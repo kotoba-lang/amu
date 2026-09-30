@@ -17,8 +17,9 @@
   moved to 65536."
   {:kotoba/export [table value typed-manifest-limits]})
 
-(def table
-  (quote
+(#?(:kotoba defn :default def) table
+  #?@(:kotoba [[] :document])
+  (#?(:kotoba do :default quote)
    {:budgets
     {:fuel
      {:trap :budget/fuel,
@@ -864,40 +865,110 @@
       [{:repo "kotoba-lang/kotoba-sema",
         :var kotoba.compiler.frontend/max-reader-depth}]}}}))
 
+#?(:kotoba
+   (defn- missing-doc
+     "The absence marker of a step that found no entry."
+     [] :document
+     (document-keyword :limits/missing)))
+
+#?(:kotoba
+   (defn- missing? [v :document] :bool
+     (match-option (document-keyword-value v) [:option :keyword]
+       (none false)
+       (some k (= k :limits/missing)))))
+
+#?(:kotoba
+   (defn- descend
+     "One `get-in` step: the entry at K of M, or the marker."
+     [m :document k :document] :document
+     (if (map? m) (get m k (missing-doc)) (missing-doc))))
+
 (defn value
   "The `:value` at PATH of `table`; throws when the table has no number there,
   so a renamed entry is a load-time failure rather than a nil in a manifest."
-  [path]
-  (let [v (get-in table (conj (vec path) :value) ::missing)]
-    (when (= ::missing v)
-      (throw (ex-info "lang/limits.edn has no value at this path" {:path path})))
-    v))
+  [#?@(:kotoba [path :document] :default [path])] #?@(:kotoba [:document])
+  #?(:kotoba
+     (let [v (descend (reduce descend (table) path) (document-keyword :value))]
+       (if (missing? v)
+         (throw (ex-info "lang/limits.edn has no value at this path"
+                         {:path path}))
+         v))
+     :default
+     (let [v (get-in table (conj (vec path) :value) ::missing)]
+       (when (= ::missing v)
+         (throw (ex-info "lang/limits.edn has no value at this path" {:path path})))
+       v)))
+
+#?(:kotoba
+   (defn- at
+     "The value at [A B] of the table."
+     [a :keyword b :keyword] :document
+     (value (document-vector (document-keyword a) (document-keyword b)))))
+
+#?(:kotoba
+   (defn- at3
+     "The value at [A B C] of the table."
+     [a :keyword b :keyword c :keyword] :document
+     (value (document-vector (document-keyword a) (document-keyword b) (document-keyword c)))))
+
+#?(:kotoba
+   (defn- put [m :document k :keyword v :document] :document
+     (assoc m (document-keyword k) v)))
 
 (defn typed-manifest-limits
   "The typed-value keys of an artifact manifest's `:limits` for PROFILE
   (`:profile/wasm` or `:profile/esm`). `:js? true` adds the keys only the
   restricted-ESM artifact carries. The slot counts are ABI layout facts, not
-  limits, and are not in the table."
-  [profile & {:keys [js?]}]
+  limits, and are not in the table.
+
+  On the Kotoba route the keyword argument is the positional JS?, since an
+  export has a fixed interface."
+  [#?@(:kotoba [profile :keyword js? :bool] :default [profile & {:keys [js?]}])]
+  #?@(:kotoba [:document])
   ;; :parametric-adt-depth / -nodes bound a TYPE DESCRIPTOR since P2/P3 of
   ;; adr-2609242100 (values themselves carry no depth or node limit any more);
   ;; the numbers, 12 and 64, did not move, so no manifest changed.
-  (cond-> {:parametric-adt-depth (value [:language/static :type-descriptor-depth])
-           :parametric-adt-nodes (value [:language/static :type-descriptor-nodes])
-           :variant-cases (value [:language/static :variant-cases])
-           :heterogeneous-vector-items (value [:language/static :heterogeneous-vector-items])
-           :typed-set-items (value [:language/static :typed-set-items])
-           :typed-map-entries (value [:language/static :typed-map-entries])
-           :record-fields (value [:language/static :record-fields])
-           :vector-i64-items (value [profile :cells :vector-items])
-           :vector-f64-items (value [profile :cells :vector-items])
-           :compact-graph-items (value [:language/value :compact-graph-items])
-           :string-index-key-bytes (value [:language/value :string-index-key-bytes])}
-    js? (assoc :string-literal-bytes (value [:language/static :string-literal-bytes])
-               :string-module-literal-bytes (value [:language/static :module-string-literal-bytes])
-               :string-value-bytes (value [:language/value :string-value-bytes])
-               :keyword-value-bytes (value [:language/value :keyword-value-bytes])
-               :map-entries (value [:language/static :map-literal-entries])
-               :option-i64-slots 2
-               :result-i64-slots 2
-               :generic-option-max-slots 3)))
+  #?(:kotoba
+     (let [base (-> (document-map)
+                    (put :parametric-adt-depth (at :language/static :type-descriptor-depth))
+                    (put :parametric-adt-nodes (at :language/static :type-descriptor-nodes))
+                    (put :variant-cases (at :language/static :variant-cases))
+                    (put :heterogeneous-vector-items (at :language/static :heterogeneous-vector-items))
+                    (put :typed-set-items (at :language/static :typed-set-items))
+                    (put :typed-map-entries (at :language/static :typed-map-entries))
+                    (put :record-fields (at :language/static :record-fields))
+                    (put :vector-i64-items (at3 profile :cells :vector-items))
+                    (put :vector-f64-items (at3 profile :cells :vector-items))
+                    (put :compact-graph-items (at :language/value :compact-graph-items))
+                    (put :string-index-key-bytes (at :language/value :string-index-key-bytes)))]
+       (if js?
+         (-> base
+             (put :string-literal-bytes (at :language/static :string-literal-bytes))
+             (put :string-module-literal-bytes (at :language/static :module-string-literal-bytes))
+             (put :string-value-bytes (at :language/value :string-value-bytes))
+             (put :keyword-value-bytes (at :language/value :keyword-value-bytes))
+             (put :map-entries (at :language/static :map-literal-entries))
+             (put :option-i64-slots (document-i64 2))
+             (put :result-i64-slots (document-i64 2))
+             (put :generic-option-max-slots (document-i64 3)))
+         base))
+     :default
+     (cond-> {:parametric-adt-depth (value [:language/static :type-descriptor-depth])
+              :parametric-adt-nodes (value [:language/static :type-descriptor-nodes])
+              :variant-cases (value [:language/static :variant-cases])
+              :heterogeneous-vector-items (value [:language/static :heterogeneous-vector-items])
+              :typed-set-items (value [:language/static :typed-set-items])
+              :typed-map-entries (value [:language/static :typed-map-entries])
+              :record-fields (value [:language/static :record-fields])
+              :vector-i64-items (value [profile :cells :vector-items])
+              :vector-f64-items (value [profile :cells :vector-items])
+              :compact-graph-items (value [:language/value :compact-graph-items])
+              :string-index-key-bytes (value [:language/value :string-index-key-bytes])}
+       js? (assoc :string-literal-bytes (value [:language/static :string-literal-bytes])
+                  :string-module-literal-bytes (value [:language/static :module-string-literal-bytes])
+                  :string-value-bytes (value [:language/value :string-value-bytes])
+                  :keyword-value-bytes (value [:language/value :keyword-value-bytes])
+                  :map-entries (value [:language/static :map-literal-entries])
+                  :option-i64-slots 2
+                  :result-i64-slots 2
+                  :generic-option-max-slots 3))))

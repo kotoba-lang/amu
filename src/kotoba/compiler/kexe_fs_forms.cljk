@@ -28,9 +28,34 @@
   the catalog, so the list is stated once."
   {:kotoba/export [forms loader-targets unanswered-in refuse-unanswered!]})
 
-(def forms
-  "Form -> its token and whether the kexe loader answers it."
-  {:read {:token nil :kexe-loader? true}
+#?(:kotoba
+   (defn- form-table-rest [] :document
+     {:write {:token "WRITE_SEP" :kexe-loader? true}
+   :append {:token "APPEND_SEP" :kexe-loader? true}
+   :exists {:token "EXISTS_SEP" :kexe-loader? true}
+   :range {:token "RANGE_SEP" :kexe-loader? true}
+   :stat {:token "STAT_SEP" :kexe-loader? true}
+   :mtime {:token "MTIME_SEP" :kexe-loader? true}
+   :chmod {:token "CHMOD_SEP" :kexe-loader? true}
+   :mkdir {:token "MKDIR_SEP" :kexe-loader? true}
+   :unlink {:token "UNLINK_SEP" :kexe-loader? true}
+   :rmdir {:token "RMDIR_SEP" :kexe-loader? true}
+   :rename {:token "RENAME_SEP" :kexe-loader? true}
+   :fsync {:token "FSYNC_SEP" :kexe-loader? true}
+   :make-temp-dir {:token "MKTEMP_SEP" :kexe-loader? true}
+   :stat-nofollow {:token "NOFOLLOW_SEP" :kexe-loader? true}
+   :owner {:token "OWNER_SEP" :kexe-loader? true}}))
+
+#?(:kotoba
+   (defn- form-table-read [] :document
+     (assoc (assoc (document-null) :token (document-null)) :kexe-loader? (document-bool true))))
+
+#?(:kotoba
+   (defn- form-table [] :document
+     (assoc (form-table-rest) :read (form-table-read)))
+   :default
+   (def ^:private form-table
+     {:read {:token nil :kexe-loader? true}
    :write {:token "WRITE_SEP" :kexe-loader? true}
    :append {:token "APPEND_SEP" :kexe-loader? true}
    :exists {:token "EXISTS_SEP" :kexe-loader? true}
@@ -45,52 +70,177 @@
    :fsync {:token "FSYNC_SEP" :kexe-loader? true}
    :make-temp-dir {:token "MKTEMP_SEP" :kexe-loader? true}
    :stat-nofollow {:token "NOFOLLOW_SEP" :kexe-loader? true}
-   :owner {:token "OWNER_SEP" :kexe-loader? true}})
+   :owner {:token "OWNER_SEP" :kexe-loader? true}}))
 
-(def loader-targets
-  "The target profiles whose artifact runs under tools/kexe_loader.c."
+(def ^:private loader-target-set
   #{:x86_64-kotoba-v1 :x86_64-linux-kotoba-v1 :x86_64-macos-kotoba-v1
     :aarch64-kotoba-v1 :aarch64-linux-kotoba-v1 :aarch64-macos-kotoba-v1})
 
-(defn- num [n] #?(:clj (long n) :cljs (js/Number n)))
+#?(:kotoba
+   (defn forms [] :document (form-table))
+   :default
+   (def forms
+     "Form -> its token and whether the kexe loader answers it."
+     form-table))
 
-(defn- ascii [s]
-  (mapv (fn [i] #?(:clj (int (.charAt ^String s (int i))) :cljs (.charCodeAt s i)))
-        (range (count s))))
+#?(:kotoba
+   (defn loader-targets [] [:set :keyword] loader-target-set)
+   :default
+   (def loader-targets
+     "The target profiles whose artifact runs under tools/kexe_loader.c."
+     loader-target-set))
 
-(defn- occurs? [code needle]
-  (let [n (count needle) limit (- (count code) n)]
-    (loop [i 0]
-      (cond
-        (> i limit) false
-        (loop [j 0] (cond (= j n) true
-                          (= (nth needle j) (nth code (+ i j))) (recur (inc j))
-                          :else false)) true
-        :else (recur (inc i))))))
+#?(:kotoba
+   (defn- loader-target? [target :document] :bool
+     (match-option (document-keyword-value target) [:option :keyword]
+       (none false)
+       (some kw (contains? loader-target-set kw)))))
+
+#?(:kotoba
+   (defn- byte-at [code :document i :i64] :i64
+     (match-option (document-i64-value (nth code i)) [:option :i64]
+       (none 0)
+       (some v (bit-and v 255)))))
+
+#?(:kotoba
+   (defn- token-matches-at? [code :document token :string i :i64 j :i64 n :i64] :bool
+     (loop [j j]
+       (cond (= j n) true
+             (= (string-code-point-at token j) (byte-at code (+ i j))) (recur (inc j))
+             :else false))))
+
+#?(:kotoba
+   (defn- occurs? [code :document token :string] :bool
+     (let [n (string-byte-length token)
+           limit (- (document-count code) n)]
+       (loop [i 0]
+         (cond
+           (> i limit) false
+           (token-matches-at? code token i 0 n) true
+           :else (recur (inc i))))))
+   :default
+   (defn- occurs? [code needle]
+     (let [n (count needle) limit (- (count code) n)]
+       (loop [i 0]
+         (cond
+           (> i limit) false
+           (loop [j 0] (cond (= j n) true
+                             (= (nth needle j) (nth code (+ i j))) (recur (inc j))
+                             :else false)) true
+           :else (recur (inc i)))))))
+
+#?(:clj (defn- num [n] (long n))
+   :cljs (defn- num [n] (js/Number n)))
+
+#?(:clj (defn- ascii [s] (mapv (fn [i] (int (.charAt ^String s (int i)))) (range (count s))))
+   :cljs (defn- ascii [s] (mapv (fn [i] (.charCodeAt s i)) (range (count s)))))
+
+#?(:kotoba
+   (defn- answered? [entry :document] :bool
+     (match-option (document-bool-value (get entry :kexe-loader? (document-null))) [:option :bool]
+       (none false)
+       (some b b))))
+
+#?(:kotoba
+   (defn- entry-unanswered? [entry :document code :document] :bool
+     (if (answered? entry)
+       false
+       (match-option (document-string-value (get entry :token (document-null))) [:option :string]
+         (none false)
+         (some token (occurs? code token))))))
+
+#?(:kotoba
+   (defn- key-text [k :document] :string
+     (match-option (document-keyword-value k) [:option :keyword]
+       (none "")
+       (some kw (keyword-name kw)))))
+
+;; index of the key of XS whose text is the smallest one greater than AFTER
+;; ("" = none yet); -1 when none is left
+#?(:kotoba
+   (defn- next-key-index [xs :document after :string] :i64
+     (let [n (document-count xs)]
+       (loop [i 0 best -1]
+         (if (>= i n)
+           best
+           (let [t (key-text (nth xs i))]
+             (if (and (> (string-compare t after) 0)
+                      (or (< best 0)
+                          (< (string-compare t (key-text (nth xs best))) 0)))
+               (recur (inc i) i)
+               (recur (inc i) best))))))))
+
+#?(:kotoba
+   (defn- sort-keys [xs :document] :document
+     (loop [out (document-vector) after ""]
+       (let [idx (next-key-index xs after)]
+         (if (< idx 0)
+           out
+           (recur (document-vector-conj out (nth xs idx)) (key-text (nth xs idx))))))))
+
+#?(:kotoba
+   (defn- unanswered-in-table [table :document code :document] :document
+     (sort-keys
+      (reduce (fn [acc pair]
+                (if (entry-unanswered? (second pair) code)
+                  (document-vector-conj acc (first pair))
+                  acc))
+              (document-vector)
+              table))))
 
 (defn unanswered-in
   "The forms the kexe loader does not answer whose token occurs in CODE (the
   artifact's code bytes, literals included), sorted. TABLE defaults to
   `forms`; since OWNER was answered (2026-09-26) that table has no such form,
   and the tests pass one that does to keep the refusal measured."
-  ([code] (unanswered-in forms code))
-  ([table code]
-   (let [code (mapv #(bit-and (num %) 0xff) code)]
-     (vec (sort (for [[form {:keys [token kexe-loader?]}] table
-                      :when (and token (not kexe-loader?) (occurs? code (ascii token)))]
-                  form))))))
+  ([#?@(:kotoba [code :document] :default [code])] #?@(:kotoba [:document])
+   (unanswered-in #?(:kotoba (forms) :default forms) code))
+  ([#?@(:kotoba [table :document code :document] :default [table code])] #?@(:kotoba [:document])
+   #?(:kotoba
+      (unanswered-in-table table code)
+      :default
+      (let [code (mapv #(bit-and (num %) 0xff) code)]
+        (vec (sort (for [[form {:keys [token kexe-loader?]}] table
+                         :when (and token (not kexe-loader?) (occurs? code (ascii token)))]
+                     form)))))))
+
+#?(:kotoba
+   (defn- join-forms [found :document] :string
+     (let [n (document-count found)]
+       (loop [i 0 acc ""]
+         (if (>= i n)
+           acc
+           (recur (inc i)
+                  (string-concat (if (= i 0) acc (string-concat acc ", "))
+                                 (string-concat ":" (key-text (nth found i))))))))))
 
 (defn refuse-unanswered!
   "Throw, naming the forms, when TARGET runs under the kexe loader and CODE
   carries the token of a form the loader does not answer."
-  ([target code] (refuse-unanswered! forms target code))
-  ([table target code]
-  (when (contains? loader-targets target)
-    (when-let [found (seq (unanswered-in table code))]
-      (throw (ex-info (str "the kexe loader does not answer the :fs/app-data form"
-                           (when (next found) "s") " "
-                           (apply str (interpose ", " (map str found)))
-                           " (lang/capability-catalog.edn :status :proposed). "
-                           "Nothing was written.")
-                      {:phase :target :reason :fs-form-not-answered-by-kexe-loader
-                       :target target :forms (vec found)}))))))
+  ([#?@(:kotoba [target :document code :document] :default [target code])] #?@(:kotoba [:document])
+   (refuse-unanswered! #?(:kotoba (forms) :default forms) target code))
+  ([#?@(:kotoba [table :document target :document code :document] :default [table target code])] #?@(:kotoba [:document])
+   #?(:kotoba
+      (if (loader-target? target)
+        (let [found (unanswered-in table code)
+              plural (if (> (document-count found) 1) "s" "")]
+          (if (> (document-count found) 0)
+            (throw (ex-info (str "the kexe loader does not answer the :fs/app-data form"
+                                 plural " "
+                                 (join-forms found)
+                                 " (lang/capability-catalog.edn :status :proposed). "
+                                 "Nothing was written.")
+                            {:phase :target :reason :fs-form-not-answered-by-kexe-loader
+                             :target target :forms found}))
+            (document-null)))
+        (document-null))
+      :default
+      (when (contains? loader-targets target)
+        (when-let [found (seq (unanswered-in table code))]
+          (throw (ex-info (str "the kexe loader does not answer the :fs/app-data form"
+                               (when (next found) "s") " "
+                               (apply str (interpose ", " (map str found)))
+                               " (lang/capability-catalog.edn :status :proposed). "
+                               "Nothing was written.")
+                          {:phase :target :reason :fs-form-not-answered-by-kexe-loader
+                           :target target :forms (vec found)})))))))
