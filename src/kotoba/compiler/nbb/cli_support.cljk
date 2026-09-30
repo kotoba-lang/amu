@@ -4,12 +4,13 @@
   Keeping policy decoding and the CLI error contract here is important: the
   Wasm/native split may reduce namespace load time, but must not create two
   subtly different admission boundaries."
-  {:kotoba/export [analyze-options capability-policy command-line-args emit-metadata execute! invoke option options oracle-fuel parse-policy-material read-artifact-file! read-artifact-text! read-edn-file! read-policy read-policy-material refusal serve! source! timed usage-error!]}
+  {:kotoba/export #?(:kotoba [command-line-args execute! option options serve! source! timed usage-error!] :default [analyze-options capability-policy command-line-args emit-metadata execute! invoke option options oracle-fuel parse-policy-material read-artifact-file! read-artifact-text! read-edn-file! read-policy read-policy-material refusal serve! source! timed usage-error!])}
   (:require [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.kotoba-reader :as kr]
             [kotoba.compiler.posix-path :as posix-path]
             [kotoba.compiler.text-bytes :as text-bytes]
             [kotoba.compiler.host-integer :as host-integer]
+            #?(:kotoba [kotoba.compiler.decimal-text :as decimal-text])
             [kotoba.compiler.json-text :as json-text]
             [kotoba.compiler.nbb.io :as nbb-io]
             [kotoba.compiler.source-path :as source-path]
@@ -29,58 +30,112 @@
 
 ;; Opt-in phase timings go to stderr behind a stable marker. Normal stdout and
 ;; artifact bytes remain unchanged.
-(def ^:private timing-enabled?
-  (= "1" (env/read "KOTOBA_COMPILER_TIMING")))
+;;
+;; Under Kotoba a def value cannot perform a capability call and module state
+;; is absent, so the flag is a function of the environment and the timing
+;; state does not exist: `timed` runs its thunk, `timing-report` answers nil.
+#?(:kotoba
+   (defn- timing-enabled? [] false)
+   :default
+   (defn- timing-enabled? []
+     (= "1" (env/read "KOTOBA_COMPILER_TIMING"))))
 
 ;; The monotonic clock in milliseconds. clock/now answers nanoseconds as
 ;; decimal text; phases are differences of two readings, so the clock's
 ;; origin does not matter (performance.now's did not either).
-(defn- monotonic-ms []
-  (/ (parse-double (clock/now "monotonic")) 1000000))
+#?(:kotoba
+   (defn- monotonic-ms [] 0)
+   :default
+   (defn- monotonic-ms []
+     (/ (parse-double (clock/now "monotonic")) 1000000)))
 
-(def ^:private timing-origin-ms (volatile! (monotonic-ms)))
-(def ^:private timing-phases (volatile! []))
+#?(:kotoba
+   (defn- reset-timing! [] nil)
+   :default
+   (do
+     (def ^:private timing-origin-ms (volatile! (monotonic-ms)))
+     (def ^:private timing-phases (volatile! []))
+     (defn- reset-timing! []
+       (vreset! timing-origin-ms (monotonic-ms))
+       (vreset! timing-phases []))))
 
-(defn- reset-timing! []
-  (vreset! timing-origin-ms (monotonic-ms))
-  (vreset! timing-phases []))
+#?(:kotoba
+   (defn timed [phase f] (f))
+   :default
+   (defn timed [phase f]
+     (if-not (timing-enabled?)
+       (f)
+       (let [started (monotonic-ms)]
+         (try
+           (f)
+           (finally
+             (vswap! timing-phases conj
+                     {:phase phase :milliseconds (- (monotonic-ms) started)})))))))
 
-(defn timed [phase f]
-  (if-not timing-enabled?
-    (f)
-    (let [started (monotonic-ms)]
-      (try
-        (f)
-        (finally
-          (vswap! timing-phases conj
-                  {:phase phase :milliseconds (- (monotonic-ms) started)}))))))
+#?(:kotoba
+   (defn- timing-report [] nil)
+   :default
+   (defn- timing-report []
+     (when (timing-enabled?)
+       {:format "kotoba.compiler-timing/v1"
+        :totalMilliseconds (- (monotonic-ms) @timing-origin-ms)
+        :phases @timing-phases})))
 
-(defn- timing-report []
-  (when timing-enabled?
-    {:format "kotoba.compiler-timing/v1"
-     :totalMilliseconds (- (monotonic-ms) @timing-origin-ms)
-     :phases @timing-phases}))
+#?(:kotoba nil
+   :default
+   (defn- emit-timing! [report]
+     (when report
+       (io/write-error (str "KOTOBA_TIMING " (json-text/encode-value report) "\n")))))
 
-(defn- emit-timing! [report]
-  (when report
-    (io/write-error (str "KOTOBA_TIMING " (json-text/encode-value report) "\n"))))
+#?(:kotoba
+   (defn- option-at [args [:list :string] flag :string i :i64] [:option :string]
+     (if (>= i (vector-count args))
+       (option-none-of [:option :string])
+       (if (= flag (typed-list-nth [:list :string] args i))
+         (if (< (+ i 1) (vector-count args))
+           (option-some-of [:option :string] (typed-list-nth [:list :string] args (+ i 1)))
+           (option-none-of [:option :string]))
+         (option-at args flag (+ i 1)))))
+   :default nil)
 
-(defn option [args flag] (second (drop-while #(not= flag %) args)))
+(defn option [#?@(:kotoba [args [:list :string] flag :string] :default [args flag])]
+  #?@(:kotoba [[:option :string]])
+  #?(:kotoba (option-at args flag 0)
+     :default (second (drop-while #(not= flag %) args))))
 
 ;; Repeated flags. `--source-path` may appear more than once and each
 ;; occurrence is a separate package root, so taking only the first would
 ;; silently compile against a subset of the roots the caller named -- the
 ;; graph would still link if the missing root happened to be unused, which is
 ;; the failure that looks like a pass.
-(defn options [args flag]
-  (into [] (keep (fn [[a b]] (when (= a flag) b)))
-        (partition 2 1 args)))
+#?(:kotoba
+   (defn- options-from [args [:list :string] flag :string i :i64 acc [:list :string]] [:list :string]
+     (if (>= (+ i 1) (vector-count args))
+       acc
+       (options-from args flag (+ i 1)
+                     (if (= flag (typed-list-nth [:list :string] args i))
+                       (conj acc (typed-list-nth [:list :string] args (+ i 1)))
+                       acc)))))
 
-(defn usage-error! [message]
+(defn options [#?@(:kotoba [args [:list :string] flag :string] :default [args flag])]
+  #?@(:kotoba [[:list :string]])
+  #?(:kotoba (options-from args flag 0 (typed-list-new [:list :string]))
+     :default (vec (keep (fn [pair] (when (= (first pair) flag) (second pair)))
+                         (partition 2 1 args)))))
+
+(defn usage-error! [#?@(:kotoba [message :string] :default [message])] #?@(:kotoba [:string])
   (throw (ex-info message {:phase :usage})))
 
 (defn source! [path] (source-path/admit! path))
 
+;; Everything from here to `command-line-args` decodes, narrows and reports on
+;; host values: EDN maps, BigInts, `ex-info` data and `catch :default`. A
+;; Kotoba module has no open map and no catchable raise, so this region is
+;; the host route's alone; the Kotoba surface is the argument helpers above
+;; and the entry contract below.
+#?(:kotoba nil
+   :default
+   (do
 ;; These bounds mirror `kotoba.compiler.bounded-edn`. Policy files are the one
 ;; untrusted-ish EDN side channel on this fast path; source has its own reader
 ;; and admission contract.
@@ -101,20 +156,28 @@
 ;; aarch64-macos, 46,498 characters, 12,520 nodes, depth 12, longest string 64.
 (def ^:private max-artifact-nodes (* 4 1024 1024))
 
+(defn- walk-edn-nodes
+  "Visits X and everything under it, answering the running node count. The
+  count is threaded rather than held in a volatile: a Kotoba module has no
+  mutable cell, and the visit order (key before value) is unchanged."
+  [limit nodes x]
+  (let [nodes (inc nodes)]
+    (when (> nodes limit)
+      (throw (ex-info "EDN value contains too many nodes"
+                      {:phase :decode :limit limit})))
+    (when (and (string? x) (> (count x) max-policy-string-chars))
+      (throw (ex-info "EDN string exceeds limit"
+                      {:phase :decode :limit max-policy-string-chars})))
+    (cond
+      (map? x) (reduce (fn [acc entry]
+                         (walk-edn-nodes limit (walk-edn-nodes limit acc (key entry)) (val entry)))
+                       nodes x)
+      (coll? x) (reduce (fn [acc item] (walk-edn-nodes limit acc item)) nodes x)
+      :else nodes)))
+
 (defn- validate-edn-shape! [limit value]
-  (let [nodes (volatile! 0)]
-    (letfn [(walk [x]
-              (when (> (vswap! nodes inc) limit)
-                (throw (ex-info "EDN value contains too many nodes"
-                                {:phase :decode :limit limit})))
-              (when (and (string? x) (> (count x) max-policy-string-chars))
-                (throw (ex-info "EDN string exceeds limit"
-                                {:phase :decode :limit max-policy-string-chars})))
-              (cond
-                (map? x) (doseq [[k v] x] (walk k) (walk v))
-                (coll? x) (doseq [item x] (walk item))))]
-      (walk value)
-      value)))
+  (walk-edn-nodes limit 0 value)
+  value)
 
 (defn- read-edn-form! [node-limit text]
   (let [forms (kr/read-forms text {:max-depth max-policy-depth
@@ -222,9 +285,12 @@
   compile-source call. Keep the integer as BigInt so provenance hashes and
   Wasm i64 emission stay exact beyond JavaScript's safe-integer range."
   [args]
-  (if (some #(= "--fuel" %) args)
+  (if (seq (filter (fn [a] (= "--fuel" a)) args))
     (let [text (option args "--fuel")]
-      (when-not (and text (re-matches #"[0-9]+" text))
+      (when-not (and text
+                     #?(:kotoba (and (decimal-text/decimal? text)
+                                     (not= "-" (subs text 0 1)))
+                        :default (re-matches #"[0-9]+" text)))
         (throw (ex-info "--fuel must be a positive decimal integer"
                         {:phase :usage :fuel text})))
       (let [fuel (host-integer/exact text)]
@@ -364,14 +430,32 @@
                       (posix-path/basename source))
         report (error-report error source-name)]
     {:status (exit-code (:error report))
-     :stderr (str (pr-str report) "\n")}))
+     :stderr (str (pr-str report) "\n")}))))
+
+#?(:kotoba
+   (defn- arguments-from [count :i64 i :i64 acc [:list :string]] [:list :string]
+     (if (>= i count)
+       acc
+       (arguments-from count (+ i 1) (conj acc (cli/args (str i)))))))
 
 (defn command-line-args
   "The arguments this entrypoint was invoked with, through the cli/args
   ability: the empty request answers the count, a decimal the argument."
-  []
-  (mapv #(cli/args (str %)) (range (parse-long (cli/args "")))))
+  [] #?@(:kotoba [[:list :string]])
+  #?(:kotoba (arguments-from (decimal-text/parse (cli/args "")) 0 (typed-list-new [:list :string]))
+     :default (mapv #(cli/args (str %)) (range (parse-long (cli/args ""))))))
 
+#?(:kotoba
+   ;; Kotoba: the command is a function from the argument list to the text
+   ;; the host route would print (`pr-str` of its value), and the status is
+   ;; 0. A refusal is not caught here: an abort ends the entry with the
+   ;; handler's own status.
+   (defn execute!
+     [run! [:fn [[[:list :string]] :string]]] :i64
+     (let [stdout (run! (command-line-args))]
+       (when (> (string-byte-length stdout) 0) (io/write stdout))
+       0))
+   :default
 (defn execute!
   "Run one command and answer its exit status. The status is the entry's
   RESULT (adr-2609242330 section 1 (a): exit is not an ability); on nbb the
@@ -383,8 +467,16 @@
     (when (seq stdout) (io/write stdout))
     (when (seq stderr) (io/write-error stderr))
     #?(:cljs (when-not (zero? status) (host-entry/exit! status)))
-    status))
+    status)))
 
+#?(:kotoba
+   ;; The NDJSON worker is a long-lived host process (stdin events, module
+   ;; state); there is no such entry on the Kotoba route, so asking for it is
+   ;; a usage error rather than an absent export.
+   (defn serve! [run! target]
+     (usage-error! "worker mode is not available on the Kotoba route"))
+   :default
+   (do
 (def ^:private max-worker-line-bytes (* 64 1024))
 (def ^:private max-worker-args 64)
 (def ^:private max-worker-arg-chars 4096)
@@ -502,4 +594,4 @@
                                         :type "result" :id nil :status 64
                                         :stdout ""
                                         :stderr "unterminated worker request\n"}))
-             (close!)))))))
+             (close!)))))))))
