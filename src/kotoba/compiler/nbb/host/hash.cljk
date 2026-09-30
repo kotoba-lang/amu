@@ -16,10 +16,15 @@
   VALUE is a string (hashed as UTF-8) or a byte buffer -- the two request
   kinds the compiler has, `:string` and `:bytes`. See
   kotoba.compiler.nbb.host.io."
-  {:kotoba/export []}
-  (:require ["node:crypto" :as crypto]))
+  {:kotoba/export #?(:kotoba [sha256] :default [])}
+  #?(:cljs (:require ["node:crypto" :as crypto])))
 
-(defn sha256
-  "hash/sha256 3."
-  [value]
-  (-> (.createHash crypto "sha256") (.update value) (.digest "hex")))
+#?(:kotoba (defn sha256
+             "hash/sha256 3 (the ability itself; a Kotoba caller hashes a string)."
+             [value :string] :string
+             (hash/sha256 value))
+   :default
+   (defn sha256
+     "hash/sha256 3."
+     [value]
+     (-> (.createHash crypto "sha256") (.update value) (.digest "hex"))))

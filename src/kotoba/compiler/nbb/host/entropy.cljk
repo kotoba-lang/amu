@@ -9,14 +9,19 @@
   Linux static ELF answers with getrandom(2). Here it is one
   crypto.randomBytes call. A request outside the wire's shape throws by name
   (the static image traps). See kotoba.compiler.nbb.host.io."
-  {:kotoba/export []}
-  (:require ["node:crypto" :as crypto]))
+  {:kotoba/export #?(:kotoba [draw] :default [])}
+  #?(:cljs (:require ["node:crypto" :as crypto])))
 
-(defn draw
-  "entropy/draw 23."
-  [request]
-  (let [n (when (re-matches #"[1-9][0-9]{0,2}" request) (js/Number request))]
-    (when-not (and n (<= n 256))
-      (throw (ex-info "entropy/draw request must be a decimal count 1..256"
-                      {:phase :host :request request})))
-    (.toString (.randomBytes crypto n) "hex")))
+#?(:kotoba (defn draw
+             "entropy/draw 23 (the ability itself; its handler comes from the target profile)."
+             [request :string] :string
+             (entropy/draw request))
+   :default
+   (defn draw
+     "entropy/draw 23."
+     [request]
+     (let [n (when (re-matches #"[1-9][0-9]{0,2}" request) (js/Number request))]
+       (when-not (and n (<= n 256))
+         (throw (ex-info "entropy/draw request must be a decimal count 1..256"
+                         {:phase :host :request request})))
+       (.toString (.randomBytes crypto n) "hex"))))

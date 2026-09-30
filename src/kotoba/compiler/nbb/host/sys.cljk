@@ -17,13 +17,18 @@
 
   Each is one property read; nothing here decides. See
   kotoba.compiler.nbb.host.io."
-  {:kotoba/export []}
-  (:require ["node:os" :as os]))
+  {:kotoba/export #?(:kotoba [cwd] :default [])}
+  #?(:cljs (:require ["node:os" :as os])))
 
-(defn cwd "sys/cwd 40." [_request] (.cwd js/process))
-(defn windows? [] (= "win32" (.-platform js/process)))
-(defn tmpdir [] (.tmpdir os))
-(defn runtime-version [] (.-version js/process))
-(defn argv [] (vec (.-argv js/process)))
-(defn path-delimiter [] (if (windows?) ";" ":"))
-(defn homedir [] (.homedir os))
+#?(:kotoba (defn cwd
+           "sys/cwd 40 (the ability itself)."
+           [request :string] :string
+           (sys/cwd request))
+   :default
+   (defn cwd "sys/cwd 40." [_request] (.cwd js/process)))
+#?(:cljs (defn windows? [] (= "win32" (.-platform js/process))))
+#?(:cljs (defn tmpdir [] (.tmpdir os)))
+#?(:cljs (defn runtime-version [] (.-version js/process)))
+#?(:cljs (defn argv [] (vec (.-argv js/process))))
+#?(:cljs (defn path-delimiter [] (if (windows?) ";" ":")))
+#?(:cljs (defn homedir [] (.homedir os)))
