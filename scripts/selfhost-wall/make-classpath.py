@@ -10,6 +10,8 @@ wt = {}
 for d in sorted(os.listdir(root)):
     m = re.match(r'wt-[A-Z]-(.+)$', d)
     if m: wt[m.group(1)] = os.path.join(root, d)   # later letters win
+# The sema under test is the working checkout, never a stale wt-*-kotoba-sema worktree.
+wt['kotoba-sema'] = os.environ.get('WALL_SEMA', '/Users/junkawasaki/github/kotoba-lang/kotoba-sema')
 res = []
 for e in cp:
     m = re.search(r'/io\.github\.kotoba-lang/([^/]+)/[0-9a-f]{40}(/.*)?$', e)
