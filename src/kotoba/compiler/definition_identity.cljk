@@ -72,21 +72,1333 @@
   mistaken for one: `:definitions` carries `:cid` on success and
   `:definition-cid <marker>` on refusal, so a consumer that reads `:cid`
   gets nothing rather than something plausible."
-  {:kotoba/export [alpha-normalize cache-material contract definition-count definitions describe desugar-contract-version format-lines joined max-recursive-group normalized-body profile-version scanned-line symbols-in]}
-  (:require [kotoba.lang.text :as str]
-            [kotoba.kir :as ir]
+  {:kotoba/export #?(:kotoba [alpha-normalize cache-material contract definition-count definitions describe desugar-contract-version format-lines joined max-recursive-group normalized-body profile-version scanned-line symbols-in]
+                   :default [alpha-normalize cache-material contract definition-count definitions describe desugar-contract-version format-lines joined max-recursive-group normalized-body profile-version scanned-line symbols-in])}
+  (:require #?@(:kotoba [[kotoba.form :as form]]
+                :default [[kotoba.lang.text :as str]
+                          [kotoba.kir :as ir]])
             [kotoba.kir.alpha-normalization :as an]
             [kotoba.kir.definition-identity :as kir-id]
-            [kotoba.compiler.capability-names :as cap-names]
-            #?(:cljs [kotoba.kir.cljs-i64 :as i64])))
+            #?@(:kotoba []
+                :default [[kotoba.compiler.capability-names :as cap-names]])
+            #?(:cljs [kotoba.kir.cljs-i64 :as i64]))
+  #?(:kotoba (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                                  [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+                        :di/link [:record :di/link [[:body [:ref :form/r]] [:deps [:ref :form/r]]]]
+                        :di/one [:record :di/one [[:cid [:ref :form/r]] [:deps [:ref :form/r]] [:entry [:ref :form/r]]]]
+                        :di/state [:record :di/state [[:pending [:ref :form/r]] [:rcid [:ref :form/r]]
+                                                      [:out [:ref :form/r]] [:done :i64]]]})))
 
-(def contract
+;; ===========================================================================
+;; The Kotoba reading of this namespace.
+;;
+;; The host walks the compiler's own maps (HIR / KIR functions) and builds
+;; identity payloads as Clojure data. A Kotoba module holds compiler data as
+;; the recursive `:form/r` record (kotoba.form), so the Kotoba surface is the
+;; same computation over Forms: `definitions` takes the HIR and the KIR as
+;; Form maps and answers the report as a Form map.
+;;
+;; WHERE IT DIFFERS ON PURPOSE
+;;   * The capability catalog (wire id -> operation keyword) is an ARGUMENT
+;;     (a Form map). The host reads it from `kotoba.sema`, which no Kotoba
+;;     module can require yet.
+;;   * try/catch is a result value: a function whose preparation fails carries
+;;     `:refused <problem>` and becomes a refusal entry, as the host's caught
+;;     ex-info does. What the host lets escape (an unencodable value in a
+;;     payload) is a trap here.
+;;   * Nothing uses a volatile: the dependency walk threads the dependency
+;;     list through its result.
+;;   * Names are addressed by their position in the module's function list; the
+;;     algorithm (declaration order, refusal rounds, blocked callees, ready
+;;     callees, strongly connected components, the smallest-canonical-bytes
+;;     permutation of a cycle) is the host's, step for step.
+;; ===========================================================================
+
+#?(:kotoba
+   (defn contract [] :keyword :kotoba.definition-identity/v1))
+
+#?(:kotoba
+   (defn profile-version [] :i64 6))
+
+#?(:kotoba
+   (defn desugar-contract-version [] :i64 2))
+
+#?(:kotoba
+   (defn max-recursive-group [] :i64 8))
+
+;; --- Form plumbing -----------------------------------------------------------
+
+#?(:kotoba
+   (defn- kw [name :string] [:ref :form/r]
+     (form/keyword-form (keyword-from-string name))))
+
+#?(:kotoba
+   (defn- fget [m [:ref :form/r] name :string] [:ref :form/r]
+     (form/form-get m (kw name))))
+
+#?(:kotoba
+   (defn- put [acc [:list [:ref :form/r]] k [:ref :form/r] v [:ref :form/r]] [:list [:ref :form/r]]
+     (form/append-form (form/append-form acc k) v)))
+
+#?(:kotoba
+   (defn- truthy? [f [:ref :form/r]] :bool
+     (not (or (= 0 (form/tag-of f))
+              (and (= 1 (form/tag-of f)) (= 0 (form/int-value f)))))))
+
+#?(:kotoba
+   (defn- keyword-text [k :keyword] :string
+     (document-edn-print (document-keyword k))))
+
+;; `str` of a name: a symbol or string as it is, a keyword with its colon.
+#?(:kotoba
+   (defn- name-text [f [:ref :form/r]] :string
+     (let [t (form/tag-of f)]
+       (if (= t 4)
+         (keyword-text (form/keyword-value f))
+         (if (or (= t 3) (= t 5))
+           (form/string-value f)
+           "")))))
+
+#?(:kotoba
+   (defn- list-has? [kids [:list [:ref :form/r]] x [:ref :form/r]] :bool
+     (let [n (vector-count kids)]
+       (loop [i 0]
+         (if (>= i n)
+           false
+           (if (form/eq (typed-list-nth [:list [:ref :form/r]] kids i) x)
+             true
+             (recur (+ i 1))))))))
+
+#?(:kotoba
+   (defn- index-of [kids [:list [:ref :form/r]] x [:ref :form/r]] :i64
+     (let [n (vector-count kids)]
+       (loop [i 0]
+         (if (>= i n)
+           -1
+           (if (form/eq (typed-list-nth [:list [:ref :form/r]] kids i) x)
+             i
+             (recur (+ i 1))))))))
+
+;; conj onto a Form vector unless an equal element is already there
+#?(:kotoba
+   (defn- vec-add-distinct [v [:ref :form/r] x [:ref :form/r]] [:ref :form/r]
+     (if (list-has? (form/kids-of v) x)
+       v
+       (form/form-vec (form/append-form (form/kids-of v) x)))))
+
+#?(:kotoba
+   (defn- vec-set [v [:ref :form/r] i :i64 x [:ref :form/r]] [:ref :form/r]
+     (let [kids (form/kids-of v)
+           n (vector-count kids)]
+       (form/form-vec
+        (loop [j 0 acc (form/no-forms)]
+          (if (>= j n)
+            acc
+            (recur (+ j 1)
+                   (form/append-form acc (if (= j i) x (typed-list-nth [:list [:ref :form/r]] kids j))))))))))
+
+#?(:kotoba
+   (defn- int-at [v [:ref :form/r] i :i64] :i64
+     (form/int-value (form/nth-of v i))))
+
+#?(:kotoba
+   (defn- range-vec [n :i64] [:ref :form/r]
+     (form/form-vec
+      (loop [i 0 acc (form/no-forms)]
+        (if (>= i n)
+          acc
+          (recur (+ i 1) (form/append-form acc (form/int-form i))))))))
+
+#?(:kotoba
+   (defn- filled-vec [n :i64 x [:ref :form/r]] [:ref :form/r]
+     (form/form-vec
+      (loop [i 0 acc (form/no-forms)]
+        (if (>= i n)
+          acc
+          (recur (+ i 1) (form/append-form acc x)))))))
+
+;; the elements of the int vector A that are not in the int vector B
+#?(:kotoba
+   (defn- ints-minus [a [:ref :form/r] b [:ref :form/r]] [:ref :form/r]
+     (let [n (form/count-of a)]
+       (form/form-vec
+        (loop [i 0 acc (form/no-forms)]
+          (if (>= i n)
+            acc
+            (let [x (form/nth-of a i)]
+              (recur (+ i 1)
+                     (if (list-has? (form/kids-of b) x) acc (form/append-form acc x))))))))))
+
+#?(:kotoba
+   (defn- text-of-index [names [:ref :form/r] i :i64] :string
+     (name-text (form/nth-of names i))))
+
+;; stable insertion of index X into SORTED (ascending by the text of the name)
+#?(:kotoba
+   (defn- insert-sorted [sorted [:ref :form/r] x :i64 names [:ref :form/r]] [:ref :form/r]
+     (let [kids (form/kids-of sorted)
+           n (vector-count kids)
+           tx (text-of-index names x)]
+       (form/form-vec
+        (loop [j 0 acc (form/no-forms) placed false]
+          (if (>= j n)
+            (if placed acc (form/append-form acc (form/int-form x)))
+            (let [y (form/int-value (typed-list-nth [:list [:ref :form/r]] kids j))]
+              (if (and (not placed) (> (string-compare (text-of-index names y) tx) 0))
+                (recur (+ j 1)
+                       (form/append-form (form/append-form acc (form/int-form x)) (form/int-form y))
+                       true)
+                (recur (+ j 1) (form/append-form acc (form/int-form y)) placed)))))))))
+
+#?(:kotoba
+   (defn- sort-indices [idxs [:ref :form/r] names [:ref :form/r]] [:ref :form/r]
+     (let [n (form/count-of idxs)]
+       (loop [i 0 sorted (form/form-vec (form/no-forms))]
+         (if (>= i n)
+           sorted
+           (recur (+ i 1) (insert-sorted sorted (int-at idxs i) names)))))))
+
+#?(:kotoba
+   (defn- text-forms [idxs [:ref :form/r] names [:ref :form/r]] [:ref :form/r]
+     (let [n (form/count-of idxs)]
+       (form/form-vec
+        (loop [i 0 acc (form/no-forms)]
+          (if (>= i n)
+            acc
+            (recur (+ i 1) (form/append-form acc (form/string-form (text-of-index names (int-at idxs i)))))))))))
+
+#?(:kotoba
+   (defn- mk-coll [t :i64 kids [:list [:ref :form/r]]] [:ref :form/r]
+     (if (= t 6)
+       (form/form-seq kids)
+       (if (= t 7)
+         (form/form-vec kids)
+         (if (= t 8)
+           (form/form-set kids)
+           (form/form-map kids))))))
+
+#?(:kotoba
+   (defn- ref-vec? [f [:ref :form/r]] :bool
+     (and (= 7 (form/tag-of f))
+          (= 2 (form/count-of f))
+          (form/eq (form/nth-of f 0) (form/keyword-form :ref)))))
+
+;; --- canonical values (the host's `canonical-value`) --------------------------
+;; The host maps every integer to the exact-decimal i64 wrapper, which the
+;; identity encodes exactly as it encodes the plain integer INSIDE +-(2^53-1).
+;; Only an integer outside that range needs the wrapper here; a Form f64 leaf is
+;; admitted by the identity's `normalize` directly.
+
+#?(:kotoba
+   (defn- i64-wrapper [n :i64] [:ref :form/r]
+     (form/form-map (put (form/no-forms)
+                         (form/keyword-form :kotoba.lang.code-identity/i64)
+                         (form/string-form (if (= n (- (- 0 9223372036854775807) 1))
+                                             "-9223372036854775808"
+                                             (string-from-i64 n)))))))
+
+#?(:kotoba
+   (defn- canon-kids [kids [:list [:ref :form/r]]] [:list [:ref :form/r]]
+     (let [n (vector-count kids)]
+       (loop [i 0 acc (form/no-forms)]
+         (if (>= i n)
+           acc
+           (recur (+ i 1) (form/append-form acc (canon (typed-list-nth [:list [:ref :form/r]] kids i)))))))))
+
+#?(:kotoba
+   (defn- canon [f [:ref :form/r]] [:ref :form/r]
+     (let [t (form/tag-of f)]
+       (if (= t 2)
+         (let [n (form/int-value f)]
+           (if (and (<= (- 0 9007199254740991) n) (<= n 9007199254740991))
+             f
+             (i64-wrapper n)))
+         (if (and (>= t 6) (<= t 9))
+           (if (ref-vec? f)
+             f
+             (mk-coll t (canon-kids (form/kids-of f))))
+           f)))))
+
+#?(:kotoba
+   (defn symbols-in
+     "Every symbol reachable in the Form F, as a Form set."
+     [f [:ref :form/r]] [:ref :form/r]
+     (an/symbols-in f)))
+
+#?(:kotoba
+   (defn alpha-normalize
+     "kotoba.kir.alpha-normalization/alpha-normalize with this module's leaf:
+     answers a map with :params :body :bound."
+     [function [:ref :form/r]] [:ref :form/r]
+     (let [r (an/alpha-normalize function)]
+       (form/assoc-form r (kw "body") (canon (fget r "body"))))))
+
+#?(:kotoba
+   (defn normalized-body
+     "Alpha-normalized body of one KIR function Form."
+     [function [:ref :form/r]] [:ref :form/r]
+     (fget (alpha-normalize function) "body")))
+
+;; --- dependency linking: a callee is its CID, never its name -------------------
+
+#?(:kotoba
+   (defn- link-of [body [:ref :form/r] deps [:ref :form/r]] [:ref :di/link]
+     (record-new [:ref :di/link] body deps)))
+
+#?(:kotoba
+   (defn- link-symbol [f [:ref :form/r] names [:ref :form/r] rcid [:ref :form/r] gidx [:ref :form/r]
+                       deps [:ref :form/r]] [:ref :di/link]
+     (let [i (index-of (form/kids-of names) f)]
+       (if (< i 0)
+         (link-of f deps)
+         (let [g (int-at gidx i)
+               cid (form/nth-of rcid i)]
+           (if (>= g 0)
+             (link-of (form/vec2 (form/keyword-form :kotoba.definition/group) (form/int-form g)) deps)
+             (if (= 3 (form/tag-of cid))
+               (link-of (form/vec2 (form/keyword-form :kotoba.definition/ref) cid)
+                        (vec-add-distinct deps cid))
+               (link-of f deps))))))))
+
+#?(:kotoba
+   (defn- link-coll [f [:ref :form/r] names [:ref :form/r] rcid [:ref :form/r] gidx [:ref :form/r]
+                     deps [:ref :form/r]] [:ref :di/link]
+     (let [kids (form/kids-of f)
+           n (vector-count kids)
+           as-set (= 8 (form/tag-of f))]
+       (loop [i 0 acc (form/no-forms) d deps]
+         (if (>= i n)
+           (link-of (mk-coll (form/tag-of f) acc) d)
+           (let [r (link-node (typed-list-nth [:list [:ref :form/r]] kids i) names rcid gidx d)
+                 x (record-get [:ref :di/link] r :body)]
+             (recur (+ i 1)
+                    (if (and as-set (list-has? acc x)) acc (form/append-form acc x))
+                    (record-get [:ref :di/link] r :deps))))))))
+
+#?(:kotoba
+   (defn- link-map [f [:ref :form/r] names [:ref :form/r] rcid [:ref :form/r] gidx [:ref :form/r]
+                    deps [:ref :form/r]] [:ref :di/link]
+     (let [kids (form/kids-of f)
+           n (vector-count kids)]
+       (loop [j 0 acc (form/form-map (form/no-forms)) d deps]
+         (if (>= (+ j 1) n)
+           (link-of acc d)
+           (let [rk (link-node (typed-list-nth [:list [:ref :form/r]] kids j) names rcid gidx d)
+                 rv (link-node (typed-list-nth [:list [:ref :form/r]] kids (+ j 1)) names rcid gidx
+                               (record-get [:ref :di/link] rk :deps))]
+             (recur (+ j 2)
+                    (form/assoc-form acc (record-get [:ref :di/link] rk :body) (record-get [:ref :di/link] rv :body))
+                    (record-get [:ref :di/link] rv :deps))))))))
+
+#?(:kotoba
+   (defn- link-node [f [:ref :form/r] names [:ref :form/r] rcid [:ref :form/r] gidx [:ref :form/r]
+                     deps [:ref :form/r]] [:ref :di/link]
+     (let [t (form/tag-of f)]
+       (cond
+         (= t 5) (link-symbol f names rcid gidx deps)
+         (ref-vec? f) (link-of f deps)
+         (= t 9) (link-map f names rcid gidx deps)
+         (or (= t 6) (= t 7) (= t 8)) (link-coll f names rcid gidx deps)
+         :else (link-of f deps)))))
+
+;; --- the sealed payload -------------------------------------------------------
+
+;; every schema name the Form F references through a `[:ref name]` vector (a
+;; map entry `:ref x` counts as one, as the host's tree walk reads it)
+#?(:kotoba
+   (defn- refs-in-kids [kids [:list [:ref :form/r]] i :i64 acc [:list [:ref :form/r]]] [:list [:ref :form/r]]
+     (let [n (vector-count kids)]
+       (loop [j i a acc]
+         (if (>= j n)
+           a
+           (recur (+ j 1) (refs-in (typed-list-nth [:list [:ref :form/r]] kids j) a)))))))
+
+#?(:kotoba
+   (defn- refs-in-map [kids [:list [:ref :form/r]] acc [:list [:ref :form/r]]] [:list [:ref :form/r]]
+     (let [n (vector-count kids)]
+       (loop [j 0 a acc]
+         (if (>= (+ j 1) n)
+           a
+           (let [k (typed-list-nth [:list [:ref :form/r]] kids j)
+                 v (typed-list-nth [:list [:ref :form/r]] kids (+ j 1))
+                 a1 (if (form/eq k (form/keyword-form :ref)) (form/append-form a v) a)]
+             (recur (+ j 2) (refs-in v (refs-in k a1)))))))))
+
+#?(:kotoba
+   (defn- refs-in [f [:ref :form/r] acc [:list [:ref :form/r]]] [:list [:ref :form/r]]
+     (let [t (form/tag-of f)]
+       (if (= t 9)
+         (refs-in-map (form/kids-of f) acc)
+         (if (or (= t 6) (= t 7) (= t 8))
+           (refs-in-kids (form/kids-of f) 0 (if (ref-vec? f) (form/append-form acc (form/nth-of f 1)) acc))
+           acc)))))
+
+;; SCHEMAS transitively reachable from ROOTS, as a Form map name -> definition
+#?(:kotoba
+   (defn- reachable-schemas [schemas [:ref :form/r] roots [:ref :form/r]] [:ref :form/r]
+     (loop [pending (refs-in roots (form/no-forms)) seen (form/form-map (form/no-forms))]
+       (if (= 0 (vector-count pending))
+         seen
+         (let [nm (typed-list-nth [:list [:ref :form/r]] pending 0)
+               rest-of (loop [j 1 acc (form/no-forms)]
+                         (if (>= j (vector-count pending))
+                           acc
+                           (recur (+ j 1) (form/append-form acc (typed-list-nth [:list [:ref :form/r]] pending j)))))]
+           (if (form/form-has? seen nm)
+             (recur rest-of seen)
+             (let [definition (form/form-get schemas nm)]
+               (recur (form/append-many rest-of (refs-in definition (form/no-forms)))
+                      (form/assoc-form seen nm definition)))))))))
+
+#?(:kotoba
+   (defn- interface-of [function [:ref :form/r] normalized [:ref :form/r] schemas [:ref :form/r]] [:ref :form/r]
+     (let [ptypes (fget function "param-types")
+           m0 (put (put (form/no-forms)
+                        (kw "arity") (form/int-form (form/count-of (fget normalized "params"))))
+                   (kw "result") (fget function "result"))
+           m1 (if (truthy? ptypes)
+                (put m0 (kw "params") (form/form-vec (form/kids-of ptypes)))
+                m0)
+           reached (reachable-schemas schemas
+                                      (form/vec3 ptypes (fget function "result") (fget function "body")))
+           m2 (if (> (form/count-of reached) 0) (put m1 (kw "schemas") reached) m1)]
+       (form/form-map m2))))
+
+;; --- the effect row bridge ------------------------------------------------------
+
+#?(:kotoba
+   (defn- control-effect? [f [:ref :form/r]] :bool
+     (and (= 4 (form/tag-of f))
+          (or (= (form/keyword-value f) :abort) (= (form/keyword-value f) :state)))))
+
+#?(:kotoba
+   (defn- wire-call? [f [:ref :form/r]] :bool
+     (and (= 7 (form/tag-of f))
+          (= 2 (form/count-of f))
+          (form/eq (form/nth-of f 0) (form/keyword-form :cap/call))
+          (= 2 (form/tag-of (form/nth-of f 1))))))
+
+;; the catalog is usable when every value is a keyword and no two ids share one
+#?(:kotoba
+   (defn- catalog-ok-from [kids [:list [:ref :form/r]] j :i64 seen [:ref :form/r]] :bool
+     (if (>= (+ j 1) (vector-count kids))
+       true
+       (let [id (typed-list-nth [:list [:ref :form/r]] kids j)
+             v (typed-list-nth [:list [:ref :form/r]] kids (+ j 1))]
+         (if (= 2 (form/tag-of id))
+           (if (= 4 (form/tag-of v))
+             (if (list-has? (form/kids-of seen) v)
+               false
+               (catalog-ok-from kids (+ j 2) (form/form-vec (form/append-form (form/kids-of seen) v))))
+             false)
+           (catalog-ok-from kids (+ j 2) seen))))))
+
+#?(:kotoba
+   (defn- catalog-ok? [catalog [:ref :form/r]] :bool
+     (and (= 9 (form/tag-of catalog))
+          (catalog-ok-from (form/kids-of catalog) 0 (form/form-vec (form/no-forms))))))
+
+;; every row member is a wire call or a control effect
+#?(:kotoba
+   (defn- row-bridgeable? [kids [:list [:ref :form/r]] i :i64] :bool
+     (if (>= i (vector-count kids))
+       true
+       (let [m (typed-list-nth [:list [:ref :form/r]] kids i)]
+         (if (or (wire-call? m) (control-effect? m))
+           (row-bridgeable? kids (+ i 1))
+           false)))))
+
+;; the row with each wire call replaced by its catalog name; nil-form when a
+;; wire id has no name
+#?(:kotoba
+   (defn- translate-row [kids [:list [:ref :form/r]] catalog [:ref :form/r]] [:ref :form/r]
+     (let [n (vector-count kids)]
+       (loop [i 0 acc (form/no-forms)]
+         (if (>= i n)
+           (form/form-set acc)
+           (let [m (typed-list-nth [:list [:ref :form/r]] kids i)]
+             (if (control-effect? m)
+               (recur (+ i 1) (if (list-has? acc m) acc (form/append-form acc m)))
+               (let [name (form/form-get catalog (form/nth-of m 1))]
+                 (if (= 4 (form/tag-of name))
+                   (recur (+ i 1) (if (list-has? acc name) acc (form/append-form acc name)))
+                   (form/nil-form))))))))))
+
+;; every named operation is a keyword the catalog names
+#?(:kotoba
+   (defn- named-known? [kids [:list [:ref :form/r]] i :i64 catalog [:ref :form/r]] :bool
+     (if (>= i (vector-count kids))
+       true
+       (let [op (typed-list-nth [:list [:ref :form/r]] kids i)
+             names (form/kids-of catalog)]
+         (if (and (= 4 (form/tag-of op))
+                  (loop [j 1]
+                    (if (>= j (vector-count names))
+                      false
+                      (if (form/eq (typed-list-nth [:list [:ref :form/r]] names j) op)
+                        true
+                        (recur (+ j 2))))))
+           (named-known? kids (+ i 1) catalog)
+           false)))))
+
+#?(:kotoba
+   (defn- effect-row-of [function [:ref :form/r] named [:ref :form/r] catalog [:ref :form/r] catalog-ok :bool]
+     [:ref :form/r]
+     (let [row (fget function "effects")]
+       (if (and catalog-ok (= 8 (form/tag-of row)))
+         (if (row-bridgeable? (form/kids-of row) 0)
+           (if (or (= 0 (form/tag-of named))
+                   (and (= 8 (form/tag-of named)) (named-known? (form/kids-of named) 0 catalog)))
+             (translate-row (form/kids-of row) catalog)
+             (form/nil-form))
+           (form/nil-form))
+         (form/nil-form)))))
+
+;; --- preparing one function -------------------------------------------------------
+
+;; a bound original name still present in the normalized body that is not a
+;; call target
+#?(:kotoba
+   (defn- leaks? [bound [:ref :form/r] present [:ref :form/r] targets [:ref :form/r]] :bool
+     (let [kids (form/kids-of bound)
+           n (vector-count kids)]
+       (loop [i 0]
+         (if (>= i n)
+           false
+           (let [b (typed-list-nth [:list [:ref :form/r]] kids i)]
+             (if (and (list-has? (form/kids-of present) b)
+                      (not (list-has? (form/kids-of targets) b)))
+               true
+               (recur (+ i 1)))))))))
+
+;; {:refused <problem keyword or nil> :function :normalized :interface :effect-row}
+#?(:kotoba
+   (defn- prepared-of [refused [:ref :form/r] function [:ref :form/r] normalized [:ref :form/r]
+                       interface [:ref :form/r] row [:ref :form/r]] [:ref :form/r]
+     (form/form-map
+      (put (put (put (put (put (form/no-forms)
+                               (kw "refused") refused)
+                          (kw "function") function)
+                     (kw "normalized") normalized)
+                (kw "interface") interface)
+           (kw "effect-row") row))))
+
+#?(:kotoba
+   (defn- prepare [function [:ref :form/r] named [:ref :form/r] names [:ref :form/r] schemas [:ref :form/r]
+                   catalog [:ref :form/r] catalog-ok :bool] [:ref :form/r]
+     (let [normalized (alpha-normalize function)]
+       (if (leaks? (fget normalized "bound") (an/symbols-in (fget normalized "body")) names)
+         (prepared-of (form/keyword-form :definition/binder-not-normalized) function normalized
+                      (form/nil-form) (form/nil-form))
+         (let [row (effect-row-of function named catalog catalog-ok)]
+           (if (= 0 (form/tag-of row))
+             (prepared-of (form/keyword-form :definition/effect-row-unbridged) function normalized
+                          (form/nil-form) (form/nil-form))
+             (prepared-of (form/nil-form) function normalized
+                          (interface-of function normalized schemas) row)))))))
+
+#?(:kotoba
+   (defn- prepare-all [fns [:ref :form/r] named [:ref :form/r] names [:ref :form/r] schemas [:ref :form/r]
+                       catalog [:ref :form/r] catalog-ok :bool] [:ref :form/r]
+     (let [n (form/count-of fns)
+           names-set (form/form-set (form/kids-of names))]
+       (form/form-vec
+        (loop [i 0 acc (form/no-forms)]
+          (if (>= i n)
+            acc
+            (recur (+ i 1)
+                   (form/append-form acc (prepare (form/nth-of fns i) named names-set schemas catalog catalog-ok)))))))))
+
+;; the module functions each function calls, as a vector of indices
+#?(:kotoba
+   (defn- graph-row [p [:ref :form/r] names [:ref :form/r]] [:ref :form/r]
+     (if (= 0 (form/tag-of (fget p "refused")))
+       (let [syms (form/kids-of (an/symbols-in (fget (fget p "normalized") "body")))
+             n (vector-count syms)]
+         (form/form-vec
+          (loop [i 0 acc (form/no-forms)]
+            (if (>= i n)
+              acc
+              (let [k (index-of (form/kids-of names) (typed-list-nth [:list [:ref :form/r]] syms i))]
+                (recur (+ i 1)
+                       (if (and (>= k 0) (not (list-has? acc (form/int-form k))))
+                         (form/append-form acc (form/int-form k))
+                         acc)))))))
+       (form/form-vec (form/no-forms)))))
+
+#?(:kotoba
+   (defn- graph-of [prepared [:ref :form/r] names [:ref :form/r]] [:ref :form/r]
+     (let [n (form/count-of prepared)]
+       (form/form-vec
+        (loop [i 0 acc (form/no-forms)]
+          (if (>= i n)
+            acc
+            (recur (+ i 1) (form/append-form acc (graph-row (form/nth-of prepared i) names)))))))))
+
+;; --- payloads -------------------------------------------------------------------------
+
+#?(:kotoba
+   (defn- definition-payload [params [:ref :form/r] body [:ref :form/r] interface [:ref :form/r]
+                              row [:ref :form/r] deps [:ref :form/r]] [:ref :form/r]
+     (form/form-map
+      (put (put (put (put (put (put (form/no-forms)
+                                    (kw "definition/profile-version") (form/int-form 6))
+                               (kw "definition/desugar-contract-version") (form/int-form 2))
+                          (kw "definition/kir")
+                          (form/form-map (put (put (put (form/no-forms)
+                                                        (kw "op") (form/keyword-form :kotoba.definition/function))
+                                                   (kw "params") params)
+                                              (kw "body") body)))
+                     (kw "definition/effect-row") row)
+                (kw "definition/interface") interface)
+           (kw "definition/dependencies") deps))))
+
+#?(:kotoba
+   (defn- group-payload [members [:ref :form/r] row [:ref :form/r] deps [:ref :form/r]] [:ref :form/r]
+     (form/form-map
+      (put (put (put (put (put (put (form/no-forms)
+                                    (kw "definition/profile-version") (form/int-form 6))
+                               (kw "definition/desugar-contract-version") (form/int-form 2))
+                          (kw "definition/kir")
+                          (form/form-map (put (put (form/no-forms)
+                                                   (kw "op") (form/keyword-form :kotoba.definition/recursive-group))
+                                              (kw "members") members)))
+                     (kw "definition/effect-row") row)
+                (kw "definition/interface")
+                (form/form-map (put (put (form/no-forms)
+                                         (kw "arity") (form/int-form (form/count-of members)))
+                                    (kw "result") (form/keyword-form :kotoba.definition/group))))
+           (kw "definition/dependencies") deps))))
+
+#?(:kotoba
+   (defn- member-payload [group-cid [:ref :form/r] index :i64 interface [:ref :form/r] row [:ref :form/r]]
+     [:ref :form/r]
+     (form/form-map
+      (put (put (put (put (put (put (form/no-forms)
+                                    (kw "definition/profile-version") (form/int-form 6))
+                               (kw "definition/desugar-contract-version") (form/int-form 2))
+                          (kw "definition/kir")
+                          (form/form-map (put (put (form/no-forms)
+                                                   (kw "op") (form/keyword-form :kotoba.definition/group-member))
+                                              (kw "index") (form/int-form index))))
+                     (kw "definition/effect-row") row)
+                (kw "definition/interface") interface)
+           (kw "definition/dependencies") (form/form-vec (form/one-form group-cid))))))
+
+;; --- report entries -------------------------------------------------------------------------
+
+#?(:kotoba
+   (defn- refusal [marker :keyword extra [:list [:ref :form/r]]] [:ref :form/r]
+     (form/form-map (form/append-many (put (form/no-forms) (kw "definition-cid") (form/keyword-form marker))
+                                      extra))))
+
+#?(:kotoba
+   (defn- entry [cid [:ref :form/r] deps [:ref :form/r] row [:ref :form/r]] [:ref :form/r]
+     (form/form-map (put (put (put (form/no-forms) (kw "cid") cid)
+                              (kw "dependencies") deps)
+                         (kw "effect-row") row))))
+
+;; --- one ready definition -----------------------------------------------------------------------
+
+#?(:kotoba
+   (defn- compile-ready-one [p [:ref :form/r] names [:ref :form/r] rcid [:ref :form/r]] [:ref :di/one]
+     (let [normalized (fget p "normalized")
+           gidx (filled-vec (form/count-of names) (form/int-form -1))
+           r (link-node (fget normalized "body") names rcid gidx (form/form-vec (form/no-forms)))
+           body (record-get [:ref :di/link] r :body)
+           deps (record-get [:ref :di/link] r :deps)
+           payload (definition-payload (fget normalized "params") body (fget p "interface")
+                     (fget p "effect-row") deps)
+           cid (form/string-form (kir-id/definition-cid payload))]
+       (record-new [:ref :di/one] cid deps (entry cid deps (fget p "effect-row"))))))
+
+;; --- strongly connected components ----------------------------------------------------------------
+
+;; the indices reachable from START (START included) through the index graph G
+#?(:kotoba
+   (defn- reachable [g [:ref :form/r] start :i64] [:ref :form/r]
+     (loop [todo (form/form-vec (form/one-form (form/int-form start))) seen (form/form-vec (form/no-forms))]
+       (if (= 0 (form/count-of todo))
+         seen
+         (let [node (form/last-of todo)
+               popped (form/form-vec (loop [j 0 acc (form/no-forms)]
+                                       (if (>= j (- (form/count-of todo) 1))
+                                         acc
+                                         (recur (+ j 1) (form/append-form acc (form/nth-of todo j))))))]
+           (if (list-has? (form/kids-of seen) node)
+             (recur popped seen)
+             (recur (form/form-vec (form/append-many (form/kids-of popped) (form/kids-of (form/nth-of g (form/int-value node)))))
+                    (form/form-vec (form/append-form (form/kids-of seen) node)))))))))
+
+;; the component of NODE inside its forward closure
+#?(:kotoba
+   (defn- component-of [g [:ref :form/r] node :i64] [:ref :form/r]
+     (let [forward (reachable g node)
+           n (form/count-of forward)]
+       (form/form-vec
+        (loop [i 0 acc (form/no-forms)]
+          (if (>= i n)
+            acc
+            (let [x (form/nth-of forward i)]
+              (recur (+ i 1)
+                     (if (list-has? (form/kids-of (reachable g (form/int-value x))) (form/int-form node))
+                       (form/append-form acc x)
+                       acc)))))))))
+
+;; components in ascending order of their first (by name text) member
+#?(:kotoba
+   (defn- strongly-connected [g [:ref :form/r] pending [:ref :form/r] names [:ref :form/r]] [:ref :form/r]
+     (loop [remaining pending out (form/form-vec (form/no-forms))]
+       (if (= 0 (form/count-of remaining))
+         out
+         (let [sorted (sort-indices remaining names)
+               node (int-at sorted 0)
+               component (component-of g node)]
+           (recur (ints-minus remaining component)
+                  (form/form-vec (form/append-form (form/kids-of out) component))))))))
+
+;; the pending graph: each pending function's callees that are still pending
+#?(:kotoba
+   (defn- pending-graph [graph [:ref :form/r] pending [:ref :form/r]] [:ref :form/r]
+     (let [n (form/count-of graph)]
+       (form/form-vec
+        (loop [i 0 acc (form/no-forms)]
+          (if (>= i n)
+            acc
+            (recur (+ i 1)
+                   (form/append-form
+                    acc
+                    (if (list-has? (form/kids-of pending) (form/int-form i))
+                      (ints-minus (form/nth-of graph i) (ints-minus (form/nth-of graph i) pending))
+                      (form/form-vec (form/no-forms)))))))))))
+
+;; a component whose whole outward edge set is resolved or inside itself
+#?(:kotoba
+   (defn- closed-component? [graph [:ref :form/r] members [:ref :form/r] rcid [:ref :form/r]] :bool
+     (let [n (form/count-of members)]
+       (loop [i 0]
+         (if (>= i n)
+           true
+           (let [row (form/nth-of graph (int-at members i))
+                 m (form/count-of row)
+                 ok (loop [j 0]
+                      (if (>= j m)
+                        true
+                        (let [d (form/nth-of row j)]
+                          (if (or (list-has? (form/kids-of members) d)
+                                  (= 3 (form/tag-of (form/nth-of rcid (form/int-value d)))))
+                            (recur (+ j 1))
+                            false))))]
+             (if ok (recur (+ i 1)) false)))))))
+
+;; --- a cycle -----------------------------------------------------------------------------------------
+
+;; the next permutation of the int vector P in lexicographic order, nil-form at the last one
+#?(:kotoba
+   (defn- pivot-of [p [:ref :form/r]] :i64
+     (loop [i (- (form/count-of p) 2)]
+       (if (< i 0)
+         -1
+         (if (< (int-at p i) (int-at p (+ i 1)))
+           i
+           (recur (- i 1)))))))
+
+#?(:kotoba
+   (defn- successor-of [p [:ref :form/r] pivot :i64] :i64
+     (loop [j (- (form/count-of p) 1)]
+       (if (> (int-at p j) (int-at p pivot))
+         j
+         (recur (- j 1))))))
+
+#?(:kotoba
+   (defn- next-permutation [p [:ref :form/r]] [:ref :form/r]
+     (let [pivot (pivot-of p)]
+       (if (< pivot 0)
+         (form/nil-form)
+         (let [j (successor-of p pivot)
+               n (form/count-of p)
+               swapped (vec-set (vec-set p pivot (form/nth-of p j)) j (form/nth-of p pivot))]
+           (form/form-vec
+            (loop [i 0 acc (form/no-forms)]
+              (if (>= i n)
+                acc
+                (recur (+ i 1)
+                       (form/append-form
+                        acc
+                        (if (<= i pivot)
+                          (form/nth-of swapped i)
+                          (form/nth-of swapped (- (+ pivot n) i)))))))))))))
+
+;; the members of one candidate ordering, linked against RCID and the group indices
+#?(:kotoba
+   (defn- candidate-members [arrangement [:ref :form/r] prepared [:ref :form/r] names [:ref :form/r]
+                             rcid [:ref :form/r] gidx [:ref :form/r]] [:ref :form/r]
+     (let [n (form/count-of arrangement)]
+       (form/form-vec
+        (loop [k 0 acc (form/no-forms)]
+          (if (>= k n)
+            acc
+            (let [p (form/nth-of prepared (int-at arrangement k))
+                  normalized (fget p "normalized")
+                  r (link-node (fget normalized "body") names rcid gidx (form/form-vec (form/no-forms)))]
+              (recur (+ k 1)
+                     (form/append-form
+                      acc
+                      (form/form-map
+                       (put (put (put (put (put (form/no-forms) (kw "params") (fget normalized "params"))
+                                           (kw "body") (record-get [:ref :di/link] r :body))
+                                      (kw "interface") (fget p "interface"))
+                                 (kw "effect-row") (fget p "effect-row"))
+                            (kw "dependencies") (record-get [:ref :di/link] r :deps))))))))))))
+
+#?(:kotoba
+   (defn- group-index-vec [arrangement [:ref :form/r] n :i64] [:ref :form/r]
+     (loop [k 0 g (filled-vec n (form/int-form -1))]
+       (if (>= k (form/count-of arrangement))
+         g
+         (recur (+ k 1) (vec-set g (int-at arrangement k) (form/int-form k)))))))
+
+;; union of the dependency vectors / effect rows of the members
+#?(:kotoba
+   (defn- union-field [members [:ref :form/r] name :string] [:ref :form/r]
+     (let [n (form/count-of members)]
+       (form/form-vec
+        (loop [k 0 acc (form/no-forms)]
+          (if (>= k n)
+            acc
+            (let [xs (form/kids-of (fget (form/nth-of members k) name))
+                  m (vector-count xs)]
+              (recur (+ k 1)
+                     (loop [j 0 a acc]
+                       (if (>= j m)
+                         a
+                         (let [x (typed-list-nth [:list [:ref :form/r]] xs j)]
+                           (recur (+ j 1) (if (list-has? a x) a (form/append-form a x))))))))))))))
+
+;; {:arrangement :members :payload :hex :dependencies :effect-row}
+#?(:kotoba
+   (defn- group-candidate [arrangement [:ref :form/r] prepared [:ref :form/r] names [:ref :form/r] rcid [:ref :form/r]]
+     [:ref :form/r]
+     (let [gidx (group-index-vec arrangement (form/count-of names))
+           members (candidate-members arrangement prepared names rcid gidx)
+           deps (union-field members "dependencies")
+           row (form/form-set (form/kids-of (union-field members "effect-row")))
+           payload (group-payload
+                    (form/form-vec
+                     (let [n (form/count-of members)]
+                       (loop [k 0 acc (form/no-forms)]
+                         (if (>= k n)
+                           acc
+                           (let [m (form/nth-of members k)]
+                             (recur (+ k 1)
+                                    (form/append-form
+                                     acc
+                                     (form/form-map (put (put (put (form/no-forms) (kw "params") (fget m "params"))
+                                                                   (kw "body") (fget m "body"))
+                                                              (kw "interface") (fget m "interface"))))))))))
+                    row deps)]
+       (form/form-map
+        (put (put (put (put (put (form/no-forms) (kw "arrangement") arrangement)
+                            (kw "members") members)
+                       (kw "payload") payload)
+                  (kw "hex") (form/string-form (kir-id/canonical-hex payload)))
+             (kw "dependencies") deps)))))
+
+;; the candidate ordering with the smallest canonical hex (the first of equals)
+#?(:kotoba
+   (defn- best-candidate [sorted-component [:ref :form/r] prepared [:ref :form/r] names [:ref :form/r]
+                          rcid [:ref :form/r]] [:ref :form/r]
+     (let [first-perm (range-vec (form/count-of sorted-component))]
+       (loop [perm first-perm best (form/nil-form)]
+         (if (= 0 (form/tag-of perm))
+           best
+           (let [arrangement (form/form-vec
+                          (let [n (form/count-of perm)]
+                            (loop [k 0 acc (form/no-forms)]
+                              (if (>= k n)
+                                acc
+                                (recur (+ k 1) (form/append-form acc (form/nth-of sorted-component (int-at perm k))))))))
+                 cand (group-candidate arrangement prepared names rcid)
+                 better (or (= 0 (form/tag-of best))
+                            (< (string-compare (form/string-value (fget cand "hex"))
+                                               (form/string-value (fget best "hex")))
+                               0))]
+             (recur (next-permutation perm) (if better cand best))))))))
+
+;; --- the walk over the module ----------------------------------------------------------------------------
+
+#?(:kotoba
+   (defn- state-of [pending [:ref :form/r] rcid [:ref :form/r] out [:ref :form/r] done :i64] [:ref :di/state]
+     (record-new [:ref :di/state] pending rcid out done)))
+
+#?(:kotoba
+   (defn- st-pending [s [:ref :di/state]] [:ref :form/r] (record-get [:ref :di/state] s :pending)))
+#?(:kotoba
+   (defn- st-rcid [s [:ref :di/state]] [:ref :form/r] (record-get [:ref :di/state] s :rcid)))
+#?(:kotoba
+   (defn- st-out [s [:ref :di/state]] [:ref :form/r] (record-get [:ref :di/state] s :out)))
+#?(:kotoba
+   (defn- st-done [s [:ref :di/state]] :i64 (record-get [:ref :di/state] s :done)))
+
+;; indices of PENDING whose preparation was refused
+#?(:kotoba
+   (defn- refused-of [pending [:ref :form/r] prepared [:ref :form/r]] [:ref :form/r]
+     (let [n (form/count-of pending)]
+       (form/form-vec
+        (loop [i 0 acc (form/no-forms)]
+          (if (>= i n)
+            acc
+            (let [x (form/nth-of pending i)]
+              (recur (+ i 1)
+                     (if (= 4 (form/tag-of (fget (form/nth-of prepared (form/int-value x)) "refused")))
+                       (form/append-form acc x)
+                       acc)))))))))
+
+;; the callees that are neither resolved nor pending (refused or stuck earlier)
+#?(:kotoba
+   (defn- blocked-of [graph [:ref :form/r] pending [:ref :form/r] rcid [:ref :form/r]] [:ref :form/r]
+     (let [n (form/count-of pending)]
+       (form/form-vec
+        (loop [i 0 acc (form/no-forms)]
+          (if (>= i n)
+            acc
+            (let [row (form/nth-of graph (int-at pending i))
+                  m (form/count-of row)]
+              (recur (+ i 1)
+                     (loop [j 0 a acc]
+                       (if (>= j m)
+                         a
+                         (let [d (form/nth-of row j)]
+                           (recur (+ j 1)
+                                  (if (and (not (= 3 (form/tag-of (form/nth-of rcid (form/int-value d)))))
+                                           (not (list-has? (form/kids-of pending) d))
+                                           (not (list-has? a d)))
+                                    (form/append-form a d)
+                                    a)))))))))))))
+
+;; pending functions all of whose callees are resolved
+#?(:kotoba
+   (defn- ready-of [graph [:ref :form/r] pending [:ref :form/r] rcid [:ref :form/r]] [:ref :form/r]
+     (let [n (form/count-of pending)]
+       (form/form-vec
+        (loop [i 0 acc (form/no-forms)]
+          (if (>= i n)
+            acc
+            (let [x (form/nth-of pending i)
+                  row (form/nth-of graph (form/int-value x))
+                  m (form/count-of row)
+                  all (loop [j 0]
+                        (if (>= j m)
+                          true
+                          (if (= 3 (form/tag-of (form/nth-of rcid (int-at row j))))
+                            (recur (+ j 1))
+                            false)))]
+              (recur (+ i 1) (if all (form/append-form acc x) acc)))))))))
+
+;; pending functions with a blocked callee
+#?(:kotoba
+   (defn- stuck-of [graph [:ref :form/r] pending [:ref :form/r] blocked [:ref :form/r]] [:ref :form/r]
+     (let [n (form/count-of pending)]
+       (form/form-vec
+        (loop [i 0 acc (form/no-forms)]
+          (if (>= i n)
+            acc
+            (let [x (form/nth-of pending i)
+                  row (form/nth-of graph (form/int-value x))
+                  hit (ints-minus row (ints-minus row blocked))]
+              (recur (+ i 1) (if (> (form/count-of hit) 0) (form/append-form acc x) acc)))))))))
+
+#?(:kotoba
+   (defn- out-refused [out [:ref :form/r] refused [:ref :form/r] prepared [:ref :form/r]] [:ref :form/r]
+     (loop [i 0 o out]
+       (if (>= i (form/count-of refused))
+         o
+         (let [x (int-at refused i)
+               p (form/nth-of prepared x)
+               problem (fget p "refused")
+               marker (if (= (form/keyword-value problem) :definition/effect-row-unbridged)
+                        :unbridged-effect
+                        (form/keyword-value problem))]
+           (recur (+ i 1)
+                  (vec-set o x (refusal marker
+                                        (put (form/no-forms) (kw "effect-row")
+                                             (fget (fget p "function") "effects"))))))))))
+
+#?(:kotoba
+   (defn- out-stuck [out [:ref :form/r] stuck [:ref :form/r] graph [:ref :form/r] blocked [:ref :form/r]
+                     names [:ref :form/r]] [:ref :form/r]
+     (loop [i 0 o out]
+       (if (>= i (form/count-of stuck))
+         o
+         (let [x (int-at stuck i)
+               row (form/nth-of graph x)
+               hit (ints-minus row (ints-minus row blocked))]
+           (recur (+ i 1)
+                  (vec-set o x (refusal :dependency-unavailable
+                                        (put (form/no-forms) (kw "blocked-by")
+                                             (text-forms (sort-indices hit names) names))))))))))
+
+#?(:kotoba
+   (defn- compile-ready [ready [:ref :form/r] prepared [:ref :form/r] names [:ref :form/r]
+                         rcid [:ref :form/r] out [:ref :form/r]] [:ref :di/state]
+     (loop [i 0 r rcid o out]
+       (if (>= i (form/count-of ready))
+         (state-of (form/form-vec (form/no-forms)) r o 0)
+         (let [x (int-at ready i)
+               one (compile-ready-one (form/nth-of prepared x) names rcid)]
+           (recur (+ i 1)
+                  (vec-set r x (record-get [:ref :di/one] one :cid))
+                  (vec-set o x (record-get [:ref :di/one] one :entry))))))))
+
+;; a cycle: the first component with no unresolved outward edge is compiled as
+;; a unit; none means the rest is unresolvable
+#?(:kotoba
+   (defn- first-closed [components [:ref :form/r] graph [:ref :form/r] rcid [:ref :form/r]] [:ref :form/r]
+     (loop [i 0]
+       (if (>= i (form/count-of components))
+         (form/nil-form)
+         (if (closed-component? graph (form/nth-of components i) rcid)
+           (form/nth-of components i)
+           (recur (+ i 1)))))))
+
+#?(:kotoba
+   (defn- seal-group [arrangement [:ref :form/r] members [:ref :form/r] group-cid [:ref :form/r]
+                      deps [:ref :form/r] rcid [:ref :form/r] out [:ref :form/r]] [:ref :di/state]
+     (loop [k 0 r rcid o out]
+       (if (>= k (form/count-of arrangement))
+         (state-of (form/form-vec (form/no-forms)) r o 0)
+         (let [x (int-at arrangement k)
+               m (form/nth-of members k)
+               cid (form/string-form
+                    (kir-id/definition-cid
+                     (member-payload group-cid k (fget m "interface") (fget m "effect-row"))))]
+           (recur (+ k 1)
+                  (vec-set r x cid)
+                  (vec-set o x (form/form-map
+                                (put (put (put (put (put (form/no-forms) (kw "cid") cid)
+                                                    (kw "group-cid") group-cid)
+                                               (kw "group-index") (form/int-form k))
+                                          (kw "dependencies") deps)
+                                     (kw "effect-row") (fget m "effect-row"))))))))))
+
+#?(:kotoba
+   (defn- refuse-group [sorted [:ref :form/r] names [:ref :form/r] out [:ref :form/r]] [:ref :form/r]
+     (loop [i 0 o out]
+       (if (>= i (form/count-of sorted))
+         o
+         (recur (+ i 1)
+                (vec-set o (int-at sorted i)
+                         (refusal :recursive-group-too-large
+                                  (put (form/no-forms) (kw "group") (text-forms sorted names)))))))))
+
+#?(:kotoba
+   (defn- compile-group-step [component [:ref :form/r] prepared [:ref :form/r] names [:ref :form/r]
+                              rcid [:ref :form/r] out [:ref :form/r]] [:ref :di/state]
+     (let [sorted (sort-indices component names)]
+       (if (> (form/count-of sorted) 8)
+         (state-of (form/form-vec (form/no-forms)) rcid (refuse-group sorted names out) 0)
+         (let [chosen (best-candidate sorted prepared names rcid)]
+           (seal-group (fget chosen "arrangement") (fget chosen "members")
+                       (form/string-form (kir-id/definition-cid (fget chosen "payload")))
+                       (fget chosen "dependencies") rcid out))))))
+
+#?(:kotoba
+   (defn- remove-from [pending [:ref :form/r] gone [:ref :form/r]] [:ref :form/r]
+     (ints-minus pending gone)))
+
+;; one round of the host's loop
+#?(:kotoba
+   (defn- step [names [:ref :form/r] prepared [:ref :form/r] graph [:ref :form/r] s [:ref :di/state]]
+     [:ref :di/state]
+     (let [pending (st-pending s)
+           rcid (st-rcid s)
+           out (st-out s)
+           refused (refused-of pending prepared)]
+       (if (> (form/count-of refused) 0)
+         (state-of (remove-from pending refused) rcid (out-refused out refused prepared) 0)
+         (let [blocked (blocked-of graph pending rcid)]
+           (if (> (form/count-of blocked) 0)
+             (let [stuck (stuck-of graph pending blocked)]
+               (state-of (remove-from pending stuck) rcid (out-stuck out stuck graph blocked names) 0))
+             (let [ready (ready-of graph pending rcid)]
+               (if (> (form/count-of ready) 0)
+                 (let [c (compile-ready ready prepared names rcid out)]
+                   (state-of (remove-from pending ready) (st-rcid c) (st-out c) 0))
+                 (let [components (strongly-connected (pending-graph graph pending) pending names)
+                       component (first-closed components graph rcid)]
+                   (if (= 0 (form/tag-of component))
+                     (state-of (form/form-vec (form/no-forms)) rcid
+                               (loop [i 0 o out]
+                                 (if (>= i (form/count-of pending))
+                                   o
+                                   (recur (+ i 1)
+                                          (vec-set o (int-at pending i)
+                                                   (refusal :unresolvable-recursion (form/no-forms))))))
+                               1)
+                     (let [c (compile-group-step component prepared names rcid out)]
+                       (state-of (remove-from pending component) (st-rcid c) (st-out c) 0))))))))))))
+
+#?(:kotoba
+   (defn- drive [names [:ref :form/r] prepared [:ref :form/r] graph [:ref :form/r]] [:ref :form/r]
+     (let [n (form/count-of names)
+           nothing (filled-vec n (form/nil-form))]
+       (loop [s (state-of (range-vec n) nothing nothing 0)]
+         (if (or (= 0 (form/count-of (st-pending s))) (= 1 (st-done s)))
+           (st-out s)
+           (recur (step names prepared graph s)))))))
+
+;; --- the report ----------------------------------------------------------------------------------------------------
+
+#?(:kotoba
+   (defn- f32-op? [f [:ref :form/r]] :bool
+     (and (= 5 (form/tag-of f))
+          (let [s (form/symbol-value f)]
+            (or (string=? s "f32-to-bits") (string=? s "f32-from-bits")
+                (string=? s "f64-to-f32-rounded") (string=? s "f32-to-f64-exact")
+                (string=? s "f32-add") (string=? s "f32-sub") (string=? s "f32-mul") (string=? s "f32-div")
+                (string=? s "f32-min") (string=? s "f32-max") (string=? s "f32-neg") (string=? s "f32-abs")
+                (string=? s "f32-sqrt") (string=? s "f32-eq") (string=? s "f32-lt") (string=? s "f32-le")
+                (string=? s "f32-gt") (string=? s "f32-ge") (string=? s "f32-unordered")
+                (string=? s "i64-to-f32-checked") (string=? s "i64-to-f32-rounded")
+                (string=? s "f32-to-i64-checked") (string=? s "f32-to-i64-truncating"))))))
+
+;; a call form (a list) headed by an f32 operator, anywhere in F
+
+#?(:kotoba
+   (defn- f32-call-in? [f [:ref :form/r]] :bool
+     (let [t (form/tag-of f)]
+       (if (and (>= t 6) (<= t 9))
+         (or (and (= t 6) (> (form/count-of f) 0) (f32-op? (form/nth-of f 0)))
+             (let [kids (form/kids-of f)
+                   n (vector-count kids)]
+               (loop [i 0]
+                 (if (>= i n)
+                   false
+                   (if (f32-call-in? (typed-list-nth [:list [:ref :form/r]] kids i))
+                     true
+                     (recur (+ i 1)))))))
+         false))))
+
+#?(:kotoba
+   (defn- uses-f32? [hir [:ref :form/r]] :bool
+     (let [fns (fget hir "functions")
+           n (form/count-of fns)]
+       (loop [i 0]
+         (if (>= i n)
+           false
+           (let [f (form/nth-of fns i)]
+             (if (or (list-has? (form/kids-of (fget f "param-types")) (form/keyword-form :f32))
+                     (form/eq (fget f "result") (form/keyword-form :f32))
+                     (f32-call-in? (fget f "body")))
+               true
+               (recur (+ i 1)))))))))
+
+#?(:kotoba
+   (defn- names-of [fns [:ref :form/r]] [:ref :form/r]
+     (let [n (form/count-of fns)]
+       (form/form-vec
+        (loop [i 0 acc (form/no-forms)]
+          (if (>= i n)
+            acc
+            (recur (+ i 1) (form/append-form acc (fget (form/nth-of fns i) "name")))))))))
+
+#?(:kotoba
+   (defn- entries-map [names [:ref :form/r] out [:ref :form/r]] [:ref :form/r]
+     (let [n (form/count-of names)]
+       (form/form-map
+        (loop [i 0 acc (form/no-forms)]
+          (if (>= i n)
+            acc
+            (recur (+ i 1)
+                   (if (= 0 (form/tag-of (form/nth-of out i)))
+                     acc
+                     (put acc (form/string-form (text-of-index names i)) (form/nth-of out i))))))))))
+
+#?(:kotoba
+   (defn- base-report [names [:ref :form/r]] [:list [:ref :form/r]]
+     (put (put (put (put (put (form/no-forms)
+                              (kw "contract") (form/keyword-form :kotoba.definition-identity/v1))
+                         (kw "payload-version") (form/int-form (kir-id/payload-version)))
+                    (kw "profile-version") (form/int-form 6))
+               (kw "desugar-contract-version") (form/int-form 2))
+          (kw "order") (text-forms (range-vec (form/count-of names)) names))))
+
+#?(:kotoba
+   (defn definitions
+     "Per-definition identity for a checked module, over Forms. HIR and KIR are
+     Form maps (KIR: :functions, :schemas; HIR: :functions, :named-operations);
+     CATALOG is the capability catalog, a Form map from wire id to the operation
+     keyword (the host reads it from kotoba.sema). Answers the report map
+     {:contract :payload-version :profile-version :desugar-contract-version
+     :order [name ...] :entries {name {:cid ...} | {:definition-cid marker ...}}}."
+     [hir [:ref :form/r] kir [:ref :form/r] catalog [:ref :form/r]] [:ref :form/r]
+     (let [fns (fget kir "functions")
+           names (names-of fns)
+           n (form/count-of fns)
+           base (base-report names)]
+       (if (and (uses-f32? hir) (> n 0))
+         (form/form-map
+          (put base (kw "entries")
+               (form/form-map
+                (loop [i 0 acc (form/no-forms)]
+                  (if (>= i n)
+                    acc
+                    (recur (+ i 1)
+                           (put acc (form/string-form (text-of-index names i))
+                                (refusal :f32-literal-unsupported (form/no-forms)))))))))
+         (let [prepared (prepare-all fns (fget hir "named-operations") names (fget kir "schemas")
+                                     catalog (catalog-ok? catalog))
+               graph (graph-of prepared names)
+               out (drive names prepared graph)]
+           (form/form-map (put base (kw "entries") (entries-map names out))))))))
+
+#?(:kotoba
+   (defn describe
+     "`definitions` for a compile RESULT Form (:hir, :kir, optionally an
+     already computed :definitions), or an explicit unavailability marker."
+     [result [:ref :form/r] catalog [:ref :form/r]] [:ref :form/r]
+     (let [hir (fget result "hir")
+           kir (fget result "kir")
+           done (fget result "definitions")]
+       (if (form/eq (fget done "contract") (form/keyword-form :kotoba.definition-identity/v1))
+         done
+         (if (not (= 9 (form/tag-of hir)))
+           (form/form-map (put (put (put (form/no-forms) (kw "contract") (form/keyword-form :kotoba.definition-identity/v1))
+                                   (kw "entries") (form/keyword-form :unavailable))
+                               (kw "reason") (form/keyword-form :no-hir)))
+           (if (= 0 (form/count-of (fget kir "functions")))
+             (form/form-map (put (put (put (form/no-forms) (kw "contract") (form/keyword-form :kotoba.definition-identity/v1))
+                                     (kw "entries") (form/keyword-form :unavailable))
+                                 (kw "reason") (form/keyword-form :no-typed-kir)))
+             (definitions hir kir catalog)))))))
+
+;; --- cache material and listings -----------------------------------------------------------------------------------------
+
+#?(:kotoba
+   (defn- all-have-cid? [entries [:ref :form/r] order [:ref :form/r]] :bool
+     (let [n (form/count-of order)]
+       (loop [i 0]
+         (if (>= i n)
+           true
+           (if (= 3 (form/tag-of (fget (form/form-get entries (form/nth-of order i)) "cid")))
+             (recur (+ i 1))
+             false))))))
+
+#?(:kotoba
+   (defn- export-names [exports [:ref :form/r] i :i64 acc [:list [:ref :form/r]]] [:list [:ref :form/r]]
+     (if (>= i (form/count-of exports))
+       acc
+       (export-names exports (+ i 1)
+                     (form/append-form acc (form/string-form (name-text (form/nth-of exports i))))))))
+
+#?(:kotoba
+   (defn cache-material
+     "The identity of a module's code as a value a cache may key on: the
+     ORDERED definition CIDs and the export names. nil-form when any definition
+     lacks a CID."
+     [report [:ref :form/r] exports [:ref :form/r]] [:ref :form/r]
+     (let [entries (fget report "entries")
+           order (fget report "order")
+           n (form/count-of order)]
+       (if (and (= 9 (form/tag-of entries))
+                (= (form/count-of entries) (* 2 n))
+                (> n 0)
+                (all-have-cid? entries order))
+         (form/form-map
+          (put (put (put (put (put (put (form/no-forms)
+                                        (kw "contract") (form/keyword-form :kotoba.definition-identity/v1))
+                                   (kw "profile-version") (fget report "profile-version"))
+                              (kw "desugar-contract-version") (fget report "desugar-contract-version"))
+                         (kw "payload-version") (fget report "payload-version"))
+                    (kw "definitions")
+                    (form/form-vec
+                     (loop [i 0 acc (form/no-forms)]
+                       (if (>= i n)
+                         acc
+                         (recur (+ i 1)
+                                (form/append-form acc (fget (form/form-get entries (form/nth-of order i)) "cid")))))))
+               (kw "exports")
+               (form/form-vec
+                (export-names exports 0 (form/no-forms)))))
+         (form/nil-form)))))
+
+#?(:kotoba
+   (defn definition-count
+     "How many definitions a cache material names."
+     [material [:ref :form/r]] :i64
+     (form/count-of (fget material "definitions"))))
+
+#?(:kotoba
+   (defn- entry-line [name [:ref :form/r] e [:ref :form/r]] :string
+     (let [cid (fget e "cid")]
+       (string-concat
+        (string-concat (name-text name) "\t")
+        (if (truthy? cid)
+          (form/string-value cid)
+          (string-concat "REFUSED:" (keyword-name (form/keyword-value (fget e "definition-cid")))))))))
+
+#?(:kotoba
+   (defn format-lines
+     "`name<TAB>cid` per definition, in declaration order, as a Form vector of
+     strings. A refused definition prints its marker."
+     [report [:ref :form/r]] [:ref :form/r]
+     (let [entries (fget report "entries")
+           order (fget report "order")
+           n (form/count-of order)]
+       (if (= 9 (form/tag-of entries))
+         (form/form-vec
+          (loop [i 0 acc (form/no-forms)]
+            (if (>= i n)
+              acc
+              (let [nm (form/nth-of order i)]
+                (recur (+ i 1)
+                       (form/append-form acc (form/string-form (entry-line nm (form/form-get entries nm)))))))))
+         (form/form-vec (form/one-form (form/string-form "UNAVAILABLE\tunknown")))))))
+
+#?(:kotoba
+   (defn scanned-line
+     "`SCANNED<TAB><identified>/<total>`."
+     [report [:ref :form/r]] :string
+     (let [entries (fget report "entries")
+           order (fget report "order")
+           n (form/count-of order)]
+       (string-concat
+        (string-concat "SCANNED\t"
+                       (string-from-i64
+                        (if (= 9 (form/tag-of entries))
+                          (loop [i 0 c 0]
+                            (if (>= i n)
+                              c
+                              (recur (+ i 1)
+                                     (if (truthy? (fget (form/form-get entries (form/nth-of order i)) "cid")) (+ c 1) c))))
+                          0)))
+        (string-concat "/" (string-from-i64 n))))))
+
+#?(:kotoba
+   (defn joined
+     "The listing of `format-lines`, one per line."
+     [report [:ref :form/r]] :string
+     (let [lines (format-lines report)
+           n (form/count-of lines)]
+       (loop [i 0 out ""]
+         (if (>= i n)
+           out
+           (recur (+ i 1)
+                  (if (= i 0)
+                    (form/string-value (form/nth-of lines i))
+                    (string-concat (string-concat out "\n") (form/string-value (form/nth-of lines i))))))))))
+
+
+;; ---- the host reading (the JVM and nbb behaviour is unchanged) ----
+
+
+#?(:kotoba nil :default (def contract
   "The versioned shape of what this namespace reports. Bumped when the
   reported map changes, so a consumer keying on it is never handed a
   differently-shaped answer under the same name."
-  :kotoba.definition-identity/v1)
+  :kotoba.definition-identity/v1))
 
-(def profile-version
+#?(:kotoba nil :default (def profile-version
   "The admitted-grammar profile this compiler implements.
 
   Read from the grammar authority, `resources/kotoba/lang/guest-grammar.edn`
@@ -97,9 +1409,9 @@
   catalog). `definition-identity-test/profile-version-matches-the-grammar-authority`
   reads the resource and asserts equality, so a bump there is a review event
   here rather than a silent disagreement between the two routes."
-  6)
+  6))
 
-(def desugar-contract-version
+#?(:kotoba nil :default (def desugar-contract-version
   "The desugar contract this compiler implements.
 
   Read from the authority, kotoba-lang `lang/elaboration-pipeline.edn`
@@ -125,24 +1437,24 @@
 
   Raising it moved every definition CID this compiler mints, once. That is what
   a sealed input means. No frozen vector moved."
-  2)
+  2))
 
-(def max-recursive-group
+#?(:kotoba nil :default (def max-recursive-group
   "The largest strongly connected component `scc-v1` will canonicalize.
 
   Same bound `kotoba.codebase.typed-code` uses. The canonical ordering is
   chosen by trying every member permutation, so the cost is factorial; beyond
   this the group is refused rather than ordered by some cheaper rule that
   would be a different identity."
-  8)
+  8))
 
-(defn- fail! [problem data]
-  (throw (ex-info (name problem) (assoc data :problem problem))))
+#?(:kotoba nil :default (defn- fail! [problem data]
+  (throw (ex-info (name problem) (assoc data :problem problem)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Value canonicalization: host numbers -> the identity's admitted forms
 
-(defn- host-integer
+#?(:kotoba nil :default (defn- host-integer
   "N as exact decimal text when N is an integer on this host, else nil.
 
   Under nbb a `.kotoba` integer literal is a JavaScript BigInt (see
@@ -155,9 +1467,9 @@
      :cljs (cond
              (and (some? n) (identical? js/BigInt (.-constructor n))) (str n)
              (and (number? n) (js/Number.isInteger n)) (str n)
-             :else nil)))
+             :else nil))))
 
-(defn- host-float
+#?(:kotoba nil :default (defn- host-float
   "N as a double when N is a non-integer number on this host, else nil."
   [n]
   #?(:clj (cond
@@ -165,9 +1477,9 @@
             (instance? Float n) (double n)
             (and (number? n) (not (integer? n))) (double n)
             :else nil)
-     :cljs (when (and (number? n) (not (js/Number.isInteger n))) n)))
+     :cljs (when (and (number? n) (not (js/Number.isInteger n))) n))))
 
-(defn- canonical-value
+#?(:kotoba nil :default (defn- canonical-value
   "One scalar, in the form `kotoba.kir.definition-identity/normalize` admits.
 
   Integers become the exact-decimal `i64` form on BOTH hosts rather than being
@@ -179,7 +1491,7 @@
     (kir-id/i64 n)
     (if-let [d (host-float x)]
       (kir-id/f64 d)
-      x)))
+      x))))
 
 ;; ---------------------------------------------------------------------------
 ;; Alpha normalization (de Bruijn by position) -- delegated to kotoba-kir
@@ -199,27 +1511,27 @@
 ;; :definition/binder-not-normalized, because that is what a consumer of this
 ;; namespace's errors matches on.
 
-(defn- ref-type-vector?
+#?(:kotoba nil :default (defn- ref-type-vector?
   "`[:ref schema-name]` names a schema, not a local. Kir's walk keeps its own
   copy of this for renaming; this one is for dependency linking and schema
   reachability below, which are this namespace's."
   [form]
-  (and (vector? form) (= :ref (first form)) (= 2 (count form))))
+  (and (vector? form) (= :ref (first form)) (= 2 (count form)))))
 
-(def symbols-in
+#?(:kotoba nil :default (def symbols-in
   "kotoba.kir.alpha-normalization/symbols-in."
-  an/symbols-in)
+  an/symbols-in))
 
-(defn alpha-normalize
+#?(:kotoba nil :default (defn alpha-normalize
   "kotoba.kir.alpha-normalization/alpha-normalize with this repository's leaf.
 
   Returns `{:params :body :bound}`. Binders become `k0`, `k1`, ... in a single
   left-to-right counter that never resets, so the renaming is a function of
   position alone."
   [function]
-  (an/alpha-normalize function {:scalar canonical-value}))
+  (an/alpha-normalize function {:scalar canonical-value})))
 
-(defn- verify-normalized!
+#?(:kotoba nil :default (defn- verify-normalized!
   "Refuse an identity that still contains a source-chosen binder name, under
   this namespace's problem keyword.
 
@@ -233,15 +1545,15 @@
   not invent one."
   [normalized call-targets]
   (an/verify-normalized! normalized call-targets
-                         {:problem :definition/binder-not-normalized}))
+                         {:problem :definition/binder-not-normalized})))
 
 ;; ---------------------------------------------------------------------------
 ;; Dependency linking: a callee is its CID, never its name
 
-(defn- reference-node [cid] [:kotoba.definition/ref cid])
-(defn- group-node [index] [:kotoba.definition/group index])
+#?(:kotoba nil :default (defn- reference-node [cid] [:kotoba.definition/ref cid]))
+#?(:kotoba nil :default (defn- group-node [index] [:kotoba.definition/group index]))
 
-(defn- link-dependencies
+#?(:kotoba nil :default (defn- link-dependencies
   "Replace call-target symbols with reference nodes. RESOLVED maps a function
   name to its CID; GROUP maps a name to its index inside the recursive group
   being built. Returns `{:body :dependencies}` with dependencies in the order
@@ -271,19 +1583,19 @@
                 (seq? form) (apply list (mapv walk form))
                 :else form))]
       (let [linked (walk body)]
-        {:body linked :dependencies @seen}))))
+        {:body linked :dependencies @seen})))))
 
 ;; ---------------------------------------------------------------------------
 ;; The sealed payload
 
-(defn- schema-refs
+#?(:kotoba nil :default (defn- schema-refs
   "The schema names one form references, via `[:ref <name>]` type vectors."
   [form]
   (into #{}
         (keep (fn [node] (when (ref-type-vector? node) (second node))))
-        (tree-seq coll? seq form)))
+        (tree-seq coll? seq form))))
 
-(defn- reachable-schemas
+#?(:kotoba nil :default (defn- reachable-schemas
   "SCHEMAS transitively reachable from ROOTS, as a canonically ordered map.
 
   A schema definition is part of a definition's INTERFACE, not metadata about
@@ -299,9 +1611,9 @@
         (let [definition (get schemas nm)]
           (recur (into (subvec pending 1) (schema-refs definition))
                  (assoc seen nm definition))))
-      (into {} (sort-by (comp str first) seen)))))
+      (into {} (sort-by (comp str first) seen))))))
 
-(defn- interface-of
+#?(:kotoba nil :default (defn- interface-of
   "The sealed interface: arity, parameter types, result type, and the schema
   definitions those types reach.
 
@@ -318,9 +1630,9 @@
                              schemas
                              [(:param-types function) (:result function)
                               (:body function)])]
-                (cond-> m (seq reached) (assoc :schemas reached))))))
+                (cond-> m (seq reached) (assoc :schemas reached)))))))
 
-(defn- effect-row-of
+#?(:kotoba nil :default (defn- effect-row-of
   "The named-operation row for one function, through the identity's own
   bridge. Throws (with `:problem :definition/effect-row-unbridged`) for a row
   the bridge refuses -- a wire id the catalog cannot name, or a keyword
@@ -331,9 +1643,9 @@
   [function named-operations]
   (kir-id/effect-row-from-hir
    {:effects (:effects function) :named-operations named-operations}
-   {:id->name cap-names/id->name}))
+   {:id->name cap-names/id->name})))
 
-(defn- definition-payload
+#?(:kotoba nil :default (defn- definition-payload
   [{:keys [params body]} interface effect-row dependencies]
   {:definition/profile-version profile-version
    :definition/desugar-contract-version desugar-contract-version
@@ -342,9 +1654,9 @@
                     :body body}
    :definition/effect-row effect-row
    :definition/interface interface
-   :definition/dependencies (vec (distinct dependencies))})
+   :definition/dependencies (vec (distinct dependencies))}))
 
-(defn- group-payload
+#?(:kotoba nil :default (defn- group-payload
   [members effect-row dependencies]
   {:definition/profile-version profile-version
    :definition/desugar-contract-version desugar-contract-version
@@ -356,9 +1668,9 @@
    :definition/effect-row effect-row
    :definition/interface {:arity (count members)
                           :result :kotoba.definition/group}
-   :definition/dependencies (vec (distinct dependencies))})
+   :definition/dependencies (vec (distinct dependencies))}))
 
-(defn- member-payload
+#?(:kotoba nil :default (defn- member-payload
   [group-cid index interface effect-row]
   {:definition/profile-version profile-version
    :definition/desugar-contract-version desugar-contract-version
@@ -366,12 +1678,12 @@
                     :index index}
    :definition/effect-row effect-row
    :definition/interface interface
-   :definition/dependencies [group-cid]})
+   :definition/dependencies [group-cid]}))
 
 ;; ---------------------------------------------------------------------------
 ;; scc-v1
 
-(defn- strongly-connected
+#?(:kotoba nil :default (defn- strongly-connected
   "Small deterministic SCC partition, mirroring `kotoba.codebase.typed-code`'s."
   [graph]
   (letfn [(reachable [start]
@@ -386,14 +1698,14 @@
         (let [forward (reachable node)
               component (set (filter #(contains? (reachable %) node) forward))]
           (recur (set (remove component remaining)) (conj out component)))
-        out))))
+        out)))))
 
-(defn- permutations [xs]
+#?(:kotoba nil :default (defn- permutations [xs]
   (if (empty? xs)
     [[]]
-    (mapcat (fn [x] (map #(cons x %) (permutations (remove #{x} xs)))) xs)))
+    (mapcat (fn [x] (map #(cons x %) (permutations (remove #{x} xs)))) xs))))
 
-(defn- group-candidate
+#?(:kotoba nil :default (defn- group-candidate
   [ordered prepared resolved]
   (let [indices (zipmap ordered (range))
         members (mapv (fn [nm]
@@ -412,9 +1724,9 @@
      :payload payload
      :hex (kir-id/canonical-hex payload)
      :dependencies dependencies
-     :effect-row effect-row}))
+     :effect-row effect-row})))
 
-(defn- compile-group
+#?(:kotoba nil :default (defn- compile-group
   "Identity for one strongly connected component.
 
   The member ordering is chosen by canonical bytes, not by name: every
@@ -443,12 +1755,12 @@
                      :group-index index
                      :dependencies (:dependencies chosen)
                      :effect-row (:effect-row member)}]))
-            (:ordered chosen)))}))
+            (:ordered chosen)))})))
 
 ;; ---------------------------------------------------------------------------
 ;; Module
 
-(defn- prepare
+#?(:kotoba nil :default (defn- prepare
   "Alpha-normalize one KIR function and derive its sealed interface and row."
   [function named-operations call-targets schemas]
   (let [normalized (alpha-normalize function)]
@@ -456,15 +1768,15 @@
     {:function function
      :normalized normalized
      :interface (interface-of function normalized schemas)
-     :effect-row (effect-row-of function named-operations)}))
+     :effect-row (effect-row-of function named-operations)})))
 
-(defn- refusal [problem data]
-  (merge {:definition-cid problem} data))
+#?(:kotoba nil :default (defn- refusal [problem data]
+  (merge {:definition-cid problem} data)))
 
-(defn- problem-of [e]
-  (or (:problem (ex-data e)) :definition/invalid))
+#?(:kotoba nil :default (defn- problem-of [e]
+  (or (:problem (ex-data e)) :definition/invalid)))
 
-(defn definitions
+#?(:kotoba nil :default (defn definitions
   "Per-definition identity for a checked module.
 
   Returns
@@ -626,9 +1938,9 @@
                                        (into out
                                              (map (fn [[nm v]] [(str nm) v]))
                                              (:definitions (:value result))))))))))))))]
-        (assoc base :entries entries)))))
+        (assoc base :entries entries))))))
 
-(defn describe
+#?(:kotoba nil :default (defn describe
   "`definitions` for a compile RESULT, or an explicit unavailability marker.
 
   Provenance is attached to results from every backend, and not all of them
@@ -669,12 +1981,12 @@
               ;; module that uses it. It changes nothing on clj/cljs: Clojure still picks
               ;; `:clj`, ClojureScript/nbb still picks `:cljs` (first match).
               :message #?(:clj (.getMessage ^Exception e) :cljs (.-message e)
-                        :default (.-message e))})))))
+                        :default (.-message e))}))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Cache material
 
-(defn cache-material
+#?(:kotoba nil :default (defn cache-material
   "The identity of a module's code, as a value a cache may key on.
 
   Two things and no more: the ORDERED definition CIDs and the export names.
@@ -705,16 +2017,16 @@
      :desugar-contract-version (:desugar-contract-version report)
      :payload-version (:payload-version report)
      :definitions (mapv (fn [nm] (:cid (get entries nm))) order)
-     :exports (mapv str exports)}))
+     :exports (mapv str exports)})))
 
-(defn definition-count
+#?(:kotoba nil :default (defn definition-count
   "How many definitions a cache material names. The unit the cache reports in:
   a compile that misses recompiles this many, a compile that hits recompiles
   none."
   [material]
-  (count (:definitions material)))
+  (count (:definitions material))))
 
-(defn format-lines
+#?(:kotoba nil :default (defn format-lines
   "`name<TAB>cid` for `amu definition-cids`, in declaration order. A refused
   definition prints its marker rather than being omitted -- a listing that
   silently dropped what it could not identify would report a clean module."
@@ -724,9 +2036,9 @@
     (mapv (fn [nm]
             (let [e (get entries nm)]
               (str nm "\t" (or (:cid e) (str "REFUSED:" (name (:definition-cid e)))))))
-          order)))
+          order))))
 
-(defn scanned-line
+#?(:kotoba nil :default (defn scanned-line
   "`SCANNED<TAB><identified>/<total>`. An evidence floor: a listing of zero
   definitions and a listing of zero identified definitions must not print the
   same thing as a module whose definitions were all identified."
@@ -735,15 +2047,16 @@
        (if (map? entries)
          (count (filter #(:cid (get entries %)) order))
          0)
-       "/" (count order)))
+       "/" (count order))))
 
-(defn ^:no-doc normalized-body
+#?(:kotoba nil :default (defn ^:no-doc normalized-body
   "Alpha-normalized body of one KIR function. Exposed for tests that need to
   see the renaming rather than only its hash."
   [function]
-  (:body (alpha-normalize function)))
+  (:body (alpha-normalize function))))
 
-(defn ^:no-doc joined
+#?(:kotoba nil :default (defn ^:no-doc joined
   "Diagnostic rendering of `format-lines`."
   [report]
-  (str/join "\n" (format-lines report)))
+  (str/join "\n" (format-lines report))))
+
