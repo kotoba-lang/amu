@@ -102,15 +102,16 @@
   OWNER is a proposed form of wire 35 (kotoba-lang capability catalog); no
   native host answers it yet. Windows keeps its stated non-claims: no owner
   or mode check and a followed final component, as before."
-  {:kotoba/export [key-for key-material limits-digest open-store record-digest
-                   resolve! toolchain-digest]}
-  (:require [kotoba.compiler.decimal-text :as decimal-text]
-            [kotoba.artifact.core :as artifact]
-            [kotoba.compiler.posix-path :as posix-path]
-            [kotoba.compiler.text-bytes :as text-bytes]
-            [kotoba.kir.compatibility :as compatibility]
-            [kotoba.lang.edn :as edn]
-            [kotoba.lang.text :as text]
+  {:kotoba/export #?(:kotoba [key-for record-digest]
+                     :default [key-for key-material limits-digest open-store record-digest
+                               resolve! toolchain-digest])}
+  (:require [kotoba.artifact.core :as artifact]
+            #?(:cljs [kotoba.compiler.decimal-text :as decimal-text])
+            #?(:cljs [kotoba.compiler.posix-path :as posix-path])
+            #?(:cljs [kotoba.compiler.text-bytes :as text-bytes])
+            #?(:cljs [kotoba.kir.compatibility :as compatibility])
+            #?(:cljs [kotoba.lang.edn :as edn])
+            #?(:cljs [kotoba.lang.text :as text])
             ;; Abilities (superproject adr-2609242330 S5); `sys` holds the
             ;; host facts no ability carries.
             #?(:cljs [kotoba.compiler.nbb.host.entropy :as entropy])
@@ -120,6 +121,28 @@
             #?(:cljs [kotoba.compiler.nbb.host.io :as io])
             #?(:cljs [kotoba.compiler.nbb.host.sys :as sys])))
 
+;; Kotoba reading: NO STORE. The store is the filesystem (fs/app-data with
+;; try/catch around capability calls, which trap under Kotoba), a volatile
+;; toolchain memo and a stat/owner protocol, and a cache that cannot be read
+;; back safely is a cache that does not exist: under Kotoba every resolution
+;; would be a miss and the verdict is computed fresh. What stays is the
+;; IDENTITY -- the key and the record digest, the artifact/sha256 of the same
+;; ordered material -- so a Kotoba-built key names the entry a host-built key
+;; does. The store itself (open-store, resolve!, toolchain-digest,
+;; limits-digest, key-material) is host-only.
+#?(:kotoba
+   (defn key-for [material :document] :string
+     (artifact/sha256 material)))
+
+#?(:kotoba
+   (defn record-digest [key :string material :document verdict :document] :string
+     (artifact/sha256 (document-vector (document-keyword :kotoba.verdict-cache/v1)
+                                       (document-string key) material verdict))))
+
+#?(:kotoba
+   nil
+   :default
+   (do
 (def ^:private record-format :kotoba.verdict-cache/v1)
 (def ^:private key-format :kotoba.verdict-key/v1)
 
@@ -527,4 +550,4 @@
             (when (replayable? verdict)
               (write-record! store key material verdict))
             (answer verdict (cond-> {:cache (if rejected :rejected :miss) :key key}
-                              rejected (assoc :reason rejected)))))))))
+                              rejected (assoc :reason rejected)))))))))))
