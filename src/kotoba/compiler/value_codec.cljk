@@ -4,10 +4,27 @@
   This is deliberately a host boundary, not new Kotoba source sugar. A typed
   ability chooses its own `max-bytes`, then uses the same `kotoba.value.v1`
   bytes as actor and I/O libraries."
-  {:kotoba/export [ability-adapter-contract ability-provider aggregate-envelopes async-ability-provider async-ability-result-type decode-bounded encode-bounded runtime->wire-value wire-contract wire-value->runtime]}
-  (:require [kotoba.bytes :as kbytes] [kotoba.kir.value :as kir-value]
-            [kotoba.value.codec :as value]))
+  {:kotoba/export #?(:kotoba [encode-bounded]
+                     :default [ability-adapter-contract ability-provider aggregate-envelopes async-ability-provider async-ability-result-type decode-bounded encode-bounded runtime->wire-value wire-contract wire-value->runtime])}
+  (:require #?@(:kotoba [[kotoba.value.codec :as value]]
+                :default [[kotoba.bytes :as kbytes] [kotoba.kir.value :as kir-value]
+                          [kotoba.value.codec :as value]]))
+  #?(:kotoba (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                                  [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]})))
 
+;; Kotoba: the adapter is a host boundary over runtime values, type descriptors
+;; and provider closures (open maps throughout); what a Kotoba caller has of it
+;; is the bounded encode of a value Form, which is the guest twin of
+;; `kotoba.value.codec` (encode side only; there is no CBOR decoder on this
+;; route). A value over the ceiling traps.
+#?(:kotoba
+   (defn encode-bounded [value [:ref :form/r] max-bytes :i64] :bytes
+     (value/encode-bounded value max-bytes))
+   :default nil)
+
+#?(:kotoba nil
+   :default
+   (do
 (def wire-contract value/wire-contract)
 
 (def aggregate-envelopes
@@ -626,4 +643,4 @@
          (catch #?(:clj Throwable :cljs :default) error
            (when (kir-value/task-live? task)
              (kir-value/task-drop! task))
-           (throw error)))))})
+           (throw error)))))})))
