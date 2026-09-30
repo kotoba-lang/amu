@@ -304,7 +304,10 @@ Clojure it is today, the language gains:
    kotoba-verifier re-derives an artifact by re-emitting it through
    kotoba-native, so it re-derives the charges with no change of its own;
    `amu compile` verifies both forms for `x86_64-aiueos-kernel-v1` and
-   `aarch64-macos`.
+   `aarch64-macos`. aiueos objects (`reproduce-kotoba-objects.cljk`, aiueos
+   `ca7fc504`, compiled by this amu): 116 scanned, 112 byte-identical
+   (`differs=0`; `drift` only records the other amu revision), 4 not compiled
+   -- the same four as above. No kernel object constructs, so none moves.
 8. **Admission by definition graph.** The 1 MiB bound moves from linked source
    bytes to per-definition size and closure count; a module is its definitions
    (as ADR 0300 already identifies it), so cssom's 1 MB file is admitted
