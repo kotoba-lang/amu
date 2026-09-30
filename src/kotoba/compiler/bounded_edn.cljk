@@ -96,6 +96,9 @@
                             (.onMalformedInput CodingErrorAction/REPORT)
                             (.onUnmappableCharacter CodingErrorAction/REPORT))
                           (ByteBuffer/wrap bytes)))
+       ;; Kotoba: `string-from-utf8` accepts canonical UTF-8 only and traps
+       ;; by name on anything else, so malformed input still cannot pass.
+       :kotoba (string-from-utf8 bytes)
        :cljs (.decode (js/TextDecoder. "utf-8" #js {:fatal true}) bytes))
     (catch #?(:clj Exception :cljs :default) error
       ;; No cause on Kotoba: a cause is another Throwable and Kotoba has
