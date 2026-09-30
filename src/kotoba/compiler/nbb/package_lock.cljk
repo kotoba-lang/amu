@@ -206,7 +206,7 @@
          listing (fs/browse dir)]
      (mapcat
       (fn [line]
-        (let [name (first (str/split line #"\t"))
+        (let [name (first (str/split line "\t"))
               rel (if (str/blank? prefix) name (str prefix "/" name))
               kind (let [answer (fs/app-data (str dir "/" name "NOFOLLOW_SEP"))]
                      (when (seq answer) (nth (decimal-text/fields answer) 3)))]
@@ -215,7 +215,7 @@
             (= 1 kind) (tree-files root rel)
             (= 0 kind) [rel]
             :else nil)))
-      (if (= "" listing) [] (str/split listing #"\n"))))))
+      (if (= "" listing) [] (str/split listing "\n"))))))
 
 (defn tree-bytes
   "The bytes `:tree-cid` is the CIDv1-raw of, for a package tree on disk.

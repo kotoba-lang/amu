@@ -20,43 +20,78 @@
             [kotoba.lang.text :as text]
             #?(:cljs [kotoba.compiler.nbb.host.fs :as fs])))
 
-(defn- fields [answer]
-  (when (seq answer)
-    (decimal-text/fields answer)))
+(defn- app-data [#?@(:kotoba [request :string] :default [request])] #?@(:kotoba [:string])
+  (fs/app-data request))
 
-(defn exists? [p]
-  (not= "" (fs/app-data (str p "STAT_SEP"))))
+(defn- browse [#?@(:kotoba [dir :string] :default [dir])] #?@(:kotoba [:string])
+  (fs/browse dir))
 
-(defn directory? [p]
-  (= 1 (nth (fields (fs/app-data (str p "STAT_SEP"))) 3 nil)))
+(defn- fields [#?@(:kotoba [answer :string] :default [answer])] #?@(:kotoba [:vector-i64])
+  #?(:kotoba (decimal-text/fields answer)
+     :default (when (seq answer)
+                (decimal-text/fields answer))))
 
-(defn kind [p]
-  (nth (fields (fs/app-data (str p "NOFOLLOW_SEP"))) 3 nil))
+(defn exists? [#?@(:kotoba [p :string] :default [p])] #?@(:kotoba [:bool])
+  (not= "" (app-data (str p "STAT_SEP"))))
 
-(defn entries [dir]
-  (let [answer (fs/browse dir)]
+(defn directory? [#?@(:kotoba [p :string] :default [p])] #?@(:kotoba [:bool])
+  #?(:kotoba (= 1 (vector-get (fields (app-data (str p "STAT_SEP"))) 3 -1))
+     :default (= 1 (nth (fields (app-data (str p "STAT_SEP"))) 3 nil))))
+
+(defn kind [#?@(:kotoba [p :string] :default [p])] #?@(:kotoba [[:option :i64]])
+  #?(:kotoba (let [found (fields (app-data (str p "NOFOLLOW_SEP")))]
+               (if (< (vector-count found) 4)
+                 (option-none-of [:option :i64])
+                 (option-some-of [:option :i64] (vector-get found 3 -1))))
+     :default (nth (fields (app-data (str p "NOFOLLOW_SEP"))) 3 nil)))
+
+#?(:kotoba
+   (defn- first-fields [lines [:list :string] i :i64 acc [:list :string]] [:list :string]
+     (if (>= i (vector-count lines))
+       acc
+       (first-fields lines (+ i 1)
+                     (conj acc (typed-list-nth [:list :string] (text/split (typed-list-nth [:list :string] lines i) "\t") 0))))))
+
+(defn entries [#?@(:kotoba [dir :string] :default [dir])] #?@(:kotoba [[:list :string]])
+  (let [answer (browse dir)]
     (if (= "" answer)
-      []
-      (mapv #(first (text/split % #"\t")) (text/split answer #"\n")))))
+      #?(:kotoba (typed-list-new [:list :string]) :default [])
+      #?(:kotoba (first-fields (text/split answer "\n") 0 (typed-list-new [:list :string]))
+         :default (mapv #(first (text/split % "\t")) (text/split answer "\n"))))))
 
 (defn make-directories!
   "Create DIR and any missing parent; throws when DIR is still not there."
-  [dir]
+  [#?@(:kotoba [dir :string] :default [dir])] #?@(:kotoba [:bool])
   (let [parent (posix-path/dirname dir)]
     (when (and (not= parent dir) (not (exists? parent)))
       (make-directories! parent))
-    (when-not (= "1" (fs/app-data (str dir "MKDIR_SEP")))
-      (when-not (directory? dir)
+    (if (= "1" (app-data (str dir "MKDIR_SEP")))
+      #?(:kotoba true :default nil)
+      (if (directory? dir)
+        #?(:kotoba true :default nil)
         (throw (ex-info "directory could not be created" {:phase :fs :dir dir}))))))
+
+#?(:kotoba
+   (defn- remove-members [dir :string names [:list :string] i :i64] :string
+     (if (>= i (vector-count names))
+       ""
+       (let [p (str dir "/" (typed-list-nth [:list :string] names i))]
+         (if (= 1 (vector-get (fields (app-data (str p "NOFOLLOW_SEP"))) 3 -1))
+           (remove-tree! p)
+           (app-data (str p "UNLINK_SEP")))
+         (remove-members dir names (+ i 1))))))
 
 (defn remove-tree!
   "Remove DIR and everything under it; a failure is ignored."
-  [dir]
-  (try
-    (doseq [name (entries dir)]
-      (let [p (str dir "/" name)]
-        (if (= 1 (kind p))
-          (remove-tree! p)
-          (fs/app-data (str p "UNLINK_SEP")))))
-    (fs/app-data (str dir "RMDIR_SEP"))
-    (catch :default _ nil)))
+  [#?@(:kotoba [dir :string] :default [dir])] #?@(:kotoba [:string])
+  #?(:kotoba (do (remove-members dir (entries dir) 0)
+                 (app-data (str dir "RMDIR_SEP")))
+     :default (try
+                (do
+                  (doseq [name (entries dir)]
+                    (let [p (str dir "/" name)]
+                      (if (= 1 (kind p))
+                        (remove-tree! p)
+                        (app-data (str p "UNLINK_SEP")))))
+                  (app-data (str dir "RMDIR_SEP")))
+                (catch :default _ nil))))
