@@ -7,8 +7,13 @@
   string past the end -- the catalog's shape. The arguments are the ones nbb
   hands the script (`*command-line-args*`), which is what every entrypoint
   read before this layer existed. See kotoba.compiler.nbb.host.io."
-  {:kotoba/export []})
+  {:kotoba/export #?(:kotoba [args] :default [])})
 
+#?(:kotoba (defn args
+             "cli/args 38 (the ability itself)."
+             [request :string] :string
+             (cli/args request))
+   :default
 (defn args
   "cli/args 38."
   [request]
@@ -19,4 +24,4 @@
         (when-not (re-matches #"[0-9]{1,19}" request)
           (throw (ex-info "cli/args request must be empty or a decimal index"
                           {:phase :host :request request})))
-        (nth argv (js/Number request) "")))))
+        (nth argv (js/Number request) ""))))))
