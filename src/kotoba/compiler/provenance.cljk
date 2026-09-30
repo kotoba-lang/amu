@@ -12,6 +12,7 @@
      ;; recursive `:form/r` record (kotoba.form), and the seal over it is
      ;; kotoba.verifier.seal, not the bounded `:document` of kotoba.artifact.core.
      :kotoba (:require [kotoba.form :as form]
+                       [kotoba.bytes :as kbytes]
                        [kotoba.verifier.seal :as seal]
                        [kotoba.kir.compatibility :as compatibility]
                        [sha2.core :as sha2])
@@ -60,21 +61,13 @@
                 (+ 0x80 (bit-and (quot cp 64) 0x3F))
                 (+ 0x80 (bit-and cp 0x3F))))))
 
-(defn- hex-digit [#?@(:kotoba [d :i64] :default [d])] #?@(:kotoba [:string])
+#?(:kotoba nil :default (defn- hex-digit [d]
   (let [digits "0123456789abcdef"]
     #?(:clj (subs digits d (inc d))
        :cljs (subs digits d (inc d))
-       :default (string-substring digits d (inc d)))))
+       :default (string-substring digits d (inc d))))))
 
-#?(:kotoba
-   (defn- pure-hex [bytes :vector-i64] :string
-     (let [n (vector-count bytes)]
-       (loop [i 0 acc ""]
-         (if (>= i n)
-           acc
-           (let [b (bit-and (vector-at bytes i) 255)]
-             (recur (+ i 1)
-                    (string-concat (string-concat acc (hex-digit (quot b 16))) (hex-digit (bit-and b 15)))))))))
+#?(:kotoba nil
    :default
 (defn- pure-hex
   "Lowercase hex of a vector of ints 0..255."
@@ -83,33 +76,36 @@
             (str acc (hex-digit (quot (bit-and b 0xff) 16)) (hex-digit (bit-and b 15))))
           "" bytes)))
 
-(defn- raw-sha256 [bytes]
+(defn- raw-sha256 [#?@(:kotoba [bytes :vector-i64] :default [bytes])] #?@(:kotoba [:string])
   #?(:clj (hex (.digest (MessageDigest/getInstance "SHA-256") ^bytes bytes))
      :cljs (-> (crypto/createHash "sha256") (.update bytes) (.digest "hex"))
+     :kotoba (kbytes/hex (sha2/sha256 bytes))
      :default (pure-hex (sha2/sha256 bytes))))
-(defn- utf8-vector
+#?(:kotoba nil :default (defn- utf8-vector
   "The UTF-8 bytes of VALUE as a vector of ints (the Kotoba text walk)."
   [value]
   #?(:clj (mapv #(bit-and % 0xff) (.getBytes ^String value StandardCharsets/UTF_8))
      :cljs (vec (js/Array.from (js/Buffer.from value "utf8")))
      ;; Kotoba: a string is UTF-8 already; its bytes are the answer's.
-     :default (vector-i64-from-bytes (string-to-utf8 value))))
-(defn- text-sha256 [value]
+     :default (vector-i64-from-bytes (string-to-utf8 value)))))
+(defn- text-sha256 [#?@(:kotoba [value :string] :default [value])] #?@(:kotoba [:string])
   #?(:clj (raw-sha256 (.getBytes ^String value StandardCharsets/UTF_8))
      :cljs (raw-sha256 (js/Buffer.from value "utf8"))
+     ;; Kotoba: the hash/sha256 ability hashes a string as its UTF-8 bytes
+     :kotoba (hash/sha256 value)
      :default (raw-sha256 (utf8-vector value))))
-(defn- byte-size [value]
+#?(:kotoba nil :default (defn- byte-size [value]
   #?(:clj (alength (.getBytes ^String value StandardCharsets/UTF_8))
      :cljs (.-length (js/Buffer.from value "utf8"))
      ;; a Kotoba string is UTF-8: its byte length is the answer
-     :default (string-byte-length value)))
-(defn- vector-sha256
+     :default (string-byte-length value))))
+#?(:kotoba nil :default (defn- vector-sha256
   "SHA-256 hex of a vector of ints (each masked to a byte, as the host
   byte containers do)."
   [bytes]
   #?(:clj (raw-sha256 (byte-array (map unchecked-byte bytes)))
      :cljs (raw-sha256 (js/Buffer.from (clj->js bytes)))
-     :default (raw-sha256 (mapv #(bit-and % 0xff) bytes))))
+     :default (raw-sha256 (mapv #(bit-and % 0xff) bytes)))))
 #?(:kotoba
    (defn- fget [m [:ref :form/r] k :keyword] [:ref :form/r]
      (form/form-get m (form/keyword-form k))))
@@ -166,12 +162,12 @@
            m3 (if (form/eq fmt (form/keyword-form :cljs/v1))
                 (put m2 :primary (put (put (put (empty-map) :format (form/keyword-form :cljs-source))
                                            :sha256 (form/string-form (text-sha256 (form/string-value (fget result :source)))))
-                                      :size (form/int-form (byte-size (form/string-value (fget result :source))))))
+                                      :size (form/int-form (string-byte-length (form/string-value (fget result :source))))))
                 m2)
            m4 (if (form/eq fmt (form/keyword-form :javascript/v1))
                 (put m3 :primary (put (put (put (empty-map) :format (form/keyword-form :javascript-source))
                                            :sha256 (form/string-form (text-sha256 (form/string-value (fget result :source)))))
-                                      :size (form/int-form (byte-size (form/string-value (fget result :source))))))
+                                      :size (form/int-form (string-byte-length (form/string-value (fget result :source))))))
                 m3)
            m5 (if (form/eq fmt (form/keyword-form :kexe/v1))
                 (put m4 :primary (put (put (empty-map) :format (form/keyword-form :kotoba.kexe/v1))
@@ -183,7 +179,7 @@
                      (put (put (put (empty-map) :format (form/keyword-form :evm-creation-bytes))
                                :sha256 (if (present? (fget result :creation-sha256))
                                          (fget result :creation-sha256)
-                                         (form/string-form (vector-sha256 (form-bytes creation)))))
+                                         (form/string-form (raw-sha256 (form-bytes creation)))))
                           :size (form/int-form (form/count-of creation))))
                 m5)
            binary (fget result :binary)
@@ -225,10 +221,6 @@
     (:binary result) (assoc :binary (bytes-identity (:format (:binary result)) (:bytes (:binary result))))
     (:object result) (assoc :object (bytes-identity (:format (:object result)) (:bytes (:object result)))))))
 
-#?(:kotoba
-   (defn- seal-form [payload [:ref :form/r]] [:ref :form/r]
-     (put payload :sha256 (form/string-form (seal/sha256-form payload)))))
-
 ;; Kotoba: the definition graph (`definition-identity/describe`) needs the
 ;; capability catalog, which no Kotoba module can read yet, so a result that
 ;; does not already carry its `:definitions` report gets the named marker the
@@ -247,8 +239,8 @@
 #?(:kotoba
    (defn descriptor [source :string policy [:ref :form/r] build-metadata [:ref :form/r] result [:ref :form/r]]
      [:ref :form/r]
-     (let [profile (fget result :target-profile)]
-       (seal-form
+     (let [profile (fget result :target-profile)
+           payload
         (put (put (put (put (put (put (put (put (put (put (put (put (put (put (empty-map)
               :format (form/keyword-form (schema)))
               :builder (form/keyword-form :kotoba-compiler/v1))
@@ -266,7 +258,8 @@
                                                           (fget (fget result :artifact) :target-profile)))))
               :compatibility-sha256 (form/string-form (seal/sha256-form (fget result :compatibility))))
               :definitions (definitions-of result))
-              :outputs (outputs result)))))
+              :outputs (outputs result))]
+       (put payload :sha256 (form/string-form (seal/sha256-form payload)))))
    :default
 (defn descriptor
   ([source policy result] (descriptor source policy {} result))
