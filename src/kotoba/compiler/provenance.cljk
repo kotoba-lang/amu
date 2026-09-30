@@ -8,15 +8,26 @@
                      [kotoba.kir.compatibility :as compatibility]
                      ["node:crypto" :as crypto])
      ;; Kotoba (adr-2609242330 S1): SHA-256 is the pure org-nist-sha2, which is
-     ;; on this classpath (8e38c43f); no host module.
+     ;; on this classpath (8e38c43f); no host module. Compiler data is the
+     ;; recursive `:form/r` record (kotoba.form), and the seal over it is
+     ;; kotoba.verifier.seal, not the bounded `:document` of kotoba.artifact.core.
+     :kotoba (:require [kotoba.form :as form]
+                       [kotoba.verifier.seal :as seal]
+                       [kotoba.kir.compatibility :as compatibility]
+                       [sha2.core :as sha2])
      :default (:require [kotoba.artifact.core :as artifact]
                         [kotoba.compiler.definition-identity :as definition-identity]
                         [kotoba.kir.compatibility :as compatibility]
                         [sha2.core :as sha2]))
   #?(:clj (:import (java.nio.charset StandardCharsets)
-                   (java.security MessageDigest))))
+                   (java.security MessageDigest)))
+  #?(:kotoba (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                                  [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]})))
 
-(def schema :kotoba.provenance/v1)
+#?(:kotoba
+   (defn schema [] :keyword :kotoba.provenance/v1)
+   :default
+   (def schema :kotoba.provenance/v1))
 
 ;; Same JVM `MessageDigest`/Node `node:crypto` split
 ;; `kotoba.artifact.core/sha256` uses -- see that namespace's own
@@ -35,7 +46,7 @@
 ;; strings -- test/kotoba/compiler/provenance_pure_test.cljk runs these
 ;; functions on nbb against node:crypto / Buffer.
 
-(defn- utf8-code-point
+#?(:kotoba nil :default (defn- utf8-code-point
   "OUT with the UTF-8 encoding of the scalar value CP appended."
   [out cp]
   (cond
@@ -47,20 +58,30 @@
     :else (conj out (+ 0xF0 (quot cp 262144))
                 (+ 0x80 (bit-and (quot cp 4096) 0x3F))
                 (+ 0x80 (bit-and (quot cp 64) 0x3F))
-                (+ 0x80 (bit-and cp 0x3F)))))
+                (+ 0x80 (bit-and cp 0x3F))))))
 
-(defn- hex-digit [d]
+(defn- hex-digit [#?@(:kotoba [d :i64] :default [d])] #?@(:kotoba [:string])
   (let [digits "0123456789abcdef"]
     #?(:clj (subs digits d (inc d))
        :cljs (subs digits d (inc d))
        :default (string-substring digits d (inc d)))))
 
+#?(:kotoba
+   (defn- pure-hex [bytes :vector-i64] :string
+     (let [n (vector-count bytes)]
+       (loop [i 0 acc ""]
+         (if (>= i n)
+           acc
+           (let [b (bit-and (vector-at bytes i) 255)]
+             (recur (+ i 1)
+                    (string-concat (string-concat acc (hex-digit (quot b 16))) (hex-digit (bit-and b 15)))))))))
+   :default
 (defn- pure-hex
   "Lowercase hex of a vector of ints 0..255."
   [bytes]
   (reduce (fn [acc b]
             (str acc (hex-digit (quot (bit-and b 0xff) 16)) (hex-digit (bit-and b 15))))
-          "" bytes))
+          "" bytes)))
 
 (defn- raw-sha256 [bytes]
   #?(:clj (hex (.digest (MessageDigest/getInstance "SHA-256") ^bytes bytes))
@@ -71,13 +92,8 @@
   [value]
   #?(:clj (mapv #(bit-and % 0xff) (.getBytes ^String value StandardCharsets/UTF_8))
      :cljs (vec (js/Array.from (js/Buffer.from value "utf8")))
-     :default (let [n (string-byte-length value)]
-                (loop [i 0 out []]
-                  (if (< i n)
-                    (let [cp (string-code-point-at value i)]
-                      (recur (+ i (cond (< cp 0x80) 1 (< cp 0x800) 2 (< cp 0x10000) 3 :else 4))
-                             (utf8-code-point out cp)))
-                    out)))))
+     ;; Kotoba: a string is UTF-8 already; its bytes are the answer's.
+     :default (vector-i64-from-bytes (string-to-utf8 value))))
 (defn- text-sha256 [value]
   #?(:clj (raw-sha256 (.getBytes ^String value StandardCharsets/UTF_8))
      :cljs (raw-sha256 (js/Buffer.from value "utf8"))
@@ -94,13 +110,91 @@
   #?(:clj (raw-sha256 (byte-array (map unchecked-byte bytes)))
      :cljs (raw-sha256 (js/Buffer.from (clj->js bytes)))
      :default (raw-sha256 (mapv #(bit-and % 0xff) bytes))))
+#?(:kotoba
+   (defn- fget [m [:ref :form/r] k :keyword] [:ref :form/r]
+     (form/form-get m (form/keyword-form k))))
+
+#?(:kotoba
+   (defn- put [m [:ref :form/r] k :keyword v [:ref :form/r]] [:ref :form/r]
+     (form/assoc-form m (form/keyword-form k) v)))
+
+#?(:kotoba
+   (defn- empty-map [] [:ref :form/r] (form/form-map (form/no-forms))))
+
+;; The host's truthiness: neither nil nor false.
+#?(:kotoba
+   (defn- present? [f [:ref :form/r]] :bool
+     (if (form/is-nil? f)
+       false
+       (if (form/is-bool? f) (form/bool-value f) true))))
+
+;; A byte string (a bytes leaf, or a vector of ints) as ints 0..255.
+#?(:kotoba
+   (defn- form-bytes [f [:ref :form/r]] :vector-i64
+     (if (form/is-bytes? f)
+       (vector-i64-from-bytes (form/bytes-of f))
+       (let [n (form/count-of f)]
+         (loop [i 0 out (vector-i64)]
+           (if (>= i n)
+             out
+             (recur (+ i 1) (vector-conj out (bit-and (form/int-value (form/nth-of f i)) 255)))))))))
+
+#?(:kotoba
+   (defn- bytes-identity [format [:ref :form/r] bytes [:ref :form/r]] [:ref :form/r]
+     (let [v (form-bytes bytes)]
+       (put (put (put (empty-map) :format format)
+                 :sha256 (form/string-form (raw-sha256 v)))
+            :size (form/int-form (vector-count v)))))
+   :default
 (defn- bytes-identity [format bytes]
   #?(:clj (let [value (byte-array (map unchecked-byte bytes))]
            {:format format :sha256 (raw-sha256 value) :size (alength value)})
      :cljs (let [value (js/Buffer.from (clj->js bytes))]
             {:format format :sha256 (raw-sha256 value) :size (.-length value)})
-     :default {:format format :sha256 (vector-sha256 bytes) :size (count bytes)}))
+     :default {:format format :sha256 (vector-sha256 bytes) :size (count bytes)})))
 
+#?(:kotoba
+   (defn- outputs [result [:ref :form/r]] [:ref :form/r]
+     (let [fmt (fget result :format)
+           m0 (empty-map)
+           m1 (if (form/eq fmt (form/keyword-form :wasm/v1))
+                (put m0 :primary (bytes-identity (form/keyword-form :wasm) (fget result :bytes)))
+                m0)
+           m2 (if (form/eq fmt (form/keyword-form :wasm-component/v1))
+                (put m1 :primary (bytes-identity (form/keyword-form :wasm-component) (fget result :bytes)))
+                m1)
+           m3 (if (form/eq fmt (form/keyword-form :cljs/v1))
+                (put m2 :primary (put (put (put (empty-map) :format (form/keyword-form :cljs-source))
+                                           :sha256 (form/string-form (text-sha256 (form/string-value (fget result :source)))))
+                                      :size (form/int-form (byte-size (form/string-value (fget result :source))))))
+                m2)
+           m4 (if (form/eq fmt (form/keyword-form :javascript/v1))
+                (put m3 :primary (put (put (put (empty-map) :format (form/keyword-form :javascript-source))
+                                           :sha256 (form/string-form (text-sha256 (form/string-value (fget result :source)))))
+                                      :size (form/int-form (byte-size (form/string-value (fget result :source))))))
+                m3)
+           m5 (if (form/eq fmt (form/keyword-form :kexe/v1))
+                (put m4 :primary (put (put (empty-map) :format (form/keyword-form :kotoba.kexe/v1))
+                                      :sha256 (fget (fget result :artifact) :sha256)))
+                m4)
+           creation (fget result :creation-bytes)
+           m6 (if (form/eq fmt (form/keyword-form :evm/v1))
+                (put m5 :primary
+                     (put (put (put (empty-map) :format (form/keyword-form :evm-creation-bytes))
+                               :sha256 (if (present? (fget result :creation-sha256))
+                                         (fget result :creation-sha256)
+                                         (form/string-form (vector-sha256 (form-bytes creation)))))
+                          :size (form/int-form (form/count-of creation))))
+                m5)
+           binary (fget result :binary)
+           m7 (if (present? binary)
+                (put m6 :binary (bytes-identity (fget binary :format) (fget binary :bytes)))
+                m6)
+           object (fget result :object)]
+       (if (present? object)
+         (put m7 :object (bytes-identity (fget object :format) (fget object :bytes)))
+         m7)))
+   :default
 (defn- outputs [result]
   (cond-> (sorted-map)
     (= :wasm/v1 (:format result))
@@ -129,8 +223,51 @@
                                  (vector-sha256 (:creation-bytes result)))
                      :size (count (:creation-bytes result))})
     (:binary result) (assoc :binary (bytes-identity (:format (:binary result)) (:bytes (:binary result))))
-    (:object result) (assoc :object (bytes-identity (:format (:object result)) (:bytes (:object result))))))
+    (:object result) (assoc :object (bytes-identity (:format (:object result)) (:bytes (:object result)))))))
 
+#?(:kotoba
+   (defn- seal-form [payload [:ref :form/r]] [:ref :form/r]
+     (put payload :sha256 (form/string-form (seal/sha256-form payload)))))
+
+;; Kotoba: the definition graph (`definition-identity/describe`) needs the
+;; capability catalog, which no Kotoba module can read yet, so a result that
+;; does not already carry its `:definitions` report gets the named marker the
+;; host uses for "unavailable" rather than an empty report.
+#?(:kotoba
+   (defn- definitions-of [result [:ref :form/r]] [:ref :form/r]
+     (let [defs (fget result :definitions)]
+       (if (form/eq (fget defs :contract) (form/keyword-form :kotoba.definition-identity/v1))
+         defs
+         (put (put (put (empty-map) :contract (form/keyword-form :kotoba.definition-identity/v1))
+                   :entries (form/keyword-form :unavailable))
+              :reason (form/keyword-form :no-capability-catalog))))))
+
+;; Kotoba: one arity (source policy build-metadata result); the host's
+;; three-argument form supplies `{}` for the metadata.
+#?(:kotoba
+   (defn descriptor [source :string policy [:ref :form/r] build-metadata [:ref :form/r] result [:ref :form/r]]
+     [:ref :form/r]
+     (let [profile (fget result :target-profile)]
+       (seal-form
+        (put (put (put (put (put (put (put (put (put (put (put (put (put (put (empty-map)
+              :format (form/keyword-form (schema)))
+              :builder (form/keyword-form :kotoba-compiler/v1))
+              :compiler (form/string-form (compatibility/compiler-version)))
+              :language (form/keyword-form (compatibility/language-version)))
+              :source-sha256 (form/string-form (text-sha256 source)))
+              :policy-sha256 (form/string-form (seal/sha256-form policy)))
+              :build-metadata-sha256 (form/string-form (seal/sha256-form build-metadata)))
+              :hir-sha256 (form/string-form (seal/sha256-form (fget result :hir))))
+              :kir-sha256 (form/string-form (seal/sha256-form (fget result :kir))))
+              :target (fget result :target))
+              :target-profile-sha256 (form/string-form
+                                      (seal/sha256-form (if (present? profile)
+                                                          profile
+                                                          (fget (fget result :artifact) :target-profile)))))
+              :compatibility-sha256 (form/string-form (seal/sha256-form (fget result :compatibility))))
+              :definitions (definitions-of result))
+              :outputs (outputs result)))))
+   :default
 (defn descriptor
   ([source policy result] (descriptor source policy {} result))
   ([source policy build-metadata result]
@@ -157,14 +294,24 @@
     ;; A backend whose result carries no typed KIR gets a named reason rather
     ;; than an empty map -- see `definition-identity/describe`.
     :definitions (definition-identity/describe result)
-    :outputs (outputs result)})))
+    :outputs (outputs result)}))))
 
+#?(:kotoba
+   (defn attach [source :string policy [:ref :form/r] build-metadata [:ref :form/r] result [:ref :form/r]]
+     [:ref :form/r]
+     (let [provenance (descriptor source policy build-metadata result)
+           attached (put result :provenance provenance)
+           manifest (fget result :manifest)]
+       (if (present? manifest)
+         (put attached :manifest (put manifest :kotoba.artifact/provenance provenance))
+         attached)))
+   :default
 (defn attach [source policy build-metadata result]
   (let [provenance (descriptor source policy build-metadata result)]
     (cond-> (assoc result :provenance provenance)
-      (:manifest result) (assoc-in [:manifest :kotoba.artifact/provenance] provenance))))
+      (:manifest result) (assoc-in [:manifest :kotoba.artifact/provenance] provenance)))))
 
-(defn- sha256-equal? [a b]
+(defn- sha256-equal? [#?@(:kotoba [a :string b :string] :default [a b])] #?@(:kotoba [:bool])
   #?(:clj (MessageDigest/isEqual
            (.getBytes ^String a StandardCharsets/US_ASCII)
            (.getBytes ^String b StandardCharsets/US_ASCII))
@@ -181,6 +328,26 @@
                                                                     (string-code-point-at b i))))
                                 acc)))))))
 
+;; Kotoba: an export cannot abort with a value a caller sees, so a rejected
+;; provenance TRAPS (`assert`), as kotoba.verifier/verify-artifact! does; the
+;; host throws ex-info "compilation provenance rejected".
+#?(:kotoba
+   (defn- reject! [] [:ref :form/r]
+     (let [refused (assert (= 1 0))] (form/nil-form))))
+
+#?(:kotoba
+   (defn verify! [source :string policy [:ref :form/r] build-metadata [:ref :form/r] result [:ref :form/r]]
+     [:ref :form/r]
+     (let [actual (fget result :provenance)
+           expected (descriptor source policy build-metadata (form/dissoc-form result (form/keyword-form :provenance)))]
+       (if (and (form/is-map? actual)
+                (form/eq (form/keys-of expected) (form/keys-of actual))
+                (seal/valid-seal? actual)
+                (sha256-equal? (form/string-value (fget actual :sha256))
+                               (form/string-value (fget expected :sha256))))
+         actual
+         (reject!))))
+   :default
 (defn verify!
   ([source policy result] (verify! source policy {} result))
   ([source policy build-metadata result]
@@ -192,4 +359,4 @@
                    (sha256-equal? (:sha256 actual) (:sha256 expected)))
       (throw (ex-info "compilation provenance rejected"
                       {:phase :provenance :reason :identity-mismatch})))
-     actual)))
+     actual))))
