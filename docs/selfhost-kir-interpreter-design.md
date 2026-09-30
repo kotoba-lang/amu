@@ -164,3 +164,20 @@ alphabet `V:<hi>:<lo>` / `B:<bool>` / `T:<full trap name>`.
 4. f64/f32 (bits arithmetic needs a native float op or a soft-float reading).
 5. pair heap, kgraph, capability calls, closures (`closure-param-indexes` with `invoke`).
 6. Not oraclable by construction: kernel/memory heads (module is kernel-native), xml, task/stream.
+
+## Wave 9: strings, options/results, typed lists, i64 vectors (measured 2026-10-01)
+
+Ported in `kotoba.kir.interp` (wt-D-osaho 290db26): string-byte-length/length/concat/`string=?`/
+substring/code-point-at/from-i64/contains?/index-of/index-of-from/replace-all/split-count/compare/
+fold-ascii; option-*-of and the untyped i64 option/result forms (fallbacks evaluated lazily, so
+fuel matches the host), option-match, result-match-of; typed-list-new/conj/nth; vector-new/count/
+at/get/drop/take/alloc/assoc/assoc!/conj. A Kotoba builtin aborts on a bad offset, so every
+host precondition is pre-checked and answered as a trap value (string-index-out-of-bounds,
+string-splits-code-point, ... ; the host throws untyped errors for these, so the oracle has no
+outcome for them). Types: :string, :vector-i64, :option-i64, :result-i64, [:option T], [:result T E],
+[:list T] (tag check only, as the host operand-tag?).
+
+Differential: interp_diff 677 cases (192 sema, 223 generated, 262 hand), 656 ported, 656 agree, 0
+disagree (sema corpus ported 171/192, was 34/64); twin (lower/execute/eval-expr) 113/227/86, all agree.
+Still unported: records/variants (need the schema table), typed maps/sets, pair heap, closures,
+bytes, document-*, f64/f32, string-upper/fold-case (Unicode), kgraph, cap-call.
