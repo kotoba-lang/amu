@@ -40,8 +40,17 @@
 ;; operation lie in exactly the case that matters -- a module that gains a
 ;; `(kernel-scratch-region)` after the packager decided it needed none -- and
 ;; 16 KiB of zeros is a cheap price for the operation always being true.
-(def ^:private scratch-offset image-scratch/offset)
-(def ^:private scratch-size image-scratch/bytes-reserved)
+#?(:kotoba
+   ;; A constant may not call a function on this route; the literals are
+   ;; kotoba.native.image-scratch/offset and /bytes-reserved (the host branch
+   ;; still reads the vars, and its guard below still asserts the layout).
+   (def ^:private scratch-offset 0x60)
+   :default
+   (def ^:private scratch-offset image-scratch/offset))
+#?(:kotoba
+   (def ^:private scratch-size 16384)
+   :default
+   (def ^:private scratch-size image-scratch/bytes-reserved))
 (def ^:private data-size (+ context-size scratch-size))
 
 ;; The offset the encoder assumes has to BE the end of the context. If the
@@ -51,8 +60,8 @@
   (throw (ex-info "the scratch region must begin where the context ends"
                   {:context-size context-size :scratch-offset scratch-offset})))
 
-(def le pe/little-endian)
-(def align pe/align-up)
+(defn le [n width] (pe/little-endian n width))
+(defn align [n alignment] (pe/align-up n alignment))
 
 ;; 2^(8*width) for the widths this packager emits. Written as literals rather
 ;; than `(bit-shift-left 1 (* 8 width))`, which is NOT portable: JavaScript
