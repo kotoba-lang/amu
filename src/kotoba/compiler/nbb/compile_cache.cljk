@@ -3,7 +3,7 @@
 
   Only fully admitted/emitted (and for native, independently verified)
   artifacts are inserted. Values never cross worker processes."
-  {:kotoba/export [create create-context key-for lookup! lookup-stage! put! put-stage! remove! resolve-stage! sha256 stage-key-for stats]}
+  {:kotoba/export #?(:kotoba [sha256] :default [create create-context key-for lookup! lookup-stage! put! put-stage! remove! resolve-stage! sha256 stage-key-for stats])}
   (:require [kotoba.compiler.json-text :as json-text]
             [kotoba.compiler.text-bytes :as text-bytes]
             ;; Abilities (superproject adr-2609242330 S5): under Kotoba
@@ -13,6 +13,17 @@
             #?(:cljs [kotoba.compiler.nbb.host.env :as env])
             #?(:cljs [kotoba.compiler.nbb.host.hash :as hash])))
 
+;; Kotoba reading: NO CACHE. A cache is mutable per-process state (volatiles)
+;; and Kotoba modules carry none, so under Kotoba this namespace answers only
+;; the identity functions: every lookup would be a miss, and the compiler
+;; recomputes. What it computes -- the sha256 ability over the same key text --
+;; is byte-identical to the host reading, so a Kotoba-built key names the same
+;; artifact a host-built key does. The cache itself (create, lookup!, put!,
+;; remove!, stage variants, stats) is host-only.
+#?(:kotoba
+   nil
+   :default
+   (do
 (defn- configured-integer [name default maximum]
   (let [text (env/read name)
         value (when (seq text) (js/Number text))]
@@ -33,14 +44,20 @@
 
 (defn create-context []
   {:artifacts (create)
-   :stages (create "KOTOBA_WORKER_STAGE_CACHE" 128 (* 64 1024 1024))})
+   :stages (create "KOTOBA_WORKER_STAGE_CACHE" 128 (* 64 1024 1024))})))
 
 (defn sha256
   "SHA-256 of VALUE (text, hashed as UTF-8, or bytes) as 64 lowercase hex
-  characters: the hash/sha256 ability (catalog wire 3)."
-  [value]
+  characters: the hash/sha256 ability (catalog wire 3). Under Kotoba the
+  ability hashes a string."
+  [#?@(:kotoba [value :string] :default [value])]
+  #?@(:kotoba [:string])
   (hash/sha256 value))
 
+#?(:kotoba
+   nil
+   :default
+   (do
 (defn key-for
   ;; `linked?` is in the key because it changes what the frontend ADMITS, not
   ;; how it is spelled: a linked project carries :admit-linked-synthetics?.
@@ -138,4 +155,4 @@
   {:entries (count @(:entries cache))
    :bytes @(:bytes cache)
    :max-entries (:max-entries cache)
-   :max-bytes (:max-bytes cache)})
+   :max-bytes (:max-bytes cache)})))

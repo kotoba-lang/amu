@@ -5,15 +5,115 @@
   sealed provenance is structurally closed and names the exact verified
   artifact selected by the output-set commit marker."
   {:kotoba/export [admit! format]}
-  (:require [kotoba.lang.coll :as coll]
-            [kotoba.lang.edn :as edn]
+  (:require #?(:cljs [kotoba.lang.coll :as coll])
             [kotoba.artifact.core :as artifact]
-            [kotoba.compiler.nbb.cli-support :as support]
-            [kotoba.compiler.nbb.compile-cache :as digest]
             [kotoba.kir.compatibility :as compatibility]
-            [kotoba.kir.cljs-i64 :as i64]
-            [kotoba.verifier :as verifier]))
+            #?(:cljs [kotoba.lang.edn :as edn])
+            #?(:cljs [kotoba.compiler.nbb.cli-support :as support])
+            #?(:cljs [kotoba.compiler.nbb.compile-cache :as digest])
+            #?(:cljs [kotoba.kir.cljs-i64 :as i64])
+            #?(:cljs [kotoba.verifier :as verifier])))
 
+;; Kotoba reading (a project-route compile of this module). Admission is
+;; FAIL-CLOSED there and says why by name: the provenance record is checked
+;; structurally over a document, but the two independent checks that admit the
+;; artifact itself have no Kotoba provider yet --
+;;   wasm-validator-unavailable    `WebAssembly.validate` and the byte digest
+;;                                 of the artifact (the hash ability hashes a
+;;                                 string, not bytes; kotoba-wasm emits but
+;;                                 does not validate)
+;;   native-verifier-unavailable   the UTF-8 decode + EDN read + independent
+;;                                 native verifier, which need the host
+;;                                 reader's integer representation
+;; A refusal is the only answer: this module never says `committed true` for
+;; bytes it did not check. The host reading is unchanged.
+#?(:kotoba
+   (defn format [] :keyword :kotoba.output-admission/v1)
+   :default nil)
+
+#?(:kotoba
+   (defn- reject! [reason :string] :document
+     (throw (ex-info (string-concat "output-set provenance rejected: " reason) {:phase :verify})))
+   :default nil)
+
+#?(:kotoba
+   (defn- field [m :document k :keyword] :document
+     (option-value-of [:option :document] (document-get m k) (document-null)))
+   :default nil)
+
+#?(:kotoba
+   (defn- present? [m :document k :keyword] :bool
+     (document-contains m (document-keyword k)))
+   :default nil)
+
+#?(:kotoba
+   (defn- hex-byte? [b :i64] :bool
+     (or (and (>= b 48) (<= b 57)) (and (>= b 97) (<= b 102))))
+   :default nil)
+
+#?(:kotoba
+   (defn- digest? [d :document] :bool
+     (if (= :string (document-kind d))
+       (let [bs (string-to-utf8 (option-value-of [:option :string] (document-string-value d) ""))]
+         (if (= 64 (bytes-count bs))
+           (loop [i 0]
+             (if (>= i 64)
+               true
+               (if (hex-byte? (bytes-at bs i)) (recur (+ i 1)) false)))
+           false))
+       false))
+   :default nil)
+
+#?(:kotoba
+   (defn- keys-closed? [m :document] :bool
+     (and (= :map (document-kind m))
+          (= 15 (document-count m))
+          (present? m :format) (present? m :builder) (present? m :compiler)
+          (present? m :language) (present? m :source-sha256) (present? m :policy-sha256)
+          (present? m :build-metadata-sha256) (present? m :hir-sha256) (present? m :kir-sha256)
+          (present? m :target) (present? m :target-profile-sha256)
+          (present? m :compatibility-sha256) (present? m :definitions)
+          (present? m :outputs) (present? m :sha256)))
+   :default nil)
+
+#?(:kotoba
+   (defn- digests? [m :document] :bool
+     (and (digest? (field m :source-sha256)) (digest? (field m :policy-sha256))
+          (digest? (field m :build-metadata-sha256)) (digest? (field m :hir-sha256))
+          (digest? (field m :kir-sha256)) (digest? (field m :target-profile-sha256))
+          (digest? (field m :compatibility-sha256))))
+   :default nil)
+
+#?(:kotoba
+   (defn- provenance? [d :document] :bool
+     (and (keys-closed? d)
+          (document-equal? (field d :format) (document-keyword :kotoba.provenance/v1))
+          (document-equal? (field d :builder) (document-keyword :kotoba-compiler/v1))
+          (document-equal? (field d :compiler) (document-string (compatibility/compiler-version)))
+          (document-equal? (field d :language) (document-keyword (compatibility/language-version)))
+          (artifact/valid-seal? d)
+          (digests? d)
+          (= 1 (document-count (field d :outputs)))
+          (present? (field d :outputs) :primary)
+          (= :map (document-kind (field (field d :outputs) :primary)))))
+   :default nil)
+
+#?(:kotoba
+   (defn admit! [artifact-bytes :bytes provenance :document] :document
+     (if (provenance? provenance)
+       (if (document-equal? (field (field (field provenance :outputs) :primary) :format) (document-keyword :wasm))
+         (reject! "wasm-validator-unavailable")
+         (if (document-equal? (field (field (field provenance :outputs) :primary) :format)
+                              (document-keyword :kotoba.kexe/v1))
+           (reject! "native-verifier-unavailable")
+           (reject! "unsupported-primary-format")))
+       (reject! "malformed-provenance")))
+   :default nil)
+
+#?(:kotoba
+   nil
+   :default
+   (do
 (def format :kotoba.output-admission/v1)
 
 (def ^:private provenance-keys
@@ -131,4 +231,4 @@
      :target-verification (case primary-format
                             :wasm :webassembly-validate
                             :kotoba.kexe/v1 :independent-native-verifier)
-     :publisher-authenticated false}))
+     :publisher-authenticated false}))))
