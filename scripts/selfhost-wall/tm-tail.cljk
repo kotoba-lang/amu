@@ -1,0 +1,71 @@
+
+(defn- op-is? [c [:ref :form/r] name :string] :bool
+  (string=? (document-edn-print (document-keyword (form/keyword-value (form/nth-of c 0))))
+            (string-concat ":" name)))
+
+(defn- b->s [b :bool] :string (if b "true" "false"))
+
+(defn- nilint->s [f [:ref :form/r]] :string
+  (if (form/is-nil? f) "nil" (string-from-i64 (form/int-value f))))
+
+(defn- bits-of-type [t [:ref :form/r]] :string
+  (let [g1 (string-concat (b->s (callable-type? t))
+                          (string-concat (b->s (parametric-result-type? t))
+                                         (string-concat (b->s (variant-type? t))
+                                                        (b->s (generic-option-type? t)))))
+        g2 (string-concat (b->s (canonical-list-type? t))
+                          (string-concat (b->s (stream-type? t))
+                                         (string-concat (b->s (task-type? t))
+                                                        (b->s (linear-resource-type? t)))))
+        g3 (string-concat (b->s (heterogeneous-vector-type? t))
+                          (string-concat (b->s (typed-set-type? t))
+                                         (string-concat (b->s (canonical-typed-map-type? t))
+                                                        (b->s (record-type? t)))))
+        g4 (string-concat (b->s (schema-ref-type? t))
+                          (string-concat (b->s (slice-type? t))
+                                         (string-concat (b->s (structured-type? t))
+                                                        (b->s (option-vector-type? t)))))]
+    (string-concat g1 (string-concat g2 (string-concat g3 g4)))))
+
+(defn- try-vt [t [:ref :form/r]] :string
+  (try (let [n (validate-value-type! t)] "ok")
+       (catch e (record-get [:ref :fe/err] e :msg))))
+
+(defn- try-hidx [i [:ref :form/r] items [:ref :form/r]] :string
+  (try (string-from-i64 (heterogeneous-vector-index! i items (form/nil-form)))
+       (catch e (record-get [:ref :fe/err] e :msg))))
+
+(defn- try-hslice [i [:ref :form/r] items [:ref :form/r]] :string
+  (try (string-from-i64 (heterogeneous-vector-slice-index! i items (form/nil-form)))
+       (catch e (record-get [:ref :fe/err] e :msg))))
+
+(defn- tm-case [c [:ref :form/r]] :string
+  (cond
+    (op-is? c "hex") (b->s (hex-text? (form/string-value (form/nth-of c 1))))
+    (op-is? c "rodata") (b->s (rodata-literal-content? (form/nth-of c 1) (form/nth-of c 2)))
+    (op-is? c "interrupt") (nilint->s (interrupt-entry-vector (form/nth-of c 1)))
+    (op-is? c "alloc") (nilint->s (alloc-region-bytes (form/nth-of c 1)))
+    (op-is? c "mlrt") (b->s (form/eq (map-literal-record-type (form/nth-of c 1)) (form/nth-of c 2)))
+    (op-is? c "rd") (b->s (form/eq (record-descriptor (form/nth-of c 1) (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4)))
+    (op-is? c "bits") (bits-of-type (form/nth-of c 1))
+    (op-is? c "clauses") (b->s (form/eq (callable-clauses (form/nth-of c 1)) (form/nth-of c 2)))
+    (op-is? c "sliceelt") (b->s (form/eq (slice-element-type (form/nth-of c 1)) (form/nth-of c 2)))
+    (op-is? c "depth") (b->s (reader-depth-exceeded? (form/string-value (form/nth-of c 1))))
+    (op-is? c "vt") (try-vt (form/nth-of c 1))
+    (op-is? c "hidx") (try-hidx (form/nth-of c 1) (form/nth-of c 2))
+    (op-is? c "hslice") (try-hslice (form/nth-of c 1) (form/nth-of c 2))
+    (op-is? c "intlit") (b->s (integer-literal? (form/nth-of c 1)))
+    (op-is? c "resolve") (b->s (form/eq (resolve-ref-type (form/nth-of c 1) (form/nth-of c 2)) (form/nth-of c 3)))
+    (op-is? c "rft") (b->s (form/eq (record-field-type (form/nth-of c 1) (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4)))
+    :else "unknown-op"))
+
+(defn- tm-lines [text :string i :i64 n :i64 out :string] :string
+  (if (>= i n)
+    out
+    (let [j (string-find-byte text 10 i)
+          end (if (< j 0) n j)
+          c (form/edn-form (string-substring text i end))]
+      (tm-lines text (+ end 1) n (string-concat out (string-concat (tm-case c) "\n"))))))
+
+(defn tm-run [text :string] :string
+  (tm-lines text 0 (string-byte-length text) ""))
