@@ -113,7 +113,7 @@ def main():
             j = i
             while j < n and s[j] not in ' \t\r\n(': j += 1
             i = max(j, i + 1)
-    names = open(os.path.join(here, 'tm-names.txt')).read().split()
+    names = open(os.environ.get('TM_NAMES') or os.path.join(here, 'tm-names.txt')).read().split()
     miss = [x for x in names if x not in forms]
     if miss:
         sys.exit('tm-gen: definitions not found in the :kotoba view: %s' % miss)
@@ -126,7 +126,9 @@ def main():
              :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]] [:phase :string]]]}))
 
 """
-    open(sys.argv[2], 'w').write(hdr + '\n\n'.join(forms[x] for x in names) + '\n'
-                                 + open(os.path.join(here, 'tm-tail.cljk')).read())
+    if os.environ.get('TM_HEADER'):
+        hdr = open(os.environ['TM_HEADER']).read()
+    tail = os.environ.get('TM_TAIL') or os.path.join(here, 'tm-tail.cljk')
+    open(sys.argv[2], 'w').write(hdr + '\n\n'.join(forms[x] for x in names) + '\n' + open(tail).read())
 
 main()

@@ -190,3 +190,67 @@ Signature convention for a ported function: every dynamic parameter is `[:ref :f
 3. **`reject!` call sites as tail/let throws.** 737 sites; most are statement-position `(when-not ok (reject! ...))`
    and need the `(let [_ ...] ...)` rewrite, which moves code rather than translating it.
 4. **Speculative `try`/`catch`** (45 probe sites) on the abort type.
+
+## 6. Desugar on the Kotoba route (2026-10-01): the env, the dispatcher, the differential
+
+Continues section 3 step 7. The desugar half of `frontend.cljk` (`desugar-expr*` and the `desugar-*` family) is ported
+function by function under `#?(:kotoba ... :default <host text>)`; every host body is byte-identical, only wrapped.
+
+**The env (`:fe/env`, section 1.2) now exists.** One record threaded by value: the synthetic-name counter
+(`*synthetic-counter*`), the contextual closure result type (`*contextual-closure-result-type*`, `nil-form` for none),
+the absence mode, the module's function arities (`*function-arities*`), lexical bindings (`*lexical-bindings*`), local
+types (`*local-types*`), document-returning functions, the loop counter, schemas, the lazy/abort context, the used
+capability set, and `tbl`: the constant tables the dispatch reads, parsed ONCE per env (a Kotoba table accessor re-reads
+its EDN text on every call, so a per-head lookup is a parse). A pass is `(env, Form) -> :fe/dr {env' form'}`; a list of
+forms is `:fe/drs`. `binding` is `with-result` / `with-lexical` on the record for the extent of the call, restored on
+exit, exactly the dynamic extent of the host's `binding`. The counter is threaded in the host's evaluation order (the
+order of `synthetic` calls is part of the output: `__kotoba_and_2` ... names), which the differential pins.
+
+**Refusals** are `:fe/err` throws (section 1.3): `require-k` is the `(when-not ok (reject! ...))` statement as an
+aborting function bound in a `let`. Two discipline points found the hard way: an `if` whose branches abort cannot be a
+`let` VALUE (hoist the `if` into a helper function so the aborting call is in tail position), and `odd?`/`even?` do not
+exist (`rem`); a type error in any function hides behind "call to aborting function ... neither catches it" because
+abort-error-type inference skips a function whose body fails to type.
+
+**Ported (Kotoba bodies over `Form`):** `desugar-expr`, `desugar-expr*` (atoms, keyword accessors, beta redexes, vector
+literals, the whole contextual-argument table chain, the ordinary-call fall-through, named operations, namespaced
+`clojure.core/X`), `desugar-result-expr` / `desugar-expected-value` (with `canonical-closure-result-type`,
+`closure-result-type?`, `closure-default-value-expr` as `default-kind`), `desugar-bool-expr`, `desugar-tail-expressions`,
+`desugar-and/or/do/cond/condp/cond-thread/thread/as-thread/some-thread/comparison-chain/case/binding-if`,
+`desugar-vector-i64-source`, `desugar-binding-some`, `desugar-quoted-datum`, `desugar-list` (as `desugar-list-arm`), `desugar-ordinary-call`, `sequenced-body`,
+`thread-form`, `synthetic`, `chain-temp`, `absence-marker?`, `absence-marker-form`, and the arms of the host's `case op`:
+`if do let (symbol patterns) not not= = < > <= >= zero? pos? neg? empty? first second rest cons some some? nil? bytes get
+contains? dissoc assoc select-keys merge assert str string-length string-from-i64 inc dec rem mod when when-not if-not
+if-let when-let throw try catch vector-i64 vector-f64 xorshift32 record record-new record-get record-assoc
+hetero-vector(-new/-assoc) typed-list-new typed-set(-new) typed-map-new variant-new match-variant variant-match
+match-result result-match-of option-match match-option`, and the 30 table-driven typed operations
+(`typed-list-nth ... option-or`, one spec table `typed-op-specs`: arity, message, operand kinds).
+22 of the 31 `desugar-*` definitions (`quoted-datum` partly: a symbol, a vector of symbols, an atom; the other nine:
+`lexical-call`, `map`, `map-against-record`, `match`, `dotimes`, `doseq`, `dataspace-form`, and the template expander's
+`desugar-template-parts`).
+
+**Scaffolding that shrinks:** `unported-heads` is the set of the host's `case op` heads without a port; such a head is
+refused as `kotoba.fe/unported` (never treated as an ordinary call). Everything outside that set and outside the
+ported arms is an ordinary call, exactly as the host's final clause.
+
+**Not ported, and why it is one wall, not a list:** `fn` (lift-lambda), `loop` (recur helpers), `dotimes`/`doseq`/`reduce`/
+`map`/`filter`/`into` (all lower through `loop` and the lifted-helper registries `*pending-lambdas*`,
+`*pending-loop-helpers*`, `*loop-helper-shapes*`, which are atoms/volatiles on the host and have to become env fields
+returning appended helper definitions), the map/set literal lowering (`desugar-map`, sorted by `pr-str` on the host, i.e.
+a printer-order dependency), quoted data, document-context lowering, `destructure-binding` (vector/map patterns in
+`let`), and `match`. Those are the destructuring lambdas that keep the file-level frontier where it was.
+
+**Differential (`scripts/selfhost-wall/ds-diff.sh`).** `ds-gen.sh` expands the `:kotoba` view of `frontend.cljk`
+(tm-gen.py with `TM_NAMES`/`TM_TAIL`/`TM_HEADER`), which `amu check` accepts as a stand-alone module and the KIR
+interpreter runs. `ds-diff.cljs` takes every `(ns ...)` program embedded as a string in kotoba-sema's tests plus the
+`.kotoba` programs under `DS_EXTRA`, reads each with the frontend's reader, and makes every list form inside a
+function a case (deduplicated, `DS_MAX` per program, `DS_TOTAL` sample). The host runs `desugar-expr` (with
+`*synthetic-counter*` and `*function-arities*` bound); the guest runs its port and compares with `form/eq` against the
+host's printed answer (or the refusal message). A guest answer of `UNPORTED <head>` is counted, never compared, so the
+figures are "agreement where the port claims to answer" and "coverage".
+
+**Measured (2026-10-01).** 523 forms (every list form inside the functions of the sema test programs and of the
+kotoba-lang `lang/stdlib`, `examples`, `bench`, `lang/migration-pilots` programs, `DS_MAX=300 DS_TOTAL=1500`): 462
+compared, **462 agree, 0 disagree**, 61 unported (24 map/set/f64 literals, 17 `invoke`, 7 `:document` context, 5
+document-head lowering, `eval`, `map`, `char`, `assert!`, `map-indexed`). Host behaviour unchanged: the sema suite
+(`run-tests.cljk` on nbb) has the same 77 failures / 25 errors, the same tests, before and after.

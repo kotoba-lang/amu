@@ -1,0 +1,46 @@
+
+;; ---- a best-effort printer for a failing case (the comparison itself is `form/eq`) ----
+(defn- ds-join [kids [:list [:ref :form/r]] i :i64 acc :string] :string
+  (if (>= i (vector-count kids))
+    acc
+    (ds-join kids (+ i 1)
+             (string-concat acc (string-concat (if (> i 0) " " "") (ds-print (typed-list-nth [:list [:ref :form/r]] kids i)))))))
+
+(defn- ds-print [f [:ref :form/r]] :string
+  (cond
+    (form/is-nil? f) "nil"
+    (form/is-bool? f) (if (form/bool-value f) "true" "false")
+    (form/is-int? f) (string-from-i64 (form/int-value f))
+    (form/is-string? f) (string-concat "\"" (string-concat (form/string-value f) "\""))
+    (form/is-keyword? f) (kw-text f)
+    (form/is-symbol? f) (form/symbol-value f)
+    (form/is-seq? f) (string-concat "(" (string-concat (ds-join (form/kids-of f) 0 "") ")"))
+    (form/is-vec? f) (string-concat "[" (string-concat (ds-join (form/kids-of f) 0 "") "]"))
+    (form/is-set? f) (string-concat "#{" (string-concat (ds-join (form/kids-of f) 0 "") "}"))
+    (form/is-map? f) (string-concat "{" (string-concat (ds-join (form/kids-of f) 0 "") "}"))
+    :else "?"))
+
+(defn- ds-refusal [e [:ref :fe/err]] :string
+  (if (string=? (record-get [:ref :fe/err] e :code) "kotoba.fe/unported")
+    (string-concat "UNPORTED " (record-get [:ref :fe/err] e :msg))
+    (string-concat "ERR " (record-get [:ref :fe/err] e :msg))))
+
+;; a case is [functions none? form expected]; expected nil means the host refused
+(defn- ds-case [c [:ref :form/r] tbl [:ref :form/r]] :string
+  (let [env (fe-env 0 (form/nil-form) (if (form/is-true? (form/nth-of c 1)) true false) (form/nth-of c 0) tbl)]
+    (try (let [r (desugar-expr env (form/nth-of c 2))]
+           (if (form/eq (dr-form r) (form/nth-of c 3))
+             "OK"
+             (string-concat "DIFF " (ds-print (dr-form r)))))
+         (catch e (ds-refusal e)))))
+
+(defn- ds-lines [text :string i :i64 n :i64 out :string tbl [:ref :form/r]] :string
+  (if (>= i n)
+    out
+    (let [j (string-find-byte text 10 i)
+          end (if (< j 0) n j)
+          c (form/edn-form (string-substring text i end))]
+      (ds-lines text (+ end 1) n (string-concat out (string-concat (ds-case c tbl) "\n")) tbl))))
+
+(defn ds-run [text :string] :string
+  (ds-lines text 0 (string-byte-length text) "" (fe-tables)))

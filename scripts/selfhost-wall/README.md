@@ -26,3 +26,18 @@ host for the report, hands the same HIR/KIR to the Kotoba `definitions` running 
 for all cases) and compares the `name<TAB>cid` listing and the SCANNED line. `SYNTH=1` adds cycles (2 and 3
 members, self recursion), shadowed binders, refused rows (unbridged wire id, `:abort`), integers beyond +-2^53,
 f64 leaves and an f32 module. `probe-definition-identity.cljs` is the narrower probe over `canonical-hex`.
+
+## Desugar differential (selfhost S3, desugar half)
+
+`ds-diff.sh` runs the frontend's HOST `desugar-expr` against its Kotoba-route port (the `:kotoba` view of kotoba-sema's
+`frontend.cljk`, extracted by `ds-gen.sh` with the `ds-names.txt` definitions, `ds-header.cljk` and `ds-tail.cljk`, then
+run on the KIR interpreter) on every list form of the programs embedded in kotoba-sema's tests (`DS_TESTS`) and of the
+`.kotoba` programs under `DS_EXTRA`. The guest answers `OK` (its form equals the host's), `DIFF <form>`, `ERR <message>`
+(a refusal, compared with the host's), or `UNPORTED <head>` (counted as coverage, never compared).
+
+    WALL_CP=<cp> WALL_K=<kotoba-lang> WALL_AMU_SRC=<this repo>/src WALL_NBB_DIR=<checkout with node_modules> \
+    FRONTEND=<kotoba-sema>/src/kotoba/compiler/frontend.cljk DS_TESTS=<kotoba-sema>/test DS_EXTRA=<dir>:<dir> \
+    DS_MAX=300 DS_TOTAL=1500 scripts/selfhost-wall/ds-diff.sh
+
+`DS_LINES=<file>` runs the guest on case lines you write (`[{f 1} false (and a b) nil]`), `DS_NOGEN=1` skips regeneration.
+`ds-names.txt` lists the definitions of the guest in source order; when a port adds a definition, add its name there.
