@@ -83,3 +83,37 @@ an EDN printer, two call sites in `desugar-quoted-datum`); the linker would pass
 reach `analyze-module` (the check path of a single entry file with a `:require` takes a route I did not
 trace), and the tables are mostly top-level `def`s, which are folded at analysis time and would have to
 become zero-arity functions with their uses rewritten. That is S3 work, not a wall fix.
+
+## S3 slice 2: `validate-expr` on the Form record (2026-09-30)
+
+`validate-expr` (frontend.cljk, admission of one desugared expression) was the smallest pass that
+could move independently: its inputs are the form, the locals in scope and the module's function
+arities, and its only ambient state is the `budget` volatile. No dynamic var is involved, so the
+port needs no env of dynamic bindings, only the explicit `:vx/env` record plus a `nodes` counter
+threaded through `:vx/r` results (Kotoba cannot catch, and the host's `reject!` throws, so a
+refusal is a value: code + message).
+
+Module: `kotoba-sema/src/kotoba/compiler/validate_expr.cljk` (passes `amu check` on the project
+route; entry `run-batch`). Operation tables come from `kotoba.compiler.frontend-tables` Forms,
+folded once per batch into a 64-bucket name index (first table wins, as the host's `cond`).
+`forbidden-heads` / `grammar-declared-heads` are resource-derived host values and are passed in.
+
+Differential: `scripts/selfhost-wall/vx-diff.sh` (needs `WALL_CP`, `WALL_K`, `KTEST`, see the
+script header). Corpus: every string literal in `kotoba-sema/test/**` is analysed with
+`validate-expr` wrapped; each outermost call (desugared form, real locals, real arities) is a
+case. Plus a hand-written refusal-probe set. Host = `frontend/validate-expr`; guest = the module
+linked as a project and run on the KIR interpreter. Compared: `OK <nodes charged>` or
+`<error code> <message>`.
+
+Measured (nbb, this tree): 892 cases (781 from the sema tests, 111 synthetic probes), 760 agree,
+0 disagree, 132 out of the slice (guest answers `vx/unsupported`, counted apart). In-slice
+agreement 760/760, covering 108 distinct refusal messages. Not in the corpus: 7 cases with an
+integer outside +-2^53 and 6 with non-ASCII text (the EDN hand-off), and a keyword over 512 bytes
+(the Form reader's `keyword-from-string` traps before the pass can see it).
+
+Out of the slice: heads whose first operand is a type descriptor (`option-*`, `result-*`,
+`record-*`, `typed-list/set/map-*`, `hetero-vector-*`, `variant-*`, `typed-cap-call`) call
+`validate-value-type!`. Its callable arm asks `closure-result-type?`, an inference-layer
+predicate, so the descriptor pass is the next unit to move (with `closure-result-type?`), not part
+of this one. `rodata-literal-content?` is the other missing helper. `grammar-declared-heads` is
+empty under nbb, so the declared-but-unlowered refusal is written but not exercised.
