@@ -1618,7 +1618,10 @@
          ;; Advanced 2026-09-29, b1cb6037 -> 832c130a: the affine analysis
          ;; spells symbol-set membership with typed-set-contains on Kotoba,
          ;; allowing the native self-host closure to pass that language wall.
-         :git/sha "33418cdcef00172b52d57a6af38c8e8d8a517e40"} ;; Native Image host: portable exception class and byte hex rendering.
+         ;; Advanced 2026-09-30, 33418cdc -> d625d554 (kotoba-native main, forward
+         ;; only; 33418cdc is on it): a constructor pays one unit of fuel on both
+         ;; ISAs (its ADR 0089, ADR 0353 floor :allocation-budget-native).
+         :git/sha "d625d55496be1abec52e3e8040cd27022fee73ff"} ;; Native Image host: portable exception class and byte hex rendering.
          ;; Advanced 2026-09-26 bc42c311 -> a0e10057 (main tip, forward only): string-search drops a bare (:require [kotoba.lang.text]) that named nothing (selfhost wall A, superproject adr-2609242330).
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
@@ -1969,7 +1972,9 @@
          ;; offsets 352-376 (string-from-bytes, superproject adr-2609242330).
          ;; Advanced 2026-09-27, 67a83d06 -> abb72f61 (kotoba-mir main tip, forward only):
          ;; kernel-dequant-dot-ptq1-0, PTQ1_0 fused dequant-dot (aiueos ADR-0222, kotoba-native ADR 0088).
-         :git/sha "abb72f61633c78780345559f1b877b34ef4a3c1a"} ;; Advanced 2026-09-24 6d92aea9 -> cfb086be (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-30, abb72f61 -> 205f2a93 (kotoba-mir main, forward only):
+         ;; :fuel-charge at the context's fuel word (ADR 0353 floor :allocation-budget-native).
+         :git/sha "205f2a931a6c785c23e54bc7e0006c1982f5906a"} ;; Advanced 2026-09-24 6d92aea9 -> cfb086be (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         io.github.kotoba-lang/kotoba-gmir
         {:git/url "https://github.com/kotoba-lang/kotoba-gmir.git"
          ;; a3f0597c -> a4b682c4 (kotoba-gmir main, ahead 6, behind 0)
@@ -1983,7 +1988,9 @@
          ;; the four ABI v11 runtime arities (string-from-bytes, superproject adr-2609242330).
          ;; Advanced 2026-09-27, 47763164 -> 8e0c3a23 (kotoba-gmir main tip, forward only):
          ;; kernel-dequant-dot-ptq1-0, PTQ1_0 fused dequant-dot (aiueos ADR-0222, kotoba-native ADR 0088).
-         :git/sha "763609e3362c9bc9704f2397a7b8450e11149010"}
+         ;; Advanced 2026-09-30, 763609e3 -> 6c3651f9 (kotoba-gmir main, forward only):
+         ;; the :fuel-charge arity (ADR 0353 floor :allocation-budget-native).
+         :git/sha "6c3651f953eb255d9ca1f45622cd904f69499c83"}
         ;; org-nist-sha2: named by osaho f404babb as cb67e53e. Its main adds
         ;; `text` as a dependency (already here) and moves amu / osaho into
         ;; the :test alias, so the closure does not grow.

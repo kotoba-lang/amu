@@ -286,9 +286,25 @@ Clojure it is today, the language gains:
    (was 506) and 505 (was 304) -- but the price of allocating is the
    reference's on each: 1,000 records cost 1,000 units and 300 vector literals
    300, on the reference, ESM and wasm32 alike. One unit short, ESM throws
-   `budget/fuel` and wasm32 traps `unreachable`. Native (both ISAs, the
-   loop's bulk pre-charge and kotoba-verifier's re-derivation) is floor
-   `:allocation-budget-native`.
+   `budget/fuel` and wasm32 traps `unreachable`.
+   On native (floor `:allocation-budget-native`, gate
+   `native-constructors-charge-fuel-test`, kotoba-native `d625d554` -- its ADR
+   0089 -- with kotoba-gmir `6c3651f9` and kotoba-mir `205f2a93`): every
+   constructor is preceded by an inline decrement of the context's fuel word
+   (`:fuel-charge`, offset 8, the entry prefix's own bytes), placed before the
+   operands and before the rewrites that lower one source constructor into
+   several; `vector-region` charges the literals it keeps in locals. Measured
+   before, under `tools/kexe_loader.c` with `KEXE_FUEL` on aarch64 and x86_64:
+   no constructor paid -- the 1,000-record loop answered under 1,002 units like
+   the loop that builds nothing, the 100-cell list under 506, 300 vector
+   literals under 102. After: 2,002, 707 and 402 on both ISAs, the reference's
+   price (1,000, 201, 300), and one unit short the loader reports
+   `budget/fuel`. The charge is not pure, so the bulk pre-charge declines a
+   counted loop that constructs: 400 steps cost 402 without records, 802 with.
+   kotoba-verifier re-derives an artifact by re-emitting it through
+   kotoba-native, so it re-derives the charges with no change of its own;
+   `amu compile` verifies both forms for `x86_64-aiueos-kernel-v1` and
+   `aarch64-macos`.
 8. **Admission by definition graph.** The 1 MiB bound moves from linked source
    bytes to per-definition size and closure count; a module is its definitions
    (as ADR 0300 already identifies it), so cssom's 1 MB file is admitted
