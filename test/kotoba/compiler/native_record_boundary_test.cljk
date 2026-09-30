@@ -75,7 +75,10 @@
 (def ^:private admitted
   (into [[parameter 3] [result 3] [chain 9] [string-field 2] [row 3]] unified))
 
-(def ^:private native-targets [:x86_64-aiueos-kernel-v1 :aarch64-kotoba-v1])
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk); :aarch64-kotoba-v1 is the ISA's generic one."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1 :aarch64-kotoba-v1])
 
 (defn- run-main [source]
   (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze source)) 'main [])))
@@ -89,9 +92,8 @@
   (testing "admitted on the reference: each program answers"
     (doseq [[source answer] admitted]
       (is (= answer (run-main source)) source)))
-  ;; `amu compile --target aarch64-macos` reaches the compiler as
-  ;; :aarch64-kotoba-v1. compile-source verifies the artifact, the oracle's
-  ;; re-execution included, before it returns it.
+  ;; compile-source verifies the artifact, the oracle's re-execution
+  ;; included, before it returns it.
   (testing "admitted on both native targets, the oracle's answer sealed"
     (doseq [target native-targets
             [source answer] admitted]
