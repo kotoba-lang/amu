@@ -89,8 +89,9 @@ Clojure it is today, the language gains:
    f is i64, and parameter m of f is the row {:a T | r}: only a record
    satisfies a row"), a record lacking a field the row reads, an exported
    generic (an export has one ABI: annotate it or `defn-`), a generic used as
-   a value. A record crossing a function boundary is still refused by the
-   native oracle (exit 65), as an annotated one is: floor `:native-handles`.
+   a value. A record crossing a function boundary, annotated or a row
+   specialization, compiles for both native targets since floor
+   `:native-record-boundary` (point 9).
    Floor `:row-operations` (gate `row-operations-extend-and-shrink-test`,
    2026-09-26): on a record, `assoc` of a field it has keeps its type (the
    value must be the field's type, no coercion), of one it lacks extends it;
@@ -106,7 +107,7 @@ Clojure it is today, the language gains:
    Hosted (`wasm32-browser`) compiles these forms; both native targets refuse
    them, as they refuse the same forms written by hand: `record-assoc` is not
    natively qualified (exit 70) and the verifier does not see a record through
-   a `let` operand (exit 65) -- floor `:native-handles`.
+   a `let` operand (exit 65) -- floor `:native-record-operations`.
    Floor `:row-unification` (gate
    `row-literal-join-and-loop-unification-test`, 2026-09-26): a keyword map
    literal written as a row argument is that row's record, the anonymous
@@ -121,9 +122,12 @@ Clojure it is today, the language gains:
    and n of pick are branches of one if, so one row: a row is one record type
    at each call"), a literal lacking a read field, a coerced field, a
    non-record, an exported generic, an `:i64` if test. Hosted
-   (`wasm32-browser`) compiles these forms; both native targets refuse them at
-   the native artifact oracle (exit 65), as they refuse a record crossing a
-   function boundary: floor `:native-handles`. Programs admitted before are
+   (`wasm32-browser`) compiles these forms. Natively, since floor
+   `:native-record-boundary`, a join returning its record (`pick`), a loop
+   helper and a `reduce` closure over a declared record compile for both
+   targets with the oracle verified; a projection of the join itself (`(:a
+   (if c m n))`) is refused by the verifier's record projection (exit 65):
+   floor `:native-record-operations`. Programs admitted before are
    unchanged -- every new row slot was a refusal.
    Floor `:literal-typing` (gate `record-vector-and-map-literal-retirement-test`,
    2026-09-26): a literal is typed by its items. kotoba-sema's `type-literals`
@@ -164,10 +168,9 @@ Clojure it is today, the language gains:
    arguments a specialization came from (provenance, unsealed); it needs a
    kotoba-hir function key and is not what identity or the cache rests on.
    A CID is target-independent (`definition-cids` takes no target). Native:
-   the gate's modules, generic and hand-written alike, are refused by both
-   `x86_64-aiueos-kernel-v1` and `aarch64-macos` at the native artifact
-   oracle (exit 65) -- a record crossing a function boundary, floor
-   `:native-handles`.
+   since floor `:native-record-boundary` the gate's modules, generic,
+   hand-written and recursive alike, compile for both
+   `x86_64-aiueos-kernel-v1` and `aarch64-macos` with the oracle verified.
 4. **Function values.** A function type carries its effect row; a closure is a
    one-word handle (code, environment) under aggregate ABI v8 and may be a
    record field or vector element. A stored function's effects are part of the
@@ -341,7 +344,37 @@ Clojure it is today, the language gains:
    a dependency on `--source-path`.
 9. **Native handles at loop boundaries.** kotoba-native qualifies record,
    vector and closure handles as loop-helper boundary types and retires
-   `map-new`, so every form above compiles for both native targets.
+   `map-new`, so every form above compiles for both native targets. Split on
+   2026-10-01 into three floors, because measuring showed three changes in
+   three places (ladder comment).
+   Floor `:native-record-boundary` (gate
+   `native-record-function-boundary-test`, landed 2026-10-01): a declared
+   record (`[:ref q]`) as a parameter or result compiled natively and was
+   refused at the native artifact oracle (exit 65, cause
+   `unknown-schema-reference`). The backends always carried it as the
+   one-word pair-chain handle; the closed program the artifact seals and the
+   verifier re-executes (`kotoba.kir/native-program`) kept `:schemas` only
+   for a recursive table, while `[:ref q]` survives lowering in exactly one
+   place, a function's `:param-types` / `:result`. The table now joins the
+   program when a signature names a reference (osaho `756c64c6`), and
+   kotoba-verifier re-derives that need -- a table that neither recursion
+   nor a signature reference into it needs stays refused as module shape
+   (`718befe6`). Nothing in codegen moved; a module none of whose signatures
+   names a reference seals the program it sealed before. Measured: the
+   gate's programs answer 3, 9 and 2 under `tools/kexe_loader.c` on aarch64
+   and x86_64 (the latter under Rosetta), and `amu compile --target
+   x86_64-aiueos-kernel-v1` / `--target aarch64-macos` exit 0 with `:oracle
+   {:status :verified}`. Refused by name: an i64 where a record is declared,
+   `=` over records, a record as an `if` test, and a record as the entry's
+   result on native (the typed-values gate, still exit 70 --
+   `:native-handles`).
+   Floor `:native-record-operations`: `record-assoc` qualified natively, and
+   the verifier's record projection through a `let` or `if` operand -- the
+   row operations and the join's projection.
+   Floor `:native-handles`: a `[:list T]` of records, record and closure
+   loop-helper slots (refused today by kotoba-sema before any target), no
+   form lowering to `map-new` (both ADR 0352 reproductions compile natively
+   as of 2026-10-01), and a target refusal exiting 65.
 
 Then browser moves, whole component by component (text-edit, input, surface
 with cssom and dom-gpu), and the hosted engine switches to amu's output of

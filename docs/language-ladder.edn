@@ -117,8 +117,28 @@
   {:id :definition-admission :gate "admission-by-definition-graph-test"
    :goal "the 1 MiB bound moves from linked source bytes to per-definition size and closure count; cssom/layout.cljk (1,083,132 bytes) is admitted definition by definition"
    :amends "ADR 0005 linked-source bound"}
+;; :native-handles split in three (2026-10-01), because measuring on amu
+  ;; 7e05c456 showed three changes in three places. (1) A declared record
+  ;; crossing a function boundary compiled natively and was refused at the
+  ;; oracle, cause unknown-schema-reference: kotoba.kir/native-program kept
+  ;; :schemas only for a recursive table, and [:ref q] survives lowering in a
+  ;; signature -- osaho and kotoba-verifier, no codegen. (2) Row operations
+  ;; natively: assoc of a field a record has is refused by the typed-values
+  ;; gate (record-assoc not qualified, kotoba-native / kotoba.kir), assoc
+  ;; extending and dissoc by the verifier's record projection through a let
+  ;; operand (kotoba-verifier). (3) The rest: a [:list T] of records, closure
+  ;; and record loop-helper parameters (refused today by kotoba-sema before
+  ;; any target: "expected map" for a record loop slot, "g is not a builtin"
+  ;; for a closure loop slot), exit 65 for a target refusal. map-new: both
+  ;; ADR 0352 reproductions, (:window/x {:window/id 1 :window/x 10}) and the
+  ;; filterv, now compile for both native targets (measured the same day);
+  ;; that no form still lowers to it is (3)'s to show.
+  {:id :native-record-boundary :gate "native-record-function-boundary-test"
+   :goal "a declared record ([:ref q]) as a function parameter or result, and a row specialized at a declared schema, compile for x86_64-aiueos-kernel-v1 and aarch64-macos with the oracle verified: the schema table joins the native program when a signature names a reference, and kotoba-verifier re-derives that need; coercion, = over records, a record as an if test and a record entry result stay refused by name"}
+  {:id :native-record-operations :gate "native-row-operations-test"
+   :goal "the row operations compile natively: record-assoc is qualified by kotoba-native and kotoba.kir's native gate, and kotoba-verifier's record projection sees through a let operand (a row operation elaborates to (record-get T (let [..] (record-new T ..)) :f), refused today as runtime KIR record projection rejected, exit 65, hand-written too) and an if operand ((:a (if (= c 1) m n)), floor :row-unification's join, refused the same way)"}
   {:id :native-handles :gate "native-record-vector-closure-boundary-test"
-   :goal "kotoba-native qualifies record, vector and closure handles as loop-helper boundary types and retires map-new; record-assoc is qualified, and kotoba-verifier's record projection sees through a let operand (a row operation elaborates to (record-get T (let [..] (record-new T ..)) :f), refused today as runtime KIR record projection rejected, exit 65, hand-written too); the forms of every floor above compile for x86_64-aiueos-kernel-v1 and aarch64-macos (target refusals exit 65, not 70)"}
+   :goal "kotoba-native qualifies vector ([:list T] of records included) and closure handles, and records, as loop-helper boundary types (the loop slot typed by kotoba-sema, not :map / an unknown operation) and retires map-new; the forms of every floor above compile for x86_64-aiueos-kernel-v1 and aarch64-macos (target refusals exit 65, not 70)"}
   {:id :browser-text-edit :gate "browser-text-edit-native-test"
    :goal "kotoba-lang/browser's browser.text-edit, migrated only mechanically (defn-, nil's meaning, a :kotoba interop branch), compiles for both native targets and its hosted tests pass on amu's output"}
   {:id :browser-input :gate "browser-input-native-test"
