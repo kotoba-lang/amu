@@ -38,7 +38,8 @@
   schema is checked, so `integer?`, `=` and `quot` below see one
   representation on both hosts."
   [value]
-  #?(:clj value
+  #?(:kotoba value
+     :clj value
      :cljs (coll/postwalk #(if (verifier/guest-integer? %) (js/Number %) %) value)))
 
 (defn- exact-keys? [value expected]
@@ -137,7 +138,12 @@
   (let [manifest (validate! manifest)]
     (when-not (and (string? path) (seq path))
       (reject! "coverage dataset path is required" {}))
-    #?(:clj
+    #?(:kotoba
+       ;; Kotoba: the dataset digest walk needs a streaming host read, which
+       ;; the compiler's own grant does not carry; the refusal is explicit
+       ;; rather than a silent pass.
+       (reject! "coverage dataset verification is not available on the Kotoba route" {})
+       :clj
        (let [file (Paths/get path (make-array String 0))]
          (when-not (Files/isRegularFile file (make-array LinkOption 0))
            (reject! "coverage dataset must be a regular file" {}))
