@@ -1203,3 +1203,26 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   tick15 記載) も amu sema pin 前進後に現行 HEAD で 1 re-probe して
   実測を更新する。
 
+- 次 (1 hypothesis): ledger `:gap` 残節 (bit-shift / keys / folds 等,
+  tick15 記載) も amu sema pin 前進後に現行 HEAD で 1 re-probe して
+  実測を更新する。
+## Iteration 40 - ledger re-probe NOT STARTED (budget exhausted at verification phase), no verdict (2026-09-30, amu@438c5aba)
+
+- Target hypothesis (carried from iter 39): ledger 残 `:gap` 行を現行 amu
+  HEAD で re-probe して実測を更新する。候補 (ledger tick37-63 実測と突合済み):
+  (a) `keys` on bounded keyword map literal (:keys-receiver, tick55 時点で
+  不変 - alias-shaped かは未切り分け), (b) `keys` on typed map は check PASS
+  だが wasm32 compile 'unsupported typed Wasm expression' (tick14 記載のまま
+  か re-probe 必要), (c) reduce-kv (lang-cosientist population 未 probe).
+- Measured this tick (code/文書 read のみ, compile/probe は未実施):
+  - amu HEAD 438c5aba, deps-lock.edn:132 pins kotoba-sema
+    15cc6e25c5b9d5946efe1ad3d869f6aff64fda05 (pin は 9898f0e から前進済み -
+    iter 23/26/37 の branch base と異なるので再 gate には rebase が必要)。
+  - jvm-dep-ledger.edn (kotoba-lang/kotoba-lang checkout) 再読: bit-shift は
+    tick37 以降 typed builtin (i64-shift-left/right, u32-shift-right) で
+    admit+compile 実測済み, folds-in-#() (mv1/fv1/rd1) も tick37 で landing,
+    min/max compile も tick60 で実測済み - `:gap` 行 (49行目, 2026-09-03
+    記載) は大幅に stale。実走 probe は次 tick。
+- No compile, no probe, no CIDs, no numbers, no commit. Hypothesis open.
+- Next tick (resume exactly): /tmp/langcos/it40 probes (p_keys3, keys-typed
+  compile, reduce-kv) を書いて amu HEAD bin/amu check --jvm-free で実測。
