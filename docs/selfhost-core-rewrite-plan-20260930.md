@@ -66,3 +66,20 @@ Frontend: `fs/app-data-bytes` (wire 35 `:bytes`), two-argument write frame, defa
 abort passes, capability calls in a `def` refused by name. Ports: `nbb/io`, `schema`, `affine`,
 reader twin, `kir` twin (partial), `cli_support`, `kir/value` (subset), artifact `core` and
 `runtime_identity`.
+
+## Finding: the frontend's quoted data tables (2026-09-30, after the reserved-prefix fixes)
+
+With the reserved-prefix wall cleared (kotoba-sema 3b9126d, 18afab9), `frontend.cljk` next stops at
+`quoted symbol-key map values are not one scalar kind`. It is not one site: the frontend quotes host
+data pervasively - symbol -> integer / vector / set tables (`kernel-memory-operations`,
+`kernel-base-positions`, `contextual-*-argument-indexes`, `document-fixed-operations`, ...), quoted
+code lists (`closure-default-value-expr`, `lambda-dispatchers`) and 3-4 dozen more. `quote` admits
+only a symbol, a symbol set, a scalar-valued symbol-key map or a symbol vector by design.
+
+A general `(quote datum)` -> `kotoba.form` literal (print the datum as EDN, call `form/edn-form`)
+is feasible, and the frontend half is small (a dynamic `*quote-form-stub*` bound from analyze opts,
+an EDN printer, two call sites in `desugar-quoted-datum`); the linker would pass the import stub of
+`edn-form` when the module requires `kotoba.form`. It was prototyped and reverted: the probe did not
+reach `analyze-module` (the check path of a single entry file with a `:require` takes a route I did not
+trace), and the tables are mostly top-level `def`s, which are folded at analysis time and would have to
+become zero-arity functions with their uses rewritten. That is S3 work, not a wall fix.
