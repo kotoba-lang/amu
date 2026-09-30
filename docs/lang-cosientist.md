@@ -1112,3 +1112,34 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   iter 34 form. wt-somethread2 tree is DIRTY with the applied patch -
   commit it before any other branch work touches that worktree.
 
+
+## Iteration 38 - some->/some->> "broken rewrite" FALSIFIED: marker scheme admits (option-returning contract) (2026-10-01 01:2x JST, amu@62344765, pin kotoba-sema 15cc6e25)
+
+- Target hypothesis (carried iter 37): upstream marker-based desugar-some-thread
+  rewrite is broken for both 1-step and 2-step some->/some->> on the new pin.
+- Measured (pin 15cc6e25 = amu deps-lock pin; bin/amu check --jvm-free):
+  - smt2-1step.kotoba `(some->> opt (+ 1))` returning :i64: REJECT exit 65
+    "expression type mismatch: expected i64, got [:option :i64]" (r-probe3.txt).
+  - smt2-2step.kotoba `(some->> opt (+ 1) (* 2))` returning :i64: REJECT exit 65,
+    same message.
+  - NEW probes with return type [:option :i64] (smt2-1step-opt.kotoba /
+    smt2-2step-opt.kotoba): BOTH check PASS exit 0 - t
+    `bafyreihokjwfg5r5k4qxj3gp6zowhqgtxsvhqdi35g74zv5tttljhwmvr4` (1-step),
+    `bafyreihafctb6wmo7sle4jletxukrownpenqzp4bgv3oo344tdselzsdou` (2-step)
+    (r-opt.txt).
+- Verdict: hypothesis FALSIFIED. The upstream marker scheme is NOT broken; it
+  implements the option-returning contract its docstring states ("result is
+  always an option") and admits 1-step AND 2-step when the declared return
+  type is the option. The iter 37 rejects are correct type checking of the
+  return-type contract, not a compiler defect. The only live question is
+  semantic: Clojure-payload-drop some-> (hand twin t
+  bafyreia223c4ht222... still PASSes) vs upstream option-returning some->.
+  That is an ADR 0353 semantics decision (amu-rank/maintainer), NOT a bug fix
+  - no desugar overwrite implemented this tick (falsify-first discipline).
+- Gate: check-only (compile/run of the option-returning form not run this
+  tick - budget). perfgate N/A (no speed measurement; no new lowering).
+- Next (1 hypothesis): value-verify the option-returning path (compile
+  smt2-2step-opt + run: none -> 0-ish option, some 41 -> 84 wrapped) and/or
+  hand the payload-drop vs option-returning decision to amu-rank with both
+  measured CIDs as evidence. Then re-check jvm-dep-ledger rows (contains? /
+  (:k m) stale handoff from iter 23/24 still pending).
