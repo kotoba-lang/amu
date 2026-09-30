@@ -72,10 +72,30 @@
   loaded cljs module is, like a WASM Instance, permanently exhausted after
   512 total function calls across its whole lifetime -- not 512 per
   top-level call."
-  {:kotoba/export [default-frames default-fuel default-ns-name emit]}
-  (:require [kotoba.lang.text :as str]
-            [kotoba.compiler.reference-runtime :as reference-runtime]))
+  {:kotoba/export #?(:kotoba [default-frames default-fuel]
+                     :default [default-frames default-fuel default-ns-name emit])}
+  (:require #?@(:kotoba []
+                :default [[kotoba.lang.text :as str]
+                          [kotoba.compiler.reference-runtime :as reference-runtime]])))
 
+;; Kotoba: the two budgets are constants of the cljs profile a caller compares
+;; against, so they are functions here. The lowering itself is the host
+;; route's: it rewrites KIR s-expressions as host lists and symbols (quoted
+;; `__kotoba_` names among them), carries a quoted runtime prelude, and prints
+;; the result with `pr-str`. A Kotoba reading needs the KIR as `:form/r`, a
+;; Form printer and synthetic-name minting (docs/selfhost-core-rewrite-plan-
+;; 20260930.md S1-S2), none of which exists yet.
+#?(:kotoba
+   (defn default-fuel [] :i64 512)
+   :default nil)
+
+#?(:kotoba
+   (defn default-frames [] :i64 256)
+   :default nil)
+
+#?(:kotoba nil
+   :default
+   (do
 (declare lower-expr)
 
 (def ^:private comparison-ops '#{= < > <= >=})
@@ -697,4 +717,4 @@
     (str/join "\n\n"
               (concat [(pr-str (list 'ns default-ns-name))
                        i64-predicate-source vector-index-source]
-                      (map pr-str forms))))))
+                      (map pr-str forms))))))))
