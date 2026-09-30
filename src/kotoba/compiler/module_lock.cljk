@@ -32,21 +32,35 @@
   ClojureScript branch hashes with `@noble/hashes`, an npm package this
   compiler does not depend on; `test/nbb/project.cljk` pins that shortcut
   against the JVM's vectors."
-  {:kotoba/export [load-locked-graph lock-cid lock-from-source-paths lock-schema read-lock write-block!]}
-  (:require [kotoba.bytes :as kbytes] [kotoba.compiler.bounded-edn :as bounded-edn]
-            [kotoba.compiler.project :as project]
-            [kotoba.sema :as sema]
-            #?@(:clj [[clojure.java.io :as io]
-                      [multiformats.core :as mf]]
-                :cljs [["node:crypto" :as crypto]
-                       ["node:fs" :as fs]
-                       ["node:path" :as path]
-                       [kotoba.compiler.nbb.io :as nbb-io]
-                       [multiformats.base32 :as base32]]))
+  {:kotoba/export #?(:kotoba [lock-schema]
+                     :default [load-locked-graph lock-cid lock-from-source-paths lock-schema read-lock write-block!])}
+  (:require #?@(:kotoba []
+                :default [[kotoba.bytes :as kbytes] [kotoba.compiler.bounded-edn :as bounded-edn]
+                          [kotoba.compiler.project :as project]
+                          [kotoba.sema :as sema]
+                          #?@(:clj [[clojure.java.io :as io]
+                                    [multiformats.core :as mf]]
+                              :cljs [["node:crypto" :as crypto]
+                                     ["node:fs" :as fs]
+                                     ["node:path" :as path]
+                                     [kotoba.compiler.nbb.io :as nbb-io]
+                                     [multiformats.base32 :as base32]])]))
   #?(:clj (:import [java.nio.file Files LinkOption Path])))
 
-(def lock-schema :kotoba.module-lock/v1)
+;; Kotoba: an exported constant is a function returning it. The lock itself
+;; -- reading, CID-verifying and resolving a closed graph -- is the host
+;; route's: it returns open maps of namespace symbols to source text, hashes
+;; through the host's crypto and reads a block store through the host's
+;; filesystem, and the linker it hands the graph to (`project`) is not on the
+;; Kotoba route. The schema keyword is the one thing a Kotoba caller compares.
+#?(:kotoba
+   (defn lock-schema [] :keyword :kotoba.module-lock/v1)
+   :default
+   (def lock-schema :kotoba.module-lock/v1))
 
+#?(:kotoba nil
+   :default
+   (do
 (defn- reject! [message data]
   (throw (ex-info message (assoc data :phase :module-lock))))
 
@@ -273,4 +287,4 @@
                               [namespace (write-block! blocks-path source)]))
                        sources)]
      {:schema lock-schema :root root :modules modules
-      :lock-cid (lock-cid {:root root :modules modules})})))
+      :lock-cid (lock-cid {:root root :modules modules})})))))
