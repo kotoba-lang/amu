@@ -14,6 +14,19 @@
 (defn join [& values] (.apply (.-join path) path (clj->js values)))
 (defn read-text [file] (.readFileSync fs file "utf8"))
 (defn write-text! [file value] (.writeFileSync fs file value))
+(defn nbb-cli
+  "`node_modules/nbb/cli.js` when the repo's own install is present; otherwise
+  the nbb engine named by KBB_ENGINE (e.g. a fleet-wide checkout of
+  org-babashka-nbb). Without the fallback every runner that spawns nbb
+  (`scripts/run-nbb-regression.cljk` and friends) fails with MODULE_NOT_FOUND
+  on a checkout that was never `npm install`ed, even though a working engine
+  is installed outside the repo."
+  []
+  (let [local (join root "node_modules" "nbb" "cli.js")]
+    (if (.existsSync fs local)
+      local
+      (or (.-KBB_ENGINE js/process.env) local))))
+
 (defn lock-classpath
   "The dependency closure from deps-lock.edn -- plus the closure each ALIAS
   adds -- joined with the platform delimiter. This replaced `kbb -Spath`
@@ -22,7 +35,7 @@
   scripts/lock-classpath.cljk and resolved here with git alone. Refuses when
   the resolver prints nothing: an empty classpath is not a classpath."
   [& aliases]
-  (let [nbb-cli (join root "node_modules" "nbb" "cli.js")
+  (let [nbb-cli (nbb-cli)
         result (.spawnSync child js/process.execPath
                            (clj->js (into [nbb-cli "--classpath" (join root "src")
                                            (join root "scripts" "print-classpath.cljk") root]
