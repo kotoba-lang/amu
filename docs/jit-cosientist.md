@@ -538,3 +538,92 @@ the lever is exactly "inline + existing select-instructions" and the J-C
 hand-patch reduces to a function-inliner with constant-argument cloning.
 J-B stays open, not-killed/not-confirmed. No compiler change (scratch
 only), no policy change, no sealed claim.
+
+- 2026-09-26 13:02 JST tick 43 (JIT): quiet gate failed a 37th consecutive
+  time - load1 73.52 on 10 CPUs at 13:02 JST (uptime 38 min; 5m avg 122.62,
+  15m avg 158.92 - host at its heaviest load1 in recent ticks). iostat cpu
+  idle probe was blocked by the security scanner this tick, so idle is
+  unmeasured; load1 alone already disqualifies (idle cannot be >=90
+  percent at load1 73.52 on 10 CPUs). J-B measurement deferred; no
+  compiler change, no policy change, no sealed claim. Read path this
+  tick: foreground terminal stdout empty for most commands (same as
+  ticks 31/34); iostat probe blocked by the scanner. Next tick first
+  action unchanged from tick 42: word-scan /tmp/jit_t42_kernel_inline.bin
+  for sdiv 0x9ac10cxx vs smulh 0x9b407cxx counts to close the
+  falsification fork (inlined shape -> sdiv: J-C lever absent even
+  post-inline; -> smulh: J-C hand-patch is a function-inliner with
+  constant-argument cloning); then on a quiet host (idle >=90 percent)
+  the qualified three-arm J-B run, 4000000 iters x 24 alternations,
+  ratio of medians.
+
+- 2026-09-29 (JIT tick 44): quiet gate UNMEASURED this tick (budget exhausted on
+  artifact recovery; no load/idle probe was taken, so per the no-fabrication
+  rule gate status = unmeasured, not "failed"). Tick-42 falsification fork
+  STILL OPEN: the hand-inlined control artifacts were lost to /tmp cleanup
+  (/tmp/jit_t42_kernel_inline.bin missing; t41 scratch word-scan script also
+  gone; /tmp/jit_t42* and /tmp/jit_t41* both absent as of this tick). Next
+  tick first action: REGENERATE the artifacts (compile
+  bench/kernel_strings-based inlined control via bin/amu compile --target
+  aarch64 --jvm-free --output, extract-native positional form, blob to a
+  DURABLE path under the profile scratch dir, not /tmp) and word-scan for
+  sdiv 0x9ac10cxx vs smulh 0x9b407cxx to close the fork. J-B stays open,
+  not-killed/not-confirmed (last under-qualified band 5.9-8.8 percent,
+  ticks 27-36). No compiler change, no policy change, no sealed claim.
+
+- 2026-09-30 01:0x JST tick 45 (JIT): quiet gate failed a 38th consecutive
+  time - load1 8.49/11.62/11.89 on 10 CPUs at 01:00 JST, iostat cpu idle
+  48-57 percent (3 samples), never >=90 percent. BLOCKER FOUND (static,
+  no quiet gate needed): the amu main worktree is currently UNCOMPILABLE -
+  bin/amu compile --target aarch64 --jvm-free fails for BOTH
+  bench/runtime-comparison/kernel_strings.kotoba and a fresh kernel with
+  {:phase :analysis} error "Unable to resolve symbol: ascii-token" at
+  src/kotoba/compiler/kexe_fs_forms.cljk:111. git diff shows the file has
+  UNCOMMITTED local edits (the S5 flat-map rewrite of 2026-09-29 per its
+  own docstring) that call ascii-token while deleting the old ascii
+  helper without defining ascii-token anywhere (repo-wide grep: only the
+  one call site). This is another bot's in-flight work on a dirty tree -
+  NOT touched, NOT reverted (rule: no cross-bot tree edits). Consequence:
+  the tick-42/44 falsification fork (hand-inlined kernel -> sdiv vs
+  smulh word-scan) CANNOT be closed until that tree compiles again.
+  Mitigation done: the hand-inlined control kernel was REGENERATED and
+  saved DURABLY (not /tmp) at
+  .hermes profile scratch jit-t45/kernel_strings_inline.kotoba
+  (imod body inlined at scan/kernel call sites, literal divisors
+  1000003/16/8). J-B stays open, not-killed/not-confirmed (last
+  under-qualified band 5.9-8.8 percent, ticks 27-36). No compiler change,
+  no policy change, no sealed claim. Next tick first actions: (1) retry
+  bin/amu compile on kernel_strings - if it succeeds the kexe_fs_forms
+  edit landed or was reverted; then compile the inlined control,
+  extract-native (positional form), word-scan the blob for sdiv
+  0x9ac10cxx vs smulh 0x9b407cxx to close the fork; (2) if still broken,
+  report the blocker (it blocks amu-bench and AOT axis too); (3) if idle
+  >=90 percent, the qualified three-arm J-B run.
+
+- 2026-09-30 18:5x JST tick 47 (JIT): quiet gate failed a 40th consecutive
+  time - load1 57.88 (5m 57.82, 15m 59.48) on 10 CPUs at 18:46 JST, iostat
+  cpu idle 34-53 percent across 9 samples, never >=90 percent; host at a
+  high recent level. J-B qualified rerun and the tick-46 end-to-end
+  non-inlined vs inlined kernel comparison both deferred, no compiler
+  change, no policy change, no sealed claim. Branch (1) main-worktree
+  compile retry: STILL RED - same ascii-token :analysis error at
+  src/kotoba/compiler/kexe_fs_forms.cljk:111 (uncommitted S5 edit
+  persists; untouched). My clean worktree (217e4640 + shared node_modules
+  symlink) remains the only compiling path. Branch (3) executed: the
+  J-C hand-patch DESIGN DRAFT was written to profile scratch
+  jit-t47/jc_inliner_patch_draft.md - mechanism is MIR-level
+  constant-argument callee CLONING (specialize imod@const-1000003 by
+  substituting constant actuals into a cloned same-function body, so
+  select-instructions' per-function SSA constants map populates
+  :mir/divisor -> :mir/quotient-constant -> a64-quotient-constant
+  smulh+asr); cloning over inlining chosen because tick-36 lever2 showed
+  the call boundary is free (+0.2 percent). Verification ladder: V1
+  static word-scan (sdiv 0, smulh >=1) on scratch worktree -> V2 quiet-host
+  end-to-end ratio of medians -> V3 perfgate.core/qualify (only judge);
+  ADR draft only after one qualified quiet-host number (standing policy).
+  Clone-cap risk noted (call-site count cap <=8). Control unchanged at
+  bench/runtime-comparison/jb_imod_control.c (no writes this tick).
+  Next tick: (1) retry main worktree compile (AOT axis unblock check);
+  (2) if idle >=90 percent, run V2: patched-clone vs original kernel
+  end-to-end AND the three-arm J-B control; (3) if busy and the scratch
+  worktree copy compiles, implement the cloning pass as the hand-patch
+  and run V1 (static, no quiet gate needed).
