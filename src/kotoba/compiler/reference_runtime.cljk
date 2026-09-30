@@ -1,12 +1,29 @@
 (ns kotoba.compiler.reference-runtime
   "Portable CLJ/CLJS reference application runtime. This is the executable
   language oracle; AOT/JIT backends qualify against the same KIR and vectors."
-  {:kotoba/export [capability-contracts instantiate max-providers runtime-format]}
-  (:require [kotoba.compiler.authority :as authority]
-            [kotoba.kir :as ir]))
+  {:kotoba/export #?(:kotoba [max-providers runtime-format]
+                     :default [capability-contracts instantiate max-providers runtime-format])}
+  (:require #?@(:kotoba []
+                :default [[kotoba.compiler.authority :as authority]
+                          [kotoba.kir :as ir]])))
 
-(def runtime-format :kotoba.reference-runtime/v1)
-(def max-providers 256)
+;; Kotoba: an exported constant is a function returning it. The runtime itself
+;; is the host route's alone -- it interprets KIR with open provider maps
+;; (`{:invoke f :scope f}`), arbitrary host closures and BigInt-keyed sets, none
+;; of which a Kotoba module can hold -- so the Kotoba surface is its format and
+;; its provider ceiling, which a caller compares against.
+#?(:kotoba
+   (defn runtime-format [] :keyword :kotoba.reference-runtime/v1)
+   :default
+   (def runtime-format :kotoba.reference-runtime/v1))
+#?(:kotoba
+   (defn max-providers [] :i64 256)
+   :default
+   (def max-providers 256))
+
+#?(:kotoba nil
+   :default
+   (do
 
 (defn- fail! [message data]
   (throw (ex-info message (assoc data :phase :reference-runtime))))
@@ -93,4 +110,4 @@
         :invoke (fn [function-name args]
                   (invoke* function-name args false))
         :invoke-authorized (fn [function-name args]
-                             (invoke* function-name args true))}))))
+                             (invoke* function-name args true))}))))))
