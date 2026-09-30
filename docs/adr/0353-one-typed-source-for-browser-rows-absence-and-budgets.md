@@ -104,10 +104,9 @@ Clojure it is today, the language gains:
    Refused by name: a missing field ("dissoc names field :z, which record
    :b/s does not have: a row shrinks only by fields it has"), a record left
    with no field, a computed field, a non-record receiver or merge operand.
-   Hosted (`wasm32-browser`) compiles these forms; both native targets refuse
-   them, as they refuse the same forms written by hand: `record-assoc` is not
-   natively qualified (exit 70) and the verifier does not see a record through
-   a `let` operand (exit 65) -- floor `:native-record-operations`.
+   Hosted (`wasm32-browser`) compiles these forms, and since floor
+   `:native-record-operations` both native targets do, hand-written forms
+   too (point 9).
    Floor `:row-unification` (gate
    `row-literal-join-and-loop-unification-test`, 2026-09-26): a keyword map
    literal written as a row argument is that row's record, the anonymous
@@ -125,9 +124,9 @@ Clojure it is today, the language gains:
    (`wasm32-browser`) compiles these forms. Natively, since floor
    `:native-record-boundary`, a join returning its record (`pick`), a loop
    helper and a `reduce` closure over a declared record compile for both
-   targets with the oracle verified; a projection of the join itself (`(:a
-   (if c m n))`) is refused by the verifier's record projection (exit 65):
-   floor `:native-record-operations`. Programs admitted before are
+   targets with the oracle verified, and since floor
+   `:native-record-operations` a projection of the join itself (`(:a (if c
+   m n))`) does too. Programs admitted before are
    unchanged -- every new row slot was a refusal.
    Floor `:literal-typing` (gate `record-vector-and-map-literal-retirement-test`,
    2026-09-26): a literal is typed by its items. kotoba-sema's `type-literals`
@@ -368,9 +367,32 @@ Clojure it is today, the language gains:
    `=` over records, a record as an `if` test, and a record as the entry's
    result on native (the typed-values gate, still exit 70 --
    `:native-handles`).
-   Floor `:native-record-operations`: `record-assoc` qualified natively, and
-   the verifier's record projection through a `let` or `if` operand -- the
-   row operations and the join's projection.
+   Floor `:native-record-operations` (gate `native-row-operations-test`,
+   landed 2026-10-01): the row operations and a join's projection compile
+   natively. Before, `assoc` of a present field elaborated to `record-assoc`,
+   which `kotoba.kir`'s native gate had no case for (the typed-values
+   refusal, exit 70); `assoc` extending, `dissoc`, `select-keys` and `merge`
+   elaborate to `(record-get T (let [receiver m] (record-new T ..)) :f)` and a
+   join projects `(record-get T (if c m n) :f)`, and kotoba-verifier's record
+   projection resolved neither operand ("runtime KIR record projection
+   rejected", exit 65), hand-written too. Now osaho qualifies `record-assoc`
+   with `record-get`'s checks (`ab22ed51`); kotoba-native lowers it on both
+   record routes -- a fresh pair chain re-projecting the other fields, or the
+   slot bundle with one register replaced (`ace48fd6`); and kotoba-verifier
+   sees a record through a `let` (a let naming a record parameter binds its
+   handle; a flattened let-bound record is still not forwarded), through an
+   `if` whose two arms denote one record, and through an update of the record
+   its operand is, else "runtime KIR record update rejected" (`1e1b69a6`).
+   Measured: the gate's twelve programs -- six row operations, a row
+   parameter, an update chain, the join's projection, two hand-written KIR
+   forms, and an update that never crosses a boundary -- answer under
+   `tools/kexe_loader.c` on aarch64 and x86_64 (Rosetta) what the reference
+   answers (9, 11, 5, 2, 11, 4, 16, 7, 12, 2, 2, 7), and `amu compile
+   --target x86_64-aiueos-kernel-v1` exits 0 with `:oracle {:status
+   :verified}` for each. Refused by name, on both targets: a coerced field, a
+   join over two records, a record as the entry's result (still the
+   typed-values refusal -- `:native-handles`), a record left with no field, a
+   record as an `if` test, a non-record merge operand.
    Floor `:native-handles`: a `[:list T]` of records, record and closure
    loop-helper slots (refused today by kotoba-sema before any target), no
    form lowering to `map-new` (both ADR 0352 reproductions compile natively
