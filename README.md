@@ -1125,8 +1125,9 @@ projection from zero or any forged handle traps. `list` is capped at 128 items
 and is expanded before structural and lowering budgets are checked, so surface
 syntax cannot hide unbounded backend work.
 
-Compilation has explicit structural budgets in addition to the 1 MiB source
-limit. Function count, common five-argument ABI, bindings, expression nodes, and
+Compilation has explicit structural budgets in addition to the 1 MiB
+per-definition source limit (8 MiB per project; ADR 0005, ADR 0353
+`:definition-admission`). Function count, common five-argument ABI, bindings, expression nodes, and
 the estimated `let`-elided lowering size are checked before backend emission;
 compact substitution chains cannot amplify into unbounded native code.
 
