@@ -1,7 +1,7 @@
 # Selfhost status and build order, 2026-09-30
 
-Reachable set (the 154 sources the compiler's entry points require): **56 pass `amu check` on the
-Kotoba route** (36%). Measured with the integrated classpath of every worktree, first refusal per file.
+Reachable set (the 154 sources the compiler's entry points require): **57 pass `amu check` on the
+Kotoba route** (37%). Measured with the integrated classpath of every worktree, first refusal per file.
 
 | stage | reachable files that pass `check` |
 |---|---:|
@@ -9,7 +9,8 @@ Kotoba route** (36%). Measured with the integrated classpath of every worktree, 
 | parallel per-file ports (wave 1) | 33 |
 | abort export, char, document heads, record-export import, set literals | 38 |
 | `:document` sequence heads and reduce/map/filter/remove over documents | 47 |
-| per-file port workflow (wave 4, 10 ports, 0 refuted by adversarial verification) | **56** |
+| per-file port workflow (wave 4, 10 ports, 0 refuted by adversarial verification) | 56 |
+| merge/select-keys/get-in/assoc-in/update/empty?/some/every?/concat/keep/into on documents; wave 5 (1 port; the harvest of per-file rewrites is exhausted) | **57** |
 
 What landed in the language (kotoba-sema / amu / osaho / native / verifier): `typed-list-conj`, an export may
 abort ([:result T E]), `contains?` on typed sets, `(char n)`, `assoc`/`dissoc`/`get`/`contains?`/`count`/`first`/
@@ -17,6 +18,11 @@ abort ([:result T E]), `contains?` on typed sets, `(char n)`, `assoc`/`dissoc`/`
 items, an import of an export returning a `[:ref]` record, descriptor bounds 64 deep / 512 nodes (ADR 0355), source
 bound 8 MiB (ADR 0356), reduce over a `[:list T]` parameter, native lowering of typed lists. A recursive typed
 `Form` (a record whose field is `[:list [:ref :form/r]]`) is unbounded in depth and count (kotoba-hir `form.cljk`).
+
+The last two passes say where the ceiling of per-file work is: wave 4 admitted 10 files, wave 5 admitted 1 after the
+remaining collection heads were added. The 97 files still blocked need a feature designed and built, not a rewrite:
+bytes and host crypto, mutable cells that can be parameters and return values, protocols with a closure ABI, and a
+`:kotoba/host-only` scope marker for the host glue. Each of those crosses the frontend, KIR, native and the module ABI.
 
 ## What is left, ranked by files unblocked (workflow synthesis of the 84 blocked)
 
