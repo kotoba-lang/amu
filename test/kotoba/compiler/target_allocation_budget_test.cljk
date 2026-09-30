@@ -38,7 +38,8 @@
             #?@(:cljs [["node:child_process" :as cp]
                        ["node:fs" :as fs]
                        ["node:os" :as os]
-                       ["node:path" :as path]])))
+                       ["node:path" :as path]
+                       ["node:url" :as url]])))
 
 (def ^:private point
   "(ns app (:schemas {:app/p [:record :app/p [[:x :i64] [:y :i64]]]}))\n")
@@ -117,9 +118,12 @@
                  file (path/join @scratch "m.wasm")]
              (fs/writeFileSync file bytes)
              (node! @scratch "w.mjs"
-                    (str "import {instantiateKotoba} from '" (path/resolve "runtime/browser-host.mjs") "';"
-                         "import fs from 'node:fs';"
-                         "try{const h=await instantiateKotoba(fs.readFileSync('" file "'));"
+                    ;; A file: URL and a JSON string, so a Windows path's
+                    ;; backslashes are neither escapes nor a bad specifier.
+                    (str "import {instantiateKotoba} from "
+                         (js/JSON.stringify (.-href (url/pathToFileURL (path/resolve "runtime/browser-host.mjs"))))
+                         ";import fs from 'node:fs';"
+                         "try{const h=await instantiateKotoba(fs.readFileSync(" (js/JSON.stringify file) "));"
                          "console.log(String(h.instance.exports.main()))}"
                          "catch(e){console.log('THREW:'+e.message)}")))
      :clj (throw (ex-info "wasm32 is run through node on the kbb route" {:fuel fuel}))))
