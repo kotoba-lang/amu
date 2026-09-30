@@ -14,6 +14,17 @@
             #?(:cljs [kotoba.compiler.nbb.host.io :as io])
             #?(:cljs [kotoba.compiler.nbb.host.entry :as host-entry])))
 
+#?(:kotoba
+   ;; Kotoba: `amu test` is the host route's (see `kotoba.compiler.test-cli`).
+   ;; The entry states the refusal itself -- an entry cannot abort -- to
+   ;; stderr, with the usage status (64).
+   (defn main [] :i64
+     (do (io/write-error "error: amu test is not available on the Kotoba route\n")
+         64))
+   :default nil)
+
+#?(:kotoba nil
+   :default
 (defn main
   "Run `amu test` over ARGS, print its report, and answer the exit status."
   [args]
@@ -31,7 +42,7 @@
               (let [{:keys [out err]} (test-cli/human-lines report)]
                 (doseq [line out] (io/write (str line "\n")))
                 (doseq [line err] (io/write-error (str line "\n")))))
-            (if (:ok report) 0 1)))))))
+            (if (:ok report) 0 1))))))))
 
 #?(:cljs
    (let [status (main (support/command-line-args))]

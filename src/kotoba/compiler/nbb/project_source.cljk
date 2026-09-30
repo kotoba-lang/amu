@@ -17,15 +17,64 @@
   namespace deliberately keeps the frontend out of its load closure so
   `output-set-cli` does not pay 15.8s to verify a signature. Both drivers that
   require this one already load `kotoba.sema`."
-  {:kotoba/export [analyze-opts attribute-error inputs-record module-graph resolve-packages! resolve-source! source-roots]}
-  (:require [kotoba.artifact.core :as artifact]
-            [kotoba.compiler.nbb.cli-support :as support]
-            [kotoba.compiler.nbb.io :as io]
-            [kotoba.compiler.module-lock :as module-lock]
-            [kotoba.compiler.nbb.package-lock :as package-lock]
-            [kotoba.compiler.project-files :as project-files]
-            [kotoba.compiler.project :as project]))
+  {:kotoba/export #?(:kotoba [resolve-single-source! source-roots]
+                     :default [analyze-opts attribute-error inputs-record module-graph resolve-packages! resolve-source! source-roots])}
+  (:require #?@(:kotoba [[kotoba.compiler.nbb.cli-support :as support]
+                         [kotoba.compiler.nbb.io :as io]]
+                :default [[kotoba.artifact.core :as artifact]
+                          [kotoba.compiler.nbb.cli-support :as support]
+                          [kotoba.compiler.nbb.io :as io]
+                          [kotoba.compiler.module-lock :as module-lock]
+                          [kotoba.compiler.nbb.package-lock :as package-lock]
+                          [kotoba.compiler.project-files :as project-files]
+                          [kotoba.compiler.project :as project]])))
 
+;; Kotoba: the surface is the single-file compile. A linked graph, a module
+;; lock and a package lock all return open maps (`{:sources :source-map
+;; :module-order :project ...}`) built by `project/link-source`, which is not
+;; on this route, so each is refused by name instead of read and ignored (the
+;; failure that motivated the host namespace).
+#?(:kotoba
+   (defn source-roots [args [:list :string]] [:list :string]
+     (support/options args "--source-path"))
+   :default nil)
+
+#?(:kotoba
+   (defn- option-is-set? [args [:list :string] flag :string] :i64
+     (let [value (support/option args flag)]
+       (if (option-some?-of [:option :string] value) 1 0)))
+   :default nil)
+
+#?(:kotoba
+   ;; Answers the text of the one source file, or an error document. A call
+   ;; into another module answers a `[:result T :document]` value, so the
+   ;; result is threaded by hand rather than by the abort elaboration.
+   (defn resolve-single-source! [args [:list :string]] [:result :string :document]
+     (if (< (vector-count args) 2)
+       (result-err-of [:result :string :document] (ex-info "missing source input" {:phase :usage}))
+       (if (> (vector-count (source-roots args)) 0)
+         (result-err-of [:result :string :document]
+                        (ex-info "--source-path (a linked project) is not available on the Kotoba route"
+                                 {:phase :usage}))
+         (if (= (option-is-set? args "--module-lock") 1)
+           (result-err-of [:result :string :document]
+                          (ex-info "--module-lock is not available on the Kotoba route"
+                                   {:phase :usage}))
+           (if (= (option-is-set? args "--package-lock") 1)
+             (result-err-of [:result :string :document]
+                            (ex-info "--package-lock is not available on the Kotoba route"
+                                     {:phase :usage}))
+             (result-match-of [:result :string :document]
+                              (support/source! (typed-list-nth [:list :string] args 1))
+                              input
+                              (io/read-text-file input)
+                              failure
+                              (result-err-of [:result :string :document] failure)))))))
+   :default nil)
+
+#?(:kotoba nil
+   :default
+   (do
 (defn analyze-opts
   "Frontend options for a compile whose source may have been linked.
 
@@ -222,4 +271,4 @@
                  :kotoba.module/source-digests module-digests}]
       {:graph graph
        :digest (artifact/sha256 graph)
-       :module-digests module-digests})))
+       :module-digests module-digests})))))

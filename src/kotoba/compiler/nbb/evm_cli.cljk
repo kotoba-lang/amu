@@ -20,23 +20,38 @@
   runtimes. If the backend's own manifest digest and the shared seal ever
   disagree about the creation bytes, that is a contradiction, not a richer
   description -- hence the cross-check below, which fails the compile."
-  {:kotoba/export [targets]}
-  (:require [json.data-json :as json]
-            [kotoba.compiler.text-bytes :as text-bytes]
-            [kotoba.artifact.core :as artifact]
-            [kotoba.compiler.backend.evm :as evm]
-            [kotoba.compiler.capability-names :as cap-names]
-            [kotoba.compiler.effect-row :as effect-row]
-            [kotoba.compiler.nbb.cli-support :as support]
-            [kotoba.compiler.nbb.io :as io]
-            [kotoba.compiler.nbb.output-set :as output-set]
-            [kotoba.compiler.nbb.project-source :as project-source]
-            [kotoba.compiler.provenance :as provenance]
-            [kotoba.kir :as ir]
-            [kotoba.kir.compatibility :as compatibility]
-            [kotoba.kir.target :as target-profile]
-            [kotoba.sema :as sema]))
+  {:kotoba/export #?(:kotoba [main] :default [targets])}
+  (:require #?@(:kotoba []
+                :default [[json.data-json :as json]
+                          [kotoba.compiler.text-bytes :as text-bytes]
+                          [kotoba.artifact.core :as artifact]
+                          [kotoba.compiler.backend.evm :as evm]
+                          [kotoba.compiler.capability-names :as cap-names]
+                          [kotoba.compiler.effect-row :as effect-row]
+                          [kotoba.compiler.nbb.cli-support :as support]
+                          [kotoba.compiler.nbb.io :as io]
+                          [kotoba.compiler.nbb.output-set :as output-set]
+                          [kotoba.compiler.nbb.project-source :as project-source]
+                          [kotoba.compiler.provenance :as provenance]
+                          [kotoba.kir :as ir]
+                          [kotoba.kir.compatibility :as compatibility]
+                          [kotoba.kir.target :as target-profile]
+                          [kotoba.sema :as sema]])))
 
+;; Kotoba: the EVM compile drives the frontend, the KIR lowering, the EVM
+;; backend and the provenance seal over open maps, and writes a five-file
+;; output set. None of those modules is on this route yet, so the entry states
+;; the refusal itself -- an entry cannot abort -- to stderr, with the usage
+;; status (64).
+#?(:kotoba
+   (defn main [] :i64
+     (do (io/write-error "error: the nbb EVM compile is not available on the Kotoba route\n")
+         64))
+   :default nil)
+
+#?(:kotoba nil
+   :default
+   (do
 (def targets
   {"evm" :evm256-kotoba-v1
    "evm256" :evm256-kotoba-v1
@@ -154,4 +169,4 @@
 ;; file was actually named as the entrypoint -- the same guard every other
 ;; nbb entrypoint draws by checking for a subcommand first.
 (when (seq (support/command-line-args))
-  (support/execute! run!))
+  (support/execute! run!))))

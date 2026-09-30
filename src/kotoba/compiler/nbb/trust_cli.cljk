@@ -8,7 +8,7 @@
   and the exit code out -- through the same `support/execute!` contract the
   other nbb entrypoints use, so a refusal here reports the same
   `:kotoba.cli-error/v1` shape and the same exit code the JVM answered."
-  {:kotoba/export []}
+  {:kotoba/export #?(:kotoba [main] :default [])}
   (:require [kotoba.artifact.core :as artifact]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.trust-cli :as trust-cli]))
@@ -17,4 +17,14 @@
 ;; a bigint on this host, and `pr-str` would print it as `#object[BigInt 0]`
 ;; (measured on the first `verify-signed` this route ever ran). The writer's
 ;; convention is one plain integer token, the same the JVM prints.
-(support/execute! (comp artifact/edn-safe trust-cli/dispatch!))
+#?(:kotoba
+   ;; Kotoba: `kotoba.compiler.trust-cli` answers the command names and a
+   ;; named refusal on this route, and an aborting call cannot sit inside the
+   ;; fn literal `support/execute!` takes, and an entry cannot abort, so the
+   ;; entry states the refusal itself: to stderr, with the usage status (64)
+   ;; `support/execute!` gives a `:phase :usage` refusal.
+   (defn main [] :i64
+     (do (io/write-error "error: the trust-plane commands are not available on the Kotoba route\n")
+         64))
+   :default
+   (support/execute! (comp artifact/edn-safe trust-cli/dispatch!)))
