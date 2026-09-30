@@ -129,12 +129,21 @@
 
 (def ^:private windows? #?(:cljs (sys/windows?) :default false))
 
-(defn- configured-integer [name default maximum]
-  (let [text (env/read name)
-        value (when (seq text) (js/Number text))]
-    (if (and value (js/Number.isSafeInteger value) (<= 1 value maximum))
-      value
-      default)))
+(defn- configured-integer [#?@(:kotoba [name :string default :i64 maximum :i64] :default [name default maximum])]
+  #?@(:kotoba [:i64] :default [])
+  (let [text (env/read name)]
+    ;; Kotoba: an unset or non-decimal setting is the default, as nbb's
+    ;; `js/Number.isSafeInteger` check makes it; `decimal?` admits 1-18 digits
+    ;; with an optional sign, which are all safe integers.
+    #?(:kotoba (if (and (decimal-text/decimal? text)
+                        (<= 1 (decimal-text/parse text))
+                        (<= (decimal-text/parse text) maximum))
+                 (decimal-text/parse text)
+                 default)
+       :default (let [value (when (seq text) (js/Number text))]
+                  (if (and value (js/Number.isSafeInteger value) (<= 1 value maximum))
+                    value
+                    default)))))
 
 ;; ---------------------------------------------------------------------------
 ;; wire-35 answers
@@ -220,7 +229,11 @@
     (when (and (some? i) (< (inc i) (count argv)))
       (let [cp (nth argv (inc i))
             delimiter #?(:cljs (sys/path-delimiter) :default ":")]
-        (vec (remove #(= "" %) (text/split cp (re-pattern (text/re-quote delimiter)))))))))
+        (vec (remove #(= "" %)
+                         ;; Kotoba: a regex literal is refused by name, and the
+                         ;; delimiter is a plain string here, so it is the separator.
+                         #?(:kotoba (text/split cp delimiter)
+                            :default (text/split cp (re-pattern (text/re-quote delimiter))))))))))
 
 (defn- compute-toolchain-digest
   ;; v2 (2026-09-25): the digest of a text that names every file by its own
