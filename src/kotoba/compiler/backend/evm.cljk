@@ -8,23 +8,28 @@
   deploys a conventional EVM runtime with a selector dispatcher, ABI-word
   return, and revert-on-unknown-selector behavior."
   {:kotoba/export [abi emit max-expression-depth max-expression-nodes selector-main target-name verify-artifact!]}
-  (:require [kotoba.artifact.core :as artifact]
+  (:require #?@(:kotoba [[kotoba.form :as form]
+                         [kotoba.bytes :as kbytes]
+                         [kotoba.verifier.seal :as seal]]
+                :default [[kotoba.artifact.core :as artifact]])
             [kotoba.kir.target :as target]
-            #?@(:cljs [[kotoba.kir.cljs-i64 :as i64]])))
+            #?@(:cljs [[kotoba.kir.cljs-i64 :as i64]]))
+  #?(:kotoba (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                                  [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]})))
 
-(def target-name :evm256-kotoba-v1)
-(def selector-main [0xdf 0xfe 0xad 0xd0])
-(def max-expression-nodes 16)
-(def max-expression-depth 12)
+#?(:kotoba nil :default (def target-name :evm256-kotoba-v1))
+#?(:kotoba nil :default (def selector-main [0xdf 0xfe 0xad 0xd0]))
+#?(:kotoba nil :default (def max-expression-nodes 16))
+#?(:kotoba nil :default (def max-expression-depth 12))
 
-(def ^:private exact-artifact-keys
+#?(:kotoba nil :default (def ^:private exact-artifact-keys
   #{:format :target :target-profile :abi :selector :kir :kir-sha256
     :runtime-bytes :creation-bytes :runtime-sha256 :creation-sha256
-    :limits})
+    :limits}))
 
-(defn- reject! [message data]
+#?(:kotoba nil :default (defn- reject! [message data]
   (throw (ex-info message (merge {:phase :evm-lowering :target target-name}
-                                 data))))
+                                 data)))))
 
 ;; This file is .cljc, so it claims both runtimes. Until 2026-08-25 the two
 ;; functions below were written only for the JVM and the claim was false in
@@ -48,13 +53,13 @@
 ;; Both branches are held to byte-for-byte identity by
 ;; `test/nbb/run.cljk`'s evm case against the JVM's pinned bytes.
 
-(defn- i64? [value]
+#?(:kotoba nil :default (defn- i64? [value]
   #?(:clj  (and (integer? value)
                 (<= Long/MIN_VALUE value Long/MAX_VALUE))
      :cljs (and (or (i64/bigint-value? value) (integer? value))
-                (i64/in-i64-range? (i64/->bigint value)))))
+                (i64/in-i64-range? (i64/->bigint value))))))
 
-(defn- i64-bytes [value]
+#?(:kotoba nil :default (defn- i64-bytes [value]
   #?(:clj  (let [word (long value)]
              (mapv (fn [shift]
                      (bit-and 0xff (unsigned-bit-shift-right word shift)))
@@ -65,9 +70,9 @@
      :cljs (let [word (i64/wrap-i64 (i64/->bigint value))]
              (mapv (fn [shift]
                      (js/Number (js/BigInt.asUintN 8 (i64/ashr word shift))))
-                   (range 56 -1 -8)))))
+                   (range 56 -1 -8))))))
 
-(defn- expression-shape
+#?(:kotoba nil :default (defn- expression-shape
   ([form] (expression-shape form 0))
   ([form depth]
    (when (> depth max-expression-depth)
@@ -89,9 +94,9 @@
 
      :else
      (reject! "unsupported checked-KIR expression for the EVM target"
-              {:reason :unsupported-expression :form form}))))
+              {:reason :unsupported-expression :form form})))))
 
-(defn- emit-expr [form]
+#?(:kotoba nil :default (defn- emit-expr [form]
   (if (i64? form)
     (into [0x67] (i64-bytes form))                 ; PUSH8
     (let [[op left right] form]
@@ -100,9 +105,9 @@
                    [(case op + 0x01 * 0x02)        ; ADD / MUL
                     0x67]                          ; PUSH8 mask
                    [0xff 0xff 0xff 0xff 0xff 0xff 0xff 0xff]
-                   [0x16])))))                     ; AND = i64 wrapping
+                   [0x16]))))))                     ; AND = i64 wrapping
 
-(defn- admitted-main [kir]
+#?(:kotoba nil :default (defn- admitted-main [kir]
   (let [functions (:functions kir)
         function (first functions)]
     (when-not (contains? #{:kotoba.kir/v3 :kotoba.kir/v4} (:format kir))
@@ -120,9 +125,9 @@
       (reject! "EVM v1 requires one pure zero-arity main returning i64"
                {:reason :entry-contract}))
     (expression-shape (:body function))
-    function))
+    function)))
 
-(defn- runtime-bytes [body]
+#?(:kotoba nil :default (defn- runtime-bytes [body]
   ;; 0x14 is the byte offset of JUMPDEST. Unknown/short selectors revert.
   (let [dispatcher [0x60 0x00 0x35                   ; PUSH1 0; CALLDATALOAD
                     0x60 0xe0 0x1c                   ; PUSH1 224; SHR
@@ -137,23 +142,23 @@
     (when (> (count runtime) 255)
       (reject! "EVM runtime exceeds one-byte creation envelope"
                {:reason :runtime-bytes :limit 255 :actual (count runtime)}))
-    runtime))
+    runtime)))
 
-(defn- creation-bytes [runtime]
+#?(:kotoba nil :default (defn- creation-bytes [runtime]
   ;; The creation prefix is exactly 12 bytes and returns the copied runtime.
   (let [size (count runtime)]
     (vec (concat [0x60 size 0x60 0x0c 0x60 0x00 0x39
                   0x60 size 0x60 0x00 0xf3]
-                 runtime))))
+                 runtime)))))
 
-(def abi
+#?(:kotoba nil :default (def abi
   [{:type "function"
     :name "main"
     :stateMutability "pure"
     :inputs []
-    :outputs [{:name "" :type "int64"}]}])
+    :outputs [{:name "" :type "int64"}]}]))
 
-(defn emit
+#?(:kotoba nil :default (defn emit
   "Lower an already checked KIR module to a deployable EVM artifact."
   [kir]
   (let [function (admitted-main kir)
@@ -174,9 +179,9 @@
      :limits {:expression-nodes max-expression-nodes
               :expression-depth max-expression-depth
               :runtime-bytes 255
-              :ambient-precompiles false}}))
+              :ambient-precompiles false}})))
 
-(defn verify-artifact!
+#?(:kotoba nil :default (defn verify-artifact!
   "Independently re-emit the closed KIR and require byte-for-byte identity."
   [candidate]
   (when-not (= exact-artifact-keys (set (keys candidate)))
@@ -188,4 +193,244 @@
     (when-not (= expected candidate)
       (reject! "EVM artifact does not match checked-KIR re-emission"
                {:reason :artifact-mismatch})))
-  candidate)
+  candidate))
+
+;; ---------------------------------------------------------------------------
+;; THE KOTOBA READING. Same lowering, same bytes, over Forms: the KIR and the
+;; artifact are `:form/r` (kotoba.form), expressions are its ints and
+;; `(+ a b)` / `(* a b)` lists, byte vectors are `:vector-i64`. The constants
+;; are functions (an export is a function). The digests are the canonical-text
+;; SHA-256 of kotoba.verifier.seal, the text the hosts' `artifact/sha256`
+;; hashes. A rejected KIR/artifact TRAPS (`assert`): an export cannot abort with
+;; a value a caller sees (host: ex-info {:phase :evm-lowering ..}).
+
+#?(:kotoba
+   (defn target-name [] :keyword :evm256-kotoba-v1))
+
+#?(:kotoba
+   (defn selector-main [] :vector-i64
+     (vector-conj (vector-conj (vector-conj (vector-conj (vector-i64) 223) 254) 173) 208)))
+
+#?(:kotoba
+   (defn max-expression-nodes [] :i64 16))
+
+#?(:kotoba
+   (defn max-expression-depth [] :i64 12))
+
+#?(:kotoba
+   (defn- trap-form [] [:ref :form/r]
+     (let [refused (assert (= 1 0))] (form/nil-form))))
+
+#?(:kotoba
+   (defn- fget [m [:ref :form/r] k :keyword] [:ref :form/r]
+     (form/form-get m (form/keyword-form k))))
+
+#?(:kotoba
+   (defn- has? [m [:ref :form/r] k :keyword] :bool
+     (form/form-has? m (form/keyword-form k))))
+
+#?(:kotoba
+   (defn- put [m [:ref :form/r] k :keyword v [:ref :form/r]] [:ref :form/r]
+     (form/assoc-form m (form/keyword-form k) v)))
+
+#?(:kotoba
+   (defn- empty-map [] [:ref :form/r] (form/form-map (form/no-forms))))
+
+#?(:kotoba
+   (defn- append-from [out :vector-i64 b :vector-i64 i :i64] :vector-i64
+     (if (>= i (vector-count b))
+       out
+       (append-from (vector-conj out (vector-at b i)) b (+ i 1)))))
+
+#?(:kotoba
+   (defn- append-bytes [a :vector-i64 b :vector-i64] :vector-i64
+     (append-from a b 0)))
+
+;; the 8 big-endian bytes of the word, shifts 56 down to 0
+#?(:kotoba
+   (defn- word-bytes [word :i64 shift :i64 out :vector-i64] :vector-i64
+     (if (< shift 0)
+       out
+       (word-bytes word (- shift 8) (vector-conj out (bit-and 255 (u64-shift-right word shift)))))))
+
+;; number of nodes of an admitted expression, or -1 when it is not admitted
+;; (depth, shape or size)
+#?(:kotoba
+   (defn- expr-nodes-total [left :i64 right :i64] :i64
+     (if (< right 0)
+       -1
+       (if (> (+ 1 (+ left right)) 16) -1 (+ 1 (+ left right))))))
+
+#?(:kotoba
+   (defn- expr-nodes [f [:ref :form/r] depth :i64] :i64
+     (if (> depth 12)
+       -1
+       (if (form/is-int? f)
+         1
+         (if (form/is-seq? f)
+           (if (= 3 (form/count-of f))
+             (if (form/is-symbol? (form/nth-of f 0))
+               (if (or (string=? "+" (form/symbol-value (form/nth-of f 0)))
+                       (string=? "*" (form/symbol-value (form/nth-of f 0))))
+                 (let [left (expr-nodes (form/nth-of f 1) (+ depth 1))]
+                   (if (< left 0)
+                     -1
+                     (expr-nodes-total left (expr-nodes (form/nth-of f 2) (+ depth 1)))))
+                 -1)
+               -1)
+             -1)
+           -1)))))
+
+#?(:kotoba
+   (defn- emit-expr [f [:ref :form/r]] :vector-i64
+     (if (form/is-int? f)
+       (word-bytes (form/int-value f) 56 (vector-conj (vector-i64) 103))
+       (append-bytes
+        (append-bytes
+         (append-bytes (emit-expr (form/nth-of f 1)) (emit-expr (form/nth-of f 2)))
+         (vector-conj (vector-conj (vector-i64)
+                                   (if (string=? "+" (form/symbol-value (form/nth-of f 0))) 1 2))
+                      103))
+        (vector-conj (vector-conj (vector-conj (vector-conj (vector-conj (vector-conj (vector-conj (vector-conj
+                       (vector-conj (vector-i64) 255) 255) 255) 255) 255) 255) 255) 255) 22)))))
+
+#?(:kotoba
+   (defn- no-or-empty? [f [:ref :form/r]] :bool
+     (if (form/is-nil? f) true (= 0 (form/count-of f)))))
+
+;; the single admitted `main`: a pure zero-arity function returning :i64
+#?(:kotoba
+   (defn- admitted? [kir [:ref :form/r]] :bool
+     (let [functions (fget kir :functions)
+           function (form/first-of functions)]
+       (if (or (form/eq (fget kir :format) (form/keyword-form :kotoba.kir/v3))
+               (form/eq (fget kir :format) (form/keyword-form :kotoba.kir/v4)))
+         (if (form/eq (fget kir :entry) (form/symbol-form "main"))
+           (if (form/eq (fget kir :exports) (form/form-vec (form/one-form (form/symbol-form "main"))))
+             (if (= 1 (form/count-of functions))
+               (if (form/eq (fget function :name) (form/symbol-form "main"))
+                 (if (no-or-empty? (fget function :params))
+                   (if (no-or-empty? (fget function :param-types))
+                     (if (form/eq (fget function :result) (form/keyword-form :i64))
+                       (if (no-or-empty? (fget kir :effects))
+                         (if (no-or-empty? (fget function :effects))
+                           (>= (expr-nodes (fget function :body) 0) 0)
+                           false)
+                         false)
+                       false)
+                     false)
+                   false)
+                 false)
+               false)
+             false)
+           false)
+         false))))
+
+;; The dispatcher and result are fixed byte strings of the host: PUSH1 0
+;; CALLDATALOAD PUSH1 224 SHR PUSH4 selector EQ PUSH1 body JUMPI REVERT(0,0)
+;; JUMPDEST, then SIGNEXTEND byte 7, MSTORE(0, value), RETURN(0, 32).
+#?(:kotoba
+   (defn- hex-bytes [text :string] :vector-i64
+     (option-value-of [:option :vector-i64] (kbytes/unhex text) (vector-i64))))
+
+#?(:kotoba
+   (defn- runtime-bytes [body [:ref :form/r]] :vector-i64
+     (append-bytes
+      (append-bytes (hex-bytes "60003560e01c63dffeadd01460145760006000fd5b") (emit-expr body))
+      (hex-bytes "60070b60005260206000f3"))))
+
+#?(:kotoba
+   (defn- creation-bytes [runtime :vector-i64] :vector-i64
+     (let [size (vector-count runtime)]
+       (append-bytes
+        (vector-conj (vector-conj (vector-conj (vector-conj (vector-conj (vector-conj (vector-conj (vector-conj
+         (vector-conj (vector-conj (vector-conj (vector-conj (vector-i64)
+          96) size) 96) 12) 96) 0) 57) 96) size) 96) 0) 243)
+        runtime))))
+
+#?(:kotoba
+   (defn- ints-form [v :vector-i64 i :i64 acc [:list [:ref :form/r]]] [:list [:ref :form/r]]
+     (if (>= i (vector-count v))
+       acc
+       (ints-form v (+ i 1) (form/append-form acc (form/int-form (vector-at v i)))))))
+
+#?(:kotoba
+   (defn- bytes-form-of [v :vector-i64] [:ref :form/r]
+     (form/form-vec (ints-form v 0 (form/no-forms)))))
+
+#?(:kotoba
+   (defn abi [] [:ref :form/r]
+     (form/edn-form "[{:type \"function\" :name \"main\" :stateMutability \"pure\" :inputs [] :outputs [{:name \"\" :type \"int64\"}]}]")))
+
+#?(:kotoba
+   (defn- limits [] [:ref :form/r]
+     (put (put (put (put (empty-map) :expression-nodes (form/int-form 16))
+                    :expression-depth (form/int-form 12))
+               :runtime-bytes (form/int-form 255))
+          :ambient-precompiles (form/bool-form false))))
+
+#?(:kotoba
+   (defn- emit-admitted [kir [:ref :form/r]] [:ref :form/r]
+     (let [body (fget (form/first-of (fget kir :functions)) :body)
+           runtime (runtime-bytes body)]
+       (if (> (vector-count runtime) 255)
+         (trap-form)
+         (let [creation (creation-bytes runtime)
+               runtime-form (bytes-form-of runtime)
+               creation-form (bytes-form-of creation)]
+           (put (put (put (put (put (put (put (put (put (put (put (empty-map)
+              :format (form/keyword-form :evm/v1))
+              :target (form/keyword-form (target-name)))
+              :target-profile (form/from-document (target/profile (target-name))))
+              :abi (abi))
+              :selector (bytes-form-of (selector-main)))
+              :kir kir)
+              :kir-sha256 (form/string-form (seal/sha256-form kir)))
+              :runtime-bytes runtime-form)
+              :creation-bytes creation-form)
+              :runtime-sha256 (form/string-form (seal/sha256-form runtime-form)))
+              :creation-sha256 (form/string-form (seal/sha256-form creation-form))))))))
+
+#?(:kotoba
+   (defn emit [kir [:ref :form/r]] [:ref :form/r]
+     (if (admitted? kir)
+       (put (emit-admitted kir) :limits (limits))
+       (trap-form))))
+
+#?(:kotoba
+   (defn- exact-keys? [candidate [:ref :form/r]] :bool
+     (if (form/is-map? candidate)
+       (if (= 24 (form/count-of candidate))
+         (if (has? candidate :format)
+           (if (has? candidate :target)
+             (if (has? candidate :target-profile)
+               (if (has? candidate :abi)
+                 (if (has? candidate :selector)
+                   (if (has? candidate :kir)
+                     (if (has? candidate :kir-sha256)
+                       (if (has? candidate :runtime-bytes)
+                         (if (has? candidate :creation-bytes)
+                           (if (has? candidate :runtime-sha256)
+                             (if (has? candidate :creation-sha256)
+                               (has? candidate :limits)
+                               false)
+                             false)
+                           false)
+                         false)
+                       false)
+                     false)
+                   false)
+                 false)
+               false)
+             false)
+           false)
+         false)
+       false)))
+
+#?(:kotoba
+   (defn verify-artifact! [candidate [:ref :form/r]] [:ref :form/r]
+     (if (exact-keys? candidate)
+       (if (form/eq (emit (fget candidate :kir)) candidate)
+         candidate
+         (trap-form))
+       (trap-form))))
