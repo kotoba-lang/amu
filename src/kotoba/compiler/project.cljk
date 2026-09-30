@@ -924,8 +924,11 @@
     (str (str/join "\n" (map #(pr-str #?(:clj % :cljs (readable-integers %))) forms))
          "\n")))
 
+;; `symbol?` first: on nbb an integer leaf can be a js BigInt, and looking one
+;; up in a set hashes it, which throws (`Cannot create property 'closure_uid_…'
+;; on bigint`). Measured 2026-09-30: a let binding's `1` crashed the link.
 (defn- definition-symbols [form names]
-  (into #{} (filter names) (tree-seq coll? seq form)))
+  (into #{} (filter #(and (symbol? %) (contains? names %))) (tree-seq coll? seq form)))
 
 (defn- admit-definition-closures!
   "Bound each definition by the transitive definition graph it can call.

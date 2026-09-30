@@ -312,6 +312,33 @@ Clojure it is today, the language gains:
    bytes to per-definition size and closure count; a module is its definitions
    (as ADR 0300 already identifies it), so cssom's 1 MB file is admitted
    definition by definition.
+   Landed (floor `:definition-admission`, gate
+   `admission-by-definition-graph-test`; mechanism amu `c51059d9` with
+   kotoba-sema `max-definition-source-bytes`): kotoba-sema refuses one
+   top-level form over 1 MiB (`top-level definition exceeds admission
+   limit`) and a whole input over 8 MiB; the linker refuses one linked
+   definition over 1 MiB (`linked definition source exceeds byte limit`) and
+   a definition whose dependency closure is over 1,024 definitions
+   (`definition dependency closure exceeds limit`); the corpus stays capped
+   at 8 MiB (`project source bytes exceed limit`). Measured 2026-09-30 on
+   cssom `9224d359`: `cssom/layout.cljk` is 1,083,132 bytes in 373
+   top-level forms, the largest 24,303 bytes, the largest closure 311 of 311
+   `defn`s (the linker's symbol scan) -- a root requiring `cssom.layout`
+   (with kotoba-lang/text and dom-gpu on the source path) now reads past
+   size and stops at a semantic wall instead (the first:
+   `qualified call is not an admitted exported import`, in
+   `kotoba.lang.text`). The gate's fixture
+   is the same shape at 1,125,902 bytes: before the bound moved it was
+   refused whole (`source exceeds 1 MiB admission limit`); after, its
+   linked source is over 1 MiB, it analyses and answers 7,680 on the KIR
+   reference, and it compiles for `x86_64-aiueos-kernel-v1` and
+   `aarch64-macos` with the oracle verified. The gate also found the closure
+   scan crashing on nbb when a body leaf is a js BigInt (a let binding's
+   `1`); the scan now tests `symbol?` before the set lookup. Still bounded
+   at 1 MiB: the ROOT file named on the command line, which the CLI reads
+   through `bounded-edn/max-source-bytes` before any parsing (the
+   conformance suite asserts that refusal); a large module is admitted as
+   a dependency on `--source-path`.
 9. **Native handles at loop boundaries.** kotoba-native qualifies record,
    vector and closure handles as loop-helper boundary types and retires
    `map-new`, so every form above compiles for both native targets.
