@@ -15,7 +15,7 @@
   is for the JVM temporary) and sets `:executable?` as 0700 on the descriptor
   before a byte lands. Owner-only Windows ACLs are a `:clj`-only claim; the
   Node branch names that rather than pretending a `chmod` is one."
-  {:kotoba/export [temp-file! write-bytes! write-edn! write-text!]}
+  {:kotoba/export #?(:kotoba [write-bytes! write-text!] :default [temp-file! write-bytes! write-edn! write-text!])}
   #?(:clj (:import [java.nio ByteBuffer]
                    [java.nio.channels FileChannel]
                    [java.nio.file CopyOption Files OpenOption Path Paths StandardCopyOption StandardOpenOption]
@@ -26,9 +26,15 @@
                      [kotoba.compiler.nbb.io :as nbb-io]
                      ["node:fs" :as fs]
                      ["node:os" :as os]
-                     ["node:path" :as path]))
+                     ["node:path" :as path])
+     ;; Kotoba: the Node file-system half is `nbb.io`'s own Kotoba branch
+     ;; (fs/app-data capabilities); no `node:*` module is named.
+     :kotoba (:require [kotoba.compiler.nbb.io :as nbb-io]))
   (:require [kotoba.bytes :as kbytes]))
 
+#?(:kotoba
+nil
+   :default
 (defn temp-file!
   "Create a temporary file under the host's temporary directory and return
   it -- a `java.io.File` registered for deletion on JVM exit on `:clj`, a
@@ -61,7 +67,7 @@
                                                    (.-O_EXCL constants)
                                                    (.-O_WRONLY constants)) 384)]
                  (.closeSync fs fd)
-                 file))))
+                 file)))))
 
 (defn- reject! [message data cause]
   (throw (ex-info message (merge {:phase :output} data) cause)))
@@ -146,6 +152,11 @@
      (nbb-io/write-bytes! output-path bytes (if executable? 448 nil))
      (.resolve path output-path)))
 
+#?(:kotoba
+   (defn write-bytes! [path :string bytes :bytes executable :i64] :string
+     (do (nbb-io/write-bytes! path bytes (if (= 0 executable) 0 448))
+         path))
+   :default
 (defn write-bytes!
   ([path bytes] (write-bytes! path bytes {}))
   ([path bytes {:keys [private? executable?] :or {private? false executable? false} :as options}]
@@ -191,14 +202,16 @@
       (do
         (when-not (byte-source? bytes)
           (reject! "output must be a byte array" {:path path} nil))
-        (write-bytes-node! path bytes options)))))
+        (write-bytes-node! path bytes options))))))
 
 (defn- utf8-bytes [^String text]
   #?(:clj (kbytes/utf8-bytes text)
      :cljs (js/Buffer.from text "utf8")
-     ;; Kotoba: the :cljs form, refused by name (host Buffer); see temp-file!.
-     :default (js/Buffer.from text "utf8")))
+     :default (kbytes/utf8-bytes text)))
 
+#?(:kotoba
+nil
+   :default
 (defn write-edn!
   "`pr-str` the value and publish it. On `:cljs` the value goes through
   `artifact/edn-safe` first: a guest integer is a bigint there, and `pr-str`
@@ -209,8 +222,13 @@
   ([path value options]
    (write-bytes! path (utf8-bytes (pr-str #?(:clj value
                                              :cljs (artifact/edn-safe value))))
-                 options)))
+                 options))))
 
+#?(:kotoba
+   (defn write-text! [path :string text :string] :string
+     (do (nbb-io/write-text! path text)
+         path))
+   :default
 (defn write-text!
   "Like write-edn! but for a value that is ALREADY a string meant to be read
   verbatim (e.g. emitted ClojureScript source) -- write-edn! would pr-str it
@@ -220,4 +238,4 @@
   ([path value options]
    (when-not (string? value)
      (reject! "output must be a string" {:path path} nil))
-   (write-bytes! path (utf8-bytes value) options)))
+   (write-bytes! path (utf8-bytes value) options))))

@@ -428,8 +428,8 @@
         close! (fn []
                  (when-not @closed?
                    (vreset! closed? true)
-                   (host-entry/pause-stdin!)
-                   (host-entry/exit-soon! 0)))
+                   #?(:cljs (host-entry/pause-stdin!))
+                   #?(:cljs (host-entry/exit-soon! 0))))
         handle-line!
         (fn [line]
           (let [count (vswap! requests inc)]
@@ -463,7 +463,7 @@
     (write-worker-response! {:format "kotoba.compiler-worker/v1"
                              :type "ready" :target (name target)
                              :maxRequests maximum})
-    (host-entry/on-stdin-data!
+    #?(:cljs (host-entry/on-stdin-data!
          (fn [chunk]
            (when-not @closed?
              (vreset! pending (text-bytes/concat-bytes @pending chunk))
@@ -493,8 +493,8 @@
                          (close!))
                        (do
                          (handle-line! (text-bytes/utf8-text-lossy line-buffer))
-                         (when-not @closed? (recur)))))))))))
-    (host-entry/on-stdin-end!
+                         (when-not @closed? (recur))))))))))))
+    #?(:cljs (host-entry/on-stdin-end!
          (fn []
            (when-not @closed?
              (when (pos? (text-bytes/bytes-length @pending))
@@ -502,4 +502,4 @@
                                         :type "result" :id nil :status 64
                                         :stdout ""
                                         :stderr "unterminated worker request\n"}))
-             (close!))))))
+             (close!)))))))
