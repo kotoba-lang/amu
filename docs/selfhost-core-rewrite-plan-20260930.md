@@ -117,3 +117,28 @@ Out of the slice: heads whose first operand is a type descriptor (`option-*`, `r
 predicate, so the descriptor pass is the next unit to move (with `closure-result-type?`), not part
 of this one. `rodata-literal-content?` is the other missing helper. `grammar-declared-heads` is
 empty under nbb, so the declared-but-unlowered refusal is written but not exercised.
+
+## S3 slice 2b: `validate-value-type!` and the type-descriptor heads (2026-09-30)
+
+`kotoba-sema/src/kotoba/compiler/value_type.cljk` ports `validate-value-type!` and its predicates over
+`:form/r` (a value type is data, so it is a Form tree): the node/depth accounting (`max-type-nodes`,
+`max-type-depth`; the host's volatile counter is threaded through `:vx/r`), the callable, slice, result,
+option, list, stream, task, heterogeneous vector, set, map, record and variant arms with the host's messages
+and codes. `closure-result-type?` (the callable arm's dependency) moved here as the `{}`-schemas call the arm
+makes: `closure-default-value-expr` reduces to `default-kind` (none / false / truthy) because the host reads
+the result and variant arms through `if-let` / `when-let`, where the `:bool` default (`false`) counts as none.
+`validate_expr.cljk` requires it and now answers every descriptor-first head (`typed-list/set/map-*`,
+`record-*`, `hetero-vector-*`, `option-*`, `variant-*`, `result-match-of`, the parametric result family,
+`typed-cap-call`) in the host's order: shape, descriptor, descriptor kind, operands. Both modules pass
+`amu check` on the project route. Only the rodata literals (`rodata-literal-content?`) still answer
+`vx/unsupported`; none is in the corpus.
+
+Differential (`vx-diff.sh`, `--descriptors` adds ~650 probes: every descriptor head with an operand dropped,
+added, the descriptor replaced by a bad / wrong-kind / bad-inside one and the last operand unbound, plus 90
+descriptor shapes through `typed-list-new` and `typed-cap-call`): 1543 cases (787 from the sema tests, 756
+synthetic), 1543 agree, 0 disagree, 0 unsupported, 202 distinct refusal messages. `--only-file F` reruns just
+the cases a previous results file left unsupported or in disagreement.
+
+One deliberate non-match: a callable clause that is not a vector (`[:fn 1]`). The host computes the clause
+arities before its shape check and dies with an internal "1 is not ISeqable"; the guest refuses with
+`kotoba.error/callable-type`. That is a host defect on malformed input and is not probed.

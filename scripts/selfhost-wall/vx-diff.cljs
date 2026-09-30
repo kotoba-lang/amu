@@ -38,6 +38,14 @@
 (def show (opt "--show" 12))
 (def skip-batches (opt "--skip-batches" 0))
 (def batch-bytes (opt "--batch-bytes" 60000))
+;; --only-file F: rerun only the cases a previous results file answered with `vx/unsupported` or a disagreement
+(defn opt-str [k] (when-let [i (some (fn [[a i]] (when (= a k) i)) (map vector argv (range)))] (nth argv (inc i))))
+(def only-forms
+  (when-let [f (opt-str "--only-file")]
+    (set (keep (fn [line]
+                 (let [[_ form h g] (cljs.reader/read-string line)]
+                   (when (or (str/starts-with? g "vx/unsupported") (not= h g)) form)))
+               (remove str/blank? (str/split-lines (fs/readFileSync f "utf8")))))))
 ;; every answered case is appended here as [synthetic? form host-line guest-line], batch by batch
 (def results-file (or (.-VX_RESULTS env) "/tmp/vx-diff-results.edn"))
 (when-not (some #{"--append"} argv) (try (fs/writeFileSync results-file "") (catch :default _ nil)))
@@ -146,6 +154,125 @@
    {:form (apply list 'vector-new (repeat 129 1)) :locals #{} :functions {} :depth 0 :synthetic true}
    {:form (apply list 'document-vector (repeat 33 1)) :locals #{} :functions {} :depth 0 :synthetic true}])
 
+
+;; ---- descriptor probes: every type-descriptor head, mutated -----------------------------------
+;; Each template is a valid form; the mutations drop / add an operand, swap the descriptor for a
+;; bad one, a wrong-kind one, one with a bad inside, and make the last operand unbound.
+(def tl '[:list :i64])
+(def ts '[:set :i64])
+(def tm '[:map :i64 :i64])
+(def tr '[:record :a/r [[:f :i64] [:g :i64]]])
+(def th '[:vector [:i64 :string]])
+(def to '[:option :i64])
+(def tv '[:variant :a/v [[:p :i64] [:q :string]]])
+(def tres '[:result :i64 :string])
+
+(def head-templates
+  [(list 'typed-list-new tl) (list 'typed-list-new tl 'x 'y) (list 'typed-list-conj tl 'x 'y) (list 'typed-list-nth tl 'x 'y)
+   (list 'typed-set-new ts 'x) (list 'typed-set-count ts 'x) (list 'typed-set-contains ts 'x 'y)
+   (list 'typed-set-conj ts 'x 'y) (list 'typed-set-disj ts 'x 'y) (list 'typed-set-equal ts 'x 'y)
+   (list 'typed-set-nth ts 'x 'y)
+   (list 'typed-map-new tm 1 2) (list 'typed-map-count tm 'x) (list 'typed-map-contains tm 'x 'y)
+   (list 'typed-map-get tm 'x 'y) (list 'typed-map-dissoc tm 'x 'y) (list 'typed-map-entry-at tm 'x 'y)
+   (list 'typed-map-keys tm 'x) (list 'typed-map-vals tm 'x) (list 'typed-map-assoc tm 'x 'y 'y)
+   (list 'typed-map-equal tm 'x 'y)
+   (list 'record-new tr 'x 'y) (list 'record-get tr 'x :f) (list 'record-assoc tr 'x :f 'y) (list 'record-equal tr 'x 'y)
+   (list 'hetero-vector-new th 'x 'y) (list 'hetero-vector-count th 'x) (list 'hetero-vector-at th 'x 0)
+   (list 'hetero-vector-assoc th 'x 1 'y) (list 'hetero-vector-equal th 'x 'y)
+   (list 'option-none-of to) (list 'option-some-of to 'x) (list 'option-some?-of to 'x) (list 'option-value-of to 'x 'y)
+   (list 'option-match to 'x 'y 'z '(+ z 1))
+   (list 'variant-new tv :p 'x) (list 'variant-match tv 'x '[[:p a a] [:q b 1]])
+   (list 'result-match-of tres 'x 'a 'a 'b 1)
+   (list 'result-ok-of tres 'x) (list 'result-err-of tres 'x) (list 'result-ok?-of tres 'x)
+   (list 'result-value-of tres 'x 'y) (list 'result-error-of tres 'x 'y)
+   (list 'typed-cap-call 3 :i64 :i64 'x) (list 'typed-cap-call 3 tl to 'x)])
+
+(defn wrong-kind [t] (if (= t tl) ts tl))
+(defn head-mutations [form]
+  (let [[op t & more] form
+        args (vec more)]
+    (concat
+     [form
+      (apply list op t (conj args 'x))
+      (list* op :banana more)
+      (list* op (wrong-kind t) more)
+      (list* op '[:list :banana] more)
+      (list* op 'x more)]
+     (when (seq args)
+       [(apply list op t (pop args))
+        (apply list op t (conj (pop args) 'zed))
+        (apply list op t (conj (vec (butlast args)) 'zed 'x))]))))
+
+(def type-probes
+  (let [rec (fn [n] (vec (concat [:record :a/r] [(vec (for [i (range n)] [(keyword (str "f" i)) :i64]))])))
+        deep (fn [n] (nth (iterate (fn [t] [:list t]) :i64) n))
+        big-rec (fn [k] [:vector (vec (repeat k (rec 32)))])]
+    ['[:fn [[:i64] :i64]] '[:fn [[:i64] [:fn [[:i64] :i64]]]] '[:fn [[:i64] :keyword]] '[:fn [[:keyword] :i64]]
+     '[:fn [[:i64] :i64] [[:i64] :i64]] '[:fn [[:i64] :i64 :i64]] '[:fn [[[:fn [[:i64] :i64]]] :i64]]
+     '[:fn [[[:stream :bytes]] :i64]] '[:fn [[:i64] [:record :a/r [[:x :i64]]]]]
+     '[:fn [[:i64] [:variant :a/v [[:p :bool]]]]] '[:fn [[:i64] [:result :bool :bool]]]
+     '[:fn [[:i64] [:result :bool :i64]]] '[:fn [[:i64] [:option :bool]]] '[:fn [[:i64] [:vector [:bool]]]]
+     '[:fn [[:i64] [:record :a/r [[:x [:ref :a/q]]]]]] '[:fn [[:i64] [:ref :a/q]]]
+     '[:fn [[:i64 :i64 :i64 :i64] :i64] [[:i64] :i64] [[:i64 :i64] :i64] [[:i64 :i64 :i64] :i64] [[] :i64]]
+     '[:fn [[:i64 :i64 :i64 :i64 :i64] :i64]] '[:fn [[:i64] :banana]] '[:fn [[:banana] :i64]]
+     '[:fn [[:i64] [:set :i64]]] '[:fn [[:i64] [:map :string :i64]]] '[:fn [[:i64] [:list :keyword]]]
+     '[:fn [[:i64] [:variant :a/v [[:p :bool] [:q :string]]]]] '[:fn [[:i64] [:result :string :bool]]]
+     '[:fn [[:i64] [:task [:stream :bytes]]]] '[:fn [[:i64] [:stream :bytes]]]
+     ;; not probed: a callable clause that is not a vector (`[:fn 1]`). The host computes the clause arities
+     ;; BEFORE its shape check, so it dies with an internal "1 is not ISeqable" where the guest refuses with
+     ;; kotoba.error/callable-type. That is a host defect on malformed input, not behaviour to reproduce.
+     '[:stream :bytes] '[:stream :i64] '[:task [:stream :bytes]] '[:task :i64]
+     '[:slice :u8] '[:slice :f32] '[:slice :i64] '[:slice [:slice :u8]] '[:slice :u64]
+     '[:set :f64] '[:set :f32] '[:set :i64] '[:set :string] '[:map :f32 :i64] '[:map :i64 :f64] '[:map :string :i64]
+     '[:record x [[:a :i64]]] '[:record :a/r []] '[:record :a/r [[:a :i64] [:a :string]]] '[:record :a/r [1]]
+     '[:record :a/r [[:a :i64 :i64]]] '[:record :a/r [[:a :i64]] 3] '[:record :a/r :x]
+     '[:variant x [[:a :i64]]] '[:variant :a/v []] '[:variant :a/v [[:a :i64] [:a :string]]] '[:variant :a/v [[:a :banana]]]
+     '[:ref :a/b] '[:ref :b] '[:ref] '[:vector :i64] '[:vector [:i64 :banana]]
+     '[:option :i64] '[:option :banana] '[:option] '[:list] '[:banana :i64] :i64 :banana :string-index :document
+     'x 3 "s" '(:list :i64) '[]
+     (rec 32) (rec 33) (deep 60) (deep 64) (deep 65) (deep 70)
+     [:vector (vec (repeat 32 :i64))] [:vector (vec (repeat 33 :i64))] (big-rec 3) (big-rec 8) (big-rec 15) (big-rec 16)
+     [:vector (vec (repeat 32 '[:vector [:i64 :i64 :i64 :i64 :i64 :i64 :i64 :i64 :i64 :i64 :i64 :i64 :i64 :i64 :i64 :i64]]))]])) 
+
+(def descriptor-specials
+  [(list 'typed-list-new tl) (apply list 'typed-list-new tl (repeat 128 'x)) (apply list 'typed-list-new tl (repeat 129 'x))
+   (apply list 'typed-set-new ts (repeat 32 'x)) (apply list 'typed-set-new ts (repeat 33 'x))
+   (apply list 'typed-map-new tm (repeat 62 'x)) (apply list 'typed-map-new tm (repeat 64 'x)) (list 'typed-map-new tm 1)
+   (list 'typed-map-new) (list 'typed-list-new) (list 'record-new tr 'x) (list 'record-new tr 'x 'y 'x) (list 'record-new tr)
+   (list 'record-get tr 'x :nope) (list 'record-get tr 'x 'f) (list 'record-get tr 'x 3) (list 'record-get ts 'x :f)
+   (list 'record-assoc tr 'x :nope 'y) (list 'record-assoc tr 'x :g 'zed) (list 'record-assoc tr 'zed :g 'zed)
+   (list 'hetero-vector-new th 'x) (list 'hetero-vector-new th 'x 'y 'x) (list 'hetero-vector-new tl 'x)
+   (list 'hetero-vector-at th 'x 2) (list 'hetero-vector-at th 'x -1) (list 'hetero-vector-at th 'x 'y)
+   (list 'hetero-vector-at th 'x "a") (list 'hetero-vector-at th 'x 1) (list 'hetero-vector-assoc th 'x 2 'y)
+   (list 'hetero-vector-assoc th 'x 'y 'y) (list 'hetero-vector-assoc tl 'x 0 'y)
+   (list 'option-match to 'x 'y 'z 'z) (list 'option-match to 'x 'y 'a/z 'z) (list 'option-match to 'x 'y 3 'z)
+   (list 'option-match to 'x 'zed 'z 'z) (list 'option-match to 'x 'y 'z 'zed) (list 'option-match to 'x 'y 'z 'x)
+   (list 'option-match to 'x 'y 'z) (list 'option-match ts 'x 'y 'z 'z)
+   (list 'variant-new tv :p 'x) (list 'variant-new tv 'p 'x) (list 'variant-new tv :p) (list 'variant-new tl :p 'x)
+   (list 'variant-new tv :nope 'x) (list 'variant-new tv :p 'zed)
+   (list 'variant-match tv 'x '[[:p a a] [:q b b]]) (list 'variant-match tv 'x '[[:q a a] [:p b b]])
+   (list 'variant-match tv 'x '[[:p a a]]) (list 'variant-match tv 'x '[[:p a a] [:q b b] [:r c c]])
+   (list 'variant-match tv 'x '[[:p a/a a] [:q b b]]) (list 'variant-match tv 'x '[[:p a] [:q b b]])
+   (list 'variant-match tv 'x '[[:p 1 a] [:q b b]]) (list 'variant-match tv 'x '[[:p a a] [:q b zed]])
+   (list 'variant-match tv 'x '[[:p a a] [:q b a]]) (list 'variant-match tv 'x '([:p a a] [:q b b]))
+   (list 'variant-match tv 'x 5) (list 'variant-match tl 'x '[[:p a a]]) (list 'variant-match tv 'zed '[[:p a a] [:q b b]])
+   (list 'result-match-of tres 'x 'a 'a 'b 'b) (list 'result-match-of tres 'x 'a/a 'a 'b 'b)
+   (list 'result-match-of tres 'x 'a 'a 'b 'a) (list 'result-match-of tres 'x 'a 'b 'b 'a) (list 'result-match-of tres 'x 'a 'a 'b 'zed)
+   (list 'result-match-of ts 'x 'a 'a 'b 'b) (list 'result-match-of '[:result :i64 :banana] 'x 'a 'a 'b 'b)
+   (list 'result-match-of tres 'x 3 'a 'b 'b) (list 'result-match-of tres 'x 'a 'a 'b)
+   (list 'result-ok-of ts 'x) (list 'result-ok-of '[:result :banana :i64] 'x) (list 'result-ok-of tres 'zed)
+   (list 'result-value-of tres 'x) (list 'result-value-of tres 'x 'y 'z)
+   (list 'typed-cap-call 3 :i64 :i64 'x) (list 'typed-cap-call 256 :i64 :i64 'x) (list 'typed-cap-call -1 :i64 :i64 'x)
+   (list 'typed-cap-call 'x :i64 :i64 'x) (list 'typed-cap-call 3 :i64 :i64) (list 'typed-cap-call 3 :i64 :i64 'x 'y)
+   (list 'typed-cap-call 3 :banana :i64 'x) (list 'typed-cap-call 3 :i64 :banana 'x) (list 'typed-cap-call 3 :i64 :i64 'zed)
+   (list 'typed-cap-call 3 :banana :banana 'zed)])
+
+(defn probe-case [form] {:form form :locals '#{x y} :functions {'f 2 'g 0} :depth 0 :synthetic true})
+(def descriptor-forms
+  (vec (concat (map probe-case (mapcat head-mutations head-templates))
+               (map probe-case descriptor-specials)
+               (map (fn [t] (probe-case (list 'typed-list-new t))) type-probes)
+               (map (fn [t] (probe-case (list 'typed-cap-call 1 t :i64 'x))) (filter vector? type-probes)))))
 
 ;; ---- host outcome ------------------------------------------------------------------
 
@@ -287,8 +414,9 @@
                                       (if (contains? m k) m (assoc m k c))))
                           (array-map) harvested)
             unique (vec (vals keyed))
-            with-status (map (fn [c] [c (unencodable? (:form c))]) (concat unique synthetic-forms deep-forms))
-            cases (vec (take limit (map first (filter (comp nil? second) with-status))))
+            with-status (map (fn [c] [c (unencodable? (:form c))]) (if (some #{"--descriptors-only"} argv) descriptor-forms (concat unique synthetic-forms deep-forms (if (some #{"--descriptors"} argv) descriptor-forms []))))
+            cases (vec (take limit (filter #(or (nil? only-forms) (contains? only-forms (pr-str (:form %))))
+                                           (map first (filter (comp nil? second) with-status)))))
             skipped (frequencies (keep second with-status))
             lowered (do (println "linking guest ...") (load-guest))]
         (println "unique cases:" (count unique) "+ synthetic" (+ (count synthetic-forms) (count deep-forms))
