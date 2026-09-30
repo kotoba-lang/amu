@@ -188,7 +188,9 @@
          ;; the bytes heads and string-from-utf8 in emitted ESM, named traps (string-from-bytes, superproject adr-2609242330).
          ;; Advanced 2026-09-26, d90bc851 -> 6500189e (kotoba-script main tip, forward only):
          ;; vector-take / vector-f64-take in emitted ESM (vectorTake, named traps); carries the 2026-09-25 kotoba.test codemod (tests only) -- selfhost stage 2 (superproject adr-2609242330)
-         :git/sha "6500189e20e434f9001a4c84b1544a22e9473fe3"}
+         ;; Advanced 2026-09-30, 6500189e -> 58d75dae (kotoba-script main, forward only):
+         ;; cell() debits one unit of fuel before its cell -- ADR 0353 point 7, floor :allocation-budget-targets.
+         :git/sha "58d75daead6f22b2bbf0b3eb4e367d822b021e7b"}
         ;; ADR-0222: source reading and semantic analysis live behind the
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         ;;
@@ -1299,7 +1301,9 @@
          ;; behind 0, forward only), adr-2609242100 P4: a loop with a reference-typed result is a Wasm loop, not recursion.
          ;; Advanced 2026-09-25, 4afb3a57 -> 185b3ed0 (kotoba-wasm main, ahead 2, forward only):
          ;; the bytes constructors and string-from-utf8 as kotoba:typed intrinsics (runtime/browser-host.mjs answers them) (string-from-bytes, superproject adr-2609242330).
-         :git/sha "185b3ed0170e486b9d29e1e97acc5e13ec5cbbe4"}
+         ;; Advanced 2026-09-30, 185b3ed0 -> 7ff9ad0d (kotoba-wasm main, forward only; carries the
+         ;; 2026-09-25 clojure.*/java.* codemod): every constructor debits the fuel global -- ADR 0353 point 7, floor :allocation-budget-targets.
+         :git/sha "7ff9ad0de0a0ddb7c067116f423285105dd8ab05"}
         ;; Production KIR routes exclusively through whole-module
         ;; GMIR/MIR/allocated-MC, including word/f64/memory/runtime/capability,
         ;; literal-data, scalar variant, word-field record, and x86 privileged

@@ -106,8 +106,14 @@
   ;; keeps its own counter: native charges entries and recur steps, ESM's
   ;; cell() debits the cells budget only. Moving native codegen moves every
   ;; aiueos kernel object, so it is its own change.
+  ;; Split 2026-09-30 again: the hosted targets and native are different
+  ;; changes. ESM's cell() and wasm32's fuel global are one emitter each;
+  ;; native fuel is the entry prefix plus the loop's bulk pre-charge, which
+  ;; kotoba-verifier re-derives, and it moves the aiueos kernel objects.
   {:id :allocation-budget-targets :gate "target-constructors-charge-fuel-test"
-   :goal "ESM (kotoba-script cell()), wasm32 and both native ISAs debit one fuel unit per constructor as kotoba.kir does, so a program that allocates past its budget traps budget/fuel on every target, not only on the reference; the aiueos objects that move are re-attested"}
+   :goal "restricted ESM (kotoba-script cell()) and wasm32 (the fuel global, vector literals kept in locals included) debit one fuel unit per constructor as kotoba.kir does: the price of allocating is the reference's on each, and a program that allocates past its budget traps (budget/fuel, unreachable) one unit short"}
+  {:id :allocation-budget-native :gate "native-constructors-charge-fuel-test"
+   :goal "x86_64-aiueos-kernel-v1 and aarch64-macos debit one fuel unit per constructor, the loop's bulk pre-charge and kotoba-verifier's fuel re-derivation included, so a program that allocates past its budget traps budget/fuel natively as on the reference; the aiueos objects that move are re-attested"}
   {:id :definition-admission :gate "admission-by-definition-graph-test"
    :goal "the 1 MiB bound moves from linked source bytes to per-definition size and closure count; cssom/layout.cljk (1,083,132 bytes) is admitted definition by definition"
    :amends "ADR 0005 linked-source bound"}
