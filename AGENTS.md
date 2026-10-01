@@ -12,6 +12,16 @@
 - Compiler benchmarks (Embench etc.) are published as selfhost results only
   when taken with a selfhost-built compiler on a quiet host.
 
+## No Rust dependency
+
+- The `kotoba`/`amu` CLI is Kotoba (.cljk/.kotoba) running on the nbb launcher
+  or the native amu route. No Rust binary, crate, `cargo` build, Rust host
+  adapter or Rust parity target may be required to build, test, run or release
+  anything. CI must not `cargo install`; fetch prebuilt release binaries.
+- Rust appears only as a benchmark competitor (`bench/runtime-comparison`,
+  `scripts/runtime-comparison.mjs`, optional `rustc`, never in the core gate)
+  and in historical ADRs. Do not turn either into a requirement.
+
 ## Refactoring is AST-based by default
 
 - Rule-shaped changes (a pattern at many sites, a rename, a module split, a

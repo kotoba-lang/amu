@@ -11,6 +11,10 @@ cloth.
 > GraalVM- or Node-hosted build is a bootstrap reference and is labelled so.
 > See [docs/selfhost-priority.md](docs/selfhost-priority.md).
 >
+> **No Rust.** The CLI is Kotoba on the nbb launcher / native amu route; no
+> Rust binary, crate or `cargo` build is needed to build, test, run or
+> release. Rust appears only as a benchmark competitor and in history.
+>
 > **Refactor with `amu refactor`.** Source changes go through the AST-based
 > `plan -> apply --check -> verify` loop, not hand edits. See
 > [docs/refactoring.md](docs/refactoring.md).
