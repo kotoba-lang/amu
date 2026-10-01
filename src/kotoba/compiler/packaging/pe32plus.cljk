@@ -544,9 +544,10 @@
   portable; it is evidence that nobody wrote one. Suspect the arithmetic --
   cljs bitwise operators truncate to int32, and the values here (entry points,
   paddrs, segment sizes) are 64-bit. See aiueos ADR-0130."
-  ([kernel] (package-embedded-kernel kernel [] {}))
-  ([kernel payload] (package-embedded-kernel kernel payload {}))
-  ([kernel payload options]
+  ([kernel] (package-embedded-kernel kernel [] {:k16-preflight? false :k16-note ""}))
+  ([kernel payload] (package-embedded-kernel kernel payload {:k16-preflight? false :k16-note ""}))
+  ([kernel payload #?@(:kotoba [options [:record :pe32plus/options [[:k16-preflight? :bool] [:k16-note :string]]]]
+                       :default [options])]
   (let [kernel (vec kernel)
         payload (vec payload)
         k16-preflight? (true? (:k16-preflight? options))
@@ -592,7 +593,7 @@
                                    (<= (:paddr %) (- 0x40000000 (:memsz %)))
                                    (zero? (mod (:paddr %) 4096))
                                    (<= (+ (:offset %) (:filesz %)) (count kernel))) segments)
-                     (= [5 6] (mapv :flags segments)) entry-segment non-overlap)
+                     (= [5 6] (mapv #(:flags %) segments)) entry-segment non-overlap)
         (throw (ex-info "embedded kernel PT_LOAD contract rejected" {:segments segments})))
       (let [entry-file-offset (+ (:offset entry-segment)
                                  (- entry (:paddr entry-segment)))
