@@ -344,7 +344,7 @@
                     " " (enc (set fe/grammar-declared-heads)) "]\n")]
     (loop [cs cases cur [] size 0 out []]
       (if-let [c (first cs)]
-        (let [s (case-edn c) n (+ (count s) 2)]
+        (let [s (or (:enc c) (case-edn c)) n (+ (count s) 2)]
           (cond
             ;; a case that cannot fit in a batch of its own is dropped (counted by the caller)
             (> (+ n (count prefix)) batch-bytes)
@@ -401,14 +401,25 @@
     (println "\nguest-unsupported heads:"
              (pr-str (take 30 (sort-by (comp - val) (frequencies (map (fn [[_ _ _ g]] g) (:unsupported by)))))))))
 
+;; WALL_GOLDEN names a file holding the HOST side (the harvested cases, encoded for the guest, with the host's answers) of an
+;; earlier identical run: used when it exists, written when it does not (golden-cache.sh keys it by host function CID and
+;; case-set CID). Unset: nothing changes.
+(defn golden [thunk]
+  (let [p (.-WALL_GOLDEN env)]
+    (if (and p (fs/existsSync p) (pos? (.-size (fs/statSync p))))
+      (do (println "golden host outputs reused from" p) (cljs.reader/read-string (str (fs/readFileSync p "utf8"))))
+      (let [v (thunk)] (when p (fs/writeFileSync p (pr-str v))) v))))
+
 (defn -main []
   (if (some #{"--report"} argv)
     (report)
     (do
-      (println "test files:" (count test-files) " candidate strings:" (count candidate-strings))
-      (harvest! (mapcat program-variants candidate-strings))
-      (set! fe/validate-expr orig)
-      (let [harvested @captured
+      (let [cases (golden
+                   (fn []
+                     (println "test files:" (count test-files) " candidate strings:" (count candidate-strings))
+                     (harvest! (mapcat program-variants candidate-strings))
+                     (set! fe/validate-expr orig)
+                     (let [harvested @captured
             _ (println "captured validate-expr calls:" (count harvested) (if opt-nested? "(all)" "(outermost)"))
             keyed (reduce (fn [m c] (let [k (pr-str [(:form c) (sort-by str (:locals c)) (sort-by str (:functions c)) (:depth c)])]
                                       (if (contains? m k) m (assoc m k c))))
@@ -417,10 +428,12 @@
             with-status (map (fn [c] [c (unencodable? (:form c))]) (if (some #{"--descriptors-only"} argv) descriptor-forms (concat unique synthetic-forms deep-forms (if (some #{"--descriptors"} argv) descriptor-forms []))))
             cases (vec (take limit (filter #(or (nil? only-forms) (contains? only-forms (pr-str (:form %))))
                                            (map first (filter (comp nil? second) with-status)))))
-            skipped (frequencies (keep second with-status))
-            lowered (do (println "linking guest ...") (load-guest))]
-        (println "unique cases:" (count unique) "+ synthetic" (+ (count synthetic-forms) (count deep-forms))
+            skipped (frequencies (keep second with-status))]
+
+                       (println "unique cases:" (count unique) "+ synthetic" (+ (count synthetic-forms) (count deep-forms))
                  " unencodable (skipped):" skipped)
+                       (mapv (fn [c] {:enc (case-edn c) :form-str (pr-str (:form c)) :synthetic (boolean (:synthetic c)) :host (host-line c)}) cases))))
+            lowered (do (println "linking guest ..." (count cases) "cases") (load-guest))]
         (let [bs (batches cases)]
           (println "batches:" (count bs))
           (doseq [[bi b] (map-indexed vector bs) :when (>= bi skip-batches)]
@@ -429,7 +442,7 @@
               (println (str "batch " bi "/" (count bs) ": " (count b) " cases, " (- (js/Date.now) t0) " ms"))
               (doseq [[[c _] g] (map vector b out)]
                 (fs/appendFileSync results-file
-                                   (str (pr-str [(boolean (:synthetic c)) (pr-str (:form c)) (host-line c) g]) "\n")))))
+                                   (str (pr-str [(boolean (:synthetic c)) (or (:form-str c) (pr-str (:form c))) (or (:host c) (host-line c)) g]) "\n")))))
           (report))))))
 
 (-main)

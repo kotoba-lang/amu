@@ -15,6 +15,7 @@
 ;; Env: KROOTS (colon-separated src roots incl. lang/compat), TM_GUEST (path of the generated module).
 (ns tm-diff
   (:require ["node:fs" :as fs]
+            [cljs.reader]
             [clojure.string :as str]
             [kotoba.sema :as sema]
             [kotoba.kir :as kir]
@@ -152,8 +153,16 @@
 
 (defn ascii? [s] (not (re-find #"[^\x09\x0a\x20-\x7e]" s)))
 
+;; WALL_GOLDEN names a file holding the HOST side (the cases with the host's answers) of an earlier identical run: used when it
+;; exists, written when it does not (golden-cache.sh keys it by host function CID and case-set CID). Unset: nothing changes.
+(defn golden [thunk]
+  (let [p (.-WALL_GOLDEN js/process.env)]
+    (if (and p (fs/existsSync p) (pos? (.-size (fs/statSync p))))
+      (do (println "golden host outputs reused from" p) (cljs.reader/read-string (str (fs/readFileSync p "utf8"))))
+      (let [v (thunk)] (when p (fs/writeFileSync p (pr-str v))) v))))
+
 (defn -main []
-  (let [cs (vec (remove (fn [[c _]] (str/includes? c "\n")) (map (fn [[c h]] [c (str h)]) (the-cases))))
+  (let [cs (golden (fn [] (vec (remove (fn [[c _]] (str/includes? c "\n")) (map (fn [[c h]] [c (str h)]) (the-cases))))))
         cs (vec (filter (fn [[c _]] (ascii? c)) cs))
         _ (println "cases:" (count cs) "linking guest ...")
         lowered (load-guest)

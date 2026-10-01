@@ -11,4 +11,7 @@ export DS_TESTS=${DS_TESTS:?set DS_TESTS to kotoba-sema/test}
 export KROOTS="$(echo "$CP" | tr ':' '\n' | grep '/src$' | tr '\n' ':')${WALL_AMU_SRC:-$AMU/src}:$K/lang/compat"
 cd ${WALL_NBB_DIR:-$AMU}
 ulimit -s ${WALL_ULIMIT_S:-65520} 2>/dev/null
-exec node --stack-size=${WALL_STACK_SIZE:-56000} ${WALL_NBB:-node_modules/nbb/cli.js} --classpath "$CP" "$HERE/ds-diff.cljs" "$@"
+. "$HERE/golden-wrap.sh"
+golden_begin ds-run "${FRONTEND:-/dev/null}" $DS_TESTS ${(s.:.)DS_EXTRA} "$HERE/ds-diff.cljs" @DS_MAX=$DS_MAX @DS_TOTAL=$DS_TOTAL @DS_BATCH=$DS_BATCH
+node --stack-size=${WALL_STACK_SIZE:-56000} ${WALL_NBB:-node_modules/nbb/cli.js} --classpath "$CP" "$HERE/ds-diff.cljs" "$@"
+golden_end $?

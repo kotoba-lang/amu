@@ -95,6 +95,18 @@
       (let [step (/ n total)]
         (vec (map #(nth (vec all) (int (* % step))) (range total)))))))
 
+;; ---- golden host outputs ------------------------------------------------------------------------------------
+;; WALL_GOLDEN names a file holding the HOST side (cases and the host's answers) of an earlier identical run: used when it
+;; exists, written when it does not. golden-cache.sh keys it by (host function CID, case-set CID), so a rerun after a
+;; change that touches only the Kotoba side computes the guest side alone. Unset: nothing changes.
+(defn golden [thunk]
+  (let [p (.-WALL_GOLDEN env)]
+    (if (and p (fs/existsSync p) (pos? (.-size (fs/statSync p))))
+      (do (println "golden host outputs reused from" p) (edn/read-string (str (fs/readFileSync p "utf8"))))
+      (let [t0 (js/Date.now) v (thunk)]
+        (println "host side computed in" (- (js/Date.now) t0) "ms")
+        (when p (fs/writeFileSync p (pr-str v))) v))))
+
 ;; ---- host ------------------------------------------------------------------------------------
 
 (defn host-answer [names form]
@@ -154,16 +166,21 @@
     (println (if (map? res) (or (:value res) (pr-str res)) res))))
 
 (defn -main []
-  (let [cs (corpus)
-        _ (println "corpus forms:" (count cs))
-        rows (vec (for [[names form] cs
-                        :let [[k v side] (host-answer names form)
-                              line  (str "[" (edn-of (into {} (map (fn [n] [n #{0 1 2 3 4}])) names)) " false " (edn-of form) " "
-                                        (if (= k :ok) v "nil") " " (if (= k :ok) side "[] {} [] #{} false false") "]")]
-                        :when (and (not (str/includes? line "\n")) (ascii? line)
-                                   (not (str/includes? line "#object")) (not (str/includes? line "#<")))]
-                    {:line line :host (if (= k :ok) "OK" (str "ERR " v)) :form (edn-of form)}))
-        _ (println "cases:" (count rows) "of" (count cs) "forms; loop-ish:" (count (filter #(re-find #"^\((loop|dotimes|doseq|fn) " (:form %)) rows)) "linking guest ...")
+  (let [{:keys [ncs rows]}
+        (golden
+         (fn []
+           (let [cs (corpus)
+                 _ (println "corpus forms:" (count cs))
+                 rows (vec (for [[names form] cs
+                                 :let [[k v side] (host-answer names form)
+                                       line  (str "[" (edn-of (into {} (map (fn [n] [n #{0 1 2 3 4}])) names)) " false " (edn-of form) " "
+                                                 (if (= k :ok) v "nil") " " (if (= k :ok) side "[] {} [] #{} false false") "]")]
+                                 :when (and (not (str/includes? line "\n")) (ascii? line)
+                                            (not (str/includes? line "#object")) (not (str/includes? line "#<")))]
+                             {:line line :host (if (= k :ok) "OK" (str "ERR " v)) :form (edn-of form)}))]
+             {:ncs (count cs) :rows rows})))
+        cs (if (.-DS_WHY env) (corpus) [])
+        _ (println "cases:" (count rows) "of" ncs "forms; loop-ish:" (count (filter #(re-find #"^\((loop|dotimes|doseq|fn) " (:form %)) rows)) "linking guest ...")
         _ (when (.-DS_WHY env)
             (doseq [[names form] (take 400 cs)
                     :let [[k v side] (host-answer names form)
