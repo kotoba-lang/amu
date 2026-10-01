@@ -123,7 +123,7 @@ def main():
   (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
                                        [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
              :form/rd [:record :form/rd [[:form [:ref :form/r]] [:pos :i64]]]
-             :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]] [:phase :string]]]}))
+             :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]] [:phase :string] [:data [:ref :form/r]]]]}))
 
 """
     if os.environ.get('TM_HEADER'):
