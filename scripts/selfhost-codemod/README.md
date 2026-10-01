@@ -1,5 +1,7 @@
 # selfhost-codemod
 
+> **Superseded.** This prototype is now `amu refactor` (`plan`/`apply`/`graph`/`partition`/`split`/`verify`, nbb only, no Python): see `docs/refactoring.md`. Kept as the reference the port was checked against.
+
 Form-rewriting codemods for the selfhost frontend port (`kotoba-sema/src/kotoba/compiler/frontend.cljk`, 22k lines).
 The port is hundreds of mechanical edits of five shapes; this library does them from a syntax tree, not by hand and
 not by regex, and proves on the host route that it changed nothing there.

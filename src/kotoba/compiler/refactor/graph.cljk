@@ -1,0 +1,293 @@
+;; Top-level form inventory and reference graph of a .cljk/.cljc namespace (amu refactor graph / partition / split).
+;;
+;; Units are TOP-LEVEL FORMS (chunks).  A chunk may define several names when a reader conditional gives each platform
+;; its own def; every branch is analysed.  References are scope aware (let / loop / fn / defn / for / doseq /
+;; destructuring / binding / case ... shadowing), so a local named like a top-level function is not an edge.
+;;
+;; Ported from scripts/selfhost-split/{sourcegraph,analyze}.py onto the lossless CST (kotoba.compiler.refactor.cst).
+(ns kotoba.compiler.refactor.graph
+  (:require [clojure.string :as str]
+            [clojure.set :as set]
+            [kotoba.compiler.refactor.cst :as cst]))
+
+(def def-heads #{"def" "defn" "defn-" "defonce" "defmacro" "defmulti" "defrecord" "deftype" "defprotocol"})
+(def let-like #{"let" "loop" "when-let" "if-let" "when-some" "if-some" "with-open" "let*" "binding" "doseq" "for" "dotimes"})
+(def skip-syms #{"&" "_"})
+
+(defn- sym-text [n]
+  (let [n (cst/strip-meta n)] (when (= :sym (:type n)) (:text n))))
+
+(defn- rc? [n] (= :rc (:type n)))
+
+(defn pattern-syms
+  "All binder symbols in a destructuring pattern (vectors, maps, reader conditionals)."
+  [n]
+  (case (:type n)
+    :sym (if (and (not (contains? skip-syms (:text n))) (not (str/includes? (:text n) "/"))) #{(:text n)} #{})
+    :meta (pattern-syms (second (:kids n)))
+    :map (let [kids (vec (:kids n))]
+           (loop [i 0 out #{}]
+             (if (>= i (count kids))
+               out
+               (let [k (nth kids i) v (get kids (inc i))]
+                 (recur (+ i 2)
+                        (cond
+                          (and (cst/kw? k) (contains? #{":keys" ":strs" ":syms"} (:text k)) v)
+                          (into out (for [s (:kids v) :when (cst/sym? s)] (last (str/split (:text s) #"/"))))
+                          (and (cst/kw? k) (= ":as" (:text k)) v) (into out (pattern-syms v))
+                          (and (cst/kw? k) (= ":or" (:text k))) out
+                          (not (cst/kw? k)) (into out (pattern-syms k))
+                          :else out))))))
+    (:vec :rc :list) (reduce into #{} (map pattern-syms (:kids n)))
+    #{}))
+
+(defn- meta-exprs
+  "Meta nodes attached in front of node."
+  [node]
+  (loop [n node out []]
+    (if (= :meta (:type n)) (recur (second (:kids n)) (conj out (first (:kids n)))) out)))
+
+(defn- find-defs
+  "[[name head defnode platform-key] ...] for def forms at the chunk's top, descending through reader conditionals/do.
+  platform-key is the reader-conditional feature the def sits under (nil = all)."
+  ([node] (find-defs node nil))
+  ([node plat]
+   (let [n (cst/strip-meta node)]
+     (cond
+       (and (cst/lst? n) (seq (:kids n)) (cst/sym? (first (:kids n))))
+       (let [h (:text (first (:kids n)))]
+         (cond
+           (and (contains? def-heads h) (> (count (:kids n)) 1))
+           (let [nm (cst/strip-meta (second (:kids n)))]
+             (if (cst/sym? nm) [[(:text nm) h n plat]] []))
+           (= h "declare") [["*declare*" h n plat]]
+           (= h "do") (vec (mapcat #(find-defs % plat) (rest (:kids n))))
+           :else []))
+       (rc? n) (vec (mapcat (fn [[k v]] (find-defs v (:text k))) (partition 2 (:kids n))))
+       :else []))))
+
+(defn- classify [src idx node lead-s]
+  (let [n (cst/strip-meta node)
+        base {:idx idx :node node :s (:s node) :e (:e node) :lead-s lead-s :text (subs src (:s node) (:e node))
+              :lines (inc (count (filter #(= \newline %) (subs src (:s node) (:e node))))) :names [] :kinds {} :plats {} :defnodes {} :private {} :dynamic {} :declares [] :doc {} :refs {}
+              :binds #{} :is-ns false :has-kotoba-branch (boolean (str/includes? (subs src (:s node) (:e node)) ":kotoba"))}]
+    (if (and (cst/lst? n) (seq (:kids n)) (cst/sym? (first (:kids n)) "ns"))
+      (assoc base :is-ns true)
+      (reduce
+       (fn [ch [name head d plat]]
+         (if (= name "*declare*")
+           (update ch :declares into (keep sym-text (rest (:kids d))))
+           (let [txt (str/join " " (map #(subs src (:s %) (:e %)) (meta-exprs (second (:kids d)))))
+                 doc (some #(when (= :str (:type %)) (:text %)) (take 2 (drop 2 (:kids d))))]
+             (-> ch
+                 (update :names #(if (some #{name} %) % (conj % name)))
+                 (assoc-in [:kinds name] head)
+                 (update-in [:plats name] (fnil conj #{}) plat)
+                 (update-in [:defnodes name] (fnil conj []) d)
+                 (assoc-in [:private name] (boolean (or (= head "defn-") (str/includes? txt ":private"))))
+                 (assoc-in [:dynamic name] (boolean (str/includes? txt ":dynamic")))
+                 (cond-> doc (assoc-in [:doc name] doc))))))
+       base (find-defs node)))))
+
+;; ---- scoped reference walk ------------------------------------------------------------------------------------------
+
+(defn- refs-of
+  "-> {:refs {name {:call n :value n}} :ref-order [names in order of first reference] :binds #{names rebound with `binding`}}
+  for one chunk."
+  [ch names]
+  (let [refs (volatile! {}) binds (volatile! #{}) order (volatile! [])
+        add (fn [name role]
+              (when-not (contains? @refs name) (vswap! order conj name))
+              (vswap! refs update-in [name role] (fnil inc 0)))]
+    (letfn [(sym* [n env role] (let [t (:text n)] (when (and (contains? names t) (not (contains? env t))) (add t role))))
+            (body [forms env] (doseq [f forms] (visit f env :value)))
+            (bindings [vec-node env]
+              (let [kids (vec (:kids vec-node))]
+                (loop [i 0 env env]
+                  (if (>= i (count kids))
+                    env
+                    (let [pat (nth kids i) val (get kids (inc i))]
+                      (if (cst/kw? pat)
+                        (do (cond (and (= ":let" (:text pat)) val (= :vec (:type val))) nil
+                                  val (visit val env :value))
+                            (recur (+ i 2) (if (and (= ":let" (:text pat)) val (= :vec (:type val))) (bindings val env) env)))
+                        (do (when val (visit val env :value))
+                            (recur (+ i 2) (into env (pattern-syms pat))))))))))
+            (fn-arity [params rest-forms env] (body rest-forms (into env (pattern-syms params))))
+            (arities [r env]
+              (if (and (seq r) (= :vec (:type (first r))))
+                (fn-arity (first r) (rest r) env)
+                (doseq [a r]
+                  (if (and (= :list (:type a)) (seq (:kids a)) (= :vec (:type (first (:kids a)))))
+                    (fn-arity (first (:kids a)) (rest (:kids a)) env)
+                    (visit a env :value)))))
+            (visit [n env role]
+              (case (:type n)
+                :sym (sym* n env role)
+                (:kw :str :num :char :regex) nil
+                :meta (do (visit (first (:kids n)) env :value) (visit (second (:kids n)) env role))
+                :prefix (when-not (= "'" (:prefix n)) (visit (first (:kids n)) env :value))
+                :list (visit-list n env)
+                (doseq [c (:kids n)] (visit c env :value))))
+            (visit-list [n env]
+              (when (seq (:kids n))
+                (let [h (first (:kids n))
+                      ht (when (= :sym (:type h)) (:text h))
+                      rest* (vec (rest (:kids n)))]
+                  (cond
+                    (nil? ht) (do (visit h env :call) (body rest* env))
+                    (= ht "quote") nil
+                    (contains? #{"declare" "ns"} ht) nil
+                    (contains? #{"def" "defonce"} ht) (body (rest rest*) env)
+                    (and (contains? let-like ht) (seq rest*) (= :vec (:type (first rest*))))
+                    (if (= ht "binding")
+                      (let [kids (vec (:kids (first rest*)))]
+                        (doseq [i (range 0 (dec (count kids)) 2)]
+                          (let [t (sym-text (nth kids i))]
+                            (when (and t (contains? names t))
+                              (vswap! binds conj t)
+                              (add t :value))
+                            (visit (nth kids (inc i)) env :value)))
+                        (body (rest rest*) env))
+                      (body (rest rest*) (bindings (first rest*) env)))
+                    (contains? #{"fn" "fn*"} ht)
+                    (let [r rest*
+                          [env r] (if (and (seq r) (= :sym (:type (first r)))) [(conj env (:text (first r))) (rest r)] [env r])]
+                      (arities (vec r) env))
+                    (contains? #{"defn" "defn-"} ht)
+                    (let [r (vec (rest rest*))                       ; drop the name
+                          r (loop [r r]
+                              (if (and (seq r) (contains? #{:str :map :meta} (:type (first r))))
+                                (do (when (= :map (:type (first r))) (visit (first r) env :value)) (recur (vec (rest r))))
+                                r))]
+                      (arities r env))
+                    (and (= ht "letfn") (seq rest*) (= :vec (:type (first rest*))))
+                    (let [fns (:kids (first rest*))
+                          env2 (into env (for [f fns :when (and (cst/lst? f) (seq (:kids f)) (= :sym (:type (first (:kids f)))))]
+                                           (:text (first (:kids f)))))]
+                      (doseq [f fns]
+                        (when (and (cst/lst? f) (> (count (:kids f)) 2) (= :vec (:type (second (:kids f)))))
+                          (fn-arity (second (:kids f)) (drop 2 (:kids f)) env2)))
+                      (body (rest rest*) env2))
+                    (and (= ht "catch") (>= (count rest*) 2))
+                    (body (drop 2 rest*) (if-let [t (sym-text (second rest*))] (conj env t) env))
+                    (and (= ht "as->") (>= (count rest*) 2))
+                    (do (visit (first rest*) env :value)
+                        (body (drop 2 rest*) (if-let [t (sym-text (second rest*))] (conj env t) env)))
+                    (and (= ht "case") (seq rest*))
+                    (let [cl (vec (rest rest*))]
+                      (visit (first rest*) env :value)
+                      (doseq [i (range 0 (dec (count cl)) 2)] (visit (nth cl (inc i)) env :value))
+                      (when (odd? (count cl)) (visit (peek cl) env :value)))
+                    (and (= ht "condp") (seq rest*)) (body rest* env)
+                    :else (do (when (and (contains? names ht) (not (contains? env ht))) (add ht :call))
+                              (body rest* env))))))]
+      (visit (:node ch) #{} :value))
+    {:refs (apply dissoc @refs (:names ch)) :binds @binds
+     :ref-order (vec (remove (set (:names ch)) @order))}))
+
+(defn analyze
+  "-> {:chunks [..] :def-chunks {name [idx]} :top-names #{..}} for the source text."
+  [src]
+  (let [tops (cst/parse src)
+        chunks (loop [i 0 prev 0 ts tops out []]
+                 (if-let [t (first ts)]
+                   (recur (inc i) (:e t) (rest ts) (conj out (classify src i t prev)))
+                   out))
+        def-chunks (reduce (fn [m ch] (reduce (fn [m nm] (update m nm (fnil (fn [v] (if (some #{(:idx ch)} v) v (conj v (:idx ch)))) []))) m (:names ch)))
+                           {} chunks)
+        names (set (keys def-chunks))
+        chunks (mapv (fn [ch] (if (:is-ns ch) ch (merge ch (refs-of ch names)))) chunks)]
+    {:chunks chunks :def-chunks def-chunks :top-names names :src src}))
+
+(defn line-of [src off]
+  (loop [i 0 n 1] (let [j (str/index-of src "\n" i)] (if (and j (< j off)) (recur (inc j) (inc n)) n))))
+
+(defn- lines-of [ch] (:lines ch))
+
+;; ---- graph ----------------------------------------------------------------------------------------------------------
+
+(defn build
+  "-> [analysis adj]; adj is a vector (per chunk) of {target weight}: weight = distinct referenced names."
+  [src]
+  (let [a (analyze src)
+        n (count (:chunks a))
+        adj (volatile! (vec (repeat n {})))
+        bump (fn [u v] (vswap! adj update u update v (fnil inc 0)))]
+    (doseq [c (:chunks a) r (keys (:refs c)) t (get (:def-chunks a) r) :when (not= t (:idx c))] (bump (:idx c) t))
+    (doseq [[_ idxs] (:def-chunks a) i idxs j idxs :when (not= i j)] (bump i j))      ; one name in several chunks: keep together
+    [a @adj]))
+
+(defn tarjan
+  "Strongly connected components (iterative), dependencies first; skip is a set of vertices left out."
+  [n adj skip]
+  (let [adj (vec adj)]
+    (loop [roots (remove skip (range n)) idx {} low {} stack [] on #{} comps [] counter 0 frames []]
+      (cond
+        (seq frames)
+        (let [[v ws] (peek frames) frames (pop frames)]
+          (if-let [w (first ws)]
+            (let [frames (conj frames [v (rest ws)])]
+              (cond
+                (not (contains? idx w))
+                (recur roots (assoc idx w counter) (assoc low w counter) (conj stack w) (conj on w) comps (inc counter)
+                       (conj frames [w (keys (get adj w))]))
+                (contains? on w) (recur roots idx (update low v min (get idx w)) stack on comps counter frames)
+                :else (recur roots idx low stack on comps counter frames)))
+            ;; v done
+            (let [low (if-let [[p _] (peek frames)] (update low p min (get low v)) low)
+                  [stack on comps]
+                  (if (= (get low v) (get idx v))
+                    (loop [stack stack on on comp []]
+                      (let [w (peek stack) stack (pop stack) on (disj on w) comp (conj comp w)]
+                        (if (= w v) [stack on (conj comps (vec (sort comp)))] (recur stack on comp))))
+                    [stack on comps])]
+              (recur roots idx low stack on comps counter frames))))
+        (seq roots)
+        (let [v (first roots)]
+          (if (contains? idx v)
+            (recur (rest roots) idx low stack on comps counter frames)
+            (recur (rest roots) (assoc idx v counter) (assoc low v counter) (conj stack v) (conj on v) comps (inc counter)
+                   [[v (keys (get adj v))]])))
+        :else comps))))
+
+(defn chunk-label [c]
+  (cond (seq (:names c)) (first (:names c))
+        (seq (:declares c)) (str "declare:" (first (:declares c)))
+        (:is-ns c) "ns"
+        :else (str "form#" (:idx c))))
+
+(defn graph-data
+  "The graph.edn payload: nodes, weighted edges, cyclic SCCs, dynamic vars (defined in / read by / bound by)."
+  [a adj comps src]
+  (let [chunks (:chunks a)
+        edges (vec (for [u (range (count adj)) [v w] (sort (get adj u))] [u v w]))
+        scc (filter #(> (count %) 1) comps)]
+    {:format :kotoba.refactor/v1
+     :kind :graph
+     :source-forms (count chunks)
+     :names (count (:top-names a))
+     :edges (count edges)
+     :nodes (vec (for [c chunks]
+                   {:id (:idx c) :names (:names c) :head (vec (sort (set (vals (:kinds c)))))
+                    :line (line-of src (:s c)) :lines (lines-of c)
+                    :private (boolean (and (seq (:names c)) (some true? (vals (:private c)))))
+                    :dynamic (vec (filter #(get (:dynamic c) %) (:names c)))
+                    :declares (:declares c)
+                    :kotoba-branch (:has-kotoba-branch c)
+                    :binds-dynamic (vec (sort (:binds c)))}))
+     :edge-list edges
+     :sccs (vec (for [c scc] {:size (count c) :lines (reduce + (map #(lines-of (nth chunks %)) c)) :members c}))
+     :dynamic-vars (into (sorted-map)
+                         (for [c chunks x (:names c) :when (get (:dynamic c) x)]
+                           [x {:defined-in (:idx c)
+                               :read-by (vec (sort (for [d chunks :when (and (contains? (:refs d) x) (not (contains? (:binds d) x)))] (:idx d))))
+                               :bound-by (vec (sort (for [d chunks :when (contains? (:binds d) x)] (:idx d))))}]))}))
+
+(defn analysis
+  "Everything graph/partition/split need: the analysis, the adjacency, the SCCs (dependencies first)."
+  [src]
+  (let [[a adj] (build src)
+        skip (set (for [c (:chunks a) :when (:is-ns c)] (:idx c)))
+        comps (tarjan (count (:chunks a)) adj skip)]
+    (assoc a :adj adj :comps comps)))

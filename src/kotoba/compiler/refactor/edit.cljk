@@ -1,0 +1,60 @@
+;; Text edits over source offsets.  An edit is {:s :e :text :rule :ord}.  A zero-width edit (s = e) is an insertion.
+(ns kotoba.compiler.refactor.edit
+  (:require [clojure.string :as str]))
+
+(defn replace-node [n text rule] {:s (:s n) :e (:e n) :text text :rule rule})
+(defn insert-at [pos text rule & [ord]] {:s pos :e pos :text text :rule rule :ord (or ord 0)})
+
+(defn- edit-key [e] [(:s e) (if (= (:s e) (:e e)) 0 1) (:e e) (or (:ord e) 0)])
+
+(defn conflicts?
+  "True when two edits cannot both be applied: they overlap, or one is an insertion strictly inside the other's range.
+  Nested edits are reported as conflicts; the caller keeps the inner one (a later pass re-finds the outer)."
+  [a b]
+  (let [[a b] (if (<= (:s a) (:s b)) [a b] [b a]) ; a starts first (or same)
+        a-ins? (= (:s a) (:e a)) b-ins? (= (:s b) (:e b))]
+    (cond
+      (and a-ins? b-ins?) false
+      a-ins? false                                    ; insertion at a.s, b starts at/after it
+      b-ins? (and (> (:s b) (:s a)) (< (:s b) (:e a))) ; insertion strictly inside a
+      :else (< (:s b) (:e a)))))                       ; ranges overlap
+
+(defn nested? [outer inner]
+  (and (<= (:s outer) (:s inner)) (<= (:e inner) (:e outer)) (not= [(:s outer) (:e outer)] [(:s inner) (:e inner)])))
+
+(defn resolve-conflicts
+  "Keep a maximal conflict-free subset, preferring the innermost edit of a nested pair, then the earliest.
+  Returns [kept dropped]."
+  [edits]
+  (let [sorted (sort-by (fn [e] [(- (:e e) (:s e)) (:s e)]) edits)] ; smaller (inner) first
+    (reduce (fn [[kept dropped] e]
+              (if (some #(conflicts? % e) kept) [kept (conj dropped e)] [(conj kept e) dropped]))
+            [[] []] sorted)))
+
+(defn apply-edits [src edits]
+  (let [sorted (sort-by edit-key edits)]
+    (loop [es sorted pos 0 out (transient [])]
+      (if-let [e (first es)]
+        (recur (rest es) (:e e) (-> out (conj! (subs src pos (:s e))) (conj! (:text e))))
+        (apply str (persistent! (conj! out (subs src pos))))))))
+
+;; ---- positions -----------------------------------------------------------------------------------------------------
+
+(defn line-starts [src]
+  (loop [i 0 acc [0]]
+    (let [j (str/index-of src "\n" i)]
+      (if (nil? j) acc (recur (inc j) (conj acc (inc j)))))))
+
+(defn offset->line
+  "1-based line of offset."
+  [starts off]
+  (loop [lo 0 hi (dec (count starts))]
+    (if (>= lo hi) (inc lo)
+        (let [mid (quot (+ lo hi 1) 2)]
+          (if (<= (nth starts mid) off) (recur mid hi) (recur lo (dec mid)))))))
+
+(defn line-indent
+  "Leading whitespace of the line containing off."
+  [src off]
+  (let [ls (inc (if (pos? off) (or (str/last-index-of src "\n" (dec off)) -1) -1))]
+    (re-find #"^[ \t]*" (subs src ls))))

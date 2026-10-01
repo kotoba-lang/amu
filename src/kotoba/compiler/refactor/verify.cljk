@@ -1,0 +1,61 @@
+;; Differential verification (amu refactor verify): run a project's test set before and after a refactoring and compare
+;; the per-test outcomes.
+;;
+;; The runner is any nbb script that prints cljs.test reports (`run-tests.cljk`).  It is run twice with the same
+;; classpath, once with the BASELINE source root first and once with the CANDIDATE root first; what is compared is not
+;; the counts but each test's outcome: FAIL/ERROR names, the expected form and the :message of the actual, with line
+;; numbers and stack frames removed.  A pre-existing failing set must be identical, not merely equal in size.
+;;
+;; Pure here: normalization, comparison, and the argument vector of one run.  The process is started by the caller
+;; (process/spawn), see kotoba.compiler.refactor-cli.
+(ns kotoba.compiler.refactor.verify
+  (:require [clojure.string :as str]))
+
+(defn- interesting? [line]
+  (or (str/starts-with? line "FAIL in")
+      (str/starts-with? line "ERROR in")
+      (str/starts-with? line "  expected:")
+      (str/starts-with? line "nbb: ")))
+
+(defn- norm-line [line]
+  (-> line
+      (str/replace #":line [0-9]+" ":line N")
+      (str/replace #"\(([^)]*_test\.cljk):[0-9]+(?::[0-9]+)?\)" "($1)")))
+
+(defn- norm-actual [line]
+  (let [m (re-find #".*(:message \"[^\"]*\").*" line)
+        s (if m (str "actual " (second m)) line)]
+    (if (> (count s) 200) (subs s 0 200) s)))
+
+(defn outcomes
+  "Sorted, normalized per-test outcome lines of one runner output."
+  [text]
+  (let [lines (str/split text #"\n")]
+    (vec (sort (concat (for [l lines :when (interesting? l)] (norm-line l))
+                       (for [l lines :when (str/starts-with? l "  actual:")] (norm-actual l)))))))
+
+(defn summary
+  "The runner's own final `nbb: N tests, ...` line, or nil."
+  [text]
+  (last (filter #(str/starts-with? % "nbb: ") (str/split text #"\n"))))
+
+(defn compare-runs
+  "-> {:ok bool :baseline {...} :candidate {...} :only-baseline [...] :only-candidate [...]}.
+  :ok needs both runs to have produced the runner's summary line (a crashed run is not a result) and equal outcomes."
+  [base-text new-text]
+  (let [bo (outcomes base-text) no (outcomes new-text)
+        bs (summary base-text) ns* (summary new-text)
+        only-b (vec (remove (set no) bo)) only-n (vec (remove (set bo) no))]
+    {:ok (boolean (and bs ns* (= bo no)))
+     :ran (boolean (and bs ns*))
+     :baseline {:summary bs :outcome-lines (count bo)}
+     :candidate {:summary ns* :outcome-lines (count no)}
+     :only-baseline (vec (take 50 only-b)) :only-candidate (vec (take 50 only-n))
+     :differences (+ (count only-b) (count only-n))}))
+
+(defn run-argv
+  "The node argument vector of one runner execution."
+  [{:keys [nbb-cli stack-size classpath first-root runner]}]
+  ["node" (str "--stack-size=" stack-size) nbb-cli
+   "--classpath" (if first-root (str first-root ":" classpath) classpath)
+   runner])

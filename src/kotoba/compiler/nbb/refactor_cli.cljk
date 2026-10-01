@@ -1,0 +1,77 @@
+(ns kotoba.compiler.nbb.refactor-cli
+  "Node entrypoint for `amu refactor`. The command is `kotoba.compiler.refactor-cli`; this file supplies the I/O record
+  (fs/app-data and fs/browse for files, process/spawn for `verify`) and answers the exit status.
+
+  Like `amu test` it prints through the io/write abilities and does not go through `support/execute!`: the answer is
+  one EDN map (`:format :kotoba.refactor/v1`), and `:ok false` -- `apply --check` found pending changes, `verify`
+  found differing outcomes -- is exit 1 rather than a thrown refusal. A real refusal is the shared
+  `:kotoba.cli-error/v1` report on stderr."
+  {:kotoba/export [main]}
+  (:require [clojure.string :as str]
+            [kotoba.compiler.nbb.cli-support :as support]
+            [kotoba.compiler.process-wire :as process-wire]
+            [kotoba.compiler.refactor-cli :as refactor-cli]
+            #?(:cljs [kotoba.compiler.nbb.host.fs :as fs])
+            #?(:cljs [kotoba.compiler.nbb.host.io :as io])
+            #?(:cljs [kotoba.compiler.nbb.host.process :as process])
+            #?(:cljs [kotoba.compiler.nbb.host.entry :as host-entry])))
+
+#?(:kotoba
+   (defn main [] :i64
+     (do (io/write-error "error: amu refactor is not available on the Kotoba route\n")
+         64))
+   :default nil)
+
+#?(:kotoba nil
+   :default
+   (do
+
+(defn- host-io
+  "The I/O record of refactor-cli over the mechanism layer. Files are read whole (a source here is larger than the
+  compile path's 1 MiB bound); a write goes to the path given, the caller names a temporary one and renames."
+  []
+  {:read (fn [path] (fs/app-data path))
+   :write (fn [path text] (fs/app-data (str path "WRITE_SEP" text)))
+   :rename (fn [from to]
+             (when-not (= "1" (fs/app-data (str from "RENAME_SEP" to)))
+               (throw (ex-info (str "rename " from " -> " to " failed") {:phase :output}))))
+   :kind (fn [path]
+           (let [answer (fs/app-data (str path "STAT_SEP"))]
+             (cond (= "" answer) nil
+                   (str/ends-with? answer " 1") :dir
+                   :else :file)))
+   :list (fn [dir]
+           (let [text (fs/browse dir)]
+             (if (= "" text)
+               []
+               (vec (for [line (str/split text #"\n")
+                          :let [[name d] (str/split line #"\t")]]
+                      {:name name :dir? (= "1" d)})))))
+   :mkdirs (fn [dir]
+             (loop [parts (remove empty? (str/split dir #"/")) acc (if (str/starts-with? dir "/") "" nil)]
+               (when-let [p (first parts)]
+                 (let [path (if acc (str acc "/" p) p)]
+                   (fs/app-data (str path "MKDIR_SEP"))   ; "0" when it exists
+                   (recur (rest parts) path)))))
+   :read-edn (fn [path] (support/read-edn-file! path))
+   :spawn (fn [argv]
+            (let [answer (process/spawn (process-wire/request (first argv) (vec (rest argv))))]
+              {:status (process-wire/answer-exit answer) :stdout (process-wire/answer-out answer)}))
+   ;; the nbb that is running this command is the one that runs the tests
+   :nbb-cli #?(:cljs (aget (.-argv js/process) 1) :default nil)})
+
+(defn main
+  "Run `amu refactor` over ARGS, print its answer, and answer the exit status."
+  [args]
+  (let [outcome (try {:ran (refactor-cli/run (vec (rest args)) (host-io))}
+                     (catch :default error
+                       {:refused (support/refusal error (second args))}))]
+    (if-let [{:keys [status stderr]} (:refused outcome)]
+      (do (io/write-error stderr) status)
+      (let [{:keys [value status]} (:ran outcome)]
+        (io/write (str (pr-str value) "\n"))
+        status))))
+
+#?(:cljs
+   (let [status (main (support/command-line-args))]
+     (when-not (zero? status) (host-entry/exit! status))))))

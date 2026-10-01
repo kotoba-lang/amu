@@ -1,0 +1,49 @@
+;; The rule library of `amu refactor`: id -> rule, with the documentation `refactor list-rules` prints.
+;;
+;; A rule is a map {:id :find (fn [{:src :nodes :opts}] findings)}; a finding is {:status :auto|:human :reason :edits ...}.
+;; See kotoba.compiler.refactor.core for the driver and each rules/*.cljk for the rewrite.  Rules a-f are the shapes the
+;; Kotoba-route port (`amu check`) of the selfhost frontend needs; none of them changes host behaviour: a rewrite either
+;; produces host-equivalent code or keeps the host text byte-for-byte as the `:default` arm of `#?(:kotoba NEW :default OLD)`.
+(ns kotoba.compiler.refactor.rules
+  (:require [kotoba.compiler.refactor.rules.destructure :as a]
+            [kotoba.compiler.refactor.rules.reject :as b]
+            [kotoba.compiler.refactor.rules.dynvars :as c]
+            [kotoba.compiler.refactor.rules.kwcallback :as d]
+            [kotoba.compiler.refactor.rules.letdestructure :as e]
+            [kotoba.compiler.refactor.rules.lowerloops :as f]))
+
+(def library
+  "Ordered; the id is what the command line takes."
+  [{:id "a" :name "destructure" :rule a/rule
+    :summary "destructuring lambda parameters (fn [[k v]] ..) / {:keys ..} -> plain parameter + (let [k (fe-nth p 0) ..] ..)"
+    :host-effect "none: fe-nth is (nth c i nil), fe-get is get, fe-nthnext is nthnext -- what Clojure's destructuring expands to"}
+   {:id "b" :name "reject" :rule b/rule
+    :summary "reject! -> the :fe/err typed abort (statement -> require-k, tail / let value -> throw fe-error)"
+    :host-effect "none: the original call stays as the :default arm"}
+   {:id "c" :name "dynvars" :rule c/rule :needs-target true
+    :summary "dynamic vars -> explicit env threading (--target dual: #?(:kotoba <threaded defn> :default <original>); --target host-env: in place, host-valid)"
+    :host-effect "none for dual; host-env is the differential experiment"}
+   {:id "d" :name "kwcallback" :rule d/rule
+    :summary "keyword callbacks (map :k xs) -> (map (fn [e] (:k e)) xs); (juxt :a :b)"
+    :host-effect "none"}
+   {:id "e" :name "let" :rule e/rule
+    :summary "destructuring in let binding vectors, flattened in place"
+    :host-effect "none"}
+   {:id "f" :name "lowerloops" :rule f/rule
+    :summary "mapv/map/filter/filterv/reduce with a one-lambda callback -> a loop over kotoba.form as the :kotoba arm"
+    :host-effect "none: the :default arm is the original call"}])
+
+(def standard-order
+  "A full run: these on the source (in this order), then `c` on that output (it replaces whole defns and runs once)."
+  ["a" "b" "d" "e" "f"])
+
+(defn lookup
+  "Rule by id or name; nil when unknown."
+  [s]
+  (first (filter #(or (= s (:id %)) (= s (:name %))) library)))
+
+(defn resolve-rules
+  "\"a,b,d\" / \"all\" -> [library entries]; nil entries are reported by the caller."
+  [spec]
+  (let [ids (if (= spec "all") standard-order (vec (remove empty? (clojure.string/split spec #","))))]
+    (mapv (fn [id] (or (lookup id) {:unknown id})) ids)))

@@ -1,0 +1,405 @@
+;; Rule (c): dynamic vars -> explicit :fe/env threading (docs/selfhost-frontend-typemodel-design.md section 1.2).
+;;
+;; What is automatic, and the soundness argument.
+;;
+;; A function READS the dynamic state if it mentions a `^:dynamic` var of the module or `binding`s one; C is the set of
+;; module functions that do so directly or reach one through calls (the callers of C are in C).  Rewriting a function f
+;; means: give it an explicit first parameter `fenv`; replace each read `*x*` by an accessor of the env; replace each
+;; `(binding [*x* v ...] body)` by `(let [fenv (with-x fenv v) ...] body)` (all values are computed from the OUTER env,
+;; as `binding` does); and pass `fenv` to every call of a rewritten function.  That is only sound if f's callees in C
+;; are rewritten too (else they would read a var the rewritten f no longer sets), so the rewritable set E is the
+;; greatest subset of the unblocked members of C that is closed under "callees in C".  Blockers:
+;;   * a var mutated through a ref (vswap!/swap!/reset!/deref ...) - on the Kotoba route a counter is an :i64 field
+;;     returned with the result, which is a hand port, not a rewrite (target :dual only);
+;;   * `set!`, `with-redefs`, `alter-var-root`, `(var f)`;
+;;   * a rewritable function used as a VALUE ((map f xs), dispatch tables) (target :dual only);
+;;   * a call in thread-first position ((-> x (f a)) puts x before the env);
+;;   * a local binding that shadows a module function name; a local named `fenv`;
+;;   * (target :host-env) a public/exported function: its signature is observable and tests bind the vars around it.
+;;
+;; Targets.
+;;   :dual     the Kotoba route.  Each function of E becomes  #?(:kotoba <env-threaded defn> :default <original, byte for byte>)
+;;             with the accessors the existing :fe/env record has (env-schemas, with-lexical, ...); a var with no field
+;;             yet gets the proposed accessor pair (listed in the report as "fields to add").
+;;   :host-env the differential experiment, in place and host-valid: `fenv` is a plain map built by `(fe-current-env)` from
+;;             the vars' current values at the entry points (non-E functions that call E functions); reads are
+;;             `(:field fenv)`, bindings `(assoc fenv ...)`.  A ref-valued var (a volatile counter) keeps its identity in the
+;;             map, so mutation through it is unchanged.  Used to show the rewrite preserves the host result.
+(ns kotoba.compiler.refactor.rules.dynvars
+  (:require [clojure.string :as str]
+            [kotoba.compiler.refactor.cst :as cst]
+            [kotoba.compiler.refactor.edit :as edit]))
+
+;; var -> field of the landed :fe/env record (frontend.cljk `fe-env`); :repr says why a mapping is not 1:1
+(def existing-fields
+  {"*synthetic-counter*" {:field "counter" :repr "i64 counter (host: volatile)"}
+   "*contextual-closure-result-type*" {:field "result"}
+   "*absence-mode*" {:field "none" :repr "bool (host: :none/:legacy keyword)"}
+   "*function-arities*" {:field "arities"}
+   "*lexical-bindings*" {:field "lexical"}
+   "*local-types*" {:field "types"}
+   "*document-functions*" {:field "docfns"}
+   "*loop-counter*" {:field "loop-counter" :repr "i64 counter (host: volatile)"}
+   "*schemas*" {:field "schemas"}
+   "*lifting-lazy-thunk?*" {:field "lazy"}
+   "*abort-lexical-context*" {:field "abort-ctx" :repr "string (host: keyword)"}
+   "*used-capability-keywords*" {:field "used-caps"}
+   "*local-option-types*" {:field "options"}})
+
+(defn field-of [nm]
+  (or (get existing-fields nm)
+      {:field (-> nm (str/replace #"^\*" "") (str/replace #"\*$" "") (str/replace #"\?$" "") (str/replace #"^private-?" "")) :new? true}))
+
+(def ^:private mutators #{"vswap!" "vreset!" "swap!" "reset!" "set!" "deref" "alter-var-root" "swap-vals!" "reset-vals!"})
+(def ^:private let-heads #{"let" "let*" "loop" "for" "doseq" "when-let" "if-let" "when-some" "if-some" "with-open" "dotimes"})
+(def ^:private thread-first #{"->" "some->" "cond->"})
+
+;; ---- collecting definitions ----------------------------------------------------------------------------------------
+
+(defn- meta-texts [n]
+  (loop [n n acc #{}]
+    (if (= :meta (:type n)) (recur (second (:kids n)) (conj acc (:text (first (:kids n))))) acc)))
+
+(defn- top-forms
+  "[{:node :arm} ...]: top-level forms and the forms of top-level reader-conditional arms (nil arm = plain)."
+  [nodes]
+  (mapcat (fn [n] (if (= :rc (:type n))
+                    (for [[k f] (cst/rc-branches n)] {:node f :arm (if (= k ":kotoba") :kotoba :default) :rc n})
+                    [{:node n :arm nil}]))
+          nodes))
+
+(defn- exports [nodes]
+  (let [ns-node (first (filter #(cst/call? % "ns") nodes))
+        m (first (filter cst/map? (:kids ns-node)))]
+    (set (when m (for [[k v] (partition 2 (:kids m)) :when (cst/kw? k ":kotoba/export") s (:kids v)] (:text s))))))
+
+(defn- param-vecs [fn-node]
+  ;; defn node -> [[params-vec-node body-nodes] ...]
+  (let [kids (drop 2 (:kids fn-node))
+        kids (drop-while #(not (or (cst/vec? %) (cst/lst? %))) kids)]
+    (cond (cst/vec? (first kids)) [[(first kids) (vec (rest kids))]]
+          :else (mapv (fn [l] [(first (:kids l)) (vec (rest (:kids l)))]) (filter cst/lst? kids)))))
+
+(defn- fn-name [n] (let [nm (cst/strip-meta (second (:kids n)))] (when (cst/sym? nm) (:text nm))))
+
+(defn- syms-in [n]
+  (let [n (cst/strip-meta n)]
+    (if (cst/sym? n) [(:text n)] (mapcat syms-in (:kids n)))))
+
+(defn- locals-of
+  "Names bound locally anywhere inside a defn (params + binding forms + fn params + catch)."
+  [defn-node]
+  (let [acc (atom #{})]
+    (letfn [(go [n]
+              (when (contains? #{:list :vec :map :set :fnlit :rc :meta :prefix} (:type n))
+                (when (cst/lst? n)
+                  (let [h (cst/head-text n) as (cst/args n)]
+                    (cond
+                      (contains? let-heads h) (when (cst/vec? (first as))
+                                                (doseq [[p v] (partition 2 (:kids (first as)))]
+                                                  (if (cst/kw? p)
+                                                    (when (cst/vec? v) (doseq [[q _] (partition 2 (:kids v))] (swap! acc into (syms-in q))))
+                                                    (swap! acc into (syms-in p)))))
+                      (contains? #{"fn" "fn*"} h)
+                      (let [ks (rest (:kids n)) ks (if (cst/sym? (first ks)) (do (swap! acc conj (:text (first ks))) (rest ks)) ks)]
+                        (cond (cst/vec? (first ks)) (swap! acc into (syms-in (first ks)))
+                              :else (doseq [l ks :when (and (cst/lst? l) (cst/vec? (first (:kids l))))]
+                                      (swap! acc into (syms-in (first (:kids l)))))))
+                      (= h "catch") (when (>= (count as) 2) (swap! acc into (syms-in (nth as 1))))
+                      (= h "letfn") (when (cst/vec? (first as)) (doseq [d (:kids (first as))] (swap! acc into (syms-in (first (:kids d)))))))))
+                (doseq [k (:kids n)] (go k))))]
+      (go defn-node)
+      (doseq [[pv _] (param-vecs defn-node)] (swap! acc into (syms-in pv))))
+    @acc))
+
+;; ---- scanning a function ---------------------------------------------------------------------------------------------
+
+(defn- scan-fn
+  "Walk the :kotoba view (view = :kotoba) or :default view of a defn body."
+  [src defn-node view {:keys [vars fns]}]
+  (let [locals (locals-of defn-node)
+        self (fn-name defn-node)
+        r (atom {:reads [] :binds [] :calls [] :refs [] :muts [] :threadrefs [] :shadowrefs [] :blockers #{} :locals locals})
+        add! (fn [k v] (swap! r update k conj v))
+        block! (fn [why] (swap! r update :blockers conj why))]
+    (letfn [(go [n parent idx]
+              (case (:type n)
+                :rc (doseq [[k f] (cst/rc-branches n)]
+                      (when (= (if (= k ":kotoba") :kotoba :default) view) (go f parent idx)))
+                (:str :num :kw :char :regex) nil
+                :sym (let [t (:text n)]
+                       (cond
+                         (contains? vars t) (do (add! :reads t)
+                                                (when (and parent (cst/lst? parent) (contains? mutators (cst/head-text parent)) (= idx 1))
+                                                  (add! :muts [t (cst/head-text parent)])))
+                         (and (contains? fns t) (not (contains? locals t)))
+                         (if (and parent (cst/lst? parent) (contains? #{"->" "->>" "some->" "some->>"} (cst/head-text parent)) (>= idx 2))
+                           (do (block! "bare function symbol as a threading step") (add! :threadrefs t))
+                           (when-not (and parent (cst/call-node? parent) (= idx 0)) (add! :refs t)))
+                         (and (contains? fns t) (contains? locals t)) (do (block! (str "local binding shadows function " t)) (add! :shadowrefs t))))
+                :prefix (cond
+                          (contains? #{"'" "`"} (:prefix n)) nil
+                          (= "@" (:prefix n)) (do (when (cst/sym? (first (:kids n))) (when (contains? vars (:text (first (:kids n)))) (add! :muts [(:text (first (:kids n))) "deref"])))
+                                                  (go (first (:kids n)) n 0))
+                          (= "#'" (:prefix n)) (do (block! "var-quote #'x") (doseq [[i k] (map-indexed vector (:kids n))] (go k n i)))
+                          :else (doseq [[i k] (map-indexed vector (:kids n))] (go k n i)))
+                (:list :fnlit)
+                      (let [h (cst/call-head-text n) as (cst/args n)]
+                        (cond
+                          (= h "quote") nil
+                          (= h "declare") nil
+                          (contains? #{"with-redefs" "alter-var-root" "bound-fn" "binding-conveyor-fn" "var"} h) (do (block! (str h)) (doseq [[i k] (map-indexed vector (:kids n))] (go k n i)))
+                          (= h "binding")
+                          (let [bv (first as)
+                                pairs (when (cst/vec? bv) (partition 2 (:kids bv)))]
+                            (if (and pairs (every? (fn [[p _]] (and (cst/sym? p) (contains? vars (:text p)))) pairs))
+                              (do (add! :binds n)
+                                  (doseq [[_ v] pairs] (go v bv 1))
+                                  (doseq [[i k] (map-indexed vector (rest as))] (go k n (+ 2 i))))
+                              (do (block! "binding of a non-module var") (doseq [[i k] (map-indexed vector (:kids n))] (go k n i)))))
+                          :else
+                          (do
+                            (when (and h (contains? fns h))
+                              (if (contains? locals h)
+                                (do (block! (str "local binding shadows function " h)) (add! :shadowrefs h))
+                                (add! :calls {:node n :name h :parent parent :idx idx})))
+                            (doseq [[i k] (map-indexed vector (:kids n))] (go k n i)))))
+                (doseq [[i k] (map-indexed vector (:kids n))] (go k n i))))]
+      (let [kids (:kids defn-node)
+            ;; skip `defn` and the name; params are not scanned (bound names)
+            body-forms (mapcat (fn [[pv body]] body) (param-vecs defn-node))]
+        (doseq [b body-forms] (go b defn-node 99))))
+    (let [res @r]
+      (cond-> res
+        (some #(and (= self (:name %))) (:calls res)) (assoc :self-recursive true)))))
+
+;; ---- analysis ------------------------------------------------------------------------------------------------------
+
+(defn analyze
+  "-> {:vars :fns :C :E :blocked ...}"
+  [src nodes target & [observable]]
+  (let [view (if (= target :host-env) :default :kotoba)
+        exported (exports nodes)
+        tops (top-forms nodes)
+        ;; vars: ^:dynamic defs outside :kotoba arms
+        vars (into {} (for [{:keys [node arm]} tops :when (not= arm :kotoba)
+                            :when (and (cst/call? node "def") (let [nm (second (:kids node))] (contains? (meta-texts nm) ":dynamic")))
+                            :let [nm (:text (cst/strip-meta (second (:kids node))))]]
+                        [nm (merge (field-of nm) {:def-s (:s node)})]))
+        ;; rewritable functions: shared top-level defns; for the host-env target also the defns in :default arms
+        ;; (host-only helpers and the host text of ported definitions, which call the same functions)
+        defn-entries (for [{:keys [node arm]} tops :when (or (cst/call? node "defn") (cst/call? node "defn-"))
+                           :let [nm (fn-name node)] :when nm]
+                       [nm {:node node :arm arm
+                            :private? (or (cst/call? node "defn-") (contains? (meta-texts (second (:kids node))) ":private"))
+                            :exported? (contains? exported nm)}])
+        shared (into {} (filter (fn [[_ f]] (or (nil? (:arm f)) (and (= target :host-env) (= :default (:arm f))))) defn-entries))
+        ;; dual: functions already ported by hand that take the :fe/env record first are part of E (their callers pass fenv)
+        ported-env (if (= target :dual)
+                     (set (for [[nm f] defn-entries :when (= :kotoba (:arm f))
+                                :let [pvs (param-vecs (:node f))]
+                                :when (some (fn [[pv _]] (and (>= (count (:kids pv)) 2) (cst/sym? (first (:kids pv)) "env")
+                                                              (str/includes? (cst/text src (second (:kids pv))) ":fe/env")))
+                                            pvs)]
+                            nm))
+                     #{})
+        fns (into (set (keys shared)) ported-env)
+        scans (into {} (for [[nm f] shared] [nm (scan-fn src (:node f) view {:vars vars :fns fns})]))
+        direct (into (set (for [[nm s] scans :when (or (seq (:reads s)) (seq (:binds s))) ] nm)) ported-env)
+        callers (reduce (fn [m [nm s]] (reduce (fn [m c] (update m c (fnil conj #{}) nm)) m (concat (map :name (:calls s)) (:refs s)))) {} scans)
+        C (loop [c direct]
+            (let [c' (into c (mapcat #(get callers % #{}) c))] (if (= c c') c (recur c'))))
+        callees-in-C (fn [nm] (set (filter C (concat (map :name (:calls (get scans nm))) (:refs (get scans nm))))))
+        thread-ref-set (set (mapcat :threadrefs (vals scans)))
+        shadow-ref-set (set (mapcat :shadowrefs (vals scans)))
+        blockers (fn [nm]
+                   (let [s (scans nm) f (shared nm)
+                         text (cst/text src (:node f))]
+                     (set (concat
+                           (:blockers s)
+                           (when (str/includes? text "fenv") ["a local/param already named fenv"])
+                           (when (thread-ref-set nm) ["used as a bare threading step ((->> x f))"])
+                           (when (shadow-ref-set nm) ["referenced where a local binding shadows its name (ambiguous)"])
+                           (when (and (= target :dual) (seq (:muts s))) ["var mutated through a ref (counter/registry: needs result threading)"])
+                           (when (some #(= "set!" (second %)) (:muts s)) ["set! of a dynamic var"])
+                           (when (and (= target :dual) (some C (:refs s))) ["rewritable function used as a value"])
+                           (when (some (fn [c] (and (C (:name c)) (:parent c) (cst/lst? (:parent c))
+                                                    (contains? thread-first (cst/head-text (:parent c))) (not= 1 (:idx c))))
+                                       (:calls s))
+                             ["call in thread-first position"])
+                           (when (and (= target :dual) (some #(:repr (vars %)) (:reads s)))
+                             ["var whose env field has a different representation"])
+                           (when (and (= target :host-env) (not (:private? f))) ["public function (signature observable)"])
+                           (when (and (= target :host-env) (contains? observable nm)) ["named by a test/other module (#'ns/f or alias/f)"])))))
+        blocked0 (into {} (for [nm C :when (shared nm) :let [b (blockers nm)] :when (seq b)] [nm b]))
+        E (loop [e (set (remove blocked0 C))]
+            (let [bad (set (filter (fn [nm] (some #(and (C %) (not (e %))) (callees-in-C nm))) e))]
+              (if (empty? bad) e (recur (apply disj e bad)))))
+        propagated (into {} (for [nm C :when (and (shared nm) (not (E nm)) (not (blocked0 nm)))]
+                              [nm #{"calls a blocked function in C"}]))]
+    {:view view :vars vars :shared shared :scans scans :C C :E E :direct direct
+     :blocked (merge propagated blocked0) :target target}))
+
+;; ---- rendering -----------------------------------------------------------------------------------------------------------
+
+(defn- render
+  "Text of node n with `subst` applied: (subst node rk) -> string | nil (nil = copy).  `rk` renders a child."
+  [src n subst view]
+  (letfn [(rk [k]
+            (or (subst k rk) (copy k)))
+          (copy [k]
+            (if (empty? (:kids k))
+              (cst/text src k)
+              (loop [pos (:s k) ks (map-indexed vector (:kids k)) out []]
+                (if-let [[i c] (first ks)]
+                  (recur (:e c) (rest ks)
+                         (conj out (subs src pos (:s c))
+                               (if (and (= :rc (:type k)) (odd? i))
+                                 (let [key (:text (nth (:kids k) (dec i)))
+                                       arm (if (= key ":kotoba") :kotoba :default)]
+                                   (if (= arm view) (rk c) (cst/text src c)))
+                                 (if (and (= :rc (:type k)) (even? i)) (cst/text src c) (rk c)))))
+                  (apply str (conj out (subs src pos (:e k))))))))]
+    (rk n)))
+
+(defn- read-text [target nm vars]
+  (let [{:keys [field]} (vars nm)]
+    (case target
+      :dual (str "(env-" field " fenv)")
+      :host-env (str "(:" field " fenv)"))))
+
+(defn- with-text [target nm vars envx valx]
+  (let [{:keys [field]} (vars nm)]
+    (case target
+      :dual (str "(with-" field " " envx " " valx ")")
+      :host-env (str "(assoc " envx " :" field " " valx ")"))))
+
+(defn- rewrite-defn [src defn-node {:keys [vars E target scans view]} in-E?]
+  (let [self (fn-name defn-node)
+        locals (:locals (scans self))
+        envarg (if in-E? "fenv" "(fe-current-env)")
+        pvs (set (map (comp :s first) (param-vecs defn-node)))
+        binding-subst
+        (fn [n rk]
+          (let [kids (:kids n) bv (second kids)
+                new (reduce (fn [acc [p v]] (with-text target (:text p) vars acc (rk v))) "fenv" (partition 2 (:kids bv)))
+                body (drop 2 kids)]
+            (str "(let [fenv " new "]"
+                 (apply str (map (fn [[prev k]] (str (subs src (:e prev) (:s k)) (rk k))) (map vector (cons bv body) body)))
+                 (subs src (:e (last kids)) (:e n)))))
+        call-subst
+        (fn [n rk]
+          (let [kids (:kids n) h (first kids)]
+            (str (subs src (:s n) (:s h)) (cst/text src h) " " envarg
+                 (apply str (map (fn [[prev k]] (str (subs src (:e prev) (:s k)) (rk k))) (map vector kids (rest kids))))
+                 (subs src (:e (last kids)) (:e n)))))
+        full
+        (fn [n rk]
+          (case (:type n)
+            :sym (let [t (:text n)]
+                   (cond (and in-E? (contains? vars t)) (read-text target t vars)
+                         (and (E t) (not (contains? locals t)) (= target :host-env)) (str "(partial " t " " envarg ")")))
+            :vec (when (and in-E? (contains? pvs (:s n)))
+                   (str "[fenv" (if (seq (:kids n)) " " "") (subs src (inc (:s n)) (:e n))))
+            (:list :fnlit)
+                  (let [h (cst/call-head-text n)]
+                    (cond
+                      (= h "binding")
+                      (let [bv (first (cst/args n))]
+                        (when (and in-E? (cst/vec? bv) (every? (fn [[p _]] (and (cst/sym? p) (contains? vars (:text p)))) (partition 2 (:kids bv))))
+                          (binding-subst n rk)))
+                      (and h (E h) (not (contains? locals h))) (call-subst n rk)))
+            nil))
+        kids (:kids defn-node)
+        arity-start (->> kids (keep-indexed (fn [i k] (when (and (> i 1) (or (cst/vec? k) (cst/lst? k))) i))) first)
+        pre (subs src (:s defn-node) (:s (nth kids arity-start)))
+        multi? (cst/lst? (nth kids arity-start))
+        parts (map-indexed
+               (fn [i k]
+                 (str (if (zero? i) "" (subs src (:e (nth kids (+ arity-start i -1))) (:s k)))
+                      (if (and multi? (cst/lst? k)) ; multi-arity clause
+                        (let [ks (:kids k)]
+                          (str (subs src (:s k) (:s (first ks)))
+                               (render src (first ks) full view)
+                               (apply str (map (fn [[p c]] (str (subs src (:e p) (:s c)) (render src c full view))) (map vector ks (rest ks))))
+                               (subs src (:e (last ks)) (:e k))))
+                        (render src k full view))))
+               (drop arity-start kids))]
+    (str pre (apply str parts) (subs src (:e (last kids)) (:e defn-node)))))
+
+;; ---- findings ------------------------------------------------------------------------------------------------------------
+
+(defn find-all [{:keys [src nodes opts]}]
+  (let [target (or (:target opts) :dual)
+        a (analyze src nodes target (:observable opts))
+        {:keys [vars shared scans C E blocked]} a
+        starts (edit/line-starts src)
+        line (fn [n] (edit/offset->line starts (:s n)))
+        out (atom [])
+        raw-occ (atom {})
+        count-of (fn [nm] (let [s (scans nm)] {:reads (count (:reads s)) :binds (count (:binds s)) :muts (count (:muts s))}))
+        ;; host-env: non-E functions that call (or reference) an E function are touched too
+        touched (if (= target :host-env)
+                  (set (for [[nm s] scans :when (and (not (E nm)) (or (some #(E (:name %)) (:calls s)) (some E (:refs s))))] nm))
+                  #{})
+        used-vars (when (= target :host-env)
+                    (set (for [nm E v (:reads (scans nm))] v)))
+        bound-vars (when (= target :host-env)
+                     (set (for [nm E b (:binds (scans nm)) [p _] (partition 2 (:kids (second (:kids b))))] (:text p))))]
+    ;; per-function findings
+    (doseq [[nm f] shared :when (C nm)]
+      (let [node (:node f) cnt (count-of nm)]
+        (cond
+          (E nm)
+          (let [new (rewrite-defn src node (assoc a :view (:view a)) true)
+                text (case target
+                       :dual (str "#?(:kotoba " new "\n   :default " (cst/text src node) ")")
+                       :host-env new)]
+            (swap! out conj (merge {:rule :dynvars :s (:s node) :e (:e node) :region (if (:arm f) :default :shared) :status :auto :kind :fn :fn nm
+                                    :line (line node) :context (name target) :edits [(edit/replace-node node text :dynvars)]} cnt)))
+          :else
+          (swap! out conj (merge {:rule :dynvars :s (:s node) :e (:e node) :region (if (:arm f) :default :shared) :status :human :kind :fn :fn nm
+                                  :line (line node) :context (name target)
+                                  :reason (str/join "; " (sort (get blocked nm)))} cnt)))))
+    (doseq [nm touched]
+      (let [node (:node (shared nm))]
+        (swap! out conj {:rule :dynvars :s (:s node) :e (:e node) :region (if (:arm (shared nm)) :default :shared) :status :auto :kind :entry :fn nm :line (line node)
+                         :context "host-env entry call sites"
+                         :edits [(edit/replace-node node (rewrite-defn src node (assoc a :view :default) false) :dynvars)]})))
+    ;; host-env needs fe-current-env (declared after ns, defined at the end of the file)
+    (when (and (= target :host-env) (seq E) (not (re-find #"\(defn-? fe-current-env" src)))
+      (let [ns-node (first (filter #(cst/call? % "ns") nodes))
+            all-vars (sort (into used-vars bound-vars))
+            body (str "\n\n(defn- fe-current-env\n  \"amu-refactor: the dynamic state as an explicit env map (host-env target).\"\n  []\n  {"
+                      (str/join "\n   " (map #(str ":" (:field (vars %)) " " %) all-vars)) "})\n")]
+        (swap! out conj {:rule :dynvars :s (:e ns-node) :e (:e ns-node) :region :shared :status :auto :kind :prelude :line 0
+                         :edits [(edit/insert-at (:e ns-node) "\n\n(declare fe-current-env)" :dynvars 5)
+                                 (edit/insert-at (count src) body :dynvars 5)]})))
+    ;; raw occurrences across the whole file, by region (the scans above only see rewritable function bodies)
+    (let [occ (atom {})]
+      (cst/walk (fn [n {:keys [region path]}]
+                  (cond
+                    (and (cst/sym? n) (contains? vars (:text n)))
+                    (swap! occ update-in [(:text n) region] (fnil inc 0))
+                    (and (cst/lst? n) (= "binding" (cst/head-text n)))
+                    (swap! occ update-in ["(binding ...)" region] (fnil inc 0))))
+                nodes)
+      (reset! raw-occ @occ))
+    ;; inventory
+    (swap! out conj {:rule :dynvars :kind :inventory :status :info :region :shared
+                     :data {:occurrences-by-region (into (sorted-map) @raw-occ)
+                            :vars (into (sorted-map)
+                                        (for [[nm v] vars
+                                              :let [reads (reduce + (map #(count (filter #{nm} (:reads %))) (vals scans)))
+                                                    binds (reduce + (map (fn [s] (count (filter (fn [b] (some (fn [[p _]] (= nm (:text p))) (partition 2 (:kids (second (:kids b)))))) (:binds s)))) (vals scans)))
+                                                    muts (reduce + (map #(count (filter (fn [m] (= nm (first m))) (:muts %))) (vals scans)))]]
+                                          [nm (assoc (select-keys v [:field :new? :repr]) :reads reads :binds binds :muts muts)]))
+                            :shared-fns (count shared) :C (count C) :E (count E)
+                            :blocked-reasons (->> (vals blocked) (mapcat identity) frequencies (sort-by (comp - val)) vec)
+                            :new-fields (vec (sort (for [[nm v] vars :when (:new? v)] (:field v))))
+                            :entries (vec (sort (for [nm E :when (and (not (some (fn [[_ s]] (some #(= nm (:name %)) (:calls s))) scans)))] nm)))}})
+    ;; host-env: the host arms of ported definitions are part of the host call graph; rewriting some callers/callees
+    ;; and not others would be unsound, so these findings apply regardless of `ported?`
+    (mapv (fn [f] (if (= target :host-env) (assoc f :force-apply true) f)) @out)))
+
+(def rule {:id :dynvars :find find-all :once true :regions #{:shared :default}})

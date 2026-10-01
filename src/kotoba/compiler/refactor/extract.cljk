@@ -1,0 +1,236 @@
+;; Cut a big namespace into modules according to a partition, plus a facade (amu refactor split).
+;;
+;; Pure: source text + partition -> {path -> text}.  The caller writes the files (under a scratch --out directory, never
+;; the source tree unless the caller names it).
+;;
+;;   <ns path>.cljk                     thin facade: same ns name + :kotoba/export attr map, re-exports every name
+;;   <ns path>/<module>.cljk            one file per module: ns + :require (dependency order, only what is used),
+;;                                      (declare ...) for forward references inside the module, then the original
+;;                                      forms byte-for-byte (docstrings and the comments before each form preserved)
+;;
+;; Only two textual edits are made to a form: `defn-` -> `defn` and `^:private` dropped (cross-module access).
+;; Reader conditionals are respected: a name that exists on only some platforms is :refer'd / re-exported only there.
+;;
+;; Ported from scripts/selfhost-split/{extract,roundtrip}.py.
+(ns kotoba.compiler.refactor.extract
+  (:require [clojure.string :as str]
+            [kotoba.compiler.refactor.cst :as cst]
+            [kotoba.compiler.refactor.graph :as graph]))
+
+(defn- ident [s] (str/replace s #"[^A-Za-z0-9-]" "-"))
+(defn- path-part [s] (str/replace s "-" "_"))
+
+(defn- refuse [code msg data] (ex-info msg (assoc data :phase :decode :kotoba.error/code code)))
+
+(defn parse-ns
+  "(ns name doc? attr-map? clauses...) -> {:name :doc :attr :requires [nodes] :other [clause-texts]}."
+  [src a]
+  (let [ns-chunk (first (filter :is-ns (:chunks a)))
+        _ (when-not ns-chunk (throw (refuse :refactor/no-ns "the source has no ns form" {})))
+        kids (vec (:kids (:node ns-chunk)))
+        txt (fn [n] (subs src (:s n) (:e n)))
+        i 2
+        [doc i] (if (= :str (:type (get kids i))) [(txt (get kids i)) (inc i)] [nil i])
+        [attr i] (if (= :map (:type (get kids i))) [(txt (get kids i)) (inc i)] [nil i])]
+    (reduce (fn [info k]
+              (let [t (cst/strip-meta k)]
+                (if (and (cst/lst? t) (seq (:kids t)) (cst/kw? (first (:kids t)) ":require"))
+                  (assoc info :requires (vec (rest (:kids t))))
+                  (update info :other conj (txt k)))))
+            {:name (:text (get kids 1)) :doc doc :attr attr :requires [] :other []}
+            (subvec kids i))))
+
+(defn- spec-alias [vec-node]
+  (let [ks (vec (:kids vec-node))]
+    (or (first (for [[j k] (map-indexed vector ks) :when (and (cst/kw? k ":as") (< (inc j) (count ks)))] (:text (nth ks (inc j)))))
+        (:text (first ks)))))
+
+(defn- all-nodes [n] (tree-seq #(seq (:kids %)) :kids n))
+
+(defn- used-aliases [chunks]
+  (set (for [c chunks n (all-nodes (:node c))
+             :when (and (= :sym (:type n)) (str/includes? (:text n) "/") (not= "/" (:text n)))]
+         (first (str/split (:text n) #"/")))))
+
+(defn- spec-vec? [n] (and (= :vec (:type n)) (seq (:kids n)) (= :sym (:type (first (:kids n))))))
+
+(defn- build-requires
+  "Filter the ORIGINAL require specs (including their #? wrappers) down to the aliases a module uses."
+  [info src used]
+  (let [keep? (fn [vec-node] (contains? used (spec-alias vec-node)))
+        txt (fn [n] (subs src (:s n) (:e n)))]
+    (vec
+     (keep (fn [e]
+             (let [t (cst/strip-meta e)]
+               (cond
+                 (= :vec (:type t)) (when (keep? t) (txt e))
+                 (= :rc (:type t))
+                 (let [branches
+                       (for [[k v] (partition 2 (:kids t))
+                             :let [specs (filter keep? (if (spec-vec? v) [v] (filter #(= :vec (:type %)) (if (= :vec (:type v)) (:kids v) [v]))))]
+                             :when (seq specs)]
+                         (if (:splice? t)
+                           (str (:text k) " [" (str/join " " (map txt specs)) "]")
+                           (str (:text k) " " (txt (first specs)))))]
+                   (when (seq branches)
+                     (str (if (:splice? t) "#?@(" "#?(") (str/join " " branches) ")"))))))
+           (:requires info)))))
+
+(defn- chunk-edits
+  "Textual edits making a form importable from another module: defn- -> defn, drop ^:private."
+  [c]
+  (vec (for [[_ ds] (:defnodes c) d ds
+             e (concat
+                (let [h (first (:kids d))] (when (= "defn-" (:text h)) [[(:s h) (:e h) "defn"]]))
+                (loop [nm (second (:kids d)) out []]
+                  (if (= :meta (:type nm))
+                    (let [m (first (:kids nm))]
+                      (recur (second (:kids nm))
+                             (if (cst/kw? m ":private") (conj out [(:s nm) (:s (second (:kids nm))) ""]) out)))
+                    out)))]
+         e)))
+
+(defn- apply-local-edits [text base edits]
+  (reduce (fn [t [s e r]] (str (subs t 0 (- s base)) r (subs t (- e base))))
+          text (sort-by (fn [[s e _]] [(- s) (- e)]) edits)))
+
+(defn- always? [ps] (or (contains? ps nil) (and (contains? ps ":kotoba") (contains? ps ":default"))))
+
+(defn- plat-wrap
+  "Reader-conditional spelling for something that exists under only some features."
+  [ps form]
+  (let [keys* (sort (remove nil? ps))
+        branches (map #(str % " " form) keys*)
+        branches (if (and (not (contains? ps ":kotoba")) (contains? ps ":default")) (cons ":kotoba nil" branches) branches)]
+    (str "#?(" (str/join " " branches) ")")))
+
+(defn- refer-items [names-plats]
+  (let [always (for [[n ps] names-plats :when (always? ps)] n)
+        groups (group-by second (for [[n ps] names-plats :when (not (always? ps))] [n ps]))
+        grouped (for [[ps rows] (sort-by (fn [[ps _]] (vec (sort (map str ps)))) groups)
+                      :let [ks (sort (remove nil? ps))
+                            body (map (fn [k] (str k " [" (str/join " " (map first rows)) "]")) ks)
+                            body (if (and (not (contains? (set ks) ":kotoba")) (contains? (set ks) ":default")) (cons ":kotoba []" body) body)]]
+                  (str "#?@(" (str/join " " body) ")"))]
+    (str/join " " (concat always grouped))))
+
+(defn extract
+  "src + partition -> {:files {path text} :report {...} :ns ns-name}.
+  partition = {:modules [{:module name :order k :chunks [idx...]} ...]} (the `partition` output)."
+  [src partition {:keys [ns-name]}]
+  (let [a (graph/analysis src)
+        chunks (:chunks a)
+        info (parse-ns src a)
+        ns-name (or ns-name (:name info))
+        order (mapv :module (sort-by :order (:modules partition)))
+        assign (into {} (for [m (:modules partition) idx (:chunks m)] [idx (:module m)]))
+        _ (let [missing (vec (for [c chunks :when (and (seq (:names c)) (not (contains? assign (:idx c))))] (:idx c)))]
+            (when (seq missing)
+              (throw (refuse :refactor/partition-incomplete
+                             "the partition does not place every defining form of the source (was it computed for another file?)"
+                             {:missing (vec (take 10 missing)) :count (count missing)}))))
+        order-pos (into {} (map-indexed (fn [i m] [m i]) order))
+        modns (fn [m] (str ns-name "." (ident m)))
+        base-dir (str/join "/" (map path-part (butlast (str/split ns-name #"\."))))
+        mod-dir (str base-dir "/" (path-part (last (str/split ns-name #"\."))))
+        mods (into {} (for [m order] [m (vec (filter #(and (= m (get assign (:idx %))) (seq (:names %))) chunks))]))
+        owner (into {} (for [[m cs] mods c cs n (:names c)] [n m]))
+        ;; comments of dropped (declare) forms ride along to the next kept form
+        trivia (loop [cs chunks pend "" out {}]
+                 (if-let [c (first cs)]
+                   (let [lead (subs src (:lead-s c) (:s c))]
+                     (cond
+                       (:is-ns c) (recur (rest cs) "" out)
+                       (or (not (contains? assign (:idx c))) (empty? (:names c)))
+                       (recur (rest cs) (if (str/blank? lead) pend (str pend lead)) out)
+                       :else (recur (rest cs) "" (assoc out (:idx c) (if (str/blank? pend) lead (str pend lead))))))
+                   out))
+        schema-clause (filter #(str/includes? % ":schemas") (:other info))
+        schema-keys (set (map second (re-seq #":([a-z]+)/" (str/join " " schema-clause))))
+        results
+        (for [m order
+              :let [cs (get mods m)
+                    names-here (set (mapcat :names cs))
+                    pos (reduce (fn [pm [i c]] (reduce (fn [pm n] (if (contains? pm n) pm (assoc pm n i))) pm (:names c)))
+                                {} (map-indexed vector cs))
+                    need (reduce (fn [need c]
+                                   (reduce (fn [need r]
+                                             (let [o (get owner r)]
+                                               (if (and o (not= o m))
+                                                 (assoc-in need [o r] (reduce into #{} (for [ci (get (:def-chunks a) r)] (get (:plats (nth chunks ci)) r))))
+                                                 need)))
+                                           need (:ref-order c)))
+                                 {} cs)
+                    fwd (vec (distinct (for [[i c] (map-indexed vector cs) r (:ref-order c)
+                                             :when (and (contains? names-here r) (>= (get pos r) i) (not (some #{r} (:names c))))]
+                                         r)))
+                    dyn (set (for [c cs n (:names c) :when (get (:dynamic c) n)] n))
+                    reqs (build-requires info src (used-aliases cs))
+                    deps (sort-by order-pos (keys need))
+                    rq (into reqs (for [dep deps] (str "[" (modns dep) " :refer [" (refer-items (sort-by first (get need dep))) "]]")))
+                    n-lines (reduce + (map :lines cs))
+                    text-all (str/join " " (map :text cs))
+                    head (cond-> [(str "(ns " (modns m))
+                                  (str "  \"Module `" m "` of " ns-name ", cut from the original namespace by amu refactor split ("
+                                       (count cs) " forms, " n-lines " lines). Depends on: "
+                                       (if (seq deps) (str/join ", " deps) "nothing in this split") ".\"")]
+                           (seq rq) (conj (str "  (:require " (str/join "\n            " rq) ")")))
+                    head (into head (for [sc schema-clause :when (some #(str/includes? text-all (str ":" % "/")) schema-keys)] (str "  " sc)))
+                    out (str (str/join "\n" head) ")\n")
+                    out (if (or (seq fwd) (seq dyn))
+                          (str out "\n;; forward references inside this module (the cut keeps the original form order)\n(declare "
+                               (str/join " " (for [r fwd] (str (when (contains? dyn r) "^:dynamic ") r))) ")\n")
+                          out)
+                    out (str out (apply str (for [c cs] (str (get trivia (:idx c) "") (apply-local-edits (:text c) (:s c) (chunk-edits c))))) "\n")]]
+          {:module m :path (str mod-dir "/" (path-part (ident m)) ".cljk") :text out
+           :stat {:forms (count cs) :lines n-lines :declares (count fwd) :requires (vec (sort deps))}})
+        ;; facade
+        fh (cond-> [(str "(ns " ns-name)]
+             (:doc info) (conj (str "  " (:doc info)))
+             (:attr info) (conj (str "  " (:attr info)))
+             true (conj (str "  (:require " (str/join "\n            " (for [m order] (str "[" (modns m) " :as " (ident m) "]"))) ")")))
+        fh (into fh (for [o (:other info) :when (str/includes? o ":schemas")] (str "  " o)))
+        rows (loop [cs chunks seen #{} rows []]
+               (if-let [c (first cs)]
+                 (let [[seen rows]
+                       (reduce (fn [[seen rows] n]
+                                 (if (or (contains? seen n) (not (contains? owner n)))
+                                   [seen rows]
+                                   (let [ps (reduce into #{} (for [ci (get (:def-chunks a) n)] (get (:plats (nth chunks ci)) n)))
+                                         private (every? #(get (:private (nth chunks %)) n) (get (:def-chunks a) n))
+                                         dynamic (some #(get (:dynamic (nth chunks %)) n) (get (:def-chunks a) n))
+                                         form (str "(def " (when dynamic "^:dynamic ") (when private "^:private ") n " " (ident (get owner n)) "/" n ")")]
+                                     [(conj seen n) (conj rows (if (always? ps) form (plat-wrap ps form)))])))
+                               [seen rows] (:names c))]
+                   (recur (rest cs) seen rows))
+                 rows))
+        facade (str (str/join "\n" fh) ")\n\n;; Facade over the split modules (amu refactor split). Each name is re-exported as a value;\n"
+                    ";; a ^:dynamic var is a SNAPSHOT here: rebind it through its owning module (see the split report).\n"
+                    (str/join "\n" rows) "\n")
+        facade-path (str base-dir "/" (path-part (last (str/split ns-name #"\."))) ".cljk")]
+    {:ns ns-name
+     :files (into {facade-path facade} (for [r results] [(:path r) (:text r)]))
+     :report {:format :kotoba.refactor/v1 :kind :split
+              :ns ns-name :facade facade-path :re-exports (count rows)
+              :modules (into (array-map) (for [r results] [(:module r) (assoc (:stat r) :path (:path r))]))}
+     :owner owner}))
+
+(defn roundtrip
+  "Structural check of an extraction: every original defining form (not ns, not (declare ..)) occurs in exactly one
+  module, byte-identical apart from the two allowed edits, and the facade re-exports every defined name.
+  -> {:ok bool :original n :split n :missing n :extra n :facade-names n :defined-names n}"
+  [src extraction]
+  (let [norm (fn [t] (-> t (str/replace "(defn- " "(defn ") (str/replace #"\^:private\s+" "")))
+        a (graph/analyze src)
+        want (frequencies (for [c (:chunks a) :when (and (not (:is-ns c)) (seq (:names c)))] (norm (:text c))))
+        facade-path (get-in extraction [:report :facade])
+        got (frequencies (for [[p t] (:files extraction) :when (not= p facade-path)
+                               c (:chunks (graph/analyze t)) :when (and (not (:is-ns c)) (seq (:names c)))]
+                           (norm (:text c))))
+        exported (set (for [c (:chunks (graph/analyze (get (:files extraction) facade-path))) n (:names c)] n))
+        defined (set (for [c (:chunks a) n (:names c)] n))
+        diff (fn [x y] (reduce + (for [[k n] x] (max 0 (- n (get y k 0))))))]
+    {:ok (and (= want got) (= exported defined))
+     :original (reduce + (vals want)) :split (reduce + (vals got))
+     :missing (diff want got) :extra (diff got want)
+     :facade-names (count exported) :defined-names (count defined)}))

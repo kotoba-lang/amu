@@ -1,0 +1,228 @@
+;; Rule (a): destructuring lambdas.
+;;
+;;   (map (fn [[k v]] body) coll)            ->  (map (fn [dd__1] (let [k (fe-nth dd__1 0) v (fe-nth dd__1 1)] body)) coll)
+;;   (fn [{:keys [a b] :or {b 1}}] body)     ->  (fn [dd__1] (let [a (fe-get dd__1 :a) b (fe-get dd__1 :b 1)] body))
+;;
+;; `fe-nth` / `fe-get` / `fe-nthnext` are the helpers of kotoba.compiler.refactor.prelude: on the host they are `(nth v i nil)` /
+;; `(get m k d)` / `(nthnext v i)` (exactly what Clojure's own destructuring expands to), on the Kotoba route they are
+;; kotoba.form's nth-of / form-get.  The rewrite changes no host semantics; it moves the destructuring out of the fn
+;; parameter list, the one place the Kotoba desugar refuses ("map fn parameter destructures").
+(ns kotoba.compiler.refactor.rules.destructure
+  (:require [clojure.string :as str]
+            [kotoba.compiler.refactor.cst :as cst]
+            [kotoba.compiler.refactor.edit :as edit]))
+
+(def prelude-names '[fe-nth fe-nthnext fe-get])
+
+(defn pat?
+  "A destructuring pattern: a vector or map in binding position.  A vector headed by a keyword is a Kotoba TYPE
+  ([:ref :form/r]), not a pattern."
+  [n]
+  (let [p (cst/strip-meta n)]
+    (case (:type p)
+      :vec (not (cst/kw? (first (:kids p))))
+      :map true
+      false)))
+
+(defn- bind-name [src n] (let [n (cst/strip-meta n)] (when (cst/sym? n) (:text n))))
+
+(defn- key-expr [src kind kw-text]
+  ;; kind :keys -> :a ; :strs -> "a" ; :syms -> 'a
+  (case kind
+    :keys kw-text
+    :strs (str "\"" (subs kw-text 1) "\"")
+    :syms (str "'" (subs kw-text 1))))
+
+(declare expand rewrite-arity)
+
+(defn- expand-vec [src pat v gen]
+  (let [kids (:kids pat)]
+    (loop [ks kids i 0 binds [] seen-amp? false]
+      (if-let [k (first ks)]
+        (cond
+          (cst/sym? k "&")
+          (let [rest-pat (cst/strip-meta (second ks))]
+            (cond
+              (nil? rest-pat) {:human "dangling &"}
+              (cst/map? rest-pat) {:human "& followed by a map pattern (keyword-args destructuring)"}
+              :else (let [r (expand src rest-pat (str "(fe-nthnext " v " " i ")") gen true)]
+                      (if (:human r) r (recur (drop 2 ks) i (into binds (:binds r)) true)))))
+
+          (cst/kw? k ":as")
+          (let [nm (bind-name src (second ks))]
+            (if nm (recur (drop 2 ks) i (conj binds [nm v]) seen-amp?) {:human ":as with a non-symbol"}))
+
+          :else
+          (let [r (expand src k (str "(fe-nth " v " " i ")") gen false)]
+            (if (:human r) r (recur (rest ks) (inc i) (into binds (:binds r)) seen-amp?))))
+        {:binds binds}))))
+
+(defn- expand-map [src pat v gen]
+  (let [pairs (partition 2 (:kids pat))
+        ors (into {} (for [[k vv] pairs :when (cst/kw? k ":or") :let [m (cst/strip-meta vv)] [ok ov] (partition 2 (:kids m))
+                           :when (cst/sym? ok)]
+                       [(:text ok) (cst/text src ov)]))]
+    (loop [ps pairs binds []]
+      (if-let [[k vv] (first ps)]
+        (let [kt (when (cst/kw? k) (:text k))]
+          (cond
+            (= kt ":or") (recur (rest ps) binds)
+            (= kt ":as") (let [nm (bind-name src vv)]
+                           (if nm (recur (rest ps) (conj binds [nm v])) {:human ":as with a non-symbol"}))
+            (and kt (re-find #"^:(?:[^/]+/)?(keys|strs|syms)$" kt))
+            (let [kind (keyword (second (re-find #"^:(?:[^/]+/)?(keys|strs|syms)$" kt)))
+                  nsq (second (re-find #"^:([^/]+)/(?:keys|strs|syms)$" kt))
+                  items (:kids (cst/strip-meta vv))]
+              (if (or (some #(str/starts-with? (or (:text %) "") "::") items) (not= kind :keys))
+                {:human (if (= kind :keys) "auto-resolved keyword (::k) inside :keys" (str ":" (name kind) " destructuring (string/symbol keys)"))}
+                (recur (rest ps)
+                       (into binds
+                             (for [it items :let [t (:text it) t (if (cst/kw? it) (subs t 1) t)
+                                                  base (last (str/split t #"/"))
+                                                  kw-text (str ":" (or nsq (when (str/includes? t "/") (first (str/split t #"/"))) "") (if (or nsq (str/includes? t "/")) "/" "") base)
+                                                  dflt (get ors base)]]
+                               [base (str (if dflt "(fe-get-or " "(fe-get ") v " " (key-expr src kind kw-text) (when dflt (str " " dflt)) ")")])))))
+            :else ;; {pattern key}
+            (let [kk (cst/text src vv)
+                  nm (bind-name src k)]
+              (cond
+                nm (recur (rest ps) (conj binds [nm (str (if (get ors nm) "(fe-get-or " "(fe-get ") v " " kk (when-let [d (get ors nm)] (str " " d)) ")")]))
+                (pat? k) (let [g (gen)
+                               r (expand src k g gen false)]
+                           (if (:human r) r
+                               (recur (rest ps) (into (conj binds [g (str "(fe-get " v " " kk ")")]) (:binds r)))))
+                :else {:human "unrecognised map-pattern key"}))))
+        {:binds binds}))))
+
+(defn expand
+  "pattern node -> {:binds [[name expr] ...]} | {:human reason}.  `v` is a symbol/expr text holding the value."
+  [src pat v gen rest?]
+  (let [p (cst/strip-meta pat)]
+    (case (:type p)
+      :sym (if (= "_" (:text p)) {:binds []} {:binds [[(:text p) v]]})
+      ;; a value expression that is not a plain symbol is bound once to a temp so it is not re-evaluated
+      :vec (if (re-matches #"[^\s()]+" v)
+             (expand-vec src p v gen)
+             (let [g (gen) r (expand-vec src p g gen)]
+               (if (:human r) r {:binds (into [[g v]] (:binds r))})))
+      :map (if (re-matches #"[^\s()]+" v)
+             (expand-map src p v gen)
+             (let [g (gen) r (expand-map src p g gen)]
+               (if (:human r) r {:binds (into [[g v]] (:binds r))})))
+      {:human (str "unsupported pattern " (name (:type p)))})))
+
+(defn- arities
+  "[[params-vec-node body-nodes] ...] of a (fn name? [..] ..) or (fn name? ([..] ..) ...) node."
+  [fn-node]
+  (let [kids (rest (:kids fn-node))
+        kids (if (cst/sym? (first kids)) (rest kids) kids)]
+    (cond
+      (cst/vec? (first kids)) [[(first kids) (vec (rest kids))]]
+      (every? cst/lst? kids) (mapv (fn [l] [(first (:kids l)) (vec (rest (:kids l)))]) kids)
+      :else nil)))
+
+(defn- format-binds [src insert-pos binds]
+  (let [flat (map (fn [[n e]] (str n " " e)) binds)
+        one (str/join " " flat)
+        starts (edit/line-starts src)
+        col (- insert-pos (nth starts (dec (edit/offset->line starts insert-pos))))]
+    (if (< (+ col 6 (count one)) 110)
+      (str "(let [" one "]")
+      (str "(let [" (str/join (str "\n" (apply str (repeat (+ col 6) " "))) flat) "]"))))
+
+(defn- rewrite-fn
+  "-> {:status :auto :edits [...]} | {:status :human :reason ..}"
+  [src fn-node]
+  (let [text (cst/text src fn-node)
+        counter (atom 0)
+        gen (fn [] (str "dd__" (:s fn-node) "_" (swap! counter inc)))
+        ars (arities fn-node)]
+    (cond
+      (nil? ars) {:status :human :reason "unrecognised fn shape"}
+      (str/includes? text (str "dd__" (:s fn-node) "_")) {:status :human :reason "generated-name collision (dd__)"}
+      :else
+      (let [results
+            (for [[pv body] ars
+                  :let [params (:kids pv)
+                        d? (some pat? params)]
+                  :when d?]
+              (cond
+                (empty? body) {:human "empty body"}
+                (and (cst/map? (first body)) (> (count body) 1)) {:human "pre/post condition map"}
+                (some #(and (cst/sym? (cst/strip-meta %)) (= "&" (:text %))) params)
+                (if (some #(and (pat? %) (not (cst/sym? %))) (rest (drop-while #(not (cst/sym? % "&")) params)))
+                  {:human "destructuring in the & rest parameter"}
+                  (rewrite-arity src pv body gen))
+                :else (rewrite-arity src pv body gen)))]
+        (if-let [h (some :human results)]
+          {:status :human :reason h}
+          {:status :auto :edits (vec (mapcat :edits results))})))))
+
+(defn rewrite-arity [src pv body gen]
+  (let [params (:kids pv)
+        per (for [p params]
+              (if (pat? p)
+                (let [g (gen) r (expand src p g gen false)]
+                  (assoc r :param p :g g))
+                {:binds [] :param p :g nil}))]
+    (if-let [h (some :human per)]
+      {:human h}
+      (let [binds (mapcat :binds per)
+            first-body (first body)
+            last-body (last body)
+            ins (:s first-body)
+            param-edits (for [{:keys [param g]} per :when g] (edit/replace-node param g :destructure))
+            open (edit/insert-at ins (str (format-binds src ins binds) (if (= (edit/offset->line (edit/line-starts src) ins)
+                                                                              (edit/offset->line (edit/line-starts src) (:e pv)))
+                                                                         " " (str "\n" (edit/line-indent src ins) "  ")))
+                                 :destructure -1)
+            close (edit/insert-at (:e last-body) ")" :destructure 1)]
+        {:edits (vec (concat param-edits (if (seq binds) [open close] [])))}))))
+
+(defn- context-of
+  "How the fn is used: the head of the call it is an argument of."
+  [path fn-node]
+  (let [parent (last path)]
+    (cond
+      (and parent (cst/lst? parent) (cst/head-text parent)) (cst/head-text parent)
+      (and parent (= :prefix (:type parent))) "prefix"
+      :else "other")))
+
+(defn- shape-of [pat]
+  (let [p (cst/strip-meta pat)]
+    (case (:type p)
+      :vec (let [ks (:kids p)]
+             (cond (some #(pat? %) ks) "nested"
+                   (and (= 2 (count ks)) (every? cst/sym? ks)) "pair [k v]"
+                   (some #(cst/sym? % "&") ks) "vector with &"
+                   :else "vector"))
+      :map (if (some #(cst/kw? % ":keys") (:kids p)) "{:keys ...}" "map")
+      "other")))
+
+(defn find-all [{:keys [src nodes]}]
+  (let [out (atom [])
+        other (atom {})]
+    (cst/walk
+     (fn [n {:keys [region path]}]
+       (when (and (cst/lst? n) (contains? #{"fn" "fn*"} (cst/head-text n)))
+         (when-let [ars (arities n)]
+           (when (some (fn [[pv _]] (some pat? (:kids pv))) ars)
+             (let [r (rewrite-fn src n)
+                   ctx (context-of path n)
+                   starts (edit/line-starts src)]
+               (swap! out conj (assoc r :rule :destructure :s (:s n) :e (:e n) :region region
+                                      :line (edit/offset->line starts (:s n)) :context ctx
+                                      :shape (->> (mapcat (fn [[pv _]] (:kids pv)) ars) (filter pat?) (map shape-of) distinct sort (str/join "+"))))))))
+       ;; destructuring that is NOT a fn parameter: counted for the report, not rewritten
+       (when (cst/lst? n)
+         (let [h (cst/head-text n) as (cst/args n)]
+           (cond
+             (and (contains? #{"let" "loop" "doseq" "for" "when-let" "if-let" "when-some" "if-some"} h) (cst/vec? (first as))
+                  (some (fn [[p _]] (pat? p)) (partition 2 (:kids (first as)))))
+             (swap! other update-in [h region] (fnil inc 0))
+             (and (contains? #{"defn" "defn-"} h) (some (fn [[pv _]] (some pat? (:kids pv))) (arities (cst/->fn-view n))))
+             (swap! other update-in ["defn params" region] (fnil inc 0))))))
+     nodes)
+    (conj @out {:rule :destructure :kind :inventory :status :info :region :shared :data {:other-destructuring @other}})))
+
+(def rule {:id :destructure :find find-all :prelude-needs prelude-names})

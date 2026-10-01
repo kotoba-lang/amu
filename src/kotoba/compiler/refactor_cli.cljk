@@ -1,0 +1,387 @@
+(ns kotoba.compiler.refactor-cli
+  "`amu refactor` -- AST-based refactoring, the default way to change the compiler's own sources.
+
+    amu refactor list-rules
+    amu refactor plan <rules> <path>...  [--no-diff] [--patch-out FILE] [rule options]
+    amu refactor apply <rules> <path>... [--check] [--out FILE] [rule options]
+    amu refactor graph <path> [--summary] [--out FILE]
+    amu refactor partition <path> [--modules N] [--driver FORM] [--names FILE] [--out FILE]
+    amu refactor split <path> --partition FILE --out DIR [--ns NAME]
+    amu refactor verify --runner FILE --classpath CP [--classpath-file FILE]
+                        [--base-first DIR] [--candidate-first DIR] [--nbb PATH] [--stack-size N]
+
+  <rules> is `a,b,d,e,f`, a rule name, or `all` (= a,b,d,e,f). A <path> is a source file or a directory searched for
+  .cljk / .cljc / .clj / .cljs files. Rule options: --target dual|host-env (rule c), --include-ported, --lower-accessor,
+  --regions shared,default,kotoba, --observable-from DIR[,DIR], --max-passes N.
+
+  Every answer is one EDN map with `:format :kotoba.refactor/v1`, printed to stdout. `plan` and `--check` never write.
+  `apply` writes through a temporary file and a rename, only after the rewritten text has been re-parsed. A refusal is
+  the usual `:kotoba.cli-error/v1` report on stderr whose `:diagnostic :code` is one of:
+
+    :refactor/usage                  bad flags or arguments               (exit 64)
+    :refactor/unknown-rule           a rule id/name the library lacks     (64)
+    :refactor/target-required        rule c without --target              (64)
+    :refactor/unreadable             a file could not be read             (65)
+    :refactor/parse-error            a source is not readable Clojure     (65)
+    :refactor/no-paths               the paths hold no source file        (65)
+    :refactor/output-unparsable      a rewrite produced unreadable text   (65)  nothing was written
+    :refactor/no-driver              partition found no pass driver       (65)
+    :refactor/partition-incomplete   the partition omits defining forms   (65)
+    :refactor/roundtrip-failed       a split lost or duplicated a form    (65)  nothing was written
+    :refactor/write-failed           a file could not be written          (74)
+
+  Exit 1 (not a refusal) means the answer is `:ok false`: `apply --check` found pending changes, or `verify` found
+  differing per-test outcomes.
+
+  One implementation, no JVM and no Python: the command is a function from arguments and an I/O record to a value
+  (`run`), the Node entrypoint is `kotoba.compiler.nbb.refactor-cli`. The host route's alone, as `amu test` is."
+  {:kotoba/export [run]}
+  (:require #?@(:kotoba []
+                :default [[clojure.string :as str]
+                          [clojure.walk :as walk]
+                          [kotoba.compiler.host-integer :as host-integer]
+                          [kotoba.compiler.refactor.core :as core]
+                          [kotoba.compiler.refactor.cst :as cst]
+                          [kotoba.compiler.refactor.diff :as diff]
+                          [kotoba.compiler.refactor.extract :as extract]
+                          [kotoba.compiler.refactor.graph :as graph]
+                          [kotoba.compiler.refactor.partition :as partition]
+                          [kotoba.compiler.refactor.rules :as rules]
+                          [kotoba.compiler.refactor.verify :as verify]])))
+
+#?(:kotoba
+   (defn run [args [:list :string]] :string
+     (throw (ex-info "amu refactor is not available on the Kotoba route"
+                     {:phase :usage})))
+   :default
+   nil)
+
+#?(:kotoba nil
+   :default
+   (do
+
+(def format-tag :kotoba.refactor/v1)
+
+(defn- refuse
+  ([phase code message] (refuse phase code message {}))
+  ([phase code message data]
+   (ex-info message (merge data {:phase phase :kotoba.error/code code}))))
+
+(defn- usage! [message] (throw (refuse :usage :refactor/usage message)))
+
+;; ---- arguments ------------------------------------------------------------------------------------------------------
+
+(def ^:private value-flags
+  #{"--out" "--partition" "--ns" "--modules" "--driver" "--names" "--target" "--regions" "--observable-from"
+    "--max-passes" "--runner" "--classpath" "--classpath-file" "--base-first" "--candidate-first" "--nbb"
+    "--stack-size" "--patch-out"})
+
+(def ^:private switch-flags
+  #{"--check" "--include-ported" "--lower-accessor" "--no-diff" "--summary"})
+
+(defn- parse-args
+  "-> {:positional [..] :flags {\"--x\" v|true}}"
+  [args]
+  (loop [as args positional [] flags {}]
+    (if-let [a (first as)]
+      (cond
+        (contains? value-flags a)
+        (if (next as)
+          (recur (nnext as) positional (assoc flags a (second as)))
+          (usage! (str a " needs a value")))
+        (contains? switch-flags a) (recur (rest as) positional (assoc flags a true))
+        (str/starts-with? a "--") (usage! (str "unknown flag " a))
+        :else (recur (rest as) (conj positional a) flags))
+      {:positional positional :flags flags})))
+
+(defn- int-flag [flags k default]
+  (if-let [v (get flags k)]
+    (or (host-integer/decimal-count v) (usage! (str k " must be a decimal integer")))
+    default))
+
+;; ---- files ----------------------------------------------------------------------------------------------------------
+
+(def ^:private source-extensions [".cljk" ".cljc" ".clj" ".cljs"])
+
+(defn- source-file? [name] (some #(str/ends-with? name %) source-extensions))
+
+(defn- files-under [io dir]
+  (mapcat (fn [{:keys [name dir?]}]
+            (let [p (str dir "/" name)]
+              (cond (str/starts-with? name ".") nil
+                    (= name "node_modules") nil
+                    dir? (files-under io p)
+                    (source-file? name) [p])))
+          ((:list io) dir)))
+
+(defn- expand-paths [io paths]
+  (let [files (vec (distinct (mapcat (fn [p]
+                                       (case ((:kind io) p)
+                                         :dir (files-under io (str/replace p #"/+$" ""))
+                                         :file [p]
+                                         (throw (refuse :decode :refactor/unreadable (str "no such file or directory: " p) {:path p}))))
+                                     paths)))]
+    (when (empty? files)
+      (throw (refuse :decode :refactor/no-paths "the paths hold no .cljk/.cljc/.clj/.cljs file" {:paths (vec paths)})))
+    files))
+
+(defn- read-source [io path]
+  (try ((:read io) path)
+       (catch :default e
+         (throw (refuse :decode :refactor/unreadable (str "cannot read " path ": " (ex-message e)) {:path path})))))
+
+(defn- parse-checked [path src]
+  (try (cst/parse src)
+       (catch :default e
+         (throw (refuse :decode :refactor/parse-error (str path ": " (ex-message e)) (merge {:path path} (select-keys (ex-data e) [:at])))))))
+
+(defn- write-file! [io path text]
+  (try ((:write io) path text)
+       (catch :default e
+         (throw (refuse :output :refactor/write-failed (str "cannot write " path ": " (ex-message e)) {:path path})))))
+
+;; ---- rules ----------------------------------------------------------------------------------------------------------
+
+(defn- resolve-rule-spec [spec flags]
+  (let [entries (rules/resolve-rules spec)]
+    (when (empty? entries) (usage! "no rule named"))
+    (doseq [e entries]
+      (when (:unknown e)
+        (throw (refuse :usage :refactor/unknown-rule (str "unknown rule " (:unknown e) "; see `amu refactor list-rules`")
+                       {:rule (:unknown e)}))))
+    (when (and (some :needs-target entries) (not (get flags "--target")))
+      (throw (refuse :usage :refactor/target-required "rule c needs --target dual|host-env" {})))
+    entries))
+
+(defn- observable-names [io dirs]
+  (set (for [d dirs f (files-under io d)
+             m (re-seq #"(?:#')?(?:kotoba\.compiler\.frontend|frontend|fe)/([^\s()\[\]{}\"]+)" (read-source io f))]
+         (second m))))
+
+(defn- core-opts [io flags]
+  (cond-> {}
+    (get flags "--include-ported") (assoc :include-ported true)
+    (get flags "--lower-accessor") (assoc :lower-accessor true)
+    (get flags "--target") (assoc :target (keyword (get flags "--target")))
+    (get flags "--regions") (assoc :regions (set (map keyword (str/split (get flags "--regions") #","))))
+    (get flags "--max-passes") (assoc :max-passes (int-flag flags "--max-passes" 8))
+    (get flags "--observable-from") (assoc :observable (observable-names io (str/split (get flags "--observable-from") #",")))))
+
+(defn- rewrite-file
+  "Run the rules over one file. -> {:path :before :after :res :human-sites ...}; refuses when the result cannot be re-read."
+  [io path entries opts]
+  (let [src (read-source io path)
+        _ (parse-checked path src)
+        res (try (core/run src (mapv :rule entries) opts)
+                 (catch :default e
+                   ;; the source itself parsed above, so a parse failure inside the driver is a rewrite pass producing
+                   ;; text the reader rejects
+                   (if (= :refactor-parse (:phase (ex-data e)))
+                     (throw (refuse :decode :refactor/output-unparsable
+                                    (str path ": a rewrite produced text that is not readable (" (ex-message e) "); nothing was written")
+                                    {:path path}))
+                     (throw e))))
+        out (:src res)
+        _ (when (not= out src)
+            (try (cst/parse out)
+                 (catch :default e
+                   (throw (refuse :decode :refactor/output-unparsable
+                                  (str path ": the rewritten text is not readable (" (ex-message e) "); nothing was written")
+                                  {:path path})))))]
+    {:path path :before src :after out :res res}))
+
+(def ^:private max-sites 200)
+
+(defn- file-report [{:keys [path before after res]} with-diff?]
+  (let [summary (core/summarize (:first res) (:applied res))
+        humans (vec (for [f (:first res) :when (= :human (:status f))] (select-keys f [:rule :line :region :reason :context :kind])))]
+    (cond-> {:path path
+             :changed (not= before after)
+             :chars-before (count before) :chars-after (count after)
+             :passes (:passes res)
+             :summary summary
+             :human-sites (vec (take max-sites humans))
+             :human-sites-total (count humans)}
+      (not= before after) (assoc :lines (diff/changed-lines before after))
+      (and with-diff? (not= before after)) (assoc :diff (diff/unified path before after))
+      (seq (filter #(= :inventory (:kind %)) (:first res)))
+      (assoc :inventory (vec (for [i (:first res) :when (= :inventory (:kind i))] {:rule (:rule i) :data (:data i)}))))))
+
+(defn- sum-summaries [reports]
+  (reduce (fn [acc r]
+            (reduce (fn [acc [rule m]]
+                      (update acc rule (fn [t] (merge-with + (or t {}) (select-keys m [:patterns :ported :actionable :auto :human :applied])))))
+                    acc (:summary r)))
+          {} reports))
+
+(defn- rules-answer [entries]
+  (mapv (comp keyword :id) entries))
+
+(defn- plan [io {:keys [positional flags]}]
+  (when (< (count positional) 2) (usage! "usage: amu refactor plan <rules> <path>..."))
+  (let [entries (resolve-rule-spec (first positional) flags)
+        files (expand-paths io (rest positional))
+        opts (core-opts io flags)
+        results (mapv #(rewrite-file io % entries opts) files)
+        reports (mapv #(file-report % (not (get flags "--no-diff"))) results)]
+    (when-let [p (get flags "--patch-out")]
+      (write-file! io p (apply str (map #(or (:diff %) "") reports))))
+    {:value {:format format-tag :command :plan :ok true :rules (rules-answer entries)
+             :files reports
+             :totals {:files (count reports) :changed (count (filter :changed reports))
+                      :summary (sum-summaries reports)}}
+     :status 0}))
+
+(defn- apply-rules [io {:keys [positional flags]}]
+  (when (< (count positional) 2) (usage! "usage: amu refactor apply <rules> <path>... [--check]"))
+  (let [entries (resolve-rule-spec (first positional) flags)
+        files (expand-paths io (rest positional))
+        out (get flags "--out")
+        _ (when (and out (> (count files) 1)) (usage! "--out names one file; give one path"))
+        check? (get flags "--check")
+        opts (core-opts io flags)
+        results (mapv #(rewrite-file io % entries opts) files)       ; every file is rewritten and re-read before any write
+        reports (mapv #(file-report % false) results)
+        changed (filter #(not= (:before %) (:after %)) results)]
+    (when-not check?
+      (doseq [r (if out results changed)]
+        (when (or out (not= (:before r) (:after r)))
+          (let [target (or out (:path r))]
+            (write-file! io (str target ".amu-refactor.tmp") (:after r))
+            (try ((:rename io) (str target ".amu-refactor.tmp") target)
+                 (catch :default e
+                   (throw (refuse :output :refactor/write-failed (str "cannot replace " target ": " (ex-message e)) {:path target}))))))))
+    (let [pending (count changed)]
+      {:value {:format format-tag :command :apply :ok (or (not check?) (zero? pending)) :check (boolean check?)
+               :written (if (or check? out) 0 pending)
+               :rules (rules-answer entries)
+               :files (mapv #(select-keys % [:path :changed :chars-before :chars-after :passes :summary :human-sites-total :lines]) reports)
+               :totals {:files (count reports) :changed pending
+                        :summary (sum-summaries reports)}}
+       :status (if (and check? (pos? pending)) 1 0)})))
+
+;; ---- graph / partition / split --------------------------------------------------------------------------------------
+
+(defn- one-path [io positional usage]
+  (when-not (= 1 (count positional)) (usage! usage))
+  (let [p (first positional)]
+    (when-not (= :file ((:kind io) p)) (throw (refuse :decode :refactor/unreadable (str "not a file: " p) {:path p})))
+    p))
+
+(defn- analyse [io path]
+  (let [src (read-source io path)]
+    (parse-checked path src)
+    [src (graph/analysis src)]))
+
+(defn- edn-out [io flags value summary]
+  (if-let [out (get flags "--out")]
+    (do (write-file! io out (str (pr-str value) "\n"))
+        {:value (assoc summary :out out) :status 0})
+    {:value value :status 0}))
+
+(defn- graph-cmd [io {:keys [positional flags]}]
+  (let [path (one-path io positional "usage: amu refactor graph <path> [--summary] [--out FILE]")
+        [src a] (analyse io path)
+        g (assoc (graph/graph-data a (:adj a) (:comps a) src) :command :graph :path path :ok true)
+        summary (select-keys g [:format :kind :command :path :ok :source-forms :names :edges])
+        summary (assoc summary :sccs (mapv #(select-keys % [:size :lines]) (:sccs g)) :dynamic-vars (count (:dynamic-vars g)))]
+    (if (get flags "--summary")
+      {:value summary :status 0}
+      (edn-out io flags g summary))))
+
+(defn- read-edn [io path]
+  (try (walk/postwalk host-integer/narrow ((:read-edn io) path))
+       (catch :default e
+         (throw (refuse :decode :refactor/unreadable (str "cannot read " path ": " (ex-message e)) {:path path})))))
+
+(defn- partition-cmd [io {:keys [positional flags]}]
+  (let [path (one-path io positional "usage: amu refactor partition <path> [--modules N] [--driver FORM] [--names FILE] [--out FILE]")
+        [_ a] (analyse io path)
+        names (when-let [f (get flags "--names")] (read-edn io f))
+        p (partition/partition-data a (int-flag flags "--modules" 12)
+                                    (cond-> {} (get flags "--driver") (assoc :driver-name (get flags "--driver")) names (assoc :names names)))
+        p (assoc p :command :partition :path path :ok true)
+        summary {:format format-tag :kind :partition :command :partition :path path :ok true
+                 :modules (mapv #(select-keys % [:module :order :forms :lines :requires]) (:modules p))
+                 :edges-total (:edges-total p) :edges-cross-module (:edges-cross-module p)
+                 :edges-backward-blocking (:edges-backward-blocking p)}]
+    (if (get flags "--summary")
+      {:value summary :status 0}
+      (edn-out io flags p summary))))
+
+(defn- split-cmd [io {:keys [positional flags]}]
+  (let [path (one-path io positional "usage: amu refactor split <path> --partition FILE --out DIR [--ns NAME]")
+        pfile (or (get flags "--partition") (usage! "split needs --partition FILE (from `amu refactor partition --out FILE`)"))
+        out (or (get flags "--out") (usage! "split needs --out DIR"))
+        src (read-source io path)
+        _ (parse-checked path src)
+        part (read-edn io pfile)
+        _ (when-not (and (map? part) (vector? (:modules part)) (every? #(and (:module %) (vector? (:chunks %))) (:modules part)))
+            (throw (refuse :decode :refactor/partition-incomplete (str pfile " is not a partition (expected {:modules [{:module .. :order .. :chunks [..]}]})") {:path pfile})))
+        ex (extract/extract src part {:ns-name (get flags "--ns")})
+        rt (extract/roundtrip src ex)
+        _ (when-not (:ok rt)
+            (throw (refuse :decode :refactor/roundtrip-failed "the split lost or duplicated a form; nothing was written" {:roundtrip rt})))]
+    (doseq [[p text] (sort (:files ex))]
+      ((:mkdirs io) (str out "/" (second (re-find #"^(.*)/[^/]*$" p))))
+      (write-file! io (str out "/" p) text))
+    {:value (assoc (:report ex) :command :split :ok true :out out :roundtrip rt :files (vec (sort (keys (:files ex)))))
+     :status 0}))
+
+;; ---- verify ---------------------------------------------------------------------------------------------------------
+
+(defn- verify-cmd [io {:keys [positional flags]}]
+  (when (seq positional) (usage! "usage: amu refactor verify --runner FILE --classpath CP [options]"))
+  (let [runner (or (get flags "--runner") (usage! "verify needs --runner FILE (a script that prints cljs.test reports)"))
+        cp (or (get flags "--classpath")
+               (when-let [f (get flags "--classpath-file")] (str/trim (read-source io f)))
+               (usage! "verify needs --classpath CP or --classpath-file FILE"))
+        nbb (or (get flags "--nbb") (:nbb-cli io) (usage! "verify needs --nbb PATH (the nbb cli.js to run the tests with)"))
+        stack (int-flag flags "--stack-size" 4096)
+        run! (fn [first-root]
+               (let [{:keys [status stdout]} ((:spawn io) (verify/run-argv {:nbb-cli nbb :stack-size stack :classpath cp
+                                                                           :first-root first-root :runner runner}))]
+                 {:status status :out stdout}))
+        base (run! (get flags "--base-first"))
+        cand (run! (get flags "--candidate-first"))
+        cmp (verify/compare-runs (:out base) (:out cand))]
+    (when-not (:ran cmp)
+      (throw (refuse :decode :refactor/verify-no-result
+                     "a test run printed no `nbb: N tests` summary (it crashed or the runner is not a cljs.test runner)"
+                     {:baseline (:summary (:baseline cmp)) :candidate (:summary (:candidate cmp))
+                      :baseline-status (:status base) :candidate-status (:status cand)})))
+    {:value (assoc cmp :format format-tag :command :verify :runner runner
+                   :baseline (assoc (:baseline cmp) :status (:status base))
+                   :candidate (assoc (:candidate cmp) :status (:status cand)))
+     :status (if (:ok cmp) 0 1)}))
+
+;; ---- list-rules -----------------------------------------------------------------------------------------------------
+
+(defn- list-rules []
+  {:value {:format format-tag :command :list-rules :ok true
+           :standard-order (mapv keyword rules/standard-order)
+           :rules (mapv (fn [r] (cond-> {:id (keyword (:id r)) :name (keyword (:name r)) :summary (:summary r)
+                                         :host-effect (:host-effect r)}
+                                  (:needs-target r) (assoc :needs-target true)))
+                        rules/library)
+           :commands [:list-rules :plan :apply :graph :partition :split :verify]}
+   :status 0})
+
+(defn run
+  "Run `amu refactor` over ARGS (the words after `refactor`). IO is the host record: :read :write :rename :kind :list
+  :mkdirs :read-edn :spawn (and :nbb-cli). -> {:value <EDN map> :status 0|1}; a refusal is thrown as ex-info."
+  [args io]
+  (let [[sub & more] args
+        parsed (parse-args more)]
+    (case sub
+      "list-rules" (list-rules)
+      "plan" (plan io parsed)
+      "apply" (apply-rules io parsed)
+      "graph" (graph-cmd io parsed)
+      "partition" (partition-cmd io parsed)
+      "split" (split-cmd io parsed)
+      "verify" (verify-cmd io parsed)
+      nil (usage! "usage: amu refactor <list-rules|plan|apply|graph|partition|split|verify> ...")
+      (usage! (str "unknown refactor command " sub "; one of list-rules plan apply graph partition split verify")))))
+
+))

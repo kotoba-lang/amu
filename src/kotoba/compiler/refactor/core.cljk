@@ -1,0 +1,94 @@
+;; Driver: parse -> rules find -> resolve conflicts -> apply -> re-parse, until a pass changes nothing.
+(ns kotoba.compiler.refactor.core
+  (:require [clojure.string :as str]
+            [kotoba.compiler.refactor.cst :as cst]
+            [kotoba.compiler.refactor.edit :as edit]
+            [kotoba.compiler.refactor.prelude :as prelude]))
+
+(def default-regions
+  "Where rewrites apply: shared code and the host arm.  The :kotoba arm is hand-written Kotoba and is never touched."
+  #{:shared :default})
+
+(defn- ported-ranges
+  "Ranges of the :default arm of every top-level reader conditional that also has a non-nil :kotoba arm
+  (a definition that has a hand-written Kotoba port; its host text is the byte-identical original)."
+  [nodes src]
+  (vec (for [n nodes :when (= :rc (:type n))
+             :let [bs (cst/rc-branches n)
+                   kot (some (fn [[k f]] (when (= k ":kotoba") f)) bs)]
+             :when (and kot (not (cst/sym? kot "nil")))
+             [k f] bs :when (not= k ":kotoba")]
+         [(:s f) (:e f)])))
+
+(defn find-findings [src nodes rules opts pass]
+  (let [ctx {:src src :nodes nodes :opts opts}
+        ported (ported-ranges nodes src)]
+    (vec (for [r rules
+               :when (or (= pass 1) (not (:once r)))
+               f ((:find r) ctx)
+               :let [f (assoc f :ported? (boolean (some (fn [[s e]] (and (>= (:s f) s) (<= (:e f) e))) ported)))]
+               :when (contains? (or (:regions opts) (:regions r) default-regions) (:region f))
+]
+           f))))
+
+(defn select-findings
+  "Greedy, smallest finding first: a finding is applied only if ALL its edits are conflict-free with those already chosen."
+  [findings opts]
+  ;; a definition with a hand-written Kotoba port keeps its host text as the :default arm: counted, not rewritten
+  (let [autos (->> findings (filter #(and (= :auto (:status %)) (seq (:edits %)) (or (:include-ported opts) (:force-apply %) (not (:ported? %)))))
+                   (sort-by #(- (:e %) (:s %))))]
+    (loop [fs autos chosen [] edits [] deferred []]
+      (if-let [f (first fs)]
+        (if (some (fn [e] (some #(edit/conflicts? e %) edits)) (:edits f))
+          (recur (rest fs) chosen edits (conj deferred f))
+          (recur (rest fs) (conj chosen f) (into edits (:edits f)) deferred))
+        {:chosen chosen :edits edits :deferred deferred}))))
+
+(defn ensure-prelude
+  "Insert the helper definitions the output calls, after the ns form, unless they are already defined."
+  [src]
+  (let [needed (filter (fn [nm] (and (re-find (re-pattern (str "\\(" nm "[\\s)]")) src)
+                                     (not (re-find (re-pattern (str "\\(defn-? " nm "\\s")) src))))
+                       prelude/order)]
+    (if (empty? needed)
+      src
+      (let [nodes (cst/parse src)
+            ns-node (first (filter #(cst/call? % "ns") nodes))
+            pos (if ns-node (:e ns-node) 0)]
+        (str (subs src 0 pos) "\n\n" (str/join "\n\n" (map prelude/defs needed)) "\n" (subs src pos))))))
+
+(defn run
+  "-> {:src out :first [findings of the original source] :applied [findings applied, all passes] :passes n}"
+  [src0 rules opts]
+  (loop [src src0 pass 1 first-f nil applied []]
+    (let [nodes (cst/parse src)
+          fs (find-findings src nodes rules opts pass)
+          {:keys [chosen edits]} (select-findings fs opts)
+          first-f (or first-f fs)]
+      (if (or (empty? edits) (> pass (or (:max-passes opts) 8)) (:dry-run opts))
+        {:src (if (:dry-run opts) src (ensure-prelude src)) :first first-f :applied applied :passes pass
+         :last-findings fs}
+        (recur (edit/apply-edits src edits) (inc pass) first-f
+               (into applied (map #(assoc % :pass pass) chosen)))))))
+
+;; ---- report ----------------------------------------------------------------------------------------------------------
+
+(defn summarize
+  "Per rule: pattern counts on the ORIGINAL source (shared + host-arm regions).  `ported` = inside the host arm of a
+  definition that already has a hand-written Kotoba port (nothing to do on the Kotoba route); `actionable` = the rest,
+  split into auto (rewritten by the tool) and human (with reasons)."
+  [first-findings applied]
+  (let [by-rule (group-by :rule (remove #(= :info (:status %)) first-findings))]
+    (into {}
+          (for [[rule fs] by-rule
+                :let [act (remove :ported? fs)]]
+            [rule {:patterns (count fs)
+                   :by-region (frequencies (map :region fs))
+                   :ported (count (filter :ported? fs))
+                   :actionable (count act)
+                   :auto (count (filter #(= :auto (:status %)) act))
+                   :human (count (filter #(= :human (:status %)) act))
+                   :applied (count (filter #(= rule (:rule %)) applied))
+                   :auto-by-kind (frequencies (map #(or (:kind %) (:context %)) (filter #(= :auto (:status %)) act)))
+                   :human-reasons (->> act (filter #(= :human (:status %))) (map :reason) frequencies
+                                       (sort-by (comp - val)) vec)}]))))

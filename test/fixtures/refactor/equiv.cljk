@@ -1,0 +1,67 @@
+(ns equiv.NS)
+
+;; Fixture for the host-equivalence tests: every function here is run before and after the rewrites and must answer alike.
+
+(def ^:dynamic *depth* 0)
+(def ^:dynamic *seen* nil)
+
+(defn- reject!
+  ([message form] (reject! message form :subset nil))
+  ([message form code] (reject! message form code nil))
+  ([message form code data] (throw (ex-info message {:form form :code code :data data}))))
+
+(defn pairs->map [m]
+  (into {} (map (fn [[k v]] [k (inc v)]) m)))
+
+(defn sum-keys [xs]
+  (mapv (fn [{:keys [a b] :or {b 10} :as w}] [a b (count w)]) xs))
+
+(defn nested [xs]
+  (mapv (fn [[a [b c] & more]] [a b c more]) xs))
+
+(defn multi-arity-fn [xs]
+  (map (fn ([[a b]] [:one a b]) ([[a b] [c d]] [:two a b c d])) xs))
+
+(defn reduce-pairs [m]
+  (reduce (fn [acc [k v]] (assoc acc v k)) {} m))
+
+(defn map-patterns [xs]
+  (mapv (fn [{:keys [a] x :x [p q] :pq :as all}] [a x p q (count all)]) xs))
+
+(defn kw-callbacks [xs]
+  [(vec (map :a xs)) (vec (filter :ok xs)) (vec (sort-by :n xs)) (group-by :g xs) (some :hit xs)
+   (vec (mapcat :kids xs)) (vec (map (juxt :a :n) xs)) (vec (remove :ok xs)) (apply max-key :n xs)])
+
+(defn check [x]
+  (when-not (integer? x) (reject! "must be an integer" x :equiv/not-integer))
+  (let [_ (when (neg? x) (reject! (str "negative " x) x))]
+    (when-not (< x 100)
+      (reject! "too big" x :equiv/too-big))
+    (if (zero? x)
+      (reject! "zero" x :equiv/zero)
+      (* 2 x))))
+
+(defn lets [m]
+  (let [[a b] (vec (vals m))
+        {:keys [c] :or {c :none}} m
+        [d & e] (seq (keys m))]
+    [a b c d e]))
+
+(defn- inner [x] (+ x *depth*))
+
+(defn- mid [x]
+  (binding [*depth* (inc *depth*)]
+    (inner (inner x))))
+
+(defn outer [x]
+  (binding [*depth* 10]
+    [(mid x) (inner x) (mapv #(mid %) [1 2])]))
+
+(defn- bump! [] (vswap! *seen* inc))
+
+(defn counting [n]
+  (binding [*seen* (volatile! 0)]
+    (dotimes [_ n] (bump!))
+    @*seen*))
+
+(defn read-depth [] (inner 0))

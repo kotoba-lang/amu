@@ -1,0 +1,240 @@
+;; Pass-ownership partition of a big namespace (amu refactor partition).
+;;
+;; 1. atoms = SCCs of the reference graph (a cycle is never cut: a require cycle cannot exist);
+;; 2. DRIVER = the analyzer that calls the passes; ROOTS = its direct callees (the pass entry points);
+;; 3. each atom gets its OWNER SET = the roots whose transitive closure contains it; the distinct owner sets are the
+;;    initial modules (a dependency always has a superset owner set, so the quotient graph is a DAG by construction);
+;; 4. modules are merged greedily (strongest connection, token-vocabulary affinity, size cap, minimum size) while the
+;;    quotient stays acyclic, until `target` remain.
+;;
+;; Ported from scripts/selfhost-split/analyze.py (the Louvain and layerize helpers there are not used by `partition`
+;; and are not ported).  Deterministic: no random numbers, ties broken by module id.
+(ns kotoba.compiler.refactor.partition
+  (:require [clojure.string :as str]
+            [clojure.set :as set]
+            [kotoba.compiler.refactor.graph :as graph]))
+
+(defn- chunk-lines [c] (:lines c))
+
+(defn- token-of*
+  "The author's own 'pass' vocabulary: the leading word of the form's name."
+  [c]
+  (when-let [nm (first (:names c))]
+    (let [t (-> nm (str/replace #"^\*+" "") (str/replace #"^-+" ""))
+          t (first (str/split t #"-"))
+          t (str/replace (or t "") #"[?!*]+$" "")]
+      (if (str/blank? t) nm t))))
+
+(def ^:private token-of (memoize (fn [c] (token-of* c))))
+
+(defn- condense [a comps]
+  (let [comp-of (into {} (for [[ci comp] (map-indexed vector comps) v comp] [v ci]))
+        cadj (reduce (fn [cadj c]
+                       (if (:is-ns c)
+                         cadj
+                         (reduce (fn [cadj [v w]]
+                                   (let [cu (get comp-of (:idx c)) cv (get comp-of v)]
+                                     (if (and cu cv (not= cu cv)) (update-in cadj [cu cv] (fnil + 0) w) cadj)))
+                                 cadj (nth (:adj a) (:idx c)))))
+                     (vec (repeat (count comps) {})) (:chunks a))]
+    [comp-of cadj]))
+
+(defn- closures
+  "Per atom, the set of atoms it reaches (itself included).  Atoms come dependencies first."
+  [cadj]
+  (reduce (fn [cl x] (conj cl (into #{x} (mapcat #(nth cl %) (keys (nth cadj x)))))) [] (range (count cadj))))
+
+(defn- find-driver
+  "The pass driver = the largest-closure atom that directly calls >= 3 big, distinct passes."
+  [cadj cl lines min-root]
+  (let [csize (fn [v] (reduce + (map lines (nth cl v))))]
+    (reduce (fn [best x]
+              (let [big (filter #(>= (csize %) min-root) (keys (nth cadj x)))]
+                (if (and (>= (count big) 3) (or (nil? best) (> (count (nth cl x)) (count (nth cl best))))) x best)))
+            nil (range (count cadj)))))
+
+(defn- reaches? [out src-m dst-m]
+  ;; a path src -> ... -> dst other than the direct edge
+  (loop [st [src-m] seen #{src-m}]
+    (if-let [u (peek st)]
+      (let [st (pop st)
+            vs (remove #(and (= u src-m) (= % dst-m)) (get out u))]
+        (if (some #{dst-m} vs)
+          true
+          (let [new (remove seen vs)]
+            (recur (into st new) (into seen new)))))
+      false)))
+
+(defn- cosine [u v]
+  (let [d (reduce + (for [[k x] u :when (contains? v k)] (* x (get v k))))
+        n (fn [m] (Math/sqrt (reduce + (map #(* % %) (vals m)))))
+        nu (n u) nv (n v)]
+    (if (and (pos? nu) (pos? nv)) (/ d (* nu nv)) 0.0)))
+
+(defn partition-chunks
+  "-> {:chunk-mod {chunk-idx module-rank} :k n :info {...}}"
+  [a target {:keys [driver-name min-root cap-factor min-lines] :or {min-root 100 cap-factor 1.7 min-lines 450}}]
+  (let [chunks (:chunks a) comps (:comps a)
+        [comp-of cadj] (condense a comps)
+        n (count comps)
+        lines (mapv (fn [comp] (reduce + (map #(chunk-lines (nth chunks %)) comp))) comps)
+        cl (closures cadj)
+        drv (if driver-name
+              (first (for [[x comp] (map-indexed vector comps) :when (some #(some #{driver-name} (:names (nth chunks %))) comp)] x))
+              (find-driver cadj cl lines min-root))
+        _ (when (nil? drv)
+            (throw (ex-info "no pass driver found: no form directly calls three big passes (name one with --driver)"
+                            {:phase :decode :kotoba.error/code :refactor/no-driver})))
+        csize (fn [v] (reduce + (map lines (nth cl v))))
+        roots (vec (sort (filter #(>= (csize %) min-root) (keys (nth cadj drv)))))
+        ancestors (set (filter #(contains? (nth cl %) drv) (range n)))
+        owners (reduce (fn [m [ri r]] (reduce (fn [m y] (update m y (fnil conj #{}) ri)) m (nth cl r)))
+                       {} (map-indexed vector roots))
+        mask (into {} (for [x (range n)]
+                        [x (cond (contains? ancestors x) #{:driver}
+                                 (empty? (get owners x)) #{:driver}
+                                 :else (get owners x))]))
+        live (vec (range n))
+        ;; initial modules: one per distinct owner set, ids in order of first appearance
+        [modof _] (reduce (fn [[modof k2m] x]
+                            (let [k (get mask x) m (or (get k2m k) (count k2m))]
+                              [(assoc modof x m) (assoc k2m k m)]))
+                          [{} {}] live)
+        members0 (reduce (fn [m [x mod]] (update m mod (fnil conj #{}) x)) (sorted-map) modof)
+        total (reduce + (map lines live))
+        cap (/ (* cap-factor total) target)
+        initial (count members0)
+        tokvec (fn [members mod]
+                 (reduce (fn [acc x]
+                           (reduce (fn [acc c] (if-let [t (token-of (nth chunks c))] (update acc t (fnil + 0) (chunk-lines (nth chunks c))) acc))
+                                   acc (nth comps x)))
+                         {} (get members mod)))
+        edges-between (fn [modof]
+                        (reduce (fn [w x]
+                                  (reduce (fn [w [v ww]] (if (not= (modof x) (modof v)) (update w [(modof x) (modof v)] (fnil + 0) ww) w))
+                                          w (nth cadj x)))
+                                {} live))]
+    (loop [modof modof members members0]
+      (let [sizes (into {} (for [[m xs] members] [m (reduce + (map lines xs))]))
+            msize (fn [m] (get sizes m))
+            small (filter #(< (msize %) min-lines) (keys members))]
+        (if (or (and (<= (count members) target) (empty? small)) (<= (count members) 2))
+          ;; done: dependencies first
+          (let [w (edges-between modof)
+                deps (reduce (fn [m [p q]] (update m p (fnil conj #{}) q)) {} (keys w))
+                order (volatile! []) seen (volatile! #{})
+                topo (fn topo [m]
+                       (when-not (contains? @seen m)
+                         (vswap! seen conj m)
+                         (doseq [d (sort-by (juxt msize identity) (get deps m))] (topo d))
+                         (vswap! order conj m)))]
+            (doseq [m (sort-by (juxt #(- (msize %)) identity) (keys members))] (topo m))
+            (let [rank (into {} (map-indexed (fn [i m] [m i]) @order))
+                  chunk-mod (into {} (for [[x comp] (map-indexed vector comps) :when (contains? modof x)
+                                           v comp :when (seq (:names (nth chunks v)))]
+                                       [v (get rank (modof x))]))]
+              {:chunk-mod chunk-mod :k (count @order)
+               :info {:driver (vec (take 3 (keep #(first (:names (nth chunks %))) (nth comps drv))))
+                      :roots (vec (keep #(first (:names (nth chunks (first (nth comps %))))) roots))
+                      :initial-modules initial}}))
+          (let [w (edges-between modof)
+                out (reduce (fn [m [p q]] (update m p (fnil conj []) q)) {} (keys w))
+                pair (reduce (fn [m [[p q] ww]] (update m [(min p q) (max p q)] (fnil + 0) ww)) {} w)
+                tv (into {} (for [m (keys members)] [m (tokvec members m)]))
+                cands (sort (for [[[p q] ww] pair
+                                  :let [sz (+ (msize p) (msize q))
+                                        score (* (/ ww (+ (min (msize p) (msize q)) 20)) (+ 1 (* 3 (cosine (tv p) (tv q)))))
+                                        tiny (< (min (msize p) (msize q)) min-lines)]]
+                              [(if tiny 0 1) (if (> sz cap) 1 0) (- score) p q]))
+                pick (first (for [[_ _ _ p q] cands
+                                  :when (not (or (reaches? out p q) (reaches? out q p)))]
+                              [p q]))
+                [p q] (or pick (let [ms (vec (sort-by (juxt msize identity) (keys members)))] [(nth ms 0) (nth ms 1)]))
+                modof (reduce (fn [m x] (assoc m x p)) modof (get members q))
+                members (-> members (update p into (get members q)) (dissoc q))]
+            (recur modof members)))))))
+
+(defn name-modules
+  "Name = the most characteristic leading token of the member names (weighted by lines); `part<k>` when none."
+  [a chunk-mod k]
+  (let [chunks (:chunks a)
+        rows (for [c chunks :when (and (contains? chunk-mod (:idx c)) (seq (:names c)))]
+               (let [tok (first (str/split (-> (first (:names c)) (str/replace #"^\*+|\*+$" "") (str/replace #"^-+" "")) #"-"))]
+                 [(get chunk-mod (:idx c)) (or tok "") (chunk-lines c)]))
+        tot (reduce (fn [m [_ t l]] (update m t (fnil + 0) l)) {} rows)
+        by-mod (reduce (fn [m [mod t l]] (update-in m [mod t] (fnil + 0) l)) {} rows)
+        first-seen (into {} (map-indexed (fn [i t] [t i]) (distinct (map second rows))))]
+    (loop [m 0 used #{} names {}]
+      (if (>= m k)
+        names
+        (let [cands (sort-by (fn [[t cnt]] [(- (/ (* cnt cnt) (max 1 (get tot t 1)))) (get first-seen t)]) (get by-mod m))
+              nm (or (first (for [[t _] cands :when (and (not (contains? used t)) (> (count t) 2))] t)) (str "part" m))]
+          (recur (inc m) (conj used nm) (assoc names m nm)))))))
+
+(defn- scc-report [a comps chunk-mod names]
+  (let [chunks (:chunks a) adj (:adj a) n (count adj)
+        lines (fn [m] (reduce + (map #(chunk-lines (nth chunks %)) m)))
+        cyc (filter #(> (count %) 1) comps)
+        rep (vec (for [comp (sort-by (fn [c] (- (lines c))) cyc)]
+                   {:size (count comp) :lines (lines comp)
+                    :module (when (contains? chunk-mod (first comp)) (get names (get chunk-mod (first comp))))
+                    :forms (vec (take 8 (map #(graph/chunk-label (nth chunks %)) comp)))}))
+        big (when (seq cyc) (apply max-key lines cyc))]
+    {:cycles rep
+     :big-cycle-opening-plan
+     (if-not big
+       []
+       (let [members (set big)]
+         (loop [work (into {} (for [u members] [u (select-keys (nth adj u) members)])) steps [] i 0]
+           (let [view (fn [w] (vec (for [u (range n)] (if (contains? members u) (get w u {}) {}))))
+                 sub (graph/tarjan n (view work) (set/difference (set (range n)) members))
+                 cycles (filter #(> (count %) 1) sub)]
+             (if (or (empty? cycles) (>= i 40))
+               steps
+               (let [worst (apply max-key lines cycles)
+                     ws (set worst)
+                     indeg (reduce (fn [m [u v]] (update m v (fnil inc 0)))
+                                   {} (for [u worst v (keys (get work u)) :when (contains? ws v)] [u v]))
+                     [hub k] (reduce (fn [best e] (if (> (val e) (val best)) e best)) (first indeg) (rest indeg))
+                     work (into {} (for [[u m] work] [u (dissoc m hub)]))
+                     sub2 (graph/tarjan n (view work) (set/difference (set (range n)) members))]
+                 (recur work
+                        (conj steps {:late-bind (graph/chunk-label (nth chunks hub)) :incoming-edges-cut k
+                                     :largest-remaining-cycle-lines (reduce max 0 (for [c sub2 :when (> (count c) 1)] (lines c)))})
+                        (inc i))))))))
+     :note "every cycle is kept inside ONE module (a require cycle cannot exist); to split the biggest one the listed forms would have to be called through a late-bound hook (declare + registry), in order"}))
+
+(defn partition-data
+  "The partition.edn payload for the analysed source."
+  [a target opts]
+  (let [{:keys [chunk-mod k info]} (partition-chunks a target opts)
+        chunks (:chunks a) adj (:adj a)
+        names (merge (name-modules a chunk-mod k)
+                     (into {} (for [[form-name label] (:names opts)
+                                    c chunks :when (and (some #{form-name} (:names c)) (contains? chunk-mod (:idx c)))]
+                                [(get chunk-mod (:idx c)) label])))
+        mods (vec (for [m (range k)
+                        :let [cs (filter #(= m (get chunk-mod (:idx %))) chunks)
+                              deps (reduce (fn [acc c]
+                                             (reduce (fn [acc v] (if (and (contains? chunk-mod v) (not= m (get chunk-mod v)))
+                                                                   (update acc (get names (get chunk-mod v)) (fnil inc 0)) acc))
+                                                     acc (keys (nth adj (:idx c)))))
+                                           {} cs)]]
+                    {:module (get names m) :order m :forms (count cs) :lines (reduce + (map chunk-lines cs))
+                     :defs (reduce + (map #(count (:names %)) cs))
+                     :requires (into (array-map) (map (fn [[nm cnt]] [(keyword nm) cnt]) (sort-by (fn [[nm cnt]] [(- cnt) nm]) deps)))
+                     :chunks (mapv :idx cs)}))
+        edges (for [u (keys chunk-mod) v (keys (nth adj u)) :when (contains? chunk-mod v)] [u v])
+        blocking (for [[u v] edges :when (> (get chunk-mod v) (get chunk-mod u))]
+                   [(get names (get chunk-mod u)) (graph/chunk-label (nth chunks u)) (get names (get chunk-mod v)) (graph/chunk-label (nth chunks v))])]
+    {:format :kotoba.refactor/v1
+     :kind :partition
+     :modules mods
+     :edges-total (count edges)
+     :edges-cross-module (count (filter (fn [[u v]] (not= (get chunk-mod u) (get chunk-mod v))) edges))
+     :edges-backward-blocking (count blocking)
+     :blocking-edges (vec blocking)
+     :forms (count chunk-mod)
+     :lines (reduce + (map :lines mods))
+     :method info
+     :cycles (scc-report a (:comps a) chunk-mod names)}))

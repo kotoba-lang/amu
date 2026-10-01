@@ -44,6 +44,10 @@ const usage = [
   "       amu sign program.kexe --key key.edn --expires <epoch> --output signed.kexe",
   "       amu run signed.kexe --trust trust.edn --runtime runtime.edn --loader kotoba-loader ...",
   "       amu verify <file>",
+  "       amu refactor list-rules | plan <rules> <path>... | apply <rules> <path>... [--check]",
+  "       amu refactor graph <path> | partition <path> | split <path> --partition p.edn --out <dir>",
+  "       amu refactor verify --runner <run-tests.cljk> --classpath <cp> [--base-first <dir>] [--candidate-first <dir>]",
+  "         (AST-based refactoring, the default way to change compiler sources; EDN answers, :kotoba.refactor/v1)",
   "       amu sign-output-set <artifact> --key key.edn --not-before <epoch> --expires <epoch>",
   "       amu verify-output-set <artifact> [--attestation FILE --trust FILE --now <epoch>]",
   "       amu <other compiler command> ...",
@@ -232,6 +236,7 @@ function nbbNativeEligible(args) {
   if (command === "compile" && divergentAiueosKernelImage(args)) return false;
   if (trustCommands.has(command)) return true;
   if (command === "test") return true;
+  if (command === "refactor") return true;
   if (runCommands.has(command)) return true;
   return command === "check" || command === "extract-native"
     || command === "definition-cids"
@@ -264,7 +269,7 @@ function nbbEntrypoint(root, args) {
   // `defaultTarget` first), and refused by name rather than dereferenced if
   // a future caller gets here without one.
   if (!targetIndependent && target === undefined
-      && !trustCommands.has(command) && command !== "test"
+      && !trustCommands.has(command) && command !== "test" && command !== "refactor"
       && !runCommands.has(command) && command !== "extract-native"
       && !["verify-output-set", "sign-output-set"].includes(command)) {
     fail(`error: internal: \`amu ${command}\` reached routing without a --target`, 70);
@@ -274,6 +279,7 @@ function nbbEntrypoint(root, args) {
   const filename = ["verify-output-set", "sign-output-set"].includes(command) ? "output_set_cli.cljk"
     : trustCommands.has(command) ? "trust_cli.cljk"
     : command === "test" ? "test_cli.cljk"
+    : command === "refactor" ? "refactor_cli.cljk"
     : runCommands.has(command) ? "run_cli.cljk"
     : command === "extract-native" ? "x86_64_cli.cljk"
     : (command === "compile" && nbbJsTargets.has(target)) ? "js_cli.cljk"
@@ -524,8 +530,33 @@ function preludeIsIgnored(args) {
   return args.includes("--prelude");
 }
 
+// `amu refactor` takes bare file and directory names (`src`, `frontend.cljk`), flag values that are paths with no
+// telltale extension, and a classpath. Resolve them against the caller's cwd, as the spawn below runs in the Amu
+// checkout. Positionals after the sub-command (and, for plan/apply, after the rule list) are resolved when they exist.
+const REFACTOR_PATH_FLAGS = new Set(["--out", "--partition", "--runner", "--classpath-file", "--base-first",
+  "--candidate-first", "--patch-out", "--names", "--nbb"]);
+function resolveRefactorPaths(args, cwd) {
+  const first = new Set(["plan", "apply"]).has(args[1]) ? 3 : 2;
+  const exists = (p) => fs.existsSync(path.resolve(cwd, p));
+  return args.map((arg, index) => {
+    if (typeof arg !== "string" || index < 2) return arg;
+    const flag = args[index - 1];
+    if (REFACTOR_PATH_FLAGS.has(flag)) return path.resolve(cwd, arg);
+    if (flag === "--observable-from") return arg.split(",").map((p) => path.resolve(cwd, p)).join(",");
+    if (flag === "--classpath") {
+      return arg.split(path.delimiter).map((p) => (p === "" || path.isAbsolute(p) || !exists(p) ? p : path.resolve(cwd, p)))
+        .join(path.delimiter);
+    }
+    if (arg.startsWith("-") || index < first || path.isAbsolute(arg)) return arg;
+    if (arg.includes(",") && !exists(arg)) return arg;
+    return exists(arg) ? path.resolve(cwd, arg) : arg;
+  });
+}
+
 function runCompiler(root, rawArgs) {
-  const defaulted = defaultTarget(resolveCallerPaths(rawArgs, process.cwd()));
+  const defaulted = defaultTarget(rawArgs[0] === "refactor"
+    ? resolveRefactorPaths(rawArgs, process.cwd())
+    : resolveCallerPaths(rawArgs, process.cwd()));
   if (defaulted.reason) fail(defaulted.reason, 64);
   const args = defaulted.args;
   // Tells the native driver where its target came from, so a refusal can say

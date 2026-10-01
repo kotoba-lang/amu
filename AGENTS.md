@@ -74,8 +74,8 @@
   rule (below) or record in the commit message why this change is one-off.
   If you made the same hand edit twice, it was a rule.
 - To add a rule: implement a rule map `{:id :find}` in the refactor rule
-  library (`scripts/selfhost-codemod/src` today, being folded into the
-  `*_cli.cljk` nbb sources), where `:find` takes `{:src :nodes :opts}` and
+  library (`src/kotoba/compiler/refactor/rules/`, registered in
+  `refactor/rules.cljk`), where `:find` takes `{:src :nodes :opts}` and
   returns findings `{:status :auto|:human :reason :edits}`. Add a fixture and a
   test (host equivalence by evaluation where the rule claims it), register it
   so `list-rules` shows it, and give refusals a stable code. A rule that cannot
@@ -93,6 +93,7 @@
   round trip, facade keeps the old namespace) -> one agent per module, each
   using the loop above on its own module -> `verify` on the recombined whole.
   Agents commit path-specific and never touch another module's files.
-- Until the CLI subcommands land in your checkout, the same rules run from
-  `scripts/selfhost-codemod/codemod.sh` and `scripts/selfhost-split/`; use
-  them with this same loop and note it in the commit.
+- `amu refactor` also has `partition` (a pass-ownership module partition, the
+  input of `split`) and exits 1 when `apply --check` has pending changes or
+  `verify` finds a differing outcome. The old prototypes
+  (`scripts/selfhost-codemod/`, `scripts/selfhost-split/`) are superseded.

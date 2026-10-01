@@ -1,5 +1,7 @@
 # selfhost-split
 
+> **Superseded.** This prototype is now `amu refactor` (`plan`/`apply`/`graph`/`partition`/`split`/`verify`, nbb only, no Python): see `docs/refactoring.md`. Kept as the reference the port was checked against.
+
 AST-based tooling for cutting a very large `.cljk` namespace (first target:
 `kotoba-sema/src/kotoba/compiler/frontend.cljk`, ~22.5k lines, 912 top-level forms) into
 independently portable modules, so the Kotoba-route port (`amu check`) can proceed per module,

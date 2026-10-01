@@ -1,0 +1,198 @@
+(ns kotoba.compiler.refactor-cli-test
+  "`amu refactor` as a command: EDN answers with a stable format keyword, plan/apply/--check semantics, refusals with
+  stable codes, split into a directory, verify over two (faked) test runs. The I/O record is an in-memory file system, so
+  nothing here touches the disk or starts a process; the end-to-end route through bin/amu is scripts/test-refactor.sh."
+  (:require [cljs.test :refer [deftest is testing]]
+            [clojure.string :as str]
+            [kotoba.compiler.refactor-cli :as cli]
+            [kotoba.compiler.refactor.verify :as verify]))
+
+(def sample
+  (str "(ns sample.x\n  \"doc\"\n  (:require [clojure.string :as str]))\n\n"
+       ";; keep this comment\n"
+       "(defn pairs [m] (map (fn [[k v]] [k v]) m))\n\n"
+       "(defn names [xs] (mapv :name xs))\n\n"
+       "(defn bad [x]\n  (when-not (pos? x) (reject! \"neg\" x \"code\"))\n  x)\n"))
+
+(defn- memory-io
+  "files: atom of {path text}; dirs: set of directory paths."
+  [files & [{:keys [spawn]}]]
+  {:read (fn [p] (or (get @files p) (throw (ex-info "no such file" {:path p}))))
+   :write (fn [p t] (swap! files assoc p t))
+   :rename (fn [a b] (swap! files (fn [m] (-> m (assoc b (get m a)) (dissoc a)))))
+   :kind (fn [p] (cond (contains? @files p) :file
+                       (some #(str/starts-with? % (str p "/")) (keys @files)) :dir))
+   :list (fn [d] (distinct (for [k (keys @files) :when (str/starts-with? k (str d "/"))
+                                 :let [rest* (subs k (inc (count d)))
+                                       [head & more] (str/split rest* #"/")]]
+                             {:name head :dir? (boolean (seq more))})))
+   :mkdirs (fn [_] nil)
+   :read-edn (fn [p] (cljs.reader/read-string (or (get @files p) (throw (ex-info "no such file" {:path p})))))
+   :nbb-cli "/nbb/cli.js"
+   :spawn (or spawn (fn [_] (throw (ex-info "no process in this test" {}))))})
+
+(defn- refusal-code [thunk]
+  (try (thunk) nil
+       (catch :default e (get (ex-data e) :kotoba.error/code))))
+
+(deftest list-rules
+  (let [{:keys [value status]} (cli/run ["list-rules"] (memory-io (atom {})))]
+    (is (= 0 status))
+    (is (= :kotoba.refactor/v1 (:format value)))
+    (is (= [:a :b :c :d :e :f] (map :id (:rules value))))
+    (is (= [:a :b :d :e :f] (:standard-order value)))
+    (is (= [:list-rules :plan :apply :graph :partition :split :verify] (:commands value)))
+    (is (= [:c] (map :id (filter :needs-target (:rules value)))))))
+
+(deftest plan-counts-and-diff-without-writing
+  (let [files (atom {"/w/sample.cljk" sample})
+        {:keys [value status]} (cli/run ["plan" "a,d" "/w/sample.cljk"] (memory-io files))
+        file (first (:files value))]
+    (is (= 0 status))
+    (is (= :plan (:command value)))
+    (is (= [:a :d] (:rules value)))
+    (is (= {:patterns 1 :ported 0 :actionable 1 :auto 1 :human 0 :applied 1} (get-in value [:totals :summary :destructure])))
+    (is (= {:patterns 1 :ported 0 :actionable 1 :auto 1 :human 0 :applied 1} (get-in value [:totals :summary :kwcallback])))
+    (is (:changed file))
+    (is (str/includes? (:diff file) "-(defn pairs [m] (map (fn [[k v]] [k v]) m))"))
+    (is (str/includes? (:diff file) "+(defn names [xs] (mapv (fn [e] (:name e)) xs))"))
+    (is (= sample (get @files "/w/sample.cljk")) "plan never writes")
+    (testing "--no-diff and --patch-out"
+      (let [r (cli/run ["plan" "a" "/w/sample.cljk" "--no-diff" "--patch-out" "/w/p.patch"] (memory-io files))]
+        (is (nil? (:diff (first (:files (:value r))))))
+        (is (= "" (get @files "/w/p.patch")) "no diff text is produced with --no-diff, so the patch is empty")))
+    (testing "human sites are reported with their reason, not rewritten"
+      (let [r (cli/run ["plan" "b" "/w/sample.cljk"] (memory-io files))]
+        (is (= 1 (:human-sites-total (first (:files (:value r))))))
+        (is (string? (:reason (first (:human-sites (first (:files (:value r))))))))))))
+
+(deftest apply-check-and-write
+  (let [files (atom {"/w/sample.cljk" sample})
+        check (cli/run ["apply" "a,d" "/w/sample.cljk" "--check"] (memory-io files))]
+    (is (= 1 (:status check)) "--check: pending changes are exit 1")
+    (is (false? (:ok (:value check))))
+    (is (= sample (get @files "/w/sample.cljk")) "--check never writes")
+    (let [applied (cli/run ["apply" "a,d" "/w/sample.cljk"] (memory-io files))
+          out (get @files "/w/sample.cljk")]
+      (is (= 0 (:status applied)))
+      (is (= 1 (:written (:value applied))))
+      (is (not= sample out))
+      (is (str/includes? out ";; keep this comment") "comments survive")
+      (is (str/includes? out "(defn- fe-nth [c i] (nth c i nil))") "the helper is inserted once")
+      (is (not-any? #(str/includes? % ".amu-refactor.tmp") (keys @files)) "the temporary file was renamed away")
+      (testing "a second run applies nothing, and --check is then green"
+        (let [again (cli/run ["apply" "a,d" "/w/sample.cljk" "--check"] (memory-io files))]
+          (is (= 0 (:status again)))
+          (is (true? (:ok (:value again))))
+          (is (= 0 (get-in again [:value :totals :changed]))))))))
+
+(deftest apply-out-leaves-the-source-alone
+  (let [files (atom {"/w/sample.cljk" sample})
+        r (cli/run ["apply" "a" "/w/sample.cljk" "--out" "/w/copy.cljk"] (memory-io files))]
+    (is (= 0 (:status r)))
+    (is (= sample (get @files "/w/sample.cljk")))
+    (is (str/includes? (get @files "/w/copy.cljk") "fe-nth"))))
+
+(deftest directories-are-searched
+  (let [files (atom {"/w/src/a.cljk" sample "/w/src/sub/b.cljc" sample "/w/src/notes.md" "x" "/w/src/.hidden/c.cljk" sample})
+        r (cli/run ["plan" "a" "/w/src" "--no-diff"] (memory-io files))]
+    (is (= ["/w/src/a.cljk" "/w/src/sub/b.cljc"] (sort (map :path (:files (:value r))))))))
+
+(deftest refusals-have-stable-codes
+  (let [files (atom {"/w/sample.cljk" sample "/w/broken.cljk" "(defn f [x" "/w/empty/readme.md" "x"})
+        io (memory-io files)]
+    (is (= :refactor/usage (refusal-code #(cli/run [] io))))
+    (is (= :refactor/usage (refusal-code #(cli/run ["frobnicate"] io))))
+    (is (= :refactor/usage (refusal-code #(cli/run ["plan" "a" "--bogus" "/w/sample.cljk"] io))))
+    (is (= :refactor/usage (refusal-code #(cli/run ["plan" "a"] io))))
+    (is (= :refactor/unknown-rule (refusal-code #(cli/run ["plan" "zz" "/w/sample.cljk"] io))))
+    (is (= :refactor/target-required (refusal-code #(cli/run ["plan" "c" "/w/sample.cljk"] io))))
+    (is (= :refactor/unreadable (refusal-code #(cli/run ["plan" "a" "/w/missing.cljk"] io))))
+    (is (= :refactor/parse-error (refusal-code #(cli/run ["plan" "a" "/w/broken.cljk"] io))))
+    (is (= :refactor/no-paths (refusal-code #(cli/run ["plan" "a" "/w/empty"] io))))
+    (is (= :refactor/usage (refusal-code #(cli/run ["split" "/w/sample.cljk" "--out" "/o"] io))))
+    (testing "the phases map onto the exit codes of the other commands"
+      (is (= :usage (:phase (try (cli/run [] io) (catch :default e (ex-data e))))))
+      (is (= :decode (:phase (try (cli/run ["plan" "a" "/w/broken.cljk"] io) (catch :default e (ex-data e)))))))))
+
+(deftest refuses-to-write-an-unreadable-rewrite
+  ;; a rule that returns text the parser cannot read must leave every file as it was
+  (let [files (atom {"/w/sample.cljk" sample})
+        bad-rule {:id "z" :name "bad" :needs-target false
+                  :rule {:id :bad :find (fn [{:keys [nodes]}]
+                                          [{:rule :bad :status :auto :region :shared :s (:s (first nodes)) :e (:e (first nodes))
+                                            :edits [{:s (:s (first nodes)) :e (:e (first nodes)) :text "(unclosed"}]}])}}]
+    (with-redefs [kotoba.compiler.refactor.rules/library (conj kotoba.compiler.refactor.rules/library bad-rule)]
+      (is (= :refactor/output-unparsable (refusal-code #(cli/run ["apply" "z" "/w/sample.cljk"] (memory-io files)))))
+      (is (= sample (get @files "/w/sample.cljk"))))))
+
+(def graph-src
+  (str "(ns g.x)\n(defn leaf-a [x] (inc x))\n(defn leaf-b [x] (leaf-a x))\n(defn pass-one [x] (leaf-a x))\n"
+       "(defn pass-two [x] (leaf-b x))\n(defn pass-three [x] (leaf-b x))\n"
+       "(defn driver [x] (+ (pass-one x) (pass-two x) (pass-three x)))\n"))
+
+(deftest graph-partition-split-through-the-command
+  (let [files (atom {"/w/g.cljk" graph-src})
+        io (memory-io files)
+        g (:value (cli/run ["graph" "/w/g.cljk"] io))]
+    (is (= :kotoba.refactor/v1 (:format g)))
+    (is (= 7 (:source-forms g)))
+    (is (= 6 (:names g)))
+    (is (= 0 (count (:sccs g))))
+    (testing "--summary and --out"
+      (is (nil? (:nodes (:value (cli/run ["graph" "/w/g.cljk" "--summary"] io)))))
+      (let [r (cli/run ["graph" "/w/g.cljk" "--out" "/w/graph.edn"] io)]
+        (is (= "/w/graph.edn" (:out (:value r))))
+        (is (= 6 (:names (cljs.reader/read-string (get @files "/w/graph.edn")))))))
+    (testing "partition, written to a file, is what split consumes"
+      (is (= :refactor/no-driver
+             (refusal-code #(cli/run ["partition" "/w/g.cljk" "--modules" "2"] io)))
+          "the default min-root is 100 lines: nothing in this toy calls three big passes")
+      (let [p (cli/run ["partition" "/w/g.cljk" "--driver" "driver" "--modules" "2" "--out" "/w/p.edn"] io)]
+        (is (= 0 (:status p)))
+        (is (contains? @files "/w/p.edn"))
+        (let [s (cli/run ["split" "/w/g.cljk" "--partition" "/w/p.edn" "--out" "/o"] io)]
+          (is (= 0 (:status s)))
+          (is (:ok (:roundtrip (:value s))))
+          (is (contains? @files "/o/g/x.cljk") "the facade")
+          (is (some #(str/starts-with? % "/o/g/x/") (keys @files)) "the modules"))))))
+
+;; ---- verify ----------------------------------------------------------------------------------------------------------
+
+(def run-pass
+  (str "Testing a.b-test\n\nFAIL in (known) (a_test.cljk:12:3)\nexpected: (= 1 2)\n  expected: (= 1 2)\n  actual: (not (= 1 2))\n\n"
+       "Ran 3 tests containing 4 assertions.\n\nnbb: 3 tests, 3 passed, 1 failed, 0 errors\n"))
+
+(deftest verify-normalization
+  (is (= (sort ["FAIL in (known) (a_test.cljk)" "  expected: (= 1 2)" "  actual: (not (= 1 2))" "nbb: 3 tests, 3 passed, 1 failed, 0 errors"])
+         (verify/outcomes run-pass)) "line and column numbers are removed; sorted")
+  (is (= ["actual :message \"boom\""]
+         (verify/outcomes "  actual: #error {:cause \"x\" :data {} :message \"boom\"}"))))
+
+(deftest verify-compares-outcomes-not-counts
+  (let [spawned (atom [])
+        outputs (atom [run-pass run-pass])
+        spawn (fn [argv] (swap! spawned conj argv) (let [o (first @outputs)] (swap! outputs rest) {:status 1 :stdout o}))
+        io (memory-io (atom {}) {:spawn spawn})
+        args ["verify" "--runner" "/k/run-tests.cljk" "--classpath" "/a:/b" "--base-first" "/k/src" "--candidate-first" "/tmp/new" "--stack-size" "7000"]
+        ok (cli/run args io)]
+    (is (= 0 (:status ok)))
+    (is (true? (:ok (:value ok))))
+    (is (= 0 (:differences (:value ok))))
+    (is (= [["node" "--stack-size=7000" "/nbb/cli.js" "--classpath" "/k/src:/a:/b" "/k/run-tests.cljk"]
+            ["node" "--stack-size=7000" "/nbb/cli.js" "--classpath" "/tmp/new:/a:/b" "/k/run-tests.cljk"]]
+           @spawned)
+        "the same classpath twice, the baseline root first and then the candidate root first")
+    (testing "a different failing test with the same counts is a difference"
+      (reset! outputs [run-pass (str/replace run-pass "(known)" "(other)")])
+      (let [r (cli/run args io)]
+        (is (= 1 (:status r)))
+        (is (false? (:ok (:value r))))
+        (is (= ["FAIL in (known) (a_test.cljk)"] (:only-baseline (:value r))))
+        (is (= ["FAIL in (other) (a_test.cljk)"] (:only-candidate (:value r))))))
+    (testing "a run that printed no summary is a refusal, not a pass"
+      (reset! outputs [run-pass "Exception in thread main"])
+      (is (= :refactor/verify-no-result (refusal-code #(cli/run args io)))))
+    (testing "verify needs a runner and a classpath"
+      (is (= :refactor/usage (refusal-code #(cli/run ["verify" "--classpath" "/a"] io))))
+      (is (= :refactor/usage (refusal-code #(cli/run ["verify" "--runner" "/r.cljk"] io)))))))

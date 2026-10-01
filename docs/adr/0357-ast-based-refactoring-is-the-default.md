@@ -248,3 +248,19 @@ rules wherever a pattern recurs.
 
 The rule language beyond Kotoba functions (a pattern DSL) and automatic rule
 synthesis from before/after pairs. Those need a measured need first.
+
+## Implementation (2026-10-01)
+
+`amu refactor` exists: `list-rules`, `plan`, `apply [--check]`, `graph`,
+`partition`, `split`, `verify`, in nbb with no Python or JVM
+(`src/kotoba/compiler/refactor/*.cljk`, `refactor_cli.cljk`,
+`nbb/refactor_cli.cljk`, routed from `bin/amu`). The lossless parser, the rule
+engine and rules a-f are the codemod prototype ported to `.cljk` (the scanner is
+character based, no regex objects); the call graph, partition and extraction are
+the Python analysis ported onto the same parser, so one parser serves both.
+Differences kept on purpose from the prototypes: `apply` re-parses every
+rewritten file before writing any, writes through a temporary file and a
+rename, `split` checks the round trip before writing, and `--check` and
+`verify` answer exit 1 when they find something. The helper comment label in
+generated code reads `amu-refactor:` (was `selfhost-codemod:`). Evidence is in
+`docs/refactoring.md`. The prototypes under `scripts/` are superseded.

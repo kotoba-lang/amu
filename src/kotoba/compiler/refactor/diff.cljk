@@ -1,0 +1,139 @@
+;; Unified diff of two texts, fast for the sparse, local changes a refactoring makes (amu refactor plan).
+;;
+;; Anchors are lines that occur exactly once on each side (patience diff): the longest increasing run of those pairs
+;; splits the problem, and what is left between two anchors is diffed by trimming the common head and tail and, when
+;; small, by an LCS table; a larger gap is shown as one replaced block.  Always a valid diff; minimal where lines are
+;; distinctive.
+(ns kotoba.compiler.refactor.diff
+  (:require [clojure.string :as str]))
+
+(defn split-lines
+  "Lines of text without their terminators; a final newline does not make an empty last line."
+  [text]
+  (if (= "" text)
+    []
+    (let [parts (str/split text #"\n" -1)]
+      (if (= "" (peek parts)) (pop parts) parts))))
+
+(defn- vector-of-zero [n] (vec (repeat n 0)))
+
+(defn- lis
+  "Longest strictly increasing subsequence of the [i j] pairs (sorted by i) on j."
+  [pairs]
+  (if (empty? pairs)
+    []
+    (let [pairs (vec pairs) n (count pairs)]
+      (loop [k 0 tails [] tail-idx [] prev (vec (repeat n nil))]
+        (if (= k n)
+          (loop [t (peek tail-idx) out '()] (if t (recur (get prev t) (cons (nth pairs t) out)) (vec out)))
+          (let [j (second (nth pairs k))
+                ;; leftmost tail >= j (binary search)
+                pos (loop [lo 0 hi (count tails)] (if (< lo hi) (let [mid (quot (+ lo hi) 2)] (if (< (nth tails mid) j) (recur (inc mid) hi) (recur lo mid))) lo))
+                prev (assoc prev k (when (pos? pos) (nth tail-idx (dec pos))))]
+            (recur (inc k)
+                   (if (= pos (count tails)) (conj tails j) (assoc tails pos j))
+                   (if (= pos (count tail-idx)) (conj tail-idx k) (assoc tail-idx pos k))
+                   prev)))))))
+
+(defn- lcs-regions
+  "Changed regions [as ae bs be] between a[as,ae) and b[bs,be) by an LCS table (small inputs only)."
+  [a b as ae bs be]
+  (let [n (- ae as) m (- be bs)
+        table (loop [i (dec n) rows (list (vec (repeat (inc m) 0)))]
+                (if (neg? i)
+                  (vec rows)
+                  (let [next-row (first rows)
+                        row (loop [j (dec m) row (vector-of-zero (inc m))]
+                              (if (neg? j)
+                                row
+                                (recur (dec j)
+                                       (assoc row j (if (= (nth a (+ as i)) (nth b (+ bs j)))
+                                                      (inc (nth next-row (inc j)))
+                                                      (max (nth next-row j) (nth row (inc j))))))))]
+                    (recur (dec i) (cons row rows)))))]
+    (loop [i 0 j 0 open nil out []]
+      (let [close (fn [] (if open (conj out [(:as open) (+ as i) (:bs open) (+ bs j)]) out))]
+        (cond
+          (and (= i n) (= j m)) (close)
+          (and (< i n) (< j m) (= (nth a (+ as i)) (nth b (+ bs j))))
+          (recur (inc i) (inc j) nil (close))
+          (and (< j m) (or (= i n) (>= (nth (nth table i) (inc j)) (nth (nth table (inc i)) j))))
+          (recur i (inc j) (or open {:as (+ as i) :bs (+ bs j)}) out)
+          :else
+          (recur (inc i) j (or open {:as (+ as i) :bs (+ bs j)}) out))))))
+
+
+(declare diff-range)
+
+(defn- diff-range [a b as ae bs be]
+  ;; trim the common head and tail
+  (let [head (loop [k 0] (if (and (< (+ as k) ae) (< (+ bs k) be) (= (nth a (+ as k)) (nth b (+ bs k)))) (recur (inc k)) k))
+        as (+ as head) bs (+ bs head)
+        tail (loop [k 0] (if (and (< as (- ae k)) (< bs (- be k)) (= (nth a (- ae k 1)) (nth b (- be k 1)))) (recur (inc k)) k))
+        ae (- ae tail) be (- be tail)]
+    (cond
+      (and (= as ae) (= bs be)) []
+      (or (= as ae) (= bs be)) [[as ae bs be]]
+      :else
+      (let [ca (frequencies (subvec a as ae)) cb (frequencies (subvec b bs be))
+            pos-b (into {} (for [j (range bs be) :when (and (= 1 (get cb (nth b j))) (= 1 (get ca (nth b j))))] [(nth b j) j]))
+            pairs (vec (for [i (range as ae) :let [j (get pos-b (nth a i))] :when j] [i j]))
+            anchors (lis pairs)]
+        (if (seq anchors)
+          (loop [anchors anchors pa as pb bs out []]
+            (if-let [[i j] (first anchors)]
+              (recur (rest anchors) (inc i) (inc j) (into out (diff-range a b pa i pb j)))
+              (into out (diff-range a b pa ae pb be))))
+          (if (<= (* (- ae as) (- be bs)) 250000)
+            (lcs-regions a b as ae bs be)
+            [[as ae bs be]]))))))
+
+(defn regions
+  "Changed regions [as ae bs be] (0-based, half open) between two line vectors."
+  [a b]
+  (diff-range (vec a) (vec b) 0 (count a) 0 (count b)))
+
+(defn- range-text [start len]
+  (cond (= len 0) (str (max 0 start) ",0")
+        (= len 1) (str (inc start))
+        :else (str (inc start) "," len)))
+
+(defn unified
+  "Unified diff text (\"\" when the texts are equal)."
+  ([path old new] (unified path old new 3))
+  ([path old new ctx]
+   (if (= old new)
+     ""
+     (let [a (vec (split-lines old)) b (vec (split-lines new))
+           rs (regions a b)
+           ;; group regions whose gap is at most 2*ctx unchanged lines
+           groups (reduce (fn [gs [as ae bs be :as r]]
+                            (let [g (peek gs)]
+                              (if (and g (<= (- as (nth (peek g) 1)) (* 2 ctx)))
+                                (conj (pop gs) (conj g r))
+                                (conj gs [r]))))
+                          [] rs)
+           hunk (fn [g]
+                  (let [[as0 _ bs0 _] (first g)
+                        [_ ae1 _ be1] (peek g)
+                        start-a (max 0 (- as0 ctx)) start-b (max 0 (- bs0 ctx))
+                        end-a (min (count a) (+ ae1 ctx)) end-b (min (count b) (+ be1 ctx))
+                        body (loop [g g pa start-a out []]
+                               (if-let [[as ae bs be] (first g)]
+                                 (recur (rest g) ae
+                                        (-> out
+                                            (into (map #(str " " (nth a %)) (range pa as)))
+                                            (into (map #(str "-" (nth a %)) (range as ae)))
+                                            (into (map #(str "+" (nth b %)) (range bs be)))))
+                                 (into out (map #(str " " (nth a %)) (range pa end-a)))))]
+                    (str "@@ -" (range-text start-a (- end-a start-a)) " +" (range-text start-b (- end-b start-b)) " @@\n"
+                         (str/join "\n" body) "\n")))]
+       (let [rel (str/replace path #"^/+" "")]
+         (str "--- a/" rel "\n+++ b/" rel "\n" (apply str (map hunk groups))))))))
+
+(defn changed-lines
+  "{:removed n :added n} over the regions."
+  [old new]
+  (let [rs (regions (split-lines old) (split-lines new))]
+    {:removed (reduce + (map (fn [[as ae _ _]] (- ae as)) rs))
+     :added (reduce + (map (fn [[_ _ bs be]] (- be bs)) rs))}))
