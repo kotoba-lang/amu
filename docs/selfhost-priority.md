@@ -41,6 +41,13 @@ own `.cljk` sources satisfies the second one.
 6. **Fail closed.** No JVM, GraalVM or Node fallback is added to make a
    selfhost stage pass. An unreachable file stays on the scoreboard as
    refused, with its reason.
+7. **Port by rule, not by hand.** Selfhost porting edits are made with
+   `amu refactor` (`kotoba refactor` in `kotoba-lang`): `plan -> apply --check
+   -> verify`, differential on per-test outcomes, nbb/Kotoba only (no Python or
+   JVM). Hand edits are for changes no rule covers, and then the rule is
+   written or the reason recorded. A large namespace is parallelised with
+   `refactor graph -> split -> one agent per module`. The `plan` counts and the
+   `verify` result go in the commit message. Workflow: `docs/refactoring.md`.
 
 ## Measured distance
 

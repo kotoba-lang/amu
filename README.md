@@ -10,6 +10,10 @@ cloth.
 > Node.js. Only a selfhost-built compiler counts as selfhost evidence; a
 > GraalVM- or Node-hosted build is a bootstrap reference and is labelled so.
 > See [docs/selfhost-priority.md](docs/selfhost-priority.md).
+>
+> **Refactor with `amu refactor`.** Source changes go through the AST-based
+> `plan -> apply --check -> verify` loop, not hand edits. See
+> [docs/refactoring.md](docs/refactoring.md).
 
 ## Definition CIDs (compile once per hash)
 

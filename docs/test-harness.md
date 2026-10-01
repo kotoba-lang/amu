@@ -24,6 +24,14 @@ budget (`--fuel`, default 512) is per test. The interpreter target traps
 self-recursion deeper than 100 frames whatever the budget (reported as
 `fuel-exhausted`); write such walks as `loop`.
 
+## Differential use: `amu refactor verify`
+
+`amu refactor verify` is the default gate for source refactors. It runs the
+project's test set (this harness plus the project's own suites) before and
+after a change and compares per-test outcomes; a changed outcome or a new
+refusal blocks the change, and failures present before stay listed as failures.
+Output is EDN, format `:kotoba.refactor/v1`. See `docs/refactoring.md`.
+
 ## Fixture
 
 `resources/kotoba/test-harness/smoke.kotoba` — add/string smoke tests.
