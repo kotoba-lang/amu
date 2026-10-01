@@ -208,7 +208,9 @@
     ;; 5. native-unqualified feature, target omitted -> named refusal, no file
     (let [r (amu! ["compile" unqualified "--output" (f "unqualified.out")])
           err (str (.-stderr r))]
-      (report! (and (= 70 (.-status r))
+      ;; 65, not 70: a target refusing what a program uses is an answer about
+      ;; the program (amu ADR 0353 floor :native-handles).
+      (report! (and (= 65 (.-status r))
                     (str/includes? err (str "native target " host-target " does not qualify `map-new`"))
                     (str/includes? err "--target wasm32-browser")
                     (str/includes? err "--target was omitted, so amu chose this host's native target"))
@@ -218,7 +220,7 @@
                "the refused compile wrote nothing (no silent wasm)" (pr-str (.readdirSync fs directory))))
     (let [r (amu! ["compile" unqualified "--target" host-target "--output" (f "explicit-native.out")])
           err (str (.-stderr r))]
-      (report! (and (= 70 (.-status r)) (str/includes? err "does not qualify `map-new`")
+      (report! (and (= 65 (.-status r)) (str/includes? err "does not qualify `map-new`")
                     (str/includes? err "--target wasm32-browser")
                     (not (str/includes? err "--target was omitted")))
                "an explicit native target names the feature but does not claim a default" (out r)))
