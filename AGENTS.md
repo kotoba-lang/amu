@@ -12,6 +12,16 @@
 - Compiler benchmarks (Embench etc.) are published as selfhost results only
   when taken with a selfhost-built compiler on a quiet host.
 
+## Refactoring is AST-based by default
+
+- Rule-shaped changes (a pattern at many sites, a rename, a module split, a
+  selfhost-wall rewrite) use `amu refactor` (`plan`, then `apply`, then
+  `verify`), not sed or hand text edits. A hand edit is the exception; say why
+  when you use one, and turn a repeated hand edit into a rule.
+- The tool is nbb/Kotoba only (no Python, no JVM), fails closed, and is a
+  bootstrap reference until it passes `amu check` on the project route.
+  Decision: `docs/adr/0357-ast-based-refactoring-is-the-default.md`.
+
 ## Language semantics are target-independent
 
 - wasm32 is one build target of the Amu native compiler, not the definition of

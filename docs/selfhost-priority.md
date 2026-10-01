@@ -48,6 +48,9 @@ own `.cljk` sources satisfies the second one.
    written or the reason recorded. A large namespace is parallelised with
    `refactor graph -> split -> one agent per module`. The `plan` counts and the
    `verify` result go in the commit message. Workflow: `docs/refactoring.md`.
+7. **Refactor by AST.** Wall rewrites that recur are done with
+   `amu refactor` rules (lossless, plan/apply/verify), not text edits; the
+   refactoring tool is itself Kotoba-route code (ADR 0357).
 
 ## Measured distance
 
