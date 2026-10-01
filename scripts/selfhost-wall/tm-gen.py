@@ -99,8 +99,8 @@ def expand(s):
 
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
-    src = open(sys.argv[1]).read()
-    s = expand(src)
+    # argv[1] may be a ':'-separated list of files (the facade first, then the split modules): later definitions win
+    s = '\n'.join(expand(open(f).read()) for f in sys.argv[1].split(':') if f)
     i = 0; forms = {}; n = len(s)
     while True:
         i = skip_ws(s, i)

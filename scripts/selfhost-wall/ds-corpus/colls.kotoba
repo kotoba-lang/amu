@@ -1,0 +1,207 @@
+(ns ds.colls)
+
+;; filter / remove / reduce / mapv / filterv / into / map / map-indexed: the loop helpers and shapes they register are compared too
+(defn keep-pos [v :vector-i64] :vector-i64
+  (filter (fn [x] (> x 0)) v))
+
+(defn drop-pos [v :vector-i64] :vector-i64
+  (remove (fn [x] (> x 0)) v))
+
+(defn named-filter [v :vector-i64] :vector-i64
+  (filter positive? v))
+
+(defn stored-filter [p v :vector-i64] :vector-i64
+  (filter p v))
+
+(defn positive? [x :i64] :bool (> x 0))
+
+(defn sum [v :vector-i64] :i64
+  (reduce + 0 v))
+
+(defn sum-fn [v :vector-i64] :i64
+  (reduce (fn [acc x] (+ acc (* x x))) 0 v))
+
+(defn sum-fn-do [v :vector-i64] :i64
+  (reduce (fn [acc x] (store! x) (+ acc x)) 0 v))
+
+(defn sum-chain [v :vector-i64] :i64
+  (reduce + 0 (map inc v)))
+
+(defn sum-chain2 [v :vector-i64] :i64
+  (reduce * 1 (map dec (map inc v))))
+
+(defn sum-named [v :vector-i64] :i64
+  (reduce add2 0 v))
+
+(defn add2 [a :i64 b :i64] :i64 (+ a b))
+
+(defn sum-stored [f v :vector-i64] :i64
+  (reduce f 0 v))
+
+(defn sum-destructure [v :vector-i64] :i64
+  (reduce (fn [acc [a b]] (+ acc a)) 0 v))
+
+(defn sum-no-init [v :vector-i64] :i64
+  (reduce + v))
+
+(defn doubled [v :vector-i64] :vector-i64
+  (map (fn [x] (* x 2)) v))
+
+(defn incd [v :vector-i64] :vector-i64
+  (map inc v))
+
+(defn named-map [v :vector-i64] :vector-i64
+  (map add1 v))
+
+(defn add1 [x :i64] :i64 (+ x 1))
+
+(defn zipped [a :vector-i64 b :vector-i64] :vector-i64
+  (map (fn [x y] (+ x y)) a b))
+
+(defn zipped3 [a :vector-i64 b :vector-i64 c :vector-i64] :vector-i64
+  (map (fn [x y z] (+ x (+ y z))) a b c))
+
+(defn mapped-v [v :vector-i64] :vector-i64
+  (mapv (fn [x] (+ x 1)) v))
+
+(defn filtered-v [v :vector-i64] :vector-i64
+  (filterv (fn [x] (> x 0)) v))
+
+(defn into-v [v :vector-i64] :vector-i64
+  (into (vector-i64) v))
+
+(defn into-map [v :vector-i64] :vector-i64
+  (into (vector-i64) (map inc) v))
+
+(defn into-filter [v :vector-i64] :vector-i64
+  (into (vector-i64) (filter positive?) v))
+
+(defn indexed [v :vector-i64] :vector-i64
+  (map-indexed (fn [i x] (+ i x)) v))
+
+(defn indexed-named [v :vector-i64] :vector-i64
+  (map-indexed add2 v))
+
+(defn refusals2 [v] :i64
+  (filter 1)
+  (filter (fn [x y] x) v)
+  (filter (fn [x]) v)
+  (reduce)
+  (reduce + 0 1 2)
+  (reduce (fn [a] a) 0 v)
+  (reduce (fn [a b & c] a) 0 v)
+  (map)
+  (map f)
+  (map :k v)
+  (map "s" v)
+  (map 1 v)
+  (map nil v)
+  (map [1] v)
+  (map {} v)
+  (map partial v)
+  (map (partial f 1) v)
+  (map (comp f g) v)
+  (map (fn [x y] x) v)
+  (map (fn [[a b]] a) v)
+  (map (fn [x x] x) v v)
+  (map (fn [x]) v)
+  (map (fn ([x] x)) v)
+  (map add2 v)
+  (map-indexed)
+  (map-indexed f)
+  (map-indexed (fn [x] x) v)
+  (map-indexed (fn [a b c] a) v)
+  (map-indexed (fn [[a b] c] a) v)
+  (map-indexed add1 v)
+  (map-indexed (fn [a a] a) v)
+  (map-indexed (fn [a b]) v)
+  (mapv)
+  (mapv f)
+  (filterv f)
+  (into)
+  (into a)
+  (into a b c)
+  (into a (comp f) c)
+  0)
+
+(defn lexical-calls [g] :i64
+  (let [f (fn [x] (+ x 1))] (f 2))
+  ((fn [h] (h 1 2)) g)
+  (let [h (fn [a b c d e] a)] 0)
+  0)
+
+(defn lazies [s] :i64
+  (lazy-cons 1 (lazy-cons 2 s))
+  (lazy-first s)
+  (lazy-rest s)
+  (lazy-empty? s)
+  (take 3 s)
+  (drop 1 s)
+  (take 1)
+  (lazy-first)
+  (char 65)
+  (char "a")
+  (char)
+  (string-join ",")
+  (string-join "," "a")
+  (string-join "," "a" "b" "c")
+  (string-join)
+  0)
+
+(defn matches [x m] :i64
+  (match x 1 10 2 20 :else 0)
+  (match x 1 10)
+  (match x "a" 1 "b" 2 :else 3)
+  (match x :k 1 true 2 :else 3)
+  (match x n (+ n 1))
+  (match x _ 7)
+  (match m {:a 1} 10 {:b y :a z} (+ y z) :else 0)
+  (match m {:a {:b 1}} 1 :else 0)
+  (match m {} 1 :else 0)
+  (match m {1 2} 1 :else 0)
+  (match m {:a 1 :b 2 :c 3 :d 4 :e 5 :f 6 :g 7 :h 8 :i 9} 1 :else 0)
+  (match x a/b 1)
+  (match x [1 2] 1)
+  (match x #{1} 1)
+  (match x (f 1) 1)
+  (match x 1.5 1)
+  (match x n 1 :else 2)
+  (match x 1 2 3)
+  (match x :else 1 :else 2)
+  (match x :else 1 1 2)
+  (match)
+  (match x)
+  (match x a 1 a 2)
+  (match x {:a q :b q} 1 :else 0)
+  (match x 1 (match x 2 3 :else 4) :else 5)
+  0)
+
+(defn lets [m v] :i64
+  (let [a 1 b (+ a 1)] (str a b))
+  (let [[x y] v] (+ x y))
+  (let [[x [y z] & more] v] more)
+  (let [{:keys [a b]} m] (+ a b))
+  (let [{:keys [a b] :or {a 1} :as whole} m] whole)
+  (let [{:ns/keys [a]} m] a)
+  (let [{:keys [ns/a b]} m] a)
+  (let [{x :x [p q] :y} m] x)
+  (let [{y :y x :x} m] x)
+  (let [{:keys [a] :or {a (+ 1 2)}} m] a)
+  (let [{} m] 1)
+  (let [{:keys a} m] 1)
+  (let [{:or {a 1}} m] 1)
+  (let [{:keys [a] :or {z 1}} m] a)
+  (let [{:keys [a] :as 1} m] a)
+  (let [[x & y z] v] 1)
+  (let [[x &] v] 1)
+  (let [[1] v] 1)
+  (let [(a b) v] 1)
+  (let [n 5 d (document-vector)] (str n))
+  (let [n 5 d (document-vector) k n] (str k))
+  (let [[x] (rest v)] x)
+  (let [x 1] x 2)
+  (let [x 1])
+  (let [x] x)
+  (let x 1)
+  (let [x 1 y (let [z 2] z)] (+ x y))
+  0)

@@ -1,0 +1,87 @@
+(ns ds.loops)
+
+;; loop/recur, dotimes, doseq: forms the desugar differential compares including the helper definitions and shapes they register
+(defn sum-to [n :i64] :i64
+  (loop [i 0 acc 0] (if (< i n) (recur (+ i 1) (+ acc i)) acc)))
+
+(defn nested [n :i64 m :i64] :i64
+  (loop [i 0 acc 0]
+    (if (< i n)
+      (recur (+ i 1) (+ acc (loop [j 0 s 0] (if (< j m) (recur (+ j 1) (+ s i)) s))))
+      acc)))
+
+(defn digits [n :i64] :string
+  (loop [k n out ""] (if (= k 0) out (recur (quot k 10) (str out (rem k 10))))))
+
+(defn captured [a :i64 b :i64 c :i64] :i64
+  (loop [i 0] (if (< i a) (recur (inc i)) (+ b c))))
+
+(defn with-let [n :i64] :i64
+  (loop [i 0 acc 0]
+    (if (< i n)
+      (let [x (* i 2) y (+ x 1)] (recur (+ i 1) (+ acc y)))
+      acc)))
+
+(defn with-try [n :i64] :i64
+  (loop [i 0 acc 0]
+    (if (< i n)
+      (recur (+ i 1) (try (+ acc (risky i)) (catch e 0)))
+      acc)))
+
+(defn counter [v :vector-i64] :i64
+  (dotimes [i 3] (vector-at v i))
+  0)
+
+(defn counter2 [n :i64] :i64
+  (dotimes [i n] (store! i) (store! (+ i 1)))
+  0)
+
+(defn each [v :vector-i64] :i64
+  (doseq [x v] (store! x))
+  0)
+
+(defn each-mod [v :vector-i64] :i64
+  (doseq [x v :when (> x 0) :let [y (* x 2)] :while (< y 100)] (store! y))
+  0)
+
+(defn each2 [v :vector-i64 w :vector-i64] :i64
+  (doseq [x v y w] (store! (+ x y)))
+  0)
+
+(defn each3 [u v w] :i64
+  (doseq [x u y v z w :when (> z 0)] (store! (+ x (+ y z))))
+  0)
+
+(defn each4 [u v w t] :i64
+  (doseq [a u b v c w d t] (store! a))
+  0)
+
+(defn each-pair [xs] :i64
+  (doseq [x (list 1 2 3)] (store! x))
+  (doseq [x (cons 1 xs)] (store! x))
+  (doseq [x (rest xs)] (store! x))
+  0)
+
+(defn refusals [v] :i64
+  (loop [i] i)
+  (loop [[a b] 1] a)
+  (loop [i 0] (recur))
+  (loop [i 0] 1 2)
+  (loop 1 2)
+  (loop)
+  (dotimes [i] 1)
+  (dotimes [a/b 3] 1)
+  (dotimes 3 1)
+  (dotimes)
+  (doseq 1 2)
+  (doseq [x v :foo 1] x)
+  (doseq [:when 1] 1)
+  (doseq [x] 1)
+  (doseq [x v :let [a 1 a 2]] 1)
+  (doseq [x v :let [a]] 1)
+  (doseq [x v :when] 1)
+  (doseq [x v y] 1)
+  (doseq [] 1)
+  (doseq [a v b v c v d v e v] 1)
+  (doseq [x v 3 4] 1)
+  0)

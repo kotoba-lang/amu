@@ -18,7 +18,9 @@
             [kotoba.kir :as kir]
             [kotoba.compiler.project :as project]
             [kotoba.compiler.project-files :as pf]
-            [kotoba.compiler.frontend :as fe]))
+            [kotoba.compiler.frontend :as fe]
+            [kotoba.compiler.frontend.base :as fe-base]
+            [kotoba.compiler.frontend.desugar :as fe-ds]))
 
 (set! *print-namespace-maps* false)
 (def env js/process.env)
@@ -31,7 +33,7 @@
 (defn fe-var [sym] @(resolve (symbol "kotoba.compiler.frontend" (name sym))))
 (def host-desugar (fe-var 'desugar-expr))
 
-(defn norm [s] (str/replace s #"(\d+)n\b" "$1"))
+(defn norm [s] (-> s (str/replace #"#object\[BigInt (-?\d+)\]" "$1") (str/replace #"(\d+)n\b" "$1")))
 (defn edn-of [x] (norm (pr-str x)))
 
 ;; ---- corpus ----------------------------------------------------------------------------------
@@ -72,7 +74,7 @@
                                 (mapcat sub-seqs (drop 2 f))
                                 (sub-seqs f)))
                             forms)
-                    (remove #(and (seq? %) (contains? '#{defn defn- ns def defrecord defprotocol fn loop let letfn binding doseq for} (first %))))
+                    (remove #(and (seq? %) (contains? '#{defn defn- ns def defrecord defprotocol letfn binding for} (first %))))
                     (take max-per-program))]
       (for [s subs] [names s]))
     (catch :default _ [])))
@@ -96,11 +98,28 @@
 ;; ---- host ------------------------------------------------------------------------------------
 
 (defn host-answer [names form]
+  ;; the answer is [form helpers shapes lambdas dispatchers uses-apply]: what the host registers on the side while lowering
+  ;; (`*pending-loop-helpers*`, `*loop-helper-shapes*`, `*pending-lambdas*`, `*required-closure-dispatchers*`, `*uses-apply?*`)
+  ;; is part of what the port must reproduce
   (try
-    (let [r (binding [fe/*synthetic-counter* (volatile! 0)
-                      fe/*function-arities* (into {} (map (fn [n] [n 1])) names)]
+    (let [helpers (atom [])
+          shapes (volatile! {})
+          lambdas (atom [])
+          dispatchers (volatile! #{})
+          uses-apply (volatile! false)
+          uses-lazy (volatile! false)
+          r (binding [fe-base/*synthetic-counter* (volatile! 0)
+                      fe-ds/*loop-counter* (volatile! 0)
+                      fe-ds/*lambda-counter* (volatile! 0)
+                      fe-ds/*pending-loop-helpers* helpers
+                      fe-ds/*loop-helper-shapes* shapes
+                      fe-ds/*pending-lambdas* lambdas
+                      fe-ds/*required-closure-dispatchers* dispatchers
+                      fe-ds/*uses-apply?* uses-apply
+                      fe-ds/*uses-lazy?* uses-lazy
+                      fe-ds/*function-arities* (into {} (map (fn [n] [n #{0 1 2 3 4}])) names)]
               (host-desugar form))]
-      [:ok (edn-of r)])
+      [:ok (edn-of r) (str/join " " [(edn-of @helpers) (edn-of @shapes) (edn-of @lambdas) (edn-of @dispatchers) (edn-of @uses-apply) (edn-of @uses-lazy)])])
     (catch :default e [:err (ex-message e)])))
 
 ;; ---- guest -----------------------------------------------------------------------------------
@@ -138,23 +157,39 @@
   (let [cs (corpus)
         _ (println "corpus forms:" (count cs))
         rows (vec (for [[names form] cs
-                        :let [[k v] (host-answer names form)
-                              line  (str "[" (edn-of (into {} (map (fn [n] [n 1])) names)) " false " (edn-of form) " "
-                                        (if (= k :ok) v "nil") "]")]
+                        :let [[k v side] (host-answer names form)
+                              line  (str "[" (edn-of (into {} (map (fn [n] [n #{0 1 2 3 4}])) names)) " false " (edn-of form) " "
+                                        (if (= k :ok) v "nil") " " (if (= k :ok) side "[] {} [] #{} false false") "]")]
                         :when (and (not (str/includes? line "\n")) (ascii? line)
                                    (not (str/includes? line "#object")) (not (str/includes? line "#<")))]
                     {:line line :host (if (= k :ok) "OK" (str "ERR " v)) :form (edn-of form)}))
-        _ (println "cases:" (count rows) "linking guest ...")
+        _ (println "cases:" (count rows) "of" (count cs) "forms; loop-ish:" (count (filter #(re-find #"^\((loop|dotimes|doseq|fn) " (:form %)) rows)) "linking guest ...")
+        _ (when (.-DS_WHY env)
+            (doseq [[names form] (take 400 cs)
+                    :let [[k v side] (host-answer names form)
+                          line (str "[" (edn-of form) " " (if (= k :ok) v "nil") " " side "]")]
+                    :when (not (and (not (str/includes? line "\n")) (ascii? line)
+                                    (not (str/includes? line "#object")) (not (str/includes? line "#<"))))]
+              (println "DROPPED" (subs line 0 (min 300 (count line))))))
         lowered (load-guest)
         batch (if-let [v (.-DS_BATCH env)] (js/parseInt v) 100)
         out (atom [])]
     (doseq [part (batches-by-size rows batch 30000)]
       (println "batch of" (count part) "...")
-      (let [text (str (str/join "\n" (map :line part)) "\n")
-            res (run-guest lowered text)
-            res (if (map? res) (or (:value res) (throw (ex-info "guest trap" {:out (pr-str res)}))) res)
-            lines (str/split res #"\n" -1)]
-        (doseq [[r g] (map vector part lines)] (swap! out conj (assoc r :guest g)))))
+      (letfn [(run-part [part]
+                (let [text (str (str/join "\n" (map :line part)) "\n")
+                      res (run-guest lowered text)
+                      res (if (map? res) (or (:value res) (throw (ex-info "guest trap" {:out (pr-str res)}))) res)
+                      lines (str/split res #"\n" -1)]
+                  (doseq [[r g] (map vector part lines)] (swap! out conj (assoc r :guest g)))))]
+        (try (run-part part)
+             (catch :default e
+               ;; a trap inside the guest loses the whole batch: rerun case by case so the cases that trap are named
+               (println "  batch trapped:" (ex-message e) "-- rerunning case by case")
+               (doseq [r part]
+                 (try (run-part [r])
+                      (catch :default e2
+                        (swap! out conj (assoc r :guest (str "TRAP " (ex-message e2))))))))))) 
     (let [rows @out
           unported (filter #(str/starts-with? (:guest %) "UNPORTED") rows)
           compared (remove #(str/starts-with? (:guest %) "UNPORTED") rows)

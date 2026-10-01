@@ -39,5 +39,17 @@ run on the KIR interpreter) on every list form of the programs embedded in kotob
     FRONTEND=<kotoba-sema>/src/kotoba/compiler/frontend.cljk DS_TESTS=<kotoba-sema>/test DS_EXTRA=<dir>:<dir> \
     DS_MAX=300 DS_TOTAL=1500 scripts/selfhost-wall/ds-diff.sh
 
-`DS_LINES=<file>` runs the guest on case lines you write (`[{f 1} false (and a b) nil]`), `DS_NOGEN=1` skips regeneration.
-`ds-names.txt` lists the definitions of the guest in source order; when a port adds a definition, add its name there.
+`DS_LINES=<file>` runs the guest on case lines you write (`[{f #{1 2}} false (and a b) nil [] {} [] #{} false false]`: the function
+names with their arities, the absence mode, the form, the expected answer, then what the host's side registries held after the
+call: loop helpers, loop-helper shapes, lifted lambdas, requested closure dispatchers, the `uses-apply` and `uses-lazy` flags), `DS_NOGEN=1` skips
+regeneration. `ds-names.txt` lists the definitions of the guest in source order; when a port adds a definition, add its name there.
+`FRONTEND` is a `:`-separated list of files (the facade first, then the modules under `frontend/`; a later definition of a name
+wins), since the frontend is split into modules.
+
+The state the host keeps in dynamic vars (`*pending-loop-helpers*`, `*loop-helper-shapes*`, `*pending-lambdas*`,
+`*required-closure-dispatchers*`, `*uses-apply?*`, `*uses-lazy?*`, `*loop-counter*`, `*lambda-counter*`) is part of what a port must reproduce:
+the host side of the differential binds each to a fresh atom/volatile, the guest returns the same data as `:fe/env` fields
+(`helpers shapes lambdas dispatchers uses-apply uses-lazy`), and a case agrees only when the form AND all six are equal.
+A case the guest cannot decide (a trap) is rerun alone and named `TRAP <message>`. `ds-corpus/*.kotoba` holds programs written
+for the differential (loops, `dotimes`/`doseq`, `filter`/`reduce`/`map`/`fn`/..., with their refusals); add the directory to
+`DS_EXTRA`. `DS_WHY=1` lists the cases dropped before comparison (an unprintable value, a case over 30000 bytes).

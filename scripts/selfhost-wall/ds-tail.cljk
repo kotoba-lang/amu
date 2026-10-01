@@ -25,13 +25,28 @@
     (string-concat "UNPORTED " (record-get [:ref :fe/err] e :msg))
     (string-concat "ERR " (record-get [:ref :fe/err] e :msg))))
 
-;; a case is [functions none? form expected]; expected nil means the host refused
+;; a case is [functions none? form expected helpers shapes lambdas dispatchers uses-apply uses-lazy]; expected nil means the host refused. The rest is
+;; what the host's side registries (`*pending-loop-helpers*`, `*loop-helper-shapes*`, `*pending-lambdas*`,
+;; `*required-closure-dispatchers*`, `*uses-apply?*`, `*uses-lazy?*`) ended up holding: the port returns them in the env.
+(defn- ds-same-side [e [:ref :fe/env] c [:ref :form/r]] :bool
+  (and (form/eq (env-helpers e) (form/nth-of c 4))
+       (form/eq (env-shapes e) (form/nth-of c 5))
+       (form/eq (env-lambdas e) (form/nth-of c 6))
+       (form/eq (env-dispatchers e) (form/nth-of c 7))
+       (form/eq (form/bool-form (env-uses-apply? e)) (form/nth-of c 8))
+       (form/eq (form/bool-form (env-uses-lazy? e)) (form/nth-of c 9))))
+
 (defn- ds-case [c [:ref :form/r] tbl [:ref :form/r]] :string
   (let [env (fe-env 0 (form/nil-form) (if (form/is-true? (form/nth-of c 1)) true false) (form/nth-of c 0) tbl)]
-    (try (let [r (desugar-expr env (form/nth-of c 2))]
-           (if (form/eq (dr-form r) (form/nth-of c 3))
+    (try (let [r (desugar-expr env (form/nth-of c 2))
+               e (dr-env r)]
+           (if (and (form/eq (dr-form r) (form/nth-of c 3)) (ds-same-side e c))
              "OK"
-             (string-concat "DIFF " (ds-print (dr-form r)))))
+             (string-concat "DIFF " (string-concat (ds-print (dr-form r))
+                                      (string-concat " || " (string-concat (ds-print (env-helpers e))
+                                        (string-concat " || " (string-concat (ds-print (env-shapes e))
+                                          (string-concat " || " (string-concat (ds-print (env-lambdas e))
+                                            (string-concat " || " (ds-print (env-dispatchers e)))))))))))))
          (catch e (ds-refusal e)))))
 
 (defn- ds-lines [text :string i :i64 n :i64 out :string tbl [:ref :form/r]] :string
