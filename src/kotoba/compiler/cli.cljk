@@ -187,6 +187,7 @@
           policy-path (option args "--policy")
           profile-s (option args "--profile")
           json? (some #{"--json"} args)
+          no-definitions? (some #{"--no-definitions"} args)
           policy (cond-> (cap-names/wire-policy
                           (if policy-path (bounded-edn/read-file policy-path) {}))
                    profile-s (assoc :language-profile (keyword profile-s)))
@@ -222,7 +223,14 @@
               exports (get-in result [:hir :exports])
               ;; ADR 0300: one CID per top-level function, the same map the
               ;; nbb `check --json` emits under the same key.
-              definitions (check-definitions (:hir result))]
+              ;; Only the JSON envelope carries it, and it is most of the cost
+              ;; of a check (lowering plus a canonical encoding of every
+              ;; definition: ~89% of the time on a 600-line module, measured).
+              ;; The human line never printed it, so it was computed and
+              ;; dropped; `--no-definitions` lets a caller that only wants the
+              ;; admission verdict (the selfhost wall scan) skip it in JSON too.
+              definitions (when (and json? (not no-definitions?))
+                            (check-definitions (:hir result)))]
           (if json?
             (println (pr-str (cond-> {:ok true
                                       :format :kotoba.check/v1
@@ -230,8 +238,8 @@
                                       :effects effects
                                       :named-operations operations
                                       :exports exports
-                                      :definitions definitions
                                       :admission admission}
+                               definitions (assoc :definitions definitions)
                                graph (assoc :root (str (:root graph)) :modules modules))))
             (do (apply println
                        (cond-> ["ok"
