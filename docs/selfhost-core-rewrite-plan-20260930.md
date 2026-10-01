@@ -54,6 +54,9 @@ Gaps to close first, because every stage needs them:
 - **S4 project linker, verifier, mir**, then the CLI shells (`nbb/*_cli`).
 - **S5 bootstrap:** amu-built compiler compiles itself; compare bytes to the stage-N compiler;
   only then run Embench on it.
+- **S6 bootstrap removal** (decision 2026-10-01: the product must not depend on nbb either): native
+  launcher, compiled entry points, nbb demoted to an optional bootstrap reference. Section
+  "S6" below.
 
 Every stage must keep the JVM/nbb behaviour identical (existing suites) and must not add a
 JVM/GraalVM/Node fallback on the selfhost path.
@@ -142,3 +145,51 @@ the cases a previous results file left unsupported or in disagreement.
 One deliberate non-match: a callable clause that is not a vector (`[:fn 1]`). The host computes the clause
 arities before its shape check and dies with an internal "1 is not ISeqable"; the guest refuses with
 `kotoba.error/callable-type`. That is a host defect on malformed input and is not probed.
+
+## S6: bootstrap removal (2026-10-01)
+
+Decision: the product must not depend on nbb, Node or the JVM. They are bootstrap references. The
+end state is a native `amu` built by `amu` that runs `check`, `refactor`, `compile` and
+`kotoba ...` with no node/nbb/JVM process. Today the product path is nbb-only in four places, all
+counted by `scripts/selfhost-wall/bootstrap-boundary.sh` (snapshot
+`docs/selfhost-bootstrap-boundary-20261001.md`): the launchers (`bin/amu` is a Node script that
+spawns nbb, `bin/kotoba` is an nbb script), the `nbb/*_cli.cljk` entry points (11 files, 7 without a
+`:kotoba` reading and 4 whose reading is nil or a named refusal), `refactor_cli.cljk` and the
+refactor library, and the host-only requires under `src/` (13 files, 36 unguarded tokens).
+
+What must exist first (S6 starts only when these are measured, not hoped):
+
+1. S2-S4 done enough that the compiler core (frontend, KIR, verifier, mir, project linker) passes
+   `amu check` on the project route with real, not refusing, bodies (`docs/selfhost-real-vs-hollow-20261001.md`
+   shows REAL, not just OK).
+2. A native runtime for the abilities the CLI shells use: `cli/args`, `io` (read/write/error),
+   `fs` (tree, atomic write, app-data), `process/spawn` (only if a command still needs it),
+   `env`, `clock`, `entropy/draw`, `hash/sha256`, exit codes. Each already has an `nbb/host/*`
+   forward; the native side is the missing half.
+3. S5 reached: an amu-built compiler compiles itself, byte-identical at stage N and N+1.
+
+Steps (each ends with a bootstrap-boundary.sh count and a differential against the nbb route):
+
+- **S6.1 Entry points as Kotoba.** Give every `nbb/*_cli` and `refactor_cli` a real `:kotoba`
+  reading (`main` over `cli/args`), replacing the 7 no-arm entries and the 4 nil/refusal ones
+  (`refactor`, `test`, `trust`, `evm`). `refactor_cli` first: it is how every later step is made.
+- **S6.2 Host requires out of `src/`.** Move the 13 files with unguarded `node:*`/`js/*`/`java.*`
+  tokens to per-module Kotoba readings or abilities; what stays host-only moves behind
+  `#?(:cljs ...)` in a file flagged `;; bootstrap-tooling`.
+- **S6.3 Native launcher.** A single native executable replaces `bin/amu` and `bin/kotoba`:
+  argv parsing, classpath/lock resolution (`resolveWithLock`, `--source-path`, `--package-lock`),
+  target selection, and in-process dispatch to the compiled entry points. No `spawnSync` of
+  node, nbb, java or python. `bin/amu.cmd` and `bin/kotoba-compiler` become thin or disappear.
+- **S6.4 Self-run.** The amu-built binary runs `check`, `refactor plan/apply/verify` and
+  `compile` over its own `src/`, under `scripts/selfhost-wall/no-host-processes.sh`, with an
+  identical outcome set to the nbb route (differential per file, like the wall harness).
+- **S6.5 Demote nbb.** `bin/amu` no longer contains an nbb route. nbb stays only as an optional
+  bootstrap reference (reproduce the first stage from a clean checkout, regression
+  differentials) in clearly flagged BOOTSTRAP-TOOL files. `package.json`, `nbb.edn` and
+  `node_modules` leave the install and release path.
+
+Exit criteria (all of them): `bootstrap-boundary.sh` reports PRODUCT = 0 in sections 1, 2, 3b
+and 4; `no-host-processes.sh -- <amu check/refactor/compile on amu's sources>` exits 0 with no
+node/nbb/java/python exec; the binary hash is recorded and its numbers are selfhost numbers
+(`docs/selfhost-priority.md` rule 4). Until then, nothing on this plan lets a new nbb, Node or JVM
+dependency join the product path (rules 8-10).

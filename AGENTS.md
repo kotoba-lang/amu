@@ -12,9 +12,36 @@
 - Compiler benchmarks (Embench etc.) are published as selfhost results only
   when taken with a selfhost-built compiler on a quiet host.
 
+## The product does not depend on nbb, Node or the JVM
+
+Decision 2026-10-01: nbb, Node, the JVM and GraalVM are bootstrap references
+only. The end state is `amu` built by `amu`, running `check`, `refactor`,
+`compile` and `kotoba ...` with no node/nbb/JVM process. Inventory:
+`scripts/selfhost-wall/bootstrap-boundary.sh`, snapshot
+`docs/selfhost-bootstrap-boundary-20261001.md`. Removal plan: stage S6 of
+`docs/selfhost-core-rewrite-plan-20260930.md`.
+
+- New code on the product path (anything a user's `amu`/`kotoba` run reaches:
+  `src/`, `bin/`, entry points) is Kotoba (`.cljk`/`.kotoba`) with a `:kotoba`
+  reading that passes `amu check`. Never nbb-, Node- or JVM-only code.
+- Host-only code (`node:*`, `js/*`, `java.*`, `:import`, nbb APIs) lives behind
+  `#?(:cljs ...)`/`#?(:clj ...)` and only in files flagged as bootstrap tooling
+  (`;; bootstrap-tooling` in the first five lines) or under `scripts/`,
+  `test/`, `bench/`, `tools/`. A product file gets a `:kotoba` reading, not a
+  bigger host arm. `#?(:kotoba nil ...)` and named refusals are debt: list
+  them, do not add them to make a count rise.
+- A PR or commit that adds an nbb/Node/JVM dependency to the product path is
+  refused. Run `scripts/selfhost-wall/bootstrap-boundary.sh` before and after;
+  the PRODUCT counts must not grow. Wall harness and differential scripts may
+  stay nbb/Python until the self-built compiler exists.
+- 100% means: the `amu` binary built by `amu` itself runs the full check,
+  refactor and compile on its own sources with zero node/JVM/nbb processes,
+  verified by `scripts/selfhost-wall/no-host-processes.sh -- <command>`
+  (strace/dtruss execve trace; no tracer is a fail, not a pass).
+
 ## No Rust dependency
 
-- The `kotoba`/`amu` CLI is Kotoba (.cljk/.kotoba) running on the nbb launcher
+- The `kotoba`/`amu` CLI is Kotoba (.cljk/.kotoba) running on the nbb launcher (bootstrap only)
   or the native amu route. No Rust binary, crate, `cargo` build, Rust host
   adapter or Rust parity target may be required to build, test, run or release
   anything. CI must not `cargo install`; fetch prebuilt release binaries.

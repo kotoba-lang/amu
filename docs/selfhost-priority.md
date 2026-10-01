@@ -52,6 +52,35 @@ own `.cljk` sources satisfies the second one.
    `amu refactor` rules (lossless, plan/apply/verify), not text edits; the
    refactoring tool is itself Kotoba-route code (ADR 0357).
 
+8. **The product does not depend on nbb, Node or the JVM** (2026-10-01).
+   nbb, Node, the JVM and GraalVM are bootstrap references only. The end
+   state is an `amu` binary built by `amu` that runs `check`, `refactor`,
+   `compile` and `kotoba ...` with no node/nbb/JVM process. nbb is not an
+   acceptable resting place for the product; "it runs on nbb" is a bootstrap
+   result. Inventory: `scripts/selfhost-wall/bootstrap-boundary.sh`
+   (snapshot `docs/selfhost-bootstrap-boundary-20261001.md`); removal: stage
+   S6 of `docs/selfhost-core-rewrite-plan-20260930.md`.
+9. **New product-path code is Kotoba.** Code a user's `amu`/`kotoba` run reaches
+   is written as `.cljk`/`.kotoba` with a `:kotoba` reading that passes
+   `amu check`, never as nbb/Node/JVM-only code. Host-only code
+   (`node:*`, `js/*`, `java.*`, `:import`) lives behind `#?(:cljs ...)` /
+   `#?(:clj ...)` in files flagged `;; bootstrap-tooling` (first five lines) or
+   under `scripts/`, `test/`, `bench/`, `tools/`. The wall harness and
+   differential scripts are BOOTSTRAP-TOOL and may stay nbb/Python until the
+   self-built compiler exists.
+10. **Refuse new host dependencies.** A PR or commit that adds an nbb, Node or
+    JVM dependency to the product path is refused (a new `bin/` host launcher,
+    an `nbb/*_cli` entry without a `:kotoba` reading, an unguarded host
+    require in `src/`, a new `#?(:kotoba nil ...)`). Compare
+    `bootstrap-boundary.sh` PRODUCT counts before and after; they must not
+    grow.
+11. **What 100% means.** The `amu` binary built by `amu` itself runs the full
+    `check`, `refactor` and `compile` on its own sources with zero
+    node/JVM/nbb processes, verified by
+    `scripts/selfhost-wall/no-host-processes.sh -- <command>` (an
+    strace/dtruss execve trace; a missing tracer is a failure, not a pass).
+    File counts, `amu check` OK counts and GraalVM binaries do not meet it.
+
 ## Measured distance
 
 `scripts/measure-selfhost-distance.cljk` in `kotoba-lang/kotoba-lang` writes
