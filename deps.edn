@@ -1016,7 +1016,7 @@
          ;; the native gate admits i64 min / max (arity 2) and the nbb reference answers them exactly past 2^53 -- selfhost stage 2 (superproject adr-2609242330)
          ;; Advanced 2026-09-27, 00d03837 -> 1bb61f3d (osaho main tip, forward only):
          ;; kernel-dequant-dot-ptq1-0, PTQ1_0 fused dequant-dot (aiueos ADR-0222, kotoba-native ADR 0088).
-         :git/sha "ab22ed516342bb9d010bcedabecbef1d2a066088"} ;; Advanced 2026-10-01 756c64c6 -> ab22ed51 (main tip, forward only): record-assoc is qualified at the native gate (ADR 0353 floor :native-record-operations). Before that: Advanced 2026-10-01 635bea6d -> 756c64c6 (main tip, forward only): a signature reference carries its schema table into the native program (ADR 0353 floor :native-record-boundary). Before that: Advanced 2026-09-30 1bb61f3d -> 635bea6d (main tip, forward only): every constructor debits the run's fuel (ADR 0353 point 7, floor :allocation-budget); value bounds unchanged, so kotoba-script stays. Before that: Advanced 2026-09-25 f305bb00 -> ed96b8da (main tip, forward only): the state ability -- :state is a sealed control-effect keyword and a :state-only module is oracled like a pure one. Before that: Advanced 2026-09-24 c5f77e12 -> 4860f4c1 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         :git/sha "0310fb5461e2679edbb2c1b19c59d30e8fa9363e"} ;; Advanced 2026-10-01 ab22ed51 -> 0310fb54 (main tip, forward only): typed-list-new / typed-list-nth over one-word handles are qualified natively and [:list T] is a native handle type (ADR 0353 floor :native-handles). Before that: Advanced 2026-10-01 756c64c6 -> ab22ed51 (main tip, forward only): record-assoc is qualified at the native gate (ADR 0353 floor :native-record-operations). Before that: Advanced 2026-10-01 635bea6d -> 756c64c6 (main tip, forward only): a signature reference carries its schema table into the native program (ADR 0353 floor :native-record-boundary). Before that: Advanced 2026-09-30 1bb61f3d -> 635bea6d (main tip, forward only): every constructor debits the run's fuel (ADR 0353 point 7, floor :allocation-budget); value bounds unchanged, so kotoba-script stays. Before that: Advanced 2026-09-25 f305bb00 -> ed96b8da (main tip, forward only): the state ability -- :state is a sealed control-effect keyword and a :state-only module is oracled like a pure one. Before that: Advanced 2026-09-24 c5f77e12 -> 4860f4c1 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
          ;; Advanced 2026-09-24, 4860f4c1 -> 245bfeb3 (osaho main, ahead 4, behind 0,
          ;; forward only by gh api compare): adr-2609242100 P2 -- a typed value is
          ;; validated once, at execute arguments and capability results, by an
@@ -1629,9 +1629,11 @@
          ;; Advanced 2026-09-30, 33418cdc -> d625d554 (kotoba-native main, forward
          ;; only; 33418cdc is on it): a constructor pays one unit of fuel on both
          ;; ISAs (its ADR 0089, ADR 0353 floor :allocation-budget-native).
+         ;; Advanced 2026-10-01, ace48fd6 -> 7b5b8fb8 (kotoba-native main tip, forward only):
+         ;; typed-list-new / typed-list-nth lower to the typed set's word arena (ADR 0353 floor :native-handles).
          ;; Advanced 2026-10-01, d625d554 -> ace48fd6 (kotoba-native main tip, forward only):
          ;; record-assoc lowers on both record routes -- ADR 0353 floor :native-record-operations.
-         :git/sha "ace48fd635e55bdbaa1f68f3abfec3085d555e7c"} ;; Native Image host: portable exception class and byte hex rendering.
+         :git/sha "7b5b8fb86fba5361577db63fd82da08479cb3c07"} ;; Native Image host: portable exception class and byte hex rendering.
          ;; Advanced 2026-09-26 bc42c311 -> a0e10057 (main tip, forward only): string-search drops a bare (:require [kotoba.lang.text]) that named nothing (selfhost wall A, superproject adr-2609242330).
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
@@ -1883,10 +1885,13 @@
          ;; Advanced 2026-10-01, a560612e -> 718befe6 (kotoba-verifier main tip, forward only;
          ;; a560612e joined main in this merge): a schema table a function signature
          ;; needs travels with the program -- ADR 0353 floor :native-record-boundary.
+         ;; Advanced 2026-10-01, 1e1b69a6 -> 32d8a4a2 (kotoba-verifier main tip, forward only):
+         ;; typed-list-new / typed-list-nth re-derived, a record through a list item, a let-bound
+         ;; record local and a record-reference field forward (ADR 0353 floor :native-handles).
          ;; Advanced 2026-10-01, 718befe6 -> 1e1b69a6 (kotoba-verifier main tip, forward only):
          ;; a record projection sees through let, if and an update, and a let naming a
          ;; record parameter binds its handle -- ADR 0353 floor :native-record-operations.
-         :git/sha "1e1b69a6239d49175383e5e6178a60ee90d31b96"} ;; Native Image host: avoid reflective alength class lookup (a560612e).
+         :git/sha "32d8a4a2e50941fa5579c2af81e1b2fc0320e21d"} ;; Native Image host: avoid reflective alength class lookup (a560612e).
 
         ;; EXPLICIT FLOORS FOR TRANSITIVE DEPENDENCIES (2026-09-12, adr-2609111900
         ;; source-side wave). None of the eight coordinates below was named in

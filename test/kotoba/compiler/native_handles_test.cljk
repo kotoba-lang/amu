@@ -1,0 +1,136 @@
+(ns kotoba.compiler.native-handles-test
+  "ADR 0353 floor :native-handles.
+
+  A `[:list T]` of records -- a vector literal of records, wherever it is
+  written: a let binding, a loop slot, a function parameter -- compiled on the
+  hosted targets and was refused by both native ones with \"typed values
+  currently require the kotoba-script web target, ...\" (`typed-list-new` not
+  qualified), and the CLI answered that refusal with exit 70, the code it
+  reserves for an internal compiler error.
+
+  Now osaho qualifies `typed-list-new` / `typed-list-nth` over one-word item
+  handles (a record through `[:ref q]` included) and `[:list T]` is a native
+  handle type, so a loop helper or a function takes one; kotoba-native lowers
+  them to the typed set's word arena (a `vector-conj` chain, `vector-at`;
+  `vector-count` already walks the carrier); kotoba-verifier re-derives both
+  heads and sees a record through an item of a list of records. A target
+  refusal is `:phase :target`, which the CLI now answers with 65.
+
+  The sweep that this floor's \"the forms of every floor above\" asks for --
+  every program the frontend-only gates of floors :absence through
+  :expression-absence admit, compiled for both native targets -- found two
+  more verifier refusals (\"runtime KIR record projection rejected\") on
+  programs codegen had already compiled: a record local named by a let
+  (`(let [m (assoc (mk) :d 4)] (:a (dissoc m :b)))`), which forwarded only for
+  a parameter, and a record whose field holds a declared reference
+  (`(:a (:x (assoc (mk) :x (mt))))`). Both forward now. The rest of that
+  sweep is refused on native by design, each pinned below. Not reached:
+  floor :hiccup-node's programs, whose node schema reaches a
+  `[:map :keyword :string]` -- floor :native-hiccup-node.
+
+  `map-new`: no form of the ladder lowers to it -- both ADR 0352 reproductions
+  are records and compile natively. The empty literal `{}` still does; that is
+  floor :empty-map-literal.
+
+  What stays refused, each by its literal: `=` over lists of records, a list as
+  an `if` test, a list item as an i64, an index out of range (the oracle traps,
+  so no artifact is sealed), and -- on native, exit 65 -- structural equality
+  over handles and a record as the entry's result."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.cli :as cli]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private prelude
+  (str "(ns b (:schemas {:b/s [:record :b/s [[:a :i64] [:b :i64]]]"
+       " :b/t [:record :b/t [[:a :i64] [:c :string]]]}))\n"
+       "(defn- mk [] [:ref :b/s] {:a 5 :b 2})\n"
+       "(defn- mt [] [:ref :b/t] {:a 7 :c \"xy\"})\n"))
+
+(def ^:private lists
+  "`[:list T]` of records and of closures, wherever it is written."
+  [["(defn main [] :i64 (loop [xs [(mk) (mk)] i 0 acc 0] (if (< i (count xs)) (recur xs (+ i 1) (+ acc (:a (nth xs i)))) acc)))" 10]
+   ["(defn main [] :i64 (let [xs [(mk) (mk)]] (loop [i 0 acc 0] (if (< i (count xs)) (recur (+ i 1) (+ acc (:a (nth xs i)))) acc))))" 10]
+   ["(defn main [] :i64 (let [xs [{:a 1} {:a 2}]] (loop [i 0 acc 0] (if (< i 2) (recur (+ i 1) (+ acc (:a (nth xs i)))) acc))))" 3]
+   [(str "(defn- total [xs [:list [:ref :b/s]]] :i64 (loop [i 0 acc 0] (if (< i (count xs)) (recur (+ i 1) (+ acc (:a (nth xs i)))) acc)))"
+         " (defn main [] :i64 (total [(mk) (mk) (mk)]))") 15]
+   ["(defn main [] :i64 (:a (nth [(mk) (mk)] 1)))" 5]
+   ["(defn main [] :i64 (count [(mk) (mk) (mk)]))" 3]
+   ["(defn main [] :i64 (string-byte-length (:c (nth [(mt) (mt)] 0))))" 2]
+   ["(defn main [] :i64 (let [fs [(fn [x] (+ x 1)) (fn [x] (+ x 2))]] ((nth fs 1) 5)))" 7]])
+
+(def ^:private earlier-floors
+  "Programs earlier floors' frontend-only gates admit that the native
+  verifier refused: a let-bound record local, and a record field holding a
+  declared reference."
+  [["(defn main [] :i64 (let [m (assoc (mk) :d 4)] (+ (:d m) (:a (dissoc m :b)))))" 9]
+   ["(defn main [] :i64 (let [m {:a 1 :b 2}] (:a (dissoc m :b))))" 1]
+   ["(defn main [] :i64 (:a (:x (assoc (mk) :x (mt) :y 2))))" 7]])
+
+(def ^:private adr-0352-reproductions
+  "Both lowered to `map-new` and were refused natively (ADR 0352)."
+  [["(ns c)\n(defn main [] :i64 (:window/x {:window/id 1 :window/x 10}))" 10]
+   ["(ns c)\n(defn main [] :i64 (count (filterv (fn [x] (= x 1)) [1 2 3])))" 1]])
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- number [value] (#?(:clj long :cljs js/Number) value))
+
+(defn- admitted []
+  (concat (map (fn [[source answer]] [(str prelude source) answer]) (concat lists earlier-floors))
+          adr-0352-reproductions))
+
+(defn- refusal
+  ([source] (refusal source nil))
+  ([source target]
+   (try (if target
+          (compiler/compile-source (str prelude source) target)
+          (ir/execute (ir/lower (sema/analyze (str prelude source))) 'main []))
+        nil
+        (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+          [(ex-message error) (cli/exit-code (:phase (ex-data error) :internal))]))))
+
+(def ^:private typed-values-refusal
+  (str "typed values currently require the kotoba-script web target, typed Wasm/CLJS target,"
+       " or the qualified native one-word string/record/variant/option/result slice"))
+
+(deftest native-record-vector-closure-boundary-test
+  (testing "admitted on the reference"
+    (doseq [[source answer] (admitted)]
+      (is (= answer (number (ir/execute (ir/lower (sema/analyze source)) 'main []))) source)))
+  (testing "no form lowers to map-new"
+    (doseq [[source _] (admitted)]
+      (is (not-any? #(and (seq? %) (= 'map-new (first %)))
+                    (tree-seq coll? seq (:functions (ir/lower (sema/analyze source)))))
+          source)))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "compiled on both native targets, the oracle verified"
+    (doseq [target native-targets
+            [source answer] (admitted)]
+      (let [{:keys [artifact]} (compiler/compile-source source target)]
+        (is (pos? (count (:code artifact))) (str target " " source))
+        (is (= answer (number (:value artifact))) (str target " " source)))))
+  (testing "refused: = over lists of records"
+    (is (= ["equality type is outside the safe value profile" 65]
+           (refusal "(defn main [] :i64 (if (= [(mk)] [(mk)]) 1 2))"))))
+  (testing "refused: a list is never truthy"
+    (is (= ["if test must be bool or an option" 65]
+           (refusal "(defn main [] :i64 (if [(mk)] 1 2))"))))
+  (testing "refused: a list item is its record, not an i64"
+    (is (= ["expression type mismatch: expected i64, got [:ref :b/s]" 65]
+           (refusal "(defn main [] :i64 (+ 1 (nth [(mk)] 0)))"))))
+  (testing "refused: an index out of range traps, and no artifact is sealed"
+    (is (= "list-index-out-of-bounds"
+           (first (refusal "(defn main [] :i64 (:a (nth [(mk) (mk)] 2)))"))))
+    (doseq [target native-targets]
+      (is (= "list-index-out-of-bounds"
+             (first (refusal "(defn main [] :i64 (:a (nth [(mk) (mk)] 2)))" target))))))
+  (testing "refused natively, exit 65: structural equality over handles, a record entry result"
+    (doseq [target native-targets
+            source ["(defn main [] :i64 (if (record-equal [:ref :b/s] (mk) (mk)) 1 2))"
+                    "(defn main [] [:ref :b/s] (nth [(mk)] 0))"]]
+      (is (= [typed-values-refusal 65] (refusal source target)) (str target " " source)))))
