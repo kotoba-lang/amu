@@ -627,3 +627,58 @@ only), no policy change, no sealed claim.
   end-to-end AND the three-arm J-B control; (3) if busy and the scratch
   worktree copy compiles, implement the cloning pass as the hand-patch
   and run V1 (static, no quiet gate needed).
+
+- 2026-10-01 06:52 JST tick 48 (JIT): quiet gate failed a 41st consecutive
+  time - load1 12.82-13.35 on 10 CPUs at 06:52 JST, iostat cpu idle 18-21
+  percent (3 samples), never >=90 percent. J-B qualified rerun deferred.
+  Branch (1) main-worktree compile retry: STILL RED - same ascii-token
+  :analysis error at src/kotoba/compiler/kexe_fs_forms.cljk:111 (uncommitted
+  S5 edit persists; untouched, blocker for AOT axis too). Branch (3)
+  EXECUTED - the tick-42/44 falsification fork is CLOSED, in my worktree
+  (bot-amu-jit-cosientist, e50f51ac, node_modules ok; CLI note: compile
+  needs a pre-existing --output parent dir, "output parent must be a
+  directory" else exit 74; --output-dir writes beside the source):
+  (1) compile of the durable hand-inlined control
+  (profile scratch jit-t45/kernel_strings_inline.kotoba, imod body inlined
+  at call sites, literal divisors 1000003/16/8) -> {:ok true,
+  :aarch64-kotoba-v1}; (2) extract-native (positional form) -> {:ok true,
+  :symbol kernel, :length 452, :offset 420} -> durable blob
+  jit-t48/kernel_inline.bin; (3) FULL objdump disassembly via .incbin
+  wrapper (durable: jit-t48/wrap.s, wrap.o; listing /tmp/jit_t48_disasm.txt)
+  - scan loop body at 0x3c-0xec: h*31 via mul, string-code-point-at via
+  blr, then the rem-by-1000003: reciprocal constant materialized
+  (mov/movk 0xa2a24e5ace35 / 0x8637), SMULH x17,x1,x16 = 0x9b507c31,
+  add+asr #19+lsr-63 correction, then msub with constant 0xf4243
+  (1000003). SDIV COUNT: 0. SMULH PRESENT: 1. VERDICT (static,
+  deterministic, no quiet gate needed): inlining + existing
+  select-instructions IS SUFFICIENT - :mir/divisor populates from
+  function-local constants once the literal is inside the same function,
+  and a64-quotient-constant (smulh+asr) fires. J-C lever CONFIRMED-PRESENT
+  post-inline; the J-C hand-patch reduces exactly to the tick-47 clone
+  draft: MIR-level constant-argument callee cloning (scratch
+  jit-t47/jc_inliner_patch_draft.md), clone-cap risk <=8 call sites,
+  V1 (sdiv 0 / smulh >=1 word-scan on scratch worktree) -> V2 quiet-host
+  end-to-end -> V3 perfgate.core/qualify. J-B stays open, not-killed/
+  not-confirmed (under-qualified band 5.9-8.8 percent, ticks 27-36). No
+  compiler change (scratch only), no policy change, no sealed claim.
+  Next tick: (1) retry main worktree compile (AOT unblock check);
+  (2) if idle >=90 percent: V2 patched-clone vs original end-to-end AND
+  the three-arm J-B control; (3) if busy and my worktree still compiles:
+  implement the cloning pass as a hand-patch on a scratch copy and run V1.
+
+- 2026-10-01 13:06 JST tick 49 (JIT): quiet gate failed a 42nd consecutive
+  time - load1 144.67 on 10 CPUs at 13:03 JST (5m 140.04, 15m 131.37),
+  iostat cpu idle 0-17 percent across 3 samples - the WORST host load of
+  any recorded tick (previous worst: tick 43, load1 73.52). No
+  measurement of any kind attempted (host this busy cannot produce even
+  a diagnostic number). Tick-48 falsification fork remains CLOSED
+  (J-C lever confirmed-present post-inline, sdiv 0 / smulh 1 static
+  verdict unchanged); next levers unchanged: (1) retry main worktree
+  compile (kexe_fs_forms ascii-token uncommitted edit - AOT blocker);
+  (2) if idle >=90 percent: V2 patched-clone vs original end-to-end
+  AND the three-arm J-B control; (3) if busy and the worktree compiles:
+  implement the tick-47 cloning-pass hand-patch (scratch
+  jit-t47/jc_inliner_patch_draft.md) and run V1 static word-scan.
+  J-B stays open, not-killed/not-confirmed (under-qualified band
+  5.9-8.8 percent, ticks 27-36). No compiler change, no policy change,
+  no sealed claim.
