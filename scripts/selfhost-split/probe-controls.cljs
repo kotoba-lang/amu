@@ -1,0 +1,5 @@
+(ns probe (:require [kotoba.sema :as sema]))
+(def src "(defn a [] :i64 1) (defn b [] :i64 2) (defn main [] :i64 (+ (a) (b)))")
+(defn outcome [] (try (do (sema/analyze src) :admitted) (catch :default e (subs (str (ex-message e)) 0 70))))
+(println "default :" (outcome))
+(println "max-functions=1 :" (with-redefs [sema/max-functions 1] (outcome)))
