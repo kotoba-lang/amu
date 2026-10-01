@@ -322,8 +322,42 @@
   (reduce (fn [value index]
             (+ value (* (nth bytes (+ offset index)) (nth byte-scale index))))
           0 (range width)))
+;; The Kotoba reading of utf16z: UTF-8 text is walked by code point (the index is
+;; a byte offset), each code point becomes one little-endian UTF-16 unit or a
+;; surrogate pair, then a zero unit terminates. Same bytes as the host branch.
+#?(:kotoba
+   (defn- utf16-width [cp]
+     (if (< cp 128) 1 (if (< cp 2048) 2 (if (< cp 65536) 3 4)))))
+#?(:kotoba
+   (defn- utf16-units [value i n acc]
+     (if (>= i n)
+       acc
+       (let [cp (string-code-point-at value i)]
+         (utf16-units value (+ i (utf16-width cp)) n
+                      (if (< cp 65536) (+ acc 1) (+ acc 2)))))))
+#?(:kotoba
+   (defn- utf16-put [out k unit]
+     (let [low (vector-assoc! out k (rem unit 256))]
+       (vector-assoc! low (+ k 1) (quot unit 256)))))
+#?(:kotoba
+   (defn- utf16-fill [value n units]
+     (loop [i 0 k 0 out (vector-alloc (* 2 (+ units 1)))]
+       (if (>= i n)
+         (vector-drop (utf16-put out k 0) 0)
+         (let [cp (string-code-point-at value i)
+               next-i (+ i (utf16-width cp))]
+           (if (< cp 65536)
+             (recur next-i (+ k 2) (utf16-put out k cp))
+             (let [v (- cp 65536)]
+               (recur next-i (+ k 4)
+                      (utf16-put (utf16-put out k (+ 55296 (quot v 1024)))
+                                 (+ k 2) (+ 56320 (rem v 1024)))))))))))
 (defn- utf16z [value]
-  (vec (mapcat #(le (int %) 2) (concat value [\u0000]))))
+  #?(:kotoba
+     (let [n (string-byte-length value)]
+       (utf16-fill value n (utf16-units value 0 n 0)))
+     :default
+     (vec (mapcat #(le (int %) 2) (concat value [\u0000])))))
 (defn- read-i32 [bytes offset]
   (let [value (read-le bytes offset 4)]
     (if (>= value 2147483648)
@@ -542,11 +576,10 @@
                               :memsz (read-le kernel (+ offset 40) 8)}))
                          (range phnum))]
       (let [first-segment (first segments) second-segment (second segments)
-            entry-segment (some #(when (and (= 5 (:flags %))
-                                            (<= (:paddr %) entry)
-                                            (< entry (+ (:paddr %) (:memsz %))))
-                                   %)
-                                segments)
+            entry-segment (first (filter #(and (= 5 (:flags %))
+                                               (<= (:paddr %) entry)
+                                               (< entry (+ (:paddr %) (:memsz %))))
+                                         segments))
             non-overlap (or (<= (+ (:paddr first-segment) (:memsz first-segment))
                                 (:paddr second-segment))
                             (<= (+ (:paddr second-segment) (:memsz second-segment))
