@@ -81,18 +81,37 @@
        "  tools/kexe_loader_decisions.kotoba (:decisions, the kexe loader's own --\n"
        "  byte-identical to the code tools/kexe_loader.c embeds) and\n"
        "  tools/linux_static_handlers.kotoba (:handlers), per ISA, as EDN text read\n"
-       "  exactly by `kotoba.compiler.nbb.cli-support/read-artifact-text!`.\"\n"
-       "  {:kotoba/export [artifact-texts source-sha256]})\n\n"
-       "(def source-sha256\n  " (pr-str shas) ")\n\n"
-       "(def artifact-texts\n  {"
-       (str/join "\n   "
+       "  exactly by `kotoba.compiler.nbb.cli-support/read-artifact-text!`.\n\n"
+       "  On the Kotoba route an exported constant is a function, so the two maps\n"
+       "  are `(source-sha256 which)` and `(artifact-text isa which)`; the host\n"
+       "  keeps `source-sha256` and `artifact-texts` as the maps they were.\"\n"
+       "  {:kotoba/export #?(:kotoba [artifact-text source-sha256] :default [artifact-texts source-sha256])})\n\n"
+       "#?(:kotoba\n"
+       "   (defn source-sha256 [which :keyword] :string\n"
+       "     (if (= which :decisions)\n"
+       "       " (literal (:decisions shas)) "\n"
+       "       " (literal (:handlers shas)) "))\n"
+       "   :default\n"
+       "   (def source-sha256\n     " (pr-str shas) "))\n\n"
+       "#?(:kotoba\n"
+       "   (defn artifact-text [isa :keyword which :keyword] :string\n"
+       "     (if (= isa :aarch64)\n"
+       "       (if (= which :decisions)\n"
+       "         " (literal (get-in texts [:aarch64 :decisions])) "\n"
+       "         " (literal (get-in texts [:aarch64 :handlers])) ")\n"
+       "       (if (= which :decisions)\n"
+       "         " (literal (get-in texts [:x86_64 :decisions])) "\n"
+       "         " (literal (get-in texts [:x86_64 :handlers])) ")))\n"
+       "   :default\n"
+       "   (def artifact-texts\n     {"
+       (str/join "\n      "
                  (for [isa [:aarch64 :x86_64]]
                    (str isa " {"
-                        (str/join "\n             "
+                        (str/join "\n                "
                                   (for [[k _] sources]
                                     (str k " " (literal (get-in texts [isa k])))))
                         "}")))
-       "})\n"))
+       "}))\n"))
 
 (defn generate []
   (let [tmp (lib/temp-dir "gen-linux-static-handlers-")]
