@@ -1,0 +1,204 @@
+;; Rule (b): `reject!` call sites -> the :fe/err typed-abort shape (docs/selfhost-frontend-typemodel-design.md section 1.3).
+;;
+;; Kotoba route: a refusal is `(throw (fe-error msg "code" form))`, allowed only in tail position or as a `let` binding
+;; value, never inside a loop; a host statement `(when-not ok (reject! ...))` becomes `(let [_ (require-k ok msg code form)] rest)`
+;; (`require-k` is the landed aborting function of frontend.cljk).  The host keeps its text, byte for byte, as the
+;; :default branch of a one-form-per-branch reader conditional:
+;;
+;;   statement   (when-not ok (reject! M F :c))        ->  (let [_ #?(:kotoba (require-k ok M "c" F)
+;;                                                                   :default (when-not ok (reject! M F :c)))]
+;;                                                         rest...)
+;;   tail/bind   (reject! M F :c)                      ->  #?(:kotoba (throw (fe-error M "c" F)) :default (reject! M F :c))
+;;
+;; Classified per call site by position (tail / statement / let-binding / value / loop / lambda / try).  Automatic:
+;; tail, let-binding value, and a conditional statement in a body sequence.  Human: value position, loop/doseq/for/dotimes
+;; bodies (the design says: split the loop into "answers" + "caller throws"), lambdas, try/catch bodies, the 4-arity
+;; (data map) form, a non-literal code argument, an unconditional mid-body reject!.
+(ns codemod.rules.reject
+  (:require [clojure.string :as str]
+            [codemod.cst :as cst]
+            [codemod.edit :as edit]))
+
+(def ^:private loop-heads #{"loop" "doseq" "dotimes" "for" "while"})
+(def ^:private fn-heads #{"fn" "fn*"})
+(def ^:private defn-heads #{"defn" "defn-"})
+
+(defn- reject-call? [n] (cst/call? n "reject!"))
+
+(defn- nil-node? [n] (cst/sym? n "nil"))
+
+(defn- code-text [src r]
+  ;; -> [:ok "string"] | [:human reason]
+  (let [as (cst/args r)]
+    (cond
+      (> (count as) 3) [:human "reject! with a data map (4-arity)"]
+      (< (count as) 2) [:human "reject! with fewer than 2 arguments"]
+      (= (count as) 2) [:ok "kotoba.error/subset-reject"]
+      (cst/kw? (nth as 2)) [:ok (subs (:text (nth as 2)) 1)]
+      (and (cst/sym? (nth as 2)) (= "nil" (:text (nth as 2)))) [:ok "kotoba.error/subset-reject"]
+      :else [:human "non-literal code argument"])))
+
+(defn- throw-text [src r code]
+  (let [[m f] (cst/args r)]
+    (str "(throw (fe-error " (cst/text src m) " \"" code "\" " (cst/text src f) "))")))
+
+(defn- dual [kotoba host] (str "#?(:kotoba " kotoba " :default " host ")"))
+
+(defn- conditional-reject
+  "If node is (when-not T R) (when T R) (if T R) (if-not T R) (if T nil R) (if T R nil) with R a reject! call:
+  [ok-expr-text reject-node]."
+  [src n]
+  (when (cst/lst? n)
+    (let [h (cst/head-text n) as (cst/args n)
+          t (cst/text src (first as))
+          neg (fn [x] (if (re-matches #"[^\s()]+" x) (str "(not " x ")") (str "(not " x ")")))]
+      (cond
+        (and (= h "when-not") (= 2 (count as)) (reject-call? (second as))) [t (second as)]
+        (and (= h "when") (= 2 (count as)) (reject-call? (second as))) [(neg t) (second as)]
+        (and (= h "if") (= 2 (count as)) (reject-call? (second as))) [(neg t) (second as)]
+        (and (= h "if-not") (= 2 (count as)) (reject-call? (second as))) [t (second as)]
+        (and (= h "if") (= 3 (count as)) (nil-node? (second as)) (reject-call? (nth as 2))) [t (nth as 2)]
+        (and (= h "if") (= 3 (count as)) (nil-node? (nth as 2)) (reject-call? (second as))) [(neg t) (second as)]
+        (and (= h "if-not") (= 3 (count as)) (nil-node? (second as)) (reject-call? (nth as 2))) [(neg t) (nth as 2)]
+        :else nil))))
+
+(defn find-all [{:keys [src nodes]}]
+  (let [out (atom [])
+        starts (edit/line-starts src)
+        add! (fn [region node status extra]
+               (swap! out conj (merge {:rule :reject :s (:s node) :e (:e node) :region region :status status
+                                       :line (edit/offset->line starts (:s node))} extra)))
+        forbid (fn [ctx] (cond (:in-loop ctx) "inside a loop/doseq/for/dotimes body (split into answer + throw)"
+                               (:in-lambda ctx) "inside a lambda"
+                               (:in-try ctx) "inside try/catch"))]
+    (letfn [(visit-all [forms pos ctx region] (doseq [f forms] (visit f pos ctx region)))
+
+            ;; a body sequence: statements may be rewritten with a let-wrapper
+            (visit-body [forms pos ctx region]
+              (let [n (count forms)]
+                (doseq [[i f] (map-indexed vector forms)]
+                  (if (< i (dec n))
+                    (if-let [[ok r] (conditional-reject src f)]
+                      (let [[st code] (code-text src r)]
+                        (cond
+                          (= st :human) (add! region f :human {:reason code :kind :statement})
+                          (forbid ctx) (add! region f :human {:reason (forbid ctx) :kind :statement})
+                          :else
+                          (let [[m fm] (cst/args r)
+                                kotoba (str "(require-k " ok " " (cst/text src m) " \"" code "\" " (cst/text src fm) ")")
+                                open (str "(let [_ " (dual kotoba (cst/text src f)) "]")]
+                            (add! region f :auto
+                                  {:kind :statement
+                                   :edits [(edit/replace-node f open :reject)
+                                           (edit/insert-at (:e (last forms)) ")" :reject 1)]}))))
+                      (visit f :stmt ctx region))
+                    (visit f pos ctx region)))))
+
+            (visit-binding-vec [bv ctx region]
+              (doseq [[p v] (partition 2 (:kids bv))]
+                (cond
+                  (and (cst/sym? p "_") (conditional-reject src v))
+                  (let [[ok r] (conditional-reject src v) [st code] (code-text src r)]
+                    (cond
+                      (= st :human) (add! region v :human {:reason code :kind :binding})
+                      (forbid ctx) (add! region v :human {:reason (forbid ctx) :kind :binding})
+                      :else (let [[m fm] (cst/args r)]
+                              (add! region v :auto
+                                    {:kind :binding
+                                     :edits [(edit/replace-node v (dual (str "(require-k " ok " " (cst/text src m) " \"" code "\" " (cst/text src fm) ")")
+                                                                        (cst/text src v)) :reject)]}))))
+                  :else (visit v (if (reject-call? v) :binding :value) ctx region))))
+
+            (visit [n pos ctx region]
+              (let [t (:type n)]
+                (cond
+                  (reject-call? n)
+                  (let [[st code] (code-text src n)]
+                    (cond
+                      (= st :human) (add! region n :human {:reason code :kind (name pos)})
+                      (forbid ctx) (add! region n :human {:reason (forbid ctx) :kind (name pos)})
+                      (contains? #{:tail :binding} pos)
+                      (add! region n :auto {:kind (name pos)
+                                            :edits [(edit/replace-node n (dual (throw-text src n code) (cst/text src n)) :reject)]})
+                      (= pos :stmt) (add! region n :human {:reason "unconditional reject! in statement position" :kind "stmt"})
+                      :else (add! region n :human {:reason "reject! in value position (argument of another form)" :kind "value"}))
+                    ;; reject!'s own args may contain nested forms; not rejects in practice
+                    )
+
+                  (= t :rc)
+                  (let [branches (cst/rc-branches n)
+                        kot (some (fn [[k f]] (when (= k ":kotoba") f)) branches)]
+                    ;; idempotence: a dual this rule wrote (the :kotoba arm is require-k / fe-error) is not visited again
+                    (when-not (and kot (or (cst/call? kot "require-k")
+                                           (str/starts-with? (cst/text src kot) "(throw (fe-error")))
+                      (doseq [[k f] (partition 2 (:kids n))]
+                        (visit f pos ctx (cst/region-of-feature (:text k))))))
+
+                  (= t :meta) (visit (second (:kids n)) pos ctx region)
+                  (and (= t :prefix) (contains? #{"'" "`"} (:prefix n))) nil
+                  (= t :prefix) (visit-all (:kids n) :value ctx region)
+                  (contains? #{:vec :map :set :fnlit} t) (visit-all (:kids n) :value (if (= t :fnlit) (assoc ctx :in-lambda true) ctx) region)
+
+                  (cst/lst? n)
+                  (let [h (cst/head-text n) as (cst/args n)]
+                    (cond
+                      (nil? h) (visit-all (:kids n) :value ctx region)
+                      (contains? defn-heads h)
+                      (let [rest-forms (drop-while #(not (or (cst/vec? %) (cst/lst? %))) as)
+                            ctx (dissoc ctx :in-loop :in-lambda :in-try)]
+                        (if (cst/vec? (first rest-forms))
+                          (visit-body (vec (rest rest-forms)) :tail ctx region)
+                          (doseq [arity rest-forms :when (cst/lst? arity)]
+                            (visit-body (vec (rest (:kids arity))) :tail ctx region))))
+                      (contains? fn-heads h)
+                      (let [rest-forms (drop-while #(not (or (cst/vec? %) (cst/lst? %))) as)
+                            ctx (assoc ctx :in-lambda true)]
+                        (if (cst/vec? (first rest-forms))
+                          (visit-body (vec (rest rest-forms)) :tail ctx region)
+                          (doseq [arity rest-forms :when (cst/lst? arity)]
+                            (visit-body (vec (rest (:kids arity))) :tail ctx region))))
+                      (contains? #{"let" "let*" "with-open" "binding"} h)
+                      (when (cst/vec? (first as))
+                        (visit-binding-vec (first as) ctx region)
+                        (visit-body (vec (rest as)) pos ctx region))
+                      (contains? loop-heads h)
+                      (let [ctx (assoc ctx :in-loop true)]
+                        (when (cst/vec? (first as)) (visit-all (:kids (first as)) :value ctx region))
+                        (visit-body (vec (rest as)) :value ctx region))
+                      (contains? #{"do"} h) (visit-body (vec as) pos ctx region)
+                      (contains? #{"when" "when-not"} h)
+                      (do (visit (first as) :value ctx region) (visit-body (vec (rest as)) pos ctx region))
+                      (contains? #{"when-let" "when-some"} h)
+                      (do (when (cst/vec? (first as)) (visit-all (:kids (first as)) :value ctx region))
+                          (visit-body (vec (rest as)) pos ctx region))
+                      (contains? #{"if" "if-not"} h)
+                      (do (visit (first as) :value ctx region) (visit-all (rest as) pos ctx region))
+                      (contains? #{"if-let" "if-some"} h)
+                      (do (when (cst/vec? (first as)) (visit-all (:kids (first as)) :value ctx region))
+                          (visit-all (rest as) pos ctx region))
+                      (= h "cond") (doseq [[t e] (partition 2 2 nil as)] (visit t :value ctx region) (when e (visit e pos ctx region)))
+                      (= h "case") (do (visit (first as) :value ctx region)
+                                       (let [cl (rest as)]
+                                         (doseq [[_ e] (partition 2 2 [nil] cl)] ; trailing default shows as [d nil]
+                                           (when e (visit e pos ctx region)))
+                                         (when (odd? (count cl)) (visit (last cl) pos ctx region))))
+                      (= h "try")
+                      (let [body (take-while #(not (or (cst/call? % "catch") (cst/call? % "finally"))) as)
+                            handlers (drop (count body) as)
+                            c2 (assoc ctx :in-try true)]
+                        (visit-body (vec body) pos c2 region)
+                        (doseq [hh handlers] (visit-all (rest (:kids hh)) :value c2 region)))
+                      (contains? #{"quote" "comment" "declare" "ns"} h) nil
+                      (contains? #{"def" "defonce" "def-"} h) (visit-all (rest as) :value ctx region)
+                      :else (visit-all (:kids n) :value ctx region)))
+
+                  :else nil)))]
+      (cst/walk
+       (fn [n {:keys [path region]}]
+         ;; only start at top-level forms (walk would re-enter); stop descent
+         (when (empty? path) (visit n :tail {} region))
+         :skip)
+       nodes))
+    @out))
+
+(def rule {:id :reject :find find-all :regions #{:shared :default}})

@@ -1,0 +1,41 @@
+;; Helper definitions the rewrites call.  Each has a host reading (byte-for-byte what Clojure's own destructuring /
+;; keyword lookup does) and a Kotoba reading over kotoba.form.  They are inserted once, after the `ns` form, when a rewrite
+;; that needs them has been applied (see codemod.core/ensure-prelude).
+(ns codemod.prelude)
+
+(def defs
+  {"fe-nth"
+   ";; selfhost-codemod: positional access.  Host: what [a b] destructuring does; Kotoba: Form child, nil-form past the end.
+#?(:kotoba
+   (defn- fe-nth [f [:ref :form/r] i :i64] [:ref :form/r] (form/nth-of f i))
+   :default
+   (defn- fe-nth [c i] (nth c i nil)))"
+
+   "fe-nthnext"
+   ";; selfhost-codemod: the rest after the first i children (nil / nil-form when none).
+#?(:kotoba
+   (defn- fe-nthnext [f [:ref :form/r] i :i64] [:ref :form/r]
+     (let [n (form/count-of f)]
+       (if (>= i n)
+         (form/nil-form)
+         (form/form-seq (loop [j i acc (form/no-forms)]
+                          (if (>= j n) acc (recur (+ j 1) (form/append-form acc (form/nth-of f j)))))))))
+   :default
+   (defn- fe-nthnext [c i] (nthnext c i)))"
+
+   "fe-get"
+   ";; selfhost-codemod: keyword lookup.  Host: `get`; Kotoba: form-get with a keyword Form.
+#?(:kotoba
+   (defn- fe-get [m [:ref :form/r] k :keyword] [:ref :form/r] (form/form-get m (form/keyword-form k)))
+   :default
+   (defn- fe-get [m k] (get m k)))"
+
+   "fe-get-or"
+   ";; selfhost-codemod: keyword lookup with a default used only when the key is ABSENT (get's not-found, not nil-punning).
+#?(:kotoba
+   (defn- fe-get-or [m [:ref :form/r] k :keyword d [:ref :form/r]] [:ref :form/r]
+     (if (form/form-has? m (form/keyword-form k)) (form/form-get m (form/keyword-form k)) d))
+   :default
+   (defn- fe-get-or [m k d] (get m k d)))"})
+
+(def order ["fe-nth" "fe-nthnext" "fe-get" "fe-get-or"])

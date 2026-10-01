@@ -1,0 +1,84 @@
+;; Rule (f) (extension of (a)): the callback combinators over Form collections as loops (Kotoba arm only).
+;;
+;; On the Kotoba route `map`/`mapv`/`filter`/`reduce` take a vector-i64 source (measured: `(map (fn [e] ..) (form/kids-of f))`
+;; is refused with "expected vector-i64, got [:list [:ref :form/r]]"), so a combinator over dynamic Form data is a loop over
+;; kotoba.form (kids-of / typed-list-nth / append-form).  This rule writes that loop as the :kotoba arm and keeps the host
+;; call byte-for-byte as the :default arm:
+;;
+;;   (mapv (fn [x] body) coll)  ->  #?(:kotoba (let [fe-lc__N (form/kids-of coll) fe-ln__N (vector-count fe-lc__N)]
+;;                                               (form/form-vec (loop [fe-li__N 0 fe-la__N (form/no-forms)] ...)))
+;;                                     :default (mapv (fn [x] body) coll))
+;;
+;; Run it AFTER (a)/(e): it takes simple-symbol parameters only (a destructuring lambda is rewritten by (a) first).
+;; Assumptions the tool cannot check (they are the reason the Kotoba arm still needs a read by a human):
+;;   * `coll` is a Form (list/vector); a Form MAP iterates with stride 2 (entries), not 1;
+;;   * mapv/map produce Forms (the loop accumulates with form/append-form); filter's lambda body is a bool;
+;;   * the lambda body contains no `recur` and no aborting call (no throw before the loop's own recur).
+;; Host behaviour is untouched by construction (the :default arm is the original text).
+(ns codemod.rules.lowerloops
+  (:require [clojure.string :as str]
+            [codemod.cst :as cst]
+            [codemod.edit :as edit]))
+
+(defn- simple-fn
+  "(fn [a b ...] body...) with plain symbol params and a non-empty body -> {:params [..] :body [nodes]}"
+  [n]
+  (when (and (cst/lst? n) (= "fn" (cst/head-text n)))
+    (let [ks (rest (:kids n))]
+      (when (and (cst/vec? (first ks)) (seq (rest ks))
+                 (every? #(and (cst/sym? %) (not= "&" (:text %))) (:kids (first ks))))
+        {:params (mapv :text (:kids (first ks))) :body (vec (rest ks))}))))
+
+(defn- body-text [src body]
+  (str/join " " (map #(cst/text src %) body)))
+
+(defn- lc [pfx n] (str "fe-l" pfx "__" n))
+
+(defn- lower [src h f coll extra]
+  (let [id (:s f)
+        c (lc "c" id) cn (lc "n" id) i (lc "i" id) a (lc "a" id)
+        ctext (cst/text src coll)
+        item (str "(typed-list-nth [:list [:ref :form/r]] " c " " i ")")
+        {:keys [params body]} (simple-fn f)
+        bt (body-text src body)
+        head (str "(let [" c " (form/kids-of " ctext ") " cn " (vector-count " c ")]")]
+    (case h
+      ("mapv" "map")
+      (str head " (" (if (= h "mapv") "form/form-vec" "form/form-seq") " (loop [" i " 0 " a " (form/no-forms)] (if (>= " i " " cn ") " a
+           " (recur (+ " i " 1) (form/append-form " a " (let [" (first params) " " item "] " bt "))))))) ")
+      ("filter" "filterv")
+      (str head " (" (if (= h "filterv") "form/form-vec" "form/form-seq") " (loop [" i " 0 " a " (form/no-forms)] (if (>= " i " " cn ") " a
+           " (let [" (first params) " " item "] (recur (+ " i " 1) (if (do " bt ") (form/append-form " a " " (first params) ") " a "))))))) ")
+      "reduce"
+      (str head " (loop [" i " 0 " (first params) " " (:init extra) "] (if (>= " i " " cn ") " (first params)
+           " (recur (+ " i " 1) (let [" (second params) " " item "] " bt "))))) "))))
+
+(defn find-all [{:keys [src nodes]}]
+  (let [out (atom []) starts (edit/line-starts src)]
+    (cst/walk
+     (fn [n {:keys [region path]}]
+       (when (and (cst/lst? n)
+                  (not (some #(and (= :rc (:type %)) (str/includes? (cst/text src %) "(let [fe-lc")) path)))
+         (let [h (cst/head-text n) as (cst/args n)
+               fin (fn [status extra] (swap! out conj (merge {:rule :lowerloops :s (:s n) :e (:e n) :region region :status status
+                                                              :line (edit/offset->line starts (:s n)) :context h} extra)))]
+           (cond
+             (and (contains? #{"mapv" "map" "filterv" "filter"} h) (= 2 (count as)) (cst/lst? (first as)) (= "fn" (cst/head-text (first as))))
+             (if-let [f (simple-fn (first as))]
+               (if (= 1 (count (:params f)))
+                 (let [f* (first as)
+                       k (lower src h f* (second as) nil)]
+                   (fin :auto {:edits [(edit/replace-node n (str "#?(:kotoba " (str/trim k) " :default " (cst/text src n) ")") :lowerloops)]}))
+                 (fin :human {:reason "callback does not take exactly one simple parameter"}))
+               (fin :human {:reason "callback parameters are not plain symbols (run rule a first) or the body is empty"}))
+             (and (= h "reduce") (= 3 (count as)) (cst/lst? (first as)) (= "fn" (cst/head-text (first as))))
+             (if-let [f (simple-fn (first as))]
+               (if (= 2 (count (:params f)))
+                 (fin :auto {:edits [(edit/replace-node n (str "#?(:kotoba " (str/trim (lower src h (first as) (nth as 2) {:init (cst/text src (second as))}))
+                                                               " :default " (cst/text src n) ")") :lowerloops)]})
+                 (fin :human {:reason "reduce callback does not take exactly two simple parameters"}))
+               (fin :human {:reason "callback parameters are not plain symbols (run rule a first) or the body is empty"}))))))
+     nodes)
+    @out))
+
+(def rule {:id :lowerloops :find find-all})

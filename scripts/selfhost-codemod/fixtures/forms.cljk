@@ -1,0 +1,15 @@
+(ns fixtures.forms
+  {:kotoba/export [pair-keys count-pairs only-seqs]}
+  (:require [kotoba.form :as form]))
+
+;; Kotoba-route fixture: dynamic Form data walked with the host combinators.  `amu check` refuses each of these
+;; until the rewrite (a) + (f) has been applied; kotoba-route-check.sh runs that.
+
+(defn pair-keys [f [:ref :form/r]] [:ref :form/r]
+  (form/form-vec (form/kids-of (mapv (fn [[k v]] k) f))))
+
+(defn count-pairs [f [:ref :form/r]] :i64
+  (reduce (fn [acc [a b]] (+ acc (form/count-of a))) 0 f))
+
+(defn only-seqs [f [:ref :form/r]] [:ref :form/r]
+  (filter (fn [x] (form/is-seq? x)) f))
