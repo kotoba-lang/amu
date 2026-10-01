@@ -440,3 +440,33 @@ with a helper that returns `[:ref :fe/err]` (a `record-new` has the resolved rec
 test programs and replay them in the guest, plus a generated corpus per spec arm with each argument position wrong).
 Known divergences: an arity-short `nth` on a spec arm reports a type mismatch against nil where the host raises an internal
 failure; a Form set iterates in source order, not hash order, in `abort-callee-sites`.
+
+## 10. The absence and abort passes on the Kotoba route, and the differential (2026-10-02)
+
+**Exports.** `infer` now exports `infer-expression-type [ctx form locals sigs] -> :ie/r` (the context-first facade over `ie-infer`; the
+importers `record_projection`, `analyze`, `state_ability` still call it with the host's three arguments, which is their own port) and
+`expand` exports `state-rebuild-seq [form items] -> form`. With these the 17 modules that stopped at "referred name infer-expression-type is
+not exported" now stop at `record_projection.cljk` (`rewrite-record-projection`, 1038 lines of host code, first at `row-op-elaborate`:
+"map fn parameter destructures") and `state_ability.cljk` ("case constants must be ...").
+
+**Ported for real** (kotoba-sema `frontend/infer.cljk`, native `amu check` OK, host bodies untouched): `absence-none`, `absence-leaves`,
+`absence-tails-legacy`, `resolve-absence-if [ctx form locals sigs statement?]`, `refinable-value-type?`, `infer-absent-results [ctx fns]`,
+`infer-absent-parameter-types [ctx fns]` with `parameter-use-conflict(-error)`, `first-aborting-call`, `abort-signatures`, `abort-type-text`,
+`abort-synthesized-context`, `infer-abort-error-types [ctx fns] -> {:functions :abort-error-types}` (the fixed point), `elaborate-aborts
+[ctx fns aet]` (the synthetic-name counter is threaded as `:ae/r`/`:ae/rs`, the context as `:ae/c`). A function is a Form map
+`{:name :source-name :params :param-types :result :body :result-inferred? :param-types-inferred :loop-helper? :lazy-thunk? ...}`.
+Two language facts found on the way: (a) a call to an aborting function nested in the value of a `let` binding whose operand names an earlier
+binding of the same `let` is hoisted before the `let` (unbound symbol), so such a call gets its own binding; (b) `let-body` / `if-parts` /
+`try-clause-parts` of `base` are aborting imports and do not propagate, so the module carries local `ae-let-body` / `ae-if-parts` (`ie-try-parts`).
+
+**Differential** (`scripts/selfhost-wall/abort-diff.sh`, BOOTSTRAP-REFERENCE): `abort-record.cljs` wraps the five host passes while
+`sema/analyze` runs every program embedded in kotoba-sema's tests plus 12 written for it (param refinement, a use conflict, nested try,
+a throw in a let binding / do, loops, propagation chains, ...), and records `(ctx, input, host answer or refusal)` per call
+(664 + 67 cases: 257 results, 136 params, 136 abort, 133 elab, 3 absence, 9 refusals). `guests/abort.cljk` links the whole frontend closure and
+answers OK/DIFF per case; it runs on the KIR interpreter on the JVM-built compiler (`abort-run-jvm.clj`; the linked project is over the
+product admission ceilings -- 16384 functions / 1024 exports -- so the ceilings are raised for this reference only, and a string value is
+bounded at 65536 bytes so the input goes in batches). Result: 730 OK, 1 DIFF (a `parameter-use-conflict` message: the case EDN carries no
+spans and no `:kotoba.diag/source-head`, so `[x at 2:31]` and `string-length` (for `string-byte-length`) cannot appear; the rest of the
+message is identical). The differential found a real bug (`use-site-text` printed two spaces after a seq head), fixed in 99e2bf9.
+Another harness fact: a `:bool` field assigned from a function result (`(record-assoc ctx :final (f x))`, an `and`-let) trapped "value is not a
+boolean" on the interpreter; `(if (f x) true false)` is the spelling that works (as `ctx-tail` already does).

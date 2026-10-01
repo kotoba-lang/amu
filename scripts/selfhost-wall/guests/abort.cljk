@@ -1,0 +1,96 @@
+(ns kotoba.compiler.abort-probe
+  {:kotoba/export [ab-run]}
+  (:require [kotoba.form :as form]
+            [kotoba.compiler.frontend.infer :as inf])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :form/rd [:record :form/rd [[:form [:ref :form/r]] [:pos :i64]]]
+             :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]] [:phase :string] [:data [:ref :form/r]]]]
+             :ie/ctx [:record :ie/ctx [[:schemas [:ref :form/r]] [:row-schemas [:ref :form/r]] [:handlers [:ref :form/r]] [:final :bool] [:tail :bool] [:names [:ref :form/r]] [:recording :bool] [:recorded [:ref :form/r]] [:collect :bool] [:throws [:list [:ref :form/r]]] [:known [:ref :form/r]] [:tbl [:ref :form/r]]]]}))
+
+;; ---- a best-effort printer for a failing case (the comparison itself is `form/eq`) ----
+(defn- ab-join [kids [:list [:ref :form/r]] i :i64 acc :string] :string
+  (if (>= i (vector-count kids))
+    acc
+    (ab-join kids (+ i 1)
+             (string-concat acc (string-concat (if (> i 0) " " "") (ab-print (typed-list-nth [:list [:ref :form/r]] kids i)))))))
+
+(defn- ab-print [f [:ref :form/r]] :string
+  (cond
+    (form/is-nil? f) "nil"
+    (form/is-bool? f) (if (form/bool-value f) "true" "false")
+    (form/is-int? f) (string-from-i64 (form/int-value f))
+    (form/is-string? f) (string-concat "\"" (string-concat (form/string-value f) "\""))
+    (form/is-keyword? f) (document-edn-print (document-keyword (form/keyword-value f)))
+    (form/is-symbol? f) (form/symbol-value f)
+    (form/is-seq? f) (string-concat "(" (string-concat (ab-join (form/kids-of f) 0 "") ")"))
+    (form/is-vec? f) (string-concat "[" (string-concat (ab-join (form/kids-of f) 0 "") "]"))
+    (form/is-set? f) (string-concat "#{" (string-concat (ab-join (form/kids-of f) 0 "") "}"))
+    (form/is-map? f) (string-concat "{" (string-concat (ab-join (form/kids-of f) 0 "") "}"))
+    :else "?"))
+
+(defn- ab-op-is? [c [:ref :form/r] name :string] :bool
+  (string=? (document-edn-print (document-keyword (form/keyword-value (form/nth-of c 0))))
+            (string-concat ":" name)))
+
+(defn- ab-get [m [:ref :form/r] k :keyword] [:ref :form/r]
+  (form/form-get m (form/keyword-form k)))
+
+(defn- ab-ctx [c [:ref :form/r]] [:ref :ie/ctx]
+  (let [base (inf/ie-new-ctx (ab-get c :schemas) (ab-get c :row) (ab-get c :handlers))
+        with-final (record-assoc [:ref :ie/ctx] base :final (if (form/is-true? (ab-get c :final)) true false))]
+    with-final))
+
+;; the host answered (:err "message")
+(defn- ab-expected-err? [e [:ref :form/r]] :bool
+  (and (form/is-seq? e) (= 2 (form/count-of e)) (form/is-keyword? (form/nth-of e 0))
+       (form/is-string? (form/nth-of e 1))
+       (string=? (document-edn-print (document-keyword (form/keyword-value (form/nth-of e 0)))) ":err")))
+
+(defn- ab-verdict [got [:ref :form/r] expected [:ref :form/r]] :string
+  (if (ab-expected-err? expected)
+    (string-concat "DIFF host refused (" (string-concat (form/string-value (form/nth-of expected 1)) (string-concat ") guest answered " (ab-print got))))
+    (if (form/eq got expected)
+      "OK"
+      (string-concat "DIFF guest " (string-concat (ab-print got) (string-concat " || host " (ab-print expected)))))))
+
+(defn- ab-refusal [e [:ref :fe/err] expected [:ref :form/r]] :string
+  (if (ab-expected-err? expected)
+    (if (string=? (record-get [:ref :fe/err] e :msg) (form/string-value (form/nth-of expected 1)))
+      "OK"
+      (string-concat "DIFF guest refused: " (string-concat (record-get [:ref :fe/err] e :msg) (string-concat " || host refused: " (form/string-value (form/nth-of expected 1))))))
+    (string-concat "DIFF guest refused: " (string-concat (record-get [:ref :fe/err] e :msg) (string-concat " || host " (ab-print expected))))))
+
+(defn- ab-case [c [:ref :form/r]] :string
+  (cond
+    (ab-op-is? c "ctx")
+    (let [x (ab-ctx (form/nth-of c 1))] "ctx-ok")
+    (ab-op-is? c "abort")
+    (match-result (inf/infer-abort-error-types (ab-ctx (form/nth-of c 1)) (form/nth-of c 2)) [:result [:ref :form/r] [:ref :fe/err]]
+      (ok r (ab-verdict r (form/nth-of c 3)))
+      (err e (ab-refusal e (form/nth-of c 3))))
+    (ab-op-is? c "elab")
+    (match-result (inf/elaborate-aborts (ab-ctx (form/nth-of c 1)) (form/nth-of c 2) (form/nth-of c 3)) [:result [:ref :form/r] [:ref :fe/err]]
+      (ok r (ab-verdict r (form/nth-of c 4)))
+      (err e (ab-refusal e (form/nth-of c 4))))
+    (ab-op-is? c "results")
+    (ab-verdict (inf/infer-absent-results (ab-ctx (form/nth-of c 1)) (form/nth-of c 2)) (form/nth-of c 3))
+    (ab-op-is? c "params")
+    (match-result (inf/infer-absent-parameter-types (ab-ctx (form/nth-of c 1)) (form/nth-of c 2)) [:result [:ref :form/r] [:ref :fe/err]]
+      (ok r (ab-verdict r (form/nth-of c 3)))
+      (err e (ab-refusal e (form/nth-of c 3))))
+    (ab-op-is? c "absence")
+    (ab-verdict (inf/resolve-absence-if (ab-ctx (form/nth-of c 1)) (form/nth-of c 2) (form/nth-of c 3) (form/nth-of c 4) (if (form/is-true? (form/nth-of c 5)) true false)) (form/nth-of c 6))
+    :else "unknown-op"))
+
+(defn- ab-lines [text :string i :i64 n :i64 out :string] :string
+  (if (>= i n)
+    out
+    (let [j (string-find-byte text 10 i)
+          end (if (< j 0) n j)
+          line (string-substring text i end)
+          answer (if (< (string-length line) 2) "" (ab-case (form/edn-form line)))]
+      (ab-lines text (+ end 1) n (string-concat out (string-concat answer "\n"))))))
+
+(defn ab-run [text :string] :string
+  (ab-lines text 0 (string-length text) ""))
