@@ -142,8 +142,8 @@ Clojure it is today, the language gains:
    literal is not counted. Refused by name beside it: a coerced field, a
    record as an `if` test, `=` over records, a typed vector item used as an
    i64. Native: a literal record compiles for `x86_64-aiueos-kernel-v1` and
-   `aarch64-macos`; a `[:list record]` is refused there by the typed-values
-   gate -- floor `:native-handles`.
+   `aarch64-macos`; a `[:list record]` does too since floor
+   `:native-handles`.
    Floor `:specialization-identity` (gate
    `specialization-cid-derived-from-generic-test`, 2026-09-27): a
    specialization's definition CID is a function of its generic's body and the
@@ -244,9 +244,10 @@ Clojure it is today, the language gains:
    `(str ..)`), and an attribute value is a string (browser's `:style` map is
    not yet a node attribute). Hosted: `amu check` exits 0 and
    `wasm32-browser` compiles. Native: both `x86_64-aiueos-kernel-v1` and
-   `aarch64-macos` refuse at the typed-values gate (exit 70,
-   `:kotoba/target-rejected`) -- the node's `[:list T]` and `[:map :keyword
-   :string]` are not qualified natively: floor `:native-handles`.
+   `aarch64-macos` refuse at the typed-values gate (`:kotoba/target-rejected`,
+   exit 65 since `:native-handles`) -- the node's `[:list T]` is qualified
+   natively since `:native-handles`, its `[:map :keyword :string]` attrs are
+   not: floor `:native-hiccup-node`.
 7. **Allocation is charged like fuel.** Every constructor debits the same
    64-bit ledger fuel uses (kotoba-kir ADR 0268, amu ADR 0333). The ADT
    node/depth ceilings stop being language constants and become the budget
@@ -342,8 +343,9 @@ Clojure it is today, the language gains:
    conformance suite asserts that refusal); a large module is admitted as
    a dependency on `--source-path`.
 9. **Native handles at loop boundaries.** kotoba-native qualifies record,
-   vector and closure handles as loop-helper boundary types and retires
-   `map-new`, so every form above compiles for both native targets. Split on
+   vector and closure handles as loop-helper boundary types and no form
+   lowers to `map-new` (the empty literal's, floor `:empty-map-literal`), so
+   every form above compiles for both native targets. Split on
    2026-10-01 into three floors, because measuring showed three changes in
    three places (ladder comment), and the third again the same day into
    `:loop-slot-types` and `:native-handles`.
@@ -366,7 +368,7 @@ Clojure it is today, the language gains:
    x86_64-aiueos-kernel-v1` / `--target aarch64-macos` exit 0 with `:oracle
    {:status :verified}`. Refused by name: an i64 where a record is declared,
    `=` over records, a record as an `if` test, and a record as the entry's
-   result on native (the typed-values gate, still exit 70 --
+   result on native (the typed-values gate, exit 65 since
    `:native-handles`).
    Floor `:native-record-operations` (gate `native-row-operations-test`,
    landed 2026-10-01): the row operations and a join's projection compile
@@ -391,8 +393,8 @@ Clojure it is today, the language gains:
    answers (9, 11, 5, 2, 11, 4, 16, 7, 12, 2, 2, 7), and `amu compile
    --target x86_64-aiueos-kernel-v1` exits 0 with `:oracle {:status
    :verified}` for each. Refused by name, on both targets: a coerced field, a
-   join over two records, a record as the entry's result (still the
-   typed-values refusal -- `:native-handles`), a record left with no field, a
+   join over two records, a record as the entry's result (the typed-values
+   refusal, exit 65 since `:native-handles`), a record left with no field, a
    record as an `if` test, a non-record merge operand.
    Floor `:loop-slot-types` (gate `loop-slot-record-list-closure-test`,
    landed 2026-10-01, split from `:native-handles` because the loop slot was
@@ -421,11 +423,44 @@ Clojure it is today, the language gains:
    coerced field, a record or closure slot as an `if` test, `=` over records
    or closures, a list item used as an i64, a closure slot as a number, and
    a number recurred into a closure slot.
-   Floor `:native-handles`: a `[:list T]` of records natively (refused by the
-   typed-values gate, `typed-list-new` not qualified, wherever it is written,
-   a loop slot included), no form lowering to `map-new` (both ADR 0352
-   reproductions compile natively as of 2026-10-01), and a target refusal
-   exiting 65.
+   Floor `:native-handles` (gate `native-record-vector-closure-boundary-test`,
+   landed 2026-10-01): a `[:list T]` of records was refused natively by the
+   typed-values gate (`typed-list-new` not qualified) wherever it was written
+   -- a let, a loop slot, a parameter -- and the CLI answered that refusal,
+   `:phase :target`, with exit 70, the internal-error code. Now osaho
+   qualifies `typed-list-new` / `typed-list-nth` over one-word item handles,
+   a record through `[:ref q]` included, and `[:list T]` is a native handle
+   type, so a loop helper or a function takes one (`0310fb54`);
+   kotoba-native lowers them to the typed set's word arena, a `vector-conj`
+   chain and `vector-at`, `vector-count` already walking the carrier
+   (`7b5b8fb8`); kotoba-verifier re-derives both heads and sees a record
+   through an item of a list of records (`32d8a4a2`). `:target` exits 65 on
+   both CLI routes. "The forms of every floor above" was measured by
+   compiling, for both targets, every program the frontend-only gates of
+   `:absence` .. `:expression-absence` admit (82): two more were refused by
+   kotoba-verifier after codegen had compiled them -- a let-bound record
+   local, which forwarded only for a parameter (`(let [m (assoc (mk) :d 4)]
+   (:a (dissoc m :b)))`), and a record whose field holds a declared reference
+   (`(:a (:x (assoc (mk) :x (mt))))`); both forward now, in the same
+   verifier commit. The rest are refused natively by design, exit 65: handle
+   structural equality (`record-equal`, `typed-set-equal`, `typed-map-equal`,
+   `hetero-vector-equal`) and a record as the entry's result. `map-new`: no
+   map literal with fields lowers to it and both ADR 0352 reproductions are
+   records that compile natively; the empty literal `{}` still lowers to it,
+   which is floor `:empty-map-literal`. Not reached: `:hiccup-node`'s
+   programs, whose node schema reaches a `[:map :keyword :string]`, which has
+   no native representation (exit 65, "does not qualify the boundary type
+   [[:ref :kotoba.hiccup/node]]") -- floor `:native-hiccup-node`. Measured: a program summing a list
+   parameter, a list of map-literal records and a list loop slot answers 2327
+   under `tools/kexe_loader.c` on aarch64 and on x86_64 (Rosetta), the two
+   forwarded projections with a flat one answer 791 on both, and `amu compile
+   --target x86_64-aiueos-kernel-v1` / `--target aarch64-macos` exit 0 with
+   `:oracle {:status :verified}`. Refused by name: `=` over lists of records,
+   a list as an `if` test, a list item as an i64, an index out of range (the
+   oracle traps `list-index-out-of-bounds`, so no artifact is sealed). Found
+   on the way and refused before any target: a `[:list T]` loop slot after a
+   row read of a let-bound map literal types as `:i64` -- floor
+   `:loop-slot-beside-row`.
 
 Then browser moves, whole component by component (text-edit, input, surface
 with cssom and dom-gpu), and the hosted engine switches to amu's output of

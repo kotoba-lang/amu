@@ -20,8 +20,8 @@
   where a closure slot or parameter is, is refused by name.
 
   Native: a record slot and a closure slot compile for x86_64-aiueos-kernel-v1
-  and aarch64-macos with the oracle verified. A `[:list T]` of records is still
-  refused there by the typed-values gate -- floor :native-handles.
+  and aarch64-macos with the oracle verified; a `[:list T]` slot of records
+  does too since floor :native-handles.
 
   What stays refused, each by its literal: a recur giving a slot another
   record, a coerced field, a record slot as an `if` test, `=` over records, a
@@ -47,7 +47,8 @@
          " (defn main [] :i64 (let [k 4] (run (fn [x] (+ x k)))))") 12]])
 
 (def ^:private list-slots
-  "`[:list T]` slots: admitted on the reference and the hosted target."
+  "`[:list T]` slots: admitted on the reference, the hosted target and, since
+  floor :native-handles, both native targets."
   [["(defn main [] :i64 (loop [xs [(mk) (mk)] i 0 acc 0] (if (< i (count xs)) (recur xs (+ i 1) (+ acc (:a (nth xs i)))) acc)))" 10]
    ["(defn main [] :i64 (let [xs [(mk) (mk)]] (loop [i 0 acc 0] (if (< i (count xs)) (recur (+ i 1) (+ acc (:a (nth xs i)))) acc))))" 10]
    ["(defn main [] :i64 (let [xs [{:a 1} {:a 2}]] (loop [i 0 acc 0] (if (< i 2) (recur (+ i 1) (+ acc (:a (nth xs i)))) acc))))" 3]])
@@ -87,11 +88,12 @@
       (let [{:keys [artifact]} (compiler/compile-source (str prelude source) target)]
         (is (pos? (count (:code artifact))) (str target " " source))
         (is (= answer (#?(:clj long :cljs js/Number) (:value artifact))) (str target " " source)))))
-  (testing "a [:list T] of records is still refused natively (floor :native-handles)"
-    (doseq [target native-targets]
-      (is (= (str "typed values currently require the kotoba-script web target, typed Wasm/CLJS"
-                  " target, or the qualified native one-word string/record/variant/option/result slice")
-             (refusal (ffirst list-slots) target)))))
+  (testing "a [:list T] slot of records compiles on both native targets (floor :native-handles)"
+    (doseq [target native-targets
+            [source answer] list-slots]
+      (is (= answer (#?(:clj long :cljs js/Number)
+                     (:value (:artifact (compiler/compile-source (str prelude source) target)))))
+          (str target " " source))))
   (testing "refused: a slot keeps its record"
     (is (= (str "expression type mismatch: expected [:record :kotoba.map-literal/a+b [[:a :i64] [:b :i64]]],"
                 " got [:record :kotoba.map-literal/c [[:c :i64]]]")

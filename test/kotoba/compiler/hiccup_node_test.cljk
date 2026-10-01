@@ -158,8 +158,9 @@
     (is (string? (:source (compiler/compile-source
                            (str "(ns app)\n" (probe "(count (:children e))")) :js-kotoba-v1)))))
   ;; Both kernel-side targets refuse the node at the typed-values gate: its
-  ;; payload holds a `[:list T]` and a `[:map :keyword :string]`, which the
-  ;; native one-word slice does not qualify -- floor :native-handles.
+  ;; elem holds a `[:map :keyword :string]`, which the native one-word slice
+  ;; does not qualify (its `[:list T]` is, since floor :native-handles) --
+  ;; floor :native-hiccup-node.
   (testing "native: both kernel-side targets refuse, for now, by the typed-values gate"
     (doseq [target [:x86_64-aiueos-kernel-v1 :aarch64-kotoba-v1]]
       (is (= (str "typed values currently require the kotoba-script web target, typed Wasm/CLJS target, "

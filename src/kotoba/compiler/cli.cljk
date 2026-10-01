@@ -90,8 +90,12 @@
 (defn exit-code [phase]
   (case phase
     :usage 64
+    ;; `:target` -- a target that does not carry what the program uses -- is
+    ;; the caller's program meeting a target's declared limits, not the
+    ;; compiler breaking (amu ADR 0353 floor :native-handles; ADR 0352
+    ;; measured it answering 70).
     (:decode :read :subset :admission :ir :verify :coverage :project-link
-     :module-lock :test) 65
+     :module-lock :test :target) 65
     ;; Neither 0 nor 65. A refused definition is an ANSWER -- the report lists
     ;; it with its marker and exits 0 -- so this code is reserved for the
     ;; other thing: no identity could be computed at all. Without a distinct

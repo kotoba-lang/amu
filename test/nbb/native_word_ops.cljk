@@ -187,7 +187,7 @@
         isa ["aarch64" "x86_64"]]
   (let [c (amu! "compile" (fixture name) "--target" isa "--output" (.join path tmp (str name "." isa ".kexe")))]
     (check! (str "native refusal " name " on " isa)
-            (and (= 70 (:status c)) (str/includes? (str (:stdout c) (:stderr c)) literal))
+            (and (= 65 (:status c)) (str/includes? (str (:stdout c) (:stderr c)) literal))
             (str "status " (:status c) ": " (head (str (:stdout c) (:stderr c)))))))
 
 (println "== frontend refusals, exact text")

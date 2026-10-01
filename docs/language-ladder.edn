@@ -145,7 +145,28 @@
   {:id :loop-slot-types :gate "loop-slot-record-list-closure-test"
    :goal "kotoba-sema types a loop slot like a let binding: a map-literal slot is its record (not :map), a vector literal of records a [:list T] (not the :i64 placeholder), a closure slot is callable (not an unknown operation) and is a closure to the :function-values refusals; record and closure slots compile for x86_64-aiueos-kernel-v1 and aarch64-macos; a slot recurred to another record, a coerced field, a record or closure slot as an if test, = over them, a list item as an i64, a closure slot as a number and a number for a closure slot stay refused by name"}
   {:id :native-handles :gate "native-record-vector-closure-boundary-test"
-   :goal "kotoba-native qualifies a [:list T] of records (typed-list-new / typed-list-nth / count over one-word handles) natively, a loop slot included, and retires map-new; the forms of every floor above compile for x86_64-aiueos-kernel-v1 and aarch64-macos (target refusals exit 65, not 70)"}
+   :goal "kotoba-native qualifies a [:list T] of records (typed-list-new / typed-list-nth / count over one-word handles) natively, a loop slot included, and no form of the ladder lowers to map-new; the forms of every floor above but :hiccup-node's compile for x86_64-aiueos-kernel-v1 and aarch64-macos (target refusals exit 65, not 70)"
+   ;; Amended 2026-10-01: first worded "retires map-new". Measured (amu
+   ;; d44506ec): no map literal with fields lowers to it and both ADR 0352
+   ;; reproductions are records, but the empty literal {} still does -- the
+   ;; legacy keyword->i64 map, which match map patterns are written against.
+   ;; That is a kotoba-sema change of its own: floor :empty-map-literal.
+   ;; "Every floor above" was measured by compiling every program the
+   ;; frontend-only gates admit (82) for both targets: the rest is refused
+   ;; natively by design (handle equality, a record entry result), exit 65.
+   ;; The hiccup node is the one floor whose forms stay refused natively: its
+   ;; closed schema reaches the elem record's [:map :keyword :string] attrs,
+   ;; and a typed map has no native representation -- floor
+   ;; :native-hiccup-node, a change of its own (kotoba-native and osaho).
+   }
+  {:id :native-hiccup-node :gate "hiccup-node-compiles-natively-test"
+   :goal "a [:map K V] of one-word keys and values is a native handle type (typed-map-new / typed-map-get / typed-map-assoc / typed-map-dissoc over the word arena), so the hiccup Node -- whose elem carries [:map :keyword :string] attrs -- crosses a native function boundary and floor :hiccup-node's programs compile for x86_64-aiueos-kernel-v1 and aarch64-macos; equality over a map handle stays refused"}
+  ;; Both measured 2026-10-01 while closing :native-handles; each is
+  ;; kotoba-sema's and refused before any target, hosted included.
+  {:id :empty-map-literal :gate "empty-map-literal-is-typed-test"
+   :goal "{} is not the legacy keyword->i64 map: (assoc {} :a 1) is the record {:a 1}, an empty literal with no row to extend is refused by name, and no form lowers to map-new on any target; match map patterns read records"}
+  {:id :loop-slot-beside-row :gate "loop-slot-typed-beside-a-row-read-test"
+   :goal "a [:list T] loop slot is typed whatever precedes the loop: (let [ys {:a 1}] (+ (:a ys) (loop [zs [(mk) (mk)] i 0] (if (< i 1) (recur zs (+ i 1)) (count zs))))) answers 2, refused today \"count requires a bounded vector, ...; got :i64.\" while the same loop without the row read is admitted"}
   {:id :browser-text-edit :gate "browser-text-edit-native-test"
    :goal "kotoba-lang/browser's browser.text-edit, migrated only mechanically (defn-, nil's meaning, a :kotoba interop branch), compiles for both native targets and its hosted tests pass on amu's output"}
   {:id :browser-input :gate "browser-input-native-test"
