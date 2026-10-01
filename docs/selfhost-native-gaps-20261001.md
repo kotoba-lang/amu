@@ -118,9 +118,9 @@ Gap 2 is closed in the part the guests needed (`:bytes` / `:vector-i64` as recor
 |---|---|---|---|---|
 | `vx` | 445 | 193 + 33 + 21 + ... (all through `:form/r`, `:vx/env`) | **0** | none: compiles, runs |
 | `codec` | 230 | 44 + 10 + 9 + ... | **0** | none: compiles |
-| `di` | 488 | 52 + 19 + 10 + `[:option :bytes]` x5 + `option-match` | **0** | none by the gate (see resolve below) |
-| `oat` | 379 | `[:option :vector-i64]` x11, `[:option :bytes]` x5, `option-match` x4, `option-value-of` x2 | **0** | none by the gate |
-| `ri` | 99 | 0 by the gate, then 22 `document-*` heads in the verifier | **0** | none by the gate |
+| `di` | 488 | 52 + 19 + 10 + `[:option :bytes]` x5 + `option-match` | **0** | none: `guest-run.sh --native-only --resolve` prints `native` |
+| `oat` | 379 | `[:option :vector-i64]` x11, `[:option :bytes]` x5, `option-match` x4, `option-value-of` x2 | **0** | the gate and the verifier pass and the `.kexe` is written (740 KB); the extract step then dies in nbb with a reader error (`Feature should be a keyword`, location 1734:17, phase parse) that is not a native-backend refusal and is not diagnosed |
+| `ri` | 99 | 0 by the gate, then 22 `document-*` heads in the verifier | **0** | the verifier heads are admitted; the compile step now dies earlier in the same nbb reader error as `oat` (the native checker passes every file of the closure) |
 | `cc` | 384 | `[:option ...]` x10, OutputEntry record/list x10, Found x2, `[:result :bytes :document]`, `record-get` | **3** (`typed-cap-call`) | `typed-cap-call` with a non-generic type pair |
 | `vc` | 558 | as cc + `typed-cap-call` | **4** (`typed-cap-call`) | same |
 | `oa` | 469 | as cc | **3** (`typed-cap-call`) | same |
@@ -132,7 +132,7 @@ Compiled and **executed natively** (`guest-run.sh`, aarch64-macos `.kexe` on the
   synthetic corpus 111 / 111 against the host (65 distinct refusal messages agree), one batch in 141 ms. It was the
   interpreter at about 6 ms per source byte. The sema-tests corpus part of the harness captured 0 calls in this run
   (`captured validate-expr calls: 0`); that is the host-side capture, independent of the mode, and is not addressed here.
-- `codec` resolves to `native` (compiles, verifies, extracts).
+- `codec` and `di` resolve to `native` (compile, verify, extract). `cc`/`ri` stop in the reader error above and `oat` in its extract step; `vc`/`oa` were not compiled (their gate still refuses `typed-cap-call`).
 - A Form-shaped probe (recursive record with `[:list [:ref]]`, `:bytes`, `:string`, `record-assoc`, a call, a `let`-bound
   update, a projected list item) runs on the loader and answers the reference value.
 
