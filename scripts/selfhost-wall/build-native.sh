@@ -26,8 +26,21 @@ SPA=(${(f)"$(echo "$(cat $CP)" | tr ':' '\n' | grep '/src$' | sed 's/^/--source-
 rm -rf $OUT/agent-cfg; mkdir -p $OUT/agent-cfg
 probe=$OUT/probe.cljk
 echo '(ns probe {:kotoba/export [f]}) (defn f [x :i64] :i64 x)' > $probe
+# A literal wider than 64 bits is read by the Clojure reader through
+# BigInteger(String) (reflection); without that entry the native checker answers
+# a different refusal on every source holding one (11 files of the reach list
+# regressed silently on a from-scratch build). The probe forces the reader down
+# that path -- decimal, hex and an N-suffixed literal -- so the tracing agent
+# records the constructor; the checker refuses it ("host literal bigint"), which
+# is the expected answer and is what check-native then reports.
+probe_wide=$OUT/probe-wide.cljk
+cat > $probe_wide <<'W'
+(ns probe-wide {:kotoba/export [f]})
+(defn f [x :i64] :i64
+  (if (= x 0) 18446744073709551615 (if (= x 1) 0xFFFFFFFFFFFFFFFFF 9223372036854775808N)))
+W
 first=1
-for f in $probe "$@"; do
+for f in $probe $probe_wide "$@"; do
   mode=config-merge-dir; [ $first = 1 ] && { mode=config-output-dir; first=0; }
   $GH/bin/java -Xss512m -agentlib:native-image-agent=$mode=$OUT/agent-cfg -cp "$JCP" kotoba.compiler.cli check $f $SPA --json >/dev/null 2>&1 || true
 done
@@ -39,6 +52,9 @@ p=sys.argv[1]; d=json.load(open(p))
 d['reflection']=[e for e in d.get('reflection',[]) if 'clojure.core.server' not in str(e.get('type'))]
 json.dump(d,open(p,'w'))
 P
+# Fail the build here, not three files later, if the wide-literal entry is missing.
+grep -q 'java.math.BigInteger' $OUT/agent-cfg/reachability-metadata.json \
+  || { echo "build-native: tracing agent did not record java.math.BigInteger (probe-wide)" >&2; exit 3; }
 python3 scripts/build-native-image.py --graal-home $GH --work-dir $OUT/work --output $OUT/amu-native \
   --opt $OPT --native-arg=-H:ConfigurationFileDirectories=$OUT/agent-cfg --classpath-file $CP --first-source ${WALL_AMU_SRC:-$AMU/src}
 echo "built $OUT/amu-native"

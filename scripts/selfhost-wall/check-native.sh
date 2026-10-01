@@ -28,6 +28,13 @@ if [ -z "$N" ]; then
     [ -x "$c" ] && N=$c && break
   done
 fi
+# A reach list may still name a ~/.gitlibs pin or a stale wt-<letter>-<repo> copy; the
+# classpath (make-classpath.py) resolves the newest worktree, so measure THAT file
+# (remap-reach.py), else kotoba-io-* report 'Reader is not exported' on a stale pin.
+if [ -z "$CHECK_NATIVE_NO_REMAP" ] && [ -f "$f" ]; then
+  rf=$(printf '%s\n' "$f" | python3 "$AMU/scripts/selfhost-wall/remap-reach.py" /dev/stdin 2>/dev/null | head -1)
+  [ -n "$rf" ] && [ -f "$rf" ] && f=$rf
+fi
 [ -x "$N" ] || { echo "no native checker: build it with scripts/selfhost-wall/build-native.sh" >&2; exit 2; }
 SP="$(echo "$CP" | tr ':' '\n' | grep '/src$' | sed 's/^/--source-path /' | tr '\n' ' ') --source-path ${WALL_AMU_SRC:-$AMU/src} --source-path $K/lang/compat"
 # The compiler recurses deeply (nbb is run with --stack-size=4096 for the same
