@@ -23,7 +23,9 @@
 # Env: WALL_CP (classpath file, default /private/tmp/wall-cp-11.txt), WALL_K (kotoba-lang checkout), WALL_AMU_SRC,
 #      WALL_NBB_DIR (checkout with node_modules), GUEST_CACHE, GUEST_POOL (native string pool bytes, default 256 MiB),
 #      GUEST_PAIRS (native pair arena, default 32M), GUEST_VECTORS / GUEST_VECTOR_ITEMS (native vector table entries / element words, defaults 4M / 128M: a list of aggregate handles is a vector, every `typed-list-conj` allocates one),
-#      GUEST_SECONDS (native cpu/wall limit, default 600), GUEST_FUEL (native fuel, default unmetered).
+#      GUEST_SECONDS (native cpu/wall limit, default 600), GUEST_FUEL (native fuel, default unmetered),
+#      GUEST_POLICY_CAPS (compile-time grant, wire ids, default 3,37,41; the cache-family guests reach 33,34,35 through their
+#      closure), GUEST_GRANT (run-time grant, default 3,37,41).
 HERE="$(cd "$(dirname "$0")" && pwd)"
 AMU=${WALL_AMU_ROOT:-$(cd "$HERE/../.." && pwd)}
 K=${WALL_K:?set WALL_K}
@@ -52,7 +54,7 @@ guest=$(cd "$(dirname "$guest")" && pwd)/$(basename "$guest")
 SRCDIRS=(${(f)"$(echo "$CP" | tr ':' '\n' | grep '/src$')"} $AMU_SRC $K/lang/compat)
 SP=(); for d in $SRCDIRS; do SP+=(--source-path $d); done
 export KROOTS="${(j/:/)SRCDIRS}"
-key=$(cat $guest <(echo $entry) | shasum -a 256 | cut -c1-16)-$(basename $guest .cljk)
+key=$(cat $guest <(echo $entry ${GUEST_POLICY_CAPS:-}) | shasum -a 256 | cut -c1-16)-$(basename $guest .cljk)
 
 # stale when any source under the classpath is newer than the product (cached refusals included)
 fresh() {  # $1 = product file (GUEST_NOFRESH=1: any existing product counts, for a loop of batches)
@@ -78,7 +80,10 @@ native_ready() {  # sets nbin noffset; returns 0 when a native product exists, 1
   # plain text: the export list becomes [main], and a main that reads stdin, calls ENTRY and writes the answer is appended
   awk '!d && sub(/:kotoba\/export \[[^]]*\]/, ":kotoba/export [main]") {d=1} {print}' $guest > $wrapped
   printf '\n(defn main [] :i64\n  (let [text (typed-cap-call :io/read :string :string "")\n        out (%s text)\n        n (typed-cap-call :io/write :string :string out)]\n    0))\n' $entry >> $wrapped
-  echo '{:allow #{[:cap/call 3] [:cap/call 37] [:cap/call 41]}}' > $pol
+  # the compile-time grant: every capability the module's closure can reach (a refusal otherwise: 'capability policy
+  # denies required effects'). The RUN grant below stays 3,37,41 unless GUEST_GRANT says more.
+  local caps=""; for c in ${(s:,:)GUEST_POLICY_CAPS:-3,37,41}; do caps="$caps [:cap/call $c]"; done
+  echo "{:allow #{$caps}}" > $pol
   out=$(nbb $AMU_SRC/kotoba/compiler/nbb/aarch64_cli.cljk compile $wrapped --target aarch64-macos --jvm-free --policy $pol --output $kexe $SP 2>&1)
   if ! echo "$out" | grep -q ':ok true'; then
     echo "$out" | refusal_of > $nref; [ -s $nref ] || echo "$out" | tail -3 | cut -c1-400 > $nref; return 1
@@ -110,7 +115,7 @@ run_native() {
   KEXE_COMMAND=1 KEXE_STRING_POOL=${GUEST_POOL:-268435456} KEXE_PAIRS=${GUEST_PAIRS:-33554432} \
     KEXE_VECTORS=${GUEST_VECTORS:-4194304} KEXE_VECTOR_ITEMS=${GUEST_VECTOR_ITEMS:-134217728} \
     KEXE_CPU_SECONDS=${GUEST_SECONDS:-600} KEXE_WALL_SECONDS=${GUEST_SECONDS:-600} ${GUEST_FUEL:+KEXE_FUEL=$GUEST_FUEL} \
-    $loader $nbin $(cat $noff) 0 aarch64 3,37,41
+    $loader $nbin $(cat $noff) 0 aarch64 ${GUEST_GRANT:-3,37,41}
 }
 
 if [ $mode = native ]; then

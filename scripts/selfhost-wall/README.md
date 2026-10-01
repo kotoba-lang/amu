@@ -74,6 +74,7 @@ text->text entry with the amu native backend (aarch64 `.kexe`, run by `tools/kex
     native-gaps.sh guests/*.cljk                              # per-function native refusals + operations the wasm emitter and verifier lack
 
 `vx-diff.sh`, `ds-diff.sh` and `tm-diff.sh` resolve the mode first and take `--interp` to force the interpreter. Every
-Form-based guest is refused by the native backend today (list of aggregate handles, `:bytes` fields, `:document` operations);
-the list and the measured speeds are in `docs/selfhost-native-gaps-20261001.md`. Needs `WALL_CP`, `WALL_K`, `WALL_AMU_SRC`,
+guest in `guests/` (and the generated ds guest) compiles natively since 2026-10-02; the gap list, the measured speeds and what is still
+open are in `docs/selfhost-native-gaps-20261001.md`. `bytes-cap.sh` runs the `fs/app-data-bytes` wire end to end; `GUEST_POLICY_CAPS` /
+`GUEST_GRANT` set the compile-time and run-time capability grants of `guest-run.sh`. Needs `WALL_CP`, `WALL_K`, `WALL_AMU_SRC`,
 `WALL_NBB_DIR` as above; `GUEST_CACHE` (default `/tmp/kotoba-guest-cache`) holds compiled products and refusals.
