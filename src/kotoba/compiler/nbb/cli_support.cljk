@@ -175,6 +175,15 @@
 ;; Measured 2026-09-08, the largest artifact in this tree: SHA-512 compiled to
 ;; aarch64-macos, 46,498 characters, 12,520 nodes, depth 12, longest string 64.
 (def ^:private max-artifact-nodes (* 4 1024 1024))
+;; The depth of an artifact is likewise set by what it embeds, not by what a policy
+;; file plausibly is: the sealed program is the KIR of source that may read at depth
+;; 512 (`:max-reader-depth`, lang/guest-grammar.edn), and desugaring nests deeper
+;; than the source (a `cond` of N arms is N nested `if`s). Measured 2026-10-02: the
+;; desugar port (944 functions, `scripts/selfhost-wall/guests`) seals a 134-deep
+;; dispatch chain, which the 128 policy bound refused as "EDN nesting exceeds limit"
+;; in `extract-native` after the compiler and the native verifier had accepted it.
+;; The verifier's own expression-depth ceiling still decides what runs.
+(def ^:private max-artifact-depth 512)
 
 (defn- walk-edn-nodes
   "Visits X and everything under it, answering the running node count. The
@@ -199,8 +208,8 @@
   (walk-edn-nodes limit 0 value)
   value)
 
-(defn- read-edn-form! [node-limit text]
-  (let [forms (kr/read-forms text {:max-depth max-policy-depth
+(defn- read-edn-form! [node-limit depth-limit text]
+  (let [forms (kr/read-forms text {:max-depth depth-limit
                                    :max-token-chars max-policy-token-chars})]
     (when (empty? forms)
       (throw (ex-info "EDN input is empty" {:phase :decode})))
@@ -213,7 +222,7 @@
 ;; supposed to make a build MORE constrained, so it must not be the one input
 ;; read without limits.
 (defn read-edn-file! [path]
-  (read-edn-form! max-policy-nodes (nbb-io/read-text-file path)))
+  (read-edn-form! max-policy-nodes max-policy-depth (nbb-io/read-text-file path)))
 
 (def ^:private structural-index-keys
   "KIR function metadata whose integers are HOST indexes into `:params`, not
@@ -263,7 +272,7 @@
   One narrowing, after the read: `structural-index-keys` above -- host
   indexes, not values."
   [path]
-  (narrow-structural-indexes (read-edn-form! max-artifact-nodes (nbb-io/read-artifact-text-file path))))
+  (narrow-structural-indexes (read-edn-form! max-artifact-nodes max-artifact-depth (nbb-io/read-artifact-text-file path))))
 
 (defn read-artifact-text!
   "`read-artifact-file!` over text already in hand: the sealed handler
@@ -271,7 +280,7 @@
   text (`kotoba.compiler.linux-static-handlers`), and are read exactly --
   every integer a BigInt -- for the same reason a `.kexe` file is."
   [text]
-  (narrow-structural-indexes (read-edn-form! max-artifact-nodes text)))
+  (narrow-structural-indexes (read-edn-form! max-artifact-nodes max-artifact-depth text)))
 
 (defn read-policy-material [args]
   (if-let [path (option args "--policy")]
@@ -294,7 +303,7 @@
   nothing."
   [material]
   (if (:present? material)
-    (read-edn-form! max-policy-nodes (:text material))
+    (read-edn-form! max-policy-nodes max-policy-depth (:text material))
     {}))
 
 (defn read-policy [args]

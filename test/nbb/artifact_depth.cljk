@@ -1,0 +1,25 @@
+(ns test.nbb.artifact-depth
+  "An artifact is read with a larger depth bound than a policy file: it seals the KIR
+  of source that may read at depth 512, and desugaring nests deeper than the source
+  (the desugar port's dispatch chain is 134 deep). A policy file keeps its 128.
+  Run: nbb --classpath <amu src and deps> test/nbb/artifact_depth.cljk"
+  (:require [kotoba.compiler.nbb.cli-support :as support]))
+
+(def ^:private failures (atom 0))
+
+(defn- check! [label ok?]
+  (println (if ok? "ok  " "FAIL") label)
+  (when-not ok? (swap! failures inc)))
+
+(defn- nested [n] (str (apply str (repeat n "[")) "1" (apply str (repeat n "]"))))
+
+(defn- refused? [f]
+  (try (f) false (catch :default _ true)))
+
+(check! "an artifact nested 200 deep is read" (not (refused? #(support/read-artifact-text! (nested 200)))))
+(check! "an artifact nested 500 deep is read" (not (refused? #(support/read-artifact-text! (nested 500)))))
+(check! "an artifact nested 600 deep is refused" (refused? #(support/read-artifact-text! (nested 600))))
+(check! "a policy nested 100 deep is read" (not (refused? #(support/parse-policy-material {:present? true :text (nested 100)}))))
+(check! "a policy nested 200 deep is refused" (refused? #(support/parse-policy-material {:present? true :text (nested 200)})))
+
+(when (pos? @failures) (js/process.exit 1))
