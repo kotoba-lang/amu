@@ -10,23 +10,36 @@
             [kotoba.kir.compatibility :as compatibility]
             #?(:cljs [kotoba.lang.edn :as edn])
             #?(:cljs [kotoba.compiler.nbb.cli-support :as support])
-            #?(:cljs [kotoba.compiler.nbb.compile-cache :as digest])
+            #?(:cljs [kotoba.compiler.nbb.compile-cache :as digest]
+               :kotoba [kotoba.compiler.nbb.compile-cache :as digest])
             #?(:cljs [kotoba.kir.cljs-i64 :as i64])
             #?(:cljs [kotoba.verifier :as verifier])))
 
-;; Kotoba reading (a project-route compile of this module). Admission is
-;; FAIL-CLOSED there and says why by name: the provenance record is checked
-;; structurally over a document, but the two independent checks that admit the
-;; artifact itself have no Kotoba provider yet --
-;;   wasm-validator-unavailable    `WebAssembly.validate` and the byte digest
-;;                                 of the artifact (the hash ability hashes a
-;;                                 string, not bytes; kotoba-wasm emits but
-;;                                 does not validate)
-;;   native-verifier-unavailable   the UTF-8 decode + EDN read + independent
-;;                                 native verifier, which need the host
-;;                                 reader's integer representation
+;; Kotoba reading (a project-route compile of this module). The provenance
+;; record is checked structurally over a document, exactly as the host does,
+;; and for a primary Wasm output the artifact's IDENTITY is checked too: the
+;; target is a wasm target, the primary record is the closed
+;; {:format :sha256 :size} map, :size is the byte count of the artifact and
+;; :sha256 is the SHA-256 of its bytes (the pure sha2 reading of
+;; `compile-cache/sha256-bytes`, byte-identical to node:crypto).
+;;
+;; What is still missing is named, not hidden. An artifact whose identity
+;; checks all pass is STILL refused, because admission also requires that the
+;; module validates, and there is no Wasm validator on the Kotoba route:
+;;   wasm-validator-unavailable    `WebAssembly.validate` is a host engine;
+;;                                 kotoba-wasm emits modules and checks them
+;;                                 only through that engine (its self-validate!)
+;;                                 -- it has no section/type/function-body
+;;                                 validator of its own
+;;   native-verifier-unavailable   the UTF-8 decode + EDN read of the kexe
+;;                                 artifact keeps the host reader's integer
+;;                                 representation (bigint leaves) that the
+;;                                 independent native verifier consumes, and
+;;                                 that representation does not exist here
 ;; A refusal is the only answer: this module never says `committed true` for
-;; bytes it did not check. The host reading is unchanged.
+;; bytes it did not fully check. A wasm artifact whose size or digest does not
+;; match its provenance is refused as `wasm-identity-mismatch`, the host's own
+;; reason. The host reading is unchanged.
 #?(:kotoba
    (defn format [] :keyword :kotoba.output-admission/v1)
    :default nil)
@@ -95,17 +108,45 @@
           (digests? d)
           (= 1 (document-count (field d :outputs)))
           (present? (field d :outputs) :primary)
+          ;; The definition graph must be present and speak its contract (a
+          ;; record without it predates ADR 0300 and is not admitted).
+          (= :map (document-kind (field d :definitions)))
+          (document-equal? (field (field d :definitions) :contract)
+                           (document-keyword :kotoba.definition-identity/v1))
           (= :map (document-kind (field (field d :outputs) :primary)))))
+   :default nil)
+
+#?(:kotoba
+   (defn- wasm-target? [t :document] :bool
+     (or (document-equal? t (document-keyword :wasm32-kotoba-v1))
+         (document-equal? t (document-keyword :wasm32-browser-kotoba-v1))
+         (document-equal? t (document-keyword :wasm32-wasi-kotoba-v1))))
+   :default nil)
+
+#?(:kotoba
+   (defn- wasm-identity? [artifact-bytes :bytes provenance :document] :bool
+     (let [primary (field (field provenance :outputs) :primary)]
+       (and (wasm-target? (field provenance :target))
+            (= 3 (document-count primary))
+            (present? primary :format) (present? primary :sha256) (present? primary :size)
+            (digest? (field primary :sha256))
+            (match-option (document-i64-value (field primary :size)) [:option :i64]
+              (none false)
+              (some size (= size (bytes-count artifact-bytes))))
+            (document-equal? (field primary :sha256)
+                             (document-string (digest/sha256-bytes artifact-bytes))))))
    :default nil)
 
 #?(:kotoba
    (defn admit! [artifact-bytes :bytes provenance :document] :document
      (if (provenance? provenance)
        (if (document-equal? (field (field (field provenance :outputs) :primary) :format) (document-keyword :wasm))
-         (reject! "wasm-validator-unavailable")
+         (if (wasm-identity? artifact-bytes provenance)
+           (reject! "wasm-validator-unavailable: identity (target, size, sha256) verified, but the Kotoba route has no WebAssembly validator (kotoba-wasm validates only through the host engine)")
+           (reject! "wasm-identity-mismatch"))
          (if (document-equal? (field (field (field provenance :outputs) :primary) :format)
                               (document-keyword :kotoba.kexe/v1))
-           (reject! "native-verifier-unavailable")
+           (reject! "native-verifier-unavailable: the kexe artifact needs the host reader's integer representation and the independent native verifier")
            (reject! "unsupported-primary-format")))
        (reject! "malformed-provenance")))
    :default nil)

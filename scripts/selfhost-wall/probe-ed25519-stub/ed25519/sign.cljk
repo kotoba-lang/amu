@@ -1,0 +1,43 @@
+;; PROBE-ONLY stand-in for ed25519.sign: the curve arithmetic as identity/sign (wire 1) and identity/verify (wire 2)
+;; answered by node:crypto in the probe's capability handler, so a differential run of output-attestation exercises
+;; ALL of its own logic at interpreter speed (the pure RFC 8032 implementation costs minutes per signature on the
+;; KIR interpreter). It is not on any product path.
+(ns ed25519.sign
+  {:kotoba/export [secret-key sign verify]}
+  (:require [kotoba.bytes :as kbytes]))
+
+(defn- sign-cap [request :string] :string (identity/sign request))
+(defn- verify-cap [request :string] :string (identity/verify request))
+
+(defn- hex-of [bs :vector-i64] :string (kbytes/hex bs))
+
+(defn- bytes-doc-from [bs :vector-i64 i :i64 d :document] :document
+  (if (>= i (vector-count bs))
+    d
+    (bytes-doc-from bs (+ i 1) (document-vector-conj d (document-i64 (vector-at bs i))))))
+
+(defn- raw-of [hex :string] :vector-i64
+  (option-value-of [:option :vector-i64] (kbytes/unhex hex) (vector-i64)))
+
+(defn secret-key [seed :vector-i64] :document
+  (let [pub (sign-cap (string-concat "pub:" (hex-of seed)))]
+    (assoc (assoc (document-map) :seed (bytes-doc-from seed 0 (document-vector)))
+           :public (bytes-doc-from (raw-of pub) 0 (document-vector)))))
+
+(defn- seed-of [sk :document] :vector-i64
+  (let [d (option-value-of [:option :document] (document-get sk :seed) (document-null))]
+    (doc-ints d 0 (vector-i64))))
+
+(defn- doc-ints [d :document i :i64 out :vector-i64] :vector-i64
+  (if (>= i (document-count d))
+    out
+    (doc-ints d (+ i 1) (vector-conj out (option-value-of [:option :i64]
+                                                          (document-i64-value
+                                                           (option-value-of [:option :document] (document-vector-at d i) (document-null)))
+                                                          0)))))
+
+(defn sign [sk :document message :vector-i64] :vector-i64
+  (raw-of (sign-cap (string-concat "sig:" (string-concat (hex-of (seed-of sk)) (string-concat ":" (hex-of message)))))))
+
+(defn verify [public :vector-i64 message :vector-i64 signature :vector-i64] :bool
+  (= "1" (verify-cap (string-concat (hex-of public) (string-concat ":" (string-concat (hex-of message) (string-concat ":" (hex-of signature))))))))
