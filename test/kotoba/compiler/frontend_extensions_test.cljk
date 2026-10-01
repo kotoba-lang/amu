@@ -1124,7 +1124,9 @@
         definitions (apply str
                            (map (fn [index]
                                   (str "(defn f" index " [] :string \"" literal "\")"))
-                                (range 17)))]
+                                (range 1025)))]
+    ;; amu ADR 0359: the module-total literal bound is 4 MiB (it was the 64 KiB
+    ;; single-value cap); 1025 literals of 4096 bytes is one literal over it
     (is (= "module string literals exceed UTF-8 byte limit"
            (rejection-message (str "(ns too.large (:export [f0]))" definitions))))))
 
