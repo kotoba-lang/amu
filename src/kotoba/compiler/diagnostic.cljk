@@ -161,14 +161,14 @@
 (defn- params-clause-message [#?@(:kotoba [form :document] :default [form])] #?@(:kotoba [:string])
   #?(:kotoba
      (let [params (second form)
-           binding (if (vector? params)
+           with-clause (if (vector? params)
                      (str "{" (option-or (document-string-value
                                           (reduce binding-step (document-string "") params))
                                          "")
                           "}")
                      "{<parameter> <type>}")]
        (str "template module declares (:params " (document-edn-print params) ") and needs an "
-            "instantiation: require it with :with " binding
+            "instantiation: require it with :with " with-clause
             " from an importing module and link the project "
             "(`amu check <entry> --source-path <dir>`); a template is never "
             "compiled on its own"))

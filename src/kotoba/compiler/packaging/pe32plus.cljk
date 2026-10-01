@@ -70,7 +70,11 @@
 ;; `maximum` was 0 and every nonzero field was rejected as "out of range",
 ;; including a relocation displacement of 4085. Both bounds below are powers of
 ;; two, exact as a JVM long and as a JS double alike.
-(def ^:private signed-limit {1 256 2 65536 4 4294967296 8 18446744073709551616})
+;; Kotoba has no 2^64 literal (an i64 tops out at 2^63 - 1) and this packager
+;; only ever emits 1, 2 and 4 byte signed fields, so the Kotoba table omits 8.
+(def ^:private signed-limit
+  #?(:kotoba {1 256 2 65536 4 4294967296}
+     :default {1 256 2 65536 4 4294967296 8 18446744073709551616}))
 
 (defn- signed-le [n width]
   (let [limit (or (signed-limit width)
