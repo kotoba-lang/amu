@@ -137,8 +137,15 @@
    :goal "a declared record ([:ref q]) as a function parameter or result, and a row specialized at a declared schema, compile for x86_64-aiueos-kernel-v1 and aarch64-macos with the oracle verified: the schema table joins the native program when a signature names a reference, and kotoba-verifier re-derives that need; coercion, = over records, a record as an if test and a record entry result stay refused by name"}
   {:id :native-record-operations :gate "native-row-operations-test"
    :goal "the row operations compile natively: record-assoc is qualified by kotoba-native and kotoba.kir's native gate, and kotoba-verifier's record projection sees through a let operand (a row operation elaborates to (record-get T (let [..] (record-new T ..)) :f), refused today as runtime KIR record projection rejected, exit 65, hand-written too) and an if operand ((:a (if (= c 1) m n)), floor :row-unification's join, refused the same way)"}
+  ;; (3) split again (2026-10-01, amu 2846b4c7): the loop slot is
+  ;; kotoba-sema's alone and refused before any target, hosted included; a
+  ;; record slot then compiles natively with nothing else moved, while a
+  ;; [:list T] of records is refused natively by the typed-values gate
+  ;; (typed-list-new not qualified) wherever it is written, loop or not.
+  {:id :loop-slot-types :gate "loop-slot-record-list-closure-test"
+   :goal "kotoba-sema types a loop slot like a let binding: a map-literal slot is its record (not :map), a vector literal of records a [:list T] (not the :i64 placeholder), a closure slot is callable (not an unknown operation) and is a closure to the :function-values refusals; record and closure slots compile for x86_64-aiueos-kernel-v1 and aarch64-macos; a slot recurred to another record, a coerced field, a record or closure slot as an if test, = over them, a list item as an i64, a closure slot as a number and a number for a closure slot stay refused by name"}
   {:id :native-handles :gate "native-record-vector-closure-boundary-test"
-   :goal "kotoba-native qualifies vector ([:list T] of records included) and closure handles, and records, as loop-helper boundary types (the loop slot typed by kotoba-sema, not :map / an unknown operation) and retires map-new; the forms of every floor above compile for x86_64-aiueos-kernel-v1 and aarch64-macos (target refusals exit 65, not 70)"}
+   :goal "kotoba-native qualifies a [:list T] of records (typed-list-new / typed-list-nth / count over one-word handles) natively, a loop slot included, and retires map-new; the forms of every floor above compile for x86_64-aiueos-kernel-v1 and aarch64-macos (target refusals exit 65, not 70)"}
   {:id :browser-text-edit :gate "browser-text-edit-native-test"
    :goal "kotoba-lang/browser's browser.text-edit, migrated only mechanically (defn-, nil's meaning, a :kotoba interop branch), compiles for both native targets and its hosted tests pass on amu's output"}
   {:id :browser-input :gate "browser-input-native-test"

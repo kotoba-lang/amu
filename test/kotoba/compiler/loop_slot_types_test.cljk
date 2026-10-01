@@ -1,0 +1,126 @@
+(ns kotoba.compiler.loop-slot-types-test
+  "ADR 0353 floor :loop-slot-types (split 2026-10-01 from :native-handles).
+
+  A `loop` desugars to a synthesized helper whose parameters are its slots,
+  typed from the helper's one call site. kotoba-sema typed that call site
+  before it typed literals, so a slot was what an untyped literal is: a map
+  literal `:map` (\"expression type mismatch: expected map, got [:record
+  :kotoba.map-literal/a+b ..]\"), a vector literal of records the `:i64`
+  placeholder (\"count requires a bounded vector, a typed set or a canonical
+  typed map; got :i64.\"). And the loop body was desugared without its slots
+  as lexical bindings, so a slot holding a closure was not callable
+  (\"unknown operation: f is not a builtin, ...\") -- while `(+ f 1)` and
+  `(= f g)` over one that was never called were admitted, answering 2 and 1:
+  a closure handle read as a number.
+
+  Now kotoba-sema re-resolves the helpers' slots once literals are typed, to a
+  fixed point; a loop's bindings are lexical bindings with their callable
+  contracts, as a `let`'s are; a slot whose argument is a closure is a closure
+  slot for the :function-values analysis, called or not; and a number literal
+  where a closure slot or parameter is, is refused by name.
+
+  Native: a record slot and a closure slot compile for x86_64-aiueos-kernel-v1
+  and aarch64-macos with the oracle verified. A `[:list T]` of records is still
+  refused there by the typed-values gate -- floor :native-handles.
+
+  What stays refused, each by its literal: a recur giving a slot another
+  record, a coerced field, a record slot as an `if` test, `=` over records, a
+  list item used as an i64, a closure slot as a number, as an equality operand
+  and as an `if` test, and a number recurred into a closure slot."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private prelude
+  (str "(ns b (:schemas {:b/s [:record :b/s [[:a :i64] [:b :i64]]]}))\n"
+       "(defn- mk [] [:ref :b/s] {:a 5 :b 2})\n"))
+
+(def ^:private native-slots
+  "Record and closure slots: admitted on the reference and on both native
+  targets."
+  [["(defn main [] :i64 (loop [m {:a 1 :b 2} i 0] (if (< i 3) (recur (assoc m :a (+ (:a m) 1)) (+ i 1)) (:a m))))" 4]
+   ["(defn main [] :i64 (let [m0 {:a 1 :b 2}] (loop [m m0 i 0] (if (< i 3) (recur (assoc m :a (+ (:a m) 1)) (+ i 1)) (:a m)))))" 4]
+   ["(defn main [] :i64 (loop [m (mk) i 0] (if (< i 3) (recur (assoc m :a (+ (:a m) 1)) (+ i 1)) (:a m))))" 8]
+   ["(defn main [] :i64 (loop [f (fn [x] (+ x 1)) i 0 acc 0] (if (< i 3) (recur f (+ i 1) (f acc)) acc)))" 3]
+   [(str "(defn- run [f [:fn [[:i64] :i64]]] :i64 (loop [g f i 0 acc 0] (if (< i 3) (recur g (+ i 1) (g acc)) acc)))"
+         " (defn main [] :i64 (let [k 4] (run (fn [x] (+ x k)))))") 12]])
+
+(def ^:private list-slots
+  "`[:list T]` slots: admitted on the reference and the hosted target."
+  [["(defn main [] :i64 (loop [xs [(mk) (mk)] i 0 acc 0] (if (< i (count xs)) (recur xs (+ i 1) (+ acc (:a (nth xs i)))) acc)))" 10]
+   ["(defn main [] :i64 (let [xs [(mk) (mk)]] (loop [i 0 acc 0] (if (< i (count xs)) (recur (+ i 1) (+ acc (:a (nth xs i)))) acc))))" 10]
+   ["(defn main [] :i64 (let [xs [{:a 1} {:a 2}]] (loop [i 0 acc 0] (if (< i 2) (recur (+ i 1) (+ acc (:a (nth xs i)))) acc))))" 3]])
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze (str prelude source))) 'main [])))
+
+(defn- refusal
+  ([source] (refusal source nil))
+  ([source target]
+   (try (if target
+          (compiler/compile-source (str prelude source) target)
+          (sema/analyze (str prelude source)))
+        nil
+        (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+          (ex-message error)))))
+
+(deftest loop-slot-record-list-closure-test
+  (testing "admitted on the reference: each slot is typed and each program answers"
+    (doseq [[source answer] (into native-slots list-slots)]
+      (is (= answer (run-main source)) source)))
+  (testing "admitted on the hosted target"
+    (doseq [[source _] (into native-slots list-slots)]
+      (is (= [0 97 115 109]
+             (mapv #(bit-and (int %) 0xff)
+                   (take 4 (:bytes (compiler/compile-source (str prelude source) :wasm32-kotoba-v1)))))
+          source)))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "a record slot and a closure slot compile on both native targets"
+    (doseq [target native-targets
+            [source answer] native-slots]
+      (let [{:keys [artifact]} (compiler/compile-source (str prelude source) target)]
+        (is (pos? (count (:code artifact))) (str target " " source))
+        (is (= answer (#?(:clj long :cljs js/Number) (:value artifact))) (str target " " source)))))
+  (testing "a [:list T] of records is still refused natively (floor :native-handles)"
+    (doseq [target native-targets]
+      (is (= (str "typed values currently require the kotoba-script web target, typed Wasm/CLJS"
+                  " target, or the qualified native one-word string/record/variant/option/result slice")
+             (refusal (ffirst list-slots) target)))))
+  (testing "refused: a slot keeps its record"
+    (is (= (str "expression type mismatch: expected [:record :kotoba.map-literal/a+b [[:a :i64] [:b :i64]]],"
+                " got [:record :kotoba.map-literal/c [[:c :i64]]]")
+           (refusal "(defn main [] :i64 (loop [m {:a 1 :b 2} i 0] (if (< i 3) (recur {:c 1} (+ i 1)) (:a m))))"))))
+  (testing "refused: a field is not coerced"
+    (is (= "expression type mismatch: expected i64, got string"
+           (refusal "(defn main [] :i64 (loop [m {:a 1 :b 2} i 0] (if (< i 3) (recur (assoc m :a \"x\") (+ i 1)) (:a m))))"))))
+  (testing "refused: a record slot is never truthy"
+    (is (= "if test must be bool or an option"
+           (refusal "(defn main [] :i64 (loop [m {:a 1 :b 2} i 0] (if m (recur m (+ i 1)) i)))"))))
+  (testing "refused: = over records"
+    (is (= "equality type is outside the safe value profile"
+           (refusal "(defn main [] :i64 (loop [m {:a 1 :b 2} i 0] (if (= m {:a 1 :b 2}) i (recur m (+ i 1)))))"))))
+  (testing "refused: a list item is its record, not an i64"
+    (is (= "expression type mismatch: expected i64, got [:ref :b/s]"
+           (refusal "(defn main [] :i64 (loop [xs [(mk) (mk)] i 0] (if (< i 1) (recur xs (+ i 1)) (+ 1 (nth xs 0)))))"))))
+  (testing "refused: a closure slot is not a number"
+    (is (= "a function value is not a number: + over a closure is refused; call it instead (ADR 0353)"
+           (refusal "(defn main [] :i64 (loop [f (fn [x] (+ x 1)) i 0] (if (< i 3) (recur f (+ i 1)) (+ f 1))))"))))
+  (testing "refused: closure slots have no equality"
+    (is (= (str "a function value has no equality: (= f g) would compare two closure handles,"
+                " and equality over handles stays refused (ADR 0353)")
+           (refusal "(defn main [] :i64 (loop [f (fn [x] (+ x 1)) g (fn [x] (+ x 2)) i 0] (if (= f g) i (+ i 1))))"))))
+  (testing "refused: a closure slot is never truthy"
+    (is (= (str "if test is :i64, and a number is never truthy: compare it (for example (not= x 0))"
+                " or answer :bool")
+           (refusal "(defn main [] :i64 (loop [f (fn [x] (+ x 1)) i 0] (if f i (recur f (+ i 1)))))"))))
+  (testing "refused: a number is not recurred into a closure slot, nor passed for a closure parameter"
+    (is (= "a number is not a function value: loop binding f holds a closure, and 7 is not one (ADR 0353)"
+           (refusal "(defn main [] :i64 (loop [f (fn [x] (+ x 1)) i 0] (if (< i 3) (recur 7 (+ i 1)) (f i))))")))
+    (is (= "a number is not a function value: parameter f of run holds a closure, and 7 is not one (ADR 0353)"
+           (refusal "(defn- run [f [:fn [[:i64] :i64]]] :i64 (f 1)) (defn main [] :i64 (run 7))")))))

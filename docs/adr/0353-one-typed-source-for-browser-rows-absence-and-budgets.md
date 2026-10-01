@@ -345,7 +345,8 @@ Clojure it is today, the language gains:
    vector and closure handles as loop-helper boundary types and retires
    `map-new`, so every form above compiles for both native targets. Split on
    2026-10-01 into three floors, because measuring showed three changes in
-   three places (ladder comment).
+   three places (ladder comment), and the third again the same day into
+   `:loop-slot-types` and `:native-handles`.
    Floor `:native-record-boundary` (gate
    `native-record-function-boundary-test`, landed 2026-10-01): a declared
    record (`[:ref q]`) as a parameter or result compiled natively and was
@@ -393,10 +394,38 @@ Clojure it is today, the language gains:
    join over two records, a record as the entry's result (still the
    typed-values refusal -- `:native-handles`), a record left with no field, a
    record as an `if` test, a non-record merge operand.
-   Floor `:native-handles`: a `[:list T]` of records, record and closure
-   loop-helper slots (refused today by kotoba-sema before any target), no
-   form lowering to `map-new` (both ADR 0352 reproductions compile natively
-   as of 2026-10-01), and a target refusal exiting 65.
+   Floor `:loop-slot-types` (gate `loop-slot-record-list-closure-test`,
+   landed 2026-10-01, split from `:native-handles` because the loop slot was
+   kotoba-sema's alone and refused before any target): a `loop` desugars to
+   a helper whose parameters are its slots, typed from its one call site --
+   before literals were typed, so a map-literal slot was `:map` ("expression
+   type mismatch: expected map, got [:record :kotoba.map-literal/a+b ..]")
+   and a captured vector literal of records the `:i64` placeholder ("count
+   requires a bounded vector, ...; got :i64."). And the body desugared
+   without its slots as lexical bindings, so a closure slot was not callable
+   ("unknown operation: f is not a builtin, ..."), while `(+ f 1)` and `(=
+   f g)` over a closure slot never called were admitted, answering 2 and 1.
+   Now kotoba-sema (`442e6d78`) re-resolves the helpers' slots once literals
+   are typed, to a fixed point; a loop's bindings are lexical bindings with
+   their callable contracts, as a `let`'s are; a slot whose argument is a
+   closure is a closure to the `:function-values` analysis, called or not;
+   and a nonzero number literal where a closure slot or parameter is, is
+   refused by name -- it was called as a handle and trapped
+   `invalid-pair-handle`, a declared `[:fn ...]` parameter included (0 stays
+   admitted: the empty lazy sequence's word). Measured: record and closure
+   slots answer 4, 4, 8, 3 and 12 under `tools/kexe_loader.c` on aarch64 and
+   on x86_64 (Rosetta), and `amu compile --target x86_64-aiueos-kernel-v1` /
+   `--target aarch64-macos` exit 0 with `:oracle {:status :verified}`; list
+   slots answer 10, 10 and 3 on the reference and compile for
+   `wasm32-kotoba-v1`. Refused by name: a slot recurred to another record, a
+   coerced field, a record or closure slot as an `if` test, `=` over records
+   or closures, a list item used as an i64, a closure slot as a number, and
+   a number recurred into a closure slot.
+   Floor `:native-handles`: a `[:list T]` of records natively (refused by the
+   typed-values gate, `typed-list-new` not qualified, wherever it is written,
+   a loop slot included), no form lowering to `map-new` (both ADR 0352
+   reproductions compile natively as of 2026-10-01), and a target refusal
+   exiting 65.
 
 Then browser moves, whole component by component (text-edit, input, surface
 with cssom and dom-gpu), and the hosted engine switches to amu's output of
