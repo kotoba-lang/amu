@@ -160,15 +160,20 @@
 ;;   13 :io/write 37                14 :gpu/compute 42
 ;;   15 :env/read 33               16 native TCP 43..47 (the net broker;
 ;;                                    which wire is the request's first byte)
+;;   17 :fs/app-data 35 over a :bytes payload (kinds 8 and 9)
 ;;
 ;; Typed kinds: 1 string, 2 option-i64, 3 result-i64, 4 clock-v1,
-;; 5 dataspace-v1, 6 ui-commit-v1, 7 ui-event-v1.
+;; 5 dataspace-v1, 6 ui-commit-v1, 7 ui-event-v1, 8 bytes-v1 (:bytes request,
+;; :bytes result), 9 string-bytes-v1 (:string request, :bytes result); 8 and 9
+;; belong to wire 35 only.
 (defn- cap-provider [id kind]
   (cond
     (= kind 4) (if (= id 7) 1 -1)
     (= kind 5) (if (= id 24) 2 0)
     (= kind 6) (if (= id 9) 3 0)
     (= kind 7) (if (= id 10) 4 0)
+    (= kind 8) (if (= id 35) 17 -1)
+    (= kind 9) (if (= id 35) 17 -1)
     (= kind 1) (cond (= id 35) 5
                      (= id 34) 6
                      (= id 39) 7

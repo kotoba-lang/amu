@@ -1,0 +1,10 @@
+(ns probe.bytes-cap {:kotoba/export [main]})
+(defn main [] :i64
+  (let [path "/tmp/kexe-bytes-cap/f.bin"
+        payload (bytes-from-vector-i64 (vector-i64 0 255 128 10 200))
+        w (fs/app-data-bytes (str path "WRITE_SEP") payload)
+        r (fs/app-data-bytes path)
+        part (fs/app-data-bytes (str path "RANGE_SEP1:3"))
+        n (+ (* 100000 (bytes-count r)) (* 1000 (bytes-count part)) (bytes-at r 1))
+        o (io/write (str "n=" n))]
+    0))

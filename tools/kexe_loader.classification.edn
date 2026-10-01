@@ -55,6 +55,7 @@
   "checked_string_substring" {:class :mechanism}
   "checked_typed_cap_call" {:class :mechanism :before :decision
                             :moved "allow-list (b cap-admitted), kind agreement (b op 1), the wire id x kind -> provider table (b op 0); the :fs/app-data request-form dispatch (b handlers op 1, fs-form) and the wire 20 / 23 routing (b handlers op 0, handler-for), 2026-09-25"}
+  "bytes_from_raw" {:class :mechanism :new true}
   "checked_vector_alloc" {:class :mechanism}
   "checked_vector_assoc" {:class :mechanism}
   "checked_vector_assoc_in_place" {:class :mechanism}
@@ -97,6 +98,9 @@
   "fs_app_data_stat_provider" {:class :mixed :left "answer vocabulary"}
   "fs_app_data_unlink_provider" {:class :mixed :left "request grammar"}
   "fs_app_data_write_provider" {:class :mixed :left "WRITE_SEP / APPEND_SEP grammar, single-token rule, append sink policy"}
+  "fs_app_data_bytes_provider" {:class :mechanism :new true}
+  "fs_app_data_dispatch" {:class :mixed :new true :before :mixed
+                          :left "the form dispatch moved out of checked_typed_cap_call unchanged: which form token is which form is still handlers op 1 (b)"}
   "fs_browse_provider" {:class :mixed :left "listing format NAME<TAB>D, entry bound"}
   "gpu_compute_provider" {:class :mechanism}
   "granted_span" {:class :mechanism}
@@ -242,6 +246,9 @@
   "valid_ui_event" {:class :decision :left "ui-event-v1 shape"}
   "valid_ui_event_request" {:class :decision :left "ui-event-v1 request shape"}
   "valid_ui_event_result" {:class :decision :left "ui-event-v1 result shape"}
+  "valid_bytes_handle" {:class :decision :new true :left "a :bytes value is a vector handle no longer than the bytes value limit"}
+  "valid_typed_request" {:class :decision :new true :left "kinds 8 and 9 judge the request side: 8 a bytes handle, 9 a string handle"}
+  "valid_typed_result" {:class :decision :new true :left "kinds 8 and 9 judge the result side: a bytes handle"}
   "valid_ui_node" {:class :decision :left "ui node shape"}
   "valid_ui_nodes" {:class :decision :left "at most 32 ui nodes"}
   "valid_utf8" {:class :mechanism :note "canonical UTF-8 is a published definition (RFC 3629), not a choice this loader makes"}
