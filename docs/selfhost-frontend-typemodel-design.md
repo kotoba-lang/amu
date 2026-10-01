@@ -412,3 +412,31 @@ reader a float Form (`match admits _, an unqualified symbol, ...`), which is the
 sema suite (`run-tests.cljk` on nbb) of the tree before and after (HEAD against the working tree): 621 tests, 2154 passed, 76 failed, 24 errors on both sides, the same 100 outcome lines.
 The ported count: every `desugar-*` definition of the module has a Kotoba body (`desugar-template-parts`, the template expander's, lives in `namespace_defs` and is not this module's); the module has 678 dual-runtime top-level forms besides the `ns`, none host-only, 586 Kotoba definitions in its view.
 Walls recorded above; `amu check` of the real `frontend/desugar.cljk` stops, at the shipped bounds, at the dependency chain (`expand`/`validate`/`infer` not Kotoba-clean when it was run) and then at ADR 0360.
+
+## 9. infer.cljk on the Kotoba route: the refusal data channel and the inference context (2026-10-02)
+
+**(1) Refusal data.** `:fe/err` is `[msg code form phase data]`; `data` is a Form map keyed like the host's ex-data
+(`:kotoba.error/expected`, `:actual`, `:field`, `:use-site`). `fe-reject-data` builds one; `infer-call-type`'s catch re-throws
+with `:kotoba.error/use-site` exactly as the host does. All 12 modules declaring the schema carry the field.
+
+**(2) The context.** The host dynamic vars of infer.cljk are the record `:ie/ctx` (`schemas row-schemas handlers final tail
+names recording recorded collect throws known tbl`), `tbl` being the constant tables parsed once. A pass is
+`(ctx, form, locals, sigs) -> :ie/r {type ctx'}`: the volatile cells (`*abort-throw-types*`, `*loop-helper-recorder*`) are
+`throws`/`recorded` fields returned in `ctx'`; `binding` is "set field, infer, restore field" (`ie-infer-t`, the `try` arm).
+`*abort-error-types*` is `known`. Remaining dynamic vars (`*synthetic-counter*`, `*loop-result-type*`) belong to the abort/loop passes.
+
+**(3) Ported** (120 `infer.cljk` definitions are now dual-runtime; checked by the native checker): the leaf helpers, numeric
+typing, row operations, library predicates, `infer-expression-type(-impl)`, `infer-call-type(-impl)`. 116 of the 151 call arms are
+table-shaped (`require arg_i T_i ... result`) and are data (`:specs`, 14 runs that keep the host `cond` order), generated from the host
+text by a parser; the other arms are functions. **Discipline found:** an imported aborting function does not propagate, so
+`namespace_defs` now exports error *builders* (`unbound-symbol-error`, `unknown-operation-error`) and the throw is local; a throw
+may sit in an `if` branch, a call to an aborting function may not (use `throw` of the builder); `(catch [:ref :fe/err] e ...)`
+with a helper that returns `[:ref :fe/err]` (a `record-new` has the resolved record type and clashes with the ref).
+
+**(4) Not yet ported (still host-only on the Kotoba route):** `elaborate-named-ability(ies)`, the loop-helper family,
+`absence-leaves`/`resolve-absence-if`, `parameter-use-conflict!`, `infer-absent-parameter-types/-results`, the abort passes
+(`infer-abort-error-types`, `elaborate-aborts`, 15k chars), `infer-closure-refinements` (20k), `check-value-types!`.
+**Not yet done:** the differential against the host (plan: record real `infer-expression-type` calls on the host while analysing the
+test programs and replay them in the guest, plus a generated corpus per spec arm with each argument position wrong).
+Known divergences: an arity-short `nth` on a spec arm reports a type mismatch against nil where the host raises an internal
+failure; a Form set iterates in source order, not hash order, in `abort-callee-sites`.
