@@ -167,8 +167,17 @@
    :goal "a [:map K V] of one-word keys and values is a native handle type (typed-map-new / typed-map-get / typed-map-assoc / typed-map-dissoc over the word arena), so the hiccup Node -- whose elem carries [:map :keyword :string] attrs -- crosses a native function boundary and floor :hiccup-node's programs compile for x86_64-aiueos-kernel-v1 and aarch64-macos; equality over a map handle stays refused"}
   ;; Both measured 2026-10-01 while closing :native-handles; each is
   ;; kotoba-sema's and refused before any target, hosted included.
+  ;; Landed 2026-10-02 in kotoba-sema (0632bed0); ADR 0353 has the
+  ;; measurements.
   {:id :empty-map-literal :gate "empty-map-literal-is-typed-test"
    :goal "{} is not the legacy keyword->i64 map: (assoc {} :a 1) is the record {:a 1}, an empty literal with no row to extend is refused by name, and no form lowers to map-new on any target; match map patterns read records"}
+  ;; Measured 2026-10-02 while closing :empty-map-literal: a row is inferred
+  ;; from (:a m) but not from (get m :a), and a match map pattern projects
+  ;; its scrutinee with get, so (defn- f [m] (match m {:a x} x :else 0)) is
+  ;; refused "expression type mismatch: expected map, got i64" -- the
+  ;; retired map's name. kotoba-sema's alone, before any target.
+  {:id :row-get-and-match :gate "row-get-and-match-read-a-row-test"
+   :goal "(get m :a) and (get m :a d) on an unannotated parameter read a row as (:a m) does, so a match map pattern over a parameter specializes per record -- an arm naming a key the record lacks does not match in that specialization; a get with a computed key on a row stays refused by name"}
   {:id :loop-slot-beside-row :gate "loop-slot-typed-beside-a-row-read-test"
    :goal "a [:list T] loop slot is typed whatever precedes the loop: (let [ys {:a 1}] (+ (:a ys) (loop [zs [(mk) (mk)] i 0] (if (< i 1) (recur zs (+ i 1)) (count zs))))) answers 2, refused today \"count requires a bounded vector, ...; got :i64.\" while the same loop without the row read is admitted"}
   {:id :browser-text-edit :gate "browser-text-edit-native-test"

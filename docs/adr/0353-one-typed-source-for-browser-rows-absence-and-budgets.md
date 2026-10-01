@@ -344,7 +344,7 @@ Clojure it is today, the language gains:
    a dependency on `--source-path`.
 9. **Native handles at loop boundaries.** kotoba-native qualifies record,
    vector and closure handles as loop-helper boundary types and no form
-   lowers to `map-new` (the empty literal's, floor `:empty-map-literal`), so
+   lowers to `map-new` (since floor `:empty-map-literal`, below), so
    every form above compiles for both native targets. Split on
    2026-10-01 into three floors, because measuring showed three changes in
    three places (ladder comment), and the third again the same day into
@@ -446,8 +446,8 @@ Clojure it is today, the language gains:
    structural equality (`record-equal`, `typed-set-equal`, `typed-map-equal`,
    `hetero-vector-equal`) and a record as the entry's result. `map-new`: no
    map literal with fields lowers to it and both ADR 0352 reproductions are
-   records that compile natively; the empty literal `{}` still lowers to it,
-   which is floor `:empty-map-literal`. Not reached: `:hiccup-node`'s
+   records that compile natively; the empty literal `{}` did, until floor
+   `:empty-map-literal`. Not reached: `:hiccup-node`'s
    programs, whose node schema reaches a `[:map :keyword :string]`, which has
    no native representation (exit 65, "does not qualify the boundary type
    [[:ref :kotoba.hiccup/node]]") -- floor `:native-hiccup-node`. Measured: a program summing a list
@@ -493,6 +493,39 @@ Clojure it is today, the language gains:
    both targets; under the plain `kbb` engine's default host stack the
    reference interpreter exhausts it (`host/stack-exhausted`), which is why
    the gate pins the smaller trees.
+   Floor `:empty-map-literal` (gate `empty-map-literal-is-typed-test`,
+   landed 2026-10-02; point 3's retirement of the keyword->i64 map, carried
+   to the literal that still produced it): `{}` desugared to `(map-new)`, the
+   pair map, whatever the program put in it -- `(assoc {} :a 1)` was that map,
+   `(get {} :a 0)` answered 0, `{}` where a record was declared was
+   "expected [:ref q], got map", and a `match` map pattern refused a record
+   scrutinee ("match map patterns admit the bounded map only; this scrutinee
+   is a record"), which since `:literal-typing` meant every literal one.
+   Now kotoba-sema (`0632bed0`): `(assoc {} :k v ..)` is the record of the
+   keys it assoc's, the literal `{:k v ..}` (fields in key order, a repeated
+   key's last value winning); `{}` where its context declares a record is
+   that record with every field absent, so only an all-option record has an
+   empty literal, and where it declares `[:map K V]` that map, empty; an
+   integer or string first key is the typed map it already was; a match map
+   pattern on a record decides presence from the type -- a field it has is
+   present, an arm naming a key it lacks does not match and is folded away
+   rather than typed; the trap synthesizer no longer writes `(map-new)` as a
+   `:map` default. Measured: the gate's 14 programs answer on the KIR
+   reference what they answer under `compile-source` for
+   `wasm32-kotoba-v1`, `x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1`
+   with the oracle verified, and none lowers to `map-new`; `amu compile
+   --target x86_64-aiueos-kernel-v1` / `--target aarch64-macos` of a program
+   using all three (assoc into `{}`, a two-arm match, an all-option `{}`)
+   exit 0 with `:oracle {:status :verified}`. The gate was red on kotoba-sema
+   `442e6d78` (5 failed, 25 errored assertions), green on `0632bed0`. No
+   aiueos kernel source (127 on disk) writes `{}`, `match`, `map-new` or a
+   `:map` type, so no kernel object can move. Refused by name: `{}` with
+   nothing to type it ("an empty map literal {} has no row to extend: ..."),
+   read, counted, let-bound or spelled `(map-new)`; a record context whose
+   field is not an option; a coerced field; a record as an `if` test; `=`
+   over records; a key the record lacks. Found and left to its own floor
+   (`:row-get-and-match`): `(get m :a)` is not a row read, so a `match` over
+   an unannotated parameter is refused before specialization.
 
 Then browser moves, whole component by component (text-edit, input, surface
 with cssom and dom-gpu), and the hosted engine switches to amu's output of
