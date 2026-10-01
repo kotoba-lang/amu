@@ -8,6 +8,7 @@ K=${WALL_K:?set WALL_K}
 CP=$(cat ${WALL_CP:?set WALL_CP})
 export KTEST=${KTEST:?set KTEST to kotoba-sema/test}
 export KROOTS="$(echo "$CP" | tr ':' '\n' | grep '/src$' | tr '\n' ':')${WALL_AMU_SRC:-$AMU/src}:$K/lang/compat"
+export SELFHOST_WALL_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd ${WALL_NBB_DIR:-$AMU}
 VXM=${VX_MODULE:-$(echo "$CP" | tr ':' '\n' | grep 'kotoba-sema/src$' | head -1)/kotoba/compiler/validate_expr.cljk}
 . "$HERE/golden-wrap.sh"

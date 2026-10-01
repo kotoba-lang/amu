@@ -1,0 +1,5 @@
+(ns probe.vx-main
+  {:kotoba/export [vx-run]}
+  (:require [kotoba.compiler.validate-expr :as vx])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword] [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]}))
+(defn vx-run [text :string] :string (vx/run-batch text))

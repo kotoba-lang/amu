@@ -328,16 +328,52 @@
        "  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword] [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]}))\n"
        "(defn vx-run [text :string] :string (vx/run-batch text))\n"))
 
-(defn load-guest []
-  (let [root "/tmp/probe_vx_main.cljk"]
-    (.writeFileSync fs root guest-main)
-    (let [graph (pf/load-closed-graph root roots)
-          linked (project/link-source (:sources graph) (:root graph))
-          hir (sema/analyze (:source linked) {:admit-linked-synthetics? true})]
-      (kir/lower hir))))
+;; ---- the Kotoba side as COMPILED code (guest-run.sh), the interpreter only on request or when no compiler admits the guest ----
+;; Default mode is native (amu aarch64 kexe under tools/kexe_loader.c), then wasm under node (BOOTSTRAP), then the KIR
+;; interpreter (BOOTSTRAP). `--interp` (or GUEST_MODE=interp) skips the compilers. The refusal that sent a guest down a
+;; mode is printed (and cached by guest-run.sh), so the gap list stays visible. docs/selfhost-native-gaps-20261001.md.
+(def ^:private child-process (js/require "node:child_process"))
+(def ^:private here (.-SELFHOST_WALL_DIR js/process.env))
+(def ^:private interp-only? (or (some #{"--interp"} (js->clj (.-argv js/process))) (= "interp" (.-GUEST_MODE js/process.env))))
+(defn- guest-run [args input]
+  (.spawnSync child-process "zsh" (clj->js (into [(str here "/guest-run.sh")] args))
+              #js {:input input :encoding "utf8" :maxBuffer (* 512 1024 1024)
+                   :env (js/Object.assign #js {} js/process.env #js {:GUEST_NOFRESH (if (= "--resolve" (first args)) "" "1")})}))
+(defn resolve-guest-mode
+  "native | wasm | interp for the guest file and entry (compiles on first use; the answer is cached)."
+  [path entry]
+  (if interp-only?
+    "interp"
+    (let [r (guest-run ["--resolve" path entry] "")]
+      (when-let [e (not-empty (.-stderr r))] (js/process.stderr.write e))
+      (let [m (str/trim (str (.-stdout r)))]
+        (if (#{"native" "wasm"} m) m "interp")))))
+(defn run-compiled
+  "Run the compiled guest on TEXT (one batch); a trap or refusal throws, like the interpreter's."
+  [mode path entry text]
+  (let [r (guest-run [(str "--" mode "-only") (str "--") path entry] text)]
+    (when-not (zero? (.-status r))
+      (throw (ex-info (str "guest trap (" mode "): " (subs (str (.-stderr r)) 0 (min 300 (count (str (.-stderr r)))))) {})))
+    (.-stdout r)))
 
-(defn run-batch [lowered text]
-  (kir/execute lowered 'vx-run [text] {:fuel 100000000000 :frames 100000 :cells 1000000000 :bytes 1000000000}))
+(def ^:private vx-root "/tmp/probe_vx_main.cljk")
+
+(defn- interp-load []
+  (let [graph (pf/load-closed-graph vx-root roots)
+        linked (project/link-source (:sources graph) (:root graph))
+        hir (sema/analyze (:source linked) {:admit-linked-synthetics? true})]
+    (kir/lower hir)))
+
+(defn load-guest []
+  (.writeFileSync fs vx-root guest-main)
+  (let [m (resolve-guest-mode vx-root "vx-run")]
+    (println "guest mode:" m (if (= m "interp") "(BOOTSTRAP: KIR interpreter on nbb)" ""))
+    (if (= m "interp") {:mode "interp" :lowered (interp-load)} {:mode m})))
+
+(defn run-batch [g text]
+  (if (= "interp" (:mode g))
+    (kir/execute (:lowered g) 'vx-run [text] {:fuel 100000000000 :frames 100000 :cells 1000000000 :bytes 1000000000})
+    (run-compiled (:mode g) vx-root "vx-run" text)))
 
 (defn batches [cases]
   (let [prefix (str "[" (enc (set fe/forbidden-heads))

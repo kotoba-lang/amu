@@ -53,3 +53,18 @@ the host side of the differential binds each to a fresh atom/volatile, the guest
 A case the guest cannot decide (a trap) is rerun alone and named `TRAP <message>`. `ds-corpus/*.kotoba` holds programs written
 for the differential (loops, `dotimes`/`doseq`, `filter`/`reduce`/`map`/`fn`/..., with their refusals); add the directory to
 `DS_EXTRA`. `DS_WHY=1` lists the cases dropped before comparison (an unprintable value, a case over 30000 bytes).
+
+## Compiled Kotoba side (native by default), 2026-10-01
+
+The Kotoba reading of a differential no longer has to run on the KIR interpreter on nbb. `guest-run.sh` compiles a module's
+text->text entry with the amu native backend (aarch64 `.kexe`, run by `tools/kexe_loader.c`), falls back to wasm under node
+(bootstrap) and then to the interpreter (bootstrap), printing and caching the refusal at each step:
+
+    guest-run.sh [--native-only|--wasm-only|--interp] [--resolve] <guest.cljk> <entry> < cases > answers
+    case-diff.sh [--native|--wasm|--interp] [--limit N]      # kotoba.string.case vs the host, all 1.1 M scalar values
+    native-gaps.sh guests/*.cljk                              # per-function native refusals + operations the wasm emitter and verifier lack
+
+`vx-diff.sh`, `ds-diff.sh` and `tm-diff.sh` resolve the mode first and take `--interp` to force the interpreter. Every
+Form-based guest is refused by the native backend today (list of aggregate handles, `:bytes` fields, `:document` operations);
+the list and the measured speeds are in `docs/selfhost-native-gaps-20261001.md`. Needs `WALL_CP`, `WALL_K`, `WALL_AMU_SRC`,
+`WALL_NBB_DIR` as above; `GUEST_CACHE` (default `/tmp/kotoba-guest-cache`) holds compiled products and refusals.

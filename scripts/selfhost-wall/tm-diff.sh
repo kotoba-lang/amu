@@ -9,6 +9,7 @@ CP=$(cat ${WALL_CP:?set WALL_CP})
 export TM_GUEST=${TM_GUEST:-/tmp/tm_guest.cljk}
 python3 "$HERE/tm-gen.py" "${FRONTEND:?set FRONTEND to kotoba-sema/src/kotoba/compiler/frontend.cljk}" "$TM_GUEST" || exit 1
 export KROOTS="$(echo "$CP" | tr ':' '\n' | grep '/src$' | tr '\n' ':')${WALL_AMU_SRC:-$AMU/src}:$K/lang/compat"
+export SELFHOST_WALL_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd ${WALL_NBB_DIR:-$AMU}
 ulimit -s ${WALL_ULIMIT_S:-65520} 2>/dev/null
 . "$HERE/golden-wrap.sh"
