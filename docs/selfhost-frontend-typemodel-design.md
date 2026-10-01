@@ -254,3 +254,64 @@ kotoba-lang `lang/stdlib`, `examples`, `bench`, `lang/migration-pilots` programs
 compared, **462 agree, 0 disagree**, 61 unported (24 map/set/f64 literals, 17 `invoke`, 7 `:document` context, 5
 document-head lowering, `eval`, `map`, `char`, `assert!`, `map-indexed`). Host behaviour unchanged: the sema suite
 (`run-tests.cljk` on nbb) has the same 77 failures / 25 errors, the same tests, before and after.
+
+## 7. The registries as env fields; the rest of the desugar half (2026-10-01)
+
+Section 6 ended on one wall: the heads that lower through `loop` or lift a lambda need the state the host keeps in
+dynamic vars. That wall is gone; the state is `:fe/env` fields and the heads are ported.
+
+**The fields** (every module that declares the `:fe/env` schema carries the same line): `helpers` (a Form vector of the
+synthesized definitions `*pending-loop-helpers*` collects: loop helpers, lazy-map/lazy-filter helpers), `shapes`
+(`*loop-helper-shapes*`: helper name -> `{:bindings n :declared-result t :known-types m}`), `loop-result` and
+`loop-known` (`*loop-result-type*`, `*loop-known-types*`), `lambda-counter` and `lambdas` (`*lambda-counter*`,
+`*pending-lambdas*`: `{:id :arity :captures :helper {...}}`), `dispatchers` (`*required-closure-dispatchers*`, a set of
+`[result arity]`), `uses-apply`, `uses-lazy`. A pass returns the grown env exactly as it returns the synthetic counter, so
+the order of `__kotoba_loop_N` / `__kotoba_lambda_ID_arityN` / `__kotoba_*_N` names is the host's evaluation order, and the
+caller of the whole analysis reads the helper definitions back from the final env. `binding` of the loop overrides, the
+absence mode, the lexical set and the abort context is "set the field for the extent of the call, restore it after".
+
+**Ported over Form** (host bodies untouched): `loop` (free-variable capture, `recur` replacement, the parameter ceiling
+message), `dotimes`, `doseq` (binding-vector parser, modifiers, the 16-wide unrolled blocks, the pair-sequence cursor walk
+and the counter the host advances for the pair form it builds even for a vector), `filter`/`remove`, `reduce` (with and
+without init; primitive, named, inline and stored callbacks; map chains; list and document sources), `map` (1-5 sources,
+packed sources, stored callbacks), `map-indexed`, `mapv`, `filterv`, `into` (and its transducer rewrite), `fn` (fixed and
+variadic clauses, multi-arity, captures), `fn-ref`, `apply`, `invoke`, direct calls of a local closure, `take`/`drop`,
+`lazy-cons`/`lazy-first`/`lazy-rest`/`lazy-empty?`/`lazy-map`/`lazy-filter`, `char`, `string-join`, `match`, `let` with
+vector/map destructuring (`destructure-binding`: `:keys`, `:ns/keys`, `:or`, `:as`, explicit entries) and the `:i64` /
+`:document` local-type tracking of the `let` arm, `assert!`/`retract!`/`observe!`/`facet-enter!`/`facet-leave!`,
+`cap-call`/`typed-cap-call`/`eval`, closed document literals (`document`, and any closed literal in a `:document` context),
+the collection heads over a document, map literals (pair map, closed anonymous record, typed map, the record named by the
+context), set literals and f64 literals. `unported-heads` is empty.
+
+**Discipline found on the way.** (1) A `:bool` record field must hold a real boolean: a comparison's 0/1 is accepted by `if`
+but not stored, "value is not a boolean" (`with-none` normalizes through `if`). (2) An aborting call may not be an argument of
+another call (not in tail position, not a `let` value): bind it first; an `if` whose branch aborts cannot be a `let` value, so
+hoist it into a helper. (3) `form/is-nil?` on an absent key is `nil-form`, so "absent" and "present and nil" must be told
+apart with `form-has?`. (4) A name defined both under `#?(:kotoba ...)` and as a plain host `defn` in the same module is two
+definitions on the Kotoba route: either wrap the host text as `:default` or give the Kotoba function another name.
+
+**Still refused by name** (never an ordinary call): a dispatcher family over a structured result type (its name is a SHA-256
+of the descriptor), an `:f32` context for a float literal (the exact-or-refused narrowing), quoted symbol sets / maps and the
+refusals of quoted data, and the float-literal reader shape that the host recognizes by reader metadata (a Form cannot carry it).
+`desugar-template-parts` is the template expander's, in `namespace_defs`.
+
+**Differential** (`scripts/selfhost-wall/ds-diff.sh`). A case now agrees only when the form AND the five side registries
+(`helpers shapes lambdas dispatchers uses-apply uses-lazy`) are equal; the host binds each var to a fresh atom/volatile on
+its owning module (the facade's dynamic vars are snapshots after the split). Integers printed by the host as
+`#object[BigInt N]` used to drop a case before the comparison (roughly half of the corpus did not reach it); `norm` fixes
+that. `let` and `loop` forms are cases again. A trapping batch is rerun case by case and the trapping case named.
+`scripts/selfhost-wall/ds-corpus/*.kotoba` are programs written for the differential, each with its refusals.
+
+**Measured (2026-10-01, guest from kotoba-sema 89a0e79).** `ds-diff.sh` over every list form of kotoba-sema's test programs, kotoba-lang
+`lang/stdlib`, `examples`, `bench`, `lang/migration-pilots` and `scripts/selfhost-wall/ds-corpus` (`DS_MAX=200 DS_TOTAL=900`): 900
+forms, **899 compared, 899 agree, 0 disagree**, 1 unported (`(eval (quote (+ 40 2)))`: the refusals of quoted data). Before the ports
+of this section the same figures were 818 of 900 compared (section 6's coverage was measured on a corpus that lost roughly half of
+its forms to the BigInt printing, 462 of 523). `ds-corpus` alone: 345 of 345 agree, 0 unported. Host behaviour unchanged:
+`amu refactor verify --runner run-tests.cljk` of the tree after the ports against the tree before them: 620 tests, 2147 passed,
+77 failed, 25 errors on both sides, 205 outcome lines each, differences 0.
+
+Of the 31 `desugar-*` definitions, 28 are ported (`lexical-call`, `dotimes`, `doseq`, `match`, `map`, `map-against-record`,
+`dataspace-form` joined section 6's 22; `quoted-datum` is complete except sets / maps / refusals), left: `desugar-template-parts`
+(the template expander's, in `namespace_defs`) and the quoted-data refusals. The first whole-file refusal of the facade is no
+longer in the desugar half: `amu check` of `frontend.cljk` stops at `frontend/base.cljk:689` (`ex-info-data-argument`: "fn value
+requires unique arities with zero to four unique parameters"), the first module the facade requires.
