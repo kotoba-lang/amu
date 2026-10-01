@@ -1,0 +1,159 @@
+(ns kotoba.compiler.native-hiccup-node-test
+  "ADR 0353 floor :native-hiccup-node.
+
+  Measured 2026-10-01 (amu c0211a86, before this floor): every program of
+  floor :hiccup-node compiled on the hosted targets and was refused by both
+  native ones with \"typed values currently require the kotoba-script web
+  target, ...\". The node's closed schema reaches the elem record's
+  `[:map :keyword :string]` attrs, and `typed-map-new` had no native
+  qualification, so even a program that never read an attribute could not
+  build a node.
+
+  Now a `[:map K V]` whose key is a scalar native code compares by content
+  (i64, bool, string, keyword) and whose value is any one-word handle is a
+  native handle type. osaho qualifies `typed-map-new` / `-count` /
+  `-contains` / `-get` / `-assoc` / `-dissoc`; kotoba-native lowers them to
+  the `[:list T]` word arena with keys and values interleaved, searched by
+  emitted helpers (`string=?` for a text key, the word compare otherwise),
+  in the reference's entry order and under its 31-entry limit;
+  kotoba-verifier re-derives them, and a record read out of a map is that
+  record to a projection.
+
+  `test/nbb/native_word_ops.cljk` runs the typed-map fixture on the
+  reference, restricted ESM and the aarch64 / x86_64 code through
+  `tools/kexe_loader.c`; this gate pins the compile and the oracle.
+
+  What stays refused, each by its literal: `=` over maps (no structural
+  equality over handles), a map as an `if` test, a map value used as another
+  type, an assoc past 31 entries (`map-too-large`, so no artifact is sealed);
+  natively, exit 65: `keys` / `vals` (entry order is not a native
+  operation), a key native code cannot compare by content (a record), and a
+  string as the entry's result (the sealed native result is a word, as for
+  every native program)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.cli :as cli]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private node "[:ref :kotoba.hiccup/node]")
+(def ^:private nodes "[:list [:ref :kotoba.hiccup/node]]")
+
+(def ^:private view
+  "browser.surface's window-node, as floor :hiccup-node's gate writes it."
+  (str "(defn- window-node [title :string focused :bool] " node "\n"
+       "  [:section {:class (if focused \"window focused\" \"window\") :data-id \"w1\"}\n"
+       "   [:header {:class \"titlebar\"} title]\n"
+       "   [:<> \"ab\" [:p \"c\"]]\n"
+       "   (str \"x\" \"y\")])\n"))
+
+(def ^:private walk
+  (str "(defn- size [n " node "] :i64\n"
+       "  (cond (string? n) (string-byte-length n)\n"
+       "        (vector? n) (+ 1 (size-list (:children n)))\n"
+       "        (seq? n) (size-list n)))\n"
+       "(defn- size-list [cs " nodes "] :i64\n"
+       "  (loop [i 0 acc 0] (if (< i (count cs))"
+       " (recur (+ i 1) (+ acc (size (typed-list-nth " nodes " cs i)))) acc)))\n"))
+
+(defn- probe [expr]
+  (str view "(defn main [] :i64 (match-variant (window-node \"hello\" true) " node
+       " (:text s 0) (:elem e " expr ") (:frag f 0)))"))
+
+(def ^:private prelude
+  (str "(ns b (:schemas {:b/s [:record :b/s [[:a :i64]]]}))\n"
+       "(defn- mk [] [:ref :b/s] {:a 5})\n"
+       "(defn- attrs [focused :bool] [:map :keyword :string]\n"
+       "  (typed-map-new [:map :keyword :string] :class (if focused \"window focused\" \"window\") :data-id \"w1\"))\n"
+       "(defn- ids [] [:map :i64 :i64] (typed-map-new [:map :i64 :i64] 3 30 4 40 5 50))\n"))
+
+(def ^:private hiccup-programs
+  "Floor :hiccup-node's admitted programs whose entry answers a word."
+  [[(probe "(count (:children e))") 3]
+   [(probe "(if (= (:tag e) :section) 1 0)") 1]
+   [(probe "(string-byte-length (get (:attrs e) :class \"none\"))") 14]
+   [(probe "(string-byte-length (get (:attrs e) :data-id \"none\"))") 2]
+   [(probe "(count (:attrs e))") 2]
+   [(str walk "(defn- v [t :string] " node " t)\n(defn main [] :i64 (size (v \"ab\")))") 2]
+   [(str walk "(defn main [] :i64 (size [:p \"ab\" [:<> \"c\"]]))") 4]
+   [(str walk "(defn main [] :i64 (size \"abc\"))") 3]
+   [(str "(defn- s? [n " node "] :bool (string? n))\n"
+         "(defn main [] :i64 (+ (if (s? \"t\") 1 0) (if (s? [:p]) 10 0)))") 1]
+   [(str "(defn- k [n " node "] :i64 (if (sequential? n) 2 (string-byte-length n)))\n"
+         "(defn main [] :i64 (k [:<>]))") 2]
+   [(str "(defn- k [n " node "] :i64 (cond (vector? n) 1 :else 5))\n"
+         "(defn main [] :i64 (k \"t\"))") 5]])
+
+(def ^:private map-programs
+  "The typed-map heads themselves, over a keyword and an i64 key."
+  [["(defn main [] :i64 (string-byte-length (get (attrs false) :class \"none\")))" 6]
+   ["(defn main [] :i64 (string-byte-length (get (attrs true) :title \"none\")))" 4]
+   ["(defn main [] :i64 (count (dissoc (assoc (attrs true) :x \"1\" :class \"zz\") :data-id)))" 2]
+   ["(defn main [] :i64 (if (contains? (ids) 4) (get (ids) 5 -1) (get (ids) 6 -1)))" 50]
+   ["(defn main [] :i64 (+ (* 100 (count (assoc (ids) 4 7))) (get (assoc (ids) 4 7) 4 -1)))" 307]
+   ["(defn main [] :i64 (+ (get (dissoc (ids) 3) 5 -1) (get (dissoc (ids) 3) 3 -1) (count (dissoc (ids) 9))))" 52]
+   ["(defn main [] :i64 (loop [m (typed-map-new [:map :i64 :i64]) i 0] (if (< i 31) (recur (assoc m i i) (+ i 1)) (count m))))" 31]
+   [(str "(defn- f [] [:map :keyword [:ref :b/s]] (typed-map-new [:map :keyword [:ref :b/s]] :x (mk)))"
+         " (defn main [] :i64 (:a (get (f) :x (mk))))") 5]])
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- number [value] (#?(:clj long :cljs js/Number) value))
+
+(defn- admitted []
+  (concat (map (fn [[source answer]] [(str "(ns app)\n" source) answer]) hiccup-programs)
+          (map (fn [[source answer]] [(str prelude source) answer]) map-programs)))
+
+(defn- refusal
+  ([source] (refusal source nil))
+  ([source target]
+   (try (if target
+          (compiler/compile-source (str prelude source) target)
+          (ir/execute (ir/lower (sema/analyze (str prelude source))) 'main []))
+        nil
+        (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+          [(ex-message error) (cli/exit-code (:phase (ex-data error) :internal))]))))
+
+(def ^:private typed-values-refusal
+  (str "typed values currently require the kotoba-script web target, typed Wasm/CLJS target,"
+       " or the qualified native one-word string/record/variant/option/result slice"))
+
+(deftest hiccup-node-compiles-natively-test
+  (testing "admitted on the reference"
+    (doseq [[source answer] (admitted)]
+      (is (= answer (number (ir/execute (ir/lower (sema/analyze source)) 'main []))) source)))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "compiled on both native targets, the oracle verified"
+    (doseq [target native-targets
+            [source answer] (admitted)]
+      (let [{:keys [artifact]} (compiler/compile-source source target)]
+        (is (pos? (count (:code artifact))) (str target " " source))
+        (is (= answer (number (:value artifact))) (str target " " source)))))
+  (testing "refused: no structural equality over map handles"
+    (is (= ["equality type is outside the safe value profile" 65]
+           (refusal "(defn main [] :i64 (if (= (attrs true) (attrs true)) 1 2))"))))
+  (testing "refused: a map is never truthy"
+    (is (= ["if test must be bool or an option" 65]
+           (refusal "(defn main [] :i64 (if (attrs true) 1 2))"))))
+  (testing "refused: a map value is its type, no coercion"
+    (is (= ["expression type mismatch: expected i64, got string" 65]
+           (refusal "(defn main [] :i64 (+ 1 (get (attrs true) :class \"\")))"))))
+  (testing "refused: past 31 entries the reference traps, and no artifact is sealed"
+    (let [source "(defn main [] :i64 (loop [m (typed-map-new [:map :i64 :i64]) i 0] (if (< i 32) (recur (assoc m i i) (+ i 1)) (count m))))"]
+      (is (= ["map-too-large" 65] (refusal source)))
+      (doseq [target native-targets]
+        (is (= ["map-too-large" 65] (refusal source target)) (str target)))))
+  (testing "refused natively, exit 65: keys / vals, a record key, a string entry result"
+    (doseq [target native-targets
+            source ["(defn main [] :i64 (count (vals (attrs true))))"
+                    "(defn main [] :i64 (count (keys (ids))))"
+                    (str "(defn- f [] [:map [:ref :b/s] :i64] (typed-map-new [:map [:ref :b/s] :i64] (mk) 1))"
+                         " (defn main [] :i64 (count (f)))")]]
+      (is (= [typed-values-refusal 65] (refusal source target)) (str target " " source)))
+    (doseq [target native-targets]
+      (is (= ["native artifact oracle value rejected" 65]
+             (refusal "(defn main [] :string (get (attrs true) :class \"none\"))" target))
+          (str target)))))

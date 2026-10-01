@@ -461,6 +461,38 @@ Clojure it is today, the language gains:
    on the way and refused before any target: a `[:list T]` loop slot after a
    row read of a let-bound map literal types as `:i64` -- floor
    `:loop-slot-beside-row`.
+   Floor `:native-hiccup-node` (gate `hiccup-node-compiles-natively-test`,
+   landed 2026-10-01): every `:hiccup-node` program was refused by both
+   native targets by the typed-values gate, because the elem's
+   `[:map :keyword :string]` attrs had no native qualification -- a program
+   that never read an attribute could not build a node. Now a `[:map K V]`
+   whose key is a scalar native code compares by content (i64, bool, string,
+   keyword) and whose value is any one-word handle is a native handle type:
+   osaho qualifies `typed-map-new` / `-count` / `-contains` / `-get` /
+   `-assoc` / `-dissoc` (`eb39dba5`); kotoba-native lowers them to the
+   `[:list T]` word arena with keys and values interleaved -- the
+   `string-index` representation, no ABI bump -- searched by appended
+   helpers (`string=?` for a text key, the word compare otherwise), `assoc`
+   of a present key re-appending its entry as `kotoba.kir` does, and past 31
+   entries trapping through an out-of-range `vector-at` (`83eecc0e`);
+   kotoba-verifier re-derives the heads and sees a record read out of a map
+   of records (`4410753e`). Measured: the 11 `:hiccup-node` programs whose
+   entry answers a word and 8 typed-map programs compile for
+   `x86_64-aiueos-kernel-v1` and `aarch64-macos` with the oracle verified;
+   `test/nbb/native_word_ops.cljk`'s typed-map fixture answers the same 10
+   rows on the reference, restricted ESM, and the aarch64 and x86_64
+   (Rosetta) code under `tools/kexe_loader.c` (`493307224`, `14`, `6`, `50`,
+   `-1`, `1`, `0`, `3160`, `304038`; 32 entries trap `map-too-large` /
+   SIGILL). Refused by name: `=` over maps, a map as an `if` test, a map
+   value used as another type, an assoc past 31 entries; natively, exit 65:
+   `keys` / `vals` (entry order is not a native operation), a record key,
+   and -- as for every native program -- a string entry result ("native
+   artifact oracle value rejected"). Walking `window-node`'s whole tree with
+   the mutually recursive `size` / `size-list` answers 13 under
+   `tools/kexe_loader.c` on aarch64, and `amu compile` verifies the oracle for
+   both targets; under the plain `kbb` engine's default host stack the
+   reference interpreter exhausts it (`host/stack-exhausted`), which is why
+   the gate pins the smaller trees.
 
 Then browser moves, whole component by component (text-edit, input, surface
 with cssom and dom-gpu), and the hosted engine switches to amu's output of
