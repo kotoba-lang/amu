@@ -197,7 +197,10 @@
       (println "compared:" (count compared) "agree:" (- (count compared) (count bad)) "disagree:" (count bad)
                "unported (not compared):" (count unported))
       (doseq [[what n] (take 25 (sort-by (comp - val) (frequencies (map #(subs (:guest %) 9) unported))))]
-        (println "  unported" n what))
+        (println "  unported" n what)
+        (when (.-DS_UNPORTED env)
+          (doseq [r (take 3 (filter #(= what (subs (:guest %) 9)) unported))]
+            (println "      e.g." (subs (:form r) 0 (min 160 (count (:form r))))))))
       (doseq [r (take show bad)]
         (println "DISAGREE" (subs (:form r) 0 (min 240 (count (:form r)))) "\n  host :" (:host r) "\n  guest:" (:guest r)))
       (js/process.exit (if (seq bad) 1 0)))))
