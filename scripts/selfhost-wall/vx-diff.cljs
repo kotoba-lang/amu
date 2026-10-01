@@ -25,7 +25,8 @@
             [kotoba.kir :as kir]
             [kotoba.compiler.project :as project]
             [kotoba.compiler.project-files :as pf]
-            [kotoba.compiler.frontend :as fe]))
+            [kotoba.compiler.frontend :as fe]
+            [kotoba.compiler.frontend.validate :as fv]))
 
 (def env js/process.env)
 (def roots (vec (str/split (.-KROOTS env) #":")))
@@ -88,11 +89,14 @@
 
 ;; ---- the tap ------------------------------------------------------------------
 
-(def orig fe/validate-expr)
+;; The analyser calls `validate-expr` of the module it lives in (frontend/validate.cljk since the
+;; frontend split), not the facade's re-export, so the tap sits on that var; the facade's value stays the
+;; untapped function for the host-side oracle.
+(def orig fv/validate-expr)
 (def captured (atom []))
 (def nest (atom 0))
 (defn arities [functions] (into {} (map (fn [[k v]] [k (count v)])) functions))
-(set! fe/validate-expr
+(set! fv/validate-expr
       (fn [form locals functions depth budget]
         (when (or opt-nested? (zero? @nest))
           (swap! captured conj {:form form :locals locals :functions (arities functions) :depth depth}))
@@ -454,7 +458,7 @@
                    (fn []
                      (println "test files:" (count test-files) " candidate strings:" (count candidate-strings))
                      (harvest! (mapcat program-variants candidate-strings))
-                     (set! fe/validate-expr orig)
+                     (set! fv/validate-expr orig)
                      (let [harvested @captured
             _ (println "captured validate-expr calls:" (count harvested) (if opt-nested? "(all)" "(outermost)"))
             keyed (reduce (fn [m c] (let [k (pr-str [(:form c) (sort-by str (:locals c)) (sort-by str (:functions c)) (:depth c)])]
