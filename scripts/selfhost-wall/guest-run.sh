@@ -22,7 +22,7 @@
 #
 # Env: WALL_CP (classpath file, default /private/tmp/wall-cp-11.txt), WALL_K (kotoba-lang checkout), WALL_AMU_SRC,
 #      WALL_NBB_DIR (checkout with node_modules), GUEST_CACHE, GUEST_POOL (native string pool bytes, default 256 MiB),
-#      GUEST_PAIRS (native pair arena, default 32M),
+#      GUEST_PAIRS (native pair arena, default 32M), GUEST_VECTORS / GUEST_VECTOR_ITEMS (native vector table entries / element words, defaults 4M / 128M: a list of aggregate handles is a vector, every `typed-list-conj` allocates one),
 #      GUEST_SECONDS (native cpu/wall limit, default 600), GUEST_FUEL (native fuel, default unmetered).
 HERE="$(cd "$(dirname "$0")" && pwd)"
 AMU=${WALL_AMU_ROOT:-$(cd "$HERE/../.." && pwd)}
@@ -83,7 +83,7 @@ native_ready() {  # sets nbin noffset; returns 0 when a native product exists, 1
   if ! echo "$out" | grep -q ':ok true'; then
     echo "$out" | refusal_of > $nref; [ -s $nref ] || echo "$out" | tail -3 | cut -c1-400 > $nref; return 1
   fi
-  out=$(node $AMU/bin/amu extract-native $kexe --symbol main --output $nbin 2>&1)
+  out=$(nbb $AMU_SRC/kotoba/compiler/nbb/x86_64_cli.cljk extract-native $kexe --symbol main --output $nbin 2>&1)
   echo "$out" | grep -q ':ok true' || { echo "extract-native: $out" | cut -c1-400 > $nref; return 1; }
   echo "$out" | sed -n 's/.*:offset \([0-9]*\).*/\1/p' > $noff
   return 0
@@ -108,6 +108,7 @@ wasm_ready() {
 run_native() {
   build_loader || { echo "guest-run: cannot build the kexe loader" >&2; return 2; }
   KEXE_COMMAND=1 KEXE_STRING_POOL=${GUEST_POOL:-268435456} KEXE_PAIRS=${GUEST_PAIRS:-33554432} \
+    KEXE_VECTORS=${GUEST_VECTORS:-4194304} KEXE_VECTOR_ITEMS=${GUEST_VECTOR_ITEMS:-134217728} \
     KEXE_CPU_SECONDS=${GUEST_SECONDS:-600} KEXE_WALL_SECONDS=${GUEST_SECONDS:-600} ${GUEST_FUEL:+KEXE_FUEL=$GUEST_FUEL} \
     $loader $nbin $(cat $noff) 0 aarch64 3,37,41
 }

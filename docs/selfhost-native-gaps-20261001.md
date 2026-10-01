@@ -103,6 +103,45 @@ bytes field, `typed-cap-call` with a non-generic type pair in verdict-cache.
 - Compiling a Form guest to wasm takes 1 to 2.5 minutes on nbb, and string-heavy guests are slow in the host (20 KB of
   `substring` walks took 12 s, 6 KB took 0.9 s).
 
+## Update: lists of aggregate handles (gap 1) closed, and what that unlocked (2026-10-01, later)
+
+Design and per-repo change list: `docs/selfhost-native-aggregate-lists-design.md`. In one sentence: the typed-list ops
+already lowered to the vector word arena and a record handle is already one word, so the work was four admission
+predicates (osaho `native-handle-type?`, the kotoba-verifier twins, kotoba-native `aggregate-abi` record members) plus
+`record-assoc` (rebuild lowering) and verifier parity for the 22 `:document` operations, `min`/`max` and `vector-take`.
+Gap 2 is closed in the part the guests needed (`:bytes` / `:vector-i64` as record members and list items, and through
+`native-handle-type?`, `[:option :bytes]` / `[:option :vector-i64]` handles); gap 3's verifier half (the `document-*` heads) is closed.
+
+`native-gaps.sh`, before and after (functions refused by the admission gate / heads the verifier text lacks):
+
+| guest | functions | refused before | refused after | what remains |
+|---|---|---|---|---|
+| `vx` | 445 | 193 + 33 + 21 + ... (all through `:form/r`, `:vx/env`) | **0** | none: compiles, runs |
+| `codec` | 230 | 44 + 10 + 9 + ... | **0** | none: compiles |
+| `di` | 488 | 52 + 19 + 10 + `[:option :bytes]` x5 + `option-match` | **0** | none by the gate (see resolve below) |
+| `oat` | 379 | `[:option :vector-i64]` x11, `[:option :bytes]` x5, `option-match` x4, `option-value-of` x2 | **0** | none by the gate |
+| `ri` | 99 | 0 by the gate, then 22 `document-*` heads in the verifier | **0** | none by the gate |
+| `cc` | 384 | `[:option ...]` x10, OutputEntry record/list x10, Found x2, `[:result :bytes :document]`, `record-get` | **3** (`typed-cap-call`) | `typed-cap-call` with a non-generic type pair |
+| `vc` | 558 | as cc + `typed-cap-call` | **4** (`typed-cap-call`) | same |
+| `oa` | 469 | as cc | **3** (`typed-cap-call`) | same |
+| `ds` | 944 | whole closure | not rescanned | `ds-gen.sh`/`tm-gen.py` do not read the split frontend (`FRONTEND_LIST`), so no ds guest is generated today |
+
+Compiled and **executed natively** (`guest-run.sh`, aarch64-macos `.kexe` on the kexe loader):
+
+- `vx` (the `validate-expr` port, 445 functions, 807 KB kexe): `vx-diff.sh` now resolves to `native` and answers its
+  synthetic corpus 111 / 111 against the host (65 distinct refusal messages agree), one batch in 141 ms. It was the
+  interpreter at about 6 ms per source byte. The sema-tests corpus part of the harness captured 0 calls in this run
+  (`captured validate-expr calls: 0`); that is the host-side capture, independent of the mode, and is not addressed here.
+- `codec` resolves to `native` (compiles, verifies, extracts).
+- A Form-shaped probe (recursive record with `[:list [:ref]]`, `:bytes`, `:string`, `record-assoc`, a call, a `let`-bound
+  update, a projected list item) runs on the loader and answers the reference value.
+
+The loader's vector budgets are the next limit: `typed-list-conj` copies, so a Form walk needs more than the default
+4096 table entries / 65536 item words. `guest-run.sh` now passes `KEXE_VECTORS=4194304 KEXE_VECTOR_ITEMS=134217728`
+(`GUEST_VECTORS`, `GUEST_VECTOR_ITEMS`); without them every vx case traps `:vector-table-exhausted`. An amortised
+list builder is the product-side follow-up. `guest-run.sh` also extracts with the worktree classpath now
+(`x86_64_cli.cljk extract-native` on nbb) instead of `bin/amu`, whose pinned classpath re-verifies with the old verifier.
+
 ## What replaces the bootstrap pieces
 
 The compile step of both compiled modes (`aarch64_cli.cljk` / `wasm_cli.cljk` on nbb) is itself bootstrap: it is the selfhost
