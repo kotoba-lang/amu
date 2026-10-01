@@ -88,12 +88,6 @@ jobs:
           # `latest`, which broke every test run when 1.254.0 shipped
           # (2026-07-20): assert-version! rightly refuses an unpinned binary.
           version: "1.243.0"
-      - name: Install pinned Component composition tool
-        run: |
-          mkdir -p "$HOME/.wasm-bin"
-          echo "$HOME/.wasm-bin" >> "$GITHUB_PATH"
-          curl -sSfL -o "$HOME/.wasm-bin/wac" https://github.com/bytecodealliance/wac/releases/download/v0.10.1/wac-cli-x86_64-unknown-linux-musl
-          chmod +x "$HOME/.wasm-bin/wac"
       - run: npm ci
       # After `npm ci`: the prefetch resolves deps-lock.edn through the nbb
       # fork in node_modules (the JVM route and `clojure -P` are gone, ADR

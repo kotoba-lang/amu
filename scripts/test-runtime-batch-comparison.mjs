@@ -13,6 +13,12 @@ const directory = mkdtempSync(join(tmpdir(), "amu-runtime-batch-test-"));
 const bundle = join(directory, "prepared");
 const preparedReport = join(directory, "prepared.json");
 const measuredReport = join(directory, "measured.json");
+// Rust is an optional comparison adapter, never a build or test dependency of
+// this repository: the artifact-batch contract is proven on Amu native alone,
+// and the Rust twin is added only when `rustc` happens to be on PATH.
+const rustAvailable = spawnSync("rustc", ["--version"], { encoding: "utf8" }).status === 0
+  && process.env.AMU_BENCH_NO_RUST !== "1";
+const comparatorEngines = rustAvailable ? ["amu-native", "rust"] : ["amu-native"];
 const iterations = 1_000;
 const n = 5;
 
@@ -33,7 +39,8 @@ function run(args, options = {}) {
 
 function fixtureArgs() {
   return ["--suite", "competitive", "--fixture", "kernel_batch",
-    "--iterations", String(iterations), "--n", String(n)];
+    "--iterations", String(iterations), "--n", String(n),
+    ...(rustAvailable ? [] : ["--disable-engines", "rust"])];
 }
 
 try {
@@ -62,7 +69,7 @@ try {
       || report.contract.fuelPerInstance !== iterations + 2
       || report.environment.preparedBundle?.buildPhaseEnteredDuringMeasure !== false)
     throw new Error("artifact-batch contract is incomplete");
-  for (const engine of ["amu-native", "rust"]) {
+  for (const engine of comparatorEngines) {
     const measured = report.engines[engine];
     if (!measured || !(measured.nanosecondsPerIteration.median > 0)
         || measured.samples.some(sample => sample.hostCalls !== 1
@@ -80,16 +87,18 @@ try {
     if (error.code !== "ENOENT") throw error;
   }
 
-  const rustAssembly = join(directory, "kernel-batch.s");
-  const assembly = spawnSync("rustc", ["--edition", "2021", "-C", "opt-level=3",
-    "-C", "codegen-units=1", "--emit", "asm",
-    join(root, "bench", "runtime-comparison", "kernel_batch.rs"), "-o", rustAssembly],
-  { cwd: root, encoding: "utf8", timeout: 120_000 });
-  if (assembly.status !== 0) throw new Error(`Rust assembly build failed\n${assembly.stderr}`);
-  const text = readFileSync(rustAssembly, "utf8");
-  if (!/kotoba_bench_batch:/.test(text)
-      || !/(?:callq?|bl)\s+_?kotoba_bench_batch\b/.test(text))
-    throw new Error("Rust artifact batch lost its opaque exported call boundary");
+  if (rustAvailable) {
+    const rustAssembly = join(directory, "kernel-batch.s");
+    const assembly = spawnSync("rustc", ["--edition", "2021", "-C", "opt-level=3",
+      "-C", "codegen-units=1", "--emit", "asm",
+      join(root, "bench", "runtime-comparison", "kernel_batch.rs"), "-o", rustAssembly],
+    { cwd: root, encoding: "utf8", timeout: 120_000 });
+    if (assembly.status !== 0) throw new Error(`Rust assembly build failed\n${assembly.stderr}`);
+    const text = readFileSync(rustAssembly, "utf8");
+    if (!/kotoba_bench_batch:/.test(text)
+        || !/(?:callq?|bl)\s+_?kotoba_bench_batch\b/.test(text))
+      throw new Error("Rust artifact batch lost its opaque exported call boundary");
+  }
 
   const tampered = join(bundle, "kernel.bin");
   const bytes = readFileSync(tampered);
