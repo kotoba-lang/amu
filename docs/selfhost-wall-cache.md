@@ -130,4 +130,6 @@ inflated; the ratios are the point).
 Differential (`ds-diff.sh`, `WALL_GOLDEN_CACHE=1`, 40 forms from the sema tests): first run `golden: miss`, second
 run `golden: hit` with the host side skipped, identical result (`compared: 40 agree: 40 disagree: 0`), 79.1 s
 and 79.3 s. No gain at this size: the host side (`desugar-expr` over 40 forms) takes milliseconds and the 79 s is
-linking and running the guest. A tampered golden file is rejected (`golden-cache: rejected`) and recomputed.
+linking and running the guest. At 500 forms (`DS_MAX=100 DS_TOTAL=500`) the host side took 600 ms in total while
+the guest side was still running after 10 minutes (stopped; the guest-side figure is another agent's speedup 1/2).
+So for `ds-diff` the golden cache removes under 1% of the time. A tampered golden file is rejected (`golden-cache: rejected`) and recomputed.
