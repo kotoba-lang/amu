@@ -26,7 +26,7 @@ xargs -n 100 shasum -a 256 < $work/nodes.txt 2>/dev/null | awk '{print $2 "\t" $
     while read d; do find $d -type f ! -name '.*' 2>/dev/null; done
   find $K/lang/compat -type f ! -name '.*'
   echo $K/lang/selfhost-compiler-grant.edn; echo $CHECK; echo $here/check-one.sh
-  for x in ${=WALL_CHECKER_EXTRA}; do echo $x; done
+  for x in ${=WALL_CHECKER_EXTRA} $AMU_NATIVE; do echo $x; done   # a native checker binary is part of the checker
   [ -n "$WALL_STRICT" ] && echo $AMU_SRC/kotoba/compiler/nbb/wasm_cli.cljk
 } | sort -u | xargs -n 100 shasum -a 256 2>/dev/null | awk '{print $2 "\t" $1}' | sort > $work/checker.tsv
 cpid=$(echo "$CP" | sha); chk=$(cat $work/checker.tsv | sha)
