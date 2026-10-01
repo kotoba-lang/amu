@@ -315,3 +315,100 @@ Of the 31 `desugar-*` definitions, 28 are ported (`lexical-call`, `dotimes`, `do
 (the template expander's, in `namespace_defs`) and the quoted-data refusals. The first whole-file refusal of the facade is no
 longer in the desugar half: `amu check` of `frontend.cljk` stops at `frontend/base.cljk:689` (`ex-info-data-argument`: "fn value
 requires unique arities with zero to four unique parameters"), the first module the facade requires.
+
+## 8. The desugar cycle on one module: shape, dispatch, what is left (2026-10-01)
+
+Sections 6 and 7 ported the arms; this one answers the question that was open after them: the host's desugar half is a recursion
+across 127 forms and 4383 lines that "cannot be cut with host late-binding". It does not have to be cut.
+
+**(a) The shape.** Measured on the `:kotoba` view of the frontend (`scripts/selfhost-wall/desugar-shape.py scc`: the call graph of the 1587
+definitions, Tarjan): the strongly connected component of `desugar-expr` has **186 functions, 1843 lines** (the Kotoba arms and their helpers).
+`desugar-expr` is called from 80 of them, `desugar-result-expr` from 15, `desugar-expected-value` from 22, `desugar-bool-expr` from 11,
+`desugar-each` from 12, `desugar-tail-expressions` from 2, `desugar-cond-rest` from 1 (the `cond` family recurses through itself). Every call
+is one of two kinds: structural recursion on the child Forms of the form being lowered (an argument, a binding value, a body), or recursion on
+a Form the arm has just built out of lower-level heads (a `dotimes` becomes `let`+`loop`, a `when-let` becomes `let`+`if`, then that is
+desugared). The second kind terminates because every lowering strictly lowers the head set; nothing is a fixed point search. There is no
+function-valued state: the dynamic vars of the host were the only non-structural channel, and they are `:fe/env` fields (sections 6, 7 and the
+`contracts` field below), threaded by value.
+
+**(b) The dispatch.** Because the recursion is one cycle and the limit is the number of functions per project (16384, ADR 0358) and not
+per module, the cycle stays in ONE module, `frontend/desugar.cljk`, with the arms as ordinary mutually recursive functions (forward references
+need no `declare` on the Kotoba route, which refuses one at top level: the module's `declare` is `#?(:kotoba nil :default (declare ..))`).
+`desugar-expr*` is the dispatcher: atoms and literals, the keyword accessors, the beta redex, the vector literal, then `desugar-list-arm`, a
+`cond` over the head's name text whose arms call the ported functions; the tables it reads are parsed once per env (`tbl`). Nothing is
+late-bound and nothing needs a function-valued cell: an arm that wants "the desugarer" calls `desugar-expr` by name.
+
+**What the 127 forms were.** After the arms of section 7 the module still contained 89 host-only top-level forms (1633 lines): the dynamic
+vars, `lift-lambda`, `desugar-lexical-call`, `desugar-map`, `desugar-match`, `destructure-binding`, `form-free-symbols`, `replace-recur`,
+the map-literal type helpers, `synthesize-lazy-map`, ... None of them is referenced by any Kotoba definition (checked on the call graph:
+`ds-users: -` for all 89); each has its Kotoba port under another name (`lift-lambda-k`, `desugar-lexical-call-k`, `desugar-map-literal`,
+`desugar-match-k`, `destructure-expand`, `free-syms`, `replace-recur-k`, ...). They were not dead on the host, only on the Kotoba route, and
+the module cannot pass `amu check` while they are compiled on it. 81 of them (declare included) are now `#?(:kotoba nil :default <the host text>)`; the host text
+is unchanged byte for byte (mechanical check: the `:default` view of the file after the `ns` form, with the Kotoba-only `nil`s removed, is
+identical to the file before, whitespace and comments aside; `hostview.py`). Every top-level form of the module is now a dual-runtime form.
+The `ns` form's `:refer` lists name only what the Kotoba arms use (`base`: dr env-counter synthetic; `kernel-region`; `closure-types`; `validate`;
+`infer`), the host lists are the `:default` branch, verbatim; `expand`, `namespace-defs` and `record-projection` are no longer required on the
+Kotoba route by this module.
+
+**Ported in this round** (each with a differential, below): quoted symbol data complete (symbol sets, symbol-key maps with their one scalar
+value type, symbol vectors, and the five refusals by name with the host's `quoted-datum-text`); an `:f32` context for a float literal (the
+exact-or-refused narrowing decided by `f64-to-f32-rounded` / `f32-to-f64-exact` on the bits, the non-finite refusal; the inexact refusal prints the
+literal with `pr-str`, the shortest round-trip decimal, which is not ported and is reported as UNPORTED, never as a disagreement); **callable
+contracts (ADR 0353)**: the four host tables (`*lexical-callable-contracts*`, `*function-callable-result-contracts*`,
+`*function-callable-param-contracts*`, `*expected-callable-contract*`) are the entries `:lexical :results :params :expected` of one Form map in the
+new env field `contracts` (`with-contract-tables` is the entry the analysis driver calls per function), so a `fn` written under a `[:fn ..]` result or
+parameter contract is lifted with the clause's parameter and result types (locals of that type in the body, option-typed ones as local option
+types, `:contract-result` / `:parameter-types` / the helper's `:param-types` in the lambda info), the arity of every clause is matched against the contract
+(`callable-result-arity`), a direct call of a local closure takes its dispatcher family and argument types from the contract clause of that arity
+(`callable-arity`), a `let` records the contract of its value for the symbols it binds (and restores the table on exit), and the dispatcher
+family of a structured result or typed parameters is named by `dispatcher-name-for`, a module-local copy of closure-types' `invoke-dispatcher-name` (SHA-256 of the descriptor
+through `kotoba.artifact.core`; the copy is explained under the walls below). Previously every one of these was `UNPORTED` (`function value under a callable contract`, `closure dispatcher
+over a structured result type`).
+
+**Walls found on the way (measured).** (1) The native checker refuses a local named `binding` (the Kotoba tables' forbidden-head set); four Kotoba
+arms (`dotimes`, `doseq`, `when-let`/`if-let`, `when-some`/`if-some`) called theirs `binding`: renamed `bform` (the host already refuses a local with that name since
+fa84033). (2) **The module literal-byte bound.** `check-value-types!` bounded the TOTAL of a module's string literals and of its keyword literals by the
+64 KiB cap of ONE runtime string. The desugar guest (976 functions, a fraction of the frontend) measured 65 504 keyword bytes and 58 325 string bytes:
+32 bytes under the bound; the contract port went over it. ADR 0359 makes the module total its own constant (4 MiB); the per-value caps are
+unchanged. The linked frontend will meet two more numbers of the same family in `kotoba.compiler.project`: `max-project-expression-nodes` (200 000) and
+`max-project-literals` (65 536), neither measured yet. (3) The float reader shape: the host recognizes the JVM-free reader's float, `(f64-from-bits N)`,
+by reader metadata, which a Form cannot carry; the Kotoba route reads a float as a float Form (tag 10). The differential spells the host's float
+`(__ds_f64 N)` on the case line and the guest revives it as the float Form. (4) The interpreter is slow: linking the 1000-function guest on nbb takes
+about 5 minutes and every batch of ~100 cases several more on a loaded host; the native backend still refuses every Form-based guest
+(`docs/selfhost-native-gaps-20261001.md`), so there is no compiled mode for this differential yet.
+
+**Walls the real module found that the stand-alone guest cannot** (a guest is one file; `frontend/desugar.cljk` is a module of a linked project). Checked with the
+native checker on the real file, the dependency modules that are not Kotoba-clean yet (`expand`, `validate`, `infer`) replaced by minimal modules holding exactly
+the Kotoba definitions desugar uses (`scripts/selfhost-wall/module-overlay.py`; base, kernel-region and closure-types are the real modules):
+(i) `only ns, def, defn, and defn- are allowed at top level`: the module's `declare` is host-only. (ii) **An aborting function imported from another module is typed `[:result T E]` at the call and its abort does not propagate** (`(if c 0 (validate-value-type! t))`,
+`(let [x (require-k ..)] x)`, a tail call: "if branches must have the same value type" / "expression type mismatch: expected i64, got [:result ...]"; used as a let statement it
+type-checks and the refusal is silently dropped). Inside one module the same code checks and propagates. closure-types met it first and keeps its own `require-k`; desugar now keeps
+module-local copies of the two aborting closure-types functions it calls (`type-valid!` for `validate-value-type!`, `dispatcher-name-for` and its label helpers for
+`invoke-dispatcher-name`), each pinned to the host by the differential. The language-side fix (the abort ability across a module boundary: the import interface must carry E and
+the effect row's `:abort`) belongs to sema, not to the ports; until then every aborting helper is module-local. 
+(iii) `linked project exports exceed limit`: a module without `:kotoba/export` exports every function and the
+project bound is 1024; the module now declares its surface (`#?(:kotoba {:kotoba/export [...]})`, 40 names: the desugarer, the env accessors, `with-contract-tables`).
+Every other module of the frontend will need the same line before the linked frontend (several thousand functions) can pass.
+(iv) **The whole-program budgets.** With the three walls above cleared, the real `desugar.cljk` (linked with base, kernel-region, closure-types, expand and the
+definitions it takes from validate and infer: 1 471 functions, 1 949 after the helpers) is refused `lowered program budget exhausted`: the lowered cost is
+**133 837** against `max-lowered-nodes` 100 000; the expression-node budget is 24 515 against 50 000. Checked with a native checker built from the sources
+with both bounds raised (and a counter), the unit is `ok`. Proposed as ADR 0360 (not applied: it moves values pinned in several repositories); the first
+module of the frontend that is not small meets it, and the linked frontend will need it several times over.
+
+**Still not ported (named).** The inexact-f32 refusal and a float inside a refused quoted datum (both
+need the host's float printer); `desugar-template-parts` (the template expander, in `namespace_defs`). Nothing in the desugar module is refused by
+head name any more.
+
+**The differential** (`ds-diff.sh`) grew three things: the case line has an optional eleventh element, the contract tables of the function the form sits in
+(computed from the program's `defn` signatures the way `analyze` does: `defn-parts`, `typed-param-parts`) plus the function's parameters as lexical bindings, bound on both
+sides; floats are carried as above; the interpreter is given the hash ability (the bootstrap host's SHA-256) because a structured family's name is a digest.
+New corpus programs: `ds-corpus/quoted.kotoba`, `f32.kotoba`, `contracts.kotoba`.
+
+**Measured (2026-10-01, guest from kotoba-sema 9f73eb7).** `ds-diff.sh` over every list form of kotoba-sema's test programs, kotoba-lang `lang/stdlib`, `examples`,
+`bench`, `lang/migration-pilots` and `scripts/selfhost-wall/ds-corpus` (`DS_MAX=200 DS_TOTAL=900`, guest from 640163b): 900 forms, **898 compared, 897 agree, 1 disagree,
+2 unported** (the two inexact `:f32` literals). The one disagreement is `(match x 1.5 1)`: the nbb reader gives the host a list pattern (`match does not admit list patterns or guards`), the Kotoba
+reader a float Form (`match admits _, an unqualified symbol, ...`), which is the message the JVM host (a `Double`) gives; it is the harness, not the port. The new corpus programs alone (final guest,
+9f73eb7): `quoted` + `f32` + `contracts` + `abort`: 143 forms, **141 compared, 141 agree, 0 disagree**, 2 unported. Before this round every one of these heads was `UNPORTED`. Host behaviour unchanged: the
+sema suite (`run-tests.cljk` on nbb) of the tree before and after (HEAD against the working tree): 621 tests, 2154 passed, 76 failed, 24 errors on both sides, the same 100 outcome lines.
+The ported count: every `desugar-*` definition of the module has a Kotoba body (`desugar-template-parts`, the template expander's, lives in `namespace_defs` and is not this module's); the module has 678 dual-runtime top-level forms besides the `ns`, none host-only, 586 Kotoba definitions in its view.
+Walls recorded above; `amu check` of the real `frontend/desugar.cljk` stops, at the shipped bounds, at the dependency chain (`expand`/`validate`/`infer` not Kotoba-clean when it was run) and then at ADR 0360.

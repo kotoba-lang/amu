@@ -36,9 +36,32 @@
        (form/eq (form/bool-form (env-uses-apply? e)) (form/nth-of c 8))
        (form/eq (form/bool-form (env-uses-lazy? e)) (form/nth-of c 9))))
 
+;; the harness spells a float literal `(__ds_f64 N)` (a printed form cannot carry the reader's metadata); the Kotoba route's reader yields a float Form
+(defn- ds-revive-kids [f [:ref :form/r] i :i64 acc [:list [:ref :form/r]]] [:list [:ref :form/r]]
+  (if (>= i (form/count-of f))
+    acc
+    (ds-revive-kids f (+ i 1) (form/append-form acc (ds-revive (form/nth-of f i))))))
+
+(defn- ds-revive [f [:ref :form/r]] [:ref :form/r]
+  (cond
+    (and (form/is-seq? f) (= 2 (form/count-of f)) (form/is-symbol? (form/nth-of f 0))
+         (string=? (form/symbol-value (form/nth-of f 0)) "__ds_f64"))
+    (form/f64-form (form/int-value (form/nth-of f 1)))
+    (form/is-seq? f) (form/form-seq (ds-revive-kids f 0 (form/no-forms)))
+    (form/is-vec? f) (form/form-vec (ds-revive-kids f 0 (form/no-forms)))
+    (form/is-set? f) (form/form-set (ds-revive-kids f 0 (form/no-forms)))
+    (form/is-map? f) (form/form-map (ds-revive-kids f 0 (form/no-forms)))
+    :else f))
+
 (defn- ds-case [c [:ref :form/r] tbl [:ref :form/r]] :string
-  (let [env (fe-env 0 (form/nil-form) (if (form/is-true? (form/nth-of c 1)) true false) (form/nth-of c 0) tbl)]
-    (try (let [r (desugar-expr env (form/nth-of c 2))
+  (let [env0 (fe-env 0 (form/nil-form) (if (form/is-true? (form/nth-of c 1)) true false) (form/nth-of c 0) tbl)
+        ;; the optional eleventh element: the callable contract tables {:lexical :results :params :expected}
+        con (if (> (form/count-of c) 10) (form/nth-of c 10) (form/nil-form))
+        binds (form/form-get con (form/keyword-form :binds))
+        env (if (form/is-nil? con)
+              env0
+              (with-lexical (record-assoc [:ref :fe/env] env0 :contracts con) (form/form-set (form/kids-of binds))))]
+    (try (let [r (desugar-expr env (ds-revive (form/nth-of c 2)))
                e (dr-env r)]
            (if (and (form/eq (dr-form r) (form/nth-of c 3)) (ds-same-side e c))
              "OK"

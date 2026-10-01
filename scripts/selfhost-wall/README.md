@@ -46,6 +46,15 @@ regeneration. `ds-names.txt` lists the definitions of the guest in source order;
 `FRONTEND` is a `:`-separated list of files (the facade first, then the modules under `frontend/`; a later definition of a name
 wins), since the frontend is split into modules.
 
+The case line may carry an eleventh element, the callable-contract tables of the function the form sits in (`{:binds [params] :lexical {param contract}
+:results {[name arity] contract} :params {[name arity] {index contract}} :expected contract}`, computed from the program's `defn` signatures the way `analyze`
+does) which both sides bind (`*lexical-bindings*`, `*lexical-callable-contracts*`, `*function-callable-result-contracts*`, `*function-callable-param-contracts*`,
+`*expected-callable-contract*` on the host, the env field `contracts` on the guest). A float the JVM-free reader hands over as `(f64-from-bits N)` (recognized
+on the host by reader metadata) is carried as `(__ds_f64 N)` and revived as the float Form by the guest. The interpreter is given the hash ability (the bootstrap
+host's SHA-256) because a structured closure family's name is a digest. `desugar-shape.py` prints the cycle's shape (`scc`), the Kotoba definitions outside
+`ds-names.txt` (`leftovers`) and checks the host view of `desugar.cljk` against a revision (`hostview REV`); `module-overlay.py` stages one frontend module
+for `amu check` before its dependencies are Kotoba-clean.
+
 The state the host keeps in dynamic vars (`*pending-loop-helpers*`, `*loop-helper-shapes*`, `*pending-lambdas*`,
 `*required-closure-dispatchers*`, `*uses-apply?*`, `*uses-lazy?*`, `*loop-counter*`, `*lambda-counter*`) is part of what a port must reproduce:
 the host side of the differential binds each to a fresh atom/volatile, the guest returns the same data as `:fe/env` fields

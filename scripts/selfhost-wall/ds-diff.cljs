@@ -12,6 +12,7 @@
 ;; Env: KROOTS (src roots + lang/compat), DS_GUEST (generated module), DS_TESTS (test dir), DS_MAX, DS_SHOW.
 (ns ds-diff
   (:require ["node:fs" :as fs]
+            ["node:crypto" :as crypto]
             [clojure.string :as str]
             [clojure.edn :as edn]
             [kotoba.sema :as sema]
@@ -64,19 +65,50 @@
 (defn defn-names [forms]
   (set (for [f forms :when (and (seq? f) (contains? '#{defn defn-} (first f)) (symbol? (second f)))] (second f))))
 
+(defn fe-fn [ns-sym sym] @(resolve (symbol (str "kotoba.compiler.frontend." ns-sym) (name sym))))
+
+(defn defn-contracts
+  "[source-name arity result-contract param-contracts] of one defn, as `analyze` reads them (callable contracts, ADR 0353):
+  param-contracts is {index contract}; nil when the form is not a plain defn whose signature parses."
+  [form]
+  (try
+    (let [parts ((fe-fn "expand" 'defn-parts) form {})
+          raw (:raw-params parts)]
+      (when (vector? raw)
+        (let [ps ((fe-fn "closure-types" 'typed-param-parts) raw {})]
+          {:name (:name parts) :arity (count ps) :result (:callable-result-contract parts)
+           :params (into {} (keep-indexed (fn [i p] (when-let [c (:callable-contract p)] [i c]))) ps)
+           :patterns (mapv :pattern ps)})))
+    (catch :default _ nil)))
+
 (defn program-cases [src]
   (try
     (let [forms (vec (fe/read-forms src))
           names (defn-names forms)
-          bodies (remove #(and (seq? %) (contains? '#{ns defn defn- def defrecord defprotocol} (first %))) forms)
+          defns (for [f forms :when (and (seq? f) (contains? '#{defn defn-} (first f)) (symbol? (second f)))] [f (defn-contracts f)])
+          results (into {} (keep (fn [[_ c]] (when (and c (:result c)) [[(:name c) (:arity c)] (:result c)]))) defns)
+          params (into {} (keep (fn [[_ c]] (when (and c (seq (:params c))) [[(:name c) (:arity c)] (:params c)]))) defns)
+          con-for (fn [c]
+                    (let [lexical (into {} (keep (fn [[i k]] (let [p (nth (:patterns c) i nil)] (when (symbol? p) [p k])))) (:params c))
+                          binds (vec (filter symbol? (:patterns c)))
+                          m (cond-> {}
+                              (seq binds) (assoc :binds binds)
+                              (seq lexical) (assoc :lexical lexical)
+                              (seq results) (assoc :results results)
+                              (seq params) (assoc :params params)
+                              (:result c) (assoc :expected (:result c)))]
+                      (when (seq m) m)))
+          top (when (or (seq results) (seq params)) (cond-> {} (seq results) (assoc :results results) (seq params) (assoc :params params)))
           subs (->> (mapcat (fn [f]
                               (if (and (seq? f) (contains? '#{defn defn-} (first f)))
-                                (mapcat sub-seqs (drop 2 f))
-                                (sub-seqs f)))
+                                (let [c (some (fn [[g c]] (when (identical? g f) c)) defns)
+                                      con (if c (con-for c) top)]
+                                  (map (fn [x] [x con]) (mapcat sub-seqs (drop 2 f))))
+                                (map (fn [x] [x top]) (sub-seqs f))))
                             forms)
-                    (remove #(and (seq? %) (contains? '#{defn defn- ns def defrecord defprotocol letfn binding for} (first %))))
+                    (remove (fn [[x _]] (and (seq? x) (contains? '#{defn defn- ns def defrecord defprotocol letfn binding for} (first x)))))
                     (take max-per-program))]
-      (for [s subs] [names s]))
+      (for [[x con] subs] [names x con]))
     (catch :default _ [])))
 
 (defn corpus []
@@ -109,7 +141,18 @@
 
 ;; ---- host ------------------------------------------------------------------------------------
 
-(defn host-answer [names form]
+(defn mark-f64
+  "The JVM-free reader hands a float over as `(f64-from-bits N)` carrying reader metadata, which a printed form cannot carry; the Kotoba
+  route's reader produces a float Form. The case line spells the literal `(__ds_f64 N)` and the guest revives it as the float Form."
+  [x]
+  (cond (and (seq? x) (true? (:kotoba.reader/f64-literal (meta x)))) (list '__ds_f64 (second x))
+        (seq? x) (apply list (map mark-f64 x))
+        (vector? x) (mapv mark-f64 x)
+        (set? x) (set (map mark-f64 x))
+        (map? x) (into {} (map (fn [[k v]] [(mark-f64 k) (mark-f64 v)])) x)
+        :else x))
+
+(defn host-answer [names form con]
   ;; the answer is [form helpers shapes lambdas dispatchers uses-apply]: what the host registers on the side while lowering
   ;; (`*pending-loop-helpers*`, `*loop-helper-shapes*`, `*pending-lambdas*`, `*required-closure-dispatchers*`, `*uses-apply?*`)
   ;; is part of what the port must reproduce
@@ -129,7 +172,12 @@
                       fe-ds/*required-closure-dispatchers* dispatchers
                       fe-ds/*uses-apply?* uses-apply
                       fe-ds/*uses-lazy?* uses-lazy
-                      fe-ds/*function-arities* (into {} (map (fn [n] [n #{0 1 2 3 4}])) names)]
+                      fe-ds/*function-arities* (into {} (map (fn [n] [n #{0 1 2 3 4}])) names)
+                      fe-ds/*lexical-bindings* (set (:binds con))
+                      fe-ds/*lexical-callable-contracts* (or (:lexical con) {})
+                      fe-ds/*function-callable-result-contracts* (or (:results con) {})
+                      fe-ds/*function-callable-param-contracts* (or (:params con) {})
+                      fe-ds/*expected-callable-contract* (:expected con)]
               (host-desugar form))]
       [:ok (edn-of r) (str/join " " [(edn-of @helpers) (edn-of @shapes) (edn-of @lambdas) (edn-of @dispatchers) (edn-of @uses-apply) (edn-of @uses-lazy)])])
     (catch :default e [:err (ex-message e)])))
@@ -175,9 +223,15 @@
     (println "guest mode:" m (if (= m "interp") "(BOOTSTRAP: KIR interpreter on nbb)" ""))
     (if (= m "interp") {:mode "interp" :lowered (interp-load)} {:mode m})))
 
+;; the guest's `artifact/sha256` (a closure dispatcher family's digest name) is the hash ability: provided here by the bootstrap host
+(defn typed-cap-call [id _ _ request]
+  (case (js/Number id)
+    3 (-> (.createHash crypto "sha256") (.update request) (.digest "hex"))
+    (throw (ex-info "unhandled capability" {:id id}))))
+
 (defn run-guest [g text]
   (if (= "interp" (:mode g))
-    (kir/execute (:lowered g) 'ds-run [text] {:fuel 100000000000 :frames 100000 :cells 1000000000 :bytes 1000000000})
+    (kir/execute (:lowered g) 'ds-run [text] {:typed-cap-call typed-cap-call :fuel 100000000000 :frames 100000 :cells 1000000000 :bytes 1000000000})
     (run-compiled (:mode g) guest-path "ds-run" text)))
 
 (defn ascii? [s] (not (re-find #"[^\x09\x0a\x20-\x7e]" s)))
@@ -206,10 +260,11 @@
          (fn []
            (let [cs (corpus)
                  _ (println "corpus forms:" (count cs))
-                 rows (vec (for [[names form] cs
-                                 :let [[k v side] (host-answer names form)
-                                       line  (str "[" (edn-of (into {} (map (fn [n] [n #{0 1 2 3 4}])) names)) " false " (edn-of form) " "
-                                                 (if (= k :ok) v "nil") " " (if (= k :ok) side "[] {} [] #{} false false") "]")]
+                 rows (vec (for [[names form con] cs
+                                 :let [[k v side] (host-answer names form con)
+                                       line  (str "[" (edn-of (into {} (map (fn [n] [n #{0 1 2 3 4}])) names)) " false " (edn-of (mark-f64 form)) " "
+                                                 (if (= k :ok) v "nil") " " (if (= k :ok) side "[] {} [] #{} false false")
+                                                 (when con (str " " (edn-of con))) "]")]
                                  :when (and (not (str/includes? line "\n")) (ascii? line)
                                             (not (str/includes? line "#object")) (not (str/includes? line "#<")))]
                              {:line line :host (if (= k :ok) "OK" (str "ERR " v)) :form (edn-of form)}))]
@@ -217,8 +272,8 @@
         cs (if (.-DS_WHY env) (corpus) [])
         _ (println "cases:" (count rows) "of" ncs "forms; loop-ish:" (count (filter #(re-find #"^\((loop|dotimes|doseq|fn) " (:form %)) rows)) "linking guest ...")
         _ (when (.-DS_WHY env)
-            (doseq [[names form] (take 400 cs)
-                    :let [[k v side] (host-answer names form)
+            (doseq [[names form con] (take 400 cs)
+                    :let [[k v side] (host-answer names form con)
                           line (str "[" (edn-of form) " " (if (= k :ok) v "nil") " " side "]")]
                     :when (not (and (not (str/includes? line "\n")) (ascii? line)
                                     (not (str/includes? line "#object")) (not (str/includes? line "#<"))))]

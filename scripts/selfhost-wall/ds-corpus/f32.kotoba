@@ -1,0 +1,20 @@
+(ns ds.f32)
+
+;; decimal literals in an :f32 context: exact-or-refused narrowing (the inexact refusal prints the literal and is reported as unported)
+(defn sum-exact [] :f32 (f32-add 1.5 2.5))
+
+(defn sum-neg [] :f32 (f32-add -2.5 0.5))
+
+(defn sum-zero [] :f32 (f32-add 0.0 -0.0))
+
+(defn sum-big [] :f32 (f32-add 16777216.0 1.0))
+
+(defn sum-tiny [] :f32 (f32-add 0.5 0.25))
+
+(defn sum-inexact [] :f32 (f32-add 0.1 2.5))
+
+(defn sum-overflow [] :f32 (f32-add 1.0e300 1.0))
+
+(defn mul-exact [] :f32 (f32-mul 3.0 0.125))
+
+(defn plain-f64 [] :f64 (f64-add 0.1 0.2))
