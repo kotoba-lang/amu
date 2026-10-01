@@ -1,0 +1,117 @@
+(ns kotoba.compiler.row-get-and-match-test
+  "ADR 0353 floor :row-get-and-match (point 3: a row is read off its uses).
+
+  An unannotated parameter the body reads a field off is a row, and its
+  function exists only as its specializations (floor :row-records). The read
+  that made it a row was `(:a m)` alone: `(get m :a)` and `(get m :a d)` left
+  the parameter the provisional :i64, read through the retired keyword->i64
+  map, so a call passing a record was refused \"expression type mismatch:
+  expected map, got [:record ...]\". A `match` map pattern projects its
+  scrutinee with `get` and tests presence beside it, so `(defn- f [m] (match
+  m {:a x} x :else 0))` was refused \"expected map, got i64\" -- the retired
+  map's name -- before any target.
+
+  Now, in kotoba-sema: `(get m :a)` reads :a off the row as `(:a m)` does;
+  `(get m :a d)` makes m a row without requiring :a (a record without it
+  answers d); a match map pattern over a parameter -- through the temp
+  `match` binds it to -- makes it a row whose arms are decided per
+  specialization: a field the record has is present, and an arm naming a key
+  it lacks does not match and is folded away.
+
+  Native: the admitted programs compile for x86_64-aiueos-kernel-v1 and
+  aarch64-macos with the oracle verified.
+
+  What stays refused, each by its literal: a get with a computed key on a
+  row, a row read of a field the record lacks, a non-record argument to a
+  row, a coerced field, a record as an `if` test, and `=` over records."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private prelude
+  (str "(ns b (:schemas {:b/s [:record :b/s [[:a :i64] [:b :i64]]]}))\n"
+       "(defn- mk [] [:ref :b/s] {:a 5 :b 2})\n"))
+
+(def ^:private admitted
+  "Each program and what its main answers on the reference and on both
+  native targets."
+  [;; get reads a row as (:a m) does
+   ["(defn- f [m] (get m :a)) (defn main [] :i64 (f {:a 3}))" 3]
+   ["(defn- f [m] (get m :a)) (defn main [] :i64 (+ (f {:a 3}) (f (mk))))" 8]
+   ["(defn- f [m] (+ (:a m) (get m :b))) (defn main [] :i64 (f (mk)))" 7]
+   ;; get with a default does not require the field
+   ["(defn- f [m] (get m :a 9)) (defn main [] :i64 (+ (f {:a 3}) (f {:c 1})))" 12]
+   ["(defn- f [m] (:b m 4)) (defn main [] :i64 (+ (f (mk)) (f {:a 1})))" 6]
+   ;; a match map pattern over a parameter specializes per record
+   ["(defn- f [m] (match m {:a x} x :else 0)) (defn main [] :i64 (f {:a 3}))" 3]
+   ["(defn- f [m] (match m {:a x} x :else 0)) (defn main [] :i64 (+ (f {:a 3}) (f {:c 1})))" 3]
+   [(str "(defn- f [m] (match m {:a x :b y} (+ x y) {:a x} x :else 0))"
+         " (defn main [] :i64 (+ (f (mk)) (f {:a 1})))") 8]
+   [(str "(defn- f [m] (match m {:a 3} 1 {:a x :b y} (+ x y) :else 0))"
+         " (defn main [] :i64 (+ (f (mk)) (f {:a 3})))") 8]
+   ["(defn- f [m] (match m {:z x} x :else 7)) (defn main [] :i64 (f (mk)))" 7]])
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze (str prelude source))) 'main [])))
+
+(defn- refusal [source]
+  (try (sema/analyze (str prelude source))
+       nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(deftest row-get-and-match-read-a-row-test
+  (testing "admitted on the reference"
+    (doseq [[source answer] admitted]
+      (is (= answer (run-main source)) source)))
+  (testing "admitted on the hosted target"
+    (doseq [[source _] admitted]
+      (is (= [0 97 115 109]
+             (mapv #(bit-and (int %) 0xff)
+                   (take 4 (:bytes (compiler/compile-source (str prelude source) :wasm32-kotoba-v1)))))
+          source)))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "admitted on both native targets"
+    (doseq [target native-targets
+            [source answer] admitted]
+      (let [{:keys [artifact]} (compiler/compile-source (str prelude source) target)]
+        (is (pos? (count (:code artifact))) (str target " " source))
+        (is (= answer (#?(:clj long :cljs js/Number) (:value artifact))) (str target " " source)))))
+  (testing "refused: a get with a computed key on a row"
+    (is (= (str "get on record :kotoba.map-literal/a has the computed key k: a record's"
+                " fields are static, so the field a get reads is a keyword literal;"
+                " a computed key needs a [:map K V]")
+           (refusal "(defn- f [m k] (get m k)) (defn main [] :i64 (f {:a 3} :a))")))
+    (is (= (str "get on record :b/s has the computed key k: a record's"
+                " fields are static, so the field a get reads is a keyword literal;"
+                " a computed key needs a [:map K V]")
+           (refusal "(defn- f [m k] (+ (:a m) (get m k 0))) (defn main [] :i64 (f (mk) :b))"))))
+  (testing "refused: a get without a default reads a field the record must have"
+    (is (= (str "argument {:c 3} to f is record :kotoba.map-literal/c, which has no field :a"
+                " that the row {:a T | r} of parameter m reads")
+           (refusal "(defn- f [m] (get m :a)) (defn main [] :i64 (f {:c 3}))"))))
+  (testing "refused: only a record satisfies a row"
+    (is (= (str "argument 5 to f is i64, and parameter m of f is the row {:a T | r}:"
+                " only a record satisfies a row")
+           (refusal "(defn- f [m] (get m :a)) (defn main [] :i64 (f 5))")))
+    (is (= (str "argument 5 to f is i64, and parameter m of f is the row {| r}:"
+                " only a record satisfies a row")
+           (refusal "(defn- f [m] (match m {:a x} x :else 0)) (defn main [] :i64 (f 5))"))))
+  (testing "refused: a field is not coerced"
+    (is (= "expression type mismatch: expected i64, got string"
+           (refusal "(defn- f [m] [:i64] :i64 (get m :a)) (defn main [] :i64 (f {:a \"x\"}))"))))
+  (testing "refused: neither a record nor a number read off one is truthy"
+    (is (= "if test must be bool or an option"
+           (refusal "(defn- f [m] (if m (get m :a) 0)) (defn main [] :i64 (f {:a 3}))")))
+    (is (= (str "if test is :i64, and a number is never truthy: compare it"
+                " (for example (not= x 0)) or answer :bool")
+           (refusal "(defn- f [m] (if (get m :a) 1 0)) (defn main [] :i64 (f {:a 3}))"))))
+  (testing "refused: = over records"
+    (is (= "equality type is outside the safe value profile"
+           (refusal "(defn- f [m] (if (= m (mk)) (get m :a) 0)) (defn main [] :i64 (f (mk)))")))))

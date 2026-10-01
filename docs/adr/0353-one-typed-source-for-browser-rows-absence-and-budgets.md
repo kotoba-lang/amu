@@ -526,6 +526,36 @@ Clojure it is today, the language gains:
    over records; a key the record lacks. Found and left to its own floor
    (`:row-get-and-match`): `(get m :a)` is not a row read, so a `match` over
    an unannotated parameter is refused before specialization.
+   Floor `:row-get-and-match` (gate `row-get-and-match-read-a-row-test`,
+   landed 2026-10-02): a row was read off `(:a m)` only. `(get m :a)` left
+   the parameter the provisional `:i64`, read through the retired
+   keyword->i64 map, so passing a record was refused "expression type
+   mismatch: expected map, got [:record ...]", and a `match` map pattern --
+   which projects its scrutinee with `get` -- over a parameter was refused
+   "expected map, got i64". Now kotoba-sema (`21e3a23f`): `(get m :a)` reads
+   `:a` off the row as `(:a m)` does; `(get m :a d)` makes `m` a row without
+   requiring `:a` (a record without it answers `d`, as on any record); a
+   match map pattern over a parameter, through the temp `match` binds it to,
+   makes it a row, and each specialization decides its arms -- a key the
+   record lacks does not match and the arm is folded away (the row
+   specializer now keeps a rebuilt form's metadata, which carries the
+   pattern's projection marker). Measured: the gate's 10 programs answer on
+   the KIR reference what they answer under `compile-source` for
+   `wasm32-kotoba-v1`, `x86_64-aiueos-kernel-v1` and
+   `aarch64-macos-kotoba-v1` with the oracle verified; `amu compile --target
+   x86_64-aiueos-kernel-v1` / `--target aarch64-macos` of a program with a
+   `get`-with-default row and a two-arm match over a parameter, each called
+   with a declared record and a literal lacking `:b`, exit 0 with `:oracle
+   {:status :verified}`. The gate was red on kotoba-sema `0632bed0` (19
+   errors), green on `21e3a23f`; kotoba-sema's own suite has the same 44
+   failures before and after (all pre-existing). No aiueos `.kotoba` source
+   (184) writes `(get`, `(match` or a defaulted keyword lookup, so no kernel
+   object can move. Refused by name: a get with a computed key on a record
+   ("get on record q has the computed key k: a record's fields are static,
+   so the field a get reads is a keyword literal; a computed key needs a
+   [:map K V]"); a `get` without a default of a field the record lacks; a
+   non-record argument to a row; a coerced field; a record, or a number read
+   off one, as an `if` test; `=` over records.
 
 Then browser moves, whole component by component (text-edit, input, surface
 with cssom and dom-gpu), and the hosted engine switches to amu's output of

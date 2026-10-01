@@ -176,6 +176,8 @@
   ;; its scrutinee with get, so (defn- f [m] (match m {:a x} x :else 0)) is
   ;; refused "expression type mismatch: expected map, got i64" -- the
   ;; retired map's name. kotoba-sema's alone, before any target.
+  ;; Landed 2026-10-02 in kotoba-sema (21e3a23f); ADR 0353 has the
+  ;; measurements.
   {:id :row-get-and-match :gate "row-get-and-match-read-a-row-test"
    :goal "(get m :a) and (get m :a d) on an unannotated parameter read a row as (:a m) does, so a match map pattern over a parameter specializes per record -- an arm naming a key the record lacks does not match in that specialization; a get with a computed key on a row stays refused by name"}
   {:id :loop-slot-beside-row :gate "loop-slot-typed-beside-a-row-read-test"
