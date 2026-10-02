@@ -40,7 +40,11 @@
   [:c OP-FUEL 18 "FUEL -- charge one fuel unit, trap when exhausted"]
   [:c OP-RET 19 "RET t -- return temp t (t is always 0 in R0 lowering)"]
   [:c OP-TRAP 20 "TRAP code -- brk #code (unreachable paths)"]
-  [:c OP-COUNT 20 "highest opcode"]]
+  [:c OP-TAB 21 "TAB t lit n -- temp t := item (temp t) of the constant i64 table LIT lit (n items, 8 bytes little-endian
+                 each in the pool); traps (brk #0) unless 0 <= temp t < n. Lowering of (vector-at V i) when V is a
+                 vector literal of integer literals (or a def of one): no runtime allocation (integration 2026-10-02:
+                 kexe-benchmark has 4096 vectors, edn's per-call literals exhausted them)"]
+  [:c OP-COUNT 21 "highest opcode"]]
 
  :binary-ops
  [[:c BOP-ADD 1 "+ wrap"] [:c BOP-SUB 2 "- wrap"] [:c BOP-MUL 3 "* low 64"]
@@ -106,7 +110,9 @@
                            (emitted right after the entry FUEL), i.e. params are re-assigned, FUEL, BR Lentry. Seed
                            code loops by self tail recursion over 10^5..10^6 items (MEMORY-MAP rule L5); without
                            this the seed's own output overflows the stack. A recur with no enclosing loop does the same."
-  "(vector-at v i)"       "[v -> t] [i -> t+1] RT RT-VECTOR-AT t 2"
+  "(vector-at v i)"       "[v -> t] [i -> t+1] RT RT-VECTOR-AT t 2 ; when v is a vector literal whose items are all integer
+                           literals, or a def of one: 30-lower appends a LIT record (LF-LEN = 8n, bytes little-endian in
+                           LITB, LF-TOK = the vector's token) and emits [i -> t] TAB t lit n"
   "(vector-conj v x)"     "RT RT-VECTOR-CONJ t 2"   "(vector-assoc v i x)" "RT RT-VECTOR-ASSOC t 3"
   "(vector-assoc! v i x)" "RT RT-VECTOR-ASSOC-IN-PLACE t 3"   "(vector-alloc n)" "RT RT-VECTOR-ALLOC t 1"
   "(string-code-point-at s i)" "RT RT-STRING-CODE-POINT-AT t 2"   "(string-length s)" "RT RT-STRING-LENGTH-VIA t 1"

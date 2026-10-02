@@ -25,7 +25,8 @@ for f in $P/*.kotoba; do
   t1=$(perl -MTime::HiRes=time -e 'printf "%.3f", time')
   x=$(zsh $SEED_REPO/scripts/seed/seed-cc.sh extract $W/$p.kseed $sym $W/$p.bin) || { echo "$p\tEXTRACT-FAIL\t$x"; fail=$((fail+1)); continue; }
   o=$(echo "$x" | sed -n 's/.*:offset \([0-9]*\).*/\1/p')
-  r=$(cd $W; $L $W/$p.bin $o 0 aarch64 - 2> $W/$p.run.err | tail -1); st=$?
+  # the loader gets kexe-benchmark's arena (its own default pair budget is smaller than the runner's 2M pairs)
+  r=$(cd $W; KEXE_PAIRS=2097152 KEXE_VECTORS=4096 KEXE_VECTOR_ITEMS=65536 KEXE_FUEL=16777216 KEXE_CPU_SECONDS=60 KEXE_WALL_SECONDS=60 $L $W/$p.bin $o 0 aarch64 - 2> $W/$p.run.err | tail -1); st=$?
   t2=$(perl -MTime::HiRes=time -e 'printf "%.3f", time')
   j=$($KB raw $W/$p.bin $o aarch64 0 1 0 16777216 2> $W/$p.bench.err); echo "$j" > $W/$p.bench.json
   rb=$(echo "$j" | sed -n 's/.*"result":\(-*[0-9]*\).*/\1/p'); fu=$(echo "$j" | sed -n 's/.*"contextFuelConsumed":\([0-9]*\).*/\1/p')

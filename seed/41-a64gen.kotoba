@@ -97,6 +97,7 @@
           (= op OP-CALL) (+ b (gn-max c 1))
           (= op OP-RT) (+ b (gn-max c 1))
           (= op OP-VEC) (+ a (gn-max b 1))
+          (= op OP-TAB) (+ a 1)
           :else 0)))
 
 ;; highest local slot named by SIR instruction i
@@ -340,6 +341,23 @@
         M7 (gn-tset M6 fr t 0)]
     (gn-restore M7 fr 0 (gn-min7 t))))
 
+;; TAB t lit n (constant table, no runtime call): x16 := temp t ; cmp x16,#n ; b.lo +2 ; brk #0 ;
+;; x16 := x16*8 (three adds) ; x17 := ctx (slot 0) ; x17 := code_base [x17,#384] ; x16 += x17 ;
+;; movz x17,#lo ; movk x17,#hi,lsl 16 (FX-LIT32: LF-POOL of lit) ; x16 += x17 ; ldr x16,[x16] ; temp t := x16
+(defn- gn-op-tab [M :vector-i64 fr :i64 t :i64 lit :i64 n :i64] :vector-i64
+  (let [M1 (gn-tget M fr 16 t)
+        M2 (gn-emit M1 (enc-cmp-i 16 n))
+        M3 (gn-emit M2 (enc-bcond (enc-cond-lo) 2))
+        M4 (gn-emit M3 (enc-brk 0))
+        M5 (gn-emit (gn-emit (gn-emit M4 (enc-add-r 16 16 16)) (enc-add-r 16 16 16)) (enc-add-r 16 16 16))
+        M6 (gn-ldslot M5 fr 17 0)
+        M7 (gn-emit M6 (enc-ldr 17 17 CTX-CODE-BASE))
+        M8 (gn-emit M7 (enc-add-r 16 16 17))
+        M9 (gn-fix M8 FX-LIT32 lit)
+        M10 (gn-emit (gn-emit M9 (enc-movz 17 0 0)) (enc-movk 17 0 1))
+        M11 (gn-emit (gn-emit M10 (enc-add-r 16 16 17)) (enc-ldr 16 16 0))]
+    (gn-tset M11 fr t 16)))
+
 ;; FUEL = ldr x7,[slot 0] ; ldr x16,[x7,#8] ; subs x16,x16,#1 ; b.hs +2 ; brk #0 ; str x16,[x7,#8]
 (defn- gn-op-fuel [M :vector-i64 fr :i64] :vector-i64
   (let [M1 (gn-ldslot M fr 7 0)
@@ -375,6 +393,7 @@
           (= op OP-CAP) (gn-op-cap M fr a b c)
           (= op OP-STR) (gn-op-str M fr a b)
           (= op OP-VEC) (gn-op-vec M fr a b)
+          (= op OP-TAB) (gn-op-tab M fr a b c)
           (= op OP-FUEL) (gn-op-fuel M fr)
           (= op OP-RET) (gn-op-ret M fr a)
           (= op OP-TRAP) (gn-emit M (enc-brk a))

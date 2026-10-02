@@ -63,6 +63,7 @@
     (= op OP-RT) (if (> c 0) (+ b (- c 1)) b)
     (= op OP-CAP) c
     (= op OP-VEC) (if (> b 0) (+ a (- b 1)) a)
+    (= op OP-TAB) a
     :else -1))
 
 ;; ------------------------------------------------------------------------------------------------------------
@@ -297,6 +298,74 @@
   (let [M1 (lw-expr M0 a t 0)]
     (lw-emit M1 OP-UN uop t 0)))
 
+;; ---- constant tables: (vector-at V i) with V a vector literal of integer literals, or a def of one -> TAB ----
+;; (seed/SIR OP-TAB). The table is a LIT record appended after 10-lex's string literals: LF-LEN = 8 * items, the items
+;; little-endian in LITB, LF-TOK = the vector's token; 42-layout pools it like a string. No runtime allocation.
+(defn- lw-vlit-vec [M :vector-i64 n :i64] :i64 (if (= (lw-nf M n NF-KIND) ND-VEC) n 0))
+(defn- lw-vlit-def [M :vector-i64 res :i64] :i64
+  (if (= (lw-rcls res) RES-DEF) (lw-vlit-vec M (lw-nth M (lw-first M (lw-ff M (lw-ridx res) FF-NODE)) 2)) 0))
+;; the vector-literal node behind v (v itself, or a def's literal), 0 for anything else
+(defn- lw-vlit [M :vector-i64 v :i64] :i64
+  (let [kind (lw-nf M v NF-KIND)
+        res (lw-nf M v NF-RES)]
+    (cond (= kind ND-VEC) v
+          (= kind ND-SYM) (lw-vlit-def M res)
+          :else 0)))
+;; 1 when the chain c has at least one item and every item is an ND-INT
+(defn- lw-allint [M :vector-i64 c :i64] :i64
+  (loop [x c k 0]
+    (if (= x 0)
+      (if (> k 0) 1 0)
+      (if (= (lw-nf M x NF-KIND) ND-INT) (recur (lw-next M x) (+ k 1)) 0))))
+;; the table node for the first operand v of a runtime head rt, 0 when the general RT path applies
+(defn- lw-tabsel2 [M :vector-i64 w :i64] :i64
+  (if (= w 0) 0 (if (= (lw-allint M (lw-first M w)) 1) w 0)))
+(defn- lw-tabsel [M :vector-i64 v :i64 rt :i64] :i64
+  (if (= rt RT-VECTOR-AT) (lw-tabsel2 M (lw-vlit M v)) 0))
+;; 0 when lit and 8m bytes fit, else the E101 region (2 LIT, 3 LITB)
+(defn- lw-tabcap [lit :i64 lb :i64 m :i64] :i64
+  (if (>= lit MM-LIT-CAP) 2 (if (> (+ lb (* 8 m)) MM-LITB-CAP) 3 0)))
+;; LITB[b .. b+8) = the 8 little-endian bytes of x (k = next byte)
+(defn- lw-bytes8 [M0 :vector-i64 b :i64 x :i64 k :i64] :vector-i64
+  (if (>= k 8)
+    M0
+    (lw-bytes8 (lw-put M0 (+ MM-LITB-BASE (+ b k)) (bit-and (u64-shift-right x (* 8 k)) 255)) b x (+ k 1))))
+(defn- lw-tabitems [M0 :vector-i64 c :i64 b :i64] :vector-i64
+  (if (= c 0)
+    M0
+    (let [x (lw-nf M0 c NF-AUX)
+          nx (lw-next M0 c)]
+      (lw-tabitems (lw-bytes8 M0 b x 0) nx (+ b 8)))))
+;; append the LIT record of table node w (m items)
+(defn- lw-tabdata [M0 :vector-i64 w :i64 m :i64] :vector-i64
+  (let [lit (vector-at M0 MM-LIT-N)
+        lb (vector-at M0 MM-LITB-N)
+        p (+ MM-LIT-BASE (* lit MM-LIT-W))
+        tok (lw-nf M0 w NF-TOK)
+        cap (lw-tabcap lit lb m)]
+    (if (> cap 0)
+      (lw-fail M0 E-HEAP-REGION -1 cap)
+      (let [M1 (lw-put M0 (+ p LF-B) lb)
+            M2 (lw-put M1 (+ p LF-LEN) (* 8 m))
+            M3 (lw-put M2 (+ p LF-TOK) tok)
+            M4 (lw-put M3 MM-LIT-N (+ lit 1))
+            M5 (lw-put M4 MM-LITB-N (+ lb (* 8 m)))
+            c (lw-first M5 w)]
+        (lw-tabitems M5 c lb)))))
+;; [i -> t] TAB t lit m
+(defn- lw-tab [M0 :vector-i64 w :i64 i :i64 t :i64] :vector-i64
+  (let [lit (vector-at M0 MM-LIT-N)
+        m (lw-count M0 (lw-first M0 w))
+        M1 (lw-tabdata M0 w m)
+        M2 (lw-expr M1 i t 0)]
+    (lw-emit M2 OP-TAB t lit m)))
+;; a runtime head over the operands from a
+(defn- lw-rtcall [M0 :vector-i64 a :i64 t :i64 rt :i64] :vector-i64
+  (let [w (lw-tabsel M0 a rt)]
+    (if (> w 0)
+      (lw-tab M0 w (lw-next M0 a) t)
+      (let [m (lw-count M0 a)] (lw-emit (lw-args M0 a t) OP-RT rt t m)))))
+
 ;; an ND-LIST expression with head code hd; h = head node, a = first argument
 (defn- lw-list2 [M0 :vector-i64 n :i64 hd :i64 t :i64 k :i64] :vector-i64
   (let [h (lw-first M0 n)
@@ -324,7 +393,7 @@
     (cond
       (> bop 0) (let [nx (lw-next M0 a)] (lw-fold (lw-expr M0 a t 0) nx t bop))
       (> cc 0) (lw-emit (lw-args M0 a t) OP-CMP cc t 0)
-      (> rt 0) (let [m (lw-count M0 a)] (lw-emit (lw-args M0 a t) OP-RT rt t m))
+      (> rt 0) (lw-rtcall M0 a t rt)
       :else (lw-list2 M0 n hd t k))))
 
 (defn- lw-sym [M0 :vector-i64 n :i64 t :i64] :vector-i64
@@ -590,6 +659,13 @@
 (defn- lw-ix-brnz-to [H :vector-i64 v :i64 l :i64 pc :i64] :i64
   (if (= v 0) (+ pc 1) (vector-at H (+ (lw-hlab) l))))
 
+;; TAB: 1 when 0 <= x < n; the item x of table lit (8 little-endian bytes in LITB)
+(defn- lw-ix-tabok [x :i64 n :i64] :i64 (if (< x 0) 0 (if (< x n) 1 0)))
+(defn- lw-ix-tabv [M :vector-i64 lit :i64 x :i64] :i64
+  (let [b (+ MM-LITB-BASE (+ (vector-at M (+ MM-LIT-BASE (+ (* lit MM-LIT-W) LF-B))) (* 8 x)))]
+    (loop [k 7 acc 0]
+      (if (< k 0) acc (recur (- k 1) (bit-or (i64-shift-left acc 8) (vector-at M (+ b k))))))))
+
 ;; the instruction loop of one frame: pc = SIR index, fb = frame base, tb = temp base
 (defn- lw-ix [M :vector-i64 H0 :vector-i64 pc :i64 fb :i64 tb :i64] :vector-i64
   (let [p (+ MM-SIR-BASE (* pc MM-SIR-W))
@@ -650,6 +726,12 @@
         (if (> st1 0)
           H1
           (let [r (vector-at H1 1)] (lw-ix M (lw-put H1 (+ tb a) r) (+ pc 1) fb tb))))
+      (= op OP-TAB)
+      (let [x (vector-at H0 (+ tb a))
+            n (vector-at M (+ p 3))]
+        (if (= (lw-ix-tabok x n) 1)
+          (lw-ix M (lw-put H0 (+ tb a) (lw-ix-tabv M b x)) (+ pc 1) fb tb)
+          (lw-ix-trap H0 2)))
       (= op OP-CAP) (lw-ix-trap H0 7)
       :else (lw-ix-trap H0 8))))
 
