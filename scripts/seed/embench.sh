@@ -12,8 +12,12 @@
 #   seed-2.bin are byte-identical (the fixed point, gate G4); the label says "seed R0 (selfhost-built subset compiler)",
 #   not "amu" (design 3.3). The runner's own qualification.json is left byte for byte as the runner wrote it.
 #
-# Env: EMBENCH_UPSTREAM (required: a git checkout of embench-iot, commit 09c2ed8c3b7008c95d08b038de4a3f6dc103ed70 in the
-#      2026-09-29 run), SEED_BUILD (default build/seed), SEED_STAGE (which seed-N to package, default 1).
+# Env: EMBENCH_UPSTREAM (a git checkout of embench-iot, commit 09c2ed8c3b7008c95d08b038de4a3f6dc103ed70 in the
+#      2026-09-29 run). When it is unset the runner is started through scripts/seed/embench_declared_upstream.py,
+#      which answers only the runner's `git rev-parse HEAD` of the upstream with that DECLARED commit, marked as
+#      declared and not re-verified (the runner uses the checkout for nothing else; the ports are the repo's own);
+#      the provenance then has "upstream_commit_declared": true.
+#      SEED_BUILD (default build/seed), SEED_STAGE (which seed-N to package, default 1).
 #      Run it on a quiet host (rule 4): the script refuses to start when the 1-minute load average is above SEED_MAX_LOAD
 #      (default 4) unless SEED_ALLOW_LOADED=1, and records the load average in the provenance.
 emulate -L zsh
@@ -23,7 +27,9 @@ B=$SEED_BUILD; R=$SEED_REPO
 stage=${SEED_STAGE:-1}
 out=${1:-$B/embench-seed-r0}
 case $out in /*) ;; *) out=$PWD/$out ;; esac
-[ -n "$EMBENCH_UPSTREAM" ] && [ -d "$EMBENCH_UPSTREAM/.git" ] || { echo "embench: set EMBENCH_UPSTREAM to a git checkout of embench-iot" >&2; exit 2; }
+declared=false
+if [ -z "$EMBENCH_UPSTREAM" ]; then declared=true
+else [ -d "$EMBENCH_UPSTREAM/.git" ] || { echo "embench: EMBENCH_UPSTREAM is not a git checkout of embench-iot" >&2; exit 2; }; fi
 load=$(sysctl -n vm.loadavg | awk '{print $2}')
 if [ -z "$SEED_ALLOW_LOADED" ] && awk "BEGIN{exit !($load > ${SEED_MAX_LOAD:-4})}"; then
   echo "embench: load average $load is above ${SEED_MAX_LOAD:-4}; rerun on a quiet host or set SEED_ALLOW_LOADED=1 (the result is then not a measurement)" >&2; exit 3
@@ -35,15 +41,21 @@ if [ -n "$SEED_COMPILER" ]; then
   comp=$SEED_COMPILER; label="harness dry run with SEED_COMPILER (not the seed)"
 else
   $R/scripts/seed/package.sh $stage --scope "$R:$B:$out:/private/tmp:/tmp" --out $B/seed || exit $?
-  comp=$B/seed; label="seed R0 (selfhost-built subset compiler)"
+  comp=$B/seed; label="seed R0, selfhost-built subset compiler, NOT an official Embench score"
 fi
 # the runner, built from the repo's source (C, system cc)
 if [ ! -x $B/kexe-benchmark ] || [ $R/bench/runtime-comparison/kexe-benchmark.c -nt $B/kexe-benchmark ]; then
   cc -O2 -std=c11 $R/bench/runtime-comparison/kexe-benchmark.c -o $B/kexe-benchmark.tmp.$$ -ldl && mv $B/kexe-benchmark.tmp.$$ $B/kexe-benchmark || { echo "embench: cannot build kexe-benchmark" >&2; exit 2; }
 fi
 mkdir -p $out
-python3 $R/bench/embench/run_native_qualification.py --compiler $comp --runner $B/kexe-benchmark \
-  --upstream $EMBENCH_UPSTREAM --output $out || { echo "embench: the qualification runner failed (a port did not return 1, or a seed command failed)" >&2; exit 1; }
+if [ $declared = true ]; then
+  python3 $R/scripts/seed/embench_declared_upstream.py $R/bench/embench/run_native_qualification.py --compiler $comp \
+    --runner $B/kexe-benchmark --upstream $R --output $out
+else
+  python3 $R/bench/embench/run_native_qualification.py --compiler $comp --runner $B/kexe-benchmark \
+    --upstream $EMBENCH_UPSTREAM --output $out
+fi || { echo "embench: the qualification runner failed (a port did not return 1, or a seed command failed)" >&2; exit 1; }
+load_end=$(sysctl -n vm.loadavg | awk '{print $2}')
 # provenance
 sha() { shasum -a 256 $1 | cut -c1-64; }
 fp=false; [ -z "$SEED_COMPILER" ] && [ -s $B/seed-1.bin ] && [ -s $B/seed-2.bin ] && cmp -s $B/seed-1.bin $B/seed-2.bin && fp=true
@@ -51,6 +63,8 @@ fp=false; [ -z "$SEED_COMPILER" ] && [ -s $B/seed-1.bin ] && [ -s $B/seed-2.bin 
   echo '{'
   echo '  "format": "amu.seed-provenance/v1",'
   echo "  \"label\": \"$label\","
+  echo '  "official_embench_score": false,'
+  echo "  \"upstream_commit_declared\": $declared,"
   echo "  \"selfhost_built\": $fp,"
   echo "  \"fixed_point_seed1_equals_seed2\": $fp,"
   echo "  \"seed_stage_packaged\": $stage,"
@@ -61,6 +75,8 @@ fp=false; [ -z "$SEED_COMPILER" ] && [ -s $B/seed-1.bin ] && [ -s $B/seed-2.bin 
   echo "  \"loader_source_sha256\": \"$(sha $R/tools/kexe_loader.c)\","
   echo "  \"runner_sha256\": \"$(sha $B/kexe-benchmark)\","
   echo "  \"load_average_1m_at_start\": $load,"
+  echo "  \"load_average_1m_at_end\": $load_end,"
+  echo "  \"host_loaded\": $( awk "BEGIN{print ($load > ${SEED_MAX_LOAD:-4}) ? \"true\" : \"false\"}" ),"
   echo "  \"qualification_json_sha256\": \"$(sha $out/qualification.json)\","
   echo "  \"repo_head\": \"$(git -C $R rev-parse HEAD)\""
   echo '}'
