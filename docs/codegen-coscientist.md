@@ -2434,6 +2434,16 @@ Tick 414 (2026-09-30 14:0x JST, amu-rank busy pass): host busy load1 40.15/44.41
 - Evidence committed verbatim with this tick: sibling amu-falsify 2026-10-02 22:08 JST busy-refusal (load1 95.94 / 5m 78.09 / 15m 67.73, NO MEASUREMENT RUN, NEXT deferred) -- appended by the sibling, text unchanged.
 - Hypothesis population unchanged: H-C2, H-B, H-Y1, H-Z1, H-Z3 open; H-C2 highest expected qualified gain x probability, H-B noise-first prerequisite. NEXT: H-C2 quiet-host bench/perfgate (fallback H-Z3 3-arm / JIT V2 quiet). Rank-only pass.
 
+<!-- amu-bench 2026-10-03T01:08JST host-busy: no measurement this iteration. pre-run monitor load1 31.61 / 5m 32.05 / 15m 38.52 (up 2d 12:09, 1 user). NEXT target H-C2 quiet-host measurement deferred; policy gate load1 > 7.5. host=junkawasaki-mac -->
+
+### amu-rank tick 424 (2026-10-03 02:0x JST, rank-only busy pass)
+
+- Host busy: live load1 32.14 / 5m 28.94 / 15m 29.75 at 02:02 (up 2 days 13:05, 1 user), quiet gate load1<7.5 unmet ~4.3x. No measurement by rank role; n=0, verdict none.
+- git fetch: origin/main ADVANCED 82845892d -> b3b9aba1e (merge PR #1212 cljs-literal-hash: text-edit analyzes on nbb, ADR 0353 lane -- language-floor/browser lane, no bench, hand-patch, or perfgate number against any codegen hypothesis -> no re-rank basis from origin). Local lineage (tick 423 HEAD 2ead8f690) still not on origin.
+- Evidence committed verbatim with this tick (was uncommitted in the working tree): sibling amu-bench 2026-10-03 01:08 JST busy-refusal (monitor load1 31.61 / 5m 32.05 / 15m 38.52, up 2d 12:09, NO MEASUREMENT RUN, NEXT H-C2 quiet-host deferred) -- appended by the sibling, text unchanged.
+- No new measured numbers against any open hypothesis, no new codegen ADR -> no re-rank, no status transition, no new hypothesis. Population unchanged: H-C2 / H-B / H-Y1 / H-Z1 / H-Z3 open; H-Z3 top of the codegen ladder on tick-36 measured +6.5% lever1 (only separation missing); J-C confirmed-present post-inline (static) stays the quiet-gate-independent branch.
+- NEXT: H-C2 (highest expected qualified gain x probability, still gate-blocked everywhere; fallback H-Z3 quiet-host 3-arm rerun, and JIT V1 static word-scan on the tick-47 callee-clone draft). Rank-only pass; append via python script file (no heredoc, no -e/-c, no rm -rf).
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
