@@ -78,3 +78,15 @@ guest in `guests/` (and the generated ds guest) compiles natively since 2026-10-
 open are in `docs/selfhost-native-gaps-20261001.md`. `bytes-cap.sh` runs the `fs/app-data-bytes` wire end to end; `GUEST_POLICY_CAPS` /
 `GUEST_GRANT` set the compile-time and run-time capability grants of `guest-run.sh`. Needs `WALL_CP`, `WALL_K`, `WALL_AMU_SRC`,
 `WALL_NBB_DIR` as above; `GUEST_CACHE` (default `/tmp/kotoba-guest-cache`) holds compiled products and refusals.
+
+## Infer passes differential (selfhost S3, infer half), 2026-10-02
+
+`ie-diff.sh` runs the host `check-value-types!`, `elaborate-named-abilities`, `infer-loop-helper-results`, `check-loop-recur-argument-types!`,
+`resolve-loop-helper-param-types` and `infer-closure-refinements` (tapped where `analyze` calls them on the programs of kotoba-sema's tests,
+plus `IE_EXTRA` directories of `.kotoba` programs) against their Kotoba-route bodies in kotoba-sema's `frontend/infer.cljk`, which `ie-gen.py`
+turns into a closed guest (every defn private; `ie-tail.cljk` is the case dispatcher and the comparison) and `ie-interp.clj` runs on the JVM
+KIR interpreter (BOOTSTRAP REFERENCE; the native and wasm backends refuse the guest today). See docs/selfhost-frontend-typemodel-design.md
+section 11 for the result and what it found.
+
+    WALL_CP=<cp> WALL_K=<kotoba-lang> WALL_AMU_SRC=<this repo>/src KSEMA=<kotoba-sema checkout> IE_EXTRA=<dir>:<dir> \
+    scripts/selfhost-wall/ie-diff.sh

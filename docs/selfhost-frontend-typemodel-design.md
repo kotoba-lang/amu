@@ -470,3 +470,44 @@ spans and no `:kotoba.diag/source-head`, so `[x at 2:31]` and `string-length` (f
 message is identical). The differential found a real bug (`use-site-text` printed two spaces after a seq head), fixed in 99e2bf9.
 Another harness fact: a `:bool` field assigned from a function result (`(record-assoc ctx :final (f x))`, an `and`-let) trapped "value is not a
 boolean" on the interpreter; `(if (f x) true false)` is the spelling that works (as `ctx-tail` already does).
+
+## 11. The module passes, the loop passes and the closure refinements on the Kotoba route, and their differential (2026-10-02)
+
+**Ported (real Kotoba bodies beside the unchanged host forms, context first, a function a Form map keyed like the host's):**
+`check-value-types!` (literal-byte bounds included), `elaborate-named-abilities` / `elaborate-named-ability` (the host's `used`
+volatile is the pair `[form used]` returned by every arm; the capability and source-operation registries sit in the context tables),
+the loop family `infer-loop-helper-results` (`loop-helper-exit-type`, `loop-helper-result`, `loop-exit-forms`, the marker walk),
+`check-loop-recur-argument-types!`, `resolve-loop-helper-param-types` (the host form is in analyze.cljk; the Kotoba body is in infer.cljk
+beside the `ie-` passes it runs) and `infer-closure-refinements` (the fixed point over `{function {:params #{i} :result? b}}`; the host's
+volatile `next-facts` is the facts value each walker answers; an expression's status is an i64: 0 unknown, 1 closure, 2 trap).
+Everything new is private: the linked project's export bound is 1024 clauses and infer's closure sits at it, so none of these can be
+exported until infer's own surface is cut (the sibling work).
+
+**Recordings survive a refusal.** `resolve-loop-helper-param-types` runs each body with `:recording`; the host's recorder is a volatile, so
+the argument types recorded before a body was refused survive the throw (`(vector-count (loop ...))` records the loop's call, then refuses
+the placeholder `:i64` result). A value-threaded context loses them. `:ie/ctx` gained `rec-limit`/`rec-count`; `ie-record-call` throws
+record number LIMIT+1 as a pending record, and the refused body is re-run with limit 0, 1, ... until the recordings before the refusal are
+recovered exactly (`lh-partial`). The differential found it (4 of 715 cases) and agrees after the fix.
+
+**Discipline found, beyond section 1.3.** (1) An argument of a module-local call that is an imported call on a let-bound local (`(f (fget x :k))`)
+inside a let that later aborts loses the local ("x is not a parameter, a let binding..."): pre-bind every argument. The same holds for
+`str` with an argument two calls deep. (2) An `if` whose branches abort cannot be a `let` value nor an argument: a helper function. (3) A
+`(= bool-from-or bool-literal)` answered false on the interpreter (the sibling's note: a `:bool` produced by `or` over `form/eq` is not
+the boolean a literal is): `(if want hit (not hit))`. (4) The checker's abort-type fixed point reports a type error in any function of a
+cycle as "calls aborting functions with two different error types"; bisect by stubbing the callees (`/private/tmp`-style scratch module:
+infer's header plus all-aborting stubs of the callees checks in 10 s against 80 s for infer.cljk).
+
+**Differential** (`scripts/selfhost-wall/ie-diff.sh`): `ie-host.cljs` (nbb) analyses every program embedded in kotoba-sema's tests plus
+the `.kotoba` conformance programs and a synthetic set of refusal probes, with the six passes tapped where `analyze` calls them, and
+writes one case per call `[op ctx functions extra expected]` (the host answer realized, or its refusal message; the host's
+elaboration is lazy, so a refusal can surface only when the answer is printed). `ie-gen.py` builds the guest (infer.cljk verbatim,
+every defn private, + `ie-tail.cljk`); the native and wasm backends do not admit it (a typed `[:set :keyword]` in a loop), so
+`ie-interp.clj` runs it on the JVM KIR interpreter (BOOTSTRAP REFERENCE: link 30 s, lower 60 s, about 1 case per second); the
+guest compares with `form/eq`. Result: 3869 cases, 3797 agree, 72 agree on the refusal message, 0 disagree
+(check-value-types! 355, elaborate-named-abilities 680, infer-loop-helper-results 715, check-loop-recur-argument-types! 713,
+resolve-loop-helper-param-types 715, infer-closure-refinements 655 + the synthetic ones; 86 programs with loop helpers, 50 closure
+cases with a refinement, 7 with a source-operation elaboration). The differential found two real bugs (above) and one host quirk: the
+host's `:used` set of `elaborate-named-abilities` is a snapshot taken before its lazily built result is realized, so it can be smaller
+than the port's complete one (the guest requires containment there; `(set/union @used-capabilities ...)` hides it in the pipeline).
+Known narrowings: a `let` with several body forms is not refused by `infer-closure-refinements` (earlier passes refuse it);
+`loop-exit-text` cuts at 45 bytes, not characters.

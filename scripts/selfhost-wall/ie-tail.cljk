@@ -1,0 +1,165 @@
+;; ---- the infer differential tail ----
+;; A case is [op ctx functions extra expected]: OP "cvt" check-value-types!, "ela" elaborate-named-abilities,
+;; "lhr" infer-loop-helper-results (extra = the shapes), "clr" check-loop-recur-argument-types! (shapes),
+;; "rlh" resolve-loop-helper-param-types (shapes), "icr" infer-closure-refinements (extra = the lambda infos).
+;; CTX is {:schemas :row-schemas :handlers}. EXPECTED is [:ok form] or [:err message] as the host answered.
+(defn- dg-join [kids [:list [:ref :form/r]] i :i64 acc :string] :string
+  (if (>= i (vector-count kids))
+    acc
+    (dg-join kids (+ i 1)
+             (string-concat acc (string-concat (if (> i 0) " " "") (dg-print (typed-list-nth [:list [:ref :form/r]] kids i)))))))
+
+(defn- dg-print [f [:ref :form/r]] :string
+  (cond
+    (form/is-nil? f) "nil"
+    (form/is-bool? f) (if (form/bool-value f) "true" "false")
+    (form/is-int? f) (string-from-i64 (form/int-value f))
+    (form/is-string? f) (string-concat "\"" (string-concat (form/string-value f) "\""))
+    (form/is-keyword? f) (form-text f)
+    (form/is-symbol? f) (form/symbol-value f)
+    (form/is-seq? f) (string-concat "(" (string-concat (dg-join (form/kids-of f) 0 "") ")"))
+    (form/is-vec? f) (string-concat "[" (string-concat (dg-join (form/kids-of f) 0 "") "]"))
+    (form/is-set? f) (string-concat "#{" (string-concat (dg-join (form/kids-of f) 0 "") "}"))
+    (form/is-map? f) (string-concat "{" (string-concat (dg-join (form/kids-of f) 0 "") "}"))
+    :else "?"))
+
+(defn- dg-revive-kids [f [:ref :form/r] i :i64 acc [:list [:ref :form/r]]] [:list [:ref :form/r]]
+  (if (>= i (form/count-of f))
+    acc
+    (dg-revive-kids f (+ i 1) (form/append-form acc (dg-revive (form/nth-of f i))))))
+
+;; the harness spells a float literal `(__ds_f64 N)`; the Kotoba route's reader yields a float Form
+(defn- dg-revive [f [:ref :form/r]] [:ref :form/r]
+  (cond
+    (and (form/is-seq? f) (= 2 (form/count-of f)) (form/is-symbol? (form/nth-of f 0))
+         (string=? (form/symbol-value (form/nth-of f 0)) "__ds_f64"))
+    (form/f64-form (form/int-value (form/nth-of f 1)))
+    (form/is-seq? f) (form/form-seq (dg-revive-kids f 0 (form/no-forms)))
+    (form/is-vec? f) (form/form-vec (dg-revive-kids f 0 (form/no-forms)))
+    (form/is-set? f) (form/form-set (dg-revive-kids f 0 (form/no-forms)))
+    (form/is-map? f) (form/form-map (dg-revive-kids f 0 (form/no-forms)))
+    :else f))
+
+(defn- dg-ctx [base [:ref :ie/ctx] c [:ref :form/r]] [:ref :ie/ctx]
+  (record-assoc [:ref :ie/ctx]
+                (record-assoc [:ref :ie/ctx]
+                              (record-assoc [:ref :ie/ctx] base :schemas (fget c :schemas))
+                              :row-schemas (fget c :row-schemas))
+                :handlers (fget c :handlers)))
+
+(defn- dg-answer [op :string ctx [:ref :ie/ctx] functions [:ref :form/r] extra [:ref :form/r]] [:ref :form/r]
+  (cond
+    (string=? op "cvt") (let [_ (check-value-types! ctx functions)] (form/nil-form))
+    (string=? op "ela") (elaborate-named-abilities ctx functions)
+    (string=? op "lhr") (infer-loop-helper-results ctx functions extra)
+    (string=? op "clr") (check-loop-recur-argument-types! ctx functions extra)
+    (string=? op "rlh") (resolve-loop-helper-param-types ctx functions extra)
+    (string=? op "icr") (infer-closure-refinements ctx functions extra)
+    (string=? op "ite") (dg-infer-body ctx functions (fget (dg-first-helper functions 0) :name))
+    (string=? op "lhd") (dg-debug-exits ctx functions (fget (dg-first-helper functions 0) :name))
+    (string=? op "lhq") (dg-debug-round ctx functions (fget (dg-first-helper functions 0) :name))
+    (string=? op "iex") (ie-type-of ctx extra (empty-fmap) (abort-signatures functions))
+    (string=? op "lhe") (dg-exit-type ctx functions (fget (dg-first-helper functions 0) :name))
+    :else (form/nil-form)))
+
+(defn- dg-first-helper [functions [:ref :form/r] i :i64] [:ref :form/r]
+  (if (>= i (form/count-of functions))
+    (form/nil-form)
+    (if (ftruthy? (fget (form/nth-of functions i) :loop-helper?))
+      (form/nth-of functions i)
+      (dg-first-helper functions (+ i 1)))))
+
+(defn- dg-debug-exits [ctx [:ref :ie/ctx] functions [:ref :form/r] name [:ref :form/r]] [:ref :form/r]
+  (let [f (dg-find functions name 0)
+        sigs (loop-helper-signatures functions)
+        marked (replace-loop-self-calls (fget f :body) name)
+        environment (zip-locals (fget f :params) (fget f :param-types))
+        locals (form/assoc-form environment (loop-recur-marker) (tk :i64))
+        exits (loop-exit-forms ctx marked locals sigs)
+        typed (loop-typed-exits ctx exits 0 sigs (form/no-forms))]
+    (form/vec3 name marked (form/vec2 (form/form-vec exits) (form/form-vec typed)))))
+
+(defn- dg-debug-round [ctx [:ref :ie/ctx] functions [:ref :form/r] name [:ref :form/r]] [:ref :form/r]
+  (let [f (dg-find functions name 0)
+        sigs (loop-helper-signatures functions)
+        marked (replace-loop-self-calls (fget f :body) name)
+        environment (zip-locals (fget f :params) (fget f :param-types))
+        provisional (tk :i64)
+        locals (form/assoc-form environment (loop-recur-marker) provisional)
+        exits (loop-exit-forms ctx marked locals sigs)
+        typed-all (loop-typed-exits ctx exits 0 sigs (form/no-forms))
+        absent (loop-filter-absence typed-all 0 true (form/no-forms))
+        typed (loop-filter-absence typed-all 0 false (form/no-forms))
+        has-absent (> (vector-count absent) 0)
+        first-type (if (> (vector-count typed) 0) (form/nth-of (fl-nth typed 0) 1) (form/nil-form))
+        disagreeing (loop-disagreeing typed 0 first-type has-absent)
+        decided (loop-exit-decide ctx marked environment sigs provisional 0 typed absent first-type disagreeing)]
+    (form/vec5 (form/int-form (vector-count typed)) (form/int-form (vector-count absent)) first-type disagreeing decided)))
+
+(defn- dg-find [functions [:ref :form/r] name [:ref :form/r] i :i64] [:ref :form/r]
+  (if (>= i (form/count-of functions))
+    (form/nil-form)
+    (if (form/eq (fget (form/nth-of functions i) :name) name)
+      (form/nth-of functions i)
+      (dg-find functions name (+ i 1)))))
+
+;; debugging op: the type of the body of the function named EXTRA
+(defn- dg-infer-body [ctx [:ref :ie/ctx] functions [:ref :form/r] name [:ref :form/r]] [:ref :form/r]
+  (let [f (dg-find functions name 0)
+        sigs (abort-signatures functions)
+        locals (zip-locals (fget f :params) (fget f :param-types))
+        body (fget f :body)]
+    (ie-type-of ctx body locals sigs)))
+
+;; debugging op: loop-helper-exit-type of the function named EXTRA
+(defn- dg-exit-type [ctx [:ref :ie/ctx] functions [:ref :form/r] name [:ref :form/r]] [:ref :form/r]
+  (let [f (dg-find functions name 0)
+        sigs (loop-helper-signatures functions)]
+    (loop-helper-exit-type ctx f sigs)))
+
+;; the comparison of elaborate-named-abilities answers: the functions are equal and the host's :used (a snapshot taken
+;; before its lazy walk is realized) is contained in the port's complete one
+(defn- dg-ela-same? [expected [:ref :form/r] got [:ref :form/r]] :bool
+  (and (form/eq (fget expected :functions) (fget got :functions))
+       (dg-subset? (form/kids-of (fget expected :used)) (fget got :used) 0)))
+
+(defn- dg-subset? [xs [:list [:ref :form/r]] set [:ref :form/r] i :i64] :bool
+  (if (>= i (vector-count xs))
+    true
+    (and (fl-has? (form/kids-of set) (fl-nth xs i) 0) (dg-subset? xs set (+ i 1)))))
+
+(defn- dg-ok-case [expected [:ref :form/r] got [:ref :form/r]] :string
+  (if (and (form/eq (form/nth-of expected 0) (form/keyword-form :ok))
+           (or (form/eq (form/nth-of expected 1) got)
+               (and (form/is-map? got) (form/is-map? (form/nth-of expected 1)) (form/form-has? got (form/keyword-form :functions))
+                    (dg-ela-same? (form/nth-of expected 1) got))))
+    "OK"
+    (string-concat "DIFF " (string-concat (dg-print got) (string-concat " || " (dg-print expected))))))
+
+(defn- dg-err-case [expected [:ref :form/r] msg :string] :string
+  (if (form/eq (form/nth-of expected 0) (form/keyword-form :err))
+    (if (string=? (form/string-value (form/nth-of expected 1)) msg)
+      "OKERR"
+      (string-concat "ERRMSG " (string-concat msg (string-concat " || " (form/string-value (form/nth-of expected 1))))))
+    (string-concat "ERR-vs-OK " (string-concat msg (string-concat " || " (dg-print expected))))))
+
+(defn- dg-case [base [:ref :ie/ctx] c [:ref :form/r]] :string
+  (let [op (form/string-value (form/nth-of c 0))
+        ctx (dg-ctx base (form/nth-of c 1))
+        functions (form/nth-of c 2)
+        extra (form/nth-of c 3)
+        expected (form/nth-of c 4)]
+    (try (let [got (dg-answer op ctx functions extra)]
+           (dg-ok-case expected got))
+         (catch [:ref :fe/err] e (dg-err-case expected (record-get [:ref :fe/err] e :msg))))))
+
+(defn- dg-lines [base [:ref :ie/ctx] text :string i :i64 n :i64 out :string] :string
+  (if (>= i n)
+    out
+    (let [j (string-find-byte text 10 i)
+          end (if (< j 0) n j)
+          c (dg-revive (form/edn-form (string-substring text i end)))]
+      (dg-lines base text (+ end 1) n (string-concat out (string-concat (dg-case base c) "\n"))))))
+
+(defn ie-diff-run [text :string] :string
+  (dg-lines (ie-new-ctx (form/nil-form) (form/nil-form) (form/nil-form)) text 0 (string-byte-length text) ""))
