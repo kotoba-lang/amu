@@ -74,7 +74,7 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
 
 /* KEXE-DECISIONS-GENERATED BEGIN -- written by scripts/gen-loader-decisions.cljk; do not
  * edit by hand. Regenerate after changing either source:
- *   tools/kexe_loader_decisions.kotoba sha256 684fa61c72305dbab1e1291cca3f476e0acdcdf1d5cb55a2efc127781f488ef3
+ *   tools/kexe_loader_decisions.kotoba sha256 e0e65e01d5da0c1ba28267e845b339cf5a3ad6f701cbbe895787d1f5548e1fd7
  *   tools/kexe_loader_names.kotoba     sha256 9ccaadfb815a920a3f39384b6b6a4860baef04ffd89377e9aa4de804f27d3ad4
  *   tools/linux_static_handlers.kotoba sha256 c7619a1aebc42b039ce7d71f318b9d41e292c5f17b49f12733e7c3cb98b80bea
  *   tools/kexe_loader_boundary.kotoba  sha256 99ec1c85f7a5811266d0eae30f8f5a47adea71de496f08879cb9adc4df1ac6d7
@@ -104,8 +104,8 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
 #define KEXE_VECTOR_MAX (4u * 1024u * 1024u)
 #define KEXE_VECTOR_ITEM_MAX (128u * 1024u * 1024u)
 #define KEXE_VECTOR_ITEM_LIMIT (16u * 1024u * 1024u)
-#define KEXE_STRING_VALUE_LIMIT 65536u
-#define KEXE_BYTES_VALUE_LIMIT 65536u
+#define KEXE_STRING_VALUE_LIMIT 8388608u
+#define KEXE_BYTES_VALUE_LIMIT 8388608u
 #define KEXE_SCOPE_ENTRIES 64
 #define KEXE_PATH_BYTES 4096u
 #define KEXE_NET_HANDLES 16u
@@ -348,9 +348,9 @@ static const uint8_t kexe_decisions_code[6016] = {
   0xc0, 0x03, 0x5f, 0xd6, 0x22, 0x02, 0x80, 0xd2, 0x1f, 0x00, 0x02, 0xeb,
   0xe3, 0x17, 0x9f, 0x9a, 0x63, 0x00, 0x00, 0xb4, 0x00, 0x20, 0xa0, 0xd2,
   0xc0, 0x03, 0x5f, 0xd6, 0x42, 0x02, 0x80, 0xd2, 0x1f, 0x00, 0x02, 0xeb,
-  0xe3, 0x17, 0x9f, 0x9a, 0x63, 0x00, 0x00, 0xb4, 0x20, 0x00, 0xa0, 0xd2,
+  0xe3, 0x17, 0x9f, 0x9a, 0x63, 0x00, 0x00, 0xb4, 0x00, 0x10, 0xa0, 0xd2,
   0xc0, 0x03, 0x5f, 0xd6, 0x62, 0x02, 0x80, 0xd2, 0x1f, 0x00, 0x02, 0xeb,
-  0xe3, 0x17, 0x9f, 0x9a, 0x63, 0x00, 0x00, 0xb4, 0x20, 0x00, 0xa0, 0xd2,
+  0xe3, 0x17, 0x9f, 0x9a, 0x63, 0x00, 0x00, 0xb4, 0x00, 0x10, 0xa0, 0xd2,
   0xc0, 0x03, 0x5f, 0xd6, 0x82, 0x02, 0x80, 0xd2, 0x1f, 0x00, 0x02, 0xeb,
   0xe3, 0x17, 0x9f, 0x9a, 0x63, 0x00, 0x00, 0xb4, 0x00, 0x08, 0x80, 0xd2,
   0xc0, 0x03, 0x5f, 0xd6, 0xa2, 0x02, 0x80, 0xd2, 0x1f, 0x00, 0x02, 0xeb,
@@ -1854,10 +1854,10 @@ static const uint8_t kexe_decisions_code[9258] = {
   0x48, 0x85, 0xd2, 0x0f, 0x84, 0x0a, 0x00, 0x00, 0x00, 0x41, 0xb8, 0x00,
   0x00, 0x00, 0x01, 0x4c, 0x89, 0xc0, 0xc3, 0xb9, 0x12, 0x00, 0x00, 0x00,
   0x48, 0x39, 0xc8, 0x0f, 0x94, 0xc2, 0x48, 0x0f, 0xb6, 0xd2, 0x48, 0x85,
-  0xd2, 0x0f, 0x84, 0x0a, 0x00, 0x00, 0x00, 0x41, 0xb8, 0x00, 0x00, 0x01,
+  0xd2, 0x0f, 0x84, 0x0a, 0x00, 0x00, 0x00, 0x41, 0xb8, 0x00, 0x00, 0x80,
   0x00, 0x4c, 0x89, 0xc0, 0xc3, 0xb9, 0x13, 0x00, 0x00, 0x00, 0x48, 0x39,
   0xc8, 0x0f, 0x94, 0xc2, 0x48, 0x0f, 0xb6, 0xd2, 0x48, 0x85, 0xd2, 0x0f,
-  0x84, 0x0a, 0x00, 0x00, 0x00, 0x41, 0xb8, 0x00, 0x00, 0x01, 0x00, 0x4c,
+  0x84, 0x0a, 0x00, 0x00, 0x00, 0x41, 0xb8, 0x00, 0x00, 0x80, 0x00, 0x4c,
   0x89, 0xc0, 0xc3, 0xb9, 0x14, 0x00, 0x00, 0x00, 0x48, 0x39, 0xc8, 0x0f,
   0x94, 0xc2, 0x48, 0x0f, 0xb6, 0xd2, 0x48, 0x85, 0xd2, 0x0f, 0x84, 0x0a,
   0x00, 0x00, 0x00, 0x41, 0xb8, 0x40, 0x00, 0x00, 0x00, 0x4c, 0x89, 0xc0,
@@ -4527,12 +4527,14 @@ struct kexe_context_v11 {
    *   string_from_utf8(b)       a pool string holding b's bytes, CANONICAL
    *                             UTF-8 only: the first bad sequence is named
    *                             (value_trap below) and the guest trapped --
-   *                             never replaced with U+FFFD. At most 65536
+   *                             never replaced with U+FFFD. At most
+   *                             KEXE_STRING_VALUE_LIMIT (8 MiB, ADR 0362)
    *                             bytes (string/too-large), charged to the
    *                             string pool (:budget/bytes).
    *   bytes_from_vector(v)      a COPY of v, refusing an item outside
    *                             [0,255] (bytes/item-out-of-range) and more
-   *                             than 65536 items (bytes/too-large). Also the
+   *                             than KEXE_BYTES_VALUE_LIMIT items (8 MiB,
+   *                             ADR 0362; bytes/too-large). Also the
    *                             lowering of vector-i64-from-bytes, whose
    *                             items always pass; it must copy, since a
    *                             view would let vector-assoc! on the result
@@ -4540,7 +4542,7 @@ struct kexe_context_v11 {
    *   bytes_slice(b, s, e)      a VIEW of [s, e) (bytes/slice-bounds), for
    *                             string_substring's reason: nothing writes
    *                             inside a bytes slice.
-   *   bytes_concat(a, b)        a copy, at most 65536 bytes.
+   *   bytes_concat(a, b)        a copy, at most KEXE_BYTES_VALUE_LIMIT bytes.
    *
    * Reference semantics: osaho kotoba.kir (eval) and kotoba.kir.value
    * (utf8-invalid-at, whose walk and names string_from_utf8 repeats).
@@ -9609,8 +9611,13 @@ static int64_t process_spawn_provider(struct kexe_context_v11 *context,
 #define KEXE_NET_ANSWER 'A'
 #define KEXE_NET_REFUSED 'R'
 #define KEXE_NET_ANSWER_MAX (2u * KEXE_NET_BYTES + 32u)
-/* A request crosses whole: a string value is at most this long. */
-#define KEXE_NET_REQUEST_MAX (KEXE_STRING_VALUE_LIMIT + 1u)
+/* A request crosses whole, in one static frame (no malloc under the
+ * sandbox). It was KEXE_STRING_VALUE_LIMIT + 1 while a string value was at
+ * most 64 KiB; amu ADR 0362 moved the value bound to 8 MiB for the compiler's
+ * sources, and native TCP (not on that path, and answering at most
+ * KEXE_NET_BYTES per read) keeps the 64 KiB request it always had: a longer
+ * request is refused as before. */
+#define KEXE_NET_REQUEST_MAX (65536u + 1u)
 
 /* A native TCP call refused BY NAME: what the guest already wrote reaches
  * fd 1, then "KEXE_TRAP {:kind :capability :capability :net/<op> :reason

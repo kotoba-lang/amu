@@ -73,9 +73,11 @@
     (= k 16) 134217728
     ;; :language/value :vector-items -- one vector, 2^24.
     (= k 17) 16777216
-    ;; :language/value :string-value-bytes, and the bytes twin.
-    (= k 18) 65536
-    (= k 19) 65536
+    ;; :language/value :string-value-bytes and :bytes-value-bytes: 8 MiB
+    ;; since 2026-10-02 (amu ADR 0362; was 64 KiB), the source admission
+    ;; bound, so a source read as one value fits.
+    (= k 18) 8388608
+    (= k 19) 8388608
     ;; filesystem scope entries per grant.
     (= k 20) 64
     ;; the longest path a scope admits, NUL included (PATH_MAX-sized
