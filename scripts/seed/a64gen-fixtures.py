@@ -129,6 +129,82 @@ fx('bigframe', 1, 600, [('LGET', 0, 1), ('CONST', 1, 2), ('BIN', 'BOP-MUL', 0), 
                         ('LGET', 0, 599), ('CALL', 'id', 0, 1), ('CONST', 1, 1), ('BIN', 'BOP-ADD', 0), ('LGET', 1, 599),
                         ('BIN', 'BOP-ADD', 0), ('RET', 0)])
 
+# ---- R2 (2026-10-02): register allocation, deferred temps, folding, fusion, inline runtime operations ------------
+# inline vector ops: alloc n (param), assoc! i := i*i for i < n via a counted loop, assoc! of a constant 0 (xzr),
+# vector-count, then v[k] (param 2) -- out-of-range index or assoc! traps (udf, SIGILL)
+fx('r2_vec', 2, 4, [('LGET', 0, 1), ('RT', 'RT-VECTOR-ALLOC', 0, 1), ('LSET', 3, 0), ('CONST', 0, 0), ('LSET', 4, 0),
+                    ('LABEL', 'rv_h'), ('LGET', 0, 4), ('LGET', 1, 1), ('CMP', 'CC-LT', 0), ('BRZ', 0, 'rv_x'),
+                    ('LGET', 0, 3), ('LGET', 1, 4), ('LGET', 2, 4), ('LGET', 3, 4), ('BIN', 'BOP-MUL', 2),
+                    ('RT', 'RT-VECTOR-ASSOC-IN-PLACE', 0, 3), ('LSET', 3, 0),
+                    ('LGET', 0, 4), ('CONST', 1, 1), ('BIN', 'BOP-ADD', 0), ('LSET', 4, 0), ('FUEL',), ('BR', 'rv_h'),
+                    ('LABEL', 'rv_x'), ('LGET', 0, 3), ('CONST', 1, 0), ('CONST', 2, 0), ('RT', 'RT-VECTOR-ASSOC-IN-PLACE', 0, 3),
+                    ('RT', 'RT-VECTOR-COUNT', 0, 1), ('CONST', 1, 1000), ('BIN', 'BOP-MUL', 0),
+                    ('LGET', 1, 3), ('LGET', 2, 2), ('RT', 'RT-VECTOR-AT', 1, 2), ('BIN', 'BOP-ADD', 0), ('RET', 0)])
+fx('r2_vset', 2, 2, [('LGET', 0, 1), ('RT', 'RT-VECTOR-ALLOC', 0, 1), ('LGET', 1, 2), ('CONST', 2, 7),
+                     ('RT', 'RT-VECTOR-ASSOC-IN-PLACE', 0, 3), ('LGET', 1, 2), ('RT', 'RT-VECTOR-AT', 0, 2), ('RET', 0)])
+# pair ops in line: pair_new(a, b) then first - second; a bad handle traps
+fx('r2_pair', 2, 3, [('LGET', 0, 1), ('LGET', 1, 2), ('RT', 'RT-PAIR-NEW', 0, 2), ('LSET', 3, 0),
+                     ('LGET', 0, 3), ('RT', 'RT-PAIR-FIRST', 0, 1), ('LGET', 1, 3), ('RT', 'RT-PAIR-SECOND', 1, 1),
+                     ('BIN', 'BOP-SUB', 0), ('RET', 0)])
+fx('r2_pbad', 1, 1, [('LGET', 0, 1), ('RT', 'RT-PAIR-FIRST', 0, 1), ('RET', 0)])
+# string literals read only by string-length / string-code-point-at: no pair (folded), bytes from the pool
+fx('r2_lit', 1, 1, [('STR', 0, 'hello'), ('RT', 'RT-STRING-LENGTH-VIA', 0, 1), ('CONST', 1, 1000), ('BIN', 'BOP-MUL', 0),
+                    ('STR', 1, 'hello'), ('LGET', 2, 1), ('RT', 'RT-STRING-CODE-POINT-AT', 1, 2), ('BIN', 'BOP-ADD', 0),
+                    ('RET', 0)])
+fx('r2_lit8', 1, 1, [('STR', 0, 'h\u00e9llo'), ('LGET', 1, 1), ('RT', 'RT-STRING-CODE-POINT-AT', 0, 2), ('RET', 0)])
+# and / or / not in branch tests (cmp + b.cond fusion, branch threading), and an `and` used as a value
+def andif(name, cc1, cc2, op):
+    br = 'BRZ' if op == 'and' else 'BRNZ'
+    fx(name, 3, 3, [('LGET', 0, 1), ('LGET', 1, 2), ('CMP', cc1, 0), (br, 0, name + '_x'),
+                    ('LGET', 0, 2), ('LGET', 1, 3), ('CMP', cc2, 0), ('LABEL', name + '_x'), ('BRZ', 0, name + '_e'),
+                    ('CONST', 0, 111), ('BR', name + '_j'), ('LABEL', name + '_e'), ('CONST', 0, 222), ('LABEL', name + '_j'),
+                    ('RET', 0)])
+andif('r2_and', 'CC-LT', 'CC-LT', 'and')
+andif('r2_or', 'CC-EQ', 'CC-GT', 'or')
+fx('r2_andv', 3, 3, [('LGET', 0, 1), ('LGET', 1, 2), ('CMP', 'CC-LT', 0), ('BRZ', 0, 'av_x'),
+                     ('LGET', 0, 2), ('LGET', 1, 3), ('CMP', 'CC-LE', 0), ('LABEL', 'av_x'), ('RET', 0)])
+fx('r2_not', 2, 2, [('LGET', 0, 1), ('LGET', 1, 2), ('CMP', 'CC-GE', 0), ('UN', 'UOP-NOT', 0), ('BRZ', 0, 'nt_e'),
+                    ('CONST', 0, 5), ('RET', 0), ('LABEL', 'nt_e'), ('CONST', 0, 6), ('RET', 0)])
+# constant folding (and its limits: quot by a constant 0 or MIN / -1 still traps at run time)
+fx('r2_fold', 0, 0, [('CONST', 0, 3), ('CONST', 1, 4), ('BIN', 'BOP-MUL', 0), ('CONST', 1, 5), ('CONST', 2, 70),
+                     ('CONST', 3, 7), ('BIN', 'BOP-QUOT', 2), ('BIN', 'BOP-SUB', 1), ('BIN', 'BOP-ADD', 0),
+                     ('CONST', 1, 1), ('CONST', 2, 66), ('BIN', 'BOP-SHL', 1), ('BIN', 'BOP-XOR', 0),
+                     ('CONST', 1, 9), ('CONST', 2, 9), ('CMP', 'CC-EQ', 1), ('BRZ', 1, 'fo_t'), ('UN', 'UOP-BITNOT', 0),
+                     ('RET', 0), ('LABEL', 'fo_t'), ('TRAP', 3)])
+fx('r2_q0', 1, 1, [('LGET', 0, 1), ('CONST', 1, 0), ('BIN', 'BOP-QUOT', 0), ('RET', 0)])
+fx('r2_qmin', 0, 0, [('CONST', 0, MIN), ('CONST', 1, -1), ('BIN', 'BOP-QUOT', 0), ('RET', 0)])
+# immediate forms against a parameter x: (op x k) and (op k x)
+IMM = [('ADD', 4095), ('ADD', -4095), ('ADD', 4096), ('SUB', 4095), ('SUB', -1), ('SUB', 0), ('SHL', 0), ('SHL', 1),
+       ('SHL', 63), ('SHL', 64), ('USHR', 65), ('USHR', 63), ('SSHR', 63), ('SSHR', 4), ('AND', 255),
+       ('AND', s64(0xffffffff00000000)), ('AND', MIN), ('OR', 0x7ff0), ('XOR', MAX), ('AND', 0x5555), ('MUL', 16),
+       ('MUL', 1 << 62), ('MUL', 3), ('QUOT', 3), ('QUOT', -7), ('QUOT', -1), ('QUOT', 1 << 40)]
+for n, (b, k) in enumerate(IMM):
+    fx('r2_i%d' % n, 1, 1, [('LGET', 0, 1), ('CONST', 1, k), ('BIN', 'BOP-' + b, 0), ('RET', 0)])
+    fx('r2_j%d' % n, 1, 1, [('CONST', 0, k), ('LGET', 1, 1), ('BIN', 'BOP-' + b, 0), ('RET', 0)])
+CIMM = [('LT', 4095), ('LT', -4095), ('EQ', 0), ('GE', 4096), ('GT', -1)]
+for n, (cc, k) in enumerate(CIMM):
+    fx('r2_c%d' % n, 1, 1, [('LGET', 0, 1), ('CONST', 1, k), ('CMP', 'CC-' + cc, 0), ('RET', 0)])
+# a leaf with 12 locals (x0..x6 + callee-saved x19..), called by a non-leaf that keeps a value in x19 across the call
+fx('r2_many', 1, 12, [('LGET', 0, 1), ('CONST', 1, 1), ('BIN', 'BOP-ADD', 0), ('LSET', 2, 0)] +
+   [x for k in range(3, 13) for x in [('LGET', 0, k - 1), ('LGET', 1, k - 2), ('BIN', 'BOP-ADD', 0), ('LSET', k, 0)]] +
+   [('LGET', 0, 12), ('RET', 0)])
+fx('r2_keep', 1, 3, [('LGET', 0, 1), ('CONST', 1, 3), ('BIN', 'BOP-MUL', 0), ('LSET', 2, 0),
+                     ('LGET', 0, 1), ('CONST', 1, 7), ('BIN', 'BOP-XOR', 0), ('LSET', 3, 0),
+                     ('LGET', 0, 2), ('LGET', 1, 1), ('CALL', 'r2_many', 1, 1), ('BIN', 'BOP-ADD', 0),
+                     ('LGET', 1, 3), ('BIN', 'BOP-SUB', 0), ('RET', 0)])
+# fuel held in x8 by a leaf loop and stored back at ret: h(n) = sum(n) + sum(n) needs 1 + 2n units
+fx('r2_fuel2', 1, 1, [('FUEL',), ('LGET', 0, 1), ('CALL', 'sum', 0, 1), ('LGET', 1, 1), ('CALL', 'sum', 1, 1),
+                      ('BIN', 'BOP-ADD', 0), ('RET', 0)])
+# a result folded into a local while a lower temp still reads that local's old value; a parallel swap
+fx('r2_prot', 2, 2, [('LGET', 0, 1), ('LGET', 1, 2), ('CONST', 2, 5), ('BIN', 'BOP-ADD', 1), ('LSET', 1, 1),
+                     ('LGET', 1, 1), ('BIN', 'BOP-SUB', 0), ('RET', 0)])
+fx('r2_swap', 2, 2, [('LGET', 0, 2), ('LGET', 1, 1), ('LSET', 1, 0), ('LSET', 2, 1), ('LGET', 0, 1),
+                     ('CONST', 1, 1000), ('BIN', 'BOP-MUL', 0), ('LGET', 1, 2), ('BIN', 'BOP-ADD', 0), ('RET', 0)])
+# branches on constants: the dead side is not emitted
+fx('r2_cbr', 1, 1, [('CONST', 0, 1), ('BRZ', 0, 'cb_a'), ('CONST', 0, 0), ('BRNZ', 0, 'cb_a'), ('LGET', 0, 1),
+                    ('CONST', 1, 0), ('BRZ', 1, 'cb_b'), ('TRAP', 7), ('LABEL', 'cb_b'), ('RET', 0),
+                    ('LABEL', 'cb_a'), ('TRAP', 8)])
+
 # ---------------------------------------------------------------------------------------------------------------
 # runs: (fixture, args, expect, opts) ; expect = int result | 'trap' ; opts: fuel, cmd (argv list), stdout, file
 # ---------------------------------------------------------------------------------------------------------------
@@ -195,6 +271,46 @@ run('rd', [], 54, cmd=['@OUT/in.txt'], mkfile=('in.txt', b'abcdefghij' * 5432))
 run('trap', [], 'trap')
 for a in [0, 21]:
     run('bigframe', [a], 4 * a + 1)
+
+# ---- R2 runs
+for n, k in [(5, 4), (5, 0), (1, 0)]:
+    run('r2_vec', [n, k], n * 1000 + (0 if k == 0 else k * k))
+run('r2_vec', [5, 5], 'trap'); run('r2_vec', [5, -1], 'trap'); run('r2_vec', [0, 0], 'trap')
+run('r2_vset', [3, 2], 7); run('r2_vset', [3, 3], 'trap'); run('r2_vset', [3, -1], 'trap')
+for a, b in [(10, 3), (MIN, 1), (-5, MAX)]:
+    run('r2_pair', [a, b], s64(a - b))
+run('r2_pbad', [0], 'trap'); run('r2_pbad', [99999], 'trap'); run('r2_pbad', [-1], 'trap')
+for i, c in enumerate(b'hello'):
+    run('r2_lit', [i], 5000 + c)
+run('r2_lit', [5], 'trap'); run('r2_lit', [-1], 'trap')
+run('r2_lit8', [0], 104); run('r2_lit8', [1], 233); run('r2_lit8', [2], 'trap'); run('r2_lit8', [3], 108)
+for a, b, c in [(1, 2, 3), (2, 1, 3), (1, 3, 2), (3, 3, 3), (MIN, 0, MAX)]:
+    run('r2_and', [a, b, c], 111 if (a < b and b < c) else 222)
+    run('r2_or', [a, b, c], 111 if (a == b or b > c) else 222)
+    run('r2_andv', [a, b, c], 1 if (a < b and b <= c) else 0)
+for a, b in [(1, 2), (2, 2), (3, 2)]:
+    run('r2_not', [a, b], 5 if not (a >= b) else 6)
+run('r2_fold', [], s64(~((12 + (5 - 10)) ^ (1 << 2))))
+run('r2_q0', [5], 'trap'); run('r2_qmin', [], 'trap')
+for n, (b, k) in enumerate(IMM):
+    for x in [0, 1, -1, 12345, -98765, MIN, MAX, 1 << 40]:
+        run('r2_i%d' % n, [x], REF[b](x, k))
+        run('r2_j%d' % n, [x], REF[b](k, x))
+for n, (cc, k) in enumerate(CIMM):
+    for x in [k - 1, k, k + 1, MIN, MAX, 0]:
+        run('r2_c%d' % n, [x], int(CMPS[cc](x, k)))
+def many(a):
+    v = [0, a, a + 1]
+    for k in range(3, 13): v.append(v[k - 1] + v[k - 2])
+    return s64(v[12])
+for a in [0, 1, -7, 1 << 33]:
+    run('r2_many', [a], many(a))
+    run('r2_keep', [a], s64(a * 3 + many(a) - (a ^ 7)))
+run('r2_fuel2', [10], 110, fuel=21); run('r2_fuel2', [10], 'trap', fuel=20)
+for a, b in [(1, 2), (100, -5), (MIN, 3)]:
+    run('r2_prot', [a, b], s64(a - (b + 5)))
+    run('r2_swap', [a, b], s64(b * 1000 + a))
+run('r2_cbr', [42], 42)
 
 # ---------------------------------------------------------------------------------------------------------------
 def layout_tables():
@@ -433,7 +549,7 @@ def runs(update):
     u = subprocess.run(['zsh', os.path.join(R, 'scripts/seed/unit.sh'), '41-a64gen'] + (['--update'] if update else []),
                        env=env, text=True, capture_output=True)
     print(u.stdout.strip().splitlines()[-1] if u.stdout.strip() else u.stderr.strip())
-    out = open(os.path.join(R, 'build/seed/unit/41-a64gen/stdout')).read()
+    out = open(os.path.join(os.environ.get('SEED_BUILD') or os.path.join(R, 'build/seed'), 'unit/41-a64gen/stdout')).read()
     if '--with-layout' in sys.argv:
         lo = build_with_layout()
         if lo is None:
