@@ -5122,6 +5122,100 @@ static void arena_exhausted(uint64_t budget) {
                       : KEXE_TRAP_LINE_ARENA_VECTOR_TABLE);
 }
 
+/* GROWTH REGIONS: the amortised list builder (2026-10-02, amu ADR 0361).
+ *
+ * `typed-list-conj`, `typed-set-conj` and `vector-conj` all lower to
+ * `checked_vector_conj`. Its in-place append fires only when the vector ends
+ * at the arena top. A builder that allocates between two appends -- the
+ * ordinary shape of a compiler pass: read a child, build its own list, conj
+ * it onto the parent -- moves the parent off the top, and every append then
+ * copied the whole parent: O(n) per append, O(n^2) per list. The desugar
+ * differential's guest needed 128M item words for 720 cases because of it.
+ *
+ * A REGION is the slack the copy path now reserves: when an interior slice
+ * of length L is copied, the copy is given a capacity of 2(L+1) (at least
+ * KEXE_REGION_MIN_WORDS) and the arena top moves past the whole capacity, so
+ * no later allocation can land in the slack. The region records how far it
+ * is FILLED: the end of the longest slice any handle of it has claimed. A
+ * conj on a handle of the region whose slice ends exactly at the fill writes
+ * the next word in place and advances the fill -- the same argument as the
+ * tail append above (the word belongs to no handle: every handle carries its
+ * own length, and every handle of the region ends at or before the fill).
+ * A conj on an OLDER handle of the region (its slice ends before the fill)
+ * finds the word taken and copies, into a new region. So a handle stays an
+ * immutable value, and a linear builder is amortised O(1) per append
+ * whatever it allocates in between.
+ *
+ * The tables are loader-private (not in the shared ABI struct, no ABI
+ * change), MAP_PRIVATE | MAP_ANONYMOUS address space touched only as used,
+ * mapped before the fork. `kexe_vector_region[i]` is the region of handle
+ * i+1 (0 = none); intern_vector clears it, so every handle minted by any
+ * other operation (views, slices, concat, assoc) has none and copies on its
+ * first conj exactly as before. arena-scope LEAVE drops the regions created
+ * inside the scope (every handle that could name one is above the mark). */
+#define KEXE_REGION_MIN_WORDS 4u
+struct kexe_growth_region { uint64_t fill_end; uint64_t cap_end; };
+static uint32_t *kexe_vector_region = NULL;               /* [KEXE_VECTOR_MAX] */
+static struct kexe_growth_region *kexe_growth_regions = NULL; /* [KEXE_VECTOR_MAX + 1] */
+static uint64_t kexe_growth_region_count = 0;
+static uint64_t kexe_growth_region_marks[KEXE_ARENA_SCOPE_DEPTH];
+/* Arena use counters for KEXE_ARENA_USE (one shared page, written by the
+ * guest process, read by the supervisor after it exits). */
+struct kexe_arena_use {
+  uint64_t conj_calls, conj_tail, conj_region, conj_copy;
+  uint64_t copied_words, reserved_words, regions, scope_releases;
+  uint64_t peak_pairs, peak_string_pool, peak_vectors, peak_vector_items;
+  uint64_t string_regions, string_region_appends, string_copied_bytes, string_reserved_bytes;
+};
+static struct kexe_arena_use *kexe_use = NULL;
+
+/* STRING GROWTH REGIONS: the same builder for `string-concat`. The tail
+ * append below `checked_string_concat` already makes an accumulator O(1) per
+ * byte while it stays at the top of the pool, but a builder that interns
+ * anything between two appends (a substring that is not a view, a number
+ * printed, a keyword name) moves the accumulator off the top, and each
+ * append then copied all of it: the desugar guest's pool grew 3.3 / 10.9 /
+ * 39 / 148 MB on 1x / 2x / 4x / 8x the same input (2026-10-02). A copied
+ * result of at least KEXE_STRING_REGION_MIN_BYTES gets a region of twice
+ * its size; a later concat whose left operand ends exactly at the region's
+ * fill appends in place. Regions are found by their FILL position through
+ * a direct-mapped cache (a collision forgets a region, which only costs a
+ * copy); an entry is believed only when the region it names still has that
+ * fill, and the in-place write is safe for ANY handle ending at the fill,
+ * because no handle spans a region's slack. */
+#define KEXE_STRING_REGION_MIN_BYTES 256u
+#define KEXE_STRING_REGION_MAX (1u << 22)
+#define KEXE_STRING_REGION_CACHE (1u << 20)
+struct kexe_string_region_slot { uint64_t fill_end; uint64_t region; };
+static struct kexe_growth_region *kexe_string_regions = NULL;     /* [KEXE_STRING_REGION_MAX + 1] */
+static struct kexe_string_region_slot *kexe_string_region_cache = NULL; /* [KEXE_STRING_REGION_CACHE] */
+static uint64_t kexe_string_region_count = 0;
+static uint64_t kexe_string_region_marks[KEXE_ARENA_SCOPE_DEPTH];
+
+static uint64_t kexe_string_region_slot_of(uint64_t fill_end) {
+  uint64_t h = fill_end * 0x9e3779b97f4a7c15ull;
+  return (h >> 40) & (KEXE_STRING_REGION_CACHE - 1u);
+}
+
+/* The region whose fill is exactly FILL_END, or 0. */
+static uint64_t kexe_string_region_at(uint64_t fill_end) {
+  if (kexe_string_region_cache == NULL) return 0;
+  const struct kexe_string_region_slot *slot =
+      &kexe_string_region_cache[kexe_string_region_slot_of(fill_end)];
+  if (slot->region == 0 || slot->region > kexe_string_region_count ||
+      slot->fill_end != fill_end ||
+      kexe_string_regions[slot->region].fill_end != fill_end) return 0;
+  return slot->region;
+}
+
+static void kexe_string_region_note(uint64_t region) {
+  uint64_t fill_end = kexe_string_regions[region].fill_end;
+  struct kexe_string_region_slot *slot =
+      &kexe_string_region_cache[kexe_string_region_slot_of(fill_end)];
+  slot->fill_end = fill_end;
+  slot->region = region;
+}
+
 /* Mints a handle for an already-populated slice. Returns 0 when the handle
  * table is full; every caller turns that into SIGILL, so exhaustion is a trap
  * rather than a silently wrong vector. */
@@ -5132,6 +5226,7 @@ static int64_t intern_vector(struct kexe_shared_v11 *shared,
   uint64_t index = shared->vector_used++;
   shared->vectors[index].offset = offset;
   shared->vectors[index].length = length;
+  if (kexe_vector_region != NULL) kexe_vector_region[index] = 0;
   return (int64_t)(index + 1);
 }
 
@@ -5183,10 +5278,38 @@ static int64_t checked_vector_conj(struct kexe_context_v11 *context,
    * capacity because the arena is deliberately wider: exhausting the arena
    * and exceeding what KIR admits are different failures. */
   if (length >= KEXE_VECTOR_ITEM_LIMIT) { raise(SIGILL); return 0; }
+  if (kexe_use != NULL) kexe_use->conj_calls++;
+  /* Region append: the handle's region has slack and its slice ends at the
+   * region's fill (see GROWTH REGIONS above intern_vector). */
+  uint32_t region = kexe_vector_region != NULL
+                        ? kexe_vector_region[(uint64_t)handle - 1] : 0u;
+  if (region != 0) {
+    struct kexe_growth_region *r = &kexe_growth_regions[region];
+    if (offset + length == r->fill_end && r->fill_end < r->cap_end) {
+      shared->vector_items[r->fill_end++] = item;
+      int64_t result = intern_vector(shared, offset, length + 1u);
+      if (result == 0) { arena_exhausted(KEXE_BUDGET_CELLS_VECTOR_TABLE); raise(SIGILL); return 0; }
+      kexe_vector_region[(uint64_t)result - 1] = region;
+      if (kexe_use != NULL) kexe_use->conj_region++;
+      return result;
+    }
+  }
   if (offset + length != shared->vector_item_used) {
     /* Interior slice: appending would write a word some other handle may
-     * already span, so copy first. */
-    if (shared->vector_item_used + length + 1u > kexe_vector_item_budget) {
+     * already span, so copy first -- into a fresh REGION of capacity
+     * 2(length+1), so the appends that follow this one are in place even
+     * when the program allocates between them. When the doubled capacity
+     * does not fit the budget the copy falls back to the exact size (the
+     * pre-region behaviour), so a run that fit before still fits. */
+    uint64_t capacity = 2u * (length + 1u);
+    if (capacity < KEXE_REGION_MIN_WORDS) capacity = KEXE_REGION_MIN_WORDS;
+    if (kexe_growth_regions == NULL ||
+        kexe_growth_region_count + 1u > KEXE_VECTOR_MAX ||
+        shared->vector_item_used + capacity > kexe_vector_item_budget ||
+        shared->vector_item_used + capacity > KEXE_VECTOR_ITEM_MAX)
+      capacity = 0;
+    if (capacity == 0 &&
+        shared->vector_item_used + length + 1u > kexe_vector_item_budget) {
       arena_exhausted(KEXE_BUDGET_CELLS_VECTOR_ITEMS);
       raise(SIGILL);
       return 0;
@@ -5194,8 +5317,28 @@ static int64_t checked_vector_conj(struct kexe_context_v11 *context,
     uint64_t destination = shared->vector_item_used;
     memmove(&shared->vector_items[destination], &shared->vector_items[offset],
             (size_t)length * sizeof(int64_t));
+    if (kexe_use != NULL) { kexe_use->conj_copy++; kexe_use->copied_words += length; }
+    if (capacity != 0) {
+      uint32_t fresh = (uint32_t)(++kexe_growth_region_count);
+      kexe_growth_regions[fresh].fill_end = destination + length + 1u;
+      kexe_growth_regions[fresh].cap_end = destination + capacity;
+      shared->vector_items[destination + length] = item;
+      shared->vector_item_used = destination + capacity;
+      int64_t result = intern_vector(shared, destination, length + 1u);
+      if (result == 0) { arena_exhausted(KEXE_BUDGET_CELLS_VECTOR_TABLE); raise(SIGILL); return 0; }
+      kexe_vector_region[(uint64_t)result - 1] = fresh;
+      if (kexe_use != NULL) {
+        kexe_use->regions++;
+        kexe_use->reserved_words += capacity - length - 1u;
+        if (shared->vector_item_used > kexe_use->peak_vector_items)
+          kexe_use->peak_vector_items = shared->vector_item_used;
+      }
+      return result;
+    }
     shared->vector_item_used += length;
     offset = destination;
+  } else if (kexe_use != NULL) {
+    kexe_use->conj_tail++;
   }
   /* The slice now ends at the arena top, so the next word belongs to no
    * handle: writing it cannot change what any existing handle reads, because
@@ -10213,6 +10356,8 @@ static int64_t checked_arena_enter(struct kexe_context_v11 *context) {
   mark[1] = shared->string_pool_used;
   mark[2] = shared->vector_used;
   mark[3] = shared->vector_item_used;
+  kexe_growth_region_marks[shared->arena_scope_depth] = kexe_growth_region_count;
+  kexe_string_region_marks[shared->arena_scope_depth] = kexe_string_region_count;
   shared->arena_scope_depth++;
   return 0;
 }
@@ -10232,10 +10377,23 @@ static int64_t checked_arena_leave(struct kexe_context_v11 *context) {
     raise(SIGILL);
     return 0;
   }
+  if (kexe_use != NULL) {
+    kexe_use->scope_releases++;
+    if (shared->pair_used > kexe_use->peak_pairs) kexe_use->peak_pairs = shared->pair_used;
+    if (shared->string_pool_used > kexe_use->peak_string_pool)
+      kexe_use->peak_string_pool = shared->string_pool_used;
+    if (shared->vector_used > kexe_use->peak_vectors) kexe_use->peak_vectors = shared->vector_used;
+    if (shared->vector_item_used > kexe_use->peak_vector_items)
+      kexe_use->peak_vector_items = shared->vector_item_used;
+  }
   shared->pair_used = mark[0];
   shared->string_pool_used = mark[1];
   shared->vector_used = mark[2];
   shared->vector_item_used = mark[3];
+  /* Regions created inside the scope: every handle that names one was minted
+   * inside it, so above the mark, and is dead now. */
+  kexe_growth_region_count = kexe_growth_region_marks[shared->arena_scope_depth];
+  kexe_string_region_count = kexe_string_region_marks[shared->arena_scope_depth];
   return 0;
 }
 
@@ -10387,6 +10545,47 @@ static int64_t checked_string_concat(struct kexe_context_v11 *context,
   uint64_t pool_offset = shared->string_pool_used;
   int a_is_tail = offset_a < 0 &&
                   (uint64_t)(-(offset_a + 1)) + (uint64_t)length_a == shared->string_pool_used;
+  /* Region append (STRING GROWTH REGIONS above): A ends at a region's fill
+   * and B fits the slack. B cannot overlap the slack (it ends at or before
+   * the fill, like every handle), so the write changes no existing string. */
+  uint64_t a_region = 0;
+  if (!a_is_tail && offset_a < 0) {
+    uint64_t a_end = (uint64_t)(-(offset_a + 1)) + (uint64_t)length_a;
+    a_region = kexe_string_region_at(a_end);
+    if (a_region != 0 &&
+        a_end + (uint64_t)length_b <= kexe_string_regions[a_region].cap_end) {
+      memmove(shared->string_pool + a_end, b, (size_t)length_b);
+      kexe_string_regions[a_region].fill_end = a_end + (uint64_t)length_b;
+      kexe_string_region_note(a_region);
+      if (kexe_use != NULL) kexe_use->string_region_appends++;
+      int64_t grown = checked_pair_new(context, offset_a, total);
+      if (inputs_validated) mark_validated(context, grown);
+      return grown;
+    }
+  }
+  if (!a_is_tail && kexe_string_region_cache != NULL &&
+      (uint64_t)total >= KEXE_STRING_REGION_MIN_BYTES &&
+      kexe_string_region_count < KEXE_STRING_REGION_MAX &&
+      (uint64_t)total <= (kexe_string_pool_budget - shared->string_pool_used) / 2u) {
+    /* A copy that starts a region: twice the result, the second half slack. */
+    uint64_t capacity = 2u * (uint64_t)total;
+    memcpy(shared->string_pool + pool_offset, a, (size_t)length_a);
+    memcpy(shared->string_pool + pool_offset + (uint64_t)length_a, b, (size_t)length_b);
+    shared->string_pool_used += capacity;
+    uint64_t region = ++kexe_string_region_count;
+    kexe_string_regions[region].fill_end = pool_offset + (uint64_t)total;
+    kexe_string_regions[region].cap_end = pool_offset + capacity;
+    kexe_string_region_note(region);
+    if (kexe_use != NULL) {
+      kexe_use->string_regions++;
+      kexe_use->string_copied_bytes += (uint64_t)length_a;
+      kexe_use->string_reserved_bytes += (uint64_t)total;
+    }
+    int64_t started = checked_pair_new(context, -((int64_t)pool_offset) - 1, total);
+    if (inputs_validated) mark_validated(context, started);
+    return started;
+  }
+  if (!a_is_tail && kexe_use != NULL) kexe_use->string_copied_bytes += (uint64_t)length_a;
   if (a_is_tail) {
     if (shared->string_pool_used + (uint64_t)length_b > kexe_string_pool_budget ||
         shared->string_pool_used + (uint64_t)length_b < shared->string_pool_used) {
@@ -12173,6 +12372,34 @@ int main(int argc, char **argv) {
            MAP_SHARED | MAP_ANONYMOUS, -1, 0);
   if (shared == MAP_FAILED) fail("mmap shared execution state");
   kexe_shared_for_budget = shared;
+  /* The growth-region tables (GROWTH REGIONS, above intern_vector): private
+   * address space, zero pages until a region is made. Without them the conj
+   * path copies exactly as it did before regions existed. */
+  {
+    void *table = mmap(NULL, (size_t)KEXE_VECTOR_MAX * sizeof(uint32_t),
+                       PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void *regions = mmap(NULL, ((size_t)KEXE_VECTOR_MAX + 1u) * sizeof(struct kexe_growth_region),
+                         PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (table != MAP_FAILED && regions != MAP_FAILED &&
+        getenv("KEXE_NO_GROWTH_REGIONS") == NULL) {
+      kexe_vector_region = (uint32_t *)table;
+      kexe_growth_regions = (struct kexe_growth_region *)regions;
+    }
+    void *string_regions = mmap(NULL, ((size_t)KEXE_STRING_REGION_MAX + 1u) * sizeof(struct kexe_growth_region),
+                                PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void *string_cache = mmap(NULL, (size_t)KEXE_STRING_REGION_CACHE * sizeof(struct kexe_string_region_slot),
+                              PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (string_regions != MAP_FAILED && string_cache != MAP_FAILED &&
+        getenv("KEXE_NO_GROWTH_REGIONS") == NULL) {
+      kexe_string_regions = (struct kexe_growth_region *)string_regions;
+      kexe_string_region_cache = (struct kexe_string_region_slot *)string_cache;
+    }
+    if (getenv("KEXE_ARENA_USE") != NULL) {
+      void *use = mmap(NULL, sizeof(struct kexe_arena_use), PROT_READ | PROT_WRITE,
+                       MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+      if (use != MAP_FAILED) kexe_use = (struct kexe_arena_use *)use;
+    }
+  }
   /* No memset: MAP_ANONYMOUS pages are zero-filled by the kernel, so this
    * only ever re-zeroed memory that was already zero -- and it TOUCHED every
    * page while doing it, which is what would make a large string arena cost
@@ -12455,6 +12682,35 @@ int main(int argc, char **argv) {
   if (child > 0) {
     int child_status = supervise(child);
     report_budget_trap(shared, child_status);
+    if (kexe_use != NULL) {
+      /* KEXE_ARENA_USE: one EDN line on stderr -- the high-water mark of each
+       * arena (the final use, or the largest use seen before an arena-scope
+       * release, whichever is larger) and what the vector conj path did. */
+      uint64_t peak_pairs = shared->pair_used > kexe_use->peak_pairs ? shared->pair_used : kexe_use->peak_pairs;
+      uint64_t peak_pool = shared->string_pool_used > kexe_use->peak_string_pool ? shared->string_pool_used : kexe_use->peak_string_pool;
+      uint64_t peak_vectors = shared->vector_used > kexe_use->peak_vectors ? shared->vector_used : kexe_use->peak_vectors;
+      uint64_t peak_items = shared->vector_item_used > kexe_use->peak_vector_items ? shared->vector_item_used : kexe_use->peak_vector_items;
+      fprintf(stderr,
+              "KEXE_ARENA_USE {:pairs %" PRIu64 " :string-pool-bytes %" PRIu64
+              " :vectors %" PRIu64 " :vector-items %" PRIu64
+              " :heap-bytes %" PRIu64
+              " :conj %" PRIu64 " :conj-tail %" PRIu64 " :conj-region %" PRIu64
+              " :conj-copy %" PRIu64 " :copied-words %" PRIu64
+              " :reserved-words %" PRIu64 " :regions %" PRIu64
+              " :scope-releases %" PRIu64
+              " :string-regions %" PRIu64 " :string-region-appends %" PRIu64
+              " :string-copied-bytes %" PRIu64 " :string-reserved-bytes %" PRIu64 "}\n",
+              peak_pairs, peak_pool, peak_vectors, peak_items,
+              peak_pairs * (uint64_t)sizeof(struct kexe_pair_v1) + peak_pool +
+                  peak_vectors * (uint64_t)sizeof(struct kexe_vector_v1) +
+                  peak_items * 8u,
+              kexe_use->conj_calls, kexe_use->conj_tail, kexe_use->conj_region,
+              kexe_use->conj_copy, kexe_use->copied_words,
+              kexe_use->reserved_words, kexe_use->regions,
+              kexe_use->scope_releases, kexe_use->string_regions,
+              kexe_use->string_region_appends, kexe_use->string_copied_bytes,
+              kexe_use->string_reserved_bytes);
+    }
     if (structured_report)
       child_status = write_supervisor_report(shared, child_status, result_type,
                                              record_field_count,

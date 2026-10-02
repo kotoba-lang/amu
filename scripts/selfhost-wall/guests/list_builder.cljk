@@ -1,0 +1,19 @@
+(ns list-builder
+  {:kotoba/export [run]})
+
+;; List-builder microbenchmark: two [:list :i64] accumulators appended in
+;; alternation, N items each (N = the input's byte length) -- every append to
+;; one moves the other off the arena top, the shape of a pass that builds a
+;; parent list while it builds each child.
+(defn run [text :string] :string
+  (let [n (string-byte-length text)
+        out (loop [i 0
+                   a (typed-list-new [:list :i64])
+                   b (typed-list-new [:list :i64])]
+              (if (< i n)
+                (recur (+ i 1)
+                       (typed-list-conj [:list :i64] a i)
+                       (typed-list-conj [:list :i64] b (* 2 i)))
+                (+ (typed-list-nth [:list :i64] a (- n 1))
+                   (typed-list-nth [:list :i64] b (- n 1)))))]
+    (if (= out (* 3 (- n 1))) "ok" "bad")))
