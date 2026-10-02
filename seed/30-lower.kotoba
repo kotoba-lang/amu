@@ -1,0 +1,687 @@
+;; seed/30-lower.kotoba -- lower the checked tree to SIR (prefix lw-). Owner: module 30-lower.
+;; Contract: seed/SIR (opcodes, lowering table, fuel rule), seed/MEMORY-MAP (NODE/FN/SIR layouts, rules L1-L13),
+;; seed/HEADS (head codes, RES-* encoding). Design: docs/selfhost-seed-design-20261002.md 2.1/2.2.
+;;
+;; API:
+;;   lw-run M                 -> M, M[MM-R0] = number of SIR instructions written (MM-SIR-N - 1)
+;;   lw-interp M H hsize f a0 -> H  (TEST-ONLY SIR interpreter; H is a separate (vector-alloc hsize) the caller
+;;                                   owns; runs FN f with argument a0 (ignored when f takes none);
+;;                                   H[0] = status (LW-IX status codes below), H[1] = result, H[4] = fuel used)
+;;
+;; What lowering reads (written by 11-read / 20-names / 21-check):
+;;   NF-KIND NF-FIRST NF-NEXT NF-AUX NF-TOK of every node; NF-RES of every ND-LIST expression (head code);
+;;   NF-RES of every ND-SYM expression (RES-LOCAL slot or RES-DEF fn) AND of every binder symbol (params, let
+;;   and loop names: RES-LOCAL slot; seed/CONTRACT-REQUESTS.md 2026-10-02 30-lower); the head symbol of a user
+;;   call: NF-RES = RES-FN fn, or else SF-FN of its NF-SYM; FF-NODE FF-KIND FF-NPARAMS FF-NSLOTS FF-FUEL.
+;; Lowering is a pure function of the tree: labels are numbered in walk order, nothing depends on hashing.
+;;
+;; Deviation noted for the reader of seed/SIR: loop INITIALISERS are lowered sequentially, like let
+;; ([e1 -> t] LSET s1 t [e2 -> t] LSET s2 t ...), so (loop [a 1 b a] ..) is right whichever way 21-check
+;; resolves `a` in b's initialiser; recur stays a parallel assignment as the table says.
+;;
+;; Own scratch cells (MEMORY-MAP MM-STAT: 30-lower is MANIFEST position 7 -> M[92..95]):
+;;   92 = FN index being lowered, 93 = its entry label, 94 = its deepest temp so far (-1 = none).
+
+;; ------------------------------------------------------------------------------------------------------------
+;; readers
+;; ------------------------------------------------------------------------------------------------------------
+(defn- lw-nf [M :vector-i64 n :i64 fld :i64] :i64
+  (vector-at M (+ MM-NODE-BASE (+ (* n MM-NODE-W) fld))))
+(defn- lw-ff [M :vector-i64 f :i64 fld :i64] :i64
+  (vector-at M (+ MM-FN-BASE (+ (* f MM-FN-W) fld))))
+(defn- lw-next [M :vector-i64 n :i64] :i64 (lw-nf M n NF-NEXT))
+(defn- lw-first [M :vector-i64 n :i64] :i64 (lw-nf M n NF-FIRST))
+;; the i-th node of a sibling chain starting at c (0-based), 0 past the end
+(defn- lw-nth [M :vector-i64 c :i64 i :i64] :i64
+  (if (= c 0) 0 (if (= i 0) c (lw-nth M (lw-next M c) (- i 1)))))
+(defn- lw-count [M :vector-i64 c :i64] :i64
+  (loop [x c k 0] (if (= x 0) k (recur (lw-next M x) (+ k 1)))))
+;; RES-* class and index of a resolution word
+(defn- lw-rcls [res :i64] :i64 (quot res RES-SCALE))
+(defn- lw-ridx [res :i64] :i64 (- res (* (quot res RES-SCALE) RES-SCALE)))
+(defn- lw-slot [M :vector-i64 n :i64] :i64 (lw-ridx (lw-nf M n NF-RES)))
+(defn- lw-pos [M :vector-i64 n :i64] :i64
+  (vector-at M (+ MM-TOK-BASE (+ (* (lw-nf M n NF-TOK) MM-TOK-W) TF-START))))
+;; SF-HEAD of the symbol of a keyword node
+(defn- lw-kwcode [M :vector-i64 n :i64] :i64
+  (vector-at M (+ MM-SYM-BASE (+ (* (lw-nf M n NF-SYM) MM-SYM-W) SF-HEAD))))
+
+;; context word k = tail bit + 2 * loop node + 2^18 * loop header label (loop node 0 = no enclosing loop)
+(defn- lw-kt [k :i64] :i64 (bit-and k 1))
+(defn- lw-kn [k :i64] :i64 (bit-and (u64-shift-right k 1) 131071))
+(defn- lw-kl [k :i64] :i64 (u64-shift-right k 18))
+(defn- lw-kmk [tail :i64 node :i64 label :i64] :i64 (+ tail (+ (* 2 node) (* 262144 label))))
+(defn- lw-knt [k :i64] :i64 (- k (lw-kt k)))
+
+;; highest temp an instruction touches, -1 for none
+(defn- lw-hi [op :i64 a :i64 b :i64 c :i64] :i64
+  (cond
+    (= op OP-CONST) a (= op OP-LGET) a (= op OP-STR) a (= op OP-RET) a
+    (= op OP-LSET) b (= op OP-UN) b (= op OP-BRZ) a (= op OP-BRNZ) a
+    (= op OP-BIN) (+ b 1) (= op OP-CMP) (+ b 1)
+    (= op OP-CALL) (if (> c 0) (+ b (- c 1)) b)
+    (= op OP-RT) (if (> c 0) (+ b (- c 1)) b)
+    (= op OP-CAP) c
+    (= op OP-VEC) (if (> b 0) (+ a (- b 1)) a)
+    :else -1))
+
+;; ------------------------------------------------------------------------------------------------------------
+;; writers: errors, emit, labels
+;; ------------------------------------------------------------------------------------------------------------
+;; STAGE-0 RULE (measured 2026-10-02 on the stable amu-native): `vector-assoc!` on a handle is admitted when the
+;; handle is linear in the function's OWN body, or else only through a whole-module proof over every caller,
+;; which one reader call (lw-nf M0 ..) before a hand-over breaks. So the ONLY direct `vector-assoc!` of this
+;; module is in lw-put, whose body is trivially linear; every other function writes through lw-put and is not
+;; checked at all. (Also: no `if`/`cond` inside a let binding or an argument -> internal compiler error; such
+;; choices are small pure helpers.)
+(defn- lw-put [V :vector-i64 i :i64 x :i64] :vector-i64 (vector-assoc! V i x))
+;; first error wins: e = the current MM-ERR
+(defn- lw-fw [e :i64 old :i64 new :i64] :i64 (if (= e 0) new old))
+(defn- lw-max [a :i64 b :i64] :i64 (if (> a b) a b))
+(defn- lw-fail [M0 :vector-i64 code :i64 pos :i64 n :i64] :vector-i64
+  (let [e (vector-at M0 MM-ERR)
+        p0 (vector-at M0 MM-ERR-POS)
+        n0 (vector-at M0 MM-ERR-N)
+        M1 (lw-put M0 MM-ERR (lw-fw e e code))
+        M2 (lw-put M1 MM-ERR-POS (lw-fw e p0 pos))]
+    (lw-put M2 MM-ERR-N (lw-fw e n0 n))))
+
+(defn- lw-depth [M0 :vector-i64 h :i64] :vector-i64
+  (let [d0 (vector-at M0 94)
+        d1 (vector-at M0 MM-MAX-DEPTH)
+        M1 (lw-put M0 94 (lw-max h d0))]
+    (lw-put M1 MM-MAX-DEPTH (lw-max h d1))))
+
+(defn- lw-emit [M0 :vector-i64 op :i64 a :i64 b :i64 c :i64] :vector-i64
+  (let [i (vector-at M0 MM-SIR-N)]
+    (if (>= i MM-SIR-CAP)
+      (lw-fail M0 E-LOWER-FULL -1 0)
+      (let [p (+ MM-SIR-BASE (* i MM-SIR-W))
+            M1 (lw-put M0 (+ p IF-OP) op)
+            M2 (lw-put M1 (+ p IF-A) a)
+            M3 (lw-put M2 (+ p IF-B) b)
+            M4 (lw-put M3 (+ p IF-C) c)
+            M5 (lw-put M4 MM-SIR-N (+ i 1))]
+        (lw-depth M5 (lw-hi op a b c))))))
+
+;; reserve n consecutive labels; the first is M[MM-LABEL-N] read BEFORE the call
+(defn- lw-labels [M0 :vector-i64 n :i64] :vector-i64
+  (let [l (vector-at M0 MM-LABEL-N)] (lw-put M0 MM-LABEL-N (+ l n))))
+
+;; ------------------------------------------------------------------------------------------------------------
+;; head -> operator tables
+;; ------------------------------------------------------------------------------------------------------------
+(defn- lw-bop [hd :i64] :i64
+  (cond (= hd HD-ADD) BOP-ADD (= hd HD-SUB) BOP-SUB (= hd HD-MUL) BOP-MUL (= hd HD-QUOT) BOP-QUOT
+        (= hd HD-BIT-AND) BOP-AND (= hd HD-BIT-OR) BOP-OR (= hd HD-BIT-XOR) BOP-XOR
+        (= hd HD-SHL) BOP-SHL (= hd HD-USHR) BOP-USHR (= hd HD-SSHR) BOP-SSHR :else 0))
+(defn- lw-cc [hd :i64] :i64
+  (cond (= hd HD-EQ) CC-EQ (= hd HD-LT) CC-LT (= hd HD-GT) CC-GT (= hd HD-LE) CC-LE (= hd HD-GE) CC-GE
+        :else 0))
+(defn- lw-rt [hd :i64] :i64
+  (cond (= hd HD-VECTOR-AT) RT-VECTOR-AT (= hd HD-VECTOR-CONJ) RT-VECTOR-CONJ
+        (= hd HD-VECTOR-ASSOC) RT-VECTOR-ASSOC (= hd HD-VECTOR-ASSOC-BANG) RT-VECTOR-ASSOC-IN-PLACE
+        (= hd HD-VECTOR-ALLOC) RT-VECTOR-ALLOC (= hd HD-STRING-CODE-POINT-AT) RT-STRING-CODE-POINT-AT
+        (= hd HD-STRING-LENGTH) RT-STRING-LENGTH-VIA (= hd HD-STRING-CONCAT) RT-STRING-CONCAT
+        (= hd HD-BYTES-FROM-VECTOR-I64) RT-BYTES-FROM-VECTOR :else 0))
+(defn- lw-wire [kw :i64] :i64
+  (cond (= kw KW-FS-APP-DATA) WIRE-FS-APP-DATA (= kw KW-CLI-ARGS) WIRE-CLI-ARGS
+        (= kw KW-IO-WRITE-ERROR) WIRE-IO-WRITE-ERROR (= kw KW-IO-WRITE) WIRE-IO-WRITE :else 0))
+(defn- lw-kind [kw :i64] :i64
+  (cond (= kw KW-STRING) CK-STRING (= kw KW-BYTES) CK-BYTES :else 0))
+
+;; ------------------------------------------------------------------------------------------------------------
+;; expressions: [n -> t] under context k
+;; ------------------------------------------------------------------------------------------------------------
+;; lower the sibling chain a, a', ... into t, t+1, ...
+(defn- lw-args [M0 :vector-i64 a :i64 t :i64] :vector-i64
+  (if (= a 0)
+    M0
+    (let [nx (lw-next M0 a)
+          M1 (lw-expr M0 a t 0)]
+      (lw-args M1 nx (+ t 1)))))
+
+;; left fold of the remaining operands a, a', ... into t (t holds the accumulator)
+(defn- lw-fold [M0 :vector-i64 a :i64 t :i64 bop :i64] :vector-i64
+  (if (= a 0)
+    M0
+    (let [nx (lw-next M0 a)
+          M1 (lw-expr M0 a (+ t 1) 0)
+          M2 (lw-emit M1 OP-BIN bop t 0)]
+      (lw-fold M2 nx t bop))))
+
+;; let/loop bindings b = first binder of the binding vector: [init -> t] LSET slot t, sequentially
+(defn- lw-binds [M0 :vector-i64 b :i64 t :i64] :vector-i64
+  (if (= b 0)
+    M0
+    (let [init (lw-next M0 b)
+          nb (lw-next M0 init)
+          slot (lw-slot M0 b)
+          M1 (lw-expr M0 init t 0)
+          M2 (lw-emit M1 OP-LSET slot t 0)]
+      (lw-binds M2 nb t))))
+
+;; recur into a loop: LSET binder_i (t+i) for the binders b, b'', ... (parallel assignment; values computed)
+(defn- lw-loop-sets [M0 :vector-i64 b :i64 t :i64] :vector-i64
+  (if (= b 0)
+    M0
+    (let [nb (lw-next M0 (lw-next M0 b))
+          slot (lw-slot M0 b)
+          M1 (lw-emit M0 OP-LSET slot t 0)]
+      (lw-loop-sets M1 nb (+ t 1)))))
+;; recur into the function: LSET param slot i+1 from t+i, i = 0 .. n-1
+(defn- lw-param-sets [M0 :vector-i64 i :i64 n :i64 t :i64] :vector-i64
+  (if (>= i n)
+    M0
+    (lw-param-sets (lw-emit M0 OP-LSET (+ i 1) (+ t i) 0) (+ i 1) n t)))
+
+;; the LSETs of a jump: into the params (no loop) or into the loop's binders from b0
+(defn- lw-jump-sets [M0 :vector-i64 loopn :i64 b0 :i64 n :i64 t :i64] :vector-i64
+  (if (= loopn 0) (lw-param-sets M0 0 n t) (lw-loop-sets M0 b0 t)))
+
+;; STAGE-0 RULE (measured 2026-10-02 on the stable amu-native): an `if`/`cond` inside a let binding or an argument
+;; of a function that writes a handle -> 'internal compiler error'. Every such choice is a small reader below.
+;; first binder of loop node loopn (0 when there is no loop)
+(defn- lw-loop-b0 [M :vector-i64 loopn :i64] :i64
+  (if (= loopn 0) 0 (lw-first M (lw-next M (lw-first M loopn)))))
+(defn- lw-jump-target [M :vector-i64 loopn :i64 k :i64] :i64
+  (if (= loopn 0) (vector-at M 93) (lw-kl k)))
+(defn- lw-andor-op [lxo :i64] :i64 (if (= (bit-and lxo 1) 1) OP-BRNZ OP-BRZ))
+(defn- lw-is-self [k :i64 f :i64 cur :i64] :i64 (if (= f cur) (lw-kt k) 0))
+(defn- lw-pos0 [M :vector-i64 n :i64] :i64 (if (= n 0) -1 (lw-pos M n)))
+(defn- lw-fn-limit [M :vector-i64] :i64 (if (= (vector-at M MM-ERR) 0) (vector-at M MM-FN-N) 0))
+
+;; (recur a ...) or a self tail call with arguments a ...: values, LSETs, FUEL, BR
+(defn- lw-jump [M0 :vector-i64 a :i64 t :i64 k :i64] :vector-i64
+  (let [loopn (lw-kn k)
+        n (lw-count M0 a)
+        b0 (lw-loop-b0 M0 loopn)
+        M1 (lw-args M0 a t)
+        M2 (lw-jump-sets M1 loopn b0 n t)
+        M3 (lw-emit M2 OP-FUEL 0 0 0)
+        target (lw-jump-target M3 loopn k)]
+    (lw-emit M3 OP-BR target 0 0)))
+
+;; a self tail call jumps to the function entry, so it must see no enclosing loop
+(defn- lw-selfjump [M0 :vector-i64 a :i64 t :i64] :vector-i64
+  (lw-jump M0 a t 0))
+
+(defn- lw-if [M0 :vector-i64 c :i64 t :i64 k :i64] :vector-i64
+  (let [x (lw-next M0 c)
+        y (lw-next M0 x)
+        le (vector-at M0 MM-LABEL-N)
+        M1 (lw-labels M0 2)
+        M2 (lw-expr M1 c t 0)
+        M3 (lw-emit M2 OP-BRZ t le 0)
+        M4 (lw-expr M3 x t k)
+        M5 (lw-emit M4 OP-BR (+ le 1) 0 0)
+        M6 (lw-emit M5 OP-LABEL le 0 0)
+        M7 (lw-expr M6 y t k)]
+    (lw-emit M7 OP-LABEL (+ le 1) 0 0)))
+
+;; cond clauses from test node c; lx = the common exit label
+(defn- lw-cond [M0 :vector-i64 c :i64 t :i64 k :i64 lx :i64] :vector-i64
+  (let [e (lw-next M0 c)
+        nc (lw-next M0 e)
+        kind (lw-nf M0 c NF-KIND)]
+    (if (= kind ND-KW)
+      (lw-emit (lw-expr M0 e t k) OP-LABEL lx 0 0)
+      (let [le (vector-at M0 MM-LABEL-N)
+            M1 (lw-labels M0 1)
+            M2 (lw-expr M1 c t 0)
+            M3 (lw-emit M2 OP-BRZ t le 0)
+            M4 (lw-expr M3 e t k)
+            M5 (lw-emit M4 OP-BR lx 0 0)
+            M6 (lw-emit M5 OP-LABEL le 0 0)]
+        (lw-cond M6 nc t k lx)))))
+
+;; and/or operands from a; lxo = 2 * exit label + (1 for or)
+(defn- lw-andor [M0 :vector-i64 a :i64 t :i64 k :i64 lxo :i64] :vector-i64
+  (let [nx (lw-next M0 a)
+        lx (quot lxo 2)]
+    (if (= nx 0)
+      (lw-emit (lw-expr M0 a t k) OP-LABEL lx 0 0)
+      (let [M1 (lw-expr M0 a t 0)
+            M2 (lw-emit M1 (lw-andor-op lxo) t lx 0)]
+        (lw-andor M2 nx t k lxo)))))
+
+(defn- lw-let [M0 :vector-i64 bv :i64 t :i64 k :i64] :vector-i64
+  (let [body (lw-next M0 bv)
+        M1 (lw-binds M0 (lw-first M0 bv) t)]
+    (lw-expr M1 body t k)))
+
+(defn- lw-loop [M0 :vector-i64 n :i64 t :i64 k :i64] :vector-i64
+  (let [bv (lw-next M0 (lw-first M0 n))
+        body (lw-next M0 bv)
+        lh (vector-at M0 MM-LABEL-N)
+        M1 (lw-labels M0 1)
+        M2 (lw-binds M1 (lw-first M1 bv) t)
+        M3 (lw-emit M2 OP-LABEL lh 0 0)]
+    (lw-expr M3 body t (lw-kmk (lw-kt k) n lh))))
+
+;; FN index of the callee named by head symbol node h
+(defn- lw-callee [M :vector-i64 h :i64] :i64
+  (let [res (lw-nf M h NF-RES)]
+    (if (= (lw-rcls res) RES-FN)
+      (lw-ridx res)
+      (vector-at M (+ MM-SYM-BASE (+ (* (lw-nf M h NF-SYM) MM-SYM-W) SF-FN))))))
+
+(defn- lw-call [M0 :vector-i64 h :i64 t :i64 k :i64] :vector-i64
+  (let [f (lw-callee M0 h)
+        a (lw-next M0 h)
+        cur (vector-at M0 92)]
+    (if (= (lw-is-self k f cur) 1)
+      (lw-selfjump M0 a t)
+      (let [n (lw-count M0 a)
+            M1 (lw-args M0 a t)]
+        (lw-emit M1 OP-CALL f t n)))))
+
+(defn- lw-cap [M0 :vector-i64 w :i64 t :i64] :vector-i64
+  (let [req (lw-next M0 w)
+        x (lw-next M0 (lw-next M0 req))
+        wire (lw-wire (lw-kwcode M0 w))
+        kind (lw-kind (lw-kwcode M0 req))
+        M1 (lw-expr M0 x t 0)]
+    (lw-emit M1 OP-CAP wire kind t)))
+
+;; entry points that reserve the exit label first
+(defn- lw-cond0 [M0 :vector-i64 a :i64 t :i64 k :i64] :vector-i64
+  (let [lx (vector-at M0 MM-LABEL-N)
+        M1 (lw-labels M0 1)]
+    (lw-cond M1 a t k lx)))
+(defn- lw-andor0 [M0 :vector-i64 a :i64 t :i64 k :i64 isor :i64] :vector-i64
+  (let [lx (vector-at M0 MM-LABEL-N)
+        M1 (lw-labels M0 1)]
+    (lw-andor M1 a t k (+ isor (* 2 lx)))))
+(defn- lw-un [M0 :vector-i64 a :i64 t :i64 uop :i64] :vector-i64
+  (let [M1 (lw-expr M0 a t 0)]
+    (lw-emit M1 OP-UN uop t 0)))
+
+;; an ND-LIST expression with head code hd; h = head node, a = first argument
+(defn- lw-list2 [M0 :vector-i64 n :i64 hd :i64 t :i64 k :i64] :vector-i64
+  (let [h (lw-first M0 n)
+        a (lw-next M0 h)]
+    (cond
+      (= hd HD-LET) (lw-let M0 a t k)
+      (= hd HD-IF) (lw-if M0 a t k)
+      (= hd HD-LOOP) (lw-loop M0 n t k)
+      (= hd HD-RECUR) (lw-jump M0 a t k)
+      (= hd HD-CALL) (lw-call M0 h t k)
+      (= hd HD-COND) (lw-cond0 M0 a t k)
+      (= hd HD-AND) (lw-andor0 M0 a t k 0)
+      (= hd HD-OR) (lw-andor0 M0 a t k 1)
+      (= hd HD-NOT) (lw-un M0 a t UOP-NOT)
+      (= hd HD-BIT-NOT) (lw-un M0 a t UOP-BITNOT)
+      (= hd HD-TYPED-CAP-CALL) (lw-cap M0 a t)
+      :else (let [pos (lw-pos M0 n)] (lw-fail M0 E-LOWER-NODE pos hd)))))
+
+(defn- lw-list [M0 :vector-i64 n :i64 t :i64 k :i64] :vector-i64
+  (let [hd (lw-nf M0 n NF-RES)
+        a (lw-next M0 (lw-first M0 n))
+        bop (lw-bop hd)
+        cc (lw-cc hd)
+        rt (lw-rt hd)]
+    (cond
+      (> bop 0) (let [nx (lw-next M0 a)] (lw-fold (lw-expr M0 a t 0) nx t bop))
+      (> cc 0) (lw-emit (lw-args M0 a t) OP-CMP cc t 0)
+      (> rt 0) (let [m (lw-count M0 a)] (lw-emit (lw-args M0 a t) OP-RT rt t m))
+      :else (lw-list2 M0 n hd t k))))
+
+(defn- lw-sym [M0 :vector-i64 n :i64 t :i64] :vector-i64
+  (let [res (lw-nf M0 n NF-RES)
+        cls (lw-rcls res)]
+    (cond
+      (= cls RES-LOCAL) (lw-emit M0 OP-LGET t (lw-ridx res) 0)
+      ;; a def reference evaluates the def's literal again (seed/SIR); (def NAME literal): literal = 3rd child
+      (= cls RES-DEF) (let [lit (lw-nth M0 (lw-first M0 (lw-ff M0 (lw-ridx res) FF-NODE)) 2)] (lw-expr M0 lit t 0))
+      :else (let [pos (lw-pos M0 n)] (lw-fail M0 E-LOWER-NODE pos ND-SYM)))))
+
+(defn- lw-expr [M0 :vector-i64 n :i64 t :i64 k :i64] :vector-i64
+  (let [kind (lw-nf M0 n NF-KIND)
+        aux (lw-nf M0 n NF-AUX)]
+    (cond
+      (= kind ND-LIST) (lw-list M0 n t k)
+      (= kind ND-SYM) (lw-sym M0 n t)
+      (= kind ND-INT) (lw-emit M0 OP-CONST t aux 0)
+      (= kind ND-STR) (lw-emit M0 OP-STR t aux 0)
+      (= kind ND-VEC) (let [a (lw-first M0 n) m (lw-count M0 a)] (lw-emit (lw-args M0 a t) OP-VEC t m 0))
+      :else (let [pos (lw-pos0 M0 n)] (lw-fail M0 E-LOWER-NODE pos kind)))))
+
+;; ------------------------------------------------------------------------------------------------------------
+;; functions and the program
+;; ------------------------------------------------------------------------------------------------------------
+(defn- lw-set-ff [M0 :vector-i64 f :i64 fld :i64 v :i64] :vector-i64
+  (lw-put M0 (+ MM-FN-BASE (+ (* f MM-FN-W) fld)) v))
+
+;; (defn NAME [params] :R body): body = 5th child
+(defn- lw-fuel-if [M0 :vector-i64 fu :i64] :vector-i64
+  (if (= fu 1) (lw-emit M0 OP-FUEL 0 0 0) M0))
+
+(defn- lw-fn [M0 :vector-i64 f :i64] :vector-i64
+  (let [body (lw-nth M0 (lw-first M0 (lw-ff M0 f FF-NODE)) 4)
+        le (vector-at M0 MM-LABEL-N)
+        M1 (lw-labels M0 1)
+        M2 (lw-put (lw-put (lw-put M1 92 f) 93 le) 94 -1)
+        sirn (vector-at M2 MM-SIR-N)
+        np (lw-ff M2 f FF-NPARAMS)
+        ns (lw-ff M2 f FF-NSLOTS)
+        M3 (lw-set-ff M2 f FF-SIR sirn)
+        M4 (lw-emit M3 OP-FN f np ns)
+        fu (lw-ff M4 f FF-FUEL)
+        M5 (lw-fuel-if M4 fu)
+        M6 (lw-emit M5 OP-LABEL le 0 0)
+        M7 (lw-expr M6 body 0 (lw-kmk 1 0 0))
+        M8 (lw-emit M7 OP-RET 0 0 0)
+        M9 (lw-emit M8 OP-END f 0 0)
+        depth (+ (vector-at M9 94) 1)]
+    (lw-set-ff M9 f FF-DEPTH depth)))
+
+(defn- lw-fns [M0 :vector-i64 f :i64] :vector-i64
+  (let [lim (lw-fn-limit M0)
+        kind (lw-ff M0 f FF-KIND)]
+    (if (>= f lim)
+      M0
+      (if (= kind FK-DEF)
+        (lw-fns M0 (+ f 1))
+        (lw-fns (lw-fn M0 f) (+ f 1))))))
+
+(defn- lw-run [M0 :vector-i64] :vector-i64
+  (let [M1 (lw-fns M0 1)
+        nl (vector-at M1 MM-LABEL-N)
+        ns (vector-at M1 MM-SIR-N)
+        M2 (lw-put M1 MM-R0 (- ns 1))]
+    (if (>= nl MM-LABEL-CAP) (lw-fail M2 E-LOWER-FULL -1 0) M2)))
+
+;; ------------------------------------------------------------------------------------------------------------
+;; TEST-ONLY: the SIR interpreter. It reads M (SIR, FN, LIT, LITB) and writes only its own vector H.
+;; H layout (words):
+;;   0 status: 0 ok, 1 quot trap, 2 vector index/alloc trap, 3 string index trap, 4 fuel exhausted,
+;;             5 interpreter stack full, 6 interpreter heap full, 7 unsupported in the interpreter (cap call,
+;;             bytes), 8 bad SIR (END reached, unknown op, TRAP)
+;;   1 result / runtime result register, 2 heap top, 3 stack top, 4 fuel used, 5 fuel budget (16777216),
+;;   6 heap end (= hsize), 7 stack end, 8 the argument a0, 10 allocation result
+;;   64 .. 64+MM-LABEL-CAP-1          label -> SIR index
+;;   LWC = 64+MM-LABEL-CAP .. +MM-LIT-CAP   literal -> string handle cache (0 = not built yet)
+;;   stack: LWC+MM-LIT-CAP .. +524288; heap: from there to hsize (bump, never freed; fresh words are 0)
+;; lw-interp keeps the heap top of an H it ran before (so several runs can share one H), resets the rest.
+;; Frame at fb: H[fb + slot] for slots 0..nslots, temps at tb = fb + 1 + nslots.
+;; Vector handle v: H[v] = block, H[v+1] = count; block b: H[b] = capacity, H[b+1] = fill, items at b+2.
+;;   vector-conj appends in place when the vector is the block's newest version (count = fill < capacity),
+;;   else copies with doubled capacity; persistent semantics are kept either way.
+;; String handle s: H[s] = byte length, bytes at s+1 .. (one per word).
+;; ------------------------------------------------------------------------------------------------------------
+(defn- lw-hlab [] :i64 64)
+(defn- lw-hlit [] :i64 (+ 64 MM-LABEL-CAP))
+(defn- lw-hstack [] :i64 (+ (+ 64 MM-LABEL-CAP) MM-LIT-CAP))
+(defn- lw-hheap [] :i64 (+ (lw-hstack) 524288))
+
+(defn- lw-sir [M :vector-i64 pc :i64 fld :i64] :i64
+  (vector-at M (+ MM-SIR-BASE (+ (* pc MM-SIR-W) fld))))
+
+(defn- lw-ix-trap [H0 :vector-i64 code :i64] :vector-i64 (lw-put H0 0 code))
+
+;; bump allocation of n words -> H[10] = address (status 6 when full)
+(defn- lw-ix-alloc [H0 :vector-i64 n :i64] :vector-i64
+  (let [top (vector-at H0 2)
+        end (+ top n)
+        lim (vector-at H0 6)]
+    (if (> end lim)
+      (lw-ix-trap H0 6)
+      (lw-put (lw-put H0 2 end) 10 top))))
+
+(defn- lw-ix-copy [H0 :vector-i64 dst :i64 src :i64 n :i64] :vector-i64
+  (if (<= n 0)
+    (lw-put H0 11 0)
+    (let [x (vector-at H0 src)]
+      (lw-ix-copy (lw-put H0 dst x) (+ dst 1) (+ src 1) (- n 1)))))
+
+(defn- lw-ix-copy-lit [M :vector-i64 H0 :vector-i64 dst :i64 src :i64 n :i64] :vector-i64
+  (if (<= n 0)
+    (lw-put H0 11 0)
+    (lw-ix-copy-lit M (lw-put H0 dst (vector-at M src)) (+ dst 1) (+ src 1) (- n 1))))
+
+;; a new vector of count cnt and capacity cap whose first ncopy items are copied from H[src..]; H[1] = handle
+(defn- lw-ix-vnew [H0 :vector-i64 cnt :i64 cap :i64 src :i64 ncopy :i64] :vector-i64
+  (let [H1 (lw-ix-alloc H0 (+ 4 cap))
+          st1 (vector-at H1 0)]
+    (if (> st1 0)
+      H1
+      (let [v (vector-at H1 10)
+            H2 (lw-put H1 v (+ v 2))
+            H3 (lw-put H2 (+ v 1) cnt)
+            H4 (lw-put H3 (+ v 2) cap)
+            H5 (lw-put H4 (+ v 3) cnt)
+            H6 (lw-ix-copy H5 (+ v 4) src ncopy)]
+        (lw-put H6 1 v)))))
+
+(defn- lw-ix-can-append [cnt :i64 fill :i64 cap :i64] :i64 (if (= cnt fill) (if (< fill cap) 1 0) 0))
+(defn- lw-ix-grow [cnt :i64] :i64 (if (< cnt 4) 8 (* 2 cnt)))
+
+(defn- lw-ix-conj [H0 :vector-i64 v :i64 x :i64] :vector-i64
+  (let [b (vector-at H0 v)
+        cnt (vector-at H0 (+ v 1))
+        cap (vector-at H0 b)
+        fill (vector-at H0 (+ b 1))]
+    (if (= (lw-ix-can-append cnt fill cap) 1)
+      (let [H1 (lw-ix-alloc H0 2)
+              st1 (vector-at H1 0)]
+        (if (> st1 0)
+          H1
+          (let [h (vector-at H1 10)
+                H2 (lw-put H1 (+ b (+ 2 cnt)) x)
+                H3 (lw-put H2 (+ b 1) (+ cnt 1))
+                H4 (lw-put H3 h b)
+                H5 (lw-put H4 (+ h 1) (+ cnt 1))]
+            (lw-put H5 1 h))))
+      (let [H1 (lw-ix-vnew H0 (+ cnt 1) (lw-ix-grow cnt) (+ b 2) cnt)
+              st1 (vector-at H1 0)]
+        (if (> st1 0)
+          H1
+          (let [nv (vector-at H1 1)
+                nb (vector-at H1 nv)]
+            (lw-put H1 (+ nb (+ 2 cnt)) x)))))))
+
+(defn- lw-ix-vat2 [H0 :vector-i64 v :i64 i :i64] :vector-i64
+  (let [x (vector-at H0 (+ (vector-at H0 v) (+ 2 i)))] (lw-put H0 1 x)))
+(defn- lw-ix-vat [H0 :vector-i64 v :i64 i :i64] :vector-i64
+  (let [cnt (vector-at H0 (+ v 1))]
+    (if (= (lw-oor i cnt) 1) (lw-ix-trap H0 2) (lw-ix-vat2 H0 v i))))
+
+(defn- lw-ix-vassoc [H0 :vector-i64 v :i64 i :i64 x :i64] :vector-i64
+  (let [cnt (vector-at H0 (+ v 1))
+        b (vector-at H0 v)]
+    (if (= (lw-oor i cnt) 1)
+      (lw-ix-trap H0 2)
+      (let [H1 (lw-ix-vnew H0 cnt cnt (+ b 2) cnt)
+              st1 (vector-at H1 0)]
+        (if (> st1 0)
+          H1
+          (let [nv (vector-at H1 1)
+                nb (vector-at H1 nv)]
+            (lw-put H1 (+ nb (+ 2 i)) x)))))))
+
+(defn- lw-ix-vassoc! [H0 :vector-i64 v :i64 i :i64 x :i64] :vector-i64
+  (let [cnt (vector-at H0 (+ v 1))
+        b (vector-at H0 v)]
+    (if (= (lw-oor i cnt) 1)
+      (lw-ix-trap H0 2)
+      (lw-put (lw-put H0 (+ b (+ 2 i)) x) 1 v))))
+
+(defn- lw-ix-valloc [H0 :vector-i64 n :i64] :vector-i64
+  (if (< n 0) (lw-ix-trap H0 2) (lw-ix-vnew H0 n n 0 0)))
+
+(defn- lw-ix-cpa2 [H0 :vector-i64 s :i64 i :i64] :vector-i64
+  (let [x (vector-at H0 (+ s (+ 1 i)))] (lw-put H0 1 x)))
+(defn- lw-ix-cpa [H0 :vector-i64 s :i64 i :i64] :vector-i64
+  (let [len (vector-at H0 s)]
+    (if (= (lw-oor i len) 1) (lw-ix-trap H0 3) (lw-ix-cpa2 H0 s i))))
+
+(defn- lw-ix-concat [H0 :vector-i64 a :i64 b :i64] :vector-i64
+  (let [la (vector-at H0 a)
+        lb (vector-at H0 b)
+        H1 (lw-ix-alloc H0 (+ 1 (+ la lb)))
+          st1 (vector-at H1 0)]
+    (if (> st1 0)
+      H1
+      (let [s (vector-at H1 10)
+            H2 (lw-put H1 s (+ la lb))
+            H3 (lw-ix-copy H2 (+ s 1) (+ a 1) la)
+            H4 (lw-ix-copy H3 (+ s (+ 1 la)) (+ b 1) lb)]
+        (lw-put H4 1 s)))))
+
+;; runtime helper rt over the operands at H[base..]; result in H[1]
+(defn- lw-ix-rt [H0 :vector-i64 rt :i64 base :i64] :vector-i64
+  (let [x (vector-at H0 base)
+        y (vector-at H0 (+ base 1))
+        z (vector-at H0 (+ base 2))]
+    (cond
+      (= rt RT-VECTOR-AT) (lw-ix-vat H0 x y)
+      (= rt RT-VECTOR-ASSOC-IN-PLACE) (lw-ix-vassoc! H0 x y z)
+      (= rt RT-STRING-CODE-POINT-AT) (lw-ix-cpa H0 x y)
+      (= rt RT-VECTOR-CONJ) (lw-ix-conj H0 x y)
+      (= rt RT-VECTOR-ASSOC) (lw-ix-vassoc H0 x y z)
+      (= rt RT-VECTOR-ALLOC) (lw-ix-valloc H0 x)
+      (= rt RT-STRING-LENGTH-VIA) (let [len (vector-at H0 x)] (lw-put H0 1 len))
+      (= rt RT-STRING-CONCAT) (lw-ix-concat H0 x y)
+      :else (lw-ix-trap H0 7))))
+
+;; string literal lit -> handle in H[1] (built once, cached)
+(defn- lw-ix-str [M :vector-i64 H0 :vector-i64 lit :i64] :vector-i64
+  (let [c (vector-at H0 (+ (lw-hlit) lit))]
+    (if (> c 0)
+      (lw-put H0 1 c)
+      (let [lp (+ MM-LIT-BASE (* lit MM-LIT-W))
+            len (vector-at M (+ lp LF-LEN))
+            H1 (lw-ix-alloc H0 (+ len 1))
+              st1 (vector-at H1 0)]
+        (if (> st1 0)
+          H1
+          (let [s (vector-at H1 10)
+                H2 (lw-put H1 s len)
+                H3 (lw-ix-copy-lit M H2 (+ s 1) (+ MM-LITB-BASE (vector-at M (+ lp LF-B))) len)
+                H4 (lw-put H3 (+ (lw-hlit) lit) s)]
+            (lw-put H4 1 s)))))))
+
+;; a fresh vector of the n temps at H[src..]; H[1] = handle
+(defn- lw-ix-vec [H0 :vector-i64 src :i64 n :i64] :vector-i64 (lw-ix-vnew H0 n n src n))
+
+(defn- lw-ix-bin [bop :i64 x :i64 y :i64] :i64
+  (cond
+    (= bop BOP-ADD) (+ x y) (= bop BOP-SUB) (- x y) (= bop BOP-MUL) (* x y)
+    (= bop BOP-QUOT) (quot x y)
+    (= bop BOP-AND) (bit-and x y) (= bop BOP-OR) (bit-or x y) (= bop BOP-XOR) (bit-xor x y)
+    (= bop BOP-SHL) (i64-shift-left x (bit-and y 63))
+    (= bop BOP-USHR) (u64-shift-right x (bit-and y 63))
+    :else (i64-shift-right x (bit-and y 63))))
+
+(defn- lw-ix-cmp [cc :i64 x :i64 y :i64] :i64
+  (cond (= cc CC-EQ) (if (= x y) 1 0) (= cc CC-LT) (if (< x y) 1 0) (= cc CC-GT) (if (> x y) 1 0)
+        (= cc CC-LE) (if (<= x y) 1 0) :else (if (>= x y) 1 0)))
+
+(defn- lw-ix-quot-bad [x :i64 y :i64] :i64
+  (if (= y 0) 1 (if (= y -1) (if (= x (i64-shift-left 1 63)) 1 0) 0)))
+;; 1 when i is outside 0 .. n-1 (no and/or/not: the stable stage-0 refuses them, CONTRACT-REQUESTS 41-a64gen)
+(defn- lw-oor [i :i64 n :i64] :i64 (if (< i 0) 1 (if (>= i n) 1 0)))
+
+(defn- lw-ix-bin-trap [bop :i64 x :i64 y :i64] :i64 (if (= bop BOP-QUOT) (lw-ix-quot-bad x y) 0))
+(defn- lw-ix-un [uop :i64 x :i64] :i64 (if (= uop UOP-NOT) (bit-xor x 1) (bit-not x)))
+(defn- lw-ix-brz-to [H :vector-i64 v :i64 l :i64 pc :i64] :i64
+  (if (= v 0) (vector-at H (+ (lw-hlab) l)) (+ pc 1)))
+(defn- lw-ix-brnz-to [H :vector-i64 v :i64 l :i64 pc :i64] :i64
+  (if (= v 0) (+ pc 1) (vector-at H (+ (lw-hlab) l))))
+
+;; the instruction loop of one frame: pc = SIR index, fb = frame base, tb = temp base
+(defn- lw-ix [M :vector-i64 H0 :vector-i64 pc :i64 fb :i64 tb :i64] :vector-i64
+  (let [p (+ MM-SIR-BASE (* pc MM-SIR-W))
+        op (vector-at M p)
+        a (vector-at M (+ p 1))
+        b (vector-at M (+ p 2))]
+    (cond
+      (= op OP-LGET) (let [x (vector-at H0 (+ fb b))] (lw-ix M (lw-put H0 (+ tb a) x) (+ pc 1) fb tb))
+      (= op OP-CONST) (lw-ix M (lw-put H0 (+ tb a) b) (+ pc 1) fb tb)
+      (= op OP-BIN)
+      (let [x (vector-at H0 (+ tb b))
+            y (vector-at H0 (+ tb (+ b 1)))]
+        (if (= (lw-ix-bin-trap a x y) 1)
+          (lw-ix-trap H0 1)
+          (lw-ix M (lw-put H0 (+ tb b) (lw-ix-bin a x y)) (+ pc 1) fb tb)))
+      (= op OP-CMP)
+      (let [x (vector-at H0 (+ tb b))
+            y (vector-at H0 (+ tb (+ b 1)))]
+        (lw-ix M (lw-put H0 (+ tb b) (lw-ix-cmp a x y)) (+ pc 1) fb tb))
+      (= op OP-LSET) (let [x (vector-at H0 (+ tb b))] (lw-ix M (lw-put H0 (+ fb a) x) (+ pc 1) fb tb))
+      (= op OP-BRZ)
+      (let [to (lw-ix-brz-to H0 (vector-at H0 (+ tb a)) b pc)] (lw-ix M H0 to fb tb))
+      (= op OP-BR) (let [to (vector-at H0 (+ (lw-hlab) a))] (lw-ix M H0 to fb tb))
+      (= op OP-LABEL) (lw-ix M H0 (+ pc 1) fb tb)
+      (= op OP-BRNZ)
+      (let [to (lw-ix-brnz-to H0 (vector-at H0 (+ tb a)) b pc)] (lw-ix M H0 to fb tb))
+      (= op OP-RT)
+      (let [H1 (lw-ix-rt H0 a (+ tb b))
+              st1 (vector-at H1 0)]
+        (if (> st1 0)
+          H1
+          (let [r (vector-at H1 1)] (lw-ix M (lw-put H1 (+ tb b) r) (+ pc 1) fb tb))))
+      (= op OP-CALL)
+      (let [H1 (lw-ix-enter M H0 a (+ tb b))
+              st1 (vector-at H1 0)]
+        (if (> st1 0)
+          H1
+          (let [r (vector-at H1 1)] (lw-ix M (lw-put H1 (+ tb b) r) (+ pc 1) fb tb))))
+      (= op OP-FUEL)
+      (let [used (+ (vector-at H0 4) 1)
+            budget (vector-at H0 5)]
+        (if (> used budget)
+          (lw-ix-trap H0 4)
+          (lw-ix M (lw-put H0 4 used) (+ pc 1) fb tb)))
+      (= op OP-UN)
+      (let [x (vector-at H0 (+ tb b))]
+        (lw-ix M (lw-put H0 (+ tb b) (lw-ix-un a x)) (+ pc 1) fb tb))
+      (= op OP-RET) (let [x (vector-at H0 (+ tb a))] (lw-put H0 1 x))
+      (= op OP-STR)
+      (let [H1 (lw-ix-str M H0 b)
+              st1 (vector-at H1 0)]
+        (if (> st1 0)
+          H1
+          (let [r (vector-at H1 1)] (lw-ix M (lw-put H1 (+ tb a) r) (+ pc 1) fb tb))))
+      (= op OP-VEC)
+      (let [H1 (lw-ix-vec H0 (+ tb a) b)
+              st1 (vector-at H1 0)]
+        (if (> st1 0)
+          H1
+          (let [r (vector-at H1 1)] (lw-ix M (lw-put H1 (+ tb a) r) (+ pc 1) fb tb))))
+      (= op OP-CAP) (lw-ix-trap H0 7)
+      :else (lw-ix-trap H0 8))))
+
+;; call FN f with its arguments at H[src..]: push a frame, run, pop. Status in H[0], result in H[1].
+(defn- lw-ix-enter [M :vector-i64 H0 :vector-i64 f :i64 src :i64] :vector-i64
+  (let [sir (lw-ff M f FF-SIR)
+        np (lw-ff M f FF-NPARAMS)
+        ns (lw-ff M f FF-NSLOTS)
+        fb (vector-at H0 3)
+        top (+ fb (+ 1 (+ ns (+ (lw-ff M f FF-DEPTH) 6))))
+        lim (vector-at H0 7)]
+    (if (> top lim)
+      (lw-ix-trap H0 5)
+      (let [H1 (lw-put H0 3 top)
+            H2 (lw-ix-copy H1 (+ fb 1) src np)
+            H3 (lw-ix M H2 (+ sir 1) fb (+ fb (+ 1 ns)))]
+        (lw-put H3 3 fb)))))
+
+;; label table: H[64 + l] = SIR index of LABEL l
+(defn- lw-ix-labels [M :vector-i64 H0 :vector-i64 i :i64] :vector-i64
+  (if (>= i (vector-at M MM-SIR-N))
+    (lw-put H0 11 0)
+    (if (= (lw-sir M i IF-OP) OP-LABEL)
+      (lw-ix-labels M (lw-put H0 (+ (lw-hlab) (lw-sir M i IF-A)) i) (+ i 1))
+      (lw-ix-labels M H0 (+ i 1)))))
+
+(defn- lw-ix-heap-top [H :vector-i64] :i64 (if (= (vector-at H 2) 0) (lw-hheap) (vector-at H 2)))
+
+(defn- lw-interp [M :vector-i64 H0 :vector-i64 hsize :i64 f :i64 a0 :i64] :vector-i64
+  (let [top (lw-ix-heap-top H0)
+        H1 (lw-put (lw-put (lw-put H0 0 0) 2 top) 3 (lw-hstack))
+        H2 (lw-put (lw-put (lw-put H1 4 0) 5 16777216) 6 hsize)
+        H3 (lw-put (lw-put H2 7 (lw-hheap)) 8 a0)
+        H4 (lw-ix-labels M H3 1)]
+    (lw-ix-enter M H4 f 8)))

@@ -1,0 +1,56 @@
+(ns lwtest (:export [t-arith t-quot t-shift t-cmp t-logic t-cond t-let t-loopval t-swap t-tail t-mutual t-vec t-str t-def t-deep run]))
+
+;; Input of the 30-lower unit test (SIR dump golden + interpreter results). Every t-* export returns 1.
+(def K 7)
+(def MSG "hello")
+(def TAB [10 20 30])
+
+(defn- add3 [a :i64 b :i64 c :i64] :i64 (+ a b c))
+(defn t-arith [] :i64
+  (if (= (- (* (add3 1 2 3) 4) 5 6) 13)
+    (if (= (+ 9223372036854775807 1) -9223372036854775808) 1 0)
+    0))
+(defn t-quot [] :i64
+  (if (= (quot 7 -2) -3) (if (= (quot -7 2) -3) 1 0) 0))
+(defn t-shift [] :i64
+  (if (= (u64-shift-right -1 65) 9223372036854775807)
+    (if (= (i64-shift-left 1 64) 1)
+      (if (= (i64-shift-right -8 65) -4) (if (= (bit-not 0) -1) (bit-and 3 (bit-or 1 (bit-xor 2 2))) 0) 0) 0) 0))
+(defn t-cmp [] :i64
+  (if (< 1 2) (if (> 2 1) (if (<= 2 2) (if (>= 3 2) (if (< 2 1) 0 1) 0) 0) 0) 0))
+(defn- f [x :i64] :i64 x)
+(defn t-logic [] :i64
+  (if (and (< 1 2) (or (> 1 2) (= 3 3)) (not (= 1 2))) 1 0))
+(defn t-cond [] :i64
+  (let [x 5]
+    (cond (< x 3) 0 (< x 6) 1 :else 2)))
+(defn t-let [] :i64
+  (let [a 1 b (+ a 1) c (let [d (* b 10)] (+ d a))]
+    (if (= c 21) 1 0)))
+(defn t-loopval [] :i64
+  (let [s (loop [i 0 acc 0] (if (= i 10) acc (recur (+ i 1) (+ acc i))))
+        t (+ s (loop [j 3 k j] (if (= j 0) k (recur (- j 1) (+ k 1)))))]
+    (if (= t 51) 1 0)))
+(defn t-swap [] :i64
+  (loop [a 1 b 2 n 0]
+    (if (= n 3) (if (= a 2) (if (= b 1) 1 0) 0) (recur b a (+ n 1)))))
+(defn- count-down [n :i64 acc :i64] :i64
+  (if (= n 0) acc (count-down (- n 1) (+ acc 2))))
+(defn t-tail [] :i64 (if (= (count-down 100000 0) 200000) 1 0))
+(defn- ev [n :i64] :bool (if (= n 0) (< 0 1) (od (- n 1))))
+(defn- od [n :i64] :bool (if (= n 0) (< 1 0) (ev (- n 1))))
+(defn t-mutual [] :i64 (if (ev 10) (if (od 7) 1 0) 0))
+(defn- fill [v :vector-i64 i :i64] :vector-i64
+  (if (= i 5) v (fill (vector-assoc! v i (* i i)) (+ i 1))))
+(defn t-vec [] :i64
+  (let [v (fill (vector-alloc 5) 0)
+        w (vector-conj (vector-conj [1 2] 3) 4)
+        u (vector-assoc w 0 9)]
+    (if (= (+ (vector-at v 4) (vector-at w 3) (vector-at u 0) (vector-at w 0)) 30) 1 0)))
+(defn t-str [] :i64
+  (let [s (string-concat MSG " world")]
+    (if (= (string-length s) 11) (if (= (string-code-point-at s 6) 119) 1 0) 0)))
+(defn t-def [] :i64 (if (= (+ K (vector-at TAB 2)) 37) (if (= (string-length MSG) 5) 1 0) 0))
+(defn t-deep [] :i64
+  (if (= (+ 1 (+ 2 (+ 3 (+ 4 (+ 5 (+ 6 (+ 7 (+ 8 (+ 9 10))))))))) 55) 1 0))
+(defn run [token :i64] :i64 (f token))
