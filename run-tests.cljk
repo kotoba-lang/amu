@@ -144,7 +144,10 @@
             [kotoba.compiler.empty-map-literal-test]
             [kotoba.compiler.row-get-and-match-test]
             [kotoba.compiler.loop-slot-beside-row-test]
-            [kotoba.compiler.let-rebinding-test]))
+            [kotoba.compiler.let-rebinding-test]
+            ;; ADR 0353 :cljs-literal-hash: nine row generics and an integer
+            ;; literal argument crashed only here (a BigInt has no hash)
+            [kotoba.compiler.cljs-literal-hash-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
   (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
@@ -228,4 +231,5 @@
              'kotoba.compiler.empty-map-literal-test
              'kotoba.compiler.row-get-and-match-test
              'kotoba.compiler.loop-slot-beside-row-test
-             'kotoba.compiler.let-rebinding-test)
+             'kotoba.compiler.let-rebinding-test
+             'kotoba.compiler.cljs-literal-hash-test)

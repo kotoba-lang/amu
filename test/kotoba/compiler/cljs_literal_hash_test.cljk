@@ -1,0 +1,257 @@
+(ns kotoba.compiler.cljs-literal-hash-test
+  "ADR 0353 floor :cljs-literal-hash.
+
+  kotoba-lang/browser's browser.text-edit, with the mechanical changes of
+  floor :browser-text-edit (every function defn- but empty-state, the nil
+  guards over never-absent values dropped, code units through
+  string-code-unit-at / string-code-unit-count, a main driving it), crashed
+  kotoba-sema on nbb with the host's words, not the language's: \"Cannot
+  create property 'closure_uid_..' on bigint '0'\". Measured 2026-10-02 on
+  kotoba-sema 531e89d8: specialize-row-parameters scans every call argument
+  for a row-polymorphic function used as a value with (contains? generics
+  arg); past eight generics that map is a hash map, an integer literal is a
+  ClojureScript BigInt, and a BigInt has no hash. text-edit has ten row
+  generics once move-caret and move-to are in; nine one-line functions over
+  a row are enough. The JVM was never affected.
+
+  Now, in kotoba-sema: the scan asks symbol? before it hashes.
+
+  Native: the admitted program compiles for x86_64-aiueos-kernel-v1 and
+  aarch64-macos with the oracle verified.
+
+  The module still refuses, by name, at the next floor's
+  (docs/language-ladder.edn); its :text/composition field is floor
+  :absent-field-from-assoc's and is left out here. What stays refused, each
+  by its literal: a row-polymorphic function used as a value, a number
+  passed to a row parameter (no coercion), a record as an if test (a record
+  is never truthy) -- all three with nine generics, where the crash was."
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private nine-generics
+  (str "(ns b)\n"
+       "(defn- g1 [s] (+ (:a s) 1))\n"
+       "(defn- g2 [s] (+ (:a s) 2))\n"
+       "(defn- g3 [s] (+ (:a s) 3))\n"
+       "(defn- g4 [s] (+ (:a s) 4))\n"
+       "(defn- g5 [s] (+ (:a s) 5))\n"
+       "(defn- g6 [s] (+ (:a s) 6))\n"
+       "(defn- g7 [s] (+ (:a s) 7))\n"
+       "(defn- g8 [s] (+ (:a s) 8))\n"
+       "(defn- g9 [s] (+ (:a s) 0))\n"
+       "(defn- sum [s] (+ (g1 s) (g2 s) (g3 s) (g4 s) (g5 s) (g6 s) (g7 s) (g8 s) (g9 s)))\n"))
+
+(def ^:private admitted
+  (str nine-generics "(defn main [] :i64 (sum {:a 0}))"))
+
+(def ^:private text-edit
+  "browser.text-edit (browser 8671500) with the mechanical changes, without
+  its :text/composition field."
+  (str
+       "(ns browser.text-edit)\n"
+       "\n"
+       "(defn empty-state\n"
+       "  []\n"
+       "  {:text/value \"\"\n"
+       "   :text/caret 0\n"
+       "   :text/selection [0 0]})\n"
+       "\n"
+       "(defn- clamp\n"
+       "  [n lo hi]\n"
+       "  (max lo (min hi n)))\n"
+       "\n"
+       "(defn- code-unit-at\n"
+       "  [s idx]\n"
+       "  (string-code-unit-at s idx))\n"
+       "\n"
+       "(defn- code-unit-count\n"
+       "  [s]\n"
+       "  (string-code-unit-count s))\n"
+       "\n"
+       "(defn- surrogate-pair-boundary?\n"
+       "  [value p]\n"
+       "  (and (pos? p) (< p (code-unit-count value))\n"
+       "       (<= 0xD800 (code-unit-at value (dec p)) 0xDBFF)\n"
+       "       (<= 0xDC00 (code-unit-at value p) 0xDFFF)))\n"
+       "\n"
+       "(defn- normalize-selection\n"
+       "  [state]\n"
+       "  (let [value (:text/value state \"\")\n"
+       "        n (code-unit-count value)\n"
+       "        [a b] (:text/selection state)\n"
+       "        a (clamp a 0 n)\n"
+       "        b (clamp b 0 n)]\n"
+       "    (assoc state\n"
+       "           :text/caret (clamp (:text/caret state) 0 n)\n"
+       "           :text/selection [(min a b) (max a b)])))\n"
+       "\n"
+       "(defn- snap-out-of-surrogate-pair\n"
+       "  [value p]\n"
+       "  (if (surrogate-pair-boundary? value p) (dec p) p))\n"
+       "\n"
+       "(defn- collapse\n"
+       "  [state caret]\n"
+       "  (let [value (:text/value state \"\")\n"
+       "        caret (-> caret (clamp 0 (code-unit-count value)) (->> (snap-out-of-surrogate-pair value)))]\n"
+       "    (assoc state :text/caret caret :text/selection [caret caret])))\n"
+       "\n"
+       "(defn- select\n"
+       "  [state start end]\n"
+       "  (let [value (:text/value state \"\")]\n"
+       "    (-> state\n"
+       "        (assoc :text/selection [(snap-out-of-surrogate-pair value start)\n"
+       "                                 (snap-out-of-surrogate-pair value end)]\n"
+       "               :text/caret (snap-out-of-surrogate-pair value end))\n"
+       "        (normalize-selection))))\n"
+       "\n"
+       "(defn- insert-text\n"
+       "  [state text]\n"
+       "  (let [state (normalize-selection state)\n"
+       "        value (:text/value state \"\")\n"
+       "        [start end] (:text/selection state)\n"
+       "        text (str text)\n"
+       "        value (str (subs value 0 start) text (subs value end))\n"
+       "        caret (+ start (code-unit-count text))]\n"
+       "    (assoc state\n"
+       "           :text/value value\n"
+       "           :text/caret caret\n"
+       "           :text/selection [caret caret])))\n"
+       "\n"
+       "(defn- delete-backward\n"
+       "  [state]\n"
+       "  (let [state (normalize-selection state)\n"
+       "        value (:text/value state \"\")\n"
+       "        [start end] (:text/selection state)]\n"
+       "    (cond\n"
+       "      (< start end)\n"
+       "      (insert-text state \"\")\n"
+       "\n"
+       "      (pos? start)\n"
+       "      (let [caret (if (surrogate-pair-boundary? value (dec start)) (- start 2) (dec start))]\n"
+       "        (assoc state\n"
+       "               :text/value (str (subs value 0 caret) (subs value start))\n"
+       "               :text/caret caret\n"
+       "               :text/selection [caret caret]))\n"
+       "\n"
+       "      :else state)))\n"
+       "\n"
+       "(defn- delete-forward\n"
+       "  [state]\n"
+       "  (let [state (normalize-selection state)\n"
+       "        value (:text/value state \"\")\n"
+       "        [start end] (:text/selection state)]\n"
+       "    (cond\n"
+       "      (< start end)\n"
+       "      (insert-text state \"\")\n"
+       "\n"
+       "      (< end (code-unit-count value))\n"
+       "      (let [delete-end (if (surrogate-pair-boundary? value (inc end)) (+ end 2) (inc end))]\n"
+       "        (assoc state\n"
+       "               :text/value (str (subs value 0 start) (subs value delete-end))\n"
+       "               :text/caret start\n"
+       "               :text/selection [start start]))\n"
+       "\n"
+       "      :else state)))\n"
+       "\n"
+       "(defn- selection-anchor\n"
+       "  [state]\n"
+       "  (let [state (normalize-selection state)\n"
+       "        caret (:text/caret state)\n"
+       "        [start end] (:text/selection state)]\n"
+       "    (if (<= caret start) end start)))\n"
+       "\n"
+       "(defn- select-all\n"
+       "  [state]\n"
+       "  (select state 0 (code-unit-count (:text/value state \"\"))))\n"
+       "\n"
+       "(defn- move-caret\n"
+       "  ([state delta]\n"
+       "   (move-caret state delta {}))\n"
+       "  ([state delta {:keys [extend?]}]\n"
+       "   (let [state (normalize-selection state)\n"
+       "         value (:text/value state \"\")\n"
+       "         [start end] (:text/selection state)\n"
+       "         caret (:text/caret state)\n"
+       "         next-caret (clamp (if (and (not extend?) (< start end))\n"
+       "                             (if (neg? delta) start end)\n"
+       "                             (+ caret delta))\n"
+       "                           0\n"
+       "                           (code-unit-count value))\n"
+       "         next-caret (cond\n"
+       "                      (and (neg? delta) (surrogate-pair-boundary? value next-caret)) (dec next-caret)\n"
+       "                      (and (pos? delta) (surrogate-pair-boundary? value next-caret)) (inc next-caret)\n"
+       "                      :else next-caret)]\n"
+       "     (if extend?\n"
+       "       (select state (selection-anchor state) next-caret)\n"
+       "       (collapse state next-caret)))))\n"
+       "\n"
+       "(defn- move-to\n"
+       "  ([state caret]\n"
+       "   (move-to state caret {}))\n"
+       "  ([state caret {:keys [extend?]}]\n"
+       "   (let [state (normalize-selection state)\n"
+       "         caret (clamp caret 0 (code-unit-count (:text/value state \"\")))]\n"
+       "     (if extend?\n"
+       "       (select state (selection-anchor state) caret)\n"
+       "       (collapse state caret)))))\n"
+       "(defn main [] :i64\n"
+       "  (+ (:text/caret (insert-text (empty-state) \"abc\"))\n"
+       "     (:text/caret (delete-backward (empty-state)))\n"
+       "     (:text/caret (delete-forward (empty-state)))\n"
+       "     (:text/caret (select-all (empty-state)))\n"
+       "     (:text/caret (collapse (empty-state) 1))\n"
+       "     (:text/caret (move-caret (empty-state) 1))\n"
+       "     (:text/caret (move-to (empty-state) 1))\n"
+       "     (selection-anchor (empty-state))))\n"))
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- outcome
+  "nil when admitted, else [message ex-data]."
+  [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         [(ex-message error) (ex-data error)])))
+
+(deftest text-edit-analyzes-on-nbb-test
+  (testing "admitted on the reference: nine row generics and integer literal arguments"
+    (is (= 36 (run-main admitted))))
+  (testing "admitted on the hosted target"
+    (is (= [0 97 115 109]
+           (mapv #(bit-and (int %) 0xff)
+                 (take 4 (:bytes (compiler/compile-source admitted :wasm32-kotoba-v1)))))))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "compiles on both native targets"
+    (doseq [target native-targets]
+      (is (= 36 (#?(:clj long :cljs js/Number)
+                 (:value (:artifact (compiler/compile-source admitted target)))))
+          (str target))))
+  (testing "browser.text-edit is answered in the language's words, not the host's"
+    (let [[message data] (outcome text-edit)]
+      (is (string? message))
+      (is (not (str/includes? (str message) "closure_uid")) message)
+      (is (= :subset (:phase data)) message)
+      (is (= "kotoba.error" (some-> (:kotoba.error/code data) namespace)) message)))
+  (testing "refused: a row-polymorphic function is not a value"
+    (is (= "row-polymorphic function g1 cannot be used as a value: it exists only as its specializations, one per record type a call passes it"
+           (first (outcome (str nine-generics
+                                "(defn- ap [f s] (f s))\n"
+                                "(defn main [] :i64 (+ (sum {:a 0}) (ap g1 {:a 0})))"))))))
+  (testing "refused: a number is not coerced to a row"
+    (is (= "argument 5 to g1 is i64, and parameter s of g1 is the row {:a T | r}: only a record satisfies a row"
+           (first (outcome (str nine-generics
+                                "(defn main [] :i64 (+ (sum {:a 0}) (g1 5)))"))))))
+  (testing "refused: a record is never truthy"
+    (is (= "if test must be bool or an option"
+           (first (outcome (str nine-generics
+                                "(defn main [] :i64 (if {:a 1} (sum {:a 0}) 0))")))))))

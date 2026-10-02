@@ -195,10 +195,23 @@
   ;; measurements.
   {:id :let-rebinding :gate "let-rebinding-is-nested-shadowing-test"
    :goal "a let that rebinds a row parameter -- (let [state (normalize-selection state)] ..) -- leaves it a row (refused before: the parameter stayed :i64, \"only a record satisfies a row\"), and a name bound again in one let is the nested let that shadows it (refused before: \"duplicate let binding\"); a read after the rebinding is the new value's, a rebound name has its new type, a record is never truthy, parameters stay distinct"}
+  ;; Landed 2026-10-02 in kotoba-sema (8d3320fc): the crash was
+  ;; specialize-row-parameters' (contains? generics arg) once there are more
+  ;; than eight row generics (a hash map) and arg is an integer literal (a
+  ;; BigInt, which has no hash); either of move-caret / move-to is
+  ;; text-edit's ninth. ADR 0353 has the measurements.
   {:id :cljs-literal-hash :gate "text-edit-analyzes-on-nbb-test"
    :goal "kotoba-sema analyzes browser.text-edit (the mechanical changes above, every function defn- but empty-state, a main driving it) on nbb without the internal error \"Cannot create property 'closure_uid_..' on bigint '0'\" -- ClojureScript hashing the bigint an integer literal is, the class kotoba-sema's run-tests.cljk names for desugar-case; not measured on the JVM; located by bisection to the module, not yet to a pass"}
   {:id :absent-field-from-assoc :gate "nil-field-typed-by-the-module-assoc-test"
    :goal "{.. :text/composition nil} is [:option T] with T the value the module assoc's into that field ({:composition/text \"\"}, composition-start), and (assoc s :text/composition nil) its none; refused today \"map literal value at key :text/composition is nil ... nothing here says T\"; a field two assoc's give two types stays refused by name"}
+;; Measured 2026-10-02 while closing :cljs-literal-hash, on kotoba-sema
+  ;; 8d3320fc: with the crash gone and :text/composition left out, text-edit
+  ;; (move-caret and move-to in, a main calling each function on
+  ;; (empty-state)) is refused at delete-backward's (insert-text state "").
+  ;; Not yet minimized: a rebound row passed to another row function, in a
+  ;; cond, after a vector destructuring, is each admitted alone.
+  {:id :rebound-row-argument :gate "text-edit-rebound-state-is-a-row-test"
+   :goal "delete-backward's and delete-forward's (insert-text state \"\"), state rebound by (normalize-selection state), passes a record to insert-text's row parameter; refused today \"argument state to insert-text is i64, and parameter state of insert-text is the row {:text/caret T :text/selection T | r}: only a record satisfies a row\"; a number passed to a row parameter stays refused by that literal"}
   {:id :native-vector-field :gate "vector-field-in-record-compiles-natively-test"
    :goal "a record field holding an i64 vector (:text/selection [start end], typed :vector-i64) compiles for x86_64-aiueos-kernel-v1 and aarch64-macos; refused today at the typed-values gate (\"typed values currently require ... the qualified native one-word string/record/variant/option/result slice\") for (nth (:sel s) 1) and (assoc s :sel [..]) alike"}
   {:id :typed-wasm-min-max :gate "min-max-qualified-on-typed-wasm-test"
@@ -207,7 +220,7 @@
    :needs-a-human "how a Clojure-readable source states an export's ABI: browser.text-edit's public functions take state (a row: refused as an exported generic, which has one ABI) and text (unannotated, so :i64; the test passes strings: \"expected i64, got string\"), and the typed signature spelling [m [:ref q]] is not Clojure. Candidates measured as possible, not chosen: Clojure type hints (^String text) and an ns schema the hint names, or the export taking the record the module's one public constructor (empty-state) returns"
    :goal "browser.text-edit's public functions export one ABI each with the source still read by Clojure"}
   {:id :browser-text-edit :gate "browser-text-edit-native-test"
-   :blocked-by [:cljs-literal-hash :absent-field-from-assoc :native-vector-field :typed-wasm-min-max :export-signatures]
+   :blocked-by [:absent-field-from-assoc :rebound-row-argument :native-vector-field :typed-wasm-min-max :export-signatures]
    :goal "kotoba-lang/browser's browser.text-edit, migrated only mechanically (defn-, nil's meaning, a :kotoba interop branch), compiles for both native targets and its hosted tests pass on amu's output"}
   {:id :browser-input :gate "browser-input-native-test"
    :goal "browser.input the same"}
