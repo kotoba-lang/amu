@@ -181,7 +181,7 @@
   {:id :row-get-and-match :gate "row-get-and-match-read-a-row-test"
    :goal "(get m :a) and (get m :a d) on an unannotated parameter read a row as (:a m) does, so a match map pattern over a parameter specializes per record -- an arm naming a key the record lacks does not match in that specialization; a get with a computed key on a row stays refused by name"}
   {:id :loop-slot-beside-row :gate "loop-slot-typed-beside-a-row-read-test"
-   :goal "a [:list T] loop slot is typed whatever precedes the loop: (let [ys {:a 1}] (+ (:a ys) (loop [zs [(mk) (mk)] i 0] (if (< i 1) (recur zs (+ i 1)) (count zs))))) answers 2, refused today \"count requires a bounded vector, ...; got :i64.\" while the same loop without the row read is admitted"}
+   :goal "a [:list T] loop slot is typed whatever precedes the loop: (let [ys {:a 1}] (+ (:a ys) (loop [zs [(mk) (mk)] i 0] (if (< i 1) (recur zs (+ i 1)) (count zs))))) answers 3 (the loop answers 2), refused before \"count requires a bounded vector, ...; got :i64.\" while the same loop without the row read is admitted"}
   {:id :browser-text-edit :gate "browser-text-edit-native-test"
    :goal "kotoba-lang/browser's browser.text-edit, migrated only mechanically (defn-, nil's meaning, a :kotoba interop branch), compiles for both native targets and its hosted tests pass on amu's output"}
   {:id :browser-input :gate "browser-input-native-test"

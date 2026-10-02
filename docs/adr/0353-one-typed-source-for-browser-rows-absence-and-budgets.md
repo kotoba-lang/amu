@@ -556,6 +556,33 @@ Clojure it is today, the language gains:
    [:map K V]"); a `get` without a default of a field the record lacks; a
    non-record argument to a row; a coerced field; a record, or a number read
    off one, as an `if` test; `=` over records.
+   Floor `:loop-slot-beside-row` (gate
+   `loop-slot-typed-beside-a-row-read-test`, landed 2026-10-02): a loop's
+   slots are typed from its helper's call site in the enclosing body, and that
+   body is typed before `rewrite-record-projection` gives `(:a ys)` its
+   descriptor. Inference read the descriptor-less `(record-get ys :a)` as the
+   3-arity form, taking the local for the descriptor -- an internal failure
+   ("nth not supported on this type"), swallowed as an independent error --
+   so a body that read a row before its loop left every slot the `:i64`
+   placeholder: `(let [ys {:a 1}] (+ (:a ys) (loop [zs [(mk) (mk)] i 0] ...
+   (count zs))))` was refused "count requires a bounded vector, a typed set
+   or a canonical typed map; got :i64." while the loop alone answered 2. Now
+   kotoba-sema (`965feb37`) types a descriptor-less `record-get` as that
+   rewrite will rewrite it: a record or declared `[:ref ..]` answers its
+   field, a canonical typed map `typed-map-get`, the keyword->i64 map
+   `map-get`. Measured: the gate's 3 programs answer 3, 12 and 8 on the KIR
+   reference and under `compile-source` for `wasm32-kotoba-v1`,
+   `x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1` with the oracle
+   verified; `amu compile --target x86_64-aiueos-kernel-v1` / `--target
+   aarch64-macos` of the floor's program exit 0 with `:oracle {:status
+   :verified}`. The gate was red on kotoba-sema `21e3a23f` (3 failures, 12
+   errors of 18 assertions), green on `965feb37`; kotoba-sema's own portable
+   suite has the same 39 failures and 5 errors before and after (all
+   pre-existing). Refused by name, as without the row read: a list item as
+   an i64; a number recurred into the list slot ("expected [:list [:ref
+   :b/s]], got i64"); a field the record lacks; a row read off a number
+   ("record-get without a type descriptor requires a record value; got
+   :i64"); a record as an `if` test.
 
 Then browser moves, whole component by component (text-edit, input, surface
 with cssom and dom-gpu), and the hosted engine switches to amu's output of
