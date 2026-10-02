@@ -16,7 +16,8 @@
 (defn- strs [s :string] :i64 (+ (string-length (string-concat s MSG)) (string-code-point-at s 0)))
 (defn- io [p :string] :i64 (string-length (typed-cap-call :fs/app-data :string :string p)))
 (defn- out [v :vector-i64] :i64
-  (let [b (typed-cap-call :fs/app-data :bytes :bytes (bytes-from-vector-i64 v))
+  (let [b (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 v))
+        r (vector-at (vector-i64-from-bytes b) 0)
         a (typed-cap-call :cli/args :string :string "0")
         e (typed-cap-call :io/write-error :string :string a)
         w (typed-cap-call :io/write :string :string e)]

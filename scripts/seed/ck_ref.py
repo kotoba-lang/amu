@@ -26,13 +26,13 @@ SPELL = ["", "ns", ":export", "defn", "defn-", "def", "let", "loop", "recur", "i
          "<=", ">=", "+", "-", "*", "quot", "bit-and", "bit-or", "bit-xor", "bit-not", "u64-shift-right",
          "i64-shift-left", "i64-shift-right", "vector-at", "vector-conj", "vector-assoc", "vector-assoc!",
          "vector-alloc", "string-code-point-at", "string-length", "[", "(call)", "typed-cap-call",
-         "bytes-from-vector-i64", "string-concat", "cond"]
+         "bytes-from-vector-i64", "string-concat", "cond", "vector-i64-from-bytes"]
 HD = {s: i for i, s in enumerate(SPELL) if i not in (0, 2, 36, 37)}
 (NS, EXPORT, DEFN, DEFNP, DEF, LET, LOOP, RECUR, IF, AND, OR, NOT, EQ, LT, GT, LE, GE, ADD, SUB, MUL, QUOT, BAND, BOR,
  BXOR, BNOT, USHR, SHL, SSHR, VAT, VCONJ, VASSOC, VASSOCB, VALLOC, SCPA, SLEN, VECLIT, CALL, CAP, BYTESF, SCAT,
- COND) = range(1, 42)
+ COND, VFROMB) = range(1, 43)
 KW = {":i64": 1, ":bool": 2, ":string": 3, ":vector-i64": 4, ":export": 5, ":else": 6, ":bytes": 7,
-      ":fs/app-data": 8, ":cli/args": 9, ":io/write-error": 10, ":io/write": 11}
+      ":fs/app-data": 8, ":cli/args": 9, ":io/write-error": 10, ":io/write": 11, ":fs/app-data-bytes": 12}
 FK_DEFN, FK_PRIV, FK_DEF = 1, 2, 3
 
 
@@ -441,9 +441,9 @@ class Model:
                 self.fail(2115, h)
             w, q, r, x = args
             wk, r1, r2 = self.head_of(w), self.head_of(q), self.head_of(r)
-            ty = 0 if r1 != r2 else (STR if r1 == KW[":string"] else
-                                     (BYTES if r1 == KW[":bytes"] and wk == KW[":fs/app-data"] else 0))
-            if self.kind[w] != ND_KW or wk not in (8, 9, 10, 11):
+            ty = 0 if r1 != r2 else ((BYTES if r1 == KW[":bytes"] else 0) if wk == KW[":fs/app-data-bytes"] else
+                                     (STR if r1 == KW[":string"] else 0))
+            if self.kind[w] != ND_KW or wk not in (8, 9, 10, 11, 12):
                 self.fail(2115, w)
             if self.kind[q] != ND_KW:
                 self.fail(2115, q)
@@ -455,8 +455,8 @@ class Model:
                 self.fail(2104, h, ty)
             self.fns[f]["fuel"] = 1
             return self.mark(n, ty, CAP)
-        if NOT <= hd <= SLEN or hd in (BYTESF, SCAT):
-            arity = 1 if hd in (NOT, BNOT, VALLOC, SLEN, BYTESF) else (3 if hd in (VASSOC, VASSOCB) else 2)
+        if NOT <= hd <= SLEN or hd in (BYTESF, SCAT, VFROMB):
+            arity = 1 if hd in (NOT, BNOT, VALLOC, SLEN, BYTESF, VFROMB) else (3 if hd in (VASSOC, VASSOCB) else 2)
             ok = na >= arity if hd in (ADD, SUB, MUL) else na == arity
             if not ok:
                 self.fail(2103, h, arity)
@@ -467,6 +467,8 @@ class Model:
                     want = VEC if k == 0 else I64
                 elif hd == BYTESF:
                     want = VEC
+                elif hd == VFROMB:
+                    want = BYTES
                 elif hd == SCPA:
                     want = STR if k == 0 else I64
                 elif hd in (SLEN, SCAT):
@@ -475,9 +477,9 @@ class Model:
                     want = I64
                 if self.expr(a, f, nxt, 0, 0) != want:
                     self.fail(2104, h, want)
-            if VAT <= hd <= SLEN or hd in (BYTESF, SCAT):
+            if VAT <= hd <= SLEN or hd in (BYTESF, SCAT, VFROMB):
                 self.fns[f]["fuel"] = 1
-            res = (BOOL if hd in (NOT, LT, GT, LE, GE) else VEC if hd in (VCONJ, VASSOC, VASSOCB, VALLOC)
+            res = (BOOL if hd in (NOT, LT, GT, LE, GE) else VEC if hd in (VCONJ, VASSOC, VASSOCB, VALLOC, VFROMB)
                    else BYTES if hd == BYTESF else STR if hd == SCAT else I64)
             return self.mark(n, res, hd)
         self.fail(2101, self.first[n])

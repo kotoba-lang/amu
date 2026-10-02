@@ -19,9 +19,14 @@
 ;;   io-write-hex M base len-> i64     M[base..base+len) (one byte per word, low 8 bits) as lowercase hex on stdout,
 ;;                                     64 bytes per line, each line ends in "\n"; `xxd -r -p` recovers the bytes. THE
 ;;                                     OUTPUT PATH OF THE STABLE STAGE-0 (the :bytes write below is refused by it)
-;; Binary writes with :bytes (kind 8) are in seed/02-io-bytes.snippet.kotoba: stage-0 refuses even DEAD code that
-;; contains a :bytes capability call (measured), so that function cannot live in this file until the stage-0 image
-;; is rebuilt (CONTRACT-REQUESTS 2026-10-02 02-io).
+;;   io-write-bytes M path base len -> i64  M[base..base+len) (one byte per word, low 8 bits) to the file `path` as raw
+;;                                     bytes, "<path>WRITE_SEP<bytes>" over :fs/app-data-bytes (wire 35, kind 8). Returns len.
+;;                                     At most 8 MiB - path - 9 bytes (loader KEXE_BYTES_VALUE_LIMIT); the loader budgets
+;;                                     must hold string pool >= 6x and vector items >= 8x len. Check with io-exists.
+;;   io-read-bytes path     -> vector  the whole file as one item (0..255) per byte (:fs/app-data-bytes request = the
+;;                                     path's bytes, then vector-i64-from-bytes). Byte-safe, unlike io-read-file.
+;; The :bytes functions were seed/02-io-bytes.snippet.kotoba until the rebuilt stage-0 (sha d2cb84f6, 2026-10-02)
+;; admitted a computed :bytes argument (T3); merged by the R0 integration with io-read-bytes added.
 ;;
 ;; Stage-0 rules respected here (01-mem header H1-H5): if/cond only in tail position, no and/or/not, the handle only in
 ;; straight-line chains.
@@ -45,18 +50,24 @@
         (= (string-code-point-at s 0) 49) 1
         :else 0))
 
+;; "<word>_SEP", built at run time: the loader's wire 35 looks for its tokens (WRITE_SEP, RANGE_SEP, EXISTS_SEP ..)
+;; ANYWHERE in a request, content included, and refuses a write whose content holds its own token (SIGILL, measured
+;; 2026-10-02 when seed-0 wrote seed-1's container). A whole token must therefore never be a literal of the seed: its
+;; literal pool is part of every container and code slice the seed writes. The pool pads literals to 8 bytes.
+(defn- io-sep [w :string] :string (string-concat w "_SEP"))
+
 (defn- io-exists [path :string] :i64
-  (io-first-is-one (typed-cap-call :fs/app-data :string :string (string-concat path "EXISTS_SEP"))))
+  (io-first-is-one (typed-cap-call :fs/app-data :string :string (string-concat path (io-sep "EXISTS")))))
 
 (defn- io-read-file [M :vector-i64 path :string] :string
   (typed-cap-call :fs/app-data :string :string path))
 
 (defn- io-slice [path :string off :i64 len :i64] :string
   (typed-cap-call :fs/app-data :string :string
-    (string-concat path (string-concat "RANGE_SEP" (string-concat (mem-u2dec off) (string-concat ":" (mem-u2dec len)))))))
+    (string-concat path (string-concat (io-sep "RANGE") (string-concat (mem-u2dec off) (string-concat ":" (mem-u2dec len)))))))
 
 (defn- io-write-text [path :string s :string] :i64
-  (let [r (typed-cap-call :fs/app-data :string :string (string-concat path (string-concat "WRITE_SEP" s)))]
+  (let [r (typed-cap-call :fs/app-data :string :string (string-concat path (string-concat (io-sep "WRITE") s)))]
     (string-length r)))
 
 ;; error word after a check: ok = 1 keeps the recorded error; ok = 0 records `code` unless an error is already there
@@ -98,3 +109,39 @@
 
 (defn- io-write-hex [M :vector-i64 base :i64 len :i64] :i64
   (io-hex-run M base (+ base len)))
+
+;; ---- binary files (:fs/app-data-bytes, wire 35 kind 8) ------------------------------------------------
+;; T[i + delta] = byte i of S for i in [i, end)
+(defn- io-bput-str [T :vector-i64 S :string i :i64 end :i64 delta :i64] :vector-i64
+  (if (>= i end)
+    (mem-keep T)
+    (io-bput-str (vector-assoc! T (+ i delta) (string-code-point-at S i)) S (+ i 1) end delta)))
+
+;; "WRITE_SEP" at T[at ..]
+(defn- io-bput-sep [T :vector-i64 at :i64] :vector-i64
+  (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! T at 87) (+ at 1) 82) (+ at 2) 73) (+ at 3) 84) (+ at 4) 69) (+ at 5) 95) (+ at 6) 83) (+ at 7) 69) (+ at 8) 80))
+
+;; T[i + delta] = M[i] & 255 for i in [i, end)
+(defn- io-bput-words [T :vector-i64 M :vector-i64 i :i64 end :i64 delta :i64] :vector-i64
+  (if (>= i end)
+    (mem-keep T)
+    (io-bput-words (vector-assoc! T (+ i delta) (bit-and (vector-at M i) 255)) M (+ i 1) end delta)))
+
+(defn- io-bsend [T :vector-i64] :i64
+  (let [r (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 T))] 0))
+
+(defn- io-write-bytes [M :vector-i64 path :string base :i64 len :i64] :i64
+  (let [plen (string-length path)
+        T0 (vector-alloc (+ plen (+ 9 len)))
+        T1 (io-bput-str T0 path 0 plen 0)
+        T2 (io-bput-sep T1 plen)
+        T3 (io-bput-words T2 M base (+ base len) (- (+ plen 9) base))
+        z (io-bsend T3)]
+    len))
+
+;; the bytes of path as a fresh vector (one item per byte)
+(defn- io-path-vec [path :string] :vector-i64
+  (io-bput-str (vector-alloc (string-length path)) path 0 (string-length path) 0))
+
+(defn- io-read-bytes [path :string] :vector-i64
+  (vector-i64-from-bytes (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 (io-path-vec path)))))

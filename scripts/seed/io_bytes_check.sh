@@ -1,5 +1,5 @@
 #!/bin/zsh
-# scripts/seed/io_bytes_check.sh -- test of the binary writer seed/02-io-bytes.snippet.kotoba (module 02-io, T3).
+# scripts/seed/io_bytes_check.sh -- test of the binary writer io-write-bytes (seed/02-io.kotoba; was 02-io-bytes.snippet) (module 02-io, T3).
 #   Assembles build/seed/io-bytes/unity.kotoba = 00-ns + 01-mem + 02-io + the snippet + seed/tests/io-bytes/io_bytes_t.kotoba,
 #   compiles it, runs it under tools/kexe_loader.c for n = 0, 1, 256, 100000 and compares the written file with the pattern
 #   (i*7 + (i >> 8)) & 255 byte for byte (python3 only as the comparer).
@@ -11,7 +11,7 @@ emulate -L zsh
 source "$(dirname "$0")/lib.sh"
 R=$SEED_REPO; W=$SEED_BUILD/io-bytes; rm -rf $W; mkdir -p $W/sc
 U=$W/unity.kotoba; : > $U
-for p in seed/00-ns.kotoba seed/01-mem.kotoba seed/02-io.kotoba seed/02-io-bytes.snippet.kotoba seed/tests/io-bytes/io_bytes_t.kotoba; do cat $R/$p >> $U; printf '\n' >> $U; done
+for p in seed/00-ns.kotoba seed/01-mem.kotoba seed/02-io.kotoba seed/tests/io-bytes/io_bytes_t.kotoba; do cat $R/$p >> $U; printf '\n' >> $U; done
 off=""
 if seed_stage0_build $U $W/u; then
   off=$(cat $W/u.offset); bin=$W/u.bin; echo "io-bytes: compiled by STAGE-0 ($SEED_STAGE0)"

@@ -49,7 +49,9 @@
  [[:c KW-I64 1 ":i64"] [:c KW-BOOL 2 ":bool"] [:c KW-STRING 3 ":string"] [:c KW-VECTOR-I64 4 ":vector-i64"]
   [:c KW-EXPORT 5 ":export"] [:c KW-ELSE 6 ":else"] [:c KW-BYTES 7 ":bytes"]
   [:c KW-FS-APP-DATA 8 ":fs/app-data"] [:c KW-CLI-ARGS 9 ":cli/args"] [:c KW-IO-WRITE-ERROR 10 ":io/write-error"]
-  [:c KW-IO-WRITE 11 ":io/write"]]
+  [:c KW-IO-WRITE 11 ":io/write"]
+  [:c KW-FS-APP-DATA-BYTES 12 ":fs/app-data-bytes"]]
+ ;; KW-FS-APP-DATA-BYTES (R0 2026-10-02): wire 35 with the :bytes kinds, the spelling stage-0 accepts.
  ;; Keywords appear ONLY in: ns (:export), signatures (types), cond (:else), typed-cap-call (wire, kinds).
  ;; A keyword anywhere else (as a value) -> E2114.
 
@@ -62,11 +64,11 @@
   [:c RES-FN 2 "index = FN index of a defn/defn- (in call head position only)"]
   [:c RES-DEF 3 "index = FN index of a top-level def constant (a value reference)"]
   [:c RES-HEAD 4 "index = head code (the symbol in head position of a builtin form)"]]
- ;; NF-RES of an ND-LIST node = its head code (1..41; HD-CALL for a user call). Of an ND-VEC used as an
+ ;; NF-RES of an ND-LIST node = its head code (1..42; HD-CALL for a user call). Of an ND-VEC used as an
  ;; expression = HD-VECLIT. Binding vectors (let/loop/params) get NF-RES 0.
 
  ;; ---------------------------------------------------------------------------------------------------------
- ;; 6. Heads 1..41. :args = argument count and types; :res = result type; :sir = the lowering in seed/SIR.
+ ;; 6. Heads 1..42. :args = argument count and types; :res = result type; :sir = the lowering in seed/SIR.
  ;;    "i" = :i64, "b" = :bool, "s" = :string, "v" = :vector-i64, "x" = :bytes. "n>=k" = variadic.
  ;; ---------------------------------------------------------------------------------------------------------
  :heads
@@ -123,14 +125,17 @@
   [:c HD-STRING-CONCAT 40 "(string-concat s s) -> s, exactly 2 args"]
   [:c HD-COND 41 "(cond c1 e1 c2 e2 ... :else en) -- ci:b, all ei the same type, :else pair mandatory and
                   last (E2109). Means (if c1 e1 (if c2 e2 ... en))"]
-  [:c HD-COUNT 41 "number of heads"]]
+  ;; -- R0 addition 2026-10-02 (binary container I/O of the driver: extract-native reads a kseed file) --
+  [:c HD-VECTOR-I64-FROM-BYTES 42 "(vector-i64-from-bytes x) -> v, a copy, one item (0..255) per byte; lowers to
+                                   RT RT-BYTES-FROM-VECTOR t 1 (the loader shares the representation, ABI v11)"]
+  [:c HD-COUNT 42 "number of heads"]]
 
  ;; Head spellings, index = head code (20-names compares a symbol's bytes against these at intern time).
  :spellings ["" "ns" ":export" "defn" "defn-" "def" "let" "loop" "recur" "if" "and" "or" "not" "=" "<" ">" "<="
              ">=" "+" "-" "*" "quot" "bit-and" "bit-or" "bit-xor" "bit-not" "u64-shift-right" "i64-shift-left"
              "i64-shift-right" "vector-at" "vector-conj" "vector-assoc" "vector-assoc!" "vector-alloc"
              "string-code-point-at" "string-length" "[" "(call)" "typed-cap-call" "bytes-from-vector-i64"
-             "string-concat" "cond"]
+             "string-concat" "cond" "vector-i64-from-bytes"]
  ;; Codes 2 (keyword), 36 and 37 have no symbol spelling: SF-HEAD is never 2, 36 or 37.
  ;; `main`, `true`, `false`, `nil` are NOT heads. `main` is an ordinary defn name.
 
@@ -143,9 +148,10 @@
  :cap-shapes
  [{:form "(typed-cap-call :fs/app-data :string :string path)" :wire 35 :kind 1
    :means "read the whole file at absolute path (inside KEXE_CAP_RESOURCES_35); also the \"<path>WRITE_SEP<text>\" write"}
-  {:form "(typed-cap-call :fs/app-data :bytes :bytes x)" :wire 35 :kind 8
-   :means "x = bytes of \"<path>WRITE_SEP<content>\": write raw bytes. STATUS 2026-10-02: stage-0 (native-image)
-           refuses a computed :bytes argument ('typed values currently require ...'); risk T3, owner 02-io"}
+  {:form "(typed-cap-call :fs/app-data-bytes :bytes :bytes x)" :wire 35 :kind 8
+   :means "x = bytes of \"<path>WRITE_SEP<content>\": write raw bytes; x = bytes of \"<path>\": read the whole file as bytes.
+           The keyword is :fs/app-data-bytes (the spelling stage-0 accepts; :fs/app-data with :bytes kinds is refused,
+           E2115). The rebuilt stage-0 (sha d2cb84f6) admits a computed :bytes argument (T3 closed 2026-10-02)"}
   {:form "(typed-cap-call :cli/args :string :string \"\")" :wire 38 :kind 1 :means "argc as decimal text"}
   {:form "(typed-cap-call :cli/args :string :string \"i\")" :wire 38 :kind 1 :means "argument i (0-based), \"\" past the end"}
   {:form "(typed-cap-call :io/write-error :string :string s)" :wire 39 :kind 1 :means "write s to fd 2; answers the byte count as text"}

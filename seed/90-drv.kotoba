@@ -4,11 +4,14 @@
 ;;   compile <src> <out> [hex]       also: compile <src> [--target aarch64-macos] --output <out> [hex]
 ;;       lex -> read -> names -> check -> lower -> a64gen -> layout -> out (kseed/v1 container).
 ;;       <out> = "-" or the word `hex`: the container is written as lowercase hex on stdout (64 bytes per line,
-;;       `xxd -r -p` recovers it). This is the ONLY output path today: the stable stage-0 refuses every :bytes
-;;       capability call (seed/CONTRACT-REQUESTS.md, 02-io T3), so a binary <out> answers E4 until the rebuilt
-;;       stage-0 lets 02-io-bytes.snippet into the unity build. extract-native is done outside the seed for now
-;;       (scripts/seed/seed-cc.sh reads the container's text header).
+;;       `xxd -r -p` recovers it; scripts/seed/build.sh uses this). Any other <out>: the container is written to
+;;       that file as raw bytes (io-write-bytes, :fs/app-data-bytes) and stdout gets one line
+;;       {:ok true, :target :aarch64-macos, :output "<out>", :bytes N}.
+;;   extract-native <kseed> --symbol <name> --output <raw>
+;;       reads the container (io-read-bytes), writes its code slice to <raw> and prints
+;;       {:ok true, :output "<raw>", :offset N, :length L, :arity A} (the qualification runner reads :offset).
 ;;   check <src>                     lex .. check only; prints "ok\n".
+;; Flags the qualification runner passes and the seed ignores: --jvm-free (the seed never has a JVM).
 ;; Exit status: 0 ok, 1 compile error (one line "seed: E<code> <text> (byte <pos>)" on stderr), 2 usage.
 ;; Strings are compared by length + FNV-1a 64 (mem-hash-str): HEADS has no string equality and stage-0 must not
 ;; index a string literal (MEMORY-MAP L13). M is threaded as a nested call argument; each phase's continuation reads
@@ -235,44 +238,58 @@
         w (io-write-hex M (+ MM-OUT-BASE 1) n)]
     0))
 
-(defn- drv-c8 [M :vector-i64 path :string] :i64
-  (if (= (vector-at M MM-ERR) 0) (drv-emit M) (drv-fail M path)))
-(defn- drv-c7 [M :vector-i64 S :string path :string] :i64
-  (if (= (vector-at M MM-ERR) 0) (drv-c8 (out-build M S) path) (drv-fail M path)))
-(defn- drv-c6 [M :vector-i64 S :string path :string] :i64
-  (if (= (vector-at M MM-ERR) 0) (drv-c7 (ly-run M) S path) (drv-fail M path)))
-(defn- drv-c5 [M :vector-i64 S :string path :string] :i64
-  (if (= (vector-at M MM-ERR) 0) (drv-c6 (gn-run M) S path) (drv-fail M path)))
+(defn- drv-cok [out :string n :i64] :i64
+  (let [w (io-out (string-concat "{:ok true, :target :aarch64-macos, :output \"" (string-concat out (string-concat "\", :bytes " (string-concat (mem-u2dec n) "}\n")))))]
+    0))
+
+;; the container as raw bytes into the file out
+(defn- drv-emit-file [M :vector-i64 out :string] :i64
+  (let [n (- (vector-at M MM-OUT-N) 1)
+        w (io-write-bytes M out (+ MM-OUT-BASE 1) n)]
+    (if (= (io-exists out) 1) (drv-cok out n) (drv-fail0 E-WRITE))))
+
+;; out = "" -> hex on stdout, else the file out
+(defn- drv-emit2 [M :vector-i64 out :string] :i64
+  (if (= (string-length out) 0) (drv-emit M) (drv-emit-file M out)))
+
+(defn- drv-c8 [M :vector-i64 path :string out :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-emit2 M out) (drv-fail M path)))
+(defn- drv-c7 [M :vector-i64 S :string path :string out :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-c8 (out-build M S) path out) (drv-fail M path)))
+(defn- drv-c6 [M :vector-i64 S :string path :string out :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-c7 (ly-run M) S path out) (drv-fail M path)))
+(defn- drv-c5 [M :vector-i64 S :string path :string out :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-c6 (gn-run M) S path out) (drv-fail M path)))
 (defn- drv-ok [M :vector-i64] :i64
   (let [w (io-out "ok\n")] 0))
-(defn- drv-c4 [M :vector-i64 S :string path :string mode :i64] :i64
+(defn- drv-c4 [M :vector-i64 S :string path :string mode :i64 out :string] :i64
   (cond (> (vector-at M MM-ERR) 0) (drv-fail M path)
         (= mode 0) (drv-ok M)
-        :else (drv-c5 (lw-run M) S path)))
-(defn- drv-c3 [M :vector-i64 S :string path :string mode :i64] :i64
-  (if (= (vector-at M MM-ERR) 0) (drv-c4 (ck-run M S) S path mode) (drv-fail M path)))
-(defn- drv-c2 [M :vector-i64 S :string path :string mode :i64] :i64
-  (if (= (vector-at M MM-ERR) 0) (drv-c3 (nm-run M S) S path mode) (drv-fail M path)))
-(defn- drv-c1 [M :vector-i64 S :string path :string mode :i64] :i64
-  (if (= (vector-at M MM-ERR) 0) (drv-c2 (rd-run M S) S path mode) (drv-fail M path)))
-(defn- drv-c0 [S :string path :string mode :i64] :i64
-  (drv-c1 (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S path mode))
+        :else (drv-c5 (lw-run M) S path out)))
+(defn- drv-c3 [M :vector-i64 S :string path :string mode :i64 out :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-c4 (ck-run M S) S path mode out) (drv-fail M path)))
+(defn- drv-c2 [M :vector-i64 S :string path :string mode :i64 out :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-c3 (nm-run M S) S path mode out) (drv-fail M path)))
+(defn- drv-c1 [M :vector-i64 S :string path :string mode :i64 out :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-c2 (rd-run M S) S path mode out) (drv-fail M path)))
+(defn- drv-c0 [S :string path :string mode :i64 out :string] :i64
+  (drv-c1 (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S path mode out))
 
 (defn- drv-read [path :string] :string (typed-cap-call :fs/app-data :string :string path))
 
-(defn- drv-run [path :string mode :i64] :i64
-  (if (= (io-exists path) 1) (drv-c0 (drv-read path) path mode) (drv-fail0 E-READ)))
+(defn- drv-run [path :string mode :i64 out :string] :i64
+  (if (= (io-exists path) 1) (drv-c0 (drv-read path) path mode out) (drv-fail0 E-READ)))
 
 (defn- drv-usage [] :i64
   (let [r (drv-fail0 E-USAGE)] 2))
 
-;; compile: <out> must be "-" or the word hex must be present (see the header)
+;; compile: <out> "-" or the word hex -> hex on stdout; any other <out> -> that file (see the header)
 (defn- drv-compile2 [src :i64 out :i64 hex :i64] :i64
   (cond (< src 0) (drv-usage)
-        (= hex 1) (drv-run (io-arg src) 1)
+        (= hex 1) (drv-run (io-arg src) 1 "")
         (< out 0) (drv-usage)
-        (= (drv-dash (io-arg out)) 1) (drv-run (io-arg src) 1)
-        :else (drv-fail0 E-WRITE)))
+        (= (drv-dash (io-arg out)) 1) (drv-run (io-arg src) 1 "")
+        :else (drv-run (io-arg src) 1 (io-arg out))))
 
 ;; --target, when given, must be aarch64-macos
 (defn- drv-target-ok [t :i64] :i64
@@ -287,12 +304,54 @@
 
 (defn- drv-check [n :i64] :i64
   (let [s (drv-pos 1 n 0)]
-    (if (< s 0) (drv-usage) (drv-run (io-arg s) 0))))
+    (if (< s 0) (drv-usage) (drv-run (io-arg s) 0 ""))))
+
+;; ---- extract-native ----------------------------------------------------------------------------------------------
+(defn- drv-xok [out :string oa :i64 cl :i64] :i64
+  (let [off (quot oa 4294967296)
+        ar (- oa (* off 4294967296))
+        w (io-out (string-concat "{:ok true, :output \"" (string-concat out (string-concat "\", :offset " (string-concat (mem-u2dec off)
+                  (string-concat ", :length " (string-concat (mem-u2dec cl) (string-concat ", :arity " (string-concat (mem-u2dec ar) "}\n")))))))))]
+    0))
+
+;; write the code slice M[start .. start+cl) to out
+(defn- drv-x4 [M :vector-i64 out :string start :i64 cl :i64 oa :i64] :i64
+  (let [w (io-write-bytes M out start cl)]
+    (if (= (io-exists out) 1) (drv-xok out oa cl) (drv-fail0 E-WRITE))))
+
+;; an out-parse failure: E5002 (symbol not exported) is the driver's E5, the others are printed as recorded
+(defn- drv-xerr [e :i64] :i64
+  (if (= e 5002) (drv-fail0 E-NOSYM) (drv-fail0 e)))
+
+(defn- drv-x3 [M :vector-i64 out :string] :i64
+  (let [e (vector-at M MM-ERR)
+        off (vector-at M MM-R0)
+        cs (vector-at M MM-R1)
+        cl (vector-at M MM-R2)
+        ar (vector-at M MM-R3)]
+    (if (> e 0) (drv-xerr e) (drv-x4 M out (+ (+ MM-OUT-BASE 1) cs) cl (+ (* off 4294967296) ar)))))
+
+(defn- drv-x2 [V :vector-i64 n :i64 sym :string out :string] :i64
+  (if (< n MM-OUT-CAP) (drv-x3 (out-load (mem-new) V n sym) out) (drv-fail0 E-OUT-FULL)))
+
+(defn- drv-x1 [V :vector-i64 sym :string out :string] :i64
+  (drv-x2 V (out-v-len V) sym out))
+
+(defn- drv-extract [n :i64] :i64
+  (let [k (drv-pos 1 n 0)
+        s (drv-flag 1 n -5041807559351932249)
+        o (drv-flag 1 n -5168643622338417694)]
+    (cond (< k 0) (drv-usage)
+          (< s 0) (drv-usage)
+          (< o 0) (drv-usage)
+          (= (io-exists (io-arg k)) 0) (drv-fail0 E-READ)
+          :else (drv-x1 (io-read-bytes (io-arg k)) (io-arg s) (io-arg o)))))
 
 (defn- drv-cmd [n :i64] :i64
   (cond (< n 1) (drv-usage)
         (= (drv-is (io-arg 0) 7 1333288279851460382) 1) (drv-compile n)
         (= (drv-is (io-arg 0) 5 -9003556064986789273) 1) (drv-check n)
+        (= (drv-is (io-arg 0) 14 -7022508286123793970) 1) (drv-extract n)
         :else (drv-usage)))
 
 (defn- drv-main [] :i64 (drv-cmd (io-argc)))

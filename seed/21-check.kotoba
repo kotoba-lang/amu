@@ -80,6 +80,7 @@
         (= hd HD-VECTOR-ALLOC) 1
         (= hd HD-STRING-LENGTH) 1
         (= hd HD-BYTES-FROM-VECTOR-I64) 1
+        (= hd HD-VECTOR-I64-FROM-BYTES) 1
         (= hd HD-VECTOR-ASSOC) 3
         (= hd HD-VECTOR-ASSOC-BANG) 3
         :else 2))
@@ -101,6 +102,7 @@
         (= hd HD-VECTOR-ASSOC) (if (= k 0) TY-VEC TY-I64)
         (= hd HD-VECTOR-ASSOC-BANG) (if (= k 0) TY-VEC TY-I64)
         (= hd HD-BYTES-FROM-VECTOR-I64) TY-VEC
+        (= hd HD-VECTOR-I64-FROM-BYTES) TY-BYTES
         (= hd HD-STRING-CODE-POINT-AT) (if (= k 0) TY-STR TY-I64)
         (= hd HD-STRING-LENGTH) TY-STR
         (= hd HD-STRING-CONCAT) TY-STR
@@ -117,12 +119,14 @@
         (= hd HD-VECTOR-ASSOC-BANG) TY-VEC
         (= hd HD-VECTOR-ALLOC) TY-VEC
         (= hd HD-BYTES-FROM-VECTOR-I64) TY-BYTES
+        (= hd HD-VECTOR-I64-FROM-BYTES) TY-VEC
         (= hd HD-STRING-CONCAT) TY-STR
         :else TY-I64))
 
 ;; 1 when the head lowers to a runtime call (RT), which makes the function charge fuel on entry
 (defn- ck-op-rt [hd :i64] :i64
   (cond (= hd HD-BYTES-FROM-VECTOR-I64) 1
+        (= hd HD-VECTOR-I64-FROM-BYTES) 1
         (= hd HD-STRING-CONCAT) 1
         (< hd HD-VECTOR-AT) 0
         (> hd HD-STRING-LENGTH) 0
@@ -131,6 +135,7 @@
 ;; 1 for the heads ck-op handles (fixed signatures from the tables above)
 (defn- ck-op-known [hd :i64] :i64
   (cond (= hd HD-BYTES-FROM-VECTOR-I64) 1
+        (= hd HD-VECTOR-I64-FROM-BYTES) 1
         (= hd HD-STRING-CONCAT) 1
         (< hd HD-NOT) 0
         (> hd HD-STRING-LENGTH) 0
@@ -345,14 +350,15 @@
 
 ;; ---- typed-cap-call ----
 (defn- ck-wire-ok [k :i64] :i64
-  (cond (= k KW-FS-APP-DATA) 1 (= k KW-CLI-ARGS) 1 (= k KW-IO-WRITE-ERROR) 1 (= k KW-IO-WRITE) 1 :else 0))
+  (cond (= k KW-FS-APP-DATA) 1 (= k KW-CLI-ARGS) 1 (= k KW-IO-WRITE-ERROR) 1 (= k KW-IO-WRITE) 1
+        (= k KW-FS-APP-DATA-BYTES) 1 :else 0))
 
 ;; the request/result type of the shape, 0 when the shape is not one of seed/HEADS :cap-shapes
 ;; (ND-KW kinds are checked by the caller)
 (defn- ck-cap-type [wk :i64 r1 :i64 r2 :i64] :i64
   (cond (nm-ne r1 r2) 0
+        (= wk KW-FS-APP-DATA-BYTES) (if (= r1 KW-BYTES) TY-BYTES 0)
         (= r1 KW-STRING) TY-STR
-        (= r1 KW-BYTES) (if (= wk KW-FS-APP-DATA) TY-BYTES 0)
         :else 0))
 
 (defn- ck-cap [M :vector-i64 n :i64 fx :i64] :vector-i64
