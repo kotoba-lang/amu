@@ -1,16 +1,298 @@
 ;; seed/90-drv.kotoba -- the seed's command-line driver (prefix drv-). Owner: contracts/integration.
-;; SKELETON (2026-10-02): answers every command with the E-USAGE text and status 2. The real driver
-;; (check / compile --target aarch64-macos --output / extract-native --symbol --output, design section 3) lands
-;; with integration, once 01..50 exist.
+;;
+;; Commands (guest argv through wire 38; paths are absolute and inside KEXE_CAP_RESOURCES_35):
+;;   compile <src> <out> [hex]       also: compile <src> [--target aarch64-macos] --output <out> [hex]
+;;       lex -> read -> names -> check -> lower -> a64gen -> layout -> out (kseed/v1 container).
+;;       <out> = "-" or the word `hex`: the container is written as lowercase hex on stdout (64 bytes per line,
+;;       `xxd -r -p` recovers it). This is the ONLY output path today: the stable stage-0 refuses every :bytes
+;;       capability call (seed/CONTRACT-REQUESTS.md, 02-io T3), so a binary <out> answers E4 until the rebuilt
+;;       stage-0 lets 02-io-bytes.snippet into the unity build. extract-native is done outside the seed for now
+;;       (scripts/seed/seed-cc.sh reads the container's text header).
+;;   check <src>                     lex .. check only; prints "ok\n".
+;; Exit status: 0 ok, 1 compile error (one line "seed: E<code> <text> (byte <pos>)" on stderr), 2 usage.
+;; Strings are compared by length + FNV-1a 64 (mem-hash-str): HEADS has no string equality and stage-0 must not
+;; index a string literal (MEMORY-MAP L13). M is threaded as a nested call argument; each phase's continuation reads
+;; MM-ERR through its own parameter (rules L14/L15 of seed/CONTRACT-REQUESTS.md).
 
-(defn- drv-err [msg :string] :i64
-  (let [o (typed-cap-call :io/write-error :string :string (string-concat "seed: " (string-concat msg "\n")))]
+;; ---- argv --------------------------------------------------------------------------------------------------------
+(defn- drv-is2 [s :string h :i64] :i64 (if (= (mem-hash-str s 0 (string-length s)) h) 1 0))
+(defn- drv-is [s :string len :i64 h :i64] :i64 (if (= (string-length s) len) (drv-is2 s h) 0))
+(defn- drv-flagv1 [s :string] :i64 (if (= (drv-is s 8 -5168643622338417694) 1) 1 (drv-is s 8 -5041807559351932249)))
+;; 1 when s is a flag that takes a value: --target --output --symbol
+(defn- drv-flagv [s :string] :i64 (if (= (drv-is s 8 4838156518066596434) 1) 1 (drv-flagv1 s)))
+(defn- drv-hexw [s :string] :i64 (drv-is s 3 3695806134807131338))
+(defn- drv-dash [s :string] :i64 (drv-is s 1 -5808622843851602280))
+
+;; argv index of the k-th positional argument after the command (flags and their values skipped), -1 when absent
+(defn- drv-pos [i :i64 n :i64 k :i64] :i64
+  (cond (>= i n) -1
+        (= (drv-flagv (io-arg i)) 1) (drv-pos (+ i 2) n k)
+        (= (drv-hexw (io-arg i)) 1) (drv-pos (+ i 1) n k)
+        (= k 0) i
+        :else (drv-pos (+ i 1) n (- k 1))))
+
+;; argv index of the value after the flag with hash h (length 8), -1 when absent
+(defn- drv-flag [i :i64 n :i64 h :i64] :i64
+  (cond (>= (+ i 1) n) -1
+        (= (drv-is (io-arg i) 8 h) 1) (+ i 1)
+        :else (drv-flag (+ i 1) n h)))
+
+;; 1 when the word `hex` is one of the arguments (not as a flag value)
+(defn- drv-hexflag [i :i64 n :i64] :i64
+  (cond (>= i n) 0
+        (= (drv-flagv (io-arg i)) 1) (drv-hexflag (+ i 2) n)
+        (= (drv-hexw (io-arg i)) 1) 1
+        :else (drv-hexflag (+ i 1) n)))
+
+(defn- drv-arg [i :i64] :string (if (< i 0) "" (io-arg i)))
+
+;; ---- error texts (generated from seed/HEADS :errors + the local 4202-4205/5002 of 42-layout/50-out) ----
+;; error text piece 0
+(defn- drv-et0 [c :i64] :string
+  (cond
+    (= c 1) "usage: seed check <file> | seed compile <file> --target aarch64-macos --output <out> | seed extract-native <kseed> --symbol <name> --output <raw>"
+    (= c 2) "unsupported target (only aarch64-macos)"
+    (= c 3) "cannot read input file"
+    (= c 4) "cannot write output file"
+    (= c 5) "symbol is not exported by the container"
+    (= c 101) "compiler table full: region "
+    (= c 102) "compiler heap exhausted"
+    (= c 201) "read failed"
+    (= c 202) "write failed"
+    (= c 1001) "unterminated string literal"
+    (= c 1002) "non-ASCII byte "
+    (= c 1003) "unsupported string escape '"
+    (= c 1004) "integer literal out of range '"
+    (= c 1005) "unsupported reader syntax '"
+    (= c 1101) "unexpected '"
+    (= c 1102) "unclosed '"
+    (= c 1103) "mismatched bracket '"
+    (= c 1105) "maps are not supported"
+    (= c 2001) "duplicate definition '"
+    (= c 2003) "unsupported top-level form '"
+    (= c 2004) "the file must start with (ns NAME (:export [...]))"
+    (= c 2005) "export of undefined function '"
+    (= c 2101) "unknown or unsupported form '"
+    (= c 2102) "unknown symbol '"
+    (= c 2103) "wrong number of arguments to '"
+    (= c 2104) "type mismatch in '"
+    (= c 2105) "unsupported type '"
+    (= c 2106) "recur is not in tail position"
+    (= c 2107) "recur expects "
+    (= c 2108) "more than 5 parameters in '"
+    (= c 2109) "cond needs a final :else clause"
+    (= c 2110) "if needs exactly a test, a then and an else"
+    (= c 2111) "malformed binding vector in '"
+    (= c 2112) "duplicate local '"
+    (= c 2114) "keyword '"
+    (= c 2115) "unsupported capability call '"
+    (= c 2116) "vector literal items must be i64 (at most 64)"
+    (= c 2118) "'"
+    (= c 2119) "malformed signature of '"
+    (= c 2120) "too many locals in one function ("
+    (= c 2121) "result of '"
+    (= c 2123) "= compares only i64 or bool values"
+    (= c 2124) "def value must be an integer, string or vector literal: '"
+    (= c 3001) "SIR table full"
+    (= c 3003) "internal: cannot lower node kind "
+    (= c 4001) "immediate out of range: "
+    (= c 4101) "code buffer full"
+    (= c 4102) "internal: unsupported SIR op "
+    (= c 4103) "frame too large ("
+    (= c 4201) "branch out of range ("
+    (= c 5001) "output buffer full"
+    (= c 5003) "malformed kseed container"
+    (= c 4202) "internal: bad fixup "
+    (= c 4203) "branch target undefined ("
+    (= c 4204) "export table full"
+    (= c 4205) "code and pool exceed 32-bit offsets"
+    (= c 5002) "symbol '"
+    :else ""))
+;; error text piece 1
+(defn- drv-et1 [c :i64] :string
+  (cond
+    (= c 1002) " (R0 accepts ASCII source only)"
+    (= c 1003) "'"
+    (= c 1004) "'"
+    (= c 1005) "'"
+    (= c 1101) "'"
+    (= c 1102) "' at end of file"
+    (= c 1103) "'"
+    (= c 2001) "'"
+    (= c 2003) "'"
+    (= c 2005) "'"
+    (= c 2101) "'"
+    (= c 2102) "'"
+    (= c 2103) "': expected "
+    (= c 2104) "': expected "
+    (= c 2105) "'"
+    (= c 2107) " arguments"
+    (= c 2108) "'"
+    (= c 2111) "'"
+    (= c 2112) "'"
+    (= c 2114) "' is not a value"
+    (= c 2115) "'"
+    (= c 2118) "' takes exactly one body expression"
+    (= c 2119) "'"
+    (= c 2120) ")"
+    (= c 2121) "' does not match its declared type "
+    (= c 2124) "'"
+    (= c 4103) " slots)"
+    (= c 4201) " words)"
+    (= c 4203) ")"
+    (= c 5002) "' not exported by the container"
+    :else ""))
+;; error text piece 2
+(defn- drv-et2 [c :i64] :string
+  (cond
+    :else ""))
+;; placeholder 0: 0 none, 1 {name}, 2 {n}, 3 {t}
+(defn- drv-ek0 [c :i64] :i64
+  (cond
+    (= c 101) 2
+    (= c 1002) 2
+    (= c 1003) 1
+    (= c 1004) 1
+    (= c 1005) 1
+    (= c 1101) 1
+    (= c 1102) 1
+    (= c 1103) 1
+    (= c 2001) 1
+    (= c 2003) 1
+    (= c 2005) 1
+    (= c 2101) 1
+    (= c 2102) 1
+    (= c 2103) 1
+    (= c 2104) 1
+    (= c 2105) 1
+    (= c 2107) 2
+    (= c 2108) 1
+    (= c 2111) 1
+    (= c 2112) 1
+    (= c 2114) 1
+    (= c 2115) 1
+    (= c 2118) 1
+    (= c 2119) 1
+    (= c 2120) 2
+    (= c 2121) 1
+    (= c 2124) 1
+    (= c 3003) 2
+    (= c 4001) 2
+    (= c 4102) 2
+    (= c 4103) 2
+    (= c 4201) 2
+    (= c 4202) 2
+    (= c 4203) 2
+    (= c 5002) 1
+    :else 0))
+;; placeholder 1: 0 none, 1 {name}, 2 {n}, 3 {t}
+(defn- drv-ek1 [c :i64] :i64
+  (cond
+    (= c 2103) 2
+    (= c 2104) 3
+    (= c 2121) 3
+    :else 0))
+
+;; ---- diagnostics ---------------------------------------------------------------------------------------------------
+(defn- drv-tyname [t :i64] :string
+  (cond (= t 1) ":i64" (= t 2) ":bool" (= t 3) ":string" (= t 4) ":vector-i64" (= t 5) ":bytes" :else "?"))
+
+(defn- drv-slice [path :string a :i64 b :i64] :string
+  (if (> b a) (io-slice path a (- b a)) ""))
+
+;; the text of placeholder kind k
+(defn- drv-ph [k :i64 path :string a :i64 b :i64 n :i64] :string
+  (cond (= k 1) (drv-slice path a b)
+        (= k 2) (mem-u2dec n)
+        (= k 3) (drv-tyname n)
+        :else ""))
+
+(defn- drv-at [pos :i64] :string
+  (if (< pos 0) "" (string-concat " (byte " (string-concat (mem-u2dec pos) ")"))))
+
+(defn- drv-say [c :i64 msg :string pos :i64] :i64
+  (let [w (io-err (string-concat "seed: E" (string-concat (mem-u2dec c) (string-concat " " (string-concat msg (string-concat (drv-at pos) "\n"))))))]
+    1))
+
+;; report the error recorded in M; the source path is where {name} spans are sliced from. Status 1.
+(defn- drv-fail [M :vector-i64 path :string] :i64
+  (let [c (vector-at M MM-ERR)
+        pos (vector-at M MM-ERR-POS)
+        a (vector-at M MM-ERR-A)
+        b (vector-at M MM-ERR-B)
+        n (vector-at M MM-ERR-N)
+        p0 (drv-ph (drv-ek0 c) path a b n)
+        p1 (drv-ph (drv-ek1 c) path a b n)]
+    (drv-say c (string-concat (drv-et0 c) (string-concat p0 (string-concat (drv-et1 c) (string-concat p1 (drv-et2 c))))) pos)))
+
+;; an error found by the driver itself (no M yet)
+(defn- drv-fail0 [c :i64] :i64 (drv-say c (drv-et0 c) -1))
+
+;; ---- the pipeline ------------------------------------------------------------------------------------------------
+;; mode: 0 = check (stop after 21-check), 1 = compile with the container as hex on stdout
+(defn- drv-emit [M :vector-i64] :i64
+  (let [n (- (vector-at M MM-OUT-N) 1)
+        w (io-write-hex M (+ MM-OUT-BASE 1) n)]
     0))
 
-(defn- drv-usage [] :string
-  "usage: seed check <file> | seed compile <file> --target aarch64-macos --output <out> | seed extract-native <kseed> --symbol <name> --output <raw>")
+(defn- drv-c8 [M :vector-i64 path :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-emit M) (drv-fail M path)))
+(defn- drv-c7 [M :vector-i64 S :string path :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-c8 (out-build M S) path) (drv-fail M path)))
+(defn- drv-c6 [M :vector-i64 S :string path :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-c7 (ly-run M) S path) (drv-fail M path)))
+(defn- drv-c5 [M :vector-i64 S :string path :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-c6 (gn-run M) S path) (drv-fail M path)))
+(defn- drv-ok [M :vector-i64] :i64
+  (let [w (io-out "ok\n")] 0))
+(defn- drv-c4 [M :vector-i64 S :string path :string mode :i64] :i64
+  (cond (> (vector-at M MM-ERR) 0) (drv-fail M path)
+        (= mode 0) (drv-ok M)
+        :else (drv-c5 (lw-run M) S path)))
+(defn- drv-c3 [M :vector-i64 S :string path :string mode :i64] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-c4 (ck-run M S) S path mode) (drv-fail M path)))
+(defn- drv-c2 [M :vector-i64 S :string path :string mode :i64] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-c3 (nm-run M S) S path mode) (drv-fail M path)))
+(defn- drv-c1 [M :vector-i64 S :string path :string mode :i64] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-c2 (rd-run M S) S path mode) (drv-fail M path)))
+(defn- drv-c0 [S :string path :string mode :i64] :i64
+  (drv-c1 (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S path mode))
 
-(defn- drv-main [] :i64
-  (let [argc (typed-cap-call :cli/args :string :string "")
-        e (drv-err (string-concat "E1 " (drv-usage)))]
-    2))
+(defn- drv-read [path :string] :string (typed-cap-call :fs/app-data :string :string path))
+
+(defn- drv-run [path :string mode :i64] :i64
+  (if (= (io-exists path) 1) (drv-c0 (drv-read path) path mode) (drv-fail0 E-READ)))
+
+(defn- drv-usage [] :i64
+  (let [r (drv-fail0 E-USAGE)] 2))
+
+;; compile: <out> must be "-" or the word hex must be present (see the header)
+(defn- drv-compile2 [src :i64 out :i64 hex :i64] :i64
+  (cond (< src 0) (drv-usage)
+        (= hex 1) (drv-run (io-arg src) 1)
+        (< out 0) (drv-usage)
+        (= (drv-dash (io-arg out)) 1) (drv-run (io-arg src) 1)
+        :else (drv-fail0 E-WRITE)))
+
+;; --target, when given, must be aarch64-macos
+(defn- drv-target-ok [t :i64] :i64
+  (if (< t 0) 1 (drv-is (io-arg t) 13 5514353923192055574)))
+
+(defn- drv-compile [n :i64] :i64
+  (let [o (drv-flag 1 n -5168643622338417694)
+        t (drv-flag 1 n 4838156518066596434)]
+    (cond (= (drv-target-ok t) 0) (drv-fail0 E-TARGET)
+          (>= o 0) (drv-compile2 (drv-pos 1 n 0) o (drv-hexflag 1 n))
+          :else (drv-compile2 (drv-pos 1 n 0) (drv-pos 1 n 1) (drv-hexflag 1 n)))))
+
+(defn- drv-check [n :i64] :i64
+  (let [s (drv-pos 1 n 0)]
+    (if (< s 0) (drv-usage) (drv-run (io-arg s) 0))))
+
+(defn- drv-cmd [n :i64] :i64
+  (cond (< n 1) (drv-usage)
+        (= (drv-is (io-arg 0) 7 1333288279851460382) 1) (drv-compile n)
+        (= (drv-is (io-arg 0) 5 -9003556064986789273) 1) (drv-check n)
+        :else (drv-usage)))
+
+(defn- drv-main [] :i64 (drv-cmd (io-argc)))

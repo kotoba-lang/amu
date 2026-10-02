@@ -115,14 +115,18 @@
   (loop [j i]
     (if (< j (string-length S)) (if (lx-symch? (lx-ch S j)) (recur (+ j 1)) j) j)))
 
+;; Seed-0 has no boolean literals (seed/HEADS): true/false are comparisons of constants
+(defn- lx-true [] :bool (= 0 0))
+(defn- lx-false [] :bool (= 0 1))
+
 (defn- lx-all-digits [S :string a :i64 b :i64] :bool
   (loop [j a]
-    (if (>= j b) true (if (lx-digit? (lx-ch S j)) (recur (+ j 1)) false))))
+    (if (>= j b) (lx-true) (if (lx-digit? (lx-ch S j)) (recur (+ j 1)) (lx-false)))))
 
 ;; the span [a,b) (non-empty, symbol characters) is an integer literal
 (defn- lx-int? [S :string a :i64 b :i64] :bool
   (if (= (lx-ch S a) 45)
-    (if (> b (+ a 1)) (lx-all-digits S (+ a 1) b) false)
+    (if (> b (+ a 1)) (lx-all-digits S (+ a 1) b) (lx-false))
     (lx-all-digits S a b)))
 
 ;; first digit of the integer token at a (after the sign)
@@ -134,12 +138,12 @@
   (let [neg (= (lx-ch S a) 45)]
     (loop [j (lx-int-start S a) acc 0]
       (if (>= j b)
-        (if neg false (= acc -9223372036854775808))
+        (if neg (lx-false) (= acc -9223372036854775808))
         (let [d (- (lx-ch S j) 48)]
           (if (< acc -922337203685477580)
-            true
+            (lx-true)
             (if (= acc -922337203685477580)
-              (if (> d 8) true (recur (+ j 1) (- (* acc 10) d)))
+              (if (> d 8) (lx-true) (recur (+ j 1) (- (* acc 10) d)))
               (recur (+ j 1) (- (* acc 10) d)))))))))
 
 (defn- lx-int-val [S :string a :i64 b :i64] :i64

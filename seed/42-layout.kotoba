@@ -144,15 +144,18 @@
       (vector-assoc! M (+ MM-CODE-BASE at) nw)
       (ly-err M st (ly-branch-n st t at)))))
 
-;; 0 = ok, else the error code: lit in 1..nlit-1, at in first..ncode-2, w0 a movz, w1 a movk
-(defn- ly-lit32-status [at :i64 lit :i64 nlit :i64 ncode :i64 w0 :i64 w1 :i64] :i64
+;; 1 when w0 is a movz and w1 a movk
+(defn- ly-words-ok [w0 :i64 w1 :i64] :i64
+  (if (ly-is-movz w0) (if (ly-is-movk w1) 1 0) 0))
+
+;; 0 = ok, else the error code: lit in 1..nlit-1, at in first..ncode-2, wok = ly-words-ok of the two words
+;; (at most 5 parameters: MEMORY-MAP rule L7, so the seed admits its own source)
+(defn- ly-lit32-status [at :i64 lit :i64 nlit :i64 ncode :i64 wok :i64] :i64
   (if (< lit 1) (ly-e-fixup)
     (if (>= lit nlit) (ly-e-fixup)
       (if (< at (ly-first)) (ly-e-fixup)
         (if (>= (+ at 1) ncode) (ly-e-fixup)
-          (if (ly-is-movz w0)
-            (if (ly-is-movk w1) 0 (ly-e-fixup))
-            (ly-e-fixup)))))))
+          (if (= wok 1) 0 (ly-e-fixup)))))))
 
 (defn- ly-lit32 [M :vector-i64 at0 :i64 lit0 :i64] :vector-i64
   (let [at (ly-clamp at0 1 (- MM-CODE-CAP 2))
@@ -162,7 +165,7 @@
         w0 (vector-at M (+ MM-CODE-BASE at))
         w1 (vector-at M (+ (+ MM-CODE-BASE at) 1))
         pos (vector-at M (+ (+ MM-LIT-BASE (* lit MM-LIT-W)) LF-POOL))
-        st (ly-lit32-status at0 lit0 nlit ncode w0 w1)]
+        st (ly-lit32-status at0 lit0 nlit ncode (ly-words-ok w0 w1))]
     (if (= st 0)
       (let [M1 (vector-assoc! M (+ MM-CODE-BASE at) (ly-patch16 w0 pos))]
         (vector-assoc! M1 (+ (+ MM-CODE-BASE at) 1) (ly-patch16 w1 (u64-shift-right pos 16))))
