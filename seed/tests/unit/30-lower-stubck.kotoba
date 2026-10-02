@@ -1,0 +1,111 @@
+;; seed/tests/unit/30-lower-stubck.kotoba -- STAND-IN CHECKER for the 30-lower gate (owner 30-lower, test-only).
+;; scripts/seed/lw-gate.sh with LW_CHECK=0 appends this file and replaces (ck-run M3 S) by (t-ck M3 1) in the test.
+;; It fills what lowering reads from 21-check (NF-RES of lists, symbol references and binders; FF-NSLOTS; FF-FUEL)
+;; for well-formed programs only and refuses nothing. Slots: params 1..n, then each let/loop binder takes the next
+;; slot, reused after its scope (by value). Helpers t-nf t-sf t-ff t-set-nf t-set-ff come from here.
+;; ---------------------------------------------------------------------------------------------------------
+;; stand-in checker
+;; ---------------------------------------------------------------------------------------------------------
+(defn- t-nf [M :vector-i64 n :i64 f :i64] :i64 (vector-at M (+ MM-NODE-BASE (+ (* n MM-NODE-W) f))))
+(defn- t-set-nf [M0 :vector-i64 n :i64 f :i64 v :i64] :vector-i64
+  (lw-put M0 (+ MM-NODE-BASE (+ (* n MM-NODE-W) f)) v))
+(defn- t-sf [M :vector-i64 s :i64 f :i64] :i64 (vector-at M (+ MM-SYM-BASE (+ (* s MM-SYM-W) f))))
+(defn- t-ff [M :vector-i64 fi :i64 f :i64] :i64 (vector-at M (+ MM-FN-BASE (+ (* fi MM-FN-W) f))))
+(defn- t-set-ff [M0 :vector-i64 fi :i64 f :i64 v :i64] :vector-i64
+  (lw-put M0 (+ MM-FN-BASE (+ (* fi MM-FN-W) f)) v))
+(defn- t-fuel [M0 :vector-i64] :vector-i64 (lw-put M0 95 1))
+(defn- t-fuel-head [hd :i64] :i64 (if (= hd HD-TYPED-CAP-CALL) 1 (lw-rt hd)))
+(defn- t-fuel-if [M0 :vector-i64 x :i64] :vector-i64 (if (> x 0) (lw-put M0 95 1) M0))
+
+;; bind binder node b to slot: NF-RES and the scope
+(defn- t-ck-bind [M0 :vector-i64 b :i64 slot :i64] :vector-i64
+  (let [s (t-nf M0 b NF-SYM)
+        M1 (t-set-nf M0 b NF-RES (+ (* RES-LOCAL RES-SCALE) slot))
+        mx (vector-at M1 94)]
+    (if (> slot mx) (nm-bind (lw-put M1 94 slot) s slot 1) (nm-bind M1 s slot 1))))
+
+;; params [p :T ...]: binders at even positions
+(defn- t-ck-params [M0 :vector-i64 p :i64 slot :i64] :vector-i64
+  (if (= p 0)
+    M0
+    (let [nx (t-nf M0 (t-nf M0 p NF-NEXT) NF-NEXT)]
+      (t-ck-params (t-ck-bind M0 p slot) nx (+ slot 1)))))
+
+;; let/loop bindings, sequential: init sees the earlier binders
+(defn- t-ck-binds [M0 :vector-i64 b :i64 ns :i64] :vector-i64
+  (if (= b 0)
+    M0
+    (let [init (t-nf M0 b NF-NEXT)
+          nb (t-nf M0 init NF-NEXT)
+          M1 (t-ck-x M0 init ns)]
+      (t-ck-binds (t-ck-bind M1 b ns) nb (+ ns 1)))))
+
+;; walk sibling expressions from a, skipping keywords
+(defn- t-ck-xs [M0 :vector-i64 a :i64 ns :i64] :vector-i64
+  (if (= a 0)
+    M0
+    (let [nx (t-nf M0 a NF-NEXT)
+          kind (t-nf M0 a NF-KIND)]
+      (if (= kind ND-KW)
+        (t-ck-xs M0 nx ns)
+        (t-ck-xs (t-ck-x M0 a ns) nx ns)))))
+
+(defn- t-ck-scoped [M0 :vector-i64 bv :i64 ns :i64] :vector-i64
+  (let [h0 (nm-scope-height M0)
+        body (t-nf M0 bv NF-NEXT)
+        nb (quot (lw-count M0 (t-nf M0 bv NF-FIRST)) 2)
+        M1 (t-ck-binds M0 (t-nf M0 bv NF-FIRST) ns)
+        M2 (t-ck-x M1 body (+ ns nb))]
+    (nm-unbind M2 h0)))
+
+(defn- t-ck-list [M0 :vector-i64 n :i64 ns :i64] :vector-i64
+  (let [h (t-nf M0 n NF-FIRST)
+        a (t-nf M0 h NF-NEXT)
+        s (t-nf M0 h NF-SYM)
+        hd (t-sf M0 s SF-HEAD)]
+    (if (= hd 0)
+      (let [M1 (t-set-nf M0 n NF-RES HD-CALL)
+            M2 (t-set-nf M1 h NF-RES (+ (* RES-FN RES-SCALE) (t-sf M1 s SF-FN)))]
+        (t-ck-xs (t-fuel M2) a ns))
+      (let [M1 (t-set-nf M0 n NF-RES hd)
+            M2 (t-fuel-if M1 (t-fuel-head hd))]
+        (cond
+          (= hd HD-LET) (t-ck-scoped M2 a ns)
+          (= hd HD-LOOP) (t-ck-scoped M2 a ns)
+          :else (t-ck-xs M2 a ns))))))
+
+(defn- t-ck-x [M0 :vector-i64 n :i64 ns :i64] :vector-i64
+  (let [kind (t-nf M0 n NF-KIND)]
+    (cond
+      (= kind ND-LIST) (t-ck-list M0 n ns)
+      (= kind ND-VEC) (t-ck-xs (t-set-nf M0 n NF-RES HD-VECLIT) (t-nf M0 n NF-FIRST) ns)
+      (= kind ND-SYM)
+      (let [s (t-nf M0 n NF-SYM)
+            sl (nm-local-slot M0 s)
+            fi (t-sf M0 s SF-FN)]
+        (if (>= sl 0)
+          (t-set-nf M0 n NF-RES (+ (* RES-LOCAL RES-SCALE) sl))
+          (t-set-nf M0 n NF-RES (+ (* RES-DEF RES-SCALE) fi))))
+      :else M0)))
+
+(defn- t-ck-fn [M0 :vector-i64 f :i64] :vector-i64
+  (let [node (t-ff M0 f FF-NODE)
+        pv (lw-nth M0 (t-nf M0 node NF-FIRST) 2)
+        body (lw-nth M0 (t-nf M0 node NF-FIRST) 4)
+        np (t-ff M0 f FF-NPARAMS)
+        h0 (nm-scope-height M0)
+        M1 (lw-put (lw-put M0 94 np) 95 0)
+        M2 (t-ck-params M1 (t-nf M1 pv NF-FIRST) 1)
+        M3 (t-ck-x M2 body (+ np 1))
+        M4 (nm-unbind M3 h0)
+        nsl (vector-at M4 94)
+        fu (vector-at M4 95)]
+    (t-set-ff (t-set-ff M4 f FF-NSLOTS nsl) f FF-FUEL fu)))
+
+(defn- t-ck [M0 :vector-i64 f :i64] :vector-i64
+  (if (>= f (vector-at M0 MM-FN-N))
+    M0
+    (if (= (t-ff M0 f FF-KIND) FK-DEF)
+      (t-ck M0 (+ f 1))
+      (t-ck (t-ck-fn M0 f) (+ f 1)))))
+
