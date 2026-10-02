@@ -1,0 +1,4 @@
+(ns embench.nsichneu (:export [run test-nsichneu]))
+(defn- step [state :i64 event :i64] :i64 (let [p1 (bit-and state 15) p2 (bit-and (u64-shift-right state 4) 15) p3 (bit-and (u64-shift-right state 8) 15)] (if (= event 0) (if (> p1 0) (+ (- p1 1) (* (+ p2 1) 16) (* p3 256)) state) (if (= event 1) (if (> p2 0) (+ p1 (* (- p2 1) 16) (* (+ p3 1) 256)) state) (if (> p3 0) (+ (+ p1 1) (* p2 16) (* (- p3 1) 256)) state)))))
+(defn run [token :i64] :i64 (if (= token 1) (loop [i 0 state (+ 3 (* 5 16))] (if (= i 3000) state (recur (+ i 1) (step state (- i (* 3 (quot i 3))))))) 0))
+(defn test-nsichneu [] :i64 (if (= (run 1) 83) 1 0))

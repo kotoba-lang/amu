@@ -1,0 +1,4 @@
+(ns embench.statemate (:export [run test-statemate]))
+(defn- transition [state :i64 event :i64] :i64 (if (= event 0) (if (= state 0) 1 state) (if (= event 1) (if (= state 1) 2 state) (if (= event 2) (if (= state 2) 3 state) (if (= event 3) (if (= state 3) 1 state) state)))))
+(defn run [token :i64] :i64 (if (= token 1) (loop [i 0 state 0] (if (= i 257) state (recur (+ i 1) (transition state (- i (* 4 (quot i 4))))))) 0))
+(defn test-statemate [] :i64 (if (= (run 1) 1) 1 0))

@@ -1,0 +1,146 @@
+;; seed/tests/lexread/dump.kotoba -- TEST-ONLY dumper for seed/10-lex + seed/11-read (not in the unity build).
+;; Assembled by scripts/seed/lexread.sh: 00-ns + 10-lex + 11-read + this file. Defines `seed-main` (called by `main`).
+;;   guest argv: 0 = mode (tok | tree | stat; told apart by the second letter o / r / t), 1 = absolute path of the source file (inside the wire-35 scope).
+;; Output formats: see scripts/seed/lexread_ref.py (the reference tool that makes the goldens).
+(defn- t-digit [d :i64] :string
+  (cond (= d 0) "0" (= d 1) "1" (= d 2) "2" (= d 3) "3" (= d 4) "4"
+        (= d 5) "5" (= d 6) "6" (= d 7) "7" (= d 8) "8" :else "9"))
+(defn- t-hexd [d :i64] :string
+  (cond (< d 10) (t-digit d) (= d 10) "a" (= d 11) "b" (= d 12) "c" (= d 13) "d" (= d 14) "e" :else "f"))
+;; decimal of a number <= 0 (so that MIN works): digits of the negative value
+(defn- t-neg [n :i64] :string
+  (if (> n -10)
+    (t-digit (- 0 n))
+    (string-concat (t-neg (quot n 10)) (t-digit (- 0 (- n (* 10 (quot n 10))))))))
+(defn- t-dec [n :i64] :string
+  (if (< n 0) (string-concat "-" (t-neg n)) (t-neg (- 0 n))))
+(defn- t-w [s :string] :i64
+  (let [o (typed-cap-call :io/write :string :string s)] 0))
+(defn- t-chr [c :i64] :string
+  (cond (= c 32) " " (= c 33) "!" (= c 35) "#" (= c 36) "$" (= c 37) "%" (= c 38) "&" (= c 39) "'"
+        (= c 40) "(" (= c 41) ")" (= c 42) "*" (= c 43) "+" (= c 44) "," (= c 45) "-" (= c 46) "." (= c 47) "/"
+        (= c 48) "0" (= c 49) "1" (= c 50) "2" (= c 51) "3" (= c 52) "4" (= c 53) "5" (= c 54) "6" (= c 55) "7"
+        (= c 56) "8" (= c 57) "9" (= c 58) ":" (= c 59) ";" (= c 60) "<" (= c 61) "=" (= c 62) ">" (= c 63) "?"
+        (= c 64) "@" (= c 65) "A" (= c 66) "B" (= c 67) "C" (= c 68) "D" (= c 69) "E" (= c 70) "F" (= c 71) "G"
+        (= c 72) "H" (= c 73) "I" (= c 74) "J" (= c 75) "K" (= c 76) "L" (= c 77) "M" (= c 78) "N" (= c 79) "O"
+        (= c 80) "P" (= c 81) "Q" (= c 82) "R" (= c 83) "S" (= c 84) "T" (= c 85) "U" (= c 86) "V" (= c 87) "W"
+        (= c 88) "X" (= c 89) "Y" (= c 90) "Z" (= c 91) "[" (= c 93) "]" (= c 94) "^" (= c 95) "_" (= c 96) "`"
+        (= c 97) "a" (= c 98) "b" (= c 99) "c" (= c 100) "d" (= c 101) "e" (= c 102) "f" (= c 103) "g"
+        (= c 104) "h" (= c 105) "i" (= c 106) "j" (= c 107) "k" (= c 108) "l" (= c 109) "m" (= c 110) "n"
+        (= c 111) "o" (= c 112) "p" (= c 113) "q" (= c 114) "r" (= c 115) "s" (= c 116) "t" (= c 117) "u"
+        (= c 118) "v" (= c 119) "w" (= c 120) "x" (= c 121) "y" (= c 122) "z" (= c 123) "{" (= c 124) "|"
+        (= c 125) "}" (= c 126) "~" :else "?"))
+(defn- t-print? [b :i64] :bool (and (>= b 32) (< b 127)))
+(defn- t-esc [b :i64] :string
+  (cond (= b 10) "\\n" (= b 9) "\\t" (= b 34) "\\\"" (= b 92) "\\\\"
+        (t-print? b) (t-chr b)
+        :else (string-concat "\\x" (string-concat (t-hexd (u64-shift-right b 4)) (t-hexd (bit-and b 15))))))
+(defn- t-kname [k :i64] :string
+  (cond (= k TK-LPAREN) "LPAREN" (= k TK-RPAREN) "RPAREN" (= k TK-LBRACK) "LBRACK" (= k TK-RBRACK) "RBRACK"
+        (= k TK-LBRACE) "LBRACE" (= k TK-RBRACE) "RBRACE" (= k TK-INT) "INT" (= k TK-STR) "STR"
+        (= k TK-SYM) "SYM" :else "KW"))
+(defn- t-tk [M :vector-i64 t :i64 f :i64] :i64 (vector-at M (+ MM-TOK-BASE (* t MM-TOK-W) f)))
+(defn- t-nf [M :vector-i64 n :i64 f :i64] :i64 (vector-at M (+ MM-NODE-BASE (* n MM-NODE-W) f)))
+
+;; the decoded bytes of LIT l, escaped
+(defn- t-lit [M :vector-i64 l :i64 j :i64] :i64
+  (let [b (+ MM-LIT-BASE (* l MM-LIT-W))
+        s (vector-at M (+ b LF-B))
+        n (vector-at M (+ b LF-LEN))]
+    (if (>= j n) 0
+      (let [o (t-w (t-esc (vector-at M (+ MM-LITB-BASE s j))))]
+        (t-lit M l (+ j 1))))))
+(defn- t-span [S :string a :i64 b :i64] :i64
+  (if (>= a b) 0
+    (let [o (t-w (t-chr (string-code-point-at S a)))]
+      (t-span S (+ a 1) b))))
+
+;; ---- tok mode
+(defn- t-lit-tail [M :vector-i64 k :i64 v :i64] :i64
+  (if (= k TK-STR)
+    (let [o (t-w " \"") o1 (t-lit M v 0)] (t-w "\""))
+    0))
+(defn- t-tok-line [M :vector-i64 i :i64] :i64
+  (let [k (t-tk M i TF-KIND)
+        v (t-tk M i TF-VAL)
+        o (t-w (string-concat "T " (string-concat (t-dec i) (string-concat " " (string-concat (t-kname k)
+            (string-concat " " (string-concat (t-dec (t-tk M i TF-START)) (string-concat " "
+            (string-concat (t-dec (t-tk M i TF-END)) (string-concat " " (t-dec v)))))))))))
+        o2 (t-lit-tail M k v)]
+    (t-w "\n")))
+(defn- t-toks [M :vector-i64 i :i64] :i64
+  (if (>= i (vector-at M MM-TOK-N)) 0
+    (let [o (t-tok-line M i)] (t-toks M (+ i 1)))))
+(defn- t-dump-toks [M :vector-i64] :i64
+  (let [o (t-w (string-concat "TOKENS " (string-concat (t-dec (vector-at M MM-R0)) "\n")))]
+    (t-toks M 1)))
+
+;; ---- tree mode (canonical print)
+(defn- t-open [k :i64] :string (if (= k ND-LIST) "(" "["))
+(defn- t-close [k :i64] :string (if (= k ND-LIST) ")" "]"))
+(defn- t-name? [k :i64] :bool (or (= k ND-SYM) (= k ND-KW)))
+(defn- t-pn [M :vector-i64 S :string n :i64] :i64
+  (let [k (t-nf M n NF-KIND)]
+    (cond
+      (= k ND-INT) (t-w (t-dec (t-nf M n NF-AUX)))
+      (= k ND-STR) (let [o (t-w "\"") o2 (t-lit M (t-nf M n NF-AUX) 0)] (t-w "\""))
+      (t-name? k)
+      (let [t (t-nf M n NF-TOK)] (t-span S (t-tk M t TF-START) (t-tk M t TF-END)))
+      :else (let [o (t-w (t-open k))
+                  o2 (t-pkids M S (t-nf M n NF-FIRST) 1)]
+              (t-w (t-close k))))))
+(defn- t-sep [first :i64] :i64 (if (= first 0) (t-w " ") 0))
+(defn- t-pkids [M :vector-i64 S :string c :i64 first :i64] :i64
+  (if (= c 0) 0
+    (let [o (t-sep first)
+          o2 (t-pn M S c)]
+      (t-pkids M S (t-nf M c NF-NEXT) 0))))
+(defn- t-tops [M :vector-i64 S :string c :i64] :i64
+  (if (= c 0) 0
+    (let [o (t-pn M S c) o2 (t-w "\n")]
+      (t-tops M S (t-nf M c NF-NEXT)))))
+
+;; ---- errors and stats
+(defn- t-wn [n :i64] :i64 (t-w (t-dec n)))
+(defn- t-err [M :vector-i64] :i64
+  (let [o (t-w "ERR ") o1 (t-wn (vector-at M MM-ERR)) o2 (t-w " ") o3 (t-wn (vector-at M MM-ERR-POS)) o4 (t-w " ")
+        o5 (t-wn (vector-at M MM-ERR-A)) o6 (t-w " ") o7 (t-wn (vector-at M MM-ERR-B)) o8 (t-w " ")
+        o9 (t-wn (vector-at M MM-ERR-N))]
+    (t-w "\n")))
+(defn- t-stat [M :vector-i64 S :string] :i64
+  (let [o (t-w "STAT bytes=") o1 (t-wn (string-length S)) o2 (t-w " toks=") o3 (t-wn (- (vector-at M MM-TOK-N) 1))
+        o4 (t-w " nodes=") o5 (t-wn (- (vector-at M MM-NODE-N) 1)) o6 (t-w " lits=") o7 (t-wn (- (vector-at M MM-LIT-N) 1))
+        o8 (t-w " litb=") o9 (t-wn (- (vector-at M MM-LITB-N) 1))]
+    (t-w "\n")))
+
+(defn- t-mem [] :vector-i64
+  (let [M0 (vector-alloc MM-WORDS)
+        M1 (vector-assoc! M0 MM-TOK-N 1)
+        M2 (vector-assoc! M1 MM-NODE-N 1)
+        M3 (vector-assoc! M2 MM-LIT-N 1)
+        M4 (vector-assoc! M3 MM-LITB-N 1)]
+    M4))
+
+;; the pipeline in continuation style (see the linearity notes in seed/10-lex.kotoba): a writer's result is passed on as a
+;; nested argument and read in the callee through its parameter
+(defn- t-go3 [M :vector-i64 S :string mode :i64] :i64
+  (if (= (vector-at M MM-ERR) 0)
+    (if (= mode 114)
+      (t-tops M S (t-nf M (vector-at M MM-ROOT) NF-FIRST))
+      (t-stat M S))
+    (t-err M)))
+(defn- t-go2 [M :vector-i64 S :string mode :i64] :i64
+  (if (= (vector-at M MM-ERR) 0)
+    (if (= mode 111)
+      (t-dump-toks M)
+      (t-go3 (rd-run M S) S mode))
+    (t-err M)))
+(defn- t-go [M :vector-i64 S :string mode :i64] :i64
+  (t-go2 (lx-run M S) S mode))
+
+(defn- seed-main [] :i64
+  (let [mode (typed-cap-call :cli/args :string :string "0")
+        path (typed-cap-call :cli/args :string :string "1")
+        S (typed-cap-call :fs/app-data :string :string path)
+        r (t-go (t-mem) S (string-code-point-at mode 1))]
+    0))

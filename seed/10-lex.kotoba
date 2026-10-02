@@ -1,0 +1,276 @@
+;; seed/10-lex.kotoba -- the lexer of the seed compiler R0 (module 10, prefix lx-). Owner: 10-lex.
+;; Contract: seed/HEADS :tokens and :errors (E10nn), seed/MEMORY-MAP TOK/LIT/LITB regions and rules L1-L13.
+;;
+;;   (lx-run M S) -> M     writer. Fills TOK (kind start end val) for the whole of S, LIT/LITB for every string
+;;                         token. Result in MM-R0: the token count (tokens are 1..count). On failure MM-ERR is set
+;;                         (E1001-E1005, E101 table full), MM-ERR-POS/A/B/N as listed in seed/HEADS, tokens after
+;;                         the error are not produced. Nothing is printed.
+;;
+;; The source must be ASCII (a byte >= 128 anywhere, even in a comment or a string, is E1002; the whole input is
+;; checked first, so E1002 wins over every other lexical error). Whitespace: space tab LF CR ','. Comment: ';'
+;; to end of line. TK-INT is -?[0-9]+ that fits i64 (-9223372036854775808 legal, 9223372036854775808 not).
+;; TK-SYM is a maximal run of [A-Za-z0-9*+!_?<>=/.-] that is not an integer. TK-KW is ':' + such a run (the
+;; span includes ':'; a lone ':' is E1005). Every other byte (# ^ ` ~ @ \ ' | % & $ ...) is E1005 with the
+;; one-byte span. TK-STR spans both quotes and decodes \n \t \\ \" into LITB (other escapes: E1003, span = the
+;; backslash and the next byte); a raw newline inside a string is kept as a byte.
+;; E101 (table full) carries MM-ERR-N = region: 1 TOK, 2 LIT, 3 LITB.
+
+;; Stage-0 linearity (the affine analysis in kotoba/compiler/affine.cljc, `check-affine-writes-module!`), which decides
+;; every `vector-assoc!` of this module together. Style rules that follow from it, all measured:
+;;   1. a handle returned by a writer is passed on as a NESTED call argument, `(g (f M x) y)`; it is never bound to a let
+;;      name that is then passed or written (a let-bound handle must come from vector-alloc/vector-assoc!/...);
+;;   2. a result that must be READ (positions, counts) is read in a callee through the callee's parameter:
+;;      `(k (f M x))` with `(defn- k [M] (let [j (vector-at M R)] (g M j)))`;
+;;   3. every path of a writer consumes the handle (a branch that returns M unchanged returns `(lx-id M)` instead);
+;;   4. in an argument list, M is not mentioned again after it was passed (bind reads before the call).
+;; lx-set wraps vector-assoc! so that a writer's result can be written without a let name (rule 1).
+(defn- lx-set [M :vector-i64 i :i64 v :i64] :vector-i64 (vector-assoc! M i v))
+
+;; Second probed rule: a writer that returns its handle UNCHANGED on some path is refused as soon as a caller reads
+;; the result and passes it on ("M is used more than once"). So every path consumes the handle; the identity writer
+;; rewrites M[MM-VERSION] with the value it always has.
+(defn- lx-id [M :vector-i64] :vector-i64 (vector-assoc! M MM-VERSION MM-LAYOUT-VERSION))
+
+(defn- lx-ch [S :string i :i64] :i64 (string-code-point-at S i))
+
+(defn- lx-digit? [c :i64] :bool (lx-range? c 48 57))
+
+(defn- lx-ws? [c :i64] :bool (or (= c 32) (= c 10) (= c 9) (= c 13) (= c 44)))
+
+;; stage-0 (native image of 2026-10-02) answers "internal compiler error" for and/or/not anywhere but as the TAIL VALUE of a
+;; function whose operands are plain comparisons or calls: not in an if/cond test, not nested in each other. So every
+;; boolean combination lives in a small :bool function and tests are comparisons or calls (CONTRACT-REQUESTS 2026-10-02).
+(defn- lx-range? [c :i64 lo :i64 hi :i64] :bool (and (>= c lo) (<= c hi)))
+
+(defn- lx-symch? [c :i64] :bool
+  (or (lx-range? c 97 122) (lx-range? c 65 90) (lx-range? c 48 57)
+      (= c 42) (= c 43) (= c 33) (= c 95) (= c 63) (= c 60) (= c 62) (= c 61) (= c 47) (= c 46) (= c 45)))
+
+;; a byte that starts a string, keyword, integer or symbol
+(defn- lx-multi? [c :i64] :bool (or (= c 34) (= c 58) (lx-symch? c)))
+
+;; bracket byte -> token kind, 0 when the byte is not a bracket
+(defn- lx-punct [c :i64] :i64
+  (cond (= c 40) TK-LPAREN (= c 41) TK-RPAREN (= c 91) TK-LBRACK (= c 93) TK-RBRACK
+        (= c 123) TK-LBRACE (= c 125) TK-RBRACE :else 0))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; errors (first writer wins)
+;; ---------------------------------------------------------------------------------------------------------
+(defn- lx-fail [M :vector-i64 code :i64 pos :i64 a :i64 b :i64] :vector-i64
+  (if (= (vector-at M MM-ERR) 0)
+    (let [M1 (vector-assoc! M MM-ERR code)
+          M2 (vector-assoc! M1 MM-ERR-POS pos)
+          M3 (vector-assoc! M2 MM-ERR-A a)]
+      (vector-assoc! M3 MM-ERR-B b))
+    (lx-id M)))
+
+;; stage-0 rule found by probing: a let-bound handle must not be returned bare in one branch while another branch
+;; consumes it. So every "if ERR is clear" decision is taken in a function whose parameter M is the handle.
+(defn- lx-fail-n [M :vector-i64 code :i64 pos :i64 n :i64] :vector-i64
+  (if (= (vector-at M MM-ERR) 0)
+    (lx-fail (vector-assoc! M MM-ERR-N n) code pos pos (+ pos 1))
+    (lx-id M)))
+
+(defn- lx-full [M :vector-i64 region :i64] :vector-i64
+  (if (= (vector-at M MM-ERR) 0)
+    (lx-fail (vector-assoc! M MM-ERR-N region) E-HEAP-REGION -1 0 0)
+    (lx-id M)))
+
+;; the lead byte of the UTF-8 sequence whose code point is cp (for the E1002 text)
+(defn- lx-lead [cp :i64] :i64
+  (cond (< cp 2048) (bit-or 192 (u64-shift-right cp 6))
+        (< cp 65536) (bit-or 224 (u64-shift-right cp 12))
+        :else (bit-or 240 (u64-shift-right cp 18))))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; pushing tokens and bytes
+;; ---------------------------------------------------------------------------------------------------------
+(defn- lx-push [M :vector-i64 kind :i64 s :i64 e :i64 v :i64] :vector-i64
+  (let [n (vector-at M MM-TOK-N)]
+    (if (>= n MM-TOK-CAP)
+      (lx-full M 1)
+      (let [b (+ MM-TOK-BASE (* n MM-TOK-W))
+            M1 (vector-assoc! M (+ b TF-KIND) kind)
+            M2 (vector-assoc! M1 (+ b TF-START) s)
+            M3 (vector-assoc! M2 (+ b TF-END) e)
+            M4 (vector-assoc! M3 (+ b TF-VAL) v)]
+        (vector-assoc! M4 MM-TOK-N (+ n 1))))))
+
+(defn- lx-litb-push [M :vector-i64 byte :i64] :vector-i64
+  (let [n (vector-at M MM-LITB-N)]
+    (if (>= n MM-LITB-CAP)
+      (lx-full M 3)
+      (let [M1 (vector-assoc! M (+ MM-LITB-BASE n) byte)]
+        (vector-assoc! M1 MM-LITB-N (+ n 1))))))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; scanners over S (read-only)
+;; ---------------------------------------------------------------------------------------------------------
+(defn- lx-eol [S :string i :i64] :i64
+  (loop [j i]
+    (if (>= j (string-length S)) j (if (= (lx-ch S j) 10) j (recur (+ j 1))))))
+
+(defn- lx-word-end [S :string i :i64] :i64
+  (loop [j i]
+    (if (< j (string-length S)) (if (lx-symch? (lx-ch S j)) (recur (+ j 1)) j) j)))
+
+(defn- lx-all-digits [S :string a :i64 b :i64] :bool
+  (loop [j a]
+    (if (>= j b) true (if (lx-digit? (lx-ch S j)) (recur (+ j 1)) false))))
+
+;; the span [a,b) (non-empty, symbol characters) is an integer literal
+(defn- lx-int? [S :string a :i64 b :i64] :bool
+  (if (= (lx-ch S a) 45)
+    (if (> b (+ a 1)) (lx-all-digits S (+ a 1) b) false)
+    (lx-all-digits S a b)))
+
+;; first digit of the integer token at a (after the sign)
+(defn- lx-int-start [S :string a :i64] :i64
+  (if (= (lx-ch S a) 45) (+ a 1) a))
+
+;; digits accumulate as a NEGATIVE magnitude so that -2^63 is representable
+(defn- lx-int-ovf [S :string a :i64 b :i64] :bool
+  (let [neg (= (lx-ch S a) 45)]
+    (loop [j (lx-int-start S a) acc 0]
+      (if (>= j b)
+        (if neg false (= acc -9223372036854775808))
+        (let [d (- (lx-ch S j) 48)]
+          (if (< acc -922337203685477580)
+            true
+            (if (= acc -922337203685477580)
+              (if (> d 8) true (recur (+ j 1) (- (* acc 10) d)))
+              (recur (+ j 1) (- (* acc 10) d)))))))))
+
+(defn- lx-int-val [S :string a :i64 b :i64] :i64
+  (let [neg (= (lx-ch S a) 45)
+        m (loop [j (lx-int-start S a) acc 0]
+            (if (>= j b) acc (recur (+ j 1) (- (* acc 10) (- (lx-ch S j) 48)))))]
+    (if neg m (- 0 m))))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; strings: reserve the LIT record, decode into LITB byte by byte, close at the quote
+;; ---------------------------------------------------------------------------------------------------------
+;; ---------------------------------------------------------------------------------------------------------
+;; strings. Third probed rule: the result of a branching writer must not be read by the caller that goes on to pass
+;; it (read it in a callee, through the parameter, or do not read it). Here nothing is read after a writer: the end of
+;; a token is found first by read-only scans of S, then the writers run and the loop continues at that end.
+;; ---------------------------------------------------------------------------------------------------------
+(defn- lx-esc-code [e :i64] :i64
+  (cond (= e 110) 10 (= e 116) 9 (= e 92) 92 (= e 34) 34 :else -1))
+
+;; index of the closing quote of the string that opens at i; -1 = unterminated; -(2+j) = bad escape at the backslash j
+(defn- lx-str-find [S :string i :i64] :i64
+  (loop [j (+ i 1)]
+    (if (>= j (string-length S))
+      -1
+      (let [c (lx-ch S j)]
+        (cond
+          (= c 34) j
+          (= c 92) (if (>= (+ j 1) (string-length S))
+                     -1
+                     (if (< (lx-esc-code (lx-ch S (+ j 1))) 0) (- -2 j) (recur (+ j 2))))
+          :else (recur (+ j 1)))))))
+
+;; decode S[j, e) into LITB (e = the closing quote, escapes already validated)
+(defn- lx-str-loop [M :vector-i64 S :string j :i64 e :i64] :vector-i64
+  (if (>= j e)
+    (lx-id M)
+    (let [c (lx-ch S j)]
+      (if (= c 92)
+        (lx-str-loop (lx-litb-push M (lx-esc-code (lx-ch S (+ j 1)))) S (+ j 2) e)
+        (lx-str-loop (lx-litb-push M c) S (+ j 1) e)))))
+
+;; close the string token spanning S[i, e]: LF-LEN of the reserved LIT record, then the token
+(defn- lx-str-end [M :vector-i64 i :i64 e :i64] :vector-i64
+  (let [lit (- (vector-at M MM-LIT-N) 1)
+        b (+ MM-LIT-BASE (* lit MM-LIT-W))
+        len (- (vector-at M MM-LITB-N) (vector-at M (+ b LF-B)))]
+    (lx-push (lx-set M (+ b LF-LEN) len) TK-STR i (+ e 1) lit)))
+
+;; reserve the LIT record (first byte, token index), then decode, then close
+(defn- lx-string [M :vector-i64 S :string i :i64 e :i64] :vector-i64
+  (let [lit (vector-at M MM-LIT-N)]
+    (if (>= lit MM-LIT-CAP)
+      (lx-full M 2)
+      (let [b (+ MM-LIT-BASE (* lit MM-LIT-W))
+            litb (vector-at M MM-LITB-N)
+            tok (vector-at M MM-TOK-N)
+            M1 (vector-assoc! M (+ b LF-B) litb)
+            M2 (vector-assoc! M1 (+ b LF-TOK) tok)
+            M3 (vector-assoc! M2 MM-LIT-N (+ lit 1))]
+        (lx-str-end (lx-str-loop M3 S (+ i 1) e) i e)))))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; the scan loop (one self tail call per token or skipped byte)
+;; ---------------------------------------------------------------------------------------------------------
+;; integer or symbol token spanning S[i, j)
+(defn- lx-word [M :vector-i64 S :string i :i64 j :i64] :vector-i64
+  (if (lx-int? S i j)
+    (if (lx-int-ovf S i j)
+      (lx-fail M E-LEX-INT i i j)
+      (lx-push M TK-INT i j (lx-int-val S i j)))
+    (lx-push M TK-SYM i j 0)))
+
+;; the string token that opens at i, given e = lx-str-find
+(defn- lx-str-token [M :vector-i64 S :string i :i64 e :i64] :vector-i64
+  (cond (>= e 0) (lx-string M S i e)
+        (= e -1) (lx-fail M E-LEX-STRING i i (+ i 1))
+        :else (lx-fail M E-LEX-ESCAPE (- -2 e) (- -2 e) (- 0 e))))
+
+;; one multi-byte token at i (string, keyword, integer, symbol): the writer for it. Its end is lx-tok-end.
+(defn- lx-token [M :vector-i64 S :string i :i64 j :i64] :vector-i64
+  (let [c (lx-ch S i)]
+    (cond (= c 34) (lx-str-token M S i j)
+          (= c 58) (if (= j (+ i 1)) (lx-fail M E-LEX-SYNTAX i i (+ i 1)) (lx-push M TK-KW i j 0))
+          :else (lx-word M S i j))))
+
+;; where the multi-byte token at i ends: after the closing quote, or at the end of the symbol-character run.
+;; For an erroneous string the "end" is only used as an error carrier (a negative code), see lx-token.
+(defn- lx-tok-end [S :string i :i64] :i64
+  (let [c (lx-ch S i)]
+    (cond (= c 34) (lx-str-find S i)
+          (= c 58) (lx-word-end S (+ i 1))
+          :else (lx-word-end S i))))
+
+;; the position the scan continues at after the token whose lx-tok-end is j (a string: after the quote)
+(defn- lx-after [S :string i :i64 j :i64] :i64
+  (if (= (lx-ch S i) 34) (+ j 1) j))
+
+(defn- lx-scan [M :vector-i64 S :string i :i64] :vector-i64
+  (if (>= i (string-length S))
+    (lx-id M)
+    (if (= (vector-at M MM-ERR) 0)
+      (let [c (lx-ch S i)
+            pk (lx-punct c)]
+        (cond
+          (lx-ws? c) (lx-scan M S (+ i 1))
+          (= c 59) (lx-scan M S (lx-eol S i))
+          (> pk 0) (lx-scan (lx-push M pk i (+ i 1) 0) S (+ i 1))
+          (lx-multi? c)
+          (let [j (lx-tok-end S i)]
+            (lx-scan (lx-token M S i j) S (lx-after S i j)))
+          :else (lx-fail M E-LEX-SYNTAX i i (+ i 1))))
+      (lx-id M))))
+
+;; whole-input ASCII check; stops at the first non-ASCII lead byte, so it never indexes a continuation byte
+(defn- lx-ascii [M :vector-i64 S :string i :i64] :vector-i64
+  (if (>= i (string-length S))
+    (lx-id M)
+    (let [c (lx-ch S i)]
+      (if (> c 127)
+        (lx-fail-n M E-LEX-ASCII i (lx-lead c))
+        (lx-ascii M S (+ i 1))))))
+
+;; scan after a clean ASCII check; the count of tokens is left in MM-R0
+(defn- lx-count [M :vector-i64] :vector-i64
+  (let [n (- (vector-at M MM-TOK-N) 1)]
+    (lx-set M MM-R0 n)))
+
+(defn- lx-run2 [M :vector-i64 S :string] :vector-i64
+  (if (= (vector-at M MM-ERR) 0)
+    (lx-count (lx-scan M S 0))
+    (lx-id M)))
+
+(defn- lx-run [M :vector-i64 S :string] :vector-i64
+  (lx-run2 (lx-ascii M S 0) S))
