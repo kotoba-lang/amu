@@ -635,7 +635,7 @@
 
 (deftest check-json-has-one-shape-across-both-entrypoints
   ;; `check` has two implementations: kotoba.compiler.cli on the JVM, and
-  ;; kotoba.compiler.nbb.wasm-cli on the nbb fast path bin/kotoba routes to
+  ;; kotoba.compiler.nbb.check-driver (entry: nbb.check-cli) on the nbb fast path bin/kotoba routes to
   ;; when no JDK is wanted. Same command, same file -- and the nbb one used to
   ;; answer with :ok/:effects/:admission only. A consumer keying on :format,
   ;; which is the versioned output contract, had nothing to key on, and
@@ -644,7 +644,7 @@
   ;; Compared by source rather than by running both, so the suite does not
   ;; grow a node dependency to check a shape.
   (let [jvm-src (slurp (io/file "src/kotoba/compiler/cli.cljk"))
-        nbb-src (slurp (io/file "src/kotoba/compiler/nbb/wasm_cli.cljk"))
+        nbb-src (slurp (io/file "src/kotoba/compiler/nbb/check_driver.cljk"))
         keys-near (fn [src anchor]
                     ;; nil when the anchor is absent, which is itself the
                     ;; finding -- an entrypoint that emits no :format at all.

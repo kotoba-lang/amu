@@ -279,7 +279,7 @@ b\" 1 2))
 
 (defn amu-command [args]
   (if dev-classpath
-    (let [driver (if (some #(str/starts-with? % "aarch64") args) "aarch64_cli.cljk" "x86_64_cli.cljk")]
+    (let [driver (if (some #(str/starts-with? % "aarch64") args) "aarch64_packaged_cli.cljk" "x86_64_cli.cljk")]
       (into ["--stack-size=4096" (lib/join lib/root "node_modules" "nbb" "cli.js") "--classpath" dev-classpath
              (lib/join lib/root "src" "kotoba" "compiler" "nbb" driver)] args))
     (into [amu] args)))

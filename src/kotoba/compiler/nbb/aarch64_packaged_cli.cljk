@@ -1,0 +1,28 @@
+(ns kotoba.compiler.nbb.aarch64-packaged-cli
+  "AArch64 nbb native compiler entrypoint for the targets that PACKAGE their artifact:
+  `aarch64-aiueos-kernel-v1` (ELF64 kernel image) and `aarch64-linux-static`
+  (static ELF). `bin/amu` and `bin/kotoba` route exactly those two targets here.
+  Every other aarch64 target is `kotoba.compiler.nbb.aarch64-cli`, whose closure
+  carries none of the ELF64 / PE32+ / linux-static packagers."
+  {:kotoba/export []}
+  (:require [kotoba.compiler.nbb.cli :as native-cli]
+            [kotoba.compiler.nbb.cli-support :as support]
+            [kotoba.compiler.nbb.compile-cache :as compile-cache]
+            [kotoba.compiler.nbb.native-package :as native-package]
+            [kotoba.kir.target :as target-profile]
+            [kotoba.native.aarch64 :as aarch64]))
+
+(defn- run! [args context]
+  (native-cli/run! args :aarch64-kotoba-v1 aarch64/emit-program
+                   native-package/package context))
+
+(let [args (support/command-line-args)]
+ (if (= "worker" (first args))
+  (let [target-name (support/option args "--target")
+        target (get native-cli/targets target-name)
+        _ (when-not (= :aarch64-kotoba-v1 (some-> target target-profile/backend))
+            (support/usage-error!
+             (str "error: AArch64 worker does not cover target " target-name)))
+        context (assoc (compile-cache/create-context) :target target)]
+    (support/serve! #(run! % context) target))
+  (support/execute! #(run! % nil))))

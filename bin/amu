@@ -261,6 +261,10 @@ function nbbNativeEligible(args) {
 const targetIndependentCommands = new Set(["check", "definition-cids",
   "module-lock", "package-manifest", "package-lock", "package-fetch"]);
 
+// The two aarch64 targets whose artifact is packaged (ELF64 kernel image, static
+// ELF). They load the packagers; every other aarch64 target does not.
+const aarch64PackagedTargets = new Set(["aarch64-aiueos-kernel-v1", "aarch64-linux-static"]);
+
 function nbbEntrypoint(root, args) {
   const command = args[0];
   const target = option(args, "--target");
@@ -276,6 +280,8 @@ function nbbEntrypoint(root, args) {
   }
   const wasm = targetIndependent
     || (target !== undefined && target.startsWith("wasm32"));
+  // `check` has an entry of its own (selfhost minimal reach): its closure is the
+  // check driver, not the Wasm emitter and the component tooling.
   const filename = ["verify-output-set", "sign-output-set"].includes(command) ? "output_set_cli.cljk"
     : trustCommands.has(command) ? "trust_cli.cljk"
     : command === "test" ? "test_cli.cljk"
@@ -283,9 +289,11 @@ function nbbEntrypoint(root, args) {
     : runCommands.has(command) ? "run_cli.cljk"
     : command === "extract-native" ? "x86_64_cli.cljk"
     : (command === "compile" && nbbJsTargets.has(target)) ? "js_cli.cljk"
+    : command === "check" ? "check_cli.cljk"
     : wasm ? "wasm_cli.cljk"
       : target && target.startsWith("evm") ? "evm_cli.cljk"
-        : target.startsWith("aarch64") ? "aarch64_cli.cljk" : "x86_64_cli.cljk";
+        : aarch64PackagedTargets.has(target) ? "aarch64_packaged_cli.cljk"
+          : target.startsWith("aarch64") ? "aarch64_cli.cljk" : "x86_64_cli.cljk";
   return path.join(root, "src", "kotoba", "compiler", "nbb", filename);
 }
 

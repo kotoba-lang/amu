@@ -92,13 +92,14 @@
 (defn- nbb-entrypoint [root sub-args]
   (let [command (first sub-args)
         target (option sub-args "--target")
-        wasm? (or (= command "check")
-                  (and (some? target) (.startsWith target "wasm32")))
+        wasm? (and (some? target) (.startsWith target "wasm32"))
         filename (cond
                    (contains? trust-commands command) "trust_cli.cljk"
                    (contains? #{"run" "measure-runtime"} command) "run_cli.cljk"
                    (= command "extract-native") "x86_64_cli.cljk"
+                   (= command "check") "check_cli.cljk"
                    wasm? "wasm_cli.cljk"
+                   (contains? #{"aarch64-aiueos-kernel-v1" "aarch64-linux-static"} target) "aarch64_packaged_cli.cljk"
                    (.startsWith target "aarch64") "aarch64_cli.cljk"
                    :else "x86_64_cli.cljk")]
     (.join path root "src" "kotoba" "compiler" "nbb" filename)))
