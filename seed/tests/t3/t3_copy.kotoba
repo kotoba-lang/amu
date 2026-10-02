@@ -1,0 +1,26 @@
+(ns seed.t3copy (:export [main]))
+
+;; T3: copy a binary file through wire 35 with :bytes request/result, then write a
+;; generated 0..255 pattern. argv0 = input path, argv1 = output copy, argv2 = output generated, argv3 = count.
+
+(defn- arg [i :i64] :string
+  (typed-cap-call :cli/args :string :string (string-concat "" (if (= i 0) "0" (if (= i 1) "1" (if (= i 2) "2" "3"))))))
+
+(defn- fill [v :vector-i64 i :i64 n :i64] :vector-i64
+  (if (= i n) v
+    (fill (vector-assoc! v i (bit-and (+ (* i 7) (u64-shift-right i 8)) 255)) (+ i 1) n)))
+
+(defn- parse-dec [s :string i :i64 acc :i64] :i64
+  (if (= i (string-length s)) acc
+    (parse-dec s (+ i 1) (+ (* acc 10) (- (string-code-point-at s i) 48)))))
+
+(defn main [] :i64
+  (let [inp (arg 0)
+        outc (arg 1)
+        outg (arg 2)
+        data (typed-cap-call :fs/app-data-bytes :bytes :bytes (string-to-utf8 inp))
+        w1 (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-concat (string-to-utf8 (string-concat outc "WRITE_SEP")) data))
+        n (parse-dec (arg 3) 0 0)
+        b (bytes-from-vector-i64 (fill (vector-alloc n) 0 n))
+        w2 (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-concat (string-to-utf8 (string-concat outg "WRITE_SEP")) b))]
+    (if (= (bytes-count w1) (bytes-count data)) 0 1)))
