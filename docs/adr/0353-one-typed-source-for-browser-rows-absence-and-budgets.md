@@ -630,6 +630,30 @@ new value's (a field it lacks, a number read as a record), a parameter read
 only after it is rebound is not a row, a rebound name has its new type, a
 record as an `if` test, a repeated parameter.
 
+The internal error landed as floor `:cljs-literal-hash` (gate
+`text-edit-analyzes-on-nbb-test`). Located on kotoba-sema `531e89d8` by
+wrapping every frontend var on nbb: `specialize-row-parameters` scans every
+call argument for a row-polymorphic function used as a value with
+`(contains? generics arg)`. Past eight generics that map is a hash map, an
+integer literal is a ClojureScript BigInt, and a BigInt has no hash. Either
+of text-edit's `move-caret` / `move-to` is its ninth row generic (the floor
+above had not reached them); nine one-line functions over a row are enough,
+and the JVM was never affected. kotoba-sema (`8d3320fc`) asks `symbol?`
+before it hashes. Measured on nbb: the gate was red on `531e89d8` (6
+failures, 4 errors of 11 assertions, every one the `closure_uid` error),
+green on `8d3320fc`; nine generics answer 36 on the KIR reference, and
+`amu compile --target x86_64-aiueos-kernel-v1` / `--target aarch64-macos`
+exit 0 with `:oracle {:status :verified}`; kotoba-sema's portable suite has
+the same 39 failures and 5 errors before and after (identical lists). With
+nine generics, refused by name as before: a row generic used as a value, a
+number passed to a row parameter, a record as an `if` test. text-edit (its
+`:text/composition` field left out, which is floor `:absent-field-from-assoc`)
+now answers a refusal in the language's words, at `delete-backward`'s
+`(insert-text state "")`: "argument state to insert-text is i64, and
+parameter state of insert-text is the row {:text/caret T :text/selection T |
+r}: only a record satisfies a row" -- floor `:rebound-row-argument`, not yet
+minimized (each of its ingredients is admitted alone).
+
 ## Selfhost foundation floors (appended 2026-09-26)
 
 Superproject adr-2609242330 measured that compiling amu with amu needs the
