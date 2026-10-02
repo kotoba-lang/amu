@@ -209,7 +209,14 @@ l2, cur2 = checks_block([("rebuild ERR", "(vector-at M2 MM-ERR)", 0), ("rebuild 
 lets += l2
 out.append("(defn- t-b-rebuild [M0 :vector-i64] :vector-i64\n  (let [" + "\n        ".join(lets) + "]\n    " + cur2 + "))\n")
 
-names = ["t-s1", "t-p-main", "t-p-alpha", "t-p-beta-absent", "t-p-prefix-absent", "t-p-longer-absent", "t-p-truncated", "t-p-too-short",
+out.append("""(defn- t-hex [M0 :vector-i64] :vector-i64
+  (let [o (t-say "hex begin\\n")
+        M1 (out-write-hex M0 (t-src))
+        g (vector-at M1 MM-R0)
+        o2 (t-say "hex end\\n")]
+    (t-chk M1 "hex total" g %d)))
+""" % len(CONT))
+names = ["t-s1", "t-hex", "t-p-main", "t-p-alpha", "t-p-beta-absent", "t-p-prefix-absent", "t-p-longer-absent", "t-p-truncated", "t-p-too-short",
          "t-p-extra-byte", "t-p-badmagic", "t-b-word-range", "t-b-word-negative", "t-b-out-full", "t-b-length-mismatch", "t-b-rebuild"]
 lets = []; cur = "A0"
 for k, fn in enumerate(names):
@@ -223,4 +230,5 @@ out.append('''(defn- seed-main [] :i64
 ''')
 dest = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../seed/tests/unit/50-out_t.kotoba")
 open(dest, "w").write("".join(out))
+open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../seed/tests/unit/50-out.hex"), "w").write("\n".join(CONT[i:i+64].hex() for i in range(0, len(CONT), 64)) + "\n")
 print("container bytes", len(CONT), "header", CS, "code", cb, "total", total, "scenarios", len(names))

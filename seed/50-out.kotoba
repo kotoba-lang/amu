@@ -396,3 +396,20 @@
   (let [M1 (out-w M (out-bslot) base)
         M2 (out-w M1 (out-lslot) len)]
     (out-pa M2 sym)))
+
+;; ---- file output --------------------------------------------------------------------------------------------------------
+;; out-write-hex M S -> M : out-build, then the container as lowercase hex on stdout (io-write-hex; `xxd -r -p` recovers the
+;; bytes). This is the output path of the STABLE stage-0 image, which refuses :bytes capability calls (CONTRACT-REQUESTS
+;; 2026-10-02 02-io). MM-R0 = container bytes. The :bytes path (out-write to a file) and out-extract, which must READ a
+;; binary container, are added when 02-io has the byte primitives; out-parse above is their tested core.
+(defn- out-write-hex2 [M :vector-i64 n :i64 ok :i64] :vector-i64
+  (if (= ok 0)
+    (let [w (io-write-hex M (+ MM-OUT-BASE 1) n)]
+      M)
+    M))
+
+(defn- out-write-hex [M :vector-i64 S :string] :vector-i64
+  (let [M1 (out-build M S)
+        n (- (vector-at M1 MM-OUT-N) 1)
+        ok (vector-at M1 MM-ERR)]
+    (out-write-hex2 M1 n ok)))
