@@ -1,0 +1,49 @@
+# seed/MANIFEST -- unity order of the seed compiler (R0). Owner: contracts.
+#
+# FORMAT: one repo-relative path per line; '#' starts a comment line; blank lines are ignored.
+#   The unity source is the concatenation of the listed files in this order, each followed by one "\n"
+#   (scripts/seed/build.sh writes build/seed/seed-unity.kotoba). A listed file that does not exist yet is
+#   skipped with a warning by unit.sh and is a hard error for build.sh.
+#
+# NAMESPACE: exactly one (ns seed (:export [main])), in 00-ns.kotoba. No other file has an ns form.
+#
+# MODULE PREFIX RULE: every top-level name defined in a module starts with that module's prefix (column 2
+#   below), e.g. 10-lex defines lx-run, lx-scan-int ... Exceptions: 00-ns defines the generated UPPER-CASE
+#   constants and `main`; 99-entry defines `seed-main`. Tests (seed/tests/unit/<mod>_t.kotoba) prefix their
+#   own helpers with `t-` and define `seed-main`. A module may CALL any name of a module listed BEFORE it;
+#   calls to a LATER module are only allowed from 90-drv and 99-entry (unit tests would not link otherwise).
+#   Every function is defn- except main (MEMORY-MAP rule L3).
+#
+# UNIT ASSEMBLY (scripts/seed/unit.sh <mod>): 00-ns, then the base modules 01-mem 02-io that precede <mod>,
+#   then the modules named on the test's `;; deps: <mod> <mod> ...` line (in MANIFEST order), then <mod>,
+#   then seed/tests/unit/<mod>_t.kotoba. 99-entry is never part of a unit build.
+#
+# path                    prefix   owner (design section 4.2)
+seed/00-ns.kotoba
+#                         (none)   contracts: ns form, GENERATED constants, `main` -> (seed-main)
+seed/01-mem.kotoba
+#                         mem-     01-mem: mem-new, mem-alloc, mem-hash, mem-u2dec, byte-buffer helpers
+seed/02-io.kotoba
+#                         io-      02-io: io-read-file, io-argc, io-arg, io-write-bytes, io-err, io-out
+seed/10-lex.kotoba
+#                         lx-      10-lex: lx-run
+seed/11-read.kotoba
+#                         rd-      11-read: rd-run
+seed/20-names.kotoba
+#                         nm-      20-names: nm-run, nm-intern, scope API
+seed/21-check.kotoba
+#                         ck-      21-check: ck-run
+seed/30-lower.kotoba
+#                         lw-      30-lower: lw-run (+ lw-interp, test-only but in the unity file)
+seed/40-a64enc.kotoba
+#                         enc-     40-a64enc: pure encoders
+seed/41-a64gen.kotoba
+#                         gn-      41-a64gen: gn-run
+seed/42-layout.kotoba
+#                         ly-      42-layout: ly-run
+seed/50-out.kotoba
+#                         out-     50-out: out-write, out-extract
+seed/90-drv.kotoba
+#                         drv-     driver (contracts owner): drv-main, drv-check, drv-compile, drv-extract
+seed/99-entry.kotoba
+#                         seed-    `seed-main` -> (drv-main). Last; replaced by the test's seed-main in unit builds

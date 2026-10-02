@@ -1,0 +1,210 @@
+;; seed/MEMORY-MAP -- the memory contract of the seed compiler (R0). EDN.
+;; Owner: contracts (strong agent). Design: docs/selfhost-seed-design-20261002.md sections 2.3 and 4.1.
+;;
+;; SINGLE SOURCE OF TRUTH FOR CONSTANTS. Every line of the form
+;;     [:c NAME VALUE "doc"]
+;; in seed/MEMORY-MAP, seed/HEADS and seed/SIR is a named i64 constant. scripts/seed/gen-ns.sh copies them, in
+;; file order, as `(def NAME VALUE)` into the generated block of seed/00-ns.kotoba, and the 00-ns unit test
+;; (scripts/seed/unit.sh 00-ns) checks the compiled values against this list. Modules use the NAMES, never
+;; the numbers. To change a constant: edit here, run scripts/seed/gen-ns.sh, run unit.sh 00-ns, commit both.
+;; Names are unique across the three files.
+
+{:format :seed.memory-map/v1
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 1. The heap M
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; One :vector-i64 of MM-WORDS words, allocated once by `mem-new` (01-mem) and threaded through every
+ ;; function as its FIRST parameter. The source text is a separate :string S (second parameter where needed).
+ ;; No other vector is long-lived. Every table below is a fixed region of M: address = BASE + index * W.
+ ;; Index 0 of every table is the NULL record: it is never written, fills start at 1, and a field value 0
+ ;; means "none" (no child, no symbol, no function, no label ...). `mem-new` sets every *-N fill to 1.
+ :constants
+ [[:c MM-WORDS 8388608 "words in M (64 MiB); below the loader's 16M-item per-vector limit"]
+  [:c MM-NULL 0 "the null index of every table"]
+  [:c MM-LAYOUT-VERSION 1 "value of M[MM-VERSION] after mem-new"]
+
+  ;; --- 1.1 header slots M[0..255] ---------------------------------------------------------------------
+  [:c MM-VERSION 0 "layout version, = MM-LAYOUT-VERSION (01-mem)"]
+  [:c MM-R0 1 "return register 0: a writer's i64 result (see rule L4). Read it immediately after the call"]
+  [:c MM-R1 2 "return register 1"]
+  [:c MM-R2 3 "return register 2"]
+  [:c MM-R3 4 "return register 3"]
+  [:c MM-ERR 5 "first error code (E table in seed/HEADS), 0 = ok. First writer wins: never overwrite non-zero"]
+  [:c MM-ERR-POS 6 "byte offset in S of the error, -1 when none applies"]
+  [:c MM-ERR-A 7 "start byte of the span printed for {name}"]
+  [:c MM-ERR-B 8 "end byte (exclusive) of the span printed for {name}"]
+  [:c MM-ERR-N 9 "number printed for {n}; type code printed for {t}"]
+  [:c MM-SRC-LEN 10 "byte length of S (driver, before lex)"]
+  [:c MM-TOK-N 16 "TOK fill = next free token index (10-lex)"]
+  [:c MM-NODE-N 17 "NODE fill (11-read)"]
+  [:c MM-SYM-N 18 "SYM fill (20-names)"]
+  [:c MM-HASH-N 19 "occupied HASH slots (20-names)"]
+  [:c MM-FN-N 20 "FN fill (20-names)"]
+  [:c MM-SCOPE-N 21 "SCOPE stack height (20-names)"]
+  [:c MM-SIR-N 22 "SIR fill (30-lower)"]
+  [:c MM-LABEL-N 23 "next label number; labels are global and allocated by 30-lower"]
+  [:c MM-CODE-N 24 "CODE fill in 32-bit words (41-a64gen)"]
+  [:c MM-FIX-N 25 "FIX fill (41-a64gen)"]
+  [:c MM-LIT-N 26 "LIT fill (10-lex)"]
+  [:c MM-LITB-N 27 "LITB fill in bytes (10-lex)"]
+  [:c MM-EXP-N 28 "EXP fill (42-layout)"]
+  [:c MM-OUT-N 29 "OUT fill in bytes (50-out)"]
+  [:c MM-HEAP-TOP 30 "next free word of the HEAP region (01-mem mem-alloc)"]
+  [:c MM-ROOT 32 "root node index (11-read). Its children are the top-level forms in source order"]
+  [:c MM-NS-NODE 33 "node of the (ns ...) form (20-names)"]
+  [:c MM-POOL-OFF 34 "byte offset of the literal pool from the code start (42-layout)"]
+  [:c MM-CODE-BYTES 35 "total code length in bytes including the pool (42-layout)"]
+  [:c MM-MAX-DEPTH 36 "deepest SIR temporary seen (30-lower), for statistics"]
+  [:c MM-STAT-BASE 64 "M[64..127]: free-form statistics, one slot per module: 64 + 4*k for MANIFEST position k"]
+
+  ;; --- 1.2 regions: BASE (word address), W (words per record), CAP (records incl. the null record) ------
+  [:c MM-TOK-BASE 256] [:c MM-TOK-W 4] [:c MM-TOK-CAP 131072]
+  [:c MM-NODE-BASE 524544] [:c MM-NODE-W 8] [:c MM-NODE-CAP 131072]
+  [:c MM-SYM-BASE 1573120] [:c MM-SYM-W 8] [:c MM-SYM-CAP 65536]
+  [:c MM-HASH-BASE 2097408] [:c MM-HASH-W 1] [:c MM-HASH-CAP 131072]
+  [:c MM-FN-BASE 2228480] [:c MM-FN-W 16] [:c MM-FN-CAP 8192]
+  [:c MM-SCOPE-BASE 2359552] [:c MM-SCOPE-W 2] [:c MM-SCOPE-CAP 65536]
+  [:c MM-SIR-BASE 2490624] [:c MM-SIR-W 4] [:c MM-SIR-CAP 262144]
+  [:c MM-LABEL-BASE 3539200] [:c MM-LABEL-W 1] [:c MM-LABEL-CAP 131072]
+  [:c MM-CODE-BASE 3670272] [:c MM-CODE-W 1] [:c MM-CODE-CAP 524288]
+  [:c MM-FIX-BASE 4194560] [:c MM-FIX-W 4] [:c MM-FIX-CAP 131072]
+  [:c MM-LIT-BASE 4718848] [:c MM-LIT-W 4] [:c MM-LIT-CAP 16384]
+  [:c MM-LITB-BASE 4784384] [:c MM-LITB-W 1] [:c MM-LITB-CAP 524288]
+  [:c MM-EXP-BASE 5308672] [:c MM-EXP-W 4] [:c MM-EXP-CAP 1024]
+  [:c MM-OUT-BASE 5312768] [:c MM-OUT-W 1] [:c MM-OUT-CAP 1048576]
+  [:c MM-HEAP-BASE 6361344] [:c MM-HEAP-END 8388608]
+
+  ;; --- 1.3 record fields (offset inside a record) -------------------------------------------------------
+  ;; TOK: one per token, source order. Written by 10-lex only.
+  [:c TF-KIND 0 "token kind TK-* (seed/HEADS)"]
+  [:c TF-START 1 "first byte offset in S"]
+  [:c TF-END 2 "byte offset after the token (exclusive). A string token spans both quotes"]
+  [:c TF-VAL 3 "TK-INT: the i64 value (wrapped from the decimal digits, '-' applied); TK-STR: its LIT index; else 0"]
+
+  ;; NODE: the read tree. Children are a linked list: FIRST child, then NEXT siblings, 0 terminates.
+  [:c NF-KIND 0 "node kind ND-* (11-read)"]
+  [:c NF-FIRST 1 "first child node or 0 (11-read)"]
+  [:c NF-NEXT 2 "next sibling node or 0 (11-read)"]
+  [:c NF-TOK 3 "token index of the atom, or of the opening bracket (11-read)"]
+  [:c NF-AUX 4 "11-read: ND-INT value; ND-STR LIT index; ND-LIST/ND-VEC/ND-MAP child count; else 0"]
+  [:c NF-SYM 5 "20-names: symbol index of an ND-SYM or ND-KW node; else 0"]
+  [:c NF-TYPE 6 "21-check: type code TY-* of the expression; 0 for non-expressions"]
+  [:c NF-RES 7 "21-check: resolution, see RES-* (seed/HEADS). ND-LIST: head code HD-*; ND-SYM: RES-* encoded"]
+
+  ;; SYM: one per distinct spelling (symbols AND keywords; a keyword's span includes the ':').
+  ;; Ids follow first occurrence in S (determinism); the HASH table is only a lookup index.
+  [:c SF-START 0 "first byte of the first occurrence in S"]
+  [:c SF-END 1 "end byte (exclusive)"]
+  [:c SF-HASH 2 "the hash nm-hash gave the spelling (FNV-1a 64 over the bytes, see 20-names)"]
+  [:c SF-HEAD 3 "symbol: head code HD-* if the spelling is a builtin head, else 0; keyword: KW-* code or 0"]
+  [:c SF-FN 4 "FN index of the top-level def/defn/defn- with this name, else 0 (20-names)"]
+  [:c SF-BIND 5 "current local binding: frame slot + 1, 0 = not bound (20-names scope API only)"]
+  [:c SF-SPARE6 6 "reserved, 0"]
+  [:c SF-SPARE7 7 "reserved, 0"]
+
+  ;; HASH: open addressing, linear probing, MM-HASH-CAP slots (a power of two). Slot = symbol index, 0 = empty.
+
+  ;; FN: one per top-level (def ...), (defn ...), (defn- ...), source order (index 1 = first def form).
+  [:c FF-SYM 0 "symbol of the name (20-names)"]
+  [:c FF-NODE 1 "the ND-LIST node of the whole def form (20-names)"]
+  [:c FF-KIND 2 "FK-DEFN / FK-PRIV / FK-DEF (20-names)"]
+  [:c FF-NPARAMS 3 "parameter count, 0 for FK-DEF (20-names)"]
+  [:c FF-RTYPE 4 "result type TY-* (21-check); for FK-DEF the constant's type"]
+  [:c FF-PT0 5 "type of parameter 0 (21-check); FF-PT0+i for parameter i, i < 5"]
+  [:c FF-PT4 9 "type of parameter 4"]
+  [:c FF-NSLOTS 10 "frame slots used by params + lets + loop vars, after slot reuse (21-check)"]
+  [:c FF-EXPORT 11 "1 when named in (:export [...]) (20-names)"]
+  [:c FF-SIR 12 "SIR index of this function's FN instruction (30-lower)"]
+  [:c FF-CODE 13 "code word index of the entry (41-a64gen)"]
+  [:c FF-FUEL 14 "1 when the body contains a call, runtime call or capability call (21-check), see SIR fuel rule"]
+  [:c FF-DEPTH 15 "max SIR temp depth + 1 used by the function (30-lower)"]
+  [:c FK-DEFN 1] [:c FK-PRIV 2 "defn-"] [:c FK-DEF 3]
+
+  ;; SCOPE: the shadow stack of 20-names' scope API: [symbol, previous SF-BIND of that symbol].
+  [:c CF-SYM 0] [:c CF-PREV 1]
+
+  ;; SIR: [op a b c], see seed/SIR. Written by 30-lower only.
+  [:c IF-OP 0] [:c IF-A 1] [:c IF-B 2] [:c IF-C 3]
+
+  ;; LABEL: label number -> code word index where the label sits (41-a64gen writes it at the LABEL op).
+
+  ;; CODE: one 32-bit instruction per word, value 0..2^32-1 (41-a64gen appends, 42-layout patches fixups).
+  ;; FIX: a code word whose immediate is resolved by 42-layout.
+  [:c XF-AT 0 "code word index of the instruction to patch"]
+  [:c XF-KIND 1 "FX-* (seed/SIR)"]
+  [:c XF-TARGET 2 "label number (FX-B26/FX-BC19/FX-CB19), FN index (FX-BL26) or LIT index (FX-LIT32)"]
+  [:c XF-AUX 3 "reserved, 0"]
+
+  ;; LIT: one per string literal token, in source order (10-lex). Bytes are the DECODED bytes (escapes applied).
+  [:c LF-B 0 "first byte index in LITB"]
+  [:c LF-LEN 1 "byte length"]
+  [:c LF-POOL 2 "byte offset of the bytes from the code start (42-layout)"]
+  [:c LF-TOK 3 "token index"]
+  ;; LITB: one byte (0..127 in R0) per word.
+
+  ;; EXP: one per exported FN, in (:export [...]) order (42-layout).
+  [:c EF-FN 0] [:c EF-OFFSET 1 "byte offset of the entry from the code start"] [:c EF-ARITY 2] [:c EF-SPARE 3]
+  ;; OUT: one byte (0..255) per word: the kseed container being written (50-out).
+  ;; HEAP: words MM-HEAP-BASE..MM-HEAP-END-1, bump-allocated by `mem-alloc`, never freed.
+  ]
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 2. Write rights. A module writes ONLY the cells listed for it. Everyone may read everything.
+ ;; ---------------------------------------------------------------------------------------------------------
+ :write-rights
+ {"00-ns/90-drv/99-entry" [:MM-SRC-LEN :MM-ERR* "(only when it detects a usage/io error itself)"]
+  "01-mem"   [:MM-VERSION :all-*-N "(initial value 1 in mem-new only)" :MM-HEAP-TOP :HEAP "(on behalf of callers)" :MM-R0..R3]
+  "02-io"    [:MM-R0..R3 :MM-ERR* "(E02nn)" "HEAP blocks it allocated"]
+  "10-lex"   [:TOK :MM-TOK-N :LIT "(LF-B LF-LEN LF-TOK)" :LITB :MM-LIT-N :MM-LITB-N :MM-ERR* "(E10nn)"]
+  "11-read"  [:NODE "fields NF-KIND NF-FIRST NF-NEXT NF-TOK NF-AUX" :MM-NODE-N :MM-ROOT :MM-ERR* "(E11nn)"]
+  "20-names" [:SYM :HASH :MM-SYM-N :MM-HASH-N :FN "(FF-SYM FF-NODE FF-KIND FF-NPARAMS FF-EXPORT)" :MM-FN-N
+              :SCOPE :MM-SCOPE-N "NODE field NF-SYM" :MM-NS-NODE :MM-ERR* "(E20nn)"]
+  "21-check" ["NODE fields NF-TYPE NF-RES" "FN fields FF-RTYPE FF-PT0..FF-PT4 FF-NSLOTS FF-FUEL" :MM-ERR* "(E21nn)"
+              "SF-BIND only through the 20-names scope API"]
+  "30-lower" [:SIR :MM-SIR-N :MM-LABEL-N :MM-MAX-DEPTH "FN fields FF-SIR FF-DEPTH" :MM-ERR* "(E30nn)"]
+  "40-a64enc" ["nothing: pure functions i64 -> i64"]
+  "41-a64gen" [:CODE "(append)" :MM-CODE-N :FIX :MM-FIX-N :LABEL "FN field FF-CODE" :MM-ERR* "(E41nn)"]
+  "42-layout" [:CODE "(patch fixups in place)" "LIT field LF-POOL" :EXP :MM-EXP-N :MM-POOL-OFF :MM-CODE-BYTES :MM-ERR* "(E42nn)"]
+  "50-out"   [:OUT :MM-OUT-N :MM-ERR* "(E50nn)"]
+  "every module" ["MM-R0..MM-R3 as return registers (rule L4)" "its own MM-STAT slots"]}
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 3. Rules for writing seed code against M. These are forced by stage-0 (measured 2026-10-02 against
+ ;;    build/native-image/amu-native, probes in the commit message) and by the seed's own R0 subset.
+ ;; ---------------------------------------------------------------------------------------------------------
+ :rules
+ [[:L1 "M is a LINEAR handle. A function that writes M (vector-assoc!, or calls a writer) RETURNS :vector-i64,
+        the new handle, and the caller rebinds it: (let [M1 (lx-push M0 ..) M2 (lx-push M1 ..)] ..). After a
+        handle is passed to a writer it is DEAD: never mention it again (stage-0 refuses some violations with
+        'vector-assoc! requires a linear handle', and the reference semantics is a COPY, so a surviving alias
+        reads stale data -- the compile-time oracle reports 'native artifact oracle inconclusive')."]
+  [:L2 "Readers take M and return :i64; they only use (vector-at M i) and call other readers. A reader call
+        does not kill M: (let [x (rd M 3) M1 (wr M 4 x)] ..) is fine."]
+  [:L3 "Every function except `main` is defn- . A public defn with a :vector-i64 parameter is refused by
+        stage-0's linearity check whenever a branch returns the handle unchanged."]
+  [:L4 "A writer that also produces an i64 stores it in M[MM-R0] (and MM-R1..R3 for more) and returns M.
+        The caller reads (vector-at M1 MM-R0) right after the call, before any other writer runs."]
+  [:L5 "Loops that WRITE M are self-recursive defn- functions with the write in tail position
+        (stage-0 turns the self tail call into a jump: 7M iterations measured, no stack growth). A `loop`
+        whose loop variable is a vector handle written with vector-assoc! is refused by stage-0. Read-only
+        loops may use loop/recur over i64 variables."]
+  [:L6 "No shadowing: let names are unique within a let ('duplicate let binding'), so number them M0 M1 M2 ..
+        and _0 _1 for discarded results. Prefer unique names in the whole function."]
+  [:L7 "At most 5 parameters per function (the seed's own call ABI, x0-x4). M counts as one."]
+  [:L8 "One body expression per defn/let/loop (no `do`). Sequence effects with let bindings."]
+  [:L9 "No top-level (def NAME [vector literal]) in seed source: stage-0 answers 'internal compiler error'
+        (measured). i64 defs are fine. Use (vector-at [..] i) inline in a defn- instead."]
+  [:L10 "Errors: on failure a module stores MM-ERR (only if it is still 0), MM-ERR-POS and, as its E-text
+        needs, MM-ERR-A/B/N, returns M, and its *-run function returns early. The driver checks MM-ERR after
+        each phase and prints the golden text of seed/HEADS :errors. No module prints anything itself."]
+  [:L11 "Determinism: nothing in the output may depend on hash-table iteration order, addresses, time or
+        environment. Iterate tables by index."]
+  [:L13 "Stage-0 defects (docs/selfhost-seed-t1-20261002.md; the native image answers 'internal compiler error' on
+        some compile paths until it is rebuilt). Measured triggers in seed-style code: a top-level vector def
+        (L9); an `if` whose arms are string literals inline as an argument inside `main`/seed-main (move the choice
+        into a defn- returning :string); string-code-point-at over a string LITERAL (T1 defect 2: index only
+        runtime strings such as the source S). Also: an arity-0 export whose value needs no capability is
+        evaluated by stage-0's oracle at COMPILE time, so every command/test main starts with a capability call."]
+  [:L12 "Name prefixes: every top-level name of a module starts with its prefix (seed/MANIFEST). Constants
+        live only in 00-ns (generated from these files) and are UPPER-CASE."]]}

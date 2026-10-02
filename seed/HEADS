@@ -1,0 +1,215 @@
+;; seed/HEADS -- the language contract of the seed compiler R0 ("Seed-0" = Seed-E + Seed-C, 41 heads). EDN.
+;; Owner: contracts. Design: docs/selfhost-seed-design-20261002.md sections 1.2, 1.3, 4.1.
+;; Every [:c NAME VALUE ...] line is a constant generated into seed/00-ns.kotoba (see seed/MEMORY-MAP header).
+;; Anything not described here is REFUSED by name (E-table below), never guessed.
+
+{:format :seed.heads/v1
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 1. Types. Every expression has exactly one type; there is no inference beyond these and no coercion.
+ ;; ---------------------------------------------------------------------------------------------------------
+ :types
+ [[:c TY-NONE 0 "not an expression (def forms, binding vectors, keywords)"]
+  [:c TY-I64 1 ":i64 -- 64-bit two's complement, arithmetic wraps modulo 2^64"]
+  [:c TY-BOOL 2 ":bool -- result of comparisons/and/or/not; only consumed by if/cond/and/or/not/="]
+  [:c TY-STR 3 ":string -- immutable bytes (ASCII in R0); literals, cap results, string-concat"]
+  [:c TY-VEC 4 ":vector-i64 -- vector handle; vector-assoc! mutates in place (linear), others copy"]
+  [:c TY-BYTES 5 ":bytes -- ONLY as the value of bytes-from-vector-i64 and the argument/result of a :bytes cap
+                  call; not a legal parameter or result type of a defn in R0"]]
+ ;; Type keywords in signatures: :i64 :bool :string :vector-i64. Anything else after a parameter -> E2105.
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 2. Lexical layer (10-lex). Bytes outside 0..127 anywhere in S -> E1002.
+ ;; ---------------------------------------------------------------------------------------------------------
+ :tokens
+ [[:c TK-LPAREN 1 "("] [:c TK-RPAREN 2 ")"] [:c TK-LBRACK 3 "["] [:c TK-RBRACK 4 "]"]
+  [:c TK-LBRACE 5 "{ (read refuses maps, E1105; lexed so the refusal names the position)"]
+  [:c TK-RBRACE 6 "}"]
+  [:c TK-INT 7 "integer: -?[0-9]+ ; the value must fit i64 (no wrapping of literals);
+                -9223372036854775808 is legal, 9223372036854775808 is not (E1004). No 0x, no N/M suffix, no ratio"]
+  [:c TK-STR 8 "string: \"...\" with escapes \\n \\t \\\\ \\\" only (E1003 otherwise); decoded bytes go to LIT/LITB"]
+  [:c TK-SYM 9 "symbol: a maximal run of [A-Za-z0-9*+!_?<>=/.-] that is not an
+                integer. Spans like `-` and `->` are symbols"]
+  [:c TK-KW 10 "keyword: ':' followed by symbol chars; the span includes the ':' (e.g. :i64 :fs/app-data)"]]
+ ;; Whitespace: space, tab, \n, \r and ','. Comments: ';' to end of line. Reader syntax # ^ ` ~ @ \ ' (as a
+ ;; prefix) -> E1005 with the one-character span. A token never spans lines except a string.
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 3. Read tree (11-read)
+ ;; ---------------------------------------------------------------------------------------------------------
+ :nodes
+ [[:c ND-ROOT 1 "the file: children = top-level forms"] [:c ND-LIST 2 "( ... )"] [:c ND-VEC 3 "[ ... ]"]
+  [:c ND-MAP 4 "{ ... } (only produced to refuse it: E1105)"] [:c ND-INT 5] [:c ND-STR 6] [:c ND-SYM 7]
+  [:c ND-KW 8]]
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 4. Keywords with a meaning (SF-HEAD of a keyword symbol, set by 20-names at intern time)
+ ;; ---------------------------------------------------------------------------------------------------------
+ :keywords
+ [[:c KW-I64 1 ":i64"] [:c KW-BOOL 2 ":bool"] [:c KW-STRING 3 ":string"] [:c KW-VECTOR-I64 4 ":vector-i64"]
+  [:c KW-EXPORT 5 ":export"] [:c KW-ELSE 6 ":else"] [:c KW-BYTES 7 ":bytes"]
+  [:c KW-FS-APP-DATA 8 ":fs/app-data"] [:c KW-CLI-ARGS 9 ":cli/args"] [:c KW-IO-WRITE-ERROR 10 ":io/write-error"]
+  [:c KW-IO-WRITE 11 ":io/write"]]
+ ;; Keywords appear ONLY in: ns (:export), signatures (types), cond (:else), typed-cap-call (wire, kinds).
+ ;; A keyword anywhere else (as a value) -> E2114.
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 5. Resolution (NF-RES of an ND-SYM node, written by 21-check): RES-CLASS * RES-SCALE + index
+ ;; ---------------------------------------------------------------------------------------------------------
+ :resolution
+ [[:c RES-SCALE 16777216 "2^24"]
+  [:c RES-LOCAL 1 "index = frame slot of a param / let / loop variable"]
+  [:c RES-FN 2 "index = FN index of a defn/defn- (in call head position only)"]
+  [:c RES-DEF 3 "index = FN index of a top-level def constant (a value reference)"]
+  [:c RES-HEAD 4 "index = head code (the symbol in head position of a builtin form)"]]
+ ;; NF-RES of an ND-LIST node = its head code (1..41; HD-CALL for a user call). Of an ND-VEC used as an
+ ;; expression = HD-VECLIT. Binding vectors (let/loop/params) get NF-RES 0.
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 6. Heads 1..41. :args = argument count and types; :res = result type; :sir = the lowering in seed/SIR.
+ ;;    "i" = :i64, "b" = :bool, "s" = :string, "v" = :vector-i64, "x" = :bytes. "n>=k" = variadic.
+ ;; ---------------------------------------------------------------------------------------------------------
+ :heads
+ [;; -- definition and binding forms (Seed-E) --
+  [:c HD-NS 1 "(ns NAME (:export [f ...])) -- exactly once, first form. NAME a symbol. The export list
+               names defn functions (E2005 if undefined). The map form {:kotoba/export ..} -> E1105"]
+  [:c HD-EXPORT 2 "(:export [sym ...]) -- only inside ns"]
+  [:c HD-DEFN 3 "(defn NAME [p :T ...] :R body) -- public; params 0..5 (E2108), each followed by its type
+                 keyword; exactly one body expression (E2118). Exported entries: params all :i64,
+                 result :i64 or :bool"]
+  [:c HD-DEFN-PRIV 4 "(defn- NAME [p :T ...] :R body) -- private, same shape"]
+  [:c HD-DEF 5 "(def NAME literal) -- literal is an integer, a string or a vector literal of integer
+                literals; the type is the literal's. A reference evaluates the literal again (no storage)"]
+  [:c HD-LET 6 "(let [n1 e1 n2 e2 ...] body) -- sequential; names unique within the let (E2112); type = body"]
+  [:c HD-LOOP 7 "(loop [n1 e1 ...] body) -- 1..10 bindings of type i64/bool/string; a value (may be non-tail);
+                 type = body"]
+  [:c HD-RECUR 8 "(recur e1 ...) -- only in tail position of the innermost loop, or of a defn body that has
+                  no enclosing loop (then it re-enters the defn). Count = binding/param count (E2107, E2106)"]
+  [:c HD-IF 9 "(if c a b) -- c:b, a and b the same type (E2104), exactly 3 args (E2110); result that type"]
+  [:c HD-AND 10 "(and b ...) n>=1 b -> b, short-circuit left to right"]
+  [:c HD-OR 11 "(or b ...) n>=1 b -> b, short-circuit"]
+  [:c HD-NOT 12 "(not b) b -> b"]
+  ;; -- comparisons and arithmetic (Seed-E) --
+  [:c HD-EQ 13 "(= x y) both i or both b -> b. Strings/vectors -> E2123"]
+  [:c HD-LT 14 "(< i i) -> b signed"] [:c HD-GT 15 "(> i i) -> b"] [:c HD-LE 16 "(<= i i) -> b"]
+  [:c HD-GE 17 "(>= i i) -> b"]
+  [:c HD-ADD 18 "(+ i i ...) n>=2 -> i, left fold, wraps"]
+  [:c HD-SUB 19 "(- i i ...) n>=2 -> i, left fold, wraps. Unary minus is NOT in R0 (E2103): write (- 0 x)"]
+  [:c HD-MUL 20 "(* i i ...) n>=2 -> i, low 64 bits"]
+  [:c HD-QUOT 21 "(quot i i) -> i, truncates toward 0; TRAPS (brk) on divisor 0 and on MIN / -1
+                  (stage-0 measured: (quot 7 -2) = -3, (quot -7 2) = -3, both traps SIGTRAP)"]
+  [:c HD-BIT-AND 22 "(bit-and i i) -> i"] [:c HD-BIT-OR 23 "(bit-or i i) -> i"]
+  [:c HD-BIT-XOR 24 "(bit-xor i i) -> i"] [:c HD-BIT-NOT 25 "(bit-not i) -> i"]
+  [:c HD-USHR 26 "(u64-shift-right x n) -> i, logical; count taken MODULO 64 (measured: (u64-shift-right -1 64)
+                  = -1, (.. -1 65) = 2^63-1, (.. -1 -1) = 1) = aarch64 lsrv"]
+  [:c HD-SHL 27 "(i64-shift-left x n) -> i, count mod 64 (measured (i64-shift-left 1 64) = 1, (.. 1 -1) = MIN)
+                 = lslv"]
+  [:c HD-SSHR 28 "(i64-shift-right x n) -> i, arithmetic, count mod 64 (measured (.. -8 65) = -4) = asrv"]
+  ;; -- vectors and strings (Seed-E) --
+  [:c HD-VECTOR-AT 29 "(vector-at v i) -> i; out of range TRAPS"]
+  [:c HD-VECTOR-CONJ 30 "(vector-conj v i) -> v (persistent: a new vector)"]
+  [:c HD-VECTOR-ASSOC 31 "(vector-assoc v i x) -> v (persistent copy)"]
+  [:c HD-VECTOR-ASSOC-BANG 32 "(vector-assoc! v i x) -> v, in place; v must be linear (MEMORY-MAP rule L1)"]
+  [:c HD-VECTOR-ALLOC 33 "(vector-alloc n) -> v of n zeros"]
+  [:c HD-STRING-CODE-POINT-AT 34 "(string-code-point-at s i) -> i; i is a BYTE offset; out of range traps"]
+  [:c HD-STRING-LENGTH 35 "(string-length s) -> i, bytes"]
+  [:c HD-VECLIT 36 "[e1 e2 ...] as an expression: 0..64 items, all i (E2116) -> v (fresh vector)"]
+  [:c HD-CALL 37 "(f e1 ...) f a defn/defn- of the file; count and types must match the signature
+                  (E2103/E2104). Forward references and mutual recursion are allowed"]
+  ;; -- Seed-C additions --
+  [:c HD-TYPED-CAP-CALL 38 "(typed-cap-call WIRE REQ RES arg) -- the four allowed shapes are :caps below
+                            (E2115 otherwise). A cap call is an effect: it is never removed or reordered"]
+  [:c HD-BYTES-FROM-VECTOR-I64 39 "(bytes-from-vector-i64 v) -> x, one byte per item (low 8 bits)"]
+  [:c HD-STRING-CONCAT 40 "(string-concat s s) -> s, exactly 2 args"]
+  [:c HD-COND 41 "(cond c1 e1 c2 e2 ... :else en) -- ci:b, all ei the same type, :else pair mandatory and
+                  last (E2109). Means (if c1 e1 (if c2 e2 ... en))"]
+  [:c HD-COUNT 41 "number of heads"]]
+
+ ;; Head spellings, index = head code (20-names compares a symbol's bytes against these at intern time).
+ :spellings ["" "ns" ":export" "defn" "defn-" "def" "let" "loop" "recur" "if" "and" "or" "not" "=" "<" ">" "<="
+             ">=" "+" "-" "*" "quot" "bit-and" "bit-or" "bit-xor" "bit-not" "u64-shift-right" "i64-shift-left"
+             "i64-shift-right" "vector-at" "vector-conj" "vector-assoc" "vector-assoc!" "vector-alloc"
+             "string-code-point-at" "string-length" "[" "(call)" "typed-cap-call" "bytes-from-vector-i64"
+             "string-concat" "cond"]
+ ;; Codes 2 (keyword), 36 and 37 have no symbol spelling: SF-HEAD is never 2, 36 or 37.
+ ;; `main`, `true`, `false`, `nil` are NOT heads. `main` is an ordinary defn name.
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 7. Capability shapes (typed-cap-call). Kind = the loader's KEXE_TYPED_* code of the request/result pair.
+ ;; ---------------------------------------------------------------------------------------------------------
+ :caps
+ [[:c CK-STRING 1 "KEXE_TYPED_STRING: :string -> :string"] [:c CK-BYTES 8 "KEXE_TYPED_BYTES_V1: :bytes -> :bytes"]
+  [:c WIRE-FS-APP-DATA 35] [:c WIRE-IO-WRITE 37] [:c WIRE-CLI-ARGS 38] [:c WIRE-IO-WRITE-ERROR 39]]
+ :cap-shapes
+ [{:form "(typed-cap-call :fs/app-data :string :string path)" :wire 35 :kind 1
+   :means "read the whole file at absolute path (inside KEXE_CAP_RESOURCES_35); also the \"<path>WRITE_SEP<text>\" write"}
+  {:form "(typed-cap-call :fs/app-data :bytes :bytes x)" :wire 35 :kind 8
+   :means "x = bytes of \"<path>WRITE_SEP<content>\": write raw bytes. STATUS 2026-10-02: stage-0 (native-image)
+           refuses a computed :bytes argument ('typed values currently require ...'); risk T3, owner 02-io"}
+  {:form "(typed-cap-call :cli/args :string :string \"\")" :wire 38 :kind 1 :means "argc as decimal text"}
+  {:form "(typed-cap-call :cli/args :string :string \"i\")" :wire 38 :kind 1 :means "argument i (0-based), \"\" past the end"}
+  {:form "(typed-cap-call :io/write-error :string :string s)" :wire 39 :kind 1 :means "write s to fd 2; answers the byte count as text"}
+  {:form "(typed-cap-call :io/write :string :string s)" :wire 37 :kind 1
+   :means "write s to fd 1. ADDED to the design's 3 wires: extract-native must print its {:ok true ..} line on stdout
+           for the qualification runner, and unit tests print on stdout"}]
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 8. Errors. Code E<mm><nn> = the integer mm*100+nn, mm = the MANIFEST module number. The driver prints
+ ;;      seed: E<code> <path>:<pos>: <text>
+ ;;    (":<pos>" omitted when MM-ERR-POS < 0) on fd 2 and exits 1. In <text>, {name} = S[MM-ERR-A..MM-ERR-B),
+ ;;    {n} = MM-ERR-N in decimal, {t} = the type name of type code MM-ERR-N (i64 bool string vector-i64 bytes).
+ ;;    The texts are GOLDEN: G3 compares them byte for byte. Add codes, never renumber or reword.
+ ;; ---------------------------------------------------------------------------------------------------------
+ :errors
+ [[:c E-USAGE 1 "usage: seed check <file> | seed compile <file> --target aarch64-macos --output <out> | seed extract-native <kseed> --symbol <name> --output <raw>"]
+  [:c E-TARGET 2 "unsupported target (only aarch64-macos)"]
+  [:c E-READ 3 "cannot read input file"]
+  [:c E-WRITE 4 "cannot write output file"]
+  [:c E-NOSYM 5 "symbol is not exported by the container"]
+  [:c E-HEAP-REGION 101 "compiler table full: region {n}"]
+  [:c E-HEAP-FULL 102 "compiler heap exhausted"]
+  [:c E-IO-READ 201 "read failed"]
+  [:c E-IO-WRITE 202 "write failed"]
+  [:c E-LEX-STRING 1001 "unterminated string literal"]
+  [:c E-LEX-ASCII 1002 "non-ASCII byte {n} (R0 accepts ASCII source only)"]
+  [:c E-LEX-ESCAPE 1003 "unsupported string escape '{name}'"]
+  [:c E-LEX-INT 1004 "integer literal out of range '{name}'"]
+  [:c E-LEX-SYNTAX 1005 "unsupported reader syntax '{name}'"]
+  [:c E-READ-CLOSE 1101 "unexpected '{name}'"]
+  [:c E-READ-EOF 1102 "unclosed '{name}' at end of file"]
+  [:c E-READ-MISMATCH 1103 "mismatched bracket '{name}'"]
+  [:c E-READ-MAP 1105 "maps are not supported"]
+  [:c E-NAMES-DUP 2001 "duplicate definition '{name}'"]
+  [:c E-NAMES-TOP 2003 "unsupported top-level form '{name}'"]
+  [:c E-NAMES-NS 2004 "the file must start with (ns NAME (:export [...]))"]
+  [:c E-NAMES-EXPORT 2005 "export of undefined function '{name}'"]
+  [:c E-CHECK-HEAD 2101 "unknown or unsupported form '{name}'"]
+  [:c E-CHECK-SYM 2102 "unknown symbol '{name}'"]
+  [:c E-CHECK-ARITY 2103 "wrong number of arguments to '{name}': expected {n}"]
+  [:c E-CHECK-TYPE 2104 "type mismatch in '{name}': expected {t}"]
+  [:c E-CHECK-TYPENAME 2105 "unsupported type '{name}'"]
+  [:c E-CHECK-RECUR-TAIL 2106 "recur is not in tail position"]
+  [:c E-CHECK-RECUR-ARITY 2107 "recur expects {n} arguments"]
+  [:c E-CHECK-PARAMS 2108 "more than 5 parameters in '{name}'"]
+  [:c E-CHECK-ELSE 2109 "cond needs a final :else clause"]
+  [:c E-CHECK-IF 2110 "if needs exactly a test, a then and an else"]
+  [:c E-CHECK-BINDINGS 2111 "malformed binding vector in '{name}'"]
+  [:c E-CHECK-DUPLOCAL 2112 "duplicate local '{name}'"]
+  [:c E-CHECK-KEYWORD 2114 "keyword '{name}' is not a value"]
+  [:c E-CHECK-CAP 2115 "unsupported capability call '{name}'"]
+  [:c E-CHECK-VECLIT 2116 "vector literal items must be i64 (at most 64)"]
+  [:c E-CHECK-BODY 2118 "'{name}' takes exactly one body expression"]
+  [:c E-CHECK-SIGNATURE 2119 "malformed signature of '{name}'"]
+  [:c E-CHECK-SLOTS 2120 "too many locals in one function ({n})"]
+  [:c E-CHECK-RESULT 2121 "result of '{name}' does not match its declared type {t}"]
+  [:c E-CHECK-EQ 2123 "= compares only i64 or bool values"]
+  [:c E-CHECK-DEF 2124 "def value must be an integer, string or vector literal: '{name}'"]
+  [:c E-LOWER-FULL 3001 "SIR table full"]
+  [:c E-LOWER-NODE 3003 "internal: cannot lower node kind {n}"]
+  [:c E-ENC-IMM 4001 "immediate out of range: {n}"]
+  [:c E-GEN-FULL 4101 "code buffer full"]
+  [:c E-GEN-OP 4102 "internal: unsupported SIR op {n}"]
+  [:c E-GEN-FRAME 4103 "frame too large ({n} slots)"]
+  [:c E-LAYOUT-RANGE 4201 "branch out of range ({n} words)"]
+  [:c E-OUT-FULL 5001 "output buffer full"]
+  [:c E-OUT-FORMAT 5003 "malformed kseed container"]]}

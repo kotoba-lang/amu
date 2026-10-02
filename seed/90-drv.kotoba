@@ -1,0 +1,16 @@
+;; seed/90-drv.kotoba -- the seed's command-line driver (prefix drv-). Owner: contracts/integration.
+;; SKELETON (2026-10-02): answers every command with the E-USAGE text and status 2. The real driver
+;; (check / compile --target aarch64-macos --output / extract-native --symbol --output, design section 3) lands
+;; with integration, once 01..50 exist.
+
+(defn- drv-err [msg :string] :i64
+  (let [o (typed-cap-call :io/write-error :string :string (string-concat "seed: " (string-concat msg "\n")))]
+    0))
+
+(defn- drv-usage [] :string
+  "usage: seed check <file> | seed compile <file> --target aarch64-macos --output <out> | seed extract-native <kseed> --symbol <name> --output <raw>")
+
+(defn- drv-main [] :i64
+  (let [argc (typed-cap-call :cli/args :string :string "")
+        e (drv-err (string-concat "E1 " (drv-usage)))]
+    2))

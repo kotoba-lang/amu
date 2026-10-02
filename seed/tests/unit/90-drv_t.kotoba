@@ -1,0 +1,8 @@
+;; deps:
+;; seed/tests/unit/90-drv_t.kotoba -- the skeleton driver answers usage with status 2 (and E1 on stderr).
+(defn- t-verdict [r :i64] :string
+  (if (= r 2) "drv-main usage status 2\n" "drv-main WRONG status\n"))
+(defn- seed-main [] :i64
+  (let [r (drv-main)
+        o (typed-cap-call :io/write :string :string (t-verdict r))]
+    0))
