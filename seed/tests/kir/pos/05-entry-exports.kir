@@ -1,0 +1,6 @@
+{:format :kotoba.kir/v4, :entry main, :exports [mk sum __kotoba_loop_1 main t], :signature {:params [], :result :i64}, :effects #{}, :functions [
+{:name mk, :params [x y], :result [:record :kir.t/Pt [[:x :i64] [:y :i64]]], :effects #{}, :body (record-new [:record :kir.t/Pt [[:x :i64] [:y :i64]]] x y), :param-types [:i64 :i64]}
+{:name sum, :params [n], :result :i64, :effects #{}, :body (__kotoba_loop_1 0 0 n), :param-types [:i64]}
+{:name __kotoba_loop_1, :params [i acc n], :result :i64, :effects #{}, :body (if (> i n) acc (__kotoba_loop_1 (+ i 1) (+ acc i) n)), :param-types [:i64 :i64 :i64]}
+{:name main, :params [], :result :i64, :effects #{}, :body (let [p (mk 3 4)] (+ (sum 4) (record-get [:record :kir.t/Pt [[:x :i64] [:y :i64]]] p :y))), :param-types []}
+{:name t, :params [], :result :i64, :effects #{}, :body (if (= (main) 14) 1 0), :param-types []}]}

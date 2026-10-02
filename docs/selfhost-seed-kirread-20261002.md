@@ -82,3 +82,40 @@ validators, while the seed has no optimizer.
 - **Stage-0 linearity rule (new, measured).** A writer whose one arm is a direct `vector-assoc!` and whose other arm is a call `(xx-id M)` is refused once a caller has read M through a reader function. Both arms must be direct `vector-assoc!` (see `kr-fail2`).
 - **Untested KIR shapes.** The reader is checked only on what stage-0 emits for the 19 ports, 4 synthetic positives and 16 negatives. Other KIR, such as a helper called twice or other gensym shapes, is refused by name rather than guessed. A non-empty `#{..}` reads as a vector and is refused only where effects are checked.
 - **Reader stack.** 11-read's item recursion is mutual, not a self tail call. A list of more than a few thousand items overflows the loader's 1 MiB stack. This is why the kexe input lexes only `:program`.
+
+## Update 2026-10-02 (wave R2/R3): KIR coverage census and the next shapes
+
+Tool: `seed/tests/kir/census.sh [seed.bin]` (+ `census.py`, BOOTSTRAP-TOOL). STAGE-0 (bootstrap-reference) compiles every
+`.kotoba` of 13 corpora (19 ports, seed/tests/{r1,corpus,conformance}, resources/kotoba/lang-conformance, examples,
+test/dual-backend, test/nbb/fixtures, bench/runtime-comparison: 391 programs, 315 compile). The seed then compiles the
+KIR (`compile-kir`) and the source (`compile`), and every arity-0 i64/bool export is run under the C loader for all
+three codes (stage-0's own, seed-via-KIR, seed-via-source). Measured with seed `0ba0bd63` (this change):
+
+| | before (R1 seed c0526b73) | after |
+|---|---:|---:|
+| programs accepted by compile-kir (of 315) | 139 (44.1%) | **241 (76.5%)** |
+| programs with runnable exports, all equal to stage-0 via KIR (of 295) | 125 (42.4%) | **224 (75.9%)** |
+| same, seed source route | 189 | 190 |
+| accepted programs with a result different from stage-0 | 0 | **0** |
+
+Body-operation coverage (occurrences of ops covered by a seed head or a 12-kirread rewrite): corpus 8,450 / 9,105
+(92.8%, 42 of 133 distinct ops); the 10 big-compiler guests below 60,399 / 66,525 (90.8%, 41 of 106).
+
+New KIR shapes read (in census order): `:entry SYM` and `:signature {..}` (141 programs; informational), exports
+filtered to emitted functions with an exportable signature (KIR lists loop helpers, lambdas and record constructors for
+implicit-export programs), vector result types (`[:record ..]`), capability effect sets `#{[:cap/call N] ..}` (others,
+e.g. `:state`, stay E1203), `:schemas #:ns{..}`, `:closure-param-indexes`, `:closure-result?`,
+`:i64-pair-chain-param-indexes` (ignored), `$` in symbols (`f$arity$2`, `__kotoba_invoke$arity1`), and the rewrites
+`(bool-not b)` -> `(not b)`, `(record-assoc SCHEMA r :f v)` -> `(assoc r :f v)`, `(- x)` -> `(- 0 x)`, `(min a b)`/`(max a b)`
+-> `(let [__kr_a a __kr_b b] (if (< ..) ..))` (only when the program defines no such function). No new SIR op.
+
+The remaining gaps need seed heads (R3, logged in CONTRACT-REQUESTS): `pair`/`pair-first`/`pair-second` (18 programs;
+KIR lambda-lifts every closure to `(pair tag env)` + a dispatch on `pair-first`, so closures follow), `string-substring`,
+`string=?`, `option-*-of`, `result-*-of`, `typed-list-*`, `document-*`; and functions with more than 5 parameters (E2108).
+
+**Largest KIR available** (the big compiler's native guests, KIR cut out of their stage-0 kexes in
+/private/tmp/kotoba-guest-cache): ds (desugar port, 1,041 functions, 633,680 KIR bytes) is lexed, read, rewritten (39 loop
+helpers inlined) and named in **0.13 s wall, 73 MB RSS** (the fixed 64 MiB heap), using 1,332,519 heap words (10.7 MB,
+**16.8 B per KIR byte**), then refused by 21-check (E2128 on `[:option ..]`). vx (173 KB): 0.05 s, 372,742 words. cc, di, oa,
+vc stop in the lexer (E1003 `\r` escape), case on a non-ASCII string (E1002); ri, oat, codec at 21-check (`:document`, `:f64`).
+No big guest compiles end to end yet; time and memory are for the front half only.
