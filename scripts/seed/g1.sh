@@ -9,7 +9,7 @@ setopt pipefail
 source "$(dirname "$0")/lib.sh"
 bin=${1:-$SEED_BUILD/seed-0.bin}; off=${2:-$(cat ${bin%.bin}.offset)}
 P=${SEED_PORTS:-/Users/junkawasaki/github/kotoba-lang/amu-embench/bench/embench/ports}
-W=$SEED_BUILD/g1; mkdir -p $W
+W=$SEED_BUILD/g1-${bin:t:r}; mkdir -p $W
 L=$(seed_loader) || exit 2
 KB=$SEED_BUILD/kexe-benchmark
 if [ ! -x $KB ] || [ $SEED_REPO/bench/runtime-comparison/kexe-benchmark.c -nt $KB ]; then

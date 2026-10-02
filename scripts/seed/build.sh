@@ -6,13 +6,14 @@
 #                         build/seed/seed-0.{kexe,bin,offset,info}. Labelled BOOTSTRAP in seed-0.info.
 #   build.sh N   (N>=1)   seed-(N-1) compiles the unity source under the C loader only (no node/JVM/nbb):
 #                           seed-(N-1) compile seed-unity.kotoba --target aarch64-macos --output seed-N.kseed
-#                           seed-(N-1) extract-native seed-N.kseed --symbol main --output seed-N.bin  (stdout :offset N)
+#                           extract `main` -> seed-N.bin (scripts/seed/seed-cc.sh extract: shell head/tail on the kseed/v1
+#                           header, until the seed reads binary containers itself; prints :offset N)
 #                         -> build/seed/seed-N.{kseed,bin,offset,info}
 #   build.sh fixed-point  0, 1, 2, then `cmp seed-1.bin seed-2.bin` (gate G4, first half). Exit 0 iff identical.
 #
 # Env: see lib.sh (SEED_STAGE0, SEED_BUILD, SEED_RESOURCES_35 = wire-35 scope, default the repo).
-#      SEED_HEX_STDOUT=1: the seed writes its container as hex on stdout instead of through wire 35 (the T3
-#      fallback); build.sh decodes it with `xxd -r -p`.
+#      SEED_HEX_STDOUT=1 (default; 0 only once the seed writes binary files): the seed writes its container as hex
+#      on stdout instead of through wire 35 (the T3 fallback); build.sh decodes it with `xxd -r -p`.
 emulate -L zsh
 setopt pipefail
 source "$(dirname "$0")/lib.sh"
@@ -48,7 +49,7 @@ stageN() {
   [ -f $B/seed-$p.bin ] && [ -f $B/seed-$p.offset ] || { echo "build: seed-$p missing (run build.sh $p)" >&2; return 2; }
   [ -f $U ] || unity || return $?
   rm -f $B/seed-$n.*(N)
-  if [ -n "$SEED_HEX_STDOUT" ]; then
+  if [ "${SEED_HEX_STDOUT:-1}" = 1 ]; then
     seed_run $B/seed-$p.bin $(cat $B/seed-$p.offset) compile $U --target aarch64-macos --output - > $B/seed-$n.hex 2> $B/seed-$n.log \
       || { echo "build: seed-$p compile failed:"; head -5 $B/seed-$n.log; return 1; }
     xxd -r -p $B/seed-$n.hex > $B/seed-$n.kseed
@@ -56,8 +57,8 @@ stageN() {
     seed_run $B/seed-$p.bin $(cat $B/seed-$p.offset) compile $U --target aarch64-macos --output $B/seed-$n.kseed > $B/seed-$n.log 2>&1 \
       || { echo "build: seed-$p compile failed:"; head -5 $B/seed-$n.log; return 1; }
   fi
-  out=$(seed_run $B/seed-$p.bin $(cat $B/seed-$p.offset) extract-native $B/seed-$n.kseed --symbol main --output $B/seed-$n.bin 2>>$B/seed-$n.log) \
-    || { echo "build: seed-$p extract-native failed: $out"; return 1; }
+  out=$(zsh $SEED_REPO/scripts/seed/seed-cc.sh extract $B/seed-$n.kseed main $B/seed-$n.bin 2>>$B/seed-$n.log) \
+    || { echo "build: extract of main from seed-$n.kseed failed: $out"; return 1; }
   echo "$out" | sed -n 's/.*:offset \([0-9]*\).*/\1/p' > $B/seed-$n.offset
   [ -s $B/seed-$n.offset ] && [ -s $B/seed-$n.bin ] || { echo "build: no offset/bin from extract-native: $out"; return 1; }
   { echo "label seed-$n built by seed-$p under tools/kexe_loader.c"
