@@ -1,0 +1,219 @@
+;; seed/tests/unit/01-mem_t.kotoba -- unit test of 01-mem (arena, fills, copy, growable arrays, FNV-1a, decimal).
+;; Prints one line per check on stdout: "ok <name>" / "FAIL <name> <value>"; the exit status is the number of failures.
+
+(defn- t-out [s :string] :i64
+  (let [o (typed-cap-call :io/write :string :string s)] 0))
+
+;; check: 1 on failure
+(defn- t-eq [name :string got :i64 want :i64] :i64
+  (if (= got want)
+    (let [a (t-out (string-concat "ok " (string-concat name "\n")))] 0)
+    (let [a (t-out (string-concat "FAIL " (string-concat name (string-concat " got " (string-concat (mem-u2dec got) (string-concat " want " (string-concat (mem-u2dec want) "\n")))))))] 1)))
+
+(defn- t-show [name :string v :i64] :i64
+  (t-out (string-concat name (string-concat " = " (string-concat (mem-u2dec v) "\n")))))
+
+;; M words [a, a+n) = a, a+1 ... style fill with 100+k
+(defn- t-seq [M0 :vector-i64 dst :i64 k :i64 n :i64] :vector-i64
+  (if (>= k n) (mem-keep M0) (t-seq (vector-assoc! M0 (+ dst k) (+ 100 k)) dst (+ k 1) n)))
+
+(defn- t-sum [M :vector-i64 a :i64 n :i64 acc :i64] :i64
+  (if (<= n 0) acc (t-sum M (+ a 1) (- n 1) (+ (* acc 7) (vector-at M a)))))
+
+;; straight-line pushes (stage-0 refuses a loop whose step is a call of mem-vec-push, see 01-mem H3/H4)
+(defn- t-push10 [M0 :vector-i64 h :i64 base :i64] :vector-i64
+  (mem-vec-push (mem-vec-push (mem-vec-push (mem-vec-push (mem-vec-push (mem-vec-push (mem-vec-push (mem-vec-push (mem-vec-push (mem-vec-push M0 h (* (+ base 0) 3)) h (* (+ base 1) 3)) h (* (+ base 2) 3)) h (* (+ base 3) 3)) h (* (+ base 4) 3)) h (* (+ base 5) 3)) h (* (+ base 6) 3)) h (* (+ base 7) 3)) h (* (+ base 8) 3)) h (* (+ base 9) 3)))
+
+(defn- t-push100 [M0 :vector-i64 h :i64] :vector-i64
+  (t-push10 (t-push10 (t-push10 (t-push10 (t-push10 (t-push10 (t-push10 (t-push10 (t-push10 (t-push10 M0 h 0) h 10) h 20) h 30) h 40) h 50) h 60) h 70) h 80) h 90))
+
+(defn- t-vec-sum [M :vector-i64 h :i64 k :i64 n :i64 acc :i64] :i64
+  (if (>= k n) acc (t-vec-sum M h (+ k 1) n (+ acc (mem-vec-at M h k)))))
+
+(defn- t-gt [a :i64 b :i64] :i64 (if (> a b) 1 0))
+(defn- t-in [x :i64 lo :i64 hi :i64] :i64 (if (< x lo) 0 (if (< x hi) 1 0)))
+(defn- t-streq-run [a :string b :string i :i64 n :i64] :i64
+  (cond (>= i n) 1
+        (= (string-code-point-at a i) (string-code-point-at b i)) (t-streq-run a b (+ i 1) n)
+        :else 0))
+;; b is copied through string-concat so that it is a runtime string (L13: no indexing of literals)
+(defn- t-len-eq [a :string b :string] :i64
+  (cond (= (string-length a) (string-length b)) (t-streq-run a (string-concat b "") 0 (string-length a))
+        :else 0))
+
+;; failures are accumulated in M[MM-STAT-BASE]; every group returns the handle
+(defn- t-fin [M0 :vector-i64 f :i64] :vector-i64
+  (vector-assoc! M0 MM-STAT-BASE (+ (vector-at M0 MM-STAT-BASE) f)))
+
+;; --- groups (each returns the number of failures; M is threaded only through the writers) ---
+(defn- t-new [M :vector-i64] :vector-i64
+  (let [f (+ (t-eq "version" (vector-at M MM-VERSION) MM-LAYOUT-VERSION)
+             (+ (t-eq "tok-n" (vector-at M MM-TOK-N) 1)
+                (+ (t-eq "out-n" (vector-at M MM-OUT-N) 1)
+                   (+ (t-eq "label-n" (vector-at M MM-LABEL-N) 1)
+                      (+ (t-eq "hash-n" (vector-at M MM-HASH-N) 0)
+                         (+ (t-eq "heap-top" (vector-at M MM-HEAP-TOP) MM-HEAP-BASE)
+                            (+ (t-eq "err" (vector-at M MM-ERR) 0)
+                               (+ (t-eq "err-pos" (vector-at M MM-ERR-POS) -1)
+                                  (+ (t-eq "r0" (vector-at M MM-R0) 0)
+                                     (t-eq "heap-word-zero" (vector-at M (+ MM-HEAP-BASE 5)) 0))))))))))]
+    (t-fin M f)))
+
+(defn- t-alloc [M0 :vector-i64] :vector-i64
+  (let [M1 (mem-alloc M0 10)
+        a (vector-at M1 MM-R0)
+        M2 (mem-alloc M1 5)
+        b (vector-at M2 MM-R0)
+        top (vector-at M2 MM-HEAP-TOP)
+        M3 (mem-alloc M2 -1)
+        r3 (vector-at M3 MM-R0)
+        e3 (vector-at M3 MM-ERR)
+        top3 (vector-at M3 MM-HEAP-TOP)
+        f (+ (t-eq "alloc-1" a MM-HEAP-BASE)
+             (+ (t-eq "alloc-2" b (+ MM-HEAP-BASE 10))
+                (+ (t-eq "alloc-top" top (+ MM-HEAP-BASE 15))
+                   (+ (t-eq "alloc-neg-r0" r3 240)
+                      (+ (t-eq "alloc-neg-err" e3 E-HEAP-FULL)
+                         (t-eq "alloc-neg-top" top3 (+ MM-HEAP-BASE 15)))))))
+        M4 (mem-set M3 MM-ERR 0)]
+    (t-fin M4 f)))
+
+(defn- t-fill-copy [M0 :vector-i64] :vector-i64
+  (let [M1 (t-seq M0 600 0 10)
+        s0 (t-sum M1 600 10 0)
+        M2 (mem-fill M1 700 4 9)
+        fl (+ (vector-at M2 700) (+ (vector-at M2 703) (vector-at M2 704)))
+        M3 (mem-copy M2 610 600 10)
+        s1 (t-sum M3 610 10 0)
+        M4 (t-seq M3 800 0 10)
+        w4 (t-sum M4 800 7 0)
+        M5 (mem-copy M4 803 800 7)
+        s2 (t-sum M5 803 7 0)
+        M6 (t-seq M5 900 0 10)
+        w6 (t-sum M6 903 7 0)
+        M7 (mem-copy M6 900 903 7)
+        s3 (t-sum M7 900 7 0)
+        M8 (mem-copy M7 900 900 5)
+        s4 (t-sum M8 900 7 0)
+        f (+ (t-eq "fill" fl 18)
+             (+ (t-eq "copy-disjoint" s1 s0)
+                (+ (t-eq "copy-overlap-up" s2 w4)
+                   (+ (t-eq "copy-overlap-down" s3 w6)
+                      (t-eq "copy-same" s4 s3)))))]
+    (t-fin M8 f)))
+
+(defn- t-vec [M0 :vector-i64] :vector-i64
+  (let [M1 (mem-vec-new M0 2)
+        h (vector-at M1 MM-R0)
+        M2 (t-push100 M1 h)
+        len (mem-vec-len M2 h)
+        cap (mem-vec-cap M2 h)
+        s (t-vec-sum M2 h 0 100 0)
+        M3 (mem-vec-set M2 h 50 7)
+        x (mem-vec-at M3 h 50)
+        M4 (mem-vec-new M3 0)
+        h2 (vector-at M4 MM-R0)
+        M5 (mem-vec-push M4 h2 42)
+        f (+ (t-eq "vec-len" len 100)
+             (+ (t-eq "vec-cap-grew" cap 128)
+                (+ (t-eq "vec-sum" s 14850)
+                   (+ (t-eq "vec-set" x 7)
+                      (+ (t-eq "vec-new-cap0" (mem-vec-cap M5 h2) 1)
+                         (+ (t-eq "vec-push-cap0" (mem-vec-at M5 h2 0) 42)
+                            (t-eq "vec-headers-apart" (t-gt h2 h) 1)))))))]
+    (t-fin M5 f)))
+
+(defn- t-hash [M0 :vector-i64 S :string] :vector-i64
+  (let [M1 (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! M0 1010 102) 1011 111) 1012 111) 1013 98) 1014 97) 1015 114)
+        M3 (vector-assoc! M1 1020 97)
+        fb (string-concat "foo" "bar")
+        hw (mem-hash-words M3 1010 6)
+        hs (mem-hash-str fb 0 6)
+        n (string-length S)
+        M4 (mem-put-bytes M3 S 0 n 1100)
+        hp (mem-hash-words M4 1100 n)
+        h0 (mem-hash-str S 0 n)
+        f (+ (t-eq "hash-empty" (mem-hash-words M4 1010 0) -3750763034362895579)
+             (+ (t-eq "hash-a" (mem-hash-words M4 1020 1) -5808556873153909620)
+                (+ (t-eq "hash-foobar-words" hw -8821353812377114648)
+                   (+ (t-eq "hash-foobar-str" hs -8821353812377114648)
+                      (+ (t-eq "hash-str-vs-words" h0 hp)
+                         (+ (t-eq "hash-empty-str" (mem-hash-str S 3 3) -3750763034362895579)
+                            (+ (t-eq "put-bytes-first" (vector-at M4 1100) (string-code-point-at S 0))
+                               (t-eq "put-bytes-last" (vector-at M4 (+ 1100 (- n 1))) (string-code-point-at S (- n 1)))))))))) ]
+    (t-fin M4 f)))
+
+(defn- t-cmp [M0 :vector-i64 S :string] :vector-i64
+  (let [M1 (t-seq M0 1200 0 6)
+        M2 (t-seq M1 1210 0 6)
+        M3 (mem-set M2 1215 0)
+        f (+ (t-eq "span-eq-yes" (mem-span-eq S 0 0 5) 1)
+             (+ (t-eq "span-eq-empty" (mem-span-eq S 0 2 0) 1)
+                (+ (t-eq "span-eq-no" (mem-span-eq S 0 (- (string-length S) 3) 3) 0)
+                   (+ (t-eq "words-eq-yes" (mem-words-eq M3 1200 1210 5) 1)
+                      (+ (t-eq "words-eq-no" (mem-words-eq M3 1200 1210 6) 0)
+                         (+ (t-eq "pow2-1" (mem-ceil-pow2 1) 1)
+                            (+ (t-eq "pow2-5" (mem-ceil-pow2 5) 8)
+                               (+ (t-eq "pow2-4096" (mem-ceil-pow2 4096) 4096)
+                                  (+ (t-eq "slot" (mem-slot -359469427895467311 131072) (bit-and -359469427895467311 131071))
+                                     (t-eq "slot-range" (t-in (mem-slot -1 8) 0 8) 1))))))))))]
+    (t-fin M3 f)))
+
+(defn- t-dec-line [name :string n :i64 want :string] :i64
+  (let [got (mem-u2dec n)
+        a (t-out (string-concat name (string-concat " " (string-concat got "\n"))))]
+    (t-eq (string-concat "dec-" name) (t-len-eq got want) 1)))
+
+(defn- t-dec [M0 :vector-i64] :vector-i64
+  (let [f (+ (t-dec-line "zero" 0 "0")
+             (+ (t-dec-line "seven" 7 "7")
+                (+ (t-dec-line "ten" 10 "10")
+                   (+ (t-dec-line "n12345" 12345 "12345")
+                      (+ (t-dec-line "minus1" -1 "-1")
+                         (+ (t-dec-line "minus987" -987 "-987")
+                            (+ (t-dec-line "max" 9223372036854775807 "9223372036854775807")
+                               (t-dec-line "min" -9223372036854775808 "-9223372036854775808"))))))))]
+    (t-fin M0 f)))
+
+(defn- t-parse [M0 :vector-i64] :vector-i64
+  (let [d (string-concat "12" "345")
+        e (string-concat "-" "5")
+        f (+ (t-eq "parse-12345" (mem-parse-dec d 0 5) 12345)
+             (+ (t-eq "parse-partial" (mem-parse-dec d 1 3) 23)
+                (+ (t-eq "parse-empty" (mem-parse-dec d 2 2) -1)
+                   (+ (t-eq "parse-nondigit" (mem-parse-dec e 0 2) -1)
+                      (t-eq "parse-roundtrip" (mem-parse-dec (mem-u2dec 9876543210) 0 10) 9876543210)))))]
+    (t-fin M0 f)))
+
+(defn- t-full [M0 :vector-i64] :vector-i64
+  (let [top0 (vector-at M0 MM-HEAP-TOP)
+        left (- MM-HEAP-END top0)
+        M1 (mem-alloc M0 left)
+        a (vector-at M1 MM-R0)
+        t1 (vector-at M1 MM-HEAP-TOP)
+        M2 (mem-alloc M1 1)
+        e2 (vector-at M2 MM-ERR)
+        M3 (mem-fail M2 7)
+        e3 (vector-at M3 MM-ERR)
+        f (+ (t-eq "full-exact" a top0)
+             (+ (t-eq "full-top" t1 MM-HEAP-END)
+                (+ (t-eq "full-over-err" e2 E-HEAP-FULL)
+                   (t-eq "first-error-wins" e3 E-HEAP-FULL))))]
+    (t-fin M3 f)))
+
+(defn- seed-main [] :i64
+  (let [S (typed-cap-call :cli/args :string :string "0")
+        o (t-out "01-mem unit\n")
+        M0 (mem-new)
+        M1 (t-new M0)
+        M2 (t-alloc M1)
+        M3 (t-fill-copy M2)
+        M4 (t-vec M3)
+        M5 (t-hash M4 S)
+        M6 (t-cmp M5 S)
+        M7 (t-dec M6)
+        M8 (t-parse M7)
+        M9 (t-full M8)
+        fails (vector-at M9 MM-STAT-BASE)
+        z (t-show "failures" fails)]
+    fails))
