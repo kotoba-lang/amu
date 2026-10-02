@@ -1,0 +1,888 @@
+;; seed/12-kirread.kotoba -- the KIR text reader of the seed compiler (module 12, prefix kr-). Owner: agent KIR.
+;; Design: docs/selfhost-seed-design-20261002.md section 5.2 (the seed backend as a KIR consumer); report and measurements:
+;; docs/selfhost-seed-kirread-20261002.md.
+;;
+;; Input: the KIR text stage-0 writes as the :program of a :kotoba.kexe/v1 artifact (`amu compile --target aarch64-macos
+;; --output x.kexe`), i.e. one EDN map {:format :kotoba.kir/v3|v4 :entry nil :exports [..] :signature nil :effects #{}
+;; :functions [{:name f :params [p ..] :result :T :effects #{} :body EXPR [:param-types [:T ..]]} ..]}, or a whole
+;; kexe/v1 (then only its :program is lexed, kr-prog). Output: the seed's own read tree of an equivalent Seed-0
+;; program, so that 20-names, 21-check (the soundness gate: everything outside Seed-0 is still refused by name),
+;; 30-lower, 41-a64gen, 42-layout and 50-out run unchanged:
+;;     (ns kir (:export [..]))  (defn f [p :T ..] :R EXPR') ...
+;; The rewrites EXPR -> EXPR' (all in place on the read tree, new nodes only where a form needs more children):
+;;   (vector-new e ..)              -> [e ..]                     (KIR spelling of a vector literal)
+;;   (string-byte-length s)         -> (string-length s)          (both are the byte length, pair_second)
+;;   true / false                   -> (= 0 0) / (= 0 1)          (Seed-0 has no boolean literals)
+;;   (let [__kotoba_and_N x] (if __kotoba_and_N y __kotoba_and_N)) -> (and x y)   KIR's expansion of and/or, recovered
+;;   (let [__kotoba_or_N x] (if __kotoba_or_N __kotoba_or_N y))    -> (or x y)    so that the seed lowers them as from
+;;   (if x false true)              -> (not x)                    source (BRZ/BRNZ chains, UN NOT; no let slot)
+;;   (__kotoba_loop_N a1 .. an)     -> (loop [p1 a1 .. pn an] BODY')   where __kotoba_loop_N is the KIR loop helper with
+;;                                     params [p1 .. pn] and body BODY; inside BODY' the helper's own calls become
+;;                                     (recur ..). KIR lifts every `loop` into such a helper (loop vars first, then the
+;;                                     captured locals, passed unchanged); inlining it back keeps the seed's loop code and
+;;                                     fuel rule (one unit per back edge) and avoids helpers with more than 5 parameters
+;;                                     (md5sum has one with 9). A helper must be called exactly once, with its arity
+;;                                     (E1204 otherwise); helper definitions are not emitted as functions. Captured
+;;                                     locals that are provably invariant are dropped from the loop (kr-drop).
+;;   v3 functions have no :param-types: every parameter is declared :i64 (21-check refuses the program if that is wrong).
+;;   :effects must be empty, :entry and :signature nil (E1203); an unknown field is E1202; anything else is E1201.
+;;
+;; Lexing: kr-lex is 10-lex's scan with two changes: `{` `}` are read as `[` `]` (a map is read as the vector of its
+;; alternating keys and values; 11-read is unchanged) and a `#` directly before `{` is skipped (the empty set #{} of
+;; :effects). Names in the generated forms (ns, defn, loop, recur, =, 0, 1, string-length, :export, :i64, and, or, not,
+;; the namespace name kir) need tokens whose span spells them: the driver appends kr-prelude to the KIR text (string-concat) and the
+;; reader uses its tokens. The prelude forms are the last kr-np top-level atoms of the read tree and are dropped.
+;;
+;;   (kr-lex M S) -> M   tokens of S (MM-R0 = count), like lx-run
+;;   (kr-run M S) -> M   after rd-run: rewrites the tree, MM-ROOT = the new root (ns form first). MM-ERR on failure:
+;;                       E1201 not a KIR program, E1202 unsupported field, E1203 unsupported value, E1204 loop helper not
+;;                       called exactly once with its arity, E101/E102 table full; {name} = the span of the node named.
+;;
+;; M cells (MEMORY-MAP: M[MM-STAT-BASE+60..63], free after the MANIFEST grew to 15 files; see CONTRACT-REQUESTS):
+;;   124 first prelude token, 125 the :exports vector node, 126 the :functions vector node, 127 the function table
+;;   (heap address; 1 = ":format seen" before the table exists). Function table: word 0 = function count, word 1 = the
+;;   address of the new string-literal records, word 2 = the next new literal index, then (from word kr-th) one record
+;;   of kr-w words per function (kr-f-*), then the new literal records (4 words, LF-* layout).
+;;
+;; String literals: KIR repeats a def's string at every use (it has no defs), so the LIT table of 10-lex is rebuilt
+;; from the strings the emitted program contains, in walk order, equal bytes sharing one record (kr-str, kr-lits): the
+;; pool then holds each distinct string once, as on the source route.
+
+(def kr-np 14)
+(def kr-c-pb 124)
+(def kr-c-exp 125)
+(def kr-c-fns 126)
+(def kr-c-tab 127)
+(def kr-w 8)
+(def kr-th 3)
+(def kr-f-name 0)
+(def kr-f-params 1)
+(def kr-f-result 2)
+(def kr-f-body 3)
+(def kr-f-ptypes 4)
+(def kr-f-used 5)
+(def kr-f-map 6)
+(def kr-f-drop 7)
+(def kr-e-doc 1201)
+(def kr-e-field 1202)
+(def kr-e-value 1203)
+(def kr-e-helper 1204)
+
+;; prelude token k (0-based): 0 ns, 1 kir, 2 :export, 3 defn, 4 loop, 5 recur, 6 =, 7 0, 8 1, 9 string-length, 10 :i64,
+;; 11 and, 12 or, 13 not
+(defn- kr-prelude [] :string "\n ns kir :export defn loop recur = 0 1 string-length :i64 and or not\n")
+
+;; ---------------------------------------------------------------------------------------------------------
+;; lexing (10-lex's scan, maps read as vectors)
+;; ---------------------------------------------------------------------------------------------------------
+(defn- kr-punct [c :i64] :i64
+  (cond (= c 123) TK-LBRACK (= c 125) TK-RBRACK :else (lx-punct c)))
+
+;; 1 when S[i] is the '#' of a set opener "#{"
+(defn- kr-set-open [S :string i :i64] :i64
+  (cond (>= (+ i 1) (string-length S)) 0
+        (= (lx-ch S i) 35) (kr-set-open2 S i)
+        :else 0))
+
+(defn- kr-set-open2 [S :string i :i64] :i64 (if (= (lx-ch S (+ i 1)) 123) 1 0))
+
+(defn- kr-scan [M :vector-i64 S :string i :i64 end :i64] :vector-i64
+  (if (>= i end)
+    (lx-id M)
+    (if (= (vector-at M MM-ERR) 0)
+      (let [c (lx-ch S i)
+            pk (kr-punct c)]
+        (cond
+          (lx-ws? c) (kr-scan M S (+ i 1) end)
+          (= c 59) (kr-scan M S (lx-eol S i) end)
+          (= (kr-set-open S i) 1) (kr-scan M S (+ i 1) end)
+          (> pk 0) (kr-scan (lx-push M pk i (+ i 1) 0) S (+ i 1) end)
+          (lx-multi? c)
+          (let [j (lx-tok-end S i)]
+            (kr-scan (lx-token M S i j) S (lx-after S i j) end))
+          :else (lx-fail M E-LEX-SYNTAX i i (+ i 1))))
+      (lx-id M))))
+
+;; A kexe/v1 input: only the value of its depth-1 key :program is lexed (then the prelude). The rest of a kexe (its
+;; :code vector has one integer per code byte, 56k for xgboost) would exceed what 11-read's item recursion can hold on
+;; the loader's 1 MiB stack. Byte scans that skip strings and comments and count brackets:
+(defn- kr-dd [c :i64] :i64
+  (cond (= c 40) 1 (= c 91) 1 (= c 123) 1 (= c 41) -1 (= c 93) -1 (= c 125) -1 :else 0))
+
+(defn- kr-after-str [S :string i :i64 end :i64] :i64
+  (let [e (lx-str-find S i)]
+    (if (< e 0) end (+ e 1))))
+
+;; 1 when S[i ..) is ":program {"
+(defn- kr-at-prog [S :string i :i64 end :i64] :i64
+  (cond (> (+ i 10) end) 0
+        (= (mem-hash-str S i (+ i 9)) -7261840534770076423) (kr-eq (lx-ch S (+ i 9)) 123)
+        :else 0))
+
+;; the offset of the '{' that opens the value of the depth-1 key :program in S[i, end) (d = the depth at i), -1 if none
+(defn- kr-prog [S :string i :i64 end :i64 d :i64] :i64
+  (if (>= i end)
+    -1
+    (let [c (lx-ch S i)]
+      (cond (= c 34) (kr-prog S (kr-after-str S i end) end d)
+            (= c 59) (kr-prog S (lx-eol S i) end d)
+            (= (* (kr-eq d 1) (kr-at-prog S i end)) 1) (+ i 9)
+            :else (kr-prog S (+ i 1) end (+ d (kr-dd c)))))))
+
+;; the offset after the bracket that closes the one opened at i (d = 0 before i); end when unbalanced
+(defn- kr-close [S :string i :i64 end :i64 d :i64] :i64
+  (if (>= i end)
+    end
+    (let [c (lx-ch S i)
+          d2 (+ d (kr-dd c))]
+      (cond (= c 34) (kr-close S (kr-after-str S i end) end d)
+            (= c 59) (kr-close S (lx-eol S i) end d)
+            (= d2 0) (+ i 1)
+            :else (kr-close S (+ i 1) end d2)))))
+
+(defn- kr-lex3 [M :vector-i64 S :string p :i64 l0 :i64] :vector-i64
+  (if (< p 0)
+    (kr-scan M S 0 (string-length S))
+    (kr-scan (kr-scan M S p (kr-close S p l0 0)) S l0 (string-length S))))
+
+(defn- kr-lex2 [M :vector-i64 S :string] :vector-i64
+  (let [l0 (- (string-length S) (string-length (kr-prelude)))]
+    (if (= (vector-at M MM-ERR) 0)
+      (lx-count (kr-lex3 M S (kr-prog S 0 l0 0) l0))
+      (lx-id M))))
+
+(defn- kr-lex [M :vector-i64 S :string] :vector-i64
+  (kr-lex2 (lx-ascii M S 0) S))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; accessors and writers
+;; ---------------------------------------------------------------------------------------------------------
+(defn- kr-na [n :i64 f :i64] :i64 (+ (+ MM-NODE-BASE (* n MM-NODE-W)) f))
+(defn- kr-nf [M :vector-i64 n :i64 f :i64] :i64 (vector-at M (kr-na n f)))
+(defn- kr-kind [M :vector-i64 n :i64] :i64 (kr-nf M n NF-KIND))
+(defn- kr-first [M :vector-i64 n :i64] :i64 (kr-nf M n NF-FIRST))
+(defn- kr-next [M :vector-i64 n :i64] :i64 (kr-nf M n NF-NEXT))
+(defn- kr-tf [M :vector-i64 t :i64 f :i64] :i64 (vector-at M (+ (+ MM-TOK-BASE (* t MM-TOK-W)) f)))
+(defn- kr-eq [a :i64 b :i64] :i64 (if (= a b) 1 0))
+(defn- kr-ne [a :i64 b :i64] :i64 (if (= a b) 0 1))
+
+(defn- kr-count [M :vector-i64 n :i64] :i64
+  (loop [c (kr-first M n) i 0]
+    (if (= c 0) i (recur (kr-next M c) (+ i 1)))))
+
+(defn- kr-id [M :vector-i64] :vector-i64 (vector-assoc! M MM-VERSION MM-LAYOUT-VERSION))
+(defn- kr-put [M :vector-i64 i :i64 v :i64] :vector-i64 (vector-assoc! M i v))
+(defn- kr-nset [M :vector-i64 n :i64 f :i64 v :i64] :vector-i64 (vector-assoc! M (kr-na n f) v))
+
+;; a fresh node (fields not listed are 0: the region is zero and never reused)
+(defn- kr-node [M :vector-i64 n :i64 kind :i64 tok :i64 aux :i64] :vector-i64
+  (let [M1 (kr-nset M n NF-KIND kind)
+        M2 (kr-nset M1 n NF-TOK tok)]
+    (kr-nset M2 n NF-AUX aux)))
+
+;; E101 with region 4 (the NODE table, as 11-read), unless an error is already recorded
+(defn- kr-full [M :vector-i64] :vector-i64
+  (let [e (vector-at M MM-ERR)
+        n (vector-at M MM-ERR-N)
+        M1 (vector-assoc! M MM-ERR (mem-sel e e E-HEAP-REGION))]
+    (vector-assoc! M1 MM-ERR-N (mem-sel e n 4))))
+
+;; reserve k nodes: MM-R0 = the first; E101 when the NODE table is full
+(defn- kr-alloc [M :vector-i64 k :i64] :vector-i64
+  (let [n (vector-at M MM-NODE-N)]
+    (if (> (+ n k) MM-NODE-CAP)
+      (kr-full M)
+      (kr-put (kr-put M MM-NODE-N (+ n k)) MM-R0 n))))
+
+;; token field address (pure)
+(defn- kr-ta [t :i64 f :i64] :i64 (+ (+ MM-TOK-BASE (* t MM-TOK-W)) f))
+
+;; error naming node n (first error wins). Stage-0 linearity: reads first (inline vector-at), the writes in kr-fail2.
+(defn- kr-fail2 [M :vector-i64 code :i64 a :i64 b :i64] :vector-i64
+  (if (= (vector-at M MM-ERR) 0)
+    (let [M1 (vector-assoc! M MM-ERR code)
+          M2 (vector-assoc! M1 MM-ERR-POS a)
+          M3 (vector-assoc! M2 MM-ERR-A a)]
+      (vector-assoc! M3 MM-ERR-B b))
+    (vector-assoc! M MM-VERSION MM-LAYOUT-VERSION)))
+
+(defn- kr-fail [M :vector-i64 code :i64 n :i64] :vector-i64
+  (let [t (vector-at M (kr-na n NF-TOK))
+        a (vector-at M (kr-ta t TF-START))
+        b (vector-at M (kr-ta t TF-END))]
+    (kr-fail2 M code a b)))
+
+(defn- kr-failed [M :vector-i64] :bool (> (vector-at M MM-ERR) 0))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; spellings the reader recognises: length + FNV-1a 64 of the span (mem-hash-str), as the driver matches its commands
+;; ---------------------------------------------------------------------------------------------------------
+(defn- kr-len-ok [len :i64 want :i64 code :i64] :i64 (if (= len want) code 0))
+
+;; 1 :format 2 :entry 3 :exports 4 :signature 5 :effects 6 :functions 7 :name 8 :params 9 :result 10 :body
+;; 11 :param-types 12 :kotoba.kir/v3 13 :kotoba.kir/v4 14 nil 15 true 16 false 17 vector-new 18 string-byte-length
+;; 21 let 22 if ; 0 = none of them
+(defn- kr-code-of [len :i64 h :i64] :i64
+  (cond
+    (= h 8937795140641149370) (kr-len-ok len 7 1)
+    (= h 6581774632722671467) (kr-len-ok len 6 2)
+    (= h 4829298807106586200) (kr-len-ok len 8 3)
+    (= h -3234123433174056955) (kr-len-ok len 10 4)
+    (= h -6564845071784922083) (kr-len-ok len 8 5)
+    (= h -7087538495882574170) (kr-len-ok len 10 6)
+    (= h 4231012625856181486) (kr-len-ok len 5 7)
+    (= h 8317371729358097035) (kr-len-ok len 7 8)
+    (= h 4952616781120422236) (kr-len-ok len 7 9)
+    (= h -8261240031619729027) (kr-len-ok len 5 10)
+    (= h 1499523671201250954) (kr-len-ok len 12 11)
+    (= h 2033750836531590243) (kr-len-ok len 14 12)
+    (= h 2033756334089731298) (kr-len-ok len 14 13)
+    (= h 2397808468787316396) (kr-len-ok len 3 14)
+    (= h 6583304908937478053) (kr-len-ok len 4 15)
+    (= h -5333701488999351944) (kr-len-ok len 5 16)
+    (= h -1824377047816844663) (kr-len-ok len 10 17)
+    (= h 1821388415448265404) (kr-len-ok len 18 18)
+    (= h 1329270083436697466) (kr-len-ok len 3 21)
+    (= h 628023482707099174) (kr-len-ok len 2 22)
+    :else 0))
+
+(defn- kr-is-name [k :i64] :i64 (cond (= k ND-SYM) 1 (= k ND-KW) 1 :else 0))
+
+(defn- kr-code2 [S :string k :i64 a :i64 b :i64] :i64
+  (if (= (kr-is-name k) 1) (kr-code-of (- b a) (mem-hash-str S a b)) 0))
+
+;; the spelling code of node n (0 for a non-name node)
+(defn- kr-code [M :vector-i64 S :string n :i64] :i64
+  (let [k (kr-kind M n)
+        t (kr-nf M n NF-TOK)
+        a (kr-tf M t TF-START)
+        b (kr-tf M t TF-END)]
+    (kr-code2 S k a b)))
+
+;; 1 when node n is a symbol spelled __kotoba_loop_<something> (KIR's loop helpers)
+(defn- kr-helper2 [S :string a :i64 b :i64] :i64
+  (if (> (- b a) 14) (kr-eq (mem-hash-str S a (+ a 14)) -5146085560221492899) 0))
+
+(defn- kr-helper [M :vector-i64 S :string n :i64] :i64
+  (let [k (kr-kind M n)
+        t (kr-nf M n NF-TOK)
+        a (kr-tf M t TF-START)
+        b (kr-tf M t TF-END)]
+    (if (= k ND-SYM) (kr-helper2 S a b) 0)))
+
+;; 1 when nodes x and y have the same spelling
+(defn- kr-same2 [S :string ax :i64 bx :i64 ay :i64 by :i64] :i64
+  (if (= (- bx ax) (- by ay)) (mem-span-eq S ax ay (- bx ax)) 0))
+
+(defn- kr-same [M :vector-i64 S :string x :i64 y :i64] :i64
+  (let [tx (kr-nf M x NF-TOK)
+        ty (kr-nf M y NF-TOK)
+        ax (kr-tf M tx TF-START)
+        bx (kr-tf M tx TF-END)
+        ay (kr-tf M ty TF-START)
+        by (kr-tf M ty TF-END)]
+    (kr-same2 S ax bx ay by)))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; the program map: its fields
+;; ---------------------------------------------------------------------------------------------------------
+(defn- kr-v34 [c :i64] :i64 (cond (= c 12) 1 (= c 13) 1 :else 0))
+
+(defn- kr-format [M :vector-i64 vc :i64 k :i64] :vector-i64
+  (if (= (kr-v34 vc) 1) (kr-put M kr-c-tab 1) (kr-fail M kr-e-value k)))
+
+(defn- kr-nil [M :vector-i64 vc :i64 k :i64] :vector-i64
+  (if (= vc 14) (kr-id M) (kr-fail M kr-e-value k)))
+
+;; an empty vector (the empty set #{} or map {} of :effects)
+(defn- kr-empty [M :vector-i64 vk :i64 vn :i64 k :i64] :vector-i64
+  (if (= (* (kr-eq vk ND-VEC) (kr-eq vn 0)) 1) (kr-id M) (kr-fail M kr-e-value k)))
+
+(defn- kr-vec-cell [M :vector-i64 vk :i64 k :i64 v :i64 cell :i64] :vector-i64
+  (if (= vk ND-VEC) (kr-put M cell v) (kr-fail M kr-e-value k)))
+
+(defn- kr-top1 [M :vector-i64 S :string k :i64 v :i64] :vector-i64
+  (let [c (kr-code M S k)
+        vc (kr-code M S v)
+        vk (kr-kind M v)
+        vn (kr-count M v)]
+    (cond
+      (= v 0) (kr-fail M kr-e-value k)
+      (= c 1) (kr-format M vc k)
+      (= c 2) (kr-nil M vc k)
+      (= c 4) (kr-nil M vc k)
+      (= c 5) (kr-empty M vk vn k)
+      (= c 3) (kr-vec-cell M vk k v kr-c-exp)
+      (= c 6) (kr-vec-cell M vk k v kr-c-fns)
+      :else (kr-fail M kr-e-field k))))
+
+(defn- kr-tops [M :vector-i64 S :string k :i64] :vector-i64
+  (cond
+    (= k 0) (kr-id M)
+    (kr-failed M) (kr-id M)
+    :else
+    (let [v (kr-next M k)
+          nk (kr-next M v)]
+      (kr-tops (kr-top1 M S k v) S nk))))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; the function table
+;; ---------------------------------------------------------------------------------------------------------
+(defn- kr-field [M :vector-i64 S :string r :i64 k :i64 v :i64] :vector-i64
+  (let [c (kr-code M S k)
+        vk (kr-kind M v)
+        vn (kr-count M v)]
+    (cond
+      (= v 0) (kr-fail M kr-e-value k)
+      (= c 7) (kr-put M (+ r kr-f-name) v)
+      (= c 8) (kr-put M (+ r kr-f-params) v)
+      (= c 9) (kr-put M (+ r kr-f-result) v)
+      (= c 10) (kr-put M (+ r kr-f-body) v)
+      (= c 11) (kr-put M (+ r kr-f-ptypes) v)
+      (= c 5) (kr-empty M vk vn k)
+      :else (kr-fail M kr-e-field k))))
+
+(defn- kr-fields [M :vector-i64 S :string r :i64 k :i64] :vector-i64
+  (cond
+    (= k 0) (kr-id M)
+    (kr-failed M) (kr-id M)
+    :else
+    (let [v (kr-next M k)
+          nk (kr-next M v)]
+      (kr-fields (kr-field M S r k v) S r nk))))
+
+;; 1 when the :param-types vector (0 = absent) has as many items as the :params vector
+(defn- kr-pt-ok [M :vector-i64 ps :i64 pt :i64] :i64
+  (cond (= pt 0) 1
+        (= (kr-kind M pt) ND-VEC) (kr-eq (kr-count M pt) (kr-count M ps))
+        :else 0))
+
+(defn- kr-fn-check [M :vector-i64 r :i64 f :i64] :vector-i64
+  (let [nm (vector-at M (+ r kr-f-name))
+        ps (vector-at M (+ r kr-f-params))
+        rs (vector-at M (+ r kr-f-result))
+        bd (vector-at M (+ r kr-f-body))
+        pt (vector-at M (+ r kr-f-ptypes))
+        ok (* (* (kr-eq (kr-kind M nm) ND-SYM) (kr-eq (kr-kind M ps) ND-VEC))
+              (* (kr-eq (kr-kind M rs) ND-KW) (kr-ne bd 0)))
+        pok (kr-pt-ok M ps pt)]
+    (cond (kr-failed M) (kr-id M)
+          (= (* ok pok) 1) (kr-id M)
+          :else (kr-fail M kr-e-value f))))
+
+(defn- kr-fn [M :vector-i64 S :string r :i64 f :i64] :vector-i64
+  (let [k (kr-kind M f)
+        k1 (kr-first M f)]
+    (if (= k ND-VEC)
+      (kr-fn-check (kr-fields (kr-put M (+ r kr-f-map) f) S r k1) r f)
+      (kr-fail M kr-e-doc f))))
+
+(defn- kr-fns [M :vector-i64 S :string r :i64 f :i64] :vector-i64
+  (cond
+    (= f 0) (kr-id M)
+    (kr-failed M) (kr-id M)
+    :else
+    (let [nx (kr-next M f)]
+      (kr-fns (kr-fn M S r f) S (+ r kr-w) nx))))
+
+(defn- kr-tab2 [M :vector-i64 S :string n :i64] :vector-i64
+  (let [tab (vector-at M MM-R0)
+        fv (vector-at M kr-c-fns)
+        f1 (kr-first M fv)]
+    (if (kr-failed M)
+      (kr-id M)
+      (kr-fns (kr-put (kr-put (kr-put (kr-put M kr-c-tab tab) tab n) (+ tab 1) (+ (+ tab kr-th) (* n kr-w))) (+ tab 2) 1)
+              S (+ tab kr-th) f1))))
+
+(defn- kr-tab [M :vector-i64 S :string] :vector-i64
+  (let [fv (vector-at M kr-c-fns)
+        n (kr-count M fv)
+        nl (vector-at M MM-LIT-N)]
+    (kr-tab2 (mem-alloc M (+ (+ (* n kr-w) kr-th) (* 4 nl))) S n)))
+
+;; the record address of the function whose :name is spelled like node h, 0 when none
+(defn- kr-find2 [M :vector-i64 S :string r :i64 end :i64 h :i64] :i64
+  (let [nm (vector-at M (+ r kr-f-name))]
+    (cond (>= r end) 0
+          (= (kr-same M S nm h) 1) r
+          :else (kr-find2 M S (+ r kr-w) end h))))
+
+(defn- kr-find [M :vector-i64 S :string h :i64] :i64
+  (let [tab (vector-at M kr-c-tab)
+        n (vector-at M tab)]
+    (kr-find2 M S (+ tab kr-th) (+ (+ tab kr-th) (* n kr-w)) h)))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; rewriting expressions (in place). cur = the record address of the loop helper whose body is being walked, 0 outside
+;; ---------------------------------------------------------------------------------------------------------
+;; where the next child goes: the FIRST of vector pv when last = 0, else the NEXT of last
+(defn- kr-link-addr [last :i64 pv :i64] :i64
+  (if (= last 0) (kr-na pv NF-FIRST) (kr-na last NF-NEXT)))
+
+;; under node pv, interleave chain a with chain b: a1 b1 a2 b2 ... (both chains have the same length, checked before)
+(defn- kr-inter [M :vector-i64 a :i64 b :i64 last :i64 pv :i64] :vector-i64
+  (if (= a 0)
+    (kr-id M)
+    (let [an (kr-next M a)
+          bn (kr-next M b)
+          M1 (kr-put M (kr-link-addr last pv) a)
+          M2 (kr-nset M1 a NF-NEXT b)
+          M3 (kr-nset M2 b NF-NEXT 0)]
+      (kr-inter M3 an bn b pv))))
+
+;; under node pv, each node of chain a followed by a fresh :i64 keyword node (f, f+1, ...)
+(defn- kr-inter-i64 [M :vector-i64 a :i64 f :i64 last :i64 pv :i64] :vector-i64
+  (if (= a 0)
+    (kr-id M)
+    (let [an (kr-next M a)
+          pb (vector-at M kr-c-pb)
+          M1 (kr-node M f ND-KW (+ pb 10) 0)
+          M2 (kr-put M1 (kr-link-addr last pv) a)
+          M3 (kr-nset M2 a NF-NEXT f)]
+      (kr-inter-i64 M3 an (+ f 1) f pv))))
+
+;; true -> (= 0 0), false -> (= 0 1): node n becomes a list of 3 fresh nodes (its token and NEXT are kept)
+(defn- kr-bool2 [M :vector-i64 n :i64 v :i64] :vector-i64
+  (if (kr-failed M)
+    (kr-id M)
+    (let [a (vector-at M MM-R0)
+          pb (vector-at M kr-c-pb)
+          M1 (kr-node M a ND-SYM (+ pb 6) 0)
+          M2 (kr-node M1 (+ a 1) ND-INT (+ pb 7) 0)
+          M3 (kr-node M2 (+ a 2) ND-INT (+ (+ pb 7) v) v)
+          M4 (kr-nset M3 a NF-NEXT (+ a 1))
+          M5 (kr-nset M4 (+ a 1) NF-NEXT (+ a 2))
+          M6 (kr-nset M5 n NF-KIND ND-LIST)
+          M7 (kr-nset M6 n NF-FIRST a)]
+      (kr-nset M7 n NF-AUX 3))))
+
+(defn- kr-bool [M :vector-i64 n :i64 v :i64] :vector-i64
+  (kr-bool2 (kr-alloc M 3) n v))
+
+;; (vector-new e ..) -> [e ..]: the list n becomes a vector of the head's siblings
+(defn- kr-vecnew [M :vector-i64 n :i64 h :i64] :vector-i64
+  (let [a (kr-next M h)
+        c (kr-nf M n NF-AUX)
+        M1 (kr-nset M n NF-KIND ND-VEC)
+        M2 (kr-nset M1 n NF-FIRST a)]
+    (kr-nset M2 n NF-AUX (- c 1))))
+
+;; respell symbol node h as prelude token k
+(defn- kr-retok [M :vector-i64 h :i64 k :i64] :vector-i64
+  (let [pb (vector-at M kr-c-pb)]
+    (kr-nset M h NF-TOK (+ pb k))))
+
+(defn- kr-walk-items [M :vector-i64 S :string c :i64 cur :i64] :vector-i64
+  (cond
+    (= c 0) (kr-id M)
+    (kr-failed M) (kr-id M)
+    :else
+    (let [nx (kr-next M c)]
+      (kr-walk-items (kr-walk M S c cur) S nx cur))))
+
+(defn- kr-walk [M :vector-i64 S :string n :i64 cur :i64] :vector-i64
+  (let [k (kr-kind M n)
+        c (kr-code M S n)
+        f (kr-first M n)]
+    (cond
+      (= k ND-LIST) (kr-walk-list M S n cur)
+      (= k ND-VEC) (kr-walk-items M S f cur)
+      (= k ND-STR) (kr-str M n)
+      (= c 15) (kr-bool M n 0)
+      (= c 16) (kr-bool M n 1)
+      :else (kr-id M))))
+
+(defn- kr-walk-list [M :vector-i64 S :string n :i64 cur :i64] :vector-i64
+  (let [h (kr-first M n)
+        hc (kr-code M S h)
+        hl (kr-helper M S h)
+        a (kr-next M h)]
+    (cond
+      (= hc 17) (kr-walk-items (kr-vecnew M n h) S a cur)
+      (= hc 18) (kr-walk-items (kr-retok M h 9) S a cur)
+      (= hc 21) (kr-let M S n cur)
+      (= hc 22) (kr-if M S n cur)
+      (= hl 1) (kr-call M S n cur)
+      :else (kr-walk-items M S h cur))))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; invariant captured locals. KIR passes the locals a loop body uses as extra helper parameters, unchanged at every
+;; self call. Such a parameter p_k is dropped from the loop (the body then reads the enclosing p_k, the same value) when
+;; (1) the k-th argument of the outer call is the symbol p_k, (2) the k-th argument of every self call in the helper body
+;; is the symbol p_k, and (3) no let in the helper body binds p_k. At least one binding is always kept. Bit k of a mask =
+;; parameter k (at most 10 loop bindings in Seed-0).
+;; ---------------------------------------------------------------------------------------------------------
+(defn- kr-bit [k :i64] :i64 (if (< k 0) 0 (i64-shift-left 1 k)))
+
+;; index of the parameter in chain p (counting from k) spelled like node b, -1 when none
+(defn- kr-pidx [M :vector-i64 S :string p :i64 b :i64 k :i64] :i64
+  (cond (= p 0) -1
+        (= (kr-same M S p b) 1) k
+        :else (kr-pidx M S (kr-next M p) b (+ k 1))))
+
+(defn- kr-diff1 [M :vector-i64 S :string p :i64 a :i64 k :i64] :i64
+  (if (= (* (kr-eq (kr-kind M a) ND-SYM) (kr-same M S p a)) 1) 0 (kr-bit k)))
+
+;; bits k where the k-th node of chain a is not the symbol spelled like the k-th node of chain p
+(defn- kr-diff [M :vector-i64 S :string p :i64 a :i64 k :i64] :i64
+  (if (= p 0)
+    0
+    (bit-or (kr-diff1 M S p a k) (kr-diff M S (kr-next M p) (kr-next M a) (+ k 1)))))
+
+;; bits of the parameters (chain p1) that a let binding vector (first binder b) rebinds
+(defn- kr-binders [M :vector-i64 S :string b :i64 p1 :i64 acc :i64] :i64
+  (if (= b 0)
+    acc
+    (let [v (kr-next M b)]
+      (kr-binders M S (kr-next M v) p1 (bit-or acc (kr-bit (kr-pidx M S p1 b 0)))))))
+
+(defn- kr-vary-head [M :vector-i64 S :string h :i64 r :i64] :i64
+  (let [nm (vector-at M (+ r kr-f-name))
+        ps (vector-at M (+ r kr-f-params))
+        p1 (kr-first M ps)
+        hc (kr-code M S h)
+        self (* (kr-eq (kr-kind M h) ND-SYM) (kr-same M S h nm))
+        a (kr-next M h)
+        b (kr-first M a)]
+    (cond (= self 1) (kr-diff M S p1 a 0)
+          (= hc 21) (kr-binders M S b p1 0)
+          :else 0)))
+
+(defn- kr-vary-items [M :vector-i64 S :string c :i64 r :i64 acc :i64] :i64
+  (if (= c 0)
+    acc
+    (kr-vary-items M S (kr-next M c) r (bit-or acc (kr-vary M S c r)))))
+
+;; the parameters of helper r that are NOT invariant in the (raw) expression n
+(defn- kr-vary [M :vector-i64 S :string n :i64 r :i64] :i64
+  (let [k (kr-kind M n)
+        h (kr-first M n)]
+    (cond (= k ND-LIST) (bit-or (kr-vary-head M S h r) (kr-vary-items M S h r 0))
+          (= k ND-VEC) (kr-vary-items M S h r 0)
+          :else 0)))
+
+(defn- kr-keep1 [d :i64 full :i64] :i64 (if (= d full) (bit-and d -2) d))
+
+;; the drop mask of helper r called with the argument chain a
+(defn- kr-drop [M :vector-i64 S :string r :i64 a :i64] :i64
+  (let [ps (vector-at M (+ r kr-f-params))
+        bd (vector-at M (+ r kr-f-body))
+        p1 (kr-first M ps)
+        np (kr-count M ps)
+        full (- (i64-shift-left 1 np) 1)
+        vary (bit-or (kr-diff M S p1 a 0) (kr-vary M S bd r))]
+    (kr-keep1 (bit-and full (bit-not vary)) full)))
+
+;; drop the nodes of chain c whose bit is set in d (bit 0 = c); MM-R0 = the first kept node
+(defn- kr-filter2 [M :vector-i64 c :i64 d :i64] :vector-i64
+  (let [rest (vector-at M MM-R0)]
+    (if (= (bit-and d 1) 1)
+      (kr-put M MM-R0 rest)
+      (kr-put (kr-nset M c NF-NEXT rest) MM-R0 c))))
+
+(defn- kr-filter [M :vector-i64 c :i64 d :i64] :vector-i64
+  (if (= c 0)
+    (kr-put M MM-R0 0)
+    (let [nx (kr-next M c)]
+      (kr-filter2 (kr-filter M nx (u64-shift-right d 1)) c d))))
+
+(defn- kr-filter-set [M :vector-i64 addr :i64] :vector-i64
+  (let [f (vector-at M MM-R0)]
+    (kr-put M addr f)))
+
+;; filter chain c by d and store its new first node at M[addr]
+(defn- kr-filter-into [M :vector-i64 addr :i64 c :i64 d :i64] :vector-i64
+  (kr-filter-set (kr-filter M c d) addr))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; string literals (see the header): new records in the table's literal area, copied over LIT at the end
+;; ---------------------------------------------------------------------------------------------------------
+;; the new literal index (from j) whose bytes equal LITB[b .. b+len), 0 when none
+(defn- kr-lit-find [M :vector-i64 tab :i64 j :i64 b :i64 len :i64] :i64
+  (let [base (vector-at M (+ tab 1))
+        u (vector-at M (+ tab 2))
+        r (+ base (* j 4))
+        bj (vector-at M (+ r LF-B))
+        lj (vector-at M (+ r LF-LEN))]
+    (cond (>= j u) 0
+          (= (* (kr-eq lj len) (mem-words-eq M (+ MM-LITB-BASE bj) (+ MM-LITB-BASE b) len)) 1) j
+          :else (kr-lit-find M tab (+ j 1) b len))))
+
+(defn- kr-str-new [M :vector-i64 n :i64 tab :i64 lit :i64] :vector-i64
+  (let [base (vector-at M (+ tab 1))
+        u (vector-at M (+ tab 2))
+        lr (+ MM-LIT-BASE (* lit MM-LIT-W))
+        b (vector-at M (+ lr LF-B))
+        len (vector-at M (+ lr LF-LEN))
+        tok (vector-at M (+ lr LF-TOK))
+        r (+ base (* u 4))
+        M1 (kr-put M (+ r LF-B) b)
+        M2 (kr-put M1 (+ r LF-LEN) len)
+        M3 (kr-put M2 (+ r LF-TOK) tok)
+        M4 (kr-put M3 (+ tab 2) (+ u 1))]
+    (kr-nset M4 n NF-AUX u)))
+
+;; the string node n gets its new literal index
+(defn- kr-str [M :vector-i64 n :i64] :vector-i64
+  (let [tab (vector-at M kr-c-tab)
+        lit (kr-nf M n NF-AUX)
+        lr (+ MM-LIT-BASE (* lit MM-LIT-W))
+        b (vector-at M (+ lr LF-B))
+        len (vector-at M (+ lr LF-LEN))
+        j (kr-lit-find M tab 1 b len)]
+    (if (> j 0)
+      (kr-nset M n NF-AUX j)
+      (kr-str-new M n tab lit))))
+
+;; copy the new literal records 1 .. u-1 over LIT and set its fill
+(defn- kr-lits [M :vector-i64 tab :i64 j :i64] :vector-i64
+  (let [base (vector-at M (+ tab 1))
+        u (vector-at M (+ tab 2))
+        r (+ base (* j 4))
+        d (+ MM-LIT-BASE (* j MM-LIT-W))
+        b (vector-at M (+ r LF-B))
+        len (vector-at M (+ r LF-LEN))
+        tok (vector-at M (+ r LF-TOK))]
+    (if (>= j u)
+      (kr-put M MM-LIT-N u)
+      (kr-lits (kr-put (kr-put (kr-put (kr-put M (+ d LF-B) b) (+ d LF-LEN) len) (+ d LF-TOK) tok) (+ d LF-POOL) 0)
+               tab (+ j 1)))))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; and / or / not, as KIR expands them
+;; ---------------------------------------------------------------------------------------------------------
+;; 1 when node n is a symbol spelled __kotoba_and_<..>, 2 when __kotoba_or_<..>, else 0
+(defn- kr-gensym2 [S :string a :i64 b :i64] :i64
+  (cond (<= (- b a) 12) 0
+        (= (mem-hash-str S a (+ a 12)) 2863727430345639440) 2
+        (<= (- b a) 13) 0
+        (= (mem-hash-str S a (+ a 13)) 717256673509837764) 1
+        :else 0))
+
+(defn- kr-gensym [M :vector-i64 S :string n :i64] :i64
+  (let [k (kr-kind M n)
+        t (kr-nf M n NF-TOK)
+        a (kr-tf M t TF-START)
+        b (kr-tf M t TF-END)]
+    (if (= k ND-SYM) (kr-gensym2 S a b) 0)))
+
+;; 1 when node c is a symbol spelled like node nm
+(defn- kr-sym-is [M :vector-i64 S :string c :i64 nm :i64] :i64
+  (* (kr-eq (kr-kind M c) ND-SYM) (kr-same M S c nm)))
+
+;; the list whose head is h becomes (OP x y), OP = prelude token k (11 and, 12 or)
+(defn- kr-andor [M :vector-i64 h :i64 x :i64 y :i64 k :i64] :vector-i64
+  (let [M1 (kr-retok M h k)
+        M2 (kr-nset M1 h NF-NEXT x)
+        M3 (kr-nset M2 x NF-NEXT y)]
+    (kr-nset M3 y NF-NEXT 0)))
+
+(defn- kr-let [M :vector-i64 S :string n :i64 cur :i64] :vector-i64
+  (let [h (kr-first M n)
+        v (kr-next M h)
+        bd (kr-next M v)
+        nm (kr-first M v)
+        x (kr-next M nm)
+        g (kr-gensym M S nm)
+        it (kr-first M bd)
+        c (kr-next M it)
+        th (kr-next M c)
+        el (kr-next M th)
+        shape (* (* (kr-eq (kr-count M v) 2) (kr-eq (kr-next M bd) 0))
+                 (* (* (kr-eq (kr-kind M bd) ND-LIST) (kr-eq (kr-code M S it) 22))
+                    (* (kr-eq (kr-next M el) 0) (kr-sym-is M S c nm))))
+        and-ok (* (* shape (kr-eq g 1)) (kr-sym-is M S el nm))
+        or-ok (* (* shape (kr-eq g 2)) (kr-sym-is M S th nm))]
+    (cond (= and-ok 1) (kr-walk-items (kr-nset (kr-andor M h x th 11) n NF-AUX 3) S x cur)
+          (= or-ok 1) (kr-walk-items (kr-nset (kr-andor M h x el 12) n NF-AUX 3) S x cur)
+          :else (kr-walk-items M S h cur))))
+
+;; (if x false true) -> (not x)
+(defn- kr-if [M :vector-i64 S :string n :i64 cur :i64] :vector-i64
+  (let [h (kr-first M n)
+        c (kr-next M h)
+        th (kr-next M c)
+        el (kr-next M th)
+        ok (* (* (kr-ne c 0) (kr-eq (kr-code M S th) 16)) (* (kr-eq (kr-code M S el) 15) (kr-eq (kr-next M el) 0)))]
+    (if (= ok 1)
+      (kr-walk-items (kr-nset (kr-nset (kr-retok M h 13) c NF-NEXT 0) n NF-AUX 2) S c cur)
+      (kr-walk-items M S h cur))))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; loop helper calls
+;; ---------------------------------------------------------------------------------------------------------
+;; a call of a loop helper: its own call -> recur (minus the dropped arguments); another helper -> the loop it stands for
+(defn- kr-call [M :vector-i64 S :string n :i64 cur :i64] :vector-i64
+  (let [h (kr-first M n)
+        a (kr-next M h)
+        r (kr-find M S h)
+        ps (vector-at M (+ r kr-f-params))
+        used (vector-at M (+ r kr-f-used))
+        d (vector-at M (+ r kr-f-drop))
+        np (kr-count M ps)
+        na (- (kr-count M n) 1)]
+    (cond
+      (= r 0) (kr-fail M kr-e-helper h)
+      (= r cur) (kr-self (kr-filter-into (kr-retok M h 5) (kr-na h NF-NEXT) a d) S n cur)
+      (> used 0) (kr-fail M kr-e-helper h)
+      (= np na) (kr-inline (kr-put M (+ r kr-f-used) 1) S n r cur)
+      :else (kr-fail M kr-e-helper h))))
+
+(defn- kr-self [M :vector-i64 S :string n :i64 cur :i64] :vector-i64
+  (let [h (kr-first M n)
+        a (kr-next M h)]
+    (kr-walk-items M S a cur)))
+
+;; the arguments are walked in the caller's context, the invariant parameters and their arguments are dropped, then
+;; (h a1 .. an) becomes (loop [p1 a1 .. pn an] BODY)
+(defn- kr-inline [M :vector-i64 S :string n :i64 r :i64 cur :i64] :vector-i64
+  (let [h (kr-first M n)
+        a (kr-next M h)]
+    (kr-inline1 (kr-walk-items M S a cur) S n r)))
+
+(defn- kr-inline1 [M :vector-i64 S :string n :i64 r :i64] :vector-i64
+  (let [h (kr-first M n)
+        a (kr-next M h)
+        ps (vector-at M (+ r kr-f-params))
+        p1 (kr-first M ps)
+        d (kr-drop M S r a)
+        M1 (kr-put M (+ r kr-f-drop) d)
+        M2 (kr-filter-into M1 (kr-na ps NF-FIRST) p1 d)
+        M3 (kr-filter-into M2 (kr-na h NF-NEXT) a d)]
+    (kr-inline2 (kr-alloc M3 2) S n r)))
+
+(defn- kr-inline2 [M :vector-i64 S :string n :i64 r :i64] :vector-i64
+  (if (kr-failed M)
+    (kr-id M)
+    (let [l (vector-at M MM-R0)
+          pb (vector-at M kr-c-pb)
+          ps (vector-at M (+ r kr-f-params))
+          bd (vector-at M (+ r kr-f-body))
+          pt (kr-nf M ps NF-TOK)
+          p1 (kr-first M ps)
+          np (kr-count M ps)
+          a (kr-next M (kr-first M n))
+          M1 (kr-node M l ND-SYM (+ pb 4) 0)
+          M2 (kr-node M1 (+ l 1) ND-VEC pt (* 2 np))
+          M3 (kr-nset M2 n NF-FIRST l)
+          M4 (kr-nset M3 n NF-AUX 3)
+          M5 (kr-nset M4 l NF-NEXT (+ l 1))
+          M6 (kr-nset M5 (+ l 1) NF-NEXT bd)
+          M7 (kr-nset M6 bd NF-NEXT 0)
+          M8 (kr-inter M7 p1 a 0 (+ l 1))]
+      (kr-walk M8 S bd r))))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; emitting the Seed-0 forms
+;; ---------------------------------------------------------------------------------------------------------
+(defn- kr-params [M :vector-i64 ps :i64 pt :i64 fresh :i64 pv :i64] :vector-i64
+  (let [a (kr-first M ps)
+        b (kr-first M pt)]
+    (if (= pt 0)
+      (kr-inter-i64 M a fresh 0 pv)
+      (kr-inter M a b 0 pv))))
+
+;; (defn NAME [p :T ..] :R BODY) for record r into the reserved nodes n (list), n+1 (defn), n+2 (params), n+3.. (:i64)
+(defn- kr-defn2 [M :vector-i64 S :string r :i64] :vector-i64
+  (if (kr-failed M)
+    (kr-id M)
+    (let [n (vector-at M MM-R0)
+          pb (vector-at M kr-c-pb)
+          nm (vector-at M (+ r kr-f-name))
+          ps (vector-at M (+ r kr-f-params))
+          rs (vector-at M (+ r kr-f-result))
+          bd (vector-at M (+ r kr-f-body))
+          pt (vector-at M (+ r kr-f-ptypes))
+          pk (kr-nf M ps NF-TOK)
+          np (kr-count M ps)
+          M1 (kr-node M n ND-LIST (+ pb 3) 5)
+          M2 (kr-node M1 (+ n 1) ND-SYM (+ pb 3) 0)
+          M3 (kr-node M2 (+ n 2) ND-VEC pk (* 2 np))
+          M4 (kr-nset M3 n NF-FIRST (+ n 1))
+          M5 (kr-nset M4 (+ n 1) NF-NEXT nm)
+          M6 (kr-nset M5 nm NF-NEXT (+ n 2))
+          M7 (kr-nset M6 (+ n 2) NF-NEXT rs)
+          M8 (kr-nset M7 rs NF-NEXT bd)
+          M9 (kr-nset M8 bd NF-NEXT 0)
+          M10 (kr-params M9 ps pt (+ n 3) (+ n 2))]
+      (kr-walk M10 S bd 0))))
+
+(defn- kr-defn [M :vector-i64 S :string r :i64] :vector-i64
+  (let [ps (vector-at M (+ r kr-f-params))
+        pt (vector-at M (+ r kr-f-ptypes))
+        np (kr-count M ps)]
+    (kr-defn2 (kr-alloc M (+ 3 (mem-sel pt 0 np))) S r)))
+
+(defn- kr-defs2 [M :vector-i64 S :string i :i64 last :i64 n0 :i64] :vector-i64
+  (if (kr-failed M)
+    (kr-id M)
+    (kr-defs (kr-nset M last NF-NEXT n0) S (+ i 1) n0)))
+
+;; function i of the table (helpers skipped: they are inlined where they are called); last = the previous top-level form
+(defn- kr-defs [M :vector-i64 S :string i :i64 last :i64] :vector-i64
+  (let [tab (vector-at M kr-c-tab)
+        n (vector-at M tab)
+        r (+ (+ tab kr-th) (* i kr-w))
+        nm (vector-at M (+ r kr-f-name))
+        n0 (vector-at M MM-NODE-N)]
+    (cond
+      (>= i n) (kr-id M)
+      (kr-failed M) (kr-id M)
+      (= (kr-helper M S nm) 1) (kr-defs M S (+ i 1) last)
+      :else (kr-defs2 (kr-defn M S r) S i last n0))))
+
+;; the new root n and (ns kir (:export [..])) in the 6 reserved nodes n .. n+5, then the defns
+(defn- kr-emit [M :vector-i64 S :string] :vector-i64
+  (if (kr-failed M)
+    (kr-id M)
+    (let [n (vector-at M MM-R0)
+          pb (vector-at M kr-c-pb)
+          ex (vector-at M kr-c-exp)
+          M1 (kr-node M n ND-ROOT 0 0)
+          M2 (kr-node M1 (+ n 1) ND-LIST pb 3)
+          M3 (kr-node M2 (+ n 2) ND-SYM pb 0)
+          M4 (kr-node M3 (+ n 3) ND-SYM (+ pb 1) 0)
+          M5 (kr-node M4 (+ n 4) ND-LIST (+ pb 2) 2)
+          M6 (kr-node M5 (+ n 5) ND-KW (+ pb 2) 0)
+          M7 (kr-nset M6 n NF-FIRST (+ n 1))
+          M8 (kr-nset M7 (+ n 1) NF-FIRST (+ n 2))
+          M9 (kr-nset M8 (+ n 2) NF-NEXT (+ n 3))
+          M10 (kr-nset M9 (+ n 3) NF-NEXT (+ n 4))
+          M11 (kr-nset M10 (+ n 4) NF-FIRST (+ n 5))
+          M12 (kr-nset M11 (+ n 5) NF-NEXT ex)
+          M13 (kr-nset M12 ex NF-NEXT 0)
+          M14 (kr-put M13 MM-ROOT n)]
+      (kr-emit-end (kr-defs M14 S 0 (+ n 1))))))
+
+(defn- kr-emit-end [M :vector-i64] :vector-i64
+  (let [tab (vector-at M kr-c-tab)]
+    (if (kr-failed M) (kr-id M) (kr-lits M tab 1))))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; the whole pass
+;; ---------------------------------------------------------------------------------------------------------
+(defn- kr-run4 [M :vector-i64 S :string] :vector-i64
+  (if (kr-failed M) (kr-id M) (kr-emit (kr-alloc M 6) S)))
+
+(defn- kr-run3 [M :vector-i64 S :string doc :i64] :vector-i64
+  (let [ok (* (* (kr-ne (vector-at M kr-c-exp) 0) (kr-ne (vector-at M kr-c-fns) 0)) (kr-eq (vector-at M kr-c-tab) 1))]
+    (cond (kr-failed M) (kr-id M)
+          (= ok 1) (kr-run4 (kr-tab M S) S)
+          :else (kr-fail M kr-e-doc doc))))
+
+(defn- kr-run2 [M :vector-i64 S :string doc :i64] :vector-i64
+  (let [d1 (kr-first M doc)]
+    (kr-run3 (kr-tops M S d1) S doc)))
+
+(defn- kr-run1 [M :vector-i64 S :string] :vector-i64
+  (let [root (vector-at M MM-ROOT)
+        doc (kr-first M root)
+        cnt (kr-count M root)
+        pb (- (vector-at M MM-TOK-N) kr-np)
+        ok (* (kr-eq (kr-kind M doc) ND-VEC) (kr-eq cnt (+ kr-np 1)))]
+    (if (= ok 1)
+      (kr-run2 (kr-put M kr-c-pb pb) S doc)
+      (kr-fail M kr-e-doc doc))))
+
+(defn- kr-run [M :vector-i64 S :string] :vector-i64
+  (if (kr-failed M) (kr-id M) (kr-run1 M S)))

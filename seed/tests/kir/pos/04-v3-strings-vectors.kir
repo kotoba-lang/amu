@@ -1,0 +1,5 @@
+{:format :kotoba.kir/v3, :entry nil, :exports [t], :signature nil, :effects #{}, :functions [
+{:name code, :params [i], :result :i64, :effects #{}, :body (string-code-point-at "kotoba" i)}
+{:name sum, :params [], :result :i64, :effects #{}, :body (__kotoba_loop_1 0 0)}
+{:name __kotoba_loop_1, :params [i acc], :result :i64, :effects #{}, :body (if (= i (string-byte-length "kotoba")) acc (__kotoba_loop_1 (+ i 1) (+ acc (code i))))}
+{:name t, :params [], :result :i64, :effects #{}, :body (if (= (+ (sum) (vector-at (vector-new 5 6 7) 2)) (+ 640 7)) 1 0)}]}

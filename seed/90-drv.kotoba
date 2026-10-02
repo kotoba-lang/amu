@@ -347,8 +347,80 @@
           (= (io-exists (io-arg k)) 0) (drv-fail0 E-READ)
           :else (drv-x1 (io-read-bytes (io-arg k)) (io-arg s) (io-arg o)))))
 
+;; ==== BEGIN compile-kir (owner: agent KIR; module seed/12-kirread.kotoba, docs/selfhost-seed-kirread-20261002.md) =====
+;;   compile-kir <file.kir|file.kexe> <out>|-      also: compile-kir <file> --output <out>
+;; The input is KIR text (the :program map of a stage-0 kexe/v1, or the whole kexe/v1). The text plus kr-prelude is
+;; lexed by kr-lex, read by 11-read, rewritten into a Seed-0 tree by kr-run, then the compile pipeline from 20-names on
+;; is the one of `compile` (drv-kir-c2 .. c8 = drv-c2 .. c8 with drv-kir-fail). Errors E1201-E1204 are 12-kirread's;
+;; a {name} span or position that lies in the prelude (a generated node) is printed empty / without a byte offset.
+(defn- drv-kir-text [c :i64] :string
+  (cond (= c 1201) "not a KIR program (one {:format :kotoba.kir/v3|v4 ..} map or a kexe/v1): '"
+        (= c 1202) "unsupported KIR field '"
+        (= c 1203) "unsupported KIR value of '"
+        (= c 1204) "KIR loop helper is not called exactly once with its arity: '"
+        :else ""))
+
+(defn- drv-kir-say [M :vector-i64 path :string] :i64
+  (let [c (vector-at M MM-ERR)
+        pos (vector-at M MM-ERR-POS)
+        a (vector-at M MM-ERR-A)
+        b (vector-at M MM-ERR-B)
+        t (drv-kir-text c)]
+    (if (= (string-length t) 0)
+      (drv-fail M path)
+      (drv-say c (string-concat t (string-concat (drv-slice path a b) "'")) pos))))
+
+;; alt when v lies beyond the KIR file (in the prelude), else keep
+(defn- drv-kir-clip [v :i64 flen :i64 alt :i64 keep :i64] :i64 (if (> v flen) alt keep))
+
+;; positions in the prelude (generated nodes) are dropped: no byte offset, an empty {name}
+(defn- drv-kir-fail [M :vector-i64 path :string] :i64
+  (let [flen (- (vector-at M MM-SRC-LEN) (string-length (kr-prelude)))
+        b (vector-at M MM-ERR-B)
+        a2 (drv-kir-clip b flen 0 (vector-at M MM-ERR-A))
+        b2 (drv-kir-clip b flen 0 b)
+        p2 (drv-kir-clip (+ (vector-at M MM-ERR-POS) 1) flen 0 (+ (vector-at M MM-ERR-POS) 1))]
+    (drv-kir-say (mem-set (mem-set (mem-set M MM-ERR-A a2) MM-ERR-B b2) MM-ERR-POS (- p2 1)) path)))
+
+;; the `compile` pipeline from 20-names on (drv-c2 .. drv-c8), with drv-kir-fail as the error report
+(defn- drv-kir-c8 [M :vector-i64 path :string out :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-emit2 M out) (drv-kir-fail M path)))
+(defn- drv-kir-c7 [M :vector-i64 S :string path :string out :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-kir-c8 (out-build M S) path out) (drv-kir-fail M path)))
+(defn- drv-kir-c6 [M :vector-i64 S :string path :string out :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-kir-c7 (ly-run M) S path out) (drv-kir-fail M path)))
+(defn- drv-kir-c5 [M :vector-i64 S :string path :string out :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-kir-c6 (gn-run M) S path out) (drv-kir-fail M path)))
+(defn- drv-kir-c4 [M :vector-i64 S :string path :string out :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-kir-c5 (lw-run M) S path out) (drv-kir-fail M path)))
+(defn- drv-kir-c3 [M :vector-i64 S :string path :string out :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-kir-c4 (ck-run M S) S path out) (drv-kir-fail M path)))
+(defn- drv-kir-c2 [M :vector-i64 S :string path :string out :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-kir-c3 (nm-run M S) S path out) (drv-kir-fail M path)))
+(defn- drv-kir-c1 [M :vector-i64 S :string path :string out :string] :i64
+  (if (= (vector-at M MM-ERR) 0) (drv-kir-c2 (kr-run M S) S path out) (drv-kir-fail M path)))
+(defn- drv-kir-c0 [S :string path :string out :string] :i64
+  (drv-kir-c1 (rd-run (kr-lex (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S) S path out))
+
+(defn- drv-kir-run [path :string out :string] :i64
+  (if (= (io-exists path) 1) (drv-kir-c0 (string-concat (drv-read path) (kr-prelude)) path out) (drv-fail0 E-READ)))
+
+;; <out> "-" -> hex on stdout (as `compile`), else that file
+(defn- drv-kir-out [i :i64] :string (if (= (drv-dash (io-arg i)) 1) "" (io-arg i)))
+
+(defn- drv-kir [n :i64] :i64
+  (let [o (drv-flag 1 n -5168643622338417694)
+        s (drv-pos 1 n 0)
+        p1 (drv-pos 1 n 1)]
+    (cond (< s 0) (drv-usage)
+          (>= o 0) (drv-kir-run (io-arg s) (drv-kir-out o))
+          (< p1 0) (drv-usage)
+          :else (drv-kir-run (io-arg s) (drv-kir-out p1)))))
+;; ==== END compile-kir =================================================================================================
+
 (defn- drv-cmd [n :i64] :i64
   (cond (< n 1) (drv-usage)
+        (= (drv-is (io-arg 0) 11 1891999495935608509) 1) (drv-kir n)  ; compile-kir (block above)
         (= (drv-is (io-arg 0) 7 1333288279851460382) 1) (drv-compile n)
         (= (drv-is (io-arg 0) 5 -9003556064986789273) 1) (drv-check n)
         (= (drv-is (io-arg 0) 14 -7022508286123793970) 1) (drv-extract n)

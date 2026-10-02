@@ -1,0 +1,5 @@
+{:format :kotoba.kir/v4, :entry nil, :exports [t], :signature nil, :effects #{}, :functions [
+{:name g, :params [k m], :result :i64, :effects #{}, :body (__kotoba_loop_1 0 0 k m), :param-types [:i64 :i64]}
+{:name __kotoba_loop_2, :params [j s i m], :result :i64, :effects #{}, :body (if (= j m) s (__kotoba_loop_2 (+ j 1) (+ s (* i j)) i m)), :param-types [:i64 :i64 :i64 :i64]}
+{:name __kotoba_loop_1, :params [i total k m], :result :i64, :effects #{}, :body (if (= i k) total (let [row (__kotoba_loop_2 0 0 i m)] (__kotoba_loop_1 (+ i 1) (+ total row) k m))), :param-types [:i64 :i64 :i64 :i64]}
+{:name t, :params [], :result :i64, :effects #{}, :body (if (= (g 4 5) 60) 1 0), :param-types []}]}
