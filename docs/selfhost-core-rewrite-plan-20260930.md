@@ -193,3 +193,28 @@ and 4; `no-host-processes.sh -- <amu check/refactor/compile on amu's sources>` e
 node/nbb/java/python exec; the binary hash is recorded and its numbers are selfhost numbers
 (`docs/selfhost-priority.md` rule 4). Until then, nothing on this plan lets a new nbb, Node or JVM
 dependency join the product path (rules 8-10).
+
+## Memory strategy (2026-10-02)
+
+The Form route's heap is the self-build's other wall: desugar keeps 616 B per source byte, which is 16-30 GB for the
+whole pipeline in one process (`docs/selfhost-native-memory-20261002.md`). The owner's five ideas are measured, and
+ordered, in `docs/selfhost-memory-plan-20261002.md`. The decisions it supports:
+
+1. **Pair hash-consing in the loader** (`KEXE_HASHCONS`, spike landed, off by default), not an intern table in
+   kotoba.form. Kotoba has no global state, and the loader does the sharing with no port changing. On the desugar
+   guest it takes 616 -> 148 B and 30.6 -> 4.4 pairs per source byte, with byte-identical output. A self-build driver
+   turns it on.
+2. **One loader process per pass**, text at the boundaries (the study's option B). With step 1 the peak is one pass,
+   about 0.5 GB and 14.5 M pairs, inside today's `KEXE_PAIR_MAX`.
+3. **The seed backend via compile-kir** for the self-built compiler (seed design 5.2). This removes the ADR 0089
+   KIR-as-Forms backend cost and takes machine_ir, mir, gmir and codegen (23% of the reach set's nodes) out of the
+   self-build. The memory that remains is the frontend's Forms and pass state (`:fe/env`, `:ie/ctx`, the lexical and
+   type maps).
+4. `record-assoc` rebuilds only the prefix of the pair chain, and the hot env fields come first: a cheap
+   kotoba-native change.
+5. Definition CIDs serve incremental builds: a median 99.2% of definitions are unchanged per commit. They do not lower
+   a cold self-build's peak. Flat Forms are deferred until a pass measured natively (infer, analyze) needs them.
+   kotoba.form's `kids-of` is a typed list that ports index directly, so a flat Form touches every port.
+
+Re-measure with `KEXE_ARENA_USE=1 KEXE_HASHCONS=1` as each S3 pass starts to run natively. Infer's per-byte cost is the
+main unknown in the projection.

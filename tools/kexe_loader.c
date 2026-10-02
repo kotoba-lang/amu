@@ -5027,9 +5027,27 @@ static int64_t checked_cap_call(struct kexe_context_v11 *context,
   return (int64_t)((uint64_t)value + 1u);
 }
 
+/* PAIR HASH-CONSING state (KEXE_HASHCONS; see kexe_hashcons_find). */
+#define KEXE_HASHCONS_BITS_DEFAULT 22u
+static uint32_t *kexe_hashcons = NULL;     /* [1 << kexe_hashcons_bits] */
+static unsigned kexe_hashcons_bits = KEXE_HASHCONS_BITS_DEFAULT;
+static int64_t kexe_empty_vector = 0;
+
+static uint64_t kexe_hashcons_slot(int64_t first, int64_t second) {
+  uint64_t h = (uint64_t)first * 0x9e3779b97f4a7c15ull;
+  h ^= (uint64_t)second + 0x632be59bd9b4e019ull + (h << 6) + (h >> 2);
+  h *= 0xbf58476d1ce4e5b9ull;
+  return h >> (64u - kexe_hashcons_bits);
+}
+static int64_t kexe_hashcons_find(struct kexe_shared_v11 *shared, int64_t first, int64_t second);
+
 static int64_t checked_pair_new(struct kexe_context_v11 *context,
                                 int64_t first, int64_t second) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (kexe_hashcons != NULL && context != NULL && context->version == 11) {
+    int64_t existing = kexe_hashcons_find(shared, first, second);
+    if (existing != 0) return existing;
+  }
 /* Every allocation site bounds the index against the ARRAY as well as the
  * budget, and the second half is not redundant belt-and-braces -- it is what
  * makes the invariant LOCAL.
@@ -5058,6 +5076,8 @@ static int64_t checked_pair_new(struct kexe_context_v11 *context,
   shared->pairs[index].first = first;
   shared->pairs[index].second = second;
   shared->pair_validated[index] = 0;
+  if (kexe_hashcons != NULL)
+    kexe_hashcons[kexe_hashcons_slot(first, second)] = (uint32_t)(index + 1);
   return (int64_t)(index + 1);
 }
 
@@ -5168,8 +5188,39 @@ struct kexe_arena_use {
   uint64_t copied_words, reserved_words, regions, scope_releases;
   uint64_t peak_pairs, peak_string_pool, peak_vectors, peak_vector_items;
   uint64_t string_regions, string_region_appends, string_copied_bytes, string_reserved_bytes;
+  uint64_t hashcons_hits, empty_vector_shared;
 };
 static struct kexe_arena_use *kexe_use = NULL;
+
+/* PAIR HASH-CONSING (KEXE_HASHCONS=1; spike, docs/selfhost-memory-plan-20261002.md).
+ * A pair is immutable once made (no slot writes one), and no KIR head can
+ * observe a pair's identity apart from its two words, so `pair_new(a, b)` may
+ * answer an existing handle holding exactly (a, b). A record is a pair chain
+ * built from its last field, so identical records share their whole chain,
+ * records that agree on a suffix of fields share that suffix, and a
+ * `record-assoc` re-shares every field after the one it changes; a string
+ * value is a pair (offset, length), so equal views share one.
+ *
+ * The table is direct-mapped and lossy: a collision forgets the older pair,
+ * which only costs an allocation. A slot is believed only when the pair it
+ * names is still below `pair_used` (an arena-scope leave may have released
+ * it) and still holds the same two words, so it needs no invalidation.
+ * Together with it the empty vector is canonical: `vector_new_empty` answers
+ * one handle made before the guest starts (below every arena-scope mark),
+ * and the first conj onto any empty slice appends at the arena top, as a
+ * fresh empty vector did. A length-0 slice has no word an in-place write
+ * could reach, so sharing it is unobservable too. */
+
+/* The handle of an existing pair (first, second), or 0. */
+static int64_t kexe_hashcons_find(struct kexe_shared_v11 *shared,
+                                  int64_t first, int64_t second) {
+  uint32_t index = kexe_hashcons[kexe_hashcons_slot(first, second)];
+  if (index == 0 || (uint64_t)index > shared->pair_used) return 0;
+  const struct kexe_pair_v1 *pair = &shared->pairs[index - 1u];
+  if (pair->first != first || pair->second != second) return 0;
+  if (kexe_use != NULL) kexe_use->hashcons_hits++;
+  return (int64_t)index;
+}
 
 /* STRING GROWTH REGIONS: the same builder for `string-concat`. The tail
  * append below `checked_string_concat` already makes an accumulator O(1) per
@@ -5238,6 +5289,10 @@ static int64_t intern_vector(struct kexe_shared_v11 *shared,
 static int64_t checked_vector_new_empty(struct kexe_context_v11 *context) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
   if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (kexe_empty_vector != 0 && (uint64_t)kexe_empty_vector <= shared->vector_used) {
+    if (kexe_use != NULL) kexe_use->empty_vector_shared++;
+    return kexe_empty_vector;
+  }
   int64_t handle = intern_vector(shared, shared->vector_item_used, 0);
   if (handle == 0) { arena_exhausted(KEXE_BUDGET_CELLS_VECTOR_TABLE); raise(SIGILL); return 0; }
   return handle;
@@ -5296,6 +5351,9 @@ static int64_t checked_vector_conj(struct kexe_context_v11 *context,
       return result;
     }
   }
+  /* An empty slice spans no word, so its first item may go at the arena top
+   * wherever the slice sits (the canonical empty vector, KEXE_HASHCONS). */
+  if (length == 0 && kexe_empty_vector != 0) offset = shared->vector_item_used;
   if (offset + length != shared->vector_item_used) {
     /* Interior slice: appending would write a word some other handle may
      * already span, so copy first -- into a fresh REGION of capacity
@@ -12684,6 +12742,21 @@ int main(int argc, char **argv) {
   }
 #endif
 
+  /* KEXE_HASHCONS: pair hash-consing and the canonical empty vector (see
+   * kexe_hashcons_find); off when unset or "0". The value is log2 of the
+   * table's slot count, 16-28; any other value takes the default (2^22
+   * slots, 16 MiB of private zero pages, made before the fork). */
+  if (getenv("KEXE_HASHCONS") != NULL && strcmp(getenv("KEXE_HASHCONS"), "0") != 0) {
+    unsigned long bits = 0;
+    if (parse_ulong_decimal(getenv("KEXE_HASHCONS"), &bits) == 0 && bits >= 16 && bits <= 28)
+      kexe_hashcons_bits = (unsigned)bits;
+    void *slots = mmap(NULL, ((size_t)1u << kexe_hashcons_bits) * sizeof(uint32_t),
+                       PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (slots != MAP_FAILED) {
+      kexe_hashcons = (uint32_t *)slots;
+      kexe_empty_vector = intern_vector(shared, shared->vector_item_used, 0);
+    }
+  }
   pid_t child = fork();
   if (child < 0) fail("fork");
   if (child > 0) {
@@ -12717,6 +12790,9 @@ int main(int argc, char **argv) {
               kexe_use->scope_releases, kexe_use->string_regions,
               kexe_use->string_region_appends, kexe_use->string_copied_bytes,
               kexe_use->string_reserved_bytes);
+      if (kexe_hashcons != NULL)
+        fprintf(stderr, "KEXE_HASHCONS {:pair-hits %" PRIu64 " :empty-vector-shared %" PRIu64 "}\n",
+                kexe_use->hashcons_hits, kexe_use->empty_vector_shared);
     }
     if (structured_report)
       child_status = write_supervisor_report(shared, child_status, result_type,
