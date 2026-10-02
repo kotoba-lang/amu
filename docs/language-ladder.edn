@@ -210,12 +210,11 @@
   ;; present record's projection is floor :native-option-record.
   {:id :absent-field-from-assoc :gate "nil-field-typed-by-the-module-assoc-test"
    :goal "{.. :text/composition nil} is [:option T] with T the value the module assoc's into that field ({:composition/text \"\"}, composition-start), and (assoc s :text/composition nil) its none; refused today \"map literal value at key :text/composition is nil ... nothing here says T\"; a field two assoc's give two types stays refused by name"}
-;; Measured 2026-10-02 while closing :cljs-literal-hash, on kotoba-sema
-  ;; 8d3320fc: with the crash gone and :text/composition left out, text-edit
-  ;; (move-caret and move-to in, a main calling each function on
-  ;; (empty-state)) is refused at delete-backward's (insert-text state "").
-  ;; Not yet minimized: a rebound row passed to another row function, in a
-  ;; cond, after a vector destructuring, is each admitted alone.
+;; Landed 2026-10-03 in kotoba-sema (275b40a0): row specialization ran
+  ;; before parameter inference, so code-unit-count's string parameter was
+  ;; still :i64 inside normalize-selection's specialization, whose result
+  ;; then stayed :i64; each round now infers parameters first. ADR 0353 has
+  ;; the measurements.
   {:id :rebound-row-argument :gate "text-edit-rebound-state-is-a-row-test"
    :goal "delete-backward's and delete-forward's (insert-text state \"\"), state rebound by (normalize-selection state), passes a record to insert-text's row parameter; refused today \"argument state to insert-text is i64, and parameter state of insert-text is the row {:text/caret T :text/selection T | r}: only a record satisfies a row\"; a number passed to a row parameter stays refused by that literal"}
   {:id :native-vector-field :gate "vector-field-in-record-compiles-natively-test"
@@ -231,11 +230,20 @@
   ;; rejected: branch-value-shape-mismatch". Presence alone compiles.
   {:id :native-option-record :gate "option-record-projects-natively-test"
    :goal "the record an [:option R] holds is projected on x86_64-aiueos-kernel-v1 and aarch64-macos -- browser.text-edit's (if-let [c (:text/composition state)] (:composition/text c) ..) and a declared [:option R] parameter read the same way; refused today \"runtime KIR record projection rejected\" and \"branch-value-shape-mismatch\"; projecting a field R does not declare, and an option as a number, stay refused"}
+;; Measured 2026-10-03 while closing :rebound-row-argument, on kotoba-sema
+  ;; 275b40a0: text-edit with move-caret and move-to is refused at main's
+  ;; (move-caret (empty-state) 1), "record-get without a type descriptor
+  ;; requires a record value; got :i64" -- the specialization's result is not
+  ;; inferable. Minimized: a {:keys [x?]} parameter is "expression type
+  ;; mismatch: expected map, got i64", and the 2-arity's {} "an empty map
+  ;; literal {} has no row to extend".
+  {:id :options-map-argument :gate "options-map-destructures-as-a-row-test"
+   :goal "move-caret's and move-to's options -- ([state delta] (move-caret state delta {})) and ([state delta {:keys [extend?]}] ..) -- are admitted, a key the map does not have read as absence; refused today \"record-get without a type descriptor requires a record value; got :i64\" at (move-caret (empty-state) 1), minimized \"expression type mismatch: expected map, got i64\"; a number as the options map, and an option used as a number, stay refused"}
   {:id :export-signatures :gate "export-abi-from-clojure-source-test"
    :needs-a-human "how a Clojure-readable source states an export's ABI: browser.text-edit's public functions take state (a row: refused as an exported generic, which has one ABI) and text (unannotated, so :i64; the test passes strings: \"expected i64, got string\"), and the typed signature spelling [m [:ref q]] is not Clojure. Candidates measured as possible, not chosen: Clojure type hints (^String text) and an ns schema the hint names, or the export taking the record the module's one public constructor (empty-state) returns"
    :goal "browser.text-edit's public functions export one ABI each with the source still read by Clojure"}
   {:id :browser-text-edit :gate "browser-text-edit-native-test"
-   :blocked-by [:absent-field-from-assoc :rebound-row-argument :native-vector-field :typed-wasm-min-max :native-option-record :export-signatures]
+   :blocked-by [:absent-field-from-assoc :rebound-row-argument :native-vector-field :typed-wasm-min-max :native-option-record :options-map-argument :export-signatures]
    :goal "kotoba-lang/browser's browser.text-edit, migrated only mechanically (defn-, nil's meaning, a :kotoba interop branch), compiles for both native targets and its hosted tests pass on amu's output"}
   {:id :browser-input :gate "browser-input-native-test"
    :goal "browser.input the same"}
