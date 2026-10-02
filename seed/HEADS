@@ -15,7 +15,13 @@
   [:c TY-STR 3 ":string -- immutable bytes (ASCII in R0); literals, cap results, string-concat"]
   [:c TY-VEC 4 ":vector-i64 -- vector handle; vector-assoc! mutates in place (linear), others copy"]
   [:c TY-BYTES 5 ":bytes -- ONLY as the value of bytes-from-vector-i64 and the argument/result of a :bytes cap
-                  call; not a legal parameter or result type of a defn in R0"]]
+                  call; not a legal parameter or result type of a defn in R0"]
+  ;; -- R1 (rung 1, 2026-10-02) --
+  [:c TY-KW 6 ":keyword -- an interned keyword; the value is the keyword's SYM index (first-occurrence order, so
+                deterministic per compile). Only = and case compare keywords; never an export parameter or result"]
+  [:c TY-REC-BASE 1024 "record types: TY-REC-BASE + the record's identity symbol (seed/MEMORY-MAP SF-REC, RB-*). A
+                        record value is the pair chain pair(f0, pair(f1, ... 0)) in declaration order (stage-0's
+                        ABI, measured 2026-10-02 on build/native-image/amu-native: pair_new from the last field)"]]
  ;; Type keywords in signatures: :i64 :bool :string :vector-i64. Anything else after a parameter -> E2105.
 
  ;; ---------------------------------------------------------------------------------------------------------
@@ -39,7 +45,7 @@
  ;; ---------------------------------------------------------------------------------------------------------
  :nodes
  [[:c ND-ROOT 1 "the file: children = top-level forms"] [:c ND-LIST 2 "( ... )"] [:c ND-VEC 3 "[ ... ]"]
-  [:c ND-MAP 4 "{ ... } (only produced to refuse it: E1105)"] [:c ND-INT 5] [:c ND-STR 6] [:c ND-SYM 7]
+  [:c ND-MAP 4 "{ k v ... } R1: read with key/value children; 21-check admits it only as the argument of map->Name"] [:c ND-INT 5] [:c ND-STR 6] [:c ND-SYM 7]
   [:c ND-KW 8]]
 
  ;; ---------------------------------------------------------------------------------------------------------
@@ -50,7 +56,11 @@
   [:c KW-EXPORT 5 ":export"] [:c KW-ELSE 6 ":else"] [:c KW-BYTES 7 ":bytes"]
   [:c KW-FS-APP-DATA 8 ":fs/app-data"] [:c KW-CLI-ARGS 9 ":cli/args"] [:c KW-IO-WRITE-ERROR 10 ":io/write-error"]
   [:c KW-IO-WRITE 11 ":io/write"]
-  [:c KW-FS-APP-DATA-BYTES 12 ":fs/app-data-bytes"]]
+  [:c KW-FS-APP-DATA-BYTES 12 ":fs/app-data-bytes"]
+  ;; -- R1 --
+  [:c KW-KEYWORD 13 ":keyword (type)"] [:c KW-RECORD 14 ":record (schema head)"] [:c KW-LET 15 ":let (doseq)"]
+  [:c KW-WHEN 16 ":when (doseq)"] [:c KW-WHILE 17 ":while (doseq)"]
+  [:c KW-INFER 18 "(no spelling) the synthetic result type of an unannotated defn: inferred from the body"]]
  ;; KW-FS-APP-DATA-BYTES (R0 2026-10-02): wire 35 with the :bytes kinds, the spelling stage-0 accepts.
  ;; Keywords appear ONLY in: ns (:export), signatures (types), cond (:else), typed-cap-call (wire, kinds).
  ;; A keyword anywhere else (as a value) -> E2114.
@@ -63,7 +73,8 @@
   [:c RES-LOCAL 1 "index = frame slot of a param / let / loop variable"]
   [:c RES-FN 2 "index = FN index of a defn/defn- (in call head position only)"]
   [:c RES-DEF 3 "index = FN index of a top-level def constant (a value reference)"]
-  [:c RES-HEAD 4 "index = head code (the symbol in head position of a builtin form)"]]
+  [:c RES-HEAD 4 "index = head code (the symbol in head position of a builtin form)"]
+  [:c RES-CONST 5 "R1: index = the value of a constant symbol (true = 1, false = 0)"]]
  ;; NF-RES of an ND-LIST node = its head code (1..42; HD-CALL for a user call). Of an ND-VEC used as an
  ;; expression = HD-VECLIT. Binding vectors (let/loop/params) get NF-RES 0.
 
@@ -128,9 +139,52 @@
   ;; -- R0 addition 2026-10-02 (binary container I/O of the driver: extract-native reads a kseed file) --
   [:c HD-VECTOR-I64-FROM-BYTES 42 "(vector-i64-from-bytes x) -> v, a copy, one item (0..255) per byte; lowers to
                                    RT RT-BYTES-FROM-VECTOR t 1 (the loader shares the representation, ABI v11)"]
-  [:c HD-COUNT 42 "number of heads"]]
+  ;; -- R1 (rung 1, 2026-10-02): sugar, enums and flat records. 21-check DESUGARS heads 43-65 into core forms
+  ;;    (in place, synthetic nodes; seed/CONTRACT-REQUESTS.md R1 line) before typing; 30-lower sees only core heads,
+  ;;    HD-DO, HD-TRAP and the record heads. Semantics measured on stage-0 2026-10-02 (docs/selfhost-seed-r1-*.md).
+  [:c HD-DO 43 "(do e1 .. en) n>=1 -> type of en; e1..e(n-1) evaluated for effect. Core form"]
+  [:c HD-WHEN 44 "(when c e ..) c:b, body i64 -> (if c (do e ..) 0) (stage-0: a false when is 0)"]
+  [:c HD-WHEN-NOT 45 "(when-not c e ..) -> (if c 0 (do e ..))"]
+  [:c HD-IF-NOT 46 "(if-not c a b) -> (if c b a)"]
+  [:c HD-CASE 47 "(case e k1 r1 (k2 k3) r2 .. [default]) e:i/keyword; k an integer, keyword or i64 def; unique (E2125);
+                  -> (let [g e] (cond (= g k1) r1 (or (= g k2) (= g k3)) r2 .. :else default|TRAP)). No match and no
+                  default traps (stage-0: refused as a compile-time trap)"]
+  [:c HD-CONDP 48 "(condp pred e c1 r1 .. [default]) pred a symbol -> (let [g e] (cond (pred c1 g) r1 .. :else d|TRAP))"]
+  [:c HD-THREAD-FIRST 49 "(-> x f (g a)) -> (g (f x) a)"] [:c HD-THREAD-LAST 50 "(->> x f (g a)) -> (g a (f x))"]
+  [:c HD-AS-THREAD 51 "(as-> x n f1 f2) -> (let [n x] (let [n f1] (let [n f2] n)))"]
+  [:c HD-COND-THREAD 52 "(cond-> x t1 f1 ..) -> (let [g x] (let [g (if t1 (-> g f1) g)] .. g))"]
+  [:c HD-COND-THREAD-LAST 53 "(cond->> x t1 f1 ..) as cond-> with ->>"]
+  [:c HD-DOTIMES 54 "(dotimes [i n] e ..) -> (let [g n] (loop [i 0] (if (< i g) (do e .. (recur (+ i 1))) 0))); value 0"]
+  [:c HD-DOSEQ 55 "(doseq [x coll mods.. y coll2 ..] e ..) coll a :vector-i64 or (range n) / (range a b); mods :let [..]
+                   :when c :while c; value 0. Per item: :let -> let, :when -> skip the rest, :while -> stop that loop"]
+  [:c HD-RANGE 56 "(range n) / (range a b) -- only as a doseq collection"]
+  [:c HD-INC 57 "(inc x) -> (+ x 1)"] [:c HD-DEC 58 "(dec x) -> (- x 1)"] [:c HD-ZERO 59 "(zero? x) -> (= x 0)"]
+  [:c HD-POS 60 "(pos? x) -> (> x 0)"] [:c HD-NEG 61 "(neg? x) -> (< x 0)"] [:c HD-NOT-EQ 62 "(not= a b) -> (not (= a b))"]
+  [:c HD-ASSERT 63 "(assert c) -> (if c 0 TRAP) (stage-0: a false assert traps)"]
+  [:c HD-TRUE 64 "true: a constant symbol, :bool 1 (RES-CONST)"] [:c HD-FALSE 65 "false: :bool 0 (RES-CONST)"]
+  [:c HD-VECTOR-COUNT 66 "(vector-count v) -> i ; RT RT-VECTOR-COUNT t 1"]
+  [:c HD-RECORD-NEW 67 "(record-new [:record :ns/name [[:f :T] ..]] e ..) -> the record; one arg per field, in order.
+                        SIR: [e_i -> t+i] CONST t+n 0, then RT RT-PAIR-NEW t+i 2 for i = n-1 .. 0"]
+  [:c HD-RECORD 68 "(record SCHEMA e ..) = record-new"]
+  [:c HD-RECORD-GET 69 "(record-get SCHEMA r :f) -> field f. SIR: [r -> t], RT RT-PAIR-SECOND t 1 (index times),
+                        RT RT-PAIR-FIRST t 1. The field keyword's NF-RES = the field index (21-check)"]
+  [:c HD-DEFRECORD 70 "(defrecord Name [f :T g ..]) top level; unannotated fields are :i64; 1..32 unique fields.
+                       Identity: the keyword :<ns>/Name when the file spells it (then inline schemas of that name must
+                       have the same fields, E2128), else the symbol Name. (->Name e ..) constructs (HD-RECORD-CTOR)"]
+  [:c HD-GET 71 "(get r :f) on a record -> field f"]
+  [:c HD-TRAP 72 "(no spelling) synthetic: brk, type bottom (OP-TRAP 0)"]
+  [:c HD-KWGET 73 "(no spelling) (:f r) on a record -> field f (NF-RES of the list)"]
+  [:c HD-RECORD-CTOR 74 "(no spelling) (->Name e ..) (NF-RES of the list); args start at the 2nd child"]
+  [:c HD-ASSOC 75 "(assoc r :f v) on a record -> a new record with field f = v (the other fields copied). 21-check gives it a
+                   hidden frame slot (NF-TYPE of the head symbol node) that holds r while the fields are copied"]
+  [:c HD-COUNT 75 "number of heads"]]
 
  ;; Head spellings, index = head code (20-names compares a symbol's bytes against these at intern time).
+ ;; R1 spellings 43.. : "do" "when" "when-not" "if-not" "case" "condp" "->" "->>" "as->" "cond->" "cond->>" "dotimes"
+ ;; "doseq" "range" "inc" "dec" "zero?" "pos?" "neg?" "not=" "assert" "true" "false" "vector-count" "record-new" "record"
+ ;; "record-get" "defrecord" "get"; 72 73 74 have none; 75 "assoc". (map->Name {..}) and (->Name ..) are recognised by
+ ;; spelling at desugaring time (the record name after the prefix); a map literal is read (ND-MAP, key/value children)
+ ;; and admitted ONLY as the argument of map->Name (exactly the record's keyword fields), E1105 anywhere else (scripts/seed/gen-names-tables.py generates 20-names' tables).
  :spellings ["" "ns" ":export" "defn" "defn-" "def" "let" "loop" "recur" "if" "and" "or" "not" "=" "<" ">" "<="
              ">=" "+" "-" "*" "quot" "bit-and" "bit-or" "bit-xor" "bit-not" "u64-shift-right" "i64-shift-left"
              "i64-shift-right" "vector-at" "vector-conj" "vector-assoc" "vector-assoc!" "vector-alloc"
@@ -210,6 +264,10 @@
   [:c E-CHECK-RESULT 2121 "result of '{name}' does not match its declared type {t}"]
   [:c E-CHECK-EQ 2123 "= compares only i64 or bool values"]
   [:c E-CHECK-DEF 2124 "def value must be an integer, string or vector literal: '{name}'"]
+  [:c E-CHECK-CASE-DUP 2125 "case constants must be unique: '{name}'"]
+  [:c E-CHECK-INFER 2126 "cannot infer the result type of '{name}' here: declare it"]
+  [:c E-CHECK-FIELD 2127 "unknown record field '{name}'"]
+  [:c E-CHECK-SCHEMA 2128 "malformed or conflicting record schema '{name}'"]
   [:c E-LOWER-FULL 3001 "SIR table full"]
   [:c E-LOWER-NODE 3003 "internal: cannot lower node kind {n}"]
   [:c E-ENC-IMM 4001 "immediate out of range: {n}"]

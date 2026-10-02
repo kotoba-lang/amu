@@ -124,7 +124,7 @@
         (= hd HD-VECTOR-ASSOC) RT-VECTOR-ASSOC (= hd HD-VECTOR-ASSOC-BANG) RT-VECTOR-ASSOC-IN-PLACE
         (= hd HD-VECTOR-ALLOC) RT-VECTOR-ALLOC (= hd HD-STRING-CODE-POINT-AT) RT-STRING-CODE-POINT-AT
         (= hd HD-STRING-LENGTH) RT-STRING-LENGTH-VIA (= hd HD-STRING-CONCAT) RT-STRING-CONCAT
-        (= hd HD-BYTES-FROM-VECTOR-I64) RT-BYTES-FROM-VECTOR
+        (= hd HD-BYTES-FROM-VECTOR-I64) RT-BYTES-FROM-VECTOR (= hd HD-VECTOR-COUNT) RT-VECTOR-COUNT
         (= hd HD-VECTOR-I64-FROM-BYTES) RT-BYTES-FROM-VECTOR :else 0))
 (defn- lw-wire [kw :i64] :i64
   (cond (= kw KW-FS-APP-DATA) WIRE-FS-APP-DATA (= kw KW-CLI-ARGS) WIRE-CLI-ARGS
@@ -368,6 +368,59 @@
       (lw-tab M0 w (lw-next M0 a) t)
       (let [m (lw-count M0 a)] (lw-emit (lw-args M0 a t) OP-RT rt t m)))))
 
+;; ---- R1: do, trap, records (seed/HEADS HD-DO HD-TRAP HD-RECORD-*: pair chains pair(f0, pair(f1, .. 0))) ----
+;; (do e1 .. en): every ei into t, only en with the context k
+(defn- lw-do [M0 :vector-i64 a :i64 t :i64 k :i64] :vector-i64
+  (let [nx (lw-next M0 a)]
+    (if (= nx 0)
+      (lw-expr M0 a t k)
+      (lw-do (lw-expr M0 a t 0) nx t k))))
+;; RT PAIR-NEW at t+i .. t for i = j down to 0 (temp t+i+1 holds the rest of the chain)
+(defn- lw-pairs [M0 :vector-i64 t :i64 j :i64] :vector-i64
+  (if (< j 0)
+    M0
+    (lw-pairs (lw-emit M0 OP-RT RT-PAIR-NEW (+ t j) 2) t (- j 1))))
+;; a record from the field values a, a', ..: [ai -> t+i] CONST t+n 0, pairs from the last field
+(defn- lw-recnew [M0 :vector-i64 a :i64 t :i64] :vector-i64
+  (let [n (lw-count M0 a)
+        M1 (lw-args M0 a t)
+        M2 (lw-emit M1 OP-CONST (+ t n) 0 0)]
+    (lw-pairs M2 t (- n 1))))
+;; j times pair_second, then pair_first
+(defn- lw-seconds [M0 :vector-i64 t :i64 j :i64] :vector-i64
+  (if (<= j 0)
+    (lw-emit M0 OP-RT RT-PAIR-FIRST t 1)
+    (lw-seconds (lw-emit M0 OP-RT RT-PAIR-SECOND t 1) t (- j 1))))
+;; field (NF-RES of keyword node kw) of the record expression r
+(defn- lw-field [M0 :vector-i64 r :i64 kw :i64 t :i64] :vector-i64
+  (let [j (lw-nf M0 kw NF-RES)
+        M1 (lw-expr M0 r t 0)]
+    (lw-seconds M1 t j)))
+(defn- lw-trap [M0 :vector-i64] :vector-i64 (lw-emit M0 OP-TRAP 0 0 0))
+;; (assoc r :f v): [r -> t] LSET s t, then field i into t+i (LGET + projections, or [v -> t+j]), CONST, pairs.
+;; s = the hidden slot (NF-TYPE of the head node), j = NF-RES of the keyword, the field count from the record type.
+(defn- lw-nfields [M :vector-i64 ty :i64] :i64
+  (vector-at M (+ (vector-at M (+ MM-SYM-BASE (+ (* (- ty TY-REC-BASE) MM-SYM-W) SF-REC))) RB-N)))
+(defn- lw-assoc-fields [M0 :vector-i64 i :i64 n :i64 sjv :i64 t :i64] :vector-i64
+  (let [s (quot sjv 1073741824)
+        j (bit-and (quot sjv 1048576) 1023)
+        v (bit-and sjv 1048575)]
+    (cond (>= i n) M0
+          (= i j) (lw-assoc-fields (lw-expr M0 v (+ t i) 0) (+ i 1) n sjv t)
+          :else (lw-assoc-fields (lw-seconds (lw-emit M0 OP-LGET (+ t i) s 0) (+ t i) i) (+ i 1) n sjv t))))
+(defn- lw-assoc [M0 :vector-i64 n :i64 t :i64] :vector-i64
+  (let [h (lw-first M0 n)
+        r (lw-next M0 h)
+        kw (lw-next M0 r)
+        v (lw-next M0 kw)
+        s (lw-nf M0 h NF-TYPE)
+        nf (lw-nfields M0 (lw-nf M0 n NF-TYPE))
+        M1 (lw-expr M0 r t 0)
+        M2 (lw-emit M1 OP-LSET s t 0)
+        M3 (lw-assoc-fields M2 0 nf (+ (* s 1073741824) (+ (* (lw-nf M2 kw NF-RES) 1048576) v)) t)
+        M4 (lw-emit M3 OP-CONST (+ t nf) 0 0)]
+    (lw-pairs M4 t (- nf 1))))
+
 ;; an ND-LIST expression with head code hd; h = head node, a = first argument
 (defn- lw-list2 [M0 :vector-i64 n :i64 hd :i64 t :i64 k :i64] :vector-i64
   (let [h (lw-first M0 n)
@@ -384,6 +437,14 @@
       (= hd HD-NOT) (lw-un M0 a t UOP-NOT)
       (= hd HD-BIT-NOT) (lw-un M0 a t UOP-BITNOT)
       (= hd HD-TYPED-CAP-CALL) (lw-cap M0 a t)
+      (= hd HD-DO) (lw-do M0 a t k)
+      (= hd HD-TRAP) (lw-trap M0)
+      (= hd HD-RECORD-NEW) (lw-recnew M0 (lw-next M0 a) t)
+      (= hd HD-RECORD-CTOR) (lw-recnew M0 a t)
+      (= hd HD-RECORD-GET) (lw-field M0 (lw-next M0 a) (lw-next M0 (lw-next M0 a)) t)
+      (= hd HD-GET) (lw-field M0 a (lw-next M0 a) t)
+      (= hd HD-KWGET) (lw-field M0 a h t)
+      (= hd HD-ASSOC) (lw-assoc M0 n t)
       :else (let [pos (lw-pos M0 n)] (lw-fail M0 E-LOWER-NODE pos hd)))))
 
 (defn- lw-list [M0 :vector-i64 n :i64 t :i64 k :i64] :vector-i64
@@ -403,6 +464,7 @@
         cls (lw-rcls res)]
     (cond
       (= cls RES-LOCAL) (lw-emit M0 OP-LGET t (lw-ridx res) 0)
+      (= cls RES-CONST) (lw-emit M0 OP-CONST t (lw-ridx res) 0)
       ;; a def reference evaluates the def's literal again (seed/SIR); (def NAME literal): literal = 3rd child
       (= cls RES-DEF) (let [lit (lw-nth M0 (lw-first M0 (lw-ff M0 (lw-ridx res) FF-NODE)) 2)] (lw-expr M0 lit t 0))
       :else (let [pos (lw-pos M0 n)] (lw-fail M0 E-LOWER-NODE pos ND-SYM)))))
@@ -415,6 +477,7 @@
       (= kind ND-SYM) (lw-sym M0 n t)
       (= kind ND-INT) (lw-emit M0 OP-CONST t aux 0)
       (= kind ND-STR) (lw-emit M0 OP-STR t aux 0)
+      (= kind ND-KW) (lw-emit M0 OP-CONST t (lw-nf M0 n NF-SYM) 0)
       (= kind ND-VEC) (let [a (lw-first M0 n) m (lw-count M0 a)] (lw-emit (lw-args M0 a t) OP-VEC t m 0))
       :else (let [pos (lw-pos0 M0 n)] (lw-fail M0 E-LOWER-NODE pos kind)))))
 
@@ -600,6 +663,17 @@
             H4 (lw-ix-copy H3 (+ s (+ 1 la)) (+ b 1) lb)]
         (lw-put H4 1 s)))))
 
+;; R1 pair: H[p] = second (so pair_second = RT-STRING-LENGTH-VIA reads it, as for a string), H[p+1] = first
+(defn- lw-ix-pair [H0 :vector-i64 x :i64 y :i64] :vector-i64
+  (let [H1 (lw-ix-alloc H0 2)
+        st1 (vector-at H1 0)]
+    (if (> st1 0)
+      H1
+      (let [p (vector-at H1 10)
+            H2 (lw-put H1 p y)
+            H3 (lw-put H2 (+ p 1) x)]
+        (lw-put H3 1 p)))))
+
 ;; runtime helper rt over the operands at H[base..]; result in H[1]
 (defn- lw-ix-rt [H0 :vector-i64 rt :i64 base :i64] :vector-i64
   (let [x (vector-at H0 base)
@@ -614,6 +688,9 @@
       (= rt RT-VECTOR-ALLOC) (lw-ix-valloc H0 x)
       (= rt RT-STRING-LENGTH-VIA) (let [len (vector-at H0 x)] (lw-put H0 1 len))
       (= rt RT-STRING-CONCAT) (lw-ix-concat H0 x y)
+      (= rt RT-PAIR-NEW) (lw-ix-pair H0 x y)
+      (= rt RT-PAIR-FIRST) (let [f (vector-at H0 (+ x 1))] (lw-put H0 1 f))
+      (= rt RT-VECTOR-COUNT) (let [c (vector-at H0 (+ x 1))] (lw-put H0 1 c))
       :else (lw-ix-trap H0 7))))
 
 ;; string literal lit -> handle in H[1] (built once, cached)

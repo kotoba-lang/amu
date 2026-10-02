@@ -100,7 +100,8 @@
   [:c SF-HEAD 3 "symbol: head code HD-* if the spelling is a builtin head, else 0; keyword: KW-* code or 0"]
   [:c SF-FN 4 "FN index of the top-level def/defn/defn- with this name, else 0 (20-names)"]
   [:c SF-BIND 5 "current local binding: frame slot + 1, 0 = not bound (20-names scope API only)"]
-  [:c SF-SPARE6 6 "reserved, 0"]
+  [:c SF-REC 6 "R1: HEAP address of the record schema block of a record name (defrecord symbol or the keyword of an
+                  inline [:record :ns/name ..] schema), else 0 (21-check). Block: RB-* below"]
   [:c SF-SPARE7 7 "reserved, 0"]
 
   ;; HASH: open addressing, linear probing, MM-HASH-CAP slots (a power of two). Slot = symbol index, 0 = empty.
@@ -120,6 +121,13 @@
   [:c FF-FUEL 14 "1 when the body contains a call, runtime call or capability call (21-check), see SIR fuel rule"]
   [:c FF-DEPTH 15 "max SIR temp depth + 1 used by the function (30-lower)"]
   [:c FK-DEFN 1] [:c FK-PRIV 2 "defn-"] [:c FK-DEF 3]
+  ;; R1: FF-EXPORT = 2 marks an IMPLICIT export (no (:export ..) clause: every defn); 21-check turns it into 1 when the
+  ;; signature is exportable (params i64, result i64/bool) and 0 otherwise.
+
+  ;; Record schema block (R1, in HEAP via mem-alloc, written by 21-check): [n id (kwsym type) * n]
+  [:c RB-N 0 "field count 1..32"] [:c RB-ID 1 "identity symbol: the record type is TY-REC-BASE + id"]
+  [:c RB-F0 2 "first field pair: the SYM of the keyword :f (0 when the file never spells it: then no accessor can
+               name the field), the field type"] [:c RB-FW 2]
 
   ;; SCOPE: the shadow stack of 20-names' scope API: [symbol, previous SF-BIND of that symbol].
   [:c CF-SYM 0] [:c CF-PREV 1]
