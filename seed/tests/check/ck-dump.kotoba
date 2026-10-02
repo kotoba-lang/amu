@@ -1,0 +1,212 @@
+;; seed/tests/check/ck-dump.kotoba -- test driver of seed modules 20-names and 21-check (owner 20-names/21-check).
+;; Assembled by scripts/seed/ck-gate.sh after 00-ns 10-lex 11-read 20-names 21-check; defines seed-main.
+;; Guest argv: <mode> <absolute path>. Runs lex, read, names, check on the file and prints ONE result line:
+;;   ok fns=<n> syms=<n> nodes=<n> digest=<FNV over every node's NF-TYPE/NF-RES and every FN's check fields>
+;;   E<code> pos=<p> n=<n> '<the {name} span>'
+;; mode "f" also prints one line per FN after the result: fn <name> kind=<k> np=<n> rt=<t> pt=<t,t,..>
+;;   nslots=<n> fuel=<0|1> export=<0|1>; mode "s" prints one line per symbol: sym <spelling> head=<SF-HEAD>.
+;; Test code follows the seed rules (no and/or/not: stable stage-0 defect).
+(defn- t-w [s :string] :i64
+  (let [o (typed-cap-call :io/write :string :string s)] 0))
+(defn- t-digit [d :i64] :string
+  (cond (= d 0) "0" (= d 1) "1" (= d 2) "2" (= d 3) "3" (= d 4) "4"
+        (= d 5) "5" (= d 6) "6" (= d 7) "7" (= d 8) "8" :else "9"))
+(defn- t-dec-pos [n :i64] :string
+  (if (< n 10) (t-digit n)
+    (string-concat (t-dec-pos (quot n 10)) (t-digit (- n (* 10 (quot n 10)))))))
+;; decimal of any i64 (MIN prints through its unsigned magnitude halves)
+(defn- t-dec [n :i64] :string
+  (cond (= n -9223372036854775808) "-9223372036854775808"
+        (< n 0) (string-concat "-" (t-dec-pos (- 0 n)))
+        :else (t-dec-pos n)))
+(defn- t-wn [n :i64] :i64 (t-w (t-dec n)))
+(defn- t-chr [c :i64] :string
+  (cond
+    (= c 32) " "
+    (= c 33) "!"
+    (= c 34) "\""
+    (= c 35) "#"
+    (= c 36) "$"
+    (= c 37) "%"
+    (= c 38) "&"
+    (= c 39) "'"
+    (= c 40) "("
+    (= c 41) ")"
+    (= c 42) "*"
+    (= c 43) "+"
+    (= c 44) ","
+    (= c 45) "-"
+    (= c 46) "."
+    (= c 47) "/"
+    (= c 48) "0"
+    (= c 49) "1"
+    (= c 50) "2"
+    (= c 51) "3"
+    (= c 52) "4"
+    (= c 53) "5"
+    (= c 54) "6"
+    (= c 55) "7"
+    (= c 56) "8"
+    (= c 57) "9"
+    (= c 58) ":"
+    (= c 59) ";"
+    (= c 60) "<"
+    (= c 61) "="
+    (= c 62) ">"
+    (= c 63) "?"
+    (= c 64) "@"
+    (= c 65) "A"
+    (= c 66) "B"
+    (= c 67) "C"
+    (= c 68) "D"
+    (= c 69) "E"
+    (= c 70) "F"
+    (= c 71) "G"
+    (= c 72) "H"
+    (= c 73) "I"
+    (= c 74) "J"
+    (= c 75) "K"
+    (= c 76) "L"
+    (= c 77) "M"
+    (= c 78) "N"
+    (= c 79) "O"
+    (= c 80) "P"
+    (= c 81) "Q"
+    (= c 82) "R"
+    (= c 83) "S"
+    (= c 84) "T"
+    (= c 85) "U"
+    (= c 86) "V"
+    (= c 87) "W"
+    (= c 88) "X"
+    (= c 89) "Y"
+    (= c 90) "Z"
+    (= c 91) "["
+    (= c 92) "\\"
+    (= c 93) "]"
+    (= c 94) "^"
+    (= c 95) "_"
+    (= c 96) "`"
+    (= c 97) "a"
+    (= c 98) "b"
+    (= c 99) "c"
+    (= c 100) "d"
+    (= c 101) "e"
+    (= c 102) "f"
+    (= c 103) "g"
+    (= c 104) "h"
+    (= c 105) "i"
+    (= c 106) "j"
+    (= c 107) "k"
+    (= c 108) "l"
+    (= c 109) "m"
+    (= c 110) "n"
+    (= c 111) "o"
+    (= c 112) "p"
+    (= c 113) "q"
+    (= c 114) "r"
+    (= c 115) "s"
+    (= c 116) "t"
+    (= c 117) "u"
+    (= c 118) "v"
+    (= c 119) "w"
+    (= c 120) "x"
+    (= c 121) "y"
+    (= c 122) "z"
+    (= c 123) "{"
+    (= c 124) "|"
+    (= c 125) "}"
+    (= c 126) "~"
+    :else "?"))
+;; S[a..b) as a string, one byte at a time (spans are short: names and keywords)
+(defn- t-span [S :string a :i64 b :i64] :string
+  (if (< a b) (string-concat (t-chr (string-code-point-at S a)) (t-span S (+ a 1) b)) ""))
+
+(defn- t-mem [] :vector-i64
+  (let [M0 (vector-alloc MM-WORDS)
+        M1 (vector-assoc! M0 MM-VERSION MM-LAYOUT-VERSION)
+        M2 (vector-assoc! M1 MM-TOK-N 1)
+        M3 (vector-assoc! M2 MM-NODE-N 1)
+        M4 (vector-assoc! M3 MM-SYM-N 1)
+        M5 (vector-assoc! M4 MM-HASH-N 1)
+        M6 (vector-assoc! M5 MM-FN-N 1)
+        M7 (vector-assoc! M6 MM-SCOPE-N 1)
+        M8 (vector-assoc! M7 MM-LIT-N 1)]
+    (vector-assoc! M8 MM-LITB-N 1)))
+
+(defn- t-err [M :vector-i64 S :string] :i64
+  (let [a (vector-at M MM-ERR-A)
+        b (vector-at M MM-ERR-B)
+        o (t-w "E") o1 (t-wn (vector-at M MM-ERR)) o2 (t-w " pos=") o3 (t-wn (vector-at M MM-ERR-POS))
+        o4 (t-w " n=") o5 (t-wn (vector-at M MM-ERR-N)) o6 (t-w " '")
+        o7 (t-w (t-span S a b))]
+    (t-w "'\n")))
+
+(defn- t-mix [h :i64 v :i64] :i64 (* (bit-xor h v) 1099511628211))
+
+(defn- t-digest-nodes [M :vector-i64 n :i64 h :i64] :i64
+  (if (< n (vector-at M MM-NODE-N))
+    (t-digest-nodes M (+ n 1) (t-mix (t-mix h (nm-nf M n NF-TYPE)) (nm-nf M n NF-RES)))
+    h))
+
+(defn- t-digest-fns [M :vector-i64 f :i64 h :i64] :i64
+  (if (< f (vector-at M MM-FN-N))
+    (let [h1 (t-mix (t-mix (t-mix h (nm-ff M f FF-RTYPE)) (nm-ff M f FF-NSLOTS)) (nm-ff M f FF-FUEL))
+          h2 (t-mix (t-mix (t-mix h1 (nm-ff M f FF-PT0)) (nm-ff M f (+ FF-PT0 1))) (nm-ff M f (+ FF-PT0 2)))
+          h3 (t-mix (t-mix (t-mix h2 (nm-ff M f (+ FF-PT0 3))) (nm-ff M f FF-PT4)) (nm-ff M f FF-EXPORT))]
+      (t-digest-fns M (+ f 1) (t-mix (t-mix h3 (nm-ff M f FF-NPARAMS)) (nm-ff M f FF-KIND))))
+    h))
+
+(defn- t-ok [M :vector-i64] :i64
+  (let [o (t-w "ok fns=") o1 (t-wn (- (vector-at M MM-FN-N) 1))
+        o2 (t-w " syms=") o3 (t-wn (- (vector-at M MM-SYM-N) 1))
+        o4 (t-w " nodes=") o5 (t-wn (- (vector-at M MM-NODE-N) 1))
+        o6 (t-w " digest=") o7 (t-wn (t-digest-fns M 1 (t-digest-nodes M 1 -3750763034362895579)))]
+    (t-w "\n")))
+
+(defn- t-fn-line [M :vector-i64 S :string f :i64] :i64
+  (let [s (nm-ff M f FF-SYM)
+        o (t-w "fn ") o1 (t-w (t-span S (nm-sf M s SF-START) (nm-sf M s SF-END)))
+        o2 (t-w " kind=") o3 (t-wn (nm-ff M f FF-KIND)) o4 (t-w " np=") o5 (t-wn (nm-ff M f FF-NPARAMS))
+        o6 (t-w " rt=") o7 (t-wn (nm-ff M f FF-RTYPE))
+        o8 (t-w " pt=") o9 (t-wn (nm-ff M f FF-PT0)) o10 (t-w ",") o11 (t-wn (nm-ff M f (+ FF-PT0 1)))
+        o12 (t-w ",") o13 (t-wn (nm-ff M f (+ FF-PT0 2))) o14 (t-w ",") o15 (t-wn (nm-ff M f (+ FF-PT0 3)))
+        o16 (t-w ",") o17 (t-wn (nm-ff M f FF-PT4))
+        o18 (t-w " nslots=") o19 (t-wn (nm-ff M f FF-NSLOTS)) o20 (t-w " fuel=") o21 (t-wn (nm-ff M f FF-FUEL))
+        o22 (t-w " export=") o23 (t-wn (nm-ff M f FF-EXPORT))]
+    (t-w "\n")))
+
+(defn- t-fns [M :vector-i64 S :string f :i64] :i64
+  (if (< f (vector-at M MM-FN-N))
+    (let [o (t-fn-line M S f)] (t-fns M S (+ f 1)))
+    0))
+
+(defn- t-syms [M :vector-i64 S :string s :i64] :i64
+  (if (< s (vector-at M MM-SYM-N))
+    (let [o (t-w "sym ") o1 (t-w (t-span S (nm-sf M s SF-START) (nm-sf M s SF-END)))
+          o2 (t-w " head=") o3 (t-wn (nm-sf M s SF-HEAD)) o4 (t-w "\n")]
+      (t-syms M S (+ s 1)))
+    0))
+
+(defn- t-out [M :vector-i64 S :string mode :i64] :i64
+  (if (= (vector-at M MM-ERR) 0)
+    (let [o1 (t-ok M)] (t-fns-if M S mode))
+    (t-err M S)))
+(defn- t-fns-if [M :vector-i64 S :string mode :i64] :i64 (if (= mode 102) (t-fns M S 1) 0))
+(defn- t-syms-if [M :vector-i64 S :string mode :i64] :i64 (if (= mode 115) (t-syms M S 1) 0))
+(defn- t-check [M :vector-i64 S :string mode :i64] :i64
+  (if (= (vector-at M MM-ERR) 0)
+    (let [o (t-syms-if M S mode)] (t-out (ck-run M S) S mode))
+    (let [o (t-syms-if M S mode)] (t-out M S mode))))
+(defn- t-names [M :vector-i64 S :string mode :i64] :i64
+  (if (= (vector-at M MM-ERR) 0) (t-check (nm-run M S) S mode) (t-out M S mode)))
+(defn- t-read [M :vector-i64 S :string mode :i64] :i64
+  (if (= (vector-at M MM-ERR) 0) (t-names (rd-run M S) S mode) (t-out M S mode)))
+(defn- t-go [M :vector-i64 S :string mode :i64] :i64 (t-read (lx-run M S) S mode))
+
+(defn- seed-main [] :i64
+  (let [mode (typed-cap-call :cli/args :string :string "0")
+        path (typed-cap-call :cli/args :string :string "1")
+        S (typed-cap-call :fs/app-data :string :string path)
+        r (t-go (t-mem) S (string-code-point-at mode 0))]
+    0))

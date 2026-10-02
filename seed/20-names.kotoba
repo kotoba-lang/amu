@@ -1,0 +1,492 @@
+;; seed/20-names.kotoba -- symbols, the FN table and the local scope stack of the seed compiler (prefix nm-).
+;; Owner: 20-names. Contract: seed/MEMORY-MAP (SYM HASH FN SCOPE regions, NF-SYM), seed/HEADS (:spellings,
+;; :keywords, E20nn). Design section 2.1, module 20.
+;;
+;; Interface (all defn-, M first; writers return M and leave their i64 result in M[MM-R0], rule L4):
+;;   accessors (readers)  nm-nf M node field   nm-tf M tok field   nm-sf M sym field   nm-ff M fn field
+;;                        nm-nth M node k (k-th child, 0-based, or 0)   nm-count M node (children)
+;;                        nm-sym-of M node (NF-SYM)  nm-head-of M node (SF-HEAD of the node's symbol, 0 if none)
+;;   setters (writers)    nm-set-nf M node field v   nm-set-ff M fn field v
+;;   errors               nm-err M code tok n -> M (first error wins, rule L10; pos/{name} = the token's span)
+;;                        nm-err-node M code node n
+;;   interning            nm-hash S a b (FNV-1a 64)   nm-intern M S a b -> M, R0 = symbol id
+;;   whole pass           nm-run M S -> M : interns every ND-SYM/ND-KW node (NF-SYM), builds FN from the
+;;                        top-level def/defn/defn- forms, validates the ns form and its export list.
+;;   scope API            nm-bind M sym slot type -> M   nm-unbind M height -> M   nm-scope-height M
+;;                        nm-local-slot M sym (-1 when unbound)   nm-local-type M sym
+;;                        nm-bound-since M sym height (1 when sym was bound at scope height >= height, else 0)
+;;   SF-BIND encoding (private to this API): 0 = unbound, else (slot + 1) + type * RES-SCALE.
+
+;; ---------------------------------------------------------------------------------------------------------
+;; accessors
+;; ---------------------------------------------------------------------------------------------------------
+(defn- nm-na [n :i64 f :i64] :i64 (+ (+ MM-NODE-BASE (* n MM-NODE-W)) f))
+(defn- nm-sa [s :i64 f :i64] :i64 (+ (+ MM-SYM-BASE (* s MM-SYM-W)) f))
+(defn- nm-fa [fi :i64 f :i64] :i64 (+ (+ MM-FN-BASE (* fi MM-FN-W)) f))
+(defn- nm-ta [t :i64 f :i64] :i64 (+ (+ MM-TOK-BASE (* t MM-TOK-W)) f))
+
+(defn- nm-nf [M :vector-i64 n :i64 f :i64] :i64 (vector-at M (nm-na n f)))
+(defn- nm-sf [M :vector-i64 s :i64 f :i64] :i64 (vector-at M (nm-sa s f)))
+(defn- nm-ff [M :vector-i64 fi :i64 f :i64] :i64 (vector-at M (nm-fa fi f)))
+(defn- nm-tf [M :vector-i64 t :i64 f :i64] :i64 (vector-at M (nm-ta t f)))
+
+;; every write goes through a parameter handle (stage-0 refuses vector-assoc! on a handle returned by a call)
+;; Stage-0 linearity shapes (probed 2026-10-02, seed/CONTRACT-REQUESTS.md): a function that vector-assoc!es its
+;; handle reads it only with vector-at (never through a user function); a writer never returns its handle bare
+;; (the result would alias the argument and the next writer in the chain is refused) -- it returns nm-touch
+;; instead, a write of this module's MM-STAT slot; a handle appears once in the arguments of a writer call.
+(defn- nm-put [M :vector-i64 i :i64 v :i64] :vector-i64 (vector-assoc! M i v))
+(defn- nm-touch [M :vector-i64] :vector-i64 (vector-assoc! M (+ MM-STAT-BASE 20) 0))
+(defn- nm-set-nf [M :vector-i64 n :i64 f :i64 v :i64] :vector-i64 (vector-assoc! M (nm-na n f) v))
+(defn- nm-set-ff [M :vector-i64 fi :i64 f :i64 v :i64] :vector-i64 (vector-assoc! M (nm-fa fi f) v))
+(defn- nm-set-sf [M :vector-i64 s :i64 f :i64 v :i64] :vector-i64 (vector-assoc! M (nm-sa s f) v))
+
+(defn- nm-kind [M :vector-i64 n :i64] :i64 (nm-nf M n NF-KIND))
+(defn- nm-first [M :vector-i64 n :i64] :i64 (nm-nf M n NF-FIRST))
+(defn- nm-next [M :vector-i64 n :i64] :i64 (nm-nf M n NF-NEXT))
+
+(defn- nm-nth [M :vector-i64 n :i64 k :i64] :i64
+  (loop [c (nm-first M n) i 0]
+    (cond (= c 0) 0
+          (= i k) c
+          :else (recur (nm-next M c) (+ i 1)))))
+
+(defn- nm-count [M :vector-i64 n :i64] :i64
+  (loop [c (nm-first M n) i 0]
+    (if (= c 0) i (recur (nm-next M c) (+ i 1)))))
+
+;; i64 flags. Seed code avoids and/or/not: the stable stage-0 answers 'internal compiler error' on them
+;; (seed/CONTRACT-REQUESTS.md, 41-a64gen line).
+(defn- nm-eqi [a :i64 b :i64] :i64 (if (= a b) 1 0))
+(defn- nm-ne [a :i64 b :i64] :bool (< (nm-eqi a b) 1))
+
+(defn- nm-sym-of [M :vector-i64 n :i64] :i64 (nm-nf M n NF-SYM))
+
+;; 1 when node kind k carries a symbol (ND-SYM or ND-KW)
+(defn- nm-is-name [k :i64] :i64 (cond (= k ND-SYM) 1 (= k ND-KW) 1 :else 0))
+
+;; SF-HEAD of the node's symbol: a head code for ND-SYM, a KW-* code for ND-KW, 0 otherwise.
+(defn- nm-head-of [M :vector-i64 n :i64] :i64
+  (let [k (nm-kind M n)]
+    (if (= (nm-is-name k) 1)
+      (nm-sf M (nm-sym-of M n) SF-HEAD)
+      0)))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; errors (rule L10)
+;; ---------------------------------------------------------------------------------------------------------
+(defn- nm-max0 [a :i64] :i64 (if (< a 0) 0 a))
+
+;; record error code with position a (-1 = none), {name} span [a, b) and {n}
+(defn- nm-err-span [M :vector-i64 code :i64 a :i64 b :i64 n :i64] :vector-i64
+  (if (= (vector-at M MM-ERR) 0)
+    (let [M1 (vector-assoc! M MM-ERR code)
+          M2 (vector-assoc! M1 MM-ERR-POS a)
+          M3 (vector-assoc! M2 MM-ERR-A (nm-max0 a))
+          M4 (vector-assoc! M3 MM-ERR-B b)]
+      (vector-assoc! M4 MM-ERR-N n))
+    (vector-assoc! M (+ MM-STAT-BASE 20) 0)))
+
+(defn- nm-tok-start [M :vector-i64 tok :i64] :i64 (if (> tok 0) (nm-tf M tok TF-START) -1))
+(defn- nm-tok-end [M :vector-i64 tok :i64] :i64 (if (> tok 0) (nm-tf M tok TF-END) 0))
+
+;; error naming token tok (0 = no position)
+(defn- nm-err [M :vector-i64 code :i64 tok :i64 n :i64] :vector-i64
+  (let [a (nm-tok-start M tok)
+        b (nm-tok-end M tok)]
+    (nm-err-span M code a b n)))
+
+(defn- nm-node-tok [M :vector-i64 node :i64] :i64 (if (> node 0) (nm-nf M node NF-TOK) 0))
+
+(defn- nm-err-node [M :vector-i64 code :i64 node :i64 n :i64] :vector-i64
+  (let [tok (nm-node-tok M node)]
+    (nm-err M code tok n)))
+
+(defn- nm-failed [M :vector-i64] :bool (nm-ne (vector-at M MM-ERR) 0))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; hashing and spelling recognition
+;; ---------------------------------------------------------------------------------------------------------
+;; FNV-1a 64 over the bytes S[a..b). Offset basis 14695981039346656037 written as its i64 value.
+(defn- nm-hash [S :string a :i64 b :i64] :i64
+  (loop [i a h -3750763034362895579]
+    (if (< i b)
+      (recur (+ i 1) (* (bit-xor h (string-code-point-at S i)) 1099511628211))
+      h)))
+
+;; word j of the span packed little-endian, 8 bytes per word, zero beyond b.
+(defn- nm-pack-step [S :string i :i64 b :i64 w :i64] :i64
+  (if (< i b)
+    (bit-or (i64-shift-left w 8) (string-code-point-at S i))
+    (i64-shift-left w 8)))
+
+(defn- nm-pack [S :string a :i64 b :i64 j :i64] :i64
+  (loop [k 7 w 0]
+    (if (< k 0)
+      w
+      (recur (- k 1) (nm-pack-step S (+ a (+ (* 8 j) k)) b w)))))
+
+;; The tables are generated from the spellings (little-endian byte packing, nested by w2, w1, w0); the
+;; 20-names unit test interns every spelling and checks its code, so a wrong number fails the test.
+;; head code of a symbol spelling (seed/HEADS :spellings) from its packed words w0 w1 w2, 0 if none.
+(defn- nm-head-code [w0 :i64 w1 :i64 w2 :i64] :i64
+  (cond
+    (= w2 0)
+    (cond
+      (= w1 0)
+      (cond
+        (= w0 29550) HD-NS  ; ns
+        (= w0 1852204388) HD-DEFN  ; defn
+        (= w0 195125732708) HD-DEFN-PRIV  ; defn-
+        (= w0 6710628) HD-DEF  ; def
+        (= w0 7628140) HD-LET  ; let
+        (= w0 1886351212) HD-LOOP  ; loop
+        (= w0 491595720050) HD-RECUR  ; recur
+        (= w0 26217) HD-IF  ; if
+        (= w0 6581857) HD-AND  ; and
+        (= w0 29295) HD-OR  ; or
+        (= w0 7630702) HD-NOT  ; not
+        (= w0 61) HD-EQ  ; =
+        (= w0 60) HD-LT  ; <
+        (= w0 62) HD-GT  ; >
+        (= w0 15676) HD-LE  ; <=
+        (= w0 15678) HD-GE  ; >=
+        (= w0 43) HD-ADD  ; +
+        (= w0 45) HD-SUB  ; -
+        (= w0 42) HD-MUL  ; *
+        (= w0 1953461617) HD-QUOT  ; quot
+        (= w0 28268861324552546) HD-BIT-AND  ; bit-and
+        (= w0 125821829540194) HD-BIT-OR  ; bit-or
+        (= w0 32210709294377314) HD-BIT-XOR  ; bit-xor
+        (= w0 32773616298125666) HD-BIT-NOT  ; bit-not
+        (= w0 1684959075) HD-COND  ; cond
+        :else 0)
+      (= w1 32765890658446708)
+      (cond
+        (= w0 7379544308312192629) HD-USHR  ; u64-shift-right
+        (= w0 7379544308312192617) HD-SSHR  ; i64-shift-right
+        :else 0)
+      (= w1 127983137074548)
+      (cond
+        (= w0 7379544308312192617) HD-SHL  ; i64-shift-left
+        :else 0)
+      (= w1 116)
+      (cond
+        (= w0 7002378818650596726) HD-VECTOR-AT  ; vector-at
+        :else 0)
+      (= w1 6975087)
+      (cond
+        (= w0 7146494006726452598) HD-VECTOR-CONJ  ; vector-conj
+        :else 0)
+      (= w1 1668248435)
+      (cond
+        (= w0 7002378818650596726) HD-VECTOR-ASSOC  ; vector-assoc
+        :else 0)
+      (= w1 143402169203)
+      (cond
+        (= w0 7002378818650596726) HD-VECTOR-ASSOC-BANG  ; vector-assoc!
+        :else 0)
+      (= w1 1668246636)
+      (cond
+        (= w0 7002378818650596726) HD-VECTOR-ALLOC  ; vector-alloc
+        :else 0)
+      (= w1 448629534309)
+      (cond
+        (= w0 7795000253961368691) HD-STRING-LENGTH  ; string-length
+        :else 0)
+      (= w1 119212746157424)
+      (cond
+        (= w0 7017502553595214196) HD-TYPED-CAP-CALL  ; typed-cap-call
+        :else 0)
+      (= w1 499850112623)
+      (cond
+        (= w0 7146481907620017267) HD-STRING-CONCAT  ; string-concat
+        :else 0)
+      :else 0)
+    (= w2 1952525684)
+    (cond
+      (= w1 7956012744315331695)
+      (cond
+        (= w0 7146481907620017267) HD-STRING-CODE-POINT-AT  ; string-code-point-at
+        :else 0)
+      :else 0)
+    (= w2 224251161970)
+    (cond
+      (= w1 8031153322933972335)
+      (cond
+        (= w0 8243326141594892642) HD-BYTES-FROM-VECTOR-I64  ; bytes-from-vector-i64
+        :else 0)
+      :else 0)
+    :else 0))
+
+;; KW-* code of a keyword spelling (the ':' included) from its packed words, 0 if none.
+(defn- nm-kw-code [w0 :i64 w1 :i64 w2 :i64] :i64
+  (cond
+    (= w2 0)
+    (cond
+      (= w1 0)
+      (cond
+        (= w0 875981114) KW-I64  ; :i64
+        (= w0 465726038586) KW-BOOL  ; :bool
+        (= w0 29113321772053306) KW-STRING  ; :string
+        (= w0 32776920252310842) KW-EXPORT  ; :export
+        (= w0 435728180538) KW-ELSE  ; :else
+        (= w0 126879583003194) KW-BYTES  ; :bytes
+        :else 0)
+      (= w1 3421801)
+      (cond
+        (= w0 3274802424726255162) KW-VECTOR-I64  ; :vector-i64
+        :else 0)
+      (= w1 1635017060)
+      (cond
+        (= w0 3274240491808581178) KW-FS-APP-DATA  ; :fs/app-data
+        :else 0)
+      (= w1 115)
+      (cond
+        (= w0 7454127189511660346) KW-CLI-ARGS  ; :cli/args
+        :else 0)
+      (= w1 32210684681203045)
+      (cond
+        (= w0 8388361637176764730) KW-IO-WRITE-ERROR  ; :io/write-error
+        :else 0)
+      (= w1 101)
+      (cond
+        (= w0 8388361637176764730) KW-IO-WRITE  ; :io/write
+        :else 0)
+      :else 0)
+    :else 0))
+
+;; SF-HEAD value of a new spelling S[a..b).
+(defn- nm-spelling-code [S :string a :i64 b :i64] :i64
+  (if (> (- b a) 24)
+    0
+    (let [w0 (nm-pack S a b 0) w1 (nm-pack S a b 1) w2 (nm-pack S a b 2)]
+      (if (= (string-code-point-at S a) 58)
+        (nm-kw-code w0 w1 w2)
+        (nm-head-code w0 w1 w2)))))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; interning
+;; ---------------------------------------------------------------------------------------------------------
+;; 1 when S[a1..b1) and S[a2..b2) hold the same bytes, else 0 (Seed-0 has no boolean literals)
+(defn- nm-span-eq [S :string a1 :i64 b1 :i64 a2 :i64 b2 :i64] :i64
+  (if (= (- b1 a1) (- b2 a2))
+    (loop [i 0]
+      (cond (= (+ a1 i) b1) 1
+            (= (string-code-point-at S (+ a1 i)) (string-code-point-at S (+ a2 i))) (recur (+ i 1))
+            :else 0))
+    0))
+
+;; probe: the symbol id spelled S[a..b) when present, else -(slot + 1) of the empty slot to fill.
+(defn- nm-probe [M :vector-i64 S :string a :i64 b :i64 h :i64] :i64
+  (loop [slot (bit-and h (- MM-HASH-CAP 1)) n 0]
+    (let [s (vector-at M (+ MM-HASH-BASE slot))]
+      (cond (= s 0) (- 0 (+ slot 1))
+            (= (* (nm-eqi (nm-sf M s SF-HASH) h)
+                  (nm-span-eq S (nm-sf M s SF-START) (nm-sf M s SF-END) a b)) 1) s
+            :else (recur (bit-and (+ slot 1) (- MM-HASH-CAP 1)) (+ n 1))))))
+
+(defn- nm-new-sym [M :vector-i64 S :string a :i64 b :i64 h :i64] :vector-i64
+  (let [s (vector-at M MM-SYM-N)
+        slot (- (- 0 (nm-probe M S a b h)) 1)]
+    (if (< s MM-SYM-CAP)
+      (let [hn (vector-at M MM-HASH-N)
+            code (nm-spelling-code S a b)
+            M1 (nm-put M (nm-sa s SF-START) a)
+            M2 (nm-put M1 (nm-sa s SF-END) b)
+            M3 (nm-put M2 (nm-sa s SF-HASH) h)
+            M4 (nm-put M3 (nm-sa s SF-HEAD) code)
+            M5 (nm-put M4 (+ MM-HASH-BASE slot) s)
+            M6 (nm-put M5 MM-HASH-N (+ hn 1))
+            M7 (nm-put M6 MM-SYM-N (+ s 1))]
+        (nm-put M7 MM-R0 s))
+      (nm-put (nm-err M E-HEAP-REGION 0 5) MM-R0 0))))
+
+;; intern S[a..b): M, R0 = the symbol id (ids in first-occurrence order of the calls).
+(defn- nm-intern [M :vector-i64 S :string a :i64 b :i64] :vector-i64
+  (let [h (nm-hash S a b)
+        p (nm-probe M S a b h)]
+    (if (> p 0)
+      (nm-put M MM-R0 p)
+      (nm-new-sym M S a b h))))
+
+;; intern the token of every ND-SYM / ND-KW node, nodes n .. NODE-N-1, in node index order.
+(defn- nm-intern-nodes [M :vector-i64 S :string n :i64] :vector-i64
+  (cond
+    (>= n (vector-at M MM-NODE-N)) (nm-touch M)
+    (nm-failed M) (nm-touch M)
+    :else
+    (let [k (nm-kind M n)]
+      (if (= (nm-is-name k) 1)
+        (let [t (nm-nf M n NF-TOK)
+              a (nm-tf M t TF-START)
+              b (nm-tf M t TF-END)
+              M1 (nm-intern M S a b)
+              s (vector-at M1 MM-R0)
+              M2 (nm-set-nf M1 n NF-SYM s)]
+          (nm-intern-nodes M2 S (+ n 1)))
+        (nm-intern-nodes M S (+ n 1))))))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; the ns form and the FN table
+;; ---------------------------------------------------------------------------------------------------------
+;; 1 when every child of node n is an ND-SYM, else 0
+(defn- nm-all-syms [M :vector-i64 n :i64] :i64
+  (loop [c (nm-first M n)]
+    (cond (= c 0) 1
+          (= (nm-kind M c) ND-SYM) (recur (nm-next M c))
+          :else 0)))
+
+;; 1 when c is a well-formed (:export [sym ...]) clause, else 0 (reads of node 0 are harmless: the null record)
+(defn- nm-export-ok [M :vector-i64 c :i64] :i64
+  (* (* (nm-eqi (nm-kind M c) ND-LIST) (nm-eqi (nm-count M c) 2))
+     (* (* (nm-eqi (nm-kind M (nm-first M c)) ND-KW) (nm-eqi (nm-head-of M (nm-first M c)) KW-EXPORT))
+        (* (nm-eqi (nm-kind M (nm-nth M c 1)) ND-VEC) (nm-all-syms M (nm-nth M c 1))))))
+
+;; 1 when n is (ns NAME) or (ns NAME (:export [sym ...])), else 0
+(defn- nm-ns-ok [M :vector-i64 n :i64] :i64
+  (let [shape (* (* (nm-eqi (nm-kind M n) ND-LIST) (nm-eqi (nm-kind M (nm-first M n)) ND-SYM))
+                 (* (nm-eqi (nm-head-of M (nm-first M n)) HD-NS) (nm-eqi (nm-kind M (nm-nth M n 1)) ND-SYM)))
+        cnt (nm-count M n)]
+    (cond (= n 0) 0
+          (= shape 0) 0
+          (= cnt 2) 1
+          (= cnt 3) (nm-export-ok M (nm-nth M n 2))
+          :else 0)))
+
+;; head code of a top-level list form whose head is a symbol, else 0
+(defn- nm-form-head [M :vector-i64 n :i64] :i64
+  (if (= (* (nm-eqi (nm-kind M n) ND-LIST) (nm-eqi (nm-kind M (nm-first M n)) ND-SYM)) 1)
+    (nm-head-of M (nm-first M n))
+    0))
+
+(defn- nm-form-kind [hd :i64] :i64
+  (cond (= hd HD-DEFN) FK-DEFN
+        (= hd HD-DEFN-PRIV) FK-PRIV
+        (= hd HD-DEF) FK-DEF
+        :else 0))
+
+;; parameter count of a defn form: half the items of its third child when that is a vector
+(defn- nm-nparams [M :vector-i64 n :i64 fk :i64] :i64
+  (let [p (nm-nth M n 2)]
+    (cond (= fk FK-DEF) 0
+          (= (nm-kind M p) ND-VEC) (quot (nm-count M p) 2)
+          :else 0)))
+
+;; register the def form n (kind fk) as a new FN record
+(defn- nm-add-fn [M :vector-i64 n :i64 fk :i64] :vector-i64
+  (let [nm (nm-nth M n 1)
+        s (nm-sym-of M nm)
+        f (vector-at M MM-FN-N)]
+    (cond
+      (> (nm-sf M s SF-FN) 0) (nm-err-node M E-NAMES-DUP nm 0)
+      (> (nm-sf M s SF-HEAD) 0) (nm-err-node M E-NAMES-DUP nm 0)
+      (>= f MM-FN-CAP) (nm-err M E-HEAP-REGION 0 6)
+      :else
+      (let [np (nm-nparams M n fk)
+            M1 (nm-put M (nm-fa f FF-SYM) s)
+            M2 (nm-put M1 (nm-fa f FF-NODE) n)
+            M3 (nm-put M2 (nm-fa f FF-KIND) fk)
+            M4 (nm-put M3 (nm-fa f FF-NPARAMS) np)
+            M5 (nm-put M4 (nm-sa s SF-FN) f)]
+        (nm-put M5 MM-FN-N (+ f 1))))))
+
+;; the node a top-level refusal names: the head of a non-empty list, else the form itself
+(defn- nm-name-node [M :vector-i64 n :i64] :i64
+  (cond (= (nm-first M n) 0) n
+        (= (nm-kind M n) ND-LIST) (nm-first M n)
+        :else n))
+
+;; one top-level form after the ns form
+(defn- nm-top [M :vector-i64 n :i64] :vector-i64
+  (let [hd (nm-form-head M n)
+        fk (nm-form-kind hd)
+        nn (nm-name-node M n)]
+    (cond
+      (= hd HD-NS) (nm-err-node M E-NAMES-NS n 0)
+      (= fk 0) (nm-err-node M E-NAMES-TOP nn 0)
+      (= (nm-kind M (nm-nth M n 1)) ND-SYM) (nm-add-fn M n fk)
+      :else (nm-err-node M E-NAMES-TOP nn 0))))
+
+(defn- nm-tops [M :vector-i64 n :i64] :vector-i64
+  (cond
+    (= n 0) (nm-touch M)
+    (nm-failed M) (nm-touch M)
+    :else
+    (let [nx (nm-next M n)
+          M1 (nm-top M n)]
+      (nm-tops M1 nx))))
+
+;; mark the exported functions: c = the next symbol of the export vector
+(defn- nm-exports [M :vector-i64 c :i64] :vector-i64
+  (let [f (nm-sf M (nm-sym-of M c) SF-FN)]
+    (cond
+      (= c 0) (nm-touch M)
+      (nm-failed M) (nm-touch M)
+      (= f 0) (nm-err-node M E-NAMES-EXPORT c 0)
+      (= (nm-ff M f FF-KIND) FK-DEF) (nm-err-node M E-NAMES-EXPORT c 0)
+      :else
+      (let [nx (nm-next M c)
+            M1 (nm-set-ff M f FF-EXPORT 1)]
+        (nm-exports M1 nx)))))
+
+;; the first symbol node of the ns form's export vector, 0 when there is none
+(defn- nm-export-first [M :vector-i64 ns :i64] :i64
+  (if (= (nm-count M ns) 3) (nm-first M (nm-nth M (nm-nth M ns 2) 1)) 0))
+
+(defn- nm-defs [M :vector-i64 ns :i64] :vector-i64
+  (let [nx (nm-next M ns)
+        ex (nm-export-first M ns)
+        M1 (nm-put M MM-NS-NODE ns)
+        M2 (nm-tops M1 nx)]
+    (nm-exports M2 ex)))
+
+;; the whole pass
+(defn- nm-run [M :vector-i64 S :string] :vector-i64
+  (nm-run-defs (nm-intern-nodes M S 1)))
+
+(defn- nm-run-defs [M :vector-i64] :vector-i64
+  (let [ns (nm-first M (vector-at M MM-ROOT))]
+    (cond (nm-failed M) (nm-touch M)
+          (= (nm-ns-ok M ns) 1) (nm-defs M ns)
+          :else (nm-err-node M E-NAMES-NS ns 0))))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; scope API (used by 21-check). A binding shadows until nm-unbind pops it.
+;; ---------------------------------------------------------------------------------------------------------
+(defn- nm-scope-height [M :vector-i64] :i64 (vector-at M MM-SCOPE-N))
+
+(defn- nm-bind [M :vector-i64 s :i64 slot :i64 ty :i64] :vector-i64
+  (let [h (vector-at M MM-SCOPE-N)
+        e (+ MM-SCOPE-BASE (* h MM-SCOPE-W))]
+    (if (< h MM-SCOPE-CAP)
+      (let [prev (nm-sf M s SF-BIND)
+            M1 (nm-put M (+ e CF-SYM) s)
+            M2 (nm-put M1 (+ e CF-PREV) prev)
+            M3 (nm-put M2 (nm-sa s SF-BIND) (+ (+ slot 1) (* ty RES-SCALE)))]
+        (nm-put M3 MM-SCOPE-N (+ h 1)))
+      (nm-err M E-HEAP-REGION 0 7))))
+
+(defn- nm-unbind [M :vector-i64 height :i64] :vector-i64
+  (let [h (vector-at M MM-SCOPE-N)]
+    (if (<= h height)
+      (nm-touch M)
+      (let [e (+ MM-SCOPE-BASE (* (- h 1) MM-SCOPE-W))
+            s (vector-at M (+ e CF-SYM))
+            prev (vector-at M (+ e CF-PREV))
+            M1 (nm-put M (nm-sa s SF-BIND) prev)
+            M2 (nm-put M1 MM-SCOPE-N (- h 1))]
+        (nm-unbind M2 height)))))
+
+(defn- nm-local-slot [M :vector-i64 s :i64] :i64
+  (let [v (nm-sf M s SF-BIND)]
+    (if (= v 0) -1 (- (bit-and v (- RES-SCALE 1)) 1))))
+
+(defn- nm-local-type [M :vector-i64 s :i64] :i64
+  (quot (nm-sf M s SF-BIND) RES-SCALE))
+
+(defn- nm-bound-since [M :vector-i64 s :i64 height :i64] :i64
+  (loop [h (- (vector-at M MM-SCOPE-N) 1)]
+    (cond (< h height) 0
+          (= (vector-at M (+ (+ MM-SCOPE-BASE (* h MM-SCOPE-W)) CF-SYM)) s) 1
+          :else (recur (- h 1)))))

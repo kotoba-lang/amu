@@ -1,0 +1,30 @@
+(ns t.ok (:export [run test-ok main]))
+(def K 7)
+(def MSG "hello")
+(def TAB [1 2 3 -9223372036854775808])
+;; forward reference and mutual recursion
+(defn- ev [n :i64] :bool (if (= n 0) (< 0 1) (od (- n 1))))
+(defn- od [n :i64] :bool (if (= n 0) (< 1 0) (ev (- n 1))))
+(defn- cls [x :i64] :i64
+  (cond (< x 0) -1
+        (= x 0) 0
+        :else 1))
+(defn- sum-to [n :i64 acc :i64] :i64 (if (= n 0) acc (recur (- n 1) (+ acc n))))
+(defn- shadow [x :i64] :i64 (let [y (+ x 1)] (let [x (* y 2) z (loop [i 0 s 0] (if (< i x) (recur (+ i 1) (+ s i)) s))] (+ x z))))
+(defn- logic [a :i64 b :i64] :bool (or (and (< a b) (not (= a 0))) (> a 100)))
+(defn- vecs [v :vector-i64] :vector-i64 (vector-assoc! (vector-conj (vector-assoc v 0 1) 5) 1 (vector-at TAB 2)))
+(defn- strs [s :string] :i64 (+ (string-length (string-concat s MSG)) (string-code-point-at s 0)))
+(defn- io [p :string] :i64 (string-length (typed-cap-call :fs/app-data :string :string p)))
+(defn- out [v :vector-i64] :i64
+  (let [b (typed-cap-call :fs/app-data :bytes :bytes (bytes-from-vector-i64 v))
+        a (typed-cap-call :cli/args :string :string "0")
+        e (typed-cap-call :io/write-error :string :string a)
+        w (typed-cap-call :io/write :string :string e)]
+    0))
+(defn- loopval [n :i64] :i64 (+ 1 (loop [i 0 v [] ok (< 0 1) s ""] (if (< i n) (recur (+ i 1) (vector-conj v i) (and ok (< i 50)) s) (vector-at (vector-conj v 9) 0)))))
+(defn- bits [x :i64] :i64 (bit-xor (bit-and x 255) (bit-or (bit-not x) (u64-shift-right (i64-shift-left x 3) (i64-shift-right x 1)))))
+(defn- arith [a :i64 b :i64] :i64 (quot (- (* a b 3) a b 1) (+ b 1)))
+(defn- tailand [n :i64] :bool (and (> n -5) (or (= n 0) (recur (- n 1)))))
+(defn run [token :i64] :i64 (+ K (cls token) (sum-to 10 0) (shadow 3) (loopval 4) (bits token) (arith 5 6) (vector-at (vector-alloc 3) 0)))
+(defn test-ok [] :bool (if (ev 10) (logic 1 2) (tailand 3)))
+(defn main [] :i64 (+ (io "/tmp/x") (+ (strs "abc") (out (vecs [1 2 3])))))
