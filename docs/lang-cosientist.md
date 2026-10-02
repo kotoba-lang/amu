@@ -1175,3 +1175,165 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   の声明形) し、lang 側 sugar で済む範囲を切り分ける。alias 型 gap
   (ledger の 2026-09-03 記載列) は str/mapv/filterv/#()/count/reduce/
   (:k m)/min/max まで消化済み。
+
+## Iteration 39 - capability-import probe: clock syntax EXISTS on current amu, probe = policy denial not gap (2026-09-29, evidence 追記のみ)
+
+- Target hypothesis (iter 38 引き継ぎ): ledger blocked `:gap` の
+  「capability-import syntax for clock/uuid/mutable-store undeclared」が
+  lang 側欠落として残っているかを 1 probe で切り分け。
+- 実測 (amu 現行 checkout /Users/junkawasaki/github/kotoba-lang/amu,
+  ./bin/amu check --jvm-free, /tmp/langcos/cap-probe.kotoba
+  `(ns t (:export [main]) (:capabilities #{:clock/now})) (defn main [] :i64 (clock/now 0))`):
+  - check REJECT exit 65 **だが reject 理由は `capability policy denies
+    required effects` (:kotoba/admission-denied)** — unknown-operation /
+    subset-reject ではない。つまり clock/now capability import 構文は
+    現行 amu で宣言済みで正常に解釈され, 拒否は policy grant 未付与による
+    正しい fail-closed。コード内実測裏付け: amu test に
+    `(ns app (:capabilities #{:clock/now}))` + `(clock/now seed)` が
+    `(typed-cap-call 7 :i64 :i64 seed)` に elaborate する測定済みテスト
+    (wasm_typed_test.cljk:679-683, w1_elaboration_test.cljk) が存在。
+  - uuid / mutable-store は capability-catalog.edn (amu resources) に
+    対応 entry 無しを確認 (uuid は catalog 全 wire id に不在;
+    mutable-store 相当は :state/transact wire 8)。
+- verdict: hypothesis **棄却 (ledger 行は stale)** — clock capability
+  import は既に declared で, jvm-dep-ledger blocked `:gap` の該当節は
+  2026-09-03 時点の過大記載。ledger 更新は amu-rank / jvm-dep-migrator へ
+  (status 書き換えは本 bot の範囲外)。速度反証対象なし。
+- 次 (1 hypothesis): ledger `:gap` 残節 (bit-shift / keys / folds 等,
+  tick15 記載) も amu sema pin 前進後に現行 HEAD で 1 re-probe して
+  実測を更新する。
+
+- 次 (1 hypothesis): ledger `:gap` 残節 (bit-shift / keys / folds 等,
+  tick15 記載) も amu sema pin 前進後に現行 HEAD で 1 re-probe して
+  実測を更新する。
+## Iteration 40 - ledger re-probe NOT STARTED (budget exhausted at verification phase), no verdict (2026-09-30, amu@438c5aba)
+
+- Target hypothesis (carried from iter 39): ledger 残 `:gap` 行を現行 amu
+  HEAD で re-probe して実測を更新する。候補 (ledger tick37-63 実測と突合済み):
+  (a) `keys` on bounded keyword map literal (:keys-receiver, tick55 時点で
+  不変 - alias-shaped かは未切り分け), (b) `keys` on typed map は check PASS
+  だが wasm32 compile 'unsupported typed Wasm expression' (tick14 記載のまま
+  か re-probe 必要), (c) reduce-kv (lang-cosientist population 未 probe).
+- Measured this tick (code/文書 read のみ, compile/probe は未実施):
+  - amu HEAD 438c5aba, deps-lock.edn:132 pins kotoba-sema
+    15cc6e25c5b9d5946efe1ad3d869f6aff64fda05 (pin は 9898f0e から前進済み -
+    iter 23/26/37 の branch base と異なるので再 gate には rebase が必要)。
+  - jvm-dep-ledger.edn (kotoba-lang/kotoba-lang checkout) 再読: bit-shift は
+    tick37 以降 typed builtin (i64-shift-left/right, u32-shift-right) で
+    admit+compile 実測済み, folds-in-#() (mv1/fv1/rd1) も tick37 で landing,
+    min/max compile も tick60 で実測済み - `:gap` 行 (49行目, 2026-09-03
+    記載) は大幅に stale。実走 probe は次 tick。
+- No compile, no probe, no CIDs, no numbers, no commit. Hypothesis open.
+- Next tick (resume exactly): /tmp/langcos/it40 probes (p_keys3, keys-typed
+  compile, reduce-kv) を書いて amu HEAD bin/amu check --jvm-free で実測。
+
+
+## Iteration 41 (kotoba-lang-cosientist) - ledger stale-row sweep: `remove` gap CLOSED on current pin, `seq` gap LIVE with verified parity canon (2026-10-02 00:45 JST, amu pin kotoba-sema 15cc6e25)
+
+- Target hypothesis (carried from iters 39/40): re-probe the remaining
+  jvm-dep-ledger blocked rows (seq/remove) with one cheap check-probe each
+  on the current pin; ledger located at kotoba-lang/kotoba-lang
+  jvm-dep-ledger.edn (its still-rejected rows :237/:420 claim seq/remove
+  both exit 65).
+- Measured (bin/amu check --jvm-free, pin 15cc6e25 confirmed at
+  deps-lock.edn:133; probes /tmp/langcos/seqrm-*.kotoba):
+  - `remove` (seqrm-remove.kotoba `(reduce + 0 (remove (fn [x] (< x 3)) v))`):
+    **check PASS exit 0** - admitted on main; t
+    `bafyreigngc36xrfewdzax7bnw7aqck4kvto7fyxmcu3nrxri5fish2s3zm`,
+    loops `bafyreif7z2msgtfltnm7qtoihu623refk7si2obwydsdykpvoyrd2eiss4` /
+    `bafyreieuoy7c66duftjm6uxs22gz23wsmjzj6uc7pvecgc7cfqamgcdwbq` (loop_2 =
+    iter 10's hand-twin reduce loop - same admitted lowering). The ledger's
+    "seq/remove still exit 65" rows are STALE for remove: the gap closed
+    upstream.
+  - `seq` (seqrm-seq.kotoba): still **REJECT exit 65**
+    `:kotoba.error/unknown-operation` "seq is not a builtin, a sugar head,
+    or a function of this module" - the seq gap is LIVE on 15cc6e25
+    (bot/lang-seq-remove-rebase-20260908 NOT an ancestor of main, measured
+    via merge-base --is-ancestor).
+  - hand twin canon (seqrm-hand.kotoba, `(reduce + 0 v)` = seq identity
+    expansion): check PASS, t
+    `bafyreifjpju3gqmsjtmswu2c2mkv3fu7tiucfgpqfqrgflskwj7vmyngq4` -
+    EXACTLY the cid iter 10 measured for the seq alias implementation. The
+    unmerged seq identity desugar already has a current-pin parity canon;
+    landing it is rebase + gate, not a redesign.
+  - probe-lesson: `(module ...)` top-level form now REJECTs ("only ns, def,
+    defn, and defn- are allowed"); ns + (:export [...]) is the current
+    spelling; main must be in the export list or "main entrypoint must be
+    exported" (exit 65).
+- Verdict: hypothesis PARTIALLY FALSIFIED in the favorable direction -
+  `remove` already admitted on the current pin (ledger stale);
+  `seq` remains a real, alias-shaped gap with a measured parity canon.
+  perfgate N/A (check-only, no speed measurement, no new lowering).
+- Commit note: my first attempt committed the shared tree's unrelated
+  uncommitted delta under my message (75acf6288, detached HEAD, unpushed);
+  reset mixed HEAD~1 restored it as uncommitted - other bots' work
+  untouched. This entry is left uncommitted in the shared checkout for the
+  drain bot / next tick to land.
+- Next (1 hypothesis): land `seq` - rebase the seq identity desugar from
+  bot/lang-seq-remove-rebase-20260908 onto 15cc6e25; gate = seqrm-seq.kotoba
+  exit 0 + t cid == bafyreifjpju3gqmsjtmswu2c2mkv3fu7tiucfgpqfqrgflskwj7vmyngq4
+  + sema regression suite, then push (same shape as iter 26 somethread
+  rebase). Ledger row corrections (remove PASS, seq still REJECT) are an
+  amu-rank / jvm-dep-migrator handoff (evidence above).
+
+## Iteration 42 - seq landing STARTED: cherry-pick onto pin 15cc6e25, `remove` case dropped (upstream first-class), gate PENDING (2026-10-02 08:1x JST)
+
+- Target hypothesis (carried from iter 41): land `seq` on the current pin - rebase
+  bot/lang-seq-remove-rebase-20260908's seq identity desugar onto 15cc6e25;
+  gate = seqrm-seq.kotoba check exit 0 + t cid == bafyreifjpju3gqmsjtmswu2c2mkv3fu7tiucfgpqfqrgflskwj7vmyngq4
+  (iter 41 canon) + sema regression suite, then push.
+- DONE this tick (terminal stdout empty persists; file-redirect workaround; loadavg
+  31.7 - quiet gate NOT met; parity-only target so speed N/A):
+  - Pin verified: deps-lock.edn:130-131 kotoba-sema 15cc6e25c5b9d5946efe1ad3d869f6aff64fda05;
+    bot/lang-seq-remove-rebase-20260908 (fafa476) is NOT an ancestor of 15cc6e25
+    (merge-base --is-ancestor exit 1) - rebase needed as expected.
+  - Worktree /Users/junkawasaki/github/wt-seq2 created, branch bot/lang-seq-20261002
+    @15cc6e2; cherry-pick fafa476 CLEAN -> eeb2a3a.
+  - NEW upstream finding (measured by compile failure): the cherry-pick REJECTED with
+    "Duplicate case test constant: remove" (frontend.cljk case op at :6187) - upstream
+    main at 15cc6e2 already has `remove` as a first-class desugar case. Consistent
+    with iter 41's remove-PASS measurement. Fix: dropped the `remove` alias case from
+    the cherry-pick, `seq` case kept; comment updated. Commit 0c33e6d.
+  - Classpath route rebuilt: securityClasspath cache file with kotoba-sema/15cc6e25
+    entries identified (a728cd3b...txt), wt-seq2/{src,resources} substituted ->
+    /tmp/langcos/cp-seq.txt (100 entries). NOTE: nbb needs TWO args `--classpath <val>`
+    (the `--classpath=<val>` single-arg form is parsed as the script path -> ENAMETOOLONG;
+    measured and fixed this tick).
+- GATE NOT RUN (budget exhausted right after the drop-remove commit): check
+  seqrm-seq.kotoba on cp-seq.txt (expect exit 0 + t cid == iter 41 canon),
+  0-arg fail-closed, wasm32 compile, run value, sema regression suite.
+  Command shape (verified working up to the nbb invocation):
+  node --stack-size=4096 <amu>/node_modules/nbb/cli.js --classpath $(cat /tmp/langcos/cp-seq.txt)
+  <amu>/src/kotoba/compiler/nbb/wasm_cli.cljk check /tmp/langcos/seqrm-seq.kotoba
+- No push yet (branch bot/lang-seq-20261002 @0c33e6d, local only). Hypothesis open.
+- Next tick (resume exactly): run the gate items above on cp-seq.txt, then
+  push bot/lang-seq-20261002 and hand the ledger stale-row note (remove PASS,
+  seq alias pending) to amu-rank / jvm-dep-migrator.
+
+## Iteration 43 - seq gate: check/parity/fail-closed/compile/run PASS; regression suite + push PENDING (2026-10-02 14:20 JST)
+
+- Target hypothesis (carried from iters 41/42): branch bot/lang-seq-20261002
+  @0c33e6d (seq identity alias, remove case dropped - first-class upstream)
+  passes gate on cp-seq.txt.
+- Measured this tick (file-redirect; plain stdout empty persists; loadavg
+  132/105/93 - quiet gate NOT met, parity-only so speed N/A):
+  - check seqrm-seq.kotoba (export fixed to [t main] - the iter 41 canon
+    file lacked main in :export and correctly REJECTED "main entrypoint must
+    be exported" first): **PASS exit 0**, t cid
+    `bafyreifjpju3gqmsjtmswu2c2mkv3fu7tiucfgpqfqrgflskwj7vmyngq4` ==
+    iter 41 hand twin canon EXACTLY; loop_1
+    `bafyreieuoy7c66duftjm6uxs22gz23wsmjzj6uc7pvecgc7cfqamgcdwbq` (same
+    reduce loop as iters 10/41). KIR parity CONFIRMED.
+  - 0-arg fail-closed: seqrm-0arg.kotoba `(seq)` REJECT exit 65, own
+    diagnostic "seq requires exactly one vector-i64 collection" (span line 5).
+  - wasm32 compile PASS: it43-seq.wasm 2027 bytes, 3 definitions, provenance
+    + publication sidecars emitted.
+  - run: browser-host instantiateKotoba OK, exports [t main], main()=0 (no
+    trap). Vector-fixture run value (t([1,2,3,0])=6) and sema regression
+    suite NOT run - budget exhausted (find/rg unavailable this tick slowed
+    the run-harness lookup). NOT pushed.
+- Next tick (resume exactly): (1) vector-fixture run t([1,2,3,0])=6
+  (reuse /tmp/langcos/run-val.mjs shape; host vector marshal for :vector-i64),
+  (2) sema regression suite on cp-seq.txt (expect 555/1958 baseline),
+  (3) push bot/lang-seq-20261002 @0c33e6d, (4) ledger note (remove PASS,
+  seq alias pending) handoff to amu-rank / jvm-dep-migrator.

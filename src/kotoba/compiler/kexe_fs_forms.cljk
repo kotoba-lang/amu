@@ -2,60 +2,72 @@
   "The :fs/app-data forms the kexe loader does not answer yet, refused BY NAME
   at compile time (superproject adr-2609251400 C3, 2026-09-25).
 
-  kotoba-lang `lang/capability-catalog.edn` lists the request forms of wire 35
-  (`:fs/app-data :forms`) and which native host answers each. The three this
+  kotoba-lang lang/capability-catalog.edn lists the request forms of wire 35
+  (fs/app-data forms) and which native host answers each. The three this
   was written for -- fsync, make-temp-dir, stat-nofollow -- the loader
   answers since the same day, from the compiled decisions the static image
   runs, and they are no longer refused. OWNER (proposed by S5, answered only
-  by amu's nbb handler) is. The loader
-  tells forms apart by searching the request for each token it knows, so a
-  request carrying a token it does not know reads as the bare READ form, of a
-  path that ends in the token: a SIGILL in every case measured, and a read of
-  the wrong file if such a name existed in the scope. That is not a refusal
-  that names what was refused, so amu refuses first: a program compiled for a
-  kexe-loader target whose code carries one of those tokens is not written.
+  by amu's nbb handler) is. The loader tells forms apart by searching the
+  request for each token it knows, so a request carrying a token it does not
+  know reads as the bare READ form, of a path that ends in the token: a
+  SIGILL in every case measured, and a read of the wrong file if such a name
+  existed in the scope. That is not a refusal that names what was refused,
+  so amu refuses first: a program compiled for a kexe-loader target whose
+  code carries one of those tokens is not written.
 
   What this does NOT see: a token the program assembles at run time from
-  pieces (\"FSY\" + \"NC_SEP\"). The literal pool is the evidence available at
+  pieces, two string literals joined. The literal pool is the evidence available at
   compile time; a request built otherwise still reaches the loader and still
   fails closed there as described. The refusal moves into the loader when
   the loader answers the forms (tools/kexe_loader.c is changed by that work,
   not this).
 
-  `forms` is the catalog's `:fs/app-data :forms` projected to what this
-  check reads; kexe_fs_forms_test holds it equal to amu's resource copy of
-  the catalog, so the list is stated once."
-  {:kotoba/export [forms loader-targets unanswered-in refuse-unanswered!]})
+  The table is TWO flat maps rather than the catalog's nested one, and the
+  bare READ form (no token) is not listed in form-tokens: a typed-keyed
+  map literal here lowers to a closed record, whose descriptor pays the
+  value-type node budget per field, and the catalog's token-plus-bool
+  shape per form exceeded it (the value-type node limit, measured
+  2026-09-29). Flat keyword-to-one-value maps stay inside the bound, and
+  nothing the check reads needed the nesting.
 
-(def forms
-  "Form -> its token and whether the kexe loader answers it."
-  {:read {:token nil :kexe-loader? true}
-   :write {:token "WRITE_SEP" :kexe-loader? true}
-   :append {:token "APPEND_SEP" :kexe-loader? true}
-   :exists {:token "EXISTS_SEP" :kexe-loader? true}
-   :range {:token "RANGE_SEP" :kexe-loader? true}
-   :stat {:token "STAT_SEP" :kexe-loader? true}
-   :mtime {:token "MTIME_SEP" :kexe-loader? true}
-   :chmod {:token "CHMOD_SEP" :kexe-loader? true}
-   :mkdir {:token "MKDIR_SEP" :kexe-loader? true}
-   :unlink {:token "UNLINK_SEP" :kexe-loader? true}
-   :rmdir {:token "RMDIR_SEP" :kexe-loader? true}
-   :rename {:token "RENAME_SEP" :kexe-loader? true}
-   :fsync {:token "FSYNC_SEP" :kexe-loader? true}
-   :make-temp-dir {:token "MKTEMP_SEP" :kexe-loader? true}
-   :stat-nofollow {:token "NOFOLLOW_SEP" :kexe-loader? true}
-   :owner {:token "OWNER_SEP" :kexe-loader? false}})
+  form-tokens and loader-answered are the catalog's fs/app-data forms
+  projected to what this check reads; kexe_fs_forms_test holds both equal to
+  amu's resource copy of the catalog, so the list is stated once."
+  {:kotoba/export [form-tokens loader-answered unanswered-in refuse-unanswered!]})
+
+(def form-tokens
+  "Form -> its ASCII token. The bare READ form has no token and is absent."
+  {:write "WRITE_SEP"
+   :append "APPEND_SEP"
+   :exists "EXISTS_SEP"
+   :range "RANGE_SEP"
+   :stat "STAT_SEP"
+   :mtime "MTIME_SEP"
+   :chmod "CHMOD_SEP"
+   :mkdir "MKDIR_SEP"
+   :unlink "UNLINK_SEP"
+   :rmdir "RMDIR_SEP"
+   :rename "RENAME_SEP"
+   :fsync "FSYNC_SEP"
+   :make-temp-dir "MKTEMP_SEP"
+   :stat-nofollow "NOFOLLOW_SEP"
+   :owner "OWNER_SEP"})
+
+(def loader-answered
+  "The forms the kexe loader answers (the catalog's answered-by list);
+  OWNER is the one it does not."
+  #{:write :append :exists :range :stat :mtime :chmod :mkdir :unlink :rmdir
+    :rename :fsync :make-temp-dir :stat-nofollow})
 
 (def loader-targets
   "The target profiles whose artifact runs under tools/kexe_loader.c."
   #{:x86_64-kotoba-v1 :x86_64-linux-kotoba-v1 :x86_64-macos-kotoba-v1
     :aarch64-kotoba-v1 :aarch64-linux-kotoba-v1 :aarch64-macos-kotoba-v1})
 
-(defn- num [n] #?(:clj (long n) :cljs (js/Number n)))
-
-(defn- ascii [s]
-  (mapv (fn [i] #?(:clj (int (.charAt ^String s (int i))) :cljs (.charCodeAt s i)))
-        (range (count s))))
+(defn- num [n]
+  #?(:clj (long n)
+     :cljs (js/Number n)
+     :default n))
 
 (defn- occurs? [code needle]
   (let [n (count needle) limit (- (count code) n)]
@@ -67,25 +79,71 @@
                           :else false)) true
         :else (recur (inc i))))))
 
+(defn- loader-answers?
+  "True when FORM is one the kexe loader answers. `contains?` is not admitted
+  over a keyword set on this surface, so membership is spelled as the closed
+  cond it is -- the set has fourteen members and one non-member."
+  [form]
+  (cond (= form :write) true
+        (= form :append) true
+        (= form :exists) true
+        (= form :range) true
+        (= form :stat) true
+        (= form :mtime) true
+        (= form :chmod) true
+        (= form :mkdir) true
+        (= form :unlink) true
+        (= form :rmdir) true
+        (= form :rename) true
+        (= form :fsync) true
+        (= form :make-temp-dir) true
+        (= form :stat-nofollow) true
+        :else false))
+
 (defn unanswered-in
   "The forms the kexe loader does not answer whose token occurs in CODE (the
   artifact's code bytes, literals included), sorted."
   [code]
   (let [code (mapv #(bit-and (num %) 0xff) code)]
-    (vec (sort (for [[form {:keys [token kexe-loader?]}] forms
-                     :when (and token (not kexe-loader?) (occurs? code (ascii token)))]
+    (vec (sort (for [form (keys form-tokens)
+                     :let [token (get form-tokens form)]
+                     :when (and (not (loader-answers? form))
+                                (occurs? code (ascii-token token)))]
                  form)))))
+
+(defn- loader-answers-target?
+  "True when TARGET's artifact runs under tools/kexe_loader.c. `contains?` is
+  not admitted over a keyword set on this surface, so membership is spelled
+  as the closed cond it is -- six profiles, by name."
+  [target]
+  (cond (= target :x86_64-kotoba-v1) true
+        (= target :x86_64-linux-kotoba-v1) true
+        (= target :x86_64-macos-kotoba-v1) true
+        (= target :aarch64-kotoba-v1) true
+        (= target :aarch64-linux-kotoba-v1) true
+        (= target :aarch64-macos-kotoba-v1) true
+        :else false))
+
+(defn- owner-list
+  "Found forms, comma-separated, as a string."
+  [found]
+  (apply str (interpose ", " (map str found)))
 
 (defn refuse-unanswered!
   "Throw, naming the forms, when TARGET runs under the kexe loader and CODE
-  carries the token of a form the loader does not answer."
+  carries the token of a form the loader does not answer. `unanswered-in`
+  answers an empty vector when nothing is refused, and `throw` is reached
+  only through the explicit count check."
   [target code]
-  (when (contains? loader-targets target)
-    (when-let [found (seq (unanswered-in code))]
-      (throw (ex-info (str "the kexe loader does not answer the :fs/app-data form"
-                           (when (next found) "s") " "
-                           (apply str (interpose ", " (map str found)))
-                           " (lang/capability-catalog.edn :status :proposed). "
-                           "Nothing was written.")
-                      {:phase :target :reason :fs-form-not-answered-by-kexe-loader
-                       :target target :forms (vec found)})))))
+  (when (loader-answers-target? target)
+    (let [found (unanswered-in code)
+          n #?(:kotoba (vector-count found) :default (count found))]
+      (if (= 0 n)
+        :none
+        (throw (ex-info (str "the kexe loader does not answer the :fs/app-data form"
+                             (when (< 1 n) "s") " "
+                             (apply str (interpose ", " (map str found)))
+                             " (lang/capability-catalog.edn :status :proposed). "
+                             "Nothing was written.")
+                        {:phase :target :reason :fs-form-not-answered-by-kexe-loader
+                         :target target :forms (vec found)})))))
