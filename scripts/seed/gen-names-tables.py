@@ -51,21 +51,22 @@ def pack(s, j):
 
 def table(name, entries, doc):
     assert all(len(s) <= 24 for s, _ in entries)
-    out = [doc, f"(defn- {name} [w0 :i64 w1 :i64 w2 :i64] :i64", "  (cond"]
+    # R1: the tables are written with `case` (the seed is compiled by an R1 seed from rung 1 on)
+    out = [doc, f"(defn- {name} [w0 :i64 w1 :i64 w2 :i64] :i64", "  (case w2"]
     by2 = {}
     for s, c in entries:
         by2.setdefault(pack(s, 2), {}).setdefault(pack(s, 1), []).append((pack(s, 0), c, s))
     for w2, by1 in by2.items():
-        out.append(f"    (= w2 {w2})")
-        out.append("    (cond")
+        out.append(f"    {w2}")
+        out.append("    (case w1")
         for w1, rows in by1.items():
-            out.append(f"      (= w1 {w1})")
-            out.append("      (cond")
+            out.append(f"      {w1}")
+            out.append("      (case w0")
             for w0, c, s in rows:
-                out.append(f"        (= w0 {w0}) {c}  ; {s}")
-            out.append("        :else 0)")
-        out.append("      :else 0)")
-    out.append("    :else 0))")
+                out.append(f"        {w0} {c}  ; {s}")
+            out.append("        0)")
+        out.append("      0)")
+    out.append("    0))")
     return "\n".join(out)
 
 

@@ -53,7 +53,18 @@ for p in $parts; do cat $p >> $W/unit.kotoba; printf '\n' >> $W/unit.kotoba; don
 print -l -- ${parts#$R/} > $W/parts.txt
 
 t0=$(date +%s)
-if ! seed_stage0_build $W/unit.kotoba $W/unit; then
+# ---- R1 (agent R1, 2026-10-02): SEED_UNIT_SEED=<seed.bin> builds the unit with that seed (offset from <seed>.offset)
+# instead of stage-0. Needed from rung 1 on: modules written in the R1 language (41-a64gen, 30-lower) are compiled
+# only by an R1 seed; stage-0 stays the default for the R0-language modules.
+if [ -n "${SEED_UNIT_SEED:-}" ]; then
+  sb=${SEED_UNIT_SEED:A}
+  if ! { seed_run $sb $(cat ${sb%.bin}.offset) compile ${W:A}/unit.kotoba --target aarch64-macos --output ${W:A}/unit.kseed > $W/unit.log 2>&1 \
+         && seed_run $sb $(cat ${sb%.bin}.offset) extract-native ${W:A}/unit.kseed --symbol main --output ${W:A}/unit.bin >> $W/unit.log 2>&1; }; then
+    echo "unit $mod: FAIL (seed ${sb:t} refused the unit build)"; head -3 $W/unit.log; exit 1
+  fi
+  sed -n 's/.*:offset \([0-9]*\).*/\1/p' $W/unit.log | tail -1 > $W/unit.offset
+elif ! seed_stage0_build $W/unit.kotoba $W/unit; then
+# ---- end R1 block
   echo "unit $mod: FAIL (stage-0 refused the unit build; parts: $(tr '\n' ' ' < $W/parts.txt))"
   grep -o ':message "[^"]*"' $W/unit.log | head -3
   exit 1
@@ -64,7 +75,7 @@ t2=$(date +%s)
 if [ $update -eq 1 ]; then cp $W/stdout $exp; echo "unit $mod: UPDATED $exp ($(wc -l < $exp | tr -d ' ') lines)"; exit 0; fi
 [ -f $exp ] || { echo "unit $mod: FAIL (no $exp; run with --update after checking $W/stdout)"; exit 1; }
 if diff -u $exp $W/stdout > $W/diff; then
-  echo "unit $mod: PASS ($(wc -l < $exp | tr -d ' ') lines; stage-0 $((t1-t0)) s, run $((t2-t1)) s)"
+  echo "unit $mod: PASS ($(wc -l < $exp | tr -d ' ') lines; ${SEED_UNIT_SEED:+seed }${${SEED_UNIT_SEED:-stage-0}:t} $((t1-t0)) s, run $((t2-t1)) s)"
   exit 0
 fi
 echo "unit $mod: FAIL (diff below; stderr: $W/stderr)"

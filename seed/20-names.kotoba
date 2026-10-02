@@ -55,20 +55,19 @@
   (loop [c (nm-first M n) i 0]
     (if (= c 0) i (recur (nm-next M c) (+ i 1)))))
 
-;; i64 flags. Seed code avoids and/or/not: the stable stage-0 answers 'internal compiler error' on them
-;; (seed/CONTRACT-REQUESTS.md, 41-a64gen line).
+;; i64 flag 1/0 for a = b (R0 code multiplied such flags; R1 code uses and/or) and its :bool negation
 (defn- nm-eqi [a :i64 b :i64] :i64 (if (= a b) 1 0))
-(defn- nm-ne [a :i64 b :i64] :bool (< (nm-eqi a b) 1))
+(defn- nm-ne [a :i64 b :i64] :bool (not= a b))
 
 (defn- nm-sym-of [M :vector-i64 n :i64] :i64 (nm-nf M n NF-SYM))
 
 ;; 1 when node kind k carries a symbol (ND-SYM or ND-KW)
-(defn- nm-is-name [k :i64] :i64 (cond (= k ND-SYM) 1 (= k ND-KW) 1 :else 0))
+(defn- nm-is-name [k :i64] :bool (case k (ND-SYM ND-KW) true false))
 
 ;; SF-HEAD of the node's symbol: a head code for ND-SYM, a KW-* code for ND-KW, 0 otherwise.
 (defn- nm-head-of [M :vector-i64 n :i64] :i64
   (let [k (nm-kind M n)]
-    (if (= (nm-is-name k) 1)
+    (if (nm-is-name k)
       (nm-sf M (nm-sym-of M n) SF-HEAD)
       0)))
 
@@ -131,192 +130,192 @@
 ;; BEGIN GENERATED SPELLINGS
 ;; head code of a symbol spelling (seed/HEADS :spellings) from its packed words w0 w1 w2, 0 if none.
 (defn- nm-head-code [w0 :i64 w1 :i64 w2 :i64] :i64
-  (cond
-    (= w2 0)
-    (cond
-      (= w1 0)
-      (cond
-        (= w0 29550) HD-NS  ; ns
-        (= w0 1852204388) HD-DEFN  ; defn
-        (= w0 195125732708) HD-DEFN-PRIV  ; defn-
-        (= w0 6710628) HD-DEF  ; def
-        (= w0 7628140) HD-LET  ; let
-        (= w0 1886351212) HD-LOOP  ; loop
-        (= w0 491595720050) HD-RECUR  ; recur
-        (= w0 26217) HD-IF  ; if
-        (= w0 6581857) HD-AND  ; and
-        (= w0 29295) HD-OR  ; or
-        (= w0 7630702) HD-NOT  ; not
-        (= w0 61) HD-EQ  ; =
-        (= w0 60) HD-LT  ; <
-        (= w0 62) HD-GT  ; >
-        (= w0 15676) HD-LE  ; <=
-        (= w0 15678) HD-GE  ; >=
-        (= w0 43) HD-ADD  ; +
-        (= w0 45) HD-SUB  ; -
-        (= w0 42) HD-MUL  ; *
-        (= w0 1953461617) HD-QUOT  ; quot
-        (= w0 28268861324552546) HD-BIT-AND  ; bit-and
-        (= w0 125821829540194) HD-BIT-OR  ; bit-or
-        (= w0 32210709294377314) HD-BIT-XOR  ; bit-xor
-        (= w0 32773616298125666) HD-BIT-NOT  ; bit-not
-        (= w0 1684959075) HD-COND  ; cond
-        (= w0 28516) HD-DO  ; do
-        (= w0 1852139639) HD-WHEN  ; when
-        (= w0 8390045772219246711) HD-WHEN-NOT  ; when-not
-        (= w0 128021938660969) HD-IF-NOT  ; if-not
-        (= w0 1702060387) HD-CASE  ; case
-        (= w0 482721296227) HD-CONDP  ; condp
-        (= w0 15917) HD-THREAD-FIRST  ; ->
-        (= w0 4079149) HD-THREAD-LAST  ; ->>
-        (= w0 1043166049) HD-AS-THREAD  ; as->
-        (= w0 68364679409507) HD-COND-THREAD  ; cond->
-        (= w0 17519813235470179) HD-COND-THREAD-LAST  ; cond->>
-        (= w0 32481142916804452) HD-DOTIMES  ; dotimes
-        (= w0 487033368420) HD-DOSEQ  ; doseq
-        (= w0 435526984050) HD-RANGE  ; range
-        (= w0 6516329) HD-INC  ; inc
-        (= w0 6514020) HD-DEC  ; dec
-        (= w0 272452707706) HD-ZERO  ; zero?
-        (= w0 1064529776) HD-POS  ; pos?
-        (= w0 1063740782) HD-NEG  ; neg?
-        (= w0 1031040878) HD-NOT-EQ  ; not=
-        (= w0 128034677158753) HD-ASSERT  ; assert
-        (= w0 1702195828) HD-TRUE  ; true
-        (= w0 435728179558) HD-FALSE  ; false
-        (= w0 110442657834354) HD-RECORD  ; record
-        (= w0 7628135) HD-GET  ; get
-        (= w0 427071599457) HD-ASSOC  ; assoc
-        :else 0)
-      (= w1 32765890658446708)
-      (cond
-        (= w0 7379544308312192629) HD-USHR  ; u64-shift-right
-        (= w0 7379544308312192617) HD-SSHR  ; i64-shift-right
-        :else 0)
-      (= w1 127983137074548)
-      (cond
-        (= w0 7379544308312192617) HD-SHL  ; i64-shift-left
-        :else 0)
-      (= w1 116)
-      (cond
-        (= w0 7002378818650596726) HD-VECTOR-AT  ; vector-at
-        :else 0)
-      (= w1 6975087)
-      (cond
-        (= w0 7146494006726452598) HD-VECTOR-CONJ  ; vector-conj
-        :else 0)
-      (= w1 1668248435)
-      (cond
-        (= w0 7002378818650596726) HD-VECTOR-ASSOC  ; vector-assoc
-        :else 0)
-      (= w1 143402169203)
-      (cond
-        (= w0 7002378818650596726) HD-VECTOR-ASSOC-BANG  ; vector-assoc!
-        :else 0)
-      (= w1 1668246636)
-      (cond
-        (= w0 7002378818650596726) HD-VECTOR-ALLOC  ; vector-alloc
-        :else 0)
-      (= w1 448629534309)
-      (cond
-        (= w0 7795000253961368691) HD-STRING-LENGTH  ; string-length
-        :else 0)
-      (= w1 119212746157424)
-      (cond
-        (= w0 7017502553595214196) HD-TYPED-CAP-CALL  ; typed-cap-call
-        :else 0)
-      (= w1 499850112623)
-      (cond
-        (= w0 7146481907620017267) HD-STRING-CONCAT  ; string-concat
-        :else 0)
-      (= w1 1953396079)
-      (cond
-        (= w0 7146494006726452598) HD-VECTOR-COUNT  ; vector-count
-        :else 0)
-      (= w1 30565)
-      (cond
-        (= w0 7939112160781886834) HD-RECORD-NEW  ; record-new
-        :else 0)
-      (= w1 29797)
-      (cond
-        (= w0 7434709002516391282) HD-RECORD-GET  ; record-get
-        :else 0)
-      (= w1 100)
-      (cond
-        (= w0 8245918730100827492) HD-DEFRECORD  ; defrecord
-        :else 0)
-      :else 0)
-    (= w2 1952525684)
-    (cond
-      (= w1 7956012744315331695)
-      (cond
-        (= w0 7146481907620017267) HD-STRING-CODE-POINT-AT  ; string-code-point-at
-        :else 0)
-      :else 0)
-    (= w2 224251161970)
-    (cond
-      (= w1 8031153322933972335)
-      (cond
-        (= w0 8243326141594892642) HD-BYTES-FROM-VECTOR-I64  ; bytes-from-vector-i64
-        :else 0)
-      :else 0)
-    (= w2 495623371106)
-    (cond
-      (= w1 3273395041299412022)
-      (cond
-        (= w0 7578839570954020214) HD-VECTOR-I64-FROM-BYTES  ; vector-i64-from-bytes
-        :else 0)
-      :else 0)
-    :else 0))
+  (case w2
+    0
+    (case w1
+      0
+      (case w0
+        29550 HD-NS  ; ns
+        1852204388 HD-DEFN  ; defn
+        195125732708 HD-DEFN-PRIV  ; defn-
+        6710628 HD-DEF  ; def
+        7628140 HD-LET  ; let
+        1886351212 HD-LOOP  ; loop
+        491595720050 HD-RECUR  ; recur
+        26217 HD-IF  ; if
+        6581857 HD-AND  ; and
+        29295 HD-OR  ; or
+        7630702 HD-NOT  ; not
+        61 HD-EQ  ; =
+        60 HD-LT  ; <
+        62 HD-GT  ; >
+        15676 HD-LE  ; <=
+        15678 HD-GE  ; >=
+        43 HD-ADD  ; +
+        45 HD-SUB  ; -
+        42 HD-MUL  ; *
+        1953461617 HD-QUOT  ; quot
+        28268861324552546 HD-BIT-AND  ; bit-and
+        125821829540194 HD-BIT-OR  ; bit-or
+        32210709294377314 HD-BIT-XOR  ; bit-xor
+        32773616298125666 HD-BIT-NOT  ; bit-not
+        1684959075 HD-COND  ; cond
+        28516 HD-DO  ; do
+        1852139639 HD-WHEN  ; when
+        8390045772219246711 HD-WHEN-NOT  ; when-not
+        128021938660969 HD-IF-NOT  ; if-not
+        1702060387 HD-CASE  ; case
+        482721296227 HD-CONDP  ; condp
+        15917 HD-THREAD-FIRST  ; ->
+        4079149 HD-THREAD-LAST  ; ->>
+        1043166049 HD-AS-THREAD  ; as->
+        68364679409507 HD-COND-THREAD  ; cond->
+        17519813235470179 HD-COND-THREAD-LAST  ; cond->>
+        32481142916804452 HD-DOTIMES  ; dotimes
+        487033368420 HD-DOSEQ  ; doseq
+        435526984050 HD-RANGE  ; range
+        6516329 HD-INC  ; inc
+        6514020 HD-DEC  ; dec
+        272452707706 HD-ZERO  ; zero?
+        1064529776 HD-POS  ; pos?
+        1063740782 HD-NEG  ; neg?
+        1031040878 HD-NOT-EQ  ; not=
+        128034677158753 HD-ASSERT  ; assert
+        1702195828 HD-TRUE  ; true
+        435728179558 HD-FALSE  ; false
+        110442657834354 HD-RECORD  ; record
+        7628135 HD-GET  ; get
+        427071599457 HD-ASSOC  ; assoc
+        0)
+      32765890658446708
+      (case w0
+        7379544308312192629 HD-USHR  ; u64-shift-right
+        7379544308312192617 HD-SSHR  ; i64-shift-right
+        0)
+      127983137074548
+      (case w0
+        7379544308312192617 HD-SHL  ; i64-shift-left
+        0)
+      116
+      (case w0
+        7002378818650596726 HD-VECTOR-AT  ; vector-at
+        0)
+      6975087
+      (case w0
+        7146494006726452598 HD-VECTOR-CONJ  ; vector-conj
+        0)
+      1668248435
+      (case w0
+        7002378818650596726 HD-VECTOR-ASSOC  ; vector-assoc
+        0)
+      143402169203
+      (case w0
+        7002378818650596726 HD-VECTOR-ASSOC-BANG  ; vector-assoc!
+        0)
+      1668246636
+      (case w0
+        7002378818650596726 HD-VECTOR-ALLOC  ; vector-alloc
+        0)
+      448629534309
+      (case w0
+        7795000253961368691 HD-STRING-LENGTH  ; string-length
+        0)
+      119212746157424
+      (case w0
+        7017502553595214196 HD-TYPED-CAP-CALL  ; typed-cap-call
+        0)
+      499850112623
+      (case w0
+        7146481907620017267 HD-STRING-CONCAT  ; string-concat
+        0)
+      1953396079
+      (case w0
+        7146494006726452598 HD-VECTOR-COUNT  ; vector-count
+        0)
+      30565
+      (case w0
+        7939112160781886834 HD-RECORD-NEW  ; record-new
+        0)
+      29797
+      (case w0
+        7434709002516391282 HD-RECORD-GET  ; record-get
+        0)
+      100
+      (case w0
+        8245918730100827492 HD-DEFRECORD  ; defrecord
+        0)
+      0)
+    1952525684
+    (case w1
+      7956012744315331695
+      (case w0
+        7146481907620017267 HD-STRING-CODE-POINT-AT  ; string-code-point-at
+        0)
+      0)
+    224251161970
+    (case w1
+      8031153322933972335
+      (case w0
+        8243326141594892642 HD-BYTES-FROM-VECTOR-I64  ; bytes-from-vector-i64
+        0)
+      0)
+    495623371106
+    (case w1
+      3273395041299412022
+      (case w0
+        7578839570954020214 HD-VECTOR-I64-FROM-BYTES  ; vector-i64-from-bytes
+        0)
+      0)
+    0))
 
 ;; KW-* code of a keyword spelling (the ':' included) from its packed words, 0 if none.
 (defn- nm-kw-code [w0 :i64 w1 :i64 w2 :i64] :i64
-  (cond
-    (= w2 0)
-    (cond
-      (= w1 0)
-      (cond
-        (= w0 875981114) KW-I64  ; :i64
-        (= w0 465726038586) KW-BOOL  ; :bool
-        (= w0 29113321772053306) KW-STRING  ; :string
-        (= w0 32776920252310842) KW-EXPORT  ; :export
-        (= w0 435728180538) KW-ELSE  ; :else
-        (= w0 126879583003194) KW-BYTES  ; :bytes
-        (= w0 7237970110066289466) KW-KEYWORD  ; :keyword
-        (= w0 28273320405594682) KW-RECORD  ; :record
-        (= w0 1952803898) KW-LET  ; :let
-        (= w0 474147747642) KW-WHEN  ; :when
-        (= w0 111516299327290) KW-WHILE  ; :while
-        :else 0)
-      (= w1 3421801)
-      (cond
-        (= w0 3274802424726255162) KW-VECTOR-I64  ; :vector-i64
-        :else 0)
-      (= w1 1635017060)
-      (cond
-        (= w0 3274240491808581178) KW-FS-APP-DATA  ; :fs/app-data
-        :else 0)
-      (= w1 115)
-      (cond
-        (= w0 7454127189511660346) KW-CLI-ARGS  ; :cli/args
-        :else 0)
-      (= w1 32210684681203045)
-      (cond
-        (= w0 8388361637176764730) KW-IO-WRITE-ERROR  ; :io/write-error
-        :else 0)
-      (= w1 101)
-      (cond
-        (= w0 8388361637176764730) KW-IO-WRITE  ; :io/write
-        :else 0)
-      :else 0)
-    (= w2 29541)
-    (cond
-      (= w1 8392847327629697380)
-      (cond
-        (= w0 3274240491808581178) KW-FS-APP-DATA-BYTES  ; :fs/app-data-bytes
-        :else 0)
-      :else 0)
-    :else 0))
+  (case w2
+    0
+    (case w1
+      0
+      (case w0
+        875981114 KW-I64  ; :i64
+        465726038586 KW-BOOL  ; :bool
+        29113321772053306 KW-STRING  ; :string
+        32776920252310842 KW-EXPORT  ; :export
+        435728180538 KW-ELSE  ; :else
+        126879583003194 KW-BYTES  ; :bytes
+        7237970110066289466 KW-KEYWORD  ; :keyword
+        28273320405594682 KW-RECORD  ; :record
+        1952803898 KW-LET  ; :let
+        474147747642 KW-WHEN  ; :when
+        111516299327290 KW-WHILE  ; :while
+        0)
+      3421801
+      (case w0
+        3274802424726255162 KW-VECTOR-I64  ; :vector-i64
+        0)
+      1635017060
+      (case w0
+        3274240491808581178 KW-FS-APP-DATA  ; :fs/app-data
+        0)
+      115
+      (case w0
+        7454127189511660346 KW-CLI-ARGS  ; :cli/args
+        0)
+      32210684681203045
+      (case w0
+        8388361637176764730 KW-IO-WRITE-ERROR  ; :io/write-error
+        0)
+      101
+      (case w0
+        8388361637176764730 KW-IO-WRITE  ; :io/write
+        0)
+      0)
+    29541
+    (case w1
+      8392847327629697380
+      (case w0
+        3274240491808581178 KW-FS-APP-DATA-BYTES  ; :fs/app-data-bytes
+        0)
+      0)
+    0))
 ;; END GENERATED SPELLINGS
 
 ;; SF-HEAD value of a new spelling S[a..b).
@@ -380,7 +379,7 @@
     (nm-failed M) (nm-touch M)
     :else
     (let [k (nm-kind M n)]
-      (if (= (nm-is-name k) 1)
+      (if (nm-is-name k)
         (let [t (nm-nf M n NF-TOK)
               a (nm-tf M t TF-START)
               b (nm-tf M t TF-END)
@@ -393,41 +392,41 @@
 ;; ---------------------------------------------------------------------------------------------------------
 ;; the ns form and the FN table
 ;; ---------------------------------------------------------------------------------------------------------
-;; 1 when every child of node n is an ND-SYM, else 0
-(defn- nm-all-syms [M :vector-i64 n :i64] :i64
+;; true when every child of node n is an ND-SYM
+(defn- nm-all-syms [M :vector-i64 n :i64] :bool
   (loop [c (nm-first M n)]
-    (cond (= c 0) 1
+    (cond (zero? c) true
           (= (nm-kind M c) ND-SYM) (recur (nm-next M c))
-          :else 0)))
+          :else false)))
 
-;; 1 when c is a well-formed (:export [sym ...]) clause, else 0 (reads of node 0 are harmless: the null record)
-(defn- nm-export-ok [M :vector-i64 c :i64] :i64
-  (* (* (nm-eqi (nm-kind M c) ND-LIST) (nm-eqi (nm-count M c) 2))
-     (* (* (nm-eqi (nm-kind M (nm-first M c)) ND-KW) (nm-eqi (nm-head-of M (nm-first M c)) KW-EXPORT))
-        (* (nm-eqi (nm-kind M (nm-nth M c 1)) ND-VEC) (nm-all-syms M (nm-nth M c 1))))))
+;; true when c is a well-formed (:export [sym ...]) clause (reads of node 0 are harmless: the null record)
+(defn- nm-export-ok [M :vector-i64 c :i64] :bool
+  (let [k (nm-first M c)
+        v (nm-nth M c 1)]
+    (and (= (nm-kind M c) ND-LIST) (= (nm-count M c) 2)
+         (= (nm-kind M k) ND-KW) (= (nm-head-of M k) KW-EXPORT)
+         (= (nm-kind M v) ND-VEC) (nm-all-syms M v))))
 
-;; 1 when n is (ns NAME) or (ns NAME (:export [sym ...])), else 0
-(defn- nm-ns-ok [M :vector-i64 n :i64] :i64
-  (let [shape (* (* (nm-eqi (nm-kind M n) ND-LIST) (nm-eqi (nm-kind M (nm-first M n)) ND-SYM))
-                 (* (nm-eqi (nm-head-of M (nm-first M n)) HD-NS) (nm-eqi (nm-kind M (nm-nth M n 1)) ND-SYM)))
-        cnt (nm-count M n)]
-    (cond (= n 0) 0
-          (= shape 0) 0
-          (= cnt 2) 1
-          (= cnt 3) (nm-export-ok M (nm-nth M n 2))
-          :else 0)))
+;; true when n is (ns NAME) or (ns NAME (:export [sym ...]))
+(defn- nm-ns-ok [M :vector-i64 n :i64] :bool
+  (and (not= n 0)
+       (= (nm-kind M n) ND-LIST)
+       (= (nm-kind M (nm-first M n)) ND-SYM)
+       (= (nm-head-of M (nm-first M n)) HD-NS)
+       (= (nm-kind M (nm-nth M n 1)) ND-SYM)
+       (case (nm-count M n)
+         2 true
+         3 (nm-export-ok M (nm-nth M n 2))
+         false)))
 
 ;; head code of a top-level list form whose head is a symbol, else 0
 (defn- nm-form-head [M :vector-i64 n :i64] :i64
-  (if (= (* (nm-eqi (nm-kind M n) ND-LIST) (nm-eqi (nm-kind M (nm-first M n)) ND-SYM)) 1)
+  (if (and (= (nm-kind M n) ND-LIST) (= (nm-kind M (nm-first M n)) ND-SYM))
     (nm-head-of M (nm-first M n))
     0))
 
 (defn- nm-form-kind [hd :i64] :i64
-  (cond (= hd HD-DEFN) FK-DEFN
-        (= hd HD-DEFN-PRIV) FK-PRIV
-        (= hd HD-DEF) FK-DEF
-        :else 0))
+  (case hd HD-DEFN FK-DEFN HD-DEFN-PRIV FK-PRIV HD-DEF FK-DEF 0))
 
 ;; number of ND-SYM children of node n (R1: a parameter vector may leave a type out: [a b :i64])
 (defn- nm-count-syms [M :vector-i64 n :i64] :i64
@@ -445,7 +444,7 @@
 
 ;; 1 for an R0 head code (1..42): a definition may not take that name. R1 heads (43..) are library sugar that a
 ;; definition of the same name shadows, as in Clojure (corpus 046-compose defines `inc`); 21-check then calls it.
-(defn- nm-r0-head [hd :i64] :i64 (cond (< hd 1) 0 (> hd HD-VECTOR-I64-FROM-BYTES) 0 :else 1))
+(defn- nm-r0-head [hd :i64] :bool (and (>= hd 1) (<= hd HD-VECTOR-I64-FROM-BYTES)))
 
 ;; register the def form n (kind fk) as a new FN record
 (defn- nm-add-fn [M :vector-i64 n :i64 fk :i64] :vector-i64
@@ -454,7 +453,7 @@
         f (vector-at M MM-FN-N)]
     (cond
       (> (nm-sf M s SF-FN) 0) (nm-err-node M E-NAMES-DUP nm 0)
-      (= (nm-r0-head (nm-sf M s SF-HEAD)) 1) (nm-err-node M E-NAMES-DUP nm 0)
+      (nm-r0-head (nm-sf M s SF-HEAD)) (nm-err-node M E-NAMES-DUP nm 0)
       (>= f MM-FN-CAP) (nm-err M E-HEAP-REGION 0 6)
       :else
       (let [np (nm-nparams M n fk)
@@ -540,7 +539,7 @@
 (defn- nm-run-defs [M :vector-i64] :vector-i64
   (let [ns (nm-first M (vector-at M MM-ROOT))]
     (cond (nm-failed M) (nm-touch M)
-          (= (nm-ns-ok M ns) 1) (nm-defs M ns)
+          (nm-ns-ok M ns) (nm-defs M ns)
           (= (nm-form-head M ns) HD-NS) (nm-err-node M E-NAMES-NS ns 0)
           (= ns 0) (nm-err-node M E-NAMES-NS ns 0)
           :else (nm-defs-nons M ns))))

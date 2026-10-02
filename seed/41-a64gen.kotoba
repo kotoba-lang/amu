@@ -7,6 +7,11 @@
 ;; 42-layout's ly-first). Branch, call and literal operands are emitted with a zero immediate plus a FIX record;
 ;; 42-layout patches them (displacement = target word index - XF-AT).
 ;;
+;; R1 (rung 1, 2026-10-02): this module is written in the R1 language and is compiled only by an R1 seed (the rung
+;; proof, docs/selfhost-seed-r1-report-20261002.md): the frame descriptor is a flat record (gn-frame), instruction
+;; sequences thread M with ->, dispatch tables are case, value choices are plain if/when/and. The emitted words are
+;; unchanged (the fixed point and G1/G2 containers are byte-identical to the R0 code generator's).
+;;
 ;; Code conventions (seed/SIR :a64), R0 = simplest correct:
 ;; - entry: args x0..x4, context x7, result x0. Prologue stp x29,x30,[sp,#-16]! ; mov x29,sp ; sub sp,sp,#F,
 ;;   then x7 -> slot 0 and x0.. -> slots 1..nparams. Epilogue mov sp,x29 ; ldp x29,x30,[sp],#16 ; ret.
@@ -20,33 +25,21 @@
 ;;   reload. Guest CALL reloads x7 from slot 0; RT/CAP pass ctx in x0 and call through [x0,#slot] with blr x16.
 ;; - FUEL reloads x7 from slot 0 (a helper call clobbers x7) and charges [x7,#8].
 ;; - quot: brk #0 on divisor 0 and on MIN / -1 (cmp dividend,#1 overflows only for MIN), then sdiv.
-;; Stage-0 note: the stable native stage-0 answers "internal compiler error" on and/or/not and on every if/cond in
-;; a VALUE position (let binding, argument); so every if/cond here is in tail position, and value choices go
-;; through small helpers (gn-max, gn-eq01, gn-cbx, gn-next-fr, ...). seed/CONTRACT-REQUESTS.md 2026-10-02.
 
 ;; ---- errors and emission --------------------------------------------------------------------------------------
-;; The ONLY vector-assoc! of this module. Stage-0 checks linearity per function that writes with vector-assoc!
-;; itself, and a parameter written in a one-form leaf is linear whatever its callers do; a let-bound handle from a
-;; user call is not "owned" in stage-0's analysis (kotoba-sema affine.cljk `producing`), so writes elsewhere fail.
 (defn- gn-put [M :vector-i64 a :i64 w :i64] :vector-i64 (vector-assoc! M a w))
-;; first error wins (rule L10). Always writes (the old values back when an error is already recorded): the stable
-;; stage-0's linearity check refuses some callers of a writer that can return its handle unchanged.
-(defn- gn-pick [c :i64 a :i64 b :i64] :i64 (if (= c 0) a b))
+;; first error wins (rule L10)
 (defn- gn-err [M :vector-i64 code :i64 n :i64] :vector-i64
-  (let [e (vector-at M MM-ERR)
-        p (vector-at M MM-ERR-POS)
-        n0 (vector-at M MM-ERR-N)
-        M1 (gn-put M MM-ERR (gn-pick e code e))
-        M2 (gn-put M1 MM-ERR-POS (gn-pick e -1 p))]
-    (gn-put M2 MM-ERR-N (gn-pick e n n0))))
+  (if (= (vector-at M MM-ERR) 0)
+    (-> M (gn-put MM-ERR code) (gn-put MM-ERR-POS -1) (gn-put MM-ERR-N n))
+    M))
 
 ;; append one instruction word; w = -1 (an encoder refused an operand) -> E-ENC-IMM {n} = the code word index
 (defn- gn-emit [M :vector-i64 w :i64] :vector-i64
   (let [n (vector-at M MM-CODE-N)]
     (cond (< w 0) (gn-err M E-ENC-IMM n)
           (>= n MM-CODE-CAP) (gn-err M E-GEN-FULL n)
-          :else (let [M1 (gn-put M (+ MM-CODE-BASE n) w)]
-                  (gn-put M1 MM-CODE-N (+ n 1))))))
+          :else (-> M (gn-put (+ MM-CODE-BASE n) w) (gn-put MM-CODE-N (+ n 1))))))
 
 ;; a FIX record for the NEXT word to be emitted
 (defn- gn-fix [M :vector-i64 kind :i64 target :i64] :vector-i64
@@ -55,368 +48,352 @@
         b (+ MM-FIX-BASE (* n MM-FIX-W))]
     (if (>= n MM-FIX-CAP)
       (gn-err M E-GEN-FULL n)
-      (let [M1 (gn-put M (+ b XF-AT) at)
-            M2 (gn-put M1 (+ b XF-KIND) kind)
-            M3 (gn-put M2 (+ b XF-TARGET) target)
-            M4 (gn-put M3 (+ b XF-AUX) 0)]
-        (gn-put M4 MM-FIX-N (+ n 1))))))
+      (-> M
+          (gn-put (+ b XF-AT) at)
+          (gn-put (+ b XF-KIND) kind)
+          (gn-put (+ b XF-TARGET) target)
+          (gn-put (+ b XF-AUX) 0)
+          (gn-put MM-FIX-N (+ n 1))))))
 
 ;; ---- readers ---------------------------------------------------------------------------------------------------
 (defn- gn-sir [M :vector-i64 i :i64 f :i64] :i64 (vector-at M (+ MM-SIR-BASE (* i MM-SIR-W) f)))
 (defn- gn-fnf [M :vector-i64 f :i64 fld :i64] :i64 (vector-at M (+ MM-FN-BASE (* f MM-FN-W) fld)))
 (defn- gn-litf [M :vector-i64 l :i64 fld :i64] :i64 (vector-at M (+ MM-LIT-BASE (* l MM-LIT-W) fld)))
 (defn- gn-max [a :i64 b :i64] :i64 (if (> a b) a b))
-(defn- gn-eq01 [a :i64 b :i64] :i64 (if (= a b) 1 0))
 (defn- gn-min7 [t :i64] :i64 (if (< t 7) t 7))
 
-;; ---- frame descriptor fr = NS + DP*2^20 + F*2^40 -----------------------------------------------------------------
-(defn- gn-fr-ns [fr :i64] :i64 (bit-and fr 1048575))
-(defn- gn-fr-dp [fr :i64] :i64 (bit-and (u64-shift-right fr 20) 1048575))
-(defn- gn-fr-f [fr :i64] :i64 (u64-shift-right fr 40))
-(defn- gn-soff [fr :i64 k :i64] :i64 (- (gn-fr-f fr) (* 8 (+ k 1))))
-(defn- gn-hslot [fr :i64 t :i64] :i64 (+ (gn-fr-ns fr) 1 t))
-(defn- gn-xslot [fr :i64] :i64 (+ (gn-fr-ns fr) 1 (gn-fr-dp fr)))
+;; ---- the frame: NS local slots, DP temp homes, F frame bytes (a flat record, pair chain at run time) -------------
+(defrecord gn-frame [ns :i64 dp :i64 f :i64])
+
+(defn- gn-soff [fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] k :i64] :i64
+  (- (:f fr) (* 8 (+ k 1))))
+(defn- gn-hslot [fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] t :i64] :i64 (+ (:ns fr) 1 t))
+(defn- gn-xslot [fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]]] :i64 (+ (:ns fr) 1 (:dp fr)))
 
 ;; temps needed by SIR instruction i (0 when it names none)
 (defn- gn-need-t [M :vector-i64 i :i64] :i64
-  (let [op (gn-sir M i IF-OP)
-        a (gn-sir M i IF-A)
+  (let [a (gn-sir M i IF-A)
         b (gn-sir M i IF-B)
         c (gn-sir M i IF-C)]
-    (cond (= op OP-CONST) (+ a 1)
-          (= op OP-LGET) (+ a 1)
-          (= op OP-STR) (+ a 1)
-          (= op OP-RET) (+ a 1)
-          (= op OP-BRZ) (+ a 1)
-          (= op OP-BRNZ) (+ a 1)
-          (= op OP-LSET) (+ b 1)
-          (= op OP-UN) (+ b 1)
-          (= op OP-BIN) (+ b 2)
-          (= op OP-CMP) (+ b 2)
-          (= op OP-CAP) (+ c 1)
-          (= op OP-CALL) (+ b (gn-max c 1))
-          (= op OP-RT) (+ b (gn-max c 1))
-          (= op OP-VEC) (+ a (gn-max b 1))
-          (= op OP-TAB) (+ a 1)
-          :else 0)))
+    (case (gn-sir M i IF-OP)
+      (OP-CONST OP-LGET OP-STR OP-RET OP-BRZ OP-BRNZ OP-TAB) (+ a 1)
+      (OP-LSET OP-UN) (+ b 1)
+      (OP-BIN OP-CMP) (+ b 2)
+      OP-CAP (+ c 1)
+      (OP-CALL OP-RT) (+ b (gn-max c 1))
+      OP-VEC (+ a (gn-max b 1))
+      0)))
 
 ;; highest local slot named by SIR instruction i
 (defn- gn-need-s [M :vector-i64 i :i64] :i64
-  (let [op (gn-sir M i IF-OP)]
-    (cond (= op OP-LGET) (gn-sir M i IF-B)
-          (= op OP-LSET) (gn-sir M i IF-A)
-          :else 0)))
+  (case (gn-sir M i IF-OP)
+    OP-LGET (gn-sir M i IF-B)
+    OP-LSET (gn-sir M i IF-A)
+    0))
 
-;; what = 1: temps needed by instruction i; else the highest slot it names
-(defn- gn-need [M :vector-i64 i :i64 what :i64] :i64 (if (= what 1) (gn-need-t M i) (gn-need-s M i)))
 ;; scan i .. the END of the function: what = 1 -> max temps, 2 -> max slot
 (defn- gn-scan [M :vector-i64 i :i64 what :i64 acc :i64] :i64
-  (if (>= i (vector-at M MM-SIR-N))
-    acc
-    (if (= (gn-sir M i IF-OP) OP-END)
-      acc
-      (gn-scan M (+ i 1) what (gn-max acc (gn-need M i what))))))
+  (cond (>= i (vector-at M MM-SIR-N)) acc
+        (= (gn-sir M i IF-OP) OP-END) acc
+        :else (gn-scan M (+ i 1) what (gn-max acc (if (= what 1) (gn-need-t M i) (gn-need-s M i))))))
 
-;; the frame descriptor of the function whose FN instruction is SIR index i
-(defn- gn-frame [M :vector-i64 i :i64] :i64
+;; the frame of the function whose FN instruction is SIR index i
+(defn- gn-frame-of [M :vector-i64 i :i64] [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]]
   (let [f (gn-sir M i IF-A)
         ns (gn-max (gn-max (gn-sir M i IF-C) (gn-fnf M f FF-NSLOTS))
                    (gn-max (gn-sir M i IF-B) (gn-scan M (+ i 1) 2 0)))
-        dp (gn-max (gn-fnf M f FF-DEPTH) (gn-scan M (+ i 1) 1 0))
-        fb (bit-and (+ (* 8 (+ ns dp 2)) 15) -16)]
-    (+ ns (* dp 1048576) (* fb 1099511627776))))
+        dp (gn-max (gn-fnf M f FF-DEPTH) (gn-scan M (+ i 1) 1 0))]
+    (->gn-frame ns dp (bit-and (+ (* 8 (+ ns dp 2)) 15) -16))))
 
 ;; ---- slots and temps ----------------------------------------------------------------------------------------------
-(defn- gn-ldslot [M :vector-i64 fr :i64 r :i64 k :i64] :vector-i64 (gn-emit M (enc-ldr r 31 (gn-soff fr k))))
-(defn- gn-stslot [M :vector-i64 fr :i64 r :i64 k :i64] :vector-i64 (gn-emit M (enc-str r 31 (gn-soff fr k))))
+(defn- gn-ldslot [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] r :i64 k :i64] :vector-i64
+  (gn-emit M (enc-ldr r 31 (gn-soff fr k))))
+(defn- gn-stslot [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] r :i64 k :i64] :vector-i64
+  (gn-emit M (enc-str r 31 (gn-soff fr k))))
 ;; register holding temp t as a source (s = scratch when t lives in its home)
 (defn- gn-tsrc [t :i64 s :i64] :i64 (if (< t 7) (+ 9 t) s))
 ;; load temp t into scratch s when it lives in its home
-(defn- gn-tload [M :vector-i64 fr :i64 t :i64 s :i64] :vector-i64
+(defn- gn-tload [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] t :i64 s :i64] :vector-i64
   (if (< t 7) M (gn-ldslot M fr s (gn-hslot fr t))))
 ;; register to compute temp t into, and the store that completes it
 (defn- gn-tdst [t :i64] :i64 (if (< t 7) (+ 9 t) 16))
-(defn- gn-tstore [M :vector-i64 fr :i64 t :i64] :vector-i64
+(defn- gn-tstore [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] t :i64] :vector-i64
   (if (< t 7) M (gn-stslot M fr 16 (gn-hslot fr t))))
 ;; temp t := register r
-(defn- gn-tset [M :vector-i64 fr :i64 t :i64 r :i64] :vector-i64
+(defn- gn-tset [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] t :i64 r :i64] :vector-i64
   (if (< t 7) (gn-emit M (enc-mov-r (+ 9 t) r)) (gn-stslot M fr r (gn-hslot fr t))))
 ;; register r := temp t
-(defn- gn-tget [M :vector-i64 fr :i64 r :i64 t :i64] :vector-i64
+(defn- gn-tget [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] r :i64 t :i64] :vector-i64
   (if (< t 7) (gn-emit M (enc-mov-r r (+ 9 t))) (gn-ldslot M fr r (gn-hslot fr t))))
 ;; store / reload the register temps i .. k-1 (k <= 7) to / from their homes
-(defn- gn-save [M :vector-i64 fr :i64 i :i64 k :i64] :vector-i64
+(defn- gn-save [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] i :i64 k :i64] :vector-i64
   (if (>= i k) M (gn-save (gn-stslot M fr (+ 9 i) (gn-hslot fr i)) fr (+ i 1) k)))
-(defn- gn-restore [M :vector-i64 fr :i64 i :i64 k :i64] :vector-i64
+(defn- gn-restore [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] i :i64 k :i64] :vector-i64
   (if (>= i k) M (gn-restore (gn-ldslot M fr (+ 9 i) (gn-hslot fr i)) fr (+ i 1) k)))
 ;; registers r .. r+n-1 := temps t .. t+n-1
-(defn- gn-args [M :vector-i64 fr :i64 t :i64 r :i64 n :i64] :vector-i64
+(defn- gn-args [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] t :i64 r :i64 n :i64] :vector-i64
   (if (<= n 0) M (gn-args (gn-tget M fr r t) fr (+ t 1) (+ r 1) (- n 1))))
 
 ;; ---- constants --------------------------------------------------------------------------------------------------
 (defn- gn-hw [k :i64 i :i64] :i64 (bit-and (u64-shift-right k (* 16 i)) 65535))
+;; number of halfwords i..3 of k equal to v
 (defn- gn-cnt [k :i64 v :i64 i :i64] :i64
-  (if (> i 3) 0 (+ (gn-eq01 (gn-hw k i) v) (gn-cnt k v (+ i 1)))))
+  (if (> i 3) 0 (+ (when (= (gn-hw k i) v) 1) (gn-cnt k v (+ i 1)))))
 (defn- gn-first-not [k :i64 v :i64 i :i64] :i64
-  (if (> i 3) 0 (if (= (gn-hw k i) v) (if (= i 3) 0 (gn-first-not k v (+ i 1))) i)))
+  (cond (> i 3) 0
+        (not= (gn-hw k i) v) i
+        (= i 3) 0
+        :else (gn-first-not k v (+ i 1))))
 ;; movk every halfword i..3 of k that differs from v
 (defn- gn-movks [M :vector-i64 d :i64 k :i64 v :i64 i :i64] :vector-i64
-  (if (> i 3)
-    M
-    (gn-movks (gn-movk1 M d (gn-hw k i) v i) d k v (+ i 1))))
-(defn- gn-movk1 [M :vector-i64 d :i64 h :i64 v :i64 i :i64] :vector-i64
-  (if (= h v) M (gn-emit M (enc-movk d h i))))
+  (cond (> i 3) M
+        (= (gn-hw k i) v) (gn-movks M d k v (+ i 1))
+        :else (gn-movks (gn-emit M (enc-movk d (gn-hw k i) i)) d k v (+ i 1))))
 ;; register d := k (movz + movk, or movn + movk when more halfwords are 0xffff than 0)
 (defn- gn-mov-imm [M :vector-i64 d :i64 k :i64] :vector-i64
   (if (> (gn-cnt k 65535 0) (gn-cnt k 0 0))
-    (let [i (gn-first-not k 65535 0)
-          M1 (gn-emit M (enc-movn d (bit-xor (gn-hw k i) 65535) i))]
-      (gn-movks M1 d k 65535 (+ i 1)))
-    (let [i (gn-first-not k 0 0)
-          M1 (gn-emit M (enc-movz d (gn-hw k i) i))]
-      (gn-movks M1 d k 0 (+ i 1)))))
+    (let [i (gn-first-not k 65535 0)]
+      (-> M (gn-emit (enc-movn d (bit-xor (gn-hw k i) 65535) i)) (gn-movks d k 65535 (+ i 1))))
+    (let [i (gn-first-not k 0 0)]
+      (-> M (gn-emit (enc-movz d (gn-hw k i) i)) (gn-movks d k 0 (+ i 1))))))
 
 ;; ---- instructions -----------------------------------------------------------------------------------------------
-(defn- gn-op-fn [M :vector-i64 fr :i64 f :i64 np :i64] :vector-i64
-  (let [F (gn-fr-f fr)
-        at (vector-at M MM-CODE-N)]
-    (cond (> F 32768) (gn-err M E-GEN-FRAME (+ (gn-fr-ns fr) (gn-fr-dp fr)))
-          (> np 5) (gn-err M E-GEN-OP OP-FN)
-          :else
-          (let [M1 (gn-put M (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) at)
-                M2 (gn-emit M1 (enc-stp-pre 29 30 31 -16))
-                M3 (gn-emit M2 (enc-mov-sp 29 31))
-                M4 (gn-subsp M3 (bit-and F -4096))
-                M5 (gn-subsp M4 (bit-and F 4095))
-                M6 (gn-stslot M5 fr 7 0)]
-            (gn-params M6 fr 0 np)))))
 (defn- gn-subsp [M :vector-i64 amt :i64] :vector-i64
   (if (> amt 0) (gn-emit M (enc-sub-i 31 31 amt)) M))
-(defn- gn-params [M :vector-i64 fr :i64 i :i64 np :i64] :vector-i64
+(defn- gn-params [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] i :i64 np :i64] :vector-i64
   (if (>= i np) M (gn-params (gn-stslot M fr i (+ i 1)) fr (+ i 1) np)))
+(defn- gn-op-fn [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] f :i64 np :i64] :vector-i64
+  (let [F (:f fr)]
+    (cond (> F 32768) (gn-err M E-GEN-FRAME (+ (:ns fr) (:dp fr)))
+          (> np 5) (gn-err M E-GEN-OP OP-FN)
+          :else
+          (-> M
+              (gn-put (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) (vector-at M MM-CODE-N))
+              (gn-emit (enc-stp-pre 29 30 31 -16))
+              (gn-emit (enc-mov-sp 29 31))
+              (gn-subsp (bit-and F -4096))
+              (gn-subsp (bit-and F 4095))
+              (gn-stslot fr 7 0)
+              (gn-params fr 0 np)))))
 
-(defn- gn-op-const [M :vector-i64 fr :i64 t :i64 k :i64] :vector-i64
-  (gn-tstore (gn-mov-imm M (gn-tdst t) k) fr t))
+(defn- gn-op-const [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] t :i64 k :i64] :vector-i64
+  (-> M (gn-mov-imm (gn-tdst t) k) (gn-tstore fr t)))
 
-(defn- gn-op-lget [M :vector-i64 fr :i64 t :i64 slot :i64] :vector-i64
-  (gn-tstore (gn-ldslot M fr (gn-tdst t) slot) fr t))
+(defn- gn-op-lget [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] t :i64 slot :i64] :vector-i64
+  (-> M (gn-ldslot fr (gn-tdst t) slot) (gn-tstore fr t)))
 
-(defn- gn-op-lset [M :vector-i64 fr :i64 slot :i64 t :i64] :vector-i64
-  (gn-stslot (gn-tload M fr t 16) fr (gn-tsrc t 16) slot))
+(defn- gn-op-lset [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] slot :i64 t :i64] :vector-i64
+  (-> M (gn-tload fr t 16) (gn-stslot fr (gn-tsrc t 16) slot)))
 
 ;; quot: x = dividend register, y = divisor register, d = destination
 (defn- gn-quot [M :vector-i64 d :i64 x :i64 y :i64] :vector-i64
-  (let [M1 (gn-emit M (enc-cbnz y 2))
-        M2 (gn-emit M1 (enc-brk 0))
-        M3 (gn-emit M2 (enc-cmn-i y 1))
-        M4 (gn-emit M3 (enc-bcond (enc-cond-ne) 4))
-        M5 (gn-emit M4 (enc-cmp-i x 1))
-        M6 (gn-emit M5 (enc-bcond (enc-cond-vc) 2))
-        M7 (gn-emit M6 (enc-brk 0))]
-    (gn-emit M7 (enc-sdiv d x y))))
+  (-> M
+      (gn-emit (enc-cbnz y 2))
+      (gn-emit (enc-brk 0))
+      (gn-emit (enc-cmn-i y 1))
+      (gn-emit (enc-bcond (enc-cond-ne) 4))
+      (gn-emit (enc-cmp-i x 1))
+      (gn-emit (enc-bcond (enc-cond-vc) 2))
+      (gn-emit (enc-brk 0))
+      (gn-emit (enc-sdiv d x y))))
 
 (defn- gn-bin-word [bop :i64 d :i64 x :i64 y :i64] :i64
-  (cond (= bop BOP-ADD) (enc-add-r d x y)
-        (= bop BOP-SUB) (enc-sub-r d x y)
-        (= bop BOP-MUL) (enc-mul d x y)
-        (= bop BOP-AND) (enc-and-r d x y)
-        (= bop BOP-OR) (enc-orr-r d x y)
-        (= bop BOP-XOR) (enc-eor-r d x y)
-        (= bop BOP-SHL) (enc-lslv d x y)
-        (= bop BOP-USHR) (enc-lsrv d x y)
-        (= bop BOP-SSHR) (enc-asrv d x y)
-        :else -1))
+  (case bop
+    BOP-ADD (enc-add-r d x y)
+    BOP-SUB (enc-sub-r d x y)
+    BOP-MUL (enc-mul d x y)
+    BOP-AND (enc-and-r d x y)
+    BOP-OR (enc-orr-r d x y)
+    BOP-XOR (enc-eor-r d x y)
+    BOP-SHL (enc-lslv d x y)
+    BOP-USHR (enc-lsrv d x y)
+    BOP-SSHR (enc-asrv d x y)
+    -1))
 
-(defn- gn-op-bin [M :vector-i64 fr :i64 bop :i64 t :i64] :vector-i64
-  (let [M1 (gn-tload M fr t 16)
-        M2 (gn-tload M1 fr (+ t 1) 17)
-        x (gn-tsrc t 16)
+(defn- gn-op-bin [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] bop :i64 t :i64] :vector-i64
+  (let [x (gn-tsrc t 16)
         y (gn-tsrc (+ t 1) 17)
-        M3 (gn-bin-emit M2 bop (gn-tdst t) x y)]
-    (gn-tstore M3 fr t)))
+        d (gn-tdst t)]
+    (-> M
+        (gn-tload fr t 16)
+        (gn-tload fr (+ t 1) 17)
+        (gn-bin-emit bop d x y)
+        (gn-tstore fr t))))
 (defn- gn-bin-emit [M :vector-i64 bop :i64 d :i64 x :i64 y :i64] :vector-i64
   (if (= bop BOP-QUOT) (gn-quot M d x y) (gn-emit M (gn-bin-word bop d x y))))
 
-(defn- gn-op-cmp [M :vector-i64 fr :i64 cc :i64 t :i64] :vector-i64
-  (let [M1 (gn-tload M fr t 16)
-        M2 (gn-tload M1 fr (+ t 1) 17)
-        M3 (gn-emit M2 (enc-cmp-r (gn-tsrc t 16) (gn-tsrc (+ t 1) 17)))
-        M4 (gn-emit M3 (enc-cset (gn-tdst t) (enc-cond-of-cc cc)))]
-    (gn-tstore M4 fr t)))
+(defn- gn-op-cmp [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] cc :i64 t :i64] :vector-i64
+  (-> M
+      (gn-tload fr t 16)
+      (gn-tload fr (+ t 1) 17)
+      (gn-emit (enc-cmp-r (gn-tsrc t 16) (gn-tsrc (+ t 1) 17)))
+      (gn-emit (enc-cset (gn-tdst t) (enc-cond-of-cc cc)))
+      (gn-tstore fr t)))
 
-(defn- gn-op-un [M :vector-i64 fr :i64 uop :i64 t :i64] :vector-i64
-  (let [M1 (gn-tload M fr t 16)
-        x (gn-tsrc t 16)
-        M2 (gn-un-emit M1 uop (gn-tdst t) x)]
-    (gn-tstore M2 fr t)))
+(defn- gn-op-un [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] uop :i64 t :i64] :vector-i64
+  (-> M (gn-tload fr t 16) (gn-un-emit uop (gn-tdst t) (gn-tsrc t 16)) (gn-tstore fr t)))
 (defn- gn-un-emit [M :vector-i64 uop :i64 d :i64 x :i64] :vector-i64
-  (cond (= uop UOP-NOT) (gn-emit M (enc-eor-1 d x))
-        (= uop UOP-BITNOT) (gn-emit M (enc-mvn d x))
-        :else (gn-err M E-GEN-OP OP-UN)))
+  (case uop
+    UOP-NOT (gn-emit M (enc-eor-1 d x))
+    UOP-BITNOT (gn-emit M (enc-mvn d x))
+    (gn-err M E-GEN-OP OP-UN)))
 
 (defn- gn-op-label [M :vector-i64 l :i64] :vector-i64
-  (let [at (vector-at M MM-CODE-N)]
-    (if (< l 1)
-      (gn-err M E-GEN-OP OP-LABEL)
-      (if (>= l MM-LABEL-CAP)
-        (gn-err M E-GEN-OP OP-LABEL)
-        (gn-put M (+ MM-LABEL-BASE l) at)))))
+  (if (or (< l 1) (>= l MM-LABEL-CAP))
+    (gn-err M E-GEN-OP OP-LABEL)
+    (gn-put M (+ MM-LABEL-BASE l) (vector-at M MM-CODE-N))))
 
 (defn- gn-op-br [M :vector-i64 l :i64] :vector-i64
-  (gn-emit (gn-fix M FX-B26 l) (enc-b 0)))
+  (-> M (gn-fix FX-B26 l) (gn-emit (enc-b 0))))
 
 ;; BRZ / BRNZ: nz = 0 -> cbz, 1 -> cbnz
-(defn- gn-op-brz [M :vector-i64 fr :i64 t :i64 l :i64 nz :i64] :vector-i64
-  (let [M1 (gn-tload M fr t 16)
-        s (gn-tsrc t 16)
-        M2 (gn-fix M1 FX-CB19 l)]
-    (gn-emit M2 (gn-cbx nz s))))
-(defn- gn-cbx [nz :i64 s :i64] :i64 (if (= nz 1) (enc-cbnz s 0) (enc-cbz s 0)))
+(defn- gn-op-brz [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] t :i64 l :i64 nz :i64] :vector-i64
+  (let [s (gn-tsrc t 16)]
+    (-> M
+        (gn-tload fr t 16)
+        (gn-fix FX-CB19 l)
+        (gn-emit (if (= nz 1) (enc-cbnz s 0) (enc-cbz s 0))))))
 
-(defn- gn-op-call [M :vector-i64 fr :i64 f :i64 t :i64 n :i64] :vector-i64
-  (let [k (gn-min7 t)
-        M1 (gn-save M fr 0 k)
-        M2 (gn-args M1 fr t 0 n)
-        M3 (gn-ldslot M2 fr 7 0)
-        M4 (gn-fix M3 FX-BL26 f)
-        M5 (gn-emit M4 (enc-bl 0))
-        M6 (gn-tset M5 fr t 0)]
-    (gn-restore M6 fr 0 k)))
+(defn- gn-op-call [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] f :i64 t :i64 n :i64] :vector-i64
+  (let [k (gn-min7 t)]
+    (-> M
+        (gn-save fr 0 k)
+        (gn-args fr t 0 n)
+        (gn-ldslot fr 7 0)
+        (gn-fix FX-BL26 f)
+        (gn-emit (enc-bl 0))
+        (gn-tset fr t 0)
+        (gn-restore fr 0 k))))
 
 ;; x0 := ctx ; x16 := [x0, #slot] ; blr x16
-(defn- gn-rtcall [M :vector-i64 fr :i64 slot :i64] :vector-i64
-  (let [M1 (gn-ldslot M fr 0 0)
-        M2 (gn-emit M1 (enc-ldr 16 0 slot))]
-    (gn-emit M2 (enc-blr 16))))
+(defn- gn-rtcall [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] slot :i64] :vector-i64
+  (-> M (gn-ldslot fr 0 0) (gn-emit (enc-ldr 16 0 slot)) (gn-emit (enc-blr 16))))
 
-(defn- gn-op-rt [M :vector-i64 fr :i64 slot :i64 t :i64 n :i64] :vector-i64
-  (let [k (gn-min7 t)
-        M1 (gn-save M fr 0 k)
-        M2 (gn-args M1 fr t 1 n)
-        M3 (gn-rtcall M2 fr slot)
-        M4 (gn-tset M3 fr t 0)]
-    (gn-restore M4 fr 0 k)))
+(defn- gn-op-rt [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] slot :i64 t :i64 n :i64] :vector-i64
+  (let [k (gn-min7 t)]
+    (-> M (gn-save fr 0 k) (gn-args fr t 1 n) (gn-rtcall fr slot) (gn-tset fr t 0) (gn-restore fr 0 k))))
 
-(defn- gn-op-cap [M :vector-i64 fr :i64 wire :i64 kind :i64 t :i64] :vector-i64
-  (let [k (gn-min7 t)
-        M1 (gn-save M fr 0 k)
-        M2 (gn-tget M1 fr 4 t)
-        M3 (gn-mov-imm M2 1 wire)
-        M4 (gn-mov-imm M3 2 kind)
-        M5 (gn-mov-imm M4 3 kind)
-        M6 (gn-rtcall M5 fr RT-TYPED-CAP-CALL)
-        M7 (gn-tset M6 fr t 0)]
-    (gn-restore M7 fr 0 k)))
+(defn- gn-op-cap [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] wire :i64 kind :i64 t :i64] :vector-i64
+  (let [k (gn-min7 t)]
+    (-> M
+        (gn-save fr 0 k)
+        (gn-tget fr 4 t)
+        (gn-mov-imm 1 wire)
+        (gn-mov-imm 2 kind)
+        (gn-mov-imm 3 kind)
+        (gn-rtcall fr RT-TYPED-CAP-CALL)
+        (gn-tset fr t 0)
+        (gn-restore fr 0 k))))
 
 ;; string literal: pair_new(ctx, code-relative pool offset (FX-LIT32 on movz x1 + movk x1), byte length)
-(defn- gn-op-str [M :vector-i64 fr :i64 t :i64 lit :i64] :vector-i64
-  (let [k (gn-min7 t)
-        len (gn-litf M lit LF-LEN)
-        M1 (gn-save M fr 0 k)
-        M2 (gn-fix M1 FX-LIT32 lit)
-        M3 (gn-emit M2 (enc-movz 1 0 0))
-        M4 (gn-emit M3 (enc-movk 1 0 1))
-        M5 (gn-mov-imm M4 2 len)
-        M6 (gn-rtcall M5 fr RT-PAIR-NEW)
-        M7 (gn-tset M6 fr t 0)]
-    (gn-restore M7 fr 0 k)))
+(defn- gn-op-str [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] t :i64 lit :i64] :vector-i64
+  (let [k (gn-min7 t)]
+    (-> M
+        (gn-save fr 0 k)
+        (gn-fix FX-LIT32 lit)
+        (gn-emit (enc-movz 1 0 0))
+        (gn-emit (enc-movk 1 0 1))
+        (gn-mov-imm 2 (gn-litf M lit LF-LEN))
+        (gn-rtcall fr RT-PAIR-NEW)
+        (gn-tset fr t 0)
+        (gn-restore fr 0 k))))
 
 ;; VEC t n: vector_alloc(ctx, n), then vector_assoc_in_place(ctx, v, i, temp t+i) for i < n; v kept in slot X
-(defn- gn-vec-items [M :vector-i64 fr :i64 t :i64 i :i64 n :i64] :vector-i64
+(defn- gn-vec-items [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] t :i64 i :i64 n :i64] :vector-i64
   (if (>= i n)
     M
-    (let [M1 (gn-ldslot M fr 1 (gn-xslot fr))
-          M2 (gn-mov-imm M1 2 i)
-          M3 (gn-ldslot M2 fr 3 (gn-hslot fr (+ t i)))
-          M4 (gn-rtcall M3 fr RT-VECTOR-ASSOC-IN-PLACE)
-          M5 (gn-stslot M4 fr 0 (gn-xslot fr))]
-      (gn-vec-items M5 fr t (+ i 1) n))))
-(defn- gn-op-vec [M :vector-i64 fr :i64 t :i64 n :i64] :vector-i64
-  (let [M1 (gn-save M fr 0 (gn-min7 (+ t n)))
-        M2 (gn-mov-imm M1 1 n)
-        M3 (gn-rtcall M2 fr RT-VECTOR-ALLOC)
-        M4 (gn-stslot M3 fr 0 (gn-xslot fr))
-        M5 (gn-vec-items M4 fr t 0 n)
-        M6 (gn-ldslot M5 fr 0 (gn-xslot fr))
-        M7 (gn-tset M6 fr t 0)]
-    (gn-restore M7 fr 0 (gn-min7 t))))
+    (gn-vec-items (-> M
+                      (gn-ldslot fr 1 (gn-xslot fr))
+                      (gn-mov-imm 2 i)
+                      (gn-ldslot fr 3 (gn-hslot fr (+ t i)))
+                      (gn-rtcall fr RT-VECTOR-ASSOC-IN-PLACE)
+                      (gn-stslot fr 0 (gn-xslot fr)))
+                  fr t (+ i 1) n)))
+(defn- gn-op-vec [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] t :i64 n :i64] :vector-i64
+  (-> M
+      (gn-save fr 0 (gn-min7 (+ t n)))
+      (gn-mov-imm 1 n)
+      (gn-rtcall fr RT-VECTOR-ALLOC)
+      (gn-stslot fr 0 (gn-xslot fr))
+      (gn-vec-items fr t 0 n)
+      (gn-ldslot fr 0 (gn-xslot fr))
+      (gn-tset fr t 0)
+      (gn-restore fr 0 (gn-min7 t))))
 
 ;; TAB t lit n (constant table, no runtime call): x16 := temp t ; cmp x16,#n ; b.lo +2 ; brk #0 ;
 ;; x16 := x16*8 (three adds) ; x17 := ctx (slot 0) ; x17 := code_base [x17,#384] ; x16 += x17 ;
 ;; movz x17,#lo ; movk x17,#hi,lsl 16 (FX-LIT32: LF-POOL of lit) ; x16 += x17 ; ldr x16,[x16] ; temp t := x16
-(defn- gn-op-tab [M :vector-i64 fr :i64 t :i64 lit :i64 n :i64] :vector-i64
-  (let [M1 (gn-tget M fr 16 t)
-        M2 (gn-emit M1 (enc-cmp-i 16 n))
-        M3 (gn-emit M2 (enc-bcond (enc-cond-lo) 2))
-        M4 (gn-emit M3 (enc-brk 0))
-        M5 (gn-emit (gn-emit (gn-emit M4 (enc-add-r 16 16 16)) (enc-add-r 16 16 16)) (enc-add-r 16 16 16))
-        M6 (gn-ldslot M5 fr 17 0)
-        M7 (gn-emit M6 (enc-ldr 17 17 CTX-CODE-BASE))
-        M8 (gn-emit M7 (enc-add-r 16 16 17))
-        M9 (gn-fix M8 FX-LIT32 lit)
-        M10 (gn-emit (gn-emit M9 (enc-movz 17 0 0)) (enc-movk 17 0 1))
-        M11 (gn-emit (gn-emit M10 (enc-add-r 16 16 17)) (enc-ldr 16 16 0))]
-    (gn-tset M11 fr t 16)))
+(defn- gn-op-tab [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] t :i64 lit :i64 n :i64] :vector-i64
+  (-> M
+      (gn-tget fr 16 t)
+      (gn-emit (enc-cmp-i 16 n))
+      (gn-emit (enc-bcond (enc-cond-lo) 2))
+      (gn-emit (enc-brk 0))
+      (gn-emit (enc-add-r 16 16 16))
+      (gn-emit (enc-add-r 16 16 16))
+      (gn-emit (enc-add-r 16 16 16))
+      (gn-ldslot fr 17 0)
+      (gn-emit (enc-ldr 17 17 CTX-CODE-BASE))
+      (gn-emit (enc-add-r 16 16 17))
+      (gn-fix FX-LIT32 lit)
+      (gn-emit (enc-movz 17 0 0))
+      (gn-emit (enc-movk 17 0 1))
+      (gn-emit (enc-add-r 16 16 17))
+      (gn-emit (enc-ldr 16 16 0))
+      (gn-tset fr t 16)))
 
 ;; FUEL = ldr x7,[slot 0] ; ldr x16,[x7,#8] ; subs x16,x16,#1 ; b.hs +2 ; brk #0 ; str x16,[x7,#8]
-(defn- gn-op-fuel [M :vector-i64 fr :i64] :vector-i64
-  (let [M1 (gn-ldslot M fr 7 0)
-        M2 (gn-emit M1 (enc-ldr 16 7 CTX-FUEL))
-        M3 (gn-emit M2 (enc-subs-i 16 16 1))
-        M4 (gn-emit M3 (enc-bcond (enc-cond-hs) 2))
-        M5 (gn-emit M4 (enc-brk 0))]
-    (gn-emit M5 (enc-str 16 7 CTX-FUEL))))
+(defn- gn-op-fuel [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]]] :vector-i64
+  (-> M
+      (gn-ldslot fr 7 0)
+      (gn-emit (enc-ldr 16 7 CTX-FUEL))
+      (gn-emit (enc-subs-i 16 16 1))
+      (gn-emit (enc-bcond (enc-cond-hs) 2))
+      (gn-emit (enc-brk 0))
+      (gn-emit (enc-str 16 7 CTX-FUEL))))
 
-(defn- gn-op-ret [M :vector-i64 fr :i64 t :i64] :vector-i64
-  (let [M1 (gn-tget M fr 0 t)
-        M2 (gn-emit M1 (enc-mov-sp 31 29))
-        M3 (gn-emit M2 (enc-ldp-post 29 30 31 16))]
-    (gn-emit M3 (enc-ret))))
+(defn- gn-op-ret [M :vector-i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]] t :i64] :vector-i64
+  (-> M (gn-tget fr 0 t) (gn-emit (enc-mov-sp 31 29)) (gn-emit (enc-ldp-post 29 30 31 16)) (gn-emit (enc-ret))))
 
 ;; one SIR instruction
-(defn- gn-ins [M :vector-i64 i :i64 op :i64 fr :i64] :vector-i64
+(defn- gn-ins [M :vector-i64 i :i64 op :i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]]] :vector-i64
   (let [a (gn-sir M i IF-A)
         b (gn-sir M i IF-B)
         c (gn-sir M i IF-C)]
-    (cond (= op OP-CONST) (gn-op-const M fr a b)
-          (= op OP-LGET) (gn-op-lget M fr a b)
-          (= op OP-LSET) (gn-op-lset M fr a b)
-          (= op OP-BIN) (gn-op-bin M fr a b)
-          (= op OP-CMP) (gn-op-cmp M fr a b)
-          (= op OP-UN) (gn-op-un M fr a b)
-          (= op OP-LABEL) (gn-op-label M a)
-          (= op OP-BR) (gn-op-br M a)
-          (= op OP-BRZ) (gn-op-brz M fr a b 0)
-          (= op OP-BRNZ) (gn-op-brz M fr a b 1)
-          (= op OP-CALL) (gn-op-call M fr a b c)
-          (= op OP-RT) (gn-op-rt M fr a b c)
-          (= op OP-CAP) (gn-op-cap M fr a b c)
-          (= op OP-STR) (gn-op-str M fr a b)
-          (= op OP-VEC) (gn-op-vec M fr a b)
-          (= op OP-TAB) (gn-op-tab M fr a b c)
-          (= op OP-FUEL) (gn-op-fuel M fr)
-          (= op OP-RET) (gn-op-ret M fr a)
-          (= op OP-TRAP) (gn-emit M (enc-brk a))
-          (= op OP-FN) (gn-op-fn M fr a b)
-          (= op OP-END) (gn-emit M (enc-brk 1))
-          :else (gn-err M E-GEN-OP op))))
+    (case op
+      OP-CONST (gn-op-const M fr a b)
+      OP-LGET (gn-op-lget M fr a b)
+      OP-LSET (gn-op-lset M fr a b)
+      OP-BIN (gn-op-bin M fr a b)
+      OP-CMP (gn-op-cmp M fr a b)
+      OP-UN (gn-op-un M fr a b)
+      OP-LABEL (gn-op-label M a)
+      OP-BR (gn-op-br M a)
+      OP-BRZ (gn-op-brz M fr a b 0)
+      OP-BRNZ (gn-op-brz M fr a b 1)
+      OP-CALL (gn-op-call M fr a b c)
+      OP-RT (gn-op-rt M fr a b c)
+      OP-CAP (gn-op-cap M fr a b c)
+      OP-STR (gn-op-str M fr a b)
+      OP-VEC (gn-op-vec M fr a b)
+      OP-TAB (gn-op-tab M fr a b c)
+      OP-FUEL (gn-op-fuel M fr)
+      OP-RET (gn-op-ret M fr a)
+      OP-TRAP (gn-emit M (enc-brk a))
+      OP-FN (gn-op-fn M fr a b)
+      OP-END (gn-emit M (enc-brk 1))
+      (gn-err M E-GEN-OP op))))
 
-(defn- gn-loop [M :vector-i64 i :i64 fr :i64] :vector-i64
-  (let [n (vector-at M MM-SIR-N)
-        e (vector-at M MM-ERR)
-        op (gn-sir M i IF-OP)]
-    (if (< i n)
-      (if (= e 0)
-        (let [fr1 (gn-next-fr M i op fr)
-              M1 (gn-ins M i op fr1)]
-          (gn-loop M1 (+ i 1) fr1))
-        M)
+;; every instruction from i; a FN instruction starts a new frame
+(defn- gn-loop [M :vector-i64 i :i64 fr [:record :seed/gn-frame [[:ns :i64] [:dp :i64] [:f :i64]]]] :vector-i64
+  (let [op (gn-sir M i IF-OP)]
+    (if (and (< i (vector-at M MM-SIR-N)) (= (vector-at M MM-ERR) 0))
+      (let [fr1 (if (= op OP-FN) (gn-frame-of M i) fr)]
+        (gn-loop (gn-ins M i op fr1) (+ i 1) fr1))
       M)))
-
-(defn- gn-next-fr [M :vector-i64 i :i64 op :i64 fr :i64] :i64 (if (= op OP-FN) (gn-frame M i) fr))
 
 ;; the module entry: SIR -> CODE (+ FIX, LABEL, FF-CODE). MM-R0 = code words emitted in total.
 (defn- gn-run [M :vector-i64] :vector-i64
-  (let [M1 (gn-loop M 1 0)
+  (let [M1 (gn-loop M 1 (->gn-frame 0 0 0))
         n (vector-at M1 MM-CODE-N)]
     (gn-put M1 MM-R0 (- n 1))))
