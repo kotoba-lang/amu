@@ -1,0 +1,398 @@
+;; seed/50-out.kotoba -- the kseed/v1 container: writer, parser, extract (prefix out-). Owner: 50-out.
+;; Contract: seed/SIR :kseed, seed/MEMORY-MAP (OUT CODE LITB LIT EXP FN SYM), design 3.1.
+;;
+;; Container (bytes): "KSEED1 <code-length> <n-exports>\n", then per export (EXP order) "<name> <offset> <arity>\n",
+;; then "\n", then exactly <code-length> raw code bytes: the CODE words little-endian, zero padding up to MM-POOL-OFF,
+;; then the literal pool (LITB bytes at each LF-POOL, zero padding between literals). <offset> = EF-OFFSET, the
+;; byte offset of the entry from the code start. extract-native writes the code slice and reports that same offset,
+;; so "extract offset = header offset" holds by construction (and is tested).
+;;
+;; OUT is one byte per word, MM-OUT-N = next free OUT index (starts at 1, rule "index 0 is null"), so the container
+;; bytes are M[MM-OUT-BASE+1 .. MM-OUT-BASE+MM-OUT-N-1].
+;;
+;; API (all private):
+;;   out-build M S      -> M    builds the container into OUT from CODE/LIT/LITB/EXP/FN/SYM (names are spans of the
+;;                              source string S). Re-entrant: it restarts OUT. MM-R0 = container bytes. On failure MM-ERR.
+;;   out-parse M base len symS a b -> M   parses a container held as one byte per word at M[base ..], looks the
+;;                              symbol (bytes a..b-1 of symS) up. MM-R0 = offset, MM-R1 = index of the first code
+;;                              byte from base, MM-R2 = code length, MM-R3 = arity. Failure: MM-ERR (not found 5002,
+;;                              malformed E-OUT-FORMAT).
+;;   out-write M S path -> M    out-build + write the container to path (file I/O: see the end of this file).
+;;   out-extract M kseed symbol path -> M   read a container file, write its code slice to path. MM-R0 = offset,
+;;                              MM-R2 = code length, MM-R3 = arity.
+;;
+;; Stage-0 idioms used (measured, see CONTRACT-REQUESTS): no and/or/not, no `if` as a let binding value, a function that
+;; branches into different M writers reads M with direct (vector-at M ..) only, forward references are not allowed.
+
+(defn- out-e-nosym [] :i64 5002)
+(defn- out-first [] :i64 1)
+;; M[MM-STAT-BASE + 44 + 1]: OUT index of the first code byte (50-out's own statistics slot); 44 + 0 = total bytes
+(defn- out-cs-slot [] :i64 (+ MM-STAT-BASE 45))
+
+;; the one leaf that does a direct vector-assoc! (stage-0 refuses a direct assoc! after a reader-function call in
+;; the same scope when the handle came from a call; writers below go through this leaf)
+(defn- out-w [M :vector-i64 i :i64 x :i64] :vector-i64
+  (vector-assoc! M i x))
+
+(defn- out-err [M :vector-i64 code :i64 n :i64] :vector-i64
+  (if (= (vector-at M MM-ERR) 0)
+    (let [M1 (out-w M MM-ERR code)
+          M2 (out-w M1 MM-ERR-POS -1)]
+      (out-w M2 MM-ERR-N n))
+    M))
+
+(defn- out-ok [M :vector-i64] :i64
+  (if (= (vector-at M MM-ERR) 0) 1 0))
+
+;; ---- byte sink ----------------------------------------------------------------------------------------------------
+
+;; append one byte (0..255); a no-op once an error is recorded
+(defn- out-put [M :vector-i64 b :i64] :vector-i64
+  (let [n (vector-at M MM-OUT-N)
+        e (vector-at M MM-ERR)]
+    (if (> e 0)
+      M
+      (if (>= n MM-OUT-CAP)
+        (out-err M E-OUT-FULL n)
+        (let [M1 (out-w M (+ MM-OUT-BASE n) b)]
+          (out-w M1 MM-OUT-N (+ n 1)))))))
+
+;; little-endian 32-bit word
+(defn- out-put-word [M :vector-i64 w :i64] :vector-i64
+  (let [M1 (out-put M (bit-and w 255))
+        M2 (out-put M1 (bit-and (u64-shift-right w 8) 255))
+        M3 (out-put M2 (bit-and (u64-shift-right w 16) 255))]
+    (out-put M3 (bit-and (u64-shift-right w 24) 255))))
+
+;; decimal digits of n >= 0 (a negative n is an internal error)
+(defn- out-put-dec [M :vector-i64 n :i64] :vector-i64
+  (if (< n 0)
+    (out-err M E-OUT-FORMAT n)
+    (if (< n 10)
+      (out-put M (+ 48 n))
+      (let [q (quot n 10)
+            M1 (out-put-dec M q)]
+        (out-put M1 (+ 48 (- n (* q 10))))))))
+
+;; bytes a..b-1 of the string S
+(defn- out-put-span [M :vector-i64 S :string a :i64 b :i64] :vector-i64
+  (if (>= a b)
+    M
+    (let [M1 (out-put M (string-code-point-at S a))]
+      (out-put-span M1 S (+ a 1) b))))
+
+;; LITB bytes a..b-1
+(defn- out-put-litb [M :vector-i64 a :i64 b :i64] :vector-i64
+  (if (>= a b)
+    M
+    (let [c (vector-at M (+ MM-LITB-BASE a))
+          M1 (out-put M c)]
+      (out-put-litb M1 (+ a 1) b))))
+
+;; bytes written since the first code byte
+(defn- out-rel [M :vector-i64] :i64
+  (- (vector-at M MM-OUT-N) (vector-at M (out-cs-slot))))
+
+;; zero bytes until out-rel = target
+(defn- out-pad-to [M :vector-i64 target :i64] :vector-i64
+  (let [rel (out-rel M)
+        e (vector-at M MM-ERR)]
+    (if (> e 0)
+      M
+      (if (>= rel target)
+        M
+        (let [M1 (out-put M 0)]
+          (out-pad-to M1 target))))))
+
+;; ---- builder ------------------------------------------------------------------------------------------------------------
+
+;; "KSEED1 "
+(defn- out-put-magic [M :vector-i64] :vector-i64
+  (let [M1 (out-put M 75)
+        M2 (out-put M1 83)
+        M3 (out-put M2 69)
+        M4 (out-put M3 69)
+        M5 (out-put M4 68)
+        M6 (out-put M5 49)]
+    (out-put M6 32)))
+
+;; "<name> <offset> <arity>\n" for EXP record k
+(defn- out-exp-line [M :vector-i64 S :string k :i64] :vector-i64
+  (let [eb (+ MM-EXP-BASE (* k MM-EXP-W))
+        f (vector-at M (+ eb EF-FN))
+        off (vector-at M (+ eb EF-OFFSET))
+        ar (vector-at M (+ eb EF-ARITY))
+        sym (vector-at M (+ (+ MM-FN-BASE (* f MM-FN-W)) FF-SYM))
+        sb (+ MM-SYM-BASE (* sym MM-SYM-W))
+        a (vector-at M (+ sb SF-START))
+        b (vector-at M (+ sb SF-END))
+        M1 (out-put-span M S a b)
+        M2 (out-put M1 32)
+        M3 (out-put-dec M2 off)
+        M4 (out-put M3 32)
+        M5 (out-put-dec M4 ar)]
+    (out-put M5 10)))
+
+(defn- out-exp-loop [M :vector-i64 S :string k :i64] :vector-i64
+  (let [n (vector-at M MM-EXP-N)]
+    (if (>= k n)
+      M
+      (let [M1 (out-exp-line M S k)]
+        (out-exp-loop M1 S (+ k 1))))))
+
+;; header: magic, code length, export count, export lines, blank line
+(defn- out-header [M :vector-i64 S :string] :vector-i64
+  (let [clen (vector-at M MM-CODE-BYTES)
+        ne (- (vector-at M MM-EXP-N) 1)
+        M1 (out-put-magic M)
+        M2 (out-put-dec M1 clen)
+        M3 (out-put M2 32)
+        M4 (out-put-dec M3 ne)
+        M5 (out-put M4 10)
+        M6 (out-exp-loop M5 S 1)]
+    (out-put M6 10)))
+
+;; CODE word i must be 0 .. 2^32-1
+(defn- out-code-word [M :vector-i64 w :i64] :vector-i64
+  (if (< w 0)
+    (out-err M E-OUT-FORMAT w)
+    (if (>= w 4294967296)
+      (out-err M E-OUT-FORMAT w)
+      (out-put-word M w))))
+
+(defn- out-code-loop [M :vector-i64 i :i64] :vector-i64
+  (let [n (vector-at M MM-CODE-N)
+        w (vector-at M (+ MM-CODE-BASE i))]
+    (if (>= i n)
+      M
+      (let [M1 (out-code-word M w)]
+        (out-code-loop M1 (+ i 1))))))
+
+;; literal i at LF-POOL
+(defn- out-lit-one [M :vector-i64 i :i64] :vector-i64
+  (let [lb (+ MM-LIT-BASE (* i MM-LIT-W))
+        pos (vector-at M (+ lb LF-POOL))
+        b (vector-at M (+ lb LF-B))
+        len (vector-at M (+ lb LF-LEN))
+        M1 (out-pad-to M pos)]
+    (out-put-litb M1 b (+ b len))))
+
+(defn- out-lit-loop [M :vector-i64 i :i64] :vector-i64
+  (let [n (vector-at M MM-LIT-N)]
+    (if (>= i n)
+      M
+      (let [M1 (out-lit-one M i)]
+        (out-lit-loop M1 (+ i 1))))))
+
+;; pool: padding up to MM-POOL-OFF, then the literals; only when there is a literal
+(defn- out-pool [M :vector-i64] :vector-i64
+  (let [nl (vector-at M MM-LIT-N)
+        poff (vector-at M MM-POOL-OFF)]
+    (if (<= nl 1)
+      M
+      (let [M1 (out-pad-to M poff)]
+        (out-lit-loop M1 1)))))
+
+;; the container must end exactly at MM-CODE-BYTES
+(defn- out-verify [M :vector-i64] :vector-i64
+  (let [rel (out-rel M)
+        want (vector-at M MM-CODE-BYTES)
+        tot (- (vector-at M MM-OUT-N) 1)]
+    (if (= rel want)
+      (let [M1 (out-w M MM-R0 tot)]
+        (out-w M1 (+ MM-STAT-BASE 44) tot))
+      (out-err M E-OUT-FORMAT rel))))
+
+(defn- out-set-cs [M :vector-i64] :vector-i64
+  (let [n (vector-at M MM-OUT-N)]
+    (out-w M (out-cs-slot) n)))
+
+(defn- out-build4 [M :vector-i64] :vector-i64
+  (let [M1 (out-pool M)]
+    (if (= (out-ok M1) 1) (out-verify M1) M1)))
+
+(defn- out-build3 [M :vector-i64] :vector-i64
+  (let [M1 (out-code-loop (out-set-cs M) 1)]
+    (if (= (out-ok M1) 1) (out-build4 M1) M1)))
+
+(defn- out-build2 [M :vector-i64 S :string] :vector-i64
+  (let [M1 (out-header M S)]
+    (if (= (out-ok M1) 1) (out-build3 M1) M1)))
+
+(defn- out-build [M :vector-i64 S :string] :vector-i64
+  (let [M1 (out-w M MM-OUT-N 1)]
+    (out-build2 M1 S)))
+
+;; ---- parser (readers over a byte-per-word buffer at M[base ..]; base and len live in two statistics cells) ---------------
+
+(defn- out-bslot [] :i64 (+ MM-STAT-BASE 46))
+(defn- out-lslot [] :i64 (+ MM-STAT-BASE 47))
+(defn- out-csslot [] :i64 (+ MM-STAT-BASE 48))
+(defn- out-clslot [] :i64 (+ MM-STAT-BASE 49))
+(defn- out-neslot [] :i64 (+ MM-STAT-BASE 50))
+
+(defn- out-byte [M :vector-i64 i :i64] :i64
+  (vector-at M (+ (vector-at M (out-bslot)) i)))
+(defn- out-len [M :vector-i64] :i64
+  (vector-at M (out-lslot)))
+
+;; index of the first byte equal to ch at or after i, or -1
+(defn- out-find [M :vector-i64 i :i64 ch :i64] :i64
+  (if (>= i (out-len M))
+    -1
+    (if (= (out-byte M i) ch)
+      i
+      (out-find M (+ i 1) ch))))
+
+;; index after the run of decimal digits starting at i (= i when there is none)
+(defn- out-dec-end [M :vector-i64 i :i64] :i64
+  (if (>= i (out-len M))
+    i
+    (let [c (out-byte M i)]
+      (if (< c 48)
+        i
+        (if (> c 57) i (out-dec-end M (+ i 1)))))))
+
+(defn- out-dec-val [M :vector-i64 i :i64 e :i64 acc :i64] :i64
+  (if (>= i e)
+    acc
+    (out-dec-val M (+ i 1) e (+ (* acc 10) (- (out-byte M i) 48)))))
+
+;; "KSEED1 " at the start: 1/0
+(defn- out-magic [M :vector-i64] :i64
+  (if (< (out-len M) 8) 0
+    (if (= (out-byte M 0) 75)
+      (if (= (out-byte M 1) 83)
+        (if (= (out-byte M 2) 69)
+          (if (= (out-byte M 3) 69)
+            (if (= (out-byte M 4) 68)
+              (if (= (out-byte M 5) 49)
+                (if (= (out-byte M 6) 32) 1 0)
+                0)
+              0)
+            0)
+          0)
+        0)
+      0)))
+
+;; position after the code length (followed by a space); -1 when malformed
+(defn- out-e1 [M :vector-i64] :i64
+  (let [e (out-dec-end M 7)]
+    (if (<= e 7) -1
+      (if (>= e (out-len M)) -1
+        (if (= (out-byte M e) 32) e -1)))))
+
+;; position after the export count (followed by a newline); -1 when malformed
+(defn- out-e2 [M :vector-i64 e1 :i64] :i64
+  (if (< e1 0) -1
+    (let [s (+ e1 1)
+          e (out-dec-end M s)]
+      (if (<= e s) -1
+        (if (>= e (out-len M)) -1
+          (if (= (out-byte M e) 10) e -1))))))
+
+;; position of the first code byte after k lines starting at p and the blank line; -1 when malformed
+(defn- out-skip [M :vector-i64 p :i64 k :i64] :i64
+  (if (<= k 0)
+    (if (>= p (out-len M)) -1
+      (if (= (out-byte M p) 10) (+ p 1) -1))
+    (let [q (out-find M p 10)]
+      (if (< q 0) -1 (out-skip M (+ q 1) (- k 1))))))
+
+;; do n bytes at p equal the bytes k.. of sym? 1/0
+(defn- out-name-eq [M :vector-i64 p :i64 sym :string k :i64 n :i64] :i64
+  (if (<= n 0)
+    1
+    (if (= (out-byte M p) (string-code-point-at sym k))
+      (out-name-eq M (+ p 1) sym (+ k 1) (- n 1))
+      0)))
+
+;; the export line at p names sym (the name ends at the first space)? 1/0
+(defn- out-line-match [M :vector-i64 p :i64 sym :string] :i64
+  (let [sp (out-find M p 32)
+        n (string-length sym)]
+    (if (< sp 0) 0
+      (if (= (- sp p) n) (out-name-eq M p sym 0 n) 0))))
+
+;; start of the matching export line among the k lines from p, -1 when absent
+(defn- out-lookup [M :vector-i64 p :i64 k :i64 sym :string] :i64
+  (if (<= k 0)
+    -1
+    (if (= (out-line-match M p sym) 1)
+      p
+      (let [q (out-find M p 10)]
+        (if (< q 0) -1 (out-lookup M (+ q 1) (- k 1) sym))))))
+
+;; offset * 2^32 + arity of the export line at p (name, space, offset, space, arity); -1 when malformed
+(defn- out-line-vals [M :vector-i64 p :i64] :i64
+  (let [sp (out-find M p 32)
+        s1 (+ sp 1)
+        e1 (out-dec-end M s1)
+        s2 (+ e1 1)
+        e2 (out-dec-end M s2)]
+    (if (< sp 0) -1
+      (if (<= e1 s1) -1
+        (if (<= e2 s2) -1
+          (+ (* (out-dec-val M s1 e1 0) 4294967296) (out-dec-val M s2 e2 0)))))))
+
+(defn- out-pg [M :vector-i64 vals :i64] :vector-i64
+  (let [off (quot vals 4294967296)
+        ar (- vals (* off 4294967296))
+        cs (vector-at M (out-csslot))
+        cl (vector-at M (out-clslot))
+        M1 (out-w M MM-R0 off)
+        M2 (out-w M1 MM-R1 cs)
+        M3 (out-w M2 MM-R2 cl)]
+    (out-w M3 MM-R3 ar)))
+
+;; results: MM-R0 offset, MM-R1 index of the first code byte from base, MM-R2 code length, MM-R3 arity
+(defn- out-pf [M :vector-i64 line :i64] :vector-i64
+  (let [vals (out-line-vals M line)]
+    (if (< vals 0)
+      (out-err M E-OUT-FORMAT line)
+      (out-pg M vals))))
+
+(defn- out-pe [M :vector-i64 e2 :i64 sym :string] :vector-i64
+  (let [line (out-lookup M (+ e2 1) (vector-at M (out-neslot)) sym)]
+    (if (< line 0)
+      (out-err M (out-e-nosym) 0)
+      (out-pf M line))))
+
+(defn- out-pd2 [M :vector-i64 cs :i64 clen :i64 nexp :i64] :vector-i64
+  (let [M1 (out-w M (out-csslot) cs)
+        M2 (out-w M1 (out-clslot) clen)]
+    (out-w M2 (out-neslot) nexp)))
+
+(defn- out-pd [M :vector-i64 e1 :i64 e2 :i64 sym :string] :vector-i64
+  (let [nexp (out-dec-val M (+ e1 1) e2 0)
+        clen (out-dec-val M 7 e1 0)
+        cs (out-skip M (+ e2 1) nexp)
+        left (- (out-len M) cs)]
+    (if (< cs 0)
+      (out-err M E-OUT-FORMAT 3)
+      (if (= left clen)
+        (out-pe (out-pd2 M cs clen nexp) e2 sym)
+        (out-err M E-OUT-FORMAT left)))))
+
+(defn- out-pc [M :vector-i64 e1 :i64 sym :string] :vector-i64
+  (let [e2 (out-e2 M e1)]
+    (if (< e2 0)
+      (out-err M E-OUT-FORMAT 2)
+      (out-pd M e1 e2 sym))))
+
+(defn- out-pb [M :vector-i64 sym :string] :vector-i64
+  (let [e1 (out-e1 M)]
+    (if (< e1 0)
+      (out-err M E-OUT-FORMAT 1)
+      (out-pc M e1 sym))))
+
+(defn- out-pa [M :vector-i64 sym :string] :vector-i64
+  (if (= (out-magic M) 1)
+    (out-pb M sym)
+    (out-err M E-OUT-FORMAT 0)))
+
+;; parse the container at M[base .. base+len) and look up the export named sym
+(defn- out-parse [M :vector-i64 base :i64 len :i64 sym :string] :vector-i64
+  (let [M1 (out-w M (out-bslot) base)
+        M2 (out-w M1 (out-lslot) len)]
+    (out-pa M2 sym)))
