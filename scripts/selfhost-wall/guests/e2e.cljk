@@ -1,0 +1,141 @@
+(ns kotoba.compiler.e2e-probe
+  {:kotoba/export [e2e-run]}
+  (:require [kotoba.form :as form]
+            [kotoba.compiler.frontend.infer :as inf]
+            [kotoba.compiler.frontend.state-ability :as sa]
+            [kotoba.compiler.frontend.record-projection :as rp]
+            [kotoba.compiler.frontend.row :as row]
+            [kotoba.compiler.frontend.analyze :as an])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :form/rd [:record :form/rd [[:form [:ref :form/r]] [:pos :i64]]]
+             :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]] [:phase :string] [:data [:ref :form/r]]]]
+             :ie/ctx [:record :ie/ctx [[:schemas [:ref :form/r]] [:row-schemas [:ref :form/r]] [:handlers [:ref :form/r]] [:final :bool] [:tail :bool] [:names [:ref :form/r]] [:recording :bool] [:recorded [:ref :form/r]] [:collect :bool] [:throws [:list [:ref :form/r]]] [:known [:ref :form/r]] [:tbl [:ref :form/r]] [:rec-limit :i64] [:rec-count :i64]]]
+             :ana/ir [:record :ana/ir [[:ok :bool] [:val [:ref :form/r]] [:err [:ref :fe/err]]]]}))
+
+;; ---- a best-effort printer for a failing case (the comparison itself is `form/eq`) ----
+(defn- e2e-join [kids [:list [:ref :form/r]] i :i64 acc :string] :string
+  (if (>= i (vector-count kids))
+    acc
+    (e2e-join kids (+ i 1)
+             (string-concat acc (string-concat (if (> i 0) " " "") (e2e-print (typed-list-nth [:list [:ref :form/r]] kids i)))))))
+
+(defn- e2e-print [f [:ref :form/r]] :string
+  (cond
+    (form/is-nil? f) "nil"
+    (form/is-bool? f) (if (form/bool-value f) "true" "false")
+    (form/is-int? f) (string-from-i64 (form/int-value f))
+    (form/is-string? f) (string-concat "\"" (string-concat (form/string-value f) "\""))
+    (form/is-keyword? f) (document-edn-print (document-keyword (form/keyword-value f)))
+    (form/is-symbol? f) (form/symbol-value f)
+    (form/is-seq? f) (string-concat "(" (string-concat (e2e-join (form/kids-of f) 0 "") ")"))
+    (form/is-vec? f) (string-concat "[" (string-concat (e2e-join (form/kids-of f) 0 "") "]"))
+    (form/is-set? f) (string-concat "#{" (string-concat (e2e-join (form/kids-of f) 0 "") "}"))
+    (form/is-map? f) (string-concat "{" (string-concat (e2e-join (form/kids-of f) 0 "") "}"))
+    :else "?"))
+
+(defn- e2e-op-is? [c [:ref :form/r] name :string] :bool
+  (string=? (document-edn-print (document-keyword (form/keyword-value (form/nth-of c 0))))
+            (string-concat ":" name)))
+
+(defn- e2e-get [m [:ref :form/r] k :keyword] [:ref :form/r]
+  (form/form-get m (form/keyword-form k)))
+
+(defn- e2e-ctx [c [:ref :form/r]] [:ref :ie/ctx]
+  (let [base (inf/ie-new-ctx (e2e-get c :schemas) (e2e-get c :row) (e2e-get c :handlers))
+        with-final (record-assoc [:ref :ie/ctx] base :final (if (form/is-true? (e2e-get c :final)) true false))]
+    with-final))
+
+;; the host answered (:err "message")
+(defn- e2e-expected-err? [e [:ref :form/r]] :bool
+  (and (form/is-seq? e) (= 2 (form/count-of e)) (form/is-keyword? (form/nth-of e 0))
+       (form/is-string? (form/nth-of e 1))
+       (string=? (document-edn-print (document-keyword (form/keyword-value (form/nth-of e 0)))) ":err")))
+
+(defn- e2e-verdict [got [:ref :form/r] expected [:ref :form/r]] :string
+  (if (e2e-expected-err? expected)
+    (string-concat "DIFF host refused (" (string-concat (form/string-value (form/nth-of expected 1)) (string-concat ") guest answered " (e2e-print got))))
+    (if (form/eq got expected)
+      "OK"
+      (string-concat "DIFF guest " (string-concat (e2e-print got) (string-concat " || host " (e2e-print expected)))))))
+
+(defn- e2e-refusal [e [:ref :fe/err] expected [:ref :form/r]] :string
+  (if (e2e-expected-err? expected)
+    (if (string=? (record-get [:ref :fe/err] e :msg) (form/string-value (form/nth-of expected 1)))
+      "OK"
+      (string-concat "DIFF guest refused: " (string-concat (record-get [:ref :fe/err] e :msg) (string-concat " || host refused: " (form/string-value (form/nth-of expected 1))))))
+    (string-concat "DIFF guest refused: " (string-concat (record-get [:ref :fe/err] e :msg) (string-concat " [code=" (string-concat (record-get [:ref :fe/err] e :code) (string-concat " phase=" (string-concat (record-get [:ref :fe/err] e :phase) (string-concat " form=" (string-concat (e2e-print (record-get [:ref :fe/err] e :form)) (string-concat "] || host " (e2e-print expected))))))))))))
+
+
+
+(defn- e2e-str-verdict [got :string expected [:ref :form/r]] :string
+  (if (form/is-nil? expected)
+    (if (string=? got "") "OK" (string-concat "DIFF guest " got))
+    (if (and (form/is-string? expected) (string=? got (form/string-value expected)))
+      "OK"
+      (string-concat "DIFF guest " (string-concat got " || host other")))))
+
+(defn- e2e-bool-verdict [got :bool expected [:ref :form/r]] :string
+  (if (form/eq (form/bool-form got) expected) "OK" (string-concat "DIFF guest " (if got "true" "false"))))
+
+(defn- e2e-pred [c [:ref :form/r]] :string
+  (cond
+    (e2e-name-is? c "escapes") (e2e-bool-verdict (sa/state-escapes? (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (e2e-name-is? c "mentions") (e2e-bool-verdict (sa/state-mentions? (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (e2e-name-is? c "first-op") (e2e-str-verdict (sa/state-first-stateful-operation (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (e2e-name-is? c "bodies") (e2e-verdict (form/form-vec (sa/state-handle-bodies (form/nth-of c 2))) (form/nth-of c 3))
+    (e2e-name-is? c "split")
+    (match-result (sa/state-split-resume (form/nth-of c 2) (form/nth-of c 3) (form/nth-of c 4) (form/nth-of c 5))
+                  [:result [:ref :form/r] [:ref :fe/err]]
+      (ok r (e2e-verdict r (form/nth-of c 6)))
+      (err e (e2e-refusal e (form/nth-of c 6))))
+    (e2e-name-is? c "impure")
+    (match-result (sa/state-refuse-impure-handler! (form/nth-of c 2) (form/nth-of c 3) (form/nth-of c 4) (form/nth-of c 5))
+                  [:result :i64 [:ref :fe/err]]
+      (ok r "DIFF guest accepted an impure handler")
+      (err e (e2e-refusal e (form/nth-of c 6))))
+    (e2e-name-is? c "advice") (e2e-str-verdict (rp/collection-head-advice (form/nth-of c 2)) (form/nth-of c 3))
+    (e2e-name-is? c "presence") (e2e-verdict (rp/option-presence-test (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (e2e-name-is? c "present")
+    (match-result (rp/option-present-value (form/nth-of c 2) (form/nth-of c 3) (form/nth-of c 4)) [:result [:ref :form/r] [:ref :fe/err]]
+      (ok r (e2e-verdict r (form/nth-of c 5)))
+      (err e (e2e-refusal e (form/nth-of c 5))))
+    (e2e-name-is? c "floatop") (e2e-verdict (rp/resolve-float-operator (form/nth-of c 2) (form/nth-of c 3) (form/nth-of c 4)) (form/nth-of c 5))
+    (e2e-name-is? c "f64bits") (e2e-bool-verdict (rp/f64-bits-literal-form? (form/nth-of c 2)) (form/nth-of c 3))
+    (e2e-name-is? c "libdoc") (e2e-verdict (rp/library-predicate-document-test (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (e2e-name-is? c "rsyms") (e2e-verdict (row/row-symbols-in (form/nth-of c 2)) (form/nth-of c 3))
+    (e2e-name-is? c "rrebinds") (e2e-bool-verdict (row/row-rebinds? (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (e2e-name-is? c "rif") (e2e-verdict (row/row-if-branches (form/nth-of c 2)) (form/nth-of c 3))
+    (e2e-name-is? c "rjoins") (e2e-verdict (row/row-joins (form/nth-of c 2) (form/nth-of c 3) (form/nth-of c 4)) (form/nth-of c 5))
+    (e2e-name-is? c "rreads") (e2e-verdict (row/row-field-reads (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (e2e-name-is? c "roperated") (e2e-bool-verdict (row/row-operated? (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (e2e-name-is? c "rpass") (e2e-verdict (row/row-pass-through (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (e2e-name-is? c "rtext") (e2e-str-verdict (row/row-text (form/nth-of c 2)) (form/nth-of c 3))
+    (e2e-name-is? c "rname") (e2e-str-verdict (row/row-name-part (form/nth-of c 2)) (form/nth-of c 3))
+    (e2e-name-is? c "rarg") (e2e-str-verdict (row/row-argument-text (form/nth-of c 2)) (form/nth-of c 3))
+    (e2e-name-is? c "rfields") (e2e-verdict (row/row-record-fields (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    :else "unknown-pred"))
+
+(defn- e2e-name-is? [c [:ref :form/r] name :string] :bool
+  (string=? (form/symbol-value (form/nth-of c 1)) name))
+
+
+;; [:hir "<program>" <HIR> | (:err "message")]
+(defn- e2e-case [c [:ref :form/r]] :string
+  (let [r (an/analyze (form/string-value (form/nth-of c 1)) (form/nil-form))
+        expected (form/nth-of c 2)]
+    (if (record-get [:ref :ana/ir] r :ok)
+      (e2e-verdict (record-get [:ref :ana/ir] r :val) expected)
+      (e2e-refusal (record-get [:ref :ana/ir] r :err) expected))))
+
+(defn- e2e-lines [text :string i :i64 n :i64 out :string] :string
+  (if (>= i n)
+    out
+    (let [j (string-find-byte text 10 i)
+          end (if (< j 0) n j)
+          line (string-substring text i end)
+          answer (if (< (string-length line) 2) "" (e2e-case (form/edn-form line)))]
+      (e2e-lines text (+ end 1) n (string-concat out (string-concat answer "\n"))))))
+
+(defn e2e-run [text :string] :string
+  (e2e-lines text 0 (string-length text) ""))

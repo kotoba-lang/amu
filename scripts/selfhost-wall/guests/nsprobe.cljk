@@ -1,0 +1,73 @@
+(ns kotoba.compiler.nsprobe
+  {:kotoba/export [ns-run]}
+  (:require [kotoba.form :as form]
+            [kotoba.compiler.frontend.namespace-defs :as nd]
+            [kotoba.compiler.frontend.base :as bs])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :form/rd [:record :form/rd [[:form [:ref :form/r]] [:pos :i64]]]
+             :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]] [:phase :string] [:data [:ref :form/r]]]]
+             :ie/ctx [:record :ie/ctx [[:schemas [:ref :form/r]] [:row-schemas [:ref :form/r]] [:handlers [:ref :form/r]] [:final :bool] [:tail :bool] [:names [:ref :form/r]] [:recording :bool] [:recorded [:ref :form/r]] [:collect :bool] [:throws [:list [:ref :form/r]]] [:known [:ref :form/r]] [:tbl [:ref :form/r]] [:rec-limit :i64] [:rec-count :i64]]]
+             :ana/ir [:record :ana/ir [[:ok :bool] [:val [:ref :form/r]] [:err [:ref :fe/err]]]]}))
+
+;; ---- a best-effort printer for a failing case (the comparison itself is `form/eq`) ----
+(defn- e2e-join [kids [:list [:ref :form/r]] i :i64 acc :string] :string
+  (if (>= i (vector-count kids))
+    acc
+    (e2e-join kids (+ i 1)
+             (string-concat acc (string-concat (if (> i 0) " " "") (e2e-print (typed-list-nth [:list [:ref :form/r]] kids i)))))))
+
+(defn- e2e-print [f [:ref :form/r]] :string
+  (cond
+    (form/is-nil? f) "nil"
+    (form/is-bool? f) (if (form/bool-value f) "true" "false")
+    (form/is-int? f) (string-from-i64 (form/int-value f))
+    (form/is-string? f) (string-concat "\"" (string-concat (form/string-value f) "\""))
+    (form/is-keyword? f) (document-edn-print (document-keyword (form/keyword-value f)))
+    (form/is-symbol? f) (form/symbol-value f)
+    (form/is-seq? f) (string-concat "(" (string-concat (e2e-join (form/kids-of f) 0 "") ")"))
+    (form/is-vec? f) (string-concat "[" (string-concat (e2e-join (form/kids-of f) 0 "") "]"))
+    (form/is-set? f) (string-concat "#{" (string-concat (e2e-join (form/kids-of f) 0 "") "}"))
+    (form/is-map? f) (string-concat "{" (string-concat (e2e-join (form/kids-of f) 0 "") "}"))
+    :else "?"))
+
+(defn- e2e-op-is? [c [:ref :form/r] name :string] :bool
+  (string=? (document-edn-print (document-keyword (form/keyword-value (form/nth-of c 0))))
+            (string-concat ":" name)))
+
+
+(defn- pr-msg [e [:ref :fe/err]] :string (record-get [:ref :fe/err] e :msg))
+
+(defn- parts-of [src :string] :string
+  (match-result (bs/read-forms src) [:result [:list [:ref :form/r]] [:ref :fe/err]]
+    (ok forms
+      (match-result (nd/namespace-parts (typed-list-nth [:list [:ref :form/r]] forms 0)) [:result [:ref :form/r] [:ref :fe/err]]
+        (ok p (e2e-print p))
+        (err e (pr-msg e))))
+    (err e0 (pr-msg e0))))
+
+(defn- eq-test [src :string] :string
+  (match-result (bs/read-forms src) [:result [:list [:ref :form/r]] [:ref :fe/err]]
+    (ok forms
+      (let [f (typed-list-nth [:list [:ref :form/r]] forms 0)
+            c (form/nth-of f 2)]
+        (string-concat (if (nd/refer-clojure-clause? c) "refer" "notrefer")
+          (string-concat (if (= false (nd/refer-clojure-clause? c)) " eqfalse" " neqfalse") (if (form/is-seq? c) " seq" " notseq")))))
+    (err e0 (pr-msg e0))))
+
+(defn- ns-case [c [:ref :form/r]] :string
+  (string-concat (parts-of (form/string-value (form/nth-of c 1)))
+    (string-concat " || explicit=" (string-concat (parts-of "(ns m.probe (:export [c len]))")
+      (string-concat " || eq=" (eq-test "(ns m.probe (:export [c len]))"))))))
+
+(defn- ns-lines [text :string i :i64 n :i64 out :string] :string
+  (if (>= i n)
+    out
+    (let [j (string-find-byte text 10 i)
+          end (if (< j 0) n j)
+          line (string-substring text i end)
+          answer (if (< (string-length line) 2) "" (ns-case (form/edn-form line)))]
+      (ns-lines text (+ end 1) n (string-concat out (string-concat answer "\n"))))))
+
+(defn ns-run [text :string] :string
+  (ns-lines text 0 (string-length text) ""))
