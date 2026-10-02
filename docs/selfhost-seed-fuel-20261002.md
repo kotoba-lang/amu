@@ -68,3 +68,31 @@ seed per back-edge and per call, so termination is still bounded by the fuel cou
 recursion (`fib`, `selftail`) and call chains (`wrap3`, `leaf`) was measured, not assumed.
 
 Reproduce: `zsh scripts/seed/fuel.sh` (about 20 s on a quiet host; table on stdout, `build/seed/fuel.tsv`).
+
+## Re-measurement on the R1 seed and the proposed fix (agent HOUSE, 2026-10-02)
+
+`SEED_BUILD=build/seed-r1 zsh scripts/seed/fuel.sh` on the R1 fixed-point seed (`c0526b73...`, 291,392 bytes) against the
+same stage-0: identical to the R0 numbers. Total 1,986,036 (stage-0) vs 1,932,797 (seed) = x0.9732; over-charge on
+exactly 4 rows: crc32 1,028 vs 2,051 (x1.995), slre 21 vs 41 (x1.952), probes `tab10` and `tabdef10` 12 vs 21 (+9). Every
+other port and probe is at or below stage-0. R1's sugar (`dotimes`, `case`, `->`, `when`) adds no fuel difference: the
+desugared forms charge like their R0 spellings. `fuel.sh` still exits 1 (T5 not met on 2 ports); G1 is unaffected.
+
+Proposed fix for the 21-check owner (not applied here; one function plus its caller). `ck-op` has the first operand
+`a` of the head; `30-lower` lowers `(vector-at V i)` to `OP-TAB` exactly when `lw-tabsel` finds a vector literal of
+integer literals (directly or as the literal of a `def`). 21-check should skip the FUEL mark under the same test:
+
+```
+;; 1 when V (first operand of vector-at) is a vector literal of integer literals, or a symbol resolving to a def of one
+(defn- ck-tab-operand [M :vector-i64 v :i64] :i64 ...)          ; mirrors lw-vlit + lw-allint (30-lower)
+(defn- ck-op-fuel [M :vector-i64 hd :i64 f :i64 a :i64] :vector-i64
+  (cond (not= (ck-op-rt hd) 1) (ck-touch M)
+        (and (= hd HD-VECTOR-AT) (= (ck-tab-operand M a) 1)) (ck-touch M)
+        :else (ck-fuel M f)))
+;; ck-op: (ck-op-fuel M1 hd (ck-fx-f fx) a)
+```
+
+(`and` in a `cond` test is fine for the R1 seed; the stage-0 ICE of the old notes only affects a stage-0 build, which no
+longer builds this module.) Acceptance: `scripts/seed/fuel.sh` exits 0, `tab10`/`tabdef10` equal 12, crc32 and slre drop
+to about stage-0's value (predicted from the probe, not measured), G1 and the fixed point still pass. Because the fix
+changes emitted code (no FUEL at the entry of such functions) the golden containers of G2/G4 stay equal between seed-0
+and seed-1 only if both seeds carry it: apply it in one rung with the bridge protocol of `scripts/seed/bootstrap.sh`.

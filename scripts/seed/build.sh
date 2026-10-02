@@ -10,6 +10,7 @@
 #                         (since 2026-10-02 the seed writes and reads the binary container itself; SEED_HEX_STDOUT=1 and
 #                         SEED_SHELL_EXTRACT=1 restore the earlier hex-on-stdout / shell head-tail routes)
 #                         -> build/seed/seed-N.{kseed,bin,offset,info}
+#   (stage-0 extract: lib.sh falls back to scripts/seed/kexe_code.py when extract-native refuses a kexe above 200,000 EDN nodes)
 #   build.sh fixed-point  0, 1, 2, then `cmp seed-1.bin seed-2.bin` (gate G4, first half). Exit 0 iff identical.
 #
 # Env: see lib.sh (SEED_STAGE0, SEED_BUILD, SEED_RESOURCES_35 = wire-35 scope, default the repo).

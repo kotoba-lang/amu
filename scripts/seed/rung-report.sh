@@ -2,7 +2,12 @@
 # scripts/seed/rung-report.sh [--record rN [--tag NAME] [--allow-incomplete]] -- the rung ladder report. BOOTSTRAP-TOOL (zsh +
 # python3 for the table text), owner GATES.
 #
-#   --record rN   measure the CURRENT build as rung rN and write seed/rungs/rN.record (committed evidence):
+#   --record rN [--commit C] [--bridge B]
+#                 measure the CURRENT build as rung rN and write seed/rungs/rN.record (committed evidence).
+#                 --commit C: the commit whose seed/MANIFEST sources built seed-1 (default HEAD; written as `unity_commit`,
+#                 which scripts/seed/bootstrap.sh checks out of git to rebuild the rung); --bridge B: the commit of the bridge
+#                 unity the PREVIOUS rung's seed compiles first (rungs whose sources use the new language; `bridge_commit`
+#                 and `bridge_sha256` lines). The record holds:
 #                   - the gate statuses of build/seed/gates/rN/summary.tsv (scripts/seed/gates.sh --rung rN; every row must
 #                     be PASS or SKIP, else refused unless --allow-incomplete, which marks the record `incomplete`),
 #                   - git HEAD, optional tag, host load average, unity source lines (seed/MANIFEST files) and sha256,
@@ -20,8 +25,8 @@ R=$SEED_REPO; B=$SEED_BUILD; S=$R/scripts/seed
 sha() { shasum -a 256 $1 | cut -c1-64; }
 now() { perl -MTime::HiRes=time -e 'printf "%.1f", time*1000'; }
 if [ "$1" = --record ]; then
-  rung=${2:?rung}; shift 2; tag=""; incomplete=0
-  while [ $# -gt 0 ]; do case $1 in --tag) tag=$2; shift 2 ;; --allow-incomplete) incomplete=1; shift ;; *) echo "unknown $1" >&2; exit 2 ;; esac; done
+  rung=${2:?rung}; shift 2; tag=""; incomplete=0; ucommit=""; bridge=""
+  while [ $# -gt 0 ]; do case $1 in --tag) tag=$2; shift 2 ;; --commit) ucommit=$2; shift 2 ;; --bridge) bridge=$2; shift 2 ;; --allow-incomplete) incomplete=1; shift ;; *) echo "unknown $1" >&2; exit 2 ;; esac; done
   G=$B/gates/$rung/summary.tsv
   [ -s $G ] || { echo "rung-report: no gate summary $G (run scripts/seed/gates.sh --rung $rung)" >&2; exit 2; }
   if awk -F'\t' '$2=="FAIL"' $G | grep -q .; then
@@ -37,6 +42,11 @@ if [ "$1" = --record ]; then
     echo "date $(date +%Y-%m-%d)"
     echo "head $(git -C $R rev-parse HEAD)"
     echo "tag ${tag:-none}"
+    echo "unity_commit $(git -C $R rev-parse ${ucommit:-HEAD}^{commit})"
+    if [ -n "$bridge" ]; then
+      echo "bridge_commit $(git -C $R rev-parse $bridge^{commit})"
+      echo "bridge_sha256 $(sha $B/seed-0.bin)"
+    fi
     echo "status $([ $incomplete -eq 1 ] && echo incomplete || echo complete)"
     echo "load1 $(sysctl -n vm.loadavg | awk '{print $2}')"
     echo "unity_lines $(wc -l < $B/seed-unity.kotoba | tr -d ' ')"

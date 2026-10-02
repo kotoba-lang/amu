@@ -7,7 +7,8 @@
 # Env: SEED_STAGE0 (default <repo>/build/native-image/amu-native; never the -next build that may be in progress),
 #      SEED_MANIFEST (default <repo>/seed/MANIFEST; a reduced list for smoke tests),
 #      SEED_BUILD (default <repo>/build/seed), SEED_STAGE0_SLOTS (default 2: at most this many concurrent
-#      stage-0 compiles machine-wide, enforced with mkdir locks in /tmp/seed-stage0.lock.<k>).
+#      stage-0 compiles machine-wide, enforced with mkdir locks in /tmp/seed-stage0.lock.<k>),
+#      SEED_EXTRACT (auto|py|native, default auto: extract-native, falling back to kexe_code.py on 'too many nodes').
 
 SEED_REPO=${SEED_REPO:-$(cd "$(dirname "${(%):-%x}")/../.." && pwd)}
 SEED_STAGE0=${SEED_STAGE0:-$SEED_REPO/build/native-image/amu-native}
@@ -55,10 +56,25 @@ seed_stage0_build() {
   r=$( ulimit -s 65500 2>/dev/null; nice $SEED_STAGE0 compile $src --target aarch64-macos --jvm-free --policy $pol --output $out.kexe 2>&1 )
   echo "$r" > $out.log
   if ! echo "$r" | grep -q ':ok true'; then seed_slot_give; return 1; fi
-  r=$( ulimit -s 65500 2>/dev/null; nice $SEED_STAGE0 extract-native $out.kexe --symbol main --output $out.bin 2>&1 )
+  if [ "${SEED_EXTRACT:-auto}" = py ]; then
+    r=$( python3 $SEED_REPO/scripts/seed/kexe_code.py $out.kexe main $out.bin 2>&1 )
+  else
+    r=$( ulimit -s 65500 2>/dev/null; nice $SEED_STAGE0 extract-native $out.kexe --symbol main --output $out.bin 2>&1 )
+  fi
   echo "$r" >> $out.log
   seed_slot_give
-  echo "$r" | grep -q ':ok true' || return 1
+  if ! echo "$r" | grep -q ':ok true'; then
+    # stage-0's extract-native refuses a kexe above 200,000 EDN nodes (bounded_edn max-nodes; the :code vector has one node
+    # per code byte), i.e. a seed unity above about 5.5k lines. Fallback (BOOTSTRAP-TOOL, measured byte-identical to
+    # extract-native on R0's seed-0): scripts/seed/kexe_code.py reads :code and the symbol offset directly.
+    # SEED_EXTRACT=py forces it, SEED_EXTRACT=native forbids it.
+    if [ "${SEED_EXTRACT:-auto}" != native ] && echo "$r" | grep -q 'too many nodes'; then
+      echo "seed: extract-native refused (too many nodes); falling back to scripts/seed/kexe_code.py" >&2
+      r=$( python3 $SEED_REPO/scripts/seed/kexe_code.py $out.kexe main $out.bin 2>&1 )
+      echo "$r" >> $out.log
+    fi
+    echo "$r" | grep -q ':ok true' || return 1
+  fi
   echo "$r" | sed -n 's/.*:offset \([0-9]*\).*/\1/p' > $out.offset
   return 0
 }

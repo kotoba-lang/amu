@@ -11,6 +11,7 @@
 #   G3     refusal texts, scripts/seed/g3.sh --rung rN
 #   G5     no program started by the packaged seed (scripts/seed/no-host-processes.sh; packages seed-1 first)
 #   GR     rung conformance (scripts/seed/gr.sh rN), r1 and later only
+#   ERR    scripts/seed/errors-check.py: seed/HEADS :errors == the text tables of 90-drv, module-local codes registered
 #   FUEL   with --with-fuel: seed fuel <= stage-0 fuel per port and probe (scripts/seed/fuel.sh)
 # Output: build/seed/gates/<rung>/<gate>.log, build/seed/gates/<rung>/summary.tsv (gate, status, seconds, detail), and
 # the table on stdout. Statuses: PASS, FAIL, SKIP (not requested or not applicable at the rung).
@@ -46,6 +47,9 @@ if want BUILD; then
     run BUILD zsh $S/build.sh fixed-point
   fi
 else skiprow BUILD "not requested"; fi
+
+# ---- ERR: the error-code table (pure text, no compiler)
+if want ERR; then run ERR python3 $S/errors-check.py; else skiprow ERR "not requested"; fi
 
 # ---- G1 / G2 with both compilers (seed-0 = stage-0 built, BOOTSTRAP; seed-1 = self-built)
 for c in seed-0 seed-1; do
