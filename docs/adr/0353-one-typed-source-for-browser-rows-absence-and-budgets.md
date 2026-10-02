@@ -589,6 +589,47 @@ with cssom and dom-gpu), and the hosted engine switches to amu's output of
 the same source. The kernel's mirrored objects (aiueos ADR-0223..0234) retire
 as each module lands.
 
+Measured on text-edit (2026-10-02, kotoba-sema `965feb37`, browser
+`8671500`). The source needs only mechanical changes: a `:kotoba` branch for
+`code-unit-at` and for a `code-unit-count` helper (`count` of a string stays
+refused), and the nil guards over values that are never absent dropped (`(or
+n lo)` on an `:i64`, `(or (:text/selection state) ..)` on a vector -- a number
+or a vector is never truthy). The compiler then refused it in six places, so
+floor `:browser-text-edit` is split and blocked by the five still open
+(`docs/language-ladder.edn`): an internal error on nbb only (an integer
+literal hashed by ClojureScript, `closure_uid_.. on bigint '0'`, located to
+the module, not yet to a pass), a `nil` field whose T only a later `assoc`
+names (`:text/composition`), an i64-vector record field natively
+(`:text/selection`), `max` / `min` on typed Wasm, and how a Clojure-readable
+source states an export's ABI -- `state` is a row, which an export cannot be,
+and `text` is unannotated, so `:i64` -- which needs an owner decision. The
+multi-arity `move-caret` / `move-to` with a `{}` options map were not reached.
+The sixth landed as floor `:let-rebinding` (gate
+`let-rebinding-is-nested-shadowing-test`): text-edit rebinds names as Clojure
+does, its state parameter by a `let` (`(let [state (normalize-selection
+state)] ..)`) and a local again in one `let` (`a (clamp a 0 n)`). Row
+inference left a parameter the body rebinds anywhere the provisional `:i64`
+("argument s to norm is i64, and parameter s of norm is the row {:a T | r}:
+only a record satisfies a row"), and a repeated binder was "duplicate let
+binding" while the nested `let` that shadows it was admitted. kotoba-sema
+(`531e89d8`) now reads a parameter only where it is in scope (`row-scope`) and
+nests a repeated binder (`nest-repeated-let-bindings`); a nested `let` was
+already what every later pass read, and the affine analysis never treated a
+rebound name as one thread. Measured: the gate's four programs answer 2, 4,
+10 and 13 on the KIR reference and under `compile-source` for
+`wasm32-kotoba-v1`, `x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1`
+with the oracle verified, and text-edit's `normalize-selection` answers 32 on
+the reference (its vector field and `max` / `min` are the floors above);
+`amu compile --target x86_64-aiueos-kernel-v1` / `--target aarch64-macos` of a
+twice-rebound row parameter exit 0 with `:oracle {:status :verified}`. The
+gate was red on kotoba-sema `965feb37` (3 failures, 17 errors of 23
+assertions), green on `531e89d8`; kotoba-sema's portable suite has the same
+39 failures and 5 errors before and after (identical lists, all
+pre-existing). Refused by name, as before: a read after the rebinding is the
+new value's (a field it lacks, a number read as a record), a parameter read
+only after it is rebound is not a row, a rebound name has its new type, a
+record as an `if` test, a repeated parameter.
+
 ## Selfhost foundation floors (appended 2026-09-26)
 
 Superproject adr-2609242330 measured that compiling amu with amu needs the

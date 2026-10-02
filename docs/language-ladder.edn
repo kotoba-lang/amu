@@ -182,7 +182,32 @@
    :goal "(get m :a) and (get m :a d) on an unannotated parameter read a row as (:a m) does, so a match map pattern over a parameter specializes per record -- an arm naming a key the record lacks does not match in that specialization; a get with a computed key on a row stays refused by name"}
   {:id :loop-slot-beside-row :gate "loop-slot-typed-beside-a-row-read-test"
    :goal "a [:list T] loop slot is typed whatever precedes the loop: (let [ys {:a 1}] (+ (:a ys) (loop [zs [(mk) (mk)] i 0] (if (< i 1) (recur zs (+ i 1)) (count zs))))) answers 3 (the loop answers 2), refused before \"count requires a bounded vector, ...; got :i64.\" while the same loop without the row read is admitted"}
+  ;; :browser-text-edit split (2026-10-02), measured on kotoba-sema 965feb37 by
+  ;; compiling browser.text-edit (browser 8671500) with the mechanical changes
+  ;; only: a :kotoba branch for code-unit-at and for a code-unit-count helper
+  ;; (count of a string stays refused: two answers), the nil guards over
+  ;; values that are never absent dropped ((or n lo) on an i64, (or
+  ;; (:text/selection state) ..) on a vector -- a number or vector is never
+  ;; truthy). Each floor below is one refusal that remained, in the order met;
+  ;; the multi-arity move-caret / move-to with a {} options map and {:keys
+  ;; [extend?]} were not reached and are unmeasured.
+  ;; Landed 2026-10-02 in kotoba-sema (531e89d8); ADR 0353 has the
+  ;; measurements.
+  {:id :let-rebinding :gate "let-rebinding-is-nested-shadowing-test"
+   :goal "a let that rebinds a row parameter -- (let [state (normalize-selection state)] ..) -- leaves it a row (refused before: the parameter stayed :i64, \"only a record satisfies a row\"), and a name bound again in one let is the nested let that shadows it (refused before: \"duplicate let binding\"); a read after the rebinding is the new value's, a rebound name has its new type, a record is never truthy, parameters stay distinct"}
+  {:id :cljs-literal-hash :gate "text-edit-analyzes-on-nbb-test"
+   :goal "kotoba-sema analyzes browser.text-edit (the mechanical changes above, every function defn- but empty-state, a main driving it) on nbb without the internal error \"Cannot create property 'closure_uid_..' on bigint '0'\" -- ClojureScript hashing the bigint an integer literal is, the class kotoba-sema's run-tests.cljk names for desugar-case; not measured on the JVM; located by bisection to the module, not yet to a pass"}
+  {:id :absent-field-from-assoc :gate "nil-field-typed-by-the-module-assoc-test"
+   :goal "{.. :text/composition nil} is [:option T] with T the value the module assoc's into that field ({:composition/text \"\"}, composition-start), and (assoc s :text/composition nil) its none; refused today \"map literal value at key :text/composition is nil ... nothing here says T\"; a field two assoc's give two types stays refused by name"}
+  {:id :native-vector-field :gate "vector-field-in-record-compiles-natively-test"
+   :goal "a record field holding an i64 vector (:text/selection [start end], typed :vector-i64) compiles for x86_64-aiueos-kernel-v1 and aarch64-macos; refused today at the typed-values gate (\"typed values currently require ... the qualified native one-word string/record/variant/option/result slice\") for (nth (:sel s) 1) and (assoc s :sel [..]) alike"}
+  {:id :typed-wasm-min-max :gate "min-max-qualified-on-typed-wasm-test"
+   :goal "max and min compile on wasm32-kotoba-v1 in a module with typed values (browser.text-edit's clamp); refused today \"typed Wasm operation is not qualified\" {:operation max}"}
+  {:id :export-signatures :gate "export-abi-from-clojure-source-test"
+   :needs-a-human "how a Clojure-readable source states an export's ABI: browser.text-edit's public functions take state (a row: refused as an exported generic, which has one ABI) and text (unannotated, so :i64; the test passes strings: \"expected i64, got string\"), and the typed signature spelling [m [:ref q]] is not Clojure. Candidates measured as possible, not chosen: Clojure type hints (^String text) and an ns schema the hint names, or the export taking the record the module's one public constructor (empty-state) returns"
+   :goal "browser.text-edit's public functions export one ABI each with the source still read by Clojure"}
   {:id :browser-text-edit :gate "browser-text-edit-native-test"
+   :blocked-by [:cljs-literal-hash :absent-field-from-assoc :native-vector-field :typed-wasm-min-max :export-signatures]
    :goal "kotoba-lang/browser's browser.text-edit, migrated only mechanically (defn-, nil's meaning, a :kotoba interop branch), compiles for both native targets and its hosted tests pass on amu's output"}
   {:id :browser-input :gate "browser-input-native-test"
    :goal "browser.input the same"}
