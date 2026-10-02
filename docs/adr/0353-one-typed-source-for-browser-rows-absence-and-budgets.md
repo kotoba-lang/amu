@@ -651,8 +651,7 @@ number passed to a row parameter, a record as an `if` test. text-edit (its
 now answers a refusal in the language's words, at `delete-backward`'s
 `(insert-text state "")`: "argument state to insert-text is i64, and
 parameter state of insert-text is the row {:text/caret T :text/selection T |
-r}: only a record satisfies a row" -- floor `:rebound-row-argument`, not yet
-minimized (each of its ingredients is admitted alone).
+r}: only a record satisfies a row" -- floor `:rebound-row-argument`, below.
 
 The `nil` field landed as floor `:absent-field-from-assoc` (gate
 `nil-field-typed-by-the-module-assoc-test`). text-edit starts its state with
@@ -691,6 +690,37 @@ module gives no type (the old message), and a present T from a call written
 at the absent field (`expected [:option ..], got [:record ..]`, no coercion).
 `composition-update`'s `text` is annotated `:string` in the gate; unannotated
 it is `:i64`, which is floor `:export-signatures`.
+
+The rebound row landed as floor `:rebound-row-argument` (gate
+`text-edit-rebound-state-is-a-row-test`). A rebound row passed on, in a
+`cond`, after a vector destructuring, was each admitted alone; minimizing
+text-edit showed what it adds is a helper over a string, `(code-unit-count
+value)` in `normalize-selection`. `specialize-row-parameters` ran before the
+module-wide parameter inference, so `code-unit-count`'s unannotated `s` was
+still the provisional `:i64` inside `normalize-selection`'s specialization;
+called with a string, that specialization's result could not be inferred and
+stayed `:i64`, and `(let [state (normalize-selection state)] (insert-text
+state ""))` passed that `:i64` to a row. kotoba-sema (`275b40a0`) infers
+absent parameter types at the start of each specialization round, before
+results. Measured on nbb: the gate was red on `7290e22e` (3 failures, 5
+errors of 11 assertions, the floor's literal), green on `275b40a0` (11
+assertions). The minimal form (`len` over a string, `norm`, `ins` and `del`
+each rebinding the row) answers 4 on the KIR reference, compiles for
+`wasm32-kotoba-v1`, and `amu compile --target x86_64-aiueos-kernel-v1` /
+`--target aarch64-macos` exit 0 with `:oracle {:status :verified}`.
+text-edit's `delete-backward` and `delete-forward` answer on the KIR
+reference ("abcd", 1..3 selected, deleted either way: "ad", caret 1; the
+caret at 4 deleted backward: "abc", caret 3). text-edit itself is refused
+natively at floor `:native-vector-field` and on wasm32 at floor
+`:typed-wasm-min-max`, pinned in the gate. kotoba-sema's portable suite has
+the same 39 failures and 5 errors before and after (identical lists), and
+amu's nbb suite the same 13 failures and 2 errors (the policy tests).
+Refused by name as before: a number passed to a row parameter, bound by `let`
+or not, and a rebound record as an `if` test. With this, text-edit (move-caret
+and move-to in) is refused at `(move-caret (empty-state) 1)`: its `{:keys
+[extend?]}` options parameter is "expected map, got i64" and the 2-arity's
+`{}` "an empty map literal {} has no row to extend" -- new floor
+`:options-map-argument`.
 
 ## Selfhost foundation floors (appended 2026-09-26)
 

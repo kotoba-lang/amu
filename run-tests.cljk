@@ -150,7 +150,10 @@
             [kotoba.compiler.cljs-literal-hash-test]
             ;; ADR 0353 :absent-field-from-assoc: a field nil in the module is
             ;; [:option T], T what the module's assoc's write there
-            [kotoba.compiler.absent-field-from-assoc-test]))
+            [kotoba.compiler.absent-field-from-assoc-test]
+            ;; ADR 0353 :rebound-row-argument: a rebound row passed on to
+            ;; another row is its record, a string helper on the way
+            [kotoba.compiler.rebound-row-argument-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
   (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
@@ -236,4 +239,5 @@
              'kotoba.compiler.loop-slot-beside-row-test
              'kotoba.compiler.let-rebinding-test
              'kotoba.compiler.cljs-literal-hash-test
-             'kotoba.compiler.absent-field-from-assoc-test)
+             'kotoba.compiler.absent-field-from-assoc-test
+             'kotoba.compiler.rebound-row-argument-test)
