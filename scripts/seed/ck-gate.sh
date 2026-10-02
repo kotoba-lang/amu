@@ -17,7 +17,7 @@ setopt pipefail
 source "$(dirname "$0")/lib.sh"
 R=$SEED_REPO; W=$SEED_BUILD/check; mkdir -p $W
 CK_CONFORMANCE=${CK_CONFORMANCE:-/private/tmp/wt-K-kotoba-lang/lang/conformance}
-CK_CONF_ACCEPT=${CK_CONF_ACCEPT:-"conf/entry_extensions/main"}
+CK_CONF_ACCEPT=${CK_CONF_ACCEPT:-""}   # conf/entry_extensions/main has no ns form and untyped params: refused (E2004)
 update=0; [ "$1" = "--update" ] && { update=1; shift; }
 G=$R/seed/tests/check/golden.txt
 
@@ -79,6 +79,16 @@ sys.exit(1 if bad or missing else 0)
 PY
 fi
 echo "ck-gate: $n programs, $nok admitted, $nE refused"
+# independent cross-check: the Python reference model (scripts/seed/ck_ref.py) must print the same line per label
+CK_SELF=$W/self.kotoba CK_CONFORMANCE=$CK_CONFORMANCE python3 $R/scripts/seed/ck_ref.py --gate > $W/ref.txt
+grep -v '^spell ' $W/out.txt | python3 -c '
+import sys
+ref = dict(l.rstrip("\n").split(" ", 1) for l in open(sys.argv[1]))
+got = sys.stdin.readlines()
+bad = [l for l in got if ref.get(l.split(" ", 1)[0]) != l.rstrip("\n").split(" ", 1)[1]]
+print("ck-gate: reference model (ck_ref.py) agrees on %d of %d lines" % (len(got) - len(bad), len(got)))
+for l in bad[:10]: print("  DIFF", l.rstrip(), "| ref:", ref.get(l.split(" ", 1)[0]))
+sys.exit(1 if bad else 0)' $W/ref.txt || fail=1
 if [ $update -eq 1 ]; then
   if [ $# -eq 0 ]; then cp $W/out.txt $G; else
     python3 - $G $W/out.txt <<'PY'
