@@ -1,0 +1,268 @@
+;; seed/42-layout.kotoba -- layout: literal pool, fixups, export table (prefix ly-). Owner: 42-layout.
+;; Design section 2.1 row 42; contracts: seed/MEMORY-MAP (CODE FIX LABEL LIT LITB EXP FN), seed/SIR (:fixups :pool).
+;;
+;; ly-run [M] -> M. Runs after 41-a64gen. On success: MM-R0 = MM-CODE-BYTES = total code length in bytes (code
+;; words + padding + literal pool). On failure: MM-ERR set (rule L10) and M returned early.
+;;
+;; Indexing (CONTRACT-REQUESTS 2026-10-02 42-layout): CODE word index 0 is the NULL record (fills start at 1), so the
+;; first instruction is word 1 and the BYTE offset of word index i from the code start is (i-1)*4. Branch
+;; displacements are index differences, so they do not depend on this choice; entry offsets and the pool do.
+;; ly-first is the only place that knows it.
+;;
+;; Steps: (1) pool: MM-POOL-OFF = align8((MM-CODE-N-1)*4); every LIT gets LF-POOL, 8-byte aligned, in LIT order, no
+;; dedup, no terminator; MM-CODE-BYTES = end of the last literal (= code bytes when there is no literal).
+;; (2) fixups in FIX order: FX-B26 / FX-BL26 (imm26 bits 25:0), FX-BC19 / FX-CB19 (imm19 bits 23:5), FX-LIT32
+;; (movz at XF-AT, movk at XF-AT+1, imm16 bits 20:5 each; lo16 and hi16 of LF-POOL). Only the immediate bits are
+;; replaced, so the encoder's opcode, condition and register bits are kept. (3) EXP: one record per FN with
+;; FF-EXPORT = 1, in FN-table (source) order.
+
+(defn- ly-first [] :i64 1)
+
+;; local error codes still missing from seed/HEADS (see CONTRACT-REQUESTS): 4202 internal fixup, 4203 undefined
+;; label / function target, 4204 export table full, 4205 pool or code too large for a 32-bit offset.
+(defn- ly-e-fixup [] :i64 4202)
+(defn- ly-e-target [] :i64 4203)
+(defn- ly-e-exports [] :i64 4204)
+(defn- ly-e-size [] :i64 4205)
+
+;; first error wins (rule L10): records code, position (-1) and number n.
+(defn- ly-err [M :vector-i64 code :i64 n :i64] :vector-i64
+  (if (= (vector-at M MM-ERR) 0)
+    (let [M1 (vector-assoc! M MM-ERR code)
+          M2 (vector-assoc! M1 MM-ERR-POS -1)]
+      (vector-assoc! M2 MM-ERR-N n))
+    M))
+
+(defn- ly-failed [M :vector-i64] :i64
+  (if (= (vector-at M MM-ERR) 0) 0 1))
+
+;; ---- pure helpers ---------------------------------------------------------------------------------------
+
+(defn- ly-align8 [x :i64] :i64
+  (bit-and (+ x 7) -8))
+
+;; byte offset of CODE word index i from the code start
+(defn- ly-byte-off [i :i64] :i64
+  (* (- i (ly-first)) 4))
+
+;; imm26 patch (b / bl): w keeps bits 31:26, d = displacement in words. -1 when d is outside [-2^25, 2^25).
+(defn- ly-patch26 [w :i64 d :i64] :i64
+  (if (>= d -33554432)
+    (if (< d 33554432)
+      (bit-or (bit-and w 4227858432) (bit-and d 67108863))
+      -1)
+    -1))
+
+;; imm19 patch (b.cond / cbz / cbnz): imm19 in bits 23:5, d in [-2^18, 2^18). -1 when out of range.
+(defn- ly-patch19 [w :i64 d :i64] :i64
+  (if (>= d -262144)
+    (if (< d 262144)
+      (bit-or (bit-and w 4278190111) (i64-shift-left (bit-and d 524287) 5))
+      -1)
+    -1))
+
+;; imm16 patch (movz / movk): imm16 in bits 20:5 (hw bits are left alone).
+(defn- ly-patch16 [w :i64 v :i64] :i64
+  (bit-or (bit-and w 4292870175) (i64-shift-left (bit-and v 65535) 5)))
+
+;; keeps a read index inside a table: x if lo <= x <= hi, else lo (the status function then reports the error)
+(defn- ly-clamp [x :i64 lo :i64 hi :i64] :i64
+  (if (< x lo) lo (if (> x hi) lo x)))
+
+;; movz (sf either) = 0x52800000 / movk = 0x72800000 under the mask 0x7F800000
+(defn- ly-is-movz [w :i64] :bool
+  (= (bit-and w 2139095040) 1384120320))
+(defn- ly-is-movk [w :i64] :bool
+  (= (bit-and w 2139095040) 1920991232))
+
+;; ---- table readers ----------------------------------------------------------------------------------------
+
+(defn- ly-fn-field [M :vector-i64 i :i64 f :i64] :i64
+  (vector-at M (+ (+ MM-FN-BASE (* i MM-FN-W)) f)))
+(defn- ly-lit-field [M :vector-i64 i :i64 f :i64] :i64
+  (vector-at M (+ (+ MM-LIT-BASE (* i MM-LIT-W)) f)))
+
+;; ---- (1) literal pool ---------------------------------------------------------------------------------------
+
+(defn- ly-set-lit-pool [M :vector-i64 i :i64 pos :i64] :vector-i64
+  (vector-assoc! M (+ (+ MM-LIT-BASE (* i MM-LIT-W)) LF-POOL) pos))
+
+;; assign LF-POOL to literal i.. ; cur = next free pool byte (already aligned)
+(defn- ly-pool-loop [M :vector-i64 i :i64 cur :i64] :vector-i64
+  (if (>= i (vector-at M MM-LIT-N))
+    M
+    (let [len (ly-lit-field M i LF-LEN)
+          M1 (ly-set-lit-pool M i cur)]
+      (ly-pool-loop M1 (+ i 1) (ly-align8 (+ cur len))))))
+
+(defn- ly-pool-total [M :vector-i64 cbytes :i64] :i64
+  (let [lastl (vector-at M MM-LIT-N)]
+    (if (= lastl 1)
+      cbytes
+      (+ (ly-lit-field M (- lastl 1) LF-POOL) (ly-lit-field M (- lastl 1) LF-LEN)))))
+
+(defn- ly-pool-end [M :vector-i64 total :i64] :vector-i64
+  (if (>= total 4294967296)
+    (ly-err M (ly-e-size) total)
+    (vector-assoc! M MM-CODE-BYTES total)))
+
+(defn- ly-pool [M :vector-i64] :vector-i64
+  (let [cbytes (ly-byte-off (vector-at M MM-CODE-N))
+        poff (ly-align8 cbytes)
+        M1 (vector-assoc! M MM-POOL-OFF poff)
+        M2 (ly-pool-loop M1 1 poff)
+        total (ly-pool-total M2 cbytes)]
+    (ly-pool-end M2 total)))
+
+;; ---- (2) fixups -----------------------------------------------------------------------------------------------
+
+
+;; a branch whose target is a CODE word index t (>= 1, <= MM-CODE-N); width 26 or 19
+;; Linearity idiom (measured, see CONTRACT-REQUESTS): when a function branches into different M writers, every read
+;; it needs is a direct (vector-at M ..) bound in its own let (or the if test); a reader FUNCTION call on M bound before
+;; the branch makes stage-0 refuse the writers ("M is used more than once on some path").
+;; 0 = ok, else the error code, for a branch to code word index t from word at with displacement d and width wide
+(defn- ly-branch-status [at :i64 t :i64 ncode :i64 nw :i64] :i64
+  (if (< t (ly-first)) (ly-e-target)
+    (if (< at (ly-first)) (ly-e-target)
+      (if (< nw 0) E-LAYOUT-RANGE
+        (if (> t ncode) (ly-e-target) 0)))))
+
+;; number reported with the error: the displacement for a range error, else the target index t
+(defn- ly-branch-n [st :i64 t :i64 at :i64] :i64
+  (if (= st E-LAYOUT-RANGE) (- t at) t))
+
+(defn- ly-branch-word [w :i64 at :i64 t :i64 wide :i64] :i64
+  (if (= wide 26) (ly-patch26 w (- t at)) (ly-patch19 w (- t at))))
+
+(defn- ly-branch [M :vector-i64 at :i64 t :i64 wide :i64] :vector-i64
+  (let [w (vector-at M (+ MM-CODE-BASE (ly-clamp at 1 (- MM-CODE-CAP 1))))
+        ncode (vector-at M MM-CODE-N)
+        nw (ly-branch-word w at t wide)
+        st (ly-branch-status at t ncode nw)]
+    (if (= st 0)
+      (vector-assoc! M (+ MM-CODE-BASE at) nw)
+      (ly-err M st (ly-branch-n st t at)))))
+
+;; 0 = ok, else the error code: lit in 1..nlit-1, at in first..ncode-2, w0 a movz, w1 a movk
+(defn- ly-lit32-status [at :i64 lit :i64 nlit :i64 ncode :i64 w0 :i64 w1 :i64] :i64
+  (if (< lit 1) (ly-e-fixup)
+    (if (>= lit nlit) (ly-e-fixup)
+      (if (< at (ly-first)) (ly-e-fixup)
+        (if (>= (+ at 1) ncode) (ly-e-fixup)
+          (if (ly-is-movz w0)
+            (if (ly-is-movk w1) 0 (ly-e-fixup))
+            (ly-e-fixup)))))))
+
+(defn- ly-lit32 [M :vector-i64 at0 :i64 lit0 :i64] :vector-i64
+  (let [at (ly-clamp at0 1 (- MM-CODE-CAP 2))
+        lit (ly-clamp lit0 1 (- MM-LIT-CAP 1))
+        nlit (vector-at M MM-LIT-N)
+        ncode (vector-at M MM-CODE-N)
+        w0 (vector-at M (+ MM-CODE-BASE at))
+        w1 (vector-at M (+ (+ MM-CODE-BASE at) 1))
+        pos (vector-at M (+ (+ MM-LIT-BASE (* lit MM-LIT-W)) LF-POOL))
+        st (ly-lit32-status at0 lit0 nlit ncode w0 w1)]
+    (if (= st 0)
+      (let [M1 (vector-assoc! M (+ MM-CODE-BASE at) (ly-patch16 w0 pos))]
+        (vector-assoc! M1 (+ (+ MM-CODE-BASE at) 1) (ly-patch16 w1 (u64-shift-right pos 16))))
+      (ly-err M st at0))))
+
+(defn- ly-label-ok [tgt :i64 lab :i64] :i64
+  (if (< tgt 1) 0 (if (>= tgt MM-LABEL-CAP) 0 lab)))
+
+(defn- ly-fn-ok [tgt :i64 fcode :i64 nfn :i64] :i64
+  (if (< tgt 1) 0 (if (>= tgt nfn) 0 fcode)))
+
+;; code word index of the target of a branch-kind fixup (0 = undefined), -1 for an unknown kind. lab = the LABEL cell of tgt,
+;; fcode = FF-CODE of FN tgt, nfn = MM-FN-N, both read (clamped) by the caller.
+(defn- ly-target [kind :i64 tgt :i64 lab :i64 fcode :i64 nfn :i64] :i64
+  (if (= kind FX-B26) (ly-label-ok tgt lab)
+    (if (= kind FX-BC19) (ly-label-ok tgt lab)
+      (if (= kind FX-CB19) (ly-label-ok tgt lab)
+        (if (= kind FX-BL26) (ly-fn-ok tgt fcode nfn) -1)))))
+
+(defn- ly-width [kind :i64] :i64
+  (if (= kind FX-B26) 26 (if (= kind FX-BL26) 26 19)))
+
+(defn- ly-fix-one [M :vector-i64 i :i64] :vector-i64
+  (let [fb (+ MM-FIX-BASE (* i MM-FIX-W))
+        at (vector-at M (+ fb XF-AT))
+        kind (vector-at M (+ fb XF-KIND))
+        tgt (vector-at M (+ fb XF-TARGET))
+        lab (vector-at M (+ MM-LABEL-BASE (ly-clamp tgt 1 (- MM-LABEL-CAP 1))))
+        nfn (vector-at M MM-FN-N)
+        fcode (vector-at M (+ (+ MM-FN-BASE (* (ly-clamp tgt 1 (- MM-FN-CAP 1)) MM-FN-W)) FF-CODE))
+        t (ly-target kind tgt lab fcode nfn)]
+    (if (= kind FX-LIT32)
+      (ly-lit32 M at tgt)
+      (if (< t 0)
+        (ly-err M (ly-e-fixup) kind)
+        (ly-branch M at t (ly-width kind))))))
+
+(defn- ly-fix-loop [M :vector-i64 i :i64] :vector-i64
+  (if (>= i (vector-at M MM-FIX-N))
+    M
+    (let [M1 (ly-fix-one M i)]
+      (if (= (ly-failed M1) 0)
+        (ly-fix-loop M1 (+ i 1))
+        M1))))
+
+;; ---- (3) export table -------------------------------------------------------------------------------------------
+
+(defn- ly-exp-put [M :vector-i64 f :i64] :vector-i64
+  (let [fb (+ MM-FN-BASE (* f MM-FN-W))
+        k (vector-at M MM-EXP-N)
+        off (ly-byte-off (vector-at M (+ fb FF-CODE)))
+        ar (vector-at M (+ fb FF-NPARAMS))]
+    (if (>= k MM-EXP-CAP)
+      (ly-err M (ly-e-exports) k)
+      (let [b (+ MM-EXP-BASE (* k MM-EXP-W))
+            M1 (vector-assoc! M (+ b EF-FN) f)
+            M2 (vector-assoc! M1 (+ b EF-OFFSET) off)
+            M3 (vector-assoc! M2 (+ b EF-ARITY) ar)
+            M4 (vector-assoc! M3 (+ b EF-SPARE) 0)]
+        (vector-assoc! M4 MM-EXP-N (+ k 1))))))
+
+;; export record for FN f, or an error when it has no code
+(defn- ly-exp-one [M :vector-i64 f :i64 fc :i64] :vector-i64
+  (if (< fc (ly-first)) (ly-err M (ly-e-target) f) (ly-exp-put M f)))
+
+;; one export record for FN f when it is exported, then the rest
+(defn- ly-exp-loop [M :vector-i64 f :i64] :vector-i64
+  (let [fb (+ MM-FN-BASE (* f MM-FN-W))
+        nfn (vector-at M MM-FN-N)
+        isexp (vector-at M (+ fb FF-EXPORT))
+        fc (vector-at M (+ fb FF-CODE))]
+    (if (>= f nfn)
+      M
+      (if (= isexp 1)
+        (let [M1 (ly-exp-one M f fc)]
+          (if (= (vector-at M1 MM-ERR) 0)
+            (ly-exp-loop M1 (+ f 1))
+            M1))
+        (ly-exp-loop M (+ f 1))))))
+
+;; ---- entry ------------------------------------------------------------------------------------------------------------
+
+(defn- ly-finish [M :vector-i64] :vector-i64
+  (let [cb (vector-at M MM-CODE-BYTES)
+        nf (- (vector-at M MM-FIX-N) 1)
+        nl (- (vector-at M MM-LIT-N) 1)
+        ne (- (vector-at M MM-EXP-N) 1)
+        M1 (vector-assoc! M MM-R0 cb)
+        M2 (vector-assoc! M1 (+ MM-STAT-BASE 40) nf)
+        M3 (vector-assoc! M2 (+ MM-STAT-BASE 41) nl)]
+    (vector-assoc! M3 (+ MM-STAT-BASE 42) ne)))
+
+(defn- ly-run3 [M :vector-i64] :vector-i64
+  (let [M1 (ly-exp-loop M 1)]
+    (if (= (ly-failed M1) 0) (ly-finish M1) M1)))
+
+(defn- ly-run2 [M :vector-i64] :vector-i64
+  (let [M1 (ly-fix-loop M 1)]
+    (if (= (ly-failed M1) 0) (ly-run3 M1) M1)))
+
+(defn- ly-run [M :vector-i64] :vector-i64
+  (let [M1 (ly-pool M)]
+    (if (= (ly-failed M1) 0) (ly-run2 M1) M1)))
