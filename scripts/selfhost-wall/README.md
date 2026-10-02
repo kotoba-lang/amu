@@ -90,3 +90,12 @@ section 11 for the result and what it found.
 
     WALL_CP=<cp> WALL_K=<kotoba-lang> WALL_AMU_SRC=<this repo>/src KSEMA=<kotoba-sema checkout> IE_EXTRA=<dir>:<dir> \
     scripts/selfhost-wall/ie-diff.sh
+
+## Minimal reach set and the ledger (selfhost, 2026-10-02)
+
+    python3 scripts/selfhost-wall/reach-minimal.py <amu-root> <cp.txt> <kotoba-lang> [--host|--full|--edges|--roots=ns,..]
+    WALL_CP=<cp.txt> WALL_K=<kotoba-lang> scripts/selfhost-wall/ledger.sh [list.txt]
+
+`reach-minimal.py` computes the require closure of the check + compile(aarch64-macos) + refactor entries (Kotoba view of
+every `ns`; `--host` follows every reader branch). `ledger.sh` counts, per module of that set, the definitions with a real
+Kotoba body (the progress metric; files OK is a diagnostic). See docs/selfhost-minimal-reach-20261002.md.
