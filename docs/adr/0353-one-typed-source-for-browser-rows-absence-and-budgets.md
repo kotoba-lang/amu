@@ -654,6 +654,44 @@ parameter state of insert-text is the row {:text/caret T :text/selection T |
 r}: only a record satisfies a row" -- floor `:rebound-row-argument`, not yet
 minimized (each of its ingredients is admitted alone).
 
+The `nil` field landed as floor `:absent-field-from-assoc` (gate
+`nil-field-typed-by-the-module-assoc-test`). text-edit starts its state with
+`{.. :text/composition nil}` and writes the field in `composition-start`
+(`(assoc state :text/composition {:composition/text ""})`),
+`composition-update` (the same with `(str text)`) and `composition-end`
+(`(assoc state :text/composition nil)`); the literal was refused, "map
+literal value at key :text/composition is nil, which makes the field an
+absent [:option T], and nothing here says T". kotoba-sema (`7290e22e`) reads
+the module's source once per analysis (`module-absent-fields`): a keyword key
+written `nil` -- a literal entry or an `assoc` pair -- is an absent field
+`[:option T]`, T the one type the module's non-nil values at that key spell.
+There `nil` is `(option-none-of [:option T])`, and a value that spells T or a
+map / vector literal (typed against T, so `{:composition/text (str text)}` is
+that record) is `(option-some-of [:option T] v)`. This is point 2's absence,
+as `:expression-absence` has it for a branch: the field is an option because
+the module writes `nil` there, not because a value is coerced. A call that
+returns T is not wrapped. Measured on nbb: the gate was red on `8d3320fc` (2
+failures, 4 errors of 7 assertions), green on `7290e22e` (10 assertions). The
+four functions answer 100, 0, 3 and 100 on the KIR reference (`if-let` over
+the field, then the code-unit count of `:composition/text`, 100 when it is
+absent), and the program compiles for `wasm32-kotoba-v1`. Native is partial.
+Construction, `assoc` and presence (the field as an `if` test, answering 6)
+compile for `x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1` with the
+oracle verified. Projecting the present record is refused on both by the
+verifier ("runtime KIR record projection rejected": `record-get`'s operand is
+an `option-value-of`, which it does not type). It was refused before this
+floor too: a declared `[:option R]` parameter read the same way gives
+"machine IR rejected: branch-value-shape-mismatch". That is floor
+`:native-option-record`, and the gate pins its current refusal so it is seen
+when it moves. kotoba-sema's portable suite has the same 39 failures and 5
+errors before and after (identical lists). Refused by name: a key the module
+writes `nil` at and two types at (`field :text/composition is nil in this
+module ... writes two types at it: [:record ..] and :string`), a `nil` key the
+module gives no type (the old message), and a present T from a call written
+at the absent field (`expected [:option ..], got [:record ..]`, no coercion).
+`composition-update`'s `text` is annotated `:string` in the gate; unannotated
+it is `:i64`, which is floor `:export-signatures`.
+
 ## Selfhost foundation floors (appended 2026-09-26)
 
 Superproject adr-2609242330 measured that compiling amu with amu needs the
