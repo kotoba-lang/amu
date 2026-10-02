@@ -40,7 +40,7 @@ for d, m in [(0, 1), (9, 16), (16, 9), (1, 31), (30, 29)]:
 for n, m in [(0, 1), (9, 10), (16, 17), (15, 31)]:
     c('(enc-cmp-r %d %d)' % (n, m), 'cmp x%d, %s' % (n, xr(m)))
     c('(enc-cmn-r %d %d)' % (n, m), 'cmn x%d, %s' % (n, xr(m)))
-CONDS = [('eq', 0), ('ne', 1), ('hs', 2), ('lo', 3), ('ge', 10), ('lt', 11), ('gt', 12), ('le', 13)]
+CONDS = [('eq', 0), ('ne', 1), ('hs', 2), ('lo', 3), ('vs', 6), ('vc', 7), ('ge', 10), ('lt', 11), ('gt', 12), ('le', 13)]
 for name, cc in CONDS:
     c('(enc-cset 9 (enc-cond-%s))' % name, 'cset x9, %s' % name)
     c('(enc-cset 16 %d)' % cc, 'cset x16, %s' % name)

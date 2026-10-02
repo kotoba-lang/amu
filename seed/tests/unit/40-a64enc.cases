@@ -97,392 +97,404 @@
 97	(enc-cset 16 2)	cset x16, hs
 98	(enc-cset 9 (enc-cond-lo))	cset x9, lo
 99	(enc-cset 16 3)	cset x16, lo
-100	(enc-cset 9 (enc-cond-ge))	cset x9, ge
-101	(enc-cset 16 10)	cset x16, ge
-102	(enc-cset 9 (enc-cond-lt))	cset x9, lt
-103	(enc-cset 16 11)	cset x16, lt
-104	(enc-cset 9 (enc-cond-gt))	cset x9, gt
-105	(enc-cset 16 12)	cset x16, gt
-106	(enc-cset 9 (enc-cond-le))	cset x9, le
-107	(enc-cset 16 13)	cset x16, le
-108	(enc-csinc 0 1 2 0)	csinc x0, x1, x2, eq
-109	(enc-csel 0 1 2 0)	csel x0, x1, x2, eq
-110	(enc-csinc 9 10 11 11)	csinc x9, x10, x11, lt
-111	(enc-csel 9 10 11 11)	csel x9, x10, x11, lt
-112	(enc-csinc 16 31 17 13)	csinc x16, xzr, x17, le
-113	(enc-csel 16 31 17 13)	csel x16, xzr, x17, le
-114	(enc-cset 1 14)	REFUSED
-115	(enc-csinc 1 2 3 16)	REFUSED
-116	(enc-eor-1 9 9)	eor x9, x9, #1
-117	(enc-eor-1 0 1)	eor x0, x1, #1
-118	(enc-eor-1 16 17)	eor x16, x17, #1
-119	(enc-eor-1 15 31)	eor x15, xzr, #1
-120	(enc-cset 9 (enc-cond-of-cc 1))	cset x9, eq
-121	(enc-cset 9 (enc-cond-of-cc 2))	cset x9, lt
-122	(enc-cset 9 (enc-cond-of-cc 3))	cset x9, gt
-123	(enc-cset 9 (enc-cond-of-cc 4))	cset x9, le
-124	(enc-cset 9 (enc-cond-of-cc 5))	cset x9, ge
-125	(enc-cset 9 (enc-cond-of-cc 6))	REFUSED
-126	(enc-add-i 0 1 0)	add x0, x1, #0
-127	(enc-add-i 0 1 1)	add x0, x1, #1
-128	(enc-add-i 0 1 8)	add x0, x1, #8
-129	(enc-add-i 0 1 4095)	add x0, x1, #4095
-130	(enc-add-i 0 1 4096)	add x0, x1, #1, lsl #12
-131	(enc-add-i 0 1 8192)	add x0, x1, #2, lsl #12
-132	(enc-add-i 0 1 16773120)	add x0, x1, #4095, lsl #12
-133	(enc-add-i 31 31 0)	add sp, sp, #0
-134	(enc-add-i 31 31 1)	add sp, sp, #1
-135	(enc-add-i 31 31 8)	add sp, sp, #8
-136	(enc-add-i 31 31 4095)	add sp, sp, #4095
-137	(enc-add-i 31 31 4096)	add sp, sp, #1, lsl #12
-138	(enc-add-i 31 31 8192)	add sp, sp, #2, lsl #12
-139	(enc-add-i 31 31 16773120)	add sp, sp, #4095, lsl #12
-140	(enc-add-i 16 29 0)	add x16, x29, #0
-141	(enc-add-i 16 29 1)	add x16, x29, #1
-142	(enc-add-i 16 29 8)	add x16, x29, #8
-143	(enc-add-i 16 29 4095)	add x16, x29, #4095
-144	(enc-add-i 16 29 4096)	add x16, x29, #1, lsl #12
-145	(enc-add-i 16 29 8192)	add x16, x29, #2, lsl #12
-146	(enc-add-i 16 29 16773120)	add x16, x29, #4095, lsl #12
-147	(enc-add-i 9 9 0)	add x9, x9, #0
-148	(enc-add-i 9 9 1)	add x9, x9, #1
-149	(enc-add-i 9 9 8)	add x9, x9, #8
-150	(enc-add-i 9 9 4095)	add x9, x9, #4095
-151	(enc-add-i 9 9 4096)	add x9, x9, #1, lsl #12
-152	(enc-add-i 9 9 8192)	add x9, x9, #2, lsl #12
-153	(enc-add-i 9 9 16773120)	add x9, x9, #4095, lsl #12
-154	(enc-add-i 1 2 -1)	REFUSED
-155	(enc-add-i 1 2 4097)	REFUSED
-156	(enc-add-i 1 2 16777216)	REFUSED
-157	(enc-add-i 1 2 16777216)	REFUSED
-158	(enc-sub-i 0 1 0)	sub x0, x1, #0
-159	(enc-sub-i 0 1 1)	sub x0, x1, #1
-160	(enc-sub-i 0 1 8)	sub x0, x1, #8
-161	(enc-sub-i 0 1 4095)	sub x0, x1, #4095
-162	(enc-sub-i 0 1 4096)	sub x0, x1, #1, lsl #12
-163	(enc-sub-i 0 1 8192)	sub x0, x1, #2, lsl #12
-164	(enc-sub-i 0 1 16773120)	sub x0, x1, #4095, lsl #12
-165	(enc-sub-i 31 31 0)	sub sp, sp, #0
-166	(enc-sub-i 31 31 1)	sub sp, sp, #1
-167	(enc-sub-i 31 31 8)	sub sp, sp, #8
-168	(enc-sub-i 31 31 4095)	sub sp, sp, #4095
-169	(enc-sub-i 31 31 4096)	sub sp, sp, #1, lsl #12
-170	(enc-sub-i 31 31 8192)	sub sp, sp, #2, lsl #12
-171	(enc-sub-i 31 31 16773120)	sub sp, sp, #4095, lsl #12
-172	(enc-sub-i 16 29 0)	sub x16, x29, #0
-173	(enc-sub-i 16 29 1)	sub x16, x29, #1
-174	(enc-sub-i 16 29 8)	sub x16, x29, #8
-175	(enc-sub-i 16 29 4095)	sub x16, x29, #4095
-176	(enc-sub-i 16 29 4096)	sub x16, x29, #1, lsl #12
-177	(enc-sub-i 16 29 8192)	sub x16, x29, #2, lsl #12
-178	(enc-sub-i 16 29 16773120)	sub x16, x29, #4095, lsl #12
-179	(enc-sub-i 9 9 0)	sub x9, x9, #0
-180	(enc-sub-i 9 9 1)	sub x9, x9, #1
-181	(enc-sub-i 9 9 8)	sub x9, x9, #8
-182	(enc-sub-i 9 9 4095)	sub x9, x9, #4095
-183	(enc-sub-i 9 9 4096)	sub x9, x9, #1, lsl #12
-184	(enc-sub-i 9 9 8192)	sub x9, x9, #2, lsl #12
-185	(enc-sub-i 9 9 16773120)	sub x9, x9, #4095, lsl #12
-186	(enc-sub-i 1 2 -1)	REFUSED
-187	(enc-sub-i 1 2 4097)	REFUSED
-188	(enc-sub-i 1 2 16777216)	REFUSED
-189	(enc-sub-i 1 2 16777216)	REFUSED
-190	(enc-adds-i 16 16 1)	adds x16, x16, #1
-191	(enc-adds-i 0 1 4095)	adds x0, x1, #4095
-192	(enc-adds-i 9 31 7)	adds x9, sp, #7
-193	(enc-adds-i 17 3 8192)	adds x17, x3, #2, lsl #12
-194	(enc-subs-i 16 16 1)	subs x16, x16, #1
-195	(enc-subs-i 0 1 4095)	subs x0, x1, #4095
-196	(enc-subs-i 9 31 7)	subs x9, sp, #7
-197	(enc-subs-i 17 3 8192)	subs x17, x3, #2, lsl #12
-198	(enc-cmp-i 9 0)	cmp x9, #0
-199	(enc-cmn-i 9 0)	cmn x9, #0
-200	(enc-cmp-i 16 1)	cmp x16, #1
-201	(enc-cmn-i 16 1)	cmn x16, #1
-202	(enc-cmp-i 10 4095)	cmp x10, #4095
-203	(enc-cmn-i 10 4095)	cmn x10, #4095
-204	(enc-cmp-i 1 4096)	cmp x1, #1, lsl #12
-205	(enc-cmn-i 1 4096)	cmn x1, #1, lsl #12
-206	(enc-mov-sp 29 31)	mov x29, sp
-207	(enc-mov-sp 31 29)	mov sp, x29
-208	(enc-mov-sp 1 31)	mov x1, sp
-209	(enc-movz 0 0 0)	movz x0, #0, lsl #0
-210	(enc-movz 0 1 0)	movz x0, #1, lsl #0
-211	(enc-movz 0 65535 0)	movz x0, #65535, lsl #0
-212	(enc-movz 0 4660 1)	movz x0, #4660, lsl #16
-213	(enc-movz 0 43981 2)	movz x0, #43981, lsl #32
-214	(enc-movz 0 65535 3)	movz x0, #65535, lsl #48
-215	(enc-movz 0 32768 3)	movz x0, #32768, lsl #48
-216	(enc-movz 1 0 0)	movz x1, #0, lsl #0
-217	(enc-movz 1 1 0)	movz x1, #1, lsl #0
-218	(enc-movz 1 65535 0)	movz x1, #65535, lsl #0
-219	(enc-movz 1 4660 1)	movz x1, #4660, lsl #16
-220	(enc-movz 1 43981 2)	movz x1, #43981, lsl #32
-221	(enc-movz 1 65535 3)	movz x1, #65535, lsl #48
-222	(enc-movz 1 32768 3)	movz x1, #32768, lsl #48
-223	(enc-movz 9 0 0)	movz x9, #0, lsl #0
-224	(enc-movz 9 1 0)	movz x9, #1, lsl #0
-225	(enc-movz 9 65535 0)	movz x9, #65535, lsl #0
-226	(enc-movz 9 4660 1)	movz x9, #4660, lsl #16
-227	(enc-movz 9 43981 2)	movz x9, #43981, lsl #32
-228	(enc-movz 9 65535 3)	movz x9, #65535, lsl #48
-229	(enc-movz 9 32768 3)	movz x9, #32768, lsl #48
-230	(enc-movz 16 0 0)	movz x16, #0, lsl #0
-231	(enc-movz 16 1 0)	movz x16, #1, lsl #0
-232	(enc-movz 16 65535 0)	movz x16, #65535, lsl #0
-233	(enc-movz 16 4660 1)	movz x16, #4660, lsl #16
-234	(enc-movz 16 43981 2)	movz x16, #43981, lsl #32
-235	(enc-movz 16 65535 3)	movz x16, #65535, lsl #48
-236	(enc-movz 16 32768 3)	movz x16, #32768, lsl #48
-237	(enc-movz 30 0 0)	movz x30, #0, lsl #0
-238	(enc-movz 30 1 0)	movz x30, #1, lsl #0
-239	(enc-movz 30 65535 0)	movz x30, #65535, lsl #0
-240	(enc-movz 30 4660 1)	movz x30, #4660, lsl #16
-241	(enc-movz 30 43981 2)	movz x30, #43981, lsl #32
-242	(enc-movz 30 65535 3)	movz x30, #65535, lsl #48
-243	(enc-movz 30 32768 3)	movz x30, #32768, lsl #48
-244	(enc-movz 1 65536 0)	REFUSED
-245	(enc-movz 1 -1 0)	REFUSED
-246	(enc-movz 1 5 4)	REFUSED
-247	(enc-movk 0 0 0)	movk x0, #0, lsl #0
-248	(enc-movk 0 1 0)	movk x0, #1, lsl #0
-249	(enc-movk 0 65535 0)	movk x0, #65535, lsl #0
-250	(enc-movk 0 4660 1)	movk x0, #4660, lsl #16
-251	(enc-movk 0 43981 2)	movk x0, #43981, lsl #32
-252	(enc-movk 0 65535 3)	movk x0, #65535, lsl #48
-253	(enc-movk 0 32768 3)	movk x0, #32768, lsl #48
-254	(enc-movk 1 0 0)	movk x1, #0, lsl #0
-255	(enc-movk 1 1 0)	movk x1, #1, lsl #0
-256	(enc-movk 1 65535 0)	movk x1, #65535, lsl #0
-257	(enc-movk 1 4660 1)	movk x1, #4660, lsl #16
-258	(enc-movk 1 43981 2)	movk x1, #43981, lsl #32
-259	(enc-movk 1 65535 3)	movk x1, #65535, lsl #48
-260	(enc-movk 1 32768 3)	movk x1, #32768, lsl #48
-261	(enc-movk 9 0 0)	movk x9, #0, lsl #0
-262	(enc-movk 9 1 0)	movk x9, #1, lsl #0
-263	(enc-movk 9 65535 0)	movk x9, #65535, lsl #0
-264	(enc-movk 9 4660 1)	movk x9, #4660, lsl #16
-265	(enc-movk 9 43981 2)	movk x9, #43981, lsl #32
-266	(enc-movk 9 65535 3)	movk x9, #65535, lsl #48
-267	(enc-movk 9 32768 3)	movk x9, #32768, lsl #48
-268	(enc-movk 16 0 0)	movk x16, #0, lsl #0
-269	(enc-movk 16 1 0)	movk x16, #1, lsl #0
-270	(enc-movk 16 65535 0)	movk x16, #65535, lsl #0
-271	(enc-movk 16 4660 1)	movk x16, #4660, lsl #16
-272	(enc-movk 16 43981 2)	movk x16, #43981, lsl #32
-273	(enc-movk 16 65535 3)	movk x16, #65535, lsl #48
-274	(enc-movk 16 32768 3)	movk x16, #32768, lsl #48
-275	(enc-movk 30 0 0)	movk x30, #0, lsl #0
-276	(enc-movk 30 1 0)	movk x30, #1, lsl #0
-277	(enc-movk 30 65535 0)	movk x30, #65535, lsl #0
-278	(enc-movk 30 4660 1)	movk x30, #4660, lsl #16
-279	(enc-movk 30 43981 2)	movk x30, #43981, lsl #32
-280	(enc-movk 30 65535 3)	movk x30, #65535, lsl #48
-281	(enc-movk 30 32768 3)	movk x30, #32768, lsl #48
-282	(enc-movk 1 65536 0)	REFUSED
-283	(enc-movk 1 -1 0)	REFUSED
-284	(enc-movk 1 5 4)	REFUSED
-285	(enc-movn 0 0 0)	movn x0, #0, lsl #0
-286	(enc-movn 0 1 0)	movn x0, #1, lsl #0
-287	(enc-movn 0 65535 0)	movn x0, #65535, lsl #0
-288	(enc-movn 0 4660 1)	movn x0, #4660, lsl #16
-289	(enc-movn 0 43981 2)	movn x0, #43981, lsl #32
-290	(enc-movn 0 65535 3)	movn x0, #65535, lsl #48
-291	(enc-movn 0 32768 3)	movn x0, #32768, lsl #48
-292	(enc-movn 1 0 0)	movn x1, #0, lsl #0
-293	(enc-movn 1 1 0)	movn x1, #1, lsl #0
-294	(enc-movn 1 65535 0)	movn x1, #65535, lsl #0
-295	(enc-movn 1 4660 1)	movn x1, #4660, lsl #16
-296	(enc-movn 1 43981 2)	movn x1, #43981, lsl #32
-297	(enc-movn 1 65535 3)	movn x1, #65535, lsl #48
-298	(enc-movn 1 32768 3)	movn x1, #32768, lsl #48
-299	(enc-movn 9 0 0)	movn x9, #0, lsl #0
-300	(enc-movn 9 1 0)	movn x9, #1, lsl #0
-301	(enc-movn 9 65535 0)	movn x9, #65535, lsl #0
-302	(enc-movn 9 4660 1)	movn x9, #4660, lsl #16
-303	(enc-movn 9 43981 2)	movn x9, #43981, lsl #32
-304	(enc-movn 9 65535 3)	movn x9, #65535, lsl #48
-305	(enc-movn 9 32768 3)	movn x9, #32768, lsl #48
-306	(enc-movn 16 0 0)	movn x16, #0, lsl #0
-307	(enc-movn 16 1 0)	movn x16, #1, lsl #0
-308	(enc-movn 16 65535 0)	movn x16, #65535, lsl #0
-309	(enc-movn 16 4660 1)	movn x16, #4660, lsl #16
-310	(enc-movn 16 43981 2)	movn x16, #43981, lsl #32
-311	(enc-movn 16 65535 3)	movn x16, #65535, lsl #48
-312	(enc-movn 16 32768 3)	movn x16, #32768, lsl #48
-313	(enc-movn 30 0 0)	movn x30, #0, lsl #0
-314	(enc-movn 30 1 0)	movn x30, #1, lsl #0
-315	(enc-movn 30 65535 0)	movn x30, #65535, lsl #0
-316	(enc-movn 30 4660 1)	movn x30, #4660, lsl #16
-317	(enc-movn 30 43981 2)	movn x30, #43981, lsl #32
-318	(enc-movn 30 65535 3)	movn x30, #65535, lsl #48
-319	(enc-movn 30 32768 3)	movn x30, #32768, lsl #48
-320	(enc-movn 1 65536 0)	REFUSED
-321	(enc-movn 1 -1 0)	REFUSED
-322	(enc-movn 1 5 4)	REFUSED
-323	(enc-ldr 0 31 0)	ldr x0, [sp, #0]
-324	(enc-ldr 9 31 8)	ldr x9, [sp, #8]
-325	(enc-ldr 16 7 8)	ldr x16, [x7, #8]
-326	(enc-ldr 7 31 16)	ldr x7, [sp, #16]
-327	(enc-ldr 15 29 32760)	ldr x15, [x29, #32760]
-328	(enc-ldr 17 0 4088)	ldr x17, [x0, #4088]
-329	(enc-ldr 30 31 200)	ldr x30, [sp, #200]
-330	(enc-ldr 1 2 -8)	REFUSED
-331	(enc-ldr 1 2 4)	REFUSED
-332	(enc-ldr 1 2 32768)	REFUSED
-333	(enc-str 0 31 0)	str x0, [sp, #0]
-334	(enc-str 9 31 8)	str x9, [sp, #8]
-335	(enc-str 16 7 8)	str x16, [x7, #8]
-336	(enc-str 7 31 16)	str x7, [sp, #16]
-337	(enc-str 15 29 32760)	str x15, [x29, #32760]
-338	(enc-str 17 0 4088)	str x17, [x0, #4088]
-339	(enc-str 30 31 200)	str x30, [sp, #200]
-340	(enc-str 1 2 -8)	REFUSED
-341	(enc-str 1 2 4)	REFUSED
-342	(enc-str 1 2 32768)	REFUSED
-343	(enc-ldur 0 29 -8)	ldur x0, [x29, #-8]
-344	(enc-ldur 9 29 -256)	ldur x9, [x29, #-256]
-345	(enc-ldur 16 31 255)	ldur x16, [sp, #255]
-346	(enc-ldur 1 2 0)	ldur x1, [x2, #0]
-347	(enc-ldur 3 4 -1)	ldur x3, [x4, #-1]
-348	(enc-ldur 17 29 7)	ldur x17, [x29, #7]
-349	(enc-ldur 1 2 256)	REFUSED
-350	(enc-ldur 1 2 -257)	REFUSED
-351	(enc-stur 0 29 -8)	stur x0, [x29, #-8]
-352	(enc-stur 9 29 -256)	stur x9, [x29, #-256]
-353	(enc-stur 16 31 255)	stur x16, [sp, #255]
-354	(enc-stur 1 2 0)	stur x1, [x2, #0]
-355	(enc-stur 3 4 -1)	stur x3, [x4, #-1]
-356	(enc-stur 17 29 7)	stur x17, [x29, #7]
-357	(enc-stur 1 2 256)	REFUSED
-358	(enc-stur 1 2 -257)	REFUSED
-359	(enc-stp-pre 29 30 31 -16)	stp x29, x30, [sp, #-16]!
-360	(enc-stp 29 30 31 -16)	stp x29, x30, [sp, #-16]
-361	(enc-ldp 29 30 31 -16)	ldp x29, x30, [sp, #-16]
-362	(enc-stp-pre 29 30 31 -512)	stp x29, x30, [sp, #-512]!
-363	(enc-stp 29 30 31 -512)	stp x29, x30, [sp, #-512]
-364	(enc-ldp 29 30 31 -512)	ldp x29, x30, [sp, #-512]
-365	(enc-stp-pre 0 1 2 504)	stp x0, x1, [x2, #504]!
-366	(enc-stp 0 1 2 504)	stp x0, x1, [x2, #504]
-367	(enc-ldp 0 1 2 504)	ldp x0, x1, [x2, #504]
-368	(enc-stp-pre 9 10 31 -8)	stp x9, x10, [sp, #-8]!
-369	(enc-stp 9 10 31 -8)	stp x9, x10, [sp, #-8]
-370	(enc-ldp 9 10 31 -8)	ldp x9, x10, [sp, #-8]
-371	(enc-ldp-post 29 30 31 16)	ldp x29, x30, [sp], #16
-372	(enc-ldp-post 29 30 31 496)	ldp x29, x30, [sp], #496
-373	(enc-ldp-post 0 1 2 -64)	ldp x0, x1, [x2], #-64
-374	(enc-stp-pre 29 30 31 -520)	REFUSED
-375	(enc-ldp-post 29 30 31 12)	REFUSED
-376	(enc-b 0)	b . + 0
-377	(enc-bl 0)	bl . + 0
-378	(enc-b 1)	b . + 4
-379	(enc-bl 1)	bl . + 4
-380	(enc-b 2)	b . + 8
-381	(enc-bl 2)	bl . + 8
-382	(enc-b -1)	b . - 4
-383	(enc-bl -1)	bl . - 4
-384	(enc-b -5)	b . - 20
-385	(enc-bl -5)	bl . - 20
-386	(enc-b 100)	b . + 400
-387	(enc-bl 100)	bl . + 400
-388	(enc-b 33554431)	b . + 134217724
-389	(enc-bl 33554431)	bl . + 134217724
-390	(enc-b -33554432)	b . - 134217728
-391	(enc-bl -33554432)	bl . - 134217728
-392	(enc-b 33554432)	REFUSED
-393	(enc-bl -33554433)	REFUSED
-394	(enc-bcond 0 2)	b.eq . + 8
-395	(enc-bcond 0 -3)	b.eq . - 12
-396	(enc-bcond 0 262143)	b.eq . + 1048572
-397	(enc-bcond 0 -262144)	b.eq . - 1048576
-398	(enc-bcond 1 2)	b.ne . + 8
-399	(enc-bcond 1 -3)	b.ne . - 12
-400	(enc-bcond 1 262143)	b.ne . + 1048572
-401	(enc-bcond 1 -262144)	b.ne . - 1048576
-402	(enc-bcond 2 2)	b.hs . + 8
-403	(enc-bcond 2 -3)	b.hs . - 12
-404	(enc-bcond 2 262143)	b.hs . + 1048572
-405	(enc-bcond 2 -262144)	b.hs . - 1048576
-406	(enc-bcond 3 2)	b.lo . + 8
-407	(enc-bcond 3 -3)	b.lo . - 12
-408	(enc-bcond 3 262143)	b.lo . + 1048572
-409	(enc-bcond 3 -262144)	b.lo . - 1048576
-410	(enc-bcond 10 2)	b.ge . + 8
-411	(enc-bcond 10 -3)	b.ge . - 12
-412	(enc-bcond 10 262143)	b.ge . + 1048572
-413	(enc-bcond 10 -262144)	b.ge . - 1048576
-414	(enc-bcond 11 2)	b.lt . + 8
-415	(enc-bcond 11 -3)	b.lt . - 12
-416	(enc-bcond 11 262143)	b.lt . + 1048572
-417	(enc-bcond 11 -262144)	b.lt . - 1048576
-418	(enc-bcond 12 2)	b.gt . + 8
-419	(enc-bcond 12 -3)	b.gt . - 12
-420	(enc-bcond 12 262143)	b.gt . + 1048572
-421	(enc-bcond 12 -262144)	b.gt . - 1048576
-422	(enc-bcond 13 2)	b.le . + 8
-423	(enc-bcond 13 -3)	b.le . - 12
-424	(enc-bcond 13 262143)	b.le . + 1048572
-425	(enc-bcond 13 -262144)	b.le . - 1048576
-426	(enc-bcond 0 262144)	REFUSED
-427	(enc-bcond 16 1)	REFUSED
-428	(enc-cbz 0 2)	cbz x0, . + 8
-429	(enc-cbz 9 -3)	cbz x9, . - 12
-430	(enc-cbz 16 262143)	cbz x16, . + 1048572
-431	(enc-cbz 15 -262144)	cbz x15, . - 1048576
-432	(enc-cbz 31 7)	cbz xzr, . + 28
-433	(enc-cbz 1 -262145)	REFUSED
-434	(enc-cbnz 0 2)	cbnz x0, . + 8
-435	(enc-cbnz 9 -3)	cbnz x9, . - 12
-436	(enc-cbnz 16 262143)	cbnz x16, . + 1048572
-437	(enc-cbnz 15 -262144)	cbnz x15, . - 1048576
-438	(enc-cbnz 31 7)	cbnz xzr, . + 28
-439	(enc-cbnz 1 -262145)	REFUSED
-440	(enc-adr 1 0)	adr x1, . + 0
-441	(enc-adr 2 4)	adr x2, . + 4
-442	(enc-adr 3 13)	adr x3, . + 13
-443	(enc-adr 16 -7)	adr x16, . - 7
-444	(enc-adr 17 1048575)	adr x17, . + 1048575
-445	(enc-adr 0 -1048576)	adr x0, . - 1048576
-446	(enc-adr 1 1048576)	REFUSED
-447	(enc-blr 0)	blr x0
-448	(enc-br 0)	br x0
-449	(enc-blr 16)	blr x16
-450	(enc-br 16)	br x16
-451	(enc-blr 17)	blr x17
-452	(enc-br 17)	br x17
-453	(enc-blr 30)	blr x30
-454	(enc-br 30)	br x30
-455	(enc-ret)	ret
-456	(enc-nop)	nop
-457	(enc-brk 0)	brk #0
-458	(enc-brk 1)	brk #1
-459	(enc-brk 4103)	brk #4103
-460	(enc-brk 65535)	brk #65535
-461	(enc-brk 65536)	REFUSED
-462	(enc-patch-imm26 (enc-b 0) 5)	b . + 20
-463	(enc-patch-imm26 (enc-bl 7) 5)	bl . + 20
-464	(enc-patch-imm26 (enc-b 0) -5)	b . - 20
-465	(enc-patch-imm26 (enc-bl 7) -5)	bl . - 20
-466	(enc-patch-imm26 (enc-b 0) 33554431)	b . + 134217724
-467	(enc-patch-imm26 (enc-bl 7) 33554431)	bl . + 134217724
-468	(enc-patch-imm26 (enc-b 0) -33554432)	b . - 134217728
-469	(enc-patch-imm26 (enc-bl 7) -33554432)	bl . - 134217728
-470	(enc-patch-imm19 (enc-bcond 11 0) 3)	b.lt . + 12
-471	(enc-patch-imm19 (enc-cbnz 9 -9) 3)	cbnz x9, . + 12
-472	(enc-patch-imm19 (enc-bcond 11 0) -3)	b.lt . - 12
-473	(enc-patch-imm19 (enc-cbnz 9 -9) -3)	cbnz x9, . - 12
-474	(enc-patch-imm19 (enc-bcond 11 0) 262143)	b.lt . + 1048572
-475	(enc-patch-imm19 (enc-cbnz 9 -9) 262143)	cbnz x9, . + 1048572
-476	(enc-patch-imm19 (enc-bcond 11 0) -262144)	b.lt . - 1048576
-477	(enc-patch-imm19 (enc-cbnz 9 -9) -262144)	cbnz x9, . - 1048576
-478	(enc-patch-imm16 (enc-movz 1 0 0) 0)	movz x1, #0
-479	(enc-patch-imm16 (enc-movk 1 777 1) 0)	movk x1, #0, lsl #16
-480	(enc-patch-imm16 (enc-movz 1 0 0) 1)	movz x1, #1
-481	(enc-patch-imm16 (enc-movk 1 777 1) 1)	movk x1, #1, lsl #16
-482	(enc-patch-imm16 (enc-movz 1 0 0) 65535)	movz x1, #65535
-483	(enc-patch-imm16 (enc-movk 1 777 1) 65535)	movk x1, #65535, lsl #16
-484	(enc-patch-imm16 (enc-movz 1 0 0) 4660)	movz x1, #4660
-485	(enc-patch-imm16 (enc-movk 1 777 1) 4660)	movk x1, #4660, lsl #16
-486	(enc-patch-imm26 (enc-b 0) 33554432)	REFUSED
-487	(enc-patch-imm19 (enc-cbz 1 0) 262144)	REFUSED
-488	(enc-patch-imm16 (enc-movz 1 0 0) 65536)	REFUSED
+100	(enc-cset 9 (enc-cond-vs))	cset x9, vs
+101	(enc-cset 16 6)	cset x16, vs
+102	(enc-cset 9 (enc-cond-vc))	cset x9, vc
+103	(enc-cset 16 7)	cset x16, vc
+104	(enc-cset 9 (enc-cond-ge))	cset x9, ge
+105	(enc-cset 16 10)	cset x16, ge
+106	(enc-cset 9 (enc-cond-lt))	cset x9, lt
+107	(enc-cset 16 11)	cset x16, lt
+108	(enc-cset 9 (enc-cond-gt))	cset x9, gt
+109	(enc-cset 16 12)	cset x16, gt
+110	(enc-cset 9 (enc-cond-le))	cset x9, le
+111	(enc-cset 16 13)	cset x16, le
+112	(enc-csinc 0 1 2 0)	csinc x0, x1, x2, eq
+113	(enc-csel 0 1 2 0)	csel x0, x1, x2, eq
+114	(enc-csinc 9 10 11 11)	csinc x9, x10, x11, lt
+115	(enc-csel 9 10 11 11)	csel x9, x10, x11, lt
+116	(enc-csinc 16 31 17 13)	csinc x16, xzr, x17, le
+117	(enc-csel 16 31 17 13)	csel x16, xzr, x17, le
+118	(enc-cset 1 14)	REFUSED
+119	(enc-csinc 1 2 3 16)	REFUSED
+120	(enc-eor-1 9 9)	eor x9, x9, #1
+121	(enc-eor-1 0 1)	eor x0, x1, #1
+122	(enc-eor-1 16 17)	eor x16, x17, #1
+123	(enc-eor-1 15 31)	eor x15, xzr, #1
+124	(enc-cset 9 (enc-cond-of-cc 1))	cset x9, eq
+125	(enc-cset 9 (enc-cond-of-cc 2))	cset x9, lt
+126	(enc-cset 9 (enc-cond-of-cc 3))	cset x9, gt
+127	(enc-cset 9 (enc-cond-of-cc 4))	cset x9, le
+128	(enc-cset 9 (enc-cond-of-cc 5))	cset x9, ge
+129	(enc-cset 9 (enc-cond-of-cc 6))	REFUSED
+130	(enc-add-i 0 1 0)	add x0, x1, #0
+131	(enc-add-i 0 1 1)	add x0, x1, #1
+132	(enc-add-i 0 1 8)	add x0, x1, #8
+133	(enc-add-i 0 1 4095)	add x0, x1, #4095
+134	(enc-add-i 0 1 4096)	add x0, x1, #1, lsl #12
+135	(enc-add-i 0 1 8192)	add x0, x1, #2, lsl #12
+136	(enc-add-i 0 1 16773120)	add x0, x1, #4095, lsl #12
+137	(enc-add-i 31 31 0)	add sp, sp, #0
+138	(enc-add-i 31 31 1)	add sp, sp, #1
+139	(enc-add-i 31 31 8)	add sp, sp, #8
+140	(enc-add-i 31 31 4095)	add sp, sp, #4095
+141	(enc-add-i 31 31 4096)	add sp, sp, #1, lsl #12
+142	(enc-add-i 31 31 8192)	add sp, sp, #2, lsl #12
+143	(enc-add-i 31 31 16773120)	add sp, sp, #4095, lsl #12
+144	(enc-add-i 16 29 0)	add x16, x29, #0
+145	(enc-add-i 16 29 1)	add x16, x29, #1
+146	(enc-add-i 16 29 8)	add x16, x29, #8
+147	(enc-add-i 16 29 4095)	add x16, x29, #4095
+148	(enc-add-i 16 29 4096)	add x16, x29, #1, lsl #12
+149	(enc-add-i 16 29 8192)	add x16, x29, #2, lsl #12
+150	(enc-add-i 16 29 16773120)	add x16, x29, #4095, lsl #12
+151	(enc-add-i 9 9 0)	add x9, x9, #0
+152	(enc-add-i 9 9 1)	add x9, x9, #1
+153	(enc-add-i 9 9 8)	add x9, x9, #8
+154	(enc-add-i 9 9 4095)	add x9, x9, #4095
+155	(enc-add-i 9 9 4096)	add x9, x9, #1, lsl #12
+156	(enc-add-i 9 9 8192)	add x9, x9, #2, lsl #12
+157	(enc-add-i 9 9 16773120)	add x9, x9, #4095, lsl #12
+158	(enc-add-i 1 2 -1)	REFUSED
+159	(enc-add-i 1 2 4097)	REFUSED
+160	(enc-add-i 1 2 16777216)	REFUSED
+161	(enc-add-i 1 2 16777216)	REFUSED
+162	(enc-sub-i 0 1 0)	sub x0, x1, #0
+163	(enc-sub-i 0 1 1)	sub x0, x1, #1
+164	(enc-sub-i 0 1 8)	sub x0, x1, #8
+165	(enc-sub-i 0 1 4095)	sub x0, x1, #4095
+166	(enc-sub-i 0 1 4096)	sub x0, x1, #1, lsl #12
+167	(enc-sub-i 0 1 8192)	sub x0, x1, #2, lsl #12
+168	(enc-sub-i 0 1 16773120)	sub x0, x1, #4095, lsl #12
+169	(enc-sub-i 31 31 0)	sub sp, sp, #0
+170	(enc-sub-i 31 31 1)	sub sp, sp, #1
+171	(enc-sub-i 31 31 8)	sub sp, sp, #8
+172	(enc-sub-i 31 31 4095)	sub sp, sp, #4095
+173	(enc-sub-i 31 31 4096)	sub sp, sp, #1, lsl #12
+174	(enc-sub-i 31 31 8192)	sub sp, sp, #2, lsl #12
+175	(enc-sub-i 31 31 16773120)	sub sp, sp, #4095, lsl #12
+176	(enc-sub-i 16 29 0)	sub x16, x29, #0
+177	(enc-sub-i 16 29 1)	sub x16, x29, #1
+178	(enc-sub-i 16 29 8)	sub x16, x29, #8
+179	(enc-sub-i 16 29 4095)	sub x16, x29, #4095
+180	(enc-sub-i 16 29 4096)	sub x16, x29, #1, lsl #12
+181	(enc-sub-i 16 29 8192)	sub x16, x29, #2, lsl #12
+182	(enc-sub-i 16 29 16773120)	sub x16, x29, #4095, lsl #12
+183	(enc-sub-i 9 9 0)	sub x9, x9, #0
+184	(enc-sub-i 9 9 1)	sub x9, x9, #1
+185	(enc-sub-i 9 9 8)	sub x9, x9, #8
+186	(enc-sub-i 9 9 4095)	sub x9, x9, #4095
+187	(enc-sub-i 9 9 4096)	sub x9, x9, #1, lsl #12
+188	(enc-sub-i 9 9 8192)	sub x9, x9, #2, lsl #12
+189	(enc-sub-i 9 9 16773120)	sub x9, x9, #4095, lsl #12
+190	(enc-sub-i 1 2 -1)	REFUSED
+191	(enc-sub-i 1 2 4097)	REFUSED
+192	(enc-sub-i 1 2 16777216)	REFUSED
+193	(enc-sub-i 1 2 16777216)	REFUSED
+194	(enc-adds-i 16 16 1)	adds x16, x16, #1
+195	(enc-adds-i 0 1 4095)	adds x0, x1, #4095
+196	(enc-adds-i 9 31 7)	adds x9, sp, #7
+197	(enc-adds-i 17 3 8192)	adds x17, x3, #2, lsl #12
+198	(enc-subs-i 16 16 1)	subs x16, x16, #1
+199	(enc-subs-i 0 1 4095)	subs x0, x1, #4095
+200	(enc-subs-i 9 31 7)	subs x9, sp, #7
+201	(enc-subs-i 17 3 8192)	subs x17, x3, #2, lsl #12
+202	(enc-cmp-i 9 0)	cmp x9, #0
+203	(enc-cmn-i 9 0)	cmn x9, #0
+204	(enc-cmp-i 16 1)	cmp x16, #1
+205	(enc-cmn-i 16 1)	cmn x16, #1
+206	(enc-cmp-i 10 4095)	cmp x10, #4095
+207	(enc-cmn-i 10 4095)	cmn x10, #4095
+208	(enc-cmp-i 1 4096)	cmp x1, #1, lsl #12
+209	(enc-cmn-i 1 4096)	cmn x1, #1, lsl #12
+210	(enc-mov-sp 29 31)	mov x29, sp
+211	(enc-mov-sp 31 29)	mov sp, x29
+212	(enc-mov-sp 1 31)	mov x1, sp
+213	(enc-movz 0 0 0)	movz x0, #0, lsl #0
+214	(enc-movz 0 1 0)	movz x0, #1, lsl #0
+215	(enc-movz 0 65535 0)	movz x0, #65535, lsl #0
+216	(enc-movz 0 4660 1)	movz x0, #4660, lsl #16
+217	(enc-movz 0 43981 2)	movz x0, #43981, lsl #32
+218	(enc-movz 0 65535 3)	movz x0, #65535, lsl #48
+219	(enc-movz 0 32768 3)	movz x0, #32768, lsl #48
+220	(enc-movz 1 0 0)	movz x1, #0, lsl #0
+221	(enc-movz 1 1 0)	movz x1, #1, lsl #0
+222	(enc-movz 1 65535 0)	movz x1, #65535, lsl #0
+223	(enc-movz 1 4660 1)	movz x1, #4660, lsl #16
+224	(enc-movz 1 43981 2)	movz x1, #43981, lsl #32
+225	(enc-movz 1 65535 3)	movz x1, #65535, lsl #48
+226	(enc-movz 1 32768 3)	movz x1, #32768, lsl #48
+227	(enc-movz 9 0 0)	movz x9, #0, lsl #0
+228	(enc-movz 9 1 0)	movz x9, #1, lsl #0
+229	(enc-movz 9 65535 0)	movz x9, #65535, lsl #0
+230	(enc-movz 9 4660 1)	movz x9, #4660, lsl #16
+231	(enc-movz 9 43981 2)	movz x9, #43981, lsl #32
+232	(enc-movz 9 65535 3)	movz x9, #65535, lsl #48
+233	(enc-movz 9 32768 3)	movz x9, #32768, lsl #48
+234	(enc-movz 16 0 0)	movz x16, #0, lsl #0
+235	(enc-movz 16 1 0)	movz x16, #1, lsl #0
+236	(enc-movz 16 65535 0)	movz x16, #65535, lsl #0
+237	(enc-movz 16 4660 1)	movz x16, #4660, lsl #16
+238	(enc-movz 16 43981 2)	movz x16, #43981, lsl #32
+239	(enc-movz 16 65535 3)	movz x16, #65535, lsl #48
+240	(enc-movz 16 32768 3)	movz x16, #32768, lsl #48
+241	(enc-movz 30 0 0)	movz x30, #0, lsl #0
+242	(enc-movz 30 1 0)	movz x30, #1, lsl #0
+243	(enc-movz 30 65535 0)	movz x30, #65535, lsl #0
+244	(enc-movz 30 4660 1)	movz x30, #4660, lsl #16
+245	(enc-movz 30 43981 2)	movz x30, #43981, lsl #32
+246	(enc-movz 30 65535 3)	movz x30, #65535, lsl #48
+247	(enc-movz 30 32768 3)	movz x30, #32768, lsl #48
+248	(enc-movz 1 65536 0)	REFUSED
+249	(enc-movz 1 -1 0)	REFUSED
+250	(enc-movz 1 5 4)	REFUSED
+251	(enc-movk 0 0 0)	movk x0, #0, lsl #0
+252	(enc-movk 0 1 0)	movk x0, #1, lsl #0
+253	(enc-movk 0 65535 0)	movk x0, #65535, lsl #0
+254	(enc-movk 0 4660 1)	movk x0, #4660, lsl #16
+255	(enc-movk 0 43981 2)	movk x0, #43981, lsl #32
+256	(enc-movk 0 65535 3)	movk x0, #65535, lsl #48
+257	(enc-movk 0 32768 3)	movk x0, #32768, lsl #48
+258	(enc-movk 1 0 0)	movk x1, #0, lsl #0
+259	(enc-movk 1 1 0)	movk x1, #1, lsl #0
+260	(enc-movk 1 65535 0)	movk x1, #65535, lsl #0
+261	(enc-movk 1 4660 1)	movk x1, #4660, lsl #16
+262	(enc-movk 1 43981 2)	movk x1, #43981, lsl #32
+263	(enc-movk 1 65535 3)	movk x1, #65535, lsl #48
+264	(enc-movk 1 32768 3)	movk x1, #32768, lsl #48
+265	(enc-movk 9 0 0)	movk x9, #0, lsl #0
+266	(enc-movk 9 1 0)	movk x9, #1, lsl #0
+267	(enc-movk 9 65535 0)	movk x9, #65535, lsl #0
+268	(enc-movk 9 4660 1)	movk x9, #4660, lsl #16
+269	(enc-movk 9 43981 2)	movk x9, #43981, lsl #32
+270	(enc-movk 9 65535 3)	movk x9, #65535, lsl #48
+271	(enc-movk 9 32768 3)	movk x9, #32768, lsl #48
+272	(enc-movk 16 0 0)	movk x16, #0, lsl #0
+273	(enc-movk 16 1 0)	movk x16, #1, lsl #0
+274	(enc-movk 16 65535 0)	movk x16, #65535, lsl #0
+275	(enc-movk 16 4660 1)	movk x16, #4660, lsl #16
+276	(enc-movk 16 43981 2)	movk x16, #43981, lsl #32
+277	(enc-movk 16 65535 3)	movk x16, #65535, lsl #48
+278	(enc-movk 16 32768 3)	movk x16, #32768, lsl #48
+279	(enc-movk 30 0 0)	movk x30, #0, lsl #0
+280	(enc-movk 30 1 0)	movk x30, #1, lsl #0
+281	(enc-movk 30 65535 0)	movk x30, #65535, lsl #0
+282	(enc-movk 30 4660 1)	movk x30, #4660, lsl #16
+283	(enc-movk 30 43981 2)	movk x30, #43981, lsl #32
+284	(enc-movk 30 65535 3)	movk x30, #65535, lsl #48
+285	(enc-movk 30 32768 3)	movk x30, #32768, lsl #48
+286	(enc-movk 1 65536 0)	REFUSED
+287	(enc-movk 1 -1 0)	REFUSED
+288	(enc-movk 1 5 4)	REFUSED
+289	(enc-movn 0 0 0)	movn x0, #0, lsl #0
+290	(enc-movn 0 1 0)	movn x0, #1, lsl #0
+291	(enc-movn 0 65535 0)	movn x0, #65535, lsl #0
+292	(enc-movn 0 4660 1)	movn x0, #4660, lsl #16
+293	(enc-movn 0 43981 2)	movn x0, #43981, lsl #32
+294	(enc-movn 0 65535 3)	movn x0, #65535, lsl #48
+295	(enc-movn 0 32768 3)	movn x0, #32768, lsl #48
+296	(enc-movn 1 0 0)	movn x1, #0, lsl #0
+297	(enc-movn 1 1 0)	movn x1, #1, lsl #0
+298	(enc-movn 1 65535 0)	movn x1, #65535, lsl #0
+299	(enc-movn 1 4660 1)	movn x1, #4660, lsl #16
+300	(enc-movn 1 43981 2)	movn x1, #43981, lsl #32
+301	(enc-movn 1 65535 3)	movn x1, #65535, lsl #48
+302	(enc-movn 1 32768 3)	movn x1, #32768, lsl #48
+303	(enc-movn 9 0 0)	movn x9, #0, lsl #0
+304	(enc-movn 9 1 0)	movn x9, #1, lsl #0
+305	(enc-movn 9 65535 0)	movn x9, #65535, lsl #0
+306	(enc-movn 9 4660 1)	movn x9, #4660, lsl #16
+307	(enc-movn 9 43981 2)	movn x9, #43981, lsl #32
+308	(enc-movn 9 65535 3)	movn x9, #65535, lsl #48
+309	(enc-movn 9 32768 3)	movn x9, #32768, lsl #48
+310	(enc-movn 16 0 0)	movn x16, #0, lsl #0
+311	(enc-movn 16 1 0)	movn x16, #1, lsl #0
+312	(enc-movn 16 65535 0)	movn x16, #65535, lsl #0
+313	(enc-movn 16 4660 1)	movn x16, #4660, lsl #16
+314	(enc-movn 16 43981 2)	movn x16, #43981, lsl #32
+315	(enc-movn 16 65535 3)	movn x16, #65535, lsl #48
+316	(enc-movn 16 32768 3)	movn x16, #32768, lsl #48
+317	(enc-movn 30 0 0)	movn x30, #0, lsl #0
+318	(enc-movn 30 1 0)	movn x30, #1, lsl #0
+319	(enc-movn 30 65535 0)	movn x30, #65535, lsl #0
+320	(enc-movn 30 4660 1)	movn x30, #4660, lsl #16
+321	(enc-movn 30 43981 2)	movn x30, #43981, lsl #32
+322	(enc-movn 30 65535 3)	movn x30, #65535, lsl #48
+323	(enc-movn 30 32768 3)	movn x30, #32768, lsl #48
+324	(enc-movn 1 65536 0)	REFUSED
+325	(enc-movn 1 -1 0)	REFUSED
+326	(enc-movn 1 5 4)	REFUSED
+327	(enc-ldr 0 31 0)	ldr x0, [sp, #0]
+328	(enc-ldr 9 31 8)	ldr x9, [sp, #8]
+329	(enc-ldr 16 7 8)	ldr x16, [x7, #8]
+330	(enc-ldr 7 31 16)	ldr x7, [sp, #16]
+331	(enc-ldr 15 29 32760)	ldr x15, [x29, #32760]
+332	(enc-ldr 17 0 4088)	ldr x17, [x0, #4088]
+333	(enc-ldr 30 31 200)	ldr x30, [sp, #200]
+334	(enc-ldr 1 2 -8)	REFUSED
+335	(enc-ldr 1 2 4)	REFUSED
+336	(enc-ldr 1 2 32768)	REFUSED
+337	(enc-str 0 31 0)	str x0, [sp, #0]
+338	(enc-str 9 31 8)	str x9, [sp, #8]
+339	(enc-str 16 7 8)	str x16, [x7, #8]
+340	(enc-str 7 31 16)	str x7, [sp, #16]
+341	(enc-str 15 29 32760)	str x15, [x29, #32760]
+342	(enc-str 17 0 4088)	str x17, [x0, #4088]
+343	(enc-str 30 31 200)	str x30, [sp, #200]
+344	(enc-str 1 2 -8)	REFUSED
+345	(enc-str 1 2 4)	REFUSED
+346	(enc-str 1 2 32768)	REFUSED
+347	(enc-ldur 0 29 -8)	ldur x0, [x29, #-8]
+348	(enc-ldur 9 29 -256)	ldur x9, [x29, #-256]
+349	(enc-ldur 16 31 255)	ldur x16, [sp, #255]
+350	(enc-ldur 1 2 0)	ldur x1, [x2, #0]
+351	(enc-ldur 3 4 -1)	ldur x3, [x4, #-1]
+352	(enc-ldur 17 29 7)	ldur x17, [x29, #7]
+353	(enc-ldur 1 2 256)	REFUSED
+354	(enc-ldur 1 2 -257)	REFUSED
+355	(enc-stur 0 29 -8)	stur x0, [x29, #-8]
+356	(enc-stur 9 29 -256)	stur x9, [x29, #-256]
+357	(enc-stur 16 31 255)	stur x16, [sp, #255]
+358	(enc-stur 1 2 0)	stur x1, [x2, #0]
+359	(enc-stur 3 4 -1)	stur x3, [x4, #-1]
+360	(enc-stur 17 29 7)	stur x17, [x29, #7]
+361	(enc-stur 1 2 256)	REFUSED
+362	(enc-stur 1 2 -257)	REFUSED
+363	(enc-stp-pre 29 30 31 -16)	stp x29, x30, [sp, #-16]!
+364	(enc-stp 29 30 31 -16)	stp x29, x30, [sp, #-16]
+365	(enc-ldp 29 30 31 -16)	ldp x29, x30, [sp, #-16]
+366	(enc-stp-pre 29 30 31 -512)	stp x29, x30, [sp, #-512]!
+367	(enc-stp 29 30 31 -512)	stp x29, x30, [sp, #-512]
+368	(enc-ldp 29 30 31 -512)	ldp x29, x30, [sp, #-512]
+369	(enc-stp-pre 0 1 2 504)	stp x0, x1, [x2, #504]!
+370	(enc-stp 0 1 2 504)	stp x0, x1, [x2, #504]
+371	(enc-ldp 0 1 2 504)	ldp x0, x1, [x2, #504]
+372	(enc-stp-pre 9 10 31 -8)	stp x9, x10, [sp, #-8]!
+373	(enc-stp 9 10 31 -8)	stp x9, x10, [sp, #-8]
+374	(enc-ldp 9 10 31 -8)	ldp x9, x10, [sp, #-8]
+375	(enc-ldp-post 29 30 31 16)	ldp x29, x30, [sp], #16
+376	(enc-ldp-post 29 30 31 496)	ldp x29, x30, [sp], #496
+377	(enc-ldp-post 0 1 2 -64)	ldp x0, x1, [x2], #-64
+378	(enc-stp-pre 29 30 31 -520)	REFUSED
+379	(enc-ldp-post 29 30 31 12)	REFUSED
+380	(enc-b 0)	b . + 0
+381	(enc-bl 0)	bl . + 0
+382	(enc-b 1)	b . + 4
+383	(enc-bl 1)	bl . + 4
+384	(enc-b 2)	b . + 8
+385	(enc-bl 2)	bl . + 8
+386	(enc-b -1)	b . - 4
+387	(enc-bl -1)	bl . - 4
+388	(enc-b -5)	b . - 20
+389	(enc-bl -5)	bl . - 20
+390	(enc-b 100)	b . + 400
+391	(enc-bl 100)	bl . + 400
+392	(enc-b 33554431)	b . + 134217724
+393	(enc-bl 33554431)	bl . + 134217724
+394	(enc-b -33554432)	b . - 134217728
+395	(enc-bl -33554432)	bl . - 134217728
+396	(enc-b 33554432)	REFUSED
+397	(enc-bl -33554433)	REFUSED
+398	(enc-bcond 0 2)	b.eq . + 8
+399	(enc-bcond 0 -3)	b.eq . - 12
+400	(enc-bcond 0 262143)	b.eq . + 1048572
+401	(enc-bcond 0 -262144)	b.eq . - 1048576
+402	(enc-bcond 1 2)	b.ne . + 8
+403	(enc-bcond 1 -3)	b.ne . - 12
+404	(enc-bcond 1 262143)	b.ne . + 1048572
+405	(enc-bcond 1 -262144)	b.ne . - 1048576
+406	(enc-bcond 2 2)	b.hs . + 8
+407	(enc-bcond 2 -3)	b.hs . - 12
+408	(enc-bcond 2 262143)	b.hs . + 1048572
+409	(enc-bcond 2 -262144)	b.hs . - 1048576
+410	(enc-bcond 3 2)	b.lo . + 8
+411	(enc-bcond 3 -3)	b.lo . - 12
+412	(enc-bcond 3 262143)	b.lo . + 1048572
+413	(enc-bcond 3 -262144)	b.lo . - 1048576
+414	(enc-bcond 6 2)	b.vs . + 8
+415	(enc-bcond 6 -3)	b.vs . - 12
+416	(enc-bcond 6 262143)	b.vs . + 1048572
+417	(enc-bcond 6 -262144)	b.vs . - 1048576
+418	(enc-bcond 7 2)	b.vc . + 8
+419	(enc-bcond 7 -3)	b.vc . - 12
+420	(enc-bcond 7 262143)	b.vc . + 1048572
+421	(enc-bcond 7 -262144)	b.vc . - 1048576
+422	(enc-bcond 10 2)	b.ge . + 8
+423	(enc-bcond 10 -3)	b.ge . - 12
+424	(enc-bcond 10 262143)	b.ge . + 1048572
+425	(enc-bcond 10 -262144)	b.ge . - 1048576
+426	(enc-bcond 11 2)	b.lt . + 8
+427	(enc-bcond 11 -3)	b.lt . - 12
+428	(enc-bcond 11 262143)	b.lt . + 1048572
+429	(enc-bcond 11 -262144)	b.lt . - 1048576
+430	(enc-bcond 12 2)	b.gt . + 8
+431	(enc-bcond 12 -3)	b.gt . - 12
+432	(enc-bcond 12 262143)	b.gt . + 1048572
+433	(enc-bcond 12 -262144)	b.gt . - 1048576
+434	(enc-bcond 13 2)	b.le . + 8
+435	(enc-bcond 13 -3)	b.le . - 12
+436	(enc-bcond 13 262143)	b.le . + 1048572
+437	(enc-bcond 13 -262144)	b.le . - 1048576
+438	(enc-bcond 0 262144)	REFUSED
+439	(enc-bcond 16 1)	REFUSED
+440	(enc-cbz 0 2)	cbz x0, . + 8
+441	(enc-cbz 9 -3)	cbz x9, . - 12
+442	(enc-cbz 16 262143)	cbz x16, . + 1048572
+443	(enc-cbz 15 -262144)	cbz x15, . - 1048576
+444	(enc-cbz 31 7)	cbz xzr, . + 28
+445	(enc-cbz 1 -262145)	REFUSED
+446	(enc-cbnz 0 2)	cbnz x0, . + 8
+447	(enc-cbnz 9 -3)	cbnz x9, . - 12
+448	(enc-cbnz 16 262143)	cbnz x16, . + 1048572
+449	(enc-cbnz 15 -262144)	cbnz x15, . - 1048576
+450	(enc-cbnz 31 7)	cbnz xzr, . + 28
+451	(enc-cbnz 1 -262145)	REFUSED
+452	(enc-adr 1 0)	adr x1, . + 0
+453	(enc-adr 2 4)	adr x2, . + 4
+454	(enc-adr 3 13)	adr x3, . + 13
+455	(enc-adr 16 -7)	adr x16, . - 7
+456	(enc-adr 17 1048575)	adr x17, . + 1048575
+457	(enc-adr 0 -1048576)	adr x0, . - 1048576
+458	(enc-adr 1 1048576)	REFUSED
+459	(enc-blr 0)	blr x0
+460	(enc-br 0)	br x0
+461	(enc-blr 16)	blr x16
+462	(enc-br 16)	br x16
+463	(enc-blr 17)	blr x17
+464	(enc-br 17)	br x17
+465	(enc-blr 30)	blr x30
+466	(enc-br 30)	br x30
+467	(enc-ret)	ret
+468	(enc-nop)	nop
+469	(enc-brk 0)	brk #0
+470	(enc-brk 1)	brk #1
+471	(enc-brk 4103)	brk #4103
+472	(enc-brk 65535)	brk #65535
+473	(enc-brk 65536)	REFUSED
+474	(enc-patch-imm26 (enc-b 0) 5)	b . + 20
+475	(enc-patch-imm26 (enc-bl 7) 5)	bl . + 20
+476	(enc-patch-imm26 (enc-b 0) -5)	b . - 20
+477	(enc-patch-imm26 (enc-bl 7) -5)	bl . - 20
+478	(enc-patch-imm26 (enc-b 0) 33554431)	b . + 134217724
+479	(enc-patch-imm26 (enc-bl 7) 33554431)	bl . + 134217724
+480	(enc-patch-imm26 (enc-b 0) -33554432)	b . - 134217728
+481	(enc-patch-imm26 (enc-bl 7) -33554432)	bl . - 134217728
+482	(enc-patch-imm19 (enc-bcond 11 0) 3)	b.lt . + 12
+483	(enc-patch-imm19 (enc-cbnz 9 -9) 3)	cbnz x9, . + 12
+484	(enc-patch-imm19 (enc-bcond 11 0) -3)	b.lt . - 12
+485	(enc-patch-imm19 (enc-cbnz 9 -9) -3)	cbnz x9, . - 12
+486	(enc-patch-imm19 (enc-bcond 11 0) 262143)	b.lt . + 1048572
+487	(enc-patch-imm19 (enc-cbnz 9 -9) 262143)	cbnz x9, . + 1048572
+488	(enc-patch-imm19 (enc-bcond 11 0) -262144)	b.lt . - 1048576
+489	(enc-patch-imm19 (enc-cbnz 9 -9) -262144)	cbnz x9, . - 1048576
+490	(enc-patch-imm16 (enc-movz 1 0 0) 0)	movz x1, #0
+491	(enc-patch-imm16 (enc-movk 1 777 1) 0)	movk x1, #0, lsl #16
+492	(enc-patch-imm16 (enc-movz 1 0 0) 1)	movz x1, #1
+493	(enc-patch-imm16 (enc-movk 1 777 1) 1)	movk x1, #1, lsl #16
+494	(enc-patch-imm16 (enc-movz 1 0 0) 65535)	movz x1, #65535
+495	(enc-patch-imm16 (enc-movk 1 777 1) 65535)	movk x1, #65535, lsl #16
+496	(enc-patch-imm16 (enc-movz 1 0 0) 4660)	movz x1, #4660
+497	(enc-patch-imm16 (enc-movk 1 777 1) 4660)	movk x1, #4660, lsl #16
+498	(enc-patch-imm26 (enc-b 0) 33554432)	REFUSED
+499	(enc-patch-imm19 (enc-cbz 1 0) 262144)	REFUSED
+500	(enc-patch-imm16 (enc-movz 1 0 0) 65536)	REFUSED
