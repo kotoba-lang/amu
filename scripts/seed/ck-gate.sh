@@ -1,7 +1,7 @@
 #!/bin/zsh
-# scripts/seed/ck-gate.sh [--update] [label-substring ...] -- admission gate of seed modules 20-names and 21-check.
-# BOOTSTRAP-TOOL (owner 20-names/21-check). Builds 00-ns + 10-lex + 11-read + 20-names + 21-check +
-# seed/tests/check/ck-dump.kotoba with STAGE-0 (scripts/seed/lib.sh) and runs the native front end on:
+# scripts/seed/ck-gate.sh [--ref-front] [--update] [label-substring ...] -- admission gate of seed modules 20-names
+# and 21-check. BOOTSTRAP-TOOL (owner 20-names/21-check). Builds 00-ns + 10-lex + 11-read + 20-names + 21-check +
+# seed/tests/check/ck-common.kotoba + ck-dump.kotoba with STAGE-0 (scripts/seed/lib.sh) and runs it natively on:
 #   port/<n>   the 19 Embench ports (bench/embench/ports)                       must be admitted ("ok ...")
 #   corpus/<n> seed/tests/corpus/*.kotoba                                        must be admitted
 #   self/unity the seed's own unity source (seed/MANIFEST, existing files)       must be admitted
@@ -10,23 +10,28 @@
 #   conf/<d>/<n> the kotoba-lang conformance programs ($CK_CONFORMANCE)          refused, except the ones listed
 #              in CK_CONF_ACCEPT (inside Seed-0)
 #   spell      seed/tests/check/spellings.kotoba in mode "s" (symbol -> head code table)
-# Every result line is compared with seed/tests/check/golden.txt (`<label> <line>`); --update rewrites it.
-# Exit 0 = every expectation holds and every line equals the golden.
+# Every result line is compared with seed/tests/check/golden.txt (`<label> <line>`); --update rewrites it. Every line
+# is also compared with the independent Python model scripts/seed/ck_ref.py.
+# --ref-front: no 10-lex/11-read: the TOK/NODE tables come from the Python reference reader (ck_ref.py --tables,
+# loaded by seed/tests/check/ck-load.kotoba); files with a lexical/reader error are skipped; only the reference
+# model comparison applies (not the golden). Exit 0 = every expectation holds and every comparison agrees.
 emulate -L zsh
 setopt pipefail
 source "$(dirname "$0")/lib.sh"
 R=$SEED_REPO; W=$SEED_BUILD/check; mkdir -p $W
 CK_CONFORMANCE=${CK_CONFORMANCE:-/private/tmp/wt-K-kotoba-lang/lang/conformance}
 CK_CONF_ACCEPT=${CK_CONF_ACCEPT:-""}   # conf/entry_extensions/main has no ns form and untyped params: refused (E2004)
+front=real; [ "$1" = "--ref-front" ] && { front=ref; shift; }
 update=0; [ "$1" = "--update" ] && { update=1; shift; }
 G=$R/seed/tests/check/golden.txt
 
-: > $W/ck.kotoba
-for p in seed/00-ns.kotoba seed/10-lex.kotoba seed/11-read.kotoba seed/20-names.kotoba seed/21-check.kotoba seed/tests/check/ck-dump.kotoba; do
-  cat $R/$p >> $W/ck.kotoba; printf '\n' >> $W/ck.kotoba
-done
-if ! { [ -f $W/ck.bin ] && [ $W/ck.bin -nt $W/ck.kotoba ] && [ -s $W/ck.offset ]; }; then
-  seed_stage0_build $W/ck.kotoba $W/ck || { echo "ck-gate: stage-0 refused the build"; grep -o ':message "[^"]*"' $W/ck.log | head -3; head -c 800 $W/ck.log; exit 1; }
+if [ $front = ref ]; then B=ck-ref; parts=(seed/00-ns.kotoba seed/20-names.kotoba seed/21-check.kotoba seed/tests/check/ck-common.kotoba seed/tests/check/ck-load.kotoba)
+else B=ck; parts=(seed/00-ns.kotoba seed/10-lex.kotoba seed/11-read.kotoba seed/20-names.kotoba seed/21-check.kotoba seed/tests/check/ck-common.kotoba seed/tests/check/ck-dump.kotoba); fi
+: > $W/$B.new
+for p in $parts; do cat $R/$p >> $W/$B.new; printf '\n' >> $W/$B.new; done
+cmp -s $W/$B.new $W/$B.kotoba || mv $W/$B.new $W/$B.kotoba
+if ! { [ -f $W/$B.bin ] && [ $W/$B.bin -nt $W/$B.kotoba ] && [ -s $W/$B.offset ]; }; then
+  seed_stage0_build $W/$B.kotoba $W/$B || { echo "ck-gate: stage-0 refused the build"; grep -o ':message "[^"]*"' $W/$B.log | head -3; head -c 800 $W/$B.log; exit 1; }
 fi
 # the self source: the MANIFEST files that exist today
 : > $W/self.kotoba
@@ -50,7 +55,13 @@ fail=0; n=0; nok=0; nE=0
 for line in ${(f)"$(list)"}; do
   lab=${line%% *}; rest=${line#* }; want=${rest%% *}; f=${rest#* }
   if [ $# -gt 0 ]; then hit=0; for s in $@; do [[ $lab == *$s* ]] && hit=1; done; [ $hit -eq 1 ] || continue; fi
-  res=$( cd $W; seed_run $W/ck.bin $(cat $W/ck.offset) r $f 2> $W/err.txt | head -1 )
+  if [ $front = ref ]; then
+    python3 $R/scripts/seed/ck_ref.py --tables $f $W/tables.txt
+    [ "$(head -1 $W/tables.txt)" = "0 0" ] && continue
+    res=$( cd $W; seed_run $W/$B.bin $(cat $W/$B.offset) r $f $W/tables.txt 2> $W/err.txt | head -1 )
+  else
+    res=$( cd $W; seed_run $W/$B.bin $(cat $W/$B.offset) r $f 2> $W/err.txt | head -1 )
+  fi
   [ -n "$res" ] || res="CRASH $(head -c 200 $W/err.txt | tr '\n' ' ')"
   echo "$lab $res" >> $W/out.txt
   n=$((n+1))
@@ -59,7 +70,9 @@ for line in ${(f)"$(list)"}; do
                *) echo "BROKEN $lab: $res"; fail=1 ;; esac
 done
 if [ $# -eq 0 ]; then
-  res=$( cd $W; seed_run $W/ck.bin $(cat $W/ck.offset) s $R/seed/tests/check/spellings.kotoba 2> $W/err.txt )
+  if [ $front = ref ]; then python3 $R/scripts/seed/ck_ref.py --tables $R/seed/tests/check/spellings.kotoba $W/tables.txt
+    res=$( cd $W; seed_run $W/$B.bin $(cat $W/$B.offset) s $R/seed/tests/check/spellings.kotoba $W/tables.txt 2> $W/err.txt )
+  else res=$( cd $W; seed_run $W/$B.bin $(cat $W/$B.offset) s $R/seed/tests/check/spellings.kotoba 2> $W/err.txt ); fi
   echo "$res" | sed 's/^/spell /' >> $W/out.txt
   python3 - $R/seed/HEADS $W/out.txt <<'PY' || fail=1
 import re, sys
@@ -89,6 +102,7 @@ bad = [l for l in got if ref.get(l.split(" ", 1)[0]) != l.rstrip("\n").split(" "
 print("ck-gate: reference model (ck_ref.py) agrees on %d of %d lines" % (len(got) - len(bad), len(got)))
 for l in bad[:10]: print("  DIFF", l.rstrip(), "| ref:", ref.get(l.split(" ", 1)[0]))
 sys.exit(1 if bad else 0)' $W/ref.txt || fail=1
+if [ $front = ref ]; then [ $fail -eq 0 ] && echo "ck-gate (ref front): PASS" || echo "ck-gate (ref front): FAIL"; exit $fail; fi
 if [ $update -eq 1 ]; then
   if [ $# -eq 0 ]; then cp $W/out.txt $G; else
     python3 - $G $W/out.txt <<'PY'

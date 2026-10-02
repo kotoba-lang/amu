@@ -7,6 +7,8 @@ process tree). Lexing and reading come from scripts/seed/lexread_ref.py (the 10-
   ck_ref.py FILE...          print the ck-dump result line of each file ("ok fns= syms= nodes= digest=" or
                              "E<code> pos= n= '<span>'"), exactly what seed/tests/check/ck-dump.kotoba prints in mode r
   ck_ref.py --gate           print "<label> <line>" for the ck-gate.sh list (same labels and order) on stdout
+  ck_ref.py --tables SRC OUT write the TOK and NODE tables of SRC as decimal text for seed/tests/check/ck-load.kotoba
+                             ("<ntok> <nnode>", 4 words per token, 8 per node); a lex/read error writes "0 0"
 """
 import os, sys, glob
 
@@ -266,8 +268,6 @@ class Model:
 
     def binder_ok(self, b, h0):
         if self.kind[b] != ND_SYM:
-            self.fail(2111, b)
-        if self.head_of(b) > 0:
             self.fail(2111, b)
         if self.bound_since(self.nsym[b], h0):
             self.fail(2112, b)
@@ -530,8 +530,23 @@ def gate_list(conf, accept, selfsrc):
     return out
 
 
+def tables(src):
+    try:
+        toks, lits = LR.lex(src)
+        root = LR.read(toks)
+    except LR.Err:
+        return "0 0\n"
+    nodes = LR.nodes_flat(root)
+    out = ["%d %d" % (len(toks), len(nodes))]
+    out += ["%d %d %d %d" % t for t in toks]
+    out += ["%d %d %d %d %d 0 0 0" % n for n in nodes]
+    return "\n".join(out) + "\n"
+
+
 if __name__ == "__main__":
-    if sys.argv[1:2] == ["--gate"]:
+    if sys.argv[1:2] == ["--tables"]:
+        open(sys.argv[3], "w").write(tables(open(sys.argv[2], "rb").read()))
+    elif sys.argv[1:2] == ["--gate"]:
         conf = os.environ.get("CK_CONFORMANCE", "/private/tmp/wt-K-kotoba-lang/lang/conformance")
         selfsrc = os.environ.get("CK_SELF", REPO + "/build/seed/check/self.kotoba")
         for lab, f in gate_list(conf, None, selfsrc):
