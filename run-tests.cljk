@@ -147,7 +147,10 @@
             [kotoba.compiler.let-rebinding-test]
             ;; ADR 0353 :cljs-literal-hash: nine row generics and an integer
             ;; literal argument crashed only here (a BigInt has no hash)
-            [kotoba.compiler.cljs-literal-hash-test]))
+            [kotoba.compiler.cljs-literal-hash-test]
+            ;; ADR 0353 :absent-field-from-assoc: a field nil in the module is
+            ;; [:option T], T what the module's assoc's write there
+            [kotoba.compiler.absent-field-from-assoc-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
   (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
@@ -232,4 +235,5 @@
              'kotoba.compiler.row-get-and-match-test
              'kotoba.compiler.loop-slot-beside-row-test
              'kotoba.compiler.let-rebinding-test
-             'kotoba.compiler.cljs-literal-hash-test)
+             'kotoba.compiler.cljs-literal-hash-test
+             'kotoba.compiler.absent-field-from-assoc-test)
