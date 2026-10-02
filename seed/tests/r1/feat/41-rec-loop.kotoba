@@ -1,0 +1,5 @@
+;; R1 feat: record read inside a loop
+(ns seed.r1 (:export [test]))
+(defrecord Pt [x :i64 y :i64])
+(defn test [] :i64
+  (let [p (->Pt 3 4)] (loop [i 0 acc 0] (if (< i 3) (recur (+ i 1) (+ acc (get p :y))) acc))))

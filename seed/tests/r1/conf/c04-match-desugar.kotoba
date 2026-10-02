@@ -1,0 +1,5 @@
+;; R1 conf from lang/conformance control/match_desugar.kotoba (21): defdesugar/match (not R1) written as a function and cond
+(ns seed.r1 (:export [test]))
+(defn- clamp [x :i64 lo :i64 hi :i64] :i64 (cond (< x lo) lo (> x hi) hi :else x))
+(defn test [] :i64
+  (+ (loop [n 5 acc 0] (if (= n 0) acc (recur (- n 1) (+ acc n)))) (clamp 9 0 6)))

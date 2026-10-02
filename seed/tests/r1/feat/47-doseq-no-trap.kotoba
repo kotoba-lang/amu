@@ -1,0 +1,5 @@
+;; R1 feat (stage-0 refuses doseq; expectation in r1.spec): doseq over a vector: completes, value of the call dropped
+(ns seed.r1 (:export [test]))
+(defn- s [v :vector-i64] :i64 (do (doseq [x v] (quot 1 x)) 7))
+(defn test [] :i64
+  (s (vector-conj (vector-conj (vector-alloc 0) 1) 2)))

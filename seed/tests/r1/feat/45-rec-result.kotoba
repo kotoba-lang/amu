@@ -1,0 +1,6 @@
+;; R1 feat: record as a function result
+(ns seed.r1 (:export [test]))
+(defrecord Pt [x :i64 y :i64])
+(defn- mk [a :i64] [:record :seed.r1/Pt [[:x :i64] [:y :i64]]] (->Pt a 1))
+(defn test [] :i64
+  (get (mk 5) :x))
