@@ -1,0 +1,42 @@
+;; seed/02-io-bytes.snippet.kotoba -- the binary writer of 02-io. NOT in seed/MANIFEST and not part of any unity build
+;; yet: the stable stage-0 native image refuses every `typed-cap-call` over :bytes, even in dead code (T3,
+;; docs/selfhost-seed-t2-t3-20261002.md; fixed in osaho e77ffff, needs the rebuilt image). When that image is the
+;; stage-0, append this file to seed/02-io.kotoba (`cat seed/02-io-bytes.snippet.kotoba >> seed/02-io.kotoba`) and
+;; the driver calls io-write-bytes instead of io-write-hex. scripts/seed/io_bytes_check.sh tests it (against the stable
+;; image it prints BLOCKED; IO_BYTES_NBB=1 compiles the test with nbb, a BOOTSTRAP-labelled stage-0, T3 recipe).
+;;
+;;   io-write-bytes M path base len -> i64   write M[base..base+len) (one byte per word, the low 8 bits) to the file
+;;                                           `path` (inside KEXE_CAP_RESOURCES_35) as raw bytes, through
+;;                                           "<path>WRITE_SEP<bytes>" (wire 35, kind 8). Returns len. At most
+;;                                           8 MiB - path - 9 bytes (loader limit KEXE_BYTES_VALUE_LIMIT, ADR 0362);
+;;                                           the loader budgets must hold string pool >= 6x and vector items >= 8x len.
+;;                                           Then call io-check-write for the E-IO-WRITE error.
+;; Same stage-0 rules as 02-io (straight-line handle code, loops end in mem-keep).
+
+;; T[i + delta] = byte i of S for i in [i, end)
+(defn- io-bput-str [T :vector-i64 S :string i :i64 end :i64 delta :i64] :vector-i64
+  (if (>= i end)
+    (mem-keep T)
+    (io-bput-str (vector-assoc! T (+ i delta) (string-code-point-at S i)) S (+ i 1) end delta)))
+
+;; "WRITE_SEP" at T[at ..]
+(defn- io-bput-sep [T :vector-i64 at :i64] :vector-i64
+  (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! T at 87) (+ at 1) 82) (+ at 2) 73) (+ at 3) 84) (+ at 4) 69) (+ at 5) 95) (+ at 6) 83) (+ at 7) 69) (+ at 8) 80))
+
+;; T[i + delta] = M[i] & 255 for i in [i, end)
+(defn- io-bput-words [T :vector-i64 M :vector-i64 i :i64 end :i64 delta :i64] :vector-i64
+  (if (>= i end)
+    (mem-keep T)
+    (io-bput-words (vector-assoc! T (+ i delta) (bit-and (vector-at M i) 255)) M (+ i 1) end delta)))
+
+(defn- io-bsend [T :vector-i64] :i64
+  (let [r (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 T))] 0))
+
+(defn- io-write-bytes [M :vector-i64 path :string base :i64 len :i64] :i64
+  (let [plen (string-length path)
+        T0 (vector-alloc (+ plen (+ 9 len)))
+        T1 (io-bput-str T0 path 0 plen 0)
+        T2 (io-bput-sep T1 plen)
+        T3 (io-bput-words T2 M base (+ base len) (- (+ plen 9) base))
+        z (io-bsend T3)]
+    len))

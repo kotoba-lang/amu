@@ -59,9 +59,10 @@
 (defn- mem-set [M0 :vector-i64 i :i64 x :i64] :vector-i64
   (vector-assoc! M0 i x))
 
-;; identity on M that is a WRITE (stores the constant layout version, already there): the base case of loops (H4)
+;; identity that is a WRITE (stores M[0] back; works for any vector, also a scratch vector): the base case of loops (H4)
 (defn- mem-keep [M0 :vector-i64] :vector-i64
-  (vector-assoc! M0 MM-VERSION MM-LAYOUT-VERSION))
+  (let [v (vector-at M0 MM-VERSION)]
+    (vector-assoc! M0 MM-VERSION v)))
 
 ;; ------------------------------------------------------------------------------------------------------------
 ;; errors. R0 = 0 afterwards.
