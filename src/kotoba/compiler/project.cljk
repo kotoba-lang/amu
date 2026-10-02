@@ -776,14 +776,72 @@
            ;; result type, so it types as that result without inventing a value.
            (list* stub-name params)))))
 
+(defn- aborting-clause?
+  "True when the analysed export ABORTS: the frontend lowers a function that
+  can `throw` (or calls one that can) to `:effects #{:abort ...}` with the
+  result `[:result T E]`, T the authored result and E the error type."
+  [{:keys [effects result callable-result-contract]}]
+  (and (nil? callable-result-contract)
+       (contains? (set effects) :abort)
+       (vector? result) (= :result (first result)) (= 3 (count result))))
+
+(defn- stub-error-name [stub] (symbol (str stub "__abort_error")))
+
+(defn- error-value
+  "A closed value of the error type E, or a call of the error stub (a
+  zero-argument function declared to return E, which is never executed --
+  `[:ref :x/err]` has no literal)."
+  [stub error-type]
+  (try (stub-value error-type)
+       (catch #?(:clj Exception :cljs :default) _
+         (list (stub-error-name stub)))))
+
+(defn- aborting-stub-body
+  "The body of an aborting import's stub: it THROWS a value of E, so the
+  importing module's frontend infers `:abort` with error type E at every call,
+  exactly as for a function of its own. The stub is analysed, never linked:
+  the call is rewritten to the dependency's linked function, whose lowered
+  result is the same `[:result T E]` the importing module now expects."
+  [stub {:keys [result]}]
+  (list 'throw (error-value stub (nth result 2))))
+
 (defn- stub-form
   "The import stub an importing module analyses in place of a dependency.
 
   A multi-arity export needs a multi-arity stub, or the importing module can
   call it at exactly one arity: the stub is what its own call resolution sees,
-  and the frontend rejects `no matching multi-arity clause` for the others."
+  and the frontend rejects `no matching multi-arity clause` for the others.
+
+  An ABORTING export (2026-10-02, amu ADR 0363) is stubbed with its authored
+  result T and a body that throws E, rather than as a plain function returning
+  the lowered `[:result T E]`. Before, a call to it typed as `[:result T E]`
+  and did not propagate: `(f x)` in tail position or a `let` init was
+  `expression type mismatch: expected T, got [:result T E]`, in an `if`
+  branch `if branches must have the same value type`, and as a discarded `let`
+  statement the refusal was silently dropped -- so every aborting helper had to
+  be copied into each module that called it."
   [stub clauses]
-  (arity-declaration 'defn- stub clauses (partial stub-body stub)))
+  (let [aborting (filter aborting-clause? clauses)
+        clauses (map (fn [clause]
+                       (if (aborting-clause? clause)
+                         (assoc clause :result (second (:result clause)) ::aborts true)
+                         clause))
+                     clauses)
+        declaration (arity-declaration 'defn- stub clauses
+                                       (fn [clause]
+                                         (if (::aborts clause)
+                                           (aborting-stub-body stub (first (filter #(= (arity-of %) (arity-of clause)) aborting)))
+                                           (stub-body stub clause))))
+        error-types (distinct (keep (fn [clause]
+                                      (let [error-type (nth (:result clause) 2)]
+                                        (when (seq? (error-value stub error-type)) error-type)))
+                                    aborting))]
+    (when (> (count error-types) 1)
+      (reject! "aborting import arities throw different unclosed error types"
+               {:stub stub :error-types (vec error-types)}))
+    (if-let [error-type (first error-types)]
+      [declaration (list 'defn- (stub-error-name stub) [] error-type (list (stub-error-name stub)))]
+      [declaration])))
 
 (defn- capability-operation?
   "True for a friendly capability operation such as `clock/now`.
@@ -1463,6 +1521,9 @@
                                   [stub (into {} (map (juxt arity-of :linked-name)) clauses)]))
                            stub-pairs)
         stub-source-names (into #{} (map second) stub-pairs)
+        ;; The error-value helpers of aborting stubs: analysed with the stubs,
+        ;; never linked, and not import targets.
+        stub-helper-names (into #{} (map (comp stub-error-name second)) stub-pairs)
         _ (check-referred-exports! info dependencies)
         rewritten (mapv #(rewrite-import-calls % import->stub)
                         (rewrite-referred-symbols (with-derived-export (without-requires forms) info)
@@ -1472,7 +1533,7 @@
                                         (:schemas (get dependencies (instantiation-key dep-name with)))))
                                  (:requires info))
         augmented (into (with-dependency-schemas rewritten dependency-schemas)
-                        (map (fn [[_ stub clauses]] (stub-form stub clauses)) stub-pairs))
+                        (mapcat (fn [[_ stub clauses]] (stub-form stub clauses)) stub-pairs))
         ;; Lambda IDs are artifact data. Give every source module a disjoint
         ;; range so the project-level dispatcher can route a closure back to
         ;; the module whose lifted helper owns that ID.
@@ -1489,7 +1550,8 @@
         ;; real functions returning a stub value.
         stub-functions (filter #(contains? stub-source-names (source-name-of %))
                                (:functions hir))
-        locals (vec (remove #(contains? stub-source-names (source-name-of %))
+        locals (vec (remove #(or (contains? stub-source-names (source-name-of %))
+                                 (contains? stub-helper-names (source-name-of %)))
                             (:functions hir)))
         stub->target
         (into {}

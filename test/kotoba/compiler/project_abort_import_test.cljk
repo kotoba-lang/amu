@@ -1,0 +1,89 @@
+(ns kotoba.compiler.project-abort-import-test
+  "An aborting function imported from another module passes its abort on
+  (amu ADR 0363). Inside one module a call to a function that can `throw`
+  propagates: the caller aborts with the same error type. Across a module
+  boundary the import stub was a plain function returning the lowered
+  `[:result T E]`, so the same call was refused in tail position and as a
+  `let` init (`expression type mismatch: expected i64, got [:result :i64
+  :string]`) and in an `if` branch (`if branches must have the same value
+  type`). Discarded as a `let` statement it type-checked and the refusal was
+  silently dropped. The compiler's own modules carried local copies of their
+  aborting helpers because of it."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.lang.text :as str]
+            [kotoba.compiler.project :as project]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def library
+  "(ns lib.check
+  (:export [need-pos! need-name! need-small! plain code-of])
+  (:schemas {:lib/err [:record :lib/err [[:code :i64] [:what :string]]]}))
+(defn need-pos! [x :i64] :i64
+  (if (< x 0) (throw \"negative\") x))
+(defn- err [c :i64 w :string] [:ref :lib/err] (record-new [:ref :lib/err] c w))
+(defn code-of [e [:ref :lib/err]] :i64 (record-get e :code))
+(defn need-name! [s :string] :string
+  (if (= s \"\") (throw (err 7 \"empty\")) s))
+(defn need-small!
+  ([x :i64] :i64 (if (> x 100) (throw \"large\") x))
+  ([x :i64 limit :i64] :i64 (if (> x limit) (throw \"large\") x)))
+(defn plain [x :i64] :i64 (+ x 1))")
+
+(def root
+  "(ns root
+  (:require [lib.check :as c])
+  (:export [tail branch bound stmt caught named arity2 plain-call]))
+(defn tail [x :i64] :i64 (c/need-pos! x))
+(defn branch [x :i64] :i64 (if (= x 0) 0 (c/need-pos! x)))
+(defn bound [x :i64] :i64 (let [y (c/need-pos! x)] (+ y 1)))
+(defn stmt [x :i64] :i64 (let [_ (c/need-pos! x)] x))
+(defn caught [x :i64] :i64 (try (c/need-pos! x) (catch :string e -1)))
+(defn named [s :string] :i64 (try (string-byte-length (c/need-name! s)) (catch [:ref :lib/err] e (c/code-of e))))
+(defn arity2 [x :i64] :i64 (+ (c/need-small! x) (c/need-small! x 50)))
+(defn plain-call [x :i64] :i64 (c/plain x))")
+
+(defn- linked-hir []
+  (let [linked (project/link-source {'lib.check library 'root root} 'root)]
+    (sema/analyze (:source linked) {:admit-linked-synthetics? true})))
+
+(defn- run [kir name args]
+  (try (ir/execute kir name args)
+       (catch #?(:clj Exception :cljs :default) e
+         [:trap (or (:trap (ex-data e)) (ex-message e))])))
+
+(deftest an-imported-aborting-function-links-in-every-position
+  (let [hir (linked-hir)
+        by-name (into {} (map (juxt :name identity)) (:functions hir))]
+    ;; The linked unit is lowered text: an aborting function is already a
+    ;; function returning `[:result T E]` there (as a module's own aborting
+    ;; functions always were), so the export's result says it aborts.
+    (doseq [export '[tail branch bound stmt]]
+      (testing (str export " aborts like the function it calls")
+        (is (= [:result :i64 :string] (:result (get by-name export))) (pr-str (get by-name export)))))
+    (testing "a caught abort and a plain import do not"
+      (is (= :i64 (:result (get by-name 'caught))))
+      (is (= :i64 (:result (get by-name 'named))))
+      (is (= :i64 (:result (get by-name 'plain-call)))))
+    (testing "the stubs and their error helpers are not linked"
+      (is (not-any? #(str/includes? (str (:name %)) "kotoba_import__") (:functions hir))))))
+
+(deftest the-abort-reaches-the-caller-at-run-time
+  (let [kir (ir/lower (linked-hir))
+        ok? (fn [answer value] (= (str value) (str (if (vector? answer) (second answer) answer))))]
+    (is (ok? (run kir 'tail [5]) 5))
+    (is (ok? (run kir 'branch [0]) 0))
+    (is (ok? (run kir 'bound [5]) 6))
+    (is (ok? (run kir 'stmt [5]) 5))
+    (testing "the dependency's error reaches the importing module's export"
+      (is (str/includes? (pr-str (run kir 'tail [-1])) "negative"))
+      (is (str/includes? (pr-str (run kir 'bound [-1])) "negative"))
+      (is (str/includes? (pr-str (run kir 'stmt [-1])) "negative") "a discarded let statement still aborts"))
+    (testing "the error is caught by the importing module's own try, with the dependency's error type"
+      (is (ok? (run kir 'caught [-3]) -1))
+      (is (ok? (run kir 'caught [3]) 3))
+      (is (ok? (run kir 'named [""]) 7))
+      (is (ok? (run kir 'named ["abc"]) 3)))
+    (testing "a multi-arity aborting import, and a plain import beside it, are unchanged"
+      (is (ok? (run kir 'arity2 [10]) 20))
+      (is (ok? (run kir 'plain-call [1]) 2)))))
