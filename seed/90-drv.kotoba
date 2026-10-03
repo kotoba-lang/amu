@@ -28,6 +28,7 @@
         (string=? s "--source-path") 1
         (string=? s "--policy") 1
         (string=? s "--object-dir") 1
+        (string=? s "--ns") 1   ; EMIT: compile-kir --emit-module --ns NAME
         :else (drv-flagv1 s)))
 (defn- drv-hexw [s :string] :i64 (drv-is s 3 3695806134807131338))
 (defn- drv-dash [s :string] :i64 (drv-is s 1 -5808622843851602280))
@@ -660,10 +661,112 @@
         s (drv-pos 1 n 0)
         p1 (drv-pos 1 n 1)]
     (cond (< s 0) (drv-usage)
+          (= (drv-pj-has 1 n "--emit-module") 1) (drv-ke n s o)   ; EMIT (block below)
           (>= o 0) (drv-kir-run (io-arg s) (drv-kir-out o) (drv-kir-met 1 n))
           (< p1 0) (drv-usage)
           :else (drv-kir-run (io-arg s) (drv-kir-out p1) (drv-kir-met 1 n)))))
 ;; ==== END compile-kir =================================================================================================
+
+;; ==== BEGIN EMIT (agent EMIT, 2026-10-04): compile-kir --emit-module, a 60-proj module object from KIR ================
+;;   compile-kir <file.kir> --emit-module --ns NAME [--object-dir O] --output <x.kso>
+;; The KIR program goes the compile-kir pipeline (kr-lex .. 42-layout, base 0) and is written as a KSEEDO1 module object
+;; named NAME (60-proj separate mode, its header comment): a source-route module that requires NAME compiles against it
+;; (`compile --emit-module`) and `seed link` lays both into ONE image. Lines: N NAME / K 0 <the empty keyword union> (the
+;; KIR route keeps keyword texts in its own library groups; it has no __r6-kwtab, so no W line) / no R line (a KIR
+;; program is closed) / one E line per KIR export (60-proj pj-iface-one: clause offsets in the blob, the stub template of
+;; the export's checked signature; an export whose types do not cross modules is E6017 by name) / L lines (literal loads,
+;; relocated at link) / X lines (the KIR exports: the object may also be a link root) / C lines (the blob, 64 B a line).
+;; The object is written from one byte vector (60-proj's pj-object builds a string: a 2.4 MB blob is 4.8 MB of hex,
+;; quadratic in its 4 KiB accumulators). --metered with --emit-module is a usage error. O is accepted and unused.
+(defn- drv-ke-put [V :vector-i64 at :i64 s :string] :i64
+  (let [w (io-bput-str V s 0 (string-length s) at)] (+ at (string-length s))))
+(defn- drv-ke-hexc [d :i64] :i64 (if (< d 10) (+ 48 d) (+ 87 d)))
+
+;; the C lines of OUT bytes [0, n) at V[at0 ..]; the new fill
+(defn- drv-ke-clines [M :vector-i64 V :vector-i64 at0 :i64 n :i64] :i64
+  (loop [i 0 at at0]
+    (if (>= i n)
+      at
+      (let [e (if (< (+ i 64) n) (+ i 64) n)
+            a2 (loop [j i a (drv-ke-put V at "C ")]
+                 (if (>= j e)
+                   a
+                   (let [b (bit-and (vector-at M (+ MM-OUT-BASE 1 j)) 255)
+                         x (vector-assoc! V a (drv-ke-hexc (u64-shift-right b 4)))
+                         y (vector-assoc! V (+ a 1) (drv-ke-hexc (bit-and b 15)))]
+                     (recur (+ j 1) (+ a 2)))))
+            z (vector-assoc! V a2 10)]
+        (recur e (+ a2 1))))))
+
+;; the lines of object section c (60-proj pj-oline: 1 E, 3 L, 4 X) at V[at0 ..]; the new fill
+(defn- drv-ke-sect [M :vector-i64 L :vector-i64 P :string S :string V :vector-i64 c :i64 at0 :i64] :i64
+  (loop [k 0 at at0]
+    (if (>= k (pj-ocount M L c)) at (recur (+ k 1) (drv-ke-put V at (pj-oline M L P S (+ (* c 1048576) k)))))))
+
+;; the text length of section c
+(defn- drv-ke-slen [M :vector-i64 L :vector-i64 P :string S :string c :i64] :i64
+  (loop [k 0 t 0]
+    (if (>= k (pj-ocount M L c)) t (recur (+ k 1) (+ t (string-length (pj-oline M L P S (+ (* c 1048576) k))))))))
+
+(defn- drv-ke-write [M :vector-i64 L :vector-i64 P :string S :string nsn :string out :string] :i64
+  (let [H (string-concat "KSEEDO1\n" (string-concat (pj-line "N" nsn) (string-concat "K 0 " (string-concat (ck-r6b-kwtab "") "\n"))))
+        n (- (vector-at M MM-OUT-N) 1)
+        cap (+ (string-length H) (drv-ke-slen M L P S 1) (drv-ke-slen M L P S 3) (drv-ke-slen M L P S 4) (* 3 (+ (quot n 64) 1)) (* 2 n) 16)
+        V (vector-alloc cap)
+        a1 (drv-ke-sect M L P S V 4 (drv-ke-sect M L P S V 3 (drv-ke-sect M L P S V 1 (drv-ke-put V 0 H))))
+        a2 (drv-ke-clines M V a1 n)
+        w (io-write-bytes V out 0 a2)]
+    (if (= (io-exists out) 1) (drv-cok out a2) (drv-fail0 E-WRITE))))
+
+;; the interface entries of module 0 (the KIR program, compiled, in M): one per export of the EXP table
+(defn- drv-ke-iface [M :vector-i64 L :vector-i64 P :string S :string] :string
+  (let [w (pj-mset L 0 pj-mf-if0 (pj-l L pj-k-nif))
+        P2 (loop [k 1 P P]
+             (if (or (>= k (vector-at M MM-EXP-N)) (not (pj-ok M)))
+               P
+               (let [f (vector-at M (+ MM-EXP-BASE (* k MM-EXP-W) EF-FN))
+                     sym (pj-ff M f FF-SYM)
+                     s (string-substring S (pj-sf M sym SF-START) (pj-sf M sym SF-END))
+                     f0 (pj-fn-named M S s)]
+                 (recur (+ k 1) (pj-iface-one M L P S s (if (> f0 0) f0 f))))))
+        w2 (pj-mset L 0 pj-mf-nif (- (pj-l L pj-k-nif) (pj-mf L 0 pj-mf-if0)))]
+    P2))
+
+;; KIR -> the module blob at base 0 in OUT (drv-kir-c1 .. c6, then out-blob instead of out-build)
+(defn- drv-ke-blob [M :vector-i64 S :string] :vector-i64
+  (let [M1 (kr-run M S)]
+    (if (not (pj-ok M1)) M1
+      (let [M2 (nm-run M1 S)]
+        (if (not (pj-ok M2)) M2
+          (let [M3 (ck-run M2 S)]
+            (if (not (pj-ok M3)) M3
+              (let [M4 (lw-run M3)]
+                (if (not (pj-ok M4)) M4
+                  (let [M5 (gn-run M4)]
+                    (if (not (pj-ok M5)) M5
+                      (let [M6 (ly-run M5)] (if (pj-ok M6) (out-blob M6) M6)))))))))))))
+
+(defn- drv-ke-run [path :string nsn :string out :string] :i64
+  (let [S (string-concat (drv-read path) (kr-prelude))
+        M (rd-run (kr-lex (mem-set (mem-set (mem-new) MM-SRC-LEN (string-length S)) 124 0) S) S)
+        M1 (if (pj-ok M) (drv-ke-blob M S) M)]
+    (if (not (pj-ok M1))
+      (drv-kir-fail M1 path)
+      (let [L (pj-new-l)
+            P0 (pj-padd L (pj-new-p L) nsn)
+            w (-> L (pj-add-mod 0 0) (pj-ls pj-k-mode 1) (pj-ls pj-k-errmod 0) (pj-ls pj-k-base 0))
+            P1 (drv-ke-iface M1 L P0 S)]
+        (if (pj-ok M1) (drv-ke-write M1 L P1 S nsn out) (drv-kir-fail M1 path))))))
+
+(defn- drv-ke [n :i64 s :i64 o :i64] :i64
+  (let [k (drv-pj-flag 1 n "--ns")]
+    (cond (< o 0) (drv-usage)
+          (< k 0) (drv-usage)
+          (= (drv-kir-met 1 n) 1) (drv-usage)
+          (= (string-length (drv-kir-out o)) 0) (drv-usage)
+          (= (io-exists (io-arg s)) 0) (drv-fail0 E-READ)
+          :else (drv-ke-run (io-arg s) (io-arg k) (io-arg o)))))
+;; ==== END EMIT ========================================================================================================
 
 (defn- drv-cmd [n :i64] :i64
   (cond (< n 1) (drv-usage)

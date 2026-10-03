@@ -268,12 +268,12 @@
     (vector-assoc! L i (bit-or (bit-and w (bit-not (i64-shift-left 255 s))) (i64-shift-left (bit-and b 255) s)))))
 ;; ==== END LINK =============================================================================================================
 
-(defn- pj-l [L :vector-i64 i :i64] :i64 (vector-at L i))
+(defn pj-l [L :vector-i64 i :i64] :i64 (vector-at L i))
 (defn- pj-max [a :i64 b :i64] :i64 (if (> a b) a b))
 (defn- pj-min [a :i64 b :i64] :i64 (if (< a b) a b))
-(defn- pj-ls [L :vector-i64 i :i64 v :i64] :vector-i64 (vector-assoc! L i v))
+(defn pj-ls [L :vector-i64 i :i64 v :i64] :vector-i64 (vector-assoc! L i v))
 (defn pj-mf [L :vector-i64 m :i64 f :i64] :i64 (vector-at L (+ pj-m-base (* m pj-m-w) f)))
-(defn- pj-mset [L :vector-i64 m :i64 f :i64 v :i64] :vector-i64 (vector-assoc! L (+ pj-m-base (* m pj-m-w) f) v))
+(defn pj-mset [L :vector-i64 m :i64 f :i64 v :i64] :vector-i64 (vector-assoc! L (+ pj-m-base (* m pj-m-w) f) v))
 (defn- pj-rf [L :vector-i64 r :i64 f :i64] :i64 (vector-at L (+ pj-r-base (* r pj-r-w) f)))
 (defn- pj-rset [L :vector-i64 r :i64 f :i64 v :i64] :vector-i64 (vector-assoc! L (+ pj-r-base (* r pj-r-w) f) v))
 (defn- pj-if [L :vector-i64 e :i64 f :i64] :i64 (vector-at L (+ pj-i-base (* e pj-i-w) f)))
@@ -302,7 +302,7 @@
 (defn pj-new-p [L :vector-i64] :string (let [w (vector-assoc! L pj-k-nstr 0)] ""))
 
 ;; ---- M access ----------------------------------------------------------------------------------------------------------
-(defn- pj-ok [M :vector-i64] :bool (= (vector-at M MM-ERR) 0))
+(defn pj-ok [M :vector-i64] :bool (= (vector-at M MM-ERR) 0))
 (defn- pj-nf [M :vector-i64 n :i64 f :i64] :i64 (vector-at M (+ MM-NODE-BASE (* n MM-NODE-W) f)))
 (defn- pj-nset [M :vector-i64 n :i64 f :i64 v :i64] :vector-i64 (vector-assoc! M (+ MM-NODE-BASE (* n MM-NODE-W) f) v))
 (defn- pj-tf [M :vector-i64 t :i64 f :i64] :i64 (vector-at M (+ MM-TOK-BASE (* t MM-TOK-W) f)))
@@ -413,7 +413,7 @@
           :else (recur (+ m 1)))))
 
 ;; a new module record (state 0); its index is the old count
-(defn- pj-add-mod [L :vector-i64 name :i64 path :i64] :vector-i64
+(defn pj-add-mod [L :vector-i64 name :i64 path :i64] :vector-i64
   (let [m (pj-l L pj-k-nmod)]
     (-> L (pj-mset m pj-mf-name name) (pj-mset m pj-mf-path path) (pj-mset m pj-mf-state 0) (pj-mset m pj-mf-depth 0)
         (pj-mset m pj-mf-nreq 0) (pj-mset m pj-mf-nif 0) (pj-mset m pj-mf-expk 0) (pj-mset m pj-mf-nexp 0) (pj-mset m pj-mf-entry 0) (pj-mset m pj-mf-sch -1)
@@ -659,7 +659,7 @@
 ;; [p0 T0 .. & pn] (the caller packs the surplus into the list, the export's clause receives it). E6017 remains for an error
 ;; type no stub can throw a value of (a record or a collection), more than 8 clauses, and a record whose schema is unknown.
 (defn- pj-ct [M :vector-i64 t :i64 f :i64] :i64 (vector-at M (+ (vector-at M MM-CT) (* (- t TY-COMP-BASE) CT-W) f)))
-(defn- pj-sf [M :vector-i64 s :i64 k :i64] :i64 (vector-at M (+ MM-SYM-BASE (* s MM-SYM-W) k)))
+(defn pj-sf [M :vector-i64 s :i64 k :i64] :i64 (vector-at M (+ MM-SYM-BASE (* s MM-SYM-W) k)))
 (defn- pj-symtext [M :vector-i64 S :string s :i64] :string (string-substring S (pj-sf M s SF-START) (pj-sf M s SF-END)))
 
 ;; the schema block of record type t, 0 when none is registered
@@ -764,7 +764,7 @@
           (= (string-length t) 0) ""
           :else (string-concat "(__r6-as " (string-concat t " 0)")))))
 
-(defn- pj-ff [M :vector-i64 f :i64 k :i64] :i64 (vector-at M (+ MM-FN-BASE (* f MM-FN-W) k)))
+(defn pj-ff [M :vector-i64 f :i64 k :i64] :i64 (vector-at M (+ MM-FN-BASE (* f MM-FN-W) k)))
 
 ;; the parameter vector of clause f (21-check gives every clause a (defn NAME [..] R body) node)
 (defn- pj-pvec [M :vector-i64 f :i64] :i64 (pj-next M (pj-next M (pj-first M (pj-ff M f FF-NODE)))))
@@ -819,7 +819,7 @@
     (if (< i 0) t (string-concat (string-substring t 0 i) (string-concat q (pj-subst (string-substring t (+ i 8) (string-length t)) q))))))
 
 ;; the first FN clause of the function spelled s in the module in M (S its source), 0 when none
-(defn- pj-fn-named [M :vector-i64 S :string s :string] :i64
+(defn pj-fn-named [M :vector-i64 S :string s :string] :i64
   (loop [f 1]
     (cond (>= f (vector-at M MM-FN-N)) 0
           (and (or (= (pj-ff M f FF-KIND) FK-DEFN) (= (pj-ff M f FF-KIND) FK-PRIV) (= (pj-ff M f FF-KIND) FK-DEF))
@@ -828,7 +828,7 @@
           :else (recur (+ f 1)))))
 
 ;; record the interface entry of export s (first clause f0) of module m; base = the module's image offset
-(defn- pj-iface-one [M :vector-i64 L :vector-i64 P :string S :string s :string f0 :i64] :string
+(defn pj-iface-one [M :vector-i64 L :vector-i64 P :string S :string s :string f0 :i64] :string
   (let [e (pj-l L pj-k-nif)
         sym (pj-ff M f0 FF-SYM)
         base (pj-l L pj-k-base)
@@ -1317,7 +1317,7 @@
   (loop [j a v 0] (if (>= j b) v (recur (+ j 1) (+ (* v 10) (- (string-code-point-at T j) 48))))))
 (defn- pj-hexv [c :i64] :i64 (if (< c 58) (- c 48) (- c 87)))
 
-(defn- pj-line [k :string a :string] :string (string-concat k (string-concat " " (string-concat a "\n"))))
+(defn pj-line [k :string a :string] :string (string-concat k (string-concat " " (string-concat a "\n"))))
 
 ;; the E line of interface entry e
 (defn- pj-eline [L :vector-i64 P :string e :i64] :string
@@ -1333,7 +1333,7 @@
         :else (let [m (quot (+ a b) 2)] (string-concat (pj-hexr M a m) (pj-hexr M m b)))))
 
 ;; the k-th line of section c of module 0's object ("" past the end of the section): 0 R, 1 E, 2 S, 3 L, 4 X, 5 C
-(defn- pj-oline [M :vector-i64 L :vector-i64 P :string S :string ck :i64] :string
+(defn pj-oline [M :vector-i64 L :vector-i64 P :string S :string ck :i64] :string
   (let [c (quot ck 1048576)
         k (bit-and ck 1048575)
         s0 (pj-l L pj-k-stub0)
@@ -1352,7 +1352,7 @@
       (pj-line "C" (pj-hexr M (* k 64) (pj-min n (* (+ k 1) 64)))))))
 
 ;; the number of lines of section c
-(defn- pj-ocount [M :vector-i64 L :vector-i64 c :i64] :i64
+(defn pj-ocount [M :vector-i64 L :vector-i64 c :i64] :i64
   (case c
     0 (pj-mf L 0 pj-mf-nreq)
     1 (pj-mf L 0 pj-mf-nif)
