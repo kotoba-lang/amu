@@ -240,7 +240,7 @@
    (defn descriptor [source :string policy [:ref :form/r] build-metadata [:ref :form/r] result [:ref :form/r]]
      [:ref :form/r]
      (let [profile (fget result :target-profile)
-           payload
+           payload0
         (put (put (put (put (put (put (put (put (put (put (put (put (put (put (empty-map)
               :format (form/keyword-form (schema)))
               :builder (form/keyword-form :kotoba-compiler/v1))
@@ -262,7 +262,8 @@
            ;; ADR 0365: the emitting backend, present only when it is not
            ;; the built-in emitter (as on the host reading below)
            emitter (fget result :emitter)
-           payload (if (present? emitter) (put payload :emitter emitter) payload)]
+           ;; one binding per name (the Kotoba subset refuses a duplicate let binding)
+           payload (if (present? emitter) (put payload0 :emitter emitter) payload0)]
        (put payload :sha256 (form/string-form (seal/sha256-form payload)))))
    :default
 (defn descriptor

@@ -10,8 +10,11 @@
 #   1. stage-0 kexe (cache: build/seed-kir/census/kexe/<sha256/16 of source>.kexe, shared with census.sh; a miss is compiled
 #      under lib.sh's machine-wide 2 slots, nice);
 #   2. KIR cut out (kir_extract.py); `seed compile-kir` -> ok, or the refusal (code + text);
-#   3. every arity-0 export (any result type) runs from BOTH codes under the C loader (fuel on, 16M): stdout, the last stderr
-#      line (traps) and the exit status are compared; and under kexe-benchmark (fuel 16M): result and contextFuelConsumed.
+#   3. every KIR export (EXPORT, 2026-10-04: all of :exports, scripts/selfhost-wall/kbd_exports.py; before: arity 0 only) must
+#      be in the seed's container; one whose parameters are i64/bool/string/vector-i64 (arity <= 5) runs from BOTH codes under the C loader
+#      (fuel on, 16M), arity 0 once, arity > 0 once per representative argument vector (up to 5 fixed vectors): stdout or
+#      the typed report of the result (by content), the last stderr line (traps) and the exit status are compared; arity 0
+#      also under kexe-benchmark (fuel 16M): result and contextFuelConsumed. Others: NOT-RUN (present in both, counted).
 #   4. code bytes (the whole :code of each container).
 #   One tsv line per program in $W/programs.tsv:
 #     id  s0  seed(ok|E..)  exports  same-behaviour  seed-only-traps  fuel-equal  fuel-s0-sum  fuel-seed-sum  code-s0  code-seed  note
@@ -59,22 +62,32 @@ seed() {
 # handle word the plain run prints: that word numbers pair allocations (stage-0 allocates pair(0,0) for an option none
 # and none for a local record, the seed the opposite), so equal strings can print different numbers. The plain run's
 # stdout is kept in <prefix>.raw and a difference there is listed (RAW-HANDLE), not counted.
+# EXPORT (2026-10-04): runx <bin> <off> <prefix> <rtype> <arity> [i64 args ..]: every export, arity 0..5 with the
+# representative arguments of kbd_exports.py; the result is observed by content through the loader's typed report
+# (KEXE_RESULT_TYPE = rtype: string, option-i64, option-string, result-i64, vector-i64, bytes, record:N), the handle word
+# (`:result N`) and the fuel/heap tail cut off; rtype opaque (a handle without a content report: records with non-scalar
+# fields, keywords, closures ..) keeps only the exit status and trap line (listed OPAQUE). kexe-benchmark runs arity 0 only.
 runx() {
+  local b=$1 o=$2 p=$3 rt=$4 ar=$5; shift 5
   ( cd $D; KEXE_PAIRS=2097152 KEXE_VECTORS=65536 KEXE_VECTOR_ITEMS=1048576 KEXE_FUEL=$FUEL KEXE_CPU_SECONDS=${KBD_SECONDS:-120} KEXE_WALL_SECONDS=${KBD_SECONDS:-120} \
-      KEXE_CAP_RESOURCES_35=$D nice $L $1 $2 0 aarch64 $SEED_GRANT > $3.out 2> $3.err; echo "rc=$? $(grep -v '^ *$' $3.err | tail -1 | tr '\t' ' ' | cut -c1-100)" > $3.st
-    if [ "$4" = string ]; then
-      mv $3.out $3.raw
-      KEXE_STRUCTURED_REPORT=1 KEXE_RESULT_TYPE=string KEXE_PAIRS=2097152 KEXE_VECTORS=65536 KEXE_VECTOR_ITEMS=1048576 KEXE_FUEL=$FUEL \
-        KEXE_CPU_SECONDS=${KBD_SECONDS:-120} KEXE_WALL_SECONDS=${KBD_SECONDS:-120} KEXE_CAP_RESOURCES_35=$D nice $L $1 $2 0 aarch64 $SEED_GRANT 2>/dev/null \
-        | sed -n -e 's/.*\(:status :ok\).*\(:result-utf8-hex "[0-9a-f]*"\).*/\1 \2/p' -e 's/.*\(:status :trap\).*/\1/p' > $3.out
+      KEXE_CAP_RESOURCES_35=$D nice $L $b $o $ar aarch64 $SEED_GRANT "$@" > $p.out 2> $p.err; echo "rc=$? $(grep -v '^ *$' $p.err | tail -1 | tr '\t' ' ' | cut -c1-100)" > $p.st
+    if [ "$rt" = opaque ]; then
+      mv $p.out $p.raw; : > $p.out
+    elif [ "$rt" != i64 ]; then
+      mv $p.out $p.raw
+      KEXE_STRUCTURED_REPORT=1 KEXE_RESULT_TYPE=$rt KEXE_PAIRS=2097152 KEXE_VECTORS=65536 KEXE_VECTOR_ITEMS=1048576 KEXE_FUEL=$FUEL \
+        KEXE_CPU_SECONDS=${KBD_SECONDS:-120} KEXE_WALL_SECONDS=${KBD_SECONDS:-120} KEXE_CAP_RESOURCES_35=$D nice $L $b $o $ar aarch64 $SEED_GRANT "$@" 2>/dev/null \
+        | grep '^{:status' | sed -e 's/ :result -\{0,1\}[0-9][0-9]*//' -e 's/ :fuel {.*//' > $p.out
     fi )
-  local j=$(cd $D; nice $KB raw $1 $2 aarch64 0 1 0 $FUEL 2>/dev/null)
-  echo "$(echo "$j" | sed -n 's/.*"result":\(-*[0-9]*\).*/\1/p') $(echo "$j" | sed -n 's/.*"contextFuelConsumed":\([0-9]*\).*/\1/p')" > $3.kb
+  if [ $ar = 0 ]; then
+    local j=$(cd $D; nice $KB raw $b $o aarch64 0 1 0 $FUEL 2>/dev/null)
+    echo "$(echo "$j" | sed -n 's/.*"result":\(-*[0-9]*\).*/\1/p') $(echo "$j" | sed -n 's/.*"contextFuelConsumed":\([0-9]*\).*/\1/p')" > $p.kb
+  else : > $p.kb; fi
 }
-# lfuel <bin> <off>: fuel the C loader's typed report says the run consumed (initial - remaining), empty when it has none
-lfuel() { ( cd $D; KEXE_STRUCTURED_REPORT=1 KEXE_PAIRS=2097152 KEXE_VECTORS=65536 KEXE_VECTOR_ITEMS=1048576 KEXE_FUEL=$FUEL \
-    KEXE_CPU_SECONDS=${KBD_SECONDS:-120} KEXE_WALL_SECONDS=${KBD_SECONDS:-120} KEXE_CAP_RESOURCES_35=$D nice $L $1 $2 0 aarch64 $SEED_GRANT 2>/dev/null \
-    | sed -n 's/.*:fuel {:initial \([0-9]*\) :remaining \([0-9]*\)}.*/\1 \2/p' | awk '{print $1-$2}' ) }
+# lfuel <bin> <off> <arity> [args ..]: fuel the C loader's typed report says the run consumed (initial - remaining), empty when it has none
+lfuel() { local b=$1 o=$2 ar=$3; shift 3; ( cd $D; KEXE_STRUCTURED_REPORT=1 KEXE_PAIRS=2097152 KEXE_VECTORS=65536 KEXE_VECTOR_ITEMS=1048576 KEXE_FUEL=$FUEL \
+    KEXE_CPU_SECONDS=${KBD_SECONDS:-120} KEXE_WALL_SECONDS=${KBD_SECONDS:-120} KEXE_CAP_RESOURCES_35=$D nice $L $b $o $ar aarch64 $SEED_GRANT "$@" 2>/dev/null \
+    | sed -n 's/.*:fuel {:initial \([0-9]*\) :remaining \([0-9]*\)[ }].*/\1 \2/p' | awk '{print $1-$2}' ) }
 codelen() { python3 -c 'import sys; s=open(sys.argv[1],encoding="utf-8").read(); i=s.index(":code [")+7; print(len(s[i:s.index("]",i)].split()))' $1; }
 
 one() {  # <src> <group>
@@ -98,47 +111,58 @@ one() {  # <src> <group>
   # selector's metered fallback); F4 is checked on the programs it accepts (same code: the flag only refuses)
   kmet=-; if [ $kst = ok ]; then kmet=ok; (cd $D; seed compile-kir $D/p.kir --output $D/km.kseed --metered) > $D/km.log 2>&1 && grep -q ':ok true' $D/km.log \
     || { kmet=$(grep -o 'E[0-9][0-9]*' $D/km.log | head -1); kmet="${kmet:-ERR}:$(grep -o "'[^']*'" $D/km.log | head -1 | tr -d "'")"; }; fi
-  ex=($(python3 $R/seed/tests/kir/census.py info $D/p.kir 2>/dev/null))
+  # EXPORT (2026-10-04): every KIR :exports entry (not only arity 0): kbd_exports.py list gives its arity, parameter kinds,
+  # representative argument vectors and the typed report of its result; an export whose parameters the runner cannot
+  # supply (not i64/bool/string/vector-i64, or > 5) is checked for presence only (NOT-RUN, counted in column 16); arity > 0 runs in column 17
+  local -a ex exl av; local line ar pk tn cl as rt ai nr=0 npos=0 sid
+  ex=("${(@f)$(python3 $H/kbd_exports.py list $D/p.kir 2>/dev/null)}")
   : > $D/exports.tsv
   if [ $kst = ok ]; then
-    for e in $ex; do
-      s=${e%%:*} t=${e#*:}
-      o0=$(python3 $R/scripts/seed/kexe_code.py $k $s $D/0.bin | xoff); o1=$(cd $D; seed extract-native $D/k.kseed --symbol $s --output $D/1.bin 2>/dev/null | xoff)
+    for line in $ex; do
+      [ -n "$line" ] || continue
+      exl=("${(@ps:\t:)line}"); s=$exl[1] ar=$exl[2] pk=$exl[3] tn=$exl[4] cl=$exl[5] as=$exl[6] rt=$exl[7]; t=$rt
+      o0=$(python3 $H/kbd_exports.py s0code $k $s $D/0.bin | xoff); o1=$(cd $D; seed extract-native $D/k.kseed --symbol $s --output $D/1.bin 2>/dev/null | xoff)
       # an export stage-0's artifact has and the seed's container lacks is an export-table difference (F1)
-      if [ -n "$o0" ] && [ -z "$o1" ]; then n=$((n+1)); xd=$((xd+1)); echo "$s\t$t\tDIFF-EXPORT-MISSING-IN-SEED" >> $D/exports.tsv; continue; fi
-      [ -n "$o0" ] && [ -n "$o1" ] || { echo "$s\t$t\tNO-SYMBOL" >> $D/exports.tsv; continue; }
-      n=$((n+1)); runx $D/0.bin $o0 $D/0.$s $t; runx $D/1.bin $o1 $D/1.$s $t
-      st0=$(cat $D/0.$s.st); st1=$(cat $D/1.$s.st); kb0=($(cat $D/0.$s.kb)); kb1=($(cat $D/1.$s.kb))
+      if [ -n "$o0" ] && [ -z "$o1" ]; then n=$((n+1)); xd=$((xd+1)); echo "$s\t$tn\tDIFF-EXPORT-MISSING-IN-SEED" >> $D/exports.tsv; continue; fi
+      [ -n "$o0" ] && [ -n "$o1" ] || { echo "$s\t$tn\tNO-SYMBOL" >> $D/exports.tsv; continue; }
+      if [ "$as" = - ]; then nr=$((nr+1)); echo "$s\t$tn\tNOT-RUN (arity $ar, parameters not i64/bool/string/vector-i64): present in both" >> $D/exports.tsv; continue; fi
+      [ "$as" = . ] && av=("") || av=("${(@s:;:)as}")
+      for ai in {1..$#av}; do
+      if [ $ar = 0 ]; then sid=$s; else sid=$s.$ai; npos=$((npos+1)); fi
+      n=$((n+1)); runx $D/0.bin $o0 $D/0.$sid $rt $ar ${(s:|:)av[ai]}; runx $D/1.bin $o1 $D/1.$sid $rt $ar ${(s:|:)av[ai]}
+      st0=$(cat $D/0.$sid.st); st1=$(cat $D/1.$sid.st); kb0=($(cat $D/0.$sid.kb)); kb1=($(cat $D/1.$sid.kb))
       v=SAME
       # a run stopped by the loader's time limit (SIGALRM / SIGXCPU, KEXE_*_SECONDS) is not a behaviour: TIMEOUT-<side>, kept out
       # of the DIFF count and listed (the host is loaded; stage-0's xgboost needs > 30 s with fuel on at load 80)
       if [[ "$st0 $st1" == *SIGALRM* || "$st0 $st1" == *SIGXCPU* ]]; then
         v=TIMEOUT; [[ "$st0" == *SIG[AX][LC]* ]] && v="$v-s0"; [[ "$st1" == *SIG[AX][LC]* ]] && v="$v-seed"
         [ "$kb0[1]" = "$kb1[1]" ] || v="$v DIFF-KB"
-      elif ! cmp -s $D/0.$s.out $D/1.$s.out || [ "${st0%% *}" != "${st1%% *}" ]; then v=DIFF
-      elif [ "$t" != string ] && [ "$kb0[1]" != "$kb1[1]" ]; then   # SEEDFIX: a :string result word is a handle (see runx)
+      elif ! cmp -s $D/0.$sid.out $D/1.$sid.out || [ "${st0%% *}" != "${st1%% *}" ]; then v=DIFF
+      elif [ "$rt" = i64 ] && [ "$kb0[1]" != "$kb1[1]" ]; then   # SEEDFIX/EXPORT: a non-i64 result word is a handle (see runx)
         # the C loader (the product runtime) agrees; kexe-benchmark leaves some runtime slots NULL (cap_call, bytes, ..), so a
         # side that calls one crashes there (empty result): KB-CRASH-<side>, behaviour SAME, listed. Two different results = DIFF.
         if [ -z "$kb0[1]" ]; then v="SAME KB-CRASH-s0"; elif [ -z "$kb1[1]" ]; then v="SAME KB-CRASH-seed"; else v=DIFF; fi
       fi
       # the trap text (last stderr line) is part of behaviour when the run did not return 0
       [[ $v == SAME* ]] && [ "${st0%% *}" != rc=0 ] && [ "$st0" != "$st1" ] && v=DIFF-TRAPKIND
-      [ -f $D/0.$s.raw ] && ! cmp -s $D/0.$s.raw $D/1.$s.raw && v="$v RAW-HANDLE"
+      [ -f $D/0.$sid.raw ] && ! cmp -s $D/0.$sid.raw $D/1.$sid.raw && v="$v RAW-HANDLE"
+      [ "$rt" = opaque ] && v="$v OPAQUE"
       [[ $v == SAME* ]] && same=$((same+1)); [[ $v == TIMEOUT* && $v != *DIFF* ]] && tmo=$((tmo+1))
       [ "${st0%% *}" = rc=0 ] && [ "${st1%% *}" != rc=0 ] && { sot=$((sot+1)); v="$v SEED-ONLY-TRAP"; }
       # SEEDFIX: fuel = kexe-benchmark's contextFuelConsumed when both sides have one; when kexe-benchmark crashed on a side
       # (a slot it leaves NULL) the C loader's typed report (initial - remaining, also on a trap) of both sides is used
       fu0=$kb0[2] fu1=$kb1[2] fs=kb
       if [ -z "$fu0" ] || [ -z "$fu1" ]; then
-        if [ "${st0%% *}" = rc=0 ] && [ "${st1%% *}" = rc=0 ]; then fu0=$(lfuel $D/0.bin $o0); fu1=$(lfuel $D/1.bin $o1); fs=loader; else fs=none; fi
+        if [ "${st0%% *}" = rc=0 ] && [ "${st1%% *}" = rc=0 ]; then fu0=$(lfuel $D/0.bin $o0 $ar ${(s:|:)av[ai]}); fu1=$(lfuel $D/1.bin $o1 $ar ${(s:|:)av[ai]}); fs=loader; else fs=none; fi
       fi
       [ -n "$fu0" ] && [ -n "$fu1" ] && fcmp=$((fcmp+1))
       if [ -n "$fu0" ] && [ "$fu0" = "$fu1" ]; then feq=$((feq+1)); fi
       f0=$((f0+${fu0:-0})); f1=$((f1+${fu1:-0}))
-      printf "%s\t%s\t%s\t[%s]\t[%s]\tkb0=%s/%s\tkb1=%s/%s\tfuel(%s)=%s/%s\n" $s $t "$v" "$st0" "$st1" "${kb0[1]}" "${kb0[2]}" "${kb1[1]}" "${kb1[2]}" $fs "$fu0" "$fu1" >> $D/exports.tsv
+      printf "%s\t%s\t%s\t[%s]\t[%s]\tkb0=%s/%s\tkb1=%s/%s\tfuel(%s)=%s/%s\targs=%s\n" $sid $tn/$rt "$v" "$st0" "$st1" "${kb0[1]}" "${kb0[2]}" "${kb1[1]}" "${kb1[2]}" $fs "$fu0" "$fu1" "${av[ai]}" >> $D/exports.tsv
+      done
     done
   else note=$kerr; fi
-  printf "%s\tok\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%d\t%s\t%d\n" $id $kst $n $same $sot $feq $f0 $f1 $c0 $c1 "$note" $tmo $kmet $fcmp > $D/line
+  printf "%s\tok\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%d\t%s\t%d\t%d\t%d\n" $id $kst $n $same $sot $feq $f0 $f1 $c0 $c1 "$note" $tmo $kmet $fcmp $nr $npos > $D/line
 }
 
 parts=${KBD_PARTS:-P G}; [ "${KBD_G:-1}" = 0 ] && parts=P
@@ -162,16 +186,18 @@ if [[ " $parts " == *" P "* ]]; then
   # documented in docs/selfhost-seed-merge-20261003.md section 7 item 4
   DOC=${KBD_DOC:-'entropy|wire 23|f64|f32|float|more than 16 param|E2116|capture|variant|hetero-vector'}
   awk -F'\t' -v doc="$DOC" '
-    $2=="ok" { s0++; if ($3=="ok") { k++; ex+=$4; sm+=$5; sot+=$6; fe+=$7; fc+=$15; f0+=$8; f1+=$9; c0+=$10; c1+=$11; tm+=$13; if ($5+$13<$4) dp++; if ($6>0) tp++; if ($7<$15) fp++;
+    $2=="ok" { s0++; if ($3=="ok") { k++; ex+=$4; sm+=$5; sot+=$6; fe+=$7; fc+=$15; f0+=$8; f1+=$9; c0+=$10; c1+=$11; tm+=$13; nr+=$16; np+=$17; if ($5+$13<$4) dp++; if ($6>0) tp++; if ($7<$15) fp++;
                                      if ($14=="ok") { mk++; mfc+=$15; mfe+=$7; mex+=$4; if ($7<$15) mfp++ } else mfb++ }
                else { if (tolower($12) ~ doc) rd++; else ru++ } }
     END { printf "P: %d programs stage-0 compiles; seed compile-kir accepts %d (%.1f%%); refused %d documented + %d other\n", s0, k, 100*k/s0, rd, ru;
           printf "P: %d exports run on both: %d same behaviour, %d stopped by the time limit, %d differ (%d programs); seed-only traps %d (%d programs)\n", ex, sm, tm, ex-sm-tm, dp, sot, tp;
           printf "P: fuel (unmetered build) equal on %d of %d exports, %d not comparable (a side trapped and kexe-benchmark has no number); %d programs with a difference; fuel sum s0 %d seed %d; code bytes (accepted programs) s0 %d seed %d (%.3fx)\n", fe, ex, ex-fc, fp, f0, f1, c0, c1, (c0>0?c1/c0:0);
+          printf "P: EXPORT: every KIR export: %d runs above are arity > 0 with representative arguments; %d exports present in both containers but not run (parameters not i64/bool/string/vector-i64)\n", np, nr;
           printf "F4: metered build (compile-kir --metered) accepts %d of %d programs (%d refused by name: metered fallback); fuel compared on %d of their %d exports (kexe-benchmark, else the loader report when both return), equal on %d; %d programs differ\n", mk, k, mfb, mfc, mex, mfe, mfp }' $W/programs.tsv | tee -a $W/summary.txt
   awk -F'\t' '$2=="ok" && $3=="ok" && $14!="ok" { print "  metered fallback  " $1 "  " $14 }' $W/programs.tsv | tee -a $W/summary.txt
   awk -F'\t' -v doc="$DOC" '$2=="ok" && $3!="ok" { print (tolower($12) ~ doc ? "  refused(doc)   " : "  refused(F2)    ") $1 "  " $12 }' $W/programs.tsv | tee -a $W/summary.txt
   for D in $W/run/*(/); do [ -f $D/exports.tsv ] && awk -F'\t' -v id=${D:t} '$3 ~ /DIFF|TRAP|NO-SYMBOL|TIMEOUT|KB-CRASH|RAW-HANDLE/ { print "  " id " " $0 }' $D/exports.tsv; done | cut -c1-260 | tee -a $W/summary.txt
+  say "P: EXPORT: $(cat $W/run/*/exports.tsv(N) | grep -c OPAQUE) runs with an opaque result (exit status and trap compared, value not observable by content)"
 fi
 
 if [[ " $parts " == *" G "* ]]; then
