@@ -91,3 +91,18 @@ native-fuel-diagnostics, compile_cache, native-value-abi: pass. kotoba-verifier 
 - Each seed-backed compile runs the seed twice (emit + verifier re-emission); the verdict cache replays the second.
 - The route is bootstrap-only by design: node + nbb + a spawned seed. The in-process link (seed modules in the amu
   image) is the next step and removes seed_backend.cljk.
+
+## Record (clean worktree, 2026-10-03 20:03-20:2x)
+
+Clean detached worktree of amu 0a77f161d (dirty 0; node_modules symlinked), kotoba-verifier worktree HEAD 4be5856
+(dirty 0), seed code be8898af, packaged seed command df610454 (scope = that worktree, its tool dir, /private/tmp, /tmp),
+wrapper a4b525fb, classpath 103 entries (lock closure, verifier from the worktree). Load 33.5 at the start, 60.6 at the
+end of the Embench run, 71.5 at the end of test.sh: correctness only, no timing.
+
+- `scripts/seed-backend/embench.sh`: exit 0. Runner 19/19 correct (exit 0), 19/19 emitted by the seed, 0 fallbacks,
+  compile-time and extract-native re-emission with the seed 19/19; verify-output-set --seed 13 ACCEPT + 6
+  `:native-decode` (same 6 ports as the first run, a property of output admission, not of the seed); without --seed
+  the 13 are refused by name; 0 seed-related refusals. Per port: docs/records/seed-backend-embench-20261003.tsv.
+- `scripts/seed-backend/test.sh`: 16/16 PASS.
+- Reproduce: `SB_SEED_BIN=<be8898af seed-1.bin> zsh scripts/seed-backend/embench.sh <out>` then
+  `zsh scripts/seed-backend/test.sh <out>/tool`, after `bin/amu compile` once (fills the lock-classpath cache).
