@@ -4918,7 +4918,7 @@
     (if (and (= code E-CHECK-TYPE) (pos? p) (zero? (vector-at M MM-ERR)) (zero? (vector-at M MM-CK-REFINE))
              (pos? want) (not= want TY-I64) (pos? (vector-at M MM-CK-STATE)))
       (let [f (ck-sg M ck-s-fn)
-            k (dec (- (nm-nf M p NF-RES) (* RES-LOCAL RES-SCALE)))]
+            k (dec (+ (nm-nf M p NF-RES) (- (* RES-LOCAL RES-SCALE))))]   ; R6C rung proof: (- x)
         (if (pos? (ck-pinfer-node M f k)) (nm-put M MM-CK-REFINE (ck-hint-pack f k want)) M))
       M)))
 (defn- ck-last-clear [M :vector-i64] :vector-i64 (nm-put M MM-CK-LAST 0))
@@ -5007,12 +5007,12 @@
 ;; way and any other value v is (__r6-todoc v) (R6B: by its type). R6B's desugaring then folds them (ck-r6b-ds codes 2 and 5;
 ;; keyword literal keys become (document-keyword :k)). The run-time value is the canonical text, so it equals stage-0's
 ;; constant byte for byte. Elsewhere a map literal keeps its R3/R4B meaning (typed map, or record of a keyword-keyed literal).
-(defn- ck-r6c-doctail [M :vector-i64 S :string c :i64] :vector-i64
+(defn- ck-r6c-doctail [M :vector-i64 S c :i64] :vector-i64   ; R6C rung proof: S unannotated (refined to :string)
   (let [r (nm-nth M c 3)]
     (if (and (= (nm-kind M r) ND-KW) (= (nm-head-of M r) KW-DOCUMENT) (pos? (ck-r6b-sym M S "document-map")))
       (ck-r6c-dt M S (nm-nth M c 4))
       M)))
-(defn- ck-r6c-dt [M :vector-i64 S :string b :i64] :vector-i64
+(defn- ck-r6c-dt [M :vector-i64 S b :i64] :vector-i64
   (let [hd (nm-form-head M b)]
     (cond (or (= (nm-kind M b) ND-MAP) (= (nm-kind M b) ND-VEC)) (ck-r6c-lit M S b)
           (or (= hd HD-LET) (= hd HD-DO) (= hd HD-LOOP)) (ck-r6c-dt M S (ck-r6c-last M b))
@@ -5023,7 +5023,7 @@
 (defn- ck-r6c-last [M :vector-i64 b :i64] :i64
   (loop [x (nm-first M b)] (if (zero? (nm-next M x)) x (recur (nm-next M x)))))
 ;; literal node m (map or vector) becomes the list (document-map|document-vector ..) in place; R0 untouched
-(defn- ck-r6c-lit [M :vector-i64 S :string m :i64] :vector-i64
+(defn- ck-r6c-lit [M :vector-i64 S m :i64] :vector-i64
   (let [ismap (= (nm-kind M m) ND-MAP)
         tok (nm-nf M m NF-TOK)
         s (ck-r6b-sym M S (if ismap "document-map" "document-vector"))
