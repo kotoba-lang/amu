@@ -1,0 +1,24 @@
+(ns amu.check
+  {:kotoba/export [run]}
+  (:require [amu.cli :as cli]
+            [kotoba.amu-front.check :as front]))
+
+;; seed/amu-main/k/amu/check.kotoba -- `amu check` on the KIR route (agent MAINS, 2026-10-04).
+;;
+;; REAL: stage-0's argument layer (as s/amu/check.kotoba: extension 64, regular file 65 with stage-0's line), then the
+;; analysis of seed/amu-front/check.cljk: kotoba.compiler.frontend.analyze/analyze over the file read through wire 35,
+;; and the report line of `amu check` (ok profile=.. effects=#{..} exports=[..] on stdout, exit 0; error: <code> at <file>:
+;; <message> on stderr, exit 65). The frontend's KIR comes from the JVM-built classes (kir-dump, BOOTSTRAP-REFERENCE at
+;; build time); the native code is the seed's (compile-kir); no host process at run time.
+;; Not covered (declared; seed/amu-front/README.md): --policy (default no-grant policy only), --source-path project
+;; linking, refusal spans (line:col), --json, definition CIDs; the file must be argv[1] (`check <file> ..`).
+
+(defn run [] :i64
+  (let [s (cli/positional 1 0)]
+    (cond (< s 0)
+          (cli/usage-error ":kotoba/invalid-usage" "source input must use .kotoba, .cljk, or .cljc" ", :details {:phase :usage}")
+          (= (cli/source-ext (cli/arg s)) 0)
+          (cli/usage-error ":kotoba/invalid-usage" "source input must use .kotoba, .cljk, or .cljc" ", :details {:phase :usage}")
+          (= (cli/regular-file (cli/arg s)) 0)
+          (let [w (cli/err (string-concat "error: invalid-data at " (string-concat (cli/arg s) ": input must be a regular file\n")))] 65)
+          :else (front/main))))
