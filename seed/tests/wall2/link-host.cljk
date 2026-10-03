@@ -1,0 +1,311 @@
+(ns wall2.link-host
+  "WALL2: the HOST answer of `kotoba.compiler.project/link-source` (amu src, nbb) on the project cases below, written as
+  fixtures for the native differential of its guest twin (kotoba-lang lang/compat/kotoba/compiler/project.kotoba).
+  BOOTSTRAP-REFERENCE (node/nbb). Run from the amu repo root:
+    node bin/kbb --backend sci --classpath \"$(cat build/walls/cp-walls.txt)\" seed/tests/wall2/link-host.cljk <out-dir>
+  For each case it writes <out-dir>/<case>/<ns>.src (one per module), <case>/args (root, then the module names) and
+  <case>/host.out: `SOURCE` + newline + the linked text, or `REFUSED ` + the refusal message.
+  The cases are the projects of test/nbb/project.cljk, project_abort_import_test, project_loop_helper_test and
+  project_test (sources copied verbatim), plus their refusal variants."
+  (:require [kotoba.compiler.project :as project]
+            ["node:fs" :as fs]
+            ["node:path" :as path]))
+
+(def union-template
+  "(ns kotoba.set.union
+  (:params [elem])
+  (:export [union]))
+(defn union [s1 [:set elem] s2 [:set elem]] [:set elem]
+  (loop [i 0 acc s1]
+    (if (< i (typed-set-count [:set elem] s2))
+      (recur (+ i 1) (typed-set-conj [:set elem] acc (typed-set-nth [:set elem] s2 i)))
+      acc)))")
+
+(def union-root
+  "(ns root
+  (:require [kotoba.set.union :as ui :with {elem :i64}]
+            [kotoba.set.union :as us :with {elem :symbol}])
+  (:export [main]))
+(defn main [] :i64
+  (+ (typed-set-count [:set :i64] (ui/union (typed-set-new [:set :i64] 1 2) (typed-set-new [:set :i64] 2 3)))
+     (typed-set-count [:set :symbol] (us/union (typed-set-new [:set :symbol] (symbol \"x\")) (typed-set-new [:set :symbol] (symbol \"y\"))))))")
+
+(def defaulted-template (.replace union-template "(:params [elem])" "(:params [elem :keyword])"))
+
+(def kw-root
+  "(ns root
+  (:require [kotoba.set.union :as u])
+  (:export [main]))
+(defn main [] :i64
+  (typed-set-count [:set :keyword] (u/union #{:a :b} #{:b :c})))")
+
+(def refer-math "(ns example.math (:export [double-it]))\n(defn double-it [n :i64] :i64 (* n 2))")
+
+(defn- refer-calc [spec call]
+  (str "(ns example.calc (:require " spec ") (:export [compute]))\n"
+       "(defn compute [n :i64] :i64 (+ (" call " n) 1))"))
+
+(defn- rc-calc [clause]
+  (str "(ns example.calc " clause " (:require [example.math :as math]) (:export [compute]))\n"
+       "(defn compute [n :i64] :i64 (+ (math/double-it n) 1))"))
+
+(def multi-arity
+  {'ma.lib "(ns ma.lib (:export [twice]))
+    (defn twice
+      ([x :i64] :i64 (* 2 x))
+      ([x :i64 y :i64] :i64 (* y x)))"
+   'app.main "(ns app.main (:require [ma.lib :as l]) (:export [main twice]))
+    (defn main [] :i64 (l/twice 5))
+    (defn twice
+      ([x :i64] :i64 (l/twice x))
+      ([x :i64 y :i64] :i64 (l/twice x y)))"})
+
+(def abort-library
+  "(ns lib.check
+  (:export [need-pos! need-name! need-small! plain code-of])
+  (:schemas {:lib/err [:record :lib/err [[:code :i64] [:what :string]]]}))
+(defn need-pos! [x :i64] :i64
+  (if (< x 0) (throw \"negative\") x))
+(defn- err [c :i64 w :string] [:ref :lib/err] (record-new [:ref :lib/err] c w))
+(defn code-of [e [:ref :lib/err]] :i64 (record-get e :code))
+(defn need-name! [s :string] :string
+  (if (= s \"\") (throw (err 7 \"empty\")) s))
+(defn need-small!
+  ([x :i64] :i64 (if (> x 100) (throw \"large\") x))
+  ([x :i64 limit :i64] :i64 (if (> x limit) (throw \"large\") x)))
+(defn plain [x :i64] :i64 (+ x 1))")
+
+(def abort-root
+  "(ns root
+  (:require [lib.check :as c])
+  (:export [tail branch bound stmt caught named arity2 plain-call]))
+(defn tail [x :i64] :i64 (c/need-pos! x))
+(defn branch [x :i64] :i64 (if (= x 0) 0 (c/need-pos! x)))
+(defn bound [x :i64] :i64 (let [y (c/need-pos! x)] (+ y 1)))
+(defn stmt [x :i64] :i64 (let [_ (c/need-pos! x)] x))
+(defn caught [x :i64] :i64 (try (c/need-pos! x) (catch :string e -1)))
+(defn named [s :string] :i64 (try (string-byte-length (c/need-name! s)) (catch [:ref :lib/err] e (c/code-of e))))
+(defn arity2 [x :i64] :i64 (+ (c/need-small! x) (c/need-small! x 50)))
+(defn plain-call [x :i64] :i64 (c/plain x))")
+
+(def person-type "[:record :example/person [[:name :string] [:age :i64]]]")
+
+(def cases
+  [["safe-project-link" 'example.app
+    {'example.text "(ns example.text (:export [greet]))
+    (defn greet [name :string] :string (string-concat \"hello, \" name))"
+     'example.app "(ns example.app (:require [example.text :as text]) (:export [welcome]))
+    (defn welcome [name :string] :string (text/greet name))"}]
+   ["numeric" 'example.calc
+    {'example.math "(ns example.math (:export [double-it]))
+    (defn double-it [n :i64] :i64 (* n 2))"
+     'example.calc "(ns example.calc (:require [example.math :as math]) (:export [compute]))
+    (defn compute [n :i64] :i64 (+ (math/double-it n) 1))"}]
+   ["keyword-lookup-on-a-map" 'example.desk
+    {'example.window "(ns example.window (:export [x-of y-or]))
+             (defn x-of [id :i64] :i64 (:window/x {:window/id id :window/x 10}))
+             (defn y-or [id :i64 d :i64] :i64 (:window/y {:window/id id :window/x 10} d))"
+     'example.desk "(ns example.desk (:require [example.window :as w]) (:export [probe]))
+             (defn probe [id :i64] :i64 (+ (* 100 (w/x-of id)) (w/y-or id 7)))"}]
+   ["conj-on-a-vector" 'example.use
+    {'example.acts "(ns example.acts (:export [acts]))
+             (defn acts [n :i64 edit :bool] :vector-i64
+               (cond-> (conj (filterv (fn [x] (< x n)) [1 2 3 4]) 10) edit (conj 20 30)))"
+     'example.use "(ns example.use (:require [example.acts :as a]) (:export [probe]))
+             (defn probe [n :i64] :i64
+               (let [v (a/acts n true) w (a/acts n false)]
+                 (+ (* 1000 (count v)) (* 100 (count w)) (peek v) (first w))))"}]
+   ["remove" 'example.desk
+    {'example.wins "(ns example.wins (:export [close keep-small]))
+             (defn close [id :i64] :vector-i64 (remove #(= % id) [1 2 3 2]))
+             (defn- big? [x] (> x 2))
+             (defn keep-small [] :vector-i64 (remove big? [1 2 3 4]))"
+     'example.desk "(ns example.desk (:require [example.wins :as w]) (:export [probe]))
+             (defn probe [id :i64] :i64
+               (let [left (w/close id) small (w/keep-small)]
+                 (+ (* 1000 (count left)) (* 100 (peek left)) (* 10 (count small)) (peek small))))"}]
+   ["multi-arity" 'app.main multi-arity]
+   ["multi-arity-wrong-arity" 'app.main
+    (assoc multi-arity 'app.main "(ns app.main (:require [ma.lib :as l]) (:export [main]))
+                                  (defn main [] :i64 (l/twice 1 2 3))")]
+   ["multi-arity-result-types" 'app.main
+    {'ma.lib "(ns ma.lib (:export [f]))
+                     (defn f
+                       ([x :i64] :i64 (* 2 x))
+                       ([x :i64 y :i64] :string (string-from-i64 (+ x y)))
+                       ([x :i64 y :i64 z :i64] :bool (> (+ x y) z)))"
+     'app.main "(ns app.main (:require [ma.lib :as l]) (:export [a b c]))
+                       (defn a [] :i64 (l/f 3))
+                       (defn b [] :string (l/f 1 2))
+                       (defn c [] :bool (l/f 1 2 0))"}]
+   ["multi-arity-three-modules" 'm.top
+    {'m.base "(ns m.base (:export [f]))
+                     (defn f ([x :i64] :i64 (+ x 1)) ([x :i64 y :i64] :i64 (+ x y)))"
+     'm.mid "(ns m.mid (:require [m.base :as b]) (:export [g]))
+                    (defn g ([x :i64] :i64 (b/f x)) ([x :i64 y :i64] :i64 (b/f x y)))"
+     'm.top "(ns m.top (:require [m.mid :as m]) (:export [main]))
+                    (defn main [] :i64 (+ (m/g 1) (m/g 10 20)))"}]
+   ["template" 'root {'kotoba.set.union union-template 'root union-root}]
+   ["template-without-binding" 'root {'kotoba.set.union union-template 'root (.replace union-root " :with {elem :i64}" "")}]
+   ["with-on-a-plain-module" 'root
+    {'plain "(ns plain (:export [one])) (defn one [] :i64 1)"
+     'root "(ns root (:require [plain :as p :with {elem :i64}]) (:export [main])) (defn main [] :i64 (p/one))"}]
+   ["template-local-stays-local" 'root
+    {'t.local "(ns t.local (:params [elem]) (:export [f]))
+(defn f [x elem] elem (let [elem 7] (+ x elem)))"
+     'root "(ns root (:require [t.local :as t :with {elem :i64}]) (:export [main])) (defn main [] :i64 (t/f 1))"}]
+   ["template-refusal-names-binding" 'root
+    {'t.plus "(ns t.plus (:params [elem]) (:export [plus]))\n(defn plus [a elem b elem] elem (+ a b))"
+     'root "(ns root (:require [t.plus :as pi :with {elem :i64}] [t.plus :as ps :with {elem :string}]) (:export [main]))\n(defn main [] :i64 (pi/plus 1 2))"}]
+   ["attr-map" 'root
+    {'kotoba.set.union (.replace union-template "(:params [elem])\n  (:export [union])" "{:kotoba/params [elem] :kotoba/export [union]}")
+     'root (-> union-root (.replace "(ns root\n" "(ns root\n  {:kotoba/export [main]}\n") (.replace "\n  (:export [main]))" ")"))}]
+   ["attr-unknown-key" 'root {'root "(ns root {:author \"nobody\" :kotoba/export [main]})\n(defn main [] :i64 1)"}]
+   ["attr-undeclared-namespaced-key" 'root {'root "(ns root {:kotoba/exports [main]})\n(defn main [] :i64 1)"}]
+   ["attr-declared-twice" 'root {'root "(ns root {:kotoba/export [main]} (:export [main]))\n(defn main [] :i64 1)"}]
+   ["attr-out-of-position" 'root {'root "(ns root (:export [main]) {:kotoba/export [main]})\n(defn main [] :i64 1)"}]
+   ["attr-value-through-clause-loop" 'root {'root "(ns root {:kotoba/export main})\n(defn main [] :i64 1)"}]
+   ["attr-empty-nothing-public" 'root {'root "(ns root {})\n(defn- main [] :i64 1)"}]
+   ["refer-qualified" 'example.calc {'example.math refer-math 'example.calc (refer-calc "[example.math :as math]" "math/double-it")}]
+   ["refer-with-alias" 'example.calc {'example.math refer-math 'example.calc (refer-calc "[example.math :as math :refer [double-it]]" "double-it")}]
+   ["refer-no-alias" 'example.calc {'example.math refer-math 'example.calc (refer-calc "[example.math :refer [double-it]]" "double-it")}]
+   ["refer-shadowed-by-let" 'example.calc
+    {'example.math refer-math
+     'example.calc (str "(ns example.calc (:require [example.math :refer [double-it]]) (:export [compute]))\n"
+                        "(defn compute [n :i64] :i64 (let [double-it 5] (+ double-it n)))")}]
+   ["refer-shadowed-by-param" 'example.calc
+    {'example.math refer-math
+     'example.calc (str "(ns example.calc (:require [example.math :refer [double-it]]) (:export [compute]))\n"
+                        "(defn compute [double-it :i64] :i64 (+ double-it 1))")}]
+   ["refer-not-exported" 'example.calc {'example.math refer-math 'example.calc (refer-calc "[example.math :refer [triple]]" "triple")}]
+   ["refer-all" 'example.calc {'example.math refer-math 'example.calc (refer-calc "[example.math :refer :all]" "double-it")}]
+   ["refer-collides" 'example.calc
+    {'example.math refer-math
+     'example.calc (str "(ns example.calc (:require [example.math :refer [double-it]]) (:export [double-it]))\n"
+                        "(defn double-it [n :i64] :i64 1)")}]
+   ["refer-two-specs" 'example.calc {'example.math refer-math 'example.calc (refer-calc "[example.math :refer [double-it]] [example.math :as m :refer [double-it]]" "double-it")}]
+   ["refer-twice-in-one-spec" 'example.calc {'example.math refer-math 'example.calc (refer-calc "[example.math :refer [double-it double-it]]" "double-it")}]
+   ["refer-empty" 'example.calc {'example.math refer-math 'example.calc (refer-calc "[example.math :refer []]" "double-it")}]
+   ["require-unknown-option" 'example.calc {'example.math refer-math 'example.calc (refer-calc "[example.math :only [double-it]]" "double-it")}]
+   ["require-bare" 'example.calc {'example.math refer-math 'example.calc (refer-calc "[example.math]" "double-it")}]
+   ["require-string" 'example.calc {'example.math refer-math 'example.calc (refer-calc "[\"node:fs\" :as fs]" "double-it")}]
+   ["require-not-a-vector" 'example.calc {'example.math refer-math 'example.calc (refer-calc "example.math" "double-it")}]
+   ["clause-import" 'root {'root "(ns root (:export [main]) (:import [java.io File]))\n(defn main [] :i64 1)"}]
+   ["clause-require-macros" 'root {'root "(ns root (:export [main]) (:require-macros [m :refer [x]]))\n(defn main [] :i64 1)"}]
+   ["clause-use" 'root {'root "(ns root (:export [main]) (:use [m]))\n(defn main [] :i64 1)"}]
+   ["clause-unknown" 'root {'root "(ns root (:export [main]) (:frobnicate 1))\n(defn main [] :i64 1)"}]
+   ["refer-clojure-exclude" 'example.calc {'example.math refer-math 'example.calc (rc-calc "(:refer-clojure :exclude [update])")}]
+   ["refer-clojure-only-and-exclude" 'example.calc {'example.math refer-math 'example.calc (rc-calc "(:refer-clojure :exclude [update] :only [inc])")}]
+   ["refer-clojure-bare" 'example.calc {'example.math refer-math 'example.calc (rc-calc "(:refer-clojure)")}]
+   ["refer-clojure-rename" 'example.calc {'example.math refer-math 'example.calc (rc-calc "(:refer-clojure :rename {update up})")}]
+   ["refer-clojure-unknown-option" 'example.calc {'example.math refer-math 'example.calc (rc-calc "(:refer-clojure :frobnicate [update])")}]
+   ["refer-clojure-string-entry" 'example.calc {'example.math refer-math 'example.calc (rc-calc "(:refer-clojure :exclude [\"update\"])")}]
+   ["refer-clojure-qualified-entry" 'example.calc {'example.math refer-math 'example.calc (rc-calc "(:refer-clojure :only [clojure.core/inc])")}]
+   ["refer-clojure-odd" 'example.calc {'example.math refer-math 'example.calc (rc-calc "(:refer-clojure :exclude)")}]
+   ["refer-clojure-repeated" 'example.calc {'example.math refer-math 'example.calc (rc-calc "(:refer-clojure :exclude [update] :exclude [inc])")}]
+   ["refer-clojure-twice" 'example.calc {'example.math refer-math 'example.calc (rc-calc "(:refer-clojure :exclude [update]) (:refer-clojure :only [inc])")}]
+   ["template-binding-beside-refer" 'root
+    {'kotoba.set.union union-template
+     'root (str "(ns root (:require [kotoba.set.union :refer [union] :with {elem :i64}]) (:export [main]))\n"
+                "(defn main [] :i64 (typed-set-count [:set :i64] (union (typed-set-new [:set :i64] 1 2) (typed-set-new [:set :i64] 2 3))))")}]
+   ["default-binding" 'root {'kotoba.set.union defaulted-template 'root kw-root}]
+   ["default-binding-explicit" 'root {'kotoba.set.union defaulted-template 'root (.replace kw-root "[kotoba.set.union :as u]" "[kotoba.set.union :as u :with {elem :keyword}]")}]
+   ["default-binding-both-spellings" 'root
+    {'kotoba.set.union defaulted-template
+     'root (str "(ns root (:require [kotoba.set.union :as a] [kotoba.set.union :as b :with {elem :keyword}]) (:export [main]))\n"
+                "(defn main [] :i64 (+ (typed-set-count [:set :keyword] (a/union #{:a} #{:b})) (typed-set-count [:set :keyword] (b/union #{:a} #{:a}))))")}]
+   ["default-overridden" 'root {'kotoba.set.union defaulted-template 'root union-root}]
+   ["default-in-attr-map" 'root
+    {'kotoba.set.union (.replace defaulted-template "(:params [elem :keyword])\n  (:export [union])" "{:kotoba/params [elem :keyword] :kotoba/export [union]}")
+     'root kw-root}]
+   ["default-missing-for-one" 'root
+    {'t.two "(ns t.two (:params [elem :keyword other]) (:export [f]))\n(defn f [x elem y other] :i64 1)"
+     'root "(ns root (:require [t.two :as t]) (:export [main]))\n(defn main [] :i64 (t/f :a 1))"}]
+   ["default-none-declared" 'root {'kotoba.set.union union-template 'root kw-root}]
+   ["default-not-a-type" 'root
+    {'t.bad "(ns t.bad (:params [elem 3]) (:export [f]))\n(defn f [x elem] elem x)"
+     'root "(ns root (:require [t.bad :as t]) (:export [main]))\n(defn main [] :i64 (t/f 1))"}]
+   ["default-type-first" 'root
+    {'t.bad "(ns t.bad (:params [:keyword elem]) (:export [f]))\n(defn f [x elem] elem x)"
+     'root "(ns root (:require [t.bad :as t]) (:export [main]))\n(defn main [] :i64 (t/f 1))"}]
+   ["default-partial-with" 'root
+    {'t.two "(ns t.two (:params [elem :keyword other :i64]) (:export [f]))\n(defn f [x elem y other] :i64 1)"
+     'root "(ns root (:require [t.two :as t :with {other :i64}]) (:export [main]))\n(defn main [] :i64 (t/f :a 1))"}]
+   ["regex-literal" 'root
+    {'plain "(ns plain (:export [one])) (defn one [] :i64 1)"
+     'root "(ns root (:require [plain :as p]) (:export [main]))\n(defn main [] :i64 (if (p/one) (count #\"x\") 0))"}]
+   ["variadic-private" 'va.main
+    {'va.lib "(ns va.lib (:export [sum3 sum1]))
+    (defn- add-all [a & r] (if (empty? r) a (+ a (first r) (if (empty? (rest r)) 0 (second r)))))
+    (defn sum1 [a :i64] :i64 (add-all a))
+    (defn sum3 [a :i64 b :i64 c :i64] :i64 (add-all a b c))"
+     'va.main "(ns va.main (:require [va.lib :as l]) (:export [main]))
+    (defn main [] :i64 (+ (l/sum1 1) (l/sum3 10 20 30)))"}]
+   ["variadic-exported" 'vx.main
+    {'vx.lib "(ns vx.lib (:export [add-all]))\n(defn add-all [a & r] (if (empty? r) a (+ a (first r))))"
+     'vx.main "(ns vx.main (:require [vx.lib :as l]) (:export [main]))\n(defn main [] :i64 (l/add-all 1 2))"}]
+   ["dependency-header-refusal" 'hx.main
+    {'hx.main "(ns hx.main (:require [hx.leaf :as leaf]) (:export [main]))\n(defn main [] :i64 (leaf/one))"
+     'hx.leaf "(ns hx.leaf (:require [\"node:fs\" :as fs]) (:export [one]))\n(defn one [] :i64 1)"}]
+   ["aborting-imports" 'root {'lib.check abort-library 'root abort-root}]
+   ["loop-helpers" 'root
+    {'lib.count "(ns lib.count\n  (:export [count-to]))\n(defn count-to [n :i64] :i64\n  (loop [i 0 acc 0]\n    (if (< i n) (recur (+ i 1) (+ acc i)) acc)))"
+     'lib.twice "(ns lib.twice\n  (:export [twice-to]))\n(defn twice-to [n :i64] :i64\n  (loop [i 0 acc 0]\n    (if (< i n) (recur (+ i 1) (+ acc 2)) acc)))"
+     'root "(ns root\n  (:require [lib.count :as c] [lib.twice :as t])\n  (:export [main]))\n(defn main [] :i64\n  (+ (c/count-to 3000) (t/twice-to 3000)))"}]
+   ["callables" 'example.use-callables
+    {'example.callables "(ns example.callables (:export [apply-one make-renderer make-document]))
+         (defn apply-one [f [:fn [[:i64] :i64]] x :i64] :i64 (f x))
+         (defn make-renderer [] [:fn [[:i64] :string]]
+           (fn [x] (string-from-i64 x)))
+         (defn make-document [] [:fn [[] :document]]
+           (fn [] (document-vector (document-i64 1))))"
+     'example.use-callables "(ns example.use-callables
+           (:require [example.callables :as callables])
+           (:export [main]))
+         (defn main []
+           (+ (+ (callables/apply-one (fn [x] (+ x 1)) 4)
+                 (string-length
+                  (let [render (callables/make-renderer)] (render 42))))
+              (document-count
+               (let [build (callables/make-document)] (build)))))"}]
+   ["f64-stubs" 'example.use
+    {'example.num (str "(ns example.num (:export [scale narrow]))"
+                       "(defn scale [x :f64] :f64 (f64-mul x 2.0))"
+                       "(defn narrow [x :f64] :f32 (f64-to-f32-rounded x))")
+     'example.use (str "(ns example.use (:require [example.num :as num])"
+                       " (:export [doubled ratio]))"
+                       "(defn doubled [] :f64 (num/scale 3.0))"
+                       "(defn ratio [] :bool (f32-unordered (num/narrow 2.0)"
+                       " (f32-from-bits 0)))")}]
+   ["record-across-modules" 'example.age
+    {'example.person (str "(ns example.person (:export [make]))"
+                          "(defn make [name :string age :i64] " person-type
+                          " (record " person-type " name age))")
+     'example.age (str "(ns example.age (:require [example.person :as person])"
+                       " (:export [age]))"
+                       "(defn age [] :i64 (record-get " person-type
+                       " (person/make \"Kotoba\" 7) :age))")}]
+   ["missing-module" 'root {'root "(ns root (:require [gone :as g]) (:export [main]))\n(defn main [] :i64 (g/x))"}]
+   ["cycle" 'a {'a "(ns a (:require [b :as b]) (:export [f]))\n(defn f [] :i64 (b/g))"
+                'b "(ns b (:require [a :as a]) (:export [g]))\n(defn g [] :i64 (a/f))"}]
+   ["key-mismatch" 'root {'root "(ns other (:export [main]))\n(defn main [] :i64 1)"}]
+   ["unexported-qualified-call" 'root
+    {'plain "(ns plain (:export [one])) (defn one [] :i64 1) (defn two [] :i64 2)"
+     'root "(ns root (:require [plain :as p]) (:export [main]))\n(defn main [] :i64 (p/three))"}]
+   ["strings-with-escapes" 'root
+    {'lib "(ns lib (:export [s]))\n(defn s [] :string \"a\\\"b\\\\c\\nd\\te\")"
+     'root "(ns root (:require [lib :as l]) (:export [main]))\n(defn main [] :i64 (string-byte-length (l/s)))"}]])
+
+(defn- write! [dir name text]
+  (.mkdirSync fs dir #js {:recursive true})
+  (.writeFileSync fs (.join path dir name) text "utf8"))
+
+(let [out (or (first *command-line-args*) "build/wall2/link")]
+  (doseq [[label root sources] cases]
+    (let [dir (.join path out label)
+          answer (try (str "SOURCE\n" (:source (project/link-source sources root)))
+                      (catch :default e (str "REFUSED " (ex-message e))))]
+      (doseq [[ns text] sources] (write! dir (str ns ".src") text))
+      (write! dir "args" (str root "\n" (apply str (map #(str % "\n") (keys sources)))))
+      (write! dir "host.out" answer)))
+  (println (str "link-host: " (count cases) " cases written to " out)))
