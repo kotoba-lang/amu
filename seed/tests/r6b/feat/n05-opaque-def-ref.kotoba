@@ -1,5 +1,7 @@
-;; want: E2124
-;; R6B a REFERENCE to an opaque def (a set literal value) is refused by name at the reference
+;; want: 2
+;; R6B a REFERENCE to an opaque def (a set literal value) was refused by name at the reference (E2124). R6D (2026-10-03): the
+;; reference is the literal itself (21-check ck-r6d-inline-def), as stage-0 reads it: stage-0 d2cb84f6 compiles this natively and
+;; answers 2 (measured), so the case is a positive now
 (ns n05 (:export [main]))
 (def ^:private s #{:a :b})
 (defn main [] :i64 (count s))

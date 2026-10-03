@@ -582,7 +582,10 @@
   (try (ck-tf M t) (catch :i64 bad (nm-put M MM-R0 0))))
 (defn- ck-tf [M :vector-i64 t :i64] :vector-i64
   (cond (= (nm-kind M t) ND-KW) (let [ty (ck-kwcode-type (nm-head-of M t))]
-                                  (if (zero? ty) (throw t) (nm-put M MM-R0 ty)))
+                                  (cond (pos? ty) (nm-put M MM-R0 ty)
+                                        ;; R6D: :option-i64 (FNV-1a of its spelling) = CT (option :i64 1), distinct from [:option :i64]
+                                        (= (nm-sf M (nm-sym-of M t) SF-HASH) 1323450292249949892) (ck-ct-intern M TC-OPTION TY-I64 1)
+                                        :else (throw t)))
         (= (ck-is-tform M t) 1) (ck-tf-vec M t)
         :else (throw t)))
 ;; R3: [:record ..] (R1) or one of the composite forms [:option T] [:list T] [:set T] [:result T E] [:map K V]
@@ -593,7 +596,18 @@
       (KW-OPTION KW-LIST KW-SET KW-RESULT KW-MAP) (ck-tf-comp M t k)
       KW-FN (ck-tf-fn M t)
       KW-REF (ck-tf-ref M t)
-      (throw t))))
+      (if (= (nm-sf M (nm-sym-of M (nm-first M t)) SF-HASH) -6526217205261292326) (ck-r6d-tuple M t) (throw t)))))   ; R6D: [:vector [T ..]]
+;; R6D: the homogeneous tuple type [:vector [T T ..]] (n items, 1 <= n <= 16; kotoba.kir.decimal [:vector [:f64 :f64 :f64]]) =
+;; CT (list T n): a [:list T] value (a vector of the items) of a type of its own (lists have CT-B 0)
+(defn- ck-r6d-tuple [M :vector-i64 t :i64] :vector-i64
+  (let [v (nm-nth M t 1)
+        n (nm-count M v)]
+    (if (or (nm-ne (nm-count M t) 2) (nm-ne (nm-kind M v) ND-VEC) (< n 1) (> n 16))
+      (throw t)
+      (let [M1 (ck-tf M (nm-first M v))
+            a (ck-ty M1)
+            ok (loop [c (nm-next M1 (nm-first M1 v))] (cond (zero? c) true (= (ck-ty (ck-tform M1 c)) a) (recur (nm-next M1 c)) :else false))]   ; ck-tform: no abort inside the loop (E2106)
+        (if ok (ck-ct-intern M1 TC-LIST a n) (throw t))))))
 ;; R4B: [:ref :kw] -> the record type registered under :kw; a ref met before its schema is TY-REC-BASE + the keyword symbol
 ;; (the identity of an inline or :schemas schema); ck-refs-check (before the signatures) refuses a keyword no schema registers (E2179)
 (defn- ck-tf-ref [M :vector-i64 t :i64] :vector-i64
@@ -904,6 +918,7 @@
       (ck-err M E-CHECK-IF h 0))))
 
 ;; (when c e ..) -> (if c (do e ..) 0); neg = 1: (when-not c e ..) -> (if c 0 (do e ..))
+;; R6D: the 0 is an ABSENCE marker (an ND-INT 0 whose NF-SYM is -1, ck-r6d-abs?); ck-if types it (ck-r6d-absif)
 (defn- ck-ds-when [M :vector-i64 n :i64 neg :i64] :vector-i64
   (let [h (nm-first M n)
         c (nm-next M h)
@@ -912,7 +927,7 @@
     (if (>= (nm-count M n) 3)
       (let [M1 (ck-mkh M tok HD-DO e)
             d (ck-r M1)
-            M2 (ck-n-int M1 tok 0)
+            M2 (ck-new M1 ND-INT tok 0 -1)   ; R6D: the absence marker (was ck-n-int 0)
             z (ck-r M2)
             M3 (ck-chain3 M2 c (ck-sel neg z d) (ck-sel neg d z))]
         (ck-rehead M3 n HD-IF c))
@@ -1746,12 +1761,28 @@
           (= k ND-INT) (ck-mark M n TY-I64 0)
           (= k ND-STR) (ck-mark M n TY-STR 0)
           (= k ND-KW) (ck-mark M n TY-KW 0)
+          (and (= k ND-SYM) (ck-r6d-opaque-ref? M n)) (ck-expr (ck-r6d-inline-def M n) n fx ctx)   ; R6D
           (= k ND-SYM) (ck-sym M n)
           (= k ND-VEC) (ck-veclit M n fx)
           (= k ND-MAP) (ck-maplit M n fx)
           (= k ND-SET) (ck-setlit M n fx)
           (= k ND-LIST) (ck-list M n fx ctx)
           :else (ck-err M E-CHECK-HEAD n 0))))
+
+;; R6D (agent R6D, 2026-10-03): a REFERENCE to an opaque def (a set or map literal of constant data, R6B) is the literal
+;; itself: the reference node becomes a copy of the def's value tree and is checked (and lowered) there, so each use builds
+;; the (immutable) collection -- the value stage-0 answers (kotoba.compiler.kexe-fs-forms loader-target-set)
+(defn- ck-r6d-opaque-ref? [M :vector-i64 n :i64] :bool
+  (let [s (nm-sym-of M n)
+        fi (nm-sf M s SF-FN)]
+    (and (< (nm-local-slot M s) 0) (pos? fi) (= (nm-ff M fi FF-KIND) FK-DEF) (zero? (nm-ff M fi FF-RTYPE))
+         (let [d (nm-ff M fi FF-NODE)]
+           (and (= (nm-count M d) 3) (let [v (nm-nth M d 2)] (and (or (= (nm-kind M v) ND-SET) (= (nm-kind M v) ND-MAP)) (ck-r6b-const? M v))))))))
+(defn- ck-r6d-inline-def [M :vector-i64 n :i64] :vector-i64
+  (let [v (nm-nth M (nm-ff M (nm-sf M (nm-sym-of M n) SF-FN) FF-NODE) 2)
+        M1 (ck-r5b-clone M v)
+        c (ck-r M1)]
+    (if (nm-failed M1) (ck-touch M1) (ck-become M1 n c))))
 
 ;; a symbol in value position: a local, or a def constant
 (defn- ck-sym [M :vector-i64 n :i64] :vector-i64
@@ -1911,11 +1942,56 @@
                 ta (ck-ty M2)
                 M3 (ck-expr M2 b fx ctx1)
                 tb (ck-ty M3)
-                M4 (ck-unify M3 ta tb h)
+                M4 (ck-r6d-absif M3 c a b ta tb h)   ; R6D: was (ck-unify M3 ta tb h)
                 ty (ck-ty M4)]
             (ck-mark M4 n ty HD-IF))
           (ck-err (ck-last-clear M1) E-CHECK-TYPE h TY-BOOL)))
       (ck-err M E-CHECK-IF h 0))))
+
+;; ---- R6D (agent R6D, 2026-10-03): absence (kotoba-sema frontend absence-type / absence-leaves) ----
+;; A `when` / `when-not` with no value on one path: the present arm's type P decides the `if`'s type.
+;;   P :bool -> :bool (absent = false)        P [:option T] -> P (absent = its none)
+;;   P :i64  -> :i64 (absent = 0) where the function DECLARES its result (the reference's :legacy mode), [:option :i64]
+;;              in a defn whose result is inferred (:none mode)
+;;   P any other type -> [:option P]: the present arm is wrapped (option-some-of [:option P] x)
+;;   P bottom (recur / abort) -> :i64 (the R1 reading; the reference gives [:option :i64] in :none mode)
+;; Every absent value is the run-time 0 (0, false and none are all 0), so only the wrap needs code. Not done (R1 reading
+;; kept): the reference's statement position (a non-final `do` form keeps :i64), absence through nested if/let/do tails,
+;; fn literals (:none there), `if` without else and `cond` without :else (refused, E2105/E2107).
+(defn- ck-r6d-abs? [M :vector-i64 n :i64] :bool (and (= (nm-kind M n) ND-INT) (= (nm-nf M n NF-SYM) -1)))
+;; the function being checked infers its result (a defn whose result node is the synthetic KW-INFER)
+(defn- ck-r6d-none-mode? [M :vector-i64] :bool
+  (let [f (ck-sg M ck-s-fn)]
+    (and (pos? f) (< f (vector-at M MM-FN-N))
+         (or (= (nm-ff M f FF-KIND) FK-DEFN) (= (nm-ff M f FF-KIND) FK-PRIV))
+         (let [d (nm-ff M f FF-NODE)]
+           (and (pos? d) (= (nm-kind M d) ND-LIST) (>= (nm-count M d) 4) (= (ck-is-infer M (nm-nth M d 3)) 1))))))
+;; the if node's children c (test), a (then), b (else) with types ta tb; h = the head node (errors)
+(defn- ck-r6d-absif [M :vector-i64 c :i64 a :i64 b :i64 ta :i64 tb :i64 h :i64] :vector-i64
+  (cond (and (ck-r6d-abs? M b) (not (ck-r6d-abs? M a))) (ck-r6d-abs1 M c a ta b)
+        (and (ck-r6d-abs? M a) (not (ck-r6d-abs? M b))) (ck-r6d-abs1 M a b tb a)
+        :else (ck-unify M ta tb h)))
+;; pred = the node before the present arm p (type tp); z = the absent arm
+(defn- ck-r6d-abs1 [M :vector-i64 pred :i64 p :i64 tp :i64 z :i64] :vector-i64
+  (cond (= tp 0) (nm-put (nm-set-nf M z NF-TYPE TY-I64) MM-R0 TY-I64)
+        (= tp TY-BOOL) (nm-put (nm-set-nf M z NF-TYPE TY-BOOL) MM-R0 TY-BOOL)
+        (= (ck-tcon M tp) TC-OPTION) (nm-put (nm-set-nf M z NF-TYPE tp) MM-R0 tp)
+        (and (= tp TY-I64) (not (ck-r6d-none-mode? M))) (nm-put (nm-set-nf M z NF-TYPE TY-I64) MM-R0 TY-I64)
+        :else (let [M1 (ck-ct-intern M TC-OPTION tp 0)
+                    ot (ck-r M1)]
+                (if (nm-failed M1) (ck-touch M1) (ck-r6d-wrap (nm-set-nf M1 z NF-TYPE ot) pred p ot)))))
+;; replace p (after pred) by (option-some-of <ot> p); R0 = ot
+(defn- ck-r6d-wrap [M :vector-i64 pred :i64 p :i64 ot :i64] :vector-i64
+  (let [tok (nm-nf M p NF-TOK)
+        nx (nm-next M p)
+        M1 (ck-n-int M tok 0)
+        d (ck-r M1)
+        M2 (ck-chain2 (nm-set-nf M1 d NF-TYPE ot) d p)
+        M3 (ck-mkh M2 tok HD-OPTION-SOME d)
+        w (ck-r M3)
+        M4 (-> M3 (ck-link w nx) (ck-link pred w) (ck-mark w ot HD-OPTION-SOME))
+        f (ck-sg M4 ck-s-fn)]
+    (nm-put (if (pos? f) (ck-fuel M4 f) M4) MM-R0 ot)))
 
 ;; ---- cond ----
 ;; c = the next test node; h = the head node, acc = the arms' type so far
@@ -2664,7 +2740,7 @@
                     (nm-put MM-R0 (+ TY-COMP-BASE n))))))
 
 ;; a key or set item type: compared by value (i64 bool keyword) or by bytes (string)
-(defn- ck-keyable [ty :i64] :bool (or (= ty TY-I64) (= ty TY-BOOL) (= ty TY-KW) (= ty TY-STR)))
+(defn- ck-keyable [ty :i64] :bool (or (= ty TY-I64) (= ty TY-BOOL) (= ty TY-KW) (= ty TY-STR) (= ty TY-SYM)))   ; R6D: + :symbol (its text, compared as a string: 30-lower lw-strty?)
 
 (defn- ck-tc-of [k :i64] :i64
   (case k KW-OPTION TC-OPTION KW-RESULT TC-RESULT KW-LIST TC-LIST KW-MAP TC-MAP KW-SET TC-SET 0))
@@ -2975,7 +3051,7 @@
                                    (and lst? (or (= na 2) (= na 3))) (ck-ta M ty)
                                    (and set? (= na 2) (nm-ne (ck-ta M ty) TY-KW)) (ck-ta M ty)
                                    :else 0))
-      HD-CONTAINS (nm-put M MM-R0 (if (and (= na 2) map?) TY-BOOL 0))
+      HD-CONTAINS (nm-put M MM-R0 (if (and (= na 2) (or map? set?)) TY-BOOL 0))   ; R6D: also a set (= typed-set-contains)
       HD-CONJ (nm-put M MM-R0 (if (and (>= na 2) (or vec? lst? set?)) ty 0))
       HD-DISJ (nm-put M MM-R0 (if (and (>= na 2) set?) ty 0))
       HD-DISSOC (nm-put M MM-R0 (if (and (= na 2) map?) ty 0))
@@ -4436,16 +4512,16 @@
 ;;     the reference's "keyword map keys" (stage-0: a native keyword's text IS its document).
 ;; =========================================================================================================
 ;; after the string literal whose opening quote is at i (the end of S when unclosed)
-(defn- ck-r6b-strend [S :string i :i64] :i64
+(defn ck-r6b-strend [S :string i :i64] :i64
   (loop [j (+ i 1)]
     (cond (>= j (string-length S)) j
           (= (string-code-point-at S j) 34) (+ j 1)
           (= (string-code-point-at S j) 92) (if (>= (+ j 1) (string-length S)) (+ j 1) (recur (+ (+ j 1) (lx-cpw (string-code-point-at S (+ j 1))))))
           :else (recur (+ j (lx-cpw (string-code-point-at S j)))))))
 ;; after the character literal whose backslash is at i
-(defn- ck-r6b-charend [S :string i :i64] :i64
+(defn ck-r6b-charend [S :string i :i64] :i64
   (if (>= (+ i 1) (string-length S)) (+ i 1) (+ (+ i 1) (lx-cpw (string-code-point-at S (+ i 1))))))
-(defn- ck-r6b-symend [S :string i :i64] :i64
+(defn ck-r6b-symend [S :string i :i64] :i64
   (loop [j i] (if (and (< j (string-length S)) (lx-symch? (string-code-point-at S j))) (recur (+ j 1)) j)))
 (defn- ck-r6b-is? [S :string a :i64 b :i64 t :string] :bool
   (and (= (- b a) (string-length t)) (string=? (string-substring S a b) t)))
@@ -4480,9 +4556,10 @@
     (if (pos? (bit-and r2 ck-r6b-g-doc)) (bit-or r2 ck-r6b-g-kw) r2)))
 
 ;; the module's keyword table: " :k1 :k2 .. " (each spelling once), the 11 document kinds first
-(defn- ck-r6b-kwtab [S :string] :string
+;; R6D: table acc0 plus the spellings of module text S it does not have yet (first occurrence order)
+(defn- ck-r6b-kwadd [acc0 :string S :string] :string
   (let [n (string-length S)]
-    (loop [i 0 acc " :null :bool :i64 :f64 :string :keyword :symbol :vector :list :set :map "]
+    (loop [i 0 acc acc0]
       (if (>= i n)
         acc
         (let [c (string-code-point-at S i)]
@@ -4500,14 +4577,33 @@
 
 (defn- ck-r6b-pick [m :i64 g :i64 t :string] :string (if (zero? (bit-and m g)) "" t))
 
+(defn ck-r6b-kwtab [S :string] :string (ck-r6b-kwadd " :null :bool :i64 :f64 :string :keyword :symbol :vector :list :set :map " S))
+;; R6D (agent R6D, 2026-10-03): the keyword TEXT table is a link-time union. A keyword made in one module and turned into
+;; text in another trapped (the R6B table was per module). 60-proj gives the ENTRY module the union T of every linked
+;; module's spellings (ck-r6b-kwmerge in compile order; separate mode: the cumulative K lines of the objects), forces its
+;; kw group, and after the link patches the first instruction of every library's __r6-kwtab into `b` to the entry's, so
+;; every module reads one table. T = "" keeps the module's own table (the single-module route, libraries).
+;; table acc plus the tokens of table T it does not have yet
+(defn ck-r6b-kwmerge [acc0 :string T :string] :string
+  (let [n (string-length T)]
+    (loop [i 0 acc acc0]
+      (cond (>= i n) acc
+            (= (string-code-point-at T i) 32) (recur (+ i 1) acc)
+            :else (let [e (loop [j i] (if (or (>= j n) (= (string-code-point-at T j) 32)) j (recur (+ j 1))))
+                        k (string-substring T i e)]
+                    (recur e (if (>= (string-index-of acc (string-concat " " (string-concat k " "))) 0) acc (string-concat acc (string-concat k " ")))))))))
+;; 1 when module text S needs the keyword group of the library on its own
+(defn ck-r6b-needs-kw? [S :string] :bool (pos? (bit-and (ck-r6b-scan S) ck-r6b-g-kw)))
+
 ;; the text appended to module source S ("" when it needs no library group)
-(defn ck-r6b-lib [S :string] :string
-  (let [m (ck-r6b-scan S)]
+;; R6D: the same with keyword table T ("" = S's own table; else T, and the keyword group is included)
+(defn ck-r6b-lib-t [S :string T :string] :string
+  (let [m (if (zero? (string-length T)) (ck-r6b-scan S) (bit-or (ck-r6b-scan S) ck-r6b-g-kw))]
     (if (zero? m)
       ""
       (-> "\n"
           (string-concat (ck-r6b-pick m ck-r6b-g-kw (ck-r6b-t-kw)))
-          (string-concat (ck-r6b-pick m ck-r6b-g-kw (string-concat "(defn- __r6-kwtab [] :string \"" (string-concat (ck-r6b-kwtab S) "\")\n"))))
+          (string-concat (ck-r6b-pick m ck-r6b-g-kw (string-concat "(defn- __r6-kwtab [] :string \"" (string-concat (if (zero? (string-length T)) (ck-r6b-kwtab S) T) "\")\n"))))
           (string-concat (ck-r6b-pick m ck-r6b-g-doc (ck-r6b-t-doc)))
           (string-concat (ck-r6b-pick m ck-r6b-g-exi (ck-r6b-t-exi)))
           (string-concat (ck-r6b-pick m ck-r6b-g-sfb (ck-r6b-t-sfb)))
@@ -4518,10 +4614,14 @@
           (string-concat (ck-r6b-pick m ck-r6b-g-parse (ck-r6b-t-parse)))
           (string-concat (ck-r6b-pick m ck-r6b-g-sym (ck-r6b-t-sym)))
           (string-concat (ck-r6b-pick m ck-r6b-g-vec (ck-r6b-t-vec)))
-          (string-concat (ck-r6b-pick m ck-r6b-g-f64 (ck-r6b-t-f64)))))))   ; R6C
+          (string-concat (ck-r6b-pick m ck-r6b-g-f64 (ck-r6b-t-f64)))   ; R6C
+          (string-concat (ck-r6b-pick m ck-r6b-g-oi64 (ck-r6b-t-oi64)))   ; R6D
+          (string-concat (ck-r6b-pick m ck-r6b-g-dec (ck-r6b-t-dec)))))))   ; R6D
+
+(defn ck-r6b-lib [S :string] :string (ck-r6b-lib-t S ""))
 
 ;; the FN index of the library defn whose spelling hashes to h (the first clause), 0 when absent
-(defn- ck-r6b-fn [M :vector-i64 h :i64] :i64
+(defn ck-r6b-fn [M :vector-i64 h :i64] :i64
   (loop [f 1]
     (cond (>= f (vector-at M MM-FN-N)) 0
           (and (= (nm-sf M (nm-ff M f FF-SYM) SF-HASH) h) (or (= (nm-ff M f FF-KIND) FK-DEFN) (= (nm-ff M f FF-KIND) FK-PRIV))) f
@@ -4895,6 +4995,8 @@
 (def ck-r6b-g-sym 512)
 (def ck-r6b-g-vec 1024)
 (def ck-r6b-g-f64 2048)
+(def ck-r6b-g-oi64 4096)
+(def ck-r6b-g-dec 8192)
 (def ck-r6b-h-str -9048150456382168848)
 (def ck-r6b-h-match-option 1201494287191572048)
 (def ck-r6b-h-none 4327140908117611899)
@@ -4957,6 +5059,12 @@
         (= h -745687937792843357) ck-r6b-g-vec   ; into
         (= h 1600856041486620590) ck-r6b-g-f64   ; f64-to-bits
         (= h 7987950950382066285) ck-r6b-g-f64   ; f64-from-bits
+        (= h 6932689201082914001) ck-r6b-g-oi64   ; some
+        (= h 5474833896677373533) ck-r6b-g-oi64   ; option-none
+        (= h -5110378306262118984) ck-r6b-g-oi64   ; option-some?
+        (= h 8206252138909507960) ck-r6b-g-oi64   ; option-value
+        (= h -4185511760341210145) ck-r6b-g-dec   ; decimal-f64-parse
+        (= h 2113945395494330990) ck-r6b-g-dec   ; decimal-f64x3-parse
         :else 0))
 ;; the capability catalogue (resources/kotoba/lang/capability-catalog.edn): the wire id of the friendly qualified
 ;; name (:source-operation) with FNV-1a hash h, 0 for none
@@ -5251,6 +5359,51 @@
   (string-concat "(defn- f64-to-bits [x :f64] :i64 (__r6-as :i64 x))\n"
   "(defn- f64-from-bits [b :i64] :f64 (__r6-as :f64 b))\n"))
 (defn- ck-r6b-t-f64 [] :string (ck-r6b-t-f640))
+(defn- ck-r6b-t-oi640 [] :string
+  (string-concat "(defn- some [x :i64] :option-i64 (__r6-as :option-i64 (option-some-of [:option :i64] x)))\n"
+  (string-concat "(defn- option-none [] :option-i64 (__r6-as :option-i64 (option-none-of [:option :i64])))\n"
+  (string-concat "(defn- option-some? [o :option-i64] :bool (option-some?-of [:option :i64] (__r6-as [:option :i64] o)))\n"
+  "(defn- option-value [o :option-i64 d :i64] :i64 (option-value-of [:option :i64] (__r6-as [:option :i64] o) d))\n"))))
+(defn- ck-r6b-t-oi64 [] :string (ck-r6b-t-oi640))
+(defn- ck-r6b-t-dec0 [] :string
+  (string-concat "(defn- __r6d-take [v :vector-i64 n :i64] :vector-i64 (let [r (vector-alloc n)] (loop [i 0] (if (>= i n) r (let [w (vector-assoc! r i (vector-at v i))] (recur (+ i 1)))))))\n"
+  (string-concat "(defn- __r6d-norm [v :vector-i64] :vector-i64 (loop [n (vector-count v)] (if (and (> n 0) (= (vector-at v (- n 1)) 0)) (recur (- n 1)) (if (= n (vector-count v)) v (__r6d-take v n)))))\n"
+  (string-concat "(defn- __r6d-small [k :i64] :vector-i64 (__r6d-norm (vector-conj (vector-conj (vector-alloc 0) (bit-and k 4294967295)) (u64-shift-right k 32))))\n"
+  (string-concat "(defn- __r6d-muladd [v :vector-i64 m :i64 a :i64] :vector-i64 (let [n (vector-count v) r (vector-alloc (+ n 1))] (loop [i 0 c a] (if (>= i n) (__r6d-norm (vector-assoc! r n c)) (let [x (+ (* (vector-at v i) m) c) w (vector-assoc! r i (bit-and x 4294967295))] (recur (+ i 1) (u64-shift-right x 32)))))))\n"
+  (string-concat "(defn- __r6d-shl [v :vector-i64 k :i64] :vector-i64 (let [q (quot k 32) b (- k (* q 32)) n (vector-count v) r (vector-alloc (+ (+ n q) 1))] (loop [i 0 c 0] (if (>= i n) (__r6d-norm (vector-assoc! r (+ n q) c)) (let [x (vector-at v i) w (vector-assoc! r (+ i q) (bit-or (bit-and (i64-shift-left x b) 4294967295) c))] (recur (+ i 1) (if (= b 0) 0 (u64-shift-right x (- 32 b)))))))))\n"
+  "(defn- __r6d-bitlen [v :vector-i64] :i64 (let [n (vector-count v)] (if (= n 0) 0 (loop [t (vector-at v (- n 1)) k 0] (if (= t 0) (+ (* 32 (- n 1)) k) (recur (u64-shift-right t 1) (+ k 1)))))))\n"))))))
+(defn- ck-r6b-t-dec1 [] :string
+  (string-concat "(defn- __r6d-mulpow10 [v0 :vector-i64 k0 :i64] :vector-i64 (loop [v v0 k k0] (cond (>= k 9) (recur (__r6d-muladd v 1000000000 0) (- k 9)) (> k 0) (recur (__r6d-muladd v 10 0) (- k 1)) :else v)))\n"
+  (string-concat "(defn- __r6d-len [v :vector-i64] :i64 (loop [n (vector-count v)] (if (and (> n 0) (= (vector-at v (- n 1)) 0)) (recur (- n 1)) n)))\n"
+  (string-concat "(defn- __r6d-cmpz [a :vector-i64 b :vector-i64] :i64 (let [na (__r6d-len a) nb (__r6d-len b)] (cond (< na nb) -1 (> na nb) 1 :else (loop [i (- na 1)] (cond (< i 0) 0 (< (vector-at a i) (vector-at b i)) -1 (> (vector-at a i) (vector-at b i)) 1 :else (recur (- i 1)))))))\n"
+  (string-concat "(defn- __r6d-subin [r :vector-i64 b :vector-i64] :i64 (loop [i 0 br 0] (if (>= i (vector-count r)) 0 (let [x (- (- (vector-at r i) (if (< i (vector-count b)) (vector-at b i) 0)) br) w (vector-assoc! r i (bit-and x 4294967295))] (recur (+ i 1) (if (< x 0) 1 0))))))\n"
+  (string-concat "(defn- __r6d-shr1in [v :vector-i64] :i64 (loop [i 0] (if (>= i (vector-count v)) 0 (let [hi (if (< (+ i 1) (vector-count v)) (vector-at v (+ i 1)) 0) w (vector-assoc! v i (bit-or (u64-shift-right (vector-at v i) 1) (bit-and (i64-shift-left hi 31) 4294967295)))] (recur (+ i 1))))))\n"
+  "(defn- __r6d-quotin [r :vector-i64 b :vector-i64] :i64 (let [bs (__r6d-shl b 56)] (loop [i 56 q 0] (if (< i 0) q (let [ge (>= (__r6d-cmpz r bs) 0) w (if ge (__r6d-subin r bs) 0) w2 (__r6d-shr1in bs)] (recur (- i 1) (if ge (bit-or q (i64-shift-left 1 i)) q)))))))\n"))))))
+(defn- ck-r6b-t-dec2 [] :string
+  (string-concat "(defn- __r6d-sn [num :vector-i64 e :i64] :vector-i64 (if (< e 0) (__r6d-shl num (- 0 e)) num))\n"
+  (string-concat "(defn- __r6d-sd [den :vector-i64 e :i64] :vector-i64 (if (> e 0) (__r6d-shl den e) den))\n"
+  (string-concat "(defn- __r6d-exp [num :vector-i64 den :vector-i64] :i64 (let [e0 (- (- (__r6d-bitlen num) (__r6d-bitlen den)) 53) a (__r6d-sn num e0) q0 (__r6d-quotin (__r6d-take a (vector-count a)) (__r6d-sd den e0)) e1 (if (>= q0 9007199254740992) (+ e0 1) e0)] (if (< e1 -1074) -1074 e1)))\n"
+  (string-concat "(defn- __r6d-round [num :vector-i64 den :vector-i64 e :i64] :i64 (let [a0 (__r6d-sn num e) a (__r6d-take a0 (vector-count a0)) b (__r6d-sd den e) q (__r6d-quotin a b) c (__r6d-cmpz (__r6d-shl a 1) b)] (cond (> c 0) (+ q 1) (= c 0) (+ q (bit-and q 1)) :else q)))\n"
+  (string-concat "(defn- __r6d-f64 [num :vector-i64 den :vector-i64] :i64 (let [e (__r6d-exp num den) q (__r6d-round num den e) q2 (if (= q 9007199254740992) 4503599627370496 q) e2 (if (= q 9007199254740992) (+ e 1) e)] (cond (> e2 971) -1 (< q2 4503599627370496) q2 :else (+ (i64-shift-left (+ e2 1075) 52) (- q2 4503599627370496)))))\n"
+  "(defn- __r6d-value [neg :bool d :vector-i64 e10 :i64] [:option :f64] (let [sg (if neg -9223372036854775808 0)] (cond (= (vector-count d) 0) (option-some-of [:option :f64] (__r6-as :f64 sg)) (> e10 330) (option-none-of [:option :f64]) (< e10 -400) (option-some-of [:option :f64] (__r6-as :f64 sg)) :else (let [b (__r6d-f64 (if (>= e10 0) (__r6d-mulpow10 d e10) d) (if (< e10 0) (__r6d-mulpow10 (__r6d-small 1) (- 0 e10)) (__r6d-small 1)))] (if (< b 0) (option-none-of [:option :f64]) (option-some-of [:option :f64] (__r6-as :f64 (bit-or sg b))))))))\n"))))))
+(defn- ck-r6b-t-dec3 [] :string
+  (string-concat "(defn- __r6d-dig? [c :i64] :bool (and (>= c 48) (<= c 57)))\n"
+  (string-concat "(defn- __r6d-digs [s :string i :i64 n :i64] :i64 (loop [j i] (if (and (< j n) (__r6d-dig? (string-code-point-at s j))) (recur (+ j 1)) j)))\n"
+  (string-concat "(defn- __r6d-acc [v0 :vector-i64 s :string a :i64 b :i64] :vector-i64 (loop [j a w v0] (if (>= j b) w (let [k (if (> (- b j) 9) (+ j 9) b)] (recur k (__r6d-muladd w (__r6d-p10 (- k j)) (__r6d-int s j k)))))))\n"
+  (string-concat "(defn- __r6d-p10 [k :i64] :i64 (loop [i 0 x 1] (if (>= i k) x (recur (+ i 1) (* x 10)))))\n"
+  (string-concat "(defn- __r6d-int [s :string a :i64 b :i64] :i64 (loop [j a x 0] (if (>= j b) x (recur (+ j 1) (+ (* x 10) (- (string-code-point-at s j) 48))))))\n"
+  "(defn- __r6d-cp [s :string i :i64 n :i64] :i64 (if (< i n) (string-code-point-at s i) 0))\n"))))))
+(defn- ck-r6b-t-dec4 [] :string
+  (string-concat "(defn- decimal-f64-parse [s :string] [:option :f64] (let [n (string-byte-length s) c0 (__r6d-cp s 0 n) i0 (if (or (= c0 43) (= c0 45)) 1 0) i1 (__r6d-digs s i0 n) f0 (if (= (__r6d-cp s i1 n) 46) (+ i1 1) i1) f1 (__r6d-digs s f0 n) hasx (or (= (__r6d-cp s f1 n) 101) (= (__r6d-cp s f1 n) 69)) x0 (if hasx (+ f1 1) f1) xs (if hasx (__r6d-cp s x0 n) 0) x1 (if (or (= xs 43) (= xs 45)) (+ x0 1) x0) x2 (if hasx (__r6d-digs s x1 n) x1) xv (if (= xs 45) (- 0 (__r6d-int s x1 x2)) (__r6d-int s x1 x2))] (if (and (> n 0) (<= n 64) (> (+ (- i1 i0) (- f1 f0)) 0) (= x2 n) (or (not hasx) (and (> (- x2 x1) 0) (<= (- x2 x1) 3)))) (__r6d-value (= c0 45) (__r6d-acc (__r6d-acc (vector-alloc 0) s i0 i1) s f0 f1) (- xv (- f1 f0))) (option-none-of [:option :f64]))))\n"
+  (string-concat "(defn- __r6d-ws? [c :i64] :bool (or (= c 32) (= c 9) (= c 13) (= c 10)))\n"
+  (string-concat "(defn- __r6d-f3ch? [c :i64] :bool (or (__r6d-dig? c) (= c 101) (= c 69) (= c 43) (= c 46) (= c 45) (__r6d-ws? c)))\n"
+  (string-concat "(defn- __r6d-tok [s :string i :i64 n :i64] :i64 (loop [j i] (if (and (< j n) (__r6d-ws? (string-code-point-at s j))) (recur (+ j 1)) j)))\n"
+  (string-concat "(defn- __r6d-tend [s :string i :i64 n :i64] :i64 (loop [j i] (if (and (< j n) (not (__r6d-ws? (string-code-point-at s j)))) (recur (+ j 1)) j)))\n"
+  "(defn- __r6d-bits [o [:option :f64]] :i64 (__r6-as :i64 (option-value-of [:option :f64] o (__r6-as :f64 0))))\n"))))))
+(defn- ck-r6b-t-dec5 [] :string
+  (string-concat "(defn- __r6d-x3 [s :string n :i64] [:option [:vector [:f64 :f64 :f64]]] (let [a0 (__r6d-tok s 0 n) a1 (__r6d-tend s a0 n) b0 (__r6d-tok s a1 n) b1 (__r6d-tend s b0 n) c0 (__r6d-tok s b1 n) c1 (__r6d-tend s c0 n) d0 (__r6d-tok s c1 n)] (if (or (= a0 a1) (= b0 b1) (= c0 c1) (< d0 n)) (option-none-of [:option [:vector [:f64 :f64 :f64]]]) (let [x (decimal-f64-parse (string-substring s a0 a1)) y (decimal-f64-parse (string-substring s b0 b1)) z (decimal-f64-parse (string-substring s c0 c1))] (if (and (option-some?-of [:option :f64] x) (option-some?-of [:option :f64] y) (option-some?-of [:option :f64] z)) (option-some-of [:option [:vector [:f64 :f64 :f64]]] (__r6-as [:vector [:f64 :f64 :f64]] [(__r6d-bits x) (__r6d-bits y) (__r6d-bits z)])) (option-none-of [:option [:vector [:f64 :f64 :f64]]]))))))\n"
+  "(defn- decimal-f64x3-parse [s :string] [:option [:vector [:f64 :f64 :f64]]] (let [n (string-byte-length s) okc (loop [i 0] (cond (>= i n) true (__r6d-f3ch? (string-code-point-at s i)) (recur (+ i 1)) :else false))] (if (and (> n 0) (<= n 194) okc) (__r6d-x3 s n) (option-none-of [:option [:vector [:f64 :f64 :f64]]]))))\n"))
+(defn- ck-r6b-t-dec [] :string (string-concat (ck-r6b-t-dec0) (string-concat (ck-r6b-t-dec1) (string-concat (ck-r6b-t-dec2) (string-concat (ck-r6b-t-dec3) (string-concat (ck-r6b-t-dec4) (ck-r6b-t-dec5)))))))
 ;; END R6B srclib
 ;; ==== END R6B ============================================================================================
 
