@@ -1,0 +1,187 @@
+(ns kotoba.amu-front.check
+  {:kotoba/export [main]}
+  (:require [kotoba.form :as form]
+            [kotoba.compiler.frontend.analyze :as an])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :form/rd [:record :form/rd [[:form [:ref :form/r]] [:pos :i64]]]
+             :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]] [:phase :string] [:data [:ref :form/r]]]]
+             :ana/ir [:record :ana/ir [[:ok :bool] [:val [:ref :form/r]] [:err [:ref :fe/err]]]]}))
+
+;; seed/amu-front/check.cljk -- the native `check` command built from the big frontend (agent COMPOSE, 2026-10-03).
+;;
+;;   amu-front check <file> [--source-path DIR ...]
+;;
+;; Reads <file> through wire 35 (:fs/app-data), runs the Kotoba-route analysis of kotoba-sema's frontend
+;; (`kotoba.compiler.frontend.analyze/analyze`, the whole linked frontend) and prints the report line of
+;; `amu check` (src/kotoba/compiler/cli.cljk "check", diagnostic/format-human):
+;;   ok profile=<p> effects=#{..} exports=[..]          stdout, exit 0
+;;   error: <code> at <file>: <message>                 stderr, exit 65
+;; Scope (measured gaps in seed/amu-front/README.md): single-namespace analysis only; --source-path is
+;; accepted and ignored (the project route's module graph is not part of this frontend); no span (line:col) in the
+;; refusal line; the capability policy is the default one (no grant; --policy is not read); the stage-0 report
+;; refinements reproduced are the :require clause rename and the capability-deny text.
+
+(defn- af-argc [] :i64
+  (let [s (typed-cap-call :cli/args :string :string "")]
+    (af-dec s 0 (string-length s) 0)))
+
+(defn- af-dec [s :string i :i64 n :i64 acc :i64] :i64
+  (if (>= i n) acc (af-dec s (+ i 1) n (+ (* acc 10) (- (string-code-point-at s i) 48)))))
+
+(defn- af-arg [i :i64] :string
+  (typed-cap-call :cli/args :string :string (string-from-i64 i)))
+
+(defn- af-out [s :string] :i64
+  (let [r (typed-cap-call :io/write :string :string s)] 0))
+
+(defn- af-err [s :string] :i64
+  (let [r (typed-cap-call :io/write-error :string :string s)] 0))
+
+;; wire 35 looks for its tokens anywhere in a request: build the token at run time (seed/02-io.kotoba io-sep)
+(defn- af-sep [w :string] :string (string-concat w "_SEP"))
+
+(defn- af-exists? [path :string] :bool
+  (let [a (typed-cap-call :fs/app-data :string :string (string-concat path (af-sep "EXISTS")))]
+    (and (> (string-length a) 0) (= (string-code-point-at a 0) 49))))
+
+;; ---- printing a HIR Form the way pr-str prints the corresponding host value ----
+(defn- af-join [kids [:list [:ref :form/r]] i :i64 acc :string] :string
+  (if (>= i (vector-count kids))
+    acc
+    (af-join kids (+ i 1)
+             (string-concat acc (string-concat (if (> i 0) " " "") (af-print (typed-list-nth [:list [:ref :form/r]] kids i)))))))
+
+(defn- af-print [f [:ref :form/r]] :string
+  (cond
+    (form/is-nil? f) "nil"
+    (form/is-bool? f) (if (form/bool-value f) "true" "false")
+    (form/is-int? f) (string-from-i64 (form/int-value f))
+    (form/is-string? f) (string-concat "\"" (string-concat (form/string-value f) "\""))
+    (form/is-keyword? f) (document-edn-print (document-keyword (form/keyword-value f)))
+    (form/is-symbol? f) (form/symbol-value f)
+    (form/is-seq? f) (string-concat "(" (string-concat (af-join (form/kids-of f) 0 "") ")"))
+    (form/is-vec? f) (string-concat "[" (string-concat (af-join (form/kids-of f) 0 "") "]"))
+    (form/is-set? f) (string-concat "#{" (string-concat (af-join (form/kids-of f) 0 "") "}"))
+    (form/is-map? f) (string-concat "{" (string-concat (af-join (form/kids-of f) 0 "") "}"))
+    :else "?"))
+
+(defn- af-get [m [:ref :form/r] k :keyword] [:ref :form/r]
+  (form/form-get m (form/keyword-form k)))
+
+(defn- af-profile [p [:ref :form/r]] :string
+  (cond (form/is-keyword? p) (string-substring (af-print p) 1 (string-length (af-print p)))
+        (form/is-symbol? p) (form/symbol-value p)
+        :else "default"))
+
+(defn- af-coll [f [:ref :form/r] empty :string] :string
+  (if (form/is-nil? f) empty (af-print f)))
+
+(defn- af-ok-line [hir [:ref :form/r]] :string
+  (string-concat "ok profile="
+    (string-concat (af-profile (af-get hir :language-profile))
+      (string-concat " effects="
+        (string-concat (af-coll (af-get hir :effects) "#{}")
+          (string-concat " exports=" (string-concat (af-coll (af-get hir :exports) "[]") "\n")))))))
+
+;; the human line prints the code keyword's name ("kotoba.error/subset-reject" -> "subset-reject")
+(defn- af-code [e [:ref :fe/err]] :string
+  (let [c (record-get [:ref :fe/err] e :code)
+        j (string-find-byte c 47 0)]
+    (cond (= (string-length c) 0) "subset-reject"
+          (< j 0) c
+          :else (string-substring c (+ j 1) (string-length c)))))
+
+(defn- af-err-line [path :string e [:ref :fe/err]] :string
+  (string-concat "error: "
+    (string-concat (af-code e)
+      (string-concat " at "
+        (string-concat path (string-concat ": " (string-concat (record-get [:ref :fe/err] e :msg) "\n")))))))
+
+;; ---- diagnostic/refine (src/kotoba/compiler/diagnostic.cljk): a `(:require ..)` / `(:params ..)` namespace clause
+;; refused by the frontend as namespace-export-clause is reported under the project-routing code and text ----
+(defn- af-clause-head? [e [:ref :fe/err] head :string] :bool
+  (let [f (record-get [:ref :fe/err] e :form)]
+    (and (string=? (af-code e) "namespace-export-clause")
+         (form/is-seq? f) (> (form/count-of f) 0)
+         (form/is-keyword? (form/nth-of f 0))
+         (string=? (af-print (form/nth-of f 0)) head))))
+
+(defn- af-require-message [] :string
+  (string-concat "this namespace declares (:require ...), so it is a module of a multi-file "
+    (string-concat "project; the single-module path admits only a standalone namespace. "
+      (string-concat "Pin the graph with `amu module-lock <entry> --source-path <dir> --blocks <dir>` "
+        (string-concat "then `amu compile --module-lock <lock> --blocks <dir>`; "
+          "`amu check <entry> --source-path <dir>` links and checks it without emitting.")))))
+
+(defn- af-refusal [path :string e [:ref :fe/err]] :string
+  (if (af-clause-head? e ":require")
+    (string-concat "error: namespace-require-needs-project at "
+      (string-concat path (string-concat ": " (string-concat (af-require-message) "\n"))))
+    (af-err-line path e)))
+
+;; ---- the capability policy: `check` without --policy allows no grant (core.cljk capability-deny-message). The wire
+;; ids are named from resources/kotoba/lang/capability-catalog.edn (:compiler-wire-id), as cap-names/name-grants does ----
+(defn- af-wire-name [w :i64] :string
+  (cond (= w 1) ":identity/sign" (= w 2) ":identity/verify" (= w 3) ":hash/sha" (= w 4) ":http/post"
+        (= w 5) ":log/read" (= w 6) ":log/append" (= w 7) ":clock/now" (= w 8) ":state/transact"
+        (= w 9) ":ui/commit" (= w 10) ":ui/next-event" (= w 11) ":llm/generate" (= w 12) ":storage/transact"
+        (= w 13) ":http/get-stream" (= w 14) ":object/get-stream" (= w 15) ":object/put-block"
+        (= w 16) ":object/compare-and-set-ref" (= w 17) ":http/accept" (= w 18) ":http/reply" (= w 19) ":fs/transact"
+        (= w 20) ":process/spawn" (= w 21) ":secret/get" (= w 22) ":git/run" (= w 23) ":entropy/draw"
+        (= w 24) ":dataspace/transact" (= w 25) ":stream/accept" (= w 26) ":stream/send" (= w 27) ":net/datagram"
+        (= w 28) ":link/frame" (= w 29) ":can/frame" (= w 30) ":code/eval" (= w 31) ":screen/observe"
+        (= w 32) ":screen/act" (= w 33) ":env/read" (= w 34) ":fs/browse" (= w 35) ":fs/app-data"
+        (= w 36) ":fs/browse-dir" (= w 37) ":io/write" (= w 38) ":cli/args" (= w 39) ":io/write-error"
+        (= w 40) ":sys/cwd" (= w 41) ":io/read" (= w 42) ":gpu/compute"
+        :else (string-from-i64 w)))
+
+;; an effect member [:cap/call N] -> "[:cap/call :name]", anything else -> ""
+(defn- af-grant [x [:ref :form/r]] :string
+  (if (and (form/is-vec? x) (= (form/count-of x) 2) (form/is-keyword? (form/nth-of x 0))
+           (string=? (af-print (form/nth-of x 0)) ":cap/call") (form/is-int? (form/nth-of x 1)))
+    (string-concat "[:cap/call " (string-concat (af-wire-name (form/int-value (form/nth-of x 1))) "]"))
+    ""))
+
+(defn- af-grants [kids [:list [:ref :form/r]] i :i64 acc :string] :string
+  (if (>= i (vector-count kids))
+    acc
+    (let [g (af-grant (typed-list-nth [:list [:ref :form/r]] kids i))]
+      (af-grants kids (+ i 1)
+                 (if (= (string-length g) 0) acc (string-concat acc (string-concat (if (= (string-length acc) 0) "" " ") g)))))))
+
+(defn- af-required [hir [:ref :form/r]] :string
+  (let [eff (af-get hir :effects)]
+    (if (or (form/is-set? eff) (form/is-vec? eff)) (af-grants (form/kids-of eff) 0 "") "")))
+
+(defn- af-deny-line [path :string req :string] :string
+  (string-concat "error: capability-missing-grant at "
+    (string-concat path
+      (string-concat ": capability policy denies required effects; missing grants #{"
+        (string-concat req (string-concat "} (required #{" (string-concat req "}, allowed #{})\n")))))))
+
+(defn- af-accept [path :string hir [:ref :form/r]] :i64
+  (let [req (af-required hir)]
+    (if (= (string-length req) 0)
+      (let [w (af-out (af-ok-line hir))] 0)
+      (let [w (af-err (af-deny-line path req))] 65))))
+
+(defn- af-check [path :string] :i64
+  (if (af-exists? path)
+    (let [text (typed-cap-call :fs/app-data :string :string path)
+          r (an/analyze text (form/nil-form))]
+      (if (record-get [:ref :ana/ir] r :ok)
+        (af-accept path (record-get [:ref :ana/ir] r :val))
+        (let [w (af-err (af-refusal path (record-get [:ref :ana/ir] r :err)))] 65)))
+    (let [w (af-err (string-concat "error: source-read-failed at " (string-concat path ": file not found\n")))] 66)))
+
+(defn- af-usage [] :i64
+  (let [w (af-err "usage: amu-front check <file> [--source-path DIR ...]\n")] 64))
+
+(defn main [] :i64
+  (let [n (af-argc)]
+    (if (< n 2)
+      (af-usage)
+      (if (string=? (af-arg 0) "check")
+        (af-check (af-arg 1))
+        (af-usage)))))
