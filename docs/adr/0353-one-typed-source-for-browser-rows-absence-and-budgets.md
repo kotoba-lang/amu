@@ -521,7 +521,8 @@ Clojure it is today, the language gains:
    aiueos kernel source (127 on disk) writes `{}`, `match`, `map-new` or a
    `:map` type, so no kernel object can move. Refused by name: `{}` with
    nothing to type it ("an empty map literal {} has no row to extend: ..."),
-   read, counted, let-bound or spelled `(map-new)`; a record context whose
+   read, counted, let-bound or spelled `(map-new)` (passed to a row it is the
+   record with no fields since floor `:options-map-argument`, below); a record context whose
    field is not an option; a coerced field; a record as an `if` test; `=`
    over records; a key the record lacks. Found and left to its own floor
    (`:row-get-and-match`): `(get m :a)` is not a row read, so a `match` over
@@ -651,7 +652,9 @@ number passed to a row parameter, a record as an `if` test. text-edit (its
 now answers a refusal in the language's words, at `delete-backward`'s
 `(insert-text state "")`: "argument state to insert-text is i64, and
 parameter state of insert-text is the row {:text/caret T :text/selection T |
-r}: only a record satisfies a row" -- floor `:rebound-row-argument`, below.
+r}: only a record satisfies a row" -- floor `:rebound-row-argument`, below;
+since floor `:options-map-argument` it is admitted and answers 3, which the
+gate now pins.
 
 The `nil` field landed as floor `:absent-field-from-assoc` (gate
 `nil-field-typed-by-the-module-assoc-test`). text-edit starts its state with
@@ -829,6 +832,54 @@ declared keyword literal"), the option as a number (`expected i64, got
 [:option ..]`), and the option projected as if it were the record
 ("record-get without a type descriptor requires a record value; got [:option
 ..]").
+
+The options map landed as floor `:options-map-argument` (gate
+`options-map-destructures-as-a-row-test`). text-edit's `move-caret` and
+`move-to` take `([state delta] (move-caret state delta {}))` and `([state
+delta {:keys [extend?]}] ..)`; text-edit with both was refused at
+`(move-caret (empty-state) 1)`, minimized "expression type mismatch: expected
+map, got i64". Three things were missing. The lookup a `{:keys [..]}`
+parameter desugars to (`__kotoba_destructure_get` off the parameter's
+synthetic alias) was not a read of a row, so the parameter stayed the
+provisional `:i64` and the lookup became the retired pair map's `map-get`;
+`{}` had no type at a row argument; and a key the record lacked was "record
+field is not declared". kotoba-sema (`77d2dd84`): the lookup makes its
+parameter a row without requiring the key, as `(get m :k d)` does; `{}` passed
+to a row is the record with no fields, `[:record :kotoba.map-literal/empty
+[]]`; a destructured key the record lacks is its `:or` default, or nothing --
+a presence test of that nothing is the constant `false`, and the binding
+nothing reads any more is dropped, so the absent option is never built (the
+typed wasm32 target has no `option-none` at all: `(let [x nil] 1)` is still
+"unsupported typed Wasm expression" there, outside this floor). A refusal
+naming the synthetic parameter now shows the pattern, `{:keys [extend?]}`.
+The record with no fields was refused by every layer below: osaho's value
+type and native gate (`a5db9a89`), kotoba-native's aggregate ABI and its
+pair-chain lowering, which skipped a `record-new` with no values -- it is now
+the empty chain, 0, with no allocation (`82d3dea1`; its
+`aggregate-abi-portable-test` pinned the empty record as refused and now pins
+it admitted) -- and kotoba-verifier's record check (`fde6f218`). Measured on
+nbb: the gate was red on `275b40a0` / `3b2eef93` / `04a8e0e3` / `3e8134cd`
+(8 failures, 11 errors of 19 assertions, the floor's literal), green on the
+four new pins (19 assertions). The minimized options (absent 1, `{:extend?
+true}` 3: 31) and an `:or` default (508) answer the reference's value on
+`wasm32-kotoba-v1`, `x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1`
+with the oracle verified, and text-edit's `move-caret` / `move-to` ("abcd":
+left, shift-left 2, move-to then shift-move-to) answer 333113313 on the
+reference, on both native targets with `empty-state` private, and compile on
+wasm32; with `empty-state` public it is refused natively as before (floor
+`:export-signatures`). `amu compile --target x86_64-aiueos-kernel-v1` /
+`--target aarch64-macos` of the minimized options exit 0 with `:oracle
+{:status :verified}`; no artifact was run under a loader. kotoba-sema's
+portable suite has the same 39 failures and 5 errors before and after
+(identical lists), kotoba-verifier's the same 22 and 1, osaho's passes (256
+tests), kotoba-native's 34 failures and 9 errors on its known-red list once
+its empty-record pin moved, and amu's nbb suite the same 13 failures and 2 errors (the policy tests) once `text-edit-analyzes-on-nbb-test` moved its pin from the refusal to the admission (text-edit with move-caret and move-to answers 3 on the reference), `native-allocation-budget-test` left out on both sides: its x86_64 loader hung in Rosetta translation (process state U) on the old pins and the new alike. Refused by name: a
+number as the options map, bound by `let` or not ("argument 5 to mv is i64,
+and parameter {:keys [extend?]} of mv is the row {| r}: only a record
+satisfies a row"); an absent option used as a number ("expected i64, got
+option-i64"); `(:k m)`, a required read, off `{}` ("... is record
+:kotoba.map-literal/empty, which has no field :extend? that the row ...
+reads"); and a record, the empty one included, as an `if` test.
 
 ## Selfhost foundation floors (appended 2026-09-26)
 

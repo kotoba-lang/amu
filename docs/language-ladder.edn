@@ -242,6 +242,12 @@
   ;; literal {} has no row to extend".
   {:id :options-map-argument :gate "options-map-destructures-as-a-row-test"
    :goal "move-caret's and move-to's options -- ([state delta] (move-caret state delta {})) and ([state delta {:keys [extend?]}] ..) -- are admitted, a key the map does not have read as absence; refused today \"record-get without a type descriptor requires a record value; got :i64\" at (move-caret (empty-state) 1), minimized \"expression type mismatch: expected map, got i64\"; a number as the options map, and an option used as a number, stay refused"}
+;; Measured 2026-10-04 while closing :options-map-argument: text-edit with
+  ;; move-caret / move-to answers on the reference, on both native targets
+  ;; with empty-state private, and compiles on wasm32 -- the absent option a
+  ;; destructured key would be is folded away. A literal nil the program
+  ;; keeps, (let [x nil] ..), is still "unsupported typed Wasm expression"
+  ;; on wasm32 (option-none); natively it compiles.
   {:id :export-signatures :gate "export-abi-from-clojure-source-test"
    :needs-a-human "how a Clojure-readable source states an export's ABI: browser.text-edit's public functions take state (a row: refused as an exported generic, which has one ABI) and text (unannotated, so :i64; the test passes strings: \"expected i64, got string\"), and the typed signature spelling [m [:ref q]] is not Clojure. Candidates measured as possible, not chosen: Clojure type hints (^String text) and an ns schema the hint names, or the export taking the record the module's one public constructor (empty-state) returns"
    :goal "browser.text-edit's public functions export one ABI each with the source still read by Clojure"}
