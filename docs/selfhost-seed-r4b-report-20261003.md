@@ -41,6 +41,33 @@ loaded host (load average 40-75); rerun on a quiet host before quoting them.
 - Ten checker functions take their operands as separate parameters instead of i64 packing.
 - `lw-assoc-fields` takes `[:ref :seed/lw-asf]`.
 
+## KIR per-function scan after R4B (seed/tests/kir/slice.py scan, the 10 big guests, every non-helper function's call closure)
+
+Seed 4502396d (R4B plus integer wire ids in typed-cap-call, the KIR spelling, which stage-0 also admits in source). Load 46-54.
+
+| guest | functions | KIR4 seed a7489ef4 | R4B seed 4502396d |
+|---|---|---|---|
+| ri | 89 | 72 | 89 |
+| case | 14 | 12 | 14 |
+| cc | 325 | 240 | 316 |
+| codec | 200 | 84 | 181 |
+| di | 412 | 226 | 397 |
+| oa | 400 | 304 | 391 |
+| oat | 304 | 233 | 304 |
+| vc | 481 | 359 | 470 |
+| vx | 394 | 75 | 341 |
+| ds_guest_w | 1002 | 101 | 756 |
+| **total** | **3,621** | **1,706 (47.1%)** | **3,259 (90.0%)** |
+
+This counts compiles only. The flip condition (>= 95% compiling with EQUAL results) is not met: EQUAL is measured per guest
+by merge.sh, not per function. The remaining frontier (slice.py frontier):
+
+- a non-literal `document-keyword` inside `kotoba_module__0__83` and its kin (12-kirread, KIR4). It blocks most of the
+  246 ds_guest_w and 53 vx refusals. The seed reports it as "E2104 ... expected :bool".
+- `:f64` and `f64-to-f32-rounded`, 7 frontier functions (out of scope).
+- the wire-35 WRITE_SEP compile SIGILL, 3 frontier functions with 27 in their closures (50-out).
+- one `if` without an else (E2110) and one wire 23 cap.
+
 ## Open
 
 - `scripts/seed/bootstrap.sh` only replays numeric rungs (`r<->.record`), so r4b is not replayed yet. The same is true of

@@ -1583,6 +1583,17 @@
       (ck-err M E-CHECK-ARITY h 1))))
 
 ;; ---- typed-cap-call ----
+;; R4B: the wire as a keyword code: a wire keyword, or the wire id as an integer literal (the spelling of stage-0's KIR,
+;; which stage-0 also admits in source): 3 33 34 41 35 37 38 39 (35 with a :bytes request = :fs/app-data-bytes); 0 otherwise.
+;; 21-check leaves the code in NF-TYPE of the wire node for 30-lower.
+(defn- ck-wire-kw [M :vector-i64 w :i64 q :i64] :i64
+  (cond (= (nm-kind M w) ND-KW) (nm-head-of M w)
+        (nm-ne (nm-kind M w) ND-INT) 0
+        :else (case (nm-nf M w NF-AUX)
+                3 KW-HASH-SHA256 33 KW-ENV-READ 34 KW-FS-BROWSE 41 KW-IO-READ
+                35 (if (= (nm-head-of M q) KW-BYTES) KW-FS-APP-DATA-BYTES KW-FS-APP-DATA)
+                37 KW-IO-WRITE 38 KW-CLI-ARGS 39 KW-IO-WRITE-ERROR
+                0)))
 (defn- ck-wire-ok [k :i64] :i64
   (cond (= k KW-FS-APP-DATA) 1 (= k KW-CLI-ARGS) 1 (= k KW-IO-WRITE-ERROR) 1 (= k KW-IO-WRITE) 1
         (= k KW-FS-APP-DATA-BYTES) 1
@@ -1609,12 +1620,11 @@
         q (nm-next M w)
         r (nm-next M q)
         x (nm-next M r)
-        wk (nm-head-of M w)
+        wk (ck-wire-kw M w q)
         ty (ck-cap-type wk (nm-head-of M q) (nm-head-of M r))
         rty (ck-cap-res wk (nm-head-of M q) (nm-head-of M r))
         aty (if (= rty ty) ty TY-STR)]
     (cond (nm-ne (nm-count M n) 5) (ck-err M E-CHECK-CAP h 0)
-          (nm-ne (nm-kind M w) ND-KW) (ck-err M E-CHECK-CAP w 0)
           (= (ck-wire-ok wk) 0) (ck-err M E-CHECK-CAP w 0)
           (nm-ne (nm-kind M q) ND-KW) (ck-err M E-CHECK-CAP q 0)
           (nm-ne (nm-kind M r) ND-KW) (ck-err M E-CHECK-CAP r 0)
@@ -1623,7 +1633,7 @@
           (let [M1 (ck-expr M x fx 0)
                 tx (ck-ty M1)]
             (if (= tx aty)
-              (ck-mark (ck-fuel M1 (ck-fx-f fx)) n rty HD-TYPED-CAP-CALL)
+              (ck-mark (ck-fuel (nm-set-nf M1 w NF-TYPE wk) (ck-fx-f fx)) n rty HD-TYPED-CAP-CALL)
               (ck-err M1 E-CHECK-TYPE h aty))))))
 
 ;; ---- calls of the file's functions ----

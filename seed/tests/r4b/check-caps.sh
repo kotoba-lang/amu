@@ -13,7 +13,7 @@ s0=0; rec=0
 bin=${1:-$SEED_BUILD/seed-1.bin}; off=${2:-$(cat ${bin%.bin}.offset 2>/dev/null || echo 0)}
 L=$(seed_loader) || exit 2
 typeset -A grant
-grant=(c01-sha256 3 c02-env-read 33 c03-fs-browse 33,34 c04-io-read 41 c05-app-data-bytes 33,35 c06-app-data-bytes-spelling 33,35)
+grant=(c01-sha256 3 c02-env-read 33 c03-fs-browse 33,34 c04-io-read 41 c05-app-data-bytes 33,35 c06-app-data-bytes-spelling 33,35 c07-int-wires 3,33,35)
 res=${D}/caps/res
 ok=0; bad=0; out=""
 for f in $D/caps/c*.kotoba; do

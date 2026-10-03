@@ -579,7 +579,7 @@
 (defn- lw-cap [M :vector-i64 w :i64 t :i64] :vector-i64
   (let [req (lw-next M w)
         x (lw-next M (lw-next M req))
-        wire (lw-wire (lw-kwcode M w))
+        wire (lw-wire (lw-nf M w NF-TYPE))   ; R4B: 21-check's wire code (a wire keyword or an integer wire id)
         kind (lw-kind2 (lw-kwcode M req) (lw-kwcode M (lw-next M req)))]
     (-> M (lw-expr x t 0) (lw-emit OP-CAP wire kind t))))
 
