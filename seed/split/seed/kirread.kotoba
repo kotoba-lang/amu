@@ -1531,6 +1531,7 @@
     (cond
       (= r 0) (kr-fail M kr-e-helper h)
       (= r cur) (kr-self (kr-filter-into (kr-retok M h 5) (kr-na h NF-NEXT) a d) S n cur)
+      (= (vector-at M (+ r kr-f-lx)) 1) (kr-walk-items M S a cur)   ; EXPORT: an exported helper is a defn: a plain call
       (> used 0) (kr-fail M kr-e-helper h)
       (= np na) (kr-inline (kr-put M (+ r kr-f-used) 1) S n r cur)
       :else (kr-fail M kr-e-helper h))))
@@ -1858,14 +1859,15 @@
     (cond
       (>= i n) (kr-lib-emit M last (kr-lib-node M 0) 0)
       (kr-failed M) (kr-id M)
+      (= (* (kr-helper M S nm) (vector-at M (+ r kr-f-lx))) 1) (kr-defs2 (kr-defn M S r) S i last n0)   ; EXPORT: exported helper
       (= (kr-helper M S nm) 1) (kr-defs (kr-helper-types M S r) S (+ i 1) last)   ; SEEDFIX: its types (inline schemas)
       :else (kr-defs2 (kr-defn M S r) S i last n0))))
 
 ;; ---------------------------------------------------------------------------------------------------------
 ;; exports. KIR lists every function of a program without an (:export ..) clause, loop helpers and constructors
 ;; included. Kept: the names of emitted functions whose signature the seed can export (all params :i64 -- v3 has no
-;; :param-types --, result :i64 or :bool); the rest are dropped (the source route's implicit-export rule, applied to
-;; explicit exports too: the loader can call only those).
+;; :param-types --, result :i64 or :bool) go into the (:export ..) clause; every other export is a late export or a
+;; refusal by name (EXPORT block, kr-lx: nothing is dropped).
 ;; ---------------------------------------------------------------------------------------------------------
 (defn- kr-is-i64 [M :vector-i64 S :string n :i64] :i64 (kr-eq (kr-code M S n) 23))
 
@@ -2173,19 +2175,53 @@
         b (kr-tf M t TF-END)]
     (if (= (* (kr-ne n 0) (kr-is-name k)) 1) (kr-fop2 (- b a) (mem-hash-str S a b)) 0)))
 
-;; 1 when export name node c names a function with :i64 parameters and a :string / :keyword result: exported after
-;; checking (30-lower), as stage-0 exports it
+;; ==== BEGIN EXPORT (agent EXPORT, 2026-10-04) =======================================================================
+;; Every KIR :exports entry is exported or the compile is refused by name (INT/INT2's F1 requests: compile-kir used to drop
+;; KIR exports silently). An export the source route's rule admits (kr-exportable: all params :i64, result :i64/:bool, not a
+;; KIR-generated __kotoba_* name) stays in the (:export ..) clause. Every other export that names a KIR function is a LATE
+;; export (word kr-f-lx = 1, defn mark kr-mk-export; 30-lower sets FF-EXPORT after 21-check), whatever its types:
+;; lambdas, invoke helpers, record constructors, :bool / :string / record / list parameters, string / keyword / option /
+;; record results. A loop helper that is exported is emitted as its own defn and called (kr-call, kr-defs), not inlined, as
+;; machine_ir compiles it (a function with a self tail call). Refused (E1203 'name' = the export): an export naming no KIR
+;; function, and a signature whose values the seed represents differently from stage-0 (the boundary would see another
+;; value): :document, :set, :map anywhere in a parameter or result type; :option, :result in a parameter type.
+(defn- kr-xbad2 [len :i64 h :i64 par :i64] :i64
+  (cond (= h 6703248742119087212) (kr-len-ok len 9 1)      ; :document
+        (= h 3905574490823568763) (kr-len-ok len 4 1)      ; :set
+        (= h 3562493875126441273) (kr-len-ok len 4 1)      ; :map
+        (= h 3580979277550285308) (kr-len-ok len 7 par)    ; :option
+        (= h 4952616781120422236) (kr-len-ok len 7 par)    ; :result
+        :else 0))
+
+;; 1 when type node n (a keyword or a vector of types) mentions a refused keyword (par = 1: parameter rules)
+(defn- kr-xbad [M :vector-i64 S :string n :i64 par :i64] :i64
+  (let [k (kr-kind M n)
+        t (kr-nf M n NF-TOK)
+        a (kr-tf M t TF-START)
+        b (kr-tf M t TF-END)]
+    (cond (= n 0) 0
+          (= k ND-KW) (kr-xbad2 (- b a) (mem-hash-str S a b) par)
+          (= k ND-VEC) (kr-xbad-items M S (kr-first M n) par)
+          :else 0)))
+
+(defn- kr-xbad-items [M :vector-i64 S :string c :i64 par :i64] :i64
+  (cond (= c 0) 0
+        (= (kr-xbad M S c par) 1) 1
+        :else (kr-xbad-items M S (kr-next M c) par)))
+
+(defn- kr-lx2 [M :vector-i64 S :string c :i64 r :i64] :vector-i64
+  (let [rs (vector-at M (+ r kr-f-result))
+        pt (vector-at M (+ r kr-f-ptypes))
+        bad (bit-or (kr-xbad M S rs 0) (if (= pt 0) 0 (kr-xbad M S pt 1)))]
+    (if (= bad 1) (kr-fail M kr-e-value c) (kr-put M (+ r kr-f-lx) 1))))
+
+;; export name node c: refused, late (marked), or left to the (:export ..) clause
 (defn- kr-lx [M :vector-i64 S :string c :i64] :vector-i64
   (let [r (kr-find M S c)]
-    (if (= r 0)
-      (kr-id M)
-      (let [nm (vector-at M (+ r kr-f-name))
-            rs (vector-at M (+ r kr-f-result))
-            pt (vector-at M (+ r kr-f-ptypes))
-            rc (kr-fop M S rs)
-            sok (+ (kr-eq rc 22) (kr-eq rc 23))
-            pok (if (= pt 0) 1 (kr-all-i64 M S (kr-first M pt)))]
-        (if (= (* (* sok pok) (- 1 (kr-helper-any M S nm))) 1) (kr-put M (+ r kr-f-lx) 1) (kr-id M))))))
+    (cond (= r 0) (kr-fail M kr-e-value c)
+          (= (kr-exportable2 M S r) 1) (kr-id M)
+          :else (kr-lx2 M S c r))))
+;; ==== END EXPORT ====================================================================================================
 
 ;; ---- arena-scope -------------------------------------------------------------------------------------------------
 ;; (arena-scope e) -> (let [__kr_a (__kr_arena_enter) __kr_b e] (let [__kr_a (__kr_arena_leave)] __kr_b)): enter, e, leave,
