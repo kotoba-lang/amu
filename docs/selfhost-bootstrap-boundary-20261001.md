@@ -210,3 +210,27 @@ sources (`check`, `refactor plan/apply/verify`, `compile`), under
 `scripts/selfhost-wall/no-host-processes.sh`, executes no `node`, `nbb`, `java`, `clojure` or
 `python` process. Exit 0 from that script plus a clean section 1-4 of this report (PRODUCT = 0)
 is the definition. Fail closed: no tracer, no pass.
+
+## Update 2026-10-04 (agent CMD): counts re-measured, and the native launcher
+
+`bash scripts/selfhost-wall/bootstrap-boundary.sh` at `071568318` (measured; was 2026-10-01 / 2026-10-04 HOUSE5):
+
+| area | 2026-10-01 | HOUSE5 (2026-10-04) | now |
+|---|---:|---:|---:|
+| PRODUCT launchers (bin/*) | 4 | 4 | 4 (`bin/amu` 677 lines node, `bin/kotoba` 311 nbb, `amu.cmd`, `kotoba-compiler`) |
+| nbb-only entry points (*_cli.cljk) | 15 (7 no :kotoba arm) | 17 | 16 (8 no :kotoba arm) |
+| modules with `#?(:kotoba nil ...)` or no :kotoba arm | 48 | 48 | 46 |
+| src files with unguarded host tokens | 13 (36 tokens) | 13 | 10 (36 tokens) |
+| src files with a :kotoba arm | 54 of 105 | 56 of 109 | 57 of 109 |
+| `#?(:kotoba nil ...)` forms | 132 | | 147 |
+| distinct PRODUCT src files (union) | 56 | 58 | 55 |
+
+The first row of "What must exist before each PRODUCT group can go" (bin/amu: a native launcher produced by Amu) now has
+an implementation: `scripts/seed/launcher/build.sh` -> `build/launcher/amu`, one Mach-O (the C loader around the seed-built
+code of `seed/amu-main/src/amu/main.kotoba`) that does bin/amu's routing in-process: usage text, `--jvm-free`, the host
+`--target` default, `check` (frontend compiled from source), `compile` (seed compiler, `:kotoba.kexe/v1`), `refactor`,
+`extract-native`, and a named stub (exit 69) for bin/amu's 21 other commands. Gate `scripts/seed/launcher/test.sh`: 4/4 PASS
+(argument layer 37 cases = stage-0 / `node bin/amu` or declared, Embench 19/19, no exec/spawn under the interposer, libSystem
+only, no wire 20); design and limits in `seed/amu-main/LAUNCHER.md`. The counts above do not move yet: `bin/amu` stays the
+repository's bootstrap launcher (every harness calls it) until the owner flips the product command, `bin/kotoba` and the 16
+nbb entry points are untouched, and the native `check` still traps on 70 of 391 corpus programs (frontend from source).

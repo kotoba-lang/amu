@@ -86,3 +86,38 @@ python3 seed/amu-main/missing.py build/walls/sb0 > seed/amu-main/missing.tsv
 - MISSING exports are an export-table difference: the seed omits public defns that are not exported. The behaviour of
   those 5 exports was not compared.
 - The parity runs single representative argument vectors (kbd_exports.py), not exhaustive inputs.
+
+## 7. CMD (2026-10-04): the launcher image, kexe/v1, argument parity, the 47/22 **M**
+
+Image `build/launcher/amu` (sha256 `7ca1ea5e`, 5,019,384 B; scripts/seed/launcher/build.sh from `071568318`, rebuilt byte-identical
+from a clean HEAD tree; design `LAUNCHER.md`). Gate `scripts/seed/launcher/test.sh`: 4/4 PASS. Load 30-45 at every run.
+
+- `compile` writes stage-0's `:kotoba.kexe/v1` (`src/amu/kexe.kotoba`): stage-0's key order, sealed exactly as
+  kotoba.artifact.core/seal (`kexe_check.py seal` reproduces stage-0's own seal on 42/42 stage-0 artifacts, and accepts all
+  290 artifacts amu wrote in the corpus run), plus `<out>.inputs.edn` (stage-0's text) and `<out>.provenance.edn` (an
+  amu-seed record), stage-0's ok line byte for byte, and stage-0's default output `<src>.kexe`. Declared: `:program` /
+  `:kir-sha256` / `:effects` nil, `:compatibility :compiler "amu-seed/1"`, export `:length` = distance to the next entry;
+  stage-0's verifier therefore refuses amu's artifacts ("missing or malformed KIR identity"), amu reads stage-0's.
+- Argument layer (`usage-parity.sh`, 37 cases): 33 byte-identical (status, stdout, stderr, files), 4 declared, 0 DIFF.
+- Corpus (`parity.sh build/launcher/parity --check --compile`, 391 programs, symmetric `--policy` since this wave):
+
+| compile class | MAINS amu-s (r6f) | EMIT amu-one | launcher |
+|---|---:|---:|---:|
+| BEHAVIOUR-SAME (of 315 stage-0 compiles) | 262 | 263 | **264** |
+| AMU-REFUSES | 49 | 48 | **47** |
+| AMU-ACCEPTS | 21 | 22 | **22** |
+| BOTH-REFUSE / BOTH-OK-DIFF (5 MISSING exports) | 55 / 4 | 54 / 4 | 54 / 4 |
+| export runs SAME / DIFF | 644 / 0 | 645 / 0 | 646 / 0 |
+
+  check (frontend objects from source, FRONTSRC): 321 same verdict and report (293 SAME-OK, 27 SAME-REFUSE, 1 exit status
+  only), **70 AMU-TRAP** (SIGTRAP inside the from-source frontend: records, keyword case, if-some, destructuring; the same 70
+  as FRONTSRC's amu-one-src, so not the launcher layer; the kir-dump frontend of amu-one had 390/391).
+- The 47 AMU-REFUSES are all the seed's language, none the CLI: unsupported forms 27 (E2101 22, E2003 5: if-some/when-some/if-let/when-let 6,
+  defprotocol/defmethod 5, a fn-typed parameter called as `f` 2, cons/lazy-cons 2, the i32 profile 3, string-join,
+  string-replace-all, vector-new, vector-f64-at, hetero-vector, variant-new, result-ok?, arena-scope, document 1 each),
+  typing 15 (E2104 non-i64 result 8, E2102 `+` as a value 4, E2126 untyped recursion 3), records E2128 2 (recursive
+  schema), E2105 type variable 1, E2103 3-collection map 1, E2138 multi-arity export 1 -> CONTRACT-REQUESTS (CMD -> language).
+- The 22 AMU-ACCEPTS are stage-0's limits, kept (the seed is right to compile them): verify "unsupported effect"
+  (abort/throw) 8, doseq "if test is :i64" 5, typed values "require the kotoba-script web target" 4, main with
+  arguments 1, count receiver 1, runtime KIR shape 1, oracle inconclusive 1, f64_mixed (stage-0 internal error) 1. The 2026-10-01 AMU-ACCEPTS
+  env-read was a harness asymmetry (stage-0 had --policy, amu not): now BOTH-REFUSE.
