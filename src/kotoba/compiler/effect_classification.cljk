@@ -71,9 +71,171 @@
   {:kotoba/export [arm catalog-declarations catalog-resource check! classification-key classify cljs-declarations declaration-for declarations subject-clearance unknown-subject-clearance]}
   (:require [kotoba.compiler.capability-names :as names]
             [kotoba.security.information-flow :as flow]
+            #?(:kotoba [kotoba.form :as form])
             #?@(:clj [[kotoba.lang.edn :as edn]
-                      [kotoba.io :as io]])))
+                      [kotoba.io :as io]]))
+  ;; Kotoba: grants, rows, policies and facts are EDN values, the recursive
+  ;; `:form/r` record (kotoba.form); the lattice is kotoba.security.information-flow's
+  ;; typed reading. The defs are zero-argument functions there (an export names a
+  ;; function), and the declarations are the closed literal (the cljs choice: a guest
+  ;; reads no classpath resource).
+  #?(:kotoba (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                                 [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]})))
 
+#?(:kotoba (defn classification-key [] :keyword :kotoba.security/classification))
+
+#?(:kotoba
+   (defn cljs-declarations [] [:ref :form/r]
+     (form/edn-form "{:identity/sign :restricted :identity/verify :public :hash/sha256 :public :http/post :confidential :log/read :internal :log/append :internal :clock/now :public :state/transact :confidential :ui/commit :internal :ui/next-event :internal :llm/generate :confidential :storage/transact :confidential :http/get-stream :confidential :object/get-stream :confidential :object/put-block :confidential :object/compare-and-set-ref :confidential :http/accept :confidential :http/reply :confidential :fs/transact :confidential :process/spawn :restricted :secret/get :restricted :git/run :confidential :entropy/draw :public :dataspace/transact :confidential :stream/accept :confidential :stream/send :confidential :net/datagram :confidential :link/frame :restricted :can/frame :restricted :code/eval :restricted :screen/observe :restricted :screen/act :restricted :env/read :restricted :fs/browse :confidential :fs/app-data :confidential :fs/browse-dir :confidential :io/write :internal :cli/args :internal :io/write-error :internal :sys/cwd :internal :io/read :internal :gpu/compute :internal :net/listen :confidential :net/accept :confidential :net/dial :confidential :net/read :confidential :net/write :confidential}")))
+
+#?(:kotoba (defn catalog-resource [] :string "kotoba/lang/capability-catalog.edn"))
+
+#?(:kotoba (defn catalog-declarations [] [:ref :form/r] (form/form-map (form/no-forms))))
+
+#?(:kotoba (defn declarations [] [:ref :form/r] (cljs-declarations)))
+
+#?(:kotoba
+   (defn- ec-get [m [:ref :form/r] k :keyword] [:ref :form/r]
+     (if (form/is-map? m) (form/form-get m (form/keyword-form k)) (form/nil-form))))
+
+#?(:kotoba
+   (defn- capability-grant? [member [:ref :form/r]] :bool
+     (and (form/is-vec? member) (= 2 (form/count-of member))
+          (form/eq (form/nth-of member 0) (form/keyword-form :cap/call)))))
+
+#?(:kotoba
+   (defn declaration-for [grant [:ref :form/r]] [:ref :form/r]
+     (let [named (names/named-grant grant)]
+       (if (and (capability-grant? named) (form/is-keyword? (form/nth-of named 1)))
+         (form/form-get (declarations) (form/nth-of named 1))
+         (form/nil-form)))))
+
+#?(:kotoba
+   (defn- ec-declared [grants [:ref :form/r] i :i64 acc [:ref :form/r]] [:ref :form/r]
+     (if (>= i (form/count-of grants))
+       acc
+       (let [g (form/nth-of grants i)]
+         (ec-declared grants (+ i 1)
+                      (if (capability-grant? g) (form/assoc-form acc (names/named-grant g) (declaration-for g)) acc))))))
+
+#?(:kotoba
+   (defn- ec-set-add [s [:ref :form/r] x [:ref :form/r]] [:ref :form/r]
+     (if (ec-has? (form/kids-of s) x 0) s (form/form-set (form/append-form (form/kids-of s) x)))))
+
+#?(:kotoba
+   (defn- ec-has? [xs [:list [:ref :form/r]] x [:ref :form/r] i :i64] :bool
+     (if (>= i (vector-count xs)) false (if (form/eq (typed-list-nth [:list [:ref :form/r]] xs i) x) true (ec-has? xs x (+ i 1))))))
+
+;; MODE 0: the keys whose value is nil (undeclared); 1: the non-nil values (labels)
+#?(:kotoba
+   (defn- ec-pick [m [:ref :form/r] mode :i64 j :i64 acc [:ref :form/r]] [:ref :form/r]
+     (if (>= (+ j 1) (form/count-of m))
+       acc
+       (let [k (form/nth-of m j) v (form/nth-of m (+ j 1))]
+         (ec-pick m mode (+ j 2)
+                  (cond (and (= mode 0) (form/is-nil? v)) (ec-set-add acc k)
+                        (and (= mode 1) (not (form/is-nil? v))) (ec-set-add acc v)
+                        :else acc))))))
+
+#?(:kotoba
+   (defn- ec-keywords [s [:ref :form/r] i :i64 acc [:list :keyword]] [:list :keyword]
+     (if (>= i (form/count-of s))
+       acc
+       (ec-keywords s (+ i 1) (if (form/is-keyword? (form/nth-of s i)) (typed-list-conj [:list :keyword] acc (form/keyword-value (form/nth-of s i))) acc)))))
+
+;; a label that is not a keyword is one this lattice cannot rank (host: absent from `ranks`)
+#?(:kotoba
+   (defn- ec-non-keywords [s [:ref :form/r] i :i64 acc [:ref :form/r]] [:ref :form/r]
+     (if (>= i (form/count-of s))
+       acc
+       (ec-non-keywords s (+ i 1) (if (form/is-keyword? (form/nth-of s i)) acc (ec-set-add acc (form/nth-of s i)))))))
+
+#?(:kotoba
+   (defn- ec-options [s [:ref :form/r] i :i64 acc [:list [:option :keyword]]] [:list [:option :keyword]]
+     (if (>= i (form/count-of s))
+       acc
+       (let [x (form/nth-of s i)]
+         (ec-options s (+ i 1)
+                     (typed-list-conj [:list [:option :keyword]] acc
+                                      (if (form/is-keyword? x) (option-some-of [:option :keyword] (form/keyword-value x)) (option-none-of [:option :keyword]))))))))
+
+#?(:kotoba
+   (defn- ec-from-set [s [:set :keyword] i :i64 acc [:ref :form/r]] [:ref :form/r]
+     (if (>= i (typed-set-count [:set :keyword] s))
+       acc
+       (ec-from-set s (+ i 1) (ec-set-add acc (form/keyword-form (typed-set-nth [:set :keyword] s i)))))))
+
+#?(:kotoba
+   (defn- ec-unknown [labels [:ref :form/r]] [:ref :form/r]
+     (ec-from-set (flow/unknown-labels (ec-keywords labels 0 (typed-list-new [:list :keyword]))) 0
+                  (ec-non-keywords labels 0 (form/form-set (form/no-forms))))))
+
+#?(:kotoba
+   (defn- ec-join [labels [:ref :form/r]] [:ref :form/r]
+     (form/keyword-form (flow/join (ec-options labels 0 (typed-list-new [:list [:option :keyword]]))))))
+
+#?(:kotoba
+   (defn classify
+     "Facts about the classification of GRANTS (counts, not a boolean)."
+     [grants [:ref :form/r]] [:ref :form/r]
+     (let [declared (ec-declared grants 0 (form/form-map (form/no-forms)))
+           undeclared (ec-pick declared 0 0 (form/form-set (form/no-forms)))
+           labels (ec-pick declared 1 0 (form/form-set (form/no-forms)))
+           m0 (form/assoc-form (form/form-map (form/no-forms)) (form/keyword-form :classification/declared) declared)
+           m1 (form/assoc-form m0 (form/keyword-form :classification/undeclared) undeclared)
+           m2 (form/assoc-form m1 (form/keyword-form :classification/unrankable) (ec-unknown labels))
+           m3 (form/assoc-form m2 (form/keyword-form :classification/labels) labels)]
+       (form/assoc-form m3 (form/keyword-form :classification/effective) (ec-join labels)))))
+
+#?(:kotoba
+   (defn check!
+     "Refuse GRANTS whose classification is missing or outside the lattice; else the facts."
+     [grants [:ref :form/r]] [:ref :form/r]
+     (let [facts (classify grants)]
+       (cond
+         (> (form/count-of (ec-get facts :classification/undeclared)) 0)
+         (throw (ex-info "effect declares no classification" {:phase :admission}))
+         (> (form/count-of (ec-get facts :classification/unrankable)) 0)
+         (throw (ex-info "effect classification is outside the lattice" {:phase :admission}))
+         :else facts))))
+
+#?(:kotoba
+   (defn subject-clearance [policy [:ref :form/r]] [:ref :form/r]
+     (ec-get (ec-get (ec-get policy :attributes) :subject) :clearance)))
+
+#?(:kotoba
+   (defn unknown-subject-clearance [policy [:ref :form/r]] [:ref :form/r]
+     (let [c (subject-clearance policy)]
+       (if (form/is-nil? c)
+         c
+         (if (> (form/count-of (ec-unknown (form/form-set (form/one-form c)))) 0) c (form/nil-form))))))
+
+#?(:kotoba
+   (defn- ec-assoc-in3 [m [:ref :form/r] k1 :keyword k2 :keyword k3 :keyword v [:ref :form/r]] [:ref :form/r]
+     (let [m1 (ec-get m k1)
+           m1x (if (form/is-map? m1) m1 (form/form-map (form/no-forms)))
+           m2 (ec-get m1x k2)
+           m2x (if (form/is-map? m2) m2 (form/form-map (form/no-forms)))]
+       (form/assoc-form (if (form/is-map? m) m (form/form-map (form/no-forms))) (form/keyword-form k1)
+                        (form/assoc-form m1x (form/keyword-form k2) (form/assoc-form m2x (form/keyword-form k3) v))))))
+
+#?(:kotoba
+   (defn arm
+     "[POLICY with the effect classification where abac reads a resource classification, the label] when the policy
+     names a subject clearance, else [POLICY nil]."
+     [policy [:ref :form/r] effective [:ref :form/r]] [:ref :form/r]
+     (if (form/is-nil? (subject-clearance policy))
+       (form/vec2 policy (form/nil-form))
+       (let [supplied (ec-get (ec-get (ec-get policy :attributes) :resource) :classification)
+             joined (ec-join (if (form/is-nil? supplied) (form/form-set (form/one-form effective))
+                                 (form/form-set (form/two-forms effective supplied))))]
+         (form/vec2 (ec-assoc-in3 policy :attributes :resource :classification joined) joined)))))
+
+;; ---------------------------------------------------------------------------
+;; Host reading (Clojure / nbb), unchanged.
+#?(:kotoba nil
+   :default
+   (do
 (def classification-key
   "The catalog key. Named once so the resource, the fallback and the test
   cannot disagree about the spelling."
@@ -292,4 +454,4 @@
     (let [supplied (get-in policy [:attributes :resource :classification])
           joined (flow/join (cond-> #{effective} (some? supplied) (conj supplied)))]
       [(assoc-in policy [:attributes :resource :classification] joined) joined])
-    [policy nil]))
+    [policy nil]))))

@@ -1,0 +1,41 @@
+(ns wall2.effects-host
+  "WALL2: compares the native answers of the Kotoba readings of kotoba.compiler.effect-row/check (seed-built,
+  seed/tests/wall2/effects-run.sh) with the HOST reading on the same cases (seed/tests/wall2/effects-cases.txt).
+  BOOTSTRAP-REFERENCE (node/nbb). Run from the amu repo root:
+    node bin/kbb --backend sci --classpath \"$(cat build/walls/cp-walls.txt)\" seed/tests/wall2/effects-host.cljk <native-dir>
+  <native-dir>/<n>.out holds the native line for case n. A refusal is compared by message; an answer by value, after
+  one normalisation applied to BOTH sides: kotoba.kir.admission's typed reading answers a set as a vector without
+  duplicates (its documents have no set), so every set and vector is compared as the multiset of its items
+  (order-insensitive), and host BigInts as numbers."
+  (:require [kotoba.compiler.effect-row :as effect-row]
+            [kotoba.compiler.kotoba-reader :as kr]
+            [clojure.walk :as walk]
+            ["node:fs" :as fs]))
+
+(defn- num [x] (if (= js/BigInt (type x)) (js/Number x) x))
+
+(defn- norm [v]
+  (walk/postwalk (fn [x]
+                   (cond (or (set? x) (vector? x)) (vec (sort-by pr-str (map num x)))
+                         (map? x) (into {} (map (fn [[k v]] [(num k) (num v)])) x)
+                         :else (num x)))
+                 v))
+
+(let [dir (first *command-line-args*)
+      lines (remove empty? (.split (.readFileSync fs "seed/tests/wall2/effects-cases.txt" "utf8") "\n"))
+      results
+      (doall
+       (map-indexed
+        (fn [i line]
+          (let [[row policy] (map #(first (kr/read-forms %)) (.split line "\t"))
+                host (try [:ok (effect-row/check {:effects row} policy)]
+                          (catch :default e [:refused (ex-message e)]))
+                native-text (.trim (.readFileSync fs (str dir "/" i ".out") "utf8"))
+                native (cond (.startsWith native-text "OK ") [:ok (first (kr/read-forms (subs native-text 3)))]
+                             (.startsWith native-text "REFUSED ") [:refused (subs native-text 8)]
+                             :else [:trap native-text])
+                same (and (= (first host) (first native)) (= (norm (second host)) (norm (second native))))]
+            (println i (if same "SAME" "DIFF") (when-not same (pr-str [host native])))
+            same))
+        lines))]
+  (println (str "effects-host: " (count (filter true? results)) " SAME, " (count (remove true? results)) " DIFF of " (count results))))

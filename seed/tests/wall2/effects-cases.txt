@@ -1,0 +1,11 @@
+#{[:cap/call 3]}	{:allow #{[:cap/call 3]}}
+#{[:cap/call 3] :abort}	{:allow #{[:cap/call 3]}}
+#{[:cap/call 3]}	{}
+#{[:cap/call 200]}	{:allow #{[:cap/call 200]}}
+#{}	{}
+#{[:cap/call 37]}	{:allow #{[:cap/call 37]} :attributes {:subject {:clearance :internal}}}
+#{[:cap/call 37] :state}	{:allow #{[:cap/call 37]} :attributes {:subject {:clearance :bogus}}}
+#{[:cap/call 3]}	{:allow #{[:cap/call 3]} :bogus 1}
+#{[:cap/call 4] [:cap/call 3]}	{:allow #{[:cap/call 3] [:cap/call 4] [:cap/call 7]}}
+#{[:cap/call 4]}	{:allow #{[:cap/call 4]} :attributes {:subject {:clearance :public}}}
+#{[:cap/call 35] [:cap/call 38]}	{:allow #{[:cap/call 35] [:cap/call 38]} :attributes {:subject {:clearance :restricted} :resource {:classification :internal}}}

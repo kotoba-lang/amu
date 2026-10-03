@@ -39,8 +39,93 @@
   ;; check` in project mode refuses a module without one.
   {:kotoba/export [control-effect? grant? grants admissible check]}
   (:require [kotoba.compiler.effect-classification :as classification]
-            [kotoba.kir.admission :as admission]))
+            [kotoba.kir.admission :as admission]
+            #?(:kotoba [kotoba.form :as form])
+            #?(:kotoba [kotoba.compiler.frontend.base :as base]))
+  ;; Kotoba: a row, a HIR and a policy are `:form/r` values (kotoba.form);
+  ;; kotoba.kir.admission's typed reading decides on documents, so the row and the
+  ;; policy cross into it as documents (`base/form->document`) and its answer comes
+  ;; back as a Form (`form/from-document`).
+  #?(:kotoba (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                                 [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]})))
 
+#?(:kotoba
+   (defn control-effects [] [:ref :form/r]
+     (form/form-set (form/two-forms (form/keyword-form :abort) (form/keyword-form :state)))))
+
+#?(:kotoba
+   (defn control-effect? [member [:ref :form/r]] :bool
+     (or (form/eq member (form/keyword-form :abort)) (form/eq member (form/keyword-form :state)))))
+
+#?(:kotoba
+   (defn grant? [member [:ref :form/r]] :bool
+     (and (form/is-vec? member) (= 2 (form/count-of member))
+          (form/eq (form/nth-of member 0) (form/keyword-form :cap/call)))))
+
+#?(:kotoba
+   (defn- er-has? [xs [:list [:ref :form/r]] x [:ref :form/r] i :i64] :bool
+     (if (>= i (vector-count xs)) false (if (form/eq (typed-list-nth [:list [:ref :form/r]] xs i) x) true (er-has? xs x (+ i 1))))))
+
+#?(:kotoba
+   (defn- er-grants [members [:ref :form/r] i :i64 acc [:list [:ref :form/r]]] [:list [:ref :form/r]]
+     (if (>= i (form/count-of members))
+       acc
+       (let [m (form/nth-of members i)]
+         (er-grants members (+ i 1) (if (or (control-effect? m) (er-has? acc m 0)) acc (form/append-form acc m)))))))
+
+#?(:kotoba
+   (defn grants
+     "ROW without its control effects (a set); every member not a known control effect stays."
+     [members [:ref :form/r]] [:ref :form/r]
+     (form/form-set (er-grants members 0 (form/no-forms)))))
+
+#?(:kotoba
+   (defn admissible [hir [:ref :form/r]] [:ref :form/r]
+     (form/assoc-form hir (form/keyword-form :effects) (grants (form/form-get hir (form/keyword-form :effects))))))
+
+#?(:kotoba
+   (defn- er-map-at [m [:ref :form/r] k :keyword] [:ref :form/r]
+     (let [v (form/form-get m (form/keyword-form k))] (if (form/is-map? v) v (form/form-map (form/no-forms))))))
+
+;; POLICY with `:attributes :resource` and `:attributes :action` present (an empty map where absent): admission merges
+;; its own entries into both (host `merge` with nil = with {}), and the seed's `document-merge` traps on a null
+;; operand (r6l, measured 2026-10-04; filed in seed/CONTRACT-REQUESTS.md). Only the policy's own map stays as
+;; written when it is present, so the decision is the host's.
+#?(:kotoba
+   (defn- er-with-attribute-maps [policy [:ref :form/r]] [:ref :form/r]
+     (let [attrs (er-map-at policy :attributes)
+           a1 (form/assoc-form attrs (form/keyword-form :resource) (er-map-at attrs :resource))
+           a2 (form/assoc-form a1 (form/keyword-form :action) (er-map-at a1 :action))]
+       (form/assoc-form policy (form/keyword-form :attributes) a2))))
+
+#?(:kotoba
+   (defn check
+     "`kotoba.kir.admission/check` over the grants of HIR's members, after the classification check, with the
+     classification facts added (the host's `check`)."
+     [hir [:ref :form/r] policy [:ref :form/r]] [:ref :form/r]
+     (let [narrowed (admissible hir)
+           members (form/form-get narrowed (form/keyword-form :effects))
+           facts (classification/check! members)
+           armed (classification/arm policy (form/form-get facts (form/keyword-form :classification/effective)))
+           armed-policy (form/nth-of armed 0)
+           armed-label (form/nth-of armed 1)
+           decided (form/from-document
+                    (admission/check (base/form->document (form/assoc-form (form/form-map (form/no-forms)) (form/keyword-form :effects) members))
+                                     (base/form->document (er-with-attribute-maps armed-policy))))
+           r1 (form/assoc-form decided (form/keyword-form :classification/effective)
+                               (form/form-get facts (form/keyword-form :classification/effective)))
+           r2 (form/assoc-form r1 (form/keyword-form :classification/labels)
+                               (form/form-get facts (form/keyword-form :classification/labels)))
+           r3 (form/assoc-form r2 (form/keyword-form :classification/no-read-up)
+                               (form/keyword-form (if (form/is-nil? armed-label) :unarmed :armed)))]
+       (form/assoc-form r3 (form/keyword-form :classification/unknown-subject-clearance)
+                        (classification/unknown-subject-clearance armed-policy)))))
+
+;; ---------------------------------------------------------------------------
+;; Host reading (Clojure / nbb), unchanged.
+#?(:kotoba nil
+   :default
+   (do
 (def control-effects
   "Row members that describe how a function may LEAVE its caller's scope, not
   what authority it exercises. Closed: kotoba-hir's `valid-effect?` admits
@@ -113,4 +198,4 @@
            :classification/labels (:classification/labels facts)
            :classification/no-read-up (if armed-label :armed :unarmed)
            :classification/unknown-subject-clearance
-           (classification/unknown-subject-clearance armed-policy))))
+           (classification/unknown-subject-clearance armed-policy))))))
