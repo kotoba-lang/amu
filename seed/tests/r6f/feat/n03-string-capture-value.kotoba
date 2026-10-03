@@ -1,0 +1,5 @@
+;; R6F: a fn VALUE (invoke) capturing a :string stays refused (stage-0 `check`: "expected i64, got string"); only a
+;; map/filter/reduce callback may capture one-word scalars (p10).
+;; want: E2104
+(ns r6f.n03)
+(defn main [] :i64 (let [s "abcd"] (invoke (fn [x] (+ x (string-length s))) 1)))

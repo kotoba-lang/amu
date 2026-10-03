@@ -3230,20 +3230,21 @@
 
 ;; the first occurrence in chain c of a captured symbol whose type is neither :i64 nor callable (the reference: captures are
 ;; i64 pair-chain words, `expected i64, got string`, measured on stage-0); 0 when every capture is admissible
-(defn- ck-cap-ok? [M :vector-i64 s :i64] :bool
+(defn- ck-cap-ok? [M :vector-i64 s :i64 wide :bool] :bool
   (let [ty (nm-local-type M s)]
     (or (= ty TY-I64) (= (ck-tcon M ty) TC-FN)
-        ;; R6F: one-word scalars too (the frontend admits them; stage-0's NATIVE capture is i64 only, measured R4):
-        ;; kotoba.security.crypto-policy captures a :keyword
-        (= ty TY-KW) (= ty TY-BOOL) (= ty TY-STR) (= ty TY-DOC) (= ty TY-SYM))))
-(defn- ck-bad-cap [M :vector-i64 c :i64 caps :vector-i64] :i64
+        ;; R6F: a fn literal that is the CALLBACK of map/filter/reduce (wide) may capture one-word scalars too: stage-0's
+        ;; frontend admits (reduce (fn [acc x] .. kw ..) ..) with a :keyword/:string/:bool capture (kotoba.security.crypto-policy)
+        ;; and refuses the same capture in a fn VALUE (r4 neg n19/n20 "expected i64, got string")
+        (and wide (or (= ty TY-KW) (= ty TY-BOOL) (= ty TY-STR) (= ty TY-DOC) (= ty TY-SYM))))))
+(defn- ck-bad-cap [M :vector-i64 c :i64 caps :vector-i64 wide :bool] :i64
   (loop [x c]
     (if (zero? x)
       0
       (let [k (nm-kind M x)
             s (nm-sym-of M x)
-            sub (if (or (= k ND-LIST) (= k ND-VEC) (= k ND-MAP) (= k ND-SET)) (ck-bad-cap M (nm-first M x) caps) 0)]
-        (cond (and (= k ND-SYM) (ck-in-list caps s) (not (ck-cap-ok? M s))) x
+            sub (if (or (= k ND-LIST) (= k ND-VEC) (= k ND-MAP) (= k ND-SET)) (ck-bad-cap M (nm-first M x) caps wide) 0)]
+        (cond (and (= k ND-SYM) (ck-in-list caps s) (not (ck-cap-ok? M s wide))) x
               (pos? sub) sub
               :else (recur (nm-next M x)))))))
 
@@ -3326,7 +3327,7 @@
         (cond (nm-failed M2) (ck-touch M2)
               (> (+ np k) 5) (ck-err M2 E-CHECK-CAPTURES h (+ np k))
               (pos? (ck-r5b-cell-cap M2 (nm-nth M2 n 2) caps)) (ck-err M2 E-ATOM-ESCAPE (ck-r5b-cell-cap M2 (nm-nth M2 n 2) caps) 0)   ; R5B
-              (pos? (ck-bad-cap M2 (nm-nth M2 n 2) caps)) (ck-err M2 E-CHECK-TYPE (ck-bad-cap M2 (nm-nth M2 n 2) caps) TY-I64)
+              (pos? (ck-bad-cap M2 (nm-nth M2 n 2) caps (= (nm-nf M n NF-RES) -77))) (ck-err M2 E-CHECK-TYPE (ck-bad-cap M2 (nm-nth M2 n 2) caps false) TY-I64)   ; R6F: -77 = a hof callback (ck-callback)
               :else (ck-fnlit2 (nm-set-nf (ck-fn-caps M2 f np caps p) h NF-TYPE f) n (+ (* f 8) np) caps fx))))))
 ;; fnp = the lifted FN * 8 + its parameter count
 (defn- ck-fnlit2 [M :vector-i64 n :i64 fnp :i64 caps :vector-i64 fx :i64] :vector-i64
@@ -3559,7 +3560,7 @@
   (do
     (cond (ck-fn-form? M cb)
           (let [M1 (ck-hint2 M pa pb)
-                M2 (ck-fnlit M1 cb fx (ck-r M1))
+                M2 (ck-fnlit (nm-set-nf M1 cb NF-RES -77) cb fx (ck-r M1))   ; R6F: mark the literal a hof callback (wide captures)
                 ty (ck-r M2)]
             (if (nm-failed M2) (ck-touch M2) (nm-put (nm-set-nf M2 cb NF-RES 0) MM-R0 ty)))
           (and (= (nm-kind M cb) ND-SYM) (< (nm-local-slot M (nm-sym-of M cb)) 0) (= (ck-callable M (nm-sf M (nm-sym-of M cb) SF-FN)) 1))
