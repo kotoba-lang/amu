@@ -41,8 +41,14 @@ progs() {
   for f in $R/seed/tests/check/cases/err-*.kotoba(N); do echo "case/${f:t:r} $f"; done
   local k d
   for k in $(seq 1 $rn 2>/dev/null); do [ $rn -ge 1 ] || break; for f in $R/seed/tests/r$k/neg/*.kotoba(N); do echo "r${k}neg/${f:t:r} $f"; done; done
-  d=$R/seed/tests/$rung/neg
-  if [[ $rung != r<-> ]] && [ -d $d ]; then for f in $d/*.kotoba(N); do echo "${rung}neg/${f:t:r} $f"; done; fi
+  # every EXTENSION rung rNx (r4b, r5a, r5b ..) whose key is <= the gated rung's: an earlier extension rung's negatives stay in later
+  # goldens (HOUSE4 2026-10-03; before, only the gated rung's own extension dir was read, so r4bneg dropped out at r5b and r6a)
+  local e ek rk=$(seed_rung_key $rung)
+  for d in $R/seed/tests/r<->[a-z](N/); do
+    e=${d:t}; ek=$(seed_rung_key $e)
+    [ $ek -le $rk ] && [ -d $d/neg ] || continue
+    for f in $d/neg/*.kotoba(N); do echo "${e}neg/${f:t:r} $f"; done
+  done
 }
 
 : > $W/out.txt; broken=0; n=0; nref=0; nacc=0
