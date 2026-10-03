@@ -1,0 +1,12 @@
+;; R6F: computed defs (lang/guest-grammar.edn: a def value over the constants above it): arithmetic, str, conj on a set
+;; constant, a boolean, an alias. (* kb 1024) = 1048576, "abcdef" 6, #{:a :b :c} 3, windows? false -> 0.
+;; want: 1048585
+(ns r6f.p02)
+(def kb 1024)
+(def mb (* kb 1024))
+(def msg (str "abc" "def"))
+(def ks #{:a :b})
+(def ks2 (conj ks :c))
+(def windows? false)
+(def mb2 mb)
+(defn main [] :i64 (+ mb2 (string-length msg) (count ks2) (if windows? 100 0)))

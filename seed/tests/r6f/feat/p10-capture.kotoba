@@ -1,0 +1,6 @@
+;; R6F: fn literals capture one-word scalars (:keyword, :string, :bool), not only :i64: 3 + 2 + 1.
+;; want: 6
+(ns r6f.p10)
+(defn main [] :i64
+  (let [k :x s "ab" b true]
+    (reduce (fn [acc i] (+ acc (if (= i 1) (if (= k :x) 3 0) (if (= i 2) (string-length s) (if b 1 0))))) 0 [1 2 3])))

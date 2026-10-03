@@ -1,0 +1,21 @@
+;; R6F test template (the shape of kotoba-lang lang/compat clojure/set.kotoba): a namespace template over the element type
+;; with a default, compiled per instantiation; the plain require below is the default instantiation (elem :keyword).
+(ns r6ft.kset
+  (:params [elem :keyword])
+  (:export [union difference subset? first-of]))
+(defn union [s1 [:set elem] s2 [:set elem]] [:set elem]
+  (loop [i 0 acc s1]
+    (if (< i (count s2))
+      (recur (+ i 1) (conj acc (typed-set-nth [:set elem] s2 i)))
+      acc)))
+(defn difference [s1 [:set elem] s2 [:set elem]] [:set elem]
+  (loop [i 0 acc s1]
+    (if (< i (count s2))
+      (recur (+ i 1) (disj acc (typed-set-nth [:set elem] s2 i)))
+      acc)))
+(defn subset? [s1 [:set elem] s2 [:set elem]] :bool
+  (loop [i 0]
+    (if (< i (count s1))
+      (if (typed-set-contains [:set elem] s2 (typed-set-nth [:set elem] s1 i)) (recur (+ i 1)) false)
+      true)))
+(defn first-of [s [:set elem]] elem (typed-set-nth [:set elem] s 0))

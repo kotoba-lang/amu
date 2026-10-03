@@ -1,0 +1,9 @@
+;; R6F: a namespace template (:params [elem :keyword]) required without :with is its default instantiation, on the project
+;; route and in separate mode (compile --emit-module of the template itself, then link). union #{:mid :zeta} #{:alpha} has 3
+;; items, its first in printed-text order is :alpha (1); difference leaves #{:mid} (1 item); #{:mid} is a subset (1).
+;; want: 3111
+(ns r6ft.main (:require [r6ft.kset :as ks]) (:export [main]))
+(defn main [] :i64
+  (let [u (ks/union #{:mid :zeta} #{:alpha})
+        d (ks/difference u #{:alpha :zeta})]
+    (+ (* 1000 (count u)) (* 100 (if (= (ks/first-of u) :alpha) 1 0)) (* 10 (count d)) (if (ks/subset? d u) 1 0))))

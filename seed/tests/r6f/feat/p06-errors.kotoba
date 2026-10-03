@@ -1,0 +1,11 @@
+;; R6F: (catch :default e ..) catches the body's error (here :document); (ex-info msg data cause) keeps the cause under :cause
+;; (kotoba-sema base ex-info-data-argument). ex-message of the caught error "outer" (5 bytes), of its :cause "inner" (5).
+;; want: 55
+(ns r6f.p06)
+(defn- inner [] :document (ex-info "inner" {:k 1}))
+(defn- boom [x :i64] :i64 (if (> x 0) (throw (ex-info "outer" {:phase :p} (inner))) x))
+(defn main [] :i64
+  (try (boom 1)
+       (catch :default e
+         (+ (* 10 (string-length (ex-message e)))
+            (string-length (ex-message (option-value-of [:option :document] (document-get (ex-data e) (document-keyword :cause)) (document-null))))))))

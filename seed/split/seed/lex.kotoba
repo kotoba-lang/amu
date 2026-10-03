@@ -392,7 +392,7 @@
         (and (= (lx-ch S (+ i 2)) 64) (= (lx-ch S (+ i 3)) 40)) 4
         :else 0))
 ;; past whitespace and comments
-(defn- lx-sk-ws [S :string p :i64] :i64
+(defn lx-sk-ws [S :string p :i64] :i64
   (cond (>= p (string-length S)) p
         (lx-ws? (lx-ch S p)) (lx-sk-ws S (+ p 1))
         (= (lx-ch S p) 59) (lx-sk-ws S (lx-eol S p))
