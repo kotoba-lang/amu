@@ -61,12 +61,32 @@
   [:c BOP-QUOT 4 "quot: trap if divisor 0 or (MIN, -1); else sdiv"]
   [:c BOP-AND 5 "bit-and"] [:c BOP-OR 6 "bit-or"] [:c BOP-XOR 7 "bit-xor"]
   [:c BOP-SHL 8 "i64-shift-left, count mod 64 (lslv)"] [:c BOP-USHR 9 "u64-shift-right, count mod 64 (lsrv)"]
-  [:c BOP-SSHR 10 "i64-shift-right, count mod 64 (asrv)"]]
+  [:c BOP-SSHR 10 "i64-shift-right, count mod 64 (asrv)"]
+  ;; -- FLOAT (agent FLOAT, rung r6j, 2026-10-04): IEEE-754 arithmetic on the carriers. A temp holding an :f64 is its 64-bit
+  ;;    pattern, an :f32 its 32-bit pattern sign-extended (HEADS R6C/R6F). 41-a64gen moves the operands into d0/d1 (s0/s1)
+  ;;    with fmov, applies the instruction and moves the result back (f32: fmov w + sxtw). Never folded, never immediates.
+  [:c BOP-F64-ADD 16 "f64-add: fadd d"] [:c BOP-F64-SUB 17 "f64-sub: fsub d"] [:c BOP-F64-MUL 18 "f64-mul: fmul d"]
+  [:c BOP-F64-DIV 19 "f64-div: fdiv d"] [:c BOP-F64-MIN 20 "f64-min: fmin d (NaN if either is NaN; -0 < +0)"]
+  [:c BOP-F64-MAX 21 "f64-max: fmax d"]
+  [:c BOP-F32-ADD 24 "f32-add: fadd s"] [:c BOP-F32-SUB 25 "f32-sub: fsub s"] [:c BOP-F32-MUL 26 "f32-mul: fmul s"]
+  [:c BOP-F32-DIV 27 "f32-div: fdiv s"] [:c BOP-F32-MIN 28 "f32-min: fmin s"] [:c BOP-F32-MAX 29 "f32-max: fmax s"]]
  :compare-ops
  [[:c CC-EQ 1 "=  (cset eq)"] [:c CC-LT 2 "<  (cset lt)"] [:c CC-GT 3 ">  (cset gt)"] [:c CC-LE 4 "<= (cset le)"]
-  [:c CC-GE 5 ">= (cset ge)"]]
+  [:c CC-GE 5 ">= (cset ge)"]
+  ;; -- FLOAT (r6j): fcmp d0, d1 (s0, s1), false on unordered operands except CC-F*-UN --
+  [:c CC-F64-EQ 8 "f64-eq (eq)"] [:c CC-F64-LT 9 "f64-lt (mi)"] [:c CC-F64-LE 10 "f64-le (ls)"] [:c CC-F64-GT 11 "f64-gt (gt)"]
+  [:c CC-F64-GE 12 "f64-ge (ge)"] [:c CC-F64-UN 13 "f64-unordered (vs)"]
+  [:c CC-F32-EQ 16 "f32-eq"] [:c CC-F32-LT 17 "f32-lt"] [:c CC-F32-LE 18 "f32-le"] [:c CC-F32-GT 19 "f32-gt"]
+  [:c CC-F32-GE 20 "f32-ge"] [:c CC-F32-UN 21 "f32-unordered"]]
  :unary-ops
- [[:c UOP-NOT 1 "bool not: t := t xor 1"] [:c UOP-BITNOT 2 "bit-not: mvn"]]
+ [[:c UOP-NOT 1 "bool not: t := t xor 1"] [:c UOP-BITNOT 2 "bit-not: mvn"]
+  ;; -- FLOAT (r6j) --
+  [:c UOP-F64-NEG 16 "f64-neg: fneg d"] [:c UOP-F64-ABS 17 "f64-abs: fabs d"] [:c UOP-F64-SQRT 18 "f64-sqrt: fsqrt d"]
+  [:c UOP-F32-NEG 24 "f32-neg: fneg s"] [:c UOP-F32-ABS 25 "f32-abs: fabs s"] [:c UOP-F32-SQRT 26 "f32-sqrt: fsqrt s"]
+  [:c UOP-F64-TO-I64 32 "f64-to-i64-truncating: fcvtzs x, d (saturating, NaN -> 0)"]
+  [:c UOP-I64-TO-F64 33 "i64-to-f64-rounded: scvtf d, x (round to nearest even)"]
+  [:c UOP-F64-TO-F32 34 "f64-to-f32-rounded: fcvt s, d"] [:c UOP-F32-TO-F64 35 "f32-to-f64-exact: fcvt d, s"]
+  [:c UOP-I64-TO-F32 36 "i64-to-f32-rounded: scvtf s, x"] [:c UOP-F32-TO-I64 37 "f32-to-i64-truncating: fcvtzs x, s"]]
 
  ;; Runtime helpers: the value of RT-* is the BYTE OFFSET of the function pointer in struct kexe_context_v11
  ;; (tools/kexe_loader.c, bench/runtime-comparison/kexe-benchmark.c _Static_asserts). Called as C functions:

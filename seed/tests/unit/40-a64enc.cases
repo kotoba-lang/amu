@@ -498,3 +498,90 @@
 498	(enc-patch-imm26 (enc-b 0) 33554432)	REFUSED
 499	(enc-patch-imm19 (enc-cbz 1 0) 262144)	REFUSED
 500	(enc-patch-imm16 (enc-movz 1 0 0) 65536)	REFUSED
+501	(enc-fmov-to-fp 1 0 0)	fmov d0, x0
+502	(enc-fmov-from-fp 1 0 0)	fmov x0, d0
+503	(enc-fmov-to-fp 1 0 9)	fmov d0, x9
+504	(enc-fmov-from-fp 1 9 0)	fmov x9, d0
+505	(enc-fmov-to-fp 1 0 17)	fmov d0, x17
+506	(enc-fmov-from-fp 1 17 0)	fmov x17, d0
+507	(enc-fmov-to-fp 1 0 31)	fmov d0, xzr
+508	(enc-fmov-from-fp 1 16 0)	fmov x16, d0
+509	(enc-fop2 0 1 0 0 1)	fadd d0, d0, d1
+510	(enc-fop2 0 1 3 7 31)	fadd d3, d7, d31
+511	(enc-fop2 1 1 0 0 1)	fsub d0, d0, d1
+512	(enc-fop2 1 1 3 7 31)	fsub d3, d7, d31
+513	(enc-fop2 2 1 0 0 1)	fmul d0, d0, d1
+514	(enc-fop2 2 1 3 7 31)	fmul d3, d7, d31
+515	(enc-fop2 3 1 0 0 1)	fdiv d0, d0, d1
+516	(enc-fop2 3 1 3 7 31)	fdiv d3, d7, d31
+517	(enc-fop2 4 1 0 0 1)	fmin d0, d0, d1
+518	(enc-fop2 4 1 3 7 31)	fmin d3, d7, d31
+519	(enc-fop2 5 1 0 0 1)	fmax d0, d0, d1
+520	(enc-fop2 5 1 3 7 31)	fmax d3, d7, d31
+521	(enc-fop1 0 1 0 0)	fneg d0, d0
+522	(enc-fop1 0 1 5 30)	fneg d5, d30
+523	(enc-fop1 1 1 0 0)	fabs d0, d0
+524	(enc-fop1 1 1 5 30)	fabs d5, d30
+525	(enc-fop1 2 1 0 0)	fsqrt d0, d0
+526	(enc-fop1 2 1 5 30)	fsqrt d5, d30
+527	(enc-fcmp 1 0 1)	fcmp d0, d1
+528	(enc-fcmp 1 30 2)	fcmp d30, d2
+529	(enc-fcvtzs 1 9 0)	fcvtzs x9, d0
+530	(enc-fcvtzs 1 16 1)	fcvtzs x16, d1
+531	(enc-scvtf 1 0 9)	scvtf d0, x9
+532	(enc-scvtf 1 1 31)	scvtf d1, xzr
+533	(enc-fop2 6 1 0 0 1)	REFUSED
+534	(enc-fop1 3 1 0 0)	REFUSED
+535	(enc-fmov-to-fp 0 0 0)	fmov s0, w0
+536	(enc-fmov-from-fp 0 0 0)	fmov w0, s0
+537	(enc-fmov-to-fp 0 0 9)	fmov s0, w9
+538	(enc-fmov-from-fp 0 9 0)	fmov w9, s0
+539	(enc-fmov-to-fp 0 0 17)	fmov s0, w17
+540	(enc-fmov-from-fp 0 17 0)	fmov w17, s0
+541	(enc-fmov-to-fp 0 0 31)	fmov s0, wzr
+542	(enc-fmov-from-fp 0 16 0)	fmov w16, s0
+543	(enc-fop2 0 0 0 0 1)	fadd s0, s0, s1
+544	(enc-fop2 0 0 3 7 31)	fadd s3, s7, s31
+545	(enc-fop2 1 0 0 0 1)	fsub s0, s0, s1
+546	(enc-fop2 1 0 3 7 31)	fsub s3, s7, s31
+547	(enc-fop2 2 0 0 0 1)	fmul s0, s0, s1
+548	(enc-fop2 2 0 3 7 31)	fmul s3, s7, s31
+549	(enc-fop2 3 0 0 0 1)	fdiv s0, s0, s1
+550	(enc-fop2 3 0 3 7 31)	fdiv s3, s7, s31
+551	(enc-fop2 4 0 0 0 1)	fmin s0, s0, s1
+552	(enc-fop2 4 0 3 7 31)	fmin s3, s7, s31
+553	(enc-fop2 5 0 0 0 1)	fmax s0, s0, s1
+554	(enc-fop2 5 0 3 7 31)	fmax s3, s7, s31
+555	(enc-fop1 0 0 0 0)	fneg s0, s0
+556	(enc-fop1 0 0 5 30)	fneg s5, s30
+557	(enc-fop1 1 0 0 0)	fabs s0, s0
+558	(enc-fop1 1 0 5 30)	fabs s5, s30
+559	(enc-fop1 2 0 0 0)	fsqrt s0, s0
+560	(enc-fop1 2 0 5 30)	fsqrt s5, s30
+561	(enc-fcmp 0 0 1)	fcmp s0, s1
+562	(enc-fcmp 0 30 2)	fcmp s30, s2
+563	(enc-fcvtzs 0 9 0)	fcvtzs x9, s0
+564	(enc-fcvtzs 0 16 1)	fcvtzs x16, s1
+565	(enc-scvtf 0 0 9)	scvtf s0, x9
+566	(enc-scvtf 0 1 31)	scvtf s1, xzr
+567	(enc-fop2 6 0 0 0 1)	REFUSED
+568	(enc-fop1 3 0 0 0)	REFUSED
+569	(enc-fcvt 1 0 0)	fcvt s0, d0
+570	(enc-fcvt 0 0 0)	fcvt d0, s0
+571	(enc-fcvt 1 7 3)	fcvt s7, d3
+572	(enc-fcvt 0 7 3)	fcvt d7, s3
+573	(enc-sxtw 9 9)	sxtw x9, w9
+574	(enc-sxtw 16 0)	sxtw x16, w0
+575	(enc-sxtw 0 30)	sxtw x0, w30
+576	(enc-cset 9 (enc-cond-of-cc CC-F64-EQ))	cset x9, eq
+577	(enc-cset 9 (enc-cond-of-cc CC-F64-LT))	cset x9, mi
+578	(enc-cset 9 (enc-cond-of-cc CC-F64-LE))	cset x9, ls
+579	(enc-cset 9 (enc-cond-of-cc CC-F64-GT))	cset x9, gt
+580	(enc-cset 9 (enc-cond-of-cc CC-F64-GE))	cset x9, ge
+581	(enc-cset 9 (enc-cond-of-cc CC-F64-UN))	cset x9, vs
+582	(enc-cset 9 (enc-cond-of-cc CC-F32-EQ))	cset x9, eq
+583	(enc-cset 9 (enc-cond-of-cc CC-F32-LT))	cset x9, mi
+584	(enc-cset 9 (enc-cond-of-cc CC-F32-LE))	cset x9, ls
+585	(enc-cset 9 (enc-cond-of-cc CC-F32-GT))	cset x9, gt
+586	(enc-cset 9 (enc-cond-of-cc CC-F32-GE))	cset x9, ge
+587	(enc-cset 9 (enc-cond-of-cc CC-F32-UN))	cset x9, vs

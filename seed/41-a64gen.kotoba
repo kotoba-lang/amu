@@ -546,9 +546,64 @@
         (gn-emit (enc-ret))
         (gn-gs gn-f-dead 1))))
 
+;; ---- FLOAT (agent FLOAT, rung r6j, 2026-10-04): f64/f32 operations (seed/SIR BOP-F*, CC-F*, UOP-F*) -----------------
+;; A float temp is its bit pattern in a general register (f32: 32 bits sign-extended). Each operation moves its operands
+;; into d0/d1 (s0/s1) with fmov, applies one instruction and moves the result back (f32: fmov w + sxtw). d0, d1 are scratch
+;; (nothing else in the seed's code uses the FP registers, and no value lives in one across an instruction group).
+(defn- gn-fl-bop? [bop :i64] :bool (>= bop BOP-F64-ADD))
+;; 1 = double, 0 = single
+(defn- gn-fl-bsz [bop :i64] :i64 (if (< bop BOP-F32-ADD) 1 0))
+(defn- gn-fl-csz [cc :i64] :i64 (if (< cc CC-F32-EQ) 1 0))
+;; d := (bop) x y, x and y general registers
+(defn- gn-fl-bin [M :vector-i64 bop :i64 d :i64 x :i64 y :i64] :vector-i64
+  (let [sz (gn-fl-bsz bop)]
+    (-> M
+        (gn-emit (enc-fmov-to-fp sz 0 x))
+        (gn-emit (enc-fmov-to-fp sz 1 y))
+        (gn-emit (enc-fop2 (bit-and bop 7) sz 0 0 1))
+        (gn-emit (enc-fmov-from-fp sz d 0))
+        (cond-> (= sz 0) (gn-emit (enc-sxtw d d))))))
+;; flags := fcmp temp t, temp t+1
+(defn- gn-fl-cmp-emit [M :vector-i64 cc :i64 t :i64] :vector-i64
+  (let [sz (gn-fl-csz cc)
+        x (gn-src M t 16 1)
+        y (gn-src M (inc t) 17 1)]
+    (-> M
+        (gn-ldt t 16 1)
+        (gn-ldt (inc t) 17 1)
+        (gn-emit (enc-fmov-to-fp sz 0 x))
+        (gn-emit (enc-fmov-to-fp sz 1 y))
+        (gn-emit (enc-fcmp sz 0 1)))))
+;; the result of an f32 operation in s0 -> d (fmov w, sxtw); of an f64 one in d0 -> d
+(defn- gn-fl-out [M :vector-i64 sz :i64 d :i64] :vector-i64
+  (-> M (gn-emit (enc-fmov-from-fp sz d 0)) (cond-> (= sz 0) (gn-emit (enc-sxtw d d)))))
+(defn- gn-fl-un-ok? [uop :i64] :bool
+  (or (and (>= uop UOP-F64-NEG) (<= uop UOP-F64-SQRT)) (and (>= uop UOP-F32-NEG) (<= uop UOP-F32-SQRT))
+      (and (>= uop UOP-F64-TO-I64) (<= uop UOP-F32-TO-I64))))
+;; d := (uop) x
+(defn- gn-fl-un [M :vector-i64 uop :i64 d :i64 x :i64] :vector-i64
+  (cond (<= uop UOP-F64-SQRT) (-> M (gn-emit (enc-fmov-to-fp 1 0 x)) (gn-emit (enc-fop1 (- uop UOP-F64-NEG) 1 0 0)) (gn-fl-out 1 d))
+        (<= uop UOP-F32-SQRT) (-> M (gn-emit (enc-fmov-to-fp 0 0 x)) (gn-emit (enc-fop1 (- uop UOP-F32-NEG) 0 0 0)) (gn-fl-out 0 d))
+        (= uop UOP-F64-TO-I64) (-> M (gn-emit (enc-fmov-to-fp 1 0 x)) (gn-emit (enc-fcvtzs 1 d 0)))
+        (= uop UOP-I64-TO-F64) (-> M (gn-emit (enc-scvtf 1 0 x)) (gn-fl-out 1 d))
+        (= uop UOP-F64-TO-F32) (-> M (gn-emit (enc-fmov-to-fp 1 0 x)) (gn-emit (enc-fcvt 1 0 0)) (gn-fl-out 0 d))
+        (= uop UOP-F32-TO-F64) (-> M (gn-emit (enc-fmov-to-fp 0 0 x)) (gn-emit (enc-fcvt 0 0 0)) (gn-fl-out 1 d))
+        (= uop UOP-I64-TO-F32) (-> M (gn-emit (enc-scvtf 0 0 x)) (gn-fl-out 0 d))
+        :else (-> M (gn-emit (enc-fmov-to-fp 0 0 x)) (gn-emit (enc-fcvtzs 0 d 0)))))
+(defn- gn-fl-op-un [M :vector-i64 i :i64 uop :i64 t :i64] :vector-i64
+  (if (gn-fl-un-ok? uop)
+    (let [s (gn-co M i t)
+          d (gn-dreg M t s)
+          x (gn-src M t 16 1)]
+      (-> M (gn-protect t s) (gn-ldt t 16 1) (gn-fl-un uop d x) (gn-fin t s d)))
+    (gn-err M E-GEN-OP OP-UN)))
+;; ---- END FLOAT ------------------------------------------------------------------------------------------------------
+
 ;; ---- data processing ------------------------------------------------------------------------------------------------
 (defn- gn-foldable [bop :i64 x :i64 y :i64] :bool
-  (if (= bop BOP-QUOT) (and (not= y 0) (not (and (= y -1) (= x -9223372036854775808)))) true))
+  (cond (gn-fl-bop? bop) false   ; FLOAT: never folded
+        (= bop BOP-QUOT) (and (not= y 0) (not (and (= y -1) (= x -9223372036854775808))))
+        :else true))
 (defn- gn-fold [bop :i64 x :i64 y :i64] :i64
   (case bop
     BOP-ADD (+ x y)
@@ -621,7 +676,10 @@
         iy (if (= ky gn-k-const) (gn-imm-kind bop vy) 0)
         ix (if (and (= kx gn-k-const) (not= ky gn-k-const) (or (= bop BOP-ADD) (= bop BOP-MUL) (= bop BOP-AND) (= bop BOP-OR) (= bop BOP-XOR)))
              (gn-imm-kind bop vx) 0)]
-    (cond (> iy 0) (-> M (gn-ldt t 16 0) (gn-bin-imm bop d (gn-src M t 16 0) vy))
+    (cond (gn-fl-bop? bop) (let [x (gn-src M t 16 1)   ; FLOAT
+                                 y (gn-src M (inc t) 17 1)]
+                             (-> M (gn-ldt t 16 1) (gn-ldt (inc t) 17 1) (gn-fl-bin bop d x y)))
+          (> iy 0) (-> M (gn-ldt t 16 0) (gn-bin-imm bop d (gn-src M t 16 0) vy))
           (> ix 0) (-> M (gn-ldt (inc t) 17 0) (gn-bin-imm bop d (gn-src M (inc t) 17 0) vx))
           (= bop BOP-QUOT) (let [x (gn-src M t 16 0)
                                  y (gn-src M (inc t) 17 0)]
@@ -640,7 +698,8 @@
 
 (defn- gn-op-un [M :vector-i64 i :i64 uop :i64 t :i64] :vector-i64
   (let [v (gn-dv M t)]
-    (cond (not (or (= uop UOP-NOT) (= uop UOP-BITNOT))) (gn-err M E-GEN-OP OP-UN)
+    (cond (>= uop UOP-F64-NEG) (gn-fl-op-un M i uop t)   ; FLOAT
+          (not (or (= uop UOP-NOT) (= uop UOP-BITNOT))) (gn-err M E-GEN-OP OP-UN)
           (gn-isk M t gn-k-const) (gn-def M t gn-k-const (if (= uop UOP-NOT) (bit-xor v 1) (bit-not v)))
           :else (let [s (gn-co M i t)
                       d (gn-dreg M t s)
@@ -661,7 +720,9 @@
     CC-GE (if (>= x y) 1 0)
     0))
 ;; flags := temp t - temp t+1 (cmp / cmp #imm / cmn #imm)
-(defn- gn-cmp-emit [M :vector-i64 t :i64] :vector-i64
+(defn- gn-cmp-emit [M :vector-i64 cc :i64 t :i64] :vector-i64
+  (if (>= cc CC-F64-EQ) (gn-fl-cmp-emit M cc t) (gn-cmp-emit-i M t)))   ; FLOAT
+(defn- gn-cmp-emit-i [M :vector-i64 t :i64] :vector-i64
   (let [vy (gn-dv M (inc t))
         imm (and (gn-isk M (inc t) gn-k-const) (> vy -4096) (< vy 4096))]
     (if imm
@@ -681,7 +742,7 @@
         bc (if (= (bit-xor nz inv) 1) c (bit-xor c 1))]
     (-> M
         (gn-flush 0 t)
-        (gn-cmp-emit t)
+        (gn-cmp-emit cc t)
         (gn-fix FX-BC19 l)
         (gn-emit (enc-bcond bc 0))
         (gn-gs gn-f-h t)
@@ -701,11 +762,11 @@
   (let [vx (gn-dv M t)
         vy (gn-dv M (inc t))
         inv (gn-fusable M i t)]
-    (cond (and (gn-isk M t gn-k-const) (gn-isk M (inc t) gn-k-const)) (gn-def M t gn-k-const (gn-cmp-fold cc vx vy))
+    (cond (and (gn-isk M t gn-k-const) (gn-isk M (inc t) gn-k-const) (< cc CC-F64-EQ)) (gn-def M t gn-k-const (gn-cmp-fold cc vx vy))   ; FLOAT: no fold
           (>= inv 0) (gn-cmp-br M i cc t inv)
           :else (let [s (gn-co M i t)
                       d (gn-dreg M t s)]
-                  (-> M (gn-protect t s) (gn-cmp-emit t) (gn-emit (enc-cset d (enc-cond-of-cc cc))) (gn-fin t s d))))))
+                  (-> M (gn-protect t s) (gn-cmp-emit cc t) (gn-emit (enc-cset d (enc-cond-of-cc cc))) (gn-fin t s d))))))
 
 ;; BRZ / BRNZ: nz = 0 -> branch when temp t = 0, 1 -> when != 0
 (defn- gn-op-brz [M :vector-i64 i :i64 t :i64 l0 :i64 nz :i64] :vector-i64

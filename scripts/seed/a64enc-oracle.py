@@ -146,6 +146,36 @@ for imm in [0, 1, 65535, 4660]:
 c('(enc-patch-imm26 (enc-b 0) 33554432)', None)
 c('(enc-patch-imm19 (enc-cbz 1 0) 262144)', None)
 c('(enc-patch-imm16 (enc-movz 1 0 0) 65536)', None)
+# FLOAT (rung r6j): scalar floating point (sz 1 = d registers, 0 = s)
+for sz, r, g in [(1, 'd', 'x'), (0, 's', 'w')]:
+    for n in [0, 9, 17, 31]:
+        c(f'(enc-fmov-to-fp {sz} 0 {n})', f'fmov {r}0, {g}{n if n != 31 else "zr"}')
+        c(f'(enc-fmov-from-fp {sz} {n if n != 31 else 16} 0)', f'fmov {g}{n if n != 31 else 16}, {r}0')
+    for k, op in enumerate(['fadd', 'fsub', 'fmul', 'fdiv', 'fmin', 'fmax']):
+        c(f'(enc-fop2 {k} {sz} 0 0 1)', f'{op} {r}0, {r}0, {r}1')
+        c(f'(enc-fop2 {k} {sz} 3 7 31)', f'{op} {r}3, {r}7, {r}31')
+    for k, op in enumerate(['fneg', 'fabs', 'fsqrt']):
+        c(f'(enc-fop1 {k} {sz} 0 0)', f'{op} {r}0, {r}0')
+        c(f'(enc-fop1 {k} {sz} 5 30)', f'{op} {r}5, {r}30')
+    c(f'(enc-fcmp {sz} 0 1)', f'fcmp {r}0, {r}1')
+    c(f'(enc-fcmp {sz} 30 2)', f'fcmp {r}30, {r}2')
+    c(f'(enc-fcvtzs {sz} 9 0)', f'fcvtzs x9, {r}0')
+    c(f'(enc-fcvtzs {sz} 16 1)', f'fcvtzs x16, {r}1')
+    c(f'(enc-scvtf {sz} 0 9)', f'scvtf {r}0, x9')
+    c(f'(enc-scvtf {sz} 1 31)', f'scvtf {r}1, xzr')
+    c(f'(enc-fop2 6 {sz} 0 0 1)', None)
+    c(f'(enc-fop1 3 {sz} 0 0)', None)
+c('(enc-fcvt 1 0 0)', 'fcvt s0, d0')
+c('(enc-fcvt 0 0 0)', 'fcvt d0, s0')
+c('(enc-fcvt 1 7 3)', 'fcvt s7, d3')
+c('(enc-fcvt 0 7 3)', 'fcvt d7, s3')
+for d, n in [(9, 9), (16, 0), (0, 30)]:
+    c(f'(enc-sxtw {d} {n})', f'sxtw x{d}, w{n}')
+# the condition after fcmp for each float compare (enc-cond-of-cc), as a cset
+for cc, cond in [('CC-F64-EQ', 'eq'), ('CC-F64-LT', 'mi'), ('CC-F64-LE', 'ls'), ('CC-F64-GT', 'gt'), ('CC-F64-GE', 'ge'),
+                 ('CC-F64-UN', 'vs'), ('CC-F32-EQ', 'eq'), ('CC-F32-LT', 'mi'), ('CC-F32-LE', 'ls'), ('CC-F32-GT', 'gt'),
+                 ('CC-F32-GE', 'ge'), ('CC-F32-UN', 'vs')]:
+    c(f'(enc-cset 9 (enc-cond-of-cc {cc}))', f'cset x9, {cond}')
 
 GROUP = 24
 

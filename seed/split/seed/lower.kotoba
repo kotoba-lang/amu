@@ -283,13 +283,16 @@
 (def BOP-SHL 8)
 (def BOP-USHR 9)
 (def BOP-SSHR 10)
+(def BOP-F64-ADD 16)
 (def CC-EQ 1)
 (def CC-LT 2)
 (def CC-GT 3)
 (def CC-LE 4)
 (def CC-GE 5)
+(def CC-F64-EQ 8)
 (def UOP-NOT 1)
 (def UOP-BITNOT 2)
+(def UOP-F64-NEG 16)
 (def RT-PAIR-NEW 56)
 (def RT-PAIR-FIRST 64)
 (def RT-PAIR-SECOND 72)
@@ -312,6 +315,8 @@
 (def RT-STRING-FROM-UTF8 352)
 (def RT-CAP-CALL 48)
 (def RT-STRING-LENGTH-VIA 72)
+;; defs of earlier modules used here (a def is not importable)
+(def ck-fl-base 4096)
 
 ;; seed/30-lower.kotoba -- lower the checked tree to SIR (prefix lw-). Owner: module 30-lower.
 ;; Contract: seed/SIR (opcodes, lowering table, fuel rule), seed/MEMORY-MAP (NODE/FN/SIR layouts, rules L1-L13),
@@ -787,6 +792,16 @@
       HD-R6-IS (lw-expr M (lw-next M a) t 0)   ; R6B: a type assertion, no code
       (if (and (>= hd HD-OPTION-SOME) (<= hd HD-POP)) (lw-r3 M n hd t k) (lw-fail M E-LOWER-NODE (lw-pos M n) hd)))))
 
+;; FLOAT (agent FLOAT, rung r6j): a float operation (21-check ck-fl-*: NF-RES = ck-fl-base + kind * 256 + code) is one
+;; SIR instruction over its operands: kind 1 [a -> t] [b -> t+1] BIN code t, 2 the same with CMP, 3 [a -> t] UN code t.
+(defn- lw-fl [M :vector-i64 a :i64 t :i64 hd :i64] :vector-i64
+  (let [kind (quot (- hd ck-fl-base) 256)
+        code (- (- hd ck-fl-base) (* kind 256))]
+    (case kind
+      1 (-> M (lw-args a t) (lw-emit OP-BIN code t))
+      2 (-> M (lw-args a t) (lw-emit OP-CMP code t))
+      (-> M (lw-expr a t 0) (lw-emit OP-UN code t)))))
+
 (defn- lw-list [M :vector-i64 n :i64 t :i64 k :i64] :vector-i64
   (let [hd (lw-nf M n NF-RES)
         a (lw-next M (lw-first M n))
@@ -794,6 +809,7 @@
         cc (lw-cc hd)
         rt (lw-rt hd)]
     (cond
+      (>= hd ck-fl-base) (lw-fl M a t hd)   ; FLOAT
       (pos? bop) (let [nx (lw-next M a)] (lw-fold (lw-expr M a t 0) nx t bop))
       (pos? cc) (-> M (lw-args a t) (lw-emit OP-CMP cc t))
       (pos? rt) (lw-rtcall M a t rt)
@@ -1522,7 +1538,8 @@
 (defn- lw-oor [i :i64 n :i64] :bool (or (neg? i) (>= i n)))
 ;; a quot that traps: divisor 0, or MIN / -1
 (defn- lw-ix-bin-trap [bop :i64 x :i64 y :i64] :bool
-  (and (= bop BOP-QUOT) (or (zero? y) (and (= y -1) (= x (i64-shift-left 1 63))))))
+  (or (>= bop BOP-F64-ADD)   ; FLOAT: lw-interp has no float arithmetic (a trap, never a wrong value)
+      (and (= bop BOP-QUOT) (or (zero? y) (and (= y -1) (= x (i64-shift-left 1 63)))))))
 (defn- lw-ix-un [uop :i64 x :i64] :i64 (if (= uop UOP-NOT) (bit-xor x 1) (bit-not x)))
 
 
@@ -1549,7 +1566,7 @@
                  (lw-ix M (lw-put H (+ tb b) (lw-ix-bin a x y)) pc1 fb tb)))
       OP-CMP (let [x (vector-at H (+ tb b))
                    y (vector-at H (+ tb b 1))]
-               (lw-ix M (lw-put H (+ tb b) (lw-ix-cmp a x y)) pc1 fb tb))
+               (if (>= a CC-F64-EQ) (lw-ix-trap H 8) (lw-ix M (lw-put H (+ tb b) (lw-ix-cmp a x y)) pc1 fb tb)))   ; FLOAT: trap
       OP-LSET (lw-ix M (lw-put H (+ fb a) (vector-at H (+ tb b))) pc1 fb tb)
       OP-BRZ (lw-ix M H (if (zero? (vector-at H (+ tb a))) (vector-at H (+ (lw-hlab) b)) pc1) fb tb)
       OP-BRNZ (lw-ix M H (if (zero? (vector-at H (+ tb a))) pc1 (vector-at H (+ (lw-hlab) b))) fb tb)
@@ -1573,7 +1590,7 @@
                 (if (> used (vector-at H 5))
                   (lw-ix-trap H 4)
                   (lw-ix M (lw-put H 4 used) pc1 fb tb)))
-      OP-UN (lw-ix M (lw-put H (+ tb b) (lw-ix-un a (vector-at H (+ tb b)))) pc1 fb tb)
+      OP-UN (if (>= a UOP-F64-NEG) (lw-ix-trap H 8) (lw-ix M (lw-put H (+ tb b) (lw-ix-un a (vector-at H (+ tb b)))) pc1 fb tb))   ; FLOAT: trap
       OP-RET (lw-put H 1 (vector-at H (+ tb a)))
       OP-TAB (let [x (vector-at H (+ tb a))]
                (if (lw-oor x (vector-at M (+ p 3)))

@@ -366,6 +366,12 @@
 (def E-STATE-RESUME-WHERE 2168)
 (def E-STATE-FN-CALL 2169)
 (def E-STATE-PARAMS4 2171)
+(def UOP-F64-TO-I64 32)
+(def UOP-I64-TO-F64 33)
+(def UOP-F64-TO-F32 34)
+(def UOP-F32-TO-F64 35)
+(def UOP-I64-TO-F32 36)
+(def UOP-F32-TO-I64 37)
 
 ;; seed/21-check.kotoba -- the type checker and admission gate of the seed compiler R0 (prefix ck-).
 ;; Owner: 21-check. Contract: seed/HEADS (types, heads 1..41, :caps, E21nn), seed/MEMORY-MAP (NF-TYPE NF-RES,
@@ -1666,13 +1672,94 @@
         M2 (nm-put M1 (ck-cache) base)]
     (ck-ds-tops M2 S (nm-first M2 (vector-at M2 MM-ROOT)))))
 
+;; =========================================================================================================
+;; FLOAT (agent FLOAT, rung r6j, 2026-10-04): f64/f32 arithmetic on the source route (seed/SIR BOP-F*, CC-F*, UOP-F*).
+;; A call whose head symbol is not a local, not a definition of the module (a module's own defn of the same name wins,
+;; as for every library name) and not a head, but is spelled as one of the 36 float operations below, is a fixed-signature
+;; operation: its list node gets NF-RES = ck-fl-base + kind * 256 + code (kind 1 BIN bop, 2 CMP cc, 3 UN uop; code = the
+;; SIR constant), which 30-lower turns into that one SIR instruction. Operand and result types follow the reference
+;; (lang/kir-ops): :f64 / :f32 carriers (R6C / R6F: the bit pattern in an i64), :i64 for conversions, :bool for compares.
+;; No fuel (no runtime call; stage-0 emits them inline too). The spelling is matched by its FNV-1a hash (SF-HASH).
+;; =========================================================================================================
+(def ck-fl-base 4096)
+(defn- ck-fl-code [h :i64] :i64
+  (case h
+    2613997037718250633 272   ; f64-add
+    -4291316704568651458 280   ; f32-add
+    -8820899703417517200 273   ; f64-sub
+    4532134367130893119 281   ; f32-sub
+    -8519800640700416212 274   ; f64-mul
+    -6672223372916964725 282   ; f32-mul
+    4429907561435325029 275   ; f64-div
+    -1175429393901360770 283   ; f32-div
+    -8538938740097272378 276   ; f64-min
+    -6653080875473595715 284   ; f32-min
+    -8531319124515283948 277   ; f64-max
+    -6660669704729994237 285   ; f32-max
+    597596647784798764 520   ; f64-eq
+    -8639624572797961279 528   ; f32-eq
+    604368539901625738 521   ; f64-lt
+    -8646396464914788253 529   ; f32-lt
+    604387231599305325 522   ; f64-le
+    -8646415156612467840 530   ; f32-le
+    595645014645102689 523   ; f64-gt
+    -8641613589333016528 531   ; f32-gt
+    595626322947423102 524   ; f64-ge
+    -8641630082007439693 532   ; f32-ge
+    5069818315657152866 525   ; f64-unordered
+    7440023075542323109 533   ; f32-unordered
+    8102281896244832684 784   ; f64-neg
+    -7413100696096902389 792   ; f32-neg
+    2612001424113426118 785   ; f64-abs
+    -4289343081196391163 793   ; f32-abs
+    5535328417983303064 786   ; f64-sqrt
+    -1637028048642175763 794   ; f32-sqrt
+    1868629902863558567 800   ; f64-to-i64-truncating
+    7348910623852123541 801   ; i64-to-f64-rounded
+    -465854805646180771 802   ; f64-to-f32-rounded
+    -205624834797417495 803   ; f32-to-f64-exact
+    -1017748302173365810 804   ; i64-to-f32-rounded
+    -2449551259944879456 805   ; f32-to-i64-truncating
+    0))
+(defn- ck-fl? [hd :i64] :bool (>= hd ck-fl-base))
+(defn- ck-fl-kind [hd :i64] :i64 (quot (- hd ck-fl-base) 256))
+(defn- ck-fl-sub [hd :i64] :i64 (- (- hd ck-fl-base) (* 256 (ck-fl-kind hd))))
+;; the carrier type of the float operands of BIN/CMP code c (f64 codes 8..23, f32 codes 24..31 for BIN, 16..23 for CMP)
+(defn- ck-fl-ty [hd :i64] :i64
+  (let [k (ck-fl-kind hd)
+        c (ck-fl-sub hd)]
+    (cond (= k 2) (if (< c 16) TY-F64 ck-ty-f32)
+          :else (if (< c 24) TY-F64 ck-ty-f32))))
+(defn- ck-fl-arity [hd :i64] :i64 (if (= (ck-fl-kind hd) 3) 1 2))
+(defn- ck-fl-arg [hd :i64] :i64
+  (let [c (ck-fl-sub hd)]
+    (cond (< (ck-fl-kind hd) 3) (ck-fl-ty hd)
+          (or (= c UOP-I64-TO-F64) (= c UOP-I64-TO-F32)) TY-I64
+          (or (= c UOP-F64-TO-I64) (= c UOP-F64-TO-F32)) TY-F64
+          (or (= c UOP-F32-TO-F64) (= c UOP-F32-TO-I64)) ck-ty-f32
+          :else (ck-fl-ty hd))))
+(defn- ck-fl-res [hd :i64] :i64
+  (let [c (ck-fl-sub hd)]
+    (cond (= (ck-fl-kind hd) 2) TY-BOOL
+          (< (ck-fl-kind hd) 2) (ck-fl-ty hd)
+          (or (= c UOP-F64-TO-I64) (= c UOP-F32-TO-I64)) TY-I64
+          (or (= c UOP-I64-TO-F64) (= c UOP-F32-TO-F64)) TY-F64
+          (or (= c UOP-F64-TO-F32) (= c UOP-I64-TO-F32)) ck-ty-f32
+          :else (ck-fl-ty hd))))
+(defn- ck-fl-op [M :vector-i64 n :i64 h :i64 hd :i64 fx :i64] :vector-i64
+  (ck-op (nm-set-nf M h NF-RES (+ (* RES-HEAD RES-SCALE) hd)) n hd fx))
+;; =========================================================================================================
+;; END FLOAT
+;; =========================================================================================================
+
 ;; ---------------------------------------------------------------------------------------------------------
 ;; the fixed-signature operations (everything except the special forms)
 ;; ---------------------------------------------------------------------------------------------------------
 ;; minimum (variadic) or exact argument count
 (defn- ck-r4b-op? [hd :i64] :bool (and (>= hd HD-BYTES-EMPTY) (<= hd HD-STRING-FROM-UTF8)))
 (defn- ck-op-arity [hd :i64] :i64
-  (cond (= hd HD-NOT) 1
+  (cond (ck-fl? hd) (ck-fl-arity hd)   ; FLOAT
+        (= hd HD-NOT) 1
         (= hd HD-BYTES-EMPTY) 0 (= hd HD-BYTES-COUNT) 1 (= hd HD-BYTES-SLICE) 3 (= hd HD-STRING-FROM-UTF8) 1
         (= hd HD-STRING-SUBSTRING) 3
         (= hd HD-STRING-BYTE-LENGTH) 1
@@ -1699,7 +1786,8 @@
 
 ;; type of argument k
 (defn- ck-op-arg [hd :i64 k :i64] :i64
-  (cond (= hd HD-NOT) TY-BOOL
+  (cond (ck-fl? hd) (ck-fl-arg hd)   ; FLOAT
+        (= hd HD-NOT) TY-BOOL
         (or (= hd HD-BYTES-AT) (= hd HD-BYTES-SLICE)) (if (= k 0) TY-BYTES TY-I64)
         (ck-r4b-op? hd) TY-BYTES
         (= hd HD-STRING-SUBSTRING) (if (= k 0) TY-STR TY-I64)
@@ -1718,7 +1806,8 @@
         :else TY-I64))
 
 (defn- ck-op-res [hd :i64] :i64
-  (cond (= hd HD-NOT) TY-BOOL
+  (cond (ck-fl? hd) (ck-fl-res hd)   ; FLOAT
+        (= hd HD-NOT) TY-BOOL
         (or (= hd HD-BYTES-EMPTY) (= hd HD-BYTES-CONCAT) (= hd HD-BYTES-SLICE)) TY-BYTES
         (= hd HD-STRING-FROM-UTF8) TY-STR
         (= hd HD-STRING-EQ) TY-BOOL
@@ -1887,6 +1976,7 @@
           (and (= (ck-callable M fi) 1) (ck-r5b-tmpl? M fi)) (ck-r5b-scall M n fi fx)   ; R5B: a stateful defn
           (= (ck-callable M fi) 1) (ck-call M n fi fx)
           (> hd 0) (ck-head (nm-set-nf M h NF-RES (+ (* RES-HEAD RES-SCALE) hd)) n hd fx ctx)
+          (pos? (ck-fl-code (nm-sf M s SF-HASH))) (ck-fl-op M n h (+ ck-fl-base (ck-fl-code (nm-sf M s SF-HASH))) fx)   ; FLOAT
           :else (ck-err M E-CHECK-HEAD h 0))))
 
 (defn- ck-head [M :vector-i64 n :i64 hd :i64 fx :i64 ctx :i64] :vector-i64

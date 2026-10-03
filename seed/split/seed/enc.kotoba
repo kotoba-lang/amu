@@ -7,6 +7,7 @@
 (def CC-GT 3)
 (def CC-LE 4)
 (def CC-GE 5)
+(def CC-F64-EQ 8)
 
 ;; seed/40-a64enc.kotoba -- AArch64 instruction encoders of the seed compiler (R0). Prefix enc-. Owner: 40-a64enc.
 ;; Pure functions over i64: register numbers (0..30, 31 = sp or xzr by instruction), immediates in the units
@@ -37,12 +38,18 @@
 (defn- enc-cond-gt [] :i64 12)
 (defn- enc-cond-le [] :i64 13)
 (defn enc-cond-of-cc [cc :i64] :i64
-  (cond (= cc CC-EQ) 0
+  (cond (>= cc CC-F64-EQ) (enc-fcond (bit-and cc 7))   ; FLOAT (r6j): after fcmp
+        (= cc CC-EQ) 0
         (= cc CC-LT) 11
         (= cc CC-GT) 12
         (= cc CC-LE) 13
         (= cc CC-GE) 10
         :else -1))
+
+;; FLOAT (r6j): the A64 condition after `fcmp` for float compare k = CC-F*-* mod 8 (0 eq 1 lt 2 le 3 gt 4 ge 5 unordered):
+;; eq, mi, ls, gt, ge, vs -- each is false on unordered operands except vs (the Arm ARM fcmp flag table: unordered = 0011)
+(defn- enc-fcond [k :i64] :i64
+  (cond (= k 0) 0 (= k 1) 4 (= k 2) 9 (= k 3) 12 (= k 4) 10 (= k 5) 6 :else -1))
 
 ;; ---- data processing, register forms: base + Rm<<16 + Rn<<5 + Rd ------------------------------------------------
 (defn- enc-rrr [base :i64 d :i64 n :i64 m :i64] :i64
@@ -157,3 +164,28 @@
 ;; imm16 at bits 5..20 (movz, movk, movn)
 (defn- enc-patch-imm16 [w :i64 imm :i64] :i64
   (if (= 1 (enc-in imm 0 65535)) (+ (bit-and w 4292870175) (enc-sh imm 5)) -1))                        ; keep ffe0001f
+
+;; ---- FLOAT (agent FLOAT, rung r6j, 2026-10-04): scalar floating point. sz = 1 double (d registers), 0 single (s). ------
+;; Words checked against clang -c + objdump (scripts/seed/a64enc-oracle.py style; seed/tests/float/enc.s).
+(defn- enc-ftype [sz :i64] :i64 (if (= sz 1) 0x00400000 0))
+;; fmov dN, xM / sN, wM (general -> fp) and xD, dN / wD, sN (fp -> general)
+(defn enc-fmov-to-fp [sz :i64 d :i64 n :i64] :i64 (+ (if (= sz 1) 0x9e670000 0x1e270000) (enc-sh (enc-r n) 5) (enc-r d)))
+(defn enc-fmov-from-fp [sz :i64 d :i64 n :i64] :i64 (+ (if (= sz 1) 0x9e660000 0x1e260000) (enc-sh (enc-r n) 5) (enc-r d)))
+;; fadd/fsub/fmul/fdiv/fmin/fmax d|s: k = 0 add 1 sub 2 mul 3 div 4 min 5 max
+(defn- enc-fop2-base [k :i64] :i64
+  (cond (= k 0) 0x1e202800 (= k 1) 0x1e203800 (= k 2) 0x1e200800 (= k 3) 0x1e201800 (= k 4) 0x1e205800 (= k 5) 0x1e204800 :else -1))
+(defn enc-fop2 [k :i64 sz :i64 d :i64 n :i64 m :i64] :i64
+  (if (< (enc-fop2-base k) 0) -1 (+ (enc-rrr (enc-fop2-base k) d n m) (enc-ftype sz))))
+;; fneg/fabs/fsqrt d|s: k = 0 neg 1 abs 2 sqrt
+(defn- enc-fop1-base [k :i64] :i64 (cond (= k 0) 0x1e214000 (= k 1) 0x1e20c000 (= k 2) 0x1e21c000 :else -1))
+(defn enc-fop1 [k :i64 sz :i64 d :i64 n :i64] :i64
+  (if (< (enc-fop1-base k) 0) -1 (+ (enc-fop1-base k) (enc-ftype sz) (enc-sh (enc-r n) 5) (enc-r d))))
+;; fcmp dN, dM / sN, sM
+(defn enc-fcmp [sz :i64 n :i64 m :i64] :i64 (+ 0x1e202000 (enc-ftype sz) (enc-sh (enc-r m) 16) (enc-sh (enc-r n) 5)))
+;; fcvtzs xD, dN|sN (round toward zero, saturating, NaN -> 0); scvtf dD|sD, xN (round to nearest even)
+(defn enc-fcvtzs [sz :i64 d :i64 n :i64] :i64 (+ 0x9e380000 (enc-ftype sz) (enc-sh (enc-r n) 5) (enc-r d)))
+(defn enc-scvtf [sz :i64 d :i64 n :i64] :i64 (+ 0x9e220000 (enc-ftype sz) (enc-sh (enc-r n) 5) (enc-r d)))
+;; fcvt sD, dN (sz = 1: narrow) / fcvt dD, sN (sz = 0: widen)
+(defn enc-fcvt [sz :i64 d :i64 n :i64] :i64 (+ (if (= sz 1) 0x1e624000 0x1e22c000) (enc-sh (enc-r n) 5) (enc-r d)))
+;; sxtw xD, wN (sbfm xD, xN, #0, #31)
+(defn enc-sxtw [d :i64 n :i64] :i64 (+ 0x93407c00 (enc-sh (enc-r n) 5) (enc-r d)))

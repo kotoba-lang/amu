@@ -1,0 +1,60 @@
+;; seed/tests/float/prog.kotoba -- FLOAT (rung r6j) program differential: f64/f32 values through lets, loops, calls, branches
+;; (fused compare + b.cond), deep operand stacks (temps beyond x15 spill), and conversions. Every export takes one i64 and
+;; returns an i64 (a bit pattern or a count); scripts/seed/float-prog.sh compares the seed with stage-0 on several arguments.
+(ns fl (:export [t-sum t-newton t-cmp t-deep t-mix t-call t-loopvar]))
+
+(defn- half [] :f64 (f64-from-bits 4602678819172646912))
+(defn- two [] :f64 (f64-from-bits 4611686018427387904))
+
+;; sum_{i<n} i * 0.5
+(defn t-sum [n :i64] :i64
+  (loop [i 0 acc (f64-from-bits 0)]
+    (if (< i n)
+      (recur (+ i 1) (f64-add acc (f64-mul (i64-to-f64-rounded i) (half))))
+      (f64-to-bits acc))))
+
+;; Newton's square root of x (as an i64 converted), 30 steps, minus f64-sqrt: the residual's bits
+(defn t-newton [x :i64] :i64
+  (let [v (i64-to-f64-rounded x)
+        r (loop [k 0 g (f64-add v (f64-from-bits 4607182418800017408))]
+            (if (< k 30) (recur (+ k 1) (f64-div (f64-add g (f64-div v g)) (two))) g))]
+    (f64-to-bits (f64-sub r (f64-sqrt v)))))
+
+;; branch shapes over the values -x .. x (fused compares, and/or/not, unordered)
+(defn t-cmp [x :i64] :i64
+  (let [nan (f64-div (f64-from-bits 0) (f64-from-bits 0))]
+    (loop [i (- 0 x) c 0]
+      (if (> i x)
+        c
+        (let [a (i64-to-f64-rounded i)
+              b (f64-mul (i64-to-f64-rounded x) (half))
+              c1 (if (f64-lt a b) (+ c 1) c)
+              c2 (if (and (f64-ge a b) (not (f64-eq a b))) (+ c1 10) c1)
+              c3 (if (or (f64-unordered a nan) (f64-gt a (f64-neg b))) (+ c2 100) c2)
+              c4 (if (f64-le (f64-abs a) b) (+ c3 1000) c3)]
+          (recur (+ i 1) c4))))))
+
+;; an operand stack deeper than the 7 register temps
+(defn t-deep [x :i64] :i64
+  (let [a (i64-to-f64-rounded x)]
+    (f64-to-bits
+      (f64-add a (f64-mul a (f64-add a (f64-sub a (f64-add a (f64-mul a (f64-add a (f64-sub a (f64-add a (f64-div a (f64-add a (two)))))))))))))))
+
+;; f32 arithmetic and conversions
+(defn t-mix [x :i64] :i64
+  (let [f (i64-to-f32-rounded x)
+        g (f32-mul f (f32-sqrt (f32-abs f)))
+        h (f32-sub (f32-div g (f64-to-f32-rounded (two))) (f32-neg f))
+        d (f64-add (f32-to-f64-exact h) (f64-from-bits 4591870180066957722))]
+    (+ (f32-to-bits h) (* 31 (f64-to-bits d)) (if (f32-lt h g) 7 0) (if (f32-unordered h h) 3 0) (if (f32-eq f f) 1 0))))
+
+;; f64 values as call arguments and results
+(defn- poly [a :f64 b :f64 c :f64 x :f64] :f64 (f64-add (f64-mul (f64-add (f64-mul a x) b) x) c))
+(defn t-call [x :i64] :i64
+  (let [v (i64-to-f64-rounded x)]
+    (f64-to-bits (poly (two) (f64-neg (half)) v (poly v v (half) (two))))))
+
+;; an f64 loop variable with a float exit test
+(defn t-loopvar [x :i64] :i64
+  (loop [v (i64-to-f64-rounded x) k 0]
+    (if (f64-gt v (f64-from-bits 4607182418800017408)) (recur (f64-mul v (half)) (+ k 1)) (+ (* k 1000) (f64-to-bits (f64-mul v (f64-from-bits 4636737291354636288)))))))
