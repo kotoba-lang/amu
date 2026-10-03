@@ -1,0 +1,261 @@
+;; bootstrap-tooling: the --backend seed spawn route of the bootstrap period (ADR 0365); the final selfhost links the seed in-process.
+(ns kotoba.compiler.nbb.seed-backend
+  "BOOTSTRAP-LABELLED (ADR 0365): the opt-in `--backend seed` of the native
+  AArch64 compile, on the nbb/Node host.
+
+  After the frontend has produced the sealed KIR (`ir/native-program kir`, the
+  value the artifact's `:program` holds and the verifier re-emits from), the
+  driver may hand that KIR to the selfhost SEED's backend instead of
+  `kotoba.native.aarch64/emit-program` (machine_ir):
+
+      <seed> compile-kir <work>/program.kir --output <work>/program.kseed [--metered]
+
+  The seed is the packaged seed command (scripts/seed/package.sh: the seed's
+  code embedded in the C loader, wire-35 scope baked in, no spawn grant). It is
+  started through the process/spawn capability's mechanism (catalog wire 20:
+  no shell, an explicit argv, an empty environment), with a grant of exactly
+  ONE program: a private copy of the seed whose bytes were hashed before they
+  were written, so the sha256 recorded in the artifact is the sha256 of the
+  program that ran. This is the bootstrap period's route only. In the final
+  selfhost the seed backend is linked into the amu image as Kotoba modules and
+  called in-process; nothing here has a Kotoba reading, and the namespace is
+  required only under `#?(:cljs ...)`.
+
+  Selection is fail-safe: ANY refusal (the seed's `E....` codes, e.g. E1203 /
+  E2101 for floats, variants, heterogeneous vectors, documents under
+  `--metered`) or failure (non-zero exit without a code, unreadable container,
+  a missing export) falls back to machine_ir, and the reason goes into the
+  compile report under `:backend`. A fallback artifact is the default
+  artifact: it carries no `:emitter` field.
+
+  When the seed's output is used the artifact records
+  `:emitter {:name :kotoba-seed :sha256 <hex of the seed command> :route
+  :bootstrap-process}` (kotoba-verifier ADR 0052). The verifier then re-emits
+  with the recorded emitter, which this namespace supplies as
+  `verifier/*emitters*` (see `emitters-for`).
+
+  Container (seed/50-out.kotoba): \"KSEED1 <code-length> <n-exports>\\n\", n
+  lines \"<name> <offset> <arity>\\n\", \"\\n\", then exactly <code-length> code
+  bytes. The seed reports no per-function length, so a seed export is
+  `{:offset o :arity a}` (machine_ir's also has `:length`; nothing in amu reads
+  it)."
+  {:kotoba/export []}
+  #?(:cljs (:require [clojure.string :as str]
+                     [kotoba.artifact.core :as artifact]
+                     ["node:child_process" :as child]
+                     ["node:crypto" :as crypto]
+                     ["node:fs" :as fs]
+                     ["node:os" :as os]
+                     ["node:path" :as path])))
+
+#?(:cljs
+   (do
+     (def emitter-name :kotoba-seed)
+     (def emitter-route :bootstrap-process)
+
+     ;; Wall-clock bound of one seed run. The packaged seed has its own CPU and
+     ;; wall limits (120 s each, package.sh); this is the parent's, so a seed
+     ;; that stops answering is a FAILURE that falls back, not a hung compile.
+     (def ^:private timeout-ms 300000)
+     (def ^:private max-output (* 4 1024 1024))
+     (def ^:private max-container (* 64 1024 1024))
+
+     (defn- usage! [message]
+       (throw (ex-info message {:phase :usage})))
+
+     (defn- option [args flag]
+       (second (drop-while #(not= flag %) args)))
+
+     (defn requested
+       "The backend the command line asks for: :machine-ir (default, also for an
+       absent flag) or :seed. Any other value is a usage error."
+       [args]
+       (let [present? (some #(= "--backend" %) args)
+             value (option args "--backend")]
+         (cond
+           (not present?) :machine-ir
+           (contains? #{"machine_ir" "machine-ir"} value) :machine-ir
+           (= "seed" value) :seed
+           :else (usage! (str "error: --backend must be machine_ir or seed, not "
+                              (pr-str value))))))
+
+     (defn- sha256-hex [buffer]
+       (-> (crypto/createHash "sha256") (.update buffer) (.digest "hex")))
+
+     (defn- seed-path [args]
+       (let [p (or (option args "--seed") (aget js/process.env "AMU_SEED"))]
+         (when (or (nil? p) (= "" p))
+           (usage! (str "error: --backend seed needs the packaged seed command: --seed <path> "
+                        "(or AMU_SEED); build it with scripts/seed/package.sh")))
+         (path/resolve p)))
+
+     (defn- work-root []
+       ;; The packaged seed reads and writes only inside its baked wire-35 scope
+       ;; (package.sh's default holds /private/tmp and /tmp), so the work
+       ;; directory is made there unless AMU_SEED_WORK names another root.
+       (let [w (aget js/process.env "AMU_SEED_WORK")]
+         (if (and w (not= "" w)) (path/resolve w) "/tmp")))
+
+     (def ^:private opened (atom {}))
+
+     (defn- open-path!
+       "{:record <the artifact's :emitter> :program <private copy> :source <path>}
+       for the seed command at SOURCE. The copy is written from the very bytes
+       that were hashed, mode 0700, in a fresh 0700 directory, once per process
+       and source path."
+       [source]
+       (or (get @opened source)
+           (let [bytes (try (fs/readFileSync source)
+                            (catch :default e
+                              (usage! (str "error: cannot read the seed command " source
+                                           ": " (ex-message e)))))
+                 digest (sha256-hex bytes)
+                 dir (fs/mkdtempSync (path/join (work-root) "amu-seed-"))
+                 program (path/join dir "seed")
+                 _ (fs/writeFileSync program bytes #js {:mode 448})
+                 _ (.once js/process "exit" (fn [] (fs/rmSync dir #js {:recursive true :force true})))
+                 seed {:record {:name emitter-name :sha256 digest :route emitter-route}
+                       :program program :source source :dir dir}]
+             (swap! opened assoc source seed)
+             seed)))
+
+     (defn open!
+       "The seed for this command line, or nil when --backend is not seed."
+       [args]
+       (when (= :seed (requested args))
+         (open-path! (seed-path args))))
+
+     (defn open-for-verify!
+       "The seed named by --seed (or AMU_SEED) for re-emitting an artifact that
+       records it, whatever --backend says; nil when none is named (the
+       verifier then refuses the artifact by name: 'recorded emitter is not
+       available to this verifier')."
+       [args]
+       (let [p (or (option args "--seed") (aget js/process.env "AMU_SEED"))]
+         (when (and p (not= "" p))
+           (open-path! (path/resolve p)))))
+
+     (defn- run-seed!
+       "One seed run: process/spawn shape (no shell, explicit argv, empty
+       environment, stdin at EOF), stdout and stderr captured."
+       [seed argv]
+       (let [r (.spawnSync child (:program seed) (clj->js argv)
+                           #js {:shell false :env #js {}
+                                :stdio #js ["ignore" "pipe" "pipe"]
+                                :encoding "utf8" :timeout timeout-ms
+                                :maxBuffer max-output})
+             error (.-error r)]
+         {:status (.-status r) :signal (.-signal r)
+          :error (when error (or (.-code error) (ex-message error)))
+          :out (or (.-stdout r) "") :err (or (.-stderr r) "")}))
+
+     (defn- first-line [text]
+       (let [t (str/trim text)
+             l (if (= "" t) "-" (first (str/split-lines t)))]
+         (subs l 0 (min 300 (count l)))))
+
+     (defn- parse-container
+       "{:code [ints] :exports {sym {:offset o :arity a}}} from the kseed/v1
+       bytes, or throws."
+       [buffer]
+       (let [n (.-length buffer)
+             nl (fn [from] (let [i (.indexOf buffer 10 from)]
+                             (when (neg? i) (throw (ex-info "kseed: truncated header" {})))
+                             i))
+             line (fn [a b] (.toString (.subarray buffer a b) "latin1"))
+             e0 (nl 0)
+             [magic code-len n-exp] (str/split (line 0 e0) #" ")
+             _ (when-not (= "KSEED1" magic) (throw (ex-info "kseed: not a container" {})))
+             code-len (js/parseInt code-len 10)
+             n-exp (js/parseInt n-exp 10)
+             _ (when-not (and (js/Number.isSafeInteger code-len) (js/Number.isSafeInteger n-exp)
+                              (<= 0 code-len) (<= 0 n-exp 16384))
+                 (throw (ex-info "kseed: malformed header" {})))
+             [exports at]
+             (loop [i 0 at (inc e0) acc {}]
+               (if (= i n-exp)
+                 [acc at]
+                 (let [e (nl at)
+                       [nm off ar] (str/split (line at e) #" ")
+                       off (js/parseInt off 10) ar (js/parseInt ar 10)]
+                   (when-not (and (seq nm) (js/Number.isSafeInteger off) (js/Number.isSafeInteger ar)
+                                  (<= 0 off) (< off code-len) (<= 0 ar 64))
+                     (throw (ex-info "kseed: malformed export line" {:line i})))
+                   (recur (inc i) (inc e) (assoc acc (symbol nm) {:offset off :arity ar})))))
+             _ (when-not (and (< at n) (= 10 (aget buffer at)))
+                 (throw (ex-info "kseed: missing header terminator" {})))
+             start (inc at)]
+         (when-not (= n (+ start code-len))
+           (throw (ex-info "kseed: code length does not match the container" {:declared code-len :present (- n start)})))
+         {:code (vec (js/Array.from (.subarray buffer start n)))
+          :exports exports}))
+
+     (defn- kir-text
+       "The sealed KIR as the artifact prints it (`artifact/edn-safe` + pr-str),
+       which is what `seed compile-kir` reads (it also reads a whole kexe)."
+       [program]
+       (pr-str (artifact/edn-safe program)))
+
+     (defn emit
+       "Run the seed backend on PROGRAM. {:emitted {:code :exports}} when it is
+       accepted and its container is well formed and exports every KIR export;
+       otherwise {:fallback {:kind :refused|:failed :code <E-code or nil>
+       :message <first line>}}."
+       [seed program metered?]
+       (let [dir (fs/mkdtempSync (path/join (:dir seed) "run-"))
+             in (path/join dir "program.kir")
+             out (path/join dir "program.kseed")]
+         (try
+           (fs/writeFileSync in (kir-text program) "utf8")
+           (let [argv (cond-> ["compile-kir" in "--output" out] metered? (conj "--metered"))
+                 {status :status signal :signal error :error stdout :out err :err} (run-seed! seed argv)
+                 said (str err "\n" stdout)
+                 code (second (re-find #"\b(E[0-9]{4})\b" said))]
+             (cond
+               error {:fallback {:kind :failed :code nil :message (str "seed did not run: " error)}}
+               (not= 0 status)
+               {:fallback {:kind (if code :refused :failed) :code code
+                           :message (first-line (if (str/blank? err) stdout err))
+                           :exit status :signal signal}}
+               (not (fs/existsSync out))
+               {:fallback {:kind :failed :code nil :message "seed exited 0 and wrote no container"}}
+               :else
+               (let [size (.-size (fs/statSync out))]
+                 (if (> size max-container)
+                   {:fallback {:kind :failed :code nil :message "seed container exceeds the bound"}}
+                   (let [parsed (try (parse-container (fs/readFileSync out))
+                                     (catch :default e {:bad (ex-message e)}))
+                         missing (when-not (:bad parsed)
+                                   (seq (remove #(contains? (:exports parsed) %) (:exports program))))]
+                     (cond
+                       (:bad parsed) {:fallback {:kind :failed :code nil :message (:bad parsed)}}
+                       missing {:fallback {:kind :failed :code nil
+                                           :message (str "seed container lacks export(s) "
+                                                         (str/join " " missing))}}
+                       :else {:emitted parsed}))))))
+           (finally
+             (fs/rmSync dir #js {:recursive true :force true})))))
+
+     (defn metered-artifact?
+       "Whether an artifact was built metered: an unmetered one says
+       `:limits {:fuel-metering :off}` (P4 of adr-2609242100)."
+       [artifact]
+       (not= :off (get-in artifact [:limits :fuel-metering])))
+
+     (defn emitters-for
+       "The `verifier/*emitters*` binding for ARTIFACT re-emitted by SEED: the
+       recorded sha256 -> a function that runs this seed, with --metered exactly
+       when the artifact is metered (the flag the emission used). A refusal or
+       failure at re-emission throws, which the verifier reports as
+       'runtime KIR cannot be safely lowered'. Empty when the artifact records no
+       emitter or SEED is nil or a different program."
+       [seed artifact]
+       (let [recorded (:emitter artifact)]
+         (if (and seed recorded (= (:sha256 recorded) (get-in seed [:record :sha256])))
+           {(:sha256 recorded)
+            (fn [program]
+              (let [r (emit seed program (metered-artifact? artifact))]
+                (or (:emitted r)
+                    (throw (ex-info (str "seed re-emission failed: " (get-in r [:fallback :message]))
+                                    {:fallback (:fallback r)})))))}
+           {})))))

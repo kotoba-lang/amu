@@ -168,6 +168,12 @@
     :build-metadata-sha256 :hir-sha256 :kir-sha256 :target
     :target-profile-sha256 :compatibility-sha256 :definitions :outputs :sha256})
 
+;; ADR 0365: a native output whose code the selfhost seed emitted carries ONE
+;; more key, `:emitter`, the artifact's own `:emitter` record. Closed in the
+;; same sense: the record must be the one admitted shape and must equal the
+;; artifact's, and the artifact is then re-emitted by THAT emitter.
+(def ^:private emitted-provenance-keys (conj provenance-keys :emitter))
+
 (def ^:private wasm-targets
   #{:wasm32-kotoba-v1 :wasm32-browser-kotoba-v1 :wasm32-wasi-kotoba-v1})
 
@@ -181,7 +187,7 @@
 (defn- provenance! [decoded]
   (let [primary (get-in decoded [:outputs :primary])]
     (when-not (and (map? decoded)
-                   (= provenance-keys (set (keys decoded)))
+                   (contains? #{provenance-keys emitted-provenance-keys} (set (keys decoded)))
                    (= :kotoba.provenance/v1 (:format decoded))
                    (= :kotoba-compiler/v1 (:builder decoded))
                    (= compatibility/compiler-version (:compiler decoded))
@@ -223,7 +229,7 @@
                    (.validate js/WebAssembly artifact-bytes))
       (reject! :wasm-identity-mismatch))))
 
-(defn- admit-native! [artifact-bytes provenance]
+(defn- admit-native! [artifact-bytes provenance emitters-for]
   ;; The bounded reader has already admitted this exact text before this
   ;; second decode, which preserves the JS integer representation the
   ;; independent native verifier expects. The second decode is
@@ -252,17 +258,29 @@
                    (digest? (:sha256 primary))
                    (= :kotoba.kexe/v1 (:format native))
                    (= (:target provenance) (:target native))
-                   (= (:sha256 primary) (:sha256 native)))
+                   (= (:sha256 primary) (:sha256 native))
+                   ;; ADR 0365: provenance and artifact name the same emitter
+                   ;; (both absent for the built-in one)
+                   (= (:emitter provenance) (:emitter native)))
       (reject! :native-identity-mismatch))
-    (verifier/verify-artifact! native)))
+    ;; A recorded emitter is re-emitted through `kotoba.verifier/*emitters*`
+    ;; (kotoba-verifier ADR 0052); EMITTERS-FOR is the caller's
+    ;; artifact -> registry function, nil when it supplies none (the verifier
+    ;; then refuses the artifact by name).
+    (if-let [registry (when (and emitters-for (:emitter native))
+                        (resolve 'kotoba.verifier/*emitters*))]
+      (with-bindings {registry (emitters-for native)}
+        (verifier/verify-artifact! native))
+      (verifier/verify-artifact! native))))
 
 (defn admit!
-  [artifact-bytes provenance]
+  ([artifact-bytes provenance] (admit! artifact-bytes provenance nil))
+  ([artifact-bytes provenance emitters-for]
   (let [provenance (provenance! provenance)
         primary-format (get-in provenance [:outputs :primary :format])]
     (case primary-format
       :wasm (admit-wasm! artifact-bytes provenance)
-      :kotoba.kexe/v1 (admit-native! artifact-bytes provenance)
+      :kotoba.kexe/v1 (admit-native! artifact-bytes provenance emitters-for)
       (reject! :unsupported-primary-format))
     {:format format
      :target (:target provenance)
@@ -272,4 +290,4 @@
      :target-verification (case primary-format
                             :wasm :webassembly-validate
                             :kotoba.kexe/v1 :independent-native-verifier)
-     :publisher-authenticated false}))))
+     :publisher-authenticated false})))))

@@ -7,7 +7,9 @@
             [kotoba.lang.text :as text]
             [kotoba.compiler.nbb.output-admission :as admission]
             [kotoba.compiler.nbb.output-attestation :as attestation]
-            [kotoba.compiler.nbb.output-set :as output-set]))
+            [kotoba.compiler.nbb.output-set :as output-set]
+            ;; ADR 0365: --seed re-emits a seed-emitted output (bootstrap route)
+            #?(:cljs [kotoba.compiler.nbb.seed-backend :as seed-backend])))
 
 (def ^:private max-artifact-bytes (* 64 1024 1024))
 (def ^:private max-metadata-bytes (* 1024 1024))
@@ -36,7 +38,16 @@
           (support/usage-error! "error: output-set options are malformed"))
         (recur tail (assoc result flag value))))))
 
-(defn- load-output-set! [output]
+(defn- emitters-for
+  "ADR 0365: the artifact -> `verifier/*emitters*` function for an output whose
+  code the seed emitted, from `--seed <packaged seed>`; nil without the flag."
+  [seed-path]
+  #?(:cljs (when seed-path
+             (let [seed (seed-backend/open-for-verify! ["--seed" seed-path])]
+               (fn [native] (seed-backend/emitters-for seed native))))
+     :default nil))
+
+(defn- load-output-set! [output seed-path]
   (let [provenance-output (str output ".provenance.edn")
         publication-output (str output ".publication.edn")
         artifact-bytes (io/read-bounded-bytes-file output max-artifact-bytes)
@@ -56,7 +67,7 @@
       {:output output :artifact-bytes artifact-bytes :provenance provenance
        :marker marker :provenance-output provenance-output
        :publication-output publication-output
-       :admission (admission/admit! artifact-bytes provenance)})))
+       :admission (admission/admit! artifact-bytes provenance (emitters-for seed-path))})))
 
 (defn- verify-output-set! [args]
   (let [output (second args)
@@ -67,7 +78,7 @@
                      (not (text/starts-with? (nth args 2) "--")))
             (support/usage-error!
              "error: verify-output-set requires exactly one artifact path"))
-        options (options! args #{"--attestation" "--trust" "--now"})
+        options (options! args #{"--attestation" "--trust" "--now" "--seed"})
         signed? (some? (get options "--attestation"))
         _ (when-not (= signed?
                        (and (some? (get options "--trust"))
@@ -75,7 +86,7 @@
             (support/usage-error!
              "error: --attestation, --trust, and --now must be supplied together"))
         {:keys [marker provenance admission provenance-output publication-output]}
-        (load-output-set! output)
+        (load-output-set! output (get options "--seed"))
         publisher (if signed?
                     (attestation/verify!
                      (read-metadata! (get options "--attestation"))
@@ -93,14 +104,14 @@
         _ (when-not output
             (support/usage-error!
              "error: sign-output-set requires an artifact path"))
-        options (options! args #{"--key" "--not-before" "--expires" "--output"})
+        options (options! args #{"--key" "--not-before" "--expires" "--output" "--seed"})
         key-path (get options "--key")
         not-before (get options "--not-before")
         expires (get options "--expires")
         _ (when-not (and key-path not-before expires)
             (support/usage-error!
              "error: sign-output-set requires --key, --not-before, and --expires"))
-        {:keys [marker provenance]} (load-output-set! output)
+        {:keys [marker provenance]} (load-output-set! output (get options "--seed"))
         key (read-metadata! key-path)
         envelope (attestation/sign marker provenance key
                                    (attestation/parse-epoch! not-before)

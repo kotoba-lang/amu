@@ -258,13 +258,18 @@
                                                           (fget (fget result :artifact) :target-profile)))))
               :compatibility-sha256 (form/string-form (seal/sha256-form (fget result :compatibility))))
               :definitions (definitions-of result))
-              :outputs (outputs result))]
+              :outputs (outputs result))
+           ;; ADR 0365: the emitting backend, present only when it is not
+           ;; the built-in emitter (as on the host reading below)
+           emitter (fget result :emitter)
+           payload (if (present? emitter) (put payload :emitter emitter) payload)]
        (put payload :sha256 (form/string-form (seal/sha256-form payload)))))
    :default
 (defn descriptor
   ([source policy result] (descriptor source policy {} result))
   ([source policy build-metadata result]
    (artifact/seal
+    (cond->
     {:format schema
     :builder :kotoba-compiler/v1
     :compiler compatibility/compiler-version
@@ -287,7 +292,13 @@
     ;; A backend whose result carries no typed KIR gets a named reason rather
     ;; than an empty map -- see `definition-identity/describe`.
     :definitions (definition-identity/describe result)
-    :outputs (outputs result)}))))
+    :outputs (outputs result)}
+     ;; ADR 0365: the backend that emitted the native code, when it is not the
+     ;; built-in machine_ir emitter: `{:name :kotoba-seed :sha256 <the seed
+     ;; command> :route :bootstrap-process}`, the artifact's own `:emitter`.
+     ;; Absent otherwise, so every other provenance record keeps its shape and
+     ;; its seal.
+     (:emitter result) (assoc :emitter (:emitter result)))))))
 
 #?(:kotoba
    (defn attach [source :string policy [:ref :form/r] build-metadata [:ref :form/r] result [:ref :form/r]]

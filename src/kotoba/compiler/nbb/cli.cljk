@@ -29,7 +29,10 @@
             ;; The env/read ability (catalog wire 33, superproject
             ;; adr-2609242330 S5); under nbb the alias names the
             ;; mechanism-layer handler.
-            #?(:cljs [kotoba.compiler.nbb.host.env :as env])))
+            #?(:cljs [kotoba.compiler.nbb.host.env :as env])
+            ;; ADR 0365: the opt-in `--backend seed` (bootstrap-labelled spawn
+            ;; route); no Kotoba reading, see the helpers before compile-native!.
+            #?(:cljs [kotoba.compiler.nbb.seed-backend :as seed-backend])))
 
 ;; Mirrors `kotoba.compiler.cli`'s `parse-target`, restricted to ORDINARY
 ;; (non-aiueos) native target names -- everything this fast
@@ -356,7 +359,61 @@
     (some? (:oracle-value kir)) {:status :verified}
     :else {:status :not-applicable}))
 
-(defn- compile-native! [hir target backend policy emit-metadata emit-program stage-cache]
+;; ---------------------------------------------------------------------------
+;; ADR 0365: `--backend seed` (opt-in; the default stays machine_ir).
+;;
+;; Absent the flag every helper below answers nil / the unchanged call, so the
+;; default route's artifact, provenance, report and cache keys are what they
+;; were. The seed route exists on the nbb host only (bootstrap period: the seed
+;; binary through the process/spawn mechanism); every other reading refuses
+;; `--backend seed` by name rather than ignoring it.
+
+(defn- seed-for
+  "The opened seed (`seed-backend/open!`) when the command line asks for
+  `--backend seed`, else nil."
+  [args]
+  #?(:cljs (seed-backend/open! args)
+     :default (when (= "seed" (support/option args "--backend"))
+                (support/usage-error! "error: --backend seed is served only on the nbb host (bootstrap route)"))))
+
+(defn- seed-emit
+  "{:emitted ..} or {:fallback ..} from the seed backend; nil without a seed.
+  A verifier without the emitter registry (a pin older than kotoba-verifier ADR
+  0052) could not verify a seed-emitted artifact, so the seed is then not run
+  and the compile falls back, saying why."
+  [seed program metered?]
+  #?(:cljs (when seed
+             (if (resolve 'kotoba.verifier/*emitters*)
+               (seed-backend/emit seed program metered?)
+               {:fallback {:kind :failed :code nil
+                           :message "the loaded kotoba-verifier has no emitter registry (kotoba-verifier ADR 0052)"}}))
+     :default nil))
+
+(defn- verify-native!
+  "`verifier/verify-artifact!`, re-emitting with the artifact's RECORDED emitter
+  when it records one (kotoba-verifier ADR 0052, `verifier/*emitters*`). The
+  var is looked up rather than named, so a verifier that predates the registry
+  still loads this namespace and an artifact without `:emitter` verifies
+  exactly as before; such a verifier refuses an artifact WITH the field by its
+  schema check."
+  [seed artifact]
+  #?(:cljs (if-let [registry (when (and seed (:emitter artifact))
+                               (resolve 'kotoba.verifier/*emitters*))]
+             (with-bindings {registry (seed-backend/emitters-for seed artifact)}
+               (verifier/verify-artifact! artifact))
+             (verifier/verify-artifact! artifact))
+     :default (verifier/verify-artifact! artifact)))
+
+(defn- backend-report
+  "The compile report's `:backend` entry (present only for `--backend seed`)."
+  [seed attempt]
+  (if (:emitted attempt)
+    {:requested :seed :emitted :kotoba-seed :emitter (:record seed)
+     :seed-path (:source seed)}
+    {:requested :seed :emitted :machine-ir :emitter nil
+     :seed-path (:source seed) :fallback (:fallback attempt)}))
+
+(defn- compile-native! [hir target backend policy emit-metadata emit-program stage-cache seed]
   (when (and (= :kotoba.hir/v3 (:format hir))
              (not (and (contains? #{:x86_64-kotoba-v1 :aarch64-kotoba-v1} backend)
                        (ir/only-native-word-typed-features? hir))))
@@ -421,7 +478,12 @@
         program (ir/native-program kir)
         ;; Verification re-emits from this closed program. Do not let
         ;; compiler-private KIR metadata influence the bytes being sealed.
-        emitted (support/timed "native-emit" #(emit-program program))
+        ;; ADR 0365: the seed backend first when asked for; any refusal or
+        ;; failure falls back to machine_ir (reason in the report). The seed
+        ;; gets --metered exactly when this artifact is metered.
+        seed-attempt (when seed (support/timed "seed-emit" #(seed-emit seed program metered?)))
+        seed-emitted (:emitted seed-attempt)
+        emitted (or seed-emitted (support/timed "native-emit" #(emit-program program)))
         code (:code emitted)
         ;; A kexe-loader program carrying the token of an :fs/app-data form
         ;; the loader does not answer (kotoba-lang lang/capability-catalog.edn
@@ -503,7 +565,10 @@
               (:oracle-inconclusive kir)
               (assoc :oracle {:status :inconclusive
                               :trap (:oracle-inconclusive kir)
-                              :fuel declared-fuel})))))
+                              :fuel declared-fuel})
+              ;; ADR 0365 / kotoba-verifier ADR 0052: present only when the
+              ;; seed's code is the artifact's code.
+              seed-emitted (assoc :emitter (:record seed))))))
         ;; Computed here rather than inside provenance so the verdict key and
         ;; the provenance record share ONE computation: `describe` returns
         ;; `(:definitions result)` unchanged when it is already present.
@@ -516,19 +581,27 @@
         verify (support/timed
                 "native-verify"
                 #(verdict-cache/resolve!
-                  (verdict-cache/open-store) :kotoba.verdict/native-verify
+                  ;; ADR 0365: a seed-emitted artifact is a different
+                  ;; validator input (the re-emission runs the recorded seed),
+                  ;; so its verdicts live under their own kind; the subject
+                  ;; (the sealed artifact) also binds the seed's sha256.
+                  (verdict-cache/open-store)
+                  (if seed-emitted :kotoba.verdict/native-verify-seed :kotoba.verdict/native-verify)
                   {:definitions (definition-identity/cache-material report (:exports hir))
                    :subject (artifact/sha256 artifact-map)
                    :target target
                    :capabilities (artifact/sha256 (support/capability-policy policy))}
-                  (fn [] (verifier/verify-artifact! artifact-map))))]
-    {:format :kexe/v1 :target target :hir hir :kir kir
-     :definitions report
-     :admission admission :artifact artifact-map :compatibility compat
-     :stage-cache {:kir (:cache kir-result)}
-     :oracle (oracle-report kir)
-     :fuel-metering (if metered? :on :off)
-     :verdict-cache {:native-verify (:cache verify)}}))
+                  (fn [] (verify-native! seed artifact-map))))]
+    (cond-> {:format :kexe/v1 :target target :hir hir :kir kir
+             :definitions report
+             :admission admission :artifact artifact-map :compatibility compat
+             :stage-cache {:kir (:cache kir-result)}
+             :oracle (oracle-report kir)
+             :fuel-metering (if metered? :on :off)
+             :verdict-cache {:native-verify (:cache verify)}}
+      ;; provenance records the emitting backend (kotoba.compiler.provenance)
+      seed-emitted (assoc :emitter (:record seed))
+      seed (assoc :backend (backend-report seed seed-attempt)))))
 
 (defn- serialized-native [source policy emit-metadata result package artifact-kind]
   (let [provenance-result (support/timed "provenance"
@@ -575,13 +648,13 @@ provenance-output (str output ".provenance.edn")
              :publication-output publication-output}
       binary (assoc :artifact-bytes (.-length binary)))))
 
-(defn- compile-uncached! [args source linked? target backend output emit-program package]
+(defn- compile-uncached! [args source linked? target backend output emit-program package seed]
   (let [policy (support/timed "policy-read" #(read-policy! args))
         emit-metadata (support/emit-metadata args)
         artifact-kind (support/option args "--artifact")
         hir (:value (resolve-hir! source
                                   (project-source/analyze-opts (admission-policy policy) linked?) nil))
-        result (compile-native! hir target backend (admission-policy policy) emit-metadata emit-program nil)
+        result (compile-native! hir target backend (admission-policy policy) emit-metadata emit-program nil seed)
         serialized (serialized-native source policy emit-metadata result
                                       package artifact-kind)
         {:keys [provenance-output publication-output artifact-bytes]}
@@ -592,9 +665,10 @@ provenance-output (str output ".provenance.edn")
              :oracle (:oracle result)
              :fuel-metering (:fuel-metering result)
              :verdict-cache (:verdict-cache result)}
-      artifact-bytes (assoc :artifact-bytes artifact-bytes))))
+      artifact-bytes (assoc :artifact-bytes artifact-bytes)
+      (:backend result) (assoc :backend (:backend result)))))
 
-(defn- compile-cached! [args source linked? target backend output emit-program package context]
+(defn- compile-cached! [args source linked? target backend output emit-program package context seed]
   (let [policy-attempt (support/timed
                         "policy-read"
                         #(try {:material (support/read-policy-material args)}
@@ -605,7 +679,13 @@ provenance-output (str output ".provenance.edn")
         key (when material
               (support/timed "cache-key"
                              #(compile-cache/key-for target source material
-                                                     emit-metadata linked?
+                                                     ;; ADR 0365: the requested emitter is part
+                                                     ;; of the artifact-cache key (key only; the
+                                                     ;; build metadata provenance hashes is
+                                                     ;; unchanged)
+                                                     (cond-> emit-metadata
+                                                       seed (assoc :kotoba/emitter (:record seed)))
+                                                     linked?
                                                      artifact-kind)))
         artifact-cache (:artifacts context)
         stage-cache (:stages context)
@@ -642,7 +722,10 @@ provenance-output (str output ".provenance.edn")
                    :provenance-output provenance-output
                    :publication-output publication-output
                    :cache :hit :cache-key key}
-            artifact-bytes (assoc :artifact-bytes artifact-bytes))))
+            artifact-bytes (assoc :artifact-bytes artifact-bytes)
+            ;; the replayed artifact is the one the same key produced; its
+            ;; :emitter field (or its absence) says which backend emitted it
+            seed (assoc :backend {:requested :seed :cache :hit}))))
       (let [_ (when-let [error (:error policy-attempt)] (throw error))
             policy (support/timed "policy-decode"
                                   #(decode-policy! material))
@@ -651,7 +734,7 @@ provenance-output (str output ".provenance.edn")
                                      stage-cache)
             hir (:value hir-result)
             result (compile-native! hir target backend (admission-policy policy) emit-metadata
-                                    emit-program stage-cache)
+                                    emit-program stage-cache seed)
             serialized (serialized-native source policy emit-metadata result
                                           package artifact-kind)
             {:keys [provenance-output publication-output artifact-bytes]}
@@ -677,7 +760,8 @@ provenance-output (str output ".provenance.edn")
                  :oracle (:oracle result)
                  :fuel-metering (:fuel-metering result)
                  :verdict-cache (:verdict-cache result)}
-          artifact-bytes (assoc :artifact-bytes artifact-bytes))))))
+          artifact-bytes (assoc :artifact-bytes artifact-bytes)
+          (:backend result) (assoc :backend (:backend result)))))))
 
 (defn run!
   "`package` is the ISA entrypoint's artifact packager (or nil for a driver
@@ -716,12 +800,14 @@ provenance-output (str output ".provenance.edn")
             source (:source resolved)
             linked? (:linked? resolved)
             output (or (support/option args "--output") (str input ".kexe"))
+            ;; ADR 0365: nil unless `--backend seed`
+            seed (seed-for args)
             result (try
                      (if context
                        (compile-cached! args source linked? target backend output
-                                        emit-program package context)
+                                        emit-program package context seed)
                        (compile-uncached! args source linked? target backend output
-                                          emit-program package))
+                                          emit-program package seed))
                      ;; A refusal against the linked unit names the module
                      ;; and line that wrote the form (amu-h10), as on the
                      ;; JVM route's `compile-project`.
@@ -746,7 +832,11 @@ provenance-output (str output ".provenance.edn")
                         (support/read-artifact-file! input) input)
           symbol (symbol (or (support/option args "--symbol") "main"))
           output (or (support/option args "--output") "program.bin")
-          _ (verifier/verify-artifact! artifact-map)
+          ;; ADR 0365: an artifact that records the seed as its emitter is
+          ;; re-emitted by the seed named with --seed / AMU_SEED
+          _ (verify-native! (when (:emitter artifact-map)
+                              #?(:cljs (seed-backend/open-for-verify! args) :default nil))
+                            artifact-map)
           export (get (:exports artifact-map) symbol)]
       (when-not export
         (throw (ex-info "unknown native export" {:phase :verify :entry symbol})))

@@ -1,0 +1,71 @@
+(ns kotoba.compiler.seed-backend-test
+  "ADR 0365: the opt-in `--backend seed` (nbb host). Unit half: flag parsing,
+  the kseed/v1 container reader, the verifier registry the driver binds, and
+  the provenance `:emitter` field. The end-to-end half (real seed, real
+  compiles, the 19 Embench ports) is scripts/seed-backend/test.sh and
+  scripts/seed-backend/embench.sh.
+
+    node --stack-size=4096 node_modules/nbb/cli.js --classpath <cp>:test \\
+      -e \"(require 'kotoba.compiler.seed-backend-test) (cljs.test/run-tests 'kotoba.compiler.seed-backend-test)\""
+  (:require [cljs.test :refer [deftest is testing] :include-macros true]
+            [kotoba.compiler.nbb.seed-backend :as seed]
+            [kotoba.compiler.provenance :as provenance]))
+
+(defn- buf [s] (js/Buffer.from s "latin1"))
+
+(deftest the-flag-defaults-to-machine-ir
+  (is (= :machine-ir (seed/requested ["compile" "x.kotoba"])))
+  (is (= :machine-ir (seed/requested ["compile" "x.kotoba" "--backend" "machine_ir"])))
+  (is (= :seed (seed/requested ["compile" "x.kotoba" "--backend" "seed"])))
+  (is (nil? (seed/open! ["compile" "x.kotoba"])) "no flag: no seed is opened")
+  (testing "an unknown backend is a usage error, never ignored"
+    (is (= :usage (:phase (ex-data (try (seed/requested ["compile" "--backend" "llvm"])
+                                        (catch :default e e))))))
+    (is (= :usage (:phase (ex-data (try (seed/requested ["compile" "--backend"])
+                                        (catch :default e e))))))))
+
+(def ^:private parse @#'seed/parse-container)
+
+(deftest the-container-reader
+  (let [code "\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u0008"
+        ok (parse (buf (str "KSEED1 8 2\nrun 0 1\ntest-x 4 0\n\n" code)))]
+    (is (= [1 2 3 4 5 6 7 8] (:code ok)))
+    (is (= {'run {:offset 0 :arity 1} 'test-x {:offset 4 :arity 0}} (:exports ok))))
+  (testing "malformed containers throw (and the driver falls back)"
+    (doseq [bad ["KSEED2 8 0\n\n\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u0008"
+                 "KSEED1 9 0\n\n\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u0008"
+                 "KSEED1 8 1\nrun 8 0\n\n\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u0008"
+                 "KSEED1 8 1\nrun 0 0\n\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u0008"
+                 "KSEED1 8 1\n"]]
+      (is (thrown? :default (parse (buf bad))) (pr-str bad)))))
+
+(def ^:private record {:name :kotoba-seed :sha256 (apply str (repeat 64 "c"))
+                       :route :bootstrap-process})
+
+(deftest the-registry-serves-only-the-recorded-seed
+  (let [opened {:record record :program "/nonexistent" :dir "/tmp"}]
+    (is (= #{(:sha256 record)} (set (keys (seed/emitters-for opened {:emitter record})))))
+    (is (= {} (seed/emitters-for opened {})) "no :emitter: nothing to bind")
+    (is (= {} (seed/emitters-for nil {:emitter record})) "no seed named: nothing to bind")
+    (is (= {} (seed/emitters-for (assoc-in opened [:record :sha256] (apply str (repeat 64 "d")))
+                                 {:emitter record}))
+        "a different seed program does not serve the record")))
+
+(deftest metered-follows-the-artifact-limits
+  (is (true? (seed/metered-artifact? {:limits {:fuel 512}})))
+  (is (false? (seed/metered-artifact? {:limits {:fuel 100000 :fuel-metering :off}}))))
+
+(def ^:private result
+  {:format :kexe/v1 :target :aarch64-macos-kotoba-v1 :hir {:format :kotoba.hir/v3} :kir {:format :kotoba.kir/v4}
+   :artifact {:sha256 (apply str (repeat 64 "e")) :target-profile {}} :compatibility {}
+   :definitions {:contract :kotoba.definition-identity/v1 :entries []}})
+
+(deftest provenance-records-the-emitter-only-when-present
+  (let [plain (provenance/descriptor "src" {} {} result)
+        seeded (provenance/descriptor "src" {} {} (assoc result :emitter record))]
+    (is (not (contains? plain :emitter)) "the default route's record keeps its shape")
+    (is (= record (:emitter seeded)))
+    (is (not= (:sha256 plain) (:sha256 seeded)) "the emitter is under the seal")
+    (is (map? (provenance/verify! "src" {} {} (assoc (assoc result :emitter record) :provenance seeded))))
+    (is (thrown? :default (provenance/verify! "src" {} {} (assoc result :provenance seeded)))
+        "a provenance naming an emitter does not verify against a result without one")))
