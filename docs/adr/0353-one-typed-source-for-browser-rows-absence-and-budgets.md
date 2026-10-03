@@ -711,8 +711,9 @@ each rebinding the row) answers 4 on the KIR reference, compiles for
 text-edit's `delete-backward` and `delete-forward` answer on the KIR
 reference ("abcd", 1..3 selected, deleted either way: "ad", caret 1; the
 caret at 4 deleted backward: "abc", caret 3). text-edit itself is refused
-natively at floor `:native-vector-field` and on wasm32 at floor
-`:typed-wasm-min-max`, pinned in the gate. kotoba-sema's portable suite has
+natively by its public `empty-state`'s record as an export's result (floor
+`:export-signatures`; until `:native-vector-field`, by its vector field) and
+on wasm32 at floor `:typed-wasm-min-max`, pinned in the gate. kotoba-sema's portable suite has
 the same 39 failures and 5 errors before and after (identical lists), and
 amu's nbb suite the same 13 failures and 2 errors (the policy tests).
 Refused by name as before: a number passed to a row parameter, bound by `let`
@@ -721,6 +722,52 @@ and move-to in) is refused at `(move-caret (empty-state) 1)`: its `{:keys
 [extend?]}` options parameter is "expected map, got i64" and the 2-arity's
 `{}` "an empty map literal {} has no row to extend" -- new floor
 `:options-map-argument`.
+
+The vector field landed as floor `:native-vector-field` (gate
+`vector-field-in-record-compiles-natively-test`). text-edit's state holds
+`:text/selection [start end]`, a `:vector-i64` field; a vector alone compiled
+natively, a record holding one was refused on both native targets by the
+typed-values gate ("typed values currently require ... the qualified native
+one-word string/record/variant/option/result slice"), for `(nth (:sel s) 1)`,
+`(assoc s :sel [..])` and `[a b]` destructuring alike. Three layers each left
+the vector-arena handle out of a record: osaho's `native-handle-type?` did not
+count it as a one-word member (`3b2eef93`); kotoba-native's `aggregate-abi`
+spelled it `:vector`, which nothing produces -- the spelling
+`word-result-type?` had already corrected at a function boundary -- so the
+module was "machine IR rejected: unsupported-function-module" (`e2da186d`);
+and kotoba-verifier's record check had no vector field, "runtime KIR record
+construction rejected" (`4a87b807`). The verifier now also refuses any record
+holding one at an export (`holds-private-handle?`), so it stays no looser than
+`kotoba.kir`, which never put it on `native-boundary-type?`: the kexe loader
+has a wire form for a vector, none for a vector inside a record. Measured on
+nbb: the gate was red on `eb39dba5` / `83eecc0e` / `4410753e` (every native
+assertion the typed-values literal), green on the three new pins (38
+assertions). Five forms -- projection, `assoc`, destructuring, the record
+through two private functions rebuilt with a computed vector, the record as a
+loop slot -- and four text-edit operations over the selection (`insert-text`,
+`normalize-selection`, `select`, `delete-backward`, `empty-state` private)
+answer the reference's value on `x86_64-aiueos-kernel-v1` and
+`aarch64-macos-kotoba-v1` with the oracle verified; `amu compile --target
+x86_64-aiueos-kernel-v1` / `--target aarch64-macos` exit 0 with `:oracle
+{:status :verified}`, and the record-through-functions program answers 42
+under `tools/kexe_loader.c` on aarch64 and on x86_64 (Rosetta).
+kotoba-native's suite has the same 34 failures and 9 errors before and after,
+kotoba-verifier's the same 22 and 1 (identical lists, host-environment tests),
+osaho's passes (256 tests), and amu's nbb suite the same policy-test failures.
+Refused by name: the record as an export's result (the typed-values literal;
+text-edit's public `empty-state` is refused for this, floor
+`:export-signatures`), `=` over it ("equality type is outside the safe value
+profile"), the vector as an `if` test, the vector as a number and a number as
+the vector (`expected i64, got vector-i64` / `expected vector-i64, got i64`),
+and an index out of range (`vector-index-out-of-range`, no artifact sealed).
+Measured on the way, not this floor's: text-edit's three operations in one
+`main` exhaust the compiler host's stack inside the KIR oracle under kbb's
+default stack (`:host/stack-exhausted`, inconclusive, nothing sealed), and in
+one process where x86_64 had just run out first, aarch64 answered "native
+artifact oracle value rejected" -- two oracle runs of one program
+disagreeing, which a host stack overflow caught inside the interpreter would
+explain. The same three operations compiled one per program agree with the
+reference on both targets.
 
 ## Selfhost foundation floors (appended 2026-09-26)
 

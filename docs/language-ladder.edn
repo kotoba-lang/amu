@@ -242,6 +242,10 @@
   {:id :export-signatures :gate "export-abi-from-clojure-source-test"
    :needs-a-human "how a Clojure-readable source states an export's ABI: browser.text-edit's public functions take state (a row: refused as an exported generic, which has one ABI) and text (unannotated, so :i64; the test passes strings: \"expected i64, got string\"), and the typed signature spelling [m [:ref q]] is not Clojure. Candidates measured as possible, not chosen: Clojure type hints (^String text) and an ns schema the hint names, or the export taking the record the module's one public constructor (empty-state) returns"
    :goal "browser.text-edit's public functions export one ABI each with the source still read by Clojure"}
+  ;; Measured 2026-10-03 while closing :native-vector-field: text-edit's
+  ;; insert/select/delete in ONE main exhaust the compiler host's stack inside
+  ;; the KIR oracle under kbb's default stack (:host/stack-exhausted, nothing
+  ;; sealed); one operation per program compiles on both native targets.
   {:id :browser-text-edit :gate "browser-text-edit-native-test"
    :blocked-by [:absent-field-from-assoc :rebound-row-argument :native-vector-field :typed-wasm-min-max :native-option-record :options-map-argument :export-signatures]
    :goal "kotoba-lang/browser's browser.text-edit, migrated only mechanically (defn-, nil's meaning, a :kotoba interop branch), compiles for both native targets and its hosted tests pass on amu's output"}

@@ -24,9 +24,11 @@
 
   Native: the minimal form (one string helper, a rebound row passed on)
   compiles for x86_64-aiueos-kernel-v1 and aarch64-macos with the oracle
-  verified. text-edit itself is refused natively at floor
-  :native-vector-field (its [start end] selection) and on wasm32 at floor
-  :typed-wasm-min-max (clamp), pinned below so it is seen when it moves.
+  verified. text-edit itself is refused natively by its public empty-state,
+  whose record (its [start end] selection a vector field, native since floor
+  :native-vector-field) would be an export's result -- floor
+  :export-signatures -- and on wasm32 at floor :typed-wasm-min-max (clamp),
+  pinned below so it is seen when it moves.
 
   What stays refused, each by its literal: a number passed to a row
   parameter (no coercion), the rebound row included; a record as an if test
@@ -199,7 +201,7 @@
           (str target))))
   (testing "browser.text-edit's delete-backward and delete-forward on the reference"
     (is (= 212133 (run-main text-edit-main))))
-  (testing "not yet native: text-edit's vector field (floor :native-vector-field)"
+  (testing "not yet native: text-edit's public empty-state, an export's record (floor :export-signatures)"
     (doseq [target native-targets]
       (is (= (str "typed values currently require the kotoba-script web target, typed "
                   "Wasm/CLJS target, or the qualified native one-word "
