@@ -1,0 +1,31 @@
+;; seed/tests/text/host.cljk -- the HOST side of the kotoba.lang.text differential (agent TEXT, 2026-10-04).
+;; BOOTSTRAP-TOOL (kbb/nbb, host only): the oracle is the host library itself, kotoba-lang/text's
+;; src/kotoba/lang/text.cljk (the `.cljk` the compiler's sources were written against), required under the
+;; alias the compiler uses. Reads the case table gen.py wrote and prints one answer per case as JSON.
+;;   kbb --backend sci --classpath <text>/src seed/tests/text/host.cljk <cases.json> > host.json
+(ns text-host
+  (:require [kotoba.lang.text :as str]
+            ["node:fs" :as fs]))
+
+(defn- answer [[_ f & args]]
+  (case f
+    "starts-with?" (str/starts-with? (nth args 0) (nth args 1))
+    "ends-with?" (str/ends-with? (nth args 0) (nth args 1))
+    "includes?" (str/includes? (nth args 0) (nth args 1))
+    "index-of" (str/index-of (nth args 0) (nth args 1))
+    "last-index-of" (str/last-index-of (nth args 0) (nth args 1))
+    "blank?" (str/blank? (nth args 0))
+    "trim" (str/trim (nth args 0))
+    "triml" (str/triml (nth args 0))
+    "trimr" (str/trimr (nth args 0))
+    "reverse" (str/reverse (nth args 0))
+    "replace" (str/replace (nth args 0) (nth args 1) (nth args 2))
+    "split" (if (= 3 (count args))
+              (str/split (nth args 0) (nth args 1) (nth args 2))
+              (str/split (nth args 0) (nth args 1)))
+    "split-lines" (str/split-lines (nth args 0))
+    "join" (str/join (nth args 0) (vec (nth args 1)))))
+
+(let [path (first *command-line-args*)
+      table (js->clj (js/JSON.parse (fs/readFileSync path "utf8")))]
+  (println (js/JSON.stringify (clj->js (mapv answer table)))))

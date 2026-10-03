@@ -68,7 +68,7 @@
   (let [c1 (ch src (inc i))]
     (cond
       (nil? c1) (inc i)
-      (and (= c1 "u") (every? #(contains? hex-chars (ch src (+ i 2 %))) (range 4))) (+ i 6)
+      (and (= c1 "u") (every? (fn [k] (contains? hex-chars (ch src (+ i 2 k)))) (range 4))) (+ i 6)
       (and (= c1 "o") (octal? (ch src (+ i 2)))) (loop [j (+ i 2) n 0] (if (and (< n 3) (octal? (ch src j))) (recur (inc j) (inc n)) j))
       (alpha? c1) (loop [j (+ i 2)] (if (alpha? (ch src j)) (recur (inc j)) j))
       :else (+ i 2))))
@@ -206,12 +206,12 @@
   (letfn [(go [n region path idx]
             (let [r (f n {:region region :path path :index idx})]
               (when-not (= r :skip)
-                (let [path' (conj path n)]
+                (let [path-next (conj path n)]
                   (if (= :rc (:type n))
                     (doseq [[i [k form]] (map-indexed vector (partition 2 (:kids n)))]
-                      (go form (region-of-feature (:text k)) (conj path' k) (inc (* 2 i))))
+                      (go form (region-of-feature (:text k)) (conj path-next k) (inc (* 2 i))))
                     (doseq [[i k] (map-indexed vector (:kids n))]
-                      (go k region path' i)))))))]
+                      (go k region path-next i)))))))]
     (doseq [[i n] (map-indexed vector nodes)] (go n :shared [] i))))
 
 (defn ->fn-view
@@ -220,5 +220,5 @@
   [n]
   (let [kids (:kids n)
         rest-kids (drop 2 kids)
-        rest-kids (drop-while #(or (= :str (:type %)) (= :map (:type %))) rest-kids)]
+        rest-kids (drop-while (fn [k] (or (= :str (:type k)) (= :map (:type k)))) rest-kids)]
     {:type :list :kids (vec (cons (first kids) rest-kids)) :s (:s n) :e (:e n)}))
