@@ -3494,8 +3494,12 @@
     -1))
 (defn- ck-wire-bit [w :i64] :i64 (if (and (>= w 0) (< w 47)) (i64-shift-left 1 w) 0))
 ;; FN f calls capability wire w: its FN2-CAPS and the module's mask
+;; R5B rung proof (local state in the seed): the heap handle threaded through a cell (atom, swap!, reset!, @)
 (defn- ck-r5b-cap [M :vector-i64 f :i64 w :i64] :vector-i64
-  (-> M (ck-f2-or f FN2-CAPS (ck-wire-bit w)) (nm-put MM-CAPS (bit-or (vector-at M MM-CAPS) (ck-wire-bit w)))))
+  (let [m (atom M)]
+    (swap! m ck-f2-or f FN2-CAPS (ck-wire-bit w))
+    (reset! m (nm-put @m MM-CAPS (bit-or (vector-at @m MM-CAPS) (ck-wire-bit w))))
+    @m))
 
 ;; ---- recognisers (a head that no definition shadows) ----
 (defn- ck-hd-of [M :vector-i64 n :i64] :i64
@@ -3783,13 +3787,24 @@
     (cond (>= f (vector-at M MM-FN-N)) 0
           (and (= (bit-and (ck-f2 M f FN2-FLAGS) 4) 4) (= (ck-f2 M f FN2-ORIGIN) s)) f
           :else (recur (inc f)))))
-;; the clause of defhandler form d named op ("get" / "put"); R0 = the clause node, R1 = how many there are
+;; R5B rung proof (the state ability in the seed): the clauses of a defhandler form named op are counted by a stateful scan whose
+;; counter is the state of handler ck-tally (it was a return register, M[MM-R1]); the scan is self-recursive, so its specialization
+;; jumps back to its entry with the state left in slot 1
+(defhandler ck-tally [:state :i64]
+  (get [s] (resume s s))
+  (put [s v] (resume v v)))
+(defn- ck-r5b-clause-scan [M :vector-i64 S :string x :i64 op :string] :i64
+  (cond (zero? x) 0
+        (and (= (nm-kind M x) ND-LIST) (= (nm-kind M (nm-first M x)) ND-SYM) (ck-spells? M S (nm-first M x) op))
+        (let [k (perform :state/put (inc (perform :state/get)))
+              r (ck-r5b-clause-scan M S (nm-next M x) op)]
+          (if (pos? r) r x))
+        :else (ck-r5b-clause-scan M S (nm-next M x) op)))
+;; the clause of defhandler form d named op ("get" / "put") from chain c: R0 = the last such clause node, R1 = how many there are
 (defn- ck-r5b-clause-of [M :vector-i64 S :string c :i64 op :string] :vector-i64
-  (loop [x c k 0 found 0]
-    (cond (zero? x) (-> M (nm-put MM-R1 k) (nm-put MM-R0 found))
-          (and (= (nm-kind M x) ND-LIST) (= (nm-kind M (nm-first M x)) ND-SYM) (ck-spells? M S (nm-first M x) op))
-          (recur (nm-next M x) (inc k) x)
-          :else (recur (nm-next M x) k found))))
+  (let [k (handle (do (ck-r5b-clause-scan M S c op) (perform :state/get)) (with ck-tally 0))
+        found (handle (ck-r5b-clause-scan M S c op) (with ck-tally 0))]
+    (-> M (nm-put MM-R1 k) (nm-put MM-R0 found))))
 ;; the source span of the bracketed node v: from its opening token to its closing token (the token after the end of its last child)
 (defn- ck-bracket? [M :vector-i64 x :i64] :bool
   (let [k (nm-kind M x)] (or (= k ND-LIST) (= k ND-VEC) (= k ND-MAP) (= k ND-SET))))

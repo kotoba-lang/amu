@@ -708,13 +708,25 @@
   (cond (string=? s ":hash/sha256") 3 (string=? s ":clock/now") 7 (string=? s ":env/read") 33 (string=? s ":fs/browse") 34
         (string=? s ":fs/app-data") 35 (string=? s ":fs/app-data-bytes") 35 (string=? s ":io/write") 37 (string=? s ":cli/args") 38
         (string=? s ":io/write-error") 39 (string=? s ":io/read") 41 :else -1))
-;; the items of mask m (bit 47 = :state first, then the wires in ascending order), each wrapped by pre/post, as #{..}
+;; the items of mask m (bit 47 = :state first, then the wires in ascending order), each wrapped by pre/post, as #{..}. R5B rung
+;; proof (a handler written in the language): the text is the state of handler drv-acc, whose put APPENDS (it was a loop
+;; accumulator); drv-r5b-items is stateful and self-recursive
+(defhandler drv-acc [:state :string]
+  (get [s] (resume s s))
+  (put [s v] (resume v (string-concat s v))))
+;; one item: a separating space unless it is the first one after "#{"
+(defn- drv-r5b-item [x :string pre :string post :string] :string
+  (perform :state/put (string-concat (if (= (string-byte-length (perform :state/get)) 2) "" " ") (string-concat pre (string-concat x post)))))
+(defn- drv-r5b-items [m :i64 w :i64 pre :string post :string] :i64
+  (cond (>= w 47) 0
+        (= (bit-and m (i64-shift-left 1 w)) 0) (drv-r5b-items m (inc w) pre post)
+        :else (do (drv-r5b-item (drv-r5b-wname w) pre post) (drv-r5b-items m (inc w) pre post))))
 (defn- drv-r5b-set [m :i64 pre :string post :string] :string
-  (loop [w 0 acc (if (= (bit-and m drv-r5b-state) 0) "" (string-concat pre (string-concat ":state" post)))]
-    (cond (>= w 47) (string-concat "#{" (string-concat acc "}"))
-          (= (bit-and m (i64-shift-left 1 w)) 0) (recur (inc w) acc)
-          :else (recur (inc w) (string-concat acc (string-concat (if (= (string-length acc) 0) "" " ")
-                                                                  (string-concat pre (string-concat (drv-r5b-wname w) post))))))))
+  (handle (do (if (= (bit-and m drv-r5b-state) 0) "" (drv-r5b-item ":state" pre post))
+              (drv-r5b-items m 0 pre post)
+              (perform :state/put "}")
+              (perform :state/get))
+          (with drv-acc "#{")))
 ;; a type name; colon 1 = keyword spelling (:i64), 0 = bare (i64)
 (defn- drv-r5b-ty [M :vector-i64 path :string t :i64 colon :i64] :string
   (let [c (if (= colon 1) ":" "")]
