@@ -99,6 +99,34 @@
        (form/assoc-form policy (form/keyword-form :attributes) a2))))
 
 #?(:kotoba
+   (defn- er-as-set [f [:ref :form/r]] [:ref :form/r]
+     (if (form/is-vec? f) (form/form-set (form/kids-of f)) f)))
+
+#?(:kotoba
+   (defn- er-update [m [:ref :form/r] k :keyword g :i64] [:ref :form/r]
+     ;; M with K's value as a set (G 0), or with the :allow of K's map value as a set (G 1); a key M lacks stays absent
+     (let [v (form/form-get m (form/keyword-form k))]
+       (if (or (not (form/is-map? m)) (not (form/form-has? m (form/keyword-form k))))
+         m
+         (form/assoc-form m (form/keyword-form k) (if (= g 0) (er-as-set v) (er-update v :allow 0)))))))
+
+;; admission's typed reading answers its sets as vectors (a document has no set; "a set in a document tree is a
+;; vector without duplicates"): the fields the host answers as sets are sets again here
+#?(:kotoba
+   (defn- er-sets [d [:ref :form/r]] [:ref :form/r]
+     (let [abac (form/form-get d (form/keyword-form :abac))
+           attrs (form/form-get abac (form/keyword-form :abac/attributes))
+           res (form/form-get attrs (form/keyword-form :resource))
+           act (form/form-get attrs (form/keyword-form :action))
+           attrs2 (if (form/is-map? attrs)
+                    (form/assoc-form (form/assoc-form attrs (form/keyword-form :resource) (er-update res :effects 0))
+                                     (form/keyword-form :action) (er-update act :capabilities 0))
+                    attrs)
+           abac2 (if (form/is-map? abac) (form/assoc-form abac (form/keyword-form :abac/attributes) attrs2) abac)
+           d1 (er-update (er-update (er-update d :required 0) :unused-grants 0) :minimal-policy 1)]
+       (form/assoc-form d1 (form/keyword-form :abac) abac2))))
+
+#?(:kotoba
    (defn check
      "`kotoba.kir.admission/check` over the grants of HIR's members, after the classification check, with the
      classification facts added (the host's `check`)."
@@ -112,7 +140,7 @@
            decided (form/from-document
                     (admission/check (base/form->document (form/assoc-form (form/form-map (form/no-forms)) (form/keyword-form :effects) members))
                                      (base/form->document (er-with-attribute-maps armed-policy))))
-           r1 (form/assoc-form decided (form/keyword-form :classification/effective)
+           r1 (form/assoc-form (er-sets decided) (form/keyword-form :classification/effective)
                                (form/form-get facts (form/keyword-form :classification/effective)))
            r2 (form/assoc-form r1 (form/keyword-form :classification/labels)
                                (form/form-get facts (form/keyword-form :classification/labels)))

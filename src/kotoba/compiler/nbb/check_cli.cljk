@@ -8,14 +8,47 @@
   its closure is the check driver (`kotoba.compiler.nbb.check-driver`) alone.
   Same command, same answer, byte for byte: both entries call the same
   `check!`."
-  {:kotoba/export []}
+  {:kotoba/export #?(:kotoba [main] :default [])}
   (:require [kotoba.compiler.nbb.check-driver :as driver]
-            [kotoba.compiler.nbb.cli-support :as support]))
+            [kotoba.compiler.nbb.cli-support :as support]
+            #?(:kotoba [kotoba.compiler.project :as project])
+            #?(:kotoba [kotoba.form :as form]))
+  #?(:kotoba (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                                 [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]})))
 
+#?(:kotoba
+   ;; Kotoba: the entry's `main` (the host's top-level `execute!` call has no Kotoba
+   ;; reading: a module has no top-level effects, and an aborting command cannot ride
+   ;; in a fn literal, E2135). Same command table: `check`, else the usage refusal.
+   ;; Success: the host's stdout (`pr-str` of the answer + newline), status 0. Refusal:
+   ;; a REDUCED `:kotoba.cli-error/v1` report on stderr (format, ok, message; no
+   ;; `:error` phase and no `:diagnostic`: the abort's data is not read here), status 65
+   ;; (64 for a command other than `check`).
+   (defn- run-check [args [:list :string]] :string
+     (string-concat (project/pr-text (driver/check! args)) "\n")))
+
+#?(:kotoba
+   (defn- report [message :string] :string
+     (string-concat "{:format :kotoba.cli-error/v1, :ok false, :message "
+                    (string-concat (project/pr-text (form/string-form message)) "}\n"))))
+
+#?(:kotoba
+   (defn main [] :i64
+     (let [args (support/command-line-args)]
+       (if (and (> (vector-count args) 0) (string=? (typed-list-nth [:list :string] args 0) "check"))
+         (try (let [w (io/write (run-check args))] 0)
+              (catch e (let [w (io/write-error (report (ex-message e)))] 65)))
+         (let [w (io/write-error (report (string-concat "error: nbb check path does not cover command "
+                                                        (if (> (vector-count args) 0) (typed-list-nth [:list :string] args 0) ""))))]
+           64)))))
+
+#?(:kotoba nil
+   :default
+   (do
 (defn- run! [args context]
   (case (first args)
     "check" (driver/check! args context)
     (support/usage-error!
      (str "error: nbb check path does not cover command " (first args)))))
 
-(support/execute! #(run! % nil))
+(support/execute! (fn [args] (run! args nil)))))

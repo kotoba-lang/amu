@@ -9,8 +9,9 @@
   `kotoba.compiler.nbb.wasm-cli` (still answering `check` for a direct spawn)
   both call it. Moved verbatim; the only change is that the functions are
   public so two entries can share them."
-  {:kotoba/export [check! computed-definition-cids decode-policy! package-verdict!
-                   read-policy! resolve-hir!]}
+  {:kotoba/export #?(:kotoba [check! read-policy!]
+                     :default [check! computed-definition-cids decode-policy! package-verdict!
+                               read-policy! resolve-hir!])}
   (:require [kotoba.compiler.capability-names :as cap-names]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.definition-identity :as definition-identity]
@@ -19,8 +20,105 @@
             [kotoba.sema :as sema]
             [kotoba.compiler.nbb.project-source :as project-source]
             [kotoba.compiler.effect-row :as effect-row]
-            [kotoba.kir :as ir]))
+            [kotoba.kir :as ir]
+            #?(:kotoba [kotoba.form :as form])
+            ;; the project route: on the Kotoba route these resolve to the guest twins
+            ;; (kotoba-lang lang/compat/kotoba/compiler/project{,_files}.kotoba)
+            #?(:kotoba [kotoba.compiler.project :as project])
+            #?(:kotoba [kotoba.compiler.project-files :as project-files]))
+  #?(:kotoba (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                                 [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+                        :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]] [:phase :string] [:data [:ref :form/r]]]]
+                        :ana/ir [:record :ana/ir [[:ok :bool] [:val [:ref :form/r]] [:err [:ref :fe/err]]]]})))
 
+#?(:kotoba
+   (defn- cd-kw [k :keyword] [:ref :form/r] (form/keyword-form k)))
+
+#?(:kotoba
+   (defn- cd-get [m [:ref :form/r] k :keyword] [:ref :form/r] (form/form-get m (cd-kw k))))
+
+#?(:kotoba
+   (defn- cd-put [m [:ref :form/r] k :keyword v [:ref :form/r]] [:ref :form/r] (form/assoc-form m (cd-kw k) v)))
+
+#?(:kotoba
+   (defn- cd-empty [] [:ref :form/r] (form/form-map (form/no-forms))))
+
+;; `--policy`, decoded by the bounded EDN reader, named grants canonicalised to wire ids; {} when absent
+#?(:kotoba
+   (defn read-policy! [args [:list :string]] [:ref :form/r]
+     (let [path (support/option args "--policy")]
+       (if (option-some?-of [:option :string] path)
+         (cap-names/wire-policy (support/read-edn-file! (option-value-of [:option :string] path "")))
+         (cd-empty)))))
+
+;; the policy keys consumed by the compiler rather than admission (`support/capability-policy`)
+#?(:kotoba
+   (defn- cd-capability-policy [policy [:ref :form/r]] [:ref :form/r]
+     (form/dissoc-form (form/dissoc-form policy (cd-kw :language-profile)) (cd-kw :budgets))))
+
+#?(:kotoba
+   (defn- cd-analyze-opts [policy [:ref :form/r] linked :bool] [:ref :form/r]
+     (let [profile (cd-get policy :language-profile)
+           o1 (if (form/is-nil? profile) (cd-empty) (cd-put (cd-empty) :language-profile profile))]
+       (if linked (cd-put o1 :admit-linked-synthetics? (form/bool-form true)) o1))))
+
+;; a refusal of the linker or the frontend, as the ex-info the rest of this route aborts with
+#?(:kotoba
+   (defn- cd-refuse [e [:ref :fe/err]] [:ref :form/r]
+     (throw (ex-info (record-get [:ref :fe/err] e :msg) {:phase :project-link}))))
+
+#?(:kotoba
+   (defn- cd-link [input :string roots [:list :string]] [:ref :form/r]
+     (try (let [g (project-files/load-closed-graph input roots)
+                l (try (project/link-source (cd-get g :sources) (cd-get g :root))
+                       (catch [:ref :fe/err] e (throw (project/with-module-file e (cd-get g :paths)))))]
+            (cd-put (cd-put (cd-put (cd-empty) :source (cd-get l :source))
+                            :project (cd-put (cd-put (cd-put (cd-empty) :root (cd-get g :root))
+                                                     :module-order (cd-get l :module-order))
+                                             :paths (cd-get g :paths)))
+                    :linked? (form/bool-form true)))
+          (catch [:ref :fe/err] e (cd-refuse e)))))
+
+#?(:kotoba
+   (defn- cd-resolve [args [:list :string]] [:ref :form/r]
+     (let [roots (project-source/source-roots args)]
+       (if (> (vector-count roots) 0)
+         (cd-link (if (> (vector-count args) 1) (typed-list-nth [:list :string] args 1) "") roots)
+         (cd-put (cd-put (cd-empty) :source (form/string-form (project-source/resolve-single-source! args)))
+                 :linked? (form/bool-form false))))))
+
+#?(:kotoba
+   (defn- cd-analyze [source :string opts [:ref :form/r]] [:ref :form/r]
+     (let [r (sema/analyze source opts)]
+       (if (record-get [:ref :ana/ir] r :ok)
+         (record-get [:ref :ana/ir] r :val)
+         (throw (ex-info (record-get [:ref :fe/err] (record-get [:ref :ana/ir] r :err) :msg) {:phase :subset}))))))
+
+;; Kotoba: `check` for one file or a `--source-path` graph (the twins), with `--policy`. The answer is the host's map
+;; with ONE named difference: `:definitions` is definition-identity's explicit unavailability marker (`:reason
+;; :no-typed-kir`): the Kotoba route's `kotoba.kir/lower` answers a run record, not the typed KIR Form `describe`
+;; reads. No `--module-lock`/`--package-lock` (refused by name by project-source), no stage cache.
+#?(:kotoba
+   (defn check! [args [:list :string]] [:ref :form/r]
+     (let [resolved (cd-resolve args)
+           linked (form/bool-value (cd-get resolved :linked?))
+           policy (read-policy! args)
+           hir (cd-analyze (form/string-value (cd-get resolved :source)) (cd-analyze-opts policy linked))
+           result (effect-row/check hir (cd-capability-policy policy))
+           definitions (definition-identity/describe (form/form-map (form/two-forms (cd-kw :hir) hir)) (form/nil-form))
+           r0 (cd-put (cd-put (cd-put (cd-empty) :ok (form/bool-form true)) :format (cd-kw :kotoba.check/v1))
+                      :language-profile (cd-get hir :language-profile))
+           r1 (cd-put (cd-put (cd-put r0 :effects (cap-names/name-grants (cd-get hir :effects)))
+                              :named-operations (cd-get hir :named-operations))
+                      :exports (cd-get hir :exports))
+           r2 (cd-put (cd-put r1 :definitions definitions) :admission (cap-names/name-grants result))]
+       (if linked (cd-put r2 :project (cd-get resolved :project)) r2))))
+
+;; ---------------------------------------------------------------------------
+;; Host reading (Clojure / nbb), unchanged.
+#?(:kotoba nil
+   :default
+   (do
 (defn read-policy!
   "`--policy`, with named grants canonicalised to wire ids.
 
@@ -39,14 +137,14 @@
 
 (defn resolve-hir! [source opts stage-cache]
   (support/timed "frontend"
-                 #(compile-cache/resolve-stage!
+                 (fn [] (compile-cache/resolve-stage!
                    stage-cache :hir
                    ;; The whole options map, not just :language-profile: a
                    ;; linked project adds :admit-linked-synthetics?, and a key
                    ;; blind to it would answer a linked question with an
                    ;; unlinked HIR. Tag raised to v3 so older entries miss.
                    (pr-str [:kotoba.hir-cache/v3 source opts])
-                   (fn [] (sema/analyze source opts)))))
+                   (fn [] (sema/analyze source opts))))))
 
 (defn computed-definition-cids
   "The definition CIDs of a built graph, as a flat collection."
@@ -67,22 +165,22 @@
   (when-let [packages (:packages resolved)]
     (let [verdict (support/timed
                    "package-definitions"
-                   #(package-lock/verify-definitions
-                     (:dependencies packages)
-                     (computed-definition-cids definitions)))]
+                   (fn [] (package-lock/verify-definitions
+                           (:dependencies packages)
+                           (computed-definition-cids definitions))))]
       (package-lock/report packages verdict))))
 
 (defn check! [args context]
   (let [resolved (project-source/resolve-source! args)
         source (:source resolved)
-        policy (support/timed "policy-read" #(read-policy! args))
+        policy (support/timed "policy-read" (fn [] (read-policy! args)))
         hir-result (resolve-hir! source
                                  (project-source/analyze-opts policy (:linked? resolved))
                                  (:stages context))
         hir (:value hir-result)
         result (support/timed
                 "admission"
-                #(effect-row/check hir (support/capability-policy policy)))
+                (fn [] (effect-row/check hir (support/capability-policy policy))))
         definitions (definition-identity/describe
                      {:hir hir :kir (try (ir/lower hir) (catch :default _ nil))})]
     ;; Same keys as the JVM `check --json` in kotoba.compiler.cli. This path
@@ -115,4 +213,4 @@
       ;; this key the answer is identical whether a lock was verified or never
       ;; supplied, which is the shape that lets a build quietly stop checking.
       (:packages resolved) (assoc :packages (package-verdict! resolved definitions))
-      context (assoc :stage-cache {:hir (:cache hir-result)}))))
+      context (assoc :stage-cache {:hir (:cache hir-result)}))))))
