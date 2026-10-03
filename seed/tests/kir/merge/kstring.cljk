@@ -1,0 +1,62 @@
+;; merge-test guest (agent KIR3): kotoba.string (lang/compat, the big compiler's string library) and
+;; kotoba.compiler.decimal-text over a corpus file. Input (file named by argument 0): one case per line,
+;; "<op><a>\t<b>\t<c>" (fields after the op byte, tab separated). Output: one answer line per case.
+(ns probe.kstring-merge
+  {:kotoba/export [main]}
+  (:require [kotoba.string :as ks]
+            [kotoba.compiler.decimal-text :as dt]))
+
+(defn cpw [c :i64] :i64 (if (< c 128) 1 (if (< c 2048) 2 (if (< c 65536) 3 4))))
+
+(defn find-cp [s :string c0 :i64 i :i64 e :i64] :i64
+  (loop [j i]
+    (if (>= j e)
+      e
+      (let [c (string-code-point-at s j)]
+        (if (= c c0) j (recur (+ j (cpw c))))))))
+
+(defn tf [b :bool] :string (if b "true" "false"))
+
+(defn opt [o [:option :i64]] :string
+  (match-option o [:option :i64]
+    (none "none")
+    (some v (string-from-i64 v))))
+
+(defn vec-text [v :vector-i64] :string
+  (loop [i 0 acc (string-from-i64 (vector-count v))]
+    (if (>= i (vector-count v)) acc (recur (+ i 1) (string-concat (string-concat acc " ") (string-from-i64 (vector-at v i)))))))
+
+(defn answer [op :i64 a :string b :string c :string] :string
+  (cond (= op 115) (tf (ks/starts-with? a b))
+        (= op 101) (tf (ks/ends-with? a b))
+        (= op 105) (tf (ks/includes? a b))
+        (= op 98) (tf (ks/blank? a))
+        (= op 116) (ks/trim a)
+        (= op 108) (ks/triml a)
+        (= op 114) (ks/trimr a)
+        (= op 118) (ks/reverse a)
+        (= op 120) (opt (ks/index-of a b))
+        (= op 121) (opt (ks/last-index-of a b))
+        (= op 112) (ks/replace a b c)
+        (= op 117) (string-from-i64 (ks/utf16-index-of a b))
+        (= op 107) (string-from-i64 (ks/byte-index-of a b))
+        (= op 68) (tf (dt/decimal? a))
+        (= op 80) (string-from-i64 (dt/parse a))
+        (= op 70) (vec-text (dt/fields a))
+        :else "?"))
+
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        s (typed-cap-call :fs/app-data :string :string path)
+        n (string-byte-length s)]
+    (loop [i 0 k 0]
+      (if (>= i n)
+        k
+        (let [e (find-cp s 10 i n)
+              t1 (find-cp s 9 (+ i 1) e)
+              t2 (find-cp s 9 (min e (+ t1 1)) e)
+              a (string-substring s (+ i 1) t1)
+              b (string-substring s (min e (+ t1 1)) t2)
+              c (string-substring s (min e (+ t2 1)) e)
+              w (typed-cap-call :io/write :string :string (string-concat (answer (string-code-point-at s i) a b c) "\n"))]
+          (recur (+ e 1) (+ k 1)))))))

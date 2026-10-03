@@ -21,13 +21,19 @@ bin=${bin:A}
 R=$SEED_REPO
 W=$R/build/seed-kir/census; mkdir -p $W/kexe $W/run
 L=$(seed_loader) || exit 2
+# KIR3: one pinned copy of the loader for the whole run (seed_run rebuilds $SEED_BUILD/kexe-loader whenever
+# tools/kexe_loader.c is newer; parallel jobs then raced on the rebuild and 12 programs failed with "mv: cannot stat")
+cp $L $W/kexe-loader.pinned; L=$W/kexe-loader.pinned
 E=/Users/junkawasaki/github/kotoba-lang/amu-embench/bench/embench/ports
 dirs=(${=CENSUS_DIRS:-$E $R/seed/tests/r1/feat $R/seed/tests/r1/conf $R/seed/tests/corpus $R/resources/kotoba/lang-conformance/values $R/resources/kotoba/lang-conformance/control $R/resources/kotoba/lang-conformance/native $R/seed/tests/conformance/*(/) $R/examples $R/test/dual-backend $R/test/nbb/fixtures $R/test/nbb/fixtures/state $R/bench/runtime-comparison})
 pol=$W/policy.edn; echo '{:allow #{[:cap/call 35] [:cap/call 37] [:cap/call 38] [:cap/call 39]}}' > $pol
 
 grp() { local d=$1; d=${d#$R/}; d=${d#/Users/junkawasaki/github/kotoba-lang/amu-embench/bench/}; echo ${d//\//.}; }
 xoff() { sed -n 's/.*:offset \([0-9]*\).*/\1/p'; }
-seed() { SEED_RESOURCES_35=$W SEED_SECONDS=60 seed_run $bin $off "$@"; }
+seed() {  # seed_run's environment, with the pinned loader
+  KEXE_COMMAND=1 KEXE_CAP_RESOURCES_35=$W KEXE_STRING_POOL=${SEED_POOL:-268435456} KEXE_PAIRS=${SEED_PAIRS:-4194304} \
+    KEXE_VECTORS=${SEED_VECTORS:-65536} KEXE_VECTOR_ITEMS=${SEED_VECTOR_ITEMS:-16777216} KEXE_CPU_SECONDS=60 KEXE_WALL_SECONDS=60 \
+    $L $bin $off 0 aarch64 $SEED_GRANT -- "$@"; }
 runb() {  # <bin> <off> -> last line (result or error)
   ( cd $W; KEXE_PAIRS=2097152 KEXE_VECTORS=65536 KEXE_VECTOR_ITEMS=1048576 KEXE_FUEL=16777216 KEXE_CPU_SECONDS=20 KEXE_WALL_SECONDS=20 \
     $L $1 $2 0 aarch64 - 2>&1 | tail -1 | tr '\t' ' ' | cut -c1-60 )

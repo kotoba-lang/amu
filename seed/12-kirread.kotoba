@@ -48,13 +48,13 @@
 ;; from the strings the emitted program contains, in walk order, equal bytes sharing one record (kr-str, kr-lits): the
 ;; pool then holds each distinct string once, as on the source route.
 
-(def kr-np 21)
+(def kr-np 38)
 (def kr-c-pb 124)
 (def kr-c-exp 125)
 (def kr-c-fns 126)
 (def kr-c-tab 127)
 (def kr-w 8)
-(def kr-th 3)
+(def kr-th 5)
 (def kr-f-name 0)
 (def kr-f-params 1)
 (def kr-f-result 2)
@@ -69,8 +69,51 @@
 (def kr-e-helper 1204)
 
 ;; prelude token k (0-based): 0 ns, 1 kir, 2 :export, 3 defn, 4 loop, 5 recur, 6 =, 7 0, 8 1, 9 string-length, 10 :i64,
-;; 11 and, 12 or, 13 not, 14 assoc, 15 let, 16 if, 17 <, 18 >, 19 __kr_a, 20 __kr_b
-(defn- kr-prelude [] :string "\n ns kir :export defn loop recur = 0 1 string-length :i64 and or not assoc let if < > __kr_a __kr_b\n")
+;; 11 and, 12 or, 13 not, 14 assoc, 15 let, 16 if, 17 <, 18 >, 19 __kr_a, 20 __kr_b,
+;; (KIR3) 21 :fs/app-data 22 :io/write 23 :cli/args 24 :io/write-error 25 :fs/app-data-bytes 26 nth 27 :option 28 :result
+;; 29 option-some-of 30 option-none-of 31 option-some?-of 32 option-value-of 33 result-ok-of 34 result-err-of
+;; 35 result-ok?-of 36 result-value-of 37 result-error-of
+(defn- kr-prelude [] :string
+  (string-concat
+    "\n ns kir :export defn loop recur = 0 1 string-length :i64 and or not assoc let if < > __kr_a __kr_b :fs/app-data :io/write :cli/args :io/write-error :fs/app-data-bytes nth :option :result option-some-of option-none-of option-some?-of option-value-of result-ok-of result-err-of result-ok?-of result-value-of result-error-of\n"
+    (kr-lib-text)))
+
+;; KIR3: the KIR library -- KIR builtins the seed has no head for, written in the seed language with the meaning (and the
+;; traps) of the loader's runtime operation that stage-0 calls or of stage-0's own lowering (kotoba-native
+;; string_search.cljk). They follow the prelude atoms as kr-nlib top-level defns; a KIR call of such a builtin is respelled
+;; as a call of its library function (kr-lib-use) and only the functions a program uses are emitted (kr-lib-emit), so a
+;; program that uses none compiles to the same bytes as before. Library function j (bit j of the table's word 3):
+;;   0 (string-find-byte s b from)     ABI v10 string_find_byte: b in 0..127 and from a boundary in [0, len] (traps
+;;                                     otherwise, as the runtime's checks); the first offset >= from holding b, or -1. An
+;;                                     ASCII byte only occurs at a boundary, so stepping by code points visits every match
+;;   1 (string-contains? h n)          stage-0: (if (< (string-index-of h n) 0) false true) (empty needle traps in both)
+;;   2 (string-replace-all s n r)      stage-0: kotoba$string-replace-from over string-index-of (uses 3)
+;;   3 kotoba$string-replace-from
+;;   4 (string-append-range acc s i j) ABI v10 string_append_range = acc ++ (string-substring s i j)
+;;   5 (string-index-of-from s n from) ABI v8 string_index_of_from: from a boundary in [0, len], n not empty
+;;   6 (vector-take v n)               stage-0 (machine_ir): the first n items, n in [0, count] (a vector read out of
+;;                                     range otherwise); stage-0 answers a view of v, the seed a copy: v is consumed by
+;;   7 (vector-drop v n)               the take/drop under stage-0's affine check (kotoba-native affine.cljk), so no program
+;;                                     stage-0 admits can observe the difference. vector-drop: the items after the first n.
+;;                                     The copy is ONE vector (vector-alloc + vector-assoc!, linear): a vector-conj
+;;                                     loop minted one table entry per item and trapped :vector-table-exhausted on the
+;;                                     posix-path merge input at 20x (merge.sh, 2026-10-03)
+(def kr-nlib 8)
+(defn- kr-lib-text [] :string
+  (string-concat
+   (string-concat
+    (string-concat
+      "(defn __kr_find_byte [s :string b :i64 i :i64] :i64 (cond (< b 0) (vector-at [0] 1) (> b 127) (vector-at [0] 1) (< i 0) (vector-at [0] 1) (> i (string-length s)) (vector-at [0] 1) :else (loop [j i] (if (>= j (string-length s)) -1 (let [c (string-code-point-at s j)] (if (= c b) j (recur (+ j (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4)))))))))\n"
+      "(defn __kr_contains [h :string n :string] :bool (if (< (string-index-of h n) 0) (= 0 1) (= 0 0)))\n")
+    (string-concat
+      "(defn __kr_replace_all [s :string n :string r :string] :string (__kr_replace_from (string-substring s 0 0) s n r (string-index-of s n)))\n(defn __kr_replace_from [acc :string s :string n :string r :string k :i64] :string (if (< k 0) (string-concat acc s) (__kr_replace_from (string-concat acc (string-concat (string-substring s 0 k) r)) (string-substring s (+ k (string-length n)) (string-length s)) n r (string-index-of (string-substring s (+ k (string-length n)) (string-length s)) n))))\n"
+      "(defn __kr_append_range [acc :string s :string i :i64 j :i64] :string (string-concat acc (string-substring s i j)))\n(defn __kr_index_of_from [s :string n :string i :i64] :i64 (let [r (string-index-of (string-substring s i (string-length s)) n)] (if (< r 0) -1 (+ r i))))\n"))
+  (kr-lib-text2)))
+
+(defn- kr-lib-text2 [] :string
+  (string-concat
+    "(defn __kr_vector_take [v :vector-i64 n :i64] :vector-i64 (if (if (< n 0) (= 0 0) (> n (vector-count v))) [(vector-at v n)] (loop [i 0 w (vector-alloc n)] (if (>= i n) w (recur (+ i 1) (vector-assoc! w i (vector-at v i)))))))\n"
+    "(defn __kr_vector_drop [v :vector-i64 n :i64] :vector-i64 (if (if (< n 0) (= 0 0) (> n (vector-count v))) [(vector-at v n)] (loop [i n w (vector-alloc (- (vector-count v) n))] (if (>= i (vector-count v)) w (recur (+ i 1) (vector-assoc! w (- i n) (vector-at v i)))))))\n"))
 
 ;; ---------------------------------------------------------------------------------------------------------
 ;; lexing (10-lex's scan, maps read as vectors)
@@ -117,6 +160,7 @@
           (= (kr-set-open S i) 1) (kr-scan M S (+ i 1) end)
           (= (kr-ns-map S i) 1) (kr-scan M S (lx-word-end S (+ i 2)) end)
           (> pk 0) (kr-scan (lx-push M pk i (+ i 1) 0) S (+ i 1) end)
+          (> c 127) (lx-fail-n M E-LEX-ASCII i (lx-lead c))
           (lx-multi? c)
           (let [j (kr-tok-end S i)]
             (kr-scan (lx-token M S i j) S (lx-after S i j) end))
@@ -134,9 +178,14 @@
     (if (< e 0) end (+ e 1))))
 
 ;; 1 when S[i ..) is ":program {"
+;; KIR3: compared byte by byte with an early exit (every matched byte is ASCII, so no read lands inside a UTF-8
+;; sequence; a hash over S[i, i+9) read continuation bytes of a literal such as "é" and trapped)
 (defn- kr-at-prog [S :string i :i64 end :i64] :i64
-  (cond (> (+ i 10) end) 0
-        (= (mem-hash-str S i (+ i 9)) -7261840534770076423) (kr-eq (lx-ch S (+ i 9)) 123)
+  (if (> (+ i 10) end) 0 (kr-at-prog2 S i 0)))
+
+(defn- kr-at-prog2 [S :string i :i64 k :i64] :i64
+  (cond (= k 10) 1
+        (= (lx-ch S (+ i k)) (lx-ch ":program {" k)) (kr-at-prog2 S i (+ k 1))
         :else 0))
 
 ;; the offset of the '{' that opens the value of the depth-1 key :program in S[i, end) (d = the depth at i), -1 if none
@@ -147,7 +196,7 @@
       (cond (= c 34) (kr-prog S (kr-after-str S i end) end d)
             (= c 59) (kr-prog S (lx-eol S i) end d)
             (= (* (kr-eq d 1) (kr-at-prog S i end)) 1) (+ i 9)
-            :else (kr-prog S (+ i 1) end (+ d (kr-dd c)))))))
+            :else (kr-prog S (+ i (lx-cpw c)) end (+ d (kr-dd c)))))))
 
 ;; the offset after the bracket that closes the one opened at i (d = 0 before i); end when unbalanced
 (defn- kr-close [S :string i :i64 end :i64 d :i64] :i64
@@ -158,7 +207,7 @@
       (cond (= c 34) (kr-close S (kr-after-str S i end) end d)
             (= c 59) (kr-close S (lx-eol S i) end d)
             (= d2 0) (+ i 1)
-            :else (kr-close S (+ i 1) end d2)))))
+            :else (kr-close S (+ i (lx-cpw c)) end d2)))))
 
 (defn- kr-lex3 [M :vector-i64 S :string p :i64 l0 :i64] :vector-i64
   (if (< p 0)
@@ -171,8 +220,10 @@
       (lx-count (kr-lex3 M S (kr-prog S 0 l0 0) l0))
       (lx-id M))))
 
+;; KIR3: string literals may hold UTF-8 (10-lex's R3 string decoder); a byte >= 128 outside a string or comment is E1002
+;; at that byte (kr-scan), and the byte scans step over whole code points (lx-cpw), so no index lands inside a sequence
 (defn- kr-lex [M :vector-i64 S :string] :vector-i64
-  (kr-lex2 (lx-ascii M S 0) S))
+  (kr-lex2 M S))
 
 ;; ---------------------------------------------------------------------------------------------------------
 ;; accessors and writers
@@ -242,7 +293,11 @@
 ;; 1 :format 2 :entry 3 :exports 4 :signature 5 :effects 6 :functions 7 :name 8 :params 9 :result 10 :body
 ;; 11 :param-types 12 :kotoba.kir/v3 13 :kotoba.kir/v4 14 nil 15 true 16 false 17 vector-new 18 string-byte-length
 ;; 21 let 22 if 23 :i64 24 :bool 25 :closure-param-indexes 26 :schemas 27 :cap/call 28 bool-not 29 record-assoc
-;; 30 min 31 max 32 - 33 :closure-result? 34 :i64-pair-chain-param-indexes ; 0 = none of them
+;; 30 min 31 max 32 - 33 :closure-result? 34 :i64-pair-chain-param-indexes
+;; (KIR3) 35 typed-cap-call 36 :bytes 37 vector-get 38 option-some 39 option-none 40 option-some? 41 option-value
+;; 42 result-ok 43 result-err 44 result-ok? 45 result-value 46 result-error 47 :state 48 string-find-byte
+;; 49 string-contains? 50 string-replace-all 51 string-append-range 52 string-index-of-from 53 vector-take 54 vector-drop
+;; 0 = none of them
 (defn- kr-code-of [len :i64 h :i64] :i64
   (cond
     (= h 8937795140641149370) (kr-len-ok len 7 1)
@@ -277,6 +332,26 @@
     (= h -5808622843851602280) (kr-len-ok len 1 32)
     (= h -7417602207336064879) (kr-len-ok len 16 33)
     (= h 3598762502014493520) (kr-len-ok len 29 34)
+    (= h 767857354240711905) (kr-len-ok len 14 35)
+    (= h 7043192940227741804) (kr-len-ok len 6 36)
+    (= h 2600161097033915871) (kr-len-ok len 10 37)
+    (= h -3416085865405386921) (kr-len-ok len 11 38)
+    (= h 5474833896677373533) (kr-len-ok len 11 39)
+    (= h -5110378306262118984) (kr-len-ok len 12 40)
+    (= h 8206252138909507960) (kr-len-ok len 12 41)
+    (= h 1735258452003540293) (kr-len-ok len 9 42)
+    (= h 7828970525143101422) (kr-len-ok len 10 43)
+    (= h 1569146262666716750) (kr-len-ok len 10 44)
+    (= h -7055665907701587864) (kr-len-ok len 12 45)
+    (= h 5083591168744969843) (kr-len-ok len 12 46)
+    (= h -2229425219510920946) (kr-len-ok len 6 47)
+    (= h 6197231196749472553) (kr-len-ok len 16 48)
+    (= h -9023377547950050021) (kr-len-ok len 16 49)
+    (= h 3450483058270114871) (kr-len-ok len 18 50)
+    (= h 1424572846352244779) (kr-len-ok len 19 51)
+    (= h -8276023412022496092) (kr-len-ok len 20 52)
+    (= h 1733912242534962942) (kr-len-ok len 11 53)
+    (= h 6494910307221814324) (kr-len-ok len 11 54)
     :else 0))
 
 (defn- kr-is-name [k :i64] :i64 (cond (= k ND-SYM) 1 (= k ND-KW) 1 :else 0))
@@ -343,9 +418,13 @@
   (if (= (* (kr-eq vk ND-VEC) (kr-eq vn 0)) 1) (kr-id M) (kr-fail M kr-e-value k)))
 
 ;; :effects: a set of capability effects [:cap/call N] (the seed lowers typed-cap-call itself and the loader enforces
-;; the grants; the effect set is an admission matter that stage-0 already settled); any other effect (:state ..) is E1203
+;; the grants; the effect set is an admission matter that stage-0 already settled) and (KIR3) the marker :state: stage-0's
+;; KIR has already lowered perform/handle of a defhandler [:state T] to state passing (__kotoba_state_* functions and
+;; :kotoba.state/ret1 records), so nothing of the effect is left in the bodies; any other effect is E1203
 (defn- kr-cap-eff [M :vector-i64 S :string e :i64] :i64
-  (if (= (kr-kind M e) ND-VEC) (kr-eq (kr-code M S (kr-first M e)) 27) 0))
+  (cond (= (kr-kind M e) ND-VEC) (kr-eq (kr-code M S (kr-first M e)) 27)
+        (= (kr-kind M e) ND-KW) (kr-eq (kr-code M S e) 47)
+        :else 0))
 
 (defn- kr-caps-ok [M :vector-i64 S :string e :i64] :i64
   (cond (= e 0) 1
@@ -457,8 +536,15 @@
         f1 (kr-first M fv)]
     (if (kr-failed M)
       (kr-id M)
-      (kr-fns (kr-put (kr-put (kr-put (kr-put M kr-c-tab tab) tab n) (+ tab 1) (+ (+ tab kr-th) (* n kr-w))) (+ tab 2) 1)
+      (kr-fns (kr-put (kr-put (kr-put (kr-put (kr-put (kr-put M kr-c-tab tab) tab n) (+ tab 1) (+ (+ tab kr-th) (* n kr-w))) (+ tab 2) 1)
+                                  (+ tab 3) 0)
+                          (+ tab 4) (kr-lib-first M))
               S (+ tab kr-th) f1))))
+
+;; KIR3: the first library defn: the (kr-np + 1)-th sibling of the KIR document under the read root (before kr-emit)
+(defn- kr-lib-first [M :vector-i64] :i64
+  (loop [c (kr-first M (vector-at M MM-ROOT)) k (+ kr-np 1)]
+    (if (= k 0) c (recur (kr-next M c) (- k 1)))))
 
 (defn- kr-tab [M :vector-i64 S :string] :vector-i64
   (let [fv (vector-at M kr-c-fns)
@@ -573,8 +659,72 @@
       (= hc 32) (kr-neg-or M S n cur)
       (= hc 30) (kr-minmax-or M S n cur 17)
       (= hc 31) (kr-minmax-or M S n cur 18)
-      (= hl 1) (kr-call M S n cur)
-      :else (kr-walk-items M S h cur))))
+      (= hc 35) (kr-walk-items (kr-cap M S n) S h cur)
+      (= hc 37) (kr-walk-items (kr-retok M h 26) S a cur)
+      (>= (kr-lib-of hc) 0) (kr-walk-items (kr-lib-use M h (kr-lib-of hc)) S a cur)
+      (= (kr-untyped-tok hc) 0) (if (= hl 1) (kr-call M S n cur) (kr-walk-items M S h cur))
+      :else (kr-untyped (kr-alloc M (kr-untyped-n hc)) S n cur hc))))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; KIR3 (agent KIR3, 2026-10-03): spellings stage-0's KIR uses for R3 heads
+;;   (typed-cap-call 35 :string :string x)  -> (typed-cap-call :fs/app-data :string :string x)   KIR writes the wire id;
+;;      37 :io/write, 38 :cli/args, 39 :io/write-error, 35 with :bytes kinds :fs/app-data-bytes (seed/HEADS :cap-shapes);
+;;      any other wire stays an integer and 21-check refuses it by name (E2115)
+;;   (vector-get v i d)                     -> (nth v i d)        (the reference's total vector read = R3 nth with default)
+;;   (option-some x) (option-none) (option-some? o) (option-value o d)
+;;                                          -> (option-some-of [:option :i64] x) ..   the untyped KIR spellings are the i64
+;;   (result-ok x) (result-err e) (result-ok? r) (result-value r d) (result-error r d)
+;;                                          -> (result-ok-of [:result :i64 :i64] x) ..   forms; a non-i64 operand is refused
+;;                                             by 21-check (E2104), never guessed
+;; ---------------------------------------------------------------------------------------------------------
+;; the prelude token of the -of spelling of untyped code hc, 0 when hc is not one
+(defn- kr-untyped-tok [hc :i64] :i64
+  (cond (= hc 38) 29 (= hc 39) 30 (= hc 40) 31 (= hc 41) 32 (= hc 42) 33 (= hc 43) 34 (= hc 44) 35 (= hc 45) 36
+        (= hc 46) 37 :else 0))
+
+;; nodes of the inserted type: [:option :i64] 3, [:result :i64 :i64] 4
+(defn- kr-untyped-n [hc :i64] :i64 (if (< hc 42) 3 4))
+
+;; the second :i64 of [:result :i64 :i64] (k = 4)
+(defn- kr-untyped3 [M :vector-i64 q :i64 pb :i64 k :i64] :vector-i64
+  (if (= k 4) (kr-nset (kr-node M (+ q 3) ND-KW (+ pb 10) 0) (+ q 2) NF-NEXT (+ q 3)) (kr-id M)))
+
+(defn- kr-untyped [M :vector-i64 S :string n :i64 cur :i64 hc :i64] :vector-i64
+  (if (kr-failed M)
+    (kr-id M)
+    (let [q (vector-at M MM-R0)
+          pb (vector-at M kr-c-pb)
+          h (kr-first M n)
+          a (kr-next M h)
+          c (kr-nf M n NF-AUX)
+          k (kr-untyped-n hc)
+          M1 (kr-nset (kr-node M q ND-VEC (+ pb (+ 24 k)) (- k 1)) q NF-NEXT a)
+          M2 (kr-nset (kr-nset M1 q NF-FIRST (+ q 1)) h NF-NEXT q)
+          M3 (kr-nset (kr-node M2 (+ q 1) ND-KW (+ pb (+ 24 k)) 0) (+ q 1) NF-NEXT (+ q 2))
+          M4 (kr-node M3 (+ q 2) ND-KW (+ pb 10) 0)
+          M6 (kr-nset (kr-retok (kr-untyped3 M4 q pb k) h (kr-untyped-tok hc)) n NF-AUX (+ c 1))]
+      (kr-walk-items M6 S a cur))))
+
+;; the prelude token of KIR wire w for a request kind spelled with code qc, 0 when the seed has no such cap shape
+(defn- kr-wire-tok [w :i64 qc :i64] :i64
+  (cond (= w 35) (if (= qc 36) 25 21) (= w 37) 22 (= w 38) 23 (= w 39) 24 :else 0))
+
+(defn- kr-cap2 [M :vector-i64 w :i64 t :i64] :vector-i64
+  (if (= t 0)
+    (kr-id M)
+    (let [pb (vector-at M kr-c-pb)]
+      (kr-node M w ND-KW (+ pb t) 0))))
+
+(defn- kr-cap [M :vector-i64 S :string n :i64] :vector-i64
+  (let [h (kr-first M n)
+        w (kr-next M h)
+        q (kr-next M w)
+        ok (* (kr-ne w 0) (kr-ne q 0))]
+    (cond (= ok 0) (kr-id M)
+          (= (kr-kind M w) ND-INT) (kr-cap2 M w (kr-wire-tok (kr-nf M w NF-AUX) (kr-code M S q)))
+          :else (kr-id M))))
+
+
 
 ;; ---------------------------------------------------------------------------------------------------------
 ;; builtins that KIR spells differently from the seed (no new SIR: each is a form the seed already compiles)
@@ -919,6 +1069,40 @@
       (kr-walk M8 S bd r))))
 
 ;; ---------------------------------------------------------------------------------------------------------
+;; KIR3: the KIR library (kr-lib-text): respelling a builtin call, emitting the used functions
+;; ---------------------------------------------------------------------------------------------------------
+;; the library function of KIR head code hc, -1 when hc is not a library builtin
+(defn- kr-lib-of [hc :i64] :i64
+  (cond (= hc 48) 0 (= hc 49) 1 (= hc 50) 2 (= hc 51) 4 (= hc 52) 5 (= hc 53) 6 (= hc 54) 7 :else -1))
+
+;; the use bits of library function j (replace-all also needs replace-from)
+(defn- kr-lib-bits [j :i64] :i64 (if (= j 2) 12 (i64-shift-left 1 j)))
+
+;; the top-level node of library defn j (the first one is word 4 of the function table; the defns are read-tree
+;; siblings until kr-lib-emit relinks them at the very end)
+(defn- kr-lib-node [M :vector-i64 j :i64] :i64
+  (loop [c (vector-at M (+ (vector-at M kr-c-tab) 4)) k j]
+    (if (= k 0) c (recur (kr-next M c) (- k 1)))))
+
+;; respell head symbol h as the name of library function j and mark j (and what it calls) used
+(defn- kr-lib-use [M :vector-i64 h :i64 j :i64] :vector-i64
+  (let [tab (vector-at M kr-c-tab)
+        u (vector-at M (+ tab 3))
+        nm (kr-next M (kr-first M (kr-lib-node M j)))
+        M1 (kr-put M (+ tab 3) (bit-or u (kr-lib-bits j)))]
+    (kr-nset M1 h NF-TOK (kr-nf M1 nm NF-TOK))))
+
+;; chain the used library defns after top-level form last (the last one ends the program). c = library defn j; its
+;; original NEXT is read before any write could reach it (only a later used defn's predecessor is rewritten)
+(defn- kr-lib-emit [M :vector-i64 last :i64 c :i64 j :i64] :vector-i64
+  (let [tab (vector-at M kr-c-tab)
+        u (vector-at M (+ tab 3))
+        nx (kr-next M c)]
+    (cond (>= j kr-nlib) (kr-nset M last NF-NEXT 0)
+          (= (bit-and (u64-shift-right u j) 1) 1) (kr-lib-emit (kr-nset M last NF-NEXT c) c nx (+ j 1))
+          :else (kr-lib-emit M last nx (+ j 1)))))
+
+;; ---------------------------------------------------------------------------------------------------------
 ;; emitting the Seed-0 forms
 ;; ---------------------------------------------------------------------------------------------------------
 (defn- kr-params [M :vector-i64 ps :i64 pt :i64 fresh :i64 pv :i64] :vector-i64
@@ -972,7 +1156,7 @@
         nm (vector-at M (+ r kr-f-name))
         n0 (vector-at M MM-NODE-N)]
     (cond
-      (>= i n) (kr-id M)
+      (>= i n) (kr-lib-emit M last (kr-lib-node M 0) 0)
       (kr-failed M) (kr-id M)
       (= (kr-helper M S nm) 1) (kr-defs M S (+ i 1) last)
       :else (kr-defs2 (kr-defn M S r) S i last n0))))
@@ -1072,8 +1256,8 @@
   (let [root (vector-at M MM-ROOT)
         doc (kr-first M root)
         cnt (kr-count M root)
-        pb (- (vector-at M MM-TOK-N) kr-np)
-        ok (* (kr-eq (kr-kind M doc) ND-VEC) (kr-eq cnt (+ kr-np 1)))]
+        pb (kr-nf M (kr-next M doc) NF-TOK)
+        ok (* (kr-eq (kr-kind M doc) ND-VEC) (kr-eq cnt (+ (+ kr-np 1) kr-nlib)))]
     (if (= ok 1)
       (kr-run2 (kr-put M kr-c-pb pb) S doc)
       (kr-fail M kr-e-doc doc))))
