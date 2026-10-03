@@ -1,0 +1,263 @@
+(ns amu.edn
+  (:export [kw str int bool nil-v raw vec lst amap hmap auto-map set-of vs vs1 vs2 vs3 conj1 conj2 count-of nth-of
+            pr pr-line join kind text hash-of kw-hash str-hash int-hash map-get map-assoc map-entries])
+  (:schemas {:edn/v [:record :edn/v [[:k :i64] [:t :string] [:h :i64] [:xs [:list [:ref :edn/v]]]]]}))
+
+;; seed/amu-main/src/amu/edn.kotoba -- EDN values and ClojureScript's `pr-str` of them, byte for byte (agent REFAC,
+;; 2026-10-04). `amu refactor` answers one EDN map printed by nbb's pr-str; this module is how the Kotoba route prints
+;; the same text.
+;;
+;; A value is :edn/v: K the kind (0 scalar, 1 vector, 2 array map, 3 hash map, 4 list/seq, 5 hash set), T the printed
+;; text of a scalar, H the scalar's cljs.core/hash (only map keys and set members need it), XS the items (a map's keys
+;; and values alternate).
+;;
+;; MAP ORDER. cljs prints a PersistentArrayMap (at most 8 entries, built by assoc / a literal) in insertion order and a
+;; PersistentHashMap in HAMT order: entries ordered by their 32-bit hash read as 5-bit groups from the low bits (the
+;; trie's slot at each level), ties (full-hash collisions) in insertion order. `auto-map` picks the kind the host's
+;; construction gives (a literal or an assoc chain: hash map above 8 entries). The hashes are cljs.core's: murmur3 over
+;; UTF-16 units for keyword names (hash-keyword = hash-combine(m3 name, hash-string ns) + 0x9e3779b9), m3-hash-int of
+;; the Java-style string hash for strings, (js-mod (floor n) 2147483647) for integers.
+
+;; ---------------------------------------------------------------------------
+;; int32 arithmetic in i64
+
+(defn- u32 [x :i64] :i64 (bit-and x 4294967295))
+(defn- i32 [x :i64] :i64 (- (bit-xor (u32 x) 2147483648) 2147483648))
+(defn- imul [a :i64 b :i64] :i64 (i32 (* (u32 a) (u32 b))))
+(defn- rotl [x :i64 n :i64] :i64
+  (i32 (bit-or (i64-shift-left (u32 x) n) (u64-shift-right (u32 x) (- 32 n)))))
+(defn- ushr [x :i64 n :i64] :i64 (u64-shift-right (u32 x) n))
+
+(defn- mix-k1 [k1 :i64] :i64 (imul (rotl (imul (i32 k1) (i32 3432918353)) 15) 461845907))
+(defn- mix-h1 [h1 :i64 k1 :i64] :i64
+  (i32 (+ (imul (rotl (bit-xor (i32 h1) (i32 k1)) 13) 5) (i32 3864292196))))
+(defn- fmix [h :i64 len :i64] :i64
+  (let [a (bit-xor (i32 h) len)
+        b (i32 (bit-xor a (ushr a 16)))
+        c (imul b (i32 2246822507))
+        d (i32 (bit-xor c (ushr c 13)))
+        e (imul d (i32 3266489909))]
+    (i32 (bit-xor e (ushr e 16)))))
+
+(defn- m3-int [x :i64] :i64
+  (if (= (i32 x) 0) 0 (fmix (mix-h1 0 (mix-k1 x)) 4)))
+
+;; UTF-16 code units of s (the unit cljs hashes and counts)
+(defn- utf8-width [p :i64] :i64 (if (< p 128) 1 (if (< p 2048) 2 (if (< p 65536) 3 4))))
+
+(defn- units [s :string] :vector-i64
+  (let [n (string-byte-length s)]
+    (loop [i 0 acc (vector-alloc 0)]
+      (if (>= i n)
+        acc
+        (let [p (string-code-point-at s i)]
+          (if (< p 65536)
+            (recur (+ i (utf8-width p)) (vector-conj acc p))
+            (let [q (- p 65536)]
+              (recur (+ i 4) (vector-conj (vector-conj acc (+ 55296 (u64-shift-right q 10))) (+ 56320 (bit-and q 1023)))))))))))
+
+(defn- m3-units [u :vector-i64] :i64
+  (let [n (vector-count u)
+        h1 (loop [i 1 h 0]
+             (if (< i n)
+               (recur (+ i 2) (mix-h1 h (mix-k1 (bit-or (vector-at u (- i 1)) (i64-shift-left (vector-at u i) 16)))))
+               h))
+        h2 (if (= (bit-and n 1) 1) (i32 (bit-xor h1 (mix-k1 (vector-at u (- n 1))))) h1)]
+    (fmix h2 (imul 2 n))))
+
+(defn- java-hash [u :vector-i64] :i64
+  (let [n (vector-count u)]
+    (loop [i 0 h 0]
+      (if (>= i n) h (recur (+ i 1) (+ (imul 31 h) (vector-at u i)))))))
+
+(defn str-hash [s :string] :i64 (m3-int (java-hash (units s))))
+
+(defn- hash-combine [seed :i64 h :i64] :i64
+  (i32 (bit-xor seed (+ h (+ 2654435769 (+ (i32 (i64-shift-left seed 6)) (i64-shift-right (i32 seed) 2)))))))
+
+;; t: the keyword's text without the colon, "name" or "ns/name"
+(defn- slash-at [t :string] :i64
+  (let [n (string-byte-length t)]
+    (loop [i 0] (cond (>= i n) -1 (and (> i 0) (= (string-code-point-at t i) 47)) i :else (recur (+ i 1))))))
+
+(defn kw-hash [t :string] :i64
+  (let [sl (slash-at t)
+        nm (if (< sl 0) t (string-substring t (+ sl 1) (string-byte-length t)))
+        nsh (if (< sl 0) 0 (java-hash (units (string-substring t 0 sl))))]
+    (i32 (+ (hash-combine (m3-units (units nm)) nsh) 2654435769))))
+
+(defn int-hash [n :i64] :i64 (- n (* (quot n 2147483647) 2147483647)))
+
+;; ---------------------------------------------------------------------------
+;; values
+
+(defn- none [] [:list [:ref :edn/v]] (typed-list-new [:list [:ref :edn/v]]))
+(defn- mk [k :i64 t :string h :i64 xs [:list [:ref :edn/v]]] [:ref :edn/v] (record-new [:ref :edn/v] k t h xs))
+
+(defn kind [v [:ref :edn/v]] :i64 (record-get [:ref :edn/v] v :k))
+(defn text [v [:ref :edn/v]] :string (record-get [:ref :edn/v] v :t))
+(defn hash-of [v [:ref :edn/v]] :i64 (record-get [:ref :edn/v] v :h))
+(defn- items [v [:ref :edn/v]] [:list [:ref :edn/v]] (record-get [:ref :edn/v] v :xs))
+
+(defn vs [] [:list [:ref :edn/v]] (none))
+(defn conj1 [xs [:list [:ref :edn/v]] a [:ref :edn/v]] [:list [:ref :edn/v]] (typed-list-conj [:list [:ref :edn/v]] xs a))
+(defn conj2 [xs [:list [:ref :edn/v]] a [:ref :edn/v] b [:ref :edn/v]] [:list [:ref :edn/v]]
+  (conj1 (conj1 xs a) b))
+(defn vs1 [a [:ref :edn/v]] [:list [:ref :edn/v]] (conj1 (none) a))
+(defn vs2 [a [:ref :edn/v] b [:ref :edn/v]] [:list [:ref :edn/v]] (conj1 (conj1 (none) a) b))
+(defn vs3 [a [:ref :edn/v] b [:ref :edn/v] c [:ref :edn/v]] [:list [:ref :edn/v]] (conj1 (conj1 (conj1 (none) a) b) c))
+(defn count-of [xs [:list [:ref :edn/v]]] :i64 (vector-count xs))
+(defn nth-of [xs [:list [:ref :edn/v]] i :i64] [:ref :edn/v] (typed-list-nth [:list [:ref :edn/v]] xs i))
+
+;; t without the colon
+(defn kw [t :string] [:ref :edn/v] (mk 0 (string-concat ":" t) (kw-hash t) (none)))
+(defn int [n :i64] [:ref :edn/v] (mk 0 (string-from-i64 n) (int-hash n) (none)))
+(defn bool [b :bool] [:ref :edn/v] (mk 0 (if b "true" "false") (if b 1231 1237) (none)))
+(defn nil-v [] [:ref :edn/v] (mk 0 "nil" 0 (none)))
+(defn raw [t :string] [:ref :edn/v] (mk 0 t 0 (none)))
+
+;; pr-str of a string: cljs quote-string escapes " \ and the five control characters b f n r t
+(defn- esc [p :i64] :string
+  (cond (= p 34) "\\\"" (= p 92) "\\\\" (= p 10) "\\n" (= p 9) "\\t" (= p 13) "\\r" (= p 8) "\\b" (= p 12) "\\f" :else ""))
+
+(defn- quote-str [s :string] :string
+  (let [n (string-byte-length s)]
+    (loop [i 0 from 0 acc "\""]
+      (if (>= i n)
+        (string-concat (string-concat acc (string-substring s from n)) "\"")
+        (let [p (string-code-point-at s i)
+              e (esc p)]
+          (if (= (string-byte-length e) 0)
+            (recur (+ i (utf8-width p)) from acc)
+            (recur (+ i 1) (+ i 1) (string-concat (string-concat acc (string-substring s from i)) e))))))))
+
+(defn str [s :string] [:ref :edn/v] (mk 0 (quote-str s) (str-hash s) (none)))
+
+(defn vec [xs [:list [:ref :edn/v]]] [:ref :edn/v] (mk 1 "" 0 xs))
+(defn lst [xs [:list [:ref :edn/v]]] [:ref :edn/v] (mk 4 "" 0 xs))
+(defn amap [kvs [:list [:ref :edn/v]]] [:ref :edn/v] (mk 2 "" 0 kvs))
+(defn hmap [kvs [:list [:ref :edn/v]]] [:ref :edn/v] (mk 3 "" 0 kvs))
+(defn auto-map [kvs [:list [:ref :edn/v]]] [:ref :edn/v] (if (> (vector-count kvs) 16) (hmap kvs) (amap kvs)))
+(defn set-of [xs [:list [:ref :edn/v]]] [:ref :edn/v] (mk 5 "" 0 xs))
+
+(defn map-entries [m [:ref :edn/v]] [:list [:ref :edn/v]] (items m))
+
+;; index of key text t in the map, -1 when absent
+(defn- key-at [m [:ref :edn/v] t :string] :i64
+  (let [xs (items m) n (vector-count xs)]
+    (loop [i 0] (cond (>= i n) -1 (string=? (text (nth-of xs i)) t) i :else (recur (+ i 2))))))
+
+(defn map-get [m [:ref :edn/v] k [:ref :edn/v]] [:ref :edn/v]
+  (let [i (key-at m (text k))] (if (< i 0) (nil-v) (nth-of (items m) (+ i 1)))))
+
+;; cljs assoc: replace in place, else append (an array map of 8 entries becomes a hash map on the 9th)
+(defn map-assoc [m [:ref :edn/v] k [:ref :edn/v] v [:ref :edn/v]] [:ref :edn/v]
+  (let [i (key-at m (text k))
+        xs (items m)
+        n (vector-count xs)]
+    (if (< i 0)
+      (let [ys (conj2 xs k v)]
+        (if (and (= (kind m) 2) (<= (vector-count ys) 16)) (amap ys) (hmap ys)))
+      (let [ys (loop [j 0 acc (none)]
+                 (if (>= j n) acc (recur (+ j 1) (conj1 acc (if (= j (+ i 1)) v (nth-of xs j))))))]
+        (mk (kind m) "" 0 ys)))))
+
+;; ---------------------------------------------------------------------------
+;; printing
+
+;; HAMT order key: the 5-bit groups of the unsigned 32-bit hash, low group most significant
+(defn- trie-key [h :i64] :i64
+  (let [u (u32 h)]
+    (bit-or (i64-shift-left (bit-and u 31) 30)
+     (bit-or (i64-shift-left (bit-and (u64-shift-right u 5) 31) 25)
+      (bit-or (i64-shift-left (bit-and (u64-shift-right u 10) 31) 20)
+       (bit-or (i64-shift-left (bit-and (u64-shift-right u 15) 31) 15)
+        (bit-or (i64-shift-left (bit-and (u64-shift-right u 20) 31) 10)
+         (bit-or (i64-shift-left (bit-and (u64-shift-right u 25) 31) 5)
+                 (u64-shift-right u 30)))))))))
+
+;; stable merge sort of the indices 0..n-1 by keys (ascending); each pass writes a fresh vector (vector-assoc!)
+(defn- merge-run [keys :vector-i64 src :vector-i64 dst :vector-i64 lo :i64 mid :i64 hi :i64] :i64
+  (loop [i lo j mid k lo]
+    (cond (>= k hi) 0
+          (and (< i mid) (or (>= j hi) (<= (vector-at keys (vector-at src i)) (vector-at keys (vector-at src j)))))
+          (let [_ (vector-assoc! dst k (vector-at src i))] (recur (+ i 1) j (+ k 1)))
+          :else (let [_ (vector-assoc! dst k (vector-at src j))] (recur i (+ j 1) (+ k 1))))))
+
+(defn- merge-pass [keys :vector-i64 src :vector-i64 w :i64] :vector-i64
+  (let [n (vector-count src)
+        dst (vector-alloc n)]
+    (loop [lo 0]
+      (if (>= lo n)
+        dst
+        (let [mid (if (> (+ lo w) n) n (+ lo w))
+              hi (if (> (+ lo (* 2 w)) n) n (+ lo (* 2 w)))
+              _ (merge-run keys src dst lo mid hi)]
+          (recur hi))))))
+
+(defn- sort-idx [keys :vector-i64] :vector-i64
+  (let [n (vector-count keys)
+        idx (loop [i 0 acc (vector-alloc 0)] (if (>= i n) acc (recur (+ i 1) (vector-conj acc i))))]
+    (loop [w 1 v idx]
+      (if (>= w n) v (recur (* w 2) (merge-pass keys v w))))))
+
+;; pieces -> one string, pairwise (n log n bytes copied)
+(defn join [ps [:list :string]] :string
+  (loop [xs ps]
+    (let [n (vector-count xs)]
+      (cond (= n 0) ""
+            (= n 1) (typed-list-nth [:list :string] xs 0)
+            :else (recur (loop [i 0 acc (typed-list-new [:list :string])]
+                           (cond (>= i n) acc
+                                 (= (+ i 1) n) (typed-list-conj [:list :string] acc (typed-list-nth [:list :string] xs i))
+                                 :else (recur (+ i 2) (typed-list-conj [:list :string] acc
+                                                                       (string-concat (typed-list-nth [:list :string] xs i)
+                                                                                      (typed-list-nth [:list :string] xs (+ i 1))))))))))))
+
+(defn- put [ps [:list :string] s :string] [:list :string] (typed-list-conj [:list :string] ps s))
+
+(defn- emit-seq [ps [:list :string] xs [:list [:ref :edn/v]] open :string close :string] [:list :string]
+  (let [n (vector-count xs)]
+    (loop [i 0 acc (put ps open)]
+      (if (>= i n)
+        (put acc close)
+        (recur (+ i 1) (emit (if (> i 0) (put acc " ") acc) (nth-of xs i)))))))
+
+(defn- emit-map-order [ps [:list :string] xs [:list [:ref :edn/v]] order :vector-i64] [:list :string]
+  (let [n (vector-count order)]
+    (loop [i 0 acc (put ps "{")]
+      (if (>= i n)
+        (put acc "}")
+        (let [e (vector-at order i)
+              a1 (if (> i 0) (put acc ", ") acc)
+              a2 (emit a1 (nth-of xs (* 2 e)))]
+          (recur (+ i 1) (emit (put a2 " ") (nth-of xs (+ (* 2 e) 1)))))))))
+
+(defn- in-order [n :i64] :vector-i64
+  (loop [i 0 acc (vector-alloc 0)] (if (>= i n) acc (recur (+ i 1) (vector-conj acc i)))))
+
+(defn- hash-order [xs [:list [:ref :edn/v]] step :i64] :vector-i64
+  (let [n (quot (vector-count xs) step)
+        keys (loop [i 0 acc (vector-alloc 0)]
+               (if (>= i n) acc (recur (+ i 1) (vector-conj acc (trie-key (hash-of (nth-of xs (* step i))))))))]
+    (sort-idx keys)))
+
+(defn- emit-set [ps [:list :string] xs [:list [:ref :edn/v]]] [:list :string]
+  (let [order (if (> (vector-count xs) 8) (hash-order xs 1) (in-order (vector-count xs)))
+        n (vector-count order)]
+    (loop [i 0 acc (put ps "#{")]
+      (if (>= i n)
+        (put acc "}")
+        (recur (+ i 1) (emit (if (> i 0) (put acc " ") acc) (nth-of xs (vector-at order i))))))))
+
+(defn- emit [ps [:list :string] v [:ref :edn/v]] [:list :string]
+  (let [k (kind v)]
+    (cond (= k 0) (put ps (text v))
+          (= k 1) (emit-seq ps (items v) "[" "]")
+          (= k 4) (emit-seq ps (items v) "(" ")")
+          (= k 2) (emit-map-order ps (items v) (in-order (quot (vector-count (items v)) 2)))
+          (= k 3) (emit-map-order ps (items v) (hash-order (items v) 2))
+          :else (emit-set ps (items v)))))
+
+(defn pr [v [:ref :edn/v]] :string (join (emit (typed-list-new [:list :string]) v)))
+(defn pr-line [v [:ref :edn/v]] :string (string-concat (pr v) "\n"))

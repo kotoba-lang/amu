@@ -1,0 +1,170 @@
+(ns amu.refactor-graph
+  {:kotoba/export [graph parse-or-refuse]}
+  (:require [amu.edn :as e]
+            [amu.refactor-io :as io]
+            [kotoba.compiler.refactor.cst :as cst]
+            [kotoba.compiler.refactor.cljs-order :as ord]
+            [kotoba.compiler.refactor.graph :as g])
+  (:schemas {:rg/dv [:record :rg/dv [[:names [:list :string]] [:defs :vector-i64]]]}))
+
+;; seed/amu-main/src/amu/refactor_graph.kotoba -- `amu refactor graph` on the Kotoba route (agent REFAC, 2026-10-04):
+;; refactor-cli graph-cmd / analyse / edn-out over the graph twin (kotoba.compiler.refactor.graph), and graph.cljk
+;; graph-data's payload as EDN in the host's key order (amu.edn: the 12-key answer and the 10-key node maps are hash
+;; maps, :dynamic-vars a sorted map).
+
+(defn- strs-v [xs [:list :string]] [:ref :edn/v]
+  (let [n (vector-count xs)]
+    (loop [i 0 acc (e/vs)] (if (>= i n) (e/vec acc) (recur (+ i 1) (e/conj1 acc (e/str (typed-list-nth [:list :string] xs i))))))))
+
+(defn- ints-v [xs :vector-i64] [:ref :edn/v]
+  (let [n (vector-count xs)]
+    (loop [i 0 acc (e/vs)] (if (>= i n) (e/vec acc) (recur (+ i 1) (e/conj1 acc (e/int (vector-at xs i))))))))
+
+(defn- kv [acc [:list [:ref :edn/v]] k :string v [:ref :edn/v]] [:list [:ref :edn/v]] (e/conj2 acc (e/kw k) v))
+
+;; analyse: read and parse-check; "" text + the refusal status when it fails
+(defn parse-or-refuse [path :string src :string] :i64
+  (let [o (cst/parse src)]
+    (if (> (string-byte-length (cst/out-err o)) 0)
+      (io/refuse "decode" "refactor/parse-error" (string-concat path (string-concat ": " (cst/out-err o))))
+      0)))
+
+(defn- dynamic-names [c [:ref :graph/chunk]] [:list :string]
+  (let [ns (g/chunk-names c) n (vector-count ns)]
+    (loop [i 0 acc (typed-list-new [:list :string])]
+      (if (>= i n) acc
+          (recur (+ i 1) (let [x (typed-list-nth [:list :string] ns i)] (if (g/chunk-dynamic? c x) (typed-list-conj [:list :string] acc x) acc)))))))
+
+(defn- node-map [src :string c [:ref :graph/chunk] line :i64] [:ref :edn/v]
+  (let [names (g/chunk-names c)]
+    (e/auto-map
+     (kv (kv (kv (kv (kv (kv (kv (kv (kv (kv (e/vs)
+                                             "id" (e/int (g/chunk-idx c)))
+                                         "names" (strs-v names))
+                                     "head" (strs-v (g/chunk-heads c)))
+                                 "line" (e/int line))
+                             "lines" (e/int (g/chunk-lines c)))
+                         "private" (e/bool (and (> (vector-count names) 0) (g/chunk-any-private? c))))
+                     "dynamic" (strs-v (dynamic-names c)))
+                 "declares" (strs-v (g/chunk-declares c)))
+             "kotoba-branch" (e/bool (g/chunk-kotoba? c)))
+         "binds-dynamic" (strs-v (ord/sort-strs (g/chunk-binds c)))))))
+
+;; [u v w] for u in order, (sort (get adj u)) = by v
+(defn- edge-list [a [:ref :graph/a]] [:list [:ref :edn/v]]
+  (let [adj (g/a-adj a)
+        n (vector-count adj)]
+    (loop [u 0 acc (e/vs)]
+      (if (>= u n)
+        acc
+        (let [row (g/adj-at adj u)
+              ts (g/adj-targets row)
+              ws (g/adj-weights row)
+              o (ord/sort-idx ts)
+              m (vector-count o)]
+          (recur (+ u 1)
+                 (loop [k 0 a2 acc]
+                   (if (>= k m) a2
+                       (recur (+ k 1) (e/conj1 a2 (e/vec (e/vs3 (e/int u) (e/int (vector-at ts (vector-at o k)))
+                                                                (e/int (vector-at ws (vector-at o k)))))))))))))))
+
+(defn- comp-lines [a [:ref :graph/a] c :vector-i64] :i64
+  (let [chunks (g/a-chunks a) n (vector-count c)]
+    (loop [i 0 s 0] (if (>= i n) s (recur (+ i 1) (+ s (g/chunk-lines (g/chunk-at chunks (vector-at c i)))))))))
+
+;; full: {:size :lines :members}; summary: {:size :lines}
+(defn- sccs [a [:ref :graph/a] full :bool] [:ref :edn/v]
+  (let [cs (g/a-comps a) n (g/comps-count cs)]
+    (loop [i 0 acc (e/vs)]
+      (if (>= i n)
+        (e/vec acc)
+        (let [c (g/comps-at cs i)]
+          (recur (+ i 1)
+                 (if (> (vector-count c) 1)
+                   (e/conj1 acc (e/amap (let [b (kv (kv (e/vs) "size" (e/int (vector-count c))) "lines" (e/int (comp-lines a c)))]
+                                          (if full (kv b "members" (ints-v c)) b))))
+                   acc)))))))
+
+(defn- read-by [a [:ref :graph/a] x :string bound :bool] :vector-i64
+  (let [chunks (g/a-chunks a) n (g/chunk-count chunks)]
+    (loop [i 0 acc (vector-alloc 0)]
+      (if (>= i n)
+        acc
+        (let [d (g/chunk-at chunks i)
+              hit (if bound (g/chunk-binds? d x) (and (g/chunk-refers? d x) (not (g/chunk-binds? d x))))]
+          (recur (+ i 1) (if hit (vector-conj acc (g/chunk-idx d)) acc)))))))
+
+;; the dynamic vars: names in definition order (a later definition replaces an earlier one), printed sorted
+(defn- dynamic-vars [a [:ref :graph/a]] [:ref :edn/v]
+  (let [chunks (g/a-chunks a) n (g/chunk-count chunks)
+        rows (loop [i 0 names (typed-list-new [:list :string]) defs (vector-alloc 0)]
+               (if (>= i n)
+                 (record-new [:ref :rg/dv] names defs)
+                 (let [c (g/chunk-at chunks i)
+                       ds (dynamic-names c)
+                       m (vector-count ds)
+                       r (loop [k 0 nm names df defs]
+                           (if (>= k m)
+                             (record-new [:ref :rg/dv] nm df)
+                             (let [x (typed-list-nth [:list :string] ds k)
+                                   at (loop [j 0] (cond (>= j (vector-count nm)) -1
+                                                        (string=? (typed-list-nth [:list :string] nm j) x) j
+                                                        :else (recur (+ j 1))))]
+                               (if (< at 0)
+                                 (recur (+ k 1) (typed-list-conj [:list :string] nm x) (vector-conj df (g/chunk-idx c)))
+                                 (recur (+ k 1) nm (vector-assoc df at (g/chunk-idx c)))))))]
+                   (recur (+ i 1) (record-get [:ref :rg/dv] r :names) (record-get [:ref :rg/dv] r :defs)))))
+        names (record-get [:ref :rg/dv] rows :names)
+        defs (record-get [:ref :rg/dv] rows :defs)
+        sorted (ord/sort-strs names)
+        m (vector-count sorted)]
+    (e/amap
+     (loop [k 0 acc (e/vs)]
+       (if (>= k m)
+         acc
+         (let [x (typed-list-nth [:list :string] sorted k)
+               at (loop [j 0] (if (string=? (typed-list-nth [:list :string] names j) x) j (recur (+ j 1))))]
+           (recur (+ k 1)
+                  (e/conj2 acc (e/str x)
+                           (e/amap (kv (kv (kv (e/vs) "defined-in" (e/int (vector-at defs at)))
+                                           "read-by" (ints-v (ord/sort-ints (read-by a x false))))
+                                       "bound-by" (ints-v (ord/sort-ints (read-by a x true)))))))))))))
+
+(defn graph [path :string summary :bool out :string has-out :bool] :i64
+  (let [src (io/read-file path)
+        st (parse-or-refuse path src)]
+    (if (> st 0)
+      st
+      (let [a (g/analysis src)
+            chunks (g/a-chunks a)
+            n (g/chunk-count chunks)
+            ;; line-of per chunk, counted incrementally (chunks come in source order)
+            nodes (loop [i 0 pos 0 line 1 acc (e/vs)]
+                    (if (>= i n)
+                      (e/vec acc)
+                      (let [c (g/chunk-at chunks i)
+                            l2 (+ line (g/count-newlines src pos (g/chunk-s c)))]
+                        (recur (+ i 1) (g/chunk-s c) l2 (e/conj1 acc (node-map src c l2))))))
+            el (edge-list a)
+            dv (dynamic-vars a)
+            head (kv (kv (kv (kv (kv (e/vs) "format" (e/kw "kotoba.refactor/v1")) "kind" (e/kw "graph"))
+                             "source-forms" (e/int n))
+                         "names" (e/int (g/a-top-count a)))
+                     "edges" (e/int (e/count-of el)))
+            full (e/hmap (kv (kv (kv (kv (kv (kv (kv head "nodes" nodes) "edge-list" (e/vec el)) "sccs" (sccs a true))
+                                         "dynamic-vars" dv)
+                                     "command" (e/kw "graph"))
+                                 "path" (e/str path))
+                             "ok" (e/bool true)))
+            summ (kv (kv (kv (kv (kv (kv (kv (kv (e/vs) "format" (e/kw "kotoba.refactor/v1")) "kind" (e/kw "graph"))
+                                             "command" (e/kw "graph"))
+                                         "path" (e/str path))
+                                     "ok" (e/bool true))
+                                 "source-forms" (e/int n))
+                             "names" (e/int (g/a-top-count a)))
+                         "edges" (e/int (e/count-of el)))
+            summ2 (kv (kv summ "sccs" (sccs a false)) "dynamic-vars" (e/int (quot (e/count-of (e/map-entries dv)) 2)))]
+        (cond summary (io/answer (e/hmap summ2) 0)
+              has-out (let [w (io/write-file out (e/pr-line full))]
+                        (io/answer (e/hmap (kv summ2 "out" (e/str out))) 0))
+              :else (io/answer full 0))))))

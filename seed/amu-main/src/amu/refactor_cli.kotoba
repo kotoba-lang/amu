@@ -1,0 +1,213 @@
+(ns amu.refactor-cli
+  {:kotoba/export [run]}
+  (:require [amu.cli :as cli]
+            [amu.edn :as e]
+            [amu.refactor-io :as io]
+            [amu.refactor-graph :as rg]
+            [kotoba.compiler.refactor.rules :as rules]))
+
+;; seed/amu-main/src/amu/refactor_cli.kotoba -- `amu refactor` on the Kotoba route (agent REFAC, 2026-10-04).
+;;
+;; The dispatcher of src/kotoba/compiler/refactor_cli.cljk `run` plus the printing of
+;; src/kotoba/compiler/nbb/refactor_cli.cljk `main`: the same argument parser (value flags, switches, "unknown flag",
+;; "needs a value"), the same sub-command routing, the same answer (one EDN map, `:format :kotoba.refactor/v1`, printed
+;; as nbb's pr-str prints it, amu.edn) and the same refusals (`:kotoba.cli-error/v1` on stderr, exit 64 usage /
+;; 65 decode / 74 output). The library behind it is the guest twins of kotoba.compiler.refactor.* (kotoba-lang
+;; lang/compat/kotoba/compiler/refactor/*.kotoba); what has no twin yet is a DECLARED STUB (amu.cli/not-available,
+;; exit 69, naming exactly what is missing), never counted as behaviour. seed/amu-main/REFACTOR.md has the table.
+;;
+;; argv: arg 0 is "refactor", arg 1 the sub-command, the rest its words. Paths are taken as given; bin/amu resolves
+;; relative ones against the caller's cwd before the nbb entry sees them (resolveRefactorPaths), which is the
+;; launcher's job here too.
+
+(defn- refuse [phase :string code :string msg :string] :i64 (io/refuse phase code msg))
+(defn- usage [msg :string] :i64 (io/refuse "usage" "refactor/usage" msg))
+(defn- answer [v [:ref :edn/v] status :i64] :i64 (io/answer v status))
+
+;; ---------------------------------------------------------------------------
+;; arguments (refactor-cli parse-args)
+
+(defn- value-flag? [a :string] :bool
+  (or (string=? a "--out") (string=? a "--partition") (string=? a "--ns") (string=? a "--modules")
+      (string=? a "--driver") (string=? a "--names") (string=? a "--target") (string=? a "--regions")
+      (string=? a "--observable-from") (string=? a "--max-passes") (string=? a "--runner") (string=? a "--classpath")
+      (string=? a "--classpath-file") (string=? a "--base-first") (string=? a "--candidate-first") (string=? a "--nbb")
+      (string=? a "--stack-size") (string=? a "--patch-out")))
+
+(defn- switch-flag? [a :string] :bool
+  (or (string=? a "--check") (string=? a "--include-ported") (string=? a "--lower-accessor") (string=? a "--no-diff")
+      (string=? a "--summary")))
+
+(defn- dashdash? [a :string] :bool
+  (and (>= (string-byte-length a) 2) (= (string-code-point-at a 0) 45) (= (string-code-point-at a 1) 45)))
+
+;; the first argument error of argv[2..] ("" when none): parse-args refuses before any sub-command runs
+(defn- args-error [] :string
+  (let [n (cli/argc)]
+    (loop [i 2]
+      (if (>= i n)
+        ""
+        (let [a (cli/arg i)]
+          (cond (value-flag? a) (if (< (+ i 1) n) (recur (+ i 2)) (string-concat a " needs a value"))
+                (switch-flag? a) (recur (+ i 1))
+                (dashdash? a) (string-concat "unknown flag " a)
+                :else (recur (+ i 1))))))))
+
+;; the flag's value (the LAST occurrence wins, as assoc does), "" when absent; has? for presence
+(defn flag [f :string] :string
+  (let [n (cli/argc)]
+    (loop [i 2 v ""]
+      (if (>= i n)
+        v
+        (let [a (cli/arg i)]
+          (cond (value-flag? a) (recur (+ i 2) (if (string=? a f) (cli/arg (+ i 1)) v))
+                :else (recur (+ i 1) v)))))))
+
+(defn has? [f :string] :bool
+  (let [n (cli/argc)]
+    (loop [i 2]
+      (if (>= i n)
+        false
+        (let [a (cli/arg i)]
+          (cond (value-flag? a) (if (string=? a f) true (recur (+ i 2)))
+                (string=? a f) true
+                :else (recur (+ i 1))))))))
+
+;; the positional words in order
+(defn positional [] [:list :string]
+  (let [n (cli/argc)]
+    (loop [i 2 acc (typed-list-new [:list :string])]
+      (if (>= i n)
+        acc
+        (let [a (cli/arg i)]
+          (cond (value-flag? a) (recur (+ i 2) acc)
+                (switch-flag? a) (recur (+ i 1) acc)
+                :else (recur (+ i 1) (typed-list-conj [:list :string] acc a))))))))
+
+(defn- npos [] :i64 (vector-count (positional)))
+(defn- pos-at [i :i64] :string (typed-list-nth [:list :string] (positional) i))
+
+;; ---------------------------------------------------------------------------
+;; list-rules
+
+(defn- kws [xs [:list :string]] [:ref :edn/v]
+  (let [n (vector-count xs)]
+    (loop [i 0 acc (e/vs)]
+      (if (>= i n) (e/vec acc) (recur (+ i 1) (e/conj1 acc (e/kw (typed-list-nth [:list :string] xs i))))))))
+
+(defn- rule-map [r [:ref :rules/entry]] [:ref :edn/v]
+  (let [base (e/conj2 (e/conj2 (e/conj2 (e/conj2 (e/vs) (e/kw "id") (e/kw (rules/entry-id r)))
+                                        (e/kw "name") (e/kw (rules/entry-name r)))
+                               (e/kw "summary") (e/str (rules/entry-summary r)))
+                      (e/kw "host-effect") (e/str (rules/entry-host-effect r)))]
+    (e/amap (if (rules/entry-needs-target? r) (e/conj2 base (e/kw "needs-target") (e/bool true)) base))))
+
+(defn- commands [] [:ref :edn/v]
+  (e/vec (e/conj1 (e/conj1 (e/conj1 (e/conj1 (e/conj1 (e/conj1 (e/conj1 (e/vs) (e/kw "list-rules")) (e/kw "plan"))
+                                                       (e/kw "apply")) (e/kw "graph")) (e/kw "partition"))
+                           (e/kw "split")) (e/kw "verify"))))
+
+(defn- list-rules [] :i64
+  (let [lib (rules/library)
+        n (rules/entries-count lib)
+        rs (loop [i 0 acc (e/vs)] (if (>= i n) acc (recur (+ i 1) (e/conj1 acc (rule-map (rules/entries-nth lib i))))))]
+    (answer (e/amap (e/conj2 (e/conj2 (e/conj2 (e/conj2 (e/conj2 (e/conj2 (e/vs) (e/kw "format") (e/kw "kotoba.refactor/v1"))
+                                                                 (e/kw "command") (e/kw "list-rules"))
+                                                        (e/kw "ok") (e/bool true))
+                                               (e/kw "standard-order") (kws (rules/standard-order)))
+                                      (e/kw "rules") (e/vec rs))
+                             (e/kw "commands") (commands)))
+            0)))
+
+;; ---------------------------------------------------------------------------
+;; rules (refactor-cli resolve-rule-spec): "" when fine, else the refusal already printed is signalled by the status
+
+(defn- rule-spec-status [spec :string] :i64
+  (let [es (rules/resolve-rules spec)
+        n (rules/entries-count es)
+        unk (loop [i 0] (cond (>= i n) -1 (rules/entry-unknown? (rules/entries-nth es i)) i :else (recur (+ i 1))))
+        nt (loop [i 0] (cond (>= i n) false (rules/entry-needs-target? (rules/entries-nth es i)) true :else (recur (+ i 1))))]
+    (cond (= n 0) (usage "no rule named")
+          (>= unk 0) (refuse "usage" "refactor/unknown-rule"
+                             (string-concat "unknown rule "
+                                            (string-concat (rules/entry-unknown (rules/entries-nth es unk))
+                                                           "; see `amu refactor list-rules`")))
+          (and nt (not (has? "--target"))) (refuse "usage" "refactor/target-required" "rule c needs --target dual|host-env")
+          :else 0)))
+
+;; the source files under the paths (refactor-cli expand-paths), or a refusal
+(defn- plan-or-apply [sub :string] :i64
+  (if (< (npos) 2)
+    (usage (if (string=? sub "plan")
+             "usage: amu refactor plan <rules> <path>..."
+             "usage: amu refactor apply <rules> <path>... [--check]"))
+    (let [st (rule-spec-status (pos-at 0))]
+      (if (> st 0)
+        st
+        (let [fs (io/expand-paths (positional) 1)]
+          (if (> (string-byte-length (io/files-error fs)) 0)
+            (refuse "decode" (io/files-code fs) (io/files-error fs))
+            (if (and (string=? sub "apply") (has? "--out") (> (vector-count (io/files-list fs)) 1))
+              (usage "--out names one file; give one path")
+              (cli/not-available (string-concat "refactor " sub)
+                                 "\"kotoba.compiler.refactor.core: guest twin not written (driver find/select/apply over the cst/edit twins)\" \"kotoba.compiler.refactor.rules.{destructure,reject,dynvars,kwcallback,letdestructure,lowerloops}: guest twins not written\""))))))))
+
+;; ---------------------------------------------------------------------------
+;; graph / partition / split
+
+;; the one path of graph/partition/split (refactor-cli one-path): "" and a printed refusal (status in one-path-status)
+(defn- one-path-status [u :string] :i64
+  (cond (not (= (npos) 1)) (usage u)
+        (not (string=? (io/kind (pos-at 0)) "file")) (refuse "decode" "refactor/unreadable" (string-concat "not a file: " (pos-at 0)))
+        :else 0))
+
+(defn- graph-cmd [] :i64
+  (let [st (one-path-status "usage: amu refactor graph <path> [--summary] [--out FILE]")]
+    (if (> st 0) st (rg/graph (pos-at 0) (has? "--summary") (flag "--out") (has? "--out")))))
+
+(defn- int-flag-ok? [f :string] :bool (or (not (has? f)) (io/js-number-ok? (flag f))))
+
+(defn- partition-cmd [] :i64
+  (let [st (one-path-status "usage: amu refactor partition <path> [--modules N] [--driver FORM] [--names FILE] [--out FILE]")]
+    (cond (> st 0) st
+          (not (int-flag-ok? "--modules")) (usage "--modules must be a decimal integer")
+          :else (cli/not-available "refactor partition"
+                                   "\"kotoba.compiler.refactor.partition: guest twin not written\""))))
+
+(defn- split-cmd [] :i64
+  (let [st (one-path-status "usage: amu refactor split <path> --partition FILE --out DIR [--ns NAME]")]
+    (cond (> st 0) st
+          (not (has? "--partition")) (usage "split needs --partition FILE (from `amu refactor partition --out FILE`)")
+          (not (has? "--out")) (usage "split needs --out DIR")
+          :else (cli/not-available "refactor split"
+                                   "\"kotoba.compiler.refactor.extract: guest twin not written\" \"kotoba.compiler.refactor.partition: guest twin not written\""))))
+
+;; ---------------------------------------------------------------------------
+;; verify
+
+(defn- verify-cmd [] :i64
+  (cond (> (npos) 0) (usage "usage: amu refactor verify --runner FILE --classpath CP [options]")
+        (not (has? "--runner")) (usage "verify needs --runner FILE (a script that prints cljs.test reports)")
+        (and (not (has? "--classpath")) (not (has? "--classpath-file")))
+        (usage "verify needs --classpath CP or --classpath-file FILE")
+        (not (int-flag-ok? "--stack-size")) (usage "--stack-size must be a decimal integer")
+        :else (cli/not-available "refactor verify"
+                                 "\"amu refactor verify: runs node/nbb twice through wire 20 (process spawn), which the amu image never holds (seed/amu-main/REFACTOR.md); the comparison itself is the kotoba.compiler.refactor.verify twin\"")))
+
+;; ---------------------------------------------------------------------------
+
+(defn run [] :i64
+  (let [ae (args-error)]
+    (cond (> (string-byte-length ae) 0) (usage ae)
+          (< (cli/argc) 2) (usage "usage: amu refactor <list-rules|plan|apply|graph|partition|split|verify> ...")
+          :else
+          (let [sub (cli/arg 1)]
+            (cond (string=? sub "list-rules") (list-rules)
+                  (string=? sub "plan") (plan-or-apply sub)
+                  (string=? sub "apply") (plan-or-apply sub)
+                  (string=? sub "graph") (graph-cmd)
+                  (string=? sub "partition") (partition-cmd)
+                  (string=? sub "split") (split-cmd)
+                  (string=? sub "verify") (verify-cmd)
+                  :else (usage (string-concat "unknown refactor command "
+                                              (string-concat sub "; one of list-rules plan apply graph partition split verify"))))))))

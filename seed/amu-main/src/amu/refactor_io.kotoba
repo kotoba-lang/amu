@@ -1,0 +1,296 @@
+(ns amu.refactor-io
+  {:kotoba/export [refuse answer kind read-file write-file rename mkdirs list-dir expand-paths files-list files-error files-code
+                   js-number-ok? js-number]}
+  (:require [amu.cli :as cli]
+            [amu.edn :as e]
+            [kotoba.compiler.refactor.cljs-order :as ord])
+  (:schemas {:rio/files [:record :rio/files [[:files [:list :string]] [:error :string] [:code :string]]]}))
+
+;; seed/amu-main/src/amu/refactor_io.kotoba -- the I/O record of `amu refactor` on the Kotoba route (agent REFAC,
+;; 2026-10-04): what src/kotoba/compiler/nbb/refactor_cli.cljk host-io gives refactor-cli over nbb's fs, through the
+;; loader's wires instead: 35 (:fs/app-data: a bare path reads, STAT_SEP / WRITE_SEP / RENAME_SEP / MKDIR_SEP) and
+;; 34 (:fs/browse: "NAME<TAB>D" lines, bytewise sorted). No wire 20: this module never starts a process.
+;; Wire-35 tokens are built at run time (seed/02-io.kotoba io-sep's rule: a literal holding a token is refused by the
+;; provider's single-occurrence rule when it travels as content).
+
+;; the refusal report of nbb cli-support/refusal for an ex-info {:phase PHASE :kotoba.error/code CODE}: SOURCE is the
+;; sub-command word (nbb passes (second args)), named in :source only when it has a source extension. Exit 64 usage,
+;; 74 output, 65 the rest (decode).
+(defn refuse [phase :string code :string msg :string] :i64
+  (let [sub (if (> (cli/argc) 1) (cli/arg 1) "")
+        diag0 (e/vs2 (e/kw "format") (e/kw "kotoba.diagnostic/v1"))
+        diag1 (e/conj2 (e/conj2 diag0 (e/kw "code") (e/kw code)) (e/kw "severity") (e/kw "error"))
+        diag (if (source-ext? sub) (e/conj2 diag1 (e/kw "source") (e/str (basename sub))) diag1)
+        rep (e/amap (e/conj2 (e/conj2 (e/conj2 (e/conj2 (e/conj2 (e/vs) (e/kw "format") (e/kw "kotoba.cli-error/v1"))
+                                                (e/kw "ok") (e/bool false))
+                                       (e/kw "error") (e/kw phase))
+                              (e/kw "diagnostic") (e/amap diag))
+                     (e/kw "message") (e/str msg)))
+        w (cli/err (e/pr-line rep))]
+    (cond (string=? phase "usage") 64
+          (string=? phase "output") 74
+          :else 65)))
+
+;; source-path/source-kind's extensions, and posix basename (UTF-8 safe: amu.cli's byte loops trap on a non-ASCII
+;; argument, string-code-point-at inside a code point)
+(defn- source-ext? [s :string] :bool
+  (or (ends-with? s ".kotoba") (ends-with? s ".cljk") (ends-with? s ".cljc")))
+
+(defn- basename [s :string] :string
+  (let [n (string-byte-length s)
+        k (loop [i 0 k 0] (if (>= i n) k (let [p (string-code-point-at s i)] (recur (+ i (cpw p)) (if (= p 47) (+ i 1) k)))))]
+    (string-substring s k n)))
+
+;; the answer: one EDN map on stdout, the status as given
+(defn answer [v [:ref :edn/v] status :i64] :i64
+  (let [w (cli/out (e/pr-line v))] status))
+
+(defn- tok [a :string] :string (string-concat a "_SEP"))
+(defn- app [req :string] :string (typed-cap-call :fs/app-data :string :string req))
+
+(defn- cpw [p :i64] :i64 (if (< p 128) 1 (if (< p 2048) 2 (if (< p 65536) 3 4))))
+
+;; the code-point boundary at or after byte k (string-substring and string-code-point-at trap inside a code point)
+(defn- boundary-from [s :string k :i64] :i64
+  (let [n (string-byte-length s)]
+    (loop [i 0] (if (or (>= i k) (>= i n)) i (recur (+ i (cpw (string-code-point-at s i))))))))
+
+(defn- ends-with? [s :string t :string] :bool
+  (let [n (string-byte-length s) m (string-byte-length t)]
+    (and (>= n m) (= (boundary-from s (- n m)) (- n m)) (string=? (string-substring s (- n m) n) t))))
+
+(defn- starts-with? [s :string t :string] :bool
+  (let [n (string-byte-length s) m (string-byte-length t)]
+    (and (>= n m) (= (boundary-from s m) m) (string=? (string-substring s 0 m) t))))
+
+;; "dir", "file", or "" when absent (host-io :kind: STAT "" -> nil, "... 1" -> :dir, else :file)
+(defn kind [path :string] :string
+  (let [a (app (string-concat path (tok "STAT")))]
+    (cond (= (string-byte-length a) 0) ""
+          (ends-with? a " 1") "dir"
+          :else "file")))
+
+(defn read-file [path :string] :string (app path))
+
+;; 1 when written
+(defn write-file [path :string text :string] :i64
+  (let [r (app (string-concat path (string-concat (tok "WRITE") text)))] 1))
+
+(defn rename [from :string to :string] :i64
+  (if (string=? (app (string-concat from (string-concat (tok "RENAME") to))) "1") 1 0))
+
+;; host-io :mkdirs: every prefix of the path, "0" when it exists
+;; host-io :mkdirs: every prefix of the path, "0" when it exists
+(defn mkdirs [dir :string] :i64
+  (let [n (string-byte-length dir)]
+    (loop [i 0 from 0 acc (if (starts-with? dir "/") "" "-")]
+      (if (> i n)
+        0
+        (if (or (= i n) (= (string-code-point-at dir i) 47))
+          (if (> i from)
+            (let [p (string-substring dir from i)
+                  path (if (string=? acc "-") p (string-concat acc (string-concat "/" p)))
+                  r (app (string-concat path (tok "MKDIR")))]
+              (recur (+ i 1) (+ i 1) path))
+            (recur (+ i 1) (+ i 1) acc))
+          (recur (+ i (cpw (string-code-point-at dir i))) from acc))))))
+
+(defn list-dir [dir :string] :string (typed-cap-call :fs/browse :string :string dir))
+
+;; ---------------------------------------------------------------------------
+;; expand-paths (refactor-cli): directories are searched for .cljk .cljc .clj .cljs files, names starting with "."
+;; and node_modules skipped; the result is distinct, in order
+
+(defn- source-file? [name :string] :bool
+  (or (ends-with? name ".cljk") (ends-with? name ".cljc") (ends-with? name ".clj") (ends-with? name ".cljs")))
+
+(defn- add [xs [:list :string] s :string] [:list :string] (typed-list-conj [:list :string] xs s))
+
+;; the entries of the listing at line i.. : name, flag
+(defn- line-end [t :string i :i64] :i64
+  (let [n (string-byte-length t)]
+    (loop [j i] (cond (>= j n) n (= (string-code-point-at t j) 10) j :else (recur (+ j (cpw (string-code-point-at t j))))))))
+
+(defn- tab-at [t :string i :i64 e :i64] :i64
+  (loop [j i] (cond (>= j e) e (= (string-code-point-at t j) 9) j :else (recur (+ j (cpw (string-code-point-at t j)))))))
+
+(defn- files-under [dir :string acc0 [:list :string]] [:list :string]
+  (let [t (list-dir dir)
+        n (string-byte-length t)]
+    (loop [i 0 acc acc0]
+      (if (>= i n)
+        acc
+        (let [e (line-end t i)
+              tb (tab-at t i e)
+              name (string-substring t i tb)
+              d (and (< (+ tb 1) e) (= (string-code-point-at t (+ tb 1)) 49))
+              p (string-concat dir (string-concat "/" name))
+              acc2 (cond (starts-with? name ".") acc
+                         (string=? name "node_modules") acc
+                         d (files-under p acc)
+                         (source-file? name) (add acc p)
+                         :else acc)]
+          (recur (+ e 1) acc2))))))
+
+(defn- strip-slashes [p :string] :string
+  (loop [q p]
+    (if (ends-with? q "/") (recur (string-substring q 0 (- (string-byte-length q) 1))) q)))
+
+(defn- member? [xs [:list :string] s :string] :bool
+  (let [n (vector-count xs)]
+    (loop [i 0] (cond (>= i n) false (string=? (typed-list-nth [:list :string] xs i) s) true :else (recur (+ i 1))))))
+
+(defn- distinct-strs [xs [:list :string]] [:list :string]
+  (let [n (vector-count xs)]
+    (loop [i 0 tab (ord/tab-new) acc (typed-list-new [:list :string])]
+      (if (>= i n)
+        acc
+        (let [s (typed-list-nth [:list :string] xs i)]
+          (if (>= (ord/tab-find tab acc s) 0)
+            (recur (+ i 1) tab acc)
+            (let [acc2 (add acc s)] (recur (+ i 1) (ord/tab-add tab acc2 (- (vector-count acc2) 1)) acc2))))))))
+
+(defn files-list [f [:ref :rio/files]] [:list :string] (record-get [:ref :rio/files] f :files))
+(defn files-error [f [:ref :rio/files]] :string (record-get [:ref :rio/files] f :error))
+(defn files-code [f [:ref :rio/files]] :string (record-get [:ref :rio/files] f :code))
+(defn- files [xs [:list :string] err :string code :string] [:ref :rio/files] (record-new [:ref :rio/files] xs err code))
+
+;; the paths are ps[start..]
+(defn expand-paths [ps [:list :string] start :i64] [:ref :rio/files]
+  (let [n (vector-count ps)]
+    (loop [i start acc (typed-list-new [:list :string])]
+      (if (>= i n)
+        (let [d (distinct-strs acc)]
+          (if (= (vector-count d) 0)
+            (files d "the paths hold no .cljk/.cljc/.clj/.cljs file" "refactor/no-paths")
+            (files d "" "")))
+        (let [p (typed-list-nth [:list :string] ps i)
+              k (kind p)]
+          (cond (string=? k "dir") (recur (+ i 1) (files-under (strip-slashes p) acc))
+                (string=? k "file") (recur (+ i 1) (add acc p))
+                :else (files (typed-list-new [:list :string]) (string-concat "no such file or directory: " p)
+                             "refactor/unreadable")))))))
+
+;; ---------------------------------------------------------------------------
+;; host-integer/decimal-count under nbb: (js/Number text) when it is a safe integer. Admitted here: JS white space
+;; around, "" -> 0, an optional sign, decimal digits with an optional fraction and exponent, and unsigned 0x / 0o / 0b.
+;; Anything else is NaN (refused), as in JS.
+
+(defn- js-ws? [p :i64] :bool
+  (or (= p 32) (= p 9) (= p 10) (= p 11) (= p 12) (= p 13) (= p 160) (= p 5760) (= p 8232) (= p 8233) (= p 8239)
+      (= p 8287) (= p 12288) (= p 65279) (and (>= p 8192) (<= p 8202))))
+
+(defn- cp-width [p :i64] :i64 (if (< p 128) 1 (if (< p 2048) 2 (if (< p 65536) 3 4))))
+
+(defn- trim-js [s :string] :string
+  (let [n (string-byte-length s)
+        a (loop [i 0] (if (and (< i n) (js-ws? (string-code-point-at s i))) (recur (+ i (cp-width (string-code-point-at s i)))) i))
+        ;; from the end: walk forward remembering the end of the last non-space code point
+        b (loop [i a last a]
+            (if (>= i n) last
+                (let [p (string-code-point-at s i) w (cp-width p)]
+                  (recur (+ i w) (if (js-ws? p) last (+ i w))))))]
+    (string-substring s a b)))
+
+(defn- digit-val [p :i64 radix :i64] :i64
+  (let [v (cond (and (>= p 48) (<= p 57)) (- p 48)
+                (and (>= p 97) (<= p 122)) (+ 10 (- p 97))
+                (and (>= p 65) (<= p 90)) (+ 10 (- p 65))
+                :else 99)]
+    (if (< v radix) v -1)))
+
+(def max-safe 9007199254740991)
+
+;; -1 when not a safe integer, else |value|; sign handled by the caller. radix digits only, all of them.
+(defn- radix-val [s :string i :i64 radix :i64] :i64
+  (let [n (string-byte-length s)]
+    (if (>= i n)
+      -1
+      (loop [j i v 0]
+        (cond (>= j n) v
+              (< (digit-val (string-code-point-at s j) radix) 0) -1
+              (> v (quot max-safe radix)) -2
+              :else (recur (+ j 1) (+ (* v radix) (digit-val (string-code-point-at s j) radix))))))))
+
+;; decimal with fraction and exponent: the exact integer value or -1 (not an integer / not safe / not a number)
+(defn- dec-val [s :string i :i64] :i64
+  (let [n (string-byte-length s)
+        ip (loop [j i] (if (and (< j n) (>= (digit-val (string-code-point-at s j) 10) 0)) (recur (+ j 1)) j))
+        fs (if (and (< ip n) (= (string-code-point-at s ip) 46)) (+ ip 1) ip)
+        fp (loop [j fs] (if (and (< j n) (>= (digit-val (string-code-point-at s j) 10) 0)) (recur (+ j 1)) j))
+        has-e (and (< fp n) (or (= (string-code-point-at s fp) 101) (= (string-code-point-at s fp) 69)))
+        es (if has-e (+ fp 1) fp)
+        eneg (and has-e (< es n) (= (string-code-point-at s es) 45))
+        ed (if (and has-e (< es n) (or (= (string-code-point-at s es) 45) (= (string-code-point-at s es) 43))) (+ es 1) es)
+        ep (loop [j ed] (if (and (< j n) (>= (digit-val (string-code-point-at s j) 10) 0)) (recur (+ j 1)) j))
+        ndig (+ (- ip i) (- fp fs))]
+    (cond (= ndig 0) -1
+          (and has-e (= ep ed)) -1
+          (< ep n) -1
+          :else
+          (let [ex0 (if has-e (radix-val (string-substring s ed ep) 0 10) 0)
+                ex (if eneg (- 0 ex0) ex0)
+                ;; digits = int part ++ fraction; value = digits * 10^(ex - fraction length)
+                digits (string-concat (string-substring s i ip) (string-substring s fs fp))
+                scale (- ex (- fp fs))
+                ;; drop trailing zeros into the scale
+                dl (loop [k (string-byte-length digits) sc scale]
+                     (if (and (> k 0) (< sc 0) (= (string-code-point-at digits (- k 1)) 48)) (recur (- k 1) (+ sc 1)) (+ (* k 1000000) (+ sc 500000))))
+                k (quot dl 1000000)
+                sc (- (- dl (* k 1000000)) 500000)
+                lead (loop [j 0] (if (and (< j k) (= (string-code-point-at digits j) 48)) (recur (+ j 1)) j))]
+            (cond (< ex0 0) -1
+                  (= lead k) 0
+                  (< sc 0) -1
+                  (> (+ (- k lead) sc) 16) -1
+                  :else
+                  (let [v (radix-val (string-substring digits lead k) 0 10)]
+                    (if (< v 0) -1
+                        (loop [x v c sc] (cond (= c 0) (if (> x max-safe) -1 x)
+                                               (> x (quot max-safe 10)) -1
+                                               :else (recur (* x 10) (- c 1)))))))))))
+
+;; [ok value] packed: -1 when not a safe integer
+(defn- js-num [s0 :string] :i64
+  (let [s (trim-js s0)
+        n (string-byte-length s)]
+    (cond (= n 0) 0
+          (and (> n 2) (= (string-code-point-at s 0) 48)
+               (or (= (string-code-point-at s 1) 120) (= (string-code-point-at s 1) 88)))
+          (let [v (radix-val s 2 16)] (if (< v 0) -1 v))
+          (and (> n 2) (= (string-code-point-at s 0) 48)
+               (or (= (string-code-point-at s 1) 111) (= (string-code-point-at s 1) 79)))
+          (let [v (radix-val s 2 8)] (if (< v 0) -1 v))
+          (and (> n 2) (= (string-code-point-at s 0) 48)
+               (or (= (string-code-point-at s 1) 98) (= (string-code-point-at s 1) 66)))
+          (let [v (radix-val s 2 2)] (if (< v 0) -1 v))
+          :else 0)))
+
+;; 0x / 0o / 0b prefix
+(defn- radix-prefix? [s :string] :bool
+  (and (> (string-byte-length s) 2) (= (string-code-point-at s 0) 48)
+       (let [d (string-code-point-at s 1)]
+         (or (= d 120) (= d 88) (= d 111) (= d 79) (= d 98) (= d 66)))))
+
+;; the JS Number of s when it is a safe integer, else -1 for "refused" (a safe negative value is answered as is;
+;; js-number-ok? tells the two apart)
+(defn- js-value [s0 :string] :i64
+  (let [s (trim-js s0)
+        n (string-byte-length s)
+        c (if (> n 0) (string-code-point-at s 0) 0)]
+    (cond (= n 0) 0
+          (= c 45) (let [v (dec-val s 1)] (if (< v 0) -1 (- 0 v)))
+          (= c 43) (dec-val s 1)
+          (radix-prefix? s) (js-num s)
+          :else (dec-val s 0))))
+
+(defn js-number-ok? [s0 :string] :bool
+  (let [s (trim-js s0)
+        n (string-byte-length s)
+        c (if (> n 0) (string-code-point-at s 0) 0)]
+    (cond (= n 0) true
+          (or (= c 43) (= c 45)) (>= (dec-val s 1) 0)
+          (radix-prefix? s) (>= (js-num s) 0)
+          :else (>= (dec-val s 0) 0))))
+
+(defn js-number [s0 :string] :i64 (js-value s0))
