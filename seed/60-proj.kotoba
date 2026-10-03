@@ -497,6 +497,7 @@
         (= t TY-BYTES) ":bytes" (= t TY-KW) ":keyword"
         (= t TY-DOC) ":document"   ; R6B
         (= t TY-SYM) ":symbol"   ; R6B
+        (= t TY-F64) ":f64"   ; R6C
         (< t TY-REC-BASE) ""
         (< t TY-COMP-BASE) (if (= (pj-blk M t) 0) "" (string-concat "[:ref " (string-concat (pj-reckw M S nsn t) "]")))
         (= (pj-ct M t CT-CTOR) TC-FN)
@@ -873,15 +874,15 @@
 (defn- pj-c5 [M :vector-i64 L :vector-i64] :vector-i64
   (let [M1 (ly-run (mem-set M (ly-base-slot) (pj-l L pj-k-base)))]
     (if (pj-ok M1) (let [M2 (out-blob M1)] (if (pj-ok M2) (pj-link M2 L) M2)) M1)))
-(defn- pj-c4 [M :vector-i64 L :vector-i64 S :string] :vector-i64
-  (let [M1 (ck-run M S)]
+(defn- pj-c4 [M :vector-i64 L :vector-i64 S :string H :vector-i64] :vector-i64
+  (let [M1 (ck-run-h M S H)]   ; R6C: with the parameter refinements so far
     (if (pj-ok M1)
       (let [M2 (lw-run M1)] (if (pj-ok M2) (let [M3 (gn-run M2)] (if (pj-ok M3) (pj-c5 M3 L) M3)) M2))
       M1)))
-(defn- pj-c3 [M :vector-i64 L :vector-i64 S :string] :vector-i64
+(defn- pj-c3 [M :vector-i64 L :vector-i64 S :string H :vector-i64] :vector-i64
   (let [M1 (nm-run M S)]
     (if (pj-ok M1)
-      (let [w (pj-ls L pj-k-stub0 (- (vector-at M1 MM-FN-N) (pj-l L pj-k-nstub)))] (pj-c4 M1 L S))
+      (let [w (pj-ls L pj-k-stub0 (- (vector-at M1 MM-FN-N) (pj-l L pj-k-nstub)))] (pj-c4 M1 L S H))
       M1)))
 
 ;; R6A: an error inside the trailer's copy of the module's own schema text is moved to the original text
@@ -898,17 +899,24 @@
 
 ;; compile module m (its source text read from its path) and link it into the image. Returns P (a library adds its
 ;; interface strings). On return M still holds module m (the entry: its EXP table for the container).
-(defn- pj-module [M :vector-i64 L :vector-i64 P :string m :i64] :string
+(defn- pj-module [M :vector-i64 L :vector-i64 P :string m :i64] :string (pj-module-h M L P m (ck-hint-new)))
+;; R6C: H = the parameter refinements so far (21-check ck-hint-*); a check that asks for a new one compiles the module again
+(defn- pj-module-h [M :vector-i64 L :vector-i64 P :string m :i64 H :vector-i64] :string
   (let [S0 (io-read-file M (pj-p L P (pj-mf L m pj-mf-path)))
         T (pj-trailer L P m)
-        S (string-concat S0 (string-concat T (ck-r6b-lib S0)))   ; R6B: the source library the module spells
+        ;; R6B: the source library the module spells. R6C: BEFORE the trailer (was after it): the stub clauses of the trailer
+        ;; must be the LAST FN records (pj-c3 takes stub0 = FN-N - nstub), else an importer that also gets a library group
+        ;; patched its library functions as stubs (measured: r6-diff driver of kotoba.compiler.decimal-text looped)
+        S1 (string-concat S0 (ck-r6b-lib S0))
+        S (string-concat S1 T)
         base (bit-and (+ (pj-l L pj-k-img) 7) -8)
-        w (-> L (pj-ls pj-k-errmod m) (pj-ls pj-k-trail (string-length S0)) (pj-ls pj-k-base base) (pj-mset m pj-mf-base base))
+        w (-> L (pj-ls pj-k-errmod m) (pj-ls pj-k-trail (string-length S1)) (pj-ls pj-k-base base) (pj-mset m pj-mf-base base))
         M1 (pj-read M S)
         M2 (if (pj-ok M1) (pj-refcheck (pj-qscan (pj-norm M1 L S) L P S m) L P m) M1)
         M3 (if (pj-ok M2) (pj-splice M2 L) M2)
-        M4 (if (pj-ok M3) (pj-c3 M3 L S) M3)]
-    (cond (not (pj-ok M4)) (let [w2 (pj-err-back M4 L m (string-length S0))] P)
+        M4 (if (pj-ok M3) (pj-c3 M3 L S H) M3)]
+    (cond (ck-hint-again? H M4) (pj-module-h M4 L P m H)   ; R6C
+          (not (pj-ok M4)) (let [w2 (pj-err-back M4 L m (string-length S1))] P)   ; R6C: the trailer starts after the library
           (>= (pj-n L) (- pj-s-cap 1)) (let [w2 (pj-err M4 E-PROJ-IMAGE 0)] P)
           (not (pj-ok (pj-r5b-after M4 L P S m))) P   ; R5B: namespace :capabilities, stateful library exports
           (>= (+ pj-img-base (pj-l L pj-k-img)) pj-l-cap) (let [w2 (pj-err M4 E-PROJ-IMAGE 0)] P)
@@ -1081,7 +1089,7 @@
                          (recur (+ k 1) (pj-load-iface L (pj-padd L P nm) T d 0)))))))))]
     (if (pj-ok M1)
       (let [P3 (pj-module M1 L P2 0)]
-        (if (pj-ok M1) (pj-padd L P3 (pj-object M1 L P3 (string-concat S (string-concat (pj-trailer L P3 0) (ck-r6b-lib S))))) P3))   ; R6B
+        (if (pj-ok M1) (pj-padd L P3 (pj-object M1 L P3 (string-concat S (string-concat (ck-r6b-lib S) (pj-trailer L P3 0))))) P3))   ; R6B, R6C: library before the trailer (pj-module)
       P2)))
 
 ;; link: visit object module m (its text read from its path) at depth d

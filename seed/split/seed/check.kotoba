@@ -8,6 +8,9 @@
 (def MM-R0 1)
 (def MM-R1 2)
 (def MM-ERR 5)
+(def MM-CK-LAST 11)
+(def MM-CK-REFINE 12)
+(def MM-CK-HINTS 13)
 (def MM-NODE-N 17)
 (def MM-SYM-N 18)
 (def MM-FN-N 20)
@@ -79,6 +82,7 @@
 (def TY-COMP-BASE 1048576)
 (def TY-DOC 8)
 (def TY-SYM 9)
+(def TY-F64 10)
 (def TC-OPTION 1)
 (def TC-RESULT 2)
 (def TC-LIST 3)
@@ -132,6 +136,8 @@
 (def KW-PROCESS-SPAWN 37)
 (def KW-ENTROPY-DRAW 38)
 (def KW-SYMBOL 39)
+(def KW-PINFER 40)
+(def KW-F64 41)
 (def RES-SCALE 16777216)
 (def RES-LOCAL 1)
 (def RES-FN 2)
@@ -415,13 +421,15 @@
     0))
 
 ;; R0 = 0 afterwards: a caller that reads a node index or a type from R0 after an error gets the null record
-(defn- ck-err [M :vector-i64 code :i64 node :i64 n :i64] :vector-i64 (nm-put (nm-err-node M code node n) MM-R0 0))
+(defn- ck-err [M :vector-i64 code :i64 node :i64 n :i64] :vector-i64
+  (nm-put (nm-err-node (ck-refine-note M code n) code node n) MM-R0 0))
 
 ;; NF-TYPE, NF-RES and R0 = ty
 (defn- ck-mark [M :vector-i64 n :i64 ty :i64 res :i64] :vector-i64
   (let [M1 (nm-set-nf M n NF-TYPE ty)
-        M2 (nm-set-nf M1 n NF-RES res)]
-    (nm-put M2 MM-R0 ty)))
+        M2 (nm-set-nf M1 n NF-RES res)
+        M3 (nm-put M2 MM-CK-LAST 0)]   ; R6C
+    (nm-put M3 MM-R0 ty)))
 
 (defn- ck-fuel [M :vector-i64 f :i64] :vector-i64 (nm-set-ff M f FF-FUEL 1))
 
@@ -460,6 +468,8 @@
         (= k KW-BYTES) TY-BYTES   ; R4B
         (= k KW-DOCUMENT) TY-DOC   ; R6B
         (= k KW-SYMBOL) TY-SYM   ; R6B
+        (= k KW-PINFER) TY-I64   ; R6C: an unannotated parameter (refined after pass A by ck-hints-apply)
+        (= k KW-F64) TY-F64   ; R6C: an opaque binary64 carrier
         :else 0))
 
 ;; the schema block of record type ty (0 for a non-record type)
@@ -534,6 +544,7 @@
           M1 (ck-tform M (nm-next M k))
           ty (ck-r M1)]
       (cond (= ty 0) (ck-err M1 E-CHECK-SCHEMA k 0)
+            (= ty TY-F64) (ck-err M1 E-CHECK-SCHEMA k 0)   ; R6C: stage-0 refuses an :f64 record field natively (r1 neg n32)
             (= (ck-key-fresh M1 blk i ks) 0) (ck-err M1 E-CHECK-SCHEMA k 0)
             :else (ck-sch-fields (ck-blk-put M1 blk i ks ty) nx blk (+ i 1))))))
 
@@ -654,6 +665,7 @@
       (cond (nm-ne (nm-kind M1 c) ND-SYM) (ck-err M1 E-CHECK-SCHEMA c 0)
             (nm-failed M1) (ck-touch M1)
             (= ty 0) (ck-err M1 E-CHECK-SCHEMA c 0)
+            (= ty TY-F64) (ck-err M1 E-CHECK-SCHEMA c 0)   ; R6C: stage-0 refuses an :f64 record field natively (r1 neg n32)
             (= (ck-key-fresh M1 blk i ks) 0) (ck-err M1 E-CHECK-SCHEMA c 0)
             :else (ck-rec-store (ck-blk-put M1 blk i ks ty) S fs blk (inc i))))))
 (defn- ck-rec-fields [M :vector-i64 S :string c :i64 blk :i64 i :i64] :vector-i64
@@ -1500,6 +1512,7 @@
           (= hd HD-LOOP) (ck-sel (nm-eqi (ck-gt3 (nm-count M n)) 1) HD-LOOP 0)
           (= hd HD-SWAP) HD-SWAP   ; R5B: (swap! a f x ..) -> (reset! a (f (deref a) x ..))
           (= hd HD-HANDLE) (if (ck-r5b-handle-catch? M n) HD-HANDLE 0)   ; R5B: (handle b (catch ..)) -> (try b (catch ..))
+          (and (= hd HD-SUB) (= (nm-count M n) 2)) HD-SUB   ; R6C: (- x) -> (- 0 x)
           (< hd HD-WHEN) 0
           (> hd HD-ASSERT) 0
           (= hd HD-RANGE) 0
@@ -1530,7 +1543,15 @@
         (= hd HD-ASSERT) (ck-ds-assert M n)
         (= hd HD-SWAP) (ck-r5b-ds-swap M n)
         (= hd HD-HANDLE) (ck-rehead M n HD-TRY (nm-next M (nm-first M n)))
+        (= hd HD-SUB) (ck-r6c-neg M n)   ; R6C
         :else (ck-err M E-CHECK-HEAD (nm-first M n) 0)))
+;; R6C: (- x) -> (- 0 x), the reference's negation (wraps: (- MIN) = MIN)
+(defn- ck-r6c-neg [M :vector-i64 n :i64] :vector-i64
+  (let [x (nm-next M (nm-first M n))
+        M1 (ck-n-int M (ck-htok M n) 0)
+        c (ck-r M1)
+        M2 (ck-chain2 M1 c x)]
+    (ck-rehead M2 n HD-SUB c)))
 
 ;; rewrite n until it is no sugar, then walk its children
 (defn- ck-ds-walk [M :vector-i64 S :string n :i64] :vector-i64
@@ -1562,7 +1583,7 @@
           (nm-ne (nm-kind M c) ND-SYM) (ck-ds-params M nx tok)
           (= (ck-is-tform M nx) 1) (ck-ds-params M (nm-next M nx) tok)
           :else
-          (let [M1 (ck-n-kw M tok KW-I64)
+          (let [M1 (ck-n-kw M tok KW-PINFER)   ; R6C: provisional :i64 (refinable, see ck-hint-*)
                 k (ck-r M1)
                 M2 (ck-link M1 c k)
                 M3 (ck-link M2 k nx)]
@@ -1601,7 +1622,7 @@
         (ck-link M1 rt d)))))
 
 (defn- ck-ds-top1 [M :vector-i64 S :string c :i64] :vector-i64
-  (let [M1 (ck-ds-defn M c)
+  (let [M1 (ck-r6c-doctail (ck-ds-defn M c) S c)   ; R6C: map/vector literals in the tail of a :document defn
         body (nm-nth M1 c 4)]
     (ck-ds-walk M1 S body)))
 
@@ -1743,7 +1764,7 @@
           (and (>= slot 0) (neg? (ck-known-get M slot))) (ck-err M E-ATOM-ESCAPE n 0)   ; R5B: a cell as a value
           (and (< slot 0) (= (ck-callable M fi) 1) (ck-r5b-tmpl? M fi)) (ck-err M E-STATE-VALUE n 0)   ; R5B
           (and (>= slot 0) (ck-known-bare? M slot)) (ck-err M E-CHECK-FNVALUE n 0)
-          (>= slot 0) (ck-mark M n ty (+ (* RES-LOCAL RES-SCALE) slot))
+          (>= slot 0) (ck-param-use (ck-mark M n ty (+ (* RES-LOCAL RES-SCALE) slot)) n slot ty)   ; R6C
           (and (= (nm-ff M fi FF-KIND) FK-DEF) (zero? dty)) (ck-err M E-CHECK-DEF n 0)   ; R6B: an opaque def
           (= (nm-ff M fi FF-KIND) FK-DEF)   ; FN record 0 has kind 0
           (ck-mark M n dty (+ (* RES-DEF RES-SCALE) fi))
@@ -1893,7 +1914,7 @@
                 M4 (ck-unify M3 ta tb h)
                 ty (ck-ty M4)]
             (ck-mark M4 n ty HD-IF))
-          (ck-err M1 E-CHECK-TYPE h TY-BOOL)))
+          (ck-err (ck-last-clear M1) E-CHECK-TYPE h TY-BOOL)))
       (ck-err M E-CHECK-IF h 0))))
 
 ;; ---- cond ----
@@ -1921,7 +1942,7 @@
                 M3 (ck-unify M2 acc te h)
                 ty (ck-ty M3)]
             (ck-cond-pairs M3 nx h ty fx ctx1))
-          (ck-err M1 E-CHECK-TYPE h TY-BOOL))))))
+          (ck-err (ck-last-clear M1) E-CHECK-TYPE h TY-BOOL))))))
 
 (defn- ck-cond [M :vector-i64 n :i64 fx :i64 ctx :i64] :vector-i64
   (let [h (nm-first M n)
@@ -1948,7 +1969,7 @@
           ctx1 (ck-ctx-after M1 a0 ctx)]
       (cond (= ty TY-BOOL) (ck-andor-args M1 nx fx ctx1 h)
             (= ty 0) (ck-andor-args M1 nx fx ctx1 h)
-            :else (ck-err M1 E-CHECK-TYPE h TY-BOOL)))))
+            :else (ck-err (ck-last-clear M1) E-CHECK-TYPE h TY-BOOL)))))
 
 (defn- ck-andor [M :vector-i64 n :i64 hd :i64 fx :i64 ctx :i64] :vector-i64
   (let [h (nm-first M n)]
@@ -2026,7 +2047,7 @@
           nx (nm-next M c)
           M1 (ck-arg M c fx want)
           ty (ck-ty M1)]
-      (if (= ty want)
+      (if (or (= ty want) (ck-probe-lenient? M1 fi k want))   ; R6C: a probe run passes a provisional parameter by
         (ck-call-args M1 nx fi (+ k 1) fx h)
         (ck-err M1 E-CHECK-TYPE h want)))))
 
@@ -2542,8 +2563,8 @@
         M1 (ck-recs M0 S (nm-first M0 (vector-at M0 MM-ROOT)))
         M1b (if (nm-failed M1) M1 (ck-refs-check (ck-inline-scan M1)))
         M2 (ck-desugar M1b S)
-        M3 (ck-sigs M2 1)
-        M4 (ck-bodies (ck-r5b-pass (ck-ab-pre (ck-r3-init2 M3)) S) 1)
+        M3 (ck-hints-apply (ck-sigs M2 1))   ; R6C
+        M4 (ck-last-clear (ck-bodies (ck-probe-first (ck-r5b-pass (ck-ab-pre (ck-r3-init2 M3)) S)) 1))   ; R6C: ck-last-clear, ck-probe-first
         M5 (if (nm-failed M4) M4 (ck-ab-final M4))]
     (ck-run-end (ck-exports M5 1))))
 
@@ -3094,7 +3115,7 @@
         E (if (pos? tx) tx te)]
     (cond (nm-failed M3) (ck-touch M3)
           (and (= cn 4) (zero? tx)) (ck-err M3 E-CHECK-TYPENAME tn 0)
-          (zero? tcount) (ck-err M3 E-CHECK-ABORT-NONE ch 0)
+          (and (zero? tcount) (zero? tx)) (ck-err M3 E-CHECK-ABORT-NONE ch 0)   ; R6C: a typed catch may guard a body that cannot abort (stage-0 admits it)
           (and (pos? tx) (pos? te) (nm-ne tx te)) (ck-err M3 E-CHECK-TYPE tn te)
           (zero? E) (ck-err M3 E-CHECK-ABORT-INFER ch 0)
           :else (ck-try3 M3 n tb E fx ctx))))
@@ -4495,7 +4516,9 @@
           (string-concat (ck-r6b-pick m ck-r6b-g-rem (ck-r6b-t-rem)))
           (string-concat (ck-r6b-pick m ck-r6b-g-utf8 (ck-r6b-t-utf8)))
           (string-concat (ck-r6b-pick m ck-r6b-g-parse (ck-r6b-t-parse)))
-          (string-concat (ck-r6b-pick m ck-r6b-g-sym (ck-r6b-t-sym)))))))
+          (string-concat (ck-r6b-pick m ck-r6b-g-sym (ck-r6b-t-sym)))
+          (string-concat (ck-r6b-pick m ck-r6b-g-vec (ck-r6b-t-vec)))
+          (string-concat (ck-r6b-pick m ck-r6b-g-f64 (ck-r6b-t-f64)))))))   ; R6C
 
 ;; the FN index of the library defn whose spelling hashes to h (the first clause), 0 when absent
 (defn- ck-r6b-fn [M :vector-i64 h :i64] :i64
@@ -4870,6 +4893,8 @@
 (def ck-r6b-g-utf8 128)
 (def ck-r6b-g-parse 256)
 (def ck-r6b-g-sym 512)
+(def ck-r6b-g-vec 1024)
+(def ck-r6b-g-f64 2048)
 (def ck-r6b-h-str -9048150456382168848)
 (def ck-r6b-h-match-option 1201494287191572048)
 (def ck-r6b-h-none 4327140908117611899)
@@ -4926,6 +4951,12 @@
         (= h 2613634576959465006) ck-r6b-g-parse   ; string-parse-i64
         (= h -8424421939860975699) ck-r6b-g-parse   ; parse-long
         (= h -1721781785132272367) ck-r6b-g-sym   ; symbol
+        (= h 6494910307221814324) ck-r6b-g-vec   ; vector-drop
+        (= h 1733912242534962942) ck-r6b-g-vec   ; vector-take
+        (= h 1682895495272856533) ck-r6b-g-vec   ; subvec
+        (= h -745687937792843357) ck-r6b-g-vec   ; into
+        (= h 1600856041486620590) ck-r6b-g-f64   ; f64-to-bits
+        (= h 7987950950382066285) ck-r6b-g-f64   ; f64-from-bits
         :else 0))
 ;; the capability catalogue (resources/kotoba/lang/capability-catalog.edn): the wire id of the friendly qualified
 ;; name (:source-operation) with FNV-1a hash h, 0 for none
@@ -5208,5 +5239,174 @@
 (defn- ck-r6b-t-sym0 [] :string
   "(defn- symbol [s :string] :symbol (__r6-as :symbol s))\n")
 (defn- ck-r6b-t-sym [] :string (ck-r6b-t-sym0))
+(defn- ck-r6b-t-vec0 [] :string
+  (string-concat "(defn- __r6c-vtrap [] :vector-i64 (vector-conj (vector-alloc 0) (vector-at [0] 1)))\n"
+  (string-concat "(defn- __r6c-vcopy [v :vector-i64 a :i64 b :i64] :vector-i64 (let [r (vector-alloc (- b a))] (loop [i a] (if (>= i b) r (let [w (vector-assoc! r (- i a) (vector-at v i))] (recur (+ i 1)))))))\n"
+  (string-concat "(defn- vector-drop [v :vector-i64 n :i64] :vector-i64 (if (and (>= n 0) (<= n (vector-count v))) (__r6c-vcopy v n (vector-count v)) (__r6c-vtrap)))\n"
+  (string-concat "(defn- vector-take [v :vector-i64 n :i64] :vector-i64 (if (and (>= n 0) (<= n (vector-count v))) (__r6c-vcopy v 0 n) (__r6c-vtrap)))\n"
+  (string-concat "(defn- subvec ([v :vector-i64 a :i64] :vector-i64 (subvec v a (vector-count v))) ([v :vector-i64 a :i64 b :i64] :vector-i64 (if (and (>= a 0) (<= a b) (<= b (vector-count v))) (__r6c-vcopy v a b) (__r6c-vtrap))))\n"
+  "(defn- into [a :vector-i64 b :vector-i64] :vector-i64 (loop [i 0 acc a] (if (>= i (vector-count b)) acc (recur (+ i 1) (vector-conj acc (vector-at b i))))))\n"))))))
+(defn- ck-r6b-t-vec [] :string (ck-r6b-t-vec0))
+(defn- ck-r6b-t-f640 [] :string
+  (string-concat "(defn- f64-to-bits [x :f64] :i64 (__r6-as :i64 x))\n"
+  "(defn- f64-from-bits [b :i64] :f64 (__r6-as :f64 b))\n"))
+(defn- ck-r6b-t-f64 [] :string (ck-r6b-t-f640))
 ;; END R6B srclib
 ;; ==== END R6B ============================================================================================
+
+;; ==== R6C (agent R6C, 2026-10-03): unannotated parameters ===========================================================
+;; The reference (kotoba-sema infer.cljk infer-absent-parameter-types) gives an unannotated parameter a provisional :i64 and,
+;; while the checker's FIRST refusal is "parameter p, bare, expected T, got :i64" with T a value type, refines p to T and checks
+;; again (to a fixed point; a parameter whose uses disagree is refused where the ordinary checker refuses it). The seed does
+;; the same with its own refusal, so no second table of operand types exists:
+;;   - 20-names/desugar: an unannotated parameter gets the synthetic type node KW-PINFER (:i64 for every other reader);
+;;   - ck-sym records the use of a still-:i64 provisional parameter in M[MM-CK-LAST]; every ck-mark clears it, so at an
+;;     E2104 it names the parameter only when that bare parameter is the expression whose type was just compared;
+;;   - ck-err (E2104 with an expected type other than :i64) writes the refinement f * 2^28 + k * 2^24 + T to M[MM-CK-REFINE];
+;;   - the driver (90-drv single route, 60-proj per module) re-runs the module from the read with the refinements so far
+;;     (ck-run-h; at most 64, each new): ck-hints-apply sets the parameter types right after pass A (signatures), where the
+;;     composite type table holds exactly the signature types of the failed run, so a composite T keeps its index.
+(defn- ck-hint-pack [f :i64 k :i64 t :i64] :i64 (+ t (* k 16777216) (* f 268435456)))
+;; the KW-PINFER type node of parameter k of defn f, else 0
+(defn- ck-pinfer-node [M :vector-i64 f :i64 k :i64] :i64
+  (if (and (pos? f) (< f (vector-at M MM-FN-N)) (or (= (nm-ff M f FF-KIND) FK-DEFN) (= (nm-ff M f FF-KIND) FK-PRIV))
+           (>= k 0) (< k (nm-ff M f FF-NPARAMS)) (= (nm-kind M (nm-nth M (nm-ff M f FF-NODE) 2)) ND-VEC))
+    (let [t (nm-nth M (nm-nth M (nm-ff M f FF-NODE) 2) (inc (* 2 k)))]
+      (if (and (pos? t) (= (nm-kind M t) ND-KW) (= (nm-head-of M t) KW-PINFER)) t 0))
+    0))
+;; after (ck-mark M n ..) of a local symbol in slot `slot` of type ty: a use of a provisional parameter
+(defn- ck-param-use [M :vector-i64 n :i64 slot :i64 ty :i64] :vector-i64
+  (let [f (ck-sg M ck-s-fn)]
+    (if (and (= ty TY-I64) (>= slot 1) (pos? f) (<= slot (nm-ff M f FF-NPARAMS)) (pos? (ck-pinfer-node M f (dec slot))))
+      (nm-put M MM-CK-LAST n)
+      M)))
+;; at an error: the refinement it asks for (first one only)
+(defn- ck-refine-note [M :vector-i64 code :i64 want :i64] :vector-i64
+  (let [p (vector-at M MM-CK-LAST)]
+    (if (and (= code E-CHECK-TYPE) (pos? p) (zero? (vector-at M MM-ERR)) (zero? (vector-at M MM-CK-REFINE))
+             (pos? want) (not= want TY-I64) (pos? (vector-at M MM-CK-STATE)))
+      (let [f (ck-sg M ck-s-fn)
+            k (dec (- (nm-nf M p NF-RES) (* RES-LOCAL RES-SCALE)))]
+        (if (pos? (ck-pinfer-node M f k)) (nm-put M MM-CK-REFINE (ck-hint-pack f k want)) M))
+      M)))
+(defn- ck-last-clear [M :vector-i64] :vector-i64 (nm-put M MM-CK-LAST 0))
+;; 1 when t names a type the hint may give: a simple value type, a registered record, a composite type of the table
+(defn- ck-hint-type-ok? [M :vector-i64 t :i64] :bool
+  (cond (or (<= t 0) (= t TY-I64)) false
+        (< t TY-REC-BASE) (or (= t TY-BOOL) (= t TY-STR) (= t TY-VEC) (= t TY-BYTES) (= t TY-KW) (= t TY-DOC) (= t TY-SYM) (= t TY-F64))
+        (< t TY-COMP-BASE) (pos? (nm-sf M (- t TY-REC-BASE) SF-REC))
+        :else (and (pos? (vector-at M MM-CT)) (< (- t TY-COMP-BASE) (vector-at M (+ (vector-at M MM-CT) CT-N))))))
+(defn- ck-hint-set [M :vector-i64 f :i64 k :i64 t :i64 tn :i64] :vector-i64
+  (let [M1 (if (< k 5) (nm-set-ff M f (+ FF-PT0 k) t) (nm-set-nf M tn NF-TYPE t))]
+    (if (= (nm-ff M1 f FF-EXPORT) 1) (ck-sig-export M1 f (nm-nth M1 (nm-ff M1 f FF-NODE) 1)) M1)))
+(defn- ck-hints-apply [M :vector-i64] :vector-i64
+  (let [h (vector-at M MM-CK-HINTS)]
+    (if (or (zero? h) (nm-failed M))
+      M
+      (loop [i 0]
+        (if (or (>= i (bit-and (vector-at M h) 255)) (nm-failed M))
+          M
+          (let [x (vector-at M (+ h 1 i))
+                f (quot x 268435456)
+                k (bit-and (quot x 16777216) 15)
+                t (bit-and x 16777215)
+                tn (ck-pinfer-node M f k)
+                w (if (and (pos? tn) (ck-hint-type-ok? M t)) (ck-hint-set M f k t tn) M)]
+            (recur (inc i))))))))
+;; ---- the PROBE: the reference looks for a refinement in EVERY function (the first one whose body asks for one), the seed
+;; stops at its first refusal. When a strict run fails without asking for a refinement and the module has provisional
+;; parameters, the driver runs a probe: the bodies of the functions with provisional parameters are checked first, and a
+;; call that passes a non-i64 argument to a provisional parameter is let through, so the callee's own body can ask. A probe
+;; only ever contributes a refinement; the run whose verdict counts is always strict (after a fruitless probe the strict run
+;; is repeated and reports its own first refusal).
+(defn- ck-probe? [M :vector-i64] :bool
+  (let [h (vector-at M MM-CK-HINTS)] (and (pos? h) (= (quot (vector-at M h) 256) 1))))
+(defn- ck-probe-lenient? [M :vector-i64 fi :i64 k :i64 want :i64] :bool
+  (and (= want TY-I64) (ck-probe? M) (pos? (ck-pinfer-node M fi k))))
+(defn- ck-has-pinfer? [M :vector-i64 f :i64] :bool
+  (loop [k 0] (cond (>= k (nm-ff M f FF-NPARAMS)) false (pos? (ck-pinfer-node M f k)) true :else (recur (inc k)))))
+(defn- ck-probe-first [M :vector-i64] :vector-i64
+  (if (ck-probe? M)
+    (loop [f 1]
+      (cond (or (>= f (vector-at M MM-FN-N)) (nm-failed M)) M
+            (and (ck-has-pinfer? M f) (zero? (ck-done-get M f)) (not (ck-r5b-tmpl? M f))) (let [w (ck-body M f)] (recur (inc f)))
+            :else (recur (inc f))))
+    M))
+(defn- ck-any-pinfer? [M :vector-i64] :bool
+  (loop [f 1] (cond (>= f (vector-at M MM-FN-N)) false (ck-has-pinfer? M f) true :else (recur (inc f)))))
+;; ---- the driver's side: a hint list H = [n + 256 * state, packed ..] (64 at most) that survives the re-runs of one module;
+;; state 0 strict, 1 probe, 2 strict after a fruitless probe ----
+(defn ck-hint-new [] :vector-i64 (vector-alloc 66))
+;; the refinement a failed check asks for, 0 when none
+(defn- ck-hint-out [M :vector-i64] :i64 (if (pos? (vector-at M MM-ERR)) (vector-at M MM-CK-REFINE) 0))
+(defn- ck-hint-n [H :vector-i64] :i64 (bit-and (vector-at H 0) 255))
+;; true when r is a refinement not in H yet and H has room
+(defn- ck-hint-more? [H :vector-i64 r :i64] :bool
+  (and (pos? r) (< (ck-hint-n H) 64)
+       (loop [i 0] (cond (>= i (ck-hint-n H)) true (= (vector-at H (+ i 1)) r) false :else (recur (inc i))))))
+(defn- ck-hint-add [H :vector-i64 r :i64] :vector-i64
+  (let [n (ck-hint-n H)
+        w (vector-assoc! H (+ n 1) r)]
+    (vector-assoc! H 0 (+ n 1))))
+;; after a check M of the module: true when the driver must compile the module again (H updated in place)
+(defn ck-hint-again? [H :vector-i64 M :vector-i64] :bool
+  (let [r (ck-hint-out M)
+        st (quot (vector-at H 0) 256)]
+    (cond (ck-hint-more? H r) (let [w (ck-hint-add H r)] true)
+          (= st 1) (let [w (vector-assoc! H 0 (+ (ck-hint-n H) 512))] true)
+          (zero? (vector-at M MM-ERR)) false
+          (and (= st 0) (ck-any-pinfer? M)) (let [w (vector-assoc! H 0 (+ (ck-hint-n H) 256))] true)
+          :else false)))
+;; copy H into the HEAP and name it in M[MM-CK-HINTS] (nothing when H is empty and strict), then the whole check
+(defn- ck-hints-load [M :vector-i64 H :vector-i64] :vector-i64
+  (let [n (ck-hint-n H)]
+    (if (zero? (vector-at H 0))
+      M
+      (let [M1 (mem-alloc M (+ n 1))
+            b (ck-r M1)]
+        (if (nm-failed M1)
+          M1
+          (let [w (loop [i 0] (if (> i n) 0 (let [y (vector-assoc! M1 (+ b i) (vector-at H i))] (recur (inc i)))))]
+            (nm-put M1 MM-CK-HINTS b)))))))
+(defn ck-run-h [M :vector-i64 S :string H :vector-i64] :vector-i64 (ck-run (ck-hints-load M H) S))
+;; ---- a map or vector literal where a :document is the result (the reference reads constant data as a document) ----
+;; In the tail of a defn whose declared result is :document (through let/do bodies and if/cond arms), {k v ..} becomes
+;; (document-map k v' ..) and [x ..] becomes (document-vector x' ..), where a nested map/vector literal is converted the same
+;; way and any other value v is (__r6-todoc v) (R6B: by its type). R6B's desugaring then folds them (ck-r6b-ds codes 2 and 5;
+;; keyword literal keys become (document-keyword :k)). The run-time value is the canonical text, so it equals stage-0's
+;; constant byte for byte. Elsewhere a map literal keeps its R3/R4B meaning (typed map, or record of a keyword-keyed literal).
+(defn- ck-r6c-doctail [M :vector-i64 S :string c :i64] :vector-i64
+  (let [r (nm-nth M c 3)]
+    (if (and (= (nm-kind M r) ND-KW) (= (nm-head-of M r) KW-DOCUMENT) (pos? (ck-r6b-sym M S "document-map")))
+      (ck-r6c-dt M S (nm-nth M c 4))
+      M)))
+(defn- ck-r6c-dt [M :vector-i64 S :string b :i64] :vector-i64
+  (let [hd (nm-form-head M b)]
+    (cond (or (= (nm-kind M b) ND-MAP) (= (nm-kind M b) ND-VEC)) (ck-r6c-lit M S b)
+          (or (= hd HD-LET) (= hd HD-DO) (= hd HD-LOOP)) (ck-r6c-dt M S (ck-r6c-last M b))
+          (= hd HD-IF) (ck-r6c-dt (ck-r6c-dt M S (nm-nth M b 2)) S (nm-nth M b 3))
+          (= hd HD-COND) (loop [M1 M t (nm-next M (nm-first M b))]
+                           (if (or (zero? t) (zero? (nm-next M1 t))) M1 (recur (ck-r6c-dt M1 S (nm-next M1 t)) (nm-next M1 (nm-next M1 t)))))
+          :else M)))
+(defn- ck-r6c-last [M :vector-i64 b :i64] :i64
+  (loop [x (nm-first M b)] (if (zero? (nm-next M x)) x (recur (nm-next M x)))))
+;; literal node m (map or vector) becomes the list (document-map|document-vector ..) in place; R0 untouched
+(defn- ck-r6c-lit [M :vector-i64 S :string m :i64] :vector-i64
+  (let [ismap (= (nm-kind M m) ND-MAP)
+        tok (nm-nf M m NF-TOK)
+        s (ck-r6b-sym M S (if ismap "document-map" "document-vector"))
+        M1 (ck-n-ref M tok s)
+        dh (ck-r M1)
+        M2 (ck-link M1 dh (nm-first M1 m))
+        M3 (loop [M4 M2 prev dh c (nm-first M2 m) i 0]
+             (if (zero? c)
+               M4
+               (let [nx (nm-next M4 c)
+                     iskey (and ismap (= (bit-and i 1) 0))]
+                 (cond (or (= (nm-kind M4 c) ND-MAP) (= (nm-kind M4 c) ND-VEC)) (recur (ck-r6c-lit M4 S c) c nx (inc i))
+                       (and iskey (= (nm-kind M4 c) ND-KW)) (recur M4 c nx (inc i))
+                       :else (let [M5 (ck-r6b-todoc M4 c)
+                                   w (ck-r M5)]
+                               (recur (ck-link (ck-link M5 prev w) w nx) w nx (inc i)))))))]
+    (-> M3 (nm-set-nf m NF-KIND ND-LIST) (nm-set-nf m NF-FIRST dh))))
+;; ==== END R6C =======================================================================================================

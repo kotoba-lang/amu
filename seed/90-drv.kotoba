@@ -308,7 +308,7 @@
 
 ;; ---- diagnostics ---------------------------------------------------------------------------------------------------
 (defn- drv-tyname [t :i64] :string
-  (cond (= t 1) ":i64" (= t 2) ":bool" (= t 3) ":string" (= t 4) ":vector-i64" (= t 5) ":bytes" (= t 6) ":keyword" (= t 8) ":document" (= t 9) ":symbol"   ; R6B
+  (cond (= t 1) ":i64" (= t 2) ":bool" (= t 3) ":string" (= t 4) ":vector-i64" (= t 5) ":bytes" (= t 6) ":keyword" (= t 8) ":document" (= t 9) ":symbol" (= t 10) ":f64"   ; R6B, R6C
         :else "?"))
 
 (defn- drv-slice [path :string a :i64 b :i64] :string
@@ -381,8 +381,17 @@
   (cond (> (vector-at M MM-ERR) 0) (drv-fail M path)
         (= mode 0) (drv-ok M)
         :else (drv-c5 (lw-run M) S path out)))
-(defn- drv-c3 [M :vector-i64 S :string path :string mode :i64 out :string] :i64
-  (if (= (vector-at M MM-ERR) 0) (drv-c4 (ck-run M S) S path mode out) (drv-fail M path)))
+(defn- drv-c3 [M :vector-i64 S :string path :string mode :i64 out :string] :i64 (drv-c3h M S path mode out (ck-hint-new)))
+;; R6C: a check that asks for a parameter refinement (21-check ck-hint-*) re-runs from the read with it
+(defn- drv-c3h [M :vector-i64 S :string path :string mode :i64 out :string H :vector-i64] :i64
+  (if (= (vector-at M MM-ERR) 0)
+    (let [M1 (ck-run-h M S H)]
+      (if (ck-hint-again? H M1)
+        (drv-c3h (drv-reread M1 S) S path mode out H)
+        (drv-c4 M1 S path mode out)))
+    (drv-fail M path)))
+(defn- drv-reread [M :vector-i64 S :string] :vector-i64
+  (let [M1 (pj-read M S)] (if (= (vector-at M1 MM-ERR) 0) (nm-run M1 S) M1)))
 (defn- drv-c2 [M :vector-i64 S :string path :string mode :i64 out :string] :i64
   (if (= (vector-at M MM-ERR) 0) (drv-c3 (nm-run M S) S path mode out) (drv-fail M path)))
 (defn- drv-c1 [M :vector-i64 S :string path :string mode :i64 out :string] :i64

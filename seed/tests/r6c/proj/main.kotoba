@@ -1,0 +1,6 @@
+;; R6C regression (60-proj): an importer whose source also gets a library group (str -> kw group, min) must keep its
+;; import stubs as the LAST FN records; before R6C the library text followed the trailer and the stub patch hit library
+;; functions (the r6-diff driver of kotoba.compiler.decimal-text looped).
+;; want: 1214
+(ns r6cp.main (:require [r6cp.lib :as l]) (:export [main]))
+(defn main [] :i64 (+ (* 100 (l/find-space "ab cd")) (l/twice (min 7 9)) (* 1000 (string-length (str "x")))) )

@@ -78,7 +78,7 @@ KWS = [
     (":state", "KW-STATE"), (":state/get", "KW-STATE-GET"), (":state/put", "KW-STATE-PUT"), (":effects", "KW-EFFECTS"),
     (":clock/now", "KW-CLOCK-NOW"),
     # R6B
-    (":document", "KW-DOCUMENT"), (":process/spawn", "KW-PROCESS-SPAWN"), (":entropy/draw", "KW-ENTROPY-DRAW"), (":symbol", "KW-SYMBOL"),
+    (":document", "KW-DOCUMENT"), (":process/spawn", "KW-PROCESS-SPAWN"), (":entropy/draw", "KW-ENTROPY-DRAW"), (":symbol", "KW-SYMBOL"), (":f64", "KW-F64"),
 ]
 
 

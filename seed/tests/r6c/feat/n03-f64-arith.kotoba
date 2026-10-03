@@ -1,0 +1,6 @@
+;; R6C: no :f64 arithmetic yet (refused by name, never computed on the bits; stage-0 d2cb84f6 compiles it and answers 0:
+;; a recorded narrowing)
+;; want: E2104
+(ns r6c.n03 (:export [main]))
+(defn- twice [x :f64] :f64 (+ x x))
+(defn main [] :i64 (f64-to-bits (twice (f64-from-bits 0))))
