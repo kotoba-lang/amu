@@ -41,8 +41,8 @@ representation reaches).
 | id | hypothesis | status | evidence |
 |---|---|---|---|
 | H-S1 | A small seed compiler compiled from itself reaches a real selfhost fixed point and an Embench measurement far sooner than porting the 136k-line host compiler | **confirmed — seed R0** | fixed point `fe2c20ae…`, 19/19 ports, compile 376 ms vs 4423 ms same-host stage-0 (docs/selfhost-seed-r0-report-20261002.md) |
-| H-S2 | A rung ladder (R1 sugar+records, R2 perf, R3 values, R4 functions, R5 modules/effects, R6 Forms) keeps every step self-proving with a fixed point | **R1 confirmed**, R2/R3 in flight | tag `seed-r1`, `c0526b73…` |
-| H-M1 | The seed backend can consume the big frontend's KIR text (`compile-kir`), bypassing the memory-hungry `machine_ir`/`mir` Form route | **confirmed for the 19 ports** | 19/19, equal fuel/code size, ~27.6 B heap per KIR byte vs >= 11,000 on the Form route; coverage beyond the ports is open |
+| H-S2 | A rung ladder (R1 sugar+records, R2 perf, R3 values, R4 functions, R5 modules/effects, R6 Forms) keeps every step self-proving with a fixed point | **R1-R4 confirmed**, R5 designed (docs/selfhost-seed-r5-design-20261002.md) | tags seed-r1..r4; fixed points c0526b73, e1b2ecd5, cbae36dc, e9598b28 (382,968 B); R2: Embench run time geomean 0.96x of same-host stage-0, code 96,969 B vs 152,476 B; R4: xgboost 2,425 -> 27.5 ms per call after the UTF-8-literal rule |
+| H-M1 | The seed backend can consume the big frontend's KIR text (`compile-kir`), bypassing the memory-hungry `machine_ir`/`mir` Form route | **leaf layer GO, replacement of machine_ir/aarch64 NO-GO for now** (docs/selfhost-seed-merge-20261003.md) | 299/315 programs compile via compile-kir (277/295 runnable equal to stage-0); 4 big-compiler pieces (posix-path, kstring+decimal, string.case, sha2) give identical output at scale 1/8/20, run time 0.93-1.43x, peak memory <= stage-0; but only 1,069/3,399 (31.4%) per-function slices of 10 big-compiler guests compile. Missing: `:document` 170 fns, records by ref 100, `:bytes` params 60, string-from-utf8 33, [:list [:ref R]] 29, cap calls 17. Verdict flips at >= 95% of functions compiling with EQUAL results on form_count, validate-expr, desugar |
 | H-M2 | Loader-level hash-consing cuts the Form route's heap enough for per-pass processes | **confirmed; hardened (2026-10-03)** | desugar 616 -> 148 B/source byte, byte-identical output on 720 cases; collision-safe by exact compare; default now a 4-way 2^16-entry table: +32% CPU instead of +75%, +4% pairs (docs/selfhost-pass-driver-20261003.md) |
 | H-M3 | Process-per-pass keeps each pass under the loader's pair limit | **confirmed for desugar-class passes, with H-M2; ceiling = vector table** | `scripts/selfhost-wall/pass-driver.sh`; 32x the real corpus (4.6 MB): per pass <= 0.48 GB heap, 14.6 M pairs (22% of 64 Mi), 3.4 M vectors (82% of 4 Mi); one process or no hash-consing traps on the vector table. `analyze`/`infer` not native yet, so unmeasured (docs/selfhost-pass-driver-20261003.md) |
 | H-M4 | Flat Forms (struct of arrays) are needed | open — only if a pass measured natively needs them | 170 B/node today vs 40 B flat (estimate) |
@@ -58,10 +58,17 @@ representation reaches).
 - **16 — H-S1 (2026-10-02):** spike T1/T2/T3, then modules, then integration. Verdict: confirmed (seed R0, F1 G1-G5 green, F5 19/19).
 - **17 — H-S2/H-M1 (2026-10-02):** R1 and `compile-kir` built; gates green. Verdict: R1 confirmed, H-M1 confirmed on the 19 ports.
 - **18 — H-M2 (2026-10-03):** hash-consing spike in the loader. Verdict: confirmed.
-- **19 — (in flight):** R2 performance, R3 values, KIR coverage, housekeeping.
+- **19 — H-S2 (2026-10-02/03):** R2, R3 built and gated; KIR coverage 241 -> 299/315. Verdict: R2, R3 confirmed.
+- **21 — H-S2/H-M1 (2026-10-03):** R4 functions (fixed point e9598b28), R5 design + oracle (77 cases), KIR merge test. Verdicts: R4 confirmed; H-M1 NO-GO for replacing machine_ir now, GO for the leaf layer.
 - **20 — H-M3 (2026-10-03):** falsified at 8x and 32x on a real corpus, built `pass-driver.sh`, hardened the loader's hash-consing. Verdict: confirmed for desugar-class passes (with H-M2); next wall is `KEXE_VECTOR_MAX`, then the unmeasured `infer`/`analyze`.
 
-## Next iterations (ranked)
+## Next iterations (ranked, 2026-10-03)
+
+1. **H-M1 flip conditions**: seed lowering for records by reference, `:bytes` params/results, [:list [:ref R]], `string-from-utf8`, capability calls, >5 parameters, then `:document` (these are R5/R6 features; each is measured by the per-function slice scan `seed/tests/kir/slice.py`).
+2. **R5 implementation** (modules/linking + effects) per the design; gate = 20 conformance programs with oracle values.
+3. **H-F1**: `infer`/`analyze` natively (next measured wall of H-M3 is KEXE_VECTOR_MAX).
+
+## Superseded list (2026-10-03 morning)
 
 1. **H-M3 + H-M2 on by default**: process-per-pass driver for the big frontend (falsify first: run `desugar` guest with hash-consing at 8x and read the arena marks).
 2. **H-M1 coverage**: the share of the repo's programs that `compile-kir` handles; the number decides whether the seed backend replaces `machine_ir`.
