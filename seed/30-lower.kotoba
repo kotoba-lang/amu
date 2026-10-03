@@ -47,11 +47,13 @@
 (defn- lw-kwcode [M :vector-i64 n :i64] :i64
   (vector-at M (+ MM-SYM-BASE (+ (* (lw-nf M n NF-SYM) MM-SYM-W) SF-HEAD))))
 
-;; context word k = tail bit + 2 * loop node + 2^18 * loop header label (loop node 0 = no enclosing loop)
+;; context word k = tail bit + 2 * loop node + 2^21 * loop header label (loop node 0 = no enclosing loop)
+;; R6B (2026-10-03, FRONT's request): the node field is 20 bits (was 17), so a loop node index up to 1,048,575 survives
+;; (MM-NODE-CAP is 196,608 since R6B; R6A's 2^17 mask truncated any node >= 131,072 silently).
 (defn- lw-kt [k :i64] :i64 (bit-and k 1))
-(defn- lw-kn [k :i64] :i64 (bit-and (u64-shift-right k 1) 131071))
-(defn- lw-kl [k :i64] :i64 (u64-shift-right k 18))
-(defn- lw-kmk [tail :i64 node :i64 label :i64] :i64 (+ tail (* 2 node) (* 262144 label)))
+(defn- lw-kn [k :i64] :i64 (bit-and (u64-shift-right k 1) 1048575))
+(defn- lw-kl [k :i64] :i64 (u64-shift-right k 21))
+(defn- lw-kmk [tail :i64 node :i64 label :i64] :i64 (+ tail (* 2 node) (* 2097152 label)))
 
 ;; highest temp an instruction touches, -1 for none
 (defn- lw-hi [op :i64 a :i64 b :i64 c :i64] :i64
@@ -157,6 +159,9 @@
     KW-ENV-READ WIRE-ENV-READ
     KW-FS-BROWSE WIRE-FS-BROWSE
     KW-IO-READ WIRE-IO-READ
+    ;; R6B
+    KW-PROCESS-SPAWN WIRE-PROCESS-SPAWN
+    KW-ENTROPY-DRAW WIRE-ENTROPY-DRAW
     0))
 (defn- lw-kind [kw :i64] :i64 (case kw KW-STRING CK-STRING KW-BYTES CK-BYTES 0))
 ;; R4B: the kind of a (request, result) keyword pair: :string :bytes is KEXE_TYPED_STRING_BYTES_V1
@@ -460,6 +465,8 @@
                   (-> M (lw-expr (lw-nth M (lw-first M w) 2) t 0) (lw-emit OP-LSET sl t) (lw-expr a t 0)))
       HD-RESUME (-> M (lw-expr a t 0) (lw-expr (lw-next M a) (inc t) 0) (lw-emit OP-RET2 t))
       HD-SCALL (lw-scall M h t k)
+      HD-R6-AS (lw-expr M (lw-next M a) t 0)   ; R6B: a retyping, no code
+      HD-R6-IS (lw-expr M (lw-next M a) t 0)   ; R6B: a type assertion, no code
       (if (and (>= hd HD-OPTION-SOME) (<= hd HD-POP)) (lw-r3 M n hd t k) (lw-fail M E-LOWER-NODE (lw-pos M n) hd)))))
 
 (defn- lw-list [M :vector-i64 n :i64 t :i64 k :i64] :vector-i64

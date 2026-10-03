@@ -246,12 +246,35 @@
 ;; the scan loop (one self tail call per token or skipped byte)
 ;; ---------------------------------------------------------------------------------------------------------
 ;; integer or symbol token spanning S[i, j)
+;; ==== R6B (agent R6B, 2026-10-03, delimited): hex integer literals -?0x.. / -?0X.. (digits 0-9 a-f A-F), as the reference
+;; reader reads them; the value must fit i64 (E1004 otherwise, like a decimal literal): 0x7fffffffffffffff and
+;; -0x8000000000000000 are the extremes. The magnitude accumulates NEGATIVE so that -2^63 is representable.
+(defn- lx-hx? [S :string a :i64 b :i64] :bool
+  (let [s (lx-int-start S a)]
+    (and (> b (+ s 2)) (= (lx-ch S s) 48) (or (= (lx-ch S (+ s 1)) 120) (= (lx-ch S (+ s 1)) 88))
+         (loop [j (+ s 2)] (cond (>= j b) true (< (lx-hex (lx-ch S j)) 0) false :else (recur (+ j 1)))))))
+;; the negated magnitude, or 1 when it does not fit in 64 bits
+(defn- lx-hx-neg [S :string a :i64 b :i64] :i64
+  (loop [j (+ (lx-int-start S a) 2) acc 0]
+    (cond (>= j b) acc
+          (< acc -576460752303423488) 1
+          :else (let [n (- (* acc 16) (lx-hex (lx-ch S j)))] (if (> n 0) 1 (recur (+ j 1) n))))))
+(defn- lx-hx-word [M :vector-i64 S :string i :i64 j :i64] :vector-i64
+  (let [m (lx-hx-neg S i j)
+        neg (= (lx-ch S i) 45)]
+    (cond (> m 0) (lx-fail M E-LEX-INT i i j)
+          neg (lx-push M TK-INT i j m)
+          (= m -9223372036854775808) (lx-fail M E-LEX-INT i i j)
+          :else (lx-push M TK-INT i j (- 0 m)))))
+;; ==== END R6B hex ====
+
 (defn- lx-word [M :vector-i64 S :string i :i64 j :i64] :vector-i64
+  (if (lx-hx? S i j) (lx-hx-word M S i j)   ; R6B
   (if (lx-int? S i j)
     (if (lx-int-ovf S i j)
       (lx-fail M E-LEX-INT i i j)
       (lx-push M TK-INT i j (lx-int-val S i j)))
-    (lx-push M TK-SYM i j 0)))
+    (lx-push M TK-SYM i j 0))))
 
 ;; the string token that opens at i, given e = lx-str-find
 (defn- lx-str-token [M :vector-i64 S :string i :i64 e :i64] :vector-i64

@@ -18,17 +18,17 @@
 (def MM-STAT-BASE 64)
 (def MM-TOK-BASE 256)
 (def MM-TOK-W 4)
-(def MM-NODE-BASE 524544)
+(def MM-NODE-BASE 1048832)
 (def MM-NODE-W 8)
-(def MM-SYM-BASE 1573120)
+(def MM-SYM-BASE 2621696)
 (def MM-SYM-W 8)
 (def MM-SYM-CAP 65536)
-(def MM-HASH-BASE 2097408)
+(def MM-HASH-BASE 3145984)
 (def MM-HASH-CAP 131072)
-(def MM-FN-BASE 2228480)
+(def MM-FN-BASE 3277056)
 (def MM-FN-W 16)
 (def MM-FN-CAP 8192)
-(def MM-SCOPE-BASE 2359552)
+(def MM-SCOPE-BASE 3408128)
 (def MM-SCOPE-W 2)
 (def MM-SCOPE-CAP 65536)
 (def TF-START 1)
@@ -37,6 +37,7 @@
 (def NF-FIRST 1)
 (def NF-NEXT 2)
 (def NF-TOK 3)
+(def NF-AUX 4)
 (def NF-SYM 5)
 (def SF-START 0)
 (def SF-END 1)
@@ -57,6 +58,7 @@
 (def ND-LIST 2)
 (def ND-VEC 3)
 (def ND-MAP 4)
+(def ND-STR 6)
 (def ND-SYM 7)
 (def ND-KW 8)
 (def KW-I64 1)
@@ -93,6 +95,9 @@
 (def KW-STATE-PUT 33)
 (def KW-EFFECTS 34)
 (def KW-CLOCK-NOW 35)
+(def KW-DOCUMENT 36)
+(def KW-PROCESS-SPAWN 37)
+(def KW-ENTROPY-DRAW 38)
 (def RES-SCALE 16777216)
 (def HD-NS 1)
 (def HD-DEFN 3)
@@ -240,6 +245,11 @@
 (def HD-WITH 154)
 (def HD-RESUME 155)
 (def HD-DEFHANDLER 156)
+(def HD-R6-AS 158)
+(def HD-R6-TODOC 159)
+(def HD-R6-DOCKEY 160)
+(def HD-R6-TOSTR 161)
+(def HD-R6-IS 162)
 (def E-HEAP-REGION 101)
 (def E-NAMES-DUP 2001)
 (def E-NAMES-TOP 2003)
@@ -467,6 +477,8 @@
         111516215828840 HD-HANDLE  ; handle
         1752459639 HD-WITH  ; with
         111520796337522 HD-RESUME  ; resume
+        32476469136613215 HD-R6-AS  ; __r6-as
+        32485265229635423 HD-R6-IS  ; __r6-is
         0)
       32765890658446708
       (case w0
@@ -690,6 +702,18 @@
       (case w0
         7810489018409706852 HD-DEFHANDLER  ; defhandler
         0)
+      25455
+      (case w0
+        7237130863743491935 HD-R6-TODOC  ; __r6-todoc
+        0)
+      7955819
+      (case w0
+        7165055677519519583 HD-R6-DOCKEY  ; __r6-dockey
+        0)
+      29300
+      (case w0
+        8317994774312410975 HD-R6-TOSTR  ; __r6-tostr
+        0)
       0)
     1952525684
     (case w1
@@ -806,6 +830,18 @@
       (case w0
         7939682742892782394 KW-CLOCK-NOW  ; :clock/now
         0)
+      116
+      (case w0
+        7954884667766694970 KW-DOCUMENT  ; :document
+        0)
+      121459014923055
+      (case w0
+        8319104414429376570 KW-PROCESS-SPAWN  ; :process/spawn
+        0)
+      512735994927
+      (case w0
+        8750616613351220538 KW-ENTROPY-DRAW  ; :entropy/draw
+        0)
       0)
     29541
     (case w1
@@ -880,8 +916,9 @@
     (let [k (nm-kind M n)]
       (if (nm-is-name k)
         (let [t (nm-nf M n NF-TOK)
-              a (nm-tf M t TF-START)
+              a0 (nm-tf M t TF-START)
               b (nm-tf M t TF-END)
+              a (if (= k ND-SYM) (nm-r6b-core a0 b S) a0)   ; R6B: clojure.core/f is f
               M1 (nm-intern M S a b)
               s (vector-at M1 MM-R0)
               M2 (nm-set-nf M1 n NF-SYM s)]
@@ -1063,9 +1100,51 @@
         M2 (nm-tops M1 first)]
     (nm-implicit-exports M2 1)))
 
+;; ==== R6B (agent R6B, 2026-10-03, delimited): the reference's top-level shapes on EVERY route (R6A read them on the project
+;; route only, 60-proj pj-norm; CONTRACT-REQUESTS 2026-10-03 R6A -> 20-names):
+;;   (defn NAME "doc" ..) / (defn- ..) / (def NAME "doc" value): the docstring is unlinked (a def keeps a string VALUE: only a
+;;   string followed by another child is a docstring), then a defn's attr-map {..} likewise (when more children follow);
+;;   a top-level `nil` (what #?(:kotoba nil :default ..) reads as) is unlinked;
+;;   `clojure.core/f` interns as `f` (nm-intern-nodes; on the project route 60-proj has narrowed the token already).
+(defn- nm-r6b-core [a :i64 b :i64 S :string] :i64
+  (if (and (> b (+ a 13)) (= (string-code-point-at S a) 99) (= (string-code-point-at S (+ a 12)) 47)
+           (string=? (string-substring S a (+ a 13)) "clojure.core/"))
+    (+ a 13)
+    a))
+(defn- nm-r6b-unlink-after [M :vector-i64 n :i64 prev :i64] :vector-i64
+  (let [x (nm-next M prev)
+        M1 (nm-set-nf M prev NF-NEXT (nm-next M x))]
+    (nm-set-nf M1 n NF-AUX (- (nm-nf M1 n NF-AUX) 1))))
+(defn- nm-r6b-strip [M :vector-i64 n :i64] :vector-i64
+  (let [hd (nm-form-head M n)
+        defn? (or (= hd HD-DEFN) (= hd HD-DEFN-PRIV))
+        nmn (nm-nth M n 1)
+        d (nm-next M nmn)
+        M1 (if (and (or defn? (= hd HD-DEF)) (nm-ne nmn 0) (= (nm-kind M d) ND-STR) (nm-ne (nm-next M d) 0))
+             (nm-r6b-unlink-after M n nmn)
+             (nm-touch M))
+        a (nm-next M1 nmn)]
+    (if (and defn? (nm-ne nmn 0) (= (nm-kind M1 a) ND-MAP) (nm-ne (nm-next M1 a) 0))
+      (nm-r6b-unlink-after M1 n nmn)
+      (nm-touch M1))))
+;; FNV-1a of "nil"
+(defn- nm-r6b-nil? [M :vector-i64 n :i64] :bool
+  (and (= (nm-kind M n) ND-SYM) (= (nm-sf M (nm-nf M n NF-SYM) SF-HASH) 2397808468787316396)))
+(defn- nm-r6b-norm [M :vector-i64] :vector-i64
+  (let [root (vector-at M MM-ROOT)]
+    (loop [M1 M n (nm-first M root) prev 0]
+      (cond (zero? n) (nm-touch M1)
+            (nm-r6b-nil? M1 n)
+            (let [M2 (if (zero? prev) (nm-set-nf M1 root NF-FIRST (nm-next M1 n)) (nm-set-nf M1 prev NF-NEXT (nm-next M1 n)))
+                  M3 (nm-set-nf M2 root NF-AUX (- (nm-nf M2 root NF-AUX) 1))]
+              (recur M3 (nm-next M3 n) prev))
+            (= (nm-kind M1 n) ND-LIST) (let [M2 (nm-r6b-strip M1 n)] (recur M2 (nm-next M2 n) n))
+            :else (recur M1 (nm-next M1 n) n)))))
+;; ==== END R6B top-level shapes ====
+
 ;; the whole pass
 (defn nm-run [M :vector-i64 S :string] :vector-i64
-  (nm-run-defs (nm-intern-nodes M S 1)))
+  (nm-run-defs (nm-r6b-norm (nm-intern-nodes M S 1))))   ; R6B: + nm-r6b-norm
 
 (defn- nm-run-defs [M :vector-i64] :vector-i64
   (let [ns (nm-first M (vector-at M MM-ROOT))]

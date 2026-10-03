@@ -65,21 +65,25 @@
   [:c MM-CAPS 97 "R5B: the capability wires the module's checked code calls, a mask (bit w = wire w < 47; 21-check)"]
 
   ;; --- 1.2 regions: BASE (word address), W (words per record), CAP (records incl. the null record) ------
-  [:c MM-TOK-BASE 256] [:c MM-TOK-W 4] [:c MM-TOK-CAP 131072]
-  [:c MM-NODE-BASE 524544] [:c MM-NODE-W 8] [:c MM-NODE-CAP 131072]
-  [:c MM-SYM-BASE 1573120] [:c MM-SYM-W 8] [:c MM-SYM-CAP 65536]
-  [:c MM-HASH-BASE 2097408] [:c MM-HASH-W 1] [:c MM-HASH-CAP 131072]
-  [:c MM-FN-BASE 2228480] [:c MM-FN-W 16] [:c MM-FN-CAP 8192]
-  [:c MM-SCOPE-BASE 2359552] [:c MM-SCOPE-W 2] [:c MM-SCOPE-CAP 65536]
-  [:c MM-SIR-BASE 2490624] [:c MM-SIR-W 4] [:c MM-SIR-CAP 262144]
-  [:c MM-LABEL-BASE 3539200] [:c MM-LABEL-W 1] [:c MM-LABEL-CAP 131072]
-  [:c MM-CODE-BASE 3670272] [:c MM-CODE-W 1] [:c MM-CODE-CAP 524288]
-  [:c MM-FIX-BASE 4194560] [:c MM-FIX-W 4] [:c MM-FIX-CAP 131072]
-  [:c MM-LIT-BASE 4718848] [:c MM-LIT-W 4] [:c MM-LIT-CAP 16384]
-  [:c MM-LITB-BASE 4784384] [:c MM-LITB-W 1] [:c MM-LITB-CAP 524288]
-  [:c MM-EXP-BASE 5308672] [:c MM-EXP-W 4] [:c MM-EXP-CAP 1024]
-  [:c MM-OUT-BASE 5312768] [:c MM-OUT-W 1] [:c MM-OUT-CAP 1048576]
-  [:c MM-HEAP-BASE 6361344] [:c MM-HEAP-END 8388608]
+  ;; R6B (2026-10-03): the seed's own unity (14k lines) filled TOK to 129,234 of 131,072 (measured with a stats build of the R6A
+  ;; seed: NODE 108,833, SIR 83,419, FIX 18,400, LITB 30,855, HEAP 243,318 words used), so TOK grows to 262,144 and NODE to
+  ;; 196,608 records, paid by SIR 262,144 -> 196,608, FIX 131,072 -> 65,536, LITB 524,288 -> 262,144 and the HEAP (-262,144
+  ;; words). M stays 8,388,608 words (the loader budgets are unchanged).
+  [:c MM-TOK-BASE 256] [:c MM-TOK-W 4] [:c MM-TOK-CAP 262144]
+  [:c MM-NODE-BASE 1048832] [:c MM-NODE-W 8] [:c MM-NODE-CAP 196608]
+  [:c MM-SYM-BASE 2621696] [:c MM-SYM-W 8] [:c MM-SYM-CAP 65536]
+  [:c MM-HASH-BASE 3145984] [:c MM-HASH-W 1] [:c MM-HASH-CAP 131072]
+  [:c MM-FN-BASE 3277056] [:c MM-FN-W 16] [:c MM-FN-CAP 8192]
+  [:c MM-SCOPE-BASE 3408128] [:c MM-SCOPE-W 2] [:c MM-SCOPE-CAP 65536]
+  [:c MM-SIR-BASE 3539200] [:c MM-SIR-W 4] [:c MM-SIR-CAP 196608]
+  [:c MM-LABEL-BASE 4325632] [:c MM-LABEL-W 1] [:c MM-LABEL-CAP 131072]
+  [:c MM-CODE-BASE 4456704] [:c MM-CODE-W 1] [:c MM-CODE-CAP 524288]
+  [:c MM-FIX-BASE 4980992] [:c MM-FIX-W 4] [:c MM-FIX-CAP 65536]
+  [:c MM-LIT-BASE 5243136] [:c MM-LIT-W 4] [:c MM-LIT-CAP 16384]
+  [:c MM-LITB-BASE 5308672] [:c MM-LITB-W 1] [:c MM-LITB-CAP 262144]
+  [:c MM-EXP-BASE 5570816] [:c MM-EXP-W 4] [:c MM-EXP-CAP 1024]
+  [:c MM-OUT-BASE 5574912] [:c MM-OUT-W 1] [:c MM-OUT-CAP 1048576]
+  [:c MM-HEAP-BASE 6623488] [:c MM-HEAP-END 8388608]
 
   ;; --- 1.3 record fields (offset inside a record) -------------------------------------------------------
   ;; TOK: one per token, source order. Written by 10-lex only.

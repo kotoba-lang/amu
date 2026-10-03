@@ -101,7 +101,7 @@
     (= c 2120) "too many locals in one function ("
     (= c 2121) "result of '"
     (= c 2123) "= compares only i64 or bool values"
-    (= c 2124) "def value must be an integer, string or vector literal: '"
+    (= c 2124) "def value must be an integer, string, keyword or vector literal: '"
     (= c 2125) "case constants must be unique: '"
     (= c 2126) "cannot infer the result type of '"
     (= c 2127) "unknown record field '"
@@ -308,7 +308,7 @@
 
 ;; ---- diagnostics ---------------------------------------------------------------------------------------------------
 (defn- drv-tyname [t :i64] :string
-  (cond (= t 1) ":i64" (= t 2) ":bool" (= t 3) ":string" (= t 4) ":vector-i64" (= t 5) ":bytes" (= t 6) ":keyword"
+  (cond (= t 1) ":i64" (= t 2) ":bool" (= t 3) ":string" (= t 4) ":vector-i64" (= t 5) ":bytes" (= t 6) ":keyword" (= t 8) ":document"   ; R6B
         :else "?"))
 
 (defn- drv-slice [path :string a :i64 b :i64] :string

@@ -57,6 +57,8 @@ HEADS = [  # (spelling, constant)
     # R5B (agent R5B, 2026-10-03): effects; "@" is the token of the reader's @x
     ("atom", "HD-ATOM"), ("swap!", "HD-SWAP"), ("reset!", "HD-RESET"), ("deref", "HD-DEREF"), ("@", "HD-DEREF"),
     ("perform", "HD-PERFORM"), ("handle", "HD-HANDLE"), ("with", "HD-WITH"), ("resume", "HD-RESUME"), ("defhandler", "HD-DEFHANDLER"),
+    # R6B (agent R6B, 2026-10-03): the source library's retyping head
+    ("__r6-as", "HD-R6-AS"), ("__r6-todoc", "HD-R6-TODOC"), ("__r6-dockey", "HD-R6-DOCKEY"), ("__r6-tostr", "HD-R6-TOSTR"), ("__r6-is", "HD-R6-IS"),
 ]
 KWS = [
     (":i64", "KW-I64"), (":bool", "KW-BOOL"), (":string", "KW-STRING"), (":vector-i64", "KW-VECTOR-I64"),
@@ -75,6 +77,8 @@ KWS = [
     # R5B
     (":state", "KW-STATE"), (":state/get", "KW-STATE-GET"), (":state/put", "KW-STATE-PUT"), (":effects", "KW-EFFECTS"),
     (":clock/now", "KW-CLOCK-NOW"),
+    # R6B
+    (":document", "KW-DOCUMENT"), (":process/spawn", "KW-PROCESS-SPAWN"), (":entropy/draw", "KW-ENTROPY-DRAW"),
 ]
 
 

@@ -16,21 +16,21 @@
 (def MM-FN2 96)
 (def MM-TOK-BASE 256)
 (def MM-TOK-W 4)
-(def MM-NODE-BASE 524544)
+(def MM-NODE-BASE 1048832)
 (def MM-NODE-W 8)
-(def MM-SYM-BASE 1573120)
+(def MM-SYM-BASE 2621696)
 (def MM-SYM-W 8)
-(def MM-FN-BASE 2228480)
+(def MM-FN-BASE 3277056)
 (def MM-FN-W 16)
-(def MM-SIR-BASE 2490624)
+(def MM-SIR-BASE 3539200)
 (def MM-SIR-W 4)
-(def MM-SIR-CAP 262144)
+(def MM-SIR-CAP 196608)
 (def MM-LABEL-CAP 131072)
-(def MM-LIT-BASE 4718848)
+(def MM-LIT-BASE 5243136)
 (def MM-LIT-W 4)
 (def MM-LIT-CAP 16384)
-(def MM-LITB-BASE 4784384)
-(def MM-LITB-CAP 524288)
+(def MM-LITB-BASE 5308672)
+(def MM-LITB-CAP 262144)
 (def TF-START 1)
 (def NF-KIND 0)
 (def NF-FIRST 1)
@@ -98,6 +98,8 @@
 (def KW-IO-READ 30)
 (def KW-STATE-GET 32)
 (def KW-STATE-PUT 33)
+(def KW-PROCESS-SPAWN 37)
+(def KW-ENTROPY-DRAW 38)
 (def RES-SCALE 16777216)
 (def RES-LOCAL 1)
 (def RES-FN 2)
@@ -223,6 +225,8 @@
 (def HD-HANDLE 153)
 (def HD-RESUME 155)
 (def HD-SCALL 157)
+(def HD-R6-AS 158)
+(def HD-R6-IS 162)
 (def CK-STRING 1)
 (def CK-BYTES 8)
 (def CK-STRING-BYTES 9)
@@ -234,6 +238,8 @@
 (def WIRE-ENV-READ 33)
 (def WIRE-FS-BROWSE 34)
 (def WIRE-IO-READ 41)
+(def WIRE-PROCESS-SPAWN 20)
+(def WIRE-ENTROPY-DRAW 23)
 (def E-HEAP-REGION 101)
 (def E-LOWER-FULL 3001)
 (def E-LOWER-NODE 3003)
@@ -352,11 +358,13 @@
 (defn- lw-kwcode [M :vector-i64 n :i64] :i64
   (vector-at M (+ MM-SYM-BASE (+ (* (lw-nf M n NF-SYM) MM-SYM-W) SF-HEAD))))
 
-;; context word k = tail bit + 2 * loop node + 2^18 * loop header label (loop node 0 = no enclosing loop)
+;; context word k = tail bit + 2 * loop node + 2^21 * loop header label (loop node 0 = no enclosing loop)
+;; R6B (2026-10-03, FRONT's request): the node field is 20 bits (was 17), so a loop node index up to 1,048,575 survives
+;; (MM-NODE-CAP is 196,608 since R6B; R6A's 2^17 mask truncated any node >= 131,072 silently).
 (defn- lw-kt [k :i64] :i64 (bit-and k 1))
-(defn- lw-kn [k :i64] :i64 (bit-and (u64-shift-right k 1) 131071))
-(defn- lw-kl [k :i64] :i64 (u64-shift-right k 18))
-(defn- lw-kmk [tail :i64 node :i64 label :i64] :i64 (+ tail (* 2 node) (* 262144 label)))
+(defn- lw-kn [k :i64] :i64 (bit-and (u64-shift-right k 1) 1048575))
+(defn- lw-kl [k :i64] :i64 (u64-shift-right k 21))
+(defn- lw-kmk [tail :i64 node :i64 label :i64] :i64 (+ tail (* 2 node) (* 2097152 label)))
 
 ;; highest temp an instruction touches, -1 for none
 (defn- lw-hi [op :i64 a :i64 b :i64 c :i64] :i64
@@ -462,6 +470,9 @@
     KW-ENV-READ WIRE-ENV-READ
     KW-FS-BROWSE WIRE-FS-BROWSE
     KW-IO-READ WIRE-IO-READ
+    ;; R6B
+    KW-PROCESS-SPAWN WIRE-PROCESS-SPAWN
+    KW-ENTROPY-DRAW WIRE-ENTROPY-DRAW
     0))
 (defn- lw-kind [kw :i64] :i64 (case kw KW-STRING CK-STRING KW-BYTES CK-BYTES 0))
 ;; R4B: the kind of a (request, result) keyword pair: :string :bytes is KEXE_TYPED_STRING_BYTES_V1
@@ -765,6 +776,8 @@
                   (-> M (lw-expr (lw-nth M (lw-first M w) 2) t 0) (lw-emit OP-LSET sl t) (lw-expr a t 0)))
       HD-RESUME (-> M (lw-expr a t 0) (lw-expr (lw-next M a) (inc t) 0) (lw-emit OP-RET2 t))
       HD-SCALL (lw-scall M h t k)
+      HD-R6-AS (lw-expr M (lw-next M a) t 0)   ; R6B: a retyping, no code
+      HD-R6-IS (lw-expr M (lw-next M a) t 0)   ; R6B: a type assertion, no code
       (if (and (>= hd HD-OPTION-SOME) (<= hd HD-POP)) (lw-r3 M n hd t k) (lw-fail M E-LOWER-NODE (lw-pos M n) hd)))))
 
 (defn- lw-list [M :vector-i64 n :i64 t :i64 k :i64] :vector-i64
