@@ -309,7 +309,7 @@
 
 ;; ---- diagnostics ---------------------------------------------------------------------------------------------------
 (defn- drv-tyname [t :i64] :string
-  (cond (= t 1) ":i64" (= t 2) ":bool" (= t 3) ":string" (= t 4) ":vector-i64" (= t 5) ":bytes" (= t 6) ":keyword" (= t 8) ":document" (= t 9) ":symbol" (= t 10) ":f64"   ; R6B, R6C
+  (cond (= t 1) ":i64" (= t 2) ":bool" (= t 3) ":string" (= t 4) ":vector-i64" (= t 5) ":bytes" (= t 6) ":keyword" (= t 8) ":document" (= t 9) ":symbol" (= t 10) ":f64" (= t TY-F32) ":f32"   ; R6B, R6C, R6K
         :else "?"))
 
 (defn- drv-slice [path :string a :i64 b :i64] :string
@@ -325,12 +325,15 @@
 (defn- drv-at [pos :i64] :string
   (if (< pos 0) "" (string-concat " (byte " (string-concat (mem-u2dec pos) ")"))))
 
-(defn- drv-say [c :i64 msg :string pos :i64] :i64
-  (let [w (io-err (string-concat "seed: E" (string-concat (mem-u2dec c) (string-concat " " (string-concat msg (string-concat (drv-at pos) "\n"))))))]
+(defn- drv-say [c :i64 msg :string pos :i64] :i64 (drv-say-in c msg pos ""))
+;; R6K (FOLD, MAINS's request): sfx follows the byte position (" in <module path>" for an error in a dependency module)
+(defn- drv-say-in [c :i64 msg :string pos :i64 sfx :string] :i64
+  (let [w (io-err (string-concat "seed: E" (string-concat (mem-u2dec c) (string-concat " " (string-concat msg (string-concat (drv-at pos) (string-concat sfx "\n")))))))]
     1))
 
 ;; report the error recorded in M; the source path is where {name} spans are sliced from. Status 1.
-(defn- drv-fail [M :vector-i64 path :string] :i64
+(defn- drv-fail [M :vector-i64 path :string] :i64 (drv-fail-in M path ""))
+(defn- drv-fail-in [M :vector-i64 path :string sfx :string] :i64
   (let [c (vector-at M MM-ERR)
         pos (vector-at M MM-ERR-POS)
         a (vector-at M MM-ERR-A)
@@ -339,8 +342,8 @@
         p0 (drv-ph (drv-ek0 c) path a b n)
         p1 (drv-ph (drv-ek1 c) path a b n)]
     (if (pos? (string-length (drv-r5b-text c)))
-      (drv-say c (drv-r5b-fill M path (drv-r5b-text c) "") pos)   ; R5B: a template text
-    (drv-say c (string-concat (drv-et0 c) (string-concat p0 (string-concat (drv-et1 c) (string-concat p1 (drv-et2 c))))) pos))))
+      (drv-say-in c (drv-r5b-fill M path (drv-r5b-text c) "") pos sfx)   ; R5B: a template text
+    (drv-say-in c (string-concat (drv-et0 c) (string-concat p0 (string-concat (drv-et1 c) (string-concat p1 (drv-et2 c))))) pos sfx))))
 
 ;; an error found by the driver itself (no M yet)
 (defn- drv-fail0 [c :i64] :i64 (drv-say c (drv-et0 c) -1))
@@ -421,12 +424,14 @@
         :else (drv-pj-roots L P (+ i 1) n)))
 
 ;; an error of the project route: {name} spans and positions beyond the module's file (its generated trailer) are dropped
-(defn- drv-pj-fail [M :vector-i64 path :string] :i64
-  (let [flen (string-length (drv-read path))
+;; R6K (FOLD, MAINS's request): an error in a module other than the entry (L[pj-k-errmod] > 0) names that module's path
+(defn- drv-pj-fail [M :vector-i64 L :vector-i64 P :string] :i64
+  (let [path (pj-err-path L P)
+        flen (string-length (drv-read path))
         b (vector-at M MM-ERR-B)
         w (if (> b flen) (-> M (vector-assoc! MM-ERR-A 0) (vector-assoc! MM-ERR-B 0)) M)
         w2 (if (> (vector-at M MM-ERR-POS) flen) (vector-assoc! M MM-ERR-POS -1) M)]
-    (drv-fail M path)))
+    (drv-fail-in M path (if (> (vector-at L pj-k-errmod) 0) (string-concat " in " path) ""))))
 
 (defn- drv-pj-emit [M :vector-i64 L :vector-i64 P :string mode :i64 out :string] :i64
   (let [S (string-concat (drv-read (pj-p L P (pj-mf L 0 pj-mf-path))) (pj-trailer L P 0))
@@ -443,7 +448,7 @@
         w (vector-assoc! L pj-k-unpinned (drv-pj-has 1 n "--unpinned"))
         P1 (pj-project M L (pj-padd L P0 path) (- (pj-n L) 1))]
     (if (> (vector-at M MM-ERR) 0)
-      (drv-pj-fail M (pj-err-path L P1))
+      (drv-pj-fail M L P1)
       (drv-pj-emit M L P1 mode out))))
 
 ;; argv index of the value after the flag spelled s, -1 when absent
@@ -461,7 +466,7 @@
         n (io-argc)
         P0 (drv-pj-objdir L n)
         P1 (pj-emit M L (pj-padd L P0 path) (- (pj-n L) 1) (drv-pj-has 1 n "--entry"))]
-    (cond (> (vector-at M MM-ERR) 0) (drv-pj-fail M (pj-err-path L P1))
+    (cond (> (vector-at M MM-ERR) 0) (drv-pj-fail M L P1)
           (= (string-length out) 0) (drv-usage)
           :else (let [t (pj-p L P1 (- (pj-n L) 1))
                       w (io-write-text out t)]
@@ -479,7 +484,7 @@
           (= (io-exists (io-arg k)) 0) (drv-fail0 E-READ)
           :else (let [P1 (pj-link-objects M L (pj-padd L P0 (io-arg k)) (- (pj-n L) 1))]
                   (if (> (vector-at M MM-ERR) 0)
-                    (drv-pj-fail M (pj-err-path L P1))
+                    (drv-pj-fail M L P1)
                     (drv-pj-lemit M L (drv-kir-out o)))))))
 
 ;; LINK (r6h): the linked container = the header in OUT + the image in L (60-proj pj-lwrite); out "" -> hex on stdout
@@ -500,7 +505,7 @@
       (drv-usage)
       (let [P1 (pj-discover M L (pj-padd L P0 (io-arg k)) (- (pj-n L) 1))]
         (if (> (vector-at M MM-ERR) 0)
-          (drv-pj-fail M (pj-err-path L P1))
+          (drv-pj-fail M L P1)
           (loop [i 0]
             (if (>= i (vector-at L pj-k-nord))
               0

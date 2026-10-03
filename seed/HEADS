@@ -47,6 +47,9 @@
   ;;    representation, KIR5), made and read only by the source library's f64-from-bits / f64-to-bits (bit casts, no code).
   ;;    No arithmetic, comparison, = or literal yet: those are refused by name (E2104/E2123/E1xxx), never computed on bits.
   [:c TY-F64 10 ":f64 -- IEEE-754 binary64 bits in an i64 (opaque: f64-from-bits / f64-to-bits only)"]
+  ;; -- R6K (FOLD, 2026-10-04; TMPL's R6F request): :f32 = an IEEE-754 binary32 bit pattern sign-extended from 32 bits in an
+  ;;    i64 (the KIR route's representation). 21-check's local ck-ty-f32 has this value; drv-tyname spells it ":f32".
+  [:c TY-F32 11 ":f32 -- IEEE-754 binary32 bits, sign-extended from 32 bits in an i64"]
   [:c TC-OPTION 1] [:c TC-RESULT 2] [:c TC-LIST 3] [:c TC-MAP 4] [:c TC-SET 5]
   ;; -- R4 (rung 4, 2026-10-03): callable types. [:fn [[P1 .. Pn] R]] (one clause, n <= 4) = TC-FN with CT-A = R and CT-B =
   ;;    the parameter list (0 for none): a chain of TC-PLIST records (CT-A = the parameter type, CT-B = the rest or 0).

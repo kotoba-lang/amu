@@ -25,7 +25,7 @@ fi
 zsh $R/scripts/seed/float-prog.sh $bin $W/fprog > $W/fprog.log 2>&1 && row PASS "FPROG $(tail -1 $W/fprog.log)" \
   || row FAIL "FPROG $(grep -E 'DIFF|REFUSED|refused' $W/fprog.log | head -3 | tr '\n' ' ')"
 S=${FLOAT_SCAN:-$B/sb}
-if [ -n "$(ls $S/r6/o/kotoba.kir.interp*.kso(N) 2>/dev/null)" ]; then
+if [ -n "$(print -l $S/r6/o/kotoba.kir.interp*.kso(N))" ]; then
   zsh $R/scripts/seed/float-interp.sh $bin $S $W/finterp > $W/finterp.log 2>&1 && row PASS "FINTERP $(tail -1 $W/finterp.log)" \
     || row FAIL "FINTERP $(tail -1 $W/finterp.log)"
 else row SKIP "FINTERP no kotoba.kir.interp object under $S/r6/o (run scripts/seed/selfbuild.sh --seed $bin --no-link $S)"; fi
