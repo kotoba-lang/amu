@@ -197,7 +197,7 @@
   "(fn-ref f)"               "FADDR t f CONST t+1 0 RT PAIR-NEW t 2"
   "adapter g'"               "FN g' n+1 n+1: LGET p1..pn into 0..n-1, the env (slot n+1) unpacked into n..n+k-1 by RT PAIR-FIRST /
                               PAIR-SECOND, CALL g 0 n+k, RET 0"
-  "(map f c) (filter p c) (reduce f [i] c)" "an inline counted loop over the vector of c (no FUEL inside, as the R3 loops),
+  "(map f c) (filter p c) (reduce f [i] c)" "c a :vector-i64 (the reference's only source); an inline counted loop over it (no FUEL inside, as the R3 loops),
                               hidden slots s0 coll s1 count s2 index s3 accumulator s4 the callback value; per item RT VECTOR-AT
                               and the callback: CALL g (+ captures) for an inline fn, CALL f for a defn name, CALLI for a value;
                               map/filter collect with RT VECTOR-CONJ into a vector that starts as VEC t 0"
