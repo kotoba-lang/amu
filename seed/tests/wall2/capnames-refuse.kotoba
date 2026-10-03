@@ -1,0 +1,11 @@
+(ns wall2.capnames-refuse
+  "WALL2 test: an unregistered capability name in a policy is a hard refusal (abort) with the host's ex-message; main answers 0 when it is caught with that text."
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.capability-names :as cn]
+            [kotoba.form :as form])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]}))
+
+(defn main [] :i64
+  (try (form/count-of (cn/wire-grant (form/edn-form "[:cap/call :no/such]")))
+       (catch e (if (string=? (ex-message e) "policy names an unregistered capability: :no/such") 0 2))))

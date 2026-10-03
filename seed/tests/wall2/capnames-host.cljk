@@ -1,0 +1,27 @@
+(ns wall2.capnames-host
+  "WALL2: the host reading of kotoba.compiler.capability-names on the cases of seed/tests/wall2/capnames.kotoba
+  (same inputs, same expected values). Run (BOOTSTRAP-REFERENCE, node/nbb):
+    node bin/kbb --backend sci --classpath \"$(cat build/walls/cp-walls.txt)\" seed/tests/wall2/capnames-host.cljk
+  Prints `capnames-host: N PASS, M FAIL`. The host's ids may be BigInt under nbb, so ids are compared as numbers."
+  (:require [kotoba.compiler.capability-names :as cn]
+            [clojure.walk :as walk]))
+
+(defn- norm [v] (walk/postwalk #(if (= js/BigInt (type %)) (js/Number %) %) v))
+
+(def ^:private cases
+  [[1 (cn/named-grant [:cap/call 3]) [:cap/call :hash/sha256]]
+   [2 (cn/named-grant [:cap/call 200]) [:cap/call 200]]
+   [3 (cn/named-grant [:cap/call :x/y]) [:cap/call :x/y]]
+   [4 (cn/name-grants {:effects #{[:cap/call 3] [:cap/call 200]} :x [[:cap/call 1] 5]})
+    {:effects #{[:cap/call :hash/sha256] [:cap/call 200]} :x [[:cap/call :identity/sign] 5]}]
+   [5 (cn/wire-grant [:cap/call :hash/sha256]) [:cap/call 3]]
+   [6 (cn/wire-grant [:cap/call 4]) [:cap/call 4]]
+   [7 (cn/wire-policy {:allow #{[:cap/call :hash/sha256] [:cap/call 3] [:cap/call 4]} :abac 1})
+    {:allow #{[:cap/call 3] [:cap/call 4]} :abac 1}]
+   [8 (cn/wire-policy {:abac 1}) {:abac 1}]
+   [9 (try (cn/wire-grant [:cap/call :no/such]) (catch :default e (ex-message e)))
+    "policy names an unregistered capability: :no/such"]])
+
+(let [r (map (fn [[n got want]] (let [ok (= (norm got) want)] (when-not ok (println "FAIL" n (pr-str got))) ok)) cases)
+      p (count (filter true? r))]
+  (println (str "capnames-host: " p " PASS, " (- (count cases) p) " FAIL")))
