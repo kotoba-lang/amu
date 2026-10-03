@@ -1,0 +1,124 @@
+;; seed/tests/kir/doclib/doclib.kotoba -- SOURCE of the KIR document library that seed/12-kirread.kotoba embeds (agent KIR4,
+;; 2026-10-03). gen-doclib.py turns the defns below (comments and blank lines dropped, one defn per line) into the string
+;; functions kr-doc-text* of 12-kirread; `gen-doclib.py --check` fails when the two differ.
+;;
+;; Representation: a KIR :document is a :string holding its CANONICAL EDN text, exactly as stage-0's native backend
+;; (kotoba-lang/kotoba-native src/kotoba/native/document.cljk, "gap 2 of the selfhost foundation"): nil, true/false, a
+;; decimal i64, an escaped string, a keyword's text, [a b] (a b) #{a b} {k v k v} with one space between forms, set items
+;; and map keys in canonical order. Every helper is a port of the kotoba$doc-* helper of the same meaning (same scans, same
+;; order, same bounds: 32 items, depth 8 + 1, 4096 nodes; the same traps, through an out-of-range vector read). The
+;; differences are the seed's spelling only: string-find-byte and string-append-range are written out (no loader call),
+;; region-compare takes 5 parameters (its end is always the key's length), (bool-not x) is (not x).
+;; Entry points (12-kirread respells the KIR head to these): __kr_dnull __kr_dbool __kr_di64 __kr_desc __kr_dsym
+;; __kr_dcount __kr_dkind __kr_deq __kr_dsetc __kr_dcontains __kr_dget __kr_dvat __kr_dlat __kr_dentry __kr_dvassoc
+;; __kr_dconj __kr_dvdrop __kr_dvremove __kr_dvsort __kr_dassocop __kr_ddissocop __kr_dmerge __kr_dstrval __kr_dboolval
+;; __kr_di64val __kr_did; the folds of document-vector/list/set/map use __kr_dvz __kr_dlz __kr_dsz __kr_dmz (empty),
+;; __kr_dvadd __kr_dsetput __kr_dmapputu (one step) and __kr_dbounded (the whole).
+(defn __kr_dw [c :i64] :i64 (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))
+(defn __kr_dcloser [c :i64] :bool (or (= c 93) (or (= c 41) (= c 125))))
+(defn __kr_dtrap [] :i64 (vector-at [0] 1))
+(defn __kr_dtraps [] :string (string-substring "x" 0 (__kr_dtrap)))
+(defn __kr_dempty [] :string (string-substring "x" 0 0))
+(defn __kr_dtokend [s :string i :i64] :i64 (if (>= i (string-length s)) i (let [c (string-code-point-at s i)] (cond (= c 32) i (__kr_dcloser c) i :else (__kr_dtokend s (+ i (__kr_dw c)))))))
+(defn __kr_dstrend [s :string i :i64] :i64 (let [c (string-code-point-at s i)] (cond (= c 34) (+ i 1) (= c 92) (__kr_dstrend s (+ i 2)) :else (__kr_dstrend s (+ i (__kr_dw c))))))
+(defn __kr_dseqend [s :string i :i64] :i64 (let [c (string-code-point-at s i)] (cond (= c 32) (__kr_dseqend s (+ i 1)) (__kr_dcloser c) (+ i 1) :else (__kr_dseqend s (__kr_dend s i)))))
+(defn __kr_dend [s :string i :i64] :i64 (let [c (string-code-point-at s i)] (cond (= c 34) (__kr_dstrend s (+ i 1)) (= c 91) (__kr_dseqend s (+ i 1)) (= c 40) (__kr_dseqend s (+ i 1)) (= c 123) (__kr_dseqend s (+ i 1)) (= c 35) (__kr_dseqend s (+ i 2)) :else (__kr_dtokend s i))))
+(defn __kr_dopen [d :string] :i64 (if (= (string-code-point-at d 0) 35) 2 1))
+(defn __kr_ditem [d :string i :i64 k :i64] :i64 (let [c (string-code-point-at d i)] (cond (= c 32) (__kr_ditem d (+ i 1) k) (__kr_dcloser c) -1 (= k 0) i :else (__kr_ditem d (__kr_dend d i) (- k 1)))))
+(defn __kr_dclose [d :string] :i64 (- (string-length d) 1))
+(defn __kr_dcountfrom [d :string i :i64 n :i64] :i64 (let [c (string-code-point-at d i)] (cond (= c 32) (__kr_dcountfrom d (+ i 1) n) (__kr_dcloser c) n :else (__kr_dcountfrom d (__kr_dend d i) (+ n 1)))))
+(defn __kr_dforms [d :string] :i64 (__kr_dcountfrom d (__kr_dopen d) 0))
+;; s[i, j) against all of t from k
+(defn __kr_dregeq [s :string i :i64 j :i64 t :string k :i64] :bool (cond (= i j) (= k (string-length t)) (>= k (string-length t)) (= 0 1) :else (let [c (string-code-point-at s i)] (if (= c (string-code-point-at t k)) (__kr_dregeq s (+ i (__kr_dw c)) j t (+ k (__kr_dw c))) (= 0 1)))))
+;; number tokens over t[i, e)
+(defn __kr_ddigit [c :i64] :bool (and (>= c 48) (< c 58)))
+(defn __kr_dat [t :string i :i64 e :i64] :i64 (if (>= i e) -1 (string-code-point-at t i)))
+(defn __kr_ddigend [t :string i :i64 e :i64] :i64 (cond (>= i e) i (__kr_ddigit (string-code-point-at t i)) (__kr_ddigend t (+ i 1) e) :else i))
+(defn __kr_dexpend [t :string i :i64 e :i64] :i64 (let [c (__kr_dat t i e)] (if (or (= c 101) (= c 69)) (let [s (__kr_dat t (+ i 1) e) j (if (or (= s 43) (= s 45)) (+ i 2) (+ i 1)) k (__kr_ddigend t j e)] (if (> k j) k -1)) i)))
+(defn __kr_dnumkind [t :string i :i64 e :i64] :i64 (let [c0 (__kr_dat t i e) i0 (if (or (= c0 43) (= c0 45)) (+ i 1) i) d1 (__kr_ddigend t i0 e)] (if (= d1 e) (if (> d1 i0) 2 0) (let [c (string-code-point-at t d1)] (cond (= c 46) (let [d2 (__kr_ddigend t (+ d1 1) e)] (if (and (= d1 i0) (= d2 (+ d1 1))) 0 (if (= (__kr_dexpend t d2 e) e) 3 0))) (or (= c 101) (= c 69)) (if (= d1 i0) 0 (let [x (__kr_dexpend t d1 e)] (if (< x 0) 0 (if (= (__kr_dexpend t x e) e) 3 0)))) :else 0)))))
+;; 0 null 1 bool 2 i64 3 f64 4 string 5 keyword 6 symbol 7 vector 8 list 9 set 10 map
+(defn __kr_dkindat [d :string i :i64 e :i64] :i64 (let [c (string-code-point-at d i)] (cond (= c 34) 4 (= c 58) 5 (= c 91) 7 (= c 40) 8 (= c 35) 9 (= c 123) 10 (__kr_dregeq d i e "nil" 0) 0 (__kr_dregeq d i e "true" 0) 1 (__kr_dregeq d i e "false" 0) 1 :else (let [k (__kr_dnumkind d i e)] (if (= k 0) 6 k)))))
+(defn __kr_dkindn [d :string] :i64 (__kr_dkindat d 0 (string-length d)))
+(defn __kr_dreq [d :string lo :i64 hi :i64] :string (let [k (__kr_dkindn d)] (if (or (< k lo) (> k hi)) (__kr_dtraps) d)))
+(defn __kr_dparseneg [t :string i :i64 acc :i64] :i64 (if (>= i (string-length t)) acc (__kr_dparseneg t (+ i 1) (- (* acc 10) (- (string-code-point-at t i) 48)))))
+(defn __kr_dparse [t :string] :i64 (let [c (string-code-point-at t 0)] (if (= c 45) (__kr_dparseneg t 1 0) (- 0 (__kr_dparseneg t (if (= c 43) 1 0) 0)))))
+;; strings
+(defn __kr_dplain [c :i64] :bool (cond (< c 32) (= 0 1) (= c 34) (= 0 1) :else (not (= c 92))))
+(defn __kr_dplainend [s :string i :i64] :i64 (if (>= i (string-length s)) i (let [c (string-code-point-at s i)] (if (__kr_dplain c) (__kr_dplainend s (+ i (__kr_dw c))) i))))
+(defn __kr_dhexd [k :i64] :string (string-substring "0123456789abcdef" k (+ k 1)))
+(defn __kr_descchar [acc :string c :i64] :string (cond (= c 34) (string-concat acc "\\\"") (= c 92) (string-concat acc "\\\\") (= c 8) (string-concat acc "\\b") (= c 9) (string-concat acc "\\t") (= c 10) (string-concat acc "\\n") (= c 12) (string-concat acc "\\f") (= c 13) (string-concat acc "\\r") :else (string-concat (string-concat (string-concat acc "\\u00") (__kr_dhexd (quot c 16))) (__kr_dhexd (- c (* (quot c 16) 16))))))
+(defn __kr_descfrom [acc :string s :string i :i64] :string (let [j (__kr_dplainend s i) a2 (string-concat acc (string-substring s i j))] (if (>= j (string-length s)) (string-concat a2 "\"") (__kr_descfrom (__kr_descchar a2 (string-code-point-at s j)) s (+ j 1)))))
+(defn __kr_desc [s :string] :string (__kr_descfrom "\"" s 0))
+(defn __kr_dhex [c :i64] :i64 (cond (< c 58) (- c 48) (< c 71) (- c 55) :else (- c 87)))
+(defn __kr_dfindbs [t :string i :i64 end :i64] :i64 (if (>= i end) -1 (let [c (string-code-point-at t i)] (if (= c 92) i (__kr_dfindbs t (+ i (__kr_dw c)) end)))))
+(defn __kr_dunesc1 [e :i64] :string (cond (= e 110) "\n" (= e 116) "\t" (= e 98) "\b" (= e 102) "\f" (= e 114) "\r" (= e 34) "\"" :else "\\"))
+(defn __kr_dctl [u :i64] :string (string-substring "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u0008\u0009\u000a\u000b\u000c\u000d\u000e\u000f\u0010\u0011\u0012\u0013\u0014\u0015\u0016\u0017\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f" u (+ u 1)))
+(defn __kr_dunescfrom [acc :string t :string i :i64 end :i64] :string (let [b (__kr_dfindbs t i end)] (if (< b 0) (string-concat acc (string-substring t i end)) (let [a2 (string-concat acc (string-substring t i b)) e (string-code-point-at t (+ b 1))] (if (= e 117) (let [u (+ (* 16 (__kr_dhex (string-code-point-at t (+ b 4)))) (__kr_dhex (string-code-point-at t (+ b 5))))] (if (and (= (string-code-point-at t (+ b 2)) 48) (and (= (string-code-point-at t (+ b 3)) 48) (< u 32))) (__kr_dunescfrom (string-concat a2 (__kr_dctl u)) t (+ b 6) end) (__kr_dtraps))) (__kr_dunescfrom (string-concat a2 (__kr_dunesc1 e)) t (+ b 2) end))))))
+(defn __kr_dunesc [t :string] :string (__kr_dunescfrom (__kr_dempty) t 1 (- (string-length t) 1)))
+;; symbols: refuse a text that would read back as something else
+(defn __kr_dsymok [c :i64] :bool (cond (<= c 32) (= 0 1) (= c 44) (= 0 1) (= c 91) (= 0 1) (= c 93) (= 0 1) (= c 123) (= 0 1) (= c 125) (= 0 1) (= c 40) (= 0 1) (= c 41) (= 0 1) (= c 34) (= 0 1) (= c 39) (= 0 1) (= c 59) (= 0 1) (= c 96) (= 0 1) (= c 126) (= 0 1) (= c 94) (= 0 1) :else (not (= c 92))))
+(defn __kr_dsymsok [s :string i :i64] :bool (if (>= i (string-length s)) (= 0 0) (let [c (string-code-point-at s i)] (if (__kr_dsymok c) (__kr_dsymsok s (+ i (__kr_dw c))) (= 0 1)))))
+(defn __kr_dsym [s :string] :string (cond (= (string-length s) 0) (__kr_dtraps) (not (__kr_dsymsok s 0)) (__kr_dtraps) (= (string-code-point-at s 0) 58) (__kr_dtraps) (= (string-code-point-at s 0) 35) (__kr_dtraps) (string=? s "nil") (__kr_dtraps) (string=? s "true") (__kr_dtraps) (string=? s "false") (__kr_dtraps) (= (__kr_dnumkind s 0 (string-length s)) 0) s :else (__kr_dtraps)))
+;; bounds: depth (levels) and nodes, as the reference counts them
+(defn __kr_dmax [a :i64 b :i64] :i64 (if (> a b) a b))
+(defn __kr_dkwat [d :string i :i64] :bool (= (string-code-point-at d i) 58))
+(defn __kr_ddepthitems [d :string i :i64 m :i64 mp :bool ky :bool] :i64 (let [c (string-code-point-at d i)] (cond (= c 32) (__kr_ddepthitems d (+ i 1) m mp ky) (__kr_dcloser c) m :else (let [here (if (and ky (__kr_dkwat d i)) 0 (__kr_ddepthat d i))] (__kr_ddepthitems d (__kr_dend d i) (__kr_dmax m here) mp (and mp (not ky)))))))
+(defn __kr_ddepthat [d :string i :i64] :i64 (let [k (__kr_dkindat d i (__kr_dend d i))] (if (< k 7) 1 (+ 1 (__kr_ddepthitems d (+ i (if (= k 9) 2 1)) 0 (= k 10) (= k 10))))))
+(defn __kr_dnodesitems [d :string i :i64 n :i64 mp :bool ky :bool] :i64 (let [c (string-code-point-at d i)] (cond (= c 32) (__kr_dnodesitems d (+ i 1) n mp ky) (__kr_dcloser c) n :else (let [here (if (and ky (__kr_dkwat d i)) 0 (__kr_dnodesat d i))] (__kr_dnodesitems d (__kr_dend d i) (+ n here) mp (and mp (not ky)))))))
+(defn __kr_dnodesat [d :string i :i64] :i64 (let [k (__kr_dkindat d i (__kr_dend d i))] (if (< k 7) 1 (+ 1 (__kr_dnodesitems d (+ i (if (= k 9) 2 1)) 0 (= k 10) (= k 10))))))
+(defn __kr_dbounded [d :string] :string (let [k (__kr_dkindn d)] (cond (< k 7) d (> (if (= k 10) (quot (__kr_dforms d) 2) (__kr_dforms d)) 32) (__kr_dtraps) (> (__kr_ddepthat d 0) 9) (__kr_dtraps) (> (__kr_dnodesat d 0) 4096) (__kr_dtraps) :else d)))
+;; canonical bytes (document-compare's order)
+(defn __kr_dlentext [acc :string tag :string s :string] :string (string-concat (string-concat (string-concat (string-concat acc tag) (string-from-i64 (string-length s))) ":") s))
+(defn __kr_dlenrange [acc :string tag :string d :string i :i64 e :i64] :string (string-concat (string-concat (string-concat (string-concat acc tag) (string-from-i64 (- e i))) ":") (string-substring d i e)))
+(defn __kr_dcanonitems [acc :string d :string i :i64 mp :bool ky :bool] :string (let [c (string-code-point-at d i)] (cond (= c 32) (__kr_dcanonitems acc d (+ i 1) mp ky) (__kr_dcloser c) acc :else (let [e (__kr_dend d i) a2 (if ky (if (__kr_dkwat d i) (__kr_dlenrange acc "K" d i e) (__kr_dcanonat (string-concat acc "D") d i)) (__kr_dcanonat acc d i))] (__kr_dcanonitems a2 d e mp (and mp (not ky)))))))
+(defn __kr_dcanonat [acc :string d :string i :i64] :string (let [e (__kr_dend d i) k (__kr_dkindat d i e)] (cond (= k 0) (string-concat acc "n") (= k 1) (string-concat acc (if (__kr_dregeq d i e "true" 0) "bt" "bf")) (= k 2) (string-concat (string-concat (string-concat acc "i") (string-substring d i e)) ";") (= k 3) (__kr_dtraps) (= k 4) (__kr_dlentext acc "s" (__kr_dunescfrom (__kr_dempty) d (+ i 1) (- e 1))) (= k 5) (__kr_dlenrange acc "k" d i e) (= k 6) (__kr_dlenrange acc "y" d i e) :else (let [open (+ i (if (= k 9) 2 1)) forms (__kr_dcountfrom d open 0) head (string-concat (string-concat (string-concat acc (cond (= k 7) "v" (= k 8) "l" (= k 9) "e" :else "m")) (string-from-i64 (if (= k 10) (quot forms 2) forms))) ":")] (__kr_dcanonitems head d open (= k 10) (= k 10))))))
+(defn __kr_dcanon [d :string] :string (__kr_dcanonat (__kr_dempty) d 0))
+;; a[i, len a) against b[k, l) in code point (= UTF-8 byte) order
+(defn __kr_drcmp [a :string i :i64 b :string k :i64 l :i64] :i64 (cond (= i (string-length a)) (if (= k l) 0 -1) (= k l) 1 :else (let [x (string-code-point-at a i) y (string-code-point-at b k)] (cond (< x y) -1 (> x y) 1 :else (__kr_drcmp a (+ i (__kr_dw x)) b (+ k (__kr_dw y)) l)))))
+(defn __kr_dkeycmp [key :string m :string i :i64 e :i64] :i64 (if (and (= (string-code-point-at key 0) 58) (__kr_dkwat m i)) (__kr_drcmp key 0 m i e) (string-compare (__kr_dcanon key) (__kr_dcanonat (__kr_dempty) m i))))
+;; maps
+(defn __kr_dmapfind [m :string key :string i :i64] :i64 (let [c (string-code-point-at m i)] (cond (= c 32) (__kr_dmapfind m key (+ i 1)) (__kr_dcloser c) -1 :else (let [ke (__kr_dend m i)] (if (__kr_dregeq m i ke key 0) i (__kr_dmapfind m key (__kr_dend m (+ ke 1))))))))
+(defn __kr_dmapslot [m :string key :string i :i64 u :bool] :i64 (let [c (string-code-point-at m i)] (cond (= c 32) (__kr_dmapslot m key (+ i 1) u) (__kr_dcloser c) i :else (let [ke (__kr_dend m i) o (__kr_dkeycmp key m i ke)] (cond (< o 0) i (and u (= o 0)) (__kr_dtrap) :else (__kr_dmapslot m key (__kr_dend m (+ ke 1)) u))))))
+(defn __kr_dinsert [m :string q :i64 entry :string] :string (cond (= q (__kr_dclose m)) (if (= q (__kr_dopen m)) (string-concat (string-substring m 0 q) (string-concat entry (string-substring m q (string-length m)))) (string-concat (string-concat (string-substring m 0 q) " ") (string-concat entry (string-substring m q (string-length m))))) :else (string-concat (string-substring m 0 q) (string-concat (string-concat entry " ") (string-substring m q (string-length m))))))
+(defn __kr_dmapput [m :string key :string value :string u :bool] :string (__kr_dbounded (__kr_dinsert m (__kr_dmapslot m key 1 u) (string-concat (string-concat key " ") value))))
+(defn __kr_dmapputu [m :string key :string value :string] :string (__kr_dmapput m key value (= 0 0)))
+(defn __kr_dassoc [m :string key :string value :string] :string (let [p (__kr_dmapfind m key 1)] (if (< p 0) (__kr_dmapput m key value (= 0 1)) (let [vs (+ (__kr_dend m p) 1) ve (__kr_dend m vs)] (__kr_dbounded (string-concat (string-substring m 0 vs) (string-concat value (string-substring m ve (string-length m)))))))))
+(defn __kr_dcut [d :string p :i64 e :i64] :string (cond (= (string-code-point-at d e) 32) (string-concat (string-substring d 0 p) (string-substring d (+ e 1) (string-length d))) (= (string-code-point-at d (- p 1)) 32) (string-concat (string-substring d 0 (- p 1)) (string-substring d e (string-length d))) :else (string-concat (string-substring d 0 p) (string-substring d e (string-length d)))))
+(defn __kr_ddissoc [m :string key :string] :string (let [p (__kr_dmapfind m key 1)] (if (< p 0) m (__kr_dcut m p (__kr_dend m (+ (__kr_dend m p) 1))))))
+(defn __kr_dget [m0 :string key :string] [:option :string] (let [m (__kr_dreq m0 10 10) p (__kr_dmapfind m key 1)] (if (< p 0) (option-none-of [:option :string]) (let [vs (+ (__kr_dend m p) 1)] (option-some-of [:option :string] (string-substring m vs (__kr_dend m vs)))))))
+(defn __kr_dmergefrom [acc :string m :string i :i64] :string (let [c (string-code-point-at m i)] (cond (= c 32) (__kr_dmergefrom acc m (+ i 1)) (__kr_dcloser c) acc :else (let [ke (__kr_dend m i) ve (__kr_dend m (+ ke 1))] (__kr_dmergefrom (__kr_dassoc acc (string-substring m i ke) (string-substring m (+ ke 1) ve)) m ve)))))
+(defn __kr_dmerge [a :string b :string] :string (let [a1 (__kr_dreq a 10 10)] (__kr_dmergefrom a1 (__kr_dreq b 10 10) 1)))
+(defn __kr_dentry [m0 :string i :i64] [:option :string] (let [m (__kr_dreq m0 10 10)] (if (< i 0) (option-none-of [:option :string]) (let [p (__kr_ditem m 1 (* 2 i))] (if (< p 0) (option-none-of [:option :string]) (let [ke (__kr_dend m p)] (option-some-of [:option :string] (string-concat (string-concat "[" (string-substring m p (__kr_dend m (+ ke 1)))) "]"))))))))
+;; vectors, lists, sets
+(defn __kr_dnth [d :string i :i64] [:option :string] (if (< i 0) (option-none-of [:option :string]) (let [p (__kr_ditem d (__kr_dopen d) i)] (if (< p 0) (option-none-of [:option :string]) (option-some-of [:option :string] (string-substring d p (__kr_dend d p)))))))
+(defn __kr_dvat [d :string i :i64] [:option :string] (__kr_dnth (__kr_dreq d 7 7) i))
+(defn __kr_dlat [d :string i :i64] [:option :string] (__kr_dnth (__kr_dreq d 8 8) i))
+(defn __kr_dvadd [v :string x :string] :string (__kr_dinsert v (__kr_dclose v) x))
+(defn __kr_dconj [v0 :string x :string] :string (let [v (__kr_dreq v0 7 7)] (__kr_dbounded (__kr_dinsert v (__kr_dclose v) x))))
+(defn __kr_dvassoc [v0 :string i :i64 x :string] :string (let [v (__kr_dreq v0 7 7) p (if (< i 0) -1 (__kr_ditem v 1 i))] (if (< p 0) (__kr_dtraps) (__kr_dbounded (string-concat (string-substring v 0 p) (string-concat x (string-substring v (__kr_dend v p) (string-length v))))))))
+(defn __kr_dvremove [v0 :string i :i64] :string (let [v (__kr_dreq v0 7 7) p (if (< i 0) -1 (__kr_ditem v 1 i))] (if (< p 0) (__kr_dtraps) (__kr_dcut v p (__kr_dend v p)))))
+(defn __kr_dvdrop [v0 :string n :i64] :string (let [v (__kr_dreq v0 7 7)] (cond (< n 0) (__kr_dtraps) (> n (__kr_dforms v)) (__kr_dtraps) (= n 0) v :else (let [p (__kr_ditem v 1 n)] (if (< p 0) "[]" (string-concat "[" (string-substring v p (string-length v))))))))
+(defn __kr_dsetcontains [s :string x :string i :i64] :bool (let [c (string-code-point-at s i)] (cond (= c 32) (__kr_dsetcontains s x (+ i 1)) (__kr_dcloser c) (= 0 1) :else (let [e (__kr_dend s i)] (if (__kr_dregeq s i e x 0) (= 0 0) (__kr_dsetcontains s x e))))))
+(defn __kr_dsetc [s :string x :string] :bool (__kr_dsetcontains (__kr_dreq s 9 9) x 2))
+(defn __kr_ditemslot [s :string cx :string i :i64 u :bool] :i64 (let [c (string-code-point-at s i)] (cond (= c 32) (__kr_ditemslot s cx (+ i 1) u) (__kr_dcloser c) i :else (let [o (string-compare cx (__kr_dcanonat (__kr_dempty) s i))] (cond (< o 0) i (and u (= o 0)) (__kr_dtrap) :else (__kr_ditemslot s cx (__kr_dend s i) u))))))
+(defn __kr_dsetput [s :string x :string] :string (__kr_dbounded (__kr_dinsert s (__kr_ditemslot s (__kr_dcanon x) 2 (= 0 0)) x)))
+(defn __kr_dsortfrom [acc :string v :string i :i64] :string (let [c (string-code-point-at v i)] (cond (= c 32) (__kr_dsortfrom acc v (+ i 1)) (__kr_dcloser c) acc :else (let [e (__kr_dend v i) x (string-substring v i e)] (__kr_dsortfrom (__kr_dinsert acc (__kr_ditemslot acc (__kr_dcanon x) 1 (= 0 1)) x) v e)))))
+(defn __kr_dvsort [v :string] :string (__kr_dsortfrom "[]" (__kr_dreq v 7 7) 1))
+;; the surface operations
+(defn __kr_dnull [] :string "nil")
+(defn __kr_dbool [b :bool] :string (if b "true" "false"))
+(defn __kr_di64 [n :i64] :string (string-from-i64 n))
+(defn __kr_dvz [] :string "[]")
+(defn __kr_dlz [] :string "()")
+(defn __kr_dsz [] :string "#{}")
+(defn __kr_dmz [] :string "{}")
+(defn __kr_dcount [d0 :string] :i64 (let [d (__kr_dreq d0 7 10)] (if (= (__kr_dkindn d) 10) (quot (__kr_dforms d) 2) (__kr_dforms d))))
+(defn __kr_dkind [d :string] :keyword (let [k (__kr_dkindn d)] (cond (= k 0) :null (= k 1) :bool (= k 2) :i64 (= k 3) :f64 (= k 4) :string (= k 5) :keyword (= k 6) :symbol (= k 7) :vector (= k 8) :list (= k 9) :set :else :map)))
+(defn __kr_deq [a :string b :string] :bool (string=? a b))
+(defn __kr_dcontains [m :string k :string] :bool (>= (__kr_dmapfind (__kr_dreq m 10 10) k 1) 0))
+(defn __kr_dassocop [m :string k :string v :string] :string (__kr_dassoc (__kr_dreq m 10 10) k v))
+(defn __kr_ddissocop [m :string k :string] :string (__kr_ddissoc (__kr_dreq m 10 10) k))
+(defn __kr_dstrval [d :string] [:option :string] (if (= (__kr_dkindn d) 4) (option-some-of [:option :string] (__kr_dunesc d)) (option-none-of [:option :string])))
+(defn __kr_dboolval [d :string] [:option :bool] (if (= (__kr_dkindn d) 1) (option-some-of [:option :bool] (string=? d "true")) (option-none-of [:option :bool])))
+(defn __kr_di64val [d :string] [:option :i64] (if (= (__kr_dkindn d) 2) (option-some-of [:option :i64] (__kr_dparse d)) (option-none-of [:option :i64])))
+(defn __kr_did [d :string] :string d)
