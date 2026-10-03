@@ -45,7 +45,7 @@
   containment, no cache or ownership decision. A malformed request, and a
   RANGE outside the file, throw by name (the static image traps). See
   kotoba.compiler.nbb.host.io for the layer's contract."
-  {:kotoba/export #?(:kotoba [app-data browse] :default [])}
+  {:kotoba/export #?(:kotoba [app-data app-data-bytes browse] :default [])}
   #?(:cljs (:require ["node:fs" :as fs])))
 
 #?(:cljs (defn- split-at-token [request token]
@@ -195,6 +195,12 @@
      "fs/app-data 35, text answers."
      [request]
      (dispatch request nil decode)))
+
+#?(:kotoba (defn app-data-bytes
+           "fs/app-data 35 with a bytes payload (the ability itself): an importer that
+           names this module `fs` calls `fs/app-data-bytes` as it calls `fs/app-data`."
+           [request :string] :bytes
+           (fs/app-data-bytes request)))
 
 #?(:cljs (defn app-data-bytes
           "fs/app-data 35 with a bytes payload: READ and RANGE answer a byte buffer;

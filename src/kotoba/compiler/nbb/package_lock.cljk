@@ -97,27 +97,8 @@
 #?(:kotoba
 (defn- kf [k :keyword] [:ref :form/r] (form/keyword-form k)))
 
-;; A function of ANOTHER module that can abort is seen here as returning its
-;; lowered interface `[:result T E]` (abort slice 2 propagates inside one module,
-;; not across a module boundary): these unwrap it and abort again with the same
-;; error, the pattern cli_support's `read-edn-file!` uses for `bounded-edn`.
-#?(:kotoba
-(defn- unwrap-form [r [:result [:ref :form/r] :document]] [:ref :form/r]
-  (if (result-ok?-of [:result [:ref :form/r] :document] r)
-    (result-value-of [:result [:ref :form/r] :document] r (form/nil-form))
-    (throw (result-error-of [:result [:ref :form/r] :document] r (document-null))))))
-
-#?(:kotoba
-(defn- unwrap-string [r [:result :string :document]] :string
-  (if (result-ok?-of [:result :string :document] r)
-    (result-value-of [:result :string :document] r "")
-    (throw (result-error-of [:result :string :document] r (document-null))))))
-
-#?(:kotoba
-(defn- unwrap-i64 [r [:result :i64 :document]] :i64
-  (if (result-ok?-of [:result :i64 :document] r)
-    (result-value-of [:result :i64 :document] r 0)
-    (throw (result-error-of [:result :i64 :document] r (document-null))))))
+;; A function of ANOTHER module that can abort aborts here too (ADR 0363): its
+;; value is used as is.
 
 #?(:kotoba
 (defn- gk [m [:ref :form/r] k :keyword] [:ref :form/r]
@@ -335,11 +316,11 @@ nil
   "The commit a materialised dependency is actually at, or none when it is not a
   git checkout at all. process/spawn: git's stderr is this process's own."
   [dir :string] [:option :string]
-  (let [request (unwrap-string (process-wire/request "git" (typed-list-new [:list :string] "-C" dir "rev-parse" "HEAD")))
+  (let [request (process-wire/request "git" (typed-list-new [:list :string] "-C" dir "rev-parse" "HEAD"))
         answer (process/spawn request)
-        code (unwrap-i64 (process-wire/answer-exit answer))]
+        code (process-wire/answer-exit answer)]
     (if (= 0 code)
-      (option-some-of [:option :string] (str/trim (unwrap-string (process-wire/answer-out answer))))
+      (option-some-of [:option :string] (str/trim (process-wire/answer-out answer)))
       (option-none-of [:option :string]))))
    :default
 (do
@@ -563,7 +544,7 @@ nil
     (if (not (exists? path))
       (throw (ex-info "dependency tree carries no package manifest"
                       {:phase :package-lock :dependency (gs dep :dep/name) :expected path}))
-      (let [manifest (unwrap-form (support/read-edn-file! path))]
+      (let [manifest (support/read-edn-file! path)]
         (normalize-numbers manifest)))))
    :default
 (defn- read-manifest! [root dep]
@@ -993,7 +974,7 @@ nil
     (not (exists? lock-path)) (throw (ex-info "package lock not found" {:phase :package-lock :path lock-path}))
     (not (directory? packages-dir)) (throw (ex-info "--packages must name an existing directory" {:phase :package-lock :path packages-dir}))
     :else
-    (let [raw (unwrap-form (support/read-edn-file! lock-path))
+    (let [raw (support/read-edn-file! lock-path)
           lock (normalize-numbers raw)
           _ (validate-lock lock trust)
           resolved (resolve-deps (gk lock :deps) 0 lock-path packages-dir (form/no-forms))]

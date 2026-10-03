@@ -4,7 +4,7 @@
   Keeping policy decoding and the CLI error contract here is important: the
   Wasm/native split may reduce namespace load time, but must not create two
   subtly different admission boundaries."
-  {:kotoba/export #?(:kotoba [command-line-args execute! option options read-edn-file! serve! source! timed usage-error!] :default [analyze-options capability-policy command-line-args emit-metadata execute! invoke option options oracle-fuel parse-policy-material read-artifact-file! read-artifact-text! read-edn-file! read-policy read-policy-material refusal serve! source! timed usage-error!])}
+  {:kotoba/export #?(:kotoba [command-line-args execute! option options read-edn-file! serve! source! usage-error!] :default [analyze-options capability-policy command-line-args emit-metadata execute! invoke option options oracle-fuel parse-policy-material read-artifact-file! read-artifact-text! read-edn-file! read-policy read-policy-material refusal serve! source! timed usage-error!])}
   (:require [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.kotoba-reader :as kr]
             [kotoba.compiler.posix-path :as posix-path]
@@ -39,9 +39,9 @@
 ;;
 ;; Under Kotoba a def value cannot perform a capability call and module state
 ;; is absent, so the flag is a function of the environment and the timing
-;; state does not exist: `timed` runs its thunk, `timing-report` answers nil.
-#?(:kotoba
-   (defn- timing-enabled? [] false)
+;; state does not exist: `timed` runs its thunk, and the timing helpers have no Kotoba reading
+;; (only the host `execute!` reads them).
+#?(:kotoba nil
    :default
    (defn- timing-enabled? []
      (= "1" (env/read "KOTOBA_COMPILER_TIMING"))))
@@ -49,14 +49,12 @@
 ;; The monotonic clock in milliseconds. clock/now answers nanoseconds as
 ;; decimal text; phases are differences of two readings, so the clock's
 ;; origin does not matter (performance.now's did not either).
-#?(:kotoba
-   (defn- monotonic-ms [] 0)
+#?(:kotoba nil
    :default
    (defn- monotonic-ms []
      (/ (parse-double (clock/now "monotonic")) 1000000)))
 
-#?(:kotoba
-   (defn- reset-timing! [] nil)
+#?(:kotoba nil
    :default
    (do
      (def ^:private timing-origin-ms (volatile! (monotonic-ms)))
@@ -65,8 +63,7 @@
        (vreset! timing-origin-ms (monotonic-ms))
        (vreset! timing-phases []))))
 
-#?(:kotoba
-   (defn timed [phase f] (f))
+#?(:kotoba nil
    :default
    (defn timed [phase f]
      (if-not (timing-enabled?)
@@ -78,8 +75,7 @@
              (vswap! timing-phases conj
                      {:phase phase :milliseconds (- (monotonic-ms) started)})))))))
 
-#?(:kotoba
-   (defn- timing-report [] nil)
+#?(:kotoba nil
    :default
    (defn- timing-report []
      (when (timing-enabled?)
@@ -140,13 +136,9 @@
 ;; stays where it was, in the host-only region.
 #?(:kotoba
    (defn read-edn-file! [path :string] [:ref :form/r]
-     ;; `bounded-edn/read-file` aborts, so across the module boundary its
-     ;; interface is a result: unwrap it and abort again with the same error
-     ;; (the pattern `kotoba.lang.json/decode` uses for `json.core/decode`).
-     (let [r (bounded-edn/read-file path)]
-       (if (result-ok?-of [:result [:ref :form/r] :document] r)
-         (result-value-of [:result [:ref :form/r] :document] r (form/nil-form))
-         (throw (result-error-of [:result [:ref :form/r] :document] r (document-null)))))))
+     ;; `bounded-edn/read-file` aborts, and across the module boundary its
+     ;; abort is this function's (ADR 0363)
+     (bounded-edn/read-file path)))
 
 ;; Everything from here to `command-line-args` decodes, narrows and reports on
 ;; host values: EDN maps, BigInts, `ex-info` data and `catch :default`. A
