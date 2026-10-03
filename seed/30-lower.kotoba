@@ -286,26 +286,30 @@
 ;; ---- constant tables: (vector-at V i) with V a vector literal of integer literals, or a def of one -> TAB ----
 ;; (seed/SIR OP-TAB). The table is a LIT record appended after 10-lex's string literals: LF-LEN = 8 * items, the items
 ;; little-endian in LITB, LF-TOK = the vector's token; 42-layout pools it like a string. No runtime allocation.
-;; the vector-literal node behind v (v itself, or a def's literal: (def NAME literal), literal = 3rd child), else 0
-(defn- lw-vlit [M :vector-i64 v :i64] :i64
+;; the vector-literal node behind v (v itself, or a def's literal: (def NAME literal), literal = 3rd child), if any.
+;; R3 rung proof: [:option :i64] instead of the R0 "0 = none" convention.
+(defn- lw-vlit [M :vector-i64 v :i64] [:option :i64]
   (let [res (lw-nf M v NF-RES)]
     (case (lw-nf M v NF-KIND)
-      ND-VEC v
+      ND-VEC (option-some-of [:option :i64] v)
       ND-SYM (if (= (lw-rcls res) RES-DEF)
                (let [lit (lw-nth M (lw-first M (lw-ff M (lw-ridx res) FF-NODE)) 2)]
-                 (if (= (lw-nf M lit NF-KIND) ND-VEC) lit 0))
-               0)
-      0)))
+                 (if (= (lw-nf M lit NF-KIND) ND-VEC) (option-some-of [:option :i64] lit) (option-none-of [:option :i64])))
+               (option-none-of [:option :i64]))
+      (option-none-of [:option :i64]))))
 ;; true when the chain c has at least one item and every item is an ND-INT
 (defn- lw-allint [M :vector-i64 c :i64] :bool
   (loop [x c k 0]
     (cond (zero? x) (pos? k)
           (= (lw-nf M x NF-KIND) ND-INT) (recur (lw-next M x) (inc k))
           :else false)))
-;; the table node for the first operand v of a runtime head rt, 0 when the general RT path applies
-(defn- lw-tabsel [M :vector-i64 v :i64 rt :i64] :i64
-  (let [w (if (= rt RT-VECTOR-AT) (lw-vlit M v) 0)]
-    (if (and (pos? w) (lw-allint M (lw-first M w))) w 0)))
+;; the table node for the first operand v of a runtime head rt; none when the general RT path applies
+(defn- lw-tabsel [M :vector-i64 v :i64 rt :i64] [:option :i64]
+  (if (= rt RT-VECTOR-AT)
+    (option-match [:option :i64] (lw-vlit M v)
+      (option-none-of [:option :i64])
+      w (if (lw-allint M (lw-first M w)) (option-some-of [:option :i64] w) (option-none-of [:option :i64])))
+    (option-none-of [:option :i64])))
 ;; LITB[b .. b+8) = the 8 little-endian bytes of x (vector-assoc! writes M in place)
 (defn- lw-bytes8 [M :vector-i64 b :i64 x :i64] :vector-i64
   (do (dotimes [k 8]
@@ -337,11 +341,9 @@
     (-> M (lw-tabdata w m) (lw-expr i t 0) (lw-emit OP-TAB t lit m))))
 ;; a runtime head over the operands from a
 (defn- lw-rtcall [M :vector-i64 a :i64 t :i64 rt :i64] :vector-i64
-  (let [w (lw-tabsel M a rt)
-        m (lw-count M a)]
-    (if (pos? w)
-      (lw-tab M w (lw-next M a) t)
-      (-> M (lw-args a t) (lw-emit OP-RT rt t m)))))
+  (option-match [:option :i64] (lw-tabsel M a rt)
+    (-> M (lw-args a t) (lw-emit OP-RT rt t (lw-count M a)))
+    w (lw-tab M w (lw-next M a) t)))
 
 ;; ---- R1: do, trap, records (seed/HEADS HD-DO HD-TRAP HD-RECORD-*: pair chains pair(f0, pair(f1, .. 0))) ----
 ;; (do e1 .. en): every ei into t, only en with the context k

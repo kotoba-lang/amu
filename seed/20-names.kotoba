@@ -786,26 +786,24 @@
 ;; R3 (agent R3, 2026-10-03): hide every local binding while 21-check checks another function on demand (an aborting
 ;; callee whose error type the caller needs, seed/21-check.kotoba ck-ensure), then show them again. The scope stack itself
 ;; is untouched (the nested check pushes and pops above it); only SF-BIND of the bound symbols is saved and cleared.
-;; nm-scope-hide M -> M, R0 = the HEAP save block [height, SF-BIND of entry 0, ..]; nm-scope-show M block -> M.
-(defn- nm-hide-save [M :vector-i64 b :i64 k :i64 h :i64] :vector-i64
-  (if (>= k h)
-    M
-    (let [s (vector-at M (+ MM-SCOPE-BASE (* k MM-SCOPE-W) CF-SYM))]
-      (nm-hide-save (nm-put M (+ b 1 k) (nm-sf M s SF-BIND)) b (inc k) h))))
-(defn- nm-hide-clear [M :vector-i64 k :i64 h :i64] :vector-i64
-  (if (>= k h)
-    M
-    (let [s (vector-at M (+ MM-SCOPE-BASE (* k MM-SCOPE-W) CF-SYM))]
-      (nm-hide-clear (nm-set-sf M s SF-BIND 0) (inc k) h))))
+;; R3 rung proof: the saved bindings are a typed list [:list :i64] (entry k = SF-BIND of scope entry k), not a HEAP block.
+;;   nm-scope-saved M -> the list; nm-scope-hide M -> M (SF-BIND of every entry cleared); nm-scope-show M list -> M.
+(defn- nm-scope-sym [M :vector-i64 k :i64] :i64 (vector-at M (+ MM-SCOPE-BASE (* k MM-SCOPE-W) CF-SYM)))
+(defn- nm-scope-saved [M :vector-i64] [:list :i64]
+  (let [h (vector-at M MM-SCOPE-N)]
+    (loop [k 0 acc (typed-list-new [:list :i64])]
+      (if (>= k h)
+        acc
+        (recur (inc k) (typed-list-conj [:list :i64] acc (nm-sf M (nm-scope-sym M k) SF-BIND)))))))
 (defn- nm-scope-hide [M :vector-i64] :vector-i64
-  (let [h (vector-at M MM-SCOPE-N)
-        M1 (mem-alloc M (+ h 1))
-        b (vector-at M1 MM-R0)]
-    (-> M1 (nm-put b h) (nm-hide-save b 0 h) (nm-hide-clear 0 h) (nm-put MM-R0 b))))
-(defn- nm-show-loop [M :vector-i64 b :i64 k :i64 h :i64] :vector-i64
-  (if (>= k h)
-    M
-    (let [s (vector-at M (+ MM-SCOPE-BASE (* k MM-SCOPE-W) CF-SYM))]
-      (nm-show-loop (nm-set-sf M s SF-BIND (vector-at M (+ b 1 k))) b (inc k) h))))
-(defn- nm-scope-show [M :vector-i64 b :i64] :vector-i64
-  (nm-show-loop M b 0 (vector-at M b)))
+  (let [h (vector-at M MM-SCOPE-N)]
+    (loop [k 0]
+      (if (>= k h)
+        M
+        (let [M1 (nm-set-sf M (nm-scope-sym M k) SF-BIND 0)] (recur (inc k)))))))
+(defn- nm-scope-show [M :vector-i64 saved [:list :i64]] :vector-i64
+  (let [h (count saved)]
+    (loop [k 0]
+      (if (>= k h)
+        M
+        (let [M1 (nm-set-sf M (nm-scope-sym M k) SF-BIND (typed-list-nth [:list :i64] saved k))] (recur (inc k)))))))

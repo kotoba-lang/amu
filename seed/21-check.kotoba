@@ -200,17 +200,22 @@
           :else (nm-put (ck-err M E-CHECK-SCHEMA nmk 0) MM-R0 0))))
 
 ;; the type of type form t: R0 = TY-* (0 when t is not a type; a malformed schema also records E2128)
+;; R3 rung proof (lang/abort-ability.edn): the forms are parsed by aborting functions (ck-tf ..) that throw the malformed
+;; node (error type :i64); this try is the only handler, so ck-tform itself does not abort.
 (defn- ck-tform [M :vector-i64 t :i64] :vector-i64
-  (cond (= (nm-kind M t) ND-KW) (nm-put M MM-R0 (ck-kwcode-type (nm-head-of M t)))
-        (= (ck-is-tform M t) 1) (ck-tform-vec M t)
-        :else (nm-put M MM-R0 0)))
+  (try (ck-tf M t) (catch :i64 bad (nm-put M MM-R0 0))))
+(defn- ck-tf [M :vector-i64 t :i64] :vector-i64
+  (cond (= (nm-kind M t) ND-KW) (let [ty (ck-kwcode-type (nm-head-of M t))]
+                                  (if (zero? ty) (throw t) (nm-put M MM-R0 ty)))
+        (= (ck-is-tform M t) 1) (ck-tf-vec M t)
+        :else (throw t)))
 ;; R3: [:record ..] (R1) or one of the composite forms [:option T] [:list T] [:set T] [:result T E] [:map K V]
-(defn- ck-tform-vec [M :vector-i64 t :i64] :vector-i64
+(defn- ck-tf-vec [M :vector-i64 t :i64] :vector-i64
   (let [k (nm-head-of M (nm-first M t))]
     (case k
-      KW-RECORD (ck-tform-rec M t)
-      (KW-OPTION KW-LIST KW-SET KW-RESULT KW-MAP) (ck-tform-comp M t k)
-      (nm-put M MM-R0 0))))
+      KW-RECORD (let [M1 (ck-tform-rec M t)] (if (zero? (ck-r M1)) (throw t) M1))
+      (KW-OPTION KW-LIST KW-SET KW-RESULT KW-MAP) (ck-tf-comp M t k)
+      (throw t))))
 
 ;; ---- defrecord (registered before desugaring, so (->Name ..) and inline schemas of the same name resolve) ----
 ;; 1 when S[a1..b1) is a keyword spelling ':' + S[a2..b2)
@@ -2127,20 +2132,19 @@
   (case k KW-OPTION TC-OPTION KW-RESULT TC-RESULT KW-LIST TC-LIST KW-MAP TC-MAP KW-SET TC-SET 0))
 (defn- ck-tc-arity [c :i64] :i64 (if (or (= c TC-RESULT) (= c TC-MAP)) 2 1))
 
-;; [:option T] [:list T] [:set T] [:result T E] [:map K V]: R0 = the type (0 when malformed)
-(defn- ck-tform-comp [M :vector-i64 t :i64 k :i64] :vector-i64
+;; [:option T] [:list T] [:set T] [:result T E] [:map K V]: R0 = the type; a malformed form throws its node
+(defn- ck-tf-comp [M :vector-i64 t :i64 k :i64] :vector-i64
   (let [c (ck-tc-of k)
-        na (ck-tc-arity c)
-        M1 (ck-tform M (nm-nth M t 1))
-        a (ck-ty M1)
-        M2 (if (= na 2) (ck-tform M1 (nm-nth M1 t 2)) (nm-put M1 MM-R0 0))
-        b (ck-ty M2)]
-    (cond (nm-failed M2) (nm-put M2 MM-R0 0)
-          (nm-ne (nm-count M2 t) (+ na 1)) (nm-put M2 MM-R0 0)
-          (zero? a) (nm-put M2 MM-R0 0)
-          (and (= na 2) (zero? b)) (nm-put M2 MM-R0 0)
-          (and (or (= c TC-SET) (= c TC-MAP)) (not (ck-keyable a))) (nm-put M2 MM-R0 0)
-          :else (ck-ct-intern M2 c a b))))
+        na (ck-tc-arity c)]
+    (if (nm-ne (nm-count M t) (+ na 1))
+      (throw t)
+      (let [M1 (ck-tf M (nm-nth M t 1))
+            a (ck-ty M1)
+            M2 (if (= na 2) (ck-tf M1 (nm-nth M1 t 2)) M1)
+            b (if (= na 2) (ck-ty M2) 0)]
+        (cond (nm-failed M2) (throw t)
+              (and (or (= c TC-SET) (= c TC-MAP)) (not (ck-keyable a))) (throw t)
+              :else (ck-ct-intern M2 c a b))))))
 
 ;; ---- small helpers for the R3 heads ----
 (defn- ck-order-head? [hd :i64] :bool (or (= hd HD-SET-NTH) (= hd HD-MAP-KEYS) (= hd HD-MAP-VALS)))
@@ -2608,8 +2612,8 @@
 (defn- ck-nested [M :vector-i64 g :i64] :vector-i64
   (let [old (vector-at M MM-CK-STATE)
         done (ck-sg M ck-s-done)
+        sv (nm-scope-saved M)
         M1 (nm-scope-hide M)
-        sv (ck-r M1)
         M2 (mem-alloc M1 ck-s-w)
         st (ck-r M2)
         M3 (-> M2 (nm-put MM-CK-STATE st) (ck-ss ck-s-done done))
