@@ -1,0 +1,7 @@
+(ns p13.main (:export [main]))
+(defhandler acc [:state :i64]
+  (get [s] (resume s s))
+  (put [s v] (resume v v)))
+(defn- add! [x :i64] :i64 (perform :state/put (+ x (perform :state/get))))
+(defn- run [n :i64] :i64 (loop [i 0] (if (= i n) (perform :state/get) (do (add! i) (recur (+ i 1))))))
+(defn main [] :i64 (handle (run 5000) (with acc 0)))

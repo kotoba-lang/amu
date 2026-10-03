@@ -1,0 +1,8 @@
+(ns p15.main (:export [main]))
+(defn- f [n :i64] :i64
+  (let [a (atom 1)]
+    (cond (> n 10) (swap! a + 100)
+          (> n 0) (swap! a * 7)
+          :else (reset! a -1))
+    (+ @a (* 1000 n))))
+(defn main [] :i64 (+ (f 20) (f 3) (f -5)))

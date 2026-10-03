@@ -1,0 +1,3 @@
+(ns n16.main (:require [n16.lib :as l]) (:export [main]))
+(defn- tick [] (perform :state/put (+ 1 (perform :state/get))))
+(defn main [] :i64 (handle (do (tick) (tick)) (with l/cell 40)))

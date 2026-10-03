@@ -1,0 +1,42 @@
+# seed/tests/r5/cases.tsv -- the R5 conformance gate (owner R5D). One case per line, TAB separated:
+#   label  entry(relative to seed/tests/r5)  source-path(relative, or -)  function  args(comma list, or -)  manifest-:kotoba-expectation(or -)
+# conf/ = verbatim kotoba-lang lang/conformance programs (commit 919232de); expectations from lang/conformance/manifest.edn.
+# neg/  = the pinned negatives of the same directories (exact refusal text in neg.tsv).
+# feat/ = R5 feature programs written for the seed (modules, linking, ADR 0363, limits, capability policy).
+conf/reader_target-branching	conf/reader_target/branching.cljk	-	main	41	51
+conf/reader_target-default_fallback	conf/reader_target/default_fallback.cljk	-	main	7	107
+conf/reader_target-splicing	conf/reader_target/splicing.cljk	-	main	0	3
+conf/namespace_priority-main	conf/namespace_priority/main.cljk	conf/namespace_priority/src	run	1	101
+conf/entry_extensions-kotoba	conf/entry_extensions/main.kotoba	-	main	5	15
+conf/entry_extensions-cljk	conf/entry_extensions/main.cljk	-	main	5	20
+conf/entry_extensions-clj	conf/entry_extensions/main.clj.cljk	-	main	5	-
+conf/entry_extensions-cljc	conf/entry_extensions/main.cljc.cljk	-	main	5	35
+conf/entry_extensions-cljs	conf/entry_extensions/main.cljs.cljk	-	main	5	-
+conf/local-state-counter_in_a_let	conf/local-state/counter_in_a_let.kotoba	-	main	-	42
+conf/local-state-atom_through_an_if	conf/local-state/atom_through_an_if.kotoba	-	main	-	15
+conf/local-state-swap_with_extra_arguments	conf/local-state/swap_with_extra_arguments.kotoba	-	main	-	42
+conf/state-counter	conf/state/counter.kotoba	-	main	-	42
+conf/state-inline_operations	conf/state/inline_operations.kotoba	-	main	-	42
+conf/state-nested_handlers	conf/state/nested_handlers.kotoba	-	main	-	2110
+conf/state-two_state_types	conf/state/two_state_types.kotoba	-	main	-	10
+conf/state-loop_accumulator	conf/state/loop_accumulator.kotoba	-	main	-	5050
+conf/state-handler_logic	conf/state/handler_logic.kotoba	-	main	-	77004
+conf/state-branch_join	conf/state/branch_join.kotoba	-	main	-	114021006
+conf/state-ceiling_declares_state	conf/state/ceiling_declares_state.kotoba	-	main	-	42
+# negatives: column 6 is the exact refusal text pinned by lang/conformance/manifest.edn (:error-contains; the kotoba-lang tests compare with =)
+neg/local-state-escapes_as_an_argument	neg/local-state-escapes_as_an_argument.kotoba	-	main	-	atom `a` escapes its let scope (atom slice 1 admits swap!/reset!/deref in straight-line code of the binding function only)
+neg/local-state-escapes_into_a_fn	neg/local-state-escapes_into_a_fn.kotoba	-	main	-	atom `a` escapes its let scope (atom slice 1 admits swap!/reset!/deref in straight-line code of the binding function only)
+neg/local-state-read_inside_a_loop	neg/local-state-read_inside_a_loop.kotoba	-	main	-	atom `a` escapes its let scope (atom slice 1 admits swap!/reset!/deref in straight-line code of the binding function only)
+neg/local-state-swap_changes_the_type	neg/local-state-swap_changes_the_type.kotoba	-	main	-	atom `a` is i64; this rebinding is string (atom slice 1 requires one type per cell)
+neg/local-state-deref_of_a_non_cell	neg/local-state-deref_of_a_non_cell.kotoba	-	main	-	deref expects a let-bound atom cell as its first argument; got `x` (atom slice 1)
+neg/state-unhandled_get	neg/state-unhandled_get.kotoba	-	main	-	unhandled ability :state at export boundary; handle it with (handle body (with handler init)): main
+neg/state-handler_type_mismatch	neg/state-handler_type_mismatch.kotoba	-	main	-	handler bad resumes state/get with string, but state/get returns i64 in a [:state :i64] handler
+neg/state-handler_shape_mismatch	neg/state-handler_shape_mismatch.kotoba	-	main	-	handler bad does not match the :state ability: its put clause takes [state value], got [s]
+neg/state-impure_handler	neg/state-impure_handler.kotoba	-	main	-	handler stamped is not pure: its put clause performs #{:clock/now}; a handler for the pure ability :state must be pure
+neg/state-ceiling_omits_state	neg/state-ceiling_omits_state.kotoba	-	main	-	inferred effects exceed declared effect ceiling for tick: #{:state}
+neg/state-perform_in_fn_literal	neg/state-perform_in_fn_literal.kotoba	-	main	-	state slice 1 does not admit perform :state/get inside a fn literal
+neg/state-stateful_as_value	neg/state-stateful_as_value.kotoba	-	main	-	stateful function tick cannot be used as a value in state slice 1; call it under a handler
+neg/state-throw_in_stateful	neg/state-throw_in_stateful.kotoba	-	main	-	state slice 1 does not admit throw or try inside a stateful function or a handle body: tick
+neg/state-unknown_handler	neg/state-unknown_handler.kotoba	-	main	-	handle names no handler: nobody
+neg/state-resume_not_tail	neg/state-resume_not_tail.kotoba	-	main	-	handler twice clause get must end every branch in exactly one (resume value state) in tail position
+neg/state-public_stateful_export	neg/state-public_stateful_export.kotoba	-	main	-	unhandled ability :state at export boundary; handle it with (handle body (with handler init)): tick
