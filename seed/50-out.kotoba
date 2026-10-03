@@ -230,18 +230,19 @@
   (let [M1 (out-w M MM-OUT-N 1)]
     (out-build3 M1)))
 
-;; L[a .. b) (one byte per item) appended to OUT
-(defn- out-put-vec [M :vector-i64 L :vector-i64 a :i64 b :i64] :vector-i64
-  (if (>= a b)
+;; LINK (r6h): image bytes [i, n) of a PACKED image (8 bytes per word, little-endian in the word) that starts at word w0 of L,
+;; appended to OUT (was one byte per item of L)
+(defn- out-put-vec [M :vector-i64 L :vector-i64 w0 :i64 i :i64 n :i64] :vector-i64
+  (if (>= i n)
     M
-    (out-put-vec (out-put M (vector-at L a)) L (+ a 1) b)))
+    (out-put-vec (out-put M (bit-and (u64-shift-right (vector-at L (+ w0 (u64-shift-right i 3))) (* 8 (bit-and i 7))) 255)) L w0 (+ i 1) n)))
 
 ;; out-image M S L a n -> M : the container of a linked image: the header with this (root) module's exports at
 ;; EF-OFFSET + base (base = the module's image offset, M[MM-STAT-BASE+43], 42-layout's ly-base-slot) and the code length n,
-;; then the n image bytes L[a .. a+n). MM-R0 = container bytes.
+;; then the n image bytes of the packed image at word a of L (60-proj pj-img-base). MM-R0 = container bytes.
 (defn- out-image [M :vector-i64 S :string L :vector-i64 a :i64 n :i64] :vector-i64
   (let [M1 (out-header (out-w M MM-OUT-N 1) S n (vector-at M (+ MM-STAT-BASE 43)))
-        M2 (out-put-vec (out-set-cs M1) L a (+ a n))]
+        M2 (out-put-vec (out-set-cs M1) L a 0 n)]
     (if (= (out-ok M2) 1) (out-w M2 MM-R0 (- (vector-at M2 MM-OUT-N) 1)) M2)))
 
 ;; ---- parser (readers over a byte-per-word buffer at M[base ..]; base and len live in two statistics cells) ---------------
@@ -449,6 +450,39 @@
 ;; MM-R1 counts from MM-OUT-BASE+1). The caller checks n < MM-OUT-CAP.
 (defn- out-load [M :vector-i64 V :vector-i64 n :i64 sym :string] :vector-i64
   (out-parse (out-copy-in M V 0 n (+ MM-OUT-BASE 1)) (+ MM-OUT-BASE 1) n sym))
+
+;; ==== LINK (agent LINK, rung r6h): extract without OUT holding the code ===================================================
+;; out-load-hdr M V n sym -> M : only the HEADER of the n container bytes V (up to the blank line) into OUT, then out-parse
+;; (results as there; MM-R1 = the index of the first code byte in V). The code stays in V: a container of any size the loader
+;; reads (io-read-bytes, < 16 Mi items) extracts; a header that does not fit OUT is E-OUT-FULL by name.
+(defn- out-load-hdr [M :vector-i64 V :vector-i64 n :i64 sym :string] :vector-i64
+  (let [cs (out-v-hdr V 0)]
+    (if (>= cs MM-OUT-CAP)
+      (out-err M E-OUT-FULL cs)
+      (out-parse (out-copy-in M V 0 cs (+ MM-OUT-BASE 1)) (+ MM-OUT-BASE 1) n sym))))
+
+;; Requests of at most out-wchunk data bytes, built in ONE reused vector where possible: the loader never reclaims a vector
+;; (KEXE_VECTOR_ITEMS), so a request vector per piece would cost as many items as the data. R = "<path><token tw>" + m slots.
+(def out-wchunk 262144)
+(defn- out-rq-new [path :string tw :i64 m :i64] :vector-i64
+  (io-bput-tok (io-bput-str (vector-alloc (+ (string-length path) (+ (io-tokn tw) m))) path 0 (string-length path) 0) (string-length path) tw))
+;; send R (its data R[d .. d+m), R exactly d+m long): one request, or, when the data spells a loader token, 02-io's cut pieces
+(defn- out-rq-send [R :vector-i64 path :string tw :i64 d :i64 m :i64] :i64
+  (if (= (io-cut R d (+ d m)) (+ d m)) (io-bsend R) (io-pieces R path d (+ d m) tw)))
+
+;; out-write-v V path a n -> n : V[a .. a+n) (low 8 bits per item) to the file path as raw bytes: the first piece written
+;; ("WRITE"), the rest appended; each request stays far below the loader's 8 MiB bytes value (io-write-bytes sends the whole
+;; range as one request). Vector items: at most 3 x out-wchunk beyond V.
+(defn- out-write-v [V :vector-i64 path :string a :i64 n :i64] :i64
+  (let [RF (if (> n out-wchunk) (out-rq-new path 1 out-wchunk) (vector-alloc 1))]
+    (loop [i a tw 0]
+      (let [e (if (< (+ i out-wchunk) (+ a n)) (+ i out-wchunk) (+ a n))
+            m (- e i)
+            d (+ (string-length path) (io-tokn tw))
+            R (if (and (= tw 1) (= m out-wchunk)) RF (out-rq-new path tw m))
+            z (out-rq-send (io-bput-words R V i e (- d i)) path tw d m)]
+        (if (>= e (+ a n)) n (recur e 1))))))
+;; ==== END LINK ==============================================================================================================
 
 ;; ---- file output --------------------------------------------------------------------------------------------------------
 ;; out-write-hex M S -> M : out-build, then the container as lowercase hex on stdout (io-write-hex; `xxd -r -p` recovers the

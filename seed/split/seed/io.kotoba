@@ -123,18 +123,18 @@
 
 ;; ---- binary files (:fs/app-data-bytes, wire 35 kind 8) ------------------------------------------------
 ;; T[i + delta] = byte i of S for i in [i, end)
-(defn- io-bput-str [T :vector-i64 S :string i :i64 end :i64 delta :i64] :vector-i64
+(defn io-bput-str [T :vector-i64 S :string i :i64 end :i64 delta :i64] :vector-i64
   (if (>= i end)
     (mem-keep T)
     (io-bput-str (vector-assoc! T (+ i delta) (string-code-point-at S i)) S (+ i 1) end delta)))
 
 ;; T[i + delta] = M[i] & 255 for i in [i, end)
-(defn- io-bput-words [T :vector-i64 M :vector-i64 i :i64 end :i64 delta :i64] :vector-i64
+(defn io-bput-words [T :vector-i64 M :vector-i64 i :i64 end :i64 delta :i64] :vector-i64
   (if (>= i end)
     (mem-keep T)
     (io-bput-words (vector-assoc! T (+ i delta) (bit-and (vector-at M i) 255)) M (+ i 1) end delta)))
 
-(defn- io-bsend [T :vector-i64] :i64
+(defn io-bsend [T :vector-i64] :i64
   (let [r (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 T))] 0))
 
 ;; ==== BEGIN KIR5 write pieces (agent KIR5, 2026-10-03; CONTRACT-REQUESTS R4B line "the compile SIGILL") ==========
@@ -150,7 +150,7 @@
 (defn- io-tokb [tw :i64 k :i64] :i64
   (if (= tw 0) (vector-at [87 82 73 84 69 95 83 69 80] k) (vector-at [65 80 80 69 78 68 95 83 69 80] k)))
 
-(defn- io-tokn [tw :i64] :i64 (if (= tw 0) 9 10))
+(defn io-tokn [tw :i64] :i64 (if (= tw 0) 9 10))
 
 ;; 1 when M[i ..] (low 8 bits per word, below end) spells token tw
 (defn- io-tok-at [M :vector-i64 i :i64 end :i64 tw :i64] :i64
@@ -162,7 +162,7 @@
             :else 0))))
 
 ;; the end of the piece that starts at i: one past the first byte of the first token occurrence at or after i, else end
-(defn- io-cut [M :vector-i64 i :i64 end :i64] :i64
+(defn io-cut [M :vector-i64 i :i64 end :i64] :i64
   (loop [p i]
     (cond (>= p end) end
           (= (io-tok-at M p end 0) 1) (+ p 1)
@@ -170,7 +170,7 @@
           :else (recur (+ p 1)))))
 
 ;; token tw at T[at ..]
-(defn- io-bput-tok [T :vector-i64 at :i64 tw :i64] :vector-i64
+(defn io-bput-tok [T :vector-i64 at :i64 tw :i64] :vector-i64
   (loop [k 0 V T]
     (if (>= k (io-tokn tw)) V (recur (+ k 1) (vector-assoc! V (+ at k) (io-tokb tw k))))))
 
@@ -184,7 +184,7 @@
         T3 (io-bput-words T2 M i j (- (+ plen n) i))]
     (io-bsend T3)))
 
-(defn- io-pieces [M :vector-i64 path :string i :i64 end :i64 tw :i64] :i64
+(defn io-pieces [M :vector-i64 path :string i :i64 end :i64 tw :i64] :i64
   (let [j (io-cut M i end)
         z (io-piece M path i j tw)]
     (if (< j end) (io-pieces M path j end 1) 0)))

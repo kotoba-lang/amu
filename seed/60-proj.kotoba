@@ -37,7 +37,7 @@
 ;; is the stub's address, which branches on).
 
 ;; ---- L layout ------------------------------------------------------------------------------------------------------------
-(def pj-l-cap 2097152)
+(def pj-l-cap 4194304)   ; LINK (r6h): 4 Mi words (was 2 Mi); see the LINK block below for the regions it moved
 (def pj-k-nmod 0)     ; modules
 (def pj-k-img 1)      ; image fill in bytes
 (def pj-k-nif 2)      ; interface entries
@@ -60,11 +60,11 @@
 (def pj-mf-if0 6) (def pj-mf-nif 7) (def pj-mf-base 8) (def pj-mf-expk 9) (def pj-mf-exp0 10) (def pj-mf-nexp 11)
 (def pj-mf-entry 12)  ; 1 = the entry module (its exports are the container's; a library exports nothing to it)
 (def pj-mf-obj 13)    ; separate mode: P index of the module's object text
-(def pj-r-base 8192) (def pj-r-w 8) (def pj-r-cap 256)
+(def pj-r-base 200704) (def pj-r-w 8) (def pj-r-cap 4096)   ; LINK (r6h): was 8192 / 256 (the image's link has ~600 edges)
 (def pj-rf-mod 0) (def pj-rf-name 1) (def pj-rf-alias 2) (def pj-rf-ref0 3) (def pj-rf-nref 4) (def pj-rf-node 5)
 (def pj-f-base 12288) (def pj-f-w 3) (def pj-f-cap 1024)   ; referred name: P index, span start, span end
 (def pj-x-base 16384) (def pj-x-cap 8192)                  ; declared export names (P indexes)
-(def pj-i-base 32768) (def pj-i-w 16) (def pj-i-cap 4096)
+(def pj-i-base 233472) (def pj-i-w 16) (def pj-i-cap 16384)   ; LINK (r6h): was 32768 / 4096
 (def pj-if-name 0) (def pj-if-text 1) (def pj-if-ncl 2) (def pj-if-off0 3) (def pj-if-maxcl 8)
 (def pj-o-base 98304)                                      ; compile order (module indexes)
 (def pj-t-base 98816) (def pj-t-cap 16384)                 ; stub clause -> target image offset (module being compiled)
@@ -77,8 +77,31 @@
 (def pj-k-owncpy 34)  ; byte offset of that text's copy in the trailer of the module being compiled (-1: none)
 (def pj-k-ownlen 35)  ; its length
 (def pj-if-sch 15)    ; P index of the entry's record schemas ("\n:kw [:record :kw [..]]" pieces), "" when none
-(def pj-img-base 200704)
-(def pj-max-depth 64) (def pj-max-edges 256) (def pj-max-bytes 8388608)
+(def pj-img-base 495616)
+(def pj-max-depth 64) (def pj-max-edges 4096) (def pj-max-bytes 8388608)
+;; ==== LINK (agent LINK, rung r6h, 2026-10-04): link capacity ===============================================================
+;; The image is PACKED, 8 bytes per word, little-endian within the word: image byte a is bits 8*(a mod 8) .. of
+;; L[pj-img-base + a/8] (was one byte per word). With L at 4 Mi words the image holds pj-img-cap = (pj-l-cap - pj-img-base) * 8
+;; = 29,589,504 bytes (was 1,896,448). Every write is checked BEFORE it happens: a blob that does not fit is E-PROJ-IMAGE by
+;; name (the old check ran after the copy, which wrote past L and trapped). Regions moved past the old image base: require
+;; edges (pj-r-base, 4096 edges, was 256 at word 8192) and interface entries (pj-i-base, 16384 entries, was 4096 at word
+;; 32768); the old regions at 8192 and 32768 are unused. An interface entry or a P string that does not fit sets
+;; pj-k-ifover / pj-k-strover; the link and the emit refuse by name (E-PROJ-EDGES / E-PROJ-IMAGE) instead of dropping it.
+;; The link no longer keeps the object texts in P (one :string, at most 8 MiB in the loader; the image's objects are ~2.1x
+;; its code bytes): pj-mf-obj = the object's path, read again where it is placed. The linked container is not built in OUT:
+;; pj-lcontainer puts the header in OUT and pj-lwrite writes the header, then the image from L in 256 KiB appends.
+(def pj-img-cap 29589504)
+(def pj-k-ifover 38)
+(def pj-k-strover 39)
+;; image byte a, and image byte a := b
+(defn- pj-ib [L :vector-i64 a :i64] :i64
+  (bit-and (u64-shift-right (vector-at L (+ pj-img-base (u64-shift-right a 3))) (* 8 (bit-and a 7))) 255))
+(defn- pj-ibset [L :vector-i64 a :i64 b :i64] :vector-i64
+  (let [i (+ pj-img-base (u64-shift-right a 3))
+        s (* 8 (bit-and a 7))
+        w (vector-at L i)]
+    (vector-assoc! L i (bit-or (bit-and w (bit-not (i64-shift-left 255 s))) (i64-shift-left (bit-and b 255) s)))))
+;; ==== END LINK =============================================================================================================
 
 (defn- pj-l [L :vector-i64 i :i64] :i64 (vector-at L i))
 (defn- pj-max [a :i64 b :i64] :i64 (if (> a b) a b))
@@ -107,7 +130,7 @@
 (defn- pj-padd [L :vector-i64 P :string s :string] :string
   (let [k (pj-n L)
         w (if (>= k (- pj-s-cap 1)) L (-> L (vector-assoc! (+ pj-s-base k) (string-length P)) (vector-assoc! pj-k-nstr (+ k 1))))]
-    (if (>= k (- pj-s-cap 1)) P (string-concat P s))))
+    (if (>= k (- pj-s-cap 1)) (let [x (vector-assoc! L pj-k-strover 1)] P) (string-concat P s))))   ; LINK: flagged, not silent
 ;; string i of P is s (no allocation)
 (defn- pj-peq [L :vector-i64 P :string i :i64 s :string] :bool (pj-span= P (pj-pa L i) (pj-pb L P i) s))
 ;; a fresh pool (90-drv: the roots are added to it)
@@ -646,6 +669,7 @@
     (cond (or (= ncl 0) (= (pj-ff M f0 FF-KIND) FK-DEF)) (let [w (pj-err-span M E-PROJ-EXPORT-FN (pj-sf M sym SF-START) (pj-sf M sym SF-START) (pj-sf M sym SF-END))] P)
           (or (> ncl pj-if-maxcl) (= (string-length txt) 0) (string=? sch "\n")) (let [w (pj-err-span M E-PROJ-IFACE (pj-sf M sym SF-START) (pj-sf M sym SF-START) (pj-sf M sym SF-END))] P)
           (>= e pj-i-cap) (let [w (pj-err M E-PROJ-EDGES 0)] P)
+          (>= (- e (pj-mf L (pj-l L pj-k-errmod) pj-mf-if0)) 4095) (let [w (pj-err M E-PROJ-EDGES 0)] P)   ; LINK: S lines code entry < 4096
           :else (let [w (-> L (pj-iset e pj-if-name (pj-n L)) (pj-iset e pj-if-text (+ (pj-n L) 1)) (pj-iset e pj-if-sch (+ (pj-n L) 2))
                             (pj-iset e pj-if-ncl ncl) (pj-ls pj-k-nif (+ e 1)))
                       w2 (loop [k 0] (if (>= k ncl) 0 (let [x (pj-iset L e (+ pj-if-off0 k) (+ base (* (- (pj-ff M (+ f0 k) FF-CODE) 1) 4)))] (recur (+ k 1)))))]
@@ -913,7 +937,7 @@
         (if (>= m (pj-l L pj-k-nmod))
           L
           (let [a (pj-mf L m pj-mf-kwt)
-                x (if (> a 0) (pj-put32 L (+ pj-img-base (- a 1)) (bit-or 335544320 (bit-and (quot (- t a) 4) 67108863))) L)]
+                x (if (> a 0) (pj-put32 L (- a 1) (bit-or 335544320 (bit-and (quot (- t a) 4) 67108863))) L)]
             (recur (+ m 1))))))))
 ;; separate mode: dependency d's K line in object text T
 (defn- pj-kw-load [L :vector-i64 P :string T :string d :i64] :string
@@ -975,28 +999,35 @@
     (if (> t 0) (pj-tpl-subst S (pj-p L P (- t 1))) S)))
 
 ;; ---- compile one module and link it ---------------------------------------------------------------------------------------
+;; LINK: at = an image byte offset (was a word index of L)
 (defn- pj-put32 [L :vector-i64 at :i64 w :i64] :vector-i64
-  (-> L (pj-ls at (bit-and w 255)) (pj-ls (+ at 1) (bit-and (u64-shift-right w 8) 255))
-      (pj-ls (+ at 2) (bit-and (u64-shift-right w 16) 255)) (pj-ls (+ at 3) (bit-and (u64-shift-right w 24) 255))))
+  (-> L (pj-ibset at (bit-and w 255)) (pj-ibset (+ at 1) (bit-and (u64-shift-right w 8) 255))
+      (pj-ibset (+ at 2) (bit-and (u64-shift-right w 16) 255)) (pj-ibset (+ at 3) (bit-and (u64-shift-right w 24) 255))))
 
 ;; copy the blob OUT[1 .. n] to the image at base, then patch every stub clause into `b <target>`
 (defn- pj-link [M :vector-i64 L :vector-i64] :vector-i64
   (let [n (- (vector-at M MM-OUT-N) 1)
         base (pj-l L pj-k-base)
-        w (loop [i 0] (if (>= i n) 0 (let [x (pj-ls L (+ pj-img-base base i) (vector-at M (+ MM-OUT-BASE 1 i)))] (recur (+ i 1)))))
+        w (loop [i 0] (if (>= i n) 0 (let [x (pj-ibset L (+ base i) (vector-at M (+ MM-OUT-BASE 1 i)))] (recur (+ i 1)))))   ; LINK
         s0 (pj-l L pj-k-stub0)
         w2 (loop [k 0]
              (if (or (>= k (pj-l L pj-k-nstub)) (= (pj-l L pj-k-mode) 1)) 0
                (let [fc (pj-ff M (+ s0 k) FF-CODE)
                      at (+ base (* (- fc 1) 4))
                      d (quot (- (pj-l L (+ pj-t-base k)) at) 4)
-                     x (if (> fc 0) (pj-put32 L (+ pj-img-base at) (bit-or 335544320 (bit-and d 67108863))) L)]
+                     x (if (> fc 0) (pj-put32 L at (bit-or 335544320 (bit-and d 67108863))) L)]
                  (recur (+ k 1)))))]
     (let [w3 (pj-ls L pj-k-img (+ base n))] M)))
 
+;; LINK: the blob must fit the image before it is copied (E-PROJ-IMAGE by name)
 (defn- pj-c5 [M :vector-i64 L :vector-i64] :vector-i64
   (let [M1 (ly-run (mem-set M (ly-base-slot) (pj-l L pj-k-base)))]
-    (if (pj-ok M1) (let [M2 (out-blob M1)] (if (pj-ok M2) (pj-link M2 L) M2)) M1)))
+    (if (pj-ok M1)
+      (let [M2 (out-blob M1)]
+        (cond (not (pj-ok M2)) M2
+              (> (+ (pj-l L pj-k-base) (- (vector-at M2 MM-OUT-N) 1)) pj-img-cap) (pj-err M2 E-PROJ-IMAGE 0)
+              :else (pj-link M2 L)))
+      M1)))
 (defn- pj-c4 [M :vector-i64 L :vector-i64 S :string H :vector-i64] :vector-i64
   (let [M1 (ck-run-h M S H)]   ; R6C: with the parameter refinements so far
     (if (pj-ok M1)
@@ -1043,7 +1074,7 @@
           (not (pj-ok M4)) (let [w2 (pj-err-back M4 L m (string-length S1))] P)   ; R6C: the trailer starts after the library
           (>= (pj-n L) (- pj-s-cap 1)) (let [w2 (pj-err M4 E-PROJ-IMAGE 0)] P)
           (not (pj-ok (pj-r5b-after M4 L P S m))) P   ; R5B: namespace :capabilities, stateful library exports
-          (>= (+ pj-img-base (pj-l L pj-k-img)) pj-l-cap) (let [w2 (pj-err M4 E-PROJ-IMAGE 0)] P)
+          (> (pj-l L pj-k-img) pj-img-cap) (let [w2 (pj-err M4 E-PROJ-IMAGE 0)] P)   ; LINK
           (= (pj-mf L m pj-mf-entry) 0) (pj-iface M4 L P S m)
           :else P)))
 
@@ -1057,7 +1088,7 @@
       P1)))
 
 ;; pj-project M L P root -> P : discover, then compile every module in order. On success M holds the entry module; the image
-;; is L[pj-img-base .. + L[pj-k-img]). A multi-module project needs --unpinned.
+;; is the packed L[pj-img-base ..], L[pj-k-img] bytes (LINK). A multi-module project needs --unpinned.
 (defn- pj-project [M :vector-i64 L :vector-i64 P :string root :i64] :string
   (let [P1 (pj-discover M L P root)]
     (loop [k 0 P P1]
@@ -1170,7 +1201,9 @@
     (loop [i 0 P P]
       (if (>= i (string-length T)) P
         (let [e (pj-eol T i)]
-          (if (and (= (string-code-point-at T i) 69) (< (pj-l L pj-k-nif) pj-i-cap))
+          (if (and (= (string-code-point-at T i) 69) (or (>= (pj-l L pj-k-nif) pj-i-cap) (>= (pj-mf L d pj-mf-nif) 4095)))
+            (let [x (pj-ls L pj-k-ifover 1)] (recur (+ e 1) P))   ; LINK: an entry that does not fit is flagged, not dropped silently
+          (if (= (string-code-point-at T i) 69)
             (let [x (pj-l L pj-k-nif)
                   a1 (+ i 2) b1 (pj-sp T a1)
                   ncl (pj-min (pj-dec T a1 b1) pj-if-maxcl)
@@ -1181,7 +1214,7 @@
                          (pj-ls pj-k-nif (+ x 1)) (pj-mset d pj-mf-nif (+ (pj-mf L d pj-mf-nif) 1)))]
               ;; R6A: the template ends at the first TAB; the schema pieces follow it
               (recur (+ e 1) (pj-padd L (pj-padd L (pj-padd L P (string-substring T nb ne)) (string-substring T (pj-min (+ ne 1) e) tb)) (string-substring T tb e))))
-            (recur (+ e 1) P)))))))
+            (recur (+ e 1) P))))))))
 
 ;; T starts "KSEEDO1\nN " and its N line is nm ("" = any); the N name
 (defn- pj-obj-ok [T :string nm :string] :bool
@@ -1212,21 +1245,21 @@
                        (let [x (pj-err M1 E-PROJ-OBJ (pj-rf L r pj-rf-node))] P)
                        (let [y (-> L (pj-add-mod (pj-n L) (pj-n L)) (pj-mset d pj-mf-state 3) (pj-rset r pj-rf-mod d))]
                          (recur (+ k 1) (pj-kw-load L (pj-load-iface L (pj-padd L P nm) T d 0) T d)))))))))]   ; R6D: + its K line
-    (if (pj-ok M1)
+    (if (and (pj-ok M1) (= (pj-l L pj-k-ifover) 0))   ; LINK: an interface entry that did not fit is refused below
       (let [P3 (pj-module M1 L P2 0)]
         (if (pj-ok M1)
           (let [w (pj-ls L pj-k-kwk (pj-n L))
                 P4 (pj-padd L P3 (pj-kw-lines M1 L P3 S2))]   ; R6D
             (pj-padd L P4 (pj-object M1 L P4 (string-concat S2 (string-concat (ck-r6b-lib-t S2 (pj-kw-table M1 L P4 0 S2)) (pj-trailer L P4 0))))))
           P3))   ; R6B, R6C: library before the trailer (pj-module)
-      P2)))
+      (let [x (if (pj-ok M1) (pj-err M1 E-PROJ-EDGES 0) M1)] P2))))
 
 ;; link: visit object module m (its text read from its path) at depth d
 (defn- pj-lvisit [M :vector-i64 L :vector-i64 P :string m :i64] :string
   (let [T (io-read-file M (pj-p L P (pj-mf L m pj-mf-path)))
         nm (string-substring T 10 (pj-eol T 10))
-        w (-> L (pj-mset m pj-mf-state 1) (pj-mset m pj-mf-obj (pj-n L)) (pj-mset m pj-mf-req0 (pj-l L pj-k-nreq)) (pj-mset m pj-mf-nreq 0) (pj-ls pj-k-errmod m))
-        P1 (pj-padd L P T)
+        w (-> L (pj-mset m pj-mf-state 1) (pj-mset m pj-mf-obj (pj-mf L m pj-mf-path)) (pj-mset m pj-mf-req0 (pj-l L pj-k-nreq)) (pj-mset m pj-mf-nreq 0) (pj-ls pj-k-errmod m))
+        P1 P   ; LINK: the object text is not kept in P (8 MiB per string); pj-mf-obj = its path, read again by pj-lplace
         P2 (if (= (pj-mf L m pj-mf-entry) 1) (let [x (pj-mset L m pj-mf-name (pj-n L))] (pj-padd L P1 nm)) P1)
         d (pj-mf L m pj-mf-depth)
         P3 (loop [i (+ 11 (string-length nm)) P P2]
@@ -1259,21 +1292,32 @@
           :else (let [y (-> L (pj-mset m pj-mf-state 2) (pj-ls (+ pj-o-base no) m) (pj-ls pj-k-nord (+ no 1)))] P5))))
 
 ;; the 32-bit word of the image at byte offset at
+;; LINK: at = an image byte offset
 (defn- pj-get32 [L :vector-i64 at :i64] :i64
-  (+ (pj-l L at) (* 256 (pj-l L (+ at 1))) (* 65536 (pj-l L (+ at 2))) (* 16777216 (pj-l L (+ at 3)))))
+  (+ (pj-ib L at) (* 256 (pj-ib L (+ at 1))) (* 65536 (pj-ib L (+ at 2))) (* 16777216 (pj-ib L (+ at 3)))))
+
+;; LINK: the blob bytes of object text T (its C lines)
+(defn- pj-tblob [T :string] :i64
+  (loop [i 0 n 0]
+    (if (>= i (string-length T)) n
+      (let [e (pj-eol T i)] (recur (+ e 1) (if (= (string-code-point-at T i) 67) (+ n (quot (- e (+ i 2)) 2)) n))))))
 
 ;; lay out object module m: blob at the next 8-aligned base, interface entries, literal relocations, stub patches
 (defn- pj-lplace [M :vector-i64 L :vector-i64 P :string m :i64] :string
-  (let [T (pj-p L P (pj-mf L m pj-mf-obj))
-        base (bit-and (+ (pj-l L pj-k-img) 7) -8)
-        w (pj-mset L m pj-mf-base base)
+  (let [T (io-read-file M (pj-p L P (pj-mf L m pj-mf-obj)))   ; LINK: read again (not kept in P)
+        base (bit-and (+ (pj-l L pj-k-img) 7) -8)]
+    (if (> (+ base (pj-tblob T)) pj-img-cap)
+      (let [x (pj-err M E-PROJ-IMAGE 0)] P)   ; LINK: refused before anything is written
+      (pj-lplace2 M L P m T base))))
+(defn- pj-lplace2 [M :vector-i64 L :vector-i64 P :string m :i64 T :string base :i64] :string
+  (let [w (pj-mset L m pj-mf-base base)
         n (loop [i 0 at base]
             (if (>= i (string-length T)) (- at base)
               (let [e (pj-eol T i)]
                 (if (= (string-code-point-at T i) 67)
                   (recur (+ e 1) (loop [j (+ i 2) at at]
                                    (if (>= (+ j 1) e) at
-                                     (let [x (pj-ls L (+ pj-img-base at) (+ (* 16 (pj-hexv (string-code-point-at T j))) (pj-hexv (string-code-point-at T (+ j 1)))))]
+                                     (let [x (pj-ibset L at (+ (* 16 (pj-hexv (string-code-point-at T j))) (pj-hexv (string-code-point-at T (+ j 1)))))]
                                        (recur (+ j 2) (+ at 1))))))
                   (recur (+ e 1) at)))))
         w1 (pj-ls L pj-k-img (+ base n))
@@ -1283,7 +1327,7 @@
              (if (>= i (string-length T)) 0
                (let [e (pj-eol T i) c (string-code-point-at T i)]
                  (cond (= c 76)
-                       (let [at (+ pj-img-base base (pj-dec T (+ i 2) e))
+                       (let [at (+ base (pj-dec T (+ i 2) e))
                              w0 (pj-get32 L at) w1 (pj-get32 L (+ at 4))
                              v (+ base (bit-and (u64-shift-right w0 5) 65535) (* 65536 (bit-and (u64-shift-right w1 5) 65535)))
                              x (-> L (pj-put32 at (ly-patch16 w0 v)) (pj-put32 (+ at 4) (ly-patch16 w1 (u64-shift-right v 16))))]
@@ -1296,14 +1340,15 @@
                              dep (pj-rf L (+ r0 (quot code 32768)) pj-rf-mod)
                              ent (+ (pj-mf L dep pj-mf-if0) (bit-and (quot code 8) 4095))
                              d (quot (- (pj-if L ent (+ pj-if-off0 (bit-and code 7))) at) 4)
-                             x (pj-put32 L (+ pj-img-base at) (bit-or 335544320 (bit-and d 67108863)))]
+                             x (pj-put32 L at (bit-or 335544320 (bit-and d 67108863)))]
                          (recur (+ e 1)))
                        :else (recur (+ e 1))))))]
     P1))
 
-;; the KSEED1 container of the linked image into OUT (M fresh): the X lines of the entry object m at its base
+;; the KSEED1 container of the linked image (M fresh): the X lines of the entry object m at its base. LINK: only the HEADER
+;; goes to OUT (MM-R0 = header bytes + image bytes); pj-lwrite writes it and then the image from L
 (defn- pj-lcontainer [M :vector-i64 L :vector-i64 P :string m :i64] :vector-i64
-  (let [T (pj-p L P (pj-mf L m pj-mf-obj))
+  (let [T (io-read-file M (pj-p L P (pj-mf L m pj-mf-obj)))
         base (pj-mf L m pj-mf-base)
         nx (loop [i 0 k 0] (if (>= i (string-length T)) k (recur (+ (pj-eol T i) 1) (if (= (string-code-point-at T i) 88) (+ k 1) k))))
         M1 (-> (vector-assoc! M MM-OUT-N 1) (out-put-magic) (out-put-dec (pj-l L pj-k-img)) (out-put 32) (out-put-dec nx) (out-put 10))
@@ -1316,8 +1361,34 @@
                                (out-put-span T (+ s2 1) e) (out-put 10))]
                      (recur (+ e 1)))
                    (recur (+ e 1))))))
-        M3 (out-put-vec (out-set-cs (out-put M2 10)) L pj-img-base (+ pj-img-base (pj-l L pj-k-img)))]
-    (if (pj-ok M3) (vector-assoc! M3 MM-R0 (- (vector-at M3 MM-OUT-N) 1)) M3)))
+        M3 (out-set-cs (out-put M2 10))]
+    (if (pj-ok M3) (vector-assoc! M3 MM-R0 (+ (- (vector-at M3 MM-OUT-N) 1) (pj-l L pj-k-img))) M3)))
+
+;; LINK: T[d + (i - a)] = image byte i for i in [a, e)
+(defn- pj-unpack [L :vector-i64 T :vector-i64 d :i64 a :i64 e :i64] :vector-i64
+  (loop [i a] (if (>= i e) T (let [x (vector-assoc! T (+ d (- i a)) (pj-ib L i))] (recur (+ i 1))))))
+;; LINK: write the linked container: the header (OUT, after pj-lcontainer), then the image straight from L in out-wchunk
+;; appends (50-out out-rq-*: one reused request vector, cut at the loader's tokens like io-write-bytes); out = "" -> both as
+;; hex on stdout. Returns the bytes. Vector items beyond M and L: at most 2 x out-wchunk.
+(defn- pj-lwrite [M :vector-i64 L :vector-i64 out :string] :i64
+  (let [hb (- (vector-at M MM-OUT-N) 1)
+        n (pj-l L pj-k-img)]
+    (if (= (string-length out) 0)
+      (let [T (vector-alloc (pj-max 1 (pj-min n out-wchunk)))
+            w (io-write-hex M (+ MM-OUT-BASE 1) hb)
+            w2 (loop [a 0] (if (>= a n) 0 (let [e (pj-min n (+ a out-wchunk)) x (io-write-hex (pj-unpack L T 0 a e) 0 (- e a))] (recur e))))]
+        (+ hb n))
+      (let [w (io-write-bytes M out (+ MM-OUT-BASE 1) hb)
+            d (+ (string-length out) (io-tokn 1))
+            RF (if (> n out-wchunk) (out-rq-new out 1 out-wchunk) (vector-alloc 1))
+            w2 (loop [a 0]
+                 (if (>= a n) 0
+                   (let [e (pj-min n (+ a out-wchunk))
+                         m (- e a)
+                         R (if (and (> n out-wchunk) (= m out-wchunk)) RF (out-rq-new out 1 m))
+                         y (out-rq-send (pj-unpack L R d a e) out 1 d m)]
+                     (recur e))))]
+        (+ hb n)))))
 
 ;; link the root object at P[path]: returns P; on success the container is in OUT
 (defn- pj-link-objects [M :vector-i64 L :vector-i64 P :string path :i64] :string
@@ -1329,7 +1400,9 @@
       (let [P2 (pj-lvisit M L P1 0)
             P3 (loop [k 0 P P2] (if (or (>= k (pj-l L pj-k-nord)) (not (pj-ok M))) P (recur (+ k 1) (pj-lplace M L P (pj-l L (+ pj-o-base k))))))]
         (cond (not (pj-ok M)) P3
-              (>= (+ pj-img-base (pj-l L pj-k-img)) pj-l-cap) (let [x (pj-err M E-PROJ-IMAGE 0)] P3)
+              (> (pj-l L pj-k-ifover) 0) (let [x (pj-err M E-PROJ-EDGES 0)] P3)   ; LINK
+              (> (pj-l L pj-k-strover) 0) (let [x (pj-err M E-PROJ-IMAGE 0)] P3)   ; LINK
+              (> (pj-l L pj-k-img) pj-img-cap) (let [x (pj-err M E-PROJ-IMAGE 0)] P3)
               :else (let [y (pj-kw-patch L) x (pj-lcontainer M L P3 0)] P3))))))   ; R6D: pj-kw-patch
 
 ;; ==== R5B (agent R5B, 2026-10-03): capability declarations and stateful exports =============================================
