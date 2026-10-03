@@ -1,0 +1,52 @@
+(ns wall2.graph
+  "WALL2 test driver: the guest twins of `project-files/load-closed-graph` and `project/link-source` (kotoba-lang
+  lang/compat), compiled by the seed and run natively.
+    graph <case-tree> <input> <root> ...   prints GRAPH / root / `ns path` per module (paths relative to <case-tree>) /
+                                           SOURCE / the linked text, or `REFUSED ` + the message (graph-host.cljk's format)."
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.project :as project]
+            [kotoba.compiler.project-files :as project-files]
+            [kotoba.form :as form])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]] [:phase :string] [:data [:ref :form/r]]]]}))
+
+(defn- dec-from [s :string i :i64 n :i64 acc :i64] :i64
+  (if (>= i n) acc (dec-from s (+ i 1) n (+ (* acc 10) (- (string-code-point-at s i) 48)))))
+
+(defn- argc [] :i64
+  (let [s (typed-cap-call :cli/args :string :string "")] (dec-from s 0 (string-length s) 0)))
+
+(defn- arg [i :i64] :string (typed-cap-call :cli/args :string :string (string-from-i64 i)))
+
+(defn- out [s :string] :i64 (let [r (typed-cap-call :io/write :string :string s)] 0))
+
+(defn- roots [i :i64 n :i64 acc [:list :string]] [:list :string]
+  (if (>= i n) acc (roots (+ i 1) n (typed-list-conj [:list :string] acc (arg i)))))
+
+(defn- rel [t :string p :string] :string
+  (let [k (+ 1 (string-byte-length t))]
+    (if (and (> (string-byte-length p) k) (string=? (string-substring p 0 k) (string-concat t "/")))
+      (string-substring p k (string-byte-length p))
+      p)))
+
+(defn- path-lines [t :string paths [:ref :form/r] j :i64 acc :string] :string
+  (if (>= (+ j 1) (form/count-of paths))
+    acc
+    (path-lines t paths (+ j 2)
+                (string-concat acc (string-concat (form/symbol-value (form/nth-of paths j))
+                                                  (string-concat " " (string-concat (rel t (form/string-value (form/nth-of paths (+ j 1)))) "\n")))))))
+
+(defn- run [] :string
+  (let [t (arg 0)
+        g (project-files/load-closed-graph (arg 1) (roots 2 (argc) (typed-list-new [:list :string])))
+        root (form/form-get g (form/keyword-form :root))
+        linked (project/link-source (form/form-get g (form/keyword-form :sources)) root)]
+    (string-concat "GRAPH\n"
+      (string-concat (form/symbol-value root)
+        (string-concat "\n"
+          (string-concat (path-lines t (form/form-get g (form/keyword-form :paths)) 0 "")
+            (string-concat "SOURCE\n" (form/string-value (form/form-get linked (form/keyword-form :source))))))))))
+
+(defn main [] :i64
+  (out (try (run) (catch [:ref :fe/err] e (string-concat "REFUSED " (record-get [:ref :fe/err] e :msg))))))
