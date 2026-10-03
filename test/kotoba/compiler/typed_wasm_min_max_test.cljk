@@ -1,0 +1,135 @@
+(ns kotoba.compiler.typed-wasm-min-max-test
+  "ADR 0353 floor :typed-wasm-min-max.
+
+  browser.text-edit clamps its caret, (max lo (min hi n)). Measured
+  2026-10-03 (amu 0c39a0ad, kotoba-wasm 7ff9ad0d, before this floor): min
+  and max compiled on wasm32-kotoba-v1 only in a module of plain i64 words.
+  Once the module held a typed value -- a string, a record -- the typed
+  emitter took over, and it had no min/max arm, so
+  `(max 0 (string-code-unit-count \"abc\"))` and text-edit alike were exit 70
+  \"typed Wasm operation is not qualified\" {:operation max}.
+
+  Now kotoba-wasm's typed emitter lowers both as the untyped one does --
+  i64.lt_s / i64.gt_s and select -- with each operand evaluated once into an
+  i64 local.
+
+  Native was never refused for these forms: the same programs answer the
+  reference's value on x86_64-aiueos-kernel-v1 and aarch64-macos.
+
+  What stays refused, each by its literal: min/max over a string, a bool or
+  an option (no coercion; an order is over i64 alone), and any arity but
+  two."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.compiler.rebound-row-argument-test :as rebound]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]
+            [kotoba.wasm.core :as wasm]
+            #?@(:cljs [["node:child_process" :as cp]
+                       ["node:fs" :as fs]
+                       ["node:os" :as os]
+                       ["node:path" :as path]
+                       ["node:url" :as url]])))
+
+(def ^:private typed-module
+  "A string helper and a record make this a typed module (KIR v4), which is
+  where min and max were refused."
+  (str "(ns b)\n"
+       "(defn- len [s] (string-code-unit-count s))\n"
+       "(defn- clamp [n lo hi] (max lo (min hi n)))\n"
+       "(defn- caret-in [m n] (clamp n 0 (len (:v m))))\n"))
+
+(def ^:private admitted
+  "Each answers the same on the reference, wasm32 and both native targets.
+  min(3,7)=3 and max(3,7)=7 are pinned because an earlier untyped emitter
+  had the two comparisons swapped."
+  {"(max 0 (len \"abc\"))" 3
+   "(min 3 7)" 3
+   "(max 3 7)" 7
+   "(min (len \"ab\") 7)" 2
+   "(caret-in {:v \"abcd\"} 9)" 4
+   "(caret-in {:v \"abcd\"} -5)" 0
+   "(caret-in {:v \"abcd\"} 2)" 2
+   "(+ (max -3 -8) (min -3 -8))" -11})
+
+(defn- program [expr]
+  (str typed-module "(defn main [] :i64 " expr ")"))
+
+(defn- number [value] (#?(:clj long :cljs js/Number) value))
+
+(defn- run-main [source]
+  (number (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- native-value [source target]
+  (number (:value (:artifact (compiler/compile-source source target)))))
+
+(def ^:private scratch
+  #?(:cljs (delay (fs/mkdtempSync (path/join (os/tmpdir) "amu-typed-min-max-")))
+     :clj nil))
+
+(defn- wasm32
+  "The module compile-source emits for wasm32-kotoba-v1, instantiated by
+  runtime/browser-host.mjs: main's answer, or THREW:<message>."
+  [source]
+  #?(:cljs (let [compiled (compiler/compile-source source :wasm32-kotoba-v1)
+                 file (path/join @scratch "m.wasm")
+                 script (path/join @scratch "w.mjs")]
+             (fs/writeFileSync file (:bytes compiled))
+             (fs/writeFileSync
+              script
+              (str "import {instantiateKotoba} from "
+                   (js/JSON.stringify (.-href (url/pathToFileURL (path/resolve "runtime/browser-host.mjs"))))
+                   ";import fs from 'node:fs';"
+                   "try{const h=await instantiateKotoba(fs.readFileSync(" (js/JSON.stringify file) "));"
+                   "console.log(String(h.instance.exports.main()))}"
+                   "catch(e){console.log('THREW:'+e.message)}"))
+             (.trim (str (.-stdout (cp/spawnSync js/process.execPath #js [script]
+                                                 #js {:encoding "utf8" :timeout 60000})))))
+     :clj (throw (ex-info "wasm32 is run through node on the kbb route" {:source source}))))
+
+(defn- refusal [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(defn- compile-refusal [source target]
+  (try (compiler/compile-source source target)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(deftest min-max-qualified-on-typed-wasm-test
+  (testing "the module is typed: the emitter that refused min/max is the one used"
+    (is (= :kotoba.kir/v4
+           (:format (:kir (compiler/compile-source (program "(max 0 (len \"abc\"))")
+                                                   :wasm32-kotoba-v1))))))
+  (testing "admitted on the reference, wasm32 (run) and both native targets"
+    (doseq [[expr expected] admitted
+            :let [source (program expr)]]
+      (is (= expected (run-main source)) expr)
+      (is (nil? (compile-refusal source :wasm32-kotoba-v1)) (str "wasm32 " expr))
+      (is (= (str expected) (wasm32 source)) (str "wasm32 run " expr))
+      (doseq [target native-targets]
+        (is (= expected (native-value source target)) (str target " " expr)))))
+  (testing "browser.text-edit (clamp in) compiles on wasm32 and runs as the reference"
+    (is (= 212133 (run-main @#'rebound/text-edit-main)))
+    (is (nil? (compile-refusal @#'rebound/text-edit-main :wasm32-kotoba-v1)))
+    (is (= "212133" (wasm32 @#'rebound/text-edit-main))))
+  (testing "refused: min/max order i64 alone, never a coerced value"
+    (is (= "expression type mismatch: expected i64, got string"
+           (refusal (program "(max 0 (:v {:v \"a\"}))"))))
+    (is (= "expression type mismatch: expected i64, got bool"
+           (refusal (program "(min 1 (< 1 2))"))))
+    (is (= "expression type mismatch: expected i64, got [:option :i64]"
+           (refusal (program "(max 1 (option-some-of [:option :i64] 2))")))))
+  (testing "refused: min and max take two arguments"
+    (is (= "i64 operation arity mismatch: max takes 2 arguments; got 0"
+           (refusal (program "(max)"))))
+    (is (= "i64 operation arity mismatch: min takes 2 arguments; got 3"
+           (refusal (program "(min 1 2 (len \"abc\"))"))))))

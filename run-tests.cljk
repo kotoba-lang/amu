@@ -156,7 +156,10 @@
             [kotoba.compiler.rebound-row-argument-test]
             ;; ADR 0353 :native-vector-field: a record holding an i64 vector
             ;; (text-edit's [start end] selection) compiles natively
-            [kotoba.compiler.native-vector-field-test]))
+            [kotoba.compiler.native-vector-field-test]
+            ;; ADR 0353 :typed-wasm-min-max: min/max in a typed wasm32 module
+            ;; (text-edit's clamp)
+            [kotoba.compiler.typed-wasm-min-max-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
   (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
@@ -244,4 +247,5 @@
              'kotoba.compiler.cljs-literal-hash-test
              'kotoba.compiler.absent-field-from-assoc-test
              'kotoba.compiler.rebound-row-argument-test
-             'kotoba.compiler.native-vector-field-test)
+             'kotoba.compiler.native-vector-field-test
+             'kotoba.compiler.typed-wasm-min-max-test)

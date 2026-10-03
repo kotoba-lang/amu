@@ -27,8 +27,8 @@
   verified. text-edit itself is refused natively by its public empty-state,
   whose record (its [start end] selection a vector field, native since floor
   :native-vector-field) would be an export's result -- floor
-  :export-signatures -- and on wasm32 at floor :typed-wasm-min-max (clamp),
-  pinned below so it is seen when it moves.
+  :export-signatures. On wasm32 its clamp was refused until floor
+  :typed-wasm-min-max; it now compiles there, pinned below.
 
   What stays refused, each by its literal: a number passed to a row
   parameter (no coercion), the rebound row included; a record as an if test
@@ -208,9 +208,8 @@
                   "string/record/variant/option/result slice")
              (compile-refusal text-edit-main target))
           (str target))))
-  (testing "not yet on wasm32: text-edit's clamp (floor :typed-wasm-min-max)"
-    (is (= "typed Wasm operation is not qualified"
-           (compile-refusal text-edit-main :wasm32-kotoba-v1))))
+  (testing "on wasm32: text-edit's clamp compiles (floor :typed-wasm-min-max)"
+    (is (nil? (compile-refusal text-edit-main :wasm32-kotoba-v1))))
   (testing "refused: a number is not coerced to a row, rebound or not"
     (is (= "argument 5 to ins is i64, and parameter m of ins is the row {:v T | r}: only a record satisfies a row"
            (refusal (str rebound "(defn main [] :i64 (:n (ins 5 \"\")))"))))
