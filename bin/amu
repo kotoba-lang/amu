@@ -294,6 +294,18 @@ function spawn(command, args, options = {}) {
   });
 }
 
+// The repo's own nbb install when present; otherwise KBB_ENGINE, the same
+// engine convention `bin/kbb` follows. Without the fallback every --jvm-free
+// command fails "the lock resolver failed three times" on a checkout that was
+// never `npm install`ed, even though a working engine is installed outside
+// the repo.
+function nbbCliPath(root) {
+  const local = path.join(root, "node_modules", "nbb", "cli.js");
+  if (fs.existsSync(local)) return local;
+  const engine = process.env.KBB_ENGINE;
+  return engine ? engine : local;
+}
+
 function resolverFailure(result) {
   if (result.error) return result.error.message;
   const stderr = (result.stderr || "").trim().split(/\r?\n/).map((l) => l.trim())
@@ -545,7 +557,7 @@ function runCompiler(root, rawArgs) {
         + "(--source-path / --module-lock), which links a closed module "
         + "graph.", 64);
     }
-    const nbbCli = path.join(root, "node_modules", "nbb", "cli.js");
+    const nbbCli = nbbCliPath(root);
     const alias = runCommands.has(args[0]) ? "native-run" : null;
     const classpath = [path.join(root, "src"), path.join(root, "resources"),
       securityClasspath(root, nbbCli, alias)].join(path.delimiter);
