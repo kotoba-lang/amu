@@ -1,0 +1,27 @@
+;; R4 conf: lang/conformance/functions/closures.kotoba (kotoba-lang 919232de), typed adaptation: the parameters that hold
+;; functions are annotated [:fn [[:i64] :i64]] / [:fn [[:i64 :i64] :i64]] (the reference infers them across call sites;
+;; the seed types an unannotated parameter as :i64). Every expression is the original's. Expected value from
+;; lang/conformance/manifest.edn (37).
+(ns seed.r4.closures (:export [main]))
+(defn make-adder [n]
+  (fn [x] (+ x n)))
+
+(defn add [a b]
+  (+ a b))
+
+(defn apply-one [f [:fn [[:i64] :i64]] x]
+  (f x))
+
+(defn identity-closure [f [:fn [[:i64] :i64]]]
+  f)
+
+(defn wrap-closure [f [:fn [[:i64] :i64]]]
+  (fn [x] (f x)))
+
+(defn main []
+  (+ (invoke (make-adder 5) 7)
+     (+ (invoke (fn-ref add) 3 8)
+        (+ (apply (fn [a b c] (+ a (+ b c))) 1 (list 2 3))
+           (apply-one
+            (identity-closure (wrap-closure (make-adder 5)))
+            3)))))

@@ -1,0 +1,4 @@
+;; R4 feat: three i64 captures (the adapter entry, env pair(c1, pair(c2, c3)))
+(ns seed.r4 (:export [test]))
+(defn mk [a :i64 b :i64 c :i64] [:fn [[:i64] :i64]] (fn [x] (+ (* x a) (* b 10) c)))
+(defn test [] :i64 (+ (invoke (mk 2 3 4) 5) (* 1000 (invoke (mk 1 0 7) 1))))

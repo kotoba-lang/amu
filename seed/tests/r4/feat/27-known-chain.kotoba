@@ -1,0 +1,7 @@
+;; R4 feat: known functions calling earlier known functions of the same let
+(ns seed.r4 (:export [test]))
+(defn test [] :i64
+  (let [a 2
+        f (fn [x] (* x a))
+        g (fn [x] (+ (f x) 1))]
+    (+ (g 5) (* 100 (g 10)))))

@@ -48,6 +48,9 @@ HEADS = [  # (spelling, constant)
     ("pair-first", "HD-PAIR-FIRST"), ("pair-second", "HD-PAIR-SECOND"), ("count", "HD-GCOUNT"), ("nth", "HD-NTH"),
     ("contains?", "HD-CONTAINS"), ("conj", "HD-CONJ"), ("disj", "HD-DISJ"), ("dissoc", "HD-DISSOC"), ("keys", "HD-KEYS"),
     ("vals", "HD-VALS"), ("peek", "HD-PEEK"), ("pop", "HD-POP"),
+    # R4 (agent R4, 2026-10-03)
+    ("fn", "HD-FN"), ("fn-ref", "HD-FN-REF"), ("invoke", "HD-INVOKE"), ("apply", "HD-APPLY"), ("map", "HD-HOF-MAP"),
+    ("filter", "HD-FILTER"), ("reduce", "HD-REDUCE"), ("list", "HD-LIST"), ("&", "HD-AMP"),
 ]
 KWS = [
     (":i64", "KW-I64"), (":bool", "KW-BOOL"), (":string", "KW-STRING"), (":vector-i64", "KW-VECTOR-I64"),
@@ -58,6 +61,8 @@ KWS = [
     (":while", "KW-WHILE"),
     # R3
     (":option", "KW-OPTION"), (":result", "KW-RESULT"), (":list", "KW-LIST"), (":map", "KW-MAP"), (":set", "KW-SET"),
+    # R4
+    (":fn", "KW-FN"),
 ]
 
 

@@ -1,0 +1,6 @@
+;; R4 feat: a bool accumulator and a filter over a vector
+(ns seed.r4 (:export [test]))
+(defn test [] :i64
+  (let [v (filter (fn [x] (> x 2)) [5 1 4 2])
+        any (reduce (fn [acc x] (or acc (= x 4))) false v)]
+    (+ (vector-count v) (if any 10 20))))

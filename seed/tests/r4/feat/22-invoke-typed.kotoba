@@ -1,0 +1,5 @@
+;; R4 feat: invoke with the result type written
+(ns seed.r4 (:export [test]))
+(defn test [] :i64
+  (+ (vector-count (invoke [:list :i64] (fn [x] (list x (+ x 1) (+ x 2))) 7))
+     (if (invoke :bool (fn [x] (> x 3)) 4) 10 20)))

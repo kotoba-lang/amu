@@ -183,7 +183,9 @@
   (if (= kind FX-B26) (ly-label-ok tgt lab)
     (if (= kind FX-BC19) (ly-label-ok tgt lab)
       (if (= kind FX-CB19) (ly-label-ok tgt lab)
-        (if (= kind FX-BL26) (ly-fn-ok tgt fcode nfn) -1)))))
+        (if (= kind FX-BL26) (ly-fn-ok tgt fcode nfn)
+          ;; R4 (agent R4, delimited): adr to the entry of FN tgt, patched like an imm19 (immhi = word displacement)
+          (if (= kind FX-ADR19) (ly-fn-ok tgt fcode nfn) -1))))))
 
 (defn- ly-width [kind :i64] :i64
   (if (= kind FX-B26) 26 (if (= kind FX-BL26) 26 19)))

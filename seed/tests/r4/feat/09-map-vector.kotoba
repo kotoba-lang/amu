@@ -1,0 +1,6 @@
+;; R4 feat: map over a vector-i64 with an inline fn capturing a local (:vector-i64 result)
+(ns seed.r4 (:export [test]))
+(defn test [] :i64
+  (let [k 10
+        v (map (fn [x] (* x k)) [1 2 3 4])]
+    (+ (vector-count v) (vector-at v 0) (vector-at v 3))))

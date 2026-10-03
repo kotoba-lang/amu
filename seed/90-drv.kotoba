@@ -105,6 +105,12 @@
     (= c 2131) "try body cannot abort; there is nothing to catch"
     (= c 2132) "malformed try or catch '"
     (= c 2133) "cannot infer the error type here: '"
+    (= c 2134) "function value not admitted: '"
+    (= c 2135) "abort inside a fn literal is not admitted: '"
+    (= c 2136) "no clause of '"
+    (= c 2137) "too many parameters and captures in a fn literal ("
+    (= c 2138) "a multi-arity or variadic function cannot be exported: '"
+    (= c 2139) "a fn literal parameter takes its type from the context, not from an annotation: '"
     (= c 3001) "SIR table full"
     (= c 3003) "internal: cannot lower node kind "
     (= c 4001) "immediate out of range: "
@@ -156,6 +162,12 @@
     (= c 2129) "'"
     (= c 2132) "'"
     (= c 2133) "'"
+    (= c 2134) "'"
+    (= c 2135) "'"
+    (= c 2136) "' takes "
+    (= c 2137) ", at most 5)"
+    (= c 2138) "'"
+    (= c 2139) "'"
     (= c 4103) " slots)"
     (= c 4201) " words)"
     (= c 4203) ")"
@@ -164,6 +176,7 @@
 ;; error text piece 2
 (defn- drv-et2 [c :i64] :string
   (cond
+    (= c 2136) " arguments"
     :else ""))
 ;; placeholder 0: 0 none, 1 {name}, 2 {n}, 3 {t}
 (defn- drv-ek0 [c :i64] :i64
@@ -203,6 +216,12 @@
     (= c 2130) 1
     (= c 2132) 1
     (= c 2133) 1
+    (= c 2134) 1
+    (= c 2135) 1
+    (= c 2136) 1
+    (= c 2137) 2
+    (= c 2138) 1
+    (= c 2139) 1
     (= c 3003) 2
     (= c 4001) 2
     (= c 4102) 2
@@ -218,6 +237,7 @@
     (= c 2103) 2
     (= c 2104) 3
     (= c 2121) 3
+    (= c 2136) 2
     :else 0))
 
 ;; ---- diagnostics ---------------------------------------------------------------------------------------------------

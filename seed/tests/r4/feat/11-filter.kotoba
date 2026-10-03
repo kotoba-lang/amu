@@ -1,0 +1,6 @@
+;; R4 feat: filter with an inline predicate capturing a threshold
+(ns seed.r4 (:export [test]))
+(defn test [] :i64
+  (let [lo 3
+        v (filter (fn [x] (> x lo)) [5 1 4 2 9 3])]
+    (+ (* 100 (vector-count v)) (vector-at v 0) (vector-at v 2))))

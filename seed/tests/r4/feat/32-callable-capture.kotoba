@@ -1,0 +1,4 @@
+;; R4 feat: a closure capturing a closure (wrap)
+(ns seed.r4 (:export [test]))
+(defn wrap [f [:fn [[:i64] :i64]] k :i64] [:fn [[:i64] :i64]] (fn [x] (+ k (f x))))
+(defn test [] :i64 (invoke (wrap (fn [y] (* y 3)) 1000) 5))

@@ -1,0 +1,6 @@
+;; R4 feat: four parameters and one capture (5 in all), via invoke and as a known fn
+(ns seed.r4 (:export [test]))
+(defn test [] :i64
+  (let [e 10000
+        f (fn [a b c d] (+ e (* a 1000) (* b 100) (* c 10) d))]
+    (+ (f 1 2 3 4) (invoke f 4 3 2 1))))

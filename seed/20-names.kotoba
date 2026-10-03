@@ -200,6 +200,15 @@
         1936482678 HD-VALS  ; vals
         1801807216 HD-PEEK  ; peek
         7368560 HD-POP  ; pop
+        28262 HD-FN  ; fn
+        112585893310054 HD-FN-REF  ; fn-ref
+        111512105938537 HD-INVOKE  ; invoke
+        521510350945 HD-APPLY  ; apply
+        7364973 HD-HOF-MAP  ; map
+        125780070525286 HD-FILTER  ; filter
+        111477845681522 HD-REDUCE  ; reduce
+        1953720684 HD-LIST  ; list
+        38 HD-AMP  ; &
         0)
       32765890658446708
       (case w0
@@ -464,6 +473,7 @@
         500152495162 KW-LIST  ; :list
         1885433146 KW-MAP  ; :map
         1952805690 KW-SET  ; :set
+        7235130 KW-FN  ; :fn
         0)
       3421801
       (case w0
@@ -610,7 +620,8 @@
 (defn- nm-count-syms [M :vector-i64 n :i64] :i64
   (loop [c (nm-first M n) i 0]
     (cond (= c 0) i
-          (= (nm-kind M c) ND-SYM) (recur (nm-next M c) (+ i 1))
+          ;; R4: the rest marker `&` of [p & rest] is not a parameter
+          (and (= (nm-kind M c) ND-SYM) (nm-ne (nm-head-of M c) HD-AMP)) (recur (nm-next M c) (+ i 1))
           :else (recur (nm-next M c) i))))
 
 ;; parameter count of a defn form: the symbols of its third child when that is a vector
@@ -633,6 +644,8 @@
       (> (nm-sf M s SF-FN) 0) (nm-err-node M E-NAMES-DUP nm 0)
       (nm-r0-head (nm-sf M s SF-HEAD)) (nm-err-node M E-NAMES-DUP nm 0)
       (>= f MM-FN-CAP) (nm-err M E-HEAP-REGION 0 6)
+      ;; R4: a multi-arity defn (defn NAME ([p ..] body ..) ([q ..] ..)): one FN record per clause, consecutive
+      (and (nm-ne fk FK-DEF) (= (nm-kind M (nm-nth M n 2)) ND-LIST)) (nm-clauses (nm-set-sf M s SF-FN f) n fk (nm-nth M n 2))
       :else
       (let [np (nm-nparams M n fk)
             M1 (nm-put M (nm-fa f FF-SYM) s)
@@ -641,6 +654,19 @@
             M4 (nm-put M3 (nm-fa f FF-NPARAMS) np)
             M5 (nm-put M4 (nm-sa s SF-FN) f)]
         (nm-put M5 MM-FN-N (+ f 1))))))
+
+;; R4: the FN records of the clauses from c of the multi-arity defn n (each FF-NODE = n until 21-check gives the clause its
+;; own (defn NAME [..] :R body) node; FF-NPARAMS = the symbols of the clause's parameter vector, `&` not counted)
+(defn- nm-clauses [M :vector-i64 n :i64 fk :i64 c :i64] :vector-i64
+  (let [f (vector-at M MM-FN-N)
+        s (nm-sym-of M (nm-nth M n 1))
+        p (nm-first M c)]
+    (cond (= c 0) (nm-touch M)
+          (>= f MM-FN-CAP) (nm-err M E-HEAP-REGION 0 6)
+          :else (nm-clauses (-> M (nm-put (nm-fa f FF-SYM) s) (nm-put (nm-fa f FF-NODE) n) (nm-put (nm-fa f FF-KIND) fk)
+                                (nm-put (nm-fa f FF-NPARAMS) (if (= (nm-kind M p) ND-VEC) (nm-count-syms M p) 0))
+                                (nm-put MM-FN-N (+ f 1)))
+                            n fk (nm-next M c)))))
 
 ;; the node a top-level refusal names: the head of a non-empty list, else the form itself
 (defn- nm-name-node [M :vector-i64 n :i64] :i64

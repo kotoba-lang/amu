@@ -1,0 +1,6 @@
+;; R4 feat: a fn literal inside a loop capturing the loop variables
+(ns seed.r4 (:export [test]))
+(defn ap [f [:fn [[:i64] :i64]] x :i64] :i64 (f x))
+(defn test [] :i64
+  (loop [i 0 acc 0]
+    (if (= i 5) acc (recur (+ i 1) (+ acc (ap (fn [x] (* x i)) acc) 1)))))

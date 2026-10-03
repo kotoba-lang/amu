@@ -125,6 +125,12 @@
   [:c FF-FUEL 14 "1 when the body contains a call, runtime call or capability call (21-check), see SIR fuel rule"]
   [:c FF-DEPTH 15 "max SIR temp depth + 1 used by the function (30-lower)"]
   [:c FK-DEFN 1] [:c FK-PRIV 2 "defn-"] [:c FK-DEF 3]
+  ;; R4: FN records 21-check appends while it checks a body (FF-EXPORT 0, never a definition of a name; FF-SYM a gensym):
+  [:c FK-LAMBDA 4 "a lifted fn literal: FF-NODE = the (fn [..] body) node, FF-NPARAMS = parameters + captures"]
+  [:c FK-ADAPTER 5 "the closure entry of a lambda with 2 or more captures: FF-NODE = the fn node, FF-NPARAMS = parameters + 1"]
+  ;; R4 multi-arity defns: 20-names adds one FN record per clause, consecutively, all with the name's FF-SYM (SF-FN = the first);
+  ;; 21-check gives each clause a synthetic (defn[-] NAME [params] :R body) node as FF-NODE. FF-NPARAMS of a variadic clause
+  ;; counts the rest parameter once (the `&` symbol is not counted).
   ;; R1: FF-EXPORT = 2 marks an IMPLICIT export (no (:export ..) clause: every defn); 21-check turns it into 1 when the
   ;; signature is exportable (params i64, result i64/bool) and 0 otherwise.
 
@@ -175,13 +181,16 @@
   "02-io"    [:MM-R0..R3 :MM-ERR* "(E02nn)" "HEAP blocks it allocated"]
   "10-lex"   [:TOK :MM-TOK-N :LIT "(LF-B LF-LEN LF-TOK)" :LITB :MM-LIT-N :MM-LITB-N :MM-ERR* "(E10nn)"]
   "11-read"  [:NODE "fields NF-KIND NF-FIRST NF-NEXT NF-TOK NF-AUX" :MM-NODE-N :MM-ROOT :MM-ERR* "(E11nn)"]
-  "20-names" [:SYM :HASH :MM-SYM-N :MM-HASH-N :FN "(FF-SYM FF-NODE FF-KIND FF-NPARAMS FF-EXPORT)" :MM-FN-N
+  "20-names" [:SYM :HASH :MM-SYM-N :MM-HASH-N :FN "(FF-SYM FF-NODE FF-KIND FF-NPARAMS FF-EXPORT; R4: one per clause)" :MM-FN-N
               :SCOPE :MM-SCOPE-N "NODE field NF-SYM" :MM-NS-NODE :MM-ERR* "(E20nn)"]
   "21-check" ["NODE fields NF-TYPE NF-RES" "FN fields FF-RTYPE FF-PT0..FF-PT4 FF-NSLOTS FF-FUEL" :MM-ERR* "(E21nn)"
               "SF-BIND only through the 20-names scope API"
               "R1: appends NODE records and relinks NF-FIRST/NF-NEXT when desugaring, SF-REC, FF-EXPORT 2 -> 1/0, gensyms"
               "R3: SF-ABORT, MM-CK-STATE, MM-CT and the CT block, NF-SYM of an ND-SET/ND-MAP expression and NF-TYPE of the
-               head symbol node of an R3 head or aborting call (the first hidden slot)"]
+               head symbol node of an R3 head or aborting call (the first hidden slot)"
+              "R4: appends FN records (FK-LAMBDA, FK-ADAPTER: all FF-* fields, MM-FN-N), FF-NODE of multi-arity clauses, NF-TYPE
+               of a fn literal's head symbol (its FN) and parameter vector (its capture block), of a defn clause's parameter
+               vector (1 = variadic), capture blocks in HEAP"]
   "30-lower" [:SIR :MM-SIR-N :MM-LABEL-N :MM-MAX-DEPTH "FN fields FF-SIR FF-DEPTH" :MM-ERR* "(E30nn)"]
   "40-a64enc" ["nothing: pure functions i64 -> i64"]
   "41-a64gen" [:CODE "(append)" :MM-CODE-N :FIX :MM-FIX-N :LABEL "FN field FF-CODE" :MM-ERR* "(E41nn)"]

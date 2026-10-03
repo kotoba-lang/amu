@@ -1,0 +1,4 @@
+;; R4 feat: a variadic defn: the surplus arguments as a list (count, nth)
+(ns seed.r4 (:export [test]))
+(defn sum-all [base & more] (+ base (* 10 (count more)) (if (> (count more) 0) (nth more 0) 0)))
+(defn test [] :i64 (+ (sum-all 1) (sum-all 1 2 3 4) (* 100 (sum-all 0 5 5))))

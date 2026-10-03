@@ -44,7 +44,9 @@
 
 (defn- lx-symch? [c :i64] :bool
   (or (lx-range? c 97 122) (lx-range? c 65 90) (lx-range? c 48 57)
-      (= c 42) (= c 43) (= c 33) (= c 95) (= c 63) (= c 60) (= c 62) (= c 61) (= c 47) (= c 46) (= c 45)))
+      (= c 42) (= c 43) (= c 33) (= c 95) (= c 63) (= c 60) (= c 62) (= c 61) (= c 47) (= c 46) (= c 45)
+      ;; R4 (agent R4, minimal delimited change): `&` is a symbol byte (the rest marker of [p & rest], seed/HEADS HD-AMP)
+      (= c 38)))
 
 ;; a byte that starts a string, keyword, integer or symbol
 (defn- lx-multi? [c :i64] :bool (or (= c 34) (= c 58) (lx-symch? c)))

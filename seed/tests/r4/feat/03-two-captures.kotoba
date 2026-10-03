@@ -1,0 +1,4 @@
+;; R4 feat: two captures (the adapter entry): (x * k) + c
+(ns seed.r4 (:export [test]))
+(defn lin [k :i64 c :i64] [:fn [[:i64] :i64]] (fn [x] (+ (* x k) c)))
+(defn test [] :i64 (let [f (lin 3 4) g (lin 10 -1)] (+ (invoke f 5) (* 1000 (invoke g 2)))))

@@ -1,0 +1,4 @@
+;; R4 feat: reduce without init on an empty collection calls the 0-arity clause
+(ns seed.r4 (:export [test]))
+(defn plus ([] 40) ([a b] (+ a b)))
+(defn test [] :i64 (+ (reduce plus (vector-alloc 0)) (reduce plus [1 2])))

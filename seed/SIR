@@ -44,7 +44,11 @@
                  each in the pool); traps (brk #0) unless 0 <= temp t < n. Lowering of (vector-at V i) when V is a
                  vector literal of integer literals (or a def of one): no runtime allocation (integration 2026-10-02:
                  kexe-benchmark has 4096 vectors, edn's per-call literals exhausted them)"]
-  [:c OP-COUNT 21 "highest opcode"]]
+  ;; -- R4 (rung 4, 2026-10-03): closures --
+  [:c OP-FADDR 22 "FADDR t f -- temp t := the absolute code address of FN f's entry (adr xd, fixup FX-ADR19 on FN f)"]
+  [:c OP-CALLI 23 "CALLI 0 t n -- temp t := call the code address in temp t+n with the arguments t .. t+n-1 (n <= 5, x7 = ctx,
+                   result x0): a closure call (seed/SIR :r4-lowering)"]
+  [:c OP-COUNT 23 "highest opcode"]]
 
  :binary-ops
  [[:c BOP-ADD 1 "+ wrap"] [:c BOP-SUB 2 "- wrap"] [:c BOP-MUL 3 "* low 64"]
@@ -171,6 +175,36 @@
                               STRING-COMPARE, string-index-of RT STRING-INDEX-OF, string-byte-length / pair-second RT PAIR-SECOND,
                               pair RT PAIR-NEW, pair-first RT PAIR-FIRST"}
 
+ ;; R4 (2026-10-03, agent R4): functions. Two new opcodes (FADDR, CALLI) and one fixup (FX-ADR19); everything else is CALL, RT,
+ ;; LGET/LSET, VEC and the R3 loop shapes. A fn literal is lifted into FN g (FK-LAMBDA) with parameters p1..pn (slots 1..n)
+ ;; followed by its captures c1..ck (slots n+1..n+k, n+k <= 5): g(p.., c..). Representation of a fn VALUE (a closure):
+ ;; pair(code address of its entry, env): k = 0 entry g, env 0 (g ignores the extra argument); k = 1 entry g, env = c1;
+ ;; k >= 2 entry = the adapter FN g' (FK-ADAPTER) of n+1 parameters and env = pair(c1, pair(c2, .. ck)) (k-1 pairs, the last
+ ;; capture is the tail). fn-ref f = pair(address of f, 0). The captured slots of a lambda are listed in a HEAP block
+ ;; [k s1 .. sk] whose address is NF-TYPE of its parameter vector node (21-check); its FN index is NF-TYPE of the `fn` head
+ ;; symbol node. Every string literal is valid UTF-8 (HEADS :tokens R4 rule), which lets 41-a64gen read an ASCII byte of a
+ ;; code-relative string in line.
+ :r4-lowering
+ {"(fn ..) as a value"       "FADDR t entry  [env -> t+1]  RT PAIR-NEW t 2 ; env: CONST 0 | LGET s1 | LGET s1 .. LGET sk into
+                              t+1 .. t+k, RT PAIR-NEW t+k-1 2 .. RT PAIR-NEW t+1 2"
+  "(fn ..) known, unused"    "a let-bound fn literal that is never used as a value: nothing (no LSET); NF-RES of the node = HD-FN
+                              with NF-TYPE of its binder node's NF-AUX... (21-check marks it: NF-RES = HD-CALLK)"
+  "(f a ..) f known"         "[a -> t] .. LGET t+n s1 .. LGET t+n+k-1 sk  CALL g t n+k"
+  "(invoke c a ..)"          "[c -> t] LSET hs t [a1 -> t] .. [an -> t+n-1] LGET t+n hs RT PAIR-SECOND t+n 1 LGET t+n+1 hs
+                              RT PAIR-FIRST t+n+1 1 CALLI 0 t n+1 ; a local c: LGET instead of the hidden slot"
+  "(apply c a .. l)"         "as invoke; the trailing arguments are RT VECTOR-AT of l (hidden slot) after a count check
+                              (TRAP when count(l) != n - m)"
+  "(fn-ref f)"               "FADDR t f CONST t+1 0 RT PAIR-NEW t 2"
+  "adapter g'"               "FN g' n+1 n+1: LGET p1..pn into 0..n-1, the env (slot n+1) unpacked into n..n+k-1 by RT PAIR-FIRST /
+                              PAIR-SECOND, CALL g 0 n+k, RET 0"
+  "(map f c) (filter p c) (reduce f [i] c)" "an inline counted loop over the vector of c (no FUEL inside, as the R3 loops),
+                              hidden slots s0 coll s1 count s2 index s3 accumulator s4 the callback value; per item RT VECTOR-AT
+                              and the callback: CALL g (+ captures) for an inline fn, CALL f for a defn name, CALLI for a value;
+                              map/filter collect with RT VECTOR-CONJ into a vector that starts as VEC t 0"
+  "multi-arity defn"         "one FN per clause, consecutive, same FF-SYM; a call picks the clause by its argument count; a
+                              variadic clause (parameter vector NF-TYPE 1) gets the surplus arguments as VEC t+m r"
+  "(list e ..)"              "[e1 -> t] .. VEC t n"}
+
  ;; Fuel rule (matches machine-ir entry-fuel-prefixes; T5 checks the seed's minimal passing fuel <= stage-0's):
  ;; one FUEL at entry of every function with FF-FUEL = 1 (its body contains a CALL, RT or CAP), and one FUEL per
  ;; recur / self tail call back-edge. Nothing else charges fuel.
@@ -201,12 +235,18 @@
                  operand is the CODE-RELATIVE offset, not an address (T2)."
   :pool         "Literal pool after the last function, each literal's bytes at LF-POOL, 8-byte aligned,
                  no terminator. MM-CODE-BYTES = end of the pool."
-  :traps        "brk #0 for every trap (quot, fuel, OP-TRAP code goes in the immediate)"}
+  :traps        "brk #0 for every trap (quot, fuel, OP-TRAP code goes in the immediate)"
+  :r4           "FADDR: adr d,#0 + FX-ADR19 (d = the temp's register). CALLI like CALL with blr x16 (x16 := the code temp, last).
+                 string-code-point-at on a non-literal string (R4, the UTF-8 rule): the pair is read in line (ABI v9 pointers);
+                 when its offset is code-relative (>= 0), the index is below its length and offset + length <= code_length
+                 ([x7,#392]), the byte at code_base + offset + index is loaded and returned when < 0x80; every other case calls
+                 string_code_point_at (which validates the handle once)"}
 
  :fixups
  [[:c FX-B26 1 "b label: imm26 words"] [:c FX-BC19 2 "b.cond label: imm19 words"]
   [:c FX-CB19 3 "cbz/cbnz label: imm19 words"] [:c FX-BL26 4 "bl FN entry: imm26 words, target = FN index"]
-  [:c FX-LIT32 5 "movz+movk pair (2 consecutive words) loading LF-POOL of LIT target, 32-bit byte offset"]]
+  [:c FX-LIT32 5 "movz+movk pair (2 consecutive words) loading LF-POOL of LIT target, 32-bit byte offset"]
+  [:c FX-ADR19 6 "R4: adr xd: the word displacement to the entry of FN target in immhi (bits 23:5, immlo 0): the imm19 patch"]]
 
  ;; ---------------------------------------------------------------------------------------------------------
  ;; 4. Output container kseed/v1 (50-out), from the design section 3.1

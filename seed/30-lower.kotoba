@@ -56,10 +56,11 @@
 ;; highest temp an instruction touches, -1 for none
 (defn- lw-hi [op :i64 a :i64 b :i64 c :i64] :i64
   (case op
-    (OP-CONST OP-LGET OP-STR OP-RET OP-BRZ OP-BRNZ OP-TAB) a
+    (OP-CONST OP-LGET OP-STR OP-RET OP-BRZ OP-BRNZ OP-TAB OP-FADDR) a
     (OP-LSET OP-UN) b
     (OP-BIN OP-CMP) (inc b)
     (OP-CALL OP-RT) (if (pos? c) (+ b (dec c)) b)
+    OP-CALLI (+ b c)
     OP-CAP c
     OP-VEC (if (pos? b) (+ a (dec b)) a)
     -1))
@@ -165,7 +166,9 @@
     (let [init (lw-next M b)
           nb (lw-next M init)
           slot (lw-slot M b)]
-      (lw-binds (-> M (lw-expr init t 0) (lw-emit OP-LSET slot t 0)) nb t))))
+      (if (and (= (lw-nf M init NF-KIND) ND-LIST) (zero? (lw-nf M init NF-RES)))
+        (lw-binds M nb t)
+        (lw-binds (-> M (lw-expr init t 0) (lw-emit OP-LSET slot t 0)) nb t)))))
 
 ;; recur into a loop: LSET binder_i (t+i) for the binders b, b'', ... (parallel assignment; values computed)
 (defn- lw-loop-sets [M :vector-i64 b :i64 t :i64] :vector-i64
@@ -261,10 +264,10 @@
 (defn- lw-call [M :vector-i64 h :i64 t :i64 k :i64] :vector-i64
   (let [f (lw-callee M h)
         a (lw-next M h)]
-    (if (and (= f (vector-at M 92)) (= (lw-kt k) 1))
-      (lw-jump M a t 0)
-      (let [n (lw-count M a)]
-        (-> M (lw-args a t) (lw-emit OP-CALL f t n) (cond-> (lw-aborts? M f) (lw-abort-check h t)))))))
+    (cond (lw-variadic? M f) (lw-call-var M f a t)
+          (and (= f (vector-at M 92)) (= (lw-kt k) 1)) (lw-jump M a t 0)
+          :else (let [n (lw-count M a)]
+                  (-> M (lw-args a t) (lw-emit OP-CALL f t n) (cond-> (lw-aborts? M f) (lw-abort-check h t)))))))
 
 (defn- lw-cap [M :vector-i64 w :i64 t :i64] :vector-i64
   (let [req (lw-next M w)
@@ -418,6 +421,14 @@
       HD-KWGET (lw-field M a h t)
       HD-ASSOC (if (= (lw-ct M (lw-nf M n NF-TYPE) CT-CTOR) TC-MAP) (lw-massoc M n a t) (lw-assoc M n t))
       HD-GET (if (= (lw-count M a) 3) (lw-gget M h a t) (lw-field M a (lw-next M a) t))
+      HD-FN (lw-closure M n t)
+      HD-FN-REF (-> M (lw-emit OP-FADDR t (lw-ridx (lw-nf M a NF-RES)) 0) (lw-emit OP-CONST (inc t) 0 0) (lw-emit OP-RT RT-PAIR-NEW t 2))
+      HD-CALLK (lw-callk M h t)
+      HD-CALLV (lw-callv M n t)
+      HD-INVOKE (lw-invoke M n t)
+      HD-APPLY (lw-apply M n t)
+      (HD-HOF-MAP HD-FILTER HD-REDUCE) (lw-hof M n hd t)
+      HD-LIST (-> M (lw-args a t) (lw-emit OP-VEC t (lw-count M a) 0))
       (if (and (>= hd HD-OPTION-SOME) (<= hd HD-POP)) (lw-r3 M n hd t k) (lw-fail M E-LOWER-NODE (lw-pos M n) hd)))))
 
 (defn- lw-list [M :vector-i64 n :i64 t :i64 k :i64] :vector-i64
@@ -464,7 +475,12 @@
 
 ;; (defn NAME [params] :R body): body = 5th child. Scratch cells 92 = f, 93 = its entry label, 94 = deepest temp.
 (defn- lw-fn [M :vector-i64 f :i64] :vector-i64
-  (let [body (lw-nth M (lw-first M (lw-ff M f FF-NODE)) 4)
+  (case (lw-ff M f FF-KIND)
+    FK-ADAPTER (lw-adapter M f)
+    FK-LAMBDA (lw-fn2 M f (lw-nth M (lw-first M (lw-ff M f FF-NODE)) 2))
+    (lw-fn2 M f (lw-nth M (lw-first M (lw-ff M f FF-NODE)) 4))))
+(defn- lw-fn2 [M :vector-i64 f :i64 body :i64] :vector-i64
+  (let [
         le (vector-at M MM-LABEL-N)
         sirn (vector-at M MM-SIR-N)
         np (lw-ff M f FF-NPARAMS)
@@ -1165,14 +1181,17 @@
       OP-BRNZ (lw-ix M H (if (zero? (vector-at H (+ tb a))) pc1 (vector-at H (+ (lw-hlab) b))) fb tb)
       OP-BR (lw-ix M H (vector-at H (+ (lw-hlab) a)) fb tb)
       OP-LABEL (lw-ix M H pc1 fb tb)
-      (OP-RT OP-CALL OP-STR OP-VEC)
-      ;; a helper that leaves its result in H[1] (or a status in H[0]); the result goes to temp b (RT, CALL) or a
+      OP-FADDR (lw-ix M (lw-put H (+ tb a) b) pc1 fb tb)
+      (OP-RT OP-CALL OP-CALLI OP-STR OP-VEC)
+      ;; a helper that leaves its result in H[1] (or a status in H[0]); the result goes to temp b (RT, CALL, CALLI) or a.
+      ;; R4: a code address in the interpreter is the FN index (FADDR); CALLI enters it
       (let [H1 (case op
                  OP-RT (lw-ix-rt H a (+ tb b))
                  OP-CALL (lw-ix-enter M H a (+ tb b))
+                 OP-CALLI (lw-ix-enter M H (vector-at H (+ tb b (vector-at M (+ p 3)))) (+ tb b))
                  OP-STR (lw-ix-str M H b)
                  (lw-ix-vec H (+ tb a) b))
-            dst (if (or (= op OP-RT) (= op OP-CALL)) b a)]
+            dst (if (or (= op OP-RT) (= op OP-CALL) (= op OP-CALLI)) b a)]
         (if (pos? (vector-at H1 0))
           H1
           (lw-ix M (lw-put H1 (+ tb dst) (vector-at H1 1)) pc1 fb tb)))
@@ -1221,3 +1240,187 @@
         H3 (lw-put (lw-put H2 7 (lw-hheap)) 8 a0)
         H4 (lw-ix-labels M H3 1)]
     (lw-ix-enter M H4 f 8)))
+
+;; ============================================================================================================
+;; R4 (agent R4, 2026-10-03): functions (seed/SIR :r4-lowering). New opcodes FADDR and CALLI only. Written in the R3
+;; language. Reads what 21-check wrote: NF-TYPE of a fn literal's head symbol = its lifted FN g, NF-TYPE of its parameter
+;; vector = the capture block [k s1 .. sk] (outer slots), FK-LAMBDA / FK-ADAPTER FN records, NF-RES 0 on a fn literal
+;; that is called directly (a known let binding or a map/filter/reduce callback), hidden slots on head symbol nodes.
+;; ============================================================================================================
+;; the capture block of lifted FN g
+(defn- lw-capblk [M :vector-i64 g :i64] :i64 (lw-nf M (lw-nth M (lw-first M (lw-ff M g FF-NODE)) 1) NF-TYPE))
+(defn- lw-ncap [M :vector-i64 g :i64] :i64 (vector-at M (lw-capblk M g)))
+;; LGET t .. t+k-1 := the captured slots of g (in the enclosing function)
+(defn- lw-caps [M :vector-i64 g :i64 t :i64] :vector-i64
+  (let [blk (lw-capblk M g)
+        k (vector-at M blk)]
+    (loop [M1 M i 0] (if (>= i k) M1 (recur (lw-emit M1 OP-LGET (+ t i) (vector-at M1 (+ blk 1 i)) 0) (inc i))))))
+;; true when FN f is a variadic clause (21-check: NF-TYPE 1 on its parameter vector)
+(defn- lw-variadic? [M :vector-i64 f :i64] :bool
+  (and (or (= (lw-ff M f FF-KIND) FK-DEFN) (= (lw-ff M f FF-KIND) FK-PRIV))
+       (= (lw-nf M (lw-nth M (lw-first M (lw-ff M f FF-NODE)) 2) NF-TYPE) 1)))
+;; a call of the variadic clause f: m fixed arguments, the surplus as one vector
+(defn- lw-call-var [M :vector-i64 f :i64 a :i64 t :i64] :vector-i64
+  (let [m (dec (lw-ff M f FF-NPARAMS))
+        n (lw-count M a)]
+    (loop [M1 M x a i 0]
+      (if (zero? x)
+        (-> M1 (lw-emit OP-VEC (+ t m) (- n m) 0) (lw-emit OP-CALL f t (inc m)))
+        (recur (lw-expr M1 x (+ t i) 0) (lw-next M1 x) (inc i))))))
+
+;; a fn literal as a value: pair(entry address, env)
+(defn- lw-closure [M :vector-i64 n :i64 t :i64] :vector-i64
+  (let [g (lw-nf M (lw-first M n) NF-TYPE)
+        k (lw-ncap M g)]
+    (-> M
+        (lw-emit OP-FADDR t (if (>= k 2) (inc g) g) 0)
+        (cond-> (zero? k) (lw-emit OP-CONST (inc t) 0 0)
+                (pos? k) (lw-caps g (inc t)))
+        (lw-env-pairs (inc t) (dec k))
+        (lw-emit OP-RT RT-PAIR-NEW t 2))))
+;; temps u .. u+j hold c1 .. c(j+1): fold them into u = pair(c1, pair(c2, .. c(j+1)))
+(defn- lw-env-pairs [M :vector-i64 u :i64 j :i64] :vector-i64
+  (if (<= j 0) M (lw-env-pairs (lw-emit M OP-RT RT-PAIR-NEW (+ u (dec j)) 2) u (dec j))))
+;; (f a ..) with f a known function slot: CALL g with the arguments and the captured slots
+(defn- lw-callk [M :vector-i64 h :i64 t :i64] :vector-i64
+  (let [g (lw-ridx (lw-nf M h NF-RES))
+        a (lw-next M h)
+        n (lw-count M a)]
+    (-> M (lw-args a t) (lw-caps g (+ t n)) (lw-emit OP-CALL g t (+ n (lw-ncap M g))))))
+;; call the closure in slot s with the arguments a .. (into t ..): env and code after them, CALLI
+(defn- lw-calli [M :vector-i64 s :i64 a :i64 t :i64] :vector-i64
+  (let [n (lw-count M a)]
+    (-> M (lw-args a t)
+        (lw-emit OP-LGET (+ t n) s 0) (lw-emit OP-RT RT-PAIR-SECOND (+ t n) 1)
+        (lw-emit OP-LGET (+ t n 1) s 0) (lw-emit OP-RT RT-PAIR-FIRST (+ t n 1) 1)
+        (lw-emit OP-CALLI 0 t (inc n)))))
+;; (g a ..) through a fn value: a local g, or a computed head (its value in the hidden slot NF-SYM of n)
+(defn- lw-callv [M :vector-i64 n :i64 t :i64] :vector-i64
+  (let [h (lw-first M n)]
+    (if (= (lw-nf M h NF-KIND) ND-SYM)
+      (lw-calli M (lw-slot M h) (lw-next M h) t)
+      (let [hs (lw-nf M n NF-SYM)]
+        (lw-calli (-> M (lw-expr h t 0) (lw-emit OP-LSET hs t 0)) hs (lw-next M h) t)))))
+;; (invoke [R] c a ..): the closure into the hidden slot NF-TYPE of the head
+(defn- lw-invoke [M :vector-i64 n :i64 t :i64] :vector-i64
+  (let [h (lw-first M n)
+        a1 (lw-next M h)
+        typed (or (= (lw-nf M a1 NF-KIND) ND-KW) (= (lw-nf M a1 NF-KIND) ND-VEC))
+        op (if typed (lw-next M a1) a1)
+        hs (lw-nf M h NF-TYPE)]
+    (lw-calli (-> M (lw-expr op t 0) (lw-emit OP-LSET hs t 0)) hs (lw-next M op) t)))
+;; the arity of fn type ty (the TC-PLIST chain of CT-B)
+(defn- lw-arity [M :vector-i64 ty :i64] :i64
+  (loop [b (lw-ct M ty CT-B) k 0] (if (zero? b) k (recur (lw-ct M b CT-B) (inc k)))))
+;; (apply c a .. l): hidden slots s (closure) and s+1 (list); count(l) must be ar - m (else TRAP)
+(defn- lw-apply [M :vector-i64 n :i64 t :i64] :vector-i64
+  (let [h (lw-first M n)
+        s (lw-nf M h NF-TYPE)
+        op (lw-next M h)
+        na (dec (lw-count M h))
+        m (- na 2)
+        ar (lw-arity M (lw-nf M op NF-TYPE))
+        l (lw-nth M h na)
+        lok (vector-at M MM-LABEL-N)
+        M1 (-> M (lw-labels 1) (lw-expr op t 0) (lw-emit OP-LSET s t 0))
+        M2 (loop [M3 M1 x (lw-next M1 op) i 0] (if (>= i m) M3 (recur (lw-expr M3 x (+ t i) 0) (lw-next M3 x) (inc i))))
+        u (+ t m)
+        M4 (-> M2 (lw-expr l u 0) (lw-emit OP-LSET (inc s) u 0)
+               (lw-emit OP-RT RT-VECTOR-COUNT u 1) (lw-emit OP-CONST (inc u) (- ar m) 0) (lw-emit OP-CMP CC-EQ u 0)
+               (lw-emit OP-BRNZ u lok 0) (lw-emit OP-TRAP 0 0 0) (lw-emit OP-LABEL lok 0 0))
+        M5 (loop [M6 M4 j 0]
+             (if (>= j (- ar m))
+               M6
+               (recur (-> M6 (lw-emit OP-LGET (+ u j) (inc s) 0) (lw-emit OP-CONST (+ u j 1) j 0) (lw-emit OP-RT RT-VECTOR-AT (+ u j) 2))
+                      (inc j))))]
+    (-> M5 (lw-emit OP-LGET (+ t ar) s 0) (lw-emit OP-RT RT-PAIR-SECOND (+ t ar) 1)
+        (lw-emit OP-LGET (+ t ar 1) s 0) (lw-emit OP-RT RT-PAIR-FIRST (+ t ar 1) 1)
+        (lw-emit OP-CALLI 0 t (inc ar)))))
+
+;; ---- map / filter / reduce: hidden slots s0 coll, s1 count, s2 index, s3 accumulator, s4 the callback value ----
+;; the callback kind of node cb: 1 a direct lifted fn (NF-RES 0), 2 a defn clause (RES-FN), 3 a value (slot s4)
+(defn- lw-cbkind [M :vector-i64 cb :i64] :i64
+  (cond (and (= (lw-nf M cb NF-KIND) ND-LIST) (zero? (lw-nf M cb NF-RES))) 1
+        (and (= (lw-nf M cb NF-KIND) ND-SYM) (= (lw-rcls (lw-nf M cb NF-RES)) RES-FN)) 2
+        :else 3))
+;; call the callback cb on the ar arguments in temps u .. u+ar-1 (result in u); s4 = the value slot
+(defn- lw-cbcall [M :vector-i64 cb :i64 ar :i64 u :i64 s4 :i64] :vector-i64
+  (case (lw-cbkind M cb)
+    1 (let [g (lw-nf M (lw-first M cb) NF-TYPE)] (-> M (lw-caps g (+ u ar)) (lw-emit OP-CALL g u (+ ar (lw-ncap M g)))))
+    2 (lw-emit M OP-CALL (lw-ridx (lw-nf M cb NF-RES)) u ar)
+    (-> M (lw-emit OP-LGET (+ u ar) s4 0) (lw-emit OP-RT RT-PAIR-SECOND (+ u ar) 1)
+        (lw-emit OP-LGET (+ u ar 1) s4 0) (lw-emit OP-RT RT-PAIR-FIRST (+ u ar 1) 1)
+        (lw-emit OP-CALLI 0 u (inc ar)))))
+;; temp u := item (slot s2) of the vector in slot s0
+(defn- lw-hitem [M :vector-i64 s :i64 u :i64] :vector-i64
+  (-> M (lw-emit OP-LGET u s 0) (lw-emit OP-LGET (inc u) (+ s 2) 0) (lw-emit OP-RT RT-VECTOR-AT u 2)))
+;; the 0-arity fixed clause of the defn whose clause is f, 0 when none
+(defn- lw-clause0 [M :vector-i64 f :i64] :i64
+  (let [sy (lw-ff M f FF-SYM)
+        f0 (loop [g f] (if (and (> g 1) (= (lw-ff M (dec g) FF-SYM) sy)) (recur (dec g)) g))]
+    (loop [g f0]
+      (cond (or (>= g (vector-at M MM-FN-N)) (not= (lw-ff M g FF-SYM) sy)) 0
+            (and (zero? (lw-ff M g FF-NPARAMS)) (not (lw-variadic? M g))) g
+            :else (recur (inc g))))))
+;; one step of the loop body for item index slot s2 (hd: map / filter / reduce)
+(defn- lw-hstep [M :vector-i64 hd :i64 cb :i64 s :i64 t :i64] :vector-i64
+  (let [lskip (vector-at M MM-LABEL-N)]
+    (case hd
+      HD-HOF-MAP (-> M (lw-emit OP-LGET t (+ s 3) 0) (lw-hitem s (inc t)) (lw-cbcall cb 1 (inc t) (+ s 4))
+                     (lw-emit OP-RT RT-VECTOR-CONJ t 2) (lw-emit OP-LSET (+ s 3) t 0))
+      HD-FILTER (-> M (lw-labels 1) (lw-hitem s t) (lw-cbcall cb 1 t (+ s 4)) (lw-emit OP-BRZ t lskip 0)
+                    (lw-emit OP-LGET t (+ s 3) 0) (lw-hitem s (inc t)) (lw-emit OP-RT RT-VECTOR-CONJ t 2)
+                    (lw-emit OP-LSET (+ s 3) t 0) (lw-emit OP-LABEL lskip 0 0))
+      (-> M (lw-emit OP-LGET t (+ s 3) 0) (lw-hitem s (inc t)) (lw-cbcall cb 2 t (+ s 4)) (lw-emit OP-LSET (+ s 3) t 0)))))
+(defn- lw-hof [M :vector-i64 n :i64 hd :i64 t :i64] :vector-i64
+  (let [h (lw-first M n)
+        s (lw-nf M h NF-TYPE)
+        na (dec (lw-count M h))
+        cb (lw-next M h)
+        coll (lw-nth M h na)
+        noinit (and (= hd HD-REDUCE) (= na 2))
+        l (vector-at M MM-LABEL-N)
+        M1 (-> M (lw-labels 4)
+               (cond-> (= (lw-cbkind M cb) 3) (-> (lw-expr cb t 0) (lw-emit OP-LSET (+ s 4) t 0)))
+               (lw-expr coll t 0) (lw-emit OP-LSET s t 0) (lw-emit OP-RT RT-VECTOR-COUNT t 1) (lw-emit OP-LSET (inc s) t 0)
+               (lw-emit OP-CONST t 0 0) (lw-emit OP-LSET (+ s 2) t 0))
+        M2 (cond (= na 3) (-> M1 (lw-expr (lw-next M1 cb) t 0) (lw-emit OP-LSET (+ s 3) t 0))
+                 noinit (lw-hseed M1 cb s t (+ l 2))
+                 :else (-> M1 (lw-emit OP-VEC t 0 0) (lw-emit OP-LSET (+ s 3) t 0)))]
+    (-> M2
+        (lw-emit OP-LABEL l 0 0)
+        (lw-emit OP-LGET t (+ s 2) 0) (lw-emit OP-LGET (inc t) (inc s) 0) (lw-emit OP-CMP CC-LT t 0) (lw-emit OP-BRZ t (inc l) 0)
+        (lw-hstep hd cb s t)
+        (lw-step (+ s 2) 1 t) (lw-emit OP-BR l 0 0)
+        (lw-emit OP-LABEL (inc l) 0 0) (lw-emit OP-LGET t (+ s 3) 0)
+        (lw-emit OP-LABEL (+ l 2) 0 0))))
+;; reduce without init: an empty collection answers (f) (the defn's 0-arity clause; TRAP when there is none) and jumps
+;; to lend; else the first item seeds the accumulator and the loop starts at index 1
+(defn- lw-hseed [M :vector-i64 cb :i64 s :i64 t :i64 lend :i64] :vector-i64
+  (let [lne (vector-at M MM-LABEL-N)
+        z (if (= (lw-cbkind M cb) 2) (lw-clause0 M (lw-ridx (lw-nf M cb NF-RES))) 0)]
+    (-> M (lw-labels 1)
+        (lw-emit OP-LGET t (inc s) 0) (lw-emit OP-BRNZ t lne 0)
+        (cond-> (pos? z) (-> (lw-emit OP-CALL z t 0) (lw-emit OP-BR lend 0 0))
+                (zero? z) (lw-emit OP-TRAP 0 0 0))
+        (lw-emit OP-LABEL lne 0 0)
+        (lw-hitem s t) (lw-emit OP-LSET (+ s 3) t 0) (lw-emit OP-CONST t 1 0) (lw-emit OP-LSET (+ s 2) t 0))))
+
+;; the closure entry of a lambda with k >= 2 captures (FN g' = g + 1): unpack the env (slot np+1) and CALL g
+(defn- lw-adapter [M :vector-i64 f :i64] :vector-i64
+  (let [g (dec f)
+        np (dec (lw-ff M f FF-NPARAMS))
+        k (lw-ncap M g)
+        e (inc np)
+        le (vector-at M MM-LABEL-N)
+        M1 (-> M (lw-labels 1) (lw-put 92 f) (lw-put 93 le) (lw-put 94 -1) (lw-set-ff f FF-SIR (vector-at M MM-SIR-N))
+               (lw-emit OP-FN f (inc np) (inc np)) (lw-emit OP-FUEL 0 0 0) (lw-emit OP-LABEL le 0 0))
+        M2 (loop [M3 M1 i 0] (if (>= i np) M3 (recur (lw-emit M3 OP-LGET i (inc i) 0) (inc i))))
+        M4 (loop [M5 M2 i 0]
+             (if (>= i (dec k))
+               (lw-emit M5 OP-LGET (+ np i) e 0)
+               (recur (-> M5 (lw-emit OP-LGET (+ np i) e 0) (lw-emit OP-RT RT-PAIR-FIRST (+ np i) 1)
+                          (lw-emit OP-LGET (+ np i 1) e 0) (lw-emit OP-RT RT-PAIR-SECOND (+ np i 1) 1) (lw-emit OP-LSET e (+ np i 1) 0))
+                      (inc i))))
+        M6 (-> M4 (lw-emit OP-CALL g 0 (+ np k)) (lw-emit OP-RET 0 0 0) (lw-emit OP-END f 0 0))]
+    (lw-set-ff M6 f FF-DEPTH (inc (vector-at M6 94)))))

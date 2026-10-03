@@ -31,7 +31,14 @@
                             (lang/guest-grammar.edn :map-literal :order). Keys/items: i64 bool keyword string (E2105 otherwise);
                             keyword items/keys are kept in interning order, so typed-set-nth, (nth set i), keys and vals refuse
                             them (E2105 / E2104)"]
-  [:c TC-OPTION 1] [:c TC-RESULT 2] [:c TC-LIST 3] [:c TC-MAP 4] [:c TC-SET 5]]
+  [:c TC-OPTION 1] [:c TC-RESULT 2] [:c TC-LIST 3] [:c TC-MAP 4] [:c TC-SET 5]
+  ;; -- R4 (rung 4, 2026-10-03): callable types. [:fn [[P1 .. Pn] R]] (one clause, n <= 4) = TC-FN with CT-A = R and CT-B =
+  ;;    the parameter list (0 for none): a chain of TC-PLIST records (CT-A = the parameter type, CT-B = the rest or 0).
+  ;;    Interning makes equal signatures equal codes. A value of a fn type is a CLOSURE: pair(code address, env)
+  ;;    (seed/SIR :r4-lowering). P and R: any type except :bytes and fn types (E2105: the reference's `callable
+  ;;    parameter types / results cannot be callable`)
+  [:c TC-FN 6 "[:fn [[P ..] R]]: CT-A = R, CT-B = the TC-PLIST chain of the parameter types (0 = no parameter)"]
+  [:c TC-PLIST 7 "one link of a parameter type list: CT-A = the type, CT-B = the next link or 0"]]
  ;; Type keywords in signatures: :i64 :bool :string :vector-i64 (R1 :keyword, records; R3 the vector forms [:option T]
  ;; [:result T E] [:list T] [:map K V] [:set T]). Anything else after a parameter -> E2105.
 
@@ -52,6 +59,10 @@
  ;; R3 (10-lex, minimal delimited change): a string literal may hold any UTF-8 text (its bytes go to LITB as they are) and
  ;; the escapes \r \b \f \uXXXX (UTF-8 encoded; a surrogate is E1003) besides \n \t \\ \"; a comment may hold any
  ;; UTF-8 text. A byte >= 128 anywhere else is E1002 at that byte (no whole-input pre-check any more).
+ ;; R4 RULE (2026-10-03): every string literal is valid UTF-8 -- by construction: S itself is a :string (the loader admits only
+ ;; valid UTF-8 through wire 35), a literal's raw bytes are the code-point-aligned span between two '"', and the escapes encode
+ ;; scalar values only (surrogates E1003); 12-kirread's literals are ASCII. Code generators may rely on it (41-a64gen reads
+ ;; ASCII bytes of code-relative strings in line, seed/SIR :a64 :r4).
  ;; Whitespace: space, tab, \n, \r and ','. Comments: ';' to end of line. Reader syntax # ^ ` ~ @ \ ' (as a
  ;; prefix) -> E1005 with the one-character span. A token never spans lines except a string.
 
@@ -78,7 +89,9 @@
   [:c KW-WHEN 16 ":when (doseq)"] [:c KW-WHILE 17 ":while (doseq)"]
   [:c KW-INFER 18 "(no spelling) the synthetic result type of an unannotated defn: inferred from the body"]
   ;; -- R3 --
-  [:c KW-OPTION 19 ":option"] [:c KW-RESULT 20 ":result"] [:c KW-LIST 21 ":list"] [:c KW-MAP 22 ":map"] [:c KW-SET 23 ":set"]]
+  [:c KW-OPTION 19 ":option"] [:c KW-RESULT 20 ":result"] [:c KW-LIST 21 ":list"] [:c KW-MAP 22 ":map"] [:c KW-SET 23 ":set"]
+  ;; -- R4 --
+  [:c KW-FN 24 ":fn (callable type)"]]
  ;; KW-FS-APP-DATA-BYTES (R0 2026-10-02): wire 35 with the :bytes kinds, the spelling stage-0 accepts.
  ;; Keywords appear ONLY in: ns (:export), signatures (types), cond (:else), typed-cap-call (wire, kinds).
  ;; A keyword anywhere else (as a value) -> E2114.
@@ -264,7 +277,35 @@
                      (E2105: the reference reads a keyword-keyed literal as a pair list or a record), 1..31 entries (7 hidden
                      slots, the first in NF-SYM of the ND-MAP node). (map->Name {..}) keeps its R1 meaning"]
   ;; R1's get and assoc also take maps: (get m k d) -> the value of k or d (5 hidden slots), (assoc m k v) = typed-map-assoc
-  [:c HD-COUNT 130 "number of heads"]]
+  ;; -- R4 (rung 4, 2026-10-03): functions. Lowerings: seed/SIR :r4-lowering. A fn literal is lambda-lifted by 21-check into
+  ;;    its own FN record (FK-LAMBDA, seed/MEMORY-MAP): parameters first, then the captured locals of the enclosing function
+  ;;    (at most 5 in all, E2137); throw / aborting calls outside a try body inside it are refused (E2135, lang/guest-grammar.edn
+  ;;    abort :note). R4 RULES aligned with the reference (lang/guest-grammar.edn :callable-type, measured on stage-0):
+  ;;    fn parameters are bare symbols (an annotation is E2139); their types come from the context -- the [:fn ..] type of
+  ;;    the module function's parameter slot the literal is an argument of, the declared [:fn ..] result when the literal
+  ;;    is in tail position, the item (:i64) / accumulator types of map, filter and reduce -- else :i64; the result is
+  ;;    inferred. Captures are :i64 or callable locals (E2104 expected :i64 otherwise: captures are i64 words).
+  [:c HD-FN 131 "(fn [p :T ..] e ..) -> [:fn [[T ..] R]] 0..4 params (E2137 with the captures); a closure value. As the init of a
+                 let binding it is a KNOWN function of that slot: (f a ..) calls the lifted function directly (HD-CALLK), and no
+                 closure is built when f is never used as a value (a syntactic scan of the rest of the let)"]
+  [:c HD-FN-REF 132 "(fn-ref f) f a single-clause, non-variadic, non-aborting defn of the file -> its fn type (E2134 otherwise);
+                     the closure is pair(address of f, 0): f ignores the env argument"]
+  [:c HD-INVOKE 133 "(invoke c a ..) / (invoke R c a ..) c a fn value, R its result type (E2104 when it differs) -> R"]
+  [:c HD-APPLY 134 "(apply c a .. l) c a fn value of arity n, l a [:list T]: the n - m trailing arguments are l's items (a count
+                    other than n - m traps) -> R"]
+  [:c HD-HOF-MAP 135 "(map f coll) coll :vector-i64 (the reference's only source type, E2104), f an inline fn, a defn name or a fn
+                      value of arity 1 returning :i64 -> :vector-i64. One source only (E2103)"]
+  [:c HD-FILTER 136 "(filter p coll) p -> :bool: the items of the :vector-i64 coll for which p holds, in order -> :vector-i64"]
+  [:c HD-REDUCE 137 "(reduce f init coll) f [A :i64] -> A, A = init's type; (reduce f coll): f a defn with clauses of arities 0
+                     and 2 (E2136 otherwise): the first item seeds the fold, an empty coll answers (f)"]
+  [:c HD-LIST 138 "(list e ..) -> [:list T] (T the first item's type; (list) is [:list :i64]); at most 64 items"]
+  [:c HD-AMP 139 "& -- only in a parameter vector of a defn clause: [p .. & rest] (rest a bare name: [:list :i64], E2111 otherwise);
+                  the call packs the surplus arguments into a list. A variadic defn cannot be a value or an export"]
+  [:c HD-CALLK 140 "(no spelling) NF-RES of (f a ..) where f is a known function slot: CALL of the lifted function with the
+                    arguments, then the captured slots"]
+  [:c HD-CALLV 141 "(no spelling) NF-RES of (g a ..) where g is a fn-typed local or ((..) a ..) where the head is a fn-typed
+                    expression: invoke"]
+  [:c HD-COUNT 141 "number of heads"]]
 
  ;; Head spellings, index = head code (20-names compares a symbol's bytes against these at intern time).
  ;; R1 spellings 43.. : "do" "when" "when-not" "if-not" "case" "condp" "->" "->>" "as->" "cond->" "cond->>" "dotimes"
@@ -283,7 +324,8 @@
  ;; "typed-set-disj" "typed-set-equal" "typed-set-nth" "typed-map-new" "typed-map-count" "typed-map-contains" "typed-map-get"
  ;; "typed-map-assoc" "typed-map-dissoc" "typed-map-equal" "typed-map-keys" "typed-map-vals" "string=?" "string-substring"
  ;; "string-from-i64" "string-compare" "string-index-of" "string-byte-length" "pair" "pair-first" "pair-second" "count" "nth"
- ;; "contains?" "conj" "disj" "dissoc" "keys" "vals" "peek" "pop"; 129 130 have none. Like R1's, an R3 head is shadowed by a
+ ;; "contains?" "conj" "disj" "dissoc" "keys" "vals" "peek" "pop"; 129 130 have none. R4 spellings 131..139: "fn" "fn-ref" "invoke"
+ ;; "apply" "map" "filter" "reduce" "list" "&"; 140 141 have none. Like R1's, an R3 head is shadowed by a
  ;; definition of the same name.
  ;; Codes 2 (keyword), 36 and 37 have no symbol spelling: SF-HEAD is never 2, 36 or 37.
  ;; `main`, `true`, `false`, `nil` are NOT heads. `main` is an ordinary defn name.
@@ -373,6 +415,13 @@
   [:c E-CHECK-ABORT-NONE 2131 "try body cannot abort; there is nothing to catch"]
   [:c E-CHECK-TRY 2132 "malformed try or catch '{name}'"]
   [:c E-CHECK-ABORT-INFER 2133 "cannot infer the error type here: '{name}'"]
+  ;; -- R4 --
+  [:c E-CHECK-FNVALUE 2134 "function value not admitted: '{name}'"]
+  [:c E-CHECK-FN-ABORT 2135 "abort inside a fn literal is not admitted: '{name}'"]
+  [:c E-CHECK-CLAUSE 2136 "no clause of '{name}' takes {n} arguments"]
+  [:c E-CHECK-CAPTURES 2137 "too many parameters and captures in a fn literal ({n}, at most 5)"]
+  [:c E-CHECK-MULTI-EXPORT 2138 "a multi-arity or variadic function cannot be exported: '{name}'"]
+  [:c E-CHECK-FN-PARAM 2139 "a fn literal parameter takes its type from the context, not from an annotation: '{name}'"]
   [:c E-LOWER-FULL 3001 "SIR table full"]
   [:c E-LOWER-NODE 3003 "internal: cannot lower node kind {n}"]
   [:c E-ENC-IMM 4001 "immediate out of range: {n}"]
