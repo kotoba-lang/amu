@@ -32,6 +32,9 @@ while [ $# -gt 0 ]; do
 done
 W=${W:-$R/build/selfbuild}; mkdir -p $W; W=${W:A}
 die() { echo "selfbuild: FAIL: $*" >&2; exit 1; }
+# the frontend's desugar (10,680 lines) needs a 16 Mi pair arena in the compiler (4 Mi traps :budget/cells :pairs;
+# FRONTSRC 2026-10-04): the default for every seed run of this script (scan and link)
+export SEED_PAIRS=${SEED_PAIRS:-16777216}
 sha() { shasum -a 256 $1 | cut -c1-64; }
 want=$(sed -n 's/^seed1_sha256 //p' $R/seed/rungs/r6e.record)
 if [ -z "$seed" ]; then

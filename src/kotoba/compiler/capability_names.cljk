@@ -62,7 +62,8 @@
      :cljs (cond
              (i64/bigint-value? x) (js/Number x)
              (and (number? x) (integer? x)) x
-             :else nil)))
+             :else nil)
+     :default (when (integer? x) x)))
 
 (def id->name
   "Wire id -> catalog capability name (`3` -> `:hash/sha256`)."
@@ -108,7 +109,7 @@
   policy read as denying the effect it had just granted -- a refusal, so it was
   loud, but it would have been silent had the set gone the other way."
   [id]
-  #?(:clj id :cljs (i64/->bigint id)))
+  #?(:clj id :cljs (i64/->bigint id) :default id))
 
 (defn wire-grant
   "`[:cap/call :hash/sha256]` -> `[:cap/call 3]`, the inverse of `named-grant`.
