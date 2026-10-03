@@ -14,6 +14,22 @@ never in a seed's process tree).
                                                   all compile: their refusal is their OWN shape, not a callee's. tsv: name,
                                                   params, result, functions blocked (whose closure contains it), refusal
 
+  slice.py equal <in.kir> <scan.tsv> <merge.kir>=<VERDICT> ..
+                                                  (KIR5) per function of <in.kir>: name, scan status (ok/refused), the
+                                                  merge runs that reach it: every <merge.kir> is a stage-0 KIR of a merge
+                                                  guest (merge.sh writes it) whose runs gave <VERDICT> (EQUAL, or anything
+                                                  else = not equal); a function is reached by a run when a function of that
+                                                  guest's `main` call closure has the same STRUCTURAL hash (below). tsv:
+                                                  name, status, cover (EQUAL / NOTEQUAL / -), the labels. Last line (#):
+                                                  functions, compile, compile+EQUAL, reached by a non-EQUAL run.
+  slice.py shash <in.kir>                         name and structural hash of every function (tsv)
+
+Structural hash (KIR5): a function's param types, result and body, where every symbol that names a function of the same
+program is replaced by that function's hash of the previous round (4 rounds, round 0 = a placeholder), so the hash does
+not depend on the names stage-0 numbers per guest (kotoba_module__N__M, loop helpers, lambdas) and two guests' copies
+of one big-compiler function match. Static reachability, not execution coverage: a reached function may not run on the
+merge inputs.
+
 A function's callees are the symbols of its :body that name a function of the same program (loop helpers, lambda-lifted
 `$` functions and `__kotoba_invoke$arityN` dispatchers are reached the same way). The function maps are cut out of the
 text (balanced brackets, string-aware), so a slice is the stage-0 KIR itself minus unreachable functions.
@@ -150,6 +166,42 @@ def write_slice(s, fns, keep, roots, out):
         f.write(''.join(parts))
 
 
+def ser(x, h, out):
+    """canonical text of a read KIR value; symbols naming a program function -> their hash in h"""
+    if isinstance(x, census.Sym):
+        out.append('@' + h[x] if x in h else 'S' + x)
+    elif isinstance(x, census.Kw):
+        out.append('K' + x)
+    elif isinstance(x, list):
+        out.append({census.Lst: '(', census.Vec: '[', census.SetV: '#{', census.MapV: '{'}.get(type(x), '<'))
+        for y in x:
+            ser(y, h, out)
+            out.append(' ')
+        out.append(')')
+    elif isinstance(x, tuple):
+        out.append('C' + str(x[1]))
+    elif isinstance(x, str):
+        out.append('"' + x + '"')
+    else:
+        out.append('N' + repr(x))
+
+
+def shashes(fns, rounds=4):
+    """{name: structural hash} (see the module doc)"""
+    import hashlib
+    h = {f[0]: '0' for f in fns}
+    for _ in range(rounds):
+        nh = {}
+        for name, _, _, m in fns:
+            out = []
+            for key in (':param-types', ':result', ':body'):
+                ser(m.get(Kw(key)), h, out)
+                out.append('|')
+            nh[name] = hashlib.sha256(''.join(out).encode('utf-8', 'surrogatepass')).hexdigest()[:16]
+        h = nh
+    return h
+
+
 def helper(name):
     return name.startswith('__kotoba_loop_') or name.startswith('__kotoba_invoke') or '$' in name
 
@@ -233,6 +285,39 @@ def main():
                     os.rmdir(tmp)
                 print('%s\t%s\t%s\t%d\t%s' % (name, tstr(m.get(Kw(':param-types'))), tstr(m.get(Kw(':result'))), blocked,
                                                why))
+    elif cmd == 'shash':
+        for name, hv in shashes(fns).items():
+            print('%s\t%s' % (name, hv))
+    elif cmd == 'equal':
+        st = {}
+        for ln in open(sys.argv[3], encoding='utf-8'):
+            c = ln.rstrip('\n').split('\t')
+            st[c[0]] = c[4]
+        hs = shashes(fns)
+        reach = {}  # hash -> [(label, equal?)]
+        for arg in sys.argv[4:]:
+            path, verdict = arg.rsplit('=', 1)
+            ms = open(path, encoding='utf-8').read().rstrip('\n')
+            mf = functions(ms)
+            mg = graph(mf)
+            mh = shashes(mf)
+            lab = os.path.basename(path).rsplit('.', 1)[0]
+            for n in closure(mg, ['main'] if 'main' in mg else []):
+                reach.setdefault(mh[n], []).append((lab, verdict == 'EQUAL'))
+        nf = nok = neq = nne = 0
+        for name, _, _, m in fns:
+            if helper(name):
+                continue
+            stat = st.get(name, '-')
+            rs = reach.get(hs[name], [])
+            labs = sorted({r[0] for r in rs})
+            cover = '-' if not rs else ('EQUAL' if all(r[1] for r in rs) else 'NOTEQUAL')
+            nf += 1
+            nok += stat == 'ok'
+            neq += stat == 'ok' and cover == 'EQUAL'
+            nne += cover == 'NOTEQUAL'
+            print('%s\t%s\t%s\t%s' % (name, stat, cover, ','.join(labs)))
+        print('#\t%d\t%d\t%d\t%d' % (nf, nok, neq, nne))
     else:
         print(__doc__)
         sys.exit(2)

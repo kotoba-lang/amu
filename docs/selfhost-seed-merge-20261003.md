@@ -1,8 +1,88 @@
 # Seed backend merge test: big-compiler KIR through `compile-kir` (2026-10-03, agent KIR3)
 
 Question: can the seed backend (`seed compile-kir`, seed/12-kirread.kotoba feeding 20-names .. 50-out) replace
-stage-0's `native/machine_ir` + aarch64 backend for the BIG compiler? It cannot replace it today. The rest of this
-page gives the tests that decide it and what is missing.
+stage-0's `native/machine_ir` + aarch64 backend for the BIG compiler? **KIR5 re-ran the flip test (section 0): the
+verdict is GO** for the condition this page set. Sections 1-6 are the KIR3/KIR4 history (NO-GO at the time). Section 7 is
+the integration plan, which starts with its falsification test.
+
+## 0. KIR5 flip test (2026-10-03, agent KIR5): GO
+
+Command: `seed/tests/kir/flip.sh <seed.bin>` (SCAN + MERGE + EQUAL in one run, summary in `$FLIP_W/flip.txt`). The seed is
+the R4B seed 4502396d's sources + this commit's 12-kirread / 02-io: **1d84e6ff (503,992 B), its own fixed point**
+(seed-1 == seed-2, built by 4502396d). Stage-0 is the stable native image (sha256 d2cb84f6..). Load 40 at the start, 74
+after SCAN, 82-84 at the end. Equality verdicts do not depend on load. The run times below are indications only.
+
+**SCAN** (slice.py scan, every non-helper function's call closure of the 10 big guests): **3,620 of 3,621 compile
+(99.97%)**. R4B's seed compiled 3,259 (90.0%). The one refusal is vc `kotoba_module__16__44`, a `typed-cap-call 23`
+(`:entropy/draw`). Its output is random, so no equality test can cover it. The wire belongs to R5B's capability table
+(request filed).
+
+**MERGE** (merge.sh: stage-0's native `main` vs the seed's native `main` compiled from stage-0's KIR, same input, stdout
+compared byte for byte plus sha256/16 of each side; scale 1 and 8; MERGE_RUNS 3, vx parts 1):
+
+| guest (big-compiler code) | scale 1: verdict, out bytes | scale 8: verdict, out bytes | code bytes s0 / seed | run ms s0 / seed (s8) |
+|---|---|---|---|---|
+| desugar pass `!read` (ds_pass = ds_guest_w + pass tail, :io/read) | EQUAL 104,514 | EQUAL 907,134 | 911,487 / 841,520 | 60 / 70 |
+| desugar pass `!desugar` | EQUAL 180,187 | EQUAL 1,508,507 | same image | 420 / 510 |
+| desugar pass `!all` (read, desugar x2, count) | EQUAL 1,604 | both trap `:vector-table-exhausted` at the same point, 0 B each | same image | 510 / 620 |
+| validate-expr (vx.cljk; cases = stage-0's `!desugar` answers, gen-vx.py; 96 cases per run) | EQUAL in 6/6 parts, 53,740 | EQUAL in 43/43 parts, 442,156 | 195,341 / 170,128 | 1,400 / 1,160 (sum of parts) |
+| form_count (kotoba.form/edn-form + node count) | EQUAL 1,585 | EQUAL 12,597 | 68,743 / 60,912 | 40 / 50 |
+| kotoba.lang.edn read/write (edn.cljk) | both SIGILL at line 19 of the corpus, 1,847 B equal | same | 76,329 / 59,496 | 20 / 20 |
+| keywords from text (kw.cljk, 155 keyword texts of the corpus) | EQUAL 10,408 | EQUAL (same texts) | 38,110 / 35,400 | 10 / 10 |
+| f64/f32 conversions (float.cljk, gen-float.py) | EQUAL 741,441 | EQUAL 3,660,593 | 2,343 / 3,281 | 180 / 180 |
+| kotoba.string + decimal-text | EQUAL 141,483 | EQUAL 1,131,989 | 10,740 / 12,488 | 140 / 200 |
+| posix-path | EQUAL 235,910 | EQUAL 1,880,213 | 8,344 / 8,328 | 120 / 160 |
+| string.case | EQUAL 5,727,282 | EQUAL 7,357,492 | 47,927 / 36,857 | 540 / 510 |
+| sha2.core | EQUAL 8,602 | EQUAL 70,312 | 13,627 / 10,073 | 40 / 30 |
+| all 31 document ops (docops.cljk) | EQUAL 41,986 | EQUAL 342,190 | 51,418 / 41,920 | 440 / 480 |
+| runtime-identity documents with `--unknown` keywords (ri_doc.cljk) | EQUAL 39,566 | EQUAL 321,026 | 97,303 / 68,888 | 50 / 70 |
+
+So 75 runs give 0 DIFF and no seed-only trap. Three runs trap on both sides at the same point with identical output:
+ds `!all` at 8x and edn at both scales. The edn trap is a guest/corpus limit, the same on both backends. ri_doc
+`--unknown` used to TRAP in the seed (KIR4: the keyword tables) and is now EQUAL. vx in one run exhausts the loader's
+vector table on BOTH sides (320 of 516 cases at 1x; the guest never frees), so flip.sh runs it in parts.
+
+**EQUAL per function** (slice.py equal): a big-guest function counts when its slice compiles AND a function with the
+same structural hash is in the `main` call closure of a merge guest whose runs were all EQUAL. The hash covers the body,
+param types and result, with callee names replaced by the callees' hashes, so stage-0's per-guest numbering drops out.
+Result: **1,741 of 3,621 (48.1%) compiled and reached by EQUAL runs; 0 reached by a non-EQUAL run.** By guest:
+ds_guest_w 843/1,002, vx 249/394, cc 96/325, oa 118/400, di 122/412, vc 156/481, codec 85/200, oat 40/304, ri 26/89,
+case 6/14. This is static reachability. A reached function need not have run on these inputs.
+
+**Verdict: GO.** The condition set in section 1 was ">= 95% of functions compile AND form_count, validate-expr and
+desugar pass merge.sh with EQUAL". Both halves hold: compile is 99.97%, and the three guests are EQUAL at 1x and 8x with
+0 DIFF. On the stricter reading ("each function's own result shown equal"), only 48.1% of the big guests' functions are
+reached by an EQUAL run. Functions not reached are not known to be equal: none is known to differ, and none has been
+tested. The integration (section 7) therefore starts with a falsification test that compares whole compiles, not
+slices.
+
+Gates on these sources (HEAD 79bca5f32 + this commit): `gates.sh --rung r4b` READY (BUILD fixed point 1d84e6ff via the
+lineage seed 568d6152, ERR, G1 19/19 with both seeds, G2 65/66, G3 0 differ from refusal-r4b.txt, G4, G5, GR), `gates.sh
+--rung r5a --only XTRA` READY (split fixed point, SPLIT-G1/G2/G4, SEP), KIR gate 19/19 + 33 tests, unit 02-io and 12-kirread
+PASS (12-kirread golden: token/node counts of the larger prelude, digest unchanged). Load 79 during the gates.
+
+What KIR5 changed to get there (all inside 12-kirread / doclib / 02-io; no SIR, HEADS, 21-check or 41-a64gen change):
+
+- **Keywords are their text** on the KIR route (`:keyword` -> `:string`, keyword literals in value positions -> string
+  literals, keyword `=` -> `string=?` where stage-0's own keyword-equality rule sees a keyword (literal, :keyword
+  parameter, record field typed :keyword, call returning :keyword, if/let of those). Other `=` stay i64 and 21-check
+  refuses a string operand (E2123), so a missed case is a refusal, not a wrong answer). This is stage-0's native
+  representation. It removes KIR4's per-program keyword tables, which trapped on texts the program never spells
+  (non-literal `document-keyword`, `keyword-from-string` of input text, `document-kind`). The `:schemas` map is walked
+  the same way (KIR4's dropped-:schemas request is closed).
+- **f64/f32** as their IEEE bit patterns in an i64 (f32 sign-extended, = stage-0's f32-to-bits). `f64-to-bits`,
+  `f64-from-bits` and `f32-to-bits` are the identity. `f64-to-f32-rounded` / `f32-to-f64-exact` are library code with
+  fcvt's result under the default FPCR (RNE, subnormals, overflow to infinity, NaN quieting with its payload kept). That
+  is EQUAL on 3.66 MB of float.cljk output and pos/13-floats (22 checks). Float arithmetic, compares and parse/print are
+  still refused by name: none is on the frontier.
+- **record-assoc on a record by reference**: the dropped inline schema was left unwalked (`:keyword`) and conflicted with
+  the walked `:schemas` entry (E2128, 4 functions; pos/14).
+- **WRITE_SEP in output** (CONTRACT-REQUESTS R4B line): 02-io `io-write-bytes` writes a container in pieces that never
+  hold a whole loader token. The first piece goes as a WRITE, and the request is cut one byte into every occurrence of
+  WRITE_SEP/APPEND_SEP, with the rest sent as APPENDs. Both token texts are built at run time from byte tables, so the seed's
+  own string pool never spells them. Content without a token is one write, as before. seed/tests/kir/writesep/run.sh:
+  4/4 programs whose literals spell the tokens compile by file = by hex route, and extract and run. 50-out itself is
+  unchanged.
 
 Every number below was measured on this Mac while it was loaded (load average 87-148, recorded per row). Timings are
 indications only. Equality verdicts do not depend on load.
@@ -181,3 +261,44 @@ Open risks:
 - The scan counts compile acceptance, not run equality. Run equality is shown only for the four merged modules.
 - R4's uncommitted sources (21-check, 30-lower, 41-a64gen) were not part of this build. 12-kirread was built on HEAD, so
   it must be re-gated once R4 lands.
+
+## 7. Integration plan (KIR5): the seed backend as the backend of the big route
+
+Goal: `compile --target aarch64-macos` of the project route keeps stage-0's frontend (HIR -> KIR) and replaces
+`kotoba.native.aarch64/emit-program` (machine_ir + AArch64 emission) with the seed's `compile-kir`.
+
+**Falsification test first (must fail before anything is switched):** `scripts/selfhost-wall/kir-backend-diff.sh` (to
+write). For every program stage-0 compiles on the aarch64-macos route (the 315-program census, the 19 Embench ports, the
+10 big guests + the merge guests) it runs both backends on the identical sealed `:program` KIR (`ir/native-program kir`,
+the bytes the verifier re-emits from) and compares exported results, stdout bytes and traps on the same inputs. The
+switch is a **no-go** if any one of these holds:
+- (F1) one DIFF;
+- (F2) a program that machine_ir compiles and the seed refuses, other than the documented refusals (wire 23 today);
+- (F3) a seed-only trap;
+- (F4) a fuel-metered program whose fuel accounting differs (kexe-benchmark `contextFuelConsumed`, KIR gate column) where
+  the artifact promises the x7 fuel ABI;
+- (F5) the seed's fixed point or any rung gate breaking.
+
+Today this is shown only on slices and 75 merge runs, not on whole sealed programs.
+
+What must change in amu-measure:
+1. **CLI path**: `src/kotoba/compiler/nbb/aarch64_cli.cljk` passes `aarch64/emit-program` to `native-cli/run!`. Add a
+   backend selector (`--native-backend seed|machine-ir`, default machine-ir until F1-F5 pass), whose seed arm writes
+   `(pr-str program)` and runs `seed compile-kir` under the C loader (a packaged seed binary + tools/kexe_loader.c, no
+   JVM/node). It reads back `:code` and the symbol table in the shape `emit-program` returns. The native image must not
+   start a host process at compile time (G5's rule): the seed runs as an in-process loader call or as a separately
+   invoked tool. That is one owner decision.
+2. **Verifier re-emission check** (`nbb/cli.cljk` compile-native!: "Verification re-emits from this closed program";
+   `verify-artifact!`, ADR 0262): the artifact records which backend emitted `:code`
+   (`:lowering :runtime-aapcs64-v1` gains a backend id, e.g. `:emitter :seed/<sha256 of the seed binary>`), and the
+   verifier re-emits with THAT backend. With machine_ir it would refuse every seed-built artifact (design table, row 50).
+   The seed's fixed point makes the emitter hash a stable identity.
+3. **ABI facts the artifact asserts**: `:fuel-abi {:mode :hidden-context-x7}`, the value ABI and `kexe-fs-forms/refuse-
+   unanswered!` (a scan of `:code` for :fs/app-data tokens) must hold for seed code. The KIR gate already measures equal
+   fuel on the 19 ports. The token scan must accept the seed's pieces.
+4. **Shapes still outside the seed**: wire 23 (`:entropy/draw`), float arithmetic, compares and parse/print, more than
+   16 parameters, 65+ item vectors with non-literal items, record captures in fn literals. The selector falls back to
+   machine_ir by name for these (a refusal, never a silent switch) until each has a seed lowering.
+5. **Order**: (a) kir-backend-diff.sh with F1-F5, (b) a selector defaulting to machine-ir, plus the verifier's emitter
+   field, (c) flip the default for aarch64-macos only, (d) delete machine_ir's aarch64 path only after one release with
+   F1-F5 green on CI.

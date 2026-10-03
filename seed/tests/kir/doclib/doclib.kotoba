@@ -113,7 +113,7 @@
 (defn __kr_dsz [] :string "#{}")
 (defn __kr_dmz [] :string "{}")
 (defn __kr_dcount [d0 :string] :i64 (let [d (__kr_dreq d0 7 10)] (if (= (__kr_dkindn d) 10) (quot (__kr_dforms d) 2) (__kr_dforms d))))
-(defn __kr_dkind [d :string] :keyword (let [k (__kr_dkindn d)] (cond (= k 0) :null (= k 1) :bool (= k 2) :i64 (= k 3) :f64 (= k 4) :string (= k 5) :keyword (= k 6) :symbol (= k 7) :vector (= k 8) :list (= k 9) :set :else :map)))
+(defn __kr_dkind [d :string] :string (let [k (__kr_dkindn d)] (cond (= k 0) ":null" (= k 1) ":bool" (= k 2) ":i64" (= k 3) ":f64" (= k 4) ":string" (= k 5) ":keyword" (= k 6) ":symbol" (= k 7) ":vector" (= k 8) ":list" (= k 9) ":set" :else ":map")))
 (defn __kr_deq [a :string b :string] :bool (string=? a b))
 (defn __kr_dcontains [m :string k :string] :bool (>= (__kr_dmapfind (__kr_dreq m 10 10) k 1) 0))
 (defn __kr_dassocop [m :string k :string v :string] :string (__kr_dassoc (__kr_dreq m 10 10) k v))
@@ -122,19 +122,13 @@
 (defn __kr_dboolval [d :string] [:option :bool] (if (= (__kr_dkindn d) 1) (option-some-of [:option :bool] (string=? d "true")) (option-none-of [:option :bool])))
 (defn __kr_di64val [d :string] [:option :i64] (if (= (__kr_dkindn d) 2) (option-some-of [:option :i64] (__kr_dparse d)) (option-none-of [:option :i64])))
 (defn __kr_did [d :string] :string d)
-;; keyword text (KIR4): a seed keyword is an interned symbol index with no text at run time; stage-0's is the string ":k".
-;; 12-kirread (kr-kwtab) fills the two case forms below with every keyword the emitted program spells (its bodies and the
-;; library's), when the program uses one of: document-keyword of a keyword variable (__kr_kwtext), document-keyword-value
-;; (__kr_dkwval), keyword-name (__kr_kwname), keyword-from-string (__kr_kwfromstr). A text no keyword of the program spells
-;; traps (__kr_kwtrap): the seed cannot make a keyword the program never names (stage-0 can), so it stops instead of
-;; answering differently.
-(defn __kr_kwtext [k :keyword] :string (case k :__kr_nokw (__kr_dtraps) (__kr_dtraps)))
-(defn __kr_kwat [i :i64] :keyword (case i -1 :__kr_nokw :__kr_nokw))
-(defn __kr_kwn [] :i64 0)
-(defn __kr_kwtrap [] :keyword (if (= (__kr_dtrap) 0) :__kr_nokw :__kr_nokw))
-(defn __kr_kwof2 [s :string i :i64 n :i64] :keyword (cond (>= i n) (__kr_kwtrap) (string=? s (__kr_kwtext (__kr_kwat i))) (__kr_kwat i) :else (__kr_kwof2 s (+ i 1) n)))
-(defn __kr_kwof [s :string] :keyword (__kr_kwof2 s 0 (__kr_kwn)))
-(defn __kr_dkwval [d :string] [:option :keyword] (if (= (__kr_dkindn d) 5) (option-some-of [:option :keyword] (__kr_kwof d)) (option-none-of [:option :keyword])))
+;; keyword text (KIR5; was KIR4's per-program keyword tables, which trapped on a text the program never spells, e.g. every
+;; keyword kotoba.form/edn-form reads from its input): on the KIR route a keyword IS its text ":k" (a :string), exactly
+;; stage-0's native representation (kotoba-native machine_ir: a keyword literal is a string literal, keyword-from-string
+;; is (string-concat ":" s), keyword-name the text after the first "/" or the ":"). 12-kirread retypes :keyword as
+;; :string, turns keyword literals in value positions into string literals and keyword `=` into string=?.
+(defn __kr_kwtext [k :string] :string k)
+(defn __kr_dkwval [d :string] [:option :string] (if (= (__kr_dkindn d) 5) (option-some-of [:option :string] d) (option-none-of [:option :string])))
 (defn __kr_dfindslash [s :string i :i64] :i64 (cond (>= i (string-length s)) -1 (= (string-code-point-at s i) 47) i :else (__kr_dfindslash s (+ i (__kr_dw (string-code-point-at s i))))))
-(defn __kr_kwname [k :keyword] :string (let [s (__kr_kwtext k) sl (__kr_dfindslash s 1)] (string-substring s (cond (< sl 0) 1 (= (string-length s) 2) 1 :else (+ sl 1)) (string-length s))))
-(defn __kr_kwfromstr [s :string] :keyword (__kr_kwof (string-concat ":" s)))
+(defn __kr_kwname [k :string] :string (let [sl (__kr_dfindslash k 1)] (string-substring k (cond (< sl 0) 1 (= (string-length k) 2) 1 :else (+ sl 1)) (string-length k))))
+(defn __kr_kwfromstr [s :string] :string (string-concat ":" s))
