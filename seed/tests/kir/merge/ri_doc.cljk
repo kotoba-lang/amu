@@ -1,0 +1,39 @@
+;; merge-test guest (agent KIR4): the :document validators of kotoba.artifact.runtime-identity that the seed compiles
+;; without :bytes (loader-source-for-profile, trust-decision) over a corpus of canonical EDN lines (gen-ri-doc.py).
+;; Line "l<profile>" -> the loader source sha256 for that target profile or "none"; "t<trust>\t<identity>" -> the trust
+;; decision as keyword text. document-edn-read is the identity on canonical text on both backends.
+(ns probe.ri-doc-merge
+  {:kotoba/export [main]}
+  (:require [kotoba.artifact.runtime-identity :as rid]))
+
+(defn line-end [s :string i :i64] :i64
+  (loop [j i]
+    (if (>= j (string-byte-length s))
+      j
+      (let [c (string-code-point-at s j)]
+        (if (= c 10) j (recur (+ j (if (< c 128) 1 (if (< c 2048) 2 (if (< c 65536) 3 4))))))))))
+
+(defn tab-at [s :string i :i64 e :i64] :i64
+  (loop [j i]
+    (if (>= j e)
+      e
+      (if (= (string-code-point-at s j) 9) j (recur (+ j 1))))))
+
+(defn answer [s :string i :i64 e :i64] :string
+  (let [op (string-code-point-at s i)]
+    (if (= op 108)
+      (option-value-of [:option :string] (rid/loader-source-for-profile (document-edn-read (string-substring s (+ i 1) e))) "none")
+      (let [t (tab-at s (+ i 1) e)]
+        (document-edn-print (document-keyword
+          (rid/trust-decision (document-edn-read (string-substring s (+ i 1) t)) (string-substring s (min e (+ t 1)) e))))))))
+
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        s (typed-cap-call :fs/app-data :string :string path)
+        n (string-byte-length s)]
+    (loop [i 0 k 0]
+      (if (>= i n)
+        k
+        (let [e (line-end s i)
+              w (typed-cap-call :io/write :string :string (string-concat (answer s i e) "\n"))]
+          (recur (+ e 1) (+ k 1)))))))

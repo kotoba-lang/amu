@@ -29,7 +29,10 @@ L=$(seed_loader) || exit 2
 K=${WALL_K:-/Users/junkawasaki/github/kotoba-lang/kotoba-lang}
 CP=$(cat ${WALL_CP:-/private/tmp/wall-cp-11.txt})
 SP=(); for d in ${(f)"$(echo "$CP" | tr ':' '\n' | grep '^/.*/src$')"} $R/src $K/lang/compat; do SP+=(--source-path $d); done
-pol=$W/policy.edn; echo '{:allow #{[:cap/call 35] [:cap/call 37] [:cap/call 38] [:cap/call 39]}}' > $pol
+# (KIR4) MERGE_CAPS="3 .." adds wire ids to stage-0's policy (a module may require a capability the guest's main never
+# reaches); MERGE_SLICE=1 gives the seed only the call closure of `main` (seed/tests/kir/slice.py), so functions outside
+# it (e.g. ones using such a capability) are not compiled
+pol=$W/policy.edn; echo "{:allow #{[:cap/call 35] [:cap/call 37] [:cap/call 38] [:cap/call 39]$(for c in ${=MERGE_CAPS:-}; do printf ' [:cap/call %s]' $c; done)}}" > $pol
 grant=${MERGE_GRANT:-35,37,38,39}
 runs=${MERGE_RUNS:-3}
 
@@ -45,6 +48,7 @@ seed_slot_give
 grep -q ':ok true' $W/$lab.s0.log || { line $lab - - - - - - - - - - - - "S0-REFUSED: $(grep -o ':message "[^"]*' $W/$lab.s0.log | head -1 | cut -c11-150)"; exit 1; }
 s0c=($(tm $W/$lab.s0.time)); s0c=($s0c[1,2])
 python3 $R/scripts/seed/kir_extract.py $k $W/$lab.kir || exit 2
+if [ "${MERGE_SLICE:-0}" = 1 ]; then python3 $R/seed/tests/kir/slice.py slice $W/$lab.kir $W/$lab.slice.kir main && mv $W/$lab.slice.kir $W/$lab.kir; fi
 kb=$(wc -c < $W/$lab.kir | tr -d ' ')
 ( /usr/bin/time -l zsh -c "source $R/scripts/seed/lib.sh; SEED_SECONDS=300 seed_run $SEED_BUILD/seed-1.bin 0 compile-kir $W/$lab.kir --output $W/$lab.kseed" ) > $W/$lab.sd.log 2> $W/$lab.sd.time
 sdc=($(tm $W/$lab.sd.time)); sdc=($sdc[1,2])
