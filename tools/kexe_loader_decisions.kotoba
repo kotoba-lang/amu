@@ -66,10 +66,14 @@
     (= k 11) 3
     (= k 12) 86400
     ;; :profile/native :cells :vectors / :vector-items (per-run budgets) and
-    ;; their address-space maxima.
+    ;; their address-space maxima. The vector table maximum is 64 Mi handles
+    ;; since 2026-10-03 (amu ADR 0364; was 4 Mi): address space, not memory --
+    ;; a handle's 16-byte entry and 4-byte region tag are touched only when
+    ;; minted -- and the 4 Mi table was the measured wall of the frontend's
+    ;; analyze pass at about 30 KB of real source per process.
     (= k 13) 4096
     (= k 14) 65536
-    (= k 15) 4194304
+    (= k 15) 67108864
     (= k 16) 134217728
     ;; :language/value :vector-items -- one vector, 2^24.
     (= k 17) 16777216

@@ -307,6 +307,7 @@
           :default {:value 4096 :override "KEXE_PAIRS" :why "The pair arena, where aggregates live as pair chains (aggregate ABI v8)."
                     :copies [{:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_PAIR_CAPACITY (\\d+)u"}]}
           :pair-arena-max {:value 67108864 :why "64 Mi handles: address space, not memory."}
+          :vector-table-max {:value 67108864 :why "64 Mi vector handles (amu ADR 0364, 2026-10-03; was 4 Mi): address space, not memory -- an entry is 16 bytes of the shared mapping plus a 4-byte growth-region tag, touched only when a handle is minted. The 4 Mi table was the measured wall of the frontend's analyze pass (about 30 KB of real source per process)."}
           :vectors {:value 4096 :why "Vector table entries: a second cell pool, exhaustion :budget/cells {:arena :vectors}."
                     :copies [{:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_VECTOR_CAPACITY (\\d+)u"}]}
           :vector-items {:value 65536 :why "The item arena per run: one item = one cell of this pool; exhaustion :budget/cells {:arena :vector-items}." :copies [{:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_VECTOR_ITEM_CAPACITY (\\d+)u"}]}}

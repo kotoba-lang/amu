@@ -74,7 +74,7 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
 
 /* KEXE-DECISIONS-GENERATED BEGIN -- written by scripts/gen-loader-decisions.cljk; do not
  * edit by hand. Regenerate after changing either source:
- *   tools/kexe_loader_decisions.kotoba sha256 e0e65e01d5da0c1ba28267e845b339cf5a3ad6f701cbbe895787d1f5548e1fd7
+ *   tools/kexe_loader_decisions.kotoba sha256 4427876ff216a52aa29afd59db06f373112a4de6a5f430a662a446a25bad802e
  *   tools/kexe_loader_names.kotoba     sha256 9ccaadfb815a920a3f39384b6b6a4860baef04ffd89377e9aa4de804f27d3ad4
  *   tools/linux_static_handlers.kotoba sha256 c7619a1aebc42b039ce7d71f318b9d41e292c5f17b49f12733e7c3cb98b80bea
  *   tools/kexe_loader_boundary.kotoba  sha256 99ec1c85f7a5811266d0eae30f8f5a47adea71de496f08879cb9adc4df1ac6d7
@@ -101,7 +101,7 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
 #define KEXE_SECONDS_MAX 86400u
 #define KEXE_VECTOR_CAPACITY 4096u
 #define KEXE_VECTOR_ITEM_CAPACITY 65536u
-#define KEXE_VECTOR_MAX (4u * 1024u * 1024u)
+#define KEXE_VECTOR_MAX (64u * 1024u * 1024u)
 #define KEXE_VECTOR_ITEM_MAX (128u * 1024u * 1024u)
 #define KEXE_VECTOR_ITEM_LIMIT (16u * 1024u * 1024u)
 #define KEXE_STRING_VALUE_LIMIT 8388608u
@@ -342,7 +342,7 @@ static const uint8_t kexe_decisions_code[6016] = {
   0xc0, 0x03, 0x5f, 0xd6, 0xc2, 0x01, 0x80, 0xd2, 0x1f, 0x00, 0x02, 0xeb,
   0xe3, 0x17, 0x9f, 0x9a, 0x63, 0x00, 0x00, 0xb4, 0x20, 0x00, 0xa0, 0xd2,
   0xc0, 0x03, 0x5f, 0xd6, 0xe2, 0x01, 0x80, 0xd2, 0x1f, 0x00, 0x02, 0xeb,
-  0xe3, 0x17, 0x9f, 0x9a, 0x63, 0x00, 0x00, 0xb4, 0x00, 0x08, 0xa0, 0xd2,
+  0xe3, 0x17, 0x9f, 0x9a, 0x63, 0x00, 0x00, 0xb4, 0x00, 0x80, 0xa0, 0xd2,
   0xc0, 0x03, 0x5f, 0xd6, 0x02, 0x02, 0x80, 0xd2, 0x1f, 0x00, 0x02, 0xeb,
   0xe3, 0x17, 0x9f, 0x9a, 0x63, 0x00, 0x00, 0xb4, 0x00, 0x00, 0xa1, 0xd2,
   0xc0, 0x03, 0x5f, 0xd6, 0x22, 0x02, 0x80, 0xd2, 0x1f, 0x00, 0x02, 0xeb,
@@ -1846,7 +1846,7 @@ static const uint8_t kexe_decisions_code[9258] = {
   0x00, 0x00, 0x00, 0x41, 0xb8, 0x00, 0x00, 0x01, 0x00, 0x4c, 0x89, 0xc0,
   0xc3, 0xb9, 0x0f, 0x00, 0x00, 0x00, 0x48, 0x39, 0xc8, 0x0f, 0x94, 0xc2,
   0x48, 0x0f, 0xb6, 0xd2, 0x48, 0x85, 0xd2, 0x0f, 0x84, 0x0a, 0x00, 0x00,
-  0x00, 0x41, 0xb8, 0x00, 0x00, 0x40, 0x00, 0x4c, 0x89, 0xc0, 0xc3, 0xb9,
+  0x00, 0x41, 0xb8, 0x00, 0x00, 0x00, 0x04, 0x4c, 0x89, 0xc0, 0xc3, 0xb9,
   0x10, 0x00, 0x00, 0x00, 0x48, 0x39, 0xc8, 0x0f, 0x94, 0xc2, 0x48, 0x0f,
   0xb6, 0xd2, 0x48, 0x85, 0xd2, 0x0f, 0x84, 0x0a, 0x00, 0x00, 0x00, 0x41,
   0xb8, 0x00, 0x00, 0x00, 0x08, 0x4c, 0x89, 0xc0, 0xc3, 0xb9, 0x11, 0x00,
@@ -5027,6 +5027,33 @@ static int64_t checked_cap_call(struct kexe_context_v11 *context,
   return (int64_t)((uint64_t)value + 1u);
 }
 
+/* ARENA CENSUS (KEXE_ARENA_CENSUS=1; diagnostic only, agent MEM2 2026-10-03, docs/selfhost-analyze-memory-20261003.md).
+ * Off by default and then costs one NULL test per minted handle. On, every minted vector handle records the guest code
+ * offsets of its first KEXE_CENSUS_DEPTH guest frames (frame-pointer walk from the host call: the AArch64 ABI keeps x29
+ * chained and the seed's frames are stp x29,x30 / mov x29,sp), in a SHARED table the supervisor reads after the guest
+ * exits; the supervisor then prints the census (kexe_arena_census) and, with KEXE_ARENA_CENSUS=<path>, writes one line
+ * per handle ("offset length site0 site1 ..") for offline attribution. Answers never change: nothing here is read by
+ * the guest. */
+#define KEXE_CENSUS_DEPTH 8u
+static uint32_t *kexe_census_sites = NULL;   /* [KEXE_VECTOR_MAX * KEXE_CENSUS_DEPTH], MAP_SHARED */
+static uint32_t *kexe_census_pair_sites = NULL; /* [KEXE_PAIR_MAX * KEXE_CENSUS_DEPTH], MAP_SHARED */
+static const uint8_t *kexe_census_code = NULL;
+static uint64_t kexe_census_code_length = 0;
+static void kexe_census_note(uint32_t *out) {
+  for (unsigned k = 0; k < KEXE_CENSUS_DEPTH; k++) out[k] = 0;
+  uintptr_t *fp = (uintptr_t *)__builtin_frame_address(0);
+  unsigned found = 0;
+  for (unsigned steps = 0; fp != NULL && steps < 64u && found < KEXE_CENSUS_DEPTH; steps++) {
+    uintptr_t ra = fp[1] & (uintptr_t)0x0000ffffffffffffull; /* strip a PAC signature, if any */
+    uintptr_t base = (uintptr_t)kexe_census_code;
+    if (ra > base && ra <= base + kexe_census_code_length) out[found++] = (uint32_t)(ra - base);
+    else if (found > 0) break;                     /* left the guest: the entry's caller is the loader */
+    uintptr_t *next = (uintptr_t *)fp[0];
+    if (next <= fp) break;                         /* frames grow towards higher addresses */
+    fp = next;
+  }
+}
+
 /* PAIR HASH-CONSING state (KEXE_HASHCONS; see kexe_hashcons_find).
  * The table is a set-associative cache of KEXE_HASHCONS_WAYS entries per set; an entry is (tag << 32 | handle), the tag the
  * high half of the pair's hash, handle 0 = empty. 2^bits entries in all (8 bytes each). */
@@ -5080,6 +5107,7 @@ static int64_t checked_pair_new(struct kexe_context_v11 *context,
   shared->pairs[index].second = second;
   shared->pair_validated[index] = 0;
   if (kexe_hashcons != NULL) kexe_hashcons_insert(first, second, (uint32_t)(index + 1));
+  if (kexe_census_pair_sites != NULL) kexe_census_note(&kexe_census_pair_sites[index * KEXE_CENSUS_DEPTH]);
   return (int64_t)(index + 1);
 }
 
@@ -5307,6 +5335,7 @@ static int64_t intern_vector(struct kexe_shared_v11 *shared,
   shared->vectors[index].offset = offset;
   shared->vectors[index].length = length;
   if (kexe_vector_region != NULL) kexe_vector_region[index] = 0;
+  if (kexe_census_sites != NULL) kexe_census_note(&kexe_census_sites[index * KEXE_CENSUS_DEPTH]);
   return (int64_t)(index + 1);
 }
 
@@ -11823,6 +11852,89 @@ static int supervise(pid_t child) {
  *
  * frames are not metered on native (no call-depth counter in the compiled
  * code); the guest stack is RLIMIT_STACK and its exhaustion is a signal. */
+/* KEXE_ARENA_CENSUS (see kexe_census_note): what the final arenas hold. Vectors: handles that are a conj-chain PREFIX
+ * of a later handle (same slice start, shorter, so a conj or region append superseded them), empty handles, handles
+ * whose item words duplicate an earlier handle's (a vector hash-consing upper bound), a length histogram. Pairs:
+ * distinct (first, second) words (a pair hash-consing upper bound with an unbounded table). */
+static int kexe_census_u64_cmp(const void *a, const void *b) {
+  uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b;
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+static uint64_t kexe_census_distinct(uint64_t *h, uint64_t n) {
+  if (n == 0) return 0;
+  qsort(h, (size_t)n, sizeof(uint64_t), kexe_census_u64_cmp);
+  uint64_t d = 1;
+  for (uint64_t i = 1; i < n; i++) if (h[i] != h[i - 1]) d++;
+  return d;
+}
+static void kexe_arena_census(const struct kexe_shared_v11 *shared, const char *path) {
+  uint64_t n = shared->vector_used, np = shared->pair_used;
+  uint64_t *key = malloc((size_t)(n > np ? n : np) * sizeof(uint64_t) + 8u);
+  if (key == NULL) return;
+  /* prefix: sort (offset << 24 | length) -- lengths are below 2^24 (KEXE_VECTOR_ITEM_LIMIT) */
+  for (uint64_t i = 0; i < n; i++) key[i] = (shared->vectors[i].offset << 24) | shared->vectors[i].length;
+  qsort(key, (size_t)n, sizeof(uint64_t), kexe_census_u64_cmp);
+  uint64_t prefix = 0, empty = 0, hist[9] = {0};
+  for (uint64_t i = 0; i < n; i++) {
+    uint64_t len = key[i] & 0xffffffu;
+    if (len == 0) empty++;
+    else if (i + 1 < n && (key[i + 1] >> 24) == (key[i] >> 24)) prefix++;
+    unsigned b = len == 0 ? 0 : len == 1 ? 1 : len == 2 ? 2 : len <= 4 ? 3 : len <= 8 ? 4 : len <= 16 ? 5
+               : len <= 64 ? 6 : len <= 1024 ? 7 : 8;
+    hist[b]++;
+  }
+  for (uint64_t i = 0; i < n; i++) {
+    uint64_t h = 1469598103934665603ull ^ shared->vectors[i].length;
+    for (uint64_t j = 0; j < shared->vectors[i].length; j++) {
+      h ^= (uint64_t)shared->vector_items[shared->vectors[i].offset + j];
+      h *= 1099511628211ull; h ^= h >> 29;
+    }
+    key[i] = h;
+  }
+  uint64_t distinct_vectors = kexe_census_distinct(key, n);
+  for (uint64_t i = 0; i < np; i++) {
+    uint64_t h = (uint64_t)shared->pairs[i].first * 0x9e3779b97f4a7c15ull ^ (uint64_t)shared->pairs[i].second;
+    h *= 0xff51afd7ed558ccdull; h ^= h >> 33;
+    key[i] = h;
+  }
+  uint64_t distinct_pairs = kexe_census_distinct(key, np);
+  free(key);
+  fprintf(stderr,
+          "KEXE_ARENA_CENSUS {:vectors %" PRIu64 " :conj-prefix %" PRIu64 " :empty %" PRIu64
+          " :distinct-contents %" PRIu64 " :length-hist [%" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64
+          " %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 "] :pairs %" PRIu64 " :distinct-pairs %" PRIu64 "}\n",
+          n, prefix, empty, distinct_vectors, hist[0], hist[1], hist[2], hist[3], hist[4], hist[5], hist[6], hist[7],
+          hist[8], np, distinct_pairs);
+  if (path != NULL && strcmp(path, "1") != 0 && kexe_census_sites != NULL) {
+    FILE *f = fopen(path, "w");
+    if (f == NULL) return;
+    for (uint64_t i = 0; i < n; i++) {
+      const uint32_t *s = &kexe_census_sites[i * KEXE_CENSUS_DEPTH];
+      fprintf(f, "%" PRIu64 " %" PRIu64, shared->vectors[i].offset, shared->vectors[i].length);
+      for (unsigned k = 0; k < KEXE_CENSUS_DEPTH; k++) fprintf(f, " %u", s[k]);
+      fputc('\n', f);
+    }
+    fclose(f);
+    /* <path>.pairs: one line per pair handle, "site0 site1 .." */
+    if (kexe_census_pair_sites != NULL) {
+      size_t pl = strlen(path);
+      char *pp = malloc(pl + 7u);
+      if (pp == NULL) return;
+      memcpy(pp, path, pl);
+      memcpy(pp + pl, ".pairs", 7u);
+      f = fopen(pp, "w");
+      free(pp);
+      if (f == NULL) return;
+      for (uint64_t i = 0; i < np; i++) {
+        const uint32_t *s = &kexe_census_pair_sites[i * KEXE_CENSUS_DEPTH];
+        for (unsigned k = 0; k < KEXE_CENSUS_DEPTH; k++) fprintf(f, k ? " %u" : "%u", s[k]);
+        fputc('\n', f);
+      }
+      fclose(f);
+    }
+  }
+}
+
 static void report_budget_trap(const struct kexe_shared_v11 *shared, int child_status) {
   if (child_status == 0) return;
   int line = -1;
@@ -12491,6 +12603,14 @@ int main(int argc, char **argv) {
                        MAP_SHARED | MAP_ANONYMOUS, -1, 0);
       if (use != MAP_FAILED) kexe_use = (struct kexe_arena_use *)use;
     }
+    if (getenv("KEXE_ARENA_CENSUS") != NULL && strcmp(getenv("KEXE_ARENA_CENSUS"), "0") != 0) {
+      void *sites = mmap(NULL, (size_t)KEXE_VECTOR_MAX * KEXE_CENSUS_DEPTH * sizeof(uint32_t), PROT_READ | PROT_WRITE,
+                         MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+      if (sites != MAP_FAILED) kexe_census_sites = (uint32_t *)sites;
+      void *pair_sites = mmap(NULL, (size_t)KEXE_PAIR_MAX * KEXE_CENSUS_DEPTH * sizeof(uint32_t), PROT_READ | PROT_WRITE,
+                              MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+      if (pair_sites != MAP_FAILED) kexe_census_pair_sites = (uint32_t *)pair_sites;
+    }
   }
   /* No memset: MAP_ANONYMOUS pages are zero-filled by the kernel, so this
    * only ever re-zeroed memory that was already zero -- and it TOUCHED every
@@ -12687,6 +12807,8 @@ int main(int argc, char **argv) {
   shared->context.vector_items_base = shared->vector_items;
   shared->context.code_base = (const uint8_t *)memory;
   shared->context.code_length = (uint64_t)length;
+  kexe_census_code = shared->context.code_base;
+  kexe_census_code_length = shared->context.code_length;
   kexe_capture_cwd();
   kexe_scope_init(&kexe_scope35, "KEXE_CAP_RESOURCES_35");
   kexe_scope_init(&kexe_scope34, "KEXE_CAP_RESOURCES_34");
@@ -12790,6 +12912,7 @@ int main(int argc, char **argv) {
   if (child > 0) {
     int child_status = supervise(child);
     report_budget_trap(shared, child_status);
+    if (kexe_census_sites != NULL) kexe_arena_census(shared, getenv("KEXE_ARENA_CENSUS"));
     if (kexe_use != NULL) {
       /* KEXE_ARENA_USE: one EDN line on stderr -- the high-water mark of each
        * arena (the final use, or the largest use seen before an arena-scope
