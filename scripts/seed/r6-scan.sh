@@ -17,6 +17,8 @@
 emulate -L zsh
 setopt pipefail
 source "$(dirname "$0")/lib.sh"
+# FOLD (r6k, FRONTSRC request): kotoba.compiler.frontend.desugar needs a 16 Mi pair arena (4 Mi = lib.sh default traps :pairs)
+export SEED_PAIRS=${SEED_PAIRS:-16777216}
 R=$SEED_REPO; B=${SEED_BUILD:A}; W=$B/r6
 bin=${1:-$B/seed-1.bin}; [ "$1" = --link ] && bin=$B/seed-1.bin
 off=$(cat ${bin%.bin}.offset 2>/dev/null || echo 0)
