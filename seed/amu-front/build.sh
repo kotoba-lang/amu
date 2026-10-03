@@ -24,7 +24,8 @@
 #      with an empty PATH on two inputs; PASS = no exec/spawn/system/popen logged, one supervisor fork per run.
 # Env (ARENA 2026-10-04): AF_SEED=<seed.bin> (its .offset beside it) skips step 1 and uses that seed, e.g. the recorded
 #      large-M profile (scripts/seed/large-m.sh, seed/profiles/large-m-r6d.record); AF_F64=1 keeps the reader twin's
-#      decimal-f64-parse (the R6D seed lowers it; the r6c-kir lineage did not, so the default still replaces it).
+#      decimal-f64-parse (F64 2026-10-04: compile-kir lowers it from rung r6g on, 12-kirread's dec group; the R6D/R6E
+#      seeds refuse it E2101 on the KIR route and the r6c-kir lineage too, so the default still replaces it by none).
 # Env: AF_SCOPE (wire-35 directories, colon separated; default the repo, amu-embench, /private/tmp, /tmp),
 #      AF_KSEMA (kotoba-sema checkout), AF_KSEMA_REV, WALL_CP, WALL_K, AF_FORCE=1 (redo every step).
 # Output: <work>/amu-front (the command), <work>/amu-front.info.

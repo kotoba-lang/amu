@@ -166,13 +166,22 @@
       (let [w (af-out (af-ok-line hir))] 0)
       (let [w (af-err (af-deny-line path req))] 65))))
 
+;; stage-0's per-file source bound (bounded_edn max-source-bytes, 1 MiB): a larger file is refused before analysis
+;; with `amu check`'s invalid-data line (agent F64, 2026-10-04; ARENA measured a 1,563,759 B REFUSE-DIFF without it)
+(defn- af-max-source-bytes [] :i64 1048576)
+
+(defn- af-analyze [path :string text :string] :i64
+  (let [r (an/analyze text (form/nil-form))]
+    (if (record-get [:ref :ana/ir] r :ok)
+      (af-accept path (record-get [:ref :ana/ir] r :val))
+      (let [w (af-err (af-refusal path (record-get [:ref :ana/ir] r :err)))] 65))))
+
 (defn- af-check [path :string] :i64
   (if (af-exists? path)
-    (let [text (typed-cap-call :fs/app-data :string :string path)
-          r (an/analyze text (form/nil-form))]
-      (if (record-get [:ref :ana/ir] r :ok)
-        (af-accept path (record-get [:ref :ana/ir] r :val))
-        (let [w (af-err (af-refusal path (record-get [:ref :ana/ir] r :err)))] 65)))
+    (let [text (typed-cap-call :fs/app-data :string :string path)]
+      (if (> (string-byte-length text) (af-max-source-bytes))
+        (let [w (af-err (string-concat "error: invalid-data at " (string-concat path ": input exceeds byte limit\n")))] 65)
+        (af-analyze path text)))
     (let [w (af-err (string-concat "error: source-read-failed at " (string-concat path ": file not found\n")))] 66)))
 
 (defn- af-usage [] :i64

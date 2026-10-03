@@ -107,3 +107,27 @@ The frontend constant tables are now built once per analyze run (kotoba-sema `ag
 amu-front can be built from the recorded large-M seed profile (`AF_SEED`, seed/profiles/README.md). Same corpus verdicts
 (382/391); the whole 810 KB seed unity and a 1.04 MB input now fit one process (pairs 59% of 64 Mi). Measurements, census
 method and remaining gaps: docs/selfhost-arena-20261004.md; results: results/arena-*-20261004.tsv.
+
+## 8. Update 2026-10-04 (agent F64): 391 / 391
+
+All nine differences of section 3 are closed, plus stage-0's input bound; the corpus is **391 / 391 same verdict and
+same report** (358 SAME-OK, 33 SAME-REFUSE, 0 differ, 0 traps) **M**, and **315 / 315** on the programs stage-0
+compiles for aarch64-macos (314 SAME-OK, 1 SAME-REFUSE). Results: `results/f64-corpus-20261004.tsv`,
+`results/f64-scale-20261004.tsv`, `results/amu-front-f64-20261004.info` (no-host-processes PASS). Load 40-110 during
+the runs: times are indications only (median 0.01 s, max 0.34 s per file).
+
+| gap | programs | change | where |
+|---|---|---|---|
+| G1 float literals | 6 | `compile-kir` lowers `decimal-f64-parse` (12-kirread dec group = 21-check's R6D prelude in the KIR float representation; seed/tests/f64, rung r6g); build with `AF_F64=1` | seed 12-kirread |
+| general-document-map (one of the 6) | 1 | then refused "value type is outside the safe profile": the Kotoba desugar's document walk kept a bare f64 Form; now `(document-f64 (f64-from-bits n))`, the host reader's shape | kotoba-sema desugar |
+| G2 `ucs2` literal | 2 | validate_expr checks the rodata literals (`ucs2`/`guid`/`bytes-literal(-length)`) like the host's `rodata-literal-content?` instead of `vx/unsupported` | kotoba-sema validate_expr |
+| G2' aiueos-uefi-scratch | 1 | then TRAPPED (SIGILL): check-kernel-region-provenance! passed `(fl-nth problems 0)` to `require-k` eagerly, reading an empty list on every admitted kernel memory operation (the JVM KIR interpreter: list-index-out-of-bounds 0/0); any `(kernel-load-u8 s 1 0)` trapped | kotoba-sema kernel_region |
+| G3 typed_map_kit | 1 | the Kotoba desugar-expr now wraps the i64-answer predicates (`typed-map-equal` ..) as `(= op 1)` exactly once (host `bool-predicate-answer`; the mark is a head-symbol span no reader writes) | kotoba-sema desugar |
+| input bound | (scale) | check.cljk refuses a file above 1 MiB with `invalid-data .. input exceeds byte limit` before analysis: the 1,563,759 B input is now SAME-REFUSE (was REFUSE-DIFF) | check.cljk |
+
+kotoba-sema: branch `agent/f64-front` (5971905, 2d7d05d on c2766ee, the ARENA tree this route compiles; pushed). The
+ADR-0363 lineage (15e45a3 / PORT's port) needs the same three edits (Kotoba arms only). Build:
+`AF_SEED=<large-M seed of r6g> AF_F64=1 AF_KSEMA=<kotoba-sema at 2d7d05d> AF_KSEMA_REV=2d7d05d seed/amu-front/build.sh <work>`.
+Spot checks beyond the corpus (amu-front == stage-0 line): computed kernel base, scratch window > 16 KiB, alloc window,
+malformed GUID / hex, `(ucs2 x)` of a parameter, `typed-set-equal` as a :bool result and as an i64 operand (refused by
+both).
