@@ -681,8 +681,7 @@ verifier ("runtime KIR record projection rejected": `record-get`'s operand is
 an `option-value-of`, which it does not type). It was refused before this
 floor too: a declared `[:option R]` parameter read the same way gives
 "machine IR rejected: branch-value-shape-mismatch". That is floor
-`:native-option-record`, and the gate pins its current refusal so it is seen
-when it moves. kotoba-sema's portable suite has the same 39 failures and 5
+`:native-option-record` (since closed, below). kotoba-sema's portable suite has the same 39 failures and 5
 errors before and after (identical lists). Refused by name: a key the module
 writes `nil` at and two types at (`field :text/composition is nil in this
 module ... writes two types at it: [:record ..] and :string`), a `nil` key the
@@ -793,6 +792,43 @@ clamp over a record's string (the native two with `:oracle {:status
 :verified}`). Refused by name as before: min/max over a string, a bool or an
 option (`expected i64, got ...`) and any arity but two ("i64 operation arity
 mismatch: max takes 2 arguments").
+
+The record an option holds landed natively as floor `:native-option-record`
+(gate `option-record-projects-natively-test`). text-edit reads its
+composition as `(if-let [c (:text/composition state)] (:composition/text c)
+..)`, which kotoba-sema elaborates to `(option-value-of [:option R] o
+(record-new R ..))`, the fallback a record of R. On both native targets it was
+refused by the verifier, "runtime KIR record projection rejected", and a
+declared `[:option R]` parameter read the same way, R a flat record, by
+kotoba-native, "machine IR rejected: branch-value-shape-mismatch". Two layers
+each left the option's payload out. kotoba-verifier's `record-schema-of` typed
+an `option-value-of` only over a `typed-map-get`, so the local `if-let` binds
+had no record; it now types any option of a record whose fallback is that
+record, the option's declared type equal to the operand's wherever the
+operand says one (a local, a record field, a call's result) (`3e8134cd`).
+kotoba-native scalar-replaced a module whose records were flat and local, so
+the payload word and the fallback's field bundle met at one phi in two
+shapes; a record an option holds now selects the pair-chain lowering, as a
+record in a variant payload already did (`04a8e0e3`, with
+`a-record-in-an-option-lowers-on-both-isas`, red before and green after).
+Measured on nbb: the gate was red on `4a87b807` / `e2da186d` (8 errors of 23
+assertions with `nil-field-typed-by-the-module-assoc-test`, the floor's two
+literals), green on the new pins (23 assertions). text-edit's composition
+answers 203, a declared `[:option R]` over a flat i64 record 12 and over a
+record holding a string 113, on the KIR reference and on
+`x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1` with the oracle
+verified; `amu compile --target x86_64-aiueos-kernel-v1` / `--target
+aarch64-macos` exit 0 with `:oracle {:status :verified}`. No artifact was run
+under a loader this time. `nil-field-typed-by-the-module-assoc-test` now pins
+the native projection (203) instead of the refusal. kotoba-verifier's suite
+has the same 22 failures and 1 error before and after (identical lists), and
+kotoba-native's the same 34 failures and 9 errors, every one on its known-red
+list; amu's nbb suite has the same 13 failures and 2 errors (the policy
+tests). Refused by name: a field R does not declare ("record field must be a
+declared keyword literal"), the option as a number (`expected i64, got
+[:option ..]`), and the option projected as if it were the record
+("record-get without a type descriptor requires a record value; got [:option
+..]").
 
 ## Selfhost foundation floors (appended 2026-09-26)
 

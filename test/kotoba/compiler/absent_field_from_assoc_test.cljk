@@ -23,12 +23,10 @@
 
   Native: every function compiles for x86_64-aiueos-kernel-v1 and
   aarch64-macos with the oracle verified, the field's presence read as an if
-  test. Projecting the present record (if-let, then :composition/text) is
+  test. Projecting the present record (if-let, then :composition/text) was
   refused natively by the verifier -- \"runtime KIR record projection
-  rejected\" -- and a declared [:option R] parameter read the same way was
-  refused natively before this floor too (machine IR
-  branch-value-shape-mismatch); that is floor :native-option-record, pinned
-  below so it is seen when it moves.
+  rejected\" -- until floor :native-option-record; it now answers 203 there
+  too.
 
   What stays refused, each by its literal: a key nil in the module that two
   values give two types; a nil key the module gives no type; a present T
@@ -95,13 +93,10 @@
       (is (= 6 (#?(:clj long :cljs js/Number)
                 (:value (:artifact (compiler/compile-source presence target)))))
           (str target))))
-  (testing "not yet native: projecting the present record (floor :native-option-record)"
+  (testing "projecting the present record compiles natively (floor :native-option-record)"
     (doseq [target native-targets]
-      (is (= "runtime KIR record projection rejected"
-             (try (compiler/compile-source admitted target)
-                  nil
-                  (catch #?(:clj Throwable :cljs :default) error
-                    (ex-message error))))
+      (is (= 203 (#?(:clj long :cljs js/Number)
+                  (:value (:artifact (compiler/compile-source admitted target)))))
           (str target))))
   (testing "refused: two values give the absent field two types"
     (is (= (str "field :text/composition is nil in this module, which makes it an absent "

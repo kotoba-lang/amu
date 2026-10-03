@@ -207,7 +207,7 @@
   ;; T the one type the module's non-nil values at that key spell; nil is its
   ;; none, a spelled value or a map literal its some. ADR 0353 has the
   ;; measurements. Native: construction, assoc and presence compile; the
-  ;; present record's projection is floor :native-option-record.
+  ;; present record's projection is floor :native-option-record (closed).
   {:id :absent-field-from-assoc :gate "nil-field-typed-by-the-module-assoc-test"
    :goal "{.. :text/composition nil} is [:option T] with T the value the module assoc's into that field ({:composition/text \"\"}, composition-start), and (assoc s :text/composition nil) its none; refused today \"map literal value at key :text/composition is nil ... nothing here says T\"; a field two assoc's give two types stays refused by name"}
 ;; Landed 2026-10-03 in kotoba-sema (275b40a0): row specialization ran
@@ -221,7 +221,10 @@
    :goal "a record field holding an i64 vector (:text/selection [start end], typed :vector-i64) compiles for x86_64-aiueos-kernel-v1 and aarch64-macos; refused today at the typed-values gate (\"typed values currently require ... the qualified native one-word string/record/variant/option/result slice\") for (nth (:sel s) 1) and (assoc s :sel [..]) alike"}
   {:id :typed-wasm-min-max :gate "min-max-qualified-on-typed-wasm-test"
    :goal "max and min compile on wasm32-kotoba-v1 in a module with typed values (browser.text-edit's clamp); refused today \"typed Wasm operation is not qualified\" {:operation max}"}
-;; Measured 2026-10-03 while closing :absent-field-from-assoc: the
+;; Landed 2026-10-03 in kotoba-verifier (3e8134cd) and kotoba-native
+  ;; (04a8e0e3): the record an option holds, defaulted to R, is R to the record
+  ;; check, and a record in an option is boxed to one word. ADR 0353 has the
+  ;; measurements. Measured 2026-10-03 while closing :absent-field-from-assoc: the
   ;; record inside an [:option R] -- (if-let [c (:text/composition s)]
   ;; (:composition/text c) ..) -- is refused on both native targets by the
   ;; verifier, "runtime KIR record projection rejected" (record-get's operand
