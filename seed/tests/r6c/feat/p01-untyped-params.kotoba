@@ -1,0 +1,15 @@
+;; R6C: unannotated parameters take the type their uses ask for (kotoba-sema infer-absent-parameter-types): s and t
+;; become :string (string ops), v :vector-i64 (vector-at), b :bool (an argument of a :bool parameter), n stays :i64; a
+;; refinement of one function feeds its caller's (wrap -> twice). An if test does not refine (stage-0: "if test is :i64").
+;; want: 2517
+(ns r6c.p01 (:export [main]))
+(defn- twice [s] (string-concat s s))
+(defn- wrap [t] (twice t))
+(defn- pick1 [c :bool x :i64] :i64 (if c x 0))
+(defn- pick [b x] (pick1 b x))
+(defn- nth3 [v n] (+ (vector-at v n) n))
+(defn main [] :i64
+  (+ (* 1000 (string-length (wrap "a")))
+     (* 100 (pick (= 1 1) 5))
+     (nth3 [5 6 7] 2)
+     8))

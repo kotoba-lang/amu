@@ -1,0 +1,11 @@
+;; R6C: vector-drop / vector-take / subvec / into on :vector-i64 (source library group vec). want = stage-0's answer
+;; (stage-0 refuses two `into` in one function and `into` over parameters, so the test keeps one, over let-bound vectors).
+;; want: 567
+(ns r6c.p04 (:export [main]))
+(defn- digits [v :vector-i64] :i64 (loop [i 0 acc 0] (if (>= i (vector-count v)) acc (recur (+ i 1) (+ (* acc 10) (vector-at v i))))))
+(defn main [] :i64
+  (let [v [1 2 3 4 5 6 7]
+        a (vector-drop (vector-take v 5) 4)
+        b (subvec v 5 7)
+        c (subvec v 3)]
+    (+ (digits (into a b)) (* 0 (vector-count c)) (- (vector-at c 0) 4))))

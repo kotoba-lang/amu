@@ -121,3 +121,16 @@
 ;; @group sym
 ;; (symbol s): a :symbol is its text (stage-0 and the KIR route); kotoba.native.string-index / string-search export 0-arity fns
 (defn- symbol [s :string] :symbol (__r6-as :symbol s))
+;; @group vec
+;; R6C (2026-10-03): vector-drop / vector-take / subvec (lang/guest-grammar.edn :subvec; stage-0 traps on an index outside
+;; [0, count] / [start, count] -- here the loader's out-of-range trap). A fresh vector of the items, copied in order.
+(defn- __r6c-vtrap [] :vector-i64 (vector-conj (vector-alloc 0) (vector-at [0] 1)))
+(defn- __r6c-vcopy [v :vector-i64 a :i64 b :i64] :vector-i64 (let [r (vector-alloc (- b a))] (loop [i a] (if (>= i b) r (let [w (vector-assoc! r (- i a) (vector-at v i))] (recur (+ i 1)))))))
+(defn- vector-drop [v :vector-i64 n :i64] :vector-i64 (if (and (>= n 0) (<= n (vector-count v))) (__r6c-vcopy v n (vector-count v)) (__r6c-vtrap)))
+(defn- vector-take [v :vector-i64 n :i64] :vector-i64 (if (and (>= n 0) (<= n (vector-count v))) (__r6c-vcopy v 0 n) (__r6c-vtrap)))
+(defn- subvec ([v :vector-i64 a :i64] :vector-i64 (subvec v a (vector-count v))) ([v :vector-i64 a :i64 b :i64] :vector-i64 (if (and (>= a 0) (<= a b) (<= b (vector-count v))) (__r6c-vcopy v a b) (__r6c-vtrap))))
+(defn- into [a :vector-i64 b :vector-i64] :vector-i64 (loop [i 0 acc a] (if (>= i (vector-count b)) acc (recur (+ i 1) (vector-conj acc (vector-at b i))))))
+;; @group f64
+;; R6C: :f64 is its binary64 bit pattern in an i64 (seed/HEADS TY-F64); the two casts are the only operations
+(defn- f64-to-bits [x :f64] :i64 (__r6-as :i64 x))
+(defn- f64-from-bits [b :i64] :f64 (__r6-as :f64 b))

@@ -1,0 +1,10 @@
+;; R6C (want = stage-0 d2cb84f6): a map / vector literal in the tail of a :document defn is a document (kotoba.compiler.kexe-fs-forms form-table):
+;; nested maps and vectors convert too, keyword keys become document keywords, scalars go through their document form
+;; want: 83113
+(ns r6c.p05 (:export [main]))
+(defn- table [] :document {:write {:token "WRITE" :ok? true} :read {:token "READ" :n 7} :xs [1 "two" :three]})
+(defn- at [d :document k :keyword] :document (option-or (document-get d (document-keyword k)) (document-null)))
+(defn- tok [d :document k :keyword] :string (option-or (document-string-value (at (at d k) :token)) ""))
+(defn main [] :i64
+  (+ (if (string=? (tok (table) :write) "WRITE") 100 0) (if (string=? (tok (table) :read) "READ") 10 0)
+     (document-count (at (table) :xs)) (* 1000 (string-length (document-edn-print (table))))))
