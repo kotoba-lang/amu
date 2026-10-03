@@ -1,0 +1,126 @@
+(ns amu.cli
+  {:kotoba/export [argc arg out err ends-with source-ext regular-file basename flag-value has-flag positional
+                   usage-error decode-error not-available]})
+
+;; seed/amu-main/src/amu/cli.kotoba -- argv, output and the stage-0 report shapes shared by the amu command entries
+;; (agent MAINS, 2026-10-04). Written in the language both build routes admit (the seed's source route and the JVM
+;; lineage's KIR route): i64/string only, no records, 0/1 answers instead of :bool, no string literal that names a
+;; wire-35 token (the token is built at run time, as seed/02-io.kotoba io-sep does).
+;;
+;; Capability layer: wire 38 (:cli/args, argc as "" -> decimal count, argument i as "<i>"), 37 (:io/write),
+;; 39 (:io/write-error), 35 (:fs/app-data STAT form). Nothing here spawns (wire 20 is never used by an amu entry).
+
+(defn- dec-parse [s :string i :i64 n :i64 acc :i64] :i64
+  (if (>= i n) acc (dec-parse s (+ i 1) n (+ (* acc 10) (- (string-code-point-at s i) 48)))))
+
+(defn argc [] :i64
+  (let [s (typed-cap-call :cli/args :string :string "")]
+    (dec-parse s 0 (string-length s) 0)))
+
+(defn arg [i :i64] :string
+  (if (< i 0) "" (typed-cap-call :cli/args :string :string (string-from-i64 i))))
+
+(defn out [s :string] :i64
+  (let [r (typed-cap-call :io/write :string :string s)] 0))
+
+(defn err [s :string] :i64
+  (let [r (typed-cap-call :io/write-error :string :string s)] 0))
+
+;; ---- strings ------------------------------------------------------------------------------------------------------
+(defn- same-tail [s :string t :string i :i64 j :i64 k :i64] :i64
+  (cond (>= k (string-length t)) 1
+        (= (string-code-point-at s (+ i k)) (string-code-point-at t (+ j k))) (same-tail s t i j (+ k 1))
+        :else 0))
+
+;; 1 when s ends with suffix t (byte-wise)
+(defn ends-with [s :string t :string] :i64
+  (if (< (string-length s) (string-length t))
+    0
+    (same-tail s t (- (string-length s) (string-length t)) 0 0)))
+
+;; stage-0's source rule (cli.cljk source-input): .kotoba, .cljk or .cljc
+(defn source-ext [s :string] :i64
+  (cond (= (ends-with s ".kotoba") 1) 1
+        (= (ends-with s ".cljk") 1) 1
+        (= (ends-with s ".cljc") 1) 1
+        :else 0))
+
+;; the byte offset after the last '/', 0 when none
+(defn- last-slash [s :string i :i64 acc :i64] :i64
+  (cond (>= i (string-length s)) acc
+        (= (string-code-point-at s i) 47) (last-slash s (+ i 1) (+ i 1))
+        :else (last-slash s (+ i 1) acc)))
+
+(defn- copy-from [s :string i :i64 acc :string] :string
+  (if (>= i (string-length s))
+    acc
+    (copy-from s (+ i 1) (string-concat acc (string-substring s i (+ i 1))))))
+
+(defn basename [s :string] :string
+  (let [k (last-slash s 0 0)] (if (= k 0) s (copy-from s k ""))))
+
+;; ---- files (wire 35) ----------------------------------------------------------------------------------------------
+;; STAT form "<path>STAT_SEP" -> "<mode> <size> <blocks> <isdir>", "" when absent or outside the granted scope
+(defn- stat-token [] :string (string-concat "STAT" "_SEP"))
+
+(defn regular-file [path :string] :i64
+  (let [a (typed-cap-call :fs/app-data :string :string (string-concat path (stat-token)))
+        n (string-length a)]
+    (cond (= n 0) 0
+          (= (string-code-point-at a (- n 1)) 48) 1
+          :else 0)))
+
+;; ---- argv ---------------------------------------------------------------------------------------------------------
+;; 1 when s is a flag that takes a value (the union of stage-0's compile/check flags and the seed driver's)
+(defn- value-flag [s :string] :i64
+  (cond (string=? s "--target") 1
+        (string=? s "--output") 1
+        (string=? s "--policy") 1
+        (string=? s "--source-path") 1
+        (string=? s "--object-dir") 1
+        (string=? s "--symbol") 1
+        :else 0))
+
+(defn- is-flag [s :string] :i64
+  (if (and (> (string-length s) 1) (= (string-code-point-at s 0) 45)) 1 0))
+
+;; argv index of the value after flag f (first occurrence at or after index i), -1 when absent
+(defn flag-value [f :string i :i64] :i64
+  (cond (>= (+ i 1) (argc)) -1
+        (string=? (arg i) f) (+ i 1)
+        :else (flag-value f (+ i 1))))
+
+(defn has-flag [f :string i :i64] :i64
+  (cond (>= i (argc)) 0
+        (string=? (arg i) f) 1
+        :else (has-flag f (+ i 1))))
+
+;; argv index of the k-th positional argument at or after index i (flags and their values skipped), -1 when absent
+(defn positional [i :i64 k :i64] :i64
+  (cond (>= i (argc)) -1
+        (= (value-flag (arg i)) 1) (positional (+ i 2) k)
+        (= (is-flag (arg i)) 1) (positional (+ i 1) k)
+        (= k 0) i
+        :else (positional (+ i 1) (- k 1))))
+
+;; ---- stage-0 report shapes (:kotoba.cli-error/v1 on stderr) ---------------------------------------------------------
+;; stage-0's usage refusal: code :kotoba/invalid-usage (or the command's own code, e.g. :refactor/usage), exit 64
+(defn usage-error [code :string message :string details :string] :i64
+  (let [w (err (string-concat "{:format :kotoba.cli-error/v1, :ok false, :error :usage, :diagnostic {:format :kotoba.diagnostic/v1, :code "
+                (string-concat code (string-concat ", :severity :error}, :message \""
+                  (string-concat message (string-concat "\"" (string-concat details "}\n")))))))]
+    64))
+
+;; stage-0's decode refusal of a compile input that is not a regular file (exit 65)
+(defn decode-error [path :string] :i64
+  (let [w (err (string-concat "{:format :kotoba.cli-error/v1, :ok false, :error :decode, :diagnostic {:format :kotoba.diagnostic/v1, :code :kotoba/invalid-data, :severity :error, :source \""
+                (string-concat (basename path) "\"}, :message \"input must be a regular file\", :details {:phase :decode}}\n")))]
+    65))
+
+;; a DECLARED STUB: this command (or this part of it) is not built from source yet. Never counted as behaviour.
+;; Exit 69 (EX_UNAVAILABLE), one :kotoba.cli-error/v1 map on stderr whose :details name exactly what is missing.
+(defn not-available [command :string missing :string] :i64
+  (let [w (err (string-concat "{:format :kotoba.cli-error/v1, :ok false, :error :not-available, :diagnostic {:format :kotoba.diagnostic/v1, :code :amu-main/not-available, :severity :error}, :message \"amu "
+                (string-concat command (string-concat " is not available in this native image (declared stub, seed/amu-main/missing.tsv)\", :details {:phase :entry, :missing ["
+                  (string-concat missing "]}}\n")))))]
+    69))

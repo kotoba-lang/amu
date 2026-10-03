@@ -1,0 +1,31 @@
+(ns amu.check
+  {:kotoba/export [run]}
+  (:require [amu.cli :as cli]))
+
+;; seed/amu-main/s/amu/check.kotoba -- `amu check` on the SOURCE route (agent MAINS, 2026-10-04).
+;;
+;; REAL: stage-0's argument layer: the source extension rule (64, :kotoba.cli-error/v1) and the regular-file rule
+;; (stage-0 `check` prints `error: invalid-data at <file>: input must be a regular file`, exit 65).
+;; DECLARED STUB for the analysis itself. The check is kotoba.compiler.frontend.analyze/analyze (the call
+;; seed/amu-front/check.cljk makes, k/amu/check.kotoba on the KIR route); the seed does not compile its closure from
+;; source. Scan of seed da6d0a98 (r6f), build/walls/sb0, 2026-10-04: analyze BLOCKED (requires kotoba.kir); the walls
+;; in the check closure are kotoba.compiler.kotoba-reader (E2102 float literal 0.0), kotoba.kir.interp (E2101
+;; string-split-count), kotoba.lang.json (E2104), kotoba.security.information-flow (E2105 :information-flow/allowed?);
+;; every frontend.* module is BLOCKED behind kotoba-reader / kotoba.kir. Exact list: seed/amu-main/missing.tsv.
+
+(defn- missing [] :string
+  (string-concat "\"kotoba.compiler.frontend.analyze: blocked (requires kotoba.kir, kotoba.compiler.frontend.base)\" "
+  (string-concat "\"kotoba.compiler.kotoba-reader: seed E2102 float literal 0.0\" "
+  (string-concat "\"kotoba.kir.interp: seed E2101 string-split-count\" "
+  (string-concat "\"kotoba.lang.json: seed E2104 type mismatch in r\" "
+                 "\"kotoba.security.information-flow: seed E2105 :information-flow/allowed?\"")))))
+
+(defn run [] :i64
+  (let [s (cli/positional 1 0)]
+    (cond (< s 0)
+          (cli/usage-error ":kotoba/invalid-usage" "source input must use .kotoba, .cljk, or .cljc" ", :details {:phase :usage}")
+          (= (cli/source-ext (cli/arg s)) 0)
+          (cli/usage-error ":kotoba/invalid-usage" "source input must use .kotoba, .cljk, or .cljc" ", :details {:phase :usage}")
+          (= (cli/regular-file (cli/arg s)) 0)
+          (let [w (cli/err (string-concat "error: invalid-data at " (string-concat (cli/arg s) ": input must be a regular file\n")))] 65)
+          :else (cli/not-available "check" (missing)))))
