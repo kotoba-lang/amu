@@ -214,12 +214,13 @@
   (let [loopn (lw-kn k)
         n (lw-count M a)
         b0 (if (zero? loopn) 0 (lw-first M (lw-next M (lw-first M loopn))))
-        target (if (zero? loopn) (vector-at M 93) (lw-kl k))]
+        target (if (zero? loopn) (vector-at M 93) (lw-kl k))
+        rf (lw-sx-recur? M)]   ; SEEDFIX: no charge in a fuel-free KIR library defn
     (-> M
         (lw-args a t)
         (cond-> (zero? loopn) (lw-param-sets 0 n t)
                 (pos? loopn) (lw-loop-sets b0 t))
-        (lw-emit OP-FUEL 0)
+        (cond-> rf (lw-emit OP-FUEL 0))
         (lw-emit OP-BR target))))
 
 (defn- lw-if [M :vector-i64 c :i64 t :i64 k :i64] :vector-i64
@@ -276,6 +277,7 @@
     (-> M
         (lw-labels 1)
         (lw-binds b t)
+        (cond-> (lw-sx-loop? M n) (lw-emit OP-FUEL 0))   ; SEEDFIX: a KIR loop helper's entry charge
         (lw-emit OP-LABEL lh)
         (lw-expr body t (lw-kmk (lw-kt k) n lh)))))
 
@@ -290,7 +292,8 @@
 (defn- lw-call [M :vector-i64 h :i64 t :i64 k :i64] :vector-i64
   (let [f (lw-callee M h)
         a (lw-next M h)]
-    (cond (lw-variadic? M f) (lw-call-var M f a t)
+    (cond (pos? (lw-sx-slot M f)) (-> M (lw-args a t) (lw-emit OP-RT (lw-sx-slot M f) t (lw-count M a)))   ; SEEDFIX
+          (lw-variadic? M f) (lw-call-var M f a t)
           (and (= f (vector-at M 92)) (= (lw-kt k) 1)) (lw-jump M a t 0)
           :else (let [n (lw-count M a)]
                   (-> M (lw-args a t) (lw-emit OP-CALL f t n) (cond-> (lw-aborts? M f) (lw-abort-check h t)))))))
@@ -536,7 +539,7 @@
         sirn (vector-at M MM-SIR-N)
         np (lw-ff M f FF-NPARAMS)
         ns (lw-ff M f FF-NSLOTS)
-        fuel (lw-ff M f FF-FUEL)
+        fuel (lw-sx-entry M f)   ; SEEDFIX: FF-FUEL, or machine_ir's rule on the KIR route
         M1 (-> M
                (lw-labels 1)
                (lw-put 92 f)
@@ -563,7 +566,7 @@
           :else (lw-fns (lw-fn M f) (inc f)))))
 
 (defn- lw-run [M :vector-i64] :vector-i64
-  (let [M1 (lw-fns M 1)
+  (let [M1 (lw-fns (lw-sx-exports M 1) 1)   ; SEEDFIX: late exports of the KIR route
         nl (vector-at M1 MM-LABEL-N)
         ns (vector-at M1 MM-SIR-N)]
     (-> M1
@@ -1516,3 +1519,26 @@
       (lw-jump M a t 0)
       (-> M (lw-emit OP-LGET t sl) (lw-args a (inc t)) (lw-emit OP-CALL g t (inc n)) (lw-emit OP-RES2 (inc t))
           (lw-emit OP-LSET sl (inc t))))))
+
+;; ==== BEGIN SEEDFIX (agent SEEDFIX, 2026-10-03; marks written by 12-kirread, see its SEEDFIX header) =================
+;; Only on the KIR route (kr-mode?: compile-kir ran 12-kirread); every source-route program lowers exactly as before.
+;;   entry FUEL of FN f: FF-FUEL off the KIR route or for a defn marked kr-mk-seed; else 1 iff its node is kr-mk-entry
+;;   (machine_ir's entry-fuel-prefixes); recur / self tail call FUEL unless the current defn is kr-mk-nofuel; a loop
+;;   node marked kr-mk-entry charges once before its header (the loop helper's entry); a call of a defn carrying a slot
+;;   is RT slot (the loader's runtime operation); a defn marked kr-mk-export gets FF-EXPORT 1 after 21-check.
+(defn- lw-sx-mk [M :vector-i64 f :i64] :i64 (kr-mk-of M (lw-ff M f FF-NODE)))
+(defn- lw-sx-entry [M :vector-i64 f :i64] :i64
+  (let [m (lw-sx-mk M f)]
+    (cond (not (kr-mode? M)) (lw-ff M f FF-FUEL)
+          (pos? (bit-and m kr-mk-seed)) (lw-ff M f FF-FUEL)
+          (pos? (bit-and m kr-mk-entry)) 1
+          :else 0)))
+(defn- lw-sx-recur? [M :vector-i64] :bool (zero? (bit-and (lw-sx-mk M (vector-at M 92)) kr-mk-nofuel)))
+(defn- lw-sx-loop? [M :vector-i64 n :i64] :bool (pos? (bit-and (kr-mk-of M n) kr-mk-entry)))
+(defn- lw-sx-slot [M :vector-i64 f :i64] :i64 (if (pos? f) (quot (lw-sx-mk M f) kr-mk-slot) 0))
+(defn- lw-sx-exports [M :vector-i64 f :i64] :vector-i64
+  (cond (not (kr-mode? M)) M
+        (>= f (vector-at M MM-FN-N)) M
+        (pos? (bit-and (lw-sx-mk M f) kr-mk-export)) (lw-sx-exports (lw-set-ff M f FF-EXPORT 1) (inc f))
+        :else (lw-sx-exports M (inc f))))
+;; ==== END SEEDFIX ===================================================================================================

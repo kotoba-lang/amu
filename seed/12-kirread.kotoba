@@ -55,8 +55,8 @@
 (def kr-c-exp 125)
 (def kr-c-fns 126)
 (def kr-c-tab 127)
-(def kr-w 8)
-(def kr-th 7)
+(def kr-w 10)
+(def kr-th 12)
 (def kr-f-name 0)
 (def kr-f-params 1)
 (def kr-f-result 2)
@@ -65,6 +65,16 @@
 (def kr-f-used 5)
 (def kr-f-map 6)
 (def kr-f-drop 7)
+;; SEEDFIX: word 8 = 1 when machine_ir's lowering of the function would contain a call, runtime call or capability call
+;; (its fuel rule: such a function is charged on entry), word 9 = 1 for a late (string-result) export; table words 7..10:
+;; the mark array, the analysis environment stack, the analysis accumulator, the module's record-boundary flag
+(def kr-f-re 8)
+(def kr-f-lx 9)
+(def kr-t-mk 7)
+(def kr-t-env 8)
+(def kr-t-acc 9)
+(def kr-t-rb 10)
+(def kr-t-met 11)
 (def kr-e-doc 1201)
 (def kr-e-field 1202)
 (def kr-e-value 1203)
@@ -111,7 +121,7 @@
     (string-concat
       "(defn __kr_replace_all [s :string n :string r :string] :string (__kr_replace_from (string-substring s 0 0) s n r (string-index-of s n)))\n(defn __kr_replace_from [acc :string s :string n :string r :string k :i64] :string (if (< k 0) (string-concat acc s) (__kr_replace_from (string-concat acc (string-concat (string-substring s 0 k) r)) (string-substring s (+ k (string-length n)) (string-length s)) n r (string-index-of (string-substring s (+ k (string-length n)) (string-length s)) n))))\n"
       "(defn __kr_append_range [acc :string s :string i :i64 j :i64] :string (string-concat acc (string-substring s i j)))\n(defn __kr_index_of_from [s :string n :string i :i64] :i64 (let [r (string-index-of (string-substring s i (string-length s)) n)] (if (< r 0) -1 (+ r i))))\n"))
-  (string-concat (kr-lib-text2) (string-concat (kr-doc-text) (kr-flt-text)))))
+  (string-concat (kr-lib-text2) (string-concat (kr-doc-text) (string-concat (kr-flt-text) (kr-fix-text))))))
 
 ;; ---------------------------------------------------------------------------------------------------------
 ;; KIR5 (agent KIR5, 2026-10-03): :f64 / :f32 in compile-kir. The seed has no float register class; a KIR float is its
@@ -683,6 +693,29 @@
     (= h -8934139231046636867) (kr-len-ok len 10 101)
     (= h -1721781785132272367) (kr-len-ok len 6 102)
     (= h 6842847860166478009) (kr-len-ok len 7 103)
+    ;; SEEDFIX: 104 i32-wrap 105 u32-wrap 106 i32-wrapping-add 107 i32-wrapping-mul 108 i32-xor 109 i32-shift-left
+    ;; 110 i32-shift-right 111 u32-shift-right 112 string-fold-ascii 113 string-compare-lines 114 string-find-blank
+    ;; 115 string-skip-blank 116 arena-scope 117 variant-new 118 variant-match 119 hetero-vector-new 120 hetero-vector-at
+    ;; 121 hetero-vector-count 122 hetero-vector-assoc
+    (= h -7628706683553491796) (kr-len-ok len 8 104)
+    (= h -6640127077671587872) (kr-len-ok len 8 105)
+    (= h -3941283744650657794) (kr-len-ok len 16 106)
+    (= h -6567073642785683381) (kr-len-ok len 16 107)
+    (= h 6637241187818425693) (kr-len-ok len 7 108)
+    (= h 4270970488703274474) (kr-len-ok len 14 109)
+    (= h -8746598672041028009) (kr-len-ok len 15 110)
+    (= h 6035406436413204563) (kr-len-ok len 15 111)
+    (= h -618694989427479926) (kr-len-ok len 17 112)
+    (= h 509472911240505904) (kr-len-ok len 20 113)
+    (= h -2247595073388064825) (kr-len-ok len 17 114)
+    (= h 1887791999898711303) (kr-len-ok len 17 115)
+    (= h 1121630809250370429) (kr-len-ok len 11 116)
+    (= h 1020304885394931549) (kr-len-ok len 11 117)
+    (= h 3051134156447049386) (kr-len-ok len 13 118)
+    (= h 5311322140460412953) (kr-len-ok len 17 119)
+    (= h 4179465675549041136) (kr-len-ok len 16 120)
+    (= h -1509583841684712660) (kr-len-ok len 19 121)
+    (= h -5614762944342869044) (kr-len-ok len 19 122)
     :else 0))
 
 (defn- kr-is-name [k :i64] :i64 (cond (= k ND-SYM) 1 (= k ND-KW) 1 :else 0))
@@ -1038,7 +1071,7 @@
   (let [h (kr-first M n)
         a (kr-next M h)
         b (if (= a 0) 0 (kr-next M a))
-        kw (bit-or (kr-kwish M S a) (kr-kwish M S b))]
+        kw (bit-or (bit-or (kr-kwish M S a) (kr-kwish M S b)) (if (= (bit-and (kr-mk-of M n) kr-mk-kweq) 0) 0 1))]   ; SEEDFIX
     (kr-walk-items (if (= kw 1) (kr-retok M h 39) (kr-id M)) S a cur)))
 
 (defn- kr-walk [M :vector-i64 S :string n :i64 cur :i64] :vector-i64
@@ -1077,6 +1110,9 @@
       (= hc 60) (kr-dkw M S n cur)
       (and (>= hc 62) (<= hc 65)) (kr-dfold M S n cur hc)
       (= (kr-dkeyed hc) 1) (kr-dkey (kr-walk-items (kr-lib-use M h (kr-lib-of hc)) S a cur) S (kr-next M a))
+      (= hc 116) (kr-arena M S n cur)                                     ; SEEDFIX: arena-scope
+      (and (kr-met? M) (and (>= hc 56) (<= hc 88))) (kr-fail M kr-e-value h)   ; SEEDFIX: --metered, document ops
+      (and (>= hc 117) (<= hc 122)) (kr-fail M kr-e-value h)             ; SEEDFIX: variants, hetero vectors (fallback)
       (>= (kr-lib-of hc) 0) (kr-walk-items (kr-lib-use M h (kr-lib-of hc)) S a cur)
       (= (kr-untyped-tok hc) 0) (if (= hl 1) (kr-call M S n cur) (kr-walk-items M S h cur))
       :else (kr-untyped (kr-alloc M (kr-untyped-n hc)) S n cur hc))))
@@ -1411,6 +1447,9 @@
         or-ok (* (* shape (kr-eq g 2)) (kr-sym-is M S th nm))]
     (cond (= and-ok 1) (kr-walk-items (kr-nset (kr-andor M h x th 11) n NF-AUX 3) S x cur)
           (= or-ok 1) (kr-walk-items (kr-nset (kr-andor M h x el 12) n NF-AUX 3) S x cur)
+          ;; SEEDFIX: the binding values are expressions, not type items (a keyword value :b became a keyword-typed local
+          ;; and every `case` over keywords was refused, E2104 expected :string)
+          (= (kr-kind M v) ND-VEC) (kr-walk (kr-walk-items M S (kr-first M v) cur) S bd cur)
           :else (kr-walk-items M S h cur))))
 
 ;; (if x false true) -> (not x)
@@ -1486,7 +1525,7 @@
           M6 (kr-nset M5 (+ l 1) NF-NEXT bd)
           M7 (kr-nset M6 bd NF-NEXT 0)
           M8 (kr-inter M7 p1 a 0 (+ l 1))]
-      (kr-walk M8 S bd r))))
+      (kr-walk (kr-mark-loop M8 n r) S bd r))))   ; SEEDFIX: the loop entry is the helper's entry
 
 ;; ---------------------------------------------------------------------------------------------------------
 ;; KIR3: the KIR library (kr-lib-text): respelling a builtin call, emitting the used functions
@@ -1494,7 +1533,8 @@
 ;; the library function of KIR head code hc, -1 when hc is not a library builtin
 (defn- kr-lib-of [hc :i64] :i64
   (cond (= hc 48) 0 (= hc 49) 1 (= hc 50) 2 (= hc 51) 4 (= hc 52) 5 (= hc 53) 6 (= hc 54) 7
-        (< hc 56) -1 (> hc 99) -1 (> hc 94) (kr-flt-of hc) (> hc 90) -1 :else (kr-doc-of hc)))
+        (< hc 56) -1 (and (>= hc 104) (<= hc 115)) (+ kr-fixb (- hc 104))   ; SEEDFIX: i32 ops and the text slots
+        (> hc 99) -1 (> hc 94) (kr-flt-of hc) (> hc 90) -1 :else (kr-doc-of hc)))
 
 ;; KIR4: the doc library entry of document head code hc (56 .. 87; 60 and 62..65 are handled before, -1)
 (defn- kr-doc-of [hc :i64] :i64
@@ -1508,10 +1548,11 @@
 
 ;; the use bits of library function j (replace-all also needs replace-from)
 (defn- kr-lib-bits [j :i64] :i64
-  (cond (= j 2) 12 (>= j (+ kr-nlib kr-ndoc)) 1024 (>= j kr-nlib) 256 :else (i64-shift-left 1 j)))
+  (cond (>= j kr-fixb) (kr-fix-bits (- j kr-fixb)) (= j 2) 12 (>= j (+ kr-nlib kr-ndoc)) 1024 (>= j kr-nlib) 256
+        :else (i64-shift-left 1 j)))
 
 ;; KIR4: the use bit of library defn j: its own for the KIR3 functions, bit 8 for every doc defn (one group)
-(defn- kr-lib-bit [j :i64] :i64 (cond (< j kr-nlib) j (< j (+ kr-nlib kr-ndoc)) kr-nlib :else 10))
+(defn- kr-lib-bit [j :i64] :i64 (cond (< j kr-nlib) j (< j (+ kr-nlib kr-ndoc)) kr-nlib (>= j kr-fixb) (+ 11 (- j kr-fixb)) :else 10))
 
 ;; the top-level node of library defn j (the first one is word 4 of the function table; the defns are read-tree
 ;; siblings until kr-lib-emit relinks them at the very end)
@@ -1542,8 +1583,9 @@
   (let [tab (vector-at M kr-c-tab)
         u (vector-at M (+ tab 3))
         nx (kr-next M c)]
-    (cond (>= j (+ (+ kr-nlib kr-ndoc) kr-nflt)) (kr-nset M last NF-NEXT 0)
-          (= (bit-and (u64-shift-right u (kr-lib-bit j)) 1) 1) (kr-lib-emit (kr-strs (kr-nset M last NF-NEXT c) c) c nx (+ j 1))
+    (cond (>= j (+ kr-fixb kr-nfix)) (kr-nset M last NF-NEXT 0)
+          (= (bit-and (u64-shift-right u (kr-lib-bit j)) 1) 1)
+          (kr-lib-emit (kr-mk-or (kr-strs (kr-nset M last NF-NEXT c) c) c (kr-lib-mark j)) c nx (+ j 1))
           :else (kr-lib-emit M last nx (+ j 1)))))
 
 ;; ---------------------------------------------------------------------------------------------------------
@@ -1740,7 +1782,7 @@
           M8 (kr-nset M7 rs NF-NEXT bd)
           M9 (kr-nset M8 bd NF-NEXT 0)
           M9a (kr-put (if (= pt 0) (kr-id M9) (kr-walk M9 S pt 0)) (+ (vector-at M9 kr-c-tab) 5) r)
-          M10 (kr-params M9a ps pt (+ n 3) (+ n 2))]
+          M10 (kr-mark-fn (kr-params M9a ps pt (+ n 3) (+ n 2)) n r)]   ; SEEDFIX: fuel and late-export marks
       (kr-walk (kr-walk-ty M10 S rs 0) S bd 0))))
 
 (defn- kr-defn [M :vector-i64 S :string r :i64] :vector-i64
@@ -1764,7 +1806,7 @@
     (cond
       (>= i n) (kr-lib-emit M last (kr-lib-node M 0) 0)
       (kr-failed M) (kr-id M)
-      (= (kr-helper M S nm) 1) (kr-defs M S (+ i 1) last)
+      (= (kr-helper M S nm) 1) (kr-defs (kr-helper-types M S r) S (+ i 1) last)   ; SEEDFIX: its types (inline schemas)
       :else (kr-defs2 (kr-defn M S r) S i last n0))))
 
 ;; ---------------------------------------------------------------------------------------------------------
@@ -1805,7 +1847,7 @@
     (kr-put M MM-R0 0)
     (let [nx (kr-next M c)
           keep (kr-exportable M S c)]
-      (kr-xkeep2 (kr-xfilter M S nx) c keep))))
+      (kr-xkeep2 (kr-xfilter (kr-lx M S c) S nx) c keep))))   ; SEEDFIX: kr-lx marks a late (string-result) export
 
 (defn- kr-xset [M :vector-i64 ex :i64] :vector-i64
   (let [f (vector-at M MM-R0)
@@ -1848,25 +1890,549 @@
 (defn- kr-run4 [M :vector-i64 S :string] :vector-i64
   (if (kr-failed M) (kr-id M) (kr-emit (kr-alloc M 6) S)))
 
-(defn- kr-run3 [M :vector-i64 S :string doc :i64] :vector-i64
+(defn- kr-run3 [M :vector-i64 S :string doc :i64 met :i64] :vector-i64
   (let [ok (* (* (kr-ne (vector-at M kr-c-exp) 0) (kr-ne (vector-at M kr-c-fns) 0)) (kr-eq (vector-at M kr-c-tab) 1))]
     (cond (kr-failed M) (kr-id M)
-          (= ok 1) (kr-run4 (kr-tab M S) S)
+          (= ok 1) (kr-run4 (kr-fuel (kr-tab M S) S met) S)   ; SEEDFIX: machine_ir's fuel rule, per function
           :else (kr-fail M kr-e-doc doc))))
 
-(defn- kr-run2 [M :vector-i64 S :string doc :i64] :vector-i64
+(defn- kr-run2 [M :vector-i64 S :string doc :i64 met :i64] :vector-i64
   (let [d1 (kr-first M doc)]
-    (kr-run3 (kr-tops M S d1) S doc)))
+    (kr-run3 (kr-tops M S d1) S doc met)))
 
 (defn- kr-run1 [M :vector-i64 S :string] :vector-i64
   (let [root (vector-at M MM-ROOT)
         doc (kr-first M root)
         cnt (kr-count M root)
         pb (kr-nf M (kr-next M doc) NF-TOK)
-        ok (* (kr-eq (kr-kind M doc) ND-VEC) (kr-eq cnt (+ (+ kr-np 1) (+ (+ kr-nlib kr-ndoc) kr-nflt))))]
+        met (vector-at M kr-c-pb)   ; SEEDFIX: 1 when the driver was given --metered (cell 124 before it holds the prelude)
+        ok (* (kr-eq (kr-kind M doc) ND-VEC) (kr-eq cnt (+ (+ kr-np 1) (+ kr-fixb kr-nfix))))]
     (if (= ok 1)
-      (kr-run2 (kr-put M kr-c-pb pb) S doc)
+      (kr-run2 (kr-put M kr-c-pb pb) S doc met)
       (kr-fail M kr-e-doc doc))))
 
 (defn- kr-run [M :vector-i64 S :string] :vector-i64
   (if (kr-failed M) (kr-id M) (kr-run1 M S)))
+
+;; =========================================================================================================
+;; SEEDFIX (agent SEEDFIX, 2026-10-03): the falsification checks F1/F2/F4 of scripts/selfhost-wall/kir-backend-diff.sh.
+;; (1) FUEL (F4): compile-kir charges fuel by machine_ir's rule (kotoba-native machine_ir.cljk entry-fuel-prefixes over
+;;     its GMIR lowering, aarch64.cljk fuel-instrumentation), not by the seed's own FF-FUEL rule: a KIR function is charged
+;;     one unit on entry, and one per self tail call / recur, exactly when its machine_ir lowering contains a call, a tail
+;;     call, a runtime call or a capability call. kr-fuel computes that per KIR function (kr-f-re) from the KIR text the way
+;;     emit-program sees it: keyword-equality's rewrite (= on a keyword-typed operand -> string=?, a runtime call),
+;;     vector-region's rewrite (a vector-new of <= 32 items read only by count/at/get, directly or through a let name,
+;;     becomes item slots: no runtime call), normalize-surface-operations (option/result/typed-list/set/vector-get .. ->
+;;     runtime pair/vector ops), the record boundary (records cross a function boundary or nest -> pair chains, else SROA:
+;;     no runtime call), literal walks ((string-code-point-at "ascii" i): no runtime call), string and keyword literals
+;;     (pair_new: a runtime call). Every head not known to lower to plain GMIR arithmetic counts as a runtime call. The
+;;     result is written as MARKS on the read tree, a word per node (table word 7): on a defn node (kr-mark-fn) and on the
+;;     loop node that replaces a loop helper call (kr-mark-loop: the helper's entry charge is the loop's entry charge);
+;;     30-lower's SEEDFIX block reads them (kr-mk-of) instead of FF-FUEL. Library defns: a defn standing for a stage-0
+;;     runtime slot or an inline lowering is fuel-free (no entry, no recur charge), kotoba$string-replace-from's twin is
+;;     charged like it, the document helpers keep the seed's own rule (stage-0's helpers are different code: a metered
+;;     document program is not fuel-exact, see docs/selfhost-seed-merge-20261003.md).
+;; (2) INTRINSICS (F1 trap kinds, F2): a library defn may carry a loader slot (mark bits 16..): 30-lower lowers a call of it
+;;     to RT slot (the C runtime call stage-0 makes, with its checks and its trap kind) instead of a call of the body, which
+;;     only gives 21-check the signature. string-find-byte 336, string-append-range 344, string-index-of-from 272,
+;;     vector-drop 192, string-fold-ascii 248, string-compare-lines 280, string-find-blank 256, string-skip-blank 264,
+;;     arena-enter 224, arena-leave 232; (arena-scope e) -> (let [__kr_a (enter) __kr_b e __kr_a (leave)] __kr_b).
+;; (3) LATE EXPORTS (F1): a KIR export with :i64 parameters and a :string (or :keyword = text) result is not exportable by
+;;     21-check's rule (E2104), yet stage-0's artifact exports it (the pair handle in x0): its defn node is marked and
+;;     30-lower sets FF-EXPORT after checking. (4) F2: i32/u32 ops are library defns over i64 (machine_ir's own lowering:
+;;     shift pairs and a mask); variant-new/variant-match/hetero-vector-* are refused by name (E1203: the documented
+;;     machine_ir fallback); a let's binding values are walked as expressions; loop helpers' types are walked like
+;;     emitted functions' (inline schemas would otherwise conflict, E2128).
+;; =========================================================================================================
+(def kr-mk-entry 1)
+(def kr-mk-nofuel 2)
+(def kr-mk-seed 4)
+(def kr-mk-export 8)
+(def kr-mk-kweq 16)
+(def kr-mk-slot 65536)
+(def kr-envcap 32768)
+(def kr-fixb 117)
+(def kr-nfix 14)
+
+;; the fix group (use bits 11 + k): 0 __kr_i32w 1 __kr_u32w 2 i32add 3 i32mul 4 i32xor 5 i32shl 6 i32shr 7 u32shr
+;; 8 fold-ascii 9 compare-lines 10 find-blank 11 skip-blank 12 arena-enter 13 arena-leave
+(defn- kr-fix-text [] :string
+  (string-concat
+   (string-concat
+    (string-concat "(defn __kr_i32w [x :i64] :i64 (i64-shift-right (i64-shift-left x 32) 32))\n"
+                   "(defn __kr_u32w [x :i64] :i64 (bit-and x 4294967295))\n")
+    (string-concat
+     (string-concat "(defn __kr_i32add [a :i64 b :i64] :i64 (__kr_i32w (+ a b)))\n(defn __kr_i32mul [a :i64 b :i64] :i64 (__kr_i32w (* a b)))\n"
+                    "(defn __kr_i32xor [a :i64 b :i64] :i64 (__kr_i32w (bit-xor a b)))\n(defn __kr_i32shl [a :i64 b :i64] :i64 (__kr_i32w (i64-shift-left a b)))\n")
+     (string-concat "(defn __kr_i32shr [a :i64 b :i64] :i64 (i64-shift-right (__kr_i32w a) b))\n"
+                    "(defn __kr_u32shr [a :i64 b :i64] :i64 (u64-shift-right (__kr_u32w a) b))\n")))
+   (string-concat
+    (string-concat "(defn __kr_fold_ascii [s :string] :string s)\n(defn __kr_compare_lines [a :string i :i64 b :string j :i64] :i64 0)\n"
+                   "(defn __kr_find_blank [s :string i :i64] :i64 0)\n(defn __kr_skip_blank [s :string i :i64] :i64 0)\n")
+    "(defn __kr_arena_enter [] :i64 0)\n(defn __kr_arena_leave [] :i64 0)\n")))
+
+(defn- kr-fix-bits [k :i64] :i64
+  (bit-or (i64-shift-left 1 (+ 11 k)) (cond (and (>= k 2) (<= k 6)) 2048 (= k 7) 4096 :else 0)))
+
+(defn- kr-fix-slot [k :i64] :i64
+  (cond (= k 8) 248 (= k 9) 280 (= k 10) 256 (= k 11) 264 (= k 12) 224 (= k 13) 232 :else 0))
+
+;; the marks of library defn j
+(defn- kr-lib-mark [j :i64] :i64
+  (cond (= j 0) (+ kr-mk-nofuel (* 336 kr-mk-slot))
+        (= j 3) kr-mk-entry
+        (= j 4) (+ kr-mk-nofuel (* 344 kr-mk-slot))
+        (= j 5) (+ kr-mk-nofuel (* 272 kr-mk-slot))
+        (= j 7) (+ kr-mk-nofuel (* 192 kr-mk-slot))
+        (< j kr-nlib) kr-mk-nofuel
+        (< j (+ kr-nlib kr-ndoc)) (if (>= j kr-dj-did) kr-mk-nofuel kr-mk-seed)
+        (< j kr-fixb) kr-mk-nofuel
+        :else (+ kr-mk-nofuel (* (kr-fix-slot (- j kr-fixb)) kr-mk-slot))))
+
+;; ---- the mark array and the table words --------------------------------------------------------------------------
+(defn- kr-tw [M :vector-i64 w :i64] :i64 (vector-at M (+ (vector-at M kr-c-tab) w)))
+(defn- kr-tset [M :vector-i64 w :i64 v :i64] :vector-i64 (kr-put M (+ (vector-at M kr-c-tab) w) v))
+
+(defn- kr-mk-or [M :vector-i64 n :i64 v :i64] :vector-i64
+  (let [b (kr-tw M kr-t-mk)]
+    (if (= (* (kr-ne b 0) (kr-ne v 0)) 1) (kr-put M (+ b n) (bit-or (vector-at M (+ b n)) v)) (kr-id M))))
+
+;; the KIR route is active: the function table exists (12-kirread ran)
+(defn- kr-mode? [M :vector-i64] :bool (> (vector-at M kr-c-tab) 1))
+
+;; the marks of node n (0 off the KIR route); read by 30-lower
+(defn- kr-mk-of [M :vector-i64 n :i64] :i64
+  (let [tab (vector-at M kr-c-tab)
+        b (if (> tab 1) (vector-at M (+ tab kr-t-mk)) 0)]
+    (if (= (* (kr-ne b 0) (kr-lt n MM-NODE-CAP)) 1) (vector-at M (+ b n)) 0)))
+
+(defn- kr-mark-fn [M :vector-i64 n :i64 r :i64] :vector-i64
+  (kr-mk-or M n (+ (* kr-mk-entry (vector-at M (+ r kr-f-re))) (* kr-mk-export (vector-at M (+ r kr-f-lx))))))
+
+(defn- kr-mark-loop [M :vector-i64 n :i64 r :i64] :vector-i64
+  (kr-mk-or M n (* kr-mk-entry (vector-at M (+ r kr-f-re)))))
+
+;; a loop helper's own types, walked as an emitted function's are (it is never emitted)
+(defn- kr-helper-types [M :vector-i64 S :string r :i64] :vector-i64
+  (let [pt (vector-at M (+ r kr-f-ptypes))
+        rs (vector-at M (+ r kr-f-result))]
+    (kr-walk-ty (if (= pt 0) (kr-id M) (kr-walk M S pt 0)) S rs 0)))
+
+;; ---- late exports ------------------------------------------------------------------------------------------------
+(defn- kr-fop2 [len :i64 h :i64] :i64
+  (cond
+    (= h -5808616246781833014) (kr-len-ok len 1 1)
+    (= h -5808622843851602280) (kr-len-ok len 1 1)
+    (= h -5808615147270204803) (kr-len-ok len 1 1)
+    (= h 2158470001243458504) (kr-len-ok len 4 1)
+    (= h -3713629218395964752) (kr-len-ok len 7 1)
+    (= h -1275064441814143682) (kr-len-ok len 6 1)
+    (= h -6576239625094102436) (kr-len-ok len 7 1)
+    (= h -269522173113995153) (kr-len-ok len 14 1)
+    (= h -862907091234840480) (kr-len-ok len 15 1)
+    (= h -4125227310385666596) (kr-len-ok len 15 1)
+    (= h -5808604152153922693) (kr-len-ok len 1 1)
+    (= h -5808601953130666271) (kr-len-ok len 1 1)
+    (= h 579146892307886066) (kr-len-ok len 2 1)
+    (= h 581112819098748884) (kr-len-ok len 2 1)
+    (= h 2403468754648211274) (kr-len-ok len 3 1)
+    (= h 7915526256235788404) (kr-len-ok len 5 1)
+    (= h -8345132667459211742) (kr-len-ok len 4 1)
+    (= h -1909623296984844870) (kr-len-ok len 4 1)
+    (= h 5186466727107661537) (kr-len-ok len 8 1)
+    (= h -1918528051750248792) (kr-len-ok len 7 1)
+    (= h -7628706683553491796) (kr-len-ok len 8 1)
+    (= h -6640127077671587872) (kr-len-ok len 8 1)
+    (= h -3941283744650657794) (kr-len-ok len 16 1)
+    (= h -6567073642785683381) (kr-len-ok len 16 1)
+    (= h 6637241187818425693) (kr-len-ok len 7 1)
+    (= h 4270970488703274474) (kr-len-ok len 14 1)
+    (= h -8746598672041028009) (kr-len-ok len 15 1)
+    (= h 6035406436413204563) (kr-len-ok len 15 1)
+    (= h 2613997037718250633) (kr-len-ok len 7 1)
+    (= h -8820899703417517200) (kr-len-ok len 7 1)
+    (= h -8519800640700416212) (kr-len-ok len 7 1)
+    (= h 4429907561435325029) (kr-len-ok len 7 1)
+    (= h -8538938740097272378) (kr-len-ok len 7 1)
+    (= h -8531319124515283948) (kr-len-ok len 7 1)
+    (= h 597596647784798764) (kr-len-ok len 6 1)
+    (= h 604368539901625738) (kr-len-ok len 6 1)
+    (= h 604387231599305325) (kr-len-ok len 6 1)
+    (= h 595645014645102689) (kr-len-ok len 6 1)
+    (= h 595626322947423102) (kr-len-ok len 6 1)
+    (= h 5069818315657152866) (kr-len-ok len 13 1)
+    (= h 7987950950382066285) (kr-len-ok len 13 1)
+    (= h 1600856041486620590) (kr-len-ok len 11 1)
+    (= h 2612001424113426118) (kr-len-ok len 7 1)
+    (= h 8102281896244832684) (kr-len-ok len 7 1)
+    (= h 5535328417983303064) (kr-len-ok len 8 1)
+    (= h -4291316704568651458) (kr-len-ok len 7 1)
+    (= h 4532134367130893119) (kr-len-ok len 7 1)
+    (= h -6672223372916964725) (kr-len-ok len 7 1)
+    (= h -1175429393901360770) (kr-len-ok len 7 1)
+    (= h -8639624572797961279) (kr-len-ok len 6 1)
+    (= h -8646396464914788253) (kr-len-ok len 6 1)
+    (= h -8646415156612467840) (kr-len-ok len 6 1)
+    (= h -8641613589333016528) (kr-len-ok len 6 1)
+    (= h -8641630082007439693) (kr-len-ok len 6 1)
+    (= h 7440023075542323109) (kr-len-ok len 13 1)
+    (= h 2038117494004186510) (kr-len-ok len 13 1)
+    (= h 739134972770748861) (kr-len-ok len 11 1)
+    (= h -4289343081196391163) (kr-len-ok len 7 1)
+    (= h -7413100696096902389) (kr-len-ok len 7 1)
+    (= h -1637028048642175763) (kr-len-ok len 8 1)
+    (= h -205624834797417495) (kr-len-ok len 16 1)
+    (= h -465854805646180771) (kr-len-ok len 18 1)
+    (= h -1017748302173365810) (kr-len-ok len 18 1)
+    (= h 7348910623852123541) (kr-len-ok len 18 1)
+    (= h 573156827627667575) (kr-len-ok len 3 1)
+    (= h 580772045163143161) (kr-len-ok len 3 1)
+    (= h 628023482707099174) (kr-len-ok len 2 1)
+    (= h 617372513566700692) (kr-len-ok len 2 1)
+    (= h 5100800879370195452) (kr-len-ok len 12 3)
+    (= h 8455052825308581137) (kr-len-ok len 16 3)
+    (= h -5536988100103468928) (kr-len-ok len 9 4)
+    (= h -8283848943413677777) (kr-len-ok len 13 4)
+    (= h 2600161097033915871) (kr-len-ok len 10 5)
+    (= h -8158213638247478922) (kr-len-ok len 14 5)
+    (= h -1824377047816844663) (kr-len-ok len 10 6)
+    (= h 4611635352269453028) (kr-len-ok len 14 6)
+    (= h 2467863451814487389) (kr-len-ok len 20 7)
+    (= h -3257248545900530045) (kr-len-ok len 10 8)
+    (= h -8934139231046636867) (kr-len-ok len 10 9)
+    (= h -715500776194032970) (kr-len-ok len 12 10)
+    (= h 767857354240711905) (kr-len-ok len 14 11)
+    (= h 4143279135262442150) (kr-len-ok len 8 11)
+    (= h -5808605251665550904) (kr-len-ok len 1 15)
+    (= h 1329270083436697466) (kr-len-ok len 3 16)
+    (= h 8718763550179762116) (kr-len-ok len 7 20)
+    (= h 4397936897309570074) (kr-len-ok len 4 21)
+    (= h 5774641095778837920) (kr-len-ok len 7 22)
+    (= h 2180993942247917868) (kr-len-ok len 8 23)
+    :else 0))
+
+;; the class of name node n for the fuel analysis: 1 plain GMIR arithmetic / control (if do min max ..), 3 vector-count,
+;; 4 vector-at, 5 vector-get, 6 vector-new, 7 string-code-point-at, 8 record-new, 9 record-get, 10 record-assoc,
+;; 11 typed-cap-call / cap-call, 15 =, 16 let, 20 :record, 21 :ref, 22 :string, 23 :keyword; 0 anything else
+(defn- kr-fop [M :vector-i64 S :string n :i64] :i64
+  (let [k (kr-kind M n)
+        t (kr-nf M n NF-TOK)
+        a (kr-tf M t TF-START)
+        b (kr-tf M t TF-END)]
+    (if (= (* (kr-ne n 0) (kr-is-name k)) 1) (kr-fop2 (- b a) (mem-hash-str S a b)) 0)))
+
+;; 1 when export name node c names a function with :i64 parameters and a :string / :keyword result: exported after
+;; checking (30-lower), as stage-0 exports it
+(defn- kr-lx [M :vector-i64 S :string c :i64] :vector-i64
+  (let [r (kr-find M S c)]
+    (if (= r 0)
+      (kr-id M)
+      (let [nm (vector-at M (+ r kr-f-name))
+            rs (vector-at M (+ r kr-f-result))
+            pt (vector-at M (+ r kr-f-ptypes))
+            rc (kr-fop M S rs)
+            sok (+ (kr-eq rc 22) (kr-eq rc 23))
+            pok (if (= pt 0) 1 (kr-all-i64 M S (kr-first M pt)))]
+        (if (= (* (* sok pok) (- 1 (kr-helper-any M S nm))) 1) (kr-put M (+ r kr-f-lx) 1) (kr-id M))))))
+
+;; ---- arena-scope -------------------------------------------------------------------------------------------------
+;; (arena-scope e) -> (let [__kr_a (__kr_arena_enter) __kr_b e] (let [__kr_a (__kr_arena_leave)] __kr_b)): enter, e, leave,
+;; e's value (machine_ir: runtime arena-enter, the body in value position, runtime arena-leave)
+(defn- kr-arena [M :vector-i64 S :string n :i64 cur :i64] :vector-i64
+  (let [h (kr-first M n)
+        e (kr-next M h)]
+    (if (= (kr-count M n) 2)
+      (kr-arena2 (kr-alloc (kr-walk M S e cur) 13) n e)
+      (kr-fail M kr-e-value h))))
+
+(defn- kr-arena2 [M :vector-i64 n :i64 e :i64] :vector-i64
+  (if (kr-failed M)
+    (kr-id M)
+    (let [q (vector-at M MM-R0)
+          pb (vector-at M kr-c-pb)
+          te (kr-lib-tok M (+ kr-fixb 12))
+          tl (kr-lib-tok M (+ kr-fixb 13))
+          M1 (kr-sym-node M q (+ pb 15) (+ q 1))
+          M2 (kr-nset (kr-nset (kr-node M1 (+ q 1) ND-VEC (+ pb 15) 4) (+ q 1) NF-FIRST (+ q 2)) (+ q 1) NF-NEXT (+ q 6))
+          M3 (kr-sym-node M2 (+ q 2) (+ pb 19) (+ q 3))
+          M4 (kr-nset (kr-nset (kr-node M3 (+ q 3) ND-LIST te 1) (+ q 3) NF-FIRST (+ q 4)) (+ q 3) NF-NEXT (+ q 5))
+          M5 (kr-sym-node M4 (+ q 4) te 0)
+          M6 (kr-nset (kr-sym-node M5 (+ q 5) (+ pb 20) e) e NF-NEXT 0)
+          M7 (kr-nset (kr-node M6 (+ q 6) ND-LIST (+ pb 15) 3) (+ q 6) NF-FIRST (+ q 7))
+          M8 (kr-sym-node M7 (+ q 7) (+ pb 15) (+ q 8))
+          M9 (kr-nset (kr-nset (kr-node M8 (+ q 8) ND-VEC (+ pb 15) 2) (+ q 8) NF-FIRST (+ q 9)) (+ q 8) NF-NEXT (+ q 12))
+          M10 (kr-sym-node M9 (+ q 9) (+ pb 19) (+ q 10))
+          M11 (kr-nset (kr-node M10 (+ q 10) ND-LIST tl 1) (+ q 10) NF-FIRST (+ q 11))
+          M12 (kr-sym-node M11 (+ q 11) tl 0)
+          M13 (kr-sym-node M12 (+ q 12) (+ pb 20) 0)
+          M14 (kr-nset (kr-nset M13 n NF-FIRST q) n NF-AUX 3)
+          tab (vector-at M14 kr-c-tab)]
+      (kr-put M14 (+ tab 3) (bit-or (vector-at M14 (+ tab 3)) (bit-or (kr-fix-bits 12) (kr-fix-bits 13)))))))
+
+;; ---- the fuel analysis -------------------------------------------------------------------------------------------
+(defn- kr-acc1 [M :vector-i64] :vector-i64 (kr-tset M kr-t-acc 1))
+(defn- kr-rb? [M :vector-i64] :bool (= (kr-tw M kr-t-rb) 1))
+(defn- kr-le [a :i64 b :i64] :i64 (if (<= a b) 1 0))
+
+;; the environment stack: entry i = (name node, flags 1 region / 2 keyword-typed / 4 barrier for regions)
+(defn- kr-env-push [M :vector-i64 sp :i64 name :i64 flags :i64] :vector-i64
+  (if (< sp kr-envcap)
+    (let [e (+ (kr-tw M kr-t-env) (* 2 sp))]
+      (kr-put (kr-put M e name) (+ e 1) flags))
+    (kr-id M)))
+
+;; the flags of the innermost binding of symbol s below sp (0 none); reg = 1: a barrier ends the search (vector-region
+;; rewrites an index / fallback / item with no region in scope)
+(defn- kr-env-find [M :vector-i64 S :string sp :i64 s :i64 reg :i64] :i64
+  (let [env (kr-tw M kr-t-env)]
+    (loop [i (- (if (< sp kr-envcap) sp kr-envcap) 1)]
+      (if (< i 0)
+        0
+        (let [nm (vector-at M (+ env (* 2 i)))
+              fl (vector-at M (+ (+ env (* 2 i)) 1))]
+          (cond (= nm 0) (if (= reg 1) 0 (recur (- i 1)))
+                (= (kr-same M S nm s) 1) fl
+                :else (recur (- i 1))))))))
+
+(defn- kr-last [M :vector-i64 c :i64] :i64
+  (loop [x c] (if (= (kr-next M x) 0) x (recur (kr-next M x)))))
+
+;; keyword-typed by kotoba-native keyword_equality.cljk: a keyword literal; a name bound to one (params by :param-types,
+;; let names in order); record-get of a field typed :keyword; an if both of whose arms are; a let's / do's value; a call of
+;; a program function whose :result is :keyword. (A let operand's own bindings are seen only when its body is one of them.)
+(defn- kr-kwt [M :vector-i64 S :string x :i64 sp :i64] :i64
+  (let [k (kr-kind M x)]
+    (cond (= x 0) 0
+          (= k ND-KW) 1
+          (= k ND-SYM) (if (= (bit-and (kr-env-find M S sp x 0) 2) 0) 0 1)
+          (= k ND-LIST) (kr-kwt-list M S x sp)
+          :else 0)))
+
+(defn- kr-kwt-list [M :vector-i64 S :string x :i64 sp :i64] :i64
+  (let [h (kr-first M x)
+        a (kr-next M h)
+        hc (kr-code M S h)
+        fc (kr-fop M S h)
+        r (if (= (kr-kind M h) ND-SYM) (kr-find M S h) 0)]
+    (cond (= a 0) 0
+          (= hc 101) (kr-rg-kw M S a)
+          (= hc 22) (if (= (kr-kwt M S (kr-next M a) sp) 1) (kr-kwt M S (kr-next M (kr-next M a)) sp) 0)
+          (= fc 16) (kr-kwt-let M S (kr-first M a) (kr-next M a) sp)
+          (= (* (kr-eq fc 1) (kr-eq (kr-code M S h) 0)) 1) (if (= (kr-kwt-do M S h) 1) (kr-kwt M S (kr-last M a) sp) 0)
+          (> r 0) (kr-is-kwtype M S (vector-at M (+ r kr-f-result)))
+          :else 0)))
+
+;; 1 when head h is spelled `do` (a class-1 head without a kr-code-of code; checked by its span)
+(defn- kr-kwt-do [M :vector-i64 S :string h :i64] :i64
+  (let [t (kr-nf M h NF-TOK)
+        a (kr-tf M t TF-START)
+        b (kr-tf M t TF-END)]
+    (if (= (- b a) 2) (* (kr-eq (lx-ch S a) 100) (kr-eq (lx-ch S (+ a 1)) 111)) 0)))
+
+;; a let operand: its body; a body that is one of the let's own names takes that binding's value
+(defn- kr-kwt-let [M :vector-i64 S :string b :i64 body :i64 sp :i64] :i64
+  (if (= (kr-kind M body) ND-SYM)
+    (let [v (kr-kwt-bound M S b body 0)]
+      (if (= v 0) (kr-kwt M S body sp) (kr-kwt M S v sp)))
+    (kr-kwt M S body sp)))
+
+;; the value node of the LAST binding of name s in binding chain b, 0 when none
+(defn- kr-kwt-bound [M :vector-i64 S :string b :i64 s :i64 acc :i64] :i64
+  (cond (= b 0) acc
+        (= (* (kr-eq (kr-kind M b) ND-SYM) (kr-same M S b s)) 1) (kr-kwt-bound M S (kr-next M (kr-next M b)) s (kr-next M b))
+        :else (kr-kwt-bound M S (kr-next M (kr-next M b)) s acc)))
+
+;; ---- vector-region's analysis (kotoba-native vector_region.cljk, the JVM twin stage-0 runs) ------------------------
+;; a constructor with at most 32 items
+(defn- kr-ctor? [M :vector-i64 S :string v :i64] :i64
+  (if (= (* (kr-ne v 0) (kr-eq (kr-kind M v) ND-LIST)) 1)
+    (* (kr-eq (kr-fop M S (kr-first M v)) 6) (kr-le (- (kr-count M v) 1) 32))
+    0))
+
+;; safe-uses?: every use of name t in f is a count, or the subject of an at/get whose other operands are safe
+(defn- kr-safe [M :vector-i64 S :string f :i64 t :i64] :i64
+  (let [k (kr-kind M f)]
+    (cond (= f 0) 1
+          (= k ND-SYM) (if (= (kr-same M S f t) 1) 0 1)
+          (= k ND-LIST) (kr-safe-seq M S f t)
+          (= k ND-VEC) (kr-safe-all M S (kr-first M f) t)
+          :else 1)))
+
+(defn- kr-safe-all [M :vector-i64 S :string c :i64 t :i64] :i64
+  (cond (= c 0) 1
+        (= (kr-safe M S c t) 0) 0
+        :else (kr-safe-all M S (kr-next M c) t)))
+
+;; the values (odd positions) of binding chain b
+(defn- kr-safe-vals [M :vector-i64 S :string b :i64 t :i64] :i64
+  (cond (= b 0) 1
+        (= (kr-safe M S (kr-next M b) t) 0) 0
+        :else (kr-safe-vals M S (kr-next M (kr-next M b)) t)))
+
+;; 1 when a binder of chain b is spelled like t
+(defn- kr-bound? [M :vector-i64 S :string b :i64 t :i64] :i64
+  (cond (= b 0) 0
+        (= (* (kr-eq (kr-kind M b) ND-SYM) (kr-same M S b t)) 1) 1
+        :else (kr-bound? M S (kr-next M (kr-next M b)) t)))
+
+(defn- kr-safe-seq [M :vector-i64 S :string f :i64 t :i64] :i64
+  (let [h (kr-first M f)
+        a0 (kr-next M h)
+        argc (- (kr-count M f) 1)
+        fc (kr-fop M S h)
+        s0 (if (= (kr-kind M a0) ND-SYM) (kr-same M S a0 t) 0)]
+    (cond (= (* (kr-eq fc 3) (* (kr-eq argc 1) s0)) 1) 1
+          (= (* (+ (kr-eq fc 4) (kr-eq fc 5)) (* s0 (* (kr-le 2 argc) (kr-le argc 3)))) 1) (kr-safe-all M S (kr-next M a0) t)
+          (= fc 16) (if (= (kr-kind M a0) ND-VEC)
+                      (* (kr-safe-vals M S (kr-first M a0) t)
+                         (if (= (kr-bound? M S (kr-first M a0) t) 1) 1 (kr-safe-all M S (kr-next M a0) t)))
+                      0)
+          :else (kr-safe-all M S h t))))
+
+;; the later bindings' values (from binder w on) and the body are safe uses of t
+(defn- kr-rest-safe [M :vector-i64 S :string w :i64 body :i64 t :i64] :i64
+  (cond (= w 0) (kr-safe M S body t)
+        (= (kr-safe M S (kr-next M w) t) 0) 0
+        :else (kr-rest-safe M S (kr-next M (kr-next M w)) body t)))
+
+;; ---- the walk: table word 9 := 1 when node n (under the environment below sp) lowers to a call / runtime call ------
+(defn- kr-fz [M :vector-i64 S :string n :i64 sp :i64] :vector-i64
+  (let [k (kr-kind M n)]
+    (cond (= n 0) (kr-id M)
+          (= k ND-LIST) (kr-fz-list M S n sp)
+          (= k ND-STR) (kr-acc1 M)
+          (= k ND-KW) (kr-acc1 M)
+          :else (kr-id M))))
+
+(defn- kr-fz-items [M :vector-i64 S :string c :i64 sp :i64] :vector-i64
+  (cond (= c 0) (kr-id M)
+        :else (let [nx (kr-next M c)] (kr-fz-items (kr-fz M S c sp) S nx sp))))
+
+;; (string-code-point-at "ascii" i): a literal walk, no runtime call
+(defn- kr-lwalk? [M :vector-i64 n :i64 a :i64] :i64
+  (if (= (* (kr-eq (kr-count M n) 3) (kr-eq (kr-kind M a) ND-STR)) 1)
+    (let [lr (+ MM-LIT-BASE (* (kr-nf M a NF-AUX) MM-LIT-W))
+          b (vector-at M (+ lr LF-B))
+          len (vector-at M (+ lr LF-LEN))]
+      (loop [i 0]
+        (cond (>= i len) 1
+              (> (vector-at M (+ (+ MM-LITB-BASE b) i)) 127) 0
+              :else (recur (+ i 1)))))
+    0))
+
+(defn- kr-fz-list [M :vector-i64 S :string n :i64 sp :i64] :vector-i64
+  (let [h (kr-first M n)
+        a (kr-next M h)
+        fc (kr-fop M S h)]
+    (cond (= fc 16) (if (= (kr-kind M a) ND-VEC) (kr-fz-let M S (kr-first M a) (kr-next M a) sp) (kr-acc1 M))
+          (= fc 1) (kr-fz-items M S a sp)
+          ;; keyword_equality: the `=` becomes string=? (a runtime call); the mark tells kr-eqkw to respell it
+          (= fc 15) (if (= (* (kr-eq (kr-count M n) 3) (bit-or (kr-kwt M S a sp) (kr-kwt M S (kr-next M a) sp))) 1)
+                      (kr-fz-items (kr-mk-or (kr-acc1 M) n kr-mk-kweq) S a sp)
+                      (kr-fz-items M S a sp))
+          (= (* (kr-le 3 fc) (kr-le fc 5)) 1) (kr-fz-read M S a fc sp)
+          (= (* (kr-eq fc 7) (kr-lwalk? M n a)) 1) (kr-fz M S (kr-next M a) sp)
+          (= (* (kr-eq fc 8) (if (kr-rb? M) 0 1)) 1) (kr-fz-items M S (kr-next M a) sp)
+          (= (* (kr-eq fc 9) (if (kr-rb? M) 0 1)) 1) (kr-fz M S (kr-next M a) sp)
+          (= (* (kr-eq fc 10) (if (kr-rb? M) 0 1)) 1) (kr-fz (kr-fz M S (kr-next M a) sp) S (kr-next M (kr-next M (kr-next M a))) sp)
+          ;; everything else is a call or a runtime / capability call; its operands are walked for the `=` marks
+          :else (kr-fz-items (kr-acc1 M) S a sp))))
+
+;; count / at / get: of a region name (count: a constant; at, get: the index and fallback, no region in scope), of a
+;; literal constructor (its items, index and fallback, no region in scope), else the runtime operation
+(defn- kr-fz-read [M :vector-i64 S :string a :i64 fc :i64 sp :i64] :vector-i64
+  (cond (= (* (kr-eq (kr-kind M a) ND-SYM) (bit-and (kr-env-find M S sp a 1) 1)) 1)
+        (if (= fc 3) (kr-id M) (kr-fz-items (kr-env-push M sp 0 4) S (kr-next M a) (+ sp 1)))
+        (= (kr-ctor? M S a) 1)
+        (let [M1 (kr-env-push M sp 0 4)]
+          (kr-fz-items (kr-fz-items M1 S (kr-next M (kr-first M a)) (+ sp 1)) S (kr-next M a) (+ sp 1)))
+        :else (kr-fz-items (kr-acc1 M) S a sp)))
+
+;; a let's bindings from binder b, then its body: a region binding (a name bound to a constructor every later use of which
+;; is safe) costs its items only and is pushed as a region; any other binding is walked and pushed with its keyword flag
+(defn- kr-fz-let [M :vector-i64 S :string b :i64 body :i64 sp :i64] :vector-i64
+  (cond (= b 0) (kr-fz M S body sp)
+        :else
+        (let [v (kr-next M b)
+              w (if (= v 0) 0 (kr-next M v))
+              reg (if (= (* (kr-eq (kr-kind M b) ND-SYM) (kr-ctor? M S v)) 1) (kr-rest-safe M S w body b) 0)
+              kw (kr-kwt M S v sp)]
+          (if (= reg 1)
+            (kr-fz-let (kr-env-push (kr-fz-items M S (kr-next M (kr-first M v)) sp) sp b 1) S w body (+ sp 1))
+            (kr-fz-let (kr-env-push (kr-fz M S v sp) sp b (* 2 kw)) S w body (+ sp 1))))))
+
+;; the parameters (chain p) with their :param-types (chain t, 0 = all :i64) at the bottom of the environment
+(defn- kr-env-params [M :vector-i64 S :string p :i64 t :i64 sp :i64] :vector-i64
+  (if (= p 0)
+    (kr-id M)
+    (kr-env-params (kr-env-push M sp p (* 2 (kr-is-kwtype M S t))) S (kr-next M p) (if (= t 0) 0 (kr-next M t)) (+ sp 1))))
+
+(defn- kr-fuel-fn [M :vector-i64 S :string r :i64] :vector-i64
+  (let [ps (vector-at M (+ r kr-f-params))
+        pt (vector-at M (+ r kr-f-ptypes))
+        bd (vector-at M (+ r kr-f-body))
+        np (kr-count M ps)
+        M1 (kr-env-params (kr-tset M kr-t-acc 0) S (kr-first M ps) (if (= pt 0) 0 (kr-first M pt)) 0)
+        M2 (kr-fz M1 S bd np)]
+    (kr-put M2 (+ r kr-f-re) (kr-tw M2 kr-t-acc))))
+
+(defn- kr-fuel-fns [M :vector-i64 S :string i :i64] :vector-i64
+  (let [tab (vector-at M kr-c-tab)
+        n (vector-at M tab)]
+    (if (>= i n) (kr-id M) (kr-fuel-fns (kr-fuel-fn M S (+ (+ tab kr-th) (* i kr-w))) S (+ i 1)))))
+
+;; machine_ir's record boundary: a parameter / result typed [:record ..] or [:ref ..], or a record type nested in a field
+(defn- kr-rb-ty [M :vector-i64 S :string t :i64] :i64
+  (if (= (kr-kind M t) ND-VEC)
+    (let [c (kr-fop M S (kr-first M t))] (bit-or (kr-eq c 20) (kr-eq c 21)))
+    0))
+
+(defn- kr-rb-tys [M :vector-i64 S :string c :i64] :i64
+  (cond (= c 0) 0 (= (kr-rb-ty M S c) 1) 1 :else (kr-rb-tys M S (kr-next M c))))
+
+(defn- kr-rb-fns [M :vector-i64 S :string r :i64 end :i64] :i64
+  (cond (>= r end) 0
+        (= (kr-rb-ty M S (vector-at M (+ r kr-f-result))) 1) 1
+        (= (kr-rb-tys M S (let [pt (vector-at M (+ r kr-f-ptypes))] (if (= pt 0) 0 (kr-first M pt)))) 1) 1
+        :else (kr-rb-fns M S (+ r kr-w) end)))
+
+;; [:record kw [[f T] ..]] with some T itself a [:record ..] vector
+(defn- kr-rb-nested [M :vector-i64 S :string v :i64] :i64
+  (let [h (kr-first M v)
+        fs (kr-next M (kr-next M h))]
+    (if (= (* (kr-eq (kr-fop M S h) 20) (kr-eq (kr-kind M fs) ND-VEC)) 1)
+      (loop [c (kr-first M fs)]
+        (cond (= c 0) 0
+              (= (* (kr-eq (kr-kind M c) ND-VEC) (kr-rb-rec M S (kr-next M (kr-first M c)))) 1) 1
+              :else (recur (kr-next M c))))
+      0)))
+
+(defn- kr-rb-rec [M :vector-i64 S :string t :i64] :i64
+  (if (= (kr-kind M t) ND-VEC) (kr-eq (kr-fop M S (kr-first M t)) 20) 0))
+
+;; every vector node of the KIR document (its nodes are the indices between the document node and the prelude's first)
+(defn- kr-rb-scan [M :vector-i64 S :string] :i64
+  (let [tab (vector-at M kr-c-tab)
+        n (vector-at M tab)
+        doc (kr-first M (vector-at M MM-ROOT))
+        end (kr-next M doc)]
+    (if (= (kr-rb-fns M S (+ tab kr-th) (+ (+ tab kr-th) (* n kr-w))) 1)
+      1
+      (loop [x (+ doc 1)]
+        (cond (>= x end) 0
+              (= (* (kr-eq (kr-kind M x) ND-VEC) (kr-rb-nested M S x)) 1) 1
+              :else (recur (+ x 1)))))))
+
+(defn- kr-fuel2 [M :vector-i64 S :string met :i64] :vector-i64
+  (if (kr-failed M)
+    (kr-id M)
+    (let [b (vector-at M MM-R0)
+          M1 (kr-tset (kr-tset (kr-tset M kr-t-mk b) kr-t-env (+ b MM-NODE-CAP)) kr-t-met met)]
+      (kr-fuel-fns (kr-tset M1 kr-t-rb (kr-rb-scan M1 S)) S 0))))
+
+(defn- kr-fuel [M :vector-i64 S :string met :i64] :vector-i64
+  (if (kr-failed M) (kr-id M) (kr-fuel2 (mem-alloc M (+ MM-NODE-CAP (* 2 kr-envcap))) S met)))
+
+;; --metered (a build whose artifact declares fuel): what compile-kir cannot charge exactly as machine_ir is refused by name
+;; (E1203) so the selector falls back to machine_ir: the document operations (the seed's doclib is not stage-0's helper code)
+(defn- kr-met? [M :vector-i64] :bool (= (kr-tw M kr-t-met) 1))

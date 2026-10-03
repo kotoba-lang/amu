@@ -52,18 +52,33 @@ xoff() { sed -n 's/.*:offset \([0-9]*\).*/\1/p'; }
 seed() {
   KEXE_COMMAND=1 KEXE_CAP_RESOURCES_35=$W KEXE_STRING_POOL=268435456 KEXE_PAIRS=4194304 KEXE_VECTORS=65536 \
     KEXE_VECTOR_ITEMS=16777216 KEXE_CPU_SECONDS=120 KEXE_WALL_SECONDS=120 $L $S 0 0 aarch64 $SEED_GRANT -- "$@"; }
-# runx <bin> <off> <prefix>: loader run (fuel on) -> <prefix>.out (stdout), <prefix>.st ("rc=N last-stderr-line");
+# runx <bin> <off> <prefix> [type]: loader run (fuel on) -> <prefix>.out (stdout), <prefix>.st ("rc=N last-stderr-line");
 # kexe-benchmark -> <prefix>.kb ("result fuel")
+# SEEDFIX (2026-10-03): an export whose KIR result type is :string is observed as the loader's typed report observes it
+# (KEXE_STRUCTURED_REPORT=1 KEXE_RESULT_TYPE=string: :status and :result-utf8-hex, the string's content), not by the raw
+# handle word the plain run prints: that word numbers pair allocations (stage-0 allocates pair(0,0) for an option none
+# and none for a local record, the seed the opposite), so equal strings can print different numbers. The plain run's
+# stdout is kept in <prefix>.raw and a difference there is listed (RAW-HANDLE), not counted.
 runx() {
   ( cd $D; KEXE_PAIRS=2097152 KEXE_VECTORS=65536 KEXE_VECTOR_ITEMS=1048576 KEXE_FUEL=$FUEL KEXE_CPU_SECONDS=${KBD_SECONDS:-120} KEXE_WALL_SECONDS=${KBD_SECONDS:-120} \
-      KEXE_CAP_RESOURCES_35=$D nice $L $1 $2 0 aarch64 $SEED_GRANT > $3.out 2> $3.err; echo "rc=$? $(grep -v '^ *$' $3.err | tail -1 | tr '\t' ' ' | cut -c1-100)" > $3.st )
+      KEXE_CAP_RESOURCES_35=$D nice $L $1 $2 0 aarch64 $SEED_GRANT > $3.out 2> $3.err; echo "rc=$? $(grep -v '^ *$' $3.err | tail -1 | tr '\t' ' ' | cut -c1-100)" > $3.st
+    if [ "$4" = string ]; then
+      mv $3.out $3.raw
+      KEXE_STRUCTURED_REPORT=1 KEXE_RESULT_TYPE=string KEXE_PAIRS=2097152 KEXE_VECTORS=65536 KEXE_VECTOR_ITEMS=1048576 KEXE_FUEL=$FUEL \
+        KEXE_CPU_SECONDS=${KBD_SECONDS:-120} KEXE_WALL_SECONDS=${KBD_SECONDS:-120} KEXE_CAP_RESOURCES_35=$D nice $L $1 $2 0 aarch64 $SEED_GRANT 2>/dev/null \
+        | sed -n -e 's/.*\(:status :ok\).*\(:result-utf8-hex "[0-9a-f]*"\).*/\1 \2/p' -e 's/.*\(:status :trap\).*/\1/p' > $3.out
+    fi )
   local j=$(cd $D; nice $KB raw $1 $2 aarch64 0 1 0 $FUEL 2>/dev/null)
   echo "$(echo "$j" | sed -n 's/.*"result":\(-*[0-9]*\).*/\1/p') $(echo "$j" | sed -n 's/.*"contextFuelConsumed":\([0-9]*\).*/\1/p')" > $3.kb
 }
+# lfuel <bin> <off>: fuel the C loader's typed report says the run consumed (initial - remaining), empty when it has none
+lfuel() { ( cd $D; KEXE_STRUCTURED_REPORT=1 KEXE_PAIRS=2097152 KEXE_VECTORS=65536 KEXE_VECTOR_ITEMS=1048576 KEXE_FUEL=$FUEL \
+    KEXE_CPU_SECONDS=${KBD_SECONDS:-120} KEXE_WALL_SECONDS=${KBD_SECONDS:-120} KEXE_CAP_RESOURCES_35=$D nice $L $1 $2 0 aarch64 $SEED_GRANT 2>/dev/null \
+    | sed -n 's/.*:fuel {:initial \([0-9]*\) :remaining \([0-9]*\)}.*/\1 \2/p' | awk '{print $1-$2}' ) }
 codelen() { python3 -c 'import sys; s=open(sys.argv[1],encoding="utf-8").read(); i=s.index(":code [")+7; print(len(s[i:s.index("]",i)].split()))' $1; }
 
 one() {  # <src> <group>
-  local f=$1 g=$2 id=$2.${1:t:r} h k r ex kst kerr="" n=0 same=0 sot=0 tmo=0 feq=0 f0=0 f1=0 c0=- c1=- note="" xd=0
+  local f=$1 g=$2 id=$2.${1:t:r} h k r ex kst kerr="" n=0 same=0 sot=0 tmo=0 feq=0 fcmp=0 f0=0 f1=0 c0=- c1=- note="" xd=0
   local e s t o0 o1 v st0 st1 kb0 kb1
   D=$W/run/$id; rm -rf $D; mkdir -p $D
   h=$(shasum -a 256 $f | cut -c1-16); k=$KC/$h.kexe
@@ -79,6 +94,10 @@ one() {  # <src> <group>
   else kst=$(grep -o 'E[0-9][0-9]*' $D/k.log | head -1); kst=${kst:-ERR}; kerr=$(grep -v '^ *$' $D/k.log | head -1 | tr '\t' ' ' | cut -c1-160); fi
   c0=$(codelen $k)
   [ $kst = ok ] && c1=$(head -1 $D/k.kseed | awk '{print $2}')   # KSEED1 <code-bytes> <symbols>
+  # SEEDFIX: the metered build (compile-kir --metered refuses by name what it cannot charge exactly as machine_ir: the
+  # selector's metered fallback); F4 is checked on the programs it accepts (same code: the flag only refuses)
+  kmet=-; if [ $kst = ok ]; then kmet=ok; (cd $D; seed compile-kir $D/p.kir --output $D/km.kseed --metered) > $D/km.log 2>&1 && grep -q ':ok true' $D/km.log \
+    || { kmet=$(grep -o 'E[0-9][0-9]*' $D/km.log | head -1); kmet="${kmet:-ERR}:$(grep -o "'[^']*'" $D/km.log | head -1 | tr -d "'")"; }; fi
   ex=($(python3 $R/seed/tests/kir/census.py info $D/p.kir 2>/dev/null))
   : > $D/exports.tsv
   if [ $kst = ok ]; then
@@ -88,7 +107,7 @@ one() {  # <src> <group>
       # an export stage-0's artifact has and the seed's container lacks is an export-table difference (F1)
       if [ -n "$o0" ] && [ -z "$o1" ]; then n=$((n+1)); xd=$((xd+1)); echo "$s\t$t\tDIFF-EXPORT-MISSING-IN-SEED" >> $D/exports.tsv; continue; fi
       [ -n "$o0" ] && [ -n "$o1" ] || { echo "$s\t$t\tNO-SYMBOL" >> $D/exports.tsv; continue; }
-      n=$((n+1)); runx $D/0.bin $o0 $D/0.$s; runx $D/1.bin $o1 $D/1.$s
+      n=$((n+1)); runx $D/0.bin $o0 $D/0.$s $t; runx $D/1.bin $o1 $D/1.$s $t
       st0=$(cat $D/0.$s.st); st1=$(cat $D/1.$s.st); kb0=($(cat $D/0.$s.kb)); kb1=($(cat $D/1.$s.kb))
       v=SAME
       # a run stopped by the loader's time limit (SIGALRM / SIGXCPU, KEXE_*_SECONDS) is not a behaviour: TIMEOUT-<side>, kept out
@@ -97,21 +116,29 @@ one() {  # <src> <group>
         v=TIMEOUT; [[ "$st0" == *SIG[AX][LC]* ]] && v="$v-s0"; [[ "$st1" == *SIG[AX][LC]* ]] && v="$v-seed"
         [ "$kb0[1]" = "$kb1[1]" ] || v="$v DIFF-KB"
       elif ! cmp -s $D/0.$s.out $D/1.$s.out || [ "${st0%% *}" != "${st1%% *}" ]; then v=DIFF
-      elif [ "$kb0[1]" != "$kb1[1]" ]; then
+      elif [ "$t" != string ] && [ "$kb0[1]" != "$kb1[1]" ]; then   # SEEDFIX: a :string result word is a handle (see runx)
         # the C loader (the product runtime) agrees; kexe-benchmark leaves some runtime slots NULL (cap_call, bytes, ..), so a
         # side that calls one crashes there (empty result): KB-CRASH-<side>, behaviour SAME, listed. Two different results = DIFF.
         if [ -z "$kb0[1]" ]; then v="SAME KB-CRASH-s0"; elif [ -z "$kb1[1]" ]; then v="SAME KB-CRASH-seed"; else v=DIFF; fi
       fi
       # the trap text (last stderr line) is part of behaviour when the run did not return 0
       [[ $v == SAME* ]] && [ "${st0%% *}" != rc=0 ] && [ "$st0" != "$st1" ] && v=DIFF-TRAPKIND
+      [ -f $D/0.$s.raw ] && ! cmp -s $D/0.$s.raw $D/1.$s.raw && v="$v RAW-HANDLE"
       [[ $v == SAME* ]] && same=$((same+1)); [[ $v == TIMEOUT* && $v != *DIFF* ]] && tmo=$((tmo+1))
       [ "${st0%% *}" = rc=0 ] && [ "${st1%% *}" != rc=0 ] && { sot=$((sot+1)); v="$v SEED-ONLY-TRAP"; }
-      if [ -n "$kb0[2]" ] && [ "$kb0[2]" = "$kb1[2]" ]; then feq=$((feq+1)); fi
-      f0=$((f0+${kb0[2]:-0})); f1=$((f1+${kb1[2]:-0}))
-      printf "%s\t%s\t%s\t[%s]\t[%s]\tkb0=%s/%s\tkb1=%s/%s\n" $s $t "$v" "$st0" "$st1" "${kb0[1]}" "${kb0[2]}" "${kb1[1]}" "${kb1[2]}" >> $D/exports.tsv
+      # SEEDFIX: fuel = kexe-benchmark's contextFuelConsumed when both sides have one; when kexe-benchmark crashed on a side
+      # (a slot it leaves NULL) the C loader's typed report (initial - remaining, also on a trap) of both sides is used
+      fu0=$kb0[2] fu1=$kb1[2] fs=kb
+      if [ -z "$fu0" ] || [ -z "$fu1" ]; then
+        if [ "${st0%% *}" = rc=0 ] && [ "${st1%% *}" = rc=0 ]; then fu0=$(lfuel $D/0.bin $o0); fu1=$(lfuel $D/1.bin $o1); fs=loader; else fs=none; fi
+      fi
+      [ -n "$fu0" ] && [ -n "$fu1" ] && fcmp=$((fcmp+1))
+      if [ -n "$fu0" ] && [ "$fu0" = "$fu1" ]; then feq=$((feq+1)); fi
+      f0=$((f0+${fu0:-0})); f1=$((f1+${fu1:-0}))
+      printf "%s\t%s\t%s\t[%s]\t[%s]\tkb0=%s/%s\tkb1=%s/%s\tfuel(%s)=%s/%s\n" $s $t "$v" "$st0" "$st1" "${kb0[1]}" "${kb0[2]}" "${kb1[1]}" "${kb1[2]}" $fs "$fu0" "$fu1" >> $D/exports.tsv
     done
   else note=$kerr; fi
-  printf "%s\tok\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%d\n" $id $kst $n $same $sot $feq $f0 $f1 $c0 $c1 "$note" $tmo > $D/line
+  printf "%s\tok\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%d\t%s\t%d\n" $id $kst $n $same $sot $feq $f0 $f1 $c0 $c1 "$note" $tmo $kmet $fcmp > $D/line
 }
 
 parts=${KBD_PARTS:-P G}; [ "${KBD_G:-1}" = 0 ] && parts=P
@@ -131,15 +158,20 @@ if [[ " $parts " == *" P "* ]]; then
   wait
   cat $W/run/*/line(N) | sort > $W/programs.tsv
   # documented refusals (plan section 7 item 4): matched on the seed's refusal text
-  DOC=${KBD_DOC:-'entropy|wire 23|f64|f32|float|more than 16 param|E2116|capture'}
+  # SEEDFIX (2026-10-03): + scalar variants and heterogeneous vectors (variant-new/-match, hetero-vector-*; E1203 by name),
+  # documented in docs/selfhost-seed-merge-20261003.md section 7 item 4
+  DOC=${KBD_DOC:-'entropy|wire 23|f64|f32|float|more than 16 param|E2116|capture|variant|hetero-vector'}
   awk -F'\t' -v doc="$DOC" '
-    $2=="ok" { s0++; if ($3=="ok") { k++; ex+=$4; sm+=$5; sot+=$6; fe+=$7; f0+=$8; f1+=$9; c0+=$10; c1+=$11; tm+=$13; if ($5+$13<$4) dp++; if ($6>0) tp++; if ($7<$4) fp++ }
+    $2=="ok" { s0++; if ($3=="ok") { k++; ex+=$4; sm+=$5; sot+=$6; fe+=$7; fc+=$15; f0+=$8; f1+=$9; c0+=$10; c1+=$11; tm+=$13; if ($5+$13<$4) dp++; if ($6>0) tp++; if ($7<$15) fp++;
+                                     if ($14=="ok") { mk++; mfc+=$15; mfe+=$7; mex+=$4; if ($7<$15) mfp++ } else mfb++ }
                else { if (tolower($12) ~ doc) rd++; else ru++ } }
     END { printf "P: %d programs stage-0 compiles; seed compile-kir accepts %d (%.1f%%); refused %d documented + %d other\n", s0, k, 100*k/s0, rd, ru;
           printf "P: %d exports run on both: %d same behaviour, %d stopped by the time limit, %d differ (%d programs); seed-only traps %d (%d programs)\n", ex, sm, tm, ex-sm-tm, dp, sot, tp;
-          printf "P: kexe-benchmark fuel equal on %d of %d exports (%d programs differ); fuel sum s0 %d seed %d; code bytes (accepted programs) s0 %d seed %d (%.3fx)\n", fe, ex, fp, f0, f1, c0, c1, (c0>0?c1/c0:0) }' $W/programs.tsv | tee -a $W/summary.txt
+          printf "P: fuel (unmetered build) equal on %d of %d exports, %d not comparable (a side trapped and kexe-benchmark has no number); %d programs with a difference; fuel sum s0 %d seed %d; code bytes (accepted programs) s0 %d seed %d (%.3fx)\n", fe, ex, ex-fc, fp, f0, f1, c0, c1, (c0>0?c1/c0:0);
+          printf "F4: metered build (compile-kir --metered) accepts %d of %d programs (%d refused by name: metered fallback); fuel compared on %d of their %d exports (kexe-benchmark, else the loader report when both return), equal on %d; %d programs differ\n", mk, k, mfb, mfc, mex, mfe, mfp }' $W/programs.tsv | tee -a $W/summary.txt
+  awk -F'\t' '$2=="ok" && $3=="ok" && $14!="ok" { print "  metered fallback  " $1 "  " $14 }' $W/programs.tsv | tee -a $W/summary.txt
   awk -F'\t' -v doc="$DOC" '$2=="ok" && $3!="ok" { print (tolower($12) ~ doc ? "  refused(doc)   " : "  refused(F2)    ") $1 "  " $12 }' $W/programs.tsv | tee -a $W/summary.txt
-  for D in $W/run/*(/); do [ -f $D/exports.tsv ] && awk -F'\t' -v id=${D:t} '$3 ~ /DIFF|TRAP|NO-SYMBOL|TIMEOUT|KB-CRASH/ { print "  " id " " $0 }' $D/exports.tsv; done | cut -c1-260 | tee -a $W/summary.txt
+  for D in $W/run/*(/); do [ -f $D/exports.tsv ] && awk -F'\t' -v id=${D:t} '$3 ~ /DIFF|TRAP|NO-SYMBOL|TIMEOUT|KB-CRASH|RAW-HANDLE/ { print "  " id " " $0 }' $D/exports.tsv; done | cut -c1-260 | tee -a $W/summary.txt
 fi
 
 if [[ " $parts " == *" G "* ]]; then
