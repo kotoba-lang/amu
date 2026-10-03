@@ -706,11 +706,17 @@
   (if (= (vector-at M MM-ERR) 0) (drv-kir-c3 (nm-run M S) S path out) (drv-kir-fail M path)))
 (defn- drv-kir-c1 [M :vector-i64 S :string path :string out :string] :i64
   (if (= (vector-at M MM-ERR) 0) (drv-kir-c2 (kr-run M S) S path out) (drv-kir-fail M path)))
-(defn- drv-kir-c0 [S :string path :string out :string] :i64
-  (drv-kir-c1 (rd-run (kr-lex (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S) S path out))
+;; SEEDFIX: met = 1 for --metered (12-kirread reads it from cell 124 before it stores the prelude token there)
+(defn- drv-kir-c0 [S :string path :string out :string met :i64] :i64
+  (drv-kir-c1 (rd-run (kr-lex (mem-set (mem-set (mem-new) MM-SRC-LEN (string-length S)) 124 met) S) S) S path out))
 
-(defn- drv-kir-run [path :string out :string] :i64
-  (if (= (io-exists path) 1) (drv-kir-c0 (string-concat (drv-read path) (kr-prelude)) path out) (drv-fail0 E-READ)))
+(defn- drv-kir-run [path :string out :string met :i64] :i64
+  (if (= (io-exists path) 1) (drv-kir-c0 (string-concat (drv-read path) (kr-prelude)) path out met) (drv-fail0 E-READ)))
+
+;; SEEDFIX: 1 when one of the arguments is --metered (compile-kir <in> --output <out> --metered: a metered artifact; what is
+;; not fuel-exact against machine_ir is refused by name, see 12-kirread's SEEDFIX header)
+(defn- drv-kir-met [i :i64 n :i64] :i64
+  (cond (>= i n) 0 (string=? (io-arg i) "--metered") 1 :else (drv-kir-met (+ i 1) n)))
 
 ;; <out> "-" -> hex on stdout (as `compile`), else that file
 (defn- drv-kir-out [i :i64] :string (if (= (drv-dash (io-arg i)) 1) "" (io-arg i)))
@@ -720,9 +726,9 @@
         s (drv-pos 1 n 0)
         p1 (drv-pos 1 n 1)]
     (cond (< s 0) (drv-usage)
-          (>= o 0) (drv-kir-run (io-arg s) (drv-kir-out o))
+          (>= o 0) (drv-kir-run (io-arg s) (drv-kir-out o) (drv-kir-met 1 n))
           (< p1 0) (drv-usage)
-          :else (drv-kir-run (io-arg s) (drv-kir-out p1)))))
+          :else (drv-kir-run (io-arg s) (drv-kir-out p1) (drv-kir-met 1 n)))))
 ;; ==== END compile-kir =================================================================================================
 
 (defn- drv-cmd [n :i64] :i64

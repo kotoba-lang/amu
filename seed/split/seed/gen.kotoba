@@ -1075,10 +1075,12 @@
         (gn-emit (gn-e-ldrr d 17 16 0))
         (gn-fin t s d))))
 
-;; FUEL: leaf -> subs x8,x8,#1 ; b.hs +2 ; brk #0. Else ldr x16,[x7,#8] ; subs x16,x16,#1 ; b.hs +2 ; brk #0 ; str x16,[x7,#8]
+;; FUEL: leaf -> subs x8,x8,#1 ; b.hs +3 ; str xzr,[x7,#8] ; brk #0. Else ldr x16,[x7,#8] ; subs x16,x16,#1 ; b.hs +2 ; brk #0 ;
+;; str x16,[x7,#8]. SEEDFIX (F4): the leaf's exhaustion path stores 0 to the context before brk, as the memory sequence
+;; leaves it, so the loader reports :budget/fuel (not a bare SIGTRAP) when a leaf runs out (x8 was never written back)
 (defn- gn-op-fuel [M :vector-i64] :vector-i64
   (if (= (gn-g M gn-f-freg) 1)
-    (-> M (gn-emit (enc-subs-i 8 8 1)) (gn-emit (enc-bcond (enc-cond-hs) 2)) (gn-emit (enc-brk 0)))
+    (-> M (gn-emit (enc-subs-i 8 8 1)) (gn-emit (enc-bcond (enc-cond-hs) 3)) (gn-emit (enc-str 31 7 CTX-FUEL)) (gn-emit (enc-brk 0)))
     (-> M
         (gn-ctx)
         (gn-emit (enc-ldr 16 7 CTX-FUEL))

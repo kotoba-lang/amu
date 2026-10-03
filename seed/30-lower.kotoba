@@ -1526,19 +1526,26 @@
 ;;   (machine_ir's entry-fuel-prefixes); recur / self tail call FUEL unless the current defn is kr-mk-nofuel; a loop
 ;;   node marked kr-mk-entry charges once before its header (the loop helper's entry); a call of a defn carrying a slot
 ;;   is RT slot (the loader's runtime operation); a defn marked kr-mk-export gets FF-EXPORT 1 after 21-check.
-(defn- lw-sx-mk [M :vector-i64 f :i64] :i64 (kr-mk-of M (lw-ff M f FF-NODE)))
+;; The layout is 12-kirread's (cell 127 = kr-c-tab, its table word 7 = kr-t-mk, the mark bits kr-mk-*), repeated here so that
+;; 30-lower does not depend on 12-kirread (its unit and lw-gate builds do not include it).
+(defn- lw-sx-mode? [M :vector-i64] :bool (> (vector-at M 127) 1))
+(defn- lw-sx-mkof [M :vector-i64 n :i64] :i64
+  (let [tab (vector-at M 127)
+        b (if (> tab 1) (vector-at M (+ tab 7)) 0)]
+    (if (and (pos? b) (< n MM-NODE-CAP)) (vector-at M (+ b n)) 0)))
+(defn- lw-sx-mk [M :vector-i64 f :i64] :i64 (lw-sx-mkof M (lw-ff M f FF-NODE)))
 (defn- lw-sx-entry [M :vector-i64 f :i64] :i64
   (let [m (lw-sx-mk M f)]
-    (cond (not (kr-mode? M)) (lw-ff M f FF-FUEL)
-          (pos? (bit-and m kr-mk-seed)) (lw-ff M f FF-FUEL)
-          (pos? (bit-and m kr-mk-entry)) 1
+    (cond (not (lw-sx-mode? M)) (lw-ff M f FF-FUEL)
+          (pos? (bit-and m 4)) (lw-ff M f FF-FUEL)   ; kr-mk-seed
+          (pos? (bit-and m 1)) 1                     ; kr-mk-entry
           :else 0)))
-(defn- lw-sx-recur? [M :vector-i64] :bool (zero? (bit-and (lw-sx-mk M (vector-at M 92)) kr-mk-nofuel)))
-(defn- lw-sx-loop? [M :vector-i64 n :i64] :bool (pos? (bit-and (kr-mk-of M n) kr-mk-entry)))
-(defn- lw-sx-slot [M :vector-i64 f :i64] :i64 (if (pos? f) (quot (lw-sx-mk M f) kr-mk-slot) 0))
+(defn- lw-sx-recur? [M :vector-i64] :bool (zero? (bit-and (lw-sx-mk M (vector-at M 92)) 2)))   ; kr-mk-nofuel
+(defn- lw-sx-loop? [M :vector-i64 n :i64] :bool (pos? (bit-and (lw-sx-mkof M n) 1)))
+(defn- lw-sx-slot [M :vector-i64 f :i64] :i64 (if (pos? f) (quot (lw-sx-mk M f) 65536) 0))   ; kr-mk-slot
 (defn- lw-sx-exports [M :vector-i64 f :i64] :vector-i64
-  (cond (not (kr-mode? M)) M
+  (cond (not (lw-sx-mode? M)) M
         (>= f (vector-at M MM-FN-N)) M
-        (pos? (bit-and (lw-sx-mk M f) kr-mk-export)) (lw-sx-exports (lw-set-ff M f FF-EXPORT 1) (inc f))
+        (pos? (bit-and (lw-sx-mk M f) 8)) (lw-sx-exports (lw-set-ff M f FF-EXPORT 1) (inc f))   ; kr-mk-export
         :else (lw-sx-exports M (inc f))))
 ;; ==== END SEEDFIX ===================================================================================================
