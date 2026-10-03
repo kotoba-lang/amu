@@ -69,18 +69,30 @@
    (defn walk-doc
      [v :document] :document
      (cond (map? v) (reduce (fn [acc k] (assoc acc (keyword-key k) (walk-doc (member-of v k)))) (document-map) (keys v))
-           (vector? v) (mapv walk-doc v)
+           (vector? v) (walk-items v)
            :else v)))
+
+#?(:kotoba
+   ;; (mapv walk-doc v) over a document vector, as a counted loop (the seed's
+   ;; source route has no mapv over :document)
+   (defn- walk-items
+     [v :document] :document
+     (let [n (document-count v)]
+       (loop [i 0 acc (document-vector)]
+         (if (>= i n)
+           acc
+           (recur (inc i)
+                  (document-vector-conj acc (walk-doc (option-value-of [:option :document]
+                                                                       (document-vector-at v i)
+                                                                       (document-null))))))))))
 
 (defn decode-object
   "JSON TEXT as a value, object keys as keywords."
   [#?@(:kotoba [text :string] :default [text])]
   #?@(:kotoba [:document])
   #?(:cljs (js->clj (.parse js/JSON text) :keywordize-keys true)
-     :kotoba (let [r (json/decode text)]
-               (if (result-ok?-of [:result :document :document] r)
-                 (walk-doc (result-value-of [:result :document :document] r (document-null)))
-                 (throw (result-error-of [:result :document :document] r (document-null)))))
+     ;; kotoba.lang.json/decode aborts on malformed text (ADR 0363): so does this
+     :kotoba (walk-doc (json/decode text))
      :default (let [walk (fn walk [v]
                            (cond (map? v) (into {} (map (fn [[k x]] [(keyword k) (walk x)])) v)
                                  (vector? v) (mapv walk v)

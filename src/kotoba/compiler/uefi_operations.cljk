@@ -21,12 +21,15 @@
   compile routes call it -- `kotoba.compiler.core` on the JVM and
   `kotoba.compiler.nbb.cli` on the JDK-free one -- because a gate on one route
   is not a gate."
-  {:kotoba/export [function-address-operations function-address-targets heads-used operations-used reject-outside-uefi-target! reject-rodata-literals-outside-native-targets! rodata-literal-only-operations rodata-literal-operations rodata-literal-targets uefi-only-operations uefi-target]}
-  (:require [kotoba.lang.coll :as coll]
-            [kotoba.kir.target :as target-profile]))
+  {:kotoba/export [rodata-literal-target? uefi-only-head? reject-outside-uefi-target! reject-rodata-literals-outside-native-targets!]}
+  (:require #?(:kotoba [kotoba.form :as form] :default [kotoba.lang.coll :as coll])
+            [kotoba.kir.target :as target-profile])
+  #?(:kotoba (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                                 [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]})))
 
 (def uefi-target :x86_64-aiueos-uefi-v1)
 
+#?(:kotoba nil :default
 (def uefi-only-operations
   '#{kernel-system-table kernel-load-ptr kernel-uefi-call2 kernel-jump-to
      ;; boot-lit: the two wider calls. Same gate, same reason -- they call
@@ -54,7 +57,7 @@
      ;; certifies as a region-provenance root. Under any other entry contract
      ;; the boot services table it indexes is not there, so the call is
      ;; through a wild pointer and the root is over whatever came back.
-     kernel-uefi-alloc-region})
+     kernel-uefi-alloc-region}))
 
 ;; boot-lit: read-only literals are gated too, but not to the same target and
 ;; not for the same reason.
@@ -74,14 +77,16 @@
 ;; the address at a 4 KiB page boundary and the layout pass does not model it)
 ;; -- an admission of a gap, and refusing here says so one layer earlier and
 ;; with the target named.
+#?(:kotoba nil :default
 (def rodata-literal-only-operations
   "The four heads whose value is a LITERAL's address.
 
   Separated from `kernel-function-address` on 2026-09-09, when the two
   stopped having the same answer. They had shared a gate since they arrived,
   and sharing it was right while they did."
-  '#{ucs2 guid bytes-literal bytes-literal-length})
+  '#{ucs2 guid bytes-literal bytes-literal-length}))
 
+#?(:kotoba nil :default
 (def function-address-operations
   "boot-scratch: `(kernel-function-address f)` needs a backend that resolves a
   label, which is what the literals need too -- so this head shared their gate
@@ -101,11 +106,12 @@
   stayed put for a few hours; a single gate for both would have moved them
   together, on evidence that covered only one. The name stays for the same
   reason: two families with two reasons, even when the two sets agree today."
-  '#{kernel-function-address})
+  '#{kernel-function-address}))
 
+#?(:kotoba nil :default
 (def rodata-literal-operations
   "Both families, for the callers that gate on \"needs a resolved label\"."
-  (into rodata-literal-only-operations function-address-operations))
+  (into rodata-literal-only-operations function-address-operations)))
 
 ;; Derived from `kotoba.kir.target`'s own profiles rather than written out, so
 ;; a new target does not silently lack the literal pool its backend already
@@ -136,6 +142,7 @@
 ;; Without a pool those types stay in the C -- which is what kotoba-native's
 ;; elf64 docstring says in as many words -- and the direction is Kotoba and
 ;; this compiler only.
+#?(:kotoba nil :default
 (def rodata-literal-targets
   (into #{}
         (keep (fn [[name profile]]
@@ -144,8 +151,9 @@
                                (contains? #{:firmware :kernel} (:execution profile)))
                           (= :native (:execution profile)))
                   name)))
-        target-profile/profiles))
+        target-profile/profiles)))
 
+#?(:kotoba nil :default
 (def function-address-targets
   "boot-scratch's set. Still spelled by intersection with the literals' set
   rather than written out, so that it stays a SUBSET by construction -- a
@@ -165,8 +173,9 @@
   (into #{}
         (keep (fn [[name _profile]]
                 (when (contains? rodata-literal-targets name) name)))
-        target-profile/profiles))
+        target-profile/profiles)))
 
+#?(:kotoba nil :default
 (defn heads-used
   "The heads from OPERATIONS this module names, as a sorted vector. Walks the
   whole tree rather than the top level of each body: a head bound by a `let` is
@@ -180,13 +189,15 @@
          (vswap! found conj (first form)))
        form)
      (:functions module))
-    (vec (sort @found))))
+    (vec (sort @found)))))
 
+#?(:kotoba nil :default
 (defn operations-used
   "The UEFI-only heads this module names."
   [module]
-  (heads-used uefi-only-operations module))
+  (heads-used uefi-only-operations module)))
 
+#?(:kotoba nil :default
 (defn reject-outside-uefi-target!
   "Throw unless TARGET is the one whose entry contract establishes the
   firmware boundary. Returns MODULE so it can sit in a `let` chain."
@@ -197,8 +208,9 @@
                       {:phase :target :target target
                        :required uefi-target
                        :operations used})))
-    module))
+    module)))
 
+#?(:kotoba nil :default
 (defn reject-rodata-literals-outside-native-targets!
   "boot-lit: throw unless TARGET's backend can place a literal pool. Returns
   MODULE so it can sit in a `let` chain beside the refusal above.
@@ -224,4 +236,82 @@
                       {:phase :target :target target
                        :admitted (vec (sort function-address-targets))
                        :operations functions})))
-    module))
+    module)))
+
+;; ---- the Kotoba reading (the seed's source route and stage-0's Kotoba check): the same two gates over a HIR Form.
+;; A head is spelled as text (the operation sets above are host symbol sets); the walk counts the heads of every
+;; call form under :functions, as the host's postwalk collects them. The refusal sentences are the host's; the error
+;; data carries the phase and the target (the host also lists the operations and the admitted targets).
+
+#?(:kotoba
+   (defn uefi-only-head? [s :string] :bool
+     (or (string=? s "kernel-system-table") (string=? s "kernel-load-ptr") (string=? s "kernel-uefi-call2")
+         (string=? s "kernel-jump-to") (string=? s "kernel-uefi-call4") (string=? s "kernel-uefi-call6")
+         (string=? s "kernel-scratch-region") (string=? s "kernel-uefi-alloc-region"))))
+
+#?(:kotoba
+   (defn- rodata-literal-only-head? [s :string] :bool
+     (or (string=? s "ucs2") (string=? s "guid") (string=? s "bytes-literal") (string=? s "bytes-literal-length"))))
+
+#?(:kotoba
+   ;; family 0 UEFI-only, 1 rodata literal, 2 function address
+   (defn- family-head? [s :string family :i64] :bool
+     (cond (= family 0) (uefi-only-head? s)
+           (= family 1) (rodata-literal-only-head? s)
+           :else (string=? s "kernel-function-address"))))
+
+#?(:kotoba
+   (defn- call-of-family? [f [:ref :form/r] family :i64] :bool
+     (and (form/is-seq? f)
+          (> (form/count-of f) 0)
+          (form/is-symbol? (form/nth-of f 0))
+          (family-head? (form/symbol-value (form/nth-of f 0)) family))))
+
+#?(:kotoba
+   (defn- count-heads [f [:ref :form/r] family :i64] :i64
+     (let [n (form/count-of f)]
+       (loop [i 0 acc (if (call-of-family? f family) 1 0)]
+         (if (>= i n)
+           acc
+           (recur (+ i 1) (+ acc (count-heads (form/nth-of f i) family))))))))
+
+#?(:kotoba
+   (defn- uses-family? [module [:ref :form/r] family :i64] :bool
+     (> (count-heads (form/form-get module (form/keyword-form :functions)) family) 0)))
+
+#?(:kotoba
+   (defn- profile-keyword [p :document k :keyword] :keyword
+     (if (map? p)
+       (match-option (document-keyword-value (get p k (document-null))) [:option :keyword]
+         (none :none)
+         (some x x))
+       :none)))
+
+#?(:kotoba
+   ;; `rodata-literal-targets` (and `function-address-targets`, the same set today) as a predicate
+   (defn rodata-literal-target? [target :keyword] :bool
+     (let [p (target-profile/profile target)
+           ex (profile-keyword p :execution)]
+       (or (and (= :aiueos (profile-keyword p :os))
+                (= :x86_64 (profile-keyword p :isa))
+                (or (= ex :firmware) (= ex :kernel)))
+           (= ex :native)))))
+
+#?(:kotoba
+   (defn- refuse-target! [message :string target :keyword] :i64
+     (throw (ex-info message {:phase :target :target target}))))
+
+#?(:kotoba
+   (defn reject-outside-uefi-target! [target :keyword module [:ref :form/r]] [:ref :form/r]
+     (if (and (uses-family? module 0) (not (= target uefi-target)))
+       (do (refuse-target! "UEFI firmware operations require the aiueos UEFI target" target) module)
+       module)))
+
+#?(:kotoba
+   (defn reject-rodata-literals-outside-native-targets! [target :keyword module [:ref :form/r]] [:ref :form/r]
+     (cond
+       (and (uses-family? module 1) (not (rodata-literal-target? target)))
+       (do (refuse-target! "an image-resolved address requires a target whose backend places a literal pool" target) module)
+       (and (uses-family? module 2) (not (rodata-literal-target? target)))
+       (do (refuse-target! "a function's address requires a native aiueos x86-64 target" target) module)
+       :else module)))
