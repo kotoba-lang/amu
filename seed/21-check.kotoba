@@ -536,6 +536,7 @@
       (ck-err M E-CHECK-IF h 0))))
 
 ;; (when c e ..) -> (if c (do e ..) 0); neg = 1: (when-not c e ..) -> (if c 0 (do e ..))
+;; R6D: the 0 is an ABSENCE marker (an ND-INT 0 whose NF-SYM is -1, ck-r6d-abs?); ck-if types it (ck-r6d-absif)
 (defn- ck-ds-when [M :vector-i64 n :i64 neg :i64] :vector-i64
   (let [h (nm-first M n)
         c (nm-next M h)
@@ -544,7 +545,7 @@
     (if (>= (nm-count M n) 3)
       (let [M1 (ck-mkh M tok HD-DO e)
             d (ck-r M1)
-            M2 (ck-n-int M1 tok 0)
+            M2 (ck-new M1 ND-INT tok 0 -1)   ; R6D: the absence marker (was ck-n-int 0)
             z (ck-r M2)
             M3 (ck-chain3 M2 c (ck-sel neg z d) (ck-sel neg d z))]
         (ck-rehead M3 n HD-IF c))
@@ -1543,11 +1544,56 @@
                 ta (ck-ty M2)
                 M3 (ck-expr M2 b fx ctx1)
                 tb (ck-ty M3)
-                M4 (ck-unify M3 ta tb h)
+                M4 (ck-r6d-absif M3 c a b ta tb h)   ; R6D: was (ck-unify M3 ta tb h)
                 ty (ck-ty M4)]
             (ck-mark M4 n ty HD-IF))
           (ck-err (ck-last-clear M1) E-CHECK-TYPE h TY-BOOL)))
       (ck-err M E-CHECK-IF h 0))))
+
+;; ---- R6D (agent R6D, 2026-10-03): absence (kotoba-sema frontend absence-type / absence-leaves) ----
+;; A `when` / `when-not` with no value on one path: the present arm's type P decides the `if`'s type.
+;;   P :bool -> :bool (absent = false)        P [:option T] -> P (absent = its none)
+;;   P :i64  -> :i64 (absent = 0) where the function DECLARES its result (the reference's :legacy mode), [:option :i64]
+;;              in a defn whose result is inferred (:none mode)
+;;   P any other type -> [:option P]: the present arm is wrapped (option-some-of [:option P] x)
+;;   P bottom (recur / abort) -> :i64 (the R1 reading; the reference gives [:option :i64] in :none mode)
+;; Every absent value is the run-time 0 (0, false and none are all 0), so only the wrap needs code. Not done (R1 reading
+;; kept): the reference's statement position (a non-final `do` form keeps :i64), absence through nested if/let/do tails,
+;; fn literals (:none there), `if` without else and `cond` without :else (refused, E2105/E2107).
+(defn- ck-r6d-abs? [M :vector-i64 n :i64] :bool (and (= (nm-kind M n) ND-INT) (= (nm-nf M n NF-SYM) -1)))
+;; the function being checked infers its result (a defn whose result node is the synthetic KW-INFER)
+(defn- ck-r6d-none-mode? [M :vector-i64] :bool
+  (let [f (ck-sg M ck-s-fn)]
+    (and (pos? f) (< f (vector-at M MM-FN-N))
+         (or (= (nm-ff M f FF-KIND) FK-DEFN) (= (nm-ff M f FF-KIND) FK-PRIV))
+         (let [d (nm-ff M f FF-NODE)]
+           (and (pos? d) (= (nm-kind M d) ND-LIST) (>= (nm-count M d) 4) (= (ck-is-infer M (nm-nth M d 3)) 1))))))
+;; the if node's children c (test), a (then), b (else) with types ta tb; h = the head node (errors)
+(defn- ck-r6d-absif [M :vector-i64 c :i64 a :i64 b :i64 ta :i64 tb :i64 h :i64] :vector-i64
+  (cond (and (ck-r6d-abs? M b) (not (ck-r6d-abs? M a))) (ck-r6d-abs1 M c a ta b)
+        (and (ck-r6d-abs? M a) (not (ck-r6d-abs? M b))) (ck-r6d-abs1 M a b tb a)
+        :else (ck-unify M ta tb h)))
+;; pred = the node before the present arm p (type tp); z = the absent arm
+(defn- ck-r6d-abs1 [M :vector-i64 pred :i64 p :i64 tp :i64 z :i64] :vector-i64
+  (cond (= tp 0) (nm-put (nm-set-nf M z NF-TYPE TY-I64) MM-R0 TY-I64)
+        (= tp TY-BOOL) (nm-put (nm-set-nf M z NF-TYPE TY-BOOL) MM-R0 TY-BOOL)
+        (= (ck-tcon M tp) TC-OPTION) (nm-put (nm-set-nf M z NF-TYPE tp) MM-R0 tp)
+        (and (= tp TY-I64) (not (ck-r6d-none-mode? M))) (nm-put (nm-set-nf M z NF-TYPE TY-I64) MM-R0 TY-I64)
+        :else (let [M1 (ck-ct-intern M TC-OPTION tp 0)
+                    ot (ck-r M1)]
+                (if (nm-failed M1) (ck-touch M1) (ck-r6d-wrap (nm-set-nf M1 z NF-TYPE ot) pred p ot)))))
+;; replace p (after pred) by (option-some-of <ot> p); R0 = ot
+(defn- ck-r6d-wrap [M :vector-i64 pred :i64 p :i64 ot :i64] :vector-i64
+  (let [tok (nm-nf M p NF-TOK)
+        nx (nm-next M p)
+        M1 (ck-n-int M tok 0)
+        d (ck-r M1)
+        M2 (ck-chain2 (nm-set-nf M1 d NF-TYPE ot) d p)
+        M3 (ck-mkh M2 tok HD-OPTION-SOME d)
+        w (ck-r M3)
+        M4 (-> M3 (ck-link w nx) (ck-link pred w) (ck-mark w ot HD-OPTION-SOME))
+        f (ck-sg M4 ck-s-fn)]
+    (nm-put (if (pos? f) (ck-fuel M4 f) M4) MM-R0 ot)))
 
 ;; ---- cond ----
 ;; c = the next test node; h = the head node, acc = the arms' type so far
@@ -4112,9 +4158,10 @@
     (if (pos? (bit-and r2 ck-r6b-g-doc)) (bit-or r2 ck-r6b-g-kw) r2)))
 
 ;; the module's keyword table: " :k1 :k2 .. " (each spelling once), the 11 document kinds first
-(defn- ck-r6b-kwtab [S :string] :string
+;; R6D: table acc0 plus the spellings of module text S it does not have yet (first occurrence order)
+(defn- ck-r6b-kwadd [acc0 :string S :string] :string
   (let [n (string-length S)]
-    (loop [i 0 acc " :null :bool :i64 :f64 :string :keyword :symbol :vector :list :set :map "]
+    (loop [i 0 acc acc0]
       (if (>= i n)
         acc
         (let [c (string-code-point-at S i)]
@@ -4132,14 +4179,33 @@
 
 (defn- ck-r6b-pick [m :i64 g :i64 t :string] :string (if (zero? (bit-and m g)) "" t))
 
+(defn- ck-r6b-kwtab [S :string] :string (ck-r6b-kwadd " :null :bool :i64 :f64 :string :keyword :symbol :vector :list :set :map " S))
+;; R6D (agent R6D, 2026-10-03): the keyword TEXT table is a link-time union. A keyword made in one module and turned into
+;; text in another trapped (the R6B table was per module). 60-proj gives the ENTRY module the union T of every linked
+;; module's spellings (ck-r6b-kwmerge in compile order; separate mode: the cumulative K lines of the objects), forces its
+;; kw group, and after the link patches the first instruction of every library's __r6-kwtab into `b` to the entry's, so
+;; every module reads one table. T = "" keeps the module's own table (the single-module route, libraries).
+;; table acc plus the tokens of table T it does not have yet
+(defn- ck-r6b-kwmerge [acc0 :string T :string] :string
+  (let [n (string-length T)]
+    (loop [i 0 acc acc0]
+      (cond (>= i n) acc
+            (= (string-code-point-at T i) 32) (recur (+ i 1) acc)
+            :else (let [e (loop [j i] (if (or (>= j n) (= (string-code-point-at T j) 32)) j (recur (+ j 1))))
+                        k (string-substring T i e)]
+                    (recur e (if (>= (string-index-of acc (string-concat " " (string-concat k " "))) 0) acc (string-concat acc (string-concat k " ")))))))))
+;; 1 when module text S needs the keyword group of the library on its own
+(defn- ck-r6b-needs-kw? [S :string] :bool (pos? (bit-and (ck-r6b-scan S) ck-r6b-g-kw)))
+
 ;; the text appended to module source S ("" when it needs no library group)
-(defn- ck-r6b-lib [S :string] :string
-  (let [m (ck-r6b-scan S)]
+;; R6D: the same with keyword table T ("" = S's own table; else T, and the keyword group is included)
+(defn- ck-r6b-lib-t [S :string T :string] :string
+  (let [m (if (zero? (string-length T)) (ck-r6b-scan S) (bit-or (ck-r6b-scan S) ck-r6b-g-kw))]
     (if (zero? m)
       ""
       (-> "\n"
           (string-concat (ck-r6b-pick m ck-r6b-g-kw (ck-r6b-t-kw)))
-          (string-concat (ck-r6b-pick m ck-r6b-g-kw (string-concat "(defn- __r6-kwtab [] :string \"" (string-concat (ck-r6b-kwtab S) "\")\n"))))
+          (string-concat (ck-r6b-pick m ck-r6b-g-kw (string-concat "(defn- __r6-kwtab [] :string \"" (string-concat (if (zero? (string-length T)) (ck-r6b-kwtab S) T) "\")\n"))))
           (string-concat (ck-r6b-pick m ck-r6b-g-doc (ck-r6b-t-doc)))
           (string-concat (ck-r6b-pick m ck-r6b-g-exi (ck-r6b-t-exi)))
           (string-concat (ck-r6b-pick m ck-r6b-g-sfb (ck-r6b-t-sfb)))
@@ -4151,6 +4217,8 @@
           (string-concat (ck-r6b-pick m ck-r6b-g-sym (ck-r6b-t-sym)))
           (string-concat (ck-r6b-pick m ck-r6b-g-vec (ck-r6b-t-vec)))
           (string-concat (ck-r6b-pick m ck-r6b-g-f64 (ck-r6b-t-f64)))))))   ; R6C
+
+(defn- ck-r6b-lib [S :string] :string (ck-r6b-lib-t S ""))
 
 ;; the FN index of the library defn whose spelling hashes to h (the first clause), 0 when absent
 (defn- ck-r6b-fn [M :vector-i64 h :i64] :i64

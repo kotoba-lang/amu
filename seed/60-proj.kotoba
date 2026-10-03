@@ -229,6 +229,7 @@
   (let [m (pj-l L pj-k-nmod)]
     (-> L (pj-mset m pj-mf-name name) (pj-mset m pj-mf-path path) (pj-mset m pj-mf-state 0) (pj-mset m pj-mf-depth 0)
         (pj-mset m pj-mf-nreq 0) (pj-mset m pj-mf-nif 0) (pj-mset m pj-mf-expk 0) (pj-mset m pj-mf-nexp 0) (pj-mset m pj-mf-entry 0) (pj-mset m pj-mf-sch -1)
+        (pj-mset m 15 0) (pj-mset m 18 0) (pj-mset m 19 0)   ; R6D: pj-mf-kwt kwu kwf
         (pj-ls pj-k-nmod (+ m 1)))))
 
 ;; ---- the ns header ------------------------------------------------------------------------------------------------------
@@ -851,6 +852,77 @@
           :else (-> M (pj-nset pred NF-NEXT (pj-next M synth)) (pj-nset synth NF-NEXT u1) (pj-nset root NF-FIRST synth)
                     (pj-nset root NF-AUX (- (pj-nf M root NF-AUX) 1))))))
 
+;; ==== R6D (agent R6D, 2026-10-03): one keyword text table per link (21-check ck-r6b-lib-t) =================================
+;; The entry module's library gets the union of the spellings of every module of the link (in process: the modules in compile
+;; order, read again; separate mode: the cumulative "K <flag> <union>" lines of its requires' objects) when any module of the
+;; link has a keyword table; after the link the first instruction of each library's __r6-kwtab is patched into `b` to the
+;; entry's (separate mode: the objects' "W <offset>" lines). Both routes build the same table and image.
+(def pj-mf-kwt 15)   ; address + 1 of the module's __r6-kwtab (in process: in the image; separate mode: in its blob), 0 = none
+(def pj-mf-kwu 18)   ; separate mode, a loaded dependency: P index + 1 of its object's K union (0 = none)
+(def pj-mf-kwf 19)   ; separate mode, a loaded dependency: 1 when a module of its closure has a keyword table
+(def pj-k-kwk 37)    ; separate mode: P index of module 0's "K .." line
+(defn- pj-kw-h [] :i64 (nm-hash "__r6-kwtab" 0 10))
+;; the cumulative union of module m (source S0): the modules compiled before it (in process) or its requires' K unions
+;; (separate mode), then its own spellings
+(defn- pj-kw-union [M :vector-i64 L :vector-i64 P :string m :i64 S0 :string] :string
+  (let [U (if (= (pj-l L pj-k-mode) 1)
+            (let [r0 (pj-mf L m pj-mf-req0)]
+              (loop [k 0 U (ck-r6b-kwtab "")]
+                (if (>= k (pj-mf L m pj-mf-nreq))
+                  U
+                  (let [u (pj-mf L (pj-rf L (+ r0 k) pj-rf-mod) pj-mf-kwu)]
+                    (recur (+ k 1) (if (> u 0) (ck-r6b-kwmerge U (pj-p L P (- u 1))) U))))))
+            (loop [k 0 U (ck-r6b-kwtab "")]
+              (if (>= k (pj-l L pj-k-nord))
+                U
+                (let [d (pj-l L (+ pj-o-base k))]
+                  (if (= d m) U (recur (+ k 1) (ck-r6b-kwmerge U (ck-r6b-kwtab (io-read-file M (pj-p L P (pj-mf L d pj-mf-path)))))))))))]
+    (ck-r6b-kwmerge U (ck-r6b-kwtab S0))))
+;; a module of m's link closure (m itself: its text S0) has a keyword table
+(defn- pj-kw-any? [L :vector-i64 m :i64 S0 :string] :bool
+  (or (ck-r6b-needs-kw? S0)
+      (if (= (pj-l L pj-k-mode) 1)
+        (let [r0 (pj-mf L m pj-mf-req0)]
+          (loop [k 0] (cond (>= k (pj-mf L m pj-mf-nreq)) false (= (pj-mf L (pj-rf L (+ r0 k) pj-rf-mod) pj-mf-kwf) 1) true :else (recur (+ k 1)))))
+        (loop [k 0]
+          (if (>= k (pj-l L pj-k-nord))
+            false
+            (let [d (pj-l L (+ pj-o-base k))]
+              (cond (= d m) false (> (pj-mf L d pj-mf-kwt) 0) true :else (recur (+ k 1)))))))))
+;; the keyword table text for module m's library: "" (its own) unless m is the entry of a link with a keyword table
+(defn- pj-kw-table [M :vector-i64 L :vector-i64 P :string m :i64 S0 :string] :string
+  (if (and (= (pj-mf L m pj-mf-entry) 1) (pj-kw-any? L m S0)) (pj-kw-union M L P m S0) ""))
+;; after module m compiled (M holds it, base = its image base): record its __r6-kwtab
+(defn- pj-kw-note [M :vector-i64 L :vector-i64 m :i64] :vector-i64
+  (let [f (ck-r6b-fn M (pj-kw-h))
+        fc (if (> f 0) (pj-ff M f FF-CODE) 0)]
+    (pj-mset L m pj-mf-kwt (if (> fc 0) (+ (pj-l L pj-k-base) (* (- fc 1) 4) 1) 0))))
+;; after the link: every library's __r6-kwtab -> `b` the entry's (module 0)
+(defn- pj-kw-patch [L :vector-i64] :vector-i64
+  (let [t (pj-mf L 0 pj-mf-kwt)]
+    (if (= t 0)
+      L
+      (loop [m 1]
+        (if (>= m (pj-l L pj-k-nmod))
+          L
+          (let [a (pj-mf L m pj-mf-kwt)
+                x (if (> a 0) (pj-put32 L (+ pj-img-base (- a 1)) (bit-or 335544320 (bit-and (quot (- t a) 4) 67108863))) L)]
+            (recur (+ m 1))))))))
+;; separate mode: dependency d's K line in object text T
+(defn- pj-kw-load [L :vector-i64 P :string T :string d :i64] :string
+  (loop [i 0]
+    (cond (>= i (string-length T)) P
+          (and (= (string-code-point-at T i) 75) (< (+ i 3) (string-length T)) (= (string-code-point-at T (+ i 1)) 32))   ; not KSEEDO1
+          (let [w (-> L (pj-mset d pj-mf-kwf (- (string-code-point-at T (+ i 2)) 48)) (pj-mset d pj-mf-kwu (+ (pj-n L) 1)))]
+            (pj-padd L P (string-substring T (+ i 4) (pj-eol T i))))
+          :else (recur (+ (pj-eol T i) 1)))))
+;; separate mode: the K and W lines of module 0 (compiled, still in M; S0 = its source text)
+(defn- pj-kw-lines [M :vector-i64 L :vector-i64 P :string S0 :string] :string
+  (let [k (string-concat "K " (string-concat (if (pj-kw-any? L 0 S0) "1 " "0 ") (string-concat (pj-kw-union M L P 0 S0) "\n")))
+        t (pj-mf L 0 pj-mf-kwt)]
+    (if (> t 0) (string-concat k (pj-line "W" (mem-u2dec (- t 1)))) k)))
+;; ==== END R6D ================================================================================================================
+
 ;; ---- compile one module and link it ---------------------------------------------------------------------------------------
 (defn- pj-put32 [L :vector-i64 at :i64 w :i64] :vector-i64
   (-> L (pj-ls at (bit-and w 255)) (pj-ls (+ at 1) (bit-and (u64-shift-right w 8) 255))
@@ -907,14 +979,15 @@
         ;; R6B: the source library the module spells. R6C: BEFORE the trailer (was after it): the stub clauses of the trailer
         ;; must be the LAST FN records (pj-c3 takes stub0 = FN-N - nstub), else an importer that also gets a library group
         ;; patched its library functions as stubs (measured: r6-diff driver of kotoba.compiler.decimal-text looped)
-        S1 (string-concat S0 (ck-r6b-lib S0))
+        S1 (string-concat S0 (ck-r6b-lib-t S0 (pj-kw-table M L P m S0)))   ; R6D: the entry of a link gets the link's keyword table
         S (string-concat S1 T)
         base (bit-and (+ (pj-l L pj-k-img) 7) -8)
         w (-> L (pj-ls pj-k-errmod m) (pj-ls pj-k-trail (string-length S1)) (pj-ls pj-k-base base) (pj-mset m pj-mf-base base))
         M1 (pj-read M S)
         M2 (if (pj-ok M1) (pj-refcheck (pj-qscan (pj-norm M1 L S) L P S m) L P m) M1)
         M3 (if (pj-ok M2) (pj-splice M2 L) M2)
-        M4 (if (pj-ok M3) (pj-c3 M3 L S H) M3)]
+        M4 (if (pj-ok M3) (pj-c3 M3 L S H) M3)
+        w9 (if (pj-ok M4) (pj-kw-note M4 L m) L)]   ; R6D
     (cond (ck-hint-again? H M4) (pj-module-h M4 L P m H)   ; R6C
           (not (pj-ok M4)) (let [w2 (pj-err-back M4 L m (string-length S1))] P)   ; R6C: the trailer starts after the library
           (>= (pj-n L) (- pj-s-cap 1)) (let [w2 (pj-err M4 E-PROJ-IMAGE 0)] P)
@@ -938,7 +1011,7 @@
   (let [P1 (pj-discover M L P root)]
     (loop [k 0 P P1]
       (if (or (>= k (pj-l L pj-k-nord)) (not (pj-ok M)))
-        P
+        (let [w (if (pj-ok M) (pj-kw-patch L) L)] P)   ; R6D
         (recur (+ k 1) (pj-module M L P (pj-l L (+ pj-o-base k))))))))
 
 ;; the source path of the module the error of M refers to
@@ -1034,7 +1107,7 @@
 
 ;; the object text of module 0 (compiled with base 0 and recorded patches, still in M; S = its source with the trailer)
 (defn- pj-object [M :vector-i64 L :vector-i64 P :string S :string] :string
-  (loop [c 0 k 0 big (string-concat "KSEEDO1\n" (pj-line "N" (pj-p L P (pj-mf L 0 pj-mf-name)))) small ""]
+  (loop [c 0 k 0 big (string-concat "KSEEDO1\n" (string-concat (pj-line "N" (pj-p L P (pj-mf L 0 pj-mf-name))) (pj-p L P (pj-l L pj-k-kwk)))) small ""]   ; R6D: K/W lines
     (cond (> c 5) (string-concat big small)
           (>= k (pj-ocount M L c)) (recur (+ c 1) 0 big small)
           :else (let [s2 (pj-small small (pj-oline M L P S (+ (* c 1048576) k)))]
@@ -1086,10 +1159,14 @@
                      (if (not (pj-obj-ok T nm))
                        (let [x (pj-err M1 E-PROJ-OBJ (pj-rf L r pj-rf-node))] P)
                        (let [y (-> L (pj-add-mod (pj-n L) (pj-n L)) (pj-mset d pj-mf-state 3) (pj-rset r pj-rf-mod d))]
-                         (recur (+ k 1) (pj-load-iface L (pj-padd L P nm) T d 0)))))))))]
+                         (recur (+ k 1) (pj-kw-load L (pj-load-iface L (pj-padd L P nm) T d 0) T d)))))))))]   ; R6D: + its K line
     (if (pj-ok M1)
       (let [P3 (pj-module M1 L P2 0)]
-        (if (pj-ok M1) (pj-padd L P3 (pj-object M1 L P3 (string-concat S (string-concat (ck-r6b-lib S) (pj-trailer L P3 0))))) P3))   ; R6B, R6C: library before the trailer (pj-module)
+        (if (pj-ok M1)
+          (let [w (pj-ls L pj-k-kwk (pj-n L))
+                P4 (pj-padd L P3 (pj-kw-lines M1 L P3 S))]   ; R6D
+            (pj-padd L P4 (pj-object M1 L P4 (string-concat S (string-concat (ck-r6b-lib-t S (pj-kw-table M1 L P4 0 S)) (pj-trailer L P4 0))))))
+          P3))   ; R6B, R6C: library before the trailer (pj-module)
       P2)))
 
 ;; link: visit object module m (its text read from its path) at depth d
@@ -1159,6 +1236,7 @@
                              v (+ base (bit-and (u64-shift-right w0 5) 65535) (* 65536 (bit-and (u64-shift-right w1 5) 65535)))
                              x (-> L (pj-put32 at (ly-patch16 w0 v)) (pj-put32 (+ at 4) (ly-patch16 w1 (u64-shift-right v 16))))]
                          (recur (+ e 1)))
+                       (= c 87) (let [x (pj-mset L m pj-mf-kwt (+ base (pj-dec T (+ i 2) e) 1))] (recur (+ e 1)))   ; R6D
                        (= c 83)
                        (let [sp (pj-sp T (+ i 2))
                              at (+ base (pj-dec T (+ i 2) sp))
@@ -1200,7 +1278,7 @@
             P3 (loop [k 0 P P2] (if (or (>= k (pj-l L pj-k-nord)) (not (pj-ok M))) P (recur (+ k 1) (pj-lplace M L P (pj-l L (+ pj-o-base k))))))]
         (cond (not (pj-ok M)) P3
               (>= (+ pj-img-base (pj-l L pj-k-img)) pj-l-cap) (let [x (pj-err M E-PROJ-IMAGE 0)] P3)
-              :else (let [x (pj-lcontainer M L P3 0)] P3))))))
+              :else (let [y (pj-kw-patch L) x (pj-lcontainer M L P3 0)] P3))))))   ; R6D: pj-kw-patch
 
 ;; ==== R5B (agent R5B, 2026-10-03): capability declarations and stateful exports =============================================
 ;; A module's (:capabilities #{..}) clause / {:kotoba/capabilities #{..}} entry is a capability mask (bit w = wire w) kept in

@@ -1,0 +1,7 @@
+;; R6D: a `when` with an :i64 present value in a defn whose result is INFERRED is [:option :i64] (kotoba-sema absence-type,
+;; :none mode): the value is (option-some-of ..) when the test holds, the none otherwise
+;; want: 11
+(ns r6d.p01 (:export [main]))
+(defn- f [x :i64] (when (> x 0) (+ x 1)))
+(defn main [] :i64
+  (+ (option-value-of [:option :i64] (f 3) 99) (option-value-of [:option :i64] (f -1) 7)))
