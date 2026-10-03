@@ -153,7 +153,10 @@
             [kotoba.compiler.absent-field-from-assoc-test]
             ;; ADR 0353 :rebound-row-argument: a rebound row passed on to
             ;; another row is its record, a string helper on the way
-            [kotoba.compiler.rebound-row-argument-test]))
+            [kotoba.compiler.rebound-row-argument-test]
+            ;; ADR 0353 :native-vector-field: a record holding an i64 vector
+            ;; (text-edit's [start end] selection) compiles natively
+            [kotoba.compiler.native-vector-field-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
   (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
@@ -240,4 +243,5 @@
              'kotoba.compiler.let-rebinding-test
              'kotoba.compiler.cljs-literal-hash-test
              'kotoba.compiler.absent-field-from-assoc-test
-             'kotoba.compiler.rebound-row-argument-test)
+             'kotoba.compiler.rebound-row-argument-test
+             'kotoba.compiler.native-vector-field-test)
