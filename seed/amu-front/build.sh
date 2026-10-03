@@ -22,6 +22,9 @@
 #      guest's first such call is a denied capability = SIGILL (measured: 28 corpus programs trapped before this).
 #   5. no host processes: the packaged command runs under build/seed/noproc/noproc.dylib (scripts/seed/no-host-processes.sh)
 #      with an empty PATH on two inputs; PASS = no exec/spawn/system/popen logged, one supervisor fork per run.
+# Env (ARENA 2026-10-04): AF_SEED=<seed.bin> (its .offset beside it) skips step 1 and uses that seed, e.g. the recorded
+#      large-M profile (scripts/seed/large-m.sh, seed/profiles/large-m-r6d.record); AF_F64=1 keeps the reader twin's
+#      decimal-f64-parse (the R6D seed lowers it; the r6c-kir lineage did not, so the default still replaces it).
 # Env: AF_SCOPE (wire-35 directories, colon separated; default the repo, amu-embench, /private/tmp, /tmp),
 #      AF_KSEMA (kotoba-sema checkout), AF_KSEMA_REV, WALL_CP, WALL_K, AF_FORCE=1 (redo every step).
 # Output: <work>/amu-front (the command), <work>/amu-front.info.
@@ -36,7 +39,9 @@ step() { echo "amu-front: $* (load $(sysctl -n vm.loadavg | awk '{print $2}'))";
 
 # ---- 1. the seed with the larger M ----
 X=$W/seedx
-if [ -n "$AF_FORCE" ] || [ ! -s $X/b/seed-1.bin ]; then
+if [ -n "$AF_SEED" ]; then
+  [ -s $AF_SEED ] && [ -s ${AF_SEED%.bin}.offset ] || { echo "amu-front: AF_SEED $AF_SEED (+ .offset) missing"; exit 1; }
+elif [ -n "$AF_FORCE" ] || [ ! -s $X/b/seed-1.bin ]; then
   step "seed M=16Mi words"
   rm -rf $X; mkdir -p $X
   git -C $R archive seed-r6c-kir seed scripts/seed tools | tar -x -C $X || exit 1
@@ -61,9 +66,14 @@ P
   ( export SEED_REPO=$X SEED_BUILD=$X/b SEED_PREV=$(ls $R/build/seedfix-g/seed-1.bin) SEED_VECTOR_ITEMS=67108864 SEED_SECONDS=900
     nice zsh $X/scripts/seed/build.sh lineage ) > $W/seedx.log 2>&1 || { tail -5 $W/seedx.log; exit 1; }
 fi
-grep -q 'FIXED POINT' $W/seedx.log || { echo "amu-front: the private seed is not its own fixed point"; exit 1; }
-SB=$X/b/seed-1.bin; SOFF=$(cat $X/b/seed-1.offset)
-export SEED_REPO=$X SEED_BUILD=$X/b; source $X/scripts/seed/lib.sh
+if [ -n "$AF_SEED" ]; then
+  SB=${AF_SEED:A}; SOFF=$(cat ${SB%.bin}.offset)
+  export SEED_REPO=$R SEED_BUILD=$W/sb; mkdir -p $W/sb; source $R/scripts/seed/lib.sh
+else
+  grep -q 'FIXED POINT' $W/seedx.log || { echo "amu-front: the private seed is not its own fixed point"; exit 1; }
+  SB=$X/b/seed-1.bin; SOFF=$(cat $X/b/seed-1.offset)
+  export SEED_REPO=$X SEED_BUILD=$X/b; source $X/scripts/seed/lib.sh
+fi
 
 # ---- 2. KIR of the driver + the linked frontend ----
 KS=$W/ksema-$KREV
@@ -80,7 +90,7 @@ fi
 # ---- 3. slice, compile-kir, extract ----
 step "slice + seed compile-kir"
 python3 $R/seed/tests/kir/slice.py slice $W/check.kir $W/check.main.kir main || exit 1
-python3 -c "
+[ -n "$AF_F64" ] || python3 -c "
 import sys; p=sys.argv[1]; s=open(p).read(); n=s.count('(decimal-f64-parse tok)')
 s=s.replace('(decimal-f64-parse tok)','(option-none-of [:option :f64])'); open(p,'w').write(s); print('decimal-f64-parse replaced:', n)" $W/check.main.kir
 SEED_RESOURCES_35=$W SEED_VECTOR_ITEMS=67108864 SEED_SECONDS=900 KEXE_ARENA_USE=1 \
@@ -128,8 +138,9 @@ cc -O2 -std=c11 -I $D -include $D/kexe_embedded.h $R/tools/kexe_loader.c -o $W/a
 mv $W/amu-front.tmp $W/amu-front
 deps=$(otool -L $W/amu-front | tail -n +2 | awk '{print $1}')
 echo "$deps" | grep -vq '^/usr/lib/' && { echo "amu-front: unexpected library dependency:"; echo "$deps"; exit 1; }
-{ echo "label amu-front (native check from the kotoba-sema frontend $KREV via kir-dump BOOTSTRAP-REFERENCE KIR + private seed M=16Mi)"
-  echo "seed $(sha $SB) bytes $(wc -c < $SB | tr -d ' ') (lineage of be8898af, MEMORY-MAP M=16Mi)"
+{ echo "label amu-front (native check from the kotoba-sema frontend $KREV via kir-dump BOOTSTRAP-REFERENCE KIR + ${AF_SEED:+seed $AF_SEED}${AF_SEED:-private seed M=16Mi})"
+  if [ -n "$AF_SEED" ]; then echo "seed $(sha $SB) bytes $(wc -c < $SB | tr -d ' ') (AF_SEED $SB) f64 ${AF_F64:-0}"
+  else echo "seed $(sha $SB) bytes $(wc -c < $SB | tr -d ' ') (lineage of be8898af, MEMORY-MAP M=16Mi)"; fi
   echo "kir $(sha $W/check.main.kir) bytes $(wc -c < $W/check.main.kir | tr -d ' ')"
   echo "code check.bin sha256 $(sha $W/check.bin) bytes $len offset $off"
   echo "command $W/amu-front sha256 $(sha $W/amu-front) bytes $(wc -c < $W/amu-front | tr -d ' ')"

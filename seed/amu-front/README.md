@@ -100,3 +100,10 @@ python3 scripts/selfhost-wall/analyze-memory-inputs.py . <dir>   # the ladder in
 - The seed is a private 16 Mi-word M build, not a committed rung (CONTRACT-REQUESTS 2026-10-03 COMPOSE).
 - All timings are on a loaded host (load 30-92); no quiet-host measurement was possible in this session.
 - The stage-0 oracle is the stage-0 *host* sema; agreement is per report line, not per HIR.
+
+## 7. Update 2026-10-04 (agent ARENA)
+
+The frontend constant tables are now built once per analyze run (kotoba-sema `agent/arena-const-tables` c2766ee) and
+amu-front can be built from the recorded large-M seed profile (`AF_SEED`, seed/profiles/README.md). Same corpus verdicts
+(382/391); the whole 810 KB seed unity and a 1.04 MB input now fit one process (pairs 59% of 64 Mi). Measurements, census
+method and remaining gaps: docs/selfhost-arena-20261004.md; results: results/arena-*-20261004.tsv.
