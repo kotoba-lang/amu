@@ -88,14 +88,14 @@ lineage() {
   if [ -n "${SEED_PREV:-}" ]; then prev=${SEED_PREV:A}; prevoff=$(cat ${prev%.bin}.offset) || return 2
   else
     stamp=$(cat $SEED_REPO/seed/rungs/r*.record $SEED_REPO/seed/bootstrap/SHA256SUMS $SEED_REPO/scripts/seed/bootstrap.sh | shasum -a 256 | cut -c1-64)
-    last=$(ls $SEED_REPO/seed/rungs/r<->.record | sed 's/.*\/r\([0-9]*\)\.record/\1/' | sort -n | tail -1)
-    if [ "$(cat $B/boot/.stamp 2>/dev/null)" != "$stamp" ] || [ ! -s $B/boot/r$last/seed-1.bin ]; then
+    last=$(seed_rung_records | tail -1 | sed 's/.*\/\(r[0-9a-z]*\)\.record/\1/')
+    if [ "$(cat $B/boot/.stamp 2>/dev/null)" != "$stamp" ] || [ ! -s $B/boot/$last/seed-1.bin ]; then
       echo "build: lineage: reproducing the recorded rungs with bootstrap.sh --no-head (work dir $B/boot)"
       SEED_BOOT=$B/boot zsh $SEED_REPO/scripts/seed/bootstrap.sh --no-head > $B/boot.log 2>&1 \
         || { echo "build: lineage: bootstrap.sh --no-head FAILED (see $B/boot.log)"; tail -3 $B/boot.log; return 1; }
       echo $stamp > $B/boot/.stamp
     fi
-    prev=$B/boot/r$last/seed-1.bin; prevoff=$(cat $B/boot/r$last/seed-1.offset)
+    prev=$B/boot/$last/seed-1.bin; prevoff=$(cat $B/boot/$last/seed-1.offset)
   fi
   rm -f $B/seed-0.*(N)
   cp $prev $B/seed-0.bin; echo $prevoff > $B/seed-0.offset

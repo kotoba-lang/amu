@@ -11,7 +11,7 @@
 #   G3     refusal texts, scripts/seed/g3.sh --rung rN
 #   G5     no program started by the packaged seed (scripts/seed/no-host-processes.sh; packages seed-1 first)
 #   GR     rung conformance (scripts/seed/gr.sh), r1 and later only: the rung's own seed/tests/<rung> AND every earlier rK with an
-#          oracle (a later rung keeps every earlier rung's programs passing; r4 = r1 + r3 + r4)
+#          oracle (a later rung keeps every earlier rung's programs passing; r4 = r1 + r3 + r4; r5a = r1 r3 r4 r4b + the R5 format of seed/tests/r5 through gr-r5.sh, part A only at r5a)
 #   UNIT   with --with-unit: every module unit test (scripts/seed/unit-all.sh) built by the CURRENT seed-1
 #   KIR LEXREAD LW A64GEN   with --with-aux: kir-gate.sh (19 ports through 12-kirread, code bytes and fuel), lexread.sh check (80 dumps vs
 #          the independent Python reference), lw-gate.sh all (30-lower unit + 19 ports + corpus), a64gen-fixtures.py run (756 loader runs);
@@ -21,6 +21,8 @@
 #          recorded unity sha256 differs from the CURRENT seed/MANIFEST sources (a stale or hand-copied build is not a result);
 #          BUILD is build.sh auto: stage-0 fixed point, or, where stage-0 refuses the unity (R3+ language), the lineage route
 #          (seed-0 = the newest recorded rung seed reproduced by bootstrap.sh --no-head); G3 includes the negatives of every rung K<=N.
+#   XTRA   the rung's own extra gate seed/tests/<rung>/gate-<rung>.sh --extra when it exists (r5a: the namespace-split rung proof SPLIT,
+#          SPLIT-G1/G2/G4, SEP), run against the current build
 #   ERR    scripts/seed/errors-check.py: seed/HEADS :errors == the text tables of 90-drv, module-local codes registered
 #   FUEL   with --with-fuel: seed fuel <= stage-0 fuel per port and probe (scripts/seed/fuel.sh)
 # Output: build/seed/gates/<rung>/<gate>.log, build/seed/gates/<rung>/summary.tsv (gate, status, seconds, detail), and
@@ -130,12 +132,17 @@ if want GR; then
   else
     grall() {   # every directory runs; the last log line joins the per-directory result lines
       local d rc=0 out="" l
-      for d in ${=gr_dirs}; do l=$(zsh $S/gr.sh $d $B/seed-1.bin 2>&1); [ $? -eq 0 ] || rc=1; echo "$l"; out="$out${out:+ | }$(echo "$l" | grep '^GR \[' | cut -c1-150)"; done
+      for d in ${=gr_dirs}; do
+        if [ -f $R/seed/tests/$d/cases.tsv ]; then l=$(zsh $S/gr-r5.sh $rung $B/seed-1.bin 2>&1); else l=$(zsh $S/gr.sh $d $B/seed-1.bin 2>&1); fi
+        [ $? -eq 0 ] || rc=1; echo "$l"; out="$out${out:+ | }$(echo "$l" | grep '^GR \[' | cut -c1-150)"; done
       echo "$out"; return $rc
     }
     run GR grall
   fi
 fi
+
+# ---- XTRA: the rung's own extra gate, seed/tests/<rung>/gate-<rung>.sh --extra (r5a: SPLIT SPLIT-G1/G2/G4 SEP, the namespace-split rung proof)
+if [ -f $R/seed/tests/$rung/gate-$rung.sh ] && want XTRA; then run XTRA env SEED_BUILD=$B zsh $R/seed/tests/$rung/gate-$rung.sh --extra; fi
 
 # ---- auxiliary gates (with --with-aux); SEED_UNIT_SEED makes the test units build with the current seed
 if [ $withaux -eq 1 ]; then
@@ -150,7 +157,7 @@ fi
 if [ $withunit -eq 1 ] && want UNIT; then run UNIT zsh $S/unit-all.sh $B/seed-1.bin; fi
 
 # ---- table
-order=(BUILD ERR G1 G2 G3 G4 G5 GR UNIT KIR LEXREAD LW A64GEN FUEL)
+order=(BUILD ERR G1 G2 G3 G4 G5 GR XTRA UNIT KIR LEXREAD LW A64GEN FUEL)
 echo
 printf '%-6s %-5s %8s  %s\n' GATE STATUS SECONDS DETAIL
 fails=0; ran=0

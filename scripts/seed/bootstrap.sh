@@ -5,10 +5,12 @@
 #
 # The chain (docs/selfhost-seed-bootstrap-20261002.md):
 #   seed/bootstrap/seed-r0.bin     the R0 fixed point, committed (sha256 in seed/bootstrap/SHA256SUMS and seed/rungs/r0.record)
-#   for each seed/rungs/rN.record, in rung order (r0, r1, r2, ...):
+#   for each seed/rungs/<rung>.record, in LINEAGE order (r0 r1 r2 r3 r4 r5a r4b ...: seed_rung_records of lib.sh = by the history
+#   position of the record's unity commit; extension rungs rNx included):
 #       unity(N) = the seed/MANIFEST files of the record's `unity_commit`, each followed by "\n" (read from git, not from
 #                  the working tree)
-#       [bridge_commit B: the previous rung's seed compiles unity(B) -> the bridge seed, sha256 = `bridge_sha256`]
+#       [bridge_commit B: the previous rung's seed (or, with `bridge_compiler_rung K`, rung K's seed) compiles unity(B) -> the bridge
+#        seed, sha256 = `bridge_sha256`]
 #       seed-N-1 := (bridge | previous seed) compiles unity(N);  seed-N-2 := seed-N-1 compiles unity(N)
 #       gate: seed-N-1 == seed-N-2 (fixed point) and sha256(seed-N-1) == the record's `seed1_sha256`
 #   finally the working tree (or --commit C): seed-A compiles the unity -> seed-B -> seed-C; fixed point iff A == B == C.
@@ -94,9 +96,11 @@ if [ $stage0 -eq 1 ]; then
 fi
 
 # ---- the recorded rungs, in order
-for rf in $R/seed/rungs/r<->.record(n); do
+typeset -A SEEDOF       # rung name -> its recorded fixed-point seed (for `bridge_compiler_rung`)
+SEEDOF[r0]=$cur
+for rf in ${(f)"$(seed_rung_records)"}; do
   rg=$(rec $rf rung); n=${rg#r}
-  [ -z "$upto" ] || [ $n -le ${upto#r} ] || break
+  [ -z "$upto" ] || [ $(seed_rung_key $rg) -le $(seed_rung_key $upto) ] || break
   uc=$(rec $rf unity_commit); [ -n "$uc" ] || uc=$(rec $rf head)
   want=$(rec $rf seed1_sha256); [ -n "$want" ] || die "$rg: no seed1_sha256 in $rf"
   D=$W/$rg; mkdir -p $D
@@ -107,7 +111,9 @@ for rf in $R/seed/rungs/r<->.record(n); do
   bc=$(rec $rf bridge_commit)
   if [ -n "$bc" ]; then
     unity_at $bc $D/bridge-unity.kotoba
-    step "$rg bridge (unity of ${bc:0:9})" $c $D/bridge-unity.kotoba $D/bridge
+    bcr=$(rec $rf bridge_compiler_rung)        # optional: the rung whose seed compiles the bridge (an extension whose bridge predates the previous rung)
+    [ -n "$bcr" ] && c=${SEEDOF[$bcr]:?"$rg: bridge_compiler_rung $bcr has no seed yet"}
+    step "$rg bridge (unity of ${bc:0:9}, by ${c:h:t})" $c $D/bridge-unity.kotoba $D/bridge
     [ "$(sha $D/bridge.bin)" = "$(rec $rf bridge_sha256)" ] || die "$rg: bridge sha256 $(sha $D/bridge.bin) != recorded $(rec $rf bridge_sha256)"
     c=$D/bridge.bin
     if [ $stage0 -eq 1 ]; then
@@ -120,13 +126,14 @@ for rf in $R/seed/rungs/r<->.record(n); do
       echo "bootstrap: $rg STAGE-0 ROUTE OK: stage-0 -> bridge -> seed-1 == record"
     fi
   fi
-  step "$rg seed-1 (by ${c:t:r})" $c $D/seed-unity.kotoba $D/seed-1
+  step "$rg seed-1 (by ${c:h:t}/${c:t:r})" $c $D/seed-unity.kotoba $D/seed-1
   step "$rg seed-2 (by seed-1)" $D/seed-1.bin $D/seed-unity.kotoba $D/seed-2
   cmp -s $D/seed-1.bin $D/seed-2.bin && cmp -s $D/seed-1.offset $D/seed-2.offset || die "$rg: not a fixed point (seed-1 != seed-2)"
   [ "$(sha $D/seed-1.bin)" = "$want" ] || die "$rg: fixed point sha256 $(sha $D/seed-1.bin) != recorded $want"
+  [ "$(sha $D/seed-2.bin)" = "$(rec $rf seed2_sha256)" ] || die "$rg: seed-2 sha256 $(sha $D/seed-2.bin) != recorded $(rec $rf seed2_sha256)"
   [ "$(wc -c < $D/seed-1.bin | tr -d ' ')" = "$(rec $rf seed1_bytes)" ] || die "$rg: size differs from the record"
   echo "bootstrap: $rg FIXED POINT == record ${want:0:16}"
-  cur=$D/seed-1.bin; last=$rg; lastrec=$rf
+  cur=$D/seed-1.bin; last=$rg; lastrec=$rf; SEEDOF[$rg]=$cur
 done
 
 [ $head_step -eq 1 ] && [ -z "$upto" ] || { echo "bootstrap: OK (recorded rungs through ${last:-none})"; exit 0; }

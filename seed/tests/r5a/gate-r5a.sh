@@ -13,18 +13,20 @@
 #          seed-1 does (seed-2.kseed): the linked seed behaves as the unity seed on its own source
 #   SPLIT-G1/G2  scripts/seed/g1.sh / g2.sh with split-1 (19 ports, corpus) and the containers compared with seed-1's
 #   SEP    seed/tests/r5a/sep-r5a.sh: separate mode (compile --emit-module per module, `seed link`) == the in-process container
+# --extra: only the rows after R5A (SPLIT .. SEP), used by gates.sh --rung r5a as its XTRA row (the other rows are gates.sh's own).
 # Exit 0 iff every row passes.
 emulate -L zsh
 setopt pipefail
 source "$(dirname "$0")/../../../scripts/seed/lib.sh"
 R=$SEED_REPO; B=${SEED_BUILD:A}; D=$R/seed/tests/r5a; S=$R/scripts/seed
-upd=0; [ "$1" = --update-golden ] && upd=1
+upd=0; extra=0; [ "$1" = --update-golden ] && upd=1; [ "$1" = --extra ] && extra=1
 fails=0
-GS=$B/gates/r5a; mkdir -p $GS; : > $GS/summary.tsv
+GS=$B/gates/r5a; [ $extra = 1 ] && GS=$B/gates/r5a-extra; mkdir -p $GS; : > $GS/summary.tsv
 # row STATUS "NAME detail": the table line, and the gate summary row (rung-report.sh --record r5a reads $SEED_BUILD/gates/r5a)
 row() { printf "%-5s %s\n" $1 "$2"; [ $1 = FAIL ] && fails=$((fails+1)); printf '%s\t%s\t0\t%s\n' "${2%% *}" $1 "${2#* }" >> $GS/summary.tsv; return 0; }
 for k in 0 1 2; do [ -s $B/seed-$k.bin ] || { echo "gate-r5a: no $B/seed-$k.bin" >&2; exit 2; }; done
 
+if [ $extra = 0 ]; then
 # PREV
 SEED_BUILD=$B zsh $S/gates.sh --rung r4 --no-build --skip G3 > $B/gate-r5a-prev.log 2>&1 && row PASS "PREV gates --rung r4 (G3 skipped): $(grep 'rung r4' $B/gate-r5a-prev.log)" \
   || row FAIL "PREV: $(grep -E 'FAIL|rung r4' $B/gate-r5a-prev.log | tr '\n' ' ' | cut -c1-300)"
@@ -32,16 +34,9 @@ SEED_BUILD=$B zsh $S/gates.sh --rung r4 --no-build --skip G3 > $B/gate-r5a-prev.
 if [ $upd = 1 ]; then SEED_BUILD=$B zsh $S/g3.sh --rung r5a --update $B/seed-1.bin > $B/gate-r5a-g3.log 2>&1
 else SEED_BUILD=$B zsh $S/g3.sh --rung r5a $B/seed-1.bin > $B/gate-r5a-g3.log 2>&1; fi \
   && row PASS "G3 $(tail -1 $B/gate-r5a-g3.log)" || row FAIL "G3 $(tail -1 $B/gate-r5a-g3.log)"
-# R5A
-SEED_BUILD=$B zsh $R/seed/tests/r5/check-r5.sh $B/seed-1.bin > $B/gate-r5a-r5.log 2>&1
-partb=$(grep -v '^#' $D/part-b.txt | grep .)
-na=0 nfa=0 nb=0 nbp=0
-for l in $(grep -E '^(PASS|FAIL) ' $B/gate-r5a-r5.log | awk '{print $1 "|" ($2 ~ /TEXT/ ? $3 : $2)}' | sed 's/:$//'); do
-  v=${l%%|*}; lab=${l#*|}; lab=${lab%:}
-  if echo "$partb" | grep -qx -- "$lab"; then nb=$((nb+1)); [ $v = PASS ] && nbp=$((nbp+1))
-  else na=$((na+1)); [ $v = FAIL ] && { nfa=$((nfa+1)); echo "  part-A FAIL: $(grep -F " $lab" $B/gate-r5a-r5.log | head -1)"; }; fi
-done
-[ $nfa -eq 0 ] && [ $na -gt 0 ] && row PASS "R5A part-A cases: $((na-nfa))/$na pass (part B, not judged: $nbp/$nb pass)" || row FAIL "R5A part-A cases: $((na-nfa))/$na pass"
+# R5A (the part-A logic lives in scripts/seed/gr-r5.sh since HOUSE3 2026-10-03; gates.sh GR runs the same script)
+zsh $S/gr-r5.sh r5a $B/seed-1.bin > $B/gate-r5a-r5.out 2>&1 && row PASS "R5A $(tail -1 $B/gate-r5a-r5.out)" || { grep -E 'part-A FAIL' $B/gate-r5a-r5.out | head; row FAIL "R5A $(tail -1 $B/gate-r5a-r5.out)"; }
+fi
 # SPLIT
 python3 $R/seed/split/gen-split.py --check > $B/gate-r5a-split.log 2>&1 || row FAIL "SPLIT gen-split --check: $(cat $B/gate-r5a-split.log | head -2)"
 spl() {   # spl <compiler.bin> <out-prefix>

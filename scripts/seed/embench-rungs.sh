@@ -8,16 +8,17 @@
 #      ($OUT/work-<rung>: seed-1 = seed-2 = the rung's fixed point, so the provenance says selfhost_built=true only when that holds)
 #   3. for stage-0 (the bootstrap-reference, SEED_COMPILER, labelled so by embench.sh) and each rung seed, in this order, scripts/seed/embench.sh
 #      -> $OUT/<name>/qualification.json + seed-provenance.json (runner unchanged: 19 ports, check/compile/run x5, fuel 16M, test-* = 1)
+#      --seed NAME=PATH adds a seed that is no recorded rung (the head of the tree) under NAME
 #   4. $OUT/table.tsv and $OUT/RESULT.txt: per port compile ms, execute ns (cold single call), raw code bytes for stage-0 and every rung seed,
 #      the host load at the start/end of every run, and the verdict line QUIET or LOADED.
 # Default OUT: $SEED_BUILD/embench-rungs.
 emulate -L zsh
 setopt pipefail
 source "$(dirname "$0")/lib.sh"
-rungs=(r2 r3 r4); out=$SEED_BUILD/embench-rungs; maxload=8; poll=600; hours=3
+rungs=(r2 r3 r4); extras=(); out=$SEED_BUILD/embench-rungs; maxload=8; poll=600; hours=3
 while [ $# -gt 0 ]; do
-  case $1 in --rungs) rungs=(${=2}); shift 2 ;; --out) out=$2; shift 2 ;; --max-load) maxload=$2; shift 2 ;; --poll) poll=$2; shift 2 ;; --hours) hours=$2; shift 2 ;;
-    *) echo "usage: embench-rungs.sh [--rungs 'r2 r3 r4'] [--out DIR] [--max-load N] [--poll SEC] [--hours H]" >&2; exit 2 ;; esac
+  case $1 in --rungs) rungs=(${=2}); shift 2 ;; --seed) extras+=($2); shift 2 ;; --out) out=$2; shift 2 ;; --max-load) maxload=$2; shift 2 ;; --poll) poll=$2; shift 2 ;; --hours) hours=$2; shift 2 ;;
+    *) echo "usage: embench-rungs.sh [--rungs 'r2 r3 r4'] [--seed NAME=seed-1.bin ...] [--out DIR] [--max-load N] [--poll SEC] [--hours H]" >&2; exit 2 ;; esac
 done
 case $out in /*) ;; *) out=$PWD/$out ;; esac
 mkdir -p $out
@@ -34,7 +35,7 @@ verdict=QUIET; extra=""
 [ $quiet -eq 1 ] || { verdict=LOADED; extra="SEED_ALLOW_LOADED=1"; echo "embench-rungs: the host never got below load $maxload in $hours h: one LOADED run (not a measurement)" | tee -a $out/poll.log; }
 # the rung seeds (verified by bootstrap.sh --no-head)
 BOOT=$out/boot
-if ! [ -s $BOOT/$rungs[-1]/seed-1.bin ]; then
+if [ ${#rungs} -gt 0 ] && ! [ -s $BOOT/$rungs[-1]/seed-1.bin ]; then
   SEED_BOOT=$BOOT zsh $R/scripts/seed/bootstrap.sh --no-head > $out/bootstrap.log 2>&1 || { echo "embench-rungs: bootstrap.sh --no-head failed"; tail -3 $out/bootstrap.log; exit 1; }
 fi
 runone() {   # runone <name> [stage0]
@@ -49,6 +50,8 @@ runone() {   # runone <name> [stage0]
   fi
   echo "embench-rungs: $n rc=$rc load_end $(load1)"; tail -1 $out/$n.log
 }
+# --seed NAME=PATH: an extra seed (e.g. the head of the working tree, not a recorded rung), measured like a rung seed
+for e in $extras; do mkdir -p $BOOT/${e%%=*}; cp ${e#*=} $BOOT/${e%%=*}/seed-1.bin; cp ${${e#*=}%.bin}.offset $BOOT/${e%%=*}/seed-1.offset; rungs+=(${e%%=*}); done
 runone stage0 stage0
 for r in $rungs; do runone $r; done
 python3 - $out $verdict ${rungs} <<'PY'

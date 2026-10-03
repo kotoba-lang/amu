@@ -111,15 +111,32 @@ seed_rung_golden() {
   [ -n "$a" ] && [ -f $SEED_REPO/seed/tests/golden/refusal-$a.txt ] && { echo $a; return 0; }
   return 1
 }
-# seed_rung_gr_dirs <rung> : every test directory with an oracle that GR must pass at this rung, oldest first: the rung's own
-# (seed_rung_tests) and all earlier rN with seed/tests/rN/rN.oracle (a later rung keeps every earlier rung's programs passing)
+# seed_rung_gr_dirs <rung> : every test directory GR must pass at this rung, oldest first: all seed/tests/rK[x] with a K[x] oracle
+# (<d>/<d>.oracle, the R1 format of gr.sh) or the R5 format (<d>/cases.tsv, check-r5.sh) whose key (seed_rung_key) is <= the rung's,
+# plus the rung's own (seed_rung_tests). A later rung keeps every earlier rung's programs passing (r4b = r1 r3 r4 r4b; r5a adds r5).
 seed_rung_gr_dirs() {
-  local r=$1 n k own d out=""
-  n=$(seed_rung_num $r); own=$(seed_rung_tests $r) || return 1
-  for k in $(seq 1 $n 2>/dev/null); do [ $n -ge 1 ] || break; d=r$k; [ -f $SEED_REPO/seed/tests/$d/$d.oracle ] && out="$out $d"; done
-  [[ " $out " == *" $own "* ]] || { [ -f $SEED_REPO/seed/tests/$own/$own.oracle ] && out="$out $own"; }
+  local r=$1 own d out="" k=$(seed_rung_key $1)
+  own=$(seed_rung_tests $r) || return 1
+  for d in $(cd $SEED_REPO/seed/tests && ls -d r<->*(/) | sort -t r -k2 -n); do
+    { [ -f $SEED_REPO/seed/tests/$d/$d.oracle ] || [ -f $SEED_REPO/seed/tests/$d/cases.tsv ]; } || continue
+    [ $(seed_rung_key $d) -le $k ] && out="$out $d"
+  done
+  [[ " $out " == *" $own "* ]] || { { [ -f $SEED_REPO/seed/tests/$own/$own.oracle ] || [ -f $SEED_REPO/seed/tests/$own/cases.tsv ]; } && out="$out $own"; }
   echo ${out# }
 }
+
+# seed_rung_records : the seed/rungs/*.record files in LINEAGE order = by the number of ancestors of the record's unity commit (a rung
+# extension such as r5a/r4b comes where its sources are in history, not where its name sorts: r5a's unity precedes r4b's). HOUSE3, 2026-10-03.
+seed_rung_records() {
+  local f c n
+  for f in $SEED_REPO/seed/rungs/r*.record(N); do
+    c=$(sed -n 's/^unity_commit //p' $f | head -1); [ -n "$c" ] || c=$(sed -n 's/^head //p' $f | head -1)
+    n=$(git -C $SEED_REPO rev-list --count $c 2>/dev/null || echo 0)
+    echo "$n $f"
+  done | sort -n | cut -d' ' -f2-
+}
+# seed_rung_key <rung> : numeric order of test rungs: N*100 + (0 for rN, 1 for rNa, 2 for rNb ..)
+seed_rung_key() { local n=${1#r} s; s=${n##<->}; n=${n%%[a-z]*}; echo $(( n*100 + ( ${#s} ? $(printf '%d' "'${s[1]}") - 96 : 0 ) )); }
 
 # seed_modbuild <src.kotoba> <out-prefix> : build a test unit that includes seed modules. HOUSE2 (2026-10-03): the modules are written in
 # the language of the CURRENT rung (R3/R4 use case constants, fn literals ...), which stage-0 refuses, so: with SEED_UNIT_SEED=<seed.bin>

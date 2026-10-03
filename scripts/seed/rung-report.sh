@@ -91,6 +91,8 @@ ladder = [
  ('r2', 'performance, no new language: inline vector/pair access, linear-scan allocation, constant folding, counted-loop fuel prepay', 'R0-R1 gates + Embench medians within 1.5x of the 2026-09-29 reference, code bytes within 1.5x'),
  ('r3', 'values: options/results, try/throw/abort, typed lists, maps and sets, full strings', 'conformance abort/ collections/ stdlib/'),
  ('r4', 'functions: fn, closures, multi-arity, invoke, map/filter/reduce', 'conformance functions/'),
+ ('r4b', 'values by reference (R4B): records by [:ref :kw], [:list [:ref R]], :bytes, capability calls on wires 3 33 34 41 35, up to 16 parameters, vector literals to 128, loops to 20 bindings', 'R0-R4 gates + GR r4b (26 positives, 16 negatives), caps 6/6 = stage-0, G3 golden refusal-r4b'),
+ ('r5a', 'R5 part A, modules and linking: ns :require, per-module compile against interfaces, linker (seed link), reader conditionals #?(:kotoba ..)', 'R0-R4 + R4B gates + GR r5 part A (39 cases) + SPLIT (the seed split into 14 namespaces is its own fixed point) + SEP (separate mode == in-process image)'),
  ('r5', 'modules and effects: ns :require, qualified names, perform/handle, atom/swap!, capability policy', 'conformance namespace_priority/ entry_extensions/ state/ local-state/ reader_target/'),
  ('r6', 'Forms, :document ops, #?(:kotoba ..); the seed compiles the big compiler module by module (convergence point)', 'per-module differentials against the stage-0-built guest'),
  ('r7', '(optional) the seed frontend and backend are amu: full checker rules, CIDs, check/refactor/compile driver', 'rule 11 on the seed lineage'),

@@ -61,6 +61,7 @@ representation reaches).
 - **19 — H-S2 (2026-10-02/03):** R2, R3 built and gated; KIR coverage 241 -> 299/315. Verdict: R2, R3 confirmed.
 - **21 — H-S2/H-M1 (2026-10-03):** R4 functions (fixed point e9598b28), R5 design + oracle (77 cases), KIR merge test. Verdicts: R4 confirmed; H-M1 NO-GO for replacing machine_ir now, GO for the leaf layer.
 - **20 — H-M3 (2026-10-03):** falsified at 8x and 32x on a real corpus, built `pass-driver.sh`, hardened the loader's hash-consing. Verdict: confirmed for desugar-class passes (with H-M2); next wall is `KEXE_VECTOR_MAX`, then the unmeasured `infer`/`analyze`.
+- **22 — gates/lineage (2026-10-03, HOUSE3):** `gates.sh --rung r5a` and `--rung r4b` READY on head seed 4502396d (503,103 B, load 67-80, 14 and 13 gates; r5a runs GR r1 r3 r4 r4b plus R5 part A 39/39 and the XTRA rung proof SPLIT/SEP; UNIT 12/12, KIR 19/19, LEXREAD 78 dumps, LW 65/66, A64GEN 756/756); `bootstrap.sh` replays r0..r4, r5a, r4b with every recorded hash (seed1, seed2, size, bridge) and the head A=B=C fixed point 4502396d. Gates only; no performance claim (load never below 8 so far).
 
 ## Next iterations (ranked, 2026-10-03)
 
