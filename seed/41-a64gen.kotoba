@@ -76,18 +76,24 @@
 (defn- gn-r16 [x :i64] :i64 (bit-and (+ x 15) -16))
 
 ;; ---- extra encoders (forms 40-a64enc does not have) ----------------------------------------------------------------
+;; R4 rung proof: each encoder binds a field placer as a KNOWN let-bound fn literal (called directly, no closure built);
+;; (fld x w s) = (x & w) << s, the register fields with w = 31, the 6-bit immediates with w = 63
 ;; add xd, xn, xm, lsl #sh                                                      8b000000
 (defn- gn-e-addsl [d :i64 n :i64 m :i64 sh :i64] :i64
-  (+ 2332033024 (i64-shift-left (bit-and m 31) 16) (i64-shift-left (bit-and sh 63) 10) (i64-shift-left (bit-and n 31) 5) (bit-and d 31)))
+  (let [fld (fn [x w s] (i64-shift-left (bit-and x w) s))]
+    (+ 2332033024 (fld m 31 16) (fld sh 63 10) (fld n 31 5) (bit-and d 31))))
 ;; ldr xt, [xn, xm] (sc = 0) / [xn, xm, lsl #3] (sc = 1)                       f8606800 / f8607800
 (defn- gn-e-ldrr [t :i64 n :i64 m :i64 sc :i64] :i64
-  (+ (if (= sc 1) 4167071744 4167067648) (i64-shift-left (bit-and m 31) 16) (i64-shift-left (bit-and n 31) 5) (bit-and t 31)))
+  (let [reg (fn [x s] (i64-shift-left (bit-and x 31) s))]
+    (+ (if (= sc 1) 4167071744 4167067648) (reg m 16) (reg n 5) (bit-and t 31))))
 ;; str xt, [xn, xm, lsl #3]                                                      f8207800
 (defn- gn-e-strr3 [t :i64 n :i64 m :i64] :i64
-  (+ 4162877440 (i64-shift-left (bit-and m 31) 16) (i64-shift-left (bit-and n 31) 5) (bit-and t 31)))
+  (let [reg (fn [x s] (i64-shift-left (bit-and x 31) s))]
+    (+ 4162877440 (reg m 16) (reg n 5) (bit-and t 31))))
 ;; bitfield and logical-immediate forms: base + immr<<16 + imms<<10 + n<<5 + d (N = 1, 64-bit element)
 (defn- gn-e-bf [base :i64 d :i64 n :i64 immr :i64 imms :i64] :i64
-  (+ base (i64-shift-left (bit-and immr 63) 16) (i64-shift-left (bit-and imms 63) 10) (i64-shift-left (bit-and n 31) 5) (bit-and d 31)))
+  (let [fld (fn [x w s] (i64-shift-left (bit-and x w) s))]
+    (+ base (fld immr 63 16) (fld imms 63 10) (fld n 31 5) (bit-and d 31))))
 ;; lsl #s = ubfm d,n,#(-s mod 64),#(63-s) ; lsr #s = ubfm d,n,#s,#63 ; asr #s = sbfm d,n,#s,#63 (ubfm d3400000, sbfm 93400000)
 (defn- gn-e-lsl [d :i64 n :i64 s :i64] :i64 (gn-e-bf 3544186880 d n (bit-and (- 64 s) 63) (- 63 s)))
 (defn- gn-e-lsr [d :i64 n :i64 s :i64] :i64 (gn-e-bf 3544186880 d n s 63))
@@ -95,7 +101,8 @@
 (defn- gn-e-udf [] :i64 0)
 ;; ldrb wt, [xn, xm]                                                            38606800
 (defn- gn-e-ldrb [t :i64 n :i64 m :i64] :i64
-  (+ 945842176 (i64-shift-left (bit-and m 31) 16) (i64-shift-left (bit-and n 31) 5) (bit-and t 31)))
+  (let [reg (fn [x s] (i64-shift-left (bit-and x 31) s))]
+    (+ 945842176 (reg m 16) (reg n 5) (bit-and t 31))))
 ;; R4: adr xd, #0 (immhi/immlo patched by 42-layout, FX-ADR19)                     10000000
 (defn- gn-e-adr [d :i64] :i64 (+ 268435456 (bit-and d 31)))
 

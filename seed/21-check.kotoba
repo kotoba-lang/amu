@@ -2924,16 +2924,20 @@
     (cond (zero? c) false
           (and (= (nm-kind M c) ND-SYM) (= (nm-sym-of M c) s)) true
           :else (recur (nm-next M c)))))
-(defn- ck-in-list [l [:list :i64] s :i64] :bool
-  (loop [i 0] (cond (>= i (count l)) false (= (typed-list-nth [:list :i64] l i) s) true :else (recur (inc i)))))
-(defn- ck-cap-walk [M :vector-i64 c :i64 p :i64 acc [:list :i64]] [:list :i64]
+;; R4 rung proof (filter, reduce, fn literals capturing an i64): the captures are a :vector-i64 of symbols
+(defn- ck-in-list [l :vector-i64 s :i64] :bool (pos? (vector-count (filter (fn [x] (= x s)) l))))
+;; the distinct items of v in first-occurrence order
+(defn- ck-dedupe [v :vector-i64] :vector-i64
+  (reduce (fn [acc s] (if (ck-in-list acc s) acc (vector-conj acc s))) (vector-alloc 0) v))
+;; every occurrence in chain c of a symbol bound as a local now that is not a parameter of p (duplicates kept)
+(defn- ck-cap-walk [M :vector-i64 c :i64 p :i64 acc :vector-i64] :vector-i64
   (loop [x c a acc]
     (if (zero? x)
       a
       (let [k (nm-kind M x)
             s (nm-sym-of M x)]
-        (cond (and (= k ND-SYM) (>= (nm-local-slot M s) 0) (not (ck-is-param M p s)) (not (ck-in-list a s)))
-              (recur (nm-next M x) (typed-list-conj [:list :i64] a s))
+        (cond (and (= k ND-SYM) (>= (nm-local-slot M s) 0) (not (ck-is-param M p s)))
+              (recur (nm-next M x) (vector-conj a s))
               (or (= k ND-LIST) (= k ND-VEC) (= k ND-MAP) (= k ND-SET))
               (recur (nm-next M x) (ck-cap-walk M (nm-first M x) p a))
               :else (recur (nm-next M x) a))))))
@@ -2942,7 +2946,7 @@
 ;; i64 pair-chain words, `expected i64, got string`, measured on stage-0); 0 when every capture is admissible
 (defn- ck-cap-ok? [M :vector-i64 s :i64] :bool
   (let [ty (nm-local-type M s)] (or (= ty TY-I64) (= (ck-tcon M ty) TC-FN))))
-(defn- ck-bad-cap [M :vector-i64 c :i64 caps [:list :i64]] :i64
+(defn- ck-bad-cap [M :vector-i64 c :i64 caps :vector-i64] :i64
   (loop [x c]
     (if (zero? x)
       0
@@ -2977,7 +2981,7 @@
             (nm-set-ff f FF-RTYPE -1) (nm-set-ff f FF-NSLOTS np) (nm-set-ff f FF-EXPORT 0) (nm-set-ff f FF-FUEL 0)
             (nm-put MM-FN-N (inc f)) (ck-done-set f 1) (nm-put MM-R0 f))))))
 ;; the captures of FN f: types PT(np+i), the block [k s1 .. sk] (outer slots) in NF-TYPE of the parameter vector p
-(defn- ck-fn-caps [M :vector-i64 f :i64 np :i64 caps [:list :i64] p :i64] :vector-i64
+(defn- ck-fn-caps [M :vector-i64 f :i64 np :i64 caps :vector-i64 p :i64] :vector-i64
   (let [k (count caps)
         M1 (mem-alloc M (inc k))
         blk (ck-r M1)
@@ -2985,19 +2989,19 @@
     (loop [M3 M2 i 0]
       (if (>= i k)
         (nm-set-ff M3 f FF-NPARAMS (+ np k))
-        (let [s (typed-list-nth [:list :i64] caps i)]
+        (let [s (vector-at caps i)]
           (recur (-> M3 (nm-set-ff f (+ FF-PT0 np i) (nm-local-type M3 s)) (nm-put (+ blk 1 i) (nm-local-slot M3 s))) (inc i)))))))
 ;; bind the captured symbols to slots np+1 .. of FN f (types PT(np+i))
-(defn- ck-bind-caps [M :vector-i64 caps [:list :i64] f :i64 np :i64] :vector-i64
+(defn- ck-bind-caps [M :vector-i64 caps :vector-i64 f :i64 np :i64] :vector-i64
   (loop [M1 M i 0]
     (if (>= i (count caps))
       M1
       (let [slot (+ np i 1)]
-        (recur (-> M1 (nm-bind (typed-list-nth [:list :i64] caps i) slot (nm-ff M1 f (+ FF-PT0 np i))) (ck-use-slot f slot)
+        (recur (-> M1 (nm-bind (vector-at caps i) slot (nm-ff M1 f (+ FF-PT0 np i))) (ck-use-slot f slot)
                    (ck-known-set slot 0))
                (inc i))))))
 ;; check the body of FN f (fn node n) with the enclosing bindings hidden and a fresh state block; R0 = the body's type
-(defn- ck-fn-body [M :vector-i64 n :i64 f :i64 np :i64 caps [:list :i64]] :vector-i64
+(defn- ck-fn-body [M :vector-i64 n :i64 f :i64 np :i64 caps :vector-i64] :vector-i64
   (let [p (nm-nth M n 1)
         old (vector-at M MM-CK-STATE)
         done (ck-sg M ck-s-done)
@@ -3027,14 +3031,14 @@
       (let [M1 (ck-fn-new M n FK-LAMBDA np)
             f (ck-r M1)
             M2 (ck-fn-ptypes M1 (nm-first M1 p) f 0 hint)
-            caps (ck-cap-walk M2 (nm-nth M2 n 2) p (typed-list-new [:list :i64]))
+            caps (ck-dedupe (ck-cap-walk M2 (nm-nth M2 n 2) p (vector-alloc 0)))
             k (count caps)]
         (cond (nm-failed M2) (ck-touch M2)
               (> (+ np k) 5) (ck-err M2 E-CHECK-CAPTURES h (+ np k))
               (pos? (ck-bad-cap M2 (nm-nth M2 n 2) caps)) (ck-err M2 E-CHECK-TYPE (ck-bad-cap M2 (nm-nth M2 n 2) caps) TY-I64)
               :else (ck-fnlit2 (nm-set-nf (ck-fn-caps M2 f np caps p) h NF-TYPE f) n (+ (* f 8) np) caps fx))))))
 ;; fnp = the lifted FN * 8 + its parameter count
-(defn- ck-fnlit2 [M :vector-i64 n :i64 fnp :i64 caps [:list :i64] fx :i64] :vector-i64
+(defn- ck-fnlit2 [M :vector-i64 n :i64 fnp :i64 caps :vector-i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
         f (quot fnp 8)
         np (bit-and fnp 7)

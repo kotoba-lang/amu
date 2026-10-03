@@ -1,7 +1,7 @@
-;; R4 feat: list literals: count, nth, conj
+;; R4 feat: list literals: count and nth (a list from (list ..) is a [:list T]; conj on it is not tested: the reference's
+;; (list ..) is a pair chain and stage-0 refuses conj on it)
 (ns seed.r4 (:export [test]))
 (defn test [] :i64
-  (let [l (list 4 5 6)
-        m (conj l 7)
+  (let [l (list 4 5 6 7)
         s (list "a" "bc")]
-    (+ (count m) (* 10 (nth m 3)) (* 100 (string-length (nth s 1))) (* 1000 (count (list))))))
+    (+ (count l) (* 10 (nth l 3)) (* 100 (string-length (nth s 1))) (* 1000 (count (list))))))
