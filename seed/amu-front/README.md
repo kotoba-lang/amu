@@ -131,3 +131,25 @@ ADR-0363 lineage (15e45a3 / PORT's port) needs the same three edits (Kotoba arms
 Spot checks beyond the corpus (amu-front == stage-0 line): computed kernel base, scratch window > 16 KiB, alloc window,
 malformed GUID / hex, `(ucs2 x)` of a parameter, `typed-set-equal` as a :bool result and as an i64 operand (refused by
 both).
+
+## 9. Update 2026-10-04 (agent MERGE): ADR-0363 lineage + ARENA + F64 in one tree, 391 / 391
+
+kotoba-sema branch **`agent/arena-f64-merged`** (pushed): ad5b00f (ARENA ported onto 15e45a3, 2 commits) + cherry-picks of
+F64's 5971905 and 2d7d05d (clean, no conflicts; desugar was not touched by the second, validate auto-merged) = **1d1eb1a**.
+Host tests (`run-tests.cljk`, kbb sci, classpath + kotoba.kir from wt-D-osaho): 15e45a3 baseline 622 tests / 2260 assertions /
+76 failures / 24 errors; merged: identical counts and the identical set of 100 failing/erroring test lines (diff of the
+FAIL/ERROR headers is empty) **M**.
+
+KIR for this lineage cannot come from build.sh's default kir-dump: the Oct-2 AOT classes (pre-0363 sema) reject the 0363
+frontend (`call to aborting function normalize-effect-ceiling ... neither catches it nor aborts`, with both 15e45a3 and
+1d1eb1a, also with the staged 15e45a3 sema laid over the old classes). `seed/amu-front/kir-dump-staged.sh` stages the
+current sources of the whole wall classpath and runs from source: 4,767 functions, 317 s (load 17-70), KIR format v4 **M**.
+Build: `seed/amu-front/kir-dump-staged.sh <work> <sema checkout> 1d1eb1a`, then `AF_SEED=build/seed-large-m-r6g/b/seed-1.bin
+AF_F64=1 AF_KSEMA_REV=1d1eb1a seed/amu-front/build.sh <work>`.
+
+Result (`build/merge`, rung r6g large-M seed c13e22c0, check.kir 2,349,576 B, amu-front 2,608,640 B, libSystem only, no-host-processes
+PASS): corpus **391 / 391 same verdict and report** (358 SAME-OK, 33 SAME-REFUSE, 0 differ, 0 trap) **M**; results/merge-corpus-20261004.tsv.
+Scale (results/merge-scale-20261004.tsv, load 30-70, times indications): the 810,094 B unity fits one process (13.0 M vectors, 31.3 M
+pairs = 47% of 64 Mi, 41 s), 1,037,509 B 39.8 M pairs (49 s), 1,563,759 B refused by the 1 MiB bound; all SAME-REFUSE
+against stage-0 (policy refusal after full analysis). Compared with the c2766ee build the pair count of the unity input is
+about the same (ARENA's tables are kept by the port). The label stays BOOTSTRAP-REFERENCE (JVM KIR) as before.
