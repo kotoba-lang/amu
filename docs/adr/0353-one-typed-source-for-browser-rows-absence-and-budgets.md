@@ -881,6 +881,37 @@ option-i64"); `(:k m)`, a required read, off `{}` ("... is record
 :kotoba.map-literal/empty, which has no field :extend? that the row ...
 reads"); and a record, the empty one included, as an `if` test.
 
+The vector parameter landed as floor `:vector-parameter` (gate
+`vector-parameter-takes-the-callers-vector-test`), the first wall of
+browser.input. Its hit-tests take a point and a rect the Clojure way,
+`(defn- point-in-rect? [[px py] [x y w h]] ..)`, and were refused "unknown
+operation: nth is not a builtin, a sugar head, or a function of this module".
+An unannotated parameter is the provisional `:i64` until
+`infer-absent-parameter-types` reads a type mismatch on it; `(vector-at p 0)`
+raised one, but `nth` (what a vector pattern desugars to) and `count` on an
+`:i64` fell through to an unknown operation and "count requires a bounded
+vector", which name no parameter. kotoba-sema (`3d051f43`): `nth` and `count`
+on an `:i64` receiver require `:vector-i64` of it, and a refused synthetic
+temp a vector pattern is read through counts as its parameter, so the
+parameter is the `:vector-i64` its callers pass. Measured on nbb: the gate was
+red on `77d2dd84` (8 errors and 5 failures of 13 assertions, the floor's
+literal), green on `3d051f43` (13 assertions). The minimized form (a
+destructured parameter, `nth` and `count`: 83) and browser.input's
+`point-in-rect?` / `in-titlebar?` / `in-resize-handle?` against a window
+record's rect (11101) answer the reference's value on `x86_64-aiueos-kernel-v1`
+and `aarch64-macos-kotoba-v1` with the oracle verified, and compile on
+`wasm32-kotoba-v1`. kotoba-sema's portable suite has the same 39 failures and
+5 errors of 616 tests before and after (identical lists). Refused by name: a
+number, a string and a heterogeneous vector passed where the vector is read
+("expected vector-i64, got i64" / "got string" / "got [:vector [:i64
+:string]]"); a parameter used both as a vector and a number (the uses
+disagree, both named); and an item as an `if` test (a number is never
+truthy). browser.input's next walls were measured and put on the ladder:
+`window-at`'s `filter` / `first` / `reverse` over the `[:list R]` a vector of
+window records is (`:record-list-sequence`), and `normalize-event`'s open host
+event (`:open-event-row`, which needs a decision: `(:k m)` is a required read
+by this ADR, and the event reads keys it may lack).
+
 ## Selfhost foundation floors (appended 2026-09-26)
 
 Superproject adr-2609242330 measured that compiling amu with amu needs the

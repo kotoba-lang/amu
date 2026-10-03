@@ -258,8 +258,37 @@
   {:id :browser-text-edit :gate "browser-text-edit-native-test"
    :blocked-by [:absent-field-from-assoc :rebound-row-argument :native-vector-field :typed-wasm-min-max :native-option-record :options-map-argument :export-signatures]
    :goal "kotoba-lang/browser's browser.text-edit, migrated only mechanically (defn-, nil's meaning, a :kotoba interop branch), compiles for both native targets and its hosted tests pass on amu's output"}
+  ;; Measured 2026-10-04 on kotoba-sema 77d2dd84, browser 8671500: browser.input
+  ;; as written is refused at its first function, point-in-rect?'s
+  ;; [[px py] [x y w h]], "unknown operation: nth is not a builtin, a sugar
+  ;; head, or a function of this module" -- an unannotated parameter read as a
+  ;; vector stayed the provisional :i64 ((vector-at p 0) refined it, (nth p 0)
+  ;; and (count p) did not).
+  {:id :vector-parameter :gate "vector-parameter-takes-the-callers-vector-test"
+   :goal "an unannotated parameter destructured as a vector or read by nth / count is the :vector-i64 its callers pass -- browser.input's point-in-rect? / in-titlebar? / in-resize-handle?; a number, a string and a heterogeneous vector at the call, a parameter used both as a vector and a number, and an item as an if test stay refused by name"}
+  ;; Measured 2026-10-04 with :vector-parameter in place: window-at's
+  ;; (first (filter #(point-in-rect? point (:window/rect %)) (reverse
+  ;; (:surface/windows surface)))) is refused -- a vector literal of window
+  ;; records is a [:list R], and over it filter is "expected vector-i64, got
+  ;; [:list R]", first "first (pair-first) reads a pair chain or a bounded
+  ;; vector", reverse "unknown operation: reverse is not a builtin".
+  {:id :record-list-sequence :gate "record-list-filter-first-reverse-test"
+   :goal "filter / first / reverse over a [:list R] of records -- browser.input's window-at -- with first answering [:option R] (absent on an empty list) and the predicate a closure over the caller's locals, on the reference, wasm32 and both native targets; first of an empty list used as a record, and a number as the list, stay refused by name"}
+  ;; Measured 2026-10-04: normalize-event reads an OPEN host event -- (or
+  ;; (:button event) 0), (select-keys event [:pointerId .. :height]) over keys
+  ;; an event may lack, one record per capability joined in one cond, and the
+  ;; event itself returned (assoc event :event/type :unknown). Refused "argument
+  ;; {:x 3} to ne is record :kotoba.map-literal/x, which has no field :button
+  ;; that the row {:button T | r} of parameter event reads", and the cond's
+  ;; branches "record-get without a type descriptor requires a record value;
+  ;; got :i64". (:k m) is a required read by ADR 0353 (pinned by
+  ;; options-map-destructures-as-a-row-test), so admitting this is a decision.
+  {:id :open-event-row
+   :needs-a-human "what a host event is in the typed source: one closed record with every key [:option T] (the host adapter fills absence), a variant with one case per capability (normalize-event becomes a match), or (or (:k m) d) read as an optional field the way (get m :k d) already is -- each measured possible, none chosen; the last changes what (:k m) means"
+   :goal "browser.input's normalize-event and event-point compile with the source still read by Clojure"}
   {:id :browser-input :gate "browser-input-native-test"
-   :goal "browser.input the same"}
+   :blocked-by [:vector-parameter :record-list-sequence :open-event-row :export-signatures]
+   :goal "browser.input the same (its reduce-event calls browser.surface's apply-actions, so the module compiles with browser.surface's action reducer; the rest of browser.surface is :browser-surface)"}
   {:id :browser-surface :gate "browser-surface-native-test"
    :goal "browser.surface with cssom.layout and kotoba.wasm.dom the same"}
   {:id :hosted-engine-switch :gate "browser-hosted-runs-amu-output-test" :repo "kotoba-lang/browser"
