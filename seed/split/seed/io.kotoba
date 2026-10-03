@@ -77,7 +77,7 @@
   (typed-cap-call :fs/app-data :string :string
     (string-concat path (string-concat (io-sep "RANGE") (string-concat (mem-u2dec off) (string-concat ":" (mem-u2dec len)))))))
 
-(defn- io-write-text [path :string s :string] :i64
+(defn io-write-text [path :string s :string] :i64
   (let [r (typed-cap-call :fs/app-data :string :string (string-concat path (string-concat (io-sep "WRITE") s)))]
     (string-length r)))
 
@@ -100,7 +100,7 @@
   (cond (= d 0) "0" (= d 1) "1" (= d 2) "2" (= d 3) "3" (= d 4) "4" (= d 5) "5" (= d 6) "6" (= d 7) "7"
         (= d 8) "8" (= d 9) "9" (= d 10) "a" (= d 11) "b" (= d 12) "c" (= d 13) "d" (= d 14) "e" :else "f"))
 
-(defn- io-hex2 [b :i64] :string
+(defn io-hex2 [b :i64] :string
   (string-concat (io-hexd (u64-shift-right b 4)) (io-hexd (bit-and b 15))))
 
 ;; hex of M[i..end) appended to acc

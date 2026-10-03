@@ -91,7 +91,7 @@
 ;; ---- byte sink ----------------------------------------------------------------------------------------------------
 
 ;; append one byte (0..255); a no-op once an error is recorded
-(defn- out-put [M :vector-i64 b :i64] :vector-i64
+(defn out-put [M :vector-i64 b :i64] :vector-i64
   (let [n (vector-at M MM-OUT-N)
         e (vector-at M MM-ERR)]
     (if (> e 0)
@@ -109,7 +109,7 @@
     (out-put M3 (bit-and (u64-shift-right w 24) 255))))
 
 ;; decimal digits of n >= 0 (a negative n is an internal error)
-(defn- out-put-dec [M :vector-i64 n :i64] :vector-i64
+(defn out-put-dec [M :vector-i64 n :i64] :vector-i64
   (if (< n 0)
     (out-err M E-OUT-FORMAT n)
     (if (< n 10)
@@ -119,7 +119,7 @@
         (out-put M1 (+ 48 (- n (* q 10))))))))
 
 ;; bytes a..b-1 of the string S
-(defn- out-put-span [M :vector-i64 S :string a :i64 b :i64] :vector-i64
+(defn out-put-span [M :vector-i64 S :string a :i64 b :i64] :vector-i64
   (if (>= a b)
     M
     (let [M1 (out-put M (string-code-point-at S a))]
@@ -151,7 +151,7 @@
 ;; ---- builder ------------------------------------------------------------------------------------------------------------
 
 ;; "KSEED1 "
-(defn- out-put-magic [M :vector-i64] :vector-i64
+(defn out-put-magic [M :vector-i64] :vector-i64
   (let [M1 (out-put M 75)
         M2 (out-put M1 83)
         M3 (out-put M2 69)
@@ -247,7 +247,7 @@
         (out-w M1 (+ MM-STAT-BASE 44) tot))
       (out-err M E-OUT-FORMAT rel))))
 
-(defn- out-set-cs [M :vector-i64] :vector-i64
+(defn out-set-cs [M :vector-i64] :vector-i64
   (let [n (vector-at M MM-OUT-N)]
     (out-w M (out-cs-slot) n)))
 
@@ -275,7 +275,7 @@
     (out-build3 M1)))
 
 ;; L[a .. b) (one byte per item) appended to OUT
-(defn- out-put-vec [M :vector-i64 L :vector-i64 a :i64 b :i64] :vector-i64
+(defn out-put-vec [M :vector-i64 L :vector-i64 a :i64 b :i64] :vector-i64
   (if (>= a b)
     M
     (out-put-vec (out-put M (vector-at L a)) L (+ a 1) b)))

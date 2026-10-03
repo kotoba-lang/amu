@@ -93,7 +93,8 @@
 ;; M cells (MEMORY-MAP: M[MM-STAT-BASE+60..63], free after the MANIFEST grew to 15 files; see CONTRACT-REQUESTS):
 ;;   124 first prelude token, 125 the :exports vector node, 126 the :functions vector node, 127 the function table
 ;;   (heap address; 1 = ":format seen" before the table exists). Function table: word 0 = function count, word 1 = the
-;;   address of the new string-literal records, word 2 = the next new literal index, then (from word kr-th) one record
+;;   address of the new string-literal records, word 2 = the next new literal index, (KIR3) word 3 = library use bits, word
+;;   4 = the first library defn, (KIR4) word 5 = the record of the function being emitted, then (from word kr-th) one record
 ;;   of kr-w words per function (kr-f-*), then the new literal records (4 words, LF-* layout).
 ;;
 ;; String literals: KIR repeats a def's string at every use (it has no defs), so the LIT table of 10-lex is rebuilt
@@ -106,7 +107,7 @@
 (def kr-c-fns 126)
 (def kr-c-tab 127)
 (def kr-w 8)
-(def kr-th 5)
+(def kr-th 6)
 (def kr-f-name 0)
 (def kr-f-params 1)
 (def kr-f-result 2)
@@ -606,7 +607,7 @@
 ;; 65 -map 66 -count 67 -kind 68 -equal? 69 -set-contains? 70 -contains 71 -get 72 -vector-at 73 -list-at 74 -map-entry-at
 ;; 75 -vector-assoc 76 -vector-conj 77 -vector-drop 78 -vector-remove 79 -vector-sort 80 -assoc 81 -dissoc 82 -merge
 ;; 83 -string-value 84 -bool-value 85 -i64-value 86 -edn-print 87 -edn-read 88 document-keyword-value 89 keyword-name
-;; 90 keyword-from-string
+;; 90 keyword-from-string 91 :keyword 92 option-value-of
 ;; 0 = none of them
 (defn- kr-code-of [len :i64 h :i64] :i64
   (cond
@@ -698,6 +699,8 @@
     (= h -946279498284706226) (kr-len-ok len 22 88)
     (= h -1399000368820294352) (kr-len-ok len 12 89)
     (= h -5903302927127843025) (kr-len-ok len 19 90)
+    (= h 2180993942247917868) (kr-len-ok len 8 91)
+    (= h 7114827962686392402) (kr-len-ok len 15 92)
     :else 0))
 
 (defn- kr-is-name [k :i64] :i64 (cond (= k ND-SYM) 1 (= k ND-KW) 1 :else 0))
@@ -1535,7 +1538,50 @@
 (defn- kr-dkeyed [hc :i64] :i64 (cond (= hc 70) 1 (= hc 71) 1 (= hc 80) 1 (= hc 81) 1 :else 0))
 
 (defn- kr-dkey [M :vector-i64 S :string k :i64] :vector-i64
-  (if (= (* (kr-ne k 0) (kr-eq (kr-kind M k) ND-KW)) 1) (kr-dkw2 M S k k) (kr-id M)))
+  (cond (= k 0) (kr-id M)
+        (= (kr-kind M k) ND-KW) (kr-dkw2 M S k k)
+        (= (kr-kwtyped M S k) 1) (kr-kwwrap (kr-alloc M 2) k)
+        :else (kr-id M)))
+
+;; 1 when operand x is known to be a :keyword: a parameter of the function being emitted declared :keyword, a call of a
+;; program function whose :result is :keyword, or (option-value-of [:option :keyword] ..). Other keyword-typed operands
+;; (let-bound, loop variables) are not recognised: 21-check refuses them against the :string parameter (E2104)
+(defn- kr-kwtyped [M :vector-i64 S :string x :i64] :i64
+  (let [k (kr-kind M x)
+        h (kr-first M x)
+        r (if (= k ND-LIST) (kr-find M S h) 0)]
+    (cond (= k ND-SYM) (kr-is-kwtype M S (kr-sym-type M S x))
+          (= k ND-LIST) (cond (> r 0) (kr-is-kwtype M S (vector-at M (+ r kr-f-result)))
+                              (= (kr-code M S h) 92) (kr-is-kwtype M S (kr-next M (kr-first M (kr-next M h))))
+                              :else 0)
+          :else 0)))
+
+(defn- kr-is-kwtype [M :vector-i64 S :string t :i64] :i64 (if (= t 0) 0 (kr-eq (kr-code M S t) 91)))
+
+;; the type node of the emitted function's parameter spelled like node b (its chain is p1 T1 p2 T2 .. after kr-params),
+;; 0 when b names none
+(defn- kr-sym-type [M :vector-i64 S :string b :i64] :i64
+  (let [r (vector-at M (+ (vector-at M kr-c-tab) 5))
+        ps (if (= r 0) 0 (vector-at M (+ r kr-f-params)))]
+    (if (= ps 0)
+      0
+      (loop [c (kr-first M ps)]
+        (cond (= c 0) 0
+              (= (* (kr-eq (kr-kind M c) ND-SYM) (kr-same M S c b)) 1) (kr-next M c)
+              :else (recur (kr-next M c)))))))
+
+;; x becomes (__kr_kwtext x'), x' a copy of x in the first of 2 fresh nodes (MM-R0); the keyword tables are marked used
+(defn- kr-kwwrap [M :vector-i64 x :i64] :vector-i64
+  (if (kr-failed M)
+    (kr-id M)
+    (let [q (vector-at M MM-R0)
+          tt (kr-lib-tok M kr-dj-kwtext)
+          M1 (kr-node M q (kr-kind M x) (kr-nf M x NF-TOK) (kr-nf M x NF-AUX))
+          M2 (kr-nset M1 q NF-FIRST (kr-first M1 x))
+          M3 (kr-sym-node M2 (+ q 1) tt q)
+          M4 (kr-nset (kr-node M3 x ND-LIST tt 2) x NF-FIRST (+ q 1))
+          tab (vector-at M4 kr-c-tab)]
+      (kr-put M4 (+ tab 3) (bit-or (vector-at M4 (+ tab 3)) 768)))))
 
 ;; the keys of a map fold (gs = 2: operands 1, 3, ..), nothing for the others
 (defn- kr-dkeys [M :vector-i64 S :string c :i64 gs :i64] :vector-i64
@@ -1720,7 +1766,7 @@
           M7 (kr-nset M6 (+ n 2) NF-NEXT rs)
           M8 (kr-nset M7 rs NF-NEXT bd)
           M9 (kr-nset M8 bd NF-NEXT 0)
-          M9a (if (= pt 0) (kr-id M9) (kr-walk M9 S pt 0))
+          M9a (kr-put (if (= pt 0) (kr-id M9) (kr-walk M9 S pt 0)) (+ (vector-at M9 kr-c-tab) 5) r)
           M10 (kr-params M9a ps pt (+ n 3) (+ n 2))]
       (kr-walk (kr-walk M10 S rs 0) S bd 0))))
 

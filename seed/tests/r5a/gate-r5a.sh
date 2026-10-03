@@ -12,6 +12,7 @@
 #          split-1 == split-2 (fixed point of the namespace-split seed), and split-1 compiles the unity to the same container as
 #          seed-1 does (seed-2.kseed): the linked seed behaves as the unity seed on its own source
 #   SPLIT-G1/G2  scripts/seed/g1.sh / g2.sh with split-1 (19 ports, corpus) and the containers compared with seed-1's
+#   SEP    seed/tests/r5a/sep-r5a.sh: separate mode (compile --emit-module per module, `seed link`) == the in-process container
 # Exit 0 iff every row passes.
 emulate -L zsh
 setopt pipefail
@@ -64,5 +65,7 @@ if spl $B/seed-1.bin $B/split-1 && spl $B/split-1.bin $B/split-2; then
   done
   [ $nd -eq 0 ] && [ $nc -gt 0 ] && row PASS "SPLIT-G4 split-1 vs seed-1 containers: $nc identical" || row FAIL "SPLIT-G4 $nd of $nc containers differ"
 else row FAIL "SPLIT compile: $(grep '^seed:' $B/gate-r5a-split.log | head -1)"; fi
+# SEP: separate mode (one process per module + seed link) gives the in-process image on every multi-module positive and the split seed
+SEED_BUILD=$B zsh $D/sep-r5a.sh $B/seed-1.bin > $B/gate-r5a-sep.log 2>&1 && row PASS "SEP $(tail -1 $B/gate-r5a-sep.log)" || row FAIL "SEP $(grep -v '^SAME' $B/gate-r5a-sep.log | head -3 | tr '\n' ' ')"
 echo "gate-r5a: $([ $fails -eq 0 ] && echo READY || echo "NOT READY ($fails failed)") (load $(uptime | sed 's/.*averages: //'))"
 [ $fails -eq 0 ]

@@ -27,6 +27,7 @@
         ;; R5A: --source-path D (repeatable) and --policy P also take a value
         (string=? s "--source-path") 1
         (string=? s "--policy") 1
+        (string=? s "--object-dir") 1
         :else (drv-flagv1 s)))
 (defn- drv-hexw [s :string] :i64 (drv-is s 3 3695806134807131338))
 (defn- drv-dash [s :string] :i64 (drv-is s 1 -5808622843851602280))
@@ -155,6 +156,8 @@
     (= c 6022) "duplicate required namespace "
     (= c 6023) "namespace templates are not admitted in R5: "
     (= c 6024) "namespace resolves from multiple explicit source paths: "
+    (= c 6025) "required module "
+    (= c 6026) "malformed or mismatched module object "
     :else ""))
 ;; error text piece 1
 (defn- drv-et1 [c :i64] :string
@@ -211,6 +214,7 @@
     (= c 6017) " uses a type the seed does not carry across modules (records, keywords, functions, variadic clauses)"
     (= c 6018) "'"
     (= c 6021) "'"
+    (= c 6025) " has no object in the object directory"
     :else ""))
 ;; error text piece 2
 (defn- drv-et2 [c :i64] :string
@@ -284,6 +288,8 @@
     (= c 6022) 1
     (= c 6023) 1
     (= c 6024) 1
+    (= c 6025) 1
+    (= c 6026) 1
     :else 0))
 ;; placeholder 1: 0 none, 1 {name}, 2 {n}, 3 {t}
 (defn- drv-ek1 [c :i64] :i64
@@ -419,12 +425,69 @@
       (drv-pj-fail M (pj-err-path L P1))
       (drv-pj-emit M L P1 mode out))))
 
+;; argv index of the value after the flag spelled s, -1 when absent
+(defn- drv-pj-flag [i :i64 n :i64 s :string] :i64
+  (cond (>= (+ i 1) n) -1 (string=? (io-arg i) s) (+ i 1) :else (drv-pj-flag (+ i 1) n s)))
+
+(defn- drv-pj-objdir [L :vector-i64 n :i64] [:list :string]
+  (let [o (drv-pj-flag 1 n "--object-dir")
+        w (-> L (vector-assoc! pj-k-root0 0) (vector-assoc! pj-k-nroot 1))]
+    (pj-padd (typed-list-new [:list :string]) (if (< o 0) "." (io-arg o)))))
+
+;; compile <file> --emit-module [--entry] --object-dir O --output X: the module object (60-proj separate mode)
+(defn- drv-pj-emitmod [M :vector-i64 path :string out :string] :i64
+  (let [L (pj-new-l)
+        n (io-argc)
+        P0 (drv-pj-objdir L n)
+        P1 (pj-emit M L (pj-padd P0 path) (count P0) (drv-pj-has 1 n "--entry"))]
+    (cond (> (vector-at M MM-ERR) 0) (drv-pj-fail M (pj-err-path L P1))
+          (= (string-length out) 0) (drv-usage)
+          :else (let [t (pj-p P1 (- (count P1) 1))
+                      w (io-write-text out t)]
+                  (if (= (io-exists out) 1) (drv-cok out (string-length t)) (drv-fail0 E-WRITE))))))
+
+;; link <root.kso> --object-dir O --output X
+(defn- drv-pj-link [n :i64] :i64
+  (let [k (drv-pos 1 n 0)
+        o (drv-flag 1 n -5168643622338417694)
+        M (mem-new)
+        L (pj-new-l)
+        P0 (drv-pj-objdir L n)]
+    (cond (< k 0) (drv-usage)
+          (< o 0) (drv-usage)
+          (= (io-exists (io-arg k)) 0) (drv-fail0 E-READ)
+          :else (let [P1 (pj-link-objects M L (pj-padd P0 (io-arg k)) (count P0))]
+                  (if (> (vector-at M MM-ERR) 0)
+                    (drv-pj-fail M (pj-err-path L P1))
+                    (drv-emit2 M (drv-kir-out o)))))))
+
+;; modules <entry> --source-path D .. : the compile order, one "<ns> <path>" line per module (dependencies first)
+(defn- drv-pj-modules [n :i64] :i64
+  (let [k (drv-pos 1 n 0)
+        M (mem-new)
+        L (pj-new-l)
+        P0 (drv-pj-roots L (typed-list-new [:list :string]) 1 n)
+        w (vector-assoc! L pj-k-unpinned 1)]
+    (if (< k 0)
+      (drv-usage)
+      (let [P1 (pj-discover M L (pj-padd P0 (io-arg k)) (count P0))]
+        (if (> (vector-at M MM-ERR) 0)
+          (drv-pj-fail M (pj-err-path L P1))
+          (loop [i 0]
+            (if (>= i (vector-at L pj-k-nord))
+              0
+              (let [m (vector-at L (+ pj-o-base i))
+                    x (io-out (string-concat (pj-p P1 (pj-mf L m pj-mf-name)) (string-concat " " (string-concat (pj-p P1 (pj-mf L m pj-mf-path)) "\n"))))]
+                (recur (+ i 1))))))))))
+
 (defn- drv-pj-run [S :string path :string mode :i64 out :string] :i64
   (let [M (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S)
         M1 (if (= (vector-at M MM-ERR) 0) (rd-run M S) M)]
+    (if (= (drv-pj-has 1 (io-argc) "--emit-module") 1)
+      (drv-pj-emitmod M1 path out)
     (if (and (= (vector-at M1 MM-ERR) 0) (or (= (drv-pj-has 1 (io-argc) "--source-path") 1) (= (pj-needed M1 S) 1)))
       (drv-pj-compile M1 path mode out)
-      (drv-c2 M1 S path mode out))))
+      (drv-c2 M1 S path mode out)))))
 ;; ==== END R5A project route ===========================================================================================
 
 (defn- drv-run [path :string mode :i64 out :string] :i64
@@ -572,6 +635,8 @@
   (cond (< n 1) (drv-usage)
         (= (drv-is (io-arg 0) 11 1891999495935608509) 1) (drv-kir n)  ; compile-kir (block above)
         (= (drv-is (io-arg 0) 7 1333288279851460382) 1) (drv-compile n)
+        (string=? (io-arg 0) "link") (drv-pj-link n)          ; R5A (60-proj separate mode)
+        (string=? (io-arg 0) "modules") (drv-pj-modules n)    ; R5A
         (= (drv-is (io-arg 0) 5 -9003556064986789273) 1) (drv-check n)
         (= (drv-is (io-arg 0) 14 -7022508286123793970) 1) (drv-extract n)
         :else (drv-usage)))

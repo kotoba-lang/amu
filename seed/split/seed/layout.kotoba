@@ -116,7 +116,7 @@
     -1))
 
 ;; imm16 patch (movz / movk): imm16 in bits 20:5 (hw bits are left alone).
-(defn- ly-patch16 [w :i64 v :i64] :i64
+(defn ly-patch16 [w :i64 v :i64] :i64
   (bit-or (bit-and w 4292870175) (i64-shift-left (bit-and v 65535) 5)))
 
 ;; keeps a read index inside a table: x if lo <= x <= hi, else lo (the status function then reports the error)
