@@ -17,7 +17,7 @@
 # LW_NOANDOR=1 (default while the stable stage-0 is used): every part is passed through scripts/seed/lw_noandor.py
 # first, because the stable stage-0 answers 'internal compiler error' on any and/or/not (CONTRACT-REQUESTS.md).
 # Set LW_NOANDOR=0 once stage-0 is rebuilt.
-# LW_FRONT=ref (default until 10-lex/11-read build under stage-0; LW_FRONT=real uses them): no 10-lex/11-read; the token/node/literal tables come from the Python reference lexer/reader
+# LW_FRONT=real (default since 2026-10-03, HOUSE2: the unit is built by the current seed, seed_modbuild in lib.sh; LW_FRONT=ref keeps the R0-only Python-table front): no 10-lex/11-read; the token/node/literal tables come from the Python reference lexer/reader
 # (scripts/seed/lw_tables.py over scripts/seed/lexread_ref.py) via seed/tests/unit/30-lower-refload.kotoba.
 # LW_PUT=1 (default): the frontend modules' `vector-assoc!` go through one trivially linear `lwg-put` (the stable
 # stage-0's whole-module linearity proof otherwise refuses them; seed/CONTRACT-REQUESTS.md, 30-lower line).
@@ -28,8 +28,8 @@ source "$(dirname "$0")/lib.sh"
 R=$SEED_REPO
 what=${1:-all}; update=0; [ "$2" = "--update" ] && update=1
 W=$SEED_BUILD/lw-gate; mkdir -p $W/scratch
-front=${LW_FRONT:-ref}
-if [ $front = ref ]; then mods=(00-ns 20-names); else mods=(00-ns 10-lex 11-read 20-names); fi
+front=${LW_FRONT:-real}
+if [ $front = ref ]; then mods=(00-ns 01-mem 02-io 20-names); else mods=(00-ns 01-mem 02-io 10-lex 11-read 20-names); fi
 [ "${LW_CHECK:-1}" = 1 ] && mods+=(21-check)
 mods+=(30-lower)
 : > $W/unit.kotoba
@@ -55,7 +55,7 @@ else cat $W/test.kotoba >> $W/unit.kotoba; fi
 
 if [ ! -f $W/unit.bin ] || ! cmp -s $W/unit.kotoba $W/unit.built.kotoba; then
   t0=$(date +%s)
-  if ! seed_stage0_build $W/unit.kotoba $W/unit; then
+  if ! seed_modbuild $W/unit.kotoba $W/unit; then
     echo "lw-gate: FAIL (stage-0 refused the test build)"; grep -o ':message "[^"]*"' $W/unit.log | head -3; exit 1
   fi
   cp $W/unit.kotoba $W/unit.built.kotoba

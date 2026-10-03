@@ -1,0 +1,7 @@
+# seed/tests/lexread/WIDENED (owner HOUSE2, 2026-10-03): negatives of the R0 grammar whose verdict the later rungs changed ON PURPOSE.
+# scripts/seed/lexread.sh check skips them (and prints the count): the golden comes from scripts/seed/lexread_ref.py, an independent
+# reference of the R0 grammar, and its dumper does not print ND-MAP / ND-SET. The current behaviour is pinned by the unit goldens
+# seed/tests/unit/10-lex.expected and 11-read.expected instead.
+n01-nonascii-comment	R3: a comment may hold UTF-8 (was E1002)
+n09-map	R1: `{` reads as ND-MAP (was E1105)
+n14-nonascii-wins	R3: the non-ASCII comment is accepted, so the next error (#x, E1005 at 35) wins (was E1002 at 21)

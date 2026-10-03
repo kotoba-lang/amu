@@ -33,9 +33,11 @@ case $cmd in
   stat) build || exit 1
         for line in ${(f)"$(files)"}; do n=${line%% *}; p=${line#* }; [ $# -eq 0 ] || (( ${@[(I)$n]} )) || continue; echo -n "$n: "; run1 stat $p; done ;;
   check) build || exit 1
-        fail=0; cnt=0
+        fail=0; cnt=0; widened=0
+        wl=$(grep -v '^#' $R/seed/tests/lexread/WIDENED 2>/dev/null | cut -f1)
         for line in ${(f)"$(files)"}; do
           n=${line%% *}; p=${line#* }
+          if [[ $'\n'$wl$'\n' == *$'\n'$n$'\n'* ]]; then widened=$((widened+1)); continue; fi
           [ $# -eq 0 ] || (( ${@[(I)$n]} )) || continue
           for m in tok tree; do
             run1 $m $p > $W/out.$m 2> $W/err.$m
@@ -43,7 +45,7 @@ case $cmd in
             if ! cmp -s $W/out.$m $R/seed/tests/lexread/golden/$n.$m; then echo "FAIL $n $m"; diff $W/out.$m $R/seed/tests/lexread/golden/$n.$m | head -5; head -3 $W/err.$m; fail=1; fi
           done
         done
-        [ $fail -eq 0 ] && echo "lexread: PASS (all dumps byte-identical to the goldens)" || { echo "lexread: FAIL"; exit 1; } ;;
+        [ $fail -eq 0 ] && echo "lexread: PASS ($cnt dumps byte-identical to the goldens; $widened files skipped: grammar widened on purpose, seed/tests/lexread/WIDENED)" || { echo "lexread: FAIL"; exit 1; } ;;
   live) build || exit 1
         fail=0
         for p in ${(f)"$(seed_manifest)"}; do

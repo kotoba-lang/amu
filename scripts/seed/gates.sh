@@ -13,6 +13,9 @@
 #   GR     rung conformance (scripts/seed/gr.sh), r1 and later only: the rung's own seed/tests/<rung> AND every earlier rK with an
 #          oracle (a later rung keeps every earlier rung's programs passing; r4 = r1 + r3 + r4)
 #   UNIT   with --with-unit: every module unit test (scripts/seed/unit-all.sh) built by the CURRENT seed-1
+#   KIR LEXREAD LW A64GEN   with --with-aux: kir-gate.sh (19 ports through 12-kirread, code bytes and fuel), lexread.sh check (80 dumps vs
+#          the independent Python reference), lw-gate.sh all (30-lower unit + 19 ports + corpus), a64gen-fixtures.py run (756 loader runs);
+#          all built/run by the CURRENT seed-1
 #   Honesty (HOUSE2, 2026-10-03): the rung name must resolve to test directories and a refusal golden (seed_rung_tests /
 #          seed_rung_golden in lib.sh, aliases in seed/tests/ALIASES) or the run fails at once; --no-build refuses seed binaries whose
 #          recorded unity sha256 differs from the CURRENT seed/MANIFEST sources (a stale or hand-copied build is not a result);
@@ -26,9 +29,9 @@
 emulate -L zsh
 setopt pipefail
 source "$(dirname "$0")/lib.sh"
-rung=r0; nobuild=0; only=""; skip=""; withfuel=0; withunit=0
+rung=r0; nobuild=0; only=""; skip=""; withfuel=0; withunit=0; withaux=0
 while [ $# -gt 0 ]; do
-  case $1 in --rung) rung=$2; shift 2 ;; --no-build) nobuild=1; shift ;; --with-fuel) withfuel=1; shift ;; --with-unit) withunit=1; shift ;; --only) only=$2; shift 2 ;; --skip) skip=$2; shift 2 ;; *) echo "usage: gates.sh [--rung rN] [--no-build] [--with-fuel] [--with-unit] [--only G1,..] [--skip G5,..]" >&2; exit 2 ;; esac
+  case $1 in --rung) rung=$2; shift 2 ;; --no-build) nobuild=1; shift ;; --with-fuel) withfuel=1; shift ;; --with-unit) withunit=1; shift ;; --with-aux) withaux=1; shift ;; --only) only=$2; shift 2 ;; --skip) skip=$2; shift 2 ;; *) echo "usage: gates.sh [--rung rN] [--no-build] [--with-fuel] [--with-unit] [--with-aux] [--only G1,..] [--skip G5,..]" >&2; exit 2 ;; esac
 done
 R=$SEED_REPO; B=$SEED_BUILD; S=$R/scripts/seed; D=$B/gates/$rung; mkdir -p $D
 : > $D/summary.tsv
@@ -134,11 +137,20 @@ if want GR; then
   fi
 fi
 
+# ---- auxiliary gates (with --with-aux); SEED_UNIT_SEED makes the test units build with the current seed
+if [ $withaux -eq 1 ]; then
+  export SEED_UNIT_SEED=$B/seed-1.bin
+  want KIR && run KIR zsh $S/kir-gate.sh $B/seed-1.bin
+  want LEXREAD && run LEXREAD zsh $S/lexread.sh check
+  want LW && run LW zsh $S/lw-gate.sh all
+  want A64GEN && run A64GEN python3 $S/a64gen-fixtures.py run
+fi
+
 # ---- UNIT (with --with-unit)
 if [ $withunit -eq 1 ] && want UNIT; then run UNIT zsh $S/unit-all.sh $B/seed-1.bin; fi
 
 # ---- table
-order=(BUILD ERR G1 G2 G3 G4 G5 GR UNIT FUEL)
+order=(BUILD ERR G1 G2 G3 G4 G5 GR UNIT KIR LEXREAD LW A64GEN FUEL)
 echo
 printf '%-6s %-5s %8s  %s\n' GATE STATUS SECONDS DETAIL
 fails=0; ran=0

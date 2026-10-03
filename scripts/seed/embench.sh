@@ -17,6 +17,7 @@
 #      which answers only the runner's `git rev-parse HEAD` of the upstream with that DECLARED commit, marked as
 #      declared and not re-verified (the runner uses the checkout for nothing else; the ports are the repo's own);
 #      the provenance then has "upstream_commit_declared": true.
+#      SEED_LABEL (default "seed R0": the rung named in the provenance label; embench-rungs.sh sets "seed rN"),
 #      SEED_BUILD (default build/seed), SEED_STAGE (which seed-N to package, default 1).
 #      Run it on a quiet host (rule 4): the script refuses to start when the 1-minute load average is above SEED_MAX_LOAD
 #      (default 4) unless SEED_ALLOW_LOADED=1, and records the load average in the provenance.
@@ -41,7 +42,7 @@ if [ -n "$SEED_COMPILER" ]; then
   comp=$SEED_COMPILER; label="harness dry run with SEED_COMPILER (not the seed)"
 else
   $R/scripts/seed/package.sh $stage --scope "$R:$B:$out:/private/tmp:/tmp" --out $B/seed || exit $?
-  comp=$B/seed; label="seed R0, selfhost-built subset compiler, NOT an official Embench score"
+  comp=$B/seed; label="${SEED_LABEL:-seed R0}, selfhost-built subset compiler, NOT an official Embench score"
 fi
 # the runner, built from the repo's source (C, system cc)
 if [ ! -x $B/kexe-benchmark ] || [ $R/bench/runtime-comparison/kexe-benchmark.c -nt $B/kexe-benchmark ]; then

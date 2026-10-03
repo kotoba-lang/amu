@@ -120,3 +120,23 @@ seed_rung_gr_dirs() {
   [[ " $out " == *" $own "* ]] || { [ -f $SEED_REPO/seed/tests/$own/$own.oracle ] && out="$out $own"; }
   echo ${out# }
 }
+
+# seed_modbuild <src.kotoba> <out-prefix> : build a test unit that includes seed modules. HOUSE2 (2026-10-03): the modules are written in
+# the language of the CURRENT rung (R3/R4 use case constants, fn literals ...), which stage-0 refuses, so: with SEED_UNIT_SEED=<seed.bin>
+# (or, when stage-0 refuses the unit with a front-end message, with $SEED_BUILD/seed-1.bin) the unit is compiled by that seed
+# (compile + extract-native, offset from <seed>.offset) -- exactly what unit.sh does; otherwise stage-0 (seed_stage0_build). Same outputs
+# as seed_stage0_build: <out>.bin <out>.offset <out>.log. The log's first line says which compiler built it.
+seed_modbuild() {
+  local src=$1 out=$2 sb=${SEED_UNIT_SEED:-}
+  if [ -z "$sb" ]; then
+    if seed_stage0_build $src $out; then return 0; fi
+    grep -q ':message "' $out.log 2>/dev/null || return 1      # an infrastructure failure, not a language refusal
+    sb=$SEED_BUILD/seed-1.bin
+  fi
+  sb=${sb:A}; [ -s $sb ] && [ -s ${sb%.bin}.offset ] || { echo "seed_modbuild: no seed at $sb" >&2; return 2; }
+  { echo "built by seed ${sb:t} (stage-0 does not admit this unit)"; } > $out.log
+  seed_run $sb $(cat ${sb%.bin}.offset) compile ${src:A} --target aarch64-macos --output ${out:A}.kseed >> $out.log 2>&1 || return 1
+  seed_run $sb $(cat ${sb%.bin}.offset) extract-native ${out:A}.kseed --symbol main --output ${out:A}.bin >> $out.log 2>&1 || return 1
+  sed -n 's/.*:offset \([0-9]*\).*/\1/p' $out.log | tail -1 > $out.offset
+  [ -s $out.bin ] && [ -s $out.offset ]
+}

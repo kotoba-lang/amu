@@ -45,7 +45,7 @@ runone() {   # runone <name> [stage0]
   else
     local d=$BOOT/$n
     cp $d/seed-1.bin $w/seed-1.bin; cp $d/seed-1.bin $w/seed-2.bin; cp $d/seed-1.offset $w/seed-1.offset; cp $d/seed-1.offset $w/seed-2.offset
-    env SEED_BUILD=$w SEED_STAGE=1 SEED_MAX_LOAD=$maxload ${=extra} zsh $R/scripts/seed/embench.sh $out/$n > $out/$n.log 2>&1; rc=$?
+    env SEED_BUILD=$w SEED_STAGE=1 SEED_LABEL="seed $n" SEED_MAX_LOAD=$maxload ${=extra} zsh $R/scripts/seed/embench.sh $out/$n > $out/$n.log 2>&1; rc=$?
   fi
   echo "embench-rungs: $n rc=$rc load_end $(load1)"; tail -1 $out/$n.log
 }

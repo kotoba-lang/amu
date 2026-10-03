@@ -15,6 +15,9 @@
 # --ref-front: no 10-lex/11-read: the TOK/NODE tables come from the Python reference reader (ck_ref.py --tables,
 # loaded by seed/tests/check/ck-load.kotoba); files with a lexical/reader error are skipped; only the reference
 # model comparison applies (not the golden). Exit 0 = every expectation holds and every comparison agrees.
+# STATUS 2026-10-03 (HOUSE2, measured with the R4 seed): the unit builds with the seed (seed_modbuild) and admits the 19 ports and the
+# corpus, but the golden seed/tests/check/golden.txt was never recorded and the reference ck_ref.py is the R0 checker: it DIFFs on the
+# R1+ language cases (err-2102-true, err-2114-kw-value, err-2118-*). Not part of gates.sh; G1/G2/G3/GR are the live admission gates.
 emulate -L zsh
 setopt pipefail
 source "$(dirname "$0")/lib.sh"
@@ -25,13 +28,13 @@ front=real; [ "$1" = "--ref-front" ] && { front=ref; shift; }
 update=0; [ "$1" = "--update" ] && { update=1; shift; }
 G=$R/seed/tests/check/golden.txt
 
-if [ $front = ref ]; then B=ck-ref; parts=(seed/00-ns.kotoba seed/20-names.kotoba seed/21-check.kotoba seed/tests/check/ck-common.kotoba seed/tests/check/ck-load.kotoba)
-else B=ck; parts=(seed/00-ns.kotoba seed/10-lex.kotoba seed/11-read.kotoba seed/20-names.kotoba seed/21-check.kotoba seed/tests/check/ck-common.kotoba seed/tests/check/ck-dump.kotoba); fi
+if [ $front = ref ]; then B=ck-ref; parts=(seed/00-ns.kotoba seed/01-mem.kotoba seed/02-io.kotoba seed/20-names.kotoba seed/21-check.kotoba seed/tests/check/ck-common.kotoba seed/tests/check/ck-load.kotoba)
+else B=ck; parts=(seed/00-ns.kotoba seed/01-mem.kotoba seed/02-io.kotoba seed/10-lex.kotoba seed/11-read.kotoba seed/20-names.kotoba seed/21-check.kotoba seed/tests/check/ck-common.kotoba seed/tests/check/ck-dump.kotoba); fi
 : > $W/$B.new
 for p in $parts; do cat $R/$p >> $W/$B.new; printf '\n' >> $W/$B.new; done
 cmp -s $W/$B.new $W/$B.kotoba || mv $W/$B.new $W/$B.kotoba
 if ! { [ -f $W/$B.bin ] && [ $W/$B.bin -nt $W/$B.kotoba ] && [ -s $W/$B.offset ]; }; then
-  seed_stage0_build $W/$B.kotoba $W/$B || { echo "ck-gate: stage-0 refused the build"; grep -o ':message "[^"]*"' $W/$B.log | head -3; head -c 800 $W/$B.log; exit 1; }
+  seed_modbuild $W/$B.kotoba $W/$B || { echo "ck-gate: stage-0 refused the build"; grep -o ':message "[^"]*"' $W/$B.log | head -3; head -c 800 $W/$B.log; exit 1; }
 fi
 # the self source: the MANIFEST files that exist today
 : > $W/self.kotoba
