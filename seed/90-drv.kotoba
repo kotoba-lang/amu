@@ -363,7 +363,9 @@
 (defn- drv-emit-file [M :vector-i64 out :string] :i64
   (let [n (- (vector-at M MM-OUT-N) 1)
         w (io-write-bytes M out (+ MM-OUT-BASE 1) n)]
-    (if (= (io-exists out) 1) (drv-cok out n) (drv-fail0 E-WRITE))))
+    (cond (= (io-exists out) 0) (drv-fail0 E-WRITE)
+          (= (vector-at M MM-QUIET) 1) 0   ; R6L: drv-compile-file
+          :else (drv-cok out n))))
 
 ;; out = "" -> hex on stdout, else the file out
 (defn- drv-emit2 [M :vector-i64 out :string] :i64
@@ -514,7 +516,7 @@
                 (recur (+ i 1))))))))))
 
 (defn- drv-pj-run [S :string path :string mode :i64 out :string] :i64
-  (let [M (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S)
+  (let [M (lx-run (mem-set (mem-set (mem-new) MM-QUIET (if (= mode 3) 1 0)) MM-SRC-LEN (string-length S)) S)   ; R6L: mode 3 = 1, quiet
         M1 (if (= (vector-at M MM-ERR) 0) (rd-run M S) M)]
     (if (= (drv-pj-has 1 (io-argc) "--emit-module") 1)
       (drv-pj-emitmod M1 path out)
@@ -525,6 +527,9 @@
 
 (defn- drv-run [path :string mode :i64 out :string] :i64
   (if (= (io-exists path) 1) (let [S0 (drv-read path)] (drv-pj-run (string-concat S0 (ck-r6b-lib S0)) path mode out)) (drv-fail0 E-READ)))   ; R6B: + the source library
+;; R6L (FOLD, CMD request): compile src into the kseed file out with the flags of argv (--policy, --source-path ..), status 0 /
+;; 1 (refusal printed) / 2, WITHOUT the ok line; seed.main of the split exports it (gen-split.py) for amu's compile command.
+(defn- drv-compile-file [src :string out :string] :i64 (drv-run src 3 out))
 
 (defn- drv-usage [] :i64
   (let [r (drv-fail0 E-USAGE)] 2))

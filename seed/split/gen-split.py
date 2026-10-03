@@ -121,10 +121,13 @@ def main():
                 refers[i][j] = used; public[j].update(used)
             for d in sorted(mi['uses'] & set(mj['defs']) - mi['fns'] - set(mi['defs'])):
                 copied[i].append(mj['defs'][d])
+    for i, mi in enumerate(info):   # R6L (FOLD): seed.main's extra export (CMD's drv-compile-file) is public
+        if mi['key'] == 'main':
+            public[i].add('drv-compile-file')
     outs = {}
     for i, mi in enumerate(info):
         req = ''.join('\n  (:require [%s :refer [%s]])' % (info[j]['ns'], ' '.join(names)) for j, names in sorted(refers[i].items()))
-        exp = '\n  (:export [main])' if mi['key'] == 'main' else ''
+        exp = ''   # R6L (FOLD): no :export clause on seed.main -- the entry exports main implicitly (its only i64 public defn), a library importer sees every public defn (drv-compile-file, CMD)
         cs = '\n'.join(consts[c] for c in sorted(mi['uses'] & set(consts), key=lambda c: list(consts).index(c)))
         text = mi['text']
         def pub(m):

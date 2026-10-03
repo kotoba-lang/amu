@@ -480,6 +480,7 @@
     (case kind
       1 (-> M (lw-args a t) (lw-emit OP-BIN code t))
       2 (-> M (lw-args a t) (lw-emit OP-CMP code t))
+      4 (lw-rtcall M a t (* code 8))   ; R6L (FOLD): a loader runtime call (21-check kind 4: __r6-kgput 80, __r6-kgget 88)
       (-> M (lw-expr a t 0) (lw-emit OP-UN code t)))))
 
 (defn- lw-list [M :vector-i64 n :i64 t :i64 k :i64] :vector-i64

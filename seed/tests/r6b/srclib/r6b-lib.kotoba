@@ -9,8 +9,12 @@
 ;;              unchanged, + the typed wrappers below); __r6-as retypes without code.
 ;;   :keyword   the 64-bit FNV-1a hash of its spelling ":ns/name" (R6A). Its TEXT comes from the module's keyword table
 ;;              __r6-kwtab (every keyword the module spells, plus the 11 document kinds; built by ck-r6b-kwtab): a keyword
-;;              made at run time (keyword-from-string, document-keyword-value) whose text the module never spells has no
-;;              text -- document-keyword / keyword-name on it trap (the loader's out-of-range trap), never a wrong answer.
+;;              made at run time (keyword-from-string, document-keyword-value) whose text the module never spells is
+;;              registered in the loader's kgraph (R6L, agent FOLD: entity = its hash, attribute A0 = 1897424841649887629
+;;              holds its code point count, -1 when __r6-kwtab has it; A0+1+j code points 3j..3j+2 packed 21 bits each;
+;;              kgraph_get answers INT64_MIN when absent) through the kind-4 pseudo heads __r6-kgput/__r6-kgget (21-check
+;;              ck-fl-code, loader slots 80/88); __r6-kwfind reads it after a static miss. The kgraph outlives arena scopes
+;;              (i64 chunks, no string handles); a full kgraph (KEXE_KGRAPH_CAPACITY datoms) traps, never a wrong answer.
 ;; One line per defn (the generator keeps lines that start with "(defn- " or "(def ").
 ;;
 ;; @group kw
@@ -20,13 +24,19 @@
 (defn- __r6-kwhr [s :string a :i64 b :i64] :i64 (loop [i a h -3750763034362895579] (if (>= i b) h (let [c (string-code-point-at s i)] (recur (+ i (__r6-cpw c)) (* (bit-xor h c) 1099511628211))))))
 (defn- __r6-kwh [s :string] :i64 (__r6-kwhr s 0 (string-length s)))
 (defn- __r6-tokend [t :string i :i64] :i64 (if (>= i (string-length t)) i (if (= (string-code-point-at t i) 32) i (__r6-tokend t (+ i 1)))))
-(defn- __r6-kwfind [t :string h :i64 i :i64] :string (cond (>= i (string-length t)) (__r6-traps) (= (string-code-point-at t i) 32) (__r6-kwfind t h (+ i 1)) :else (let [e (__r6-tokend t i)] (if (= (__r6-kwhr t i e) h) (string-substring t i e) (__r6-kwfind t h e)))))
+(defn- __r6-kwfind [t :string h :i64 i :i64] :string (cond (>= i (string-length t)) (__r6-kwdyn h) (= (string-code-point-at t i) 32) (__r6-kwfind t h (+ i 1)) :else (let [e (__r6-tokend t i)] (if (= (__r6-kwhr t i e) h) (string-substring t i e) (__r6-kwfind t h e)))))
 (defn- __r6-kwtext [k :keyword] :string (__r6-kwfind (__r6-kwtab) (__r6-as :i64 k) 0))
 (defn- __r6-slash [s :string i :i64] :i64 (cond (>= i (string-length s)) -1 (= (string-code-point-at s i) 47) i :else (__r6-slash s (+ i (__r6-cpw (string-code-point-at s i))))))
 (defn- keyword-name [k :keyword] :string (let [t (__r6-kwtext k) sl (__r6-slash t 1)] (string-substring t (cond (< sl 0) 1 (= (string-length t) 2) 1 :else (+ sl 1)) (string-length t))))
-(defn- keyword-from-string [s :string] :keyword (__r6-as :keyword (__r6-kwh (string-concat ":" s))))
+(defn- keyword-from-string [s :string] :keyword (__r6-as :keyword (__r6-kwreg (string-concat ":" s))))
 (defn- __r6-i2s [n :i64] :string (string-from-i64 n))
 (defn- __r6-b2s [b :bool] :string (if b "true" "false"))
+(defn- __r6-u8 [v :vector-i64 c :i64] :vector-i64 (cond (< c 128) (vector-conj v c) (< c 2048) (vector-conj (vector-conj v (+ 192 (quot c 64))) (+ 128 (bit-and c 63))) (< c 65536) (vector-conj (vector-conj (vector-conj v (+ 224 (quot c 4096))) (+ 128 (bit-and (quot c 64) 63))) (+ 128 (bit-and c 63))) :else (vector-conj (vector-conj (vector-conj (vector-conj v (+ 240 (quot c 262144))) (+ 128 (bit-and (quot c 4096) 63))) (+ 128 (bit-and (quot c 64) 63))) (+ 128 (bit-and c 63)))))
+(defn- __r6-kwdb [h :i64 n :i64 i :i64 v :vector-i64] :vector-i64 (if (>= i n) v (let [q (quot i 3) r (- i (* 3 q)) w (__r6-kgget h (+ 1897424841649887630 q)) c (bit-and (cond (= r 0) w (= r 1) (quot w 2097152) :else (quot w 4398046511104)) 2097151)] (__r6-kwdb h n (+ i 1) (__r6-u8 v c)))))
+(defn- __r6-kwdyn [h :i64] :string (let [n (__r6-kgget h 1897424841649887629)] (if (< n 0) (__r6-traps) (string-from-utf8 (bytes-from-vector-i64 (__r6-kwdb h n 0 (vector-alloc 0)))))))
+(defn- __r6-kwput [s :string h :i64 i :i64 k :i64 w :i64] :i64 (if (>= i (string-length s)) (let [x (if (= (- k (* 3 (quot k 3))) 0) 0 (__r6-kgput h (+ 1897424841649887630 (quot (- k 1) 3)) w))] (__r6-kgput h 1897424841649887629 k)) (let [c (string-code-point-at s i) q (quot k 3) r (- k (* 3 q)) w1 (+ w (* c (cond (= r 0) 1 (= r 1) 2097152 :else 4398046511104)))] (if (= r 2) (let [x (__r6-kgput h (+ 1897424841649887630 q) w1)] (__r6-kwput s h (+ i (__r6-cpw c)) (+ k 1) 0)) (__r6-kwput s h (+ i (__r6-cpw c)) (+ k 1) w1)))))
+(defn- __r6-kwhas [t :string h :i64 i :i64] :i64 (cond (>= i (string-length t)) 0 (= (string-code-point-at t i) 32) (__r6-kwhas t h (+ i 1)) :else (let [e (__r6-tokend t i)] (if (= (__r6-kwhr t i e) h) 1 (__r6-kwhas t h e)))))
+(defn- __r6-kwreg [t :string] :i64 (let [h (__r6-kwh t)] (if (< (__r6-kgget h 1897424841649887629) -1) (let [x (if (= (__r6-kwhas (__r6-kwtab) h 0) 1) (__r6-kgput h 1897424841649887629 -1) (__r6-kwput t h 0 0 0))] h) h)))
 ;; @group doc
 (defn- __r6-ds [d :document] :string (__r6-as :string d))
 (defn- __r6-dd [s :string] :document (__r6-as :document s))
@@ -63,7 +73,7 @@
 (defn- document-dissoc [m :document k :document] :document (__r6-dd (__kr_ddissocop (__r6-ds m) (__r6-ds k))))
 (defn- document-merge [a :document b :document] :document (__r6-dd (__kr_dmerge (__r6-ds a) (__r6-ds b))))
 (defn- document-string-value [d :document] [:option :string] (__kr_dstrval (__r6-ds d)))
-(defn- document-keyword-value [d :document] [:option :keyword] (if (= (__kr_dkindn (__r6-ds d)) 5) (option-some-of [:option :keyword] (__r6-as :keyword (__r6-kwh (__r6-ds d)))) (option-none-of [:option :keyword])))
+(defn- document-keyword-value [d :document] [:option :keyword] (if (= (__kr_dkindn (__r6-ds d)) 5) (option-some-of [:option :keyword] (__r6-as :keyword (__r6-kwreg (__r6-ds d)))) (option-none-of [:option :keyword])))
 (defn- document-bool-value [d :document] [:option :bool] (__kr_dboolval (__r6-ds d)))
 (defn- document-i64-value [d :document] [:option :i64] (__kr_di64val (__r6-ds d)))
 (defn- document-edn-print [d :document] :string (__r6-ds d))

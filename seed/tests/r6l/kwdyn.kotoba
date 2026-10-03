@@ -1,0 +1,13 @@
+;; R6L KWDYN (FOLD, FRONTSRC's request): keywords made from text at run time keep their text (the loader kgraph registry).
+;; main = 0 when every check holds, else the number of the first failing check. r6k: check 1 traps (SIGILL, __r6-trap).
+(ns kwdyn (:export [main]))
+(defn- txt [a :string b :string] :string (string-concat a b))
+(defn- c1 [] :bool (string=? (keyword-name (keyword-from-string (txt "al" "pha"))) "alpha"))
+(defn- c2 [] :bool (= (keyword-from-string (txt "be" "ta")) :beta))
+(defn- c3 [] :bool (string=? (keyword-name (keyword-from-string (txt "be" "ta"))) "beta"))
+(defn- c4 [] :bool (string=? (keyword-name (keyword-from-string (txt "ns.x/na" "me"))) "name"))
+(defn- c5 [] :bool (string=? (keyword-name (keyword-from-string (txt "été-" "中文-xyz-😀-0123456789"))) "été-中文-xyz-😀-0123456789"))
+(defn- c6 [] :bool (let [k (keyword-from-string (txt "gam" "ma")) j (keyword-from-string (txt "ga" "mma"))] (and (= k j) (string=? (keyword-name j) "gamma"))))
+(defn- c7 [] :bool (string=? (keyword-name (keyword-from-string (txt "" "d"))) "d"))
+(defn main [] :i64
+  (cond (not (c1)) 1 (not (c2)) 2 (not (c3)) 3 (not (c4)) 4 (not (c5)) 5 (not (c6)) 6 (not (c7)) 7 :else 0))

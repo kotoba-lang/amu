@@ -1345,6 +1345,8 @@
     -205624834797417495 803   ; f32-to-f64-exact
     -1017748302173365810 804   ; i64-to-f32-rounded
     -2449551259944879456 805   ; f32-to-i64-truncating
+    4623269880264399329 1034   ; __r6-kgput  R6L (FOLD): kind 4 = a loader runtime call, slot 8 * code (kgraph_assert 80)
+    507429522991792204 1035   ; __r6-kgget  R6L (FOLD): kgraph_get 88
     0))
 (defn- ck-fl? [hd :i64] :bool (>= hd ck-fl-base))
 (defn- ck-fl-kind [hd :i64] :i64 (quot (- hd ck-fl-base) 256))
@@ -1355,17 +1357,19 @@
         c (ck-fl-sub hd)]
     (cond (= k 2) (if (< c 16) TY-F64 ck-ty-f32)
           :else (if (< c 24) TY-F64 ck-ty-f32))))
-(defn- ck-fl-arity [hd :i64] :i64 (if (= (ck-fl-kind hd) 3) 1 2))
+(defn- ck-fl-arity [hd :i64] :i64 (cond (= (ck-fl-kind hd) 4) (if (= (ck-fl-sub hd) 10) 3 2) (= (ck-fl-kind hd) 3) 1 :else 2))   ; R6L kind 4
 (defn- ck-fl-arg [hd :i64] :i64
   (let [c (ck-fl-sub hd)]
-    (cond (< (ck-fl-kind hd) 3) (ck-fl-ty hd)
+    (cond (= (ck-fl-kind hd) 4) TY-I64   ; R6L: kgraph runtime calls take and answer :i64
+          (< (ck-fl-kind hd) 3) (ck-fl-ty hd)
           (or (= c UOP-I64-TO-F64) (= c UOP-I64-TO-F32)) TY-I64
           (or (= c UOP-F64-TO-I64) (= c UOP-F64-TO-F32)) TY-F64
           (or (= c UOP-F32-TO-F64) (= c UOP-F32-TO-I64)) ck-ty-f32
           :else (ck-fl-ty hd))))
 (defn- ck-fl-res [hd :i64] :i64
   (let [c (ck-fl-sub hd)]
-    (cond (= (ck-fl-kind hd) 2) TY-BOOL
+    (cond (= (ck-fl-kind hd) 4) TY-I64   ; R6L
+          (= (ck-fl-kind hd) 2) TY-BOOL
           (< (ck-fl-kind hd) 2) (ck-fl-ty hd)
           (or (= c UOP-F64-TO-I64) (= c UOP-F32-TO-I64)) TY-I64
           (or (= c UOP-I64-TO-F64) (= c UOP-F32-TO-F64)) TY-F64
@@ -4923,15 +4927,22 @@
   (string-concat "(defn- __r6-kwh [s :string] :i64 (__r6-kwhr s 0 (string-length s)))\n"
   "(defn- __r6-tokend [t :string i :i64] :i64 (if (>= i (string-length t)) i (if (= (string-code-point-at t i) 32) i (__r6-tokend t (+ i 1)))))\n"))))))
 (defn- ck-r6b-t-kw1 [] :string
-  (string-concat "(defn- __r6-kwfind [t :string h :i64 i :i64] :string (cond (>= i (string-length t)) (__r6-traps) (= (string-code-point-at t i) 32) (__r6-kwfind t h (+ i 1)) :else (let [e (__r6-tokend t i)] (if (= (__r6-kwhr t i e) h) (string-substring t i e) (__r6-kwfind t h e)))))\n"
+  (string-concat "(defn- __r6-kwfind [t :string h :i64 i :i64] :string (cond (>= i (string-length t)) (__r6-kwdyn h) (= (string-code-point-at t i) 32) (__r6-kwfind t h (+ i 1)) :else (let [e (__r6-tokend t i)] (if (= (__r6-kwhr t i e) h) (string-substring t i e) (__r6-kwfind t h e)))))\n"
   (string-concat "(defn- __r6-kwtext [k :keyword] :string (__r6-kwfind (__r6-kwtab) (__r6-as :i64 k) 0))\n"
   (string-concat "(defn- __r6-slash [s :string i :i64] :i64 (cond (>= i (string-length s)) -1 (= (string-code-point-at s i) 47) i :else (__r6-slash s (+ i (__r6-cpw (string-code-point-at s i))))))\n"
   (string-concat "(defn- keyword-name [k :keyword] :string (let [t (__r6-kwtext k) sl (__r6-slash t 1)] (string-substring t (cond (< sl 0) 1 (= (string-length t) 2) 1 :else (+ sl 1)) (string-length t))))\n"
-  (string-concat "(defn- keyword-from-string [s :string] :keyword (__r6-as :keyword (__r6-kwh (string-concat \":\" s))))\n"
+  (string-concat "(defn- keyword-from-string [s :string] :keyword (__r6-as :keyword (__r6-kwreg (string-concat \":\" s))))\n"
   "(defn- __r6-i2s [n :i64] :string (string-from-i64 n))\n"))))))
 (defn- ck-r6b-t-kw2 [] :string
-  "(defn- __r6-b2s [b :bool] :string (if b \"true\" \"false\"))\n")
-(defn- ck-r6b-t-kw [] :string (string-concat (ck-r6b-t-kw0) (string-concat (ck-r6b-t-kw1) (ck-r6b-t-kw2))))
+  (string-concat "(defn- __r6-b2s [b :bool] :string (if b \"true\" \"false\"))\n"
+  (string-concat "(defn- __r6-u8 [v :vector-i64 c :i64] :vector-i64 (cond (< c 128) (vector-conj v c) (< c 2048) (vector-conj (vector-conj v (+ 192 (quot c 64))) (+ 128 (bit-and c 63))) (< c 65536) (vector-conj (vector-conj (vector-conj v (+ 224 (quot c 4096))) (+ 128 (bit-and (quot c 64) 63))) (+ 128 (bit-and c 63))) :else (vector-conj (vector-conj (vector-conj (vector-conj v (+ 240 (quot c 262144))) (+ 128 (bit-and (quot c 4096) 63))) (+ 128 (bit-and (quot c 64) 63))) (+ 128 (bit-and c 63)))))\n"
+  (string-concat "(defn- __r6-kwdb [h :i64 n :i64 i :i64 v :vector-i64] :vector-i64 (if (>= i n) v (let [q (quot i 3) r (- i (* 3 q)) w (__r6-kgget h (+ 1897424841649887630 q)) c (bit-and (cond (= r 0) w (= r 1) (quot w 2097152) :else (quot w 4398046511104)) 2097151)] (__r6-kwdb h n (+ i 1) (__r6-u8 v c)))))\n"
+  (string-concat "(defn- __r6-kwdyn [h :i64] :string (let [n (__r6-kgget h 1897424841649887629)] (if (< n 0) (__r6-traps) (string-from-utf8 (bytes-from-vector-i64 (__r6-kwdb h n 0 (vector-alloc 0)))))))\n"
+  (string-concat "(defn- __r6-kwput [s :string h :i64 i :i64 k :i64 w :i64] :i64 (if (>= i (string-length s)) (let [x (if (= (- k (* 3 (quot k 3))) 0) 0 (__r6-kgput h (+ 1897424841649887630 (quot (- k 1) 3)) w))] (__r6-kgput h 1897424841649887629 k)) (let [c (string-code-point-at s i) q (quot k 3) r (- k (* 3 q)) w1 (+ w (* c (cond (= r 0) 1 (= r 1) 2097152 :else 4398046511104)))] (if (= r 2) (let [x (__r6-kgput h (+ 1897424841649887630 q) w1)] (__r6-kwput s h (+ i (__r6-cpw c)) (+ k 1) 0)) (__r6-kwput s h (+ i (__r6-cpw c)) (+ k 1) w1)))))\n"
+  "(defn- __r6-kwhas [t :string h :i64 i :i64] :i64 (cond (>= i (string-length t)) 0 (= (string-code-point-at t i) 32) (__r6-kwhas t h (+ i 1)) :else (let [e (__r6-tokend t i)] (if (= (__r6-kwhr t i e) h) 1 (__r6-kwhas t h e)))))\n"))))))
+(defn- ck-r6b-t-kw3 [] :string
+  "(defn- __r6-kwreg [t :string] :i64 (let [h (__r6-kwh t)] (if (< (__r6-kgget h 1897424841649887629) -1) (let [x (if (= (__r6-kwhas (__r6-kwtab) h 0) 1) (__r6-kgput h 1897424841649887629 -1) (__r6-kwput t h 0 0 0))] h) h)))\n")
+(defn- ck-r6b-t-kw [] :string (string-concat (ck-r6b-t-kw0) (string-concat (ck-r6b-t-kw1) (string-concat (ck-r6b-t-kw2) (ck-r6b-t-kw3)))))
 (defn- ck-r6b-t-doc0 [] :string
   (string-concat "(defn- __kr_dw [c :i64] :i64 (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))\n"
   (string-concat "(defn- __kr_dcloser [c :i64] :bool (or (= c 93) (or (= c 41) (= c 125))))\n"
@@ -5092,7 +5103,7 @@
   (string-concat "(defn- document-dissoc [m :document k :document] :document (__r6-dd (__kr_ddissocop (__r6-ds m) (__r6-ds k))))\n"
   (string-concat "(defn- document-merge [a :document b :document] :document (__r6-dd (__kr_dmerge (__r6-ds a) (__r6-ds b))))\n"
   (string-concat "(defn- document-string-value [d :document] [:option :string] (__kr_dstrval (__r6-ds d)))\n"
-  "(defn- document-keyword-value [d :document] [:option :keyword] (if (= (__kr_dkindn (__r6-ds d)) 5) (option-some-of [:option :keyword] (__r6-as :keyword (__r6-kwh (__r6-ds d)))) (option-none-of [:option :keyword])))\n"))))))
+  "(defn- document-keyword-value [d :document] [:option :keyword] (if (= (__kr_dkindn (__r6-ds d)) 5) (option-some-of [:option :keyword] (__r6-as :keyword (__r6-kwreg (__r6-ds d)))) (option-none-of [:option :keyword])))\n"))))))
 (defn- ck-r6b-t-doc23 [] :string
   (string-concat "(defn- document-bool-value [d :document] [:option :bool] (__kr_dboolval (__r6-ds d)))\n"
   (string-concat "(defn- document-i64-value [d :document] [:option :i64] (__kr_di64val (__r6-ds d)))\n"
