@@ -22,8 +22,8 @@ is still a declared stub? Oracle: `bin/amu refactor` (node + nbb, BOOTSTRAP-REFE
   HAMT order (cljs murmur3 hashes) and string escapes.
 - The library: kotoba-lang `lang/compat/kotoba/compiler/refactor/*.kotoba` guest twins (branch
   `agent/refactor-cst-twin`). PORT/INTEGRATE wrote cst, edit, diff and prelude. REFAC wrote graph, rules,
-  cljs-order, finding, core, rules.{destructure,letdestructure,kwcallback,lowerloops,reject}, partition, extract
-  and verify.
+  cljs-order, finding, core, rules.{destructure,letdestructure,kwcallback,lowerloops,reject,dynvars}, partition,
+  extract and verify.
 
 ## Status (the sub-commands)
 
@@ -32,8 +32,7 @@ is still a declared stub? Oracle: `bin/amu refactor` (node + nbb, BOOTSTRAP-REFE
 | (argument layer, every sub-command) | real | `seed/tests/refactor/cases-args.txt` |
 | list-rules | real | same |
 | graph (full, --summary, --out) | real | `cases-graph.txt`, `cases-graph-src.txt` (every amu src/**/*.cljk) |
-| plan, apply (rules a b d e f, `all`, every flag) | real | `cases-plan.txt`, `cases-plan-src.txt`, `cases-apply.txt` (scripts/seed/refactor/apply-cases.sh) |
-| plan, apply with rule c (dynvars) | arguments are real; the rewrite is a STUB (69) | dynvars twin is not written |
+| plan, apply (rules a b c d e f, `all`, every flag) | real | `cases-plan.txt`, `cases-plan-src.txt`, `cases-dynvars.txt`, `cases-apply.txt` (scripts/seed/refactor/apply-cases.sh) |
 | partition (full, --summary, --out, --modules, --driver) | real | `cases-partition.txt` |
 | split | real | `cases-split.txt` (scripts/seed/refactor/split-cases.sh: the answer and every written file) |
 | verify | arguments are real; the run is a STUB | it needs wire 20 (spawn), which the image never holds. The comparison twin is real: `scripts/seed/refactor/verify-diff.sh`, 5/5 |
@@ -43,6 +42,13 @@ Measured 2026-10-04 with seed r6k ab9f8236 (test entry 95fe7b34), all SAME: args
 flag cases), apply 36/36, verify twin 5/5. Test entry f90868a7: partition 19/19, split 10/10, args 31/31. Earlier, with seed r6j 4b2498ec: graph SAME on 3 kotoba-sema frontend files
 of 347-603 KB. The whole amu.main with the delegate compiles to 963,738 B of code. That image gives
 list-rules SAME and graph 20/20 SAME, and `compile` still works (crc32 port).
+
+Measured 2026-10-04 with seed r6k ab9f8236 and test entry e3b13046, using `scripts/seed/refactor/all.sh` (bin/amu as
+oracle). Every suite has 0 DIFFER: args 31/31, graph 20/20, plan 18/18, partition 19/19, dynvars 44/44, graph-src
+109/109, plan-src 128/128, apply 40/40, split 10/10, verify twin 5/5. Only verify's process runs remain a stub.
+
+Whole image (`scripts/seed/refactor/build-image.sh`): the default r6k seed stops at E5001 (output buffer full). A large-M
+r6k seed (fixed point 9d776226, KEXE_ARENA_USE=1) gives 1,428,096 B of code.
 
 Reproduce:
 

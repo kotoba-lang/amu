@@ -177,9 +177,6 @@
             (and (string=? sub "apply") (has? "--out") (> (vector-count (io/files-list fs)) 1))
             (usage "--out names one file; give one path")
             (not (int-flag-ok? "--max-passes")) (usage "--max-passes must be a decimal integer")
-            (has-id? (rule-ids (pos-at 0)) "c")
-            (cli/not-available (string-concat "refactor " sub)
-                               "\"kotoba.compiler.refactor.rules.dynvars (rule c): guest twin not written\"")
             :else
             (rp/plan-or-apply sub (rule-ids (pos-at 0)) (io/files-list fs)
                               (core/opts (has? "--include-ported") (has? "--lower-accessor")
@@ -189,7 +186,9 @@
                                              (if (= (vector-count ps) 0) (typed-list-new [:list :string] "") ps))
                                            (typed-list-new [:list :string]))
                                          (if (has? "--max-passes") (io/js-number (flag "--max-passes")) 8)
-                                         false)
+                                         false
+                                         (flag "--target")
+                                         (if (has? "--observable-from") (io/observable-names (flag "--observable-from")) (typed-list-new [:list :string])))
                               (has? "--no-diff") (flag "--patch-out") (has? "--patch-out")
                               (has? "--check") (flag "--out") (has? "--out"))))))))
 

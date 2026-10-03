@@ -128,6 +128,82 @@
         a5 (if (> (string-byte-length (fd/f-kind f)) 0) (kv a4 "kind" (if (fd/f-kind-kw? f) (e/kw (fd/f-kind f)) (e/str (fd/f-kind f)))) a4)]
     (e/amap a5)))
 
+;; dynvars' inventory rows (kotoba.compiler.refactor.rules.dynvars inventory) -> its :data map
+(defn- tab-split [s :string] [:list :string]
+  (let [n (string-byte-length s)]
+    (loop [from 0 acc (typed-list-new [:list :string])]
+      (let [k (if (> from n) -1 (string-index-of (string-substring s from n) "\t"))]
+        (if (< k 0) (typed-list-conj [:list :string] acc (string-substring s from n))
+            (recur (+ from (+ k 1)) (typed-list-conj [:list :string] acc (string-substring s from (+ from k)))))))))
+
+(defn- starts? [s :string t :string] :bool (= (string-index-of s t) 0))
+(defn- after-tab [s :string] :string (string-substring s (+ 1 (string-index-of s "\t")) (string-byte-length s)))
+(defn- dec-int [t :string] :i64 (e/int-value (e/raw t)))
+
+(defn- dynvars-data [f [:ref :finding/f]] [:ref :edn/v]
+  (let [rows (fd/f-inv f) n (fd/rows-count rows)
+        ;; occurrences: names sorted, each with its regions in first-seen order
+        onames (loop [i 0 acc (typed-list-new [:list :string])]
+                 (if (>= i n) acc
+                     (let [r (fd/rows-nth rows i)]
+                       (recur (+ i 1) (if (and (starts? (fd/row-a r) "occ\t") (not (has-str? acc (after-tab (fd/row-a r))))) (typed-list-conj [:list :string] acc (after-tab (fd/row-a r))) acc)))))
+        occ (e/amap (let [so (sort-strings onames)]
+                      (loop [k 0 acc (e/vs)]
+                        (if (>= k (vector-count so)) acc
+                            (let [nm (typed-list-nth [:list :string] so k)]
+                              (recur (+ k 1) (e/conj2 acc (e/str nm)
+                                                      (e/auto-map (loop [i 0 a (e/vs)]
+                                                                    (if (>= i n) a
+                                                                        (let [r (fd/rows-nth rows i)]
+                                                                          (recur (+ i 1) (if (and (starts? (fd/row-a r) "occ\t") (string=? (after-tab (fd/row-a r)) nm))
+                                                                                           (e/conj2 a (e/kw (fd/row-b r)) (e/int (fd/row-n r))) a)))))))))))))
+        vnames (loop [i 0 acc (typed-list-new [:list :string])]
+                 (if (>= i n) acc (let [r (fd/rows-nth rows i)] (recur (+ i 1) (if (starts? (fd/row-a r) "var\t") (typed-list-conj [:list :string] acc (after-tab (fd/row-a r))) acc)))))
+        vars (e/amap (let [so (sort-strings vnames)]
+                       (loop [k 0 acc (e/vs)]
+                         (if (>= k (vector-count so)) acc
+                             (let [nm (typed-list-nth [:list :string] so k)
+                                   r (loop [i 0] (let [x (fd/rows-nth rows i)] (if (and (starts? (fd/row-a x) "var\t") (string=? (after-tab (fd/row-a x)) nm)) x (recur (+ i 1)))))
+                                   ps (tab-split (fd/row-b r))
+                                   fld (typed-list-nth [:list :string] ps 0) repr (typed-list-nth [:list :string] ps 1) nw (typed-list-nth [:list :string] ps 2)
+                                   a0 (kv (e/vs) "field" (e/str fld))
+                                   a1 (if (string=? nw "1") (kv a0 "new?" (e/bool true)) a0)
+                                   a2 (if (> (string-byte-length repr) 0) (kv a1 "repr" (e/str repr)) a1)
+                                   a3 (kv (kv (kv a2 "reads" (e/int (dec-int (typed-list-nth [:list :string] ps 3)))) "binds" (e/int (dec-int (typed-list-nth [:list :string] ps 4))))
+                                          "muts" (e/int (dec-int (typed-list-nth [:list :string] ps 5))))]
+                               (recur (+ k 1) (e/conj2 acc (e/str nm) (e/amap a3))))))))
+        reasons (e/vec (loop [i 0 acc (e/vs)]
+                         (if (>= i n) acc
+                             (let [r (fd/rows-nth rows i)]
+                               (recur (+ i 1) (if (string=? (fd/row-a r) "reason") (e/conj1 acc (e/vec (e/vs2 (e/str (fd/row-b r)) (e/int (fd/row-n r))))) acc))))))
+]
+    (e/amap (kv (kv (kv (kv (kv (kv (kv (kv (e/vs) "occurrences-by-region" occ) "vars" vars)
+                                        "shared-fns" (e/int (row-count rows "count\tshared-fns")))
+                                    "C" (e/int (row-count rows "count\tC")))
+                                "E" (e/int (row-count rows "count\tE")))
+                            "blocked-reasons" reasons)
+                        "new-fields" (strs-of rows "new-field"))
+                    "entries" (strs-of rows "entry")))))
+
+(defn- row-count [rows [:list [:ref :finding/row]] a :string] :i64
+  (loop [i 0] (let [r (fd/rows-nth rows i)] (if (string=? (fd/row-a r) a) (fd/row-n r) (recur (+ i 1))))))
+(defn- strs-of [rows [:list [:ref :finding/row]] a :string] [:ref :edn/v]
+  (let [n (fd/rows-count rows)]
+    (e/vec (loop [i 0 acc (e/vs)] (if (>= i n) acc (recur (+ i 1) (let [r (fd/rows-nth rows i)] (if (string=? (fd/row-a r) a) (e/conj1 acc (e/str (fd/row-b r))) acc))))))))
+(defn- has-str? [xs [:list :string] s :string] :bool
+  (let [n (vector-count xs)] (loop [i 0] (cond (>= i n) false (string=? (typed-list-nth [:list :string] xs i) s) true :else (recur (+ i 1))))))
+;; cljs sort of strings (byte order; UTF-16 order differs only between astral and U+E000..U+FFFF characters)
+(defn- sort-strings [xs [:list :string]] [:list :string]
+  (let [n (vector-count xs)]
+    (loop [i 0 acc (typed-list-new [:list :string])]
+      (if (>= i n) acc
+          (let [x (typed-list-nth [:list :string] xs i) m (vector-count acc)
+                pos (loop [j 0] (cond (>= j m) m (> (string-compare (typed-list-nth [:list :string] acc j) x) 0) j :else (recur (+ j 1))))]
+            (recur (+ i 1) (loop [j 0 b (typed-list-new [:list :string])]
+                             (cond (> j m) b
+                                   (= j pos) (recur (+ j 1) (if (< j m) (typed-list-conj [:list :string] (typed-list-conj [:list :string] b x) (typed-list-nth [:list :string] acc j)) (typed-list-conj [:list :string] b x)))
+                                   :else (recur (+ j 1) (if (< j m) (typed-list-conj [:list :string] b (typed-list-nth [:list :string] acc j)) b))))))))))
+
 ;; destructure's inventory rows (head, region, n) -> {:other-destructuring {head {region n}}}
 (defn- inventory-data [f [:ref :finding/f]] [:ref :edn/v]
   (let [rows (fd/f-inv f) n (fd/rows-count rows)
@@ -173,7 +249,7 @@
                (if (>= i n) acc
                    (let [f (fd/fs-nth fs i)]
                      (recur (+ i 1) (if (and (fd/f-kind-kw? f) (string=? (fd/f-kind f) "inventory"))
-                                      (e/conj1 acc (e/amap (kv (kv (e/vs) "rule" (e/kw (fd/f-rule f))) "data" (inventory-data f))))
+                                      (e/conj1 acc (e/amap (kv (kv (e/vs) "rule" (e/kw (fd/f-rule f))) "data" (if (string=? (fd/f-rule f) "dynvars") (dynvars-data f) (inventory-data f)))))
                                       acc)))))
         base (e/amap (kv (kv (kv (kv (kv (kv (kv (kv (e/vs) "path" (e/str (f-path x))) "changed" (e/bool changed))
                                                  "chars-before" (e/int (u16-count (f-before x))))
@@ -226,11 +302,15 @@
           (if (> (string-byte-length (cst/out-err p)) 0)
             (record-new [:ref :rp/fr] acc (io/refuse "decode" "refactor/parse-error" (string-concat path (string-concat ": " (cst/out-err p)))))
             (let [res (core/run src ids o)]
-              (if (> (string-byte-length (core/res-err res)) 0)
+              (cond
+                (string=? (core/res-err res) "INTERNAL")
+                (record-new [:ref :rp/fr] acc (io/refuse "internal" "kotoba/internal-error" "internal compiler error"))
+                (> (string-byte-length (core/res-err res)) 0)
                 (record-new [:ref :rp/fr] acc
                             (io/refuse "decode" "refactor/output-unparsable"
                                        (string-concat path (string-concat ": a rewrite produced text that is not readable ("
                                                                           (string-concat (core/res-err res) "); nothing was written")))))
+                :else
                 (let [out (core/res-src res)
                       p2 (if (string=? out src) p (cst/parse out))]
                   (if (> (string-byte-length (cst/out-err p2)) 0)

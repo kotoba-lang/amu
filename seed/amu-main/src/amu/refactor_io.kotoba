@@ -1,5 +1,5 @@
 (ns amu.refactor-io
-  {:kotoba/export [refuse answer kind read-file write-file rename mkdirs list-dir expand-paths files-list files-error files-code
+  {:kotoba/export [observable-names refuse answer kind read-file write-file rename mkdirs list-dir expand-paths files-list files-error files-code
                    js-number-ok? js-number]}
   (:require [amu.cli :as cli]
             [amu.edn :as e]
@@ -29,6 +29,7 @@
         w (cli/err (e/pr-line rep))]
     (cond (string=? phase "usage") 64
           (string=? phase "output") 74
+          (string=? phase "internal") 70
           :else 65)))
 
 ;; source-path/source-kind's extensions, and posix basename (UTF-8 safe: amu.cli's byte loops trap on a non-ASCII
@@ -169,6 +170,47 @@
                 (string=? k "file") (recur (+ i 1) (add acc p))
                 :else (files (typed-list-new [:list :string]) (string-concat "no such file or directory: " p)
                              "refactor/unreadable")))))))
+
+;; refactor-cli observable-names: the names in (?:#')?(?:kotoba\.compiler\.frontend|frontend|fe)/([^\s()\[\]{}\"]+)
+;; over every source file under the comma-separated directories (a set: membership only)
+(defn- name-char? [p :i64] :bool
+  (not (or (= p 32) (= p 9) (= p 10) (= p 11) (= p 12) (= p 13) (= p 160) (= p 5760) (= p 8232) (= p 8233) (= p 8239)
+           (= p 8287) (= p 12288) (= p 65279) (and (>= p 8192) (<= p 8202))
+           (= p 40) (= p 41) (= p 91) (= p 93) (= p 123) (= p 125) (= p 34))))
+
+(defn- prefix-at? [t :string i :i64 pre :string] :bool
+  (let [n (string-byte-length t) m (string-byte-length pre)]
+    (and (<= (+ i m) n) (= (boundary-from-at t i (+ i m)) (+ i m)) (string=? (string-substring t i (+ i m)) pre))))
+
+;; the boundary at or after k, scanning from a boundary i
+(defn- boundary-from-at [t :string i :i64 k :i64] :i64
+  (let [n (string-byte-length t)] (loop [j i] (if (or (>= j k) (>= j n)) j (recur (+ j (cpw (string-code-point-at t j))))))))
+
+(defn- scan-names [t :string acc [:list :string]] [:list :string]
+  (let [n (string-byte-length t)]
+    (loop [i 0 a acc]
+      (if (>= i n)
+        a
+        (let [m (cond (prefix-at? t i "kotoba.compiler.frontend/") 25 (prefix-at? t i "frontend/") 9 (prefix-at? t i "fe/") 3 :else 0)]
+          (if (= m 0)
+            (recur (+ i (cpw (string-code-point-at t i))) a)
+            (let [s (+ i m)
+                  e (loop [j s] (if (and (< j n) (name-char? (string-code-point-at t j))) (recur (+ j (cpw (string-code-point-at t j)))) j))]
+              (if (> e s)
+                (recur e (add a (string-substring t s e)))
+                (recur (+ i 1) a)))))))))
+
+(defn observable-names [dirs :string] [:list :string]
+  (let [n (string-byte-length dirs)
+        ds (loop [from 0 acc (typed-list-new [:list :string])]
+             (let [k (if (> from n) -1 (string-index-of (string-substring dirs from n) ","))]
+               (if (< k 0) (add acc (string-substring dirs from n)) (recur (+ from (+ k 1)) (add acc (string-substring dirs from (+ from k)))))))]
+    (loop [i 0 acc (typed-list-new [:list :string])]
+      (if (>= i (vector-count ds))
+        acc
+        (let [d (typed-list-nth [:list :string] ds i)
+              fs (if (string=? (kind d) "dir") (files-under d (typed-list-new [:list :string])) (typed-list-new [:list :string]))]
+          (recur (+ i 1) (loop [j 0 a acc] (if (>= j (vector-count fs)) a (recur (+ j 1) (scan-names (read-file (typed-list-nth [:list :string] fs j)) a))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; host-integer/decimal-count under nbb: (js/Number text) when it is a safe integer. Admitted here: JS white space

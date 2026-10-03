@@ -1,0 +1,30 @@
+(ns fixture.dyn1
+  "dynvars fixture (REFAC differential): dynamic vars read, bound, threaded, shadowed and mutated."
+  {:kotoba/export [top entry]}
+  (:require [clojure.string :as str]))
+
+(def ^:dynamic *schemas* nil)
+(def ^:dynamic *counter* nil)
+(def ^:dynamic *local-types* {})
+(def ^:dynamic ^:private *private-depth?* 0)
+(def ^:dynamic *lexical-bindings* [])
+
+(defn- leaf [x] (get *schemas* x))
+(defn- leaf2 [x y] (+ (leaf x) (count *local-types*) y))
+(defn- mid [x] (binding [*schemas* {:a 1} *local-types* (assoc *local-types* :x 1)] (leaf x) (leaf2 x 2)))
+(defn- tick [] (vswap! *counter* inc))
+(defn- deep [n] (if (pos? n) (deep (dec n)) *private-depth?*))
+(defn- uses-thread [x] (->> x (map leaf) vec))
+(defn- first-thread [x] (-> x (leaf2 1)))
+(defn- shadow [leaf] (leaf 1))
+(defn- multi
+  ([x] (multi x 1))
+  ([x y] (binding [*lexical-bindings* (conj *lexical-bindings* x)] (+ (leaf x) y))))
+(defn- as-value [xs] (map leaf2 xs [1 2]))
+(defn- quoted [] '*schemas*)
+(defn top [x] (mid x))
+(defn entry [x] (+ (deep 3) (multi x) (first-thread x)))
+(defn- dbl [x] #?(:kotoba (leaf x) :default (leaf2 x 0)))
+(defn- fenv-user [fenv] (leaf fenv))
+(defn- loc [] (let [x *schemas*] (fn [y] (leaf y))))
+(defn- caller-of-tick [] (tick) (top 1))

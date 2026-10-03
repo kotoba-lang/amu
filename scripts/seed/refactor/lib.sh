@@ -15,7 +15,7 @@ rf_compile() {
     SEED_PAIRS=${SEED_PAIRS:-16777216} SEED_VECTOR_ITEMS=${SEED_VECTOR_ITEMS:-67108864} \
     seed_run $RF_SEED $(cat ${RF_SEED%.bin}.offset 2>/dev/null || echo 0) compile $src $sp --unpinned --target aarch64-macos --output $out.kseed > $out.compile.log 2>&1 \
     || { tail -5 $out.compile.log >&2; return 1; }
-  SEED_RESOURCES_35=${RF_RES:-$RF_REPO:/private/tmp:/Users/junkawasaki/github} \
+  SEED_RESOURCES_35=${RF_RES:-$RF_REPO:/private/tmp:/Users/junkawasaki/github} SEED_VECTOR_ITEMS=${SEED_VECTOR_ITEMS:-67108864} \
     seed_run $RF_SEED $(cat ${RF_SEED%.bin}.offset 2>/dev/null || echo 0) extract-native $out.kseed --symbol main --output $out.bin > $out.extract.log 2>&1 \
     || { tail -3 $out.extract.log >&2; return 1; }
   sed -n 's/.*:offset \([0-9]*\).*/\1/p' $out.extract.log > $out.offset
