@@ -5,6 +5,71 @@ stage-0's `native/machine_ir` + aarch64 backend for the BIG compiler? **KIR5 re-
 verdict is GO** for the condition this page set. Sections 1-6 are the KIR3/KIR4 history (NO-GO at the time). Section 7 is
 the integration plan, which starts with its falsification test.
 
+## 00. SEEDFIX: the falsification test re-run, F1-F5 all pass (2026-10-03, agent SEEDFIX)
+
+INT's run of `scripts/selfhost-wall/kir-backend-diff.sh` (seed 36433468) gave **NO-GO** on F1, F2 and F4. This wave
+changes the seed (12-kirread, delimited SEEDFIX blocks in 30-lower, 41-a64gen and the compile-kir block of 90-drv) and
+re-runs the script. Verdict: **all five checks pass** for seed **be8898af (675,512 B, its own fixed point; bridge = the
+R6C seed ecc9c136 compiling the same unity, because 41-a64gen changed)**. Tag `seed-r6c-kir`, record
+`seed/rungs/r6c-kir.record`. Stage-0 is the stable native image d2cb84f6 (bootstrap-reference). Load: 23 at the start of
+the P run, 122 at its end; 113 -> 60 during the G run. No timing is a result here.
+
+| check | INT (36433468) | SEEDFIX (be8898af) |
+|---|---|---|
+| F1 DIFF | 5 string-result exports missing from the container; 1 trap kind differs (SIGILL vs SIGTRAP) | **0 of 357 exports differ**; 0 missing; G: 75/75 merge runs EQUAL |
+| F2 undocumented refusals | 13 | **0** (307 of 315 accepted; 8 documented: 4 float, 4 variant / hetero-vector) |
+| F3 seed-only traps | 0 | **0** |
+| F4 fuel, metered build | seed charged more on 20 exports, 94 of 348 differ | **347 of 347 comparable exports equal** under `compile-kir --metered`; 1 program refused by name (documents) |
+| F5 fixed point + gates | pass | seed-1 == seed-2 (be8898af); `gates.sh --rung r6c --with-unit --with-aux`: **14/14 PASS**; `bootstrap.sh` replays the lineage |
+
+What changed:
+- **F4 fuel.** compile-kir no longer uses the seed's FF-FUEL rule. 12-kirread computes machine_ir's rule per KIR
+  function: a function is charged on entry and per self tail call exactly when its machine_ir lowering contains a call,
+  tail call, runtime call or capability call (kotoba-native `entry-fuel-prefixes`). The analysis models what
+  `emit-program` does to the KIR first: keyword equality (`=` on a keyword-typed operand becomes `string=?`), vector
+  regions (a `vector-new` of at most 32 items read only by count/at/get becomes slots), the record boundary (pair chains
+  vs SROA), literal walks, and string or keyword literals (`pair_new`). The result goes into marks on the read tree, and
+  30-lower reads them. A loop helper's entry charge becomes the inlined loop's entry charge. Library defns that stand for
+  a stage-0 runtime slot or inline lowering are fuel-free. On the 19 ports the KIR route now consumes exactly stage-0's
+  1,986,036 (the KIR gate); before it was 1,932,797. Decision with the numbers: an exact match, not a refusal of
+  `--fuel`. The one exception is documents. The seed's doclib is different code from stage-0's `kotoba$doc-*`
+  helpers (typed-closure-parameters: 953 vs 678), so `compile-kir --metered` refuses every `document-*` op by name
+  (E1203) and the selector falls back to machine_ir for a metered build only.
+- **F4 trap kind.** In a leaf function the seed holds the fuel counter in x8. Its exhaustion path now stores 0 to
+  `[x7,#8]` before `brk`, so a metered run that runs out inside a leaf reports `:budget/fuel` as machine_ir's does.
+  Before, the loader saw a bare SIGTRAP. This applies to every seed output.
+- **F1.** An export with `:i64` parameters and a `:string` (or keyword = text) result is exported after checking. 21-check
+  refuses it as an export type, so 30-lower sets FF-EXPORT afterwards. `string-find-byte`, `string-append-range`,
+  `string-index-of-from` and `vector-drop` are now calls of the loader's runtime slots (RT), stage-0's exact operation,
+  so `range-slots bad-byte` traps SIGILL like stage-0.
+- **F2 lowered (9 of 13).** `case` over keywords (3): a let's binding values were walked as type items, so a keyword
+  value stayed a keyword; the `=` respelling now also follows stage-0's let-bound keyword typing. `i32-*`/`u32-*` (2):
+  library defns, i.e. machine_ir's own shift and mask lowering. `string-compare-lines`, `string-fold-ascii` (2), and
+  `string-find-blank`/`-skip-blank`: runtime slots 280/248/256/264. `arena-scope` (1): runtime slots 224/232 around the
+  body. Record schema conflict (closure-node, 1): loop helpers' types are now walked like emitted functions'.
+- **F2 documented (4 of 13).** `variant-new`/`variant-match` (held-operations, recursive-tree, recursive-generic) and
+  `hetero-vector-*` (type_directed_heterogeneous_nth) are refused by name (E1203). Item 4 of section 7 lists them now.
+  machine_ir lowers scalar variants by SROA and hetero vectors as pair chains. The seed has neither type.
+- **Measurement changes to kir-backend-diff.sh** (marked SEEDFIX in the script):
+  - An export whose KIR result is `:string` is compared by content: the loader's typed report (`KEXE_RESULT_TYPE=string`,
+    `:result-utf8-hex`). The raw handle word numbers pair allocations: stage-0 allocates `pair(0,0)` for an option none and
+    nothing for a local record, and the seed does the opposite. A raw-handle difference is listed (RAW-HANDLE: option-or
+    `name`, 2 vs 1, same text "guest") but not counted. kexe-benchmark's result word is not compared for such exports.
+  - Fuel comes from kexe-benchmark when both sides have a number. When kexe-benchmark crashes on a NULL slot on one side,
+    it comes from the loader's report, used only when both runs return.
+  - F4 is reported on the programs `compile-kir --metered` accepts. The documented-refusal regex gains `variant|hetero-vector`.
+- **Selector interface (INT, next wave).** `seed compile-kir <in> --output <out> [--metered]`. Pass `--metered` when the
+  artifact declares fuel (`--fuel n` or the policy's `:budgets :fuel`). Fall back to machine_ir on any refusal.
+
+Open risks:
+- The fuel model is checked only on these 315 programs (they cover the ports, the r1 tests, the corpus, conformance and
+  examples). Its approximations are listed in 12-kirread's SEEDFIX header: a keyword-typed `let` operand is only seen
+  through its body name, and `:ref` counts as a record boundary without a lookup. A program outside the corpus could still
+  differ in a metered build.
+- Fuel remaining on a NON-fuel trap inside a leaf is still stale, because x8 is written back only at ret and on
+  exhaustion. That is observable only in a trapped metered report.
+- Unmetered fuel for documents differs (above).
+
 ## 0. KIR5 flip test (2026-10-03, agent KIR5): GO
 
 Command: `seed/tests/kir/flip.sh <seed.bin>` (SCAN + MERGE + EQUAL in one run, summary in `$FLIP_W/flip.txt`). The seed is
@@ -297,7 +362,9 @@ What must change in amu-measure:
    unanswered!` (a scan of `:code` for :fs/app-data tokens) must hold for seed code. The KIR gate already measures equal
    fuel on the 19 ports. The token scan must accept the seed's pieces.
 4. **Shapes still outside the seed**: wire 23 (`:entropy/draw`), float arithmetic, compares and parse/print, more than
-   16 parameters, 65+ item vectors with non-literal items, record captures in fn literals. The selector falls back to
+   16 parameters, 65+ item vectors with non-literal items, record captures in fn literals, (SEEDFIX) scalar variants
+   (`variant-new`/`variant-match`) and heterogeneous vectors (`hetero-vector-*`), refused E1203 by name; in a METERED
+   build (`compile-kir --metered`) also every `document-*` op (fuel of the seed's doclib differs from stage-0's helpers). The selector falls back to
    machine_ir by name for these (a refusal, never a silent switch) until each has a seed lowering.
 5. **Order**: (a) kir-backend-diff.sh with F1-F5, (b) a selector defaulting to machine-ir, plus the verifier's emitter
    field, (c) flip the default for aarch64-macos only, (d) delete machine_ir's aarch64 path only after one release with
