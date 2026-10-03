@@ -26,16 +26,43 @@
 (def MM-ERR-N 9)
 (def MM-SRC-LEN 10)
 (def MM-OUT-N 29)
+(def MM-CT 91)
+(def MM-CAPS 97)
+(def MM-TOK-BASE 256)
+(def MM-TOK-W 4)
+(def MM-NODE-BASE 524544)
+(def MM-NODE-W 8)
+(def MM-SYM-BASE 1573120)
+(def MM-SYM-W 8)
 (def MM-OUT-BASE 5312768)
 (def MM-OUT-CAP 1048576)
+(def TF-START 1)
+(def TF-END 2)
+(def NF-TOK 3)
+(def SF-START 0)
+(def SF-END 1)
+(def CT-CTOR 0)
+(def CT-A 1)
+(def CT-B 2)
+(def CT-W 4)
+(def TY-REC-BASE 1024)
+(def TY-COMP-BASE 1048576)
+(def TC-OPTION 1)
+(def TC-RESULT 2)
+(def TC-LIST 3)
+(def TC-MAP 4)
+(def TC-SET 5)
 (def E-USAGE 1)
 (def E-TARGET 2)
 (def E-READ 3)
 (def E-WRITE 4)
 (def E-NOSYM 5)
+(def E-POLICY-FILE 2170)
+(def E-CAP-POLICY 2177)
 (def E-OUT-FULL 5001)
 ;; defs of earlier modules used here (a def is not importable)
 (def pj-img-base 135168)
+(def pj-k-caps 32)
 (def pj-k-img 1)
 (def pj-k-nord 11)
 (def pj-k-nroot 5)
@@ -384,7 +411,9 @@
         n (vector-at M MM-ERR-N)
         p0 (drv-ph (drv-ek0 c) path a b n)
         p1 (drv-ph (drv-ek1 c) path a b n)]
-    (drv-say c (string-concat (drv-et0 c) (string-concat p0 (string-concat (drv-et1 c) (string-concat p1 (drv-et2 c))))) pos)))
+    (if (pos? (string-length (drv-r5b-text c)))
+      (drv-say c (drv-r5b-fill M path (drv-r5b-text c) "") pos)   ; R5B: a template text
+    (drv-say c (string-concat (drv-et0 c) (string-concat p0 (string-concat (drv-et1 c) (string-concat p1 (drv-et2 c))))) pos))))
 
 ;; an error found by the driver itself (no M yet)
 (defn- drv-fail0 [c :i64] :i64 (drv-say c (drv-et0 c) -1))
@@ -411,7 +440,9 @@
   (if (= (string-length out) 0) (drv-emit M) (drv-emit-file M out)))
 
 (defn- drv-c8 [M :vector-i64 path :string out :string] :i64
-  (if (= (vector-at M MM-ERR) 0) (drv-emit2 M out) (drv-fail M path)))
+  (if (= (vector-at M MM-ERR) 0)
+    (let [g (drv-r5b-gate M path (vector-at M MM-CAPS))] (if (< g 0) (drv-emit2 M out) g))   ; R5B: --policy
+    (drv-fail M path)))
 (defn- drv-c7 [M :vector-i64 S :string path :string out :string] :i64
   (if (= (vector-at M MM-ERR) 0) (drv-c8 (out-build M S) path out) (drv-fail M path)))
 (defn- drv-c6 [M :vector-i64 S :string path :string out :string] :i64
@@ -466,7 +497,8 @@
         M1 (if (= mode 0) M (out-image M S L pj-img-base (vector-at L pj-k-img)))]
     (cond (> (vector-at M1 MM-ERR) 0) (drv-fail0 (vector-at M1 MM-ERR))
           (= mode 0) (drv-ok M1)
-          :else (drv-emit2 M1 out))))
+          ;; R5B: --policy against the capabilities of every module of the project
+          :else (let [g (drv-r5b-gate M1 (pj-p P (pj-mf L 0 pj-mf-path)) (vector-at L pj-k-caps))] (if (< g 0) (drv-emit2 M1 out) g)))))
 
 (defn- drv-pj-compile [M :vector-i64 path :string mode :i64 out :string] :i64
   (let [L (pj-new-l)
@@ -695,6 +727,157 @@
         :else (drv-usage)))
 
 (defn- drv-main [] :i64 (drv-cmd (io-argc)))
+
+;; ==== BEGIN R5B (agent R5B, 2026-10-03): effect texts and the capability policy =========================================
+;; The texts of E2140-E2177 are TEMPLATES (seed/HEADS :errors, scripts/seed/errors-check.py compares them with =), filled at print
+;; time: {name} the span MM-ERR-A..B, {n} MM-ERR-N, {t} the type N with ':', {op} get/put (N bits 48..49), {ty1} {ty2} the types of
+;; N bits 0..23 / 24..47 without ':', {kw2} the second one with ':', {fx} the effect set of N, {node} the token of node N bits 0..23,
+;; {want} [state] / [state value], {req} {allow} {miss} the grant sets of N, MM-ERR-A and N without A.
+(defn- drv-r5b-text [c :i64] :string
+  (cond
+    (= c 2140) "atom `{name}` escapes its let scope (atom slice 1 admits swap!/reset!/deref in straight-line code of the binding function only)"
+    (= c 2141) "atom must be the init expression of a let binding (atom slice 1 admits swap!/reset!/deref in straight-line code of the binding function only)"
+    (= c 2142) "deref expects a let-bound atom cell as its first argument; got `{name}` (atom slice 1)"
+    (= c 2143) "swap!/reset! is not admitted inside `{name}` (atom slice 1 admits them in let, do, if, when, cond and case only)"
+    (= c 2144) "atom `{name}` is {ty1}; this rebinding is {ty2} (atom slice 1 requires one type per cell)"
+    (= c 2147) "atom `{name}` shadows an atom of the same name (atom slice 1 admits swap!/reset!/deref in straight-line code of the binding function only)"
+    (= c 2148) "swap! expects a let-bound atom cell as its first argument; got `{name}` (atom slice 1)"
+    (= c 2149) "reset! expects a let-bound atom cell as its first argument; got `{name}` (atom slice 1)"
+    (= c 2150) "unhandled ability :state at export boundary; handle it with (handle body (with handler init)): {name}"
+    (= c 2151) "handler {name} resumes state/{op} with {ty1}, but state/{op} returns {ty2} in a [:state {kw2}] handler"
+    (= c 2152) "handler {name} resumes state/{op} with next state {ty1}, but the handler's state is {ty2} in a [:state {kw2}] handler"
+    (= c 2153) "handler {name} is not pure: its {op} clause performs {fx}; a handler for the pure ability :state must be pure"
+    (= c 2154) "inferred effects exceed declared effect ceiling for {name}: {fx}"
+    (= c 2155) "handler {name} clause {op} must end every branch in exactly one (resume value state) in tail position"
+    (= c 2156) "state slice 1 does not admit perform :state/{op} inside a fn literal"
+    (= c 2157) "state slice 1 does not admit throw or try inside a stateful function or a handle body: {name}"
+    (= c 2158) "handle names no handler: {name}"
+    (= c 2159) "handler {name} does not match the :state ability: it must define exactly get and put, once each"
+    (= c 2160) "handler {node} does not match the :state ability: its {op} clause takes {want}, got {name}"
+    (= c 2161) "stateful function {name} cannot be used as a value in state slice 1; call it under a handler"
+    (= c 2162) "state slice 1 does not admit a stateful function that aborts: {name}"
+    (= c 2163) "state slice 1 does not admit a call to an aborting function inside a handle body: {name}"
+    (= c 2164) "handle installs one handler with one initial state: (handle body (with handler init))"
+    (= c 2165) "perform :state/get takes no value; got {n}"
+    (= c 2166) "perform :state/put takes exactly one value; got {n}"
+    (= c 2167) "named operation {name} is not a registered capability"
+    (= c 2168) "resume is admitted only in tail position of a defhandler clause"
+    (= c 2169) "state slice 1 does not admit a call of the stateful function {name} inside a fn literal"
+    (= c 2170) "malformed capability policy file (expected an :allow set of [:cap/call wire] items)"
+    (= c 2171) "stateful function {name} takes more than 4 parameters (the state is passed first, at most 5 in all)"
+    (= c 2176) "cap-call uses a capability not declared in namespace :capabilities: {fx}"
+    (= c 2177) "capability policy denies required effects; missing grants {miss} (required {req}, allowed {allow})"
+    :else ""))
+
+(def drv-r5b-m24 16777215)
+(def drv-r5b-m47 140737488355327)
+(def drv-r5b-state 140737488355328)
+
+;; the catalogue name of capability wire w
+(defn- drv-r5b-wname [w :i64] :string
+  (case w 3 ":hash/sha256" 7 ":clock/now" 33 ":env/read" 34 ":fs/browse" 35 ":fs/app-data" 37 ":io/write" 38 ":cli/args"
+        39 ":io/write-error" 41 ":io/read" (mem-u2dec w)))
+;; the wire of a capability name (with ':'), -1 when none
+(defn- drv-r5b-wire [s :string] :i64
+  (cond (string=? s ":hash/sha256") 3 (string=? s ":clock/now") 7 (string=? s ":env/read") 33 (string=? s ":fs/browse") 34
+        (string=? s ":fs/app-data") 35 (string=? s ":fs/app-data-bytes") 35 (string=? s ":io/write") 37 (string=? s ":cli/args") 38
+        (string=? s ":io/write-error") 39 (string=? s ":io/read") 41 :else -1))
+;; the items of mask m (bit 47 = :state first, then the wires in ascending order), each wrapped by pre/post, as #{..}
+(defn- drv-r5b-set [m :i64 pre :string post :string] :string
+  (loop [w 0 acc (if (= (bit-and m drv-r5b-state) 0) "" (string-concat pre (string-concat ":state" post)))]
+    (cond (>= w 47) (string-concat "#{" (string-concat acc "}"))
+          (= (bit-and m (i64-shift-left 1 w)) 0) (recur (inc w) acc)
+          :else (recur (inc w) (string-concat acc (string-concat (if (= (string-length acc) 0) "" " ")
+                                                                  (string-concat pre (string-concat (drv-r5b-wname w) post))))))))
+;; a type name; colon 1 = keyword spelling (:i64), 0 = bare (i64)
+(defn- drv-r5b-ty [M :vector-i64 path :string t :i64 colon :i64] :string
+  (let [c (if (= colon 1) ":" "")]
+    (cond (and (>= t 1) (<= t 6)) (string-concat c (case t 1 "i64" 2 "bool" 3 "string" 4 "vector-i64" 5 "bytes" "keyword"))
+          (>= t TY-COMP-BASE)
+          (let [r (+ (vector-at M MM-CT) (* (- t TY-COMP-BASE) CT-W))
+                k (vector-at M (+ r CT-CTOR))
+                a (drv-r5b-ty M path (vector-at M (+ r CT-A)) 1)]
+            (case k
+              TC-OPTION (string-concat "[:option " (string-concat a "]"))
+              TC-LIST (string-concat "[:list " (string-concat a "]"))
+              TC-SET (string-concat "[:set " (string-concat a "]"))
+              TC-RESULT (string-concat "[:result " (string-concat a (string-concat " " (string-concat (drv-r5b-ty M path (vector-at M (+ r CT-B)) 1) "]"))))
+              TC-MAP (string-concat "[:map " (string-concat a (string-concat " " (string-concat (drv-r5b-ty M path (vector-at M (+ r CT-B)) 1) "]"))))
+              "[:fn ..]"))
+          (>= t TY-REC-BASE)
+          (let [sy (- t TY-REC-BASE)]
+            (drv-slice path (vector-at M (+ MM-SYM-BASE (* sy MM-SYM-W) SF-START)) (vector-at M (+ MM-SYM-BASE (* sy MM-SYM-W) SF-END))))
+          :else "?")))
+;; the value of placeholder key
+(defn- drv-r5b-ph [M :vector-i64 path :string key :string] :string
+  (let [n (vector-at M MM-ERR-N)
+        a (vector-at M MM-ERR-A)
+        b (vector-at M MM-ERR-B)
+        op (bit-and (u64-shift-right n 48) 3)
+        t1 (bit-and n drv-r5b-m24)
+        t2 (bit-and (u64-shift-right n 24) drv-r5b-m24)
+        nd (vector-at M (+ MM-NODE-BASE (* t1 MM-NODE-W) NF-TOK))]
+    (cond (string=? key "name") (drv-slice path a b)
+          (string=? key "n") (mem-u2dec n)
+          (string=? key "t") (drv-tyname n)
+          (string=? key "op") (if (= op 2) "put" "get")
+          (string=? key "ty1") (drv-r5b-ty M path t1 0)
+          (string=? key "ty2") (drv-r5b-ty M path t2 0)
+          (string=? key "kw2") (drv-r5b-ty M path t2 1)
+          (string=? key "fx") (drv-r5b-set (bit-and n (bit-or drv-r5b-m47 drv-r5b-state)) "" "")
+          (string=? key "node") (drv-slice path (vector-at M (+ MM-TOK-BASE (* nd MM-TOK-W) TF-START)) (vector-at M (+ MM-TOK-BASE (* nd MM-TOK-W) TF-END)))
+          (string=? key "want") (if (= op 2) "[state value]" "[state]")
+          (string=? key "req") (drv-r5b-set n "[:cap/call " "]")
+          (string=? key "allow") (drv-r5b-set a "[:cap/call " "]")
+          (string=? key "miss") (drv-r5b-set (bit-and n (bit-not a)) "[:cap/call " "]")
+          :else (string-concat "{" (string-concat key "}")))))
+;; template tpl with every {key} replaced, appended to acc
+(defn- drv-r5b-fill [M :vector-i64 path :string tpl :string acc :string] :string
+  (let [i (string-index-of tpl "{")
+        len (string-length tpl)]
+    (if (< i 0)
+      (string-concat acc tpl)
+      (let [rest (string-substring tpl (+ i 1) len)
+            j (string-index-of rest "}")]
+        (if (< j 0)
+          (string-concat acc tpl)
+          (drv-r5b-fill M path (string-substring rest (+ j 1) (string-length rest))
+                        (string-concat acc (string-concat (string-substring tpl 0 i) (drv-r5b-ph M path (string-substring rest 0 j))))))))))
+
+;; ---- the capability policy (--policy P, the stage-0 file shape {:allow #{[:cap/call N] [:cap/call :name] ..}}) ----
+;; decimal digits of s from i to its end, -1 when s has another byte or none
+(defn- drv-r5b-num [s :string] :i64
+  (let [n (string-length s)]
+    (loop [i 0 v 0]
+      (cond (>= i n) (if (> n 0) v -1)
+            (and (>= (string-code-point-at s i) 48) (<= (string-code-point-at s i) 57)) (recur (inc i) (+ (* v 10) (- (string-code-point-at s i) 48)))
+            :else -1))))
+;; the allowed mask of policy text T, -1 when malformed
+(defn- drv-r5b-allow [T :string] :i64
+  (if (< (string-index-of T ":allow") 0)
+    -1
+    (loop [t T acc 0]
+      (let [i (string-index-of t "[:cap/call ")]
+        (if (< i 0)
+          acc
+          (let [r (string-substring t (+ i 11) (string-length t))
+                j (string-index-of r "]")
+                x (if (< j 0) "" (string-substring r 0 j))
+                w (if (and (> (string-length x) 0) (= (string-code-point-at x 0) 58)) (drv-r5b-wire x) (drv-r5b-num x))]
+            (if (or (< w 0) (>= w 47)) -1 (recur (string-substring r (+ j 1) (string-length r)) (bit-or acc (i64-shift-left 1 w))))))))))
+;; -1 when the compile may write its output: no --policy, or every required capability (mask req) is allowed; else the
+;; refusal is printed (E2177 / E2170) and the exit status is returned
+(defn- drv-r5b-gate [M :vector-i64 path :string req :i64] :i64
+  (let [k (drv-pj-flag 1 (io-argc) "--policy")]
+    (if (< k 0)
+      -1
+      (let [allow (if (= (io-exists (io-arg k)) 1) (drv-r5b-allow (drv-read (io-arg k))) -1)]
+        (cond (< allow 0) (drv-say E-POLICY-FILE (drv-r5b-text E-POLICY-FILE) -1)
+              (= (bit-and req (bit-not allow)) 0) -1
+              :else (drv-fail (-> M (vector-assoc! MM-ERR E-CAP-POLICY) (vector-assoc! MM-ERR-POS -1) (vector-assoc! MM-ERR-A allow)
+                                  (vector-assoc! MM-ERR-B 0) (vector-assoc! MM-ERR-N req))
+                              path))))))
+;; ==== END R5B ==========================================================================================================
 
 ;; seed/99-entry.kotoba -- the unity build's `seed-main` (called by `main` in 00-ns). Last in MANIFEST and never
 ;; part of a unit build, where the test defines `seed-main` instead. Owner: contracts/integration.

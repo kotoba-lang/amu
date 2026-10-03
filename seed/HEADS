@@ -65,7 +65,8 @@
   [:c TK-SYM 9 "symbol: a maximal run of [A-Za-z0-9*+!_?<>=/.-] that is not an
                 integer. Spans like `-` and `->` are symbols"]
   [:c TK-KW 10 "keyword: ':' followed by symbol chars; the span includes the ':' (e.g. :i64 :fs/app-data)"]
-  [:c TK-HASH-BRACE 11 "R3: '#{' (a set literal opens; closed by '}')"]]
+  [:c TK-HASH-BRACE 11 "R3: '#{' (a set literal opens; closed by '}')"]
+  [:c TK-AT 12 "R5B: '@' (11-read reads @x as (deref x): a list whose head symbol is the '@' token, spelled HD-DEREF)"]]
  ;; R3 (10-lex, minimal delimited change): a string literal may hold any UTF-8 text (its bytes go to LITB as they are) and
  ;; the escapes \r \b \f \uXXXX (UTF-8 encoded; a surrogate is E1003) besides \n \t \\ \"; a comment may hold any
  ;; UTF-8 text. A byte >= 128 anywhere else is E1002 at that byte (no whole-input pre-check any more).
@@ -105,7 +106,10 @@
   ;; -- R4B --
   [:c KW-REF 25 ":ref (record type by reference)"] [:c KW-SCHEMAS 26 ":schemas (ns clause)"]
   [:c KW-HASH-SHA256 27 ":hash/sha256"] [:c KW-ENV-READ 28 ":env/read"] [:c KW-FS-BROWSE 29 ":fs/browse"]
-  [:c KW-IO-READ 30 ":io/read"]]
+  [:c KW-IO-READ 30 ":io/read"]
+  ;; -- R5B (effects) --
+  [:c KW-STATE 31 ":state (the handler's ability, [:state S])"] [:c KW-STATE-GET 32 ":state/get"] [:c KW-STATE-PUT 33 ":state/put"]
+  [:c KW-EFFECTS 34 ":effects (a declared effect ceiling {:effects #{..}})"] [:c KW-CLOCK-NOW 35 ":clock/now (capability wire 7)"]]
  ;; KW-FS-APP-DATA-BYTES (R0 2026-10-02): wire 35 with the :bytes kinds, the spelling stage-0 accepts.
  ;; Keywords appear ONLY in: ns (:export), signatures (types), cond (:else), typed-cap-call (wire, kinds).
  ;; A keyword anywhere else (as a value) -> E2114.
@@ -328,7 +332,23 @@
   [:c HD-BYTES-CONCAT 145 "(bytes-concat x y) -> x ; RT RT-BYTES-CONCAT"]
   [:c HD-BYTES-SLICE 146 "(bytes-slice x start end) -> x, traps when not 0 <= start <= end <= count ; RT RT-BYTES-SLICE"]
   [:c HD-STRING-FROM-UTF8 147 "(string-from-utf8 x) -> s, traps on non-canonical UTF-8 ; RT RT-STRING-FROM-UTF8"]
-  [:c HD-COUNT 147 "number of heads"]]
+  ;; -- R5B (2026-10-03, agent R5B): effects (docs/selfhost-seed-r5-design-20261002.md section 5). Local state is elaborated in
+  ;;    21-check into frame slots (no SIR change); the state ability uses the SIR ops RES2/RET2 (seed/SIR :r5b-lowering).
+  [:c HD-ATOM 148 "(atom e) -- only as the init of a let binding (E2141): the binder is a CELL of e's type in a frame slot; the
+                   cell may be spelled only as the first argument of swap!/reset!/deref in the binding function (E2140)"]
+  [:c HD-SWAP 149 "(swap! a f x ..) = (reset! a (f (deref a) x ..)) (21-check desugars it); value = the new content"]
+  [:c HD-RESET 150 "(reset! a v) v of the cell's type (E2144) -> the new content ; [v -> t] LSET slot(a) t"]
+  [:c HD-DEREF 151 "(deref a) / @a -> the cell's content ; LGET t slot(a)"]
+  [:c HD-PERFORM 152 "(perform :state/get) -> S ; (perform :state/put v) v:S -> S ; (perform :clock/now x) x:i64 -> i64 (a capability
+                      call: RT RT-CAP-CALL with the wire, stage-0's lowering)"]
+  [:c HD-HANDLE 153 "(handle body (with h init)) -> body's type: installs handler h (a defhandler of the module) with state init in a
+                     hidden slot; (handle body (catch e x)) = try (desugared)"]
+  [:c HD-WITH 154 "with -- only as (with h init), the last child of handle"]
+  [:c HD-RESUME 155 "(resume v n) -- only in tail position of a defhandler clause; v and n of the handler's state type S; bottom"]
+  [:c HD-DEFHANDLER 156 "(defhandler NAME DOC? [:state S] (get [s] body) (put [s v] body)) top level: two clause functions"]
+  [:c HD-SCALL 157 "(no spelling) NF-RES of (g a ..) where g is a STATEFUL defn called under a handler: CALL of the specialization of g
+                    for that handler (head symbol NF-RES = RES-FN spec, NF-TYPE = the state slot)"]
+  [:c HD-COUNT 157 "number of heads"]]
 
  ;; Head spellings, index = head code (20-names compares a symbol's bytes against these at intern time).
  ;; R1 spellings 43.. : "do" "when" "when-not" "if-not" "case" "condp" "->" "->>" "as->" "cond->" "cond->>" "dotimes"
@@ -349,7 +369,8 @@
  ;; "string-from-i64" "string-compare" "string-index-of" "string-byte-length" "pair" "pair-first" "pair-second" "count" "nth"
  ;; "contains?" "conj" "disj" "dissoc" "keys" "vals" "peek" "pop"; 129 130 have none. R4 spellings 131..139: "fn" "fn-ref" "invoke"
  ;; "apply" "map" "filter" "reduce" "list" "&"; 140 141 have none. R4B spellings 142..147: "bytes-empty" "bytes-count" "bytes-at"
- ;; "bytes-concat" "bytes-slice" "string-from-utf8". Like R1's, an R3 head is shadowed by a
+ ;; "bytes-concat" "bytes-slice" "string-from-utf8". R5B spellings 148..156: "atom" "swap!" "reset!" "deref" (and "@", the token of the
+ ;; reader's @x) "perform" "handle" "with" "resume" "defhandler"; 157 has none. Like R1's, an R3 head is shadowed by a
  ;; definition of the same name.
  ;; Codes 2 (keyword), 36 and 37 have no symbol spelling: SF-HEAD is never 2, 36 or 37.
  ;; `main`, `true`, `false`, `nil` are NOT heads. `main` is an ordinary defn name.
@@ -460,6 +481,44 @@
   ;; -- R4B (E2140-E2177 are reserved for R5) --
   [:c E-CHECK-PARAMS16 2178 "more than 16 parameters in '{name}'"]
   [:c E-CHECK-REF 2179 "type references an undeclared record schema '{name}'"]
+  ;; -- R5B (agent R5B, 2026-10-03): effects. Texts = the reference's (lang/local-state.edn :refusals, lang/state-ability.edn
+  ;;    :refusals, the capability texts of stage-0) where it has one, so the pinned negatives compare with =. Placeholders beyond
+  ;;    {name} {n} {t} (90-drv drv-r5b-text, a template filled at print time): {op} = get/put (MM-ERR-N bits 48..49), {ty1} / {ty2} =
+  ;;    the type name without ':' of N bits 0..23 / 24..47, {kw2} = the same with ':', {fx} = the effect set of N bits 0..47
+  ;;    (bit w = capability wire w, bit 47 = :state), {node} = the token text of node N bits 0..23, {want} = [state] / [state value]
+  ;;    by {op}, {req} {allow} {miss} = grant sets #{[:cap/call :x] ..} of N, MM-ERR-A and N without A.
+  [:c E-ATOM-ESCAPE 2140 "atom `{name}` escapes its let scope (atom slice 1 admits swap!/reset!/deref in straight-line code of the binding function only)"]
+  [:c E-ATOM-POSITION 2141 "atom must be the init expression of a let binding (atom slice 1 admits swap!/reset!/deref in straight-line code of the binding function only)"]
+  [:c E-ATOM-DEREF 2142 "deref expects a let-bound atom cell as its first argument; got `{name}` (atom slice 1)"]
+  [:c E-ATOM-INSIDE 2143 "swap!/reset! is not admitted inside `{name}` (atom slice 1 admits them in let, do, if, when, cond and case only)"]
+  [:c E-ATOM-TYPE 2144 "atom `{name}` is {ty1}; this rebinding is {ty2} (atom slice 1 requires one type per cell)"]
+  [:c E-ATOM-SHADOW 2147 "atom `{name}` shadows an atom of the same name (atom slice 1 admits swap!/reset!/deref in straight-line code of the binding function only)"]
+  [:c E-ATOM-SWAP 2148 "swap! expects a let-bound atom cell as its first argument; got `{name}` (atom slice 1)"]
+  [:c E-ATOM-RESET 2149 "reset! expects a let-bound atom cell as its first argument; got `{name}` (atom slice 1)"]
+  [:c E-STATE-EXPORT 2150 "unhandled ability :state at export boundary; handle it with (handle body (with handler init)): {name}"]
+  [:c E-STATE-RESUME-TYPE 2151 "handler {name} resumes state/{op} with {ty1}, but state/{op} returns {ty2} in a [:state {kw2}] handler"]
+  [:c E-STATE-NEXT-TYPE 2152 "handler {name} resumes state/{op} with next state {ty1}, but the handler's state is {ty2} in a [:state {kw2}] handler"]
+  [:c E-STATE-IMPURE 2153 "handler {name} is not pure: its {op} clause performs {fx}; a handler for the pure ability :state must be pure"]
+  [:c E-STATE-CEILING 2154 "inferred effects exceed declared effect ceiling for {name}: {fx}"]
+  [:c E-STATE-RESUME 2155 "handler {name} clause {op} must end every branch in exactly one (resume value state) in tail position"]
+  [:c E-STATE-FN 2156 "state slice 1 does not admit perform :state/{op} inside a fn literal"]
+  [:c E-STATE-THROW 2157 "state slice 1 does not admit throw or try inside a stateful function or a handle body: {name}"]
+  [:c E-STATE-NOHANDLER 2158 "handle names no handler: {name}"]
+  [:c E-STATE-OPS 2159 "handler {name} does not match the :state ability: it must define exactly get and put, once each"]
+  [:c E-STATE-PARAMS 2160 "handler {node} does not match the :state ability: its {op} clause takes {want}, got {name}"]
+  [:c E-STATE-VALUE 2161 "stateful function {name} cannot be used as a value in state slice 1; call it under a handler"]
+  [:c E-STATE-ABORTS 2162 "state slice 1 does not admit a stateful function that aborts: {name}"]
+  [:c E-STATE-ABORT-CALL 2163 "state slice 1 does not admit a call to an aborting function inside a handle body: {name}"]
+  [:c E-STATE-HANDLE 2164 "handle installs one handler with one initial state: (handle body (with handler init))"]
+  [:c E-STATE-GET-ARITY 2165 "perform :state/get takes no value; got {n}"]
+  [:c E-STATE-PUT-ARITY 2166 "perform :state/put takes exactly one value; got {n}"]
+  [:c E-STATE-UNKNOWN-OP 2167 "named operation {name} is not a registered capability"]
+  [:c E-STATE-RESUME-WHERE 2168 "resume is admitted only in tail position of a defhandler clause"]
+  [:c E-STATE-FN-CALL 2169 "state slice 1 does not admit a call of the stateful function {name} inside a fn literal"]
+  [:c E-POLICY-FILE 2170 "malformed capability policy file (expected an :allow set of [:cap/call wire] items)"]
+  [:c E-STATE-PARAMS4 2171 "stateful function {name} takes more than 4 parameters (the state is passed first, at most 5 in all)"]
+  [:c E-CAP-UNDECLARED 2176 "cap-call uses a capability not declared in namespace :capabilities: {fx}"]
+  [:c E-CAP-POLICY 2177 "capability policy denies required effects; missing grants {miss} (required {req}, allowed {allow})"]
   [:c E-LOWER-FULL 3001 "SIR table full"]
   [:c E-LOWER-NODE 3003 "internal: cannot lower node kind {n}"]
   [:c E-ENC-IMM 4001 "immediate out of range: {n}"]

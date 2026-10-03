@@ -1134,6 +1134,8 @@
           (> (nm-sf M s SF-FN) 0) 0
           (= hd HD-LET) (ck-sel (nm-eqi (ck-gt3 (nm-count M n)) 1) HD-LET 0)
           (= hd HD-LOOP) (ck-sel (nm-eqi (ck-gt3 (nm-count M n)) 1) HD-LOOP 0)
+          (= hd HD-SWAP) HD-SWAP   ; R5B: (swap! a f x ..) -> (reset! a (f (deref a) x ..))
+          (= hd HD-HANDLE) (if (ck-r5b-handle-catch? M n) HD-HANDLE 0)   ; R5B: (handle b (catch ..)) -> (try b (catch ..))
           (< hd HD-WHEN) 0
           (> hd HD-ASSERT) 0
           (= hd HD-RANGE) 0
@@ -1162,6 +1164,8 @@
         (= hd HD-NEG) (ck-ds-arith M n HD-LT 0)
         (= hd HD-NOT-EQ) (ck-ds-noteq M n)
         (= hd HD-ASSERT) (ck-ds-assert M n)
+        (= hd HD-SWAP) (ck-r5b-ds-swap M n)
+        (= hd HD-HANDLE) (ck-rehead M n HD-TRY (nm-next M (nm-first M n)))
         :else (ck-err M E-CHECK-HEAD (nm-first M n) 0)))
 
 ;; rewrite n until it is no sugar, then walk its children
@@ -1206,7 +1210,7 @@
         :else 1))
 
 (defn- ck-ds-defn [M :vector-i64 n :i64] :vector-i64
-  (let [p (nm-nth M n 2)] (ck-ds-defn1 (if (= (nm-kind M p) ND-VEC) (ck-ds-rest M p) M) n)))
+  (let [p (nm-nth M n 2)] (ck-ds-defn1 (ck-r5b-ceiling-take (if (= (nm-kind M p) ND-VEC) (ck-ds-rest M p) M) n) n)))
 (defn- ck-ds-defn1 [M :vector-i64 n :i64] :vector-i64
   (let [h (nm-first M n)
         p (nm-nth M n 2)
@@ -1371,6 +1375,8 @@
         fi (nm-sf M s SF-FN)
         dty (nm-ff M fi FF-RTYPE)]
     (cond (= ty (ck-poison)) (ck-err M E-CHECK-BINDINGS n 0)
+          (and (>= slot 0) (neg? (ck-known-get M slot))) (ck-err M E-ATOM-ESCAPE n 0)   ; R5B: a cell as a value
+          (and (< slot 0) (= (ck-callable M fi) 1) (ck-r5b-tmpl? M fi)) (ck-err M E-STATE-VALUE n 0)   ; R5B
           (and (>= slot 0) (ck-known-bare? M slot)) (ck-err M E-CHECK-FNVALUE n 0)
           (>= slot 0) (ck-mark M n ty (+ (* RES-LOCAL RES-SCALE) slot))
           (= (nm-ff M fi FF-KIND) FK-DEF)   ; FN record 0 has kind 0
@@ -1423,6 +1429,7 @@
           (= (nm-kind M h) ND-LIST) (ck-callv M n fx)
           (nm-ne (nm-kind M h) ND-SYM) (ck-err M E-CHECK-HEAD h 0)
           (>= (nm-local-slot M s) 0) (ck-call-local M n fx)
+          (and (= (ck-callable M fi) 1) (ck-r5b-tmpl? M fi)) (ck-r5b-scall M n fi fx)   ; R5B: a stateful defn
           (= (ck-callable M fi) 1) (ck-call M n fi fx)
           (> hd 0) (ck-head (nm-set-nf M h NF-RES (+ (* RES-HEAD RES-SCALE) hd)) n hd fx ctx)
           :else (ck-err M E-CHECK-HEAD h 0))))
@@ -1447,6 +1454,7 @@
         (= hd HD-ASSOC) (ck-assoc M n fx)
         (and (>= hd HD-OPTION-SOME) (<= hd HD-POP)) (ck-r3 M n hd fx ctx)
         (and (>= hd HD-FN) (<= hd HD-AMP)) (ck-r4 M n hd fx ctx)
+        (and (>= hd HD-ATOM) (<= hd HD-DEFHANDLER)) (ck-r5b M n hd fx ctx)   ; R5B
         (= (ck-op-known hd) 1) (ck-op M n hd fx)
         :else (ck-head-err M n)))
 
@@ -1578,7 +1586,8 @@
   (let [h (nm-first M n)]
     (if (>= (nm-count M n) 2)
       (let [c (nm-next M h)
-            M1 (ck-andor-args M c fx ctx h)]
+            a0 (ck-sg M ck-s-andor)   ; R5B: no cell write inside an and/or operand (E2143)
+            M1 (ck-ss (ck-andor-args (ck-ss M ck-s-andor h) c fx ctx h) ck-s-andor a0)]
         (ck-mark M1 n TY-BOOL hd))
       (ck-err M E-CHECK-ARITY h 1))))
 
@@ -1633,7 +1642,7 @@
           (let [M1 (ck-expr M x fx 0)
                 tx (ck-ty M1)]
             (if (= tx aty)
-              (ck-mark (ck-fuel (nm-set-nf M1 w NF-TYPE wk) (ck-fx-f fx)) n rty HD-TYPED-CAP-CALL)
+              (ck-mark (ck-r5b-cap (ck-fuel (nm-set-nf M1 w NF-TYPE wk) (ck-fx-f fx)) (ck-fx-f fx) (ck-kw-wire wk)) n rty HD-TYPED-CAP-CALL)
               (ck-err M1 E-CHECK-TYPE h aty))))))
 
 ;; ---- calls of the file's functions ----
@@ -1697,8 +1706,8 @@
     :else
     (let [e (nm-next M b)
           slot (ck-fx-next fx)
-          M1 (ck-binder-ok M b h0)
-          M2 (ck-expr M1 e fx 0)
+          M1 (ck-r5b-shadow (ck-binder-ok M b h0) b)
+          M2 (if (and (= mode 0) (ck-r5b-atom-form? M1 e)) (ck-r5b-atom M1 e fx) (ck-expr M1 e fx 0))   ; R5B: a cell
           ty (ck-ty M2)]
       (cond (> slot (ck-max-slots)) (ck-err M2 E-CHECK-SLOTS b slot)
             (= ty 0) (ck-err M2 E-CHECK-BINDINGS b 0)
@@ -1712,8 +1721,10 @@
         nx (nm-next M (nm-next M b))
         M1 (ck-bind M b (ck-fx-next fx) (ck-bind-type mode ty) (ck-fx-f fx))
         M2 (nm-set-nf M1 b NF-TYPE ty)
-        M3 (if (and (= mode 0) (ck-fn-form? M2 (nm-next M2 b))) (ck-known-bind M2 b (ck-fx-next fx)) M2)]
-    (ck-binds M3 nx (+ fx 1) h0 mode)))
+        M3 (if (and (= mode 0) (ck-fn-form? M2 (nm-next M2 b))) (ck-known-bind M2 b (ck-fx-next fx)) M2)
+        ;; R5B: a let-bound (atom e) makes the slot a cell: known table value -(loop depth + 1)
+        M3b (if (and (= mode 0) (ck-r5b-atom-form? M3 (nm-next M3 b))) (ck-known-set M3 (ck-fx-next fx) (- -1 (ck-sg M3 ck-s-loopn))) M3)]
+    (ck-binds M3b nx (+ fx 1) h0 mode)))
 
 ;; loop: re-bind every binder from b with its real type (NF-TYPE) and slot (NF-RES)
 (defn- ck-rebind [M :vector-i64 b :i64 f :i64] :vector-i64
@@ -1774,7 +1785,9 @@
           M3 (ck-rebind M2 b0 (ck-fx-f fx))
           ;; R3: aborts caught by a try outside this loop still leave its body (the recur rule, ck-abort-at)
           d0 (ck-sg M3 ck-s-loopd)
-          M4 (ck-ss (ck-expr (ck-ss M3 ck-s-loopd (ck-sg M3 ck-s-tryd)) body fx2 (+ (* v 2) 1)) ck-s-loopd d0)
+          ln (ck-sg M3 ck-s-loopn)   ; R5B: the loop depth of the body
+          M4 (ck-ss (ck-ss (ck-expr (ck-ss (ck-ss M3 ck-s-loopn (inc ln)) ck-s-loopd (ck-sg M3 ck-s-tryd)) body fx2 (+ (* v 2) 1)) ck-s-loopd d0)
+                    ck-s-loopn ln)
           ty (ck-ty M4)
           M5 (nm-unbind M4 h0)]
       (ck-mark M5 n ty HD-LOOP))))
@@ -2101,7 +2114,7 @@
         :else (ck-err M E-CHECK-RESULT nm rt)))
 
 (defn- ck-body [M :vector-i64 f :i64] :vector-i64
-  (ck-done-set (ck-body0 (ck-state-reset (ck-done-set M f 2) f) f) f 1))
+  (ck-done-set (ck-r5b-body0 (ck-state-reset (ck-done-set M f 2) f) f) f 1))
 (defn- ck-body0 [M :vector-i64 f :i64] :vector-i64
   (let [n (nm-ff M f FF-NODE)
         nm (nm-nth M n 1)
@@ -2126,6 +2139,7 @@
     (nm-failed M) (ck-touch M)
     (= (nm-ff M f FF-KIND) FK-DEF) (ck-bodies M (+ f 1))
     (pos? (ck-done-get M f)) (ck-bodies M (+ f 1))
+    (ck-r5b-tmpl? M f) (ck-bodies M (+ f 1))   ; R5B: a stateful defn is checked as its specializations
     :else (ck-bodies (ck-body M f) (+ f 1))))
 
 ;; pass E: implicit exports become 1 (exportable) or 0; explicit ones are checked again (inferred results)
@@ -2142,12 +2156,12 @@
 
 ;; the whole pass: M, R0 = MM-ERR (0 when the program is admitted)
 (defn- ck-run [M :vector-i64 S :string] :vector-i64
-  (let [M0 (ck-r3-init M)
+  (let [M0 (ck-r5b-init (ck-r3-init M))
         M1 (ck-recs M0 S (nm-first M0 (vector-at M0 MM-ROOT)))
         M1b (if (nm-failed M1) M1 (ck-refs-check (ck-inline-scan M1)))
         M2 (ck-desugar M1b S)
         M3 (ck-sigs M2 1)
-        M4 (ck-bodies (ck-ab-pre (ck-r3-init2 M3)) 1)
+        M4 (ck-bodies (ck-r5b-pass (ck-ab-pre (ck-r3-init2 M3)) S) 1)
         M5 (if (nm-failed M4) M4 (ck-ab-final M4))]
     (ck-run-end (ck-exports M5 1))))
 
@@ -2184,7 +2198,7 @@
 (def ck-s-loopd 7)  ; the try depth at the entry of the innermost loop (0 = the function body)
 (def ck-s-known 8)  ; R4: HEAP address of the 256-word table slot -> 2 * lifted FN + 1 when its closure is built (0 = none)
 (def ck-s-lbody 9)  ; R4: the body of the let whose bindings are being checked (the scan region of a known function)
-(def ck-s-w 10)
+(def ck-s-w 16)     ; R5B: words 10..13 are the effects state (ck-s-hslot .. ck-s-andor, R5B block)
 
 (defn- ck-sg [M :vector-i64 k :i64] :i64 (vector-at M (+ (vector-at M MM-CK-STATE) k)))
 (defn- ck-ss [M :vector-i64 k :i64 v :i64] :vector-i64 (nm-put M (+ (vector-at M MM-CK-STATE) k) v))
@@ -2199,7 +2213,9 @@
 ;; reset the current block for a check of f
 (defn- ck-state-reset [M :vector-i64 f :i64] :vector-i64
   (-> M (ck-ss ck-s-tryd 0) (ck-ss ck-s-trye 0) (ck-ss ck-s-tryn 0) (ck-ss ck-s-aborts 0) (ck-ss ck-s-fn f) (ck-ss ck-s-tryx 0)
-      (ck-ss ck-s-loopd 0)))
+      (ck-ss ck-s-loopd 0)
+      ;; R5B: no handler, loop depth 0, not inside and/or
+      (ck-ss ck-s-hslot 0) (ck-ss ck-s-hfn 0) (ck-ss ck-s-loopn 0) (ck-ss ck-s-andor 0)))
 
 ;; the CT table and the first state block (before anything is checked)
 (defn- ck-r3-init [M :vector-i64] :vector-i64
@@ -3129,6 +3145,7 @@
             k (count caps)]
         (cond (nm-failed M2) (ck-touch M2)
               (> (+ np k) 5) (ck-err M2 E-CHECK-CAPTURES h (+ np k))
+              (pos? (ck-r5b-cell-cap M2 (nm-nth M2 n 2) caps)) (ck-err M2 E-ATOM-ESCAPE (ck-r5b-cell-cap M2 (nm-nth M2 n 2) caps) 0)   ; R5B
               (pos? (ck-bad-cap M2 (nm-nth M2 n 2) caps)) (ck-err M2 E-CHECK-TYPE (ck-bad-cap M2 (nm-nth M2 n 2) caps) TY-I64)
               :else (ck-fnlit2 (nm-set-nf (ck-fn-caps M2 f np caps p) h NF-TYPE f) n (+ (* f 8) np) caps fx))))))
 ;; fnp = the lifted FN * 8 + its parameter count
@@ -3249,6 +3266,7 @@
         g (if (= (ck-callable M fi) 1) (ck-pick M fi ar) 0)]
     (cond (or (nm-ne (nm-kind M x) ND-SYM) (>= (nm-local-slot M (nm-sym-of M x)) 0) (zero? (ck-callable M fi)))
           (nm-put (ck-err M E-CHECK-FNVALUE x 0) MM-R0 0)
+          (ck-r5b-tmpl? M fi) (nm-put (ck-err M E-STATE-VALUE x 0) MM-R0 0)   ; R5B
           (zero? g) (nm-put (ck-err M E-CHECK-CLAUSE x ar) MM-R0 0)
           (ck-variadic? M g) (nm-put (ck-err M E-CHECK-FNVALUE x 0) MM-R0 0)
           (nm-ne (nm-sf M (nm-ff M g FF-SYM) SF-ABORT) 0) (nm-put (ck-err M E-CHECK-FNVALUE x 0) MM-R0 0)
@@ -3429,3 +3447,549 @@
           (and (= hd HD-FILTER) (nm-ne r TY-BOOL)) (ck-err M1 E-CHECK-TYPE h TY-BOOL)
           (and (= hd HD-REDUCE) (nm-ne r acc)) (ck-err M1 E-CHECK-TYPE h acc)
           :else (ck-mark (ck-fuel M1 (ck-fx-f fx)) n out hd))))
+
+;; =========================================================================================================
+;; R5B (agent R5B, 2026-10-03): effects (docs/selfhost-seed-r5-design-20261002.md section 5; seed/HEADS 148-157, E2140-E2177;
+;; seed/SIR :r5b-lowering; seed/MEMORY-MAP FN2). Written in the R5A language (the R5A/R4B seed compiles it).
+;;   local state  (let [a (atom e)] ..) binds a CELL: a frame slot whose known-table entry is -(loop depth + 1). The cell may be
+;;                spelled only as the first argument of deref / reset! (swap! is desugared into reset!) at the loop depth it was
+;;                bound at; anywhere else it escapes (E2140). No SIR change: deref = LGET, reset! = LSET.
+;;   handlers     (defhandler h [:state S] (get [s] ..) (put [s v] ..)) -> two FN records (FK-LAMBDA: the body is the clause's
+;;                3rd child), get then put; FN2 marks them. Every tail of a clause is (resume v n) (bottom), checked here.
+;;   stateful     a defn that performs :state or calls a stateful defn outside every handle body (a syntactic fixed point, before
+;;                pass B) is a TEMPLATE: never checked or lowered itself. Under a handler h it is SPECIALIZED: an FN record whose
+;;                node is a clone of the template's defn form, checked with the state in slot 1 and its parameters in slots 2..
+;;                (one specialization per (template, handler), created at the first call). Calls in a specialization go to the
+;;                specializations under the same handler; an inner handle shadows it.
+;;   effects      FN2-CAPS = the capabilities a checked body calls; M[MM-CAPS] = the module's; declared {:effects #{..}} ceilings
+;;                are checked against a syntactic fixed point of caps + :state.
+;; =========================================================================================================
+(def ck-s-hslot 10)  ; the state slot of the innermost handler (0 = none; 1 in a specialization)
+(def ck-s-hfn 11)    ; its handler (the get clause FN)
+(def ck-s-loopn 12)  ; loop nesting depth of the expression being checked
+(def ck-s-andor 13)  ; the and/or head node whose operands are being checked (0 = none)
+
+(def ck-fx-state 140737488355328)   ; 2^47: the :state bit of an effect mask (bit w < 47 = capability wire w)
+
+;; ---- FN2 ----
+(defn- ck-f2 [M :vector-i64 f :i64 fld :i64] :i64 (vector-at M (+ (vector-at M MM-FN2) (* f FN2-W) fld)))
+(defn- ck-f2-set [M :vector-i64 f :i64 fld :i64 v :i64] :vector-i64 (nm-put M (+ (vector-at M MM-FN2) (* f FN2-W) fld) v))
+(defn- ck-f2-or [M :vector-i64 f :i64 fld :i64 v :i64] :vector-i64 (ck-f2-set M f fld (bit-or (ck-f2 M f fld) v)))
+(defn- ck-r5b-tmpl? [M :vector-i64 f :i64] :bool (and (pos? f) (= (bit-and (ck-f2 M f FN2-FLAGS) 1) 1)))
+(defn- ck-r5b-spec? [M :vector-i64 f :i64] :bool (and (pos? f) (= (bit-and (ck-f2 M f FN2-FLAGS) 2) 2)))
+(defn- ck-r5b-clause? [M :vector-i64 f :i64] :bool (and (pos? f) (pos? (bit-and (ck-f2 M f FN2-FLAGS) 12))))
+;; 1 for a get clause, 2 for a put clause
+(defn- ck-r5b-op-of [M :vector-i64 f :i64] :i64 (if (= (bit-and (ck-f2 M f FN2-FLAGS) 8) 8) 2 1))
+
+;; the FN2 table and the module's capability mask (before anything is registered)
+(defn- ck-r5b-init [M :vector-i64] :vector-i64
+  (let [M1 (mem-alloc M (* (+ MM-FN-CAP 1) FN2-W))]
+    (-> M1 (nm-put MM-FN2 (ck-r M1)) (nm-put MM-CAPS 0))))
+
+;; the capability wire of a keyword code (seed/HEADS :caps and the catalogue's :clock/now), -1 when none
+(defn- ck-kw-wire [k :i64] :i64
+  (case k
+    KW-HASH-SHA256 3 KW-CLOCK-NOW 7 KW-ENV-READ 33 KW-FS-BROWSE 34 (KW-FS-APP-DATA KW-FS-APP-DATA-BYTES) 35 KW-IO-WRITE 37
+    KW-CLI-ARGS 38 KW-IO-WRITE-ERROR 39 KW-IO-READ 41
+    -1))
+(defn- ck-wire-bit [w :i64] :i64 (if (and (>= w 0) (< w 47)) (i64-shift-left 1 w) 0))
+;; FN f calls capability wire w: its FN2-CAPS and the module's mask
+(defn- ck-r5b-cap [M :vector-i64 f :i64 w :i64] :vector-i64
+  (-> M (ck-f2-or f FN2-CAPS (ck-wire-bit w)) (nm-put MM-CAPS (bit-or (vector-at M MM-CAPS) (ck-wire-bit w)))))
+
+;; ---- recognisers (a head that no definition shadows) ----
+(defn- ck-hd-of [M :vector-i64 n :i64] :i64
+  (let [h (nm-first M n)
+        s (nm-sym-of M h)]
+    (if (and (= (nm-kind M n) ND-LIST) (= (nm-kind M h) ND-SYM) (zero? (nm-sf M s SF-FN))) (nm-sf M s SF-HEAD) 0)))
+(defn- ck-r5b-atom-form? [M :vector-i64 e :i64] :bool (= (ck-hd-of M e) HD-ATOM))
+;; 1 get, 2 put, 0 another operation, of the perform list n
+(defn- ck-perform-op [M :vector-i64 n :i64] :i64
+  (let [k (nm-head-of M (nm-nth M n 1))]
+    (cond (nm-ne (nm-kind M (nm-nth M n 1)) ND-KW) 0 (= k KW-STATE-GET) 1 (= k KW-STATE-PUT) 2 :else 0)))
+;; the defn called by list n (its head symbol names a defn and is not a local of the walk's function: a syntactic answer)
+(defn- ck-callee-of [M :vector-i64 n :i64] :i64
+  (let [h (nm-first M n)
+        fi (nm-sf M (nm-sym-of M h) SF-FN)]
+    (if (and (= (nm-kind M n) ND-LIST) (= (nm-kind M h) ND-SYM) (= (ck-callable M fi) 1)) fi 0)))
+(defn- ck-r5b-handle-catch? [M :vector-i64 n :i64] :bool
+  (let [c (nm-nth M n 2)] (and (= (nm-count M n) 3) (= (ck-hd-of M c) HD-CATCH))))
+
+;; ---- desugaring ----
+;; (swap! a f x ..) -> (reset! a (f (deref a') x ..)); the reset! head carries NF-AUX 1 (its refusals name swap!)
+(defn- ck-r5b-ds-swap [M :vector-i64 n :i64] :vector-i64
+  (let [h (nm-first M n)
+        a (nm-next M h)
+        f (nm-next M a)
+        tok (nm-nf M h NF-TOK)]
+    (if (or (zero? a) (zero? f))
+      (ck-err M E-CHECK-ARITY h 2)
+      (let [r (nm-next M f)
+            M1 (ck-n-copy M a)
+            a2 (ck-r M1)
+            M2 (ck-mkh M1 tok HD-DEREF a2)
+            d (ck-r M2)
+            M3 (-> M2 (ck-link d r) (ck-link f d))
+            M4 (ck-n-list M3 tok f)
+            l (ck-r M4)
+            M5 (-> M4 (ck-link a l) (ck-link l 0) (ck-rehead n HD-RESET a))]
+        (nm-set-nf M5 (nm-first M5 n) NF-AUX 1)))))
+
+;; a declared effect ceiling {:effects #{..}} right after the parameters or after the result type: unlinked from the defn
+;; form n, kept in NF-TYPE of the name node
+(defn- ck-ceil-map? [M :vector-i64 x :i64] :bool
+  (and (= (nm-kind M x) ND-MAP) (= (nm-head-of M (nm-first M x)) KW-EFFECTS)))
+(defn- ck-r5b-ceiling-take [M :vector-i64 n :i64] :vector-i64
+  (let [nm (nm-nth M n 1)
+        p (nm-nth M n 2)
+        x (nm-next M p)
+        y (nm-next M x)]
+    (cond (or (nm-failed M) (nm-ne (nm-kind M p) ND-VEC)) M
+          (ck-ceil-map? M x) (-> M (ck-link p y) (nm-set-nf nm NF-TYPE x))
+          (and (= (ck-is-tform M x) 1) (ck-ceil-map? M y)) (-> M (ck-link x (nm-next M y)) (nm-set-nf nm NF-TYPE y))
+          :else M)))
+
+;; ---- node clones (a specialization checks its own copy of the template's tree) ----
+(defn- ck-r5b-clone [M :vector-i64 n :i64] :vector-i64
+  (let [M1 (ck-new M (nm-kind M n) (nm-nf M n NF-TOK) (nm-nf M n NF-AUX) (nm-sym-of M n))
+        c (ck-r M1)
+        M2 (-> M1 (nm-set-nf c NF-TYPE (nm-nf M1 n NF-TYPE)) (nm-set-nf c NF-RES (nm-nf M1 n NF-RES)))
+        M3 (ck-r5b-clone-chain M2 (nm-first M2 n))
+        k (ck-r M3)]
+    (if (zero? c) M3 (-> M3 (nm-set-nf c NF-FIRST k) (nm-put MM-R0 c)))))
+(defn- ck-r5b-clone-chain [M :vector-i64 c :i64] :vector-i64
+  (if (or (zero? c) (nm-failed M))
+    (nm-put M MM-R0 0)
+    (let [M1 (ck-r5b-clone M c)
+          x (ck-r M1)
+          M2 (ck-r5b-clone-chain M1 (nm-next M1 c))
+          y (ck-r M2)]
+      (if (zero? x) M2 (-> M2 (nm-set-nf x NF-NEXT y) (nm-put MM-R0 x))))))
+
+;; ---- local state ----
+;; (atom e) as the init of a let binding: R0 = e's type
+(defn- ck-r5b-atom [M :vector-i64 e :i64 fx :i64] :vector-i64
+  (if (nm-ne (nm-count M e) 2)
+    (ck-err M E-CHECK-ARITY (nm-first M e) 1)
+    (let [M1 (ck-expr M (nm-nth M e 1) fx 0)
+          ty (ck-ty M1)]
+      (ck-mark M1 e ty HD-ATOM))))
+;; a let binder b whose symbol names a cell now: E2147
+(defn- ck-r5b-shadow [M :vector-i64 b :i64] :vector-i64
+  (let [slot (nm-local-slot M (nm-sym-of M b))]
+    (if (and (= (nm-kind M b) ND-SYM) (>= slot 0) (neg? (ck-known-get M slot))) (ck-err M E-ATOM-SHADOW b 0) M)))
+;; the cell named by x for operation code (the refusal of a non-cell): R0 = its type; x's NF-RES = its slot
+(defn- ck-r5b-cell [M :vector-i64 x :i64 code :i64] :vector-i64
+  (let [s (nm-sym-of M x)
+        slot (nm-local-slot M s)
+        k (ck-known-get M slot)]
+    (cond (or (nm-ne (nm-kind M x) ND-SYM) (< slot 0) (>= k 0)) (ck-err M code x 0)
+          (nm-ne (- -1 k) (ck-sg M ck-s-loopn)) (ck-err M E-ATOM-ESCAPE x 0)
+          :else (ck-mark M x (nm-local-type M s) (+ (* RES-LOCAL RES-SCALE) slot)))))
+(defn- ck-r5b-deref [M :vector-i64 n :i64] :vector-i64
+  (if (nm-ne (nm-count M n) 2)
+    (ck-err M E-CHECK-ARITY (nm-first M n) 1)
+    (let [M1 (ck-r5b-cell M (nm-nth M n 1) E-ATOM-DEREF)]
+      (if (nm-failed M1) M1 (ck-mark M1 n (ck-ty M1) HD-DEREF)))))
+(defn- ck-r5b-reset [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
+        a (nm-next M h)
+        ao (ck-sg M ck-s-andor)]
+    (cond (nm-ne (nm-count M n) 3) (ck-err M E-CHECK-ARITY h 2)
+          :else
+          (let [M1 (ck-r5b-cell M a (if (= (nm-nf M h NF-AUX) 1) E-ATOM-SWAP E-ATOM-RESET))
+                ty (ck-ty M1)
+                M2 (cond (nm-failed M1) M1
+                         (pos? ao) (ck-err M1 E-ATOM-INSIDE ao 0)
+                         :else (ck-expr M1 (nm-next M1 a) fx 0))
+                tv (ck-ty M2)]
+            (cond (nm-failed M2) M2
+                  (and (pos? tv) (nm-ne tv ty)) (ck-err M2 E-ATOM-TYPE a (+ ty (* tv 16777216)))
+                  :else (ck-mark M2 n ty HD-RESET))))))
+;; the first occurrence in chain c of a captured symbol that is a cell (a fn literal capturing it), 0 when none
+(defn- ck-r5b-cell-cap [M :vector-i64 c :i64 caps :vector-i64] :i64
+  (loop [x c]
+    (if (zero? x)
+      0
+      (let [k (nm-kind M x)
+            s (nm-sym-of M x)
+            sub (if (or (= k ND-LIST) (= k ND-VEC) (= k ND-MAP) (= k ND-SET)) (ck-r5b-cell-cap M (nm-first M x) caps) 0)]
+        (cond (and (= k ND-SYM) (ck-in-list caps s) (neg? (ck-known-get M (nm-local-slot M s)))) x
+              (pos? sub) sub
+              :else (recur (nm-next M x)))))))
+
+;; ---- the forms ----
+(defn- ck-r5b [M :vector-i64 n :i64 hd :i64 fx :i64 ctx :i64] :vector-i64
+  (case hd
+    HD-ATOM (ck-err M E-ATOM-POSITION (nm-first M n) 0)
+    HD-DEREF (ck-r5b-deref M n)
+    HD-RESET (ck-r5b-reset M n fx)
+    HD-PERFORM (ck-r5b-perform M n fx)
+    HD-HANDLE (ck-r5b-handle M n fx ctx)
+    HD-RESUME (ck-r5b-resume M n fx ctx)
+    (ck-head-err M n)))
+
+;; the handler name node of clause FN f
+(defn- ck-r5b-hname [M :vector-i64 f :i64] :i64 (nm-nth M (ck-f2 M f FN2-NODE) 1))
+
+;; (perform :state/get) (perform :state/put v) under the innermost handler; (perform :clock/now x) a capability call
+(defn- ck-r5b-perform [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
+        kw (nm-nth M n 1)
+        op (ck-perform-op M n)
+        na (- (nm-count M n) 2)
+        f (ck-sg M ck-s-fn)
+        hs (ck-sg M ck-s-hslot)
+        hf (ck-sg M ck-s-hfn)
+        S (cond (ck-r5b-clause? M f) (ck-f2 M f FN2-S) (pos? hs) (ck-f2 M hf FN2-S) :else 0)]
+    (cond (nm-ne (nm-kind M kw) ND-KW) (ck-err M E-STATE-UNKNOWN-OP kw 0)
+          (and (= op 1) (nm-ne na 0)) (ck-err M E-STATE-GET-ARITY h na)
+          (and (= op 2) (nm-ne na 1)) (ck-err M E-STATE-PUT-ARITY h na)
+          (pos? op)
+          (cond (ck-r5b-clause? M f)   ; a handler clause performs :state: recorded, refused after the clause (E2153)
+                (let [M1 (ck-f2-or M f FN2-CAPS ck-fx-state)
+                      M2 (if (= op 2) (ck-want M1 (nm-nth M1 n 2) fx S h) M1)]
+                  (if (nm-failed M2) M2 (ck-mark M2 n S HD-PERFORM)))
+                (zero? hs) (ck-err M E-STATE-FN h (i64-shift-left op 48))
+                :else
+                (let [M1 (if (= op 2) (ck-want M (nm-nth M n 2) fx S h) M)]
+                  (if (nm-failed M1)
+                    M1
+                    (-> M1 (nm-set-nf h NF-TYPE hs) (nm-set-nf kw NF-TYPE hf) (ck-fuel (ck-fx-f fx)) (ck-mark n S HD-PERFORM)))))
+          (= (ck-kw-wire (nm-head-of M kw)) 7)
+          (if (nm-ne na 1)
+            (ck-err M E-CHECK-ARITY h 2)
+            (let [M1 (ck-want M (nm-nth M n 2) fx TY-I64 h)]
+              (if (nm-failed M1)
+                M1
+                (-> M1 (nm-set-nf h NF-TYPE 0) (nm-set-nf kw NF-TYPE 0) (ck-r5b-cap (ck-fx-f fx) 7) (ck-fuel (ck-fx-f fx))
+                    (ck-mark n TY-I64 HD-PERFORM)))))
+          :else (ck-err M E-STATE-UNKNOWN-OP kw 0))))
+
+;; (handle body (with h init)): the handler was resolved by the pass (NF-TYPE of the `with` symbol node); the state lives in a
+;; hidden slot (NF-TYPE of the handle head node); the body is no tail position
+(defn- ck-r5b-handle [M :vector-i64 n :i64 fx :i64 ctx :i64] :vector-i64
+  (let [h (nm-first M n)
+        w (nm-nth M n 2)
+        hf (nm-nf M (nm-first M w) NF-TYPE)
+        S (ck-f2 M hf FN2-S)]
+    (if (or (nm-ne (nm-count M n) 3) (zero? hf))
+      (ck-err M E-STATE-HANDLE h 0)
+      (let [M1 (ck-hide M h NF-TYPE 1 fx)
+            fx2 (ck-ty M1)
+            sl (nm-nf M1 h NF-TYPE)
+            M2 (ck-want M1 (nm-nth M1 w 2) fx2 S h)
+            hs0 (ck-sg M2 ck-s-hslot)
+            hf0 (ck-sg M2 ck-s-hfn)
+            M3 (if (nm-failed M2) M2 (ck-expr (-> M2 (ck-ss ck-s-hslot sl) (ck-ss ck-s-hfn hf)) (nm-nth M2 n 1) fx2 (- ctx (bit-and ctx 1))))
+            ty (ck-ty M3)
+            M4 (-> M3 (ck-ss ck-s-hslot hs0) (ck-ss ck-s-hfn hf0))]
+        (if (nm-failed M4) M4 (ck-mark M4 n ty HD-HANDLE))))))
+
+;; (resume v n) in tail position of a handler clause: v and n of the handler's S; bottom
+(defn- ck-r5b-resume [M :vector-i64 n :i64 fx :i64 ctx :i64] :vector-i64
+  (let [h (nm-first M n)
+        f (ck-sg M ck-s-fn)
+        S (ck-f2 M f FN2-S)
+        op (if (ck-r5b-clause? M f) (ck-r5b-op-of M f) 0)
+        nmn (if (pos? op) (ck-r5b-hname M f) 0)]
+    (cond (zero? op) (ck-err M E-STATE-RESUME-WHERE h 0)
+          (zero? (bit-and ctx 1)) (ck-err M E-STATE-RESUME nmn (i64-shift-left op 48))
+          (nm-ne (nm-count M n) 3) (ck-err M E-CHECK-ARITY h 2)
+          :else
+          (let [M1 (ck-expr M (nm-nth M n 1) fx 0)
+                tv (ck-ty M1)
+                M2 (cond (nm-failed M1) M1
+                         (and (pos? tv) (nm-ne tv S)) (ck-err M1 E-STATE-RESUME-TYPE nmn (+ tv (* S 16777216) (i64-shift-left op 48)))
+                         :else (ck-expr M1 (nm-nth M1 n 2) fx 0))
+                tn (ck-ty M2)]
+            (cond (nm-failed M2) M2
+                  (and (pos? tn) (nm-ne tn S)) (ck-err M2 E-STATE-NEXT-TYPE nmn (+ tn (* S 16777216) (i64-shift-left op 48)))
+                  :else (ck-mark M2 n 0 HD-RESUME))))))
+
+;; ---- specializations ----
+;; the specialization of template g under handler hf: found, or made (a clone of g's defn form) and checked now; R0 = its FN
+(defn- ck-r5b-spec-find [M :vector-i64 g :i64 hf :i64] :i64
+  (loop [f 1]
+    (cond (>= f (vector-at M MM-FN-N)) 0
+          (and (ck-r5b-spec? M f) (= (ck-f2 M f FN2-ORIGIN) g) (= (ck-f2 M f FN2-HAND) hf)) f
+          :else (recur (inc f)))))
+(defn- ck-r5b-spec [M :vector-i64 g :i64 hf :i64] :vector-i64
+  (let [old (ck-r5b-spec-find M g hf)]
+    (if (pos? old)
+      (nm-put M MM-R0 old)
+      (let [np (nm-ff M g FF-NPARAMS)
+            M1 (ck-r5b-clone M (nm-ff M g FF-NODE))
+            c (ck-r M1)
+            M2 (ck-fn-new M1 c FK-PRIV (inc np))
+            f (ck-r M2)
+            M3 (-> M2 (nm-set-ff f FF-RTYPE (nm-ff M2 g FF-RTYPE)) (nm-set-ff f FF-PT0 (ck-f2 M2 hf FN2-S))
+                   (ck-f2-set f FN2-FLAGS 2) (ck-f2-set f FN2-ORIGIN g) (ck-f2-set f FN2-HAND hf) (ck-done-set f 0))
+            M4 (loop [M5 M3 k 0] (if (>= k np) M5 (recur (nm-set-ff M5 f (+ FF-PT0 k 1) (nm-ff M5 g (+ FF-PT0 k))) (inc k))))]
+        (if (nm-failed M4) (nm-put M4 MM-R0 0) (nm-put (ck-nested M4 f) MM-R0 f))))))
+
+;; the body check of FN f: a specialization binds the state to slot 1 and its parameters to slots 2..
+(defn- ck-r5b-body0 [M :vector-i64 f :i64] :vector-i64
+  (if (ck-r5b-spec? M f) (ck-r5b-sbody M f) (ck-body0 M f)))
+(defn- ck-r5b-sbody [M :vector-i64 f :i64] :vector-i64
+  (let [n (nm-ff M f FF-NODE)
+        nm (nm-nth M n 1)
+        p (nm-nth M n 2)
+        body (nm-nth M n 4)
+        np (dec (nm-ff M f FF-NPARAMS))
+        rt (nm-ff M f FF-RTYPE)
+        h0 (nm-scope-height M)
+        M1 (-> M (nm-set-ff f FF-NSLOTS (inc np)) (nm-set-ff f FF-FUEL 0) (ck-ss ck-s-hslot 1) (ck-ss ck-s-hfn (ck-f2 M f FN2-HAND)))
+        M2 (loop [M3 M1 b (nm-first M1 p) k 0]
+             (if (or (zero? b) (nm-failed M3))
+               M3
+               (recur (ck-bind (ck-binder-ok M3 b h0) b (+ k 2) (ck-pt M3 f (inc k)) f) (nm-next M3 (nm-next M3 b)) (inc k))))
+        M4 (ck-expr M2 body (+ (* f 1024) (+ np 2)) (+ (* p 2) 1))
+        ty (ck-ty M4)
+        M5 (nm-unbind M4 h0)]
+    (ck-body-result M5 nm ty rt f)))
+
+;; (g a ..) with g a stateful defn, under the innermost handler: a call of g's specialization (HD-SCALL)
+(defn- ck-r5b-scall [M :vector-i64 n :i64 f0 :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
+        na (- (nm-count M n) 1)
+        g (ck-pick M f0 na)
+        hs (ck-sg M ck-s-hslot)]
+    (cond (zero? g) (ck-err M E-CHECK-ARITY h (nm-ff M f0 FF-NPARAMS))
+          (zero? hs) (ck-err M E-STATE-FN-CALL h 0)
+          (nm-ne (nm-ff M g FF-NPARAMS) na) (ck-err M E-CHECK-ARITY h (nm-ff M g FF-NPARAMS))
+          :else
+          (let [M1 (ck-r5b-spec M g (ck-sg M ck-s-hfn))
+                sp (ck-r M1)
+                rt (nm-ff M1 sp FF-RTYPE)]
+            (cond (nm-failed M1) M1
+                  (< rt 1) (ck-err M1 E-CHECK-INFER h 0)
+                  :else
+                  (let [M2 (ck-call-args M1 (nm-next M1 h) g 0 fx h)]
+                    (if (nm-failed M2)
+                      M2
+                      (-> M2 (nm-set-nf h NF-RES (+ (* RES-FN RES-SCALE) sp)) (nm-set-nf h NF-TYPE hs) (ck-fuel (ck-fx-f fx))
+                          (ck-mark n rt HD-SCALL)))))))))
+
+;; ---- the pass before pass B: handlers, stateful defns, their refusals, effect ceilings, handler clauses ----
+;; the spelling of node x is the text s
+(defn- ck-spells? [M :vector-i64 S :string x :i64 s :string] :bool
+  (let [a (nm-tf M (nm-nf M x NF-TOK) TF-START)
+        b (nm-tf M (nm-nf M x NF-TOK) TF-END)]
+    (and (= (- b a) (string-length s)) (string=? (string-substring S a b) s))))
+;; the handler (get clause FN) named by symbol s, 0 when none
+(defn- ck-r5b-handler [M :vector-i64 s :i64] :i64
+  (loop [f 1]
+    (cond (>= f (vector-at M MM-FN-N)) 0
+          (and (= (bit-and (ck-f2 M f FN2-FLAGS) 4) 4) (= (ck-f2 M f FN2-ORIGIN) s)) f
+          :else (recur (inc f)))))
+;; the clause of defhandler form d named op ("get" / "put"); R0 = the clause node, R1 = how many there are
+(defn- ck-r5b-clause-of [M :vector-i64 S :string c :i64 op :string] :vector-i64
+  (loop [x c k 0 found 0]
+    (cond (zero? x) (-> M (nm-put MM-R1 k) (nm-put MM-R0 found))
+          (and (= (nm-kind M x) ND-LIST) (= (nm-kind M (nm-first M x)) ND-SYM) (ck-spells? M S (nm-first M x) op))
+          (recur (nm-next M x) (inc k) x)
+          :else (recur (nm-next M x) k found))))
+;; the source span of the bracketed node v: from its opening token to its closing token (the token after the end of its last child)
+(defn- ck-bracket? [M :vector-i64 x :i64] :bool
+  (let [k (nm-kind M x)] (or (= k ND-LIST) (= k ND-VEC) (= k ND-MAP) (= k ND-SET))))
+(defn- ck-end-tok [M :vector-i64 x :i64] :i64
+  (cond (not (ck-bracket? M x)) (nm-nf M x NF-TOK)
+        (zero? (nm-first M x)) (inc (nm-nf M x NF-TOK))
+        :else (inc (ck-end-tok M (ck-last M (nm-first M x))))))
+(defn- ck-r5b-err-vec [M :vector-i64 code :i64 v :i64 n :i64] :vector-i64
+  (let [a (nm-tf M (nm-nf M v NF-TOK) TF-START)
+        b (nm-tf M (ck-end-tok M v) TF-END)]
+    (nm-put (nm-err-span M code a b n) MM-R0 0)))
+;; one clause (op [params] body ..) of handler form d (name node nmn): the clause FN f (made by the caller) gets its body
+(defn- ck-r5b-clause-fn [M :vector-i64 S :string d :i64 c :i64 op :i64 S0 :i64] :vector-i64
+  (let [nmn (nm-nth M d 1)
+        p (nm-nth M c 1)
+        e (nm-nth M c 2)
+        np (if (= op 1) 1 2)
+        tok (nm-nf M (nm-first M c) NF-TOK)]
+    (cond (or (nm-ne (nm-kind M p) ND-VEC) (nm-ne (nm-count M p) np) (nm-ne (nm-count-syms M p) np))
+          (if (= (nm-kind M p) ND-VEC) (ck-r5b-err-vec M E-STATE-PARAMS p (+ nmn (i64-shift-left op 48))) (ck-err M E-STATE-OPS nmn 0))
+          (zero? e) (ck-err M E-STATE-RESUME nmn (i64-shift-left op 48))
+          :else
+          (let [M1 (if (zero? (nm-next M e)) M (let [M2 (ck-mkh M tok HD-DO e)] (ck-link M2 p (ck-r M2))))
+                M3 (ck-ds-walk M1 S (nm-nth M1 c 2))
+                M4 (ck-fn-new M3 c FK-LAMBDA np)
+                f (ck-r M4)]
+            (-> M4 (nm-set-ff f FF-PT0 S0) (nm-set-ff f (inc FF-PT0) S0) (nm-set-ff f FF-RTYPE S0)
+                (ck-f2-set f FN2-FLAGS (if (= op 1) 4 8)) (ck-f2-set f FN2-ORIGIN (nm-sym-of M4 nmn)) (ck-f2-set f FN2-S S0)
+                (ck-f2-set f FN2-NODE d) (nm-put MM-R0 f))))))
+;; (defhandler NAME DOC? [:state S] (get [s] ..) (put [s v] ..)): its two clause FNs, get then put
+(defn- ck-r5b-defhandler [M :vector-i64 S :string d :i64] :vector-i64
+  (let [nmn (nm-nth M d 1)
+        x (nm-nth M d 2)
+        sv (if (= (nm-kind M x) ND-STR) (nm-next M x) x)
+        c0 (nm-next M sv)
+        M1 (ck-r5b-clause-of M S c0 "get")
+        cg (ck-r M1)
+        ng (vector-at M1 MM-R1)
+        M2 (ck-r5b-clause-of M1 S c0 "put")
+        cp (ck-r M2)
+        npt (vector-at M2 MM-R1)]
+    (cond (nm-ne (nm-kind M2 nmn) ND-SYM) (ck-err M2 E-CHECK-SIGNATURE d 0)
+          (pos? (ck-r5b-handler M2 (nm-sym-of M2 nmn))) (ck-err M2 E-NAMES-DUP nmn 0)
+          (or (nm-ne (nm-kind M2 sv) ND-VEC) (nm-ne (nm-count M2 sv) 2) (nm-ne (nm-head-of M2 (nm-first M2 sv)) KW-STATE))
+          (ck-err M2 E-CHECK-SIGNATURE nmn 0)
+          (or (nm-ne ng 1) (nm-ne npt 1) (nm-ne (ck-chain-len M2 c0) 2)) (ck-err M2 E-STATE-OPS nmn 0)
+          :else
+          (let [M3 (ck-tform M2 (nm-nth M2 sv 1))
+                S0 (ck-r M3)]
+            (if (zero? S0)
+              (ck-err M3 E-CHECK-TYPENAME (nm-nth M3 sv 1) 0)
+              (ck-r5b-clause-fn (ck-r5b-clause-fn M3 S d cg 1 S0) S d cp 2 S0))))))
+
+;; check clause FN f: (s) or (s v) of S; every tail a resume (the body is bottom), no capability and no :state (E2153)
+(defn- ck-r5b-clause-body [M :vector-i64 f :i64] :vector-i64
+  (let [c (nm-ff M f FF-NODE)
+        p (nm-nth M c 1)
+        S0 (ck-f2 M f FN2-S)
+        op (ck-r5b-op-of M f)
+        nmn (ck-r5b-hname M f)
+        h0 (nm-scope-height M)
+        M1 (-> (ck-state-reset M f) (nm-set-ff f FF-NSLOTS (nm-ff M f FF-NPARAMS)) (nm-set-ff f FF-FUEL 0))
+        M2 (loop [M3 M1 b (nm-first M1 p) k 1]
+             (if (or (zero? b) (nm-failed M3)) M3 (recur (ck-bind (ck-binder-ok M3 b h0) b k S0 f) (nm-next M3 b) (inc k))))
+        M4 (ck-expr M2 (nm-nth M2 c 2) (+ (* f 1024) (inc (nm-ff M2 f FF-NPARAMS))) (+ (* p 2) 1))
+        ty (ck-ty M4)
+        M5 (nm-unbind M4 h0)]
+    (cond (nm-failed M5) M5
+          (pos? (ck-f2 M5 f FN2-CAPS)) (ck-err M5 E-STATE-IMPURE nmn (+ (ck-f2 M5 f FN2-CAPS) (i64-shift-left op 48)))
+          (pos? ty) (ck-err M5 E-STATE-RESUME nmn (i64-shift-left op 48))
+          :else M5)))
+
+;; a walk over node n (fn literals skipped): mode 0 -> 1 when it performs :state or calls a stateful defn outside every handle
+;; body; mode 1 -> 1 at a throw/try, 2 at a call of an aborting defn (handle bodies included); mode 2 -> the first handle form
+;; whose body has a mode-1 answer: that answer
+(defn- ck-r5b-walk [M :vector-i64 n :i64 mode :i64] :i64
+  (let [k (nm-kind M n)
+        hd (ck-hd-of M n)
+        g (ck-callee-of M n)]
+    (cond (or (= k ND-VEC) (= k ND-MAP) (= k ND-SET)) (ck-r5b-walks M (nm-first M n) mode)
+          (nm-ne k ND-LIST) 0
+          (ck-fn-form? M n) 0
+          (and (= mode 0) (= hd HD-PERFORM) (pos? (ck-perform-op M n))) 1
+          (and (= mode 0) (= hd HD-HANDLE)) (ck-r5b-walks M (nm-nth M n 2) mode)
+          (and (= mode 0) (ck-r5b-tmpl? M g)) 1
+          (and (= mode 1) (or (= hd HD-THROW) (= hd HD-TRY))) 1
+          (and (= mode 1) (pos? g) (nm-ne (nm-sf M (nm-ff M g FF-SYM) SF-ABORT) 0)) 2
+          (and (= mode 2) (= hd HD-HANDLE) (pos? (ck-r5b-walk M (nm-nth M n 1) 1))) (ck-r5b-walk M (nm-nth M n 1) 1)
+          :else (ck-r5b-walks M (nm-first M n) mode))))
+(defn- ck-r5b-walks [M :vector-i64 c :i64 mode :i64] :i64
+  (loop [x c]
+    (if (zero? x)
+      0
+      (let [r (ck-r5b-walk M x mode)] (if (zero? r) (recur (nm-next M x)) r)))))
+
+;; mark the stateful defns: rounds until nothing changes
+(defn- ck-r5b-stateful [M :vector-i64] :vector-i64
+  (let [M1 (loop [M2 M f 1 ch 0]
+             (cond (>= f (vector-at M2 MM-FN-N)) (nm-put M2 MM-R0 ch)
+                   (and (ck-is-defn M2 f) (not (ck-r5b-tmpl? M2 f)) (pos? (ck-r5b-walk M2 (ck-defn-body M2 f) 0)))
+                   (recur (ck-f2-or M2 f FN2-FLAGS 1) (inc f) (inc ch))
+                   :else (recur M2 (inc f) ch)))]
+    (if (pos? (ck-r M1)) (ck-r5b-stateful M1) M1)))
+
+;; resolve every (handle body (with h init)) of node n: shape (E2164), handler (E2158); the handler's get FN goes to NF-TYPE
+;; of the `with` symbol node. S tells a qualified name (alias/name) apart: never a handler of this module.
+(defn- ck-r5b-handles [M :vector-i64 S :string n :i64] :vector-i64
+  (let [k (nm-kind M n)]
+    (cond (nm-failed M) M
+          (or (= k ND-LIST) (= k ND-VEC) (= k ND-MAP) (= k ND-SET))
+          (let [M1 (if (= (ck-hd-of M n) HD-HANDLE) (ck-r5b-handle1 M S n) M)]
+            (loop [M2 M1 x (nm-first M1 n)] (if (or (zero? x) (nm-failed M2)) M2 (recur (ck-r5b-handles M2 S x) (nm-next M2 x)))))
+          :else M)))
+(defn- ck-r5b-handle1 [M :vector-i64 S :string n :i64] :vector-i64
+  (let [h (nm-first M n)
+        w (nm-nth M n 2)
+        hn (nm-nth M w 1)
+        a (nm-tf M (nm-nf M hn NF-TOK) TF-START)
+        b (nm-tf M (nm-nf M hn NF-TOK) TF-END)]
+    (cond (or (nm-ne (nm-count M n) 3) (nm-ne (ck-hd-of M w) HD-WITH) (nm-ne (nm-count M w) 3) (nm-ne (nm-kind M hn) ND-SYM)
+              (pos? (string-index-of (string-substring S a b) "/")))
+          (ck-err M E-STATE-HANDLE h 0)
+          (zero? (ck-r5b-handler M (nm-sym-of M hn))) (ck-err M E-STATE-NOHANDLER hn 0)
+          :else (nm-set-nf M (nm-first M w) NF-TYPE (ck-r5b-handler M (nm-sym-of M hn))))))
+
+;; the refusals of defn f: a stateful one with more than 4 parameters (E2171), exported (E2150), with throw/try (E2157) or an
+;; aborting call (E2162); a handle body with throw/try (E2157) or an aborting call (E2163)
+(defn- ck-r5b-refuse [M :vector-i64 f :i64] :vector-i64
+  (let [nm (nm-nth M (nm-ff M f FF-NODE) 1)
+        body (ck-defn-body M f)
+        t? (ck-r5b-tmpl? M f)
+        a (if t? (ck-r5b-walk M body 1) 0)
+        hb (ck-r5b-walk M body 2)]
+    (cond (and t? (> (nm-ff M f FF-NPARAMS) 4)) (ck-err M E-STATE-PARAMS4 nm 0)
+          (and t? (pos? (nm-ff M f FF-EXPORT))) (ck-err M E-STATE-EXPORT nm 0)
+          (= a 1) (ck-err M E-STATE-THROW nm 0)
+          (= a 2) (ck-err M E-STATE-ABORTS nm 0)
+          (= hb 1) (ck-err M E-STATE-THROW nm 0)
+          (= hb 2) (ck-err M E-STATE-ABORT-CALL nm 0)
+          :else M)))
+
+;; ---- effect ceilings ----
+;; the capabilities of node n (typed-cap-call wires, perform of a capability, the FN2-FX of the defns it calls)
+(defn- ck-r5b-caps-of [M :vector-i64 n :i64] :i64
+  (let [k (nm-kind M n)
+        hd (ck-hd-of M n)
+        g (ck-callee-of M n)
+        w (nm-nth M n 1)
+        own (cond (= hd HD-TYPED-CAP-CALL) (ck-wire-bit (if (= (nm-kind M w) ND-INT) (nm-nf M w NF-AUX) (ck-kw-wire (nm-head-of M w))))
+                  (= hd HD-PERFORM) (ck-wire-bit (ck-kw-wire (nm-head-of M w)))
+                  (pos? g) (ck-f2 M g FN2-FX)
+                  :else 0)]
+    (if (or (= k ND-LIST) (= k ND-VEC) (= k ND-MAP) (= k ND-SET))
+      (loop [x (nm-first M n) acc own] (if (zero? x) acc (recur (nm-next M x) (bit-or acc (ck-r5b-caps-of M x)))))
+      0)))
+(defn- ck-r5b-fx-round [M :vector-i64] :vector-i64
+  (loop [M1 M f 1 ch 0]
+    (cond (>= f (vector-at M1 MM-FN-N)) (nm-put M1 MM-R0 ch)
+          (not (ck-is-defn M1 f)) (recur M1 (inc f) ch)
+          :else (let [v (bit-or (ck-f2 M1 f FN2-FX) (ck-r5b-caps-of M1 (ck-defn-body M1 f)))]
+                  (if (= v (ck-f2 M1 f FN2-FX)) (recur M1 (inc f) ch) (recur (ck-f2-set M1 f FN2-FX v) (inc f) (inc ch)))))))
+(defn- ck-r5b-fx [M :vector-i64] :vector-i64
+  (let [M1 (ck-r5b-fx-round M)] (if (pos? (ck-r M1)) (ck-r5b-fx M1) M1)))
+;; the effect mask a ceiling map {:effects #{..}} declares
+(defn- ck-r5b-ceil-mask [M :vector-i64 m :i64] :i64
+  (let [v (nm-next M (nm-first M m))]
+    (loop [x (nm-first M v) acc 0]
+      (cond (zero? x) acc
+            (= (nm-head-of M x) KW-STATE) (recur (nm-next M x) (bit-or acc ck-fx-state))
+            :else (recur (nm-next M x) (bit-or acc (ck-wire-bit (ck-kw-wire (nm-head-of M x)))))))))
+(defn- ck-r5b-ceilings [M :vector-i64] :vector-i64
+  (let [any (loop [f 1] (cond (>= f (vector-at M MM-FN-N)) false
+                              (and (ck-is-defn M f) (pos? (nm-nf M (nm-nth M (nm-ff M f FF-NODE) 1) NF-TYPE))) true
+                              :else (recur (inc f))))]
+    (if (not any)
+      M
+      (let [M1 (ck-r5b-fx M)]
+        (loop [M2 M1 f 1]
+          (if (or (>= f (vector-at M2 MM-FN-N)) (nm-failed M2))
+            M2
+            (let [nm (nm-nth M2 (nm-ff M2 f FF-NODE) 1)
+                  m (nm-nf M2 nm NF-TYPE)
+                  fx (bit-or (ck-f2 M2 f FN2-FX) (if (ck-r5b-tmpl? M2 f) ck-fx-state 0))
+                  over (if (and (ck-is-defn M2 f) (pos? m)) (bit-and fx (bit-not (ck-r5b-ceil-mask M2 m))) 0)]
+              (if (pos? over) (ck-err M2 E-STATE-CEILING nm over) (recur M2 (inc f))))))))))
+
+;; the whole pass (after ab-pre, before pass B)
+(defn- ck-r5b-pass [M :vector-i64 S :string] :vector-i64
+  (let [nf0 (vector-at M MM-FN-N)
+        M1 (loop [M2 M c (nm-first M (vector-at M MM-ROOT))]
+             (cond (or (zero? c) (nm-failed M2)) M2
+                   (= (nm-form-head M2 c) HD-DEFHANDLER) (recur (ck-r5b-defhandler M2 S c) (nm-next M2 c))
+                   :else (recur M2 (nm-next M2 c))))
+        M3 (if (nm-failed M1) M1 (ck-r5b-stateful M1))
+        M4 (loop [M5 M3 f 1]
+             (cond (or (>= f nf0) (nm-failed M5)) M5
+                   (ck-is-defn M5 f) (recur (ck-r5b-refuse (ck-r5b-handles M5 S (ck-defn-body M5 f)) f) (inc f))
+                   :else (recur M5 (inc f))))
+        M6 (if (nm-failed M4) M4 (ck-r5b-ceilings M4))]
+    (loop [M7 M6 f nf0]
+      (cond (or (>= f (vector-at M7 MM-FN-N)) (nm-failed M7)) M7
+            (ck-r5b-clause? M7 f) (recur (ck-r5b-clause-body M7 f) (inc f))
+            :else (recur M7 (inc f))))))

@@ -63,6 +63,8 @@
     OP-CALLI (+ b c)
     OP-CAP c
     OP-VEC (if (pos? b) (+ a (dec b)) a)
+    OP-RES2 a        ; R5B
+    OP-RET2 (inc a)  ; R5B
     -1))
 
 ;; ------------------------------------------------------------------------------------------------------------
@@ -198,7 +200,8 @@
 (defn- lw-param-sets [M :vector-i64 i :i64 n :i64 t :i64] :vector-i64
   (if (>= i n)
     M
-    (lw-param-sets (lw-emit M OP-LSET (inc i) (+ t i)) (inc i) n t)))
+    ;; R5B: a specialization's parameters are slots 2.. (slot 1 holds the state)
+    (lw-param-sets (lw-emit M OP-LSET (+ i 1 (if (lw-spec? M (vector-at M 92)) 1 0)) (+ t i)) (inc i) n t)))
 
 ;; (recur a ...) or a self tail call with arguments a ...: values, LSETs (into the params when there is no loop,
 ;; else into the loop's binders), FUEL, BR to the function entry (M[93]) or the loop header
@@ -447,6 +450,16 @@
       HD-APPLY (lw-apply M n t)
       (HD-HOF-MAP HD-FILTER HD-REDUCE) (lw-hof M n hd t)
       HD-LIST (-> M (lw-args a t) (lw-emit OP-VEC t (lw-count M a)))
+      ;; R5B: effects (seed/SIR :r5b-lowering)
+      HD-ATOM (lw-expr M a t 0)
+      HD-DEREF (lw-emit M OP-LGET t (lw-slot M a))
+      HD-RESET (-> M (lw-expr (lw-next M a) t 0) (lw-emit OP-LSET (lw-slot M a) t))
+      HD-PERFORM (lw-perform M n t)
+      HD-HANDLE (let [w (lw-next M a)
+                      sl (lw-nf M h NF-TYPE)]
+                  (-> M (lw-expr (lw-nth M (lw-first M w) 2) t 0) (lw-emit OP-LSET sl t) (lw-expr a t 0)))
+      HD-RESUME (-> M (lw-expr a t 0) (lw-expr (lw-next M a) (inc t) 0) (lw-emit OP-RET2 t))
+      HD-SCALL (lw-scall M h t k)
       (if (and (>= hd HD-OPTION-SOME) (<= hd HD-POP)) (lw-r3 M n hd t k) (lw-fail M E-LOWER-NODE (lw-pos M n) hd)))))
 
 (defn- lw-list [M :vector-i64 n :i64 t :i64 k :i64] :vector-i64
@@ -519,7 +532,9 @@
                (lw-put 95 0)
                (lw-expr body 0 (lw-kmk 1 0 0))
                (cond-> (lw-aborts? M f) (-> (lw-emit OP-CONST 1) (lw-emit OP-RT RT-PAIR-NEW 0 2)))
-               (lw-emit OP-RET 0)
+               ;; R5B: a specialization returns (value, state): x1 := slot 1
+               (cond-> (lw-spec? M f) (-> (lw-emit OP-LGET 1 1) (lw-emit OP-RET2 0))
+                       (not (lw-spec? M f)) (lw-emit OP-RET 0))
                (lw-emit OP-END f))]
     (lw-set-ff M1 f FF-DEPTH (inc (vector-at M1 94)))))
 
@@ -527,6 +542,7 @@
   (let [lim (if (zero? (vector-at M MM-ERR)) (vector-at M MM-FN-N) 0)]
     (cond (>= f lim) M
           (= (lw-ff M f FF-KIND) FK-DEF) (lw-fns M (inc f))
+          (lw-tmpl? M f) (lw-fns M (inc f))   ; R5B: a stateful defn has no code of its own (its specializations do)
           :else (lw-fns (lw-fn M f) (inc f)))))
 
 (defn- lw-run [M :vector-i64] :vector-i64
@@ -1444,3 +1460,40 @@
                       (inc i))))
         M6 (-> M4 (lw-emit OP-CALL g 0 (+ np k)) (lw-emit OP-RET 0) (lw-emit OP-END f))]
     (lw-set-ff M6 f FF-DEPTH (inc (vector-at M6 94)))))
+
+;; ============================================================================================================
+;; R5B (agent R5B, 2026-10-03): effects (seed/SIR :r5b-lowering, OP-RES2 OP-RET2 RT-CAP-CALL). Reads what 21-check wrote: FN2 at
+;; M[MM-FN2] (templates, specializations), NF-TYPE of a perform head (the state slot) and of its keyword (the handler's get
+;; clause FN; put = get + 1), of a stateful call's head (the state slot; its NF-RES = RES-FN of the specialization), of a handle
+;; head (its state slot). Cells are frame slots (deref/reset! above).
+;; ============================================================================================================
+(defn- lw-f2 [M :vector-i64 f :i64 fld :i64] :i64 (vector-at M (+ (vector-at M MM-FN2) (* f FN2-W) fld)))
+(defn- lw-tmpl? [M :vector-i64 f :i64] :bool (and (pos? f) (= (bit-and (lw-f2 M f FN2-FLAGS) 1) 1)))
+(defn- lw-spec? [M :vector-i64 f :i64] :bool (and (pos? f) (= (bit-and (lw-f2 M f FN2-FLAGS) 2) 2)))
+
+;; (perform :state/get) / (perform :state/put v) / (perform :clock/now x)
+(defn- lw-perform [M :vector-i64 n :i64 t :i64] :vector-i64
+  (let [h (lw-first M n)
+        kw (lw-next M h)
+        v (lw-next M kw)
+        sl (lw-nf M h NF-TYPE)
+        hf (lw-nf M kw NF-TYPE)
+        code (lw-kwcode M kw)]
+    (cond (= code KW-STATE-GET)
+          (-> M (lw-emit OP-LGET t sl) (lw-emit OP-CALL hf t 1) (lw-emit OP-RES2 (inc t)) (lw-emit OP-LSET sl (inc t)))
+          (= code KW-STATE-PUT)
+          (-> M (lw-emit OP-LGET t sl) (lw-expr v (inc t) 0) (lw-emit OP-CALL (inc hf) t 2) (lw-emit OP-RES2 (inc t))
+              (lw-emit OP-LSET sl (inc t)))
+          :else (-> M (lw-emit OP-CONST t 7) (lw-expr v (inc t) 0) (lw-emit OP-RT RT-CAP-CALL t 2)))))
+
+;; (g a ..) of a stateful defn: CALL its specialization with the state first; a self call in tail position of a specialization
+;; jumps to the entry (its arguments into slots 2.., the state stays in slot 1)
+(defn- lw-scall [M :vector-i64 h :i64 t :i64 k :i64] :vector-i64
+  (let [g (lw-ridx (lw-nf M h NF-RES))
+        sl (lw-nf M h NF-TYPE)
+        a (lw-next M h)
+        n (lw-count M a)]
+    (if (and (= g (vector-at M 92)) (= (lw-kt k) 1))
+      (lw-jump M a t 0)
+      (-> M (lw-emit OP-LGET t sl) (lw-args a (inc t)) (lw-emit OP-CALL g t (inc n)) (lw-emit OP-RES2 (inc t))
+          (lw-emit OP-LSET sl (inc t))))))

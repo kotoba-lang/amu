@@ -1,0 +1,27 @@
+# seed/tests/r5b/expect.tsv -- extra R5B cases (owner R5B), run by run-r5b.sh. TAB separated: label, file, policy file or -, expectation.
+# Expectation: an i64 (the program's `main` value, hand-derived in the comment of each line below) or `E<code> <text>` (the refusal).
+# p01: 105 after (rec 5), 115 after (down 4); (inner 7) runs an inner dbl handler (14 -> 34 -> 72 -> 146) and reads the outer 115;
+#      cells: (i*3)+1 summed for i < 4 = 22 -> 22 * 1000 + 115
+pos/p01	pos/p01-specs-recur-inner-cells.kotoba	-	22115
+# p02: "q"+"ab"+"ab" = 5 bytes; inner last-only "xyz" = 3 -> 300; outer last-only "k" = 1 -> 10000
+pos/p02	pos/p02-string-state.kotoba	-	10305
+# p03: (sq 3) = 9 + 11, (sq 5) = 25 + 27
+pos/p03	pos/p03-deref-reader.kotoba	-	5220
+# p04: (note "") answers the byte count text "0" (length 1); bump = 1 + 41, then 1 + 42
+pos/p04	pos/p04-ceiling-caps.kotoba	-	43
+# the io/write answer is the byte count as text ("3"), whose length is 1
+ext/policy-number	ext/w.kotoba	ext/allow37.edn	1
+ext/policy-name	ext/w.kotoba	ext/allow-name.edn	1
+ext/policy-none	ext/w.kotoba	ext/allow-none.edn	E2177 capability policy denies required effects; missing grants #{[:cap/call :io/write]} (required #{[:cap/call :io/write]}, allowed #{})
+ext/policy-bad	ext/w.kotoba	ext/bad.edn	E2170 malformed capability policy file (expected an :allow set of [:cap/call wire] items)
+neg/n01	neg/n01-swap-in-and.kotoba	-	E2143 swap!/reset! is not admitted inside `and` (atom slice 1 admits them in let, do, if, when, cond and case only)
+neg/n02	neg/n02-atom-shadow.kotoba	-	E2147 atom `a` shadows an atom of the same name (atom slice 1 admits swap!/reset!/deref in straight-line code of the binding function only)
+neg/n03	neg/n03-atom-position.kotoba	-	E2141 atom must be the init expression of a let binding (atom slice 1 admits swap!/reset!/deref in straight-line code of the binding function only)
+neg/n04	neg/n04-resume-outside.kotoba	-	E2168 resume is admitted only in tail position of a defhandler clause
+neg/n05	neg/n05-get-arity.kotoba	-	E2165 perform :state/get takes no value; got 1
+neg/n06	neg/n06-handler-ops.kotoba	-	E2159 handler cell does not match the :state ability: it must define exactly get and put, once each
+neg/n07	neg/n07-stateful-in-fn.kotoba	-	E2169 state slice 1 does not admit a call of the stateful function tick inside a fn literal
+neg/n08	neg/n08-ceiling-omits-cap.kotoba	-	E2154 inferred effects exceed declared effect ceiling for note: #{:io/write}
+neg/n09	neg/n09-stateful-five-params.kotoba	-	E2171 stateful function f takes more than 4 parameters (the state is passed first, at most 5 in all)
+neg/n10	neg/n10-abort-in-handle.kotoba	-	E2163 state slice 1 does not admit a call to an aborting function inside a handle body: main
+neg/n11	neg/n11-init-type.kotoba	-	E2104 type mismatch in 'handle': expected :i64

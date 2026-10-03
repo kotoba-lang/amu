@@ -50,7 +50,11 @@
                    result x0): a closure call (seed/SIR :r4-lowering)"]
   [:c OP-VECP 24 "R4B: VECP t lit n -- temp t := a fresh vector of the n i64 items of the constant table LIT lit (the OP-TAB data
                   layout: 8 bytes little-endian per item, pooled by 42-layout); n 65..128 (the reference limit) (vector literals of integer literals)"]
-  [:c OP-COUNT 24 "highest opcode"]]
+  ;; -- R5B (rung 5 part B, 2026-10-03): the state ability's two-register results (docs/selfhost-seed-r5-design-20261002.md 5.4, 6) --
+  [:c OP-RES2 25 "RES2 t -- temp t := x1 of the CALL immediately before it (the next state a handler clause or a specialization
+                  returned); nothing may come between the CALL and its RES2 (41-a64gen keeps x1 intact through the CALL's result move)"]
+  [:c OP-RET2 26 "RET2 t -- return temp t in x0 and temp t+1 in x1 (a handler clause's (resume v n), a specialization's end)"]
+  [:c OP-COUNT 26 "highest opcode"]]
 
  :binary-ops
  [[:c BOP-ADD 1 "+ wrap"] [:c BOP-SUB 2 "- wrap"] [:c BOP-MUL 3 "* low 64"]
@@ -94,6 +98,8 @@
   [:c RT-BYTES-CONCAT 376 "R4B: bytes_concat(ctx, a, b) -- a copy (ABI v11)"]
   [:c RT-STRING-FROM-UTF8 352 "string_from_utf8(ctx, v) -- v a vector of bytes 0..255 that is canonical UTF-8 (ABI v11; NULL in
                                kexe-benchmark: only string-from-i64 uses it)"]
+  [:c RT-CAP-CALL 48 "R5B: cap_call(ctx, wire, request) -- the untyped i64 capability call; (perform :clock/now x) = wire 7 (stage-0's
+                     lowering, measured 2026-10-03: mov x1,#7 ; mov x2,x ; blr [ctx,#48])"]
   [:c CTX-FUEL 8 "byte offset of the fuel counter in the context"]
   [:c CTX-CODE-BASE 384 "byte offset of code_base"]]
  ;; string-length: 30-lower emits RT RT-STRING-LENGTH-VIA t 1 (docs/selfhost-seed-t2-t3-20261002.md: pair_second).
@@ -208,6 +214,22 @@
   "multi-arity defn"         "one FN per clause, consecutive, same FF-SYM; a call picks the clause by its argument count; a
                               variadic clause (parameter vector NF-TYPE 1) gets the surplus arguments as VEC t+m r"
   "(list e ..)"              "[e1 -> t] .. VEC t n"}
+
+ ;; R5B (2026-10-03, agent R5B): effects. Local state needs no SIR: a cell is a frame slot (deref = LGET, reset! = [v -> t] LSET
+ ;; slot t, the value stays in t). The state ability is lowered imperatively (design 5.4): sigma = the state slot of the innermost
+ ;; handler (a hidden slot of the handle in a plain function, slot 1 in a specialization), h = the handler's get clause FN (put = h+1).
+ ;; A handler clause is a function (s) / (s v) returning (value x0, next state x1); a specialization f_h of a stateful function f takes
+ ;; the state as parameter 0 (slot 1) and returns (value x0, state x1); its own parameters are slots 2.. .
+ :r5b-lowering
+ {"(handle body (with h init))" "[init -> t] LSET sigma t [body -> t]   (sigma = NF-TYPE of the handle head node)"
+  "(perform :state/get)"   "LGET t sigma CALL h t 1 RES2 t+1 LSET sigma t+1   (the value in t)"
+  "(perform :state/put v)" "LGET t sigma [v -> t+1] CALL h+1 t 2 RES2 t+1 LSET sigma t+1"
+  "(g a ..) g stateful"    "LGET t sigma [a.. -> t+1 ..] CALL g_h t n+1 RES2 t+1 LSET sigma t+1 ; in tail position of g_h itself: the
+                            arguments into slots 2.., FUEL, BR entry (the state stays in slot 1)"
+  "(resume v n)"           "[v -> t] [n -> t+1] RET2 t"
+  "end of g_h"             "[body -> 0] LGET 1 1 RET2 0 ; a recur with no loop sets slots 2.. (slot 1 is the state)"
+  "(perform :clock/now x)" "CONST t 7 [x -> t+1] RT RT-CAP-CALL t 2"
+  "cells"                  "(let [a (atom e)] ..): [e -> t] LSET slot(a) t ; @a / (deref a): LGET t slot(a) ; (reset! a v): [v -> t] LSET slot(a) t"}
 
  ;; Fuel rule (matches machine-ir entry-fuel-prefixes; T5 checks the seed's minimal passing fuel <= stage-0's):
  ;; one FUEL at entry of every function with FF-FUEL = 1 (its body contains a CALL, RT or CAP), and one FUEL per

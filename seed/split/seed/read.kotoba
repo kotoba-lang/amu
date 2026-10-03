@@ -38,6 +38,7 @@
 (def TK-STR 8)
 (def TK-SYM 9)
 (def TK-HASH-BRACE 11)
+(def TK-AT 12)
 (def ND-ROOT 1)
 (def ND-LIST 2)
 (def ND-VEC 3)
@@ -48,6 +49,7 @@
 (def ND-KW 8)
 (def ND-SET 9)
 (def E-HEAP-REGION 101)
+(def E-LEX-SYNTAX 1005)
 (def E-READ-CLOSE 1101)
 (def E-READ-EOF 1102)
 (def E-READ-MISMATCH 1103)
@@ -196,11 +198,30 @@
       (= k TK-LBRACK) (rd-open M t ND-VEC)
       (= k TK-LBRACE) (rd-open M t ND-MAP)
       (= k TK-HASH-BRACE) (rd-open M t ND-SET)
+      (= k TK-AT) (rd-deref M t)   ; R5B
       (rd-closer? k) (rd-fail-tok M E-READ-CLOSE t)
       (= k TK-INT) (rd-atom M t ND-INT v)
       (= k TK-STR) (rd-atom M t ND-STR v)
       (= k TK-SYM) (rd-atom M t ND-SYM 0)
       :else (rd-atom M t ND-KW 0))))
+
+;; R5B (agent R5B, delimited): @x at token t reads as the list (@ x) -- a list node and a head symbol node on the '@' token
+;; (20-names interns the spelling "@" as HD-DEREF), then the next form; MM-R0 = the token after it, MM-R1 = the list. A '@'
+;; with no form after it is E1005.
+(defn- rd-deref [M :vector-i64 t :i64] :vector-i64
+  (if (or (>= (+ t 1) (vector-at M MM-TOK-N)) (rd-closer? (vector-at M (+ MM-TOK-BASE (* (+ t 1) MM-TOK-W) TF-KIND))))
+    (rd-fail-tok M E-LEX-SYNTAX t)
+    (rd-deref2 (rd-new M ND-LIST t 2) t)))
+(defn- rd-deref2 [M :vector-i64 t :i64] :vector-i64
+  (let [l (vector-at M MM-R0)] (rd-deref3 (rd-new M ND-SYM t 0) t l)))
+(defn- rd-deref3 [M :vector-i64 t :i64 l :i64] :vector-i64
+  (let [h (vector-at M MM-R0)] (rd-deref4 (rd-form M (+ t 1)) l h)))
+(defn- rd-deref4 [M :vector-i64 l :i64 h :i64] :vector-i64
+  (if (= (vector-at M MM-ERR) 0)
+    (let [x (vector-at M MM-R1)
+          nx (vector-at M MM-R0)]
+      (rd-set (rd-set (rd-nset (rd-nset M l NF-FIRST h) h NF-NEXT x) MM-R0 nx) MM-R1 l))
+    (rd-id M)))
 
 (defn- rd-run2 [M :vector-i64] :vector-i64
   (if (= (vector-at M MM-ERR) 0)

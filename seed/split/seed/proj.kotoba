@@ -19,6 +19,7 @@
 (def MM-ERR-POS 6)
 (def MM-ERR-A 7)
 (def MM-ERR-B 8)
+(def MM-ERR-N 9)
 (def MM-SRC-LEN 10)
 (def MM-TOK-N 16)
 (def MM-NODE-N 17)
@@ -36,6 +37,8 @@
 (def MM-HEAP-TOP 30)
 (def MM-ROOT 32)
 (def MM-CT 91)
+(def MM-FN2 96)
+(def MM-CAPS 97)
 (def MM-TOK-BASE 256)
 (def MM-TOK-W 4)
 (def MM-NODE-BASE 524544)
@@ -91,6 +94,8 @@
 (def CT-A 1)
 (def CT-B 2)
 (def CT-W 4)
+(def FN2-W 8)
+(def FN2-FLAGS 0)
 (def XF-AT 0)
 (def XF-KIND 1)
 (def EF-FN 0)
@@ -106,6 +111,7 @@
 (def TC-LIST 3)
 (def TC-MAP 4)
 (def TC-SET 5)
+(def TK-LPAREN 1)
 (def TK-SYM 9)
 (def ND-LIST 2)
 (def ND-VEC 3)
@@ -113,6 +119,9 @@
 (def ND-STR 6)
 (def ND-SYM 7)
 (def ND-KW 8)
+(def ND-SET 9)
+(def E-STATE-EXPORT 2150)
+(def E-CAP-UNDECLARED 2176)
 (def E-PROJ-CYCLE 6001)
 (def E-PROJ-MISSING 6002)
 (def E-PROJ-DUP-ALIAS 6003)
@@ -484,6 +493,7 @@
           (= v 0) (let [w (pj-err M E-PROJ-NSFORM k)] P)
           (pj-is M S k ":kotoba/export") (pj-attrs M L (pj-declare M L P S v) S (pj-next M v))
           (pj-is M S k ":kotoba/params") (let [w (pj-err M E-PROJ-TEMPLATE k)] P)
+          (pj-is M S k ":kotoba/capabilities") (let [w (pj-r5b-decl M L S v)] (pj-attrs M L P S (pj-next M v)))   ; R5B
           :else (pj-attrs M L P S (pj-next M v)))))
 
 ;; one clause or attr-map of the ns form
@@ -495,7 +505,8 @@
           (not= (pj-kind M k) ND-KW) (let [w (pj-err M E-PROJ-NSFORM c)] P)
           (pj-is M S k ":require") (pj-specs M L P S (pj-next M k))
           (pj-is M S k ":export") (if (= (pj-next M (pj-next M k)) 0) (pj-declare M L P S (pj-next M k)) (let [w (pj-err M E-PROJ-NSFORM c)] P))
-          (or (pj-is M S k ":capabilities") (pj-is M S k ":schemas") (pj-is M S k ":refer-clojure")) P
+          (pj-is M S k ":capabilities") (let [w (pj-r5b-decl M L S (pj-next M k))] P)   ; R5B
+          (or (pj-is M S k ":schemas") (pj-is M S k ":refer-clojure")) P
           (pj-is M S k ":params") (let [w (pj-err M E-PROJ-TEMPLATE k)] P)
           (pj-is M S k ":use") (let [w (pj-err M E-PROJ-USE k)] P)
           :else (let [w (pj-err M E-PROJ-CLAUSE k)] P))))
@@ -759,7 +770,8 @@
           (if (< sl 0)
             (recur (+ t 1))
             (let [r (pj-req-alias L P m (string-substring S a sl))]
-              (cond (< r 0) (pj-err-span M E-PROJ-UNKNOWN-OP a a b)
+              (cond (pj-r5b-with? M S t) (recur (+ t 1))   ; R5B: (with l/h ..) is refused by 21-check (handle shape)
+                    (< r 0) (pj-err-span M E-PROJ-UNKNOWN-OP a a b)
                     (< (pj-if-find L P (pj-rf L r pj-rf-mod) (string-substring S (+ sl 1) b)) 0) (pj-err-span M E-PROJ-NOT-EXPORT a a b)
                     :else (recur (+ t 1))))))))))
 
@@ -839,6 +851,7 @@
         M3 (if (pj-ok M2) (pj-splice M2 L) M2)
         M4 (if (pj-ok M3) (pj-c3 M3 L S) M3)]
     (cond (not (pj-ok M4)) P
+          (not (pj-ok (pj-r5b-after M4 L P S m))) P   ; R5B: namespace :capabilities, stateful library exports
           (>= (+ pj-img-base (pj-l L pj-k-img)) pj-l-cap) (let [w2 (pj-err M4 E-PROJ-IMAGE 0)] P)
           (= (pj-mf L m pj-mf-entry) 0) (pj-iface M4 L P S m)
           :else P)))
@@ -1119,3 +1132,58 @@
         (cond (not (pj-ok M)) P3
               (>= (+ pj-img-base (pj-l L pj-k-img)) pj-l-cap) (let [x (pj-err M E-PROJ-IMAGE 0)] P3)
               :else (let [x (pj-lcontainer M L P3 0)] P3))))))
+
+;; ==== R5B (agent R5B, 2026-10-03): capability declarations and stateful exports =============================================
+;; A module's (:capabilities #{..}) clause / {:kotoba/capabilities #{..}} entry is a capability mask (bit w = wire w) kept in
+;; its module record (pj-mf-caps, mask + 1; 0 = no declaration: no check, as the reference distinguishes nil from #{}); after the
+;; module compiles, every capability its code calls (M[MM-CAPS], 21-check) must be declared (E2176), and the union over the
+;; modules (L[pj-k-caps]) is what 90-drv checks against --policy. A library's exported defn must not be stateful (E2150): the
+;; trailer exports nothing from a library, so 21-check cannot see it.
+(def pj-k-caps 32)
+(def pj-mf-caps 14)
+
+(defn- pj-r5b-wire [s :string] :i64
+  (cond (string=? s ":hash/sha256") 3 (string=? s ":clock/now") 7 (string=? s ":env/read") 33 (string=? s ":fs/browse") 34
+        (string=? s ":fs/app-data") 35 (string=? s ":fs/app-data-bytes") 35 (string=? s ":io/write") 37 (string=? s ":cli/args") 38
+        (string=? s ":io/write-error") 39 (string=? s ":io/read") 41 :else -1))
+;; the declared set node v of the module being read (L[pj-k-errmod])
+(defn- pj-r5b-decl [M :vector-i64 L :vector-i64 S :string v :i64] :vector-i64
+  (let [m (pj-l L pj-k-errmod)
+        mask (loop [c (pj-first M v) acc 0]
+               (if (= c 0)
+                 acc
+                 (let [w (if (= (pj-kind M c) ND-KW) (pj-r5b-wire (pj-text M S c)) -1)]
+                   (recur (pj-next M c) (if (and (>= w 0) (< w 47)) (bit-or acc (i64-shift-left 1 w)) acc)))))]
+    (if (or (= (pj-kind M v) ND-SET) (= (pj-kind M v) ND-VEC))
+      (let [w (pj-mset L m pj-mf-caps (+ mask 1))] M)
+      (pj-err M E-PROJ-NSFORM v))))
+
+;; token t is the symbol right after `(with`
+(defn- pj-r5b-with? [M :vector-i64 S :string t :i64] :bool
+  (and (> t 2) (= (pj-tf M (- t 1) TF-KIND) TK-SYM) (= (pj-tf M (- t 2) TF-KIND) TK-LPAREN)
+       (string=? (string-substring S (pj-tf M (- t 1) TF-START) (pj-tf M (- t 1) TF-END)) "with")))
+
+(defn- pj-r5b-tmpl? [M :vector-i64 f :i64] :bool
+  (= (bit-and (vector-at M (+ (vector-at M MM-FN2) (* f FN2-W) FN2-FLAGS)) 1) 1))
+(defn- pj-r5b-err-sym [M :vector-i64 code :i64 f :i64] :vector-i64
+  (let [sy (pj-ff M f FF-SYM)] (pj-err-span M code (pj-sf M sy SF-START) (pj-sf M sy SF-START) (pj-sf M sy SF-END))))
+
+;; after module m compiled (M holds it): the checks above; M (with MM-ERR set on a refusal)
+(defn- pj-r5b-after [M :vector-i64 L :vector-i64 P [:list :string] S :string m :i64] :vector-i64
+  (let [used (vector-at M MM-CAPS)
+        d (pj-mf L m pj-mf-caps)
+        extra (if (> d 0) (bit-and used (bit-not (- d 1))) 0)
+        w (pj-ls L pj-k-caps (bit-or (pj-l L pj-k-caps) used))
+        bad (cond (= (pj-mf L m pj-mf-entry) 1) 0
+                  (> (pj-mf L m pj-mf-expk) 0)
+                  (loop [k 0]
+                    (if (>= k (pj-mf L m pj-mf-nexp)) 0
+                      (let [f (pj-fn-named M S (pj-p P (pj-l L (+ pj-x-base (pj-mf L m pj-mf-exp0) k))))]
+                        (if (and (> f 0) (pj-r5b-tmpl? M f)) f (recur (+ k 1))))))
+                  :else (loop [f 1]
+                          (cond (>= f (vector-at M MM-FN-N)) 0
+                                (and (= (pj-ff M f FF-KIND) FK-DEFN) (pj-r5b-tmpl? M f)) f
+                                :else (recur (+ f 1)))))]
+    (cond (> bad 0) (pj-r5b-err-sym M E-STATE-EXPORT bad)
+          (not= extra 0) (-> (pj-err-span M E-CAP-UNDECLARED -1 0 0) (vector-assoc! MM-ERR-N extra))
+          :else M)))

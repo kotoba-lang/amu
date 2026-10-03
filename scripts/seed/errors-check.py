@@ -34,6 +34,9 @@ PH = {'0': '', '1': '{name}', '2': '{n}', '3': '{t}'}
 def unq(s): return s[1:-1].replace('\\"', '"').replace('\\\\', '\\')
 
 printed = {}
+# R5B (agent R5B, 2026-10-03): E2140-E2177 are templates in drv-r5b-text, printed with their placeholders filled at run time
+r5b = fn_cases('drv-r5b-text')
+for c in r5b: printed[c] = unq(r5b[c])
 for c in set(et[0]) | set(kir):
     if c in kir:
         printed[c] = unq(kir[c]) + '{name}' + "'"   # drv-kir-say: text + span + "'"

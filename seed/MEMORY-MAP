@@ -60,6 +60,9 @@
   ;; R3 (2026-10-03): two of 21-check's cells (88..91: 88 touch, 89 gensym cache) carry contract values
   [:c MM-CK-STATE 90 "R3: HEAP address of 21-check's current check-state block (private layout, see 21-check)"]
   [:c MM-CT 91 "R3: HEAP address of the composite type table CT (21-check writes it; 30-lower and the driver read it)"]
+  ;; R5B (2026-10-03): two cells of the stat range of 40-a64enc (a pure module that writes none)
+  [:c MM-FN2 96 "R5B: HEAP address of the FN side table FN2 (MM-FN-CAP records of FN2-W words; 21-check writes, 30-lower and 60-proj read)"]
+  [:c MM-CAPS 97 "R5B: the capability wires the module's checked code calls, a mask (bit w = wire w < 47; 21-check)"]
 
   ;; --- 1.2 regions: BASE (word address), W (words per record), CAP (records incl. the null record) ------
   [:c MM-TOK-BASE 256] [:c MM-TOK-W 4] [:c MM-TOK-CAP 131072]
@@ -145,6 +148,17 @@
   [:c CT-CTOR 0 "TC-* constructor (seed/HEADS)"] [:c CT-A 1 "first type argument (T, K)"] [:c CT-B 2 "second (E, V), else 0"]
   [:c CT-N 3 "in record 0 only: the fill"] [:c CT-W 4] [:c CT-CAP 4096]
 
+  ;; FN2 (R5B): one record per FN index, in HEAP at M[MM-FN2] (allocated by 21-check at ck-run; fresh words are zero)
+  [:c FN2-W 8]
+  [:c FN2-FLAGS 0 "bit 0: a stateful defn (a TEMPLATE: never checked or lowered itself; its specializations are); bit 1: a
+                   specialization; bit 2: a handler's get clause; bit 3: a handler's put clause"]
+  [:c FN2-ORIGIN 1 "a specialization: its template FN; a handler clause: the handler's name symbol"]
+  [:c FN2-HAND 2 "a specialization: the handler (its get clause FN; put = get + 1); a handler clause: the get clause FN"]
+  [:c FN2-CAPS 3 "the effect mask the function's checked body performs directly (bit w = wire w, bit 47 = :state)"]
+  [:c FN2-S 4 "a handler clause: the handler's state type S"]
+  [:c FN2-FX 5 "21-check scratch: the inferred effect mask (effect ceilings)"]
+  [:c FN2-NODE 6 "a handler clause: the defhandler form"]
+  [:c FN2-SPARE 7]
   ;; SCOPE: the shadow stack of 20-names' scope API: [symbol, previous SF-BIND of that symbol].
   [:c CF-SYM 0] [:c CF-PREV 1]
 
@@ -192,6 +206,11 @@
               "R4: appends FN records (FK-LAMBDA, FK-ADAPTER: all FF-* fields, MM-FN-N), FF-NODE of multi-arity clauses, NF-TYPE
                of a fn literal's head symbol (its FN) and parameter vector (its capture block), of a defn clause's parameter
                vector (1 = variadic), capture blocks in HEAP"]
+  "R5B"      ["21-check: FN2 and M[MM-FN2] M[MM-CAPS]; FN records of handler clauses (FK-LAMBDA, body = 3rd child) and of
+               specializations (FK-PRIV, a clone of the template's defn form); NF-TYPE of a handle head (the state slot), of a perform
+               head (the state slot) and its keyword (the handler), of a stateful call's head (the state slot), of a defn's name node
+               (its {:effects ..} ceiling map, unlinked from the form at desugaring)"
+              "60-proj: reads M[MM-CAPS] and FN2 after a module's compile (namespace :capabilities, stateful library exports)"]
   "30-lower" [:SIR :MM-SIR-N :MM-LABEL-N :MM-MAX-DEPTH "FN fields FF-SIR FF-DEPTH" :MM-ERR* "(E30nn)"]
   "40-a64enc" ["nothing: pure functions i64 -> i64"]
   "41-a64gen" [:CODE "(append)" :MM-CODE-N :FIX :MM-FIX-N :LABEL "FN field FF-CODE" :MM-ERR* "(E41nn)"]

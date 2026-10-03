@@ -1,0 +1,3 @@
+(defhandler cell [:state :i64] (get [s] (resume s s)) (put [s v] (resume v v)))
+(defn- f [a :i64 b :i64 c :i64 d :i64 e :i64] :i64 (perform :state/put (+ a b c d e)))
+(defn main [] :i64 (handle (f 1 2 3 4 5) (with cell 0)))

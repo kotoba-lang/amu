@@ -357,3 +357,26 @@ Total about 2.6-3.4k lines; critical path 20-names -> 21-check -> 60-proj -> run
 | R5 | `mem-reset` restores "fresh = zero" for every module's state | unit: compile module X alone vs after module Y; byte-identical blob (15 min) | zero the whole regions (cost: 6.4M words per module, est. 5-10 ms) |
 | R6 | constants per namespace keep the seed's code identical in behaviour | G1/G2/G4 on the namespace-split seed | keep the seed a unity and prove R5 with a separate multi-module test program only |
 | R7 | stage-0 stays a usable oracle for R5 programs | measured: 4 of 41 feature positives already need `r5.spec` (verifier re-derivation, handle/catch); conformance 20/20 fine | widen `r5.spec` with hand-derived values, as R3 did (28 of 54) |
+
+## 11. Part B as implemented (agent R5B, 2026-10-03)
+
+What the seed does, where it differs from sections 5-7, and why. Everything below is exercised by `seed/tests/r5/check-r5.sh`
+(all 77 cases, 16/16 pinned texts) and `seed/tests/r5b/run-r5b.sh` (19 extra cases).
+
+| item | implementation |
+|---|---|
+| reader | 10-lex emits `TK-AT` (12) for `@`; 11-read reads `@x` as the list `(@ x)` whose head token spells `@`, interned as `HD-DEREF` (a second spelling of head 151) |
+| heads | 148 `atom` 149 `swap!` 150 `reset!` 151 `deref` 152 `perform` 153 `handle` 154 `with` 155 `resume` 156 `defhandler`, 157 `HD-SCALL` (synthetic); keywords 31-35 `:state :state/get :state/put :effects :clock/now` |
+| local state | a let-bound `(atom e)` is a frame slot marked in 21-check's known-function table with `-(loop depth + 1)`; `swap!` is desugared to `(reset! a (f (deref a) x ..))`; any other spelling of the cell (an argument, a capture, a read at another loop depth) is E2140. No SIR change |
+| handlers | `defhandler` = two FN records (get, then put; kind FK-LAMBDA, so 30-lower takes the body as the 3rd child), registered after pass A; every tail of a clause is `(resume v n)` (bottom), checked before pass B with the purity rule (FN2-CAPS of the clause) |
+| stateful defns | a syntactic fixed point before pass B (perform :state, or a call of a stateful defn, outside every handle body); such a defn is a TEMPLATE, never checked or lowered; under handler h its specialization is a new FN record whose node is a CLONE of the template's defn form (one clone per pair, not per S as section 5.3 proposed: simpler, and NF-TYPE / NF-RES of a clone are consistent by construction), checked with the state in slot 1 and the parameters in slots 2.. |
+| SIR | `OP-RES2 25`, `OP-RET2 26`, `RT-CAP-CALL 48` (the untyped `cap_call`, stage-0's lowering of `(perform :clock/now x)`, measured); no FX-EXT / FK-IMPORT (R5A linked by stubs) |
+| a64 | RES2 = the CALL's result move of x1 (`gn-take` with register 1); RET2 moves t+1 through x16 (either source may be x0/x1 in a leaf) |
+| effects | FN2-CAPS per function, `M[MM-CAPS]` per module; ceilings `{:effects #{..}}` (after the parameters or after the result type) are unlinked at desugaring and checked against a syntactic fixed point of capabilities + `:state` |
+| capabilities | 60-proj reads `(:capabilities #{..})` / `{:kotoba/capabilities #{..}}` into the module record (E2176 after the module compiles), ORs `M[MM-CAPS]` into `L[32]`; 90-drv checks `--policy P` (`[:cap/call N]` or `[:cap/call :name]`) before writing any output (E2177, E2170); without `--policy` nothing is checked (R0-R5A behaviour) |
+| texts | E2140-E2177 are templates in 90-drv `drv-r5b-text` filled at print time (`{op} {ty1} {ty2} {kw2} {fx} {node} {want} {req} {allow} {miss}` besides `{name} {n} {t}`); `scripts/seed/errors-check.py` compares them with HEADS |
+
+Measured differences from stage-0, kept: (1) a set of two or more grants prints in ascending wire order with `:state` first; stage-0
+prints its hash-set order (measured `#{[:cap/call :io/write] [:cap/call :clock/now]}`); (2) E2159 (handler ops) omits the
+reference's trailing "; it defines <ops>"; (3) a stateful defn takes at most 4 parameters (E2171; the state is parameter 0);
+(4) the seed refuses a call of a stateful defn inside a fn literal by name (E2169), the reference text set has none.

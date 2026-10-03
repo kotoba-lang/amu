@@ -67,6 +67,8 @@
 (def OP-FADDR 22)
 (def OP-CALLI 23)
 (def OP-VECP 24)
+(def OP-RES2 25)
+(def OP-RET2 26)
 (def BOP-ADD 1)
 (def BOP-SUB 2)
 (def BOP-MUL 3)
@@ -357,7 +359,7 @@
   (let [op (gn-op M j)]
     (case op
       (OP-BIN OP-CMP OP-UN OP-LSET OP-CALL OP-RT OP-CALLI) (gn-sir M j IF-B)
-      (OP-TAB OP-VEC OP-BRZ OP-BRNZ OP-RET) (gn-sir M j IF-A)
+      (OP-TAB OP-VEC OP-BRZ OP-BRNZ OP-RET OP-RET2) (gn-sir M j IF-A)
       OP-CAP (gn-sir M j IF-C)
       1)))
 (defn- gn-rhi [M :vector-i64 j :i64] :i64
@@ -372,12 +374,13 @@
       OP-CALLI (+ b c)
       OP-VEC (dec (+ a b))
       (OP-TAB OP-BRZ OP-BRNZ OP-RET) a
+      OP-RET2 (inc a)   ; R5B
       OP-CAP c
       0)))
 (defn- gn-defd [M :vector-i64 j :i64] :i64
   (let [op (gn-op M j)]
     (case op
-      (OP-CONST OP-LGET OP-STR OP-TAB OP-VEC OP-FADDR OP-VECP) (gn-sir M j IF-A)
+      (OP-CONST OP-LGET OP-STR OP-TAB OP-VEC OP-FADDR OP-VECP OP-RES2) (gn-sir M j IF-A)
       (OP-BIN OP-CMP OP-UN OP-CALL OP-RT OP-CALLI) (gn-sir M j IF-B)
       OP-CAP (gn-sir M j IF-C)
       -1)))
@@ -389,6 +392,7 @@
           (>= j (vector-at M MM-SIR-N)) false
           (or (= op OP-END) (= op OP-TRAP)) true
           (= op OP-RET) (not= (gn-sir M j IF-A) t)
+          (= op OP-RET2) (and (not= (gn-sir M j IF-A) t) (not= (inc (gn-sir M j IF-A)) t))   ; R5B
           (= op OP-BR) (let [p (gn-lpos M (gn-sir M j IF-A))] (and (> p 0) (gn-kills M (inc p) t (dec n))))
           (or (= op OP-BRZ) (= op OP-BRNZ)) false
           (and (<= (gn-rlo M j) t) (<= t (gn-rhi M j))) false
@@ -402,7 +406,7 @@
   (let [op (gn-op M j)
         d (gn-defd M j)]
     (cond (or (<= n 0) (>= j (vector-at M MM-SIR-N))) 0
-          (or (= op OP-LABEL) (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ) (= op OP-RET) (= op OP-END) (= op OP-TRAP) (= op OP-FN)) 0
+          (or (= op OP-LABEL) (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ) (= op OP-RET) (= op OP-RET2) (= op OP-END) (= op OP-TRAP) (= op OP-FN)) 0
           (and (<= (gn-rlo M j) t) (<= t (gn-rhi M j))) j
           (and (>= d 0) (<= d t)) 0
           :else (gn-reader M (inc j) t (dec n)))))
@@ -428,7 +432,7 @@
   (let [op (gn-op M j)
         d (gn-defd M j)]
     (cond (or (<= j 0) (< j (- k 64))) 0
-          (or (= op OP-LABEL) (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ) (= op OP-RET) (= op OP-END) (= op OP-TRAP) (= op OP-FN)) 0
+          (or (= op OP-LABEL) (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ) (= op OP-RET) (= op OP-RET2) (= op OP-END) (= op OP-TRAP) (= op OP-FN)) 0
           (= d t) (if (and (= op OP-STR) (= (gn-str-fold M j) k)) j 0)
           (and (>= d 0) (< d t)) 0
           :else (gn-back-str M k (dec j) t))))
@@ -477,7 +481,8 @@
         b (gn-sir M i IF-B)
         c (gn-sir M i IF-C)]
     (case (gn-op M i)
-      (OP-CONST OP-LGET OP-STR OP-RET OP-BRZ OP-BRNZ OP-TAB OP-FADDR OP-VECP) (+ a 1)
+      (OP-CONST OP-LGET OP-STR OP-RET OP-BRZ OP-BRNZ OP-TAB OP-FADDR OP-VECP OP-RES2) (+ a 1)
+      OP-RET2 (+ a 2)   ; R5B
       (OP-LSET OP-UN) (+ b 1)
       (OP-BIN OP-CMP) (+ b 2)
       OP-CAP (+ c 1)
@@ -623,10 +628,15 @@
                   (gn-gs gn-f-ctx 1)
                   (gn-gs gn-f-h 0)))))))
 
-(defn- gn-op-ret [M :vector-i64 t :i64] :vector-i64
+(defn- gn-op-ret [M :vector-i64 t :i64] :vector-i64 (gn-epilogue (gn-into M 0 t)))
+;; R5B: RET2 t -- x0 := temp t, x1 := temp t+1 (through x16: either source may be x0 or x1 in a leaf), then the epilogue
+(defn- gn-op-ret2 [M :vector-i64 t :i64] :vector-i64 (-> M (gn-into 16 (inc t)) (gn-into 0 t) (gn-mov 1 16) (gn-epilogue)))
+;; R5B: RES2 t (right after a CALL): temp t := x1, the CALL's second result register
+(defn- gn-op-res2 [M :vector-i64 i :i64 t :i64] :vector-i64 (gn-take M i t 1))
+;; the fuel store of a leaf, the frame and callee-saved restore, ret
+(defn- gn-epilogue [M :vector-i64] :vector-i64
   (let [F (gn-g M gn-f-fb)]
     (-> M
-        (gn-into 0 t)
         (cond-> (= (gn-g M gn-f-freg) 1) (gn-emit (enc-str 8 7 CTX-FUEL)))
         (cond-> (> F 0) (-> (gn-csave 0 (gn-g M gn-f-nsv) 1)
                             (gn-emit (enc-mov-sp 31 29))
@@ -1098,6 +1108,8 @@
         OP-VECP (gn-op-vecp M i a b c)
         OP-FUEL (gn-op-fuel M)
         OP-RET (gn-op-ret M a)
+        OP-RET2 (gn-op-ret2 M a)       ; R5B
+        OP-RES2 (gn-op-res2 M i a)     ; R5B
         OP-TRAP (-> M (gn-emit (enc-brk a)) (gn-gs gn-f-dead 1))
         OP-FN (gn-op-fn M i a b)
         OP-END (-> M (gn-emit (enc-brk 1)) (gn-gs gn-f-dead 0))

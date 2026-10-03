@@ -88,6 +88,11 @@
 (def KW-ENV-READ 28)
 (def KW-FS-BROWSE 29)
 (def KW-IO-READ 30)
+(def KW-STATE 31)
+(def KW-STATE-GET 32)
+(def KW-STATE-PUT 33)
+(def KW-EFFECTS 34)
+(def KW-CLOCK-NOW 35)
 (def RES-SCALE 16777216)
 (def HD-NS 1)
 (def HD-DEFN 3)
@@ -226,6 +231,15 @@
 (def HD-BYTES-CONCAT 145)
 (def HD-BYTES-SLICE 146)
 (def HD-STRING-FROM-UTF8 147)
+(def HD-ATOM 148)
+(def HD-SWAP 149)
+(def HD-RESET 150)
+(def HD-DEREF 151)
+(def HD-PERFORM 152)
+(def HD-HANDLE 153)
+(def HD-WITH 154)
+(def HD-RESUME 155)
+(def HD-DEFHANDLER 156)
 (def E-HEAP-REGION 101)
 (def E-NAMES-DUP 2001)
 (def E-NAMES-TOP 2003)
@@ -311,7 +325,7 @@
 (defn- nm-max0 [a :i64] :i64 (if (< a 0) 0 a))
 
 ;; record error code with position a (-1 = none), {name} span [a, b) and {n}
-(defn- nm-err-span [M :vector-i64 code :i64 a :i64 b :i64 n :i64] :vector-i64
+(defn nm-err-span [M :vector-i64 code :i64 a :i64 b :i64 n :i64] :vector-i64
   (if (= (vector-at M MM-ERR) 0)
     (let [M1 (vector-assoc! M MM-ERR code)
           M2 (vector-assoc! M1 MM-ERR-POS a)
@@ -444,6 +458,15 @@
         1953720684 HD-LIST  ; list
         38 HD-AMP  ; &
         8386033954787195234 HD-BYTES-AT  ; bytes-at
+        1836020833 HD-ATOM  ; atom
+        143619356531 HD-SWAP  ; swap!
+        36783801984370 HD-RESET  ; reset!
+        439788660068 HD-DEREF  ; deref
+        64 HD-DEREF  ; @
+        30806595247170928 HD-PERFORM  ; perform
+        111516215828840 HD-HANDLE  ; handle
+        1752459639 HD-WITH  ; with
+        111520796337522 HD-RESUME  ; resume
         0)
       32765890658446708
       (case w0
@@ -663,6 +686,10 @@
       (case w0
         7362654689733801075 HD-STRING-FROM-UTF8  ; string-from-utf8
         0)
+      29285
+      (case w0
+        7810489018409706852 HD-DEFHANDLER  ; defhandler
+        0)
       0)
     1952525684
     (case w1
@@ -732,6 +759,8 @@
         1717924410 KW-REF  ; :ref
         8314046669413118778 KW-SCHEMAS  ; :schemas
         7233174017630234938 KW-IO-READ  ; :io/read
+        111550525633338 KW-STATE  ; :state
+        8319383698820982074 KW-EFFECTS  ; :effects
         0)
       3421801
       (case w0
@@ -764,6 +793,18 @@
       25971
       (case w0
         8606223178956760634 KW-FS-BROWSE  ; :fs/browse
+        0)
+      29797
+      (case w0
+        7435273060337611578 KW-STATE-GET  ; :state/get
+        0)
+      29813
+      (case w0
+        8083791406678963002 KW-STATE-PUT  ; :state/put
+        0)
+      30575
+      (case w0
+        7939682742892782394 KW-CLOCK-NOW  ; :clock/now
         0)
       0)
     29541
@@ -961,6 +1002,8 @@
     (cond
       (= hd HD-NS) (nm-err-node M E-NAMES-NS n 0)
       (= hd HD-DEFRECORD) (nm-touch M)
+      ;; R5B (agent R5B): (defhandler NAME ..) is registered by 21-check (two clause functions)
+      (= hd HD-DEFHANDLER) (nm-touch M)
       (= fk 0) (nm-err-node M E-NAMES-TOP nn 0)
       (= (nm-kind M (nm-nth M n 1)) ND-SYM) (nm-add-fn M n fk)
       :else (nm-err-node M E-NAMES-TOP nn 0))))

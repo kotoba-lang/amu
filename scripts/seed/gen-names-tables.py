@@ -54,6 +54,9 @@ HEADS = [  # (spelling, constant)
     # R4B (agent R4B, 2026-10-03)
     ("bytes-empty", "HD-BYTES-EMPTY"), ("bytes-count", "HD-BYTES-COUNT"), ("bytes-at", "HD-BYTES-AT"),
     ("bytes-concat", "HD-BYTES-CONCAT"), ("bytes-slice", "HD-BYTES-SLICE"), ("string-from-utf8", "HD-STRING-FROM-UTF8"),
+    # R5B (agent R5B, 2026-10-03): effects; "@" is the token of the reader's @x
+    ("atom", "HD-ATOM"), ("swap!", "HD-SWAP"), ("reset!", "HD-RESET"), ("deref", "HD-DEREF"), ("@", "HD-DEREF"),
+    ("perform", "HD-PERFORM"), ("handle", "HD-HANDLE"), ("with", "HD-WITH"), ("resume", "HD-RESUME"), ("defhandler", "HD-DEFHANDLER"),
 ]
 KWS = [
     (":i64", "KW-I64"), (":bool", "KW-BOOL"), (":string", "KW-STRING"), (":vector-i64", "KW-VECTOR-I64"),
@@ -69,6 +72,9 @@ KWS = [
     # R4B
     (":ref", "KW-REF"), (":schemas", "KW-SCHEMAS"), (":hash/sha256", "KW-HASH-SHA256"), (":env/read", "KW-ENV-READ"),
     (":fs/browse", "KW-FS-BROWSE"), (":io/read", "KW-IO-READ"),
+    # R5B
+    (":state", "KW-STATE"), (":state/get", "KW-STATE-GET"), (":state/put", "KW-STATE-PUT"), (":effects", "KW-EFFECTS"),
+    (":clock/now", "KW-CLOCK-NOW"),
 ]
 
 
