@@ -121,7 +121,7 @@
     (string-concat
       "(defn __kr_replace_all [s :string n :string r :string] :string (__kr_replace_from (string-substring s 0 0) s n r (string-index-of s n)))\n(defn __kr_replace_from [acc :string s :string n :string r :string k :i64] :string (if (< k 0) (string-concat acc s) (__kr_replace_from (string-concat acc (string-concat (string-substring s 0 k) r)) (string-substring s (+ k (string-length n)) (string-length s)) n r (string-index-of (string-substring s (+ k (string-length n)) (string-length s)) n))))\n"
       "(defn __kr_append_range [acc :string s :string i :i64 j :i64] :string (string-concat acc (string-substring s i j)))\n(defn __kr_index_of_from [s :string n :string i :i64] :i64 (let [r (string-index-of (string-substring s i (string-length s)) n)] (if (< r 0) -1 (+ r i))))\n"))
-  (string-concat (kr-lib-text2) (string-concat (kr-doc-text) (string-concat (kr-flt-text) (kr-fix-text))))))
+  (string-concat (kr-lib-text2) (string-concat (kr-doc-text) (string-concat (kr-flt-text) (string-concat (kr-fix-text) (kr-dec-text)))))))   ; F64: + the dec group
 
 ;; ---------------------------------------------------------------------------------------------------------
 ;; KIR5 (agent KIR5, 2026-10-03): :f64 / :f32 in compile-kir. The seed has no float register class; a KIR float is its
@@ -716,6 +716,7 @@
     (= h 4179465675549041136) (kr-len-ok len 16 120)
     (= h -1509583841684712660) (kr-len-ok len 19 121)
     (= h -5614762944342869044) (kr-len-ok len 19 122)
+    (= h -4185511760341210145) (kr-len-ok len 17 123)   ; F64: decimal-f64-parse
     :else 0))
 
 (defn- kr-is-name [k :i64] :i64 (cond (= k ND-SYM) 1 (= k ND-KW) 1 :else 0))
@@ -1535,6 +1536,7 @@
 (defn- kr-lib-of [hc :i64] :i64
   (cond (= hc 48) 0 (= hc 49) 1 (= hc 50) 2 (= hc 51) 4 (= hc 52) 5 (= hc 53) 6 (= hc 54) 7
         (< hc 56) -1 (and (>= hc 104) (<= hc 115)) (+ kr-fixb (- hc 104))   ; SEEDFIX: i32 ops and the text slots
+        (= hc 123) kr-dj-f64parse   ; F64: decimal-f64-parse
         (> hc 99) -1 (> hc 94) (kr-flt-of hc) (> hc 90) -1 :else (kr-doc-of hc)))
 
 ;; KIR4: the doc library entry of document head code hc (56 .. 87; 60 and 62..65 are handled before, -1)
@@ -1549,11 +1551,11 @@
 
 ;; the use bits of library function j (replace-all also needs replace-from)
 (defn- kr-lib-bits [j :i64] :i64
-  (cond (>= j kr-fixb) (kr-fix-bits (- j kr-fixb)) (= j 2) 12 (>= j (+ kr-nlib kr-ndoc)) 1024 (>= j kr-nlib) 256
+  (cond (>= j kr-decb) kr-dec-bits (>= j kr-fixb) (kr-fix-bits (- j kr-fixb)) (= j 2) 12 (>= j (+ kr-nlib kr-ndoc)) 1024 (>= j kr-nlib) 256
         :else (i64-shift-left 1 j)))
 
 ;; KIR4: the use bit of library defn j: its own for the KIR3 functions, bit 8 for every doc defn (one group)
-(defn- kr-lib-bit [j :i64] :i64 (cond (< j kr-nlib) j (< j (+ kr-nlib kr-ndoc)) kr-nlib (>= j kr-fixb) (+ 11 (- j kr-fixb)) :else 10))
+(defn- kr-lib-bit [j :i64] :i64 (cond (< j kr-nlib) j (< j (+ kr-nlib kr-ndoc)) kr-nlib (>= j kr-decb) 25 (>= j kr-fixb) (+ 11 (- j kr-fixb)) :else 10))
 
 ;; the top-level node of library defn j (the first one is word 4 of the function table; the defns are read-tree
 ;; siblings until kr-lib-emit relinks them at the very end)
@@ -1584,7 +1586,7 @@
   (let [tab (vector-at M kr-c-tab)
         u (vector-at M (+ tab 3))
         nx (kr-next M c)]
-    (cond (>= j (+ kr-fixb kr-nfix)) (kr-nset M last NF-NEXT 0)
+    (cond (>= j (+ kr-decb kr-ndec)) (kr-nset M last NF-NEXT 0)
           (= (bit-and (u64-shift-right u (kr-lib-bit j)) 1) 1)
           (kr-lib-emit (kr-mk-or (kr-strs (kr-nset M last NF-NEXT c) c) c (kr-lib-mark j)) c nx (+ j 1))
           :else (kr-lib-emit M last nx (+ j 1)))))
@@ -1908,7 +1910,7 @@
         cnt (kr-count M root)
         pb (kr-nf M (kr-next M doc) NF-TOK)
         met (vector-at M kr-c-pb)   ; SEEDFIX: 1 when the driver was given --metered (cell 124 before it holds the prelude)
-        ok (* (kr-eq (kr-kind M doc) ND-VEC) (kr-eq cnt (+ (+ kr-np 1) (+ kr-fixb kr-nfix))))]
+        ok (* (kr-eq (kr-kind M doc) ND-VEC) (kr-eq cnt (+ (+ kr-np 1) (+ kr-decb kr-ndec))))]
     (if (= ok 1)
       (kr-run2 (kr-put M kr-c-pb pb) S doc met)
       (kr-fail M kr-e-doc doc))))
@@ -1956,6 +1958,49 @@
 (def kr-fixb 117)
 (def kr-nfix 14)
 
+;; ---------------------------------------------------------------------------------------------------------
+;; F64 (agent F64, 2026-10-04): (decimal-f64-parse s) on the KIR route. The fifth library group (use bit 25, emitted whole,
+;; kr-ndec defns from kr-decb), a port of 21-check's R6D source prelude (ck-r6b-t-dec: correctly rounded decimal ->
+;; binary64 over <= 64 bytes, exact limb arithmetic) to the KIR float representation (KIR5: an f64 is its bit pattern in an
+;; i64, so [:option :f64] is [:option :i64] and the __r6-as casts are the identity). Generated from ck-r6b-t-dec0..4 by
+;; seed/tests/f64/gen-dec.py (--check compares); the call is respelled to __krd_parse (head code 123). Fuel-free like a
+;; runtime slot (stage-0 parses in one runtime call). decimal-f64x3-parse is not lowered (21-check refuses it by name).
+(def kr-decb 131)
+(def kr-ndec 25)
+(def kr-dj-f64parse 155)
+(def kr-dec-bits 33554432)
+(defn- kr-dec-text0 [] :string
+  (string-concat "(defn __krd_take [v :vector-i64 n :i64] :vector-i64 (let [r (vector-alloc n)] (loop [i 0] (if (>= i n) r (let [w (vector-assoc! r i (vector-at v i))] (recur (+ i 1)))))))\n"
+    (string-concat "(defn __krd_norm [v :vector-i64] :vector-i64 (loop [n (vector-count v)] (if (and (> n 0) (= (vector-at v (- n 1)) 0)) (recur (- n 1)) (if (= n (vector-count v)) v (__krd_take v n)))))\n"
+    (string-concat "(defn __krd_small [k :i64] :vector-i64 (__krd_norm (vector-conj (vector-conj (vector-alloc 0) (bit-and k 4294967295)) (u64-shift-right k 32))))\n"
+    (string-concat "(defn __krd_muladd [v :vector-i64 m :i64 a :i64] :vector-i64 (let [n (vector-count v) r (vector-alloc (+ n 1))] (loop [i 0 c a] (if (>= i n) (__krd_norm (vector-assoc! r n c)) (let [x (+ (* (vector-at v i) m) c) w (vector-assoc! r i (bit-and x 4294967295))] (recur (+ i 1) (u64-shift-right x 32)))))))\n"
+    "(defn __krd_shl [v :vector-i64 k :i64] :vector-i64 (let [q (quot k 32) b (- k (* q 32)) n (vector-count v) r (vector-alloc (+ (+ n q) 1))] (loop [i 0 c 0] (if (>= i n) (__krd_norm (vector-assoc! r (+ n q) c)) (let [x (vector-at v i) w (vector-assoc! r (+ i q) (bit-or (bit-and (i64-shift-left x b) 4294967295) c))] (recur (+ i 1) (if (= b 0) 0 (u64-shift-right x (- 32 b)))))))))\n")))))
+(defn- kr-dec-text1 [] :string
+  (string-concat "(defn __krd_bitlen [v :vector-i64] :i64 (let [n (vector-count v)] (if (= n 0) 0 (loop [t (vector-at v (- n 1)) k 0] (if (= t 0) (+ (* 32 (- n 1)) k) (recur (u64-shift-right t 1) (+ k 1)))))))\n"
+    (string-concat "(defn __krd_mulpow10 [v0 :vector-i64 k0 :i64] :vector-i64 (loop [v v0 k k0] (cond (>= k 9) (recur (__krd_muladd v 1000000000 0) (- k 9)) (> k 0) (recur (__krd_muladd v 10 0) (- k 1)) :else v)))\n"
+    (string-concat "(defn __krd_len [v :vector-i64] :i64 (loop [n (vector-count v)] (if (and (> n 0) (= (vector-at v (- n 1)) 0)) (recur (- n 1)) n)))\n"
+    (string-concat "(defn __krd_cmpz [a :vector-i64 b :vector-i64] :i64 (let [na (__krd_len a) nb (__krd_len b)] (cond (< na nb) -1 (> na nb) 1 :else (loop [i (- na 1)] (cond (< i 0) 0 (< (vector-at a i) (vector-at b i)) -1 (> (vector-at a i) (vector-at b i)) 1 :else (recur (- i 1)))))))\n"
+    "(defn __krd_subin [r :vector-i64 b :vector-i64] :i64 (loop [i 0 br 0] (if (>= i (vector-count r)) 0 (let [x (- (- (vector-at r i) (if (< i (vector-count b)) (vector-at b i) 0)) br) w (vector-assoc! r i (bit-and x 4294967295))] (recur (+ i 1) (if (< x 0) 1 0))))))\n")))))
+(defn- kr-dec-text2 [] :string
+  (string-concat "(defn __krd_shr1in [v :vector-i64] :i64 (loop [i 0] (if (>= i (vector-count v)) 0 (let [hi (if (< (+ i 1) (vector-count v)) (vector-at v (+ i 1)) 0) w (vector-assoc! v i (bit-or (u64-shift-right (vector-at v i) 1) (bit-and (i64-shift-left hi 31) 4294967295)))] (recur (+ i 1))))))\n"
+    (string-concat "(defn __krd_quotin [r :vector-i64 b :vector-i64] :i64 (let [bs (__krd_shl b 56)] (loop [i 56 q 0] (if (< i 0) q (let [ge (>= (__krd_cmpz r bs) 0) w (if ge (__krd_subin r bs) 0) w2 (__krd_shr1in bs)] (recur (- i 1) (if ge (bit-or q (i64-shift-left 1 i)) q)))))))\n"
+    (string-concat "(defn __krd_sn [num :vector-i64 e :i64] :vector-i64 (if (< e 0) (__krd_shl num (- 0 e)) num))\n"
+    (string-concat "(defn __krd_sd [den :vector-i64 e :i64] :vector-i64 (if (> e 0) (__krd_shl den e) den))\n"
+    "(defn __krd_exp [num :vector-i64 den :vector-i64] :i64 (let [e0 (- (- (__krd_bitlen num) (__krd_bitlen den)) 53) a (__krd_sn num e0) q0 (__krd_quotin (__krd_take a (vector-count a)) (__krd_sd den e0)) e1 (if (>= q0 9007199254740992) (+ e0 1) e0)] (if (< e1 -1074) -1074 e1)))\n")))))
+(defn- kr-dec-text3 [] :string
+  (string-concat "(defn __krd_round [num :vector-i64 den :vector-i64 e :i64] :i64 (let [a0 (__krd_sn num e) a (__krd_take a0 (vector-count a0)) b (__krd_sd den e) q (__krd_quotin a b) c (__krd_cmpz (__krd_shl a 1) b)] (cond (> c 0) (+ q 1) (= c 0) (+ q (bit-and q 1)) :else q)))\n"
+    (string-concat "(defn __krd_f64 [num :vector-i64 den :vector-i64] :i64 (let [e (__krd_exp num den) q (__krd_round num den e) q2 (if (= q 9007199254740992) 4503599627370496 q) e2 (if (= q 9007199254740992) (+ e 1) e)] (cond (> e2 971) -1 (< q2 4503599627370496) q2 :else (+ (i64-shift-left (+ e2 1075) 52) (- q2 4503599627370496)))))\n"
+    (string-concat "(defn __krd_value [neg :bool d :vector-i64 e10 :i64] [:option :i64] (let [sg (if neg -9223372036854775808 0)] (cond (= (vector-count d) 0) (option-some-of [:option :i64] sg) (> e10 330) (option-none-of [:option :i64]) (< e10 -400) (option-some-of [:option :i64] sg) :else (let [b (__krd_f64 (if (>= e10 0) (__krd_mulpow10 d e10) d) (if (< e10 0) (__krd_mulpow10 (__krd_small 1) (- 0 e10)) (__krd_small 1)))] (if (< b 0) (option-none-of [:option :i64]) (option-some-of [:option :i64] (bit-or sg b)))))))\n"
+    (string-concat "(defn __krd_dig? [c :i64] :bool (and (>= c 48) (<= c 57)))\n"
+    "(defn __krd_digs [s :string i :i64 n :i64] :i64 (loop [j i] (if (and (< j n) (__krd_dig? (string-code-point-at s j))) (recur (+ j 1)) j)))\n")))))
+(defn- kr-dec-text4 [] :string
+  (string-concat "(defn __krd_acc [v0 :vector-i64 s :string a :i64 b :i64] :vector-i64 (loop [j a w v0] (if (>= j b) w (let [k (if (> (- b j) 9) (+ j 9) b)] (recur k (__krd_muladd w (__krd_p10 (- k j)) (__krd_int s j k)))))))\n"
+    (string-concat "(defn __krd_p10 [k :i64] :i64 (loop [i 0 x 1] (if (>= i k) x (recur (+ i 1) (* x 10)))))\n"
+    (string-concat "(defn __krd_int [s :string a :i64 b :i64] :i64 (loop [j a x 0] (if (>= j b) x (recur (+ j 1) (+ (* x 10) (- (string-code-point-at s j) 48))))))\n"
+    (string-concat "(defn __krd_cp [s :string i :i64 n :i64] :i64 (if (< i n) (string-code-point-at s i) 0))\n"
+    "(defn __krd_parse [s :string] [:option :i64] (let [n (string-byte-length s) c0 (__krd_cp s 0 n) i0 (if (or (= c0 43) (= c0 45)) 1 0) i1 (__krd_digs s i0 n) f0 (if (= (__krd_cp s i1 n) 46) (+ i1 1) i1) f1 (__krd_digs s f0 n) hasx (or (= (__krd_cp s f1 n) 101) (= (__krd_cp s f1 n) 69)) x0 (if hasx (+ f1 1) f1) xs (if hasx (__krd_cp s x0 n) 0) x1 (if (or (= xs 43) (= xs 45)) (+ x0 1) x0) x2 (if hasx (__krd_digs s x1 n) x1) xv (if (= xs 45) (- 0 (__krd_int s x1 x2)) (__krd_int s x1 x2))] (if (and (> n 0) (<= n 64) (> (+ (- i1 i0) (- f1 f0)) 0) (= x2 n) (or (not hasx) (and (> (- x2 x1) 0) (<= (- x2 x1) 3)))) (__krd_value (= c0 45) (__krd_acc (__krd_acc (vector-alloc 0) s i0 i1) s f0 f1) (- xv (- f1 f0))) (option-none-of [:option :i64]))))\n")))))
+(defn- kr-dec-text [] :string (string-concat (kr-dec-text0) (string-concat (kr-dec-text1) (string-concat (kr-dec-text2) (string-concat (kr-dec-text3) (kr-dec-text4))))))
+
 ;; the fix group (use bits 11 + k): 0 __kr_i32w 1 __kr_u32w 2 i32add 3 i32mul 4 i32xor 5 i32shl 6 i32shr 7 u32shr
 ;; 8 fold-ascii 9 compare-lines 10 find-blank 11 skip-blank 12 arena-enter 13 arena-leave
 (defn- kr-fix-text [] :string
@@ -1989,6 +2034,7 @@
         (< j kr-nlib) kr-mk-nofuel
         (< j (+ kr-nlib kr-ndoc)) (if (>= j kr-dj-did) kr-mk-nofuel kr-mk-seed)
         (< j kr-fixb) kr-mk-nofuel
+        (>= j kr-decb) kr-mk-nofuel   ; F64: the dec group (stage-0: one runtime parse, no fuel inside)
         :else (+ kr-mk-nofuel (* (kr-fix-slot (- j kr-fixb)) kr-mk-slot))))
 
 ;; ---- the mark array and the table words --------------------------------------------------------------------------
