@@ -1,0 +1,9 @@
+;; R6M: heterogeneous vectors (hetero-vector, hetero-vector-at, hetero-vector-assoc, nth with a literal index)
+(ns r6m.p11 (:export [main]))
+(defn main [] :i64
+  (let [v (hetero-vector [:vector [:i64 :string :bool]] 7 "Ada" true)
+        w (hetero-vector-assoc [:vector [:i64 :string :bool]] v 1 "Lovelace")]
+    (+ (hetero-vector-at [:vector [:i64 :string :bool]] v 0)
+       (+ (* 10 (string-length (nth v 1)))
+          (+ (* 1000 (string-length (nth w 1)))
+             (if (nth w 2) 100000 0))))))

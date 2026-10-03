@@ -1,0 +1,10 @@
+;; R6M: if-some / if-let / when-some / when-let on options (desugared to option-match with an inferred option type)
+(ns r6m.p01 (:export [main]))
+(defn- pick [n :i64] [:option :i64]
+  (if (> n 0) (option-some-of [:option :i64] n) (option-none-of [:option :i64])))
+(defn main [] :i64
+  (+ (if-some [x (pick 7)] x 0)
+     (+ (if-some [y (pick -1)] y 900)
+        (+ (if-let [z (some 40)] (* z 2) 1)
+           (+ (when-some [w (pick 3)] (* w 1000))
+              (when-let [v (pick 0)] 77777))))))

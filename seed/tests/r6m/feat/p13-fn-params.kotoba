@@ -1,0 +1,11 @@
+;; R6M: unannotated parameters used as functions are inferred as fn types (called, invoked, passed on, captured)
+(ns r6m.p13 (:export [main]))
+(defn make-adder [n] (fn [x] (+ x n)))
+(defn apply-one [f x] (f x))
+(defn apply-two [g a b] (invoke g a b))
+(defn same [f] f)
+(defn wrap [f] (fn [x] (* 2 (f x))))
+(defn main [] :i64
+  (+ (apply-one (same (make-adder 5)) 3)
+     (+ (* 100 (apply-two (fn [a b] (- a b)) 9 4))
+        (* 1000 (apply-one (wrap (make-adder 1)) 10)))))

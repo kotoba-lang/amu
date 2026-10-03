@@ -470,7 +470,41 @@
       HD-SCALL (lw-scall M h t k)
       HD-R6-AS (lw-expr M (lw-next M a) t 0)   ; R6B: a retyping, no code
       HD-R6-IS (lw-expr M (lw-next M a) t 0)   ; R6B: a type assertion, no code
-      (if (and (>= hd HD-OPTION-SOME) (<= hd HD-POP)) (lw-r3 M n hd t k) (lw-fail M E-LOWER-NODE (lw-pos M n) hd)))))
+      (cond (and (>= hd HD-OPTION-SOME) (<= hd HD-POP)) (lw-r3 M n hd t k)
+            (= hd lw-r6m-hd-vnew) (lw-r6m-vnew M n t)   ; R6M
+            (= hd lw-r6m-hd-vmatch) (lw-r6m-vmatch M n t k)   ; R6M
+            :else (lw-fail M E-LOWER-NODE (lw-pos M n) hd)))))
+
+;; R6M (agent SEEDLANG, 2026-10-04): variants (21-check ck-r6m-*: NF-RES codes 3001 / 3002; a variant is pair(tag index,
+;; payload); the tag node of a variant-new / of each clause carries NF-RES = index + 1).
+(def lw-r6m-hd-vnew 3001)
+(def lw-r6m-hd-vmatch 3002)
+;; (variant-new T :tag x): [i -> t] [x -> t+1] RT pair_new t 2
+(defn- lw-r6m-vnew [M :vector-i64 n :i64 t :i64] :vector-i64
+  (let [tg (lw-next M (lw-next M (lw-first M n)))
+        x (lw-next M tg)]
+    (-> M (lw-emit OP-CONST t (dec (lw-nf M tg NF-RES))) (lw-expr x (inc t) 0) (lw-emit OP-RT RT-PAIR-NEW t 2))))
+;; (match-variant v T c ..): v into the hidden slot s (NF-TYPE of the head); per clause (:tag x body): the tag compare, the
+;; payload into x's slot, the body, a jump to the end; no clause matching = brk
+(defn- lw-r6m-vmatch [M :vector-i64 n :i64 t :i64 k :i64] :vector-i64
+  (let [h (lw-first M n)
+        s (lw-nf M h NF-TYPE)
+        v (lw-next M h)
+        c0 (lw-next M (lw-next M v))
+        nc (lw-count M c0)
+        l (vector-at M MM-LABEL-N)
+        M1 (-> M (lw-labels (inc nc)) (lw-expr v t 0) (lw-emit OP-LSET s t))]
+    (loop [M2 M1 c c0 i 0]
+      (if (zero? c)
+        (-> M2 (lw-emit OP-TRAP 0) (lw-emit OP-LABEL (+ l nc)))
+        (let [tg (lw-first M2 c)
+              x (lw-next M2 tg)
+              body (lw-next M2 x)]
+          (recur (-> M2 (lw-emit OP-LGET t s) (lw-emit OP-RT RT-PAIR-FIRST t 1) (lw-emit OP-CONST (inc t) (dec (lw-nf M2 tg NF-RES)))
+                     (lw-emit OP-CMP CC-EQ t) (lw-emit OP-BRZ t (+ l i))
+                     (lw-emit OP-LGET t s) (lw-emit OP-RT RT-PAIR-SECOND t 1) (lw-emit OP-LSET (lw-slot M2 x) t)
+                     (lw-expr body t k) (lw-emit OP-BR (+ l nc)) (lw-emit OP-LABEL (+ l i)))
+                 (lw-next M2 c) (inc i)))))))
 
 ;; FLOAT (agent FLOAT, rung r6j): a float operation (21-check ck-fl-*: NF-RES = ck-fl-base + kind * 256 + code) is one
 ;; SIR instruction over its operands: kind 1 [a -> t] [b -> t+1] BIN code t, 2 the same with CMP, 3 [a -> t] UN code t.

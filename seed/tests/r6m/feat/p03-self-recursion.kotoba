@@ -1,0 +1,6 @@
+;; R6M: an unannotated self-recursive defn (provisional :i64 self calls)
+(ns r6m.p03 (:export [main]))
+(defn fact [n] (if (< n 2) 1 (* n (fact (- n 1)))))
+(defn fib [n] (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
+(defn sum-to [n acc] (if (= n 0) acc (sum-to (- n 1) (+ acc n))))
+(defn main [] :i64 (+ (fact 10) (+ (fib 15) (sum-to 100 0))))

@@ -1,0 +1,9 @@
+;; R6M: the i32 profile (i32-wrap, wrapping add/mul, xor, literal-count shifts, xorshift32)
+(ns r6m.p07 (:export [main]))
+(defn main [] :i64
+  (+ (i32-wrapping-add (i32-wrap 2147483647) (i32-wrap 1))
+     (+ (i32-wrapping-mul 100000 100000)
+        (+ (i32-xor 4294967295 1)
+           (+ (i32-shift-left 3 30)
+              (+ (i32-shift-right -16 2)
+                 (+ (xorshift32 1) (xorshift32 -5))))))))

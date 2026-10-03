@@ -1,0 +1,5 @@
+;; R6M neg: mutual recursion through inferred results stays E2126 (only SELF calls are provisional)
+(ns r6m.n05 (:export [main]))
+(defn ev [n] (if (= n 0) 1 (od (- n 1))))
+(defn od [n] (if (= n 0) 0 (ev (- n 1))))
+(defn main [] :i64 (ev 10))

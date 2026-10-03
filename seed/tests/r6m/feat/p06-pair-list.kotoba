@@ -1,0 +1,7 @@
+;; R6M: cons and the pair-list readers first / second / rest / empty? on an :i64 pair chain
+(ns r6m.p06 (:export [main]))
+(defn- sum-list [l :i64 acc :i64] :i64 (if (empty? l) acc (sum-list (rest l) (+ acc (first l)))))
+(defn main [] :i64
+  (+ (sum-list (cons 1 (cons 2 (cons 3 0))) 0)
+     (+ (* 100 (second (cons 4 (cons 5 0))))
+        (* 1000 (if (empty? (rest (cons 9 0))) 1 0)))))

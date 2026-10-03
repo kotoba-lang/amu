@@ -1,0 +1,19 @@
+;; R6M: variants (variant-new, match-variant, variant-match) incl. a recursive one through :schemas
+(ns r6m.p10 (:export [main])
+  (:schemas {:r6m/tree [:variant :r6m/tree [[:leaf :i64] [:node [:vector [[:ref :r6m/tree] [:ref :r6m/tree]]]]]]}))
+(defn- leaf [n :i64] [:ref :r6m/tree] (variant-new [:ref :r6m/tree] :leaf n))
+(defn- node [l [:ref :r6m/tree] r [:ref :r6m/tree]] [:ref :r6m/tree]
+  (variant-new [:ref :r6m/tree] :node (hetero-vector [:vector [[:ref :r6m/tree] [:ref :r6m/tree]]] l r)))
+(defn- total [t [:ref :r6m/tree]] :i64
+  (match-variant t [:ref :r6m/tree]
+    (:leaf x x)
+    (:node p (+ (total (hetero-vector-at [:vector [[:ref :r6m/tree] [:ref :r6m/tree]]] p 0))
+                (total (hetero-vector-at [:vector [[:ref :r6m/tree] [:ref :r6m/tree]]] p 1))))))
+(defn- shape [v [:variant :r6m/shape [[:square :i64] [:rect [:vector [:i64 :i64]]]]]] :i64
+  (variant-match [:variant :r6m/shape [[:square :i64] [:rect [:vector [:i64 :i64]]]]] v
+    [[:square s (* s s)]
+     [:rect wh (* (nth wh 0) (nth wh 1))]]))
+(defn main [] :i64
+  (+ (total (node (leaf 1) (node (leaf 2) (leaf 3))))
+     (+ (* 100 (shape (variant-new [:variant :r6m/shape [[:square :i64] [:rect [:vector [:i64 :i64]]]]] :square 4)))
+        (* 10000 (shape (variant-new [:variant :r6m/shape [[:square :i64] [:rect [:vector [:i64 :i64]]]]] :rect (hetero-vector [:vector [:i64 :i64]] 2 3)))))))

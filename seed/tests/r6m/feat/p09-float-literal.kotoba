@@ -1,0 +1,8 @@
+;; R6M: decimal literals as :f64 constants (the FLOAT operations take them)
+(ns r6m.p09 (:export [main]))
+(defn main [] :i64
+  (+ (f64-to-bits (f64-add 1.5 2.25))
+     (+ (f64-to-bits 0.1)
+        (+ (f64-to-bits -2.75)
+           (f64-to-truncating-i64-sum)))))
+(defn- f64-to-truncating-i64-sum [] :i64 (f64-to-i64-truncating (f64-mul 12.5 4.0)))
