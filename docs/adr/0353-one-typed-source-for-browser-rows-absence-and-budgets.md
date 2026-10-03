@@ -713,7 +713,7 @@ reference ("abcd", 1..3 selected, deleted either way: "ad", caret 1; the
 caret at 4 deleted backward: "abc", caret 3). text-edit itself is refused
 natively by its public `empty-state`'s record as an export's result (floor
 `:export-signatures`; until `:native-vector-field`, by its vector field) and
-on wasm32 at floor `:typed-wasm-min-max`, pinned in the gate. kotoba-sema's portable suite has
+on wasm32 at floor `:typed-wasm-min-max` (since closed, below). kotoba-sema's portable suite has
 the same 39 failures and 5 errors before and after (identical lists), and
 amu's nbb suite the same 13 failures and 2 errors (the policy tests).
 Refused by name as before: a number passed to a row parameter, bound by `let`
@@ -768,6 +768,31 @@ artifact oracle value rejected" -- two oracle runs of one program
 disagreeing, which a host stack overflow caught inside the interpreter would
 explain. The same three operations compiled one per program agree with the
 reference on both targets.
+
+min and max in a typed Wasm module landed as floor `:typed-wasm-min-max`
+(gate `min-max-qualified-on-typed-wasm-test`). text-edit clamps its caret,
+`(max lo (min hi n))`. Both compiled on `wasm32-kotoba-v1` only in a module
+of plain i64 words; once the module held a string or a record, kotoba-wasm's
+typed (KIR v4) emitter took over, and it had no arm for either, so
+`(max 0 (string-code-unit-count "abc"))` and text-edit alike were exit 70
+"typed Wasm operation is not qualified" `{:operation max}`. The typed emitter
+now lowers both as the untyped one does -- `i64.lt_s` / `i64.gt_s` and
+`select` -- with each operand evaluated once into an i64 local (kotoba-wasm
+`a82bc58e`). Measured on nbb: the gate was red on `7ff9ad0d` (9 failures and
+10 errors of 49 assertions, the floor's literal), green on `a82bc58e` (49
+assertions); kotoba-wasm's own suite passes before and after (25 tests, 97
+assertions). Eight typed programs, `min(3,7)=3` / `max(3,7)=7` and negative
+operands among them, answer the reference's value when the wasm32 module is
+run by `runtime/browser-host.mjs`, and on `x86_64-aiueos-kernel-v1` and
+`aarch64-macos-kotoba-v1` (native never refused these forms); text-edit's
+delete-backward / delete-forward program answers 212133 on wasm32 as on the
+reference, so `text-edit-rebound-state-is-a-row-test` now pins its wasm32
+admission instead of the refusal. `amu compile --target wasm32` /
+`--target x86_64-aiueos-kernel-v1` / `--target aarch64-macos` exit 0 on a
+clamp over a record's string (the native two with `:oracle {:status
+:verified}`). Refused by name as before: min/max over a string, a bool or an
+option (`expected i64, got ...`) and any arity but two ("i64 operation arity
+mismatch: max takes 2 arguments").
 
 ## Selfhost foundation floors (appended 2026-09-26)
 
