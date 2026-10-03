@@ -94,20 +94,21 @@
 ;;   124 first prelude token, 125 the :exports vector node, 126 the :functions vector node, 127 the function table
 ;;   (heap address; 1 = ":format seen" before the table exists). Function table: word 0 = function count, word 1 = the
 ;;   address of the new string-literal records, word 2 = the next new literal index, (KIR3) word 3 = library use bits, word
-;;   4 = the first library defn, (KIR4) word 5 = the record of the function being emitted, then (from word kr-th) one record
+;;   4 = the first library defn, (KIR4) word 5 = the record of the function being emitted, (KIR5) word 6 = the first doc
+;;   library defn (its original sibling chain survives kr-lib-emit), then (from word kr-th) one record
 ;;   of kr-w words per function (kr-f-*), then the new literal records (4 words, LF-* layout).
 ;;
 ;; String literals: KIR repeats a def's string at every use (it has no defs), so the LIT table of 10-lex is rebuilt
 ;; from the strings the emitted program contains, in walk order, equal bytes sharing one record (kr-str, kr-lits): the
 ;; pool then holds each distinct string once, as on the source route.
 
-(def kr-np 39)
+(def kr-np 41)
 (def kr-c-pb 124)
 (def kr-c-exp 125)
 (def kr-c-fns 126)
 (def kr-c-tab 127)
 (def kr-w 8)
-(def kr-th 6)
+(def kr-th 7)
 (def kr-f-name 0)
 (def kr-f-params 1)
 (def kr-f-result 2)
@@ -125,10 +126,11 @@
 ;; 11 and, 12 or, 13 not, 14 assoc, 15 let, 16 if, 17 <, 18 >, 19 __kr_a, 20 __kr_b,
 ;; (KIR3) 21 :fs/app-data 22 :io/write 23 :cli/args 24 :io/write-error 25 :fs/app-data-bytes 26 nth 27 :option 28 :result
 ;; 29 option-some-of 30 option-none-of 31 option-some?-of 32 option-value-of 33 result-ok-of 34 result-err-of
-;; 35 result-ok?-of 36 result-value-of 37 result-error-of (KIR4) 38 :string
+;; 35 result-ok?-of 36 result-value-of 37 result-error-of (KIR4) 38 :string (KIR5) 39 string=? 40 :string (the type a
+;; :keyword becomes: a token of its own, so kr-is-kwtype still sees that the KIR said :keyword)
 (defn kr-prelude [] :string
   (string-concat
-    "\n ns kir :export defn loop recur = 0 1 string-length :i64 and or not assoc let if < > __kr_a __kr_b :fs/app-data :io/write :cli/args :io/write-error :fs/app-data-bytes nth :option :result option-some-of option-none-of option-some?-of option-value-of result-ok-of result-err-of result-ok?-of result-value-of result-error-of :string\n"
+    "\n ns kir :export defn loop recur = 0 1 string-length :i64 and or not assoc let if < > __kr_a __kr_b :fs/app-data :io/write :cli/args :io/write-error :fs/app-data-bytes nth :option :result option-some-of option-none-of option-some?-of option-value-of result-ok-of result-err-of result-ok?-of result-value-of result-error-of :string string=? :string\n"
     (kr-lib-text)))
 
 ;; KIR3: the KIR library -- KIR builtins the seed has no head for, written in the seed language with the meaning (and the
@@ -161,7 +163,38 @@
     (string-concat
       "(defn __kr_replace_all [s :string n :string r :string] :string (__kr_replace_from (string-substring s 0 0) s n r (string-index-of s n)))\n(defn __kr_replace_from [acc :string s :string n :string r :string k :i64] :string (if (< k 0) (string-concat acc s) (__kr_replace_from (string-concat acc (string-concat (string-substring s 0 k) r)) (string-substring s (+ k (string-length n)) (string-length s)) n r (string-index-of (string-substring s (+ k (string-length n)) (string-length s)) n))))\n"
       "(defn __kr_append_range [acc :string s :string i :i64 j :i64] :string (string-concat acc (string-substring s i j)))\n(defn __kr_index_of_from [s :string n :string i :i64] :i64 (let [r (string-index-of (string-substring s i (string-length s)) n)] (if (< r 0) -1 (+ r i))))\n"))
-  (string-concat (kr-lib-text2) (kr-doc-text))))
+  (string-concat (kr-lib-text2) (string-concat (kr-doc-text) (kr-flt-text)))))
+
+;; ---------------------------------------------------------------------------------------------------------
+;; KIR5 (agent KIR5, 2026-10-03): :f64 / :f32 in compile-kir. The seed has no float register class; a KIR float is its
+;; IEEE-754 BIT PATTERN in an i64: an f64 its 64 bits, an f32 its 32 bits sign-extended (exactly what stage-0's
+;; f64-to-bits / f32-to-bits answer, measured: (f32-to-bits -1.0f) = -1082130432). So the type keywords :f64 / :f32 in a
+;; TYPE position (a vector item: param types, [:option :f64], record fields; a function's :result) become :i64, and
+;; f64-to-bits / f64-from-bits / f32-to-bits are the identity. KIR spells float equality and order as f64-eq/f64-lt ..
+;; (stage-0 respells `=`/`<` on floats, measured), never `=`, so no generic i64 operation ever meets a float. The
+;; conversions are a third library group (use bit 10), integer code with the result of AArch64 fcvt under the default
+;; FPCR (round to nearest even, no flush to zero, NaN payload kept and quieted), measured against stage-0's native code:
+;;   (f64-to-f32-rounded x) -> (__kr_f64_to_f32 x)     (f32-to-f64-exact x) -> (__kr_f32_to_f64 x)
+;; Every other float operation (arithmetic, comparisons, f64 vectors, parse/print, f32-from-bits) is left for 21-check to
+;; refuse by name. A keyword VALUE :f64 (e.g. (= kind :f64) of a document kind) is not in a type position and stays.
+(def kr-nflt 7)
+(defn- kr-flt-text [] :string
+  (string-concat
+   (string-concat
+    "(defn __kr_fbits [x :i64] :i64 x)\n"
+    "(defn __kr_rne [x :i64 sh :i64] :i64 (if (> sh 54) 0 (let [r (u64-shift-right x sh) rem (bit-and x (- (i64-shift-left 1 sh) 1)) half (i64-shift-left 1 (- sh 1))] (cond (> rem half) (+ r 1) (= rem half) (+ r (bit-and r 1)) :else r))))\n")
+   (string-concat
+    (string-concat
+     "(defn __kr_f32_round [e :i64 m :i64] :i64 (let [sig (if (= e 0) m (bit-or m 4503599627370496)) x (if (= e 0) -1022 (- e 1023))] (cond (> x 127) 2139095040 (>= x -126) (+ (i64-shift-left (+ x 126) 23) (__kr_rne sig 29)) :else (__kr_rne sig (- -97 x)))))\n"
+     "(defn __kr_f64_to_f32 [b :i64] :i64 (let [e (bit-and (u64-shift-right b 52) 2047) m (bit-and b 4503599627370495) mag (cond (< e 2047) (__kr_f32_round e m) (= m 0) 2139095040 :else (bit-or 2143289344 (u64-shift-right m 29)))] (if (< b 0) (- mag 2147483648) mag)))\n")
+    (string-concat
+     "(defn __kr_hibit [m :i64 p :i64] :i64 (if (= (bit-and (u64-shift-right m p) 1) 1) p (__kr_hibit m (- p 1))))\n(defn __kr_f32_sub [m :i64] :i64 (let [p (__kr_hibit m 22)] (bit-or (i64-shift-left (+ p 874) 52) (bit-and (i64-shift-left m (- 52 p)) 4503599627370495))))\n"
+     "(defn __kr_f32_to_f64 [x :i64] :i64 (let [mag (bit-and x 2147483647) e (u64-shift-right mag 23) m (bit-and mag 8388607) r (cond (= e 0) (if (= m 0) 0 (__kr_f32_sub m)) (< e 255) (bit-or (i64-shift-left (+ e 896) 52) (i64-shift-left m 29)) (= m 0) 9218868437227405312 :else (bit-or 9221120237041090560 (i64-shift-left m 29)))] (if (< x 0) (bit-or r (i64-shift-left 1 63)) r)))\n"))))
+
+;; the float library entry of head code hc (95 f64-to-bits, 96 f64-from-bits, 97 f32-to-bits, 98 f64-to-f32-rounded,
+;; 99 f32-to-f64-exact): defn 0 __kr_fbits, 3 __kr_f64_to_f32, 6 __kr_f32_to_f64 of the group
+(defn- kr-flt-of [hc :i64] :i64
+  (+ (+ kr-nlib kr-ndoc) (cond (= hc 98) 3 (= hc 99) 6 :else 0)))
 
 (defn- kr-lib-text2 [] :string
   (string-concat
@@ -188,8 +221,8 @@
 ;; Not supported (left for 21-check to refuse by name): document-keyword-value / document-symbol-value (no keyword or
 ;; symbol from text in the seed), document-f64*, document-sha256, document-print/read (stage-0 refuses them too).
 ;; BEGIN KIR4 doclib (generated by seed/tests/kir/doclib/gen-doclib.py)
-;; 107 defns from seed/tests/kir/doclib/doclib.kotoba; edit that file, then run the generator
-(def kr-ndoc 107)
+;; 102 defns from seed/tests/kir/doclib/doclib.kotoba; edit that file, then run the generator
+(def kr-ndoc 102)
 (def kr-dj-dw 8)
 (def kr-dj-dcloser 9)
 (def kr-dj-dtrap 10)
@@ -288,15 +321,10 @@
 (def kr-dj-di64val 103)
 (def kr-dj-did 104)
 (def kr-dj-kwtext 105)
-(def kr-dj-kwat 106)
-(def kr-dj-kwn 107)
-(def kr-dj-kwtrap 108)
-(def kr-dj-kwof2 109)
-(def kr-dj-kwof 110)
-(def kr-dj-dkwval 111)
-(def kr-dj-dfindslash 112)
-(def kr-dj-kwname 113)
-(def kr-dj-kwfromstr 114)
+(def kr-dj-dkwval 106)
+(def kr-dj-dfindslash 107)
+(def kr-dj-kwname 108)
+(def kr-dj-kwfromstr 109)
 (defn- kr-doc-text0 [] :string
   (string-concat "(defn __kr_dw [c :i64] :i64 (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))\n"
   (string-concat "(defn __kr_dcloser [c :i64] :bool (or (= c 93) (or (= c 41) (= c 125))))\n"
@@ -397,7 +425,7 @@
   (string-concat "(defn __kr_dmz [] :string \"{}\")\n"
   "(defn __kr_dcount [d0 :string] :i64 (let [d (__kr_dreq d0 7 10)] (if (= (__kr_dkindn d) 10) (quot (__kr_dforms d) 2) (__kr_dforms d))))\n"))))))))
 (defn- kr-doc-text11 [] :string
-  (string-concat "(defn __kr_dkind [d :string] :keyword (let [k (__kr_dkindn d)] (cond (= k 0) :null (= k 1) :bool (= k 2) :i64 (= k 3) :f64 (= k 4) :string (= k 5) :keyword (= k 6) :symbol (= k 7) :vector (= k 8) :list (= k 9) :set :else :map)))\n"
+  (string-concat "(defn __kr_dkind [d :string] :string (let [k (__kr_dkindn d)] (cond (= k 0) \":null\" (= k 1) \":bool\" (= k 2) \":i64\" (= k 3) \":f64\" (= k 4) \":string\" (= k 5) \":keyword\" (= k 6) \":symbol\" (= k 7) \":vector\" (= k 8) \":list\" (= k 9) \":set\" :else \":map\")))\n"
   (string-concat "(defn __kr_deq [a :string b :string] :bool (string=? a b))\n"
   (string-concat "(defn __kr_dcontains [m :string k :string] :bool (>= (__kr_dmapfind (__kr_dreq m 10 10) k 1) 0))\n"
   (string-concat "(defn __kr_dassocop [m :string k :string v :string] :string (__kr_dassoc (__kr_dreq m 10 10) k v))\n"
@@ -407,18 +435,12 @@
   "(defn __kr_di64val [d :string] [:option :i64] (if (= (__kr_dkindn d) 2) (option-some-of [:option :i64] (__kr_dparse d)) (option-none-of [:option :i64])))\n"))))))))
 (defn- kr-doc-text12 [] :string
   (string-concat "(defn __kr_did [d :string] :string d)\n"
-  (string-concat "(defn __kr_kwtext [k :keyword] :string (case k :__kr_nokw (__kr_dtraps) (__kr_dtraps)))\n"
-  (string-concat "(defn __kr_kwat [i :i64] :keyword (case i -1 :__kr_nokw :__kr_nokw))\n"
-  (string-concat "(defn __kr_kwn [] :i64 0)\n"
-  (string-concat "(defn __kr_kwtrap [] :keyword (if (= (__kr_dtrap) 0) :__kr_nokw :__kr_nokw))\n"
-  (string-concat "(defn __kr_kwof2 [s :string i :i64 n :i64] :keyword (cond (>= i n) (__kr_kwtrap) (string=? s (__kr_kwtext (__kr_kwat i))) (__kr_kwat i) :else (__kr_kwof2 s (+ i 1) n)))\n"
-  (string-concat "(defn __kr_kwof [s :string] :keyword (__kr_kwof2 s 0 (__kr_kwn)))\n"
-  "(defn __kr_dkwval [d :string] [:option :keyword] (if (= (__kr_dkindn d) 5) (option-some-of [:option :keyword] (__kr_kwof d)) (option-none-of [:option :keyword])))\n"))))))))
-(defn- kr-doc-text13 [] :string
+  (string-concat "(defn __kr_kwtext [k :string] :string k)\n"
+  (string-concat "(defn __kr_dkwval [d :string] [:option :string] (if (= (__kr_dkindn d) 5) (option-some-of [:option :string] d) (option-none-of [:option :string])))\n"
   (string-concat "(defn __kr_dfindslash [s :string i :i64] :i64 (cond (>= i (string-length s)) -1 (= (string-code-point-at s i) 47) i :else (__kr_dfindslash s (+ i (__kr_dw (string-code-point-at s i))))))\n"
-  (string-concat "(defn __kr_kwname [k :keyword] :string (let [s (__kr_kwtext k) sl (__kr_dfindslash s 1)] (string-substring s (cond (< sl 0) 1 (= (string-length s) 2) 1 :else (+ sl 1)) (string-length s))))\n"
-  "(defn __kr_kwfromstr [s :string] :keyword (__kr_kwof (string-concat \":\" s)))\n")))
-(defn- kr-doc-text [] :string (string-concat (kr-doc-text0) (string-concat (kr-doc-text1) (string-concat (kr-doc-text2) (string-concat (kr-doc-text3) (string-concat (kr-doc-text4) (string-concat (kr-doc-text5) (string-concat (kr-doc-text6) (string-concat (kr-doc-text7) (string-concat (kr-doc-text8) (string-concat (kr-doc-text9) (string-concat (kr-doc-text10) (string-concat (kr-doc-text11) (string-concat (kr-doc-text12) (kr-doc-text13)))))))))))))))
+  (string-concat "(defn __kr_kwname [k :string] :string (let [sl (__kr_dfindslash k 1)] (string-substring k (cond (< sl 0) 1 (= (string-length k) 2) 1 :else (+ sl 1)) (string-length k))))\n"
+  "(defn __kr_kwfromstr [s :string] :string (string-concat \":\" s))\n"))))))
+(defn- kr-doc-text [] :string (string-concat (kr-doc-text0) (string-concat (kr-doc-text1) (string-concat (kr-doc-text2) (string-concat (kr-doc-text3) (string-concat (kr-doc-text4) (string-concat (kr-doc-text5) (string-concat (kr-doc-text6) (string-concat (kr-doc-text7) (string-concat (kr-doc-text8) (string-concat (kr-doc-text9) (string-concat (kr-doc-text10) (string-concat (kr-doc-text11) (kr-doc-text12))))))))))))))
 ;; END KIR4 doclib
 
 ;; ---------------------------------------------------------------------------------------------------------
@@ -607,7 +629,8 @@
 ;; 65 -map 66 -count 67 -kind 68 -equal? 69 -set-contains? 70 -contains 71 -get 72 -vector-at 73 -list-at 74 -map-entry-at
 ;; 75 -vector-assoc 76 -vector-conj 77 -vector-drop 78 -vector-remove 79 -vector-sort 80 -assoc 81 -dissoc 82 -merge
 ;; 83 -string-value 84 -bool-value 85 -i64-value 86 -edn-print 87 -edn-read 88 document-keyword-value 89 keyword-name
-;; 90 keyword-from-string 91 :keyword 92 option-value-of
+;; 90 keyword-from-string 91 :keyword 92 option-value-of (KIR5) 93 :f64 94 :f32 95 f64-to-bits 96 f64-from-bits
+;; 97 f32-to-bits 98 f64-to-f32-rounded 99 f32-to-f64-exact 100 = 101 record-get 102 symbol 103 :symbol
 ;; 0 = none of them
 (defn- kr-code-of [len :i64 h :i64] :i64
   (cond
@@ -701,6 +724,17 @@
     (= h -5903302927127843025) (kr-len-ok len 19 90)
     (= h 2180993942247917868) (kr-len-ok len 8 91)
     (= h 7114827962686392402) (kr-len-ok len 15 92)
+    (= h -8029064578845238813) (kr-len-ok len 4 93)
+    (= h -8033845255403754116) (kr-len-ok len 4 94)
+    (= h 1600856041486620590) (kr-len-ok len 11 95)
+    (= h 7987950950382066285) (kr-len-ok len 13 96)
+    (= h 739134972770748861) (kr-len-ok len 11 97)
+    (= h -465854805646180771) (kr-len-ok len 18 98)
+    (= h -205624834797417495) (kr-len-ok len 16 99)
+    (= h -5808605251665550904) (kr-len-ok len 1 100)
+    (= h -8934139231046636867) (kr-len-ok len 10 101)
+    (= h -1721781785132272367) (kr-len-ok len 6 102)
+    (= h 6842847860166478009) (kr-len-ok len 7 103)
     :else 0))
 
 (defn- kr-is-name [k :i64] :i64 (cond (= k ND-SYM) 1 (= k ND-KW) 1 :else 0))
@@ -802,7 +836,7 @@
       (= c 2) (kr-nil-or M vc vk ND-SYM k)
       (= c 4) (kr-nil-or M vc vk ND-VEC k)
       (= c 5) (kr-effects M S v k)
-      (= c 26) (kr-id M)
+      (= c 26) (kr-walk M S v 0)   ; KIR5: its types follow the bodies' (:keyword -> :string ..); 21-check scans every schema
       (= c 3) (kr-vec-cell M vk k v kr-c-exp)
       (= c 6) (kr-vec-cell M vk k v kr-c-fns)
       :else (kr-fail M kr-e-field k))))
@@ -879,15 +913,21 @@
     (let [nx (kr-next M f)]
       (kr-fns (kr-fn M S r f) S (+ r kr-w) nx))))
 
+;; KIR5: node k siblings after c in the ORIGINAL read-tree order (only valid before kr-lib-emit relinks the used defns)
+(defn- kr-lib-walk [c :i64 k :i64 M :vector-i64] :i64
+  (loop [x c i k]
+    (if (= i 0) x (recur (kr-next M x) (- i 1)))))
+
 (defn- kr-tab2 [M :vector-i64 S :string n :i64] :vector-i64
   (let [tab (vector-at M MM-R0)
         fv (vector-at M kr-c-fns)
         f1 (kr-first M fv)]
     (if (kr-failed M)
       (kr-id M)
-      (kr-fns (kr-put (kr-put (kr-put (kr-put (kr-put (kr-put M kr-c-tab tab) tab n) (+ tab 1) (+ (+ tab kr-th) (* n kr-w))) (+ tab 2) 1)
+      (kr-fns (kr-put (kr-put (kr-put (kr-put (kr-put (kr-put (kr-put M kr-c-tab tab) tab n) (+ tab 1) (+ (+ tab kr-th) (* n kr-w))) (+ tab 2) 1)
                                   (+ tab 3) 0)
                           (+ tab 4) (kr-lib-first M))
+                 (+ tab 6) (kr-lib-walk (kr-lib-first M) kr-nlib M))
               S (+ tab kr-th) f1))))
 
 ;; KIR3: the first library defn: the (kr-np + 1)-th sibling of the KIR document under the read root (before kr-emit)
@@ -981,17 +1021,89 @@
     (let [nx (kr-next M c)]
       (kr-walk-items (kr-walk M S c cur) S nx cur))))
 
+;; KIR5: the items of a vector (a type form or a vector literal): :f64 / :f32 there are types -> :i64 (kr-flt-text)
+(defn- kr-walk-vitems [M :vector-i64 S :string c :i64 cur :i64] :vector-i64
+  (cond
+    (= c 0) (kr-id M)
+    (kr-failed M) (kr-id M)
+    :else
+    (let [nx (kr-next M c)]
+      (kr-walk-vitems (kr-walk-ty M S c cur) S nx cur))))
+
+;; a node in a TYPE position (a vector item, a function's :result): :f64/:f32 -> :i64, :keyword -> :string (prelude 40),
+;; :document -> :string; any other keyword is a type or field name and stays; anything else is walked
+(defn- kr-walk-ty [M :vector-i64 S :string n :i64 cur :i64] :vector-i64
+  (let [c (kr-code M S n)]
+    (cond (and (>= c 93) (<= c 94)) (kr-retok M n 10)
+          (= c 91) (kr-retok M n 40)
+          (= c 55) (kr-retok M n 38)
+          (= c 103) (kr-retok M n 38)
+          (= (kr-kind M n) ND-KW) (kr-id M)
+          :else (kr-walk M S n cur))))
+
+;; KIR5: items whose bare keywords are syntax (typed-cap-call kinds, a record-get field): left as they are
+(defn- kr-walk-nokw [M :vector-i64 S :string c :i64 cur :i64] :vector-i64
+  (cond
+    (= c 0) (kr-id M)
+    (kr-failed M) (kr-id M)
+    (= (kr-kind M c) ND-KW) (kr-walk-nokw M S (kr-next M c) cur)
+    :else
+    (let [nx (kr-next M c)]
+      (kr-walk-nokw (kr-walk M S c cur) S nx cur))))
+
+;; KIR5: (= a b) where a or b is keyword-typed -> (string=? a b): keywords are their text. Keyword-typed by stage-0's own
+;; rule (kotoba-native keyword_equality.cljk), so both backends take the same compare: a keyword literal; a parameter
+;; declared :keyword; (record-get [:record ..] r :f) whose inline descriptor types :f :keyword; a call of a program
+;; function whose :result is :keyword; an `if` both of whose arms are; a `let`'s body. Where stage-0 sees no keyword it
+;; compares words (handles); the seed has no such compare on its :string, so 21-check refuses that `=` (E2123): a
+;; refusal, never a different answer. (Bindings of a let are not tracked: such an operand is refused, not guessed.)
+(defn- kr-kwish [M :vector-i64 S :string x :i64] :i64
+  (let [k (if (= x 0) 0 (kr-kind M x))]
+    (cond (= x 0) 0
+          (= k ND-KW) 1
+          (= k ND-SYM) (kr-is-kwtype M S (kr-sym-type M S x))
+          (= k ND-LIST) (kr-kwish-list M S x (kr-first M x))
+          :else 0)))
+
+(defn- kr-kwish-list [M :vector-i64 S :string x :i64 h :i64] :i64
+  (let [hc (kr-code M S h)
+        a (kr-next M h)
+        r (if (= (kr-kind M h) ND-SYM) (kr-find M S h) 0)]
+    (cond (= hc 101) (kr-rg-kw M S a)
+          (= hc 22) (if (= (kr-kwish M S (kr-next M a)) 1) (kr-kwish M S (kr-next M (kr-next M a))) 0)
+          (= hc 21) (kr-kwish M S (kr-next M a))
+          (> r 0) (kr-is-kwtype M S (vector-at M (+ r kr-f-result)))
+          :else 0)))
+
+;; record-get operands d r f: 1 when d is [:record id [[f :keyword] ..] ..] for the field spelled like f
+(defn- kr-rg-kw [M :vector-i64 S :string d :i64] :i64
+  (let [f (if (= d 0) 0 (kr-next M (kr-next M d)))
+        fs (if (= (kr-kind M d) ND-VEC) (kr-next M (kr-next M (kr-first M d))) 0)]
+    (if (= (* (kr-ne f 0) (kr-ne fs 0)) 1)
+      (loop [c (if (= (kr-kind M fs) ND-VEC) (kr-first M fs) 0)]
+        (cond (= c 0) 0
+              (= (* (kr-eq (kr-kind M c) ND-VEC) (kr-same M S (kr-first M c) f)) 1) (kr-is-kwtype M S (kr-next M (kr-first M c)))
+              :else (recur (kr-next M c))))
+      0)))
+
+(defn- kr-eqkw [M :vector-i64 S :string n :i64 cur :i64] :vector-i64
+  (let [h (kr-first M n)
+        a (kr-next M h)
+        b (if (= a 0) 0 (kr-next M a))
+        kw (bit-or (kr-kwish M S a) (kr-kwish M S b))]
+    (kr-walk-items (if (= kw 1) (kr-retok M h 39) (kr-id M)) S a cur)))
+
 (defn- kr-walk [M :vector-i64 S :string n :i64 cur :i64] :vector-i64
   (let [k (kr-kind M n)
         c (kr-code M S n)
         f (kr-first M n)]
     (cond
       (= k ND-LIST) (kr-walk-list M S n cur)
-      (= k ND-VEC) (kr-walk-items M S f cur)
+      (= k ND-VEC) (kr-walk-vitems M S f cur)
       (= k ND-STR) (kr-str M n)
       (= c 15) (kr-bool M n 0)
       (= c 16) (kr-bool M n 1)
-      (= c 55) (kr-retok M n 38)
+      (= k ND-KW) (kr-dkw2 M S n n)
       :else (kr-id M))))
 
 (defn- kr-walk-list [M :vector-i64 S :string n :i64 cur :i64] :vector-i64
@@ -1009,7 +1121,10 @@
       (= hc 32) (kr-neg-or M S n cur)
       (= hc 30) (kr-minmax-or M S n cur 17)
       (= hc 31) (kr-minmax-or M S n cur 18)
-      (= hc 35) (kr-walk-items (kr-cap M S n) S h cur)
+      (= hc 35) (kr-walk-nokw (kr-cap M S n) S h cur)
+      (= hc 100) (kr-eqkw M S n cur)
+      (= hc 101) (kr-walk-nokw M S a cur)
+      (= hc 102) (kr-walk-items (kr-lib-use M h kr-dj-kwtext) S a cur)
       (= hc 37) (kr-walk-items (kr-retok M h 26) S a cur)
       (= hc 60) (kr-dkw M S n cur)
       (and (>= hc 62) (<= hc 65)) (kr-dfold M S n cur hc)
@@ -1092,10 +1207,14 @@
         sc (kr-next M h)
         r (kr-next M sc)
         c (kr-nf M n NF-AUX)
-        M1 (kr-retok M h 14)
+        ;; KIR5: the dropped schema is still a node of the file that 21-check's inline scan registers, so its types are
+        ;; walked like every other schema (:keyword -> :string); unwalked it conflicted with the :schemas entry (E2128)
+        M0 (kr-walk M S sc cur)
+        M1 (kr-retok M0 h 14)
         M2 (kr-nset M1 h NF-NEXT r)
-        M3 (kr-nset M2 n NF-AUX (- c 1))]
-    (kr-walk-items M3 S r cur)))
+        M3 (kr-nset M2 n NF-AUX (- c 1))
+        f (kr-next M3 r)]
+    (if (= f 0) (kr-walk M3 S r cur) (kr-walk-items (kr-walk M3 S r cur) S (kr-next M3 f) cur))))
 
 (defn- kr-neg [M :vector-i64 S :string n :i64 cur :i64] :vector-i64
   (if (kr-failed M)
@@ -1427,7 +1546,7 @@
 ;; the library function of KIR head code hc, -1 when hc is not a library builtin
 (defn- kr-lib-of [hc :i64] :i64
   (cond (= hc 48) 0 (= hc 49) 1 (= hc 50) 2 (= hc 51) 4 (= hc 52) 5 (= hc 53) 6 (= hc 54) 7
-        (< hc 56) -1 (> hc 90) -1 :else (kr-doc-of hc)))
+        (< hc 56) -1 (> hc 99) -1 (> hc 94) (kr-flt-of hc) (> hc 90) -1 :else (kr-doc-of hc)))
 
 ;; KIR4: the doc library entry of document head code hc (56 .. 87; 60 and 62..65 are handled before, -1)
 (defn- kr-doc-of [hc :i64] :i64
@@ -1441,20 +1560,25 @@
 
 ;; the use bits of library function j (replace-all also needs replace-from)
 (defn- kr-lib-bits [j :i64] :i64
-  (cond (= j 2) 12 (= (kr-kw-user j) 1) 768 (>= j kr-nlib) 256 :else (i64-shift-left 1 j)))
-
-;; KIR4: 1 when doc defn j needs the keyword text tables (bit 9: kr-kwtab fills them)
-(defn- kr-kw-user [j :i64] :i64
-  (cond (= j kr-dj-kwtext) 1 (= j kr-dj-dkwval) 1 (= j kr-dj-kwname) 1 (= j kr-dj-kwfromstr) 1 :else 0))
+  (cond (= j 2) 12 (>= j (+ kr-nlib kr-ndoc)) 1024 (>= j kr-nlib) 256 :else (i64-shift-left 1 j)))
 
 ;; KIR4: the use bit of library defn j: its own for the KIR3 functions, bit 8 for every doc defn (one group)
-(defn- kr-lib-bit [j :i64] :i64 (if (< j kr-nlib) j kr-nlib))
+(defn- kr-lib-bit [j :i64] :i64 (cond (< j kr-nlib) j (< j (+ kr-nlib kr-ndoc)) kr-nlib :else 10))
 
 ;; the top-level node of library defn j (the first one is word 4 of the function table; the defns are read-tree
 ;; siblings until kr-lib-emit relinks them at the very end)
 (defn- kr-lib-node [M :vector-i64 j :i64] :i64
-  (loop [c (vector-at M (+ (vector-at M kr-c-tab) 4)) k j]
-    (if (= k 0) c (recur (kr-next M c) (- k 1)))))
+  (if (< j kr-nlib)
+    (loop [c (vector-at M (+ (vector-at M kr-c-tab) 4)) k j]
+      (if (= k 0) c (recur (kr-next M c) (- k 1))))
+    (kr-doc-node M (- j kr-nlib))))
+
+;; KIR5: doc defn k from the first doc defn (table word 6, recorded before kr-lib-emit). The doc group is emitted whole, so
+;; its chain stays the original one, while the chain from KIR3 defn 0 skips unused KIR3 defns once kr-lib-emit relinked it
+;; (kr-kwtab runs after the emit: with string-find-byte used, `kr-lib-node kr-dj-kwtext` landed 7 defns too far -> E2104/E2110)
+(defn- kr-doc-node [M :vector-i64 k :i64] :i64
+  (loop [c (vector-at M (+ (vector-at M kr-c-tab) 6)) i k]
+    (if (= i 0) c (recur (kr-next M c) (- i 1)))))
 
 ;; respell head symbol h as the name of library function j and mark j (and what it calls) used
 (defn- kr-lib-use [M :vector-i64 h :i64 j :i64] :vector-i64
@@ -1470,7 +1594,7 @@
   (let [tab (vector-at M kr-c-tab)
         u (vector-at M (+ tab 3))
         nx (kr-next M c)]
-    (cond (>= j (+ kr-nlib kr-ndoc)) (kr-nset M last NF-NEXT 0)
+    (cond (>= j (+ (+ kr-nlib kr-ndoc) kr-nflt)) (kr-nset M last NF-NEXT 0)
           (= (bit-and (u64-shift-right u (kr-lib-bit j)) 1) 1) (kr-lib-emit (kr-strs (kr-nset M last NF-NEXT c) c) c nx (+ j 1))
           :else (kr-lib-emit M last nx (+ j 1)))))
 
@@ -1540,7 +1664,6 @@
 (defn- kr-dkey [M :vector-i64 S :string k :i64] :vector-i64
   (cond (= k 0) (kr-id M)
         (= (kr-kind M k) ND-KW) (kr-dkw2 M S k k)
-        (= (kr-kwtyped M S k) 1) (kr-kwwrap (kr-alloc M 2) k)
         :else (kr-id M)))
 
 ;; 1 when operand x is known to be a :keyword: a parameter of the function being emitted declared :keyword, a call of a
@@ -1556,7 +1679,11 @@
                               :else 0)
           :else 0)))
 
-(defn- kr-is-kwtype [M :vector-i64 S :string t :i64] :i64 (if (= t 0) 0 (kr-eq (kr-code M S t) 91)))
+;; (KIR5) also the :string token a :keyword type was respelled to (prelude 40)
+(defn- kr-is-kwtype [M :vector-i64 S :string t :i64] :i64
+  (cond (= t 0) 0
+        (= (kr-nf M t NF-TOK) (+ (vector-at M kr-c-pb) 40)) 1
+        :else (kr-eq (kr-code M S t) 91)))
 
 ;; the type node of the emitted function's parameter spelled like node b (its chain is p1 T1 p2 T2 .. after kr-params),
 ;; 0 when b names none
@@ -1569,19 +1696,6 @@
         (cond (= c 0) 0
               (= (* (kr-eq (kr-kind M c) ND-SYM) (kr-same M S c b)) 1) (kr-next M c)
               :else (recur (kr-next M c)))))))
-
-;; x becomes (__kr_kwtext x'), x' a copy of x in the first of 2 fresh nodes (MM-R0); the keyword tables are marked used
-(defn- kr-kwwrap [M :vector-i64 x :i64] :vector-i64
-  (if (kr-failed M)
-    (kr-id M)
-    (let [q (vector-at M MM-R0)
-          tt (kr-lib-tok M kr-dj-kwtext)
-          M1 (kr-node M q (kr-kind M x) (kr-nf M x NF-TOK) (kr-nf M x NF-AUX))
-          M2 (kr-nset M1 q NF-FIRST (kr-first M1 x))
-          M3 (kr-sym-node M2 (+ q 1) tt q)
-          M4 (kr-nset (kr-node M3 x ND-LIST tt 2) x NF-FIRST (+ q 1))
-          tab (vector-at M4 kr-c-tab)]
-      (kr-put M4 (+ tab 3) (bit-or (vector-at M4 (+ tab 3)) 768)))))
 
 ;; the keys of a map fold (gs = 2: operands 1, 3, ..), nothing for the others
 (defn- kr-dkeys [M :vector-i64 S :string c :i64 gs :i64] :vector-i64
@@ -1645,95 +1759,6 @@
 (defn- kr-strs-items [M :vector-i64 c :i64] :vector-i64
   (if (= c 0) (kr-id M) (kr-strs-items (kr-strs M c) (kr-next M c))))
 
-;; KIR4: the keyword text tables (doclib __kr_kwtext / __kr_kwat / __kr_kwn), filled when bit 9 is set: every distinct
-;; keyword spelled in the bodies of the emitted defns (the program's and the library's, except :else and :__kr_nokw)
-;; becomes one clause of each case form: (case k .. :kw ":kw" ..) and (case i .. 7 :kw ..); __kr_kwn answers the count.
-;; Work block H on the heap: word 0 = count, then (spelling hash, keyword node) per distinct keyword.
-(def kr-kwmax 4096)
-
-(defn- kr-kwtab [M :vector-i64 S :string] :vector-i64
-  (let [tab (vector-at M kr-c-tab)
-        u (vector-at M (+ tab 3))]
-    (if (= (bit-and (u64-shift-right u 9) 1) 1) (kr-kwtab2 (mem-alloc M (+ 1 (* 2 kr-kwmax))) S) (kr-id M))))
-
-(defn- kr-kwtab2 [M :vector-i64 S :string] :vector-i64
-  (let [H (vector-at M MM-R0)
-        M1 (kr-put M H 0)
-        root (vector-at M1 MM-ROOT)
-        M2 (kr-kwc-tops M1 S (kr-first M1 root) H)
-        cnt (vector-at M2 H)]
-    (if (kr-failed M2) (kr-id M2) (kr-kwfill (kr-alloc M2 (* 4 cnt)) S H))))
-
-;; the body (5th item) of every top-level defn
-(defn- kr-kwc-tops [M :vector-i64 S :string c :i64 H :i64] :vector-i64
-  (cond (= c 0) (kr-id M)
-        (= (kr-count M c) 5) (kr-kwc-tops (kr-kwc M S (kr-nth-child M c 4) H) S (kr-next M c) H)
-        :else (kr-kwc-tops M S (kr-next M c) H)))
-
-(defn- kr-nth-child [M :vector-i64 n :i64 k :i64] :i64
-  (loop [c (kr-first M n) i k]
-    (if (= i 0) c (recur (kr-next M c) (- i 1)))))
-
-(defn- kr-kwc [M :vector-i64 S :string n :i64 H :i64] :vector-i64
-  (let [k (kr-kind M n)]
-    (cond (= k ND-LIST) (kr-kwc-items M S (kr-first M n) H)
-          (= k ND-VEC) (kr-kwc-items M S (kr-first M n) H)
-          (= k ND-KW) (kr-kwadd M S n H)
-          :else (kr-id M))))
-
-(defn- kr-kwc-items [M :vector-i64 S :string c :i64 H :i64] :vector-i64
-  (if (= c 0) (kr-id M) (kr-kwc-items (kr-kwc M S c H) S (kr-next M c) H)))
-
-;; the index of the recorded keyword spelled like node n (hash h), -1 when none
-(defn- kr-kwfind [M :vector-i64 S :string H :i64 h :i64 n :i64] :i64
-  (loop [i 0]
-    (cond (>= i (vector-at M H)) -1
-          (and (= (vector-at M (+ H (+ 1 (* 2 i)))) h) (= (kr-same M S (vector-at M (+ H (+ 2 (* 2 i)))) n) 1)) i
-          :else (recur (+ i 1)))))
-
-(defn- kr-kwadd [M :vector-i64 S :string n :i64 H :i64] :vector-i64
-  (let [t (kr-nf M n NF-TOK)
-        h (mem-hash-str S (kr-tf M t TF-START) (kr-tf M t TF-END))
-        cnt (vector-at M H)]
-    (cond (= h -8710350092420938974) (kr-id M)
-          (= h 4586004427304358184) (kr-id M)
-          (>= (kr-kwfind M S H h n) 0) (kr-id M)
-          (>= cnt kr-kwmax) (lx-full M 2)
-          :else (kr-put (kr-put (kr-put M (+ H (+ 1 (* 2 cnt))) h) (+ H (+ 2 (* 2 cnt))) n) H (+ cnt 1)))))
-
-;; MM-R0 = the first of 4 * count fresh nodes
-(defn- kr-kwfill [M :vector-i64 S :string H :i64] :vector-i64
-  (let [cnt (vector-at M H)
-        q (vector-at M MM-R0)
-        tb (kr-nth-child M (kr-lib-node M kr-dj-kwtext) 4)
-        ab (kr-nth-child M (kr-lib-node M kr-dj-kwat) 4)
-        nb (kr-nth-child M (kr-lib-node M kr-dj-kwn) 4)
-        tk (kr-next M (kr-first M tb))
-        ak (kr-next M (kr-first M ab))
-        M1 (if (kr-failed M) (kr-id M) (kr-kwfill2 M S H q (- cnt 1)))
-        M2 (if (= cnt 0) (kr-id M1) (kr-nset (kr-nset M1 tk NF-NEXT q) ak NF-NEXT (+ q 2)))
-        M3 (kr-nset (kr-nset M2 tb NF-AUX (+ (kr-nf M2 tb NF-AUX) (* 2 cnt))) ab NF-AUX (+ (kr-nf M2 ab NF-AUX) (* 2 cnt)))]
-    (kr-nset M3 nb NF-AUX cnt)))
-
-;; keyword i (from the last down): (kw "kw") into the text case, (i kw) into the index case; each pair links to the
-;; next keyword's, the last one to what followed the subject in the template
-(defn- kr-kwfill2 [M :vector-i64 S :string H :i64 q :i64 i :i64] :vector-i64
-  (if (< i 0)
-    (kr-id M)
-    (let [cnt (vector-at M H)
-          pb (vector-at M kr-c-pb)
-          last (= i (- cnt 1))
-          tr (if last (kr-next M (kr-next M (kr-first M (kr-nth-child M (kr-lib-node M kr-dj-kwtext) 4)))) (+ q (* 4 (+ i 1))))
-          ar (if last (kr-next M (kr-next M (kr-first M (kr-nth-child M (kr-lib-node M kr-dj-kwat) 4)))) (+ q (+ 2 (* 4 (+ i 1)))))
-          e (vector-at M (+ H (+ 2 (* 2 i))))
-          et (kr-nf M e NF-TOK)
-          b (+ q (* 4 i))
-          M2 (kr-nset (kr-node M b ND-KW et 0) b NF-NEXT (+ b 1))
-          M3 (kr-nset (kr-dkw2 M2 S (+ b 1) e) (+ b 1) NF-NEXT tr)
-          M4 (kr-nset (kr-node M3 (+ b 2) ND-INT (+ pb 7) i) (+ b 2) NF-NEXT (+ b 3))
-          M5 (kr-nset (kr-node M4 (+ b 3) ND-KW et 0) (+ b 3) NF-NEXT ar)]
-      (kr-kwfill2 M5 S H q (- i 1)))))
-
 ;; ---------------------------------------------------------------------------------------------------------
 ;; emitting the Seed-0 forms
 ;; ---------------------------------------------------------------------------------------------------------
@@ -1768,7 +1793,7 @@
           M9 (kr-nset M8 bd NF-NEXT 0)
           M9a (kr-put (if (= pt 0) (kr-id M9) (kr-walk M9 S pt 0)) (+ (vector-at M9 kr-c-tab) 5) r)
           M10 (kr-params M9a ps pt (+ n 3) (+ n 2))]
-      (kr-walk (kr-walk M10 S rs 0) S bd 0))))
+      (kr-walk (kr-walk-ty M10 S rs 0) S bd 0))))
 
 (defn- kr-defn [M :vector-i64 S :string r :i64] :vector-i64
   (let [ps (vector-at M (+ r kr-f-params))
@@ -1867,7 +1892,7 @@
 
 (defn- kr-emit-end [M :vector-i64 S :string] :vector-i64
   (let [tab (vector-at M kr-c-tab)]
-    (if (kr-failed M) (kr-id M) (kr-lits (kr-kwtab M S) tab 1))))
+    (if (kr-failed M) (kr-id M) (kr-lits M tab 1))))
 
 ;; ---------------------------------------------------------------------------------------------------------
 ;; the whole pass
@@ -1890,7 +1915,7 @@
         doc (kr-first M root)
         cnt (kr-count M root)
         pb (kr-nf M (kr-next M doc) NF-TOK)
-        ok (* (kr-eq (kr-kind M doc) ND-VEC) (kr-eq cnt (+ (+ kr-np 1) (+ kr-nlib kr-ndoc))))]
+        ok (* (kr-eq (kr-kind M doc) ND-VEC) (kr-eq cnt (+ (+ kr-np 1) (+ (+ kr-nlib kr-ndoc) kr-nflt))))]
     (if (= ok 1)
       (kr-run2 (kr-put M kr-c-pb pb) S doc)
       (kr-fail M kr-e-doc doc))))

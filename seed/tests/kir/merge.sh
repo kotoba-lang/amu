@@ -11,13 +11,18 @@
 # One tsv line on stdout:
 #   label  kir-bytes  s0-compile-ms  s0-compile-rss-mb  seed-compile-ms  seed-compile-rss-mb  s0-code  seed-code
 #   s0-run-ms  seed-run-ms  s0-run-rss-mb  seed-run-rss-mb  out-bytes  verdict(EQUAL|DIFF|SEED-REFUSED: ..|S0-REFUSED: ..)
-#   s0-run-cpu-ms  seed-run-cpu-ms  load1
+#   s0-run-cpu-ms  seed-run-cpu-ms  load1  s0-out-sha256(16)  seed-out-sha256(16)  (KIR5: the stdout hashes)
 # (run ms = wall clock of the loader process, median of MERGE_RUNS; cpu ms = user + sys of the loader and its children
 #  (/usr/bin/time -l; its "instructions retired" covers only the parent, not the forked runner, so it is not used);
 #  rss = maximum resident set size; load1 = the 1-minute load average at the end)
 # Env: SEED_BUILD (seed-1.bin of that dir is the compiler), WALL_CP (default /private/tmp/wall-cp-11.txt), WALL_K
 #      (kotoba-lang checkout), MERGE_W (work dir, default $SEED_BUILD/merge), MERGE_RUNS (runs per side, default 3; the
 #      median is reported), MERGE_GRANT (default 35,37,38,39).
+# (KIR5) MERGE_STDIN=1: the input file is ALSO given on standard input (guests that read :io/read, wire 41, e.g. the desugar
+#      pass image); MERGE_SEED_BIN: the seed compiler (default $SEED_BUILD/seed-1.bin); MERGE_KEXE=<file>: reuse a stage-0
+#      kexe of this guest instead of compiling it (stage-0 compiles of the big guests take minutes on a loaded host);
+#      MERGE_ENV="K=V .." extra loader environment for BOTH runs (e.g. KEXE_HASHCONS=22, the pair/vector sharing of ADR 0361's
+#      hash-consing study, output-neutral by construction and measured so).
 emulate -L zsh
 setopt pipefail
 export SEED_BUILD=${SEED_BUILD:-$(cd "$(dirname "$0")/../../.." && pwd)/build/seed-kir3}
@@ -42,26 +47,34 @@ med() { print -l $@ | sort -n | awk '{a[NR]=$1} END{print a[int((NR+1)/2)]}'; }
 line() { local IFS=$'\t'; print -r -- "$*"; }
 
 k=$W/$lab.kexe
+SB=${MERGE_SEED_BIN:-$SEED_BUILD/seed-1.bin}; SB=${SB:A}
+if [ -n "${MERGE_KEXE:-}" ]; then
+  [ "${MERGE_KEXE:A}" = "${k:A}" ] || cp $MERGE_KEXE $k; echo '{:ok true, :reused true}' > $W/$lab.s0.log; printf '        0.00 real         0.00 user         0.00 sys\n         0  maximum resident set size\n' > $W/$lab.s0.time
+else
 seed_slot_take
 ( ulimit -s 65500 2>/dev/null; cd ${g:h}; /usr/bin/time -l nice $SEED_STAGE0 compile $g --unpinned --target aarch64-macos --jvm-free --policy $pol ${=SP} --output $k ) > $W/$lab.s0.log 2> $W/$lab.s0.time
 seed_slot_give
-grep -q ':ok true' $W/$lab.s0.log || { line $lab - - - - - - - - - - - - "S0-REFUSED: $(grep -o ':message "[^"]*' $W/$lab.s0.log | head -1 | cut -c11-150)"; exit 1; }
+fi
+grep -q ':ok true' $W/$lab.s0.log || { line $lab - - - - - - - - - - - - "S0-REFUSED: $(cat $W/$lab.s0.log $W/$lab.s0.time | grep -o ':message "[^"]*' | head -1 | cut -c11-150)"; exit 1; }
 s0c=($(tm $W/$lab.s0.time)); s0c=($s0c[1,2])
 python3 $R/scripts/seed/kir_extract.py $k $W/$lab.kir || exit 2
 if [ "${MERGE_SLICE:-0}" = 1 ]; then python3 $R/seed/tests/kir/slice.py slice $W/$lab.kir $W/$lab.slice.kir main && mv $W/$lab.slice.kir $W/$lab.kir; fi
 kb=$(wc -c < $W/$lab.kir | tr -d ' ')
-( /usr/bin/time -l zsh -c "source $R/scripts/seed/lib.sh; SEED_SECONDS=300 seed_run $SEED_BUILD/seed-1.bin 0 compile-kir $W/$lab.kir --output $W/$lab.kseed" ) > $W/$lab.sd.log 2> $W/$lab.sd.time
+( /usr/bin/time -l zsh -c "source $R/scripts/seed/lib.sh; SEED_SECONDS=300 seed_run $SB 0 compile-kir $W/$lab.kir --output $W/$lab.kseed" ) > $W/$lab.sd.log 2> $W/$lab.sd.time
 sdc=($(tm $W/$lab.sd.time)); sdc=($sdc[1,2])
 if ! grep -q ':ok true' $W/$lab.sd.log; then
   line $lab $kb $s0c $sdc - - - - - - - "SEED-REFUSED: $(cat $W/$lab.sd.log $W/$lab.sd.time | grep -m1 -E 'seed:|KEXE|error' | cut -c1-160)"; exit 1
 fi
 o0=$( ulimit -s 65500 2>/dev/null; nice $SEED_STAGE0 extract-native $k --symbol main --output $W/$lab.s0.bin 2>&1 | sed -n 's/.*:offset \([0-9]*\).*/\1/p' )
-o1=$( seed_run $SEED_BUILD/seed-1.bin 0 extract-native $W/$lab.kseed --symbol main --output $W/$lab.sd.bin | sed -n 's/.*:offset \([0-9]*\).*/\1/p' )
+# stage-0's extract-native refuses a kexe above its EDN node ceiling (the big guests): kexe_code.py reads :code directly
+[ -n "$o0" ] || o0=$( python3 $R/scripts/seed/kexe_code.py $k main $W/$lab.s0.bin 2>&1 | sed -n 's/.*:offset \([0-9]*\).*/\1/p' )
+o1=$( seed_run $SB 0 extract-native $W/$lab.kseed --symbol main --output $W/$lab.sd.bin | sed -n 's/.*:offset \([0-9]*\).*/\1/p' )
 [ -n "$o0" ] && [ -n "$o1" ] || { line $lab $kb $s0c $sdc - - - - - - - "EXTRACT-FAILED"; exit 1; }
+si=/dev/null; [ "${MERGE_STDIN:-0}" = 1 ] && si=$inp
 run() {  # <bin> <off> <out> <time>
-  ( cd ${inp:h}; /usr/bin/time -l env KEXE_COMMAND=1 KEXE_CAP_RESOURCES_35=${inp:h} KEXE_STRING_POOL=1073741824 KEXE_PAIRS=33554432 \
+  ( cd ${inp:h}; /usr/bin/time -l env ${=MERGE_ENV:-} KEXE_COMMAND=1 KEXE_CAP_RESOURCES_35=${inp:h} KEXE_STRING_POOL=1073741824 KEXE_PAIRS=33554432 \
       KEXE_VECTORS=4194304 KEXE_VECTOR_ITEMS=134217728 KEXE_CPU_SECONDS=600 KEXE_WALL_SECONDS=600 \
-      $L $1 $2 0 aarch64 $grant -- $inp ) > $3 2> $4
+      $L $1 $2 0 aarch64 $grant -- $inp < $si ) > $3 2> $4
 }
 t0=(); t1=(); r0=(); r1=(); i0=(); i1=()
 for i in $(seq 1 $runs); do
@@ -69,6 +82,8 @@ for i in $(seq 1 $runs); do
   run $W/$lab.sd.bin $o1 $W/$lab.sd.out $W/$lab.sd.rt; x=($(tm $W/$lab.sd.rt)); t1+=$x[1]; r1+=$x[2]; i1+=$x[3]
 done
 v=EQUAL; cmp -s $W/$lab.s0.out $W/$lab.sd.out || v="DIFF($(cmp $W/$lab.s0.out $W/$lab.sd.out 2>&1 | head -1 | cut -c1-80))"
-grep -q KEXE_TRAP $W/$lab.s0.rt $W/$lab.sd.rt && v="$v TRAP($(grep -h -o 'KEXE_TRAP.*' $W/$lab.s0.rt $W/$lab.sd.rt | head -1 | cut -c1-60))"
+tw=""; grep -q KEXE_TRAP $W/$lab.s0.rt && tw=s0; grep -q KEXE_TRAP $W/$lab.sd.rt && { [ -n "$tw" ] && tw=both || tw=seed; }   # (KIR5) which side trapped
+[ -n "$tw" ] && v="$v TRAP-$tw($(grep -h -o 'KEXE_TRAP.*' $W/$lab.s0.rt $W/$lab.sd.rt | head -1 | cut -c1-60))"
 line $lab $kb $s0c $sdc $(wc -c < $W/$lab.s0.bin | tr -d ' ') $(wc -c < $W/$lab.sd.bin | tr -d ' ') $(med $t0) $(med $t1) $(med $r0) $(med $r1) \
-  "$(wc -c < $W/$lab.s0.out | tr -d ' ')" "$v" $(med $i0) $(med $i1) "$(sysctl -n vm.loadavg | awk '{print $2}')"
+  "$(wc -c < $W/$lab.s0.out | tr -d ' ')" "$v" $(med $i0) $(med $i1) "$(sysctl -n vm.loadavg | awk '{print $2}')" \
+  $(shasum -a 256 $W/$lab.s0.out | cut -c1-16) $(shasum -a 256 $W/$lab.sd.out | cut -c1-16)

@@ -117,10 +117,6 @@
     (mem-keep T)
     (io-bput-str (vector-assoc! T (+ i delta) (string-code-point-at S i)) S (+ i 1) end delta)))
 
-;; "WRITE_SEP" at T[at ..]
-(defn- io-bput-sep [T :vector-i64 at :i64] :vector-i64
-  (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! T at 87) (+ at 1) 82) (+ at 2) 73) (+ at 3) 84) (+ at 4) 69) (+ at 5) 95) (+ at 6) 83) (+ at 7) 69) (+ at 8) 80))
-
 ;; T[i + delta] = M[i] & 255 for i in [i, end)
 (defn- io-bput-words [T :vector-i64 M :vector-i64 i :i64 end :i64 delta :i64] :vector-i64
   (if (>= i end)
@@ -130,14 +126,62 @@
 (defn- io-bsend [T :vector-i64] :i64
   (let [r (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 T))] 0))
 
-(defn- io-write-bytes [M :vector-i64 path :string base :i64 len :i64] :i64
+;; ==== BEGIN KIR5 write pieces (agent KIR5, 2026-10-03; CONTRACT-REQUESTS R4B line "the compile SIGILL") ==========
+;; The loader's WRITE form refuses (SIGILL) a request whose content holds "WRITE_SEP", the APPEND form one whose content
+;; holds "APPEND_SEP" (tools/kexe_loader.c fs_app_data_write_provider, single-occurrence rule). A compiled program whose
+;; string pool spells either token put it into the container (and into an extracted code slice): the compile trapped.
+;; io-write-bytes therefore cuts the content one byte into every occurrence of either token; the first piece is written
+;; ("<path>WRITE_SEP<piece>"), the others appended ("<path>APPEND_SEP<piece>", the loader's buffered sink for the same
+;; file; the next wire-35 request, io-exists in the callers, closes it). No piece holds a whole token, and none forms
+;; across "<TOKEN>" + piece (neither token has a proper suffix that is a prefix of a token). Content without a token is
+;; ONE write, as before. Both token texts are built at run time (byte tables / io-sep): never a literal of the seed.
+;; byte k of token tw (0 WRITE_SEP, 9 bytes; 1 APPEND_SEP, 10 bytes)
+(defn- io-tokb [tw :i64 k :i64] :i64
+  (if (= tw 0) (vector-at [87 82 73 84 69 95 83 69 80] k) (vector-at [65 80 80 69 78 68 95 83 69 80] k)))
+
+(defn- io-tokn [tw :i64] :i64 (if (= tw 0) 9 10))
+
+;; 1 when M[i ..] (low 8 bits per word, below end) spells token tw
+(defn- io-tok-at [M :vector-i64 i :i64 end :i64 tw :i64] :i64
+  (if (> (+ i (io-tokn tw)) end)
+    0
+    (loop [k 0]
+      (cond (>= k (io-tokn tw)) 1
+            (= (bit-and (vector-at M (+ i k)) 255) (io-tokb tw k)) (recur (+ k 1))
+            :else 0))))
+
+;; the end of the piece that starts at i: one past the first byte of the first token occurrence at or after i, else end
+(defn- io-cut [M :vector-i64 i :i64 end :i64] :i64
+  (loop [p i]
+    (cond (>= p end) end
+          (= (io-tok-at M p end 0) 1) (+ p 1)
+          (= (io-tok-at M p end 1) 1) (+ p 1)
+          :else (recur (+ p 1)))))
+
+;; token tw at T[at ..]
+(defn- io-bput-tok [T :vector-i64 at :i64 tw :i64] :vector-i64
+  (loop [k 0 V T]
+    (if (>= k (io-tokn tw)) V (recur (+ k 1) (vector-assoc! V (+ at k) (io-tokb tw k))))))
+
+;; one request "<path><token tw><M[i..j)>"
+(defn- io-piece [M :vector-i64 path :string i :i64 j :i64 tw :i64] :i64
   (let [plen (string-length path)
-        T0 (vector-alloc (+ plen (+ 9 len)))
+        n (io-tokn tw)
+        T0 (vector-alloc (+ plen (+ n (- j i))))
         T1 (io-bput-str T0 path 0 plen 0)
-        T2 (io-bput-sep T1 plen)
-        T3 (io-bput-words T2 M base (+ base len) (- (+ plen 9) base))
-        z (io-bsend T3)]
+        T2 (io-bput-tok T1 plen tw)
+        T3 (io-bput-words T2 M i j (- (+ plen n) i))]
+    (io-bsend T3)))
+
+(defn- io-pieces [M :vector-i64 path :string i :i64 end :i64 tw :i64] :i64
+  (let [j (io-cut M i end)
+        z (io-piece M path i j tw)]
+    (if (< j end) (io-pieces M path j end 1) 0)))
+
+(defn- io-write-bytes [M :vector-i64 path :string base :i64 len :i64] :i64
+  (let [z (io-pieces M path base (+ base len) 0)]
     len))
+;; ==== END KIR5 write pieces ============================================================================================
 
 ;; the bytes of path as a fresh vector (one item per byte)
 (defn- io-path-vec [path :string] :vector-i64

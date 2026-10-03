@@ -1,0 +1,31 @@
+;; merge-test guest (agent KIR5): validate-expr (kotoba.compiler.validate-expr/run-batch, the wall guest
+;; scripts/selfhost-wall/guests/vx.cljk) with a `main`. Input (file named by argument 0): line 0 = the batch header
+;; [forbidden-set declared-set], every later line one case [form locals functions depth] (gen-vx.py builds it from the
+;; desugar pass's output). The cases go to run-batch in batches of 64 lines (its answer is one string per batch); the
+;; answers are written as they come: one line per case, "OK <nodes>" or "<code> <message>".
+(ns probe.vx-merge
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.validate-expr :as vx])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword] [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]}))
+
+(defn- nl [text :string i :i64 n :i64] :i64
+  (let [j (string-find-byte text 10 i)] (if (< j 0) n j)))
+
+;; the end (exclusive, after its newline) of k more lines from i
+(defn- lines-end [text :string i :i64 n :i64 k :i64] :i64
+  (if (or (= k 0) (>= i n)) i (lines-end text (+ (nl text i n) 1) n (- k 1))))
+
+(defn- batches [text :string head :string i :i64 n :i64 k :i64] :i64
+  (if (>= i n)
+    k
+    (let [e (lines-end text i n 64)
+          e2 (if (> e n) n e)
+          w (typed-cap-call :io/write :string :string (vx/run-batch (string-concat head (string-substring text i e2))))]
+      (batches text head e2 n (+ k 1)))))
+
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        text (typed-cap-call :fs/app-data :string :string path)
+        n (string-byte-length text)
+        h (nl text 0 n)]
+    (batches text (string-concat (string-substring text 0 h) "\n") (+ h 1) n 0)))

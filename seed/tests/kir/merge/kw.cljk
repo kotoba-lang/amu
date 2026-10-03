@@ -1,0 +1,51 @@
+;; merge-test guest (agent KIR5): keywords as their text on the KIR route. Every input line "<text>" is turned into a
+;; keyword at run time (keyword-from-string: texts the program never spells, the case that trapped before KIR5) and run
+;; through: keyword-name, `=` against literals and a record field, `case` on keywords, a keyword record field, a
+;; keyword parameter, document-keyword / document-kind / document-keyword-value, document map keys, (symbol s) and
+;; document-symbol. Output: one line per input line.
+(ns probe.kw-merge
+  {:kotoba/export [main]}
+  (:schemas {:kw/tag [:record :kw/tag [[:k :keyword] [:n :i64]]]}))
+
+(defn line-end [s :string i :i64] :i64
+  (loop [j i]
+    (if (>= j (string-byte-length s)) j (if (= (string-code-point-at s j) 10) j (recur (+ j 1))))))
+
+(defn klass [k :keyword] :string
+  (case k
+    :a "A"
+    :b/c "BC"
+    :else "ELSE"
+    "other"))
+
+(defn same-kw [x :keyword y :keyword] :bool (= x y))
+
+(defn pick [t [:ref :kw/tag]] :keyword (if (> (record-get [:ref :kw/tag] t :n) 3) (record-get [:ref :kw/tag] t :k) :short))
+
+(defn sp [a :string b :string] :string (string-concat a (string-concat " " b)))
+
+(defn show [s :string] :string
+  (let [k (keyword-from-string s)
+        t (record-new [:ref :kw/tag] k (string-byte-length s))
+        d (document-keyword k)
+        m (document-assoc (document-map) :x d)
+        v (document-keyword-value (option-value (document-get m :x) (document-null)))
+        p1 (sp (keyword-name k) (klass k))
+        p2 (sp p1 (if (= k :a) "eq-a" "ne-a"))
+        p3 (sp p2 (if (same-kw k (record-get [:ref :kw/tag] t :k)) "same" "diff"))
+        p4 (sp p3 (keyword-name (pick t)))
+        p5 (sp p4 (document-edn-print m))
+        p6 (sp p5 (if (option-some? v) (keyword-name (option-value v :none)) "-"))
+        p7 (sp p6 (if (= (document-kind d) :keyword) "K" "?"))]
+    (sp p7 (document-edn-print (document-symbol (symbol s))))))
+
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        s (typed-cap-call :fs/app-data :string :string path)
+        n (string-byte-length s)]
+    (loop [i 0 k 0]
+      (if (>= i n)
+        k
+        (let [e (line-end s i)
+              w (typed-cap-call :io/write :string :string (string-concat (show (string-substring s i e)) "\n"))]
+          (recur (+ e 1) (+ k 1)))))))
