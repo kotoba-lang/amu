@@ -162,7 +162,10 @@
             [kotoba.compiler.typed-wasm-min-max-test]
             ;; ADR 0353 :native-option-record: the record an [:option R]
             ;; holds is projected natively (text-edit's composition)
-            [kotoba.compiler.native-option-record-test]))
+            [kotoba.compiler.native-option-record-test]
+            ;; ADR 0353 :options-map-argument: a {:keys [..]} options
+            ;; parameter is a row; {} is the record with no fields
+            [kotoba.compiler.options-map-argument-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
   (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
@@ -252,4 +255,5 @@
              'kotoba.compiler.rebound-row-argument-test
              'kotoba.compiler.native-vector-field-test
              'kotoba.compiler.typed-wasm-min-max-test
-             'kotoba.compiler.native-option-record-test)
+             'kotoba.compiler.native-option-record-test
+             'kotoba.compiler.options-map-argument-test)
