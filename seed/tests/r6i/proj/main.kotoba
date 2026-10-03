@@ -1,0 +1,12 @@
+;; R6I (LET): the importer calls an aborting import whose error type is the record :r6ie/err, catches it and reads its
+;; field through the library and directly; a second aborting function re-raises it (its own error type is the record).
+;; (try (need-pos 5)) = 5; (need-pos -7) caught: code 7 via err-code, + 10 * code 7 read directly = 77;
+;; (twice -3) re-raises: caught, code 3 -> 3000.   5 + 7 + 70 + 3000 = 3082
+;; want: 3082
+(ns r6ie.main (:require [r6ie.lib :as l]) (:export [main])
+  (:schemas {:r6ie/err [:record :r6ie/err [[:code :i64] [:msg :string]]]}))
+(defn- twice [x :i64] :i64 (+ (l/need-pos x) (l/need-pos x)))
+(defn main [] :i64
+  (+ (try (l/need-pos 5) (catch e 100))
+     (try (l/need-pos -7) (catch e (+ (l/err-code e) (* 10 (record-get [:ref :r6ie/err] e :code)))))
+     (try (twice -3) (catch e (* 1000 (l/err-code e))))))

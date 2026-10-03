@@ -1,0 +1,11 @@
+;; R6I (LET): a repeated `_` binder in one let is admitted (Clojure; stage-0 admits it when an init aborts, see 21-check
+;; ck-let-wild?); each `_` shadows the previous one, so a later use of `_` reads the last: (let [_ 1 x 10 _ 2] (+ x _)) = 12;
+;; with aborting inits (the frontend's shape): (g 3) = 3 + 100 = 103 (the inits run in order, the second `_` is 3).
+;; 12 + 1000 * 103 = 103012. Stage-0 d2cb84f6 refuses this file at the first let (no aborting init): the seed is wider there.
+;; want: 103012
+(ns r6i.p01)
+(defn- req [c :bool m :string] :i64 (if c 0 (throw m)))
+(defn- g [x :i64] :i64 (let [_ (req (> x 0) "a") _ (+ x (req (> x 1) "b"))] (+ _ 100)))
+(defn main [] :i64
+  (let [_ 1 x 10 _ 2]
+    (+ (+ x _) (* 1000 (try (g 3) (catch e 7))))))

@@ -1,0 +1,10 @@
+;; R6I (LET): `string-contains? s needle` (the grammar's string kit; kotoba-sema frontend.expand uses it) as a library defn,
+;; = (>= (string-index-of s needle) 0). "hello world" contains "wor" (1), not "xyz" (0), contains itself (1), "a" in "" (0).
+;; 1 + 0 * 10 + 1 * 100 + 0 * 1000 = 101
+;; want: 101
+(ns r6i.p02)
+(defn- b [x :bool] :i64 (if x 1 0))
+(defn main [] :i64
+  (let [s "hello world"]
+    (+ (b (string-contains? s "wor")) (* 10 (b (string-contains? s "xyz")))
+       (* 100 (b (string-contains? s s))) (* 1000 (b (string-contains? "" "a"))))))

@@ -1832,6 +1832,17 @@
   (cond (nm-ne (nm-kind M b) ND-SYM) (ck-err M E-CHECK-BINDINGS b 0)
         (= (nm-bound-since M (nm-sym-of M b) h0) 1) (ck-err M E-CHECK-DUPLOCAL b 0)
         :else (ck-touch M)))
+;; LET (r6i): in a `let` binding vector (mode 0 of ck-binds; not loop, not parameters) the binder `_` (SF-HASH = FNV-1a of
+;; "_", one byte) may repeat: each `_` is an ordinary binding that shadows the previous one (a later use reads the last), as
+;; in Clojure. kotoba-sema's frontend has ~560 such binders, all in lets with an aborting init, which stage-0 admits because
+;; its ADR-0363 a-normalization splits such a let into nested lets before the duplicate check (measured: there stage-0 also
+;; admits a repeated NAME, (let [a (abort-call) a (abort-call)] a), and refuses a repeated `_` in a let without an aborting
+;; init). The seed's rule is the name rule: `_` in any let, every other repeated name E2112.
+(defn- ck-let-wild? [M :vector-i64 b :i64] :bool
+  (let [s (nm-sym-of M b)]
+    (and (= (nm-kind M b) ND-SYM) (= (nm-sf M s SF-HASH) -5808497499525986226) (= (- (nm-sf M s SF-END) (nm-sf M s SF-START)) 1))))
+(defn- ck-binder-ok-let [M :vector-i64 b :i64 h0 :i64 mode :i64] :vector-i64
+  (if (and (= mode 0) (ck-let-wild? M b)) (ck-touch M) (ck-binder-ok M b h0)))
 
 ;; let bindings from binder b; mode 0 = let (bind with the init's type), 1 = loop (bind as poison until all
 ;; inits are checked). R0 = the fx after the last binding.
@@ -1842,7 +1853,7 @@
     :else
     (let [e (nm-next M b)
           slot (ck-fx-next fx)
-          M1 (ck-r5b-shadow (ck-binder-ok M b h0) b)
+          M1 (ck-r5b-shadow (ck-binder-ok-let M b h0 mode) b)   ; LET (r6i): was ck-binder-ok
           M2 (if (and (= mode 0) (ck-r5b-atom-form? M1 e)) (ck-r5b-atom M1 e fx) (ck-expr M1 e fx 0))   ; R5B: a cell
           ty (ck-ty M2)]
       (cond (> slot (ck-max-slots)) (ck-err M2 E-CHECK-SLOTS b slot)
@@ -5341,6 +5352,9 @@
 (def ck-r6f-g-upper 33554432)
 (def ck-r6f-g-vget 67108864)
 (def ck-r6f-g-symp 134217728)
+;; LET (r6i): `string-contains? s needle` (the grammar's string kit; kotoba-sema frontend.expand) = (>= (string-index-of s
+;; needle) 0), the same refusal of an empty needle as string-index-of. Group bit 2^28 (the next free one after R6F's).
+(def ck-let-g-scont 268435456)
 (defn- ck-r6f-name-bit [S :string a :i64 b :i64] :i64
   (cond (ck-r6b-is? S a b "string-fold-ascii") ck-r6f-g-fold
         (ck-r6b-is? S a b "string-find-blank") ck-r6f-g-fblank
@@ -5353,6 +5367,7 @@
         (ck-r6b-is? S a b "string-upper") ck-r6f-g-upper
         (ck-r6b-is? S a b "vector-get") ck-r6f-g-vget
         (ck-r6b-is? S a b "symbol?") ck-r6f-g-symp
+        (ck-r6b-is? S a b "string-contains?") ck-let-g-scont   ; LET (r6i)
         (ck-r6b-is? S a b "fs/app-data-bytes") ck-r6b-g-utf8   ; the write spelling needs string-to-utf8 (ck-r6f-adb3)
         :else 0))
 (defn- ck-r6f-t-str [m :i64] :string
@@ -5367,6 +5382,7 @@
       (string-concat (ck-r6b-pick m ck-r6f-g-upper "(defn- string-upper [s :string] :string (let [n (string-byte-length s)] (loop [i 0 from 0 acc \"\"] (if (>= i n) (string-concat acc (string-substring s from n)) (let [c (string-code-point-at s i)] (cond (>= c 128) (string-substring \"x\" 0 (vector-at [0] 1)) (and (>= c 97) (<= c 122)) (recur (+ i 1) (+ i 1) (string-concat (string-concat acc (string-substring s from i)) (string-substring \"ABCDEFGHIJKLMNOPQRSTUVWXYZ\" (- c 97) (- c 96)))) :else (recur (+ i 1) from acc)))))))\n"))
       (string-concat (ck-r6b-pick m ck-r6f-g-vget "(defn- vector-get [v :vector-i64 i :i64 d :i64] :i64 (if (and (>= i 0) (< i (vector-count v))) (vector-at v i) d))\n"))
       (string-concat (ck-r6b-pick m ck-r6b-g-exi "(defn- __r6-exc [d :document c :document] :document (document-assoc d :cause c))\n"))
+      (string-concat (ck-r6b-pick m ck-let-g-scont "(defn- string-contains? [s :string needle :string] :bool (>= (string-index-of s needle) 0))\n"))   ; LET (r6i)
       (string-concat (ck-r6b-pick m ck-r6f-g-symp "(defn- symbol? [d :document] :bool (__r6-kind? d 6))\n"))
       (string-concat (ck-r6b-pick m ck-r6f-g-mod "(defn- mod [a :i64 b :i64] :i64 (let [r (- a (* b (quot a b)))] (if (and (not= r 0) (not= (< r 0) (< b 0))) (+ r b) r)))\n"))))
 ;; R6F: `(fs/app-data-bytes request content)`, the WRITE / APPEND spelling, is the one bytes request the wire carries:
