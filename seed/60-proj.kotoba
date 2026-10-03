@@ -510,12 +510,18 @@
                     a (pj-ty M S nsn (pj-ct M t CT-A))
                     b (if (or (= c TC-RESULT) (= c TC-MAP)) (pj-ty M S nsn (pj-ct M t CT-B)) ":i64")]
                 (cond (or (= (string-length a) 0) (= (string-length b) 0)) ""
+                      (and (= c TC-OPTION) (= (pj-ct M t CT-B) 1)) ":option-i64"   ; R6D: the legacy option
                       (= c TC-OPTION) (string-concat "[:option " (string-concat a "]"))
+                      (and (= c TC-LIST) (> (pj-ct M t CT-B) 0)) (pj-tuple a (pj-ct M t CT-B))   ; R6D: [:vector [T ..]]
                       (= c TC-LIST) (string-concat "[:list " (string-concat a "]"))
                       (= c TC-SET) (string-concat "[:set " (string-concat a "]"))
                       (= c TC-RESULT) (string-concat "[:result " (string-concat a (string-concat " " (string-concat b "]"))))
                       (= c TC-MAP) (string-concat "[:map " (string-concat a (string-concat " " (string-concat b "]"))))
                       :else ""))))
+
+;; R6D: "[:vector [a a ..]]" (n items)
+(defn- pj-tuple [a :string n :i64] :string
+  (loop [k 0 acc "[:vector ["] (if (>= k n) (string-concat acc "]]") (recur (+ k 1) (string-concat acc (string-concat (if (= k 0) "" " ") a))))))
 
 ;; the record types reachable from type t, added to ids (" t " tokens, each record once: recursive schemas terminate)
 (defn- pj-recs [M :vector-i64 t :i64 ids :string] :string

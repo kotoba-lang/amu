@@ -1,0 +1,10 @@
+;; R6D: kotoba.native.peephole (the legacy :option-i64 type and its four operations) from the R6 scan farm, compiled on the
+;; project route; want = stage-0's native answer (d2cb84f6, measured 2026-10-03)
+;; want: 103083
+(ns r6d.pp (:require [kotoba.native.peephole :as p]) (:export [main]))
+(defn- v [o :option-i64] :i64 (if (option-some? o) (+ 1 (* 2 (option-value o 0))) 0))
+(defn main [] :i64
+  (+ (v (p/constant-operand (document-i64 41)))
+     (* 1000 (v (p/constant-operand (document-bool true))))
+     (* 100000 (v (p/constant-operand (document-bool false))))
+     (* 10000000 (v (p/constant-operand (document-string "x"))))))
