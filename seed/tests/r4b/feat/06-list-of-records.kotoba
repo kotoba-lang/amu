@@ -1,0 +1,10 @@
+;; R4B feat: a [:list [:ref R]] grown with typed-list-conj in a loop, then folded
+(ns seed.r4b (:export [test]) (:schemas {:l/item [:record :l/item [[:k :i64] [:name :string]]]}))
+(defn- item [k :i64] [:ref :l/item] (record-new [:record :l/item [[:k :i64] [:name :string]]] k (string-from-i64 k)))
+(defn- build [n :i64] [:list [:ref :l/item]]
+  (loop [i 0 xs (typed-list-new [:list [:ref :l/item]])]
+    (if (< i n) (recur (inc i) (typed-list-conj [:list [:ref :l/item]] xs (item (* i i)))) xs)))
+(defn- total [xs [:list [:ref :l/item]]] :i64
+  (loop [i 0 acc 0]
+    (if (< i (count xs)) (recur (inc i) (+ acc (get (nth xs i) :k) (string-length (get (nth xs i) :name)))) acc)))
+(defn test [] :i64 (let [xs (build 12)] (+ (* 1000 (count xs)) (total xs))))

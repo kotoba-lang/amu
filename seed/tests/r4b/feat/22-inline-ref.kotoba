@@ -1,0 +1,6 @@
+;; R4B feat: [:ref :kw] resolved by an INLINE schema only (no :schemas clause, no defrecord): the KIR route
+(ns seed.r4b (:export [test]))
+(defn- mk [a :i64 b :string] [:ref :kr/r] (record-new [:record :kr/r [[:a :i64] [:b :string]]] a b))
+(defn- val [r [:ref :kr/r]] :i64 (+ (record-get [:record :kr/r [[:a :i64] [:b :string]]] r :a) (string-length (get r :b))))
+(defn- two [] [:list [:ref :kr/r]] (typed-list-new [:list [:ref :kr/r]] (mk 1 "x") (mk 20 "yyy")))
+(defn test [] :i64 (let [xs (two)] (+ (val (typed-list-nth [:list [:ref :kr/r]] xs 0)) (* 100 (val (typed-list-nth [:list [:ref :kr/r]] xs 1))))))

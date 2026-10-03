@@ -102,6 +102,12 @@
 (def KW-MAP 22)
 (def KW-SET 23)
 (def KW-FN 24)
+(def KW-REF 25)
+(def KW-SCHEMAS 26)
+(def KW-HASH-SHA256 27)
+(def KW-ENV-READ 28)
+(def KW-FS-BROWSE 29)
+(def KW-IO-READ 30)
 (def RES-SCALE 16777216)
 (def RES-LOCAL 1)
 (def RES-FN 2)
@@ -239,6 +245,12 @@
 (def HD-AMP 139)
 (def HD-CALLK 140)
 (def HD-CALLV 141)
+(def HD-BYTES-EMPTY 142)
+(def HD-BYTES-COUNT 143)
+(def HD-BYTES-AT 144)
+(def HD-BYTES-CONCAT 145)
+(def HD-BYTES-SLICE 146)
+(def HD-STRING-FROM-UTF8 147)
 (def E-HEAP-REGION 101)
 (def E-READ-MAP 1105)
 (def E-NAMES-DUP 2001)
@@ -277,6 +289,8 @@
 (def E-CHECK-CAPTURES 2137)
 (def E-CHECK-MULTI-EXPORT 2138)
 (def E-CHECK-FN-PARAM 2139)
+(def E-CHECK-PARAMS16 2178)
+(def E-CHECK-REF 2179)
 
 ;; seed/21-check.kotoba -- the type checker and admission gate of the seed compiler R0 (prefix ck-).
 ;; Owner: 21-check. Contract: seed/HEADS (types, heads 1..41, :caps, E21nn), seed/MEMORY-MAP (NF-TYPE NF-RES,
@@ -375,6 +389,7 @@
         (= k KW-STRING) TY-STR
         (= k KW-VECTOR-I64) TY-VEC
         (= k KW-KEYWORD) TY-KW
+        (= k KW-BYTES) TY-BYTES   ; R4B
         :else 0))
 
 ;; the schema block of record type ty (0 for a non-record type)
@@ -496,7 +511,18 @@
       KW-RECORD (let [M1 (ck-tform-rec M t)] (if (zero? (ck-r M1)) (throw t) M1))
       (KW-OPTION KW-LIST KW-SET KW-RESULT KW-MAP) (ck-tf-comp M t k)
       KW-FN (ck-tf-fn M t)
+      KW-REF (ck-tf-ref M t)
       (throw t))))
+;; R4B: [:ref :kw] -> the record type registered under :kw; a ref met before its schema is TY-REC-BASE + the keyword symbol
+;; (the identity of an inline or :schemas schema); ck-refs-check (before the signatures) refuses a keyword no schema registers (E2179)
+(defn- ck-tf-ref [M :vector-i64 t :i64] :vector-i64
+  (let [k (nm-nth M t 1)
+        ks (nm-sym-of M k)
+        b (nm-sf M ks SF-REC)]
+    (cond (nm-ne (nm-count M t) 2) (throw t)
+          (nm-ne (nm-kind M k) ND-KW) (throw t)
+          (pos? b) (nm-put M MM-R0 (ck-blk-type M b))
+          :else (nm-put M MM-R0 (+ TY-REC-BASE ks)))))
 
 ;; ---- defrecord (registered before desugaring, so (->Name ..) and inline schemas of the same name resolve) ----
 ;; 1 when S[a1..b1) is a keyword spelling ':' + S[a2..b2)
@@ -593,24 +619,78 @@
           (> (nm-sf M ms SF-REC) 0) (ck-err M E-NAMES-DUP m 0)
           (> (ck-dup-sym M fv) 0) (ck-err M E-CHECK-SCHEMA (ck-dup-sym M fv) 0)
           :else
+          ;; R4B: every defrecord's block is in SF-REC (of Name and of :<ns>/Name) before any field is typed (ck-recs-fields):
+          ;; a field may refer to its own record ([:list [:ref :<ns>/Name]]) or to one defined later in the file
           (let [M1 (ck-blk-new M nf ms)
                 b (ck-r M1)
-                M2 (ck-rec-fields M1 S (nm-first M1 fv) b 0)
-                M3 (nm-set-sf M2 ms SF-REC b)
-                k (ck-find-nskw M3 S m)]
-            (ck-defrecord-kw M3 k b)))))
+                M2 (nm-set-sf M1 ms SF-REC b)
+                k (ck-find-nskw M2 S m)]
+            (ck-defrecord-kw M2 k b)))))
+
+;; R4B: the fields of every top-level defrecord form from c (their blocks are registered)
+(defn- ck-recs-fields [M :vector-i64 S :string c :i64] :vector-i64
+  (cond (= c 0) (ck-schemas M)
+        (nm-failed M) (ck-touch M)
+        (= (nm-form-head M c) HD-DEFRECORD)
+        (let [b (nm-sf M (nm-sym-of M (nm-nth M c 1)) SF-REC)]
+          (ck-recs-fields (ck-rec-fields M S (nm-first M (nm-nth M c 2)) b 0) S (nm-next M c)))
+        :else (ck-recs-fields M S (nm-next M c))))
 
 (defn- ck-defrecord-kw [M :vector-i64 k :i64 b :i64] :vector-i64
   (cond (= k 0) (ck-touch M)
         (> (nm-sf M k SF-REC) 0) (ck-touch M)
         :else (nm-set-sf M k SF-REC b)))
 
-;; every top-level defrecord form from c
+;; every top-level defrecord form from c (registration; then their fields, then the ns :schemas)
 (defn- ck-recs [M :vector-i64 S :string c :i64] :vector-i64
-  (cond (= c 0) (ck-touch M)
+  (cond (= c 0) (ck-recs-fields M S (nm-first M (vector-at M MM-ROOT)))
         (nm-failed M) (ck-touch M)
         (= (nm-form-head M c) HD-DEFRECORD) (ck-recs (ck-defrecord M S c) S (nm-next M c))
         :else (ck-recs M S (nm-next M c))))
+
+;; R4B: the ns clause (:schemas {:kw [:record :kw [[:f T] ..]] ..}) (20-names admits its shape): every value is a schema
+;; whose keyword is its key (E2128 otherwise), registered like an inline schema, after the defrecords
+(defn- ck-schemas-map [M :vector-i64 ns :i64] :i64
+  (let [c2 (nm-nth M ns 2)
+        c3 (nm-nth M ns 3)]
+    (cond (and (= (nm-kind M c2) ND-LIST) (= (nm-head-of M (nm-first M c2)) KW-SCHEMAS)) (nm-nth M c2 1)
+          (and (= (nm-kind M c3) ND-LIST) (= (nm-head-of M (nm-first M c3)) KW-SCHEMAS)) (nm-nth M c3 1)
+          :else 0)))
+(defn- ck-schemas [M :vector-i64] :vector-i64
+  (let [ns (vector-at M MM-NS-NODE)
+        mp (if (zero? ns) 0 (ck-schemas-map M ns))]
+    (loop [M1 (ck-touch M) k (nm-first M mp)]
+      (let [v (nm-next M1 k)]
+        (cond (zero? k) M1
+              (nm-failed M1) M1
+              (nm-ne (nm-kind M1 k) ND-KW) (ck-err M1 E-CHECK-SCHEMA k 0)
+              (nm-ne (ck-is-tform M1 v) 1) (ck-err M1 E-CHECK-SCHEMA k 0)
+              (nm-ne (nm-head-of M1 (nm-first M1 v)) KW-RECORD) (ck-err M1 E-CHECK-SCHEMA k 0)
+              (nm-ne (nm-sym-of M1 (nm-nth M1 v 1)) (nm-sym-of M1 k)) (ck-err M1 E-CHECK-SCHEMA k 0)
+              :else (let [M2 (ck-tform-rec M1 v)]
+                      (if (zero? (ck-r M2)) (ck-err M2 E-CHECK-SCHEMA k 0) (recur M2 (nm-next M2 v)))))))))
+
+;; R4B: every well-formed inline [:record :kw ..] schema of the file is registered before the signatures (a malformed one
+;; is refused where it is typed), so a [:ref :kw] resolves whichever form names its schema first
+(defn- ck-inline-scan [M :vector-i64] :vector-i64
+  (loop [M1 (ck-touch M) n 1]
+    (cond (>= n (vector-at M1 MM-NODE-N)) M1
+          (nm-failed M1) M1
+          (and (= (nm-kind M1 n) ND-VEC) (= (nm-kind M1 (nm-first M1 n)) ND-KW) (= (nm-head-of M1 (nm-first M1 n)) KW-RECORD)
+               (= (ck-sch-ok M1 n) 1))
+          (recur (ck-tform-rec M1 n) (inc n))
+          :else (recur M1 (inc n)))))
+
+;; R4B (before the signatures): every [:ref :kw] of the file names a registered schema, else E2179 at the keyword
+(defn- ck-refs-check [M :vector-i64] :vector-i64
+  (loop [M1 (ck-touch M) n 1]
+    (let [k (nm-nth M1 n 1)]
+      (cond (>= n (vector-at M1 MM-NODE-N)) M1
+            (nm-failed M1) M1
+            (and (= (nm-kind M1 n) ND-VEC) (= (nm-count M1 n) 2) (= (nm-kind M1 (nm-first M1 n)) ND-KW)
+                 (= (nm-head-of M1 (nm-first M1 n)) KW-REF) (= (nm-kind M1 k) ND-KW) (zero? (nm-sf M1 (nm-sym-of M1 k) SF-REC)))
+            (ck-err M1 E-CHECK-REF k 0)
+            :else (recur M1 (inc n))))))
 
 ;; ---------------------------------------------------------------------------------------------------------
 ;; R1: desugaring (seed/HEADS heads 43-65). Runs after the defrecord registration and before typing. Each sugar
@@ -1477,8 +1557,10 @@
 ;; the fixed-signature operations (everything except the special forms)
 ;; ---------------------------------------------------------------------------------------------------------
 ;; minimum (variadic) or exact argument count
+(defn- ck-r4b-op? [hd :i64] :bool (and (>= hd HD-BYTES-EMPTY) (<= hd HD-STRING-FROM-UTF8)))
 (defn- ck-op-arity [hd :i64] :i64
   (cond (= hd HD-NOT) 1
+        (= hd HD-BYTES-EMPTY) 0 (= hd HD-BYTES-COUNT) 1 (= hd HD-BYTES-SLICE) 3 (= hd HD-STRING-FROM-UTF8) 1
         (= hd HD-STRING-SUBSTRING) 3
         (= hd HD-STRING-BYTE-LENGTH) 1
         (= hd HD-PAIR-FIRST) 1
@@ -1505,6 +1587,8 @@
 ;; type of argument k
 (defn- ck-op-arg [hd :i64 k :i64] :i64
   (cond (= hd HD-NOT) TY-BOOL
+        (or (= hd HD-BYTES-AT) (= hd HD-BYTES-SLICE)) (if (= k 0) TY-BYTES TY-I64)
+        (ck-r4b-op? hd) TY-BYTES
         (= hd HD-STRING-SUBSTRING) (if (= k 0) TY-STR TY-I64)
         (= hd HD-STRING-EQ) TY-STR (= hd HD-STRING-COMPARE) TY-STR (= hd HD-STRING-INDEX-OF) TY-STR
         (= hd HD-STRING-BYTE-LENGTH) TY-STR
@@ -1522,6 +1606,8 @@
 
 (defn- ck-op-res [hd :i64] :i64
   (cond (= hd HD-NOT) TY-BOOL
+        (or (= hd HD-BYTES-EMPTY) (= hd HD-BYTES-CONCAT) (= hd HD-BYTES-SLICE)) TY-BYTES
+        (= hd HD-STRING-FROM-UTF8) TY-STR
         (= hd HD-STRING-EQ) TY-BOOL
         (= hd HD-STRING-SUBSTRING) TY-STR
         (= hd HD-LT) TY-BOOL
@@ -1540,6 +1626,7 @@
 ;; 1 when the head lowers to a runtime call (RT), which makes the function charge fuel on entry
 (defn- ck-op-rt [hd :i64] :i64
   (cond (= hd HD-BYTES-FROM-VECTOR-I64) 1
+        (ck-r4b-op? hd) 1
         (ck-r3-op? hd) 1
         (= hd HD-VECTOR-COUNT) 1
         (= hd HD-VECTOR-I64-FROM-BYTES) 1
@@ -1551,6 +1638,7 @@
 ;; 1 for the heads ck-op handles (fixed signatures from the tables above)
 (defn- ck-op-known [hd :i64] :i64
   (cond (= hd HD-BYTES-FROM-VECTOR-I64) 1
+        (ck-r4b-op? hd) 1
         (ck-r3-op? hd) 1
         (= hd HD-VECTOR-COUNT) 1
         (= hd HD-VECTOR-I64-FROM-BYTES) 1
@@ -1605,8 +1693,13 @@
         (ck-err M1 E-CHECK-VECLIT c 0)))))
 
 (defn- ck-veclit [M :vector-i64 n :i64 fx :i64] :vector-i64
-  (if (> (nm-count M n) 64)
+  (cond
+    ;; R4B: 65..128 (the reference's limit, stage-0 "vector literal exceeds item limit") integer literals: a pooled constant table (30-lower OP-VECP)
+    (and (> (nm-count M n) 64) (<= (nm-count M n) 128) (= (ck-all-ints M n) 1))
+    (ck-mark (ck-mark-items M (nm-first M n)) n TY-VEC HD-VECLIT)
+    (> (nm-count M n) 64)
     (ck-err M E-CHECK-VECLIT n 0)
+    :else
     (let [c (nm-first M n)
           M1 (ck-items M c fx)]
       (ck-mark M1 n TY-VEC HD-VECLIT))))
@@ -1794,7 +1887,10 @@
 ;; ---- typed-cap-call ----
 (defn- ck-wire-ok [k :i64] :i64
   (cond (= k KW-FS-APP-DATA) 1 (= k KW-CLI-ARGS) 1 (= k KW-IO-WRITE-ERROR) 1 (= k KW-IO-WRITE) 1
-        (= k KW-FS-APP-DATA-BYTES) 1 :else 0))
+        (= k KW-FS-APP-DATA-BYTES) 1
+        ;; R4B: wires 3 33 34 41 (:string :string)
+        (= k KW-HASH-SHA256) 1 (= k KW-ENV-READ) 1 (= k KW-FS-BROWSE) 1 (= k KW-IO-READ) 1
+        :else 0))
 
 ;; the request/result type of the shape, 0 when the shape is not one of seed/HEADS :cap-shapes
 ;; (ND-KW kinds are checked by the caller)
@@ -1803,6 +1899,11 @@
         (= wk KW-FS-APP-DATA-BYTES) (if (= r1 KW-BYTES) TY-BYTES 0)
         (= r1 KW-STRING) TY-STR
         :else 0))
+;; R4B: the result type of the shape (wire 35 :string :bytes reads a file as bytes, kind CK-STRING-BYTES), 0 when none
+(defn- ck-cap-res [wk :i64 r1 :i64 r2 :i64] :i64
+  (if (and (or (= wk KW-FS-APP-DATA) (= wk KW-FS-APP-DATA-BYTES)) (= r1 KW-STRING) (= r2 KW-BYTES))
+    TY-BYTES
+    (ck-cap-type wk r1 r2)))
 
 (defn- ck-cap [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
@@ -1811,28 +1912,30 @@
         r (nm-next M q)
         x (nm-next M r)
         wk (nm-head-of M w)
-        ty (ck-cap-type wk (nm-head-of M q) (nm-head-of M r))]
+        ty (ck-cap-type wk (nm-head-of M q) (nm-head-of M r))
+        rty (ck-cap-res wk (nm-head-of M q) (nm-head-of M r))
+        aty (if (= rty ty) ty TY-STR)]
     (cond (nm-ne (nm-count M n) 5) (ck-err M E-CHECK-CAP h 0)
           (nm-ne (nm-kind M w) ND-KW) (ck-err M E-CHECK-CAP w 0)
           (= (ck-wire-ok wk) 0) (ck-err M E-CHECK-CAP w 0)
           (nm-ne (nm-kind M q) ND-KW) (ck-err M E-CHECK-CAP q 0)
           (nm-ne (nm-kind M r) ND-KW) (ck-err M E-CHECK-CAP r 0)
-          (= ty 0) (ck-err M E-CHECK-CAP q 0)
+          (= rty 0) (ck-err M E-CHECK-CAP q 0)
           :else
           (let [M1 (ck-expr M x fx 0)
                 tx (ck-ty M1)]
-            (if (= tx ty)
-              (ck-mark (ck-fuel M1 (ck-fx-f fx)) n ty HD-TYPED-CAP-CALL)
-              (ck-err M1 E-CHECK-TYPE h ty))))))
+            (if (= tx aty)
+              (ck-mark (ck-fuel M1 (ck-fx-f fx)) n rty HD-TYPED-CAP-CALL)
+              (ck-err M1 E-CHECK-TYPE h aty))))))
 
 ;; ---- calls of the file's functions ----
-;; fik = fn * 8 + k (k = index of argument c); h = the head node
+;; fik = fn * 32 + k (k = index of argument c; R4B: up to 16 parameters); h = the head node
 (defn- ck-call-args [M :vector-i64 c :i64 fik :i64 fx :i64 h :i64] :vector-i64
   (cond
     (= c 0) (ck-touch M)
     (nm-failed M) (ck-touch M)
     :else
-    (let [want (nm-ff M (quot fik 8) (+ FF-PT0 (bit-and fik 7)))
+    (let [want (ck-pt M (quot fik 32) (bit-and fik 31))
           nx (nm-next M c)
           M1 (ck-arg M c fx want)
           ty (ck-ty M1)]
@@ -1855,7 +1958,7 @@
           (ck-variadic? M fi) (ck-call-var M n fi fx)
           (= (- (nm-count M n) 1) np)
           (let [c (nm-next M h)
-                M1 (ck-call-args M c (* fi 8) fx h)]
+                M1 (ck-call-args M c (* fi 32) fx h)]
             (ck-mark (ck-fuel M1 (ck-fx-f fx)) n rt HD-CALL))
           :else (ck-err M E-CHECK-ARITY h np))))
 
@@ -1891,7 +1994,6 @@
           ty (ck-ty M2)]
       (cond (> slot (ck-max-slots)) (ck-err M2 E-CHECK-SLOTS b slot)
             (= ty 0) (ck-err M2 E-CHECK-BINDINGS b 0)
-            (= (* mode (nm-eqi ty TY-BYTES)) 1) (ck-err M2 E-CHECK-BINDINGS b 0)
             :else (ck-binds-next M2 b fx h0 mode)))))
 
 (defn- ck-bind-type [mode :i64 ty :i64] :i64 (if (= mode 1) (ck-poison) ty))
@@ -1949,7 +2051,7 @@
       (ck-mark M3 n ty HD-LET))))
 
 (defn- ck-loop [M :vector-i64 n :i64 fx :i64] :vector-i64
-  (ck-loop-body (ck-binding-form M n 10) n fx))
+  (ck-loop-body (ck-binding-form M n 20) n fx))
 
 (defn- ck-loop-body [M :vector-i64 n :i64 fx :i64] :vector-i64
   (if (nm-failed M)
@@ -2150,7 +2252,12 @@
 ;; ---------------------------------------------------------------------------------------------------------
 ;; pass A: signatures and def literals
 ;; ---------------------------------------------------------------------------------------------------------
-;; params from binder b (k = index); records FF-PT0+k
+;; R4B: the type of parameter k of FN f: FF-PT0+k for k < 5, else NF-TYPE of the k-th type form of its parameter vector
+(defn- ck-pt [M :vector-i64 f :i64 k :i64] :i64
+  (if (< k 5)
+    (nm-ff M f (+ FF-PT0 k))
+    (nm-nf M (nm-nth M (nm-nth M (nm-ff M f FF-NODE) 2) (inc (* 2 k))) NF-TYPE)))
+;; params from binder b (k = index); records FF-PT0+k (R4B: NF-TYPE of the type form t for k >= 5)
 (defn- ck-sig-params [M :vector-i64 b :i64 f :i64 k :i64] :vector-i64
   (let [t (nm-next M b)]
     (cond (= b 0) (ck-touch M)
@@ -2164,12 +2271,14 @@
         nx (nm-next M t)]
     (cond (nm-failed M) (ck-touch M)
           (= ty 0) (ck-err M E-CHECK-TYPENAME t 0)
+          (>= k 5) (ck-sig-params (nm-set-nf M t NF-TYPE ty) nx f (+ k 1))
           :else (ck-sig-params (nm-set-ff M f (+ FF-PT0 k) ty) nx f (+ k 1)))))
 
-;; 1 when every parameter type of f is i64
+;; 1 when every parameter type of f is i64 (R4B: and there are at most 5)
 (defn- ck-params-i64 [M :vector-i64 f :i64] :i64
   (loop [k 0]
-    (cond (= k (nm-ff M f FF-NPARAMS)) 1
+    (cond (> (nm-ff M f FF-NPARAMS) 5) 0
+          (= k (nm-ff M f FF-NPARAMS)) 1
           (= (nm-ff M f (+ FF-PT0 k)) TY-I64) (recur (+ k 1))
           :else 0)))
 
@@ -2187,6 +2296,7 @@
   (let [rt (nm-ff M f FF-RTYPE)]
     (cond (nm-ne (nm-ff M f FF-EXPORT) 1) (ck-touch M)
           (< rt 1) (ck-touch M)
+          (> (nm-ff M f FF-NPARAMS) 5) (ck-err M E-CHECK-PARAMS nm 0)   ; R4B: an export takes at most 5
           (= (ck-params-i64 M f) 0) (ck-err M E-CHECK-TYPE nm TY-I64)
           (= rt TY-I64) (ck-touch M)
           (= rt TY-BOOL) (ck-touch M)
@@ -2199,7 +2309,9 @@
         r (nm-nth M n 3)]
     (cond (nm-ne (nm-kind M p) ND-VEC) (ck-err M E-CHECK-SIGNATURE nm 0)
           (nm-ne (bit-and (nm-count M p) 1) 0) (ck-err M E-CHECK-SIGNATURE nm 0)
-          (> (nm-count M p) 10) (ck-err M E-CHECK-PARAMS nm 0)
+          (> (nm-count M p) 32) (ck-err M E-CHECK-PARAMS16 nm 0)
+          ;; R4B: a clause takes up to 16 parameters; an explicit export or a variadic clause up to 5
+          (and (> (nm-count M p) 10) (or (= (nm-ff M f FF-EXPORT) 1) (= (nm-nf M p NF-TYPE) 1))) (ck-err M E-CHECK-PARAMS nm 0)
           (= (ck-is-tform M r) 0) (ck-err M E-CHECK-SIGNATURE nm 0)
           (nm-ne (nm-count M n) 5) (ck-err M E-CHECK-BODY nm 0)
           (= (ck-is-infer M r) 1) (ck-sig-defn2 (nm-put M MM-R0 -1) f p nm)
@@ -2230,10 +2342,10 @@
           M1 (ck-mark M c TY-I64 0)]
       (ck-mark-items M1 nx))))
 
-;; 1 when v is a vector literal of at most 64 integer literals
+;; 1 when v is a vector literal of at most 64 integer literals (R4B: 128)
 (defn- ck-def-vec [M :vector-i64 v :i64] :i64
   (cond (nm-ne (nm-kind M v) ND-VEC) 0
-        (> (nm-count M v) 64) 0
+        (> (nm-count M v) 128) 0
         :else (ck-all-ints M v)))
 
 (defn- ck-sig-def [M :vector-i64 f :i64] :vector-i64
@@ -2268,7 +2380,7 @@
     (nm-failed M) (ck-touch M)
     :else
     (let [nx (nm-next M (nm-next M b))
-          ty (nm-ff M f (+ FF-PT0 k))
+          ty (ck-pt M f k)
           M1 (ck-binder-ok M b h0)
           M2 (ck-bind M1 b (+ k 1) ty f)]
       (ck-bind-params M2 nx f (+ k 1) h0))))
@@ -2326,7 +2438,8 @@
 (defn ck-run [M :vector-i64 S :string] :vector-i64
   (let [M0 (ck-r3-init M)
         M1 (ck-recs M0 S (nm-first M0 (vector-at M0 MM-ROOT)))
-        M2 (ck-desugar M1 S)
+        M1b (if (nm-failed M1) M1 (ck-refs-check (ck-inline-scan M1)))
+        M2 (ck-desugar M1b S)
         M3 (ck-sigs M2 1)
         M4 (ck-bodies (ck-ab-pre (ck-r3-init2 M3)) 1)
         M5 (if (nm-failed M4) M4 (ck-ab-final M4))]

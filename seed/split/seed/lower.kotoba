@@ -88,6 +88,10 @@
 (def KW-IO-WRITE-ERROR 10)
 (def KW-IO-WRITE 11)
 (def KW-FS-APP-DATA-BYTES 12)
+(def KW-HASH-SHA256 27)
+(def KW-ENV-READ 28)
+(def KW-FS-BROWSE 29)
+(def KW-IO-READ 30)
 (def RES-SCALE 16777216)
 (def RES-LOCAL 1)
 (def RES-FN 2)
@@ -200,12 +204,23 @@
 (def HD-LIST 138)
 (def HD-CALLK 140)
 (def HD-CALLV 141)
+(def HD-BYTES-EMPTY 142)
+(def HD-BYTES-COUNT 143)
+(def HD-BYTES-AT 144)
+(def HD-BYTES-CONCAT 145)
+(def HD-BYTES-SLICE 146)
+(def HD-STRING-FROM-UTF8 147)
 (def CK-STRING 1)
 (def CK-BYTES 8)
+(def CK-STRING-BYTES 9)
 (def WIRE-FS-APP-DATA 35)
 (def WIRE-IO-WRITE 37)
 (def WIRE-CLI-ARGS 38)
 (def WIRE-IO-WRITE-ERROR 39)
+(def WIRE-HASH-SHA256 3)
+(def WIRE-ENV-READ 33)
+(def WIRE-FS-BROWSE 34)
+(def WIRE-IO-READ 41)
 (def E-HEAP-REGION 101)
 (def E-LOWER-FULL 3001)
 (def E-LOWER-NODE 3003)
@@ -232,6 +247,7 @@
 (def OP-TAB 21)
 (def OP-FADDR 22)
 (def OP-CALLI 23)
+(def OP-VECP 24)
 (def BOP-ADD 1)
 (def BOP-SUB 2)
 (def BOP-MUL 3)
@@ -254,6 +270,7 @@
 (def RT-PAIR-SECOND 72)
 (def RT-STRING-CONCAT 120)
 (def RT-STRING-CODE-POINT-AT 144)
+(def RT-VECTOR-NEW-EMPTY 152)
 (def RT-VECTOR-CONJ 160)
 (def RT-VECTOR-COUNT 168)
 (def RT-VECTOR-AT 176)
@@ -265,6 +282,8 @@
 (def RT-STRING-SUBSTRING 136)
 (def RT-STRING-INDEX-OF 216)
 (def RT-STRING-COMPARE 240)
+(def RT-BYTES-SLICE 368)
+(def RT-BYTES-CONCAT 376)
 (def RT-STRING-FROM-UTF8 352)
 (def RT-STRING-LENGTH-VIA 72)
 
@@ -326,7 +345,7 @@
 ;; highest temp an instruction touches, -1 for none
 (defn- lw-hi [op :i64 a :i64 b :i64 c :i64] :i64
   (case op
-    (OP-CONST OP-LGET OP-STR OP-RET OP-BRZ OP-BRNZ OP-TAB OP-FADDR) a
+    (OP-CONST OP-LGET OP-STR OP-RET OP-BRZ OP-BRNZ OP-TAB OP-FADDR OP-VECP) a
     (OP-LSET OP-UN) b
     (OP-BIN OP-CMP) (inc b)
     (OP-CALL OP-RT) (if (pos? c) (+ b (dec c)) b)
@@ -406,6 +425,13 @@
     (HD-STRING-BYTE-LENGTH HD-PAIR-SECOND) RT-PAIR-SECOND
     HD-PAIR RT-PAIR-NEW
     HD-PAIR-FIRST RT-PAIR-FIRST
+    ;; R4B: bytes (a bytes value is a vector handle of items 0..255: count and at are the vector operations)
+    HD-BYTES-EMPTY RT-VECTOR-NEW-EMPTY
+    HD-BYTES-COUNT RT-VECTOR-COUNT
+    HD-BYTES-AT RT-VECTOR-AT
+    HD-BYTES-CONCAT RT-BYTES-CONCAT
+    HD-BYTES-SLICE RT-BYTES-SLICE
+    HD-STRING-FROM-UTF8 RT-STRING-FROM-UTF8
     0))
 (defn- lw-wire [kw :i64] :i64
   (case kw
@@ -413,8 +439,15 @@
     KW-CLI-ARGS WIRE-CLI-ARGS
     KW-IO-WRITE-ERROR WIRE-IO-WRITE-ERROR
     KW-IO-WRITE WIRE-IO-WRITE
+    ;; R4B
+    KW-HASH-SHA256 WIRE-HASH-SHA256
+    KW-ENV-READ WIRE-ENV-READ
+    KW-FS-BROWSE WIRE-FS-BROWSE
+    KW-IO-READ WIRE-IO-READ
     0))
 (defn- lw-kind [kw :i64] :i64 (case kw KW-STRING CK-STRING KW-BYTES CK-BYTES 0))
+;; R4B: the kind of a (request, result) keyword pair: :string :bytes is KEXE_TYPED_STRING_BYTES_V1
+(defn- lw-kind2 [q :i64 r :i64] :i64 (if (and (= q KW-STRING) (= r KW-BYTES)) CK-STRING-BYTES (lw-kind q)))
 
 ;; ------------------------------------------------------------------------------------------------------------
 ;; expressions: [n -> t] under context k
@@ -547,7 +580,7 @@
   (let [req (lw-next M w)
         x (lw-next M (lw-next M req))
         wire (lw-wire (lw-kwcode M w))
-        kind (lw-kind (lw-kwcode M req))]
+        kind (lw-kind2 (lw-kwcode M req) (lw-kwcode M (lw-next M req)))]
     (-> M (lw-expr x t 0) (lw-emit OP-CAP wire kind t))))
 
 ;; entry points that reserve the exit label first
@@ -737,7 +770,10 @@
       ND-KW (lw-emit M OP-CONST t (lw-nf M n NF-SYM))
       ND-VEC (let [a (lw-first M n)
                    m (lw-count M a)]
-               (-> M (lw-args a t) (lw-emit OP-VEC t m)))
+               (if (> m 64)
+                 ;; R4B: 65..128 integer literals (21-check): the items as a constant table, copied into a fresh vector
+                 (let [lit (vector-at M MM-LIT-N)] (-> M (lw-tabdata n m) (lw-emit OP-VECP t lit m)))
+                 (-> M (lw-args a t) (lw-emit OP-VEC t m))))
       (ND-SET ND-MAP) (lw-newcoll M (lw-first M n) (lw-nf M n NF-SYM) (lw-md M (lw-nf M n NF-TYPE)) t)
       (lw-fail M E-LOWER-NODE (if (zero? n) -1 (lw-pos M n)) kind))))
 

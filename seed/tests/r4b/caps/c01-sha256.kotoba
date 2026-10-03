@@ -1,0 +1,5 @@
+;; R4B caps: wire 3 :hash/sha256 (:string :string): the digest of "abc" as 64 hex characters (grant 3)
+(ns seed.r4b (:export [test]))
+(defn test [] :i64
+  (let [h (typed-cap-call :hash/sha256 :string :string "abc")]
+    (+ (string-length h) (if (string=? (string-substring h 0 8) "ba7816bf") 1000 0))))

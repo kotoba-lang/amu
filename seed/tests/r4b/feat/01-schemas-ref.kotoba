@@ -1,0 +1,5 @@
+;; R4B feat: an ns :schemas record passed and returned by reference ([:ref :kw]); get and record-get
+(ns seed.r4b (:export [test]) (:schemas {:p/pt [:record :p/pt [[:x :i64] [:y :i64]]]}))
+(defn- mk [x :i64 y :i64] [:ref :p/pt] (record-new [:record :p/pt [[:x :i64] [:y :i64]]] x y))
+(defn- sum [p [:ref :p/pt]] :i64 (+ (get p :x) (* 10 (record-get [:record :p/pt [[:x :i64] [:y :i64]]] p :y))))
+(defn test [] :i64 (sum (mk 3 4)))

@@ -1,0 +1,6 @@
+;; R4B feat: 8 parameters whose stack-passed one is a :keyword; the callee also calls a 7-parameter function
+(ns seed.r4b (:export [test]))
+(defn- g7 [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64 g :i64] :i64 (- (+ a c e g) (+ b d f)))
+(defn- f8 [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64 g :i64 k :keyword] :i64
+  (+ (g7 a b c d e f g) (if (= k :big) 1000 1)))
+(defn test [] :i64 (+ (f8 9 1 9 1 9 1 9 :big) (* 10000 (f8 1 1 1 1 1 1 1 :small))))

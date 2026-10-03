@@ -51,6 +51,9 @@ HEADS = [  # (spelling, constant)
     # R4 (agent R4, 2026-10-03)
     ("fn", "HD-FN"), ("fn-ref", "HD-FN-REF"), ("invoke", "HD-INVOKE"), ("apply", "HD-APPLY"), ("map", "HD-HOF-MAP"),
     ("filter", "HD-FILTER"), ("reduce", "HD-REDUCE"), ("list", "HD-LIST"), ("&", "HD-AMP"),
+    # R4B (agent R4B, 2026-10-03)
+    ("bytes-empty", "HD-BYTES-EMPTY"), ("bytes-count", "HD-BYTES-COUNT"), ("bytes-at", "HD-BYTES-AT"),
+    ("bytes-concat", "HD-BYTES-CONCAT"), ("bytes-slice", "HD-BYTES-SLICE"), ("string-from-utf8", "HD-STRING-FROM-UTF8"),
 ]
 KWS = [
     (":i64", "KW-I64"), (":bool", "KW-BOOL"), (":string", "KW-STRING"), (":vector-i64", "KW-VECTOR-I64"),
@@ -63,6 +66,9 @@ KWS = [
     (":option", "KW-OPTION"), (":result", "KW-RESULT"), (":list", "KW-LIST"), (":map", "KW-MAP"), (":set", "KW-SET"),
     # R4
     (":fn", "KW-FN"),
+    # R4B
+    (":ref", "KW-REF"), (":schemas", "KW-SCHEMAS"), (":hash/sha256", "KW-HASH-SHA256"), (":env/read", "KW-ENV-READ"),
+    (":fs/browse", "KW-FS-BROWSE"), (":io/read", "KW-IO-READ"),
 ]
 
 

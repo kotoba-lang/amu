@@ -1,0 +1,9 @@
+;; R4B feat: bytes-concat, bytes-slice, bytes-empty, and :bytes results
+(ns seed.r4b (:export [test]))
+(defn- twice [b :bytes] :bytes (bytes-concat b b))
+(defn- mid [b :bytes] :bytes (bytes-slice b 1 (- (bytes-count b) 1)))
+(defn test [] :i64
+  (let [b (twice (bytes-from-vector-i64 [5 6 7]))
+        m (mid b)
+        e (bytes-concat (bytes-empty) m)]
+    (+ (bytes-count b) (* 10 (bytes-count e)) (* 100 (bytes-at e 0)) (* 10000 (bytes-at e 3)))))

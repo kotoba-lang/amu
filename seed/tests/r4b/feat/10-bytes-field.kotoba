@@ -1,0 +1,6 @@
+;; R4B feat: a record with a :bytes field (the KIR shape [:record ..Found [[:hit :bool] [:data :bytes]]])
+(ns seed.r4b (:export [test]) (:schemas {:f/found [:record :f/found [[:hit :bool] [:data :bytes]]]}))
+(defn- found [d :bytes] [:ref :f/found] (record-new [:record :f/found [[:hit :bool] [:data :bytes]]] (> (bytes-count d) 0) d))
+(defn test [] :i64
+  (let [a (found (bytes-from-vector-i64 [9 8 7])) z (found (bytes-empty))]
+    (+ (if (get a :hit) 1 0) (if (get z :hit) 10 0) (* 100 (bytes-count (get a :data))) (* 1000 (bytes-at (get a :data) 2)))))

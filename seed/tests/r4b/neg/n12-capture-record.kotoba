@@ -1,0 +1,4 @@
+;; R4B neg: a fn literal captures a record (captures are :i64 or callable only; E2104)
+(ns seed.r4b (:export [test]) (:schemas {:c/r [:record :c/r [[:n :i64]]]}))
+(defn- mk [n :i64] [:ref :c/r] (record-new [:record :c/r [[:n :i64]]] n))
+(defn test [] :i64 (let [r (mk 3)] (reduce (fn [acc x] (+ acc x (get r :n))) 0 [1 2])))

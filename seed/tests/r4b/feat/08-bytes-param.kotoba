@@ -1,0 +1,5 @@
+;; R4B feat: :bytes as a parameter type: count and at
+(ns seed.r4b (:export [test]))
+(defn- bsum [b :bytes] :i64
+  (loop [i 0 acc 0] (if (< i (bytes-count b)) (recur (inc i) (+ acc (bytes-at b i))) acc)))
+(defn test [] :i64 (let [b (bytes-from-vector-i64 [1 2 3 250])] (+ (bsum b) (* 1000 (bytes-count b)))))

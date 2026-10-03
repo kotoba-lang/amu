@@ -1,0 +1,8 @@
+;; R4B feat: a recursive defrecord (its own keyword in a field type), depth of a chain
+(ns seed.r4b (:export [test]))
+(defrecord Node [v :i64 kids [:list [:ref :seed.r4b/Node]]])
+(defn- chain [k :i64] [:ref :seed.r4b/Node]
+  (if (= k 0) (->Node 7 (typed-list-new [:list [:ref :seed.r4b/Node]])) (->Node k (typed-list-new [:list [:ref :seed.r4b/Node]] (chain (dec k))))))
+(defn- depth [n [:ref :seed.r4b/Node]] :i64
+  (let [ks (:kids n)] (if (= (count ks) 0) (:v n) (+ 1 (depth (nth ks 0))))))
+(defn test [] :i64 (+ (depth (chain 5)) (* 100 (:v (chain 3)))))

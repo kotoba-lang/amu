@@ -1,0 +1,7 @@
+;; R4B feat: a defrecord field refers to a record defined LATER in the file
+(ns seed.r4b (:export [test]))
+(defrecord Outer [inner [:ref :seed.r4b/Inner] n :i64])
+(defrecord Inner [x :i64 s :string])
+(defn- mk [x :i64] [:ref :seed.r4b/Outer] (->Outer (->Inner x "abc") 5))
+(defn- in-x [i [:ref :seed.r4b/Inner]] :i64 (+ (:x i) (string-length (:s i))))
+(defn test [] :i64 (let [o (mk 40)] (+ (in-x (:inner o)) (* 1000 (:n o)))))

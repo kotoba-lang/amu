@@ -1,0 +1,7 @@
+;; R4B caps: wire 35 with :string -> :bytes (kind KEXE_TYPED_STRING_BYTES_V1 9): a file read as bytes (grant 35 + 33)
+(ns seed.r4b (:export [test]))
+(defn- bsum [b :bytes] :i64 (loop [i 0 acc 0] (if (< i (bytes-count b)) (recur (inc i) (+ (* acc 1000) (bytes-at b i))) acc)))
+(defn test [] :i64
+  (let [p (typed-cap-call :env/read :string :string "SEED_R4B_FILE")
+        b (typed-cap-call :fs/app-data :string :bytes p)]
+    (+ (bytes-count b) (* 10 (bsum b)))))

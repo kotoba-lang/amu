@@ -739,6 +739,8 @@
       (loop [c (pj-next M (pj-next M (pj-first M ns)))]
         (cond (= c 0) 0
               (and (= (pj-kind M c) ND-LIST) (= (pj-kind M (pj-first M c)) ND-KW) (pj-is M S (pj-first M c) ":export")) (recur (pj-next M c))
+              ;; R4B (agent R4B, coordinated in CONTRACT-REQUESTS): 20-names reads one (:schemas {..}) clause too
+              (and (= (pj-kind M c) ND-LIST) (= (pj-kind M (pj-first M c)) ND-KW) (pj-is M S (pj-first M c) ":schemas")) (recur (pj-next M c))
               :else 1)))))
 
 ;; ==== separate mode (design 3.3, option C): module objects and `seed link` ================================================

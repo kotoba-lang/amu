@@ -66,6 +66,7 @@
 (def OP-TAB 21)
 (def OP-FADDR 22)
 (def OP-CALLI 23)
+(def OP-VECP 24)
 (def BOP-ADD 1)
 (def BOP-SUB 2)
 (def BOP-MUL 3)
@@ -222,6 +223,7 @@
 (def gn-f-dead 9)     ; 1 = the current point is unreachable (after br/ret/trap, until a label)
 (def gn-f-skip 10)    ; SIR instructions after the current one that it consumed
 (def gn-f-freg 11)    ; 1 = the fuel counter is in x8
+(def gn-f-out 12)     ; R4B: bytes of the outgoing argument area at [sp,#0..] (calls with more than 7 arguments)
 (def gn-cap 4096)     ; slots and temps per function (the frame limit F <= 32768 is lower)
 (def gn-a-sreg 16)    ; slot -> register + 1 (0 = frame slot); gn-cap words
 (def gn-a-use 4112)   ; slot -> weighted use count; gn-cap words
@@ -375,7 +377,7 @@
 (defn- gn-defd [M :vector-i64 j :i64] :i64
   (let [op (gn-op M j)]
     (case op
-      (OP-CONST OP-LGET OP-STR OP-TAB OP-VEC OP-FADDR) (gn-sir M j IF-A)
+      (OP-CONST OP-LGET OP-STR OP-TAB OP-VEC OP-FADDR OP-VECP) (gn-sir M j IF-A)
       (OP-BIN OP-CMP OP-UN OP-CALL OP-RT OP-CALLI) (gn-sir M j IF-B)
       OP-CAP (gn-sir M j IF-C)
       -1)))
@@ -475,7 +477,7 @@
         b (gn-sir M i IF-B)
         c (gn-sir M i IF-C)]
     (case (gn-op M i)
-      (OP-CONST OP-LGET OP-STR OP-RET OP-BRZ OP-BRNZ OP-TAB OP-FADDR) (+ a 1)
+      (OP-CONST OP-LGET OP-STR OP-RET OP-BRZ OP-BRNZ OP-TAB OP-FADDR OP-VECP) (+ a 1)
       (OP-LSET OP-UN) (+ b 1)
       (OP-BIN OP-CMP) (+ b 2)
       OP-CAP (+ c 1)
@@ -510,7 +512,9 @@
     (case op
       (OP-LGET OP-LSET) (gn-use1 M j 1)
       OP-LABEL (if (and (> a 0) (< a MM-LABEL-CAP)) (gn-gs M (+ gn-a-lp a) j) M)
-      (OP-CALL OP-CAP OP-VEC OP-CALLI) (gn-gs M gn-f-leaf 0)
+      (OP-CAP OP-VEC OP-CALLI OP-VECP) (gn-gs M gn-f-leaf 0)
+      ;; R4B: a call with more than 7 arguments needs the outgoing area
+      OP-CALL (-> M (gn-gs gn-f-leaf 0) (gn-gmax gn-f-out (gn-r16 (* 8 (gn-max 0 (- (gn-sir M j IF-C) 7))))))
       OP-STR (if (> (gn-str-fold M j) 0) M (gn-gs M gn-f-leaf 0))
       OP-RT (if (or (gn-inl a (gn-sir M j IF-B) (gn-sir M j IF-C))
                     (and (= a RT-STRING-CODE-POINT-AT) (> (gn-back-str M j (dec j) (gn-sir M j IF-B)) 0)))
@@ -559,23 +563,28 @@
         nsv (gn-g M2 gn-f-nsv)
         dp (gn-g M2 gn-f-dp)
         framed (or (= leaf 0) (> nsv 0) (> dp 7) (gn-memslot M2 1 ns))]
-    (gn-gs M2 gn-f-fb (if framed (+ (gn-r16 (* 8 (+ ns dp 2))) (gn-r16 (* 8 nsv))) 0))))
+    (gn-gs M2 gn-f-fb (if framed (+ (gn-r16 (* 8 (+ ns dp 2))) (gn-r16 (* 8 nsv)) (gn-g M2 gn-f-out)) 0))))
 
 ;; ---- prologue and epilogue -----------------------------------------------------------------------------------------
 (defn- gn-subsp [M :vector-i64 amt :i64] :vector-i64
   (if (> amt 0) (gn-emit M (enc-sub-i 31 31 amt)) M))
-;; save (ld = 0) / restore (ld = 1) the callee-saved x19 .. x(19+n-1) at [sp, #0 ..]
+;; save (ld = 0) / restore (ld = 1) the callee-saved x19 .. x(19+n-1) at [sp, #O ..] (R4B: O = the outgoing area)
 (defn- gn-csave [M :vector-i64 i :i64 n :i64 ld :i64] :vector-i64
-  (cond (>= i n) M
-        (< (inc i) n) (gn-csave (gn-emit M (if (= ld 1) (enc-ldp (+ 19 i) (+ 20 i) 31 (* 8 i)) (enc-stp (+ 19 i) (+ 20 i) 31 (* 8 i))))
-                                (+ i 2) n ld)
-        :else (gn-emit M (if (= ld 1) (enc-ldr (+ 19 i) 31 (* 8 i)) (enc-str (+ 19 i) 31 (* 8 i))))))
-;; params x0.. -> their slots (register or frame)
+  (let [o (+ (gn-g M gn-f-out) (* 8 i))]
+    (cond (>= i n) M
+          (< (inc i) n) (gn-csave (gn-emit M (if (= ld 1) (enc-ldp (+ 19 i) (+ 20 i) 31 o) (enc-stp (+ 19 i) (+ 20 i) 31 o)))
+                                  (+ i 2) n ld)
+          :else (gn-emit M (if (= ld 1) (enc-ldr (+ 19 i) 31 o) (enc-str (+ 19 i) 31 o))))))
+;; params x0.. -> their slots (register or frame). R4B: parameter k-1 >= 7 arrives at [x29, #16+8*(k-8)] (the caller's
+;; outgoing area; a function that uses such a parameter always has a frame); an unused one is not loaded
 (defn- gn-params [M :vector-i64 k :i64 np :i64] :vector-i64
-  (if (> k np)
-    M
-    (let [r (gn-sreg M k)]
-      (gn-params (if (>= r 0) (gn-mov M r (dec k)) (gn-st M (dec k) k)) (inc k) np))))
+  (let [r (gn-sreg M k)
+        off (+ 16 (* 8 (- k 8)))]
+    (cond (> k np) M
+          (<= k 7) (gn-params (if (>= r 0) (gn-mov M r (dec k)) (gn-st M (dec k) k)) (inc k) np)
+          (>= r 0) (gn-params (gn-emit M (enc-ldr r 29 off)) (inc k) np)
+          (zero? (gn-g M (+ gn-a-use k))) (gn-params M (inc k) np)
+          :else (gn-params (-> M (gn-emit (enc-ldr 16 29 off)) (gn-st 16 k)) (inc k) np))))
 (defn- gn-op-fn [M :vector-i64 i :i64 f :i64 np :i64] :vector-i64
   (let [ns0 (gn-max (gn-max (gn-sir M i IF-C) (gn-fnf M f FF-NSLOTS)) (gn-max np (gn-scan M (inc i) 2 0)))
         dp0 (gn-max (gn-fnf M f FF-DEPTH) (gn-scan M (inc i) 1 0))]
@@ -594,7 +603,7 @@
 (defn- gn-op-fn2 [M1 :vector-i64 i :i64 f :i64 np :i64] :vector-i64
   (let [ns (gn-g M1 gn-f-ns)
         dp (gn-g M1 gn-f-dp)]
-    (cond (> np 5) (gn-err M1 E-GEN-OP OP-FN)
+    (cond (> np 16) (gn-err M1 E-GEN-OP OP-FN)
           :else
           (let [M2 (gn-assign M1)
                 F (gn-g M2 gn-f-fb)
@@ -826,10 +835,17 @@
       (gn-emit (enc-ldr 16 0 slot))
       (gn-emit (enc-blr 16))
       (gn-gs gn-f-ctx 0)))
+;; R4B: arguments k >= 7 of a call go to the outgoing area [sp, #8*(k-7)]
+(defn- gn-stack-args [M :vector-i64 t :i64 k :i64 n :i64] :vector-i64
+  (if (>= k n)
+    M
+    (let [r (gn-src M (+ t k) 16 1)]
+      (gn-stack-args (-> M (gn-ldt (+ t k) 16 1) (gn-emit (enc-str r 31 (* 8 (- k 7))))) t (inc k) n))))
 (defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
   (-> M
       (gn-save 0 t)
-      (gn-args t 0 n)
+      (gn-stack-args t 7 n)
+      (gn-args t 0 (gn-min n 7))
       (gn-ctx)
       (gn-fix FX-BL26 f)
       (gn-emit (enc-bl 0))
@@ -1002,6 +1018,23 @@
                           (gn-vec-items t 0 n)))
       (gn-take i t 0)))
 
+;; R4B: VECP t lit n: vector_alloc(ctx, n), x16 := the items, x17 := code_base + LF-POOL(lit), then the copy loop
+;;   ldr x3,[x17] ; add x17,x17,#8 ; str x3,[x16] ; add x16,x16,#8 ; subs x2,x2,#1 ; b.ne -5
+(defn- gn-op-vecp [M :vector-i64 i :i64 t :i64 lit :i64 n :i64] :vector-i64
+  (-> M
+      (gn-save 0 t)
+      (gn-mov-imm 1 n)
+      (gn-rtcall RT-VECTOR-ALLOC)
+      (gn-ctx)
+      (gn-emit (enc-sub-i 17 0 1)) (gn-emit (enc-ldr 16 7 320)) (gn-emit (gn-e-addsl 16 16 17 4)) (gn-emit (enc-ldr 17 16 0))
+      (gn-emit (enc-ldr 16 7 328)) (gn-emit (gn-e-addsl 16 16 17 3))
+      (gn-fix FX-LIT32 lit) (gn-emit (enc-movz 1 0 0)) (gn-emit (enc-movk 1 0 1))
+      (gn-emit (enc-ldr 17 7 CTX-CODE-BASE)) (gn-emit (enc-add-r 17 17 1))
+      (gn-mov-imm 2 n)
+      (gn-emit (enc-ldr 3 17 0)) (gn-emit (enc-add-i 17 17 8)) (gn-emit (enc-str 3 16 0)) (gn-emit (enc-add-i 16 16 8))
+      (gn-emit (enc-subs-i 2 2 1)) (gn-emit (enc-bcond (enc-cond-ne) -5))
+      (gn-take i t 0)))
+
 ;; TAB t lit n (constant table): cmp idx,#n ; b.lo +2 ; brk #0 ; x17 := code_base + 8*idx ; x16 := LF-POOL (FX-LIT32) ;
 ;; d := [x17, x16]
 (defn- gn-op-tab [M :vector-i64 i :i64 t :i64 lit :i64 n :i64] :vector-i64
@@ -1062,6 +1095,7 @@
         OP-STR (gn-op-str M i a b)
         OP-VEC (gn-op-vec M i a b)
         OP-TAB (gn-op-tab M i a b c)
+        OP-VECP (gn-op-vecp M i a b c)
         OP-FUEL (gn-op-fuel M)
         OP-RET (gn-op-ret M a)
         OP-TRAP (-> M (gn-emit (enc-brk a)) (gn-gs gn-f-dead 1))

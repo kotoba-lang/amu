@@ -56,6 +56,7 @@
 (def CF-PREV 1)
 (def ND-LIST 2)
 (def ND-VEC 3)
+(def ND-MAP 4)
 (def ND-SYM 7)
 (def ND-KW 8)
 (def KW-I64 1)
@@ -81,6 +82,12 @@
 (def KW-MAP 22)
 (def KW-SET 23)
 (def KW-FN 24)
+(def KW-REF 25)
+(def KW-SCHEMAS 26)
+(def KW-HASH-SHA256 27)
+(def KW-ENV-READ 28)
+(def KW-FS-BROWSE 29)
+(def KW-IO-READ 30)
 (def RES-SCALE 16777216)
 (def HD-NS 1)
 (def HD-DEFN 3)
@@ -213,6 +220,12 @@
 (def HD-REDUCE 137)
 (def HD-LIST 138)
 (def HD-AMP 139)
+(def HD-BYTES-EMPTY 142)
+(def HD-BYTES-COUNT 143)
+(def HD-BYTES-AT 144)
+(def HD-BYTES-CONCAT 145)
+(def HD-BYTES-SLICE 146)
+(def HD-STRING-FROM-UTF8 147)
 (def E-HEAP-REGION 101)
 (def E-NAMES-DUP 2001)
 (def E-NAMES-TOP 2003)
@@ -430,6 +443,7 @@
         111477845681522 HD-REDUCE  ; reduce
         1953720684 HD-LIST  ; list
         38 HD-AMP  ; &
+        8386033954787195234 HD-BYTES-AT  ; bytes-at
         0)
       32765890658446708
       (case w0
@@ -629,6 +643,26 @@
       (case w0
         8317701429086023523 HD-CONTAINS  ; contains?
         0)
+      7959664
+      (case w0
+        7882756696428542306 HD-BYTES-EMPTY  ; bytes-empty
+        0)
+      7630453
+      (case w0
+        8026308934550976866 HD-BYTES-COUNT  ; bytes-count
+        0)
+      1952539502
+      (case w0
+        8026308934550976866 HD-BYTES-CONCAT  ; bytes-concat
+        0)
+      6644585
+      (case w0
+        7814639752064563554 HD-BYTES-SLICE  ; bytes-slice
+        0)
+      4064063760370593650
+      (case w0
+        7362654689733801075 HD-STRING-FROM-UTF8  ; string-from-utf8
+        0)
       0)
     1952525684
     (case w1
@@ -695,6 +729,9 @@
         1885433146 KW-MAP  ; :map
         1952805690 KW-SET  ; :set
         7235130 KW-FN  ; :fn
+        1717924410 KW-REF  ; :ref
+        8314046669413118778 KW-SCHEMAS  ; :schemas
+        7233174017630234938 KW-IO-READ  ; :io/read
         0)
       3421801
       (case w0
@@ -715,6 +752,18 @@
       101
       (case w0
         8388361637176764730 KW-IO-WRITE  ; :io/write
+        0)
+      909455969
+      (case w0
+        7526411527925098554 KW-HASH-SHA256  ; :hash/sha256
+        0)
+      100
+      (case w0
+        7018141142502761786 KW-ENV-READ  ; :env/read
+        0)
+      25971
+      (case w0
+        8606223178956760634 KW-FS-BROWSE  ; :fs/browse
         0)
       0)
     29541
@@ -816,7 +865,14 @@
          (= (nm-kind M k) ND-KW) (= (nm-head-of M k) KW-EXPORT)
          (= (nm-kind M v) ND-VEC) (nm-all-syms M v))))
 
-;; true when n is (ns NAME) or (ns NAME (:export [sym ...]))
+;; R4B: true when c is a (:schemas {..}) clause (21-check checks the entries in pass A0)
+(defn- nm-schemas-ok [M :vector-i64 c :i64] :bool
+  (let [k (nm-first M c)]
+    (and (= (nm-kind M c) ND-LIST) (= (nm-count M c) 2)
+         (= (nm-kind M k) ND-KW) (= (nm-head-of M k) KW-SCHEMAS)
+         (= (nm-kind M (nm-nth M c 1)) ND-MAP))))
+
+;; true when n is (ns NAME) or (ns NAME (:export [sym ...])); R4B: plus at most one (:schemas {..}) clause, in either order
 (defn- nm-ns-ok [M :vector-i64 n :i64] :bool
   (and (not= n 0)
        (= (nm-kind M n) ND-LIST)
@@ -825,7 +881,9 @@
        (= (nm-kind M (nm-nth M n 1)) ND-SYM)
        (case (nm-count M n)
          2 true
-         3 (nm-export-ok M (nm-nth M n 2))
+         3 (or (nm-export-ok M (nm-nth M n 2)) (nm-schemas-ok M (nm-nth M n 2)))
+         4 (or (and (nm-export-ok M (nm-nth M n 2)) (nm-schemas-ok M (nm-nth M n 3)))
+               (and (nm-schemas-ok M (nm-nth M n 2)) (nm-export-ok M (nm-nth M n 3))))
          false)))
 
 ;; head code of a top-level list form whose head is a symbol, else 0
@@ -929,9 +987,14 @@
             M1 (nm-set-ff M f FF-EXPORT 1)]
         (nm-exports M1 nx)))))
 
+;; R4B: the (:export ..) clause of the ns form, 0 when there is none
+(defn- nm-export-clause [M :vector-i64 ns :i64] :i64
+  (cond (nm-export-ok M (nm-nth M ns 2)) (nm-nth M ns 2)
+        (nm-export-ok M (nm-nth M ns 3)) (nm-nth M ns 3)
+        :else 0))
 ;; the first symbol node of the ns form's export vector, 0 when there is none
 (defn- nm-export-first [M :vector-i64 ns :i64] :i64
-  (if (= (nm-count M ns) 3) (nm-first M (nm-nth M (nm-nth M ns 2) 1)) 0))
+  (let [c (nm-export-clause M ns)] (if (zero? c) 0 (nm-first M (nm-nth M c 1)))))
 
 ;; R1: without an (:export [..]) clause (no ns form, or (ns NAME)) every defn is an IMPLICIT export: FF-EXPORT = 2,
 ;; which 21-check turns into 1 (exportable signature) or 0 (seed/MEMORY-MAP FK-* note).
@@ -941,7 +1004,7 @@
         :else (nm-implicit-exports M (+ f 1))))
 
 (defn- nm-defs-exports [M :vector-i64 ns :i64] :vector-i64
-  (if (= (nm-count M ns) 3)
+  (if (pos? (nm-export-clause M ns))
     (nm-exports M (nm-export-first M ns))
     (nm-implicit-exports M 1)))
 

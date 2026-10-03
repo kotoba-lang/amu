@@ -32,7 +32,7 @@
   [:c OP-BR 10 "BR l -- unconditional jump"]
   [:c OP-BRZ 11 "BRZ t l -- jump to l when temp t = 0 (t keeps its value)"]
   [:c OP-BRNZ 12 "BRNZ t l -- jump to l when temp t != 0 (t keeps its value)"]
-  [:c OP-CALL 13 "CALL f t n -- temp t := f(temp t .. temp t+n-1), f an FN index, n <= 5"]
+  [:c OP-CALL 13 "CALL f t n -- temp t := f(temp t .. temp t+n-1), f an FN index, n <= 5 (R4B: n <= 16, seed/SIR :a64 :r4b)"]
   [:c OP-RT 14 "RT rt t n -- temp t := runtime helper rt (RT-*) applied to (ctx, temp t .. temp t+n-1)"]
   [:c OP-CAP 15 "CAP wire kind t -- temp t := typed_cap_call(ctx, wire, kind, temp t) ; kind = CK-*"]
   [:c OP-STR 16 "STR t lit -- temp t := the string handle of literal lit (LIT index)"]
@@ -48,7 +48,9 @@
   [:c OP-FADDR 22 "FADDR t f -- temp t := the absolute code address of FN f's entry (adr xd, fixup FX-ADR19 on FN f)"]
   [:c OP-CALLI 23 "CALLI 0 t n -- temp t := call the code address in temp t+n with the arguments t .. t+n-1 (n <= 5, x7 = ctx,
                    result x0): a closure call (seed/SIR :r4-lowering)"]
-  [:c OP-COUNT 23 "highest opcode"]]
+  [:c OP-VECP 24 "R4B: VECP t lit n -- temp t := a fresh vector of the n i64 items of the constant table LIT lit (the OP-TAB data
+                  layout: 8 bytes little-endian per item, pooled by 42-layout); n 65..128 (the reference limit) (vector literals of integer literals)"]
+  [:c OP-COUNT 24 "highest opcode"]]
 
  :binary-ops
  [[:c BOP-ADD 1 "+ wrap"] [:c BOP-SUB 2 "- wrap"] [:c BOP-MUL 3 "* low 64"]
@@ -88,6 +90,8 @@
   [:c RT-VECTOR-DROP 192 "vector_drop(ctx, v, k) -- the items after the first k (a view)"]
   [:c RT-STRING-INDEX-OF 216 "string_index_of(ctx, h, n) -> byte offset or -1; an empty needle traps"]
   [:c RT-STRING-COMPARE 240 "string_compare(ctx, a, b) -> -1/0/1 (byte order)"]
+  [:c RT-BYTES-SLICE 368 "R4B: bytes_slice(ctx, b, start, end) -- a view; traps unless 0 <= start <= end <= count (ABI v11)"]
+  [:c RT-BYTES-CONCAT 376 "R4B: bytes_concat(ctx, a, b) -- a copy (ABI v11)"]
   [:c RT-STRING-FROM-UTF8 352 "string_from_utf8(ctx, v) -- v a vector of bytes 0..255 that is canonical UTF-8 (ABI v11; NULL in
                                kexe-benchmark: only string-from-i64 uses it)"]
   [:c CTX-FUEL 8 "byte offset of the fuel counter in the context"]
@@ -240,7 +244,14 @@
                  string-code-point-at on a non-literal string (R4, the UTF-8 rule): the pair is read in line (ABI v9 pointers);
                  when its offset is code-relative (>= 0), the index is below its length and offset + length <= code_length
                  ([x7,#392]), the byte at code_base + offset + index is loaded and returned when < 0x80; every other case calls
-                 string_code_point_at (which validates the handle once)"}
+                 string_code_point_at (which validates the handle once)"
+  :r4b          "R4B (2026-10-03). CALL with n <= 16 arguments: args 0..6 in x0..x6 (x7 = context), args 7..n-1 at [sp,#8*(k-7)] of
+                 the CALLER: every function reserves an outgoing area of 16-rounded 8*(max n - 7) bytes at the bottom of its
+                 frame ([sp,#0..]), the callee-saved registers are saved above it. The callee (always framed when it reads such a
+                 parameter) loads parameter k >= 7 from [x29,#16+8*(k-7)]. Leaf functions keep slot k <= 7 in x(k-1) as before.
+                 VECP t lit n: vector_alloc(ctx, n), then a copy loop from code_base + LF-POOL(lit) into the fresh vector's
+                 items (x1/x2/x3 as scratch after the call). bytes-count / bytes-at take the inline vector-count / vector-at
+                 paths (a bytes value is a vector handle)"}
 
  :fixups
  [[:c FX-B26 1 "b label: imm26 words"] [:c FX-BC19 2 "b.cond label: imm19 words"]

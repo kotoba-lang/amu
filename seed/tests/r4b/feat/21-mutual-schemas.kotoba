@@ -1,0 +1,19 @@
+;; R4B feat: two :schemas records that refer to each other (a list of B in A, an A in B), with a :keyword field
+(ns seed.r4b (:export [test])
+  (:schemas {:mu/a [:record :mu/a [[:name :keyword] [:bs [:list [:ref :mu/b]]]]]
+             :mu/b [:record :mu/b [[:w :i64] [:back [:option [:ref :mu/a]]]]]}))
+(defn- a-new [k :keyword bs [:list [:ref :mu/b]]] [:ref :mu/a] (record-new [:record :mu/a [[:name :keyword] [:bs [:list [:ref :mu/b]]]]] k bs))
+(defn- b-new [w :i64 back [:option [:ref :mu/a]]] [:ref :mu/b] (record-new [:record :mu/b [[:w :i64] [:back [:option [:ref :mu/a]]]]] w back))
+(defn- bs-of [a [:ref :mu/a]] [:list [:ref :mu/b]] (record-get [:record :mu/a [[:name :keyword] [:bs [:list [:ref :mu/b]]]]] a :bs))
+(defn- back-of [b [:ref :mu/b]] [:option [:ref :mu/a]] (record-get [:record :mu/b [[:w :i64] [:back [:option [:ref :mu/a]]]]] b :back))
+(defn- name-score [a [:ref :mu/a]] :i64 (if (= (record-get [:record :mu/a [[:name :keyword] [:bs [:list [:ref :mu/b]]]]] a :name) :root) 1 2))
+(defn test [] :i64
+  (let [inner (a-new :leaf (typed-list-new [:list [:ref :mu/b]]))
+        b1 (b-new 30 (option-some-of [:option [:ref :mu/a]] inner))
+        b2 (b-new 400 (option-none-of [:option [:ref :mu/a]]))
+        root (a-new :root (typed-list-new [:list [:ref :mu/b]] b1 b2))
+        bs (bs-of root)]
+    (+ (name-score root)
+       (* 10 (name-score (option-value-of [:option [:ref :mu/a]] (back-of (typed-list-nth [:list [:ref :mu/b]] bs 0)) root)))
+       (record-get [:record :mu/b [[:w :i64] [:back [:option [:ref :mu/a]]]]] (typed-list-nth [:list [:ref :mu/b]] bs 1) :w)
+       (* 1000 (count bs)))))
