@@ -46,30 +46,21 @@
    :default nil)
 
 #?(:kotoba
-   ;; Answers the text of the one source file, or an error document. A call
-   ;; into another module answers a `[:result T :document]` value, so the
-   ;; result is threaded by hand rather than by the abort elaboration.
-   (defn resolve-single-source! [args [:list :string]] [:result :string :document]
-     (if (< (vector-count args) 2)
-       (result-err-of [:result :string :document] (ex-info "missing source input" {:phase :usage}))
-       (if (> (vector-count (source-roots args)) 0)
-         (result-err-of [:result :string :document]
-                        (ex-info "--source-path (a linked project) is not available on the Kotoba route"
-                                 {:phase :usage}))
-         (if (= (option-is-set? args "--module-lock") 1)
-           (result-err-of [:result :string :document]
-                          (ex-info "--module-lock is not available on the Kotoba route"
-                                   {:phase :usage}))
-           (if (= (option-is-set? args "--package-lock") 1)
-             (result-err-of [:result :string :document]
-                            (ex-info "--package-lock is not available on the Kotoba route"
-                                     {:phase :usage}))
-             (result-match-of [:result :string :document]
-                              (support/source! (typed-list-nth [:list :string] args 1))
-                              input
-                              (io/read-text-file input)
-                              failure
-                              (result-err-of [:result :string :document] failure)))))))
+   ;; Answers the text of the one source file, or aborts with the usage error
+   ;; document. An imported aborting function aborts here too (ADR 0363), so
+   ;; `support/source!` and `io/read-text-file` are plain calls.
+   (defn resolve-single-source! [args [:list :string]] :string
+     (cond
+       (< (vector-count args) 2)
+       (throw (ex-info "missing source input" {:phase :usage}))
+       (> (vector-count (source-roots args)) 0)
+       (throw (ex-info "--source-path (a linked project) is not available on the Kotoba route" {:phase :usage}))
+       (= (option-is-set? args "--module-lock") 1)
+       (throw (ex-info "--module-lock is not available on the Kotoba route" {:phase :usage}))
+       (= (option-is-set? args "--package-lock") 1)
+       (throw (ex-info "--package-lock is not available on the Kotoba route" {:phase :usage}))
+       :else
+       (io/read-text-file (support/source! (typed-list-nth [:list :string] args 1)))))
    :default nil)
 
 #?(:kotoba nil
