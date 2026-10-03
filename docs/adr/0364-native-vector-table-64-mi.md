@@ -54,7 +54,7 @@ stay below 2^32, so the 32-bit handle in a hash-consing entry and the 32-bit reg
   off). A program needing more than 4 Mi handles answers correctly above the old ceiling: the seed prefix 00-ns..01-mem
   (5.37 M handles) gives exactly the host's HIR (`form/eq` OK); 00-ns..02-io and ..10-lex (7.9 M / 13.5 M handles)
   equal the host's HIR modulo one known guest difference (duplicates in the `:named-operations` set).
-- Seed gates G1 and G5 at r6b on a clean worktree: see seed/rungs or the commit message of this change.
+- Seed gates G1 and G5 at r6b on a clean worktree (412a48615, seeds 6cc3dd9b of the r6b record, new loader): G1 19/19 by seed-0 and seed-1, G5 PASS, "rung r6b: READY" (load 99).
 
 ## Consequences
 
