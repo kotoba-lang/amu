@@ -6,7 +6,9 @@
 #   neg/<n>   seed/tests/neg/*.kotoba           the seed negatives (30 at R0)
 #   conf/<d>/<n>  seed/tests/conformance/*/*.kotoba   verbatim kotoba-lang conformance programs (55)
 #   case/<n>  seed/tests/check/cases/err-*.kotoba     21-check's own refusal cases
-#   r1neg/<n> seed/tests/r1/neg/*.kotoba         R1 negatives (only with --rung r1 and later)
+#   rKneg/<n> seed/tests/rK/neg/*.kotoba         the negatives of every rung K = 1..N up to the gated rung N (r1neg from r1 on, r3neg from r3,
+#             r4neg from r4: since 2026-10-03; before, only r1/neg was included), plus seed/tests/<rung>/neg for an extension rung
+#             such as r4b (label <rung>neg/<n>)
 # Result of one program: `ACCEPT` (check exits 0 and prints "ok") or `REFUSED <the single stderr line>`; anything else
 # (no stderr line, exit status other than 0/1, a line not starting "seed: E<code> ", a crash) is
 # BROKEN. `compile` must give the SAME refusal line as `check`, exit 1 and leave NO output file behind.
@@ -24,7 +26,11 @@ while [ $# -gt 0 ]; do
 done
 bin=${1:-$SEED_BUILD/seed-1.bin}; off=${2:-$(cat ${bin%.bin}.offset)}
 R=$SEED_REPO; W=$SEED_BUILD/g3-${bin:t:r}; mkdir -p $W $R/seed/tests/golden
-G=$R/seed/tests/golden/refusal-$rung.txt
+# the golden: refusal-<rung>.txt; a rung without its own golden uses the alias target's (seed/tests/ALIASES) and --update refuses to
+# write that (record a golden of its own by creating the file or adding no alias)
+gname=$(seed_rung_golden $rung) || gname=$rung
+G=$R/seed/tests/golden/refusal-$gname.txt
+rn=$(seed_rung_num $rung)
 [ -s $bin ] || { echo "G3: no compiler at $bin" >&2; exit 2; }
 export SEED_RESOURCES_35=$R:$W
 
@@ -33,7 +39,10 @@ progs() {
   for f in $R/seed/tests/neg/*.kotoba(N); do echo "neg/${f:t:r} $f"; done
   for f in $R/seed/tests/conformance/*/*.kotoba(N); do echo "conf/${${f:h}:t}/${f:t:r} $f"; done
   for f in $R/seed/tests/check/cases/err-*.kotoba(N); do echo "case/${f:t:r} $f"; done
-  case $rung in r0) ;; *) for f in $R/seed/tests/r1/neg/*.kotoba(N); do echo "r1neg/${f:t:r} $f"; done ;; esac
+  local k d
+  for k in $(seq 1 $rn 2>/dev/null); do [ $rn -ge 1 ] || break; for f in $R/seed/tests/r$k/neg/*.kotoba(N); do echo "r${k}neg/${f:t:r} $f"; done; done
+  d=$R/seed/tests/$rung/neg
+  if [[ $rung != r<-> ]] && [ -d $d ]; then for f in $d/*.kotoba(N); do echo "${rung}neg/${f:t:r} $f"; done; fi
 }
 
 : > $W/out.txt; broken=0; n=0; nref=0; nacc=0
@@ -55,6 +64,7 @@ for line in ${(f)"$(progs)"}; do
 done
 
 if [ $update -eq 1 ]; then
+  G=$R/seed/tests/golden/refusal-$rung.txt   # --update always records the rung's OWN golden (also for an aliased rung)
   [ $broken -eq 0 ] || { echo "G3: refusing to record a golden with $broken BROKEN lines"; grep BROKEN $W/out.txt | head; exit 1; }
   cp $W/out.txt $G; echo "G3: golden $G written ($n programs)"
 fi

@@ -10,7 +10,14 @@
 #   G2     seed/tests/corpus (63 programs) equal to stage-0's oracle, seed-0 and seed-1
 #   G3     refusal texts, scripts/seed/g3.sh --rung rN
 #   G5     no program started by the packaged seed (scripts/seed/no-host-processes.sh; packages seed-1 first)
-#   GR     rung conformance (scripts/seed/gr.sh rN), r1 and later only
+#   GR     rung conformance (scripts/seed/gr.sh), r1 and later only: the rung's own seed/tests/<rung> AND every earlier rK with an
+#          oracle (a later rung keeps every earlier rung's programs passing; r4 = r1 + r3 + r4)
+#   UNIT   with --with-unit: every module unit test (scripts/seed/unit-all.sh) built by the CURRENT seed-1
+#   Honesty (HOUSE2, 2026-10-03): the rung name must resolve to test directories and a refusal golden (seed_rung_tests /
+#          seed_rung_golden in lib.sh, aliases in seed/tests/ALIASES) or the run fails at once; --no-build refuses seed binaries whose
+#          recorded unity sha256 differs from the CURRENT seed/MANIFEST sources (a stale or hand-copied build is not a result);
+#          BUILD is build.sh auto: stage-0 fixed point, or, where stage-0 refuses the unity (R3+ language), the lineage route
+#          (seed-0 = the newest recorded rung seed reproduced by bootstrap.sh --no-head); G3 includes the negatives of every rung K<=N.
 #   ERR    scripts/seed/errors-check.py: seed/HEADS :errors == the text tables of 90-drv, module-local codes registered
 #   FUEL   with --with-fuel: seed fuel <= stage-0 fuel per port and probe (scripts/seed/fuel.sh)
 # Output: build/seed/gates/<rung>/<gate>.log, build/seed/gates/<rung>/summary.tsv (gate, status, seconds, detail), and
@@ -19,9 +26,9 @@
 emulate -L zsh
 setopt pipefail
 source "$(dirname "$0")/lib.sh"
-rung=r0; nobuild=0; only=""; skip=""; withfuel=0
+rung=r0; nobuild=0; only=""; skip=""; withfuel=0; withunit=0
 while [ $# -gt 0 ]; do
-  case $1 in --rung) rung=$2; shift 2 ;; --no-build) nobuild=1; shift ;; --with-fuel) withfuel=1; shift ;; --only) only=$2; shift 2 ;; --skip) skip=$2; shift 2 ;; *) echo "usage: gates.sh [--rung rN] [--no-build] [--with-fuel] [--only G1,..] [--skip G5,..]" >&2; exit 2 ;; esac
+  case $1 in --rung) rung=$2; shift 2 ;; --no-build) nobuild=1; shift ;; --with-fuel) withfuel=1; shift ;; --with-unit) withunit=1; shift ;; --only) only=$2; shift 2 ;; --skip) skip=$2; shift 2 ;; *) echo "usage: gates.sh [--rung rN] [--no-build] [--with-fuel] [--with-unit] [--only G1,..] [--skip G5,..]" >&2; exit 2 ;; esac
 done
 R=$SEED_REPO; B=$SEED_BUILD; S=$R/scripts/seed; D=$B/gates/$rung; mkdir -p $D
 : > $D/summary.tsv
@@ -39,12 +46,22 @@ run() {
 }
 skiprow() { row $1 SKIP 0 "$2"; }
 
+# ---- rung must resolve (no silent reuse of another rung's tests)
+gr_dirs=""
+if [ "$rung" != r0 ]; then
+  gr_dirs=$(seed_rung_gr_dirs $rung) && [ -n "$gr_dirs" ] && seed_rung_golden $rung > /dev/null \
+    || { echo "gates: rung $rung has no test directory with an oracle or no refusal golden (seed/tests/<rung>, seed/tests/ALIASES, seed/tests/golden/refusal-<rung>.txt)" >&2; exit 2; }
+fi
+# unity sha256 of the CURRENT sources (the same concatenation build.sh makes)
+cur_unity=$( { for p in $(seed_manifest); do cat $R/$p; printf '\n'; done } | shasum -a 256 | cut -c1-64 )
+
 # ---- BUILD
 if want BUILD; then
   if [ $nobuild -eq 1 ]; then
-    run BUILD sh -c "for k in 0 1 2; do [ -s $B/seed-\$k.bin ] || { echo missing seed-\$k.bin; exit 1; }; done; echo 'reused build/seed/seed-{0,1,2}.bin (--no-build): unity sha256 '\$(cat $B/seed-unity.kotoba.sha256 2>/dev/null)"
+    built=$(sed -n 's/^unity-sha256 //p' $B/seed-1.info 2>/dev/null)
+    run BUILD sh -c "for k in 0 1 2; do [ -s $B/seed-\$k.bin ] || { echo missing seed-\$k.bin; exit 1; }; done; [ '$built' = '$cur_unity' ] || { echo 'STALE: seed-1 was built from unity '\"$built\"', the current sources are '$cur_unity' (rebuild without --no-build)'; exit 1; }; echo 'reused '$B'/seed-{0,1,2}.bin (--no-build), built from the current sources: unity sha256 '$cur_unity'; '\$(head -1 $B/seed-0.info | cut -c1-90)"
   else
-    run BUILD zsh $S/build.sh fixed-point
+    run BUILD zsh $S/build.sh auto
   fi
 else skiprow BUILD "not requested"; fi
 
@@ -83,6 +100,10 @@ if want G4; then
       if cmp -s $k $o; then s=$((s+1)); else d=$((d+1)); echo "G4: DIFF ${k:t}"; fi
     done
     echo "G4: seed-1.bin == seed-2.bin ($(wc -c < $B/seed-1.bin | tr -d ' ') bytes, sha256 $(shasum -a 256 $B/seed-1.bin | cut -c1-64)); seed-0 vs seed-1 containers: $s identical, $d different"
+    if grep -q '^label LINEAGE' $B/seed-0.info 2>/dev/null; then
+      # lineage build: seed-0 is the previous recorded rung seed, whose containers differ legitimately when the code generator changed
+      echo "G4: (lineage build: seed-0 vs seed-1 container difference is informational, the fixed point above is the gate)"; return 0
+    fi
     [ $d -eq 0 ] && [ $s -gt 0 ]
   }
   run G4 g4
@@ -103,11 +124,21 @@ if [ $withfuel -eq 1 ] && want FUEL; then run FUEL zsh $S/fuel.sh $B/seed-1.bin;
 # ---- GR
 if want GR; then
   if [ "$rung" = r0 ]; then skiprow GR "rung r0: G2 is the rung conformance"
-  else run GR zsh $S/gr.sh $rung; fi
+  else
+    grall() {   # every directory runs; the last log line joins the per-directory result lines
+      local d rc=0 out="" l
+      for d in ${=gr_dirs}; do l=$(zsh $S/gr.sh $d $B/seed-1.bin 2>&1); [ $? -eq 0 ] || rc=1; echo "$l"; out="$out${out:+ | }$(echo "$l" | grep '^GR \[' | cut -c1-150)"; done
+      echo "$out"; return $rc
+    }
+    run GR grall
+  fi
 fi
 
+# ---- UNIT (with --with-unit)
+if [ $withunit -eq 1 ] && want UNIT; then run UNIT zsh $S/unit-all.sh $B/seed-1.bin; fi
+
 # ---- table
-order=(BUILD G1 G2 G3 G4 G5 GR FUEL)
+order=(BUILD ERR G1 G2 G3 G4 G5 GR UNIT FUEL)
 echo
 printf '%-6s %-5s %8s  %s\n' GATE STATUS SECONDS DETAIL
 fails=0; ran=0

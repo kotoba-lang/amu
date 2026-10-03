@@ -89,3 +89,34 @@ seed_run() {
     KEXE_CPU_SECONDS=${SEED_SECONDS:-120} KEXE_WALL_SECONDS=${SEED_SECONDS:-120} \
     $l $bin $off 0 aarch64 $SEED_GRANT -- "$@"
 }
+
+# ---- rung names (HOUSE2, 2026-10-03): rN, or rNx for an extension of rung N (r4b = "values by reference" on top of R4).
+# seed_rung_num <rung> : the number N.   seed_rung_tests <rung> : the test directory name under seed/tests/ the rung's GR gate uses:
+# seed/tests/<rung> if it exists, else the base rN, else the target of an explicit alias line "<rung> <target>" in seed/tests/ALIASES
+# (a rung that adds no language, e.g. r2 -> r1, says so in git instead of silently reusing a copy). Empty output = unknown rung.
+seed_rung_num() { local n=${1#r}; echo ${n%%[a-z]*}; }
+seed_rung_tests() {
+  local r=$1 base a
+  [ -d $SEED_REPO/seed/tests/$r ] && { echo $r; return 0; }
+  a=$(awk -v r=$r '$1==r {print $2}' $SEED_REPO/seed/tests/ALIASES 2>/dev/null | head -1)
+  [ -n "$a" ] && [ -d $SEED_REPO/seed/tests/$a ] && { echo $a; return 0; }
+  base=r$(seed_rung_num $r); [ -d $SEED_REPO/seed/tests/$base ] && { echo $base; return 0; }
+  return 1
+}
+# seed_rung_golden <rung> : the refusal golden name: refusal-<rung>.txt, else the alias target's, else the base rung's
+seed_rung_golden() {
+  local r=$1 a base
+  [ -f $SEED_REPO/seed/tests/golden/refusal-$r.txt ] && { echo $r; return 0; }
+  a=$(awk -v r=$r '$1==r {print $2}' $SEED_REPO/seed/tests/ALIASES 2>/dev/null | head -1)
+  [ -n "$a" ] && [ -f $SEED_REPO/seed/tests/golden/refusal-$a.txt ] && { echo $a; return 0; }
+  return 1
+}
+# seed_rung_gr_dirs <rung> : every test directory with an oracle that GR must pass at this rung, oldest first: the rung's own
+# (seed_rung_tests) and all earlier rN with seed/tests/rN/rN.oracle (a later rung keeps every earlier rung's programs passing)
+seed_rung_gr_dirs() {
+  local r=$1 n k own d out=""
+  n=$(seed_rung_num $r); own=$(seed_rung_tests $r) || return 1
+  for k in $(seq 1 $n 2>/dev/null); do [ $n -ge 1 ] || break; d=r$k; [ -f $SEED_REPO/seed/tests/$d/$d.oracle ] && out="$out $d"; done
+  [[ " $out " == *" $own "* ]] || { [ -f $SEED_REPO/seed/tests/$own/$own.oracle ] && out="$out $own"; }
+  echo ${out# }
+}
