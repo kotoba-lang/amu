@@ -8,39 +8,42 @@ Generated from the design ladder (docs/selfhost-seed-design-20261002.md section 
 |---|---|---|---|---|---|---|---|
 | R0 | Seed-0: 41 heads, 4 types (i64, bool, string, vector-i64), 3 capability wires; stack IR (SIR), depth-indexed temporaries, C runtime calls for vector and string ops | G1 19 ports, G2 corpus, G3 refusal texts, G4 fixed point, G5 no host processes | complete | BUILD PASS (0.0s), G1 PASS (16.0s), G2 PASS (13.5s), G4 PASS (0.2s), G3 PASS (8.6s), G5 PASS (4.3s) ; skipped: GR | yes `fe2c20aefa02f4f9...` | 4840 | 546 / 4472 / 8.2x |
 | R1 | sugar and enums: do, when, cond, case on i64/keywords, ->/->>, dotimes/doseq, keywords as interned i64, flat records | R0 gates + GR (seed/tests/r1: 49 feature programs, 8 typed conformance adaptations, 40 negatives) + G3 golden for r1 | complete, tag `seed-r1` | BUILD PASS (0.0s), G1 PASS (14.8s), G2 PASS (12.6s), G4 PASS (0.2s), G3 PASS (10.5s), G5 PASS (4.3s), GR PASS (6.1s) | yes `c0526b73f8c347a2...` | 7238 | 568 / 4704 / 8.3x |
-| R2 | performance, no new language: inline vector/pair access, linear-scan allocation, constant folding, counted-loop fuel prepay | R0-R1 gates + Embench medians within 1.5x of the 2026-09-29 reference, code bytes within 1.5x | not recorded | | | | |
-| R3 | values: options/results, try/throw/abort, typed lists, maps and sets, full strings | conformance abort/ collections/ stdlib/ | not recorded | | | | |
-| R4 | functions: fn, closures, multi-arity, invoke, map/filter/reduce | conformance functions/ | not recorded | | | | |
+| R2 | performance, no new language: inline vector/pair access, linear-scan allocation, constant folding, counted-loop fuel prepay | R0-R1 gates + Embench medians within 1.5x of the 2026-09-29 reference, code bytes within 1.5x | complete, tag `seed-r2` | BUILD PASS (0.0s), ERR PASS (0.0s), G1 PASS (16.1s), G2 PASS (14.5s), G4 PASS (0.2s), G3 PASS (11.5s), G5 PASS (4.6s), GR PASS (7.1s) | yes `e1b2ecd55aac99fb...` | 7986 | 609 / 4742 / 7.8x |
+| R3 | values: options/results, try/throw/abort, typed lists, maps and sets, full strings | conformance abort/ collections/ stdlib/ | complete, tag `seed-r3` | BUILD PASS (0.0s), ERR PASS (0.0s), G1 PASS (17.8s), G2 PASS (16.1s), G4 PASS (0.3s), G3 PASS (13.5s), G5 PASS (5.0s), GR PASS (8.3s) | yes `cbae36dcc9dfa035...` | 9492 | 686 / 5006 / 7.3x |
+| R4 | functions: fn, closures, multi-arity, invoke, map/filter/reduce | conformance functions/ | complete, tag `seed-r4` | BUILD PASS (0.0s), ERR PASS (0.0s), G1 PASS (13.4s), G2 PASS (40.8s), G4 PASS (0.8s), G3 PASS (35.5s), G5 PASS (8.1s), GR PASS (11.4s) | yes `e9598b28f61134c5...` | 10648 | 609 / 4730 / 7.8x |
 | R5 | modules and effects: ns :require, qualified names, perform/handle, atom/swap!, capability policy | conformance namespace_priority/ entry_extensions/ state/ local-state/ reader_target/ | not recorded | | | | |
 | R6 | Forms, :document ops, #?(:kotoba ..); the seed compiles the big compiler module by module (convergence point) | per-module differentials against the stage-0-built guest | not recorded | | | | |
 | R7 | (optional) the seed frontend and backend are amu: full checker rules, CIDs, check/refactor/compile driver | rule 11 on the seed lineage | not recorded | | | | |
 
 ## Per-port compile ms and code bytes
 
-| port | R0 seed ms | R0 stage-0 ms | R0 code B | R1 seed ms | R1 stage-0 ms | R1 code B |
-|---|---|---|---|---|---|---|
-| aha-mont64 | 27.1 | 169.7 | 3532 | 29.9 | 178.8 | 3532 |
-| crc32 | 29.4 | 600.7 | 4248 | 28.9 | 595.5 | 4248 |
-| depthconv | 29.4 | 439.8 | 2648 | 31.3 | 455.9 | 2648 |
-| edn | 29.1 | 139.3 | 1432 | 30.2 | 155.6 | 1432 |
-| huffbench | 28.8 | 85.1 | 840 | 30.3 | 125.3 | 840 |
-| matmult-int | 29.6 | 933.4 | 7160 | 31.3 | 984.3 | 7160 |
-| md5sum | 27.7 | 238.2 | 8488 | 29.2 | 252.7 | 8488 |
-| nettle-aes | 27.9 | 137.0 | 2264 | 29.7 | 144.7 | 2264 |
-| nettle-sha256 | 29.5 | 270.9 | 9516 | 29.8 | 276.7 | 9516 |
-| nsichneu | 27.5 | 87.3 | 792 | 29.5 | 105.8 | 792 |
-| picojpeg | 26.5 | 83.8 | 1012 | 29.6 | 96.6 | 1012 |
-| qrduino | 32.4 | 110.0 | 968 | 29.1 | 118.4 | 968 |
-| sglib-combined | 28.9 | 108.6 | 1604 | 28.9 | 112.3 | 1604 |
-| slre | 29.9 | 103.3 | 1333 | 27.9 | 98.8 | 1333 |
-| statemate | 27.8 | 81.2 | 652 | 29.5 | 82.1 | 652 |
-| tarfind | 29.0 | 129.6 | 1928 | 29.7 | 136.0 | 1928 |
-| ud | 26.4 | 275.5 | 5692 | 28.9 | 293.9 | 5692 |
-| wikisort | 26.9 | 179.4 | 3592 | 30.8 | 193.6 | 3592 |
-| xgboost | 32.4 | 298.7 | 56732 | 33.0 | 297.5 | 56732 |
+| port | R0 seed ms | R0 stage-0 ms | R0 code B | R1 seed ms | R1 stage-0 ms | R1 code B | R2 seed ms | R2 stage-0 ms | R2 code B | R3 seed ms | R3 stage-0 ms | R3 code B | R4 seed ms | R4 stage-0 ms | R4 code B |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| aha-mont64 | 27.1 | 169.7 | 3532 | 29.9 | 178.8 | 3532 | 41.4 | 179.8 | 3264 | 42.3 | 188.1 | 3264 | 29.1 | 169.4 | 3264 |
+| crc32 | 29.4 | 600.7 | 4248 | 28.9 | 595.5 | 4248 | 33.0 | 587.4 | 3304 | 33.8 | 630.2 | 3304 | 29.5 | 620.5 | 3304 |
+| depthconv | 29.4 | 439.8 | 2648 | 31.3 | 455.9 | 2648 | 28.4 | 454.8 | 2088 | 34.6 | 477.1 | 2088 | 30.2 | 475.4 | 2440 |
+| edn | 29.1 | 139.3 | 1432 | 30.2 | 155.6 | 1432 | 30.8 | 140.9 | 1072 | 33.7 | 162.3 | 1072 | 30.2 | 155.2 | 1072 |
+| huffbench | 28.8 | 85.1 | 840 | 30.3 | 125.3 | 840 | 29.4 | 88.5 | 616 | 35.2 | 98.5 | 616 | 33.1 | 99.4 | 616 |
+| matmult-int | 29.6 | 933.4 | 7160 | 31.3 | 984.3 | 7160 | 28.6 | 960.4 | 5752 | 35.3 | 1001.2 | 5752 | 32.6 | 996.1 | 5752 |
+| md5sum | 27.7 | 238.2 | 8488 | 29.2 | 252.7 | 8488 | 32.6 | 307.7 | 4488 | 35.0 | 271.7 | 4488 | 32.3 | 253.2 | 4488 |
+| nettle-aes | 27.9 | 137.0 | 2264 | 29.7 | 144.7 | 2264 | 29.4 | 139.9 | 1592 | 31.5 | 175.5 | 1592 | 31.2 | 140.8 | 1592 |
+| nettle-sha256 | 29.5 | 270.9 | 9516 | 29.8 | 276.7 | 9516 | 29.6 | 288.5 | 5868 | 37.6 | 306.3 | 5868 | 35.6 | 286.5 | 5868 |
+| nsichneu | 27.5 | 87.3 | 792 | 29.5 | 105.8 | 792 | 34.0 | 97.7 | 468 | 48.6 | 125.4 | 468 | 31.7 | 94.4 | 468 |
+| picojpeg | 26.5 | 83.8 | 1012 | 29.6 | 96.6 | 1012 | 40.6 | 117.0 | 664 | 47.8 | 103.4 | 664 | 31.8 | 95.2 | 664 |
+| qrduino | 32.4 | 110.0 | 968 | 29.1 | 118.4 | 968 | 32.8 | 119.3 | 744 | 31.0 | 136.1 | 744 | 39.9 | 121.8 | 744 |
+| sglib-combined | 28.9 | 108.6 | 1604 | 28.9 | 112.3 | 1604 | 28.9 | 109.6 | 1360 | 36.0 | 118.6 | 1360 | 35.4 | 109.1 | 1360 |
+| slre | 29.9 | 103.3 | 1333 | 27.9 | 98.8 | 1333 | 29.9 | 111.6 | 885 | 32.9 | 117.0 | 885 | 29.8 | 107.1 | 885 |
+| statemate | 27.8 | 81.2 | 652 | 29.5 | 82.1 | 652 | 30.5 | 85.2 | 432 | 32.6 | 92.5 | 432 | 29.2 | 82.5 | 432 |
+| tarfind | 29.0 | 129.6 | 1928 | 29.7 | 136.0 | 1928 | 32.0 | 142.3 | 1436 | 32.7 | 156.6 | 1436 | 28.8 | 143.8 | 1436 |
+| ud | 26.4 | 275.5 | 5692 | 28.9 | 293.9 | 5692 | 34.9 | 314.2 | 4804 | 33.2 | 309.8 | 4804 | 33.3 | 285.2 | 4804 |
+| wikisort | 26.9 | 179.4 | 3592 | 30.8 | 193.6 | 3592 | 30.0 | 193.3 | 2680 | 32.1 | 205.5 | 2680 | 30.7 | 193.7 | 2680 |
+| xgboost | 32.4 | 298.7 | 56732 | 33.0 | 297.5 | 56732 | 32.1 | 303.7 | 55452 | 39.6 | 330.4 | 55452 | 34.8 | 300.9 | 55804 |
 
 - **R0**: seed 26.4-32.4 ms per port, stage-0 81.2-933.4 ms, ratio 2.9-31.5x (wall, process start included); the BUILD gate reused build artifacts whose unity sha256 matches the head; head `c23ff79abc6b`, 2026-10-02, load average 78.60 at record time, unity sha256 `07e4a2d7ab9cd481...`, seed-1 sha256 `fe2c20aefa02f4f91f5b8394c8ad8a31e75325242050aaf7964b0eab73a39dd6`, seed-2 sha256 `fe2c20aefa02f4f91f5b8394c8ad8a31e75325242050aaf7964b0eab73a39dd6`, stage-0 sha256 `d2cb84f6e7934a63...`, seed-1 187186 bytes.
 - **R1**: seed 27.9-33.0 ms per port, stage-0 82.1-984.3 ms, ratio 2.8-31.4x (wall, process start included); the BUILD gate reused build artifacts whose unity sha256 matches the head; head `9daea87dbf34`, 2026-10-02, load average 44.07 at record time, unity sha256 `0273f66d577b8436...`, seed-1 sha256 `c0526b73f8c347a254fc3ff6cf8f50985074dc4822b9f77fab2c1fe50c20dcac`, seed-2 sha256 `c0526b73f8c347a254fc3ff6cf8f50985074dc4822b9f77fab2c1fe50c20dcac`, stage-0 sha256 `d2cb84f6e7934a63...`, seed-1 291392 bytes.
+- **R2**: seed 28.4-41.4 ms per port, stage-0 85.2-960.4 ms, ratio 2.8-33.6x (wall, process start included); the BUILD gate reused build artifacts whose unity sha256 matches the head; head `89888e5d0315`, 2026-10-02, load average 173.48 at record time, unity sha256 `8a7eea4af2388f46...`, seed-1 sha256 `e1b2ecd55aac99fb9a8cb9dac096e4cbf07202c2efc8aa08b50d7634a7cbe6aa`, seed-2 sha256 `e1b2ecd55aac99fb9a8cb9dac096e4cbf07202c2efc8aa08b50d7634a7cbe6aa`, stage-0 sha256 `d2cb84f6e7934a63...`, seed-1 269456 bytes.
+- **R3**: seed 31.0-48.6 ms per port, stage-0 92.5-1001.2 ms, ratio 2.2-28.4x (wall, process start included); the BUILD gate reused build artifacts whose unity sha256 matches the head; head `b7b8a548d27a`, 2026-10-03, load average 36.62 at record time, unity sha256 `8943a6cc0ccff710...`, seed-1 sha256 `cbae36dcc9dfa035d6df75ad6aedf34ba62484b5fbfbd85325ee9151adb487bb`, seed-2 sha256 `cbae36dcc9dfa035d6df75ad6aedf34ba62484b5fbfbd85325ee9151adb487bb`, stage-0 sha256 `d2cb84f6e7934a63...`, seed-1 330584 bytes.
+- **R4**: seed 28.8-39.9 ms per port, stage-0 82.5-996.1 ms, ratio 2.8-30.6x (wall, process start included); the BUILD gate reused build artifacts whose unity sha256 matches the head; head `929867140548`, 2026-10-03, load average 94.84 at record time, unity sha256 `bdd1df016ec2a20c...`, seed-1 sha256 `e9598b28f61134c5c7b852bd300275280bb827325f22b8eb75f81bc6229b64a9`, seed-2 sha256 `e9598b28f61134c5c7b852bd300275280bb827325f22b8eb75f81bc6229b64a9`, stage-0 sha256 `d2cb84f6e7934a63...`, seed-1 382968 bytes.
 
 ## Gates
 
