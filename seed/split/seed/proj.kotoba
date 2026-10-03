@@ -754,6 +754,15 @@
   (cond (= e TY-I64) "0" (= e TY-STR) "\"\"" (= e TY-BOOL) "false" (= e TY-KW) ":seed.proj/stub"
         (= e TY-DOC) "(__r6-as :document \"nil\")"   ; R6B: the null document, no library needed (__r6-as is a head)
         :else ""))
+;; LET (r6i): any other error type that crosses (a record [:ref :kw], a collection, :f64 ..) gets a retyped 0. The stub body
+;; is never run (its first instruction is patched to the export's entry); the throw only types the importer's call as :abort
+;; with E (ADR 0363: frontend passes export functions whose error type is a record). "" when the type does not cross.
+(defn- pj-zero-ty [M :vector-i64 S :string nsn :string e :i64] :string
+  (let [z (pj-zero-of e)
+        t (pj-ty M S nsn e)]
+    (cond (> (string-length z) 0) z
+          (= (string-length t) 0) ""
+          :else (string-concat "(__r6-as " (string-concat t " 0)")))))
 
 (defn- pj-ff [M :vector-i64 f :i64 k :i64] :i64 (vector-at M (+ MM-FN-BASE (* f MM-FN-W) k)))
 
@@ -794,14 +803,14 @@
         r (pj-ty M S nsn (pj-ff M f FF-RTYPE))
         ab (pj-sf M (pj-ff M f FF-SYM) SF-ABORT)
         np (if (pj-variadic? M f) (- (pj-ff M f FF-NPARAMS) 1) (pj-ff M f FF-NPARAMS))
-        body (if (= ab 0) (pj-selfcall np) (string-concat "(throw " (string-concat (pj-zero-of ab) ")")))]
+        body (if (= ab 0) (pj-selfcall np) (string-concat "(throw " (string-concat (pj-zero-ty M S nsn ab) ")")))]
     (cond (or (= (string-length ps) 0) (= (string-length r) 0)) ""
-          (and (not= ab 0) (= (string-length (pj-zero-of ab)) 0)) ""
+          (and (not= ab 0) (= (string-length (pj-zero-ty M S nsn ab)) 0)) ""
           :else (string-concat ps (string-concat " " (string-concat r (string-concat " " body)))))))
 
 ;; the record types of the signature of clause f, added to ids
 (defn- pj-clause-recs [M :vector-i64 f :i64 ids :string] :string
-  (loop [i 0 acc (pj-recs M (pj-ff M f FF-RTYPE) ids)]
+  (loop [i 0 acc (pj-recs M (pj-sf M (pj-ff M f FF-SYM) SF-ABORT) (pj-recs M (pj-ff M f FF-RTYPE) ids))]   ; LET: + the error type
     (if (>= i (pj-ff M f FF-NPARAMS)) acc (recur (+ i 1) (pj-recs M (pj-pt M f i) acc)))))
 
 ;; replace every SEEDSELF in t by q
