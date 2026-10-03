@@ -1,10 +1,10 @@
 # scripts/seed/refactor/lib.sh -- compile and run Kotoba programs with the seed for the refactor port (agent REFAC, 2026-10-04).
-# BOOTSTRAP-TOOL (zsh). The seed (RF_SEED, default build/refac/seed.bin = rung r6j 4b2498ec) compiles from source; no stage-0,
+# BOOTSTRAP-TOOL (zsh). The seed (RF_SEED, default build/refac/seed-r6k.bin = rung r6k ab9f8236) compiles from source; no stage-0,
 # JVM or node in the compiled program's process.
 #   rf_compile <entry.kotoba> <out-prefix> <source-path>...   -> <out>.kseed <out>.bin <out>.offset
 #   rf_run <out-prefix> [args...]                              runs main through tools/kexe_loader.c (wires 34,35,37,38,39)
 RF_REPO=${RF_REPO:-${${(%):-%x}:A:h:h:h:h}}
-RF_SEED=${RF_SEED:-$RF_REPO/build/refac/seed.bin}
+RF_SEED=${RF_SEED:-$RF_REPO/build/refac/seed-r6k.bin}
 export SEED_REPO=$RF_REPO SEED_BUILD=${SEED_BUILD:-$RF_REPO/build/refac}
 source $RF_REPO/scripts/seed/lib.sh
 rf_compile() {

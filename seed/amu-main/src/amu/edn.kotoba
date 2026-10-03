@@ -1,6 +1,7 @@
 (ns amu.edn
   (:export [kw str int bool nil-v raw vec lst amap hmap auto-map set-of vs vs1 vs2 vs3 conj1 conj2 count-of nth-of
-            pr pr-line join kind text hash-of kw-hash str-hash int-hash map-get map-assoc map-entries])
+            pr pr-line join kind text hash-of kw-hash str-hash int-hash map-get map-assoc map-entries has-key? int-value
+            hash-order-of])
   (:schemas {:edn/v [:record :edn/v [[:k :i64] [:t :string] [:h :i64] [:xs [:list [:ref :edn/v]]]]]}))
 
 ;; seed/amu-main/src/amu/edn.kotoba -- EDN values and ClojureScript's `pr-str` of them, byte for byte (agent REFAC,
@@ -147,6 +148,15 @@
   (let [xs (items m) n (vector-count xs)]
     (loop [i 0] (cond (>= i n) -1 (string=? (text (nth-of xs i)) t) i :else (recur (+ i 2))))))
 
+;; the value of an integer scalar (its printed decimal text)
+(defn int-value [v [:ref :edn/v]] :i64
+  (let [t (text v) n (string-byte-length t)
+        neg (and (> n 0) (= (string-code-point-at t 0) 45))]
+    (loop [i (if neg 1 0) acc 0]
+      (if (>= i n) (if neg (- 0 acc) acc) (recur (+ i 1) (+ (* acc 10) (- (string-code-point-at t i) 48)))))))
+
+(defn has-key? [m [:ref :edn/v] k [:ref :edn/v]] :bool (>= (key-at m (text k)) 0))
+
 (defn map-get [m [:ref :edn/v] k [:ref :edn/v]] [:ref :edn/v]
   (let [i (key-at m (text k))] (if (< i 0) (nil-v) (nth-of (items m) (+ i 1)))))
 
@@ -200,6 +210,9 @@
         idx (loop [i 0 acc (vector-alloc 0)] (if (>= i n) acc (recur (+ i 1) (vector-conj acc i))))]
     (loop [w 1 v idx]
       (if (>= w n) v (recur (* w 2) (merge-pass keys v w))))))
+
+;; the indices of the scalars xs in HAMT order (a hash map or set over them iterates so)
+(defn hash-order-of [xs [:list [:ref :edn/v]]] :vector-i64 (hash-order xs 1))
 
 ;; pieces -> one string, pairwise (n log n bytes copied)
 (defn join [ps [:list :string]] :string

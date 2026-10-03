@@ -16,7 +16,7 @@ while IFS= read -r line; do
   i=$((i+1))
   line=${line//@R@/$R}; line=${line//@T@/$W}
   args=(${=line})
-  outs=(); for ((k=1;k<${#args};k++)); do [ "${args[k]}" = --out ] && outs+=(${args[k+1]}); done
+  outs=(); for ((k=1;k<${#args};k++)); do { [ "${args[k]}" = --out ] || [ "${args[k]}" = --patch-out ]; } && outs+=(${args[k+1]}); done
   for o in $outs; do rm -rf $o; done
   (cd $R && bin/amu refactor $args > $W/$i.h.out 2> $W/$i.h.err); hs=$?
   for o in $outs; do [ -e $o ] && mv $o $W/$i.h.file; done

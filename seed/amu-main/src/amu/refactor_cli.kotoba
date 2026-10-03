@@ -4,6 +4,8 @@
             [amu.edn :as e]
             [amu.refactor-io :as io]
             [amu.refactor-graph :as rg]
+            [amu.refactor-plan :as rp]
+            [kotoba.compiler.refactor.core :as core]
             [kotoba.compiler.refactor.rules :as rules]))
 
 ;; seed/amu-main/src/amu/refactor_cli.kotoba -- `amu refactor` on the Kotoba route (agent REFAC, 2026-10-04).
@@ -135,7 +137,30 @@
           (and nt (not (has? "--target"))) (refuse "usage" "refactor/target-required" "rule c needs --target dual|host-env")
           :else 0)))
 
-;; the source files under the paths (refactor-cli expand-paths), or a refusal
+;; the resolved rule ids, in order
+(defn- rule-ids [spec :string] [:list :string]
+  (let [es (rules/resolve-rules spec) n (rules/entries-count es)]
+    (loop [i 0 acc (typed-list-new [:list :string])]
+      (if (>= i n) acc (recur (+ i 1) (typed-list-conj [:list :string] acc (rules/entry-id (rules/entries-nth es i))))))))
+
+(defn- has-id? [ids [:list :string] x :string] :bool
+  (let [n (vector-count ids)] (loop [i 0] (cond (>= i n) false (string=? (typed-list-nth [:list :string] ids i) x) true :else (recur (+ i 1))))))
+
+;; --regions a,b -> the pieces (clojure.string/split drops trailing empty pieces)
+(defn- comma-split [s :string] [:list :string]
+  (let [n (string-byte-length s)]
+    (loop [from 0 acc (typed-list-new [:list :string])]
+      (let [k (if (> from n) -1 (string-index-of (string-substring s from n) ","))]
+        (if (< k 0)
+          (let [all (typed-list-conj [:list :string] acc (string-substring s from n))]
+            ;; drop trailing empty pieces
+            (loop [m (vector-count all)]
+              (if (and (> m 0) (= (string-byte-length (typed-list-nth [:list :string] all (- m 1))) 0))
+                (recur (- m 1))
+                (loop [i 0 out (typed-list-new [:list :string])]
+                  (if (>= i m) out (recur (+ i 1) (typed-list-conj [:list :string] out (typed-list-nth [:list :string] all i))))))))
+          (recur (+ from (+ k 1)) (typed-list-conj [:list :string] acc (string-substring s from (+ from k)))))))))
+
 (defn- plan-or-apply [sub :string] :i64
   (if (< (npos) 2)
     (usage (if (string=? sub "plan")
@@ -145,12 +170,26 @@
       (if (> st 0)
         st
         (let [fs (io/expand-paths (positional) 1)]
-          (if (> (string-byte-length (io/files-error fs)) 0)
-            (refuse "decode" (io/files-code fs) (io/files-error fs))
-            (if (and (string=? sub "apply") (has? "--out") (> (vector-count (io/files-list fs)) 1))
-              (usage "--out names one file; give one path")
-              (cli/not-available (string-concat "refactor " sub)
-                                 "\"kotoba.compiler.refactor.core: guest twin not written (driver find/select/apply over the cst/edit twins)\" \"kotoba.compiler.refactor.rules.{destructure,reject,dynvars,kwcallback,letdestructure,lowerloops}: guest twins not written\""))))))))
+          (cond
+            (> (string-byte-length (io/files-error fs)) 0) (refuse "decode" (io/files-code fs) (io/files-error fs))
+            (and (string=? sub "apply") (has? "--out") (> (vector-count (io/files-list fs)) 1))
+            (usage "--out names one file; give one path")
+            (not (int-flag-ok? "--max-passes")) (usage "--max-passes must be a decimal integer")
+            (has-id? (rule-ids (pos-at 0)) "c")
+            (cli/not-available (string-concat "refactor " sub)
+                               "\"kotoba.compiler.refactor.rules.dynvars (rule c): guest twin not written\"")
+            :else
+            (rp/plan-or-apply sub (rule-ids (pos-at 0)) (io/files-list fs)
+                              (core/opts (has? "--include-ported") (has? "--lower-accessor")
+                                         (if (has? "--regions")
+                                           (let [ps (comma-split (flag "--regions"))]
+                                             ;; no piece: the host's set matches no region; "" stands for that
+                                             (if (= (vector-count ps) 0) (typed-list-new [:list :string] "") ps))
+                                           (typed-list-new [:list :string]))
+                                         (if (has? "--max-passes") (io/js-number (flag "--max-passes")) 8)
+                                         false)
+                              (has? "--no-diff") (flag "--patch-out") (has? "--patch-out")
+                              (has? "--check") (flag "--out") (has? "--out"))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; graph / partition / split

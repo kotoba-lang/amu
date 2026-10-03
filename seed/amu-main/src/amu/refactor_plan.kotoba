@@ -1,0 +1,313 @@
+(ns amu.refactor-plan
+  {:kotoba/export [plan-or-apply]}
+  (:require [amu.edn :as e]
+            [amu.refactor-io :as io]
+            [kotoba.compiler.refactor.cst :as cst]
+            [kotoba.compiler.refactor.core :as core]
+            [kotoba.compiler.refactor.diff :as diff]
+            [kotoba.compiler.refactor.finding :as fd]
+            [kotoba.compiler.refactor.rules :as rules])
+  (:schemas {:rp/file [:record :rp/file [[:path :string] [:before :string] [:after :string] [:res [:ref :core/res]]]]
+             :rp/fr [:record :rp/fr [[:files [:list [:ref :rp/file]]] [:status :i64]]]
+             :rp/freq [:record :rp/freq [[:keys [:list [:ref :edn/v]]] [:counts :vector-i64]]]
+             :rp/hs [:record :rp/hs [[:sites [:list [:ref :edn/v]]] [:total :i64]]]}))
+
+;; seed/amu-main/src/amu/refactor_plan.kotoba -- `amu refactor plan` / `apply` on the Kotoba route (agent REFAC,
+;; 2026-10-04): refactor-cli plan / apply-rules / rewrite-file / file-report / sum-summaries and core.cljk summarize,
+;; over the core twin (kotoba.compiler.refactor.core) and the diff twin, printed as nbb prints the host's maps
+;; (amu.edn). The caller (amu.refactor-cli) has checked the argument count, the rule spec and the paths.
+
+(defn- kv [acc [:list [:ref :edn/v]] k :string v [:ref :edn/v]] [:list [:ref :edn/v]] (e/conj2 acc (e/kw k) v))
+(defn- cpw [p :i64] :i64 (if (< p 128) 1 (if (< p 2048) 2 (if (< p 65536) 3 4))))
+
+;; cljs `count` of a string: UTF-16 units
+(defn- u16-count [s :string] :i64
+  (let [n (string-byte-length s)]
+    (loop [i 0 k 0] (if (>= i n) k (let [p (string-code-point-at s i)] (recur (+ i (cpw p)) (+ k (if (>= p 65536) 2 1))))))))
+
+;; ---------------------------------------------------------------------------
+;; frequencies: keys (EDN scalars) in insertion order with their counts; printed as cljs prints `frequencies`
+;; (an array map up to 8 keys, a hash map past 8)
+
+(defn- freq-new [] [:ref :rp/freq] (record-new [:ref :rp/freq] (e/vs) (vector-alloc 0)))
+(defn- freq-keys [f [:ref :rp/freq]] [:list [:ref :edn/v]] (record-get [:ref :rp/freq] f :keys))
+(defn- freq-counts [f [:ref :rp/freq]] :vector-i64 (record-get [:ref :rp/freq] f :counts))
+
+(defn- freq-add [f [:ref :rp/freq] k [:ref :edn/v] by :i64] [:ref :rp/freq]
+  (let [ks (freq-keys f) cs (freq-counts f) n (e/count-of ks)
+        at (loop [i 0] (cond (>= i n) -1 (string=? (e/text (e/nth-of ks i)) (e/text k)) i :else (recur (+ i 1))))]
+    (if (< at 0)
+      (record-new [:ref :rp/freq] (e/conj1 ks k) (vector-conj cs by))
+      (record-new [:ref :rp/freq] ks (vector-assoc cs at (+ by (vector-at cs at)))))))
+
+(defn- freq-map [f [:ref :rp/freq]] [:ref :edn/v]
+  (let [ks (freq-keys f) cs (freq-counts f) n (e/count-of ks)]
+    (e/auto-map (loop [i 0 acc (e/vs)] (if (>= i n) acc (recur (+ i 1) (e/conj2 acc (e/nth-of ks i) (e/int (vector-at cs i)))))))))
+
+;; (->> m (sort-by (comp - val)) vec): stable by descending count, in the map's iteration order
+(defn- freq-sorted-pairs [f [:ref :rp/freq]] [:ref :edn/v]
+  (let [ks (freq-keys f) cs (freq-counts f) n (e/count-of ks)
+        ;; iteration order of the map
+        order (if (> n 8) (e/hash-order-of ks) (loop [i 0 acc (vector-alloc 0)] (if (>= i n) acc (recur (+ i 1) (vector-conj acc i)))))
+        ;; stable insertion sort by descending count over that order
+        sorted (loop [i 0 acc (vector-alloc 0)]
+                 (if (>= i n)
+                   acc
+                   (let [x (vector-at order i)
+                         c (vector-at cs x)
+                         m (vector-count acc)
+                         pos (loop [j 0] (cond (>= j m) m (< (vector-at cs (vector-at acc j)) c) j :else (recur (+ j 1))))]
+                     (recur (+ i 1)
+                            (loop [j 0 b (vector-alloc 0)]
+                              (cond (> j m) b
+                                    (= j pos) (recur (+ j 1) (if (< j m) (vector-conj (vector-conj b x) (vector-at acc j)) (vector-conj b x)))
+                                    :else (recur (+ j 1) (if (< j m) (vector-conj b (vector-at acc j)) b))))))))]
+    (e/vec (loop [i 0 acc (e/vs)]
+             (if (>= i n) acc
+                 (let [x (vector-at sorted i)]
+                   (recur (+ i 1) (e/conj1 acc (e/vec (e/vs2 (e/nth-of ks x) (e/int (vector-at cs x))))))))))))
+
+;; ---------------------------------------------------------------------------
+;; summarize (core.cljk)
+
+(defn- kind-or-context [f [:ref :finding/f]] [:ref :edn/v]
+  (cond (> (string-byte-length (fd/f-kind f)) 0) (if (fd/f-kind-kw? f) (e/kw (fd/f-kind f)) (e/str (fd/f-kind f)))
+        (> (string-byte-length (fd/f-context f)) 0) (e/str (fd/f-context f))
+        :else (e/nil-v)))
+
+(defn- rules-in-order [fs [:list [:ref :finding/f]]] [:list :string]
+  (let [n (fd/fs-count fs)]
+    (loop [i 0 acc (typed-list-new [:list :string])]
+      (if (>= i n) acc
+          (let [f (fd/fs-nth fs i)
+                r (fd/f-rule f)
+                seen (loop [j 0] (cond (>= j (vector-count acc)) false (string=? (typed-list-nth [:list :string] acc j) r) true :else (recur (+ j 1))))]
+            (recur (+ i 1) (if (or seen (string=? (fd/f-status f) "info")) acc (typed-list-conj [:list :string] acc r))))))))
+
+(defn- summarize [first [:list [:ref :finding/f]] applied [:list [:ref :finding/f]]] [:ref :edn/v]
+  (let [rs (rules-in-order first)
+        rn (vector-count rs)
+        n (fd/fs-count first)]
+    (e/auto-map
+     (loop [k 0 acc (e/vs)]
+       (if (>= k rn)
+         acc
+         (let [r (typed-list-nth [:list :string] rs k)
+               st (loop [i 0 pat 0 por 0 act 0 au 0 hu 0 reg (freq-new) kinds (freq-new) reasons (freq-new)]
+                    (if (>= i n)
+                      (e/auto-map (kv (kv (kv (kv (kv (kv (kv (kv (kv (e/vs) "patterns" (e/int pat)) "by-region" (freq-map reg))
+                                                          "ported" (e/int por)) "actionable" (e/int act)) "auto" (e/int au)) "human" (e/int hu))
+                                              "applied" (e/int (let [am (fd/fs-count applied)]
+                                                                 (loop [j 0 c 0] (if (>= j am) c (recur (+ j 1) (if (string=? (fd/f-rule (fd/fs-nth applied j)) r) (+ c 1) c)))))))
+                                          "auto-by-kind" (freq-map kinds))
+                                      "human-reasons" (freq-sorted-pairs reasons)))
+                      (let [f (fd/fs-nth first i)]
+                        (if (or (not (string=? (fd/f-rule f) r)) (string=? (fd/f-status f) "info"))
+                          (recur (+ i 1) pat por act au hu reg kinds reasons)
+                          (let [ported (fd/f-ported? f)
+                                isa (and (not ported) (string=? (fd/f-status f) "auto"))
+                                ish (and (not ported) (string=? (fd/f-status f) "human"))]
+                            (recur (+ i 1) (+ pat 1) (if ported (+ por 1) por) (if ported act (+ act 1))
+                                   (if isa (+ au 1) au) (if ish (+ hu 1) hu)
+                                   (freq-add reg (e/kw (keyword-name (fd/f-region f))) 1)
+                                   (if isa (freq-add kinds (kind-or-context f) 1) kinds)
+                                   (if ish (freq-add reasons (e/str (fd/f-reason f)) 1) reasons)))))))]
+           (recur (+ k 1) (e/conj2 acc (e/kw r) st))))))))
+
+;; ---------------------------------------------------------------------------
+;; file reports
+
+(def max-sites 200)
+
+(defn- human-site [f [:ref :finding/f]] [:ref :edn/v]
+  (let [a0 (kv (e/vs) "rule" (e/kw (fd/f-rule f)))
+        a1 (if (>= (fd/f-line f) 0) (kv a0 "line" (e/int (fd/f-line f))) a0)
+        a2 (kv a1 "region" (e/kw (keyword-name (fd/f-region f))))
+        a3 (if (> (string-byte-length (fd/f-reason f)) 0) (kv a2 "reason" (e/str (fd/f-reason f))) a2)
+        a4 (if (> (string-byte-length (fd/f-context f)) 0) (kv a3 "context" (e/str (fd/f-context f))) a3)
+        a5 (if (> (string-byte-length (fd/f-kind f)) 0) (kv a4 "kind" (if (fd/f-kind-kw? f) (e/kw (fd/f-kind f)) (e/str (fd/f-kind f)))) a4)]
+    (e/amap a5)))
+
+;; destructure's inventory rows (head, region, n) -> {:other-destructuring {head {region n}}}
+(defn- inventory-data [f [:ref :finding/f]] [:ref :edn/v]
+  (let [rows (fd/f-inv f) n (fd/rows-count rows)
+        heads (loop [i 0 acc (typed-list-new [:list :string])]
+                (if (>= i n) acc
+                    (let [h (fd/row-a (fd/rows-nth rows i))
+                          seen (loop [j 0] (cond (>= j (vector-count acc)) false (string=? (typed-list-nth [:list :string] acc j) h) true :else (recur (+ j 1))))]
+                      (recur (+ i 1) (if seen acc (typed-list-conj [:list :string] acc h))))))
+        hn (vector-count heads)
+        outer (loop [k 0 acc (e/vs)]
+                (if (>= k hn) acc
+                    (let [h (typed-list-nth [:list :string] heads k)
+                          inner (loop [i 0 a (e/vs)]
+                                  (if (>= i n) a
+                                      (let [r (fd/rows-nth rows i)]
+                                        (recur (+ i 1) (if (string=? (fd/row-a r) h) (e/conj2 a (e/kw (fd/row-b r)) (e/int (fd/row-n r))) a)))))]
+                      (recur (+ k 1) (e/conj2 acc (e/str h) (e/auto-map inner))))))]
+    (e/amap (kv (e/vs) "other-destructuring" (e/auto-map outer)))))
+
+(defn- f-path [x [:ref :rp/file]] :string (record-get [:ref :rp/file] x :path))
+(defn- f-before [x [:ref :rp/file]] :string (record-get [:ref :rp/file] x :before))
+(defn- f-after [x [:ref :rp/file]] :string (record-get [:ref :rp/file] x :after))
+(defn- f-res [x [:ref :rp/file]] [:ref :core/res] (record-get [:ref :rp/file] x :res))
+
+(defn- lines-map [before :string after :string] [:ref :edn/v]
+  (let [cl (diff/changed-lines before after)]
+    (e/amap (kv (kv (e/vs) "removed" (e/int (diff/cl-removed cl))) "added" (e/int (diff/cl-added cl))))))
+
+;; the report map; the diff text separately (plan's --patch-out)
+(defn- file-report [x [:ref :rp/file] with-diff :bool] [:ref :edn/v]
+  (let [res (f-res x)
+        fs (core/res-first res)
+        n (fd/fs-count fs)
+        changed (not (string=? (f-before x) (f-after x)))
+        humans (loop [i 0 acc (e/vs) total 0]
+                 (if (>= i n)
+                   (record-new [:ref :rp/hs] acc total)
+                   (let [f (fd/fs-nth fs i)]
+                     (if (string=? (fd/f-status f) "human")
+                       (recur (+ i 1) (if (< total max-sites) (e/conj1 acc (human-site f)) acc) (+ total 1))
+                       (recur (+ i 1) acc total)))))
+        invs (loop [i 0 acc (e/vs)]
+               (if (>= i n) acc
+                   (let [f (fd/fs-nth fs i)]
+                     (recur (+ i 1) (if (and (fd/f-kind-kw? f) (string=? (fd/f-kind f) "inventory"))
+                                      (e/conj1 acc (e/amap (kv (kv (e/vs) "rule" (e/kw (fd/f-rule f))) "data" (inventory-data f))))
+                                      acc)))))
+        base (e/amap (kv (kv (kv (kv (kv (kv (kv (kv (e/vs) "path" (e/str (f-path x))) "changed" (e/bool changed))
+                                                 "chars-before" (e/int (u16-count (f-before x))))
+                                             "chars-after" (e/int (u16-count (f-after x))))
+                                         "passes" (e/int (core/res-passes res)))
+                                     "summary" (summarize fs (core/res-applied res)))
+                                 "human-sites" (e/vec (record-get [:ref :rp/hs] humans :sites)))
+                             "human-sites-total" (e/int (record-get [:ref :rp/hs] humans :total))))
+        b1 (if changed (e/map-assoc base (e/kw "lines") (lines-map (f-before x) (f-after x))) base)
+        b2 (if (and with-diff changed) (e/map-assoc b1 (e/kw "diff") (e/str (diff/unified (f-path x) (f-before x) (f-after x) 3))) b1)]
+    (if (> (e/count-of invs) 0) (e/map-assoc b2 (e/kw "inventory") (e/vec invs)) b2)))
+
+(def summary-keys-n 6)
+
+;; sum-summaries: per rule, merge-with + over the select-keys of each file's summary
+(defn- sum-summaries [reports [:list [:ref :edn/v]]] [:ref :edn/v]
+  (let [rn (e/count-of reports)
+        keys (typed-list-new [:list :string] "patterns" "ported" "actionable" "auto" "human" "applied")]
+    (loop [i 0 acc (e/amap (e/vs))]
+      (if (>= i rn)
+        acc
+        (let [summ (e/map-get (e/nth-of reports i) (e/kw "summary"))
+              es (e/map-entries summ)
+              en (quot (e/count-of es) 2)]
+          (recur (+ i 1)
+                 (loop [j 0 a acc]
+                   (if (>= j en) a
+                       (let [rule (e/nth-of es (* 2 j))
+                             m (e/nth-of es (+ (* 2 j) 1))
+                             old (e/map-get a rule)
+                             merged (loop [k 0 t (if (= (e/kind old) 0) (e/amap (e/vs)) old)]
+                                      (if (>= k summary-keys-n) t
+                                          (let [kk (e/kw (typed-list-nth [:list :string] keys k))
+                                                v (e/map-get m kk)
+                                                prev (e/map-get t kk)]
+                                            (recur (+ k 1) (e/map-assoc t kk (e/int (+ (e/int-value v) (if (e/has-key? t kk) (e/int-value prev) 0))))))))]
+                         (recur (+ j 1) (e/map-assoc a rule merged)))))))))))
+
+;; ---------------------------------------------------------------------------
+;; rewrite-file: every file is rewritten and re-read before anything is written
+
+(defn- rewrite-all [files [:list :string] ids [:list :string] o [:ref :core/opts]] [:ref :rp/fr]
+  (let [n (vector-count files)]
+    (loop [i 0 acc (typed-list-new [:list [:ref :rp/file]])]
+      (if (>= i n)
+        (record-new [:ref :rp/fr] acc 0)
+        (let [path (typed-list-nth [:list :string] files i)
+              src (io/read-file path)
+              p (cst/parse src)]
+          (if (> (string-byte-length (cst/out-err p)) 0)
+            (record-new [:ref :rp/fr] acc (io/refuse "decode" "refactor/parse-error" (string-concat path (string-concat ": " (cst/out-err p)))))
+            (let [res (core/run src ids o)]
+              (if (> (string-byte-length (core/res-err res)) 0)
+                (record-new [:ref :rp/fr] acc
+                            (io/refuse "decode" "refactor/output-unparsable"
+                                       (string-concat path (string-concat ": a rewrite produced text that is not readable ("
+                                                                          (string-concat (core/res-err res) "); nothing was written")))))
+                (let [out (core/res-src res)
+                      p2 (if (string=? out src) p (cst/parse out))]
+                  (if (> (string-byte-length (cst/out-err p2)) 0)
+                    (record-new [:ref :rp/fr] acc
+                                (io/refuse "decode" "refactor/output-unparsable"
+                                           (string-concat path (string-concat ": the rewritten text is not readable ("
+                                                                              (string-concat (cst/out-err p2) "); nothing was written")))))
+                    (recur (+ i 1) (typed-list-conj [:list [:ref :rp/file]] acc (record-new [:ref :rp/file] path src out res)))))))))))))
+
+(defn- rules-answer [ids [:list :string]] [:ref :edn/v]
+  (let [n (vector-count ids)]
+    (e/vec (loop [i 0 acc (e/vs)] (if (>= i n) acc (recur (+ i 1) (e/conj1 acc (e/kw (typed-list-nth [:list :string] ids i)))))))))
+
+(defn- totals [reports [:list [:ref :edn/v]] changed :i64] [:ref :edn/v]
+  (e/amap (kv (kv (kv (e/vs) "files" (e/int (e/count-of reports))) "changed" (e/int changed)) "summary" (sum-summaries reports))))
+
+(defn- select-report [r [:ref :edn/v]] [:ref :edn/v]
+  (let [ks (typed-list-new [:list :string] "path" "changed" "chars-before" "chars-after" "passes" "summary" "human-sites-total" "lines")]
+    (e/amap (loop [k 0 acc (e/vs)]
+              (if (>= k 8) acc
+                  (let [kk (e/kw (typed-list-nth [:list :string] ks k))
+                        v (e/map-get r kk)]
+                    (recur (+ k 1) (if (e/has-key? r kk) (e/conj2 acc kk v) acc))))))))
+
+;; ids: the resolved rule ids; files: the expanded paths
+(defn plan-or-apply [sub :string ids [:list :string] files [:list :string] o [:ref :core/opts] no-diff :bool patch-out :string
+                     has-patch :bool check :bool out :string has-out :bool] :i64
+  (let [fr (rewrite-all files ids o)]
+    (if (> (record-get [:ref :rp/fr] fr :status) 0)
+      (record-get [:ref :rp/fr] fr :status)
+      (let [xs (record-get [:ref :rp/fr] fr :files)
+            n (vector-count xs)
+            is-plan (string=? sub "plan")
+            reports (loop [i 0 acc (e/vs)]
+                      (if (>= i n) acc
+                          (recur (+ i 1) (e/conj1 acc (file-report (typed-list-nth [:list [:ref :rp/file]] xs i) (and is-plan (not no-diff)))))))
+            changed (loop [i 0 c 0]
+                      (if (>= i n) c
+                          (let [x (typed-list-nth [:list [:ref :rp/file]] xs i)]
+                            (recur (+ i 1) (if (string=? (f-before x) (f-after x)) c (+ c 1))))))]
+        (if is-plan
+          (let [w (if has-patch
+                    (io/write-file patch-out
+                                   (loop [i 0 acc ""]
+                                     (if (or (>= i n) no-diff) acc
+                                         (let [x (typed-list-nth [:list [:ref :rp/file]] xs i)]
+                                           (recur (+ i 1) (if (string=? (f-before x) (f-after x))
+                                                            acc
+                                                            (string-concat acc (diff/unified (f-path x) (f-before x) (f-after x) 3))))))))
+                    0)]
+            (io/answer (e/amap (kv (kv (kv (kv (kv (kv (e/vs) "format" (e/kw "kotoba.refactor/v1")) "command" (e/kw "plan"))
+                                               "ok" (e/bool true))
+                                           "rules" (rules-answer ids))
+                                       "files" (e/vec reports))
+                                   "totals" (totals reports changed)))
+                       0))
+          (let [ws (if check
+                     0
+                     (loop [i 0 st 0]
+                       (if (or (>= i n) (> st 0)) st
+                           (let [x (typed-list-nth [:list [:ref :rp/file]] xs i)
+                                 ch (not (string=? (f-before x) (f-after x)))]
+                             (if (or has-out ch)
+                               (let [target (if has-out out (f-path x))
+                                     tmp (string-concat target ".amu-refactor.tmp")
+                                     w (io/write-file tmp (f-after x))]
+                                 (if (= (io/rename tmp target) 1)
+                                   (recur (+ i 1) st)
+                                   (recur (+ i 1) (io/refuse "output" "refactor/write-failed" (string-concat "cannot replace " (string-concat target ": rename failed"))))))
+                               (recur (+ i 1) st))))))]
+            (if (> ws 0)
+              ws
+              (io/answer (e/amap (kv (kv (kv (kv (kv (kv (kv (kv (e/vs) "format" (e/kw "kotoba.refactor/v1")) "command" (e/kw "apply"))
+                                                         "ok" (e/bool (or (not check) (= changed 0))))
+                                                     "check" (e/bool check))
+                                                 "written" (e/int (if (or check has-out) 0 changed)))
+                                             "rules" (rules-answer ids))
+                                         "files" (e/vec (loop [i 0 acc (e/vs)] (if (>= i n) acc (recur (+ i 1) (e/conj1 acc (select-report (e/nth-of reports i))))))))
+                                     "totals" (totals reports changed)))
+                         (if (and check (> changed 0)) 1 0)))))))))

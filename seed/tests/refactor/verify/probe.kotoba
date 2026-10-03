@@ -1,0 +1,24 @@
+(ns refactor-verify-probe
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.refactor.verify :as v]))
+
+;; seed/tests/refactor/verify/probe.kotoba -- dumps the verify twin's answer for two runner outputs (argv 0, 1), in the
+;; line format host.cljs prints for the host verify.cljk (agent REFAC, 2026-10-04).
+(defn- out [s :string] :i64 (let [r (typed-cap-call :io/write :string :string s)] 0))
+(defn- arg [i :i64] :string (typed-cap-call :cli/args :string :string (string-from-i64 i)))
+(defn- dump [tag :string xs [:list :string]] :i64
+  (let [n (vector-count xs)]
+    (loop [i 0] (if (>= i n) 0 (let [w (out (string-concat tag (string-concat (typed-list-nth [:list :string] xs i) "\n")))] (recur (+ i 1)))))))
+(defn- b [x :bool] :string (if x "true" "false"))
+(defn main [] :i64
+  (let [a (typed-cap-call :fs/app-data :string :string (arg 0))
+        c (typed-cap-call :fs/app-data :string :string (arg 1))
+        r (v/compare-runs a c)
+        w1 (dump "OA " (v/outcomes a))
+        w2 (dump "OB " (v/outcomes c))
+        w3 (out (string-concat "SA " (string-concat (v/summary a) "\n")))
+        w4 (out (string-concat "OK " (string-concat (b (v/cmp-ok? r)) (string-concat " RAN " (string-concat (b (v/cmp-ran? r)) (string-concat " BN " (string-concat (string-from-i64 (v/cmp-bn r)) (string-concat " NN " (string-concat (string-from-i64 (v/cmp-nn r)) (string-concat " D " (string-concat (string-from-i64 (v/cmp-differences r)) "\n")))))))))))
+        w5 (dump "XB " (v/cmp-only-b r))
+        w6 (dump "XN " (v/cmp-only-n r))
+        w7 (dump "AV " (v/run-argv "cli.js" 4096 "a:b" "base" "run.cljk"))]
+    0))
