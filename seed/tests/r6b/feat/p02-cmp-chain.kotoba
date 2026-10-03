@@ -1,0 +1,7 @@
+;; want: 1011
+;; R6B: (<= a b c) and the other comparisons of 3+ operands (kotoba.bytes (<= 0xD800 cp 0xDFFF)); hex literals
+(ns p02 (:export [main]))
+(defn- in? [cp :i64] :bool (<= 0xD800 cp 0xDFFF))
+(defn- b [x :bool] :i64 (if x 1 0))
+(defn main [] :i64
+  (+ (* 1000 (b (in? 55296))) (* 100 (b (in? 0xE000))) (* 10 (b (< 1 2 3 4))) (b (= 7 7 0x7))))

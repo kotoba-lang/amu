@@ -1,0 +1,6 @@
+;; want: E2104
+;; R6B: the record must have the schema's type
+(ns n01 (:export [main]))
+(defn- mk [a :i64] [:ref :n01/a] (record-new [:record :n01/a [[:x :i64]]] a))
+(defn- other [a :i64] [:ref :n01/b] (record-new [:record :n01/b [[:x :i64]]] a))
+(defn main [] :i64 (record-get [:ref :n01/b] (record-assoc [:ref :n01/b] (mk 1) :x 2) :x))

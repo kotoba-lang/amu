@@ -308,7 +308,7 @@
 
 ;; ---- diagnostics ---------------------------------------------------------------------------------------------------
 (defn- drv-tyname [t :i64] :string
-  (cond (= t 1) ":i64" (= t 2) ":bool" (= t 3) ":string" (= t 4) ":vector-i64" (= t 5) ":bytes" (= t 6) ":keyword" (= t 8) ":document"   ; R6B
+  (cond (= t 1) ":i64" (= t 2) ":bool" (= t 3) ":string" (= t 4) ":vector-i64" (= t 5) ":bytes" (= t 6) ":keyword" (= t 8) ":document" (= t 9) ":symbol"   ; R6B
         :else "?"))
 
 (defn- drv-slice [path :string a :i64 b :i64] :string
@@ -502,7 +502,7 @@
 ;; ==== END R5A project route ===========================================================================================
 
 (defn- drv-run [path :string mode :i64 out :string] :i64
-  (if (= (io-exists path) 1) (drv-pj-run (drv-read path) path mode out) (drv-fail0 E-READ)))
+  (if (= (io-exists path) 1) (let [S0 (drv-read path)] (drv-pj-run (string-concat S0 (ck-r6b-lib S0)) path mode out)) (drv-fail0 E-READ)))   ; R6B: + the source library
 
 (defn- drv-usage [] :i64
   (let [r (drv-fail0 E-USAGE)] 2))

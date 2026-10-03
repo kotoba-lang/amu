@@ -96,6 +96,8 @@
         (= k KW-VECTOR-I64) TY-VEC
         (= k KW-KEYWORD) TY-KW
         (= k KW-BYTES) TY-BYTES   ; R4B
+        (= k KW-DOCUMENT) TY-DOC   ; R6B
+        (= k KW-SYMBOL) TY-SYM   ; R6B
         :else 0))
 
 ;; the schema block of record type ty (0 for a non-record type)
@@ -1175,6 +1177,7 @@
     (cond (= n 0) (ck-touch M)
           (nm-failed M) (ck-touch M)
           (> hd 0) (ck-ds-walk (ck-ds-one M n hd) S n)
+          (pos? (ck-r6b-ds-code M n)) (ck-ds-walk (ck-r6b-ds M S n) S n)   ; R6B
           (ck-fn-form? M n) (ck-ds-list (ck-ds-fn M n) S n)
           (= k ND-LIST) (ck-ds-list (ck-ds-ctor M S n) S n)
           (= k ND-VEC) (ck-ds-kids M S (nm-first M n))
@@ -1379,6 +1382,7 @@
           (and (< slot 0) (= (ck-callable M fi) 1) (ck-r5b-tmpl? M fi)) (ck-err M E-STATE-VALUE n 0)   ; R5B
           (and (>= slot 0) (ck-known-bare? M slot)) (ck-err M E-CHECK-FNVALUE n 0)
           (>= slot 0) (ck-mark M n ty (+ (* RES-LOCAL RES-SCALE) slot))
+          (and (= (nm-ff M fi FF-KIND) FK-DEF) (zero? dty)) (ck-err M E-CHECK-DEF n 0)   ; R6B: an opaque def
           (= (nm-ff M fi FF-KIND) FK-DEF)   ; FN record 0 has kind 0
           (ck-mark M n dty (+ (* RES-DEF RES-SCALE) fi))
           (= (nm-sf M s SF-HEAD) HD-TRUE) (ck-mark M n TY-BOOL (+ (* RES-CONST RES-SCALE) 1))
@@ -1455,6 +1459,8 @@
         (and (>= hd HD-OPTION-SOME) (<= hd HD-POP)) (ck-r3 M n hd fx ctx)
         (and (>= hd HD-FN) (<= hd HD-AMP)) (ck-r4 M n hd fx ctx)
         (and (>= hd HD-ATOM) (<= hd HD-DEFHANDLER)) (ck-r5b M n hd fx ctx)   ; R5B
+        (or (= hd HD-R6-AS) (= hd HD-R6-IS)) (ck-r6b-as M n fx hd)   ; R6B
+        (and (>= hd HD-R6-TODOC) (<= hd HD-R6-TOSTR)) (ck-r6b-conv M n hd fx)   ; R6B
         (= (ck-op-known hd) 1) (ck-op M n hd fx)
         :else (ck-head-err M n)))
 
@@ -1602,12 +1608,14 @@
                 3 KW-HASH-SHA256 33 KW-ENV-READ 34 KW-FS-BROWSE 41 KW-IO-READ
                 35 (if (= (nm-head-of M q) KW-BYTES) KW-FS-APP-DATA-BYTES KW-FS-APP-DATA)
                 37 KW-IO-WRITE 38 KW-CLI-ARGS 39 KW-IO-WRITE-ERROR
+                20 KW-PROCESS-SPAWN 23 KW-ENTROPY-DRAW   ; R6B
                 0)))
 (defn- ck-wire-ok [k :i64] :i64
   (cond (= k KW-FS-APP-DATA) 1 (= k KW-CLI-ARGS) 1 (= k KW-IO-WRITE-ERROR) 1 (= k KW-IO-WRITE) 1
         (= k KW-FS-APP-DATA-BYTES) 1
         ;; R4B: wires 3 33 34 41 (:string :string)
         (= k KW-HASH-SHA256) 1 (= k KW-ENV-READ) 1 (= k KW-FS-BROWSE) 1 (= k KW-IO-READ) 1
+        (= k KW-PROCESS-SPAWN) 1 (= k KW-ENTROPY-DRAW) 1   ; R6B: wires 20 23 (:string :string)
         :else 0))
 
 ;; the request/result type of the shape, 0 when the shape is not one of seed/HEADS :cap-shapes
@@ -1923,7 +1931,7 @@
 
 ;; (get r :f) on a record
 (defn- ck-get [M :vector-i64 n :i64 fx :i64] :vector-i64
-  (if (= (nm-count M n) 4) (ck-gget M n fx) (ck-get-rec M n fx)))
+  (if (= (nm-count M n) 4) (ck-r6b-get M n fx) (ck-get-rec M n fx)))   ; R6B: (get d k default) on a :document
 (defn- ck-get-rec [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
         r (nm-next M h)
@@ -1939,6 +1947,7 @@
         M1 (if (= (nm-count M n) 4) (ck-expr M r (+ fx 7) 0) M)]
     (cond (nm-failed M1) (ck-touch M1)
           (and (= (nm-count M1 n) 4) (= (ck-tcon M1 (ck-ty M1)) TC-MAP)) (ck-gassoc M1 n fx)
+          (and (= (nm-count M1 n) 4) (= (ck-ty M1) TY-DOC)) (ck-r6b-assoc M1 n fx)   ; R6B: (assoc d k v) on a :document
           :else (ck-assoc-rec M1 n fx))))
 (defn- ck-assoc-rec [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
@@ -2075,12 +2084,23 @@
     (cond (nm-ne (nm-count M n) 3) (ck-err M E-CHECK-DEF nm 0)
           (= k ND-INT) (nm-set-ff (ck-mark M v TY-I64 0) f FF-RTYPE TY-I64)
           (= k ND-STR) (nm-set-ff (ck-mark M v TY-STR 0) f FF-RTYPE TY-STR)
+          (= k ND-KW) (nm-set-ff (ck-mark M v TY-KW 0) f FF-RTYPE TY-KW)   ; R6B: (def NAME :ns/k), a keyword constant
           (= (ck-def-vec M v) 1)
           (let [c (nm-first M v)
                 M1 (ck-mark-items M c)
                 M2 (ck-mark M1 v TY-VEC HD-VECLIT)]
             (nm-set-ff M2 f FF-RTYPE TY-VEC))
+          ;; R6B: a set or map literal of constant data (keywords, strings, integers, nested such collections) is OPAQUE:
+          ;; FF-RTYPE 0, nothing is checked or emitted, and a REFERENCE to it is E2124 there (kotoba.compiler.schema's unused
+          ;; `primitives`); anything else stays E2124 at the def (stage-0 checks a def's value even when nothing uses it)
+          (and (or (= k ND-SET) (= k ND-MAP)) (ck-r6b-const? M v)) (nm-set-ff M f FF-RTYPE 0)
           :else (ck-err M E-CHECK-DEF nm 0))))
+(defn- ck-r6b-const? [M :vector-i64 v :i64] :bool
+  (let [k (nm-kind M v)]
+    (cond (or (= k ND-KW) (= k ND-STR) (= k ND-INT)) true
+          (or (= k ND-SET) (= k ND-MAP) (= k ND-VEC))
+          (loop [c (nm-first M v)] (cond (zero? c) true (ck-r6b-const? M c) (recur (nm-next M c)) :else false))
+          :else false)))
 
 (defn- ck-sigs [M :vector-i64 f :i64] :vector-i64
   (cond
@@ -2610,6 +2630,11 @@
             M3 (ck-g-res M2 hd ty (ck-g-kind M2 ty) na)
             rt (ck-ty M3)]
         (cond (nm-failed M3) (ck-touch M3)
+              (and (zero? rt) (= hd HD-NTH) (= ty TY-DOC) (= na 2)) (ck-r6b-nth M3 n fx ck-r6b-h-__r6-dnth)   ; R6B: (nth d i) on a :document
+              (and (zero? rt) (= hd HD-GCOUNT) (= ty TY-DOC) (= na 1)) (ck-r6b-nth M3 n fx ck-r6b-h-document-count)   ; R6B: (count d)
+              (and (zero? rt) (= hd HD-KEYS) (= ty TY-DOC) (= na 1)) (ck-r6b-nth M3 n fx ck-r6b-h-__r6-dkeys)   ; R6B: (keys d)
+              (and (zero? rt) (= hd HD-CONTAINS) (= ty TY-DOC) (= na 2))   ; R6B: (contains? d k), k a document or keyword
+              (ck-r6b-nth (ck-r6b-keyed M3 n) n fx ck-r6b-h-document-contains)
               (zero? rt) (ck-err M3 E-CHECK-TYPE h ty)
               :else (let [M4 (ck-g-args M3 (nm-next M3 a) (+ (* hd 65536) 1) fx2 ty)]
                       (if (nm-failed M4) (ck-touch M4) (ck-mark (ck-fuel M4 (ck-fx-f fx)) n rt hd))))))))
@@ -3491,6 +3516,7 @@
   (case k
     KW-HASH-SHA256 3 KW-CLOCK-NOW 7 KW-ENV-READ 33 KW-FS-BROWSE 34 (KW-FS-APP-DATA KW-FS-APP-DATA-BYTES) 35 KW-IO-WRITE 37
     KW-CLI-ARGS 38 KW-IO-WRITE-ERROR 39 KW-IO-READ 41
+    KW-PROCESS-SPAWN 20 KW-ENTROPY-DRAW 23   ; R6B
     -1))
 (defn- ck-wire-bit [w :i64] :i64 (if (and (>= w 0) (< w 47)) (i64-shift-left 1 w) 0))
 ;; FN f calls capability wire w: its FN2-CAPS and the module's mask
@@ -4008,3 +4034,817 @@
       (cond (or (>= f (vector-at M7 MM-FN-N)) (nm-failed M7)) M7
             (ck-r5b-clause? M7 f) (recur (ck-r5b-clause-body M7 f) (inc f))
             :else (recur M7 (inc f))))))
+
+;; =========================================================================================================
+;; R6B (agent R6B, 2026-10-03): source-route features of rung R6 (docs/selfhost-seed-r6b-report-20261003.md).
+;; (1) The source library. Operations the reference has and the seed has no head for (:document and its document-*
+;;     operations, keyword-name, keyword-from-string, string-find-byte, min, max) are Kotoba defn-s
+;;     (seed/tests/r6b/srclib/r6b-lib.kotoba + the KIR doclib, embedded below by gen-srclib.py). ck-r6b-lib S answers the
+;;     text to APPEND to a module's source: the groups the module spells as a call head (or :document as a keyword),
+;;     outside strings and comments, minus a single-function group the module defines itself. The driver (single-module
+;;     route) and 60-proj (per module, after its trailer) append it before lexing; a module that spells none of them gets
+;;     "" and compiles to the same bytes as before. Representations: a document is the :string of its canonical EDN text
+;;     (stage-0's and the KIR route's), a keyword the FNV-1a hash of its spelling (R6A); a keyword's TEXT comes from the
+;;     module's table __r6-kwtab (every keyword the module spells + the document kinds).
+;; (2) __r6-as (HD-R6-AS): (__r6-as T x) retypes x as T, no code.
+;; (3) Desugaring (in ck-ds-walk, before typing): (vector-i64 a ..) -> [a ..]; (document-vector|list|set|map a ..) -> the
+;;     fold of the KIR route ((__r6-dbd (step .. (step (document-X) a) ..))); a keyword LITERAL where a document key is
+;;     expected (2nd argument of document-get/-contains/-assoc/-dissoc, keys of document-map) -> (document-keyword :k),
+;;     the reference's "keyword map keys" (stage-0: a native keyword's text IS its document).
+;; =========================================================================================================
+;; after the string literal whose opening quote is at i (the end of S when unclosed)
+(defn- ck-r6b-strend [S :string i :i64] :i64
+  (loop [j (+ i 1)]
+    (cond (>= j (string-length S)) j
+          (= (string-code-point-at S j) 34) (+ j 1)
+          (= (string-code-point-at S j) 92) (if (>= (+ j 1) (string-length S)) (+ j 1) (recur (+ (+ j 1) (lx-cpw (string-code-point-at S (+ j 1))))))
+          :else (recur (+ j (lx-cpw (string-code-point-at S j)))))))
+;; after the character literal whose backslash is at i
+(defn- ck-r6b-charend [S :string i :i64] :i64
+  (if (>= (+ i 1) (string-length S)) (+ i 1) (+ (+ i 1) (lx-cpw (string-code-point-at S (+ i 1))))))
+(defn- ck-r6b-symend [S :string i :i64] :i64
+  (loop [j i] (if (and (< j (string-length S)) (lx-symch? (string-code-point-at S j))) (recur (+ j 1)) j)))
+(defn- ck-r6b-is? [S :string a :i64 b :i64 t :string] :bool
+  (and (= (- b a) (string-length t)) (string=? (string-substring S a b) t)))
+(defn- ck-r6b-head-bit [S :string a :i64 b :i64] :i64
+  (if (and (> (- b a) 9) (string=? (string-substring S a (+ a 9)) "document-"))
+    ck-r6b-g-doc
+    (ck-r6b-name-bit (nm-hash S a b))))
+(defn- ck-r6b-defhead? [S :string a :i64 b :i64] :bool
+  (or (ck-r6b-is? S a b "defn") (ck-r6b-is? S a b "defn-") (ck-r6b-is? S a b "def")))
+
+;; the library groups module text S needs: the groups it spells, minus single-function groups it defines; exi needs doc,
+;; doc needs kw
+(defn- ck-r6b-scan [S :string] :i64
+  (let [n (string-length S)
+        r (loop [i 0 used 0 defd 0 pd false]
+            (if (>= i n)
+              (bit-and used (bit-not (bit-and defd (bit-not (bit-or ck-r6b-g-kw ck-r6b-g-doc)))))
+              (let [c (string-code-point-at S i)]
+                (cond (= c 59) (recur (lx-eol S i) used defd false)
+                      (= c 34) (recur (ck-r6b-strend S i) used defd false)
+                      (= c 92) (recur (ck-r6b-charend S i) used defd false)
+                      (= c 40) (let [b (ck-r6b-symend S (+ i 1))]
+                                 (if (= b (+ i 1))
+                                   (recur b used defd false)
+                                   (recur b (bit-or used (ck-r6b-head-bit S (+ i 1) b)) defd (ck-r6b-defhead? S (+ i 1) b))))
+                      (= c 58) (let [b (ck-r6b-symend S (+ i 1))]
+                                 (recur b (if (ck-r6b-is? S i b ":document") (bit-or used ck-r6b-g-doc) used) defd false))
+                      (lx-symch? c) (let [b (ck-r6b-symend S i)]
+                                      (recur b used (if pd (bit-or defd (ck-r6b-name-bit (nm-hash S i b))) defd) false))
+                      :else (recur (+ i (lx-cpw c)) used defd (if (lx-ws? c) pd false))))))
+        r2 (if (pos? (bit-and r ck-r6b-g-exi)) (bit-or r ck-r6b-g-doc) r)]
+    (if (pos? (bit-and r2 ck-r6b-g-doc)) (bit-or r2 ck-r6b-g-kw) r2)))
+
+;; the module's keyword table: " :k1 :k2 .. " (each spelling once), the 11 document kinds first
+(defn- ck-r6b-kwtab [S :string] :string
+  (let [n (string-length S)]
+    (loop [i 0 acc " :null :bool :i64 :f64 :string :keyword :symbol :vector :list :set :map "]
+      (if (>= i n)
+        acc
+        (let [c (string-code-point-at S i)]
+          (cond (= c 59) (recur (lx-eol S i) acc)
+                (= c 34) (recur (ck-r6b-strend S i) acc)
+                (= c 92) (recur (ck-r6b-charend S i) acc)
+                (= c 58) (let [b (ck-r6b-symend S (+ i 1))]
+                           (if (= b (+ i 1))
+                             (recur b acc)
+                             (let [k (string-substring S i b)]
+                               (recur b (if (>= (string-index-of acc (string-concat " " (string-concat k " "))) 0)
+                                          acc
+                                          (string-concat acc (string-concat k " ")))))))
+                :else (recur (+ i (lx-cpw c)) acc)))))))
+
+(defn- ck-r6b-pick [m :i64 g :i64 t :string] :string (if (zero? (bit-and m g)) "" t))
+
+;; the text appended to module source S ("" when it needs no library group)
+(defn- ck-r6b-lib [S :string] :string
+  (let [m (ck-r6b-scan S)]
+    (if (zero? m)
+      ""
+      (-> "\n"
+          (string-concat (ck-r6b-pick m ck-r6b-g-kw (ck-r6b-t-kw)))
+          (string-concat (ck-r6b-pick m ck-r6b-g-kw (string-concat "(defn- __r6-kwtab [] :string \"" (string-concat (ck-r6b-kwtab S) "\")\n"))))
+          (string-concat (ck-r6b-pick m ck-r6b-g-doc (ck-r6b-t-doc)))
+          (string-concat (ck-r6b-pick m ck-r6b-g-exi (ck-r6b-t-exi)))
+          (string-concat (ck-r6b-pick m ck-r6b-g-sfb (ck-r6b-t-sfb)))
+          (string-concat (ck-r6b-pick m ck-r6b-g-min (ck-r6b-t-min)))
+          (string-concat (ck-r6b-pick m ck-r6b-g-max (ck-r6b-t-max)))
+          (string-concat (ck-r6b-pick m ck-r6b-g-rem (ck-r6b-t-rem)))
+          (string-concat (ck-r6b-pick m ck-r6b-g-utf8 (ck-r6b-t-utf8)))
+          (string-concat (ck-r6b-pick m ck-r6b-g-parse (ck-r6b-t-parse)))
+          (string-concat (ck-r6b-pick m ck-r6b-g-sym (ck-r6b-t-sym)))))))
+
+;; the FN index of the library defn whose spelling hashes to h (the first clause), 0 when absent
+(defn- ck-r6b-fn [M :vector-i64 h :i64] :i64
+  (loop [f 1]
+    (cond (>= f (vector-at M MM-FN-N)) 0
+          (and (= (nm-sf M (nm-ff M f FF-SYM) SF-HASH) h) (or (= (nm-ff M f FF-KIND) FK-DEFN) (= (nm-ff M f FF-KIND) FK-PRIV))) f
+          :else (recur (inc f)))))
+
+;; synthetic head / keyword nodes of R6B (gensym cache indexes 240.. : clear of the head (code) and keyword (128 + code)
+;; indexes the R1 helpers ck-n-head / ck-n-kw use)
+(defn- ck-r6b-nhead [M :vector-i64 tok :i64 code :i64 idx :i64] :vector-i64
+  (let [M1 (ck-csym M idx code)] (ck-new M1 ND-SYM tok 0 (ck-r M1))))
+(defn- ck-r6b-nkw [M :vector-i64 tok :i64 kwc :i64 idx :i64] :vector-i64
+  (let [M1 (ck-csym M idx kwc)] (ck-new M1 ND-KW tok 0 (ck-r M1))))
+;; a new list (code x) (x's NF-NEXT := 0); R0 = the list
+(defn- ck-r6b-wrap [M :vector-i64 tok :i64 code :i64 idx :i64 x :i64] :vector-i64
+  (let [M1 (ck-r6b-nhead M tok code idx)
+        hn (ck-r M1)
+        M2 (ck-chain2 M1 hn x)]
+    (ck-n-list M2 tok hn)))
+(defn- ck-r6b-dockey [M :vector-i64 x :i64] :vector-i64 (ck-r6b-wrap M (nm-nf M x NF-TOK) HD-R6-DOCKEY 241 x))
+(defn- ck-r6b-todoc [M :vector-i64 x :i64] :vector-i64 (ck-r6b-wrap M (nm-nf M x NF-TOK) HD-R6-TODOC 242 x))
+(defn- ck-r6b-tostr [M :vector-i64 x :i64] :vector-i64 (ck-r6b-wrap M (nm-nf M x NF-TOK) HD-R6-TOSTR 243 x))
+
+;; ---- (__r6-as T x) / (__r6-is T x): the second also requires x's type to be T ----
+(defn- ck-r6b-as [M :vector-i64 n :i64 fx :i64 hd :i64] :vector-i64
+  (let [h (nm-first M n)]
+    (if (nm-ne (nm-count M n) 3)
+      (ck-err M E-CHECK-ARITY h 2)
+      (let [tn (nm-nth M n 1)
+            M1 (ck-tform M tn)
+            ty (ck-ty M1)]
+        (cond (nm-failed M1) (ck-touch M1)
+              (zero? ty) (ck-err M1 E-CHECK-TYPENAME tn 0)
+              :else (let [x (nm-nth M1 n 2)
+                          M2 (ck-expr (nm-set-nf M1 tn NF-TYPE ty) x fx 0)]
+                      (cond (nm-failed M2) (ck-touch M2)
+                            (and (= hd HD-R6-IS) (nm-ne (ck-ty M2) ty)) (ck-err M2 E-CHECK-TYPE (nm-first M2 n) ty)
+                            :else (ck-mark M2 n ty hd))))))))
+
+;; ---- (__r6-todoc x) (__r6-dockey x) (__r6-tostr x): x is checked once; the node becomes (do x) or a call of the library
+;; defn that converts x's type (the head symbol resolves to it: NF-RES = RES-FN, the node HD-CALL)
+(defn- ck-r6b-conv-fn [hd :i64 ty :i64] :i64
+  ;; (str ..) items: :string and :i64 only, as stage-0 (measured 2026-10-03: a :keyword or :bool item is "expression type
+  ;; mismatch: expected string" there)
+  (cond (= hd HD-R6-TOSTR) (cond (= ty TY-STR) -1 (= ty TY-I64) ck-r6b-h-__r6-i2s :else 0)
+        (= ty TY-DOC) -1
+        (= ty TY-KW) ck-r6b-h-document-keyword
+        (= hd HD-R6-DOCKEY) 0
+        (= ty TY-I64) ck-r6b-h-document-i64
+        (= ty TY-STR) ck-r6b-h-document-string
+        (= ty TY-BOOL) ck-r6b-h-document-bool
+        :else 0))
+(defn- ck-r6b-conv [M :vector-i64 n :i64 hd :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)]
+    (if (nm-ne (nm-count M n) 2)
+      (ck-err M E-CHECK-ARITY h 1)
+      (let [M1 (ck-expr M (nm-nth M n 1) fx 0)
+            ty (ck-ty M1)
+            fh (ck-r6b-conv-fn hd ty)
+            fi (if (and (nm-ne fh 0) (nm-ne fh -1)) (ck-r6b-fn M1 fh) 0)   ; a hash may be negative
+            want (if (= hd HD-R6-TOSTR) TY-STR TY-DOC)]
+        (cond (nm-failed M1) (ck-touch M1)
+              (= fh -1) (ck-mark M1 n ty HD-DO)
+              (zero? fh) (ck-err M1 E-CHECK-TYPE h want)
+              (zero? fi) (ck-err M1 E-CHECK-HEAD h 0)
+              :else (ck-mark (ck-fuel (nm-set-nf M1 h NF-RES (+ (* RES-FN RES-SCALE) fi)) (ck-fx-f fx)) n (nm-ff M1 fi FF-RTYPE) HD-CALL))))))
+
+;; ---- (get d k default) on a :document -> (option-value-of [:option :document] (document-get d (__r6-dockey k)) default).
+;; d is checked first (with the 5 hidden slots ck-gget takes, so a map get re-checks it the same way)
+(defn- ck-r6b-get [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [M1 (ck-expr M (nm-nth M n 1) (+ fx 5) 0)]
+    (cond (nm-failed M1) (ck-touch M1)
+          (= (ck-ty M1) TY-DOC) (ck-r6b-docget M1 n fx)
+          :else (ck-gget M1 n fx))))
+(defn- ck-r6b-docget [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
+        tok (nm-nf M h NF-TOK)
+        d (nm-next M h)
+        k (nm-next M d)
+        dflt (nm-next M k)
+        fi (ck-r6b-fn M ck-r6b-h-document-get)]
+    (if (zero? fi)
+      (ck-err M E-CHECK-HEAD h 0)
+      (let [M1 (ck-r6b-dockey M k)
+            dk (ck-r M1)
+            M2 (ck-n-ref M1 tok (nm-ff M1 fi FF-SYM))
+            gh (ck-r M2)
+            M3 (ck-link (ck-chain2 M2 gh d) d dk)
+            M4 (ck-n-list M3 tok gh)
+            dg (ck-r M4)
+            M5 (ck-r6b-nkw M4 tok KW-OPTION 250)
+            ko (ck-r M5)
+            M6 (ck-r6b-nkw M5 tok KW-DOCUMENT 251)
+            kd (ck-r M6)
+            M7 (ck-n-vec (ck-chain2 M6 ko kd) tok ko)
+            tv (ck-r M7)
+            M8 (ck-r6b-nhead M7 tok HD-OPTION-VALUE 244)
+            oh (ck-r M8)
+            M9 (ck-chain3 (ck-link M8 oh tv) tv dg dflt)
+            M10 (nm-set-nf M9 n NF-FIRST oh)]
+        (ck-expr M10 n fx 0)))))
+
+;; R6B: (assoc d k v) with d a :document -> (document-assoc d (__r6-dockey k) v), then checked (kotoba.codegen.layout)
+(defn- ck-r6b-assoc [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
+        fi (ck-r6b-fn M ck-r6b-h-document-assoc)]
+    (if (zero? fi)
+      (ck-err M E-CHECK-HEAD h 0)
+      (let [d (nm-next M h)
+            k (nm-next M d)
+            after (nm-next M k)
+            M1 (ck-r6b-dockey M k)
+            w (ck-r M1)
+            M2 (ck-link (ck-link M1 d w) w after)
+            M3 (ck-n-ref M2 (nm-nf M2 h NF-TOK) (nm-ff M2 fi FF-SYM))
+            gh (ck-r M3)
+            M4 (ck-link M3 gh d)
+            M5 (nm-set-nf M4 n NF-FIRST gh)]
+        (ck-expr M5 n fx 0)))))
+
+;; R6B: (nth d i) / (count d) with d a :document -> (__r6-dnth d i) (the library's list/vector item, a trap when absent) /
+;; (document-count d): the head becomes a call of the library defn with hash fh, then the list is checked again
+(defn- ck-r6b-nth [M :vector-i64 n :i64 fx :i64 fh :i64] :vector-i64
+  (let [h (nm-first M n)
+        fi (ck-r6b-fn M fh)]
+    (if (zero? fi)
+      (ck-err M E-CHECK-HEAD h 0)
+      (let [M1 (ck-n-ref M (nm-nf M h NF-TOK) (nm-ff M fi FF-SYM))
+            gh (ck-r M1)
+            M2 (ck-link M1 gh (nm-next M1 h))
+            M3 (nm-set-nf M2 n NF-FIRST gh)]
+        (ck-expr M3 n fx 0)))))
+
+;; ---- desugaring ----
+;; the symbol of library defn `name` (its spelling in the appended library text), 0 when the library is absent
+(defn- ck-r6b-sym [M :vector-i64 S :string name :string] :i64
+  (let [p (string-index-of S (string-concat "(defn- " (string-concat name " ")))]
+    (if (< p 0) 0 (nm-lookup M S (+ p 7) (+ (+ p 7) (string-length name))))))
+
+;; the head code of list x, 0 when it is no head
+(defn- ck-r6b-hd [M :vector-i64 x :i64] :i64
+  (if (= (nm-kind M x) ND-LIST) (nm-head-of M (nm-first M x)) 0))
+;; 1 when symbol s is free to mean the library operation: no definition of the module, no head
+(defn- ck-r6b-free? [M :vector-i64 s :i64] :bool (and (zero? (nm-sf M s SF-FN)) (zero? (nm-sf M s SF-HEAD))))
+
+;; 0 none, 1 vector-i64, 2 3 4 5 document-vector list set map with items, 6 a document key to wrap, 7 (str ..),
+;; 8 match-option, 9 ex-info with a map literal, 10 record-assoc, 11 a comparison of 3 or more operands, 12 a friendly
+;; capability call (ck-r6b-cap)
+(defn- ck-r6b-ds-code [M :vector-i64 n :i64] :i64
+  (let [h (nm-first M n)
+        s (nm-sym-of M h)
+        hh (if (and (= (nm-kind M n) ND-LIST) (= (nm-kind M h) ND-SYM)) (nm-sf M s SF-HASH) 0)]
+    (cond (zero? hh) 0
+          (and (> (nm-count M n) 3) (zero? (nm-sf M s SF-FN)) (ck-r6b-cmphd? (nm-sf M s SF-HEAD)) (ck-r6b-mids? M n)) 11
+          (= hh ck-r6b-h-vector-i64) (if (ck-r6b-free? M s) 1 0)
+          (< (nm-count M n) 2) 0
+          (= hh ck-r6b-h-str) (if (ck-r6b-free? M s) 7 0)
+          (= hh ck-r6b-h-match-option) (if (ck-r6b-free? M s) 8 0)
+          (= hh ck-r6b-h-document-vector) 2
+          (= hh ck-r6b-h-document-list) 3
+          (= hh ck-r6b-h-document-set) 4
+          (= hh ck-r6b-h-document-map) 5
+          (and (or (= hh ck-r6b-h-document-get) (= hh ck-r6b-h-document-contains) (= hh ck-r6b-h-document-assoc)
+                   (= hh ck-r6b-h-document-dissoc))
+               (>= (nm-count M n) 3)
+               (nm-ne (ck-r6b-hd M (nm-nth M n 2)) HD-R6-DOCKEY)) 6
+          (and (= hh ck-r6b-h-ex-info) (= (nm-count M n) 3) (= (nm-kind M (nm-nth M n 2)) ND-MAP)) 9
+          (and (= hh ck-r6b-h-record-assoc) (= (nm-count M n) 5) (ck-r6b-free? M s)) 10
+          (and (= (nm-count M n) 2) (ck-r6b-free? M s) (pos? (ck-r6b-capwire hh))) 12
+          :else 0)))
+
+;; R6B: a friendly capability call (ns/op x) of the catalogue (ck-r6b-capwire; lang/capability-catalog.edn :elaboration:
+;; source arity 1, request from the argument, result from the context) -> (typed-cap-call :ns/op :string R x), R = :bytes for
+;; fs/app-data-bytes and :string otherwise. Admitted wires: 3 20 23 33 34 35 37 38 39 41; any other catalogue name is E2115
+;; at its head (named, never guessed).
+(defn- ck-r6b-capkw [w :i64 hh :i64] :i64
+  (case w
+    3 KW-HASH-SHA256 20 KW-PROCESS-SPAWN 23 KW-ENTROPY-DRAW 33 KW-ENV-READ 34 KW-FS-BROWSE
+    35 (if (= hh ck-r6b-h-fs-app-data-bytes) KW-FS-APP-DATA-BYTES KW-FS-APP-DATA)
+    37 KW-IO-WRITE 38 KW-CLI-ARGS 39 KW-IO-WRITE-ERROR 41 KW-IO-READ
+    0))
+(defn- ck-r6b-cap [M :vector-i64 n :i64] :vector-i64
+  (let [h (nm-first M n)
+        tok (nm-nf M h NF-TOK)
+        x (nm-next M h)
+        hh (nm-sf M (nm-sym-of M h) SF-HASH)
+        kw (ck-r6b-capkw (ck-r6b-capwire hh) hh)]
+    (if (zero? kw)
+      (ck-err M E-CHECK-CAP h 0)
+      (let [M1 (ck-n-kw M tok kw)
+            wn (ck-r M1)
+            M2 (ck-n-kw M1 tok KW-STRING)
+            qn (ck-r M2)
+            M3 (ck-n-kw M2 tok (if (= kw KW-FS-APP-DATA-BYTES) KW-BYTES KW-STRING))
+            rn (ck-r M3)
+            M4 (ck-link (ck-link (ck-link M3 wn qn) qn rn) rn x)]
+        (ck-rehead M4 n HD-TYPED-CAP-CALL wn)))))
+
+;; a new list (name x) (x's NF-NEXT := 0) calling library defn `name`; R0 = the list. E2101 at x when it is missing
+(defn- ck-r6b-call1 [M :vector-i64 S :string name :string x :i64] :vector-i64
+  (let [s (ck-r6b-sym M S name)
+        tok (nm-nf M x NF-TOK)]
+    (if (zero? s)
+      (ck-err M E-CHECK-HEAD x 0)
+      (let [M1 (ck-n-ref M tok s)
+            hn (ck-r M1)
+            M2 (ck-chain2 M1 hn x)]
+        (ck-n-list M2 tok hn)))))
+
+;; (op m k ..) -> (op m (__r6-dockey k) ..)
+(defn- ck-r6b-keyed [M :vector-i64 n :i64] :vector-i64
+  (let [m (nm-nth M n 1)
+        k (nm-next M m)
+        after (nm-next M k)
+        M1 (ck-r6b-dockey M k)
+        w (ck-r M1)]
+    (ck-link (ck-link M1 m w) w after)))
+
+;; (document-X a1 .. an) -> (__r6-dbd (step (.. (step (document-X) a1) ..) an)); map items in pairs, keys through __r6-dockey
+(defn- ck-r6b-fold [M :vector-i64 S :string n :i64 code :i64] :vector-i64
+  (let [h (nm-first M n)
+        tok (nm-nf M h NF-TOK)
+        ss (ck-r6b-sym M S (case code 4 "__r6-dss" 5 "__r6-dms" "__r6-dvs"))
+        M1 (ck-n-copy M h)
+        h0 (ck-r M1)
+        M3 (ck-n-list (ck-link M1 h0 0) tok h0)]
+    (if (zero? ss)
+      (ck-err M3 E-CHECK-HEAD h 0)
+      (loop [M4 M3 acc (ck-r M3) c (nm-next M3 h)]
+        (cond (nm-failed M4) (ck-touch M4)
+              (zero? c) (let [M5 (ck-r6b-call1 M4 S "__r6-dbd" acc)] (if (nm-failed M5) (ck-touch M5) (ck-become M5 n (ck-r M5))))
+              (and (= code 5) (zero? (nm-next M4 c))) (ck-err M4 E-CHECK-ARITY h 2)
+              :else
+              (let [v (if (= code 5) (nm-next M4 c) 0)
+                    nx (nm-next M4 (if (= code 5) v c))
+                    M5 (if (= code 5) (ck-r6b-dockey M4 c) (nm-put M4 MM-R0 c))
+                    kk (ck-r M5)
+                    M6 (if (= code 5) (ck-chain2 M5 kk v) (ck-link M5 kk 0))
+                    M7 (ck-n-ref M6 tok ss)
+                    sh (ck-r M7)
+                    M8 (ck-link (ck-link M7 sh acc) acc kk)
+                    M9 (ck-n-list M8 tok sh)]
+                (recur M9 (ck-r M9) nx)))))))
+
+;; (str a) -> (__r6-tostr a); (str a b ..) -> (string-concat (.. (string-concat (__r6-tostr a) (__r6-tostr b)) ..) ..)
+(defn- ck-r6b-str [M :vector-i64 n :i64] :vector-i64
+  (let [h (nm-first M n)
+        tok (nm-nf M h NF-TOK)
+        a (nm-next M h)
+        nx (nm-next M a)
+        M1 (ck-r6b-tostr M a)]
+    (loop [M2 M1 acc (ck-r M1) c nx]
+      (if (zero? c)
+        (ck-become M2 n acc)
+        (let [nx2 (nm-next M2 c)
+              M3 (ck-r6b-tostr M2 c)
+              t (ck-r M3)
+              M4 (ck-chain2 M3 acc t)
+              M5 (ck-mkh M4 tok HD-STRING-CONCAT acc)]
+          (recur M5 (ck-r M5) nx2))))))
+
+;; (match-option o T (none a) (some x b)) (either clause order) -> (option-match T o a x b)
+(defn- ck-r6b-clause [M :vector-i64 n :i64 hh :i64] :i64
+  (let [c3 (nm-nth M n 3)
+        c4 (nm-nth M n 4)]
+    (cond (and (= (nm-kind M c3) ND-LIST) (= (nm-sf M (nm-sym-of M (nm-first M c3)) SF-HASH) hh)) c3
+          (and (= (nm-kind M c4) ND-LIST) (= (nm-sf M (nm-sym-of M (nm-first M c4)) SF-HASH) hh)) c4
+          :else 0)))
+(defn- ck-r6b-match [M :vector-i64 n :i64] :vector-i64
+  (let [h (nm-first M n)
+        o (nm-next M h)
+        ty (nm-next M o)
+        cn (ck-r6b-clause M n ck-r6b-h-none)
+        cs (ck-r6b-clause M n ck-r6b-h-some)]
+    (if (or (nm-ne (nm-count M n) 5) (zero? cn) (zero? cs) (nm-ne (nm-count M cn) 2) (nm-ne (nm-count M cs) 3))
+      (ck-err M E-CHECK-ARITY h 4)
+      (let [a (nm-nth M cn 1)
+            x (nm-nth M cs 1)
+            b (nm-nth M cs 2)
+            M1 (ck-r6b-nhead M (nm-nf M h NF-TOK) HD-OPTION-MATCH 245)
+            mh (ck-r M1)
+            M2 (-> M1 (ck-link mh ty) (ck-link ty o) (ck-link o a) (ck-link a x) (ck-link x b) (ck-link b 0))]
+        (nm-set-nf M2 n NF-FIRST mh)))))
+
+;; (op a b c ..) for op = < > <= >= = -> (and (op a b) (op b' c) ..), the reference's variadic comparison. Admitted only
+;; when every operand after the first and before the last is a symbol or an integer literal (b' is a copy of the node, so
+;; nothing is evaluated twice that could differ); otherwise the arity error stays.
+(defn- ck-r6b-cmphd? [hd :i64] :bool
+  (or (= hd HD-LT) (= hd HD-GT) (= hd HD-LE) (= hd HD-GE) (= hd HD-EQ)))
+(defn- ck-r6b-mids? [M :vector-i64 n :i64] :bool
+  (loop [c (nm-next M (nm-next M (nm-first M n)))]
+    (cond (zero? (nm-next M c)) true
+          (or (= (nm-kind M c) ND-INT) (and (= (nm-kind M c) ND-SYM) (zero? (nm-head-of M c)))) (recur (nm-next M c))
+          :else false)))
+(defn- ck-r6b-dup [M :vector-i64 y :i64] :vector-i64
+  (if (= (nm-kind M y) ND-INT) (ck-n-int M (nm-nf M y NF-TOK) (nm-nf M y NF-AUX)) (ck-n-copy M y)))
+(defn- ck-r6b-cmp [M :vector-i64 n :i64 hd :i64] :vector-i64
+  (let [h (nm-first M n)
+        tok (nm-nf M h NF-TOK)]
+    (loop [M1 M x (nm-next M h) prev 0 f0 0]
+      (let [y (nm-next M1 x)]
+        (if (zero? y)
+          (let [M2 (ck-mkh M1 tok HD-AND f0)] (ck-become M2 n (ck-r M2)))
+          (let [ny (nm-next M1 y)
+                M2 (if (zero? ny) (nm-put M1 MM-R0 0) (ck-r6b-dup M1 y))
+                y2 (ck-r M2)
+                M3 (ck-chain2 (ck-link M2 y2 ny) x y)
+                M4 (ck-mkh M3 tok hd x)
+                pl (ck-r M4)
+                M5 (ck-link M4 prev pl)]
+            (recur M5 y2 pl (if (zero? f0) pl f0))))))))
+
+;; (record-assoc SCHEMA r :f v) -> (assoc (__r6-is SCHEMA r) :f v)
+(defn- ck-r6b-recassoc [M :vector-i64 n :i64] :vector-i64
+  (let [h (nm-first M n)
+        tok (nm-nf M h NF-TOK)
+        s (nm-next M h)
+        r (nm-next M s)
+        kw (nm-next M r)
+        M1 (ck-r6b-nhead M tok HD-R6-IS 246)
+        ih (ck-r M1)
+        M2 (ck-link (ck-link M1 ih s) r 0)
+        M3 (ck-n-list M2 tok ih)
+        il (ck-r M3)
+        M4 (ck-r6b-nhead M3 tok HD-ASSOC 247)
+        ah (ck-r M4)
+        M5 (ck-link (ck-link M4 ah il) il kw)]
+    (nm-set-nf M5 n NF-FIRST ah)))
+
+;; (ex-info msg {k v ..}) -> (ex-info msg (document-map k (__r6-todoc v) ..)) (the reference's map-literal data)
+(defn- ck-r6b-exinfo [M :vector-i64 S :string n :i64] :vector-i64
+  (let [m (nm-nth M n 2)
+        tok (nm-nf M m NF-TOK)
+        s (ck-r6b-sym M S "document-map")]
+    (if (zero? s)
+      (ck-err M E-CHECK-HEAD m 0)
+      (let [M1 (ck-n-ref M tok s)
+            dh (ck-r M1)
+            M2 (ck-link M1 dh (nm-first M1 m))
+            M3 (loop [M4 M2 prev dh c (nm-first M2 m)]
+                 (if (or (zero? c) (zero? (nm-next M4 c)))
+                   M4
+                   (let [v (nm-next M4 c)
+                         nx (nm-next M4 v)
+                         M5 (ck-r6b-todoc M4 v)
+                         w (ck-r M5)]
+                     (recur (ck-link (ck-link M5 c w) w nx) w nx))))]
+        (-> M3 (nm-set-nf m NF-KIND ND-LIST) (nm-set-nf m NF-FIRST dh))))))
+
+(defn- ck-r6b-ds [M :vector-i64 S :string n :i64] :vector-i64
+  (let [code (ck-r6b-ds-code M n)]
+    (case code
+      1 (nm-set-nf (nm-set-nf M n NF-KIND ND-VEC) n NF-FIRST (nm-next M (nm-first M n)))
+      6 (ck-r6b-keyed M n)
+      7 (ck-r6b-str M n)
+      8 (ck-r6b-match M n)
+      9 (ck-r6b-exinfo M S n)
+      10 (ck-r6b-recassoc M n)
+      11 (ck-r6b-cmp M n (nm-head-of M (nm-first M n)))
+      12 (ck-r6b-cap M n)
+      (ck-r6b-fold M S n code))))
+;; BEGIN R6B srclib (generated by seed/tests/r6b/srclib/gen-srclib.py)
+;; edit seed/tests/r6b/srclib/r6b-lib.kotoba (or the KIR doclib), then run the generator
+(def ck-r6b-g-kw 1)
+(def ck-r6b-g-doc 2)
+(def ck-r6b-g-sfb 4)
+(def ck-r6b-g-min 8)
+(def ck-r6b-g-max 16)
+(def ck-r6b-g-exi 32)
+(def ck-r6b-g-rem 64)
+(def ck-r6b-g-utf8 128)
+(def ck-r6b-g-parse 256)
+(def ck-r6b-g-sym 512)
+(def ck-r6b-h-str -9048150456382168848)
+(def ck-r6b-h-match-option 1201494287191572048)
+(def ck-r6b-h-none 4327140908117611899)
+(def ck-r6b-h-some 6932689201082914001)
+(def ck-r6b-h-ex-info 2203569563317006795)
+(def ck-r6b-h-__r6-i2s -2945411176932352310)
+(def ck-r6b-h-__r6-b2s 8727414380487575083)
+(def ck-r6b-h-__r6-kwtext -8845673549209021897)
+(def ck-r6b-h-document-i64 -5110041547470111716)
+(def ck-r6b-h-document-string 690999184106806014)
+(def ck-r6b-h-document-keyword 7060134862450744438)
+(def ck-r6b-h-document-bool -1257836948771266241)
+(def ck-r6b-h-vector-i64 -1220338344787219618)
+(def ck-r6b-h-document-vector 1239673953068744840)
+(def ck-r6b-h-document-list -62595317315667325)
+(def ck-r6b-h-document-set 7059577448296561193)
+(def ck-r6b-h-document-map -2591559586180773685)
+(def ck-r6b-h-document-get 1088424468606068501)
+(def ck-r6b-h-document-contains 7283803499010354882)
+(def ck-r6b-h-document-assoc -3223699498627898274)
+(def ck-r6b-h-document-dissoc -4750057269407097116)
+(def ck-r6b-h-record-assoc -715500776194032970)
+(def ck-r6b-h-__r6-dnth -7168050004506419644)
+(def ck-r6b-h-document-count -51795290030251958)
+(def ck-r6b-h-__r6-dkeys 8898643555360701642)
+;; the group bit of the call-head spelling with hash h (exact names; the document- prefix is tested apart)
+(defn- ck-r6b-name-bit [h :i64] :i64
+  (cond (= h -1399000368820294352) ck-r6b-g-kw   ; keyword-name
+        (= h -5903302927127843025) ck-r6b-g-kw   ; keyword-from-string
+        (= h -9048150456382168848) ck-r6b-g-kw   ; str
+        (= h 2203569563317006795) ck-r6b-g-exi   ; ex-info
+        (= h -741585363824271330) ck-r6b-g-exi   ; ex-message
+        (= h -2158987832811628953) ck-r6b-g-exi   ; ex-data
+        (= h 6197231196749472553) ck-r6b-g-sfb   ; string-find-byte
+        (= h 573156827627667575) ck-r6b-g-min   ; min
+        (= h 580772045163143161) ck-r6b-g-max   ; max
+        (= h 645364649377164233) ck-r6b-g-doc   ; nil?
+        (= h 3988478846623731818) ck-r6b-g-doc   ; some?
+        (= h 2252384353609096874) ck-r6b-g-doc   ; map?
+        (= h -105946348095602752) ck-r6b-g-doc   ; boolean?
+        (= h 9091101342244405390) ck-r6b-g-doc   ; integer?
+        (= h -9157093811056680187) ck-r6b-g-doc   ; string?
+        (= h 2965165368296370529) ck-r6b-g-doc   ; keyword?
+        (= h 3382084118839404583) ck-r6b-g-doc   ; vector?
+        (= h -3693705228454459110) ck-r6b-g-doc   ; list?
+        (= h 3260232402901290521) ck-r6b-g-doc   ; seq?
+        (= h 3257417653133638036) ck-r6b-g-doc   ; set?
+        (= h 8642969046350357768) ck-r6b-g-doc   ; coll?
+        (= h -8514075438229807807) ck-r6b-g-doc   ; first
+        (= h -6586085717218287427) ck-r6b-g-doc   ; second
+        (= h 5527727774794834391) ck-r6b-g-doc   ; rest
+        (= h -8509051109125074585) ck-r6b-g-rem   ; rem
+        (= h -5363147738531601902) ck-r6b-g-utf8   ; string-to-utf8
+        (= h 2613634576959465006) ck-r6b-g-parse   ; string-parse-i64
+        (= h -8424421939860975699) ck-r6b-g-parse   ; parse-long
+        (= h -1721781785132272367) ck-r6b-g-sym   ; symbol
+        :else 0))
+;; the capability catalogue (resources/kotoba/lang/capability-catalog.edn): the wire id of the friendly qualified
+;; name (:source-operation) with FNV-1a hash h, 0 for none
+(defn- ck-r6b-capwire [h :i64] :i64
+  (cond (= h 1523489726228185725) 1   ; identity/sign
+        (= h -4981883870761471375) 2   ; identity/verify
+        (= h 1506410741630539861) 3   ; hash/sha256
+        (= h 1456777209906806896) 4   ; http/post
+        (= h 4878944748840525602) 5   ; log/read
+        (= h -970694661870998130) 6   ; log/append
+        (= h 8199700614416819094) 7   ; clock/now
+        (= h -6440997922957550731) 8   ; state/transact
+        (= h -8963386966565948919) 9   ; ui/commit
+        (= h -5772237966409477360) 10   ; ui/next-event
+        (= h 2983532776957565090) 11   ; llm/generate
+        (= h 3981579986039500709) 12   ; storage/transact
+        (= h -4625014802083912635) 13   ; http/get-stream
+        (= h 7245293437234724692) 14   ; object/get-stream
+        (= h -2367338882253901164) 15   ; object/put-block
+        (= h 3197791491444987707) 16   ; object/compare-and-set-ref
+        (= h -1881642599112554834) 17   ; http/accept
+        (= h 2856781541485763426) 18   ; http/reply
+        (= h 826809779708829773) 19   ; fs/transact
+        (= h -349418794445343446) 20   ; process/spawn
+        (= h -3320971797478508906) 21   ; secret/get
+        (= h 1083135189531752585) 22   ; git/run
+        (= h -47496999760311579) 23   ; entropy/draw
+        (= h -5495046854826211332) 24   ; dataspace/transact
+        (= h -466929250860428370) 25   ; stream/accept
+        (= h 7772444900204689636) 26   ; stream/send
+        (= h -5363180621018221298) 27   ; net/datagram
+        (= h -8802658379509268541) 28   ; link/frame
+        (= h -1610531289743028945) 29   ; can/frame
+        (= h 1705063112364208995) 30   ; code/eval
+        (= h -8251865206720973802) 31   ; screen/observe
+        (= h 3191237653009659478) 32   ; screen/act
+        (= h 2899793197873472097) 33   ; env/read
+        (= h -4197786277176582335) 34   ; fs/browse
+        (= h 4094767123730857499) 36   ; fs/browse-dir
+        (= h 2275939487182141329) 35   ; fs/app-data
+        (= h 173977598554302551) 35   ; fs/app-data-bytes
+        (= h 6925227135057355205) 37   ; io/write
+        (= h -1615384570522115789) 38   ; cli/args
+        (= h -8207943756487543458) 39   ; io/write-error
+        (= h -3807296312816633077) 40   ; sys/cwd
+        (= h 524881795662885090) 41   ; io/read
+        (= h 1791932595410158387) 42   ; gpu/compute
+        :else 0))
+(def ck-r6b-h-fs-app-data-bytes 173977598554302551)
+(defn- ck-r6b-t-kw0 [] :string
+  (string-concat "(defn- __r6-trap [] :i64 (vector-at [0] 1))\n"
+  (string-concat "(defn- __r6-traps [] :string (string-substring \"x\" 0 (__r6-trap)))\n"
+  (string-concat "(defn- __r6-cpw [c :i64] :i64 (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))\n"
+  (string-concat "(defn- __r6-kwhr [s :string a :i64 b :i64] :i64 (loop [i a h -3750763034362895579] (if (>= i b) h (let [c (string-code-point-at s i)] (recur (+ i (__r6-cpw c)) (* (bit-xor h c) 1099511628211))))))\n"
+  (string-concat "(defn- __r6-kwh [s :string] :i64 (__r6-kwhr s 0 (string-length s)))\n"
+  "(defn- __r6-tokend [t :string i :i64] :i64 (if (>= i (string-length t)) i (if (= (string-code-point-at t i) 32) i (__r6-tokend t (+ i 1)))))\n"))))))
+(defn- ck-r6b-t-kw1 [] :string
+  (string-concat "(defn- __r6-kwfind [t :string h :i64 i :i64] :string (cond (>= i (string-length t)) (__r6-traps) (= (string-code-point-at t i) 32) (__r6-kwfind t h (+ i 1)) :else (let [e (__r6-tokend t i)] (if (= (__r6-kwhr t i e) h) (string-substring t i e) (__r6-kwfind t h e)))))\n"
+  (string-concat "(defn- __r6-kwtext [k :keyword] :string (__r6-kwfind (__r6-kwtab) (__r6-as :i64 k) 0))\n"
+  (string-concat "(defn- __r6-slash [s :string i :i64] :i64 (cond (>= i (string-length s)) -1 (= (string-code-point-at s i) 47) i :else (__r6-slash s (+ i (__r6-cpw (string-code-point-at s i))))))\n"
+  (string-concat "(defn- keyword-name [k :keyword] :string (let [t (__r6-kwtext k) sl (__r6-slash t 1)] (string-substring t (cond (< sl 0) 1 (= (string-length t) 2) 1 :else (+ sl 1)) (string-length t))))\n"
+  (string-concat "(defn- keyword-from-string [s :string] :keyword (__r6-as :keyword (__r6-kwh (string-concat \":\" s))))\n"
+  "(defn- __r6-i2s [n :i64] :string (string-from-i64 n))\n"))))))
+(defn- ck-r6b-t-kw2 [] :string
+  "(defn- __r6-b2s [b :bool] :string (if b \"true\" \"false\"))\n")
+(defn- ck-r6b-t-kw [] :string (string-concat (ck-r6b-t-kw0) (string-concat (ck-r6b-t-kw1) (ck-r6b-t-kw2))))
+(defn- ck-r6b-t-doc0 [] :string
+  (string-concat "(defn- __kr_dw [c :i64] :i64 (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))\n"
+  (string-concat "(defn- __kr_dcloser [c :i64] :bool (or (= c 93) (or (= c 41) (= c 125))))\n"
+  (string-concat "(defn- __kr_dtrap [] :i64 (vector-at [0] 1))\n"
+  (string-concat "(defn- __kr_dtraps [] :string (string-substring \"x\" 0 (__kr_dtrap)))\n"
+  (string-concat "(defn- __kr_dempty [] :string (string-substring \"x\" 0 0))\n"
+  "(defn- __kr_dtokend [s :string i :i64] :i64 (if (>= i (string-length s)) i (let [c (string-code-point-at s i)] (cond (= c 32) i (__kr_dcloser c) i :else (__kr_dtokend s (+ i (__kr_dw c)))))))\n"))))))
+(defn- ck-r6b-t-doc1 [] :string
+  (string-concat "(defn- __kr_dstrend [s :string i :i64] :i64 (let [c (string-code-point-at s i)] (cond (= c 34) (+ i 1) (= c 92) (__kr_dstrend s (+ i 2)) :else (__kr_dstrend s (+ i (__kr_dw c))))))\n"
+  (string-concat "(defn- __kr_dseqend [s :string i :i64] :i64 (let [c (string-code-point-at s i)] (cond (= c 32) (__kr_dseqend s (+ i 1)) (__kr_dcloser c) (+ i 1) :else (__kr_dseqend s (__kr_dend s i)))))\n"
+  (string-concat "(defn- __kr_dend [s :string i :i64] :i64 (let [c (string-code-point-at s i)] (cond (= c 34) (__kr_dstrend s (+ i 1)) (= c 91) (__kr_dseqend s (+ i 1)) (= c 40) (__kr_dseqend s (+ i 1)) (= c 123) (__kr_dseqend s (+ i 1)) (= c 35) (__kr_dseqend s (+ i 2)) :else (__kr_dtokend s i))))\n"
+  (string-concat "(defn- __kr_dopen [d :string] :i64 (if (= (string-code-point-at d 0) 35) 2 1))\n"
+  (string-concat "(defn- __kr_ditem [d :string i :i64 k :i64] :i64 (let [c (string-code-point-at d i)] (cond (= c 32) (__kr_ditem d (+ i 1) k) (__kr_dcloser c) -1 (= k 0) i :else (__kr_ditem d (__kr_dend d i) (- k 1)))))\n"
+  "(defn- __kr_dclose [d :string] :i64 (- (string-length d) 1))\n"))))))
+(defn- ck-r6b-t-doc2 [] :string
+  (string-concat "(defn- __kr_dcountfrom [d :string i :i64 n :i64] :i64 (let [c (string-code-point-at d i)] (cond (= c 32) (__kr_dcountfrom d (+ i 1) n) (__kr_dcloser c) n :else (__kr_dcountfrom d (__kr_dend d i) (+ n 1)))))\n"
+  (string-concat "(defn- __kr_dforms [d :string] :i64 (__kr_dcountfrom d (__kr_dopen d) 0))\n"
+  (string-concat "(defn- __kr_dregeq [s :string i :i64 j :i64 t :string k :i64] :bool (cond (= i j) (= k (string-length t)) (>= k (string-length t)) (= 0 1) :else (let [c (string-code-point-at s i)] (if (= c (string-code-point-at t k)) (__kr_dregeq s (+ i (__kr_dw c)) j t (+ k (__kr_dw c))) (= 0 1)))))\n"
+  (string-concat "(defn- __kr_ddigit [c :i64] :bool (and (>= c 48) (< c 58)))\n"
+  (string-concat "(defn- __kr_dat [t :string i :i64 e :i64] :i64 (if (>= i e) -1 (string-code-point-at t i)))\n"
+  "(defn- __kr_ddigend [t :string i :i64 e :i64] :i64 (cond (>= i e) i (__kr_ddigit (string-code-point-at t i)) (__kr_ddigend t (+ i 1) e) :else i))\n"))))))
+(defn- ck-r6b-t-doc3 [] :string
+  (string-concat "(defn- __kr_dexpend [t :string i :i64 e :i64] :i64 (let [c (__kr_dat t i e)] (if (or (= c 101) (= c 69)) (let [s (__kr_dat t (+ i 1) e) j (if (or (= s 43) (= s 45)) (+ i 2) (+ i 1)) k (__kr_ddigend t j e)] (if (> k j) k -1)) i)))\n"
+  (string-concat "(defn- __kr_dnumkind [t :string i :i64 e :i64] :i64 (let [c0 (__kr_dat t i e) i0 (if (or (= c0 43) (= c0 45)) (+ i 1) i) d1 (__kr_ddigend t i0 e)] (if (= d1 e) (if (> d1 i0) 2 0) (let [c (string-code-point-at t d1)] (cond (= c 46) (let [d2 (__kr_ddigend t (+ d1 1) e)] (if (and (= d1 i0) (= d2 (+ d1 1))) 0 (if (= (__kr_dexpend t d2 e) e) 3 0))) (or (= c 101) (= c 69)) (if (= d1 i0) 0 (let [x (__kr_dexpend t d1 e)] (if (< x 0) 0 (if (= (__kr_dexpend t x e) e) 3 0)))) :else 0)))))\n"
+  (string-concat "(defn- __kr_dkindat [d :string i :i64 e :i64] :i64 (let [c (string-code-point-at d i)] (cond (= c 34) 4 (= c 58) 5 (= c 91) 7 (= c 40) 8 (= c 35) 9 (= c 123) 10 (__kr_dregeq d i e \"nil\" 0) 0 (__kr_dregeq d i e \"true\" 0) 1 (__kr_dregeq d i e \"false\" 0) 1 :else (let [k (__kr_dnumkind d i e)] (if (= k 0) 6 k)))))\n"
+  (string-concat "(defn- __kr_dkindn [d :string] :i64 (__kr_dkindat d 0 (string-length d)))\n"
+  (string-concat "(defn- __kr_dreq [d :string lo :i64 hi :i64] :string (let [k (__kr_dkindn d)] (if (or (< k lo) (> k hi)) (__kr_dtraps) d)))\n"
+  "(defn- __kr_dparseneg [t :string i :i64 acc :i64] :i64 (if (>= i (string-length t)) acc (__kr_dparseneg t (+ i 1) (- (* acc 10) (- (string-code-point-at t i) 48)))))\n"))))))
+(defn- ck-r6b-t-doc4 [] :string
+  (string-concat "(defn- __kr_dparse [t :string] :i64 (let [c (string-code-point-at t 0)] (if (= c 45) (__kr_dparseneg t 1 0) (- 0 (__kr_dparseneg t (if (= c 43) 1 0) 0)))))\n"
+  (string-concat "(defn- __kr_dplain [c :i64] :bool (cond (< c 32) (= 0 1) (= c 34) (= 0 1) :else (not (= c 92))))\n"
+  (string-concat "(defn- __kr_dplainend [s :string i :i64] :i64 (if (>= i (string-length s)) i (let [c (string-code-point-at s i)] (if (__kr_dplain c) (__kr_dplainend s (+ i (__kr_dw c))) i))))\n"
+  (string-concat "(defn- __kr_dhexd [k :i64] :string (string-substring \"0123456789abcdef\" k (+ k 1)))\n"
+  (string-concat "(defn- __kr_descchar [acc :string c :i64] :string (cond (= c 34) (string-concat acc \"\\\\\\\"\") (= c 92) (string-concat acc \"\\\\\\\\\") (= c 8) (string-concat acc \"\\\\b\") (= c 9) (string-concat acc \"\\\\t\") (= c 10) (string-concat acc \"\\\\n\") (= c 12) (string-concat acc \"\\\\f\") (= c 13) (string-concat acc \"\\\\r\") :else (string-concat (string-concat (string-concat acc \"\\\\u00\") (__kr_dhexd (quot c 16))) (__kr_dhexd (- c (* (quot c 16) 16))))))\n"
+  "(defn- __kr_descfrom [acc :string s :string i :i64] :string (let [j (__kr_dplainend s i) a2 (string-concat acc (string-substring s i j))] (if (>= j (string-length s)) (string-concat a2 \"\\\"\") (__kr_descfrom (__kr_descchar a2 (string-code-point-at s j)) s (+ j 1)))))\n"))))))
+(defn- ck-r6b-t-doc5 [] :string
+  (string-concat "(defn- __kr_desc [s :string] :string (__kr_descfrom \"\\\"\" s 0))\n"
+  (string-concat "(defn- __kr_dhex [c :i64] :i64 (cond (< c 58) (- c 48) (< c 71) (- c 55) :else (- c 87)))\n"
+  (string-concat "(defn- __kr_dfindbs [t :string i :i64 end :i64] :i64 (if (>= i end) -1 (let [c (string-code-point-at t i)] (if (= c 92) i (__kr_dfindbs t (+ i (__kr_dw c)) end)))))\n"
+  (string-concat "(defn- __kr_dunesc1 [e :i64] :string (cond (= e 110) \"\\n\" (= e 116) \"\\t\" (= e 98) \"\\b\" (= e 102) \"\\f\" (= e 114) \"\\r\" (= e 34) \"\\\"\" :else \"\\\\\"))\n"
+  (string-concat "(defn- __kr_dctl [u :i64] :string (string-substring \"\\u0000\\u0001\\u0002\\u0003\\u0004\\u0005\\u0006\\u0007\\u0008\\u0009\\u000a\\u000b\\u000c\\u000d\\u000e\\u000f\\u0010\\u0011\\u0012\\u0013\\u0014\\u0015\\u0016\\u0017\\u0018\\u0019\\u001a\\u001b\\u001c\\u001d\\u001e\\u001f\" u (+ u 1)))\n"
+  "(defn- __kr_dunescfrom [acc :string t :string i :i64 end :i64] :string (let [b (__kr_dfindbs t i end)] (if (< b 0) (string-concat acc (string-substring t i end)) (let [a2 (string-concat acc (string-substring t i b)) e (string-code-point-at t (+ b 1))] (if (= e 117) (let [u (+ (* 16 (__kr_dhex (string-code-point-at t (+ b 4)))) (__kr_dhex (string-code-point-at t (+ b 5))))] (if (and (= (string-code-point-at t (+ b 2)) 48) (and (= (string-code-point-at t (+ b 3)) 48) (< u 32))) (__kr_dunescfrom (string-concat a2 (__kr_dctl u)) t (+ b 6) end) (__kr_dtraps))) (__kr_dunescfrom (string-concat a2 (__kr_dunesc1 e)) t (+ b 2) end))))))\n"))))))
+(defn- ck-r6b-t-doc6 [] :string
+  (string-concat "(defn- __kr_dunesc [t :string] :string (__kr_dunescfrom (__kr_dempty) t 1 (- (string-length t) 1)))\n"
+  (string-concat "(defn- __kr_dsymok [c :i64] :bool (cond (<= c 32) (= 0 1) (= c 44) (= 0 1) (= c 91) (= 0 1) (= c 93) (= 0 1) (= c 123) (= 0 1) (= c 125) (= 0 1) (= c 40) (= 0 1) (= c 41) (= 0 1) (= c 34) (= 0 1) (= c 39) (= 0 1) (= c 59) (= 0 1) (= c 96) (= 0 1) (= c 126) (= 0 1) (= c 94) (= 0 1) :else (not (= c 92))))\n"
+  (string-concat "(defn- __kr_dsymsok [s :string i :i64] :bool (if (>= i (string-length s)) (= 0 0) (let [c (string-code-point-at s i)] (if (__kr_dsymok c) (__kr_dsymsok s (+ i (__kr_dw c))) (= 0 1)))))\n"
+  (string-concat "(defn- __kr_dsym [s :string] :string (cond (= (string-length s) 0) (__kr_dtraps) (not (__kr_dsymsok s 0)) (__kr_dtraps) (= (string-code-point-at s 0) 58) (__kr_dtraps) (= (string-code-point-at s 0) 35) (__kr_dtraps) (string=? s \"nil\") (__kr_dtraps) (string=? s \"true\") (__kr_dtraps) (string=? s \"false\") (__kr_dtraps) (= (__kr_dnumkind s 0 (string-length s)) 0) s :else (__kr_dtraps)))\n"
+  (string-concat "(defn- __kr_dmax [a :i64 b :i64] :i64 (if (> a b) a b))\n"
+  "(defn- __kr_dkwat [d :string i :i64] :bool (= (string-code-point-at d i) 58))\n"))))))
+(defn- ck-r6b-t-doc7 [] :string
+  (string-concat "(defn- __kr_ddepthitems [d :string i :i64 m :i64 mp :bool ky :bool] :i64 (let [c (string-code-point-at d i)] (cond (= c 32) (__kr_ddepthitems d (+ i 1) m mp ky) (__kr_dcloser c) m :else (let [here (if (and ky (__kr_dkwat d i)) 0 (__kr_ddepthat d i))] (__kr_ddepthitems d (__kr_dend d i) (__kr_dmax m here) mp (and mp (not ky)))))))\n"
+  (string-concat "(defn- __kr_ddepthat [d :string i :i64] :i64 (let [k (__kr_dkindat d i (__kr_dend d i))] (if (< k 7) 1 (+ 1 (__kr_ddepthitems d (+ i (if (= k 9) 2 1)) 0 (= k 10) (= k 10))))))\n"
+  (string-concat "(defn- __kr_dnodesitems [d :string i :i64 n :i64 mp :bool ky :bool] :i64 (let [c (string-code-point-at d i)] (cond (= c 32) (__kr_dnodesitems d (+ i 1) n mp ky) (__kr_dcloser c) n :else (let [here (if (and ky (__kr_dkwat d i)) 0 (__kr_dnodesat d i))] (__kr_dnodesitems d (__kr_dend d i) (+ n here) mp (and mp (not ky)))))))\n"
+  (string-concat "(defn- __kr_dnodesat [d :string i :i64] :i64 (let [k (__kr_dkindat d i (__kr_dend d i))] (if (< k 7) 1 (+ 1 (__kr_dnodesitems d (+ i (if (= k 9) 2 1)) 0 (= k 10) (= k 10))))))\n"
+  (string-concat "(defn- __kr_dbounded [d :string] :string (let [k (__kr_dkindn d)] (cond (< k 7) d (> (if (= k 10) (quot (__kr_dforms d) 2) (__kr_dforms d)) 32) (__kr_dtraps) (> (__kr_ddepthat d 0) 9) (__kr_dtraps) (> (__kr_dnodesat d 0) 4096) (__kr_dtraps) :else d)))\n"
+  "(defn- __kr_dlentext [acc :string tag :string s :string] :string (string-concat (string-concat (string-concat (string-concat acc tag) (string-from-i64 (string-length s))) \":\") s))\n"))))))
+(defn- ck-r6b-t-doc8 [] :string
+  (string-concat "(defn- __kr_dlenrange [acc :string tag :string d :string i :i64 e :i64] :string (string-concat (string-concat (string-concat (string-concat acc tag) (string-from-i64 (- e i))) \":\") (string-substring d i e)))\n"
+  (string-concat "(defn- __kr_dcanonitems [acc :string d :string i :i64 mp :bool ky :bool] :string (let [c (string-code-point-at d i)] (cond (= c 32) (__kr_dcanonitems acc d (+ i 1) mp ky) (__kr_dcloser c) acc :else (let [e (__kr_dend d i) a2 (if ky (if (__kr_dkwat d i) (__kr_dlenrange acc \"K\" d i e) (__kr_dcanonat (string-concat acc \"D\") d i)) (__kr_dcanonat acc d i))] (__kr_dcanonitems a2 d e mp (and mp (not ky)))))))\n"
+  (string-concat "(defn- __kr_dcanonat [acc :string d :string i :i64] :string (let [e (__kr_dend d i) k (__kr_dkindat d i e)] (cond (= k 0) (string-concat acc \"n\") (= k 1) (string-concat acc (if (__kr_dregeq d i e \"true\" 0) \"bt\" \"bf\")) (= k 2) (string-concat (string-concat (string-concat acc \"i\") (string-substring d i e)) \";\") (= k 3) (__kr_dtraps) (= k 4) (__kr_dlentext acc \"s\" (__kr_dunescfrom (__kr_dempty) d (+ i 1) (- e 1))) (= k 5) (__kr_dlenrange acc \"k\" d i e) (= k 6) (__kr_dlenrange acc \"y\" d i e) :else (let [open (+ i (if (= k 9) 2 1)) forms (__kr_dcountfrom d open 0) head (string-concat (string-concat (string-concat acc (cond (= k 7) \"v\" (= k 8) \"l\" (= k 9) \"e\" :else \"m\")) (string-from-i64 (if (= k 10) (quot forms 2) forms))) \":\")] (__kr_dcanonitems head d open (= k 10) (= k 10))))))\n"
+  (string-concat "(defn- __kr_dcanon [d :string] :string (__kr_dcanonat (__kr_dempty) d 0))\n"
+  (string-concat "(defn- __kr_drcmp [a :string i :i64 b :string k :i64 l :i64] :i64 (cond (= i (string-length a)) (if (= k l) 0 -1) (= k l) 1 :else (let [x (string-code-point-at a i) y (string-code-point-at b k)] (cond (< x y) -1 (> x y) 1 :else (__kr_drcmp a (+ i (__kr_dw x)) b (+ k (__kr_dw y)) l)))))\n"
+  "(defn- __kr_dkeycmp [key :string m :string i :i64 e :i64] :i64 (if (and (= (string-code-point-at key 0) 58) (__kr_dkwat m i)) (__kr_drcmp key 0 m i e) (string-compare (__kr_dcanon key) (__kr_dcanonat (__kr_dempty) m i))))\n"))))))
+(defn- ck-r6b-t-doc9 [] :string
+  (string-concat "(defn- __kr_dmapfind [m :string key :string i :i64] :i64 (let [c (string-code-point-at m i)] (cond (= c 32) (__kr_dmapfind m key (+ i 1)) (__kr_dcloser c) -1 :else (let [ke (__kr_dend m i)] (if (__kr_dregeq m i ke key 0) i (__kr_dmapfind m key (__kr_dend m (+ ke 1))))))))\n"
+  (string-concat "(defn- __kr_dmapslot [m :string key :string i :i64 u :bool] :i64 (let [c (string-code-point-at m i)] (cond (= c 32) (__kr_dmapslot m key (+ i 1) u) (__kr_dcloser c) i :else (let [ke (__kr_dend m i) o (__kr_dkeycmp key m i ke)] (cond (< o 0) i (and u (= o 0)) (__kr_dtrap) :else (__kr_dmapslot m key (__kr_dend m (+ ke 1)) u))))))\n"
+  (string-concat "(defn- __kr_dinsert [m :string q :i64 entry :string] :string (cond (= q (__kr_dclose m)) (if (= q (__kr_dopen m)) (string-concat (string-substring m 0 q) (string-concat entry (string-substring m q (string-length m)))) (string-concat (string-concat (string-substring m 0 q) \" \") (string-concat entry (string-substring m q (string-length m))))) :else (string-concat (string-substring m 0 q) (string-concat (string-concat entry \" \") (string-substring m q (string-length m))))))\n"
+  (string-concat "(defn- __kr_dmapput [m :string key :string value :string u :bool] :string (__kr_dbounded (__kr_dinsert m (__kr_dmapslot m key 1 u) (string-concat (string-concat key \" \") value))))\n"
+  (string-concat "(defn- __kr_dmapputu [m :string key :string value :string] :string (__kr_dmapput m key value (= 0 0)))\n"
+  "(defn- __kr_dassoc [m :string key :string value :string] :string (let [p (__kr_dmapfind m key 1)] (if (< p 0) (__kr_dmapput m key value (= 0 1)) (let [vs (+ (__kr_dend m p) 1) ve (__kr_dend m vs)] (__kr_dbounded (string-concat (string-substring m 0 vs) (string-concat value (string-substring m ve (string-length m)))))))))\n"))))))
+(defn- ck-r6b-t-doc10 [] :string
+  (string-concat "(defn- __kr_dcut [d :string p :i64 e :i64] :string (cond (= (string-code-point-at d e) 32) (string-concat (string-substring d 0 p) (string-substring d (+ e 1) (string-length d))) (= (string-code-point-at d (- p 1)) 32) (string-concat (string-substring d 0 (- p 1)) (string-substring d e (string-length d))) :else (string-concat (string-substring d 0 p) (string-substring d e (string-length d)))))\n"
+  (string-concat "(defn- __kr_ddissoc [m :string key :string] :string (let [p (__kr_dmapfind m key 1)] (if (< p 0) m (__kr_dcut m p (__kr_dend m (+ (__kr_dend m p) 1))))))\n"
+  (string-concat "(defn- __kr_dget [m0 :string key :string] [:option :string] (let [m (__kr_dreq m0 10 10) p (__kr_dmapfind m key 1)] (if (< p 0) (option-none-of [:option :string]) (let [vs (+ (__kr_dend m p) 1)] (option-some-of [:option :string] (string-substring m vs (__kr_dend m vs)))))))\n"
+  (string-concat "(defn- __kr_dmergefrom [acc :string m :string i :i64] :string (let [c (string-code-point-at m i)] (cond (= c 32) (__kr_dmergefrom acc m (+ i 1)) (__kr_dcloser c) acc :else (let [ke (__kr_dend m i) ve (__kr_dend m (+ ke 1))] (__kr_dmergefrom (__kr_dassoc acc (string-substring m i ke) (string-substring m (+ ke 1) ve)) m ve)))))\n"
+  (string-concat "(defn- __kr_dmerge [a :string b :string] :string (let [a1 (__kr_dreq a 10 10)] (__kr_dmergefrom a1 (__kr_dreq b 10 10) 1)))\n"
+  "(defn- __kr_dentry [m0 :string i :i64] [:option :string] (let [m (__kr_dreq m0 10 10)] (if (< i 0) (option-none-of [:option :string]) (let [p (__kr_ditem m 1 (* 2 i))] (if (< p 0) (option-none-of [:option :string]) (let [ke (__kr_dend m p)] (option-some-of [:option :string] (string-concat (string-concat \"[\" (string-substring m p (__kr_dend m (+ ke 1)))) \"]\"))))))))\n"))))))
+(defn- ck-r6b-t-doc11 [] :string
+  (string-concat "(defn- __kr_dnth [d :string i :i64] [:option :string] (if (< i 0) (option-none-of [:option :string]) (let [p (__kr_ditem d (__kr_dopen d) i)] (if (< p 0) (option-none-of [:option :string]) (option-some-of [:option :string] (string-substring d p (__kr_dend d p)))))))\n"
+  (string-concat "(defn- __kr_dvat [d :string i :i64] [:option :string] (__kr_dnth (__kr_dreq d 7 7) i))\n"
+  (string-concat "(defn- __kr_dlat [d :string i :i64] [:option :string] (__kr_dnth (__kr_dreq d 8 8) i))\n"
+  (string-concat "(defn- __kr_dvadd [v :string x :string] :string (__kr_dinsert v (__kr_dclose v) x))\n"
+  (string-concat "(defn- __kr_dconj [v0 :string x :string] :string (let [v (__kr_dreq v0 7 7)] (__kr_dbounded (__kr_dinsert v (__kr_dclose v) x))))\n"
+  "(defn- __kr_dvassoc [v0 :string i :i64 x :string] :string (let [v (__kr_dreq v0 7 7) p (if (< i 0) -1 (__kr_ditem v 1 i))] (if (< p 0) (__kr_dtraps) (__kr_dbounded (string-concat (string-substring v 0 p) (string-concat x (string-substring v (__kr_dend v p) (string-length v))))))))\n"))))))
+(defn- ck-r6b-t-doc12 [] :string
+  (string-concat "(defn- __kr_dvremove [v0 :string i :i64] :string (let [v (__kr_dreq v0 7 7) p (if (< i 0) -1 (__kr_ditem v 1 i))] (if (< p 0) (__kr_dtraps) (__kr_dcut v p (__kr_dend v p)))))\n"
+  (string-concat "(defn- __kr_dvdrop [v0 :string n :i64] :string (let [v (__kr_dreq v0 7 7)] (cond (< n 0) (__kr_dtraps) (> n (__kr_dforms v)) (__kr_dtraps) (= n 0) v :else (let [p (__kr_ditem v 1 n)] (if (< p 0) \"[]\" (string-concat \"[\" (string-substring v p (string-length v))))))))\n"
+  (string-concat "(defn- __kr_dsetcontains [s :string x :string i :i64] :bool (let [c (string-code-point-at s i)] (cond (= c 32) (__kr_dsetcontains s x (+ i 1)) (__kr_dcloser c) (= 0 1) :else (let [e (__kr_dend s i)] (if (__kr_dregeq s i e x 0) (= 0 0) (__kr_dsetcontains s x e))))))\n"
+  (string-concat "(defn- __kr_dsetc [s :string x :string] :bool (__kr_dsetcontains (__kr_dreq s 9 9) x 2))\n"
+  (string-concat "(defn- __kr_ditemslot [s :string cx :string i :i64 u :bool] :i64 (let [c (string-code-point-at s i)] (cond (= c 32) (__kr_ditemslot s cx (+ i 1) u) (__kr_dcloser c) i :else (let [o (string-compare cx (__kr_dcanonat (__kr_dempty) s i))] (cond (< o 0) i (and u (= o 0)) (__kr_dtrap) :else (__kr_ditemslot s cx (__kr_dend s i) u))))))\n"
+  "(defn- __kr_dsetput [s :string x :string] :string (__kr_dbounded (__kr_dinsert s (__kr_ditemslot s (__kr_dcanon x) 2 (= 0 0)) x)))\n"))))))
+(defn- ck-r6b-t-doc13 [] :string
+  (string-concat "(defn- __kr_dsortfrom [acc :string v :string i :i64] :string (let [c (string-code-point-at v i)] (cond (= c 32) (__kr_dsortfrom acc v (+ i 1)) (__kr_dcloser c) acc :else (let [e (__kr_dend v i) x (string-substring v i e)] (__kr_dsortfrom (__kr_dinsert acc (__kr_ditemslot acc (__kr_dcanon x) 1 (= 0 1)) x) v e)))))\n"
+  (string-concat "(defn- __kr_dvsort [v :string] :string (__kr_dsortfrom \"[]\" (__kr_dreq v 7 7) 1))\n"
+  (string-concat "(defn- __kr_dnull [] :string \"nil\")\n"
+  (string-concat "(defn- __kr_dbool [b :bool] :string (if b \"true\" \"false\"))\n"
+  (string-concat "(defn- __kr_di64 [n :i64] :string (string-from-i64 n))\n"
+  "(defn- __kr_dvz [] :string \"[]\")\n"))))))
+(defn- ck-r6b-t-doc14 [] :string
+  (string-concat "(defn- __kr_dlz [] :string \"()\")\n"
+  (string-concat "(defn- __kr_dsz [] :string \"#{}\")\n"
+  (string-concat "(defn- __kr_dmz [] :string \"{}\")\n"
+  (string-concat "(defn- __kr_dcount [d0 :string] :i64 (let [d (__kr_dreq d0 7 10)] (if (= (__kr_dkindn d) 10) (quot (__kr_dforms d) 2) (__kr_dforms d))))\n"
+  (string-concat "(defn- __kr_dkind [d :string] :string (let [k (__kr_dkindn d)] (cond (= k 0) \":null\" (= k 1) \":bool\" (= k 2) \":i64\" (= k 3) \":f64\" (= k 4) \":string\" (= k 5) \":keyword\" (= k 6) \":symbol\" (= k 7) \":vector\" (= k 8) \":list\" (= k 9) \":set\" :else \":map\")))\n"
+  "(defn- __kr_deq [a :string b :string] :bool (string=? a b))\n"))))))
+(defn- ck-r6b-t-doc15 [] :string
+  (string-concat "(defn- __kr_dcontains [m :string k :string] :bool (>= (__kr_dmapfind (__kr_dreq m 10 10) k 1) 0))\n"
+  (string-concat "(defn- __kr_dassocop [m :string k :string v :string] :string (__kr_dassoc (__kr_dreq m 10 10) k v))\n"
+  (string-concat "(defn- __kr_ddissocop [m :string k :string] :string (__kr_ddissoc (__kr_dreq m 10 10) k))\n"
+  (string-concat "(defn- __kr_dstrval [d :string] [:option :string] (if (= (__kr_dkindn d) 4) (option-some-of [:option :string] (__kr_dunesc d)) (option-none-of [:option :string])))\n"
+  (string-concat "(defn- __kr_dboolval [d :string] [:option :bool] (if (= (__kr_dkindn d) 1) (option-some-of [:option :bool] (string=? d \"true\")) (option-none-of [:option :bool])))\n"
+  "(defn- __kr_di64val [d :string] [:option :i64] (if (= (__kr_dkindn d) 2) (option-some-of [:option :i64] (__kr_dparse d)) (option-none-of [:option :i64])))\n"))))))
+(defn- ck-r6b-t-doc16 [] :string
+  (string-concat "(defn- __kr_did [d :string] :string d)\n"
+  (string-concat "(defn- __kr_kwtext [k :string] :string k)\n"
+  (string-concat "(defn- __kr_dkwval [d :string] [:option :string] (if (= (__kr_dkindn d) 5) (option-some-of [:option :string] d) (option-none-of [:option :string])))\n"
+  (string-concat "(defn- __kr_dfindslash [s :string i :i64] :i64 (cond (>= i (string-length s)) -1 (= (string-code-point-at s i) 47) i :else (__kr_dfindslash s (+ i (__kr_dw (string-code-point-at s i))))))\n"
+  (string-concat "(defn- __kr_kwname [k :string] :string (let [sl (__kr_dfindslash k 1)] (string-substring k (cond (< sl 0) 1 (= (string-length k) 2) 1 :else (+ sl 1)) (string-length k))))\n"
+  "(defn- __kr_kwfromstr [s :string] :string (string-concat \":\" s))\n"))))))
+(defn- ck-r6b-t-doc17 [] :string
+  (string-concat "(defn- __r6-ds [d :document] :string (__r6-as :string d))\n"
+  (string-concat "(defn- __r6-dd [s :string] :document (__r6-as :document s))\n"
+  (string-concat "(defn- __r6-dopt [o [:option :string]] [:option :document] (__r6-as [:option :document] o))\n"
+  (string-concat "(defn- document-null [] :document (__r6-dd \"nil\"))\n"
+  (string-concat "(defn- document-bool [b :bool] :document (__r6-dd (__kr_dbool b)))\n"
+  "(defn- document-i64 [n :i64] :document (__r6-dd (string-from-i64 n)))\n"))))))
+(defn- ck-r6b-t-doc18 [] :string
+  (string-concat "(defn- document-string [s :string] :document (__r6-dd (__kr_desc s)))\n"
+  (string-concat "(defn- document-symbol [s :symbol] :document (__r6-dd (__kr_dsym (__r6-as :string s))))\n"
+  (string-concat "(defn- document-keyword [k :keyword] :document (__r6-dd (__r6-kwtext k)))\n"
+  (string-concat "(defn- document-vector [] :document (__r6-dd \"[]\"))\n"
+  (string-concat "(defn- document-list [] :document (__r6-dd \"()\"))\n"
+  "(defn- document-set [] :document (__r6-dd \"#{}\"))\n"))))))
+(defn- ck-r6b-t-doc19 [] :string
+  (string-concat "(defn- document-map [] :document (__r6-dd \"{}\"))\n"
+  (string-concat "(defn- __r6-dvs [v :document x :document] :document (__r6-dd (__kr_dvadd (__r6-ds v) (__r6-ds x))))\n"
+  (string-concat "(defn- __r6-dss [s :document x :document] :document (__r6-dd (__kr_dsetput (__r6-ds s) (__r6-ds x))))\n"
+  (string-concat "(defn- __r6-dms [m :document k :document v :document] :document (__r6-dd (__kr_dmapputu (__r6-ds m) (__r6-ds k) (__r6-ds v))))\n"
+  (string-concat "(defn- __r6-dbd [d :document] :document (__r6-dd (__kr_dbounded (__r6-ds d))))\n"
+  "(defn- document-count [d :document] :i64 (__kr_dcount (__r6-ds d)))\n"))))))
+(defn- ck-r6b-t-doc20 [] :string
+  (string-concat "(defn- document-kind [d :document] :keyword (__r6-as :keyword (__r6-kwh (__kr_dkind (__r6-ds d)))))\n"
+  (string-concat "(defn- document-equal? [a :document b :document] :bool (string=? (__r6-ds a) (__r6-ds b)))\n"
+  (string-concat "(defn- document-set-contains? [s :document x :document] :bool (__kr_dsetc (__r6-ds s) (__r6-ds x)))\n"
+  (string-concat "(defn- document-contains [m :document k :document] :bool (__kr_dcontains (__r6-ds m) (__r6-ds k)))\n"
+  (string-concat "(defn- document-get [m :document k :document] [:option :document] (__r6-dopt (__kr_dget (__r6-ds m) (__r6-ds k))))\n"
+  "(defn- document-vector-at [d :document i :i64] [:option :document] (__r6-dopt (__kr_dvat (__r6-ds d) i)))\n"))))))
+(defn- ck-r6b-t-doc21 [] :string
+  (string-concat "(defn- document-list-at [d :document i :i64] [:option :document] (__r6-dopt (__kr_dlat (__r6-ds d) i)))\n"
+  (string-concat "(defn- document-map-entry-at [d :document i :i64] [:option :document] (__r6-dopt (__kr_dentry (__r6-ds d) i)))\n"
+  (string-concat "(defn- document-vector-assoc [v :document i :i64 x :document] :document (__r6-dd (__kr_dvassoc (__r6-ds v) i (__r6-ds x))))\n"
+  (string-concat "(defn- document-vector-conj [v :document x :document] :document (__r6-dd (__kr_dconj (__r6-ds v) (__r6-ds x))))\n"
+  (string-concat "(defn- document-vector-drop [v :document n :i64] :document (__r6-dd (__kr_dvdrop (__r6-ds v) n)))\n"
+  "(defn- document-vector-remove [v :document i :i64] :document (__r6-dd (__kr_dvremove (__r6-ds v) i)))\n"))))))
+(defn- ck-r6b-t-doc22 [] :string
+  (string-concat "(defn- document-vector-sort [v :document] :document (__r6-dd (__kr_dvsort (__r6-ds v))))\n"
+  (string-concat "(defn- document-assoc [m :document k :document v :document] :document (__r6-dd (__kr_dassocop (__r6-ds m) (__r6-ds k) (__r6-ds v))))\n"
+  (string-concat "(defn- document-dissoc [m :document k :document] :document (__r6-dd (__kr_ddissocop (__r6-ds m) (__r6-ds k))))\n"
+  (string-concat "(defn- document-merge [a :document b :document] :document (__r6-dd (__kr_dmerge (__r6-ds a) (__r6-ds b))))\n"
+  (string-concat "(defn- document-string-value [d :document] [:option :string] (__kr_dstrval (__r6-ds d)))\n"
+  "(defn- document-keyword-value [d :document] [:option :keyword] (if (= (__kr_dkindn (__r6-ds d)) 5) (option-some-of [:option :keyword] (__r6-as :keyword (__r6-kwh (__r6-ds d)))) (option-none-of [:option :keyword])))\n"))))))
+(defn- ck-r6b-t-doc23 [] :string
+  (string-concat "(defn- document-bool-value [d :document] [:option :bool] (__kr_dboolval (__r6-ds d)))\n"
+  (string-concat "(defn- document-i64-value [d :document] [:option :i64] (__kr_di64val (__r6-ds d)))\n"
+  (string-concat "(defn- document-edn-print [d :document] :string (__r6-ds d))\n"
+  (string-concat "(defn- document-edn-read [s :string] :document (__r6-dd s))\n"
+  (string-concat "(defn- nil? [d :document] :bool (= (__kr_dkindn (__r6-ds d)) 0))\n"
+  "(defn- some? [d :document] :bool (not= (__kr_dkindn (__r6-ds d)) 0))\n"))))))
+(defn- ck-r6b-t-doc24 [] :string
+  (string-concat "(defn- map? [d :document] :bool (= (__kr_dkindn (__r6-ds d)) 10))\n"
+  (string-concat "(defn- __r6-kind? [d :document k :i64] :bool (= (__kr_dkindn (__r6-ds d)) k))\n"
+  (string-concat "(defn- boolean? [d :document] :bool (__r6-kind? d 1))\n"
+  (string-concat "(defn- integer? [d :document] :bool (__r6-kind? d 2))\n"
+  (string-concat "(defn- string? [d :document] :bool (__r6-kind? d 4))\n"
+  "(defn- keyword? [d :document] :bool (__r6-kind? d 5))\n"))))))
+(defn- ck-r6b-t-doc25 [] :string
+  (string-concat "(defn- vector? [d :document] :bool (__r6-kind? d 7))\n"
+  (string-concat "(defn- list? [d :document] :bool (__r6-kind? d 8))\n"
+  (string-concat "(defn- seq? [d :document] :bool (__r6-kind? d 8))\n"
+  (string-concat "(defn- set? [d :document] :bool (__r6-kind? d 9))\n"
+  (string-concat "(defn- coll? [d :document] :bool (>= (__kr_dkindn (__r6-ds d)) 7))\n"
+  "(defn- first [d :document] :document (if (= (document-count d) 0) (document-null) (let [k (__kr_dkindn (__r6-ds d))] (option-value-of [:option :document] (cond (= k 10) (document-map-entry-at d 0) (= k 8) (document-list-at d 0) :else (document-vector-at d 0)) (document-null)))))\n"))))))
+(defn- ck-r6b-t-doc26 [] :string
+  (string-concat "(defn- second [d :document] :document (if (< (document-count d) 2) (document-null) (let [k (__kr_dkindn (__r6-ds d))] (option-value-of [:option :document] (cond (= k 10) (document-map-entry-at d 1) (= k 8) (document-list-at d 1) :else (document-vector-at d 1)) (document-null)))))\n"
+  (string-concat "(defn- __r6-item [d :document i :i64] :document (let [k (__kr_dkindn (__r6-ds d))] (option-value-of [:option :document] (cond (= k 10) (document-map-entry-at d i) (= k 8) (document-list-at d i) :else (document-vector-at d i)) (document-null))))\n"
+  (string-concat "(defn- rest [d :document] :document (loop [i 1 acc (document-vector)] (if (>= i (document-count d)) acc (recur (+ i 1) (document-vector-conj acc (__r6-item d i))))))\n"
+  (string-concat "(defn- __r6-dkeys [d :document] :document (loop [i 0 acc (document-vector)] (if (>= i (document-count d)) acc (recur (+ i 1) (document-vector-conj acc (__r6-dnth (__r6-item d i) 0))))))\n"
+  "(defn- __r6-dnth [d :document i :i64] :document (let [o (if (= (__kr_dkindn (__r6-ds d)) 8) (document-list-at d i) (document-vector-at d i))] (if (option-some?-of [:option :document] o) (option-value-of [:option :document] o (document-null)) (__r6-dd (__r6-traps)))))\n")))))
+(defn- ck-r6b-t-doc [] :string (string-concat (ck-r6b-t-doc0) (string-concat (ck-r6b-t-doc1) (string-concat (ck-r6b-t-doc2) (string-concat (ck-r6b-t-doc3) (string-concat (ck-r6b-t-doc4) (string-concat (ck-r6b-t-doc5) (string-concat (ck-r6b-t-doc6) (string-concat (ck-r6b-t-doc7) (string-concat (ck-r6b-t-doc8) (string-concat (ck-r6b-t-doc9) (string-concat (ck-r6b-t-doc10) (string-concat (ck-r6b-t-doc11) (string-concat (ck-r6b-t-doc12) (string-concat (ck-r6b-t-doc13) (string-concat (ck-r6b-t-doc14) (string-concat (ck-r6b-t-doc15) (string-concat (ck-r6b-t-doc16) (string-concat (ck-r6b-t-doc17) (string-concat (ck-r6b-t-doc18) (string-concat (ck-r6b-t-doc19) (string-concat (ck-r6b-t-doc20) (string-concat (ck-r6b-t-doc21) (string-concat (ck-r6b-t-doc22) (string-concat (ck-r6b-t-doc23) (string-concat (ck-r6b-t-doc24) (string-concat (ck-r6b-t-doc25) (ck-r6b-t-doc26))))))))))))))))))))))))))))
+(defn- ck-r6b-t-sfb0 [] :string
+  "(defn- string-find-byte [s :string b :i64 i :i64] :i64 (cond (< b 0) (vector-at [0] 1) (> b 127) (vector-at [0] 1) (< i 0) (vector-at [0] 1) (> i (string-length s)) (vector-at [0] 1) :else (loop [j i] (if (>= j (string-length s)) -1 (let [c (string-code-point-at s j)] (if (= c b) j (recur (+ j (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4)))))))))\n")
+(defn- ck-r6b-t-sfb [] :string (ck-r6b-t-sfb0))
+(defn- ck-r6b-t-min0 [] :string
+  "(defn- min [a :i64 b :i64] :i64 (if (< a b) a b))\n")
+(defn- ck-r6b-t-min [] :string (ck-r6b-t-min0))
+(defn- ck-r6b-t-max0 [] :string
+  "(defn- max [a :i64 b :i64] :i64 (if (> a b) a b))\n")
+(defn- ck-r6b-t-max [] :string (ck-r6b-t-max0))
+(defn- ck-r6b-t-exi0 [] :string
+  (string-concat "(defn- ex-info [msg :string data :document] :document (__r6-dbd (__r6-dd (string-concat \"{:data \" (string-concat (__r6-ds data) (string-concat \" :message \" (string-concat (__kr_desc msg) \"}\")))))))\n"
+  (string-concat "(defn- ex-message [e :document] :string (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (__r6-dopt (__kr_dget (__r6-ds e) \":message\")) (document-null))) \"\"))\n"
+  "(defn- ex-data [e :document] :document (option-value-of [:option :document] (__r6-dopt (__kr_dget (__r6-ds e) \":data\")) (document-null)))\n")))
+(defn- ck-r6b-t-exi [] :string (ck-r6b-t-exi0))
+(defn- ck-r6b-t-rem0 [] :string
+  "(defn- rem [a :i64 b :i64] :i64 (- a (* b (quot a b))))\n")
+(defn- ck-r6b-t-rem [] :string (ck-r6b-t-rem0))
+(defn- ck-r6b-t-utf80 [] :string
+  "(defn- string-to-utf8 [s :string] :bytes (let [n (string-byte-length s)] (loop [i 0 v (vector-alloc n)] (if (>= i n) (bytes-from-vector-i64 v) (let [c (string-code-point-at s i)] (if (< c 128) (recur (+ i 1) (vector-assoc! v i c)) (if (< c 2048) (recur (+ i 2) (vector-assoc! (vector-assoc! v i (+ 192 (quot c 64))) (+ i 1) (+ 128 (bit-and c 63)))) (if (< c 65536) (recur (+ i 3) (vector-assoc! (vector-assoc! (vector-assoc! v i (+ 224 (quot c 4096))) (+ i 1) (+ 128 (bit-and (quot c 64) 63))) (+ i 2) (+ 128 (bit-and c 63)))) (recur (+ i 4) (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! v i (+ 240 (quot c 262144))) (+ i 1) (+ 128 (bit-and (quot c 4096) 63))) (+ i 2) (+ 128 (bit-and (quot c 64) 63))) (+ i 3) (+ 128 (bit-and c 63))))))))))))\n")
+(defn- ck-r6b-t-utf8 [] :string (ck-r6b-t-utf80))
+(defn- ck-r6b-t-parse0 [] :string
+  (string-concat "(defn- string-parse-i64 [s :string] [:result :i64 :keyword] (let [n (string-byte-length s) c0 (if (> n 0) (string-code-point-at s 0) -1) negative (= c0 45) start (if (or (= c0 45) (= c0 43)) 1 0)] (if (>= start n) (result-err-of [:result :i64 :keyword] :parse/malformed) (loop [i start acc 0 over false] (if (>= i n) (if over (result-err-of [:result :i64 :keyword] :parse/out-of-range) (if negative (result-ok-of [:result :i64 :keyword] acc) (if (= acc -9223372036854775808) (result-err-of [:result :i64 :keyword] :parse/out-of-range) (result-ok-of [:result :i64 :keyword] (- 0 acc))))) (let [c (string-code-point-at s i)] (if (or (< c 48) (> c 57)) (result-err-of [:result :i64 :keyword] :parse/malformed) (let [d (- c 48)] (if (or over (< acc -922337203685477580) (and (= acc -922337203685477580) (> d 8))) (recur (+ i 1) acc true) (recur (+ i 1) (- (* acc 10) d) false))))))))))\n"
+  "(defn- parse-long [s :string] [:option :i64] (let [r (string-parse-i64 s)] (if (result-ok?-of [:result :i64 :keyword] r) (option-some-of [:option :i64] (result-value-of [:result :i64 :keyword] r 0)) (option-none-of [:option :i64]))))\n"))
+(defn- ck-r6b-t-parse [] :string (ck-r6b-t-parse0))
+(defn- ck-r6b-t-sym0 [] :string
+  "(defn- symbol [s :string] :symbol (__r6-as :symbol s))\n")
+(defn- ck-r6b-t-sym [] :string (ck-r6b-t-sym0))
+;; END R6B srclib
+;; ==== END R6B ============================================================================================

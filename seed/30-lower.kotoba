@@ -589,7 +589,9 @@
 ;; the walk mode of a set or map type: stride (1 set, 2 map) + 4 when the items/keys are strings + 8 when map values are
 (defn- lw-md [M :vector-i64 ty :i64] :i64
   (let [map? (= (lw-ct M ty CT-CTOR) TC-MAP)]
-    (+ (if map? 2 1) (if (= (lw-ct M ty CT-A) TY-STR) 4 0) (if (and map? (= (lw-ct M ty CT-B) TY-STR)) 8 0))))
+    (+ (if map? 2 1) (if (lw-strty? (lw-ct M ty CT-A)) 4 0) (if (and map? (lw-strty? (lw-ct M ty CT-B))) 8 0))))
+;; R6B: types whose run-time value is a string (a :document is its canonical text, a :symbol its text): compared by content
+(defn- lw-strty? [t :i64] :bool (or (= t TY-STR) (= t TY-DOC) (= t TY-SYM)))
 (defn- lw-b0 [p :i64] :i64 (bit-and p 255))
 (defn- lw-b1 [p :i64] :i64 (bit-and (u64-shift-right p 8) 255))
 (defn- lw-b2 [p :i64] :i64 (bit-and (u64-shift-right p 16) 255))

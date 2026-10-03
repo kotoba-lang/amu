@@ -1,0 +1,8 @@
+;; want: 496783
+;; R6B document kind predicates coll? seq? integer? boolean? string? keyword? nil? some? map? set? (want = stage-0's answer)
+(ns p15 (:export [main]))
+(defn- w [b :bool k :i64] :i64 (if b k 0))
+(defn main [] :i64 (let [v (document-vector) l (document-list) s (document-set) m (document-map) i (document-i64 1) z (document-null) t (document-string "x") b (document-bool false) k (document-keyword :k)]
+  (+ (w (coll? v) 1) (w (coll? l) 2) (w (coll? s) 4) (w (coll? m) 8) (w (coll? i) 16) (w (coll? z) 32)
+     (w (seq? v) 64) (w (seq? l) 128) (w (seq? s) 256) (w (seq? m) 512)
+     (w (integer? i) 1024) (w (integer? t) 2048) (w (boolean? b) 4096) (w (boolean? z) 8192) (w (string? k) 16384) (w (keyword? k) 32768) (w (nil? z) 65536) (w (some? i) 131072) (w (map? m) 262144) (w (set? m) 524288))))

@@ -1,0 +1,6 @@
+;; want: 5958
+;; R6B string-to-utf8, string-parse-i64 (want = stage-0's answer)
+(ns p11 (:export [main]))
+(defn main [] :i64 (let [b (string-to-utf8 "héllo") r (string-parse-i64 "-42") r2 (string-parse-i64 "x")]
+  (+ (* 1000 (bytes-count b)) (if (result-ok?-of [:result :i64 :keyword] r) (result-value-of [:result :i64 :keyword] r 0) 0)
+     (if (result-ok?-of [:result :i64 :keyword] r2) 100 0))))

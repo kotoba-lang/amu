@@ -1,0 +1,123 @@
+;; seed/tests/r6b/srclib/r6b-lib.kotoba -- SOURCE of the R6B source-route library (agent R6B, 2026-10-03) that
+;; seed/21-check.kotoba embeds (gen-srclib.py writes the block ";; BEGIN R6B srclib" .. ";; END R6B srclib"; --check fails
+;; when they differ). A module that spells one of these operations (outside strings and comments) gets the group's defns
+;; appended to its source (ck-r6b-lib; the driver and 60-proj call it); a module that spells none compiles to the same bytes
+;; as before. Every defn here is defn- (never an export) and written in the seed language.
+;;
+;; Representations (the ones stage-0's native backend and the KIR route use, so all three agree byte for byte):
+;;   :document  the :string of its canonical EDN text (doc group = the KIR doclib seed/tests/kir/doclib/doclib.kotoba,
+;;              unchanged, + the typed wrappers below); __r6-as retypes without code.
+;;   :keyword   the 64-bit FNV-1a hash of its spelling ":ns/name" (R6A). Its TEXT comes from the module's keyword table
+;;              __r6-kwtab (every keyword the module spells, plus the 11 document kinds; built by ck-r6b-kwtab): a keyword
+;;              made at run time (keyword-from-string, document-keyword-value) whose text the module never spells has no
+;;              text -- document-keyword / keyword-name on it trap (the loader's out-of-range trap), never a wrong answer.
+;; One line per defn (the generator keeps lines that start with "(defn- " or "(def ").
+;;
+;; @group kw
+(defn- __r6-trap [] :i64 (vector-at [0] 1))
+(defn- __r6-traps [] :string (string-substring "x" 0 (__r6-trap)))
+(defn- __r6-cpw [c :i64] :i64 (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))
+(defn- __r6-kwhr [s :string a :i64 b :i64] :i64 (loop [i a h -3750763034362895579] (if (>= i b) h (let [c (string-code-point-at s i)] (recur (+ i (__r6-cpw c)) (* (bit-xor h c) 1099511628211))))))
+(defn- __r6-kwh [s :string] :i64 (__r6-kwhr s 0 (string-length s)))
+(defn- __r6-tokend [t :string i :i64] :i64 (if (>= i (string-length t)) i (if (= (string-code-point-at t i) 32) i (__r6-tokend t (+ i 1)))))
+(defn- __r6-kwfind [t :string h :i64 i :i64] :string (cond (>= i (string-length t)) (__r6-traps) (= (string-code-point-at t i) 32) (__r6-kwfind t h (+ i 1)) :else (let [e (__r6-tokend t i)] (if (= (__r6-kwhr t i e) h) (string-substring t i e) (__r6-kwfind t h e)))))
+(defn- __r6-kwtext [k :keyword] :string (__r6-kwfind (__r6-kwtab) (__r6-as :i64 k) 0))
+(defn- __r6-slash [s :string i :i64] :i64 (cond (>= i (string-length s)) -1 (= (string-code-point-at s i) 47) i :else (__r6-slash s (+ i (__r6-cpw (string-code-point-at s i))))))
+(defn- keyword-name [k :keyword] :string (let [t (__r6-kwtext k) sl (__r6-slash t 1)] (string-substring t (cond (< sl 0) 1 (= (string-length t) 2) 1 :else (+ sl 1)) (string-length t))))
+(defn- keyword-from-string [s :string] :keyword (__r6-as :keyword (__r6-kwh (string-concat ":" s))))
+(defn- __r6-i2s [n :i64] :string (string-from-i64 n))
+(defn- __r6-b2s [b :bool] :string (if b "true" "false"))
+;; @group doc
+(defn- __r6-ds [d :document] :string (__r6-as :string d))
+(defn- __r6-dd [s :string] :document (__r6-as :document s))
+(defn- __r6-dopt [o [:option :string]] [:option :document] (__r6-as [:option :document] o))
+(defn- document-null [] :document (__r6-dd "nil"))
+(defn- document-bool [b :bool] :document (__r6-dd (__kr_dbool b)))
+(defn- document-i64 [n :i64] :document (__r6-dd (string-from-i64 n)))
+(defn- document-string [s :string] :document (__r6-dd (__kr_desc s)))
+(defn- document-symbol [s :symbol] :document (__r6-dd (__kr_dsym (__r6-as :string s))))
+(defn- document-keyword [k :keyword] :document (__r6-dd (__r6-kwtext k)))
+(defn- document-vector [] :document (__r6-dd "[]"))
+(defn- document-list [] :document (__r6-dd "()"))
+(defn- document-set [] :document (__r6-dd "#{}"))
+(defn- document-map [] :document (__r6-dd "{}"))
+(defn- __r6-dvs [v :document x :document] :document (__r6-dd (__kr_dvadd (__r6-ds v) (__r6-ds x))))
+(defn- __r6-dss [s :document x :document] :document (__r6-dd (__kr_dsetput (__r6-ds s) (__r6-ds x))))
+(defn- __r6-dms [m :document k :document v :document] :document (__r6-dd (__kr_dmapputu (__r6-ds m) (__r6-ds k) (__r6-ds v))))
+(defn- __r6-dbd [d :document] :document (__r6-dd (__kr_dbounded (__r6-ds d))))
+(defn- document-count [d :document] :i64 (__kr_dcount (__r6-ds d)))
+(defn- document-kind [d :document] :keyword (__r6-as :keyword (__r6-kwh (__kr_dkind (__r6-ds d)))))
+(defn- document-equal? [a :document b :document] :bool (string=? (__r6-ds a) (__r6-ds b)))
+(defn- document-set-contains? [s :document x :document] :bool (__kr_dsetc (__r6-ds s) (__r6-ds x)))
+(defn- document-contains [m :document k :document] :bool (__kr_dcontains (__r6-ds m) (__r6-ds k)))
+(defn- document-get [m :document k :document] [:option :document] (__r6-dopt (__kr_dget (__r6-ds m) (__r6-ds k))))
+(defn- document-vector-at [d :document i :i64] [:option :document] (__r6-dopt (__kr_dvat (__r6-ds d) i)))
+(defn- document-list-at [d :document i :i64] [:option :document] (__r6-dopt (__kr_dlat (__r6-ds d) i)))
+(defn- document-map-entry-at [d :document i :i64] [:option :document] (__r6-dopt (__kr_dentry (__r6-ds d) i)))
+(defn- document-vector-assoc [v :document i :i64 x :document] :document (__r6-dd (__kr_dvassoc (__r6-ds v) i (__r6-ds x))))
+(defn- document-vector-conj [v :document x :document] :document (__r6-dd (__kr_dconj (__r6-ds v) (__r6-ds x))))
+(defn- document-vector-drop [v :document n :i64] :document (__r6-dd (__kr_dvdrop (__r6-ds v) n)))
+(defn- document-vector-remove [v :document i :i64] :document (__r6-dd (__kr_dvremove (__r6-ds v) i)))
+(defn- document-vector-sort [v :document] :document (__r6-dd (__kr_dvsort (__r6-ds v))))
+(defn- document-assoc [m :document k :document v :document] :document (__r6-dd (__kr_dassocop (__r6-ds m) (__r6-ds k) (__r6-ds v))))
+(defn- document-dissoc [m :document k :document] :document (__r6-dd (__kr_ddissocop (__r6-ds m) (__r6-ds k))))
+(defn- document-merge [a :document b :document] :document (__r6-dd (__kr_dmerge (__r6-ds a) (__r6-ds b))))
+(defn- document-string-value [d :document] [:option :string] (__kr_dstrval (__r6-ds d)))
+(defn- document-keyword-value [d :document] [:option :keyword] (if (= (__kr_dkindn (__r6-ds d)) 5) (option-some-of [:option :keyword] (__r6-as :keyword (__r6-kwh (__r6-ds d)))) (option-none-of [:option :keyword])))
+(defn- document-bool-value [d :document] [:option :bool] (__kr_dboolval (__r6-ds d)))
+(defn- document-i64-value [d :document] [:option :i64] (__kr_di64val (__r6-ds d)))
+(defn- document-edn-print [d :document] :string (__r6-ds d))
+(defn- document-edn-read [s :string] :document (__r6-dd s))
+;; nil? some? map? on a :document (kotoba.codegen.layout, kotoba.kir.target): the null document / not it / a map document
+(defn- nil? [d :document] :bool (= (__kr_dkindn (__r6-ds d)) 0))
+(defn- some? [d :document] :bool (not= (__kr_dkindn (__r6-ds d)) 0))
+(defn- map? [d :document] :bool (= (__kr_dkindn (__r6-ds d)) 10))
+;; the kind predicates stage-0 answers on a :document (measured 2026-10-03, seed/tests/r6b/feat/p15: coll? = vector list set map,
+;; seq? = list; doclib kinds 0 null 1 bool 2 i64 3 f64 4 string 5 keyword 6 symbol 7 vector 8 list 9 set 10 map)
+(defn- __r6-kind? [d :document k :i64] :bool (= (__kr_dkindn (__r6-ds d)) k))
+(defn- boolean? [d :document] :bool (__r6-kind? d 1))
+(defn- integer? [d :document] :bool (__r6-kind? d 2))
+(defn- string? [d :document] :bool (__r6-kind? d 4))
+(defn- keyword? [d :document] :bool (__r6-kind? d 5))
+(defn- vector? [d :document] :bool (__r6-kind? d 7))
+(defn- list? [d :document] :bool (__r6-kind? d 8))
+(defn- seq? [d :document] :bool (__r6-kind? d 8))
+(defn- set? [d :document] :bool (__r6-kind? d 9))
+(defn- coll? [d :document] :bool (>= (__kr_dkindn (__r6-ds d)) 7))
+;; (first d): nil for an empty container, else item 0 of a vector or list, entry 0 of a map; a set traps (stage-0, p19)
+(defn- first [d :document] :document (if (= (document-count d) 0) (document-null) (let [k (__kr_dkindn (__r6-ds d))] (option-value-of [:option :document] (cond (= k 10) (document-map-entry-at d 0) (= k 8) (document-list-at d 0) :else (document-vector-at d 0)) (document-null)))))
+;; (second d): nil when it has fewer than 2 items, else item 1 (as first)
+(defn- second [d :document] :document (if (< (document-count d) 2) (document-null) (let [k (__kr_dkindn (__r6-ds d))] (option-value-of [:option :document] (cond (= k 10) (document-map-entry-at d 1) (= k 8) (document-list-at d 1) :else (document-vector-at d 1)) (document-null)))))
+;; item i of a vector or list, entry i of a map (a [k v] vector), nil when absent
+(defn- __r6-item [d :document i :i64] :document (let [k (__kr_dkindn (__r6-ds d))] (option-value-of [:option :document] (cond (= k 10) (document-map-entry-at d i) (= k 8) (document-list-at d i) :else (document-vector-at d i)) (document-null))))
+;; (rest d): a VECTOR document of items (entries) 1.. ([] when fewer), as stage-0 answers for vectors, lists and maps (p22)
+(defn- rest [d :document] :document (loop [i 1 acc (document-vector)] (if (>= i (document-count d)) acc (recur (+ i 1) (document-vector-conj acc (__r6-item d i))))))
+;; (keys d) on a :document map (21-check rewrites the head): the keys in canonical order as a vector document ([] for {})
+(defn- __r6-dkeys [d :document] :document (loop [i 0 acc (document-vector)] (if (>= i (document-count d)) acc (recur (+ i 1) (document-vector-conj acc (__r6-dnth (__r6-item d i) 0))))))
+;; (nth d i) on a :document (21-check ck-gen rewrites it to this call): item i of a list or vector document; traps when absent
+(defn- __r6-dnth [d :document i :i64] :document (let [o (if (= (__kr_dkindn (__r6-ds d)) 8) (document-list-at d i) (document-vector-at d i))] (if (option-some?-of [:option :document] o) (option-value-of [:option :document] o (document-null)) (__r6-dd (__r6-traps)))))
+;; @group exi
+;; the reference's library heads ex-info / ex-message / ex-data (lang/guest-grammar.edn :library-heads :ex-info; the bodies of
+;; lang/compat/clojure/core.kotoba): ex-info is the document {:data data :message msg} (keys in canonical order, bounded)
+(defn- ex-info [msg :string data :document] :document (__r6-dbd (__r6-dd (string-concat "{:data " (string-concat (__r6-ds data) (string-concat " :message " (string-concat (__kr_desc msg) "}")))))))
+(defn- ex-message [e :document] :string (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (__r6-dopt (__kr_dget (__r6-ds e) ":message")) (document-null))) ""))
+(defn- ex-data [e :document] :document (option-value-of [:option :document] (__r6-dopt (__kr_dget (__r6-ds e) ":data")) (document-null)))
+;; @group sfb
+(defn- string-find-byte [s :string b :i64 i :i64] :i64 (cond (< b 0) (vector-at [0] 1) (> b 127) (vector-at [0] 1) (< i 0) (vector-at [0] 1) (> i (string-length s)) (vector-at [0] 1) :else (loop [j i] (if (>= j (string-length s)) -1 (let [c (string-code-point-at s j)] (if (= c b) j (recur (+ j (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4)))))))))
+;; @group min
+(defn- min [a :i64 b :i64] :i64 (if (< a b) a b))
+;; @group max
+(defn- max [a :i64 b :i64] :i64 (if (> a b) a b))
+;; @group rem
+;; Clojure's rem on :i64 (truncated: the sign of the dividend); traps exactly where quot traps (divisor 0, MIN / -1), as stage-0
+(defn- rem [a :i64 b :i64] :i64 (- a (* b (quot a b))))
+;; @group utf8
+;; the reference's library heads string-to-utf8 / string-parse-i64 / parse-long (lang/guest-grammar.edn :library-heads; the
+;; bodies of kotoba-sema kotoba.compiler.frontend.base intrinsic-helper-source, renamed, one defn per line)
+(defn- string-to-utf8 [s :string] :bytes (let [n (string-byte-length s)] (loop [i 0 v (vector-alloc n)] (if (>= i n) (bytes-from-vector-i64 v) (let [c (string-code-point-at s i)] (if (< c 128) (recur (+ i 1) (vector-assoc! v i c)) (if (< c 2048) (recur (+ i 2) (vector-assoc! (vector-assoc! v i (+ 192 (quot c 64))) (+ i 1) (+ 128 (bit-and c 63)))) (if (< c 65536) (recur (+ i 3) (vector-assoc! (vector-assoc! (vector-assoc! v i (+ 224 (quot c 4096))) (+ i 1) (+ 128 (bit-and (quot c 64) 63))) (+ i 2) (+ 128 (bit-and c 63)))) (recur (+ i 4) (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! v i (+ 240 (quot c 262144))) (+ i 1) (+ 128 (bit-and (quot c 4096) 63))) (+ i 2) (+ 128 (bit-and (quot c 64) 63))) (+ i 3) (+ 128 (bit-and c 63))))))))))))
+;; @group parse
+(defn- string-parse-i64 [s :string] [:result :i64 :keyword] (let [n (string-byte-length s) c0 (if (> n 0) (string-code-point-at s 0) -1) negative (= c0 45) start (if (or (= c0 45) (= c0 43)) 1 0)] (if (>= start n) (result-err-of [:result :i64 :keyword] :parse/malformed) (loop [i start acc 0 over false] (if (>= i n) (if over (result-err-of [:result :i64 :keyword] :parse/out-of-range) (if negative (result-ok-of [:result :i64 :keyword] acc) (if (= acc -9223372036854775808) (result-err-of [:result :i64 :keyword] :parse/out-of-range) (result-ok-of [:result :i64 :keyword] (- 0 acc))))) (let [c (string-code-point-at s i)] (if (or (< c 48) (> c 57)) (result-err-of [:result :i64 :keyword] :parse/malformed) (let [d (- c 48)] (if (or over (< acc -922337203685477580) (and (= acc -922337203685477580) (> d 8))) (recur (+ i 1) acc true) (recur (+ i 1) (- (* acc 10) d) false))))))))))
+(defn- parse-long [s :string] [:option :i64] (let [r (string-parse-i64 s)] (if (result-ok?-of [:result :i64 :keyword] r) (option-some-of [:option :i64] (result-value-of [:result :i64 :keyword] r 0)) (option-none-of [:option :i64]))))
+;; @group sym
+;; (symbol s): a :symbol is its text (stage-0 and the KIR route); kotoba.native.string-index / string-search export 0-arity fns
+(defn- symbol [s :string] :symbol (__r6-as :symbol s))

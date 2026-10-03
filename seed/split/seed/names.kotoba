@@ -98,6 +98,7 @@
 (def KW-DOCUMENT 36)
 (def KW-PROCESS-SPAWN 37)
 (def KW-ENTROPY-DRAW 38)
+(def KW-SYMBOL 39)
 (def RES-SCALE 16777216)
 (def HD-NS 1)
 (def HD-DEFN 3)
@@ -365,7 +366,7 @@
 ;; hashing and spelling recognition
 ;; ---------------------------------------------------------------------------------------------------------
 ;; FNV-1a 64 over the bytes S[a..b). Offset basis 14695981039346656037 written as its i64 value.
-(defn- nm-hash [S :string a :i64 b :i64] :i64
+(defn nm-hash [S :string a :i64 b :i64] :i64
   (loop [i a h -3750763034362895579]
     (if (< i b)
       (recur (+ i 1) (* (bit-xor h (string-code-point-at S i)) 1099511628211))
@@ -785,6 +786,7 @@
         7233174017630234938 KW-IO-READ  ; :io/read
         111550525633338 KW-STATE  ; :state
         8319383698820982074 KW-EFFECTS  ; :effects
+        30521766018904890 KW-SYMBOL  ; :symbol
         0)
       3421801
       (case w0

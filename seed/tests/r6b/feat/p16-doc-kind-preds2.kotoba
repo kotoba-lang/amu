@@ -1,0 +1,5 @@
+;; want: 11111
+;; R6B keyword? vector? string? set? list? map? on documents (want = stage-0's answer)
+(ns p16 (:export [main]))
+(defn main [] :i64 (let [k (document-keyword :a/b) v (document-vector) s (document-string "x") n (document-i64 1) st (document-set) l (document-list) b (document-bool true)]
+  (+ (if (keyword? k) 1 0) (if (vector? v) 10 0) (if (string? s) 100 0) (if (set? st) 1000 0) (if (list? l) 10000 0) (if (keyword? s) 100000 0) (if (map? v) 1000000 0))))

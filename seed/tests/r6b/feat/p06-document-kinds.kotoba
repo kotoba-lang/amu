@@ -1,0 +1,17 @@
+;; want: 783521201
+;; R6B document-kind / set / list / keyword values / vector-at / keyword-name (want = stage-0's answer)
+(ns p06 (:export [main]))
+(defn- kd [d :document] :i64
+  (let [k (document-kind d)]
+    (cond (= k :map) 1 (= k :vector) 2 (= k :keyword) 3 (= k :string) 4 (= k :i64) 5 (= k :null) 6 (= k :set) 7 (= k :list) 8 (= k :bool) 9 :else 0)))
+(defn main [] :i64
+  (let [s (document-set (document-i64 3) (document-i64 1))
+        l (document-list (document-keyword :x/y) (document-null))
+        kv (option-or (document-keyword-value (document-keyword :x/y)) :none)
+        at (option-or (document-vector-at (document-vector (document-i64 5) (document-i64 6)) 1) (document-null))]
+    (+ (* 100000000 (kd s)) (* 10000000 (kd l)) (* 1000000 (kd (document-keyword :q)))
+       (* 100000 (kd at)) (* 10000 (document-count s))
+       (* 1000 (if (= kv :x/y) 1 0))
+       (* 100 (string-length (keyword-name kv)))
+       (* 10 (string-length (document-edn-print l)))
+       (if (document-set-contains? s (document-i64 1)) 1 0))))

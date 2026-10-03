@@ -1,0 +1,4 @@
+;; want: 11
+;; R6B (contains? d k) on :document with a keyword or document key (want = stage-0's answer)
+(ns p21 (:export [main]))
+(defn main [] :i64 (let [m (document-map (document-keyword :a) (document-i64 1) (document-string "s") (document-i64 2))] (+ (if (contains? m :a) 1 0) (if (contains? m (document-string "s")) 10 0) (if (contains? m :b) 100 0))))

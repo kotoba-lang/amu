@@ -495,6 +495,8 @@
 (defn- pj-ty [M :vector-i64 S :string nsn :string t :i64] :string
   (cond (= t TY-I64) ":i64" (= t TY-BOOL) ":bool" (= t TY-STR) ":string" (= t TY-VEC) ":vector-i64"
         (= t TY-BYTES) ":bytes" (= t TY-KW) ":keyword"
+        (= t TY-DOC) ":document"   ; R6B
+        (= t TY-SYM) ":symbol"   ; R6B
         (< t TY-REC-BASE) ""
         (< t TY-COMP-BASE) (if (= (pj-blk M t) 0) "" (string-concat "[:ref " (string-concat (pj-reckw M S nsn t) "]")))
         (= (pj-ct M t CT-CTOR) TC-FN)
@@ -552,7 +554,9 @@
 
 ;; a value of the error type e for a stub's throw, "" when none is spelled here
 (defn- pj-zero-of [e :i64] :string
-  (cond (= e TY-I64) "0" (= e TY-STR) "\"\"" (= e TY-BOOL) "false" (= e TY-KW) ":seed/stub" :else ""))
+  (cond (= e TY-I64) "0" (= e TY-STR) "\"\"" (= e TY-BOOL) "false" (= e TY-KW) ":seed/stub"
+        (= e TY-DOC) "(__r6-as :document \"nil\")"   ; R6B: the null document, no library needed (__r6-as is a head)
+        :else ""))
 
 (defn- pj-ff [M :vector-i64 f :i64 k :i64] :i64 (vector-at M (+ MM-FN-BASE (* f MM-FN-W) k)))
 
@@ -781,6 +785,8 @@
               (cond (pj-r5b-with? M S t) (recur (+ t 1))   ; R5B: (with l/h ..) is refused by 21-check (handle shape)
                     ;; R6A: clojure.core/f is the core name f (the token is narrowed to it)
                     (pj-span= S a sl "clojure.core") (let [w (vector-assoc! M (+ MM-TOK-BASE (* t MM-TOK-W) TF-START) (+ sl 1))] (recur (+ t 1)))
+                    ;; R6B: a friendly capability name of the catalogue (hash/sha256 ..) is 21-check's (ck-r6b-cap)
+                    (and (< r 0) (pos? (ck-r6b-capwire (nm-hash S a b)))) (recur (+ t 1))
                     (< r 0) (pj-err-span M E-PROJ-UNKNOWN-OP a a b)
                     (< (pj-if-find L P (pj-rf L r pj-rf-mod) (string-substring S (+ sl 1) b)) 0) (pj-err-span M E-PROJ-NOT-EXPORT a a b)
                     :else (recur (+ t 1))))))))))
@@ -895,7 +901,7 @@
 (defn- pj-module [M :vector-i64 L :vector-i64 P :string m :i64] :string
   (let [S0 (io-read-file M (pj-p L P (pj-mf L m pj-mf-path)))
         T (pj-trailer L P m)
-        S (string-concat S0 T)
+        S (string-concat S0 (string-concat T (ck-r6b-lib S0)))   ; R6B: the source library the module spells
         base (bit-and (+ (pj-l L pj-k-img) 7) -8)
         w (-> L (pj-ls pj-k-errmod m) (pj-ls pj-k-trail (string-length S0)) (pj-ls pj-k-base base) (pj-mset m pj-mf-base base))
         M1 (pj-read M S)
@@ -1075,7 +1081,7 @@
                          (recur (+ k 1) (pj-load-iface L (pj-padd L P nm) T d 0)))))))))]
     (if (pj-ok M1)
       (let [P3 (pj-module M1 L P2 0)]
-        (if (pj-ok M1) (pj-padd L P3 (pj-object M1 L P3 (string-concat S (pj-trailer L P3 0)))) P3))
+        (if (pj-ok M1) (pj-padd L P3 (pj-object M1 L P3 (string-concat S (string-concat (pj-trailer L P3 0) (ck-r6b-lib S))))) P3))   ; R6B
       P2)))
 
 ;; link: visit object module m (its text read from its path) at depth d

@@ -41,6 +41,8 @@
   ;;    key / set item / export type; its operations are the source library of 21-check (ck-r6b-lib), appended to a module
   ;;    that spells them.
   [:c TY-DOC 8 ":document -- a canonical EDN text (:string at run time); only the document-* library and __r6-as see inside"]
+  [:c TY-SYM 9 ":symbol -- a symbol's text (:string at run time, the KIR route's representation); made by (symbol s) of the R6B
+                 library, read by document-symbol; = and the other operations refuse it (E2104)"]
   [:c TC-OPTION 1] [:c TC-RESULT 2] [:c TC-LIST 3] [:c TC-MAP 4] [:c TC-SET 5]
   ;; -- R4 (rung 4, 2026-10-03): callable types. [:fn [[P1 .. Pn] R]] (one clause, n <= 4) = TC-FN with CT-A = R and CT-B =
   ;;    the parameter list (0 for none): a chain of TC-PLIST records (CT-A = the parameter type, CT-B = the rest or 0).
@@ -122,7 +124,8 @@
   [:c KW-DOCUMENT 36 ":document (type)"]
   ;; R6B: two more catalogue wires admitted as typed-cap-call :string :string (resources/kotoba/lang/capability-catalog.edn);
   ;; the friendly qualified calls (hash/sha256 x) .. of every catalogue entry are rewritten by 21-check (ck-r6b-cap)
-  [:c KW-PROCESS-SPAWN 37 ":process/spawn (capability wire 20)"] [:c KW-ENTROPY-DRAW 38 ":entropy/draw (capability wire 23)"]]
+  [:c KW-PROCESS-SPAWN 37 ":process/spawn (capability wire 20)"] [:c KW-ENTROPY-DRAW 38 ":entropy/draw (capability wire 23)"]
+  [:c KW-SYMBOL 39 ":symbol (type)"]]
  ;; KW-FS-APP-DATA-BYTES (R0 2026-10-02): wire 35 with the :bytes kinds, the spelling stage-0 accepts.
  ;; Keywords appear ONLY in: ns (:export), signatures (types), cond (:else), typed-cap-call (wire, kinds).
  ;; A keyword anywhere else (as a value) -> E2114.

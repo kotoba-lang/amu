@@ -1,0 +1,5 @@
+;; want: 101
+;; R6B nil? / map? on :document (want = stage-0's answer)
+(ns p10 (:export [main]))
+(defn- absent? [d :document] :bool (nil? d))
+(defn main [] :i64 (+ (if (absent? (document-null)) 1 0) (if (absent? (document-i64 0)) 10 0) (if (map? (document-map)) 100 0) (if (map? (document-vector)) 1000 0)))
