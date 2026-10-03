@@ -3,26 +3,57 @@
   (:require [amu.cli :as cli]
             [amu.check :as check]
             [amu.compile :as compile]
-            [amu.refactor :as refactor]))
+            [amu.refactor :as refactor]
+            [seed.main :as seed]))
 
-;; seed/amu-main/src/amu/main.kotoba -- the `amu` command as ONE Kotoba entry (agent MAINS, 2026-10-04).
+;; seed/amu-main/src/amu/main.kotoba -- the `amu` command as ONE Kotoba entry (agent MAINS, 2026-10-04; the native
+;; launcher's command table: agent CMD, 2026-10-04, seed/amu-main/LAUNCHER.md).
 ;;
 ;;   amu check <file> ..          -> amu.check/run      (stage-0 `amu check`)
-;;   amu compile <file> --target aarch64-macos --output X ..
-;;                                -> amu.compile/run    (stage-0 `amu compile`)
+;;   amu compile <file> --target aarch64-macos [--output X] ..
+;;                                -> amu.compile/run    (stage-0 `amu compile`, :kotoba.kexe/v1)
 ;;   amu refactor <sub> ..        -> amu.refactor/run   (bin/amu -> nbb refactor_cli)
+;;   amu link | modules | extract-native ..
+;;                                -> seed.main          (the seed driver's own build commands, so an amu image rebuilds
+;;                                   itself with no seed binary beside it; FRONTSRC's request, CONTRACT-REQUESTS 2026-10-04.
+;;                                   extract-native reads the seed's kseed/v1 container, not a kexe/v1 artifact)
+;;   a command bin/amu routes elsewhere (nbb / JVM) -> declared stub, exit 69, naming the command
 ;;   anything else                -> stage-0's usage refusal, exit 64
+;;   no command, -h, --help       -> bin/amu's usage text on stdout, exit 0 (the launcher layer; LAUNCHER.md)
+;; `--jvm-free` is ignored wherever it stands (bin/amu drops it before routing): amu.cli/argx skips it.
 ;;
-;; The routing is bin/amu's for these three commands; the usage refusal is stage-0's in-process CLI text. Each command
-;; namespace exists in one or two build routes (seed/amu-main/README.md): s/ (the seed compiles everything from source)
-;; and k/ (the KIR route); a command that a route cannot build is a declared stub (amu.cli/not-available, exit 69)
-;; that names exactly what is missing. Arity-0 `main`, argv through wire 38, the exit status is the result.
+;; Requires the source route (seed.main linked in). The k/ route (amu-k, JVM kir-dump) cannot compile seed.main and is
+;; superseded by the one image (amu-one); its build-k.sh keeps the MAINS entry of git history, not this one.
+
+;; bin/amu's usage text (its `usage` array joined by newlines, written on stdout with exit 0 for no command, -h, --help)
+(defn- usage-text [] :string
+  (string-concat "usage: amu compile <file.kotoba|file.cljk|file.cljc> [--target <target>] [--policy policy.edn] [--jvm-free] --output <file>\n       (no --target: this host's native target, e.g. aarch64-macos / x86_64-linux;\n        AMU_TARGET overrides it; wasm32-browser / wasm32-wasi are chosen explicitly)\n       amu check <file.kotoba|file.cljk|file.cljc> [--policy policy.edn] [--jvm-free]\n  multi-file (a module declaring (:require [ns :as alias])):\n       amu module-lock <entry> --source-path <dir> --blocks <dir>\n       amu compile --module-lock <lock> --blocks <dir> --target <target> --output <file>\n       (both halves run without a JDK; add --jvm-free to prove it)\n       amu check <entry> --source-path <dir>            # links, emits nothing\n"
+    (string-concat "       (a template module -- (ns lib (:params [elem]) ...) -- is instantiated per\n        importer binding: (:require [lib :as l :with {elem :i64}]); ADR 0346)\n  packages (a signed, CID-pinned kotoba.lock.edn supplying the dependencies):\n       amu check <entry> --source-path <dir> --package-lock kotoba.lock.edn \\\n         --packages <dir> [--trust trust.edn]\n       amu package-manifest <package root> --name <n> --version <v> \\\n         --url <git url> --key key.edn\n       amu package-fetch --deps kotoba.deps.edn --packages <dir>\n       amu package-lock --deps kotoba.deps.edn --packages <dir> --output kotoba.lock.edn\n       amu definition-cids <file> [--source-path <dir>]  # one CID per definition\n"
+    (string-concat "       amu compile <entry> --source-path <dir> --unpinned --target <target> --output <file>\n       amu worker [--target <target>]   (no --target: this host's native target)\n       amu inspect <file.kotoba|file.cljk|file.cljc> [--output interface.edn]\n       amu test <file.kotoba|file.cljk|file.cljc> [--json] [--fuel <n>] [--source-path <dir> ...]   (one instance per test)\n       amu module-lock <file.kotoba> --blocks <dir> --source-path <dir>\n       amu package-aiueos-boot <kernel> [--output BOOTX64.EFI]\n       amu extract-native <file> [--symbol main] [--output program.bin]\n       amu package-ios program.kexe [--entry main] --output program.S\n       amu sbom <artifact> --output artifact.spdx\n"
+    (string-concat "       amu attest-release <artifact> --sbom artifact.spdx --target <target> ...\n       amu verify-release release.edn --artifact <artifact> --sbom artifact.spdx --trust trust.edn\n       amu coverage <coverage-manifest.edn> --dataset <raw-dataset>\n       amu keygen --output key.edn\n       amu measure-runtime --output runtime.edn --loader-output kotoba-loader\n       amu sign program.kexe --key key.edn --expires <epoch> --output signed.kexe\n       amu run signed.kexe --trust trust.edn --runtime runtime.edn --loader kotoba-loader ...\n       amu verify <file>\n       amu refactor list-rules | plan <rules> <path>... | apply <rules> <path>... [--check]\n       amu refactor graph <path> | partition <path> | split <path> --partition p.edn --out <dir>\n"
+    "       amu refactor verify --runner <run-tests.cljk> --classpath <cp> [--base-first <dir>] [--candidate-first <dir>]\n         (AST-based refactoring, the default way to change compiler sources; EDN answers, :kotoba.refactor/v1)\n       amu sign-output-set <artifact> --key key.edn --not-before <epoch> --expires <epoch>\n       amu verify-output-set <artifact> [--attestation FILE --trust FILE --now <epoch>]\n       amu <other compiler command> ...\n")))))
+
+;; bin/amu's commands that have no native implementation in this image yet (bin/amu usage text, 2026-10-04)
+(defn- bin-amu-command [c :string] :i64
+  (cond (string=? c "module-lock") 1 (string=? c "package-manifest") 1 (string=? c "package-fetch") 1
+        (string=? c "package-lock") 1 (string=? c "definition-cids") 1 (string=? c "worker") 1 (string=? c "inspect") 1
+        (string=? c "test") 1 (string=? c "package-aiueos-boot") 1 (string=? c "package-ios") 1 (string=? c "sbom") 1
+        (string=? c "attest-release") 1 (string=? c "verify-release") 1 (string=? c "coverage") 1 (string=? c "keygen") 1
+        (string=? c "measure-runtime") 1 (string=? c "sign") 1 (string=? c "run") 1 (string=? c "verify") 1
+        (string=? c "sign-output-set") 1 (string=? c "verify-output-set") 1
+        :else 0))
 
 (defn main [] :i64
-  (if (< (cli/argc) 1)
-    (cli/usage-error ":kotoba/invalid-usage" "unknown or missing kotoba command" ", :details {:phase :usage}")
-    (let [c (cli/arg 0)]
-      (cond (string=? c "check") (check/run)
+  (if (or (< (cli/argc) 1) (string=? (cli/argx 0) "-h") (string=? (cli/argx 0) "--help"))
+    (let [w (cli/out (usage-text))] 0)
+    (let [c (cli/argx 0)]
+      (cond (string=? c "") (let [w (cli/err "error: missing Amu compiler command\n")] 2)   ; bin/amu: only --jvm-free given
+            (string=? c "check") (check/run)
             (string=? c "compile") (compile/run)
             (string=? c "refactor") (refactor/run)
+            (string=? c "link") (seed/main)
+            (string=? c "modules") (seed/main)
+            (string=? c "extract-native") (seed/main)
+            (= (bin-amu-command c) 1)
+            (cli/not-available c (string-concat "\"bin/amu routes `" (string-concat c "` to nbb or the JVM; no native implementation in this image yet\"")))
             :else (cli/usage-error ":kotoba/invalid-usage" "unknown or missing kotoba command" ", :details {:phase :usage}")))))

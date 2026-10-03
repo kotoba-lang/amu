@@ -14,7 +14,8 @@
 #           argument vector): result by content (KEXE_RESULT_TYPE), exit status and trap line compared -> SAME / DIFF /
 #           TIMEOUT (loader time limit: not a behaviour) / MISSING (exported by stage-0, absent in the amu container).
 #           The program is BEHAVIOUR-SAME when every run export is SAME.
-#   The report format of compile is NOT compared (declared difference: the seed writes kseed/v1 and prints its own line).
+#   The report format of compile is NOT compared here (seed/amu-main/usage-parity.sh compares the argument layer byte for
+#   byte). Since CMD (2026-10-04) amu writes :kotoba.kexe/v1 (column 12: its seal, kexe_check.py) and gets the same --policy.
 # Env: AM_FILES (path list instead of the corpus), AM_SEED (seed.bin used for extract-native of amu's kseed; default the
 #      r6f seed build/mains/seed-1.bin), AM_SECONDS (loader limit per run, default 60), AM_FUEL (16777216).
 # Output: <work>/check.tsv, <work>/compile.tsv, <work>/exports.tsv, <work>/summary.txt
@@ -101,9 +102,13 @@ P
       seed_slot_give
       if echo "$r" | grep -q ':ok true'; then mv $k.tmp.$$ $k; else echo "$r" | head -3 > $k.fail; rm -f $k.tmp.$$*; fi
     fi
-    $AP compile $f --target aarch64-macos --output $D/a.kseed > $D/ap.out 2> $D/ap.err; c1=$?
+    # CMD (2026-10-04): amu writes stage-0's :kotoba.kexe/v1 (AM_KSEED=1: the older kseed/v1 images) and gets the same
+    # --policy as stage-0 (was: stage-0 only, so a policy refusal counted as AMU-ACCEPTS)
+    if [ -n "$AM_KSEED" ]; then ao=$D/a.kseed; ( cd ${f:h}; $AP compile $f --target aarch64-macos --output $ao ) > $D/ap.out 2> $D/ap.err; c1=$?
+    else ao=$D/a.kexe; ( cd ${f:h}; $AP compile $f --target aarch64-macos --policy $pol --output $ao ) > $D/ap.out 2> $D/ap.err; c1=$?; fi
     s0v=ok; [ -f $k ] || s0v=refuse
-    if [ $c1 = 69 ]; then cls=STUB; elif [ $c1 = 0 ] && grep -q ':ok true' $D/ap.out && [ -s $D/a.kseed ]; then a=ok; else a=refuse; fi
+    if [ $c1 = 69 ]; then cls=STUB; elif [ $c1 = 0 ] && grep -q ':ok true' $D/ap.out && [ -s $ao ]; then a=ok; else a=refuse; fi
+    sealv=-; if [ -z "$AM_KSEED" ] && [ -s $ao ]; then sealv=$(python3 $H/kexe_check.py seal $ao | cut -d' ' -f2); fi
     if [ $c1 != 69 ]; then
       if [ $c1 != 0 ] && [ $c1 != 65 ] && [ $c1 != 64 ]; then cls=AMU-TRAP
       elif [ $s0v = ok ] && [ $a = ok ]; then cls=BOTH-OK
@@ -119,7 +124,8 @@ P
         exl=("${(@ps:\t:)ln}"); s=$exl[1] ar=$exl[2] as=$exl[6] rt=$exl[7]
         [[ $exl[5] = user ]] || continue
         o0=$(python3 $R/scripts/selfhost-wall/kbd_exports.py s0code $k $s $D/0.bin | xoff)
-        o1=$(SEED_RESOURCES_35=$W SEED_VECTOR_ITEMS=67108864 seed_run $SB 0 extract-native $D/a.kseed --symbol $s --output $D/1.bin 2>/dev/null | xoff)
+        if [ -n "$AM_KSEED" ]; then o1=$(SEED_RESOURCES_35=$W SEED_VECTOR_ITEMS=67108864 seed_run $SB 0 extract-native $ao --symbol $s --output $D/1.bin 2>/dev/null | xoff)
+        else o1=$(python3 $H/kexe_check.py code $ao $s $D/1.bin 2>/dev/null | xoff); fi
         if [ -n "$o0" ] && [ -z "$o1" ]; then nm=$((nm+1)); print -r -- "$id	$s	MISSING" >> $W/exports.tsv; continue; fi
         [ -n "$o0" ] || continue
         if [ "$as" = - ]; then nn=$((nn+1)); print -r -- "$id	$s	NOT-RUN" >> $W/exports.tsv; continue; fi
@@ -137,13 +143,14 @@ P
       if [ $nd -gt 0 ] || [ $nm -gt 0 ]; then cls=BOTH-OK-DIFF; elif [ $nx -gt 0 ]; then cls=BEHAVIOUR-SAME; else cls=BOTH-OK-NORUN; fi
     fi
     am=$(grep -v '^ *$' $D/ap.err | head -1 | tr '\t' ' ' | cut -c1-160)
-    print -r -- "$id	$s0v	$c1	$cls	$nx	$ns	$nd	$nt	$nm	$nn	$am" >> $W/compile.tsv
+    print -r -- "$id	$s0v	$c1	$cls	$nx	$ns	$nd	$nt	$nm	$nn	$am	$sealv" >> $W/compile.tsv
   fi
   print -r -- "$id $([ -n "$AC" ] && tail -1 $W/check.tsv | cut -f6) $([ -n "$AP" ] && tail -1 $W/compile.tsv | cut -f4)"
 done
 { echo "parity $(date '+%F %T') load $(sysctl -n vm.loadavg | awk '{print $2}') stage-0 $(shasum -a 256 $S0 | cut -c1-16) (BOOTSTRAP-REFERENCE)"
   [ -n "$AC" ] && { echo "check: $AC $(shasum -a 256 $AC | cut -c1-16) files $(wc -l < $W/check.tsv | tr -d ' ')"; cut -f6 $W/check.tsv | sort | uniq -c; }
   [ -n "$AP" ] && { echo "compile: $AP $(shasum -a 256 $AP | cut -c1-16) files $(wc -l < $W/compile.tsv | tr -d ' ')"; cut -f4 $W/compile.tsv | sort | uniq -c
+    echo "kexe/v1 seals (column 12): $(cut -f12 $W/compile.tsv | sort | uniq -c | tr -s ' ' | tr '\n' ' ')"
     echo "export runs: $(awk -F'\t' '{s+=$5} END {print s}' $W/compile.tsv) (SAME $(awk -F'\t' '{s+=$6} END {print s}' $W/compile.tsv), DIFF $(awk -F'\t' '{s+=$7} END {print s}' $W/compile.tsv), TIMEOUT $(awk -F'\t' '{s+=$8} END {print s}' $W/compile.tsv), MISSING $(awk -F'\t' '{s+=$9} END {print s}' $W/compile.tsv), NOT-RUN $(awk -F'\t' '{s+=$10} END {print s}' $W/compile.tsv))"; }
 } > $W/summary.txt
 cat $W/summary.txt

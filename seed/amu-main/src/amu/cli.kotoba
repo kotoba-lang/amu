@@ -1,6 +1,6 @@
 (ns amu.cli
-  {:kotoba/export [argc arg out err ends-with source-ext regular-file basename flag-value has-flag positional
-                   usage-error decode-error not-available]})
+  {:kotoba/export [argc arg argx out err ends-with source-ext regular-file directory parent basename flag-value has-flag positional
+                   usage-error usage-error-at decode-error report-error not-available]})
 
 ;; seed/amu-main/src/amu/cli.kotoba -- argv, output and the stage-0 report shapes shared by the amu command entries
 ;; (agent MAINS, 2026-10-04). Written in the language both build routes admit (the seed's source route and the JVM
@@ -19,6 +19,15 @@
 
 (defn arg [i :i64] :string
   (if (< i 0) "" (typed-cap-call :cli/args :string :string (string-from-i64 i))))
+
+;; argument i of argv with every `--jvm-free` left out (bin/amu filters it before routing; it means nothing), "" past the end
+(defn- argx-at [i :i64 k :i64 n :i64] :string
+  (cond (>= i n) ""
+        (string=? (arg i) "--jvm-free") (argx-at (+ i 1) k n)
+        (= k 0) (arg i)
+        :else (argx-at (+ i 1) (- k 1) n)))
+
+(defn argx [k :i64] :string (argx-at 0 k (argc)))
 
 (defn out [s :string] :i64
   (let [r (typed-cap-call :io/write :string :string s)] 0))
@@ -70,6 +79,21 @@
           (= (string-code-point-at a (- n 1)) 48) 1
           :else 0)))
 
+;; 1 when path names a directory (STAT's last field 1) (CMD, 2026-10-04)
+(defn directory [path :string] :i64
+  (let [a (typed-cap-call :fs/app-data :string :string (string-concat path (stat-token)))
+        n (string-length a)]
+    (cond (= n 0) 0
+          (= (string-code-point-at a (- n 1)) 49) 1
+          :else 0)))
+
+;; the directory part of a path ("." when it has none), as java.io.File's parent of a relative name
+(defn parent [s :string] :string
+  (let [k (last-slash s 0 0)]
+    (cond (= k 0) "."
+          (= k 1) "/"
+          :else (string-substring s 0 (- k 1)))))
+
 ;; ---- argv ---------------------------------------------------------------------------------------------------------
 ;; 1 when s is a flag that takes a value (the union of stage-0's compile/check flags and the seed driver's)
 (defn- value-flag [s :string] :i64
@@ -110,6 +134,19 @@
                 (string-concat code (string-concat ", :severity :error}, :message \""
                   (string-concat message (string-concat "\"" (string-concat details "}\n")))))))]
     64))
+
+;; any stage-0 :kotoba.cli-error/v1 report with a :source: error class, code, input path, message, details text, status
+(defn report-error [error :string code :string path :string message :string details :string status :i64] :i64
+  (let [w (err (string-concat "{:format :kotoba.cli-error/v1, :ok false, :error "
+                (string-concat error (string-concat ", :diagnostic {:format :kotoba.diagnostic/v1, :code "
+                  (string-concat code (string-concat ", :severity :error, :source \""
+                    (string-concat (basename path) (string-concat "\"}, :message \""
+                      (string-concat message (string-concat "\"" (string-concat details "}\n")))))))))))]
+    status))
+
+;; the same with the diagnostic's :source (the input's file name), as stage-0 adds it once argv[1] is a source path
+(defn usage-error-at [path :string message :string details :string] :i64
+  (report-error ":usage" ":kotoba/invalid-usage" path message details 64))
 
 ;; stage-0's decode refusal of a compile input that is not a regular file (exit 65)
 (defn decode-error [path :string] :i64

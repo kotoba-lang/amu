@@ -1,0 +1,161 @@
+(ns amu.kexe
+  {:kotoba/export [write-artifact sha-text]}
+  (:require [seed.io :as sio]))
+
+;; seed/amu-main/src/amu/kexe.kotoba -- the kseed/v1 container the seed writes, rewritten as a `:kotoba.kexe/v1` artifact
+;; (agent CMD, 2026-10-04). SOURCE route only (it reads the container with the seed's own seed.io); in src/ so that every
+;; build that copies src/amu/*.kotoba links it.
+;;
+;; The artifact is an EDN map in stage-0's key order (kotoba.compiler.core: :format :compatibility :value :fuel-abi
+;; :exports :effects :kir-sha256 :code :target-profile :sha256 :context-abi :limits :target :lowering :program), sealed as
+;; kotoba.artifact.core/seal does: :sha256 = SHA-256 (wire 3) of the pr-str of the CANONICAL map without :sha256 (keys
+;; sorted by their pr-str, sets as sorted vectors). The canonical text is built beside the file text and only hashed.
+;;
+;; What the seed cannot say, and so the artifact does not claim (declared, seed/amu-main/README.md):
+;; - :program nil and :kir-sha256 nil: the seed lowers source to SIR, it has no KIR (stage-0's verifier re-derives the code
+;;   from :program, so stage-0's `extract-native`/`run` refuse this artifact: correct, it is not kotoba-compiler output);
+;; - :effects nil: the kseed container does not carry the capability set the seed's checker computed;
+;; - :compatibility names :compiler "amu-seed/1" and carries no :hir/:kir/:value-abi versions;
+;; - an export's :length is the distance to the next export (or the code end), an upper bound of its own bytes: the
+;;   container records entry offsets only;
+;; - :fuel-abi / :limits are stage-0's defaults (512 fuel, 64 KiB, 4 KiB stack): the seed reads no fuel declaration.
+;; The code bytes, the entry offsets and arities, the context ABI (version 11, the C loader's) and the target are exact.
+
+;; ---- small text helpers -------------------------------------------------------------------------------------------
+(defn- digits [s :string a :i64 b :i64 acc :i64] :i64
+  (if (>= a b) acc (digits s (+ a 1) b (+ (* acc 10) (- (string-code-point-at s a) 48)))))
+
+;; index of byte c in s at or after i, n when none
+(defn- find-byte [s :string c :i64 i :i64] :i64
+  (cond (>= i (string-length s)) (string-length s)
+        (= (string-code-point-at s i) c) i
+        :else (find-byte s c (+ i 1))))
+
+;; -1 / 0 / 1: s[a..b) against t[c..d) byte-wise (Java compareTo order for ASCII names)
+(defn- cmp-span [s :string a :i64 b :i64 t :string c :i64 d :i64] :i64
+  (cond (>= a b) (if (>= c d) 0 -1)
+        (>= c d) 1
+        (< (string-code-point-at s a) (string-code-point-at t c)) -1
+        (> (string-code-point-at s a) (string-code-point-at t c)) 1
+        :else (cmp-span s (+ a 1) b t (+ c 1) d)))
+
+;; ---- the code bytes as EDN: "b0 b1 .." (balanced concatenation: n log n bytes copied, not n^2) ---------------------
+(defn- dec-run [V :vector-i64 a :i64 b :i64 acc :string] :string
+  (if (>= a b)
+    acc
+    (dec-run V (+ a 1) b (string-concat acc (string-concat (if (= (string-length acc) 0) "" " ") (string-from-i64 (vector-at V a)))))))
+
+(defn- dec-text [V :vector-i64 a :i64 b :i64] :string
+  (if (<= (- b a) 512)
+    (dec-run V a b "")
+    (let [m (quot (+ a b) 2)]
+      (string-concat (dec-text V a m) (string-concat " " (dec-text V m b))))))
+
+;; ---- the header "KSEED1 <code-length> <n>\n" + n lines "<name> <offset> <arity>\n" + "\n" ----------------------------
+;; index of the empty line's newline (the byte before the code), -1 when there is none
+(defn- hdr-end [V :vector-i64 i :i64] :i64
+  (cond (>= (+ i 1) (vector-count V)) -1
+        (and (= (vector-at V i) 10) (= (vector-at V (+ i 1)) 10)) (+ i 1)
+        :else (hdr-end V (+ i 1))))
+
+;; line fields at line start i of H: name end, offset, arity
+(defn- l-sp1 [H :string i :i64] :i64 (find-byte H 32 i))
+(defn- l-sp2 [H :string i :i64] :i64 (find-byte H 32 (+ (l-sp1 H i) 1)))
+(defn- l-end [H :string i :i64] :i64 (find-byte H 10 i))
+(defn- l-off [H :string i :i64] :i64 (digits H (+ (l-sp1 H i) 1) (l-sp2 H i) 0))
+(defn- l-ar [H :string i :i64] :i64 (digits H (+ (l-sp2 H i) 1) (l-end H i) 0))
+(defn- l-name [H :string i :i64] :string (string-substring H i (l-sp1 H i)))
+(defn- l-next [H :string i :i64] :i64 (+ (l-end H i) 1))
+
+;; the smallest export offset greater than off, or len
+(defn- next-off [H :string i :i64 stop :i64 off :i64 best :i64] :i64
+  (if (>= i stop)
+    best
+    (let [o (l-off H i)]
+      (next-off H (l-next H i) stop off (if (and (> o off) (< o best)) o best)))))
+
+(defn- l-len [H :string i :i64 f0 :i64 stop :i64 len :i64] :i64
+  (- (next-off H f0 stop (l-off H i) len) (l-off H i)))
+
+(defn- entry-file [H :string i :i64 f0 :i64 stop :i64 len :i64] :string
+  (string-concat (l-name H i)
+    (string-concat " {:offset " (string-concat (string-from-i64 (l-off H i))
+      (string-concat ", :length " (string-concat (string-from-i64 (l-len H i f0 stop len))
+        (string-concat ", :arity " (string-concat (string-from-i64 (l-ar H i)) "}"))))))))
+
+(defn- entry-canon [H :string i :i64 f0 :i64 stop :i64 len :i64] :string
+  (string-concat (l-name H i)
+    (string-concat " {:arity " (string-concat (string-from-i64 (l-ar H i))
+      (string-concat ", :length " (string-concat (string-from-i64 (l-len H i f0 stop len))
+        (string-concat ", :offset " (string-concat (string-from-i64 (l-off H i)) "}"))))))))
+
+;; file order: the container's order
+(defn- exports-file [H :string i :i64 f0 :i64 stop :i64 len :i64 acc :string] :string
+  (if (>= i stop)
+    acc
+    (exports-file H (l-next H i) f0 stop len
+      (string-concat acc (string-concat (if (= i f0) "" ", ") (entry-file H i f0 stop len))))))
+
+;; the line whose name is the smallest one greater than the name at line p (p < 0: no lower bound), -1 when none
+(defn- min-after [H :string i :i64 stop :i64 p :i64 best :i64] :i64
+  (if (>= i stop)
+    best
+    (let [above (if (< p 0) 1 (if (> (cmp-span H i (l-sp1 H i) H p (l-sp1 H p)) 0) 1 0))
+          better (if (< best 0) 1 (if (< (cmp-span H i (l-sp1 H i) H best (l-sp1 H best)) 0) 1 0))]
+      (min-after H (l-next H i) stop p (if (and (= above 1) (= better 1)) i best)))))
+
+;; canonical order: sorted by name (a symbol's pr-str is its name)
+(defn- exports-canon [H :string f0 :i64 stop :i64 len :i64 p :i64 acc :string] :string
+  (let [q (min-after H f0 stop p -1)]
+    (if (< q 0)
+      acc
+      (exports-canon H f0 stop len q
+        (string-concat acc (string-concat (if (< p 0) "" ", ") (entry-canon H q f0 stop len)))))))
+
+;; ---- constant parts (stage-0's texts; canonical spellings sorted by key) -------------------------------------------
+(defn- compat [] :string
+  "{:compiler \"amu-seed/1\", :format :kotoba.compatibility/v1, :language :kotoba.language/safe-v1, :runtime :kototama-macos-supervisor-v1, :target :aarch64-macos-kotoba-v1, :tender-contract :kotoba.supervisor/v1, :tender-role :kototama/component-tender-v1}")
+(defn- profile-file [] :string
+  "{:format :kotoba.target-profile/v1, :execution :native, :isa :aarch64, :os :macos, :abi :aapcs64, :runtime :kototama-macos-supervisor-v1}")
+(defn- profile-canon [] :string
+  "{:abi :aapcs64, :execution :native, :format :kotoba.target-profile/v1, :isa :aarch64, :os :macos, :runtime :kototama-macos-supervisor-v1}")
+(defn- ctx-file [] :string
+  (string-concat "{:version 11, :fuel-offset 8, :allow-bitmap-offset 16, :allow-bitmap-bytes 32, :cap-call-offset 48, :pair-new-offset 56, :pair-f0-offset 64, :pair-second-offset 72, :pair-capacity 4096, :kgraph-assert-offset 80, :kgraph-get-offset 88, :kgraph-count-offset 96, :kgraph-entity-at-offset 104, :kgraph-capacity 4096, :string-equal-offset 112, :string-concat-offset 120, :typed-cap-call-offset 128, :string-substring-offset 136, :string-code-point-at-offset 144, :string-pool-capacity 65536, "
+                 ":vector-new-empty-offset 152, :vector-conj-offset 160, :vector-count-offset 168, :vector-at-offset 176, :vector-assoc-offset 184, :vector-drop-offset 192, :vector-alloc-offset 200, :vector-assoc-in-place-offset 208, :string-index-of-offset 216, :arena-enter-offset 224, :arena-leave-offset 232, :string-compare-offset 240, :string-fold-ascii-offset 248, :string-find-blank-offset 256, :string-skip-blank-offset 264, :string-index-of-from-offset 272, :string-compare-lines-offset 280, :pair-used-pointer-offset 288, :pairs-base-offset 296, :pair-validated-base-offset 304, :vector-used-pointer-offset 312, :vectors-base-offset 320, :vector-items-base-offset 328, :string-find-byte-offset 336, :string-append-range-offset 344, :string-from-utf8-offset 352, :bytes-from-vector-offset 360, :bytes-slice-offset 368, :bytes-concat-offset 376, :vector-capacity 4096, :vector-item-capacity 65536}"))
+(defn- ctx-canon [] :string
+  (string-concat "{:allow-bitmap-bytes 32, :allow-bitmap-offset 16, :arena-enter-offset 224, :arena-leave-offset 232, :bytes-concat-offset 376, :bytes-from-vector-offset 360, :bytes-slice-offset 368, :cap-call-offset 48, :fuel-offset 8, :kgraph-assert-offset 80, :kgraph-capacity 4096, :kgraph-count-offset 96, :kgraph-entity-at-offset 104, :kgraph-get-offset 88, :pair-capacity 4096, :pair-f0-offset 64, :pair-new-offset 56, :pair-second-offset 72, :pair-used-pointer-offset 288, :pair-validated-base-offset 304, :pairs-base-offset 296, "
+                 ":string-append-range-offset 344, :string-code-point-at-offset 144, :string-compare-lines-offset 280, :string-compare-offset 240, :string-concat-offset 120, :string-equal-offset 112, :string-find-blank-offset 256, :string-find-byte-offset 336, :string-fold-ascii-offset 248, :string-from-utf8-offset 352, :string-index-of-from-offset 272, :string-index-of-offset 216, :string-pool-capacity 65536, :string-skip-blank-offset 264, :string-substring-offset 136, :typed-cap-call-offset 128, :vector-alloc-offset 200, :vector-assoc-in-place-offset 208, :vector-assoc-offset 184, :vector-at-offset 176, :vector-capacity 4096, :vector-conj-offset 160, :vector-count-offset 168, :vector-drop-offset 192, :vector-item-capacity 65536, :vector-items-base-offset 328, :vector-new-empty-offset 152, :vector-used-pointer-offset 312, :vectors-base-offset 320, :version 11}"))
+
+;; SHA-256 of a text, 64 lowercase hex characters (wire 3, the loader's FIPS 180-4 provider)
+(defn sha-text [s :string] :string
+  (typed-cap-call :hash/sha256 :string :string s))
+
+;; ---- the artifact ----------------------------------------------------------------------------------------------------
+;; read the kseed at kseed, write the sealed :kotoba.kexe/v1 text to out (out may be the same path). Answers the seal
+;; (64 hex characters), "" when the container is malformed or the write did not land.
+(defn write-artifact [kseed :string out :string] :string
+  (let [V (sio/io-read-bytes kseed)
+        e (hdr-end V 0)]
+    (if (< e 0)
+      ""
+      (let [H (sio/io-slice kseed 0 e)
+            f0 (+ (find-byte H 10 0) 1)
+            stop (string-length H)
+            len (- (vector-count V) (+ e 1))
+            code (string-concat "[" (string-concat (dec-text V (+ e 1) (vector-count V)) "]"))
+            canon (string-concat "{:code " (string-concat code
+                    (string-concat ", :compatibility " (string-concat (compat)
+                    (string-concat ", :context-abi " (string-concat (ctx-canon)
+                    (string-concat ", :effects nil, :exports {" (string-concat (exports-canon H f0 stop len -1 "")
+                    (string-concat "}, :format :kotoba.kexe/v1, :fuel-abi {:initial 512, :mode :hidden-context-x7}, :kir-sha256 nil, :limits {:fuel 512, :memory-bytes 65536, :stack-bytes 4096}, :lowering :runtime-aapcs64-v1, :program nil, :target :aarch64-macos-kotoba-v1, :target-profile "
+                    (string-concat (profile-canon) ", :value nil}"))))))))))
+            seal (sha-text canon)
+            file (string-concat "{:format :kotoba.kexe/v1, :compatibility " (string-concat (compat)
+                   (string-concat ", :value nil, :fuel-abi {:mode :hidden-context-x7, :initial 512}, :exports {" (string-concat (exports-file H f0 f0 stop len "")
+                   (string-concat "}, :effects nil, :kir-sha256 nil, :code " (string-concat code
+                   (string-concat ", :target-profile " (string-concat (profile-file)
+                   (string-concat ", :sha256 \"" (string-concat seal
+                   (string-concat "\", :context-abi " (string-concat (ctx-file)
+                   ", :limits {:memory-bytes 65536, :fuel 512, :stack-bytes 4096}, :target :aarch64-macos-kotoba-v1, :lowering :runtime-aapcs64-v1, :program nil}"))))))))))))
+            w (sio/io-write-text out file)]
+        (if (= (sio/io-exists out) 1) seal "")))))
