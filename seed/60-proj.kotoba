@@ -55,7 +55,7 @@
 (def pj-k-base 14)    ; image base of the module being compiled
 (def pj-k-mode 15)    ; 0 = link in process (patch stubs now); 1 = emit an object (60-proj separate mode: record the patches)
 (def pj-k-root0 16)   ; .. 31: up to 16 roots
-(def pj-m-base 64) (def pj-m-w 20) (def pj-m-cap 256)   ; R6A: 20 words (was 16)
+(def pj-m-base 64) (def pj-m-w 24) (def pj-m-cap 256)   ; R6A: 20 words (was 16); R6D: 24 (pj-mf-tpl 20)
 (def pj-mf-name 0) (def pj-mf-path 1) (def pj-mf-state 2) (def pj-mf-depth 3) (def pj-mf-req0 4) (def pj-mf-nreq 5)
 (def pj-mf-if0 6) (def pj-mf-nif 7) (def pj-mf-base 8) (def pj-mf-expk 9) (def pj-mf-exp0 10) (def pj-mf-nexp 11)
 (def pj-mf-entry 12)  ; 1 = the entry module (its exports are the container's; a library exports nothing to it)
@@ -229,7 +229,7 @@
   (let [m (pj-l L pj-k-nmod)]
     (-> L (pj-mset m pj-mf-name name) (pj-mset m pj-mf-path path) (pj-mset m pj-mf-state 0) (pj-mset m pj-mf-depth 0)
         (pj-mset m pj-mf-nreq 0) (pj-mset m pj-mf-nif 0) (pj-mset m pj-mf-expk 0) (pj-mset m pj-mf-nexp 0) (pj-mset m pj-mf-entry 0) (pj-mset m pj-mf-sch -1)
-        (pj-mset m 15 0) (pj-mset m 18 0) (pj-mset m 19 0)   ; R6D: pj-mf-kwt kwu kwf
+        (pj-mset m 15 0) (pj-mset m 18 0) (pj-mset m 19 0) (pj-mset m 20 0)   ; R6D: pj-mf-kwt kwu kwf tpl
         (pj-ls pj-k-nmod (+ m 1)))))
 
 ;; ---- the ns header ------------------------------------------------------------------------------------------------------
@@ -365,7 +365,7 @@
     (cond (or (= k 0) (not (pj-ok M))) P
           (= v 0) (let [w (pj-err M E-PROJ-NSFORM k)] P)
           (pj-is M S k ":kotoba/export") (pj-attrs M L (pj-declare M L P S v) S (pj-next M v))
-          (pj-is M S k ":kotoba/params") (let [w (pj-err M E-PROJ-TEMPLATE k)] P)
+          (pj-is M S k ":kotoba/params") (pj-attrs M L (pj-tpl-params M L P S v k) S (pj-next M v))   ; R6D
           (pj-is M S k ":kotoba/schemas") (pj-attrs M L (pj-own-schemas M L P S v) S (pj-next M v))   ; R6A
           (pj-is M S k ":kotoba/capabilities") (let [w (pj-r5b-decl M L S v)] (pj-attrs M L P S (pj-next M v)))   ; R5B
           :else (pj-attrs M L P S (pj-next M v)))))
@@ -391,7 +391,7 @@
           (pj-is M S k ":schemas") (pj-own-schemas M L P S (pj-next M k))   ; R6A
           (pj-is M S k ":capabilities") (let [w (pj-r5b-decl M L S (pj-next M k))] P)   ; R5B
           (pj-is M S k ":refer-clojure") P
-          (pj-is M S k ":params") (let [w (pj-err M E-PROJ-TEMPLATE k)] P)
+          (pj-is M S k ":params") (pj-tpl-params M L P S (pj-next M k) k)   ; R6D: a template whose parameters all have defaults
           (pj-is M S k ":use") (let [w (pj-err M E-PROJ-USE k)] P)
           :else (let [w (pj-err M E-PROJ-CLAUSE k)] P))))
 
@@ -882,7 +882,7 @@
               (if (>= k (pj-l L pj-k-nord))
                 U
                 (let [d (pj-l L (+ pj-o-base k))]
-                  (if (= d m) U (recur (+ k 1) (ck-r6b-kwmerge U (ck-r6b-kwtab (io-read-file M (pj-p L P (pj-mf L d pj-mf-path)))))))))))]
+                  (if (= d m) U (recur (+ k 1) (ck-r6b-kwmerge U (ck-r6b-kwtab (pj-src M L P d)))))))))]
     (ck-r6b-kwmerge U (ck-r6b-kwtab S0))))
 ;; a module of m's link closure (m itself: its text S0) has a keyword table
 (defn- pj-kw-any? [L :vector-i64 m :i64 S0 :string] :bool
@@ -928,6 +928,50 @@
         t (pj-mf L 0 pj-mf-kwt)]
     (if (> t 0) (string-concat k (pj-line "W" (mem-u2dec (- t 1)))) k)))
 ;; ==== END R6D ================================================================================================================
+
+;; ---- R6D: namespace templates with default instantiation ------------------------------------------------------------------
+;; (:params [p1 T1 p2 T2 ..]) / {:kotoba/params [..]}: every parameter must carry its default type form (clojure.set's
+;; [elem :keyword]); an importer's plain require is the default instantiation (the reference's reading: a :require without
+;; :with). The module is compiled from its text with every symbol token spelled like a parameter (outside strings, comments
+;; and keywords) replaced by the default's text. `:with` (another instantiation) stays E6023, as does a parameter without a
+;; default. Positions in a refusal refer to the instantiated text.
+(def pj-mf-tpl 20)   ; P index + 1 of the module's " name type\n" substitution lines (0 = not a template)
+(defn- pj-tpl-params [M :vector-i64 L :vector-i64 P :string S :string v :i64 k :i64] :string
+  (let [cur (pj-l L pj-k-errmod)
+        n (if (= (pj-kind M v) ND-VEC) (nm-count M v) -1)]
+    (if (or (< n 2) (not= (bit-and n 1) 0))
+      (let [w (pj-err M E-PROJ-TEMPLATE k)] P)
+      (let [t (loop [c (pj-first M v) acc ""]
+                (cond (= c 0) acc
+                      (not= (pj-kind M c) ND-SYM) ""
+                      :else (let [d (pj-next M c) e (lx-sk-form S (pj-a M d))]
+                              (if (< e 0) "" (recur (pj-next M d) (string-concat acc (string-concat " " (string-concat (pj-text M S c) (string-concat " " (string-concat (string-substring S (pj-a M d) e) "\n"))))))))))]
+        (if (= (string-length t) 0)
+          (let [w (pj-err M E-PROJ-TEMPLATE k)] P)
+          (let [w (pj-mset L cur pj-mf-tpl (+ (pj-n L) 1))] (pj-padd L P t)))))))
+;; the replacement of symbol S[a, b) in substitution lines T, "" when it is not a parameter
+(defn- pj-tpl-find [T :string S :string a :i64 b :i64] :string
+  (let [i (string-index-of T (string-concat " " (string-concat (string-substring S a b) " ")))]
+    (if (< i 0) "" (let [c (+ i (- b a) 2)] (string-substring T c (pj-eol T c))))))
+;; S with the parameters of T replaced
+(defn- pj-tpl-subst [S :string T :string] :string
+  (let [n (string-length S)]
+    (loop [i 0 from 0 acc ""]
+      (if (>= i n)
+        (string-concat acc (string-substring S from n))
+        (let [c (string-code-point-at S i)]
+          (cond (= c 59) (recur (lx-eol S i) from acc)
+                (= c 34) (recur (ck-r6b-strend S i) from acc)
+                (= c 92) (recur (ck-r6b-charend S i) from acc)
+                (= c 58) (recur (ck-r6b-symend S (+ i 1)) from acc)
+                (lx-symch? c) (let [b (ck-r6b-symend S i) r (pj-tpl-find T S i b)]
+                                (if (= (string-length r) 0) (recur b from acc) (recur b b (string-concat acc (string-concat (string-substring S from i) r)))))
+                :else (recur (+ i (lx-cpw c)) from acc)))))))
+;; the source text of module m (read from its path; a template instantiated)
+(defn- pj-src [M :vector-i64 L :vector-i64 P :string m :i64] :string
+  (let [S (io-read-file M (pj-p L P (pj-mf L m pj-mf-path)))
+        t (pj-mf L m pj-mf-tpl)]
+    (if (> t 0) (pj-tpl-subst S (pj-p L P (- t 1))) S)))
 
 ;; ---- compile one module and link it ---------------------------------------------------------------------------------------
 (defn- pj-put32 [L :vector-i64 at :i64 w :i64] :vector-i64
@@ -980,7 +1024,7 @@
 (defn- pj-module [M :vector-i64 L :vector-i64 P :string m :i64] :string (pj-module-h M L P m (ck-hint-new)))
 ;; R6C: H = the parameter refinements so far (21-check ck-hint-*); a check that asks for a new one compiles the module again
 (defn- pj-module-h [M :vector-i64 L :vector-i64 P :string m :i64 H :vector-i64] :string
-  (let [S0 (io-read-file M (pj-p L P (pj-mf L m pj-mf-path)))
+  (let [S0 (pj-src M L P m)   ; R6D: a template's text with its parameters instantiated
         T (pj-trailer L P m)
         ;; R6B: the source library the module spells. R6C: BEFORE the trailer (was after it): the stub clauses of the trailer
         ;; must be the LAST FN records (pj-c3 takes stub0 = FN-N - nstub), else an importer that also gets a library group
@@ -1152,6 +1196,7 @@
         S (io-read-file M (pj-p L P path))
         M1 (pj-read M S)
         P1 (if (pj-ok M1) (pj-header M1 L (pj-padd L P "") S "") (pj-padd L P ""))
+        S2 (if (> (pj-mf L 0 pj-mf-tpl) 0) (pj-tpl-subst S (pj-p L P1 (- (pj-mf L 0 pj-mf-tpl) 1))) S)   ; R6D: a template instantiated
         r0 (pj-mf L 0 pj-mf-req0)
         P2 (loop [k 0 P P1]
              (if (or (>= k (pj-mf L 0 pj-mf-nreq)) (not (pj-ok M1))) P
@@ -1170,8 +1215,8 @@
       (let [P3 (pj-module M1 L P2 0)]
         (if (pj-ok M1)
           (let [w (pj-ls L pj-k-kwk (pj-n L))
-                P4 (pj-padd L P3 (pj-kw-lines M1 L P3 S))]   ; R6D
-            (pj-padd L P4 (pj-object M1 L P4 (string-concat S (string-concat (ck-r6b-lib-t S (pj-kw-table M1 L P4 0 S)) (pj-trailer L P4 0))))))
+                P4 (pj-padd L P3 (pj-kw-lines M1 L P3 S2))]   ; R6D
+            (pj-padd L P4 (pj-object M1 L P4 (string-concat S2 (string-concat (ck-r6b-lib-t S2 (pj-kw-table M1 L P4 0 S2)) (pj-trailer L P4 0))))))
           P3))   ; R6B, R6C: library before the trailer (pj-module)
       P2)))
 
