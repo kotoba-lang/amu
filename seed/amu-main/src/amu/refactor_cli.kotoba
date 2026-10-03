@@ -5,6 +5,8 @@
             [amu.refactor-io :as io]
             [amu.refactor-graph :as rg]
             [amu.refactor-plan :as rp]
+            [amu.refactor-partition :as ptn]
+            [amu.refactor-split :as spl]
             [kotoba.compiler.refactor.core :as core]
             [kotoba.compiler.refactor.rules :as rules]))
 
@@ -208,18 +210,18 @@
 
 (defn- partition-cmd [] :i64
   (let [st (one-path-status "usage: amu refactor partition <path> [--modules N] [--driver FORM] [--names FILE] [--out FILE]")]
-    (cond (> st 0) st
-          (not (int-flag-ok? "--modules")) (usage "--modules must be a decimal integer")
-          :else (cli/not-available "refactor partition"
-                                   "\"kotoba.compiler.refactor.partition: guest twin not written\""))))
+    (if (> st 0)
+      st
+      (ptn/partition (pos-at 0) (has? "--summary") (flag "--out") (has? "--out")
+                     (int-flag-ok? "--modules") (if (has? "--modules") (io/js-number (flag "--modules")) 12)
+                     (flag "--driver") (flag "--names") (has? "--names")))))
 
 (defn- split-cmd [] :i64
   (let [st (one-path-status "usage: amu refactor split <path> --partition FILE --out DIR [--ns NAME]")]
     (cond (> st 0) st
           (not (has? "--partition")) (usage "split needs --partition FILE (from `amu refactor partition --out FILE`)")
           (not (has? "--out")) (usage "split needs --out DIR")
-          :else (cli/not-available "refactor split"
-                                   "\"kotoba.compiler.refactor.extract: guest twin not written\" \"kotoba.compiler.refactor.partition: guest twin not written\""))))
+          :else (spl/split (pos-at 0) (flag "--partition") (flag "--out") (flag "--ns")))))
 
 ;; ---------------------------------------------------------------------------
 ;; verify

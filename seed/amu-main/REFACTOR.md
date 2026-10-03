@@ -13,13 +13,17 @@ is still a declared stub? Oracle: `bin/amu refactor` (node + nbb, BOOTSTRAP-REFE
 - `src/amu/refactor_io.kotoba`: the I/O record over wires 35 (read, STAT, WRITE, RENAME, MKDIR) and 34 (browse), plus
   `expand-paths`, `refuse` (`:kotoba.cli-error/v1`, exit 64/65/74) and nbb's `js/Number` integer flags.
 - `src/amu/refactor_graph.kotoba`: graph-cmd. It turns the graph twin's answer into EDN.
+- `src/amu/refactor_partition.kotoba` and `src/amu/refactor_split.kotoba`: partition and split. The --names and
+  --partition files are read with the cst twin. String labels and module names are supported; any other spelling is
+  a declared stub.
 - `src/amu/refactor_plan.kotoba`: plan and apply. This covers rewrite-file, file-report, sum-summaries, core's
   summarize, and the write-through-tmp-and-rename of apply.
 - `src/amu/edn.kotoba`: cljs `pr-str`, byte for byte. That covers array-map insertion order versus PersistentHashMap
   HAMT order (cljs murmur3 hashes) and string escapes.
 - The library: kotoba-lang `lang/compat/kotoba/compiler/refactor/*.kotoba` guest twins (branch
   `agent/refactor-cst-twin`). PORT/INTEGRATE wrote cst, edit, diff and prelude. REFAC wrote graph, rules,
-  cljs-order, finding, core, rules.{destructure,letdestructure,kwcallback,lowerloops,reject} and verify.
+  cljs-order, finding, core, rules.{destructure,letdestructure,kwcallback,lowerloops,reject}, partition, extract
+  and verify.
 
 ## Status (the sub-commands)
 
@@ -30,13 +34,13 @@ is still a declared stub? Oracle: `bin/amu refactor` (node + nbb, BOOTSTRAP-REFE
 | graph (full, --summary, --out) | real | `cases-graph.txt`, `cases-graph-src.txt` (every amu src/**/*.cljk) |
 | plan, apply (rules a b d e f, `all`, every flag) | real | `cases-plan.txt`, `cases-plan-src.txt`, `cases-apply.txt` (scripts/seed/refactor/apply-cases.sh) |
 | plan, apply with rule c (dynvars) | arguments are real; the rewrite is a STUB (69) | dynvars twin is not written |
-| partition | arguments are real; the rest is a STUB | partition twin is not written |
-| split | arguments are real; the rest is a STUB | extract and partition twins are not written |
+| partition (full, --summary, --out, --modules, --driver) | real | `cases-partition.txt` |
+| split | real | `cases-split.txt` (scripts/seed/refactor/split-cases.sh: the answer and every written file) |
 | verify | arguments are real; the run is a STUB | it needs wire 20 (spawn), which the image never holds. The comparison twin is real: `scripts/seed/refactor/verify-diff.sh`, 5/5 |
 
 Measured 2026-10-04 with seed r6k ab9f8236 (test entry 95fe7b34), all SAME: args 31/31, graph 20/20, graph-src
 109/109, plan 18/18, plan-src 128/128 (every amu src file plus 12 kotoba-sema frontend files with `plan all`, and the
-flag cases), apply 36/36, verify twin 5/5. Earlier, with seed r6j 4b2498ec: graph SAME on 3 kotoba-sema frontend files
+flag cases), apply 36/36, verify twin 5/5. Test entry f90868a7: partition 19/19, split 10/10, args 31/31. Earlier, with seed r6j 4b2498ec: graph SAME on 3 kotoba-sema frontend files
 of 347-603 KB. The whole amu.main with the delegate compiles to 963,738 B of code. That image gives
 list-rules SAME and graph 20/20 SAME, and `compile` still works (crc32 port).
 
@@ -53,6 +57,8 @@ zsh scripts/seed/refactor/diff.sh build/refac/t1/rf seed/tests/refactor/cases-gr
 - `apply` writes through wire 35 WRITE_SEP. The loader refuses content that holds the token `WRITE_SEP` itself, as
   nbb's refactor_cli.cljk does (single-occurrence rule). Such a file cannot be applied, and failed writes are not
   reported as `:refactor/write-failed`.
+- A missing `--partition` file is refused as `:refactor/unreadable` with the message "cannot read P: no such file".
+  nbb's message is node's error text instead.
 - `--observable-from` is read only by rule c, and the Kotoba route does not read it.
 
 - Paths: bin/amu resolves relative paths against the caller's cwd. The Kotoba dispatcher takes paths as given, so

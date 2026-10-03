@@ -79,21 +79,20 @@
 (defn rename [from :string to :string] :i64
   (if (string=? (app (string-concat from (string-concat (tok "RENAME") to))) "1") 1 0))
 
-;; host-io :mkdirs: every prefix of the path, "0" when it exists
-;; host-io :mkdirs: every prefix of the path, "0" when it exists
-(defn mkdirs [dir :string] :i64
-  (let [n (string-byte-length dir)]
-    (loop [i 0 from 0 acc (if (starts-with? dir "/") "" "-")]
-      (if (> i n)
-        0
-        (if (or (= i n) (= (string-code-point-at dir i) 47))
-          (if (> i from)
-            (let [p (string-substring dir from i)
-                  path (if (string=? acc "-") p (string-concat acc (string-concat "/" p)))
-                  r (app (string-concat path (tok "MKDIR")))]
-              (recur (+ i 1) (+ i 1) path))
-            (recur (+ i 1) (+ i 1) acc))
-          (recur (+ i (cpw (string-code-point-at dir i))) from acc))))))
+;; host-io :mkdirs (every missing directory of the path). The loader traps on a path outside its scope, so the walk goes
+;; up only until a directory that exists (normally inside the scope) and creates the missing ones downwards.
+(defn- parent-dir [d :string] :string
+  (let [n (string-byte-length d)
+        k (loop [i 0 k -1] (if (>= i n) k (let [p (string-code-point-at d i)] (recur (+ i (cpw p)) (if (= p 47) i k)))))]
+    (if (<= k 0) "" (string-substring d 0 k))))
+
+(defn mkdirs [dir0 :string] :i64
+  (let [dir (strip-slashes dir0)]
+    (cond (= (string-byte-length dir) 0) 0
+          (string=? (kind dir) "dir") 0
+          :else (let [p (mkdirs (parent-dir dir))
+                      r (app (string-concat dir (tok "MKDIR")))]
+                  0))))
 
 (defn list-dir [dir :string] :string (typed-cap-call :fs/browse :string :string dir))
 

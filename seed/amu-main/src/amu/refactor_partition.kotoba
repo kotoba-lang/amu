@@ -1,0 +1,171 @@
+(ns amu.refactor-partition
+  {:kotoba/export [partition]}
+  (:require [amu.cli :as cli]
+            [amu.edn :as e]
+            [amu.refactor-io :as io]
+            [amu.refactor-graph :as rg]
+            [kotoba.compiler.refactor.cst :as cst]
+            [kotoba.compiler.refactor.graph :as g]
+            [kotoba.compiler.refactor.partition :as pt])
+  (:schemas {:rpt/names [:record :rpt/names [[:ok :bool] [:forms [:list :string]] [:labels [:list :string]]]]}))
+
+;; seed/amu-main/src/amu/refactor_partition.kotoba -- `amu refactor partition` on the Kotoba route (agent REFAC,
+;; 2026-10-04): refactor-cli partition-cmd over the partition twin, partition.cljk partition-data's payload as EDN in the
+;; host's key order. --names FILE is read with the cst twin (the host reads EDN): a map of string form names to string
+;; labels; any other shape is a declared stub.
+
+(defn- kv [acc [:list [:ref :edn/v]] k :string v [:ref :edn/v]] [:list [:ref :edn/v]] (e/conj2 acc (e/kw k) v))
+(defn- snth [xs [:list :string] i :i64] :string (typed-list-nth [:list :string] xs i))
+
+(defn- strs-v [xs [:list :string]] [:ref :edn/v]
+  (let [n (vector-count xs)] (loop [i 0 acc (e/vs)] (if (>= i n) (e/vec acc) (recur (+ i 1) (e/conj1 acc (e/str (snth xs i))))))))
+(defn- ints-v [xs :vector-i64] [:ref :edn/v]
+  (let [n (vector-count xs)] (loop [i 0 acc (e/vs)] (if (>= i n) (e/vec acc) (recur (+ i 1) (e/conj1 acc (e/int (vector-at xs i))))))))
+
+;; ---------------------------------------------------------------------------
+;; --names: {"form" "label" ...}
+
+(defn- unescape [t :string] :string
+  ;; the text of a string literal, quotes included
+  (let [n (- (string-byte-length t) 1)]
+    (loop [i 1 from 1 acc ""]
+      (if (>= i n)
+        (string-concat acc (string-substring t from n))
+        (if (= (string-code-point-at t i) 92)
+          (let [c (string-code-point-at t (+ i 1))
+                r (cond (= c 110) "\n" (= c 116) "\t" (= c 114) "\r" (= c 98) "\b" (= c 102) "\f" (= c 34) "\"" (= c 92) "\\" :else "")]
+            (recur (+ i 2) (+ i 2) (string-concat (string-concat acc (string-substring t from i)) r)))
+          (recur (+ i (let [p (string-code-point-at t i)] (if (< p 128) 1 (if (< p 2048) 2 (if (< p 65536) 3 4))))) from acc))))))
+
+(defn- read-names [path :string] [:ref :rpt/names]
+  (let [src (io/read-file path)
+        o (cst/parse src)
+        ns (cst/out-nodes o)]
+    (if (or (> (string-byte-length (cst/out-err o)) 0) (not (= (vector-count ns) 1)) (not (cst/map? (typed-list-nth [:list [:ref :cst/node]] ns 0))))
+      (record-new [:ref :rpt/names] false (typed-list-new [:list :string]) (typed-list-new [:list :string]))
+      (let [m (typed-list-nth [:list [:ref :cst/node]] ns 0)
+            ks (cst/node-kids m)
+            kn (vector-count ks)]
+        (loop [i 0 fs (typed-list-new [:list :string]) ls (typed-list-new [:list :string])]
+          (if (>= (+ i 1) kn)
+            (record-new [:ref :rpt/names] (= i kn) fs ls)
+            (let [k (typed-list-nth [:list [:ref :cst/node]] ks i)
+                  v (typed-list-nth [:list [:ref :cst/node]] ks (+ i 1))]
+              (if (and (= :str (cst/node-type k)) (= :str (cst/node-type v)))
+                (recur (+ i 2) (typed-list-conj [:list :string] fs (unescape (cst/node-text k))) (typed-list-conj [:list :string] ls (unescape (cst/node-text v))))
+                (record-new [:ref :rpt/names] false fs ls)))))))))
+
+;; ---------------------------------------------------------------------------
+;; payload
+
+;; :requires: (into (array-map) (sort-by (fn [[nm cnt]] [(- cnt) nm]) deps)) with keyword keys
+(defn- requires-map [names [:list :string] counts :vector-i64] [:ref :edn/v]
+  (let [n (vector-count names)
+        order (loop [i 0 acc (vector-alloc 0)]
+                (if (>= i n) acc
+                    (let [m (vector-count acc)
+                          pos (loop [j 0] (cond (>= j m) m
+                                                (let [y (vector-at acc j)]
+                                                  (or (< (vector-at counts y) (vector-at counts i))
+                                                      (and (= (vector-at counts y) (vector-at counts i)) (> (string-compare (snth names y) (snth names i)) 0))))
+                                                j
+                                                :else (recur (+ j 1))))]
+                      (recur (+ i 1) (loop [j 0 b (vector-alloc 0)]
+                                       (cond (> j m) b
+                                             (= j pos) (recur (+ j 1) (if (< j m) (vector-conj (vector-conj b i) (vector-at acc j)) (vector-conj b i)))
+                                             :else (recur (+ j 1) (if (< j m) (vector-conj b (vector-at acc j)) b))))))))]
+    (e/auto-map (loop [k 0 acc (e/vs)] (if (>= k n) acc (recur (+ k 1) (e/conj2 acc (e/kw (snth names (vector-at order k))) (e/int (vector-at counts (vector-at order k))))))))))
+
+(defn- mod-map [m [:ref :pt/mod] full :bool] [:ref :edn/v]
+  (let [b (kv (kv (kv (kv (e/vs) "module" (e/str (pt/mod-name m))) "order" (e/int (pt/mod-order m))) "forms" (e/int (pt/mod-forms m)))
+              "lines" (e/int (pt/mod-lines m)))]
+    (e/amap (if full
+              (kv (kv (kv b "defs" (e/int (pt/mod-defs m))) "requires" (requires-map (pt/mod-req-names m) (pt/mod-req-counts m)))
+                  "chunks" (ints-v (pt/mod-chunks m)))
+              (kv b "requires" (requires-map (pt/mod-req-names m) (pt/mod-req-counts m)))))))
+
+(defn- mods-v [o [:ref :pt/out] full :bool] [:ref :edn/v]
+  (let [ms (pt/out-mods o) n (pt/mods-count ms)]
+    (loop [i 0 acc (e/vs)] (if (>= i n) (e/vec acc) (recur (+ i 1) (e/conj1 acc (mod-map (pt/mods-nth ms i) full)))))))
+
+(defn- cross-count [o [:ref :pt/out]] :i64
+  (let [es (pt/out-edges o) ks (pt/out-chunk-keys o) rs (pt/out-chunk-ranks o) n (quot (vector-count es) 2)
+]
+    (loop [i 0 c 0]
+      (if (>= i n) c
+          (recur (+ i 1) (if (= (rank-of ks rs (vector-at es (* 2 i))) (rank-of ks rs (vector-at es (+ (* 2 i) 1)))) c (+ c 1)))))))
+
+(defn- rank-of [ks :vector-i64 rs :vector-i64 v :i64] :i64
+  (let [n (vector-count ks)] (loop [i 0] (cond (>= i n) -1 (= (vector-at ks i) v) (vector-at rs i) :else (recur (+ i 1))))))
+
+(defn- blocking-v [o [:ref :pt/out]] [:ref :edn/v]
+  (let [b (pt/out-blocking o) n (quot (vector-count b) 4)]
+    (loop [i 0 acc (e/vs)]
+      (if (>= i n) (e/vec acc)
+          (recur (+ i 1) (e/conj1 acc (e/vec (e/conj1 (e/vs3 (e/str (snth b (* 4 i))) (e/str (snth b (+ (* 4 i) 1))) (e/str (snth b (+ (* 4 i) 2))))
+                                                      (e/str (snth b (+ (* 4 i) 3)))))))))))
+
+(defn- cycles-v [o [:ref :pt/out]] [:ref :edn/v]
+  (let [cs (pt/out-cycles o) n (pt/cycs-count cs)
+        rep (loop [i 0 acc (e/vs)]
+              (if (>= i n) (e/vec acc)
+                  (let [c (pt/cycs-nth cs i)]
+                    (recur (+ i 1) (e/conj1 acc (e/amap (kv (kv (kv (kv (e/vs) "size" (e/int (pt/cyc-size c))) "lines" (e/int (pt/cyc-lines c)))
+                                                                    "module" (if (pt/cyc-has-module? c) (e/str (pt/cyc-module c)) (e/nil-v)))
+                                                                "forms" (strs-v (pt/cyc-forms c)))))))))
+        ss (pt/out-steps o) sn (pt/steps-count ss)
+        plan (loop [i 0 acc (e/vs)]
+               (if (>= i sn) (e/vec acc)
+                   (let [s (pt/steps-nth ss i)]
+                     (recur (+ i 1) (e/conj1 acc (e/amap (kv (kv (kv (e/vs) "late-bind" (e/str (pt/step-label s))) "incoming-edges-cut" (e/int (pt/step-cut s)))
+                                                                 "largest-remaining-cycle-lines" (e/int (pt/step-largest s)))))))))]
+    (e/amap (kv (kv (kv (e/vs) "cycles" rep) "big-cycle-opening-plan" plan)
+                "note" (e/str "every cycle is kept inside ONE module (a require cycle cannot exist); to split the biggest one the listed forms would have to be called through a late-bound hook (declare + registry), in order")))))
+
+(defn- total-lines [o [:ref :pt/out]] :i64
+  (let [ms (pt/out-mods o) n (pt/mods-count ms)] (loop [i 0 s 0] (if (>= i n) s (recur (+ i 1) (+ s (pt/mod-lines (pt/mods-nth ms i))))))))
+
+(defn partition [path :string summary :bool out :string has-out :bool target-ok :bool target :i64 driver :string names-file :string
+                 has-names :bool] :i64
+  (let [src (io/read-file path)
+        st (rg/parse-or-refuse path src)]
+    (if (> st 0)
+      st
+      (let [nm (if has-names (read-names names-file) (record-new [:ref :rpt/names] true (typed-list-new [:list :string]) (typed-list-new [:list :string])))]
+        (cond
+          (not (record-get [:ref :rpt/names] nm :ok))
+          (cli/not-available "refactor partition --names"
+                            "\"amu.refactor-partition: --names FILE other than a map of string form names to string labels\"")
+          (not target-ok) (io/refuse "usage" "refactor/usage" "--modules must be a decimal integer")
+          :else
+          (let [a (g/analysis src)
+                o (pt/partition-data a target driver (record-get [:ref :rpt/names] nm :forms) (record-get [:ref :rpt/names] nm :labels))]
+            (if (> (string-byte-length (pt/out-err o)) 0)
+              (io/refuse "decode" "refactor/no-driver" (pt/out-err o))
+              (let [ne (quot (vector-count (pt/out-edges o)) 2)
+                    nb (quot (vector-count (pt/out-blocking o)) 4)
+                    full (e/hmap (kv (kv (kv (kv (kv (kv (kv (kv (kv (kv (kv (kv (kv (kv (e/vs) "format" (e/kw "kotoba.refactor/v1")) "kind" (e/kw "partition"))
+                                                                             "modules" (mods-v o true))
+                                                                         "edges-total" (e/int ne))
+                                                                     "edges-cross-module" (e/int (cross-count o)))
+                                                                 "edges-backward-blocking" (e/int nb))
+                                                             "blocking-edges" (blocking-v o))
+                                                         "forms" (e/int (vector-count (pt/out-chunk-keys o))))
+                                                     "lines" (e/int (total-lines o)))
+                                                 "method" (e/amap (kv (kv (kv (e/vs) "driver" (strs-v (pt/out-driver o))) "roots" (strs-v (pt/out-roots o)))
+                                                                      "initial-modules" (e/int (pt/out-initial o)))))
+                                             "cycles" (cycles-v o))
+                                         "command" (e/kw "partition"))
+                                     "path" (e/str path))
+                                 "ok" (e/bool true)))
+                    summ (kv (kv (kv (kv (kv (kv (kv (kv (kv (e/vs) "format" (e/kw "kotoba.refactor/v1")) "kind" (e/kw "partition"))
+                                                     "command" (e/kw "partition"))
+                                                 "path" (e/str path))
+                                             "ok" (e/bool true))
+                                         "modules" (mods-v o false))
+                                     "edges-total" (e/int ne))
+                                 "edges-cross-module" (e/int (cross-count o)))
+                             "edges-backward-blocking" (e/int nb))]
+                (cond summary (io/answer (e/hmap summ) 0)
+                      has-out (let [w (io/write-file out (e/pr-line full))] (io/answer (e/hmap (kv summ "out" (e/str out))) 0))
+                      :else (io/answer full 0))))))))))

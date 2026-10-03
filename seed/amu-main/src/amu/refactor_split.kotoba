@@ -1,0 +1,145 @@
+(ns amu.refactor-split
+  {:kotoba/export [split]}
+  (:require [amu.cli :as cli]
+            [amu.edn :as e]
+            [amu.refactor-io :as io]
+            [amu.refactor-graph :as rg]
+            [kotoba.compiler.refactor.cst :as cst]
+            [kotoba.compiler.refactor.cljs-order :as ord]
+            [kotoba.compiler.refactor.extract :as ex]
+            [kotoba.compiler.refactor.graph :as g])
+  (:schemas {:rs/part [:record :rs/part [[:status :i64] [:names [:list :string]] [:orders :vector-i64] [:chunks [:list :vector-i64]]]]}))
+
+;; seed/amu-main/src/amu/refactor_split.kotoba -- `amu refactor split` on the Kotoba route (agent REFAC, 2026-10-04):
+;; refactor-cli split-cmd over the extract twin. The partition file is read with the cst twin (the host reads EDN):
+;; {:modules [{:module "name" :order n :chunks [i ..]} ..]} with string module names; another module name spelling is a
+;; declared stub.
+
+(defn- kv [acc [:list [:ref :edn/v]] k :string v [:ref :edn/v]] [:list [:ref :edn/v]] (e/conj2 acc (e/kw k) v))
+(defn- snth [xs [:list :string] i :i64] :string (typed-list-nth [:list :string] xs i))
+(defn- kid [n [:ref :cst/node] i :i64] [:ref :cst/node]
+  (let [ks (cst/node-kids n)] (if (< i (vector-count ks)) (typed-list-nth [:list [:ref :cst/node]] ks i) (cst/nil-node))))
+(defn- nkids [n [:ref :cst/node]] :i64 (vector-count (cst/node-kids n)))
+
+(defn- unescape [t :string] :string
+  (let [n (- (string-byte-length t) 1)]
+    (loop [i 1 from 1 acc ""]
+      (if (>= i n)
+        (string-concat acc (string-substring t from n))
+        (if (= (string-code-point-at t i) 92)
+          (let [c (string-code-point-at t (+ i 1))
+                r (cond (= c 110) "\n" (= c 116) "\t" (= c 114) "\r" (= c 34) "\"" (= c 92) "\\" :else "")]
+            (recur (+ i 2) (+ i 2) (string-concat (string-concat acc (string-substring t from i)) r)))
+          (recur (+ i (let [p (string-code-point-at t i)] (if (< p 128) 1 (if (< p 2048) 2 (if (< p 65536) 3 4))))) from acc))))))
+
+(defn- dec-of [t :string] :i64
+  (let [n (string-byte-length t) neg (and (> n 0) (= (string-code-point-at t 0) 45))]
+    (loop [i (if neg 1 0) v 0] (if (>= i n) (if neg (- 0 v) v) (recur (+ i 1) (+ (* v 10) (- (string-code-point-at t i) 48)))))))
+
+;; the value node of key kt in a map node, the nil node when absent (the last occurrence, as a map would hold)
+(defn- map-val [m [:ref :cst/node] kt :string] [:ref :cst/node]
+  (let [n (nkids m)]
+    (loop [i 0 v (cst/nil-node)] (if (>= (+ i 1) n) v (recur (+ i 2) (if (cst/kw-named? (kid m i) kt) (kid m (+ i 1)) v))))))
+
+(defn- truthy? [n [:ref :cst/node]] :bool
+  (not (or (cst/nil-node? n) (cst/sym-named? n "nil") (cst/sym-named? n "false"))))
+
+(defn- digits? [t :string] :bool
+  (let [n (string-byte-length t)]
+    (and (> n 0) (loop [i (if (= (string-code-point-at t 0) 45) 1 0)]
+                   (cond (>= i n) true (let [p (string-code-point-at t i)] (and (>= p 48) (<= p 57))) (recur (+ i 1)) :else false)))))
+
+;; status 0 ok, 1 not a partition, 2 unsupported spelling (declared stub)
+(defn- read-partition [path :string] [:ref :rs/part]
+  (let [o (cst/parse (io/read-file path))
+        ns (cst/out-nodes o)
+        bad (record-new [:ref :rs/part] 1 (typed-list-new [:list :string]) (vector-alloc 0) (typed-list-new [:list :vector-i64]))]
+    (if (or (> (string-byte-length (cst/out-err o)) 0) (= (vector-count ns) 0) (not (cst/map? (typed-list-nth [:list [:ref :cst/node]] ns 0))))
+      bad
+      (let [ms (map-val (typed-list-nth [:list [:ref :cst/node]] ns 0) ":modules")]
+        (if (not (cst/vec? ms))
+          bad
+          (loop [i 0 names (typed-list-new [:list :string]) orders (vector-alloc 0) chunks (typed-list-new [:list :vector-i64])]
+            (if (>= i (nkids ms))
+              (record-new [:ref :rs/part] 0 names orders chunks)
+              (let [m (kid ms i)
+                    mn (map-val m ":module") mo (map-val m ":order") mc (map-val m ":chunks")]
+                (cond
+                  (not (and (cst/map? m) (truthy? mn) (cst/vec? mc))) bad
+                  (not (and (= :str (cst/node-type mn)) (= :num (cst/node-type mo)) (digits? (cst/node-text mo))
+                            (loop [j 0] (cond (>= j (nkids mc)) true (and (= :num (cst/node-type (kid mc j))) (digits? (cst/node-text (kid mc j)))) (recur (+ j 1)) :else false))))
+                  (record-new [:ref :rs/part] 2 names orders chunks)
+                  :else
+                  (recur (+ i 1) (typed-list-conj [:list :string] names (unescape (cst/node-text mn))) (vector-conj orders (dec-of (cst/node-text mo)))
+                         (typed-list-conj [:list :vector-i64] chunks
+                                          (loop [j 0 v (vector-alloc 0)] (if (>= j (nkids mc)) v (recur (+ j 1) (vector-conj v (dec-of (cst/node-text (kid mc j))))))))))))))))))
+
+;; "^(.*)/[^/]*$" group 1, or "" when no "/"
+(defn- dirname [p :string] :string
+  (let [n (string-byte-length p)
+        k (loop [i 0 k -1] (if (>= i n) k (let [c (string-code-point-at p i)] (recur (+ i (if (< c 128) 1 (if (< c 2048) 2 (if (< c 65536) 3 4)))) (if (= c 47) i k)))))]
+    (if (< k 0) "" (string-substring p 0 k))))
+
+(defn- strs-v [xs [:list :string]] [:ref :edn/v]
+  (let [n (vector-count xs)] (loop [i 0 acc (e/vs)] (if (>= i n) (e/vec acc) (recur (+ i 1) (e/conj1 acc (e/str (snth xs i))))))))
+
+(defn split [path :string pfile :string out :string ns-override :string] :i64
+  (let [src (io/read-file path)
+        st (rg/parse-or-refuse path src)]
+    (if (> st 0)
+      st
+      (if (not (string=? (io/kind pfile) "file"))
+        (io/refuse "decode" "refactor/unreadable" (string-concat "cannot read " (string-concat pfile ": no such file")))
+        (let [pt (read-partition pfile)
+              ps (record-get [:ref :rs/part] pt :status)]
+          (cond
+            (= ps 1) (io/refuse "decode" "refactor/partition-incomplete"
+                                (string-concat pfile " is not a partition (expected {:modules [{:module .. :order .. :chunks [..]}]})"))
+            (= ps 2) (cli/not-available "refactor split"
+                                        "\"amu.refactor-split: a partition whose :module is not a string or whose :order / :chunks are not decimal integers\"")
+            :else
+            (let [a (g/analysis src)
+                  o (ex/extract src a (record-get [:ref :rs/part] pt :names) (record-get [:ref :rs/part] pt :orders)
+                                (record-get [:ref :rs/part] pt :chunks) ns-override)]
+              (if (> (string-byte-length (ex/out-err o)) 0)
+                (io/refuse "decode" (ex/out-code o) (ex/out-err o))
+                (let [rt (ex/roundtrip src o)]
+                  (if (not (ex/rt-ok? rt))
+                    (io/refuse "decode" "refactor/roundtrip-failed" "the split lost or duplicated a form; nothing was written")
+                    (let [paths (ex/out-paths o) texts (ex/out-texts o) n (vector-count paths)
+                          sorted (ord/sort-strs paths)
+                          w (loop [i 0]
+                              (if (>= i n) 0
+                                  (let [p (snth sorted i)
+                                        at (loop [j 0] (if (string=? (snth paths j) p) j (recur (+ j 1))))
+                                        d (io/mkdirs (string-concat out (string-concat "/" (dirname p))))
+                                        w1 (io/write-file (string-concat out (string-concat "/" p)) (snth texts at))]
+                                    (recur (+ i 1)))))
+                          mnames (ex/out-mod-names o)
+                          mn (vector-count mnames)
+                          mods (e/auto-map (loop [i 0 acc (e/vs)]
+                                             (if (>= i mn) acc
+                                                 (recur (+ i 1)
+                                                        (e/conj2 acc (e/str (snth mnames i))
+                                                                 (e/amap (kv (kv (kv (kv (kv (e/vs) "forms" (e/int (vector-at (ex/out-mod-forms o) i)))
+                                                                                         "lines" (e/int (vector-at (ex/out-mod-lines o) i)))
+                                                                                     "declares" (e/int (vector-at (ex/out-mod-declares o) i)))
+                                                                                 "requires" (strs-v (typed-list-nth [:list [:list :string]] (ex/out-mod-requires o) i)))
+                                                                             "path" (e/str (snth (ex/out-mod-paths o) i)))))))))
+                          rtv (e/amap (kv (kv (kv (kv (kv (kv (kv (e/vs) "ok" (e/bool true)) "original" (e/int (ex/rt-original rt)))
+                                                              "split" (e/int (ex/rt-split rt)))
+                                                          "missing" (e/int (ex/rt-missing rt)))
+                                                      "extra" (e/int (ex/rt-extra rt)))
+                                                  "facade-names" (e/int (ex/rt-facade-names rt)))
+                                              "defined-names" (e/int (ex/rt-defined-names rt))))]
+                      (io/answer (e/hmap (kv (kv (kv (kv (kv (kv (kv (kv (kv (kv (kv (e/vs) "format" (e/kw "kotoba.refactor/v1")) "kind" (e/kw "split"))
+                                                                             "ns" (e/str (ex/out-ns o)))
+                                                                         "facade" (e/str (ex/out-facade o)))
+                                                                     "re-exports" (e/int (ex/out-reexports o)))
+                                                                 "modules" mods)
+                                                             "command" (e/kw "split"))
+                                                         "ok" (e/bool true))
+                                                     "out" (e/str out))
+                                                 "roundtrip" rtv)
+                                             "files" (strs-v sorted)))
+                                 0))))))))))))
