@@ -1,0 +1,18 @@
+(ns main (:require [p03.form :as f]) (:export [main])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]}))
+(defn- total [x [:ref :form/r]] :i64
+  (if (= (f/tag-of x) 2)
+    (f/int-value x)
+    (loop [i 0 s 0] (if (>= i (f/count-of x)) s (recur (+ i 1) (+ s (total (f/nth-of x i))))))))
+(defn main [] :i64
+  (let [a (f/vec-form (typed-list-new [:list [:ref :form/r]] (f/int-form 5) (f/kw-form :op/add)
+                        (f/vec-form (typed-list-new [:list [:ref :form/r]] (f/int-form 30) (f/int-form 7)))))
+        b (f/vec-form (typed-list-new [:list [:ref :form/r]] (f/int-form 5) (f/kw-form :op/add)
+                        (f/vec-form (typed-list-new [:list [:ref :form/r]] (f/int-form 30) (f/int-form 7)))))
+        c (f/vec-form (typed-list-new [:list [:ref :form/r]] (f/int-form 5) (f/kw-form :op/sub)))]
+    (+ (* 1000 (total a))
+       (if (f/eq a b) 100 0)
+       (if (f/eq a c) 50 0)
+       (if (= (f/kw-value (f/nth-of a 1)) :op/add) 7 0)
+       (f/count-of a))))

@@ -1,0 +1,8 @@
+;; R6A feature case p02: a record by reference across a module boundary; the importer does not declare the schema (the seed
+;; carries it in the interface; the reference requires the importer to declare it, see p02b)
+(ns p02.geo (:export [pt sum-pt shift])
+  (:schemas {:p02/pt [:record :p02/pt [[:x :i64] [:y :i64]]]}))
+(defn pt [x :i64 y :i64] [:ref :p02/pt] (record-new [:ref :p02/pt] x y))
+(defn sum-pt [p [:ref :p02/pt]] :i64 (+ (record-get [:ref :p02/pt] p :x) (record-get [:ref :p02/pt] p :y)))
+(defn shift [p [:ref :p02/pt] d :i64] [:ref :p02/pt]
+  (record-new [:ref :p02/pt] (+ d (record-get [:ref :p02/pt] p :x)) (record-get [:ref :p02/pt] p :y)))

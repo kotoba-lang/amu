@@ -1,0 +1,6 @@
+;; R6A feature case p02b: as p02, the importer declares the same schema (one type: schemas compare structurally)
+(ns main (:require [p02.geo :as g]) (:export [main])
+  (:schemas {:p02/pt [:record :p02/pt [[:x :i64] [:y :i64]]]}))
+(defn main [] :i64
+  (let [p (g/shift (record-new [:ref :p02/pt] 3 4) 10)]
+    (+ (* 100 (g/sum-pt p)) (record-get [:ref :p02/pt] p :x))))

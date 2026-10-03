@@ -19,8 +19,10 @@
                   record field and list item type (never an export type, a map key or a set item); the value is a vector
                   handle of items 0..255 (the loader's ABI v11 shared representation)"]
   ;; -- R1 (rung 1, 2026-10-02) --
-  [:c TY-KW 6 ":keyword -- an interned keyword; the value is the keyword's SYM index (first-occurrence order, so
-                deterministic per compile). Only = and case compare keywords; never an export parameter or result"]
+  [:c TY-KW 6 ":keyword -- an interned keyword. R6A (2026-10-03): the run-time value is the 64-bit FNV-1a hash of the
+                keyword's spelling (SF-HASH of its symbol; 30-lower lw-kwval), so modules compiled apart agree (it was the SYM
+                index, private to one compile). Only = and case compare keywords; never a ROOT export parameter or result
+                (a library interface may carry it, 60-proj)"]
   [:c TY-REC-BASE 1024 "record types: TY-REC-BASE + the record's identity symbol (seed/MEMORY-MAP SF-REC, RB-*). A
                         record value is the pair chain pair(f0, pair(f1, ... 0)) in declaration order (stage-0's
                         ABI, measured 2026-10-02 on build/native-image/amu-native: pair_new from the last field)"]

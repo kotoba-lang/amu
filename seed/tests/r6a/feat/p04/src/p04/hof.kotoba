@@ -1,0 +1,4 @@
+;; R6A feature case p04: function types across a module boundary (a fn parameter and a closure result)
+(ns p04.hof (:export [twice adder]))
+(defn twice [f [:fn [[:i64] :i64]] x :i64] :i64 (invoke f (invoke f x)))
+(defn adder [n :i64] [:fn [[:i64] :i64]] (fn [x] (+ x n)))

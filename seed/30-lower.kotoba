@@ -483,6 +483,16 @@
       RES-DEF (lw-expr M (lw-nth M (lw-first M (lw-ff M (lw-ridx res) FF-NODE)) 2) t 0)
       (lw-fail M E-LOWER-NODE (lw-pos M n) ND-SYM))))
 
+;; ==== R6A (agent R6A, rung R6 entry: keywords across modules) ======================================================
+;; The run-time value of a keyword is the 64-bit FNV-1a hash of its spelling (SF-HASH of its symbol, 20-names), not its SYM
+;; index: a SYM index is private to one module's compile, so a keyword passed across a module boundary (an interface typed
+;; :keyword, a record field) would compare unequal to the same keyword spelled by the importer. The hash is a function of
+;; the text alone, so every module (and the separate-mode objects) agree without a link-time table. A synthetic keyword
+;; (a gensym, SF-HASH 0) keeps its SYM index; none is ever lowered as a value.
+(defn- lw-kwval [M :vector-i64 s :i64] :i64
+  (let [h (vector-at M (+ MM-SYM-BASE (* s MM-SYM-W) SF-HASH))] (if (= h 0) s h)))
+;; ==== END R6A ======================================================================================================
+
 (defn- lw-expr [M :vector-i64 n :i64 t :i64 k :i64] :vector-i64
   (let [aux (lw-nf M n NF-AUX)
         kind (lw-nf M n NF-KIND)]
@@ -491,7 +501,7 @@
       ND-SYM (lw-sym M n t)
       ND-INT (lw-emit M OP-CONST t aux)
       ND-STR (lw-emit M OP-STR t aux)
-      ND-KW (lw-emit M OP-CONST t (lw-nf M n NF-SYM))
+      ND-KW (lw-emit M OP-CONST t (lw-kwval M (lw-nf M n NF-SYM)))   ; R6A: a keyword's value is its spelling's hash
       ND-VEC (let [a (lw-first M n)
                    m (lw-count M a)]
                (if (> m 64)

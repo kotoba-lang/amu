@@ -1,0 +1,11 @@
+;; R6A feature case p07: a record whose field is another record (the interface carries both schemas)
+(ns p07.geo (:export [line len2])
+  (:schemas {:p07/pt [:record :p07/pt [[:x :i64] [:y :i64]]]
+             :p07/line [:record :p07/line [[:a [:ref :p07/pt]] [:b [:ref :p07/pt]]]]}))
+(defn line [x1 :i64 y1 :i64 x2 :i64 y2 :i64] [:ref :p07/line]
+  (record-new [:ref :p07/line] (record-new [:ref :p07/pt] x1 y1) (record-new [:ref :p07/pt] x2 y2)))
+(defn len2 [l [:ref :p07/line]] :i64
+  (let [a (record-get [:ref :p07/line] l :a) b (record-get [:ref :p07/line] l :b)
+        dx (- (record-get [:ref :p07/pt] b :x) (record-get [:ref :p07/pt] a :x))
+        dy (- (record-get [:ref :p07/pt] b :y) (record-get [:ref :p07/pt] a :y))]
+    (+ (* dx dx) (* dy dy))))

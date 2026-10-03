@@ -1,0 +1,6 @@
+(ns main (:require [p07.geo :as g]) (:export [main])
+  (:schemas {:p07/pt [:record :p07/pt [[:x :i64] [:y :i64]]]
+             :p07/line [:record :p07/line [[:a [:ref :p07/pt]] [:b [:ref :p07/pt]]]]}))
+(defn main [] :i64
+  (let [l (g/line 1 2 4 6)]
+    (+ (g/len2 l) (* 100 (record-get [:ref :p07/pt] (record-get [:ref :p07/line] l :b) :y)))))

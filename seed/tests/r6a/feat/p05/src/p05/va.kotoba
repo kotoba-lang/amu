@@ -1,0 +1,6 @@
+;; R6A feature case p05: a variadic export (a fixed clause and a rest clause)
+(ns p05.va (:export [total]))
+(defn total
+  ([] :i64 0)
+  ([a :i64 & more] :i64
+   (loop [i 0 s a] (if (>= i (count more)) s (recur (+ i 1) (+ s (typed-list-nth [:list :i64] more i)))))))

@@ -1,7 +1,7 @@
 (ns seed.proj
   (:require [seed.mem :refer [mem-init-fills mem-set mem-u2dec]])
   (:require [seed.io :refer [io-exists io-hex2 io-read-file]])
-  (:require [seed.lex :refer [lx-run]])
+  (:require [seed.lex :refer [lx-run lx-sk-form]])
   (:require [seed.read :refer [rd-run]])
   (:require [seed.names :refer [nm-run]])
   (:require [seed.check :refer [ck-run]])
@@ -79,6 +79,7 @@
 (def SF-START 0)
 (def SF-END 1)
 (def SF-FN 4)
+(def SF-REC 6)
 (def SF-ABORT 7)
 (def FF-SYM 0)
 (def FF-NODE 1)
@@ -90,6 +91,9 @@
 (def FK-DEFN 1)
 (def FK-PRIV 2)
 (def FK-DEF 3)
+(def RB-N 0)
+(def RB-F0 2)
+(def RB-FW 2)
 (def CT-CTOR 0)
 (def CT-A 1)
 (def CT-B 2)
@@ -105,12 +109,16 @@
 (def TY-BOOL 2)
 (def TY-STR 3)
 (def TY-VEC 4)
+(def TY-BYTES 5)
+(def TY-KW 6)
+(def TY-REC-BASE 1024)
 (def TY-COMP-BASE 1048576)
 (def TC-OPTION 1)
 (def TC-RESULT 2)
 (def TC-LIST 3)
 (def TC-MAP 4)
 (def TC-SET 5)
+(def TC-FN 6)
 (def TK-LPAREN 1)
 (def TK-SYM 9)
 (def ND-LIST 2)
@@ -180,7 +188,7 @@
 ;;      clause offsets in the image, stub templates) is recorded in L; then M is reset. The entry's container is the image
 ;;      with the entry module's exports (out-image).
 ;;
-;; State that survives the reset lives in L (a second :vector-i64, layout below) and in P, a [:list :string] pool of the
+;; State that survives the reset lives in L (a second :vector-i64, layout below) and in P, a :string pool of the
 ;; strings (paths, names, aliases, stub templates); functions that add strings return P. Errors are recorded in M as by
 ;; the other modules (MM-ERR, MM-ERR-POS/A/B = a span of the source of module L[pj-k-errmod], which the driver prints).
 ;; Seed limits refused by name (E6017): interface types other than :i64 :bool :string :vector-i64 and option/result/list/
@@ -207,7 +215,7 @@
 (def pj-k-base 14)    ; image base of the module being compiled
 (def pj-k-mode 15)    ; 0 = link in process (patch stubs now); 1 = emit an object (60-proj separate mode: record the patches)
 (def pj-k-root0 16)   ; .. 31: up to 16 roots
-(def pj-m-base 64) (def pj-m-w 16) (def pj-m-cap 256)
+(def pj-m-base 64) (def pj-m-w 20) (def pj-m-cap 256)   ; R6A: 20 words (was 16)
 (def pj-mf-name 0) (def pj-mf-path 1) (def pj-mf-state 2) (def pj-mf-depth 3) (def pj-mf-req0 4) (def pj-mf-nreq 5)
 (def pj-mf-if0 6) (def pj-mf-nif 7) (def pj-mf-base 8) (def pj-mf-expk 9) (def pj-mf-exp0 10) (def pj-mf-nexp 11)
 (def pj-mf-entry 12)  ; 1 = the entry module (its exports are the container's; a library exports nothing to it)
@@ -221,7 +229,15 @@
 (def pj-o-base 98304)                                      ; compile order (module indexes)
 (def pj-t-base 98816) (def pj-t-cap 16384)                 ; stub clause -> target image offset (module being compiled)
 (def pj-u-base 115200)                                     ; stub clause -> (edge * 4096 + entry of the dependency) * 8 + clause
-(def pj-img-base 135168)
+;; R6A: the string table of the arena P (start offsets) and the per-module / per-entry schema fields
+(def pj-k-nstr 36)    ; strings in P
+(def pj-s-base 135168) (def pj-s-cap 65536)
+(def pj-mf-sch 16)    ; P index of the inner text of the module's own :schemas map (-1: none)
+(def pj-mf-sche 17)   ; its byte offset in the module's source
+(def pj-k-owncpy 34)  ; byte offset of that text's copy in the trailer of the module being compiled (-1: none)
+(def pj-k-ownlen 35)  ; its length
+(def pj-if-sch 15)    ; P index of the entry's record schemas ("\n:kw [:record :kw [..]]" pieces), "" when none
+(def pj-img-base 200704)
 (def pj-max-depth 64) (def pj-max-edges 256) (def pj-max-bytes 8388608)
 
 (defn- pj-l [L :vector-i64 i :i64] :i64 (vector-at L i))
@@ -238,8 +254,24 @@
 (defn pj-new-l [] :vector-i64 (vector-alloc pj-l-cap))
 
 ;; ---- the string pool P ----------------------------------------------------------------------------------------------------
-(defn pj-p [P [:list :string] i :i64] :string (typed-list-nth [:list :string] P i))
-(defn pj-padd [P [:list :string] s :string] [:list :string] (typed-list-conj [:list :string] P s))
+;; R6A: P is a STRING ARENA, not a list: string k is P[L[pj-s-base + k], end) where end is the next string's start (or the
+;; arena's length for the last one); L[pj-k-nstr] strings. Adding a string appends its bytes to the arena (string-concat on
+;; the newest string: the loader appends in place into a string region, amortised O(1) per byte) and costs no loader vector
+;; handle; the [:list :string] of R5A cost one handle per string (KEXE_VECTORS) and is gone. Reading copies the span
+;; (pj-p); comparisons read the arena in place (pj-peq).
+(defn pj-n [L :vector-i64] :i64 (vector-at L pj-k-nstr))
+(defn- pj-pa [L :vector-i64 i :i64] :i64 (vector-at L (+ pj-s-base i)))
+(defn- pj-pb [L :vector-i64 P :string i :i64] :i64
+  (if (< (+ i 1) (pj-n L)) (vector-at L (+ pj-s-base i 1)) (string-length P)))
+(defn pj-p [L :vector-i64 P :string i :i64] :string (string-substring P (pj-pa L i) (pj-pb L P i)))
+(defn pj-padd [L :vector-i64 P :string s :string] :string
+  (let [k (pj-n L)
+        w (if (>= k (- pj-s-cap 1)) L (-> L (vector-assoc! (+ pj-s-base k) (string-length P)) (vector-assoc! pj-k-nstr (+ k 1))))]
+    (if (>= k (- pj-s-cap 1)) P (string-concat P s))))
+;; string i of P is s (no allocation)
+(defn- pj-peq [L :vector-i64 P :string i :i64 s :string] :bool (pj-span= P (pj-pa L i) (pj-pb L P i) s))
+;; a fresh pool (90-drv: the roots are added to it)
+(defn pj-new-p [L :vector-i64] :string (let [w (vector-assoc! L pj-k-nstr 0)] ""))
 
 ;; ---- M access ----------------------------------------------------------------------------------------------------------
 (defn- pj-ok [M :vector-i64] :bool (= (vector-at M MM-ERR) 0))
@@ -334,29 +366,29 @@
   (and (>= (string-length path) 7) (string=? (string-substring path (- (string-length path) 7) (string-length path)) ".kotoba")))
 
 ;; the file of namespace nm over the roots: "" none; "\n" ambiguous (two roots, not exactly one .kotoba among them)
-(defn- pj-locate [L :vector-i64 P [:list :string] nm :string] :string
+(defn- pj-locate [L :vector-i64 P :string nm :string] :string
   (let [rel (pj-rel nm)
         n (pj-l L pj-k-nroot)]
     (loop [k 0 found "" nfound 0 nkot 0 kot ""]
       (if (>= k n)
         (cond (= nfound 0) "" (= nfound 1) found (= nkot 1) kot :else "\n")
-        (let [c (pj-in-root (pj-p P (pj-l L (+ pj-k-root0 k))) rel)]
+        (let [c (pj-in-root (pj-p L P (pj-l L (+ pj-k-root0 k))) rel)]
           (cond (= (string-length c) 0) (recur (+ k 1) found nfound nkot kot)
                 (pj-kotoba? c) (recur (+ k 1) c (+ nfound 1) (+ nkot 1) c)
                 :else (recur (+ k 1) c (+ nfound 1) nkot kot)))))))
 
 ;; the module named nm, -1 when none
-(defn- pj-find-mod [L :vector-i64 P [:list :string] nm :string] :i64
+(defn- pj-find-mod [L :vector-i64 P :string nm :string] :i64
   (loop [m 0]
     (cond (>= m (pj-l L pj-k-nmod)) -1
-          (string=? (pj-p P (pj-mf L m pj-mf-name)) nm) m
+          (pj-peq L P (pj-mf L m pj-mf-name) nm) m
           :else (recur (+ m 1)))))
 
 ;; a new module record (state 0); its index is the old count
 (defn- pj-add-mod [L :vector-i64 name :i64 path :i64] :vector-i64
   (let [m (pj-l L pj-k-nmod)]
     (-> L (pj-mset m pj-mf-name name) (pj-mset m pj-mf-path path) (pj-mset m pj-mf-state 0) (pj-mset m pj-mf-depth 0)
-        (pj-mset m pj-mf-nreq 0) (pj-mset m pj-mf-nif 0) (pj-mset m pj-mf-expk 0) (pj-mset m pj-mf-nexp 0) (pj-mset m pj-mf-entry 0)
+        (pj-mset m pj-mf-nreq 0) (pj-mset m pj-mf-nif 0) (pj-mset m pj-mf-expk 0) (pj-mset m pj-mf-nexp 0) (pj-mset m pj-mf-entry 0) (pj-mset m pj-mf-sch -1)
         (pj-ls pj-k-nmod (+ m 1)))))
 
 ;; ---- the ns header ------------------------------------------------------------------------------------------------------
@@ -390,18 +422,18 @@
           :else (recur (pj-next M n)))))
 
 ;; append the symbols of vector v as declared exports of module m
-(defn- pj-exports [M :vector-i64 L :vector-i64 P [:list :string] S :string v :i64] [:list :string]
+(defn- pj-exports [M :vector-i64 L :vector-i64 P :string S :string v :i64] :string
   (loop [c (pj-first M v) P P]
     (cond (not (pj-ok M)) P
           (= c 0) P
           (not= (pj-kind M c) ND-SYM) (let [w (pj-err M E-PROJ-NSFORM c)] P)
           (>= (pj-l L pj-k-nexpn) pj-x-cap) (let [w (pj-err M E-PROJ-NSFORM c)] P)
           :else (let [k (pj-l L pj-k-nexpn)
-                      w (pj-ls (pj-ls L (+ pj-x-base k) (count P)) pj-k-nexpn (+ k 1))]
-                  (recur (pj-next M c) (pj-padd P (pj-text M S c)))))))
+                      w (pj-ls (pj-ls L (+ pj-x-base k) (pj-n L)) pj-k-nexpn (+ k 1))]
+                  (recur (pj-next M c) (pj-padd L P (pj-text M S c)))))))
 
 ;; module m declares its exports with the vector v (kind 1 clause, 2 attr-map)
-(defn- pj-declare [M :vector-i64 L :vector-i64 P [:list :string] S :string v :i64] [:list :string]
+(defn- pj-declare [M :vector-i64 L :vector-i64 P :string S :string v :i64] :string
   (let []
     (cond (> (pj-mf L (pj-l L pj-k-errmod) pj-mf-expk) 0) (let [w (pj-err M E-PROJ-NSFORM v)] P)
           (not= (pj-kind M v) ND-VEC) (let [w (pj-err M E-PROJ-NSFORM v)] P)
@@ -411,27 +443,27 @@
                   (let [w2 (pj-mset L cur pj-mf-nexp (- (pj-l L pj-k-nexpn) (pj-mf L cur pj-mf-exp0)))] P2)))))
 
 ;; an alias already used by a require of module cur
-(defn- pj-alias-dup? [L :vector-i64 P [:list :string] cur :i64 a :string] :bool
+(defn- pj-alias-dup? [L :vector-i64 P :string cur :i64 a :string] :bool
   (loop [r (pj-mf L cur pj-mf-req0)]
     (cond (>= r (pj-l L pj-k-nreq)) false
-          (and (>= (pj-rf L r pj-rf-alias) 0) (string=? (pj-p P (pj-rf L r pj-rf-alias)) a)) true
+          (and (>= (pj-rf L r pj-rf-alias) 0) (pj-peq L P (pj-rf L r pj-rf-alias) a)) true
           :else (recur (+ r 1)))))
 
-(defn- pj-ns-dup? [L :vector-i64 P [:list :string] cur :i64 a :string] :bool
+(defn- pj-ns-dup? [L :vector-i64 P :string cur :i64 a :string] :bool
   (loop [r (pj-mf L cur pj-mf-req0)]
     (cond (>= r (pj-l L pj-k-nreq)) false
-          (string=? (pj-p P (pj-rf L r pj-rf-name)) a) true
+          (pj-peq L P (pj-rf L r pj-rf-name) a) true
           :else (recur (+ r 1)))))
 
 ;; a name referred by an earlier require of module cur (or the one being read)
-(defn- pj-refer-dup? [L :vector-i64 P [:list :string] cur :i64 a :string] :bool
+(defn- pj-refer-dup? [L :vector-i64 P :string cur :i64 a :string] :bool
   (loop [f (pj-rf L (pj-mf L cur pj-mf-req0) pj-rf-ref0)]
     (cond (>= f (pj-l L pj-k-nref)) false
-          (string=? (pj-p P (pj-l L (+ pj-f-base (* f pj-f-w)))) a) true
+          (pj-peq L P (pj-l L (+ pj-f-base (* f pj-f-w))) a) true
           :else (recur (+ f 1)))))
 
 ;; the referred names of vector v
-(defn- pj-refers [M :vector-i64 L :vector-i64 P [:list :string] S :string v :i64] [:list :string]
+(defn- pj-refers [M :vector-i64 L :vector-i64 P :string S :string v :i64] :string
   (let [cur (pj-l L pj-k-errmod)]
     (loop [c (pj-first M v) P P]
       (cond (not (pj-ok M)) P
@@ -443,12 +475,12 @@
             :else (let [f (pj-l L pj-k-nref)
                         b (+ pj-f-base (* f pj-f-w))
                         r (- (pj-l L pj-k-nreq) 1)
-                        w (-> L (pj-ls b (count P)) (pj-ls (+ b 1) (pj-a M c)) (pj-ls (+ b 2) (pj-b M c)) (pj-ls pj-k-nref (+ f 1))
+                        w (-> L (pj-ls b (pj-n L)) (pj-ls (+ b 1) (pj-a M c)) (pj-ls (+ b 2) (pj-b M c)) (pj-ls pj-k-nref (+ f 1))
                               (pj-rset r pj-rf-nref (+ (pj-rf L r pj-rf-nref) 1)))]
-                    (recur (pj-next M c) (pj-padd P (pj-text M S c))))))))
+                    (recur (pj-next M c) (pj-padd L P (pj-text M S c))))))))
 
 ;; the options after the namespace symbol of a require spec, from node o (the edge r is the last one)
-(defn- pj-spec-opts [M :vector-i64 L :vector-i64 P [:list :string] S :string o :i64] [:list :string]
+(defn- pj-spec-opts [M :vector-i64 L :vector-i64 P :string S :string o :i64] :string
   (let [cur (pj-l L pj-k-errmod)
         r (- (pj-l L pj-k-nreq) 1)
         v (pj-next M o)]
@@ -460,8 +492,8 @@
           (cond (not= (pj-kind M v) ND-SYM) (let [w (pj-err M E-PROJ-SPEC v)] P)
                 (>= (pj-rf L r pj-rf-alias) 0) (let [w (pj-err M E-PROJ-SPEC o)] P)
                 (pj-alias-dup? L P cur (pj-text M S v)) (let [w (pj-err M E-PROJ-DUP-ALIAS v)] P)
-                :else (let [w (pj-rset L r pj-rf-alias (count P))]
-                        (pj-spec-opts M L (pj-padd P (pj-text M S v)) S (pj-next M v))))
+                :else (let [w (pj-rset L r pj-rf-alias (pj-n L))]
+                        (pj-spec-opts M L (pj-padd L P (pj-text M S v)) S (pj-next M v))))
           (pj-is M S o ":refer")
           (if (= (pj-kind M v) ND-VEC)
             (pj-spec-opts M L (pj-refers M L P S v) S (pj-next M v))
@@ -470,7 +502,7 @@
           :else (let [w (pj-err M E-PROJ-SPEC o)] P))))
 
 ;; one require spec [ns :as a :refer [..]]
-(defn- pj-spec [M :vector-i64 L :vector-i64 P [:list :string] S :string sp :i64] [:list :string]
+(defn- pj-spec [M :vector-i64 L :vector-i64 P :string S :string sp :i64] :string
   (let [cur (pj-l L pj-k-errmod)
         nm (pj-first M sp)
         r (pj-l L pj-k-nreq)]
@@ -478,26 +510,36 @@
           (not= (pj-kind M nm) ND-SYM) (let [w (pj-err M E-PROJ-SPEC sp)] P)
           (pj-ns-dup? L P cur (pj-text M S nm)) (let [w (pj-err M E-PROJ-DUP-NS nm)] P)
           (>= r pj-r-cap) (let [w (pj-err M E-PROJ-EDGES nm)] P)
-          :else (let [w (-> L (pj-rset r pj-rf-mod -1) (pj-rset r pj-rf-name (count P)) (pj-rset r pj-rf-alias -1)
+          :else (let [w (-> L (pj-rset r pj-rf-mod -1) (pj-rset r pj-rf-name (pj-n L)) (pj-rset r pj-rf-alias -1)
                             (pj-rset r pj-rf-ref0 (pj-l L pj-k-nref)) (pj-rset r pj-rf-nref 0) (pj-rset r pj-rf-node nm)
                             (pj-ls pj-k-nreq (+ r 1)) (pj-mset cur pj-mf-nreq (+ (pj-mf L cur pj-mf-nreq) 1)))]
-                  (pj-spec-opts M L (pj-padd P (pj-text M S nm)) S (pj-next M nm))))))
+                  (pj-spec-opts M L (pj-padd L P (pj-text M S nm)) S (pj-next M nm))))))
 
-(defn- pj-specs [M :vector-i64 L :vector-i64 P [:list :string] S :string sp :i64] [:list :string]
+(defn- pj-specs [M :vector-i64 L :vector-i64 P :string S :string sp :i64] :string
   (if (or (= sp 0) (not (pj-ok M))) P (pj-specs M L (pj-spec M L P S sp) S (pj-next M sp))))
 
 ;; the attr-map {k v ..} of the ns form
-(defn- pj-attrs [M :vector-i64 L :vector-i64 P [:list :string] S :string k :i64] [:list :string]
+(defn- pj-attrs [M :vector-i64 L :vector-i64 P :string S :string k :i64] :string
   (let [v (pj-next M k)]
     (cond (or (= k 0) (not (pj-ok M))) P
           (= v 0) (let [w (pj-err M E-PROJ-NSFORM k)] P)
           (pj-is M S k ":kotoba/export") (pj-attrs M L (pj-declare M L P S v) S (pj-next M v))
           (pj-is M S k ":kotoba/params") (let [w (pj-err M E-PROJ-TEMPLATE k)] P)
+          (pj-is M S k ":kotoba/schemas") (pj-attrs M L (pj-own-schemas M L P S v) S (pj-next M v))   ; R6A
           (pj-is M S k ":kotoba/capabilities") (let [w (pj-r5b-decl M L S v)] (pj-attrs M L P S (pj-next M v)))   ; R5B
           :else (pj-attrs M L P S (pj-next M v)))))
 
+;; R6A: the module's own schema map v: its inner text (verbatim, re-read in the generated ns form) is string pj-mf-sch
+(defn- pj-own-schemas [M :vector-i64 L :vector-i64 P :string S :string v :i64] :string
+  (let [cur (pj-l L pj-k-errmod)
+        a (pj-a M v)
+        e (lx-sk-form S a)]
+    (cond (not= (pj-kind M v) ND-MAP) (let [w (pj-err M E-PROJ-NSFORM v)] P)
+          (< e 0) (let [w (pj-err M E-PROJ-NSFORM v)] P)
+          :else (let [w (-> L (pj-mset cur pj-mf-sch (pj-n L)) (pj-mset cur pj-mf-sche (+ a 1)))] (pj-padd L P (string-substring S (+ a 1) (- e 1)))))))
+
 ;; one clause or attr-map of the ns form
-(defn- pj-clause [M :vector-i64 L :vector-i64 P [:list :string] S :string c :i64] [:list :string]
+(defn- pj-clause [M :vector-i64 L :vector-i64 P :string S :string c :i64] :string
   (let [k (pj-first M c)]
     (cond (= (pj-kind M c) ND-STR) P
           (= (pj-kind M c) ND-MAP) (pj-attrs M L P S (pj-first M c))
@@ -505,17 +547,18 @@
           (not= (pj-kind M k) ND-KW) (let [w (pj-err M E-PROJ-NSFORM c)] P)
           (pj-is M S k ":require") (pj-specs M L P S (pj-next M k))
           (pj-is M S k ":export") (if (= (pj-next M (pj-next M k)) 0) (pj-declare M L P S (pj-next M k)) (let [w (pj-err M E-PROJ-NSFORM c)] P))
+          (pj-is M S k ":schemas") (pj-own-schemas M L P S (pj-next M k))   ; R6A
           (pj-is M S k ":capabilities") (let [w (pj-r5b-decl M L S (pj-next M k))] P)   ; R5B
-          (or (pj-is M S k ":schemas") (pj-is M S k ":refer-clojure")) P
+          (pj-is M S k ":refer-clojure") P
           (pj-is M S k ":params") (let [w (pj-err M E-PROJ-TEMPLATE k)] P)
           (pj-is M S k ":use") (let [w (pj-err M E-PROJ-USE k)] P)
           :else (let [w (pj-err M E-PROJ-CLAUSE k)] P))))
 
-(defn- pj-clauses [M :vector-i64 L :vector-i64 P [:list :string] S :string c :i64] [:list :string]
+(defn- pj-clauses [M :vector-i64 L :vector-i64 P :string S :string c :i64] :string
   (if (or (= c 0) (not (pj-ok M))) P (pj-clauses M L (pj-clause M L P S c) S (pj-next M c))))
 
 ;; parse the header of module L[errmod] (its source S is read into M); expect = the required name ("" for the entry)
-(defn- pj-header [M :vector-i64 L :vector-i64 P [:list :string] S :string expect :string] [:list :string]
+(defn- pj-header [M :vector-i64 L :vector-i64 P :string S :string expect :string] :string
   (let [cur (pj-l L pj-k-errmod)
         ns (pj-first M (vector-at M MM-ROOT))
         nmn (pj-next M (pj-first M ns))]
@@ -524,7 +567,7 @@
           (not= (pj-kind M nmn) ND-SYM) (let [w (pj-err M E-PROJ-NSFORM ns)] P)
           (and (> (string-length expect) 0) (not (pj-is M S nmn expect))) (let [w (pj-err M E-PROJ-MISMATCH nmn)] P)
           :else (let [w (-> L (pj-mset cur pj-mf-req0 (pj-l L pj-k-nreq)) (pj-mset cur pj-mf-nreq 0))
-                      P1 (if (= (string-length expect) 0) (let [w1 (pj-mset L cur pj-mf-name (count P))] (pj-padd P (pj-text M S nmn))) P)
+                      P1 (if (= (string-length expect) 0) (let [w1 (pj-mset L cur pj-mf-name (pj-n L))] (pj-padd L P (pj-text M S nmn))) P)
                       P2 (pj-clauses M L P1 S (pj-next M nmn))]
                   (cond (not (pj-ok M)) P2
                         (and (= (pj-mf L cur pj-mf-entry) 0) (= (pj-mf L cur pj-mf-expk) 0) (= (pj-count-pub M S) 0)) (let [w2 (pj-err M E-PROJ-NOTHING nmn)] P2)
@@ -532,8 +575,8 @@
 
 ;; ---- discovery --------------------------------------------------------------------------------------------------------
 ;; resolve require edge r of module cur (depth d) to a module: an existing one, or a new one from the roots
-(defn- pj-resolve [M :vector-i64 L :vector-i64 P [:list :string] r :i64 d :i64] [:list :string]
-  (let [nm (pj-p P (pj-rf L r pj-rf-name))
+(defn- pj-resolve [M :vector-i64 L :vector-i64 P :string r :i64 d :i64] :string
+  (let [nm (pj-p L P (pj-rf L r pj-rf-name))
         node (pj-rf L r pj-rf-node)
         m (pj-find-mod L P nm)]
     (cond (> (+ d 1) pj-max-depth) (let [w (pj-err M E-PROJ-DEPTH node)] P)
@@ -544,10 +587,10 @@
                   (cond (= (string-length path) 0) (let [w (pj-err M E-PROJ-MISSING node)] P)
                         (string=? path "\n") (let [w (pj-err M E-PROJ-AMBIGUOUS node)] P)
                         :else (let [k (pj-l L pj-k-nmod)
-                                    w (-> L (pj-add-mod (pj-rf L r pj-rf-name) (count P)) (pj-rset r pj-rf-mod k) (pj-mset k pj-mf-depth (+ d 1)))]
-                                (pj-padd P path)))))))
+                                    w (-> L (pj-add-mod (pj-rf L r pj-rf-name) (pj-n L)) (pj-rset r pj-rf-mod k) (pj-mset k pj-mf-depth (+ d 1)))]
+                                (pj-padd L P path)))))))
 
-(defn- pj-resolve-all [M :vector-i64 L :vector-i64 P [:list :string] cur :i64] [:list :string]
+(defn- pj-resolve-all [M :vector-i64 L :vector-i64 P :string cur :i64] :string
   (let [r0 (pj-mf L cur pj-mf-req0)
         n (pj-mf L cur pj-mf-nreq)
         d (pj-mf L cur pj-mf-depth)]
@@ -555,8 +598,8 @@
       (if (or (>= k n) (not (pj-ok M))) P (recur (+ k 1) (pj-resolve M L P (+ r0 k) d))))))
 
 ;; visit module m: read, header, resolve, children, then append m to the compile order
-(defn- pj-visit [M :vector-i64 L :vector-i64 P [:list :string] m :i64] [:list :string]
-  (let [path (pj-p P (pj-mf L m pj-mf-path))
+(defn- pj-visit [M :vector-i64 L :vector-i64 P :string m :i64] :string
+  (let [path (pj-p L P (pj-mf L m pj-mf-path))
         S (io-read-file M path)
         bytes (+ (pj-l L pj-k-bytes) (string-length S))
         w (-> L (pj-ls pj-k-bytes bytes) (pj-ls pj-k-errmod m) (pj-mset m pj-mf-state 1))
@@ -564,7 +607,7 @@
     (cond (not (pj-ok M1)) P
           (> bytes pj-max-bytes) (let [w2 (pj-err M1 E-PROJ-BYTES 0)] P)
           :else
-          (let [P2 (pj-header M1 L P S (if (= (pj-mf L m pj-mf-entry) 1) "" (pj-p P (pj-mf L m pj-mf-name))))
+          (let [P2 (pj-header M1 L P S (if (= (pj-mf L m pj-mf-entry) 1) "" (pj-p L P (pj-mf L m pj-mf-name))))
                 P3 (if (pj-ok M1) (pj-resolve-all M1 L P2 m) P2)
                 r0 (pj-mf L m pj-mf-req0)
                 n (pj-mf L m pj-mf-nreq)
@@ -578,15 +621,50 @@
               P4)))))
 
 ;; ---- interface types and stub templates -------------------------------------------------------------------------------
+;; R6A: the interface of an export is SOURCE TEXT (a stub template) whose types are spelled canonically, so that the importer
+;; re-interns them in its own compile: :i64 :bool :string :vector-i64 :bytes :keyword, records by reference [:ref :kw] (the
+;; record travels with its schema: [:record :kw [[:f T] ..]] pieces in the entry's schema text, every record reachable from
+;; the signature, so the importer's generated ns declares them and 21-check compares them structurally with any schema of the
+;; same name the importer declares itself, E2128), fn types [:fn [[P ..] R]], and option/result/list/set/map of those.
+;; A keyword value crosses as is (30-lower: a keyword's value is the hash of its spelling). Variadic clauses cross as
+;; [p0 T0 .. & pn] (the caller packs the surplus into the list, the export's clause receives it). E6017 remains for an error
+;; type no stub can throw a value of (a record or a collection), more than 8 clauses, and a record whose schema is unknown.
 (defn- pj-ct [M :vector-i64 t :i64 f :i64] :i64 (vector-at M (+ (vector-at M MM-CT) (* (- t TY-COMP-BASE) CT-W) f)))
+(defn- pj-sf [M :vector-i64 s :i64 k :i64] :i64 (vector-at M (+ MM-SYM-BASE (* s MM-SYM-W) k)))
+(defn- pj-symtext [M :vector-i64 S :string s :i64] :string (string-substring S (pj-sf M s SF-START) (pj-sf M s SF-END)))
+
+;; the schema block of record type t, 0 when none is registered
+(defn- pj-blk [M :vector-i64 t :i64] :i64 (pj-sf M (- t TY-REC-BASE) SF-REC))
+
+;; the keyword that names record type t across modules: its identity keyword, or :<ns>/Name for a defrecord whose module never
+;; spells its keyword (the importer registers the schema under that keyword)
+(defn- pj-reckw [M :vector-i64 S :string nsn :string t :i64] :string
+  (let [tx (pj-symtext M S (- t TY-REC-BASE))]
+    (if (and (> (string-length tx) 0) (= (string-code-point-at tx 0) 58))
+      tx
+      (string-concat ":" (string-concat nsn (string-concat "/" tx))))))
+
+;; "[P1 P2 ..]" of the parameter-list type chain p (TC-PLIST: CT-A the type, CT-B the rest), "" when one does not cross
+(defn- pj-typl [M :vector-i64 S :string nsn :string p :i64] :string
+  (loop [q p acc ""]
+    (cond (= q 0) (string-concat "[" (string-concat acc "]"))
+          (= (string-length (pj-ty M S nsn (pj-ct M q CT-A))) 0) ""
+          :else (recur (pj-ct M q CT-B) (string-concat acc (string-concat (if (= q p) "" " ") (pj-ty M S nsn (pj-ct M q CT-A))))))))
 
 ;; the source spelling of type t, "" when it does not cross a module boundary in the seed
-(defn- pj-ty [M :vector-i64 t :i64] :string
+(defn- pj-ty [M :vector-i64 S :string nsn :string t :i64] :string
   (cond (= t TY-I64) ":i64" (= t TY-BOOL) ":bool" (= t TY-STR) ":string" (= t TY-VEC) ":vector-i64"
-        (< t TY-COMP-BASE) ""
+        (= t TY-BYTES) ":bytes" (= t TY-KW) ":keyword"
+        (< t TY-REC-BASE) ""
+        (< t TY-COMP-BASE) (if (= (pj-blk M t) 0) "" (string-concat "[:ref " (string-concat (pj-reckw M S nsn t) "]")))
+        (= (pj-ct M t CT-CTOR) TC-FN)
+        (let [ps (pj-typl M S nsn (pj-ct M t CT-B))
+              r (pj-ty M S nsn (pj-ct M t CT-A))]
+          (if (or (= (string-length ps) 0) (= (string-length r) 0)) ""
+            (string-concat "[:fn [" (string-concat ps (string-concat " " (string-concat r "]]"))))))
         :else (let [c (pj-ct M t CT-CTOR)
-                    a (pj-ty M (pj-ct M t CT-A))
-                    b (if (or (= c TC-RESULT) (= c TC-MAP)) (pj-ty M (pj-ct M t CT-B)) ":i64")]
+                    a (pj-ty M S nsn (pj-ct M t CT-A))
+                    b (if (or (= c TC-RESULT) (= c TC-MAP)) (pj-ty M S nsn (pj-ct M t CT-B)) ":i64")]
                 (cond (or (= (string-length a) 0) (= (string-length b) 0)) ""
                       (= c TC-OPTION) (string-concat "[:option " (string-concat a "]"))
                       (= c TC-LIST) (string-concat "[:list " (string-concat a "]"))
@@ -595,43 +673,95 @@
                       (= c TC-MAP) (string-concat "[:map " (string-concat a (string-concat " " (string-concat b "]"))))
                       :else ""))))
 
+;; the record types reachable from type t, added to ids (" t " tokens, each record once: recursive schemas terminate)
+(defn- pj-recs [M :vector-i64 t :i64 ids :string] :string
+  (cond (< t TY-REC-BASE) ids
+        (< t TY-COMP-BASE)
+        (let [tok (string-concat " " (string-concat (mem-u2dec t) " "))
+              blk (pj-blk M t)]
+          (if (or (= blk 0) (>= (string-index-of ids tok) 0))
+            ids
+            (loop [i 0 acc (string-concat ids tok)]
+              (if (>= i (vector-at M (+ blk RB-N))) acc
+                (recur (+ i 1) (pj-recs M (vector-at M (+ blk RB-F0 (* i RB-FW) 1)) acc))))))
+        :else (pj-recs M (pj-ct M t CT-B) (pj-recs M (pj-ct M t CT-A) ids))))
+
+;; the schema piece of record type t: "\t:kw [:record :kw [[:f T] ..]]", "" when a field type does not cross
+(defn- pj-schema [M :vector-i64 S :string nsn :string t :i64] :string
+  (let [blk (pj-blk M t)
+        kw (pj-reckw M S nsn t)
+        fs (loop [i 0 acc ""]
+             (if (>= i (vector-at M (+ blk RB-N)))
+               acc
+               (let [ft (pj-ty M S nsn (vector-at M (+ blk RB-F0 (* i RB-FW) 1)))]
+                 (if (= (string-length ft) 0)
+                   "\n"
+                   (recur (+ i 1) (string-concat acc (string-concat (if (= i 0) "[" " [") (string-concat (pj-symtext M S (vector-at M (+ blk RB-F0 (* i RB-FW))))
+                                                         (string-concat " " (string-concat ft "]"))))))))))]
+    (if (or (= blk 0) (string=? fs "\n")) ""
+      (string-concat "\t" (string-concat kw (string-concat " [:record " (string-concat kw (string-concat " [" (string-concat fs "]]")))))))))
+
+;; the schema pieces of the records in ids; "\n" when one does not cross
+(defn- pj-schemas [M :vector-i64 S :string nsn :string ids :string] :string
+  (loop [i 0 v 0 acc ""]
+    (cond (>= i (string-length ids)) acc
+          (and (>= (string-code-point-at ids i) 48) (<= (string-code-point-at ids i) 57)) (recur (+ i 1) (+ (* v 10) (- (string-code-point-at ids i) 48)) acc)
+          (= v 0) (recur (+ i 1) 0 acc)
+          (= (string-length (pj-schema M S nsn v)) 0) "\n"
+          :else (recur (+ i 1) 0 (string-concat acc (pj-schema M S nsn v))))))
+
 ;; a value of the error type e for a stub's throw, "" when none is spelled here
 (defn- pj-zero-of [e :i64] :string
-  (cond (= e TY-I64) "0" (= e TY-STR) "\"\"" (= e TY-BOOL) "false" :else ""))
+  (cond (= e TY-I64) "0" (= e TY-STR) "\"\"" (= e TY-BOOL) "false" (= e TY-KW) ":seed.proj/stub" :else ""))
 
 (defn- pj-ff [M :vector-i64 f :i64 k :i64] :i64 (vector-at M (+ MM-FN-BASE (* f MM-FN-W) k)))
-(defn- pj-sf [M :vector-i64 s :i64 k :i64] :i64 (vector-at M (+ MM-SYM-BASE (* s MM-SYM-W) k)))
 
-;; "[p0 T0 p1 T1 ..]" of clause f, "" when a type does not cross
-(defn- pj-params [M :vector-i64 f :i64] :string
-  (let [n (pj-ff M f FF-NPARAMS)]
+;; the parameter vector of clause f (21-check gives every clause a (defn NAME [..] R body) node)
+(defn- pj-pvec [M :vector-i64 f :i64] :i64 (pj-next M (pj-next M (pj-first M (pj-ff M f FF-NODE)))))
+
+;; the type of parameter k of clause f (R4B: FF-PT0+k for k < 5, else NF-TYPE of the k-th type form of its parameter vector)
+(defn- pj-pt [M :vector-i64 f :i64 k :i64] :i64
+  (if (< k 5)
+    (pj-ff M f (+ FF-PT0 k))
+    (let [pv (pj-pvec M f)]
+      (pj-nf M (loop [c (pj-first M pv) j 0] (if (or (= c 0) (>= j (+ (* 2 k) 1))) c (recur (pj-next M c) (+ j 1)))) NF-TYPE))))
+
+;; the variadic flag of clause f (21-check marks NF-TYPE 1 on a variadic clause's parameter vector)
+(defn- pj-variadic? [M :vector-i64 f :i64] :bool
+  (let [pv (pj-pvec M f)]
+    (and (= (pj-kind M pv) ND-VEC) (= (pj-nf M pv NF-TYPE) 1))))
+
+;; "[p0 T0 p1 T1 ..]" of clause f ("& pn" for the rest parameter of a variadic clause), "" when a type does not cross
+(defn- pj-params [M :vector-i64 S :string nsn :string f :i64] :string
+  (let [n (pj-ff M f FF-NPARAMS)
+        va (pj-variadic? M f)]
     (loop [i 0 acc "["]
       (cond (>= i n) (string-concat acc "]")
-            (= (string-length (pj-ty M (pj-ff M f (+ FF-PT0 i)))) 0) ""
+            (and va (= i (- n 1))) (recur (+ i 1) (string-concat acc (string-concat (if (= i 0) "& p" " & p") (mem-u2dec i))))
+            (= (string-length (pj-ty M S nsn (pj-pt M f i))) 0) ""
             :else (recur (+ i 1) (string-concat acc (string-concat (if (= i 0) "p" " p") (string-concat (mem-u2dec i)
-                                   (string-concat " " (pj-ty M (pj-ff M f (+ FF-PT0 i))))))))))))
+                                   (string-concat " " (pj-ty M S nsn (pj-pt M f i)))))))))))
 
 ;; "(SEEDSELF p0 p1 ..)": the self call that types a stub body
 (defn- pj-selfcall [n :i64] :string
   (loop [i 0 acc "(SEEDSELF"]
     (if (>= i n) (string-concat acc ")") (recur (+ i 1) (string-concat acc (string-concat " p" (mem-u2dec i)))))))
 
-;; the variadic flag of clause f (21-check marks NF-TYPE 1 on a variadic clause's parameter vector)
-(defn- pj-variadic? [M :vector-i64 f :i64] :bool
-  (let [n (pj-ff M f FF-NODE)
-        pv (pj-next M (pj-next M (pj-first M n)))]
-    (and (= (pj-kind M pv) ND-VEC) (= (pj-nf M pv NF-TYPE) 1))))
-
 ;; "[params] R body" of clause f, "" when it does not cross
-(defn- pj-clause-text [M :vector-i64 f :i64] :string
-  (let [ps (pj-params M f)
-        r (pj-ty M (pj-ff M f FF-RTYPE))
+(defn- pj-clause-text [M :vector-i64 S :string nsn :string f :i64] :string
+  (let [ps (pj-params M S nsn f)
+        r (pj-ty M S nsn (pj-ff M f FF-RTYPE))
         ab (pj-sf M (pj-ff M f FF-SYM) SF-ABORT)
-        body (if (= ab 0) (pj-selfcall (pj-ff M f FF-NPARAMS)) (string-concat "(throw " (string-concat (pj-zero-of ab) ")")))]
+        np (if (pj-variadic? M f) (- (pj-ff M f FF-NPARAMS) 1) (pj-ff M f FF-NPARAMS))
+        body (if (= ab 0) (pj-selfcall np) (string-concat "(throw " (string-concat (pj-zero-of ab) ")")))]
     (cond (or (= (string-length ps) 0) (= (string-length r) 0)) ""
           (and (not= ab 0) (= (string-length (pj-zero-of ab)) 0)) ""
-          (pj-variadic? M f) ""
           :else (string-concat ps (string-concat " " (string-concat r (string-concat " " body)))))))
+
+;; the record types of the signature of clause f, added to ids
+(defn- pj-clause-recs [M :vector-i64 f :i64 ids :string] :string
+  (loop [i 0 acc (pj-recs M (pj-ff M f FF-RTYPE) ids)]
+    (if (>= i (pj-ff M f FF-NPARAMS)) acc (recur (+ i 1) (pj-recs M (pj-pt M f i) acc)))))
 
 ;; replace every SEEDSELF in t by q
 (defn- pj-subst [t :string q :string] :string
@@ -648,52 +778,55 @@
           :else (recur (+ f 1)))))
 
 ;; record the interface entry of export s (first clause f0) of module m; base = the module's image offset
-(defn- pj-iface-one [M :vector-i64 L :vector-i64 P [:list :string] s :string f0 :i64] [:list :string]
+(defn- pj-iface-one [M :vector-i64 L :vector-i64 P :string S :string s :string f0 :i64] :string
   (let [e (pj-l L pj-k-nif)
         sym (pj-ff M f0 FF-SYM)
         base (pj-l L pj-k-base)
+        nsn (pj-p L P (pj-mf L (pj-l L pj-k-errmod) pj-mf-name))
         ncl (loop [f f0 k 0] (if (and (< f (vector-at M MM-FN-N)) (= (pj-ff M f FF-SYM) sym) (not= (pj-ff M f FF-KIND) FK-DEF)) (recur (+ f 1) (+ k 1)) k))
         txt (loop [k 0 acc ""]
               (cond (>= k ncl) acc
-                    (= (string-length (pj-clause-text M (+ f0 k))) 0) ""
-                    (= ncl 1) (pj-clause-text M f0)
-                    :else (recur (+ k 1) (string-concat acc (string-concat " (" (string-concat (pj-clause-text M (+ f0 k)) ")"))))))]
+                    (= (string-length (pj-clause-text M S nsn (+ f0 k))) 0) ""
+                    (= ncl 1) (pj-clause-text M S nsn f0)
+                    :else (recur (+ k 1) (string-concat acc (string-concat " (" (string-concat (pj-clause-text M S nsn (+ f0 k)) ")"))))))
+        sch (pj-schemas M S nsn (loop [k 0 ids ""] (if (>= k ncl) ids (recur (+ k 1) (pj-clause-recs M (+ f0 k) ids)))))]
     (cond (or (= ncl 0) (= (pj-ff M f0 FF-KIND) FK-DEF)) (let [w (pj-err-span M E-PROJ-EXPORT-FN (pj-sf M sym SF-START) (pj-sf M sym SF-START) (pj-sf M sym SF-END))] P)
-          (or (> ncl pj-if-maxcl) (= (string-length txt) 0)) (let [w (pj-err-span M E-PROJ-IFACE (pj-sf M sym SF-START) (pj-sf M sym SF-START) (pj-sf M sym SF-END))] P)
+          (or (> ncl pj-if-maxcl) (= (string-length txt) 0) (string=? sch "\n")) (let [w (pj-err-span M E-PROJ-IFACE (pj-sf M sym SF-START) (pj-sf M sym SF-START) (pj-sf M sym SF-END))] P)
           (>= e pj-i-cap) (let [w (pj-err M E-PROJ-EDGES 0)] P)
-          :else (let [w (-> L (pj-iset e pj-if-name (count P)) (pj-iset e pj-if-text (+ (count P) 1)) (pj-iset e pj-if-ncl ncl) (pj-ls pj-k-nif (+ e 1)))
+          :else (let [w (-> L (pj-iset e pj-if-name (pj-n L)) (pj-iset e pj-if-text (+ (pj-n L) 1)) (pj-iset e pj-if-sch (+ (pj-n L) 2))
+                            (pj-iset e pj-if-ncl ncl) (pj-ls pj-k-nif (+ e 1)))
                       w2 (loop [k 0] (if (>= k ncl) 0 (let [x (pj-iset L e (+ pj-if-off0 k) (+ base (* (- (pj-ff M (+ f0 k) FF-CODE) 1) 4)))] (recur (+ k 1)))))]
-                  (pj-padd (pj-padd P s) txt)))))
+                  (pj-padd L (pj-padd L (pj-padd L P s) txt) sch)))))
 
 ;; the interface of library module m (compiled, still in M; S = its source with the trailer)
-(defn- pj-iface [M :vector-i64 L :vector-i64 P [:list :string] S :string m :i64] [:list :string]
+(defn- pj-iface [M :vector-i64 L :vector-i64 P :string S :string m :i64] :string
   (let [w (-> L (pj-mset m pj-mf-if0 (pj-l L pj-k-nif)))
         P2 (if (> (pj-mf L m pj-mf-expk) 0)
              (loop [k 0 P P]
                (cond (or (>= k (pj-mf L m pj-mf-nexp)) (not (pj-ok M))) P
-                     :else (let [s (pj-p P (pj-l L (+ pj-x-base (pj-mf L m pj-mf-exp0) k)))
+                     :else (let [s (pj-p L P (pj-l L (+ pj-x-base (pj-mf L m pj-mf-exp0) k)))
                                  f (pj-fn-named M S s)]
                              (if (= f 0)
                                (let [w2 (pj-err-span M E-PROJ-EXPORT-FN -1 0 0)] P)
-                               (recur (+ k 1) (pj-iface-one M L P s f))))))
+                               (recur (+ k 1) (pj-iface-one M L P S s f))))))
              (loop [f 1 P P]
                (cond (or (>= f (vector-at M MM-FN-N)) (not (pj-ok M))) P
                      (and (= (pj-ff M f FF-KIND) FK-DEFN) (= (pj-sf M (pj-ff M f FF-SYM) SF-FN) f))
-                     (recur (+ f 1) (pj-iface-one M L P (string-substring S (pj-sf M (pj-ff M f FF-SYM) SF-START) (pj-sf M (pj-ff M f FF-SYM) SF-END)) f))
+                     (recur (+ f 1) (pj-iface-one M L P S (string-substring S (pj-sf M (pj-ff M f FF-SYM) SF-START) (pj-sf M (pj-ff M f FF-SYM) SF-END)) f))
                      :else (recur (+ f 1) P))))]
     (let [w3 (pj-mset L m pj-mf-nif (- (pj-l L pj-k-nif) (pj-mf L m pj-mf-if0)))] P2)))
 
 ;; the interface entry of module t named s, -1 when none
-(defn- pj-if-find [L :vector-i64 P [:list :string] t :i64 s :string] :i64
+(defn- pj-if-find [L :vector-i64 P :string t :i64 s :string] :i64
   (let [e0 (pj-mf L t pj-mf-if0) n (pj-mf L t pj-mf-nif)]
     (loop [k 0]
       (cond (>= k n) -1
-            (string=? (pj-p P (pj-if L (+ e0 k) pj-if-name)) s) (+ e0 k)
+            (pj-peq L P (pj-if L (+ e0 k) pj-if-name) s) (+ e0 k)
             :else (recur (+ k 1))))))
 
 ;; ---- the trailer ---------------------------------------------------------------------------------------------------------
 ;; the stub of interface entry e named q; its clause targets are appended to the T table
-(defn- pj-stub [L :vector-i64 P [:list :string] e :i64 q :string r :i64] :string
+(defn- pj-stub [L :vector-i64 P :string e :i64 q :string r :i64] :string
   (let [ncl (pj-if L e pj-if-ncl)
         k0 (pj-min (pj-l L pj-k-nstub) (- pj-t-cap pj-if-maxcl))
         el (- e (pj-mf L (pj-rf L r pj-rf-mod) pj-mf-if0))
@@ -703,7 +836,7 @@
                     y (pj-ls L (+ pj-u-base k0 k) (+ (* (+ (* (- r (pj-mf L (pj-l L pj-k-errmod) pj-mf-req0)) 4096) el) 8) k))]
                 (recur (+ k 1)))))
         w2 (pj-ls L pj-k-nstub (+ k0 ncl))]
-    (string-concat "(defn- " (string-concat q (string-concat " " (string-concat (pj-subst (pj-p P (pj-if L e pj-if-text)) q) ")\n"))))))
+    (string-concat "(defn- " (string-concat q (string-concat " " (string-concat (pj-subst (pj-p L P (pj-if L e pj-if-text)) q) ")\n"))))))
 
 ;; Long texts are built with two accumulators (big, small): a piece is appended to small, and small (at most about 4 KiB) to
 ;; big, so a byte is copied a few times, not once per later piece (strings are never freed: KEXE_STRING_POOL), and no list
@@ -711,7 +844,7 @@
 (defn- pj-small [small :string p :string] :string (string-concat small p))
 
 ;; the stubs of require edge r
-(defn- pj-stubs-req [L :vector-i64 P [:list :string] r :i64] :string
+(defn- pj-stubs-req [L :vector-i64 P :string r :i64] :string
   (let [t (pj-rf L r pj-rf-mod)
         al (pj-rf L r pj-rf-alias)
         e0 (pj-mf L t pj-mf-if0)
@@ -722,34 +855,69 @@
       (if (>= k n)
         (string-concat big small)
         (let [p (if (< k na)
-                  (pj-stub L P (+ e0 k) (string-concat (pj-p P al) (string-concat "/" (pj-p P (pj-if L (+ e0 k) pj-if-name)))) r)
-                  (let [s (pj-p P (pj-l L (+ pj-f-base (* (+ f0 (- k na)) pj-f-w))))
+                  (pj-stub L P (+ e0 k) (string-concat (pj-p L P al) (string-concat "/" (pj-p L P (pj-if L (+ e0 k) pj-if-name)))) r)
+                  (let [s (pj-p L P (pj-l L (+ pj-f-base (* (+ f0 (- k na)) pj-f-w))))
                         e (pj-if-find L P t s)]
                     (if (< e 0) "" (pj-stub L P e s r))))
               s2 (pj-small small p)]
           (if (> (string-length s2) 4096) (recur (+ k 1) (string-concat big s2) "") (recur (+ k 1) big s2)))))))
 
-;; the trailer of module m: the replacement ns form, then its import stubs
-(defn pj-trailer [L :vector-i64 P [:list :string] m :i64] :string
+;; R6A: acc with the schema pieces of text t ("\t:kw [..]" pieces) that acc does not hold yet
+(defn- pj-sch-merge [acc :string t :string] :string
+  (loop [i 0 acc acc]
+    (if (>= i (string-length t))
+      acc
+      (let [j (loop [j (+ i 1)] (cond (>= j (string-length t)) j (= (string-code-point-at t j) 9) j :else (recur (+ j 1))))
+            pc (string-substring t i j)]
+        (recur j (if (>= (string-index-of acc pc) 0) acc (string-concat acc pc)))))))
+
+;; R6A: acc with the schemas of the interface entries require edge r stubs (as pj-stubs-req chooses them)
+(defn- pj-sch-req [L :vector-i64 P :string r :i64 acc :string] :string
+  (let [t (pj-rf L r pj-rf-mod)
+        al (pj-rf L r pj-rf-alias)
+        e0 (pj-mf L t pj-mf-if0)
+        na (if (< al 0) 0 (pj-mf L t pj-mf-nif))
+        f0 (pj-rf L r pj-rf-ref0)
+        n (+ na (pj-rf L r pj-rf-nref))]
+    (loop [k 0 acc acc]
+      (if (>= k n)
+        acc
+        (let [e (if (< k na) (+ e0 k) (pj-if-find L P t (pj-p L P (pj-l L (+ pj-f-base (* (+ f0 (- k na)) pj-f-w))))))]
+          (recur (+ k 1) (if (< e 0) acc (pj-sch-merge acc (pj-p L P (pj-if L e pj-if-sch))))))))))
+
+;; the trailer of module m: the replacement ns form, then its import stubs. R6A: the ns form carries (:schemas {..}) with the
+;; module's own schema entries (its :schemas clause or :kotoba/schemas attribute, verbatim) and the schemas of the records its
+;; imports' signatures reach; 21-check registers both and refuses one name with two different definitions (E2128)
+(defn pj-trailer [L :vector-i64 P :string m :i64] :string
   (let [w (pj-ls L pj-k-nstub 0)
+        r0 (pj-mf L m pj-mf-req0)
+        body (loop [k 0 big ""]
+               (if (>= k (pj-mf L m pj-mf-nreq)) big (recur (+ k 1) (string-concat big (pj-stubs-req L P (+ r0 k))))))
+        imp (loop [k 0 acc ""]
+              (if (>= k (pj-mf L m pj-mf-nreq)) acc (recur (+ k 1) (pj-sch-req L P (+ r0 k) acc))))
+        own (if (< (pj-mf L m pj-mf-sch) 0) "" (pj-p L P (pj-mf L m pj-mf-sch)))
+        ;; the imported schemas first: a conflict is then reported at the module's own declaration (pj-module maps the
+        ;; position of the copy back to the module's source)
+        sc (if (= (+ (string-length own) (string-length imp)) 0) ""
+             (string-concat " (:schemas {" (string-concat imp (string-concat " " (string-concat own "})")))))
         ;; the module's own name: a record's identity keyword is :<ns>/<Name> (21-check)
-        hn (string-concat "\n(ns " (pj-p P (pj-mf L m pj-mf-name)))
-        hd (cond (= (pj-mf L m pj-mf-entry) 0) (string-concat hn " (:export []))\n")
-                 (= (pj-mf L m pj-mf-expk) 0) (string-concat hn ")\n")
+        hn (string-concat "\n(ns " (pj-p L P (pj-mf L m pj-mf-name)))
+        hd (cond (= (pj-mf L m pj-mf-entry) 0) (string-concat hn " (:export [])")
+                 (= (pj-mf L m pj-mf-expk) 0) hn
                  :else (loop [k 0 acc (string-concat hn " (:export [")]
-                         (if (>= k (pj-mf L m pj-mf-nexp)) (string-concat acc "]))\n")
-                           (recur (+ k 1) (string-concat acc (string-concat " " (pj-p P (pj-l L (+ pj-x-base (pj-mf L m pj-mf-exp0) k)))))))))
-        r0 (pj-mf L m pj-mf-req0)]
-    (loop [k 0 big hd]
-      (if (>= k (pj-mf L m pj-mf-nreq)) big (recur (+ k 1) (string-concat big (pj-stubs-req L P (+ r0 k))))))))
+                         (if (>= k (pj-mf L m pj-mf-nexp)) (string-concat acc "])")
+                           (recur (+ k 1) (string-concat acc (string-concat " " (pj-p L P (pj-l L (+ pj-x-base (pj-mf L m pj-mf-exp0) k)))))))))
+        w2 (-> L (pj-ls pj-k-owncpy (if (= (string-length own) 0) -1 (+ (string-length hd) 13 (string-length imp))))
+               (pj-ls pj-k-ownlen (string-length own)))]
+    (string-concat hd (string-concat sc (string-concat ")\n" body)))))
 
 ;; ---- per-module checks on the read source (before 20-names) --------------------------------------------------------------
 ;; the require edge of module m whose alias is a, -1 when none
-(defn- pj-req-alias [L :vector-i64 P [:list :string] m :i64 a :string] :i64
+(defn- pj-req-alias [L :vector-i64 P :string m :i64 a :string] :i64
   (let [r0 (pj-mf L m pj-mf-req0)]
     (loop [k 0]
       (cond (>= k (pj-mf L m pj-mf-nreq)) -1
-            (and (>= (pj-rf L (+ r0 k) pj-rf-alias) 0) (string=? (pj-p P (pj-rf L (+ r0 k) pj-rf-alias)) a)) (+ r0 k)
+            (and (>= (pj-rf L (+ r0 k) pj-rf-alias) 0) (pj-peq L P (pj-rf L (+ r0 k) pj-rf-alias) a)) (+ r0 k)
             :else (recur (+ k 1))))))
 
 ;; byte offset of the first '/' in S[a,b) after its first byte, -1 when none
@@ -760,7 +928,7 @@
           :else (recur (+ i 1)))))
 
 ;; every symbol token alias/name of the module's own text: alias required, name an export of it
-(defn- pj-qscan [M :vector-i64 L :vector-i64 P [:list :string] S :string m :i64] :vector-i64
+(defn- pj-qscan [M :vector-i64 L :vector-i64 P :string S :string m :i64] :vector-i64
   (let [trail (pj-l L pj-k-trail)]
     (loop [t 1]
       (if (or (>= t (vector-at M MM-TOK-N)) (not (pj-ok M)) (>= (pj-tf M t TF-START) trail))
@@ -771,12 +939,44 @@
             (recur (+ t 1))
             (let [r (pj-req-alias L P m (string-substring S a sl))]
               (cond (pj-r5b-with? M S t) (recur (+ t 1))   ; R5B: (with l/h ..) is refused by 21-check (handle shape)
+                    ;; R6A: clojure.core/f is the core name f (the token is narrowed to it)
+                    (pj-span= S a sl "clojure.core") (let [w (vector-assoc! M (+ MM-TOK-BASE (* t MM-TOK-W) TF-START) (+ sl 1))] (recur (+ t 1)))
                     (< r 0) (pj-err-span M E-PROJ-UNKNOWN-OP a a b)
                     (< (pj-if-find L P (pj-rf L r pj-rf-mod) (string-substring S (+ sl 1) b)) 0) (pj-err-span M E-PROJ-NOT-EXPORT a a b)
                     :else (recur (+ t 1))))))))))
 
+;; ==== R6A: project-route normalization of a module's own forms (before 20-names) ==========================================
+;; The reference's top-level shapes that the seed's front end does not read yet, rewritten in the tree (no text change):
+;;   (defn NAME "doc" ..) / (defn- ..) / (def NAME "doc" value): the docstring is unlinked (a def keeps a string VALUE: only
+;;   a string followed by another child is a docstring), then a defn's attr-map {..} likewise;
+;;   a top-level `nil` (what #?(:kotoba nil :default ..) reads as) is unlinked.
+;; The single-module route still refuses these (20-names/21-check owners: CONTRACT-REQUESTS 2026-10-03 R6A).
+(defn- pj-unlink-after [M :vector-i64 n :i64 prev :i64] :vector-i64
+  (let [x (pj-next M prev)]
+    (-> M (pj-nset prev NF-NEXT (pj-next M x)) (pj-nset n NF-AUX (- (pj-nf M n NF-AUX) 1)))))
+(defn- pj-strip-doc [M :vector-i64 S :string n :i64] :vector-i64
+  (let [nm (pj-next M (pj-first M n))
+        d (pj-next M nm)
+        dn (pj-next M d)
+        defn? (or (pj-head? M S n "defn") (pj-head? M S n "defn-"))
+        M1 (if (and (or defn? (pj-head? M S n "def")) (= (pj-kind M d) ND-STR) (not= dn 0)) (pj-unlink-after M n nm) M)
+        a (pj-next M1 nm)]
+    (if (and defn? (= (pj-kind M1 a) ND-MAP) (not= (pj-next M1 a) 0)) (pj-unlink-after M1 n nm) M1)))
+(defn- pj-norm [M :vector-i64 L :vector-i64 S :string] :vector-i64
+  (let [root (vector-at M MM-ROOT)
+        trail (pj-l L pj-k-trail)]
+    (loop [n (pj-first M root) prev 0]
+      (cond (or (= n 0) (>= (pj-a M n) trail)) M
+            (and (= (pj-kind M n) ND-SYM) (pj-is M S n "nil"))
+            (let [w (if (= prev 0) (pj-nset M root NF-FIRST (pj-next M n)) (pj-nset M prev NF-NEXT (pj-next M n)))
+                  w2 (pj-nset M root NF-AUX (- (pj-nf M root NF-AUX) 1))]
+              (recur (pj-next M n) prev))
+            (= (pj-kind M n) ND-LIST) (let [w (pj-strip-doc M S n)] (recur (pj-next M n) n))
+            :else (recur (pj-next M n) n)))))
+;; ==== END R6A normalization ================================================================================================
+
 ;; every referred name of module m is an export of its module
-(defn- pj-refcheck [M :vector-i64 L :vector-i64 P [:list :string] m :i64] :vector-i64
+(defn- pj-refcheck [M :vector-i64 L :vector-i64 P :string m :i64] :vector-i64
   (let [r0 (pj-mf L m pj-mf-req0)]
     (loop [k 0]
       (if (or (>= k (pj-mf L m pj-mf-nreq)) (not (pj-ok M)))
@@ -784,7 +984,7 @@
         (let [r (+ r0 k)
               bad (loop [j 0]
                     (cond (>= j (pj-rf L r pj-rf-nref)) -1
-                          (< (pj-if-find L P (pj-rf L r pj-rf-mod) (pj-p P (pj-l L (+ pj-f-base (* (+ (pj-rf L r pj-rf-ref0) j) pj-f-w))))) 0)
+                          (< (pj-if-find L P (pj-rf L r pj-rf-mod) (pj-p L P (pj-l L (+ pj-f-base (* (+ (pj-rf L r pj-rf-ref0) j) pj-f-w))))) 0)
                           (+ pj-f-base (* (+ (pj-rf L r pj-rf-ref0) j) pj-f-w))
                           :else (recur (+ j 1))))]
           (if (< bad 0)
@@ -838,19 +1038,32 @@
       (let [w (pj-ls L pj-k-stub0 (- (vector-at M1 MM-FN-N) (pj-l L pj-k-nstub)))] (pj-c4 M1 L S))
       M1)))
 
+;; R6A: an error inside the trailer's copy of the module's own schema text is moved to the original text
+(defn- pj-back1 [M :vector-i64 i :i64 c0 :i64 c1 :i64 d :i64] :vector-i64
+  (let [v (vector-at M i)] (if (and (>= v c0) (<= v c1) (> d 0)) (vector-assoc! M i (- v d)) M)))
+(defn- pj-err-back [M :vector-i64 L :vector-i64 m :i64 n0 :i64] :vector-i64
+  (let [cp (pj-l L pj-k-owncpy)
+        c0 (+ n0 cp)
+        c1 (+ c0 (pj-l L pj-k-ownlen))
+        d (- c0 (pj-mf L m pj-mf-sche))]
+    (if (or (< cp 0) (< (vector-at M MM-ERR-POS) c0) (> (vector-at M MM-ERR-POS) c1))
+      M
+      (-> M (pj-back1 MM-ERR-POS c0 c1 d) (pj-back1 MM-ERR-A c0 c1 d) (pj-back1 MM-ERR-B c0 c1 d)))))
+
 ;; compile module m (its source text read from its path) and link it into the image. Returns P (a library adds its
 ;; interface strings). On return M still holds module m (the entry: its EXP table for the container).
-(defn- pj-module [M :vector-i64 L :vector-i64 P [:list :string] m :i64] [:list :string]
-  (let [S0 (io-read-file M (pj-p P (pj-mf L m pj-mf-path)))
+(defn- pj-module [M :vector-i64 L :vector-i64 P :string m :i64] :string
+  (let [S0 (io-read-file M (pj-p L P (pj-mf L m pj-mf-path)))
         T (pj-trailer L P m)
         S (string-concat S0 T)
         base (bit-and (+ (pj-l L pj-k-img) 7) -8)
         w (-> L (pj-ls pj-k-errmod m) (pj-ls pj-k-trail (string-length S0)) (pj-ls pj-k-base base) (pj-mset m pj-mf-base base))
         M1 (pj-read M S)
-        M2 (if (pj-ok M1) (pj-refcheck (pj-qscan M1 L P S m) L P m) M1)
+        M2 (if (pj-ok M1) (pj-refcheck (pj-qscan (pj-norm M1 L S) L P S m) L P m) M1)
         M3 (if (pj-ok M2) (pj-splice M2 L) M2)
         M4 (if (pj-ok M3) (pj-c3 M3 L S) M3)]
-    (cond (not (pj-ok M4)) P
+    (cond (not (pj-ok M4)) (let [w2 (pj-err-back M4 L m (string-length S0))] P)
+          (>= (pj-n L) (- pj-s-cap 1)) (let [w2 (pj-err M4 E-PROJ-IMAGE 0)] P)
           (not (pj-ok (pj-r5b-after M4 L P S m))) P   ; R5B: namespace :capabilities, stateful library exports
           (>= (+ pj-img-base (pj-l L pj-k-img)) pj-l-cap) (let [w2 (pj-err M4 E-PROJ-IMAGE 0)] P)
           (= (pj-mf L m pj-mf-entry) 0) (pj-iface M4 L P S m)
@@ -858,16 +1071,16 @@
 
 ;; ---- the whole project ---------------------------------------------------------------------------------------------------
 ;; pj-discover M L P root -> P : the module table and the compile order from the entry (module 0, path P[root])
-(defn pj-discover [M :vector-i64 L :vector-i64 P [:list :string] root :i64] [:list :string]
-  (let [w (-> L (pj-add-mod (count P) root) (pj-mset 0 pj-mf-depth 1) (pj-mset 0 pj-mf-entry 1))
-        P1 (pj-visit M L (pj-padd P "") 0)]
+(defn pj-discover [M :vector-i64 L :vector-i64 P :string root :i64] :string
+  (let [w (-> L (pj-add-mod (pj-n L) root) (pj-mset 0 pj-mf-depth 1) (pj-mset 0 pj-mf-entry 1))
+        P1 (pj-visit M L (pj-padd L P "") 0)]
     (if (and (pj-ok M) (> (pj-l L pj-k-nmod) 1) (= (pj-l L pj-k-unpinned) 0))
       (let [w2 (pj-err M E-PROJ-UNPINNED 0)] P1)
       P1)))
 
 ;; pj-project M L P root -> P : discover, then compile every module in order. On success M holds the entry module; the image
 ;; is L[pj-img-base .. + L[pj-k-img]). A multi-module project needs --unpinned.
-(defn pj-project [M :vector-i64 L :vector-i64 P [:list :string] root :i64] [:list :string]
+(defn pj-project [M :vector-i64 L :vector-i64 P :string root :i64] :string
   (let [P1 (pj-discover M L P root)]
     (loop [k 0 P P1]
       (if (or (>= k (pj-l L pj-k-nord)) (not (pj-ok M)))
@@ -875,7 +1088,7 @@
         (recur (+ k 1) (pj-module M L P (pj-l L (+ pj-o-base k))))))))
 
 ;; the source path of the module the error of M refers to
-(defn pj-err-path [L :vector-i64 P [:list :string]] :string (pj-p P (pj-mf L (pj-l L pj-k-errmod) pj-mf-path)))
+(defn pj-err-path [L :vector-i64 P :string] :string (pj-p L P (pj-mf L (pj-l L pj-k-errmod) pj-mf-path)))
 
 ;; 1 when a symbol token of S is spelled alias/name
 (defn- pj-qualified? [M :vector-i64 S :string] :bool
@@ -924,11 +1137,11 @@
 (defn- pj-line [k :string a :string] :string (string-concat k (string-concat " " (string-concat a "\n"))))
 
 ;; the E line of interface entry e
-(defn- pj-eline [L :vector-i64 P [:list :string] e :i64] :string
+(defn- pj-eline [L :vector-i64 P :string e :i64] :string
   (let [offs (loop [j 0 acc ""]
                (if (>= j (pj-if L e pj-if-ncl)) acc (recur (+ j 1) (string-concat acc (string-concat (mem-u2dec (pj-if L e (+ pj-if-off0 j))) " ")))))]
     (pj-line "E" (string-concat (mem-u2dec (pj-if L e pj-if-ncl))
-                   (string-concat " " (string-concat offs (string-concat (pj-p P (pj-if L e pj-if-name)) (string-concat " " (pj-p P (pj-if L e pj-if-text))))))))))
+                   (string-concat " " (string-concat offs (string-concat (pj-p L P (pj-if L e pj-if-name)) (string-concat " " (string-concat (pj-p L P (pj-if L e pj-if-text)) (pj-p L P (pj-if L e pj-if-sch)))))))))))
 
 ;; the hex text of OUT bytes [a, b) (balanced: no list, each byte copied log2(b-a) times)
 (defn- pj-hexr [M :vector-i64 a :i64 b :i64] :string
@@ -937,7 +1150,7 @@
         :else (let [m (quot (+ a b) 2)] (string-concat (pj-hexr M a m) (pj-hexr M m b)))))
 
 ;; the k-th line of section c of module 0's object ("" past the end of the section): 0 R, 1 E, 2 S, 3 L, 4 X, 5 C
-(defn- pj-oline [M :vector-i64 L :vector-i64 P [:list :string] S :string ck :i64] :string
+(defn- pj-oline [M :vector-i64 L :vector-i64 P :string S :string ck :i64] :string
   (let [c (quot ck 1048576)
         k (bit-and ck 1048575)
         s0 (pj-l L pj-k-stub0)
@@ -945,7 +1158,7 @@
         eb (+ MM-EXP-BASE (* (+ k 1) MM-EXP-W))
         n (- (vector-at M MM-OUT-N) 1)]
     (case c
-      0 (pj-line "R" (pj-p P (pj-rf L (+ (pj-mf L 0 pj-mf-req0) k) pj-rf-name)))
+      0 (pj-line "R" (pj-p L P (pj-rf L (+ (pj-mf L 0 pj-mf-req0) k) pj-rf-name)))
       1 (pj-eline L P (+ (pj-mf L 0 pj-mf-if0) k))
       2 (if (< (pj-ff M (+ s0 k) FF-CODE) 1) ""
           (pj-line "S" (string-concat (mem-u2dec (* (- (pj-ff M (+ s0 k) FF-CODE) 1) 4)) (string-concat " " (mem-u2dec (pj-l L (+ pj-u-base k)))))))
@@ -966,15 +1179,15 @@
     (quot (+ (- (vector-at M MM-OUT-N) 1) 63) 64)))
 
 ;; the object text of module 0 (compiled with base 0 and recorded patches, still in M; S = its source with the trailer)
-(defn- pj-object [M :vector-i64 L :vector-i64 P [:list :string] S :string] :string
-  (loop [c 0 k 0 big (string-concat "KSEEDO1\n" (pj-line "N" (pj-p P (pj-mf L 0 pj-mf-name)))) small ""]
+(defn- pj-object [M :vector-i64 L :vector-i64 P :string S :string] :string
+  (loop [c 0 k 0 big (string-concat "KSEEDO1\n" (pj-line "N" (pj-p L P (pj-mf L 0 pj-mf-name)))) small ""]
     (cond (> c 5) (string-concat big small)
           (>= k (pj-ocount M L c)) (recur (+ c 1) 0 big small)
           :else (let [s2 (pj-small small (pj-oline M L P S (+ (* c 1048576) k)))]
                   (if (> (string-length s2) 4096) (recur c (+ k 1) (string-concat big s2) "") (recur c (+ k 1) big s2))))))
 
 ;; the E lines of object text T (module d) as interface entries, offsets + base
-(defn- pj-load-iface [L :vector-i64 P [:list :string] T :string d :i64 base :i64] [:list :string]
+(defn- pj-load-iface [L :vector-i64 P :string T :string d :i64 base :i64] :string
   (let [w (-> L (pj-mset d pj-mf-if0 (pj-l L pj-k-nif)) (pj-mset d pj-mf-nif 0))]
     (loop [i 0 P P]
       (if (>= i (string-length T)) P
@@ -985,9 +1198,11 @@
                   ncl (pj-min (pj-dec T a1 b1) pj-if-maxcl)
                   nb (loop [j 0 p (+ b1 1)] (if (>= j ncl) p (let [q (pj-sp T p) y (pj-iset L x (+ pj-if-off0 j) (+ base (pj-dec T p q)))] (recur (+ j 1) (+ q 1)))))
                   ne (pj-sp T nb)
-                  w2 (-> L (pj-iset x pj-if-name (count P)) (pj-iset x pj-if-text (+ (count P) 1)) (pj-iset x pj-if-ncl ncl)
+                  tb (loop [j (pj-min (+ ne 1) e)] (cond (>= j e) e (= (string-code-point-at T j) 9) j :else (recur (+ j 1))))
+                  w2 (-> L (pj-iset x pj-if-name (pj-n L)) (pj-iset x pj-if-text (+ (pj-n L) 1)) (pj-iset x pj-if-sch (+ (pj-n L) 2)) (pj-iset x pj-if-ncl ncl)
                          (pj-ls pj-k-nif (+ x 1)) (pj-mset d pj-mf-nif (+ (pj-mf L d pj-mf-nif) 1)))]
-              (recur (+ e 1) (pj-padd (pj-padd P (string-substring T nb ne)) (string-substring T (pj-min (+ ne 1) e) e))))
+              ;; R6A: the template ends at the first TAB; the schema pieces follow it
+              (recur (+ e 1) (pj-padd L (pj-padd L (pj-padd L P (string-substring T nb ne)) (string-substring T (pj-min (+ ne 1) e) tb)) (string-substring T tb e))))
             (recur (+ e 1) P)))))))
 
 ;; T starts "KSEEDO1\nN " and its N line is nm ("" = any); the N name
@@ -995,20 +1210,20 @@
   (and (> (string-length T) 10) (string=? (string-substring T 0 10) "KSEEDO1\nN ")
        (or (= (string-length nm) 0) (string=? (string-substring T 10 (pj-eol T 10)) nm))))
 
-(defn- pj-objpath [L :vector-i64 P [:list :string] nm :string] :string
-  (string-concat (pj-p P (pj-l L pj-k-root0)) (string-concat "/" (string-concat nm ".kso"))))
+(defn- pj-objpath [L :vector-i64 P :string nm :string] :string
+  (string-concat (pj-p L P (pj-l L pj-k-root0)) (string-concat "/" (string-concat nm ".kso"))))
 
 ;; emit: module 0 (the file at P[path]) against the objects of its requires; returns P, the object text is the last string
-(defn pj-emit [M :vector-i64 L :vector-i64 P [:list :string] path :i64 entry :i64] [:list :string]
-  (let [w (-> L (pj-add-mod (count P) path) (pj-mset 0 pj-mf-depth 1) (pj-mset 0 pj-mf-entry entry) (pj-ls pj-k-mode 1) (pj-ls pj-k-errmod 0))
-        S (io-read-file M (pj-p P path))
+(defn pj-emit [M :vector-i64 L :vector-i64 P :string path :i64 entry :i64] :string
+  (let [w (-> L (pj-add-mod (pj-n L) path) (pj-mset 0 pj-mf-depth 1) (pj-mset 0 pj-mf-entry entry) (pj-ls pj-k-mode 1) (pj-ls pj-k-errmod 0))
+        S (io-read-file M (pj-p L P path))
         M1 (pj-read M S)
-        P1 (if (pj-ok M1) (pj-header M1 L (pj-padd P "") S "") (pj-padd P ""))
+        P1 (if (pj-ok M1) (pj-header M1 L (pj-padd L P "") S "") (pj-padd L P ""))
         r0 (pj-mf L 0 pj-mf-req0)
         P2 (loop [k 0 P P1]
              (if (or (>= k (pj-mf L 0 pj-mf-nreq)) (not (pj-ok M1))) P
                (let [r (+ r0 k)
-                     nm (pj-p P (pj-rf L r pj-rf-name))
+                     nm (pj-p L P (pj-rf L r pj-rf-name))
                      op (pj-objpath L P nm)]
                  (if (= (io-exists op) 0)
                    (let [x (pj-err M1 E-PROJ-NOOBJ (pj-rf L r pj-rf-node))] P)
@@ -1016,20 +1231,20 @@
                          d (pj-l L pj-k-nmod)]
                      (if (not (pj-obj-ok T nm))
                        (let [x (pj-err M1 E-PROJ-OBJ (pj-rf L r pj-rf-node))] P)
-                       (let [y (-> L (pj-add-mod (count P) (count P)) (pj-mset d pj-mf-state 3) (pj-rset r pj-rf-mod d))]
-                         (recur (+ k 1) (pj-load-iface L (pj-padd P nm) T d 0)))))))))]
+                       (let [y (-> L (pj-add-mod (pj-n L) (pj-n L)) (pj-mset d pj-mf-state 3) (pj-rset r pj-rf-mod d))]
+                         (recur (+ k 1) (pj-load-iface L (pj-padd L P nm) T d 0)))))))))]
     (if (pj-ok M1)
       (let [P3 (pj-module M1 L P2 0)]
-        (if (pj-ok M1) (pj-padd P3 (pj-object M1 L P3 (string-concat S (pj-trailer L P3 0)))) P3))
+        (if (pj-ok M1) (pj-padd L P3 (pj-object M1 L P3 (string-concat S (pj-trailer L P3 0)))) P3))
       P2)))
 
 ;; link: visit object module m (its text read from its path) at depth d
-(defn- pj-lvisit [M :vector-i64 L :vector-i64 P [:list :string] m :i64] [:list :string]
-  (let [T (io-read-file M (pj-p P (pj-mf L m pj-mf-path)))
+(defn- pj-lvisit [M :vector-i64 L :vector-i64 P :string m :i64] :string
+  (let [T (io-read-file M (pj-p L P (pj-mf L m pj-mf-path)))
         nm (string-substring T 10 (pj-eol T 10))
-        w (-> L (pj-mset m pj-mf-state 1) (pj-mset m pj-mf-obj (count P)) (pj-mset m pj-mf-req0 (pj-l L pj-k-nreq)) (pj-mset m pj-mf-nreq 0) (pj-ls pj-k-errmod m))
-        P1 (pj-padd P T)
-        P2 (if (= (pj-mf L m pj-mf-entry) 1) (let [x (pj-mset L m pj-mf-name (count P1))] (pj-padd P1 nm)) P1)
+        w (-> L (pj-mset m pj-mf-state 1) (pj-mset m pj-mf-obj (pj-n L)) (pj-mset m pj-mf-req0 (pj-l L pj-k-nreq)) (pj-mset m pj-mf-nreq 0) (pj-ls pj-k-errmod m))
+        P1 (pj-padd L P T)
+        P2 (if (= (pj-mf L m pj-mf-entry) 1) (let [x (pj-mset L m pj-mf-name (pj-n L))] (pj-padd L P1 nm)) P1)
         d (pj-mf L m pj-mf-depth)
         P3 (loop [i (+ 11 (string-length nm)) P P2]
              (cond (or (>= i (string-length T)) (not (pj-ok M))) P
@@ -1039,8 +1254,8 @@
                          r (pj-l L pj-k-nreq)
                          t (pj-find-mod L P rn)
                          op (pj-objpath L P rn)
-                         x (-> L (pj-rset r pj-rf-name (count P)) (pj-ls pj-k-nreq (+ r 1)) (pj-mset m pj-mf-nreq (+ (pj-mf L m pj-mf-nreq) 1)))
-                         P4 (pj-padd P rn)]
+                         x (-> L (pj-rset r pj-rf-name (pj-n L)) (pj-ls pj-k-nreq (+ r 1)) (pj-mset m pj-mf-nreq (+ (pj-mf L m pj-mf-nreq) 1)))
+                         P4 (pj-padd L P rn)]
                      (cond (>= r pj-r-cap) (let [y (pj-err M E-PROJ-EDGES 0)] P4)
                            (> (+ d 1) pj-max-depth) (let [y (pj-err M E-PROJ-DEPTH 0)] P4)
                            (and (>= t 0) (= (pj-mf L t pj-mf-state) 1)) (let [y (pj-err M E-PROJ-CYCLE 0)] P4)
@@ -1048,8 +1263,8 @@
                            (>= (pj-l L pj-k-nmod) pj-m-cap) (let [y (pj-err M E-PROJ-MODULES 0)] P4)
                            (= (io-exists op) 0) (let [y (pj-err M E-PROJ-NOOBJ 0)] P4)
                            :else (let [k (pj-l L pj-k-nmod)
-                                       y (-> L (pj-add-mod (count P4) (+ (count P4) 1)) (pj-rset r pj-rf-mod k) (pj-mset k pj-mf-depth (+ d 1)))]
-                                   (recur (+ (pj-eol T i) 1) (pj-padd (pj-padd P4 rn) op)))))))
+                                       y (-> L (pj-add-mod (pj-n L) (+ (pj-n L) 1)) (pj-rset r pj-rf-mod k) (pj-mset k pj-mf-depth (+ d 1)))]
+                                   (recur (+ (pj-eol T i) 1) (pj-padd L (pj-padd L P4 rn) op)))))))
         r0 (pj-mf L m pj-mf-req0)
         P5 (loop [k 0 P P3]
              (cond (or (>= k (pj-mf L m pj-mf-nreq)) (not (pj-ok M))) P
@@ -1057,7 +1272,7 @@
                    :else (recur (+ k 1) P)))
         no (pj-l L pj-k-nord)]
     (cond (not (pj-ok M)) P5
-          (not (pj-obj-ok T (if (= (pj-mf L m pj-mf-entry) 1) "" (pj-p P (pj-mf L m pj-mf-name))))) (let [y (pj-err M E-PROJ-OBJ 0)] P5)
+          (not (pj-obj-ok T (if (= (pj-mf L m pj-mf-entry) 1) "" (pj-p L P (pj-mf L m pj-mf-name))))) (let [y (pj-err M E-PROJ-OBJ 0)] P5)
           :else (let [y (-> L (pj-mset m pj-mf-state 2) (pj-ls (+ pj-o-base no) m) (pj-ls pj-k-nord (+ no 1)))] P5))))
 
 ;; the 32-bit word of the image at byte offset at
@@ -1065,8 +1280,8 @@
   (+ (pj-l L at) (* 256 (pj-l L (+ at 1))) (* 65536 (pj-l L (+ at 2))) (* 16777216 (pj-l L (+ at 3)))))
 
 ;; lay out object module m: blob at the next 8-aligned base, interface entries, literal relocations, stub patches
-(defn- pj-lplace [M :vector-i64 L :vector-i64 P [:list :string] m :i64] [:list :string]
-  (let [T (pj-p P (pj-mf L m pj-mf-obj))
+(defn- pj-lplace [M :vector-i64 L :vector-i64 P :string m :i64] :string
+  (let [T (pj-p L P (pj-mf L m pj-mf-obj))
         base (bit-and (+ (pj-l L pj-k-img) 7) -8)
         w (pj-mset L m pj-mf-base base)
         n (loop [i 0 at base]
@@ -1103,8 +1318,8 @@
     P1))
 
 ;; the KSEED1 container of the linked image into OUT (M fresh): the X lines of the entry object m at its base
-(defn- pj-lcontainer [M :vector-i64 L :vector-i64 P [:list :string] m :i64] :vector-i64
-  (let [T (pj-p P (pj-mf L m pj-mf-obj))
+(defn- pj-lcontainer [M :vector-i64 L :vector-i64 P :string m :i64] :vector-i64
+  (let [T (pj-p L P (pj-mf L m pj-mf-obj))
         base (pj-mf L m pj-mf-base)
         nx (loop [i 0 k 0] (if (>= i (string-length T)) k (recur (+ (pj-eol T i) 1) (if (= (string-code-point-at T i) 88) (+ k 1) k))))
         M1 (-> (vector-assoc! M MM-OUT-N 1) (out-put-magic) (out-put-dec (pj-l L pj-k-img)) (out-put 32) (out-put-dec nx) (out-put 10))
@@ -1121,10 +1336,10 @@
     (if (pj-ok M3) (vector-assoc! M3 MM-R0 (- (vector-at M3 MM-OUT-N) 1)) M3)))
 
 ;; link the root object at P[path]: returns P; on success the container is in OUT
-(defn pj-link-objects [M :vector-i64 L :vector-i64 P [:list :string] path :i64] [:list :string]
-  (let [w (-> L (pj-add-mod (count P) path) (pj-mset 0 pj-mf-depth 1) (pj-mset 0 pj-mf-entry 1) (pj-ls pj-k-errmod 0))
-        T (io-read-file M (pj-p P path))
-        P1 (pj-padd P "")]
+(defn pj-link-objects [M :vector-i64 L :vector-i64 P :string path :i64] :string
+  (let [w (-> L (pj-add-mod (pj-n L) path) (pj-mset 0 pj-mf-depth 1) (pj-mset 0 pj-mf-entry 1) (pj-ls pj-k-errmod 0))
+        T (io-read-file M (pj-p L P path))
+        P1 (pj-padd L P "")]
     (if (not (pj-obj-ok T ""))
       (let [x (pj-err M E-PROJ-OBJ 0)] P1)
       (let [P2 (pj-lvisit M L P1 0)
@@ -1169,7 +1384,7 @@
   (let [sy (pj-ff M f FF-SYM)] (pj-err-span M code (pj-sf M sy SF-START) (pj-sf M sy SF-START) (pj-sf M sy SF-END))))
 
 ;; after module m compiled (M holds it): the checks above; M (with MM-ERR set on a refusal)
-(defn- pj-r5b-after [M :vector-i64 L :vector-i64 P [:list :string] S :string m :i64] :vector-i64
+(defn- pj-r5b-after [M :vector-i64 L :vector-i64 P :string S :string m :i64] :vector-i64
   (let [used (vector-at M MM-CAPS)
         d (pj-mf L m pj-mf-caps)
         extra (if (> d 0) (bit-and used (bit-not (- d 1))) 0)
@@ -1178,7 +1393,7 @@
                   (> (pj-mf L m pj-mf-expk) 0)
                   (loop [k 0]
                     (if (>= k (pj-mf L m pj-mf-nexp)) 0
-                      (let [f (pj-fn-named M S (pj-p P (pj-l L (+ pj-x-base (pj-mf L m pj-mf-exp0) k))))]
+                      (let [f (pj-fn-named M S (pj-p L P (pj-l L (+ pj-x-base (pj-mf L m pj-mf-exp0) k))))]
                         (if (and (> f 0) (pj-r5b-tmpl? M f)) f (recur (+ k 1))))))
                   :else (loop [f 1]
                           (cond (>= f (vector-at M MM-FN-N)) 0

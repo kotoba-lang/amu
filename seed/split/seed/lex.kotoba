@@ -343,6 +343,9 @@
           (> (lx-rc-w S i c) 0) (lx-rc M S i end (lx-rc-w S i c))
           ;; R5B (agent R5B, delimited): '@' is a token of its own; 11-read reads @x as (deref x)
           (= c 64) (lx-scan (lx-push M TK-AT i (+ i 1) 0) S (+ i 1) end)
+          ;; R6A (agent R6A, minimal delimited change): ^meta before a form reads as nothing (the reference keeps metadata off
+          ;; the value; 932 of the 940 uses in the R6 modules are (def ^:private ..), and a def is never an export)
+          (= c 94) (let [q (lx-sk-next S (+ i 1))] (if (< q 0) (lx-fail M E-LEX-SYNTAX i i (+ i 1)) (lx-scan M S q end)))
           (> c 127) (lx-fail-n M E-LEX-ASCII i (lx-lead c))
           (lx-multi? c)
           (let [j (lx-tok-end S i)]
@@ -408,7 +411,7 @@
             (lx-delim? d) -1
             :else (lx-sk-next S (lx-sk-atom S (+ p 1)))))))
 ;; after the form that starts at p (p is not whitespace), -1 when malformed or unclosed
-(defn- lx-sk-form [S :string p :i64] :i64
+(defn lx-sk-form [S :string p :i64] :i64
   (let [c (lx-ch S p)]
     (cond (or (= c 40) (= c 91) (= c 123)) (lx-sk-seq S (+ p 1))
           (lx-closer? c) -1

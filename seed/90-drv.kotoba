@@ -402,12 +402,12 @@
   (cond (>= i n) 0 (string=? (io-arg i) s) 1 :else (drv-pj-has (+ i 1) n s)))
 
 ;; the --source-path values as roots of L (P indexes), up to 16
-(defn- drv-pj-roots [L :vector-i64 P [:list :string] i :i64 n :i64] [:list :string]
+(defn- drv-pj-roots [L :vector-i64 P :string i :i64 n :i64] :string
   (cond (>= (+ i 1) n) P
         (and (string=? (io-arg i) "--source-path") (< (vector-at L pj-k-nroot) 16))
         (let [k (vector-at L pj-k-nroot)
-              w (-> L (vector-assoc! (+ pj-k-root0 k) (count P)) (vector-assoc! pj-k-nroot (+ k 1)))]
-          (drv-pj-roots L (pj-padd P (io-arg (+ i 1))) (+ i 2) n))
+              w (-> L (vector-assoc! (+ pj-k-root0 k) (pj-n L)) (vector-assoc! pj-k-nroot (+ k 1)))]
+          (drv-pj-roots L (pj-padd L P (io-arg (+ i 1))) (+ i 2) n))
         :else (drv-pj-roots L P (+ i 1) n)))
 
 ;; an error of the project route: {name} spans and positions beyond the module's file (its generated trailer) are dropped
@@ -418,20 +418,20 @@
         w2 (if (> (vector-at M MM-ERR-POS) flen) (vector-assoc! M MM-ERR-POS -1) M)]
     (drv-fail M path)))
 
-(defn- drv-pj-emit [M :vector-i64 L :vector-i64 P [:list :string] mode :i64 out :string] :i64
-  (let [S (string-concat (drv-read (pj-p P (pj-mf L 0 pj-mf-path))) (pj-trailer L P 0))
+(defn- drv-pj-emit [M :vector-i64 L :vector-i64 P :string mode :i64 out :string] :i64
+  (let [S (string-concat (drv-read (pj-p L P (pj-mf L 0 pj-mf-path))) (pj-trailer L P 0))
         M1 (if (= mode 0) M (out-image M S L pj-img-base (vector-at L pj-k-img)))]
     (cond (> (vector-at M1 MM-ERR) 0) (drv-fail0 (vector-at M1 MM-ERR))
           (= mode 0) (drv-ok M1)
           ;; R5B: --policy against the capabilities of every module of the project
-          :else (let [g (drv-r5b-gate M1 (pj-p P (pj-mf L 0 pj-mf-path)) (vector-at L pj-k-caps))] (if (< g 0) (drv-emit2 M1 out) g)))))
+          :else (let [g (drv-r5b-gate M1 (pj-p L P (pj-mf L 0 pj-mf-path)) (vector-at L pj-k-caps))] (if (< g 0) (drv-emit2 M1 out) g)))))
 
 (defn- drv-pj-compile [M :vector-i64 path :string mode :i64 out :string] :i64
   (let [L (pj-new-l)
         n (io-argc)
-        P0 (drv-pj-roots L (typed-list-new [:list :string]) 1 n)
+        P0 (drv-pj-roots L (pj-new-p L) 1 n)
         w (vector-assoc! L pj-k-unpinned (drv-pj-has 1 n "--unpinned"))
-        P1 (pj-project M L (pj-padd P0 path) (count P0))]
+        P1 (pj-project M L (pj-padd L P0 path) (- (pj-n L) 1))]
     (if (> (vector-at M MM-ERR) 0)
       (drv-pj-fail M (pj-err-path L P1))
       (drv-pj-emit M L P1 mode out))))
@@ -440,20 +440,20 @@
 (defn- drv-pj-flag [i :i64 n :i64 s :string] :i64
   (cond (>= (+ i 1) n) -1 (string=? (io-arg i) s) (+ i 1) :else (drv-pj-flag (+ i 1) n s)))
 
-(defn- drv-pj-objdir [L :vector-i64 n :i64] [:list :string]
+(defn- drv-pj-objdir [L :vector-i64 n :i64] :string
   (let [o (drv-pj-flag 1 n "--object-dir")
         w (-> L (vector-assoc! pj-k-root0 0) (vector-assoc! pj-k-nroot 1))]
-    (pj-padd (typed-list-new [:list :string]) (if (< o 0) "." (io-arg o)))))
+    (pj-padd L (pj-new-p L) (if (< o 0) "." (io-arg o)))))
 
 ;; compile <file> --emit-module [--entry] --object-dir O --output X: the module object (60-proj separate mode)
 (defn- drv-pj-emitmod [M :vector-i64 path :string out :string] :i64
   (let [L (pj-new-l)
         n (io-argc)
         P0 (drv-pj-objdir L n)
-        P1 (pj-emit M L (pj-padd P0 path) (count P0) (drv-pj-has 1 n "--entry"))]
+        P1 (pj-emit M L (pj-padd L P0 path) (- (pj-n L) 1) (drv-pj-has 1 n "--entry"))]
     (cond (> (vector-at M MM-ERR) 0) (drv-pj-fail M (pj-err-path L P1))
           (= (string-length out) 0) (drv-usage)
-          :else (let [t (pj-p P1 (- (count P1) 1))
+          :else (let [t (pj-p L P1 (- (pj-n L) 1))
                       w (io-write-text out t)]
                   (if (= (io-exists out) 1) (drv-cok out (string-length t)) (drv-fail0 E-WRITE))))))
 
@@ -467,7 +467,7 @@
     (cond (< k 0) (drv-usage)
           (< o 0) (drv-usage)
           (= (io-exists (io-arg k)) 0) (drv-fail0 E-READ)
-          :else (let [P1 (pj-link-objects M L (pj-padd P0 (io-arg k)) (count P0))]
+          :else (let [P1 (pj-link-objects M L (pj-padd L P0 (io-arg k)) (- (pj-n L) 1))]
                   (if (> (vector-at M MM-ERR) 0)
                     (drv-pj-fail M (pj-err-path L P1))
                     (drv-emit2 M (drv-kir-out o)))))))
@@ -477,18 +477,18 @@
   (let [k (drv-pos 1 n 0)
         M (mem-new)
         L (pj-new-l)
-        P0 (drv-pj-roots L (typed-list-new [:list :string]) 1 n)
+        P0 (drv-pj-roots L (pj-new-p L) 1 n)
         w (vector-assoc! L pj-k-unpinned 1)]
     (if (< k 0)
       (drv-usage)
-      (let [P1 (pj-discover M L (pj-padd P0 (io-arg k)) (count P0))]
+      (let [P1 (pj-discover M L (pj-padd L P0 (io-arg k)) (- (pj-n L) 1))]
         (if (> (vector-at M MM-ERR) 0)
           (drv-pj-fail M (pj-err-path L P1))
           (loop [i 0]
             (if (>= i (vector-at L pj-k-nord))
               0
               (let [m (vector-at L (+ pj-o-base i))
-                    x (io-out (string-concat (pj-p P1 (pj-mf L m pj-mf-name)) (string-concat " " (string-concat (pj-p P1 (pj-mf L m pj-mf-path)) "\n"))))]
+                    x (io-out (string-concat (pj-p L P1 (pj-mf L m pj-mf-name)) (string-concat " " (string-concat (pj-p L P1 (pj-mf L m pj-mf-path)) "\n"))))]
                 (recur (+ i 1))))))))))
 
 (defn- drv-pj-run [S :string path :string mode :i64 out :string] :i64

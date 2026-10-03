@@ -1,0 +1,126 @@
+cbor.core /private/tmp/wt-A-amu-measure/cbor/core.cljk -
+clojure.set /private/tmp/wt-A-amu-measure/clojure/set.kotoba -
+kotoba.lang.text /private/tmp/wt-A-amu-measure/kotoba/lang/text.cljk -
+kotoba.string /private/tmp/wt-A-amu-measure/kotoba/string.cljk kotoba.lang.text
+clojure.string /private/tmp/wt-A-amu-measure/clojure/string.kotoba kotoba.string
+x25519.field /private/tmp/wt-A-amu-measure/x25519/field.cljk -
+ed25519.edwards /private/tmp/wt-A-amu-measure/ed25519/edwards.cljk x25519.field
+ed25519.scalar /private/tmp/wt-A-amu-measure/ed25519/scalar.cljk -
+sha2.sha512 /private/tmp/wt-A-amu-measure/sha2/sha512.cljk -
+ed25519.sign /private/tmp/wt-A-amu-measure/ed25519/sign.cljk ed25519.edwards ed25519.scalar sha2.sha512
+ed25519.core /private/tmp/wt-A-amu-measure/ed25519/core.cljk ed25519.edwards ed25519.sign sha2.sha512
+json.core /private/tmp/wt-A-amu-measure/json/core.cljk -
+kotoba.artifact.core /private/tmp/wt-A-amu-measure/kotoba/artifact/core.cljk -
+kotoba.bytes /private/tmp/wt-A-amu-measure/kotoba/bytes.cljk -
+kotoba.bytes.sha256 /private/tmp/wt-A-amu-measure/kotoba/bytes/sha256.cljk kotoba.bytes
+kotoba.codegen.layout /private/tmp/wt-A-amu-measure/kotoba/codegen/layout.cljk -
+kotoba.form /private/tmp/wt-A-amu-measure/kotoba/form.cljk -
+kotoba.gmir /private/tmp/wt-A-amu-measure/kotoba/gmir.cljk -
+kotoba.mir /private/tmp/wt-A-amu-measure/kotoba/mir.cljk kotoba.form kotoba.gmir
+kotoba.codegen.mc /private/tmp/wt-A-amu-measure/kotoba/codegen/mc.cljk kotoba.form kotoba.mir
+kotoba.lang.coll /private/tmp/wt-A-amu-measure/kotoba/lang/coll.cljk -
+kotoba.compiler.affine /private/tmp/wt-A-amu-measure/kotoba/compiler/affine.cljk kotoba.lang.coll
+kotoba.compiler.base64-text /private/tmp/wt-A-amu-measure/kotoba/compiler/base64_text.cljk kotoba.bytes
+kotoba.compiler.kotoba-reader /private/tmp/wt-A-amu-measure/kotoba/compiler/kotoba_reader.cljk kotoba.lang.text
+kotoba.compiler.bounded-edn /private/tmp/wt-A-amu-measure/kotoba/compiler/bounded_edn.cljk kotoba.compiler.kotoba-reader
+kotoba.compiler.frontend-tables /private/tmp/wt-A-amu-measure/kotoba/compiler/frontend_tables.cljk kotoba.form
+kotoba.compiler.frontend.base /private/tmp/wt-A-amu-measure/kotoba/compiler/frontend/base.cljk kotoba.lang.text kotoba.compiler.frontend-tables kotoba.compiler.kotoba-reader kotoba.form
+kotoba.compiler.frontend.kernel-region /private/tmp/wt-A-amu-measure/kotoba/compiler/frontend/kernel_region.cljk kotoba.lang.text kotoba.compiler.frontend-tables kotoba.form kotoba.compiler.frontend.base
+kotoba.compiler.value-type /private/tmp/wt-A-amu-measure/kotoba/compiler/value_type.cljk kotoba.form
+kotoba.compiler.frontend.closure-types /private/tmp/wt-A-amu-measure/kotoba/compiler/frontend/closure_types.cljk kotoba.artifact.core kotoba.form kotoba.compiler.value-type kotoba.compiler.frontend-tables kotoba.compiler.frontend.base
+kotoba.compiler.frontend.expand /private/tmp/wt-A-amu-measure/kotoba/compiler/frontend/expand.cljk kotoba.lang.coll kotoba.lang.text kotoba.compiler.frontend-tables kotoba.form kotoba.compiler.frontend.base kotoba.compiler.frontend.closure-types
+kotoba.hir /private/tmp/wt-A-amu-measure/kotoba/hir.cljk kotoba.lang.coll
+kotoba.kir.value /private/tmp/wt-A-amu-measure/kotoba/kir/value.cljk kotoba.lang.text
+kotoba.kir.iq-codebook /private/tmp/wt-A-amu-measure/kotoba/kir/iq_codebook.cljk kotoba.lang.text
+kotoba.kir.decimal /private/tmp/wt-A-amu-measure/kotoba/kir/decimal.cljk -
+kotoba.kir.xml /private/tmp/wt-A-amu-measure/kotoba/kir/xml.cljk kotoba.lang.text
+kotoba.kir /private/tmp/wt-A-amu-measure/kotoba/kir.cljk kotoba.lang.text kotoba.hir kotoba.kir.value kotoba.kir.iq-codebook kotoba.kir.decimal kotoba.kir.xml
+kotoba.compiler.frontend.namespace-defs /private/tmp/wt-A-amu-measure/kotoba/compiler/frontend/namespace_defs.cljk kotoba.lang.coll kotoba.lang.text kotoba.compiler.frontend-tables kotoba.kir kotoba.form kotoba.compiler.frontend.base kotoba.compiler.frontend.kernel-region kotoba.compiler.frontend.closure-types kotoba.compiler.frontend.expand
+kotoba.compiler.validate-expr /private/tmp/wt-A-amu-measure/kotoba/compiler/validate_expr.cljk kotoba.form kotoba.compiler.frontend-tables kotoba.compiler.value-type
+kotoba.compiler.frontend.validate /private/tmp/wt-A-amu-measure/kotoba/compiler/frontend/validate.cljk kotoba.lang.text kotoba.kir.value kotoba.form kotoba.compiler.validate-expr kotoba.compiler.frontend.base kotoba.compiler.frontend.kernel-region kotoba.compiler.frontend.closure-types kotoba.compiler.frontend.expand kotoba.compiler.frontend.namespace-defs
+kotoba.compiler.frontend.infer /private/tmp/wt-A-amu-measure/kotoba/compiler/frontend/infer.cljk kotoba.lang.coll kotoba.lang.text kotoba.compiler.frontend-tables kotoba.kir.value kotoba.form kotoba.compiler.value-type kotoba.compiler.frontend.base kotoba.compiler.frontend.kernel-region kotoba.compiler.frontend.closure-types kotoba.compiler.frontend.expand kotoba.compiler.frontend.namespace-defs
+kotoba.compiler.frontend.record-projection /private/tmp/wt-A-amu-measure/kotoba/compiler/frontend/record_projection.cljk kotoba.compiler.frontend-tables kotoba.kir.value kotoba.form kotoba.compiler.frontend.base kotoba.compiler.frontend.closure-types kotoba.compiler.frontend.expand kotoba.compiler.frontend.namespace-defs kotoba.compiler.frontend.infer
+kotoba.compiler.frontend.desugar /private/tmp/wt-A-amu-measure/kotoba/compiler/frontend/desugar.cljk kotoba.lang.coll kotoba.lang.text kotoba.compiler.frontend-tables kotoba.kir.value kotoba.form kotoba.artifact.core kotoba.compiler.value-type kotoba.compiler.frontend.base kotoba.compiler.frontend.kernel-region kotoba.compiler.frontend.closure-types kotoba.compiler.frontend.expand kotoba.compiler.frontend.validate kotoba.compiler.frontend.infer
+kotoba.compiler.frontend.row /private/tmp/wt-A-amu-measure/kotoba/compiler/frontend/row.cljk kotoba.form kotoba.lang.text kotoba.compiler.frontend-tables kotoba.compiler.frontend.base kotoba.compiler.frontend.kernel-region kotoba.compiler.frontend.closure-types kotoba.compiler.frontend.infer kotoba.compiler.frontend.record-projection
+kotoba.compiler.frontend.state-ability /private/tmp/wt-A-amu-measure/kotoba/compiler/frontend/state_ability.cljk kotoba.compiler.frontend-tables kotoba.form kotoba.compiler.frontend.base kotoba.compiler.frontend.closure-types kotoba.compiler.frontend.expand kotoba.compiler.frontend.namespace-defs kotoba.compiler.frontend.infer
+kotoba.compiler.schema /private/tmp/wt-A-amu-measure/kotoba/compiler/schema.cljk kotoba.artifact.core
+kotoba.compiler.frontend.analyze /private/tmp/wt-A-amu-measure/kotoba/compiler/frontend/analyze.cljk kotoba.lang.coll kotoba.lang.text kotoba.compiler.affine kotoba.compiler.schema kotoba.compiler.frontend-tables kotoba.hir kotoba.kir kotoba.kir.value kotoba.form kotoba.compiler.frontend.base kotoba.compiler.frontend.kernel-region kotoba.compiler.frontend.closure-types kotoba.compiler.frontend.expand kotoba.compiler.frontend.namespace-defs kotoba.compiler.frontend.validate kotoba.compiler.frontend.infer kotoba.compiler.frontend.record-projection kotoba.compiler.frontend.desugar kotoba.compiler.frontend.row kotoba.compiler.frontend.state-ability
+kotoba.compiler.frontend /private/tmp/wt-A-amu-measure/kotoba/compiler/frontend.cljk kotoba.compiler.frontend.base kotoba.compiler.frontend.kernel-region kotoba.compiler.frontend.closure-types kotoba.compiler.frontend.expand kotoba.compiler.frontend.namespace-defs kotoba.compiler.frontend.validate kotoba.compiler.frontend.infer kotoba.compiler.frontend.record-projection kotoba.compiler.frontend.desugar kotoba.compiler.frontend.row kotoba.compiler.frontend.state-ability kotoba.compiler.frontend.analyze
+kotoba.sema /private/tmp/wt-A-amu-measure/kotoba/sema.cljk kotoba.compiler.frontend kotoba.compiler.frontend.analyze kotoba.compiler.frontend.expand kotoba.compiler.frontend.namespace-defs kotoba.compiler.frontend.validate kotoba.compiler.schema
+kotoba.compiler.capability-names /private/tmp/wt-A-amu-measure/kotoba/compiler/capability_names.cljk kotoba.lang.coll kotoba.sema
+kotoba.compiler.decimal-text /private/tmp/wt-A-amu-measure/kotoba/compiler/decimal_text.cljk -
+kotoba.kir.alpha-normalization /private/tmp/wt-A-amu-measure/kotoba/kir/alpha_normalization.cljk -
+multiformats.base32 /private/tmp/wt-A-amu-measure/multiformats/base32.cljk -
+multiformats.core /private/tmp/wt-A-amu-measure/multiformats/core.cljk kotoba.bytes kotoba.lang.text multiformats.base32 kotoba.bytes.sha256
+kotoba.kir.definition-identity /private/tmp/wt-A-amu-measure/kotoba/kir/definition_identity.cljk kotoba.form cbor.core multiformats.core
+kotoba.compiler.definition-identity /private/tmp/wt-A-amu-measure/kotoba/compiler/definition_identity.cljk kotoba.form kotoba.kir.alpha-normalization kotoba.kir.definition-identity
+kotoba.compiler.diagnostic /private/tmp/wt-A-amu-measure/kotoba/compiler/diagnostic.cljk kotoba.lang.text
+kotoba.security.information-flow /private/tmp/wt-A-amu-measure/kotoba/security/information_flow.cljk -
+kotoba.compiler.effect-classification /private/tmp/wt-A-amu-measure/kotoba/compiler/effect_classification.cljk kotoba.compiler.capability-names kotoba.security.information-flow
+kotoba.security.abac /private/tmp/wt-A-amu-measure/kotoba/security/abac.cljk kotoba.lang.coll kotoba.security.information-flow
+kotoba.security.crypto-policy /private/tmp/wt-A-amu-measure/kotoba/security/crypto_policy.cljk kotoba.lang.coll
+kotoba.security.hardware /private/tmp/wt-A-amu-measure/kotoba/security/hardware.cljk -
+kotoba.kir.admission /private/tmp/wt-A-amu-measure/kotoba/kir/admission.cljk kotoba.lang.coll kotoba.security.abac kotoba.security.crypto-policy kotoba.security.hardware kotoba.security.information-flow
+kotoba.compiler.effect-row /private/tmp/wt-A-amu-measure/kotoba/compiler/effect_row.cljk kotoba.compiler.effect-classification kotoba.kir.admission
+kotoba.compiler.host-integer /private/tmp/wt-A-amu-measure/kotoba/compiler/host_integer.cljk kotoba.compiler.decimal-text
+kotoba.lang.json /private/tmp/wt-A-amu-measure/kotoba/lang/json.cljk json.core
+kotoba.compiler.json-text /private/tmp/wt-A-amu-measure/kotoba/compiler/json_text.cljk kotoba.lang.json
+kotoba.compiler.kexe-fs-forms /private/tmp/wt-A-amu-measure/kotoba/compiler/kexe_fs_forms.cljk -
+kotoba.compiler.module-lock /private/tmp/wt-A-amu-measure/kotoba/compiler/module_lock.cljk -
+kotoba.compiler.posix-path /private/tmp/wt-A-amu-measure/kotoba/compiler/posix_path.cljk -
+kotoba.compiler.text-bytes /private/tmp/wt-A-amu-measure/kotoba/compiler/text_bytes.cljk -
+kotoba.compiler.nbb.io /private/tmp/wt-A-amu-measure/kotoba/compiler/nbb/io.cljk kotoba.compiler.decimal-text kotoba.compiler.posix-path kotoba.compiler.text-bytes kotoba.lang.text
+kotoba.compiler.source-path /private/tmp/wt-A-amu-measure/kotoba/compiler/source_path.cljk kotoba.lang.text
+kotoba.compiler.nbb.cli-support /private/tmp/wt-A-amu-measure/kotoba/compiler/nbb/cli_support.cljk kotoba.compiler.diagnostic kotoba.compiler.kotoba-reader kotoba.compiler.posix-path kotoba.compiler.text-bytes kotoba.compiler.host-integer kotoba.compiler.decimal-text kotoba.compiler.bounded-edn kotoba.form kotoba.compiler.json-text kotoba.compiler.nbb.io kotoba.compiler.source-path
+sha2.core /private/tmp/wt-A-amu-measure/sha2/core.cljk -
+kotoba.compiler.nbb.compile-cache /private/tmp/wt-A-amu-measure/kotoba/compiler/nbb/compile_cache.cljk kotoba.compiler.json-text kotoba.compiler.text-bytes kotoba.bytes sha2.core kotoba.compiler.decimal-text kotoba.compiler.nbb.io
+kotoba.kir.compatibility /private/tmp/wt-A-amu-measure/kotoba/kir/compatibility.cljk -
+kotoba.compiler.nbb.verdict-cache /private/tmp/wt-A-amu-measure/kotoba/compiler/nbb/verdict_cache.cljk kotoba.artifact.core kotoba.compiler.posix-path kotoba.compiler.decimal-text kotoba.compiler.nbb.compile-cache kotoba.kir.compatibility
+kotoba.compiler.nbb.output-set /private/tmp/wt-A-amu-measure/kotoba/compiler/nbb/output_set.cljk kotoba.compiler.nbb.compile-cache kotoba.compiler.host-integer kotoba.compiler.posix-path kotoba.compiler.text-bytes kotoba.form kotoba.bytes sha2.core
+kotoba.compiler.nbb.project-source /private/tmp/wt-A-amu-measure/kotoba/compiler/nbb/project_source.cljk kotoba.compiler.nbb.cli-support kotoba.compiler.nbb.io
+kotoba.verifier.seal /private/tmp/wt-A-amu-measure/kotoba/verifier/seal.kotoba kotoba.form
+kotoba.compiler.provenance /private/tmp/wt-A-amu-measure/kotoba/compiler/provenance.cljk kotoba.form kotoba.bytes kotoba.verifier.seal kotoba.kir.compatibility sha2.core
+kotoba.kir.target /private/tmp/wt-A-amu-measure/kotoba/kir/target.cljk -
+kotoba.compiler.uefi-operations /private/tmp/wt-A-amu-measure/kotoba/compiler/uefi_operations.cljk kotoba.lang.coll kotoba.kir.target
+kotoba.verifier /private/tmp/wt-A-amu-measure/kotoba/verifier.cljk kotoba.bytes kotoba.lang.coll kotoba.lang.coll kotoba.kir.target kotoba.gmir kotoba.artifact.core kotoba.kir.compatibility kotoba.kir kotoba.form
+kotoba.compiler.nbb.cli /private/tmp/wt-A-amu-measure/kotoba/compiler/nbb/cli.cljk kotoba.compiler.capability-names kotoba.compiler.kexe-fs-forms kotoba.compiler.nbb.cli-support kotoba.compiler.nbb.compile-cache kotoba.compiler.nbb.verdict-cache kotoba.compiler.definition-identity kotoba.sema kotoba.compiler.nbb.io kotoba.compiler.nbb.output-set kotoba.compiler.nbb.project-source kotoba.compiler.effect-row kotoba.artifact.core kotoba.kir.compatibility kotoba.compiler.host-integer kotoba.kir kotoba.compiler.provenance kotoba.compiler.source-path kotoba.compiler.uefi-operations kotoba.kir.target kotoba.verifier kotoba.compiler.text-bytes kotoba.compiler.base64-text
+kotoba.native.aggregate-abi /private/tmp/wt-A-amu-measure/kotoba/native/aggregate_abi.cljk kotoba.lang.coll
+kotoba.native.image-scratch /private/tmp/wt-A-amu-measure/kotoba/native/image_scratch.cljk -
+kotoba.native.interrupt-abi /private/tmp/wt-A-amu-measure/kotoba/native/interrupt_abi.cljk kotoba.lang.text
+kotoba.native.document /private/tmp/wt-A-amu-measure/kotoba/native/document.cljk -
+kotoba.native.string-index /private/tmp/wt-A-amu-measure/kotoba/native/string_index.cljk -
+kotoba.native.string-search /private/tmp/wt-A-amu-measure/kotoba/native/string_search.cljk -
+kotoba.native.machine-ir /private/tmp/wt-A-amu-measure/kotoba/native/machine_ir.cljk kotoba.form kotoba.bytes kotoba.lang.text kotoba.lang.coll kotoba.gmir kotoba.mir kotoba.codegen.mc kotoba.codegen.layout kotoba.native.aggregate-abi kotoba.native.image-scratch kotoba.native.interrupt-abi kotoba.native.document kotoba.native.string-index kotoba.native.string-search
+kotoba.native.peephole /private/tmp/wt-A-amu-measure/kotoba/native/peephole.cljk -
+kotoba.native.keyword-equality /private/tmp/wt-A-amu-measure/kotoba/native/keyword_equality.cljk -
+kotoba.native.vector-region /private/tmp/wt-A-amu-measure/kotoba/native/vector_region.cljk -
+kotoba.native.aarch64 /private/tmp/wt-A-amu-measure/kotoba/native/aarch64.cljk kotoba.form kotoba.bytes kotoba.lang.text kotoba.codegen.layout kotoba.native.machine-ir kotoba.native.peephole kotoba.native.keyword-equality kotoba.native.document kotoba.native.string-index kotoba.native.string-search kotoba.native.vector-region
+kotoba.compiler.nbb.aarch64-cli /private/tmp/wt-A-amu-measure/kotoba/compiler/nbb/aarch64_cli.cljk kotoba.compiler.nbb.cli kotoba.compiler.nbb.cli-support kotoba.compiler.nbb.compile-cache kotoba.kir.target kotoba.native.aarch64
+kotoba.compiler.process-wire /private/tmp/wt-A-amu-measure/kotoba/compiler/process_wire.cljk kotoba.compiler.decimal-text kotoba.lang.text
+kotoba.compiler.nbb.host.fs /private/tmp/wt-A-amu-measure/kotoba/compiler/nbb/host/fs.cljk -
+kotoba.compiler.nbb.host.process /private/tmp/wt-A-amu-measure/kotoba/compiler/nbb/host/process.cljk -
+kotoba.compiler.nbb.fs-tree /private/tmp/wt-A-amu-measure/kotoba/compiler/nbb/fs_tree.cljk kotoba.compiler.decimal-text kotoba.compiler.posix-path kotoba.lang.text
+kotoba.lang.package-contract /private/tmp/wt-A-amu-measure/kotoba/lang/package_contract.cljk kotoba.lang.text kotoba.form kotoba.bytes cbor.core multiformats.core ed25519.core
+kotoba.compiler.nbb.package-lock /private/tmp/wt-A-amu-measure/kotoba/compiler/nbb/package_lock.cljk kotoba.compiler.decimal-text kotoba.compiler.host-integer kotoba.compiler.posix-path kotoba.compiler.process-wire kotoba.compiler.text-bytes kotoba.compiler.nbb.host.fs kotoba.compiler.nbb.host.process kotoba.compiler.nbb.fs-tree kotoba.form kotoba.bytes multiformats.core kotoba.lang.coll kotoba.lang.text kotoba.lang.package-contract kotoba.compiler.nbb.cli-support
+kotoba.compiler.nbb.check-driver /private/tmp/wt-A-amu-measure/kotoba/compiler/nbb/check_driver.cljk kotoba.compiler.capability-names kotoba.compiler.nbb.cli-support kotoba.compiler.definition-identity kotoba.compiler.nbb.package-lock kotoba.compiler.nbb.compile-cache kotoba.sema kotoba.compiler.nbb.project-source kotoba.compiler.effect-row kotoba.kir
+kotoba.compiler.nbb.check-cli /private/tmp/wt-A-amu-measure/kotoba/compiler/nbb/check_cli.cljk kotoba.compiler.nbb.check-driver kotoba.compiler.nbb.cli-support
+kotoba.compiler.refactor-cli /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor_cli.cljk -
+kotoba.compiler.nbb.refactor-cli /private/tmp/wt-A-amu-measure/kotoba/compiler/nbb/refactor_cli.cljk clojure.string kotoba.compiler.nbb.cli-support kotoba.compiler.process-wire kotoba.compiler.refactor-cli
+kotoba.compiler.project /private/tmp/wt-A-amu-measure/kotoba/compiler/project.cljk kotoba.lang.text kotoba.sema kotoba.kir.value
+kotoba.compiler.project-files /private/tmp/wt-A-amu-measure/kotoba/compiler/project_files.cljk kotoba.lang.text kotoba.sema kotoba.compiler.project
+kotoba.compiler.refactor.cst /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor/cst.cljk -
+kotoba.compiler.refactor.edit /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor/edit.cljk clojure.string
+kotoba.compiler.refactor.prelude /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor/prelude.cljk -
+kotoba.compiler.refactor.core /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor/core.cljk clojure.string kotoba.compiler.refactor.cst kotoba.compiler.refactor.edit kotoba.compiler.refactor.prelude
+kotoba.compiler.refactor.diff /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor/diff.cljk clojure.string
+kotoba.compiler.refactor.graph /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor/graph.cljk clojure.string clojure.set kotoba.compiler.refactor.cst
+kotoba.compiler.refactor.extract /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor/extract.cljk clojure.string kotoba.compiler.refactor.cst kotoba.compiler.refactor.graph
+kotoba.compiler.refactor.partition /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor/partition.cljk clojure.string clojure.set kotoba.compiler.refactor.graph
+kotoba.compiler.refactor.rules.destructure /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor/rules/destructure.cljk clojure.string kotoba.compiler.refactor.cst kotoba.compiler.refactor.edit
+kotoba.compiler.refactor.rules.reject /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor/rules/reject.cljk clojure.string kotoba.compiler.refactor.cst kotoba.compiler.refactor.edit
+kotoba.compiler.refactor.rules.dynvars /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor/rules/dynvars.cljk clojure.string kotoba.compiler.refactor.cst kotoba.compiler.refactor.edit
+kotoba.compiler.refactor.rules.kwcallback /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor/rules/kwcallback.cljk clojure.string kotoba.compiler.refactor.cst kotoba.compiler.refactor.edit
+kotoba.compiler.refactor.rules.letdestructure /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor/rules/letdestructure.cljk clojure.string kotoba.compiler.refactor.cst kotoba.compiler.refactor.edit kotoba.compiler.refactor.rules.destructure
+kotoba.compiler.refactor.rules.lowerloops /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor/rules/lowerloops.cljk clojure.string kotoba.compiler.refactor.cst kotoba.compiler.refactor.edit
+kotoba.compiler.refactor.rules /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor/rules.cljk kotoba.compiler.refactor.rules.destructure kotoba.compiler.refactor.rules.reject kotoba.compiler.refactor.rules.dynvars kotoba.compiler.refactor.rules.kwcallback kotoba.compiler.refactor.rules.letdestructure kotoba.compiler.refactor.rules.lowerloops
+kotoba.compiler.refactor.verify /private/tmp/wt-A-amu-measure/kotoba/compiler/refactor/verify.cljk clojure.string
