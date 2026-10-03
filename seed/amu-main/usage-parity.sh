@@ -24,6 +24,7 @@ mkenv() {  # <dir>
   print -r -- '(ns app.util) (defn twice [x :i64] :i64 (* 2 x))' > $1/p/app/util.kotoba
   print -r -- '(ns app.main (:require [app.util :as u])) (defn main [] :i64 (u/twice 21))' > $1/p/app/main.kotoba
   print -r -- 'not a source' > $1/x.txt
+  cp $W/s0.kexe $1/s0.kexe 2>/dev/null
 }
 cases=(
   'B:'
@@ -58,7 +59,15 @@ cases=(
   'check'
   'check x.txt'
   'inspect x.kotoba'
+  'extract-native'
+  'extract-native nonexist.kexe'
+  'extract-native s0.kexe'
+  'extract-native s0.kexe --symbol fact --output f.bin'
+  'extract-native s0.kexe --symbol nope'
 )
+# s0.kexe: stage-0's own artifact of x.kotoba (the extract-native cases read it on both sides)
+mkdir -p $W/k0; ( cd $W/k0; print -r -- '(ns x) (defn fact [n :i64] :i64 (if (<= n 1) 1 (* n (fact (- n 1))))) (defn main [] :i64 (fact 5))' > x.kotoba
+  nice $S0 compile x.kotoba --target aarch64-macos --output ../s0.kexe > /dev/null 2>&1 ) || echo "usage-parity: stage-0 could not compile s0.kexe" >&2
 : > $W/usage.tsv
 i=0
 for c in "${cases[@]}"; do
@@ -81,8 +90,9 @@ for c in "${cases[@]}"; do
   cmp -s $W/$i/s0.out $W/$i/amu.out || { cls=DIFF; det="$det stdout"; }
   cmp -s $W/$i/s0.err $W/$i/amu.err || { cls=DIFF; det="$det stderr"; }
   cmp -s $W/$i/s0.files $W/$i/amu.files || { cls=DIFF; det="$det files"; }
+  for b in $D0/*.bin(N); do cmp -s $b $D1/${b:t} || { cls=DIFF; det="$det bytes(${b:t})"; }; done
   if [[ $c == *r.kotoba* ]] && [ $r0 = $r1 ] && [ $cls = DIFF ]; then cls=DECLARED; det="$det (the seed's refusal line)"; fi
-  if [[ $c == inspect* ]] && [ $r0 = 64 ] && [ $r1 = 69 ]; then cls=DECLARED; det="$det (a bin/amu command with no native implementation: declared stub naming it; stage-0's in-process CLI does not know it)"; fi
+  if [[ $c == inspect* ]] && [ $r1 = 69 ]; then cls=DECLARED; det="$det (a bin/amu command with no native implementation in the image: declared stub naming it)"; fi
   if [[ $c == *--blocks* ]] && [ $r1 = 69 ]; then cls=DECLARED; det="$det (declared stub: module locks are not on the seed route)"; fi
   if [[ $c == *f.kotoba* ]] && [ $r0 = 0 ] && [ $r1 = 65 ]; then cls=DECLARED; det="$det (language: the seed refuses what stage-0 compiles, AMU-REFUSES)"; fi
   if [ $r1 = 0 ] && [ $cls = SAME ]; then

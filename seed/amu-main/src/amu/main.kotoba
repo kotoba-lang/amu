@@ -4,6 +4,7 @@
             [amu.check :as check]
             [amu.compile :as compile]
             [amu.refactor :as refactor]
+            [amu.kexe :as kexe]
             [seed.main :as seed]))
 
 ;; seed/amu-main/src/amu/main.kotoba -- the `amu` command as ONE Kotoba entry (agent MAINS, 2026-10-04; the native
@@ -16,7 +17,8 @@
 ;;   amu link | modules | extract-native ..
 ;;                                -> seed.main          (the seed driver's own build commands, so an amu image rebuilds
 ;;                                   itself with no seed binary beside it; FRONTSRC's request, CONTRACT-REQUESTS 2026-10-04.
-;;                                   extract-native reads the seed's kseed/v1 container, not a kexe/v1 artifact)
+;;                                   extract-native: a KSEED1 container goes to the seed driver, a :kotoba.kexe/v1
+;;                                   artifact (stage-0's or amu's) is read by amu.kexe/extract with stage-0's texts)
 ;;   a command bin/amu routes elsewhere (nbb / JVM) -> declared stub, exit 69, naming the command
 ;;   anything else                -> stage-0's usage refusal, exit 64
 ;;   no command, -h, --help       -> bin/amu's usage text on stdout, exit 0 (the launcher layer; LAUNCHER.md)
@@ -43,6 +45,24 @@
         (string=? c "sign-output-set") 1 (string=? c "verify-output-set") 1
         :else 0))
 
+(defn- extract-native [] :i64
+  (let [p (cli/argx 1)
+        ks (cli/flag-value "--symbol" 1)
+        ko (cli/flag-value "--output" 1)]
+    (cond (string=? p "")
+          (cli/report-plain ":decode" ":kotoba/invalid-data" "input path is required" ", :details {:phase :decode}" 65)
+          (= (cli/regular-file p) 0)
+          (cli/report-plain ":decode" ":kotoba/invalid-data" "input must be a regular file" ", :details {:phase :decode}" 65)
+          (= (kexe/head-byte p) 75) (seed/main)   ; KSEED1: the seed's own container (build use)
+          :else
+          (let [s (if (< ks 0) "main" (cli/arg ks))
+                r (kexe/extract p s (if (< ko 0) "program.bin" (cli/arg ko)))]
+            (cond (= r 0) 0
+                  (= r 1) (cli/report-plain ":verify" ":kotoba/verification-failed" "unknown native export"
+                                            (string-concat ", :details {:phase :verify, :entry " (string-concat s "}")) 65)
+                  (= r 2) (cli/report-plain ":decode" ":kotoba/invalid-data" "extract-native input did not read as a native artifact" ", :details {:phase :decode}" 65)
+                  :else (cli/report-plain ":output" ":kotoba/output-failed" "output could not be written" ", :details {:phase :output}" 74))))))
+
 (defn main [] :i64
   (if (or (< (cli/argc) 1) (string=? (cli/argx 0) "-h") (string=? (cli/argx 0) "--help"))
     (let [w (cli/out (usage-text))] 0)
@@ -53,7 +73,7 @@
             (string=? c "refactor") (refactor/run)
             (string=? c "link") (seed/main)
             (string=? c "modules") (seed/main)
-            (string=? c "extract-native") (seed/main)
+            (string=? c "extract-native") (extract-native)
             (= (bin-amu-command c) 1)
             (cli/not-available c (string-concat "\"bin/amu routes `" (string-concat c "` to nbb or the JVM; no native implementation in this image yet\"")))
             :else (cli/usage-error ":kotoba/invalid-usage" "unknown or missing kotoba command" ", :details {:phase :usage}")))))

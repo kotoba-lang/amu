@@ -1,5 +1,5 @@
 (ns amu.kexe
-  {:kotoba/export [write-artifact sha-text]}
+  {:kotoba/export [write-artifact sha-text extract head-byte]}
   (:require [seed.io :as sio]))
 
 ;; seed/amu-main/src/amu/kexe.kotoba -- the kseed/v1 container the seed writes, rewritten as a `:kotoba.kexe/v1` artifact
@@ -159,3 +159,75 @@
                    ", :limits {:memory-bytes 65536, :fuel 512, :stack-bytes 4096}, :target :aarch64-macos-kotoba-v1, :lowering :runtime-aapcs64-v1, :program nil}"))))))))))))
             w (sio/io-write-text out file)]
         (if (= (sio/io-exists out) 1) seal "")))))
+
+;; ---- extract-native for a :kotoba.kexe/v1 artifact (CMD, 2026-10-04) ------------------------------------------------
+;; stage-0's `extract-native <artifact> [--symbol main] [--output program.bin]`: the :code bytes into out and the line
+;; {:ok true, :output "<out>", :symbol <s>, :offset N, :length L, :arity A}. Declared differences: stage-0 first runs its
+;; verifier (it re-derives the code from :program and so refuses amu's own artifacts, "missing or malformed KIR identity");
+;; this reads :exports and :code as written ({:offset N, :length L, :arity A} per export, stage-0's and amu's order) and
+;; does not check the seal.
+
+;; the decimal number at i (digits only), and the index after it
+(defn- num-end [T :string i :i64] :i64
+  (cond (>= i (string-length T)) i
+        (< (string-code-point-at T i) 48) i
+        (> (string-code-point-at T i) 57) i
+        :else (num-end T (+ i 1))))
+
+(defn- num-at [T :string i :i64] :i64 (digits T i (num-end T i) 0))
+
+;; the byte count of the code vector text from i (just after "[") to "]"
+(defn- code-count [T :string i :i64 n :i64] :i64
+  (let [c (string-code-point-at T i)]
+    (cond (= c 93) n
+          (= c 32) (code-count T (+ i 1) n)
+          :else (code-count T (num-end T i) (+ n 1)))))
+
+(defn- code-fill [T :string i :i64 V :vector-i64 k :i64] :vector-i64
+  (let [c (string-code-point-at T i)]
+    (cond (= c 93) V
+          (= c 32) (code-fill T (+ i 1) V k)
+          :else (code-fill T (num-end T i) (vector-assoc! V k (num-at T i)) (+ k 1)))))
+
+;; the index of "<sym> {:offset " as a whole symbol (after "{" or " ") at or after i, -1 when absent
+(defn- entry-at [T :string pat :string i :i64] :i64
+  (let [j (string-index-of-from T pat i)]
+    (cond (< j 0) -1
+          (= j 0) -1
+          (= (string-code-point-at T (- j 1)) 123) j
+          (= (string-code-point-at T (- j 1)) 32) j
+          :else (entry-at T pat (+ j 1)))))
+
+;; 0 written, 1 the symbol is not exported, 2 malformed (no :exports / :code), 3 the write did not land
+(defn extract [path :string sym :string out :string] :i64
+  (let [T (sio/io-read-file (vector-alloc 0) path)
+        ex (string-index-of T ":exports {")
+        cd (string-index-of T ":code [")]
+    (if (or (< ex 0) (< cd 0))
+      2
+      (let [pat (string-concat sym " {:offset ")
+            e (entry-at T pat ex)]
+        (if (< e 0)
+          1
+          (let [o0 (+ e (string-length pat))
+                off (num-at T o0)
+                l0 (+ (num-end T o0) (string-length ", :length "))
+                ln (num-at T l0)
+                a0 (+ (num-end T l0) (string-length ", :arity "))
+                ar (num-at T a0)
+                c0 (+ cd (string-length ":code ["))
+                n (code-count T c0 0)
+                V (code-fill T c0 (vector-alloc n) 0)
+                w (sio/io-write-bytes V out 0 n)]
+            (if (= (sio/io-exists out) 1)
+              (let [z (typed-cap-call :io/write :string :string
+                        (string-concat "{:ok true, :output \"" (string-concat out (string-concat "\", :symbol " (string-concat sym
+                          (string-concat ", :offset " (string-concat (string-from-i64 off) (string-concat ", :length "
+                            (string-concat (string-from-i64 ln) (string-concat ", :arity " (string-concat (string-from-i64 ar) "}\n")))))))))))]
+                0)
+              3)))))))
+
+;; the first byte of a file (123 "{" for EDN, 75 "K" for the seed's KSEED1 container), -1 when empty or unreadable
+(defn head-byte [path :string] :i64
+  (let [h (sio/io-slice path 0 1)]
+    (if (= (string-length h) 0) -1 (string-code-point-at h 0))))

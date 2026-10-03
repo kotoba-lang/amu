@@ -43,6 +43,7 @@ S=$W/s; rm -rf $S; mkdir -p $S
 # the amu sources: the worktree's seed/amu-main/{src,s}, except the paths in AM_FROM_HEAD (space separated, relative to
 # seed/amu-main, e.g. "src/amu/refactor.kotoba"), taken from git HEAD (another agent's file in progress) (CMD, 2026-10-04)
 AS=$W/am; rm -rf $AS; mkdir -p $AS; cp -R $H/src $H/s $AS/
+cp $H/l/amu/compile.kotoba $AS/s/amu/compile.kotoba   # the launcher's compile (l/: needs seed.main/drv-compile-file, patch-split.py)
 for f in ${=AM_FROM_HEAD:-}; do git -C $R show HEAD:seed/amu-main/$f > $AS/$f || exit 1; done
 export SEED_BUILD=$S SEED_RESOURCES_35=$R SEED_VECTOR_ITEMS=67108864 SEED_SECONDS=900
 source $R/scripts/seed/lib.sh
@@ -54,7 +55,7 @@ nice zsh -c "source $R/scripts/seed/lib.sh; seed_run $SB $SOFF extract-native $S
   || { echo "amu-main: extract-native failed:"; tail -3 $S/extract.log; exit 1; }
 sed -n 's/.*:offset \([0-9]*\).*/\1/p' $S/extract.log > $S/seed-1.offset
 [ -s $S/seed-1.offset ] || { echo "amu-main: no offset"; exit 1; }
-SEED_BUILD=$S zsh $R/scripts/seed/package.sh 1 --out $W/amu-s --allow 3,35,37,38,39 \
+SEED_PKG_VECTORS=${SEED_PKG_VECTORS:-67108864} SEED_BUILD=$S zsh $R/scripts/seed/package.sh 1 --out $W/amu-s --allow 3,35,37,38,39 \
   --scope "$R:/Users/junkawasaki/github/kotoba-lang/amu-embench:/private/tmp:/tmp" > $S/package.log 2>&1 \
   || { echo "amu-main: package failed:"; tail -3 $S/package.log; exit 1; }
 deps=$(otool -L $W/amu-s | tail -n +2 | awk '{print $1}')

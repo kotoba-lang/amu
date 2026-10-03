@@ -1,0 +1,137 @@
+(ns amu.compile
+  {:kotoba/export [run]}
+  (:require [amu.cli :as cli]
+            [amu.kexe :as kexe]
+            [seed.io :as sio]
+            [seed.main :as seed]))
+
+;; seed/amu-main/l/amu/compile.kotoba -- `amu compile` of the native LAUNCHER (source route; agent MAINS, 2026-10-04; output, argument
+;; order and report shapes: agent CMD, 2026-10-04).
+;;
+;; REAL: the seed's compiler (seed/split/seed, the seed's own source split into namespaces, its own fixed point) is linked
+;; into this image and called in-process through `seed/drv-compile-file` (CONTRACT-REQUESTS 2026-10-04 CMD -> FOLD): lex,
+;; read, names, check, lower, a64gen, layout, out; --source-path (60-proj project route) and --policy (R5B capability
+;; gate) as the seed driver reads them from argv.
+;;
+;; Stage-0's CLI (kotoba.compiler.cli "compile"), in its order, with its texts and exit codes:
+;;   1. argv[1] is the source: not .kotoba/.cljk/.cljc -> usage 64; not a regular file -> decode 65
+;;      (--module-lock instead of a source: declared stub, 69)
+;;   2. --source-path without --unpinned -> usage 64 (:compile/unpinned-inputs)
+;;   3. no --target flag -> bin/amu's host default (ADR 0351: aarch64-macos on this host; AMU_TARGET is not read: the
+;;      image holds no :env/read wire); `--target` with no value -> usage 64 (:compile/missing-target); a name stage-0's table does not know -> internal 70
+;;      ({:target :<name>}); a known target other than aarch64-macos -> declared stub 69
+;;   4. --output, or stage-0's default <source>.kexe; its parent not a directory -> output 74
+;;   5. compile; a seed refusal is the seed's own line `seed: E<code> ..` (declared difference), status 65 (usage 64)
+;;   6. the artifact: the container is rewritten in place as a sealed :kotoba.kexe/v1 (amu.kexe, its declared
+;;      differences there), then <output>.inputs.edn (stage-0's text) and <output>.provenance.edn (an amu-seed record:
+;;      source and artifact digests; stage-0's definition CIDs / HIR / KIR digests do not exist on this route)
+;;   7. stdout: stage-0's ok line, byte for byte.
+;; --emit-module (not a stage-0 flag): the seed driver's module object, exactly as `seed compile .. --emit-module` (the
+;; amu image's self-rebuild, scripts/seed/frontsrc/build-one-src.sh).
+
+(defn- target-alias [t :string] :i64
+  (cond (string=? t "wasm32") 1 (string=? t "x86_64") 1 (string=? t "aarch64") 1 (string=? t "component") 1
+        (string=? t "wasm-component") 1 (string=? t "js") 1 (string=? t "javascript") 1 (string=? t "web") 1
+        (string=? t "js-browser") 1 (string=? t "cljs") 1 (string=? t "cljs-browser") 1 (string=? t "cljs-node") 1
+        (string=? t "evm") 1 (string=? t "evm256") 1 (string=? t "wasm32-browser") 1 (string=? t "wasm32-wasi") 1
+        (string=? t "x86_64-linux") 1 (string=? t "x86_64-macos") 1 (string=? t "x86_64-windows") 1
+        (string=? t "aarch64-linux") 1 (string=? t "x86_64-linux-static") 1 (string=? t "aarch64-linux-static") 1
+        (string=? t "aarch64-windows") 1 (string=? t "aarch64-android") 1 (string=? t "aarch64-ios") 1
+        :else 0))
+
+;; 2 = this route compiles it, 1 = a target stage-0 knows (declared stub here), 0 = unknown (stage-0: internal error)
+(defn- target-class [t :string] :i64
+  (cond (string=? t "aarch64-macos") 2
+        (string=? t "aarch64-macos-kotoba-v1") 2
+        (= (target-alias t) 1) 1
+        (= (cli/ends-with t "-kotoba-v1") 1) 1
+        (= (cli/ends-with t "-aiueos-kernel-v1") 1) 1
+        (= (cli/ends-with t "-aiueos-user-v1") 1) 1
+        (= (cli/ends-with t "-aiueos-uefi-v1") 1) 1
+        :else 0))
+
+(defn- seed-status [r :i64] :i64
+  (cond (= r 1) 65
+        (= r 2) 64
+        :else r))
+
+;; the --source-path values as an EDN vector body: "\"a\" \"b\""
+(defn- source-paths [i :i64 acc :string] :string
+  (cond (>= (+ i 1) (cli/argc)) acc
+        (string=? (cli/arg i) "--source-path")
+        (source-paths (+ i 2) (string-concat acc (string-concat (if (= (string-length acc) 0) "\"" " \"") (string-concat (cli/arg (+ i 1)) "\""))))
+        :else (source-paths (+ i 1) acc)))
+
+(defn- inputs-text [] :string
+  (if (= (cli/has-flag "--source-path" 1) 1)
+    (string-concat "{:kotoba.compile/inputs :unpinned-source-path, :source-paths [" (string-concat (source-paths 1 "") "]}"))
+    "{:kotoba.compile/inputs :single-file}"))
+
+(defn- inputs-kind [] :string
+  (if (= (cli/has-flag "--source-path" 1) 1) ":unpinned-source-path" ":single-file"))
+
+(defn- provenance-text [src :string seal :string] :string
+  (string-concat "{:format :amu.seed-provenance/v1, :builder :amu-seed/v1, :source-sha256 \""
+    (string-concat (kexe/sha-text (sio/io-read-file (vector-alloc 0) src))
+      (string-concat "\", :outputs {:primary {:format :kotoba.kexe/v1, :sha256 \""
+        (string-concat seal "\"}}, :target :aarch64-macos-kotoba-v1}")))))
+
+(defn- ok-line [o :string] :i64
+  (cli/out (string-concat "{:ok true, :target :aarch64-macos-kotoba-v1, :output \""
+             (string-concat o (string-concat "\", :provenance-output \""
+               (string-concat o (string-concat ".provenance.edn\", :inputs-output \""
+                 (string-concat o (string-concat ".inputs.edn\", :kotoba.compile/inputs "
+                   (string-concat (inputs-kind) "}\n"))))))))))
+
+;; after a successful seed compile: rewrite the container as the artifact, write the two side files, print the ok line
+(defn- finish [src :string o :string] :i64
+  (let [seal (kexe/write-artifact o o)]
+    (if (= (string-length seal) 0)
+      (cli/report-error ":output" ":kotoba/output-failed" src "the kseed container could not be rewritten as :kotoba.kexe/v1" ", :details {:phase :output}" 74)
+      (let [a (sio/io-write-text (string-concat o ".inputs.edn") (inputs-text))
+            b (sio/io-write-text (string-concat o ".provenance.edn") (provenance-text src seal))
+            c (ok-line o)]
+        0))))
+
+(defn- build [src :string o :string] :i64
+  (let [r (seed/drv-compile-file src o)]
+    (if (= r 0) (finish src o) (seed-status r))))
+
+(defn- output-path [src :string] :string
+  (let [k (cli/flag-value "--output" 1)]
+    (if (< k 0) (string-concat src ".kexe") (cli/arg k))))
+
+(defn- emit [src :string] :i64
+  (let [o (output-path src)]
+    (if (= (cli/directory (cli/parent o)) 0)
+      (cli/report-error ":output" ":kotoba/output-failed" src "output parent must be a directory" ", :details {:phase :output}" 74)
+      (build src o))))
+
+(defn- targeted [src :string] :i64
+  (let [t (cli/flag-value "--target" 1)]
+    (if (and (< t 0) (= (cli/has-flag "--target" 1) 0))
+      (emit src)   ; bin/amu (ADR 0351): an omitted --target is this host's native target, aarch64-macos here
+    (if (< t 0)
+      (cli/usage-error-at src "--target is required on the in-process CLI; bin/amu defaults an omitted --target to the host's native target (amu ADR 0351)"
+                          ", :details {:phase :usage, :problem :compile/missing-target}")
+      (let [c (target-class (cli/arg t))]
+        (cond (= c 2) (emit src)
+              (= c 1) (cli/not-available (string-concat "compile --target " (cli/arg t))
+                                         "\"targets other than aarch64-macos: the seed backend emits aarch64-macos only\"")
+              :else (cli/report-error ":internal" ":kotoba/internal-error" src "internal compiler error"
+                                      (string-concat ", :details {:target :" (string-concat (cli/arg t) "}")) 70)))))))
+
+(defn run [] :i64
+  (let [src (cli/argx 1)]
+    (cond (= (cli/has-flag "--emit-module" 1) 1) (seed-status (seed/main))   ; the seed's module object (build use, not stage-0)
+          (and (= (cli/has-flag "--module-lock" 1) 1) (< (cli/flag-value "--blocks" 1) 0))
+          (cli/usage-error-at src "--module-lock requires --blocks <dir>" ", :details {:phase :usage}")
+          (= (cli/has-flag "--module-lock" 1) 1)
+          (cli/not-available "compile --module-lock" "\"module locks (kotoba.compiler.module-lock): not on the seed route\"")
+          (= (cli/source-ext src) 0)
+          (cli/usage-error ":kotoba/invalid-usage" "source input must use .kotoba, .cljk, or .cljc" ", :details {:phase :usage}")
+          (= (cli/regular-file src) 0) (cli/decode-error src)
+          (and (= (cli/has-flag "--source-path" 1) 1) (= (cli/has-flag "--unpinned" 1) 0))
+          (cli/usage-error-at src "a multi-module compile needs pinned inputs"
+                              ", :details {:phase :usage, :problem :compile/unpinned-inputs, :pin \"module-lock <entry> --source-path <dir> --blocks <dir>\", :then \"compile --module-lock <lock> --blocks <dir>\", :override \"--unpinned\"}")
+          :else (targeted src))))

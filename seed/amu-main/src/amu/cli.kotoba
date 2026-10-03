@@ -1,6 +1,6 @@
 (ns amu.cli
   {:kotoba/export [argc arg argx out err ends-with source-ext regular-file directory parent basename flag-value has-flag positional
-                   usage-error usage-error-at decode-error report-error not-available]})
+                   usage-error usage-error-at decode-error report-error report-plain not-available]})
 
 ;; seed/amu-main/src/amu/cli.kotoba -- argv, output and the stage-0 report shapes shared by the amu command entries
 ;; (agent MAINS, 2026-10-04). Written in the language both build routes admit (the seed's source route and the JVM
@@ -142,6 +142,14 @@
                   (string-concat code (string-concat ", :severity :error, :source \""
                     (string-concat (basename path) (string-concat "\"}, :message \""
                       (string-concat message (string-concat "\"" (string-concat details "}\n")))))))))))]
+    status))
+
+;; the same report without :source (stage-0 adds :source only when argv[1] is a source path)
+(defn report-plain [error :string code :string message :string details :string status :i64] :i64
+  (let [w (err (string-concat "{:format :kotoba.cli-error/v1, :ok false, :error "
+                (string-concat error (string-concat ", :diagnostic {:format :kotoba.diagnostic/v1, :code "
+                  (string-concat code (string-concat ", :severity :error}, :message \""
+                    (string-concat message (string-concat "\"" (string-concat details "}\n")))))))))]
     status))
 
 ;; the same with the diagnostic's :source (the input's file name), as stage-0 adds it once argv[1] is a source path
