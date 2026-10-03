@@ -5027,19 +5027,22 @@ static int64_t checked_cap_call(struct kexe_context_v11 *context,
   return (int64_t)((uint64_t)value + 1u);
 }
 
-/* PAIR HASH-CONSING state (KEXE_HASHCONS; see kexe_hashcons_find). */
-#define KEXE_HASHCONS_BITS_DEFAULT 22u
-static uint32_t *kexe_hashcons = NULL;     /* [1 << kexe_hashcons_bits] */
+/* PAIR HASH-CONSING state (KEXE_HASHCONS; see kexe_hashcons_find).
+ * The table is a set-associative cache of KEXE_HASHCONS_WAYS entries per set; an entry is (tag << 32 | handle), the tag the
+ * high half of the pair's hash, handle 0 = empty. 2^bits entries in all (8 bytes each). */
+#define KEXE_HASHCONS_BITS_DEFAULT 16u
+#define KEXE_HASHCONS_WAYS 4u
+_Static_assert(KEXE_PAIR_MAX < 0xffffffffu, "a hash-cons entry holds a pair handle in 32 bits");
+static uint64_t *kexe_hashcons = NULL;     /* [1 << kexe_hashcons_bits] */
 static unsigned kexe_hashcons_bits = KEXE_HASHCONS_BITS_DEFAULT;
 static int64_t kexe_empty_vector = 0;
 
-static uint64_t kexe_hashcons_slot(int64_t first, int64_t second) {
-  uint64_t h = (uint64_t)first * 0x9e3779b97f4a7c15ull;
-  h ^= (uint64_t)second + 0x632be59bd9b4e019ull + (h << 6) + (h >> 2);
-  h *= 0xbf58476d1ce4e5b9ull;
-  return h >> (64u - kexe_hashcons_bits);
+static uint64_t kexe_hashcons_hash(int64_t first, int64_t second) {
+  uint64_t h = (uint64_t)first * 0x9e3779b97f4a7c15ull + (uint64_t)second * 0xbf58476d1ce4e5b9ull;
+  return h ^ (h >> 29);
 }
 static int64_t kexe_hashcons_find(struct kexe_shared_v11 *shared, int64_t first, int64_t second);
+static void kexe_hashcons_insert(int64_t first, int64_t second, uint32_t handle);
 
 static int64_t checked_pair_new(struct kexe_context_v11 *context,
                                 int64_t first, int64_t second) {
@@ -5076,8 +5079,7 @@ static int64_t checked_pair_new(struct kexe_context_v11 *context,
   shared->pairs[index].first = first;
   shared->pairs[index].second = second;
   shared->pair_validated[index] = 0;
-  if (kexe_hashcons != NULL)
-    kexe_hashcons[kexe_hashcons_slot(first, second)] = (uint32_t)(index + 1);
+  if (kexe_hashcons != NULL) kexe_hashcons_insert(first, second, (uint32_t)(index + 1));
   return (int64_t)(index + 1);
 }
 
@@ -5201,25 +5203,50 @@ static struct kexe_arena_use *kexe_use = NULL;
  * `record-assoc` re-shares every field after the one it changes; a string
  * value is a pair (offset, length), so equal views share one.
  *
- * The table is direct-mapped and lossy: a collision forgets the older pair,
- * which only costs an allocation. A slot is believed only when the pair it
- * names is still below `pair_used` (an arena-scope leave may have released
- * it) and still holds the same two words, so it needs no invalidation.
+ * The table is a lossy 4-way set-associative cache (an entry: 32 tag bits
+ * of the pair's hash and the handle): a full set forgets its oldest pair,
+ * which only costs an allocation. An entry is believed only when the tag
+ * matches, the pair it names is still below `pair_used` (an arena-scope
+ * leave may have released it) and still holds the same two words (an exact
+ * compare, so a tag or index collision can never answer a wrong pair), so it
+ * needs no invalidation. 2^16 entries (512 KiB, L2-resident) is the default:
+ * reuse is local, so 2^16 finds all but about 4% of what 2^22 finds while
+ * costing about +30% CPU on the desugar guest instead of +75%
+ * (docs/selfhost-coscientist.md, H-M3).
  * Together with it the empty vector is canonical: `vector_new_empty` answers
  * one handle made before the guest starts (below every arena-scope mark),
  * and the first conj onto any empty slice appends at the arena top, as a
  * fresh empty vector did. A length-0 slice has no word an in-place write
  * could reach, so sharing it is unobservable too. */
 
-/* The handle of an existing pair (first, second), or 0. */
+/* The handle of an existing pair (first, second), or 0. An entry is believed only when its tag matches, its handle is
+ * within `pair_used` (an arena-scope leave may have released it) and the pair it names holds exactly the same two words,
+ * so a stale entry or a tag collision costs a missed share, never a wrong one. */
 static int64_t kexe_hashcons_find(struct kexe_shared_v11 *shared,
                                   int64_t first, int64_t second) {
-  uint32_t index = kexe_hashcons[kexe_hashcons_slot(first, second)];
-  if (index == 0 || (uint64_t)index > shared->pair_used) return 0;
-  const struct kexe_pair_v1 *pair = &shared->pairs[index - 1u];
-  if (pair->first != first || pair->second != second) return 0;
-  if (kexe_use != NULL) kexe_use->hashcons_hits++;
-  return (int64_t)index;
+  uint64_t h = kexe_hashcons_hash(first, second);
+  const uint64_t *set = &kexe_hashcons[((h >> 32) & (((uint64_t)1 << (kexe_hashcons_bits - 2u)) - 1u)) * KEXE_HASHCONS_WAYS];
+  uint64_t tag = h & 0xffffffffull;
+  for (unsigned way = 0; way < KEXE_HASHCONS_WAYS; way++) {
+    uint64_t entry = set[way];
+    uint32_t index = (uint32_t)entry;
+    if ((entry >> 32) != tag || index == 0 || (uint64_t)index > shared->pair_used) continue;
+    const struct kexe_pair_v1 *pair = &shared->pairs[index - 1u];
+    if (pair->first != first || pair->second != second) continue;
+    if (kexe_use != NULL) kexe_use->hashcons_hits++;
+    return (int64_t)index;
+  }
+  return 0;
+}
+
+/* Remember a new pair: into an empty way, else over the way holding the oldest pair (smallest handle). */
+static void kexe_hashcons_insert(int64_t first, int64_t second, uint32_t handle) {
+  uint64_t h = kexe_hashcons_hash(first, second);
+  uint64_t *set = &kexe_hashcons[((h >> 32) & (((uint64_t)1 << (kexe_hashcons_bits - 2u)) - 1u)) * KEXE_HASHCONS_WAYS];
+  unsigned victim = 0;
+  for (unsigned way = 1; way < KEXE_HASHCONS_WAYS; way++)
+    if ((uint32_t)set[way] < (uint32_t)set[victim]) victim = way;  /* an empty way (handle 0) is the smallest */
+  set[victim] = ((h & 0xffffffffull) << 32) | handle;
 }
 
 /* STRING GROWTH REGIONS: the same builder for `string-concat`. The tail
@@ -12744,18 +12771,19 @@ int main(int argc, char **argv) {
 
   /* KEXE_HASHCONS: pair hash-consing and the canonical empty vector (see
    * kexe_hashcons_find); off when unset or "0". The value is log2 of the
-   * table's slot count, 16-28; any other value takes the default (2^22
-   * slots, 16 MiB of private zero pages, made before the fork). */
+   * table's entry count, 12-28; any other value takes the default (2^16
+   * entries, 512 KiB of private zero pages, made before the fork). A table
+   * that cannot be mapped is an error, not a silent "off": a caller that
+   * asked for sharing sized its arenas for it. */
   if (getenv("KEXE_HASHCONS") != NULL && strcmp(getenv("KEXE_HASHCONS"), "0") != 0) {
     unsigned long bits = 0;
-    if (parse_ulong_decimal(getenv("KEXE_HASHCONS"), &bits) == 0 && bits >= 16 && bits <= 28)
+    if (parse_ulong_decimal(getenv("KEXE_HASHCONS"), &bits) == 0 && bits >= 12 && bits <= 28)
       kexe_hashcons_bits = (unsigned)bits;
-    void *slots = mmap(NULL, ((size_t)1u << kexe_hashcons_bits) * sizeof(uint32_t),
+    void *slots = mmap(NULL, ((size_t)1u << kexe_hashcons_bits) * sizeof(uint64_t),
                        PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (slots != MAP_FAILED) {
-      kexe_hashcons = (uint32_t *)slots;
-      kexe_empty_vector = intern_vector(shared, shared->vector_item_used, 0);
-    }
+    if (slots == MAP_FAILED) fail("KEXE_HASHCONS table mmap");
+    kexe_hashcons = (uint64_t *)slots;
+    kexe_empty_vector = intern_vector(shared, shared->vector_item_used, 0);
   }
   pid_t child = fork();
   if (child < 0) fail("fork");
@@ -12791,8 +12819,8 @@ int main(int argc, char **argv) {
               kexe_use->string_region_appends, kexe_use->string_copied_bytes,
               kexe_use->string_reserved_bytes);
       if (kexe_hashcons != NULL)
-        fprintf(stderr, "KEXE_HASHCONS {:pair-hits %" PRIu64 " :empty-vector-shared %" PRIu64 "}\n",
-                kexe_use->hashcons_hits, kexe_use->empty_vector_shared);
+        fprintf(stderr, "KEXE_HASHCONS {:entries-log2 %u :ways %u :pair-hits %" PRIu64 " :empty-vector-shared %" PRIu64 "}\n",
+                kexe_hashcons_bits, KEXE_HASHCONS_WAYS, kexe_use->hashcons_hits, kexe_use->empty_vector_shared);
     }
     if (structured_report)
       child_status = write_supervisor_report(shared, child_status, result_type,

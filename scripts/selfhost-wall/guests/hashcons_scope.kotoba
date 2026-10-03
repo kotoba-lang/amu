@@ -1,0 +1,36 @@
+(ns kotoba.hashcons-scope
+  {:kotoba/export [main]})
+
+;; hashcons_scope.kotoba: soundness probe for the loader's pair hash-consing (KEXE_HASHCONS) across arena-scope releases.
+;; Every iteration builds strings (a pair per view/concat, one new pool range each) INSIDE an arena-scope, which the loader
+;; releases on leave; the next iteration allocates different bytes at the very same pool offsets and pair indexes. A
+;; hash-cons table entry that outlived its release and were believed would hand back a pair for the OLD bytes, so the
+;; running checksum would differ from the run without hash-consing. The answer is one line: the checksum, which the test
+;; compares across table sizes (including off).
+(defn digest [s :string i :i64 n :i64 acc :i64] :i64
+  (if (>= i n)
+    acc
+    (digest s (+ i 1) n (+ (* acc 31) (string-code-point-at s i)))))
+
+(defn step [i :i64] :i64
+  (let [a (string-concat "key-" (string-from-i64 i))
+        b (string-concat a (string-concat "/" (string-from-i64 (* i 7))))
+        c (string-substring b 2 (string-byte-length b))]
+    (+ (digest b 0 (string-byte-length b) 7) (digest c 0 (string-byte-length c) 11))))
+
+(defn loop-scoped [i :i64 n :i64 acc :i64] :i64
+  (if (>= i n)
+    acc
+    (loop-scoped (+ i 1) n (+ (* acc 1000003) (arena-scope (step i))))))
+
+(defn loop-plain [i :i64 n :i64 acc :i64] :i64
+  (if (>= i n)
+    acc
+    (loop-plain (+ i 1) n (+ (* acc 1000003) (step i)))))
+
+(defn main [] :i64
+  (let [a (loop-scoped 0 50000 1)
+        b (loop-plain 0 50000 1)
+        n (typed-cap-call :io/write :string :string
+                          (string-concat (string-from-i64 a) (string-concat " " (string-concat (string-from-i64 b) "\n"))))]
+    0))

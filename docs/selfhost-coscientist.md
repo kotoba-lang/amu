@@ -43,8 +43,8 @@ representation reaches).
 | H-S1 | A small seed compiler compiled from itself reaches a real selfhost fixed point and an Embench measurement far sooner than porting the 136k-line host compiler | **confirmed — seed R0** | fixed point `fe2c20ae…`, 19/19 ports, compile 376 ms vs 4423 ms same-host stage-0 (docs/selfhost-seed-r0-report-20261002.md) |
 | H-S2 | A rung ladder (R1 sugar+records, R2 perf, R3 values, R4 functions, R5 modules/effects, R6 Forms) keeps every step self-proving with a fixed point | **R1 confirmed**, R2/R3 in flight | tag `seed-r1`, `c0526b73…` |
 | H-M1 | The seed backend can consume the big frontend's KIR text (`compile-kir`), bypassing the memory-hungry `machine_ir`/`mir` Form route | **confirmed for the 19 ports** | 19/19, equal fuel/code size, ~27.6 B heap per KIR byte vs >= 11,000 on the Form route; coverage beyond the ports is open |
-| H-M2 | Loader-level hash-consing cuts the Form route's heap enough for per-pass processes | **confirmed in spike** | desugar 616 -> 148 B/source byte, byte-identical output on 720 cases; +75% CPU (docs/selfhost-memory-plan-20261002.md) |
-| H-M3 | Process-per-pass keeps each pass under the loader's pair limit | open — next to build | projected ~0.5 GB, 14.5M pairs per pass with H-M2 |
+| H-M2 | Loader-level hash-consing cuts the Form route's heap enough for per-pass processes | **confirmed; hardened (2026-10-03)** | desugar 616 -> 148 B/source byte, byte-identical output on 720 cases; collision-safe by exact compare; default now a 4-way 2^16-entry table: +32% CPU instead of +75%, +4% pairs (docs/selfhost-pass-driver-20261003.md) |
+| H-M3 | Process-per-pass keeps each pass under the loader's pair limit | **confirmed for desugar-class passes, with H-M2; ceiling = vector table** | `scripts/selfhost-wall/pass-driver.sh`; 32x the real corpus (4.6 MB): per pass <= 0.48 GB heap, 14.6 M pairs (22% of 64 Mi), 3.4 M vectors (82% of 4 Mi); one process or no hash-consing traps on the vector table. `analyze`/`infer` not native yet, so unmeasured (docs/selfhost-pass-driver-20261003.md) |
 | H-M4 | Flat Forms (struct of arrays) are needed | open — only if a pass measured natively needs them | 170 B/node today vs 40 B flat (estimate) |
 | H-F1 | The big frontend's remaining Form ports (`infer`, `desugar`, `record_projection`, `analyze`) are on the critical path for R6 | open | ledger: REAL 3,209 of 10,219 defs (31.4%); many passes carry real bodies, differential 3,869 cases agree on `infer` |
 | H-F2 | Mechanical rewrites via `amu refactor` are cheaper than hand ports | **confirmed for destructuring/reject!** | rules a-f, 1,000+ sites, outcomes identical |
@@ -59,6 +59,7 @@ representation reaches).
 - **17 — H-S2/H-M1 (2026-10-02):** R1 and `compile-kir` built; gates green. Verdict: R1 confirmed, H-M1 confirmed on the 19 ports.
 - **18 — H-M2 (2026-10-03):** hash-consing spike in the loader. Verdict: confirmed.
 - **19 — (in flight):** R2 performance, R3 values, KIR coverage, housekeeping.
+- **20 — H-M3 (2026-10-03):** falsified at 8x and 32x on a real corpus, built `pass-driver.sh`, hardened the loader's hash-consing. Verdict: confirmed for desugar-class passes (with H-M2); next wall is `KEXE_VECTOR_MAX`, then the unmeasured `infer`/`analyze`.
 
 ## Next iterations (ranked)
 

@@ -1,0 +1,50 @@
+
+
+;; ---- the PASS entry (scripts/selfhost-wall/pass-driver.sh): one native process runs ONE pass over a file of forms, one form per
+;; line, and answers one form per line, so the text between two processes is the (compact, canonical) serialized Form state. The first
+;; line names the pass: !read (parse + print), !desugar (the desugar pass, the same env as a ds-diff case), !count (node counts),
+;; !all (read, desugar, desugar, count in ONE process: the single-process baseline the per-pass peaks are compared with). ----
+(defn- pn-kids [kids [:list [:ref :form/r]] i :i64 acc :i64] :i64
+  (if (>= i (vector-count kids))
+    acc
+    (pn-kids kids (+ i 1) (+ acc (pn-nodes (typed-list-nth [:list [:ref :form/r]] kids i))))))
+
+(defn- pn-nodes [f [:ref :form/r]] :i64
+  (if (or (form/is-seq? f) (form/is-vec? f) (form/is-set? f) (form/is-map? f))
+    (+ 1 (pn-kids (form/kids-of f) 0 0))
+    1))
+
+(defn- pass-one [mode :i64 line :string tbl [:ref :form/r]] :string
+  (cond
+    (= mode 0) (ds-print (form/edn-form line))
+    (= mode 2) (string-from-i64 (pn-nodes (form/edn-form line)))
+    :else
+    (let [c (form/edn-form (string-concat "[{f #{1 2}} false " (string-concat line " nil [] {} [] #{} false false]")))
+          env (fe-env 0 (form/nil-form) false (form/nth-of c 0) tbl)]
+      (try (let [r (desugar-expr env (ds-revive (form/nth-of c 2)))]
+             (ds-print (dr-form r)))
+           (catch e (ds-refusal e))))))
+
+(defn- pass-lines [mode :i64 text :string i :i64 n :i64 out :string tbl [:ref :form/r]] :string
+  (if (>= i n)
+    out
+    (let [j (string-find-byte text 10 i)
+          end (if (< j 0) n j)
+          line (string-substring text i end)
+          answer (if (< (string-length line) 2) "" (pass-one mode line tbl))]
+      (pass-lines mode text (+ end 1) n (if (string=? answer "") out (string-concat out (string-concat answer "\n"))) tbl))))
+
+(defn- pass-mode [name :string] :i64
+  (cond (string=? name "!read") 0 (string=? name "!desugar") 1 (string=? name "!count") 2 (string=? name "!all") 9 :else 7))
+
+(defn- pass-run1 [mode :i64 text :string tbl [:ref :form/r]] :string
+  (pass-lines mode text 0 (string-byte-length text) "" tbl))
+
+(defn ds-pass-run [text :string] :string
+  (let [j (string-find-byte text 10 0)
+        mode (pass-mode (string-substring text 0 j))
+        body (string-substring text (+ j 1) (string-byte-length text))
+        tbl (fe-tables)]
+    (if (= mode 9)
+      (pass-run1 2 (pass-run1 1 (pass-run1 1 (pass-run1 0 body tbl) tbl) tbl) tbl)
+      (pass-run1 mode body tbl))))
