@@ -686,7 +686,7 @@
 (defrecord lw-asf [s :i64 j :i64 v :i64])
 (defn- lw-nfields [M :vector-i64 ty :i64] :i64
   (vector-at M (+ (vector-at M (+ MM-SYM-BASE (* (- ty TY-REC-BASE) MM-SYM-W) SF-REC)) RB-N)))
-(defn- lw-assoc-fields [M :vector-i64 i :i64 n :i64 q [:record :seed.lower/lw-asf [[:s :i64] [:j :i64] [:v :i64]]] t :i64]
+(defn- lw-assoc-fields [M :vector-i64 i :i64 n :i64 q [:ref :seed.lower/lw-asf] t :i64]
   :vector-i64
   (cond (>= i n) M
         (= i (:j q)) (lw-assoc-fields (lw-expr M (:v q) (+ t i) 0) (inc i) n q t)

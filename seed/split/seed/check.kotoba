@@ -538,19 +538,15 @@
           (= (ck-kw-spells S (nm-sf M s SF-START) (nm-sf M s SF-END) a b) 1) s
           :else (recur (+ s 1)))))
 
-;; 1 when S[a..b) spells ':' + ns + '/' + name, with q = the ns name node and m = the record name node
-(defn- ck-nskw-spells [M :vector-i64 S :string a :i64 b :i64 qm :i64] :i64
-  (let [q (quot qm 1048576)
-        m (bit-and qm 1048575)
-        qa (nm-tf M (nm-nf M q NF-TOK) TF-START)
-        qb (nm-tf M (nm-nf M q NF-TOK) TF-END)
-        ma (nm-tf M (nm-nf M m NF-TOK) TF-START)
-        mb (nm-tf M (nm-nf M m NF-TOK) TF-END)
-        sl (+ (- qb qa) 1)]
-    (cond (nm-ne (- b a) (+ (+ sl 1) (- mb ma))) 0
-          (= (ck-kw-spells S a (+ a sl) qa qb) 0) 0
-          (nm-ne (string-code-point-at S (+ a sl)) 47) 0
-          :else (nm-span-eq S (+ (+ a sl) 1) b ma mb))))
+;; 1 when S[a..b) spells the byte c1, S[qa..qb), the byte c2, S[ma..mb) (R4B rung proof: 9 parameters, the last two
+;; stack-passed; it was a 5-parameter function with the two name nodes packed into one i64 and the spans recomputed per symbol)
+(defn- ck-span3-eq [S :string a :i64 b :i64 c1 :i64 qa :i64 qb :i64 c2 :i64 ma :i64 mb :i64] :i64
+  (let [q (+ a 1 (- qb qa))]
+    (cond (nm-ne (- b a) (+ (- q a) 1 (- mb ma))) 0
+          (nm-ne (string-code-point-at S a) c1) 0
+          (= (nm-span-eq S (+ a 1) q qa qb) 0) 0
+          (nm-ne (string-code-point-at S q) c2) 0
+          :else (nm-span-eq S (+ q 1) b ma mb))))
 
 ;; the keyword symbol :<ns>/<Name> of record name node m, 0 without an ns form or when never spelled
 (defn- ck-find-nskw [M :vector-i64 S :string m :i64] :i64
@@ -558,39 +554,40 @@
         q (nm-nth M ns 1)]
     (if (= ns 0)
       0
-      (loop [s 1]
-        (cond (>= s (vector-at M MM-SYM-N)) 0
-              (= (ck-nskw-spells M S (nm-sf M s SF-START) (nm-sf M s SF-END) (+ (* q 1048576) m)) 1) s
-              :else (recur (+ s 1)))))))
+      (let [qa (nm-tf M (nm-nf M q NF-TOK) TF-START)
+            qb (nm-tf M (nm-nf M q NF-TOK) TF-END)
+            ma (nm-tf M (nm-nf M m NF-TOK) TF-START)
+            mb (nm-tf M (nm-nf M m NF-TOK) TF-END)]
+        (loop [s 1]
+          (cond (>= s (vector-at M MM-SYM-N)) 0
+                (= (ck-span3-eq S (nm-sf M s SF-START) (nm-sf M s SF-END) 58 qa qb 47 ma mb) 1) s
+                :else (recur (+ s 1))))))))
 
-;; defrecord fields from symbol node c (index i) into block blk: an unannotated field is :i64
+;; R4B rung proof: a defrecord's field vector as a list of records by reference (the field's name node c and its type
+;; form node t, 0 when unannotated = :i64), then typed and stored in order (was: block and index packed as blk*64+i,
+;; then with the type as bi*2^21+ty)
+(defrecord ck-fld [c :i64 t :i64])
+(defn- ck-rec-flds [M :vector-i64 c :i64 acc [:list [:ref :seed.check/ck-fld]]] [:list [:ref :seed.check/ck-fld]]
+  (let [t (nm-next M c)]
+    (cond (= c 0) acc
+          (and (= (nm-kind M c) ND-SYM) (= (ck-is-tform M t) 1)) (ck-rec-flds M (nm-next M t) (conj acc (->ck-fld c t)))
+          :else (ck-rec-flds M t (conj acc (->ck-fld c 0))))))
+;; type and store fields i.. of fs into block blk (E2128 at a field that is not a symbol, has no type or repeats a key)
+(defn- ck-rec-store [M :vector-i64 S :string fs [:list [:ref :seed.check/ck-fld]] blk :i64 i :i64] :vector-i64
+  (if (or (>= i (count fs)) (nm-failed M))
+    (ck-touch M)
+    (let [f (nth fs i)
+          c (:c f)
+          M1 (cond (nm-ne (nm-kind M c) ND-SYM) M (zero? (:t f)) (nm-put M MM-R0 TY-I64) :else (ck-tform M (:t f)))
+          ty (ck-r M1)
+          ks (ck-find-kw M1 S (nm-tf M1 (nm-nf M1 c NF-TOK) TF-START) (nm-tf M1 (nm-nf M1 c NF-TOK) TF-END))]
+      (cond (nm-ne (nm-kind M1 c) ND-SYM) (ck-err M1 E-CHECK-SCHEMA c 0)
+            (nm-failed M1) (ck-touch M1)
+            (= ty 0) (ck-err M1 E-CHECK-SCHEMA c 0)
+            (= (ck-key-fresh M1 blk i ks) 0) (ck-err M1 E-CHECK-SCHEMA c 0)
+            :else (ck-rec-store (ck-blk-put M1 blk i ks ty) S fs blk (inc i))))))
 (defn- ck-rec-fields [M :vector-i64 S :string c :i64 blk :i64 i :i64] :vector-i64
-  (ck-rec-fields2 M S c (+ (* blk 64) i)))
-
-(defn- ck-rec-fields2 [M :vector-i64 S :string c :i64 bi :i64] :vector-i64
-  (let [blk (quot bi 64)
-        i (bit-and bi 63)
-        t (nm-next M c)]
-    (cond
-      (= c 0) (ck-touch M)
-      (nm-failed M) (ck-touch M)
-      (nm-ne (nm-kind M c) ND-SYM) (ck-err M E-CHECK-SCHEMA c 0)
-      (= (ck-is-tform M t) 1)
-      (let [M1 (ck-tform M t)
-            ty (ck-r M1)]
-        (ck-rec-field3 M1 S c (nm-next M1 t) (+ (* bi 2097152) ty)))
-      :else (ck-rec-field3 M S c t (+ (* bi 2097152) TY-I64)))))
-
-;; store the field named by symbol node c with type (bty mod 2^21), continue at nx
-(defn- ck-rec-field3 [M :vector-i64 S :string c :i64 nx :i64 bty :i64] :vector-i64
-  (let [bi (quot bty 2097152)
-        ty (bit-and bty 2097151)
-        blk (quot bi 64)
-        i (bit-and bi 63)
-        ks (ck-find-kw M S (nm-tf M (nm-nf M c NF-TOK) TF-START) (nm-tf M (nm-nf M c NF-TOK) TF-END))]
-    (cond (= ty 0) (ck-err M E-CHECK-SCHEMA c 0)
-          (= (ck-key-fresh M blk i ks) 0) (ck-err M E-CHECK-SCHEMA c 0)
-          :else (ck-rec-fields2 (ck-blk-put M blk i ks ty) S nx (+ bi 1)))))
+  (ck-rec-store M S (ck-rec-flds M c (typed-list-new [:list [:ref :seed.check/ck-fld]])) blk i))
 
 ;; the first symbol of vector v that repeats an earlier symbol of v, else 0
 (defn- ck-dup-sym [M :vector-i64 v :i64] :i64
@@ -1273,11 +1270,9 @@
         ri (ck-r M3)
         M4 (ck-let1 M3 s ri p tok)
         lx (ck-r M4)]
-    (ck-seq-range2 M4 gi (+ (* a1 1048576) a2) lx tok)))
-(defn- ck-seq-range2 [M :vector-i64 gi :i64 a12 :i64 lx :i64 tok :i64] :vector-i64
-  (let [a1 (quot a12 1048576)
-        a2 (bit-and a12 1048575)
-        M1 (ck-link M a1 0)
+    (ck-seq-range2 M4 gi a1 a2 lx tok)))
+(defn- ck-seq-range2 [M :vector-i64 gi :i64 a1 :i64 a2 :i64 lx :i64 tok :i64] :vector-i64
+  (let [M1 (ck-link M a1 0)
         M2 (ck-n-int M1 tok 0)
         z (ck-r M2)
         lo (ck-sel a2 a1 z)
@@ -1352,9 +1347,8 @@
 ;; ---- (->Name e ..): the head symbol becomes a gensym with SF-HEAD = HD-RECORD-CTOR and SF-REC = Name's block ----
 ;; (map->Name {:f e ..}) becomes (->Name e ..) with the values in field order (exactly the record's fields).
 ;; the record block named by S[a..b) when it starts with the k-byte prefix p (packed little-endian), else 0
-(defn- ck-prefix-blk [M :vector-i64 S :string ab :i64 k :i64 p :i64] :i64
-  (let [a (quot ab 16777216)
-        b (bit-and ab 16777215)]
+(defn- ck-prefix-blk [M :vector-i64 S :string a :i64 b :i64 k :i64 p :i64] :i64
+  (do
     (cond (<= (- b a) k) 0
           (nm-ne (nm-pack S a (+ a k) 0) p) 0
           :else (nm-sf M (nm-lookup M S (+ a k) b) SF-REC))))
@@ -1365,7 +1359,7 @@
     (cond (nm-ne (nm-kind M h) ND-SYM) 0
           (> (nm-sf M s SF-HEAD) 0) 0
           (> (nm-sf M s SF-FN) 0) 0
-          :else (ck-prefix-blk M S (+ (* (nm-sf M s SF-START) 16777216) (nm-sf M s SF-END)) 5 (ck-mapctor-word)))))
+          :else (ck-prefix-blk M S (nm-sf M s SF-START) (nm-sf M s SF-END) 5 (ck-mapctor-word)))))
 ;; the value node of key keyword symbol ks in map node mp, 0 when absent
 (defn- ck-map-val [M :vector-i64 mp :i64 ks :i64] :i64
   (loop [k (nm-first M mp)]
@@ -1754,18 +1748,18 @@
   (let [h (nm-first M n)] (ck-err M E-CHECK-HEAD h 0)))
 
 ;; ---- fixed-signature operations ----
-;; arguments c.. of head hd, hk = hd * 65536 + k (k = index of c), hn = the head node
-(defn- ck-op-args [M :vector-i64 c :i64 hk :i64 fx :i64 hn :i64] :vector-i64
+;; arguments c.. of head hd, k = index of c, hn = the head node
+(defn- ck-op-args [M :vector-i64 c :i64 hd :i64 k :i64 fx :i64 hn :i64] :vector-i64
   (cond
     (= c 0) (ck-touch M)
     (nm-failed M) (ck-touch M)
     :else
-    (let [want (ck-op-arg (quot hk 65536) (bit-and hk 65535))
+    (let [want (ck-op-arg hd k)
           nx (nm-next M c)
           M1 (ck-expr M c fx 0)
           ty (ck-ty M1)]
-      (if (or (= ty want) (and (= want TY-VEC) (= (quot hk 65536) HD-VECTOR-COUNT) (= (ck-tcon M1 ty) TC-LIST)))
-        (ck-op-args M1 nx (+ hk 1) fx hn)
+      (if (or (= ty want) (and (= want TY-VEC) (= hd HD-VECTOR-COUNT) (= (ck-tcon M1 ty) TC-LIST)))
+        (ck-op-args M1 nx hd (+ k 1) fx hn)
         (ck-err M1 E-CHECK-TYPE hn want)))))
 
 (defn- ck-op-fuel [M :vector-i64 hd :i64 f :i64] :vector-i64
@@ -1776,7 +1770,7 @@
         na (- (nm-count M n) 1)]
     (if (= (ck-op-count-ok hd na) 1)
       (let [a (nm-next M h)
-            M1 (ck-op-args M a (* hd 65536) fx h)]
+            M1 (ck-op-args M a hd 0 fx h)]
         (ck-mark (ck-op-fuel M1 hd (ck-fx-f fx)) n (ck-op-res hd) hd))
       (ck-err M E-CHECK-ARITY h (ck-op-arity hd)))))
 
@@ -1821,11 +1815,9 @@
       (ck-err M E-CHECK-IF h 0))))
 
 ;; ---- cond ----
-;; c = the next test node; hacc = head node * 2^21 + the arms' type so far (R1: types reach TY-REC-BASE + sym)
-(defn- ck-cond-pairs [M :vector-i64 c :i64 hacc :i64 fx :i64 ctx :i64] :vector-i64
-  (let [h (quot hacc 2097152)
-        acc (bit-and hacc 2097151)
-        e (nm-next M c)
+;; c = the next test node; h = the head node, acc = the arms' type so far
+(defn- ck-cond-pairs [M :vector-i64 c :i64 h :i64 acc :i64 fx :i64 ctx :i64] :vector-i64
+  (let [e (nm-next M c)
         nx (nm-next M e)]
     (cond
       (nm-failed M) (ck-touch M)
@@ -1845,8 +1837,8 @@
           (let [M2 (ck-expr M1 e fx ctx1)
                 te (ck-ty M2)
                 M3 (ck-unify M2 acc te h)
-                ty (bit-and (ck-ty M3) 2097151)]
-            (ck-cond-pairs M3 nx (+ (* h 2097152) ty) fx ctx1))
+                ty (ck-ty M3)]
+            (ck-cond-pairs M3 nx h ty fx ctx1))
           (ck-err M1 E-CHECK-TYPE h TY-BOOL))))))
 
 (defn- ck-cond [M :vector-i64 n :i64 fx :i64 ctx :i64] :vector-i64
@@ -1855,7 +1847,7 @@
     (cond (< na 2) (ck-err M E-CHECK-ELSE h 0)
           (nm-ne (bit-and na 1) 0) (ck-err M E-CHECK-ELSE h 0)
           :else (let [c (nm-next M h)
-                      M1 (ck-cond-pairs M c (* h 2097152) fx ctx)
+                      M1 (ck-cond-pairs M c h 0 fx ctx)
                       ty (ck-ty M1)]
                   (ck-mark M1 n ty HD-COND)))))
 
@@ -1929,18 +1921,18 @@
               (ck-err M1 E-CHECK-TYPE h aty))))))
 
 ;; ---- calls of the file's functions ----
-;; fik = fn * 32 + k (k = index of argument c; R4B: up to 16 parameters); h = the head node
-(defn- ck-call-args [M :vector-i64 c :i64 fik :i64 fx :i64 h :i64] :vector-i64
+;; argument c is argument k of FN fi; h = the head node
+(defn- ck-call-args [M :vector-i64 c :i64 fi :i64 k :i64 fx :i64 h :i64] :vector-i64
   (cond
     (= c 0) (ck-touch M)
     (nm-failed M) (ck-touch M)
     :else
-    (let [want (ck-pt M (quot fik 32) (bit-and fik 31))
+    (let [want (ck-pt M fi k)
           nx (nm-next M c)
           M1 (ck-arg M c fx want)
           ty (ck-ty M1)]
       (if (= ty want)
-        (ck-call-args M1 nx (+ fik 1) fx h)
+        (ck-call-args M1 nx fi (+ k 1) fx h)
         (ck-err M1 E-CHECK-TYPE h want)))))
 
 (defn- ck-call [M :vector-i64 n :i64 f0 :i64 fx :i64] :vector-i64
@@ -1958,7 +1950,7 @@
           (ck-variadic? M fi) (ck-call-var M n fi fx)
           (= (- (nm-count M n) 1) np)
           (let [c (nm-next M h)
-                M1 (ck-call-args M c (* fi 32) fx h)]
+                M1 (ck-call-args M c fi 0 fx h)]
             (ck-mark (ck-fuel M1 (ck-fx-f fx)) n rt HD-CALL))
           :else (ck-err M E-CHECK-ARITY h np))))
 
@@ -2168,10 +2160,8 @@
 
 ;; field access: r = the record expression, kw = the field keyword node, want = the record type it must have
 ;; (0: any record type); res = the NF-RES head code. The keyword's NF-RES = the field index.
-(defn- ck-access [M :vector-i64 n :i64 rkw :i64 want :i64 fx :i64] :vector-i64
-  (let [r (quot rkw 1048576)
-        kw (bit-and rkw 1048575)
-        h (nm-first M n)
+(defn- ck-access [M :vector-i64 n :i64 r :i64 kw :i64 want :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
         M1 (ck-expr M r fx 0)
         ty (ck-ty M1)
         blk (ck-blk M1 ty)
@@ -2197,7 +2187,7 @@
             ty (ck-ty M1)]
         (cond (nm-failed M1) (ck-touch M1)
               (< ty TY-REC-BASE) (ck-err M1 E-CHECK-SCHEMA sn 0)
-              :else (ck-access-end (ck-access M1 n (+ (* r 1048576) kw) ty fx) n r kw HD-RECORD-GET)))
+              :else (ck-access-end (ck-access M1 n r kw ty fx) n r kw HD-RECORD-GET)))
       (ck-err M E-CHECK-ARITY h 3))))
 (defn- ck-access-end [M :vector-i64 n :i64 r :i64 kw :i64 res :i64] :vector-i64
   (if (nm-failed M) (ck-touch M) (ck-mark M n (ck-access-ty M r kw) res)))
@@ -2210,7 +2200,7 @@
         r (nm-next M h)
         kw (nm-next M r)]
     (if (= (nm-count M n) 3)
-      (ck-access-end (ck-access M n (+ (* r 1048576) kw) 0 fx) n r kw HD-GET)
+      (ck-access-end (ck-access M n r kw 0 fx) n r kw HD-GET)
       (ck-err M E-CHECK-ARITY h 2))))
 
 ;; (assoc r :f v) on a record: r is held in a hidden slot (the next free one; NF-TYPE of the head node) while
@@ -2230,7 +2220,7 @@
     (cond (nm-ne (nm-count M n) 4) (ck-err M E-CHECK-ARITY h 3)
           (> slot (ck-max-slots)) (ck-err M E-CHECK-SLOTS h slot)
           :else
-          (let [M1 (ck-access M n (+ (* r 1048576) kw) 0 fx)
+          (let [M1 (ck-access M n r kw 0 fx)
                 ty (nm-nf M1 r NF-TYPE)
                 fty (ck-access-ty M1 r kw)
                 M2 (ck-use-slot M1 (ck-fx-f fx) slot)
@@ -2246,7 +2236,7 @@
   (let [kw (nm-first M n)
         r (nm-next M kw)]
     (if (= (nm-count M n) 2)
-      (ck-access-end (ck-access M n (+ (* r 1048576) kw) 0 fx) n r kw HD-KWGET)
+      (ck-access-end (ck-access M n r kw 0 fx) n r kw HD-KWGET)
       (ck-err M E-CHECK-ARITY kw 1))))
 
 ;; ---------------------------------------------------------------------------------------------------------
@@ -2736,10 +2726,8 @@
     (if (nm-failed M2) (ck-touch M2) (ck-mark (ck-fuel M2 (ck-fx-f fx)) n TY-STR HD-STRING-FROM-I64))))
 
 ;; bind binder node b to the next free slot with type ty, check body e (ctx) after it; R0 = e's type
-(defn- ck-bind-body [M :vector-i64 b :i64 ty :i64 e :i64 fxctx :i64] :vector-i64
-  (let [fx (quot fxctx 1073741824)
-        ctx (bit-and fxctx 1073741823)
-        slot (ck-fx-next fx)
+(defn- ck-bind-body [M :vector-i64 b :i64 ty :i64 e :i64 fx :i64 ctx :i64] :vector-i64
+  (let [slot (ck-fx-next fx)
         h0 (nm-scope-height M)
         M1 (ck-binder-ok M b h0)
         M2 (if (> slot (ck-max-slots)) (ck-err M1 E-CHECK-SLOTS b slot) (ck-bind M1 b slot ty (ck-fx-f fx)))
@@ -2747,7 +2735,6 @@
         te (ck-ty M3)
         M4 (nm-unbind M3 h0)]
     (nm-put M4 MM-R0 te)))
-(defn- ck-fxctx [fx :i64 ctx :i64] :i64 (+ (* fx 1073741824) ctx))
 
 ;; (option-match T o none-body x some-body)
 (defn- ck-omatch [M :vector-i64 n :i64 fx :i64 ctx :i64] :vector-i64
@@ -2760,7 +2747,7 @@
         ctx1 (ck-ctx-after M2 a0 ctx)
         M3 (ck-expr M2 (nm-nth M2 n 3) fx ctx1)
         tn (ck-ty M3)
-        M4 (ck-bind-body M3 (nm-nth M3 n 4) (ck-ta M3 ty) (nm-nth M3 n 5) (ck-fxctx fx ctx1))
+        M4 (ck-bind-body M3 (nm-nth M3 n 4) (ck-ta M3 ty) (nm-nth M3 n 5) fx ctx1)
         ts (ck-ty M4)
         M5 (ck-unify M4 tn ts h)
         rt (ck-ty M5)]
@@ -2775,22 +2762,22 @@
         a0 (ck-aborts M1)
         M2 (if (nm-failed M1) M1 (ck-want M1 (nm-nth M1 n 2) fx ty h))
         ctx1 (ck-ctx-after M2 a0 ctx)
-        M3 (ck-bind-body M2 (nm-nth M2 n 3) (ck-ta M2 ty) (nm-nth M2 n 4) (ck-fxctx fx ctx1))
+        M3 (ck-bind-body M2 (nm-nth M2 n 3) (ck-ta M2 ty) (nm-nth M2 n 4) fx ctx1)
         tok (ck-ty M3)
-        M4 (ck-bind-body M3 (nm-nth M3 n 5) (ck-tb M3 ty) (nm-nth M3 n 6) (ck-fxctx fx ctx1))
+        M4 (ck-bind-body M3 (nm-nth M3 n 5) (ck-tb M3 ty) (nm-nth M3 n 6) fx ctx1)
         ter (ck-ty M4)
         M5 (ck-unify M4 tok ter h)
         rt (ck-ty M5)]
     (if (nm-failed M5) (ck-touch M5) (ck-mark (ck-fuel M5 (ck-fx-f fx)) n rt HD-RESULT-MATCH))))
 
 ;; ---- map and set literals ----
-;; items from c must have type want (k = index for the alternation of a map: want = K at even k, V at odd k)
-(defn- ck-lit-items [M :vector-i64 c :i64 fx :i64 kv :i64 k :i64] :vector-i64
+;; items from c must have type want (k = index for the alternation of a map: want = kt at even k, vt at odd k)
+(defn- ck-lit-items [M :vector-i64 c :i64 fx :i64 kt :i64 vt :i64 k :i64] :vector-i64
   (cond (zero? c) (ck-touch M)
         (nm-failed M) (ck-touch M)
-        :else (let [want (if (zero? (bit-and k 1)) (quot kv 2097152) (bit-and kv 2097151))
+        :else (let [want (if (zero? (bit-and k 1)) kt vt)
                     nx (nm-next M c)]
-                (ck-lit-items (ck-want M c fx want c) nx fx kv (inc k)))))
+                (ck-lit-items (ck-want M c fx want c) nx fx kt vt (inc k)))))
 
 ;; #{x ..}: [:set :keyword], at most 32 items (7 hidden slots: the first in NF-SYM of the node)
 (defn- ck-setlit [M :vector-i64 n :i64 fx :i64] :vector-i64
@@ -2807,7 +2794,7 @@
                   ;; the reference: a #{..} literal is [:set :keyword]; typed-set-new builds the others
                   (nm-ne t TY-KW) (ck-err M2 E-CHECK-TYPE c TY-KW)
                   :else
-                  (let [M3 (ck-lit-items M2 (nm-next M2 c) fx2 (+ (* t 2097152) t) 1)
+                  (let [M3 (ck-lit-items M2 (nm-next M2 c) fx2 t t 1)
                         M4 (ck-ct-intern M3 TC-SET t 0)
                         st (ck-ty M4)]
                     (if (nm-failed M4) (ck-touch M4) (ck-mark (ck-fuel M4 (ck-fx-f fx)) n st HD-SETLIT))))))))
@@ -2831,7 +2818,7 @@
                   (not (or (= kt TY-I64) (= kt TY-STR))) (ck-err M3 E-CHECK-TYPENAME c 0)
                   (zero? vt) (ck-err M3 E-CHECK-ABORT-INFER n 0)
                   :else
-                  (let [M4 (ck-lit-items M3 (nm-next M3 (nm-next M3 c)) fx2 (+ (* kt 2097152) vt) 0)
+                  (let [M4 (ck-lit-items M3 (nm-next M3 (nm-next M3 c)) fx2 kt vt 0)
                         M5 (ck-ct-intern M4 TC-MAP kt vt)
                         mt (ck-ty M5)]
                     (if (nm-failed M5) (ck-touch M5) (ck-mark (ck-fuel M5 (ck-fx-f fx)) n mt HD-MAPLIT))))))))
@@ -2991,15 +2978,13 @@
           (zero? tcount) (ck-err M3 E-CHECK-ABORT-NONE ch 0)
           (and (pos? tx) (pos? te) (nm-ne tx te)) (ck-err M3 E-CHECK-TYPE tn te)
           (zero? E) (ck-err M3 E-CHECK-ABORT-INFER ch 0)
-          :else (ck-try3 M3 n (+ (* tb 2097152) E) fx ctx))))
+          :else (ck-try3 M3 n tb E fx ctx))))
 
-;; the handler: binder x : E in the next free slot; the try's type joins body (tbe / 2^21) and handler
-(defn- ck-try3 [M :vector-i64 n :i64 tbe :i64 fx :i64 ctx :i64] :vector-i64
-  (let [tb (quot tbe 2097152)
-        E (bit-and tbe 2097151)
-        c (nm-nth M n 2)
+;; the handler: binder x : E in the next free slot; the try's type joins the body's (tb) and the handler's
+(defn- ck-try3 [M :vector-i64 n :i64 tb :i64 E :i64 fx :i64 ctx :i64] :vector-i64
+  (let [c (nm-nth M n 2)
         cn (nm-count M c)
-        M1 (ck-bind-body M (nm-nth M c (- cn 2)) E (nm-nth M c (- cn 1)) (ck-fxctx fx ctx))
+        M1 (ck-bind-body M (nm-nth M c (- cn 2)) E (nm-nth M c (- cn 1)) fx ctx)
         th (ck-ty M1)
         M2 (ck-mark M1 c 0 HD-CATCH)
         M3 (ck-unify M2 tb th (nm-first M2 n))
@@ -3656,9 +3641,8 @@
     (ck-ct-intern M2 TC-FN TY-I64 (ck-r M2))))
 ;; the callback cb of arity ar (pa, pb its parameter types; pb 0 for arity 1): an inline fn (its NF-RES becomes 0: called
 ;; directly), a defn name (NF-RES RES-FN clause), or a fn value. R0 = its fn type.
-(defn- ck-callback [M :vector-i64 cb :i64 ar :i64 pab :i64 fx :i64] :vector-i64
-  (let [pa (quot pab 2097152)
-        pb (bit-and pab 2097151)]
+(defn- ck-callback [M :vector-i64 cb :i64 ar :i64 pa :i64 pb :i64 fx :i64] :vector-i64
+  (do
     (cond (ck-fn-form? M cb)
           (let [M1 (ck-hint2 M pa pb)
                 M2 (ck-fnlit M1 cb fx (ck-r M1))
@@ -3696,14 +3680,15 @@
             M3 (if (pos? init) (ck-expr M2 init fx2 0) (nm-put M2 MM-R0 it))
             acc (ck-ty M3)
             ar (if (= hd HD-REDUCE) 2 1)
-            pab (if (= hd HD-REDUCE) (+ (* acc 2097152) it) (* it 2097152))]
+            pa (if (= hd HD-REDUCE) acc it)
+            pb (if (= hd HD-REDUCE) it 0)]
         (cond (nm-failed M3) (ck-touch M3)
               ;; the reference: `reduce` and `map` accept a :vector-i64 source only (lang/surface-status.edn
               ;; :reduce-over-typed-set), so the item is an :i64
               (nm-ne cty TY-VEC) (ck-err M3 E-CHECK-TYPE h TY-VEC)
               (and (= hd HD-REDUCE) (= na 2) (zero? (ck-clause0-of M3 cb))) (ck-err M3 E-CHECK-CLAUSE cb 0)
               :else
-              (let [M4 (ck-callback M3 cb ar pab fx2)
+              (let [M4 (ck-callback M3 cb ar pa pb fx2)
                     fty (ck-ty M4)
                     M5 (ck-fn-check M4 fty ar h)
                     r (ck-ta M5 fty)]
