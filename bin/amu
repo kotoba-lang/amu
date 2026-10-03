@@ -262,7 +262,9 @@ const targetIndependentCommands = new Set(["check", "definition-cids",
   "module-lock", "package-manifest", "package-lock", "package-fetch"]);
 
 // The two aarch64 targets whose artifact is packaged (ELF64 kernel image, static
-// ELF). They load the packagers; every other aarch64 target does not.
+// ELF). They load the packagers, so they share the packaged native entry
+// (x86_64_cli.cljk) with the x86-64 targets (ADR 0366 retired the separate
+// aarch64_packaged_cli); every other aarch64 target does not load them.
 const aarch64PackagedTargets = new Set(["aarch64-aiueos-kernel-v1", "aarch64-linux-static"]);
 
 function nbbEntrypoint(root, args) {
@@ -292,7 +294,7 @@ function nbbEntrypoint(root, args) {
     : command === "check" ? "check_cli.cljk"
     : wasm ? "wasm_cli.cljk"
       : target && target.startsWith("evm") ? "evm_cli.cljk"
-        : aarch64PackagedTargets.has(target) ? "aarch64_packaged_cli.cljk"
+        : aarch64PackagedTargets.has(target) ? "x86_64_cli.cljk"
           : target.startsWith("aarch64") ? "aarch64_cli.cljk" : "x86_64_cli.cljk";
   return path.join(root, "src", "kotoba", "compiler", "nbb", filename);
 }
@@ -561,6 +563,30 @@ function resolveRefactorPaths(args, cwd) {
   });
 }
 
+// ADR 0366: the native `check` route (opt-in, bootstrap period). AMU_FRONT
+// names a native amu-front binary (seed/amu-front: the kotoba-sema frontend
+// compiled by the seed, no node/nbb/JVM in its process). Its domain is exactly
+// `amu check <one file>` with no flag: one module, the default (no-grant)
+// policy. Its report is `amu check`'s HUMAN line (`ok profile=.. effects=..
+// exports=..` on stdout, exit 0; the refusal on stderr, exit 65), not the EDN
+// this launcher's nbb route prints; that is the contract a caller opts into.
+// Any other `check` (--source-path, --policy, --package-lock, --json, ...)
+// takes the nbb route as before, and nothing changes when AMU_FRONT is unset.
+// A native run that neither accepts nor refuses (a trap, a budget) is an
+// error naming the bootstrap route, never a silent fallback in another format.
+// Known gaps (seed/amu-front/README.md section 3): 9 of 391 corpus programs
+// stage-0 accepts are refused natively (float literals, ucs2, one frontend
+// rule). `host` keeps the rule testable without a binary.
+function nativeCheckRoute(args, env, host = { exists: fs.existsSync }) {
+  const binary = env.AMU_FRONT;
+  if (typeof binary !== "string" || binary === "") return {};
+  if (args[0] !== "check" || args.length !== 2 || args[1].startsWith("-")) return {};
+  if (!path.isAbsolute(binary) || !host.exists(binary)) {
+    return { reason: `error: AMU_FRONT must name an existing native amu-front binary by absolute path: ${binary}` };
+  }
+  return { binary };
+}
+
 function runCompiler(root, rawArgs) {
   const defaulted = defaultTarget(rawArgs[0] === "refactor"
     ? resolveRefactorPaths(rawArgs, process.cwd())
@@ -575,6 +601,18 @@ function runCompiler(root, rawArgs) {
     childEnv.AMU_TARGET_ORIGIN = defaulted.origin;
   } else {
     delete childEnv.AMU_TARGET_ORIGIN;
+  }
+  const front = nativeCheckRoute(args, process.env);
+  if (front.reason) fail(front.reason, 64);
+  if (front.binary) {
+    const result = spawn(front.binary, ["check", args[1]], { stdio: "inherit", env: {} });
+    if (result.error) fail(`error: unable to start the native check ${front.binary}`, 70);
+    const status = result.status ?? 70;
+    if (status !== 0 && status !== 65) {
+      fail(`error: the native check (AMU_FRONT) did not answer (exit ${status}); `
+        + "unset AMU_FRONT for the bootstrap nbb route", 70);
+    }
+    process.exit(status);
   }
   if (nbbNativeEligible(args)) {
     if (preludeIsIgnored(args)) {
@@ -635,5 +673,5 @@ function main() {
 if (require.main === module) {
   main();
 } else {
-  module.exports = { hostNativeTargets, hostNativeTarget, defaultTarget };
+  module.exports = { hostNativeTargets, hostNativeTarget, defaultTarget, nativeCheckRoute };
 }
