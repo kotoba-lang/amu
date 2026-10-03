@@ -14,7 +14,7 @@
 #        the frontend closure (dependency-first), kotoba.amu-front.check (seed/amu-front/check.cljk), the seed split
 #        (`modules` order), amu.cli, amu.refactor, amu.compile (s/), amu.check (k/), amu.main (--entry; the entry is
 #        seed/frontsrc/amu/main.kotoba = seed/amu-main's dispatcher + link/modules/extract-native routed to the seed driver).
-#      C = the seed binary (default: rung r6j's recorded seed, checked against seed/rungs/r6j.record), or, with
+#      C = the seed binary (default: rung r6l's recorded seed, checked against seed/rungs/r6l.record; FS_RUNG), or, with
 #      --builder AMU, a packaged amu image (its `compile` command = the seed compiler linked into it): the self-rebuild.
 #   4. link, extract-native (the seed binary; with --builder, the builder image's own link/extract-native), package with
 #      tools/kexe_loader.c (KEXE_EMBEDDED, wires 3,35,37,38,39, never 20) -> <work>/amu-one-src (+ .info).
@@ -34,8 +34,12 @@ die() { echo "build-one-src: FAIL: $*" >&2; exit 1; }
 step() { echo "build-one-src: $* (load $(sysctl -n vm.loadavg | awk '{print $2}'))"; }
 
 # ---- 1. tree + seed ----
-SB=${FS_SEED:-$R/build/float/seed-1.bin}
-[ -n "$FS_SEED" ] || [ "$(sha $SB)" = "$(sed -n 's/^seed1_sha256 //p' $R/seed/rungs/r6j.record)" ] || die "$SB is not rung r6j's seed"
+# the compiler seed: rung $FS_RUNG's recorded seed (default r6l; REBUILD 2026-10-04, was r6j), its sha256 checked against
+# seed/rungs/$FS_RUNG.record; first of build/seed-boot/<rung>/seed-1.bin (bootstrap.sh) and build/rebuild/seed-<rung>.bin.
+# FS_SEED overrides (no record check).
+RUNG=${FS_RUNG:-r6l}
+SB=${FS_SEED:-$R/build/seed-boot/$RUNG/seed-1.bin}; [ -n "$FS_SEED" ] || [ -s $SB ] || SB=$R/build/rebuild/seed-$RUNG.bin
+[ -n "$FS_SEED" ] || [ "$(sha $SB)" = "$(sed -n 's/^seed1_sha256 //p' $R/seed/rungs/$RUNG.record)" ] || die "$SB is not rung $RUNG's seed"
 T=$W/tree; rm -rf $T; mkdir -p $T
 git -C $R archive HEAD seed scripts/seed tools | tar -x -C $T || die "git archive"
 python3 $T/seed/split/gen-split.py > $W/gen-split.log || die "gen-split"
@@ -95,7 +99,20 @@ step "seed split ($(wc -l < $W/modules.txt | tr -d ' ') modules) + 5 amu modules
 while read nm p; do comp $p $nm < /dev/null >> $W/emit.log 2>&1 || die "split $nm"; done < $W/modules.txt
 # the amu.* library modules (every file but main), dependency-first by retry: a pass compiles what it can (E6025 = a
 # require has no object yet); stop when a pass adds nothing
-todo=(${(f)"$(ls $S/amu/*.kotoba | grep -v '/main.kotoba$')"})
+# only the amu.* modules amu.main reaches through its requires (src/ also holds REFAC's Kotoba-route refactor_*.kotoba,
+# which need the kotoba-lang compat root and are not reached while src/amu/refactor.kotoba is the declared stub)
+python3 - $S/amu > $W/amu-reach.txt <<'EOP' || die "amu closure"
+import os, re, sys
+d = sys.argv[1]; seen, todo = set(), ['main']
+while todo:
+    m = todo.pop()
+    if m in seen: continue
+    seen.add(m)
+    src = open(os.path.join(d, m.replace('-', '_') + '.kotoba')).read()
+    todo += [x for x in re.findall(r'\[amu\.([\w-]+)', src) if os.path.exists(os.path.join(d, x.replace('-', '_') + '.kotoba'))]
+for m in sorted(seen - {'main'}): print(os.path.join(d, m.replace('-', '_') + '.kotoba'))
+EOP
+todo=(${(f)"$(cat $W/amu-reach.txt)"})
 while [ ${#todo} -gt 0 ]; do
   left=()
   for f in $todo; do
@@ -144,7 +161,7 @@ mv $W/amu-one-src.tmp $W/amu-one-src
 deps=$(otool -L $W/amu-one-src | tail -n +2 | awk '{print $1}')
 echo "$deps" | grep -vq '^/usr/lib/' && die "unexpected library dependency"
 { echo "label amu-one-src (amu.main: check REAL via the kotoba-sema frontend compiled FROM SOURCE by the seed, no kir-dump; compile REAL via the seed compiler from source; entry seed/frontsrc/amu/main.kotoba (amu.main + link/modules/extract-native); objects, link and extract by ${builder:-seed $(sha $SB | cut -c1-16)})"
-  echo "compiler ${builder:+builder $builder $(sha $builder)} seed $(sha $SB) bytes $(wc -c < $SB | tr -d ' ')"
+  echo "compiler ${builder:+builder $builder $(sha $builder)} seed ${FS_SEED:+(FS_SEED) }${FS_SEED:-rung $RUNG} $(sha $SB) bytes $(wc -c < $SB | tr -d ' ')"
   echo "tree HEAD $(git -C $R rev-parse --short HEAD) pairs $SEED_PAIRS"
   cat $W/roots.txt
   for f in $S/amu/*.kotoba $T/seed/amu-front/check.cljk; do echo "source ${f:t} $(sha $f | cut -c1-16)"; done

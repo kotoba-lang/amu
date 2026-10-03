@@ -16,7 +16,22 @@ import os, re, sys
 p = os.path.join(sys.argv[1], 'seed', 'main.kotoba')
 s = open(p).read()
 if re.search(r'^\(defn drv-compile-file ', s, re.M):
-    print('patch-split: native (seed.main defines drv-compile-file)')
+    # REBUILD 2026-10-04 (rung r6l): drv-compile-file is quiet (MM-QUIET) on the single-module route only; the project
+    # route's pj-read -> pj-reset zeroes the header cells 0..255, MM-QUIET (37) included, so `amu compile --source-path`
+    # printed the seed's ok line before amu's (usage-parity case 25). Until the seed keeps it (CONTRACT-REQUESTS
+    # 2026-10-04 REBUILD -> SEEDLANG), the copy's pj-read carries MM-QUIET across the reset. No-op when already kept.
+    q = os.path.join(sys.argv[1], 'seed', 'proj.kotoba')
+    t = open(q).read()
+    old = ('(defn pj-read [M :vector-i64 S :string] :vector-i64\n'
+           '  (let [M1 (mem-set (pj-reset M) MM-SRC-LEN (string-length S))\n')
+    if old in t:
+        t = t.replace(old, '(defn pj-read [M :vector-i64 S :string] :vector-i64\n'
+                           '  (let [q (vector-at M 37)   ; MM-QUIET of seed.main (amu-main patch-split.py)\n'
+                           '        M1 (mem-set (mem-set (pj-reset M) 37 q) MM-SRC-LEN (string-length S))\n', 1)
+        open(q, 'w').write(t)
+        print('patch-split: native (seed.main defines drv-compile-file; pj-read keeps MM-QUIET)')
+    else:
+        print('patch-split: native (seed.main defines drv-compile-file)')
     sys.exit(0)
 m = re.search(r'^\(defn- drv-run \[path :string mode :i64 out :string\] :i64\n.*\n', s, re.M)
 if not m:

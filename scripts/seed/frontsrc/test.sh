@@ -5,7 +5,7 @@
 #   T2 check refuse      seed/tests/r1/feat/46-doseq-trap.kotoba and seed/tests/corpus/060-truthiness.kotoba are refused
 #                        with stage-0's line (subset-reject, "if test is :i64"), exit 65
 #   T3 check usage       `check` without a file -> 64; unknown command -> 64
-#   T4 compile           the crc32 Embench port -> kseed byte-identical to the r6j seed's (FS_SEED), and its test export
+#   T4 compile           the crc32 Embench port -> kseed byte-identical to the compiler seed's (rung FS_RUNG, default r6l; FS_SEED), and its test export
 #                        runs to rc=0 through the C loader
 #   T5 build commands    `modules`, `compile --emit-module`, `link`, `extract-native` of a 2-module project answer 0
 #                        and the linked entry runs (exit = its main)
@@ -33,7 +33,7 @@ $A check > /dev/null 2>&1; s1=$?; $A frobnicate > /dev/null 2>&1; s2=$?
 # T4
 E=/Users/junkawasaki/github/kotoba-lang/amu-embench/bench/embench/ports
 export SEED_REPO=$R SEED_BUILD=$W; source $R/scripts/seed/lib.sh; L=$(seed_loader)
-SB=${FS_SEED:-$R/build/float/seed-1.bin}
+RUNG=${FS_RUNG:-r6l}; SB=${FS_SEED:-$R/build/seed-boot/$RUNG/seed-1.bin}; [ -n "$FS_SEED" ] || [ -s $SB ] || SB=$R/build/rebuild/seed-$RUNG.bin
 SEED_RESOURCES_35=$R:$E:$W seed_run $SB 0 compile $E/crc32.kotoba --target aarch64-macos --output $W/crc32-seed.kseed > /dev/null 2>&1
 $A compile $E/crc32.kotoba --target aarch64-macos --output $W/crc32.kseed > $W/t4.out 2>&1 \
   && off=$($A extract-native $W/crc32.kseed --symbol test-crc32 --output $W/crc32.bin | sed -n 's/.*:offset \([0-9]*\).*/\1/p') \
