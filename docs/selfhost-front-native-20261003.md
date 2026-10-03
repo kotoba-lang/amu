@@ -95,7 +95,7 @@ float literals, no seed lowering) replaced by `none`:
 | TRAP SIGILL (16 use the slice carrier, 1 kernel-load-u8) | 17 |
 
 The JVM interpreter run of 2026-10-02 found the same classes on its 88-program sample (79/88 same, 7 slice traps, 2 DIFF).
-JVM check of the 30 non-OK programs on this corpus: see section 6.
+JVM cross-check on this corpus (abort-run-jvm.clj, same guest, KIR interpreter): the 13 DIFF programs give **byte-identical answers** to the native run (1,271 s on the JVM for the 13, ~98 s per program, load ~50) and 5 sampled OK programs answer OK there too. The 17 traps were not re-run (the interpreter loses a whole batch on a trap).
 
 Per program, one process each (246 non-trapping): max 1.84 M vectors (44%) and 3.24 M pairs without hash-consing, 1.57 M /
 1.55 M with it; max heap 93 MB; aggregate 865 vectors, 1,856 pairs and 48,915 heap bytes per source byte; the largest
