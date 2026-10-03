@@ -1,0 +1,4 @@
+;; R3 feat: options of strings
+(ns seed.r3 (:export [test]))
+(defn- pick [b :bool] [:option :string] (if b (option-some-of [:option :string] "four") (option-none-of [:option :string])))
+(defn test [] :i64 (+ (string-length (option-value-of [:option :string] (pick true) "")) (string-length (option-value-of [:option :string] (pick false) "xy"))))

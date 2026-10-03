@@ -1,0 +1,3 @@
+;; R3 feat: typed sets are kept in key order (signed i64, strings by bytes). Stage-0 native keeps insertion order (measured 2026-10-03: this program without the contains term gives 981005); the reference keeps typed sets sorted (lang/guest-grammar.edn :map-literal :order)
+(ns seed.r3 (:export [test]))
+(defn test [] :i64 (let [s (typed-set-new [:set :i64] 5 -3 9 0) t (typed-set-new [:set :string] "b" "B" "ab")] (+ (typed-set-nth [:set :i64] s 0) (* 10 (typed-set-nth [:set :i64] s 3)) (* 1000 (string-length (typed-set-nth [:set :string] t 1))) (* 10000 (string-code-point-at (typed-set-nth [:set :string] t 0) 0)) (if (typed-set-contains [:set :i64] s 9) 1000000 0))))

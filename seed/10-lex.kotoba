@@ -6,8 +6,8 @@
 ;;                         (E1001-E1005, E101 table full), MM-ERR-POS/A/B/N as listed in seed/HEADS, tokens after
 ;;                         the error are not produced. Nothing is printed.
 ;;
-;; The source must be ASCII (a byte >= 128 anywhere, even in a comment or a string, is E1002; the whole input is
-;; checked first, so E1002 wins over every other lexical error). Whitespace: space tab LF CR ','. Comment: ';'
+;; R0/R1: the source had to be ASCII. R3 (agent R3, 2026-10-03, minimal delimited change marked R3 below; seed/HEADS
+;; :tokens): a string literal or a comment may hold any UTF-8 text; a byte >= 128 anywhere else is E1002 at that byte. Whitespace: space tab LF CR ','. Comment: ';'
 ;; to end of line. TK-INT is -?[0-9]+ that fits i64 (-9223372036854775808 legal, 9223372036854775808 not).
 ;; TK-SYM is a maximal run of [A-Za-z0-9*+!_?<>=/.-] that is not an integer. TK-KW is ':' + such a run (the
 ;; span includes ':'; a lone ':' is E1005). Every other byte (# ^ ` ~ @ \ ' | % & $ ...) is E1005 with the
@@ -107,9 +107,10 @@
 ;; ---------------------------------------------------------------------------------------------------------
 ;; scanners over S (read-only)
 ;; ---------------------------------------------------------------------------------------------------------
+;; R3: a comment may hold UTF-8: step over whole code points (string-code-point-at traps inside one)
 (defn- lx-eol [S :string i :i64] :i64
   (loop [j i]
-    (if (>= j (string-length S)) j (if (= (lx-ch S j) 10) j (recur (+ j 1))))))
+    (if (>= j (string-length S)) j (if (= (lx-ch S j) 10) j (recur (+ j (lx-cpw (lx-ch S j))))))))
 
 (defn- lx-word-end [S :string i :i64] :i64
   (loop [j i]
@@ -160,8 +161,42 @@
 ;; it (read it in a callee, through the parameter, or do not read it). Here nothing is read after a writer: the end of
 ;; a token is found first by read-only scans of S, then the writers run and the loop continues at that end.
 ;; ---------------------------------------------------------------------------------------------------------
+;; ---- R3 (agent R3): UTF-8 in strings and comments, escapes \r \b \f \uXXXX ----
+;; byte width of the UTF-8 sequence of code point cp
+(defn- lx-cpw [cp :i64] :i64 (cond (< cp 128) 1 (< cp 2048) 2 (< cp 65536) 3 :else 4))
+;; value of hex digit c, -1 when c is not one
+(defn- lx-hex [c :i64] :i64
+  (cond (lx-range? c 48 57) (- c 48) (lx-range? c 97 102) (- c 87) (lx-range? c 65 70) (- c 55) :else -1))
+;; the code point of \uXXXX whose 'u' is at j, -1 when malformed (fewer than 4 hex digits) or a surrogate; the digits
+;; are read one by one and the scan stops at the first non-digit (so it never indexes inside a UTF-8 sequence)
+(defn- lx-u4 [S :string j :i64] :i64
+  (if (> (+ j 5) (string-length S))
+    -1
+    (loop [k 1 v 0]
+      (if (> k 4)
+        (if (and (>= v 55296) (<= v 57343)) -1 v)
+        (let [h (lx-hex (lx-ch S (+ j k)))]
+          (if (neg? h) -1 (recur (inc k) (+ (* v 16) h))))))))
+;; push the UTF-8 bytes of code point cp
+(defn- lx-utf8-push [M :vector-i64 cp :i64] :vector-i64
+  (cond (< cp 128) (lx-litb-push M cp)
+        (< cp 2048) (-> M (lx-litb-push (bit-or 192 (u64-shift-right cp 6))) (lx-litb-push (bit-or 128 (bit-and cp 63))))
+        (< cp 65536) (-> M (lx-litb-push (bit-or 224 (u64-shift-right cp 12)))
+                         (lx-litb-push (bit-or 128 (bit-and (u64-shift-right cp 6) 63)))
+                         (lx-litb-push (bit-or 128 (bit-and cp 63))))
+        :else (-> M (lx-litb-push (bit-or 240 (u64-shift-right cp 18)))
+                  (lx-litb-push (bit-or 128 (bit-and (u64-shift-right cp 12) 63)))
+                  (lx-litb-push (bit-or 128 (bit-and (u64-shift-right cp 6) 63)))
+                  (lx-litb-push (bit-or 128 (bit-and cp 63))))))
+
 (defn- lx-esc-code [e :i64] :i64
-  (cond (= e 110) 10 (= e 116) 9 (= e 92) 92 (= e 34) 34 :else -1))
+  (cond (= e 110) 10 (= e 116) 9 (= e 92) 92 (= e 34) 34 (= e 114) 13 (= e 98) 8 (= e 102) 12 :else -1))
+;; R3: the source width of the escape whose backslash is at j (2, or 6 for \uXXXX), 0 when it is not a valid escape
+(defn- lx-esc-w [S :string j :i64] :i64
+  (let [e (lx-ch S (+ j 1))]
+    (cond (= e 117) (if (neg? (lx-u4 S (+ j 1))) 0 6)
+          (neg? (lx-esc-code e)) 0
+          :else 2)))
 
 ;; index of the closing quote of the string that opens at i; -1 = unterminated; -(2+j) = bad escape at the backslash j
 (defn- lx-str-find [S :string i :i64] :i64
@@ -173,17 +208,17 @@
           (= c 34) j
           (= c 92) (if (>= (+ j 1) (string-length S))
                      -1
-                     (if (< (lx-esc-code (lx-ch S (+ j 1))) 0) (- -2 j) (recur (+ j 2))))
-          :else (recur (+ j 1)))))))
+                     (if (zero? (lx-esc-w S j)) (- -2 j) (recur (+ j (lx-esc-w S j)))))
+          :else (recur (+ j (lx-cpw c))))))))
 
 ;; decode S[j, e) into LITB (e = the closing quote, escapes already validated)
 (defn- lx-str-loop [M :vector-i64 S :string j :i64 e :i64] :vector-i64
   (if (>= j e)
     (lx-id M)
     (let [c (lx-ch S j)]
-      (if (= c 92)
-        (lx-str-loop (lx-litb-push M (lx-esc-code (lx-ch S (+ j 1)))) S (+ j 2) e)
-        (lx-str-loop (lx-litb-push M c) S (+ j 1) e)))))
+      (cond (and (= c 92) (= (lx-ch S (+ j 1)) 117)) (lx-str-loop (lx-utf8-push M (lx-u4 S (+ j 1))) S (+ j 6) e)
+            (= c 92) (lx-str-loop (lx-litb-push M (lx-esc-code (lx-ch S (+ j 1)))) S (+ j 2) e)
+            :else (lx-str-loop (lx-utf8-push M c) S (+ j (lx-cpw c)) e)))))
 
 ;; close the string token spanning S[i, e]: LF-LEN of the reserved LIT record, then the token
 (defn- lx-str-end [M :vector-i64 i :i64 e :i64] :vector-i64
@@ -251,13 +286,16 @@
           (lx-ws? c) (lx-scan M S (+ i 1))
           (= c 59) (lx-scan M S (lx-eol S i))
           (> pk 0) (lx-scan (lx-push M pk i (+ i 1) 0) S (+ i 1))
+          (lx-hash-brace? S i c) (lx-scan (lx-push M TK-HASH-BRACE i (+ i 2) 0) S (+ i 2))
+          (> c 127) (lx-fail-n M E-LEX-ASCII i (lx-lead c))
           (lx-multi? c)
           (let [j (lx-tok-end S i)]
             (lx-scan (lx-token M S i j) S (lx-after S i j)))
           :else (lx-fail M E-LEX-SYNTAX i i (+ i 1))))
       (lx-id M))))
 
-;; whole-input ASCII check; stops at the first non-ASCII lead byte, so it never indexes a continuation byte
+;; whole-input ASCII check; stops at the first non-ASCII lead byte, so it never indexes a continuation byte. R3: no longer
+;; part of lx-run (strings and comments may hold UTF-8); kept for 12-kirread's KIR lexer (kr-lex), which still uses it.
 (defn- lx-ascii [M :vector-i64 S :string i :i64] :vector-i64
   (if (>= i (string-length S))
     (lx-id M)
@@ -265,6 +303,10 @@
       (if (> c 127)
         (lx-fail-n M E-LEX-ASCII i (lx-lead c))
         (lx-ascii M S (+ i 1))))))
+
+;; R3: '#{' opens a set literal (any other '#' stays E1005)
+(defn- lx-hash-brace? [S :string i :i64 c :i64] :bool
+  (and (= c 35) (< (+ i 1) (string-length S)) (= (lx-ch S (+ i 1)) 123)))
 
 ;; scan after a clean ASCII check; the count of tokens is left in MM-R0
 (defn- lx-count [M :vector-i64] :vector-i64
@@ -277,4 +319,4 @@
     (lx-id M)))
 
 (defn- lx-run [M :vector-i64 S :string] :vector-i64
-  (lx-run2 (lx-ascii M S 0) S))
+  (lx-run2 M S))

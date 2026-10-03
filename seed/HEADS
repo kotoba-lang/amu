@@ -21,8 +21,19 @@
                 deterministic per compile). Only = and case compare keywords; never an export parameter or result"]
   [:c TY-REC-BASE 1024 "record types: TY-REC-BASE + the record's identity symbol (seed/MEMORY-MAP SF-REC, RB-*). A
                         record value is the pair chain pair(f0, pair(f1, ... 0)) in declaration order (stage-0's
-                        ABI, measured 2026-10-02 on build/native-image/amu-native: pair_new from the last field)"]]
- ;; Type keywords in signatures: :i64 :bool :string :vector-i64. Anything else after a parameter -> E2105.
+                        ABI, measured 2026-10-02 on build/native-image/amu-native: pair_new from the last field)"]
+  ;; -- R3 (rung 3, 2026-10-03): composite value types, interned in the composite type table CT (seed/MEMORY-MAP MM-CT) --
+  [:c TY-COMP-BASE 1048576 "composite types: TY-COMP-BASE + the CT index of [:option T] [:result T E] [:list T] [:map K V]
+                            [:set T] (TC-* constructors below). Runtime values (seed/SIR :r3-values): option = 0 (none) or
+                            pair(x, 0); result = pair(payload, tag) tag 0 ok / 1 err; list = vector handle of the items; set =
+                            vector handle of the items sorted by key (no duplicates, at most 32); map = vector handle of
+                            k0 v0 k1 v1 .. sorted by key (no duplicate keys, at most 31 entries), the reference's order
+                            (lang/guest-grammar.edn :map-literal :order). Keys/items: i64 bool keyword string (E2105 otherwise);
+                            keyword items/keys are kept in interning order, so typed-set-nth, (nth set i), keys and vals refuse
+                            them (E2105 / E2104)"]
+  [:c TC-OPTION 1] [:c TC-RESULT 2] [:c TC-LIST 3] [:c TC-MAP 4] [:c TC-SET 5]]
+ ;; Type keywords in signatures: :i64 :bool :string :vector-i64 (R1 :keyword, records; R3 the vector forms [:option T]
+ ;; [:result T E] [:list T] [:map K V] [:set T]). Anything else after a parameter -> E2105.
 
  ;; ---------------------------------------------------------------------------------------------------------
  ;; 2. Lexical layer (10-lex). Bytes outside 0..127 anywhere in S -> E1002.
@@ -36,7 +47,11 @@
   [:c TK-STR 8 "string: \"...\" with escapes \\n \\t \\\\ \\\" only (E1003 otherwise); decoded bytes go to LIT/LITB"]
   [:c TK-SYM 9 "symbol: a maximal run of [A-Za-z0-9*+!_?<>=/.-] that is not an
                 integer. Spans like `-` and `->` are symbols"]
-  [:c TK-KW 10 "keyword: ':' followed by symbol chars; the span includes the ':' (e.g. :i64 :fs/app-data)"]]
+  [:c TK-KW 10 "keyword: ':' followed by symbol chars; the span includes the ':' (e.g. :i64 :fs/app-data)"]
+  [:c TK-HASH-BRACE 11 "R3: '#{' (a set literal opens; closed by '}')"]]
+ ;; R3 (10-lex, minimal delimited change): a string literal may hold any UTF-8 text (its bytes go to LITB as they are) and
+ ;; the escapes \r \b \f \uXXXX (UTF-8 encoded; a surrogate is E1003) besides \n \t \\ \"; a comment may hold any
+ ;; UTF-8 text. A byte >= 128 anywhere else is E1002 at that byte (no whole-input pre-check any more).
  ;; Whitespace: space, tab, \n, \r and ','. Comments: ';' to end of line. Reader syntax # ^ ` ~ @ \ ' (as a
  ;; prefix) -> E1005 with the one-character span. A token never spans lines except a string.
 
@@ -46,7 +61,8 @@
  :nodes
  [[:c ND-ROOT 1 "the file: children = top-level forms"] [:c ND-LIST 2 "( ... )"] [:c ND-VEC 3 "[ ... ]"]
   [:c ND-MAP 4 "{ k v ... } R1: read with key/value children; 21-check admits it only as the argument of map->Name"] [:c ND-INT 5] [:c ND-STR 6] [:c ND-SYM 7]
-  [:c ND-KW 8]]
+  [:c ND-KW 8]
+  [:c ND-SET 9 "R3: #{ x ... } (children = the items); an expression (a typed set literal)"]]
 
  ;; ---------------------------------------------------------------------------------------------------------
  ;; 4. Keywords with a meaning (SF-HEAD of a keyword symbol, set by 20-names at intern time)
@@ -60,7 +76,9 @@
   ;; -- R1 --
   [:c KW-KEYWORD 13 ":keyword (type)"] [:c KW-RECORD 14 ":record (schema head)"] [:c KW-LET 15 ":let (doseq)"]
   [:c KW-WHEN 16 ":when (doseq)"] [:c KW-WHILE 17 ":while (doseq)"]
-  [:c KW-INFER 18 "(no spelling) the synthetic result type of an unannotated defn: inferred from the body"]]
+  [:c KW-INFER 18 "(no spelling) the synthetic result type of an unannotated defn: inferred from the body"]
+  ;; -- R3 --
+  [:c KW-OPTION 19 ":option"] [:c KW-RESULT 20 ":result"] [:c KW-LIST 21 ":list"] [:c KW-MAP 22 ":map"] [:c KW-SET 23 ":set"]]
  ;; KW-FS-APP-DATA-BYTES (R0 2026-10-02): wire 35 with the :bytes kinds, the spelling stage-0 accepts.
  ;; Keywords appear ONLY in: ns (:export), signatures (types), cond (:else), typed-cap-call (wire, kinds).
  ;; A keyword anywhere else (as a value) -> E2114.
@@ -177,7 +195,76 @@
   [:c HD-RECORD-CTOR 74 "(no spelling) (->Name e ..) (NF-RES of the list); args start at the 2nd child"]
   [:c HD-ASSOC 75 "(assoc r :f v) on a record -> a new record with field f = v (the other fields copied). 21-check gives it a
                    hidden frame slot (NF-TYPE of the head symbol node) that holds r while the fields are copied"]
-  [:c HD-COUNT 75 "number of heads"]]
+  ;; -- R3 (rung 3, 2026-10-03): values. Every R3 head is typed by 21-check; the type argument T/R/L/S/Mt is a type form
+  ;;    ([:option T] ...) that must name the matching constructor (E2105 / E2104 otherwise). Heads that need frame slots
+  ;;    for their lowering get k HIDDEN slots: NF-TYPE of the head symbol node = the first one (21-check), the
+  ;;    arguments are checked after them (so a nested let never reuses them). Lowerings: seed/SIR :r3-lowering.
+  [:c HD-OPTION-SOME 76 "(option-some-of [:option T] x) x:T -> [:option T]"]
+  [:c HD-OPTION-NONE 77 "(option-none-of [:option T]) -> [:option T]"]
+  [:c HD-OPTION-IS-SOME 78 "(option-some?-of [:option T] o) -> b"]
+  [:c HD-OPTION-VALUE 79 "(option-value-of [:option T] o d) d:T -> T (o and d evaluated first; 2 hidden slots)"]
+  [:c HD-OPTION-MATCH 80 "(option-match [:option T] o none-body x some-body) x bound to the value (a local slot) -> the arms' type"]
+  [:c HD-OPTION-OR 81 "(option-or o d) o:[:option T] d:T -> T (2 hidden slots)"]
+  [:c HD-RESULT-OK 82 "(result-ok-of [:result T E] v) v:T -> R"]
+  [:c HD-RESULT-ERR 83 "(result-err-of [:result T E] e) e:E -> R"]
+  [:c HD-RESULT-IS-OK 84 "(result-ok?-of R r) -> b"]
+  [:c HD-RESULT-VALUE 85 "(result-value-of R r d) d:T -> T (2 hidden slots)"]
+  [:c HD-RESULT-ERROR 86 "(result-error-of R r d) d:E -> E (2 hidden slots)"]
+  [:c HD-RESULT-MATCH 87 "(result-match-of R r v ok-body e err-body) v:T e:E bound (local slots) -> the arms' type"]
+  [:c HD-THROW 88 "(throw e) -> bottom. The enclosing function ABORTS (lang/abort-ability.edn): its interface is [:result T E],
+                   E = the type of e; outside a try body it returns err(e), inside one it jumps to the innermost handler"]
+  [:c HD-TRY 89 "(try body (catch e handler)) / (try body (catch :E e handler)) -> join of body and handler. The body is
+                 not a tail position (recur there: E2106); E = the explicit type or the single error type of the body's
+                 throws and aborting calls (E2129 when two, E2131 when none, E2133 when not yet known)"]
+  [:c HD-CATCH 90 "(catch ..) only as the last child of try (E2132 elsewhere)"]
+  [:c HD-LIST-NEW 91 "(typed-list-new [:list T] x ..) 0..64 items -> L (VEC)"]
+  [:c HD-LIST-NTH 92 "(typed-list-nth L l i) -> T; out of range traps"]
+  [:c HD-LIST-CONJ 93 "(typed-list-conj L l x) -> L"]
+  [:c HD-SET-NEW 94 "(typed-set-new [:set T] x ..) -> S; duplicates are dropped, a 33rd item traps (7 hidden slots)"]
+  [:c HD-SET-COUNT 95 "(typed-set-count S s) -> i"]
+  [:c HD-SET-CONTAINS 96 "(typed-set-contains S s x) -> b (4 hidden slots)"]
+  [:c HD-SET-CONJ 97 "(typed-set-conj S s x) -> S; unchanged when present, inserted in order else (33rd item traps) (7 slots)"]
+  [:c HD-SET-DISJ 98 "(typed-set-disj S s x) -> S (7 hidden slots)"]
+  [:c HD-SET-EQUAL 99 "(typed-set-equal S a b) -> b; the same items (7 hidden slots)"]
+  [:c HD-SET-NTH 100 "(typed-set-nth S s i) -> T; out of range traps"]
+  [:c HD-MAP-NEW 101 "(typed-map-new [:map K V] k v ..) -> Mt; a duplicate key or a 32nd entry traps (7 slots)"]
+  [:c HD-MAP-COUNT 102 "(typed-map-count Mt m) -> i"]
+  [:c HD-MAP-CONTAINS 103 "(typed-map-contains Mt m k) -> b (4 hidden slots)"]
+  [:c HD-MAP-GET 104 "(typed-map-get Mt m k) -> [:option V] (4 hidden slots)"]
+  [:c HD-MAP-ASSOC 105 "(typed-map-assoc Mt m k v) -> Mt: the value of a present k is replaced, else (k v) inserted in
+                                key order (a 32nd entry traps) (7 slots)"]
+  [:c HD-MAP-DISSOC 106 "(typed-map-dissoc Mt m k) -> Mt (7 hidden slots)"]
+  [:c HD-MAP-EQUAL 107 "(typed-map-equal Mt a b) -> b; the same entries; V must be i64 bool keyword string (E2105) (7 slots)"]
+  [:c HD-MAP-KEYS 108 "(typed-map-keys Mt m) -> [:list K] in key order (4 hidden slots)"]
+  [:c HD-MAP-VALS 109 "(typed-map-vals Mt m) -> [:list V] (4 hidden slots)"]
+  [:c HD-STRING-EQ 110 "(string=? s s) -> b ; RT RT-STRING-EQUAL"]
+  [:c HD-STRING-SUBSTRING 111 "(string-substring s a b) -> s, byte offsets; traps unless 0 <= a <= b <= length on code point
+                               boundaries ; RT RT-STRING-SUBSTRING"]
+  [:c HD-STRING-FROM-I64 112 "(string-from-i64 i) -> s, decimal (5 hidden slots)"]
+  [:c HD-STRING-COMPARE 113 "(string-compare s s) -> i -1/0/1 ; RT RT-STRING-COMPARE"]
+  [:c HD-STRING-INDEX-OF 114 "(string-index-of s needle) -> i byte offset or -1; an empty needle traps ; RT"]
+  [:c HD-STRING-BYTE-LENGTH 115 "(string-byte-length s) -> i = string-length"]
+  [:c HD-PAIR 116 "(pair a b) i i -> i (a pair handle; KIR's closures and stdlib chains) ; RT RT-PAIR-NEW"]
+  [:c HD-PAIR-FIRST 117 "(pair-first p) i -> i"] [:c HD-PAIR-SECOND 118 "(pair-second p) i -> i"]
+  [:c HD-GCOUNT 119 "(count c) on a vector, list, set or map -> i"]
+  [:c HD-NTH 120 "(nth c i) on a vector, list or set -> the item (traps out of range); (nth c i d) vector/list -> the item
+                  or d (3 hidden slots)"]
+  [:c HD-CONTAINS 121 "(contains? m k) map key -> b (4 hidden slots). A set receiver is refused (E2104), as by the reference
+                      (lang/surface-status.edn :set-literal :operations contains?); typed-set-contains is the set head"]
+  [:c HD-CONJ 122 "(conj c x ..) set / vector / list -> the same type (7 hidden slots)"]
+  [:c HD-DISJ 123 "(disj s x ..) on a set (7 hidden slots)"]
+  [:c HD-DISSOC 124 "(dissoc m k) on a map (7 hidden slots)"]
+  [:c HD-KEYS 125 "(keys m) -> [:list K]"] [:c HD-VALS 126 "(vals m) -> [:list V]"]
+  [:c HD-PEEK 127 "(peek v) the last item of a vector or list (empty traps; 1 hidden slot)"]
+  [:c HD-POP 128 "(pop v) all items but the last (empty traps; 4 hidden slots)"]
+  [:c HD-SETLIT 129 "(no spelling) NF-RES of an ND-SET expression: #{x ..} -> [:set :keyword] (the reference's set literal
+                     is keyword-only; typed-set-new builds the others), 1..32 items, all :keyword (E2104), not empty (E2133).
+                     7 hidden slots: the first is in NF-SYM of the ND-SET node"]
+  [:c HD-MAPLIT 130 "(no spelling) NF-RES of an ND-MAP expression {k v ..} -> [:map K V] from the first entry, K :i64 or :string
+                     (E2105: the reference reads a keyword-keyed literal as a pair list or a record), 1..31 entries (7 hidden
+                     slots, the first in NF-SYM of the ND-MAP node). (map->Name {..}) keeps its R1 meaning"]
+  ;; R1's get and assoc also take maps: (get m k d) -> the value of k or d (5 hidden slots), (assoc m k v) = typed-map-assoc
+  [:c HD-COUNT 130 "number of heads"]]
 
  ;; Head spellings, index = head code (20-names compares a symbol's bytes against these at intern time).
  ;; R1 spellings 43.. : "do" "when" "when-not" "if-not" "case" "condp" "->" "->>" "as->" "cond->" "cond->>" "dotimes"
@@ -190,6 +277,14 @@
              "i64-shift-right" "vector-at" "vector-conj" "vector-assoc" "vector-assoc!" "vector-alloc"
              "string-code-point-at" "string-length" "[" "(call)" "typed-cap-call" "bytes-from-vector-i64"
              "string-concat" "cond" "vector-i64-from-bytes"]
+ ;; R3 spellings 76..128: "option-some-of" "option-none-of" "option-some?-of" "option-value-of" "option-match" "option-or"
+ ;; "result-ok-of" "result-err-of" "result-ok?-of" "result-value-of" "result-error-of" "result-match-of" "throw" "try" "catch"
+ ;; "typed-list-new" "typed-list-nth" "typed-list-conj" "typed-set-new" "typed-set-count" "typed-set-contains" "typed-set-conj"
+ ;; "typed-set-disj" "typed-set-equal" "typed-set-nth" "typed-map-new" "typed-map-count" "typed-map-contains" "typed-map-get"
+ ;; "typed-map-assoc" "typed-map-dissoc" "typed-map-equal" "typed-map-keys" "typed-map-vals" "string=?" "string-substring"
+ ;; "string-from-i64" "string-compare" "string-index-of" "string-byte-length" "pair" "pair-first" "pair-second" "count" "nth"
+ ;; "contains?" "conj" "disj" "dissoc" "keys" "vals" "peek" "pop"; 129 130 have none. Like R1's, an R3 head is shadowed by a
+ ;; definition of the same name.
  ;; Codes 2 (keyword), 36 and 37 have no symbol spelling: SF-HEAD is never 2, 36 or 37.
  ;; `main`, `true`, `false`, `nil` are NOT heads. `main` is an ordinary defn name.
 
@@ -272,6 +367,12 @@
   [:c E-CHECK-INFER 2126 "cannot infer the result type of '{name}' here: declare it"]
   [:c E-CHECK-FIELD 2127 "unknown record field '{name}'"]
   [:c E-CHECK-SCHEMA 2128 "malformed or conflicting record schema '{name}'"]
+  ;; -- R3 --
+  [:c E-CHECK-ABORT-TYPES 2129 "two different error types meet at '{name}'"]
+  [:c E-CHECK-ABORT-EXPORT 2130 "unhandled abort at export boundary; catch it with try: {name}"]
+  [:c E-CHECK-ABORT-NONE 2131 "try body cannot abort; there is nothing to catch"]
+  [:c E-CHECK-TRY 2132 "malformed try or catch '{name}'"]
+  [:c E-CHECK-ABORT-INFER 2133 "cannot infer the error type here: '{name}'"]
   [:c E-LOWER-FULL 3001 "SIR table full"]
   [:c E-LOWER-NODE 3003 "internal: cannot lower node kind {n}"]
   [:c E-ENC-IMM 4001 "immediate out of range: {n}"]

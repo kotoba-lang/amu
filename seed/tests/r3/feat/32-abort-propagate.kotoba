@@ -1,0 +1,6 @@
+;; R3 feat: propagation through a caller that writes no throw
+(ns seed.r3 (:export [test]))
+(defn- parse [s :string] :i64 (if (string=? s "") (throw "empty") (string-length s)))
+(defn- read2 [s :string] :i64 (+ 1 (parse s)))
+(defn- read3 [s :string] :i64 (* 2 (read2 s)))
+(defn test [] :i64 (+ (try (read3 "ab") (catch e -1)) (try (read3 "") (catch :string e (* 1000 (string-length e))))))

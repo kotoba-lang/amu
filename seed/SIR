@@ -78,6 +78,14 @@
   [:c RT-VECTOR-ALLOC 200 "vector_alloc(ctx, n)"]
   [:c RT-VECTOR-ASSOC-IN-PLACE 208 "vector_assoc_in_place(ctx, v, i, x)"]
   [:c RT-BYTES-FROM-VECTOR 360 "bytes_from_vector(ctx, v) -- ABI v11; NULL in kexe-benchmark (no port uses it)"]
+  ;; -- R3 (2026-10-03): more of the context's helpers, called through the generic RT path (no new SIR op) --
+  [:c RT-STRING-EQUAL 112 "string_equal(ctx, a, b) -> 1/0"]
+  [:c RT-STRING-SUBSTRING 136 "string_substring(ctx, s, start, end) -- byte offsets, traps off code point boundaries"]
+  [:c RT-VECTOR-DROP 192 "vector_drop(ctx, v, k) -- the items after the first k (a view)"]
+  [:c RT-STRING-INDEX-OF 216 "string_index_of(ctx, h, n) -> byte offset or -1; an empty needle traps"]
+  [:c RT-STRING-COMPARE 240 "string_compare(ctx, a, b) -> -1/0/1 (byte order)"]
+  [:c RT-STRING-FROM-UTF8 352 "string_from_utf8(ctx, v) -- v a vector of bytes 0..255 that is canonical UTF-8 (ABI v11; NULL in
+                               kexe-benchmark: only string-from-i64 uses it)"]
   [:c CTX-FUEL 8 "byte offset of the fuel counter in the context"]
   [:c CTX-CODE-BASE 384 "byte offset of code_base"]]
  ;; string-length: 30-lower emits RT RT-STRING-LENGTH-VIA t 1 (docs/selfhost-seed-t2-t3-20261002.md: pair_second).
@@ -120,6 +128,48 @@
   "(string-concat a b)"   "RT RT-STRING-CONCAT t 2"   "(bytes-from-vector-i64 v)" "RT RT-BYTES-FROM-VECTOR t 1"
   "(typed-cap-call W R R x)" "[x -> t] CAP wire kind t"
   "defn f [p1..pn] body"  "FN f n nslots  [FUEL if FF-FUEL]  LABEL Lentry  [body -> 0]  RET 0  END f"}
+
+ ;; R3 (2026-10-03, agent R3): values and abort. No new opcode; every R3 head lowers to CONST LGET LSET BIN CMP UN LABEL BR
+ ;; BRZ BRNZ CALL RT VEC TRAP RET (30-lower, R3 block). Representation (seed/HEADS TY-COMP-BASE): option = 0 or pair(x, 0);
+ ;; result = pair(payload, tag), tag 0 ok / 1 err; list = vector; set = vector of distinct items SORTED by key; map =
+ ;; vector k0 v0 k1 v1 .. of distinct keys sorted by key (the reference order, lang/guest-grammar.edn :map-literal
+ ;; :order: i64 signed, string by bytes (= UTF-16 order except supplementary vs U+E000..U+FFFF), bool false < true;
+ ;; keyword items/keys are kept in interning order, so 21-check refuses the order-observing heads on them).
+ ;; hs = the head's first hidden slot (21-check: NF-TYPE of the head symbol node; NF-SYM of an ND-SET/ND-MAP literal),
+ ;; s1 s2 .. the next ones. eq(T) = RT STRING-EQUAL t 2 for strings, else CMP EQ t; lt(T) = RT STRING-COMPARE + CMP LT.
+ :r3-lowering
+ {"(option-some-of T x)"     "[x -> t] CONST t+1 0 RT PAIR-NEW t 2       (option-none-of T): CONST t 0"
+  "(option-some?-of T o)"    "[o -> t] CONST t+1 0 CMP EQ t UN NOT t"
+  "(option-value-of T o d)"  "[o -> t] LSET hs t [d -> t] LSET s1 t LGET t hs BRZ t Ld LGET t hs RT PAIR-FIRST t 1 BR Lx
+                              LABEL Ld LGET t s1 LABEL Lx   ((option-or o d): the same; result-value-of: the test is
+                              RT PAIR-SECOND + BRNZ; result-error-of: RT PAIR-SECOND + BRZ)"
+  "(option-match T o n x s)" "[o -> t] LSET slot(x) t BRZ t Ln LGET t slot(x) RT PAIR-FIRST t 1 LSET slot(x) t [s -> t] BR Lx
+                              LABEL Ln [n -> t] LABEL Lx   (both arms keep the context: recur in an arm is a tail jump)"
+  "(result-ok-of R v)"       "[v -> t] CONST t+1 0 RT PAIR-NEW t 2 ; result-err-of: CONST t+1 1"
+  "(result-ok?-of R r)"      "[r -> t] RT PAIR-SECOND t 1 CONST t+1 0 CMP EQ t"
+  "(result-match-of R r v a e b)" "[r -> t] LSET slot(v) t RT PAIR-SECOND t 1 BRNZ t Le LGET t slot(v) RT PAIR-FIRST t 1 LSET
+                              slot(v) t [a -> t] BR Lx LABEL Le LGET t slot(v) RT PAIR-FIRST t 1 LSET slot(e) t [b -> t] LABEL Lx"
+  "aborting function f"      "its body's value is wrapped: [body -> 0] CONST 1 0 RT PAIR-NEW 0 2 RET 0 (interface [:result T E])"
+  "(throw e)"                "outside a try body: [e -> t] CONST t+1 1 RT PAIR-NEW t 2 RET t ; inside one: [e -> t] LSET
+                              slot(catch binder) t BR Lhandler (30-lower cell M[95] = Lhandler * 256 + that slot)"
+  "(g ..) g aborting"        "CALL g t n LSET hs t RT PAIR-SECOND t 1 BRZ t Lok LGET t hs, then RET t outside a try body (the err
+                              result is re-raised as it is) or RT PAIR-FIRST t 1 LSET slot(binder) t BR Lhandler; LABEL Lok
+                              LGET t hs RT PAIR-FIRST t 1"
+  "(try b (catch [E] x h))"  "[b -> t] (not a tail position) BR Lx LABEL Lhandler [h -> t] LABEL Lx"
+  "lists"                    "typed-list-new = VEC t n; typed-list-nth / typed-set-nth / (nth c i) = RT VECTOR-AT; typed-list-conj
+                              and conj on a vector/list = RT VECTOR-CONJ; count = RT VECTOR-COUNT (a map: halved with BIN USHR)"
+  "sets and maps"            "inline loops over the vector, no FUEL inside (30-lower lw-scan lw-ins lw-sdel lw-proj lw-equal):
+                              scan = index of the item/key (stride 1/2) or -1 (contains, get, typed-map-get); insert = find the
+                              first item >= x, a present item is kept (set), its value replaced (assoc) or TRAP (a duplicate key
+                              in typed-map-new / a map literal), else a copy with x at its place (TRAP beyond 32 items / 31
+                              entries); disj/dissoc/pop/keys/vals = a copy loop with RT VECTOR-AT + VECTOR-CONJ; equal = same
+                              count and every item/key of the first found in the second (maps: equal values). Hidden slots:
+                              hs collection, s1 item/key, s2 count, s3 index, s4 map value, s5 new vector, s6 inner index"
+  "(string-from-i64 x)"      "digits of m = -|x| (no overflow at MIN) by quot 10 into a reversed vector, '-' when x < 0, reversed
+                              into a byte vector, RT STRING-FROM-UTF8 (5 hidden slots)"
+  "strings and pairs"        "string=? RT STRING-EQUAL, string-substring RT STRING-SUBSTRING (byte offsets), string-compare RT
+                              STRING-COMPARE, string-index-of RT STRING-INDEX-OF, string-byte-length / pair-second RT PAIR-SECOND,
+                              pair RT PAIR-NEW, pair-first RT PAIR-FIRST"}
 
  ;; Fuel rule (matches machine-ir entry-fuel-prefixes; T5 checks the seed's minimal passing fuel <= stage-0's):
  ;; one FUEL at entry of every function with FF-FUEL = 1 (its body contains a CALL, RT or CAP), and one FUEL per

@@ -100,6 +100,11 @@
     (= c 2126) "cannot infer the result type of '"
     (= c 2127) "unknown record field '"
     (= c 2128) "malformed or conflicting record schema '"
+    (= c 2129) "two different error types meet at '"
+    (= c 2130) "unhandled abort at export boundary; catch it with try: "
+    (= c 2131) "try body cannot abort; there is nothing to catch"
+    (= c 2132) "malformed try or catch '"
+    (= c 2133) "cannot infer the error type here: '"
     (= c 3001) "SIR table full"
     (= c 3003) "internal: cannot lower node kind "
     (= c 4001) "immediate out of range: "
@@ -148,6 +153,9 @@
     (= c 2126) "' here: declare it"
     (= c 2127) "'"
     (= c 2128) "'"
+    (= c 2129) "'"
+    (= c 2132) "'"
+    (= c 2133) "'"
     (= c 4103) " slots)"
     (= c 4201) " words)"
     (= c 4203) ")"
@@ -191,6 +199,10 @@
     (= c 2126) 1
     (= c 2127) 1
     (= c 2128) 1
+    (= c 2129) 1
+    (= c 2130) 1
+    (= c 2132) 1
+    (= c 2133) 1
     (= c 3003) 2
     (= c 4001) 2
     (= c 4102) 2
@@ -210,7 +222,8 @@
 
 ;; ---- diagnostics ---------------------------------------------------------------------------------------------------
 (defn- drv-tyname [t :i64] :string
-  (cond (= t 1) ":i64" (= t 2) ":bool" (= t 3) ":string" (= t 4) ":vector-i64" (= t 5) ":bytes" :else "?"))
+  (cond (= t 1) ":i64" (= t 2) ":bool" (= t 3) ":string" (= t 4) ":vector-i64" (= t 5) ":bytes" (= t 6) ":keyword"
+        :else "?"))
 
 (defn- drv-slice [path :string a :i64 b :i64] :string
   (if (> b a) (io-slice path a (- b a)) ""))

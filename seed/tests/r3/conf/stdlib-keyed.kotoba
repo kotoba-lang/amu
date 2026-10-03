@@ -1,0 +1,64 @@
+;; R3 conf: lang/conformance/stdlib/keyed.kotoba (kotoba-lang 919232de) with the three stdlib/core.kotoba defns it calls
+;; (tally-into, frequencies, get-in2, verbatim) in one file: modules are R5, so the core/ qualifiers are dropped.
+;; Expected value from lang/conformance/manifest.edn (3555086133).
+(ns seed.r3.keyed (:export [main]))
+(defn- tally-into [items counts [:map :i64 :i64]] [:map :i64 :i64]
+  (if (= items 0)
+    counts
+    (let [value (pair-first items)]
+      (tally-into (pair-second items)
+                  (assoc counts value (+ 1 (get counts value 0)))))))
+
+(defn frequencies [items] [:map :i64 :i64]
+  (tally-into items (typed-map-new [:map :i64 :i64])))
+
+;; Two levels, always -- the DEPTH is in the name for the same reason the
+;; arity is in comp2, partial1 and juxt2, and for a stronger reason than
+;; theirs: in clojure.core/get-in the path is a value, and here it is part of
+;; the TYPE. A one-key path answers the inner map and a two-key path answers
+;; an i64, so one monomorphic function cannot be both. `get-in` itself stays
+;; absent, with this as the reason.
+;;
+;; Divergence from clojure.core/get-in, pinned by the oracle rather than
+;; hidden by the inputs: a path shorter than two keys answers NOT-FOUND here,
+;; where Clojure would answer the inner map or the map itself. Those have
+;; types this function cannot return.
+(defn get-in2 [nested [:map :i64 [:map :i64 :i64]] path not-found] :i64
+  (if (= path 0)
+    not-found
+    (let [rest-path (pair-second path)]
+      (if (= rest-path 0)
+        not-found
+        (get (get nested (pair-first path) (typed-map-new [:map :i64 :i64]))
+             (pair-first rest-path)
+             not-found)))))
+
+;; The two names version 5 added, each on its own power of ten so a wrong
+;; answer says which function produced it.
+;;
+;; frequencies of (3 1 3 2 3): three distinct keys, 3 occurs three times,
+;; 1 occurs once, and 9 -- which is not in the chain -- answers the default.
+;; get-in2 reads through a two-level map, misses in the outer map, misses in
+;; the inner one, and answers not-found for a one-key path.
+;; Expected: 3555086133, measured on wasm32 (5126 bytes) through amu
+;; runtime/browser-host.mjs.
+(defn- counted []
+  (frequencies (pair 3 (pair 1 (pair 3 (pair 2 (pair 3 0)))))))
+
+(defn- nested []
+  (typed-map-assoc [:map :i64 [:map :i64 :i64]]
+    (typed-map-new [:map :i64 [:map :i64 :i64]])
+    4 (typed-map-new [:map :i64 :i64] 7 8)))
+
+(defn main []
+  (let [f (counted)
+        n (nested)]
+    (+ (typed-map-count [:map :i64 :i64] f)
+       (* 10 (get f 3 0))
+       (* 100 (get f 1 0))
+       (* 1000 (get f 9 6))
+       (* 10000 (get-in2 n (pair 4 (pair 7 0)) 5))
+       (* 1000000 (get-in2 n (pair 1 (pair 7 0)) 5))
+       (* 10000000 (get-in2 n (pair 4 (pair 1 0)) 5))
+       (* 100000000 (get-in2 n (pair 4 0) 5))
+       (* 1000000000 (if (contains? f 2) 3 4)))))

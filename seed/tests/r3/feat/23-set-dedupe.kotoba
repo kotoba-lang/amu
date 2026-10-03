@@ -1,0 +1,3 @@
+;; R3 feat: a set holds distinct items (stage-0 native typed-set-new keeps duplicates: measured 2026-10-03, (typed-set-new [:set :i64] 1 1) counts 2; the language says bounded-unique, lang/surface-status.edn :set-literal)
+(ns seed.r3 (:export [test]))
+(defn test [] :i64 (+ (typed-set-count [:set :i64] (typed-set-new [:set :i64] 1 2 1)) (* 10 (typed-set-count [:set :i64] (typed-set-disj [:set :i64] (typed-set-conj [:set :i64] (typed-set-new [:set :i64] 1 2) 2) 7)))))

@@ -20,7 +20,8 @@
 ;; resolves `a` in b's initialiser; recur stays a parallel assignment as the table says.
 ;;
 ;; Own scratch cells (MEMORY-MAP MM-STAT: 30-lower is MANIFEST position 7 -> M[92..95]):
-;;   92 = FN index being lowered, 93 = its entry label, 94 = its deepest temp so far (-1 = none).
+;;   92 = FN index being lowered, 93 = its entry label, 94 = its deepest temp so far (-1 = none),
+;;   95 = R3: the innermost try body being lowered: handler label * 256 + the catch binder's slot (0 = none).
 
 ;; ------------------------------------------------------------------------------------------------------------
 ;; readers
@@ -122,6 +123,14 @@
     HD-STRING-CONCAT RT-STRING-CONCAT
     (HD-BYTES-FROM-VECTOR-I64 HD-VECTOR-I64-FROM-BYTES) RT-BYTES-FROM-VECTOR
     HD-VECTOR-COUNT RT-VECTOR-COUNT
+    ;; R3: strings and pairs (seed/HEADS 110-118)
+    HD-STRING-EQ RT-STRING-EQUAL
+    HD-STRING-SUBSTRING RT-STRING-SUBSTRING
+    HD-STRING-COMPARE RT-STRING-COMPARE
+    HD-STRING-INDEX-OF RT-STRING-INDEX-OF
+    (HD-STRING-BYTE-LENGTH HD-PAIR-SECOND) RT-PAIR-SECOND
+    HD-PAIR RT-PAIR-NEW
+    HD-PAIR-FIRST RT-PAIR-FIRST
     0))
 (defn- lw-wire [kw :i64] :i64
   (case kw
@@ -255,7 +264,7 @@
     (if (and (= f (vector-at M 92)) (= (lw-kt k) 1))
       (lw-jump M a t 0)
       (let [n (lw-count M a)]
-        (-> M (lw-args a t) (lw-emit OP-CALL f t n))))))
+        (-> M (lw-args a t) (lw-emit OP-CALL f t n) (cond-> (lw-aborts? M f) (lw-abort-check h t)))))))
 
 (defn- lw-cap [M :vector-i64 w :i64 t :i64] :vector-i64
   (let [req (lw-next M w)
@@ -404,10 +413,10 @@
       HD-RECORD-NEW (lw-recnew M (lw-next M a) t)
       HD-RECORD-CTOR (lw-recnew M a t)
       HD-RECORD-GET (lw-field M (lw-next M a) (lw-next M (lw-next M a)) t)
-      HD-GET (lw-field M a (lw-next M a) t)
       HD-KWGET (lw-field M a h t)
-      HD-ASSOC (lw-assoc M n t)
-      (lw-fail M E-LOWER-NODE (lw-pos M n) hd))))
+      HD-ASSOC (if (= (lw-ct M (lw-nf M n NF-TYPE) CT-CTOR) TC-MAP) (lw-massoc M n a t) (lw-assoc M n t))
+      HD-GET (if (= (lw-count M a) 3) (lw-gget M h a t) (lw-field M a (lw-next M a) t))
+      (if (and (>= hd HD-OPTION-SOME) (<= hd HD-POP)) (lw-r3 M n hd t k) (lw-fail M E-LOWER-NODE (lw-pos M n) hd)))))
 
 (defn- lw-list [M :vector-i64 n :i64 t :i64 k :i64] :vector-i64
   (let [hd (lw-nf M n NF-RES)
@@ -442,6 +451,7 @@
       ND-VEC (let [a (lw-first M n)
                    m (lw-count M a)]
                (-> M (lw-args a t) (lw-emit OP-VEC t m 0)))
+      (ND-SET ND-MAP) (lw-newcoll M (lw-first M n) (lw-nf M n NF-SYM) (lw-md M (lw-nf M n NF-TYPE)) t)
       (lw-fail M E-LOWER-NODE (if (zero? n) -1 (lw-pos M n)) kind))))
 
 ;; ------------------------------------------------------------------------------------------------------------
@@ -467,7 +477,9 @@
                (lw-emit OP-FN f np ns)
                (cond-> (= fuel 1) (lw-emit OP-FUEL 0 0 0))
                (lw-emit OP-LABEL le 0 0)
+               (lw-put 95 0)
                (lw-expr body 0 (lw-kmk 1 0 0))
+               (cond-> (lw-aborts? M f) (-> (lw-emit OP-CONST 1 0 0) (lw-emit OP-RT RT-PAIR-NEW 0 2)))
                (lw-emit OP-RET 0 0 0)
                (lw-emit OP-END f 0 0))]
     (lw-set-ff M1 f FF-DEPTH (inc (vector-at M1 94)))))
@@ -485,6 +497,436 @@
     (-> M1
         (lw-put MM-R0 (dec ns))
         (cond-> (>= nl MM-LABEL-CAP) (lw-fail E-LOWER-FULL -1 0)))))
+
+;; ============================================================================================================
+;; R3 (agent R3, 2026-10-03): values (seed/HEADS 76-130, seed/SIR :r3-lowering). No new SIR opcode: everything
+;; lowers to CONST LGET LSET BIN CMP UN LABEL BR BRZ BRNZ CALL RT VEC TRAP RET. Representation (seed/HEADS TY-COMP-BASE):
+;; option = 0 or pair(x, 0); result = pair(payload, tag) with tag 0 ok / 1 err; list = vector; set = vector of distinct
+;; items sorted by key; map = vector k0 v0 k1 v1 .. of distinct keys sorted by key (the reference's canonical order).
+;; Sets and maps are walked by inline loops (no FUEL inside them) over hidden frame slots
+;; that 21-check reserved: s = NF-TYPE of the head symbol node (NF-SYM of an ND-SET / ND-MAP literal), then s+1, ..
+;; Abort (lang/abort-ability.edn): an aborting function returns pair(value, 0) or pair(error, 1); M[95] = the
+;; innermost try being lowered (handler label * 256 + the catch binder's slot), 0 outside every try body.
+;; ============================================================================================================
+;; field fld of the CT record of composite type ty (0 for any other type)
+(defn- lw-ct [M :vector-i64 ty :i64 fld :i64] :i64
+  (if (< ty TY-COMP-BASE) 0 (vector-at M (+ (vector-at M MM-CT) (* (- ty TY-COMP-BASE) CT-W) fld))))
+;; true when FN f aborts (SF-ABORT of its symbol, 21-check)
+(defn- lw-aborts? [M :vector-i64 f :i64] :bool
+  (not (zero? (vector-at M (+ MM-SYM-BASE (* (lw-ff M f FF-SYM) MM-SYM-W) SF-ABORT)))))
+;; the walk mode of a set or map type: stride (1 set, 2 map) + 4 when the items/keys are strings + 8 when map values are
+(defn- lw-md [M :vector-i64 ty :i64] :i64
+  (let [map? (= (lw-ct M ty CT-CTOR) TC-MAP)]
+    (+ (if map? 2 1) (if (= (lw-ct M ty CT-A) TY-STR) 4 0) (if (and map? (= (lw-ct M ty CT-B) TY-STR)) 8 0))))
+(defn- lw-b0 [p :i64] :i64 (bit-and p 255))
+(defn- lw-b1 [p :i64] :i64 (bit-and (u64-shift-right p 8) 255))
+(defn- lw-b2 [p :i64] :i64 (bit-and (u64-shift-right p 16) 255))
+(defn- lw-p3 [a :i64 b :i64 c :i64] :i64 (+ a (* 256 b) (* 65536 c)))
+
+;; temp t := (temp t = temp t+1): by bytes for strings, else by value
+(defn- lw-eq [M :vector-i64 str? :bool t :i64] :vector-i64
+  (if str? (lw-emit M OP-RT RT-STRING-EQUAL t 2) (lw-emit M OP-CMP CC-EQ t 0)))
+;; slot i += w (through temps t, t+1)
+(defn- lw-step [M :vector-i64 i :i64 w :i64 t :i64] :vector-i64
+  (-> M (lw-emit OP-LGET t i 0) (lw-emit OP-CONST (inc t) w 0) (lw-emit OP-BIN BOP-ADD t 0) (lw-emit OP-LSET i t 0)))
+;; temp t := the count of the map in temp t (its vector holds two words per entry)
+(defn- lw-halve [M :vector-i64 t :i64] :vector-i64
+  (-> M (lw-emit OP-CONST (inc t) 1 0) (lw-emit OP-BIN BOP-USHR t 0)))
+;; temp t := conj(temp t, item (slot i) + off of the vector in slot c)
+(defn- lw-copy1 [M :vector-i64 c :i64 i :i64 off :i64 t :i64] :vector-i64
+  (-> M (lw-emit OP-LGET (inc t) c 0) (lw-emit OP-LGET (+ t 2) i 0)
+      (cond-> (pos? off) (-> (lw-emit OP-CONST (+ t 3) off 0) (lw-emit OP-BIN BOP-ADD (+ t 2) 0)))
+      (lw-emit OP-RT RT-VECTOR-AT (inc t) 2) (lw-emit OP-RT RT-VECTOR-CONJ t 2)))
+
+;; temp t := the index of the value in slot x within the vector in slot c, stepping by the stride of md, or -1.
+;; sp = lw-p3 c x w; afterwards slot w = the vector's count and slot w+1 = the index.
+(defn- lw-scan [M :vector-i64 sp :i64 md :i64 t :i64] :vector-i64
+  (let [c (lw-b0 sp) x (lw-b1 sp) n (lw-b2 sp) i (inc (lw-b2 sp))
+        l (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 3)
+        (lw-emit OP-LGET t c 0) (lw-emit OP-RT RT-VECTOR-COUNT t 1) (lw-emit OP-LSET n t 0)
+        (lw-emit OP-CONST t 0 0) (lw-emit OP-LSET i t 0)
+        (lw-emit OP-LABEL l 0 0)
+        (lw-emit OP-LGET t i 0) (lw-emit OP-LGET (inc t) n 0) (lw-emit OP-CMP CC-LT t 0) (lw-emit OP-BRZ t (+ l 1) 0)
+        (lw-emit OP-LGET t c 0) (lw-emit OP-LGET (inc t) i 0) (lw-emit OP-RT RT-VECTOR-AT t 2)
+        (lw-emit OP-LGET (inc t) x 0) (lw-eq (= (bit-and md 4) 4) t) (lw-emit OP-BRNZ t (+ l 2) 0)
+        (lw-step i (bit-and md 3) t) (lw-emit OP-BR l 0 0)
+        (lw-emit OP-LABEL (+ l 1) 0 0) (lw-emit OP-CONST t -1 0) (lw-emit OP-LSET i t 0)
+        (lw-emit OP-LABEL (+ l 2) 0 0) (lw-emit OP-LGET t i 0))))
+
+;; temp t := item (slot i) of the vector in slot s
+(defn- lw-item [M :vector-i64 s :i64 i :i64 t :i64] :vector-i64
+  (-> M (lw-emit OP-LGET t s 0) (lw-emit OP-LGET (inc t) i 0) (lw-emit OP-RT RT-VECTOR-AT t 2)))
+;; temp t := (temp t < temp t+1): byte order for strings, else signed (bool: false < true; keyword: interning order)
+(defn- lw-lt [M :vector-i64 str? :bool t :i64] :vector-i64
+  (if str?
+    (-> M (lw-emit OP-RT RT-STRING-COMPARE t 2) (lw-emit OP-CONST (inc t) 0 0) (lw-emit OP-CMP CC-LT t 0))
+    (lw-emit M OP-CMP CC-LT t 0)))
+;; insert the item/key in slot s+1 (a map: with the value in slot s+4) into the sorted set/map in slot s, at its place
+;; in key order (the reference keeps typed sets and maps sorted: lang/guest-grammar.edn :map-literal :order). Present:
+;; a set keeps it, a map replaces the value, a map constructor (md bit 32) traps (a duplicate key). A set holds at most
+;; 32 items, a map 31 entries: one more traps. Slots s+2 n, s+3 i, s+5 the new vector, s+6 j.
+(defn- lw-ins [M :vector-i64 s :i64 md :i64 t :i64] :vector-i64
+  (let [x (+ s 1) n (+ s 2) i (+ s 3) v (+ s 4) nv (+ s 5) j (+ s 6) w (bit-and md 3) str? (= (bit-and md 4) 4)
+        l (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 8)
+        (lw-emit OP-LGET t s 0) (lw-emit OP-RT RT-VECTOR-COUNT t 1) (lw-emit OP-LSET n t 0)
+        (lw-emit OP-CONST t 0 0) (lw-emit OP-LSET i t 0)
+        ;; l: find the first item >= x
+        (lw-emit OP-LABEL l 0 0)
+        (lw-emit OP-LGET t i 0) (lw-emit OP-LGET (inc t) n 0) (lw-emit OP-CMP CC-LT t 0) (lw-emit OP-BRZ t (+ l 2) 0)
+        (lw-item s i t) (lw-emit OP-LGET (inc t) x 0) (lw-eq str? t) (lw-emit OP-BRNZ t (+ l 1) 0)
+        (lw-item s i t) (lw-emit OP-LGET (inc t) x 0) (lw-lt str? t) (lw-emit OP-BRZ t (+ l 2) 0)
+        (lw-step i w t) (lw-emit OP-BR l 0 0)
+        ;; l+1: present at i
+        (lw-emit OP-LABEL (+ l 1) 0 0)
+        (cond-> (= (bit-and md 32) 32) (lw-emit OP-TRAP 0 0 0)
+                (and (zero? (bit-and md 32)) (= w 2))
+                (-> (lw-emit OP-LGET t s 0) (lw-emit OP-LGET (inc t) i 0) (lw-emit OP-CONST (+ t 2) 1 0)
+                    (lw-emit OP-BIN BOP-ADD (inc t) 0) (lw-emit OP-LGET (+ t 2) v 0) (lw-emit OP-RT RT-VECTOR-ASSOC t 3)
+                    (lw-emit OP-LSET s t 0)))
+        (lw-emit OP-BR (+ l 6) 0 0)
+        ;; l+2: insert at i (room left, else trap), copying the items around it
+        (lw-emit OP-LABEL (+ l 2) 0 0)
+        (lw-emit OP-LGET t n 0) (lw-emit OP-CONST (inc t) (if (= w 2) 62 32) 0) (lw-emit OP-CMP CC-LT t 0)
+        (lw-emit OP-BRNZ t (+ l 5) 0) (lw-emit OP-TRAP 0 0 0)
+        (lw-emit OP-LABEL (+ l 5) 0 0)
+        (lw-emit OP-VEC t 0 0) (lw-emit OP-LSET nv t 0) (lw-emit OP-CONST t 0 0) (lw-emit OP-LSET j t 0)
+        (lw-emit OP-LABEL (+ l 3) 0 0)
+        (lw-emit OP-LGET t j 0) (lw-emit OP-LGET (inc t) i 0) (lw-emit OP-CMP CC-EQ t 0) (lw-emit OP-BRZ t (+ l 4) 0)
+        (lw-emit OP-LGET t nv 0) (lw-emit OP-LGET (inc t) x 0) (lw-emit OP-RT RT-VECTOR-CONJ t 2)
+        (cond-> (= w 2) (-> (lw-emit OP-LGET (inc t) v 0) (lw-emit OP-RT RT-VECTOR-CONJ t 2)))
+        (lw-emit OP-LSET nv t 0)
+        (lw-emit OP-LABEL (+ l 4) 0 0)
+        (lw-emit OP-LGET t j 0) (lw-emit OP-LGET (inc t) n 0) (lw-emit OP-CMP CC-LT t 0) (lw-emit OP-BRZ t (+ l 7) 0)
+        (lw-emit OP-LGET t nv 0) (lw-copy1 s j 0 t) (cond-> (= w 2) (lw-copy1 s j 1 t)) (lw-emit OP-LSET nv t 0)
+        (lw-step j w t) (lw-emit OP-BR (+ l 3) 0 0)
+        (lw-emit OP-LABEL (+ l 7) 0 0) (lw-emit OP-LGET t nv 0) (lw-emit OP-LSET s t 0)
+        (lw-emit OP-LABEL (+ l 6) 0 0))))
+;; set/map: remove the item/key in slot x from the collection in slot c (sp = lw-p3 c x w; slots w, w+1, w+3): a copy
+;; of the other items/entries, or the collection itself when absent
+(defn- lw-sdel [M :vector-i64 sp :i64 md :i64 t :i64] :vector-i64
+  (let [c (lw-b0 sp) x (lw-b1 sp) n (lw-b2 sp) i (inc n) nv (+ n 3) w (bit-and md 3)
+        l (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 4) (lw-scan sp md t)
+        (lw-emit OP-CONST (inc t) 0 0) (lw-emit OP-CMP CC-LT t 0) (lw-emit OP-BRNZ t (+ l 3) 0)
+        (lw-emit OP-LGET t i 0) (lw-emit OP-LSET x t 0)
+        (lw-emit OP-VEC t 0 0) (lw-emit OP-LSET nv t 0) (lw-emit OP-CONST t 0 0) (lw-emit OP-LSET i t 0)
+        (lw-emit OP-LABEL l 0 0)
+        (lw-emit OP-LGET t i 0) (lw-emit OP-LGET (inc t) n 0) (lw-emit OP-CMP CC-LT t 0) (lw-emit OP-BRZ t (+ l 2) 0)
+        (lw-emit OP-LGET t i 0) (lw-emit OP-LGET (inc t) x 0) (lw-emit OP-CMP CC-EQ t 0) (lw-emit OP-BRNZ t (+ l 1) 0)
+        (lw-emit OP-LGET t nv 0) (lw-copy1 c i 0 t) (cond-> (= w 2) (lw-copy1 c i 1 t)) (lw-emit OP-LSET nv t 0)
+        (lw-emit OP-LABEL (+ l 1) 0 0)
+        (lw-step i w t) (lw-emit OP-BR l 0 0)
+        (lw-emit OP-LABEL (+ l 2) 0 0) (lw-emit OP-LGET t nv 0) (lw-emit OP-LSET c t 0)
+        (lw-emit OP-LABEL (+ l 3) 0 0))))
+
+;; add the items (set) or key/value pairs (map) of chain c to the collection in slot s (slots s+1 .. s+6)
+(defn- lw-adds [M :vector-i64 c :i64 s :i64 md :i64 t :i64] :vector-i64
+  (cond (zero? c) M
+        (= (bit-and md 3) 2)
+        (let [v (lw-next M c)
+              nx (lw-next M v)]
+          (lw-adds (-> M (lw-expr c t 0) (lw-emit OP-LSET (+ s 1) t 0) (lw-expr v t 0) (lw-emit OP-LSET (+ s 4) t 0)
+                       (lw-ins s md t))
+                   nx s md t))
+        :else
+        (let [nx (lw-next M c)]
+          (lw-adds (-> M (lw-expr c t 0) (lw-emit OP-LSET (+ s 1) t 0) (lw-ins s md t)) nx s md t))))
+;; remove the items/keys of chain c from the collection in slot s (slots s+1 .. s+5)
+(defn- lw-dels [M :vector-i64 c :i64 s :i64 md :i64 t :i64] :vector-i64
+  (if (zero? c)
+    M
+    (let [nx (lw-next M c)]
+      (lw-dels (-> M (lw-expr c t 0) (lw-emit OP-LSET (+ s 1) t 0) (lw-sdel (lw-p3 s (+ s 1) (+ s 2)) md t)) nx s md t))))
+;; a new set/map from the items/pairs of chain c (#{..}, {..}, typed-set-new, typed-map-new): a duplicate map key traps
+(defn- lw-newcoll [M :vector-i64 c :i64 s :i64 md :i64 t :i64] :vector-i64
+  (-> M (lw-emit OP-VEC t 0 0) (lw-emit OP-LSET s t 0) (lw-adds c s (if (= (bit-and md 3) 2) (+ md 32) md) t)
+      (lw-emit OP-LGET t s 0)))
+;; [e -> slot s], then add (md < 16) or remove (md + 16) the items/pairs that follow e; temp t := the result
+(defn- lw-upd [M :vector-i64 e :i64 s :i64 md :i64 t :i64] :vector-i64
+  (-> M (lw-expr e t 0) (lw-emit OP-LSET s t 0)
+      (cond-> (< md 16) (lw-adds (lw-next M e) s md t)
+              (>= md 16) (lw-dels (lw-next M e) s (- md 16) t))
+      (lw-emit OP-LGET t s 0)))
+;; membership of the expression after e in the set/map e: bool
+(defn- lw-has [M :vector-i64 e :i64 s :i64 md :i64 t :i64] :vector-i64
+  (-> M (lw-expr e t 0) (lw-emit OP-LSET s t 0) (lw-expr (lw-next M e) t 0) (lw-emit OP-LSET (+ s 1) t 0)
+      (lw-scan (lw-p3 s (+ s 1) (+ s 2)) md t) (lw-emit OP-CONST (inc t) 0 0) (lw-emit OP-CMP CC-GE t 0)))
+;; temp t := the value at index (slot s+3) + 1 of the map in slot s
+(defn- lw-mval [M :vector-i64 s :i64 t :i64] :vector-i64
+  (-> M (lw-emit OP-LGET t s 0) (lw-emit OP-LGET (inc t) (+ s 3) 0) (lw-emit OP-CONST (+ t 2) 1 0)
+      (lw-emit OP-BIN BOP-ADD (inc t) 0) (lw-emit OP-RT RT-VECTOR-AT t 2)))
+;; (typed-map-get Mt m k) -> [:option V]
+(defn- lw-mget [M :vector-i64 e :i64 s :i64 md :i64 t :i64] :vector-i64
+  (let [l (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 2)
+        (lw-expr e t 0) (lw-emit OP-LSET s t 0) (lw-expr (lw-next M e) t 0) (lw-emit OP-LSET (+ s 1) t 0)
+        (lw-scan (lw-p3 s (+ s 1) (+ s 2)) md t)
+        (lw-emit OP-CONST (inc t) 0 0) (lw-emit OP-CMP CC-LT t 0) (lw-emit OP-BRZ t l 0)
+        (lw-emit OP-CONST t 0 0) (lw-emit OP-BR (inc l) 0 0)
+        (lw-emit OP-LABEL l 0 0) (lw-mval s t) (lw-emit OP-CONST (inc t) 0 0) (lw-emit OP-RT RT-PAIR-NEW t 2)
+        (lw-emit OP-LABEL (inc l) 0 0))))
+;; (get m k d) on a map: the value of k, or d (slot s+4 holds d)
+(defn- lw-gget [M :vector-i64 h :i64 a :i64 t :i64] :vector-i64
+  (let [s (lw-nf M h NF-TYPE)
+        kx (lw-next M a)
+        md (lw-md M (lw-nf M a NF-TYPE))
+        l (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 2)
+        (lw-expr a t 0) (lw-emit OP-LSET s t 0) (lw-expr kx t 0) (lw-emit OP-LSET (+ s 1) t 0)
+        (lw-expr (lw-next M kx) t 0) (lw-emit OP-LSET (+ s 4) t 0)
+        (lw-scan (lw-p3 s (+ s 1) (+ s 2)) md t)
+        (lw-emit OP-CONST (inc t) 0 0) (lw-emit OP-CMP CC-LT t 0) (lw-emit OP-BRZ t l 0)
+        (lw-emit OP-LGET t (+ s 4) 0) (lw-emit OP-BR (inc l) 0 0)
+        (lw-emit OP-LABEL l 0 0) (lw-mval s t)
+        (lw-emit OP-LABEL (inc l) 0 0))))
+;; (assoc m k v) on a map
+(defn- lw-massoc [M :vector-i64 n :i64 a :i64 t :i64] :vector-i64
+  (lw-upd M a (lw-nf M (lw-first M n) NF-TYPE) (lw-md M (lw-nf M n NF-TYPE)) t))
+
+;; slot s+3 := a new vector of the items off, off + w, .. below (slot s+1) of the vector in slot s; temp t := it.
+;; ow = 4 * off + w.
+(defn- lw-proj [M :vector-i64 s :i64 ow :i64 t :i64] :vector-i64
+  (let [off (quot ow 4) w (bit-and ow 3) n (+ s 1) i (+ s 2) nv (+ s 3) l (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 2)
+        (lw-emit OP-VEC t 0 0) (lw-emit OP-LSET nv t 0) (lw-emit OP-CONST t 0 0) (lw-emit OP-LSET i t 0)
+        (lw-emit OP-LABEL l 0 0)
+        (lw-emit OP-LGET t i 0) (lw-emit OP-LGET (inc t) n 0) (lw-emit OP-CMP CC-LT t 0) (lw-emit OP-BRZ t (inc l) 0)
+        (lw-emit OP-LGET t nv 0) (lw-copy1 s i off t) (lw-emit OP-LSET nv t 0)
+        (lw-step i w t) (lw-emit OP-BR l 0 0)
+        (lw-emit OP-LABEL (inc l) 0 0) (lw-emit OP-LGET t nv 0))))
+;; keys (off 0) or vals (off 1) of the map e
+(defn- lw-kv [M :vector-i64 e :i64 s :i64 off :i64 t :i64] :vector-i64
+  (-> M (lw-expr e t 0) (lw-emit OP-LSET s t 0) (lw-emit OP-RT RT-VECTOR-COUNT t 1) (lw-emit OP-LSET (+ s 1) t 0)
+      (lw-proj s (+ (* 4 off) 2) t)))
+;; (pop v): all items but the last; an empty vector traps
+(defn- lw-pop [M :vector-i64 e :i64 s :i64 t :i64] :vector-i64
+  (let [l (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 1)
+        (lw-expr e t 0) (lw-emit OP-LSET s t 0) (lw-emit OP-RT RT-VECTOR-COUNT t 1) (lw-emit OP-CONST (inc t) 1 0)
+        (lw-emit OP-BIN BOP-SUB t 0) (lw-emit OP-LSET (+ s 1) t 0) (lw-emit OP-CONST (inc t) 0 0) (lw-emit OP-CMP CC-LT t 0)
+        (lw-emit OP-BRZ t l 0) (lw-emit OP-TRAP 0 0 0)
+        (lw-emit OP-LABEL l 0 0) (lw-proj s 1 t))))
+;; (peek v): the last item (an empty vector traps in vector_at)
+(defn- lw-peek [M :vector-i64 e :i64 s :i64 t :i64] :vector-i64
+  (-> M (lw-expr e t 0) (lw-emit OP-LSET s t 0) (lw-emit OP-LGET (inc t) s 0) (lw-emit OP-RT RT-VECTOR-COUNT (inc t) 1)
+      (lw-emit OP-CONST (+ t 2) 1 0) (lw-emit OP-BIN BOP-SUB (inc t) 0) (lw-emit OP-RT RT-VECTOR-AT t 2)))
+;; (nth c i d): item i of the vector/list c when 0 <= i < count, else d (slots s, s+1, s+2)
+(defn- lw-nthd [M :vector-i64 e :i64 s :i64 t :i64] :vector-i64
+  (let [i (lw-next M e) l (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 2)
+        (lw-expr e t 0) (lw-emit OP-LSET s t 0) (lw-expr i t 0) (lw-emit OP-LSET (+ s 1) t 0)
+        (lw-expr (lw-next M i) t 0) (lw-emit OP-LSET (+ s 2) t 0)
+        (lw-emit OP-LGET t (+ s 1) 0) (lw-emit OP-CONST (inc t) 0 0) (lw-emit OP-CMP CC-LT t 0) (lw-emit OP-BRNZ t l 0)
+        (lw-emit OP-LGET t (+ s 1) 0) (lw-emit OP-LGET (inc t) s 0) (lw-emit OP-RT RT-VECTOR-COUNT (inc t) 1)
+        (lw-emit OP-CMP CC-LT t 0) (lw-emit OP-BRZ t l 0)
+        (lw-emit OP-LGET t s 0) (lw-emit OP-LGET (inc t) (+ s 1) 0) (lw-emit OP-RT RT-VECTOR-AT t 2) (lw-emit OP-BR (inc l) 0 0)
+        (lw-emit OP-LABEL l 0 0) (lw-emit OP-LGET t (+ s 2) 0)
+        (lw-emit OP-LABEL (inc l) 0 0))))
+;; temp t := (value at index (slot s+3) + 1 of the map in slot s) = (value at index (slot s+6) + 1 of the map in slot s+1)
+(defn- lw-eqval [M :vector-i64 s :i64 str? :bool t :i64] :vector-i64
+  (-> M (lw-mval s t)
+      (lw-emit OP-LGET (inc t) (+ s 1) 0) (lw-emit OP-LGET (+ t 2) (+ s 6) 0) (lw-emit OP-CONST (+ t 3) 1 0)
+      (lw-emit OP-BIN BOP-ADD (+ t 2) 0) (lw-emit OP-RT RT-VECTOR-AT (inc t) 2)
+      (lw-eq str? t)))
+;; equality of the sets/maps in slots s and s+1 (slots s .. s+6): same count, every item/key of the first in the
+;; second (maps: with an equal value). Order does not matter.
+(defn- lw-equal [M :vector-i64 s :i64 md :i64 t :i64] :vector-i64
+  (let [n (+ s 2) i (+ s 3) x (+ s 4) w (bit-and md 3) l (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 4)
+        (lw-emit OP-LGET t s 0) (lw-emit OP-RT RT-VECTOR-COUNT t 1) (lw-emit OP-LSET n t 0)
+        (lw-emit OP-LGET t (inc s) 0) (lw-emit OP-RT RT-VECTOR-COUNT t 1) (lw-emit OP-LGET (inc t) n 0)
+        (lw-emit OP-CMP CC-EQ t 0) (lw-emit OP-BRZ t (+ l 2) 0)
+        (lw-emit OP-CONST t 0 0) (lw-emit OP-LSET i t 0)
+        (lw-emit OP-LABEL l 0 0)
+        (lw-emit OP-LGET t i 0) (lw-emit OP-LGET (inc t) n 0) (lw-emit OP-CMP CC-LT t 0) (lw-emit OP-BRZ t (+ l 1) 0)
+        (lw-emit OP-LGET t s 0) (lw-emit OP-LGET (inc t) i 0) (lw-emit OP-RT RT-VECTOR-AT t 2) (lw-emit OP-LSET x t 0)
+        (lw-scan (lw-p3 (inc s) x (+ s 5)) (bit-and md 7) t)
+        (lw-emit OP-CONST (inc t) 0 0) (lw-emit OP-CMP CC-LT t 0) (lw-emit OP-BRNZ t (+ l 2) 0)
+        (cond-> (= w 2) (-> (lw-eqval s (> md 7) t) (lw-emit OP-BRZ t (+ l 2) 0)))
+        (lw-step i w t) (lw-emit OP-BR l 0 0)
+        (lw-emit OP-LABEL (+ l 1) 0 0) (lw-emit OP-CONST t 1 0) (lw-emit OP-BR (+ l 3) 0 0)
+        (lw-emit OP-LABEL (+ l 2) 0 0) (lw-emit OP-CONST t 0 0)
+        (lw-emit OP-LABEL (+ l 3) 0 0))))
+
+;; ---- options, results ----
+;; [e -> t] CONST t+1 tag RT PAIR-NEW: option-some (tag 0), result ok (0) / err (1)
+(defn- lw-wrap [M :vector-i64 e :i64 tag :i64 t :i64] :vector-i64
+  (-> M (lw-expr e t 0) (lw-emit OP-CONST (inc t) tag 0) (lw-emit OP-RT RT-PAIR-NEW t 2)))
+;; the payload of the option/result e, or the default after e (slots s, s+1). mode 0 option (none -> default),
+;; 1 result value (err -> default), 2 result error (ok -> default)
+(defn- lw-pick [M :vector-i64 e :i64 s :i64 mode :i64 t :i64] :vector-i64
+  (let [l (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 2)
+        (lw-expr e t 0) (lw-emit OP-LSET s t 0) (lw-expr (lw-next M e) t 0) (lw-emit OP-LSET (inc s) t 0)
+        (lw-emit OP-LGET t s 0)
+        (cond-> (pos? mode) (lw-emit OP-RT RT-PAIR-SECOND t 1))
+        (lw-emit (if (= mode 1) OP-BRNZ OP-BRZ) t l 0)
+        (lw-emit OP-LGET t s 0) (lw-emit OP-RT RT-PAIR-FIRST t 1) (lw-emit OP-BR (inc l) 0 0)
+        (lw-emit OP-LABEL l 0 0) (lw-emit OP-LGET t (inc s) 0)
+        (lw-emit OP-LABEL (inc l) 0 0))))
+;; (option-match T o none-body x some-body); a = the type argument
+(defn- lw-omatch [M :vector-i64 a :i64 t :i64 k :i64] :vector-i64
+  (let [o (lw-next M a)
+        nb (lw-next M o)
+        x (lw-next M nb)
+        sx (lw-slot M x)
+        l (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 2)
+        (lw-expr o t 0) (lw-emit OP-LSET sx t 0) (lw-emit OP-BRZ t l 0)
+        (lw-emit OP-LGET t sx 0) (lw-emit OP-RT RT-PAIR-FIRST t 1) (lw-emit OP-LSET sx t 0)
+        (lw-expr (lw-next M x) t k) (lw-emit OP-BR (inc l) 0 0)
+        (lw-emit OP-LABEL l 0 0) (lw-expr nb t k)
+        (lw-emit OP-LABEL (inc l) 0 0))))
+;; (result-match-of R r v ok-body e err-body); a = the type argument
+(defn- lw-rmatch [M :vector-i64 a :i64 t :i64 k :i64] :vector-i64
+  (let [r (lw-next M a)
+        v (lw-next M r)
+        ob (lw-next M v)
+        e (lw-next M ob)
+        sv (lw-slot M v)
+        l (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 2)
+        (lw-expr r t 0) (lw-emit OP-LSET sv t 0) (lw-emit OP-RT RT-PAIR-SECOND t 1) (lw-emit OP-BRNZ t l 0)
+        (lw-emit OP-LGET t sv 0) (lw-emit OP-RT RT-PAIR-FIRST t 1) (lw-emit OP-LSET sv t 0)
+        (lw-expr ob t k) (lw-emit OP-BR (inc l) 0 0)
+        (lw-emit OP-LABEL l 0 0) (lw-emit OP-LGET t sv 0) (lw-emit OP-RT RT-PAIR-FIRST t 1) (lw-emit OP-LSET (lw-slot M e) t 0)
+        (lw-expr (lw-next M e) t k)
+        (lw-emit OP-LABEL (inc l) 0 0))))
+
+;; ---- abort ----
+;; (throw e): outside a try body the function returns err(e); inside one: catch binder := e, jump to the handler
+(defn- lw-throw [M :vector-i64 e :i64 t :i64] :vector-i64
+  (let [c (vector-at M 95)]
+    (if (zero? c)
+      (-> M (lw-wrap e 1 t) (lw-emit OP-RET t 0 0))
+      (-> M (lw-expr e t 0) (lw-emit OP-LSET (bit-and c 255) t 0) (lw-emit OP-BR (quot c 256) 0 0)))))
+;; after CALL of an aborting function into t (hidden slot = NF-TYPE of the head node h): an err result is re-raised as
+;; it is (outside a try body) or goes to the handler; an ok result is unwrapped
+(defn- lw-abort-check [M :vector-i64 h :i64 t :i64] :vector-i64
+  (let [hs (lw-nf M h NF-TYPE)
+        c (vector-at M 95)
+        l (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 1)
+        (lw-emit OP-LSET hs t 0) (lw-emit OP-RT RT-PAIR-SECOND t 1) (lw-emit OP-BRZ t l 0)
+        (lw-emit OP-LGET t hs 0)
+        (cond-> (zero? c) (lw-emit OP-RET t 0 0)
+                (pos? c) (-> (lw-emit OP-RT RT-PAIR-FIRST t 1) (lw-emit OP-LSET (bit-and c 255) t 0)
+                             (lw-emit OP-BR (quot c 256) 0 0)))
+        (lw-emit OP-LABEL l 0 0) (lw-emit OP-LGET t hs 0) (lw-emit OP-RT RT-PAIR-FIRST t 1))))
+;; (try body (catch [E] x handler)); b = the body
+(defn- lw-try [M :vector-i64 b :i64 t :i64 k :i64] :vector-i64
+  (let [c (lw-first M (lw-next M b))
+        x (lw-nth M c (- (lw-count M c) 2))
+        old (vector-at M 95)
+        l (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 2) (lw-put 95 (+ (* l 256) (lw-slot M x)))
+        (lw-expr b t 0) (lw-put 95 old) (lw-emit OP-BR (inc l) 0 0)
+        (lw-emit OP-LABEL l 0 0) (lw-expr (lw-next M x) t k)
+        (lw-emit OP-LABEL (inc l) 0 0))))
+
+;; ---- strings ----
+;; (string-from-i64 x), slots s .. s+4: x, m = -|x| (no overflow at MIN), reversed digits, output bytes, index
+(defn- lw-sfrom [M :vector-i64 e :i64 s :i64 t :i64] :vector-i64
+  (let [m (+ s 1) rv (+ s 2) out (+ s 3) i (+ s 4) l (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 6)
+        (lw-expr e t 0) (lw-emit OP-LSET s t 0)
+        (lw-emit OP-CONST (inc t) 0 0) (lw-emit OP-CMP CC-LT t 0) (lw-emit OP-BRNZ t l 0)
+        (lw-emit OP-CONST t 0 0) (lw-emit OP-LGET (inc t) s 0) (lw-emit OP-BIN BOP-SUB t 0) (lw-emit OP-LSET m t 0)
+        (lw-emit OP-BR (+ l 1) 0 0)
+        (lw-emit OP-LABEL l 0 0) (lw-emit OP-LGET t s 0) (lw-emit OP-LSET m t 0)
+        (lw-emit OP-LABEL (+ l 1) 0 0) (lw-emit OP-VEC t 0 0) (lw-emit OP-LSET rv t 0)
+        ;; do: rv += '0' + ((m quot 10) * 10 - m); m := m quot 10; while m != 0
+        (lw-emit OP-LABEL (+ l 2) 0 0)
+        (lw-emit OP-LGET t rv 0) (lw-emit OP-LGET (inc t) m 0) (lw-emit OP-CONST (+ t 2) 10 0) (lw-emit OP-BIN BOP-QUOT (inc t) 0)
+        (lw-emit OP-CONST (+ t 2) 10 0) (lw-emit OP-BIN BOP-MUL (inc t) 0) (lw-emit OP-LGET (+ t 2) m 0)
+        (lw-emit OP-BIN BOP-SUB (inc t) 0) (lw-emit OP-CONST (+ t 2) 48 0) (lw-emit OP-BIN BOP-ADD (inc t) 0)
+        (lw-emit OP-RT RT-VECTOR-CONJ t 2) (lw-emit OP-LSET rv t 0)
+        (lw-emit OP-LGET t m 0) (lw-emit OP-CONST (inc t) 10 0) (lw-emit OP-BIN BOP-QUOT t 0) (lw-emit OP-LSET m t 0)
+        (lw-emit OP-BRNZ t (+ l 2) 0)
+        (lw-emit OP-VEC t 0 0) (lw-emit OP-LSET out t 0)
+        (lw-emit OP-LGET t s 0) (lw-emit OP-CONST (inc t) 0 0) (lw-emit OP-CMP CC-LT t 0) (lw-emit OP-BRZ t (+ l 3) 0)
+        (lw-emit OP-LGET t out 0) (lw-emit OP-CONST (inc t) 45 0) (lw-emit OP-RT RT-VECTOR-CONJ t 2) (lw-emit OP-LSET out t 0)
+        (lw-emit OP-LABEL (+ l 3) 0 0)
+        (lw-emit OP-LGET t rv 0) (lw-emit OP-RT RT-VECTOR-COUNT t 1) (lw-emit OP-LSET i t 0)
+        (lw-emit OP-LABEL (+ l 4) 0 0)
+        (lw-emit OP-LGET t i 0) (lw-emit OP-BRZ t (+ l 5) 0)
+        (lw-emit OP-CONST (inc t) 1 0) (lw-emit OP-BIN BOP-SUB t 0) (lw-emit OP-LSET i t 0)
+        (lw-emit OP-LGET t out 0) (lw-emit OP-LGET (inc t) rv 0) (lw-emit OP-LGET (+ t 2) i 0) (lw-emit OP-RT RT-VECTOR-AT (inc t) 2)
+        (lw-emit OP-RT RT-VECTOR-CONJ t 2) (lw-emit OP-LSET out t 0) (lw-emit OP-BR (+ l 4) 0 0)
+        (lw-emit OP-LABEL (+ l 5) 0 0)
+        (lw-emit OP-LGET t out 0) (lw-emit OP-RT RT-STRING-FROM-UTF8 t 1))))
+
+;; ---- dispatch ----
+;; heads with a type argument a (the type form node; 21-check put its type in NF-TYPE); e = the first value argument
+(defn- lw-typed [M :vector-i64 n :i64 hd :i64 t :i64] :vector-i64
+  (let [h (lw-first M n)
+        a (lw-next M h)
+        e (lw-next M a)
+        s (lw-nf M h NF-TYPE)
+        md (lw-md M (lw-nf M a NF-TYPE))]
+    (case hd
+      (HD-OPTION-SOME HD-RESULT-OK) (lw-wrap M e 0 t)
+      HD-RESULT-ERR (lw-wrap M e 1 t)
+      HD-OPTION-NONE (lw-emit M OP-CONST t 0 0)
+      HD-OPTION-IS-SOME (-> M (lw-expr e t 0) (lw-emit OP-CONST (inc t) 0 0) (lw-emit OP-CMP CC-EQ t 0) (lw-emit OP-UN UOP-NOT t 0))
+      HD-RESULT-IS-OK (-> M (lw-expr e t 0) (lw-emit OP-RT RT-PAIR-SECOND t 1) (lw-emit OP-CONST (inc t) 0 0) (lw-emit OP-CMP CC-EQ t 0))
+      HD-OPTION-VALUE (lw-pick M e s 0 t)
+      HD-RESULT-VALUE (lw-pick M e s 1 t)
+      HD-RESULT-ERROR (lw-pick M e s 2 t)
+      HD-LIST-NEW (-> M (lw-args e t) (lw-emit OP-VEC t (lw-count M e) 0))
+      (HD-LIST-NTH HD-SET-NTH) (-> M (lw-args e t) (lw-emit OP-RT RT-VECTOR-AT t 2))
+      HD-LIST-CONJ (-> M (lw-args e t) (lw-emit OP-RT RT-VECTOR-CONJ t 2))
+      HD-SET-COUNT (-> M (lw-expr e t 0) (lw-emit OP-RT RT-VECTOR-COUNT t 1))
+      HD-MAP-COUNT (-> M (lw-expr e t 0) (lw-emit OP-RT RT-VECTOR-COUNT t 1) (lw-halve t))
+      (HD-SET-NEW HD-MAP-NEW) (lw-newcoll M e s md t)
+      (HD-SET-CONTAINS HD-MAP-CONTAINS) (lw-has M e s md t)
+      (HD-SET-CONJ HD-MAP-ASSOC) (lw-upd M e s md t)
+      (HD-SET-DISJ HD-MAP-DISSOC) (lw-upd M e s (+ md 16) t)
+      (HD-SET-EQUAL HD-MAP-EQUAL) (-> M (lw-expr e t 0) (lw-emit OP-LSET s t 0) (lw-expr (lw-next M e) t 0)
+                                      (lw-emit OP-LSET (inc s) t 0) (lw-equal s md t))
+      HD-MAP-GET (lw-mget M e s md t)
+      HD-MAP-KEYS (lw-kv M e s 0 t)
+      HD-MAP-VALS (lw-kv M e s 1 t)
+      (lw-fail M E-LOWER-NODE (lw-pos M n) hd))))
+;; the generic collection heads: the type of the first argument a decides
+(defn- lw-gen [M :vector-i64 n :i64 hd :i64 t :i64] :vector-i64
+  (let [h (lw-first M n)
+        a (lw-next M h)
+        s (lw-nf M h NF-TYPE)
+        ty (lw-nf M a NF-TYPE)
+        ctor (lw-ct M ty CT-CTOR)
+        md (lw-md M ty)]
+    (case hd
+      HD-GCOUNT (-> M (lw-expr a t 0) (lw-emit OP-RT RT-VECTOR-COUNT t 1) (cond-> (= ctor TC-MAP) (lw-halve t)))
+      HD-NTH (if (= (lw-count M a) 3) (lw-nthd M a s t) (-> M (lw-args a t) (lw-emit OP-RT RT-VECTOR-AT t 2)))
+      HD-CONTAINS (lw-has M a s md t)
+      HD-CONJ (if (= ctor TC-SET) (lw-upd M a s md t) (-> M (lw-expr a t 0) (lw-vconj (lw-next M a) t)))
+      (HD-DISJ HD-DISSOC) (lw-upd M a s (+ md 16) t)
+      HD-KEYS (lw-kv M a s 0 t)
+      HD-VALS (lw-kv M a s 1 t)
+      HD-PEEK (lw-peek M a s t)
+      HD-POP (lw-pop M a s t)
+      (lw-fail M E-LOWER-NODE (lw-pos M n) hd))))
+;; conj onto the vector/list in temp t: the items of chain c
+(defn- lw-vconj [M :vector-i64 c :i64 t :i64] :vector-i64
+  (if (zero? c)
+    M
+    (let [nx (lw-next M c)]
+      (lw-vconj (-> M (lw-expr c (inc t) 0) (lw-emit OP-RT RT-VECTOR-CONJ t 2)) nx t))))
+;; an R3 head (strings and pairs go through lw-rt instead)
+(defn- lw-r3 [M :vector-i64 n :i64 hd :i64 t :i64 k :i64] :vector-i64
+  (let [h (lw-first M n)
+        a (lw-next M h)]
+    (cond (= hd HD-OPTION-MATCH) (lw-omatch M a t k)
+          (= hd HD-RESULT-MATCH) (lw-rmatch M a t k)
+          (= hd HD-OPTION-OR) (lw-pick M a (lw-nf M h NF-TYPE) 0 t)
+          (= hd HD-THROW) (lw-throw M a t)
+          (= hd HD-TRY) (lw-try M a t k)
+          (= hd HD-STRING-FROM-I64) (lw-sfrom M a (lw-nf M h NF-TYPE) t)
+          (>= hd HD-GCOUNT) (lw-gen M n hd t)
+          :else (lw-typed M n hd t))))
 
 ;; ------------------------------------------------------------------------------------------------------------
 ;; TEST-ONLY: the SIR interpreter. It reads M (SIR, FN, LIT, LITB) and writes only its own vector H.

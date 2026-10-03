@@ -30,6 +30,24 @@ HEADS = [  # (spelling, constant)
     ("false", "HD-FALSE"), ("vector-count", "HD-VECTOR-COUNT"), ("record-new", "HD-RECORD-NEW"),
     ("record", "HD-RECORD"), ("record-get", "HD-RECORD-GET"), ("defrecord", "HD-DEFRECORD"), ("get", "HD-GET"),
     ("assoc", "HD-ASSOC"),
+    # R3 (agent R3, 2026-10-03)
+    ("option-some-of", "HD-OPTION-SOME"), ("option-none-of", "HD-OPTION-NONE"), ("option-some?-of", "HD-OPTION-IS-SOME"),
+    ("option-value-of", "HD-OPTION-VALUE"), ("option-match", "HD-OPTION-MATCH"), ("option-or", "HD-OPTION-OR"),
+    ("result-ok-of", "HD-RESULT-OK"), ("result-err-of", "HD-RESULT-ERR"), ("result-ok?-of", "HD-RESULT-IS-OK"),
+    ("result-value-of", "HD-RESULT-VALUE"), ("result-error-of", "HD-RESULT-ERROR"), ("result-match-of", "HD-RESULT-MATCH"),
+    ("throw", "HD-THROW"), ("try", "HD-TRY"), ("catch", "HD-CATCH"),
+    ("typed-list-new", "HD-LIST-NEW"), ("typed-list-nth", "HD-LIST-NTH"), ("typed-list-conj", "HD-LIST-CONJ"),
+    ("typed-set-new", "HD-SET-NEW"), ("typed-set-count", "HD-SET-COUNT"), ("typed-set-contains", "HD-SET-CONTAINS"),
+    ("typed-set-conj", "HD-SET-CONJ"), ("typed-set-disj", "HD-SET-DISJ"), ("typed-set-equal", "HD-SET-EQUAL"),
+    ("typed-set-nth", "HD-SET-NTH"), ("typed-map-new", "HD-MAP-NEW"), ("typed-map-count", "HD-MAP-COUNT"),
+    ("typed-map-contains", "HD-MAP-CONTAINS"), ("typed-map-get", "HD-MAP-GET"), ("typed-map-assoc", "HD-MAP-ASSOC"),
+    ("typed-map-dissoc", "HD-MAP-DISSOC"), ("typed-map-equal", "HD-MAP-EQUAL"), ("typed-map-keys", "HD-MAP-KEYS"),
+    ("typed-map-vals", "HD-MAP-VALS"), ("string=?", "HD-STRING-EQ"), ("string-substring", "HD-STRING-SUBSTRING"),
+    ("string-from-i64", "HD-STRING-FROM-I64"), ("string-compare", "HD-STRING-COMPARE"),
+    ("string-index-of", "HD-STRING-INDEX-OF"), ("string-byte-length", "HD-STRING-BYTE-LENGTH"), ("pair", "HD-PAIR"),
+    ("pair-first", "HD-PAIR-FIRST"), ("pair-second", "HD-PAIR-SECOND"), ("count", "HD-GCOUNT"), ("nth", "HD-NTH"),
+    ("contains?", "HD-CONTAINS"), ("conj", "HD-CONJ"), ("disj", "HD-DISJ"), ("dissoc", "HD-DISSOC"), ("keys", "HD-KEYS"),
+    ("vals", "HD-VALS"), ("peek", "HD-PEEK"), ("pop", "HD-POP"),
 ]
 KWS = [
     (":i64", "KW-I64"), (":bool", "KW-BOOL"), (":string", "KW-STRING"), (":vector-i64", "KW-VECTOR-I64"),
@@ -38,6 +56,8 @@ KWS = [
     (":fs/app-data-bytes", "KW-FS-APP-DATA-BYTES"),
     (":keyword", "KW-KEYWORD"), (":record", "KW-RECORD"), (":let", "KW-LET"), (":when", "KW-WHEN"),
     (":while", "KW-WHILE"),
+    # R3
+    (":option", "KW-OPTION"), (":result", "KW-RESULT"), (":list", "KW-LIST"), (":map", "KW-MAP"), (":set", "KW-SET"),
 ]
 
 

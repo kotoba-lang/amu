@@ -14,6 +14,8 @@
 ;; index; ND-SYM and ND-KW: NF-AUX = 0 (the name is the span of the token NF-TOK, in S). The root has NF-TOK 0.
 ;; R1 (2026-10-02, agent R1; seed/CONTRACT-REQUESTS.md): a '{' opens an ND-MAP node like a list (children = keys and
 ;; values in source order); 21-check admits it only as the argument of (map->Name {..}) and refuses it elsewhere (E1105).
+;; R3 (2026-10-03, agent R3; minimal delimited change): '#{' (TK-HASH-BRACE) opens an ND-SET node (children = the items),
+;; closed by '}'; 21-check types {..} and #{..} as typed map and set literals.
 ;; Recursion: rd-form <-> rd-items (nesting depth = native stack depth); a list's items are a self tail loop.
 
 ;; Linearity style of this module (stage-0 affine analysis, see the notes at lx-set in 10-lex): the handle returned by a
@@ -87,7 +89,7 @@
 
 ;; the closing token kind of a list or vector node kind
 (defn- rd-want [pk :i64] :i64
-  (cond (= pk ND-LIST) TK-RPAREN (= pk ND-MAP) TK-RBRACE :else TK-RBRACK))
+  (cond (= pk ND-LIST) TK-RPAREN (= pk ND-MAP) TK-RBRACE (= pk ND-SET) TK-RBRACE :else TK-RBRACK))
 
 ;; closing bracket token t (kind k) met inside `parent`: success leaves MM-R0 = t+1
 (defn- rd-close [M :vector-i64 t :i64 k :i64 parent :i64] :vector-i64
@@ -139,6 +141,7 @@
       (= k TK-LPAREN) (rd-open M t ND-LIST)
       (= k TK-LBRACK) (rd-open M t ND-VEC)
       (= k TK-LBRACE) (rd-open M t ND-MAP)
+      (= k TK-HASH-BRACE) (rd-open M t ND-SET)
       (rd-closer? k) (rd-fail-tok M E-READ-CLOSE t)
       (= k TK-INT) (rd-atom M t ND-INT v)
       (= k TK-STR) (rd-atom M t ND-STR v)

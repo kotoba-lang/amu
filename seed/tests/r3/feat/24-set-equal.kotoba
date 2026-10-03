@@ -1,0 +1,3 @@
+;; R3 feat: typed-set-equal
+(ns seed.r3 (:export [test]))
+(defn test [] :i64 (+ (if (typed-set-equal [:set :i64] (typed-set-new [:set :i64] 1 2 3) (typed-set-new [:set :i64] 3 1 2)) 1 0) (if (typed-set-equal [:set :i64] (typed-set-new [:set :i64] 1 2) (typed-set-new [:set :i64] 1 3)) 10 0) (if (typed-set-equal [:set :string] (typed-set-new [:set :string] "a" "b") (typed-set-new [:set :string] "b" "a")) 100 0) (if (typed-set-equal [:set :keyword] #{:a :b} (conj #{:b} :a)) 1000 0)))

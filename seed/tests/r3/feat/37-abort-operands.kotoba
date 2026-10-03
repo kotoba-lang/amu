@@ -1,0 +1,6 @@
+;; R3 feat: aborting calls in operand and test positions keep left-to-right order
+(ns seed.r3 (:export [test]))
+(defn- f [x :i64] :i64 (if (= x 0) (throw "s") x))
+(defn- h [x :i64] :i64 (+ x 1))
+(defn- g [a :i64 b :i64] :i64 (- a b))
+(defn test [] :i64 (try (+ (+ 1 (f 7)) (if (> (f 5) 3) 100 200) (g (h 1) (f 2))) (catch e 0)))

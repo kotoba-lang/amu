@@ -1,0 +1,4 @@
+;; R3 feat: abort through a function returning a string
+(ns seed.r3 (:export [test]))
+(defn- name-of [k :i64] :string (if (= k 1) "one" (if (= k 2) "two" (throw k))))
+(defn test [] :i64 (+ (string-length (try (name-of 2) (catch e "?"))) (string-length (try (name-of 9) (catch e (string-from-i64 (* e 111)))))))

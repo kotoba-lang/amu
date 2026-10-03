@@ -1,0 +1,161 @@
+;; R3 conf: lang/conformance/stdlib/i64_set.kotoba + stdlib/i64set.kotoba (kotoba-lang 919232de) in one file: modules are R5, so
+;; the library's defns follow main's ns and the iset/ qualifiers are dropped; main as in i64set.kotoba
+(ns seed.r3.i64set (:export [main]))
+
+
+
+(defn set-empty [] :i64
+  0)
+
+(defn- ascending? [chain :i64 prev :i64] :bool
+  (if (= chain 0)
+    true
+    (let [v (pair-first chain)]
+      (if (<= v prev)
+        false
+        (ascending? (pair-second chain) v)))))
+
+(defn set-valid? [s :i64] :bool
+  (if (= s 0)
+    true
+    (ascending? (pair-second s) (pair-first s))))
+
+(defn set-count [s :i64] :i64
+  (if (= s 0)
+    0
+    (+ 1 (set-count (pair-second s)))))
+
+
+(defn- insert-sorted [fuel :i64 s :i64 v :i64] :i64
+  (if (<= fuel 0)
+    0
+    (if (= s 0)
+      (pair v 0)
+      (let [head (pair-first s)
+            rest (pair-second s)]
+        (if (< v head)
+          (pair v s)
+          (if (= v head)
+            s
+            (pair head (insert-sorted (- fuel 1) rest v))))))))
+
+(defn- build-sorted [items :i64] :i64
+  (if (= items 0)
+    0
+    (insert-sorted (set-count items) (build-sorted (pair-second items)) (pair-first items))))
+
+(defn set-from-chain [items :i64] :i64
+  (build-sorted items))
+
+(defn set-to-chain [s :i64] :i64
+  s)
+
+
+(defn set-contains? [s :i64 v :i64] :bool
+  (if (= s 0)
+    false
+    (let [head (pair-first s)]
+      (if (= v head)
+        true
+        (if (< v head)
+          false
+          (set-contains? (pair-second s) v))))))
+
+
+(defn set-union [a :i64 b :i64] :i64
+  (if (= a 0)
+    b
+    (if (= b 0)
+      a
+      (let [x (pair-first a)
+            y (pair-first b)]
+        (if (< x y)
+          (pair x (set-union (pair-second a) b))
+          (if (< y x)
+            (pair y (set-union a (pair-second b)))
+            (pair x (set-union (pair-second a) (pair-second b)))))))))
+
+(defn set-intersection [a :i64 b :i64] :i64
+  (if (= a 0)
+    0
+    (if (= b 0)
+      0
+      (let [x (pair-first a)
+            y (pair-first b)]
+        (if (= x y)
+          (pair x (set-intersection (pair-second a) (pair-second b)))
+          (if (< x y)
+            (set-intersection (pair-second a) b)
+            (set-intersection a (pair-second b))))))))
+
+(defn set-difference [a :i64 b :i64] :i64
+  (if (= a 0)
+    0
+    (if (= b 0)
+      a
+      (let [x (pair-first a)
+            y (pair-first b)]
+        (if (= x y)
+          (set-difference (pair-second a) (pair-second b))
+          (if (< y x)
+            (set-difference a (pair-second b))
+            (pair x (set-difference (pair-second a) b))))))))
+
+
+(defn set-subset? [a :i64 b :i64] :bool
+  (if (= a 0)
+    true
+    (if (= b 0)
+      false
+      (let [x (pair-first a)
+            y (pair-first b)]
+        (if (= x y)
+          (set-subset? (pair-second a) (pair-second b))
+          (if (< y x)
+            (set-subset? a (pair-second b))
+            false))))))
+
+(defn set-equal? [a :i64 b :i64] :bool
+  (if (= a 0)
+    (= b 0)
+    (if (= b 0)
+      false
+      (if (= (pair-first a) (pair-first b))
+        (set-equal? (pair-second a) (pair-second b))
+        false))))
+
+(defn set-disjoint? [a :i64 b :i64] :bool
+  (= (set-intersection a b) 0))
+
+;; The version-6 module, exercised on its own powers of ten so a wrong
+;; answer names the operation that produced it.
+;;
+;; Canonicalization: from-chain over (3 1 2 1) sorts to {1 2 3} and
+;; dedups to 3 items. Membership hits and misses on the sorted set, the
+;; count of union/intersection/difference over two hand-built sets, the
+;; subset and equality relations, and validity of every constructed
+;; set. Expected: 4294967845, measured on wasm32 through amu
+;; runtime/browser-host.mjs (recorded in the manifest revision).
+;;
+;; Weights: count=1, contains-hit=10, contains-miss=100,
+;; union-count=1000, intersection-count=10000, difference-count=100000,
+;; subset=true=1000000, subset=false=10000000, equal=true=100000000,
+;; valid=1000000000.
+(defn- a [] :i64
+  (set-from-chain (pair 3 (pair 1 (pair 2 (pair 1 0))))))
+
+(defn- b [] :i64
+  (set-from-chain (pair 2 (pair 3 (pair 4 0)))))
+
+(defn main [] :i64
+  (+ (set-count (a))
+     (* 10 (if (set-contains? (a) 2) 1 0))
+     (* 100 (if (set-contains? (a) 7) 0 1))
+     (* 1000 (set-count (set-union (a) (b))))
+     (* 10000 (set-count (set-intersection (a) (b))))
+     (* 100000 (set-count (set-difference (a) (b))))
+     (* 1000000 (if (set-subset? (set-from-chain (pair 2 (pair 3 0))) (b)) 1 0))
+     (* 10000000 (if (set-subset? (set-from-chain (pair 2 (pair 9 0))) (b)) 0 1))
+     (* 100000000 (if (set-equal? (set-union (set-from-chain (pair 1 0)) (set-from-chain (pair 2 0)))
+                                       (set-from-chain (pair 1 (pair 2 0)))) 1 0))
+     (* 1000000000 (if (set-valid? (set-union (a) (b))) 1 0))))

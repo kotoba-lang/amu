@@ -202,8 +202,15 @@
 ;; the type of type form t: R0 = TY-* (0 when t is not a type; a malformed schema also records E2128)
 (defn- ck-tform [M :vector-i64 t :i64] :vector-i64
   (cond (= (nm-kind M t) ND-KW) (nm-put M MM-R0 (ck-kwcode-type (nm-head-of M t)))
-        (= (ck-is-tform M t) 1) (ck-tform-rec M t)
+        (= (ck-is-tform M t) 1) (ck-tform-vec M t)
         :else (nm-put M MM-R0 0)))
+;; R3: [:record ..] (R1) or one of the composite forms [:option T] [:list T] [:set T] [:result T E] [:map K V]
+(defn- ck-tform-vec [M :vector-i64 t :i64] :vector-i64
+  (let [k (nm-head-of M (nm-first M t))]
+    (case k
+      KW-RECORD (ck-tform-rec M t)
+      (KW-OPTION KW-LIST KW-SET KW-RESULT KW-MAP) (ck-tform-comp M t k)
+      (nm-put M MM-R0 0))))
 
 ;; ---- defrecord (registered before desugaring, so (->Name ..) and inline schemas of the same name resolve) ----
 ;; 1 when S[a1..b1) is a keyword spelling ':' + S[a2..b2)
@@ -1101,6 +1108,7 @@
           (= k ND-LIST) (ck-ds-list (ck-ds-ctor M S n) S n)
           (= k ND-VEC) (ck-ds-kids M S (nm-first M n))
           (= k ND-MAP) (ck-ds-kids M S (nm-first M n))
+          (= k ND-SET) (ck-ds-kids M S (nm-first M n))
           :else (ck-touch M))))
 (defn- ck-ds-list [M :vector-i64 S :string n :i64] :vector-i64 (ck-ds-kids M S (nm-first M n)))
 (defn- ck-ds-kids [M :vector-i64 S :string c :i64] :vector-i64
@@ -1181,6 +1189,10 @@
 ;; minimum (variadic) or exact argument count
 (defn- ck-op-arity [hd :i64] :i64
   (cond (= hd HD-NOT) 1
+        (= hd HD-STRING-SUBSTRING) 3
+        (= hd HD-STRING-BYTE-LENGTH) 1
+        (= hd HD-PAIR-FIRST) 1
+        (= hd HD-PAIR-SECOND) 1
         (= hd HD-VECTOR-COUNT) 1
         (= hd HD-BIT-NOT) 1
         (= hd HD-VECTOR-ALLOC) 1
@@ -1203,6 +1215,9 @@
 ;; type of argument k
 (defn- ck-op-arg [hd :i64 k :i64] :i64
   (cond (= hd HD-NOT) TY-BOOL
+        (= hd HD-STRING-SUBSTRING) (if (= k 0) TY-STR TY-I64)
+        (= hd HD-STRING-EQ) TY-STR (= hd HD-STRING-COMPARE) TY-STR (= hd HD-STRING-INDEX-OF) TY-STR
+        (= hd HD-STRING-BYTE-LENGTH) TY-STR
         (= hd HD-VECTOR-AT) (if (= k 0) TY-VEC TY-I64)
         (= hd HD-VECTOR-COUNT) TY-VEC
         (= hd HD-VECTOR-CONJ) (if (= k 0) TY-VEC TY-I64)
@@ -1217,6 +1232,8 @@
 
 (defn- ck-op-res [hd :i64] :i64
   (cond (= hd HD-NOT) TY-BOOL
+        (= hd HD-STRING-EQ) TY-BOOL
+        (= hd HD-STRING-SUBSTRING) TY-STR
         (= hd HD-LT) TY-BOOL
         (= hd HD-GT) TY-BOOL
         (= hd HD-LE) TY-BOOL
@@ -1233,6 +1250,7 @@
 ;; 1 when the head lowers to a runtime call (RT), which makes the function charge fuel on entry
 (defn- ck-op-rt [hd :i64] :i64
   (cond (= hd HD-BYTES-FROM-VECTOR-I64) 1
+        (ck-r3-op? hd) 1
         (= hd HD-VECTOR-COUNT) 1
         (= hd HD-VECTOR-I64-FROM-BYTES) 1
         (= hd HD-STRING-CONCAT) 1
@@ -1243,6 +1261,7 @@
 ;; 1 for the heads ck-op handles (fixed signatures from the tables above)
 (defn- ck-op-known [hd :i64] :i64
   (cond (= hd HD-BYTES-FROM-VECTOR-I64) 1
+        (ck-r3-op? hd) 1
         (= hd HD-VECTOR-COUNT) 1
         (= hd HD-VECTOR-I64-FROM-BYTES) 1
         (= hd HD-STRING-CONCAT) 1
@@ -1261,7 +1280,8 @@
           (= k ND-KW) (ck-mark M n TY-KW 0)
           (= k ND-SYM) (ck-sym M n)
           (= k ND-VEC) (ck-veclit M n fx)
-          (= k ND-MAP) (ck-err M E-READ-MAP n 0)
+          (= k ND-MAP) (ck-maplit M n fx)
+          (= k ND-SET) (ck-setlit M n fx)
           (= k ND-LIST) (ck-list M n fx ctx)
           :else (ck-err M E-CHECK-HEAD n 0))))
 
@@ -1340,6 +1360,7 @@
         (= hd HD-RECORD-GET) (ck-recget M n fx)
         (= hd HD-GET) (ck-get M n fx)
         (= hd HD-ASSOC) (ck-assoc M n fx)
+        (and (>= hd HD-OPTION-SOME) (<= hd HD-POP)) (ck-r3 M n hd fx ctx)
         (= (ck-op-known hd) 1) (ck-op M n hd fx)
         :else (ck-head-err M n)))
 
@@ -1357,7 +1378,7 @@
           nx (nm-next M c)
           M1 (ck-expr M c fx 0)
           ty (ck-ty M1)]
-      (if (= ty want)
+      (if (or (= ty want) (and (= want TY-VEC) (= (quot hk 65536) HD-VECTOR-COUNT) (= (ck-tcon M1 ty) TC-LIST)))
         (ck-op-args M1 nx (+ hk 1) fx hn)
         (ck-err M1 E-CHECK-TYPE hn want)))))
 
@@ -1398,12 +1419,14 @@
         a (nm-next M c)
         b (nm-next M a)]
     (if (= (nm-count M n) 4)
-      (let [M1 (ck-expr M c fx 0)
-            tc (ck-ty M1)]
+      (let [a0 (ck-aborts M)
+            M1 (ck-expr M c fx 0)
+            tc (ck-ty M1)
+            ctx1 (ck-ctx-after M1 a0 ctx)]
         (if (= tc TY-BOOL)
-          (let [M2 (ck-expr M1 a fx ctx)
+          (let [M2 (ck-expr M1 a fx ctx1)
                 ta (ck-ty M2)
-                M3 (ck-expr M2 b fx ctx)
+                M3 (ck-expr M2 b fx ctx1)
                 tb (ck-ty M3)
                 M4 (ck-unify M3 ta tb h)
                 ty (ck-ty M4)]
@@ -1428,14 +1451,16 @@
                     (ck-unify M1 acc te h)))
       (= nx 0) (ck-err M E-CHECK-ELSE h 0)
       :else
-      (let [M1 (ck-expr M c fx 0)
-            tc (ck-ty M1)]
+      (let [a0 (ck-aborts M)
+            M1 (ck-expr M c fx 0)
+            tc (ck-ty M1)
+            ctx1 (ck-ctx-after M1 a0 ctx)]
         (if (= tc TY-BOOL)
-          (let [M2 (ck-expr M1 e fx ctx)
+          (let [M2 (ck-expr M1 e fx ctx1)
                 te (ck-ty M2)
                 M3 (ck-unify M2 acc te h)
                 ty (bit-and (ck-ty M3) 2097151)]
-            (ck-cond-pairs M3 nx (+ (* h 2097152) ty) fx ctx))
+            (ck-cond-pairs M3 nx (+ (* h 2097152) ty) fx ctx1))
           (ck-err M1 E-CHECK-TYPE h TY-BOOL))))))
 
 (defn- ck-cond [M :vector-i64 n :i64 fx :i64 ctx :i64] :vector-i64
@@ -1457,10 +1482,12 @@
     (nm-failed M) (ck-touch M)
     :else
     (let [nx (nm-next M c)
+          a0 (ck-aborts M)
           M1 (ck-expr M c fx (ck-last-ctx nx ctx))
-          ty (ck-ty M1)]
-      (cond (= ty TY-BOOL) (ck-andor-args M1 nx fx ctx h)
-            (= ty 0) (ck-andor-args M1 nx fx ctx h)
+          ty (ck-ty M1)
+          ctx1 (ck-ctx-after M1 a0 ctx)]
+      (cond (= ty TY-BOOL) (ck-andor-args M1 nx fx ctx1 h)
+            (= ty 0) (ck-andor-args M1 nx fx ctx1 h)
             :else (ck-err M1 E-CHECK-TYPE h TY-BOOL)))))
 
 (defn- ck-andor [M :vector-i64 n :i64 hd :i64 fx :i64 ctx :i64] :vector-i64
@@ -1521,6 +1548,8 @@
         (ck-err M1 E-CHECK-TYPE h want)))))
 
 (defn- ck-call [M :vector-i64 n :i64 fi :i64 fx :i64] :vector-i64
+  (ck-call-abort (ck-call2 (ck-ensure M fi) n fi fx) n fi fx))
+(defn- ck-call2 [M :vector-i64 n :i64 fi :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
         np (nm-ff M fi FF-NPARAMS)
         rt (nm-ff M fi FF-RTYPE)]
@@ -1610,9 +1639,10 @@
           body (nm-next M v)
           h0 (nm-scope-height M)
           b0 (nm-first M v)
+          a0 (ck-aborts M)
           M1 (ck-binds M b0 fx h0 0)
           fx2 (ck-ty M1)
-          M2 (ck-expr M1 body fx2 ctx)
+          M2 (ck-expr M1 body fx2 (ck-ctx-after M1 a0 ctx))
           ty (ck-ty M2)
           M3 (nm-unbind M2 h0)]
       (ck-mark M3 n ty HD-LET))))
@@ -1631,7 +1661,9 @@
           fx2 (ck-ty M1)
           M2 (nm-unbind M1 h0)
           M3 (ck-rebind M2 b0 (ck-fx-f fx))
-          M4 (ck-expr M3 body fx2 (+ (* v 2) 1))
+          ;; R3: aborts caught by a try outside this loop still leave its body (the recur rule, ck-abort-at)
+          d0 (ck-sg M3 ck-s-loopd)
+          M4 (ck-ss (ck-expr (ck-ss M3 ck-s-loopd (ck-sg M3 ck-s-tryd)) body fx2 (+ (* v 2) 1)) ck-s-loopd d0)
           ty (ck-ty M4)
           M5 (nm-unbind M4 h0)]
       (ck-mark M5 n ty HD-LOOP))))
@@ -1661,18 +1693,22 @@
           :else
           (let [a (nm-next M h)
                 b (nm-first M tgt)
+                a0 (ck-aborts M)
                 M1 (ck-recur-args M a b fx h)]
-            (ck-mark M1 n 0 HD-RECUR)))))
+            (if (> (ck-aborts M1) a0)
+              (ck-err M1 E-CHECK-RECUR-TAIL h 0)
+              (ck-mark M1 n 0 HD-RECUR))))))
 
 ;; ---------------------------------------------------------------------------------------------------------
 ;; R1: do, the synthetic trap, records
 ;; ---------------------------------------------------------------------------------------------------------
 ;; (do e1 .. en): e1..e(n-1) in no tail position, en inherits ctx; type = en's
 (defn- ck-do-args [M :vector-i64 c :i64 fx :i64 ctx :i64] :vector-i64
-  (let [nx (nm-next M c)]
+  (let [nx (nm-next M c)
+        a0 (ck-aborts M)]
     (cond (nm-failed M) (ck-touch M)
           (= nx 0) (ck-expr M c fx ctx)
-          :else (ck-do-args (ck-expr M c fx 0) nx fx ctx))))
+          :else (let [M1 (ck-expr M c fx 0)] (ck-do-args M1 nx fx (ck-ctx-after M1 a0 ctx))))))
 (defn- ck-do [M :vector-i64 n :i64 fx :i64 ctx :i64] :vector-i64
   (let [h (nm-first M n)
         c (nm-next M h)]
@@ -1765,6 +1801,8 @@
 
 ;; (get r :f) on a record
 (defn- ck-get [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (if (= (nm-count M n) 4) (ck-gget M n fx) (ck-get-rec M n fx)))
+(defn- ck-get-rec [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
         r (nm-next M h)
         kw (nm-next M r)]
@@ -1775,6 +1813,12 @@
 ;; (assoc r :f v) on a record: r is held in a hidden slot (the next free one; NF-TYPE of the head node) while
 ;; the fields are copied, v is checked with the slots after it
 (defn- ck-assoc [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [r (nm-nth M n 1)
+        M1 (if (= (nm-count M n) 4) (ck-expr M r (+ fx 7) 0) M)]
+    (cond (nm-failed M1) (ck-touch M1)
+          (and (= (nm-count M1 n) 4) (= (ck-tcon M1 (ck-ty M1)) TC-MAP)) (ck-gassoc M1 n fx)
+          :else (ck-assoc-rec M1 n fx))))
+(defn- ck-assoc-rec [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
         r (nm-next M h)
         kw (nm-next M r)
@@ -1938,6 +1982,8 @@
         :else (ck-err M E-CHECK-RESULT nm rt)))
 
 (defn- ck-body [M :vector-i64 f :i64] :vector-i64
+  (ck-done-set (ck-body0 (ck-state-reset (ck-done-set M f 2) f) f) f 1))
+(defn- ck-body0 [M :vector-i64 f :i64] :vector-i64
   (let [n (nm-ff M f FF-NODE)
         nm (nm-nth M n 1)
         p (nm-nth M n 2)
@@ -1961,6 +2007,7 @@
     (>= f (vector-at M MM-FN-N)) (ck-touch M)
     (nm-failed M) (ck-touch M)
     (= (nm-ff M f FF-KIND) FK-DEF) (ck-bodies M (+ f 1))
+    (pos? (ck-done-get M f)) (ck-bodies M (+ f 1))
     :else (ck-bodies (ck-body M f) (+ f 1))))
 
 ;; pass E: implicit exports become 1 (exportable) or 0; explicit ones are checked again (inferred results)
@@ -1969,17 +2016,680 @@
         n (nm-ff M f FF-NODE)]
     (cond (>= f (vector-at M MM-FN-N)) (ck-touch M)
           (nm-failed M) (ck-touch M)
-          (= e 2) (ck-exports (nm-set-ff M f FF-EXPORT (ck-exportable M f)) (+ f 1))
-          (= e 1) (ck-exports (ck-sig-export M f (nm-nth M n 1)) (+ f 1))
+          (= e 2) (ck-exports (ck-abort-export (nm-set-ff M f FF-EXPORT (ck-exportable M f)) f) (+ f 1))
+          (= e 1) (ck-exports (ck-abort-export (ck-sig-export M f (nm-nth M n 1)) f) (+ f 1))
           :else (ck-exports M (+ f 1)))))
 
 ;; the whole pass: M, R0 = MM-ERR (0 when the program is admitted)
 (defn- ck-run [M :vector-i64 S :string] :vector-i64
-  (let [M1 (ck-recs M S (nm-first M (vector-at M MM-ROOT)))
+  (let [M0 (ck-r3-init M)
+        M1 (ck-recs M0 S (nm-first M0 (vector-at M0 MM-ROOT)))
         M2 (ck-desugar M1 S)
         M3 (ck-sigs M2 1)
-        M4 (ck-bodies M3 1)]
-    (ck-run-end (ck-exports M4 1))))
+        M4 (ck-bodies (ck-ab-pre (ck-r3-init2 M3)) 1)
+        M5 (if (nm-failed M4) M4 (ck-ab-final M4))]
+    (ck-run-end (ck-exports M5 1))))
 
 (defn- ck-run-end [M :vector-i64] :vector-i64
   (let [e (vector-at M MM-ERR)] (nm-put M MM-R0 e)))
+
+;; =========================================================================================================
+;; R3 (agent R3, 2026-10-03): values. Composite types (seed/HEADS TY-COMP-BASE, the CT table at M[MM-CT]), options
+;; and results, the abort ability (throw / try, lang/abort-ability.edn: an aborting function's interface is
+;; [:result T E]), typed lists, sets and maps, map and set literals, strings, pairs and the generic collection heads.
+;;
+;; Abort analysis, in three steps around pass B:
+;;   pre   (ck-ab-pre, before pass B) a syntactic fixed point: a defn ABORTS when its body has a throw, or a call of an
+;;         aborting defn, outside every try body. SF-ABORT := -1 (aborts, error type not known yet).
+;;   B     the throws and aborting calls give the error types: outside a try body they set E of the function
+;;         (SF-ABORT := E; a second, different E is E2129), inside one they set E of the innermost try. A call of an
+;;         aborting callee whose E is not known yet checks that callee first (ck-ensure: an on-demand body check with
+;;         the caller's locals hidden, 20-names nm-scope-hide), unless it is being checked (recursion).
+;;   final (ck-ab-final) E flows from callees to callers until nothing changes; then every aborting call outside a try
+;;         body must agree with its caller's E (E2129), and every aborting defn must have one (E2133).
+;; Recur: an abort not caught inside the innermost loop body (a try around the loop does not count), before a recur on the same path, is refused (E2106): the elaborated result match
+;; would take the recur out of tail position. Each function check counts such aborts (ck-s-aborts); a let binding, an
+;; if/cond test, an and/or operand or a do form that raised the count clears the tail bit of what follows it.
+;; =========================================================================================================
+
+;; ---- the check-state block (HEAP; M[MM-CK-STATE] = the current one; an on-demand nested check pushes another) ----
+(def ck-s-tryd 0)   ; try depth inside the function being checked
+(def ck-s-trye 1)   ; error type of the innermost try body so far (0 = none yet)
+(def ck-s-tryn 2)   ; aborting forms met in the innermost try body
+(def ck-s-aborts 3) ; aborting forms not caught inside the innermost loop body (monotonic: the recur rule)
+(def ck-s-done 4)   ; HEAP address of the per-FN table: 0 not checked, 2 being checked, 1 checked
+(def ck-s-fn 5)     ; the function being checked
+(def ck-s-tryx 6)   ; the explicit catch type of the innermost try (0 = none)
+(def ck-s-loopd 7)  ; the try depth at the entry of the innermost loop (0 = the function body)
+(def ck-s-w 8)
+
+(defn- ck-sg [M :vector-i64 k :i64] :i64 (vector-at M (+ (vector-at M MM-CK-STATE) k)))
+(defn- ck-ss [M :vector-i64 k :i64 v :i64] :vector-i64 (nm-put M (+ (vector-at M MM-CK-STATE) k) v))
+(defn- ck-aborts [M :vector-i64] :i64 (ck-sg M ck-s-aborts))
+;; ctx without its tail bit when an abort was counted since a0
+(defn- ck-ctx-after [M :vector-i64 a0 :i64 ctx :i64] :i64
+  (if (> (ck-aborts M) a0) (- ctx (bit-and ctx 1)) ctx))
+
+(defn- ck-done-get [M :vector-i64 f :i64] :i64 (vector-at M (+ (ck-sg M ck-s-done) f)))
+(defn- ck-done-set [M :vector-i64 f :i64 v :i64] :vector-i64 (nm-put M (+ (ck-sg M ck-s-done) f) v))
+
+;; reset the current block for a check of f
+(defn- ck-state-reset [M :vector-i64 f :i64] :vector-i64
+  (-> M (ck-ss ck-s-tryd 0) (ck-ss ck-s-trye 0) (ck-ss ck-s-tryn 0) (ck-ss ck-s-aborts 0) (ck-ss ck-s-fn f) (ck-ss ck-s-tryx 0)
+      (ck-ss ck-s-loopd 0)))
+
+;; the CT table and the first state block (before anything is checked)
+(defn- ck-r3-init [M :vector-i64] :vector-i64
+  (let [M1 (mem-alloc M (* CT-CAP CT-W))
+        ct (ck-r M1)
+        M2 (-> M1 (nm-put MM-CT ct) (nm-put (+ ct CT-N) 1))
+        M3 (mem-alloc M2 ck-s-w)
+        st (ck-r M3)]
+    (nm-put M3 MM-CK-STATE st)))
+;; the done table (FN-N words), after the FN table is final
+(defn- ck-r3-init2 [M :vector-i64] :vector-i64
+  (let [M1 (mem-alloc M (+ (vector-at M MM-FN-N) 1))
+        d (ck-r M1)]
+    (ck-ss M1 ck-s-done d)))
+
+;; ---- composite types ----
+;; field fld of the CT record of composite type ty (0 for any other type)
+(defn- ck-ct [M :vector-i64 ty :i64 fld :i64] :i64
+  (if (< ty TY-COMP-BASE) 0 (vector-at M (+ (vector-at M MM-CT) (* (- ty TY-COMP-BASE) CT-W) fld))))
+(defn- ck-tcon [M :vector-i64 ty :i64] :i64 (ck-ct M ty CT-CTOR))
+(defn- ck-ta [M :vector-i64 ty :i64] :i64 (ck-ct M ty CT-A))
+(defn- ck-tb [M :vector-i64 ty :i64] :i64 (ck-ct M ty CT-B))
+
+;; the CT index of (c a b), 0 when absent
+(defn- ck-ct-find [M :vector-i64 c :i64 a :i64 b :i64] :i64
+  (let [base (vector-at M MM-CT)
+        n (vector-at M (+ base CT-N))]
+    (loop [i 1]
+      (let [r (+ base (* i CT-W))]
+        (cond (>= i n) 0
+              (and (= (vector-at M (+ r CT-CTOR)) c) (= (vector-at M (+ r CT-A)) a) (= (vector-at M (+ r CT-B)) b)) i
+              :else (recur (inc i)))))))
+;; R0 = the type code of (c a b), interned in CT (E101 region 8 when CT is full)
+(defn- ck-ct-intern [M :vector-i64 c :i64 a :i64 b :i64] :vector-i64
+  (let [i (ck-ct-find M c a b)
+        base (vector-at M MM-CT)
+        n (vector-at M (+ base CT-N))
+        r (+ base (* n CT-W))]
+    (cond (pos? i) (nm-put M MM-R0 (+ TY-COMP-BASE i))
+          (>= n CT-CAP) (ck-err M E-HEAP-REGION 0 8)
+          :else (-> M (nm-put (+ r CT-CTOR) c) (nm-put (+ r CT-A) a) (nm-put (+ r CT-B) b) (nm-put (+ base CT-N) (inc n))
+                    (nm-put MM-R0 (+ TY-COMP-BASE n))))))
+
+;; a key or set item type: compared by value (i64 bool keyword) or by bytes (string)
+(defn- ck-keyable [ty :i64] :bool (or (= ty TY-I64) (= ty TY-BOOL) (= ty TY-KW) (= ty TY-STR)))
+
+(defn- ck-tc-of [k :i64] :i64
+  (case k KW-OPTION TC-OPTION KW-RESULT TC-RESULT KW-LIST TC-LIST KW-MAP TC-MAP KW-SET TC-SET 0))
+(defn- ck-tc-arity [c :i64] :i64 (if (or (= c TC-RESULT) (= c TC-MAP)) 2 1))
+
+;; [:option T] [:list T] [:set T] [:result T E] [:map K V]: R0 = the type (0 when malformed)
+(defn- ck-tform-comp [M :vector-i64 t :i64 k :i64] :vector-i64
+  (let [c (ck-tc-of k)
+        na (ck-tc-arity c)
+        M1 (ck-tform M (nm-nth M t 1))
+        a (ck-ty M1)
+        M2 (if (= na 2) (ck-tform M1 (nm-nth M1 t 2)) (nm-put M1 MM-R0 0))
+        b (ck-ty M2)]
+    (cond (nm-failed M2) (nm-put M2 MM-R0 0)
+          (nm-ne (nm-count M2 t) (+ na 1)) (nm-put M2 MM-R0 0)
+          (zero? a) (nm-put M2 MM-R0 0)
+          (and (= na 2) (zero? b)) (nm-put M2 MM-R0 0)
+          (and (or (= c TC-SET) (= c TC-MAP)) (not (ck-keyable a))) (nm-put M2 MM-R0 0)
+          :else (ck-ct-intern M2 c a b))))
+
+;; ---- small helpers for the R3 heads ----
+(defn- ck-order-head? [hd :i64] :bool (or (= hd HD-SET-NTH) (= hd HD-MAP-KEYS) (= hd HD-MAP-VALS)))
+;; check expression c; when want > 0 its type must be want (a bottom passes), else E2104 at hn. R0 = its type.
+(defn- ck-want [M :vector-i64 c :i64 fx :i64 want :i64 hn :i64] :vector-i64
+  (let [M1 (ck-expr M c fx 0)
+        ty (ck-ty M1)]
+    (cond (nm-failed M1) (ck-touch M1)
+          (zero? want) M1
+          (zero? ty) M1
+          (= ty want) M1
+          :else (ck-err M1 E-CHECK-TYPE hn want))))
+
+;; the type argument of n (its 2nd child) must be a ctor type: R0 = the type (0 after an error)
+(defn- ck-targ [M :vector-i64 n :i64 ctor :i64] :vector-i64
+  (let [tn (nm-nth M n 1)
+        M1 (ck-tform M tn)
+        ty (ck-ty M1)]
+    (cond (nm-failed M1) (nm-put M1 MM-R0 0)
+          (zero? ty) (ck-err M1 E-CHECK-TYPENAME tn 0)
+          (nm-ne (ck-tcon M1 ty) ctor) (ck-err M1 E-CHECK-TYPE tn ty)
+          ;; map equality compares values by value or bytes: V must be i64 bool keyword string (E2105)
+          (and (= ctor TC-MAP) (= (nm-head-of M1 (nm-first M1 n)) HD-MAP-EQUAL) (not (ck-keyable (ck-tb M1 ty))))
+          (ck-err M1 E-CHECK-TYPENAME tn 0)
+          ;; the reference orders keyword items/keys by printed text, the seed by interning: no order-observing head on them
+          (and (= (ck-ta M1 ty) TY-KW) (ck-order-head? (nm-head-of M1 (nm-first M1 n))))
+          (ck-err M1 E-CHECK-TYPENAME tn 0)
+          :else (nm-put (nm-set-nf M1 tn NF-TYPE ty) MM-R0 ty))))
+
+;; k hidden slots for node h (their first slot goes to field fld of h: NF-TYPE of a head symbol node, NF-SYM of a
+;; literal); R0 = the fx for the arguments (after the hidden slots)
+(defn- ck-hide [M :vector-i64 h :i64 fld :i64 k :i64 fx :i64] :vector-i64
+  (let [s (ck-fx-next fx)
+        last (+ s k -1)]
+    (cond (zero? k) (nm-put M MM-R0 fx)
+          (> last (ck-max-slots)) (ck-err M E-CHECK-SLOTS h last)
+          :else (-> M (nm-set-nf h fld s) (ck-use-slot (ck-fx-f fx) last) (nm-put MM-R0 (+ fx k))))))
+
+;; n has na arguments (after its head), else E2103 at the head
+(defn- ck-arity [M :vector-i64 n :i64 na :i64] :vector-i64
+  (if (= (- (nm-count M n) 1) na) (ck-touch M) (ck-err M E-CHECK-ARITY (nm-first M n) na)))
+
+;; ---- the R3 heads ----
+(defn- ck-r3-op? [hd :i64] :bool
+  (or (= hd HD-STRING-EQ) (= hd HD-STRING-SUBSTRING) (= hd HD-STRING-COMPARE) (= hd HD-STRING-INDEX-OF)
+      (= hd HD-STRING-BYTE-LENGTH) (= hd HD-PAIR) (= hd HD-PAIR-FIRST) (= hd HD-PAIR-SECOND)))
+
+(defn- ck-r3 [M :vector-i64 n :i64 hd :i64 fx :i64 ctx :i64] :vector-i64
+  (cond (ck-r3-op? hd) (ck-op M n hd fx)
+        (= hd HD-STRING-FROM-I64) (ck-sfrom M n fx)
+        (= hd HD-OPTION-MATCH) (ck-omatch M n fx ctx)
+        (= hd HD-RESULT-MATCH) (ck-rmatch M n fx ctx)
+        (= hd HD-OPTION-OR) (ck-oor M n fx)
+        (= hd HD-THROW) (ck-throw M n fx)
+        (= hd HD-TRY) (ck-try M n fx ctx)
+        (= hd HD-CATCH) (ck-err M E-CHECK-TRY (nm-first M n) 0)
+        (>= hd HD-GCOUNT) (ck-gen M n hd fx)
+        :else (ck-typed M n hd fx)))
+
+;; ---- typed heads with a type argument: a table per head ----
+;; the constructor of the type argument
+(defn- ck-t-ctor [hd :i64] :i64
+  (cond (<= hd HD-OPTION-OR) TC-OPTION
+        (<= hd HD-RESULT-MATCH) TC-RESULT
+        (<= hd HD-LIST-CONJ) TC-LIST
+        (<= hd HD-SET-NTH) TC-SET
+        :else TC-MAP))
+;; value arguments after the type argument; -1 = any number of items, -2 = any number of key/value pairs
+(defn- ck-t-nargs [hd :i64] :i64
+  (case hd
+    HD-OPTION-NONE 0
+    (HD-OPTION-SOME HD-OPTION-IS-SOME HD-RESULT-OK HD-RESULT-ERR HD-RESULT-IS-OK HD-SET-COUNT HD-MAP-COUNT HD-MAP-KEYS
+     HD-MAP-VALS) 1
+    (HD-LIST-NEW HD-SET-NEW) -1
+    HD-MAP-NEW -2
+    HD-MAP-ASSOC 3
+    2))
+;; the kind of value argument k: 1 the type argument T, 2 its first parameter, 3 its second, 4 i64
+(defn- ck-t-argk [hd :i64 k :i64] :i64
+  (case hd
+    (HD-OPTION-SOME HD-RESULT-OK HD-LIST-NEW HD-SET-NEW) 2
+    HD-RESULT-ERR 3
+    HD-MAP-NEW (if (zero? (bit-and k 1)) 2 3)
+    (HD-OPTION-VALUE HD-RESULT-VALUE) (if (zero? k) 1 2)
+    HD-RESULT-ERROR (if (zero? k) 1 3)
+    (HD-LIST-NTH HD-SET-NTH) (if (zero? k) 1 4)
+    (HD-SET-EQUAL HD-MAP-EQUAL) 1
+    HD-MAP-ASSOC (case k 0 1 1 2 3)
+    (if (zero? k) 1 2)))
+;; the result: 1 T, 2 its first parameter, 3 bool, 4 i64, 5 [:option V], 6 [:list K], 7 [:list V], 8 its second
+(defn- ck-t-resk [hd :i64] :i64
+  (case hd
+    (HD-OPTION-IS-SOME HD-RESULT-IS-OK HD-SET-CONTAINS HD-SET-EQUAL HD-MAP-CONTAINS HD-MAP-EQUAL) 3
+    (HD-OPTION-VALUE HD-RESULT-VALUE HD-LIST-NTH HD-SET-NTH) 2
+    HD-RESULT-ERROR 8
+    (HD-SET-COUNT HD-MAP-COUNT) 4
+    HD-MAP-GET 5 HD-MAP-KEYS 6 HD-MAP-VALS 7
+    1))
+;; hidden slots of the head's lowering (seed/SIR :r3-lowering)
+(defn- ck-t-slots [hd :i64] :i64
+  (case hd
+    (HD-OPTION-VALUE HD-RESULT-VALUE HD-RESULT-ERROR) 2
+    (HD-SET-CONTAINS HD-MAP-CONTAINS HD-MAP-GET HD-MAP-KEYS HD-MAP-VALS) 4
+    (HD-SET-NEW HD-SET-CONJ HD-MAP-NEW HD-MAP-ASSOC HD-SET-DISJ HD-MAP-DISSOC HD-SET-EQUAL HD-MAP-EQUAL) 7
+    0))
+
+;; the type of kind k for the type argument ty
+(defn- ck-kind-ty [M :vector-i64 ty :i64 k :i64] :i64
+  (case k 1 ty 2 (ck-ta M ty) 3 (ck-tb M ty) 4 TY-I64 0))
+
+;; value arguments from c (index k) of head hd with type argument ty; hn = the head node
+(defn- ck-t-args [M :vector-i64 c :i64 hk :i64 fx :i64 ty :i64] :vector-i64
+  (let [hd (quot hk 65536)
+        k (bit-and hk 65535)]
+    (cond (zero? c) (ck-touch M)
+          (nm-failed M) (ck-touch M)
+          :else (let [nx (nm-next M c)
+                      M1 (ck-want M c fx (ck-kind-ty M ty (ck-t-argk hd k)) c)]
+                  (ck-t-args M1 nx (inc hk) fx ty)))))
+
+;; the result type of head hd for the type argument ty (lists and options are interned)
+(defn- ck-t-res [M :vector-i64 hd :i64 ty :i64] :vector-i64
+  (case (ck-t-resk hd)
+    1 (nm-put M MM-R0 ty)
+    2 (nm-put M MM-R0 (ck-ta M ty))
+    8 (nm-put M MM-R0 (ck-tb M ty))
+    3 (nm-put M MM-R0 TY-BOOL)
+    4 (nm-put M MM-R0 TY-I64)
+    5 (ck-ct-intern M TC-OPTION (ck-tb M ty) 0)
+    6 (ck-ct-intern M TC-LIST (ck-ta M ty) 0)
+    (ck-ct-intern M TC-LIST (ck-tb M ty) 0)))
+
+;; the number of value arguments na fits head hd (items: at most 64 VEC words)
+(defn- ck-t-count-ok [hd :i64 na :i64] :bool
+  (let [want (ck-t-nargs hd)]
+    (cond (= want -1) (<= na 64)
+          (= want -2) (and (<= na 64) (zero? (bit-and na 1)))
+          :else (= na want))))
+
+(defn- ck-typed [M :vector-i64 n :i64 hd :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
+        na (- (nm-count M n) 2)
+        M1 (ck-targ M n (ck-t-ctor hd))
+        ty (ck-ty M1)]
+    (cond (nm-failed M1) (ck-touch M1)
+          (< na 0) (ck-err M1 E-CHECK-ARITY h 1)
+          (not (ck-t-count-ok hd na)) (ck-err M1 E-CHECK-ARITY h (+ 1 (bit-and (ck-t-nargs hd) 255)))
+          :else
+          (let [M2 (ck-hide M1 h NF-TYPE (ck-t-slots hd) fx)
+                fx2 (ck-ty M2)
+                M3 (ck-t-args M2 (nm-nth M2 n 2) (* hd 65536) fx2 ty)
+                M4 (ck-t-res M3 hd ty)
+                rt (ck-ty M4)
+                M5 (if (or (= hd HD-OPTION-NONE) (= hd HD-LIST-NEW)) M4 (ck-fuel M4 (ck-fx-f fx)))]
+            (if (nm-failed M5) (ck-touch M5) (ck-mark M5 n rt hd))))))
+
+;; (option-or o d): o any option, d its value type (2 hidden slots)
+(defn- ck-oor [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
+        M0 (ck-arity M n 2)
+        M1 (ck-hide M0 h NF-TYPE 2 fx)
+        fx2 (ck-ty M1)
+        M2 (ck-expr M1 (nm-nth M1 n 1) fx2 0)
+        ot (ck-ty M2)]
+    (cond (nm-failed M2) (ck-touch M2)
+          (nm-ne (ck-tcon M2 ot) TC-OPTION) (ck-err M2 E-CHECK-TYPE h ot)
+          :else (let [M3 (ck-want M2 (nm-nth M2 n 2) fx2 (ck-ta M2 ot) h)]
+                  (if (nm-failed M3) (ck-touch M3) (ck-mark (ck-fuel M3 (ck-fx-f fx)) n (ck-ta M3 ot) HD-OPTION-OR))))))
+
+;; (string-from-i64 x) (4 hidden slots)
+(defn- ck-sfrom [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
+        M0 (ck-arity M n 1)
+        M1 (ck-hide M0 h NF-TYPE 5 fx)
+        M2 (ck-want M1 (nm-nth M1 n 1) (ck-ty M1) TY-I64 h)]
+    (if (nm-failed M2) (ck-touch M2) (ck-mark (ck-fuel M2 (ck-fx-f fx)) n TY-STR HD-STRING-FROM-I64))))
+
+;; bind binder node b to the next free slot with type ty, check body e (ctx) after it; R0 = e's type
+(defn- ck-bind-body [M :vector-i64 b :i64 ty :i64 e :i64 fxctx :i64] :vector-i64
+  (let [fx (quot fxctx 1073741824)
+        ctx (bit-and fxctx 1073741823)
+        slot (ck-fx-next fx)
+        h0 (nm-scope-height M)
+        M1 (ck-binder-ok M b h0)
+        M2 (if (> slot (ck-max-slots)) (ck-err M1 E-CHECK-SLOTS b slot) (ck-bind M1 b slot ty (ck-fx-f fx)))
+        M3 (ck-expr M2 e (+ fx 1) ctx)
+        te (ck-ty M3)
+        M4 (nm-unbind M3 h0)]
+    (nm-put M4 MM-R0 te)))
+(defn- ck-fxctx [fx :i64 ctx :i64] :i64 (+ (* fx 1073741824) ctx))
+
+;; (option-match T o none-body x some-body)
+(defn- ck-omatch [M :vector-i64 n :i64 fx :i64 ctx :i64] :vector-i64
+  (let [h (nm-first M n)
+        M0 (ck-arity M n 5)
+        M1 (ck-targ M0 n TC-OPTION)
+        ty (ck-ty M1)
+        a0 (ck-aborts M1)
+        M2 (if (nm-failed M1) M1 (ck-want M1 (nm-nth M1 n 2) fx ty h))
+        ctx1 (ck-ctx-after M2 a0 ctx)
+        M3 (ck-expr M2 (nm-nth M2 n 3) fx ctx1)
+        tn (ck-ty M3)
+        M4 (ck-bind-body M3 (nm-nth M3 n 4) (ck-ta M3 ty) (nm-nth M3 n 5) (ck-fxctx fx ctx1))
+        ts (ck-ty M4)
+        M5 (ck-unify M4 tn ts h)
+        rt (ck-ty M5)]
+    (if (nm-failed M5) (ck-touch M5) (ck-mark (ck-fuel M5 (ck-fx-f fx)) n rt HD-OPTION-MATCH))))
+
+;; (result-match-of R r v ok-body e err-body)
+(defn- ck-rmatch [M :vector-i64 n :i64 fx :i64 ctx :i64] :vector-i64
+  (let [h (nm-first M n)
+        M0 (ck-arity M n 6)
+        M1 (ck-targ M0 n TC-RESULT)
+        ty (ck-ty M1)
+        a0 (ck-aborts M1)
+        M2 (if (nm-failed M1) M1 (ck-want M1 (nm-nth M1 n 2) fx ty h))
+        ctx1 (ck-ctx-after M2 a0 ctx)
+        M3 (ck-bind-body M2 (nm-nth M2 n 3) (ck-ta M2 ty) (nm-nth M2 n 4) (ck-fxctx fx ctx1))
+        tok (ck-ty M3)
+        M4 (ck-bind-body M3 (nm-nth M3 n 5) (ck-tb M3 ty) (nm-nth M3 n 6) (ck-fxctx fx ctx1))
+        ter (ck-ty M4)
+        M5 (ck-unify M4 tok ter h)
+        rt (ck-ty M5)]
+    (if (nm-failed M5) (ck-touch M5) (ck-mark (ck-fuel M5 (ck-fx-f fx)) n rt HD-RESULT-MATCH))))
+
+;; ---- map and set literals ----
+;; items from c must have type want (k = index for the alternation of a map: want = K at even k, V at odd k)
+(defn- ck-lit-items [M :vector-i64 c :i64 fx :i64 kv :i64 k :i64] :vector-i64
+  (cond (zero? c) (ck-touch M)
+        (nm-failed M) (ck-touch M)
+        :else (let [want (if (zero? (bit-and k 1)) (quot kv 2097152) (bit-and kv 2097151))
+                    nx (nm-next M c)]
+                (ck-lit-items (ck-want M c fx want c) nx fx kv (inc k)))))
+
+;; #{x ..}: [:set :keyword], at most 32 items (7 hidden slots: the first in NF-SYM of the node)
+(defn- ck-setlit [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [c (nm-first M n)
+        M1 (ck-hide M n NF-SYM 7 fx)
+        fx2 (ck-ty M1)]
+    (cond (nm-failed M1) (ck-touch M1)
+          (zero? c) (ck-err M1 E-CHECK-ABORT-INFER n 0)
+          (> (nm-count M1 n) 32) (ck-err M1 E-CHECK-VECLIT n 0)
+          :else
+          (let [M2 (ck-expr M1 c fx2 0)
+                t (ck-ty M2)]
+            (cond (nm-failed M2) (ck-touch M2)
+                  ;; the reference: a #{..} literal is [:set :keyword]; typed-set-new builds the others
+                  (nm-ne t TY-KW) (ck-err M2 E-CHECK-TYPE c TY-KW)
+                  :else
+                  (let [M3 (ck-lit-items M2 (nm-next M2 c) fx2 (+ (* t 2097152) t) 1)
+                        M4 (ck-ct-intern M3 TC-SET t 0)
+                        st (ck-ty M4)]
+                    (if (nm-failed M4) (ck-touch M4) (ck-mark (ck-fuel M4 (ck-fx-f fx)) n st HD-SETLIT))))))))
+
+;; {k v ..}: [:map K V] from the first entry, K :i64 or :string (the reference reads a keyword-keyed literal as a pair
+;; list or a record), at most 31 entries (7 hidden slots: the first in NF-SYM of the node)
+(defn- ck-maplit [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [c (nm-first M n)
+        M1 (ck-hide M n NF-SYM 7 fx)
+        fx2 (ck-ty M1)]
+    (cond (nm-failed M1) (ck-touch M1)
+          (zero? c) (ck-err M1 E-CHECK-ABORT-INFER n 0)
+          (nm-ne (bit-and (nm-count M1 n) 1) 0) (ck-err M1 E-READ-MAP n 0)
+          (> (nm-count M1 n) 62) (ck-err M1 E-CHECK-VECLIT n 0)
+          :else
+          (let [M2 (ck-expr M1 c fx2 0)
+                kt (ck-ty M2)
+                M3 (ck-expr M2 (nm-next M2 c) fx2 0)
+                vt (ck-ty M3)]
+            (cond (nm-failed M3) (ck-touch M3)
+                  (not (or (= kt TY-I64) (= kt TY-STR))) (ck-err M3 E-CHECK-TYPENAME c 0)
+                  (zero? vt) (ck-err M3 E-CHECK-ABORT-INFER n 0)
+                  :else
+                  (let [M4 (ck-lit-items M3 (nm-next M3 (nm-next M3 c)) fx2 (+ (* kt 2097152) vt) 0)
+                        M5 (ck-ct-intern M4 TC-MAP kt vt)
+                        mt (ck-ty M5)]
+                    (if (nm-failed M5) (ck-touch M5) (ck-mark (ck-fuel M5 (ck-fx-f fx)) n mt HD-MAPLIT))))))))
+
+;; ---- the generic collection heads: the first argument's type decides (6 = :vector-i64) ----
+(defn- ck-g-slots [hd :i64] :i64
+  (case hd HD-GCOUNT 0 HD-NTH 3 (HD-CONTAINS HD-KEYS HD-VALS HD-POP) 4 (HD-CONJ HD-DISJ HD-DISSOC) 7 HD-PEEK 1 0))
+(defn- ck-g-kind [M :vector-i64 ty :i64] :i64 (if (= ty TY-VEC) 6 (ck-tcon M ty)))
+
+;; the result type of generic head hd over a collection of type ty (kind ck); 0 when the head does not apply
+(defn- ck-g-res [M :vector-i64 hd :i64 ty :i64 ck :i64 na :i64] :vector-i64
+  (let [vec? (= ck 6)
+        lst? (= ck TC-LIST)
+        set? (= ck TC-SET)
+        map? (= ck TC-MAP)]
+    (case hd
+      HD-GCOUNT (nm-put M MM-R0 (if (and (= na 1) (or vec? lst? set? map?)) TY-I64 0))
+      HD-NTH (nm-put M MM-R0 (cond (and vec? (or (= na 2) (= na 3))) TY-I64
+                                   (and lst? (or (= na 2) (= na 3))) (ck-ta M ty)
+                                   (and set? (= na 2) (nm-ne (ck-ta M ty) TY-KW)) (ck-ta M ty)
+                                   :else 0))
+      HD-CONTAINS (nm-put M MM-R0 (if (and (= na 2) map?) TY-BOOL 0))
+      HD-CONJ (nm-put M MM-R0 (if (and (>= na 2) (or vec? lst? set?)) ty 0))
+      HD-DISJ (nm-put M MM-R0 (if (and (>= na 2) set?) ty 0))
+      HD-DISSOC (nm-put M MM-R0 (if (and (= na 2) map?) ty 0))
+      HD-KEYS (if (and (= na 1) map? (nm-ne (ck-ta M ty) TY-KW)) (ck-ct-intern M TC-LIST (ck-ta M ty) 0) (nm-put M MM-R0 0))
+      HD-VALS (if (and (= na 1) map? (nm-ne (ck-ta M ty) TY-KW)) (ck-ct-intern M TC-LIST (ck-tb M ty) 0) (nm-put M MM-R0 0))
+      HD-PEEK (nm-put M MM-R0 (cond (and (= na 1) vec?) TY-I64 (and (= na 1) lst?) (ck-ta M ty) :else 0))
+      HD-POP (nm-put M MM-R0 (if (and (= na 1) (or vec? lst?)) ty 0))
+      (nm-put M MM-R0 0))))
+
+;; the type of argument k >= 1 of generic head hd over ty (kind ck)
+(defn- ck-g-arg [M :vector-i64 hd :i64 ty :i64 ck :i64 k :i64] :i64
+  (cond (= ck 6) TY-I64
+        (and (= hd HD-NTH) (= k 1)) TY-I64
+        :else (ck-ta M ty)))
+
+(defn- ck-g-args [M :vector-i64 c :i64 hk :i64 fx :i64 ty :i64] :vector-i64
+  (let [hd (quot hk 65536)
+        k (bit-and hk 65535)]
+    (cond (zero? c) (ck-touch M)
+          (nm-failed M) (ck-touch M)
+          :else (let [nx (nm-next M c)
+                      M1 (ck-want M c fx (ck-g-arg M hd ty (ck-g-kind M ty) k) c)]
+                  (ck-g-args M1 nx (inc hk) fx ty)))))
+
+(defn- ck-gen [M :vector-i64 n :i64 hd :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
+        na (- (nm-count M n) 1)
+        a (nm-next M h)
+        M1 (ck-hide M h NF-TYPE (ck-g-slots hd) fx)
+        fx2 (ck-ty M1)]
+    (if (or (nm-failed M1) (zero? a))
+      (if (zero? a) (ck-err M1 E-CHECK-ARITY h 1) (ck-touch M1))
+      (let [M2 (ck-expr M1 a fx2 0)
+            ty (ck-ty M2)
+            M3 (ck-g-res M2 hd ty (ck-g-kind M2 ty) na)
+            rt (ck-ty M3)]
+        (cond (nm-failed M3) (ck-touch M3)
+              (zero? rt) (ck-err M3 E-CHECK-TYPE h ty)
+              :else (let [M4 (ck-g-args M3 (nm-next M3 a) (+ (* hd 65536) 1) fx2 ty)]
+                      (if (nm-failed M4) (ck-touch M4) (ck-mark (ck-fuel M4 (ck-fx-f fx)) n rt hd))))))))
+
+;; (get m k d) on a map (5 hidden slots): the value of k, or d
+(defn- ck-gget [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
+        M1 (ck-hide M h NF-TYPE 5 fx)
+        fx2 (ck-ty M1)
+        M2 (ck-expr M1 (nm-nth M1 n 1) fx2 0)
+        ty (ck-ty M2)]
+    (cond (nm-failed M2) (ck-touch M2)
+          (nm-ne (ck-tcon M2 ty) TC-MAP) (ck-err M2 E-CHECK-TYPE h ty)
+          :else (let [M3 (ck-want M2 (nm-nth M2 n 2) fx2 (ck-ta M2 ty) h)
+                      M4 (ck-want M3 (nm-nth M3 n 3) fx2 (ck-tb M3 ty) h)]
+                  (if (nm-failed M4) (ck-touch M4) (ck-mark (ck-fuel M4 (ck-fx-f fx)) n (ck-tb M4 ty) HD-GET))))))
+
+;; (assoc m k v) on a map = typed-map-assoc (7 hidden slots); m was checked already (ck-assoc)
+(defn- ck-gassoc [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
+        M1 (ck-hide M h NF-TYPE 7 fx)
+        fx2 (ck-ty M1)
+        M2 (ck-expr M1 (nm-nth M1 n 1) fx2 0)
+        ty (ck-ty M2)
+        M3 (ck-want M2 (nm-nth M2 n 2) fx2 (ck-ta M2 ty) h)
+        M4 (ck-want M3 (nm-nth M3 n 3) fx2 (ck-tb M3 ty) h)]
+    (if (nm-failed M4) (ck-touch M4) (ck-mark (ck-fuel M4 (ck-fx-f fx)) n ty HD-ASSOC))))
+
+;; ---- abort: throw, try, aborting calls ----
+;; one aborting form at head node hn with error type te (0 = not known yet)
+(defn- ck-abort-at [M :vector-i64 hn :i64 te :i64] :vector-i64
+  (ck-abort-at2 (if (= (ck-sg M ck-s-tryd) (ck-sg M ck-s-loopd)) (ck-ss M ck-s-aborts (inc (ck-sg M ck-s-aborts))) M) hn te))
+(defn- ck-abort-at2 [M :vector-i64 hn :i64 te :i64] :vector-i64
+  (if (pos? (ck-sg M ck-s-tryd))
+    (let [M1 (ck-ss M ck-s-tryn (inc (ck-sg M ck-s-tryn)))
+          cur (ck-sg M1 ck-s-trye)]
+      (cond (zero? te) (if (pos? (ck-sg M1 ck-s-tryx)) M1 (ck-err M1 E-CHECK-ABORT-INFER hn 0))
+            (zero? cur) (ck-ss M1 ck-s-trye te)
+            (= cur te) M1
+            :else (ck-err M1 E-CHECK-ABORT-TYPES hn 0)))
+    (let [M1 (ck-touch M)
+          fs (nm-ff M1 (ck-sg M1 ck-s-fn) FF-SYM)
+          ef (nm-sf M1 fs SF-ABORT)]
+      (cond (zero? te) (if (zero? ef) (nm-set-sf M1 fs SF-ABORT -1) M1)
+            (<= ef 0) (nm-set-sf M1 fs SF-ABORT te)
+            (= ef te) M1
+            :else (ck-err M1 E-CHECK-ABORT-TYPES hn 0)))))
+
+;; (throw e): bottom
+(defn- ck-throw [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
+        M0 (ck-arity M n 1)
+        M1 (if (nm-failed M0) M0 (ck-expr M0 (nm-nth M0 n 1) fx 0))
+        te (ck-ty M1)]
+    (cond (nm-failed M1) (ck-touch M1)
+          (zero? te) (ck-err M1 E-CHECK-ABORT-INFER h 0)
+          :else (ck-mark (ck-fuel (ck-abort-at M1 h te) (ck-fx-f fx)) n 0 HD-THROW))))
+
+;; 1 when node c is (catch ..) with a binder symbol (and an optional type form before it)
+(defn- ck-catch-ok [M :vector-i64 c :i64] :bool
+  (let [h (nm-first M c)
+        cn (nm-count M c)]
+    (and (= (nm-kind M c) ND-LIST) (= (nm-kind M h) ND-SYM) (= (nm-head-of M h) HD-CATCH)
+         (zero? (nm-sf M (nm-sym-of M h) SF-FN))
+         (or (= cn 3) (= cn 4))
+         (= (nm-kind M (nm-nth M c (- cn 2))) ND-SYM))))
+
+;; (try body (catch [E] x handler))
+(defn- ck-try [M :vector-i64 n :i64 fx :i64 ctx :i64] :vector-i64
+  (let [h (nm-first M n)
+        c (nm-nth M n 2)]
+    (cond (nm-ne (nm-count M n) 3) (ck-err M E-CHECK-TRY h 0)
+          (not (ck-catch-ok M c)) (ck-err M E-CHECK-TRY h 0)
+          :else (ck-try2 M n fx ctx))))
+
+(defn- ck-try2 [M :vector-i64 n :i64 fx :i64 ctx :i64] :vector-i64
+  (let [body (nm-nth M n 1)
+        c (nm-nth M n 2)
+        ch (nm-first M c)
+        cn (nm-count M c)
+        tn (nm-nth M c 1)
+        M0 (if (= cn 4) (ck-tform M tn) (nm-put M MM-R0 0))
+        tx (ck-ty M0)
+        d0 (ck-sg M0 ck-s-tryd)
+        e0 (ck-sg M0 ck-s-trye)
+        n0 (ck-sg M0 ck-s-tryn)
+        x0 (ck-sg M0 ck-s-tryx)
+        M1 (-> M0 (ck-ss ck-s-tryd (inc d0)) (ck-ss ck-s-trye 0) (ck-ss ck-s-tryn 0) (ck-ss ck-s-tryx tx))
+        M2 (ck-expr M1 body fx (- ctx (bit-and ctx 1)))
+        tb (ck-ty M2)
+        te (ck-sg M2 ck-s-trye)
+        tcount (ck-sg M2 ck-s-tryn)
+        M3 (-> M2 (ck-ss ck-s-tryd d0) (ck-ss ck-s-trye e0) (ck-ss ck-s-tryn n0) (ck-ss ck-s-tryx x0))
+        E (if (pos? tx) tx te)]
+    (cond (nm-failed M3) (ck-touch M3)
+          (and (= cn 4) (zero? tx)) (ck-err M3 E-CHECK-TYPENAME tn 0)
+          (zero? tcount) (ck-err M3 E-CHECK-ABORT-NONE ch 0)
+          (and (pos? tx) (pos? te) (nm-ne tx te)) (ck-err M3 E-CHECK-TYPE tn te)
+          (zero? E) (ck-err M3 E-CHECK-ABORT-INFER ch 0)
+          :else (ck-try3 M3 n (+ (* tb 2097152) E) fx ctx))))
+
+;; the handler: binder x : E in the next free slot; the try's type joins body (tbe / 2^21) and handler
+(defn- ck-try3 [M :vector-i64 n :i64 tbe :i64 fx :i64 ctx :i64] :vector-i64
+  (let [tb (quot tbe 2097152)
+        E (bit-and tbe 2097151)
+        c (nm-nth M n 2)
+        cn (nm-count M c)
+        M1 (ck-bind-body M (nm-nth M c (- cn 2)) E (nm-nth M c (- cn 1)) (ck-fxctx fx ctx))
+        th (ck-ty M1)
+        M2 (ck-mark M1 c 0 HD-CATCH)
+        M3 (ck-unify M2 tb th (nm-first M2 n))
+        ty (ck-ty M3)]
+    (if (nm-failed M3) (ck-touch M3) (ck-mark M3 n ty HD-TRY))))
+
+;; after a user call (R0 = its type): when the callee aborts, a hidden slot for its result and the abort bookkeeping
+(defn- ck-call-abort [M :vector-i64 n :i64 fi :i64 fx :i64] :vector-i64
+  (let [ty (ck-ty M)
+        e (nm-sf M (nm-ff M fi FF-SYM) SF-ABORT)
+        h (nm-first M n)]
+    (if (or (zero? e) (nm-failed M))
+      M
+      (let [M1 (ck-hide M h NF-TYPE 1 fx)
+            M2 (ck-abort-at M1 h (if (pos? e) e 0))]
+        (nm-put M2 MM-R0 ty)))))
+
+;; an aborting callee g whose error type is not known yet and that was not checked: check it now (its body, with the
+;; caller's locals hidden and a fresh state block), so the caller sees its E
+(defn- ck-ensure [M :vector-i64 g :i64] :vector-i64
+  (if (and (= (nm-sf M (nm-ff M g FF-SYM) SF-ABORT) -1) (zero? (ck-done-get M g)) (ck-is-defn M g))
+    (ck-nested M g)
+    M))
+(defn- ck-nested [M :vector-i64 g :i64] :vector-i64
+  (let [old (vector-at M MM-CK-STATE)
+        done (ck-sg M ck-s-done)
+        M1 (nm-scope-hide M)
+        sv (ck-r M1)
+        M2 (mem-alloc M1 ck-s-w)
+        st (ck-r M2)
+        M3 (-> M2 (nm-put MM-CK-STATE st) (ck-ss ck-s-done done))
+        M4 (ck-body M3 g)
+        M5 (nm-put M4 MM-CK-STATE old)]
+    (nm-scope-show M5 sv)))
+
+;; ---- the abort walks (pre / final): a read-only walk over a body that skips try bodies ----
+;; mode 0: 1 when an aborting form (throw, call of an aborting defn) is met; mode 1: the first known E of an aborting
+;; callee; mode 2: the head node of an aborting call whose known E differs from ef. 0 = nothing.
+(defn- ck-aw [M :vector-i64 n :i64 mode :i64 ef :i64] :i64
+  (let [k (nm-kind M n)]
+    (cond (= k ND-LIST) (ck-aw-list M n mode ef)
+          (or (= k ND-VEC) (= k ND-MAP) (= k ND-SET)) (ck-aw-kids M (nm-first M n) mode ef)
+          :else 0)))
+(defn- ck-aw-kids [M :vector-i64 c :i64 mode :i64 ef :i64] :i64
+  (loop [x c]
+    (if (zero? x)
+      0
+      (let [r (ck-aw M x mode ef)]
+        (if (zero? r) (recur (nm-next M x)) r)))))
+(defn- ck-aw-site [M :vector-i64 h :i64 mode :i64 ef :i64] :i64
+  (let [s (nm-sym-of M h)
+        fi (nm-sf M s SF-FN)
+        e (nm-sf M (nm-ff M fi FF-SYM) SF-ABORT)]
+    (cond (= (ck-callable M fi) 1)
+          (cond (zero? e) 0
+                (= mode 0) 1
+                (= mode 1) (if (pos? e) e 0)
+                (and (pos? e) (nm-ne e ef)) h
+                :else 0)
+          (and (= (nm-sf M s SF-HEAD) HD-THROW) (= mode 0)) 1
+          :else 0)))
+(defn- ck-aw-list [M :vector-i64 n :i64 mode :i64 ef :i64] :i64
+  (let [h (nm-first M n)
+        s (nm-sym-of M h)
+        sym? (= (nm-kind M h) ND-SYM)
+        site (if sym? (ck-aw-site M h mode ef) 0)]
+    (cond (nm-ne site 0) site
+          (and sym? (zero? (nm-sf M s SF-FN)) (= (nm-sf M s SF-HEAD) HD-TRY)) (ck-aw-kids M (nm-nth M n 2) mode ef)
+          :else (ck-aw-kids M h mode ef))))
+
+(defn- ck-defn-body [M :vector-i64 f :i64] :i64 (nm-nth M (nm-ff M f FF-NODE) 4))
+(defn- ck-is-defn [M :vector-i64 f :i64] :bool (or (= (nm-ff M f FF-KIND) FK-DEFN) (= (nm-ff M f FF-KIND) FK-PRIV)))
+
+;; pre: one round over the FN table; R0 = how many defns became aborting
+(defn- ck-ab-round [M :vector-i64 f :i64 ch :i64] :vector-i64
+  (let [s (nm-ff M f FF-SYM)]
+    (cond (>= f (vector-at M MM-FN-N)) (nm-put M MM-R0 ch)
+          (and (ck-is-defn M f) (zero? (nm-sf M s SF-ABORT)) (= (ck-aw M (ck-defn-body M f) 0 0) 1))
+          (ck-ab-round (nm-set-sf M s SF-ABORT -1) (inc f) (inc ch))
+          :else (ck-ab-round M (inc f) ch))))
+(defn- ck-ab-pre [M :vector-i64] :vector-i64
+  (let [M1 (ck-ab-round M 1 0)]
+    (if (pos? (ck-r M1)) (ck-ab-pre M1) M1)))
+
+;; final: E flows from callees to callers until nothing changes, then every defn is verified
+(defn- ck-ab-fill [M :vector-i64 f :i64 ch :i64] :vector-i64
+  (let [s (nm-ff M f FF-SYM)]
+    (cond (>= f (vector-at M MM-FN-N)) (nm-put M MM-R0 ch)
+          (and (ck-is-defn M f) (= (nm-sf M s SF-ABORT) -1) (pos? (ck-aw M (ck-defn-body M f) 1 0)))
+          (ck-ab-fill (nm-set-sf M s SF-ABORT (ck-aw M (ck-defn-body M f) 1 0)) (inc f) (inc ch))
+          :else (ck-ab-fill M (inc f) ch))))
+(defn- ck-ab-verify [M :vector-i64 f :i64] :vector-i64
+  (let [s (nm-ff M f FF-SYM)
+        e (nm-sf M s SF-ABORT)
+        nm (nm-nth M (nm-ff M f FF-NODE) 1)]
+    (cond (>= f (vector-at M MM-FN-N)) (ck-touch M)
+          (nm-failed M) (ck-touch M)
+          (not (ck-is-defn M f)) (ck-ab-verify M (inc f))
+          (zero? e) (ck-ab-verify M (inc f))
+          (neg? e) (ck-err M E-CHECK-ABORT-INFER nm 0)
+          (pos? (ck-aw M (ck-defn-body M f) 2 e)) (ck-err M E-CHECK-ABORT-TYPES (ck-aw M (ck-defn-body M f) 2 e) 0)
+          :else (ck-ab-verify M (inc f)))))
+(defn- ck-ab-final [M :vector-i64] :vector-i64
+  (let [M1 (ck-ab-fill M 1 0)]
+    (if (pos? (ck-r M1)) (ck-ab-final M1) (ck-ab-verify M1 1))))
+
+;; an exported defn (explicitly, or implicitly with an exportable signature) must not abort (E2130)
+(defn- ck-abort-export [M :vector-i64 f :i64] :vector-i64
+  (if (and (= (nm-ff M f FF-EXPORT) 1) (nm-ne (nm-sf M (nm-ff M f FF-SYM) SF-ABORT) 0))
+    (ck-err M E-CHECK-ABORT-EXPORT (nm-nth M (nm-ff M f FF-NODE) 1) 0)
+    (ck-touch M)))

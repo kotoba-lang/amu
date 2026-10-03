@@ -1,0 +1,4 @@
+;; R3 feat: a self-recursive aborting function
+(ns seed.r3 (:export [test]))
+(defn- down [n :i64] :i64 (if (= n 0) (throw 42) (+ 1 (down (- n 1)))))
+(defn test [] :i64 (try (down 5) (catch e e)))
