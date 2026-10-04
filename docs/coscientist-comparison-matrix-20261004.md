@@ -128,3 +128,14 @@ ASan/UBSan passes 1..32 bodies and 14,751 initialized reads. One owned
 The canonical native matrix has 15 matched profiles and four paths pending
 alignment (md5sum, nettle-sha256, tarfind, xgboost). asher is still offline;
 this changes correctness coverage, not historical timings or official scores.
+
+### 2026-10-05: tarfind carried-RNG repeated original profile
+
+[Full tarfind qualification](coscientist-tarfind-full-20261005.md) adds all
+35 full 257-byte header initializations and five searches per body, carrying
+the BEEBS RNG between 0/1/2/17/32 bodies. All 5,635 packed/state observations
+match C; injective eight-byte packing covers 44,975 header bytes. C ASan/UBSan
+checks 296,835 initialized header bytes and 37,191 packed/state reads. Guards
+and PRODUCT inventory remain intact. The canonical native matrix has 16
+matched profiles and three pending (md5sum, nettle-sha256, xgboost). asher is
+offline; historical timings and official scores are unchanged.
