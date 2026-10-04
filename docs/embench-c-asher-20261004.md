@@ -140,3 +140,10 @@ guards and resource checks. Original C signed-multiply overflow is recorded;
 explicit-wrap sanitizers pass and both C variants have identical observed
 states. Only picojpeg still lacks a complete alternative. asher is offline;
 no ratio or official score is added and historical timings are untouched.
+
+[Selfhost picojpeg reader](coscientist-picojpeg-reader-20261004.md) now has
+9,504 matching C buffer/bit-reservoir observations on the original fixture,
+with native guards and original C decoder/verifier/sanitizers. The native
+full decoder is still missing; picojpeg remains the last incomplete alternative.
+asher is offline, so this untimed fragment changes no historical timing or
+official-score claim. The actual C profile is 51×64 YH1V1 with 56 MCUs.

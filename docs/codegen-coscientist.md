@@ -4516,3 +4516,14 @@ between plain -O2 and -O2 -fwrapv. This is an actual-host profile agreement,
 not portable ISO C proof or plain-C sanitizer success. Only picojpeg lacks
 a complete alternative. asher is offline; no timing/rank/promotion or official
 score follows. Comparator uses original plain -O2 C; evidence/replay saved.
+
+Picojpeg in progress: [selfhost reader fragment](coscientist-picojpeg-reader-20261004.md).
+Original 570-byte input, refill/pushback/FF checking, bit reservoir, priming and
+fixInBuffer now pass native check/compile and 9,504 C primitive state matches.
+Original C decoder/verify passes repeated bodies and ASan/UBSan, as do native
+bounds/fuel, three pin refusals, byte regeneration and unchanged 97 PRODUCT
+entries. C profile probe establishes 51×64 YH1V1, 56 MCUs, three blocks/MCU.
+The scripts are controlled reader diagnostics, not native JPEG decoding.
+Marker/Huffman/quantization/coefficient/IDCT/color still remain; picojpeg is
+still incomplete. asher is offline; no timing/rank/promotion/official score
+follows. Raw evidence and fresh fragment replay are archived.
