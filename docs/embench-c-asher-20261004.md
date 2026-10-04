@@ -49,3 +49,11 @@ Geometric mean of these nine time ratios: **13.43x** (smaller is better; C = 1).
 An official-equivalent Kotoba/Amu full-suite score remains unavailable: ten full upstream bodies, exact initialization/repetition/timing boundaries and a dummy-subtracted size metric remain to be implemented and audited. Reusing the prior single-call stage-0 ratios or scaling them by a published C score would not produce that score.
 
 Evidence: docs/evidence/embench-c-asher-20261004/raw-results.tgz contains unchanged-source hashes, build commands, executable hashes, all timing samples and load checks. The C measurements were calibrated a second time using the warmed initial data; initial-rows.json retains that first run. The nine native batches are retained from the initial run.
+
+Subsequent research, separately measured: [depthconv](coscientist-depthconv-20261004.md)
+has a matched batch alternative 24.597x faster than its Base64 reference but
+2.901x slower than C. [EDN](coscientist-edn-20261004.md) now has a complete
+eight-operation alternative with 5,427 state-cell matches, measuring 14.357x
+slower than C. Nine adapted workloads remain without complete alternatives.
+These additions do not revise the historical table, its geometric mean, or
+produce an official full-suite score.

@@ -4363,3 +4363,14 @@ Reflect and are not implemented. This is benchmark-source improvement, not
 a generic compiler speedup, full-suite score or formal perfgate qualification.
 Next rank: native inlining/constant-trip lowering with fuel semantics intact;
 the C-or-better goal remains open.
+
+Next complete workload: [selfhost EDN](coscientist-edn-20261004.md). All eight
+upstream operations now have a native check/compile accepted alternative;
+5,427 state cells agree with unchanged C at all nine stages, including DCT.
+The first matched run is 13,645.480 ns/body versus C 950.431 ns (14.357x
+slower). A two-shift signed-short source candidate is 18.51% slower than its
+same-run reference; the layout-preserving Reflect patch saves 2.84% without
+separation, below the research threshold. Both are rejected, despite fewer
+emitted instructions and 327,680 conversion checks. No compiler change or
+formal qualification follows. Nine adapted workloads still lack complete
+alternatives; the historical suite and score claims remain unchanged.
