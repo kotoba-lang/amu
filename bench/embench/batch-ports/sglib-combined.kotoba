@@ -1,0 +1,180 @@
+(ns embench.sglib-full (:export [batch test-sglib observe bounds-probe]))
+;; Full pinned container algorithms; pointer identities are owned node indices.
+;; Copyright 2014-2019 Embecosm / University of Bristol.
+;; SGLIB copyright 2003-2005 Marian Vittek, Bratislava.
+;; SPDX-License-Identifier: GPL-3.0-or-later.
+(defn- input [i :i64] :i64 (if (= i 0) 14 (if (= i 1) 66 (if (= i 2) 12 (if (= i 3) 41 (if (= i 4) 86 (if (= i 5) 69 (if (= i 6) 19 (if (= i 7) 77 (if (= i 8) 68 (if (= i 9) 38 (if (= i 10) 26 (if (= i 11) 42 (if (= i 12) 37 (if (= i 13) 23 (if (= i 14) 17 (if (= i 15) 29 (if (= i 16) 55 (if (= i 17) 13 (if (= i 18) 90 (if (= i 19) 92 (if (= i 20) 76 (if (= i 21) 99 (if (= i 22) 10 (if (= i 23) 54 (if (= i 24) 57 (if (= i 25) 83 (if (= i 26) 40 (if (= i 27) 44 (if (= i 28) 75 (if (= i 29) 33 (if (= i 30) 24 (if (= i 31) 28 (if (= i 32) 80 (if (= i 33) 18 (if (= i 34) 78 (if (= i 35) 32 (if (= i 36) 93 (if (= i 37) 89 (if (= i 38) 52 (if (= i 39) 11 (if (= i 40) 21 (if (= i 41) 96 (if (= i 42) 50 (if (= i 43) 15 (if (= i 44) 48 (if (= i 45) 63 (if (= i 46) 87 (if (= i 47) 20 (if (= i 48) 8 (if (= i 49) 85 (if (= i 50) 43 (if (= i 51) 16 (if (= i 52) 94 (if (= i 53) 88 (if (= i 54) 53 (if (= i 55) 84 (if (= i 56) 74 (if (= i 57) 91 (if (= i 58) 67 (if (= i 59) 36 (if (= i 60) 95 (if (= i 61) 61 (if (= i 62) 64 (if (= i 63) 5 (if (= i 64) 30 (if (= i 65) 82 (if (= i 66) 72 (if (= i 67) 46 (if (= i 68) 59 (if (= i 69) 9 (if (= i 70) 7 (if (= i 71) 3 (if (= i 72) 39 (if (= i 73) 31 (if (= i 74) 4 (if (= i 75) 73 (if (= i 76) 70 (if (= i 77) 60 (if (= i 78) 58 (if (= i 79) 81 (if (= i 80) 56 (if (= i 81) 51 (if (= i 82) 45 (if (= i 83) 1 (if (= i 84) 6 (if (= i 85) 49 (if (= i 86) 27 (if (= i 87) 47 (if (= i 88) 34 (if (= i 89) 35 (if (= i 90) 62 (if (= i 91) 97 (if (= i 92) 2 (if (= i 93) 79 (if (= i 94) 98 (if (= i 95) 25 (if (= i 96) 22 (if (= i 97) 65 (if (= i 98) 71 (if (= i 99) 0 0)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+(defn- put [v :vector-i64 i :i64 x :i64] :vector-i64 (vector-assoc! v i x))
+(defn- d [id :i64 f :i64] :i64 (+ 200 (* (- id 1) 3) f))
+(defn- h [id :i64 f :i64] :i64 (+ 500 (* (- id 1) 2) f))
+(defn- t [id :i64 f :i64] :i64 (+ 900 (* (- id 1) 4) f))
+(defn- swap [v :vector-i64 a :i64 b :i64] :vector-i64
+  (let [x (vector-at v a) y (vector-at v b)] (put (put v a y) b x)))
+(defn- fill [v :vector-i64 i :i64] :vector-i64
+  (if (= i 100) v (fill (put v (+ 100 i) (input i)) (+ i 1))))
+(defn- scan-left [v :vector-i64 i :i64 j :i64 pivot :i64] :i64
+  (if (and (<= i j) (<= (vector-at v (+ 100 i)) (vector-at v (+ 100 pivot)))) (scan-left v (+ i 1) j pivot) i))
+(defn- scan-right [v :vector-i64 i :i64 j :i64 pivot :i64] :i64
+  (if (and (<= i j) (>= (vector-at v (+ 100 j)) (vector-at v (+ 100 pivot)))) (scan-right v i (- j 1) pivot) j))
+(defn- partition [v :vector-i64 pivot :i64 i :i64 j :i64 stack :i64 start :i64 end :i64] :vector-i64
+  (if (>= i j) (quick-next v stack start end i j)
+    (let [li (scan-left v i j pivot)]
+      (if (> li j) (partition (swap v (+ 100 j) (+ 100 pivot)) pivot j j stack start end)
+        (let [rj (scan-right v li j pivot)]
+          (if (> li rj) (partition (swap v (+ 100 rj) (+ 100 pivot)) pivot rj rj stack start end)
+            (if (< li rj)
+              (partition (swap v (+ 100 li) (+ 100 rj)) pivot (if (< (+ li 1) rj) (+ li 1) li) (if (< (+ li 2) rj) (- rj 1) rj) stack start end)
+              (partition v pivot li rj stack start end))))))))
+(defn- quick-next [v :vector-i64 stack :i64 start :i64 end :i64 i :i64 j :i64] :vector-i64
+  (if (and (> (- i start) 1) (> (- end j) 1))
+    (if (< (- i start) (- end j 1))
+      (quick-range (put (put v (+ 1300 stack) (+ j 1)) (+ 1364 stack) end) (+ stack 1) start i)
+      (quick-range (put (put v (+ 1300 stack) start) (+ 1364 stack) i) (+ stack 1) (+ j 1) end))
+    (if (> (- i start) 1) (quick-range v stack start i) (quick-range v stack (+ j 1) end))))
+(defn- quick-range [v :vector-i64 stack :i64 start :i64 end :i64] :vector-i64
+  (if (> (- end start) 2) (partition v start (+ start 1) (- end 1) stack start end)
+    (let [updated (if (and (= (- end start) 2) (> (vector-at v (+ 100 start)) (vector-at v (+ 100 end -1)))) (swap v (+ 100 start) (+ 100 end -1)) v)]
+      (quick-stack updated stack))))
+(defn- quick-stack [v :vector-i64 stack :i64] :vector-i64
+  (if (= stack 0) v (let [i (- stack 1)] (quick-range v i (vector-at v (+ 1300 i)) (vector-at v (+ 1364 i))))))
+(defn- quick [v :vector-i64] :vector-i64 (quick-stack (put (put (fill v 0) 1300 0) 1364 100) 1))
+(defn- list-build [v :vector-i64 i :i64] :vector-i64
+  (if (= i 100) v
+    (let [id (+ i 1) root (vector-at v 1) previous (if (= root 0) 0 (vector-at v (d root 2)))
+          fresh (put (put (put (put v (d id 0) (input i)) (d id 1) root) (d id 2) previous) 3 (+ (vector-at v 3) 24))
+          updated (if (= root 0) (put fresh 1 id)
+                    (let [a (put fresh (d root 2) id)] (if (= previous 0) a (put a (d previous 1) id))))]
+      (list-build updated (+ i 1)))))
+(defn- first-node [v :vector-i64 id :i64] :i64
+  (if (and (not= id 0) (not= (vector-at v (d id 2)) 0)) (first-node v (vector-at v (d id 2))) id))
+(defn- nth-node [v :vector-i64 id :i64 n :i64] :i64
+  (if (and (> n 1) (not= id 0)) (nth-node v (vector-at v (d id 1)) (- n 1)) id))
+(defn- tail-ref [v :vector-i64 ref :i64] :i64
+  (let [id (vector-at v ref)] (if (= id 0) ref (tail-ref v (d id 1)))))
+(defn- list-merge [v :vector-i64 a :i64 b :i64 ref :i64 todo :i64 n :i64] :vector-i64
+  (if (and (not= a 0) (not= b 0))
+    (if (< (vector-at v (d a 0)) (vector-at v (d b 0)))
+      (list-merge (put v ref a) (vector-at v (d a 1)) b (d a 1) todo n)
+      (list-merge (put v ref b) a (vector-at v (d b 1)) (d b 1) todo n))
+    (let [updated (put v ref (if (not= a 0) a b)) end-ref (tail-ref updated ref)]
+      (list-todo updated todo end-ref n true))))
+(defn- list-todo [v :vector-i64 todo :i64 ref :i64 n :i64 cont :bool] :vector-i64
+  (if (= todo 0) (if cont (list-pass v (* n 2)) v)
+    (let [ta (nth-node v todo n)]
+      (if (= ta 0) (let [updated (put v ref todo)] (if cont (list-pass updated (* n 2)) updated))
+        (let [b (vector-at v (d ta 1)) cut (put v (d ta 1) 0) tb (nth-node cut b n)
+              next-todo (if (= tb 0) 0 (vector-at cut (d tb 1))) updated (if (= tb 0) cut (put cut (d tb 1) 0))]
+          (list-merge updated todo b ref next-todo n))))))
+(defn- list-pass [v :vector-i64 n :i64] :vector-i64
+  (let [head (vector-at v 1)] (list-todo (put v 1 0) head 1 n false)))
+(defn- rebuild-previous [v :vector-i64 id :i64 previous :i64] :vector-i64
+  (if (= id 0) v (rebuild-previous (put v (d id 2) previous) (vector-at v (d id 1)) id)))
+(defn- list-count [v :vector-i64 id :i64 count :i64] :vector-i64
+  (if (= id 0) (put v 0 count) (list-count v (vector-at v (d id 1)) (+ count 1))))
+(defn- list-stage [v :vector-i64] :vector-i64
+  (let [made (list-build (put (put v 1 0) 3 0) 0) head (first-node made (vector-at made 1))
+        sorted (list-pass (put made 1 head) 1) linked (rebuild-previous sorted (vector-at sorted 1) 0)]
+    (list-count linked (vector-at linked 1) 0)))
+(defn- clear-heads [v :vector-i64 i :i64] :vector-i64 (if (= i 20) v (clear-heads (put v (+ 700 i) 0) (+ i 1))))
+(defn- hash-find [v :vector-i64 id :i64 value :i64] :i64
+  (if (or (= id 0) (= (vector-at v (h id 0)) value)) id (hash-find v (vector-at v (h id 1)) value)))
+(defn- hash-build [v :vector-i64 i :i64] :vector-i64
+  (if (= i 100) v
+    (let [value (input i) bucket (+ 700 (rem value 20)) root (vector-at v bucket)]
+      (if (not= (hash-find v root value) 0) (hash-build v (+ i 1))
+        (let [id (+ i 1) updated (put (put (put (put v (h id 0) value) (h id 1) root) bucket id) 3 (+ (vector-at v 3) 16))]
+          (hash-build updated (+ i 1)))))))
+(defn- hash-chain-count [v :vector-i64 id :i64 bucket :i64] :vector-i64
+  (if (= id 0) (hash-count v (+ bucket 1))
+    (hash-chain-count (put v 0 (+ (vector-at v 0) 1)) (vector-at v (h id 1)) bucket)))
+(defn- hash-count [v :vector-i64 bucket :i64] :vector-i64
+  (if (= bucket 20) v (hash-chain-count v (vector-at v (+ 700 bucket)) bucket)))
+(defn- hash-stage [v :vector-i64] :vector-i64 (hash-count (hash-build (clear-heads v 0) 0) 0))
+(defn- queue-add [v :vector-i64 i :i64] :vector-i64
+  (if (= i 100) (put v 6 i) (queue-add (put v (+ 720 i) (input i)) (+ i 1))))
+(defn- queue-drain [v :vector-i64 i :i64 j :i64] :vector-i64
+  (if (= i j) (put v 5 i)
+    (queue-drain (put v 0 (+ (vector-at v 0) (vector-at v (+ 720 i)))) (rem (+ i 1) 101) j)))
+(defn- queue-stage [v :vector-i64] :vector-i64 (queue-drain (queue-add (put (put v 5 0) 6 0) 0) 0 100))
+(defn- heap-up [v :vector-i64 i :i64] :vector-i64
+  (let [parent (quot i 2)] (if (and (> i 0) (< (vector-at v (+ 720 parent)) (vector-at v (+ 720 i))))
+    (heap-up (swap v (+ 720 parent) (+ 720 i)) parent) v)))
+(defn- heap-add [v :vector-i64 i :i64] :vector-i64
+  (if (= i 100) (put v 7 i) (heap-add (heap-up (put v (+ 720 i) (input i)) i) (+ i 1))))
+(defn- heap-down [v :vector-i64 i :i64 max :i64] :vector-i64
+  (let [left (+ (* i 2) 1) right (+ left 1)
+        m1 (if (and (< left max) (< (vector-at v (+ 720 i)) (vector-at v (+ 720 left)))) left i)
+        m2 (if (and (< left max) (< right max) (< (vector-at v (+ 720 m1)) (vector-at v (+ 720 right)))) right m1)]
+    (if (not= m2 i) (heap-down (swap v (+ 720 i) (+ 720 m2)) m2 max) v)))
+(defn- heap-drain [v :vector-i64 n :i64] :vector-i64
+  (if (= n 0) (put v 7 0)
+    (let [next (- n 1) counted (put v 0 (+ (vector-at v 0) (vector-at v 720)))
+          updated (heap-down (put counted 720 (vector-at counted (+ 720 next))) 0 next)]
+      (heap-drain updated next))))
+(defn- heap-stage [v :vector-i64] :vector-i64 (heap-drain (heap-add (put v 7 0) 0) 100))
+(defn- red [v :vector-i64 id :i64] :bool (and (not= id 0) (= (vector-at v (t id 1)) 1)))
+(defn- tree-fix [v :vector-i64 ref :i64 lf :i64 rf :i64] :vector-i64
+  (let [a (vector-at v ref) b (vector-at v (t a lf)) ar (vector-at v (t a rf))
+        bl (vector-at v (t b lf)) br (vector-at v (t b rf))]
+    (if (red v ar)
+      (if (and (red v b) (or (red v bl) (red v br))) (put (put (put v (t b 1) 0) (t ar 1) 0) (t a 1) 1) v)
+      (if (red v b)
+        (if (red v bl)
+          (put (put (put (put (put (put v (t a lf) br) (t b lf) bl) (t b rf) a) (t a 1) 1) (t b 1) 0) ref b)
+          (if (red v br)
+            (let [cl (vector-at v (t br lf)) cr (vector-at v (t br rf))]
+              (put (put (put (put (put (put (put v (t b rf) cl) (t a lf) cr) (t br lf) b) (t br rf) a) (t br 1) 0) (t a 1) 1) ref br)) v)) v))))
+(defn- tree-insert [v :vector-i64 ref :i64 id :i64] :vector-i64
+  (let [root (vector-at v ref)]
+    (if (= root 0) (put (put v (t id 1) 1) ref id)
+      (let [cmp (- (vector-at v (t id 0)) (vector-at v (t root 0)))
+            lf (if (or (< cmp 0) (and (= cmp 0) (< id root))) 2 3) rf (if (= lf 2) 3 2)
+            updated (tree-insert v (t root lf) id)]
+        (if (= (vector-at updated (t root 1)) 0) (tree-fix updated ref lf rf) updated)))))
+(defn- tree-find [v :vector-i64 root :i64 value :i64] :i64
+  (if (= root 0) 0
+    (let [cmp (- value (vector-at v (t root 0)))]
+      (if (= cmp 0) root (tree-find v (vector-at v (t root (if (< cmp 0) 2 3))) value)))))
+(defn- tree-build [v :vector-i64 i :i64] :vector-i64
+  (if (= i 100) v
+    (let [value (input i)]
+      (if (not= (tree-find v (vector-at v 2) value) 0) (tree-build v (+ i 1))
+        (let [id (+ i 1) fresh (put (put (put (put v (t id 0) value) (t id 2) 0) (t id 3) 0) 3 (+ (vector-at v 3) 24))
+              added (tree-insert fresh 2 id) blackened (put added (t (vector-at added 2) 1) 0)]
+          (tree-build blackened (+ i 1)))))))
+(defn- tree-current [v :vector-i64] :vector-i64
+  (let [pi (vector-at v 8)]
+    (if (= pi 0) (put v 9 0)
+      (let [i (- pi 1) pass (vector-at v (+ 1628 i))]
+        (if (>= pass 2)
+          (let [updated (put v 8 (- pi 1)) parent (- pi 2)]
+            (if (and (> pi 1) (= (vector-at updated (+ 1628 parent)) 1)) (put updated 9 (vector-at updated (+ 1500 parent))) (tree-current updated)))
+          (let [child (vector-at v (t (vector-at v (+ 1500 i)) (if (= pass 0) 2 3)))
+                stepped (put v (+ 1628 i) (+ pass 1))
+                updated (if (= child 0) stepped (put (put (put stepped (+ 1500 pi) child) (+ 1628 pi) 0) 8 (+ pi 1)))
+                top (- (vector-at updated 8) 1)]
+            (if (= (vector-at updated (+ 1628 top)) 1) (put updated 9 (vector-at updated (+ 1500 top))) (tree-current updated))))))))
+(defn- tree-sum [v :vector-i64] :vector-i64
+  (let [id (vector-at v 9)]
+    (if (= id 0) v (tree-sum (tree-current (put v 0 (+ (vector-at v 0) (vector-at v (t id 0)))))))))
+(defn- tree-stage [v :vector-i64] :vector-i64
+  (let [built (tree-build (put v 2 0) 0) root (vector-at built 2)
+        initialized (put (put (put built 8 1) 1500 root) 1628 0)]
+    (tree-sum (tree-current initialized))))
+(defn- body [v :vector-i64] :vector-i64 (tree-stage (heap-stage (queue-stage (hash-stage (list-stage (quick v)))))))
+(defn- verify-array [v :vector-i64 i :i64] :i64
+  (if (= i 100) 1 (if (= (vector-at v (+ 100 i)) i) (verify-array v (+ i 1)) 0)))
+(defn- verify-list [v :vector-i64 id :i64 i :i64] :i64
+  (if (= id 0) 1 (if (= (vector-at v (d id 0)) i) (verify-list v (vector-at v (d id 1)) (+ i 1)) 0)))
+(defn- verify-hash [v :vector-i64 i :i64] :i64
+  (if (= i 100) 1
+    (let [value (input i) id (hash-find v (vector-at v (+ 700 (rem value 20))) value)]
+      (if (and (not= id 0) (= (vector-at v (h id 0)) value)) (verify-hash v (+ i 1)) 0))))
+(defn- repeats [v :vector-i64 n :i64] :vector-i64 (if (= n 0) v (repeats (body v) (- n 1))))
+(defn batch [n :i64] :i64
+  (if (<= n 0) 0
+    (let [result (repeats (vector-alloc 1760) n)]
+      (if (and (= (vector-at result 0) 15050) (<= (vector-at result 3) 8192) (= (verify-array result 0) 1) (= (verify-list result (first-node result (vector-at result 1)) 0) 1) (= (verify-hash result 0) 1)) 1 0))))
+(defn test-sglib [] :i64 (batch 1))
+(defn bounds-probe [i :i64] :i64 (vector-at (vector-alloc 1760) i))
+(defn observe [cell :i64] :i64 (let [result (body (vector-alloc 1760))] (vector-at result cell)))

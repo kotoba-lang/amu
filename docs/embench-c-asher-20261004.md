@@ -96,3 +96,10 @@ with padded short regex buffers and sanitizer-checked oracle accesses.
 Batches and bounds/fuel guards pass. asher remains offline, so this adds no
 performance ratio or official score. Four adapted workloads still lack
 complete alternatives; the historical timing table remains unchanged.
+
+[SGLIB combined](coscientist-sglib-20261004.md) now has a complete alternative
+for quicksort, linked-list sort, hash, queue, heap and red/black tree/iterator.
+Native selfhost check/compile pass; 9,445 structural and repeated-body values
+match C, with batches, bounds/fuel and oracle sanitizer checks. asher is still
+unreachable, so no timing ratio or official score is added. Three adapted
+workloads still lack complete alternatives; historical timings are unchanged.

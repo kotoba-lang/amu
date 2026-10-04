@@ -4444,3 +4444,15 @@ also matches that oracle, whose access sanitizer checks pass. PRODUCT counts
 remain unchanged. No timing, ranking or promotion while asher is offline;
 four adapted workloads remain without complete alternatives. Raw artifacts
 and a fresh timing replay bundle are saved. C-or-better remains the goal.
+
+Next complete workload: [selfhost SGLIB combined](coscientist-sglib-20261004.md).
+The alternative executes all six original container algorithms rather than
+insertion sorting and reconstructing sums. Native check/compile pass. All
+3,805 staged values, 1,128 production-body values and 4,512 values after
+1/2/17/32 bodies match C, including tree shape/colors and 100 iterator yields.
+The failed first draft is retained; list-run and parent-yield continuations
+are corrected. Bounds/fuel, C oracle sanitizers, four profile-pin refusals,
+byte-identical regeneration and unchanged PRODUCT counts pass. asher remains
+unreachable, so no timing/ranking/promotion or official score is claimed.
+Three adapted workloads still need complete alternatives. Raw artifacts and
+a fresh timing replay bundle are saved; C-or-better remains the goal.
