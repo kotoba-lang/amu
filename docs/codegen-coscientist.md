@@ -4599,3 +4599,14 @@ fit unchanged budgets. A draft unknown-operation refusal is retained;
 existing vector-assoc! was used without checker/runtime changes. Matrix
 coverage becomes 14 matched profiles / five pending paths; asher offline,
 no timing/score/promotion. See `coscientist-matmult-full-20261005.md`.
+
+### 2026-10-05: UD repeated original profile
+
+[UD full qualification](coscientist-ud-full-20261005.md) adds original
+initialization, LU, forward/backward substitution and final verification for
+0/1/2/17/32 bodies. All 2,235 initialized native/C observations match; C
+ASan/UBSan passes 1..32 bodies and 14,751 initialized reads. One owned
+541-cell workspace uses 16,280 fuel for 32 bodies, with guards intact.
+The canonical native matrix has 15 matched profiles and four paths pending
+alignment (md5sum, nettle-sha256, tarfind, xgboost). asher is still offline;
+this changes correctness coverage, not historical timings or official scores.
