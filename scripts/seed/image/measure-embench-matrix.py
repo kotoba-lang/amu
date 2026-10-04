@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# BOOTSTRAP-TOOL: pinned 19-arm preparation and optional quiet-asher paired timing.
+# BOOTSTRAP-TOOL: pinned 19-arm preparation and optional quiet-host paired timing.
 import argparse,hashlib,json,pathlib,re,socket,statistics,subprocess,tarfile,time,math
 from darwin_cpu_idle import snapshot as cpu_snapshot, interval as cpu_interval
 p=argparse.ArgumentParser();p.add_argument('repo',type=pathlib.Path);p.add_argument('environment',type=pathlib.Path);p.add_argument('output',type=pathlib.Path);p.add_argument('--measure',action='store_true');a=p.parse_args();repo=a.repo.resolve();env=a.environment.resolve();out=a.output.resolve()
@@ -9,7 +9,7 @@ def sha(f):return hashlib.sha256(f.read_bytes()).hexdigest()
 spec=json.loads((repo/'bench/embench/paired-timing-spec.json').read_text());matrix=json.loads((repo/'bench/embench/comparison-matrix.json').read_text())
 require(not out.exists(),'refusing to replace evidence')
 # Refuse timing on other hosts before any build/execution or output creation.
-if a.measure:require(socket.gethostname().split('.')[0]==spec['host'],'timing host must be asher')
+if a.measure:require(socket.gethostname().split('.')[0]==spec['host'],'timing host must be '+spec['host'])
 require(sha(repo/'bench/embench/comparison-matrix.json')==spec['matrixSpecSha256'],'matrix spec changed')
 compiler=env/'images/r6m';runner=env/'runner';up=env/'upstream';require(sha(compiler)==matrix['compilerSha256'],'selfhost compiler pin');require(sha(runner)==matrix['runnerSha256'],'runner pin')
 require(subprocess.check_output(['git','-C',str(up),'rev-parse','HEAD'],text=True).strip()==matrix['upstreamCommit'],'upstream commit')

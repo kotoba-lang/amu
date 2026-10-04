@@ -21,7 +21,7 @@ Run preparation from a checkout and the previously pinned environment:
 python3 scripts/seed/image/measure-embench-matrix.py REPO ENV NEW_OUTPUT
 ```
 
-Add --measure only on asher. Measurement rotates C/Kotoba order across 30
+Add --measure only on the pinned host (currently jacob). Measurement rotates C/Kotoba order across 30
 pairs, calibrates each arm toward 300 ms, uses one untimed warmup and requires
 at least 50 ms per interval. Each ABI call contains 32 complete original bodies
 (depthconv uses its qualified 2,000-body batch); per-body time divides by the
@@ -66,3 +66,29 @@ Counters enclose runner setup, warmup and timing, so exact-boundary and
 official-driver qualification remain unmet. No benchmark timing was taken.
 API layout was verified against the installed SDK and
 [Apple XNU host_info.h](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/mach/host_info.h).
+
+### 2026-10-05: alternate-host preparation
+
+The live Tailscale inventory identified jacob as an SSH-accessible Apple M4
+with 10 cores. Its load at the environment probe was 2.14/2.50/2.69;
+this single observation does not qualify sustained CPU idle. It runs macOS
+26.3.1 (a) and Apple Clang 21, so its C baseline must be rebuilt and kept
+separate from the historical asher/Clang 17 baseline. The timing spec now
+pins jacob, with all numerical acceptance thresholds unchanged.
+
+A 10,368,922-byte input archive is prepared locally. Automatic approval
+review rejected its transfer because explicit authorization to send the
+internal source/compiler/runner payload to jacob was missing. No transfer or
+remote benchmark execution occurred. User approval is pending. The archive
+hash and observed host details are recorded in
+[preparation evidence](evidence/coscientist-jacob-preparation-20261005/preparation.json).
+Wrong-host measurement still refuses under Python -O before creating output.
+These are preparation results, with no new performance claim.
+
+The revised configuration was then exercised locally without timing: all 19
+C/Kotoba pairs passed two calls and one warmup, and the native code hashes
+matched the qualified matrix. Results and generated artifacts are retained
+in the same evidence directory (`local-results.json`, `local-preparation.tgz`).
+The first restricted execution failed at the compiler's sandbox initialization;
+the successful rerun used local execution outside that restriction and made no
+network transfer. This does not prove jacob execution or performance.
