@@ -3,8 +3,8 @@
 Measured on 2026-10-04 JST on Tailscale host asher (Apple M4, 10 cores, 16 GiB RAM, macOS 26.2). C uses Apple Clang 17.0.0, -O2, without LTO. Kotoba uses the r6m unified Amu image abcc1318957af7d3a09cfd66c06d17821b5cf47f4c47d02b5620e9e92a24f02e. Amu is the compiler of the measured Kotoba programs, not another independent language entry.
 
 Current comparison coverage: [the canonical-path audit](coscientist-comparison-matrix-20261004.md)
-rebuilds and runs all 19 paths through native selfhost Amu. Twelve have matched
-original active-profile alternatives after the CRC32 follow-up; seven still need initialization/repetition/
+rebuilds and runs all 19 paths through native selfhost Amu. Thirteen have matched
+original active-profile alternatives after the CRC32/Montgomery follow-ups; six still need initialization/repetition/
 timing alignment. The measurements below are historical and are unchanged.
 No full-suite Kotoba score or C-or-better result is established.
 
@@ -190,3 +190,13 @@ candidate, despite lower fuel. Original C sanitizer checks 1..32 pass. Matrix
 coverage becomes 12 matched profiles / seven pending alignments. asher offline;
 no new timing, score, ranking or performance promotion. See
 `coscientist-crc32-full-20261004.md`.
+
+
+Aha-mont64 matched full repeated body (2026-10-04): unchanged unsigned helper
+AST, ordinary/Montgomery result, partial inverse check and errors agree with
+original C at 1/2/17/32 bodies. Original verifier and C ASan/UBSan pass 1..32.
+A draft constant-vector bounds exit-code expectation was corrected against
+generated comparison/BRK instructions, with failed evidence retained and no
+guard change. Matrix coverage becomes 13 matched profiles / six pending
+alignments. asher offline; no new timing/score/promotion. See
+`coscientist-mont64-full-20261004.md`.

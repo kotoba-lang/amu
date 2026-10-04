@@ -4579,3 +4579,13 @@ candidate, despite lower fuel. Original C sanitizer checks 1..32 pass. Matrix
 coverage becomes 12 matched profiles / seven pending alignments. asher offline;
 no new timing, score, ranking or performance promotion. See
 `coscientist-crc32-full-20261004.md`.
+
+
+Aha-mont64 matched full repeated body (2026-10-04): unchanged unsigned helper
+AST, ordinary/Montgomery result, partial inverse check and errors agree with
+original C at 1/2/17/32 bodies. Original verifier and C ASan/UBSan pass 1..32.
+A draft constant-vector bounds exit-code expectation was corrected against
+generated comparison/BRK instructions, with failed evidence retained and no
+guard change. Matrix coverage becomes 13 matched profiles / six pending
+alignments. asher offline; no new timing/score/promotion. See
+`coscientist-mont64-full-20261004.md`.

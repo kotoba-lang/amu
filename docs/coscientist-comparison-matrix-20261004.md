@@ -103,3 +103,10 @@ replaces its historical single-body matrix entry with the verified chunked
 12 matched original-active profiles / seven pending alignments. The table
 above retains the initial audit snapshot. New evidence is in the CRC32
 `matrix-audit.tgz`; timing/score/formal flags remain false.
+
+
+Montgomery follow-up: `coscientist-mont64-full-20261004.md` qualifies the
+original full repeated aha-mont64 body and final verifier. Updated canonical
+spec and all-19 re-audit now record 13 matched profiles / six pending paths;
+full timing/official-score/formal flags remain false. Snapshot evidence is
+saved in the Montgomery `matrix-audit.tgz`.
