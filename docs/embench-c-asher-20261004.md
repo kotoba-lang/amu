@@ -154,3 +154,12 @@ including the original full-init API comparison and guards/sanitizers.
 Native coefficient/IDCT/color decoding remains open, so picojpeg is still
 incomplete. asher remains offline; this untimed fragment changes no historical
 ratio, ranking or official-score claim. Raw artifacts and fresh replay are saved.
+
+
+Picojpeg DC/AC coefficients (2026-10-04): native selfhost Kotoba now decodes
+all 168 original blocks; 14,740 coefficient/reader/terminal fields match C.
+The original C transforms and verifier are retained in the observation
+adapter, independently checked with ASan/UBSan (1..32 iterations). A draft
+adapter pointer-initialization failure is retained and corrected. IDCT/color
+and full reused native bodies remain open; no timing, score or performance
+ranking changed. See `coscientist-picojpeg-coefficients-20261004.md`.
