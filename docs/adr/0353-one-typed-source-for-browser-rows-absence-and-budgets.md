@@ -912,6 +912,61 @@ window records is (`:record-list-sequence`), and `normalize-event`'s open host
 event (`:open-event-row`, which needs a decision: `(:k m)` is a required read
 by this ADR, and the event reads keys it may lack).
 
+The record-list sequence landed as floor `:record-list-sequence` (gate
+`record-list-filter-first-reverse-test`), browser.input's second wall.
+`window-at` is `(first (filter #(point-in-rect? point (:window/rect %))
+(reverse (:surface/windows surface))))` over a vector literal of window
+records, a `[:list R]`, and was refused three ways: `filter` "expected
+vector-i64, got [:list R]" (it desugared to the T4.5 loop that builds a
+bounded i64 vector, and a `[:list R]` has no builder), `first` "first
+(pair-first) reads a pair chain or a bounded vector", and `reverse` "unknown
+operation". `first` of a filter / remove / reverse chain needs no built
+sequence: it is a search. kotoba-sema (`942d8764`) fuses the chain into one
+loop that walks the source by index -- from its end under an odd number of
+reverses -- and answers the first item every predicate admits, innermost
+first, as Clojure's lazy filter tests it; it allocates nothing. Its two exits
+are typed by the source: over a `[:list R]` the search answers `[:option R]`,
+absent when nothing is found; over a bounded vector it answers the item and
+traps on an empty result (`(vector-at <empty> 0)`, the trap `(first (filter
+..))` always raised there), so a vector program keeps its value. `first` of a
+`[:list R]` is `[:option R]`. Two inference gaps on the way were closed in the
+same change: a loop helper's captures are settled again after row
+specialization (the surface's windows were the placeholder `:i64` in the
+generic), and a capture typed `:i64` that the loop body reads as a vector is
+refined like an unannotated parameter, which refines the enclosing function's
+parameter through the call (`window-at`'s `point`). kotoba-verifier
+(`90ff3911`) admits a record field that is a `[:list R]` of one-word items
+(kotoba-native's ABI and KIR already did) and a let naming a list item as
+that record. Measured on nbb: the gate was red on `3d051f43` / `fde6f218` (2
+failures and 12 errors of 17 assertions, the floor's literal), green on
+`942d8764` / `90ff3911` (17 assertions). The minimized chains over a
+`[:list R]` (29132) and window-at over two overlapping windows (2 on top, 1
+alone, absent outside: 912) answer the reference's value on
+`x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1` with the oracle
+verified, and compile on `wasm32-kotoba-v1`; a vector program keeps its value
+(22) and its trap. `amu compile --target x86_64-aiueos-kernel-v1` / `--target
+aarch64-macos` of window-at exit 0 with `:oracle {:status :verified}`; no
+artifact was run under a loader. kotoba-sema's portable suite has the same 39
+failures and 5 errors of 616 tests before and after, kotoba-verifier's the
+same 22 and 1 of 53 (identical lists), and amu's nbb suite the same 13
+failures and 2 errors (the policy tests) besides the gate,
+`native-allocation-budget-test` left out on both sides: its x86_64 loader
+again hung in Rosetta translation (process state U). Refused by name: what `first` answers over a list used as a record ("record-get
+without a type descriptor requires a record value; got [:option [:record
+..]]"); a number as the list ("expected vector-i64, got i64"); a bare
+`reverse` ("reverse is admitted only where first reads it .. a reversed
+sequence of its own needs a list builder this profile does not have"); and a
+`filter` over a `[:list R]` that `first` does not read ("expected vector-i64,
+got [:list R]"): materializing a list needs a list builder (a `typed-list-conj`
+on KIR, Wasm and native), which no floor has asked for yet. Measured on the
+way and left: a module with no private function exports every function, its
+synthesized loop helpers included, so a loop over a `[:list R]` there is
+refused natively ("typed values currently require .. the qualified native
+one-word .. slice": a list is no export's ABI); an unannotated parameter
+handed an option, `(defn- a-of [o d] (if-let [r o] ..))`, stays the
+provisional `:i64`; and native rejects `(vector-at v (vector-count v))` in an
+`if` branch at machine IR ("unknown-parameter").
+
 ## Selfhost foundation floors (appended 2026-09-26)
 
 Superproject adr-2609242330 measured that compiling amu with amu needs the
