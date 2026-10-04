@@ -1,0 +1,125 @@
+;; Nettle AES-256 benchmark implementation derived from Embench.
+;; Copyright 2000-2013 Rafael R. Sevilla/Niels Moeller, 2019 Embecosm.
+;; SPDX-License-Identifier: GPL-3.0-or-later.
+;; 635 owned cells: enc keys[60], dec keys[60], enc bytes[256], dec bytes[256],
+;; rounds[2], and one untimed-observable block-offset scratch cell.
+(defn- or4 [a :i64 b :i64 c :i64 d :i64] :i64
+  (bit-or (bit-or a b) (bit-or c d)))
+(defn- xor4 [a :i64 b :i64 c :i64 d :i64] :i64
+  (bit-xor (bit-xor a b) (bit-xor c d)))
+(defn- xor5 [a :i64 b :i64 c :i64 d :i64 e :i64] :i64
+  (bit-xor a (xor4 b c d e)))
+(defn- u32 [x :i64] :i64 (bit-and x 4294967295))
+(defn- byte-at [x :i64 n :i64] :i64 (bit-and (u64-shift-right x n) 255))
+(defn- rot [x :i64 n :i64] :i64
+  (u32 (bit-or (i64-shift-left x n) (u64-shift-right x (- 32 n)))))
+(defn- box [mode :i64 i :i64] :i64 (if (= mode 0) (enc-sbox i) (dec-sbox i)))
+(defn- subword [mode :i64 x :i64] :i64
+  (or4 (box mode (byte-at x 0)) (i64-shift-left (box mode (byte-at x 8)) 8)
+          (i64-shift-left (box mode (byte-at x 16)) 16) (i64-shift-left (box mode (byte-at x 24)) 24)))
+(defn- key-byte [test :i64 i :i64] :i64
+  (if (= test 3) 0 (if (= test 1) (bit-xor (key-data i) 255) (key-data i))))
+(defn- plain-byte [test :i64 i :i64] :i64
+  (if (= test 3) 0 (if (= test 2) (bit-xor (plain-data i) i) (plain-data i))))
+(defn- read-key [test :i64 i :i64] :i64
+  (or4 (key-byte test i) (i64-shift-left (key-byte test (+ i 1)) 8)
+          (i64-shift-left (key-byte test (+ i 2)) 16) (i64-shift-left (key-byte test (+ i 3)) 24)))
+(defn- initial-keys [s :vector-i64 base :i64 test :i64 i :i64] :vector-i64
+  (if (= i 8) s
+    (let [value (read-key test (* i 4)) next (vector-assoc! s (+ base i) value)]
+      (initial-keys next base test (+ i 1)))))
+(defn- expand-keys [s :vector-i64 base :i64 i :i64] :vector-i64
+  (if (= i 60) s
+    (let [t (vector-at s (+ base (- i 1))) residue (rem i 8)
+          transformed (if (= residue 0) (bit-xor (subword 0 (rot t 24)) (rcon (- (quot i 8) 1)))
+                        (if (= residue 4) (subword 0 t) t))
+          value (bit-xor (vector-at s (+ base (- i 8))) transformed)
+          next (vector-assoc! s (+ base i) value)]
+      (expand-keys next base (+ i 1)))))
+(defn- set-key [s :vector-i64 base :i64 test :i64] :vector-i64
+  (expand-keys (initial-keys s base test 0) base 8))
+(defn- reverse-key [s :vector-i64 i :i64 k :i64] :vector-i64
+  (if (= i 28) s
+    (if (= k 4) (reverse-key s (+ i 4) 0)
+      (let [left (+ 60 i k) right (+ 60 (- 56 i) k)
+            x (vector-at s left) y (vector-at s right)
+            s1 (vector-assoc! s left y) s2 (vector-assoc! s1 right x)]
+        (reverse-key s2 i (+ k 1))))))
+(defn- mix [x :i64] :i64
+  (xor4 (mt (byte-at x 0)) (rot (mt (byte-at x 8)) 8)
+           (rot (mt (byte-at x 16)) 16) (rot (mt (byte-at x 24)) 24)))
+(defn- invert-keys [s :vector-i64 i :i64] :vector-i64
+  (if (= i 56) s
+    (let [value (mix (vector-at s (+ 60 i))) next (vector-assoc! s (+ 60 i) value)]
+      (invert-keys next (+ i 1)))))
+(defn- table-round [mode :i64 a :i64 b :i64 c :i64 d :i64 key :i64] :i64
+  (xor5 key
+    (if (= mode 0) (enc-t0 (byte-at a 0)) (dec-t0 (byte-at a 0)))
+    (if (= mode 0) (enc-t1 (byte-at b 8)) (dec-t1 (byte-at b 8)))
+    (if (= mode 0) (enc-t2 (byte-at c 16)) (dec-t2 (byte-at c 16)))
+    (if (= mode 0) (enc-t3 (byte-at d 24)) (dec-t3 (byte-at d 24)))))
+(defn- last-round [mode :i64 a :i64 b :i64 c :i64 d :i64 key :i64] :i64
+  (bit-xor key (or4 (box mode (byte-at a 0))
+    (i64-shift-left (box mode (byte-at b 8)) 8)
+    (i64-shift-left (box mode (byte-at c 16)) 16)
+    (i64-shift-left (box mode (byte-at d 24)) 24))))
+(defn- write-word [s :vector-i64 at :i64 value :i64] :vector-i64
+  (let [s1 (vector-assoc! s at (byte-at value 0))
+        s2 (vector-assoc! s1 (+ at 1) (byte-at value 8))
+        s3 (vector-assoc! s2 (+ at 2) (byte-at value 16))]
+    (vector-assoc! s3 (+ at 3) (byte-at value 24))))
+(defn- rounds [s :vector-i64 mode :i64 r :i64 w0 :i64 w1 :i64 w2 :i64 w3 :i64] :vector-i64
+  (let [at (+ (if (= mode 0) 0 60) (* r 4))
+        t0 (if (= r 14)
+             (last-round mode w0 (if (= mode 0) w1 w3) w2 (if (= mode 0) w3 w1) (vector-at s at))
+             (table-round mode w0 (if (= mode 0) w1 w3) w2 (if (= mode 0) w3 w1) (vector-at s at)))
+        t1 (if (= r 14)
+             (last-round mode w1 (if (= mode 0) w2 w0) w3 (if (= mode 0) w0 w2) (vector-at s (+ at 1)))
+             (table-round mode w1 (if (= mode 0) w2 w0) w3 (if (= mode 0) w0 w2) (vector-at s (+ at 1))))
+        t2 (if (= r 14)
+             (last-round mode w2 (if (= mode 0) w3 w1) w0 (if (= mode 0) w1 w3) (vector-at s (+ at 2)))
+             (table-round mode w2 (if (= mode 0) w3 w1) w0 (if (= mode 0) w1 w3) (vector-at s (+ at 2))))
+        t3 (if (= r 14)
+             (last-round mode w3 (if (= mode 0) w0 w2) w1 (if (= mode 0) w2 w0) (vector-at s (+ at 3)))
+             (table-round mode w3 (if (= mode 0) w0 w2) w1 (if (= mode 0) w2 w0) (vector-at s (+ at 3))))]
+    (if (= r 14)
+      (let [out (+ (if (= mode 0) 120 376) (vector-at s 634))
+            s1 (write-word s out t0) s2 (write-word s1 (+ out 4) t1)
+            s3 (write-word s2 (+ out 8) t2)] (write-word s3 (+ out 12) t3))
+      (rounds s mode (+ r 1) t0 t1 t2 t3))))
+(defn- set-block [s :vector-i64 i :i64] :vector-i64 (vector-assoc! s 634 i))
+(defn- blocks [s :vector-i64 mode :i64 test :i64 block :i64] :vector-i64
+  (if (= block 16) s
+    (let [input (* block 16) key (if (= mode 0) 0 60)
+          w0 (bit-xor (or4 (if (= mode 0) (plain-byte test input) (vector-at s (+ 120 input))) (i64-shift-left (if (= mode 0) (plain-byte test (+ input 1)) (vector-at s (+ 120 (+ input 1)))) 8) (i64-shift-left (if (= mode 0) (plain-byte test (+ input 2)) (vector-at s (+ 120 (+ input 2)))) 16) (i64-shift-left (if (= mode 0) (plain-byte test (+ input 3)) (vector-at s (+ 120 (+ input 3)))) 24)) (vector-at s key))
+          w1 (bit-xor (or4 (if (= mode 0) (plain-byte test (+ input 4)) (vector-at s (+ 120 (+ input 4)))) (i64-shift-left (if (= mode 0) (plain-byte test (+ input 5)) (vector-at s (+ 120 (+ input 5)))) 8) (i64-shift-left (if (= mode 0) (plain-byte test (+ input 6)) (vector-at s (+ 120 (+ input 6)))) 16) (i64-shift-left (if (= mode 0) (plain-byte test (+ input 7)) (vector-at s (+ 120 (+ input 7)))) 24)) (vector-at s (+ key 1)))
+          w2 (bit-xor (or4 (if (= mode 0) (plain-byte test (+ input 8)) (vector-at s (+ 120 (+ input 8)))) (i64-shift-left (if (= mode 0) (plain-byte test (+ input 9)) (vector-at s (+ 120 (+ input 9)))) 8) (i64-shift-left (if (= mode 0) (plain-byte test (+ input 10)) (vector-at s (+ 120 (+ input 10)))) 16) (i64-shift-left (if (= mode 0) (plain-byte test (+ input 11)) (vector-at s (+ 120 (+ input 11)))) 24)) (vector-at s (+ key 2)))
+          w3 (bit-xor (or4 (if (= mode 0) (plain-byte test (+ input 12)) (vector-at s (+ 120 (+ input 12)))) (i64-shift-left (if (= mode 0) (plain-byte test (+ input 13)) (vector-at s (+ 120 (+ input 13)))) 8) (i64-shift-left (if (= mode 0) (plain-byte test (+ input 14)) (vector-at s (+ 120 (+ input 14)))) 16) (i64-shift-left (if (= mode 0) (plain-byte test (+ input 15)) (vector-at s (+ 120 (+ input 15)))) 24)) (vector-at s (+ key 3)))
+          next (set-block s input)]
+      (blocks (rounds next mode 1 w0 w1 w2 w3) mode test (+ block 1)))))
+(defn- enc-key [s :vector-i64 test :i64] :vector-i64
+  (set-key (vector-assoc! s 632 14) 0 test))
+(defn- dec-key [s :vector-i64 test :i64] :vector-i64
+  (invert-keys (reverse-key (set-key (vector-assoc! s 633 14) 60 test) 0 0) 4))
+(defn- stages [s :vector-i64 test :i64 limit :i64] :vector-i64
+  (if (= limit 0) s
+    (let [s1 (enc-key s test)]
+      (if (= limit 1) s1
+        (let [s2 (blocks s1 0 test 0)]
+          (if (= limit 2) s2
+            (let [s3 (dec-key s2 test)]
+              (if (= limit 3) s3 (blocks s3 1 test 0)))))))))
+(defn- body [s :vector-i64] :vector-i64
+  (blocks (dec-key (blocks (enc-key s 0) 0 0 0) 0) 1 0 0))
+(defn- repeats [s :vector-i64 n :i64] :vector-i64
+  (if (= n 0) s (repeats (body s) (- n 1))))
+(defn- verify [s :vector-i64 i :i64] :i64
+  (if (= i 256) 1
+    (if (and (= (vector-at s (+ 120 i)) (expected-data i))
+             (= (vector-at s (+ 376 i)) (plain-data i))) (verify s (+ i 1)) 0)))
+(defn batch [iterations :i64] :i64
+  (if (<= iterations 0) 0 (verify (repeats (vector-alloc 635) iterations) 0)))
+(defn stage-cell [encoded :i64] :i64
+  (let [test (quot encoded 4096) code (rem encoded 4096) stage (quot code 634) cell (rem code 634)
+        done (stages (vector-alloc 635) test stage)] (vector-at done cell)))
+(defn test-nettle-aes [] :i64 (batch 1))

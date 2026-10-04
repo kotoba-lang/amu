@@ -73,3 +73,10 @@ offline, so there is no new performance ratio. Seven adapted workloads remain
 without complete alternatives; historical timings and full-suite score claims
 remain unchanged. C volatile globals and owned Kotoba vectors differ in access
 semantics; the evidence establishes the recorded sequential state comparisons.
+
+[Nettle-AES](coscientist-aes-20261004.md) now has a complete AES-256 alternative
+including both schedules, inversion, and 256-byte encryption/decryption.
+12,680 phase-state values and 634 production-body final values match C.
+It is unmeasured while asher is offline. Six adapted workloads still lack
+complete alternatives; no historical timing or geometric mean is changed
+and no official full-suite score or C-or-better claim follows.

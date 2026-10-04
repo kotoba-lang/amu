@@ -4409,3 +4409,14 @@ source without changing the compiler or weakening validation. asher remains
 offline: no timing, ranking, promotion or C-or-better claim. Seven adapted
 workloads still lack complete alternatives. Source pins refuse changed C
 under Python -O; raw correctness evidence and a timing replay bundle are saved.
+
+Next complete workload: [selfhost Nettle-AES](coscientist-aes-20261004.md).
+The alternative performs both schedules, inversion and all 16 encryption /
+decryption blocks. Native check/compile pass; 12,680 state cells agree across
+four inputs and five phases, with 634 extra production-body comparisons,
+five batch counts and bounds/fuel trap checks. This preserves all AES rounds
+rather than using the historical simplified model. A typed scratch-store
+helper resolves a source check refusal without compiler/guard changes. asher
+is still offline, so this is correctness evidence only: no timing, ranking,
+optimization promotion or official score. Six adapted workloads remain
+without complete alternatives; replay and source-pinned artifacts are saved.
