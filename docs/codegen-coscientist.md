@@ -4374,3 +4374,17 @@ separation, below the research threshold. Both are rejected, despite fewer
 emitted instructions and 327,680 conversion checks. No compiler change or
 formal qualification follows. Nine adapted workloads still lack complete
 alternatives; the historical suite and score claims remain unchanged.
+
+Next complete workload: [selfhost Huffbench](coscientist-huffbench-20261004.md).
+The pinned 500-byte full codec passes native check/compile and 3,309 C state
+comparisons, plus 1,001 output-byte checks against unchanged C. Matched
+32-body timing is 60,339.107 ns/body versus C 8,278.511 ns (7.289x slower).
+Two handle-validation Reflect prototypes save about 4.2%/4.0% without
+sample-spread separation and are rejected. Their completed summaries were
+observed, but raw reports await recovery from offline asher; baseline raw
+reports were retrieved. Fresh per-body allocation passes one-body state
+checks but exceeds the 65,536-item arena at 19 bodies, so it is also rejected
+without timing. No compiler optimization or formal qualification follows.
+Eight adapted workloads still lack complete alternatives. Next investigate
+bounded reusable-buffer initialization rather than increasing measurement
+resource limits to hide the allocation failure.

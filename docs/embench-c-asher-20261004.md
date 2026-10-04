@@ -57,3 +57,11 @@ eight-operation alternative with 5,427 state-cell matches, measuring 14.357x
 slower than C. Nine adapted workloads remain without complete alternatives.
 These additions do not revise the historical table, its geometric mean, or
 produce an official full-suite score.
+
+[Huffbench](coscientist-huffbench-20261004.md) now has a complete selfhost
+500-byte codec alternative with 3,309 matching C state cells and a separate
+matched-batch comparison: 60,339.107 ns/body versus C 8,278.511 ns (7.289x
+slower). Eight adapted workloads remain without complete alternatives. The
+historical table and geometric mean remain unchanged; no official full-suite
+score or C-or-better claim follows. Two rejected prototype raw reports await
+recovery from offline asher; the baseline report is archived locally.
