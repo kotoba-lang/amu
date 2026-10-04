@@ -110,3 +110,10 @@ original full repeated aha-mont64 body and final verifier. Updated canonical
 spec and all-19 re-audit now record 13 matched profiles / six pending paths;
 full timing/official-score/formal flags remain false. Snapshot evidence is
 saved in the Montgomery `matrix-audit.tgz`.
+
+
+Matmult follow-up (2026-10-05): `coscientist-matmult-full-20261005.md`
+qualifies the original init/copy/20x20 repeated body and final verifier.
+Updated spec and fresh all-19 audit now record 14 matched profiles / five
+pending paths; no full-suite timing/score/formal claim. Matrix evidence is
+saved in the matmult `matrix-audit.tgz`.

@@ -4589,3 +4589,13 @@ generated comparison/BRK instructions, with failed evidence retained and no
 guard change. Matrix coverage becomes 13 matched profiles / six pending
 alignments. asher offline; no new timing/score/promotion. See
 `coscientist-mont64-full-20261004.md`.
+
+
+Matmult-int matched repeated body (2026-10-05): original 800 RNG inputs,
+800 copied input cells/body, all 8,000 MACs and 400 final output values are
+retained. All 10,005 init/1/2/17/32 states agree with C; original verifier and
+ASan/UBSan pass 1..32. One reused 2,001-cell owned workspace and 347,702 fuel
+fit unchanged budgets. A draft unknown-operation refusal is retained;
+existing vector-assoc! was used without checker/runtime changes. Matrix
+coverage becomes 14 matched profiles / five pending paths; asher offline,
+no timing/score/promotion. See `coscientist-matmult-full-20261005.md`.
