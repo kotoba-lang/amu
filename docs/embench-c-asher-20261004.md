@@ -266,3 +266,13 @@ once, carries offsets and reuses owned storage, with diagnostics off bench.
 All 19 canonical paths now have matched active profiles. Whole-suite timing/
 official scores remain unqualified; asher SSH times out. C-or-better speed is
 still unproven.
+
+### 2026-10-05: common paired-timing preparation
+
+[Shared 19-profile timing harness](embench-paired-timing-20261005.md) pins
+qualified native bytes and explicit C archive members. Both arms pass repeated
+ABI calls and untimed warmup for all 19. Wrong-host measurement and changed
+source refuse under Python -O; PRODUCT stays 97. Thirty alternating pairs
+will report mean/SD/time ratios and retain nonseparated hypotheses. Timing
+remains provisional without CPU-idle/official-driver evidence. asher is
+offline; no new elapsed measurement or C speedup is claimed.
