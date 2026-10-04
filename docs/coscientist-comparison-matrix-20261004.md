@@ -161,3 +161,15 @@ bodies/full golden digests and 9,966 observations. The original C timed
 verifier checks eight bytes; qualification separately checks all 32. Diagnostic
 stores stay off the benchmark path. The native matrix now has 18 matched
 profiles, with xgboost pending. asher is offline; no timing/score is inferred.
+
+### 2026-10-05: complete xgboost model and repeated inference
+
+[Full xgboost qualification](coscientist-xgboost-full-20261005.md) keeps all
+400 trees and 128x64 inputs. All 39,555 bytes match through 9,889 injective
+packed groups; 4,227 count/prediction/vote observations match at 0/1/32 bodies.
+Exact counts 0/126/252/2142/4032 qualify 0/1/2/17/32 bodies. C ASan/UBSan passes
+32 original bodies, 46,497 snapshot reads and all model groups. Native decodes
+once, carries offsets and reuses owned storage, with diagnostics off bench.
+All 19 canonical paths now have matched active profiles. Whole-suite timing/
+official scores remain unqualified; asher SSH times out. C-or-better speed is
+still unproven.
