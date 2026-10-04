@@ -117,3 +117,10 @@ boundaries match unchanged C behavior for the original v2 profile. Placement,
 mask scoring/selection and final format are still open. Three full alternatives
 remain incomplete; this untimed evidence changes no historical performance
 ratio or official-score claim.
+
+[QR data placement](coscientist-qr-placement-20261004.md) now connects the
+selfhost codewords and frame fragments. All 7,144 image/cursor/component
+observations match C, with four unchanged-fillframe final-image selfchecks
+and guards/sanitizers. Masks, scoring/selection and final format remain open.
+Three full alternatives remain incomplete. asher is offline: this untimed
+fragment changes no historical timing ratio or official-score claim.

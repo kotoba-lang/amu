@@ -4479,3 +4479,13 @@ unchanged PRODUCT counts pass. Data placement, eight mask penalties/selection
 and final format are still required, so QR stays incomplete. Three workloads
 still lack complete alternatives. asher remains unreachable: no timing,
 ranking, promotion or official score follows. Raw evidence/replay are saved.
+
+QR in progress: [selfhost data placement](coscientist-qr-placement-20261004.md).
+AST composition connects the checked codewords/base frame in one 2,048-cell
+workspace, preserving components. Native check/compile pass; all 7,144 image,
+cursor and component comparisons match C, including all 352 bits and the
+original final advance. Four final images agree with unchanged fillframe.
+Bounds/fuel, C ASan/UBSan, regeneration, three pin refusals and unchanged
+PRODUCT entries pass. Eight masks, penalties/selection and final format
+still remain; three complete alternatives are outstanding. asher is offline;
+no timing, ranking, optimization promotion or official score follows.
