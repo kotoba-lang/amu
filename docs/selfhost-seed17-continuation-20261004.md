@@ -85,7 +85,9 @@ The image remains below 100%:
 - The strict exec tracer failed closed: `sudo -n dtruss` requires a password.
   The successful dyld interposer is supplementary evidence, not rule 11's
   complete own-source execution trace.
-- No quiet Embench timing receipt exists.
+- Quiet Embench timing is now recorded separately in
+  `docs/embench-asher-20261004.md`; it does not close the product-entry or
+  own-source execution gates above.
 
 The trace wrapper now fails if it captured no exec events. A simulated
 tracer returning success with an empty log was tested and returned exit 2.
