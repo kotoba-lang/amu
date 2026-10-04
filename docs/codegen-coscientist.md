@@ -4388,3 +4388,12 @@ without timing. No compiler optimization or formal qualification follows.
 Eight adapted workloads still lack complete alternatives. Next investigate
 bounded reusable-buffer initialization rather than increasing measurement
 resource limits to hide the allocation failure.
+
+Huffbench follow-up: [bounded reset candidates](coscientist-huffbench-reset-20261004.md).
+Split/4-store/8-store initialization preserves every write and the existing
+arena limit. All three pass 6,618 poisoned-workspace cell comparisons, five
+batch counts and boundary/fuel traps through native selfhost Amu. The default
+source remains byte-identical. Fuel counts decrease for grouped source loops,
+but this is not timing evidence. asher is offline and local load is high:
+no candidate is ranked or promoted, and no compiler optimization is made.
+A replay bundle is prepared for the same-host C/reference timing gate.

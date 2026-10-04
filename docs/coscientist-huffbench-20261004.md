@@ -107,3 +107,8 @@ nsichneu, picojpeg, qrduino, sglib-combined, slre, statemate, and wikisort.
 Initialization/timing audit and official size scoring remain open. Next test
 bounded workspace reuse with bulk initialization, then loop/access/call
 lowering; fewer instructions alone have not predicted a reliable win.
+
+Follow-up: [bounded initialization candidates](coscientist-huffbench-reset-20261004.md)
+now pass complete poisoned-workspace checks after 1/32 bodies while retaining
+the arena budget. These are unmeasured experimental generator options; the
+measured default and all performance claims above remain unchanged.

@@ -16,11 +16,7 @@
 (def DISTINCT 3306)
 (def MAX-CODE 3307)
 (def MAX-LENGTH 3308)
-(defn- reset [s :vector-i64 i :i64] :vector-i64
-  (if (= i RESET-LIMIT) s
-    (let [value (if (< i 500) (original-at i) 0)
-          next (vector-assoc! s i value)]
-      (reset next (+ i 1)))))
+;; @RESET@
 (defn- count-frequencies [s :vector-i64 i :i64] :vector-i64
   (if (= i 500) s
     (let [symbol (vector-at s i) at (+ FREQ symbol)
