@@ -147,3 +147,10 @@ with native guards and original C decoder/verifier/sanitizers. The native
 full decoder is still missing; picojpeg remains the last incomplete alternative.
 asher is offline, so this untimed fragment changes no historical timing or
 official-score claim. The actual C profile is 51×64 YH1V1 with 56 MCUs.
+
+[Selfhost picojpeg headers/tables](coscientist-picojpeg-headers-20261004.md)
+now match 4,712 C reader/quant/Huffman/header state values through scan setup,
+including the original full-init API comparison and guards/sanitizers.
+Native coefficient/IDCT/color decoding remains open, so picojpeg is still
+incomplete. asher remains offline; this untimed fragment changes no historical
+ratio, ranking or official-score claim. Raw artifacts and fresh replay are saved.

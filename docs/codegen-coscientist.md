@@ -4527,3 +4527,15 @@ The scripts are controlled reader diagnostics, not native JPEG decoding.
 Marker/Huffman/quantization/coefficient/IDCT/color still remain; picojpeg is
 still incomplete. asher is offline; no timing/rank/promotion/official score
 follows. Raw evidence and fresh fragment replay are archived.
+
+Picojpeg in progress: [selfhost headers/tables](coscientist-picojpeg-headers-20261004.md).
+Checked-reader AST composition adds actual marker/DQT/DHT/SOF/SOS parsing,
+Winograd quant scaling, canonical Huffman fields, component/MCU geometry and
+scan validation/fixup. Native check/compile and 4,712 C state matches pass.
+Final staged state agrees with unchanged full init API; original C RGB
+verifier, ASan/UBSan, native bounds/fuel, three pin refusals, regeneration,
+unchanged reader and unchanged 97 PRODUCT entries pass. Source bits produce
+51×64 YH1V1, 56 MCUs, both quant/four Huffman tables. Only the original fixture
+is qualified. Native coefficient/IDCT/color and reused whole bodies remain;
+picojpeg stays incomplete. asher is offline: no timing/rank/promotion/official
+score follows. Exact artifacts and fresh fragment replay are archived.
