@@ -4569,3 +4569,13 @@ full-suite timing or score follows from prior algorithm completion. Source/
 compiler/upstream/identity pins fail closed under Python -O; 97 PRODUCT entries
 unchanged. asher offline; no new timing/ranking/promotion. See
 `coscientist-comparison-matrix-20261004.md` before selecting the next measured gap.
+
+
+CRC32 matched repeated body (2026-10-04): both chunked/scalar table paths
+match 2,306 table/prefix/RNG observations each and unchanged C body/verifier
+through 32 bodies. Verification occurs once after all bodies; RNG resets
+exactly as C at each body. Chunked remains canonical; scalar is an unmeasured
+candidate, despite lower fuel. Original C sanitizer checks 1..32 pass. Matrix
+coverage becomes 12 matched profiles / seven pending alignments. asher offline;
+no new timing, score, ranking or performance promotion. See
+`coscientist-crc32-full-20261004.md`.

@@ -3,8 +3,8 @@
 Measured on 2026-10-04 JST on Tailscale host asher (Apple M4, 10 cores, 16 GiB RAM, macOS 26.2). C uses Apple Clang 17.0.0, -O2, without LTO. Kotoba uses the r6m unified Amu image abcc1318957af7d3a09cfd66c06d17821b5cf47f4c47d02b5620e9e92a24f02e. Amu is the compiler of the measured Kotoba programs, not another independent language entry.
 
 Current comparison coverage: [the canonical-path audit](coscientist-comparison-matrix-20261004.md)
-rebuilds and runs all 19 paths through native selfhost Amu. Eleven have matched
-original active-profile alternatives; eight still need initialization/repetition/
+rebuilds and runs all 19 paths through native selfhost Amu. Twelve have matched
+original active-profile alternatives after the CRC32 follow-up; seven still need initialization/repetition/
 timing alignment. The measurements below are historical and are unchanged.
 No full-suite Kotoba score or C-or-better result is established.
 
@@ -180,3 +180,13 @@ pass; 32 bodies fit one reused 4,096-cell workspace and minimum passing fuel
 IDCT/color/reuse gap is closed for this original input; alternate JPEG APIs
 are unqualified. asher is offline, so timing/ranking/official-score claims
 remain unchanged. See `coscientist-picojpeg-full-20261004.md`.
+
+
+CRC32 matched repeated body (2026-10-04): both chunked/scalar table paths
+match 2,306 table/prefix/RNG observations each and unchanged C body/verifier
+through 32 bodies. Verification occurs once after all bodies; RNG resets
+exactly as C at each body. Chunked remains canonical; scalar is an unmeasured
+candidate, despite lower fuel. Original C sanitizer checks 1..32 pass. Matrix
+coverage becomes 12 matched profiles / seven pending alignments. asher offline;
+no new timing, score, ranking or performance promotion. See
+`coscientist-crc32-full-20261004.md`.

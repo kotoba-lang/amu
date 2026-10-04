@@ -95,3 +95,11 @@ flags remain false. The full-suite timing flag remains false by construction.
 asher is offline and no live measurement job is claimed. Next align the eight
 remaining paths, then collect rotated paired measurements on quiet asher and
 rank hypotheses against a verified, comparable gap. C-or-better is unachieved.
+
+
+Follow-up: [CRC32 matched repeated bodies](coscientist-crc32-full-20261004.md)
+replaces its historical single-body matrix entry with the verified chunked
+32-body path. The updated canonical spec and fresh all-19 audit now record
+12 matched original-active profiles / seven pending alignments. The table
+above retains the initial audit snapshot. New evidence is in the CRC32
+`matrix-audit.tgz`; timing/score/formal flags remain false.
