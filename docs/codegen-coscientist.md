@@ -4489,3 +4489,16 @@ Bounds/fuel, C ASan/UBSan, regeneration, three pin refusals and unchanged
 PRODUCT entries pass. Eight masks, penalties/selection and final format
 still remain; three complete alternatives are outstanding. asher is offline;
 no timing, ranking, optimization promotion or official score follows.
+
+Next complete workload: [selfhost qrduino](coscientist-qr-full-20261004.md).
+The original v2/L encoder now includes all eight mask predicates, N1–N4
+penalties, strict best-mask selection, reset/reapplication and format bits.
+Native selfhost check/compile pass. All 8,640 staged and 1,408 repeated-body
+values match C; full unmasked/final images, all scores and selection state
+are included. Original input's mask-1/6 tie and long input's mask-7 break
+match. Unchanged qrencode and original benchmark/verify selfchecks,
+ASan/UBSan, bounds/fuel, five pin refusals, regeneration and unchanged 97
+PRODUCT entries pass. One 2,048-cell workspace supports 32 full bodies within
+fuel/arena limits. Two alternatives remain incomplete (picojpeg, wikisort).
+asher is offline; no timing, rank, optimization promotion or official score
+is claimed. Fresh comparator replay and exact evidence are archived.

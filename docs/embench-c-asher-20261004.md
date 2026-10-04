@@ -124,3 +124,11 @@ observations match C, with four unchanged-fillframe final-image selfchecks
 and guards/sanitizers. Masks, scoring/selection and final format remain open.
 Three full alternatives remain incomplete. asher is offline: this untimed
 fragment changes no historical timing ratio or official-score claim.
+
+[Full selfhost qrduino](coscientist-qr-full-20261004.md) now supplies the
+complete original v2/L path through eight masks, penalties/selection and
+format bits. Native check/compile and 10,048 staged/repeated value matches
+pass, including original C verifier and full final images, with guards and
+sanitizers. Only picojpeg/wikisort still lack complete alternatives. asher
+is offline; no timing ratio or official score is added to the historical
+table. The complete comparator's fresh replay is saved for quiet-host runs.
