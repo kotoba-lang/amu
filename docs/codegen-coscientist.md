@@ -4456,3 +4456,15 @@ byte-identical regeneration and unchanged PRODUCT counts pass. asher remains
 unreachable, so no timing/ranking/promotion or official score is claimed.
 Three adapted workloads still need complete alternatives. Raw artifacts and
 a fresh timing replay bundle are saved; C-or-better remains the goal.
+
+Next workload in progress: [QR codeword fragment](coscientist-qr-codewords-20261004.md).
+Replace the historical unrelated-prefix parity kernel with the actual
+version-2/L byte-mode and Reed–Solomon pipeline. Native selfhost check/compile
+pass. Four initialized inputs across five phases yield 20,480 matching
+workspace values, all 512 GF table entries match, and final buffers/codewords
+agree with unchanged stringtoqr. Native bounds/fuel and C profile/access
+sanitizers pass; four source-pin refusals, regeneration and unchanged PRODUCT
+counts pass. This is explicitly a fragment: frame construction, placement,
+eight masks, scoring and final format still need implementation. Three
+adapted workloads still lack complete alternatives. asher remains unreachable;
+no timing, ranking, official score or optimization promotion follows.

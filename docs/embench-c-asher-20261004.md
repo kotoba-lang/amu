@@ -103,3 +103,10 @@ Native selfhost check/compile pass; 9,445 structural and repeated-body values
 match C, with batches, bounds/fuel and oracle sanitizer checks. asher is still
 unreachable, so no timing ratio or official score is added. Three adapted
 workloads still lack complete alternatives; historical timings are unchanged.
+
+[QR codewords](coscientist-qr-codewords-20261004.md) now has a selfhost fragment
+for the original input's byte-mode and Reed–Solomon pipeline, with four-input
+C differential, unchanged-function selfchecks, table and guard checks.
+Framing/placement/mask selection/format remain open. QR is still counted
+among the three incomplete alternatives, and no performance ratio or
+historical timing is changed while asher is unreachable.
