@@ -4352,3 +4352,14 @@ has not improved. Other exploratory prototypes have no adoption verdict.
 The JVM perfgate launcher is still REFUSED; numerical separation is a
 research diagnostic, not formal qualification. This bounded seed work
 neither changes nor satisfies the six-domain / five-comparator contract.
+
+Follow-up: [selfhost depthconv research](coscientist-depthconv-20261004.md).
+The generated benchmark port uses literal tables, expands four fixed rows,
+and places the channel expression in its kernel. Both native check and
+compile accept the final helper formulation. In the final matched batch run,
+it measures 123.510 ns versus Base64 3038.023 ns (24.597x faster), but C is
+42.582 ns (Kotoba remains 2.901x slower). Two table-address prototypes fail
+Reflect and are not implemented. This is benchmark-source improvement, not
+a generic compiler speedup, full-suite score or formal perfgate qualification.
+Next rank: native inlining/constant-trip lowering with fuel semantics intact;
+the C-or-better goal remains open.
