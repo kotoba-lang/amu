@@ -4420,3 +4420,14 @@ helper resolves a source check refusal without compiler/guard changes. asher
 is still offline, so this is correctness evidence only: no timing, ranking,
 optimization promotion or official score. Six adapted workloads remain
 without complete alternatives; replay and source-pinned artifacts are saved.
+
+Next complete workload: [selfhost Statemate](coscientist-statemate-20261004.md).
+A hash-locked C AST bootstrap generator emits static typed Kotoba functions
+for all seven controllers, including switch fallthrough, early breaks and
+the stabilization loop. The native selfhost compiler accepts and compiles
+it. All 2,028 staged state values, 169 actual-body values and 676 values after
+1/2/17/32 bodies match C; bounds and fuel guards pass. PRODUCT inventory is
+unchanged. Generation and optimized-Python pin refusal are checked. asher
+remains offline: no timing, ranking, promotion or official score is claimed.
+Five adapted workloads still need complete alternatives; raw evidence and
+a fresh timing replay bundle are saved. C-or-better remains unachieved.

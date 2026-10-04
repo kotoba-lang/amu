@@ -80,3 +80,10 @@ including both schedules, inversion, and 256-byte encryption/decryption.
 It is unmeasured while asher is offline. Six adapted workloads still lack
 complete alternatives; no historical timing or geometric mean is changed
 and no official full-suite score or C-or-better claim follows.
+
+[Statemate](coscientist-statemate-20261004.md) now has a complete selfhost
+window-controller alternative. All 2,028 staged state values, 169 actual-body
+values and 676 repeated-body values match unchanged C. Native check/compile,
+batches and bounds/fuel checks pass. It remains unmeasured while asher is
+offline; five adapted workloads still lack complete alternatives. The
+historical timing table and geometric mean remain unchanged.
