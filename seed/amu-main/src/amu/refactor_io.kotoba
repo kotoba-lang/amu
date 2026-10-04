@@ -32,8 +32,7 @@
           (string=? phase "internal") 70
           :else 65)))
 
-;; source-path/source-kind's extensions, and posix basename (UTF-8 safe: amu.cli's byte loops trap on a non-ASCII
-;; argument, string-code-point-at inside a code point)
+;; source-path/source-kind's extensions, and posix basename (UTF-8 safe; amu.cli's are too since CHECKFULL 2026-10-04)
 (defn- source-ext? [s :string] :bool
   (or (ends-with? s ".kotoba") (ends-with? s ".cljk") (ends-with? s ".cljc")))
 
@@ -65,17 +64,48 @@
     (and (>= n m) (= (boundary-from s m) m) (string=? (string-substring s 0 m) t))))
 
 ;; "dir", "file", or "" when absent (host-io :kind: STAT "" -> nil, "... 1" -> :dir, else :file)
+;; STAT traps (SIGILL) on a path outside the loader's scope; EXISTS answers "0" there, so it is asked first and such a
+;; path is absent, as nbb answers for a file it cannot see (CHECKFULL, 2026-10-04)
 (defn kind [path :string] :string
-  (let [a (app (string-concat path (tok "STAT")))]
-    (cond (= (string-byte-length a) 0) ""
-          (ends-with? a " 1") "dir"
-          :else "file")))
+  (if (= (cli/readable path) 0)
+    ""
+    (let [a (app (string-concat path (tok "STAT")))]
+      (cond (= (string-byte-length a) 0) ""
+            (ends-with? a " 1") "dir"
+            :else "file"))))
 
 (defn read-file [path :string] :string (app path))
 
+;; WRITE_SEP content (CHECKFULL, 2026-10-04). The loader refuses (SIGILL) a write whose request holds its form's token
+;; twice -- content that contains the text WRITE_SEP -- and an append whose request holds APPEND_SEP twice. So the content
+;; is cut one byte into every occurrence of either token: the first piece is written (WRITE_SEP), the others appended
+;; (APPEND_SEP) in order, and no piece holds a whole token. The bytes on disk are the content's bytes. The tokens are built
+;; at run time and matched byte by byte from code-point boundaries (both are ASCII, so every byte matched is a boundary).
+(defn- tok-at? [s :string i :i64 t :string j :i64] :bool
+  (cond (>= j (string-byte-length t)) true
+        (>= (+ i j) (string-byte-length s)) false
+        (= (string-code-point-at s (+ i j)) (string-code-point-at t j)) (tok-at? s i t (+ j 1))
+        :else false))
+
+;; the byte after the first byte of the next WRITE_SEP / APPEND_SEP occurrence at or after boundary i, or n
+(defn- next-cut [s :string i :i64 n :i64 tw :string ta :string] :i64
+  (cond (>= i n) n
+        (or (tok-at? s i tw 0) (tok-at? s i ta 0)) (+ i 1)
+        :else (next-cut s (+ i (cpw (string-code-point-at s i))) n tw ta)))
+
+(defn- append-pieces [path :string text :string i :i64 n :i64] :i64
+  (if (>= i n)
+    1
+    (let [c (next-cut text i n (tok "WRITE") (tok "APPEND"))
+          r (app (string-concat path (string-concat (tok "APPEND") (string-substring text i c))))]
+      (append-pieces path text c n))))
+
 ;; 1 when written
 (defn write-file [path :string text :string] :i64
-  (let [r (app (string-concat path (string-concat (tok "WRITE") text)))] 1))
+  (let [n (string-byte-length text)
+        c (next-cut text 0 n (tok "WRITE") (tok "APPEND"))
+        r (app (string-concat path (string-concat (tok "WRITE") (string-substring text 0 c))))]
+    (append-pieces path text c n)))
 
 (defn rename [from :string to :string] :i64
   (if (string=? (app (string-concat from (string-concat (tok "RENAME") to))) "1") 1 0))

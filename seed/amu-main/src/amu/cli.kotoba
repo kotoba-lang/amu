@@ -1,5 +1,5 @@
 (ns amu.cli
-  {:kotoba/export [argc arg argx out err ends-with source-ext regular-file directory parent basename flag-value has-flag positional
+  {:kotoba/export [argc arg argx out err ends-with source-ext readable regular-file directory parent basename flag-value has-flag positional
                    usage-error usage-error-at decode-error report-error report-plain not-available]})
 
 ;; seed/amu-main/src/amu/cli.kotoba -- argv, output and the stage-0 report shapes shared by the amu command entries
@@ -36,16 +36,30 @@
   (let [r (typed-cap-call :io/write-error :string :string s)] 0))
 
 ;; ---- strings ------------------------------------------------------------------------------------------------------
-(defn- same-tail [s :string t :string i :i64 j :i64 k :i64] :i64
-  (cond (>= k (string-length t)) 1
-        (= (string-code-point-at s (+ i k)) (string-code-point-at t (+ j k))) (same-tail s t i j (+ k 1))
+;; Offsets are BYTES (string-length is the byte length) and string-code-point-at traps inside a multi-byte code point, so
+;; every walk below steps by whole code points from a boundary (CHECKFULL, 2026-10-04: `amu check é.txt` trapped in
+;; ends-with at byte 1 of "é"; basename copied one byte at a time).
+(defn- cp-width [c :i64] :i64 (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))
+
+;; 1 when byte offset k is a code-point boundary of s, walking from boundary i
+(defn- boundary [s :string i :i64 k :i64] :i64
+  (cond (= i k) 1
+        (> i k) 0
+        :else (boundary s (+ i (cp-width (string-code-point-at s i))) k)))
+
+;; 1 when t's code points equal s's from boundary i on (t ends exactly at the end of s: the caller checks the lengths)
+(defn- same-tail [s :string t :string i :i64 j :i64] :i64
+  (cond (>= j (string-length t)) 1
+        (= (string-code-point-at s i) (string-code-point-at t j))
+        (same-tail s t (+ i (cp-width (string-code-point-at t j))) (+ j (cp-width (string-code-point-at t j))))
         :else 0))
 
-;; 1 when s ends with suffix t (byte-wise)
+;; 1 when s ends with suffix t (byte-wise; a suffix that starts inside a code point of s is not one)
 (defn ends-with [s :string t :string] :i64
-  (if (< (string-length s) (string-length t))
-    0
-    (same-tail s t (- (string-length s) (string-length t)) 0 0)))
+  (let [k (- (string-length s) (string-length t))]
+    (cond (< k 0) 0
+          (= (boundary s 0 k) 0) 0
+          :else (same-tail s t k 0))))
 
 ;; stage-0's source rule (cli.cljk source-input): .kotoba, .cljk or .cljc
 (defn source-ext [s :string] :i64
@@ -56,36 +70,40 @@
 
 ;; the byte offset after the last '/', 0 when none
 (defn- last-slash [s :string i :i64 acc :i64] :i64
-  (cond (>= i (string-length s)) acc
-        (= (string-code-point-at s i) 47) (last-slash s (+ i 1) (+ i 1))
-        :else (last-slash s (+ i 1) acc)))
-
-(defn- copy-from [s :string i :i64 acc :string] :string
   (if (>= i (string-length s))
     acc
-    (copy-from s (+ i 1) (string-concat acc (string-substring s i (+ i 1))))))
+    (let [c (string-code-point-at s i)]
+      (if (= c 47) (last-slash s (+ i 1) (+ i 1)) (last-slash s (+ i (cp-width c)) acc)))))
 
 (defn basename [s :string] :string
-  (let [k (last-slash s 0 0)] (if (= k 0) s (copy-from s k ""))))
+  (let [k (last-slash s 0 0)] (if (= k 0) s (string-substring s k (string-length s)))))
 
 ;; ---- files (wire 35) ----------------------------------------------------------------------------------------------
-;; STAT form "<path>STAT_SEP" -> "<mode> <size> <blocks> <isdir>", "" when absent or outside the granted scope
+;; STAT form "<path>STAT_SEP" -> "<mode> <size> <blocks> <isdir>", "" when absent. STAT TRAPS (SIGILL) on a path outside
+;; the loader's granted scope, so the scope is asked first with the EXISTS form, which answers "0" there and never traps
+;; (tools/kexe_loader.c fs_app_data_exists_provider; "1" for any readable file or directory inside the scope). A path
+;; outside the scope is therefore answered as absent ("input must be a regular file"), not a trap (CHECKFULL, 2026-10-04).
 (defn- stat-token [] :string (string-concat "STAT" "_SEP"))
+(defn- exists-token [] :string (string-concat "EXISTS" "_SEP"))
 
-(defn regular-file [path :string] :i64
-  (let [a (typed-cap-call :fs/app-data :string :string (string-concat path (stat-token)))
-        n (string-length a)]
-    (cond (= n 0) 0
-          (= (string-code-point-at a (- n 1)) 48) 1
-          :else 0)))
+;; 1 when path names something readable inside the granted scope (wire 35 EXISTS)
+(defn readable [path :string] :i64
+  (if (= (string-length path) 0)
+    0
+    (let [a (typed-cap-call :fs/app-data :string :string (string-concat path (exists-token)))]
+      (if (and (> (string-length a) 0) (= (string-code-point-at a 0) 49)) 1 0))))
+
+(defn- stat-last [path :string] :i64
+  (if (= (readable path) 0)
+    0
+    (let [a (typed-cap-call :fs/app-data :string :string (string-concat path (stat-token)))
+          n (string-length a)]
+      (if (= n 0) 0 (string-code-point-at a (- n 1))))))
+
+(defn regular-file [path :string] :i64 (if (= (stat-last path) 48) 1 0))
 
 ;; 1 when path names a directory (STAT's last field 1) (CMD, 2026-10-04)
-(defn directory [path :string] :i64
-  (let [a (typed-cap-call :fs/app-data :string :string (string-concat path (stat-token)))
-        n (string-length a)]
-    (cond (= n 0) 0
-          (= (string-code-point-at a (- n 1)) 49) 1
-          :else 0)))
+(defn directory [path :string] :i64 (if (= (stat-last path) 49) 1 0))
 
 ;; the directory part of a path ("." when it has none), as java.io.File's parent of a relative name
 (defn parent [s :string] :string

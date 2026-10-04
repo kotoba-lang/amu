@@ -1,0 +1,10 @@
+(ns amu.tmain
+  {:kotoba/export [main]}
+  (:require [amu.cli :as cli]
+            [amu.check :as check]))
+
+;; seed/tests/checkfull/tmain.kotoba -- a test entry for `amu check` alone (agent CHECKFULL): argv[0] "check" -> amu.check/run.
+(defn main [] :i64
+  (if (string=? (cli/argx 0) "check")
+    (check/run)
+    (cli/usage-error ":kotoba/invalid-usage" "unknown or missing kotoba command" ", :details {:phase :usage}")))
