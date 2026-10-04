@@ -667,7 +667,11 @@
             n (gn-run-len k)]
         (gn-emit M (gn-e-bf (gn-logic-base bop) d x (bit-and (- 64 tz) 63) (dec n))))
     4 (gn-emit M (gn-e-lsl d x (gn-pow2 k)))
-    (-> M (gn-mov-imm 17 k) (gn-emit (enc-sdiv d x 17)))))
+    ;; Identity division is total even at MIN: preserve the operand instead
+    ;; of serializing it through SDIV. Zero and -1 still use guarded gn-quot.
+    (if (and (= bop BOP-QUOT) (= k 1))
+      (gn-mov M d x)
+      (-> M (gn-mov-imm 17 k) (gn-emit (enc-sdiv d x 17))))))
 (defn- gn-bin-emit [M :vector-i64 bop :i64 t :i64 d :i64] :vector-i64
   (let [ky (gn-dk M (inc t))
         vy (gn-dv M (inc t))

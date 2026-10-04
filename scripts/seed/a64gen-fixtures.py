@@ -177,11 +177,16 @@ fx('r2_qmin', 0, 0, [('CONST', 0, MIN), ('CONST', 1, -1), ('BIN', 'BOP-QUOT', 0)
 IMM = [('ADD', 4095), ('ADD', -4095), ('ADD', 4096), ('SUB', 4095), ('SUB', -1), ('SUB', 0), ('SHL', 0), ('SHL', 1),
        ('SHL', 63), ('SHL', 64), ('USHR', 65), ('USHR', 63), ('SSHR', 63), ('SSHR', 4), ('AND', 255),
        ('AND', s64(0xffffffff00000000)), ('AND', MIN), ('OR', 0x7ff0), ('XOR', MAX), ('AND', 0x5555), ('MUL', 16),
-       ('MUL', 1 << 62), ('MUL', 3), ('QUOT', 3), ('QUOT', -7), ('QUOT', -1), ('QUOT', 1 << 40)]
+       ('MUL', 1 << 62), ('MUL', 3), ('QUOT', 3), ('QUOT', -7), ('QUOT', -1), ('QUOT', 1 << 40), ('QUOT', 1)]
 for n, (b, k) in enumerate(IMM):
     fx('r2_i%d' % n, 1, 1, [('LGET', 0, 1), ('CONST', 1, k), ('BIN', 'BOP-' + b, 0), ('RET', 0)])
     fx('r2_j%d' % n, 1, 1, [('CONST', 0, k), ('LGET', 1, 1), ('BIN', 'BOP-' + b, 0), ('RET', 0)])
 CIMM = [('LT', 4095), ('LT', -4095), ('EQ', 0), ('GE', 4096), ('GT', -1)]
+fx('quot_one_alias', 1, 1, [('LGET', 0, 1), ('CONST', 1, 1), ('BIN', 'BOP-QUOT', 0),
+                           ('LSET', 1, 0), ('LGET', 0, 1), ('RET', 0)])
+fx('quot_one_deep', 1, 1, [('CONST', t, 0) for t in range(7)] +
+   [('LGET', 7, 1), ('CONST', 8, 1), ('BIN', 'BOP-QUOT', 7)] +
+   [('BIN', 'BOP-ADD', t) for t in range(6, -1, -1)] + [('RET', 0)])
 for n, (cc, k) in enumerate(CIMM):
     fx('r2_c%d' % n, 1, 1, [('LGET', 0, 1), ('CONST', 1, k), ('CMP', 'CC-' + cc, 0), ('RET', 0)])
 # a leaf with 12 locals (x0..x6 + callee-saved x19..), called by a non-leaf that keeps a value in x19 across the call
@@ -299,6 +304,9 @@ for n, (b, k) in enumerate(IMM):
 for n, (cc, k) in enumerate(CIMM):
     for x in [k - 1, k, k + 1, MIN, MAX, 0]:
         run('r2_c%d' % n, [x], int(CMPS[cc](x, k)))
+for x in [MIN, MAX, -1, 0, 1, -98765, 12345]:
+    run('quot_one_alias', [x], x)
+    run('quot_one_deep', [x], x)
 def many(a):
     v = [0, a, a + 1]
     for k in range(3, 13): v.append(v[k - 1] + v[k - 2])
@@ -446,7 +454,8 @@ def kotoba(real_layout=False):
          '  (if (>= l (vector-at M MM-LIT-N))',
          '    0',
          '    (let [b (t-litf M l LF-B)',
-         '          o (t-out (string-concat (string-concat (string-concat "lit " (t-dec (t-litf M l LF-POOL))) " ")',
+         '          o (t-out (string-concat (string-concat (string-concat "lit " (t-dec (t-litf M l LF-POOL)))',
+         '                                             (if (= (t-litf M l LF-LEN) 0) "" " "))',
          '                                  (string-concat (t-bl M b (+ b (t-litf M l LF-LEN)) "") "\\n")))]',
          '      (t-pl M (+ l 1)))))',
          '(defn- t-pf [M :vector-i64 f :i64] :i64',
