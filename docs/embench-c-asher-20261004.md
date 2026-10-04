@@ -110,3 +110,10 @@ C differential, unchanged-function selfchecks, table and guard checks.
 Framing/placement/mask selection/format remain open. QR is still counted
 among the three incomplete alternatives, and no performance ratio or
 historical timing is changed while asher is unreachable.
+
+[QR frame construction](coscientist-qr-frame-20261004.md) now also has a
+selfhost fragment: all 1,269 base/reservation byte comparisons across nine
+boundaries match unchanged C behavior for the original v2 profile. Placement,
+mask scoring/selection and final format are still open. Three full alternatives
+remain incomplete; this untimed evidence changes no historical performance
+ratio or official-score claim.

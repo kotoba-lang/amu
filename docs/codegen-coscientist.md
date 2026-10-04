@@ -4468,3 +4468,14 @@ counts pass. This is explicitly a fragment: frame construction, placement,
 eight masks, scoring and final format still need implementation. Three
 adapted workloads still lack complete alternatives. asher remains unreachable;
 no timing, ranking, official score or optimization promotion follows.
+
+QR in progress: [active v2 frame construction](coscientist-qr-frame-20261004.md).
+Native selfhost check/compile pass; all 1,269 base/reservation-byte comparisons
+at nine boundaries match C. The fragment preserves finders, alignment, gaps,
+format/timing reservations and the original v2 version-information no-op.
+Unchanged initframe agrees after 1/2/17/32 fresh setups; C profile/access
+sanitizers, native bounds/fuel, regeneration, three source-pin refusals and
+unchanged PRODUCT counts pass. Data placement, eight mask penalties/selection
+and final format are still required, so QR stays incomplete. Three workloads
+still lack complete alternatives. asher remains unreachable: no timing,
+ranking, promotion or official score follows. Raw evidence/replay are saved.
