@@ -4559,3 +4559,13 @@ pass; 32 bodies fit one reused 4,096-cell workspace and minimum passing fuel
 IDCT/color/reuse gap is closed for this original input; alternate JPEG APIs
 are unqualified. asher is offline, so timing/ranking/official-score claims
 remain unchanged. See `coscientist-picojpeg-full-20261004.md`.
+
+
+Canonical Embench matrix (2026-10-04): all 19 current sources rebuild with
+native selfhost Amu and produce the qualified native bytes; fresh correctness
+and fuel checks pass. Eleven matched active-profile alternatives coexist with
+eight single-body paths still needing timing/init/repetition alignment. No
+full-suite timing or score follows from prior algorithm completion. Source/
+compiler/upstream/identity pins fail closed under Python -O; 97 PRODUCT entries
+unchanged. asher offline; no new timing/ranking/promotion. See
+`coscientist-comparison-matrix-20261004.md` before selecting the next measured gap.
