@@ -1,5 +1,9 @@
 # Embench port comparison: r6l, r6m and stage-0
 
+The later same-host C comparison is in `docs/embench-c-asher-20261004.md`.
+Its warmed repeated native timings and unchanged C benchmark bodies are
+separate from the cold single-call export timings below.
+
 Measured 2026-10-04 at 13:04–13:05 JST over SSH on the Tailscale host
 `asher`: Apple M4, 10 cores, 16 GiB RAM, macOS 26.2. The host had been
 running for 24 days. All compilers ran on this same host. Stage-0 is the
