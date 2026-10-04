@@ -163,3 +163,14 @@ adapter, independently checked with ASan/UBSan (1..32 iterations). A draft
 adapter pointer-initialization failure is retained and corrected. IDCT/color
 and full reused native bodies remain open; no timing, score or performance
 ranking changed. See `coscientist-picojpeg-coefficients-20261004.md`.
+
+
+Picojpeg complete original active profile (2026-10-04): native selfhost Kotoba
+now performs all IDCT/color work for all 56 MCUs, with 33,356 staged and 4,400
+reused-body values matching C. Full 1/2/17/32 bodies and original verifier
+pass; 32 bodies fit one reused 4,096-cell workspace and minimum passing fuel
+7,102,019 without changing bounds/fuel/ABI. Original C ASan/UBSan checks pass
+1..32 bodies and all initialized observations. The prior picojpeg coefficient/
+IDCT/color/reuse gap is closed for this original input; alternate JPEG APIs
+are unqualified. asher is offline, so timing/ranking/official-score claims
+remain unchanged. See `coscientist-picojpeg-full-20261004.md`.
