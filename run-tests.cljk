@@ -168,7 +168,10 @@
             [kotoba.compiler.options-map-argument-test]
             ;; ADR 0353 :vector-parameter: an unannotated parameter read as a
             ;; vector is the vector its callers pass (browser.input's rects)
-            [kotoba.compiler.vector-parameter-test]))
+            [kotoba.compiler.vector-parameter-test]
+            ;; ADR 0353 :record-list-sequence: first of a filter / remove /
+            ;; reverse chain over a [:list R] (browser.input's window-at)
+            [kotoba.compiler.record-list-sequence-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
   (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
@@ -260,4 +263,5 @@
              'kotoba.compiler.typed-wasm-min-max-test
              'kotoba.compiler.native-option-record-test
              'kotoba.compiler.options-map-argument-test
-             'kotoba.compiler.vector-parameter-test)
+             'kotoba.compiler.vector-parameter-test
+             'kotoba.compiler.record-list-sequence-test)

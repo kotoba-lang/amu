@@ -274,6 +274,13 @@
   ;; vector", reverse "unknown operation: reverse is not a builtin".
   {:id :record-list-sequence :gate "record-list-filter-first-reverse-test"
    :goal "filter / first / reverse over a [:list R] of records -- browser.input's window-at -- with first answering [:option R] (absent on an empty list) and the predicate a closure over the caller's locals, on the reference, wasm32 and both native targets; first of an empty list used as a record, and a number as the list, stay refused by name"}
+  ;; Measured 2026-10-04 while closing :record-list-sequence: first of a
+  ;; filter / remove / reverse chain is a fused search that builds nothing; a
+  ;; bare reverse, and a filter over a [:list R] first does not read, stay
+  ;; refused (a list builder, typed-list-conj on KIR / Wasm / native, is what
+  ;; they would need). A module with no defn- exports its loop helpers, so a
+  ;; loop over a [:list R] there is refused natively; browser's modules use
+  ;; defn-, so it is not on the browser path.
   ;; Measured 2026-10-04: normalize-event reads an OPEN host event -- (or
   ;; (:button event) 0), (select-keys event [:pointerId .. :height]) over keys
   ;; an event may lack, one record per capability joined in one cond, and the
