@@ -132,3 +132,11 @@ pass, including original C verifier and full final images, with guards and
 sanitizers. Only picojpeg/wikisort still lack complete alternatives. asher
 is offline; no timing ratio or official score is added to the historical
 table. The complete comparator's fresh replay is saved for quiet-host runs.
+
+[Full active-profile selfhost WikiSort](coscientist-wikisort-full-20261004.md)
+now retains all nine original 400-item inputs and the executed cache-512
+algorithm. All 17,710 staged/repeated values agree with C, with full verifier,
+guards and resource checks. Original C signed-multiply overflow is recorded;
+explicit-wrap sanitizers pass and both C variants have identical observed
+states. Only picojpeg still lacks a complete alternative. asher is offline;
+no ratio or official score is added and historical timings are untouched.

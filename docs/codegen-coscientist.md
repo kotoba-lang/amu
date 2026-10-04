@@ -4502,3 +4502,17 @@ PRODUCT entries pass. One 2,048-cell workspace supports 32 full bodies within
 fuel/arena limits. Two alternatives remain incomplete (picojpeg, wikisort).
 asher is offline; no timing, rank, optimization promotion or official score
 is claimed. Fresh comparator replay and exact evidence are archived.
+
+Next complete active-profile workload: [selfhost WikiSort](coscientist-wikisort-full-20261004.md).
+All nine original generators, 400 stable value/index pairs, insertion chunks,
+reverse rotation, cached merges and ordered skips execute on selfhost.
+Native check/compile and 14,490 staged + 3,220 repeated-body C matches pass;
+original verifier, bounds/fuel, 32 bodies, source-pin refusals, byte regeneration
+and unchanged 97 PRODUCT entries pass. The original cache-512 profile never
+enters internal-block merging (proved by retained C branch instrumentation).
+Plain C UBSan exposes upstream input-generator signed overflow; the receipt
+is retained, explicit -fwrapv sanitizer passes, and all 14,490 C states agree
+between plain -O2 and -O2 -fwrapv. This is an actual-host profile agreement,
+not portable ISO C proof or plain-C sanitizer success. Only picojpeg lacks
+a complete alternative. asher is offline; no timing/rank/promotion or official
+score follows. Comparator uses original plain -O2 C; evidence/replay saved.
