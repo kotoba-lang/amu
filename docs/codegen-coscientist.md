@@ -4431,3 +4431,16 @@ unchanged. Generation and optimized-Python pin refusal are checked. asher
 remains offline: no timing, ranking, promotion or official score is claimed.
 Five adapted workloads still need complete alternatives; raw evidence and
 a fresh timing replay bundle are saved. C-or-better remains unachieved.
+
+Next complete workload: [selfhost SLRE](coscientist-slre-20261004.md).
+The port runs the original regex parser and recursive matcher rather than
+four specialized recognizers. Native check/compile pass. All 33,810 state/
+result values across 42 fixtures match C, plus 15 production-body values,
+five batch counts and bounds/fuel checks. The first version discarded the
+last named error on failed unanchored search; the differential rejects it,
+and the accepted version preserves -2 for `*a`. Padded short regex buffers
+make the upstream four-byte flag probe valid; every recorded native value
+also matches that oracle, whose access sanitizer checks pass. PRODUCT counts
+remain unchanged. No timing, ranking or promotion while asher is offline;
+four adapted workloads remain without complete alternatives. Raw artifacts
+and a fresh timing replay bundle are saved. C-or-better remains the goal.

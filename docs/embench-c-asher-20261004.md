@@ -87,3 +87,12 @@ values and 676 repeated-body values match unchanged C. Native check/compile,
 batches and bounds/fuel checks pass. It remains unmeasured while asher is
 offline; five adapted workloads still lack complete alternatives. The
 historical timing table and geometric mean remain unchanged.
+
+[SLRE](coscientist-slre-20261004.md) now has a complete regex-engine
+alternative, preserving parsing, branches, quantifiers, captures and
+backtracking. Native selfhost check/compile pass. All 33,810 fixture state/
+result values and 15 production-body values agree with C, including a replay
+with padded short regex buffers and sanitizer-checked oracle accesses.
+Batches and bounds/fuel guards pass. asher remains offline, so this adds no
+performance ratio or official score. Four adapted workloads still lack
+complete alternatives; the historical timing table remains unchanged.
