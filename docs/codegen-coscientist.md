@@ -4621,3 +4621,14 @@ checks 296,835 initialized header bytes and 37,191 packed/state reads. Guards
 and PRODUCT inventory remain intact. The canonical native matrix has 16
 matched profiles and three pending (md5sum, nettle-sha256, xgboost). asher is
 offline; historical timings and official scores are unchanged.
+
+### 2026-10-05: complete repeated MD5 original profile
+
+[MD5 full qualification](coscientist-md5-full-20261005.md) adds original input
+generation, padded allocation clearing/copy, 16x64 rounds and once-per-batch
+XOR verification. All 2,940 packed/state observations match, including all
+input/padding bytes, final digest and 16 post-block states. C ASan/UBSan passes
+32 original bodies and 19,404 observations. Diagnostic block stores are excluded
+from the accepted benchmark path and retained on the observation path. Native
+canonical coverage is 17 matched profiles; SHA-256 and xgboost remain pending.
+asher is offline: no new timings, official score or C speedup is claimed.

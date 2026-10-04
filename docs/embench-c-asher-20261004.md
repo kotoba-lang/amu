@@ -3,8 +3,8 @@
 Measured on 2026-10-04 JST on Tailscale host asher (Apple M4, 10 cores, 16 GiB RAM, macOS 26.2). C uses Apple Clang 17.0.0, -O2, without LTO. Kotoba uses the r6m unified Amu image abcc1318957af7d3a09cfd66c06d17821b5cf47f4c47d02b5620e9e92a24f02e. Amu is the compiler of the measured Kotoba programs, not another independent language entry.
 
 Current comparison coverage: [the canonical-path audit](coscientist-comparison-matrix-20261004.md)
-rebuilds and runs all 19 paths through native selfhost Amu. Sixteen have matched
-original active-profile alternatives after CRC32/Montgomery/matrix/UD/tarfind follow-ups; three still need initialization/repetition/
+rebuilds and runs all 19 paths through native selfhost Amu. Seventeen have matched
+original active-profile alternatives after CRC32/Montgomery/matrix/UD/tarfind/MD5 follow-ups; two still need initialization/repetition/
 timing alignment. The measurements below are historical and are unchanged.
 No full-suite Kotoba score or C-or-better result is established.
 
@@ -232,3 +232,14 @@ checks 296,835 initialized header bytes and 37,191 packed/state reads. Guards
 and PRODUCT inventory remain intact. The canonical native matrix has 16
 matched profiles and three pending (md5sum, nettle-sha256, xgboost). asher is
 offline; historical timings and official scores are unchanged.
+
+### 2026-10-05: complete repeated MD5 original profile
+
+[MD5 full qualification](coscientist-md5-full-20261005.md) adds original input
+generation, padded allocation clearing/copy, 16x64 rounds and once-per-batch
+XOR verification. All 2,940 packed/state observations match, including all
+input/padding bytes, final digest and 16 post-block states. C ASan/UBSan passes
+32 original bodies and 19,404 observations. Diagnostic block stores are excluded
+from the accepted benchmark path and retained on the observation path. Native
+canonical coverage is 17 matched profiles; SHA-256 and xgboost remain pending.
+asher is offline: no new timings, official score or C speedup is claimed.
