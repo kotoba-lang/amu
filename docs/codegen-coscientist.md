@@ -4665,3 +4665,14 @@ source refuse under Python -O; PRODUCT stays 97. Thirty alternating pairs
 will report mean/SD/time ratios and retain nonseparated hypotheses. Timing
 remains provisional without CPU-idle/official-driver evidence. asher is
 offline; no new elapsed measurement or C speedup is claimed.
+
+### 2026-10-05: CPU activity envelope
+
+Darwin CPU tick deltas now accompany each measurement row. Missing/invalid
+counters or idle below 90% refuse the run; the rejected row is retained.
+Boundary/32-bit wrap/zero-tick/invalid-field checks and a live local counter
+probe pass; wrong-host timing refuses under Python -O and PRODUCT stays 97.
+Counters enclose runner setup, warmup and timing, so exact-boundary and
+official-driver qualification remain unmet. No benchmark timing was taken.
+API layout was verified against the installed SDK and
+[Apple XNU host_info.h](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/mach/host_info.h).

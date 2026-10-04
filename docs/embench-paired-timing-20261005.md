@@ -36,11 +36,14 @@ needs relative SD <=10%, at least 5% speedup and separation greater than the
 sum of standard deviations; negative/nonseparated findings remain in results.
 The geometric mean across all 19 is a custom time ratio, not an Embench score.
 
-The tool's timing output remains provisional: load checks do not establish
->=90% CPU idle during samples. formalPerfgateQualified and officialEmbenchScore
-remain false, even if the numerical candidate criterion passes. CPU-idle
-qualification, official driver integration and a measured C-or-better result
-still require evidence. asher is offline and direct SSH times out at this
+The tool now records Darwin HOST_CPU_LOAD_INFO tick differences around each
+runner invocation, including setup/warmup and enclosing the timed interval.
+Intervals below 90% idle are preserved and refused; missing/nonadvancing
+counters refuse as well. This is an enclosing CPU envelope, not counters at
+the exact internal timed boundaries. formalPerfgateQualified and
+officialEmbenchScore remain false, even if the numerical criterion passes.
+Exact-boundary qualification, official driver integration and a measured
+C-or-better result still require evidence. asher is offline and direct SSH times out at this
 snapshot. No timing was performed locally and no performance win is claimed.
 
 New measurement/configuration authoring has no applicable mechanical Amu
@@ -52,3 +55,14 @@ unmet.
 
 Evidence: [summary](evidence/coscientist-suite-timing-20261005/summary.json),
 [preparation artifacts](evidence/coscientist-suite-timing-20261005/preparation.tgz).
+
+### 2026-10-05: CPU activity envelope
+
+Darwin CPU tick deltas now accompany each measurement row. Missing/invalid
+counters or idle below 90% refuse the run; the rejected row is retained.
+Boundary/32-bit wrap/zero-tick/invalid-field checks and a live local counter
+probe pass; wrong-host timing refuses under Python -O and PRODUCT stays 97.
+Counters enclose runner setup, warmup and timing, so exact-boundary and
+official-driver qualification remain unmet. No benchmark timing was taken.
+API layout was verified against the installed SDK and
+[Apple XNU host_info.h](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/mach/host_info.h).
