@@ -150,3 +150,14 @@ input/padding bytes, final digest and 16 post-block states. C ASan/UBSan passes
 from the accepted benchmark path and retained on the observation path. Native
 canonical coverage is 17 matched profiles; SHA-256 and xgboost remain pending.
 asher is offline: no new timings, official score or C speedup is claimed.
+
+### 2026-10-05: SHA-256 context lifecycle and repeated original profile
+
+[Full SHA-256 qualification](coscientist-sha256-full-20261005.md) adds original
+init/update/padding/compression/serialization/reset and once-per-batch verifier.
+All 1,510 initialized packed/state observations match C; all 32 digest bytes
+also match the complete original golden. C ASan/UBSan passes 32 original
+bodies/full golden digests and 9,966 observations. The original C timed
+verifier checks eight bytes; qualification separately checks all 32. Diagnostic
+stores stay off the benchmark path. The native matrix now has 18 matched
+profiles, with xgboost pending. asher is offline; no timing/score is inferred.
