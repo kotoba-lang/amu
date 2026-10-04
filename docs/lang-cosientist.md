@@ -1337,3 +1337,13 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   (2) sema regression suite on cp-seq.txt (expect 555/1958 baseline),
   (3) push bot/lang-seq-20261002 @0c33e6d, (4) ledger note (remove PASS,
   seq alias pending) handoff to amu-rank / jvm-dep-migrator.
+
+## Iteration 44 - seq gate: run value 6 CONFIRMED, regression suite ran with 3 reader-set failures (unrelated namespaces), push PENDING (2026-10-03 00:5x JST)
+
+- Target (iters 41-43): branch bot/lang-seq-20261002 @0c33e6d gate; remaining items were vector-fixture run, regression suite, push.
+- Measured (file-redirect; loadavg 57/50/48 - quiet gate NOT met; parity-only so speed N/A):
+  - Vector-fixture run CONFIRMED: /tmp/langcos/it44-run2.mjs (admitted.typedValues.vectorI64([1n,2n,3n,0n]) -> ex.t(v)): **t = 6n** (seq identity = reduce + 0 over [1,2,3,0]) - matches iter 10/41 hand-patch value. Probe lessons: hostVector requires BigInt items ([1n...] not [1...]); host values live at admitted.typedValues (not admitted.vectorI64).
+  - Regression suite (nbb run-tests.cljk, cp-seq.txt + appended /Users/junkawasaki/github/wt-seq2/test; bash ${CP//...} substitution FAILED - backslash escaping produced literal backslashes; must append the entry with : concatenation instead): **609 tests / 2205 passed / 2 failed / 1 error** (it44-regression.txt). Suite has grown past the iter 23/37 baseline 555/1958 (upstream added tests).
+  - The 2 failures + 1 error are ALL in kotoba.reader-set BigInt hashing territory: (1) FAIL nine-exact-integers-in-a-set-read-as-a-tagged-form (actual: not (= kotoba.reader/set #object[BigInt 7])), (2) ERROR same test, (3) FAIL large-integer-set-is-refused-by-name-not-as-an-internal-error (kotoba.compiler.pure-head-slice-test). The seq branch touches ONLY the frontend desugar `seq` case (no reader, no set literal code) - these failures are not in the touched surface, but a pin-control run (same suite on unpatched 15cc6e25) was NOT run this tick (budget), so pre-existing vs introduced is NOT yet proven.
+- NOT DONE: pin-control regression run on unpatched 15cc6e25 (to attribute the 3 reader failures), then push bot/lang-seq-20261002. Hypothesis open (gate 5/6 items green: check/parity/0arg/compile/run; regression attribution pending).
+- Next tick (resume exactly): run run-tests.cljk on the unpatched pin classpath (cp-seq.txt minus wt-seq2 substitution, i.e. the original securityClasspath cache file a728cd3b*.txt); if the same 3 failures appear, attribute them as pre-existing and push 0c33e6d; if they differ, investigate the seq branch. Then ledger handoff note (remove PASS on pin per iter 41, seq alias pending PR).
