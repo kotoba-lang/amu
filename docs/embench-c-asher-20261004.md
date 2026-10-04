@@ -65,3 +65,11 @@ slower). Eight adapted workloads remain without complete alternatives. The
 historical table and geometric mean remain unchanged; no official full-suite
 score or C-or-better claim follows. Two rejected prototype raw reports await
 recovery from offline asher; the baseline report is archived locally.
+
+[NSichneu](coscientist-nsichneu-20261004.md) now has a complete sequential
+alternative for all 126 upstream transitions, with 17,272 stage-state matches
+and 136 production-chain final-state matches. It is unmeasured while asher is
+offline, so there is no new performance ratio. Seven adapted workloads remain
+without complete alternatives; historical timings and full-suite score claims
+remain unchanged. C volatile globals and owned Kotoba vectors differ in access
+semantics; the evidence establishes the recorded sequential state comparisons.

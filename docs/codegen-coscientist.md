@@ -4397,3 +4397,15 @@ source remains byte-identical. Fuel counts decrease for grouped source loops,
 but this is not timing evidence. asher is offline and local load is high:
 no candidate is ranked or promoted, and no compiler optimization is made.
 A replay bundle is prepared for the same-host C/reference timing gate.
+
+Next complete workload: [selfhost NSichneu](coscientist-nsichneu-20261004.md).
+The new alternative executes every upstream transition (6 T1, 120 T2),
+including five-token guards and P2 compaction. Native check/compile accept
+its typed helper-chain formulation. All 17,272 state cells match across
+8 inputs and 127 boundaries; an independent export exercises the production
+chain and matches 136 final values. Five batch counts and fuel exhaustion
+also agree. A wide ownership let was refused and replaced with accepted
+source without changing the compiler or weakening validation. asher remains
+offline: no timing, ranking, promotion or C-or-better claim. Seven adapted
+workloads still lack complete alternatives. Source pins refuse changed C
+under Python -O; raw correctness evidence and a timing replay bundle are saved.
