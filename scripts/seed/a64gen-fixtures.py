@@ -535,6 +535,40 @@ for k,(width,outer,inner,lo,hi) in enumerate(cases):
     run(c,[v,-1],'trap',fuel=1+outer+inner)
    for fuel in range(1,1+outer+inner):run(c,[0,0],'trap',fuel=fuel)
 
+# Exact affine-index vector readers: wrapping multiplication, actual entry
+# labels, live register/home operands, invalid indices and private entry fuel.
+# New algorithm authoring; generated artifacts continue to come from this table.
+READER_TYPED_FIRST = len(FIX) + 1
+for k, charged in [(2,1), (3,0), (0,1), (-1,1), (MIN,1)]:
+ leaf = 'reader_leaf_%d_%d' % (k,charged)
+ fx(leaf,2,2,([('FUEL',)] if charged else [])+[('LABEL',leaf+'_entry'),
+     ('LGET',0,1),('LGET',1,2),('CONST',2,k),('BIN','BOP-MUL',1),
+     ('RT','RT-VECTOR-AT',0,2),('RET',0)])
+ for t in [0,7]:
+  caller = leaf+'_call%d' % t
+  body=[('FUEL',),('CONST',0,11),('CONST',1,-22),('CONST',2,33),('CONST',3,-44),
+        ('VEC',0,4),('LSET',3,0)]+[('CONST',j,100+j) for j in range(t)]+[
+        ('LGET',t,3),('LGET',t+1,1),('CALL',leaf,t,2)]
+  body += [('BIN','BOP-ADD',j) for j in range(t-1,-1,-1)]+[
+          ('LGET',1,2),('BIN','BOP-ADD',0),('RET',0)]
+  fx(caller,2,3,body)
+  for index in [MIN,-1,0,1,2,3,4,MAX]:
+   ix=s64(index*k)
+   for live in [MIN,37,MAX]:
+    answer=s64([11,-22,33,-44][ix]+sum(100+j for j in range(t))+live) if 0<=ix<4 else 'trap'
+    run(caller,[index,live],answer,fuel=1+charged)
+  if charged:run(caller,[0,37],'trap',fuel=1)
+for mode in ['wrong-type','extra','frame','other-op']:
+ leaf='reader_refuse_'+mode
+ body=[('FUEL',),('LGET',0,1),('LGET',1,2),('CONST',2,2),
+       ('BIN','BOP-ADD' if mode=='other-op' else 'BOP-MUL',1),('RT','RT-VECTOR-AT',0,2)]
+ if mode=='extra':body += [('CONST',1,1),('BIN','BOP-ADD',0)]
+ body += [('RET',0)];fx(leaf,2,3 if mode=='frame' else 2,body)
+ caller=leaf+'_call';fx(caller,1,2,[('FUEL',),('CONST',0,11),('CONST',1,-22),('CONST',2,33),('CONST',3,-44),
+  ('VEC',0,4),('LSET',2,0),('LGET',0,2),('LGET',1,1),('CALL',leaf,0,2),('RET',0)])
+ run(caller,[0],33 if mode=='other-op' else 12 if mode=='extra' else 11,fuel=2)
+ run(caller,[0],'trap',fuel=1)
+
 def kotoba(real_layout=False):
     fns, labels, lits, sir, fnrecs = layout_tables()
     o = [';; deps: 40-a64enc',
@@ -674,13 +708,28 @@ def kotoba(real_layout=False):
     clamp_fn = next(i+1 for i,x in enumerate(FIX) if x[0]=='cl_bound2')
     sign_fn = next(i+1 for i,x in enumerate(FIX) if x[0]=='cl_sign2')
     clamp_call = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-CALL'] and x[1]==clamp_fn)
+    reader_fn = next(i+1 for i,x in enumerate(FIX) if x[0]=='reader_leaf_2_1')
+    reader_bad = next(i+1 for i,x in enumerate(FIX) if x[0]=='reader_refuse_wrong-type')
+    reader_call = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-CALL'] and x[1]==reader_fn)
+    reader_bad_call = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-CALL'] and x[1]==reader_bad)
+    o += ['(defn- t-reader-types [M :vector-i64 f :i64] :vector-i64',
+          '  (if (>= f (vector-at M MM-FN-N)) M',
+          '    (t-reader-types (-> M (t-put (+ MM-FN-BASE (* f MM-FN-W) FF-PT0) TY-VEC)',
+          '                         (t-put (+ MM-FN-BASE (* f MM-FN-W) (+ FF-PT0 1)) TY-I64)',
+          '                         (t-put (+ MM-FN-BASE (* f MM-FN-W) FF-RTYPE) TY-I64)) (inc f))))']
     o += ['(defn- t-mask-types [M :vector-i64 f :i64] :vector-i64',
           '  (if (>= f (vector-at M MM-FN-N)) M',
           '    (t-mask-types (-> M (t-put (+ MM-FN-BASE (* f MM-FN-W) FF-PT0) TY-I64)',
           '                       (t-put (+ MM-FN-BASE (* f MM-FN-W) FF-RTYPE) TY-I64)) (inc f))))',
           '(defn- seed-main [] :i64',
           '  (let [a (typed-cap-call :cli/args :string :string "")',
-          '        M0 (t-mask-types (t-load (t-init)) %d)' % MASK_TYPED_FIRST,
+          '        MT (t-mask-types (t-load (t-init)) %d)' % MASK_TYPED_FIRST,
+          '        MR (t-reader-types MT %d)' % READER_TYPED_FIRST,
+          '        M0 (t-put MR (+ MM-FN-BASE (* %d MM-FN-W) FF-PT0) TY-I64)' % reader_bad,
+          '        reader_closed (gn-affine-reader M0 %d %d 2)' % (reader_call,reader_fn),
+          '        reader_wrong (gn-affine-reader M0 %d %d 2)' % (reader_bad_call,reader_bad),
+          '        MI (-> M0 (gn-gs gn-g-open %d) (gn-gs gn-g-open-n 1))' % reader_fn,
+          '        reader_open (gn-affine-reader MI %d %d 2)' % (reader_call,reader_fn),
           '        mask_shared (gn-mask-reused M0 %d 1 0 16384)' % MASK_TYPED_FIRST,
           '        mask_single (gn-mask-reused M0 %d 1 0 16384)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='mask_single')),
           '        mask_limit (gn-mask-reused M0 %d 1 0 0)' % MASK_TYPED_FIRST,
@@ -710,6 +759,7 @@ def kotoba(real_layout=False):
           '        MS (gn-gs MO gn-g-open %d)' % sign_fn,
           '        sign_open (gn-clamp MS %d %d 1)]' % (clamp_call,clamp_fn),
           '    (if (and mask_shared (not mask_single) (not mask_limit)',
+          '             (> reader_closed 0) (= reader_wrong 0) (= reader_open 0)',
           '             (= e3 0) (>= closed 0) (= direct -1) (= transitive -1) (>= independent 0)',
           '             (> clamp_closed 0) (= clamp_open 0) (= sign_open 0)) 0 1)))']
     return '\n'.join(o) + '\n'
