@@ -1284,10 +1284,36 @@
       (gn-emit (enc-mov-r 0 7)) (gn-emit (enc-ldr 16 0 RT-STRING-CODE-POINT-AT)) (gn-emit (enc-blr 16))
       (gn-gs gn-f-ctx 0)
       (gn-take i t 0)))
+;; High-temp read composition. Original prescan stays nonleaf and keeps its
+;; frame/register/fuel contract. Preserve live prefix registers and homes without call spills; x0/x1 are free
+;; argument scratch under that contract. Every handle/index check stays ordered.
+;; Profitability guard: only an access inside an actual backward branch region.
+;; Bounded scans refuse without changing the original call path. Label ownership
+;; is checked against the current function; no code or benchmark names.
+(defn- gn-high-start [M :vector-i64 j :i64 work :i64] :i64
+ (cond (or (<= work 0) (<= j 0)) 0
+       (= (gn-op M j) OP-FN) j
+       (= (gn-op M j) OP-END) 0
+       :else (gn-high-start M (dec j) (dec work))))
+(defn- gn-high-loop-scan [M :vector-i64 i :i64 j :i64 start :i64 work :i64] :bool
+ (if (or (<= work 0) (>= j (vector-at M MM-SIR-N)) (= (gn-op M j) OP-END)) false
+  (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B)
+        l (if (= op OP-BR) a (if (or (= op OP-BRZ) (= op OP-BRNZ)) b 0))
+        p (if (> l 0) (gn-lpos M l) 0)]
+   (if (and (> p start) (<= p i) (< p j) (= (gn-op M p) OP-LABEL) (= (gn-sir M p IF-A) l)) true
+    (gn-high-loop-scan M i (inc j) start (dec work))))))
+(defn- gn-high-loop [M :vector-i64 i :i64] :bool
+ (let [start (gn-high-start M i 8192)]
+  (and (> start 0) (gn-high-loop-scan M i (inc i) start 8192))))
+(defn- gn-rt-high-at [M :vector-i64 i :i64 t :i64] :vector-i64
+ (-> M (gn-into 0 t) (gn-into 1 (inc t)) (gn-ctx)
+     (gn-hchk 0 312 320) (gn-vidx 1) (gn-emit (gn-e-ldrr 0 16 17 1))
+     (gn-take i t 0)))
 (defn- gn-op-rt [M :vector-i64 i :i64 slot :i64 t :i64 n :i64] :vector-i64
   (cond (and (gn-isk M t gn-k-lit) (= slot RT-PAIR-SECOND)) (gn-def M t gn-k-const (gn-litf M (gn-dv M t) LF-LEN))
         (gn-isk M t gn-k-lit) (gn-rt-lit-at M i t)
         (and (= slot RT-STRING-CODE-POINT-AT) (= n 2)) (gn-rt-cpa M i t)
+        (and (= slot RT-VECTOR-AT) (= n 2) (>= t 6) (= (gn-g M gn-f-leaf) 0) (gn-high-loop M i)) (gn-rt-high-at M i t)
         (not (gn-inl slot t n)) (-> M (gn-save 0 t) (gn-args t 1 n) (gn-rtcall slot) (gn-take i t 0))
         (= slot RT-VECTOR-AT) (gn-rt-at M i t)
         (= slot RT-VECTOR-ASSOC-IN-PLACE) (gn-rt-set M t)

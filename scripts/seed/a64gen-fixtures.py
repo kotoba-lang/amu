@@ -569,6 +569,91 @@ for mode in ['wrong-type','extra','frame','other-op']:
  run(caller,[0],33 if mode=='other-op' else 12 if mode=='extra' else 11,fuel=2)
  run(caller,[0],'trap',fuel=1)
 
+HOT_CASES=[]
+fx('ht_clobber',7,7,[('FUEL',),('CONST',0,77),('RET',0)])
+fx('ht_alloc',0,0,[('FUEL',),('CONST',0,1),('RT','RT-VECTOR-ALLOC',0,1),('CONST',0,77),('RET',0)])
+for t,mode in [(t,mode) for t in [6,7,10,31] for mode in ['plain','coalesced','beforecall','aftercall','alias','loop','walk','skip']]+[(63,'plain')]:
+ name=f'ht_case_{len(HOT_CASES)}';body=[('FUEL',)]+[('CONST',j,11-3*j) for j in range(8)]+[('VEC',0,8),('CONST',0,99),('VEC',0,1)]
+ if mode in ['loop','walk']:body += [('CONST',0,2),('LSET',7,0),('CONST',0,0),('LSET',8,0),('LABEL',name+'_loop'),('LGET',0,7),('BRZ',0,name+'_end')]
+ for j in range(t):body += [('LGET',j,3 if j%2==0 else 4),('CONST',j+1,-19+7*j),('BIN','BOP-ADD',j)]
+ if mode=='beforecall':body += [('CONST',t+j,v) for j,v in enumerate([1,99,98,1,0,1,66])]+[('CALL','ht_clobber',t,7)]
+ if mode=='skip':body += [('LGET',t,2),('CONST',t+1,8),('CMP','CC-GE',t),('BRNZ',t,name+'_skip')]
+ body += [('LGET',t,1),('LGET',t+1,2),('RT','RT-VECTOR-AT',t,2)]
+ if mode=='coalesced':body += [('LSET',5,t),('LGET',t,5)]
+ if mode=='aftercall':body += [('CALL','ht_alloc',t+1,0),('BIN','BOP-ADD',t)]
+ if mode=='alias':body += [('LSET',1,t),('LGET',t,1),('CONST',t+1,0),('RT','RT-VECTOR-AT',t,2)]
+ if mode=='skip':body += [('BR',name+'_join'),('LABEL',name+'_skip'),('CONST',t,77),('LABEL',name+'_join')]
+ body += [('BIN','BOP-ADD',j) for j in range(t-1,-1,-1)]
+ if mode in ['loop','walk']:
+  body += [('LGET',1,8),('BIN','BOP-ADD',0),('LSET',8,0)]
+  if mode=='walk':body += [('LGET',0,2),('CONST',1,1),('BIN','BOP-ADD',0),('LSET',2,0)]
+  body += [('LGET',0,7),('CONST',1,1),('BIN','BOP-SUB',0),('LSET',7,0),('FUEL',),('BR',name+'_loop'),('LABEL',name+'_end'),('LGET',0,8)]
+ body += [('RET',0)];fx(name,4,8,body);HOT_CASES.append({'name':name,'t':t,'mode':mode})
+# Author one-iteration enclosing loop for every hand caller so the new
+# profitability guard admits each access, including call/alias/resource paths.
+for c in HOT_CASES:
+ k=next(j for j,x in enumerate(FIX) if x[0]==c['name']);name,np,ns,dp,body=FIX[k];at=body.index(('VEC',0,1))+1;label=name+'_outer'
+ assert body[-1]==('RET',0)
+ body=body[:at]+[('CONST',0,1),('LSET',6,0),('LABEL',label)]+body[at:-1]+[('LSET',9,0),('LGET',0,6),('CONST',1,1),('BIN','BOP-SUB',0),('LSET',6,0),('FUEL',),('BRNZ',0,label),('LGET',0,9),('RET',0)]
+ FIX[k]=(name,np,9,dp,body)
+HOT_OWN_CASES=[]
+for t in [6,7,10,31]:
+ for mode in ['raw','coalesced-alias','join']:
+  raw=f'ns_raw_{t}_{mode}';caller=raw+'_caller';body=[('FUEL',)]+[('LGET',j,3 if j%2==0 else 4) for j in range(t)]
+  if mode=='join':body += [('LGET',t,3),('BRZ',t,raw+'_zero'),('CONST',t,5),('BIN','BOP-ADD',t-1),('BR',raw+'_join'),('LABEL',raw+'_zero'),('CONST',t-1,-7),('LABEL',raw+'_join')]
+  body += [('LGET',t,1),('LGET',t+1,2),('RT','RT-VECTOR-AT',t,2)]
+  if mode=='coalesced-alias':body += [('LSET',3,t),('LGET',t,3)]
+  body += [('BIN','BOP-ADD',j) for j in range(t-1,-1,-1)]+[('LGET',1,3),('BIN','BOP-ADD',0),('RET',0)];fx(raw,4,4,body)
+  wrapper=[('FUEL',)]+[('CONST',j,11-3*j) for j in range(8)]+[('VEC',0,8),('CONST',0,99),('VEC',0,1)]+[('LGET',j,j+1) for j in range(4)]+[('CALL',raw,0,4),('RET',0)];fx(caller,4,4,wrapper);HOT_OWN_CASES.append({'raw':raw,'caller':caller,'t':t,'mode':mode})
+# The raw function has no call/allocation; only its high read makes it nonleaf.
+# Enclose its authored alias/join cases in a one-iteration backward-branch region.
+for c in HOT_OWN_CASES:
+ k=next(j for j,x in enumerate(FIX) if x[0]==c['raw']);name,np,ns,dp,body=FIX[k];label=name+'_outer';assert body[0]==('FUEL',) and body[-1]==('RET',0)
+ body=body[:1]+[('CONST',0,1),('LSET',5,0),('LABEL',label)]+body[1:-1]+[('LSET',6,0),('LGET',0,5),('CONST',1,1),('BIN','BOP-SUB',0),('LSET',5,0),('FUEL',),('BRNZ',0,label),('LGET',0,6),('RET',0)]
+ FIX[k]=(name,np,6,dp,body)
+
+# Pure hand model for the authored SIR (not compiler lowering or measured output).
+def _hot_expect(c,handle,index,live,other,fuel):
+ remaining=fuel-1;items=[11-3*j for j in range(8)]+[99]
+ def charge():
+  nonlocal remaining
+  if remaining<1:remaining=0;return False
+  remaining-=1;return True
+ def read(h,ix):
+  n=8 if h==1 else 1 if h==2 else 0
+  return items[(0 if h==1 else 8)+ix] if 0<=ix<n else None
+ prefix=s64(sum(s64((live if j%2==0 else other)+(-19+7*j)) for j in range(c['t'])));total=0
+ for it in range(2 if c['mode'] in ['loop','walk'] else 1):
+  if c['mode']=='beforecall' and not charge():return 'trap'
+  value=77 if c['mode']=='skip' and index>=8 else read(handle,index)
+  if value is None:return 'trap'
+  if c['mode']=='aftercall':
+   if not charge():return 'trap'
+   value=s64(value+77)
+  if c['mode']=='alias':
+   handle=value;value=read(handle,0)
+   if value is None:return 'trap'
+  total=s64(total+prefix+value)
+  if c['mode'] in ['loop','walk']:
+   if c['mode']=='walk':index=s64(index+1)
+   if not charge():return 'trap'
+ return total if charge() else 'trap'
+for c in HOT_CASES:
+ for handle,index in [(1,0),(1,7),(1,8),(2,0),(0,0),(MIN,-1),(MAX,MAX),(1,MIN)]:
+  for live,other in [(MIN,37),(37,MAX)]:
+   for fuel in [1,2,3,4,16777216]:run(c['name'],[handle,index,live,other],_hot_expect(c,handle,index,live,other,fuel),fuel=fuel)
+for c in HOT_OWN_CASES:
+ for handle,index in [(1,0),(1,7),(1,8),(2,0),(2,1),(0,0),(MIN,0),(MAX,MAX)]:
+  for live,other in [(MIN,37),(0,MAX),(37,MAX)]:
+   for fuel in [1,2,3,16777216]:
+    valid=fuel>=3 and ((handle==1 and 0<=index<8) or(handle==2 and index==0));value=(11-3*index if handle==1 else 99) if valid else 0;prefix=s64(sum(live if j%2==0 else other for j in range(c['t'])))
+    if c['mode']=='join':prefix=s64(prefix+5) if live!=0 else s64(prefix-(live if (c['t']-1)%2==0 else other)-7)
+    answer=s64(prefix+value+(value if c['mode']=='coalesced-alias' else live)) if valid else 'trap'
+    run(c['caller'],[handle,index,live,other],answer,fuel=fuel)
+# A cold high-depth access has no backward branch and retains the original path.
+fx('ht_cold_control',0,1,[('FUEL',)]+[('CONST',j,11-3*j) for j in range(8)]+[('VEC',0,8),('LSET',1,0)]+[('CONST',j,100+j) for j in range(6)]+[('LGET',6,1),('CONST',7,0),('RT','RT-VECTOR-AT',6,2)]+[('BIN','BOP-ADD',j) for j in range(5,-1,-1)]+[('RET',0)])
+run('ht_cold_control',[],626,fuel=1)
+
 def kotoba(real_layout=False):
     fns, labels, lits, sir, fnrecs = layout_tables()
     o = [';; deps: 40-a64enc',
@@ -705,6 +790,12 @@ def kotoba(real_layout=False):
     for g in range(len(groups)):
         expr = '(t-load%d %s)' % (g, expr)
     o.append('  %s)' % expr)
+    hot_fn = fns['ht_case_0']; cold_fn = fns['ht_cold_control']
+    hot_start = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-FN'] and x[1]==hot_fn)
+    cold_start = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-FN'] and x[1]==cold_fn)
+    hot_i = next(i+1 for i,x in enumerate(sir) if i+1>hot_start and i+1<cold_start and x[0]==C['OP-RT'] and x[1]==C['RT-VECTOR-AT'] and x[2]==6)
+    cold_i = next(i+1 for i,x in enumerate(sir) if i+1>cold_start and x[0]==C['OP-RT'])
+    hot_label = labels['ht_case_0_outer']
     clamp_fn = next(i+1 for i,x in enumerate(FIX) if x[0]=='cl_bound2')
     sign_fn = next(i+1 for i,x in enumerate(FIX) if x[0]=='cl_sign2')
     clamp_call = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-CALL'] and x[1]==clamp_fn)
@@ -736,6 +827,15 @@ def kotoba(real_layout=False):
           '        mask_single (gn-mask-reused M0 %d 1 0 16384)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='mask_single')),
           '        mask_limit (gn-mask-reused M0 %d 1 0 0)' % MASK_TYPED_FIRST,
           '        M1 (gn-run M0)',
+          '        hot_guard (gn-high-loop M1 %d)' % hot_i,
+          '        cold_guard (gn-high-loop M1 %d)' % cold_i,
+          '        hot_limit (gn-high-loop-scan M1 %d %d %d 0)' % (hot_i,hot_i+1,hot_start),
+          '        start_limit (gn-high-start M1 %d 0)' % hot_i,
+          '        MH (gn-gs M1 (+ gn-a-lp %d) %d)' % (hot_label,hot_start+1),
+          '        bad_label_guard (gn-high-loop MH %d)' % hot_i,
+          '        MF (gn-gs MH (+ gn-a-lp %d) %d)' % (hot_label,cold_start),
+          '        foreign_guard (gn-high-loop MF %d)' % hot_i,
+
           # Import bodies are substituted after generation. A pure-looking stub
           # and every transitive caller must refuse context-preservation proof.
           '        closed (gn-ctx-safe M1 %d 1 8 512)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_scalar')),
@@ -761,6 +861,7 @@ def kotoba(real_layout=False):
           '        MS (gn-gs MO gn-g-open %d)' % sign_fn,
           '        sign_open (gn-clamp MS %d %d 1)]' % (clamp_call,clamp_fn),
           '    (if (and mask_shared (not mask_single) (not mask_limit)',
+          '             hot_guard (not cold_guard) (not hot_limit) (= start_limit 0) (not bad_label_guard) (not foreign_guard)',
           '             (> reader_closed 0) (= reader_wrong 0) (= reader_open 0)',
           '             (= e3 0) (>= closed 0) (= direct -1) (= transitive -1) (>= independent 0)',
           '             (> clamp_closed 0) (= clamp_open 0) (= sign_open 0)) 0 1)))']
