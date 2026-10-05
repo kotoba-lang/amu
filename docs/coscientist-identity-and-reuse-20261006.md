@@ -1,5 +1,7 @@
 # Content identity, computation recipes, and measured native reuse
 
+Latest qualified experiment: [guarded whole-dot expansion with direct return](coscientist-dot-unroll-return-20261006.md). Fresh30 paired triples qualify67.814724% less original matmult body time (3.107011x); native tests/gates and committed-source3gen integration pass. C remains4.680001x faster; all19 C-or-better remains open. Earlier experiments below retain their historical decisions.
+
 Subsequent qualified experiment: [dominated same-local reads](coscientist-same-local-read-20261006.md)
 removes the later dynamic-key comparison after a stable-local/straight-line proof.
 Fresh30triples qualify18.494929% shorter originalmatmult; permanent native tests,

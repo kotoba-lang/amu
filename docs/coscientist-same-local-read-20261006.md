@@ -1,5 +1,7 @@
 # Native dominated same-local vector reads
 
+Latest qualified experiment: [guarded whole-dot expansion with direct return](coscientist-dot-unroll-return-20261006.md). Fresh30 paired triples qualify67.814724% less original matmult body time (3.107011x); native tests/gates and committed-source3gen integration pass. C remains4.680001x faster; all19 C-or-better remains open. Earlier experiments below retain their historical decisions.
+
 Adopted on the research branch: the original full matmult body is18.494929%
 shorter in a fresh quiet comparison; other18 guest binaries remain identical.
 The committed-source integrated image reproduces the measured machines and is

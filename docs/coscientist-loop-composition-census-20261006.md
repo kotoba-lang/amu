@@ -1,5 +1,7 @@
 # Current native loop composition census
 
+Latest qualified experiment: [guarded whole-dot expansion with direct return](coscientist-dot-unroll-return-20261006.md). Fresh30 paired triples qualify67.814724% less original matmult body time (3.107011x); native tests/gates and committed-source3gen integration pass. C remains4.680001x faster; all19 C-or-better remains open. Earlier experiments below retain their historical decisions.
+
 The next optimization target is now grounded in fresh current-product code:
 the original matmult dot loop emits 47 words, with 30 instructions on a valid
 warm descriptor path and 39 on a valid cold path. The unchanged timed C image
