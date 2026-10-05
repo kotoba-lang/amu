@@ -1,0 +1,114 @@
+diff --git a/private/tmp/amu-loop-descriptor-20261006/baseline-41-a64gen.kotoba b/private/tmp/amu-loop-descriptor-20261006/41-a64gen-prototype.kotoba
+index e628254..3074937 100644
+--- a/private/tmp/amu-loop-descriptor-20261006/baseline-41-a64gen.kotoba
++++ b/private/tmp/amu-loop-descriptor-20261006/41-a64gen-prototype.kotoba
+@@ -559,6 +559,38 @@
+       M
+       (gn-pre (gn-pre-op M j) (inc j)))))
+ 
++;; Experimental loop cache: x3=length, x4=data base, x5=positive key;0=invalid.
++;; Dynamic handle checks cover joins/reassignment. Unknown returning calls clear.
++;; x3..5 are free only in nonleaf functions or <=3-local leaves.
++(defn- gn-vloop-scan [M :vector-i64 j :i64 reads :i64 back :bool work :i64] :bool
++ (if (or (<= work 0) (>= j (vector-at M MM-SIR-N))) false
++  (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) c (gn-sir M j IF-C)
++        target (if (= op OP-BR) a (if (or (= op OP-BRZ) (= op OP-BRNZ)) b 0))
++        p (if (> target 0) (gn-lpos M target) 0)
++        rd (or (and (= op OP-RT) (= a RT-VECTOR-AT) (= c 2) (<= b 5))
++               (and (= op OP-CALL) (or (> (gn-affine-reader M j a c) 0)
++                  (= (bit-and (gn-call-wrapper M j a b c) 255) RT-VECTOR-AT))))]
++   (if (= op OP-END) (and (> reads 0) back)
++    (gn-vloop-scan M (inc j) (+ reads (if rd 1 0))
++      (or back (and (> p 0) (< p j))) (dec work))))))
++(defn- gn-vmode [M :vector-i64 i :i64] :vector-i64
++ (gn-gs M 8 (if (and (or (= (gn-g M gn-f-leaf) 0) (<= (gn-g M gn-f-ns) 3))
++                     (gn-vloop-scan M (inc i) 0 false 8192)) 1 0)))
++(defn- gn-vclear [M :vector-i64] :vector-i64
++ (if (= (gn-g M 8) 1) (gn-mov-imm M 5 0) M))
++;; Hit requires nonzero key from a prior original handle check. Miss captures
++;; descriptor at the original access, before its index check. No trap/charge
++;; speculation. RV/RI/D cannot collide with x3..5 under the register proof.
++(defn- gn-vread [M :vector-i64 rv :i64 ri :i64 d :i64] :vector-i64
++ (if (= (gn-g M 8) 0)
++  (-> M (gn-hchk rv 312 320) (gn-vidx ri) (gn-emit (gn-e-ldrr d 16 17 1)))
++  (-> M
++   (gn-emit (enc-cbz 5 3)) (gn-emit (enc-cmp-r rv 5)) (gn-emit (enc-bcond (enc-cond-eq) 13))
++   (gn-mov 5 rv) (gn-hchk 5 312 320)
++   (gn-emit (enc-ldp 17 3 16 0)) (gn-emit (enc-ldr 4 7 328)) (gn-emit (gn-e-addsl 4 4 17 3))
++   (gn-emit (enc-cmp-r ri 3)) (gn-emit (enc-bcond (enc-cond-lo) 2)) (gn-emit (gn-e-udf))
++   (gn-emit (gn-e-ldrr d 4 ri 1)))))
++
+ ;; ---- register assignment ----------------------------------------------------------------------------------------
+ (defn- gn-lowregs [M :vector-i64 k :i64 n :i64] :vector-i64
+   (if (> k n) M (gn-lowregs (gn-gs M (+ gn-a-sreg k) k) (inc k) n)))
+@@ -630,7 +662,7 @@
+         dp (gn-g M1 gn-f-dp)]
+     (cond (> np 16) (gn-err M1 E-GEN-OP OP-FN)
+           :else
+-          (let [M2 (gn-assign M1)
++          (let [M2 (gn-vmode (gn-assign M1) i)
+                 F (gn-g M2 gn-f-fb)
+                 leaf (gn-g M2 gn-f-leaf)]
+             (if (> F 32768)
+@@ -646,7 +678,7 @@
+                   (gn-params 1 np)
+                   (cond-> (and (= leaf 1) (= (gn-g M2 gn-f-fuel) 1)) (-> (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-gs gn-f-freg 1)))
+                   (gn-gs gn-f-ctx 1)
+-                  (gn-gs gn-f-h 0) (gn-tree-entry f)))))))
++                  (gn-gs gn-f-h 0) (gn-vclear) (gn-tree-entry f)))))))
+ 
+ (defn- gn-op-ret [M :vector-i64 t :i64] :vector-i64 (gn-epilogue (gn-into M 0 t)))
+ ;; R5B: RET2 t -- x0 := temp t, x1 := temp t+1 (through x16: either source may be x0 or x1 in a leaf), then the epilogue
+@@ -976,7 +1008,7 @@
+       (cond-> (= (gn-g M gn-f-ctx) 1) (gn-mov 0 7)
+               (= (gn-g M gn-f-ctx) 0) (gn-ld 0 0))
+       (gn-emit (enc-ldr 16 0 slot))
+-      (gn-emit (enc-blr 16))
++      (gn-emit (enc-blr 16)) (gn-vclear)
+       (gn-gs gn-f-ctx 0)))
+ ;; R4B: arguments k >= 7 of a call go to the outgoing area [sp, #8*(k-7)]
+ (defn- gn-stack-args [M :vector-i64 t :i64 k :i64 n :i64] :vector-i64
+@@ -1120,7 +1152,7 @@
+       (cond-> charged (gn-emit (enc-ldr 8 7 CTX-FUEL)) charged (gn-mask-charge))
+       (cond-> (> shift 0) (gn-emit (gn-e-lsl 1 1 shift))
+               (<= shift 0) (gn-mov-imm 2 k) (<= shift 0) (gn-emit (enc-mul 1 1 2)))
+-      (gn-hchk 0 312 320) (gn-vidx 1) (gn-emit (gn-e-ldrr 0 16 17 1))
++      (gn-vread 0 1 0)
+       (cond-> charged (gn-emit (enc-str 8 7 CTX-FUEL))) (gn-take i t 0))))
+ (defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
+   (let [w (gn-call-wrapper M i f t n) q (gn-clamp M i f n) mask (gn-scalar-mask M i f n) reader (gn-affine-reader M i f n)]
+@@ -1139,6 +1171,7 @@
+       (gn-ctx)
+       (gn-fix FX-BL26 f)
+       (gn-emit (enc-bl 0))
++      (gn-vclear)
+       (gn-gs gn-f-ctx (if (>= (gn-ctx-safe M f n 8 512) 0) 1 0))
+       (gn-take i t 0)))))
+ ;; A direct call whose only successor returns its scalar result can restore
+@@ -1156,7 +1189,7 @@
+       (gn-args t 0 n)
+       (gn-into 16 (+ t n))
+       (gn-ctx)
+-      (gn-emit (enc-blr 16))
++      (gn-emit (enc-blr 16)) (gn-vclear)
+       (gn-gs gn-f-ctx 0)
+       (gn-take i t 0)))
+ ;; R4: FADDR t f -- adr d, <entry of FN f> (FX-ADR19)
+@@ -1217,7 +1250,7 @@
+         rv (gn-src M1 t 17 0)
+         s (gn-co M1 i t)
+         d (gn-dreg M1 t s)]
+-    (-> M1 (gn-protect t s) (gn-ctx) (gn-ldt t 17 0) (gn-hchk rv 312 320) (gn-vidx ri) (gn-emit (gn-e-ldrr d 16 17 1)) (gn-fin t s d))))
++    (-> M1 (gn-protect t s) (gn-ctx) (gn-ldt t 17 0) (gn-vread rv ri d) (gn-fin t s d))))
+ ;; (vector-assoc! v i x), temps t, t+1, t+2 (t <= 4); the result is v (its descriptor is kept)
+ (defn- gn-rt-set [M :vector-i64 t :i64] :vector-i64
+   (let [M1 (-> M (gn-pin t) (gn-pin (inc t)))
+@@ -1281,7 +1314,7 @@
+       (gn-emit (enc-add-r 16 17 16)) (gn-emit (enc-ldr 0 7 392)) (gn-emit (enc-cmp-r 16 0)) (gn-emit (enc-bcond 8 6))
+       (gn-emit (enc-ldr 16 7 CTX-CODE-BASE)) (gn-emit (enc-add-r 16 16 17)) (gn-emit (gn-e-ldrb 0 16 2))
+       (gn-emit (enc-cmp-i 0 128)) (gn-emit (enc-bcond (enc-cond-lo) 4))
+-      (gn-emit (enc-mov-r 0 7)) (gn-emit (enc-ldr 16 0 RT-STRING-CODE-POINT-AT)) (gn-emit (enc-blr 16))
++      (gn-emit (enc-mov-r 0 7)) (gn-emit (enc-ldr 16 0 RT-STRING-CODE-POINT-AT)) (gn-emit (enc-blr 16)) (gn-vclear)
+       (gn-gs gn-f-ctx 0)
+       (gn-take i t 0)))
+ (defn- gn-op-rt [M :vector-i64 i :i64 slot :i64 t :i64 n :i64] :vector-i64

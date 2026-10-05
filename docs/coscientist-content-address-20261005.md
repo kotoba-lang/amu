@@ -1,5 +1,12 @@
 # Content identity, computation identity, and native performance
 
+Latest experimental follow-up: [dynamic-key loop descriptor reuse](coscientist-loop-descriptor-20261006.md)
+admits272 read sites across17 originals; native fixedpoint,4196 fresh regressions,
+3312 preflight full-state comparisons and209 additional original-workload states
+pass. All17 fresh comparisons fail the unchanged promotion rule; product stays
+unchanged. Actual SIR exposes high-temp vector reads still calling C in matmult
+and SHA256; composing those in the retained nonleaf frame is registered next.
+
 Latest experimental follow-up: [successful handle-validation reuse](coscientist-vector-validity-20261006.md)
 passes5760 native hand-state comparisons,48 allocating imports,16 resource-limit
 partial-write comparisons and a four-generation fixedpoint. Fresh WikiSort time

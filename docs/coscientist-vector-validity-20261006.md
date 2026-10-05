@@ -96,3 +96,10 @@ is guarded loop-region descriptor/data-base reuse for ordinary vector reads,
 with actual SIR admission census first. Keep original per-access index/fuel/trap
 boundaries and fallback on failed entry guards. Unknown effects, mutable handle
 provenance and unproved control flow refuse. It is not implemented or measured.
+
+## Follow-up executed
+
+The [dynamic-key loop descriptor experiment](coscientist-loop-descriptor-20261006.md)
+now tests272 actual native read sites across17 originals. Proofs pass, but all17
+fresh timing comparisons fail promotion. Product stays unchanged. High-temp C
+runtime reads, found in actual matmult/SHA256 SIR, are the next registered target.
