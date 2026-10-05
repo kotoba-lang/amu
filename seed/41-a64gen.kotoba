@@ -586,7 +586,7 @@
                   (gn-params 1 np)
                   (cond-> (and (= leaf 1) (= (gn-g M2 gn-f-fuel) 1)) (-> (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-gs gn-f-freg 1)))
                   (gn-gs gn-f-ctx 1)
-                  (gn-gs gn-f-h 0)))))))
+                  (gn-gs gn-f-h 0) (gn-tree-entry f)))))))
 
 (defn- gn-op-ret [M :vector-i64 t :i64] :vector-i64 (gn-epilogue (gn-into M 0 t)))
 ;; R5B: RET2 t -- x0 := temp t, x1 := temp t+1 (through x16: either source may be x0 or x1 in a leaf), then the epilogue
@@ -603,6 +603,54 @@
                             (gn-emit (enc-ldp-post 29 30 31 16))))
         (gn-emit (enc-ret))
         (gn-gs gn-f-dead 1))))
+
+;; A whole pure scalar threshold tree; return the exclusive SIR end or0.
+;; Exact operands and actual branch target positions are checked recursively.
+(defn- gn-tree-end [M :vector-i64 p :i64 depth :i64] :i64
+  (if (or (> depth 7) (>= p (vector-at M MM-SIR-N))) 0
+    (if (and (= (gn-op M p) OP-CONST) (= (gn-sir M p IF-A) 0) (= (gn-sir M p IF-C) 0)) (inc p)
+      (if (and (= (gn-op M p) OP-LGET) (= (gn-sir M p IF-A) 0) (= (gn-sir M p IF-B) 1) (= (gn-sir M p IF-C) 0)
+               (= (gn-op M (+ p 1)) OP-CONST) (= (gn-sir M (+ p 1) IF-A) 1) (= (gn-sir M (+ p 1) IF-C) 0)
+               (> (gn-sir M (+ p 1) IF-B) 0) (< (gn-sir M (+ p 1) IF-B) 64)
+               (= (gn-op M (+ p 2)) OP-CMP) (= (gn-sir M (+ p 2) IF-A) CC-LT) (= (gn-sir M (+ p 2) IF-B) 0) (= (gn-sir M (+ p 2) IF-C) 0)
+               (= (gn-op M (+ p 3)) OP-BRZ) (= (gn-sir M (+ p 3) IF-A) 0) (= (gn-sir M (+ p 3) IF-C) 0))
+        (let [a (gn-tree-end M (+ p 4) (inc depth)) le (gn-sir M (+ p 3) IF-B)]
+          (if (and (> a 0) (= (gn-op M a) OP-BR) (= (gn-sir M a IF-B) 0) (= (gn-sir M a IF-C) 0)
+                   (= (gn-op M (inc a)) OP-LABEL) (= (gn-sir M (inc a) IF-A) le)
+                   (= (gn-sir M (inc a) IF-B) 0) (= (gn-sir M (inc a) IF-C) 0) (= (gn-lpos M le) (inc a)))
+            (let [b (gn-tree-end M (+ a 2) (inc depth)) lx (gn-sir M a IF-A)]
+              (if (and (> b 0) (= (gn-op M b) OP-LABEL) (= (gn-sir M b IF-A) lx)
+                       (= (gn-sir M b IF-B) 0) (= (gn-sir M b IF-C) 0) (= (gn-lpos M lx) b)) (inc b) 0)) 0)) 0))))
+(defn- gn-tree-value [M :vector-i64 p :i64 x :i64] :i64
+  (if (= (gn-op M p) OP-CONST) (gn-sir M p IF-B)
+    (gn-tree-value M (if (< x (gn-sir M (inc p) IF-B)) (+ p 4) (inc (gn-lpos M (gn-sir M (+ p 3) IF-B)))) x)))
+(defn- gn-tree-data [M :vector-i64 p :i64 x :i64] :vector-i64
+  (if (= x 64) M (let [v (gn-tree-value M p x)]
+    (gn-tree-data (-> M (gn-emit (bit-and v 0xffffffff)) (gn-emit (bit-and (i64-shift-right v 32) 0xffffffff))) p (inc x)))))
+(defn- gn-tree-emit [M :vector-i64 p :i64 charge :i64] :vector-i64
+  (let [M0 (cond-> M (= charge 1) (gn-op-fuel))
+        M1 (-> M0 (cond-> (>= (gn-sreg M0 1) 0) (gn-mov 9 (gn-sreg M0 1))) (cond-> (< (gn-sreg M0 1) 0) (gn-ld 9 1)) (gn-emit (enc-cmp-i 9 0))) low (vector-at M1 MM-CODE-N)
+        M2 (-> M1 (gn-emit (enc-bcond (enc-cond-lt) 0)) (gn-emit (enc-cmp-i 9 63))) high (vector-at M2 MM-CODE-N)
+        M3 (gn-emit M2 (enc-bcond (enc-cond-gt) 0)) adr (vector-at M3 MM-CODE-N)
+        M4 (-> M3 (gn-emit (gn-e-adr 10)) (gn-emit (gn-e-ldrr 0 10 9 1)) (gn-epilogue))
+        l (vector-at M4 MM-CODE-N) M5 (-> M4 (gn-mov-imm 0 (gn-tree-value M p 0)) (gn-epilogue))
+        h (vector-at M5 MM-CODE-N) M6 (-> M5 (gn-mov-imm 0 (gn-tree-value M p 63)) (gn-epilogue))
+        table (vector-at M6 MM-CODE-N) delta (* (- table adr) 4)
+        M7 (gn-tree-data M6 p 0)]
+    (-> M7 (gn-put (+ MM-CODE-BASE low) (enc-bcond (enc-cond-lt) (- l low)))
+           (gn-put (+ MM-CODE-BASE high) (enc-bcond (enc-cond-gt) (- h high)))
+           (gn-put (+ MM-CODE-BASE adr) (+ (gn-e-adr 10) (i64-shift-left (bit-and delta 3) 29) (i64-shift-left (i64-shift-right delta 2) 5)))
+           (gn-gs 14 1))))
+(defn- gn-tree-entry [M :vector-i64 f :i64] :vector-i64
+  (let [a (gn-fnf M f FF-SIR) charge (if (= (gn-op M (inc a)) OP-FUEL) 1 0)
+        label (+ a 1 charge) p (inc label)]
+    (if (and (= (gn-sir M a IF-B) 1) (= (gn-g M gn-f-leaf) 1)
+             (= (gn-op M label) OP-LABEL) (= (gn-sir M label IF-B) 0) (= (gn-sir M label IF-C) 0)
+             (or (= charge 0) (and (= (gn-sir M (inc a) IF-A) 0) (= (gn-sir M (inc a) IF-B) 0) (= (gn-sir M (inc a) IF-C) 0))))
+      (let [end (gn-tree-end M p 0)]
+        (if (and (> (- end p) 128) (= (gn-op M end) OP-RET) (= (gn-sir M end IF-A) 0) (= (gn-sir M end IF-B) 0) (= (gn-sir M end IF-C) 0)
+                 (= (gn-op M (inc end)) OP-END) (= (gn-sir M (inc end) IF-A) f) (= (gn-sir M (inc end) IF-B) 0) (= (gn-sir M (inc end) IF-C) 0))
+          (gn-tree-emit M p charge) M)) M)))
 
 ;; ---- FLOAT (agent FLOAT, rung r6j, 2026-10-04): f64/f32 operations (seed/SIR BOP-F*, CC-F*, UOP-F*) -----------------
 ;; A float temp is its bit pattern in a general register (f32: 32 bits sign-extended). Each operation moves its operands
@@ -1136,7 +1184,8 @@
   (let [a (gn-sir M i IF-A)
         b (gn-sir M i IF-B)
         c (gn-sir M i IF-C)]
-    (if (and (= (gn-g M gn-f-dead) 1) (not (or (= op OP-LABEL) (= op OP-FN) (= op OP-END))))
+    (if (or (and (= (gn-g M 14) 1) (not (or (= op OP-FN) (= op OP-END))))
+            (and (= (gn-g M gn-f-dead) 1) (not (or (= op OP-LABEL) (= op OP-FN) (= op OP-END)))))
       M
       (case op
         OP-CONST (gn-def M a gn-k-const b)

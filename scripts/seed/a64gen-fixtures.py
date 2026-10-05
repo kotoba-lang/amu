@@ -403,6 +403,29 @@ def layout_tables():
         fnrecs.append((f, np, ns, maxt if dp is None else dp))
     return fns, labels, lits, sir, fnrecs
 
+# Complete scalar threshold trees: authoring new backend tests, not a source refactor.
+# Canonicalization of data below is not a DefCID or result memoization mechanism.
+def _add_scalar_tree_fixtures():
+    leaves=[MIN,MAX,-1,0,1,-4294967297,4294967297,65535]*8
+    values=[MIN,MIN+1,-65537,-65,-2,-1,*range(66),127,65535,MAX-1,MAX]
+    def rows(name,lo,hi,mode='lt',outer=False):
+     if hi-lo==1:return [('LGET',0,1)] if mode=='value' and lo==3 else [('CONST',0,leaves[lo])]
+     mid=(lo+hi)//2;threshold=mid if mode not in ['negative','outside'] or not outer else -1 if mode=='negative' else 65
+     le=f'{name}_{lo}_{hi}_else';lx=f'{name}_{lo}_{hi}_end';cc='CC-EQ' if mode=='eq' and outer else 'CC-LT'
+     return [('LGET',0,1),('CONST',1,threshold),('CMP',cc,0),('BRZ',0,le)]+rows(name,lo,mid,mode)+[('BR',lx),('LABEL',le)]+rows(name,mid,hi,mode)+[('LABEL',lx)]
+    def expected(x,lo,hi,mode='lt',outer=False):
+     if hi-lo==1:return x if mode=='value' and lo==3 else leaves[lo]
+     mid=(lo+hi)//2;t=mid if mode not in ['negative','outside'] or not outer else -1 if mode=='negative' else 65;pick=x==t if mode=='eq' and outer else x<t
+     return expected(x,lo,mid,mode) if pick else expected(x,mid,hi,mode)
+    for charge in [0,1]:
+     for tag,size,mode in [('lt64',64,'lt'),('lt32',32,'lt'),('lt16',16,'lt'),('negative',64,'negative'),('outside',64,'outside'),('eq',64,'eq'),('value',64,'value')]:
+      name=f'tree{charge}_{tag}';body=([('FUEL',)] if charge else [])+[('LABEL',name+'_root')]+rows(name,0,size,mode,True)+[('RET',0)];fx(name,1,1,body)
+      caller='call_'+name;fx(caller,1,1,[('FUEL',),('FUEL',),('LGET',0,1),('CALL',name,0,1),('RET',0)])
+      for x in values:run(caller,[x],expected(x,0,size,mode,True),fuel=2+charge)
+      for fuel in range(1,2+charge):run(caller,[MIN],'trap',fuel=fuel)
+
+_add_scalar_tree_fixtures()
+
 def kotoba(real_layout=False):
     fns, labels, lits, sir, fnrecs = layout_tables()
     o = [';; deps: 40-a64enc',
