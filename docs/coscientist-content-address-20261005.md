@@ -1,9 +1,15 @@
 # Content identity, computation identity, and native performance
 
-Latest follow-up: [two affine signed-write candidates](coscientist-affine-writer-20261005.md)
+Latest follow-up: [constant recovery across joins](coscientist-affine-join-20261005.md)
+recovers4 sites after native observation falsified the source-only assumption
+(0 sites). Native proofs pass; fresh4.37% shorter timing fails both promotion
+criteria. No product change. Next hypothesis is closed-callee scalar-argument
+specialization, including explicit loop-invariance proof.
+
+Previous follow-up: [two affine signed-write candidates](coscientist-affine-writer-20261005.md)
 preserve native state and fixedpoint but fail the prospective timing rule
 (3.10% and4.59% shorter; ratios1.031967 and1.048076). Neither is promoted.
-The next registered hypothesis specializes proven immutable index operands.
+That registered index-operand hypothesis is evaluated in the latest follow-up above.
 
 The latest qualified [signed-clamp composition](coscientist-clamp-call-20261005.md)
 qualifies5.48% shorter freshly executed Picojpeg time and passes integrated
