@@ -1,5 +1,13 @@
 # Content identity, computation identity, and native performance
 
+Latest experimental follow-up: [loop-produced high-temp registers](coscientist-loop-temp-registers-20261006.md)
+uses [fresh native spill census](coscientist-temp-materialization-census-20261006.md)
+to admit only1 originalfunction/2temps. Native fixedpoint,7989 regressions,
+1095 extra state comparisons and9 guard checks pass. Fresh30triples show9.96%
+shorter mean but fail unchanged summed-variation criterion; product unchanged.
+Next compose closed affine expression arithmetic and intermediate homes, without
+new callee saves, after exact shape/liveness/alias proofs.
+
 Latest experimental follow-up: [unused callee registers for high temps](coscientist-callee-temp-20261006.md)
 passes native3-generation fixedpoint,7989 existing regressions and1095 additional
 full-state comparisons. Allsix fresh30-triple comparisons fail promotion;
