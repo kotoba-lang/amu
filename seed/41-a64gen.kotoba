@@ -460,6 +460,25 @@
   (if (= (gn-op M (inc i)) OP-RES2) 0
       (let [w (gn-wrapper M f t n)] (if (> w 0) w (gn-sign-wrapper M f n)))))
 
+;; Exact charged mask-and-write composition. Keep it outside gn-call-wrapper
+;; so prescan retains the caller's original nonleaf frame and fuel publication.
+;; Natural parameters, AND255, one charged inline writer dependency, RET/END.
+(defn- gn-mask-writer [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :bool
+  (let [p (gn-fnf M f FF-SIR)
+        q (gn-skiplab M (+ p 2))
+        target (gn-sir M (+ q 5) IF-A)]
+    (and (> p 0) (= n 3) (<= t 4) (= (gn-g M gn-f-leaf) 0)
+         (not= (gn-op M (inc i)) OP-RES2)
+         (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) f) (= (gn-sir M p IF-B) 3)
+         (= (gn-op M (inc p)) OP-FUEL)
+         (= (gn-wparams M q 0 3) (+ q 3))
+         (= (gn-op M (+ q 3)) OP-CONST) (= (gn-sir M (+ q 3) IF-A) 3) (= (gn-sir M (+ q 3) IF-B) 255)
+         (= (gn-op M (+ q 4)) OP-BIN) (= (gn-sir M (+ q 4) IF-A) BOP-AND) (= (gn-sir M (+ q 4) IF-B) 2)
+         (= (gn-op M (+ q 5)) OP-CALL) (= (gn-sir M (+ q 5) IF-B) 0) (= (gn-sir M (+ q 5) IF-C) 3)
+         (= (gn-wrapper M target 0 3) (+ RT-VECTOR-ASSOC-IN-PLACE 256))
+         (= (gn-op M (+ q 6)) OP-RET) (= (gn-sir M (+ q 6) IF-A) 0)
+         (= (gn-op M (+ q 7)) OP-END))))
+
 (defn- gn-use [M :vector-i64 s :i64 w :i64] :vector-i64
   (if (and (>= s 0) (< s gn-cap)) (gn-gs M (+ gn-a-use s) (+ w (gn-g M (+ gn-a-use s)))) M))
 (defn- gn-use1 [M :vector-i64 j :i64 w :i64] :vector-i64
@@ -933,9 +952,26 @@
       (let [s (gn-co M1 i t) d (gn-dreg M1 t s) x (gn-src M1 t 16 1)]
         (-> M1 (gn-protect t s) (gn-ldt t 16 1)
             (gn-emit (gn-e-bf 0x93400000 d x 0 (dec width))) (gn-fin t s d))))))
+;; Emulate the callee leaf transaction in x8, not caller gn-op-fuel.
+;; x0/x8 are free in the retained nonleaf caller; pinned argument/live temps
+;; are x9..x15, callee-saved locals or homes. Traps keep the pre-call fuel,
+;; except original exhaustion, which publishes zero. Return publishes x8.
+(defn- gn-mask-charge [M :vector-i64] :vector-i64
+  (-> M (gn-emit (enc-subs-i 8 8 1)) (gn-emit (enc-bcond (enc-cond-hs) 3))
+      (gn-emit (enc-str 31 7 CTX-FUEL)) (gn-emit (enc-brk 0))))
+(defn- gn-call-mask-writer [M :vector-i64 t :i64] :vector-i64
+  (let [M1 (-> M (gn-pin t) (gn-pin (inc t)))
+        rv (gn-pinned M1 t) ri (gn-pinned M1 (inc t))]
+    (-> M1 (gn-ctx) (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-mask-charge)
+        (gn-into 0 (+ t 2)) (gn-emit (gn-e-bf 0xd3400000 0 0 0 7))
+        (gn-mask-charge) (gn-hchk rv 312 320) (gn-vidx ri)
+        (gn-emit (gn-e-strr3 0 16 17)) (gn-emit (enc-str 8 7 CTX-FUEL))
+        (gn-gs gn-f-h (inc t)))))
+
 (defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
   (let [w (gn-call-wrapper M i f t n)]
-   (cond (>= w 1024) (gn-call-sign M i t w)
+   (cond (gn-mask-writer M i f t n) (gn-call-mask-writer M t)
+         (>= w 1024) (gn-call-sign M i t w)
          (> w 0) (let [M1 (if (>= w 256) (gn-op-fuel M) M)
                        slot (bit-and w 255)]
                    (if (= slot 1) (gn-gs M1 gn-f-h (inc t)) (gn-op-rt M1 i slot t n)))

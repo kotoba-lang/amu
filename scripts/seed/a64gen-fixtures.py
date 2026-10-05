@@ -426,6 +426,37 @@ def _add_scalar_tree_fixtures():
 
 _add_scalar_tree_fixtures()
 
+# Exact admitted shape and refused neighborhoods, caller temp heights0..5.
+fx('mw_unknown',1,1,[('LGET',0,1),('CONST',1,1),('BIN','BOP-ADD',0),('RET',0)])
+for charged in [0,1]:
+ fx('mw_put'+str(charged),3,3,([('FUEL',)] if charged else [])+[('LGET',0,1),('LGET',1,2),('LGET',2,3),('RT','RT-VECTOR-ASSOC-IN-PLACE',0,3),('RET',0)])
+masktargets=[]
+for outer,inner,mask in [(1,1,255),(0,1,255),(1,0,255),(1,1,65535)]:
+ writer=f'mw_mask_{outer}{inner}_{mask}'
+ body=([('FUEL',)] if outer else [])+[('LGET',0,1),('LGET',1,2),('LGET',2,3),('CONST',3,mask),('BIN','BOP-AND',2),('CALL','mw_put'+str(inner),0,3),('RET',0)]
+ fx(writer,3,3,body)
+ for t in ([0,1,4,5] if (outer,inner,mask)==(1,1,255) else [0]):
+  for restore in [0,1]:
+   caller=f'mw_call_{outer}{inner}_{mask}_{t}_{restore}';body=[('CONST',0,11),('CONST',1,-22),('CONST',2,33),('CONST',3,-44),('VEC',0,4),('LSET',3,0)]
+   if restore:body+=[('CONST',0,7),('CALL','mw_unknown',0,1)]
+   # One valid write followed by a possibly invalid write: observe partial arena.
+   for ix in [0,1]:
+    body+=[('CONST',j,100+j) for j in range(t)]+[('LGET',t,3)]
+    body+=[('CONST',t+1,0)] if ix==0 else [('LGET',t+1,1)]
+    body+=[('LGET',t+2,2),('CALL',writer,t,3),('RT','RT-VECTOR-COUNT',t,1)]
+    for j in range(t-1,-1,-1):body+=[('BIN','BOP-ADD',j)]
+    body+=[('LSET',4,0)]
+   body+=[('LGET',0,3),('CONST',1,0),('RT','RT-VECTOR-AT',0,2),('LGET',1,4),('BIN','BOP-ADD',0),('RET',0)];fx(caller,2,4,body);masktargets.append((caller,(outer,inner,mask)==(1,1,255) and t<=4,restore))
+
+# Hand-derived result includes the stored mask value, vector length and live temps.
+for name,admitted,restore in masktargets:
+ _,_,charges,mask,t,restore = name.split('_')
+ mask=int(mask);t=int(t);cost=2*(int(charges[0])+int(charges[1]));live=sum(100+j for j in range(t))
+ for value in [MIN,-257,-1,0,255,256,MAX]:
+  for index in [0,1,3]:run(name,[index,value],(value&mask)+4+live,fuel=max(cost,1))
+ for index in [-1,4,MIN,MAX]:run(name,[index,-1],'trap',fuel=100)
+ for fuel in range(1,cost):run(name,[1,256],'trap',fuel=fuel)
+
 def kotoba(real_layout=False):
     fns, labels, lits, sir, fnrecs = layout_tables()
     o = [';; deps: 40-a64enc',
