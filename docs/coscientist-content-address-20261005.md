@@ -97,3 +97,53 @@ no new full-suite performance geometric mean is inferred from one workload.
 Evidence: [summary](evidence/coscientist-content-address-20261005/summary.json),
 [full native experiment](evidence/coscientist-content-address-20261005/native-proof.tgz),
 [timing rows and baseline lineage](evidence/coscientist-content-address-20261005/timing.tgz).
+
+## Follow-up: what “compute address” would identify
+
+Verified again at source HEAD `03e147c3c1e70a80e8bea72ba3bcb11594d47b44`.
+`src/kotoba/compiler/definition_identity.cljk` contains the typed-KIR/effect/
+interface/dependency identity contract and a Kotoba reading. The measured native
+seed artifact writer is `seed/amu-main/src/amu/kexe.kotoba`; its KIR fields are
+explicitly nil. `seed/amu-main/src/amu/check_full.kotoba` still refuses the JSON
+identity envelope. Existing identity modules therefore do not establish that
+these particular selfhost commands have a DefCID-based cache.
+
+Three different identities serve three different jobs:
+
+| Identity | Sealed inputs | Reuse |
+| --- | --- | --- |
+| Definition content | Normalized checked implementation, dependency CIDs, type/interface, effects, semantic/desugaring profile | Checking and identifying an immutable implementation |
+| Computation recipe (proposed) | Definition CID, canonical immutable arguments, semantic profile and explicit handler/state snapshot | Reusing deterministic results or unchanged subcomputations |
+| Native specialization/artifact (proposed) | Definition/dependency identities, immutable static arguments, compiler content identity, target, runtime/fuel ABI, optimization contract, policy, ordered exports/packaging | Reusing compiled specialized code |
+
+A computation address is itself content addressing of a computation recipe.
+It is not an execution host's network address, a hash of one past output, or
+proof of equivalence between arbitrary programs. If compute means a remote
+execution location, that is a separate handler choice: Unison's `Location`
+is explicitly distinct from its hash of a computation. The primary source is
+[Unison incremental evaluation](https://www.unison-lang.org/articles/distributed-datasets/incremental-evaluation/).
+
+Recipe admission must reject unavailable dependency identities, unknown effects,
+mutable handle inputs without immutable snapshots, and unsealed profiles. A
+native artifact also needs position-independent code or relocation metadata;
+absolute/relative call offsets cannot be cached as independent functions and
+reused at arbitrary locations. Cache verification does not substitute for
+current capability/policy admission. Fuel exhaustion, traps, partial writes,
+allocation and cancellation need an explicit resource/observation contract.
+
+The next implemented experiment applies *structural proof and specialization*
+to a hot bounded vector-fill loop. It does not add a DefCID cache or computation
+memoization: the seed recognizes exact SIR and dependencies before lowering,
+checks immutable loop parameters at runtime, and otherwise executes the original
+loop. The comparison executes all original benchmark bodies freshly. This
+separates a possible execution-speed benefit from a warm-cache reuse benefit.
+Detailed native proof and timing decision are recorded in
+[the bounded-fill experiment](coscientist-bounded-fill-20261005.md).
+
+Future identity integration should separately report cold compilation, identical
+warm compilation, private rename, one changed leaf and its affected dependents,
+and changed compiler/target/profile/policy cache misses. Count actual rebuilt
+functions and compare final artifact bytes. For result memoization separately
+measure hit rate, canonicalization/hash/lookup overhead, retained bytes and
+resource semantics. Neither cache experiment qualifies as fresh-body Embench
+execution speed.

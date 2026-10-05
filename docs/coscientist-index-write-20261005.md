@@ -122,8 +122,10 @@ Retain each original loop-entry/backedge charge, including the terminal iteratio
 and every helper charge/commit after each successful write. Do not batch or defer
 context-visible fuel across iterations. Remove repeated descriptor/bounds loads
 and call frames only under the proved guard. No allocator, callback or unknown
-effect is admitted in the fast region. This larger-loop candidate is unimplemented;
-it needs the same native semantic gates and fresh full-body performance comparison.
+effect is admitted in the fast region. At the time of this index-write decision the larger-loop candidate was unimplemented.
+The subsequent [bounded-fill experiment](coscientist-bounded-fill-20261005.md)
+implements it, passes the native semantic gates and rejects performance promotion
+on fresh whole-body measurements.
 
 Evidence: [summary](evidence/coscientist-index-write-20261005/summary.json),
 [prototype](evidence/coscientist-index-write-20261005/prototype.diff),
