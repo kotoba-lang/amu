@@ -457,6 +457,35 @@ for name,admitted,restore in masktargets:
  for index in [-1,4,MIN,MAX]:run(name,[index,-1],'trap',fuel=100)
  for fuel in range(1,cost):run(name,[1,256],'trap',fuel=fuel)
 
+# Context preservation facts, refused effects/depth/work neighborhoods.
+fx('cp_scalar',1,1,[('FUEL',),('LGET',0,1),('CONST',1,1),('BIN','BOP-ADD',0),('RET',0)])
+fx('cp_vector',2,2,[('FUEL',),('LGET',0,1),('LGET',1,2),('RT','RT-VECTOR-AT',0,2),('CONST',1,1),('BIN','BOP-ADD',0),('RET',0)])
+fx('cp_alloc',1,1,[('LGET',0,1),('RT','RT-VECTOR-ALLOC',0,1),('RET',0)])
+fx('cp_cap',1,1,[('LGET',0,1),('CAP',39,1,0),('RET',0)])
+fx('cp_indirect',1,1,[('LGET',0,1),('FADDR',1,next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_scalar')),('CALLI',0,0,1),('RET',0)])
+fx('cp_cycle',1,1,[('CONST',0,0),('BRZ',0,'cp_cycle_done'),('LGET',0,1),('CALL','cp_cycle',0,1),('LABEL','cp_cycle_done'),('CONST',0,17),('RET',0)])
+fx('cp_big',1,1,[('CONST',0,k) for k in range(520)]+[('RET',0)])
+for k in range(9):fx('cp_chain'+str(k),1,1,[('LGET',0,1),('CALL','cp_scalar' if k==0 else 'cp_chain'+str(k-1),0,1),('RET',0)])
+cp_targets=[]
+for callee,admitted in [('cp_scalar',True),('cp_vector',True),('cp_alloc',False),('cp_cap',False),('cp_indirect',False),('cp_cycle',False),('cp_big',False),('cp_chain0',True),('cp_chain8',False)]:
+ name='call_'+callee;body=[('CONST',0,11),('CONST',1,-22),('VEC',0,2),('LSET',3,0)]
+ body+=([('LGET',0,3),('LGET',1,1)] if callee=='cp_vector' else [('LGET',0,2)])+[('CALL',callee,0,2 if callee=='cp_vector' else 1),('LSET',4,0),('FUEL',),('LGET',0,3),('RT','RT-VECTOR-COUNT',0,1),('LGET',1,4),('BIN','BOP-ADD',0),('RET',0)]
+ fx(name,2,4,body);cp_targets.append((name,callee,admitted))
+
+# Hand-derived values plus original low-fuel and bounds traps.
+for name,callee,admitted in cp_targets:
+ if callee=='cp_cap':continue # refusal/audit and denied-cap state are covered separately
+ if callee=='cp_vector':
+  for index,value in [(0,14),(1,-19)]:run(name,[index,1],value,fuel=2)
+  for index in [-1,2,MIN,MAX]:run(name,[index,1],'trap',fuel=2)
+ elif callee=='cp_alloc':
+  for n in [0,1,4]:run(name,[0,n],4,fuel=1) # second fresh handle2 + root vector length2
+  run(name,[0,-1],'trap',fuel=1)
+ elif callee in ['cp_cycle','cp_big']:run(name,[0,1],19 if callee=='cp_cycle' else 521,fuel=1)
+ else:
+  for value in [MIN,-1,0,1,MAX]:run(name,[0,value],s64(value+3),fuel=2)
+ if callee not in ['cp_alloc','cp_cycle','cp_big']:run(name,[0,1],'trap',fuel=1)
+
 def kotoba(real_layout=False):
     fns, labels, lits, sir, fnrecs = layout_tables()
     o = [';; deps: 40-a64enc',
@@ -528,6 +557,7 @@ def kotoba(real_layout=False):
          '        pool (t-litf M g LF-POOL)]',
          '    (cond (= k FX-B26) (t-patch1 M at (enc-patch-imm26 w (- lab at)))',
          '          (= k FX-BL26) (t-patch1 M at (enc-patch-imm26 w (- fnc at)))',
+         '          (= k FX-ADR19) (t-patch1 M at (enc-patch-imm19 w (- fnc at)))',
          '          (= k FX-CB19) (t-patch1 M at (enc-patch-imm19 w (- lab at)))',
          '          (= k FX-BC19) (t-patch1 M at (enc-patch-imm19 w (- lab at)))',
          '          (= k FX-LIT32) (t-patch1 (t-patch1 M at (enc-patch-imm16 w (bit-and pool 65535)))',
