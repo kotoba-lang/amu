@@ -1,12 +1,12 @@
 # Content identity, computation identity, and native performance
 
-Latest follow-up: the [direct-callee context proof](coscientist-context-call-20261005.md)
-qualifies8.31% shorter UD execution on all19 aligned quiet measurements. It
-initially failed integrated self-rebuild because import stub bodies change at
-link time. An explicit import boundary now passes adversarial substitution,
-three integrated generations and unchanged per-case corpus outcomes. Picojpeg
-is unchanged in that experiment; C-level performance remains unachieved.
-This is structural compiler optimization, not definition-CID or execution caching.
+Latest follow-up: the [signed-clamp composition](coscientist-clamp-call-20261005.md)
+qualifies5.48% shorter freshly executed Picojpeg time and passes integrated
+three-generation rebuilding, full supervisor comparisons and unchanged corpus
+outcomes. Other18 guest binaries are unchanged. It uses stable exact SIR/body
+proofs and refuses open imports; it is not DefCID or execution caching.
+The previous [context proof](coscientist-context-call-20261005.md) improved UD.
+C-level-or-better on the original aligned workloads remains unachieved.
 
 Current code identity is content addressing. `kotoba.compiler.definition-identity`
 alpha-normalizes checked typed KIR and seals six inputs: typed KIR, profile version,
