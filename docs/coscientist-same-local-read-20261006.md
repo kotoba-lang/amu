@@ -136,6 +136,11 @@ integration.
 
 ## Next prospective experiment
 
+The [fresh current native census](coscientist-loop-composition-census-20261006.md)
+now completes the observation step below with all19 diagnostic/quiet bytes and
+offsets equal. It audits the actual loop and unchanged C instructions and checks
+a prospective guard model. Native loop expansion remains unimplemented/unmeasured.
+
 Freshly observe complete current native SIR and actual emitted loop instructions,
 without overwriting the now-live state13 or existing14. Verify all19 diagnostic
 bytes/offsets before attributing costs; inspect the pinned C comparator separately.
