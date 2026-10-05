@@ -1,5 +1,12 @@
 # Content identity, computation identity, and native performance
 
+Latest experimental follow-up: [high-depth vector read composition](coscientist-high-temp-read-20261006.md)
+passes a four-generation native fixedpoint,4196 fresh regressions and16185
+preflight full-state comparisons. Only matmult/SHA machines change. Fresh times
+are4.31%/0.40% shorter; both fail the unchanged promotion rule and are rejected.
+Product remains unchanged. Retained call-preparation spills are the next registered
+hypothesis; native DefCID/result-cache integration remains unconnected.
+
 Latest experimental follow-up: [dynamic-key loop descriptor reuse](coscientist-loop-descriptor-20261006.md)
 admits272 read sites across17 originals; native fixedpoint,4196 fresh regressions,
 3312 preflight full-state comparisons and209 additional original-workload states
