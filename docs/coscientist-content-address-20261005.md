@@ -1,5 +1,11 @@
 # Content identity, computation identity, and native performance
 
+Latest experimental follow-up: [affine-chain composition](coscientist-affine-chain-20261006.md)
+passes4 native generations,7989 permanent runs and6419 extra state comparisons.
+Fresh30triples show10.40% shorter matmult mean but fail unchanged summed-variation
+criterion; reject, product unchanged. C remains17.58x faster than candidate.
+Next registered: exact affine index plus immediately consuming checked vector read.
+
 Latest experimental follow-up: [loop-produced high-temp registers](coscientist-loop-temp-registers-20261006.md)
 uses [fresh native spill census](coscientist-temp-materialization-census-20261006.md)
 to admit only1 originalfunction/2temps. Native fixedpoint,7989 regressions,
