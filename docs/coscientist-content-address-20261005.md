@@ -1,5 +1,11 @@
 # Content identity, computation identity, and native performance
 
+Latest follow-up: the qualified scalar-tree lowering improved freshly executed
+Picojpeg by 9.29%, while scatter-zero specialization failed timing acceptance.
+The [fuel-cost diagnostic](coscientist-fuel-cost-20261005.md) now separates the
+effect of omitting fuel checks, with explicit semantic differences and no product
+promotion. Its next experiment preserves original fuel/trap/state boundaries.
+
 Current code identity is content addressing. `kotoba.compiler.definition-identity`
 alpha-normalizes checked typed KIR and seals six inputs: typed KIR, profile version,
 desugaring contract, effect row, interface (including reachable schemas), and direct

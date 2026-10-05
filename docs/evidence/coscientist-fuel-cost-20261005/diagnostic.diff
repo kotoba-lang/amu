@@ -1,0 +1,14 @@
+--- product/seed/41-a64gen.kotoba
++++ diagnostic/41-a64gen.kotoba
+@@ -1172,9 +1172,2 @@
+-  (if (= (gn-g M gn-f-freg) 1)
+-    (-> M (gn-emit (enc-subs-i 8 8 1)) (gn-emit (enc-bcond (enc-cond-hs) 3)) (gn-emit (enc-str 31 7 CTX-FUEL)) (gn-emit (enc-brk 0)))
+-    (-> M
+-        (gn-ctx)
+-        (gn-emit (enc-ldr 16 7 CTX-FUEL))
+-        (gn-emit (enc-subs-i 16 16 1))
+-        (gn-emit (enc-bcond (enc-cond-hs) 2))
+-        (gn-emit (enc-brk 0))
+-        (gn-emit (enc-str 16 7 CTX-FUEL)))))
++  ;; DIAGNOSTIC ONLY: no charge/check; preserve context restoration side effect.
++  (if (= (gn-g M gn-f-freg) 1) M (gn-ctx M)))
