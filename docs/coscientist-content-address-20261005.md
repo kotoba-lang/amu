@@ -1,6 +1,12 @@
 # Content identity, computation identity, and native performance
 
-Latest follow-up: [constant recovery across joins](coscientist-affine-join-20261005.md)
+Latest follow-up: [closed scalar-argument specialization](coscientist-static-arg-20261005.md)
+produces11 native variants across5 original programs and passes native fixedpoint,
+4233 hand-derived runs and180 actual allocating-import comparisons. All five
+fresh timing comparisons fail promotion; product source stays unchanged.
+Next registered step is a native dynamic cost census before another specialization.
+
+Previous follow-up: [constant recovery across joins](coscientist-affine-join-20261005.md)
 recovers4 sites after native observation falsified the source-only assumption
 (0 sites). Native proofs pass; fresh4.37% shorter timing fails both promotion
 criteria. No product change. Next hypothesis is closed-callee scalar-argument
