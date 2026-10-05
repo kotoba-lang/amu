@@ -52,8 +52,26 @@ The first unified rebuild used an uncommitted codegen change while the
 launcher correctly archives git HEAD. Generation 1 was compiled with the
 new seed but embedded old compiler source; generations 2/3 returned to the
 old tail-call image, so the three-generation comparison correctly failed.
-Commit the source before repeating that archive-based proof; do not relax
-the fixed-point check. The failed attempt remains in evidence.
+After committing the source at `fafb295a7`, the repeated archive-based
+rebuild passes three-generation equality of every object, container, native
+code and command. The integrated Amu is 6,092,664 bytes, SHA-256
+`40538bfb021af4662c79ab478848e9bd360d51339135062751e69cb3b3fe213d`.
+All 19 sources check and compile through this image, producing the exact
+measured prototype code. The failed attempt remains in evidence.
+
+The integrated corpus preserves the prior results: check 358 same accepts
+and 33 same refusals; compile 300 behavior matches, 27 Amu-only accepts,
+12 Amu-only refusals, 3 differing accepted outputs and 49 shared refusals;
+exports 875 same, 15 existing differences, 0 timeouts and 1 missing. Stage-0
+is solely the test reference, never a compiler in the build lineage.
+A full-suite rotating comparison against the prior integrated image and
+unchanged C binaries now completes all 19 workloads, each with 30 accepted
+triples and relative SD below 10% in every arm. Concurrent baseline/C
+geometric time ratio is 10.3942 and candidate/C is 9.6251, a 1.0799x
+geometric speedup (7.40% less time). Seven workloads meet the predeclared
+improvement and spread criteria; none reaches C time. The whole-suite
+Statemate improvement is 1.611x and its C ratio is 24.949x, distinct from
+the standalone experiment above. No across-run ratio is used for speedup.
 
 [Evidence](evidence/coscientist-wrapper-inline-20261005/summary.json) includes
 all generation/source hashes, ports, state/fuel checks, fixtures, requested
@@ -62,3 +80,33 @@ observer incorrectly included pool bytes after the final function; the fixed
 observer and failed log remain. The first raw port compiler invocation omitted
 the existing string-pool budget; the rerun uses seed_run's existing budget.
 The product entry has not been switched and own-source 100% remains unproven.
+
+
+| Workload | Prior / candidate speedup | Candidate / C time | Improvement criterion |
+|---|---:|---:|---|
+| aha-mont64 | 0.995 | 1.950 | not established |
+| crc32 | 0.993 | 2.309 | not established |
+| depthconv | 1.016 | 3.484 | not established |
+| edn | 1.008 | 15.672 | not established |
+| huffbench | 1.012 | 7.328 | not established |
+| matmult-int | 1.033 | 23.883 | not established |
+| md5sum | 1.153 | 5.671 | PASS |
+| nettle-aes | 1.005 | 18.040 | not established |
+| nettle-sha256 | 1.065 | 13.724 | PASS |
+| nsichneu | 0.997 | 8.801 | not established |
+| picojpeg | 1.073 | 30.118 | PASS |
+| qrduino | 1.009 | 12.712 | not established |
+| sglib-combined | 1.093 | 7.108 | PASS |
+| slre | 0.990 | 7.424 | not established |
+| statemate | 1.611 | 24.949 | PASS |
+| tarfind | 1.379 | 14.539 | PASS |
+| ud | 1.173 | 10.930 | PASS |
+| wikisort | 1.057 | 15.768 | not established |
+| xgboost | 1.026 | 7.207 | not established |
+
+The next largest measured gap is Picojpeg (30.118x C), followed by
+Statemate (24.949x) and Matmult-int (23.883x). Next work should isolate
+Picojpeg decode, transform and pixel-store costs against the original C
+observations, then test a general codegen hypothesis for the largest cost.
+The full-suite evidence is in [suite summary](evidence/coscientist-wrapper-inline-20261005/suite-summary.json)
+and `suite-timing.tgz`, including every rejected attempt and calibration row.
