@@ -626,6 +626,9 @@ def kotoba(real_layout=False):
           '  (let [a (typed-cap-call :cli/args :string :string "")',
           '        M0 (t-load (t-init))',
           '        M1 (gn-run M0)',
+          # Import bodies are substituted after generation. A pure-looking stub
+          # and every transitive caller must refuse context-preservation proof.
+          '        closed (gn-ctx-safe M1 %d 1 8 512)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_scalar')),
           '        nw (vector-at M1 MM-R0)',
           '        e1 (vector-at M1 MM-ERR)',
           '        o1 (t-out (string-concat (string-concat (string-concat "gen err " (t-dec e1)) " words ")',
@@ -637,8 +640,12 @@ def kotoba(real_layout=False):
           '        o3 (t-pf M3 1)',
           '        o4 (t-pw M3 1 (+ nw 1))',
           '        o5 (t-pl M3 1)',
-          '        o6 (t-out (string-concat (string-concat "end " (t-dec (vector-at M3 MM-CODE-BYTES))) "\\n"))]',
-          '    (if (= e3 0) 0 1)))']
+          '        o6 (t-out (string-concat (string-concat "end " (t-dec (vector-at M3 MM-CODE-BYTES))) "\\n"))',
+          '        MC (gn-run-open (t-put (t-put M3 MM-CODE-N 1) MM-FIX-N 1) %d 1)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_scalar')),
+          '        direct (gn-ctx-safe MC %d 1 8 512)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_scalar')),
+          '        transitive (gn-ctx-safe MC %d 1 8 512)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_chain0')),
+          '        independent (gn-ctx-safe MC %d 2 8 512)]' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_vector')),
+          '    (if (and (= e3 0) (>= closed 0) (= direct -1) (= transitive -1) (>= independent 0)) 0 1)))']
     return '\n'.join(o) + '\n'
 
 def gen():

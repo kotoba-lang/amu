@@ -1312,6 +1312,7 @@
   (let [a (typed-cap-call :cli/args :string :string "")
         M0 (t-load (t-init))
         M1 (gn-run M0)
+        closed (gn-ctx-safe M1 207 1 8 512)
         nw (vector-at M1 MM-R0)
         e1 (vector-at M1 MM-ERR)
         o1 (t-out (string-concat (string-concat (string-concat "gen err " (t-dec e1)) " words ")
@@ -1323,5 +1324,9 @@
         o3 (t-pf M3 1)
         o4 (t-pw M3 1 (+ nw 1))
         o5 (t-pl M3 1)
-        o6 (t-out (string-concat (string-concat "end " (t-dec (vector-at M3 MM-CODE-BYTES))) "\n"))]
-    (if (= e3 0) 0 1)))
+        o6 (t-out (string-concat (string-concat "end " (t-dec (vector-at M3 MM-CODE-BYTES))) "\n"))
+        MC (gn-run-open (t-put (t-put M3 MM-CODE-N 1) MM-FIX-N 1) 207 1)
+        direct (gn-ctx-safe MC 207 1 8 512)
+        transitive (gn-ctx-safe MC 214 1 8 512)
+        independent (gn-ctx-safe MC 208 2 8 512)]
+    (if (and (= e3 0) (>= closed 0) (= direct -1) (= transitive -1) (>= independent 0)) 0 1)))

@@ -1,0 +1,42 @@
+diff --git a/Users/junkawasaki/github/wt/amu-seed17/seed/41-a64gen.kotoba b/private/tmp/amu-context-call-20261005/41-a64gen-prototype.kotoba
+index 1c48cefe0..ab360c4f0 100644
+--- a/Users/junkawasaki/github/wt/amu-seed17/seed/41-a64gen.kotoba
++++ b/private/tmp/amu-context-call-20261005/41-a64gen-prototype.kotoba
+@@ -968,6 +968,28 @@
+         (gn-emit (gn-e-strr3 0 16 17)) (gn-emit (enc-str 8 7 CTX-FUEL))
+         (gn-gs gn-f-h (inc t)))))
+ 
++;; Bounded structural proof that a direct callee returns with input x7.
++;; A shared remaining-work budget counts all transitive SIR instructions; it
++;; prevents exponential rescanning. Unknown effects/operations fail closed.
++;; Caller frame, real call and every fuel/trap/publication boundary remain.
++(defn- gn-ctx-safe [M :vector-i64 f :i64 n :i64 depth :i64 work :i64] :i64
++  (let [p (gn-fnf M f FF-SIR)]
++    (if (and (> f 0) (< f (vector-at M MM-FN-N)) (> p 0) (> depth 0) (> work 0)
++             (<= n 7) (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) f) (= (gn-sir M p IF-B) n))
++      (gn-ctx-scan M (inc p) f depth (dec work)) -1)))
++(defn- gn-ctx-scan [M :vector-i64 j :i64 f :i64 depth :i64 work :i64] :i64
++  (if (or (>= j (vector-at M MM-SIR-N)) (<= work 0)) -1
++    (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) c (gn-sir M j IF-C)
++          left (dec work)]
++      (case op
++        OP-END (if (= a f) left -1)
++        (OP-CONST OP-LGET OP-LSET OP-BIN OP-CMP OP-UN OP-LABEL OP-BR OP-BRZ OP-BRNZ OP-FUEL OP-RET OP-RET2 OP-RES2 OP-TRAP OP-TAB OP-FADDR)
++        (gn-ctx-scan M (inc j) f depth left)
++        OP-RT (if (gn-inl a b c) (gn-ctx-scan M (inc j) f depth left) -1)
++        OP-CALL (let [remain (gn-ctx-safe M a c (dec depth) left)]
++                  (if (< remain 0) -1 (gn-ctx-scan M (inc j) f depth remain)))
++        -1))))
++
+ (defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
+   (let [w (gn-call-wrapper M i f t n)]
+    (cond (gn-mask-writer M i f t n) (gn-call-mask-writer M t)
+@@ -985,7 +1007,7 @@
+       (gn-ctx)
+       (gn-fix FX-BL26 f)
+       (gn-emit (enc-bl 0))
+-      (gn-gs gn-f-ctx 0)
++      (gn-gs gn-f-ctx (if (>= (gn-ctx-safe M f n 8 512) 0) 1 0))
+       (gn-take i t 0)))))
+ ;; A direct call whose only successor returns its scalar result can restore
+ ;; this frame and branch to the callee. Stack arguments and RET2 are excluded.

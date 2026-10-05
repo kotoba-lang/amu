@@ -1,10 +1,12 @@
 # Content identity, computation identity, and native performance
 
-Latest follow-up: the qualified scalar-tree lowering improved freshly executed
-Picojpeg by 9.29%, while scatter-zero specialization failed timing acceptance.
-The [fuel-cost diagnostic](coscientist-fuel-cost-20261005.md) now separates the
-effect of omitting fuel checks, with explicit semantic differences and no product
-promotion. Its next experiment preserves original fuel/trap/state boundaries.
+Latest follow-up: the [direct-callee context proof](coscientist-context-call-20261005.md)
+qualifies8.31% shorter UD execution on all19 aligned quiet measurements. It
+initially failed integrated self-rebuild because import stub bodies change at
+link time. An explicit import boundary now passes adversarial substitution,
+three integrated generations and unchanged per-case corpus outcomes. Picojpeg
+is unchanged in that experiment; C-level performance remains unachieved.
+This is structural compiler optimization, not definition-CID or execution caching.
 
 Current code identity is content addressing. `kotoba.compiler.definition-identity`
 alpha-normalizes checked typed KIR and seals six inputs: typed KIR, profile version,
