@@ -687,6 +687,70 @@ for c in AFFINE_READ_CASES:
 # Retain the original final-function state used by existing guard tests.
 _sentinel=next(f for f in FIX if f[0]=='ht_cold_control');FIX.append(('ar_cold_sentinel',*_sentinel[1:]))
 
+# Same-local descriptor reuse: new algorithm / hand fixtures.
+fx('sl_pair_clobber',7,7,[('FUEL',),('CONST',0,77),('RET',0)]);fx('sl_pair_alloc',0,0,[('FUEL',),('CONST',0,1),('RT','RT-VECTOR-ALLOC',0,1),('CONST',0,77),('RET',0)])
+SL_VALUES=[11-3*j for j in range(8)]+[99-3*j for j in range(8)];SAME_LOCAL_READ_CASES=[]
+def _sl_read(t,slot,ixlocal):
+ out=t-2
+ return [('CONST',j,0) for j in range(out)]+[('LGET',out,slot),('CONST',t-1,0),('LGET',t,1),('CONST',t+1,20),('BIN','BOP-MUL',t),('LGET',t+1,ixlocal),('BIN','BOP-ADD',t),('BIN','BOP-ADD',t-1),('RT','RT-VECTOR-AT',out,2)]
+for t in [7,8,17]:
+ for mode in ['same','different','alias-source','write','reassign','co-result','co-bin','call','alloc','fuel','join']:
+  name='sl_pair_'+str(len(SAME_LOCAL_READ_CASES));loop=name+'_loop';body=[('FUEL',)]+[('CONST',j,SL_VALUES[j]) for j in range(8)]+[('VEC',0,8),('LSET',4,0)]+[('CONST',j,SL_VALUES[j+8]) for j in range(8)]+[('VEC',0,8),('LSET',5,0)]
+  if mode=='alias-source':body += [('LGET',0,4),('LSET',5,0)]
+  body += [('CONST',0,2),('LSET',9,0),('CONST',0,0),('LSET',10,0),('LABEL',loop)]
+  if mode=='join':body += [('LGET',0,2),('BRZ',0,name+'_skip')]
+  body += _sl_read(t,4,2)+[('LSET',4 if mode=='co-result' else 7,t-2)]
+  if mode=='co-result':body += [('LGET',0,4),('LSET',7,0)]
+  if mode=='join':body += [('BR',name+'_join'),('LABEL',name+'_skip'),('CONST',0,17),('LSET',7,0),('LABEL',name+'_join')]
+  if mode=='write':body += [('LGET',0,4),('CONST',1,0),('CONST',2,77),('RT','RT-VECTOR-ASSOC-IN-PLACE',0,3)]
+  if mode=='reassign':body += [('LGET',0,5),('LSET',4,0)]
+  if mode=='co-bin':body += [('LGET',0,4),('CONST',1,1),('BIN','BOP-ADD',0),('LSET',4,0)]
+  if mode=='call':body += [('LGET',0,4)]+[('CONST',j,v) for j,v in enumerate([99,98,1,0,1,66],1)]+[('CALL','sl_pair_clobber',0,7)]
+  if mode=='alloc':body += [('CALL','sl_pair_alloc',0,0)]
+  if mode=='fuel':body += [('FUEL',)]
+  body += _sl_read(t+1,5 if mode in ['different','alias-source'] else 4,3)+[('LSET',8,t-1),('LGET',0,7),('LGET',1,8),('BIN','BOP-ADD',0),('LGET',1,10),('BIN','BOP-ADD',0),('LSET',10,0),('LGET',0,9),('CONST',1,1),('BIN','BOP-SUB',0),('LSET',9,0),('FUEL',),('BRNZ',0,loop),('LGET',0,10),('CONST',1,37),('BIN','BOP-ADD',0),('RET',0)]
+  fx(name,3,10,body);SAME_LOCAL_READ_CASES.append({'name':name,'t':t,'mode':mode,'staticHitExpected':mode=='same'})
+
+# Independent scalar/vector hand oracle. No generator/native code is consulted.
+def _sl_answer(c, av, ix1, ix2, b1, fuel):
+    remaining=fuel; items=list(SL_VALUES); descs=[(0,8),(8,8)]
+    handle=1; other=1 if c['mode']=='alias-source' else 2; total=0
+    def charge():
+        nonlocal remaining
+        if remaining<1:
+            remaining=0; return False
+        remaining-=1; return True
+    def at(h, ix):
+        if not 1<=h<=len(descs): return None
+        off,n=descs[h-1]
+        return items[off+ix] if 0<=ix<n else None
+    if not charge(): return 'trap'
+    for iteration in range(2):
+        first=17 if c['mode']=='join' and b1==0 else at(handle,ix1)
+        if first is None: return 'trap'
+        mode=c['mode']
+        if mode=='co-result': handle=first
+        if mode=='write': items[descs[handle-1][0]]=77
+        if mode=='reassign': handle=other
+        if mode=='co-bin': handle=s64(handle+1)
+        if mode in ['call','alloc','fuel']:
+            if not charge(): return 'trap'
+            if mode=='alloc': descs.append((len(items),1)); items.append(0)
+        second=at(other if mode in ['different','alias-source'] else handle,ix2)
+        if second is None: return 'trap'
+        total=s64(total+first+second)
+        if not charge(): return 'trap'
+    return s64(total+37)
+
+for c in SAME_LOCAL_READ_CASES:
+    for av,ix1,ix2 in [(0,0,7),(MIN,7,0),(MAX,0,0),(-1,8,0),(0,0,8),(123,-1,0),(MIN,0,-1),(MAX,7,7)]:
+        b1=s64(ix1-s64(av*20)); b2=s64(ix2-s64(av*20))
+        for fuel in [1,2,3,4,5,6,16777216]:
+            run(c['name'],[av,b1,b2],_sl_answer(c,av,ix1,ix2,b1,fuel),fuel=fuel)
+_sl_sentinel=next(f for f in FIX if f[0]=='ht_cold_control')
+FIX.append(('sl_pair_cold_sentinel',*_sl_sentinel[1:]))
+
+
 def kotoba(real_layout=False):
     fns, labels, lits, sir, fnrecs = layout_tables()
     o = [';; deps: 40-a64enc',
