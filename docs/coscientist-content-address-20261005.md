@@ -1,5 +1,13 @@
 # Content identity, computation identity, and native performance
 
+Current qualified follow-up: [dominated same-local reads](coscientist-same-local-read-20261006.md)
+qualifies18.494929% shorter originalmatmult in fresh30triples. Native4gen,
+4085 preflight state comparisons,470/11187 permanent runs preserving434/9339,
+ERR/G1-G5 and committed-source integrated3gen/full actual-output corpus parity
+pass. Other18 guests are unchanged. C remains14.3349x faster; the full19 goal
+is unachieved. Native DefCID/result caching remains unconnected. Next registered:
+fresh current SIR/instruction census and guarded bounded affine accumulation.
+
 Latest qualified follow-up: [direct affine-index checked read](coscientist-affine-read-direct-20261006.md)
 passes4 native generations,8939 preflight state comparisons,434/9339 permanent
 fixtures/runs preserving original402/7989,12 guards, ERR/G1-G5 and committed-source

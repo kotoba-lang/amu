@@ -1,5 +1,11 @@
 # Content identity, computation recipes, and measured native reuse
 
+Subsequent qualified experiment: [dominated same-local reads](coscientist-same-local-read-20261006.md)
+removes the later dynamic-key comparison after a stable-local/straight-line proof.
+Fresh30triples qualify18.494929% shorter originalmatmult; permanent native tests,
+gates and committed-source integrated3gen/full actual-output parity pass. The
+dynamic-cache-only trial below remains rejected. C-or-better all19 remains open.
+
 The current checked-definition identity is **content addressing** of a normalized
 implementation. A computation recipe can also be content addressed; these are
 layers of identity, not two competing kinds of hash. Neither identifies every
