@@ -1,5 +1,12 @@
 # Content identity, computation identity, and native performance
 
+Latest experimental follow-up: [successful handle-validation reuse](coscientist-vector-validity-20261006.md)
+passes5760 native hand-state comparisons,48 allocating imports,16 resource-limit
+partial-write comparisons and a four-generation fixedpoint. Fresh WikiSort time
+is1.23% shorter but fails the unchanged promotion rule; product stays unchanged.
+The runtime inspection corrects a prior hypothesis: append returns a new descriptor,
+not a changed length on the old handle. Guarded loop-region reuse is registered next.
+
 Latest qualified follow-up: [closed affine-index vector reader composition](coscientist-affine-reader-20261006.md)
 reduces freshly measured original WikiSort body time8.29%; other18 current product
 guest binaries are unchanged.38064 hand-result/full-state comparisons,96 allocating-

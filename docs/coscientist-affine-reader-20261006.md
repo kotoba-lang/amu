@@ -125,3 +125,12 @@ mutation and open imports invalidate admission. The actual runtime's in-place
 vector append can change descriptor length: content identity does not make heap
 state immutable. This is registered, not implemented/measured. The objective
 remains C-level-or-better across the full original19-workload scope.
+
+## October6 runtime correction
+
+The registered next-hypothesis statement above about in-place append changing
+an existing descriptor length was incorrect. `intern_vector` creates a new table
+entry, and `checked_vector_conj` returns its new handle. Old/new descriptors retain
+different lengths. The historical archived hypothesis is unchanged. See the
+[validity-reuse experiment and correction](coscientist-vector-validity-20261006.md):
+semantic proofs pass, fresh1.23% timing fails promotion, product stays unchanged.
