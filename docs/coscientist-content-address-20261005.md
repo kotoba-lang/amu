@@ -1,6 +1,11 @@
 # Content identity, computation identity, and native performance
 
-Latest follow-up: the [signed-clamp composition](coscientist-clamp-call-20261005.md)
+Latest follow-up: [two affine signed-write candidates](coscientist-affine-writer-20261005.md)
+preserve native state and fixedpoint but fail the prospective timing rule
+(3.10% and4.59% shorter; ratios1.031967 and1.048076). Neither is promoted.
+The next registered hypothesis specializes proven immutable index operands.
+
+The latest qualified [signed-clamp composition](coscientist-clamp-call-20261005.md)
 qualifies5.48% shorter freshly executed Picojpeg time and passes integrated
 three-generation rebuilding, full supervisor comparisons and unchanged corpus
 outcomes. Other18 guest binaries are unchanged. It uses stable exact SIR/body
