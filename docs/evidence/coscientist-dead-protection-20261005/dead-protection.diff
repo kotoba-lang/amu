@@ -1,0 +1,38 @@
+--- seed/41-a64gen.kotoba
++++ dead-protection/41-a64gen.kotoba
+@@ -303,6 +303,15 @@
+ ;; temp t is dead at label l (unknown label: live)
+ (defn- gn-dead-at [M :vector-i64 l :i64 t :i64] :bool
+   (let [p (gn-lpos M l)] (and (> p 0) (gn-kills M (inc p) t 16))))
++;; Before an explicit local update, only preserve aliases that may be read.
++;; The existing bounded kill proof refuses branches/unknown paths. A proved
++;; dead alias needs no old-value materialization, including at a later flush.
++(defn- gn-prot-live [M :vector-i64 lo :i64 hi :i64 x :i64 s :i64 j :i64] :vector-i64
++  (cond (>= lo hi) M
++        (and (not= lo x) (gn-isk M lo gn-k-local) (= (gn-dv M lo) s))
++        (let [next (if (gn-kills M j lo 16) (gn-dset M lo gn-k-reg 0) (gn-mat M lo))]
++          (gn-prot-live next (inc lo) hi x s j))
++        :else (gn-prot-live M (inc lo) hi x s j)))
+ ;; the first reader of temp t from instruction j on in straight-line code (n steps): its index, 0 = none or unknown
+ (defn- gn-reader [M :vector-i64 j :i64 t :i64 n :i64] :i64
+   (let [op (gn-op M j)
+@@ -851,8 +860,8 @@
+           (gn-gs gn-f-dead 0)
+           (gn-gs gn-f-ctx (gn-g M1 gn-f-leaf))))))
+ 
+-(defn- gn-op-lset [M :vector-i64 s :i64 t :i64] :vector-i64
+-  (let [M1 (gn-prot M 0 (gn-g M gn-f-h) t s)
++(defn- gn-op-lset [M :vector-i64 i :i64 s :i64 t :i64] :vector-i64
++  (let [M1 (gn-prot-live M 0 (gn-g M gn-f-h) t s (inc i))
+         r (gn-sreg M1 s)]
+     (cond (and (gn-isk M1 t gn-k-local) (= (gn-dv M1 t) s)) M1
+           (>= r 0) (gn-into M1 r t)
+@@ -1141,7 +1150,7 @@
+       (case op
+         OP-CONST (gn-def M a gn-k-const b)
+         OP-LGET (gn-def M a gn-k-local b)
+-        OP-LSET (gn-op-lset M a b)
++        OP-LSET (gn-op-lset M i a b)
+         OP-BIN (gn-op-bin M i a b)
+         OP-CMP (gn-op-cmp M i a b)
+         OP-UN (gn-op-un M i a b)
