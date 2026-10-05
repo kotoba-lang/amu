@@ -1,5 +1,13 @@
 # Content identity, computation identity, and native performance
 
+Latest experimental follow-up: [unused callee registers for high temps](coscientist-callee-temp-20261006.md)
+passes native3-generation fixedpoint,7989 existing regressions and1095 additional
+full-state comparisons. Allsix fresh30-triple comparisons fail promotion;
+matmult's9.16% shorter mean is below summed variation, SHA/UD slower. Product
+unchanged. Native SIR falsifies unused declared capacity; constant-only vector
+initializers add callee preservation without replacing spills. Observe actual
+materialization/loop-weighted use before another allocation policy.
+
 Latest qualified follow-up: [loop-contained high-depth reads](coscientist-loop-high-temp-20261006.md)
 reduces original matmult time15.32%; other18 guest binaries equal previous product.
 The emitted machine equals the prospective30-triple qualified target; immutable
