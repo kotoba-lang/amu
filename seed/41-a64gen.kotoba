@@ -134,6 +134,8 @@
 (def gn-a-dk 8208)    ; temp -> descriptor kind; gn-cap words
 (def gn-a-dv 12304)   ; temp -> descriptor value; gn-cap words
 (def gn-a-lp 16400)   ; label -> SIR index of its LABEL in the current function; MM-LABEL-CAP words
+(def gn-g-open (+ gn-a-lp MM-LABEL-CAP)) ; module-wide first replaceable import FN (outside per-function reset)
+(def gn-g-open-n (inc gn-g-open))       ; number of replaceable import FNs
 (def gn-k-reg 1)
 (def gn-k-const 2)
 (def gn-k-local 3)
@@ -975,6 +977,7 @@
 (defn- gn-ctx-safe [M :vector-i64 f :i64 n :i64 depth :i64 work :i64] :i64
   (let [p (gn-fnf M f FF-SIR)]
     (if (and (> f 0) (< f (vector-at M MM-FN-N)) (> p 0) (> depth 0) (> work 0)
+             (not (and (>= f (gn-g M gn-g-open)) (< f (+ (gn-g M gn-g-open) (gn-g M gn-g-open-n)))))
              (<= n 7) (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) f) (= (gn-sir M p IF-B) n))
       (gn-ctx-scan M (inc p) f depth (dec work)) -1)))
 (defn- gn-ctx-scan [M :vector-i64 j :i64 f :i64 depth :i64 work :i64] :i64
@@ -1283,11 +1286,15 @@
     M))
 
 ;; the module entry: SIR -> CODE (+ FIX, LABEL, FF-CODE). MM-R0 = code words emitted in total.
-(defn- gn-run [M :vector-i64] :vector-i64
+(defn- gn-run-open [M :vector-i64 first :i64 count :i64] :vector-i64
   (let [top (vector-at M MM-HEAP-TOP)
         M0 (if (< top MM-HEAP-BASE) (gn-put M MM-HEAP-TOP MM-HEAP-BASE) M)
-        M1 (mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP))
-        M2 (gn-put M1 gn-cell (vector-at M1 MM-R0))
+        M1 (mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 2))
+        M2 (-> (gn-put M1 gn-cell (vector-at M1 MM-R0))
+               (gn-gs gn-g-open first) (gn-gs gn-g-open-n count))
         M3 (if (= (vector-at M2 MM-ERR) 0) (gn-loop M2 1) M2)
         n (vector-at M3 MM-CODE-N)]
     (gn-put M3 MM-R0 (- n 1))))
+
+;; Unity compilation has no link-time replacement of function bodies.
+(defn- gn-run [M :vector-i64] :vector-i64 (gn-run-open M 0 0))

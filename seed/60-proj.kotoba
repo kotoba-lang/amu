@@ -1040,7 +1040,7 @@
 (defn- pj-c4 [M :vector-i64 L :vector-i64 S :string H :vector-i64] :vector-i64
   (let [M1 (ck-run-h M S H)]   ; R6C: with the parameter refinements so far
     (if (pj-ok M1)
-      (let [M2 (lw-run M1)] (if (pj-ok M2) (let [M3 (gn-run M2)] (if (pj-ok M3) (pj-c5 M3 L) M3)) M2))
+      (let [M2 (lw-run M1)] (if (pj-ok M2) (let [M3 (gn-run-open M2 (pj-l L pj-k-stub0) (pj-l L pj-k-nstub))] (if (pj-ok M3) (pj-c5 M3 L) M3)) M2))
       M1)))
 (defn- pj-c3 [M :vector-i64 L :vector-i64 S :string H :vector-i64] :vector-i64
   (let [M1 (nm-run M S)]
