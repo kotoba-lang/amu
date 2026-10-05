@@ -1,5 +1,10 @@
 # Fuel lowering sensitivity on the unchanged Picojpeg workload
 
+Follow-up: the [sufficient-fuel region experiment](coscientist-fuel-region-20261005.md)
+passes native fuel/trap/state proofs but qualifies no speedup across all seven
+changed workloads and regresses Wikisort. It is not promoted; cold failure-path
+layout is registered as the next experiment.
+
 The preceding scatter-zero hypothesis did not qualify for promotion. This
 registered diagnostic tests the influence of emitted fuel checks on the complete
 original Picojpeg workload. It intentionally changes observable fuel semantics.
