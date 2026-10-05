@@ -1,9 +1,6 @@
 --- a/seed/30-lower.kotoba
 +++ b/seed/30-lower.kotoba
-@@ -223,19 +223,48 @@
-         (cond-> rf (lw-emit OP-FUEL 0))
-         (lw-emit OP-BR target))))
- 
+@@ -225,0 +226,25 @@
 +;; Bounded exact-content proof for uniform integer decision trees. Only
 +;; literal/local scalar comparisons can disappear: no call, allocation,
 +;; mutable read, division, capability, or fuel-bearing expression is admitted.
@@ -29,12 +26,10 @@
 +          (if (not (lw-static-test? M c)) 0
 +              (let [a (lw-uniform-int M x (inc depth)) b (lw-uniform-int M y (inc depth))]
 +                (if (and (> a 0) (> b 0) (= (lw-nf M a NF-AUX) (lw-nf M b NF-AUX))) a 0))))))
- (defn- lw-if [M :vector-i64 c :i64 t :i64 k :i64] :vector-i64
-   (let [x (lw-next M c)
-         y (lw-next M x)
+@@ -228,0 +254,2 @@
 +        a (lw-uniform-int M x 0)
 +        b (if (> a 0) (lw-uniform-int M y 0) 0)
-         le (vector-at M MM-LABEL-N)]
+@@ -230,9 +257,11 @@
 -    (-> M
 -        (lw-labels 2)
 -        (lw-expr c t 0)
@@ -55,6 +50,3 @@
 +          (lw-emit OP-LABEL le)
 +          (lw-expr y t k)
 +          (lw-emit OP-LABEL (inc le))))))
- 
- ;; cond clauses from test node c; lx = the common exit label
- (defn- lw-cond [M :vector-i64 c :i64 t :i64 k :i64 lx :i64] :vector-i64
