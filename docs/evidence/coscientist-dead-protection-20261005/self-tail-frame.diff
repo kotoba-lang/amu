@@ -1,37 +1,16 @@
 --- seed/41-a64gen.kotoba
 +++ self-tail-frame/41-a64gen.kotoba
-@@ -128,6 +128,8 @@
- (def gn-f-skip 10)    ; SIR instructions after the current one that it consumed
- (def gn-f-freg 11)    ; 1 = the fuel counter is in x8
- (def gn-f-out 12)     ; R4B: bytes of the outgoing argument area at [sp,#0..] (calls with more than 7 arguments)
+@@ -130,0 +131,2 @@
 +(def gn-f-self 13)    ; current function id
 +(def gn-f-body 14)    ; code word after prologue/parameter binding
- (def gn-cap 4096)     ; slots and temps per function (the frame limit F <= 32768 is lower)
- (def gn-a-sreg 16)    ; slot -> register + 1 (0 = frame slot); gn-cap words
- (def gn-a-use 4112)   ; slot -> weighted use count; gn-cap words
-@@ -565,6 +567,8 @@
-                      (gn-gs gn-f-dp dp0)
-                      (gn-pre (inc i)))
-                  i f np))))
+@@ -567,0 +570,2 @@
 +(defn- gn-body-mark [M :vector-i64 f :i64] :vector-i64
 +  (-> M (gn-gs gn-f-self f) (gn-gs gn-f-body (vector-at M MM-CODE-N))))
- (defn- gn-op-fn2 [M1 :vector-i64 i :i64 f :i64 np :i64] :vector-i64
-   (let [ns (gn-g M1 gn-f-ns)
-         dp (gn-g M1 gn-f-dp)]
-@@ -586,7 +590,8 @@
-                   (gn-params 1 np)
-                   (cond-> (and (= leaf 1) (= (gn-g M2 gn-f-fuel) 1)) (-> (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-gs gn-f-freg 1)))
-                   (gn-gs gn-f-ctx 1)
+@@ -589 +593,2 @@
 -                  (gn-gs gn-f-h 0)))))))
 +                  (gn-gs gn-f-h 0)
 +                  (gn-body-mark f)))))))
- 
- (defn- gn-op-ret [M :vector-i64 t :i64] :vector-i64 (gn-epilogue (gn-into M 0 t)))
- ;; R5B: RET2 t -- x0 := temp t, x1 := temp t+1 (through x16: either source may be x0 or x1 in a leaf), then the epilogue
-@@ -908,9 +913,15 @@
- ;; Argument registers and x7 (context) survive the callee-saved restore.
- ;; FX-BL26 resolves a function target and patches imm26; the opcode remains B.
- (defn- gn-op-tail-call [M :vector-i64 f :i64 t :i64 n :i64] :vector-i64
+@@ -911,3 +916,9 @@
 -  (let [restored (-> M (gn-args t 0 n) (gn-ctx) (gn-epilogue))
 -        at (- (vector-at restored MM-CODE-N) 1)]
 -    (-> restored (gn-put MM-CODE-N at) (gn-fix FX-BL26 f) (gn-emit (enc-b 0)))))
@@ -44,6 +23,3 @@
 +      (let [restored (-> M (gn-args t 0 n) (gn-ctx) (gn-epilogue))
 +            at (- (vector-at restored MM-CODE-N) 1)]
 +        (-> restored (gn-put MM-CODE-N at) (gn-fix FX-BL26 f) (gn-emit (enc-b 0))))))
- ;; R4: CALLI 0 t n -- blr to the code address in temp t+n, arguments t .. t+n-1 (a closure call)
- (defn- gn-op-calli [M :vector-i64 i :i64 t :i64 n :i64] :vector-i64
-   (-> M

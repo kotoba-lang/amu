@@ -82,6 +82,9 @@ be preserved too. Retain entry fuel, division/trap semantics and caller temporar
 measure fresh canonical execution rather than memoized answers. This is a next
 hypothesis, not an implemented optimization or native typed-CID cache bridge.
 
+Prototype diffs use zero context to avoid trailing-whitespace warnings from
+blank unified-diff context records; full experimental sources are archived.
+
 Evidence: [summary](evidence/coscientist-dead-protection-20261005/summary.json),
 [no-op proof](evidence/coscientist-dead-protection-20261005/no-op-proof.json),
 [backend self-tail attempt](evidence/coscientist-dead-protection-20261005/self-tail-no-op.tgz),
