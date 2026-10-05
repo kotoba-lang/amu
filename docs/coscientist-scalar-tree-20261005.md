@@ -41,7 +41,8 @@ fallback admission is refused.
 The fixture generator authors these regression cases, regenerates its source and
 index, and the native unit harness regenerates the golden by real execution.
 All 1,979 runs pass (185 fixtures); native test/real layouts match. PRODUCT
-bootstrap inventory remains 97 before/after. ERR and G1-G5 (six gates) pass at
+bootstrap inventory remains unchanged: 97 inventory rows and 58 distinct
+PRODUCT src files before/after. ERR and G1-G5 (six gates) pass at
 r6m, including 84 identical seed-generation corpus/port containers; this is not
 a claim that all rung release gates pass. Preserved harness failures include an
 unknown emission helper at initial prototype build, an older QR baseline refused
@@ -69,10 +70,31 @@ Do not label QR a win. Candidate/C remains 21.9135x and 12.7987x respectively;
 C-or-better remains unachieved. These are aligned whole-body measurements, not
 an official Embench score, formal perfgate or a fresh suite geometric mean.
 
-The measured algorithm is committed before rebuilding the integrated image,
-so subsequent source snapshots include the actual backend. Integrated generation
-and corpus proof are pending at this source commit; no successful integrated
-fixed-point or unchanged corpus is inferred from the seed-only evidence above.
+The measured algorithm was committed at `29d7163ae` before rebuilding the
+integrated image. Its copied backend source is byte-identical to that commit.
+The rebuilt executable is 6,092,664 bytes, SHA-256
+`203e04213183a3e56ee728f4f6302a1d40f10a25e70db67c17e09a748b053a87`.
+All three generations of the command, native code, container and every one of
+162 objects are byte-identical; 117 frontend modules are compiled from source.
+The content-pinned external input snapshot is checked and retained locally.
+Every canonical source passes integrated check/compile and reproduces the exact
+measured raw machine code, including both changed workloads.
+
+Every one of 391 check classifications and 391 compile classifications/counts
+matches the previous qualified sign-extension product. The complete 891-row
+export table (875 same, 15 pre-existing differences, one missing; zero timeout)
+is unchanged as well. Check retains 358 shared accepts and 33 shared refusals;
+compile retains 300 behavioral matches, 27 Amu-only accepts, 12 Amu-only refusals,
+3 differing accepted behaviors and 49 shared refusals. This proves the optimization
+has not changed those outcomes; it does not close the existing language or own-source
+selfhost gaps. `bin/amu` and rung pins remain unchanged.
+
+[Integrated summary](evidence/coscientist-scalar-tree-20261005/integrated-summary.json)
+and [native image, exact corpus tables, metadata and proof scripts](evidence/coscientist-scalar-tree-20261005/integrated-proof.tgz)
+retain the integrated evidence. A comparison helper initially assumed every
+export row has exit columns; MISSING rows have three fields. The corrected check
+compares complete variable-length export rows with the baseline rather than
+omitting the missing entry.
 
 Evidence: [summary](evidence/coscientist-scalar-tree-20261005/summary.json),
 [native prototype and proof](evidence/coscientist-scalar-tree-20261005/native-proof.tgz),
