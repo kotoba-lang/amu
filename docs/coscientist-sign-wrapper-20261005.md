@@ -83,3 +83,15 @@ charges with positive budgets and preserve the expected successful values/traps.
 The initial gate invocation used the r0 default and an out-of-scope default port
 path; the repeat explicitly names r6m and the repository's gate ports, with the
 existing rung golden unchanged.
+
+## Source-probe coverage correction
+
+The original unsigned timing runner accepted only decimal inputs 0..2147483646.
+Of the reported 1872 source comparisons, 792 executed the guest and 1080 compared
+setup refusals. Those refusals did not prove signed-edge behavior. The later
+[signed coverage audit](coscientist-floor-specialize-20261005.md) reruns the
+original source and both compiler versions through the signed native loader: all
+1872 now execute and match, with independent full-fuel expected values. Positive
+fuel-budget outcomes match; this loader exposes no exact consumed-fuel count.
+The separate signed SIR fixtures, canonical exact-fuel checks, unified rebuild
+and valid-input performance measurements remain their original evidence.

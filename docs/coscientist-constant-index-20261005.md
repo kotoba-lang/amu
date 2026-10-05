@@ -65,3 +65,11 @@ Evidence: [summary](evidence/coscientist-constant-index-20261005/summary.json),
 [prototype patch](evidence/coscientist-constant-index-20261005/prototype.diff),
 [native proof](evidence/coscientist-constant-index-20261005/native-proof.tgz),
 [all timing rows](evidence/coscientist-constant-index-20261005/timing.tgz).
+
+## Source-probe adapter correction
+
+The old 1448 source-comparison total includes 1424 actual guest comparisons and
+24 input-setup refusals by the unsigned timing runner. The latter are not guest
+trap/edge coverage. See the later [signed audit](coscientist-floor-specialize-20261005.md).
+Separate SIR/canonical correctness and the failed performance decision remain
+unchanged; this prototype was never promoted.

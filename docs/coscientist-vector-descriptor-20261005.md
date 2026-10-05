@@ -103,3 +103,11 @@ Evidence: [summary](evidence/coscientist-vector-descriptor-20261005/summary.json
 [VD-1 timing](evidence/coscientist-vector-descriptor-20261005/vector-descriptor-timing.tgz),
 [VD-2 timing](evidence/coscientist-vector-descriptor-20261005/vector-descriptor2-timing.tgz),
 [source probes](evidence/coscientist-vector-descriptor-20261005/source-probes.tgz).
+
+## Source-probe adapter correction
+
+The old 1448 source-comparison total includes 1424 actual guest comparisons and
+24 input-setup refusals by the unsigned timing runner. The latter are not guest
+trap/edge coverage. See the later [signed audit](coscientist-floor-specialize-20261005.md).
+Separate SIR/canonical correctness and the failed performance decision remain
+unchanged; this prototype was never promoted.
