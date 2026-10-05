@@ -36,15 +36,20 @@ needs relative SD <=10%, at least 5% speedup and separation greater than the
 sum of standard deviations; negative/nonseparated findings remain in results.
 The geometric mean across all 19 is a custom time ratio, not an Embench score.
 
-The tool now records Darwin HOST_CPU_LOAD_INFO tick differences around each
+The tool records Darwin PROCESSOR_CPU_LOAD_INFO tick differences around each
 runner invocation, including setup/warmup and enclosing the timed interval.
-Intervals below 90% idle are preserved and refused; missing/nonadvancing
-counters refuse as well. This is an enclosing CPU envelope, not counters at
+Raw host idle and estimated background idle are both retained. Background idle
+adds the waited runner child's user/system CPU share back to raw host idle,
+using elapsed envelope time and logical CPU count. Estimated background idle
+below 90% refuses; missing/nonadvancing counters refuse as well. This avoids
+counting the benchmark's own intentionally busy core as unrelated host load.
+This is an enclosing CPU envelope, not counters at
 the exact internal timed boundaries. formalPerfgateQualified and
 officialEmbenchScore remain false, even if the numerical criterion passes.
 Exact-boundary qualification, official driver integration and a measured
-C-or-better result still require evidence. asher is offline and direct SSH times out at this
-snapshot. No timing was performed locally and no performance win is claimed.
+C-or-better result still require evidence. The original preparation snapshot
+had asher offline with SSH timeouts. Subsequent jacob attempts are documented
+below. No timing was performed locally and no performance win is claimed.
 
 New measurement/configuration authoring has no applicable mechanical Amu
 refactor rule. No compiler/product source is rewritten, no host fallback is
@@ -92,3 +97,41 @@ in the same evidence directory (`local-results.json`, `local-preparation.tgz`).
 The first restricted execution failed at the compiler's sandbox initialization;
 the successful rerun used local execution outside that restriction and made no
 network transfer. This does not prove jacob execution or performance.
+
+### Authorized jacob execution and instrumentation corrections
+
+The user explicitly authorized transfer and measurement, including necessary
+follow-up work. The input archive was transferred to jacob. All 19 pairs then
+passed native-source check, compile, qualified machine-byte comparison and
+C/Kotoba repeat/warmup verification there, using native selfhost Amu and
+Apple Clang 21. Three attempts exposed instrumentation issues before a
+complete timing run: short correctness probes had no advancing CPU ticks;
+raw host idle counted the benchmark's own core (86.77% on the first rejected
+row); and consecutive intervals encountered cached host_statistics results.
+Their failed results remain separate from subsequent runs.
+
+Only actual measurement rows now capture CPU counters. Background-idle
+accounting retains raw idle, child CPU nanoseconds and logical CPU count;
+the 90% requirement now applies explicitly to the background estimate, not
+raw host idle. This is a documented change of metric, and does not retroactively
+qualify the failed rows. The estimate is not exact-boundary qualification.
+The counter API now uses host_processor_info/PROCESSOR_CPU_LOAD_INFO, with
+returned memory released through vm_deallocate. The installed SDK declarations
+and [Apple XNU implementation](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/host.c)
+confirm host_statistics caching/rate limiting and the per-processor route.
+Twenty consecutive local 60-ms intervals advanced. Synthetic child-share,
+zero-child, negative-time, invalid-core-count and over-capacity cases passed.
+The fourth remote attempt uses these revised rules; its status must be read
+from retained results rather than inferred from launch success.
+
+The fourth attempt stopped after nine retained rows, when estimated background
+idle fell to 82.55% (raw idle 72.60%). It completed no 30-pair workload and
+supports no aggregate performance result. All four attempts and the latest
+script/spec provenance are retained in
+[execution evidence](evidence/coscientist-jacob-execution-20261005/summary.json).
+Configured SSH usernames also corrected the earlier mistaken classification
+of eight other Macs as inaccessible. A three-second read-only CPU probe found
+zebulun at 96.69% idle, but its proposed source/compiler transfer was rejected
+by automatic review as a different destination from the explicit jacob
+approval. User approval for zebulun is pending; no transfer occurred. The
+committed timing host remains jacob. No C-or-better or official score is claimed.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # BOOTSTRAP-TOOL: pinned 19-arm preparation and optional quiet-host paired timing.
-import argparse,hashlib,json,pathlib,re,socket,statistics,subprocess,tarfile,time,math
-from darwin_cpu_idle import snapshot as cpu_snapshot, interval as cpu_interval
+import argparse,hashlib,json,pathlib,re,socket,statistics,subprocess,tarfile,time,math,resource,os
+from darwin_cpu_idle import snapshot as cpu_snapshot, interval as cpu_interval, background_activity
 p=argparse.ArgumentParser();p.add_argument('repo',type=pathlib.Path);p.add_argument('environment',type=pathlib.Path);p.add_argument('output',type=pathlib.Path);p.add_argument('--measure',action='store_true');a=p.parse_args();repo=a.repo.resolve();env=a.environment.resolve();out=a.output.resolve()
 def require(ok,detail):
  if not ok:raise AssertionError(detail)
@@ -23,9 +23,13 @@ out.mkdir(parents=True);(out/'upstream').symlink_to(up,target_is_directory=True)
 report={'format':'amu.embench-paired-timing/v1','status':'running','host':socket.gethostname(),'specSha256':sha(repo/'bench/embench/paired-timing-spec.json'),'matrixSpecSha256':spec['matrixSpecSha256'],'compilerSha256':sha(compiler),'runnerSha256':sha(runner),'clang':subprocess.check_output(['clang','--version'],text=True),'performanceMeasured':False,'officialEmbenchScore':False,'formalPerfgateQualified':False,'ownSource100PercentSelfhostQualified':False,'entries':[],'rows':[]}
 def save():(out/'results.json').write_text(json.dumps(report,indent=2)+'\n')
 def load():return float(subprocess.check_output(['sysctl','-n','vm.loadavg'],text=True).split()[1])
-def sample(row,arm,calls,warm):
- d=out/row['workload'];kind='raw' if arm=='Kotoba' else 'dylib';binary=d/'native.bin' if arm=='Kotoba' else d/'c.dylib';entry=str(row['offset']) if arm=='Kotoba' else row['cSymbol'];cpu_before=cpu_snapshot() if a.measure else None;q=subprocess.run([str(runner),kind,str(binary),entry,'aarch64',str(row['iterationsPerCall']),str(calls),str(warm),str(matrix['maximumFuel'])],capture_output=True,text=True);require(q.returncode==0,(row['workload'],arm,q.returncode,q.stderr));s=json.loads(q.stdout);
- if a.measure:s['cpuActivityEnvelope']=cpu_interval(cpu_before,cpu_snapshot())
+def sample(row,arm,calls,warm,capture_cpu=False):
+ usage_before=resource.getrusage(resource.RUSAGE_CHILDREN) if capture_cpu else None
+ d=out/row['workload'];kind='raw' if arm=='Kotoba' else 'dylib';binary=d/'native.bin' if arm=='Kotoba' else d/'c.dylib';entry=str(row['offset']) if arm=='Kotoba' else row['cSymbol'];cpu_before=cpu_snapshot() if capture_cpu else None;q=subprocess.run([str(runner),kind,str(binary),entry,'aarch64',str(row['iterationsPerCall']),str(calls),str(warm),str(matrix['maximumFuel'])],capture_output=True,text=True);require(q.returncode==0,(row['workload'],arm,q.returncode,q.stderr));s=json.loads(q.stdout);
+ if capture_cpu:
+  activity=cpu_interval(cpu_before,cpu_snapshot());usage_after=resource.getrusage(resource.RUSAGE_CHILDREN)
+  child_ns=round(((usage_after.ru_utime+usage_after.ru_stime)-(usage_before.ru_utime+usage_before.ru_stime))*1e9)
+  s['cpuActivityEnvelope']=background_activity(activity,child_ns,os.cpu_count())
  require(s['result']==1 and s['calls']==calls and s['warmupCalls']==warm,('execution',row['workload'],arm,s));return s
 save()
 try:
@@ -52,7 +56,7 @@ try:
    row['calibratedCalls']=counts
    for pair in range(spec['samplesPerArm']):
     for arm in (['Kotoba','C'] if pair%2==0 else ['C','Kotoba']):
-     before=load();require(before<=spec['maximumLoad'],'host too busy');s=sample(row,arm,counts[arm],spec['warmupCalls']);after=load();require(after<=spec['maximumLoad'],'host too busy');require(s['elapsedNanoseconds']>=spec['minimumIntervalNs'],'interval too short');report['rows'].append({'workload':row['workload'],'arm':arm,'pair':pair,'calls':counts[arm],'iterationsPerCall':row['iterationsPerCall'],'warmupCalls':spec['warmupCalls'],'elapsedNanoseconds':s['elapsedNanoseconds'],'loadBefore':before,'loadAfter':after,'recordedEpoch':time.time(),'cpuActivityEnvelope':s['cpuActivityEnvelope']});save();require(s['cpuActivityEnvelope']['idlePercent']>=spec['minimumIdlePercent'],'CPU idle below threshold')
+     before=load();require(before<=spec['maximumLoad'],'host too busy');s=sample(row,arm,counts[arm],spec['warmupCalls'],capture_cpu=True);after=load();require(after<=spec['maximumLoad'],'host too busy');require(s['elapsedNanoseconds']>=spec['minimumIntervalNs'],'interval too short');report['rows'].append({'workload':row['workload'],'arm':arm,'pair':pair,'calls':counts[arm],'iterationsPerCall':row['iterationsPerCall'],'warmupCalls':spec['warmupCalls'],'elapsedNanoseconds':s['elapsedNanoseconds'],'loadBefore':before,'loadAfter':after,'recordedEpoch':time.time(),'cpuActivityEnvelope':s['cpuActivityEnvelope']});save();require(s['cpuActivityEnvelope']['estimatedBackgroundIdlePercent']>=spec['minimumBackgroundIdlePercent'],'background CPU idle below threshold')
     save()
    summary={}
    for arm in ['Kotoba','C']:
