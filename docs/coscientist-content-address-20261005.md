@@ -1,5 +1,19 @@
 # Content identity, computation identity, and native performance
 
+Latest qualified follow-up: [loop-contained high-depth reads](coscientist-loop-high-temp-20261006.md)
+reduces original matmult time15.32%; other18 guest binaries equal previous product.
+The emitted machine equals the prospective30-triple qualified target; immutable
+receipt/compiler lineage is explicit, with no identical-machine retiming.
+17337 fresh state comparisons,7989 permanent runs, gates and committed-source
+integrated3gen/full per-case actual-output parity pass. Matmult remains19.98x C.
+The full19-workload goal remains unachieved; native DefCID caching is unconnected.
+
+Latest experimental follow-up: [high-depth reads without call spills](coscientist-high-temp-no-spill-20261006.md)
+qualifies15.32% shorter matmult time; SHA setup accesses improve1.14% and fail
+promotion. The unrestricted candidate is rejected. Actual SIR distinguishes
+loop-contained matmult from out-of-loop setup; a general bounded loop guard is
+the follow-up. The full19-workload C-or-better objective remains unchanged.
+
 Latest experimental follow-up: [high-depth vector read composition](coscientist-high-temp-read-20261006.md)
 passes a four-generation native fixedpoint,4196 fresh regressions and16185
 preflight full-state comparisons. Only matmult/SHA machines change. Fresh times

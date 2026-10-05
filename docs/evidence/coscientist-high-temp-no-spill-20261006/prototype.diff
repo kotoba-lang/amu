@@ -1,0 +1,23 @@
+diff --git a/private/tmp/amu-high-temp-no-spill-20261006/baseline-41-a64gen.kotoba b/private/tmp/amu-high-temp-no-spill-20261006/41-a64gen-prototype.kotoba
+index e628254..56312ad 100644
+--- a/private/tmp/amu-high-temp-no-spill-20261006/baseline-41-a64gen.kotoba
++++ b/private/tmp/amu-high-temp-no-spill-20261006/41-a64gen-prototype.kotoba
+@@ -1284,10 +1284,18 @@
+       (gn-emit (enc-mov-r 0 7)) (gn-emit (enc-ldr 16 0 RT-STRING-CODE-POINT-AT)) (gn-emit (enc-blr 16))
+       (gn-gs gn-f-ctx 0)
+       (gn-take i t 0)))
++;; High-temp read composition. Original prescan stays nonleaf and keeps its
++;; frame/register/fuel contract. Preserve live prefix registers and homes without call spills; x0/x1 are free
++;; argument scratch under that contract. Every handle/index check stays ordered.
++(defn- gn-rt-high-at [M :vector-i64 i :i64 t :i64] :vector-i64
++ (-> M (gn-into 0 t) (gn-into 1 (inc t)) (gn-ctx)
++     (gn-hchk 0 312 320) (gn-vidx 1) (gn-emit (gn-e-ldrr 0 16 17 1))
++     (gn-take i t 0)))
+ (defn- gn-op-rt [M :vector-i64 i :i64 slot :i64 t :i64 n :i64] :vector-i64
+   (cond (and (gn-isk M t gn-k-lit) (= slot RT-PAIR-SECOND)) (gn-def M t gn-k-const (gn-litf M (gn-dv M t) LF-LEN))
+         (gn-isk M t gn-k-lit) (gn-rt-lit-at M i t)
+         (and (= slot RT-STRING-CODE-POINT-AT) (= n 2)) (gn-rt-cpa M i t)
++        (and (= slot RT-VECTOR-AT) (= n 2) (>= t 6) (= (gn-g M gn-f-leaf) 0)) (gn-rt-high-at M i t)
+         (not (gn-inl slot t n)) (-> M (gn-save 0 t) (gn-args t 1 n) (gn-rtcall slot) (gn-take i t 0))
+         (= slot RT-VECTOR-AT) (gn-rt-at M i t)
+         (= slot RT-VECTOR-ASSOC-IN-PLACE) (gn-rt-set M t)
