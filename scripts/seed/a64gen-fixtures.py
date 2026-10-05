@@ -350,6 +350,22 @@ for a, b in [(1, 2), (100, -5), (MIN, 3)]:
 run('r2_cbr', [42], 42)
 
 # ---------------------------------------------------------------------------------------------------------------
+# Scalar sign-extension wrappers: hand-computed results and positive-fuel guards.
+for width,charged in [(1,False),(8,False),(16,False),(32,False),(8,True)]:
+ name=f'sx{width}'+('_fuel' if charged else '')
+ mask=(1<<width)-1;half=1<<(width-1);mod=1<<width
+ body=[('FUEL',)] if charged else []
+ body += [('LGET',0,1),('CONST',1,mask),('BIN','BOP-AND',0),('LSET',2,0),('LGET',0,2),('CONST',1,half),('CMP','CC-GE',0),('BRZ',0,name+'_else'),('LGET',0,2),('CONST',1,mod),('BIN','BOP-SUB',0),('BR',name+'_exit'),('LABEL',name+'_else'),('LGET',0,2),('LABEL',name+'_exit'),('RET',0)]
+ fx(name,1,2,body)
+ caller='caller_'+name;fx(caller,1,1,[('FUEL',),('FUEL',),('LGET',0,1),('CALL',name,0,1),('RET',0)])
+ for n in [MIN,-(1<<32),-65536,-32769,-129,-128,-1,0,1,127,128,255,32768,65535,2147483648,MAX]:
+  v=n&mask;expect=v-mod if v>=half else v;run(caller,[n],expect,fuel=3 if charged else 2)
+ run(caller,[1],'trap',fuel=2 if charged else 1)
+fx('caller_sx_high',1,1,[('FUEL',),('LGET',8,1),('CALL','sx16',8,1),('RET',8)])
+for n in [-32769,-32768,-1,0,32767,32768,MAX]:
+ v=n&65535;run('caller_sx_high',[n],v-65536 if v>=32768 else v,fuel=1)
+fx('caller_sx_const',0,0,[('FUEL',),('CONST',0,65535),('CALL','sx16',0,1),('RET',0)]);run('caller_sx_const',[],-1,fuel=1)
+
 def layout_tables():
     """number functions (FN index = position + 1), labels, literals; return the flat SIR words and records."""
     fns = {name: i + 1 for i, (name, *_) in enumerate(FIX)}
