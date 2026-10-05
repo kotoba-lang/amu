@@ -159,3 +159,9 @@ passes fixedpoint and native state proofs;8 of19 improve but EDN regresses.
 It is rejected globally. Definition identity is unchanged; no cache hit is
 counted as a fresh executed body. The next registered masked-writer experiment
 uses exact SIR structural/dependency proof, not assumed DefCID integration.
+
+Latest qualified execution improvement: [exact masked writer](coscientist-masked-writer-20261005.md)
+shortens Picojpeg6.49% in fresh quiet measurements, preserves18 other workload
+binaries and passes native state/regression plus integrated fixedpoint proofs.
+It is promoted through the actual product path. This remains structural SIR
+specialization, not DefCID/result caching; C-or-better remains unachieved.

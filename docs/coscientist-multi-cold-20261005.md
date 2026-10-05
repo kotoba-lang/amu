@@ -107,3 +107,7 @@ Evidence: [summary](evidence/coscientist-multi-cold-20261005/summary.json),
 [all19 timing](evidence/coscientist-multi-cold-20261005/timing.tgz),
 [independent audit](evidence/coscientist-multi-cold-20261005/timing-audit.json),
 [next hypothesis](evidence/coscientist-multi-cold-20261005/next-hypothesis.json).
+
+Follow-up: [exact masked writer](coscientist-masked-writer-20261005.md) is now
+implemented, with native fixedpoint/state proofs and a fresh original-C timing
+comparison. Its acceptance decision is recorded there.
