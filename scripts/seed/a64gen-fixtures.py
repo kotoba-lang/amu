@@ -222,10 +222,25 @@ fx('tail_direct3', 3, 3, [('FUEL',), ('LGET', 0, 3), ('LGET', 1, 1), ('LGET', 2,
 fx('tail_high3', 3, 3, [('CONST', t, 99) for t in range(6)] +
                       [('FUEL',), ('LGET', 6, 3), ('LGET', 7, 1), ('LGET', 8, 2),
                        ('CALL', 'tail_target3', 6, 3), ('RET', 6)])
+fx('wrapper_id',1,1,[('FUEL',),('LGET',0,1),('RET',0)])
+fx('wrapper_at',2,2,[('FUEL',),('LGET',0,1),('LGET',1,2),('RT','RT-VECTOR-AT',0,2),('RET',0)])
+fx('wrapper_set',3,3,[('FUEL',),('LGET',0,1),('LGET',1,2),('LGET',2,3),('RT','RT-VECTOR-ASSOC-IN-PLACE',0,3),('RET',0)])
+fx('wrapper_leaf',1,1,[('FUEL',),('LGET',0,1),('CALL','wrapper_id',0,1),('RET',0)])
+fx('wrapper_work',0,2,[('FUEL',),('CONST',0,11),('CONST',1,22),('CONST',2,33),('VEC',0,3),('LSET',1,0),('LGET',0,1),('CONST',1,1),('CALL','wrapper_at',0,2),('LSET',2,0),('LGET',0,1),('CONST',1,2),('LGET',2,2),('CALL','wrapper_set',0,3),('CONST',1,2),('CALL','wrapper_at',0,2),('CALL','wrapper_id',0,1),('RET',0)])
+fx('wrapper_bad_index',0,1,[('FUEL',),('CONST',0,11),('VEC',0,1),('CONST',1,1),('CALL','wrapper_at',0,2),('RET',0)])
+fx('wrapper_high',1,1,[('FUEL',),('LGET',8,1),('CALL','wrapper_id',8,1),('RET',8)])
 RUNS = []
 
 def run(name, args, expect, **o):
     RUNS.append((name, args, expect, o))
+
+for wrapper_fixture in ('wrapper_leaf','wrapper_high'):
+    run(wrapper_fixture,[42],42,fuel=2)
+    run(wrapper_fixture,[-7],-7,fuel=2)
+    run(wrapper_fixture,[42],'trap',fuel=1)
+run('wrapper_work',[],22,fuel=5)
+run('wrapper_work',[],'trap',fuel=4)
+run('wrapper_bad_index',[],'trap',fuel=2)
 
 for tail_fixture in ('tail_direct3', 'tail_high3'):
     run(tail_fixture, [3, 5, 7], 26, fuel=2)
@@ -486,6 +501,9 @@ def kotoba(real_layout=False):
         stmts.append('(t-sir M%%d [%s] %d)' % (' '.join(str(x) for x in ch), len(ch)))
     for f, np, ns, dp in fnrecs:
         stmts.append('(t-fnrec M%%d %d %d %d %d)' % (f, np, ns, dp))
+    for j, instruction in enumerate(sir, start=1):
+        if instruction[0] == C['OP-FN']:
+            stmts.append('(t-put M%%d %d %d)' % (C['MM-FN-BASE'] + instruction[1]*C['MM-FN-W'] + C['FF-SIR'],j))
     b = 1
     for l, s in enumerate(lits, start=1):
         bs = s.encode()

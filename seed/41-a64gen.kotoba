@@ -404,6 +404,30 @@
         (= slot RT-VECTOR-ASSOC-IN-PLACE) (and (= n 3) (<= t 4))
         (or (= slot RT-PAIR-FIRST) (= slot RT-PAIR-SECOND) (= slot RT-VECTOR-COUNT)) (= n 1)
         :else false))
+;; Exact straight-line wrappers only: optional entry FUEL/LABEL, natural
+;; parameter loads, one already-inlined runtime operation (or identity), RET.
+;; No source names or benchmark-specific decisions. 256 encodes entry fuel.
+(defn- gn-wparams [M :vector-i64 j :i64 k :i64 n :i64] :i64
+  (cond (= k n) j
+        (and (= (gn-op M j) OP-LGET) (= (gn-sir M j IF-A) k) (= (gn-sir M j IF-B) (inc k)))
+        (gn-wparams M (inc j) (inc k) n)
+        :else 0))
+(defn- gn-wrapper [M :vector-i64 f :i64 t :i64 n :i64] :i64
+  (let [p (gn-fnf M f FF-SIR)]
+    (if (or (< p 1) (< n 1) (> n 3) (not= (gn-op M p) OP-FN) (not= (gn-sir M p IF-A) f) (not= (gn-sir M p IF-B) n))
+      0
+      (let [fuel (if (= (gn-op M (inc p)) OP-FUEL) 256 0)
+            q (gn-skiplab M (+ p 1 (if (> fuel 0) 1 0)))
+            j (gn-wparams M q 0 n)
+            rt (= (gn-op M j) OP-RT)
+            slot (if rt (gn-sir M j IF-A) 1)
+            ret (if rt (inc j) j)]
+        (if (and (> j 0) (= (gn-op M ret) OP-RET) (= (gn-sir M ret IF-A) 0) (= (gn-op M (inc ret)) OP-END)
+                 (if rt (and (= (gn-sir M j IF-B) 0) (= (gn-sir M j IF-C) n) (gn-inl slot t n)) (= n 1)))
+          (+ slot fuel)
+          0)))))
+(defn- gn-call-wrapper [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :i64
+  (if (= (gn-op M (inc i)) OP-RES2) 0 (gn-wrapper M f t n)))
 (defn- gn-use [M :vector-i64 s :i64 w :i64] :vector-i64
   (if (and (>= s 0) (< s gn-cap)) (gn-gs M (+ gn-a-use s) (+ w (gn-g M (+ gn-a-use s)))) M))
 (defn- gn-use1 [M :vector-i64 j :i64 w :i64] :vector-i64
@@ -421,7 +445,9 @@
       OP-LABEL (if (and (> a 0) (< a MM-LABEL-CAP)) (gn-gs M (+ gn-a-lp a) j) M)
       (OP-CAP OP-VEC OP-CALLI OP-VECP) (gn-gs M gn-f-leaf 0)
       ;; R4B: a call with more than 7 arguments needs the outgoing area
-      OP-CALL (-> M (gn-gs gn-f-leaf 0) (gn-gmax gn-f-out (gn-r16 (* 8 (gn-max 0 (- (gn-sir M j IF-C) 7))))))
+      OP-CALL (let [w (gn-call-wrapper M j a (gn-sir M j IF-B) (gn-sir M j IF-C))]
+                (if (> w 0) (if (>= w 256) (gn-gs M gn-f-fuel 1) M)
+                    (-> M (gn-gs gn-f-leaf 0) (gn-gmax gn-f-out (gn-r16 (* 8 (gn-max 0 (- (gn-sir M j IF-C) 7))))))))
       OP-STR (if (> (gn-str-fold M j) 0) M (gn-gs M gn-f-leaf 0))
       OP-RT (if (or (gn-inl a (gn-sir M j IF-B) (gn-sir M j IF-C))
                     (and (= a RT-STRING-CODE-POINT-AT) (> (gn-back-str M j (dec j) (gn-sir M j IF-B)) 0)))
@@ -819,8 +845,13 @@
     (let [r (gn-src M (+ t k) 16 1)]
       (gn-stack-args (-> M (gn-ldt (+ t k) 16 1) (gn-emit (enc-str r 31 (* 8 (- k 7))))) t (inc k) n))))
 (defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
-  (if (and (<= n 7) (= (gn-op M (inc i)) OP-RET) (= (gn-sir M (inc i) IF-A) t))
-    (gn-op-tail-call M f t n)
+  (let [w (gn-call-wrapper M i f t n)]
+   (cond (> w 0) (let [M1 (if (>= w 256) (gn-op-fuel M) M)
+                       slot (bit-and w 255)]
+                   (if (= slot 1) (gn-gs M1 gn-f-h (inc t)) (gn-op-rt M1 i slot t n)))
+         (and (<= n 7) (= (gn-op M (inc i)) OP-RET) (= (gn-sir M (inc i) IF-A) t))
+         (gn-op-tail-call M f t n)
+         :else
     (-> M
       (gn-save 0 t)
       (gn-stack-args t 7 n)
@@ -829,7 +860,7 @@
       (gn-fix FX-BL26 f)
       (gn-emit (enc-bl 0))
       (gn-gs gn-f-ctx 0)
-      (gn-take i t 0))))
+      (gn-take i t 0)))))
 ;; A direct call whose only successor returns its scalar result can restore
 ;; this frame and branch to the callee. Stack arguments and RET2 are excluded.
 ;; Argument registers and x7 (context) survive the callee-saved restore.
