@@ -4,7 +4,7 @@ r=Path('/Users/junkawasaki/github/wt/amu-seed17');w=Path('/private/tmp/amu-maske
 shutil.copyfile(w/'integrated-summary.json',d/'integrated-summary.json');shutil.copyfile(w/'gates.tsv',d/'gates.tsv')
 with tarfile.open(d/'product-validation.tgz','w:gz') as a:
  for n in ['bootstrap-before.txt','bootstrap-after.txt','gates.tsv','failed-gate-source-scope','failed-canonical-source-scope.txt','integrated-ports.py','integrated-proof.py','integrated-summary.json','integrated-parity.log']:a.add(w/n,arcname=n)
- for n in ['gates','g5']: 
+ for n in ['gates','g5']:
   path=w/'gate-build'/n
   if path.exists():
    for f in sorted(path.rglob('*')):
