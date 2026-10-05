@@ -481,6 +481,45 @@
          (= (gn-op M (+ q 6)) OP-RET) (= (gn-sir M (+ q 6) IF-A) 0)
          (= (gn-op M (+ q 7)) OP-END))))
 
+;; Exact signed-extension followed by an ordered signed clamp tree.
+;; Keep the original caller nonleaf. Open link-time bodies cannot prove it.
+(defn- gn-clamp-open [M :vector-i64 f :i64] :bool
+  (and (>= f (gn-g M gn-g-open)) (< f (+ (gn-g M gn-g-open) (gn-g M gn-g-open-n)))))
+(defn- gn-clamp [M :vector-i64 i :i64 f :i64 n :i64] :i64
+  (let [p (gn-fnf M f FF-SIR) fuel (if (= (gn-op M (inc p)) OP-FUEL) 1 0)
+        q (gn-skiplab M (+ p 1 fuel)) target (gn-sir M (inc q) IF-A)
+        slot (gn-sir M (+ q 2) IF-A) low (gn-sir M (+ q 4) IF-B) high (gn-sir M (+ q 11) IF-B)
+        le (gn-sir M (+ q 6) IF-B) lx (gn-sir M (+ q 8) IF-A)
+        le2 (gn-sir M (+ q 13) IF-B) lx2 (gn-sir M (+ q 15) IF-A)]
+    (if (and (> p 0) (= n 1) (= (gn-g M gn-f-leaf) 0)
+             (not (gn-clamp-open M f)) (not (gn-clamp-open M target))
+             (not= (gn-op M (inc i)) OP-RES2)
+             (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) f) (= (gn-sir M p IF-B) 1)
+             (= (gn-op M q) OP-LGET) (= (gn-sir M q IF-A) 0) (= (gn-sir M q IF-B) 1)
+             (= (gn-op M (inc q)) OP-CALL) (= (gn-sir M (inc q) IF-B) 0) (= (gn-sir M (inc q) IF-C) 1)
+             (> (gn-sign-wrapper M target 1) 0)
+             (= (gn-op M (+ q 2)) OP-LSET) (> slot 1) (= (gn-sir M (+ q 2) IF-B) 0)
+             (= (gn-op M (+ q 3)) OP-LGET) (= (gn-sir M (+ q 3) IF-A) 0) (= (gn-sir M (+ q 3) IF-B) slot)
+             (= (gn-op M (+ q 4)) OP-CONST) (= (gn-sir M (+ q 4) IF-A) 1) (<= low high)
+             (= (gn-op M (+ q 5)) OP-CMP) (= (gn-sir M (+ q 5) IF-A) CC-LT) (= (gn-sir M (+ q 5) IF-B) 0)
+             (= (gn-op M (+ q 6)) OP-BRZ) (= (gn-sir M (+ q 6) IF-A) 0) (> le 0)
+             (= (gn-op M (+ q 7)) OP-CONST) (= (gn-sir M (+ q 7) IF-A) 0) (= (gn-sir M (+ q 7) IF-B) low)
+             (= (gn-op M (+ q 8)) OP-BR) (> lx 0)
+             (= (gn-op M (+ q 9)) OP-LABEL) (= (gn-sir M (+ q 9) IF-A) le)
+             (= (gn-op M (+ q 10)) OP-LGET) (= (gn-sir M (+ q 10) IF-A) 0) (= (gn-sir M (+ q 10) IF-B) slot)
+             (= (gn-op M (+ q 11)) OP-CONST) (= (gn-sir M (+ q 11) IF-A) 1)
+             (= (gn-op M (+ q 12)) OP-CMP) (= (gn-sir M (+ q 12) IF-A) CC-GT) (= (gn-sir M (+ q 12) IF-B) 0)
+             (= (gn-op M (+ q 13)) OP-BRZ) (= (gn-sir M (+ q 13) IF-A) 0) (> le2 0)
+             (= (gn-op M (+ q 14)) OP-CONST) (= (gn-sir M (+ q 14) IF-A) 0) (= (gn-sir M (+ q 14) IF-B) high)
+             (= (gn-op M (+ q 15)) OP-BR) (> lx2 0)
+             (= (gn-op M (+ q 16)) OP-LABEL) (= (gn-sir M (+ q 16) IF-A) le2)
+             (= (gn-op M (+ q 17)) OP-LGET) (= (gn-sir M (+ q 17) IF-A) 0) (= (gn-sir M (+ q 17) IF-B) slot)
+             (= (gn-op M (+ q 18)) OP-LABEL) (= (gn-sir M (+ q 18) IF-A) lx2)
+             (= (gn-op M (+ q 19)) OP-LABEL) (= (gn-sir M (+ q 19) IF-A) lx)
+             (not= le lx) (not= le le2) (not= le lx2) (not= lx le2) (not= lx lx2) (not= le2 lx2)
+             (= (gn-op M (+ q 20)) OP-RET) (= (gn-sir M (+ q 20) IF-A) 0)
+             (= (gn-op M (+ q 21)) OP-END) (= (gn-sir M (+ q 21) IF-A) f)) q 0)))
+
 (defn- gn-use [M :vector-i64 s :i64 w :i64] :vector-i64
   (if (and (>= s 0) (< s gn-cap)) (gn-gs M (+ gn-a-use s) (+ w (gn-g M (+ gn-a-use s)))) M))
 (defn- gn-use1 [M :vector-i64 j :i64 w :i64] :vector-i64
@@ -970,6 +1009,25 @@
         (gn-emit (gn-e-strr3 0 16 17)) (gn-emit (enc-str 8 7 CTX-FUEL))
         (gn-gs gn-f-h (inc t)))))
 
+;; x8 reproduces the original leaf's fuel transaction; CSEL comparisons
+;; use signed flags and do not subtract bounds in language arithmetic.
+(defn- gn-call-clamp [M :vector-i64 i :i64 f :i64 t :i64 q :i64] :vector-i64
+  (let [p (gn-fnf M f FF-SIR) fuel (= (gn-op M (inc p)) OP-FUEL)
+        w (gn-sign-wrapper M (gn-sir M (inc q) IF-A) 1)
+        charged (or fuel (>= w 1536)) width (bit-and w 511)
+        low (gn-sir M (+ q 4) IF-B) high (gn-sir M (+ q 11) IF-B)]
+    (-> M (gn-into 0 t) (gn-ctx)
+        (cond-> charged (gn-emit (enc-ldr 8 7 CTX-FUEL))
+                fuel (gn-mask-charge)
+                (>= w 1536) (gn-mask-charge))
+        (gn-emit (gn-e-bf 0x93400000 0 0 0 (dec width)))
+        (gn-mov-imm 16 low) (gn-emit (enc-cmp-r 0 16))
+        (gn-emit (enc-csel 0 16 0 (enc-cond-lt)))
+        (gn-mov-imm 17 high) (gn-emit (enc-cmp-r 0 17))
+        (gn-emit (enc-csel 0 17 0 (enc-cond-gt)))
+        (cond-> charged (gn-emit (enc-str 8 7 CTX-FUEL)))
+        (gn-take i t 0))))
+
 ;; Bounded structural proof that a direct callee returns with input x7.
 ;; A shared remaining-work budget counts all transitive SIR instructions; it
 ;; prevents exponential rescanning. Unknown effects/operations fail closed.
@@ -994,8 +1052,8 @@
         -1))))
 
 (defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
-  (let [w (gn-call-wrapper M i f t n)]
-   (cond (gn-mask-writer M i f t n) (gn-call-mask-writer M t)
+  (let [w (gn-call-wrapper M i f t n) q (gn-clamp M i f n)]
+   (cond (> q 0) (gn-call-clamp M i f t q) (gn-mask-writer M i f t n) (gn-call-mask-writer M t)
          (>= w 1024) (gn-call-sign M i t w)
          (> w 0) (let [M1 (if (>= w 256) (gn-op-fuel M) M)
                        slot (bit-and w 255)]

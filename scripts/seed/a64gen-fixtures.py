@@ -486,6 +486,31 @@ for name,callee,admitted in cp_targets:
   for value in [MIN,-1,0,1,MAX]:run(name,[0,value],s64(value+3),fuel=2)
  if callee not in ['cp_alloc','cp_cycle','cp_big']:run(name,[0,1],'trap',fuel=1)
 
+# Exact signed-clamp composition; hand-derived results and exhaustion/bounds traps.
+def sign(name,width,charged):
+ mask=(1<<width)-1;half=1<<(width-1)
+ fx(name,1,2,([('FUEL',)] if charged else [])+[('LGET',0,1),('CONST',1,mask),('BIN','BOP-AND',0),('LSET',2,0),('LGET',0,2),('CONST',1,half),('CMP','CC-GE',0),('BRZ',0,name+'_lo'),('LGET',0,2),('CONST',1,1<<width),('BIN','BOP-SUB',0),('BR',name+'_end'),('LABEL',name+'_lo'),('LGET',0,2),('LABEL',name+'_end'),('RET',0)])
+cases=[(1,0,0,-1,0),(8,1,0,0,127),(16,0,1,0,255),(32,1,1,-7,13),(16,1,1,MIN,MAX),(8,0,0,-1,-1),(16,1,0,-100000,-99999),(16,1,1,10,-10)]
+clamp_targets=[]
+for k,(width,outer,inner,lo,hi) in enumerate(cases):
+ s=f'cl_sign{k}';f=f'cl_bound{k}';sign(s,width,inner)
+ body=([('FUEL',)] if outer else [])+[('LABEL',f+'_entry'),('LGET',0,1),('CALL',s,0,1),('LSET',2,0),('LGET',0,2),('CONST',1,lo),('CMP','CC-LT',0),('BRZ',0,f+'_notlo'),('CONST',0,lo),('BR',f+'_done'),('LABEL',f+'_notlo'),('LGET',0,2),('CONST',1,hi),('CMP','CC-GT',0),('BRZ',0,f+'_nothi'),('CONST',0,hi),('BR',f+'_innerdone'),('LABEL',f+'_nothi'),('LGET',0,2),('LABEL',f+'_innerdone'),('LABEL',f+'_done'),('RET',0)]
+ fx(f,1,2,body)
+ for t in [0,3,6,7,8]:
+  c=f'cl_call{k}_{t}'
+  cb=[('FUEL',),('CONST',0,11),('CONST',1,-22),('VEC',0,2),('LSET',3,0)]+[('CONST',j,100+j) for j in range(t)]+[('LGET',t,1),('CALL',f,t,1)]
+  for j in range(t-1,-1,-1):cb+=[('BIN','BOP-ADD',j)]
+  cb+=[('LSET',4,0),('LGET',0,3),('LGET',1,2),('RT','RT-VECTOR-AT',0,2),('LGET',1,4),('BIN','BOP-ADD',0),('RET',0)]
+  fx(c,2,4,cb);clamp_targets.append((c,f,width,outer,inner,lo,hi,t,lo<=hi))
+  if k<7:
+   vals=[MIN,-65537,-32769,-32768,-129,-128,-1,0,1,127,128,255,256,32767,32768,65535,MAX]
+   for v in vals:
+    sv=v&((1<<width)-1);sv=sv-(1<<width) if sv>=(1<<(width-1)) else sv
+    result=s64(min(max(sv,lo),hi)+sum(100+j for j in range(t))+11)
+    run(c,[v,0],result,fuel=1+outer+inner)
+    run(c,[v,-1],'trap',fuel=1+outer+inner)
+   for fuel in range(1,1+outer+inner):run(c,[0,0],'trap',fuel=fuel)
+
 def kotoba(real_layout=False):
     fns, labels, lits, sir, fnrecs = layout_tables()
     o = [';; deps: 40-a64enc',
@@ -622,6 +647,9 @@ def kotoba(real_layout=False):
     for g in range(len(groups)):
         expr = '(t-load%d %s)' % (g, expr)
     o.append('  %s)' % expr)
+    clamp_fn = next(i+1 for i,x in enumerate(FIX) if x[0]=='cl_bound2')
+    sign_fn = next(i+1 for i,x in enumerate(FIX) if x[0]=='cl_sign2')
+    clamp_call = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-CALL'] and x[1]==clamp_fn)
     o += ['(defn- seed-main [] :i64',
           '  (let [a (typed-cap-call :cli/args :string :string "")',
           '        M0 (t-load (t-init))',
@@ -644,8 +672,14 @@ def kotoba(real_layout=False):
           '        MC (gn-run-open (t-put (t-put M3 MM-CODE-N 1) MM-FIX-N 1) %d 1)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_scalar')),
           '        direct (gn-ctx-safe MC %d 1 8 512)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_scalar')),
           '        transitive (gn-ctx-safe MC %d 1 8 512)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_chain0')),
-          '        independent (gn-ctx-safe MC %d 2 8 512)]' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_vector')),
-          '    (if (and (= e3 0) (>= closed 0) (= direct -1) (= transitive -1) (>= independent 0)) 0 1)))']
+          '        independent (gn-ctx-safe MC %d 2 8 512)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_vector')),
+          '        clamp_closed (gn-clamp MC %d %d 1)' % (clamp_call,clamp_fn),
+          '        MO (-> MC (gn-gs gn-g-open %d) (gn-gs gn-g-open-n 1))' % clamp_fn,
+          '        clamp_open (gn-clamp MO %d %d 1)' % (clamp_call,clamp_fn),
+          '        MS (gn-gs MO gn-g-open %d)' % sign_fn,
+          '        sign_open (gn-clamp MS %d %d 1)]' % (clamp_call,clamp_fn),
+          '    (if (and (= e3 0) (>= closed 0) (= direct -1) (= transitive -1) (>= independent 0)',
+          '             (> clamp_closed 0) (= clamp_open 0) (= sign_open 0)) 0 1)))']
     return '\n'.join(o) + '\n'
 
 def gen():
