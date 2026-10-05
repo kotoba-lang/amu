@@ -654,6 +654,39 @@ for c in HOT_OWN_CASES:
 fx('ht_cold_control',0,1,[('FUEL',)]+[('CONST',j,11-3*j) for j in range(8)]+[('VEC',0,8),('LSET',1,0)]+[('CONST',j,100+j) for j in range(6)]+[('LGET',6,1),('CONST',7,0),('RT','RT-VECTOR-AT',6,2)]+[('BIN','BOP-ADD',j) for j in range(5,-1,-1)]+[('RET',0)])
 run('ht_cold_control',[],626,fuel=1)
 
+# Exact affine-index/checked-read composition. One-off hand SIR test authoring;
+# original fixture/run prefix is preserved. Expected math does not use compiler output.
+AFFINE_READ_CASES=[]
+def _affine_read_fixture(name,t,factor,prefix,mode,admit):
+ out=t-2;label=name+'_loop';values=[11-3*j for j in range(8)]
+ body=[('FUEL',)]+[('CONST',j,values[j]) for j in range(8)]+[('VEC',0,8),('CONST',0,1),('LSET',5,0),('LABEL',label)]+[('LGET',j,1) for j in range(out)]+[('LGET',out,3),('CONST',t-1,prefix),('LGET',t,1),('CONST',t+1,factor),('BIN','BOP-MUL',t),('LGET',t+1,2),('BIN','BOP-ADD',t),('BIN','BOP-ADD',t-1),('RT','RT-VECTOR-AT',out,2)]
+ if mode=='live-index':body += [('RET2',out),('FUEL',),('BR',label)]
+ else:
+  if mode.startswith('alias'):
+   dest={'alias-a':1,'alias-b':2,'alias-handle':3}[mode];body += [('LSET',dest,out),('LGET',out,dest)]
+  body += [('BIN','BOP-ADD',j) for j in range(out-1,-1,-1)]+[('LSET',6,0),('LGET',0,5),('CONST',1,1),('BIN','BOP-SUB',0),('LSET',5,0),('FUEL',)]
+  if mode!='cold':body += [('BRNZ',0,label)]
+  body += [('LGET',0,6),('RET',0)]
+ fx(name,3,6,body);entry=name
+ if mode=='live-index':
+  entry=name+'_wrapper';fx(entry,3,3,[('FUEL',),('LGET',0,1),('LGET',1,2),('LGET',2,3),('CALL',name,0,3),('RES2',1),('BIN','BOP-ADD',0),('RET',0)])
+ AFFINE_READ_CASES.append({'name':name,'entry':entry,'t':t,'factor':factor,'prefix':prefix,'mode':mode,'admit':admit})
+for t in [7,8,17]:
+ for factor in [20,MIN]:
+  for mode in ['plain','alias-a','alias-b','alias-handle']:_affine_read_fixture('ar_permanent_'+str(len(AFFINE_READ_CASES)),t,factor,-4095,mode,True)
+for mode in ['live-index','cold','large-prefix','factor0','factor1','factor-1']:
+ _affine_read_fixture('ar_refuse_'+mode,7,0 if mode=='factor0' else 1 if mode=='factor1' else -1 if mode=='factor-1' else 20,4096 if mode=='large-prefix' else 800,mode,False)
+for c in AFFINE_READ_CASES:
+ for a,ix in [(MIN,0),(MAX,7),(-1,8),(0,-1),(123,MIN)]:
+  b=s64(ix-c['prefix']-s64(a*c['factor']))
+  for h in [0,1,MIN]:
+   for fuel in [1,2,16777216]:
+    valid=h==1 and 0<=ix<8 and fuel>=2
+    expected=s64(11-3*ix+(ix if c['mode']=='live-index' else (c['t']-2)*a)) if valid else 'trap'
+    run(c['entry'],[a,b,h],expected,fuel=fuel)
+# Retain the original final-function state used by existing guard tests.
+_sentinel=next(f for f in FIX if f[0]=='ht_cold_control');FIX.append(('ar_cold_sentinel',*_sentinel[1:]))
+
 def kotoba(real_layout=False):
     fns, labels, lits, sir, fnrecs = layout_tables()
     o = [';; deps: 40-a64enc',
@@ -790,6 +823,19 @@ def kotoba(real_layout=False):
     for g in range(len(groups)):
         expr = '(t-load%d %s)' % (g, expr)
     o.append('  %s)' % expr)
+    affine = AFFINE_READ_CASES[0]; af=fns[affine['name']]; ast=next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-FN'] and x[1]==af)
+    ai=next(i+1 for i,x in enumerate(sir) if i+1>ast and x[0]==C['OP-LGET'] and x[1]==affine['t'])
+    alp=labels[affine['name']+'_loop']; ati=next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-LABEL'] and x[1]==alp)
+    guard_exprs=[('(gn-affine-read? (t-ar-state) %d %d)'%(ai,affine['t']),True),
+      ('(gn-affine-read? (gn-gs (t-ar-state) gn-f-leaf 1) %d %d)'%(ai,affine['t']),False),
+      ('(gn-affine-read? (gn-gs (t-ar-state) (+ gn-a-sreg 1) 0) %d %d)'%(ai,affine['t']),False),
+      ('(gn-affine-read? (gn-def (t-ar-state) %d gn-k-local 1) %d %d)'%(affine['t']-1,ai,affine['t']),False),
+      ('(gn-affine-read? (gn-def (t-ar-state) %d gn-k-const 4096) %d %d)'%(affine['t']-1,ai,affine['t']),False),
+      ('(gn-affine-read? (gn-gs (t-ar-state) (+ gn-a-lp %d) %d) %d %d)'%(alp,ast,ai,affine['t']),False)]
+    for ins,field,value in [(ai,'IF-C',1),(ai,'IF-B',0),(ai+6,'IF-A',C['RT-VECTOR-COUNT']),(ai+6,'IF-B',affine['t']-1),(ai+6,'IF-C',1),(ati,'IF-A',alp+1)]:
+      guard_exprs.append(('(gn-affine-read? (t-put (t-ar-state) %d %d) %d %d)'%(C['MM-SIR-BASE']+ins*C['MM-SIR-W']+C[field],value,ai,affine['t']),False))
+    o += ['(defn- t-ar-state [] :vector-i64 (gn-def (gn-op-fn (gn-run (t-load (t-init))) %d %d 3) %d gn-k-const %d))'%(ast,af,affine['t']-1,affine['prefix']),
+          '(defn- t-ar-guards [] :bool (and '+' '.join(expr if want else '(not '+expr+')' for expr,want in guard_exprs)+'))']
     hot_fn = fns['ht_case_0']; cold_fn = fns['ht_cold_control']
     hot_start = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-FN'] and x[1]==hot_fn)
     cold_start = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-FN'] and x[1]==cold_fn)
@@ -861,6 +907,7 @@ def kotoba(real_layout=False):
           '        MS (gn-gs MO gn-g-open %d)' % sign_fn,
           '        sign_open (gn-clamp MS %d %d 1)]' % (clamp_call,clamp_fn),
           '    (if (and mask_shared (not mask_single) (not mask_limit)',
+          '             (t-ar-guards)',
           '             hot_guard (not cold_guard) (not hot_limit) (= start_limit 0) (not bad_label_guard) (not foreign_guard)',
           '             (> reader_closed 0) (= reader_wrong 0) (= reader_open 0)',
           '             (= e3 0) (>= closed 0) (= direct -1) (= transitive -1) (>= independent 0)',
