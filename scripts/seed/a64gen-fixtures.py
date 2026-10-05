@@ -366,6 +366,30 @@ for n in [-32769,-32768,-1,0,32767,32768,MAX]:
  v=n&65535;run('caller_sx_high',[n],v-65536 if v>=32768 else v,fuel=1)
 fx('caller_sx_const',0,0,[('FUEL',),('CONST',0,65535),('CALL','sx16',0,1),('RET',0)]);run('caller_sx_const',[],-1,fuel=1)
 
+# Exact scalar-mask leaf composition: typed metadata, real entry labels,
+# repeated direct sites, live register/home operands and unchanged fuel.
+# Keep the generator authoritative for the checked-in unit artifacts.
+MASK_TYPED_FIRST = len(FIX) + 1
+for width in [1, 8, 16, 32, 63]:
+ for charged in [0, 1]:
+  leaf = 'mask_leaf_%d_%d' % (width, charged)
+  mask = (1 << width) - 1
+  body = ([('FUEL',)] if charged else []) + [('LABEL', leaf+'_entry'),
+          ('LGET', 0, 1), ('CONST', 1, mask), ('BIN', 'BOP-AND', 0), ('RET', 0)]
+  fx(leaf, 1, 1, body)
+  for t in [0, 7]:
+   caller = leaf+'_call%d' % t
+   fx(caller, 2, 2, [('FUEL',), ('LGET', t, 1), ('CALL', leaf, t, 1),
+                    ('LGET', t+1, 2), ('BIN', 'BOP-ADD', t), ('RET', t)])
+   for x in [MIN, -1, 0, 1, MAX]:
+    for live in [MIN, 37, MAX]:run(caller, [x, live], s64((x & mask)+live), fuel=1+charged)
+   if charged:run(caller, [MAX, 37], 'trap', fuel=1)
+fx('mask_single', 1, 1, [('FUEL',), ('LABEL', 'mask_single_entry'),
+   ('LGET', 0, 1), ('CONST', 1, 7), ('BIN', 'BOP-AND', 0), ('RET', 0)])
+fx('mask_single_call', 1, 1, [('FUEL',), ('LGET', 0, 1), ('CALL', 'mask_single', 0, 1), ('RET', 0)])
+for x in [MIN, -1, 0, MAX]:run('mask_single_call', [x], x & 7, fuel=2)
+run('mask_single_call', [0], 'trap', fuel=1)
+
 def layout_tables():
     """number functions (FN index = position + 1), labels, literals; return the flat SIR words and records."""
     fns = {name: i + 1 for i, (name, *_) in enumerate(FIX)}
@@ -650,9 +674,16 @@ def kotoba(real_layout=False):
     clamp_fn = next(i+1 for i,x in enumerate(FIX) if x[0]=='cl_bound2')
     sign_fn = next(i+1 for i,x in enumerate(FIX) if x[0]=='cl_sign2')
     clamp_call = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-CALL'] and x[1]==clamp_fn)
-    o += ['(defn- seed-main [] :i64',
+    o += ['(defn- t-mask-types [M :vector-i64 f :i64] :vector-i64',
+          '  (if (>= f (vector-at M MM-FN-N)) M',
+          '    (t-mask-types (-> M (t-put (+ MM-FN-BASE (* f MM-FN-W) FF-PT0) TY-I64)',
+          '                       (t-put (+ MM-FN-BASE (* f MM-FN-W) FF-RTYPE) TY-I64)) (inc f))))',
+          '(defn- seed-main [] :i64',
           '  (let [a (typed-cap-call :cli/args :string :string "")',
-          '        M0 (t-load (t-init))',
+          '        M0 (t-mask-types (t-load (t-init)) %d)' % MASK_TYPED_FIRST,
+          '        mask_shared (gn-mask-reused M0 %d 1 0 16384)' % MASK_TYPED_FIRST,
+          '        mask_single (gn-mask-reused M0 %d 1 0 16384)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='mask_single')),
+          '        mask_limit (gn-mask-reused M0 %d 1 0 0)' % MASK_TYPED_FIRST,
           '        M1 (gn-run M0)',
           # Import bodies are substituted after generation. A pure-looking stub
           # and every transitive caller must refuse context-preservation proof.
@@ -678,7 +709,8 @@ def kotoba(real_layout=False):
           '        clamp_open (gn-clamp MO %d %d 1)' % (clamp_call,clamp_fn),
           '        MS (gn-gs MO gn-g-open %d)' % sign_fn,
           '        sign_open (gn-clamp MS %d %d 1)]' % (clamp_call,clamp_fn),
-          '    (if (and (= e3 0) (>= closed 0) (= direct -1) (= transitive -1) (>= independent 0)',
+          '    (if (and mask_shared (not mask_single) (not mask_limit)',
+          '             (= e3 0) (>= closed 0) (= direct -1) (= transitive -1) (>= independent 0)',
           '             (> clamp_closed 0) (= clamp_open 0) (= sign_open 0)) 0 1)))']
     return '\n'.join(o) + '\n'
 
