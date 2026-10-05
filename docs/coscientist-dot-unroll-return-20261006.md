@@ -1,5 +1,7 @@
 # Guarded whole-dot expansion with direct original-frame return
 
+Latest qualified experiment: [guarded forward-copy composition](coscientist-copy-forward-20261006.md). Fresh30 triples per affected workload qualify26.937912% less original matmult time and11.063853% less MD5 time; native permanent/gate/integration proofs pass. C remains3.498214x/4.409767x faster; all19 C-or-better remains open. Earlier experiments retain their historical decisions.
+
 Qualified against the current same-local-read product: original full matmult body
 execution is 67.814724% shorter (3.107011x speedup), while C remains 4.680001x
 faster. The other 18 canonical guest binaries are unchanged. This is a same-host

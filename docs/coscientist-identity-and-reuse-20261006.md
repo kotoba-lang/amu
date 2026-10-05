@@ -1,5 +1,7 @@
 # Content identity, computation recipes, and measured native reuse
 
+Latest qualified experiment: [guarded forward-copy composition](coscientist-copy-forward-20261006.md). Fresh30 triples per affected workload qualify26.937912% less original matmult time and11.063853% less MD5 time; native permanent/gate/integration proofs pass. C remains3.498214x/4.409767x faster; all19 C-or-better remains open. Earlier experiments retain their historical decisions.
+
 Latest qualified experiment: [guarded whole-dot expansion with direct return](coscientist-dot-unroll-return-20261006.md). Fresh30 paired triples qualify67.814724% less original matmult body time (3.107011x); native tests/gates and committed-source3gen integration pass. C remains4.680001x faster; all19 C-or-better remains open. Earlier experiments below retain their historical decisions.
 
 Subsequent qualified experiment: [dominated same-local reads](coscientist-same-local-read-20261006.md)
