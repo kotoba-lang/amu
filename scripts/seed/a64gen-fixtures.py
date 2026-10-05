@@ -751,6 +751,58 @@ _sl_sentinel=next(f for f in FIX if f[0]=='ht_cold_control')
 FIX.append(('sl_pair_cold_sentinel',*_sl_sentinel[1:]))
 
 
+# Guarded whole-dot expansion: independent i64/vector/fuel oracle.
+DOT_UNROLL_TEMPLATE = [('OP-FN', 'f', 5, 5), ('OP-FUEL', 0, 0, 0), ('OP-LABEL', 'head', 0, 0), ('OP-LGET', 0, 4, 0), ('OP-CONST', 1, 'n', 0), ('OP-CMP', 'CC-EQ', 0, 0), ('OP-BRZ', 0, 'body', 0), ('OP-LGET', 0, 5, 0), ('OP-BR', 'exit', 0, 0), ('OP-LABEL', 'body', 0, 0), ('OP-LGET', 0, 1, 0), ('OP-LGET', 1, 2, 0), ('OP-LGET', 2, 3, 0), ('OP-LGET', 3, 4, 0), ('OP-CONST', 4, 1, 0), ('OP-BIN', 'BOP-ADD', 3, 0), ('OP-LGET', 4, 5, 0), ('OP-LGET', 5, 1, 0), ('OP-CONST', 6, 'oa', 0), ('OP-LGET', 7, 2, 0), ('OP-CONST', 8, 'sa', 0), ('OP-BIN', 'BOP-MUL', 7, 0), ('OP-LGET', 8, 4, 0), ('OP-BIN', 'BOP-ADD', 7, 0), ('OP-BIN', 'BOP-ADD', 6, 0), ('OP-RT', 'RT-VECTOR-AT', 5, 2), ('OP-LGET', 6, 1, 0), ('OP-CONST', 7, 'ob', 0), ('OP-LGET', 8, 4, 0), ('OP-CONST', 9, 'sb', 0), ('OP-BIN', 'BOP-MUL', 8, 0), ('OP-LGET', 9, 3, 0), ('OP-BIN', 'BOP-ADD', 8, 0), ('OP-BIN', 'BOP-ADD', 7, 0), ('OP-RT', 'RT-VECTOR-AT', 6, 2), ('OP-BIN', 'BOP-MUL', 5, 0), ('OP-BIN', 'BOP-ADD', 4, 0), ('OP-LSET', 1, 0, 0), ('OP-LSET', 2, 1, 0), ('OP-LSET', 3, 2, 0), ('OP-LSET', 4, 3, 0), ('OP-LSET', 5, 4, 0), ('OP-FUEL', 0, 0, 0), ('OP-BR', 'head', 0, 0), ('OP-LABEL', 'exit', 0, 0), ('OP-RET', 0, 0, 0), ('OP-END', 'f', 0, 0)]
+DOT_UNROLL_CASES = []
+for _name,_n,_sa,_sb,_oa,_ob,_length in [
+ ('du_small',3,3,3,0,0,9),('du_overlap',3,1,1,0,0,9),
+ ('du_wide',64,64,64,4095,4095,8192),('du_refused',65,1,1,0,0,129)]:
+ _values={j:v for j,v in enumerate([MIN,MAX,-1,0,1,7,-3,9,11])}
+ if _name=='du_wide':
+  _values={4095+j:v for j,v in enumerate([MIN,MAX,-1,0,1,7,-3,9,11])}
+  _values.update({4095+64*j:v for j,v in enumerate([MIN,MAX,-1,0,1,7,-3,9,11]) if j>0})
+ _capture={'n':_n,'sa':_sa,'sb':_sb,'oa':_oa,'ob':_ob,
+           'head':_name+'_head','body':_name+'_body','exit':_name+'_exit'}
+ _body=[tuple([ins[0][3:]]+[_capture.get(x,x) for x in ins[1:]]) for ins in DOT_UNROLL_TEMPLATE[1:-1]]
+ fx(_name,5,5,_body)
+ _wrapper=[('FUEL',),('CONST',0,_length),('RT','RT-VECTOR-ALLOC',0,1),('LSET',4,0)]
+ for _ix,_v in sorted(_values.items()):
+  _wrapper += [('LGET',0,4),('CONST',1,_ix),('CONST',2,_v),('RT','RT-VECTOR-ASSOC-IN-PLACE',0,3)]
+ _wrapper += [('LGET',0,4),('LGET',1,1),('LGET',2,2),('LGET',3,3),('CONST',4,MAX),('CALL',_name,0,5),('RET',0)]
+ fx(_name+'_run',3,4,_wrapper)
+ DOT_UNROLL_CASES.append({'name':_name,'trip':_n,'sa':_sa,'sb':_sb,'oa':_oa,'ob':_ob,'length':_length,'values':_values})
+
+def _du_answer(c,row,col,k,fuel):
+ # No native generator is consulted. Charge the wrapper and dot entries first.
+ if fuel<2:return 'trap'
+ fuel-=2;total=MAX
+ for _ in range(c['length']+5):
+  if k==c['trip']:return total
+  a=s64(c['oa']+s64(s64(row*c['sa'])+k));b=s64(c['ob']+s64(s64(k*c['sb'])+col))
+  if not (0<=a<c['length'] and 0<=b<c['length']):return 'trap'
+  total=s64(total+s64(c['values'].get(a,0)*c['values'].get(b,0)));k=s64(k+1)
+  if fuel==0:return 'trap'
+  fuel-=1
+ raise AssertionError('dot oracle did not reach its bounded range or fuel trap')
+
+for c in DOT_UNROLL_CASES:
+ n=c['trip']
+ for row,col,k in [(0,0,0),(0,n-1,0),(n-1,0,0),(n-1,n-1,0),(1,1,0),
+                   (n,0,0),(-1,0,0),(MIN,MAX,0),(MAX,MIN,0),
+                   (0,0,n),(0,0,1),(0,0,n-1),(0,0,n+1),(0,0,-1),
+                   (0,0,MIN),(0,0,MAX),(0,MIN,0),(0,MAX,0)]:
+  for fuel in sorted(set([1,2,3,n+1,n+2,n+3,16777216,(1<<53)-1])):
+   run(c['name']+'_run',[row,col,k],_du_answer(c,row,col,k,fuel),fuel=fuel)
+fx('du_bad_handle',3,3,[('FUEL',),('LGET',0,1),('CONST',1,0),('CONST',2,0),
+                      ('LGET',3,2),('LGET',4,3),('CALL','du_small',0,5),('RET',0)])
+for h in [MIN,-1,0,1,MAX]:
+ for k in [0,3,-1,MAX]:
+  for fuel in [1,2,3,16777216]:
+   run('du_bad_handle',[h,k,MAX],MAX if fuel>=2 and k==3 else 'trap',fuel=fuel)
+_du_sentinel=next(f for f in FIX if f[0]=='ht_cold_control')
+FIX.append(('du_cold_sentinel',*_du_sentinel[1:]))
+
+
 def kotoba(real_layout=False):
     fns, labels, lits, sir, fnrecs = layout_tables()
     o = [';; deps: 40-a64enc',
@@ -915,6 +967,15 @@ def kotoba(real_layout=False):
     reader_bad = next(i+1 for i,x in enumerate(FIX) if x[0]=='reader_refuse_wrong-type')
     reader_call = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-CALL'] and x[1]==reader_fn)
     reader_bad_call = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-CALL'] and x[1]==reader_bad)
+    du_ids=[fns[c['name']] for c in DOT_UNROLL_CASES]
+    du_members='(or '+' '.join('(= f %d)'%f for f in du_ids)+')'
+    o += ['(defn- t-du-types [M :vector-i64 f :i64] :vector-i64',
+          ' (if (>= f (vector-at M MM-FN-N)) M',
+          '  (let [b (+ MM-FN-BASE (* f MM-FN-W))',
+          '        M1 (if %s (-> M (t-put (+ b FF-PT0) TY-VEC)'%du_members,
+          '              (t-put (+ b FF-PT0 1) TY-I64) (t-put (+ b FF-PT0 2) TY-I64)',
+          '              (t-put (+ b FF-PT0 3) TY-I64) (t-put (+ b FF-PT0 4) TY-I64)',
+          '              (t-put (+ b FF-RTYPE) TY-I64)) M)] (t-du-types M1 (inc f)))))']
     o += ['(defn- t-reader-types [M :vector-i64 f :i64] :vector-i64',
           '  (if (>= f (vector-at M MM-FN-N)) M',
           '    (t-reader-types (-> M (t-put (+ MM-FN-BASE (* f MM-FN-W) FF-PT0) (if %s TY-VEC TY-I64))' % reader_is_leaf,
@@ -928,7 +989,7 @@ def kotoba(real_layout=False):
           '  (let [a (typed-cap-call :cli/args :string :string "")',
           '        MT (t-mask-types (t-load (t-init)) %d)' % MASK_TYPED_FIRST,
           '        MR (t-reader-types MT %d)' % READER_TYPED_FIRST,
-          '        M0 (t-put MR (+ MM-FN-BASE (* %d MM-FN-W) FF-PT0) TY-I64)' % reader_bad,
+          '        M0 (t-put (t-du-types MR 1) (+ MM-FN-BASE (* %d MM-FN-W) FF-PT0) TY-I64)' % reader_bad,
           '        reader_closed (gn-affine-reader M0 %d %d 2)' % (reader_call,reader_fn),
           '        reader_wrong (gn-affine-reader M0 %d %d 2)' % (reader_bad_call,reader_bad),
           '        MI (-> M0 (gn-gs gn-g-open %d) (gn-gs gn-g-open-n 1))' % reader_fn,
