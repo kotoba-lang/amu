@@ -54,14 +54,27 @@ try:
    for arm in ['Kotoba','C']:
     require(load()<=spec['maximumLoad'],'host too busy');s=sample(row,arm,3,spec['warmupCalls']);require(s['elapsedNanoseconds']>0,'invalid calibration');counts[arm]=max(1,round(spec['targetIntervalNs']/(s['elapsedNanoseconds']/3)))
    row['calibratedCalls']=counts
-   for pair in range(spec['samplesPerArm']):
+   accepted_pairs=0
+   for pair in range(spec['maximumPairAttempts']):
+    pair_rows=[]
     for arm in (['Kotoba','C'] if pair%2==0 else ['C','Kotoba']):
-     before=load();require(before<=spec['maximumLoad'],'host too busy');s=sample(row,arm,counts[arm],spec['warmupCalls'],capture_cpu=True);after=load();require(after<=spec['maximumLoad'],'host too busy');require(s['elapsedNanoseconds']>=spec['minimumIntervalNs'],'interval too short');report['rows'].append({'workload':row['workload'],'arm':arm,'pair':pair,'calls':counts[arm],'iterationsPerCall':row['iterationsPerCall'],'warmupCalls':spec['warmupCalls'],'elapsedNanoseconds':s['elapsedNanoseconds'],'loadBefore':before,'loadAfter':after,'recordedEpoch':time.time(),'cpuActivityEnvelope':s['cpuActivityEnvelope']});save();require(s['cpuActivityEnvelope']['estimatedBackgroundIdlePercent']>=spec['minimumBackgroundIdlePercent'],'background CPU idle below threshold')
+     before=load();s=sample(row,arm,counts[arm],spec['warmupCalls'],capture_cpu=True);after=load()
+     reasons=[]
+     if max(before,after)>spec['maximumLoad']:reasons.append('host-load')
+     if s['elapsedNanoseconds']<spec['minimumIntervalNs']:reasons.append('short-interval')
+     if s['cpuActivityEnvelope']['estimatedBackgroundIdlePercent']<spec['minimumBackgroundIdlePercent']:reasons.append('background-cpu')
+     measured={'workload':row['workload'],'arm':arm,'pair':pair,'calls':counts[arm],'iterationsPerCall':row['iterationsPerCall'],'warmupCalls':spec['warmupCalls'],'elapsedNanoseconds':s['elapsedNanoseconds'],'loadBefore':before,'loadAfter':after,'recordedEpoch':time.time(),'cpuActivityEnvelope':s['cpuActivityEnvelope'],'accepted':False,'rejectionReasons':reasons}
+     pair_rows.append(measured);report['rows'].append(measured);save()
+    accepted=all(not s['rejectionReasons'] for s in pair_rows)
+    for s in pair_rows:s['accepted']=accepted
+    accepted_pairs+=int(accepted);row['acceptedPairs']=accepted_pairs;row['attemptedPairs']=pair+1
     save()
+    if accepted_pairs==spec['samplesPerArm']:break
+   require(accepted_pairs==spec['samplesPerArm'],'not enough quiet pairs within fixed attempt limit')
    summary={}
    for arm in ['Kotoba','C']:
-    xs=[s['elapsedNanoseconds']/(s['calls']*s['iterationsPerCall']) for s in report['rows'] if s['workload']==row['workload'] and s['arm']==arm];mu=statistics.mean(xs);sd=statistics.stdev(xs);summary[arm]={'meanNsPerBody':mu,'sdNs':sd,'relativeSd':sd/mu,'samples':len(xs)}
-   k=summary['Kotoba'];c=summary['C'];summary['KotobaTimeOverC']=k['meanNsPerBody']/c['meanNsPerBody'];summary['stable']=max(k['relativeSd'],c['relativeSd'])<=spec['maximumRelativeSd'];summary['separatedCOrBetter']=summary['stable'] and c['meanNsPerBody']-k['meanNsPerBody']>c['sdNs']+k['sdNs'] and c['meanNsPerBody']/k['meanNsPerBody']>=spec['minimumSpeedup'];row['timingSummary']=summary;save()
+    xs=[s['elapsedNanoseconds']/(s['calls']*s['iterationsPerCall']) for s in report['rows'] if s['workload']==row['workload'] and s['arm']==arm and s['accepted']];mu=statistics.mean(xs);sd=statistics.stdev(xs);summary[arm]={'meanNsPerBody':mu,'sdNs':sd,'relativeSd':sd/mu,'samples':len(xs)}
+   k=summary['Kotoba'];c=summary['C'];summary['KotobaTimeOverC']=k['meanNsPerBody']/c['meanNsPerBody'];summary['stable']=max(k['relativeSd'],c['relativeSd'])<=spec['maximumRelativeSd'];summary['separatedCOrBetter']=summary['stable'] and c['meanNsPerBody']-k['meanNsPerBody']>c['sdNs']+k['sdNs'] and c['meanNsPerBody']/k['meanNsPerBody']>=spec['minimumSpeedup'];row['timingSummary']=summary;save();print(row['workload'],'timing ratio',round(summary['KotobaTimeOverC'],4),'stable',summary['stable'],'pairs',row['acceptedPairs'],'/',row['attemptedPairs'],flush=True)
   report['performanceMeasured']=True;report['status']='complete-provisional-timing';report['geometricMeanKotobaTimeOverC']=math.exp(statistics.mean(math.log(e['timingSummary']['KotobaTimeOverC']) for e in report['entries']));report['allWorkloadsSeparatedCOrBetter']=all(e['timingSummary']['separatedCOrBetter'] for e in report['entries'])
   # CPU envelope includes warmup/setup, not exact timed boundaries; official scoring remains unqualified.
 except (AssertionError,subprocess.CalledProcessError,RuntimeError,ValueError) as error:

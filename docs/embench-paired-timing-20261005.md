@@ -21,7 +21,7 @@ Run preparation from a checkout and the previously pinned environment:
 python3 scripts/seed/image/measure-embench-matrix.py REPO ENV NEW_OUTPUT
 ```
 
-Add --measure only on the pinned host (currently jacob). Measurement rotates C/Kotoba order across 30
+Add --measure only on the pinned host (currently zebulunnoMac-mini). Measurement rotates C/Kotoba order across 30
 pairs, calibrates each arm toward 300 ms, uses one untimed warmup and requires
 at least 50 ms per interval. Each ABI call contains 32 complete original bodies
 (depthconv uses its qualified 2,000-body batch); per-body time divides by the
@@ -135,3 +135,35 @@ zebulun at 96.69% idle, but its proposed source/compiler transfer was rejected
 by automatic review as a different destination from the explicit jacob
 approval. User approval for zebulun is pending; no transfer occurred. The
 committed timing host remains jacob. No C-or-better or official score is claimed.
+
+### Authorized zebulun execution and prospective pair retries
+
+The user subsequently authorized zebulun explicitly, then all Tailscale-connected
+devices for the work. The transfer completed. The first zebulun run passed all
+19 correctness pairs and completed 30 timing pairs for aha-mont64 (Kotoba/C
+time ratio 2.0249), then stopped on background activity during crc32. This
+single-workload result is provisional, not a suite score or official Embench
+score. Its failed-run data remains separate.
+
+Before the second run, the spec fixed a maximum of 90 attempted pairs per
+workload to gather 30 qualifying pairs. Any arm failing load, background-idle
+or minimum-duration conditions rejects both arms of that pair. Every attempted
+row is retained with acceptance and rejection reasons; the summary uses only
+complete accepted pairs. The timing order alternates by attempted pair.
+Correctness failures, invalid CPU counters and exhaustion of the attempt cap
+still fail closed. The actual measurement-loop test verifies symmetric pair
+exclusion, accepted-only statistics and attempt-cap refusal. This prospective
+change does not relabel previous failures or choose pairs by their speed ratio.
+The native/compiler/upstream source pins and numerical stability/speedup
+criteria remain unchanged. The second run is incomplete until its result
+records confirm completion.
+
+The second zebulun run completed all 19 workloads: 30 accepted pairs each,
+1,166 retained rows including rejected pairs, all relative deviations within
+the 10% criterion. The custom geometric mean Kotoba/C time ratio is 11.1274;
+zero workloads meet the separated C-or-better criterion. Raw rows were
+independently checked for symmetric pair acceptance, all thresholds and
+summary means. See the [full comparison](embench-c-zebulun-20261005.md) and
+[baseline evidence](evidence/coscientist-zebulun-baseline-20261005/results.json).
+The first compiler hypothesis and its measured outcome are in
+[the direct-tail-call experiment](coscientist-tailcall-20261005.md).

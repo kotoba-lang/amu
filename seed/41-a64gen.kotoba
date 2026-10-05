@@ -819,7 +819,9 @@
     (let [r (gn-src M (+ t k) 16 1)]
       (gn-stack-args (-> M (gn-ldt (+ t k) 16 1) (gn-emit (enc-str r 31 (* 8 (- k 7))))) t (inc k) n))))
 (defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
-  (-> M
+  (if (and (<= n 7) (= (gn-op M (inc i)) OP-RET) (= (gn-sir M (inc i) IF-A) t))
+    (gn-op-tail-call M f t n)
+    (-> M
       (gn-save 0 t)
       (gn-stack-args t 7 n)
       (gn-args t 0 (gn-min n 7))
@@ -827,7 +829,15 @@
       (gn-fix FX-BL26 f)
       (gn-emit (enc-bl 0))
       (gn-gs gn-f-ctx 0)
-      (gn-take i t 0)))
+      (gn-take i t 0))))
+;; A direct call whose only successor returns its scalar result can restore
+;; this frame and branch to the callee. Stack arguments and RET2 are excluded.
+;; Argument registers and x7 (context) survive the callee-saved restore.
+;; FX-BL26 resolves a function target and patches imm26; the opcode remains B.
+(defn- gn-op-tail-call [M :vector-i64 f :i64 t :i64 n :i64] :vector-i64
+  (let [restored (-> M (gn-args t 0 n) (gn-ctx) (gn-epilogue))
+        at (- (vector-at restored MM-CODE-N) 1)]
+    (-> restored (gn-put MM-CODE-N at) (gn-fix FX-BL26 f) (gn-emit (enc-b 0)))))
 ;; R4: CALLI 0 t n -- blr to the code address in temp t+n, arguments t .. t+n-1 (a closure call)
 (defn- gn-op-calli [M :vector-i64 i :i64 t :i64 n :i64] :vector-i64
   (-> M

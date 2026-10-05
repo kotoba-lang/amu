@@ -213,10 +213,24 @@ fx('r2_cbr', 1, 1, [('CONST', 0, 1), ('BRZ', 0, 'cb_a'), ('CONST', 0, 0), ('BRNZ
 # ---------------------------------------------------------------------------------------------------------------
 # runs: (fixture, args, expect, opts) ; expect = int result | 'trap' ; opts: fuel, cmd (argv list), stdout, file
 # ---------------------------------------------------------------------------------------------------------------
+# Direct scalar tail-call regression: argument permutation, high operand temp,
+# caller-frame restoration and fuel crossing the direct branch.
+fx('tail_target3', 3, 3, [('FUEL',), ('LGET', 0, 1), ('LGET', 1, 2),
+                         ('BIN', 'BOP-MUL', 0), ('LGET', 1, 3), ('BIN', 'BOP-ADD', 0), ('RET', 0)])
+fx('tail_direct3', 3, 3, [('FUEL',), ('LGET', 0, 3), ('LGET', 1, 1), ('LGET', 2, 2),
+                         ('CALL', 'tail_target3', 0, 3), ('RET', 0)])
+fx('tail_high3', 3, 3, [('CONST', t, 99) for t in range(6)] +
+                      [('FUEL',), ('LGET', 6, 3), ('LGET', 7, 1), ('LGET', 8, 2),
+                       ('CALL', 'tail_target3', 6, 3), ('RET', 6)])
 RUNS = []
 
 def run(name, args, expect, **o):
     RUNS.append((name, args, expect, o))
+
+for tail_fixture in ('tail_direct3', 'tail_high3'):
+    run(tail_fixture, [3, 5, 7], 26, fuel=2)
+    run(tail_fixture, [-3, 5, 7], -16, fuel=2)
+    run(tail_fixture, [3, 5, 7], 'trap', fuel=1)
 
 def q(a, b):
     if b == 0 or (a == MIN and b == -1):
@@ -536,12 +550,13 @@ def blob_from(stdout):
 
 def build_with_layout():
     """00-ns + 40 + 41 + 42 + the same fixtures, laid out by the REAL ly-run; returns its stdout."""
-    w = os.path.join(R, 'build/seed/a64gen-ly')
+    w = os.path.join(os.environ.get('SEED_BUILD', os.path.join(R, 'build/seed')), 'a64gen-ly')
     os.makedirs(w, exist_ok=True)
     src = ''.join(open(os.path.join(R, f)).read() + '\n' for f in
-                  ['seed/00-ns.kotoba', 'seed/40-a64enc.kotoba', 'seed/41-a64gen.kotoba', 'seed/42-layout.kotoba'])
+                  ['seed/00-ns.kotoba', 'seed/01-mem.kotoba', 'seed/02-io.kotoba',
+                   'seed/40-a64enc.kotoba', 'seed/41-a64gen.kotoba', 'seed/42-layout.kotoba'])
     open(w + '/unit.kotoba', 'w').write(src + kotoba(real_layout=True))
-    sh = ('source %s/scripts/seed/lib.sh; seed_stage0_build %s/unit.kotoba %s/unit || exit 1; '
+    sh = ('source %s/scripts/seed/lib.sh; seed_modbuild %s/unit.kotoba %s/unit || exit 1; '
           'cd %s; seed_run %s/unit.bin $(cat %s/unit.offset) %s %s > %s/stdout 2> %s/stderr; echo exit=$? >> %s/stdout'
           % (R, w, w, w, w, w, R, w, w, w, w))
     r = subprocess.run(['zsh', '-c', sh], capture_output=True, text=True)
