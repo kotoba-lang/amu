@@ -1,6 +1,14 @@
 # Content identity, computation identity, and native performance
 
-Latest qualified follow-up: [native census and repeated scalar-mask composition](coscientist-native-census-mask-20261005.md)
+Latest qualified follow-up: [closed affine-index vector reader composition](coscientist-affine-reader-20261006.md)
+reduces freshly measured original WikiSort body time8.29%; other18 current product
+guest binaries are unchanged.38064 hand-result/full-state comparisons,96 allocating-
+import and72 invalid-handle comparisons,4196 permanent runs, native fixedpoint,
+gates and integrated three-generation/corpus parity pass. Original handle/index/
+fuel checks remain; this is structural compilation, not result memoization.
+Candidate time remains11.72x C; the full19-workload goal is unachieved.
+
+Previous qualified follow-up: [native census and repeated scalar-mask composition](coscientist-native-census-mask-20261005.md)
 reduces freshly measured MD5 time10.57% and SHA-2565.25%; other17 original guest
 binaries are unchanged. Native seed fixedpoint, permanent regression, gates and
 integrated three-generation/corpus parity pass. The unrestricted AES arm failed
