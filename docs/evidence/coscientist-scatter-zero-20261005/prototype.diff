@@ -1,0 +1,141 @@
+--- a/seed/41-a64gen.kotoba
++++ b/seed/41-a64gen.kotoba
+@@ -589 +589 @@
+-                  (gn-gs gn-f-h 0) (gn-tree-entry f)))))))
++                  (gn-gs gn-f-h 0) (gn-tree-entry f) (gn-scatter-entry f)))))))
+@@ -653,0 +654,135 @@
++
++(defn- gn-index-fuel [M :vector-i64 p :i64] :bool
++  (or (not= (gn-op M (inc p)) OP-FUEL)
++      (and (= (gn-sir M (inc p) IF-A) 0) (= (gn-sir M (inc p) IF-B) 0) (= (gn-sir M (inc p) IF-C) 0))))
++(defn- gn-index-write [M :vector-i64 f :i64] :i64
++  (let [p (gn-fnf M f FF-SIR)]
++    (if (or (< p 1) (not= (gn-op M p) OP-FN) (not= (gn-sir M p IF-A) f)
++            (not= (gn-sir M p IF-B) 3) (not (gn-index-fuel M p))) 0
++      (let [fuel (if (= (gn-op M (inc p)) OP-FUEL) 1 0) q (gn-skiplab M (+ p 1 fuel))]
++        (if (and (and (= (gn-op M (+ q 0)) OP-LGET) (= (gn-sir M (+ q 0) IF-A) 0) (= (gn-sir M (+ q 0) IF-B) 1) (= (gn-sir M (+ q 0) IF-C) 0))
++                 (and (= (gn-op M (+ q 1)) OP-LGET) (= (gn-sir M (+ q 1) IF-A) 1) (= (gn-sir M (+ q 1) IF-B) 2) (= (gn-sir M (+ q 1) IF-C) 0))
++                 (and (= (gn-op M (+ q 2)) OP-LGET) (= (gn-sir M (+ q 2) IF-A) 2) (= (gn-sir M (+ q 2) IF-B) 3) (= (gn-sir M (+ q 2) IF-C) 0))
++                 (and (= (gn-op M (+ q 3)) OP-RT) (= (gn-sir M (+ q 3) IF-A) RT-VECTOR-ASSOC-IN-PLACE) (= (gn-sir M (+ q 3) IF-B) 0) (= (gn-sir M (+ q 3) IF-C) 3))
++                 (and (= (gn-op M (+ q 4)) OP-RET) (= (gn-sir M (+ q 4) IF-A) 0) (= (gn-sir M (+ q 4) IF-B) 0) (= (gn-sir M (+ q 4) IF-C) 0))
++                 (and (= (gn-op M (+ q 5)) OP-END) (= (gn-sir M (+ q 5) IF-A) f) (= (gn-sir M (+ q 5) IF-B) 0) (= (gn-sir M (+ q 5) IF-C) 0))) (inc fuel) 0)))))
++;; Exact dependency labels are resolved inside the callee, not the caller's prescan.
++(defn- gn-scatter-pos [M :vector-i64 lo :i64 hi :i64 l :i64 j :i64 acc :i64] :i64
++  (if (>= j hi) acc (gn-scatter-pos M lo hi l (inc j) (if (and (= (gn-op M j) OP-LABEL) (= (gn-sir M j IF-A) l)) j acc))))
++(defn- gn-scatter-end [M :vector-i64 a :i64 j :i64] :i64
++  (cond (or (>= j (vector-at M MM-SIR-N)) (> (- j a) 1024) (= (gn-op M j) OP-FN)) 0
++        (= (gn-op M j) OP-END) j
++        :else (gn-scatter-end M a (inc j))))
++(defn- gn-scatter-tree-end [M :vector-i64 p :i64 depth :i64 lo :i64 hi :i64] :i64
++  (if (or (> depth 7) (>= p (vector-at M MM-SIR-N))) 0
++    (if (and (= (gn-op M p) OP-CONST) (= (gn-sir M p IF-A) 0) (= (gn-sir M p IF-C) 0)) (inc p)
++      (if (and (= (gn-op M p) OP-LGET) (= (gn-sir M p IF-A) 0) (= (gn-sir M p IF-B) 1) (= (gn-sir M p IF-C) 0)
++               (= (gn-op M (+ p 1)) OP-CONST) (= (gn-sir M (+ p 1) IF-A) 1) (= (gn-sir M (+ p 1) IF-C) 0)
++               (> (gn-sir M (+ p 1) IF-B) 0) (< (gn-sir M (+ p 1) IF-B) 64)
++               (= (gn-op M (+ p 2)) OP-CMP) (= (gn-sir M (+ p 2) IF-A) CC-LT) (= (gn-sir M (+ p 2) IF-B) 0) (= (gn-sir M (+ p 2) IF-C) 0)
++               (= (gn-op M (+ p 3)) OP-BRZ) (= (gn-sir M (+ p 3) IF-A) 0) (= (gn-sir M (+ p 3) IF-C) 0))
++        (let [a (gn-scatter-tree-end M (+ p 4) (inc depth) lo hi) le (gn-sir M (+ p 3) IF-B)]
++          (if (and (> a 0) (= (gn-op M a) OP-BR) (= (gn-sir M a IF-B) 0) (= (gn-sir M a IF-C) 0)
++                   (= (gn-op M (inc a)) OP-LABEL) (= (gn-sir M (inc a) IF-A) le)
++                   (= (gn-sir M (inc a) IF-B) 0) (= (gn-sir M (inc a) IF-C) 0) (= (gn-scatter-pos M lo hi le lo 0) (inc a)))
++            (let [b (gn-scatter-tree-end M (+ a 2) (inc depth) lo hi) lx (gn-sir M a IF-A)]
++              (if (and (> b 0) (= (gn-op M b) OP-LABEL) (= (gn-sir M b IF-A) lx)
++                       (= (gn-sir M b IF-B) 0) (= (gn-sir M b IF-C) 0) (= (gn-scatter-pos M lo hi lx lo 0) b)) (inc b) 0)) 0)) 0))))
++(defn- gn-scatter-tree-value [M :vector-i64 p :i64 x :i64 lo :i64 hi :i64] :i64
++  (if (= (gn-op M p) OP-CONST) (gn-sir M p IF-B)
++    (gn-scatter-tree-value M (if (< x (gn-sir M (inc p) IF-B)) (+ p 4) (inc (gn-scatter-pos M lo hi (gn-sir M (+ p 3) IF-B) lo 0))) x lo hi)))
++
++(defn- gn-scatter-range [M :vector-i64 p :i64 lo :i64 hi :i64 x :i64] :bool
++  (if (= x 64) true (let [v (gn-scatter-tree-value M p x lo hi)]
++    (and (>= v 0) (< v 64) (gn-scatter-range M p lo hi (inc x))))))
++(defn- gn-scatter-root [M :vector-i64 f :i64] :i64
++  (let [a (gn-fnf M f FF-SIR) hi (gn-scatter-end M a (inc a)) charge (if (= (gn-op M (inc a)) OP-FUEL) 1 0)
++        label (+ a 1 charge) p (inc label)]
++    (if (and (> a 0) (> hi 0) (= (gn-op M a) OP-FN) (= (gn-sir M a IF-A) f) (= (gn-sir M a IF-B) 1)
++             (gn-index-fuel M a) (= (gn-op M label) OP-LABEL) (= (gn-sir M label IF-B) 0) (= (gn-sir M label IF-C) 0))
++      (let [end (gn-scatter-tree-end M p 0 a hi)]
++        (if (and (> (- end p) 128) (= (inc end) hi) (= (gn-op M end) OP-RET)
++                 (= (gn-sir M end IF-A) 0) (= (gn-sir M end IF-B) 0) (= (gn-sir M end IF-C) 0)
++                 (= (gn-sir M hi IF-A) f) (= (gn-sir M hi IF-B) 0) (= (gn-sir M hi IF-C) 0)
++                 (gn-scatter-range M p a hi 0)) p 0)) 0)))
++(defn- gn-scatter-regs [M :vector-i64 k :i64] :bool
++  (if (> k 3) true (and (>= (gn-sreg M k) 19) (<= (gn-sreg M k) 28) (gn-scatter-regs M (inc k)))))
++;; Exact scatter-zero recurrence. The token is its SIR expression start.
++(defn- gn-scatter-wrapper [M :vector-i64 f :i64] :i64
++  (let [p (gn-fnf M f FF-SIR)]
++    (if (or (< p 1) (not= (gn-op M p) OP-FN) (not= (gn-sir M p IF-A) f)
++            (not= (gn-sir M p IF-B) 3) (not (gn-index-fuel M p))
++            (not= (gn-g M gn-f-leaf) 0) (not= (gn-g M gn-f-freg) 0) (not (gn-scatter-regs M 1))) 0
++      (let [charge (if (= (gn-op M (inc p)) OP-FUEL) 1 0) lab (+ p 1 charge) q (inc lab)
++            loop (gn-sir M lab IF-A) le (gn-sir M (+ q 3) IF-B) lx (gn-sir M (+ q 5) IF-A)
++            mf (gn-sir M (+ q 10) IF-A) wf (gn-sir M (+ q 13) IF-A) base (gn-sir M (+ q 8) IF-B)]
++        (if (and (= (gn-op M lab) OP-LABEL) (> loop 0) (= (gn-sir M lab IF-B) 0) (= (gn-sir M lab IF-C) 0)
++                 (> le 0) (> lx 0) (not= loop le) (not= loop lx) (not= le lx) (> mf 0) (> wf 0) (not= mf f) (not= wf f)
++                 (>= base 0) (<= base 4095)
++                 (and (= (gn-op M (+ q 0)) OP-LGET) (= (gn-sir M (+ q 0) IF-A) 0) (= (gn-sir M (+ q 0) IF-B) 2) (= (gn-sir M (+ q 0) IF-C) 0))
++                 (and (= (gn-op M (+ q 1)) OP-LGET) (= (gn-sir M (+ q 1) IF-A) 1) (= (gn-sir M (+ q 1) IF-B) 3) (= (gn-sir M (+ q 1) IF-C) 0))
++                 (and (= (gn-op M (+ q 2)) OP-CMP) (= (gn-sir M (+ q 2) IF-A) CC-EQ) (= (gn-sir M (+ q 2) IF-B) 0) (= (gn-sir M (+ q 2) IF-C) 0))
++                 (and (= (gn-op M (+ q 3)) OP-BRZ) (= (gn-sir M (+ q 3) IF-A) 0) (= (gn-sir M (+ q 3) IF-B) le) (= (gn-sir M (+ q 3) IF-C) 0))
++                 (and (= (gn-op M (+ q 4)) OP-LGET) (= (gn-sir M (+ q 4) IF-A) 0) (= (gn-sir M (+ q 4) IF-B) 1) (= (gn-sir M (+ q 4) IF-C) 0))
++                 (and (= (gn-op M (+ q 5)) OP-BR) (= (gn-sir M (+ q 5) IF-A) lx) (= (gn-sir M (+ q 5) IF-B) 0) (= (gn-sir M (+ q 5) IF-C) 0))
++                 (and (= (gn-op M (+ q 6)) OP-LABEL) (= (gn-sir M (+ q 6) IF-A) le) (= (gn-sir M (+ q 6) IF-B) 0) (= (gn-sir M (+ q 6) IF-C) 0))
++                 (and (= (gn-op M (+ q 7)) OP-LGET) (= (gn-sir M (+ q 7) IF-A) 0) (= (gn-sir M (+ q 7) IF-B) 1) (= (gn-sir M (+ q 7) IF-C) 0))
++                 (and (= (gn-op M (+ q 8)) OP-CONST) (= (gn-sir M (+ q 8) IF-A) 1) (= (gn-sir M (+ q 8) IF-B) base) (= (gn-sir M (+ q 8) IF-C) 0))
++                 (and (= (gn-op M (+ q 9)) OP-LGET) (= (gn-sir M (+ q 9) IF-A) 2) (= (gn-sir M (+ q 9) IF-B) 2) (= (gn-sir M (+ q 9) IF-C) 0))
++                 (and (= (gn-op M (+ q 10)) OP-CALL) (= (gn-sir M (+ q 10) IF-A) mf) (= (gn-sir M (+ q 10) IF-B) 2) (= (gn-sir M (+ q 10) IF-C) 1))
++                 (and (= (gn-op M (+ q 11)) OP-BIN) (= (gn-sir M (+ q 11) IF-A) BOP-ADD) (= (gn-sir M (+ q 11) IF-B) 1) (= (gn-sir M (+ q 11) IF-C) 0))
++                 (and (= (gn-op M (+ q 12)) OP-CONST) (= (gn-sir M (+ q 12) IF-A) 2) (= (gn-sir M (+ q 12) IF-B) 0) (= (gn-sir M (+ q 12) IF-C) 0))
++                 (and (= (gn-op M (+ q 13)) OP-CALL) (= (gn-sir M (+ q 13) IF-A) wf) (= (gn-sir M (+ q 13) IF-B) 0) (= (gn-sir M (+ q 13) IF-C) 3))
++                 (and (= (gn-op M (+ q 14)) OP-LGET) (= (gn-sir M (+ q 14) IF-A) 1) (= (gn-sir M (+ q 14) IF-B) 2) (= (gn-sir M (+ q 14) IF-C) 0))
++                 (and (= (gn-op M (+ q 15)) OP-CONST) (= (gn-sir M (+ q 15) IF-A) 2) (= (gn-sir M (+ q 15) IF-B) 1) (= (gn-sir M (+ q 15) IF-C) 0))
++                 (and (= (gn-op M (+ q 16)) OP-BIN) (= (gn-sir M (+ q 16) IF-A) BOP-ADD) (= (gn-sir M (+ q 16) IF-B) 1) (= (gn-sir M (+ q 16) IF-C) 0))
++                 (and (= (gn-op M (+ q 17)) OP-LGET) (= (gn-sir M (+ q 17) IF-A) 2) (= (gn-sir M (+ q 17) IF-B) 3) (= (gn-sir M (+ q 17) IF-C) 0))
++                 (and (= (gn-op M (+ q 18)) OP-LSET) (= (gn-sir M (+ q 18) IF-A) 1) (= (gn-sir M (+ q 18) IF-B) 0) (= (gn-sir M (+ q 18) IF-C) 0))
++                 (and (= (gn-op M (+ q 19)) OP-LSET) (= (gn-sir M (+ q 19) IF-A) 2) (= (gn-sir M (+ q 19) IF-B) 1) (= (gn-sir M (+ q 19) IF-C) 0))
++                 (and (= (gn-op M (+ q 20)) OP-LSET) (= (gn-sir M (+ q 20) IF-A) 3) (= (gn-sir M (+ q 20) IF-B) 2) (= (gn-sir M (+ q 20) IF-C) 0))
++                 (and (= (gn-op M (+ q 21)) OP-FUEL) (= (gn-sir M (+ q 21) IF-A) 0) (= (gn-sir M (+ q 21) IF-B) 0) (= (gn-sir M (+ q 21) IF-C) 0))
++                 (and (= (gn-op M (+ q 22)) OP-BR) (= (gn-sir M (+ q 22) IF-A) loop) (= (gn-sir M (+ q 22) IF-B) 0) (= (gn-sir M (+ q 22) IF-C) 0))
++                 (and (= (gn-op M (+ q 23)) OP-LABEL) (= (gn-sir M (+ q 23) IF-A) lx) (= (gn-sir M (+ q 23) IF-B) 0) (= (gn-sir M (+ q 23) IF-C) 0))
++                 (and (= (gn-op M (+ q 24)) OP-RET) (= (gn-sir M (+ q 24) IF-A) 0) (= (gn-sir M (+ q 24) IF-B) 0) (= (gn-sir M (+ q 24) IF-C) 0))
++                 (and (= (gn-op M (+ q 25)) OP-END) (= (gn-sir M (+ q 25) IF-A) f) (= (gn-sir M (+ q 25) IF-B) 0) (= (gn-sir M (+ q 25) IF-C) 0))
++                 (> (gn-index-write M wf) 0) (> (gn-scatter-root M mf) 0)) q 0)))))
++;; Original optional mapper leaf transaction commits only after its pure lookup.
++(defn- gn-scatter-map-fuel [M :vector-i64] :vector-i64
++  (-> M (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-emit (enc-subs-i 8 8 1)) (gn-emit (enc-bcond (enc-cond-hs) 3))
++        (gn-emit (enc-str 31 7 CTX-FUEL)) (gn-emit (enc-brk 0))))
++;; Guards precede any charge or write. Original loop remains on all failures.
++(defn- gn-scatter-data [M :vector-i64 p :i64 lo :i64 hi :i64 x :i64] :vector-i64
++  (if (= x 64) M (let [v (gn-scatter-tree-value M p x lo hi)]
++    (gn-scatter-data (-> M (gn-emit v) (gn-emit 0)) p lo hi (inc x)))))
++(defn- gn-scatter-fast [M :vector-i64 f :i64 q :i64] :vector-i64
++  (let [rv (gn-sreg M 1) rk (gn-sreg M 2) re (gn-sreg M 3)
++        mf (gn-sir M (+ q 10) IF-A) wf (gn-sir M (+ q 13) IF-A) base (gn-sir M (+ q 8) IF-B)
++        a (gn-fnf M mf FF-SIR) hi (gn-scatter-end M a (inc a)) p (gn-scatter-root M mf)
++        cf (if (= (gn-op M (inc (gn-fnf M f FF-SIR))) OP-FUEL) 1 0)
++        cm (if (= (gn-op M (inc a)) OP-FUEL) 1 0) cw (dec (gn-index-write M wf))
++        M0 (gn-emit M (enc-cmp-i re 64)) f0 (vector-at M0 MM-CODE-N)
++        M1 (-> M0 (gn-emit (enc-bcond 8 0)) (gn-emit (enc-cmp-r rk re))) f1 (vector-at M1 MM-CODE-N)
++        M2 (-> M1 (gn-emit (enc-bcond 8 0)) (gn-emit (enc-ldr 16 7 312)) (gn-emit (enc-ldr 16 16 0))
++               (gn-emit (enc-sub-i 17 rv 1)) (gn-emit (enc-cmp-r 17 16))) f2 (vector-at M2 MM-CODE-N)
++        M3 (-> M2 (gn-emit (enc-bcond (enc-cond-hs) 0)) (gn-emit (enc-ldr 16 7 320))
++               (gn-emit (gn-e-addsl 16 16 17 4)) (gn-emit (enc-ldp 17 16 16 0)) (gn-mov 9 17)
++               (gn-mov-imm 17 (+ base 64)) (gn-emit (enc-cmp-r 16 17))) f3 (vector-at M3 MM-CODE-N)
++        M4 (-> M3 (gn-emit (enc-bcond (enc-cond-lo) 0)) (gn-emit (enc-ldr 16 7 328))
++               (gn-emit (gn-e-addsl 9 16 9 3)) (gn-mov-imm 16 (* base 8)) (gn-emit (enc-add-r 9 9 16))
++               (gn-mov 11 rk) (gn-mov 12 re) (cond-> (= cf 1) (gn-op-fuel))) adr (vector-at M4 MM-CODE-N)
++        M5 (gn-emit M4 (gn-e-adr 10)) loop (vector-at M5 MM-CODE-N)
++        M6 (gn-emit M5 (enc-cmp-r 11 12)) done (vector-at M6 MM-CODE-N)
++        M7 (-> M6 (gn-emit (enc-bcond (enc-cond-eq) 0)) (cond-> (= cm 1) (gn-scatter-map-fuel))
++               (gn-emit (gn-e-ldrr 13 10 11 1)) (cond-> (= cm 1) (gn-emit (enc-str 8 7 CTX-FUEL))) (cond-> (= cw 1) (gn-op-fuel))
++               (gn-emit (gn-e-strr3 31 9 13)) (gn-emit (enc-add-i 11 11 1)) (gn-op-fuel)) back (vector-at M7 MM-CODE-N)
++        M8 (gn-emit M7 (enc-b (- loop back))) end (vector-at M8 MM-CODE-N)
++        M9 (-> M8 (gn-mov 0 rv) (gn-epilogue) (gn-gs gn-f-dead 0)) table (vector-at M9 MM-CODE-N)
++        M10 (gn-scatter-data M9 p a hi 0) fallback (vector-at M10 MM-CODE-N) delta (* (- table adr) 4)]
++    (-> M10 (gn-put (+ MM-CODE-BASE f0) (enc-bcond 8 (- fallback f0)))
++         (gn-put (+ MM-CODE-BASE f1) (enc-bcond 8 (- fallback f1)))
++         (gn-put (+ MM-CODE-BASE f2) (enc-bcond (enc-cond-hs) (- fallback f2)))
++         (gn-put (+ MM-CODE-BASE f3) (enc-bcond (enc-cond-lo) (- fallback f3)))
++         (gn-put (+ MM-CODE-BASE done) (enc-bcond (enc-cond-eq) (- end done)))
++         (gn-put (+ MM-CODE-BASE adr) (+ (gn-e-adr 10) (i64-shift-left (bit-and delta 3) 29) (i64-shift-left (i64-shift-right delta 2) 5))))))
++(defn- gn-scatter-entry [M :vector-i64 f :i64] :vector-i64
++  (let [q (gn-scatter-wrapper M f)] (if (= q 0) M (gn-scatter-fast M f q))))

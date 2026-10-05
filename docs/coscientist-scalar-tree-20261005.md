@@ -100,3 +100,8 @@ Evidence: [summary](evidence/coscientist-scalar-tree-20261005/summary.json),
 [native prototype and proof](evidence/coscientist-scalar-tree-20261005/native-proof.tgz),
 [all measurement rows and lineage](evidence/coscientist-scalar-tree-20261005/timing.tgz),
 [six gate outcomes](evidence/coscientist-scalar-tree-20261005/gates.tsv).
+
+The subsequent [scatter-zero experiment](coscientist-scatter-zero-20261005.md)
+proves/fuses the bounded mapping/write loop, passes exact native semantic tests,
+and fails the prospective performance threshold. The scalar-tree product stays
+qualified; that further candidate is not installed.
