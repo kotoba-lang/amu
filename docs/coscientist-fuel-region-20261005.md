@@ -1,5 +1,9 @@
 # Sufficient-fuel region experiment: negative result
 
+Follow-up: [cold fuel failure layout](coscientist-cold-fuel-20261005.md) qualifies
+eleven improvements across all19 workloads but regresses EDN. Global promotion
+is rejected; a generic multiple-site profitability threshold is registered next.
+
 The [fuel-cost diagnostic](coscientist-fuel-cost-20261005.md) separated a20.75%
 counterfactual sensitivity to omitted checks. This next registered experiment
 keeps the original workload and observable fuel semantics. It proves bounded
