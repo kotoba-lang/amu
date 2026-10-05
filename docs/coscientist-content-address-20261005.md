@@ -1,0 +1,99 @@
+# Content identity, computation identity, and native performance
+
+Current code identity is content addressing. `kotoba.compiler.definition-identity`
+alpha-normalizes checked typed KIR and seals six inputs: typed KIR, profile version,
+desugaring contract, effect row, interface (including reachable schemas), and direct
+definition dependencies. References use callee CIDs; recursive groups use `scc-v1`.
+This identifies normalized implementations, not every mathematically equivalent
+program. Names are not implementation identity; exported names and declaration
+order can nevertheless affect artifact bytes. ADR 0300 and its amendments explain
+those boundaries. The implementation has a Kotoba reading as well as bootstrap
+readings. Existing compile/verdict stores reuse admitted artifacts/static verdicts;
+a cache key alone is not proof that a particular native command uses those stores.
+
+The measured native seed route lowers directly to SIR. Its Kexe writer explicitly
+records `:program nil` and `:kir-sha256 nil`; the unified checker still refuses
+`--json` because the definition-CID envelope is not linked. Therefore the current
+integrated Embench compiler is not evidence of end-to-end DefCID caching.
+
+Unison calls this content-addressed code too: normalized syntax and dependency
+hashes identify a definition, while human names are separate metadata. Its reusable
+checking and pure-test results follow from immutable code identity, not from a
+claim that all executions or all algebraically equivalent functions share a hash.
+Primary references: https://www.unison-lang.org/docs/the-big-idea/ and
+https://www.unison-lang.org/docs/language-reference/hashes/.
+
+A computation address would be a separate, versioned recipe identity, conceptually
+`H(domain, DefCID, canonical input values, semantic profile, handler/state snapshot)`.
+It is not a CPU/host address. An artifact address additionally seals compiler
+identity, target, runtime/context ABI, optimization settings, policy/resource
+inputs, ordered definition CIDs and export/packaging metadata. Hashing handles,
+mutable names, or only function source is insufficient. Effectful calls need an
+explicit snapshot/handler contract; unknown effects or unavailable identities
+must refuse cache admission. Fuel, traps, allocation limits and cancellation are
+observable: even pure-looking results cannot silently bypass them. A cached test
+result must not be reported as a fresh executed Embench workload.
+
+## Experiment CA-1: identical-content branch elimination
+
+Hypothesis registered before timing: proving that both arms of an integer decision
+tree return the same literal permits eliminating redundant branches, potentially
+reducing Picojpeg instruction-cache pressure. Canonical benchmark sources stay
+unchanged. This is new compiler algorithm authoring, not a mechanical rewrite;
+no existing refactor rule covers the one-off experimental algorithm.
+
+The prototype changes `lw-if` in the native seed lowerer. A bounded (32 levels)
+exact proof recognizes integer literals and uniform nested `if` trees. Nested
+conditions must be comparisons of literal/local scalar values. Unknown forms,
+calls, mutable reads, division, capabilities and allocation are not admitted to
+that proof. A root condition outside the pure subset is still evaluated once,
+including its original fuel/trap behavior. Literal content equality is checked
+exactly, without hashing. This is a local application of content equality, **not**
+an implementation of DefCID integration or computation-result caching.
+
+Three generations (2/3/4) of the native compiler reproduce identical bytes. All
+19 canonical workloads preserve the existing representative results, exact fuel
+consumption and fuel-exhaustion traps. Targeted probes cover signed extremes,
+differing branches, a fuel-charging condition call, and a trapping vector read.
+Picojpeg's complete workspace after one and two bodies is compared with the
+previous selfhost compiler; source and compiler hashes are retained in evidence.
+
+## Timing decision
+
+On zebulun (Apple M4), the pre-existing pinned runner and unchanged C binary are
+used. Baseline is the measured wrapper compiler's machine code; all three arms
+are resampled, rotating order, 30 accepted triples, fixed 90-attempt limit,
+300 ms target interval, minimum 50 ms, load <= 4, estimated background idle >= 90%,
+and each arm RSD <= 10%. Promotion requires >= 5% speedup and a mean gap greater
+than summed standard deviations. All rejected attempts/calibrations are retained.
+
+| Picojpeg arm | Mean us/body | RSD |
+| --- | ---: | ---: |
+| Previous native selfhost | 314.615 | 2.18% |
+| Content-equality prototype | 315.043 | 1.90% |
+| C, unchanged comparator | 10.836 | 0.79% |
+
+The candidate has 40,932 code bytes against 45,652 (10.34% smaller), but the
+speedup is 0.99864x: no execution improvement. Candidate/C is 29.0738x in this
+experiment. The hypothesis is rejected for performance promotion. The production
+compiler and integrated image stay at the previously measured wrapper version.
+These are custom aligned whole-body timings, not official Embench scores, and
+no new full-suite performance geometric mean is inferred from one workload.
+
+## Next experiment boundaries
+
+1. Instrument hot helper calls and checked vector operations; select a measured
+   execution cost rather than assuming repeated source means repeated work.
+2. Test generic specialization with known immutable arguments. Key optimized IR
+   by sealed definition/input identities and the compiler/ABI/profile; preserve
+   fuel, bounds checks and effects. This can improve freshly executed workloads.
+3. Connect identities to the native seed route only through an explicit checked
+   SIR/KIR contract. Do not label raw SIR/source hashes as existing KIR DefCIDs.
+4. Separately measure cold/warm compile and incremental rebuild caches. Reusing
+   code/check results can improve development latency but does not demonstrate
+   an Embench execution-speed win. Consider computation-result memoization only
+   where reuse exceeds canonicalization, hashing and lookup cost.
+
+Evidence: [summary](evidence/coscientist-content-address-20261005/summary.json),
+[full native experiment](evidence/coscientist-content-address-20261005/native-proof.tgz),
+[timing rows and baseline lineage](evidence/coscientist-content-address-20261005/timing.tgz).
