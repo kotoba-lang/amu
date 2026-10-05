@@ -803,6 +803,48 @@ _du_sentinel=next(f for f in FIX if f[0]=='ht_cold_control')
 FIX.append(('du_cold_sentinel',*_du_sentinel[1:]))
 
 
+# Exact forward-copy semantic fixtures; independent observable-value oracle.
+COPY_FORWARD_TEMPLATE = [['OP-FN', 'f', 2, 2], ['OP-FUEL', 0, 0, 0], ['OP-LABEL', 'head', 0, 0], ['OP-LGET', 0, 2, 0], ['OP-CONST', 1, 'n', 0], ['OP-CMP', 'CC-EQ', 0, 0], ['OP-BRZ', 0, 'body', 0], ['OP-LGET', 0, 1, 0], ['OP-BR', 'exit', 0, 0], ['OP-LABEL', 'body', 0, 0], ['OP-LGET', 0, 1, 0], ['OP-CONST', 1, 'dest', 0], ['OP-LGET', 2, 2, 0], ['OP-BIN', 'BOP-ADD', 1, 0], ['OP-LGET', 2, 1, 0], ['OP-LGET', 3, 2, 0], ['OP-RT', 'RT-VECTOR-AT', 2, 2], ['OP-CALL', 'writer', 0, 3], ['OP-LGET', 1, 2, 0], ['OP-CONST', 2, 1, 0], ['OP-BIN', 'BOP-ADD', 1, 0], ['OP-LSET', 1, 0, 0], ['OP-LSET', 2, 1, 0], ['OP-FUEL', 0, 0, 0], ['OP-BR', 'head', 0, 0], ['OP-LABEL', 'exit', 0, 0], ['OP-RET', 0, 0, 0], ['OP-END', 'f', 0, 0]]
+fx('cf_writer',3,3,[('FUEL',),('LABEL','cf_writer_entry'),('LGET',0,1),('LGET',1,2),('LGET',2,3),
+                   ('RT','RT-VECTOR-ASSOC-IN-PLACE',0,3),('RET',0)])
+COPY_FORWARD_CASES=[]
+for name,n,dest,length in [('cf_small',3,3,8),('cf_overlap',8,1,10),('cf_short',8,5,10),
+                            ('cf_wide',2047,2047,4094),('cf_refused',2048,0,2048),('cf_negative',3,-1,4)]:
+ values={j:v for j,v in enumerate([MIN,MAX,-1,0,1,7,-3,9,11,37,-99,47,67,-101,127,257]) if j<length}
+ capture={'n':n,'dest':dest,'writer':'cf_writer','head':name+'_head','body':name+'_body','exit':name+'_exit'}
+ fx(name,2,2,[tuple([x[0][3:]]+[capture.get(a,a) for a in x[1:]]) for x in COPY_FORWARD_TEMPLATE[1:-1]])
+ body=[('FUEL',),('CONST',0,length),('RT','RT-VECTOR-ALLOC',0,1),('LSET',3,0)]
+ for ix,v in sorted(values.items()):
+  body += [('LGET',0,3),('CONST',1,ix),('CONST',2,v),('RT','RT-VECTOR-ASSOC-IN-PLACE',0,3)]
+ body += [('LGET',0,3),('LGET',1,1),('CALL',name,0,2),('LGET',1,2),('RT','RT-VECTOR-AT',0,2),('RET',0)]
+ fx(name+'_run',2,3,body)
+ COPY_FORWARD_CASES.append({'name':name,'n':n,'dest':dest,'length':length,'values':values})
+
+def _cf_answer(c,i,probe,fuel):
+ # Wrapper publishes its entry; copy entry/writer/backedges use private leaf fuel.
+ if fuel<2:return 'trap'
+ remaining=fuel-2;values=dict(c['values'])
+ for _ in range(c['length']+4):
+  if i==c['n']:return values.get(probe,0) if 0<=probe<c['length'] else 'trap'
+  if not 0<=i<c['length']:return 'trap'
+  value=values.get(i,0)
+  if remaining==0:return 'trap'
+  remaining-=1;to=s64(c['dest']+i)
+  if not 0<=to<c['length']:return 'trap'
+  values[to]=value
+  if remaining==0:return 'trap'
+  remaining-=1;i=s64(i+1)
+ raise AssertionError('forward-copy oracle exceeded bounded input/fuel')
+
+for c in COPY_FORWARD_CASES:
+ n=c['n']
+ for i in sorted(set([0,1,n-1,n,n+1,-1,MIN,MAX])):
+  for probe in sorted(set([0,1,c['dest'],c['dest']+1,c['dest']+n-1,c['length']-1,-1])):
+   for fuel in sorted(set([1,2,3,4,2*n+1,2*n+2,16777216,(1<<53)-1])):
+    run(c['name']+'_run',[i,probe],_cf_answer(c,i,probe,fuel),fuel=fuel)
+_cf_sentinel=next(f for f in FIX if f[0]=='ht_cold_control')
+FIX.append(('cf_cold_sentinel',*_cf_sentinel[1:]))
+
 def kotoba(real_layout=False):
     fns, labels, lits, sir, fnrecs = layout_tables()
     o = [';; deps: 40-a64enc',
@@ -967,6 +1009,15 @@ def kotoba(real_layout=False):
     reader_bad = next(i+1 for i,x in enumerate(FIX) if x[0]=='reader_refuse_wrong-type')
     reader_call = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-CALL'] and x[1]==reader_fn)
     reader_bad_call = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-CALL'] and x[1]==reader_bad)
+    cf_ids=[fns[c['name']] for c in COPY_FORWARD_CASES]
+    cf_members='(or '+' '.join('(= f %d)'%f for f in cf_ids)+')'
+    cf_writer=fns['cf_writer']
+    o += ['(defn- t-cf-types [M :vector-i64 f :i64] :vector-i64',
+          ' (if (>= f (vector-at M MM-FN-N)) M',
+          '  (let [b (+ MM-FN-BASE (* f MM-FN-W))',
+          '        M1 (if (or %s (= f %d)) (-> M (t-put (+ b FF-PT0) TY-VEC)'%(cf_members,cf_writer),
+          '              (t-put (+ b FF-PT0 1) TY-I64) (t-put (+ b FF-RTYPE) TY-VEC)) M)',
+          '        M2 (if (= f %d) (t-put M1 (+ b FF-PT0 2) TY-I64) M1)] (t-cf-types M2 (inc f)))))'%cf_writer]
     du_ids=[fns[c['name']] for c in DOT_UNROLL_CASES]
     du_members='(or '+' '.join('(= f %d)'%f for f in du_ids)+')'
     o += ['(defn- t-du-types [M :vector-i64 f :i64] :vector-i64',
@@ -989,7 +1040,7 @@ def kotoba(real_layout=False):
           '  (let [a (typed-cap-call :cli/args :string :string "")',
           '        MT (t-mask-types (t-load (t-init)) %d)' % MASK_TYPED_FIRST,
           '        MR (t-reader-types MT %d)' % READER_TYPED_FIRST,
-          '        M0 (t-put (t-du-types MR 1) (+ MM-FN-BASE (* %d MM-FN-W) FF-PT0) TY-I64)' % reader_bad,
+          '        M0 (t-put (t-cf-types (t-du-types MR 1) 1) (+ MM-FN-BASE (* %d MM-FN-W) FF-PT0) TY-I64)' % reader_bad,
           '        reader_closed (gn-affine-reader M0 %d %d 2)' % (reader_call,reader_fn),
           '        reader_wrong (gn-affine-reader M0 %d %d 2)' % (reader_bad_call,reader_bad),
           '        MI (-> M0 (gn-gs gn-g-open %d) (gn-gs gn-g-open-n 1))' % reader_fn,
