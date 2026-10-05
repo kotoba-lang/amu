@@ -50,10 +50,28 @@ and WikiSort; the other 16 canonical workload binaries are byte-identical.
 This is an isolated aligned whole-body experiment, not a new suite geometric mean,
 not an official Embench score and not formal perfgate qualification.
 
-The source change is promoted after correctness/performance evidence; source-built
-unified-image reproduction and measurements of the other changed workloads are
-tracked separately. No claim of completed unified-image qualification follows
-from the raw seed fixed point alone.
+The committed source at `e0218f27a` rebuilds the unified Amu for three identical
+generations, including all 162 objects, containers, native code and commands.
+The 6,092,664-byte executable SHA-256 is
+`3a6337a3c0101015369e24c0c28a8f7d3a5fbf0458de229620253aa7b1fd82e9`.
+Copied source inputs are content-pinned and checked. All 19 canonical sources
+check/compile through generation 3 and reproduce the exact measured raw code.
+The 391-case integrated corpus retains every previous per-case check/compile
+classification: check 358 same accepts and 33 same refusals; compile 300 behavior
+matches, 27 Amu-only accepts, 12 Amu-only refusals, 3 differing accepted outputs,
+49 shared refusals. Every export's classification is also unchanged (875 same,
+15 existing differences, no timeout, one missing). The existing language and
+own-source selfhost gaps are not claimed closed. `bin/amu` stays unchanged.
+
+Fresh 30-triple measurements of the other two changed binaries find Statemate
+1.0332x (below the 5% threshold; candidate/C 24.0466x) and WikiSort 1.1117x
+(candidate/C 13.6253x). WikiSort's 23.08 us mean improvement is smaller than the
+25.01 us sum of standard deviations, so it is not a confirmed improvement either.
+Do not resample to turn this negative spread decision into a pass. All 16 other
+canonical binaries are byte-identical; no new full-suite timing mean is claimed.
+[Integrated proof](evidence/coscientist-sign-wrapper-20261005/integrated-summary.json)
+and [changed-workload rows](evidence/coscientist-sign-wrapper-20261005/changed-timing.tgz)
+retain the evidence.
 
 [Evidence summary](evidence/coscientist-sign-wrapper-20261005/summary.json),
 [native proof bundle](evidence/coscientist-sign-wrapper-20261005/native-proof.tgz),
