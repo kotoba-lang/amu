@@ -1,5 +1,13 @@
 # Content identity, computation identity, and native performance
 
+Latest qualified follow-up: [direct affine-index checked read](coscientist-affine-read-direct-20261006.md)
+passes4 native generations,8939 preflight state comparisons,434/9339 permanent
+fixtures/runs preserving original402/7989,12 guards, ERR/G1-G5 and committed-source
+integrated3gen/full actual-output corpus parity. Fresh30triples qualify13.12%
+shorter originalmatmult time; other18 guests equal previous product. C remains
+16.97x faster than candidate; all19 goal unachieved. Next guarded descriptor reuse
+uses a new mechanism: adjacent high-depth reads no longer cross a C helper.
+
 Latest experimental follow-up: [affine-chain composition](coscientist-affine-chain-20261006.md)
 passes4 native generations,7989 permanent runs and6419 extra state comparisons.
 Fresh30triples show10.40% shorter matmult mean but fail unchanged summed-variation

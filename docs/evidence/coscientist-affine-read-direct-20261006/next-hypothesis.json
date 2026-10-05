@@ -1,0 +1,107 @@
+{
+  "status": "registered-not-implemented-or-measured",
+  "hypothesis": "Revisit guarded vector descriptor reuse only in nonleaf functions whose validated loops actually contain high-depth inlined reads. All admitted low/high/direct-affine reads use the same dynamic handle key and descriptor cache in proven-free caller scratch x3/x4/x5. Preserve every index check and fresh item read; miss validates handle at original access. No new callee registers/frame changes.",
+  "changedMechanismSinceRejectedExperiment": "The prior17-guest descriptor experiment used a low-depth cached read followed by a high-depth C helper which cleared the cache in matmult. Current qualified high-loop reads and new direct-affine composition eliminate that returning C boundary. This is a new generated-code mechanism; the old rejected machine must not be retimed. Restrict admission by structural high-inline-loop witness rather than workload names.",
+  "currentActualNativeWitness": {
+    "observerQuietAll19GuestParity": true,
+    "affineReadSites": [
+      [
+        3291,
+        7,
+        5,
+        0,
+        21,
+        19,
+        20,
+        800
+      ],
+      [
+        3300,
+        8,
+        6,
+        0,
+        19,
+        22,
+        20,
+        1200
+      ]
+    ],
+    "directReadInstructionAudit": {
+      "status": "complete-original19-observer-byte-parity-and-exact-affine-direct-read-words",
+      "sites": [
+        {
+          "workload": "matmult-int",
+          "site": [
+            3291,
+            7,
+            5,
+            0,
+            21,
+            19,
+            20,
+            800
+          ],
+          "words": [
+            "0xd2800290",
+            "0x9b104ea1",
+            "0x910c8021"
+          ],
+          "count": 1,
+          "directReadWord": "0xf8717a0e",
+          "destinationRegister": 14,
+          "byteOffset": 8740
+        },
+        {
+          "workload": "matmult-int",
+          "site": [
+            3300,
+            8,
+            6,
+            0,
+            19,
+            22,
+            20,
+            1200
+          ],
+          "words": [
+            "0xd2800290",
+            "0x9b105a61",
+            "0x9112c021"
+          ],
+          "count": 1,
+          "directReadWord": "0xf8717a0f",
+          "destinationRegister": 15,
+          "byteOffset": 8820
+        }
+      ],
+      "distinctFromPriorMachines": true,
+      "unchangedOriginalFn5Prologue": {
+        "offset": 8648,
+        "words": [
+          "0xa9bf7bfd",
+          "0x910003fd",
+          "0xd10303ff",
+          "0xa90053f3",
+          "0xa9015bf5",
+          "0xf90013f7",
+          "0xf9005fe7",
+          "0xaa0003f4",
+          "0xaa0103f5",
+          "0xaa0203f6",
+          "0xaa0303f3",
+          "0xaa0403f7",
+          "0xf94004f0",
+          "0xf1000610",
+          "0x54000042"
+        ],
+        "sourceFrameBytes": 192,
+        "sourceAllocatedLocals": 5,
+        "evidence": "Current native census FN5 start codeWord2163; first15 words exactly baseline; original gn-pre/frame source byte-preserved."
+      }
+    },
+    "meaning": "Actual native admission/machine instructions, not dynamic time shares or evidence of cache profitability."
+  },
+  "admission": "Bounded same-function high-inline-vector read and validated loop; nonleaf reserves x3..5 outside locals; all actual returning guest/runtime/indirect/Unicode slow calls clear key, including branch landing correction. Dynamic nonzero/same key check guards reuse; invalid/changed handles use original handle check before cache admission. Mutable vector elements remain freshly loaded. Unknown loops/effects/ownership refuse. State14 tree flag untouched; named cache state must not overlap existing state arrays.",
+  "requiredProof": "Native4gen; unchanged permanent434/9339 fixtures and actual19 canonical source/results/fuel; independent key changes/branch joins/bypassed first access/high-depth live homes/aliases/writes/allocating open imports/scratch clobbers/partial fuel/resource states; actual instruction and quiet/observer parity for all19; fresh30 triples each changed distinctguest, ratio>=1.05 gap>sumSD RSD<=10, then productgates+committed3gen+fullcorpus beforepromotion.",
+  "goal": "C-or-better all19 original unchanged aligned workloads remains unachieved; not officialscores, no result caching."
+}
