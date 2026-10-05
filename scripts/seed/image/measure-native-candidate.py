@@ -33,9 +33,16 @@ def sample(arm,calls,capture=False):
  return s
 save()
 try:
- counts={}
+ counts={};report['calibrationRows']=[]
  for arm in arms:
-  s=sample(arm,3);require(s['elapsedNanoseconds']>0,'invalid calibration');counts[arm]=max(1,round(spec['targetIntervalNs']/(s['elapsedNanoseconds']/3)))
+  calls=3
+  for calibration_attempt in range(5):
+   s=sample(arm,calls);elapsed=s['elapsedNanoseconds'];require(elapsed>0,'invalid calibration')
+   report['calibrationRows'].append({**s,'arm':arm,'calibrationAttempt':calibration_attempt});save()
+   if spec['targetIntervalNs']*.75<=elapsed<=spec['targetIntervalNs']*1.5:break
+   calls=max(1,min(100000000,round(calls*spec['targetIntervalNs']/elapsed)))
+  else:raise AssertionError('calibration failed within five attempts: '+arm)
+  counts[arm]=calls
  report['callsByArm']=counts;accepted=0;order=list(arms)
  for attempt in range(spec['maximumPairAttempts']):
   rows=[]

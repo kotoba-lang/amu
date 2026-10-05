@@ -59,13 +59,16 @@ the simultaneous three-arm comparison, not a comparison across runs.
 
 These are provisional whole-call measurements, not official Embench scores.
 The CPU envelope includes setup and warmup and background idle is estimated.
-The candidate is a native selfhost seed; it has not been integrated into the
-packaged Amu product image, and full own-source 100% qualification remains
-unmet. The 19-workload baseline geometric mean stays 11.1274 until an entire
-candidate suite is measured; no partial result is substituted into it.
+The candidate is a native selfhost seed. It is now integrated into a
+[source-rebuilt unified Amu candidate](coscientist-integrated-tailcall-20261005.md)
+with three identical generations; the product entry has not been switched,
+and full own-source 100% qualification remains unmet. The original
+19-workload baseline geometric mean is 11.1274. The now
+completed integrated suite measures candidate/C at 10.3885 and concurrent
+baseline/C at 11.1314; no partial result was substituted into either suite.
 
 [Evidence](evidence/coscientist-tailcall-20261005/summary.json) includes all
 compiler generations, state and fuel comparisons, requested gate logs and
-raw accepted/rejected timing triples. Further work is product-image
-integration and whole-suite measurement, followed by a measured hypothesis
-for the remaining controller/vector-access overhead.
+raw accepted/rejected timing triples. The whole-suite integrated
+measurement is complete. The next measured
+hypothesis addresses the remaining controller/frame overhead.

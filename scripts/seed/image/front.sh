@@ -12,7 +12,7 @@
 emulate -L zsh; setopt pipefail; renice -n 10 $$ > /dev/null
 S=${1:?seed}; O0=${2:?scan objdir}; TW=${3:?twindir}; O=${4:?out}; H=${0:A:h}; R=${H:h:h:h}
 S=${S:A}; O0=${O0:A}; TW=${TW:A}; mkdir -p $O; O=${O:A}
-export SEED_REPO=$R SEED_BUILD=$O.sb SEED_PAIRS=${SEED_PAIRS:-16777216} SEED_RESOURCES_35=$R:$O:$O.sb:$TW SEED_SECONDS=1800 SEED_VECTOR_ITEMS=134217728
+export SEED_REPO=$R SEED_BUILD=$O.sb SEED_PAIRS=${SEED_PAIRS:-16777216} SEED_RESOURCES_35=$R:$O:$O.sb:$TW:${O0:h}/src SEED_SECONDS=1800 SEED_VECTOR_ITEMS=134217728
 mkdir -p $SEED_BUILD; source $R/scripts/seed/lib.sh
 die() { echo "front: FAIL: $*" >&2; exit 1; }
 rm -f $O/*.kso(N)
@@ -31,4 +31,4 @@ done < $O0/../order.txt
 c $TW/project.kotoba kotoba.compiler.project
 c $TW/project_files.kotoba kotoba.compiler.project-files
 c $R/seed/amu-front/check.cljk kotoba.amu-front.check
-echo "front: ${B:+builder $B $(shasum -a 256 $B | cut -c1-16), }$(ls $O/*.kso | wc -l | tr -d ' ') objects, seed $(shasum -a 256 $S | cut -c1-16), twins $(git -C $TW rev-parse --short HEAD) $(git -C $TW status --short . | grep -c .) dirty, scan $O0"
+echo "front: ${B:+builder $B $(shasum -a 256 $B | cut -c1-16), }$(ls $O/*.kso | wc -l | tr -d ' ') objects, seed $(shasum -a 256 $S | cut -c1-16), project twins $(shasum -a 256 $TW/project.kotoba $TW/project_files.kotoba | cut -c1-64 | tr '\n' ' '), scan $O0"
