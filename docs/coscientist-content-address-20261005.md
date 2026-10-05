@@ -153,3 +153,9 @@ functions and compare final artifact bytes. For result memoization separately
 measure hit rate, canonicalization/hash/lookup overhead, retained bytes and
 resource semantics. Neither cache experiment qualifies as fresh-body Embench
 execution speed.
+
+Latest native execution follow-up: [multiple-site cold fuel sharing](coscientist-multi-cold-20261005.md)
+passes fixedpoint and native state proofs;8 of19 improve but EDN regresses.
+It is rejected globally. Definition identity is unchanged; no cache hit is
+counted as a fresh executed body. The next registered masked-writer experiment
+uses exact SIR structural/dependency proof, not assumed DefCID integration.

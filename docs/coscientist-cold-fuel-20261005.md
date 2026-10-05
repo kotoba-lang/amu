@@ -108,3 +108,7 @@ Evidence: [summary](evidence/coscientist-cold-fuel-20261005/summary.json),
 [all19 comparisons](evidence/coscientist-cold-fuel-20261005/timing.tgz),
 [independent row audit](evidence/coscientist-cold-fuel-20261005/timing-audit.json),
 [next hypothesis](evidence/coscientist-cold-fuel-20261005/next-hypothesis.json).
+
+Follow-up: the [multiple-site condition](coscientist-multi-cold-20261005.md) was
+implemented and tested over all19; EDN remains a separated regression. Reject
+global promotion and register the next exact masked-writer hypothesis.
