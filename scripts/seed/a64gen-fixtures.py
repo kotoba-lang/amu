@@ -708,13 +708,15 @@ def kotoba(real_layout=False):
     clamp_fn = next(i+1 for i,x in enumerate(FIX) if x[0]=='cl_bound2')
     sign_fn = next(i+1 for i,x in enumerate(FIX) if x[0]=='cl_sign2')
     clamp_call = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-CALL'] and x[1]==clamp_fn)
+    reader_leaf_ids = [i+1 for i,x in enumerate(FIX) if i+1 >= READER_TYPED_FIRST and x[1] == 2 and not x[0].endswith(('_call', '_call0', '_call7'))]
+    reader_is_leaf = '(or ' + ' '.join('(= f %d)' % f for f in reader_leaf_ids) + ')'
     reader_fn = next(i+1 for i,x in enumerate(FIX) if x[0]=='reader_leaf_2_1')
     reader_bad = next(i+1 for i,x in enumerate(FIX) if x[0]=='reader_refuse_wrong-type')
     reader_call = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-CALL'] and x[1]==reader_fn)
     reader_bad_call = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-CALL'] and x[1]==reader_bad)
     o += ['(defn- t-reader-types [M :vector-i64 f :i64] :vector-i64',
           '  (if (>= f (vector-at M MM-FN-N)) M',
-          '    (t-reader-types (-> M (t-put (+ MM-FN-BASE (* f MM-FN-W) FF-PT0) TY-VEC)',
+          '    (t-reader-types (-> M (t-put (+ MM-FN-BASE (* f MM-FN-W) FF-PT0) (if %s TY-VEC TY-I64))' % reader_is_leaf,
           '                         (t-put (+ MM-FN-BASE (* f MM-FN-W) (+ FF-PT0 1)) TY-I64)',
           '                         (t-put (+ MM-FN-BASE (* f MM-FN-W) FF-RTYPE) TY-I64)) (inc f))))']
     o += ['(defn- t-mask-types [M :vector-i64 f :i64] :vector-i64',
