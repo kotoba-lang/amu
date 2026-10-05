@@ -1,6 +1,14 @@
 # Content identity, computation identity, and native performance
 
-Latest follow-up: [closed scalar-argument specialization](coscientist-static-arg-20261005.md)
+Latest qualified follow-up: [native census and repeated scalar-mask composition](coscientist-native-census-mask-20261005.md)
+reduces freshly measured MD5 time10.57% and SHA-2565.25%; other17 original guest
+binaries are unchanged. Native seed fixedpoint, permanent regression, gates and
+integrated three-generation/corpus parity pass. The unrestricted AES arm failed
+and was rejected. Exact closed implementation proofs remove call overhead;
+this is not connected DefCID caching or computation-result memoization.
+C remains4.91x and12.62x faster in those respective aligned body comparisons.
+
+Previous follow-up: [closed scalar-argument specialization](coscientist-static-arg-20261005.md)
 produces11 native variants across5 original programs and passes native fixedpoint,
 4233 hand-derived runs and180 actual allocating-import comparisons. All five
 fresh timing comparisons fail promotion; product source stays unchanged.
@@ -17,7 +25,7 @@ preserve native state and fixedpoint but fail the prospective timing rule
 (3.10% and4.59% shorter; ratios1.031967 and1.048076). Neither is promoted.
 That registered index-operand hypothesis is evaluated in the latest follow-up above.
 
-The latest qualified [signed-clamp composition](coscientist-clamp-call-20261005.md)
+The previously qualified [signed-clamp composition](coscientist-clamp-call-20261005.md)
 qualifies5.48% shorter freshly executed Picojpeg time and passes integrated
 three-generation rebuilding, full supervisor comparisons and unchanged corpus
 outcomes. Other18 guest binaries are unchanged. It uses stable exact SIR/body
