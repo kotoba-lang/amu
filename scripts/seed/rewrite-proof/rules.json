@@ -1,0 +1,11 @@
+{
+  "format": "amu.rewrite-experiment/v1",
+  "identity": "artifact recipe hash, separate from checked semantic DefCID",
+  "execution": {"rootDispatch": "opcode", "strategy": "deterministic bounded worklist", "maxMatchesPerNode": 1, "onBudgetExhaustion": "retain original lowering", "decrease": "unresolved eligible roots"},
+  "rules": [
+    {"id":"i64/add-zero", "phase":"pure-value", "match":["add-i64","x",["const-i64",0]], "replace":"x", "requires":["wrapping-i64", "same-type", "no-effect-or-trap-removal", "retain-fuel"], "obligation":"add-zero"},
+    {"id":"a64/closed-vector-constant-index", "phase":"target-lowering", "match":["checked-vector-access","handle",["proved-local-constant","index"]], "replace":"checked-scaled-offset-access", "requires":["closed-mode2-contract", "index-0-through-4095", "straightline-local-fact", "invalidate-explicit-and-coalesced-writes", "invalidate-control-and-unknown-effects", "retain-runtime-local-assignments", "retain-original-handle-check", "unsigned-bound-at-original-access", "retain-fuel-traps-memory-order", "proved-register-liveness"], "obligation":"constant-index", "productImplementation":"pending"}
+  ],
+  "adoption": ["law-and-mutation-check", "native-kernel-check", "generator-invariants", "translation-validation", "native-fixed-point", "original19-state-proof", "fresh-prospective-paired-timing", "normal-gates", "integrated-fixed-point-and-corpus"],
+  "claimBoundary": "The solver proves listed abstract laws. It does not prove the emitter, the full compiler, arbitrary memory forwarding, or actual authorization runtime."
+}
