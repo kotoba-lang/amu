@@ -148,12 +148,13 @@
         unqualified (f "unqualified.kotoba")
         project (f "proj")]
     (lib/write-text! source "(defn main [] :i64 (+ 40 2))\n")
-    ;; A legacy pair-map literal: the Wasm targets carry it, native does not
-    ;; (`map-new` is outside `kotoba.kir/only-native-word-typed-features?`).
-    ;; `{}`: since ADR 0353 floor :literal-typing a keyword literal WITH fields
-    ;; is a record, which native qualifies; the empty literal is still the
-    ;; `map-new` pair map, which it does not.
-    (lib/write-text! unqualified "(ns unqualified)\n(defn main [] :i64 (get {} :b))\n")
+    ;; A document digest: the Wasm targets carry it, native does not
+    ;; (`document-sha256` stays refused natively by name, ADR 0353
+    ;; :native-document). This was `(get {} :b)`, the legacy `map-new` pair
+    ;; map, until ADR 0353 floor :empty-map-literal refused `{}` with nothing
+    ;; to type it before any target.
+    (lib/write-text! unqualified
+                     "(ns unqualified)\n(defn main [] :i64 (string-length (document-sha256 (document-null))))\n")
     (.mkdirSync fs (lib/join project "src") #js {:recursive true})
     (lib/write-text! (lib/join project "src" "util.cljk")
                      "(ns util (:export [twice]))\n(defn twice [x :i64] :i64 (* 2 x))\n")
@@ -208,8 +209,10 @@
     ;; 5. native-unqualified feature, target omitted -> named refusal, no file
     (let [r (amu! ["compile" unqualified "--output" (f "unqualified.out")])
           err (str (.-stderr r))]
-      (report! (and (= 70 (.-status r))
-                    (str/includes? err (str "native target " host-target " does not qualify `map-new`"))
+      ;; 65, not 70: a target refusing what a program uses is an answer about
+      ;; the program (amu ADR 0353 floor :native-handles).
+      (report! (and (= 65 (.-status r))
+                    (str/includes? err (str "native target " host-target " does not qualify `document-sha256`"))
                     (str/includes? err "--target wasm32-browser")
                     (str/includes? err "--target was omitted, so amu chose this host's native target"))
                "an unqualified feature is refused by name with the wasm32 hint" (out r))
@@ -218,7 +221,7 @@
                "the refused compile wrote nothing (no silent wasm)" (pr-str (.readdirSync fs directory))))
     (let [r (amu! ["compile" unqualified "--target" host-target "--output" (f "explicit-native.out")])
           err (str (.-stderr r))]
-      (report! (and (= 70 (.-status r)) (str/includes? err "does not qualify `map-new`")
+      (report! (and (= 65 (.-status r)) (str/includes? err "does not qualify `document-sha256`")
                     (str/includes? err "--target wasm32-browser")
                     (not (str/includes? err "--target was omitted")))
                "an explicit native target names the feature but does not claim a default" (out r)))

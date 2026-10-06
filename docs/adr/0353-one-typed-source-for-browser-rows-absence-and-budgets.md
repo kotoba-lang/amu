@@ -89,8 +89,9 @@ Clojure it is today, the language gains:
    f is i64, and parameter m of f is the row {:a T | r}: only a record
    satisfies a row"), a record lacking a field the row reads, an exported
    generic (an export has one ABI: annotate it or `defn-`), a generic used as
-   a value. A record crossing a function boundary is still refused by the
-   native oracle (exit 65), as an annotated one is: floor `:native-handles`.
+   a value. A record crossing a function boundary, annotated or a row
+   specialization, compiles for both native targets since floor
+   `:native-record-boundary` (point 9).
    Floor `:row-operations` (gate `row-operations-extend-and-shrink-test`,
    2026-09-26): on a record, `assoc` of a field it has keeps its type (the
    value must be the field's type, no coercion), of one it lacks extends it;
@@ -103,10 +104,9 @@ Clojure it is today, the language gains:
    Refused by name: a missing field ("dissoc names field :z, which record
    :b/s does not have: a row shrinks only by fields it has"), a record left
    with no field, a computed field, a non-record receiver or merge operand.
-   Hosted (`wasm32-browser`) compiles these forms; both native targets refuse
-   them, as they refuse the same forms written by hand: `record-assoc` is not
-   natively qualified (exit 70) and the verifier does not see a record through
-   a `let` operand (exit 65) -- floor `:native-handles`.
+   Hosted (`wasm32-browser`) compiles these forms, and since floor
+   `:native-record-operations` both native targets do, hand-written forms
+   too (point 9).
    Floor `:row-unification` (gate
    `row-literal-join-and-loop-unification-test`, 2026-09-26): a keyword map
    literal written as a row argument is that row's record, the anonymous
@@ -121,9 +121,12 @@ Clojure it is today, the language gains:
    and n of pick are branches of one if, so one row: a row is one record type
    at each call"), a literal lacking a read field, a coerced field, a
    non-record, an exported generic, an `:i64` if test. Hosted
-   (`wasm32-browser`) compiles these forms; both native targets refuse them at
-   the native artifact oracle (exit 65), as they refuse a record crossing a
-   function boundary: floor `:native-handles`. Programs admitted before are
+   (`wasm32-browser`) compiles these forms. Natively, since floor
+   `:native-record-boundary`, a join returning its record (`pick`), a loop
+   helper and a `reduce` closure over a declared record compile for both
+   targets with the oracle verified, and since floor
+   `:native-record-operations` a projection of the join itself (`(:a (if c
+   m n))`) does too. Programs admitted before are
    unchanged -- every new row slot was a refusal.
    Floor `:literal-typing` (gate `record-vector-and-map-literal-retirement-test`,
    2026-09-26): a literal is typed by its items. kotoba-sema's `type-literals`
@@ -139,8 +142,8 @@ Clojure it is today, the language gains:
    literal is not counted. Refused by name beside it: a coerced field, a
    record as an `if` test, `=` over records, a typed vector item used as an
    i64. Native: a literal record compiles for `x86_64-aiueos-kernel-v1` and
-   `aarch64-macos`; a `[:list record]` is refused there by the typed-values
-   gate -- floor `:native-handles`.
+   `aarch64-macos`; a `[:list record]` does too since floor
+   `:native-handles`.
    Floor `:specialization-identity` (gate
    `specialization-cid-derived-from-generic-test`, 2026-09-27): a
    specialization's definition CID is a function of its generic's body and the
@@ -164,10 +167,9 @@ Clojure it is today, the language gains:
    arguments a specialization came from (provenance, unsealed); it needs a
    kotoba-hir function key and is not what identity or the cache rests on.
    A CID is target-independent (`definition-cids` takes no target). Native:
-   the gate's modules, generic and hand-written alike, are refused by both
-   `x86_64-aiueos-kernel-v1` and `aarch64-macos` at the native artifact
-   oracle (exit 65) -- a record crossing a function boundary, floor
-   `:native-handles`.
+   since floor `:native-record-boundary` the gate's modules, generic,
+   hand-written and recursive alike, compile for both
+   `x86_64-aiueos-kernel-v1` and `aarch64-macos` with the oracle verified.
 4. **Function values.** A function type carries its effect row; a closure is a
    one-word handle (code, environment) under aggregate ABI v8 and may be a
    record field or vector element. A stored function's effects are part of the
@@ -242,25 +244,728 @@ Clojure it is today, the language gains:
    `(str ..)`), and an attribute value is a string (browser's `:style` map is
    not yet a node attribute). Hosted: `amu check` exits 0 and
    `wasm32-browser` compiles. Native: both `x86_64-aiueos-kernel-v1` and
-   `aarch64-macos` refuse at the typed-values gate (exit 70,
-   `:kotoba/target-rejected`) -- the node's `[:list T]` and `[:map :keyword
-   :string]` are not qualified natively: floor `:native-handles`.
+   `aarch64-macos` refuse at the typed-values gate (`:kotoba/target-rejected`,
+   exit 65 since `:native-handles`) -- the node's `[:list T]` is qualified
+   natively since `:native-handles`, its `[:map :keyword :string]` attrs are
+   not: floor `:native-hiccup-node`.
 7. **Allocation is charged like fuel.** Every constructor debits the same
    64-bit ledger fuel uses (kotoba-kir ADR 0268, amu ADR 0333). The ADT
    node/depth ceilings stop being language constants and become the budget
    the caller grants; a DOM tree is bounded by what it was given, not by 64.
+   Landed 2026-09-30 on the reference semantics (osaho `635bea6d`, gate
+   `allocation-charged-to-fuel-test`). Measured before: fuel counted function
+   entries only and a self-tail loop's re-entries are free, so a loop built
+   1,000 records under `:fuel 2`; the one ledger that counted constructors,
+   `:cells`, is unmetered unless the embedder names it. Now `kotoba.kir`
+   debits one unit of the run's fuel at every constructor
+   (`cell-constructor-ops`: record, variant, option / result, list, set, map,
+   vector, pair, document), metered cells or not, and the trap names the
+   constructor (`:operation record-new :allocation true`). The price is exact:
+   the 1,000-record loop needs 1,002 (was 2), a 100-cell cons list -- 201
+   nodes, 200 deep -- needs 507 (was 306), a program that constructs nothing
+   pays nothing new, and the compile-time oracle pays the same (one unit short
+   it is inconclusive, not refused). The 64 / 12 had stopped bounding a value
+   at superproject adr-2609242100 P2 (2026-09-24); they bound a type
+   DESCRIPTOR, which is checker work per type, a static language size like the
+   32 record fields -- not an allocation. Refused, as before and now by the
+   budget: allocating past what the caller granted (`budget/fuel`, and
+   `budget/cells` when metered). Native: both forms compile for
+   `x86_64-aiueos-kernel-v1` and `aarch64-macos`, and the aarch64 kexes
+   printed 499500 and 4950 under `tools/kexe_loader.c`; but the targets keep
+   their own counters. aiueos objects (`reproduce-kotoba-objects.cljk`,
+   aiueos `ca7fc504`): 116 scanned, 112 byte-identical (`differs=0`), 4 not
+   compiled -- the four sources point 2 already names as testing a 0/1
+   `write-u32` answer.
+   On the hosted targets (floor `:allocation-budget-targets`, gate
+   `target-constructors-charge-fuel-test`, kotoba-script `58d75dae`,
+   kotoba-wasm `7ff9ad0d`): restricted ESM's `cell()` calls `charge()` before
+   its cells debit, and wasm32 puts the fuel global's charge in front of every
+   constructor and of the vector literals it keeps in locals. Measured before:
+   ESM's `cell()` debited cells only, and wasm32's loop helpers are
+   zero-charge, so a module compiled with `:fuel 1` built 1,000 records. Each
+   target keeps its own per-entry counting (ESM charges every loop iteration,
+   wasm32 none), so the least budgets differ -- the 1,000-record loop needs
+   2,002 on ESM (was 1,002) and 1,001 on wasm32 (was 1); the 100-cell list 707
+   (was 506) and 505 (was 304) -- but the price of allocating is the
+   reference's on each: 1,000 records cost 1,000 units and 300 vector literals
+   300, on the reference, ESM and wasm32 alike. One unit short, ESM throws
+   `budget/fuel` and wasm32 traps `unreachable`.
+   On native (floor `:allocation-budget-native`, gate
+   `native-constructors-charge-fuel-test`, kotoba-native `d625d554` -- its ADR
+   0089 -- with kotoba-gmir `6c3651f9` and kotoba-mir `205f2a93`): every
+   constructor is preceded by an inline decrement of the context's fuel word
+   (`:fuel-charge`, offset 8, the entry prefix's own bytes), placed before the
+   operands and before the rewrites that lower one source constructor into
+   several; `vector-region` charges the literals it keeps in locals. Measured
+   before, under `tools/kexe_loader.c` with `KEXE_FUEL` on aarch64 and x86_64:
+   no constructor paid -- the 1,000-record loop answered under 1,002 units like
+   the loop that builds nothing, the 100-cell list under 506, 300 vector
+   literals under 102. After: 2,002, 707 and 402 on both ISAs, the reference's
+   price (1,000, 201, 300), and one unit short the loader reports
+   `budget/fuel`. The charge is not pure, so the bulk pre-charge declines a
+   counted loop that constructs: 400 steps cost 402 without records, 802 with.
+   kotoba-verifier re-derives an artifact by re-emitting it through
+   kotoba-native, so it re-derives the charges with no change of its own;
+   `amu compile` verifies both forms for `x86_64-aiueos-kernel-v1` and
+   `aarch64-macos`. aiueos objects (`reproduce-kotoba-objects.cljk`, aiueos
+   `ca7fc504`, compiled by this amu): 116 scanned, 112 byte-identical
+   (`differs=0`; `drift` only records the other amu revision), 4 not compiled
+   -- the same four as above. No kernel object constructs, so none moves.
 8. **Admission by definition graph.** The 1 MiB bound moves from linked source
    bytes to per-definition size and closure count; a module is its definitions
    (as ADR 0300 already identifies it), so cssom's 1 MB file is admitted
    definition by definition.
+   Landed (floor `:definition-admission`, gate
+   `admission-by-definition-graph-test`; mechanism amu `c51059d9` with
+   kotoba-sema `max-definition-source-bytes`): kotoba-sema refuses one
+   top-level form over 1 MiB (`top-level definition exceeds admission
+   limit`) and a whole input over 8 MiB; the linker refuses one linked
+   definition over 1 MiB (`linked definition source exceeds byte limit`) and
+   a definition whose dependency closure is over 1,024 definitions
+   (`definition dependency closure exceeds limit`); the corpus stays capped
+   at 8 MiB (`project source bytes exceed limit`). Measured 2026-09-30 on
+   cssom `9224d359`: `cssom/layout.cljk` is 1,083,132 bytes in 373
+   top-level forms, the largest 24,303 bytes, the largest closure 311 of 311
+   `defn`s (the linker's symbol scan) -- a root requiring `cssom.layout`
+   (with kotoba-lang/text and dom-gpu on the source path) now reads past
+   size and stops at a semantic wall instead (the first:
+   `qualified call is not an admitted exported import`, in
+   `kotoba.lang.text`). The gate's fixture
+   is the same shape at 1,125,902 bytes: before the bound moved it was
+   refused whole (`source exceeds 1 MiB admission limit`); after, its
+   linked source is over 1 MiB, it analyses and answers 7,680 on the KIR
+   reference, and it compiles for `x86_64-aiueos-kernel-v1` and
+   `aarch64-macos` with the oracle verified. The gate also found the closure
+   scan crashing on nbb when a body leaf is a js BigInt (a let binding's
+   `1`); the scan now tests `symbol?` before the set lookup. Still bounded
+   at 1 MiB: the ROOT file named on the command line, which the CLI reads
+   through `bounded-edn/max-source-bytes` before any parsing (the
+   conformance suite asserts that refusal); a large module is admitted as
+   a dependency on `--source-path`.
 9. **Native handles at loop boundaries.** kotoba-native qualifies record,
-   vector and closure handles as loop-helper boundary types and retires
-   `map-new`, so every form above compiles for both native targets.
+   vector and closure handles as loop-helper boundary types and no form
+   lowers to `map-new` (since floor `:empty-map-literal`, below), so
+   every form above compiles for both native targets. Split on
+   2026-10-01 into three floors, because measuring showed three changes in
+   three places (ladder comment), and the third again the same day into
+   `:loop-slot-types` and `:native-handles`.
+   Floor `:native-record-boundary` (gate
+   `native-record-function-boundary-test`, landed 2026-10-01): a declared
+   record (`[:ref q]`) as a parameter or result compiled natively and was
+   refused at the native artifact oracle (exit 65, cause
+   `unknown-schema-reference`). The backends always carried it as the
+   one-word pair-chain handle; the closed program the artifact seals and the
+   verifier re-executes (`kotoba.kir/native-program`) kept `:schemas` only
+   for a recursive table, while `[:ref q]` survives lowering in exactly one
+   place, a function's `:param-types` / `:result`. The table now joins the
+   program when a signature names a reference (osaho `756c64c6`), and
+   kotoba-verifier re-derives that need -- a table that neither recursion
+   nor a signature reference into it needs stays refused as module shape
+   (`718befe6`). Nothing in codegen moved; a module none of whose signatures
+   names a reference seals the program it sealed before. Measured: the
+   gate's programs answer 3, 9 and 2 under `tools/kexe_loader.c` on aarch64
+   and x86_64 (the latter under Rosetta), and `amu compile --target
+   x86_64-aiueos-kernel-v1` / `--target aarch64-macos` exit 0 with `:oracle
+   {:status :verified}`. Refused by name: an i64 where a record is declared,
+   `=` over records, a record as an `if` test, and a record as the entry's
+   result on native (the typed-values gate, exit 65 since
+   `:native-handles`).
+   Floor `:native-record-operations` (gate `native-row-operations-test`,
+   landed 2026-10-01): the row operations and a join's projection compile
+   natively. Before, `assoc` of a present field elaborated to `record-assoc`,
+   which `kotoba.kir`'s native gate had no case for (the typed-values
+   refusal, exit 70); `assoc` extending, `dissoc`, `select-keys` and `merge`
+   elaborate to `(record-get T (let [receiver m] (record-new T ..)) :f)` and a
+   join projects `(record-get T (if c m n) :f)`, and kotoba-verifier's record
+   projection resolved neither operand ("runtime KIR record projection
+   rejected", exit 65), hand-written too. Now osaho qualifies `record-assoc`
+   with `record-get`'s checks (`ab22ed51`); kotoba-native lowers it on both
+   record routes -- a fresh pair chain re-projecting the other fields, or the
+   slot bundle with one register replaced (`ace48fd6`); and kotoba-verifier
+   sees a record through a `let` (a let naming a record parameter binds its
+   handle; a flattened let-bound record is still not forwarded), through an
+   `if` whose two arms denote one record, and through an update of the record
+   its operand is, else "runtime KIR record update rejected" (`1e1b69a6`).
+   Measured: the gate's twelve programs -- six row operations, a row
+   parameter, an update chain, the join's projection, two hand-written KIR
+   forms, and an update that never crosses a boundary -- answer under
+   `tools/kexe_loader.c` on aarch64 and x86_64 (Rosetta) what the reference
+   answers (9, 11, 5, 2, 11, 4, 16, 7, 12, 2, 2, 7), and `amu compile
+   --target x86_64-aiueos-kernel-v1` exits 0 with `:oracle {:status
+   :verified}` for each. Refused by name, on both targets: a coerced field, a
+   join over two records, a record as the entry's result (the typed-values
+   refusal, exit 65 since `:native-handles`), a record left with no field, a
+   record as an `if` test, a non-record merge operand.
+   Floor `:loop-slot-types` (gate `loop-slot-record-list-closure-test`,
+   landed 2026-10-01, split from `:native-handles` because the loop slot was
+   kotoba-sema's alone and refused before any target): a `loop` desugars to
+   a helper whose parameters are its slots, typed from its one call site --
+   before literals were typed, so a map-literal slot was `:map` ("expression
+   type mismatch: expected map, got [:record :kotoba.map-literal/a+b ..]")
+   and a captured vector literal of records the `:i64` placeholder ("count
+   requires a bounded vector, ...; got :i64."). And the body desugared
+   without its slots as lexical bindings, so a closure slot was not callable
+   ("unknown operation: f is not a builtin, ..."), while `(+ f 1)` and `(=
+   f g)` over a closure slot never called were admitted, answering 2 and 1.
+   Now kotoba-sema (`442e6d78`) re-resolves the helpers' slots once literals
+   are typed, to a fixed point; a loop's bindings are lexical bindings with
+   their callable contracts, as a `let`'s are; a slot whose argument is a
+   closure is a closure to the `:function-values` analysis, called or not;
+   and a nonzero number literal where a closure slot or parameter is, is
+   refused by name -- it was called as a handle and trapped
+   `invalid-pair-handle`, a declared `[:fn ...]` parameter included (0 stays
+   admitted: the empty lazy sequence's word). Measured: record and closure
+   slots answer 4, 4, 8, 3 and 12 under `tools/kexe_loader.c` on aarch64 and
+   on x86_64 (Rosetta), and `amu compile --target x86_64-aiueos-kernel-v1` /
+   `--target aarch64-macos` exit 0 with `:oracle {:status :verified}`; list
+   slots answer 10, 10 and 3 on the reference and compile for
+   `wasm32-kotoba-v1`. Refused by name: a slot recurred to another record, a
+   coerced field, a record or closure slot as an `if` test, `=` over records
+   or closures, a list item used as an i64, a closure slot as a number, and
+   a number recurred into a closure slot.
+   Floor `:native-handles` (gate `native-record-vector-closure-boundary-test`,
+   landed 2026-10-01): a `[:list T]` of records was refused natively by the
+   typed-values gate (`typed-list-new` not qualified) wherever it was written
+   -- a let, a loop slot, a parameter -- and the CLI answered that refusal,
+   `:phase :target`, with exit 70, the internal-error code. Now osaho
+   qualifies `typed-list-new` / `typed-list-nth` over one-word item handles,
+   a record through `[:ref q]` included, and `[:list T]` is a native handle
+   type, so a loop helper or a function takes one (`0310fb54`);
+   kotoba-native lowers them to the typed set's word arena, a `vector-conj`
+   chain and `vector-at`, `vector-count` already walking the carrier
+   (`7b5b8fb8`); kotoba-verifier re-derives both heads and sees a record
+   through an item of a list of records (`32d8a4a2`). `:target` exits 65 on
+   both CLI routes. "The forms of every floor above" was measured by
+   compiling, for both targets, every program the frontend-only gates of
+   `:absence` .. `:expression-absence` admit (82): two more were refused by
+   kotoba-verifier after codegen had compiled them -- a let-bound record
+   local, which forwarded only for a parameter (`(let [m (assoc (mk) :d 4)]
+   (:a (dissoc m :b)))`), and a record whose field holds a declared reference
+   (`(:a (:x (assoc (mk) :x (mt))))`); both forward now, in the same
+   verifier commit. The rest are refused natively by design, exit 65: handle
+   structural equality (`record-equal`, `typed-set-equal`, `typed-map-equal`,
+   `hetero-vector-equal`) and a record as the entry's result. `map-new`: no
+   map literal with fields lowers to it and both ADR 0352 reproductions are
+   records that compile natively; the empty literal `{}` did, until floor
+   `:empty-map-literal`. Not reached: `:hiccup-node`'s
+   programs, whose node schema reaches a `[:map :keyword :string]`, which has
+   no native representation (exit 65, "does not qualify the boundary type
+   [[:ref :kotoba.hiccup/node]]") -- floor `:native-hiccup-node`. Measured: a program summing a list
+   parameter, a list of map-literal records and a list loop slot answers 2327
+   under `tools/kexe_loader.c` on aarch64 and on x86_64 (Rosetta), the two
+   forwarded projections with a flat one answer 791 on both, and `amu compile
+   --target x86_64-aiueos-kernel-v1` / `--target aarch64-macos` exit 0 with
+   `:oracle {:status :verified}`. Refused by name: `=` over lists of records,
+   a list as an `if` test, a list item as an i64, an index out of range (the
+   oracle traps `list-index-out-of-bounds`, so no artifact is sealed). Found
+   on the way and refused before any target: a `[:list T]` loop slot after a
+   row read of a let-bound map literal types as `:i64` -- floor
+   `:loop-slot-beside-row`.
+   Floor `:native-hiccup-node` (gate `hiccup-node-compiles-natively-test`,
+   landed 2026-10-01): every `:hiccup-node` program was refused by both
+   native targets by the typed-values gate, because the elem's
+   `[:map :keyword :string]` attrs had no native qualification -- a program
+   that never read an attribute could not build a node. Now a `[:map K V]`
+   whose key is a scalar native code compares by content (i64, bool, string,
+   keyword) and whose value is any one-word handle is a native handle type:
+   osaho qualifies `typed-map-new` / `-count` / `-contains` / `-get` /
+   `-assoc` / `-dissoc` (`eb39dba5`); kotoba-native lowers them to the
+   `[:list T]` word arena with keys and values interleaved -- the
+   `string-index` representation, no ABI bump -- searched by appended
+   helpers (`string=?` for a text key, the word compare otherwise), `assoc`
+   of a present key re-appending its entry as `kotoba.kir` does, and past 31
+   entries trapping through an out-of-range `vector-at` (`83eecc0e`);
+   kotoba-verifier re-derives the heads and sees a record read out of a map
+   of records (`4410753e`). Measured: the 11 `:hiccup-node` programs whose
+   entry answers a word and 8 typed-map programs compile for
+   `x86_64-aiueos-kernel-v1` and `aarch64-macos` with the oracle verified;
+   `test/nbb/native_word_ops.cljk`'s typed-map fixture answers the same 10
+   rows on the reference, restricted ESM, and the aarch64 and x86_64
+   (Rosetta) code under `tools/kexe_loader.c` (`493307224`, `14`, `6`, `50`,
+   `-1`, `1`, `0`, `3160`, `304038`; 32 entries trap `map-too-large` /
+   SIGILL). Refused by name: `=` over maps, a map as an `if` test, a map
+   value used as another type, an assoc past 31 entries; natively, exit 65:
+   `keys` / `vals` (entry order is not a native operation), a record key,
+   and -- as for every native program -- a string entry result ("native
+   artifact oracle value rejected"). Walking `window-node`'s whole tree with
+   the mutually recursive `size` / `size-list` answers 13 under
+   `tools/kexe_loader.c` on aarch64, and `amu compile` verifies the oracle for
+   both targets; under the plain `kbb` engine's default host stack the
+   reference interpreter exhausts it (`host/stack-exhausted`), which is why
+   the gate pins the smaller trees.
+   Floor `:empty-map-literal` (gate `empty-map-literal-is-typed-test`,
+   landed 2026-10-02; point 3's retirement of the keyword->i64 map, carried
+   to the literal that still produced it): `{}` desugared to `(map-new)`, the
+   pair map, whatever the program put in it -- `(assoc {} :a 1)` was that map,
+   `(get {} :a 0)` answered 0, `{}` where a record was declared was
+   "expected [:ref q], got map", and a `match` map pattern refused a record
+   scrutinee ("match map patterns admit the bounded map only; this scrutinee
+   is a record"), which since `:literal-typing` meant every literal one.
+   Now kotoba-sema (`0632bed0`): `(assoc {} :k v ..)` is the record of the
+   keys it assoc's, the literal `{:k v ..}` (fields in key order, a repeated
+   key's last value winning); `{}` where its context declares a record is
+   that record with every field absent, so only an all-option record has an
+   empty literal, and where it declares `[:map K V]` that map, empty; an
+   integer or string first key is the typed map it already was; a match map
+   pattern on a record decides presence from the type -- a field it has is
+   present, an arm naming a key it lacks does not match and is folded away
+   rather than typed; the trap synthesizer no longer writes `(map-new)` as a
+   `:map` default. Measured: the gate's 14 programs answer on the KIR
+   reference what they answer under `compile-source` for
+   `wasm32-kotoba-v1`, `x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1`
+   with the oracle verified, and none lowers to `map-new`; `amu compile
+   --target x86_64-aiueos-kernel-v1` / `--target aarch64-macos` of a program
+   using all three (assoc into `{}`, a two-arm match, an all-option `{}`)
+   exit 0 with `:oracle {:status :verified}`. The gate was red on kotoba-sema
+   `442e6d78` (5 failed, 25 errored assertions), green on `0632bed0`. No
+   aiueos kernel source (127 on disk) writes `{}`, `match`, `map-new` or a
+   `:map` type, so no kernel object can move. Refused by name: `{}` with
+   nothing to type it ("an empty map literal {} has no row to extend: ..."),
+   read, counted, let-bound or spelled `(map-new)` (passed to a row it is the
+   record with no fields since floor `:options-map-argument`, below); a record context whose
+   field is not an option; a coerced field; a record as an `if` test; `=`
+   over records; a key the record lacks. Found and left to its own floor
+   (`:row-get-and-match`): `(get m :a)` is not a row read, so a `match` over
+   an unannotated parameter is refused before specialization.
+   Floor `:row-get-and-match` (gate `row-get-and-match-read-a-row-test`,
+   landed 2026-10-02): a row was read off `(:a m)` only. `(get m :a)` left
+   the parameter the provisional `:i64`, read through the retired
+   keyword->i64 map, so passing a record was refused "expression type
+   mismatch: expected map, got [:record ...]", and a `match` map pattern --
+   which projects its scrutinee with `get` -- over a parameter was refused
+   "expected map, got i64". Now kotoba-sema (`21e3a23f`): `(get m :a)` reads
+   `:a` off the row as `(:a m)` does; `(get m :a d)` makes `m` a row without
+   requiring `:a` (a record without it answers `d`, as on any record); a
+   match map pattern over a parameter, through the temp `match` binds it to,
+   makes it a row, and each specialization decides its arms -- a key the
+   record lacks does not match and the arm is folded away (the row
+   specializer now keeps a rebuilt form's metadata, which carries the
+   pattern's projection marker). Measured: the gate's 10 programs answer on
+   the KIR reference what they answer under `compile-source` for
+   `wasm32-kotoba-v1`, `x86_64-aiueos-kernel-v1` and
+   `aarch64-macos-kotoba-v1` with the oracle verified; `amu compile --target
+   x86_64-aiueos-kernel-v1` / `--target aarch64-macos` of a program with a
+   `get`-with-default row and a two-arm match over a parameter, each called
+   with a declared record and a literal lacking `:b`, exit 0 with `:oracle
+   {:status :verified}`. The gate was red on kotoba-sema `0632bed0` (19
+   errors), green on `21e3a23f`; kotoba-sema's own suite has the same 44
+   failures before and after (all pre-existing). No aiueos `.kotoba` source
+   (184) writes `(get`, `(match` or a defaulted keyword lookup, so no kernel
+   object can move. Refused by name: a get with a computed key on a record
+   ("get on record q has the computed key k: a record's fields are static,
+   so the field a get reads is a keyword literal; a computed key needs a
+   [:map K V]"); a `get` without a default of a field the record lacks; a
+   non-record argument to a row; a coerced field; a record, or a number read
+   off one, as an `if` test; `=` over records.
+   Floor `:loop-slot-beside-row` (gate
+   `loop-slot-typed-beside-a-row-read-test`, landed 2026-10-02): a loop's
+   slots are typed from its helper's call site in the enclosing body, and that
+   body is typed before `rewrite-record-projection` gives `(:a ys)` its
+   descriptor. Inference read the descriptor-less `(record-get ys :a)` as the
+   3-arity form, taking the local for the descriptor -- an internal failure
+   ("nth not supported on this type"), swallowed as an independent error --
+   so a body that read a row before its loop left every slot the `:i64`
+   placeholder: `(let [ys {:a 1}] (+ (:a ys) (loop [zs [(mk) (mk)] i 0] ...
+   (count zs))))` was refused "count requires a bounded vector, a typed set
+   or a canonical typed map; got :i64." while the loop alone answered 2. Now
+   kotoba-sema (`965feb37`) types a descriptor-less `record-get` as that
+   rewrite will rewrite it: a record or declared `[:ref ..]` answers its
+   field, a canonical typed map `typed-map-get`, the keyword->i64 map
+   `map-get`. Measured: the gate's 3 programs answer 3, 12 and 8 on the KIR
+   reference and under `compile-source` for `wasm32-kotoba-v1`,
+   `x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1` with the oracle
+   verified; `amu compile --target x86_64-aiueos-kernel-v1` / `--target
+   aarch64-macos` of the floor's program exit 0 with `:oracle {:status
+   :verified}`. The gate was red on kotoba-sema `21e3a23f` (3 failures, 12
+   errors of 18 assertions), green on `965feb37`; kotoba-sema's own portable
+   suite has the same 39 failures and 5 errors before and after (all
+   pre-existing). Refused by name, as without the row read: a list item as
+   an i64; a number recurred into the list slot ("expected [:list [:ref
+   :b/s]], got i64"); a field the record lacks; a row read off a number
+   ("record-get without a type descriptor requires a record value; got
+   :i64"); a record as an `if` test.
 
 Then browser moves, whole component by component (text-edit, input, surface
 with cssom and dom-gpu), and the hosted engine switches to amu's output of
 the same source. The kernel's mirrored objects (aiueos ADR-0223..0234) retire
 as each module lands.
+
+Measured on text-edit (2026-10-02, kotoba-sema `965feb37`, browser
+`8671500`). The source needs only mechanical changes: a `:kotoba` branch for
+`code-unit-at` and for a `code-unit-count` helper (`count` of a string stays
+refused), and the nil guards over values that are never absent dropped (`(or
+n lo)` on an `:i64`, `(or (:text/selection state) ..)` on a vector -- a number
+or a vector is never truthy). The compiler then refused it in six places, so
+floor `:browser-text-edit` is split and blocked by the five still open
+(`docs/language-ladder.edn`): an internal error on nbb only (an integer
+literal hashed by ClojureScript, `closure_uid_.. on bigint '0'`, located to
+the module, not yet to a pass), a `nil` field whose T only a later `assoc`
+names (`:text/composition`), an i64-vector record field natively
+(`:text/selection`), `max` / `min` on typed Wasm, and how a Clojure-readable
+source states an export's ABI -- `state` is a row, which an export cannot be,
+and `text` is unannotated, so `:i64` -- which needs an owner decision. The
+multi-arity `move-caret` / `move-to` with a `{}` options map were not reached.
+The sixth landed as floor `:let-rebinding` (gate
+`let-rebinding-is-nested-shadowing-test`): text-edit rebinds names as Clojure
+does, its state parameter by a `let` (`(let [state (normalize-selection
+state)] ..)`) and a local again in one `let` (`a (clamp a 0 n)`). Row
+inference left a parameter the body rebinds anywhere the provisional `:i64`
+("argument s to norm is i64, and parameter s of norm is the row {:a T | r}:
+only a record satisfies a row"), and a repeated binder was "duplicate let
+binding" while the nested `let` that shadows it was admitted. kotoba-sema
+(`531e89d8`) now reads a parameter only where it is in scope (`row-scope`) and
+nests a repeated binder (`nest-repeated-let-bindings`); a nested `let` was
+already what every later pass read, and the affine analysis never treated a
+rebound name as one thread. Measured: the gate's four programs answer 2, 4,
+10 and 13 on the KIR reference and under `compile-source` for
+`wasm32-kotoba-v1`, `x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1`
+with the oracle verified, and text-edit's `normalize-selection` answers 32 on
+the reference (its vector field and `max` / `min` are the floors above);
+`amu compile --target x86_64-aiueos-kernel-v1` / `--target aarch64-macos` of a
+twice-rebound row parameter exit 0 with `:oracle {:status :verified}`. The
+gate was red on kotoba-sema `965feb37` (3 failures, 17 errors of 23
+assertions), green on `531e89d8`; kotoba-sema's portable suite has the same
+39 failures and 5 errors before and after (identical lists, all
+pre-existing). Refused by name, as before: a read after the rebinding is the
+new value's (a field it lacks, a number read as a record), a parameter read
+only after it is rebound is not a row, a rebound name has its new type, a
+record as an `if` test, a repeated parameter.
+
+The internal error landed as floor `:cljs-literal-hash` (gate
+`text-edit-analyzes-on-nbb-test`). Located on kotoba-sema `531e89d8` by
+wrapping every frontend var on nbb: `specialize-row-parameters` scans every
+call argument for a row-polymorphic function used as a value with
+`(contains? generics arg)`. Past eight generics that map is a hash map, an
+integer literal is a ClojureScript BigInt, and a BigInt has no hash. Either
+of text-edit's `move-caret` / `move-to` is its ninth row generic (the floor
+above had not reached them); nine one-line functions over a row are enough,
+and the JVM was never affected. kotoba-sema (`8d3320fc`) asks `symbol?`
+before it hashes. Measured on nbb: the gate was red on `531e89d8` (6
+failures, 4 errors of 11 assertions, every one the `closure_uid` error),
+green on `8d3320fc`; nine generics answer 36 on the KIR reference, and
+`amu compile --target x86_64-aiueos-kernel-v1` / `--target aarch64-macos`
+exit 0 with `:oracle {:status :verified}`; kotoba-sema's portable suite has
+the same 39 failures and 5 errors before and after (identical lists). With
+nine generics, refused by name as before: a row generic used as a value, a
+number passed to a row parameter, a record as an `if` test. text-edit (its
+`:text/composition` field left out, which is floor `:absent-field-from-assoc`)
+now answers a refusal in the language's words, at `delete-backward`'s
+`(insert-text state "")`: "argument state to insert-text is i64, and
+parameter state of insert-text is the row {:text/caret T :text/selection T |
+r}: only a record satisfies a row" -- floor `:rebound-row-argument`, below;
+since floor `:options-map-argument` it is admitted and answers 3, which the
+gate now pins.
+
+The `nil` field landed as floor `:absent-field-from-assoc` (gate
+`nil-field-typed-by-the-module-assoc-test`). text-edit starts its state with
+`{.. :text/composition nil}` and writes the field in `composition-start`
+(`(assoc state :text/composition {:composition/text ""})`),
+`composition-update` (the same with `(str text)`) and `composition-end`
+(`(assoc state :text/composition nil)`); the literal was refused, "map
+literal value at key :text/composition is nil, which makes the field an
+absent [:option T], and nothing here says T". kotoba-sema (`7290e22e`) reads
+the module's source once per analysis (`module-absent-fields`): a keyword key
+written `nil` -- a literal entry or an `assoc` pair -- is an absent field
+`[:option T]`, T the one type the module's non-nil values at that key spell.
+There `nil` is `(option-none-of [:option T])`, and a value that spells T or a
+map / vector literal (typed against T, so `{:composition/text (str text)}` is
+that record) is `(option-some-of [:option T] v)`. This is point 2's absence,
+as `:expression-absence` has it for a branch: the field is an option because
+the module writes `nil` there, not because a value is coerced. A call that
+returns T is not wrapped. Measured on nbb: the gate was red on `8d3320fc` (2
+failures, 4 errors of 7 assertions), green on `7290e22e` (10 assertions). The
+four functions answer 100, 0, 3 and 100 on the KIR reference (`if-let` over
+the field, then the code-unit count of `:composition/text`, 100 when it is
+absent), and the program compiles for `wasm32-kotoba-v1`. Native is partial.
+Construction, `assoc` and presence (the field as an `if` test, answering 6)
+compile for `x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1` with the
+oracle verified. Projecting the present record is refused on both by the
+verifier ("runtime KIR record projection rejected": `record-get`'s operand is
+an `option-value-of`, which it does not type). It was refused before this
+floor too: a declared `[:option R]` parameter read the same way gives
+"machine IR rejected: branch-value-shape-mismatch". That is floor
+`:native-option-record` (since closed, below). kotoba-sema's portable suite has the same 39 failures and 5
+errors before and after (identical lists). Refused by name: a key the module
+writes `nil` at and two types at (`field :text/composition is nil in this
+module ... writes two types at it: [:record ..] and :string`), a `nil` key the
+module gives no type (the old message), and a present T from a call written
+at the absent field (`expected [:option ..], got [:record ..]`, no coercion).
+`composition-update`'s `text` is annotated `:string` in the gate; unannotated
+it is `:i64`, which is floor `:export-signatures`.
+
+The rebound row landed as floor `:rebound-row-argument` (gate
+`text-edit-rebound-state-is-a-row-test`). A rebound row passed on, in a
+`cond`, after a vector destructuring, was each admitted alone; minimizing
+text-edit showed what it adds is a helper over a string, `(code-unit-count
+value)` in `normalize-selection`. `specialize-row-parameters` ran before the
+module-wide parameter inference, so `code-unit-count`'s unannotated `s` was
+still the provisional `:i64` inside `normalize-selection`'s specialization;
+called with a string, that specialization's result could not be inferred and
+stayed `:i64`, and `(let [state (normalize-selection state)] (insert-text
+state ""))` passed that `:i64` to a row. kotoba-sema (`275b40a0`) infers
+absent parameter types at the start of each specialization round, before
+results. Measured on nbb: the gate was red on `7290e22e` (3 failures, 5
+errors of 11 assertions, the floor's literal), green on `275b40a0` (11
+assertions). The minimal form (`len` over a string, `norm`, `ins` and `del`
+each rebinding the row) answers 4 on the KIR reference, compiles for
+`wasm32-kotoba-v1`, and `amu compile --target x86_64-aiueos-kernel-v1` /
+`--target aarch64-macos` exit 0 with `:oracle {:status :verified}`.
+text-edit's `delete-backward` and `delete-forward` answer on the KIR
+reference ("abcd", 1..3 selected, deleted either way: "ad", caret 1; the
+caret at 4 deleted backward: "abc", caret 3). text-edit itself is refused
+natively by its public `empty-state`'s record as an export's result (floor
+`:export-signatures`; until `:native-vector-field`, by its vector field) and
+on wasm32 at floor `:typed-wasm-min-max` (since closed, below). kotoba-sema's portable suite has
+the same 39 failures and 5 errors before and after (identical lists), and
+amu's nbb suite the same 13 failures and 2 errors (the policy tests).
+Refused by name as before: a number passed to a row parameter, bound by `let`
+or not, and a rebound record as an `if` test. With this, text-edit (move-caret
+and move-to in) is refused at `(move-caret (empty-state) 1)`: its `{:keys
+[extend?]}` options parameter is "expected map, got i64" and the 2-arity's
+`{}` "an empty map literal {} has no row to extend" -- new floor
+`:options-map-argument`.
+
+The vector field landed as floor `:native-vector-field` (gate
+`vector-field-in-record-compiles-natively-test`). text-edit's state holds
+`:text/selection [start end]`, a `:vector-i64` field; a vector alone compiled
+natively, a record holding one was refused on both native targets by the
+typed-values gate ("typed values currently require ... the qualified native
+one-word string/record/variant/option/result slice"), for `(nth (:sel s) 1)`,
+`(assoc s :sel [..])` and `[a b]` destructuring alike. Three layers each left
+the vector-arena handle out of a record: osaho's `native-handle-type?` did not
+count it as a one-word member (`3b2eef93`); kotoba-native's `aggregate-abi`
+spelled it `:vector`, which nothing produces -- the spelling
+`word-result-type?` had already corrected at a function boundary -- so the
+module was "machine IR rejected: unsupported-function-module" (`e2da186d`);
+and kotoba-verifier's record check had no vector field, "runtime KIR record
+construction rejected" (`4a87b807`). The verifier now also refuses any record
+holding one at an export (`holds-private-handle?`), so it stays no looser than
+`kotoba.kir`, which never put it on `native-boundary-type?`: the kexe loader
+has a wire form for a vector, none for a vector inside a record. Measured on
+nbb: the gate was red on `eb39dba5` / `83eecc0e` / `4410753e` (every native
+assertion the typed-values literal), green on the three new pins (38
+assertions). Five forms -- projection, `assoc`, destructuring, the record
+through two private functions rebuilt with a computed vector, the record as a
+loop slot -- and four text-edit operations over the selection (`insert-text`,
+`normalize-selection`, `select`, `delete-backward`, `empty-state` private)
+answer the reference's value on `x86_64-aiueos-kernel-v1` and
+`aarch64-macos-kotoba-v1` with the oracle verified; `amu compile --target
+x86_64-aiueos-kernel-v1` / `--target aarch64-macos` exit 0 with `:oracle
+{:status :verified}`, and the record-through-functions program answers 42
+under `tools/kexe_loader.c` on aarch64 and on x86_64 (Rosetta).
+kotoba-native's suite has the same 34 failures and 9 errors before and after,
+kotoba-verifier's the same 22 and 1 (identical lists, host-environment tests),
+osaho's passes (256 tests), and amu's nbb suite the same policy-test failures.
+Refused by name: the record as an export's result (the typed-values literal;
+text-edit's public `empty-state` is refused for this, floor
+`:export-signatures`), `=` over it ("equality type is outside the safe value
+profile"), the vector as an `if` test, the vector as a number and a number as
+the vector (`expected i64, got vector-i64` / `expected vector-i64, got i64`),
+and an index out of range (`vector-index-out-of-range`, no artifact sealed).
+Measured on the way, not this floor's: text-edit's three operations in one
+`main` exhaust the compiler host's stack inside the KIR oracle under kbb's
+default stack (`:host/stack-exhausted`, inconclusive, nothing sealed), and in
+one process where x86_64 had just run out first, aarch64 answered "native
+artifact oracle value rejected" -- two oracle runs of one program
+disagreeing, which a host stack overflow caught inside the interpreter would
+explain. The same three operations compiled one per program agree with the
+reference on both targets.
+
+min and max in a typed Wasm module landed as floor `:typed-wasm-min-max`
+(gate `min-max-qualified-on-typed-wasm-test`). text-edit clamps its caret,
+`(max lo (min hi n))`. Both compiled on `wasm32-kotoba-v1` only in a module
+of plain i64 words; once the module held a string or a record, kotoba-wasm's
+typed (KIR v4) emitter took over, and it had no arm for either, so
+`(max 0 (string-code-unit-count "abc"))` and text-edit alike were exit 70
+"typed Wasm operation is not qualified" `{:operation max}`. The typed emitter
+now lowers both as the untyped one does -- `i64.lt_s` / `i64.gt_s` and
+`select` -- with each operand evaluated once into an i64 local (kotoba-wasm
+`a82bc58e`). Measured on nbb: the gate was red on `7ff9ad0d` (9 failures and
+10 errors of 49 assertions, the floor's literal), green on `a82bc58e` (49
+assertions); kotoba-wasm's own suite passes before and after (25 tests, 97
+assertions). Eight typed programs, `min(3,7)=3` / `max(3,7)=7` and negative
+operands among them, answer the reference's value when the wasm32 module is
+run by `runtime/browser-host.mjs`, and on `x86_64-aiueos-kernel-v1` and
+`aarch64-macos-kotoba-v1` (native never refused these forms); text-edit's
+delete-backward / delete-forward program answers 212133 on wasm32 as on the
+reference, so `text-edit-rebound-state-is-a-row-test` now pins its wasm32
+admission instead of the refusal. `amu compile --target wasm32` /
+`--target x86_64-aiueos-kernel-v1` / `--target aarch64-macos` exit 0 on a
+clamp over a record's string (the native two with `:oracle {:status
+:verified}`). Refused by name as before: min/max over a string, a bool or an
+option (`expected i64, got ...`) and any arity but two ("i64 operation arity
+mismatch: max takes 2 arguments").
+
+The record an option holds landed natively as floor `:native-option-record`
+(gate `option-record-projects-natively-test`). text-edit reads its
+composition as `(if-let [c (:text/composition state)] (:composition/text c)
+..)`, which kotoba-sema elaborates to `(option-value-of [:option R] o
+(record-new R ..))`, the fallback a record of R. On both native targets it was
+refused by the verifier, "runtime KIR record projection rejected", and a
+declared `[:option R]` parameter read the same way, R a flat record, by
+kotoba-native, "machine IR rejected: branch-value-shape-mismatch". Two layers
+each left the option's payload out. kotoba-verifier's `record-schema-of` typed
+an `option-value-of` only over a `typed-map-get`, so the local `if-let` binds
+had no record; it now types any option of a record whose fallback is that
+record, the option's declared type equal to the operand's wherever the
+operand says one (a local, a record field, a call's result) (`3e8134cd`).
+kotoba-native scalar-replaced a module whose records were flat and local, so
+the payload word and the fallback's field bundle met at one phi in two
+shapes; a record an option holds now selects the pair-chain lowering, as a
+record in a variant payload already did (`04a8e0e3`, with
+`a-record-in-an-option-lowers-on-both-isas`, red before and green after).
+Measured on nbb: the gate was red on `4a87b807` / `e2da186d` (8 errors of 23
+assertions with `nil-field-typed-by-the-module-assoc-test`, the floor's two
+literals), green on the new pins (23 assertions). text-edit's composition
+answers 203, a declared `[:option R]` over a flat i64 record 12 and over a
+record holding a string 113, on the KIR reference and on
+`x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1` with the oracle
+verified; `amu compile --target x86_64-aiueos-kernel-v1` / `--target
+aarch64-macos` exit 0 with `:oracle {:status :verified}`. No artifact was run
+under a loader this time. `nil-field-typed-by-the-module-assoc-test` now pins
+the native projection (203) instead of the refusal. kotoba-verifier's suite
+has the same 22 failures and 1 error before and after (identical lists), and
+kotoba-native's the same 34 failures and 9 errors, every one on its known-red
+list; amu's nbb suite has the same 13 failures and 2 errors (the policy
+tests). Refused by name: a field R does not declare ("record field must be a
+declared keyword literal"), the option as a number (`expected i64, got
+[:option ..]`), and the option projected as if it were the record
+("record-get without a type descriptor requires a record value; got [:option
+..]").
+
+The options map landed as floor `:options-map-argument` (gate
+`options-map-destructures-as-a-row-test`). text-edit's `move-caret` and
+`move-to` take `([state delta] (move-caret state delta {}))` and `([state
+delta {:keys [extend?]}] ..)`; text-edit with both was refused at
+`(move-caret (empty-state) 1)`, minimized "expression type mismatch: expected
+map, got i64". Three things were missing. The lookup a `{:keys [..]}`
+parameter desugars to (`__kotoba_destructure_get` off the parameter's
+synthetic alias) was not a read of a row, so the parameter stayed the
+provisional `:i64` and the lookup became the retired pair map's `map-get`;
+`{}` had no type at a row argument; and a key the record lacked was "record
+field is not declared". kotoba-sema (`77d2dd84`): the lookup makes its
+parameter a row without requiring the key, as `(get m :k d)` does; `{}` passed
+to a row is the record with no fields, `[:record :kotoba.map-literal/empty
+[]]`; a destructured key the record lacks is its `:or` default, or nothing --
+a presence test of that nothing is the constant `false`, and the binding
+nothing reads any more is dropped, so the absent option is never built (the
+typed wasm32 target has no `option-none` at all: `(let [x nil] 1)` is still
+"unsupported typed Wasm expression" there, outside this floor). A refusal
+naming the synthetic parameter now shows the pattern, `{:keys [extend?]}`.
+The record with no fields was refused by every layer below: osaho's value
+type and native gate (`a5db9a89`), kotoba-native's aggregate ABI and its
+pair-chain lowering, which skipped a `record-new` with no values -- it is now
+the empty chain, 0, with no allocation (`82d3dea1`; its
+`aggregate-abi-portable-test` pinned the empty record as refused and now pins
+it admitted) -- and kotoba-verifier's record check (`fde6f218`). Measured on
+nbb: the gate was red on `275b40a0` / `3b2eef93` / `04a8e0e3` / `3e8134cd`
+(8 failures, 11 errors of 19 assertions, the floor's literal), green on the
+four new pins (19 assertions). The minimized options (absent 1, `{:extend?
+true}` 3: 31) and an `:or` default (508) answer the reference's value on
+`wasm32-kotoba-v1`, `x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1`
+with the oracle verified, and text-edit's `move-caret` / `move-to` ("abcd":
+left, shift-left 2, move-to then shift-move-to) answer 333113313 on the
+reference, on both native targets with `empty-state` private, and compile on
+wasm32; with `empty-state` public it is refused natively as before (floor
+`:export-signatures`). `amu compile --target x86_64-aiueos-kernel-v1` /
+`--target aarch64-macos` of the minimized options exit 0 with `:oracle
+{:status :verified}`; no artifact was run under a loader. kotoba-sema's
+portable suite has the same 39 failures and 5 errors before and after
+(identical lists), kotoba-verifier's the same 22 and 1, osaho's passes (256
+tests), kotoba-native's 34 failures and 9 errors on its known-red list once
+its empty-record pin moved, and amu's nbb suite the same 13 failures and 2 errors (the policy tests) once `text-edit-analyzes-on-nbb-test` moved its pin from the refusal to the admission (text-edit with move-caret and move-to answers 3 on the reference), `native-allocation-budget-test` left out on both sides: its x86_64 loader hung in Rosetta translation (process state U) on the old pins and the new alike. Refused by name: a
+number as the options map, bound by `let` or not ("argument 5 to mv is i64,
+and parameter {:keys [extend?]} of mv is the row {| r}: only a record
+satisfies a row"); an absent option used as a number ("expected i64, got
+option-i64"); `(:k m)`, a required read, off `{}` ("... is record
+:kotoba.map-literal/empty, which has no field :extend? that the row ...
+reads"); and a record, the empty one included, as an `if` test.
+
+The vector parameter landed as floor `:vector-parameter` (gate
+`vector-parameter-takes-the-callers-vector-test`), the first wall of
+browser.input. Its hit-tests take a point and a rect the Clojure way,
+`(defn- point-in-rect? [[px py] [x y w h]] ..)`, and were refused "unknown
+operation: nth is not a builtin, a sugar head, or a function of this module".
+An unannotated parameter is the provisional `:i64` until
+`infer-absent-parameter-types` reads a type mismatch on it; `(vector-at p 0)`
+raised one, but `nth` (what a vector pattern desugars to) and `count` on an
+`:i64` fell through to an unknown operation and "count requires a bounded
+vector", which name no parameter. kotoba-sema (`3d051f43`): `nth` and `count`
+on an `:i64` receiver require `:vector-i64` of it, and a refused synthetic
+temp a vector pattern is read through counts as its parameter, so the
+parameter is the `:vector-i64` its callers pass. Measured on nbb: the gate was
+red on `77d2dd84` (8 errors and 5 failures of 13 assertions, the floor's
+literal), green on `3d051f43` (13 assertions). The minimized form (a
+destructured parameter, `nth` and `count`: 83) and browser.input's
+`point-in-rect?` / `in-titlebar?` / `in-resize-handle?` against a window
+record's rect (11101) answer the reference's value on `x86_64-aiueos-kernel-v1`
+and `aarch64-macos-kotoba-v1` with the oracle verified, and compile on
+`wasm32-kotoba-v1`. kotoba-sema's portable suite has the same 39 failures and
+5 errors of 616 tests before and after (identical lists). Refused by name: a
+number, a string and a heterogeneous vector passed where the vector is read
+("expected vector-i64, got i64" / "got string" / "got [:vector [:i64
+:string]]"); a parameter used both as a vector and a number (the uses
+disagree, both named); and an item as an `if` test (a number is never
+truthy). browser.input's next walls were measured and put on the ladder:
+`window-at`'s `filter` / `first` / `reverse` over the `[:list R]` a vector of
+window records is (`:record-list-sequence`), and `normalize-event`'s open host
+event (`:open-event-row`, which needs a decision: `(:k m)` is a required read
+by this ADR, and the event reads keys it may lack).
+
+The record-list sequence landed as floor `:record-list-sequence` (gate
+`record-list-filter-first-reverse-test`), browser.input's second wall.
+`window-at` is `(first (filter #(point-in-rect? point (:window/rect %))
+(reverse (:surface/windows surface))))` over a vector literal of window
+records, a `[:list R]`, and was refused three ways: `filter` "expected
+vector-i64, got [:list R]" (it desugared to the T4.5 loop that builds a
+bounded i64 vector, and a `[:list R]` has no builder), `first` "first
+(pair-first) reads a pair chain or a bounded vector", and `reverse` "unknown
+operation". `first` of a filter / remove / reverse chain needs no built
+sequence: it is a search. kotoba-sema (`942d8764`) fuses the chain into one
+loop that walks the source by index -- from its end under an odd number of
+reverses -- and answers the first item every predicate admits, innermost
+first, as Clojure's lazy filter tests it; it allocates nothing. Its two exits
+are typed by the source: over a `[:list R]` the search answers `[:option R]`,
+absent when nothing is found; over a bounded vector it answers the item and
+traps on an empty result (`(vector-at <empty> 0)`, the trap `(first (filter
+..))` always raised there), so a vector program keeps its value. `first` of a
+`[:list R]` is `[:option R]`. Two inference gaps on the way were closed in the
+same change: a loop helper's captures are settled again after row
+specialization (the surface's windows were the placeholder `:i64` in the
+generic), and a capture typed `:i64` that the loop body reads as a vector is
+refined like an unannotated parameter, which refines the enclosing function's
+parameter through the call (`window-at`'s `point`). kotoba-verifier
+(`90ff3911`) admits a record field that is a `[:list R]` of one-word items
+(kotoba-native's ABI and KIR already did) and a let naming a list item as
+that record. Measured on nbb: the gate was red on `3d051f43` / `fde6f218` (2
+failures and 12 errors of 17 assertions, the floor's literal), green on
+`942d8764` / `90ff3911` (17 assertions). The minimized chains over a
+`[:list R]` (29132) and window-at over two overlapping windows (2 on top, 1
+alone, absent outside: 912) answer the reference's value on
+`x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1` with the oracle
+verified, and compile on `wasm32-kotoba-v1`; a vector program keeps its value
+(22) and its trap. `amu compile --target x86_64-aiueos-kernel-v1` / `--target
+aarch64-macos` of window-at exit 0 with `:oracle {:status :verified}`; no
+artifact was run under a loader. kotoba-sema's portable suite has the same 39
+failures and 5 errors of 616 tests before and after, kotoba-verifier's the
+same 22 and 1 of 53 (identical lists), and amu's nbb suite the same 13
+failures and 2 errors (the policy tests) besides the gate,
+`native-allocation-budget-test` left out on both sides: its x86_64 loader
+again hung in Rosetta translation (process state U). Refused by name: what `first` answers over a list used as a record ("record-get
+without a type descriptor requires a record value; got [:option [:record
+..]]"); a number as the list ("expected vector-i64, got i64"); a bare
+`reverse` ("reverse is admitted only where first reads it .. a reversed
+sequence of its own needs a list builder this profile does not have"); and a
+`filter` over a `[:list R]` that `first` does not read ("expected vector-i64,
+got [:list R]"): materializing a list needs a list builder (a `typed-list-conj`
+on KIR, Wasm and native), which no floor has asked for yet. Measured on the
+way and left: a module with no private function exports every function, its
+synthesized loop helpers included, so a loop over a `[:list R]` there is
+refused natively ("typed values currently require .. the qualified native
+one-word .. slice": a list is no export's ABI); an unannotated parameter
+handed an option, `(defn- a-of [o d] (if-let [r o] ..))`, stays the
+provisional `:i64`; and native rejects `(vector-at v (vector-count v))` in an
+`if` branch at machine IR ("unknown-parameter").
 
 ## Selfhost foundation floors (appended 2026-09-26)
 

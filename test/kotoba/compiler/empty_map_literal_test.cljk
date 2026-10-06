@@ -1,0 +1,131 @@
+(ns kotoba.compiler.empty-map-literal-test
+  "ADR 0353 floor :empty-map-literal (point 3: the keyword->i64 map is
+  retired).
+
+  A map literal with keyword keys was already a record (floor
+  :literal-typing). The empty literal was not: `{}` desugared to `(map-new)`,
+  the legacy keyword->i64 pair map, whatever the program went on to put in
+  it. So `(assoc {} :a 1)` was that map (read back through `map-get` with an
+  i64 default), `(get {} :a 0)` answered 0, `{}` where a record was declared
+  was refused as `expected [:ref q], got map`, and `match` map patterns were
+  written against the pair map and refused a record scrutinee (\"match map
+  patterns admit the bounded map only; this scrutinee is a record\") --
+  which, once a literal was a record, meant every literal one.
+
+  Now, in kotoba-sema: `(assoc {} :k v ...)` is the record of the keys it
+  assoc's -- the literal `{:k v ...}`, fields in a map literal's key order,
+  a repeated key's last value winning; `{}` where its context declares a
+  record is that record with every field absent (so only an all-option
+  record has an empty literal), and where it declares a `[:map K V]` that
+  map, empty; an integer or string first key is the typed map it already
+  was. Any other `{}` has no row to extend and is refused by name. A match
+  map pattern on a record decides presence from the record's type: a field
+  it has is present, and an arm naming a key it lacks does not match, so it
+  is dropped rather than typed. No form lowers to `map-new`.
+
+  Native: the admitted programs compile for x86_64-aiueos-kernel-v1 and
+  aarch64-macos with the oracle verified.
+
+  What stays refused, each by its literal: the empty literal with nothing
+  to type it (read, counted, let-bound, or spelled `(map-new)`), a record
+  context whose field is not an option, a coerced field, a record as an
+  `if` test, `=` over records, and a key the record does not have."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private prelude
+  (str "(ns b (:schemas {:b/s [:record :b/s [[:a :i64] [:b :i64]]]"
+       " :b/o [:record :b/o [[:x [:option :i64]] [:y [:option :i64]]]]}))\n"
+       "(defn- mk [] [:ref :b/s] {:a 5 :b 2})\n"))
+
+(def ^:private admitted
+  "Each program and what its main answers on the reference and on both
+  native targets."
+  [;; assoc into {} is the record of the keys it assoc's
+   ["(defn main [] :i64 (:a (assoc {} :a 1)))" 1]
+   ["(defn main [] :i64 (:b (assoc {} :b 2 :a 1 :b 3)))" 3]
+   ["(defn main [] :i64 (let [x 3 m (assoc {} :a x :b 4)] (+ (:a m) (:b m))))" 7]
+   ["(defn main [] :i64 (:a (merge (mk) (assoc {} :a 7))))" 7]
+   ["(defn main [] :i64 (let [m (assoc {} :a 1)] (:b (assoc m :b 4))))" 4]
+   ;; {} takes the type its context declares
+   [(str "(defn- e [] [:ref :b/o] {})"
+         " (defn main [] :i64 (option-value-of [:option :i64] (:x (e)) 9))") 9]
+   [(str "(defn- g [] [:map :i64 :i64] {})"
+         " (defn main [] :i64 (typed-map-count [:map :i64 :i64] (g)))") 0]
+   ;; an integer first key is still the typed map
+   ["(defn main [] :i64 (get (assoc {} 1 10) 1 0))" 10]
+   ;; match map patterns read records
+   ["(defn main [] :i64 (match {:a 1 :b 2} {:a x :b y} (+ x y) :else 0))" 3]
+   ["(defn main [] :i64 (match {:a 1} {:a x :b y} (+ x y) {:a x} x :else 0))" 1]
+   ["(defn main [] :i64 (match {:c 1} {:a x} x :else -1))" -1]
+   ["(defn main [] :i64 (match {:a 4} {:a 3} 111 {:a _} 222 :else -1))" 222]
+   ["(defn main [] :i64 (match (assoc {} :value 0) {:value n} 42 :else -1))" 42]
+   ["(defn main [] :i64 (match (mk) {:a n :b 2} n :else 0))" 5]])
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze (str prelude source))) 'main [])))
+
+(defn- lowers-map-new? [source]
+  (boolean (some #{'map-new}
+                 (tree-seq coll? seq (:functions (ir/lower (sema/analyze (str prelude source))))))))
+
+(defn- refusal [source]
+  (try (sema/analyze (str prelude source))
+       nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(def ^:private empty-literal-refusal
+  (str "an empty map literal {} has no row to extend: it is not a "
+       "keyword->i64 map any more, and nothing here says its type. "
+       "assoc keys into it ((assoc {} :a 1) is the record {:a 1}), "
+       "write the literal with its fields, or give it a record or "
+       "[:map K V] type from context"))
+
+(deftest empty-map-literal-is-typed-test
+  (testing "admitted on the reference, and no program lowers to map-new"
+    (doseq [[source answer] admitted]
+      (is (= answer (run-main source)) source)
+      (is (not (lowers-map-new? source)) source)))
+  (testing "admitted on the hosted target"
+    (doseq [[source _] admitted]
+      (is (= [0 97 115 109]
+             (mapv #(bit-and (int %) 0xff)
+                   (take 4 (:bytes (compiler/compile-source (str prelude source) :wasm32-kotoba-v1)))))
+          source)))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "admitted on both native targets"
+    (doseq [target native-targets
+            [source answer] admitted]
+      (let [{:keys [artifact]} (compiler/compile-source (str prelude source) target)]
+        (is (pos? (count (:code artifact))) (str target " " source))
+        (is (= answer (#?(:clj long :cljs js/Number) (:value artifact))) (str target " " source)))))
+  (testing "refused: {} with nothing to type it is not the keyword->i64 map"
+    (doseq [source ["(defn main [] :i64 (get {} :a 0))"
+                    "(defn main [] :i64 (count {}))"
+                    "(defn main [] :i64 (let [m {}] 0))"
+                    "(defn main [] :i64 (map-get (map-new) :a 0))"]]
+      (is (= empty-literal-refusal (refusal source)) source)))
+  (testing "refused: an empty record literal leaves out a field that is not an option"
+    (is (= (str "map literal field :a of record :b/s is :i64, which is not an option,"
+                " so it cannot be absent (the key is left out); only an [:option T] field is absent")
+           (refusal "(defn main [] [:ref :b/s] {})"))))
+  (testing "refused: a field is not coerced"
+    (is (= "expression type mismatch: expected i64, got string"
+           (refusal "(defn main [] :i64 (:a (assoc {} :a \"x\")))"))))
+  (testing "refused: a record is never truthy"
+    (is (= "if test must be bool or an option"
+           (refusal "(defn main [] :i64 (if (assoc {} :a 1) 1 0))"))))
+  (testing "refused: = over records"
+    (is (= "equality type is outside the safe value profile"
+           (refusal "(defn main [] :i64 (if (= (assoc {} :a 1) {:a 1}) 1 0))"))))
+  (testing "refused: a key the record does not have is not read as 0"
+    (is (= "record field must be a declared keyword literal"
+           (refusal "(defn main [] :i64 (:z (assoc {} :a 1)))")))))

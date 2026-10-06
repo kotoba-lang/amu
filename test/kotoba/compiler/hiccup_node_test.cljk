@@ -157,14 +157,13 @@
   (testing "hosted: restricted ESM compiles the node program"
     (is (string? (:source (compiler/compile-source
                            (str "(ns app)\n" (probe "(count (:children e))")) :js-kotoba-v1)))))
-  ;; Both kernel-side targets refuse the node at the typed-values gate: its
-  ;; payload holds a `[:list T]` and a `[:map :keyword :string]`, which the
-  ;; native one-word slice does not qualify -- floor :native-handles.
-  (testing "native: both kernel-side targets refuse, for now, by the typed-values gate"
+  ;; Both kernel-side targets compile the node since floor
+  ;; :native-hiccup-node (its gate, hiccup-node-compiles-natively-test, pins every
+  ;; program above whose entry answers a word): the elem's
+  ;; `[:map :keyword :string]` attrs are a native handle.
+  (testing "native: both kernel-side targets compile the node program"
     (doseq [target [:x86_64-aiueos-kernel-v1 :aarch64-kotoba-v1]]
-      (is (= (str "typed values currently require the kotoba-script web target, typed Wasm/CLJS target, "
-                  "or the qualified native one-word string/record/variant/option/result slice")
-             (try (compiler/compile-source (str "(ns app)\n" (probe "(count (:children e))")) target) nil
-                  (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
-                    (ex-message error))))
+      (is (= 3 (#?(:clj long :cljs js/Number)
+                (:value (:artifact (compiler/compile-source
+                                    (str "(ns app)\n" (probe "(count (:children e))")) target)))))
           (str target)))))

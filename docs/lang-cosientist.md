@@ -1203,9 +1203,6 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   tick15 記載) も amu sema pin 前進後に現行 HEAD で 1 re-probe して
   実測を更新する。
 
-- 次 (1 hypothesis): ledger `:gap` 残節 (bit-shift / keys / folds 等,
-  tick15 記載) も amu sema pin 前進後に現行 HEAD で 1 re-probe して
-  実測を更新する。
 ## Iteration 40 - ledger re-probe NOT STARTED (budget exhausted at verification phase), no verdict (2026-09-30, amu@438c5aba)
 
 - Target hypothesis (carried from iter 39): ledger 残 `:gap` 行を現行 amu

@@ -1,0 +1,145 @@
+(ns kotoba.compiler.native-vector-field-test
+  "ADR 0353 floor :native-vector-field.
+
+  browser.text-edit keeps its selection as an i64 vector in its state,
+  `:text/selection [start end]`. Measured 2026-10-03 (amu 0e6eadf1, before
+  this floor): a record with a `:vector-i64` field compiled on the hosted
+  targets and was refused by both native ones with \"typed values currently
+  require the kotoba-script web target, ...\" -- (nth (:sel s) 1),
+  (assoc s :sel [..]) and [a b] destructuring alike. A vector alone already
+  compiled natively; only a record holding one did not.
+
+  Three places spelled the vector handle out of a record, each its own:
+  osaho's `native-handle-type?` did not count a `:vector-i64` as a one-word
+  member; kotoba-native's `aggregate-abi` record and payload word types listed
+  `:vector`, a spelling nothing produces (kotoba.kir emits `:vector-i64`, as
+  `word-result-type?`'s note already says), so the module was
+  `unsupported-function-module`; and kotoba-verifier's record check had no
+  vector field, so `record-new` was \"runtime KIR record construction
+  rejected\". Now each admits the one-word handle, and the verifier keeps a
+  record holding one off the export boundary.
+
+  What stays refused, each by its literal: such a record leaving the module
+  (an export's result -- the kexe loader has a wire form for a vector, none
+  for a vector inside a record; text-edit's public empty-state is refused for
+  this, floor :export-signatures), `=` over the record (no structural
+  equality over handles), the vector as an `if` test, the vector as a
+  number, a number as the vector, and an index out of range
+  (`vector-index-out-of-range`: the oracle traps, so no artifact is sealed)."
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.compiler.rebound-row-argument-test :as rebound]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private state
+  (str "(ns b)\n"
+       "(defn- mk [] {:v \"ab\" :sel [1 2]})\n"))
+
+(def ^:private admitted
+  "Each answers the same on the reference and both native targets."
+  {"(nth (:sel (mk)) 1)" 2
+   "(let [s (assoc (mk) :sel [3 4])] (nth (:sel s) 0))" 3
+   "(let [[a b] (:sel (mk))] (+ a b))" 3
+   ;; the record crosses two private functions, rebuilt with a computed vector
+   "(second-of (widen (mk) 40))" 42
+   ;; the record as a loop slot, its vector replaced each turn
+   "(loop [s (mk) i 0] (if (< i 3) (recur (assoc s :sel [i (* 2 i)]) (inc i)) (+ (nth (:sel s) 0) (nth (:sel s) 1))))" 6})
+
+(def ^:private helpers
+  (str "(defn- second-of [s] (nth (:sel s) 1))\n"
+       "(defn- widen [s d] (let [[a b] (:sel s)] (assoc s :sel [a (+ b d)])))\n"))
+
+(defn- program [expr]
+  (str state helpers "(defn main [] :i64 " expr ")"))
+
+(def ^:private text-edit
+  "browser.text-edit as floor :rebound-row-argument's gate has it, with
+  empty-state private: as a public function its record would be an export's
+  result (refused below, floor :export-signatures)."
+  (str/replace @#'rebound/text-edit "(defn empty-state" "(defn- empty-state"))
+
+(def ^:private text-edit-calls
+  "One text-edit operation per program: the three together exhaust the
+  compiler host's stack inside the oracle under kbb's default stack, an
+  inconclusive answer that seals nothing (measured, not this floor's)."
+  {"(nth (:text/selection (insert-text (empty-state) \"abcd\")) 1)" 4
+   "(nth (:text/selection (normalize-selection (assoc (empty-state) :text/value \"abc\" :text/selection [3 1]))) 0)" 1
+   "(nth (:text/selection (select (insert-text (empty-state) \"abcd\") 1 3)) 1)" 3
+   "(:text/caret (delete-backward (insert-text (empty-state) \"abcd\")))" 3})
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- number [value] (#?(:clj long :cljs js/Number) value))
+
+(defn- run-main [source]
+  (number (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- native-value [source target]
+  (number (:value (:artifact (compiler/compile-source source target)))))
+
+(defn- refusal [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(defn- compile-refusal [source target]
+  (try (compiler/compile-source source target)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(def ^:private typed-values-refusal
+  (str "typed values currently require the kotoba-script web target, typed "
+       "Wasm/CLJS target, or the qualified native one-word "
+       "string/record/variant/option/result slice"))
+
+(deftest vector-field-in-record-compiles-natively-test
+  (testing "the field is a vector-i64 in the record's schema"
+    (is (= [:record :kotoba.map-literal/sel+v [[:sel :vector-i64] [:v :string]]]
+           (:result (first (filter #(= 'mk (:name %))
+                                   (:functions (sema/analyze (program "1")))))))))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "admitted on the reference and both native targets"
+    (doseq [[expr expected] admitted
+            :let [source (program expr)]]
+      (is (= expected (run-main source)) expr)
+      (doseq [target native-targets]
+        (is (= expected (native-value source target)) (str target " " expr)))))
+  (testing "browser.text-edit's operations over its [start end] selection"
+    (doseq [[expr expected] text-edit-calls
+            :let [source (str text-edit "(defn main [] :i64 " expr ")")]]
+      (is (= expected (run-main source)) expr)
+      (doseq [target native-targets]
+        (is (= expected (native-value source target)) (str target " " expr)))))
+  (testing "refused natively: the record as an export's result"
+    (doseq [target native-targets]
+      (is (= typed-values-refusal
+             (compile-refusal (str state "(defn main [] (mk))") target))
+          (str target))
+      (is (= typed-values-refusal
+             (compile-refusal (str @#'rebound/text-edit
+                                   "(defn main [] :i64 (:text/caret (empty-state)))")
+                              target))
+          (str target " text-edit's public empty-state"))))
+  (testing "refused: no structural equality over the record"
+    (is (= "equality type is outside the safe value profile"
+           (refusal (program "(if (= (mk) (mk)) 1 0)")))))
+  (testing "refused: the vector is not an if test"
+    (is (= "if test must be bool or an option"
+           (refusal (program "(if (:sel (mk)) 1 0)")))))
+  (testing "refused: no coercion between the vector and a number"
+    (is (= "expression type mismatch: expected i64, got vector-i64"
+           (refusal (program "(+ 1 (:sel (mk)))"))))
+    (is (= "expression type mismatch: expected vector-i64, got i64"
+           (refusal (program "(nth (:sel (assoc (mk) :sel 5)) 0)")))))
+  (testing "refused: an index out of range seals no artifact"
+    (doseq [target native-targets]
+      (is (= "vector-index-out-of-range"
+             (compile-refusal (program "(nth (:sel (mk)) 5)") target))
+          (str target)))))

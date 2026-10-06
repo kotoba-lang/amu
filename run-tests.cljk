@@ -69,6 +69,7 @@
 (ns run-tests
   (:require [cljs.test :as t]
             [kotoba.compiler.accelerator-test]
+            [kotoba.compiler.allocation-budget-test]
             [kotoba.compiler.backend-cljs-portable-test]
             [kotoba.compiler.backend-evm-test]
             [kotoba.compiler.backend-qualification-test]
@@ -131,7 +132,46 @@
             [kotoba.compiler.value-bounds-agreement-test]
             [kotoba.compiler.embedded-resources-test]
             [kotoba.compiler.value-codec-iterative-test]
-            [kotoba.compiler.wasm32-kotoba-v1-qualification-test]))
+            [kotoba.compiler.wasm32-kotoba-v1-qualification-test]
+            [kotoba.compiler.target-allocation-budget-test]
+            [kotoba.compiler.native-allocation-budget-test]
+            [kotoba.compiler.definition-admission-test]
+            [kotoba.compiler.native-record-boundary-test]
+            [kotoba.compiler.native-row-operations-test]
+            [kotoba.compiler.loop-slot-types-test]
+            [kotoba.compiler.native-handles-test]
+            [kotoba.compiler.native-hiccup-node-test]
+            [kotoba.compiler.empty-map-literal-test]
+            [kotoba.compiler.row-get-and-match-test]
+            [kotoba.compiler.loop-slot-beside-row-test]
+            [kotoba.compiler.let-rebinding-test]
+            ;; ADR 0353 :cljs-literal-hash: nine row generics and an integer
+            ;; literal argument crashed only here (a BigInt has no hash)
+            [kotoba.compiler.cljs-literal-hash-test]
+            ;; ADR 0353 :absent-field-from-assoc: a field nil in the module is
+            ;; [:option T], T what the module's assoc's write there
+            [kotoba.compiler.absent-field-from-assoc-test]
+            ;; ADR 0353 :rebound-row-argument: a rebound row passed on to
+            ;; another row is its record, a string helper on the way
+            [kotoba.compiler.rebound-row-argument-test]
+            ;; ADR 0353 :native-vector-field: a record holding an i64 vector
+            ;; (text-edit's [start end] selection) compiles natively
+            [kotoba.compiler.native-vector-field-test]
+            ;; ADR 0353 :typed-wasm-min-max: min/max in a typed wasm32 module
+            ;; (text-edit's clamp)
+            [kotoba.compiler.typed-wasm-min-max-test]
+            ;; ADR 0353 :native-option-record: the record an [:option R]
+            ;; holds is projected natively (text-edit's composition)
+            [kotoba.compiler.native-option-record-test]
+            ;; ADR 0353 :options-map-argument: a {:keys [..]} options
+            ;; parameter is a row; {} is the record with no fields
+            [kotoba.compiler.options-map-argument-test]
+            ;; ADR 0353 :vector-parameter: an unannotated parameter read as a
+            ;; vector is the vector its callers pass (browser.input's rects)
+            [kotoba.compiler.vector-parameter-test]
+            ;; ADR 0353 :record-list-sequence: first of a filter / remove /
+            ;; reverse chain over a [:list R] (browser.input's window-at)
+            [kotoba.compiler.record-list-sequence-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
   (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
@@ -140,6 +180,7 @@
     (set! (.-exitCode js/process) 1)))
 
 (t/run-tests 'kotoba.compiler.accelerator-test
+             'kotoba.compiler.allocation-budget-test
              'kotoba.compiler.backend-cljs-portable-test
              'kotoba.compiler.backend-evm-test
              'kotoba.compiler.backend-qualification-test
@@ -202,4 +243,25 @@
              'kotoba.compiler.value-bounds-agreement-test
              'kotoba.compiler.embedded-resources-test
              'kotoba.compiler.value-codec-iterative-test
-             'kotoba.compiler.wasm32-kotoba-v1-qualification-test)
+             'kotoba.compiler.wasm32-kotoba-v1-qualification-test
+             'kotoba.compiler.target-allocation-budget-test
+             'kotoba.compiler.native-allocation-budget-test
+             'kotoba.compiler.definition-admission-test
+             'kotoba.compiler.native-record-boundary-test
+             'kotoba.compiler.native-row-operations-test
+             'kotoba.compiler.loop-slot-types-test
+             'kotoba.compiler.native-handles-test
+             'kotoba.compiler.native-hiccup-node-test
+             'kotoba.compiler.empty-map-literal-test
+             'kotoba.compiler.row-get-and-match-test
+             'kotoba.compiler.loop-slot-beside-row-test
+             'kotoba.compiler.let-rebinding-test
+             'kotoba.compiler.cljs-literal-hash-test
+             'kotoba.compiler.absent-field-from-assoc-test
+             'kotoba.compiler.rebound-row-argument-test
+             'kotoba.compiler.native-vector-field-test
+             'kotoba.compiler.typed-wasm-min-max-test
+             'kotoba.compiler.native-option-record-test
+             'kotoba.compiler.options-map-argument-test
+             'kotoba.compiler.vector-parameter-test
+             'kotoba.compiler.record-list-sequence-test)

@@ -1,0 +1,220 @@
+(ns kotoba.compiler.rebound-row-argument-test
+  "ADR 0353 floor :rebound-row-argument.
+
+  kotoba-lang/browser's browser.text-edit rebinds its state in every
+  function, (let [state (normalize-selection state)] ..), and
+  delete-backward / delete-forward then pass it on: (insert-text state \"\").
+  That call was refused: \"argument state to insert-text is i64, and
+  parameter state of insert-text is the row {:text/caret T :text/selection T
+  | r}: only a record satisfies a row\". A rebound row passed on, in a cond,
+  after a vector destructuring, was each admitted alone; what text-edit adds
+  is a helper over a string -- (code-unit-count value) in
+  normalize-selection.
+
+  Measured 2026-10-03 on kotoba-sema 7290e22e: specialize-row-parameters
+  runs before the module-wide parameter inference, so code-unit-count's
+  unannotated s is still the provisional :i64 there. normalize-selection's
+  specialization calls it with a string, so its result could not be inferred
+  and stayed :i64, and the rebound state passed to insert-text was that i64.
+
+  Now, in kotoba-sema: each specialization round infers absent parameter
+  types before results, so the helper's parameter is a string, the
+  specialization's result is its record, and the rebound state is that
+  record.
+
+  Native: the minimal form (one string helper, a rebound row passed on)
+  compiles for x86_64-aiueos-kernel-v1 and aarch64-macos with the oracle
+  verified. text-edit itself is refused natively by its public empty-state,
+  whose record (its [start end] selection a vector field, native since floor
+  :native-vector-field) would be an export's result -- floor
+  :export-signatures. On wasm32 its clamp was refused until floor
+  :typed-wasm-min-max; it now compiles there, pinned below.
+
+  What stays refused, each by its literal: a number passed to a row
+  parameter (no coercion), the rebound row included; a record as an if test
+  (a record is never truthy)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private rebound
+  "The shape text-edit has, minimized: norm calls a helper over a string, and
+  del passes its rebound row on to ins, which rebinds it again."
+  (str "(ns b)\n"
+       "(defn- len [s] (string-code-unit-count s))\n"
+       "(defn- norm [m] (assoc m :n (len (:v m))))\n"
+       "(defn- ins [m t] (let [m (norm m)] (assoc m :v (str (:v m) t) :n (+ (:n m) 1))))\n"
+       "(defn- del [m] (let [m (norm m)] (if (< (:n m) 9) (ins m \"\") m)))\n"))
+
+(def ^:private admitted
+  (str rebound "(defn main [] :i64 (:n (del {:v \"abc\" :n 0})))"))
+
+(def ^:private text-edit
+  "browser.text-edit (browser 8671500) with the mechanical changes of floor
+  :browser-text-edit, the functions delete-backward and delete-forward reach,
+  without :text/composition (floor :absent-field-from-assoc) and move-caret /
+  move-to (their {} options map is refused: \"an empty map literal {} has no
+  row to extend\")."
+  (str
+       "(ns browser.text-edit)\n"
+       "\n"
+       "(defn empty-state\n"
+       "  []\n"
+       "  {:text/value \"\"\n"
+       "   :text/caret 0\n"
+       "   :text/selection [0 0]})\n"
+       "\n"
+       "(defn- clamp\n"
+       "  [n lo hi]\n"
+       "  (max lo (min hi n)))\n"
+       "\n"
+       "(defn- code-unit-at\n"
+       "  [s idx]\n"
+       "  (string-code-unit-at s idx))\n"
+       "\n"
+       "(defn- code-unit-count\n"
+       "  [s]\n"
+       "  (string-code-unit-count s))\n"
+       "\n"
+       "(defn- surrogate-pair-boundary?\n"
+       "  [value p]\n"
+       "  (and (pos? p) (< p (code-unit-count value))\n"
+       "       (<= 0xD800 (code-unit-at value (dec p)) 0xDBFF)\n"
+       "       (<= 0xDC00 (code-unit-at value p) 0xDFFF)))\n"
+       "\n"
+       "(defn- normalize-selection\n"
+       "  [state]\n"
+       "  (let [value (:text/value state \"\")\n"
+       "        n (code-unit-count value)\n"
+       "        [a b] (:text/selection state)\n"
+       "        a (clamp a 0 n)\n"
+       "        b (clamp b 0 n)]\n"
+       "    (assoc state\n"
+       "           :text/caret (clamp (:text/caret state) 0 n)\n"
+       "           :text/selection [(min a b) (max a b)])))\n"
+       "\n"
+       "(defn- snap-out-of-surrogate-pair\n"
+       "  [value p]\n"
+       "  (if (surrogate-pair-boundary? value p) (dec p) p))\n"
+       "\n"
+       "(defn- select\n"
+       "  [state start end]\n"
+       "  (let [value (:text/value state \"\")]\n"
+       "    (-> state\n"
+       "        (assoc :text/selection [(snap-out-of-surrogate-pair value start)\n"
+       "                                 (snap-out-of-surrogate-pair value end)]\n"
+       "               :text/caret (snap-out-of-surrogate-pair value end))\n"
+       "        (normalize-selection))))\n"
+       "\n"
+       "(defn- insert-text\n"
+       "  [state text]\n"
+       "  (let [state (normalize-selection state)\n"
+       "        value (:text/value state \"\")\n"
+       "        [start end] (:text/selection state)\n"
+       "        text (str text)\n"
+       "        value (str (subs value 0 start) text (subs value end))\n"
+       "        caret (+ start (code-unit-count text))]\n"
+       "    (assoc state\n"
+       "           :text/value value\n"
+       "           :text/caret caret\n"
+       "           :text/selection [caret caret])))\n"
+       "\n"
+       "(defn- delete-backward\n"
+       "  [state]\n"
+       "  (let [state (normalize-selection state)\n"
+       "        value (:text/value state \"\")\n"
+       "        [start end] (:text/selection state)]\n"
+       "    (cond\n"
+       "      (< start end)\n"
+       "      (insert-text state \"\")\n"
+       "\n"
+       "      (pos? start)\n"
+       "      (let [caret (if (surrogate-pair-boundary? value (dec start)) (- start 2) (dec start))]\n"
+       "        (assoc state\n"
+       "               :text/value (str (subs value 0 caret) (subs value start))\n"
+       "               :text/caret caret\n"
+       "               :text/selection [caret caret]))\n"
+       "\n"
+       "      :else state)))\n"
+       "\n"
+       "(defn- delete-forward\n"
+       "  [state]\n"
+       "  (let [state (normalize-selection state)\n"
+       "        value (:text/value state \"\")\n"
+       "        [start end] (:text/selection state)]\n"
+       "    (cond\n"
+       "      (< start end)\n"
+       "      (insert-text state \"\")\n"
+       "\n"
+       "      (< end (code-unit-count value))\n"
+       "      (let [delete-end (if (surrogate-pair-boundary? value (inc end)) (+ end 2) (inc end))]\n"
+       "        (assoc state\n"
+       "               :text/value (str (subs value 0 start) (subs value delete-end))\n"
+       "               :text/caret start\n"
+       "               :text/selection [start start]))\n"
+       "\n"
+       "      :else state)))\n"))
+
+(def ^:private text-edit-main
+  "\"abcd\", 1..3 selected, deleted backward and forward: \"ad\", caret 1 (21);
+  the caret at 4 deleted backward: \"abc\", caret 3 (33)."
+  (str text-edit
+       "(defn- measure [s] (+ (* 10 (code-unit-count (:text/value s))) (:text/caret s)))\n"
+       "(defn main [] :i64\n"
+       "  (+ (* 10000 (measure (delete-backward (select (insert-text (empty-state) \"abcd\") 1 3))))\n"
+       "     (* 100 (measure (delete-forward (select (insert-text (empty-state) \"abcd\") 3 1))))\n"
+       "     (measure (delete-backward (insert-text (empty-state) \"abcd\")))))"))
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- refusal [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(defn- compile-refusal [source target]
+  (try (compiler/compile-source source target)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(deftest text-edit-rebound-state-is-a-row-test
+  (testing "admitted on the reference: a rebound row passed on to another row"
+    (is (= 4 (run-main admitted))))
+  (testing "admitted on the hosted target"
+    (is (= [0 97 115 109]
+           (mapv #(bit-and (int %) 0xff)
+                 (take 4 (:bytes (compiler/compile-source admitted :wasm32-kotoba-v1)))))))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "compiles on both native targets"
+    (doseq [target native-targets]
+      (is (= 4 (#?(:clj long :cljs js/Number)
+                (:value (:artifact (compiler/compile-source admitted target)))))
+          (str target))))
+  (testing "browser.text-edit's delete-backward and delete-forward on the reference"
+    (is (= 212133 (run-main text-edit-main))))
+  (testing "not yet native: text-edit's public empty-state, an export's record (floor :export-signatures)"
+    (doseq [target native-targets]
+      (is (= (str "typed values currently require the kotoba-script web target, typed "
+                  "Wasm/CLJS target, or the qualified native one-word "
+                  "string/record/variant/option/result slice")
+             (compile-refusal text-edit-main target))
+          (str target))))
+  (testing "on wasm32: text-edit's clamp compiles (floor :typed-wasm-min-max)"
+    (is (nil? (compile-refusal text-edit-main :wasm32-kotoba-v1))))
+  (testing "refused: a number is not coerced to a row, rebound or not"
+    (is (= "argument 5 to ins is i64, and parameter m of ins is the row {:v T | r}: only a record satisfies a row"
+           (refusal (str rebound "(defn main [] :i64 (:n (ins 5 \"\")))"))))
+    (is (= "argument m to ins is i64, and parameter m of ins is the row {:v T | r}: only a record satisfies a row"
+           (refusal (str rebound "(defn main [] :i64 (let [m 5] (:n (ins m \"\"))))")))))
+  (testing "refused: a rebound record is never truthy"
+    (is (= "if test must be bool or an option"
+           (refusal (str rebound "(defn main [] :i64 (let [m (norm {:v \"a\" :n 0})] (if m 1 0)))"))))))

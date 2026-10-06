@@ -314,7 +314,10 @@
         ;; `:vectors` and `:vector-items` joined this report on 2026-09-09,
         ;; and `:string-pool` on 2026-09-10, for the reason recorded at the
         ;; first assertion in this file.
-        (lib/ensure! (= (str "{:status :ok :result 42 :fuel {:initial 512 :remaining 511} "
+        ;; 511 -> 509 on 2026-09-30 (ADR 0353 floor :allocation-budget-native):
+        ;; each of the program's two `pair`s pays the reference's one unit of
+        ;; fuel, as on kotoba.kir, restricted ESM and wasm32.
+        (lib/ensure! (= (str "{:status :ok :result 42 :fuel {:initial 512 :remaining 509} "
                              ":heap {:capacity 4096 :used 2} "
                              ":string-pool {:capacity 65536 :used 0} "
                              ":vectors {:capacity 4096 :used 0} "

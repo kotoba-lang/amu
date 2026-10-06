@@ -1,0 +1,38 @@
+(ns fixtures.native-word-ops.typed-map
+  {:kotoba/export [main get-len lookup has grow branches]})
+
+;; `[:map K V]` of one-word keys and values (amu ADR 0353 floor
+;; :native-hiccup-node): the hiccup elem's `[:map :keyword :string]` attrs and
+;; an i64-keyed map, over new / count / contains / get / assoc / dissoc. A
+;; keyword key is compared by content (`string=?`), an i64 key by the word.
+(defn- attrs [focused :bool] [:map :keyword :string]
+  (typed-map-new [:map :keyword :string]
+                 :class (if focused "window focused" "window") :data-id "w1"))
+
+(defn- ids [] [:map :i64 :i64] (typed-map-new [:map :i64 :i64] 3 30 4 40 5 50))
+
+(defn get-len [focused :i64] :i64
+  (string-byte-length (get (attrs (= focused 1)) :class "none")))
+
+(defn lookup [k :i64] :i64 (get (ids) k -1))
+
+(defn has [k :i64] :i64 (if (contains? (ids) k) 1 0))
+
+;; N fresh keys onto an empty map: 31 is the reference's entry limit, and
+;; the 32nd traps.
+(defn grow [n :i64] :i64
+  (loop [m (typed-map-new [:map :i64 :i64]) i 0]
+    (if (< i n) (recur (assoc m i (* 2 i)) (+ i 1)) (+ (* 100 (count m)) (get m (- n 1) -1)))))
+
+;; Two maps grown from one: neither sees the other's key.
+(defn branches [] :i64
+  (let [m (ids) a (assoc m 6 60) b (assoc m 7 70)]
+    (+ (get a 7 -1) (get b 6 -1) (* 10 (count a)) (* 1000 (count b)) (* 100000 (count m)))))
+
+(defn main [] :i64
+  (+ (string-byte-length (get (attrs true) :title "none"))
+     (* 10 (string-byte-length (get (attrs true) :data-id "")))
+     (* 100 (count (dissoc (assoc (attrs true) :x "1" :class "zz") :data-id)))
+     (* 1000 (+ (* 100 (count (assoc (ids) 4 7))) (get (assoc (ids) 4 7) 4 -1)))
+     (* 1000000 (count (dissoc (ids) 9)))
+     (* 10000000 (+ (get (dissoc (ids) 3) 5 -1) (get (dissoc (ids) 3) 3 -1)))))

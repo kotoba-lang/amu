@@ -1,0 +1,89 @@
+(ns kotoba.compiler.loop-slot-beside-row-test
+  "ADR 0353 floor :loop-slot-beside-row.
+
+  A loop's slots are typed from its helper's one call site, in the enclosing
+  body (floor :loop-slot-types). That body is typed BEFORE
+  `rewrite-record-projection` gives `(:a ys)` its descriptor, and inference
+  read the descriptor-less `(record-get ys :a)` as the 3-arity form, taking
+  the local for the descriptor: an internal failure (\"nth not supported on
+  this type\"), swallowed as an independent error. So a body that read a row
+  before its loop left every slot the `:i64` placeholder, and a `[:list T]`
+  slot was refused \"count requires a bounded vector, a typed set or a
+  canonical typed map; got :i64.\" while the same loop with no row read beside
+  it was admitted.
+
+  Now kotoba-sema types a descriptor-less `record-get` as that rewrite will
+  rewrite it: a record (or a declared `[:ref ..]`) answers its field, a
+  canonical typed map `typed-map-get`, the keyword->i64 map `map-get`.
+
+  Native: the admitted programs compile for x86_64-aiueos-kernel-v1 and
+  aarch64-macos with the oracle verified.
+
+  What stays refused, each by its literal: a list item used as an i64, a
+  number recurred into the list slot, a field the record lacks, a row read off
+  a number, and a record as an `if` test -- the same refusals the loop has with
+  no row read beside it."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private prelude
+  (str "(ns b (:schemas {:b/s [:record :b/s [[:a :i64] [:b :i64]]]}))\n"
+       "(defn- mk [] [:ref :b/s] {:a 5 :b 2})\n"))
+
+(def ^:private admitted
+  "A `[:list T]` loop slot beside a row read: the read's field plus the loop's
+  answer."
+  [["(defn main [] :i64 (let [ys {:a 1}] (+ (:a ys) (loop [zs [(mk) (mk)] i 0] (if (< i 1) (recur zs (+ i 1)) (count zs))))))" 3]
+   ["(defn main [] :i64 (let [ys (mk)] (+ (:b ys) (loop [zs [(mk) (mk)] i 0 acc 0] (if (< i (count zs)) (recur zs (+ i 1) (+ acc (:a (nth zs i)))) acc)))))" 12]
+   ["(defn main [] :i64 (let [ys {:a 1 :b 4}] (+ (:b ys) (loop [m {:a 1 :b 2} i 0] (if (< i 3) (recur (assoc m :a (+ (:a m) 1)) (+ i 1)) (:a m))))))" 8]])
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze (str prelude source))) 'main [])))
+
+(defn- refusal [source]
+  (try (sema/analyze (str prelude source))
+       nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(deftest loop-slot-typed-beside-a-row-read-test
+  (testing "admitted on the reference: the slot is typed whatever precedes the loop"
+    (doseq [[source answer] admitted]
+      (is (= answer (run-main source)) source)))
+  (testing "the same loop without the row read is admitted, as it was"
+    (is (= 2 (run-main "(defn main [] :i64 (loop [zs [(mk) (mk)] i 0] (if (< i 1) (recur zs (+ i 1)) (count zs))))"))))
+  (testing "admitted on the hosted target"
+    (doseq [[source _] admitted]
+      (is (= [0 97 115 109]
+             (mapv #(bit-and (int %) 0xff)
+                   (take 4 (:bytes (compiler/compile-source (str prelude source) :wasm32-kotoba-v1)))))
+          source)))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "compiles on both native targets"
+    (doseq [target native-targets
+            [source answer] admitted]
+      (is (= answer (#?(:clj long :cljs js/Number)
+                     (:value (:artifact (compiler/compile-source (str prelude source) target)))))
+          (str target " " source))))
+  (testing "refused: a list item is its record, not an i64"
+    (is (= "expression type mismatch: expected i64, got [:ref :b/s]"
+           (refusal "(defn main [] :i64 (let [ys {:a 1}] (+ (:a ys) (loop [zs [(mk) (mk)] i 0] (if (< i 1) (recur zs (+ i 1)) (+ 1 (nth zs 0)))))))"))))
+  (testing "refused: a number is not recurred into the list slot"
+    (is (= "expression type mismatch: expected [:list [:ref :b/s]], got i64"
+           (refusal "(defn main [] :i64 (let [ys {:a 1}] (+ (:a ys) (loop [zs [(mk) (mk)] i 0] (if (< i 1) (recur 3 (+ i 1)) (count zs))))))"))))
+  (testing "refused: a field the record lacks"
+    (is (= "record field must be a declared keyword literal"
+           (refusal "(defn main [] :i64 (let [ys {:a 1}] (+ (:z ys) (loop [zs [(mk) (mk)] i 0] (if (< i 1) (recur zs (+ i 1)) (count zs))))))"))))
+  (testing "refused: a row is not read off a number"
+    (is (= "record-get without a type descriptor requires a record value; got :i64"
+           (refusal "(defn main [] :i64 (let [ys 4] (+ (:a ys) (loop [zs [(mk) (mk)] i 0] (if (< i 1) (recur zs (+ i 1)) (count zs))))))"))))
+  (testing "refused: a record is never truthy"
+    (is (= "if test must be bool or an option"
+           (refusal "(defn main [] :i64 (let [ys {:a 1}] (if ys 1 (loop [zs [(mk) (mk)] i 0] (if (< i 1) (recur zs (+ i 1)) (count zs))))))")))))

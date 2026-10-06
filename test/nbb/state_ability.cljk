@@ -72,7 +72,10 @@
 ;; reference
 
 (defn- reference [name]
-  (str (kir/execute (kir/lower (sema/analyze (source name))) 'main [])))
+  ;; The same explicit budget the ESM run below is given: since ADR 0353
+  ;; point 7 every constructor the state threads is charged to fuel too, and
+  ;; the reference default (512) no longer covers the longest fixture.
+  (str (kir/execute (kir/lower (sema/analyze (source name))) 'main [] {:fuel 1000000})))
 
 ;; ---------------------------------------------------------------------------
 ;; ESM: fuel is a per-target profile (adr-2609242100 P4); each get/put is two
