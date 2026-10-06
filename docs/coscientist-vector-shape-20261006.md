@@ -47,3 +47,7 @@
 静的な照合では、1,474個のclone内CALLのBL数は両版とも216、532個のcloneのframe・保存レジスタ数・leaf種別も一致した。呼び出し融合の消失とframe肥大化は、この範囲では裏付けられなかった。コード配置や燃料処理の依存による待ち時間は次に検査する仮説であり、退行原因は未確定である。観測数を速度比として使わず、既存の性能不合格も変更しない。
 
 [診断報告](evidence/coscientist-vector-shape-20261006/pc-diagnostic-report.json)、[静的照合](evidence/coscientist-vector-shape-20261006/static-diagnostic-report.json)、[独立コピーの再検証](evidence/coscientist-vector-shape-20261006/pc-diagnostic-isolated-replay.json)を追加した。`pc-diagnostic.tgz`・`pc-diagnostic.manifest.json`・`replay-pc-diagnostic.py` の3ファイルから、選択した98ファイルのハッシュと生の命令位置からのFN/SIR/命令対応・観測比率をオフラインで再検証できる。新しいnative実行、solver、性能測定は行わない。割込み位置は命令のretirement、cycle、cache miss、branch missではなく、ホストのCPU tick囲いもないため、この診断は性能スコアや因果証明ではない。
+
+続く配置診断は、両版の機械語を変更せず、コード開始位置を0・64・128・256・512・1,024・4,096バイトずらした。各位置で順序を反転し、事前登録した28回を一度ずつ実行した。全回で結果1・燃料消費23,715・入口とRX範囲が一致した。10回は背景idle条件を満たさず、その記録を保存して置き換えなかった。事前の配置感度の条件を満たす位置はなく、試した範囲で退行は解消しなかった。プロセスごとのASLR上位アドレスや関数同士の相対配置は固定していないため、コード配置全般を原因から除外したとは言えない。
+
+[配置診断報告](evidence/coscientist-vector-shape-20261006/placement-diagnostic-report.json)と[独立コピーの再検証](evidence/coscientist-vector-shape-20261006/placement-diagnostic-isolated-replay.json)を保存した。`placement-diagnostic.tgz`・`placement-diagnostic.manifest.json`・`replay-placement-diagnostic.py` の3ファイルから、183ファイルの内容、28回の生の記録、順序・結果・燃料・配置範囲・保存済みのidle flagを使う事前条件の判定を再検証できる。CPU観測を新たに行うものではなく、全19本30組の性能スコアや因果証明でもない。V4の性能不合格と不採用を維持する。
