@@ -296,7 +296,35 @@
   {:id :browser-input :gate "browser-input-native-test"
    :blocked-by [:vector-parameter :record-list-sequence :open-event-row :export-signatures]
    :goal "browser.input the same (its reduce-event calls browser.surface's apply-actions, so the module compiles with browser.surface's action reducer; the rest of browser.surface is :browser-surface)"}
+;; Measured 2026-10-06 on kotoba-sema 942d8764, browser 8671500: browser.surface
+  ;; as written is refused at its first function, empty-surface's
+  ;; {.. :surface/focus nil ..}, "map literal value at key :surface/focus is
+  ;; nil .. nothing here says T": the module writes the field only from
+  ;; expressions (open-window's id, close-window's (:window/id (peek
+  ;; remaining)), focus-window's window-id), and a present T from an
+  ;; expression at an absent field is refused as a coercion
+  ;; (nil-field-typed-by-the-module-assoc-test pins it). Behind it, each
+  ;; measured on its own: update was no head; an empty vector field ([] for
+  ;; :surface/apps / :surface/windows / :surface/input-log) is :vector-i64,
+  ;; so (conj log {:event ..}) is "expected i64, got [:record ..]"; a record
+  ;; literal holding a vector of records is not typed as a record ("record-get
+  ;; without a type descriptor requires a record value; got :i64"); (str "w"
+  ;; n) of an i64 is "expected string, got i64"; and focus-window's (some
+  ;; pred coll) is refused by design (some is the option constructor).
+  {:id :record-field-update :gate "update-writes-a-record-field-through-f-test"
+   :goal "(update m k f x ..) -- browser.surface's (update surface :surface/next-window-id inc), (update surface :surface/input-log conj e), (update w :window/rect (fn [[_ _ ww hh]] [x y ww hh])) -- is (assoc m k (f (k m) x ..)) on the reference, wasm32 and both native targets, a fn literal applied as a let; refused \"unbound symbol has no value type: inc\" before; f answering another type, a key the record lacks, a number as the map, an absent field handed to a function of T, and update without a function stay refused by name"}
+  ;; Landed 2026-10-06 in kotoba-sema (b1c48883). ADR 0353 has the
+  ;; measurements; update is not yet in the grammar authority
+  ;; (guest-grammar.edn, digest-pinned in four repos), like mapv / remove.
+  {:id :empty-vector-field :gate "empty-vector-field-typed-by-the-module-conj-test"
+   :goal "an empty vector literal at a keyword field -- browser.surface's :surface/apps [] / :surface/windows [] / :surface/input-log [] -- is typed by what the module conj's or assoc's at that key (a [:list R] of window records, of app records, of input-event records), as :absent-field-from-assoc types a nil field; refused today \"expression type mismatch: expected i64, got [:record ..]\" at the conj; a key the module gives two element types, and a number conj'd onto a list of records, stay refused by name"}
+  {:id :record-list-field-literal :gate "record-literal-holds-a-list-of-records-test"
+   :goal "a keyword record literal holding a vector of record literals, {:surface/id \"k\" :surface/windows [{:window/id \"w1\" ..}]}, is a record with a [:list R] field on the reference, wasm32 and both native targets; refused today \"record-get without a type descriptor requires a record value; got :i64\" where the literal is read"}
+  {:id :absent-field-from-expression
+   :needs-a-human "what a T written by an expression at an absent [:option T] field is: browser.surface writes :surface/focus only from expressions (open-window's id, close-window's (:window/id (peek remaining)), focus-window's window-id); ADR 0353 admits a spelled literal as the option's some and refuses a call returning T as a coercion (pinned by nil-field-typed-by-the-module-assoc-test), so admitting this changes that line -- or the source writes the field another way"
+   :goal "browser.surface's empty-surface / open-window / close-window / focus-window type :surface/focus with the source still read by Clojure"}
   {:id :browser-surface :gate "browser-surface-native-test"
+   :blocked-by [:empty-vector-field :record-list-field-literal :absent-field-from-expression :browser-text-edit]
    :goal "browser.surface with cssom.layout and kotoba.wasm.dom the same"}
   {:id :hosted-engine-switch :gate "browser-hosted-runs-amu-output-test" :repo "kotoba-lang/browser"
    :goal "kotoba-lang/browser's hosted engine runs amu's compiled output of its own source; the Clojure source is that source, not a second copy"}
