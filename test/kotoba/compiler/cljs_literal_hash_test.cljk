@@ -19,14 +19,14 @@
   Native: the admitted program compiles for x86_64-aiueos-kernel-v1 and
   aarch64-macos with the oracle verified.
 
-  The module still refuses, by name, at the next floor's
-  (docs/language-ladder.edn); its :text/composition field is floor
-  :absent-field-from-assoc's and is left out here. What stays refused, each
+  The module, move-caret and move-to in, answers on the reference since
+  floor :options-map-argument (it was refused there, by name, until then);
+  its :text/composition field is floor :absent-field-from-assoc's and is
+  left out here. What stays refused, each
   by its literal: a row-polymorphic function used as a value, a number
   passed to a row parameter (no coercion), a record as an if test (a record
   is never truthy) -- all three with nine generics, where the crash was."
-  (:require [clojure.string :as str]
-            [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [kotoba.sema :as sema]))
@@ -236,12 +236,9 @@
       (is (= 36 (#?(:clj long :cljs js/Number)
                  (:value (:artifact (compiler/compile-source admitted target)))))
           (str target))))
-  (testing "browser.text-edit is answered in the language's words, not the host's"
-    (let [[message data] (outcome text-edit)]
-      (is (string? message))
-      (is (not (str/includes? (str message) "closure_uid")) message)
-      (is (= :subset (:phase data)) message)
-      (is (= "kotoba.error" (some-> (:kotoba.error/code data) namespace)) message)))
+  (testing "browser.text-edit, ten row generics, is admitted (floor :options-map-argument)"
+    (is (nil? (outcome text-edit)))
+    (is (= 3 (run-main text-edit))))
   (testing "refused: a row-polymorphic function is not a value"
     (is (= "row-polymorphic function g1 cannot be used as a value: it exists only as its specializations, one per record type a call passes it"
            (first (outcome (str nine-generics

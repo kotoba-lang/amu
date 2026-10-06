@@ -1,0 +1,152 @@
+(ns kotoba.compiler.record-list-sequence-test
+  "ADR 0353 floor :record-list-sequence.
+
+  kotoba-lang/browser's browser.input finds the window under a point the
+  Clojure way:
+
+    (defn window-at [surface point]
+      (first (filter #(point-in-rect? point (:window/rect %))
+                     (reverse (:surface/windows surface)))))
+
+  over a vector literal of window records -- a [:list R]. That was refused
+  three ways: filter \"expected vector-i64, got [:list R]\" (it desugared to
+  the T4.5 loop that builds a bounded i64 vector, and a [:list R] has no
+  builder), first \"first (pair-first) reads a pair chain or a bounded
+  vector\", and reverse \"unknown operation: reverse is not a builtin\".
+
+  Measured 2026-10-04 on kotoba-sema 3d051f43. Now, in kotoba-sema, `first`
+  of a filter / remove / reverse chain is one search that builds nothing: it
+  walks the source by index -- from its end under an odd number of reverses
+  -- and answers the first item every predicate admits. Over a [:list R] it
+  answers [:option R], absent when nothing is found; over a bounded vector it
+  answers the item and traps on an empty result, as it always did. `first`
+  of a [:list R] itself is [:option R]. A loop helper's captures are settled
+  again after row specialization (the surface's windows were the
+  placeholder :i64 there), and a capture the loop reads as a vector refines
+  the enclosing function's unannotated parameter (window-at's point). In
+  kotoba-verifier, a record field may be a [:list R] of one-word items, and a
+  let naming a list item is that record.
+
+  What stays refused, each by its literal: the option `first` answers used
+  as a record (absence is not a record); a number as the list (no
+  coercion); a bare `reverse` and a `filter` over a [:list R] that `first`
+  does not read (a sequence of their own needs a list builder this profile
+  does not have)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private minimized
+  "first over filter, remove and reverse chains of a [:list R], and first
+  of the list itself: 2 + 10 * 3 + 100 * 1 + 1000 * 9 (absent) + 10000 * 2.
+  The module has a private function, so main alone is exported (a module
+  with none exports its loop helpers too, and a [:list R] parameter is no
+  export's ABI)."
+  (str "(ns b)\n"
+       "(defn- unused [] 0)\n"
+       "(defn main [] :i64\n"
+       "  (let [xs [{:a 1} {:a 2} {:a 3}]]\n"
+       "    (+ (if-let [r (first (filter #(> (:a %) 1) xs))] (:a r) 0)\n"
+       "       (* 10 (if-let [r (first (reverse xs))] (:a r) 0))\n"
+       "       (* 100 (if-let [r (first xs)] (:a r) 0))\n"
+       "       (* 1000 (if-let [r (first (filter #(> (:a %) 5) xs))] (:a r) 9))\n"
+       "       (* 10000 (if-let [r (first (remove #(> (:a %) 2) (reverse xs)))] (:a r) 0)))))"))
+
+(def ^:private input
+  "browser.input (browser 8671500)'s window-at, as written but private (an
+  export's ABI is floor :export-signatures), over a surface whose two
+  windows overlap: the point both cover answers the window drawn last (2),
+  a point only the first covers answers 1, and a point outside both is
+  absent (9)."
+  (str "(ns browser.input)\n"
+       "(defn- point-in-rect?\n"
+       "  [[px py] [x y w h]]\n"
+       "  (and (<= x px (+ x w))\n"
+       "       (<= y py (+ y h))))\n"
+       "(defn- window-at\n"
+       "  [surface point]\n"
+       "  (first (filter #(point-in-rect? point (:window/rect %))\n"
+       "                 (reverse (:surface/windows surface)))))\n"
+       "(defn- id-at [surface point missing]\n"
+       "  (if-let [window (window-at surface point)] (:window/id window) missing))\n"
+       "(defn main [] :i64\n"
+       "  (let [surface {:surface/windows [{:window/id 1 :window/rect [0 0 100 100]}\n"
+       "                                   {:window/id 2 :window/rect [50 50 100 100]}]}]\n"
+       "    (+ (id-at surface [60 60] 0)\n"
+       "       (* 10 (id-at surface [10 10] 0))\n"
+       "       (* 100 (id-at surface [500 500] 9)))))"))
+
+(def ^:private vectors
+  "A bounded vector keeps its value: the item, and 3 found from the end."
+  (str "(ns b)\n"
+       "(defn- unused [] 0)\n"
+       "(defn main [] :i64\n"
+       "  (+ (first (filter #(> % 1) [1 2 3]))\n"
+       "     (* 10 (first (filter #(< % 3) (reverse [1 2 3]))))))"))
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- refusal [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(defn- trap [source]
+  (try (run-main source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(defn- native-value [source target]
+  (#?(:clj long :cljs js/Number) (:value (:artifact (compiler/compile-source source target)))))
+
+(deftest record-list-filter-first-reverse-test
+  (testing "admitted on the reference: filter, remove, reverse and first over a [:list R]"
+    (is (= 29132 (run-main minimized))))
+  (testing "browser.input's window-at on the reference: 2 on top, 1 alone, absent outside"
+    (is (= 912 (run-main input))))
+  (testing "a bounded vector keeps its value, and traps on an empty result as before"
+    (is (= 22 (run-main vectors)))
+    (is (= "vector-index-out-of-range"
+           (trap (str "(ns b)\n(defn- unused [] 0)\n"
+                      "(defn main [] :i64 (first (filter #(> % 5) [1 2 3])))")))))
+  (testing "admitted on the hosted target"
+    (doseq [source [minimized input vectors]]
+      (is (= [0 97 115 109]
+             (mapv #(bit-and (int %) 0xff)
+                   (take 4 (:bytes (compiler/compile-source source :wasm32-kotoba-v1))))))))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "compiles on both native targets"
+    (doseq [target native-targets]
+      (is (= 29132 (native-value minimized target)) (str target))
+      (is (= 912 (native-value input target)) (str target))
+      (is (= 22 (native-value vectors target)) (str target))))
+  (testing "refused: what first answers over a list is an option, not a record"
+    (is (= (str "record-get without a type descriptor requires a record value; "
+                "got [:option [:record :kotoba.map-literal/a [[:a :i64]]]]")
+           (refusal (str "(ns b)\n"
+                         "(defn main [] :i64 (:a (first (filter #(> (:a %) 5) [{:a 1} {:a 2}]))))")))))
+  (testing "refused: a number is not a list"
+    (is (= "expression type mismatch: expected vector-i64, got i64"
+           (refusal (str "(ns b)\n"
+                         "(defn main [] :i64 (first (filter #(> % 1) 5)))")))))
+  (testing "refused: a reversed sequence of its own is not built"
+    (is (= (str "reverse is admitted only where first reads it -- (first (reverse s)), "
+                "(first (filter p (reverse s))) -- which searches s from its end and builds "
+                "nothing; a reversed sequence of its own needs a list builder this profile "
+                "does not have")
+           (refusal (str "(ns b)\n"
+                         "(defn main [] :i64 (count (reverse [1 2 3])))")))))
+  (testing "refused: a filtered [:list R] that first does not read is not built"
+    (is (= (str "expression type mismatch: expected vector-i64, got "
+                "[:list [:record :kotoba.map-literal/a [[:a :i64]]]]")
+           (refusal (str "(ns b)\n"
+                         "(defn main [] :i64 (count (filter #(> (:a %) 1) [{:a 1} {:a 2}])))"))))))

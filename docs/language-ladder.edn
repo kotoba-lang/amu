@@ -207,7 +207,7 @@
   ;; T the one type the module's non-nil values at that key spell; nil is its
   ;; none, a spelled value or a map literal its some. ADR 0353 has the
   ;; measurements. Native: construction, assoc and presence compile; the
-  ;; present record's projection is floor :native-option-record.
+  ;; present record's projection is floor :native-option-record (closed).
   {:id :absent-field-from-assoc :gate "nil-field-typed-by-the-module-assoc-test"
    :goal "{.. :text/composition nil} is [:option T] with T the value the module assoc's into that field ({:composition/text \"\"}, composition-start), and (assoc s :text/composition nil) its none; refused today \"map literal value at key :text/composition is nil ... nothing here says T\"; a field two assoc's give two types stays refused by name"}
 ;; Landed 2026-10-03 in kotoba-sema (275b40a0): row specialization ran
@@ -221,7 +221,10 @@
    :goal "a record field holding an i64 vector (:text/selection [start end], typed :vector-i64) compiles for x86_64-aiueos-kernel-v1 and aarch64-macos; refused today at the typed-values gate (\"typed values currently require ... the qualified native one-word string/record/variant/option/result slice\") for (nth (:sel s) 1) and (assoc s :sel [..]) alike"}
   {:id :typed-wasm-min-max :gate "min-max-qualified-on-typed-wasm-test"
    :goal "max and min compile on wasm32-kotoba-v1 in a module with typed values (browser.text-edit's clamp); refused today \"typed Wasm operation is not qualified\" {:operation max}"}
-;; Measured 2026-10-03 while closing :absent-field-from-assoc: the
+;; Landed 2026-10-03 in kotoba-verifier (3e8134cd) and kotoba-native
+  ;; (04a8e0e3): the record an option holds, defaulted to R, is R to the record
+  ;; check, and a record in an option is boxed to one word. ADR 0353 has the
+  ;; measurements. Measured 2026-10-03 while closing :absent-field-from-assoc: the
   ;; record inside an [:option R] -- (if-let [c (:text/composition s)]
   ;; (:composition/text c) ..) -- is refused on both native targets by the
   ;; verifier, "runtime KIR record projection rejected" (record-get's operand
@@ -239,6 +242,12 @@
   ;; literal {} has no row to extend".
   {:id :options-map-argument :gate "options-map-destructures-as-a-row-test"
    :goal "move-caret's and move-to's options -- ([state delta] (move-caret state delta {})) and ([state delta {:keys [extend?]}] ..) -- are admitted, a key the map does not have read as absence; refused today \"record-get without a type descriptor requires a record value; got :i64\" at (move-caret (empty-state) 1), minimized \"expression type mismatch: expected map, got i64\"; a number as the options map, and an option used as a number, stay refused"}
+;; Measured 2026-10-04 while closing :options-map-argument: text-edit with
+  ;; move-caret / move-to answers on the reference, on both native targets
+  ;; with empty-state private, and compiles on wasm32 -- the absent option a
+  ;; destructured key would be is folded away. A literal nil the program
+  ;; keeps, (let [x nil] ..), is still "unsupported typed Wasm expression"
+  ;; on wasm32 (option-none); natively it compiles.
   {:id :export-signatures :gate "export-abi-from-clojure-source-test"
    :needs-a-human "how a Clojure-readable source states an export's ABI: browser.text-edit's public functions take state (a row: refused as an exported generic, which has one ABI) and text (unannotated, so :i64; the test passes strings: \"expected i64, got string\"), and the typed signature spelling [m [:ref q]] is not Clojure. Candidates measured as possible, not chosen: Clojure type hints (^String text) and an ns schema the hint names, or the export taking the record the module's one public constructor (empty-state) returns"
    :goal "browser.text-edit's public functions export one ABI each with the source still read by Clojure"}
@@ -249,8 +258,44 @@
   {:id :browser-text-edit :gate "browser-text-edit-native-test"
    :blocked-by [:absent-field-from-assoc :rebound-row-argument :native-vector-field :typed-wasm-min-max :native-option-record :options-map-argument :export-signatures]
    :goal "kotoba-lang/browser's browser.text-edit, migrated only mechanically (defn-, nil's meaning, a :kotoba interop branch), compiles for both native targets and its hosted tests pass on amu's output"}
+  ;; Measured 2026-10-04 on kotoba-sema 77d2dd84, browser 8671500: browser.input
+  ;; as written is refused at its first function, point-in-rect?'s
+  ;; [[px py] [x y w h]], "unknown operation: nth is not a builtin, a sugar
+  ;; head, or a function of this module" -- an unannotated parameter read as a
+  ;; vector stayed the provisional :i64 ((vector-at p 0) refined it, (nth p 0)
+  ;; and (count p) did not).
+  {:id :vector-parameter :gate "vector-parameter-takes-the-callers-vector-test"
+   :goal "an unannotated parameter destructured as a vector or read by nth / count is the :vector-i64 its callers pass -- browser.input's point-in-rect? / in-titlebar? / in-resize-handle?; a number, a string and a heterogeneous vector at the call, a parameter used both as a vector and a number, and an item as an if test stay refused by name"}
+  ;; Measured 2026-10-04 with :vector-parameter in place: window-at's
+  ;; (first (filter #(point-in-rect? point (:window/rect %)) (reverse
+  ;; (:surface/windows surface)))) is refused -- a vector literal of window
+  ;; records is a [:list R], and over it filter is "expected vector-i64, got
+  ;; [:list R]", first "first (pair-first) reads a pair chain or a bounded
+  ;; vector", reverse "unknown operation: reverse is not a builtin".
+  {:id :record-list-sequence :gate "record-list-filter-first-reverse-test"
+   :goal "filter / first / reverse over a [:list R] of records -- browser.input's window-at -- with first answering [:option R] (absent on an empty list) and the predicate a closure over the caller's locals, on the reference, wasm32 and both native targets; first of an empty list used as a record, and a number as the list, stay refused by name"}
+  ;; Measured 2026-10-04 while closing :record-list-sequence: first of a
+  ;; filter / remove / reverse chain is a fused search that builds nothing; a
+  ;; bare reverse, and a filter over a [:list R] first does not read, stay
+  ;; refused (a list builder, typed-list-conj on KIR / Wasm / native, is what
+  ;; they would need). A module with no defn- exports its loop helpers, so a
+  ;; loop over a [:list R] there is refused natively; browser's modules use
+  ;; defn-, so it is not on the browser path.
+  ;; Measured 2026-10-04: normalize-event reads an OPEN host event -- (or
+  ;; (:button event) 0), (select-keys event [:pointerId .. :height]) over keys
+  ;; an event may lack, one record per capability joined in one cond, and the
+  ;; event itself returned (assoc event :event/type :unknown). Refused "argument
+  ;; {:x 3} to ne is record :kotoba.map-literal/x, which has no field :button
+  ;; that the row {:button T | r} of parameter event reads", and the cond's
+  ;; branches "record-get without a type descriptor requires a record value;
+  ;; got :i64". (:k m) is a required read by ADR 0353 (pinned by
+  ;; options-map-destructures-as-a-row-test), so admitting this is a decision.
+  {:id :open-event-row
+   :needs-a-human "what a host event is in the typed source: one closed record with every key [:option T] (the host adapter fills absence), a variant with one case per capability (normalize-event becomes a match), or (or (:k m) d) read as an optional field the way (get m :k d) already is -- each measured possible, none chosen; the last changes what (:k m) means"
+   :goal "browser.input's normalize-event and event-point compile with the source still read by Clojure"}
   {:id :browser-input :gate "browser-input-native-test"
-   :goal "browser.input the same"}
+   :blocked-by [:vector-parameter :record-list-sequence :open-event-row :export-signatures]
+   :goal "browser.input the same (its reduce-event calls browser.surface's apply-actions, so the module compiles with browser.surface's action reducer; the rest of browser.surface is :browser-surface)"}
   {:id :browser-surface :gate "browser-surface-native-test"
    :goal "browser.surface with cssom.layout and kotoba.wasm.dom the same"}
   {:id :hosted-engine-switch :gate "browser-hosted-runs-amu-output-test" :repo "kotoba-lang/browser"
