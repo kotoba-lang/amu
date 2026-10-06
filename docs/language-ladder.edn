@@ -341,6 +341,24 @@
   ;; and that is refused where (merge {:window/id "w" ..} window) is not.
   {:id :merge-literal-reads-its-row :gate "merge-literal-reading-its-row-test"
    :goal "(merge {:k (:a m) ..} m') with m a row parameter -- browser.surface's open-window, whose merged literal reads title / app-id / rect / document off the window it then merges (dissoc'd) -- is the record merge gives, on the reference, wasm32 and both native targets; refused today \"record-get without a type descriptor requires a record value; got :i64\" ((merge {:t title} w) with title destructured off w); a merge onto a number and a read of a field the row lacks stay refused by name"}
+  ;; Landed 2026-10-07 in kotoba-sema (be68d75c): each specialization round
+  ;; types its literals before it infers results, and a map literal's own
+  ;; record field that a row read defaulted to :i64 at desugar takes the
+  ;; read's type. ADR 0353 has the measurements. Measured behind it, each on
+  ;; its own, before and after alike: next-window-id's (str "w" n) of an i64
+  ;; ("expression type mismatch: expected string, got i64"); on native, a row
+  ;; rebound by (let [s (update s ..)] (update s ..)) ("runtime KIR record
+  ;; update rejected" at verify, the reference admitting it); and
+  ;; open-window's (or title app-id id) / (or rect [..]) over a key the
+  ;; record has, a string's and a vector's truthiness ("if test must be bool
+  ;; or an option"). Its [id surface] pair, destructured, is admitted.
+  {:id :integer-str :gate "str-formats-an-integer-test"
+   :goal "(str \"w\" n) with n an :i64 -- browser.surface's next-window-id -- is the string of n's decimal digits on the reference, wasm32 and both native targets, as Clojure's str prints a long; refused today \"expression type mismatch: expected string, got i64\"; str of a record, a vector and an option stays refused by name (no implicit printing of an aggregate)"}
+  {:id :native-rebound-row-update :gate "native-rebound-row-update-test"
+   :goal "a row rebound by its own update -- browser.surface's next-window-id / open-window, (let [s (update s :n inc)] (update s :m inc)) -- compiles and verifies on x86_64-aiueos-kernel-v1 and aarch64-macos as it runs on the reference; refused today \"runtime KIR record update rejected\" at verify; an update of a field the record lacks stays refused by name"}
+  {:id :destructured-key-fallback
+   :needs-a-human "what open-window's (or title app-id id) / (or rect [80 80 520 360]) is when the window record HAS :title / :rect: a destructured key the record has is its T (floor :options-map-argument), so or asks a string's / vector's truthiness, refused \"if test must be bool or an option\" (ADR 0353 keeps it refused). Candidates, each possible, none chosen: a {:keys} key is always [:option T] whether or not the record has it (or is then option-or), the source writes (get window :title (or app-id id)) -- (get m :k d) is already admitted -- or the same reading :open-event-row asks of (or (:k m) d)"
+   :goal "browser.surface's open-window states its title / rect fallbacks with the source still read by Clojure"}
   {:id :input-log-events
    :needs-a-human "what browser.surface's input log holds: record-key, scroll-window and append-text conj three event shapes ({:event :keyboard/key :window-id :key}, {:event :window/scroll :window-id :delta-x :delta-y}, {:event :text/input :window-id :text}) onto one [] field, refused \"this module conj's two types at it ... a list holds one type\" (empty-vector-field-typed-by-the-module-conj-test pins it). Candidates, each possible, none chosen: a variant with one case per event (the reader then matches), one closed record with every key [:option T], or a log per event kind -- the same question :open-event-row asks of a host event"
    :goal "browser.surface's input log is typed with the source still read by Clojure"}
@@ -350,7 +368,7 @@
    :needs-a-human "what a T written by an expression at an absent [:option T] field is: browser.surface writes :surface/focus only from expressions (open-window's id, close-window's (:window/id (peek remaining)), focus-window's window-id); ADR 0353 admits a spelled literal as the option's some and refuses a call returning T as a coercion (pinned by nil-field-typed-by-the-module-assoc-test), so admitting this changes that line -- or the source writes the field another way"
    :goal "browser.surface's empty-surface / open-window / close-window / focus-window type :surface/focus with the source still read by Clojure"}
   {:id :browser-surface :gate "browser-surface-native-test"
-   :blocked-by [:empty-vector-field :list-item-from-expression :merge-literal-reads-its-row :input-log-events :record-list-field-literal :absent-field-from-expression :browser-text-edit]
+   :blocked-by [:empty-vector-field :list-item-from-expression :merge-literal-reads-its-row :integer-str :native-rebound-row-update :destructured-key-fallback :input-log-events :record-list-field-literal :absent-field-from-expression :browser-text-edit]
    :goal "browser.surface with cssom.layout and kotoba.wasm.dom the same"}
   {:id :hosted-engine-switch :gate "browser-hosted-runs-amu-output-test" :repo "kotoba-lang/browser"
    :goal "kotoba-lang/browser's hosted engine runs amu's compiled output of its own source; the Clojure source is that source, not a second copy"}
