@@ -7,7 +7,7 @@ description: Use when auditing Hermes bot profiles or cron fleet health.
 
 ## Inventory (workspace root = ~/.hermes/profiles/)
 
-- Profiles: count dirs under `~/.hermes/profiles/`. Cron jobs: parse `~/.hermes/profiles/<p>/cron/*.json` — each file is `{"jobs": [...]}` with per-job fields `enabled`, `state`, `paused_at`, `last_status`, `last_error`, `failure_streak`, `last_run_at`, `next_run_at`, `schedule_display`, `repeat.completed`, `last_dispatch` (has `scheduled_at`/`dispatched_at`), `deliver`.
+- Profiles: count dirs under `~/.hermes/profiles/`. Cron jobs: parse only `~/.hermes/profiles/<p>/cron/jobs.json` — unwrap `{"jobs": [...]}` or accept a bare job list; never inventory other cron JSON with per-job fields `enabled`, `state`, `paused_at`, `last_status`, `last_error`, `failure_streak`, `last_run_at`, `next_run_at`, `schedule_display`, `repeat.completed`, `last_dispatch` (has `scheduled_at`/`dispatched_at`), `deliver`.
 - Exclude `*.bak-*` profile dirs (user keeps backup clones; they inflate counts).
 - `cronjob_manage` only sees the CURRENT profile's jobs — cross-profile audit must read the JSON files directly.
 - Gateway profiles are the ones with a live process: `ps aux | grep 'hermes_cli.main.*gateway run'` and extract `--profile <name>`. A profile with cron but no gateway means its jobs fire only if some supervisor loop starts it.

@@ -87,15 +87,8 @@ launchd tick が生成する append-only 台帳（observatory / funnel-pulse 等
    actor が在るときだけ行単位判定に落ちる。**時刻の辞書順比較は裸の文字列で行う** —
    quote 付き (`vals[-1] < '"2026-..."'`) のまま比較すると `"` の影響で常に
    False になり「stash は新鮮」という誤判定になる（実測 2026-09-13）。
-5. runtime 実体（state.db / -wal / -shm / schema_columns.json）は行判定の対象外 —
-   **pop しない**。bin 差分のみで「緊急退避物」として残す。生成キャッシュの世代差分
-   （schema_hash の違い等）は「stash 版が新世代」であっても適用しない: それを書いた
-   runtime が管理する。
-   **退避した runtime 実体は必ず pop で戻す** — それらは live server が開いている
-   working state であり、stash に入れたままにすると次の session の ff-sync 監査で
-   恒久的な modified 残りになる。push →（他の stash や ff を処理）→ 即 pop、を
-   1 つの sync 手順の中で閉じる。pop 後は兄弟 3 ファイルが全部 working tree に
-   戻ったことを status で確認する。
+5. runtime 実体（state.db / -wal / -shm / schema_columns.json）は行判定の対象外。live server が開く DB は stash しない。別 worktree で sync し、runtime が書いた世代を Git の操作で置換しない。
+   既存 stash に runtime 実体がある場合は、stash を保持して runtime owner/process と現在のファイルを確認する。実行中・状態不明・現在のファイルが更新済みなら apply/pop しない。復旧が必要と確認できた場合だけ owner と連携して runtime を停止し、現在の DB/WAL/SHM と schema を一式バックアップした上で、同じ世代の退避物を隔離先へ取り出して整合性を検証する。検証済みの一式で復旧して再起動・read/write 検証を終えるまで stash を drop しない。stash 全体の pop や DB 一個だけの上書きは禁止。
 
 ### index.lock と並行 session（superproject 本体）
 
@@ -110,8 +103,7 @@ launchd tick が生成する append-only 台帳（observatory / funnel-pulse 等
   から 1 回やる。
 - **stale と判定した lock は stash より先に除去する。** lock が在ると
   `git stash push` 自身が `error: could not write index` で落ちる — ff-sync の順序は
-  lock 除去 → stash push → ff merge → stash pop。runtime db は `.db` と `-wal` / `-shm`
-  を 3 つセットで stash する（`.db` だけ戻すと兄弟が modified 残りで次の ff を止める）。
+  lock 除去 → source-only stash push → ff merge → source-only stash pop。runtime DB 一式は対象外。live checkout の DB が ff を阻む場合は別 worktree で sync し、上記の owner 管理の復旧手順へ切り分ける。
   **自分の操作が中断した直後の 0 byte lock は自分が作った stale** — `could not write
   index` の直後なら確認なしで除去して再開してよい。
 - **launchd tick bot が追記する生成型台帳 (observatory 等) の tracked 変更は ff を

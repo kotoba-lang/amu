@@ -18,9 +18,10 @@ Use when migrating Clojure/ClojureScript code from java.*/clojure.java.* usage t
 
 ## Verify by running the artifact (build/test green before landing)
 
-`.kotoba`: `amu check` → `amu compile --target wasm32-browser` (multi-module
-graphs: `amu module-lock ... --source-path <dir> --blocks <dir>` then
-`amu compile --module-lock <lock> --blocks <dir>`; wasm32-browser target only —
+`.kotoba`: `bin/amu check <entry> --jvm-free` →
+`bin/amu compile <entry> --target wasm32-browser --jvm-free --output <artifact>` (multi-module
+graphs: `bin/amu module-lock <entry> --source-path <dir> --blocks <dir> --output <lock> --jvm-free` then
+`bin/amu compile --module-lock <lock> --blocks <dir> --target wasm32-browser --jvm-free --output <artifact>`; wasm32-browser target only —
 the js-browser route refuses some graphs) → instantiate in Node with
 `amu/runtime/browser-host.mjs` and assert exported values. `.cljc`/`.cljk` test
 suites: `kbb -M:test` — the invocation is always kbb, never a Clojure CLI/bb/nbb
@@ -41,7 +42,7 @@ cutover work; for ADDING new decision logic to a repo whose suite is JVM-bound
 prerequisite and do not boot a JVM "just to check the suite" — the owner's
 direction is JVM-free verification only. Scope the new logic as a pure
 `.kotoba` guest (`repo/kotoba/<ns>/<name>.kotoba`, capability-free), verify
-with `amu check --jvm-free` + `amu test --jvm-free` + a Node-side test script
+with `bin/amu check <entry> --jvm-free` + `bin/amu test <entry> --jvm-free` + a Node-side test script
 over the host artifacts, state the suite's JVM-boundness in the report, and
 leave the suite port as its own authorized wave (skill `kbb-test-suite-fix`).
 
@@ -90,7 +91,7 @@ For logic that must run natively, write `*_core.kotoba` under the amu guest gram
 1. `mkdir -p <checkout>/src/kotoba`; `project.edn` at repo ROOT (not under `src/`) with `:name :version :description :license`.
 2. Write the pure core as `src/kotoba/<name>.kotoba` (amu grammar).
 3. Add an in-module self-check: `(defn self-check [] :i64 (+ (if (= <expected> (<fn> <args>)) 0 1) ...))` and `main` returning it. Probe in Node asserts both `main` and individual exports.
-4. Verify: `amu check` → `amu compile --jvm-free --target wasm32-browser` → Node probe → commit → push.
+4. Verify: `bin/amu check <entry> --jvm-free` → `bin/amu compile <entry> --jvm-free --target wasm32-browser --output <artifact>` → Node probe → commit → push.
 
 ### amu `.kotoba` subset-reject pitfalls (rewrite these shapes)
 
@@ -98,34 +99,34 @@ For logic that must run natively, write `*_core.kotoba` under the amu guest gram
 - Type annotations are inline and per-parameter: `(defn f [x :i64] :i64 ...)`; mixing metadata-style `(param :i64)` fails with "parameter name expected".
 - `subs` with computed indices has no admitted lowering — compute chars arithmetically via char codes instead.
 - The compiled wasm module MUST export `main` (browser-host rejects otherwise): `(defn main [] :i64 (self-check))` plus `(:export [... main])`.
-- `mkdir -p target` before `amu compile --output target/x.wasm`.
+- `mkdir -p target` before `bin/amu compile <entry> --target wasm32-browser --jvm-free --output target/x.wasm`.
 - browser-host needs `new Uint8Array(readFileSync(...))` — a Node Buffer is rejected as "must be an ArrayBuffer or typed-array view".
 
 ### Guest-grammar admission rules measured on the wave-1 tranche (20 repos, agent-dispatched)
 
 Check these BEFORE writing a guest — every one was a real dispatch failure at least once:
 
-- **Every defn a gate discovers must be IN the `(:export [...])` vector — including `test-*` defs and `main`.** `kotoba -M test`'s tests-in filters over `:exports`, not all defs; `main` missing → "entryless library" rejection on wasm targets. Adding a test fn without adding it to the export vector fails with `no exported test-* definitions`.
+- **Every defn a gate discovers must be IN the `(:export [...])` vector — including `test-*` defs and `main`.** `bin/amu test <entry> --jvm-free` discovers exported tests, not arbitrary private defs; `main` missing → "entryless library" rejection on wasm targets. Adding a test fn without adding it to the export vector fails with `no exported test-* definitions`.
 - **`if` branches must have the same value type** — mixing `true`/`false` with `1/0` in nested if branches fails `if branches must have the same value type`. Return booleans via `(and ...)` directly.
 - **`count` on a string is rejected** (`count-receiver`): pass lengths as separate i64 parameters instead of calling `(count s)`.
 - **`string-substring` uses codepoint indices; `string-byte-length` counts bytes** — UTF-8 multibyte characters shift byte indexes off codepoint boundaries and fail `string-substring-code-point-boundary`. Keep scanned fixtures ASCII or index in codepoints.
-- **`kotoba -M` requires ABSOLUTE paths** — relative paths fail `:decode`/"input could not be read".
+- **Resolve the intended entry path before invoking `bin/amu`** — use an absolute path for a cross-worktree gate and retain its source/module-lock scope.
 - `kbb` js host resolves file paths against the MAIN checkout, not a linked worktree cwd — a fixture that exists only in the worktree fails "path outside the granted scope"; copy it into the main checkout or commit it first.
 - `kotoba.lang.text/split` takes a REGEX only (`#"/"`) — a string separator (`"/"`) crashes the host matcher with `Cannot read properties of undefined (reading 'includes')`, a message that names nothing about the argument type. Probe helper crash sites by asking "what TYPE did I pass?" first, not "what is broken?".
 - Sampling profiler swap (utsushi measured): JFR -> `node:inspector` Session + `Profiler.enable/start/stop`. `Profiler.stop`'s result is WRAPPED (`.-profile` of the arg — its only key is "profile"). `js->clj` does NOT kebab-case: V8 nodes carry `:callFrame`/`:functionName`. The consumer's own sources are sci-eval'd — their frames carry url="" with a BLANK function name (munged cljs names live only in the closure-compiled engine bundle); attribute own frames by the eval url and exclude `(root)`/`(garbage collector)`/`(program)`/`(idle)`, which also sit at url="". Label decoder frames by eval position `sci@<line>:<col>`.
 
 ### Verification verdicts must be string-matched, not truthy-checked
 
-`kotoba -M test` prints `kotoba test: N/N passed ...`. A gate script that collects raw output and treats any non-empty string as truthy records rc70 failures as passes — check for the exact `N/N passed` shape (or exit 0) before claiming green. This pattern also applies to `amu check` (`:ok true` in stdout) and to wasm-compile verification (`:ok true` + `:target :wasm32-kotoba-v1`).
+For Q9 acceptance, require exit 0 from `bin/amu check <entry> --jvm-free`, compile the named target with `bin/amu compile <entry> --target <target> --jvm-free --output <artifact>`, and execute/assert that artifact. A test gate must also check nonzero test counts and zero failures/errors; arbitrary nonempty stdout is not success. Shadow forbidden JVM launchers and verify no marker is written, including refusal paths. `kotoba`/`clojure -M:test` results are explicitly labeled JVM compatibility diagnostics and never Q9 acceptance or selfhost proof.
 
 ### LLM agent dispatch for guest migrations (measured: 20/20 landed)
 
 - Model selection measured across 5 models × 2 compilers: **mercury-2.5-preview 6/6 in ~2.5s** (fastest and most instruction-faithful); glm-5.3 fails instruction-following (reasoning exhausts token budget before content); deepseek-v4-flash 5/6. Use mercury-2.5 for agent-dispatched guest migrations.
-- **Verify with the native CLI, not the JVM route**: `kotoba -M check/test/compile` (`kotoba -M test` prints `kotoba test: N/N passed targets=[:jvm-kir :js :wasm]`), plus `amu check --jvm-free`. `clojure -M:test` is auxiliary. Gate scripts must string-match `N/N passed` — truthy-checking raw output records rc70 failures as passes.
+- **Q9 acceptance uses the explicit JVM-free route**: run `bin/amu check <entry> --jvm-free`, then `bin/amu compile <entry> --target <target> --jvm-free --output <artifact>` and a targeted runtime assertion. `bin/amu test <entry> --jvm-free` adds nonzero-count test evidence. Keep missing locks, unsupported targets and linker gaps refused; do not substitute a JVM route. JVM suites are compatibility diagnostics only. A Node/nbb driver is JVM-free bootstrap evidence, not a selfhost-built compiler.
 - Quality checkpoints: every ~10 slices, re-run all gates + verify pin freshness + append to an append-only ledger. When a recorded claim turns out overstated (gate script bug), append a correction amendment — never edit past entries.
 - One agent = one repo = one slice, 5 parallel batches. Worktrees pre-created by the operator from synced origin/main.
 - Dispatch prompts must embed ALL measured constraints (export-vector listing, main entry, same-type if branches, absolute paths, int-only) — agents repeat each failure class unless the constraint is in the prompt.
-- **Agent self-report is not evidence**: after each merge, re-run `kotoba -M check/test/compile` + `amu check` on the landed files before advancing pins. Agents report success honestly but can miss a gate; re-running catches it.
+- **Agent self-report is not evidence**: after each merge, re-run the explicit `bin/amu check ... --jvm-free` and `bin/amu compile ... --target <target> --jvm-free` gates plus runtime assertions on the landed files before advancing pins. Agents report success honestly but can miss a gate; re-running catches it.
 - Advance many pins with `PINS=pins.tsv nbb scripts/west-pin-put-batch.cljs` (tsv: `name<TAB>sha<TAB>slug`) — 19 pins landed in one commit. Take SHAs from the GitHub API (`gh api repos/<org>/<repo>/commits/main --jq .sha`), NOT from shared-checkout `rev-parse` — checkout origin/main refs go stale during parallel work and the batch drops every entry as "already at that pin".
 - Run a quality checkpoint every ~10 slices: re-run all 4 gates on every landed file, verify pin freshness (manifest revision == GitHub main SHA) for every repo, and append to an append-only ledger.
 
@@ -502,9 +503,9 @@ An adapter repo (e.g. kotoba-net) needs a `deps.edn` at its ROOT (`{:paths ["src
 
 ### Distinguish source repos from auto-generated worktrees
 
-- **Source repos live in `~/github/com-junkasaki/orgs/`, `~/.gftd/kotoba-lang/`, `~/.codex-worktrees/`, `~/.gitlibs/libs/`**. Migrate `.clj`/`.cljc` files in these locations.
+- **Source repos live in `~/github/com-junkawasaki/orgs/`, `~/.gftd/kotoba-lang/`, `~/.codex-worktrees/`, `~/.gitlibs/libs/`**. Migrate `.clj`/`.cljc` files in these locations.
 - **Auto-generated worktrees live in `~/.gftd/worktrees/`**. These are temporary/build artifacts (e.g., `kotoba-cli-build-bot/`, `kotoba-cli-build-verifier/`). **DO NOT migrate** `.clj`/`.cljc` files here — they will be regenerated.
-- **Identify target directories first**: `find ~/github/com-junkasaki/orgs -type f -name '*.clj'` vs `find ~/.gftd/worktrees -type f -name '*.clj'`.
+- **Identify target directories first**: `find ~/github/com-junkawasaki/orgs -type f -name '*.clj'` vs `find ~/.gftd/worktrees -type f -name '*.clj'`.
 
 ### File selection rules
 
@@ -532,10 +533,10 @@ verified.
 ### Migration pattern
 
 1. Identify target orgs (exclude `~/.gftd/worktrees/`)
-2. Convert files: `find . -type f \( -name '*.clj' -o -name '*.cljc' \) -exec sh -c 'cp "$1" "${1%.clj}.kotoba"' _ {} \;`
+2. Prepare copies (this changes filenames only; it is not a completed language migration): `find . -type f \( -name '*.clj' -o -name '*.cljc' \) -exec sh -c 'case "$1" in *.cljc) stem=${1%.cljc} ;; *.clj) stem=${1%.clj} ;; *) exit 64 ;; esac; test ! -e "$stem.kotoba" || exit 65; cp "$1" "$stem.kotoba"' _ {} \;`
 3. Keep same `ns` declaration in converted files
-4. Verify with `find . -type f -name '*.kotoba' | wc -l`
+4. Rewrite unsupported source forms and verify every prepared file with the explicit `bin/amu check ... --jvm-free`, targeted compile and artifact execution gates above. `find . -type f -name '*.kotoba' | wc -l` is inventory only; a count does not prove namespace resolution or migration success.
 
 ## Prioritization
 
-Count remaining files first (`find src -name '*.cl[jcs]' | wc -l`), migrate by java.* usage (interop in src/ first), then by repo. Decision cores move to `.kotoba` first; host wrappers remain. Test-infra JVM usage (io/resource, Files/createTempDirectory, shell) migrates last.
+Count remaining files first (`find src -type f \( -name '*.clj' -o -name '*.cljc' -o -name '*.cljs' -o -name '*.cljk' \) | wc -l`), migrate by java.* usage (interop in src/ first), then by repo. Decision cores move to `.kotoba` first; host wrappers remain. Test-infra JVM usage (io/resource, Files/createTempDirectory, shell) migrates last.

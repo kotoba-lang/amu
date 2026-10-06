@@ -16,12 +16,9 @@ repo は `orgs/net-kotobase/ipfs`（west 子リポ、plain git）。
 この repo の source は `(:require ["@noble/curves/ed25519" …])` 形の **host module
 文字列 import を持つ**。amu の project linker はこれを拒否する（`import names a host
 module by string`）— package.json 書式・project-mode 書式の両方で同一拒否を実測済み。
-**正規 build 経路は shadow-cljs のみ**。scripts を amu に書き換えた cutover があると
-test/build/typecheck/deploy が全経路落ちる — 修復は package.json を
-`node_modules/.bin/shadow-cljs release <build>` に戻すこと（commit message に拒否
-diagnostic を引用して記録する）。
+**Q9 の正規 build は `bin/amu check <entry> --source-path <src> --jvm-free` と `bin/amu compile <entry> --source-path <src> --target wasm32-browser --jvm-free --output <artifact>`。** 必要な module/package lock と依存を保持する。host-module imports や project linker が拒否された場合は、その diagnostic を記録して Q9 component を blocked のままにする。shadow-cljs へ戻して成功扱いにせず、JVM fallback を deploy しない。下記 shadow-cljs 手順は既存経路の互換診断専用であり、Q9 acceptance / JVM-free output / selfhost の証拠ではない。JVM-free な driver だけでも selfhost-built compiler の証明にはならない。
 
-## 手順
+## 既存 shadow-cljs 経路の互換診断（Q9 acceptance ではない）
 
 1. **worktree を切る**（共有 checkout は触らない）:
    ```bash
@@ -50,7 +47,7 @@ diagnostic を引用して記録する）。
    node_modules/.bin/shadow-cljs release worker
    grep -c '<topic-string>' out/worker.js   # 0 なら stale
    ```
-5. **deploy**（worktree から直接。routes は wrangler.jsonc の custom_domain / zone route）:
+5. **deploy は別の明示的なリリース承認と既存リリース手順に従う**。Q9 が拒否された場合はここへ進まない。下記は旧経路のコマンド記録で、実行を指示するものではない:
    ```bash
    node_modules/.bin/wrangler deploy
    ```
