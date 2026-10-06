@@ -845,6 +845,31 @@ for c in COPY_FORWARD_CASES:
 _cf_sentinel=next(f for f in FIX if f[0]=='ht_cold_control')
 FIX.append(('cf_cold_sentinel',*_cf_sentinel[1:]))
 
+# Small terminal-only frames: independent scalar, branch, fuel and vector oracles.
+SMALL_TAIL_START=len(FIX)
+fx('st_id',1,1,[('LGET',0,1),('RET',0)])
+fx('st_target',1,1,[('FUEL',),('LGET',0,1),('CONST',1,2),('BIN','BOP-MUL',0),('CONST',1,3),('BIN','BOP-ADD',0),('RET',0)])
+locals=[('LGET',0,1),('CONST',1,7),('BIN','BOP-ADD',0),('LSET',2,0),('LGET',0,1),('CONST',1,5),('BIN','BOP-SUB',0),('LSET',3,0),('LGET',0,2),('LGET',1,3),('BIN','BOP-MUL',0),('LSET',4,0),('LGET',0,4)]
+fx('st_scalar',1,4,[('FUEL',)]+locals+[('CALL','st_target',0,1),('RET',0)])
+fx('st_wrap',1,4,[('FUEL',)]+locals+[('CALL','st_id',0,1),('CALL','st_target',0,1),('RET',0)])
+fx('st_branch',1,1,[('FUEL',),('LGET',0,1),('BRZ',0,'st_else'),('LGET',0,1),('CALL','st_target',0,1),('RET',0),('LABEL','st_else'),('CONST',0,19),('CALL','st_target',0,1),('RET',0)])
+fx('st_vtarget',1,1,[('FUEL',),('LGET',0,1),('CONST',1,0),('RT','RT-VECTOR-AT',0,2),('LGET',1,1),('CONST',2,1),('RT','RT-VECTOR-AT',1,2),('BIN','BOP-ADD',0),('RET',0)])
+fx('st_vec',1,1,[('FUEL',),('LGET',0,1),('CONST',1,0),('CONST',2,7),('RT','RT-VECTOR-ASSOC-IN-PLACE',0,3),('LGET',0,1),('CALL','st_vtarget',0,1),('RET',0)])
+fx('st_driver',1,1,[('FUEL',),('CONST',0,0),('LGET',1,1),('CONST',2,-3),('VEC',0,3),('CALL','st_vec',0,1),('RET',0)])
+fx('st_ref_np2',2,2,[('FUEL',),('LGET',0,2),('CALL','st_target',0,1),('RET',0)])
+fx('st_ref_d8',1,1,[('FUEL',),('CONST',7,17),('LGET',0,1),('CALL','st_target',0,1),('RET',0)])
+fx('st_ref_return',1,1,[('FUEL',),('LGET',0,1),('CALL','st_target',0,1),('LGET',1,1),('BIN','BOP-ADD',0),('RET',0)])
+fx('st_alloc',1,1,[('FUEL',),('LGET',0,1),('VEC',0,1),('RET',0)])
+fx('st_ref_vec',1,1,[('FUEL',),('LGET',0,1),('CALL','st_alloc',0,1),('RT','RT-VECTOR-COUNT',0,1),('RET',0)])
+fx('st_ref_driver',1,1,[('FUEL',),('LGET',0,1),('VEC',0,1),('CALL','st_ref_vec',0,1),('RET',0)])
+
+for name in ['st_scalar','st_wrap','st_branch','st_driver','st_ref_np2','st_ref_d8','st_ref_return','st_ref_driver']:
+ for x in [0,1,-1,3,-7,17,MIN,MAX,65536]:
+  value=s64(2*s64((x+7)*(x-5))+3) if name in ['st_scalar','st_wrap'] else 41 if name=='st_branch' and x==0 else s64(x+7) if name=='st_driver' else s64(3*x+3) if name=='st_ref_return' else 1 if name=='st_ref_driver' else s64(2*x+3)
+  charges=3 if name in ['st_driver','st_ref_driver'] else 2
+  for fuel in [1,2,3,4,5,16777216,(1<<53)-1]:
+   run(name,[99,x] if name=='st_ref_np2' else [x],value if fuel>=charges else 'trap',fuel=fuel)
+
 def kotoba(real_layout=False):
     fns, labels, lits, sir, fnrecs = layout_tables()
     o = [';; deps: 40-a64enc',
@@ -1018,6 +1043,9 @@ def kotoba(real_layout=False):
           '        M1 (if (or %s (= f %d)) (-> M (t-put (+ b FF-PT0) TY-VEC)'%(cf_members,cf_writer),
           '              (t-put (+ b FF-PT0 1) TY-I64) (t-put (+ b FF-RTYPE) TY-VEC)) M)',
           '        M2 (if (= f %d) (t-put M1 (+ b FF-PT0 2) TY-I64) M1)] (t-cf-types M2 (inc f)))))'%cf_writer]
+    small_types={x[0]:('TY-VEC' if x[0] in ['st_vtarget','st_vec','st_alloc','st_ref_vec'] else 'TY-I64','TY-VEC' if x[0]=='st_alloc' else 'TY-I64') for x in FIX[SMALL_TAIL_START:]}
+    o += ['(defn- t-small-types [M :vector-i64] :vector-i64',
+          ' (-> M '+' '.join('(t-put '+str(C['MM-FN-BASE']+fns[name]*C['MM-FN-W']+fld)+' '+ty+')' for name,(pt,rt) in small_types.items() for fld,ty in [(C['FF-RTYPE'],rt)]+[(C['FF-PT0']+j,pt) for j in range(next(x[1] for x in FIX if x[0]==name))])+'))']
     du_ids=[fns[c['name']] for c in DOT_UNROLL_CASES]
     du_members='(or '+' '.join('(= f %d)'%f for f in du_ids)+')'
     o += ['(defn- t-du-types [M :vector-i64 f :i64] :vector-i64',
@@ -1048,7 +1076,7 @@ def kotoba(real_layout=False):
           '        mask_shared (gn-mask-reused M0 %d 1 0 16384)' % MASK_TYPED_FIRST,
           '        mask_single (gn-mask-reused M0 %d 1 0 16384)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='mask_single')),
           '        mask_limit (gn-mask-reused M0 %d 1 0 0)' % MASK_TYPED_FIRST,
-          '        M1 (gn-run M0)',
+          '        M1 (gn-run (t-small-types M0))',
           '        hot_guard (gn-high-loop M1 %d)' % hot_i,
           '        cold_guard (gn-high-loop M1 %d)' % cold_i,
           '        hot_limit (gn-high-loop-scan M1 %d %d %d 0)' % (hot_i,hot_i+1,hot_start),

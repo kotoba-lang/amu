@@ -638,8 +638,8 @@
 (defn- gn-assign [M :vector-i64] :vector-i64
   (let [ns (gn-g M gn-f-ns)
         leaf (gn-g M gn-f-leaf)
-        M1 (if (= leaf 1) (gn-lowregs M 1 (gn-min ns 7)) M)
-        M2 (gn-rank M1 (if (= leaf 1) 8 1) ns 0)
+        M1 (if (> leaf 0) (gn-lowregs M 1 (gn-min ns 7)) M)
+        M2 (gn-rank M1 (if (> leaf 0) 8 1) ns 0)
         nsv (gn-g M2 gn-f-nsv)
         dp (gn-g M2 gn-f-dp)
         framed (or (= leaf 0) (> nsv 0) (> dp 7) (gn-memslot M2 1 ns))]
@@ -680,12 +680,73 @@
                      (gn-gs gn-f-dp dp0)
                      (gn-pre (inc i)))
                  i f np))))
+;; Terminal-only mode2: low local registers with original published fuel.
+;; Mode1 remains private-fuel leaf; mode0 remains ordinary nonleaf.
+(defn- gn-small-type [ty :i64] :bool
+ (or (= ty TY-I64) (= ty TY-BOOL) (= ty TY-STR) (= ty TY-VEC)
+     (= ty TY-BYTES) (= ty TY-KW) (= ty TY-DOC) (= ty TY-SYM)))
+(defn- gn-small-end [M :vector-i64 j :i64 f :i64 work :i64] :i64
+ (cond (or (>= j (vector-at M MM-SIR-N)) (<= work 0)) 0
+       (= (gn-op M j) OP-END) (if (and (= (gn-sir M j IF-A) f)
+        (= (gn-sir M j IF-B) 0) (= (gn-sir M j IF-C) 0)) j 0)
+       (= (gn-op M j) OP-FN) 0
+       :else (gn-small-end M (inc j) f (dec work))))
+(defn- gn-small-label [M :vector-i64 j :i64 l :i64 found :i64] :i64
+ (cond (or (<= l 0) (>= l MM-LABEL-CAP)) 0
+       (>= j (vector-at M MM-SIR-N)) found
+       (and (= (gn-op M j) OP-LABEL) (= (gn-sir M j IF-A) l))
+       (if (> found 0) 0 (gn-small-label M (inc j) l j))
+       :else (gn-small-label M (inc j) l found)))
+(defn- gn-small-owned [M :vector-i64 start :i64 end :i64 l :i64] :bool
+ (let [p (gn-small-label M 1 l 0)] (and (> p start) (< p end))))
+(defn- gn-small-callee [M :vector-i64 f :i64 n :i64] :bool
+ (let [p (gn-fnf M f FF-SIR)]
+  (and (> f 0) (< f (vector-at M MM-FN-N)) (not (gn-clamp-open M f))
+       (> p 0) (< p (vector-at M MM-SIR-N)) (= (gn-op M p) OP-FN)
+       (= (gn-sir M p IF-A) f) (= (gn-sir M p IF-B) n)
+       (= (gn-fnf M f FF-NPARAMS) n) (gn-small-type (gn-fnf M f FF-RTYPE)))))
+(defn- gn-small-params [M :vector-i64 f :i64 k :i64 n :i64] :bool
+ (or (= k n) (and (gn-small-type (gn-fnf M f (+ FF-PT0 k)))
+                  (gn-small-params M f (inc k) n))))
+(defn- gn-small-call [M :vector-i64 j :i64 ty :i64] :bool
+ (let [f (gn-sir M j IF-A) t (gn-sir M j IF-B) n (gn-sir M j IF-C)
+       w (gn-call-wrapper M j f t n)]
+  (and (>= n 0) (<= n 3) (gn-small-callee M f n) (gn-small-params M f 0 n)
+   (or (> w 0)
+       (and (<= n 1) (= (gn-fnf M f FF-RTYPE) ty)
+            (= (gn-op M (inc j)) OP-RET) (= (gn-sir M (inc j) IF-A) t)
+            (= (gn-sir M (inc j) IF-B) 0) (= (gn-sir M (inc j) IF-C) 0))))))
+(defn- gn-small-scan [M :vector-i64 j :i64 start :i64 end :i64 ty :i64] :bool
+ (if (= j end) true
+  (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) c (gn-sir M j IF-C)]
+   (and (case op
+      (OP-CONST OP-LGET OP-LSET OP-BIN OP-CMP OP-UN OP-RET) true
+      OP-FUEL (and (= a 0) (= b 0) (= c 0))
+      OP-LABEL (and (= b 0) (= c 0) (= (gn-small-label M 1 a 0) j))
+      OP-BR (and (= b 0) (= c 0) (gn-small-owned M start end a))
+      (OP-BRZ OP-BRNZ) (and (= c 0) (gn-small-owned M start end b))
+      OP-RT (gn-inl a b c)
+      OP-CALL (gn-small-call M j ty)
+      false)
+    (gn-small-scan M (inc j) start end ty)))))
+(defn- gn-small-tail [M :vector-i64 i :i64 f :i64 np :i64] :bool
+ (let [end (gn-small-end M (inc i) f 4096) ty (gn-fnf M f FF-RTYPE)]
+  (and (= (gn-g M gn-f-leaf) 0) (>= np 0) (<= np 1)
+       (>= (gn-g M gn-f-ns) np) (<= (gn-g M gn-f-ns) 7)
+       (<= (gn-g M gn-f-dp) 7) (= (gn-g M gn-f-out) 0)
+       (> f 0) (< f (vector-at M MM-FN-N)) (not (gn-clamp-open M f))
+       (= (gn-fnf M f FF-SIR) i) (= (gn-fnf M f FF-NPARAMS) np)
+       (= (gn-fnf M f FF-NSLOTS) (gn-g M gn-f-ns))
+       (= (gn-fnf M f FF-DEPTH) (gn-g M gn-f-dp))
+       (gn-small-type ty) (gn-small-params M f 0 np)
+       (> end i) (gn-small-scan M (inc i) i end ty))))
 (defn- gn-op-fn2 [M1 :vector-i64 i :i64 f :i64 np :i64] :vector-i64
   (let [ns (gn-g M1 gn-f-ns)
         dp (gn-g M1 gn-f-dp)]
     (cond (> np 16) (gn-err M1 E-GEN-OP OP-FN)
           :else
-          (let [M2 (gn-vmode (gn-assign M1) i)
+          (let [MM (if (gn-small-tail M1 i f np) (gn-gs M1 gn-f-leaf 2) M1)
+                M2 (gn-vmode (gn-assign MM) i)
                 F (gn-g M2 gn-f-fb)
                 leaf (gn-g M2 gn-f-leaf)]
             (if (> F 32768)
@@ -1012,7 +1073,7 @@
           (gn-allreg 0 (gn-max h (gn-g M1 gn-f-dp)))
           (gn-put (+ MM-LABEL-BASE l) (vector-at M1 MM-CODE-N))
           (gn-gs gn-f-dead 0)
-          (gn-gs gn-f-ctx (gn-g M1 gn-f-leaf))))))
+          (gn-gs gn-f-ctx (if (= (gn-g M1 gn-f-leaf) 0) 0 1))))))
 
 (defn- gn-op-lset [M :vector-i64 s :i64 t :i64] :vector-i64
   (let [M1 (gn-prot M 0 (gn-g M gn-f-h) t s)
@@ -1178,7 +1239,7 @@
       (gn-vread 0 1 0)
       (cond-> charged (gn-emit (enc-str 8 7 CTX-FUEL))) (gn-take i t 0))))
 (defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
-  (let [w (gn-call-wrapper M i f t n) q (gn-clamp M i f n) mask (gn-scalar-mask M i f n) reader (gn-affine-reader M i f n)]
+  (let [w (gn-call-wrapper M i f t n) q (if (= (gn-g M gn-f-leaf) 2) 0 (gn-clamp M i f n)) mask (if (= (gn-g M gn-f-leaf) 2) 0 (gn-scalar-mask M i f n)) reader (if (= (gn-g M gn-f-leaf) 2) 0 (gn-affine-reader M i f n))]
    (cond (> reader 0) (gn-call-affine-reader M i t f reader) (> mask 0) (gn-call-scalar-mask M i t mask) (> q 0) (gn-call-clamp M i f t q) (gn-mask-writer M i f t n) (gn-call-mask-writer M t)
          (>= w 1024) (gn-call-sign M i t w)
          (> w 0) (let [M1 (if (>= w 256) (gn-op-fuel M) M)
