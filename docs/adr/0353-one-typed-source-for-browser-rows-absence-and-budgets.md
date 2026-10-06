@@ -1062,12 +1062,59 @@ conj's two item types at ("... this module conj's two types at it: .. and ..;
 a list holds one type"), which is browser.surface's own input log, whose
 keyboard, scroll and text events are three shapes (`:input-log-events` needs
 a decision); a number conj'd onto a list of records ("expected [:record ..],
-got i64"); and an item only an expression gives -- register-app's `app`
-parameter, open-window's merged window -- which leaves the field the
-`:vector-i64` it was (`:list-item-from-expression`). R is what the source
-spells, as an absent field's T is: a map literal's expression values spell
-`:i64`, so browser.surface's `{:event :keyboard/key :window-id window-id :key
-key}` is typed with i64 fields.
+got i64"). An item only an expression gives -- register-app's `app`
+parameter, open-window's merged window -- spells nothing here; floor
+`:list-item-from-expression` below types it. R is what the source spells, as
+an absent field's T is: a map literal's expression values spell `:i64`, so
+browser.surface's `{:event :keyboard/key :window-id window-id :key key}` is
+typed with i64 fields.
+
+The expression item landed as floor `:list-item-from-expression` (gate
+`list-field-typed-by-a-conj-expression-test`), measured on browser.surface:
+register-app's `(update surface :surface/apps conj app)` with `app` a
+parameter, and open-window's `(update surface :surface/windows conj window)`
+with `window` a merge, were refused "expression type mismatch: expected i64,
+got [:record ..]" -- the field stayed `:vector-i64` because an expression
+spells no item type. kotoba-sema (`dee5a5d2`) calls a `[]` key whose items
+spell no type but `:i64` open, and lets inference type it: a `conj` onto an
+open field notes the type its item is inferred to have, and `analyze-forms*`
+analyses the module again with the noted types, as if spelled, until a pass
+notes nothing new (the keys are finite; the passes are bounded at 16). One
+non-`:i64` type R makes the field `[:list R]`; two types, or R beside an
+integer literal conj'd there, are the conflict two spelled types already
+were. A note is a fact about the source -- the type an item has where it is
+conj'd -- so a pass that refuses still contributes them. `app` alone is not
+typed by anything in register-app's body, so a parameter of a row function
+that is only conj'd onto an open field rides along with the row (added to
+`row-generics` after its fixed point, so passing it on makes nothing else a
+row): specialized at the record a call passes, left as it was for anything
+else -- an integer conj'd through a parameter keeps the `:vector-i64`, and no
+definition CID moves. Two record parameters spell a specialization name past
+`max-symbol-chars` (139 characters for register-app), which the verifier
+refused as "runtime KIR function shape rejected"; the name is now cut to fit,
+with the `_k` suffix keeping a cut name distinct. Measured on nbb: the gate
+was red on the old pin (2 failures and 5 errors of 9 assertions), green on
+the new (9 of 9); a browser.surface slice -- two apps registered, two windows
+merged from parameters -- answers 2240520 on the reference, on
+`x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1` with the oracle
+verified, and compiles to wasm32 and the `:js-kotoba-v1` ESM artifact (the
+gate checks wasm32's magic and the ESM source; neither was run). `amu compile
+--target x86_64-aiueos-kernel-v1` / `--target aarch64-macos` of it exit 0 with
+`:oracle {:status :verified}`; no artifact was run under a loader. amu's kbb
+suite (286 tests) has the same 13 failures and 2 errors, all in
+`policy-grant-count-test`, before and after; kotoba-sema's own suite does not
+load on its pins (`kir/host-stack-exhausted?` unresolved) before or after.
+`:empty-vector-field`'s gate pinned the old refusal of register-app; that
+assertion moved here as the admission. Refused by name: two inferred types
+at one key ("... this module conj's two types at it: [:record ..app.id+app.title
+..] and [:record ..app.id ..]; a list holds one type"), and a number conj'd
+onto the inferred list of records ("expected [:record ..], got i64").
+Measured behind it, before and after alike: the real open-window merges a
+literal that reads the window it merges (`{:keys [app-id title ..] :as
+window}`, then `(merge {.. :window/title (or title app-id id) ..} (dissoc
+window ..))`), refused "record-get without a type descriptor requires a
+record value; got :i64" where `(merge {:window/id "w" ..} window)` is
+admitted -- floor `:merge-literal-reads-its-row`.
 
 ## Selfhost foundation floors (appended 2026-09-26)
 

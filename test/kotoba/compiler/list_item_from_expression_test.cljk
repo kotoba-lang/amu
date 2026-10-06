@@ -1,0 +1,112 @@
+(ns kotoba.compiler.list-item-from-expression-test
+  "ADR 0353 floor :list-item-from-expression.
+
+  kotoba-lang/browser's browser.surface conj's only expressions onto two of
+  its [] fields: register-app's (update surface :surface/apps conj app), app
+  a parameter, and open-window's (update surface :surface/windows conj
+  window), window a merge. Floor :empty-vector-field typed a [] field by the
+  item type the module's source SPELLS at its conj's, and an expression
+  spells none, so both fields stayed the :vector-i64 they were and a record
+  there was refused \"expression type mismatch: expected i64, got [:record
+  ..]\".
+
+  Now, in kotoba-sema: a [] key whose items spell no type but :i64 is open,
+  and inference types it. A conj onto an open field notes the type its item
+  is inferred to have; the module is analysed again with those types, as if
+  spelled, until no pass notes anything new (the keys are finite). One
+  non-:i64 type R makes the field [:list R]; a parameter of a row function
+  that is only conj'd onto an open field rides along with the row, so it is
+  the record its call passes (register-app__row_..), and stays as it was for
+  anything else -- an integer conj'd that way keeps the :vector-i64, and no
+  definition CID moves.
+
+  What stays refused, each by its literal: two inferred types at one key,
+  the conflict two spelled types already were; and a number conj'd onto the
+  inferred list of records (no coercion)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private surface
+  "browser.surface (browser 8671500)'s register-app and open-window, the
+  window merged from a parameter as open-window merges it: two apps, two
+  windows. 2 apps, 2 windows, the second window's :window/z 4, the first
+  window's width 520."
+  (str "(ns browser.surface)\n"
+       "(defn- empty-surface [] {:surface/id \"kotoba-os\" :surface/apps [] "
+       ":surface/windows [] :surface/next-window-id 1})\n"
+       "(defn- register-app [surface app] (update surface :surface/apps conj app))\n"
+       "(defn- open-window [surface window]\n"
+       "  (let [window (merge {:window/id \"w\" :window/title \"untitled\" "
+       ":window/rect [80 80 520 360]} window)]\n"
+       "    (update surface :surface/windows conj window)))\n"
+       "(defn main [] :i64\n"
+       "  (let [s (-> (empty-surface)\n"
+       "              (register-app {:app/id \"files\" :app/title \"Files\"})\n"
+       "              (register-app {:app/id \"term\" :app/title \"Terminal\"})\n"
+       "              (open-window {:window/title \"A\" :window/z 3})\n"
+       "              (open-window {:window/title \"B\" :window/z 4}))]\n"
+       "    (+ (* 1000000 (count (:surface/apps s))) (* 100000 (count (:surface/windows s)))\n"
+       "       (* 10000 (:window/z (nth (:surface/windows s) 1)))\n"
+       "       (nth (:window/rect (nth (:surface/windows s) 0)) 2))))"))
+
+(def ^:private untouched
+  "A parameter the module conj's onto an open [] field, passed an integer,
+  keeps the field a :vector-i64."
+  (str "(ns b)\n"
+       "(defn- e [] {:s/id \"k\" :s/l []})\n"
+       "(defn- add [s x] (update s :s/l conj x))\n"
+       "(defn main [] :i64 (count (:s/l (add (add (e) 3) 4))))"))
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- refusal [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(def ^:private app-record
+  "[:record :kotoba.map-literal/app.id+app.title [[:app/id :string] [:app/title :string]]]")
+
+(deftest list-field-typed-by-a-conj-expression-test
+  (testing "admitted on the reference: 2 apps, 2 windows, :window/z 4, width 520"
+    (is (= 2240520 (run-main surface))))
+  (testing "an integer conj'd through a parameter keeps the field a :vector-i64"
+    (is (= 2 (run-main untouched))))
+  (testing "admitted on the hosted target"
+    (is (= [0 97 115 109]
+           (mapv #(bit-and (int %) 0xff)
+                 (take 4 (:bytes (compiler/compile-source surface :wasm32-kotoba-v1)))))))
+  (testing "admitted on the restricted-ESM target, which builds the list"
+    (is (re-find #"list-too-large" (:source (compiler/compile-source surface :js-kotoba-v1)))))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "compiles on both native targets"
+    (doseq [target native-targets]
+      (is (= 2240520 (#?(:clj long :cljs js/Number)
+                      (:value (:artifact (compiler/compile-source surface target)))))
+          (str target))))
+  (testing "refused: two inferred types at one key"
+    (is (= (str "field :surface/apps is [] in this module, which makes it a list of "
+                "what the module conj's at it, and this module conj's two types at it: "
+                app-record " and [:record :kotoba.map-literal/app.id [[:app/id :string]]]"
+                "; a list holds one type")
+           (refusal (str "(ns browser.surface)\n"
+                         "(defn- empty-surface [] {:surface/id \"kotoba-os\" :surface/apps []})\n"
+                         "(defn- register-app [surface app] (update surface :surface/apps conj app))\n"
+                         "(defn main [] :i64 (count (:surface/apps (register-app (register-app "
+                         "(empty-surface) {:app/id \"files\" :app/title \"Files\"}) {:app/id \"t\"}))))")))))
+  (testing "refused: a number conj'd onto the inferred list of records (no coercion)"
+    (is (= (str "expression type mismatch: expected " app-record ", got i64")
+           (refusal (str "(ns browser.surface)\n"
+                         "(defn- empty-surface [] {:surface/id \"kotoba-os\" :surface/apps []})\n"
+                         "(defn- register-app [surface app] (update surface :surface/apps conj app))\n"
+                         "(defn main [] :i64 (count (conj (:surface/apps (register-app (empty-surface) "
+                         "{:app/id \"files\" :app/title \"Files\"})) 5)))"))))))
