@@ -17,6 +17,8 @@
 (try
   (.mkdirSync fs (.dirname path engine) #js {:recursive true})
   (.mkdirSync fs fixture-root #js {:recursive true})
+  (.mkdirSync fs (lib/join fixture-root "bin") #js {:recursive true})
+  (.copyFileSync fs (lib/join lib/root "bin" "amu") (lib/join fixture-root "bin" "amu"))
   (lib/write-text! engine "// fake engine; never execute this in path-selection tests\n")
   (.chdir js/process directory)
   (set! (.-KBB_ENGINE js/process.env) "engine/cli.js")
@@ -27,7 +29,7 @@
     (lib/ensure! (refused? lib/nbb-cli) "shared helper refuses directory-valued engine")
     (lib/ensure! (refused? #(.nbbCliPath launcher fixture-root)) "launcher refuses directory-valued engine")
     ;; Exercise the real process entry point, including its error exit.
-    (let [result (lib/run js/process.execPath [(lib/join original-cwd "bin" "amu") "check" "missing.kotoba" "--jvm-free"]
+    (let [result (lib/run js/process.execPath [(lib/join fixture-root "bin" "amu") "check" "missing.kotoba" "--jvm-free"]
                           {:cwd directory :env {"KBB_ENGINE" "engine"} :allow-failure? true})]
       (lib/ensure! (= 64 (:status result)) "directory-valued engine must refuse the actual compiler invocation")
       (lib/ensure! (re-find #"existing cli.js file" (:stderr result)) "actual refusal identifies the engine configuration"))
