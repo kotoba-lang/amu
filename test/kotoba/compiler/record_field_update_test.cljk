@@ -1,0 +1,104 @@
+(ns kotoba.compiler.record-field-update-test
+  "ADR 0353 floor :record-field-update.
+
+  kotoba-lang/browser's browser.surface writes a field through the function
+  that changes it: (update surface :surface/apps conj app), (update surface
+  :surface/next-window-id inc), (update w :window/rect (fn [[_ _ ww hh]] [x y
+  ww hh])). `update` was no head at all -- it fell through to a call of an
+  undefined function, whose first refusal was its function argument:
+  \"unbound symbol has no value type: inc is not a parameter, a let binding,
+  or a function of this module\".
+
+  Measured 2026-10-06 on kotoba-sema 942d8764. Now, in kotoba-sema:
+  (update m k f x ..) is (let [m' m] (assoc m' k (f (k m') x ..))) -- the read
+  and the write the author would otherwise spell, so the field keeps its type
+  (assoc's rule) and the read is the required read (k m) already is. A fn
+  literal of the call's arity is applied as a let, so a destructuring
+  parameter means what it means in let. A module that defines its own update
+  keeps it.
+
+  What stays refused, each by its literal: f answering another type than the
+  field holds (no coercion); a key the record does not have (a required
+  read); a number as the map; an absent [:option T] field handed to a
+  function of T (absence is not a number); and update without a function."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private surface
+  "browser.surface's (browser 8671500) field updates, as written, over a
+  surface record and a window record: next-window-id, record-key's conj onto
+  the input log, move-window's and resize-window's rect rewrites (one window,
+  not the vector of windows: a record literal holding a vector of records is
+  another wall), and an update with extra arguments."
+  (str "(ns browser.surface)\n"
+       "(defn- empty-surface [] {:surface/id \"kotoba-os\" :surface/next-window-id 1 :surface/input-log [0]})\n"
+       "(defn- next-window-id [surface] (update surface :surface/next-window-id inc))\n"
+       "(defn- record-key [surface key] (update surface :surface/input-log conj key))\n"
+       "(defn- skip-ids [surface by] (update surface :surface/next-window-id + by 10))\n"
+       "(defn- window [] {:window/id \"w1\" :window/rect [80 80 520 360]})\n"
+       "(defn- move-window [w [x y]] (update w :window/rect (fn [[_ _ ww hh]] [x y ww hh])))\n"
+       "(defn- resize-window [w [ww hh]] (update w :window/rect (fn [[x y _ _]] [x y ww hh])))\n"
+       "(defn- rect-sum [w] (reduce + 0 (:window/rect w)))\n"))
+
+(def ^:private admitted
+  "3 (two next ids), 2 (a key logged), 15 (2 + 3 + 10), 14 (rect [1 2 5
+  6]): 3 + 20 + 1500 + 140000."
+  (str surface
+       "(defn main [] :i64\n"
+       "  (+ (:surface/next-window-id (next-window-id (next-window-id (empty-surface))))\n"
+       "     (* 10 (count (:surface/input-log (record-key (empty-surface) 7))))\n"
+       "     (* 100 (:surface/next-window-id (skip-ids (next-window-id (empty-surface)) 3)))\n"
+       "     (* 10000 (rect-sum (resize-window (move-window (window) [1 2]) [5 6])))))"))
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- refusal [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(deftest update-writes-a-record-field-through-f-test
+  (testing "admitted on the reference"
+    (is (= 141523 (run-main admitted))))
+  (testing "a module's own update keeps it"
+    (is (= 5 (run-main (str "(ns b)\n(defn- update [a b c] (+ a b c))\n"
+                            "(defn main [] :i64 (update 1 2 2))")))))
+  (testing "admitted on the hosted target"
+    (is (= [0 97 115 109]
+           (mapv #(bit-and (int %) 0xff)
+                 (take 4 (:bytes (compiler/compile-source admitted :wasm32-kotoba-v1)))))))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "admitted on both native targets"
+    (doseq [target native-targets]
+      (is (= 141523 (#?(:clj long :cljs js/Number)
+                     (:value (:artifact (compiler/compile-source admitted target)))))
+          (str target))))
+  (testing "refused: f answers another type than the field holds"
+    (is (= "expression type mismatch: expected i64, got string"
+           (refusal (str surface "(defn main [] :i64 (:surface/next-window-id (update (empty-surface) :surface/next-window-id (fn [n] \"w\"))))")))))
+  (testing "refused: a key the record does not have"
+    (is (= (str "argument (empty-surface) to focus-next is record "
+                ":kotoba.map-literal/surface.id+surface.input-log+surface.next-window-id, "
+                "which has no field :surface/focus that the row {:surface/focus T | r} "
+                "of parameter s reads")
+           (refusal (str surface "(defn- focus-next [s] (update s :surface/focus inc))\n"
+                         "(defn main [] :i64 (:surface/next-window-id (focus-next (empty-surface))))")))))
+  (testing "refused: a number as the map"
+    (is (= "record-get without a type descriptor requires a record value; got :i64"
+           (refusal "(ns b)\n(defn main [] :i64 (:n (update 5 :n inc)))"))))
+  (testing "refused: an absent field handed to a function of its T"
+    (is (= "expression type mismatch: expected i64, got [:option :i64]"
+           (refusal (str "(ns b)\n(defn- e [] {:id \"k\" :o nil})\n(defn- put [s] (assoc s :o 3))\n"
+                         "(defn main [] :i64 (if (:o (update (put (e)) :o inc)) 1 0))")))))
+  (testing "refused: update without a function"
+    (is (= "update requires a map, a key and a function: (update m k f x ..)"
+           (refusal "(ns b)\n(defn- e [] {:id \"k\" :n 1})\n(defn main [] :i64 (:n (update (e) :n)))")))))

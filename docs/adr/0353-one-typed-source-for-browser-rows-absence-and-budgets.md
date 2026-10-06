@@ -967,6 +967,50 @@ handed an option, `(defn- a-of [o d] (if-let [r o] ..))`, stays the
 provisional `:i64`; and native rejects `(vector-at v (vector-count v))` in an
 `if` branch at machine IR ("unknown-parameter").
 
+The record field update landed as floor `:record-field-update` (gate
+`update-writes-a-record-field-through-f-test`), measured on browser.surface.
+browser.surface writes a field through the function that changes it --
+`(update surface :surface/next-window-id inc)`, `(update surface
+:surface/input-log conj e)`, `(update w :window/rect (fn [[_ _ ww hh]] [x y ww
+hh]))` -- and `update` was no head: it fell through to a call of an undefined
+function, refused at its function argument, "unbound symbol has no value type:
+inc". kotoba-sema (`b1c48883`): `(update m k f x ..)` is `(let [m' m] (assoc
+m' k (f (k m') x ..)))`, the read and the write the author would otherwise
+spell, so the field keeps its type (assoc's rule) and the read is the required
+read `(k m)` already is; a `fn` literal of the call's arity is applied as a
+`let`, so a destructuring parameter means what it means there; a module's own
+`update` keeps it. Measured on nbb: the gate was red on `942d8764` (5 failures
+and 4 errors of 10 assertions, the floor's literal), green on `b1c48883` (10
+assertions). browser.surface's field updates over a surface and a window
+record answer 141523 on the reference and on `x86_64-aiueos-kernel-v1` and
+`aarch64-macos-kotoba-v1` with the oracle verified, and compile on
+`wasm32-kotoba-v1`; `amu compile --target x86_64-aiueos-kernel-v1` / `--target
+aarch64-macos` of the same program exit 0 with `:oracle {:status :verified}`;
+no artifact was run under a loader. kotoba-sema's portable suite has the same
+39 failures and 5 errors of 616 tests before and after (identical lists).
+Refused by name: `f` answering another type than the field holds ("expected
+i64, got string"); a key the record does not have, through a row parameter
+("... which has no field :surface/focus that the row {:surface/focus T | r} of
+parameter s reads"); a number as the map ("record-get without a type
+descriptor requires a record value; got :i64"); an absent `[:option T]` field
+handed to a function of T ("expected i64, got [:option :i64]"); and `update`
+without a function. `update` is not yet declared in the grammar authority
+(`guest-grammar.edn`, whose digest is pinned in four repositories), as `mapv`
+and `remove` are not.
+
+browser.surface's other walls were measured and put on the ladder. Its first
+function, `empty-surface`, is refused at `{.. :surface/focus nil ..}`: the
+module writes the field only from expressions (`open-window`'s id,
+`close-window`'s `(:window/id (peek remaining))`), and a present T from an
+expression at an absent field is the coercion `:absent-field-from-assoc`
+refuses, so `:absent-field-from-expression` needs a decision. An empty vector
+field (`:surface/apps []`) is `:vector-i64`, so a record conj'd onto it is
+"expected i64, got [:record ..]" (`:empty-vector-field`); a record literal
+holding a vector of records is not typed as a record
+(`:record-list-field-literal`). Measured and not yet floors: `(str "w" n)` of
+an i64 ("expected string, got i64") and focus-window's two-argument `some`
+(refused by design: `some` is the option constructor).
+
 ## Selfhost foundation floors (appended 2026-09-26)
 
 Superproject adr-2609242330 measured that compiling amu with amu needs the

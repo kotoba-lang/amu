@@ -171,7 +171,10 @@
             [kotoba.compiler.vector-parameter-test]
             ;; ADR 0353 :record-list-sequence: first of a filter / remove /
             ;; reverse chain over a [:list R] (browser.input's window-at)
-            [kotoba.compiler.record-list-sequence-test]))
+            [kotoba.compiler.record-list-sequence-test]
+            ;; ADR 0353 :record-field-update: (update m k f x ..) writes a
+            ;; record field through f (browser.surface's field updates)
+            [kotoba.compiler.record-field-update-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
   (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
@@ -264,4 +267,5 @@
              'kotoba.compiler.native-option-record-test
              'kotoba.compiler.options-map-argument-test
              'kotoba.compiler.vector-parameter-test
-             'kotoba.compiler.record-list-sequence-test)
+             'kotoba.compiler.record-list-sequence-test
+             'kotoba.compiler.record-field-update-test)
