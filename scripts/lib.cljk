@@ -22,10 +22,15 @@
   on a checkout that was never `npm install`ed, even though a working engine
   is installed outside the repo."
   []
-  (let [local (join root "node_modules" "nbb" "cli.js")]
-    (if (.existsSync fs local)
-      local
-      (or (.-KBB_ENGINE js/process.env) local))))
+  (let [local (join root "node_modules" "nbb" "cli.js")
+        engine (if (.existsSync fs local)
+                 local
+                 (if-let [configured (not-empty (.-KBB_ENGINE js/process.env))]
+                   (.resolve path (.cwd js/process) configured)
+                   local))]
+    (ensure! (and (.existsSync fs engine) (.isFile (.statSync fs engine)))
+             (str "nbb engine must name an existing cli.js file, not a directory: " engine))
+    engine))
 
 (defn lock-classpath
   "The dependency closure from deps-lock.edn -- plus the closure each ALIAS

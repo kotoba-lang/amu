@@ -301,9 +301,12 @@ function spawn(command, args, options = {}) {
 // the repo.
 function nbbCliPath(root) {
   const local = path.join(root, "node_modules", "nbb", "cli.js");
-  if (fs.existsSync(local)) return local;
-  const engine = process.env.KBB_ENGINE;
-  return engine ? engine : local;
+  const engine = fs.existsSync(local) ? local
+    : process.env.KBB_ENGINE ? path.resolve(process.cwd(), process.env.KBB_ENGINE) : local;
+  if (!fs.existsSync(engine) || !fs.statSync(engine).isFile()) {
+    throw new Error(`nbb engine must name an existing cli.js file, not a directory: ${engine}`);
+  }
+  return engine;
 }
 
 function resolverFailure(result) {
@@ -557,7 +560,9 @@ function runCompiler(root, rawArgs) {
         + "(--source-path / --module-lock), which links a closed module "
         + "graph.", 64);
     }
-    const nbbCli = nbbCliPath(root);
+    let nbbCli;
+    try { nbbCli = nbbCliPath(root); }
+    catch (error) { fail(`error: ${error.message}`, 64); }
     const alias = runCommands.has(args[0]) ? "native-run" : null;
     const classpath = [path.join(root, "src"), path.join(root, "resources"),
       securityClasspath(root, nbbCli, alias)].join(path.delimiter);
@@ -608,5 +613,5 @@ function main() {
 if (require.main === module) {
   main();
 } else {
-  module.exports = { hostNativeTargets, hostNativeTarget, defaultTarget };
+  module.exports = { hostNativeTargets, hostNativeTarget, defaultTarget, nbbCliPath };
 }
