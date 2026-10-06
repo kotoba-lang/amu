@@ -29,6 +29,11 @@ def stage_directory(source: Path, destination: Path) -> None:
         relative = Path(current).relative_to(source)
         for filename in files:
             original = Path(current) / filename
+            # A `.cljk` is the authority for its `.cljc` twin: staging renames
+            # it onto the twin's path, so copying the raw twin as well would
+            # race it and can leave the unquoted export vector on the JVM path.
+            if original.suffix == ".cljc" and original.with_suffix(".cljk").exists():
+                continue
             target = staged_name(destination / relative / filename)
             target.parent.mkdir(parents=True, exist_ok=True)
             if original.suffix == ".cljk":
