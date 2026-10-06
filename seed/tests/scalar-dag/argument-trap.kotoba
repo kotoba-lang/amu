@@ -1,0 +1,3 @@
+(ns dag.argument-trap (:export [scalar run]))
+(defn scalar [a :i64 b :i64] :i64 (+ (* a a) (* b 3) (- a b)))
+(defn run [x :i64 y :i64] :i64 (let [r (scalar (quot x y) x)] (+ r x)))

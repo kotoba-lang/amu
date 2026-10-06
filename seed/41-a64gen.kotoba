@@ -1439,13 +1439,116 @@
               (<= shift 0) (gn-mov-imm 2 k) (<= shift 0) (gn-emit (enc-mul 1 1 2)))
       (gn-vread 0 1 0)
       (cond-> charged (gn-emit (enc-str 8 7 CTX-FUEL))) (gn-take i t 0))))
+;; Novel bounded pure scalar DAG call-edge expansion. No SIR/FN mutation.
+;; All caller allocation/frame remains ordinary nonleaf. Generic callee remains.
+(def di-used (+ gn-g-open-n 1))
+(def di-sites (+ gn-g-open-n 2))
+(def di-snap (+ gn-g-open-n 3))
+(defn- di-type [ty :i64] :bool (or (= ty TY-I64) (= ty TY-BOOL)))
+(defn- di-params [M :vector-i64 f :i64 k :i64 n :i64] :bool
+ (or (= k n) (and (di-type (gn-fnf M f (+ FF-PT0 k))) (di-params M f (inc k) n))))
+(defn- di-bit [k :i64] :i64 (i64-shift-left 1 k))
+(defn- di-have [mask :i64 k :i64] :bool (not= (bit-and mask (di-bit k)) 0))
+(defn- di-bin [a :i64] :bool
+ (or (= a BOP-ADD) (= a BOP-SUB) (= a BOP-MUL) (= a BOP-AND) (= a BOP-OR) (= a BOP-XOR)
+     (= a BOP-SHL) (= a BOP-USHR) (= a BOP-SSHR)))
+;; Returns exact END index, or zero. Iterative finite32-instruction certificate.
+(defn- di-body [M :vector-i64 p :i64 f :i64 ns :i64 dp :i64 n :i64] :i64
+ (loop [j (inc p) h 0 locals (dec (di-bit (inc n))) work 32]
+  (if (or (<= work 0) (>= (inc j) (vector-at M MM-SIR-N))) 0
+   (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) c (gn-sir M j IF-C)
+         dst (if (or (= op OP-CONST) (= op OP-LGET)) a b)
+         valid (case op
+          OP-LABEL (and (= j (inc p)) (> a 0) (< a MM-LABEL-CAP) (= b 0) (= c 0))
+          OP-CONST (and (>= a 0) (<= a h) (< a dp) (= c 0))
+          OP-LGET (and (>= a 0) (<= a h) (< a dp) (> b 0) (<= b ns) (di-have locals b) (= c 0))
+          OP-LSET (and (> a 0) (<= a ns) (>= b 0) (< b h) (= c 0))
+          OP-BIN (and (di-bin a) (>= b 0) (< (inc b) h) (= c 0))
+          OP-CMP (and (>= a CC-EQ) (<= a CC-GE) (>= b 0) (< (inc b) h) (= c 0))
+          OP-UN (and (or (= a UOP-NOT) (= a UOP-BITNOT)) (>= b 0) (< b h) (= c 0))
+          OP-RET (and (>= a 0) (< a h) (= b 0) (= c 0)
+                      (= (gn-op M (inc j)) OP-END) (= (gn-sir M (inc j) IF-A) f)
+                      (= (gn-sir M (inc j) IF-B) 0) (= (gn-sir M (inc j) IF-C) 0))
+          false)]
+    (cond (not valid) 0
+          (= op OP-RET) (inc j)
+          :else (recur (inc j) (if (or (= op OP-CONST) (= op OP-LGET) (= op OP-BIN) (= op OP-CMP) (= op OP-UN)) (inc dst) h)
+                      (if (= op OP-LSET) (bit-or locals (di-bit a)) locals) (dec work)))))))
+(defn- di-shape [M :vector-i64 f :i64 n :i64] :i64
+ (if (or (<= f 0) (>= f (vector-at M MM-FN-N)) (< n 1) (> n 5) (gn-clamp-open M f)) 0
+  (let [p (gn-fnf M f FF-SIR) ns (gn-fnf M f FF-NSLOTS) dp (gn-fnf M f FF-DEPTH)]
+   (if (and (> p 0) (< p (vector-at M MM-SIR-N)) (= (gn-op M p) OP-FN)
+       (= (gn-sir M p IF-A) f) (= (gn-sir M p IF-B) n) (= (gn-sir M p IF-C) ns)
+       (= (gn-fnf M f FF-NPARAMS) n) (>= ns n) (<= ns 7) (> dp 0) (<= dp 7)
+       (di-type (gn-fnf M f FF-RTYPE)) (di-params M f 0 n))
+    (di-body M p f ns dp n) 0))))
+;; Caller argument source banks are disjoint from x0..4 destinations.
+(defn- di-args-safe [M :vector-i64 t :i64 n :i64] :bool
+ (if (= n 0) true
+  (let [k (gn-dk M t) v (gn-dv M t) r (if (= k gn-k-local) (gn-sreg M v) -1)]
+   (and (or (= k gn-k-const) (= k gn-k-reg) (= k gn-k-home)
+            (and (= k gn-k-local) (> v 0) (<= v (gn-g M gn-f-ns)) (or (< r 0) (and (>= r 19) (<= r 28)))))
+        (di-args-safe M (inc t) (dec n))))))
+(defn- di-admit [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :i64
+ (if (and (= (gn-g M gn-f-leaf) 0) (> (gn-g M gn-f-fb) 0) (>= t 0) (> n 0) (<= n 5)
+          (<= (+ t n) (gn-g M gn-f-h)) (<= (+ t n) (gn-g M gn-f-dp))
+          (not= (gn-op M (inc i)) OP-RET) (not= (gn-op M (inc i)) OP-RES2)
+          (< (gn-g M di-sites) 256) (< (gn-g M di-used) 4096) (di-args-safe M t n))
+  (di-shape M f n) 0))
+;; Snapshot38 cells: scalar0..15, sreg0..7, dk0..6, dv0..6.
+(defn- di-field [k :i64] :i64
+ (cond (< k 16) k (< k 24) (+ gn-a-sreg (- k 16)) (< k 31) (+ gn-a-dk (- k 24))
+       :else (+ gn-a-dv (- k 31))))
+(defn- di-save [M :vector-i64 bank :i64 k :i64] :vector-i64
+ (if (= k 38) M (di-save (gn-gs M (+ di-snap (+ (* bank 38) k)) (gn-g M (di-field k))) bank (inc k))))
+(defn- di-restore [M :vector-i64 bank :i64 k :i64] :vector-i64
+ (if (= k 38) M (di-restore (gn-gs M (di-field k) (gn-g M (+ di-snap (+ (* bank 38) k)))) bank (inc k))))
+(defn- di-init [M :vector-i64 f :i64] :vector-i64
+ (-> M (gn-zero 0 16) (gn-zero gn-a-sreg (+ gn-a-sreg 8))
+       (gn-zero gn-a-dk (+ gn-a-dk 7)) (gn-zero gn-a-dv (+ gn-a-dv 7))
+       (gn-gs gn-f-leaf 1) (gn-gs gn-f-ns (gn-fnf M f FF-NSLOTS))
+       (gn-gs gn-f-dp (gn-fnf M f FF-DEPTH)) (gn-lowregs 1 (gn-fnf M f FF-NSLOTS))))
+;; No fn/ret/prologue/layout instruction is emitted; exact scalar emitters only.
+(defn- di-emit-body [M :vector-i64 j :i64 end :i64] :vector-i64
+ (if (or (>= j end) (not= (vector-at M MM-ERR) 0)) M
+  (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B)
+        m1 (case op
+             OP-CONST (gn-def M a gn-k-const b)
+             OP-LGET (gn-def M a gn-k-local b)
+             OP-LSET (gn-op-lset M a b)
+             OP-BIN (gn-op-bin M j a b)
+             OP-CMP (gn-op-cmp M j a b)
+             OP-UN (gn-op-un M j a b)
+             OP-LABEL M
+             OP-RET (gn-into M 0 a)
+             (gn-err M E-GEN-OP op))
+        skip (gn-g m1 gn-f-skip)]
+   (di-emit-body (gn-gs m1 gn-f-skip 0) (+ j 1 skip) end))))
+(defn- di-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64 end :i64] :vector-i64
+ (let [code (vector-at M MM-CODE-N) fix (vector-at M MM-FIX-N)
+       m0 (di-save M 0 0)
+       m1 (-> m0 (gn-save 0 t) (gn-args t 0 n) (gn-ctx) (di-save 1 0))
+       m2 (di-emit-body (di-init m1 f) (inc (gn-fnf M f FF-SIR)) end)
+       m3 (-> m2 (di-restore 1 0) (gn-vclear) (gn-gs gn-f-ctx 1) (gn-take i t 0))
+       words (- (vector-at m3 MM-CODE-N) code)
+       good (and (<= words 64) (<= (+ (gn-g m3 di-used) words) 4096) (= (vector-at m3 MM-FIX-N) fix))]
+  (cond (not= (vector-at m3 MM-ERR) 0) m3
+        good (-> m3 (gn-gs di-used (+ (gn-g m3 di-used) words))
+                 (gn-gs di-sites (inc (gn-g m3 di-sites))))
+        :else (-> m3 (di-restore 0 0) (gn-put MM-CODE-N code) (gn-put MM-FIX-N fix)
+                  (gn-call-generic i f t n)))))
+
 (defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
-  (let [w (gn-call-wrapper M i f t n) q (if (= (gn-g M gn-f-leaf) 2) 0 (gn-clamp M i f n)) mask (if (= (gn-g M gn-f-leaf) 2) 0 (gn-scalar-mask M i f n)) reader (if (= (gn-g M gn-f-leaf) 2) 0 (gn-affine-reader M i f n))]
+  (let [w (gn-call-wrapper M i f t n) q (if (= (gn-g M gn-f-leaf) 2) 0 (gn-clamp M i f n)) mask (if (= (gn-g M gn-f-leaf) 2) 0 (gn-scalar-mask M i f n)) reader (if (= (gn-g M gn-f-leaf) 2) 0 (gn-affine-reader M i f n)) dag (di-admit M i f t n)]
    (cond (> reader 0) (gn-call-affine-reader M i t f reader) (> mask 0) (gn-call-scalar-mask M i t mask) (> q 0) (gn-call-clamp M i f t q) (gn-mask-writer M i f t n) (gn-call-mask-writer M t)
          (>= w 1024) (gn-call-sign M i t w)
          (> w 0) (let [M1 (if (>= w 256) (gn-op-fuel M) M)
                        slot (bit-and w 255)]
                    (if (= slot 1) (gn-gs M1 gn-f-h (inc t)) (gn-op-rt M1 i slot t n)))
+         (> dag 0) (di-call M i f t n dag)
+         :else (gn-call-generic M i f t n))))
+(defn- gn-call-generic [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
+ (cond
          (and (<= n 7) (= (gn-op M (inc i)) OP-RET) (= (gn-sir M (inc i) IF-A) t))
          (gn-op-tail-call M f t n)
          :else
@@ -1458,7 +1561,7 @@
       (gn-emit (enc-bl 0))
       (gn-vclear)
       (gn-gs gn-f-ctx (if (>= (gn-ctx-safe M f n 8 512) 0) 1 0))
-      (gn-take i t 0)))))
+      (gn-take i t 0))))
 ;; A direct call whose only successor returns its scalar result can restore
 ;; this frame and branch to the callee. Stack arguments and RET2 are excluded.
 ;; Argument registers and x7 (context) survive the callee-saved restore.
@@ -2022,9 +2125,10 @@
 (defn- gn-run-open [M :vector-i64 first :i64 count :i64] :vector-i64
   (let [top (vector-at M MM-HEAP-TOP)
         M0 (if (< top MM-HEAP-BASE) (gn-put M MM-HEAP-TOP MM-HEAP-BASE) M)
-        M1 (mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 2))
+        M1 (mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 80))
         M2 (-> (gn-put M1 gn-cell (vector-at M1 MM-R0))
-               (gn-gs gn-g-open first) (gn-gs gn-g-open-n count))
+               (gn-gs gn-g-open first) (gn-gs gn-g-open-n count)
+               (gn-gs di-used 0) (gn-gs di-sites 0))
         M3 (if (= (vector-at M2 MM-ERR) 0) (gn-loop M2 1) M2)
         n (vector-at M3 MM-CODE-N)]
     (gn-put M3 MM-R0 (- n 1))))
