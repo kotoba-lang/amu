@@ -174,7 +174,10 @@
             [kotoba.compiler.record-list-sequence-test]
             ;; ADR 0353 :record-field-update: (update m k f x ..) writes a
             ;; record field through f (browser.surface's field updates)
-            [kotoba.compiler.record-field-update-test]))
+            [kotoba.compiler.record-field-update-test]
+            ;; ADR 0353 :empty-vector-field: [] at a field is the [:list R]
+            ;; the module conj's (browser.surface's windows and input log)
+            [kotoba.compiler.empty-vector-field-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
   (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
@@ -268,4 +271,5 @@
              'kotoba.compiler.options-map-argument-test
              'kotoba.compiler.vector-parameter-test
              'kotoba.compiler.record-list-sequence-test
-             'kotoba.compiler.record-field-update-test)
+             'kotoba.compiler.record-field-update-test
+             'kotoba.compiler.empty-vector-field-test)
