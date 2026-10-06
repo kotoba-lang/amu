@@ -15,14 +15,16 @@
 emulate -L zsh
 setopt pipefail
 source "$(dirname "$0")/lib.sh"
-R=$SEED_REPO; B=${SEED_BUILD:A}; S=$B/r6; W=$B/r6diff
+R=$SEED_REPO; B=${SEED_BUILD:A}; S=$B/r6; W=${R6DIFF_DIR:-$B/r6diff}   # R6DIFF_DIR: another output directory (a partial run)
 bin=${1:-$B/seed-1.bin}; [ -f "$bin" ] && shift || bin=$B/seed-1.bin
 bin=${bin:A}; off=$(cat ${bin%.bin}.offset 2>/dev/null || echo 0)
 [ -f $S/r6-scan.tsv ] || { echo "r6-diff: run scripts/seed/r6-scan.sh first ($S/r6-scan.tsv)" >&2; exit 2; }
 L=$(seed_loader) || exit 2; L=${L:A}
 rm -rf $W; mkdir -p $W
+cp $bin $W/compiler.bin; bin=$W/compiler.bin   # a private copy: a rebuild of seed-1 during the run must not change the compiler
 python3 $R/scripts/seed/r6_diff.py gen $S $W "$@" > $W/gen.txt || { echo "r6-diff: gen failed" >&2; exit 2; }
-echo '{:allow #{[:cap/call :hash/sha256]}}' > $W/pol.edn
+# stage-0's compile-time policy admits the capabilities the scanned modules name; at run time only wire 3 is granted to both
+echo '{:allow #{[:cap/call :hash/sha256] [:cap/call :fs/app-data] [:cap/call :fs/browse] [:cap/call :process/spawn]}}' > $W/pol.edn
 export SEED_RESOURCES_35=$R:$S:$W
 load0=$(uptime | sed 's/.*averages: //')
 print -r -- "# r6-diff $(date '+%F %T') seed $(shasum -a 256 $bin | cut -c1-16) stage-0 $(shasum -a 256 $SEED_STAGE0 | cut -c1-16) load $load0" > $W/r6-diff.tsv

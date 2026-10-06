@@ -34,6 +34,14 @@ PRELUDE = '''(defn- r6d-bytes [b :bytes] :i64 (loop [i 0 h (bytes-count b)] (if 
 (defn- r6d-str [s :string] :i64 (r6d-bytes (string-to-utf8 s)))
 (defn- r6d-vec [v :vector-i64] :i64 (loop [i 0 h (vector-count v)] (if (>= i (vector-count v)) h (recur (+ i 1) (+ (* h 31) (vector-at v i))))))
 '''
+# records (the module's own :schemas): a result of a record type, or a list of one, is folded field by field (keyword
+# fields count 0: a keyword made at run time has no portable text); a [:ref :form/r] / [:list [:ref :form/r]] argument is
+# built with kotoba.form's constructors (F = its alias) when the module's :form/r is kotoba.form's
+FORM_ARGS = ['(F/int-form 7)', '(F/string-form "a.b")', '(F/vec2 (F/int-form 1) (F/string-form "x"))', '(F/nil-form)',
+             '(F/call1 "f" (F/int-form 2))', '(F/keyword-form :k)']
+FORM_LIST_ARGS = ['(typed-list-new [:list [:ref :form/r]])', '(typed-list-new [:list [:ref :form/r]] (F/int-form 1) (F/string-form "s"))']
+FORM_FIELDS = [(':tag', ':i64'), (':s', ':string'), (':n', ':i64'), (':k', ':keyword'), (':kids', '[:list [:ref :form/r]]'),
+               (':span', ':i64'), (':data', ':bytes')]
 PER_EXPORT = 4      # argument tuples per export clause
 MAX_CASES = 120     # per module
 
@@ -51,13 +59,81 @@ def clauses(line):
     return name, out
 
 
+def balanced(t, i):
+    # the index after the bracket form that starts at t[i] ([ { or (), strings skipped
+    depth, k, ins = 0, i, False
+    while k < len(t):
+        c = t[k]
+        if ins:
+            if c == '\\': k += 1
+            elif c == '"': ins = False
+        elif c == '"': ins = True
+        elif c in '([{': depth += 1
+        elif c in ')]}':
+            depth -= 1
+            if depth == 0: return k + 1
+        k += 1
+    return len(t)
+
+
+def schemas_of(src):
+    # the module's (:schemas {..}) clause text and {kw: [(field, type-text)]}
+    i = src.find('(:schemas {')
+    if i < 0:
+        return '', {}
+    clause = src[i:balanced(src, i)]
+    out = {}
+    for m in re.finditer(r'(:[^\s\[\]{}()]+) \[:record \1 \[', clause):
+        j = m.end() - 1
+        fv = clause[j + 1:balanced(clause, j) - 1]
+        fields, k = [], 0
+        while True:
+            a = fv.find('[', k)
+            if a < 0: break
+            b = balanced(fv, a)
+            inner = fv[a + 1:b - 1].strip()
+            nm, _, ty = inner.partition(' ')
+            fields.append((nm, ty.strip()))
+            k = b
+        out[m.group(1)] = fields
+    return clause, out
+
+
+def record_digests(schemas):
+    # (defn- r6d-r<i> ..) per schema and r6d-l<i> for a list of it; names by schema order
+    idx = {kw: i for i, kw in enumerate(schemas)}
+    out = []
+    def fd(kw, nm, ty):
+        get = f'(record-get [:ref {kw}] r {nm})'
+        if ty in DIGEST and ty != ':document': return DIGEST[ty].format(x=get)
+        m = re.fullmatch(r'\[:ref (:\S+)\]', ty)
+        if m and m.group(1) in idx: return f'(r6d-r{idx[m.group(1)]} {get})'
+        m = re.fullmatch(r'\[:list \[:ref (:\S+)\]\]', ty)
+        if m and m.group(1) in idx: return f'(r6d-l{idx[m.group(1)]} {get})'
+        return '0'
+    for kw, i in idx.items():
+        body = '0'
+        for nm, ty in schemas[kw]:
+            body = f'(+ (* {body} 31) {fd(kw, nm, ty)})'
+        out.append(f'(defn- r6d-r{i} [r [:ref {kw}]] :i64 {body})')
+        out.append(f'(defn- r6d-l{i} [xs [:list [:ref {kw}]]] :i64 (loop [i 0 h (vector-count xs)] (if (>= i (vector-count xs)) h '
+                   f'(recur (+ i 1) (+ (* h 31) (r6d-r{i} (typed-list-nth [:list [:ref {kw}]] xs i)))))))')
+    return idx, out
+
+
 def gen(scan, outdir, only):
     rows = [l.rstrip('\n').split('\t') for l in open(os.path.join(scan, 'r6-scan.tsv')) if not l.startswith('#')]
+    paths = {l.split()[0]: l.split()[1] for l in open(os.path.join(scan, 'order.txt')) if l.strip()}
     for r in rows:
         ns, st = r[0], r[1]
         if st != 'OK' or (only and ns not in only):
             continue
         kso = open(os.path.join(scan, 'o', ns + '.kso'), 'rb').read().decode('utf-8', 'replace')
+        clause, schemas = schemas_of(open(paths[ns], encoding='utf-8').read())
+        sidx, rdig = record_digests(schemas)
+        form_ok = schemas.get(':form/r') == FORM_FIELDS
+        F = 'm' if ns == 'kotoba.form' else 'kf'
+        use_rec, use_form = False, False
         cases, skipped = [], []
         for line in kso.split('\n'):
             if not line.startswith('E '):
@@ -74,25 +150,37 @@ def gen(scan, outdir, only):
                            f'(+ 1 (* 2 {DIGEST[t].format(x=f"(option-value-of [:option {t}] o {DEFAULT[t]})")})) 0))')
                 elif res in DIGEST:
                     dig = DIGEST[res]
+                elif re.fullmatch(r'\[:ref (:\S+)\]', res) and res[6:-1] in sidx:
+                    dig = f'(r6d-r{sidx[res[6:-1]]} {{x}})'; use_rec = True
+                elif re.fullmatch(r'\[:list \[:ref (:\S+)\]\]', res) and res[13:-2] in sidx:
+                    dig = f'(r6d-l{sidx[res[13:-2]]} {{x}})'; use_rec = True
                 else:
                     dig = None
                 if dig is None:
                     skipped.append(f'{tag} result {res}'); continue
-                bad = [p for p in params if p not in ARGS]
+                pargs = dict(ARGS)
+                if form_ok:
+                    pargs['[:ref :form/r]'] = [a.replace('F/', F + '/') for a in FORM_ARGS]
+                    pargs['[:list [:ref :form/r]]'] = [a.replace('F/', F + '/') for a in FORM_LIST_ARGS]
+                bad = [p for p in params if p not in pargs]
                 if bad:
                     skipped.append(f'{tag} param {bad[0]}'); continue
+                if any(p in ('[:ref :form/r]', '[:list [:ref :form/r]]') for p in params):
+                    use_form = True; use_rec = True
                 n = 1
                 for p in params:
-                    n *= len(ARGS[p])
+                    n *= len(pargs[p])
                 for i in range(min(PER_EXPORT, n)):
-                    args = [ARGS[p][(i + j) % len(ARGS[p])] for j, p in enumerate(params)]
+                    args = [pargs[p][(i + j) % len(pargs[p])] for j, p in enumerate(params)]
                     call = f'(m/{name}' + ''.join(' ' + a for a in args) + ')'
                     cases.append((name, call, dig.format(x=call)))
         cases = cases[:MAX_CASES]
         d = os.path.join(outdir, ns)
         os.makedirs(d, exist_ok=True)
         ex = ' '.join(f'c{k}' for k in range(len(cases))) or 'c0'
-        src = [f'(ns r6d.main (:require [{ns} :as m]) (:export [{ex}]))', PRELUDE.rstrip('\n')]
+        req = f'[{ns} :as m]' + (' [kotoba.form :as kf]' if use_form and F == 'kf' else '')
+        sch = (' ' + clause) if use_rec else ''
+        src = [f'(ns r6d.main (:require {req}) (:export [{ex}]){sch})', PRELUDE.rstrip('\n')] + (rdig if use_rec else [])
         for k, (_, _, body) in enumerate(cases):
             src.append(f'(defn c{k} [] :i64 {body})')
         if not cases:
