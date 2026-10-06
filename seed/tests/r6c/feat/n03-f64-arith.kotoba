@@ -1,6 +1,6 @@
-;; R6C: no :f64 arithmetic yet (refused by name, never computed on the bits; stage-0 d2cb84f6 compiles it and answers 0:
-;; a recorded narrowing)
-;; want: E2104
+;; R6C pinned this as a refusal (a recorded narrowing); R6N (owner decision 2026-10-05, agent SEED7) lifts it: + on two
+;; :f64 is f64-add, as stage-0 d2cb84f6 compiles it and answers 0 (bits of 0.0 + 0.0)
+;; want: 0
 (ns r6c.n03 (:export [main]))
 (defn- twice [x :f64] :f64 (+ x x))
 (defn main [] :i64 (f64-to-bits (twice (f64-from-bits 0))))

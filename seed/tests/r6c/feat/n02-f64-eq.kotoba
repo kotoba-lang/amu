@@ -1,5 +1,5 @@
-;; R6C: the seed refuses = on :f64 by name (lang/guest-grammar.edn :equality says it is not admitted; stage-0 d2cb84f6
-;; nevertheless compiles this program and answers 1: a recorded NARROWING of the seed, never a different answer)
-;; want: E2123
+;; R6C pinned this as a refusal (a recorded narrowing); R6N (owner decision 2026-10-05, agent SEED7) lifts it: = on two
+;; :f64 is f64-eq, as stage-0 d2cb84f6 compiles it and answers 1 (0.0 = 0.0)
+;; want: 1
 (ns r6c.n02 (:export [main]))
 (defn main [] :i64 (if (= (f64-from-bits 0) (f64-from-bits 0)) 1 0))

@@ -1914,7 +1914,33 @@
 (defn- ck-op-fuel [M :vector-i64 hd :i64 f :i64] :vector-i64
   (if (= (ck-op-rt hd) 1) (ck-fuel M f) (ck-touch M)))
 
+;; R6N (agent SEED7, 2026-10-05): + - * < > <= >= on TWO :f64 operands are the f64 operations (stage-0 d2cb84f6 compiles
+;; dual-backend 10-f64 and answers 1 1 1 1; the R6C narrowing n03 is lifted by owner decision). The first operand is
+;; checked once: an :f64 one selects the float op, any other continues the i64 path from the second operand.
+(defn- ck-r6n-fop [hd :i64] :i64
+  (cond (= hd HD-ADD) 272 (= hd HD-SUB) 273 (= hd HD-MUL) 274
+        (= hd HD-LT) 521 (= hd HD-LE) 522 (= hd HD-GT) 523 (= hd HD-GE) 524 (= hd HD-EQ) 520
+        :else 0))
+(defn- ck-r6n-fmark [M :vector-i64 n :i64 h :i64 fhd :i64 tb :i64] :vector-i64
+  (if (= tb TY-F64)
+    (ck-mark (nm-set-nf M h NF-RES (+ (* RES-HEAD RES-SCALE) fhd)) n (ck-fl-res fhd) fhd)
+    (ck-err M E-CHECK-TYPE h TY-F64)))
+(defn- ck-r6n-op2 [M :vector-i64 n :i64 hd :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
+        a (nm-next M h)
+        b (nm-next M a)
+        M1 (ck-expr M a fx 0)
+        ta (ck-ty M1)]
+    (cond (nm-failed M1) (ck-touch M1)
+          (= ta TY-F64) (let [M2 (ck-expr M1 b fx 0)]
+                          (if (nm-failed M2) (ck-touch M2) (ck-r6n-fmark M2 n h (+ ck-fl-base (ck-r6n-fop hd)) (ck-ty M2))))
+          (nm-ne ta (ck-op-arg hd 0)) (ck-err M1 E-CHECK-TYPE h (ck-op-arg hd 0))
+          :else (let [M2 (ck-op-args M1 b hd 1 fx h)]
+                  (ck-mark (ck-op-fuel M2 hd (ck-fx-f fx)) n (ck-op-res hd) hd)))))
+
 (defn- ck-op [M :vector-i64 n :i64 hd :i64 fx :i64] :vector-i64
+  (if (and (pos? (ck-r6n-fop hd)) (= (nm-count M n) 3)) (ck-r6n-op2 M n hd fx) (ck-op1 M n hd fx)))
+(defn- ck-op1 [M :vector-i64 n :i64 hd :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
         na (- (nm-count M n) 1)]
     (if (= (ck-op-count-ok hd na) 1)
@@ -1936,6 +1962,7 @@
             M2 (ck-expr M1 b fx 0)
             tb (ck-ty M2)]
         (cond (and (= ta tb) (or (= ta TY-STR) (= ta TY-SYM))) (ck-mark (ck-fuel M2 (ck-fx-f fx)) n TY-BOOL HD-STRING-EQ)   ; R6F: = on strings/symbols is string=?
+              (and (= ta TY-F64) (= tb TY-F64)) (ck-r6n-fmark M2 n h (+ ck-fl-base 520) tb)   ; R6N: = on two :f64 is f64-eq
               (= (ck-eqable ta) 0) (ck-err M2 E-CHECK-EQ h 0)
               (= (ck-eqable tb) 0) (ck-err M2 E-CHECK-EQ h 0)
               (nm-ne ta tb) (ck-err M2 E-CHECK-TYPE h ta)
@@ -3130,7 +3157,9 @@
                 M3 (ck-expr M2 (nm-next M2 c) fx2 0)
                 vt (ck-ty M3)]
             (cond (nm-failed M3) (ck-touch M3)
-                  (not (or (= kt TY-I64) (= kt TY-STR))) (ck-err M3 E-CHECK-TYPENAME c 0)
+                  ;; R6N (agent SEED7, owner decision 2026-10-05): a keyword-keyed literal is a [:map :keyword V] (stage-0 d2cb84f6
+                  ;; compiles dual-backend 09-map and answers 1 0 2; R3 neg n15 is now listed in seed/tests/r3/r3.accept)
+                  (not (or (= kt TY-I64) (= kt TY-STR) (= kt TY-KW))) (ck-err M3 E-CHECK-TYPENAME c 0)
                   (zero? vt) (ck-err M3 E-CHECK-ABORT-INFER n 0)
                   :else
                   (let [M4 (ck-lit-items M3 (nm-next M3 (nm-next M3 c)) fx2 kt vt 0)
