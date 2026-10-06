@@ -92,6 +92,10 @@ const ALLOWED_IMPORTS = new Set([
   // that never indexes a list carries neither and is unaffected.
   "kotoba:typed/list-nth-i64/function",
   "kotoba:typed/list-nth-ref/function",
+  // The list builder (ADR 0353 floor :empty-vector-field), conditional the
+  // same way: only a module that conj's onto a `[:list T]` imports these.
+  "kotoba:typed/list-conj-i64/function",
+  "kotoba:typed/list-conj-ref/function",
   "kotoba:typed/map-contains-i64/function",
   "kotoba:typed/map-contains-ref/function",
   "kotoba:typed/map-get-i64/function",
@@ -2236,6 +2240,12 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     "list-nth-ref"(descriptorId, value, rawIndex) {
       return listNth(descriptorId, value, i64(rawIndex), /*i64Item*/ false);
     },
+    "list-conj-i64"(descriptorId, value, item) {
+      return listConj(descriptorId, value, i64(item));
+    },
+    "list-conj-ref"(descriptorId, value, item) {
+      return listConj(descriptorId, value, item);
+    },
     "map-contains-i64"(descriptorId, value, key) {
       return mapContains(descriptorId, value, i64(key)) ? 1 : 0;
     },
@@ -2709,6 +2719,20 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     const item = items[Number(index)];
     assertValue(descriptor[1], item);
     return i64Item ? i64(item) : item;
+  };
+  /**
+   * `typed-list-conj`: append to a canonical `[:list T]` (ADR 0353 floor
+   * :empty-vector-field), at the end, bounded by the canonical list's 16384
+   * items as the reference (osaho `canonical-list-item-limit`) is.
+   */
+  const listConj = (descriptorId, value, item) => {
+    const descriptor = descriptorAt(descriptorId);
+    if (!Array.isArray(descriptor) || descriptor[0] !== "list")
+      reject("invalid-typed-operation", "list conj requires a list descriptor");
+    const checked = assertValue(descriptor, value);
+    assertValue(descriptor[1], item);
+    if (checked[1].length >= 16384) reject("invalid-typed-value", "typed list item budget exceeded");
+    return admitValue(descriptor, Object.freeze([descriptor, Object.freeze([...checked[1], item])]));
   };
   const checkedMap = (descriptorId, value) => {
     const descriptor = descriptorAt(descriptorId);

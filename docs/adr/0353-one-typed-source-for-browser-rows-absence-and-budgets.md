@@ -1011,6 +1011,64 @@ holding a vector of records is not typed as a record
 an i64 ("expected string, got i64") and focus-window's two-argument `some`
 (refused by design: `some` is the option constructor).
 
+The empty vector field landed as floor `:empty-vector-field` (gate
+`empty-vector-field-typed-by-the-module-conj-test`), measured on
+browser.surface. Its surface starts `{.. :surface/apps [] :surface/windows []
+:surface/input-log [] ..}` and grows them with `(update surface
+:surface/windows conj window)`; `[]` was the bounded `:vector-i64`, so a
+record conj'd onto it was "expression type mismatch: expected i64, got
+[:record ..]", and a `[:list R]` had no builder at all ("conj requires a typed
+set [:set item-type] or a bounded :vector-i64 / :vector-f64"). The builder is
+a new KIR head, `typed-list-conj`: osaho (`738d8eb9`) appends at the end, as
+Clojure's `conj` on the vector the source wrote, bounded by
+`canonical-list-item-limit` (16384, a `:list-too-large` trap past it) and
+charged one cell, and admits it on the native word slice beside
+`typed-list-nth`; kotoba-verifier (`44fd1b56`) verifies it as
+`typed-set-conj`; kotoba-native (`0ecca92a`) lowers it to `vector-conj` on the
+list's word arena; kotoba-wasm (`fc6c8459`) calls `list-conj-i64` /
+`list-conj-ref`, imported only by a module that builds a list, and
+`runtime/browser-host.mjs` answers them; kotoba-script (`66bf70b5`) emits the
+append inline, so its prelude -- and every other ESM artifact's bytes, its 66
+parity goldens -- is unchanged. The typed-value conformance corpus gains
+`:typed-list-conj-i64` and `:typed-list-conj-reference`, executed on the
+reference, the ESM artifact and wasm on the browser host (28 vectors pass).
+kotoba-sema (`4befca1e`) reads the
+field the way `:absent-field-from-assoc` reads a nil one: a keyword key
+written `[]` in the module is a list field when the module's own source
+spells what it holds -- the items `(update m k conj v ..)` conj's at that key
+and the items of a vector literal written there. One spelled item type R
+other than `:i64` makes the field `[:list R]` and `[]` there `(typed-list-new
+[:list R])`; spelled `:i64` items, or none, leave it the `:vector-i64` it was,
+so no existing definition CID moves. `conj` onto a `[:list R]` is
+`typed-list-conj`, and a vector literal where a `[:list T]` is expected is that
+list, each item typed against T. Measured on nbb: the gate was red on the old
+pins (2 failures and 4 errors of 8 assertions), green on the new (9 with the ESM assertion). A
+browser.surface slice -- two windows opened with spelled window records
+carrying a `:window/rect` vector, two scrolls logged -- answers 2387206 on the
+reference, on `x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1` with the
+oracle verified, on `wasm32-browser-kotoba-v1` run on
+`runtime/browser-host.mjs` under node, and as the `:js-kotoba-v1` ESM artifact
+run under node (the gate checks wasm32's magic and the ESM source);
+`amu compile --target x86_64-aiueos-kernel-v1` / `--target aarch64-macos` of
+it exit 0 with `:oracle {:status :verified}`; no artifact was run under a
+loader. The constructor is private there: a public function returning the
+surface record is an export, floor `:export-signatures`. kotoba-sema's
+portable suite (40 failures, 5 errors of 616 tests), kotoba-verifier's (22
+failures, 1 error of 53) and kotoba-native's (35 failures, 9 errors of 463)
+have identical failure lists before and after, on the same classpath; osaho's
+(256 tests) and kotoba-wasm's (25) pass; the typed-value conformance corpus
+passes its 26 vectors on the new host. Refused by name: a key the module
+conj's two item types at ("... this module conj's two types at it: .. and ..;
+a list holds one type"), which is browser.surface's own input log, whose
+keyboard, scroll and text events are three shapes (`:input-log-events` needs
+a decision); a number conj'd onto a list of records ("expected [:record ..],
+got i64"); and an item only an expression gives -- register-app's `app`
+parameter, open-window's merged window -- which leaves the field the
+`:vector-i64` it was (`:list-item-from-expression`). R is what the source
+spells, as an absent field's T is: a map literal's expression values spell
+`:i64`, so browser.surface's `{:event :keyboard/key :window-id window-id :key
+key}` is typed with i64 fields.
+
 ## Selfhost foundation floors (appended 2026-09-26)
 
 Superproject adr-2609242330 measured that compiling amu with amu needs the

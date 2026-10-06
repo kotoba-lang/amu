@@ -318,13 +318,29 @@
   ;; (guest-grammar.edn, digest-pinned in four repos), like mapv / remove.
   {:id :empty-vector-field :gate "empty-vector-field-typed-by-the-module-conj-test"
    :goal "an empty vector literal at a keyword field -- browser.surface's :surface/apps [] / :surface/windows [] / :surface/input-log [] -- is typed by what the module conj's or assoc's at that key (a [:list R] of window records, of app records, of input-event records), as :absent-field-from-assoc types a nil field; refused today \"expression type mismatch: expected i64, got [:record ..]\" at the conj; a key the module gives two element types, and a number conj'd onto a list of records, stay refused by name"}
+  ;; Landed 2026-10-06: typed-list-conj in osaho, kotoba-verifier,
+  ;; kotoba-native, kotoba-wasm (+ runtime/browser-host.mjs's list-conj-*),
+  ;; kotoba-script, and
+  ;; the module pre-pass in kotoba-sema. ADR 0353 has the measurements. Like an
+  ;; absent field's T, R is what the source SPELLS: a map literal whose values
+  ;; are expressions spells their fields :i64 (map-literal-value-type is
+  ;; syntactic), so browser.surface's own events -- {:event :keyboard/key
+  ;; :window-id window-id :key key} -- are typed with i64 fields, and its three
+  ;; event shapes (keyboard, scroll, text) are two types at one key, refused
+  ;; by name. Its apps and windows are conj'd only from expressions (a
+  ;; parameter; a merge), so those fields stay :vector-i64.
+  {:id :list-item-from-expression :gate "list-field-typed-by-a-conj-expression-test"
+   :goal "a [] field the module conj's only expressions onto -- browser.surface's (update surface :surface/apps conj app) with app a parameter, and open-window's merged window -- is the [:list R] of the type those expressions have (inferred, not spelled), on the reference, wasm32 and both native targets; refused today \"expression type mismatch: expected i64, got [:record ..]\"; two inferred types at one key, and a number onto a list of records, stay refused by name"}
+  {:id :input-log-events
+   :needs-a-human "what browser.surface's input log holds: record-key, scroll-window and append-text conj three event shapes ({:event :keyboard/key :window-id :key}, {:event :window/scroll :window-id :delta-x :delta-y}, {:event :text/input :window-id :text}) onto one [] field, refused \"this module conj's two types at it ... a list holds one type\" (empty-vector-field-typed-by-the-module-conj-test pins it). Candidates, each possible, none chosen: a variant with one case per event (the reader then matches), one closed record with every key [:option T], or a log per event kind -- the same question :open-event-row asks of a host event"
+   :goal "browser.surface's input log is typed with the source still read by Clojure"}
   {:id :record-list-field-literal :gate "record-literal-holds-a-list-of-records-test"
    :goal "a keyword record literal holding a vector of record literals, {:surface/id \"k\" :surface/windows [{:window/id \"w1\" ..}]}, is a record with a [:list R] field on the reference, wasm32 and both native targets; refused today \"record-get without a type descriptor requires a record value; got :i64\" where the literal is read"}
   {:id :absent-field-from-expression
    :needs-a-human "what a T written by an expression at an absent [:option T] field is: browser.surface writes :surface/focus only from expressions (open-window's id, close-window's (:window/id (peek remaining)), focus-window's window-id); ADR 0353 admits a spelled literal as the option's some and refuses a call returning T as a coercion (pinned by nil-field-typed-by-the-module-assoc-test), so admitting this changes that line -- or the source writes the field another way"
    :goal "browser.surface's empty-surface / open-window / close-window / focus-window type :surface/focus with the source still read by Clojure"}
   {:id :browser-surface :gate "browser-surface-native-test"
-   :blocked-by [:empty-vector-field :record-list-field-literal :absent-field-from-expression :browser-text-edit]
+   :blocked-by [:empty-vector-field :list-item-from-expression :input-log-events :record-list-field-literal :absent-field-from-expression :browser-text-edit]
    :goal "browser.surface with cssom.layout and kotoba.wasm.dom the same"}
   {:id :hosted-engine-switch :gate "browser-hosted-runs-amu-output-test" :repo "kotoba-lang/browser"
    :goal "kotoba-lang/browser's hosted engine runs amu's compiled output of its own source; the Clojure source is that source, not a second copy"}

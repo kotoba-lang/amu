@@ -1,0 +1,128 @@
+(ns kotoba.compiler.empty-vector-field-test
+  "ADR 0353 floor :empty-vector-field.
+
+  kotoba-lang/browser's browser.surface starts its surface with empty
+  vectors -- {.. :surface/apps [] :surface/windows [] :surface/input-log []
+  ..} -- and grows them with (update surface :surface/windows conj window).
+  An empty vector was the bounded :vector-i64, so a record conj'd onto it was
+  refused \"expression type mismatch: expected i64, got [:record ..]\"; and a
+  [:list R] had no builder at all (conj: \"conj requires a typed set
+  [:set item-type] or a bounded :vector-i64 / :vector-f64\").
+
+  Now, in kotoba-sema: a keyword key written [] somewhere in the module is a
+  list field when the module's own source spells what it holds -- the items
+  (update m k conj v ..) conj's at that key, and the items of a vector
+  literal written there -- as floor :absent-field-from-assoc reads a nil
+  field. One spelled item type R other than :i64 makes the field [:list R]
+  and [] there (typed-list-new [:list R]); spelled :i64 items, or none, leave
+  it the :vector-i64 it was, so no existing definition CID moves. conj onto a
+  [:list R] is typed-list-conj, a new KIR head (osaho) that appends at the
+  end, bounded by the canonical list's 16384 items and charged one cell; the
+  verifier admits it, kotoba-native lowers it to vector-conj on the list's
+  word arena, kotoba-wasm calls a conditionally imported host intrinsic
+  (list-conj-i64 / list-conj-ref, answered by runtime/browser-host.mjs), and
+  kotoba-script emits the append inline (its prelude, and so every other
+  artifact's bytes, unchanged). The typed-value conformance corpus
+  (:typed-list-conj-i64 / :typed-list-conj-reference) executes both wasm
+  imports on the browser host, the ESM artifact and the reference.
+
+  The constructor is private here: a public function returning the surface
+  record is an export whose ABI is floor :export-signatures.
+
+  What stays refused, each by its literal: a key the module conj's two item
+  types at (browser.surface's own input-log, whose keyboard / scroll / text
+  events are three shapes); a number conj'd onto a list of records; and an
+  item only an expression gives (register-app's app parameter), which leaves
+  the field the :vector-i64 it was."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private surface
+  "browser.surface (browser 8671500)'s windows and input log, the window and
+  event records spelled in the source: two windows opened, two scrolls
+  logged. 2 windows, 2 events, the second event's :delta-y 6, the first
+  window's area 520 * 360."
+  (str "(ns browser.surface)\n"
+       "(defn- empty-surface [] {:surface/id \"kotoba-os\" :surface/windows [] "
+       ":surface/input-log [] :surface/next-window-id 1})\n"
+       "(defn- open-window [surface] (update surface :surface/windows conj "
+       "{:window/id \"w\" :window/title \"Files\" :window/rect [80 80 520 360]}))\n"
+       "(defn- scroll-window [surface dx dy] (update surface :surface/input-log conj "
+       "{:event :window/scroll :delta-x dx :delta-y dy}))\n"
+       "(defn- area [w] (let [r (:window/rect w)] (* (nth r 2) (nth r 3))))\n"
+       "(defn main [] :i64\n"
+       "  (let [s (scroll-window (scroll-window (open-window (open-window (empty-surface))) 3 4) 5 6)]\n"
+       "    (+ (* 1000000 (count (:surface/windows s))) (* 100000 (count (:surface/input-log s)))\n"
+       "       (:delta-y (nth (:surface/input-log s) 1)) (area (nth (:surface/windows s) 0)))))"))
+
+(def ^:private untouched
+  "An empty vector the module conj's integers onto stays a :vector-i64."
+  (str "(ns b)\n"
+       "(defn- e [] {:s/id \"k\" :s/l []})\n"
+       "(defn main [] :i64 (count (:s/l (update (e) :s/l conj 3))))"))
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- refusal [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(def ^:private event-record
+  "[:record :kotoba.map-literal/delta-x+delta-y+event [[:delta-x :i64] [:delta-y :i64] [:event :keyword]]]")
+
+(deftest empty-vector-field-typed-by-the-module-conj-test
+  (testing "admitted on the reference: 2 windows, 2 events, :delta-y 6, area 187200"
+    (is (= 2387206 (run-main surface))))
+  (testing "an empty vector the module conj's integers onto keeps its type"
+    (is (= 1 (run-main untouched))))
+  (testing "admitted on the hosted target"
+    (is (= [0 97 115 109]
+           (mapv #(bit-and (int %) 0xff)
+                 (take 4 (:bytes (compiler/compile-source surface :wasm32-kotoba-v1)))))))
+  (testing "admitted on the restricted-ESM target, which builds the list"
+    (is (re-find #"list-too-large" (:source (compiler/compile-source surface :js-kotoba-v1)))))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "compiles on both native targets"
+    (doseq [target native-targets]
+      (is (= 2387206 (#?(:clj long :cljs js/Number)
+                      (:value (:artifact (compiler/compile-source surface target)))))
+          (str target))))
+  (testing "refused: browser.surface's input log, whose events are more than one shape"
+    (is (= (str "field :surface/input-log is [] in this module, which makes it a list of "
+                "what the module conj's at it, and this module conj's two types at it: "
+                "[:record :kotoba.map-literal/event+key+window-id [[:event :keyword] "
+                "[:key :i64] [:window-id :i64]]] and " event-record "; a list holds one type")
+           (refusal (str "(ns browser.surface)\n"
+                         "(defn- empty-surface [] {:surface/id \"kotoba-os\" :surface/input-log []})\n"
+                         "(defn- record-key [surface window-id key] (update surface :surface/input-log conj "
+                         "{:event :keyboard/key :window-id window-id :key key}))\n"
+                         "(defn- scroll-window [surface dx dy] (update surface :surface/input-log conj "
+                         "{:event :window/scroll :delta-x dx :delta-y dy}))\n"
+                         "(defn main [] :i64 (count (:surface/input-log "
+                         "(scroll-window (record-key (empty-surface) 1 2) 3 4))))")))))
+  (testing "refused: a number conj'd onto a list of records (no coercion)"
+    (is (= (str "expression type mismatch: expected " event-record ", got i64")
+           (refusal (str "(ns browser.surface)\n"
+                         "(defn- empty-surface [] {:surface/id \"kotoba-os\" :surface/input-log []})\n"
+                         "(defn- scroll-window [surface dx dy] (update surface :surface/input-log conj "
+                         "{:event :window/scroll :delta-x dx :delta-y dy}))\n"
+                         "(defn main [] :i64 (count (conj (:surface/input-log "
+                         "(scroll-window (empty-surface) 3 4)) 5)))")))))
+  (testing "refused: an item only an expression gives leaves the field a :vector-i64"
+    (is (= (str "expression type mismatch: expected i64, got [:record "
+                ":kotoba.map-literal/app.id+app.title [[:app/id :string] [:app/title :string]]]")
+           (refusal (str "(ns browser.surface)\n"
+                         "(defn- empty-surface [] {:surface/id \"kotoba-os\" :surface/apps []})\n"
+                         "(defn- register-app [surface app] (update surface :surface/apps conj app))\n"
+                         "(defn main [] :i64 (count (:surface/apps (register-app (empty-surface) "
+                         "{:app/id \"files\" :app/title \"Files\"}))))"))))))
