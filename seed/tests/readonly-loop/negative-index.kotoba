@@ -1,0 +1,3 @@
+(ns stable.negative-index (:export [run walk]))
+(defn- walk [v :vector-i64 n :i64] :i64 (let [first (vector-at v 0)] (loop [i 0 s first] (if (= i n) s (recur (+ i 1) (+ s (vector-at v -1)))))))
+(defn run [n :i64] :i64 (walk [11 13 17] n))

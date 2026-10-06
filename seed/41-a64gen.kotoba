@@ -623,11 +623,146 @@
           (-> M1 (gn-mov 5 rv) (gn-hchk 5 312 320)
            (gn-emit (enc-ldp 17 3 16 0)) (gn-emit (enc-ldr 4 7 328)) (gn-emit (gn-e-addsl 4 4 17 3))))]
   (gn-gs M2 gn-f-vslot slot)))
+;; Excluded finite admission proof: whole-body no calls/allocation/write effects.
+;; Single typed Vec parameter stays same local; exact linear reaching-copy
+;; witnesses for every vector handle producer and assignment to that local.
+;; Cached registers are newly reserved/saved callee registers, never x3..5.
+(defn- sl-end [M :vector-i64 j :i64 f :i64 work :i64] :i64
+ (cond (or (>= j (vector-at M MM-SIR-N)) (<= work 0)) 0
+       (= (gn-op M j) OP-FN) 0
+       (= (gn-op M j) OP-END) (if (= (gn-sir M j IF-A) f) j 0)
+       :else (sl-end M (inc j) f (dec work))))
+(defn- sl-pick [M :vector-i64 f :i64 np :i64 k :i64 chosen :i64] :i64
+ (if (= k np) chosen
+  (let [ty (gn-fnf M f (+ FF-PT0 k))]
+   (cond (= ty TY-VEC) (if (> chosen 0) 0 (sl-pick M f np (inc k) (inc k)))
+         (or (= ty TY-I64) (= ty TY-BOOL)) (sl-pick M f np (inc k) chosen)
+         :else 0))))
+(defn- sl-label-valid [M :vector-i64 target :i64 start :i64 end :i64] :bool
+ (let [p (if (and (> target 0) (< target MM-LABEL-CAP)) (gn-lpos M target) 0)]
+  (and (> p start) (< p end) (= (gn-op M p) OP-LABEL) (= (gn-sir M p IF-A) target))))
+(defn- sl-count-label [M :vector-i64 j :i64 end :i64 target :i64 n :i64] :i64
+ (if (>= j end) n
+  (sl-count-label M (inc j) end target (if (and (= (gn-op M j) OP-LABEL) (= (gn-sir M j IF-A) target)) (inc n) n))))
+;; Bounded rooted must-origin proof. S is excluded compiler scratch, never M.
+;; Header: remaining visits, okay, bodyN, start, end, chosenLocal, edgeN, epoch.
+;; Four node arrays and two 2N edge arrays; size8+8*(N+1), zero allocated.
+(defn- sc-l [S :vector-i64] :i64 (inc (vector-at S 2)))
+(defn- sc-head [S :vector-i64 k :i64] :i64 (vector-at S (+ 8 k)))
+(defn- sc-mark-at [S :vector-i64 k :i64] :i64 (+ 8 (+ (sc-l S) k)))
+(defn- sc-node-at [S :vector-i64 d :i64] :i64 (+ 8 (+ (* 2 (sc-l S)) d)))
+(defn- sc-cursor-at [S :vector-i64 d :i64] :i64 (+ 8 (+ (* 3 (sc-l S)) d)))
+(defn- sc-from-at [S :vector-i64 e :i64] :i64 (+ 8 (+ (* 4 (sc-l S)) e)))
+(defn- sc-next-at [S :vector-i64 e :i64] :i64 (+ 8 (+ (* 6 (sc-l S)) e)))
+(defn- sc-fail [S :vector-i64] :vector-i64 (vector-assoc! S 1 0))
+(defn- sc-edge [S :vector-i64 from :i64 to :i64] :vector-i64
+ (let [n (vector-at S 2) e (inc (vector-at S 6))]
+  (cond (= to (inc n)) S
+        (or (< from 1) (> from n) (< to 1) (> to n) (> e (* 2 n))) (sc-fail S)
+        :else (let [prev (sc-head S to)]
+          (-> S (vector-assoc! (sc-from-at S e) from) (vector-assoc! (sc-next-at S e) prev)
+                (vector-assoc! (+ 8 to) e) (vector-assoc! 6 e))))))
+(defn- sc-build [M :vector-i64 start :i64 end :i64 slot :i64] :vector-i64
+ (let [n (- end (inc start)) S (-> (vector-alloc (+ 8 (* 8 (inc n))))
+         (vector-assoc! 0 131072) (vector-assoc! 1 1) (vector-assoc! 2 n)
+         (vector-assoc! 3 start) (vector-assoc! 4 end) (vector-assoc! 5 slot))]
+  (loop [j (inc start) reads 0 backs 0]
+   (if (or (= (vector-at S 1) 0) (= j end))
+    (if (and (>= reads 2) (> backs 0)) S (sc-fail S))
+    (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) c (gn-sir M j IF-C)
+          target (if (= op OP-BR) a b)
+          branch (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ))
+          valid (cond (or (= op OP-CONST) (= op OP-LGET) (= op OP-LSET) (= op OP-RET) (= op OP-FUEL)) true
+                      (= op OP-BIN) (< a BOP-F64-ADD)
+                      (= op OP-CMP) (< a CC-F64-EQ)
+                      (= op OP-UN) (< a UOP-F64-NEG)
+                      (= op OP-RT) (and (= a RT-VECTOR-AT) (= c 2) (>= b 0) (<= b 5))
+                      (= op OP-LABEL) (and (> a 0) (< a MM-LABEL-CAP) (= (sl-count-label M (inc start) end a 0) 1))
+                      branch (sl-label-valid M target start end)
+                      :else false)
+          k (- j start)
+          S1 (cond (not valid) (sc-fail S)
+                   (= op OP-RET) S
+                   branch (sc-edge S k (- (gn-lpos M target) start))
+                   :else (sc-edge S k (inc k)))
+          S2 (if (and valid (or (= op OP-BRZ) (= op OP-BRNZ))) (sc-edge S1 k (inc k)) S1)]
+      (recur (inc j) (if (= op OP-RT) (inc reads) reads)
+                    (if (and branch valid (< (gn-lpos M target) j)) (inc backs) backs)))))))
+;; Iterative DFS of every predecessor. Gray/black tags use bounded query epoch;
+;; undefined, other definition, any uncut dependency cycle or budget exhaustion
+;; fails closed. An accepted LGET definition cuts its incoming dependency edges.
+(defn- sc-walk [M :vector-i64 S :vector-i64 t :i64 gray :i64 black :i64] :vector-i64
+ (loop [depth 0]
+  (let [node (vector-at S (sc-node-at S depth)) cursor (vector-at S (sc-cursor-at S depth))]
+   (if (= cursor 0)
+    (let [S1 (vector-assoc! S (sc-mark-at S node) black)]
+     (if (= depth 0) S1 (recur (dec depth))))
+    (let [child (vector-at S (sc-from-at S cursor))
+          S1 (vector-assoc! S (sc-cursor-at S depth) (vector-at S (sc-next-at S cursor)))
+          mark (vector-at S1 (sc-mark-at S1 child))]
+     (cond (= mark gray) (sc-fail S1)
+           (= mark black) (recur depth)
+           (<= (vector-at S1 0) 0) (sc-fail S1)
+           :else (let [S2 (vector-assoc! S1 0 (dec (vector-at S1 0)))
+                       j (+ (vector-at S2 3) child) defined (= (gn-defd M j) t)]
+             (cond defined (if (and (= (gn-op M j) OP-LGET) (= (gn-sir M j IF-B) (vector-at S2 5)))
+                              (let [S3 (vector-assoc! S2 (sc-mark-at S2 child) black)] (recur depth)) (sc-fail S2))
+                   (= (sc-head S2 child) 0) (sc-fail S2)
+                   (>= (inc depth) (sc-l S2)) (sc-fail S2)
+                   :else (let [S3 (-> S2 (vector-assoc! (sc-mark-at S2 child) gray)
+                                         (vector-assoc! (sc-node-at S2 (inc depth)) child)
+                                         (vector-assoc! (sc-cursor-at S2 (inc depth)) (sc-head S2 child)))]
+                           (recur (inc depth)))))))))))
+(defn- sc-query [M :vector-i64 S :vector-i64 site :i64 t :i64] :vector-i64
+ (let [k (- site (vector-at S 3)) epoch (inc (vector-at S 7)) gray (inc (* 2 epoch)) black (+ 2 (* 2 epoch))]
+  (if (or (= (sc-head S k) 0) (> epoch 8192)) (sc-fail S)
+   (let [S1 (-> S (vector-assoc! 7 epoch) (vector-assoc! (sc-mark-at S k) gray)
+                 (vector-assoc! (sc-node-at S 0) k) (vector-assoc! (sc-cursor-at S 0) (sc-head S k)))]
+    (sc-walk M S1 t gray black)))))
+(defn- sc-queries [M :vector-i64 S :vector-i64] :vector-i64
+ (loop [j (inc (vector-at S 3))]
+  (if (or (= (vector-at S 1) 0) (= j (vector-at S 4))) S
+   (let [op (gn-op M j) chosen-write (and (= op OP-LSET) (= (gn-sir M j IF-A) (vector-at S 5)))
+         S1 (if (or (= op OP-RT) chosen-write) (sc-query M S j (gn-sir M j IF-B)) S)]
+    (recur (inc j))))))
+
+(defn- sl-assign [M :vector-i64 i :i64 f :i64 np :i64] :vector-i64
+ (let [end (sl-end M (inc i) f 8192)
+       slot (if (and (> np 0) (<= np 5)) (sl-pick M f np 0 0) 0)
+       nsv (gn-g M gn-f-nsv)
+       nnew (+ nsv 3)
+       frame (+ (gn-r16 (* 8 (+ (gn-g M gn-f-ns) (gn-g M gn-f-dp) 2))) (gn-r16 (* 8 nnew)) (gn-g M gn-f-out))]
+  (if (and (= (gn-g M gn-f-leaf) 1) (= (gn-g M gn-f-vmode) 0) (= (gn-g M gn-f-out) 0)
+           (> slot 0) (> end i) (<= nsv 7) (<= frame 32768)
+           (> (gn-g M gn-f-fb) 0))
+    (let [proof (sc-queries M (sc-build M i end slot))]
+     (if (= (vector-at proof 1) 1)
+      (-> M (gn-gs gn-f-nsv nnew) (gn-gs gn-f-fb frame) (gn-gs gn-f-vmode 3) (gn-gs 15 slot)) M)) M)))
+(defn- sl-len [M :vector-i64] :i64 (+ 16 (gn-g M gn-f-nsv)))
+(defn- sl-base [M :vector-i64] :i64 (+ 17 (gn-g M gn-f-nsv)))
+(defn- sl-flag [M :vector-i64] :i64 (+ 18 (gn-g M gn-f-nsv)))
+(defn- sl-clear [M :vector-i64] :vector-i64
+ (if (= (gn-g M gn-f-vmode) 3) (gn-emit M (enc-movz (sl-flag M) 0 0)) (gn-vclear M)))
+;; Runtime flag is a successful original-site validation witness across
+;; closed stable-local body/backedges. Positive compile witness is retained
+;; only through straight-line source; joins/branches retain the flag guard.
+(defn- sl-read [M :vector-i64 rv :i64 ri :i64 d :i64 slot :i64] :vector-i64
+ (if (not= slot (gn-g M 15)) (gn-err M E-GEN-OP OP-RT)
+  (let [known false len (sl-len M) base (sl-base M) flag (sl-flag M)
+        m0 (if known M (gn-emit M (enc-cbnz flag 13)))
+        m1 (if known m0
+             (-> m0 (gn-hchk rv 312 320) (gn-emit (enc-ldp 17 len 16 0))
+                    (gn-emit (enc-ldr base 7 328)) (gn-emit (gn-e-addsl base base 17 3))
+                    (gn-emit (enc-movz flag 1 0))))]
+   (-> m1 (gn-emit (enc-cmp-r ri len)) (gn-emit (enc-bcond (enc-cond-lo) 2)) (gn-emit (gn-e-udf))
+           (gn-emit (gn-e-ldrr d base ri 1)) (gn-gs gn-f-vslot slot)))))
+
 (defn- gn-chain-read [M :vector-i64 rv :i64 ri :i64 d :i64 slot :i64] :vector-i64
+ (if (= (gn-g M gn-f-vmode) 3) (sl-read M rv ri d slot)
  (if (not= (gn-g M gn-f-vmode) 2) (gn-vread M rv ri d)
   (-> M (gn-chain-base rv slot)
    (gn-emit (enc-cmp-r ri 3)) (gn-emit (enc-bcond (enc-cond-lo) 2)) (gn-emit (gn-e-udf))
-   (gn-emit (gn-e-ldrr d 4 ri 1)))))
+   (gn-emit (gn-e-ldrr d 4 ri 1))))))
 (defn- gn-chain-store [M :vector-i64 rv :i64 ri :i64 rx :i64 slot :i64] :vector-i64
  (if (not= (gn-g M gn-f-vmode) 2)
   (-> M (gn-hchk rv 312 320) (gn-vidx ri) (gn-emit (gn-e-strr3 rx 16 17)))
@@ -812,7 +947,7 @@
     (cond (> np 16) (gn-err M1 E-GEN-OP OP-FN)
           :else
           (let [MM (if (gn-small-tail M1 i f np) (gn-gs M1 gn-f-leaf 2) M1)
-                M2 (gn-vmode (gn-assign MM) i)
+                M2 (sl-assign (gn-vmode (gn-assign MM) i) i f np)
                 F (gn-g M2 gn-f-fb)
                 leaf (gn-g M2 gn-f-leaf)]
             (if (> F 32768)
@@ -828,7 +963,7 @@
                   (gn-params 1 np)
                   (cond-> (and (= leaf 1) (= (gn-g M2 gn-f-fuel) 1)) (-> (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-gs gn-f-freg 1)))
                   (gn-gs gn-f-ctx 1)
-                  (gn-gs gn-f-h 0) (gn-vclear) (gn-gs gn-f-vslot (if (= (gn-g M2 gn-f-vmode) 2) -1 0)) (gn-tree-entry f)))))))
+                  (gn-gs gn-f-h 0) (sl-clear) (gn-gs gn-f-vslot (if (= (gn-g M2 gn-f-vmode) 2) -1 0)) (gn-tree-entry f)))))))
 
 (defn- gn-op-ret [M :vector-i64 t :i64] :vector-i64 (gn-epilogue (gn-into M 0 t)))
 ;; R5B: RET2 t -- x0 := temp t, x1 := temp t+1 (through x16: either source may be x0 or x1 in a leaf), then the epilogue
@@ -1395,7 +1530,7 @@
       (gn-emit (enc-add-r 17 17 ri))))
 ;; (vector-at v i), v = temp t, i = temp t+1 (t <= 5)
 (defn- gn-rt-at [M :vector-i64 i :i64 t :i64] :vector-i64
-  (let [slot (if (gn-isk M t gn-k-local) (gn-dv M t) 0)
+  (let [slot (if (= (gn-g M gn-f-vmode) 3) (gn-g M 15) (if (gn-isk M t gn-k-local) (gn-dv M t) 0))
         M1 (gn-pin M (inc t))
         ri (gn-pinned M1 (inc t))
         rv (gn-src M1 t 17 0)
