@@ -1,0 +1,17 @@
+(declare-fun used () Int)
+(declare-fun cachedOffset () Int)
+(declare-fun cachedLength () Int)
+(declare-fun key () Int)
+(declare-fun offsets () (Array Int Int))
+(declare-fun lengths () (Array Int Int))
+(assert (>= used 0))
+(assert (let ((a!1 (=> false
+               (and (> key 0)
+                    (<= key used)
+                    (= cachedLength (select lengths key))
+                    (= cachedOffset (select offsets key))
+                    (>= cachedLength 0)
+                    (>= cachedOffset 0)))))
+  (not a!1)))
+
+(check-sat)

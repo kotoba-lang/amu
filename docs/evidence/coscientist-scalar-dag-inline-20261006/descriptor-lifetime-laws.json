@@ -1,0 +1,68 @@
+{
+  "status": "PASS fresh stated-assumption descriptor lifetime SMT laws and unsafe controls",
+  "solver": "5.1.0",
+  "sourcePins": {
+    "tools/kexe_loader.c": "f44b50995a0e45db4be35244da34dd61538a484c7d5ea2f15f7f5a73d9daa8c3",
+    "seed/41-a64gen.kotoba": "4ed9b5600505c33013c966d266a977a3d4ccd56ad3cdc425b1805acf390b95f3"
+  },
+  "queries": [
+    {
+      "name": "descriptor-append-preserves-old-entry",
+      "result": "unsat",
+      "sha256": "31ce9a96baf745d55f8767923a5273ca7adb7f8190695c702e43e2cbd69d8629"
+    },
+    {
+      "name": "descriptor-reset-clears-witness",
+      "result": "unsat",
+      "sha256": "7a87cbf3cb18867546bb98b7edd5f73830def2b4ed378d5a523546e1a15b7826"
+    },
+    {
+      "name": "descriptor-hit-preserves-bounds-outcome",
+      "result": "unsat",
+      "sha256": "0a6b18733ebdd74e9710effd023a9fc34c45e791b5af7136b241da670e09be61"
+    },
+    {
+      "name": "descriptor-content-write-loads-fresh-item",
+      "result": "unsat",
+      "sha256": "a15841e4784e79a908f9ca30fd8f0fcca79342c3155dea6f13acd4372372573d"
+    },
+    {
+      "name": "descriptor-no-reset-return-summary",
+      "result": "unsat",
+      "sha256": "9bfb279d6d4214063a28344d7f1bd173cfbdc8588137f11b48c92a495e7f3305"
+    },
+    {
+      "name": "descriptor-recycle-key-only-is-unsafe",
+      "result": "sat",
+      "sha256": "8c21e4485b2058c8977d560d9c07f9986634d586f09da4a5c96cb2aeac51d1d7",
+      "witness": "[lengths = K(Int, 1),\n cachedLength = 3,\n used = 1,\n key = 1,\n index = 2]"
+    },
+    {
+      "name": "descriptor-release-key-only-is-unsafe",
+      "result": "sat",
+      "sha256": "30272b45320ca3ccb2722e16a18eb1a79794f3b1526f76a14f837bd0a2f5504e",
+      "witness": "[cachedLength = 3, used = 0, key = 1, index = 0]"
+    },
+    {
+      "name": "descriptor-caching-element-is-unsafe",
+      "result": "sat",
+      "sha256": "2822502ef6448be3fbed96448842775c766ef47cc7822dc20c2fa9b236a7b392",
+      "witness": "[newValue = 99, cachedItem = 0]"
+    },
+    {
+      "name": "descriptor-new-bank-disjoint-from-original-operands",
+      "result": "unsat",
+      "sha256": "36b9fd2ab58422ab6b31ec31f19ae2c3f4b66f47f51e033b6b8523aa9d675935"
+    }
+  ],
+  "unsat": 6,
+  "satControls": 3,
+  "assumptions": [
+    "Runtime append writes only a fresh row; content write modifies items only; reset or unknown barrier clears validity.",
+    "Backing pointer stable within no-reset context; returned-call summary assumes monotone count and unchanged all old descriptor rows, requiring source closure binding; trusted native ABI preserves new saved banks.",
+    "Source and machine binding for proposed optimization remains required; finite models do not prove arbitrary runtime/callback/compiler soundness.",
+    "No native candidate implementation, native execution, profiling or timing by this proof."
+  ],
+  "nativeExecutions": 0,
+  "newMeasurements": 0
+}
