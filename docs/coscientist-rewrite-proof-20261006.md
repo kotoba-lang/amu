@@ -103,3 +103,5 @@ Evidence: [summary](evidence/coscientist-rewrite-proof-20261006/summary.json),
 The complete archive was restored into a distinct directory. Its source, included
 native seed/supervisor, solver inputs and kernels reran successfully, reproducing
 the entire summary and recipe hash exactly. See [replay receipt](evidence/coscientist-rewrite-proof-20261006/replay.json).
+
+The next concrete application is the [native closed-operation and normal-return identity summary](coscientist-shape-summary-20261006.md): rooted CFG transfers, reverse caller worklist, independent raw-SIR oracle, native mutant controls and a finite schedule model. It leaves the product unchanged and does not claim a performance improvement.
