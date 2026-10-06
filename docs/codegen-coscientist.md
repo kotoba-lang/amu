@@ -2460,6 +2460,8 @@ Tick 414 (2026-09-30 14:0x JST, amu-rank busy pass): host busy load1 40.15/44.41
 
 
 - 2026-10-06 22:11 JST amu-bench: H-C2 (NEXT-designated) evidence: host busy (pre-run monitor 22:09 load1 102.81 / 5m 102.07 / 15m 97.35, up 6 days 9:12, 1 user; append-time load1 108.25 / load5 103.69 / load15 98.44; threshold 7.5, gate unmet ~14x on load1). No measurement run this iteration (quiet gate failed; host heavily loaded, forced measurement would only bury numbers in noise). host=local(junkawasaki-mac), n=0, no ABBA. NEXT unchanged: H-C2 quiet-host bench/perfgate re-measure of the ~4.4% kernel residue vs Clang.
+
+- 2026-10-07 01:10 JST amu-bench tick: NEXT-designated H-C2 (quiet-host bench/perfgate of the ~4.4% kernel residue vs Clang): host busy (pre-run monitor load1 51.78 / 5m 62.10 / 15m 61.29, up 6 days 12:11; append-time load1 52.66 / load5 59.84 / load15 60.50; threshold 7.5 unmet ~7-8x). No measurement attempted, quiet gate unmet, n=0, host=local(junkawasaki-mac), no ABBA. NEXT unchanged: H-C2 quiet-host bench/perfgate.
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
