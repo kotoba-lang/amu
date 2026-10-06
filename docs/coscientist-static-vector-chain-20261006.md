@@ -134,3 +134,8 @@ Evidence: [summary](evidence/coscientist-static-vector-chain-20261006/summary.js
 Extract the native archive and run replay-analysis.py to verify stored state
 oracles and independently recalculate raw timing. Replay does not execute native
 code again; independent native execution receipts are retained separately.
+
+Follow-up: the [fallthrough witness](coscientist-fallthrough-vector-chain-20261006.md)
+was implemented and independently tested, but a fresh30-triple experiment yielded
+no qualified performance improvement. It is rejected; the product above remains
+unchanged. A calibrated read-only scalar element-reuse census is registered next.
