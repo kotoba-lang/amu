@@ -870,6 +870,11 @@ for name in ['st_scalar','st_wrap','st_branch','st_driver','st_ref_np2','st_ref_
   for fuel in [1,2,3,4,5,16777216,(1<<53)-1]:
    run(name,[99,x] if name=='st_ref_np2' else [x],value if fuel>=charges else 'trap',fuel=fuel)
 
+# Native private vector chains: preserve the original fixture/run prefixes.
+VECTOR_CHAIN_START=len(FIX)
+from a64gen_vector_chain_fixtures import add_fixtures as _add_vector_chain_fixtures
+_add_vector_chain_fixtures(fx,run,MIN,MAX,s64)
+
 def kotoba(real_layout=False):
     fns, labels, lits, sir, fnrecs = layout_tables()
     o = [';; deps: 40-a64enc',
@@ -937,10 +942,12 @@ def kotoba(real_layout=False):
          '        w (t-code M at)',
          '        w2 (t-code M (+ at 1))',
          '        lab (vector-at M (+ MM-LABEL-BASE g))',
-         '        fnc (vector-at M (+ MM-FN-BASE (* g MM-FN-W) FF-CODE))',
+         '        fn0 (vector-at M (+ MM-FN-BASE (* g MM-FN-W) FF-CODE))',
+         '        aux (t-fixf M i XF-AUX)',
+         '        fnc (if (= aux 0) fn0 (if (and (= aux 1) (= k FX-BL26) (= (bit-and w 0xfc000000) 0x14000000) (= (t-code M fn0) 0xd2800005)) (inc fn0) -1))',
          '        pool (t-litf M g LF-POOL)]',
          '    (cond (= k FX-B26) (t-patch1 M at (enc-patch-imm26 w (- lab at)))',
-         '          (= k FX-BL26) (t-patch1 M at (enc-patch-imm26 w (- fnc at)))',
+         '          (= k FX-BL26) (if (< fnc 0) (t-put M MM-ERR 9999) (t-patch1 M at (enc-patch-imm26 w (- fnc at))))',
          '          (= k FX-ADR19) (t-patch1 M at (enc-patch-imm19 w (- fnc at)))',
          '          (= k FX-CB19) (t-patch1 M at (enc-patch-imm19 w (- lab at)))',
          '          (= k FX-BC19) (t-patch1 M at (enc-patch-imm19 w (- lab at)))',
@@ -1044,6 +1051,8 @@ def kotoba(real_layout=False):
           '              (t-put (+ b FF-PT0 1) TY-I64) (t-put (+ b FF-RTYPE) TY-VEC)) M)',
           '        M2 (if (= f %d) (t-put M1 (+ b FF-PT0 2) TY-I64) M1)] (t-cf-types M2 (inc f)))))'%cf_writer]
     small_types={x[0]:('TY-VEC' if x[0] in ['st_vtarget','st_vec','st_alloc','st_ref_vec'] else 'TY-I64','TY-VEC' if x[0]=='st_alloc' else 'TY-I64') for x in FIX[SMALL_TAIL_START:]}
+    o += ['(defn- t-vector-chain-types [M :vector-i64] :vector-i64',
+          ' (-> M '+' '.join('(t-put '+str(C['MM-FN-BASE']+fns[name]*C['MM-FN-W']+fld)+' '+ty+')' for name,np,ns,dp,body in FIX[VECTOR_CHAIN_START:] for fld,ty in [(C['FF-RTYPE'],'TY-I64' if name.endswith('_driver') else 'TY-VEC')]+[(C['FF-PT0']+j,'TY-I64' if name.endswith('_driver') or j>0 else 'TY-VEC') for j in range(np)])+'))']
     o += ['(defn- t-small-types [M :vector-i64] :vector-i64',
           ' (-> M '+' '.join('(t-put '+str(C['MM-FN-BASE']+fns[name]*C['MM-FN-W']+fld)+' '+ty+')' for name,(pt,rt) in small_types.items() for fld,ty in [(C['FF-RTYPE'],rt)]+[(C['FF-PT0']+j,pt) for j in range(next(x[1] for x in FIX if x[0]==name))])+'))']
     du_ids=[fns[c['name']] for c in DOT_UNROLL_CASES]
@@ -1076,7 +1085,7 @@ def kotoba(real_layout=False):
           '        mask_shared (gn-mask-reused M0 %d 1 0 16384)' % MASK_TYPED_FIRST,
           '        mask_single (gn-mask-reused M0 %d 1 0 16384)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='mask_single')),
           '        mask_limit (gn-mask-reused M0 %d 1 0 0)' % MASK_TYPED_FIRST,
-          '        M1 (gn-run (t-small-types M0))',
+          '        M1 (gn-run (t-vector-chain-types (t-small-types M0)))',
           '        hot_guard (gn-high-loop M1 %d)' % hot_i,
           '        cold_guard (gn-high-loop M1 %d)' % cold_i,
           '        hot_limit (gn-high-loop-scan M1 %d %d %d 0)' % (hot_i,hot_i+1,hot_start),
@@ -1191,6 +1200,7 @@ def runs(update):
         off = fns[names.index(name) + 1]
         e = dict(os.environ, KEXE_CAP_RESOURCES_35=d)
         if 'fuel' in o: e['KEXE_FUEL'] = str(o['fuel'])
+        if 'fuel_remaining' in o: e['KEXE_STRUCTURED_REPORT'] = '1'
         if 'mkfile' in o: open(os.path.join(d, o['mkfile'][0]), 'wb').write(o['mkfile'][1])
         if 'cmd' in o:
             e['KEXE_COMMAND'] = '1'
@@ -1209,6 +1219,12 @@ def runs(update):
             lines = so.splitlines()
             good = p.returncode == 0 and lines and lines[-1] == str(expect)
             got = 'exit %d out %r err %r' % (p.returncode, so[-40:], p.stderr.decode('latin1')[:80])
+        if 'fuel_remaining' in o:
+            import re
+            left=re.search(r':remaining (-?\d+)',so)
+            result=re.search(r':result (-?\d+)',so)
+            good=(p.returncode != 0 and b'KEXE_TRAP' in p.stderr) if expect=='trap' else (p.returncode==0 and result is not None and int(result[1])==expect)
+            good=good and left is not None and int(left[1])==o['fuel_remaining']
         if good and 'stdout' in o:
             good = so.startswith(o['stdout'])
         if good and 'file' in o:

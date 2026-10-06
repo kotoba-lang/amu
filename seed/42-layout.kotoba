@@ -203,7 +203,15 @@
         lab (vector-at M (+ MM-LABEL-BASE (ly-clamp tgt 1 (- MM-LABEL-CAP 1))))
         nfn (vector-at M MM-FN-N)
         fcode (vector-at M (+ (+ MM-FN-BASE (* (ly-clamp tgt 1 (- MM-FN-CAP 1)) MM-FN-W)) FF-CODE))
-        t (ly-target kind tgt lab fcode nfn)]
+        t0 (ly-target kind tgt lab fcode nfn)
+        aux (vector-at M (+ fb XF-AUX))
+        t (if (= aux 0) t0
+            (if (and (= aux 1) (= kind FX-BL26) (> t0 0)
+                     (< (inc t0) (vector-at M MM-CODE-N))
+                     (> at 0) (< at (vector-at M MM-CODE-N))
+                     (= (bit-and (vector-at M (+ MM-CODE-BASE at)) 0xfc000000) 0x14000000)
+                     (= (vector-at M (+ MM-CODE-BASE t0)) 0xd2800005))
+                (inc t0) -1))]
     (if (= kind FX-LIT32)
       (ly-lit32 M at tgt)
       (if (< t 0)
