@@ -294,6 +294,21 @@ function spawn(command, args, options = {}) {
   });
 }
 
+// The repo's own nbb install when present; otherwise KBB_ENGINE, the same
+// engine convention `bin/kbb` follows. Without the fallback every --jvm-free
+// command fails "the lock resolver failed three times" on a checkout that was
+// never `npm install`ed, even though a working engine is installed outside
+// the repo.
+function nbbCliPath(root) {
+  const local = path.join(root, "node_modules", "nbb", "cli.js");
+  const engine = fs.existsSync(local) ? local
+    : process.env.KBB_ENGINE ? path.resolve(process.cwd(), process.env.KBB_ENGINE) : local;
+  if (!fs.existsSync(engine) || !fs.statSync(engine).isFile()) {
+    throw new Error(`nbb engine must name an existing cli.js file, not a directory: ${engine}`);
+  }
+  return engine;
+}
+
 function resolverFailure(result) {
   if (result.error) return result.error.message;
   const stderr = (result.stderr || "").trim().split(/\r?\n/).map((l) => l.trim())
@@ -545,7 +560,9 @@ function runCompiler(root, rawArgs) {
         + "(--source-path / --module-lock), which links a closed module "
         + "graph.", 64);
     }
-    const nbbCli = path.join(root, "node_modules", "nbb", "cli.js");
+    let nbbCli;
+    try { nbbCli = nbbCliPath(root); }
+    catch (error) { fail(`error: ${error.message}`, 64); }
     const alias = runCommands.has(args[0]) ? "native-run" : null;
     const classpath = [path.join(root, "src"), path.join(root, "resources"),
       securityClasspath(root, nbbCli, alias)].join(path.delimiter);
@@ -596,5 +613,5 @@ function main() {
 if (require.main === module) {
   main();
 } else {
-  module.exports = { hostNativeTargets, hostNativeTarget, defaultTarget };
+  module.exports = { hostNativeTargets, hostNativeTarget, defaultTarget, nbbCliPath };
 }
