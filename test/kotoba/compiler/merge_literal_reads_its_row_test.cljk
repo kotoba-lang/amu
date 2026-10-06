@@ -1,0 +1,129 @@
+(ns kotoba.compiler.merge-literal-reads-its-row-test
+  "ADR 0353 floor :merge-literal-reads-its-row.
+
+  kotoba-lang/browser's browser.surface opens a window by merging a literal
+  that reads the window parameter it then merges:
+
+      (defn open-window [surface {:keys [app-id title rect document] :as window}]
+        (let [[id surface] (next-window-id surface)
+              window (merge {:window/id id :window/app-id app-id ..}
+                            (dissoc window :app-id :title :rect :document))]
+          (update surface :surface/windows conj window)))
+
+  window is a row (it is destructured, dissoc'd and merged), so open-window
+  exists only as its specializations. Literals are typed (floor
+  :literal-typing) BEFORE rows are specialized, and in the generic a field
+  read off the row has no type yet, so a literal holding one stayed the
+  untyped literal: the specialization's result had no inferable type, kept
+  the provisional :i64, and a caller reading it was refused \"record-get
+  without a type descriptor requires a record value; got :i64\" -- where
+  (merge {:window/id \"w\" ..} window), whose literal reads nothing, was not.
+
+  Now, in kotoba-sema: each specialization round types its literals before
+  it infers results, so in a specialization, where the row is its record,
+  the literal is the record of what it reads, the merge is the record merge
+  gives, and a caller passing it on (open-window's own update .. conj) passes
+  a record.
+
+  What stays refused, each by its literal: a merge onto a number (only a
+  record satisfies a row), and a read of a field the row lacks. And, not this
+  floor's to change: open-window's own (or title app-id id) and (or rect [..])
+  over a present field ask a string's and a vector's truthiness, which ADR
+  0353 refuses -- the source states that fallback another way."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private surface
+  "browser.surface (browser 097e44c)'s open-window, the merged literal
+  reading app-id / title / rect / document off the window it merges, without
+  the (or ..) fallbacks, and with the id made of the app-id where
+  next-window-id formats a counter -- (str \"w\" n) of an i64, floor
+  :integer-str -- and returns it beside the rebound surface, which native
+  refuses (floor :native-rebound-row-update): two windows. 2 windows, the second's
+  :window/z 4, its title 8 code units, its document 9, its width 700; the
+  first window's id \"w-files\" (7 code units)."
+  (str "(ns browser.surface)\n"
+       "(defn- empty-surface [] {:surface/id \"kotoba-os\" :surface/windows [] "
+       ":surface/next-window-id 1})\n"
+       "(defn- open-window\n"
+       "  [surface {:keys [app-id title rect document] :as window}]\n"
+       "  (let [id (str \"w-\" app-id)\n"
+       "        window (merge {:window/id id\n"
+       "                       :window/app-id app-id\n"
+       "                       :window/title title\n"
+       "                       :window/rect rect\n"
+       "                       :window/document document\n"
+       "                       :window/state :normal}\n"
+       "                      (dissoc window :app-id :title :rect :document))]\n"
+       "    (update surface :surface/windows conj window)))\n"
+       "(defn main [] :i64\n"
+       "  (let [s (-> (empty-surface)\n"
+       "              (open-window {:app-id \"files\" :title \"Files\" :rect [80 80 520 360] "
+       ":document 7 :window/z 3})\n"
+       "              (open-window {:app-id \"term\" :title \"Terminal\" :rect [5 6 700 8] "
+       ":document 9 :window/z 4}))\n"
+       "        w (nth (:surface/windows s) 1)]\n"
+       "    (+ (* 10000000 (count (:surface/windows s))) (* 1000000 (:window/z w))\n"
+       "       (* 100000 (string-code-unit-count (:window/title w)))\n"
+       "       (* 10000 (string-code-unit-count (:window/id (nth (:surface/windows s) 0))))\n"
+       "       (* 1000 (:window/document w)) (nth (:window/rect w) 2))))"))
+
+(def ^:private destructured
+  "The refusal the ladder measured, (merge {:t title} w) with title
+  destructured off w, the merged-away field dissoc'd: 3 + 5 + 3."
+  (str "(ns b)\n"
+       "(defn- ow [s {:keys [title] :as w}] (merge {:t title :id s} (dissoc w :title)))\n"
+       "(defn main [] :i64\n"
+       "  (let [r (ow 5 {:title \"abc\" :z 3})]\n"
+       "    (+ (:z r) (:id r) (string-code-unit-count (:t r)))))"))
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- refusal [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(deftest merge-literal-reading-its-row-test
+  (testing "admitted on the reference: the literal is the record of what it reads"
+    (is (= 11 (run-main destructured))))
+  (testing "admitted on the reference: 2 windows, :window/z 4, title 8, id \"w-files\", document 9, width 700"
+    (is (= 24879700 (run-main surface))))
+  (testing "admitted on the hosted target"
+    (is (= [0 97 115 109]
+           (mapv #(bit-and (int %) 0xff)
+                 (take 4 (:bytes (compiler/compile-source surface :wasm32-kotoba-v1)))))))
+  (testing "admitted on the restricted-ESM target"
+    (is (string? (:source (compiler/compile-source surface :js-kotoba-v1)))))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "compiles on both native targets"
+    (doseq [target native-targets]
+      (is (= 24879700 (#?(:clj long :cljs js/Number)
+                       (:value (:artifact (compiler/compile-source surface target)))))
+          (str target))))
+  (testing "refused: a merge onto a number (no coercion)"
+    (is (= (str "argument 5 to ow is i64, and parameter w of ow is the row {:title T | r}: "
+                "only a record satisfies a row")
+           (refusal (str "(ns b)\n"
+                         "(defn- ow [w] (merge {:t (:title w)} w))\n"
+                         "(defn main [] :i64 (string-code-unit-count (:t (ow 5))))")))))
+  (testing "refused: a read of a field the row lacks"
+    (is (= (str "argument {:z 3} to ow is record :kotoba.map-literal/z, which has no field "
+                ":title that the row {:title T | r} of parameter w reads")
+           (refusal (str "(ns b)\n"
+                         "(defn- ow [w] (merge {:t (:title w)} w))\n"
+                         "(defn main [] :i64 (:z (ow {:z 3})))")))))
+  (testing "refused: a string's truthiness -- open-window's (or title app-id id) over a present title"
+    (is (= "if test must be bool or an option"
+           (refusal (str "(ns b)\n"
+                         "(defn- ow [{:keys [title] :as w}] (string-code-unit-count (or title \"untitled\")))\n"
+                         "(defn main [] :i64 (ow {:title \"abc\"}))"))))))

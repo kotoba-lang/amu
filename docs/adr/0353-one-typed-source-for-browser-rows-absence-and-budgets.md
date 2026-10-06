@@ -1116,6 +1116,39 @@ window ..))`), refused "record-get without a type descriptor requires a
 record value; got :i64" where `(merge {:window/id "w" ..} window)` is
 admitted -- floor `:merge-literal-reads-its-row`.
 
+That landed as floor `:merge-literal-reads-its-row` (gate
+`merge-literal-reading-its-row-test`). Two causes, measured apart. Literals
+are typed (`:literal-typing`) before rows are specialized, and in the generic
+a field read off the row has no type yet, so `{:t (:title w)}` stayed the
+untyped literal; and a literal one of whose values spells a type --
+open-window's `:window/state :normal` -- is lowered to its record at desugar,
+every value that spells none taking `:i64` there, so `(:title w)` sat at an
+`:i64` field. Either way the specialization's result kept the provisional
+`:i64` and its caller was refused. kotoba-sema (`be68d75c`) types the
+literals in each specialization round before inferring results, and
+`type-literal` retypes a literal's own anonymous record at a field it
+defaulted to `:i64` when the value there infers to another type (that was a
+mismatch before, so nothing admitted moves). Measured on nbb: the gate was red
+on the old pin (6 errors of 9 assertions), green on the new (9 of 9); an
+open-window slice -- two windows, the merged literal reading app-id / title /
+rect / document off the window and merging it dissoc'd, then conj'd onto
+`:surface/windows` -- answers 24879700 on the reference and on
+`x86_64-aiueos-kernel-v1` / `aarch64-macos-kotoba-v1` with the oracle
+verified, and compiles to wasm32 and the `:js-kotoba-v1` ESM artifact (the
+gate checks wasm32's magic and the ESM source; neither was run). Refused by
+name: a merge onto a number ("argument 5 to ow is i64, and parameter w of ow
+is the row {:title T | r}: only a record satisfies a row"), a read of a field
+the row lacks ("... which has no field :title that the row {:title T | r} of
+parameter w reads"), and `(or title ..)` over a title the record has ("if
+test must be bool or an option" -- a string's truthiness). Measured behind
+it, each on its own and before and after alike: next-window-id's `(str "w"
+n)` of an i64 ("expected string, got i64", floor `:integer-str`); on native,
+a row rebound by its own `update` ("runtime KIR record update rejected" at
+verify, floor `:native-rebound-row-update`); and open-window's `(or title
+app-id id)` / `(or rect [..])` fallbacks, which need a decision
+(`:destructured-key-fallback`). The `[id surface]` pair next-window-id
+returns, destructured, is admitted.
+
 ## Selfhost foundation floors (appended 2026-09-26)
 
 Superproject adr-2609242330 measured that compiling amu with amu needs the

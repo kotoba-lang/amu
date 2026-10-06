@@ -181,7 +181,10 @@
             ;; ADR 0353 :list-item-from-expression: a [] field conj'd only
             ;; expressions is the [:list R] inference gives (register-app's
             ;; app, open-window's merged window)
-            [kotoba.compiler.list-item-from-expression-test]))
+            [kotoba.compiler.list-item-from-expression-test]
+            ;; ADR 0353 :merge-literal-reads-its-row: a merged literal that
+            ;; reads the row it merges is the record merge gives (open-window)
+            [kotoba.compiler.merge-literal-reads-its-row-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
   (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
@@ -277,4 +280,5 @@
              'kotoba.compiler.record-list-sequence-test
              'kotoba.compiler.record-field-update-test
              'kotoba.compiler.empty-vector-field-test
-             'kotoba.compiler.list-item-from-expression-test)
+             'kotoba.compiler.list-item-from-expression-test
+             'kotoba.compiler.merge-literal-reads-its-row-test)
