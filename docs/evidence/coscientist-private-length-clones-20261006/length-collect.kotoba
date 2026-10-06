@@ -1,0 +1,105 @@
+;; Diagnostic only: distinct private-analysis contexts; compiler M/G read-only.
+;; H has 16 local + 16 temp (kind,value) facts: unknown0, literal1, Vec length2.
+(defn- lc-k [H :vector-i64 k :i64] :i64 (vector-at H (* 2 k)))
+(defn- lc-v [H :vector-i64 k :i64] :i64 (vector-at H (inc (* 2 k))))
+(defn- lc-put [H :vector-i64 k :i64 kind :i64 value :i64] :vector-i64
+ (-> H (mem-set (* 2 k) kind) (mem-set (inc (* 2 k)) (if (= kind 0) 0 value))))
+(defn- lc-zero [H :vector-i64 k :i64] :vector-i64
+ (if (= k 32) H (lc-zero (lc-put H k 0 0) (inc k))))
+(defn- lc-read [V :vector-i64 H :vector-i64 i :i64 k :i64] :vector-i64
+ (if (= k 64) H (lc-read V (mem-set H k (vector-at V (+ 16 (* (- i (vector-at V 0)) 64) k))) i (inc k))))
+(defn- lc-join [V :vector-i64 H :vector-i64 Q :vector-i64 i :i64 k :i64] :vector-i64
+ (if (= k 32) Q
+  (let [at (+ 16 (* (- i (vector-at V 0)) 64) (* k 2)) oldk (vector-at V at) oldv (vector-at V (inc at))
+        hk (lc-k H k) hv (lc-v H k) first (= (vector-at Q (sh-at i)) 0)
+        keep (or first (and (= oldk hk) (= oldv hv))) nk (if keep hk 0) nv (if (= nk 0) 0 hv)
+        change (or (not= nk oldk) (not= nv oldv))
+        v0 (-> V (mem-set at nk) (mem-set (inc at) nv))
+        q0 (if change (mem-set Q 6 1) Q)] (lc-join v0 H q0 i (inc k)))))
+(defn- lc-merge [V :vector-i64 H :vector-i64 Q :vector-i64 i :i64] :vector-i64
+ (if (or (<= i (vector-at Q 9)) (> i (vector-at Q 10))) (mem-set Q 5 1)
+  (let [seen (vector-at Q (sh-at i)) q0 (mem-set Q 6 0) q1 (lc-join V H q0 i 0)
+        changed (or (= seen 0) (= (vector-at q1 6) 1)) q2 (mem-set q1 (sh-at i) 1)]
+   (if changed (sh-enqueue q2 i) q2))))
+(defn- lc-step [M :vector-i64 F :vector-i64 V :vector-i64 H :vector-i64 Q :vector-i64 L :vector-i64 i :i64] :vector-i64
+ (let [op (gn-op M i) a (gn-sir M i IF-A) b (gn-sir M i IF-B) c (gn-sir M i IF-C)
+       h0 (lc-read V H i 0)]
+  (case op
+   OP-RET Q
+   OP-END (mem-set Q 5 1)
+   OP-BR (lc-merge V h0 Q (sh-target Q L a))
+   (OP-BRZ OP-BRNZ) (let [q0 (lc-merge V h0 Q (sh-target Q L b))] (lc-merge V h0 q0 (inc i)))
+   OP-LGET (lc-merge V (lc-put h0 (+ 16 a) (lc-k h0 (dec b)) (lc-v h0 (dec b))) Q (inc i))
+   OP-LSET (lc-merge V (lc-put h0 (dec a) (lc-k h0 (+ 16 b)) (lc-v h0 (+ 16 b))) Q (inc i))
+   OP-CONST (lc-merge V (lc-put h0 (+ 16 a) 1 b) Q (inc i))
+   (OP-BIN OP-CMP OP-UN) (lc-merge V (lc-put h0 (+ 16 b) 0 0) Q (inc i))
+   OP-CALL (let [closed (and (> a 0) (< a (vector-at M MM-FN-N)) (= c (gn-fnf M a FF-NPARAMS)) (= (vector-at F (sh-at a)) 1))
+                 identity (and closed (= (vector-at F (inc (sh-at a))) 1))
+                 kind (if identity (lc-k h0 (+ 16 b)) 0) value (if identity (lc-v h0 (+ 16 b)) 0)
+                 h1 (if closed h0 (lc-zero h0 0)) h2 (lc-put h1 (+ 16 b) kind value)]
+              (lc-merge V h2 Q (inc i)))
+   OP-RT (let [known (= (lc-k h0 (+ 16 b)) 2) len (lc-v h0 (+ 16 b))
+               alloc (and (= a RT-VECTOR-ALLOC) (= c 1) (= (lc-k h0 (+ 16 b)) 1) (>= len 0) (<= len 4096))
+               admitted (gn-inl a b c)
+               kind (cond alloc 2 (and admitted (= a RT-VECTOR-ASSOC-IN-PLACE) known) 2
+                          (and admitted (= a RT-VECTOR-COUNT) known) 1 :else 0)
+               value (if (> kind 0) len 0) h1 (if (or alloc admitted) h0 (lc-zero h0 0))]
+            (lc-merge V (lc-put h1 (+ 16 b) kind value) Q (inc i)))
+   OP-VEC (let [h1 (lc-zero h0 0)] (lc-merge V (lc-put h1 (+ 16 a) (if (and (>= b 0) (<= b 4096)) 2 0) b) Q (inc i)))
+   OP-VECP (let [h1 (lc-zero h0 0)] (lc-merge V (lc-put h1 (+ 16 a) (if (and (>= c 0) (<= c 4096)) 2 0) c) Q (inc i)))
+   (OP-FUEL OP-LABEL) (lc-merge V h0 Q (inc i))
+   (lc-merge V (lc-zero h0 0) Q (inc i)))))
+(defn- lc-cfg [M :vector-i64 F :vector-i64 V :vector-i64 H :vector-i64 Q :vector-i64 L :vector-i64 limit :i64] :vector-i64
+ (cond (= (vector-at Q 0) 0) Q
+       (>= (vector-at Q 2) limit) (mem-set Q 3 1)
+       :else (let [q0 (sh-pop Q) q1 (lc-step M F V H q0 L (vector-at q0 8))] (lc-cfg M F V H q1 L limit))))
+;; J[0]=context count, J[4]=global failure; entries are fn/length at16+2*id.
+;; Generic context length=-1. Actual constructed length can be zero.
+(defn- lc-find [J :vector-i64 f :i64 len :i64 j :i64] :i64
+ (cond (> j (vector-at J 0)) 0
+       (and (= (vector-at J (+ 16 (* 4 j))) f) (= (vector-at J (+ 17 (* 4 j))) len)) j
+       :else (lc-find J f len (inc j))))
+(defn- lc-add [J :vector-i64 f :i64 len :i64] :vector-i64
+ (if (> (lc-find J f len 1) 0) J
+  (let [n (inc (vector-at J 0))] (if (> n 4096) (mem-set J 4 1)
+   (-> J (mem-set 0 n) (mem-set (+ 16 (* 4 n)) f) (mem-set (+ 17 (* 4 n)) len))))))
+(defn- lc-init [M :vector-i64 J :vector-i64 f :i64] :vector-i64
+ (if (>= f (vector-at M MM-FN-N)) J (lc-init M (lc-add J f -1) (inc f))))
+(defn- lc-out [prefix :string f :i64 len :i64 i :i64 x :i64 y :i64] :i64
+ (io-out (string-concat prefix (string-concat " " (string-concat (string-from-i64 f) (string-concat " "
+  (string-concat (string-from-i64 len) (string-concat " " (string-concat (string-from-i64 i) (string-concat " "
+  (string-concat (string-from-i64 x) (string-concat " " (string-concat (string-from-i64 y) "\n")))))))))))))
+(defn- lc-facts [M :vector-i64 F :vector-i64 V :vector-i64 H :vector-i64 Q :vector-i64 J :vector-i64 D :vector-i64 f :i64 len :i64 i :i64 end :i64] :vector-i64
+ (if (>= i end) J
+  (let [seen (= (vector-at Q (sh-at i)) 1) op (gn-op M i) a (gn-sir M i IF-A) b (gn-sir M i IF-B) c (gn-sir M i IF-C)
+        h0 (lc-read V H i 0)
+        wrapper (if (= op OP-CALL) (gn-call-wrapper M i a b c) 0)
+        slot (if (= op OP-RT) a (if (and (> wrapper 0) (< wrapper 1024)) (bit-and wrapper 255) 0))
+        access (and seen (or (= slot RT-VECTOR-AT) (= slot RT-VECTOR-ASSOC-IN-PLACE)) (= (lc-k h0 (+ 16 b)) 2) (= (lc-k h0 (+ 17 b)) 1))
+        alen (if access (lc-v h0 (+ 16 b)) -1) idx (if access (lc-v h0 (+ 17 b)) -1)
+        printed 0
+        callee (and seen (= op OP-CALL) (> a 0) (< a (vector-at M MM-FN-N)) (= c (gn-fnf M a FF-NPARAMS)) (> c 0)
+                    (= (gn-fnf M a FF-PT0) TY-VEC) (= (vector-at F (sh-at a)) 1) (= (lc-k h0 (+ 16 b)) 2))
+        actual (if callee (lc-v h0 (+ 16 b)) -1)
+        printed2 0
+        j0 (if (and callee (>= actual 0) (<= actual 4096)) (lc-add J a actual) J)
+        d0 (if (and access (>= len 0) (>= idx 0) (< idx alen)) (pc-fact D (vector-at J 1) i 2 alen idx) D)
+        d1 (if (and callee (>= actual 0) (<= actual 4096)) (pc-fact d0 (vector-at J 1) i 1 (lc-find j0 a actual 1) 0) d0)]
+    (lc-facts M F V H Q j0 D f len (inc i) end))))
+(defn- lc-function [M :vector-i64 F :vector-i64 V :vector-i64 H :vector-i64 Q :vector-i64 L :vector-i64 J :vector-i64 D :vector-i64 f :i64 len :i64] :vector-i64
+ (let [p (gn-fnf M f FF-SIR) np (gn-fnf M f FF-NPARAMS) end (if (> p 0) (sh-end M (inc p) f 8192) 0)
+       ns (if (> end p) (gn-max (gn-max np (gn-sir M p IF-C)) (gn-max (gn-fnf M f FF-NSLOTS) (gn-scan M (inc p) 2 0))) 0)
+       dp (if (> end p) (gn-max (gn-fnf M f FF-DEPTH) (gn-scan M (inc p) 1 0)) 0)
+       valid (and (> p 0) (> end p) (>= np 0) (<= np 16) (>= ns np) (<= ns 16) (> dp 0) (<= dp 16))]
+  (if (not valid) (let [printed 0] (mem-set J (+ 18 (* 4 (vector-at J 1))) 2))
+   (let [vbase (mem-set V 0 p) q0 (sh-clear Q p end)
+         q1 (-> q0 (mem-set 0 0) (mem-set 1 0) (mem-set 2 0) (mem-set 3 0) (mem-set 5 0) (mem-set 9 p) (mem-set 10 end))
+         h0 (lc-zero H 0) h1 (if (and (>= len 0) (> np 0) (= (gn-fnf M f FF-PT0) TY-VEC)) (lc-put h0 0 2 len) h0)
+         q2 (lc-merge V h1 q1 (inc p)) q3 (lc-cfg M F V H q2 L (* 128 (- end p)))
+         good (and (= (vector-at q3 3) 0) (= (vector-at q3 5) 0))
+         printed 0]
+    (if good (lc-facts M F V H q3 (mem-set J (+ 18 (* 4 (vector-at J 1))) 1) D f len (inc p) end) (mem-set J (+ 18 (* 4 (vector-at J 1))) 2))))))
+(defn- lc-jobs [M :vector-i64 F :vector-i64 V :vector-i64 H :vector-i64 Q :vector-i64 L :vector-i64 J :vector-i64 D :vector-i64 j :i64] :vector-i64
+ (if (or (> j (vector-at J 0)) (= (vector-at J 4) 1)) J
+  (let [f (vector-at J (+ 16 (* 4 j))) len (vector-at J (+ 17 (* 4 j)))
+        j0 (lc-function M F V H Q L (mem-set J 1 j) D f len)] (lc-jobs M F V H Q L j0 D (inc j)))))
