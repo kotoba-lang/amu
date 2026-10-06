@@ -31,9 +31,10 @@
 
   What stays refused, each by its literal: a key the module conj's two item
   types at (browser.surface's own input-log, whose keyboard / scroll / text
-  events are three shapes); a number conj'd onto a list of records; and an
-  item only an expression gives (register-app's app parameter), which leaves
-  the field the :vector-i64 it was."
+  events are three shapes); and a number conj'd onto a list of records. An
+  item only an expression gives (register-app's app parameter) left the field
+  the :vector-i64 it was here; floor :list-item-from-expression types it by
+  inference (list-field-typed-by-a-conj-expression-test)."
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
@@ -117,12 +118,4 @@
                          "(defn- scroll-window [surface dx dy] (update surface :surface/input-log conj "
                          "{:event :window/scroll :delta-x dx :delta-y dy}))\n"
                          "(defn main [] :i64 (count (conj (:surface/input-log "
-                         "(scroll-window (empty-surface) 3 4)) 5)))")))))
-  (testing "refused: an item only an expression gives leaves the field a :vector-i64"
-    (is (= (str "expression type mismatch: expected i64, got [:record "
-                ":kotoba.map-literal/app.id+app.title [[:app/id :string] [:app/title :string]]]")
-           (refusal (str "(ns browser.surface)\n"
-                         "(defn- empty-surface [] {:surface/id \"kotoba-os\" :surface/apps []})\n"
-                         "(defn- register-app [surface app] (update surface :surface/apps conj app))\n"
-                         "(defn main [] :i64 (count (:surface/apps (register-app (empty-surface) "
-                         "{:app/id \"files\" :app/title \"Files\"}))))"))))))
+                         "(scroll-window (empty-surface) 3 4)) 5)))"))))))

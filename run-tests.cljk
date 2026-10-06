@@ -177,7 +177,11 @@
             [kotoba.compiler.record-field-update-test]
             ;; ADR 0353 :empty-vector-field: [] at a field is the [:list R]
             ;; the module conj's (browser.surface's windows and input log)
-            [kotoba.compiler.empty-vector-field-test]))
+            [kotoba.compiler.empty-vector-field-test]
+            ;; ADR 0353 :list-item-from-expression: a [] field conj'd only
+            ;; expressions is the [:list R] inference gives (register-app's
+            ;; app, open-window's merged window)
+            [kotoba.compiler.list-item-from-expression-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
   (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
@@ -272,4 +276,5 @@
              'kotoba.compiler.vector-parameter-test
              'kotoba.compiler.record-list-sequence-test
              'kotoba.compiler.record-field-update-test
-             'kotoba.compiler.empty-vector-field-test)
+             'kotoba.compiler.empty-vector-field-test
+             'kotoba.compiler.list-item-from-expression-test)
