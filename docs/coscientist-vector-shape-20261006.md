@@ -41,3 +41,9 @@
 [証拠・再検証手順](evidence/coscientist-vector-shape-20261006/README.md)、[全測定報告](evidence/coscientist-vector-shape-20261006/timing-report.json)、[root独立確認](evidence/coscientist-vector-shape-20261006/root-timing-root-check.json)、[freshコピーからの再検証](evidence/coscientist-vector-shape-20261006/isolated-replays.json)を保存した。depthconvの入力2,000回・期待fuel70,034は、ソース・native・export offset1,352が完全一致する既存版の実測証跡から継承した。ほか18本の32回分は今回のowner状態対から得た。過去の時間や統計の継承はしていない。
 
 製品ソース・golden・測定条件を変更せず、証拠を選択コピーした。旧ownerの全inventoryや外部origin pinsと、アーカイブ内の実際のselected payloadは別に記録する。元リポジトリ全体を複製したという主張はしない。
+
+退行の診断として、固定した両版の `statemate` を M4 上で8回、各200,000呼出しで観測した。結果1・燃料消費23,715は6件の測定器較正と8件の観測すべてで一致した。既存測定器を同じ最適化設定で再ビルドした命令領域も一致する。SIGPROF が記録した命令位置は既存版3,704件、候補7,682件で、領域外3件、対応不能・取りこぼし0件だった。観測の約53%は両版とも既存の燃料処理に対応した。これは追加の燃料消費や、命令ごとの実行時間を示すものではない。
+
+静的な照合では、1,474個のclone内CALLのBL数は両版とも216、532個のcloneのframe・保存レジスタ数・leaf種別も一致した。呼び出し融合の消失とframe肥大化は、この範囲では裏付けられなかった。コード配置や燃料処理の依存による待ち時間は次に検査する仮説であり、退行原因は未確定である。観測数を速度比として使わず、既存の性能不合格も変更しない。
+
+[診断報告](evidence/coscientist-vector-shape-20261006/pc-diagnostic-report.json)、[静的照合](evidence/coscientist-vector-shape-20261006/static-diagnostic-report.json)、[独立コピーの再検証](evidence/coscientist-vector-shape-20261006/pc-diagnostic-isolated-replay.json)を追加した。`pc-diagnostic.tgz`・`pc-diagnostic.manifest.json`・`replay-pc-diagnostic.py` の3ファイルから、選択した98ファイルのハッシュと生の命令位置からのFN/SIR/命令対応・観測比率をオフラインで再検証できる。新しいnative実行、solver、性能測定は行わない。割込み位置は命令のretirement、cycle、cache miss、branch missではなく、ホストのCPU tick囲いもないため、この診断は性能スコアや因果証明ではない。

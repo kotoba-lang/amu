@@ -1,0 +1,133 @@
+{
+  "status": "PASS_DIAGNOSTIC_PROFILE_UNCERTAIN_CAUSE",
+  "productAdoption": false,
+  "diagnosticOnly": true,
+  "performanceMeasured": false,
+  "officialEmbenchScore": false,
+  "executionSession": 42600,
+  "executionExit": 0,
+  "host": "zebulun@100.66.28.79",
+  "registeredProfiles": 8,
+  "executedProfiles": 8,
+  "callsEach": 200000,
+  "n": 32,
+  "fuelEach": 16777216,
+  "expectedResult": 1,
+  "fuelConsumedEach": 23715,
+  "calibrationComparisons": 6,
+  "baselineCaptured": 3704,
+  "candidateCaptured": 7682,
+  "outsideGuestSamples": 3,
+  "unmappedGuestSamples": 0,
+  "droppedSamples": 0,
+  "samplingIntervalUs": [
+    997,
+    1009
+  ],
+  "proportions": {
+    "baseline": {
+      "OP-LSET": 0.008639308855291577,
+      "OP-CALL": 0.11636069114470843,
+      "fuelInstruction": 0.531317494600432,
+      "OP-RT": 0.2329913606911447,
+      "OP-RET": 0.023758099352051837,
+      "OP-FN": 0.01565874730021598,
+      "OP-BR": 0.03509719222462203,
+      "OP-CMP": 0.028347732181425486,
+      "OP-LABEL": 0.0064794816414686825,
+      "OP-UN": 0.0002699784017278618,
+      "OP-BRZ": 0.0005399568034557236,
+      "outsideGuest": 0.0002699784017278618,
+      "OP-BIN": 0.0002699784017278618
+    },
+    "candidate": {
+      "OP-BR": 0.020046862796146838,
+      "OP-RT": 0.28924759177297577,
+      "fuelInstruction": 0.5300702941942202,
+      "OP-CALL": 0.08357198646185889,
+      "OP-CMP": 0.026425410049466285,
+      "OP-FN": 0.008721687060661286,
+      "OP-LABEL": 0.005467326217130955,
+      "OP-RET": 0.03553762041135121,
+      "OP-LSET": 0.0002603488674824265,
+      "OP-UN": 0.00013017443374121324,
+      "outsideGuest": 0.0002603488674824265,
+      "OP-BRZ": 0.00013017443374121324,
+      "OP-BIN": 0.00013017443374121324
+    }
+  },
+  "perRunProportionRanges": {
+    "baseline": {
+      "fuelInstruction": {
+        "minimum": 0.5200868621064061,
+        "maximum": 0.5410733844468785
+      },
+      "OP-RT": {
+        "minimum": 0.22698744769874477,
+        "maximum": 0.23877327491785322
+      },
+      "OP-CALL": {
+        "minimum": 0.09419496166484119,
+        "maximum": 0.1248642779587405
+      }
+    },
+    "candidate": {
+      "fuelInstruction": {
+        "minimum": 0.5137844611528822,
+        "maximum": 0.5549231644849175
+      },
+      "OP-RT": {
+        "minimum": 0.24758110415480933,
+        "maximum": 0.3139339675433688
+      },
+      "OP-CALL": {
+        "minimum": 0.06883044208170118,
+        "maximum": 0.10073989755264656
+      }
+    }
+  },
+  "fuelInstructionCounts": {
+    "baseline": {
+      "f90004f0": 408,
+      "f94004f0": 1458,
+      "54000042": 2,
+      "f1000508": 94,
+      "f1000610": 6
+    },
+    "candidate": {
+      "f94004f0": 3144,
+      "f90004f0": 585,
+      "f1000508": 148,
+      "54000042": 87,
+      "f1000610": 108
+    }
+  },
+  "findings": [
+    "Actual interrupted-PC samples concentrate on existing context fuel loads/stores: fuel-class shares baseline53.13%,candidate53.01%. The most sampled fuel instruction is ldr x16,[x7,#8],1458 baseline/3144 candidate samples. Same charge23715 and actual sample spans bind to preserved original SIR; this is not evidence of additional FUEL operations.",
+    "Vector runtime EMIT-region share rises23.30%\u219228.92%; CALL-region share falls11.64%\u21928.36%. A CALL EMIT can include an inlined vector or charge operation, so these are source-emission buckets, not mutually distinct algorithm costs.",
+    "Previous exact static audit finds no lost no-BL/tail-B fusion and unchanged532clone frames/leaf/saved counts. Actual hot samples are distributed across many corresponding original function identities, and not one new expensive generic call.",
+    "This evidence prioritizes fuel/context dependency and code placement among remaining investigation targets. It does not prove instruction-cache/branch-predictor misses or a causal regression mechanism. The rejected candidate still must not be adopted."
+  ],
+  "causalFrontier": {
+    "proven": "Same frozen workload/native/expectedresult/fuel; hot sampled original instruction regions and exact mappings; no static fusion/frame inflation.",
+    "unproven": "Why equivalent smaller clone CALL spans are slower. Address-dependent instruction fetch/prediction and context dependency latency remain hypotheses requiring a separately preregistered diagnostic/control or hardware counters.",
+    "nextCandidateAllowedByThisReport": false
+  },
+  "limitations": [
+    "SIGPROF records interrupted PCs, not instruction retirement, cycles, cache misses or branch mispredictions. Saved PC may be next instruction after an asynchronous stall/interrupt. No elapsed measurement statistics are analyzed or pooled.",
+    "Timer delivery is scheduler/coalescing dependent; proportions and per-run ranges are reported, and capture counts are not speed ratios. Two intervals/order reversal reduce but do not prove elimination of periodic alias bias.",
+    "Host metadata includes before/after uname/cpu/load plus per-run load; profiles required load<3. No host_processor_info CPU tick envelope or scheduling trace was recorded, so no quiet-host performance qualification is claimed.",
+    "Each of8processes bounded45seconds, capture65536entries, wholejob420seconds. Actual no dropped samples. Driver restores original SIGPROF action/timer/mask and drains pending tick after disabling; no loader SIGILL/SIGTRAP handlers overwritten.",
+    "Calibration compares original measured runner/rebuilt trusted O2/sampler on each frozen native. Entire MachO hash differs due build identity; actual trusted O2 __text exact prior __text SHA11cca1128addcab6d21e585bde77362d2621b17f8f5096adff19cde74e87283b. Driver C context/pair/vector/reset bodies unchanged.",
+    "Signal-instrumented calibration is return/fuel evidence only. Prior frozen full supervisor-state/resource proofs remain separate; this is not a new full-state/universal-stack proof."
+  ],
+  "setupHistory": [
+    "First internal payload transfer auto-review rejected. Identical prior payload/destination and explicit user authorization were supplied to same reviewer; same transport accepted, no bypass.",
+    "Exploratory O3 driver build did not match prior runner code and was not profiled; retained O3 build logs. Historic O2/stdc11/ldl __text matched exactly before profiles. Single-call setup trials had result1/fuel23715 and sampler0PCs.",
+    "No source/native/workload/expected-output changes; no profile reruns or new performance campaign."
+  ],
+  "rawEvidence": "remote-evidence/profile-0..7-ARM.stdout/stderr, profiles.json, calibration*.stdout/stderr, calibration.json, environment*.json, driver source/binaries/text/buildlogs; profile-*.mapped.json gives every PC exact origin FN/SIR/instruction.",
+  "preregistrationSHA256": "b70ac30e3cf778c7723532d9e4fc780d460833cc6efc993006bcfd96acc20fb9",
+  "analysisSHA256": "724282f4e82b15df178630eb4568a2b84105d79e5b1f6a2adc49ec08ffae411d",
+  "externalInputPinsSHA256": "6f99125bd15d00fcfcdfe91d8eb050b0ecd8253a0f1d99219a6a3f2975d540c8"
+}
