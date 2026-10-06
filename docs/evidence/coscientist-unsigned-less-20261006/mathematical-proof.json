@@ -1,0 +1,29 @@
+{
+  "status": "mathematical-four-sign-cases-with-independent-native-bitpattern-oracles",
+  "domain": "All signed i64 values interpreted as unsigned bitpatterns U(x)=x if x>=0 else x+2^64",
+  "cases": [
+    {
+      "signs": "a>=0,b>=0",
+      "identity": "U(a)<U(b) iff a<b",
+      "originalTree": "signed comparison"
+    },
+    {
+      "signs": "a<0,b<0",
+      "identity": "Adding 2^64 to both preserves order; U(a)<U(b) iff a<b",
+      "originalTree": "signed comparison"
+    },
+    {
+      "signs": "a<0,b>=0",
+      "identity": "U(a)>=2^63>U(b); false",
+      "originalTree": "false"
+    },
+    {
+      "signs": "a>=0,b<0",
+      "identity": "U(a)<2^63<=U(b); true",
+      "originalTree": "true"
+    }
+  ],
+  "nativeCompare": "CMP establishes carry clear exactly when unsigned minuend<subtrahend; CSET LO returns exact 0 or 1",
+  "negativeImmediate": "For 1<=k<=4095, CMN x,k carry set iff U(x)+k>=2^64 iff U(x)>=2^64-k=U(-k); CSET LO therefore equals CMP x,U(-k). Zero uses CMP. Other constants load a register.",
+  "observableSemantics": "Exact helper has no FUEL/runtime/cap/alloc/call ops. Pure scalar result does not alter ctx, fuel, allocation or traps; caller frame and original fuel remain. No equivalence of arbitrary mathematical programs or result cache is claimed."
+}
