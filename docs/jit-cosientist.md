@@ -555,3 +555,46 @@ only), no policy change, no sealed claim.
   constant-argument cloning); then on a quiet host (idle >=90 percent)
   the qualified three-arm J-B run, 4000000 iters x 24 alternations,
   ratio of medians.
+
+- 2026-09-29 (JIT tick 44): quiet gate UNMEASURED this tick (budget exhausted on
+  artifact recovery; no load/idle probe was taken, so per the no-fabrication
+  rule gate status = unmeasured, not "failed"). Tick-42 falsification fork
+  STILL OPEN: the hand-inlined control artifacts were lost to /tmp cleanup
+  (/tmp/jit_t42_kernel_inline.bin missing; t41 scratch word-scan script also
+  gone; /tmp/jit_t42* and /tmp/jit_t41* both absent as of this tick). Next
+  tick first action: REGENERATE the artifacts (compile
+  bench/kernel_strings-based inlined control via bin/amu compile --target
+  aarch64 --jvm-free --output, extract-native positional form, blob to a
+  DURABLE path under the profile scratch dir, not /tmp) and word-scan for
+  sdiv 0x9ac10cxx vs smulh 0x9b407cxx to close the fork. J-B stays open,
+  not-killed/not-confirmed (last under-qualified band 5.9-8.8 percent,
+  ticks 27-36). No compiler change, no policy change, no sealed claim.
+
+- 2026-09-30 01:0x JST tick 45 (JIT): quiet gate failed a 38th consecutive
+  time - load1 8.49/11.62/11.89 on 10 CPUs at 01:00 JST, iostat cpu idle
+  48-57 percent (3 samples), never >=90 percent. BLOCKER FOUND (static,
+  no quiet gate needed): the amu main worktree is currently UNCOMPILABLE -
+  bin/amu compile --target aarch64 --jvm-free fails for BOTH
+  bench/runtime-comparison/kernel_strings.kotoba and a fresh kernel with
+  {:phase :analysis} error "Unable to resolve symbol: ascii-token" at
+  src/kotoba/compiler/kexe_fs_forms.cljk:111. git diff shows the file has
+  UNCOMMITTED local edits (the S5 flat-map rewrite of 2026-09-29 per its
+  own docstring) that call ascii-token while deleting the old ascii
+  helper without defining ascii-token anywhere (repo-wide grep: only the
+  one call site). This is another bot's in-flight work on a dirty tree -
+  NOT touched, NOT reverted (rule: no cross-bot tree edits). Consequence:
+  the tick-42/44 falsification fork (hand-inlined kernel -> sdiv vs
+  smulh word-scan) CANNOT be closed until that tree compiles again.
+  Mitigation done: the hand-inlined control kernel was REGENERATED and
+  saved DURABLY (not /tmp) at
+  .hermes profile scratch jit-t45/kernel_strings_inline.kotoba
+  (imod body inlined at scan/kernel call sites, literal divisors
+  1000003/16/8). J-B stays open, not-killed/not-confirmed (last
+  under-qualified band 5.9-8.8 percent, ticks 27-36). No compiler change,
+  no policy change, no sealed claim. Next tick first actions: (1) retry
+  bin/amu compile on kernel_strings - if it succeeds the kexe_fs_forms
+  edit landed or was reverted; then compile the inlined control,
+  extract-native (positional form), word-scan the blob for sdiv
+  0x9ac10cxx vs smulh 0x9b407cxx to close the fork; (2) if still broken,
+  report the blocker (it blocks amu-bench and AOT axis too); (3) if idle
+  >=90 percent, the qualified three-arm J-B run.
