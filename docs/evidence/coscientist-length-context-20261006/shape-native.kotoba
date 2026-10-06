@@ -1,0 +1,146 @@
+;; Diagnostic only. Separate vectors F/Q/E/L, never write compiler M or G.
+;; F/Q nodes: seen-or-closed, local-or-identity, temps, queued, next.
+(defn- sh-at [i :i64] :i64 (+ 16 (* i 5)))
+(defn- sh-bit [mask :i64 i :i64] :i64 (bit-and (u64-shift-right mask i) 1))
+(defn- sh-putbit [mask :i64 i :i64 value :i64] :i64
+ (bit-or (bit-and mask (bit-not (i64-shift-left 1 i))) (i64-shift-left value i)))
+(defn- sh-enqueue [Q :vector-i64 i :i64] :vector-i64
+ (let [at (sh-at i) tail (vector-at Q 1)]
+  (if (not= (vector-at Q (+ at 3)) 0) Q
+   (let [q0 (-> Q (mem-set (+ at 3) 1) (mem-set (+ at 4) 0))
+         q1 (if (= tail 0) (mem-set q0 0 i) (mem-set q0 (+ (sh-at tail) 4) i))]
+    (mem-set q1 1 i)))))
+(defn- sh-pop [Q :vector-i64] :vector-i64
+ (let [i (vector-at Q 0) next (vector-at Q (+ (sh-at i) 4)) steps (vector-at Q 2)]
+  (-> Q (mem-set 8 i) (mem-set 0 next) (mem-set 1 (if (= next 0) 0 (vector-at Q 1)))
+        (mem-set (+ (sh-at i) 3) 0) (mem-set 2 (inc steps)))))
+(defn- sh-end [M :vector-i64 j :i64 f :i64 work :i64] :i64
+ (cond (or (<= work 0) (>= j (vector-at M MM-SIR-N))) 0
+       (= (gn-op M j) OP-END) (if (= (gn-sir M j IF-A) f) j 0)
+       (= (gn-op M j) OP-FN) 0
+       :else (sh-end M (inc j) f (dec work))))
+(defn- sh-target [Q :vector-i64 L :vector-i64 label :i64] :i64
+ (if (or (<= label 0) (>= label MM-LABEL-CAP)) 0
+  (let [i (vector-at L label)]
+   (if (and (> i (vector-at Q 9)) (< i (vector-at Q 10))) i 0))))
+(defn- sh-valid [M :vector-i64 i :i64 ns :i64 dp :i64] :bool
+ (let [op (gn-op M i) a (gn-sir M i IF-A) b (gn-sir M i IF-B) c (gn-sir M i IF-C)]
+  (case op
+   OP-CONST (and (>= a 0) (< a dp) (= c 0))
+   OP-LGET (and (>= a 0) (< a dp) (> b 0) (<= b ns) (= c 0))
+   OP-LSET (and (> a 0) (<= a ns) (>= b 0) (< b dp) (= c 0))
+   OP-BIN (and (>= a 0) (< a BOP-F64-ADD) (>= b 0) (< (inc b) dp) (= c 0))
+   OP-CMP (and (>= a 0) (< a CC-F64-EQ) (>= b 0) (< (inc b) dp) (= c 0))
+   OP-UN (and (>= a 0) (< a UOP-F64-NEG) (>= b 0) (< b dp) (= c 0))
+   OP-RET (and (>= a 0) (< a dp) (= b 0) (= c 0))
+   OP-FUEL (and (= a 0) (= b 0) (= c 0))
+   OP-LABEL (and (> a 0) (< a MM-LABEL-CAP) (= b 0) (= c 0))
+   OP-BR (and (> a 0) (< a MM-LABEL-CAP) (= b 0) (= c 0))
+   (OP-BRZ OP-BRNZ) (and (>= a 0) (< a dp) (> b 0) (< b MM-LABEL-CAP) (= c 0))
+   OP-CALL (and (> a 0) (< a (vector-at M MM-FN-N)) (>= b 0) (>= c 0) (<= (+ b (gn-max c 1)) dp) (= c (gn-fnf M a FF-NPARAMS)))
+   OP-RT (and (>= b 0) (> c 0) (<= (+ b c) dp) (gn-inl a b c))
+   false)))
+(defn- sh-local [M :vector-i64 j :i64 end :i64 ns :i64 dp :i64] :bool
+ (or (= j end) (and (sh-valid M j ns dp) (sh-local M (inc j) end ns dp))))
+(defn- sh-init [M :vector-i64 F :vector-i64 f :i64] :vector-i64
+ (if (>= f (vector-at M MM-FN-N)) F
+  (let [p (gn-fnf M f FF-SIR) np (gn-fnf M f FF-NPARAMS)
+        end (if (> p 0) (sh-end M (inc p) f 8192) 0)
+        ns (if (> end p) (gn-max (gn-max np (gn-sir M p IF-C)) (gn-max (gn-fnf M f FF-NSLOTS) (gn-scan M (inc p) 2 0))) 0)
+        dp (if (> end p) (gn-max (gn-fnf M f FF-DEPTH) (gn-scan M (inc p) 1 0)) 0)
+        valid (and (> p 0) (> end p) (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) f)
+                   (= (gn-sir M p IF-B) np) (>= np 0) (<= np 5) (>= ns 0) (< ns gn-cap) (> dp 0) (< dp gn-cap)
+                   (sh-local M (inc p) end ns dp))
+        id (and valid (> np 0) (<= ns 16) (<= dp 16) (= (gn-fnf M f FF-PT0) TY-VEC) (= (gn-fnf M f FF-RTYPE) TY-VEC))
+        f0 (-> F (mem-set (sh-at f) (if valid 1 0)) (mem-set (+ (sh-at f) 1) (if id 1 0)))
+        f1 (sh-enqueue f0 f)] (sh-init M f1 (inc f)))))
+(defn- sh-edge [M :vector-i64 E :vector-i64 L :vector-i64 i :i64] :vector-i64
+ (if (>= i (vector-at M MM-SIR-N)) E
+  (let [op (gn-op M i) a (gn-sir M i IF-A) owner (vector-at E 1)
+        e0 (if (= op OP-FN) (mem-set E 1 a) E)
+        e1 (if (and (= op OP-CALL) (> a 0) (< a (vector-at M MM-FN-N)))
+             (let [at (+ 16 (vector-at M MM-FN-N) (* i 2)) head (vector-at e0 (+ 16 a))]
+              (-> e0 (mem-set at head) (mem-set (inc at) owner) (mem-set (+ 16 a) i))) e0)
+        printed (if (and (= op OP-LABEL) (> a 0) (< a MM-LABEL-CAP))
+                   (let [old (vector-at L a) l0 (mem-set L a (if (= old 0) i -1))] 0) 0)]
+   (sh-edge M e1 L (inc i)))))
+(defn- sh-calls [M :vector-i64 F :vector-i64 j :i64 end :i64] :bool
+ (or (= j end)
+     (and (or (not= (gn-op M j) OP-CALL) (= (vector-at F (sh-at (gn-sir M j IF-A))) 1))
+          (sh-calls M F (inc j) end))))
+(defn- sh-clear [Q :vector-i64 j :i64 end :i64] :vector-i64
+ (if (> j end) Q
+  (let [at (sh-at j) q0 (-> Q (mem-set at 0) (mem-set (inc at) 0) (mem-set (+ at 2) 0) (mem-set (+ at 3) 0) (mem-set (+ at 4) 0))]
+   (sh-clear q0 (inc j) end))))
+(defn- sh-merge [Q :vector-i64 i :i64 locals :i64 temps :i64] :vector-i64
+ (if (or (<= i (vector-at Q 9)) (> i (vector-at Q 10))) (mem-set Q 5 1)
+  (let [at (sh-at i) seen (vector-at Q at) old_l (vector-at Q (inc at)) old_t (vector-at Q (+ at 2))
+        l (if (= seen 0) locals (bit-and old_l locals)) t (if (= seen 0) temps (bit-and old_t temps))]
+   (if (and (= seen 1) (= old_l l) (= old_t t)) Q
+    (sh-enqueue (-> Q (mem-set at 1) (mem-set (inc at) l) (mem-set (+ at 2) t)) i)))))
+(defn- sh-step [M :vector-i64 F :vector-i64 Q :vector-i64 L :vector-i64 i :i64] :vector-i64
+ (let [op (gn-op M i) a (gn-sir M i IF-A) b (gn-sir M i IF-B) c (gn-sir M i IF-C)
+       locals (vector-at Q (inc (sh-at i))) temps (vector-at Q (+ (sh-at i) 2))]
+  (case op
+   OP-RET (-> Q (mem-set 4 1) (mem-set 5 (if (= (sh-bit temps a) 1) (vector-at Q 5) 1)))
+   OP-END (mem-set Q 5 1)
+   OP-BR (sh-merge Q (sh-target Q L a) locals temps)
+   (OP-BRZ OP-BRNZ) (let [target (sh-target Q L b) q0 (sh-merge Q target locals temps)] (sh-merge q0 (inc i) locals temps))
+   OP-LGET (sh-merge Q (inc i) locals (sh-putbit temps a (sh-bit locals (dec b))))
+   OP-LSET (sh-merge Q (inc i) (sh-putbit locals (dec a) (sh-bit temps b)) temps)
+   OP-CONST (sh-merge Q (inc i) locals (sh-putbit temps a 0))
+   (OP-BIN OP-CMP OP-UN) (sh-merge Q (inc i) locals (sh-putbit temps b 0))
+   OP-RT (sh-merge Q (inc i) locals (sh-putbit temps b (if (= a RT-VECTOR-ASSOC-IN-PLACE) (sh-bit temps b) 0)))
+   OP-CALL (sh-merge Q (inc i) locals (sh-putbit temps b (if (= (vector-at F (+ (sh-at a) 1)) 1) (sh-bit temps b) 0)))
+   (OP-FUEL OP-LABEL) (sh-merge Q (inc i) locals temps)
+   (mem-set Q 5 1))))
+(defn- sh-cfg [M :vector-i64 F :vector-i64 Q :vector-i64 L :vector-i64 limit :i64] :vector-i64
+ (cond (= (vector-at Q 0) 0) Q
+       (>= (vector-at Q 2) limit) (mem-set Q 3 1)
+       :else (let [q0 (sh-pop Q) i (vector-at q0 8) q1 (sh-step M F q0 L i)] (sh-cfg M F q1 L limit))))
+(defn- sh-identity [M :vector-i64 F :vector-i64 Q :vector-i64 L :vector-i64 f :i64] :bool
+ (let [p (gn-fnf M f FF-SIR) end (sh-end M (inc p) f 8192)
+       q0 (sh-clear Q p end)
+       q1 (-> q0 (mem-set 0 0) (mem-set 1 0) (mem-set 2 0) (mem-set 3 0) (mem-set 4 0) (mem-set 5 0) (mem-set 9 p) (mem-set 10 end))
+       q2 (sh-merge q1 (inc p) 1 0) q3 (sh-cfg M F q2 L (* 128 (- end p)))]
+  (and (= (vector-at q3 3) 0) (= (vector-at q3 4) 1) (= (vector-at q3 5) 0))))
+(defn- sh-callers [M :vector-i64 F :vector-i64 E :vector-i64 edge :i64 work :i64] :vector-i64
+ (cond (= edge 0) F
+       (<= work 0) (mem-set F 3 1)
+       :else (let [at (+ 16 (vector-at M MM-FN-N) (* edge 2)) next (vector-at E at)
+                   f (vector-at E (inc at)) f0 (sh-enqueue F f)] (sh-callers M f0 E next (dec work)))))
+(defn- sh-update [M :vector-i64 F :vector-i64 Q :vector-i64 L :vector-i64 f :i64] :vector-i64
+ (let [at (sh-at f) closed (vector-at F at) identity (vector-at F (inc at)) p (gn-fnf M f FF-SIR)
+       end (if (= closed 1) (sh-end M (inc p) f 8192) 0)
+       nc (and (= closed 1) (sh-calls M F (inc p) end))
+       ni (and (= identity 1) nc (sh-identity M F Q L f))
+       changed (or (not= closed (if nc 1 0)) (not= identity (if ni 1 0)))]
+  (-> F (mem-set at (if nc 1 0)) (mem-set (inc at) (if ni 1 0)) (mem-set 6 (if changed 1 0)))))
+(defn- sh-solve [M :vector-i64 F :vector-i64 Q :vector-i64 E :vector-i64 L :vector-i64] :vector-i64
+ (cond (= (vector-at F 0) 0) F
+       (or (= (vector-at F 3) 1) (> (vector-at F 2) (+ (* 8 (vector-at M MM-SIR-N)) (* 4 (vector-at M MM-FN-N))))) (mem-set F 3 1)
+       :else (let [f0 (sh-pop F) f (vector-at f0 8) f1 (sh-update M f0 Q L f)
+                   f2 (if (= (vector-at f1 6) 1) (sh-callers M f1 E (vector-at E (+ 16 f)) (vector-at M MM-SIR-N)) f1)]
+               (sh-solve M f2 Q E L))))
+(defn- sh-print [M :vector-i64 F :vector-i64 f :i64] :i64
+ (if (>= f (vector-at M MM-FN-N)) 0
+  (let [at (sh-at f) enabled (= (vector-at F 3) 0)
+        printed (io-out (string-concat "SHAPE " (string-concat (string-from-i64 f) (string-concat " "
+         (string-concat (string-from-i64 (if enabled (vector-at F at) 0)) (string-concat " "
+         (string-concat (string-from-i64 (if enabled (vector-at F (inc at)) 0)) "\n"))))))) ]
+   (sh-print M F (inc f)))))
+(defn- sh-report [M :vector-i64] :i64
+ (let [F (vector-alloc (+ 16 (* 5 (vector-at M MM-FN-N))))
+       Q (vector-alloc (+ 16 (* 5 (vector-at M MM-SIR-N))))
+       E (vector-alloc (+ 16 (vector-at M MM-FN-N) (* 2 (vector-at M MM-SIR-N))))
+       L (vector-alloc MM-LABEL-CAP)
+       e0 (sh-edge M E L 1) f0 (sh-init M F 1) f1 (sh-solve M f0 Q e0 L)
+       printed (io-out (string-concat "SHAPE-END " (string-concat (string-from-i64 (vector-at f1 2)) (string-concat " " (string-concat (string-from-i64 (vector-at f1 3)) "\n"))))) ]
+  (sh-print M f1 1)))
+
+(defn- sh-meta [M :vector-i64 f :i64] :i64
+ (if (>= f (vector-at M MM-FN-N)) 0
+  (let [printed (io-out (string-concat "META " (string-concat (string-from-i64 f) (string-concat " " (string-concat (string-from-i64 (gn-fnf M f FF-SIR)) (string-concat " " (string-concat (string-from-i64 (gn-fnf M f FF-NPARAMS)) (string-concat " " (string-concat (string-from-i64 (gn-fnf M f FF-NSLOTS)) (string-concat " " (string-concat (string-from-i64 (gn-fnf M f FF-DEPTH)) (string-concat " " (string-concat (string-from-i64 (gn-fnf M f FF-RTYPE)) (string-concat " " (string-concat (string-from-i64 (gn-fnf M f FF-PT0)) (string-concat " " "\n"))))))))))))))))] (sh-meta M (inc f)))))
+(defn- sh-sir [M :vector-i64 i :i64] :i64
+ (if (>= i (vector-at M MM-SIR-N)) 0
+  (let [printed (io-out (string-concat "SIR " (string-concat (string-from-i64 i) (string-concat " " (string-concat (string-from-i64 (gn-op M i)) (string-concat " " (string-concat (string-from-i64 (gn-sir M i IF-A)) (string-concat " " (string-concat (string-from-i64 (gn-sir M i IF-B)) (string-concat " " (string-concat (string-from-i64 (gn-sir M i IF-C)) (string-concat " " "\n"))))))))))))] (sh-sir M (inc i)))))

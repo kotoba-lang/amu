@@ -1,0 +1,34 @@
+{
+  "status": "PASS prospective64-bit unsigned bounds laws and negative controls",
+  "solverVersion": "5.1.0",
+  "checks": [
+    {
+      "name": "exact-small-length-implies-original-unsigned-bound",
+      "result": "unsat",
+      "counterexample": null
+    },
+    {
+      "name": "wrong-constructor-length-is-unsound",
+      "result": "sat",
+      "counterexample": "[index = 0, proved_length = 1, actual_length = 0]"
+    },
+    {
+      "name": "merged-different-length-is-unsound",
+      "result": "sat",
+      "counterexample": "[index = 2, proved_length = 3, actual_length = 0]"
+    },
+    {
+      "name": "negative-index-cannot-use-signed-only-bound",
+      "result": "sat",
+      "counterexample": "[index = 18446744073709551615, actual_length = 3]"
+    }
+  ],
+  "assumptions": [
+    "Actual successfully allocated length equals static fact at this particular private callsite.",
+    "Existing handle validation still executes in original order; these laws do not remove it.",
+    "Traps, fuel, resource limits and partial vectors remain observed separately."
+  ],
+  "nativeEmitterProof": false,
+  "boundsChecksRemoved": 0,
+  "performanceClaim": false
+}
