@@ -1,0 +1,60 @@
+{
+  "status": "READ_ONLY_DESIGN_COMPLETE_NOT_IMPLEMENTED",
+  "baseline": "44bf/native761856; all8 inspected repo files remain byte-identical to baseline despite live HEAD6bdd70d",
+  "observed": [
+    {
+      "source": "seed/90-drv.kotoba:24,545,519,645",
+      "fact": "--target value is aarch64-macos only; no CPU feature option. Source and compile-kir allocate a fresh M. Need explicit per-compilation settings on both routes and project route, not global mutable compiler constant."
+    },
+    {
+      "source": "seed/MEMORY-MAP:23-70",
+      "fact": "No named target-feature/header flag. Header has documented counters/stats and240..255 scratch; unused-looking words are not a negotiated contract. Add named compiler-only field through MEMORY-MAP/gen-ns/unit contract or explicit options parameter; do not repurpose statistics/scratch or x7 fields."
+    },
+    {
+      "source": "seed/50-out.kotoba:4;seed/60-proj.kotoba:1143",
+      "fact": "KSEED1 contains only code length,exports,raw bytes; KSEEDO1 has namespace/import/export/pool/code records. Neither carries CPU requirement. Feature requirements must survive object linking as union; old readers must reject feature-bearing new version, never strip it."
+    },
+    {
+      "source": "seed/amu-main/src/amu/kexe.kotoba:117-159;seed/amu-main/l/amu/compile.kotoba:79-105",
+      "fact": "Native profile and provenance are fixed strings. Sealed profile can be extended canonically, but source-route program/kir-sha256 are nil and normal stage0 run/extract refuse them. Sidecar alone cannot enforce executable admission."
+    },
+    {
+      "source": "tools/kexe_loader.c:12455-12560",
+      "fact": "Loader accepts raw bytes+offset+arity+isa, or compile-time embedded bytes/isa. It does not parse KSEED/EDN profiles, bind a feature manifest, or check CPU features before RX. SIGILL trapping is after execution and is insufficient."
+    },
+    {
+      "source": "tools/kexe_loader.c:4325-4562",
+      "fact": "Context_v11 has no feature bitmap/reserved negotiated flags; version, fuel, allow mask are not CPU flags. No struct extension needed for supervisor-only execution admission."
+    },
+    {
+      "source": "src/kotoba/compiler/nbb/compile_cache.cljk:80;src/kotoba/compiler/nbb/seed_backend.cljk:25-39",
+      "fact": "Cache identity already accepts emit-metadata; feature recipe must join that material. Recorded emitter route supports verifier re-emission only once feature settings are bound to emitter options; existing recorded seed hash alone does not express per-job CRC selection."
+    }
+  ],
+  "proposed_minimal_path": [
+    "CLI accepts --target-feature crc32 only with aarch64-macos, absent means empty feature set/default software. Reject unknown/duplicate conflicting feature spellings. Propagate normalized options to all source/KIR/project paths; cr-feature compile-time1 becomes per-compilation explicit option0/1 with bounded rule and current guards unchanged.",
+    "Canonical build recipe includes target, sorted permitted features, actual required features, optimizer/source/emitter pins. Recipe CID is separate from semantic DefCID. Required crc32 recorded whenever hardware words emitted; permitted-but-unused feature may be retained in recipe only. Cache/re-emission use the same normalized recipe.",
+    "First safely limited adoption route can package immutable code with compile-time KEXE_EMBEDDED_REQUIRED_FEATURES and digest-bound recipe. Loader gate before RX/fork/guest entry checks known requirements and actual host support; unsupported ISA/unknown features/missing detection fail closed. Empty mask executes software unchanged. This route needs no new capability wire or context_v11 layout change.",
+    "For standalone files, new versioned feature-bearing container/envelope with exact code digest and requirements is necessary; parsing must happen in loader or trusted verifier before raw extraction. Current raw loader cannot promise fail-closed by sidecar/env assertion. Feature-bearing files must not be accepted by old readers; raw native escape remains explicitly unmanaged unless instruction verification/allowlist also enforces requirements.",
+    "KSEEDO feature-bearing version and linker union are required before feature-enabled multi-module/selfhost artifacts are supported. In the minimal first route reject such jobs until union/provenance/loader contracts exist; never silently lose requirements.",
+    "Host detection remains supervisor-local. macOS actual sysctl result for FEAT_CRC32/armv8_crc32 may support gate, with absent/error/unsupported platform refusal. No hostname/CPU-name inference. Future Linux needs a verified HWCAP contract; do not implement guessed constants. No automatic optimization based on build host."
+  ],
+  "required_controls": [
+    "default/explicit-empty all19 native bytes+offset equal761 baseline",
+    "enabled recipe+code digest exact and independent re-emission",
+    "unsupported/unknown/absent feature refuses before code becomes executable, zero guest fuel/arena/publication",
+    "mutated feature metadata/code digest and old reader rejection",
+    "union of required features across objects and entry exports",
+    "no ctx offset/size change; embedded/raw paths tested separately",
+    "feature-disabled compiler fixedpoint; enabled compiler selfhost recipe requirements bound even when its own code emits no CRC"
+  ],
+  "boundaries": {
+    "implementation": false,
+    "native_execution": 0,
+    "timing": 0,
+    "product_edits": 0,
+    "automatic_feature_admission_exists": false,
+    "qualified_gain": "Parent-supplied ed0 result2.15x baseline; not independently timing-audited here and not an official score",
+    "fuel_boundary": "Product returning with remaining fuel0 is success; diagnostic supervisor post-return fuel0 classification must not substitute for product admission or prefix proof."
+  }
+}
