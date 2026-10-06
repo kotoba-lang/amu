@@ -19,8 +19,12 @@
   [:list R] is typed-list-conj, a new KIR head (osaho) that appends at the
   end, bounded by the canonical list's 16384 items and charged one cell; the
   verifier admits it, kotoba-native lowers it to vector-conj on the list's
-  word arena, and kotoba-wasm calls a conditionally imported host intrinsic
-  (list-conj-i64 / list-conj-ref, answered by runtime/browser-host.mjs).
+  word arena, kotoba-wasm calls a conditionally imported host intrinsic
+  (list-conj-i64 / list-conj-ref, answered by runtime/browser-host.mjs), and
+  kotoba-script emits the append inline (its prelude, and so every other
+  artifact's bytes, unchanged). The typed-value conformance corpus
+  (:typed-list-conj-i64 / :typed-list-conj-reference) executes both wasm
+  imports on the browser host, the ESM artifact and the reference.
 
   The constructor is private here: a public function returning the surface
   record is an export whose ABI is floor :export-signatures.
@@ -85,6 +89,8 @@
     (is (= [0 97 115 109]
            (mapv #(bit-and (int %) 0xff)
                  (take 4 (:bytes (compiler/compile-source surface :wasm32-kotoba-v1)))))))
+  (testing "admitted on the restricted-ESM target, which builds the list"
+    (is (re-find #"list-too-large" (:source (compiler/compile-source surface :js-kotoba-v1)))))
   ;; compile-source verifies the artifact, the oracle's re-execution included.
   (testing "compiles on both native targets"
     (doseq [target native-targets]

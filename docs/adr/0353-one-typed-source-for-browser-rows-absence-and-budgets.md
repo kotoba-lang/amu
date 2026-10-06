@@ -1027,7 +1027,12 @@ charged one cell, and admits it on the native word slice beside
 `typed-set-conj`; kotoba-native (`0ecca92a`) lowers it to `vector-conj` on the
 list's word arena; kotoba-wasm (`fc6c8459`) calls `list-conj-i64` /
 `list-conj-ref`, imported only by a module that builds a list, and
-`runtime/browser-host.mjs` answers them. kotoba-sema (`4befca1e`) reads the
+`runtime/browser-host.mjs` answers them; kotoba-script (`66bf70b5`) emits the
+append inline, so its prelude -- and every other ESM artifact's bytes, its 66
+parity goldens -- is unchanged. The typed-value conformance corpus gains
+`:typed-list-conj-i64` and `:typed-list-conj-reference`, executed on the
+reference, the ESM artifact and wasm on the browser host (28 vectors pass).
+kotoba-sema (`4befca1e`) reads the
 field the way `:absent-field-from-assoc` reads a nil one: a keyword key
 written `[]` in the module is a list field when the module's own source
 spells what it holds -- the items `(update m k conj v ..)` conj's at that key
@@ -1037,12 +1042,13 @@ other than `:i64` makes the field `[:list R]` and `[]` there `(typed-list-new
 so no existing definition CID moves. `conj` onto a `[:list R]` is
 `typed-list-conj`, and a vector literal where a `[:list T]` is expected is that
 list, each item typed against T. Measured on nbb: the gate was red on the old
-pins (2 failures and 4 errors of 8 assertions), green on the new (8). A
+pins (2 failures and 4 errors of 8 assertions), green on the new (9 with the ESM assertion). A
 browser.surface slice -- two windows opened with spelled window records
 carrying a `:window/rect` vector, two scrolls logged -- answers 2387206 on the
 reference, on `x86_64-aiueos-kernel-v1` and `aarch64-macos-kotoba-v1` with the
-oracle verified, and on `wasm32-browser-kotoba-v1` run on
-`runtime/browser-host.mjs` under node (the gate checks wasm32's magic);
+oracle verified, on `wasm32-browser-kotoba-v1` run on
+`runtime/browser-host.mjs` under node, and as the `:js-kotoba-v1` ESM artifact
+run under node (the gate checks wasm32's magic and the ESM source);
 `amu compile --target x86_64-aiueos-kernel-v1` / `--target aarch64-macos` of
 it exit 0 with `:oracle {:status :verified}`; no artifact was run under a
 loader. The constructor is private there: a public function returning the

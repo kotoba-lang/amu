@@ -319,7 +319,8 @@
   {:id :empty-vector-field :gate "empty-vector-field-typed-by-the-module-conj-test"
    :goal "an empty vector literal at a keyword field -- browser.surface's :surface/apps [] / :surface/windows [] / :surface/input-log [] -- is typed by what the module conj's or assoc's at that key (a [:list R] of window records, of app records, of input-event records), as :absent-field-from-assoc types a nil field; refused today \"expression type mismatch: expected i64, got [:record ..]\" at the conj; a key the module gives two element types, and a number conj'd onto a list of records, stay refused by name"}
   ;; Landed 2026-10-06: typed-list-conj in osaho, kotoba-verifier,
-  ;; kotoba-native, kotoba-wasm (+ runtime/browser-host.mjs's list-conj-*), and
+  ;; kotoba-native, kotoba-wasm (+ runtime/browser-host.mjs's list-conj-*),
+  ;; kotoba-script, and
   ;; the module pre-pass in kotoba-sema. ADR 0353 has the measurements. Like an
   ;; absent field's T, R is what the source SPELLS: a map literal whose values
   ;; are expressions spells their fields :i64 (map-literal-value-type is

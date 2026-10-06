@@ -41,6 +41,16 @@
   {:id :typed-list-nth-reference
    :source "(defn main [] (string-byte-length (typed-list-nth [:list :string] (typed-list-new [:list :string] \"a\" \"bb\" \"ccc\") 1)))"
    :expect 2}
+  ;; The list builder (ADR 0353 floor :empty-vector-field), both lowerings
+  ;; on wasm32 for the same reason as nth: an i64 item calls `list-conj-i64`
+  ;; and a reference item `list-conj-ref`, each a conditional import the host
+  ;; must answer.
+  {:id :typed-list-conj-i64
+   :source "(defn main [] (+ (vector-count (typed-list-conj [:list :i64] (typed-list-new [:list :i64] 4 5) 6)) (typed-list-nth [:list :i64] (typed-list-conj [:list :i64] (typed-list-new [:list :i64] 4 5) 6) 2)))"
+   :expect 9}
+  {:id :typed-list-conj-reference
+   :source "(defn main [] (string-byte-length (typed-list-nth [:list :string] (typed-list-conj [:list :string] (typed-list-conj [:list :string] (typed-list-new [:list :string]) \"a\") \"bbb\") 1)))"
+   :expect 3}
   ;; In-place vector update. Present here because a lowering to a STORE is
   ;; only indistinguishable from a copy when the handle is dead afterwards,
   ;; and "indistinguishable" is a claim about three runtimes agreeing rather
