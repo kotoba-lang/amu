@@ -101,3 +101,9 @@ Evidence: [summary](evidence/coscientist-fallthrough-vector-chain-20261006/summa
 Extract the archive and run replay-analysis.py to independently audit stored
 states/oracles, source/generation/runner pins and raw timing. Offline replay does
 not execute native code again; actual native execution receipts are separate.
+
+Follow-up: the [completed element census](coscientist-element-reuse-census-20261006.md)
+qualifies the read-only observer. Only16/208 closed reads repeat the latest pair,
+while all480 observed closed accesses have locally constant indices. Register
+constant-index lowering with explicit/coalesced/control invalidation next; no
+value-cache optimizer or speed claim is adopted from these counts.
