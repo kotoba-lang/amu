@@ -1,0 +1,9 @@
+Call descriptor cache: negative performance result, unadopted candidate117793 versus qualified baseline761856. Full original19 matched C campaign:570accepted/651attempted/81rejected/1953raw arms; no qualified gain/regression/C-or-better. All12 changed guests neutral. Mean-only full19 reduction0.347048487% is not a qualified gain; C goal remains unachieved; not an official Embench score.
+
+Run python3 native-replay.py and python3 timing-replay.py here. Each checks the matching archive manifest, safely extracts into a fresh isolated temporary directory, then recomputes retained proof observations. No guest/compiler/solver/timing executes.
+
+For a three-file isolated native replay, copy `native-proof.tgz`, `native-manifest.json`, and `native-replay.py` together. For timing, copy `timing-replay.tgz`, `timing-entry-manifest.json`, and `timing-replay.py`. Use Python 3.12 or newer. `root-isolated-replays.json` records a separate root replay; its first timing copy selected the descriptive manifest instead of the entry manifest. That setup failure is retained and the corrected replay uses the exact original evidence, without repeating measurements.
+
+External origin pins and original owner inventories document provenance only, and may list files outside the selected archives. native-selected-payload-pins.json enumerates the actual independent native payload. Original reports and sources stay byte-exact; portable source helpers change path plumbing only. native/staging replay and final isolated-replays.json report the recomputation boundary. No product source or expectation change, commit or push performed by this packaging step.
+
+The top-level permanent and typed-ABI reports are compact summaries with exact hashes and archive-member paths. Their complete raw reports remain byte-exact inside `native-proof.tgz`; this avoids duplicating more than 10 MB of observations in the review diff.
