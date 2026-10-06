@@ -3,7 +3,7 @@
 - Status: accepted
 - Date: 2026-09-07
 - Relates: superproject `ADR-2609051100` (kbb native backend), `ADR-2609062200`
-  (kbb js backend oracle), superproject CLAUDE.md "kbb-first" (owner,
+  (kbb js backend oracle), superproject AGENTS.md "kbb-first" (owner,
   2026-09-07), kotoba-lang/artifact `runtime_identity.cljc` (loader identity
   `147b0344fabaedc9cc9740f7ab87a785344f6b074a39ebca69ac8f256433a3a0`)
 
