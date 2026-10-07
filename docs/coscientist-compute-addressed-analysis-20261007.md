@@ -51,7 +51,19 @@ V8 は **activation 内の exact memo** である。同じ SIR/FREC、phase4 eff
 
 [型付き native 制御試験](coscientist-vector-shape-memo-typed-controls-20261007.md)は、固定した5関数で寄与4・未知長0・実際の自己呼び出し neutral を検査した。全5関数の新しい集計への再生も直接解析と一致した。これを Result の状態更新契約の有限な証拠として使う。IPLD、永続化、一般的な意味保存の証明とは区別する。
 
-局所的 bounds-check 省略候補は、解析の証明情報を module-owned の別領域へ移し、生成終了時に消去する。今は native の検証前である。その証明情報は将来 ResultCID と結び付けられるが、識別子だけを emitter の許可条件にしない。現在の SIR・private body・同じ関数内の RT200 割当・定数 index・ABI・lifetime の検査を維持する。SSA、effect、trap を保存する規則の前提と検証結果は provenance に明記する。
+局所的 bounds-check 省略候補は、解析の証明情報を module-owned の別領域へ移し、生成終了時に消去する。[局所割当の native 検証](coscientist-vector-local-bounds-20261007.md)を経て、private 関数の引数への寄与を封じる候補も有限の native 検証を通った。後者の現時点の範囲は、下記の1 fixture・3入力だけである。その証明情報は将来 ResultCID と結び付けられるが、識別子だけを emitter の許可条件にしない。現在の SIR・private body・割当または全呼び出し元の確定した寄与・定数 index・ABI・lifetime の検査を維持する。SSA、effect、trap を保存する規則の前提と検証結果は provenance に明記する。
+
+### 引数への状態更新を封じる最初の有限な証拠
+
+実験用 native compiler は `4158d7de2dfe4d922450b60788bb5f6a950ca129f92f0b841069aa4c0f76b509`、ソースは `ea8281843170b65999ff5a6460a2ba2b3474f04e8e5fda8abc616bf283a0acf5`。どちらも SHA-256 であり、native IPLD CID の実装ではない。
+
+private `read-param(v, n)` が `vector-at(v, 0) + n` を返し、公開された呼び出し元が長さ4のベクトルの要素0へ `n` を入れる fixture で、全呼び出し元の寄与と現在の解析キーを確認して証明を封じた。生成物は276から264バイトになった。差は `CMP / B.LO / UDF` の12バイト削除と1分岐の位置補正のみで、handle 検査・descriptor・pool・address 計算・load は保持された。
+
+`n=0,7,-1` で結果は両方とも `0,14,-2`、fuel は `16777216→16777214`、heap/string 使用量0、vector1個・items4個で完全一致した。compile/extract 4回と機能確認6回を上限10回で実行し、独立レビューは raw bytes・ログ・入力・GO の対応を再実行なしで確認した。owner report SHA は `030ab5a7717f722d2dd6e9c1175badaea85eaa9f3f375a4f9e6fecba546322b2`、独立 raw review SHA は `18aefab19a094c983bd1fe6c3d19eb9b42114602095baf438e7d1dcaf1dd1a9b`。
+
+ソース・native compiler/loader・有限 GO・生成物・機能ログ・独立レビューは[封印した証拠](evidence/coscientist-inverse-aes-20261007/vector-param-positive/README.md)に保存した。archive SHA は `257ec431b2629bcb09af8a36c77e0007d7be53f8b2cb05776fe99b4cd6fddb32`、69 member・展開4,267,707バイトを抽出・実行なしで全件照合した。元の絶対パスを含む実行記録であり、portable な再実行手順ではない。
+
+この証拠は、解析の値だけでなく呼び出し辺の寄与と再適用条件を保持する設計を具体化する。永続保存・共有 import・cold/warm cache の同一性・一般的な意味保存の証明・Embench の速度向上は証明しない。未知の入口、短いベクトル、自己再帰、returned-origin の拒否と元の19本は、別の事前登録した検査として扱う。実験は既定で無効で、製品採用の変更ではない。
 
 ## 予算と再現可能な生成物
 
