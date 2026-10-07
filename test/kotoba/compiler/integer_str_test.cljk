@@ -1,0 +1,108 @@
+(ns kotoba.compiler.integer-str-test
+  "ADR 0353 floor :integer-str.
+
+  kotoba-lang/browser's browser.surface names a window by formatting a
+  counter:
+
+      (defn- next-window-id [surface]
+        [(str \"w\" (:surface/next-window-id surface))
+         (update surface :surface/next-window-id inc)])
+
+  str desugared to a nest of string-concat, which requires two strings, so
+  an :i64 part was refused \"expression type mismatch: expected string, got
+  i64\".
+
+  Now, in kotoba-sema: str survives desugar and is resolved by its parts'
+  types in the type-directed rewrite. A :string part is itself; an :i64 part
+  is its decimal digits -- the string-from-i64 printer that already lowered
+  on every target -- with a leading - when negative, as Clojure's str prints
+  a long, the most negative long included. An unannotated parameter str
+  formats keeps the reading it had: refinement types it :string (a text
+  builder's text parameter), so an i64 str formats is one the source types --
+  a field, a literal, arithmetic, an annotated parameter.
+
+  What stays refused, each by its literal: str of a record, a vector and an
+  option. There is no implicit printing of an aggregate (ADR 0353: no
+  coercion); a source that wants one formats its fields."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private surface
+  "browser.surface (browser 097e44c)'s next-window-id, its [id surface] pair
+  destructured by the caller as open-window does, and read back without the
+  rebound row's own update (native refuses that, floor
+  :native-rebound-row-update): id \"w12\", a negative and the most negative
+  long formatted beside it. 3 + 3 + 20 code units, and a byte compare of
+  each against the digits Clojure prints."
+  (str "(ns browser.surface)\n"
+       "(defn- empty-surface [] {:surface/id \"kotoba-os\" :surface/next-window-id 12})\n"
+       "(defn- next-window-id [surface]\n"
+       "  [(str \"w\" (:surface/next-window-id surface)) surface])\n"
+       "(defn- digits [n :i64] (str n))\n"
+       "(defn main [] :i64\n"
+       "  (let [[id surface] (next-window-id (empty-surface))\n"
+       "        neg (str \"(\" -7 \")\")\n"
+       "        least (digits (- -9223372036854775807 1))]\n"
+       "    (+ (* 1000000 (string-code-unit-count id))\n"
+       "       (* 100000 (string-code-unit-count neg))\n"
+       "       (* 1000 (string-code-unit-count least))\n"
+       "       (* 100 (if (string=? id \"w12\") 1 0))\n"
+       "       (* 10 (if (string=? neg \"(-7)\") 1 0))\n"
+       "       (if (string=? least \"-9223372036854775808\") 1 0)\n"
+       "       (if (string=? (str 0 9 10) \"0910\") 0 7000000))))"))
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(def ^:private answer 3420111)
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- refusal [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(deftest str-formats-an-integer-test
+  (testing "admitted on the reference: (str \"w\" n) is \"w\" and n's decimal digits"
+    (is (= 2 (run-main (str "(ns b)\n"
+                            "(defn- id [n :i64] (str \"w\" n))\n"
+                            "(defn main [] :i64 (string-code-unit-count (id 1)))")))))
+  (testing "admitted on the reference: next-window-id, a negative, the most negative long"
+    (is (= answer (run-main surface))))
+  (testing "admitted on the hosted target"
+    (is (= [0 97 115 109]
+           (mapv #(bit-and (int %) 0xff)
+                 (take 4 (:bytes (compiler/compile-source surface :wasm32-kotoba-v1)))))))
+  (testing "admitted on the restricted-ESM target"
+    (is (string? (:source (compiler/compile-source surface :js-kotoba-v1)))))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "compiles on both native targets"
+    (doseq [target native-targets]
+      (is (= answer (#?(:clj long :cljs js/Number)
+                     (:value (:artifact (compiler/compile-source surface target)))))
+          (str target))))
+  (testing "an unannotated parameter str formats is a string, as before: an i64 argument is refused"
+    (is (= "expression type mismatch: expected string, got i64"
+           (refusal (str "(ns b)\n"
+                         "(defn- id [n] (str \"w\" n))\n"
+                         "(defn main [] :i64 (string-code-unit-count (id 1)))")))))
+  (testing "refused: str of a record (no implicit printing of an aggregate)"
+    (is (= "str of a record is refused: str formats a string or an i64, and an aggregate is not printed implicitly"
+           (refusal (str "(ns b)\n"
+                         "(defn main [] :i64 (string-code-unit-count (str \"w\" {:a 1})))")))))
+  (testing "refused: str of a vector"
+    (is (= "str of a vector is refused: str formats a string or an i64, and an aggregate is not printed implicitly"
+           (refusal (str "(ns b)\n"
+                         "(defn main [] :i64 (string-code-unit-count (str \"w\" [1 2])))")))))
+  (testing "refused: str of an option"
+    (is (= "str of an option is refused: str formats a string or an i64, and an aggregate is not printed implicitly"
+           (refusal (str "(ns b)\n"
+                         "(defn- f [{:keys [t]}] (str \"w\" t))\n"
+                         "(defn main [] :i64 (string-code-unit-count (f {:t (some 3)})))"))))))

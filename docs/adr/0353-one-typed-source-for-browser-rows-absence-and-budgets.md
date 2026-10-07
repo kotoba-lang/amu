@@ -1149,6 +1149,37 @@ app-id id)` / `(or rect [..])` fallbacks, which need a decision
 (`:destructured-key-fallback`). The `[id surface]` pair next-window-id
 returns, destructured, is admitted.
 
+`(str "w" n)` landed as floor `:integer-str` (gate
+`str-formats-an-integer-test`). `str` was desugared to a `string-concat` nest,
+which requires two strings. kotoba-sema (`de903367`) keeps `str` through
+desugar and resolves it in the type-directed rewrite: a `:string` part is
+itself, an `:i64` part is `string-from-i64`'s decimal printer, and the parts
+are the same `string-concat` nest, so a string-only `str` lowers as before. A
+record, vector or option part is refused by name ("str of a record is refused:
+str formats a string or an i64, and an aggregate is not printed implicitly")
+-- no implicit printing, no coercion. One reading is kept rather than changed:
+an unannotated parameter that `str` formats is still refined to `:string` (a
+text builder's text parameter, browser.text-edit's insert-text), so `(defn- id
+[n] (str "w" n))` called with 1 stays refused "expected string, got i64"; an
+`:i64` `str` formats is one the source types -- a field (next-window-id's
+counter), a literal, arithmetic, an annotated parameter. The printer was
+fixed on the way, each fault measured by the gate: the most negative long
+negated to itself and trapped in `string-substring` (now the magnitude of
+`(quot n 10)` and its last digit); the recursive printer exhausted the
+reference interpreter's 32 frames at 19 digits, and a 19-deep concat or `if`
+chain did too (now three chunks zero-padded to 19 digits, balanced trees);
+and native lowering refused a `10^18` literal (`unsupported-value`; no
+literal past `10^9` now). Measured on nbb: the gate was red on the old pin (9
+of 9 assertions), green on the new (10 of 10). A next-window-id slice -- id
+`"w12"`, `(str "(" -7 ")")`, the most negative long, `(str 0 9 10)`, each
+byte-compared with what Clojure's `str` prints -- answers 3420111 on the
+reference and on `x86_64-aiueos-kernel-v1` / `aarch64-macos-kotoba-v1` with
+the oracle verified, and compiles to wasm32 and the `:js-kotoba-v1` ESM
+artifact (magic and source checked; neither was run). `amu compile --target
+x86_64-aiueos-kernel-v1` and `--target aarch64-macos` of next-window-id exit
+0 with `:oracle {:status :verified}`. Programs that already called
+`string-from-i64` get the new printer, so their definition CIDs move.
+
 ## Selfhost foundation floors (appended 2026-09-26)
 
 Superproject adr-2609242330 measured that compiling amu with amu needs the
