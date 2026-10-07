@@ -212,6 +212,28 @@
               (ok! (str name ".mjs carries `" needle "` (the --fuel override reached the emitter)"))
               (fail! (str name " --fuel") (str "module does not contain " (pr-str needle))))))))))
 
+;; Explicit namespace-only/private-only libraries pass the normal CLI;
+;; they have no synthetic entry and expose no private helper.
+(doseq [[name source] [["empty-library" "(ns empty.library (:export []))"]
+                       ["private-library" "(ns private.library (:export [])) (defn- hidden [] :i64 7)"]]]
+  (let [input (.join path tmp (str name ".kotoba"))
+        output (.join path tmp (str name ".mjs"))
+        _ (.writeFileSync fs input source)
+        r (amu! "compile" input "--target" "js" "--jvm-free" "--output" output)]
+    (swap! scanned inc)
+    (if-not (= 0 (:status r))
+      (fail! (str name " compile") (str (:err r) (:out r)))
+      (let [probe (str "import {instantiateKotoba,kotobaArtifact} from "
+                       (js/JSON.stringify output)
+                       ";if(kotobaArtifact.entry!==null||Object.keys(instantiateKotoba()).length)process.exit(2);")
+            run (cp/spawnSync (.-execPath js/process)
+                             #js ["--input-type=module" "-e" probe]
+                             #js {:encoding "utf8" :timeout 10000 :env jvm-free-env})]
+        (swap! scanned inc)
+        (if (= 0 (.-status run))
+          (ok! (str name " has no entry or exports"))
+          (fail! (str name " execution") (str (.-stderr run))))))))
+
 (.rmSync fs tmp #js {:recursive true :force true})
 (println (str "SCANNED " @scanned " failed " (count @failures)))
 (.exit js/process (cond (zero? @scanned) 2 (seq @failures) 1 :else 0))
