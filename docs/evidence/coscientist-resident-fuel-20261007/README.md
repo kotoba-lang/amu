@@ -1,4 +1,4 @@
-# Resident fuel: native proof, performance pending
+# Resident fuel: native proof and AES-only timing qualification
 
 The native selfhost candidate `a236b3e8` preserves six separate fuel decrements
 and publications, using a resident scratch value only in the certified sufficient
@@ -37,6 +37,15 @@ The scoped fuel ownership requirement is separate from a generic raw context
 ABI. Diagnostic raw-u64 fuel does not expand product budget admission. No
 universal compiler/OS/hardware proof, automatic product integration, official
 Embench score, C-or-better result or performance qualification is claimed here.
+
+That boundary describes the frozen native proof packet. The later separately
+frozen [full19 timing proof](timing-proof/README.md) includes all 57 semantic
+preflight calls, 2,061 attempted measurement arms, 145 calibration rows and the
+independent audit. AES improved by 1.095870x (8.7483% shorter time), but remains
+9.9885x slower than C. The full19 descriptive aggregate does not establish an
+overall improvement; product adoption and official-score claims remain false.
+The [full19 comparison](../../coscientist-resident-fuel-comparison-20261007.md)
+lists every original body's timing.
 
 The separately frozen [timing host setup proof](host-proof/README.md) checks the
 new measured host's admission, unchanged timing loop and retained setup controls.
