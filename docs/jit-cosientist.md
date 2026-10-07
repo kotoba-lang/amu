@@ -729,3 +729,108 @@ unchanged at bench/runtime-comparison/jb_imod_control.c. Next tick
 unchanged: on a quiet host (idle >=90 percent) run 4000000 iters x 24
 alternations, ratio of medians, then add the third (non-inlined mulh)
 arm. J-A remains not-actionable (no chicory host); J-C untouched.
+
+- 2026-10-03 00:5x JST tick 53 (JIT): quiet gate failed a 44th consecutive
+  time - load1 43.2-47.0 on 10 CPUs (uptime probe 00:42; 20 iostat samples
+  over ~90 s), cpu idle 17-64 percent, never >=90 percent. J-B qualified
+  rerun deferred; no compiler change in any tracked tree, no policy change,
+  no sealed claim. V1 clone-pass work per plan, state: (a) classpath route
+  VERIFIED recoverable - scripts/print-classpath.cljk runs under nbb
+  directly (exit 0, /tmp/jit_t53_cp.txt; pinned kotoba-mir src is line 23
+  of the printed entries), so a scratch-mir-first classpath compile does
+  NOT need to touch deps.edn or deps-lock.edn; (b) GMIR shapes verified by
+  read (gmir.cljk cf39f7c1): :gmir/argument #{op dst index} binds params
+  (line 45); vreg = :kotoba.gmir.vreg/N, canonical regex-validated keyword
+  (vreg/vreg? lines 19-29), so fresh clone vregs must be minted as the
+  next unused numeric index; validate! resolves :gmir/call arity against
+  module signatures (lines 1166-1174), so a cloned program can be
+  re-validated by gmir/validate! for free; (c) pinned kotoba-mir checkout
+  COPIED to scratch jit-t53/mir-patch (diff -q on src/kotoba/mir.cljk =
+  identical, untouched). The clone-pass code was DRAFTED but NOT applied to
+  jit-t53/mir-patch/src/kotoba/mir.cljk before budget ran out - the scratch
+  copy is still byte-identical to the pinned source. Known draft gaps for
+  next tick: clojure.walk is NOT in the scratch mir.cljk ns requires (add
+  [clojure.walk :as walk]); param dsts must bind first and never be
+  re-renamed; a return value that is a bare param bound to a NON-constant
+  actual must skip the site (no way to name the call dst). Next tick first
+  actions: (1) apply + syntax-check the clone pass in scratch
+  jit-t53/mir-patch, wire it at the top of select-target's v3 branch before
+  gmir/validate! so the cloned program is validated; (2) manual nbb compile
+  of bench/runtime-comparison/kernel_strings.kotoba --target aarch64
+  --jvm-free with the scratch mir src PREPENDED to the print-classpath
+  entries (V1 static, no quiet gate needed); (3) word-scan the blob for
+  sdiv 0x9ac10cxx (expect 0) / smulh 0x9b4xx/0x9b50xx (expect >=1),
+  tick-48 method; (4) if idle >=90 percent, V2 + the three-arm J-B
+  control. J-B stays open, not-killed/not-confirmed (under-qualified band
+  5.9-8.8 percent, ticks 27-36).
+
+- 2026-10-06 12:47 JST tick 54 (JIT): quiet gate failed a 45th consecutive
+  time - load1 15.15-15.51 on 10 CPUs (uptime 12:47:17 JST), iostat cpu
+  idle 38-57 percent (3 samples), never >=90 percent. Read path healthy
+  this tick (redirected date/uptime/iostat probes land; foreground stdout
+  empty as usual). J-B qualified rerun deferred (last under-qualified band
+  5.9-8.8 percent, ticks 27-36). Branch (3) advanced: the V1 clone-pass
+  code was WRITTEN as a new scratch file
+  profile-scratch/jit-t54/clone_patch.cljk (ns kotoba.mir.clone-patch;
+  constant-argument callee cloning per jit-t50/jc_clone_spec.md: cap 8,
+  fail-closed skips incl. tail-calls and multi-return callees, fresh
+  global vreg numbering, fresh labels, call-dst->clone-return aliasing,
+  cloned program re-validated by the existing gmir/validate! in
+  select-target). WIRING NOT COMPLETED: the patch tool again refused
+  scratch jit-t53/mir-patch/src/kotoba/mir.cljk ("Failed to read file ...
+  partial view" even after all 3361 lines were read across 5 pages) - the
+  same large-file patch-tool failure mode as ticks 32-34; mir.cljk stays
+  byte-identical to the pinned source. The two remaining edits are tiny
+  (ns require + a program-shadowing binding after gmir/validate! plus one
+  closing paren at the end of select-target). No compiler change in any
+  tracked tree, no policy change, no sealed claim. J-B stays open,
+  not-killed/not-confirmed. Next tick first actions: (1) finish the
+  mir.cljk wiring in the scratch copy (if the patch tool keeps failing,
+  apply the two edits via a small python file-rewrite script); (2) manual
+  nbb compile of bench/runtime-comparison/kernel_strings.kotoba --target
+  aarch64 --jvm-free with the scratch mir src FIRST on the print-classpath
+  entries; (3) V1 word-scan of the extracted blob for sdiv 0x9ac10cxx
+  (expect 0) / smulh (expect >=1), tick-48 method; (4) if idle >=90
+  percent, V2 + the three-arm J-B control.
+
+
+- 2026-10-07 07:2x JST tick 55 (JIT): quiet gate failed a 46th consecutive
+  time - load1 32.56 (5m 38.67, 15m 34.76) on 10 CPUs at 07:09 JST, iostat
+  cpu idle 56-58 percent (3 samples), never >=90 percent. J-B qualified
+  rerun and the end-to-end inlined-vs-non-inlined TIMING comparison both
+  deferred (the latter also needs a native kexe runner, not yet located -
+  recorded as an open prep item, not silently skipped). Branch (1)
+  main-worktree compile retry: STILL RED - reproduced this tick with a
+  full redirected log (/tmp/jit_t49_maincompile.txt, exit=1): same
+  ascii-token :analysis error at src/kotoba/compiler/kexe_fs_forms.cljk:111
+  (uncommitted S5 edit persists, grep ascii-token src/: exactly 1 hit = the
+  call site, no definition; untouched, blocker for AOT axis too). Branch
+  (2/3) advanced statically (no quiet gate needed): the tick-45/46
+  hand-inlined control was LOST (profile scratch jit-t45/jit-t46 gone,
+  /tmp cleaned) and was REGENERATED durably at profile scratch
+  jit-t49/kernel_strings_inline.kotoba (imod body inlined at scan/kernel
+  call sites, literal divisors 1000003/16/8); compiled BOTH arms in MY
+  clean worktree (e50f51acc) jvm-free -> {:ok true :aarch64-kotoba-v1}
+  (/tmp/jit_t49/out/ks_{noninline,inline}.kexe + .bin, extract-native
+  positional form; noninline kernel 436 bytes @420, inline 452 bytes
+  @368); word-scan (durable scratch jit-t49/wordscan.py + scan3):
+  NONINLINE: sdiv count 1 (0x9AC family), smulh count 0, madd/msub 2 -
+  INLINE CONTROL: sdiv count 0, smulh (0x9B5 family) count 3, madd/msub 4.
+  VERDICT (static, deterministic): tick-46's fork resolution REPRODUCED a
+  THIRD time on freshly regenerated artifacts - inlining the imod body so
+  the literal divisor becomes a function-local constant is sufficient for
+  the existing kotoba-mir select-instructions + a64-quotient-constant to
+  emit SMULH+ASR and drop the guarded SDIV. J-C lever remains
+  confirmed-present post-inline; the honest J-C proxy (end-to-end timing,
+  inlined vs non-inlined) still needs (a) a native kexe runner located or
+  built and (b) the quiet gate. J-B stays open, not-killed/not-confirmed
+  (under-qualified band 5.9-8.8 percent, ticks 27-36). No compiler change
+  in any tracked tree (scratch only), no policy change, no sealed claim.
+  Next tick first actions: (1) locate/build a native kexe runner
+  (candidates: bench/kexe-benchmark.c, kexe_loader, bin/amu run) and
+  smoke-test both /tmp/jit_t49/out kexe artifacts; (2) if idle >=90
+  percent, run the end-to-end inlined-vs-non-inlined comparison AND the
+  qualified three-arm J-B control (ratio of medians); (3) retry main
+  worktree compile (ascii-token blocker check).
+
+- 2026-10-07 (JIT tick 56): quiet gate UNMEASURED this tick - the iostat/load probe group was blocked by the security scanner (no reading taken, no number invented). Main-worktree compile retry: STILL RED - reproduced (exit=1), same ascii-token :analysis error at src/kotoba/compiler/kexe_fs_forms.cljk:111 (uncommitted S5 edit persists; untouched, blocker for AOT axis too). kexe runner prep (static, no quiet gate needed): candidates LOCATED - bench/runtime-comparison/kexe-benchmark.c and kexe-batch-benchmark.c, plus bin/amu run (signed-kexe loader route, line 218-45) and kotoba-loader; smoke-test of the /tmp/jit_t49/out kexe artifacts is next. J-C lever unchanged: confirmed-present post-inline (sdiv 0 / smulh >=1, reproduced 3x). J-B stays open, not-killed/not-confirmed (under-qualified band 5.9-8.8 percent, ticks 27-36). No compiler change, no policy change, no sealed claim. Next tick first actions: (1) smoke-test kexe-benchmark.c against the tick-49 kexe artifacts and, if it runs, the end-to-end inlined-vs-noninlined timing (V2 still needs idle >=90 percent); (2) qualified three-arm J-B control if quiet; (3) main worktree compile retry.
