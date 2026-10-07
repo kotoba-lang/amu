@@ -37,3 +37,7 @@ The scoped fuel ownership requirement is separate from a generic raw context
 ABI. Diagnostic raw-u64 fuel does not expand product budget admission. No
 universal compiler/OS/hardware proof, automatic product integration, official
 Embench score, C-or-better result or performance qualification is claimed here.
+
+The separately frozen [timing host setup proof](host-proof/README.md) checks the
+new measured host's admission, unchanged timing loop and retained setup controls.
+Its snapshot also precedes the full benchmark preflight and campaign.
