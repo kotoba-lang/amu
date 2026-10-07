@@ -341,8 +341,10 @@ closed. The explicitly selected root may live beside the source directory
 because it is not discovered ambiently. This filesystem discovery does not run in the compiled program and
 does not widen runtime authority.
 
-An explicit, non-empty export clause also admits a library without `main`, but
-only for `:js-kotoba-v1`. Its KIR has a nil entry and signature and is handed to
+An explicit export vector also admits a library without `main`, including
+`(:export [])` for a namespace-only or private-only library, but only for
+`:js-kotoba-v1`. The attribute-map spelling `{:kotoba/export []}` has the
+same empty-library meaning. Its KIR has a nil entry and signature and is handed to
 `kotoba-script` as a restricted ESM library. All executable and non-JavaScript
 targets reject an entryless module. This target gate prevents a library-shaped
 source unit from silently acquiring different execution semantics across

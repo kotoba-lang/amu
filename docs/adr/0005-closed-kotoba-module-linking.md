@@ -46,8 +46,14 @@ functions, in source order: every `defn` whose name carries no `^:private`.
 (the frontend refuses a constant as an export). An explicit `:export` still
 wins and may narrow the set. The linker hands the frontend the derived vector
 as the `(:export [...])` clause the author could have written, so both
-spellings link to the same source and the same interface; a module whose every
-function is private is refused (`project module <ns> exports nothing`).
+spellings link to the same source and the same interface. With an omitted export
+clause, a module whose every function is private is still refused
+(`project module <ns> exports nothing`). An explicit empty export vector is
+different: `(:export [])` (or `{:kotoba/export []}`) declares an intentionally
+empty interface and admits a namespace-only or private-only entryless library
+on the `:js-kotoba-v1` target. Its exported object is empty; private definitions
+remain unavailable to callers. Entryless native, Wasm and ClojureScript outputs
+remain refused. This does not admit an unmarked empty executable program.
 Closedness is unchanged: the set is still exact, only its spelling moved from
 the header to `defn` / `defn-`. The linker rejects missing
 source units, namespace/key mismatches, duplicate aliases or dependencies,
