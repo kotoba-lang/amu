@@ -11,11 +11,17 @@
 (def identity-source
   "(ns host.values (:export [keep])) (defn keep [v :js-value] :js-value v)")
 
+(def predicates-source
+  "(ns host.predicates (:export [nullable truthy strict]))
+   (defn nullable [v :js-value] :bool (js-nullish? v))
+   (defn truthy [v :js-value] :bool (js-truthy? v))
+   (defn strict [a :js-value b :js-value] :bool (js-strict-equal? a b))")
+
 (deftest opaque-source-is-refused-before-lowering-on-every-non-js-backend
   (let [lowered (atom 0)]
     (with-redefs [ir/lower (fn [& _] (swap! lowered inc)
                             (throw (ex-info "unexpected lowering" {})))]
-      (doseq [source [identity-source
+      (doseq [source [identity-source predicates-source
                       "(defn main [] :i64 (do (option-none-of [:option :js-value]) 7))"]
               target [:wasm32-kotoba-v1 :wasm32-browser-kotoba-v1 :wasm32-wasi-kotoba-v1
                       :cljs-kotoba-v1 :x86_64-kotoba-v1 :aarch64-kotoba-v1]]
