@@ -13,3 +13,21 @@
 [独立raw監査](evidence/coscientist-quotient-two-20261008/build-actual-review.json)は10 argv・producer chain・root GO・review・入力・raw・全header/sole main0 payloadを照合した。[全内容packet](evidence/coscientist-quotient-two-20261008/content.tgz)は2,438,495 B、SHA-256 `3d651820dfb53f3f7f58d4d3e2190533ba2b7ce7409aaf2a13925d3fe393f0a7`、55 regular member・展開9,654,019 B。70元パスを54 content memberへ重複排除し、embedded manifestを含む。[内容監査](evidence/coscientist-quotient-two-20261008/packet-review.json)も抽出・実行なしで全件照合した。元の絶対パスとloader/producerを保存する内容証拠で、portable再実行やsource-to-loader由来証明ではない。
 
 固定点は速度の証拠ではない。native深い状態・容量境界、実際に発行したCODEの符号付き入力実行、fuel・arena観測、元19本のOFF identity/ON machine比較と機能、同じ静穏hostでのCとの速度比較はまだ必要である。現在のEXTR cohort・製品baseline・bin entryを切り替えず、C以上・公式スコア・製品採用を未達のまま保持する。
+
+## 成分試験V1の停止
+
+Q2成分試験は上限14回で新規登録したが、[独立実監査](evidence/coscientist-quotient-two-20261008/state-v1-failure/independent-report.json)のとおり、compile・extract成功後の最初のprobeが終了コード91で停止した。全3回はtimeoutなし・stderr空で閉じた。raw stdoutは `PIPELINE 0 8 2`、allocation receipt、`END 0 0` の3行であり、必須のROOT／FN／SIR／STATE記録がない。想定したsiteの捕捉に入っていないので、容量境界・full M/G状態・算術・codegenのPASSにも反例にも判定しない。残る11ケースは未実行、元の試験は再実行しない。
+
+コンパイラ自己再ビルド10回と、この失敗3回を区別して保存する。次は通常のcheck・refinement・lower後のSIR／FRECを観測する有限診断を別に登録し、実際の形を確認してから新しい成分試験をレビューする。観測のためのguardを広げて旧試験の成功と呼ばない。
+
+[失敗の全内容packet](evidence/coscientist-quotient-two-20261008/state-v1-failure/content.tgz)は1,685,896 B、SHA-256 `9bdfbde1cc2538cceed706c637b190bc6b9fd94da508a0c18c8c4f6bb49dc3af`、36 regular members・39元パス・展開6,578,685 B。凍結ソース・入力producer／loader・有限GO・3回のraw・生成harness・独立失敗監査を保存する。
+
+[失敗packetの独立内容監査](evidence/coscientist-quotient-two-20261008/state-v1-failure/independent-packet-report.json)は36 member・39元パスと独立実監査の37依存を照合した。失敗結果は上書きせず、後続診断と区別して保持する。
+
+## 通常loweringの観測V1
+
+別登録のcompile・extract・observe計3回はすべて終了コード0、stderr空、timeoutなしで閉じた。[独立実監査](evidence/coscientist-quotient-two-20261008/observation-v1/independent-report.json)は通常のcheck・refinement・lower、8 SIR行、2個の全16フィールドFREC、実際に訪問した7命令直前のframe／descriptorを照合した。失敗の原因は試験側の局所slot仮定だった。SIR3のLGETはtemp0へslot1を読み、V1のsite predicateはslot0を要求していた。隣接CONST2・BINquotと命令5への訪問は一致する。これは最適化の算術失敗ではなく、成分試験の捕捉条件の不一致である。
+
+[観測の全内容packet](evidence/coscientist-quotient-two-20261008/observation-v1/content.tgz)は1,685,153 B、SHA-256 `d57c51860baebe9e5f13e1de8cef6812b99cffb949f42abff6494a432c0764da`、46 regular members・49元パス・展開6,592,180 B。自己再ビルド10回、失敗成分試験3回、観測3回の累計16回を区別して保持する。新しい成分試験はslot1の実観測に合わせ、独立source reviewと別の有限GOを必要とする。旧失敗・残り11ケースを再実行しない。成分状態、生成CODE実行、物理register／NZCV、fuel／arena、性能、製品採用の成功はこの観測から主張しない。
+
+[観測packetの独立内容監査](evidence/coscientist-quotient-two-20261008/observation-v1/independent-packet-report.json)は全46 member・49元パス・47実監査依存を照合した。
