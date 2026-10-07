@@ -104,6 +104,9 @@ That primary Node front resolves its pinned source closure from
 hermetically and compiles/executes a representative native artifact with JVM
 executables removed from `PATH`; every dependency pin change must regenerate
 the lock with `kbb --backend sci scripts/lock-classpath.cljk`.
+A fresh cache fetches the exact locked commit if ordinary full-history clone
+omits it from advertised history. An unavailable commit remains a fetch error;
+resolution never substitutes a branch tip or changes the pin.
 
 Primary Wasm and ordinary-native compilation are policy-bound as well:
 `:budgets :fuel` controls the emitted Wasm module or sealed native fuel ABI
