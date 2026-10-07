@@ -1,0 +1,84 @@
+# ComputeCID / ResultCID を解析再利用へ接続する
+
+状態：設計・事前登録。永続キャッシュ、IPLD の符号化、ComputeCID の native 実装を追加した記録ではない。既存の V8 shape memo と、既定で無効な局所的 bounds-check 省略候補へ、この契約を接続する。
+
+## 二つの内容アドレス
+
+`ComputeCID = CID(canonical calculation request)` と `ResultCID = CID(canonical semantic result)` を分ける。ComputeCID も計算要求の **content address** であり、計算の正しさを保証する別種のハッシュではない。計算前に検索できる要求と、計算後に得る内容を別々に識別する。DefCID は変更しない。
+
+Bazel の action cache と CAS は、要求から結果への対応と結果の内容保管を分ける参考になる。[公式資料](https://bazel.build/remote/caching)。ただし CID が一致しても、要求を正しく評価した結果だという証明にはならない。
+
+### ComputeCID が封じるもの
+
+| 要素 | この解析で必要な内容 |
+| --- | --- |
+| domain / schema | query 種別、符号化版、計算契約版。DefCID・ResultCID と domain を分離 |
+| evaluator | 実際の解析実装と transitive implementation dependencies の CID |
+| subject | 型付き定義または厳密な SIR/FREC snapshot の CID、再帰群、依存閉包、edge の対応 |
+| read context | effect・alias・lifetime・return bound・parameter mapping・support・poison と、読み取る解析結果の CID |
+| input | 全4入口 bound、query mode、candidate、必要な根・公開境界情報 |
+| rules | 方向・工程・前提・停止条件・cost model を含む規則群と設定の CID |
+| semantics | 数値幅・overflow・trap・target・ABI・descriptor・fuel の意味を規定する契約 |
+| resources | 予算の種類と版、admission / logical charge 契約。必要な残量や限度 |
+
+読み取り集合が不明な query は共有再利用しない。読み取り順に意味がある場合は順序も保存する。依存の集合と順序付き列を勝手に同一視しない。型・effect・trap の解釈、規則または ABI が変わったら別の要求になる。
+
+既存の [definition identity](../src/kotoba/compiler/definition_identity.cljk) は、checked KIR・profile・desugar・effect・interface・直接依存を扱う。native SIR/KSEED 経路から同じ DefCID へ接続した証拠は、この実験では持っていない。最初の共有実装は厳密な snapshot identity を使い、名前変更や宣言順変更での共有は拒否してよい。native の DefCID bridge と正規化を検証するまで Unison 的な rename cache hit を主張しない。SHA-256 の hex をそのまま IPLD CID と呼ばない。
+
+### ResultCID が封じるもの
+
+結果は純粋な値だけではなく、検証できる再適用データを含む。
+
+```
+semantic-result
+ordered per-edge contributions: stable-edge-ref, stable-target-ref, ordinal, bound
+supported / poison / semantic diagnostics
+replay schema and preconditions
+observable charge / effect / trap observations, if the query contract includes them
+```
+
+shape の bound は非負値、neutral は -1、未知長・poison の寄与0は neutral と区別する。保存する寄与は元の全訪問を集約した値であり、最後の訪問だけではない。ヒットは新しく初期化した callee 集計に元の meet 規則で再適用する。集計済み状態での冪等性だけを根拠にしない。
+
+共有データに activation の FN 番号・edge index・scratch のメモリアドレスを保存して使い回さない。安定した参照を、その要求が封じた現在の graph へ一意に解決し、型・arity・ordinal・呼び出し位置も検査する。解決できなければ miss とする。
+
+解析時間、CPU 時間、host load、キャッシュヒット率、scratch の途中値は semantic ResultCID に混ぜない。観測可能な fuel・診断・trap が契約に入る場合は省かない。物理的な作業量と必要な再現性証拠は、ComputeCID / ResultCID を参照する別の receipt に置く。キャッシュヒットを実際の query 再実行として証言しない。
+
+## V8 と emitter 候補への対応
+
+V8 は **activation 内の exact memo** である。同じ SIR/FREC、phase4 effect/lifetime、phase5 alias/return、mode1 の不変な view を保持し、その中で全4入口 bound を厳密比較する。これはプロセスをまたぐ ComputeCID ではない。不変な view を変えたら同じ小さいキーを使ってはいけない。
+
+[V8 の実験](coscientist-vector-typed-v8-20261007.md)は、辺ごとの4寄与を保持し、元の neutral/min 集約で再生する。mode0 の alias query と mode2 の証明生成へ同じ memo を流用しない。valid は reset 前に無効化し、完了した query と key の保存後に公開する。途中拒否、作業上限、部分書込み、unsupported query は再利用しない。
+
+[型付き native 制御試験](coscientist-vector-shape-memo-typed-controls-20261007.md)は、固定した5関数で寄与4・未知長0・実際の自己呼び出し neutral を検査した。全5関数の新しい集計への再生も直接解析と一致した。これを Result の状態更新契約の有限な証拠として使う。IPLD、永続化、一般的な意味保存の証明とは区別する。
+
+局所的 bounds-check 省略候補は、解析の証明情報を module-owned の別領域へ移し、生成終了時に消去する。今は native の検証前である。その証明情報は将来 ResultCID と結び付けられるが、識別子だけを emitter の許可条件にしない。現在の SIR・private body・同じ関数内の RT200 割当・定数 index・ABI・lifetime の検査を維持する。SSA、effect、trap を保存する規則の前提と検証結果は provenance に明記する。
+
+## 予算と再現可能な生成物
+
+予算をキーに含めるだけでは不十分である。ヒットが物理的作業を節約し、以前は上限に達した後続解析まで完了させると、冷たいキャッシュと温まったキャッシュで採用される最適化が変わり得る。同じ BuildCID から異なる生成バイトが出る状態は、この selfhost 実験では受理しない。
+
+V8 は各 activation の空の memo から始まり、共有された warm state に依存しない。永続・共有キャッシュの初版は既定で無効とし、同じ入力・設定について cold / warm / shared-cache disabled の成果物と exports が一致するまで採用しない。このバイト一致ゲートでは activation-local memo と最適化設定を同じに保ち、共有 cache の可用性だけを変える。異なる最適化設定の比較は、別の意味保存・性能実験として扱う。
+
+永続版の候補は、決定的な logical admission / charge と物理作業の計測を分ける方式である。記録した charge の再利用には、その charge が読む状態も要求へ封じる。callee 集計などで元の charge が変わる場合、現在の小さい4要素キーだけでは不十分である。charge 契約を新しく定義するなら意味論版を変え、予算境界の拒否・結果・生成バイトを比較する。物理上限による拒否を、ヒットの有無で異なる最適化を選ぶ隠れた条件にしない。
+
+言語が観測する fuel・課金は別の契約である。必要な消費とその順序をヒットでも保存する。外部書込み、現在の権限判断、時刻や乱数を読む query は最初の共有対象から除外する。以前の署名や receipt は現在の権限判断を代替しない。
+
+共有 importer は、decode 前の符号化サイズ、展開サイズ、深さ、参照数、edge 数、要求・結果件数に上限を設け、サイズを検査してから確保する。decode・hash・materialize・参照解決・検証・replay・保管・eviction・cleanup の全経路を物理資源の計測と上限の対象にする。超過や改変は cache miss として同じ決定的な解析を行うか、action 全体を失敗として記録する。fallback の物理予算も不足した場合、別の最適化を黙って選ばない。異なる fallback を提案するなら、決定的な規則として別に事前登録し、cold / warm の生成バイト一致を検証する。これらの importer と上限はまだ実装していない。
+
+## Result が同じ場合に止められる範囲
+
+入力が変わって再評価しても ResultCID が同じなら、**その結果だけを読む**下流 query は再利用できる可能性がある。これは依存結果を比較する増分計算の考え方である。[query の公式解説](https://rustc-dev-guide.rust-lang.org/queries/incremental-compilation-in-detail.html)。Rust をビルドや実行の依存には加えない。
+
+下流が変わった DefCID、型・effect・ABI、graph 構造も直接読む場合は、同じ ResultCID だけで停止しない。Result の一致と、下流の完全な read footprint の一致を両方検査する。結果が同じでも、新しい要求との検証済み対応を記録する。payload の semantic fields を実験中は厳密比較し、digest の一致だけで比較を省かない。
+
+## 事前登録する比較
+
+1. cache disabled / activation-local memo / 将来の persistent memo を別々に扱う。元の19入力と同じ compiler・target・ABI を固定する。
+2. 結果だけでなく、初期化した集計に再適用した全寄与、support、poison、診断、観測可能な charge を照合する。
+3. 上表のキー要素を一つずつ変え、必要な miss が発生することを確認する。依存の追加・削除・再帰群変更、edge の入替えも含める。
+4. valid 公開の各 prefix、中断、途中拒否、改変・不正な参照・古い schema を拒否する。CAS の内容検査と ComputeCID→ResultCID の計算対応の検証は別々に行う。
+5. 異なる要求で同じ結果を得る場合、完全な結果の一致と下流の read footprint 条件を確認する。異なる poison・診断・target update を同じ結果として扱わない。
+6. 同じ activation-local memo・最適化設定で、cold / warm / shared-cache disabled の生成バイトと exports、3世代自己再ビルドを照合する。生成バイト一致を result-value parity に緩めない。
+7. 同じ低負荷の条件で、入力符号化・hash・検索・検証・再適用・保管の全費用を含めて解析時間を測る。生成物の実行時間と分け、CID の性能寄与は cache 有無の ablation で測る。現在の Embench 高速化を CID の効果とは呼ばない。
+
+最初の実装範囲は純粋で完了した shape query に限定する。canonical encoder、read-footprint extractor、安定した graph reference bridge、検証済み対応の publisher / importer、決定的 charge は未実装である。この設計は、既存の局所 memo とコード生成候補を進めるための契約であり、共有 cache を製品へ有効化する変更ではない。
