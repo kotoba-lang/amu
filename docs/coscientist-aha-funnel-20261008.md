@@ -18,4 +18,6 @@ V4 は8回すべて終了コード0・timeoutなしで完了した。[実行結�
 
 このコード比較のドライバーV1は、書換え後の命令途中へ向くADRを見逃す[反例でHOLD](evidence/coscientist-aha-funnel-20261008/original19-source-v1-hold.json)となり、V2は継承環境の全値をrawへ保存する[記録範囲の問題でHOLD](evidence/coscientist-aha-funnel-20261008/original19-source-v2-hold.json)となった。どちらもnative実行0回で保存した。アドレス・literal読取り範囲の検査と、必要な固定KEXE設定・削除したキー名だけの記録へ修正したV3が[独立sourceレビュー](evidence/coscientist-aha-funnel-20261008/original19-source-v3-review.json)を通った後に、別の有限GOで一回実行した。過去の失敗を削除せず、比較条件も緩めていない。
 
+native状態試験V1は、harness compile・extractの2回を成功した後、最初のprobeが終了コード91で `PIPELINE 2101 1 14`、`END 0 2101` を返して停止した。[失敗の独立監査](evidence/coscientist-aha-funnel-20261008/controls-v1-failure-review.json)は3回すべての終了とrawを確認した。ALLOC・ROOT・STATEには到達せず、残る11 probeは未実行である。sourceレビューとrootレビューで、通常の `drv-run` が追加する `ck-r6b-lib` と `ck-run-h`／refinement再読を、harnessの経路に含める必要を見落とした。これは状態・容量試験のPASSではない。元19本のコード差分監査とは別の失敗として保存し、V1を再実行せず、通常経路に合わせたV2を新規登録・レビューする。
+
 完全な凍結sourceと実行GO・rawは `/Users/junkawasaki/github/workspaces/codex/vector-aha-funnel-source-v1-controls` と `vector-aha-funnel-native-build-plan-v3-root`、`vector-aha-funnel-native-build-plan-v4-root`、`vector-aha-funnel-original19-plan-v3-width`、`vector-aha-funnel-original19-run-v3-root` にある。この保存資料は完全なportable archiveではない。native制御試験とONの元19本機能・fuel・資源比較を確認した後に、新しい静穏host cohortで実行速度を測る。以前のCRC32静穏条件不足のFAILやCohortを上書きせず、元19本・C以上の性能という成功条件も変えない。
