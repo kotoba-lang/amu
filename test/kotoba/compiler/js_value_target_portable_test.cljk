@@ -156,3 +156,16 @@
           (is (= :kotoba.error/js-value-target (:kotoba.error/code data)))
           (is (= :target (:phase data)))))
       (is (zero? @lowered)))))
+
+(def empty-record-source
+  "(ns host.empty (:export [create]))
+   (defrecord Empty [])
+   (defn create [] [:record :host.empty/Empty []] (->Empty))")
+
+(deftest published-empty-record-floor-reaches-both-js-backends
+  (doseq [target [:js-kotoba-v1 :js-browser-kotoba-v1]]
+    (let [result (compiler/compile-source empty-record-source target)]
+      (is (= :javascript/v1 (:format result)))
+      (is (= target (:target result)))
+      (is (string? (:source result)))
+      (is (empty? (:effects (:hir result)))))))
