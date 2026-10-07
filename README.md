@@ -1606,3 +1606,29 @@ use a controlled compiler phase rather than leaking host reader exceptions.
 
 See [docs/architecture.md](docs/architecture.md) and
 [docs/threat-model.md](docs/threat-model.md).
+
+## Opaque JavaScript observations and undefined
+
+The locked Sema, Script and Osaho closure supports `js-typeof(js-value) ->
+string`, `js-array?(js-value) -> bool`, `js-bool-value(bool) -> js-value`,
+and zero-arity `js-undefined() -> js-value` through explicit `--target js`
+or `--target js-browser` and `--jvm-free`. These are Node/nbb bootstrap routes,
+not selfhost-built compiler evidence. Wasm-browser, CLJS and native targets
+refuse the opaque JS leaf without an output artifact or JVM fallback.
+
+A compiled Mithril `isPlainObject` example matched actual transpiled CosmoKit
+for 35 values / 105 comparisons per generated target, including foreign arrays
+and raw falsy values, plus two revoked-Proxy TypeErrors; getters were untouched.
+Eight ambient `Array.isArray` replacements also matched after runtime and
+emitter normalization. Both generated targets were executed in a pinned offline
+Node image; this does not qualify execution in a browser host.
+
+The authored Mithril `noop` lowers to a zero-arity undefined operation. The
+consumer qualification checks ignored extra arguments, including a revoked
+Proxy, and native undefined identity through the ordinary locked compiler route.
+These finite checks qualify compiler operations, not whole-Harness API/plugin
+equivalence. Public-library compatibility remains a separate requirement:
+restricted artifact instances have a cumulative fuel budget, and their export
+wrappers need independent qualification for function names, prototypes and
+constructibility before replacing the original package exports. Preserve the
+restricted profile and its budgets while implementing that library boundary.
