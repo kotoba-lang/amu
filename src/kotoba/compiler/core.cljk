@@ -384,6 +384,7 @@
   ([source] (compile-component-wit source {}))
   ([source policy]
    (let [hir (sema/analyze source)
+         _ (js-value-target/reject-outside-js-target! :wasm-component-kotoba-v1 hir)
          checked (admit! hir policy)
          kir (component-kir (ir/lower hir))]
      (assoc (component-wit/emit kir) :admission checked))))
@@ -816,7 +817,16 @@
 (defn compile-source-cached
   [source target policy build-metadata cache-entry trust now]
   (if cache-entry
-    (cache/admit! source target policy build-metadata cache-entry trust now)
+    (let [language-profile (or (:language-profile build-metadata)
+                               (:language-profile policy))]
+      ;; A signed cache hit skips lowering, not source-ABI qualification.
+      (js-value-target/reject-outside-js-target!
+       target
+       (sema/analyze source (cond-> {}
+                              language-profile (assoc :language-profile language-profile)
+                              (:admit-linked-synthetics? build-metadata)
+                              (assoc :admit-linked-synthetics? true))))
+      (cache/admit! source target policy build-metadata cache-entry trust now))
     {:hit? false
      :result (compile-source source target policy build-metadata)}))
 

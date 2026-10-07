@@ -25,6 +25,14 @@
           (is (= :target (:phase data)))))
       (let [data (try (compiler/compile-component identity-source {}) nil
                      (catch #?(:clj Exception :cljs :default) e (ex-data e)))]
+        (is (= :kotoba.error/js-value-target (:kotoba.error/code data))))
+      (let [data (try (compiler/compile-component-wit identity-source {}) nil
+                     (catch #?(:clj Exception :cljs :default) e (ex-data e)))]
+        (is (= :kotoba.error/js-value-target (:kotoba.error/code data))))
+      (let [data (try (compiler/compile-source-cached identity-source :wasm32-kotoba-v1
+                                                      {} {} {:cached true} nil nil)
+                     nil
+                     (catch #?(:clj Exception :cljs :default) e (ex-data e)))]
         (is (= :kotoba.error/js-value-target (:kotoba.error/code data)))))
     (is (zero? @lowered))))
 
