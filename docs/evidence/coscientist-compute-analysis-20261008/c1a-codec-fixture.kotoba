@@ -1,0 +1,94 @@
+(ns c1a-native-codec (:export [main]))
+;; Isolated toy codec. No shape snapshot, memo lookup, graph mutation or result trust.
+(defn- io-out [s :string] :i64
+  (let [r (typed-cap-call :io/write :string :string s)] 0))
+(defn- cx-prefix [request :bool] :string
+ (if request "C1A/request/v1|" "C1A/result/v1|"))
+(defn- cx-digit [c :i64] :i64
+ (cond (and (>= c 48) (<= c 57)) (- c 48)
+       (and (>= c 97) (<= c 102)) (+ 10 (- c 97)) :else -1))
+(defn- cx-hex-valid [s :string start :i64 end :i64] :bool
+ (and (>= start 0) (>= end start) (<= end (string-length s))
+  (loop [i start] (cond (>= i end) true
+   (< (cx-digit (string-code-point-at s i)) 0) false :else (recur (inc i))))))
+(defn- cx-hex [v :i64] :string
+ (loop [i 0 out ""]
+  (if (= i 16) out
+   (let [n (bit-and (u64-shift-right v (* 4 (- 15 i))) 15)
+         d (string-substring "0123456789abcdef" n (inc n))]
+    (recur (inc i) (string-concat out d))))))
+(defn- cx-read-word [s :string start :i64] :i64
+ (loop [i 0 v 0]
+  (if (= i 16) v
+   (recur (inc i) (bit-or (i64-shift-left v 4) (cx-digit (string-code-point-at s (+ start i))))))))
+(defn- cx-encode [request :bool values :vector-i64] :string
+ (let [n (vector-count values) p (cx-prefix request)
+       bytes (+ (string-length p) 16 (* 16 n) 4)]
+  (if (or (< n 1) (> n 8) (> bytes 256)) ""
+   (loop [i 0 out (string-concat p (cx-hex n))]
+    (if (= i n) (string-concat out "|END")
+     (recur (inc i) (string-concat out (cx-hex (vector-at values i)))))))))
+(defn- cx-decode [request :bool s :string] :vector-i64
+ (let [p (cx-prefix request) a (string-length p) bytes (string-length s)]
+  (if (or (> bytes 256) (< bytes (+ a 16 4))) (vector-alloc 0)
+   (if (or (not (string=? (string-substring s 0 a) p))
+           (not (cx-hex-valid s a (+ a 16)))) (vector-alloc 0)
+    (let [n (cx-read-word s a) data (+ a 16)]
+     (if (or (< n 1) (> n 8)) (vector-alloc 0)
+      (if (or (not= bytes (+ data (* n 16) 4))
+              (not (string=? (string-substring s (- bytes 4) bytes) "|END"))
+              (not (cx-hex-valid s data (+ data (* n 16))))) (vector-alloc 0)
+       (loop [i 0 out (vector-alloc n)]
+        (if (= i n) out
+         (recur (inc i) (vector-assoc! out i (cx-read-word s (+ data (* i 16)))))))))))))
+)
+(defn- cx-hash [s :string] :string
+ (typed-cap-call :hash/sha256 :string :string s))
+(defn- cx-b32-char [n :i64] :string
+ (string-substring "abcdefghijklmnopqrstuvwxyz234567" n (inc n)))
+(defn- cx-cid [h :string] :string
+ (if (or (not= (string-length h) 64) (not (cx-hex-valid h 0 64))) ""
+  (let [initial (-> (vector-alloc 36) (vector-assoc! 0 1) (vector-assoc! 1 85)
+                   (vector-assoc! 2 18) (vector-assoc! 3 32))
+        data (loop [i 0 v initial]
+         (if (= i 32) v
+          (let [byte (+ (* 16 (cx-digit (string-code-point-at h (* i 2))))
+                         (cx-digit (string-code-point-at h (inc (* i 2)))))]
+           (recur (inc i) (vector-assoc! v (+ i 4) byte)))))]
+   (loop [i 0 buffer 0 bits 0 out "b"]
+    (cond (>= bits 5)
+           (let [remaining (- bits 5) digit (bit-and (u64-shift-right buffer remaining) 31)
+                 rest (bit-and buffer (- (i64-shift-left 1 remaining) 1))]
+            (recur i rest remaining (string-concat out (cx-b32-char digit))))
+          (< i 36) (recur (inc i) (bit-or (i64-shift-left buffer 8) (vector-at data i)) (+ bits 8) out)
+          (> bits 0) (string-concat out (cx-b32-char (bit-and (i64-shift-left buffer (- 5 bits)) 31)))
+          :else out)))))
+(defn- cx-line [tag :string value :string] :i64
+ (io-out (string-concat tag (string-concat " " (string-concat value "\n")))))
+(defn main [] :i64
+ (let [input [7 4 0] request (cx-encode true input)
+       result (cx-encode false [4 -1]) decoded (cx-decode true request) decoded-result (cx-decode false result)
+       changed (vector-assoc! input 0 8) mutated (cx-encode true changed)
+       roundtrip (and (= (vector-count decoded) 3) (= (vector-at decoded 0) 7)
+                      (= (vector-at decoded 1) 4) (= (vector-at decoded 2) 0)
+                      (= (vector-count decoded-result) 2) (= (vector-at decoded-result 0) 4)
+                      (= (vector-at decoded-result 1) -1)
+                      (string=? (cx-encode true decoded) request) (string=? (cx-encode false decoded-result) result))
+       negatives (and (= (vector-count (cx-decode true (string-concat request "x"))) 0)
+                      (= (vector-count (cx-decode false request)) 0)
+                      (= (vector-count (cx-decode true "C1A/request/v1|0000000000000001FFFFFFFFFFFFFFFF|END")) 0)
+                      (= (vector-count (cx-decode true "C1A/request/v1|0000000000000009|END")) 0)
+                      (string=? (cx-encode true (vector-alloc 9)) ""))
+       request-hash (cx-hash request) result-hash (cx-hash result) mutant-hash (cx-hash mutated)
+       empty-hash (cx-hash "") abc-hash (cx-hash "abc") repeat-hash (cx-hash request)
+       a (cx-line "REQUEST" request) b (cx-line "RESULT" result) c (cx-line "MUTATED" mutated)
+       d (cx-line "HASH-REQUEST" request-hash) e (cx-line "HASH-RESULT" result-hash) f (cx-line "HASH-MUTATED" mutant-hash)
+       g (cx-line "CID-REQUEST" (cx-cid request-hash)) h (cx-line "CID-RESULT" (cx-cid result-hash)) j (cx-line "CID-MUTATED" (cx-cid mutant-hash))
+       k (cx-line "HASH-EMPTY" empty-hash) l (cx-line "HASH-ABC" abc-hash) m (cx-line "HASH-REPEAT" repeat-hash)
+       n (cx-line "ROUNDTRIP" (if roundtrip "1" "0")) o (cx-line "NEGATIVE" (if negatives "1" "0"))
+       end (cx-line "END" "C1A-TOY-ONLY")]
+  (if (and roundtrip negatives (not (string=? request mutated))
+           (string=? request-hash repeat-hash)
+           (= (string-length (cx-cid request-hash)) 59)
+           (= (string-length (cx-cid result-hash)) 59)
+           (= (string-length (cx-cid mutant-hash)) 59)) 0 91)))

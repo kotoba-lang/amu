@@ -136,3 +136,19 @@ GP2 的な規則記述と Simple 的な局所 worklist の組合せでは、**�
 ヒット後には、保存した参照が現在のグラフで一意に解決し、全前提が現在も成立することを確認してから、現在の optimizer が置換と利用先・worklist の更新を行う。古いノード番号や更新済み graph の receipt をそのまま適用しない。検証失敗時は更新を公開する前に miss とし、元の判定を行う。規則判定の再利用は、規則自体の意味保存の検証や SSA・effect・trap の検査を代替しない。
 
 この接続も C1 では毎回直接判定し、保存結果と比較する。C2 へ進む条件は、cold / warm / disabled で判定・状態更新・論理 charge・生成バイトが一致することと、符号化から再適用までを含めた解析費用が改善することである。最初の C1 実験は shape query に限定し、規則判定への拡張は別に事前登録する。
+
+### 次に実装するnative前提
+
+[具体的なshadow実装提案](evidence/coscientist-compute-analysis-20261008/c1-native-shadow-proposal.md)では、実在するwire3のUTF-8 byte列SHA-256と、型付きbase32経路を接続点として特定した。正規ASCII payloadへCIDv1 raw codec・sha2-256・base32を適用する最小案であり、SHA hexをCIDと呼ぶ案ではない。DAG-CBORやnative DefCID bridgeの実装済み主張もしない。codecの単独検証を先行し、shape query全体の再利用と区別する。
+
+完全なshape C1はまだHOLDである。推移的read footprintと更新干渉、snapshotの封印・参照解決が未検証であり、実解析器のM8,388,608要素の独立materializationを、既存のsnapshot8,192words／262,144wordops上限に入ったものとして扱えない。物理allocation・zero・copyも明示した別の資源契約が必要になる。既定OFF、毎回の直接計算、fresh集計への全辺replay、cold/warm/disabledでの同一生成物という受理条件を維持する。
+
+### C1a：native codec・hash・raw CIDの最小実行
+
+[隔離した型付きfixture](evidence/coscientist-compute-analysis-20261008/c1a-codec-fixture.kotoba)をソースからnative compile・extract・実行する[固定3回](evidence/coscientist-compute-analysis-20261008/c1a-terminal.json)を完了した。正規ASCIIの要求 `[7,4,0]` と結果 `[4,-1]` を別domainで符号化し、fresh vectorへの厳密復号・入力を `[8,4,0]` に変えた後のsnapshot独立性・5つの不正符号化拒否を検査した。これはtoy codecであり、この要求を評価するとこの結果になるという対応の証明ではない。
+
+[実際の15出力](evidence/coscientist-compute-analysis-20261008/c1a-guest.stdout)ではwire3のSHA-256を6回使い、空文字・abc・要求・結果・変更した要求・同一要求の反復を標準ライブラリと照合した。CIDv1 raw `01 55`、sha2-256 multihash `12 20`、32 digest bytes、lowercase base32の全bytesも独立に検査した。要求CIDは `bafkreih56p74meeo5e33xidrva3igmx54kqvrp5cgojzstgtyowrzzxiji`、結果CIDは `bafkreid4425lccevsmbzsepevztdqgqjqwygkgxfxo4iih5tjccm46onom`。SHA hexをCIDとして扱っていない。
+
+[実行報告](evidence/coscientist-compute-analysis-20261008/c1a-actual-report.json)の範囲はcodec・hash・CIDの有限なnative検証だけである。完全なshape snapshot/read footprint/seal/resolver、compute→resultの正しさ、解析省略・永続共有cache・fuel同等性・性能改善は未検証で、full shape C1のHOLDと製品既定OFFを維持する。
+
+[独立raw監査](evidence/coscientist-compute-analysis-20261008/c1a-independent-actual-review.json)は全3呼び出し・15出力・artifact/offset/GO/入力の対応を再実行なしで検査した。6 hash呼び出しという数は実行したsourceからの導出であり、wire traceを取得した主張ではない。[全内容packet](evidence/coscientist-compute-analysis-20261008/c1a-content.tgz)は746,476 B、SHA-256 `ba5dc0df3d5118963066a4661d1f3e2b63137c87aa1d5f5b02130315220c0d11`、31 regular member・展開3,056,123 Bで、[独立内容監査](evidence/coscientist-compute-analysis-20261008/c1a-packet-independent-review.json)も全内容一致を確認した。元の絶対パスを含む再検証用保存物で、portable native再実行や要求と結果の正しさの証明ではない。
