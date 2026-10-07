@@ -380,6 +380,15 @@
    :goal "browser.surface's input log is typed with the source still read by Clojure"}
   {:id :record-list-field-literal :gate "record-literal-holds-a-list-of-records-test"
    :goal "a keyword record literal holding a vector of record literals, {:surface/id \"k\" :surface/windows [{:window/id \"w1\" ..}]}, is a record with a [:list R] field on the reference, wasm32 and both native targets; refused today \"record-get without a type descriptor requires a record value; got :i64\" where the literal is read"}
+  ;; Landed 2026-10-08 in kotoba-sema (b379f353). Measured first (amu
+  ;; edd85617, kotoba-sema 621e89b7): the literal itself was already that
+  ;; record after :empty-vector-field and :list-item-from-expression -- read,
+  ;; searched with first / filter / reverse and conj'd a spelled literal, it
+  ;; answered on every target. What was refused is open-window's shape: a row
+  ;; function conj'ing its parameter onto that field stayed :i64 ("unbound
+  ;; symbol has no value type", "expected i64, got [:record ..]", "has no
+  ;; type known here"). A key a vector literal of records is written at is
+  ;; now a list-item key like an open []. ADR 0353 has the measurements.
   {:id :absent-field-from-expression
    :needs-a-human "what a T written by an expression at an absent [:option T] field is: browser.surface writes :surface/focus only from expressions (open-window's id, close-window's (:window/id (peek remaining)), focus-window's window-id); ADR 0353 admits a spelled literal as the option's some and refuses a call returning T as a coercion (pinned by nil-field-typed-by-the-module-assoc-test), so admitting this changes that line -- or the source writes the field another way"
    :goal "browser.surface's empty-surface / open-window / close-window / focus-window type :surface/focus with the source still read by Clojure"}
