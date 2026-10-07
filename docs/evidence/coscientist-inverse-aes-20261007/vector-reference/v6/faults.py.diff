@@ -1,0 +1,15 @@
+--- frozen-V5/faults.py
++++ prospective-V6/faults.py
+@@ -46,5 +46,12 @@
+ r=result(b);assert not r['summaries']['aliasSummariesConverged'] and not r['summaries']['returnAlias'] and not r['summaries']['returnMinLength'];assert count(r)==0
+ controls.append({'name':'eight-pass-alias-nonconvergence-clears-positive-summaries','detected':True,'records':records(b),'summaries':r['summaries']})
+ b=copy.deepcopy(base);b[0][3].insert(2,(14,208,0,1));reject('malformed-inplace-arity-not-alias',b)
++# Independent preregistered mixed14th: unrelated exhaustion must poison whole module.
++b=copy.deepcopy(base)
++for f in range(3,13):b.append((f,1,True,[(4,0,1,0)]+([(13,f+1,0,1)]if f<12 else [])+[(19,0,0,0)]))
++r=result(b);assert not r['summaries']['aliasSummariesConverged'];assert count(r)==0
++assert not r['summaries']['returnAlias'] and not r['summaries']['returnMinLength']
++assert not any(L for p in r['summaries']['parameterLowerBounds'].values()for L in p.values())
++controls.append({'name':'mixed-independent-allocation-global-exhaustion','expectedAdmitted':0,'actualAdmitted':count(r),'detected':True,'records':records(b),'summaries':r['summaries']})
+ (D/'fault-controls.json').write_text(json.dumps({'scope':'fixed finite diagnostic model/domain controls; no native proof','baselineRecords':records(base),'baselineAdmitted':1,'controls':controls,'allDetected':True},indent=2)+'\n')
+ print('PASS',len(controls),'fixed controls')
