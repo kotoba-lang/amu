@@ -152,15 +152,3 @@ GP2 的な規則記述と Simple 的な局所 worklist の組合せでは、**�
 [実行報告](evidence/coscientist-compute-analysis-20261008/c1a-actual-report.json)の範囲はcodec・hash・CIDの有限なnative検証だけである。完全なshape snapshot/read footprint/seal/resolver、compute→resultの正しさ、解析省略・永続共有cache・fuel同等性・性能改善は未検証で、full shape C1のHOLDと製品既定OFFを維持する。
 
 [独立raw監査](evidence/coscientist-compute-analysis-20261008/c1a-independent-actual-review.json)は全3呼び出し・15出力・artifact/offset/GO/入力の対応を再実行なしで検査した。6 hash呼び出しという数は実行したsourceからの導出であり、wire traceを取得した主張ではない。[全内容packet](evidence/coscientist-compute-analysis-20261008/c1a-content.tgz)は746,476 B、SHA-256 `ba5dc0df3d5118963066a4661d1f3e2b63137c87aa1d5f5b02130315220c0d11`、31 regular member・展開3,056,123 Bで、[独立内容監査](evidence/coscientist-compute-analysis-20261008/c1a-packet-independent-review.json)も全内容一致を確認した。元の絶対パスを含む再検証用保存物で、portable native再実行や要求と結果の正しさの証明ではない。
-
-### C1b：読み取りと更新干渉を先に検査する
-
-ユーザーのComputeCID／ResultCID案を次の有限試験へ接続するため、[事前登録](evidence/coscientist-compute-analysis-20261008/c1b/preregistration.json)を追加した。実装と実行はまだない。`vw-run-fn`からの保守的なソース参照閉包は55定義、直接readerは11定義だった。これはテキスト上の列挙であり、全入力についての完全なread footprintの証明ではない。
-
-`gn-g`はflat M中のセル基点を読み、そこから入力を読む。`vw-call`はcalleeのeffect・alias・returnを読み、`vw-arg-bound`はcalleeの既存集計へmeetを書き戻す。queryは途中で書いたcontrol・flow scratchも後で読む。したがって、全readを無条件に入力キーへ入れる方法と、4入口boundだけをキーにする方法は、どちらもこの分類を解決しない。入力のread-before-write、計算内部のread-after-write、集計への状態更新を区別する必要がある。
-
-C1bはFN≤8・edge≤16・SIR≤512に限定し、直接計算を常に行う。独立したfull Mコピー2個とfreshな集計への全辺replayで、読み取り・更新の干渉を検査する計画である。full Mは診断用snapshotであり、canonicalなComputeCID payloadとして採用しない。動的traceが得られても、その有限入力での観測に限る。
-
-Mは8,388,608 scalar cellsであり、コピーの初期化・読み書き・2回の比較だけでも最低83,886,080 scalar operationsを要する見積りになる。新しい物理診断上限536,870,912を別登録し、旧262,144 wordops内の試験と呼ばない。実際のallocation・fuel・arena費用は未測定である。この段階のnative要求／結果encode・hashは0回とし、計算省略、永続共有cache、C1の完成、性能改善を認定しない。実装ソースと資源契約のレビュー、有限GO、実行証拠が揃うまでfull shape C1／C2はHOLDを維持する。
-
-[独立ソースレビュー](evidence/coscientist-compute-analysis-20261008/c1b/independent-report.json)は、55定義・11 readerの列挙とこの設計の範囲を確認した。実装の正しさや費用の実測を受理したものではない。[保存manifest](evidence/coscientist-compute-analysis-20261008/c1b/manifest.json)にはレビュー時の文書・契約・参照ソースも含め、以後の文書追記と凍結時のbytesを区別する。

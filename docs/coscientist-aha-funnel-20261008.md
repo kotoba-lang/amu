@@ -52,3 +52,15 @@ remote runner buildは[独立実監査](evidence/coscientist-aha-funnel-20261008
 続く[有限171件の独立raw監査](evidence/coscientist-aha-funnel-20261008/remote-functional171/actual-review.json)もPASSした。元19本をbaseline/OFF・candidate/ON・同hostのCの3armで、n=0・1・登録済み最大nの3入力ずつ実行した。全171件が終了コード0、stderr空、timeoutなし。全57組でCの結果oracleと一致し、native pairの論理fuel消費・4arenaのcapacity/最終used値も完全一致した。新しいrunner buildやC body変更はなく、各runner・入力・toolchainのhashは凍結したbuild cohortに一致する。
 
 [封印raw](evidence/coscientist-aha-funnel-20261008/remote-functional171/result.tgz)は46,453 B、SHA-256 `db1e1ade4b54e389bcc310b565bdd97da864a9770b06caef73903bd851fbbf72`、348 payload member（inventoryを含むtar entryは349）・展開609,084 B。launcher1 SSHとcollector1 SSH/1 SCPの全3transportも閉じた。独立監査SHAは `06fa42b3ab3d90df87c7d234abb8c68ccfebf0a50d19195f186f0b43a23c6efc`。arenaは最終呼出しの終端観測であり、peak/全内部状態の証明ではない。elapsed値を性能結果に使っていない。静穏hostでの新しい元19本の速度比較・公式スコア・C以上の目標・製品採用は未達で、既定OFFを維持する。
+
+## timed CPU計測を加えた新runnerの機能確認
+
+短い呼出しでCPU tick差分が0の場合も構造的な診断を返す変更だけを加え、元19本のrunnerを新規buildした。[独立build監査](evidence/coscientist-aha-funnel-20261008/timed-window19/build-independent-report.json)で19 build・14環境照会の全33件の閉鎖、埋込みnative38/C19/header19の一致を確認した。SDK aliasから26.2への解決はremote sourceが記録したassertionであり、独立したfilesystem traceではない。
+
+最初のcollectorは入力inventory変数を出力bytesで上書きしてpostguardに失敗した。SSHの終了コード0を成功証拠にせず、stderrのTypeErrorとSCP未実行を保持した。修正版V2では入力・出力変数を分離し、合成データによる全成功経路もsource段階で確認してから新規収集した。buildは繰り返していない。build launch1・失敗collection1・修正collection2の計4transportを区別する。レビュー中の改行表現の誤読も保持し、LFの実byte数とarchive一致による訂正を別記録にした。
+
+続く[新171件の独立機能監査](evidence/coscientist-aha-funnel-20261008/timed-window19/functional171-independent-report.json)はPASSした。元19本×3入力×3armの57組すべてで、各armのresult・fuel・native4arenaの終端値が前の受理済み171件と完全一致した。Cのarenaはunavailable/null、論理fuel消費0である。新しいCPU telemetryの構造も検査したが、144件はtick差分0であり、静穏さや速度の証拠には使わない。CPU APIはsourceと出力に結び付いた証拠で、独立したOS traceではない。新171件はlaunch1・collection2のみで再実行なし。
+
+[全内容packet](evidence/coscientist-aha-funnel-20261008/timed-window19/content.tgz)は2,448,411 B、SHA-256 `b4023ef9b09470c110ad19f7bc01c073b0dd68a33d66bb6d7c727256a70ad586`。716 logical pathsを403 regular membersへ重複排除し、展開12,524,321 B。ソース・有限GO・前提レビュー・raw・失敗と訂正を保持する。この段階で新しい性能campaignは実行しておらず、公式Embenchスコア・C以上の性能・CIDによる高速化・製品採用は未認定である。
+
+[packetの独立内容監査](evidence/coscientist-aha-funnel-20261008/timed-window19/packet-independent-report.json)は全403 members・716元ファイルと、171件の実監査が参照する706依存証拠の収録・byte一致を、展開やnative再実行なしで確認した。

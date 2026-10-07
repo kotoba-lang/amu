@@ -1,0 +1,12 @@
+(ns memo-vector-probe)
+(defn- positive-sink [s :vector-i64] :i64 (vector-at s 0))
+(defn- zero-sink [s :vector-i64] :i64 (vector-at s 0))
+(defn- preserving-self [s :vector-i64 n :i64] :vector-i64
+ (if (< n 1) s
+  (let [r (preserving-self s (- n 1))]
+   (vector-assoc! r 0 7))))
+(defn unknown-entry [s :vector-i64] :i64 (zero-sink s))
+(defn bench [n :i64] :i64
+ (let [s (vector-alloc 4) p (positive-sink s)
+       r (preserving-self s n)]
+  (+ p (vector-at r 0))))
