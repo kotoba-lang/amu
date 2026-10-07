@@ -96,3 +96,31 @@ V8 は各 activation の空の memo から始まり、共有された warm state
 7. 同じ低負荷の条件で、入力符号化・hash・検索・検証・再適用・保管の全費用を含めて解析時間を測る。生成物の実行時間と分け、CID の性能寄与は cache 有無の ablation で測る。現在の Embench 高速化を CID の効果とは呼ばない。
 
 最初の実装範囲は純粋で完了した shape query に限定する。canonical encoder、read-footprint extractor、安定した graph reference bridge、検証済み対応の publisher / importer、決定的 charge は未実装である。この設計は、既存の局所 memo とコード生成候補を進めるための契約であり、共有 cache を製品へ有効化する変更ではない。
+
+## 計算結果の再利用を進める実装順序
+
+計算要求のアドレスと結果のアドレスを分ける提案を、次の三段階で検証する。最初から共有キャッシュを有効にせず、現在の native shape 解析を基準にする。
+
+| 段階 | 実装するもの | 採用条件 |
+| --- | --- | --- |
+| C0：activation 内 | 同じ不変な解析 view の下での厳密キー、結果と全辺への寄与の保存・再生 | 新しく初期化した集計への再生、neutral / unknown / poison、完了後公開の有限検査。既存 V8 はこの段階の証拠 |
+| C1：shadow receipt | 正規化した要求・結果の native 符号化と安定参照。直接解析を毎回実行し、保存結果を別の新しい集計へ再生して比較 | 要求・結果の全 semantic fields と更新が一致。receipt を読むだけで解析を省略しない |
+| C2：検証済み再利用 | 同じ符号化と参照解決で、完了した純粋 query の計算を省略 | cache disabled / cold / warm の生成バイト・exports・論理 charge が一致し、全費用込みの解析時間に改善がある |
+
+C1 / C2 は未実装である。C0 の証明情報を emitter が使う場合も、現在の型・effect・trap・private boundary・descriptor の検査を保つ。ComputeCID→ResultCID の対応を取得しただけでは省略を許可しない。
+
+最初の C1 実験では、対象を固定した shape query、読み取る graph snapshot、全4入口 bound、解析実装、規則、ABI、資源契約を一つの要求に封じる。直接評価の結果と、**空の callee 集計**へ保存寄与を再生した結果を比較する。共有 importer と同じ参照検査を通し、activation 内の番号をそのまま移植しない。失敗した比較は保存結果の利用を止め、失敗 receipt を残す。
+
+### 失効と再生の対照実験
+
+| 一つだけ変える入力 | 期待する扱い | 確認する観測 |
+| --- | --- | --- |
+| 入口 bound、alias、effect、lifetime、return、support、poison | 別の ComputeCID、古い結果は miss | 直接解析と同じ結果・全辺更新・拒否 |
+| 解析実装、規則、工程、停止条件、数値・trap 意味論、ABI | 別の ComputeCID | 古い証明で新しい emitter の省略を許可しない |
+| 読み取る依存結果または graph edge の対応 | 別の ComputeCID | arity・ordinal・参照解決と全 incoming meet |
+| 物理的な cache の有無・検索順 | 同じ計算契約のまま | 同じ生成バイト・exports・意味上の診断・論理 charge |
+| 観測可能な fuel / admission 状態 | 契約が読む値を要求へ含める | 必要な消費・順序・予算境界の拒否 |
+| 再評価後に ResultCID が同じ | 完全な下流 read footprint も同じ場合だけ下流を再利用 | 値に加え、更新・poison・診断・charge と直接入力の一致 |
+| 保存途中の prefix、改変 payload、古い schema、不正参照 | 公開または import を拒否 | 有効な対応を残さず、部分更新を集計へ適用しない |
+
+性能の仮説は二つに分ける。C2 は重複する**コンパイラ解析**を減らす仮説であり、正しい証明情報に基づくチェック省略は**生成プログラムの実行**を短くする仮説である。同じ成果物なら C2 だけで Embench 実行時間は変わらない。解析費用の比較には符号化・hash・lookup・検証・replay・保管を含め、実行性能は同じ元19本と C を同じ host で別に測る。両方の改善を一つの CID 効果として集計しない。
