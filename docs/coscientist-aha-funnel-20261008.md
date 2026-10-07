@@ -64,3 +64,32 @@ remote runner buildは[独立実監査](evidence/coscientist-aha-funnel-20261008
 [全内容packet](evidence/coscientist-aha-funnel-20261008/timed-window19/content.tgz)は2,448,411 B、SHA-256 `b4023ef9b09470c110ad19f7bc01c073b0dd68a33d66bb6d7c727256a70ad586`。716 logical pathsを403 regular membersへ重複排除し、展開12,524,321 B。ソース・有限GO・前提レビュー・raw・失敗と訂正を保持する。この段階で新しい性能campaignは実行しておらず、公式Embenchスコア・C以上の性能・CIDによる高速化・製品採用は未認定である。
 
 [packetの独立内容監査](evidence/coscientist-aha-funnel-20261008/timed-window19/packet-independent-report.json)は全403 members・716元ファイルと、171件の実監査が参照する706依存証拠の収録・byte一致を、展開やnative再実行なしで確認した。
+
+## 新しいtimed-window V2の部分結果
+
+V1の実行前source reviewで初回失敗の収集とsource-pins再照合に不備が見つかった。V1は未実行のHOLDとして保存し、修正版V2を別のソース・出力・GOへ固定した。独立reviewとroot GO後、zebulunで一度だけ実行・封印・収集した。[独立raw監査](evidence/coscientist-aha-funnel-20261008/timed-campaign-v2/independent-report.json)は2,803 runnerと5,606 load query、全8,409子プロセスの終了、既存171件との結果／fuel／4 arena／C nullの同一性、全順序・calibration・静穏判定を再計算した。
+
+元19件中16件に静穏条件を満たす30組が揃った。tarfind・wikisortはcalibration上限、udは90組中2組だけ合格してPARTIAL。失敗したworkloadのretryや過去結果とのpoolingはない。全19件のGMはnull、C達成・公式スコア・製品採用はfalseである。以下は完了した16件の同一host・元body当たりnsであり、別のEmbench標準referenceへ正規化した公式スコアではない。
+
+| 元workload | Kotoba候補 ns/body | C ns/body | Kotoba/C |
+|---|---:|---:|---:|
+| aha-mont64 | 710.871 | 581.167 | 1.2232 |
+| crc32 | 3248.174 | 1817.916 | 1.7868 |
+| depthconv | 120.705 | 36.790 | 3.2809 |
+| edn | 11317.008 | 813.282 | 13.9152 |
+| huffbench | 52906.789 | 8031.905 | 6.5871 |
+| matmult-int | 3526.357 | 1018.817 | 3.4612 |
+| md5sum | 10748.297 | 2721.447 | 3.9495 |
+| nettle-aes | 8197.603 | 1537.959 | 5.3302 |
+| nettle-sha256 | 2801.162 | 237.403 | 11.7992 |
+| nsichneu | 716.282 | 84.913 | 8.4355 |
+| picojpeg | 215996.307 | 11853.854 | 18.2216 |
+| qrduino | 277255.821 | 23686.771 | 11.7051 |
+| sglib-combined | 36262.661 | 6164.435 | 5.8826 |
+| slre | 7815.652 | 1116.852 | 6.9979 |
+| statemate | 528.303 | 34.215 | 15.4407 |
+| xgboost | 1194653.125 | 194730.629 | 6.1349 |
+
+別保存した完了16件の統計を独立に再計算した。全16件でrelative SD≤0.1だが、C以上は0件、baseline／Cに対する採用基準を満たすものも0件。Ahaのbaseline/candidate平均比は1.0290197583、平均差20.629 nsはSD和56.742 ns未満、paired bootstrap95%CIは[1.021385,1.036317]で1.05未満である。残り18件のOFF／ON生成バイトは同じなので、それらの小さい時間差をEXTRの効果と解釈しない。EXTR候補は既定OFFのまま、次の調査では大きいC差の生成処理・call・vector・fuel経路を根拠付きで区別する。
+
+[完了16件の統計独立監査](evidence/coscientist-aha-funnel-20261008/timed-campaign-v2/analysis-report.json)は全mean・sample SDと32個の20,000回paired bootstrap CIを再計算した。最初の全内容packetは転送reviewの二次依存14件が欠け、[HOLD](evidence/coscientist-aha-funnel-20261008/timed-campaign-v2/packet-review-v2-hold.json)として保持する。[追加封印V3](evidence/coscientist-aha-funnel-20261008/timed-campaign-v2/revision-v3/content.tgz)は4,442,914 B、SHA-256 `f03cf0ccdbe7a714c21920671fb711c2f4ff52cab330ff64744b859319336667`、6,630 regular members・19,756元パス・展開35,881,825 B。[独立内容監査](evidence/coscientist-aha-funnel-20261008/timed-campaign-v2/revision-v3/independent-packet-report.json)は全primary19,733依存と3種類の二次依存の完備を照合した。追加は証拠の収録だけで、実験・計測・転送を再実行していない。
