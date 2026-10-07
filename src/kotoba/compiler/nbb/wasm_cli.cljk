@@ -26,6 +26,7 @@
             [kotoba.compiler.effect-row :as effect-row]
             [kotoba.kir.compatibility :as compatibility]
             [kotoba.kir.target :as target-profile]
+            [kotoba.compiler.js-value-target :as js-value-target]
             [kotoba.wasm.core :as wasm]
             [kotoba.wasm.typed :as typed]))
 
@@ -296,6 +297,7 @@
   (let [policy (support/timed "policy-read" #(read-policy! args))
         emit-metadata (support/emit-metadata args)
         hir (:value (resolve-hir! source (project-source/analyze-opts policy linked?) nil))
+        _ (js-value-target/reject-outside-js-target! target hir)
         admission-result (support/timed
                           "admission"
                           #(effect-row/check hir (support/capability-policy policy)))
@@ -336,6 +338,11 @@
         stage-cache (:stages context)
         cached (when key (support/timed "cache-lookup"
                                         #(compile-cache/lookup! artifact-cache key)))]
+    ;; An artifact cache hit must still qualify the current source ABI.
+    (when cached
+      (let [policy (decode-policy! material)
+            hir (:value (resolve-hir! source (project-source/analyze-opts policy linked?) stage-cache))]
+        (js-value-target/reject-outside-js-target! target hir)))
     (if cached
       (let [bytes (:bytes cached)
             artifact-valid? (support/timed
@@ -362,6 +369,7 @@
                                   #(decode-policy! material))
             hir-result (resolve-hir! source (project-source/analyze-opts policy linked?) stage-cache)
             hir (:value hir-result)
+            _ (js-value-target/reject-outside-js-target! target hir)
             admission-result (support/timed
                               "admission"
                               #(effect-row/check hir
@@ -437,7 +445,8 @@
                          hir (:value (resolve-hir!
                                       source
                                       (project-source/analyze-opts policy linked?)
-                                      nil))]
+                                      nil))
+                         _ (js-value-target/reject-outside-js-target! target hir)]
                      (package-verdict!
                       resolved
                       (definition-identity/describe

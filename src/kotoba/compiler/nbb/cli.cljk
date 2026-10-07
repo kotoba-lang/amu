@@ -23,6 +23,7 @@
             [kotoba.compiler.source-path :as source-path]
             [kotoba.compiler.uefi-operations :as uefi]
             [kotoba.kir.target :as target-profile]
+            [kotoba.compiler.js-value-target :as js-value-target]
             [kotoba.verifier :as verifier]
             [kotoba.compiler.text-bytes :as text-bytes]
             [kotoba.compiler.base64-text :as base64-text]
@@ -357,6 +358,7 @@
     :else {:status :not-applicable}))
 
 (defn- compile-native! [hir target backend policy emit-metadata emit-program stage-cache]
+  (js-value-target/reject-outside-js-target! target hir)
   (when (and (= :kotoba.hir/v3 (:format hir))
              (not (and (contains? #{:x86_64-kotoba-v1 :aarch64-kotoba-v1} backend)
                        (ir/only-native-word-typed-features? hir))))
@@ -611,6 +613,13 @@ provenance-output (str output ".provenance.edn")
         stage-cache (:stages context)
         cached (when key (support/timed "cache-lookup"
                                         #(compile-cache/lookup! artifact-cache key)))]
+    ;; Qualification applies even when no lowering/emission runs on a hit.
+    (when cached
+      (let [policy (decode-policy! material)
+            hir (:value (resolve-hir! source
+                                     (project-source/analyze-opts (admission-policy policy) linked?)
+                                     stage-cache))]
+        (js-value-target/reject-outside-js-target! target hir)))
     (if cached
       (let [artifact-valid? (support/timed
                              "cache-artifact-integrity"

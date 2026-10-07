@@ -109,6 +109,37 @@
     (check "the fetched checkout is at the pinned commit"
            (= sha (classpath/head-sha (classpath/checkout-dir "io.example/dep" sha)))))
 
+  ;; A valid lock may name a retained commit outside advertised branches.
+  ;; Ordinary clone omits that object; fetch the exact pin, never a new tip.
+  (let [hidden-origin (.join node-path (temp-dir "kotoba-hidden-origin-") "dep")
+        main-sha (init-repo! hidden-origin)]
+    (git! hidden-origin ["checkout" "--quiet" "-b" "unadvertised"])
+    (.writeFileSync fs (.join node-path hidden-origin "src" "marker.txt") "pinned hidden content\n")
+    (git! hidden-origin ["commit" "--quiet" "-am" "retained pin"])
+    (let [hidden-sha (.trim (.-stdout (git! hidden-origin ["rev-parse" "HEAD"])))]
+      (git! hidden-origin ["checkout" "--quiet" "main"])
+      (git! hidden-origin ["branch" "-D" "unadvertised"])
+      (let [root (write-fixture! [{:coordinate "io.example/hidden"
+                                 :git-url (str "file://" hidden-origin)
+                                 :git-sha hidden-sha :paths ["src"]}])
+            dirs (try (classpath/resolve-directories root) (catch :default _ []))]
+        (check "an unadvertised retained pin is fetched exactly"
+               (and (= 1 (count dirs))
+                    (= hidden-sha (classpath/head-sha (classpath/checkout-dir "io.example/hidden" hidden-sha)))
+                    (not= main-sha hidden-sha)
+                    (= "pinned hidden content\n"
+                       (.readFileSync fs (.join node-path (first dirs) "marker.txt") "utf8")))))))
+
+  (let [missing-sha (apply str (repeat 40 "f"))
+        missing-dir (classpath/checkout-dir "io.example/missing-commit" missing-sha)
+        root (write-fixture! [{:coordinate "io.example/missing-commit"
+                               :git-url (str "file://" origin)
+                               :git-sha missing-sha :paths ["src"]}])]
+    (check "an unavailable exact pin fails closed"
+           (= :fetch (phase-of #(classpath/resolve-directories root))))
+    (check "an unavailable pin removes the fresh checkout"
+           (not (.existsSync fs missing-dir))))
+
   (let [missing-sha (apply str (repeat 40 "f"))
         missing-dir (classpath/checkout-dir "io.example/missing" missing-sha)
         root (write-fixture! [{:coordinate "io.example/missing"

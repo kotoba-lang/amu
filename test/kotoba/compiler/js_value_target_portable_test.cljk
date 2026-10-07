@@ -1,0 +1,71 @@
+(ns kotoba.compiler.js-value-target-portable-test
+  (:require #?(:clj [kotoba.test :refer [deftest is]]
+               :cljs [cljs.test :refer [deftest is]])
+            [kotoba.compiler.core :as compiler]
+            [kotoba.compiler.js-value-target :as target-gate]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]
+            #?@(:cljs [[kotoba.compiler.nbb.cli :as native-cli]
+                       [kotoba.compiler.nbb.compile-cache :as cache]])))
+
+(def identity-source
+  "(ns host.values (:export [keep])) (defn keep [v :js-value] :js-value v)")
+
+(deftest opaque-source-is-refused-before-lowering-on-every-non-js-backend
+  (let [lowered (atom 0)]
+    (with-redefs [ir/lower (fn [& _] (swap! lowered inc)
+                            (throw (ex-info "unexpected lowering" {})))]
+      (doseq [source [identity-source
+                      "(defn main [] :i64 (do (option-none-of [:option :js-value]) 7))"]
+              target [:wasm32-kotoba-v1 :wasm32-browser-kotoba-v1 :wasm32-wasi-kotoba-v1
+                      :cljs-kotoba-v1 :x86_64-kotoba-v1 :aarch64-kotoba-v1]]
+        (let [data (try (compiler/compile-source source target) nil
+                       (catch #?(:clj Exception :cljs :default) e (ex-data e)))]
+          (is (= :kotoba.error/js-value-target (:kotoba.error/code data)))
+          (is (= :target (:phase data)))))
+      (let [data (try (compiler/compile-component identity-source {}) nil
+                     (catch #?(:clj Exception :cljs :default) e (ex-data e)))]
+        (is (= :kotoba.error/js-value-target (:kotoba.error/code data))))
+      (let [data (try (compiler/compile-component-wit identity-source {}) nil
+                     (catch #?(:clj Exception :cljs :default) e (ex-data e)))]
+        (is (= :kotoba.error/js-value-target (:kotoba.error/code data))))
+      (let [data (try (compiler/compile-source-cached identity-source :wasm32-kotoba-v1
+                                                      {} {} {:cached true} nil nil)
+                     nil
+                     (catch #?(:clj Exception :cljs :default) e (ex-data e)))]
+        (is (= :kotoba.error/js-value-target (:kotoba.error/code data)))))
+    (is (zero? @lowered))))
+
+(deftest hidden-host-types-and-callable-contracts-are-qualified
+  (doseq [hir [{:schemas {:app/host [:record :app/host [[:value :js-value]]]}}
+               {:functions [{:body '(typed-cap-call 3 :i64 :js-value 0)}]}
+               {:functions [{:body '(typed-cap-call 3 :js-value :i64 0)}]}
+               {:functions [{:callable-param-contracts {0 [:fn [[:js-value] :i64]]}}]}
+               {:functions [{:callable-result-contract [:fn [[:i64] :js-value]]}]}]]
+    (is (target-gate/uses-js-values? hir))
+    (is (identical? hir (target-gate/reject-outside-js-target! :js-kotoba-v1 hir)))))
+
+(deftest inert-js-value-names-are-ordinary-data
+  (doseq [hir [{:schemas {:js-value [:record :js-value [[:js-value :string]]]}}
+               {:functions [{:param-types [:keyword] :result :keyword :body :js-value}]}
+               {:functions [{:body '(record-new [:record :app/name [[:js-value :keyword]]] :js-value)}]}]]
+    (is (false? (target-gate/uses-js-values? hir)))
+    (is (identical? hir (target-gate/reject-outside-js-target! :wasm32-kotoba-v1 hir))))
+  (let [hir (sema/analyze identity-source)]
+    (is (target-gate/uses-js-values? hir))
+    (is (identical? hir (target-gate/reject-outside-js-target! :js-browser-kotoba-v1 hir)))))
+
+#?(:cljs
+   (deftest a-native-artifact-cache-hit-cannot-bypass-host-type-qualification
+     (let [emitted (atom 0)
+           compile-cached! (ns-resolve 'kotoba.compiler.nbb.cli 'compile-cached!)]
+       (with-redefs [cache/lookup! (fn [& _] {:artifact-text "cached"})]
+         (let [data (try
+                      (compile-cached! ["compile" "fixture.kotoba" "--target" "x86_64" "--jvm-free"]
+                        identity-source false :x86_64-kotoba-v1 :x86_64-kotoba-v1
+                        "unused.kexe" (fn [& _] (swap! emitted inc)) nil
+                        {:artifacts nil :stages nil})
+                      nil
+                      (catch :default e (ex-data e)))]
+           (is (= :kotoba.error/js-value-target (:kotoba.error/code data)))
+           (is (zero? @emitted)))))))
