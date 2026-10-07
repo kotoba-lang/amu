@@ -1180,6 +1180,43 @@ x86_64-aiueos-kernel-v1` and `--target aarch64-macos` of next-window-id exit
 0 with `:oracle {:status :verified}`. Programs that already called
 `string-from-i64` get the new printer, so their definition CIDs move.
 
+A row rebound by its own update landed as floor `:native-rebound-row-update`
+(gate `native-rebound-row-update-test`). `(let [s (update s :n inc)] (update
+s :m inc))` elaborates to `(let [t (record-assoc T s ..)] (record-assoc T t
+..))`; the reference ran it and both native targets refused it at verify,
+"runtime KIR record update rejected": kotoba-verifier's
+`binding-record-schema` resolves an update named by a let in no scope, so its
+operand -- the record parameter -- was unknown and the let named no record.
+kotoba-verifier (`192005f9`) resolves it in the binding's own scope
+(`update-forward`), the update's type held to its operand's, so nothing is
+coerced; an update naming another record than its operand is still "runtime
+KIR record update rejected". The rebinding also hid a read from the row:
+kotoba-sema renamed it out of the way, so `(let [s (update s :n inc)] (update
+s :zz inc))` called with a record lacking `:zz` was refused only inside the
+specialization, "expression type mismatch: expected i64, got nil".
+kotoba-sema (`6cba8d76`) follows a let bound once to a keyword-keyed assoc of
+the parameter: a field read off it that the assoc did not write is a field
+the row reads, so the call is refused by name ("... which has no field :zz
+that the row {:n T :zz T | r} of parameter s reads"). Two refusals are pinned
+with literals that do not name their cause, measured and not chosen: the same
+absent update on a let-bound literal ("expected i64, got nil") and an update
+that changes a field's type ("record-get without a type descriptor requires a
+record value; got :i64", the caller's projection of a result that did not
+type). Measured on nbb: the gate was red on the old pins (6 native refusals
+and the by-name assertion), green on the new (15 of 15). The floor's shape on
+a row parameter, an update of an update, a let-bound literal rebound three
+times, and next-window-id / open-window (the surface next-window-id rebound,
+updated and focused on the id) answer 1304, 1304, 4203 and 20119 on the
+reference and on `x86_64-aiueos-kernel-v1` / `aarch64-macos-kotoba-v1` with
+the oracle verified; `amu compile --target x86_64-aiueos-kernel-v1` and
+`--target aarch64-macos` of the first and the last exit 0 with `:oracle
+{:status :verified}`. Measuring open-window found the next floor,
+`:row-tuple-element-argument`: a record destructured out of a row function's
+vector is typed only inside the function that destructures it -- read by its
+caller it is "unbound symbol has no value type", passed on to a row parameter
+"has no type known here", and two chained open-windows beside `(str "w" n)`
+type the first one's result `i64`.
+
 ## Selfhost foundation floors (appended 2026-09-26)
 
 Superproject adr-2609242330 measured that compiling amu with amu needs the
