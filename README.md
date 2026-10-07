@@ -1606,3 +1606,24 @@ use a controlled compiler phase rather than leaking host reader exceptions.
 
 See [docs/architecture.md](docs/architecture.md) and
 [docs/threat-model.md](docs/threat-model.md).
+
+## Opaque JavaScript type and array observations
+
+The locked Sema, Script and Osaho closure supports `js-typeof(js-value) ->
+string`, `js-array?(js-value) -> bool`, and `js-bool-value(bool) -> js-value`
+through explicit `--target js` or `--target js-browser` and `--jvm-free`.
+These are Node/nbb bootstrap routes, not selfhost-built compiler evidence.
+Wasm-browser, CLJS and native targets refuse the opaque JS leaf without an
+output artifact or JVM fallback.
+
+A compiled Mithril `isPlainObject` example matched actual transpiled CosmoKit
+for 35 values / 105 comparisons per generated target, including foreign arrays
+and raw falsy values, plus two revoked-Proxy TypeErrors; getters were untouched.
+Both generated targets were executed in a pinned offline Node image. This does
+not qualify execution in a browser host. Portable tests passed 74 / 505.
+
+Full compatibility remains blocked: replacing `Array.isArray` with a function
+returning non-bool falsy values exposes a difference between the typed bool
+assumption and JavaScript negation. This consumer pin update must not be
+accepted as whole-Harness API/plugin equivalence. The underlying runtime and
+emitter must normalize that observation before the migration is qualified.
