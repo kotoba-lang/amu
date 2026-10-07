@@ -31,3 +31,11 @@ Q2成分試験は上限14回で新規登録したが、[独立実監査](evidenc
 [観測の全内容packet](evidence/coscientist-quotient-two-20261008/observation-v1/content.tgz)は1,685,153 B、SHA-256 `d57c51860baebe9e5f13e1de8cef6812b99cffb949f42abff6494a432c0764da`、46 regular members・49元パス・展開6,592,180 B。自己再ビルド10回、失敗成分試験3回、観測3回の累計16回を区別して保持する。新しい成分試験はslot1の実観測に合わせ、独立source reviewと別の有限GOを必要とする。旧失敗・残り11ケースを再実行しない。成分状態、生成CODE実行、物理register／NZCV、fuel／arena、性能、製品採用の成功はこの観測から主張しない。
 
 [観測packetの独立内容監査](evidence/coscientist-quotient-two-20261008/observation-v1/independent-packet-report.json)は全46 member・49元パス・47実監査依存を照合した。
+
+## 成分試験V2の有限実行
+
+実観測のslot1に合わせた新V2は診断siteとraw validatorの2リテラルだけを変更した。独立修正レビューとroot GOを経て、新規14呼出（compile／extract＋12ケース）が終了コード0・stderr空・timeoutなしで閉じた。[実監査](evidence/coscientist-quotient-two-20261008/state-v2/independent-report.json)はargv・KEXE設定・全KSEED／native・rawの12 schemaを照合した。CODE残り2語では旧経路が成功し、新3語経路が4101を返す、明示した新資源契約の差を実際に確認した。dirty901・register16／alias・17／31 fallbackも登録した結果に一致する。
+
+nativeハーネスは各ケースでfull M／G／CODE／metadata／overall比較を行い、rawではすべての比較flagが1だった。この判定はレビューされたソースに結び付く内部assertionであり、rawへ全メモリをserializeして第三者が再比較した証拠ではない。監査者は旧V1作者であるため、元のoracleの再確認とwidth作者による新slot修正の独立確認を区別して報告した。元V1のroot・width独立source reviewの履歴も保持する。
+
+[全内容packet](evidence/coscientist-quotient-two-20261008/state-v2/content.tgz)は1,990,898 B、SHA-256 `f36943f8f6b59bf88ea23c26a516f71dd435dbb58e32397f14fed1d217eed2c4`、56 regular members・71元パス・展開7,824,297 B。累計は自己再ビルド10＋旧失敗3＋観測3＋新成分14＝30呼出。旧未実行11ケースを流用した計数ではない。これで確認したのはoperand load後のhelper成分だけであり、生成CODE実行、後続protect／fin、物理x17／NZCV、fuel／arena、元19本とCの速度比較、製品採用は引き続き未認定である。
