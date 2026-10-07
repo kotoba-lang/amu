@@ -1217,6 +1217,37 @@ caller it is "unbound symbol has no value type", passed on to a row parameter
 "has no type known here", and two chained open-windows beside `(str "w" n)`
 type the first one's result `i64`.
 
+A record destructured out of a row function's pair landed as floor
+`:row-tuple-element-argument` (gate `row-tuple-element-argument-test`). The
+three refusals had one cause, and it was not destructuring: each
+specialization round infers a result from its body after
+`rewrite-record-projection`, which writes `str`'s `:i64` part as
+`__kotoba_string_from_i64` -- the printer floor `:integer-str` injects only
+after that pass. Inference met an unknown operation, next-window-id's result
+stayed the provisional `:i64`, open-window's `[id surface]` literal was built
+from untyped elements, and every caller of either had no record. kotoba-sema
+(`88fb9531`) types the helper as `string-from-i64`'s printer (`:i64` ->
+`:string`), so next-window-id is `[:vector [:string R]]`, open-window the pair
+(or the record) built from its elements, and a caller's destructured element
+that `R`. Without the `str`, the same shapes were already admitted. What stays
+refused, by its literal: the destructured id (a string) read as a record
+("record-get without a type descriptor requires a record value; got
+:string"), and an element past the pair's end ("heterogeneous vector index
+must be in range"). Measured on nbb: the gate was red on the old pin (2
+failures, 9 errors: the three measured refusals, once on the reference and
+once per native target, and both refusal literals answered by the unbound
+symbol instead), green on the new (11 of 11). open-window returning its pair
+read by its caller, that surface passed on to a second open-window, and
+browser.surface's open-window called on its own result answer 112, 30211 and
+30210 on the reference and on `x86_64-aiueos-kernel-v1` /
+`aarch64-macos-kotoba-v1` with the oracle verified; `amu compile --target
+x86_64-aiueos-kernel-v1` and `--target aarch64-macos` of the second exit 0
+with `:oracle {:status :verified}`. One thing measured on the way, not
+changed: on kbb's default node stack, the reference interpreter answers
+`:host/stack-exhausted` for a call chain main -> open-window ->
+next-window-id -> the printer; on `--stack-size=4096` (what `bin/amu` gives
+the compiler) it completes.
+
 ## Selfhost foundation floors (appended 2026-09-26)
 
 Superproject adr-2609242330 measured that compiling amu with amu needs the

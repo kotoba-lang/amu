@@ -190,7 +190,11 @@
             [kotoba.compiler.integer-str-test]
             ;; ADR 0353 :native-rebound-row-update: a row rebound by its own
             ;; update verifies natively (next-window-id / open-window)
-            [kotoba.compiler.native-rebound-row-update-test]))
+            [kotoba.compiler.native-rebound-row-update-test]
+            ;; ADR 0353 :row-tuple-element-argument: a record destructured
+            ;; out of a row function's pair keeps its type in the caller
+            ;; (next-window-id's [id surface])
+            [kotoba.compiler.row-tuple-element-argument-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
   (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
@@ -289,4 +293,5 @@
              'kotoba.compiler.list-item-from-expression-test
              'kotoba.compiler.merge-literal-reads-its-row-test
              'kotoba.compiler.integer-str-test
-             'kotoba.compiler.native-rebound-row-update-test)
+             'kotoba.compiler.native-rebound-row-update-test
+             'kotoba.compiler.row-tuple-element-argument-test)

@@ -367,6 +367,11 @@
   ;; row reads. ADR 0353 has the measurements.
   {:id :row-tuple-element-argument :gate "row-tuple-element-argument-test"
    :goal "a record destructured out of a row function's vector result -- browser.surface's [id surface] from next-window-id, element!'s [id document] from dom/create-element -- keeps its record type where the caller reads it, passes it on to a row parameter, or returns it updated; measured 2026-10-07 (amu 8397d0a3 + floor :native-rebound-row-update): (let [[a s] (open-window (empty-surface))] (:k s)) with open-window returning [id (update surface ..)] is refused \"unbound symbol has no value type: s ..\", passing that s to a row parameter \"argument s to open-window has no type known here ..\", and (open-window (open-window (empty-surface))) with open-window returning the updated destructured surface, beside next-window-id's (str \"w\" n), \"argument (open-window__row_0_.. ) to open-window is i64 ..\" (without the str, and with one call, it is admitted); a destructured element that is not a record stays refused where a record is read"}
+  ;; Landed 2026-10-07 in kotoba-sema (88fb9531): str's integer printer,
+  ;; injected after rewrite-record-projection, is typed where a
+  ;; specialization's result is inferred from its rewritten body, so a row
+  ;; function's [(str "w" n) s] is [:vector [:string R]] and the caller's
+  ;; destructured element is R. ADR 0353 has the measurements.
   {:id :destructured-key-fallback
    :needs-a-human "what open-window's (or title app-id id) / (or rect [80 80 520 360]) is when the window record HAS :title / :rect: a destructured key the record has is its T (floor :options-map-argument), so or asks a string's / vector's truthiness, refused \"if test must be bool or an option\" (ADR 0353 keeps it refused). Candidates, each possible, none chosen: a {:keys} key is always [:option T] whether or not the record has it (or is then option-or), the source writes (get window :title (or app-id id)) -- (get m :k d) is already admitted -- or the same reading :open-event-row asks of (or (:k m) d)"
    :goal "browser.surface's open-window states its title / rect fallbacks with the source still read by Clojure"}
