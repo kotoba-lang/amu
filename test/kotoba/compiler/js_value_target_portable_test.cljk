@@ -75,3 +75,30 @@
                       (catch :default e (ex-data e)))]
            (is (= :kotoba.error/js-value-target (:kotoba.error/code data)))
            (is (zero? @emitted)))))))
+
+(def closure-source
+  "(ns host.closures (:export [keep]))
+   (defn applyOpaque [f [:fn [[:js-value] :js-value]] v :js-value] :js-value (f v))
+   (defn keep [v :js-value] :js-value (applyOpaque (fn [x] x) v))")
+
+(deftest typed-opaque-guest-closures-reach-both-js-backends
+  (doseq [target [:js-kotoba-v1 :js-browser-kotoba-v1]]
+    (let [result (compiler/compile-source closure-source target)]
+      (is (= :javascript/v1 (:format result)))
+      (is (= target (:target result)))
+      (is (string? (:source result)))
+      (is (empty? (:effects (:hir result)))))))
+
+(deftest hidden-js-closure-results-refuse-before-non-js-lowering
+  (let [source "(defn create [] [:fn [[] :js-value]] (fn [] (js-undefined)))
+                (defn main [] :i64 (do (create) 7))"
+        lowered (atom 0)]
+    (with-redefs [ir/lower (fn [& _] (swap! lowered inc)
+                            (throw (ex-info "unexpected lowering" {})))]
+      (doseq [target [:wasm32-kotoba-v1 :wasm32-browser-kotoba-v1 :wasm32-wasi-kotoba-v1
+                      :cljs-kotoba-v1 :x86_64-kotoba-v1 :aarch64-kotoba-v1]]
+        (let [data (try (compiler/compile-source source target) nil
+                       (catch #?(:clj Exception :cljs :default) e (ex-data e)))]
+          (is (= :kotoba.error/js-value-target (:kotoba.error/code data)))
+          (is (= :target (:phase data)))))
+      (is (zero? @lowered)))))
