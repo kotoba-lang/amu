@@ -1248,6 +1248,45 @@ changed: on kbb's default node stack, the reference interpreter answers
 next-window-id -> the printer; on `--stack-size=4096` (what `bin/amu` gives
 the compiler) it completes.
 
+A record literal holding a list of records landed as floor
+`:record-list-field-literal` (gate `record-literal-holds-a-list-of-records-test`).
+Measured first (amu `edd85617`, kotoba-sema `621e89b7`): the floor's own
+refusal no longer reproduced. After `:empty-vector-field` and
+`:list-item-from-expression`, `{:surface/id "k" :surface/windows
+[{:window/id "w1" ..}]}` was already a record whose field is the `[:list R]`
+the vector types: read by a row function, searched with `first` / `filter` /
+`reverse`, and conj'd a spelled literal, it answered on the reference and both
+native targets. What was refused is the shape browser.surface's open-window
+has over such a surface: a row function conj'ing its window PARAMETER onto
+that field. `:list-item-from-expression` specializes such a parameter only at
+an open `[]` key, so here it stayed `:i64`, and the caller was refused
+"unbound symbol has no value type: s .." (the result bound by `let`),
+"expression type mismatch: expected i64, got [:record ..]" (the literal passed
+inline), or "argument s to window-at has no type known here .." (the result
+passed on to another row function). kotoba-sema (`b379f353`) notes the keys a
+vector literal of keyword-keyed map literals is written at (`:record-lists`)
+and treats them as it treats an open `[]` key: the parameter is specialized at
+the record its call passes, and `typed-list-conj` checks it against `R`. What
+stays refused, by its literal: a record of another shape conj'd onto the list
+-- "field :surface/windows holds a vector of [:record ..] in this module,
+which makes it a list of that record, and this module conj's [:record ..] at
+it; a list holds one type", named where it was "record-get without a type
+descriptor requires a record value; got :i64" -- and a number conj'd onto it
+("expression type mismatch: expected [:record ..], got i64"). A number reaching
+it through a parameter is still the unnamed "record-get .. got :i64", as at an
+open `[]` key. Measured on nbb: the gate was red on the old pin (1 failure, 4
+errors), green on the new (14 of 14). The surface bound by `let`, the literal
+passed inline, and browser.input's window-at plus a focus lookup over the
+opened surface answer 35, 2 and 3850 on the reference and on
+`x86_64-aiueos-kernel-v1` / `aarch64-macos-kotoba-v1` with the oracle
+verified, and `wasm32-kotoba-v1` emits a module; `amu compile --target
+x86_64-aiueos-kernel-v1` and `--target aarch64-macos` of the last exit 0 with
+`:oracle {:status :verified}`. Measured on the way, not changed: a vector
+literal holding two record shapes, `[{:w 1} {:x 2}]`, is admitted as the
+heterogeneous vector it reads as, and `mapv` / a bare `remove` over a
+`[:list R]` (move-window, close-window) is refused, as `:record-list-sequence`
+left it -- a list builder this profile does not have.
+
 ## Selfhost foundation floors (appended 2026-09-26)
 
 Superproject adr-2609242330 measured that compiling amu with amu needs the
