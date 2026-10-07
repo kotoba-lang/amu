@@ -607,15 +607,27 @@ The restricted JavaScript target is selected with `--target js`. Since
 kotoba-script`, is portable `.cljc`), and `test/nbb/js_parity.cljk` holds the
 route to the JVM's bytes: the committed `runtime/http/route-decide.mjs` is the
 JVM's artifact and the nbb route reproduces it byte for byte, with the manifest
-and provenance equal as values. `cljs-browser` is the one JavaScript-family
-target still on the JVM route (ADR 0340). A Web
-library may deliberately omit `main`, but only when its namespace declares a
-non-empty host boundary, for example `(ns example.math (:export [add1]))`.
-This produces an entryless ESM artifact whose frozen API contains only those
-exports. Entryless source is rejected for every native, Wasm, and
-ClojureScript target; executable programs still require an exported,
-zero-argument `main`. Missing, empty, private, duplicate, or unknown exports
+and provenance equal as values. The three CLJS source profiles also have a
+JVM-free nbb driver (ADR 0347). A Web library may deliberately omit `main`
+when its namespace declares its host boundary, for example
+`(ns example.math (:export [add1]))`. `(:export [])` also admits an intentional
+namespace-only or private-only library with an empty public object. The
+restricted ESM API contains exactly the declared exports. The orchestrator
+admits entryless Wasm, qualified CLJS and ordinary native library profiles
+under their respective type gates; the empty JS result does not qualify those
+runtimes. Firmware/kernel/process profiles still require their entry symbol.
+Unmarked empty source and missing, private, duplicate or unknown named exports
 fail closed before lowering.
+
+Restricted JS functions may use `:js-value` parameters and results, preserving
+raw host identity through exports and internal calls. The opaque leaf does not
+read properties, coerce objects or grant callback/ambient capability access.
+Non-JS compilation, including CLJS, Wasm and components, refuses this host ABI
+before lowering; cached native/Wasm artifacts still require source ABI
+qualification. Descriptor IDs, field labels and keyword literals named
+`:js-value` are ordinary names and do not trigger that refusal. Canonical set
+items/map keys containing the type are unordered and refused; map values may
+contain it. Retained host graphs have embedder-owned resource/lifetime costs.
 
 The Web target also carries the first non-i64 value profile without erasing
 types. A parameter is written `name` or `name :type`, per parameter, in any

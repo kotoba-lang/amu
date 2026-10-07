@@ -29,6 +29,7 @@
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.artifact.core :as artifact]
             [kotoba.kir.target :as target-profile]
+            [kotoba.compiler.js-value-target :as js-value-target]
             [kotoba.verifier :as verifier]
             #?@(:cljs [["node:crypto" :as crypto]]))
   #?(:clj (:import
@@ -431,6 +432,7 @@
                                (cond-> {}
                                  admit-linked-synthetics?
                                  (assoc :admit-linked-synthetics? true)))
+         _ (js-value-target/reject-outside-js-target! target hir)
          checked-admission (admit! hir policy)
          kir (component-kir (ir/lower hir))
          target-profile (target-profile/profile target)
@@ -547,6 +549,7 @@
                                        language-profile (assoc :language-profile language-profile)
                                        (:admit-linked-synthetics? emit-metadata)
                                        (assoc :admit-linked-synthetics? true)))
+        _ (js-value-target/reject-outside-js-target! target hir)
         ;; f32 and f64 were gated separately because kotoba-native implemented
         ;; f64 scalar arithmetic (ADR-2608030300) and no f32 at all, so
         ;; admitting them together would have routed f32 to a backend that

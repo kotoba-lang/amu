@@ -341,14 +341,14 @@ closed. The explicitly selected root may live beside the source directory
 because it is not discovered ambiently. This filesystem discovery does not run in the compiled program and
 does not widen runtime authority.
 
-An explicit export vector also admits a library without `main`, including
-`(:export [])` for a namespace-only or private-only library, but only for
-`:js-kotoba-v1`. The attribute-map spelling `{:kotoba/export []}` has the
-same empty-library meaning. Its KIR has a nil entry and signature and is handed to
-`kotoba-script` as a restricted ESM library. All executable and non-JavaScript
-targets reject an entryless module. This target gate prevents a library-shaped
-source unit from silently acquiring different execution semantics across
-native, Wasm, or ClojureScript backends.
+An explicit export vector admits a library without `main`, including
+`(:export [])` for a namespace-only or private-only library. The attribute-map
+spelling `{:kotoba/export []}` has the same meaning. Empty restricted ESM
+compilation has been qualified on `:js-kotoba-v1`: KIR has nil entry/signature
+and the resulting exported object is empty. The orchestrator also admits
+entryless Wasm, qualified CLJS and ordinary native library profiles under their
+existing type gates; that admission is not empty-library runtime qualification.
+Firmware/kernel/process profiles require their declared entry symbol.
 
 Typed string, keyword, bounded-map, boolean, option-i64, or result-i64 source advances HIR to `kotoba.hir/v3` and KIR to
 `kotoba.kir/v4`. Function `:param-types` and `:result` are checked before

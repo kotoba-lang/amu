@@ -52,8 +52,10 @@ clause, a module whose every function is private is still refused
 different: `(:export [])` (or `{:kotoba/export []}`) declares an intentionally
 empty interface and admits a namespace-only or private-only entryless library
 on the `:js-kotoba-v1` target. Its exported object is empty; private definitions
-remain unavailable to callers. Entryless native, Wasm and ClojureScript outputs
-remain refused. This does not admit an unmarked empty executable program.
+remain unavailable to callers. The orchestrator also admits entryless Wasm,
+qualified ClojureScript and ordinary native library profiles under their type
+gates; this empty-library result does not qualify those runtimes. Native
+firmware/kernel/process profiles still require their declared entry symbol. This does not admit an unmarked empty executable program.
 Closedness is unchanged: the set is still exact, only its spelling moved from
 the header to `defn` / `defn-`. The linker rejects missing
 source units, namespace/key mismatches, duplicate aliases or dependencies,
