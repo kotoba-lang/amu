@@ -20,6 +20,6 @@
 
 [ComputeCID / ResultCID](coscientist-compute-addressed-analysis-20261007.md)のC0は、activation内exact memoと寄与の保存・新しい集計への再生が実装済みで、有限fixtureの証拠を持つ。C1のnative canonical encoding・stable reference・shadow receiptと、C2の検証済み永続／共有再利用は未実装である。現在のSHA-256をnative IPLD CIDと呼ばず、チェック省略やarena診断をCIDの性能効果とは扱わない。再利用には完全なread footprint、出力状態の更新、support・poison・診断、fuel／論理chargeの保存、cold／warm／disabledでの生成バイト一致が必要である。
 
-タイミング計画v1はソースレビューでHOLDになった。独立171件監査の確認が無関係なPASS資料を受理できた点と、CPU診断失敗時に終了済みrunnerのrawを保存する前に止まる点がT1/T2である。v1を保持し、別のv2修正と独立レビューを待つ。171件の単発elapsed・RSSは性能結果へ転用しない。新しい測定は同一host・元19本・固定maxN・静穏条件・反復paired比較を満たした別の有限GOを必要とする。
+タイミング計画v1はソースレビューでHOLDになった。独立171件監査の確認が無関係なPASS資料を受理できた点と、CPU診断失敗時に終了済みrunnerのrawを保存する前に止まる点がT1/T2である。v1を保持し、別のv2修正は独立ソースレビューを通過した。続く[最初の実測](coscientist-vector-param-timing-20261008.md)はCRC32の静穏条件不足で停止し、全19本の比較は未達だった。171件の単発elapsed・RSSは性能結果へ転用しない。新しい測定は同一host・元19本・固定maxN・静穏条件・反復paired比較を満たした別の有限GOを必要とする。
 
 実験compilerはsource `ea8281843170b65999ff5a6460a2ba2b3474f04e8e5fda8abc616bf283a0acf5`、native `4158d7de2dfe4d922450b60788bb5f6a950ca129f92f0b841069aa4c0f76b509`（943,320バイト）。別の6回の検査では3世代のnative/KSEEDが一致した。製品経路は変更していない。
