@@ -15,3 +15,5 @@
 [固定した証拠と再生手順](evidence/coscientist-inverse-aes-20261007/vector-shape-memo-scalar/README.md)は2,009,441 B、SHA-256 `3a5e3f8696e3223878fe1f9e4b8f61366aa3849164f9188f61ec1cad5e278d90`。159ファイル・raw7,903,953 Bで4 MiB／32 MiB上限内。新しいコピーから、外部read・writeを拒否するreaderで21件・25記録を再計算した。V8の4世代自己ビルドは[別の証拠](coscientist-vector-typed-v8-20261007.md)に帰属し、このscalar packetが8ビルドを再証明したとは数えない。
 
 次は実際の型付きvectorから正値4・未知値0・自己呼び出しのneutralを採取し、新しくリセットしたcallee集計に再生して比較する。型付き検査のソースと7呼び出しの計画は別途準備中で、まだnative結果ではない。実際の検査省略0、低負荷性能・C以上・公式Embenchスコア・製品100% selfhostは未達成である。
+
+追記：この後、[型付き vector の3ケース・7呼び出し](coscientist-vector-shape-memo-typed-controls-20261007.md)が完了した。固定した fixture の正値4・未知長0・自己呼び出し neutral と、初期化した集計への再生一致を二人が独立に確認した。上の「準備中」は scalar 試験の記録時点を示す。
