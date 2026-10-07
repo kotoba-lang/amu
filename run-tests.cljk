@@ -184,7 +184,10 @@
             [kotoba.compiler.list-item-from-expression-test]
             ;; ADR 0353 :merge-literal-reads-its-row: a merged literal that
             ;; reads the row it merges is the record merge gives (open-window)
-            [kotoba.compiler.merge-literal-reads-its-row-test]))
+            [kotoba.compiler.merge-literal-reads-its-row-test]
+            ;; ADR 0353 :integer-str: str formats an i64 part as its decimal
+            ;; digits (next-window-id's (str "w" n))
+            [kotoba.compiler.integer-str-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
   (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
@@ -281,4 +284,5 @@
              'kotoba.compiler.record-field-update-test
              'kotoba.compiler.empty-vector-field-test
              'kotoba.compiler.list-item-from-expression-test
-             'kotoba.compiler.merge-literal-reads-its-row-test)
+             'kotoba.compiler.merge-literal-reads-its-row-test
+             'kotoba.compiler.integer-str-test)

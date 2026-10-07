@@ -354,6 +354,11 @@
   ;; or an option"). Its [id surface] pair, destructured, is admitted.
   {:id :integer-str :gate "str-formats-an-integer-test"
    :goal "(str \"w\" n) with n an :i64 -- browser.surface's next-window-id -- is the string of n's decimal digits on the reference, wasm32 and both native targets, as Clojure's str prints a long; refused today \"expression type mismatch: expected string, got i64\"; str of a record, a vector and an option stays refused by name (no implicit printing of an aggregate)"}
+  ;; Landed 2026-10-07 in kotoba-sema (de903367): str survives desugar and
+  ;; the type-directed rewrite prints an :i64 part with string-from-i64's
+  ;; printer (flat now, and right at the most negative long); an
+  ;; unannotated parameter str formats is still refined to :string. ADR 0353
+  ;; has the measurements.
   {:id :native-rebound-row-update :gate "native-rebound-row-update-test"
    :goal "a row rebound by its own update -- browser.surface's next-window-id / open-window, (let [s (update s :n inc)] (update s :m inc)) -- compiles and verifies on x86_64-aiueos-kernel-v1 and aarch64-macos as it runs on the reference; refused today \"runtime KIR record update rejected\" at verify; an update of a field the record lacks stays refused by name"}
   {:id :destructured-key-fallback
