@@ -111,6 +111,8 @@ C1 / C2 は未実装である。C0 の証明情報を emitter が使う場合も
 
 最初の C1 実験では、対象を固定した shape query、読み取る graph snapshot、全4入口 bound、解析実装、規則、ABI、資源契約を一つの要求に封じる。直接評価の結果と、**空の callee 集計**へ保存寄与を再生した結果を比較する。共有 importer と同じ参照検査を通し、activation 内の番号をそのまま移植しない。失敗した比較は保存結果の利用を止め、失敗 receipt を残す。
 
+最初の C1 の[有限事前登録](evidence/coscientist-compute-analysis-20261008/c1-preregistration.json)と[独立レビュー](evidence/coscientist-compute-analysis-20261008/c1-plan-review.json)では、同じ封印済み snapshot 内で型付き参照を一意に解決する。名前変更や並べ替えをまたぐ DefCID bridge は後続範囲であり、最初の実験の前提ではない。[範囲の受理記録](evidence/coscientist-compute-analysis-20261008/c1-scope-acceptance.json)は設計のみを受理している。native 正規化 codec・hash、完全な推移的 read footprint と更新干渉検査、snapshot の封印と参照解決は、まだ検証済み実装として揃っていない。直接評価を毎回行う C1 から進め、共有・永続キャッシュはまだ有効化しない。
+
 ### 失効と再生の対照実験
 
 | 一つだけ変える入力 | 期待する扱い | 確認する観測 |
