@@ -1,0 +1,60 @@
+# Split immutable reader decision collapse: SOURCE V2 HOLD
+
+This is a novel compiler algorithm authored under the one-off exception: no existing mechanical AST refactor rule implements the admission/path certificate/emission. All source changes are confined to a copied41 file in this scratch directory. Original benchmarks, repository files and pinned artifacts are unchanged. Compiler/native/SSH/solver/CPU/timing calls are0. This candidate has not passed `amu check`, a native build, current typed binding or semantic/runtime qualification.
+
+## Actual source-data applicability
+
+Saved typed CRC reader FN1 contains SIR1..174. SIR2 is its sole FUEL; all256 admitted input paths perform that one entry charge and exactly one checked immutable OP-TAB read before RET0. There are no path-dependent charges, calls, allocations, stores, effects or division. Sixteen literals IDs1..16 each have LF-LEN128B. Caller FN3 SIR220 captures an index through CONST255/BIN-AND/LSET7/LGET7 at216..219. The bounded path certificate therefore has a real historical source-data applicability, not a fabricated synthetic shape.
+
+The observer's original workload source is byte-identical to current original source. Its current41 producer binding is unproved and explicitly deferred to the next bounded observer gate. No old record is presented as a newly generated typed record.
+
+`source-data-controls.py` is an independently written finite SIR source-data interpreter, separate from the Kotoba fragment. It verifies all256 original paths, original table values, exact one-charge prefix and read ownership/index. Thirteen mutated source-data reader cases reject (including near-max, negative and short LITB bounds): path FUEL, runtime effect, wrong offset, wrong literal ID, short physical slice, backward edge, duplicate label, added trap, wrong result temp, extra local mutation. This companion validation does not execute the Kotoba admission algorithm or injected actual compiler faults. Neither oracle is an independent third-party review.
+
+## Rule and caps
+
+Direction: an ordinary typed CALL edge to a certified closed split-table reader becomes one lookup over its already contiguous immutable physical literal bytes. This is generic to values, not CRC-polynomial-specific. No namespace/function/workload name participates in admission.
+
+Caller requirements: natural one-argument call, original framed nonleaf mode0, scalar i64 result/parameter, no RET/RES2 successor, valid temp height/depth, source register disjointness through existing `di-args-safe`, no open/replaced body, and an immediate exact CONST-mask/AND/LSET/LGET suffix. Tail calls remain generic, preserving the original epilogue-before-callee-charge lifetime. mask is31..255 with mask+1 a power of2; n32..256. The whole reader is one input slot and temporary depth2, natural FN header, exactly one entry FUEL, <=256 subsequent SIR instructions, one final RET0/END and forward unique labels only.
+
+Every reader node is claimed by an exact grammar: LGET0 slot1/CONST1 bound/CMP-LT0/BRZ0 label, or LGET0 slot1/CONST1 offset/SUB0/TAB0 literal16; joins are LABEL/BR only. All unused fields are checked. Sequential leaf offsets are0,16,...; literal IDs are base,base+1,... with exact128B lengths and bounded existing LIT/LITB metadata. No general arithmetic, local assignment, trap, FADDR, indirect call, runtime operation or inner FUEL enters the grammar.
+
+For each x in0..n-1 a bounded256-step path returns the exact witness `(base+floor(x/16), x&15)`, with only forward pure joins after its one read. Enumeration plus full grammar validation proves the domain mapping directly; no solver or unbounded evaluation is used. The scan checks every node, including nodes not selected by a single input. Work is statically finite: at most256 reader rows,256 indices,256 path steps, with bounded label scans within that reader. This may be expensive compiler work; no compile-time benefit is claimed.
+
+Original reader FN/body, public export, all other callsites and FADDR entry remain intact. An unknown argument, missing mask suffix, malformed body, unsupported slices or cap exhaustion uses the generic call. No runtime range branch or descriptor join is needed because the admitted suffix proves unsigned0..n-1 before the edge.
+
+## Data/layout certificate
+
+No merged literal is appended and no table contents are copied. Current seed42 `ly-pool-loop` assigns every LIT in record order, alignment8, no dedup or terminator. Each admitted consecutive record is128B, itself a multiple of8. Thus physical LF-POOL positions satisfy `POOL(base+k)=POOL(base)+128*k` for k0..n/16-1. The one FX-LIT32 relocation targets existing first literal base; machine address is `CTX-CODE-BASE + relocated LF-POOL(base) +8*x`. That byte address equals the original selected leaf read. Existing linker module-base adjustment is retained through normal FX-LIT32. Do not infer physical adjacency only from LF-B; the layout source contract supplies it.
+
+Existing LF-TOK, LF-B, LF-LEN, LF-POOL ownership, LITB contents and SIR/FN records remain unchanged. No new compiler heap, LIT, LITB or guest arena cells are allocated. Code alignment/pool starting offset can change when generated code shrinks, so physical machine-byte correspondence still needs actual verification.
+
+## Frame/register/fuel/evaluation obligations
+
+Prescan and register allocation are unchanged; the original caller stays framed nonleaf. Original gn-save0t runs before input capture, preserving normal call prefix homes and HOME descriptors. Input is then captured into x0 before any arithmetic scratch use. Existing admission accepts only descriptors sourced from constants, temps, homes or callee-saved/local-frame sources; x0 is disjoint. Earlier prefix temps x9..15, homes, locals x19..28 and caller frame are retained. Emission writes x0/x8/x16/x17; gn-ctx owns restoring x7 from its existing home. Result placement uses original `gn-take`, including protect/coalescing/home behavior. No runtime call or ABI authority substitution occurs. The generic descriptor cache clear may write x5; remaining x1..6 and all callee-saved registers are not touched. Original gn-ctx-safe analysis restores the conservative context descriptor before gn-take.
+
+The real original leaf loads x8 from CTX-FUEL, debits its single entry unit before its selectors/read, and publishes remaining fuel on success. The replacement uses exactly existing `gn-mask-charge`: SUBS x8,#1, B.HS, STR XZR to CTX-FUEL and BRK on exhaustion. Thus initial0 traps with published0 before any read; initial1 can return successfully with remaining0; larger fuels return their original remaining value. It performs the one immutable read only after the debit and publishes x8 after the read before result placement. All removed selector arithmetic is pure; every removed bounds trap is proven impossible on the certified domain. The table memory is immutable, already physically present and correctly bounded. Ordered argument computation and all preceding effects remain in ordinary generated code. Resource contract is guest terminal/peak arena unchanged because neither path allocates guest memory; compiler scratch is existing snapshot state only.
+
+`tc-call` snapshots existing38-cell di bank0 before emission, counts the complete emitted span including capture/context/charge/read/publication/result/protection, accepts at most64 words/site and shares existing4096-word/256-site module budgets. Exactly one normal literal fixup is required. Cap fallback restores generator descriptors/scalars plus CODE-N/FIX-N and emits the original generic call; actual emission errors fail closed. No generic body or analysis state is memoized. Byte-golden/ABI register-canary/trap tests must bind these source assertions to emitted instructions before acceptance. The original caller frame is preserved; the admitted callee call/return/prologue is omitted. No general OS stack-limit or compiler scratch budget-boundary equivalence is proved, and no claim that every machine stack event is unchanged is made.
+
+## Copied candidate integration
+
+`candidate-fragment.kotoba` contains admission and emission. `41-a64gen-candidate.kotoba` is the full copied source with this fragment inserted before `gn-op-call`. Existing wrapper/read/clamp priorities remain; collapse is selected before scalar DAG expansion and generic fallback. The new admission reads M without mutation. `di` already refuses this branched reader, so there is no competing scalar expansion on this edge. The shared budget interaction remains explicit and must be tested at site/module boundaries.
+
+The candidate is intended to use existing lowerer/generator and native Kotoba route. Source syntax/type and selfhost buildability are unverified. A frozen SOURCE candidate is not a product adoption, compiler pass or performance result.
+
+## Smallest next gates
+
+1. Independent SOURCE review of the copied candidate, field bounds, label uniqueness, all-node grammar, caller dominance, descriptor/register ownership, exact fuel transaction, rollback span, and contiguous layout/linker law. Fix SOURCE defects and retain failed controls before freezing a native pilot.
+2. A separately authorized bounded readonly observer must bind current compiler lineage to real typed FN1/FN3 owner rows, masks and literal metadata. Include all256 input paths in offline replay; do not substitute the historical observer for this gate.
+3. Native compile/extract small typed positive/negative controls only after SOURCE and typed-binding GO. Require negative/no-rule byte identity; root-independent decoder binds every emitted instruction and relocation to the stated read/fuel/result sequence. Test code/site/module cap rollbacks, generic/FADDR/public fallbacks and actual compiler-source faults.
+4. Exact runtime results, successful fuel0 boundary, fuel exhaustion, earlier effects, invalid generic indices, all chunk endpoints, high i64 table values, saved-register sentinels and guest arena observations; then original19 semantics/resources and selfbuild fixed point/gates. Fresh samehost original19 C timing is separate and must wait for ongoing session53145 to finish.
+
+No speedup, current native applicability, official score, current19 completion or full selfhost claim is made.
+
+## V1 root HOLD and V2 corrections
+
+V1 remains untouched, including its frozen candidate and report. Root SOURCE review found that V1 did not preserve original gn-save0t prefix spills/HOME descriptors. That was a SOURCE finding, not an executed native register-clobber result. Canonical REG temp k is x9+k; the source-data model does not claim REG descriptor value0 means physical x0. V2 adds gn-save before capture, after the full existing di snapshot. It also matches generic gn-vclear and gn-ctx-safe publication. Root and independent reviewer found potential wrapping LF-B+128 checks; V2 uses bounded N>=128,N<=cap,B>=0,B<=N-128,B<=cap-128. It adds FF-SIR/MM-SIR/FN/label/slot/descriptor bound checks before array reads. Each tc-end scan step checks MM-SIR-CAP.
+
+Root also found the tail CALL/RET frame lifetime difference: V2 excludes every RET successor, matching di-admit's restriction. The actual saved CRC220 successor is LGET for the shift/XOR continuation and remains eligible. Additional finite controls include6 mutated caller suffix/RET/RES2 cases;3 source-order omission checks;4 prefix descriptor models;4 near-fuel models (0/1/2/3); a38-cell snapshot restore model;4 independently generated synthetic reader source-data cases n32/64/128/256 with480 total paths; and a physical pool-gap address fault. These are finite models/source checks; actual Kotoba admission, rollback and native faults remain unexecuted. No behavioral test or refusal golden was altered.
+
+Status is SOURCE HOLD until root and independent SOURCE reviews accept the frozen V2. The current typed producer-binding observer is still pending. No new native/compiler/SSH/solver/CPU/timing call is authorized by this document; the root must close the respective gates separately.

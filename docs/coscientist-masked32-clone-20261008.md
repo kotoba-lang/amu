@@ -242,3 +242,46 @@ zebulunの専用領域で、環境照会7・元のC19本・新consumer19本・�
 2件の独立SOURCEレビューとroot GOで同一hostの元19本3arm計測を1回起動した。[独立保存失敗監査](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-current19-timing-v1-failure/reviews/actual-failure/failure-report.json)はread-only collection88 members、14 children（runner5／load9）全終了、OFF／LC校正4成功、最初のC校正のSIGXFSZ・stdout／stderr空を確認した。測定paired tripleは0、statisticsなし、性能未認定である。旧namespaceは再試行しない。
 
 [ソースに基づく診断](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-current19-timing-v1-failure/diagnosis/report.json)では、変更していないC比較runnerが計測前に17,432 Bの埋込みlibraryを一時ファイルへ書く一方、ledgerが全regular fileへ16 KiB上限を与えていた。これは有力な停止原因仮説であり、実際の失敗syscallは未追跡。次のSOURCEではstdout／stderrのbounded pipeとregular-file上限を分け、元19本・ABI・fuel・arena・生成成果物・quiet条件・統計を維持する。ComputeCID設計へ[readerと資源契約の分離](coscientist-compute-canonical-next-20261008.md)を反映した。[選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-current19-timing-v1-failure/snapshot.json)は全依存の実バイトarchiveではない。C2 OFF、公式スコア／CID実行時効果／C以上の性能は未認定のままである。
+
+
+## LC quiet timing V2：11本のstable30、C超えなし
+
+streamとregular-fileの上限を分けた修正版は1 launchで正常終了した。[独立保存raw監査](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-current19-timing-v2-partial/reviews/actual/report.json)は36,452 archive members、runner3,638／load7,276の10,914子プロセス全終了、strict14-field telemetry・意味・fuel・4 arena一致とclosed pipeを確認した。V1の14終了も保持し累計10,928である。元19本のうち11本はquietな30 paired triplesに達し、8本は有限上限内で部分終了した。全19本のGM・公式スコア・C以上の性能は認定しない。partial summaryでfixed19 bootstrapを実行していないことは[監査scope補足](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-current19-timing-v2-partial/reviews/actual/scope-supplement.json)に明記した。
+
+[別の独立COMPLETE30診断](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-current19-timing-v2-partial/diagnostic/report.json)は11本それぞれのmean・sample SD・paired20K bootstrapを再計算した。全armのCVは0.1未満だが、11本すべてのC/candidateの95%上限は1未満で、individual C-or-betterは0本だった。下表はcandidate/Cの実行時間比で、1より大きいと候補が遅い。11本だけの集約はしない。
+
+| Workload | Candidate/C time | Candidate code changed |
+|---|---:|---|
+| crc32 | 1.87120x | no |
+| edn | 14.61239x | no |
+| huffbench | 7.13431x | no |
+| md5sum | 4.17285x | yes |
+| nsichneu | 8.51466x | no |
+| sglib-combined | 6.02778x | no |
+| slre | 7.02217x | no |
+| statemate | 15.98152x | no |
+| tarfind | 13.91825x | no |
+| wikisort | 11.65575x | no |
+| xgboost | 6.27562x | no |
+
+変更が入ったMD5はbaseline/candidate mean1.01599、paired95%[0.99545,1.03570]で、事前登録の5%・SD・CI採用条件を満たさない。SHA256は校正部分終了なので、速度を認定しない。LCの性能採用を見送り、生成コードの意味保存・固定点の証拠とは分けて保持する。
+
+partialはaha29/90、AES26/90、picojpeg29/90、qrduino22/90のquiet triple上限、depthconv／matmult-int／SHA256／udの校正上限である。保存rawの拒否集計ではbackground-idle条件が主で、picojpegにはload条件の拒否もある。1回のread-only進捗probeは保存し、observed host activityへ含まれるが、影響0の証明や原因帰属はしない。再実行はせず、次のhost／待機・有限上限設計は別の事前登録とする。
+
+[選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-current19-timing-v2-partial/snapshot.json)は全36,452 collected membersを4,516,385 Bのraw archiveへ封じるが、449 MBの元依存bank全体を含むarchiveではない。ComputeCIDのruntime効果、C2省略、product採用、full own-source100%は未認定。次の生成規則は、ハードウェアfeatureに依存しない、bounded callerと完全CFG証明を持つsplit immutable table readerの直接読みに絞る。
+
+
+## 次の規則：split immutable table readerのcall edgeを縮約
+
+[TC V2 SOURCE](evidence/coscientist-masked32-clone-20261008/table-decision-collapse-v2-source/source/proposal.md)をnative Kotobaでコピーへ実装し、[root](evidence/coscientist-masked32-clone-20261008/table-decision-collapse-v2-source/reviews/root/report.json)と[独立SOURCEレビュー](evidence/coscientist-masked32-clone-20261008/table-decision-collapse-v2-source/reviews/independent/report.json)を通した。規則は名前やCRC polynomialを参照せず、immediate AND-maskによる32／64／128／256の入力範囲、完全なreader CFG、defined-before-read、各pathの1 immutable read・1 entry fuel、連続16要素literalとlayout42の順序・8-byte alignmentを条件にする。既存poolを使い、新しいliteral／arena領域を追加しない。generic／public／FADDR readerは残す。
+
+V1のprefix-save欠落・context/cache publication・数値overflow／bounds／tail lifetimeのSOURCE指摘を保存し、V2へ直した。V2は元のgn-save、gn-vclear、context解析、gn-takeを保ち、RET／RES2 successorと未知shapeをgenericへ戻す。38-cell snapshot、64-word／4096-word／256-siteの既存予算でrollbackする。新しいアルゴリズムの一回のauthoringで、既存AST refactor ruleに対応規則はない。
+
+historical同一sourceの256 paths、13 reader mutations、6 caller mutations、synthetic32／64／128／256 readerの480 pathsとprefix／fuel modelは有限source-data証拠で、実際のKotoba/native fault validationではない。copied candidate133,738 B・SHA3d7c169818cdf0fabc151da98017d3b28bbe38fc3407d9b42921b646520c2abaはまだコンパイルしていない。current typed producer binding、実命令・relocation・register／fuel／trap／arenaの検証、元19本と固定点・required gates、fresh C比較が次の条件。callee frameを省くため、任意のOS stack-limit同等性は未証明である。
+
+[LC性能採用のroot判断](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-current19-timing-v2-decision/root/performance-decision.json)はMD5の未達とSHA256の未認定を保持する。TC SOURCEレビューは実行GO・速度改善・production採用の証拠ではない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/table-decision-collapse-v2-source/snapshot.json)は完全な依存archiveではない。
+
+
+## 次の測定hostのread-only確認
+
+[有限read-only survey](evidence/coscientist-masked32-clone-20261008/quiet-host-recon-v1/recon/report.json)では3回のSSHが閉じ、ZebulunはApple M4・10 logical cores、10秒のidle93.11%、load1.88→1.75でsurvey条件を満たした。AsherはSSH timeoutで未確認。単一Tailscale inventoryは非JSONでwrapperが停止し、最初の元診断を永続保存し損ねたことを記録した。他の端末は未確認である。surveyは新しいtiming資格ではない。次のcampaignは元のquiet条件を緩めず、有限の待機・readiness条件を別に事前登録する。今回bench／compiler／転送／remote変更は0。

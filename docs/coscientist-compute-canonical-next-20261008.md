@@ -151,3 +151,12 @@ coscientistの次の対照は、同じ入力状態からcacheなし／shadowあ�
 比較runnerは計測前に埋込みCライブラリ17,432 Bを一時ファイルへ書く。新ledgerは標準出力の16 KiB上限をプロセス全体のRLIMIT_FSIZEにも適用しており、書込みとの契約衝突が静的ソースから確認できる。これを停止原因の有力な仮説とするが、失敗した具体的syscallの追跡はしていない。標準出力／標準エラーのstream契約、一時成果物のファイル契約、言語のfuel・arena契約を分けて扱う。
 
 この失敗を成功ResultCIDへの対応に登録しない。実装CIDと不変な入力内容に加え、readerの意味、ABI・effect・trap・予算などの実行契約を要求へ封じ、現在状態への再適用は別のTransitionで検証する。現在の権限判断や外部書込みをキャッシュで代替しない。この診断はハーネスの正しさの証拠であり、ComputeCIDの性能効果や19本のC比較結果ではない。
+
+
+## immutable table規則の解析再利用への適用
+
+次の[TC V2 SOURCE規則](coscientist-masked32-clone-20261008.md)でも同じ分離を使う。ComputeRequestへcurrent typed FN／SIR／literal・layout閉包、規則実装・工程、callerの入力範囲とprefix／successor条件、ABI・fuel／trap／資源契約を含める。意味Answerはreaderの全有限domainの値と制御・effect／fuel証明、必要なordered fixup役割を所有し、現在のcode offset・literal address・caller register cacheなどの可変global scratchを答えに混ぜない。現段階ではComputeCID／ResultCIDを実装したcacheではなく、証明対象の契約である。
+
+再適用時には現在のliteral配置・fixup・register／context publicationを検査し、元fuel debitとadmissionを保存する。code／fixup cap失敗はrollbackしgeneric経路へ戻す。古いmachine bytesを新しい配置へ単純コピーせず、現在状態のTransitionとして検証する。規則・layout・mask・reader edge・effect・entry fuel・ABIを一つずつ変える負例、途中公開とrollback拒否をSOURCE／native段階で分けて検証する。同じAnswerCIDでもcaller条件が変われば現在のadmissionを省略しない。
+
+LC timing V2は11本のstable30を得たが、C以上は0本、MD5の採用条件も未達だった。この[負の測定結果](coscientist-masked32-clone-20261008.md)は生成コードの評価であり、解析再利用のhash／lookup／replay費用を測った結果ではない。C2はOFF、解析reuseとEmbench速度の資格は別に維持する。

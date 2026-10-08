@@ -1,0 +1,182 @@
+;; SOURCE ONLY, not compiled. Novel algorithm; one-off authoring exception.
+;; Bounded ordered split immutable table reader call-edge collapse.
+;; No names, benchmark edits, new literal/heap cells, or CPU feature assumptions.
+;; Reuses existing di snapshot and shared site/word budgets.
+
+(defn- tc-end [M :vector-i64 p :i64 f :i64] :i64
+ (loop [j (+ p 2) work 256]
+  (cond (or (<= work 0) (>= j MM-SIR-CAP) (>= j (vector-at M MM-SIR-N))) 0
+        (= (gn-op M j) OP-END) (if (gn-dot-at? M j OP-END f 0 0) j 0)
+        (= (gn-op M j) OP-FN) 0
+        :else (recur (inc j) (dec work)))))
+
+;; Label identity is unique inside the certified whole body.
+(defn- tc-label [M :vector-i64 p :i64 end :i64 lab :i64] :i64
+ (loop [j (+ p 2) found 0]
+  (if (>= j end) found
+   (if (and (= (gn-op M j) OP-LABEL) (= (gn-sir M j IF-A) lab))
+    (if (> found 0) 0 (recur (inc j) j))
+    (recur (inc j) found)))))
+
+(defn- tc-lit [M :vector-i64 lit :i64] :bool
+ (and (> lit 0) (< lit (vector-at M MM-LIT-N)) (< lit MM-LIT-CAP)
+      (= (gn-litf M lit LF-LEN) 128)
+      (>= (vector-at M MM-LITB-N) 128)
+      (<= (vector-at M MM-LITB-N) MM-LITB-CAP)
+      (>= (gn-litf M lit LF-B) 0)
+      (<= (gn-litf M lit LF-B) (- (vector-at M MM-LITB-N) 128))
+      (<= (gn-litf M lit LF-B) (- MM-LITB-CAP 128))))
+
+;; Every data/selector group has exact defined-before-read stack structure.
+(defn- tc-test [M :vector-i64 j :i64] :bool
+ (and (gn-dot-at? M j OP-LGET 0 1 0)
+      (= (gn-op M (inc j)) OP-CONST) (= (gn-sir M (inc j) IF-A) 1)
+      (= (gn-sir M (inc j) IF-C) 0)
+      (gn-dot-at? M (+ j 2) OP-CMP CC-LT 0 0)
+      (= (gn-op M (+ j 3)) OP-BRZ) (= (gn-sir M (+ j 3) IF-A) 0)
+      (= (gn-sir M (+ j 3) IF-C) 0)))
+(defn- tc-leaf [M :vector-i64 j :i64] :bool
+ (and (gn-dot-at? M j OP-LGET 0 1 0)
+      (= (gn-op M (inc j)) OP-CONST) (= (gn-sir M (inc j) IF-A) 1)
+      (= (gn-sir M (inc j) IF-C) 0)
+      (gn-dot-at? M (+ j 2) OP-BIN BOP-SUB 0 0)
+      (= (gn-op M (+ j 3)) OP-TAB) (= (gn-sir M (+ j 3) IF-A) 0)
+      (= (gn-sir M (+ j 3) IF-C) 16)
+      (tc-lit M (gn-sir M (+ j 3) IF-B))))
+
+;; Validate all source nodes, including nodes not selected by one path.
+;; Only forward edges are accepted; entry FUEL is outside this grammar.
+;; Return exact number of 16-item leaves, or -1.
+(defn- tc-scan [M :vector-i64 p :i64 end :i64 base :i64] :i64
+ (loop [j (+ p 2) leaves 0]
+  (cond (>= j end) leaves
+        (= (gn-op M j) OP-LABEL)
+         (if (and (gn-dot-at? M j OP-LABEL (gn-sir M j IF-A) 0 0)
+                  (> (gn-sir M j IF-A) 0) (< (gn-sir M j IF-A) MM-LABEL-CAP)
+                  (= (tc-label M p end (gn-sir M j IF-A)) j))
+          (recur (inc j) leaves) -1)
+        (= (gn-op M j) OP-BR)
+         (if (and (gn-dot-at? M j OP-BR (gn-sir M j IF-A) 0 0)
+                  (> (tc-label M p end (gn-sir M j IF-A)) j))
+          (recur (inc j) leaves) -1)
+        (= j (dec end)) (if (gn-dot-at? M j OP-RET 0 0 0) leaves -1)
+        (>= (+ j 3) end) -1
+        (tc-test M j)
+         (if (> (tc-label M p end (gn-sir M (+ j 3) IF-B)) (+ j 3))
+          (recur (+ j 4) leaves) -1)
+        (tc-leaf M j)
+         (if (and (= (gn-sir M (+ j 3) IF-B) (+ base leaves))
+                  (= (gn-sir M (inc j) IF-B) (* leaves 16)))
+          (recur (+ j 4) (inc leaves)) -1)
+        :else -1)))
+
+;; After the one table value read, only pure forward joins and final RET.
+(defn- tc-return [M :vector-i64 p :i64 end :i64 pc :i64] :bool
+ (loop [j pc work 256]
+  (cond (or (<= work 0) (>= j end)) false
+        (= (gn-op M j) OP-LABEL) (recur (inc j) (dec work))
+        (= (gn-op M j) OP-BR)
+         (let [to (tc-label M p end (gn-sir M j IF-A))]
+          (if (> to j) (recur to (dec work)) false))
+        :else (and (= j (dec end)) (gn-dot-at? M j OP-RET 0 0 0)))))
+
+;; Finite path certificate gives lit*256+local index; zero means refusal.
+;; Called only after complete tc-scan admission; no data values are computed.
+(defn- tc-path [M :vector-i64 p :i64 end :i64 x :i64] :i64
+ (loop [j (+ p 2) work 256]
+  (cond (or (<= work 0) (>= (+ j 3) end)) 0
+        (= (gn-op M j) OP-LABEL) (recur (inc j) (dec work))
+        (= (gn-op M j) OP-BR)
+         (let [to (tc-label M p end (gn-sir M j IF-A))]
+          (if (> to j) (recur to (dec work)) 0))
+        (tc-test M j)
+         (let [to (if (< x (gn-sir M (inc j) IF-B)) (+ j 4)
+                      (tc-label M p end (gn-sir M (+ j 3) IF-B)))]
+          (if (> to j) (recur to (dec work)) 0))
+        (tc-leaf M j)
+         (let [idx (- x (gn-sir M (inc j) IF-B))]
+          (if (and (>= idx 0) (< idx 16) (tc-return M p end (+ j 4)))
+           (+ (* (gn-sir M (+ j 3) IF-B) 256) idx) 0))
+        :else 0)))
+(defn- tc-cover [M :vector-i64 p :i64 end :i64 base :i64 n :i64] :bool
+ (loop [x 0]
+  (or (= x n)
+      (and (= (tc-path M p end x) (+ (* (+ base (quot x 16)) 256) (bit-and x 15)))
+           (recur (inc x))))))
+
+;; The immediate AND/LSET/LGET suffix proves the sole captured argument.
+;; No name, earlier local search, or speculative/unknown range premise.
+(defn- tc-mask [M :vector-i64 i :i64 t :i64] :i64
+ (if (< i 5) 0
+  (let [mask (gn-sir M (- i 4) IF-B) slot (gn-sir M (- i 1) IF-B)]
+   (if (and (>= mask 31) (<= mask 255) (= (bit-and mask (inc mask)) 0)
+            (> slot 0) (< slot gn-cap) (<= slot (gn-g M gn-f-ns))
+            (gn-dot-at? M (- i 4) OP-CONST (inc t) mask 0)
+            (gn-dot-at? M (- i 3) OP-BIN BOP-AND t 0)
+            (gn-dot-at? M (- i 2) OP-LSET slot t 0)
+            (gn-dot-at? M (- i 1) OP-LGET t slot 0)) (inc mask) 0))))
+
+;; Range check LOCAL descriptor before existing di-args-safe reads sreg.
+(defn- tc-arg-safe [M :vector-i64 t :i64] :bool
+ (and (or (not= (gn-dk M t) gn-k-local)
+          (and (> (gn-dv M t) 0) (< (gn-dv M t) gn-cap)
+               (<= (gn-dv M t) (gn-g M gn-f-ns))))
+      (di-args-safe M t 1)))
+
+;; Return first literal ID. Original FN, literal records and all SIR retained.
+(defn- tc-admit [M :vector-i64 i :i64 f :i64 t :i64 narg :i64] :i64
+ (if (or (< i 5) (>= i (- MM-SIR-CAP 1))
+         (<= (vector-at M MM-SIR-N) 2) (> (vector-at M MM-SIR-N) MM-SIR-CAP)
+         (>= i (dec (vector-at M MM-SIR-N)))
+         (not= narg 1) (not= (gn-g M gn-f-leaf) 0) (< t 0) (> t 6)
+         (< (gn-g M gn-f-ns) 1) (>= (gn-g M gn-f-ns) gn-cap)
+         (< (gn-g M gn-f-dp) 1) (> (gn-g M gn-f-dp) gn-cap)
+         (> (gn-g M gn-f-h) (gn-g M gn-f-dp))
+         (<= (gn-g M gn-f-fb) 0) (> (inc t) (gn-g M gn-f-h))
+         (> (inc t) (gn-g M gn-f-dp)) (not (tc-arg-safe M t))
+         (< f 1) (>= f MM-FN-CAP) (>= f (vector-at M MM-FN-N)) (gn-clamp-open M f)
+         (= (gn-op M (inc i)) OP-RET) (= (gn-op M (inc i)) OP-RES2)
+         (>= (gn-g M di-sites) 256) (>= (gn-g M di-used) 4096)) 0
+  (let [p (gn-fnf M f FF-SIR) n (tc-mask M i t)]
+   (if (or (= n 0) (<= p 0) (>= p (- (vector-at M MM-SIR-N) 2))
+           (not= (gn-fnf M f FF-RTYPE) TY-I64) (not= (gn-fnf M f FF-PT0) TY-I64)
+           (not= (gn-fnf M f FF-NPARAMS) 1) (not= (gn-fnf M f FF-NSLOTS) 1)
+           (not= (gn-fnf M f FF-DEPTH) 2)
+           (not (gn-dot-at? M p OP-FN f 1 1))
+           (not (gn-dot-at? M (inc p) OP-FUEL 0 0 0))) 0
+    (let [end (tc-end M p f)
+          base (loop [j (+ p 2)]
+                 (cond (or (= end 0) (>= j end)) 0
+                       (= (gn-op M j) OP-TAB) (gn-sir M j IF-B)
+                       :else (recur (inc j))))]
+     (if (and (> base 0) (= (tc-scan M p end base) (quot n 16))
+              (tc-cover M p end base n)) base 0))))))
+
+;; Same original nonleaf caller, no host/runtime call or arena allocation.
+;; Save earlier live temps exactly as the original call before capture.
+;; Capture input before x16/17 use; x0 and x8 are free in this caller mode.
+;; Clear descriptor runtime key and conservatively restore original ctx analysis.
+;; The original reader has exactly one private entry charge and no path charge.
+;; LIT IDs base..base+n/16-1 are each128B, and layout42 aligns each to8
+;; in LIT order with no dedup, so their original physical bytes are contiguous.
+(defn- tc-call [M :vector-i64 i :i64 f :i64 t :i64 base :i64] :vector-i64
+ (let [code (vector-at M MM-CODE-N) fix (vector-at M MM-FIX-N)
+       m0 (di-save M 0 0)
+       m1 (-> m0 (gn-save 0 t) (gn-into 0 t) (gn-ctx)
+                 (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-mask-charge)
+                 (gn-emit (enc-ldr 17 7 CTX-CODE-BASE))
+                 (gn-emit (gn-e-addsl 17 17 0 3))
+                 (gn-fix FX-LIT32 base)
+                 (gn-emit (enc-movz 16 0 0)) (gn-emit (enc-movk 16 0 1))
+                 (gn-emit (gn-e-ldrr 0 17 16 0))
+                 (gn-emit (enc-str 8 7 CTX-FUEL)) (gn-vclear)
+                 (gn-gs gn-f-ctx (if (>= (gn-ctx-safe M f 1 8 512) 0) 1 0))
+                 (gn-take i t 0))
+       words (- (vector-at m1 MM-CODE-N) code)]
+  (cond (not= (vector-at m1 MM-ERR) 0) m1
+        (and (<= words 64) (<= (+ (gn-g m1 di-used) words) 4096)
+             (= (vector-at m1 MM-FIX-N) (inc fix)))
+         (-> m1 (gn-gs di-used (+ (gn-g m1 di-used) words))
+                (gn-gs di-sites (inc (gn-g m1 di-sites))))
+        :else (-> m1 (di-restore 0 0) (gn-put MM-CODE-N code) (gn-put MM-FIX-N fix)
+                    (gn-call-generic i f t 1)))))
