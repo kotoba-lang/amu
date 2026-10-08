@@ -89,3 +89,15 @@ private cloneの9行SIRパターンと直後の1引数CALLを構造で照合し�
 診断ハーネスの初回は成功マーカー777を通常のMC fallbackが失敗と扱って再生成し、3呼出でFAILした。修正版の3呼出はnativeで正常終了したが、host検証器が生成前の件数でclone ownerを調べたためFAILした。どちらも再分類せず保存した。V3は診断結果を保持し、実際の生成後SIR／FN件数を出力してowner・END・CALLを厳密に検査する。
 
 V3のcompile／extractと34ケースの計36呼出は正常に閉じ、[独立監査](evidence/coscientist-masked32-clone-20261008/shift-orr-components-v3/independent-report.json)が全raw・環境・入力・17 counters・34比較を照合した。元AES／SHAの2方向で、scalar Mの8,388,608項目と全G、容量0〜4、dirty error、高さ・skip・shift範囲・レジスタ重なり・frame・後続使用・FUEL境界を確認した。成功時は登録した3 CODE語だけを比較対象から除き、拒否時は全状態一致を要求した。これはnativeソース拘束の有限述語による比較であり、全メモリの外部dumpや物理X10／NZCV・runtime fuel・一般の意味保存証明ではない。過去6FAILと新36を合わせ累計42呼出として保持し、guest機能、元19本、自己再ビルド、quiet C比較は別のゲートとして続ける。[選択snapshot](evidence/coscientist-masked32-clone-20261008/shift-orr-components-v3/snapshot.json)。
+
+
+## shift／OR の有限AES・SHA機能比較
+
+元AES／SHAの入力0／1／2／17／32で、従来のmaskedON・新SR・Cを比較した30呼出が正常に閉じ、[独立監査](evidence/coscientist-masked32-clone-20261008/shift-orr-functional30-v1/independent-report.json)が全raw・argv・環境・入力・10組の結果を照合した。native 2 armは結果の0／1、正常終了、fuel残量、4 arenaのcapacity／terminal使用量がすべて一致した。Cは同じ結果を返し、fuelは不変、native arenaは取得不能のnullを保持した。
+
+| 入力32の対象 | native fuel消費（両arm） | terminal pairs | terminal vectors | terminal vector-items | terminal string bytes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| nettle-aes | 427363 | 0 | 1 | 635 | 0 |
+| nettle-sha256 | 79084 | 0 | 3 | 290 | 0 |
+
+このterminal値は子の終了後に共有状態から読む値で、compiler診断の独立peakではない。nativeはsource-bound e14 loaderの同一contextで実行し、以前のself-contained285とは範囲を分ける。CはOS26.2／SDK26.2／Clang17で作成済みのimmutable consumerをローカルで機能確認に再利用した。新しいローカルCビルドや現在のtoolchain一致、elapsed／RSSによる速度比較は認定しない。有限5入力の一致は一般のX10／NZCV／CFG安全性、元19本の全機能、自己再ビルド固定点、公式Embenchスコア、製品採用、CIDによる効果の証明ではない。[selected snapshot](evidence/coscientist-masked32-clone-20261008/shift-orr-functional30-v1/snapshot.json)にはsource・raw30・生成物・実監査を保存し、全依存closureの実バイトは重複保存していない。
