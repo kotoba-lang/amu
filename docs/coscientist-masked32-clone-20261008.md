@@ -60,4 +60,4 @@ fresh V4はvalidatorのコードを一切変えず、元の固定packetを配置
 
 リモート比較runnerはtoolchainの前半7照会を通った後、最初のCビルドで停止した。内容ハッシュ名の入力が拡張子を失い、ClangがCソースとして認識しなかった。C内容・元flags・元19本を保持し、別のfresh領域でコンパイル入力だけに`.c`別名を与える修正を準備する。機能285呼出、quiet性能比較、selfhost固定点は未実行・未認定である。
 
-C入力別名を修正したfresh remote-v3で、元19 runnerのビルドと前後14照会は閉じ、成功reportと全93ファイル（2677319 B）を読み取り回収した。独立raw監査を待つ段階で、生成workloadの285機能呼出と時間比較はまだ認定しない。
+C入力別名を修正したfresh remote-v3で、元19 runnerのビルドと前後14照会は閉じ、成功reportと全93ファイル（2677319 B）を読み取り回収した。[独立raw監査](evidence/coscientist-masked32-clone-20261008/remote-build33-v3/independent-report.json)が19ビルド・14照会・33閉じた呼出、同じC toolchain／SDK、型付き入力役割と19 runnerを照合した。rootはこのビルド証拠だけを受理し、生成workloadの285機能呼出を別GOで開始した。時間比較はまだ認定しない。

@@ -63,3 +63,19 @@ ResultCID一致を使う下流停止は、下流が読む出力と更新をす�
 既存canonical encoder／decoder・resolver・512項目のResult／Transition・ordered replayを保持し、3対象×5種類の入口状態（同一入力、work、既存集計、control、memo）の診断をKotobaで実装した。[SOURCEと初回失敗の選択保存](evidence/coscientist-compute-canonical-20261008/semantic-shadow-v1-failure/snapshot.json)。各ケースで独立した状態コピーに元の解析器を2回実行し、解析は省略しない。初期キー除外は空で、非ゼロの状態変更ケースは再利用証明を公開しない。
 
 rootとcontrolsのSOURCEレビュー後、最大17呼出の試験を開始したが、最初のnative compileが`E2109 cond needs a final :else clause (byte 1175658)`で停止した。1呼出は閉じ、extractと15 shadowケースは未実行である。SOURCEレビューをnative型検査の代用とせず、旧失敗を保存してfresh版で既定節を修正する。現時点で同一対象のヒット率・省略・性能改善を確認したとは言えない。
+
+## 実際に異なる要求を解析した15ケース
+
+既定節だけを修正したfresh V2を再レビューし、compile／extractと3対象×5状態の計17呼出が終了した。[独立raw監査](evidence/coscientist-compute-canonical-20261008/semantic-shadow-v2/independent-report.json)は全argv・環境・raw、60個のcanonical objectとCID、順序付きのsaved／fresh寄与を照合した。元のFAIL1呼出は保存し、累計18呼出として区別する。直接状態・first-read・fresh状態の一致はnativeソース拘束flagに基づく有限確認であり、全メモリを別にserializeして比較したとは言わない。
+
+| 固定3対象で変更した状態 | ComputeCID／TransitionCID | ResultCID | 再利用証明の公開 |
+| --- | --- | --- | --- |
+| 同一入口状態の2回の直接解析 | 元の完全要求を保持 | 一致を照合 | 完全な3ケースだけ公開 |
+| work +128 | 変わる | 3対象すべて一致 | 公開しない |
+| 呼出先の既存集計1項目 | 変わる | 3対象すべて一致 | 公開しない |
+| control20 1項目 | 変わる | 3対象すべて一致 | 公開しない |
+| 未検証のmemo-valid | 変わる | 3対象すべて変わる、complete=false | 公開しない |
+
+work／既存集計／controlの9組は、同じpayloadの符号化対照だけでなく、変更した要求を実際に直接解析して得た有限観測である。意味上のqueryと現在状態へのadmission／transitionを分ける候補を支持する。ただし、キー除外は空のまま、解析を省略した回数は0、C2と共有キャッシュはOFFである。control20が一般に不要な入力とは認定しない。memoの不完全状態は失効・拒否が必要な具体例として保持する。
+
+診断ledgerは352603062〜355838326で元の536870912上限内だった。これは符号化・検査の費用を含む診断量で、elapsed・RSS・速度ではない。次は実際の重複queryの分布とhash／lookup／replayを含む費用を測り、除外候補のread依存を検証してから、新しいキーschemaと限定した再利用を試す。生成コードのEmbench速度とC比較は別の評価のままである。
