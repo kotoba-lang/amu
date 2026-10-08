@@ -39,3 +39,13 @@ Q2成分試験は上限14回で新規登録したが、[独立実監査](evidenc
 nativeハーネスは各ケースでfull M／G／CODE／metadata／overall比較を行い、rawではすべての比較flagが1だった。この判定はレビューされたソースに結び付く内部assertionであり、rawへ全メモリをserializeして第三者が再比較した証拠ではない。監査者は旧V1作者であるため、元のoracleの再確認とwidth作者による新slot修正の独立確認を区別して報告した。元V1のroot・width独立source reviewの履歴も保持する。
 
 [全内容packet](evidence/coscientist-quotient-two-20261008/state-v2/content.tgz)は1,990,898 B、SHA-256 `f36943f8f6b59bf88ea23c26a516f71dd435dbb58e32397f14fed1d217eed2c4`、56 regular members・71元パス・展開7,824,297 B。累計は自己再ビルド10＋旧失敗3＋観測3＋新成分14＝30呼出。旧未実行11ケースを流用した計数ではない。これで確認したのはoperand load後のhelper成分だけであり、生成CODE実行、後続protect／fin、物理x17／NZCV、fuel／arena、元19本とCの速度比較、製品採用は引き続き未認定である。
+
+## Typed ordinary-pipeline観測16と構造HOLD
+
+typed fixture3種×OFF／ONのcompile／extract12呼出は全6成果物を生成した。literal2 positiveはnative624→628 B・bench offset20→24で、literal3とruntime-divisorのnegativeは全KSEED／native／exportが一致する。この段階は生成コードを実行していない。
+
+独立SOURCEレビュー済みのreadonly observerを別にcompile／extract4回し、その2 compilerで同じfixtureをcompile／extract12回した。全16子プロセスは終了し、全6観測成果物が既存typed成果物とバイト一致した。チェック済みSIR、FREC、FIX、LIT、実emission範囲とQ2 siteを記録した。[独立実監査](evidence/coscientist-quotient-two-20261008/observer-v2/independent-report.json)はargv／環境・raw・全成果物を確認した。
+
+凍結したoffline構造検査器は全3対でKeyError4によりHOLDとなった。sourceのFIX列挙値はB26=1、BC19=2、CB19=3、BL26=4、LIT32=5、ADR19=6だが、検査器がlabelを1/3/4、functionを2と誤分類していた。実positiveの `[1,95,2,4,0,98]` はLABEL4へのconditional branchで、FREC4ではない。sourceと失敗を保持し、別の検査器修正をレビューする。生成コードの再実行や、失敗を除外した受理はしない。
+
+[全内容packet](evidence/coscientist-quotient-two-20261008/observer-v2/content.tgz)はSHA-256 `a9e88ffe7660ae846e642ec9f985f3e9788f21df613ffa932cf2b33ae72955f8`、4,164,102 B・172 member・245元パス。[独立packet監査](evidence/coscientist-quotient-two-20261008/observer-v2/independent-packet-report.json)は全内容と実監査の243依存ファイル、16呼出の閉鎖、6成果物一致を確認した。CODE+1の実構造認定・CPU/scoped feature・generated guest execution・fuel／arena・runtime register／NZCV・full19性能・採用は未通過である。

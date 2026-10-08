@@ -25,3 +25,15 @@ rawは `C1BFAIL 2 2893317 536870888 536870928 0 9733 0 0 0 0 536870912` であ�
 [失敗箇所観測の独立実監査](evidence/coscientist-compute-analysis-20261008/c1b-failure-location-v1/independent-report.json)は全3呼出の閉鎖・厳密argv／入力・KSEEDとnative一致・原因計算を確認し、追加C1BFAILを除くrawが旧失敗とバイト一致することを確認した。[全内容packet](evidence/coscientist-compute-analysis-20261008/c1b-failure-location-v1/content.tgz)は SHA-256 `338451e2fa18d8dd1594cdd48be020228b6265298ac4abf1136eb9a860114a39`、2,227,533 B・70 member・82元パスである。
 
 [独立packet内容監査](evidence/coscientist-compute-analysis-20261008/c1b-failure-location-v1/independent-packet-report.json)は全80依存ファイルと82元パスの内容閉包、70安全なmember、余分なmemberがないことを、展開・再実行なしで確認した。原witness作者による実監査・内容監査参加と、rootによるpacket構築の分担はreportに明記している。
+
+## 新しいequality-firstの有限3ケース
+
+独立SOURCEレビュー後、新しい診断compilerのcompile／extractと3つのembedded fixture、計5呼出を実行した。全5子プロセスがrc0・空stderrで終了し、bench／unknown-entry／preserving-selfの3ケースが通過した。旧5失敗＋失敗箇所観測3＋新試験5の累積13で、既存の失敗rootは再実行していない。
+
+全8,388,608 scalar cellの入力検証（所有する診断領域を除く）、直接計算の比較、fresh集計への順序付きreplay、stale入力の拒否、trace容量超過の拒否と元解析保持、support1／poison0、cleanupを照合した。各ケースの小さな実validator対照も、記録済み書込みの差分は受理、未記録差分は拒否、予算超過probeは拒否した。実edge寄与は長さ4、unknown0、自己再帰の全-1にそれぞれ対応する。
+
+[独立実監査](evidence/coscientist-compute-analysis-20261008/c1b-equality-first-v1/independent-report.json)は全5呼出・全raw・argv／環境・成果物と120依存ファイルを照合した。equal cellは8を計上してtable探索を省くため、古い診断の計上と受理限界は意図的に変わる。同じ536,870,912上限で走査を通過したが、rawのtracePhysicalCounterは最終scan費用やCPU命令数ではない。言語fuelの変更や性能の計測とは扱わない。
+
+[全内容packet](evidence/coscientist-compute-analysis-20261008/c1b-equality-first-v1/content.tgz)はSHA-256 `376be19d655be387c70d038b5a4aad796422a291586c814693ef0f163b6a9f4e`、3,040,212 B・104 member・122元パスである。これは有限fixtureでの入力・更新再適用の前提試験であり、完全なread-set／canonical ComputeCID・ResultCID、跨snapshot共有・persistent cache、full shape C1／C2、Embench高速化はまだ認定しない。
+
+[新試験packetの独立内容監査](evidence/coscientist-compute-analysis-20261008/c1b-equality-first-v1/independent-packet-report.json)は全120依存資料を含む122元パス、104安全なmemberと余分なmemberがないことを照合した。実監査width、実装controls、packet構築root、内容監査native_controlsの参加歴をreportに明記した。
