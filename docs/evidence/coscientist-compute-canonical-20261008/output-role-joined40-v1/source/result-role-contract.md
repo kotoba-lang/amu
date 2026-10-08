@@ -1,0 +1,34 @@
+# SOURCE result-role and scratch-lifetime proof
+
+This continuation preserves the pilot observer unchanged. Its expanded payload is a raw state projection; it is not a semanticResult codec. No output field is excluded from a production key, and no current result is re-applied.
+
+## Why controls9..14 are not owned by each memo query
+
+The frozen `41-census.kotoba` names the controlling source routines precisely. `vw-reset-flow` bulk-clears flow scratch, writes9=0,10=candidate,11=1,12=0,13=0,14=0 and mode20. `vw-ret` accumulates return count9, identity11, anchor12 and minimum bound13 using candidate10. `vw-flow` increments14 and refuses at65536 iterations. These fields therefore belong to the current `vw-run-fn` flow execution. They are neither immutable context nor automatically a saved result of every later memo query.
+
+The miss branch of `cq-original-query` resets memo contributions and calls `vw-run-fn f 0 1`, which executes `vw-reset-flow` before flow analysis. The hit branch calls only `vw-memo-replay`. Its transitive hit closure (`vw-memo-key-match`, `vw-out-head`, `vw-out-checked`, `vw-memo-fn?`, accessors, `vw-tick`, `vw-write`, `vw-fs`) writes work/status, match control29 and target aggregate bounds; it never calls reset-flow/ret/flow and never overwrites controls9..14. Thus these global summary cells remain from the most recently executed function analysis, possibly another subject. The pilot observed111 hits whose9..14 exactly match the immediately preceding global query, with106 different from the previous same-subject snapshot. These are scratch lifetime observations, not different semantic answers.
+
+The current stage6 memo caller is `vw-shape-functions`. After the query it consumes control1 and target support15, then may call `vw-poison-edges` when a previously supported query loses support. It does not consume9..14. Stage5 `vw-alias-params` consumes9/11/12 and `vw-alias-pass` consumes9/13 immediately after their own `vw-run-fn` calls, before stage6. Stage7 `vw-certificates` executes fresh mode2 `vw-run-fn` calls and their resets; its certificate collection derives from stable block states. This finite source proof is about this stage/mode/call graph only; it is not a blanket permission to omit scratch, diagnostics or budget from another query contract.
+
+## Permanent effects at the stage6 query boundary
+
+| Role | Source write sites and consumers | Contract status |
+| --- | --- | --- |
+| Per-edge contribution bank, all4 values including -1/0 | `vw-memo-reset`, `vw-memo-capture`; later `vw-memo-replay` | Observed complete ordered edge records with caller/ordinal/site/target/base/arity. Semantic candidate role. |
+| Current target aggregate input/updates fields6..9 | `vw-arg-bound` on miss; `vw-memo-replay` on hit; `vw-poison-edges` after support loss; `vw-bounds-finish` later | Mixture of preexisting aggregate and query effect. Subject VW6..9 alone does not identify the outgoing query result. Need each actual target before/after and source-defined merge relation. |
+| Subject support15 | `vw-block-add` sets0 at detailed64 refusal; `vw-shape-functions` checks it and poisons outgoing bounds | Semantic success/refusal role. Support loss excluded from reusable success. |
+| Subject poison14 | Read by query admission and by shape/certificate paths; the reachable stage6 query body does not set it | Input admission fact plus reported outcome. Capturing it does not prove it irrelevant as input. |
+| Memo valid, stored key and linkage | `vw-memo-valid-store`, `vw-memo-key-save`; `vw-memo-find`/replay validate links and matching site/target/base/arity | Operational cache evidence and replay preconditions. Not a semantic return summary. No automatic exclusion approved. |
+| Global return-flow summary9..14 | Miss reset/flow/ret; hit does not refresh; aliases consume before stage6 | Raw scratch. To offer a query-owned summary, store explicit owner/context/input provenance for directly evaluated summaries; never read current globals as the cached query answer. |
+| Certificate sites/count4 | `vw-read-certificate` writes only when mode20==2 and good stable state; `vw-final-reads` walks stable blocks in certificate phase | Stage6 miss uses mode1, so this bank is not a mode1 summary. For a certificate-query result, capture all8 fields of every owned certificate and exact count/order; do not relabel global bank contents as current-query certificates. |
+| Work/status/control and CFG/current/incoming blocks | Tick/bulk-work guards, block/merge/flow, cleanup | Transition and trap/budget evidence. Needed for effect reapplication; not represented completely by current projection. |
+
+The existing query boundary is before the caller's support-loss poison action. A complete stage6 effect contract must explicitly include or separately receipt that caller action. It must not silently call the present observer the complete propagation result.
+
+## Concrete next semantic contract
+
+Define `SemanticQueryAnswer/v1` for successful stage6 mode1: typed owner(context,activation,fn,mode,input-contract version); query-owned abstract return summary with explicit direct-evaluation provenance; subject support/poison/refusal diagnostics; exact ordered site contributions with full call contract. Capture contributions as query output, and separately describe `Stage6Transition/v1`: current target aggregates before/after, neutral/min/poison merge operations, memo validity/key publication, ordered status/work effects and the caller's support-loss handling. Native output identity and unchanged baseline analysis remain required.
+
+Current subject entry bounds6..9 and complete FN metadata retain input roles. A role proof may separate them from the semantic answer representation only after the above output/transition contract exists; this continuation does not approve an exclusion. Every successful changed-bound direct query must supply an owned fresh summary. Every hit must either carry a separately sealed saved-summary receipt tied to the actual memo/input lifetime, or be marked `SUMMARY_NOT_OWNED`; inheriting the globals is prohibited. Copying a previous direct summary into an offline candidate is not proof of fresh-query equivalence. A later shadow experiment can analyze a private state for validation without replacing baseline results, under a separate finite preregistration and budget/trap receipt.
+
+This is an implementable per-role path: add owned-summary and ordered target before/after observers, verify static query write-role coverage, test neutral/-1, poison0, duplicate sites, support drop, stale-summary owner and budget boundaries. It does not require a blanket full-M dump before taking that next step. Until closed, fullResultCID, fullComputeCID/read closure, semantic reapplication, downstream stopping and C2 remain false.

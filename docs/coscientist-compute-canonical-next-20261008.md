@@ -106,3 +106,33 @@ work／既存集計／controlの9組は、同じpayloadの符号化対照だけ�
 111 hitのcontrol9..14はすべて直前のglobal queryの値と一致し、106件で同じfnの前回値と異なった。これはscratchの寿命を示す実証であり、control9..14を現在のfn固有の意味結果としてResultCIDへ封じてはいけない。全subject VW fieldsにも入口bound6..9があり、全記録状態を意味結果と呼ばない。SLREの3件のbound変更missは以前の小projectionでも追加記録でも一致0件だったが、このpilotを元19件の60候補全体へ広げない。
 
 [著者参加を明示した再確認](evidence/coscientist-compute-canonical-20261008/output-role-pilot6-v1/reviews/actual-census-review/report.json)も保存した。出力role・read closure・現在のaggregateへの再適用・完全なResultCID／ComputeCIDは未資格、C2 OFFである。[選択snapshot](evidence/coscientist-compute-canonical-20261008/output-role-pilot6-v1/snapshot.json)は全763依存の実バイトarchiveではない。残る17件は既存observerと終了済みCRC／SLREを再実行せず、別の有限34-call実験として扱う。
+
+
+## 次の再利用単位：owned answerと現在状態へのtransition
+
+以下は次の実装契約であり、現在のcache採用ではない。ComputeCIDは計算要求を正規化した内容CIDであり、計算結果の正しさの証明ではない。DefCIDと区別し、同じ不変snapshot内ではcontextを一度封印して、小さなquery入力を厳密比較する。永続化・共有時にComputeCIDを求め、毎queryの全M hashは要求しない。
+
+| オブジェクト | 封じる内容 | ヒット時の確認 |
+| --- | --- | --- |
+| ImmutableContext | 対象・型・effect・依存閉包、解析器／規則群／工程／schema、ABI・数値・trap契約、入力readerの役割 | 現在のcontextと一致、未分類read／外部writerがない |
+| ComputeRequest | context、query種別／対象／mode、入口bound、意味結果に影響する全read、資源契約 | 除外項目は初期状態で空。role証拠なしの除外は拒否 |
+| SemanticQueryAnswer | 問い合わせが所有するfresh要約、support／poison／意味上の診断、全arityと元の順序を保つ辺寄与 | global scratchを答えとして代用しない。-1／0、重複辺を保持 |
+| TransitionReceipt | 現在の各target集計のbefore／after、元のmerge、callerのsupport低下処理、論理消費／実作業／trap・予算証拠 | 現在の集計へ再適用し、現在の権限と観測可能なfuel／課金を確認 |
+| VerifiedBinding | ComputeCID→ResultCID、transition・検証器版・証拠への参照 | 全検証後にvalid-lastで公開。途中・拒否・失効した対応は利用しない |
+
+ResultCIDの意味payloadへComputeCIDそのものを入れない。異なる要求から同じ答えを得ることを許し、要求との関係はbindingに持たせる。論理消費が結果の意味契約に含まれる版では保存し、観測不能な解析実作業を別receiptへ移す変更は別schemaとrole検証を要する。実時間やハッシュの費用を意味結果の一致から推定しない。
+
+coscientistの次の対照は、同じ入力状態からcacheなし／shadowありを実行して、owned answer・全target更新・caller poison処理・診断／trapを照合すること。規則、ABI、依存、effect、入口bound、予算を各1項目変えた失効負例と、部分公開・stale owner・辺欠落／順序変更の拒否を入れる。費用はcontext封印、hash、lookup、検証、再適用を含めて測る。予算切れや途中拒否を成功cacheへ登録しない。内部解析上限による完了率の変化と、言語上観測可能なfuel／課金の保存は別に判定する。
+
+局所graph rewriteでは型・effect・trap・ABIを保存する規則条件を別に検証し、その規則CIDをcontextへ入れる。公開／失効／再適用の状態遷移不変条件は、規則の意味保存と別に扱う。現在の有限テストとCID照合を、一般のTLA+モデル検査や定理証明と呼ばない。下流停止は、下流が消費する完全なAnswer契約が閉じた後の別段階である。解析時間の改善とEmbench実行時間の改善も別々に判定する。
+
+
+## 元19本への出力role観測：終了済み40呼出
+
+残る17本のcompile／extract34呼出を終了し、pilot6を再実行せず結合した。[独立保存raw監査](evidence/coscientist-compute-canonical-20261008/output-role-joined40-v1/reviews/independent/report.json)は全19本のKSEED／native／export／offsetのバイト一致、4,212 query、13,173 ordered edge、4,211 successfulとSLREの1 support低下、3,404既存memo hitを確認した。元の解析を1回ずつ呼び出す読み取り専用診断で、新しい解析省略は0である。
+
+269回のbound変更比較は従来の小投影60一致／209差、全追加raw投影21一致／248差だった。小投影では同じだった39件の差はglobal control13（return最小bound）または14（flow counter）だけで、subject VW／FN／辺arityの差はなかった。[差分の内訳](evidence/coscientist-compute-canonical-20261008/output-role-joined40-v1/reviews/independent/projection-differences.json)。これは39件の意味結果が異なる証明ではなく、scratchをそのままResultCIDへ入れると候補判定を歪める具体例である。21件の全raw一致も完全な意味結果や再利用資格ではない。
+
+全3,404 hitのcontrol9..14は直前global queryと一致し、2,968件で同じ対象の前回値と異なった。[SOURCEのrole／寿命確認](evidence/coscientist-compute-canonical-20261008/output-role-joined40-v1/source/result-role-contract.md)ではstage6のhitはfresh flowを走らせず、現在のcallerもこのglobal summaryを読まないことを確認した。一方、同じ辺の寄与は現在のtarget集計へ再適用される。保存する答えの所有者と、集計更新・support低下後のcaller処理を別契約にする根拠として使う。現在の処理をこの観測だけで不正と扱わない。
+
+[選択snapshot](evidence/coscientist-compute-canonical-20261008/output-role-joined40-v1/snapshot.json)と封印済みraw34 archive／inventoryを保存した。全828依存の実バイトarchiveではない。read closure、owned summary、現在状態への再適用、予算・trap契約、hash／lookup費用は未資格で、C2はOFFのままである。
