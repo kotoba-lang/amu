@@ -49,3 +49,11 @@ Resultは順序付き呼び出し辺の寄与とsupport／poison／診断を保�
 最適化規則のCIDは定義CIDと分けてquery契約・成果物provenanceへ結び付ける。局所graph rewriteの意味保存検証と、cache公開／失効／再適用の状態遷移検証を別の仮説として扱う。ここで一般的なモデル検査や定理証明が実装済みとは主張しない。解析時間の短縮と生成コードの実行時間は別に測定し、最終判断には元19本、selfhost固定点、同一quiet hostでのC比較を維持する。C2はOFFのままである。
 
 [新しい事前登録](evidence/coscientist-compute-canonical-20261008/semantic-transition-prereg-v1/preregistration.json)を凍結し、[独立SOURCEレビュー](evidence/coscientist-compute-canonical-20261008/semantic-transition-prereg-v1/independent-source-review.json)で設計の整合性を確認した。固定3対象×5条件の15 shadow commandとcompile／extract2呼出は将来の計画で、実行済みではない。初期キー除外は空、現在の完全requestとResult／Transitionは維持する。具体的な実装・変異offset・資源ledgerの検証後に実行する。同一対象の実query数を元19本から採取する別phaseと、費用を含むquiet計測も登録した。設計レビューをキー完全性・意味保存の一般証明やcache採用の承認とは呼ばない。
+
+## 内容CIDと入力解釈の契約
+
+比較runnerのリモートビルドで、内容一致だけでは入力の解釈を保存しない具体例が得られた。Cソースの内容をハッシュ名で配置したところ、拡張子が消え、最初のClang呼出はその入力をCとして扱わず失敗した。旧失敗を保持し、コンパイル役割に限定した同一バイトの`.c`別名をfresh領域に設ける修正を準備する。内容CIDを入力形式や実行成功の証拠へ読み替えない。
+
+ComputeCIDの要求は、内容CIDに加え、入力の役割、reader／frontendの種類と言語モード、正規化schema、読み取る範囲、出力契約を封じる。ファイル名が意味へ影響する経路では名前または明示した解釈契約も必要である。一方、物理配置先だけの変更で内容・役割・reader契約が同じなら、不要な失効を避けられるかを別に検証する。まず役割や言語モードの変更を誤ヒット負例へ追加し、全要求のshadow照合と現在状態へのordered replayを維持する。
+
+ResultCID一致を使う下流停止は、下流が読む出力と更新をすべて含む場合に限る。入力解釈・ABI・規則・effect／trap・現在の予算確認を省略する理由にはならない。これはコンパイル要求の契約改善であり、CIDによるEmbench実行速度改善を測定した結果ではない。
