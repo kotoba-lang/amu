@@ -49,3 +49,11 @@ typed fixture3種×OFF／ONのcompile／extract12呼出は全6成果物を生成
 凍結したoffline構造検査器は全3対でKeyError4によりHOLDとなった。sourceのFIX列挙値はB26=1、BC19=2、CB19=3、BL26=4、LIT32=5、ADR19=6だが、検査器がlabelを1/3/4、functionを2と誤分類していた。実positiveの `[1,95,2,4,0,98]` はLABEL4へのconditional branchで、FREC4ではない。sourceと失敗を保持し、別の検査器修正をレビューする。生成コードの再実行や、失敗を除外した受理はしない。
 
 [全内容packet](evidence/coscientist-quotient-two-20261008/observer-v2/content.tgz)はSHA-256 `a9e88ffe7660ae846e642ec9f985f3e9788f21df613ffa932cf2b33ae72955f8`、4,164,102 B・172 member・245元パス。[独立packet監査](evidence/coscientist-quotient-two-20261008/observer-v2/independent-packet-report.json)は全内容と実監査の243依存ファイル、16呼出の閉鎖、6成果物一致を確認した。CODE+1の実構造認定・CPU/scoped feature・generated guest execution・fuel／arena・runtime register／NZCV・full19性能・採用は未通過である。
+
+## 修正検査器による保存済み3対の再判定
+
+旧HOLDを保持した別V3検査器で、sourceのFIX enumとlabel／function・BL aux・ADR変位を合わせた。独立SOURCEレビュー2件と新しいoffline GO後、保存済み3対に各1回だけ検査器を適用した。[独立offline実監査](evidence/coscientist-quotient-two-20261008/offline-v3/independent-report.json)は全279依存資料、GO／レビュー／source pin、rawから再parseしたmetadata、全CODE／FIX／literal／exportの対応を照合した。
+
+literal2の実typed owner FN1／SIR5、x0→d9の1 siteが、MOVZ17=2／SDIVからADD sign bias／ASR1／MOVZ17=2に対応する。native624→628 B・bench offset20→24で、それ以外の全wordと再配置・exportの対応を確認した。literal3／runtime-divisorのnegativeはQ2 site0、native668／708 Bの全KSEED／nativeが一致した。新native／SSH／再buildは0である。これは保存されたコードの構造検証で、CPU・scoped feature・runtime・NZCV・fuel／arena・性能の認定ではない。
+
+[全内容packet](evidence/coscientist-quotient-two-20261008/offline-v3/content.tgz)はSHA-256 `d8007eb7d411922af0bad90ed94dc8bc658fef6e5b31fac6f73aafe276184c3f`、4,190,503 B・187 member・281元パス。[独立内容監査](evidence/coscientist-quotient-two-20261008/offline-v3/independent-packet-report.json)は全279依存の内容閉包と保存された構造判定を確認した。source作者controlsの内容監査への参加と、root構築・width実監査をreportに明記した。C以上の性能・採用は未達である。
