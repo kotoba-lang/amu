@@ -307,3 +307,8 @@ SOURCEと1,769入力371,271,887 Bの照合、rootと独立レビュー後にV2�
 [独立保存監査](evidence/coscientist-masked32-clone-20261008/table-resource-diagnostic1-as-failure/reviews/actual-independent/report.json)は、loaderを呼ばない1 Python診断childのargv／環境、10 SOURCE／9 input pins、6保存outputs、1,065 Bのjournal／stdout完全一致・stderr0を検査した。通常のchild bodyでFSIZE64MiB、CPU1800の設定とreadbackが一致し、AS4GiBは`ValueError('current limit exceeds maximum limit')`で失敗しreadbackはinfinityのままだった。childはexit78でreap済み、first failureで終了しcompletionなし、retryなし。外側exit78はrootのtool観測に限る。
 
 これは今回の診断のAS設定拒否であり、旧native V2の失敗setterを確定する証拠でも、すべてのmacOS／AS値で未対応という証拠でもない。次のnative adapterは平台の有限メモリ契約を明示して別SOURCE／GOで扱う。ASを黙って除去せず、resident memoryやarena契約との意味差を混ぜない。現時点のcompiler／native execution0、TC生成・current typed binding・C以上の性能は未認定のままである。[選択snapshot](evidence/coscientist-masked32-clone-20261008/table-resource-diagnostic1-as-failure/snapshot.json)は完全なPython／OS／共有library閉包ではない。
+## SOURCEの性能仮説とプロセス群の資源契約
+
+[静的census](evidence/coscientist-masked32-clone-20261008/dense-dispatch-frontier-v1/source/proposal.md)では、元のstatemate／nsichneuに認識対象のdense dispatch chainはなかった。現在のscalarDAGはboolも許可済みで、主な境界はvector引数・分岐・fuel・runtime操作だった。歴史的typed observerと測定済みLC、現在の41-a64genを別のproducerとして記録した。状態更新やfuelを飛ばす置換は採用せず、既存tail loweringの適用を現在のproducerで観測してから、順序を保持した継続領域の融合を検討する。これはSOURCE仮説で、性能改善を測定した結果ではない。
+
+[owned-group memory adapterと旧fixtureのSOURCE記録](evidence/coscientist-masked32-clone-20261008/owned-group-memory-source-and-holds-v1/snapshot.json)を保存した。メトリックは所有する最大2プロセスのri_phys_footprintの合計、4GiBを超えたsampleで拒否する別契約である。AS・RSS・hard peakの上限とは同等でない。V1〜V3で見つかった終了処理の競合を保存し、V4はwaitに入る前にシグナル送信権を永久に取り下げる。割り込みで所有権が曖昧なら、成功や終了済みとは推定しない。

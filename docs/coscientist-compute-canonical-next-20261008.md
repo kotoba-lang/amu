@@ -152,6 +152,16 @@ coscientistの次の対照は、同じ入力状態からcacheなし／shadowあ�
 
 この失敗を成功ResultCIDへの対応に登録しない。実装CIDと不変な入力内容に加え、readerの意味、ABI・effect・trap・予算などの実行契約を要求へ封じ、現在状態への再適用は別のTransitionで検証する。現在の権限判断や外部書込みをキャッシュで代替しない。この診断はハーネスの正しさの証拠であり、ComputeCIDの性能効果や19本のC比較結果ではない。
 
+## 完全キーの失効と、所有した結果の再適用を検証する
+
+ユーザーの再利用案を[独立gap監査](evidence/coscientist-masked32-clone-20261008/compute-replay-gap-audit-v1/source/AUDIT.md)で既存の実証と照合した。既存のfield反転対照は符号化した値の相違を検出する試験であり、変更したABI・規則・effect・trap・予算を実際のcache lookup／admissionへ渡して古い結果を拒否した証拠ではない。既存15 shadowケースやpublication-prefix試験を、この不足を埋めるために重複実行しない。
+
+次の観測対象は、queryが所有するsummary、全呼び出し辺の順序付き寄与とtargetの更新前後、callerで行うsupport低下・poison処理である。既存memo hitが返すglobal scratchを、そのqueryのResultとして扱わない。所有者を特定できないsummaryは未資格として記録し、現在の集計や権限・予算への再適用はTransitionで別に検査する。
+
+CRC32／SLREの元の本体を使う新observerのcompile／extractと2本のcompile／extract、最大6呼出を次の有限試験案とする。これは未実行の提案で、SOURCE・正確な資源契約・2レビューの確定後に別登録する。wrong owner、辺の欠落・並べ替え、arity変更、-1から0への変更、caller poison欠落、診断・課金改変、途中valid公開、予算不足を実際のnative importer／admissionが拒否する負例も別に実装する。
+
+キー除外は空、C2はOFF、追加解析省略は0のまま維持する。hash・lookup・replay・公開と失敗経路を含む実費用を測るまで、ResultCID一致や既存memo hit率から速度向上を推定しない。生成コードの局所書き換えとCIDによる解析再利用は別々に評価し、元19本・自己再ビルド固定点・quiet hostでのC比較を最終条件に保つ。
+
 
 ## immutable table規則の解析再利用への適用
 

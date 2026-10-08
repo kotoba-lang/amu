@@ -1,0 +1,9 @@
+# Owned-group qualification fixture SOURCE HOLD
+
+The concrete fixture starts a fixed pinned Python leader in a fresh session and exactly one fixed pinned Python helper in that group. Leader readiness/release messages make the phases stable: two samples while one member waits, four while both wait, then two only after helper exit and reap. No sample is taken during spawn or drop transitions. The exact adapter is copied byte-identically from the frozen reviewed proposal.
+
+The metric is sum-ri_phys_footprint only, with a soft4GiB refusal threshold and raw per-process summation without shared-page deduplication. This explicitly supersedes the earlier preserved resident-size AND footprint proposal for qualification. Sequential censuses cannot prove atomic completeness, transient-process absence, unsampled peak memory or finite overshoot. No two-metric or AS equivalence is claimed.
+
+The parent records each ready/release/sample receipt durably, supervises10s wall with a watchdog that signals only the owned group, retains at most64KiB per raw stream and journal, and reserves5s total cleanup. The leader normally reaps its helper; the parent kills the owned group and reaps its leader on every terminal path, then checks that the group is absent before completion. Failure preserves bounded raw/terminal evidence and refuses. PGID reuse after leader reap remains a narrow cleanup identity race, explicitly unresolved. Source review must assess it before any execution GO.
+
+The current compiler/benchmark/loader source and8-child binding gate are unchanged and unqualified. This fixture contains no resource setters, compiler, loader, SSH, arbitrary PID/command inputs or retries. Python executable and source pins are complete declared inputs; sharedcache/runtime stdlib closure is not a universal hermeticity claim. No child or process API was executed for authoring.

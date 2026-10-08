@@ -1,0 +1,43 @@
+# ComputeCID / ResultCID / replay: independent SOURCE gap audit
+
+This is a read-only audit of saved documents, preregistration, source, and reports. No native/compiler/SSH/solver calls, product edits, or reruns. It is separate from the dense-dispatch performance frontier. Exact document/report/source hashes are retained in input-pins.json. This is a selected SOURCE audit, not a full dependency archive or renewed raw-runtime certification.
+
+## Decision
+
+The user's proposal is already incorporated as ComputeRequest → owned SemanticQueryAnswer plus a current-state TransitionReceipt and valid-last VerifiedBinding. The **next missing evidence is ownership plus the complete query/caller update boundary**, not another serialization example or the same 15-case shadow. Key exclusions remain empty; new query skips 0; C2 OFF. There is no established CID runtime speedup, complete reusable key, general transition proof, or measured hash/lookup/replay benefit.
+
+| Requirement | Existing concrete evidence | Remaining qualification |
+| --- | --- | --- |
+| Complete key and individual invalidation | Canonical context/request fields; host malformed/field mutation controls; native field xor vs decoded-value comparisons; 15 actual same-input/work/preaggregate/control/memo direct pairs | Current actual lookup/admission mutations for rule/schema/ABI/dependency/type/effect/trap/budget/reader role; exhaustive read-role closure including reset ownership and external writers. A field difference alone is not a native stale-hit rejection test. |
+| Ordered call-bound replay | Fixed3 canonical cases replay saved and fresh aggregate; independent payload replay; full19 observes 13,173 ordered arity/site/target/base contributions | All actual targets' pre/post aggregates; query-owned answer on misses/hits; caller support-loss poison handling, diagnostics/status/work, exact merge/admission at the full boundary. Preserve duplicate edges, -1 neutral vs0 poison. |
+| Support / poison / diagnostics | 15 shadow memo mutation becomes incomplete, not published; SLRE full19 has one support drop; source role identifies caller vw-poison-edges after query | Native negative path at query **plus caller** boundary, owned diagnostic/result; independently serialized target/support/poison changes rather than only source-bound equality flags. |
+| Observable fuel vs compiler work | Original analysis cap268435456 and diagnostic cap536870912 retained; explicit logical charge; host publication-budget prefixes; compiler work counters recorded | Native replay/admission budget boundary and first-failure prefix; distinguish internal compiler-work changes from language fuel/charge/trap. Runtime fuel parity from unrelated Embench candidate tests does not qualify analysis reuse. |
+| Result identity independent of request | Canonical V2 serialization control; actual 15 shadow: work/preaggregate/control changes have distinct Compute/Transition and same Result for9 finite pairs; memo changes fail | General ownedAnswer contract, real same-query repeated input matching, downstream dependency closure; oldResult projection is not permission to drop fields. No rerun of these9 pairs needed solely to demonstrate separation again. |
+| valid-last / no failed publication | Canonical cc-publish-controls checks22 interrupted prefixes and22 diagnostic-budget shortfalls; shadow publishes only3 same-input successful cases; old failures retained | Import/lookup rejects wrong/stale owner/context, torn/corrupt binding, failed/trap/unsupported result at actual current transition boundary; concurrency/durability not qualified by in-memory prefix controls. |
+| Hash / lookup / replay total cost | Diagnostic ledger and query work census; original prereg explicitly charges seal/encode/hash/lookup/direct/replay/publication/failures/amortization | Actual quiet time/CPU/memory data with all added work and cold/warm amortization. No actual new lookup or skipped analysis measured; logical ticks are not elapsed time. |
+| Source/ABI/reader/resource identity | Docs distinguish input content from language mode, stream limits from file/OS limits, immutable input from current admission | Versioned executable key schema with reader role and source closure; resource/platform negative admissions must remain failure receipts, never successful bindings. |
+| C2 OFF and full performance goal | Reports state skips0, no production cache; native generated-code timing is separate | Keep OFF until all semantic/runtime/cost gates pass; original19 quiet C comparison and selfhost fixed point remain final performance criteria. |
+
+## Two important non-equivalences
+
+1. `cc-invalidation-controls` flips each encoded vector field, checks inequality against decoded value, then restores it. It does **not** call a cache importer/lookup for every changed ABI, rule, effect, trap or budget. Host `oneFieldReaderRejections` and22 publication prefixes are useful controls already performed, but are not a complete native key-admission mutant campaign.
+2. Full19 output-role observer retains direct analysis and existing memo replay. The 3,404 existing hits carry global control9..14 from the preceding global analysis; 2,968 differ from the previous same-subject record. Those globals are not the current query's owned answer. The21 expanded raw matches,60 small-projection matches, and39 scratch-only differences are **not** fullResultCID equivalence or reuse qualification. The role audit correctly distinguishes this current behavior from a compiler bug.
+
+## Recommended next native experiment: owned-answer / target-transition observer
+
+Prepare a **new** Kotoba SOURCE adapter using the unchanged original stage6 mode1 analysis. It must bind current producer, full snapshot/readers, source and implementation versions before any root GO. This recommendation is not executable GO and does not assign final byte offsets or resource caps without implementation.
+
+First pilot can reuse the **original CRC32 and SLRE bodies** as inputs to an expanded observer: new observer compile/extract2 plus two original workload compile/extract4, maximum6 native child calls with first-failure stop/no retry. This would add ownership/update evidence absent from the prior six-call pilot; do not rerun the old observer just to claim new coverage. A prospective SOURCE must freeze exact producer/argv/environment/resource/stream/file bounds and two reviews before launch.
+
+Record the stage6 full boundary:
+
+* Direct summary owned by(context,activation,fn,mode,input contract); for existing hits emit a sealed receipt to the actual saved owner or `SUMMARY_NOT_OWNED`. Never substitute inherited globals or fabricate a prior answer offline.
+* Every edge in original order with ordinal/site/target/base/arity and four bound contributions; current target aggregates immediately before/after each merge. Keep exact duplicate edges and -1/0 distinctions.
+* Subject support/poison, status/diagnostics, work and resource state before query, after query, and after caller support-loss/poison handling. Log first-failure order; unsupported/budget/trap never publishes successful binding.
+* Native/container/export/offset bytes remain identical to the unchanged unobserved producer on both originals. No evaluator skip and C2 OFF.
+
+The SOURCE prereg should additionally specify finite **actual admission/import mutants**, outside the observational query schedule: wrong summary owner/context; dropped/reordered/duplicate edge identity; changed arity; -1→0; missing caller poison; altered diagnosis/charge; partial valid-last binding; rejected/unsupported/insufficient-budget receipt. A native validator must consume those records and refuse them. Do not count host xor inequality as these controls. Exact fixture indices/call counts must be authored after selecting real saved sites and retaining query lifetimes; no guessed offsets are supplied by this audit.
+
+This pilot closes ownership and transition outputs; it still does not prove full read-key closure or all19 generality. Full immutable/input/reset read audit and individual contract-key mutations follow under separate finite source registrations. Only after exact direct/shadow/replay agreement and successful refusal controls should quiet costs for seal/encode/hash/lookup/replay/publication be measured, including failed paths and amortization. No persistent import, crosssnapshot sharing, downstream stopping, or production C2 follows automatically.
+
+The bounded TC graph rewrite and dense-dispatch hypotheses remain separate generated-code experiments. Their measured performance must not be reported as ComputeCID/ResultCID cache benefit.

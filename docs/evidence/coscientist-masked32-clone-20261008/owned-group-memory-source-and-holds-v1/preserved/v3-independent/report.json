@@ -1,0 +1,39 @@
+{
+  "status": "HOLD_SOURCE_OWNED_GROUP_MEMORY_QUALIFICATION2_WAITPID_BEFORE_RETURNCODE_PUBLICATION",
+  "independent": true,
+  "priorOperationalAuthorship": false,
+  "sourcePinsSHA256": "0e03edda9bf39f04ae841db961652823a52ad41271d1e7bc2ceff159c857ddad",
+  "driverSHA256": "ebf9790493d37241ce3add4d20e7e4ae5361616051f33bc989b3ce2a134a5bb7",
+  "wholeSourceFilesHashed": 11,
+  "wholeInputFilesHashed": 13,
+  "findings": [
+    {
+      "priority": 1,
+      "driverPath": "/Users/junkawasaki/github/workspaces/codex/crc-table-decision-collapse-portable-memory-qualification-v3-20261008/run.py",
+      "reason": "returncode None is insufficient proof the PID was not reaped. Pinned interpreter local subprocess _try_wait invokes os.waitpid before _wait publishes status through _handle_exitstatus. An asynchronous exception between them leaves released PID with returncode None; driver finally then permits cleanup killpg on recycled PGID.",
+      "required": "Conservatively retire signaling authority on unexpected/uncertain wait exception; add fake reaped-but-returncodeNone-then-raise control. Preserve uncertainty/failure rather than signal an ambiguous anchor."
+    },
+    {
+      "priority": 2,
+      "reason": "README has stale claim that parent kills every terminal path then checks group absence, contradicted by later correction. New frozen description should consistently describe final policy."
+    }
+  ],
+  "localInterpreterStdlibEvidence": {
+    "path": "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py",
+    "bytes": 90732,
+    "sha256": "6628ffdd65c093a6c08cae01ffe82877d3ced515aac9e7be0cff16512c30a7d9",
+    "lines": [
+      2039,
+      2071
+    ]
+  },
+  "correctedV3Cases": [
+    "Shared lock serializes explicit group signal and leader waits.",
+    "Published returncode followed by wait exception is handled.",
+    "No explicit leader poll or post-reap group query exists.",
+    "Original fixed child/handshake/sample scope remains bounded."
+  ],
+  "reviewerOperationalCalls": 0,
+  "fixtureQualified": false,
+  "native8Authorized": false
+}
