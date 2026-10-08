@@ -79,3 +79,11 @@ rootとcontrolsのSOURCEレビュー後、最大17呼出の試験を開始した
 work／既存集計／controlの9組は、同じpayloadの符号化対照だけでなく、変更した要求を実際に直接解析して得た有限観測である。意味上のqueryと現在状態へのadmission／transitionを分ける候補を支持する。ただし、キー除外は空のまま、解析を省略した回数は0、C2と共有キャッシュはOFFである。control20が一般に不要な入力とは認定しない。memoの不完全状態は失効・拒否が必要な具体例として保持する。
 
 診断ledgerは352603062〜355838326で元の536870912上限内だった。これは符号化・検査の費用を含む診断量で、elapsed・RSS・速度ではない。次は実際の重複queryの分布とhash／lookup／replayを含む費用を測り、除外候補のread依存を検証してから、新しいキーschemaと限定した再利用を試す。生成コードのEmbench速度とC比較は別の評価のままである。
+
+## 元19本の実query頻度と既存memo
+
+新しい読み取り専用の診断をAmuでビルドし、元19本のcompile／extractを含む40呼出を実行した。[独立監査](evidence/coscientist-compute-canonical-20261008/query-census40-v2/independent-report.json)は全40呼出のraw・環境・17 countersと、全19本のKSEED・native・exportの完全一致を確認した。診断は元のqueryを1回ずつ実行し、M／G更新・追加work tick・新たな省略を挿入しない。各activation内の対象と4入口boundの反復を記録し、実際のcontrol29の結果から既存memo経路を分類した。
+
+4,212 queryのうち既存memo hitは3,404（80.8%）、missは808だった。[保存rawの費用調査](evidence/coscientist-compute-canonical-20261008/query-census40-v2/cost-report.json)では、missを初回対象539と4bound変更の再問い合わせ269へ分解した。論理解析tickはhitの中央値2,304、missの中央値199,424、合計10,497,920／226,455,168だった。これはVWの論理workで、時間・CPU・診断IOの費用ではない。slreの初回1queryではsupportが1から0へ変わった。投影形式のunsupportedとVW errorは0でも、すべての解析結果が再利用可能とは言わない。
+
+同じ小さな入力を繰り返す経路は、すでに既存memoが扱っている。新しいComputeCID cacheを加えればこの80.8%をさらに省ける、とは推定しない。次は269回のbound変更と539個の初回対象、順序付き寄与の再適用、context封印・hash・lookupの費用を検証する。異なる要求のResultCID一致と下流停止には完全な出力・更新契約が要る。今回の4bound頻度は完全なkeyでもResultCIDでもなく、fullComputeCIDの資格付与はfalse、新cacheの省略0、C2はOFFである。元のVWのFN128／edge512領域を観測し、canonical codecを切り詰めたCIDは作らない。[選択snapshot](evidence/coscientist-compute-canonical-20261008/query-census40-v2/snapshot.json)は全763依存の実バイトarchiveではない。生成コードの速度は、quietなC比較で別に判断する。
