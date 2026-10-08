@@ -46,3 +46,17 @@ Resultのpayloadへ要求CIDや可変global scratchを混ぜない。ただし�
 - 費用記録にはcontext封印・符号化・hash・参照解決・lookup・検証・replay・公開・失効、miss／拒否経路を含める。cold／warmと同一対象の実ヒット率、context費用の償却単位を分け、cacheなしの全体解析時間と比較する。既存memo hit数や論理work減少を、新しいCID cacheの速度改善として数えない。
 
 観測対象の解析lineageと上記schemaが確定するまでは、キー除外は空、新しい解析省略は0、C2はOFFを維持する。現在のCRC生成コードの比較実行は別の意味保存試験であり、このcacheの実装・高速化を証明するものではない。
+
+## 今回の提案を使う実験の判定表
+
+同じ解析を繰り返さない仮説は、生成コードの局所最適化と分けて事前登録する。ComputeCIDは実行前の検索キー、ResultCIDは実行後のowned Answer、TransitionReceiptはそのAnswerを現在状態へ使えることの検査記録とする。ResultCIDだけで現在の権限・fuel・辺の更新を代替しない。
+
+| 実験 | 対照と受入条件 | 次の判断 |
+| --- | --- | --- |
+| query再利用 | 同一snapshotでcacheなし／shadow／replayのAnswer、順序付き寄与、support／poison、診断が一致 | 不一致なら再利用を採用しない |
+| 要求の失効 | 定義本体、依存、入力bound、規則、ABI、effect／trap、資源契約を一つずつ変更 | 実lookupが旧bindingを拒否する |
+| 同じ結果への収束 | 要求が変わりAnswerが同じでも、現在transitionと全consumer read-viewを更新 | SCCのpending更新が残れば停止しない |
+| 公開の原子性 | 部分結果、途中書込み、予算切れ、trap、unsupportedを注入 | 成功bindingを公開しない |
+| 実費用 | 封印から失効までの全費用を含むcold／warm、ヒット率、全体解析時間を比較 | 観測した純改善だけ採用候補にする |
+
+共有・永続化はcanonical ComputeCIDでbindingを検証し、単一不変snapshot内の小さなキー比較はそのsnapshotへの所属を検証する。この二層の使い分けによる利益も、hash費用を含めて測る。解析時間の改善はコンパイル時間の成果であり、Embenchの実行速度改善として加算しない。現時点ではC2 OFF、新しい解析省略0、キー除外なしを維持する。

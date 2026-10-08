@@ -367,3 +367,17 @@ V1は記述に旧8-group資源集計が残るため未実行のHOLDとして保�
 ONはsamplerの`ProcessLookupError`とcleanupの`killgroup:PermissionError`で失敗した。捕捉したstdoutは0 Bで、stderrは完全なarena行だった。adapterのowner／member照合は複数箇所で`os.getpgid`を呼ぶが、保存exceptionには内側tracebackがなく、失敗した呼出・PID・原因は特定できない。cleanupはpipeを完全にdrainせず閉じるため、空の保存stdoutをguestが出力しなかった証拠と扱わない。
 
 残る6呼出とcompletionは不在、accepted pairは0で、凍結campaignはFAILのまま再実行0である。[選択snapshot](evidence/coscientist-masked32-clone-20261008/table-original-guest8-sampler-failure-v1/snapshot.json)は全393 MB依存archiveではない。tool session3728のouter exit1はrootのtool観測に限る。次は有限pipe捕捉と所有権を維持したsamplerの試験を別SOURCEで設計する。今回の失敗から意味の不一致や性能改善を推定せず、guest parity・full19・固定点・C比較は未資格を保持する。
+
+## CRC置換の有限意味モデルと、捕捉処理の12対照
+
+[保存された実13命令の有限モデル](evidence/coscientist-masked32-clone-20261008/table-emitted13-finite-model-v1/model/report.json)を独立に作り、rootも再計算した。実TCEMIT・FIX・typed SIR・literal bytesを照合し、入力256値とfuel 0／1／2の768ケースで整数結果・fuel更新を確認した。10命令変異と3範囲外対照は拒否した。mapped context、readonly literal、入力範囲などの前提を明示している。これは保存命令の有限モデルであり、hardware実行、元readerの全scratch／stack／trap状態の同等性や一般的な形式証明ではない。レビューの初回dictionary比較失敗と訂正も保存した。
+
+pipe捕捉V1はsetup失敗時のFD所有権が不十分なため、未実行HOLDとして保存した。新V2は所有権grant／denyを明示し、writer停止後にだけhashを公開する。12対照を一度実行し、[独立監査](evidence/coscientist-masked32-clone-20261008/capture-fixture12-v2-actual/reviews/actual-independent/report.json)は8捕捉状態と4setup失敗、16 rawファイルを照合した。非対称EOF、上限超過、short write、fsync失敗、join timeout、曖昧なthread startを含む。停止後にrawが完全になっても、最初の失敗を消さない。native／Popen／group操作はfixture内部で0で、元CRC guest試験は再実行していない。
+
+[選択package監査](evidence/coscientist-masked32-clone-20261008/capture-fixture12-v2-actual/reviews/package-independent/report.json)は、16 rawの合計9,437,262 Bを9,654 Bのtgzへ保存したことと、展開内容の完全一致を確認した。SOURCE、GO、completion、レビューも保存している。これは全依存archiveではない。chronologyとFD closureは凍結fixtureのassertionであり、独立syscall traceではない。通常ファイルのwrite／fsyncが任意にblockしないことや、native samplerのmemory admissionを資格化してはいない。
+
+## vector状態の次の仮説：コピー除去から実read／store観測へ
+
+[元statemate／nsichneuのSOURCE調査](evidence/coscientist-masked32-clone-20261008/vector-state-source-frontier-v1/source/report.md)は、両者がaffine mutable vector-assoc!を使い、状態vectorを反復外で一度確保することを確認した。persistent vector-assocは0で、ループ内のimmutableコピー除去という仮説を退けた。syntax上のcall／read数を生成後の命令数やCとの差の原因と扱わない。
+
+次の候補は、実allocationとchecked storeを保持したまま、同じhandle・定数indexの直線区間で値をforwardできるかである。alias、write、call、join、寿命、fuel／trapの条件が未確認なら通常経路を維持する。実typed eligibilityは未確定であり、SOURCE上の数から推定しない。元19本、3世代固定点、同一quiet hostのC比較は引き続き最終条件である。
