@@ -56,6 +56,8 @@ fresh V4はvalidatorのコードを一切変えず、元の固定packetを配置
 
 ## 未実行だったAES抽出・SHA観測の終了
 
-残る3呼出だけをfresh領域で実行し、AES extract、SHA compile／extractは終了コード0で閉じた。[保存rawの監査](evidence/coscientist-masked32-clone-20261008/remaining3-v2/report.json)は通常ONの全コンテナ／native一致、scope内へコピーしたAES入力の内容一致、SHAの10サイト・10 clone・150 SIRとFIX→CODEを照合した。AESと合わせて14サイト・13 clone・195 SIRである。監査者はdriver作者でもあるため、その参加を明記し、第二の作者独立レビューを別に求める。旧FAIL計4呼出は保存し、この継続3呼出で成功へ再分類しない。
+残る3呼出だけをfresh領域で実行し、AES extract、SHA compile／extractは終了コード0で閉じた。[保存rawの監査](evidence/coscientist-masked32-clone-20261008/remaining3-v2/report.json)は通常ONの全コンテナ／native一致、scope内へコピーしたAES入力の内容一致、SHAの10サイト・10 clone・150 SIRとFIX→CODEを照合した。AESと合わせて14サイト・13 clone・195 SIRである。監査者はdriver作者でもあるため、その参加を明記し、[第二のrawレビュー](evidence/coscientist-masked32-clone-20261008/remaining3-v2/second-review/report.json)も全3呼出・コンテナ・SHA所有者を照合した。第二reviewerの観測器作者としての関与も開示し、完全な作者非関与とは呼ばない。旧FAIL計4呼出は保存し、この継続3呼出で成功へ再分類しない。
 
 リモート比較runnerはtoolchainの前半7照会を通った後、最初のCビルドで停止した。内容ハッシュ名の入力が拡張子を失い、ClangがCソースとして認識しなかった。C内容・元flags・元19本を保持し、別のfresh領域でコンパイル入力だけに`.c`別名を与える修正を準備する。機能285呼出、quiet性能比較、selfhost固定点は未実行・未認定である。
+
+C入力別名を修正したfresh remote-v3で、元19 runnerのビルドと前後14照会は閉じ、成功reportと全93ファイル（2677319 B）を読み取り回収した。独立raw監査を待つ段階で、生成workloadの285機能呼出と時間比較はまだ認定しない。

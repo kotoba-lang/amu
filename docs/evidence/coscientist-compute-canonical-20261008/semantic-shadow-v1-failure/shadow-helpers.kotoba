@@ -1,0 +1,68 @@
+(def cs-adapter "4886b9d85fe04b35f6d087282139281b320d6de0d646651c3e21e7f95a90f4f6")
+;; Diagnostic direct-only C1 shadow. No shared lookup or reused answer path.
+(defn- cs-family [] :i64
+ (if (= (io-argc) 3)
+  (cond (string=? (io-arg 2) "0") 0 (string=? (io-arg 2) "1") 1
+        (string=? (io-arg 2) "2") 2 (string=? (io-arg 2) "3") 3
+        (string=? (io-arg 2) "4") 4 :else -1) -1))
+(defn- cs-mutation-address [M :vector-i64 f :i64 family :i64] :i64
+ (cond (= family 1) (+ (vector-at M gn-cell) vw-control)
+       (= family 2) (let [e (vw-out-head M f)]
+         (if (and (>= e 0) (< e (vw-c M 3)))
+          (+ (vector-at M gn-cell) vw-fns (* (vw-e M e 2) 16) 6) -1))
+       (= family 3) (+ (vector-at M gn-cell) vw-control 20)
+       (= family 4) (+ (vector-at M gn-cell) vw-old 1792 f) -1))
+(defn- cs-mutate [M :vector-i64 f :i64 family :i64] :vector-i64
+ (let [a (cs-mutation-address M f family)]
+  (if (< a 0) M
+   (let [old (vector-at M a) value (cond (= family 1) (+ old 128)
+                    (= family 2) (if (< old 0) 0 (inc old))
+                    (= family 3) (bit-xor old 1) :else 1)]
+    (vector-assoc! M a value)))))
+(defn- cs-shadow [A :vector-i64 B :vector-i64 fresh :vector-i64 b :i64 f :i64 c :i64 family :i64 same :bool] :bool
+ (let [C (-> (vector-alloc 2) (vector-assoc! 0 (vector-at B (+ b 3))))
+       scanned (cc-cost-input-scan C A B b 0)
+       scopeHash (cc-hash C (string-concat cc-evaluator (string-concat cc-rules (string-concat cc-contract cs-adapter))))
+       X (cc-context C A) xb (cc-encode C "shape-context/v1" scopeHash X 393216)
+       snap (cc-hash C xb) Q (cc-request C A f c)
+       qb (cc-encode C "shape-compute/v1" snap Q 131072) compute (cc-hash C qb)
+       T (cc-result C A B f) R (cc-semantic-result C T)
+       outScope (cc-hash C (string-concat snap cc-output-contract))
+       rb (cc-encode C "shape-result/v2" outScope R 131072) result (cc-hash C rb)
+       tb (cc-encode C "shape-transition/v2" compute T 131072) transition (cc-hash C tb)
+       dx (cc-decode C "shape-context/v1" scopeHash xb 393216)
+       dq (cc-decode C "shape-compute/v1" snap qb 131072)
+       dr (cc-decode C "shape-result/v2" outScope rb 131072)
+       dt (cc-decode C "shape-transition/v2" compute tb 131072)
+       encoded (and (= (vector-count dx) cc-context-n) (= (vector-count dq) cc-request-n)
+                    (= (vector-count dr) cc-result-n) (= (vector-count dt) cc-result-n)
+                    (cc-vector-same C X dx 0) (cc-vector-same C Q dq 0)
+                    (cc-vector-same C R dr 0) (cc-vector-same C T dt 0))
+       roles (and scanned encoded (cc-role-tape C A B b dx dq 0))
+       refs (and encoded (cc-resolve-fns C A 1) (cc-resolve-labels C A 0)
+                 (cc-resolve-edges C A 0) (cc-resolve-links C A f 0) (cc-resolve-params C A 1 0))
+       complete (and (= (vw-c B 1) 0) (= (vw-f B f 15) 1) (= (vw-f B f 14) 0)
+                     (= (gn-g A (+ vw-old 1792 f)) 0) (= (vector-at B (+ b 2)) 0))
+       saved (if (and complete roles refs) (cc-replay C dx dq dr f false) (vector-alloc 0))
+       freshReplay (if (and complete roles refs) (cc-replay C dx dq dr f true) (vector-alloc 0))
+       savedSame (and (= (vector-count saved) (* (vw-c A 2) 4)) (cc-aggregate-same C saved B 0))
+       freshSame (and (= (vector-count freshReplay) (* (vw-c A 2) 4)) (cc-aggregate-same C freshReplay fresh 0))
+       outputCost (cc-spend C (+ (string-length xb) (string-length qb) (string-length rb) (string-length tb) 2048))
+       allowed (and outputCost (= (vector-at C 1) 0) complete roles refs same savedSame freshSame (= family 0))
+       pub (vector-alloc 22) fields (-> (vector-alloc 22) (vector-assoc! 1 f)
+         (vector-assoc! 2 cc-context-n) (vector-assoc! 3 cc-request-n)
+         (vector-assoc! 4 cc-result-n) (vector-assoc! 5 (if (= (vector-count T) cc-result-n) (vector-at T 9) 0)))
+       digests (loop [i 0 out fields] (if (= i 16) out
+        (let [hash (cond (< i 4) snap (< i 8) compute (< i 12) result :else transition)]
+         (recur (inc i) (vector-assoc! out (+ 6 i) (if (= (string-length hash) 64) (ccx-read-word hash (* (mod i 4) 16)) 0))))))
+       published (if allowed (cc-publish-prefix C pub digests 23) pub)
+       a (ccx-line "SHADOW-CONTEXT" xb) q (ccx-line "SHADOW-REQUEST" qb)
+       r (ccx-line "SHADOW-RESULT" rb) t (ccx-line "SHADOW-TRANSITION" tb)
+       hs (ccx-line "SNAPSHOT-CID" (ccx-cid snap)) hc (ccx-line "COMPUTE-CID" (ccx-cid compute))
+       hr (ccx-line "RESULT-CID" (ccx-cid result)) ht (ccx-line "TRANSITION-CID" (ccx-cid transition))
+       record (c1bw-print "SHADOW" [c family f (if same 1 0) (if scanned 1 0) (if encoded 1 0)
+                    (if roles 1 0) (if refs 1 0) (if complete 1 0) (if savedSame 1 0) (if freshSame 1 0)
+                    (vector-at published 0) (vector-at C 0) (vector-at C 1) (vw-c A 0) (vw-c B 0)
+                    (vw-c B 1) (vw-f B f 15) (vw-f B f 14)])]
+  (and same scanned encoded outputCost (= (vector-at C 1) 0)
+       (if (= family 0) (and allowed (= (vector-at published 0) 1)) (= (vector-at published 0) 0)))))

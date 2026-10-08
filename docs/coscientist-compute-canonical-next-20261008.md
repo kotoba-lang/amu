@@ -57,3 +57,9 @@ Resultは順序付き呼び出し辺の寄与とsupport／poison／診断を保�
 ComputeCIDの要求は、内容CIDに加え、入力の役割、reader／frontendの種類と言語モード、正規化schema、読み取る範囲、出力契約を封じる。ファイル名が意味へ影響する経路では名前または明示した解釈契約も必要である。一方、物理配置先だけの変更で内容・役割・reader契約が同じなら、不要な失効を避けられるかを別に検証する。まず役割や言語モードの変更を誤ヒット負例へ追加し、全要求のshadow照合と現在状態へのordered replayを維持する。
 
 ResultCID一致を使う下流停止は、下流が読む出力と更新をすべて含む場合に限る。入力解釈・ABI・規則・effect／trap・現在の予算確認を省略する理由にはならない。これはコンパイル要求の契約改善であり、CIDによるEmbench実行速度改善を測定した結果ではない。
+
+## 同一対象×5状態の具体的native shadow
+
+既存canonical encoder／decoder・resolver・512項目のResult／Transition・ordered replayを保持し、3対象×5種類の入口状態（同一入力、work、既存集計、control、memo）の診断をKotobaで実装した。[SOURCEと初回失敗の選択保存](evidence/coscientist-compute-canonical-20261008/semantic-shadow-v1-failure/snapshot.json)。各ケースで独立した状態コピーに元の解析器を2回実行し、解析は省略しない。初期キー除外は空で、非ゼロの状態変更ケースは再利用証明を公開しない。
+
+rootとcontrolsのSOURCEレビュー後、最大17呼出の試験を開始したが、最初のnative compileが`E2109 cond needs a final :else clause (byte 1175658)`で停止した。1呼出は閉じ、extractと15 shadowケースは未実行である。SOURCEレビューをnative型検査の代用とせず、旧失敗を保存してfresh版で既定節を修正する。現時点で同一対象のヒット率・省略・性能改善を確認したとは言えない。
