@@ -67,3 +67,9 @@ C入力別名を修正したfresh remote-v3で、元19 runnerのビルドと前�
 比較285呼出が正常に閉じ、[独立raw監査](evidence/coscientist-masked32-clone-20261008/functional285-v3/independent-report.json)は回収575ファイルと各argv・環境・空stderr・終了コードを照合した。元19 workloadの95入力（0／1／2／17／32、depthconvの最後は2000）でC／OFF／ONの結果が一致し、native OFF／ONのfuelと4 arenaのterminal使用量も一致した。Cのarenaは取得不能としてnullを保持し、架空のnative arenaを与えない。
 
 native fuel消費は1〜11079189。terminal使用量の最大はpairs256／vectors417／vector-items39566／strings0であり、arenaのpeakではない。この有限機能試験のelapsedとRSSを速度比較へ流用せず、公式Embenchスコア、quiet速度、自己再ビルド固定点、製品採用は別に未認定として残す。旧リモートFAIL1ビルド／7照会も保持した。
+
+## 汎用full64 shift／OR融合のnative受理
+
+private cloneの9行SIRパターンと直後の1引数CALLを構造で照合し、元の3 CODE語を`LSR + ORR shifted + NOP`へ置換する隔離Kotoba emitterを実装した。workload名では分岐せず、元のgeneratorの状態更新を実行してから、語数・descriptor・補助tableが一致した場合だけ3語を書き換える。fuel・引数評価・nested CALLは残す。逆順パターンではinactiveなX10の値が変わるため、temp1／2／3が次のCALL以降で読まれない条件を要する。任意の物理register一致は主張しない。
+
+診断stderrの契約不足をSOURCE段階でHOLDにし、fresh driverで17 counterを厳密に読み取るよう修正した。その後OFF／ON compile・extractの4呼出は正常に閉じ、[独立監査](evidence/coscientist-masked32-clone-20261008/shift-orr-build4-v2/independent-report.json)が715入力、source copy、全KSEED／native、argv・環境・rawを確認した。生成したコンパイラの実行は0であり、この変換の実状態・容量・liveness、元19本の機能、自己再ビルド固定点、速度はまだ認定しない。[保存sourceと生成物](evidence/coscientist-masked32-clone-20261008/shift-orr-build4-v2/snapshot.json)も完全な依存archiveではない。
