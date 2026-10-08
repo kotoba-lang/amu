@@ -1,0 +1,151 @@
+{
+  "sourceFiles": 9,
+  "sourceLogicalBytes": 171608,
+  "inputFiles": 10,
+  "inputLogicalBytes": 1466132,
+  "sourcePins": {
+    "bytes": 1178,
+    "sha256": "7c7ce2f314eeffdfaef892b710a9ad089f05cd2cc22a7aa5ac5c73cf34008192"
+  },
+  "candidate": {
+    "bytes": 140686,
+    "sha256": "d0d297b1fdd78d54a92dc2a250b73cd8cbd3aede27857886ea9aa6a0e3ff6195"
+  },
+  "preregistration": {
+    "bytes": 3867,
+    "sha256": "1ed93744f8b373a68768a04c817c364ce3b142174f64d90e72b04511800659c1"
+  },
+  "freeze": {
+    "bytes": 366,
+    "sha256": "843358d80aec02ea3117661a11b2bc7ff9b193ab4e193a62be114e9317948791"
+  },
+  "savedControlsRecomputed": {
+    "status": "PASS_PURE_SAVED_WORD_ADMISSION_CONTROLS_ONLY",
+    "firstPositive": {
+      "owner": 132,
+      "target": 133,
+      "F": 80,
+      "fixIndex": 524,
+      "tailWord": 5567,
+      "privateEntryWord": 5574,
+      "CODECountUnchanged": true,
+      "FIXCountUnchanged": true,
+      "addedLabels": 1,
+      "rewriteWords": [
+        4181723070,
+        3573751839,
+        3573751839
+      ]
+    },
+    "observedBoundedPositiveOwners": [
+      132,
+      133,
+      134,
+      135,
+      136,
+      138,
+      139,
+      140,
+      141,
+      142,
+      143
+    ],
+    "oldLabelCount": 587,
+    "completeExistingFIXClosure": true,
+    "negatives": {
+      "mismatched-F": true,
+      "wrong-context-slot": true,
+      "wrong-callee-save": true,
+      "wrong-parameter-entry": true,
+      "unknown-incoming-label": true,
+      "extra-restore-relocation": true,
+      "chain-AUX": true,
+      "label-cap": true,
+      "different-temp-home-map": true,
+      "extra-observable-trap": true,
+      "oldLN-alias": true,
+      "high-label-id": true,
+      "negative-label-id": true,
+      "unresolved-old-label": true,
+      "unknown-FIX-kind": true,
+      "literal-FIX-generic": true
+    },
+    "candidateSourceCompiled": false,
+    "nativeCalls": 0
+  },
+  "modelRecomputed": {
+    "status": "PASS_PURE_SYMBOLIC_EQUAL_FRAME_TRANSITION_MODEL_ONLY",
+    "arbitraryValues": "independent opaque callerFP/callerLR/callerx19/context/vector/volatile registers/frame homes/guest memory/NZCV atoms; no equality assumptions between atoms",
+    "cases": [
+      {
+        "F": 80,
+        "fuel": 0,
+        "allRegistersFlagsFrameHomesGuestMemoryEqual": true
+      },
+      {
+        "F": 80,
+        "fuel": 1,
+        "allRegistersFlagsFrameHomesGuestMemoryEqual": true
+      },
+      {
+        "F": 80,
+        "fuel": 2,
+        "allRegistersFlagsFrameHomesGuestMemoryEqual": true
+      },
+      {
+        "F": 80,
+        "fuel": 18446744073709551615,
+        "allRegistersFlagsFrameHomesGuestMemoryEqual": true
+      },
+      {
+        "F": 96,
+        "fuel": 0,
+        "allRegistersFlagsFrameHomesGuestMemoryEqual": true
+      },
+      {
+        "F": 96,
+        "fuel": 1,
+        "allRegistersFlagsFrameHomesGuestMemoryEqual": true
+      },
+      {
+        "F": 96,
+        "fuel": 2,
+        "allRegistersFlagsFrameHomesGuestMemoryEqual": true
+      },
+      {
+        "F": 96,
+        "fuel": 18446744073709551615,
+        "allRegistersFlagsFrameHomesGuestMemoryEqual": true
+      }
+    ],
+    "negatives": {
+      "bareNOP3-wrong-LR": true,
+      "mismatched-F": true,
+      "mismatched-context": true,
+      "mismatched-callee-save-map": true,
+      "wrong-private-entry-skips-param": true,
+      "unknown-incoming": true,
+      "helper-stack-alias": true,
+      "extra-observable-trap": true
+    },
+    "closure": "returning helper may clobber every volatile register including x30; must obey ABI preserving active frame/home/context memory and x19. x9 stores its returned vector after existing gn-take. Fusion reloads saved callerLR explicitly.",
+    "exactObservableState": [
+      "x0..x30",
+      "SP",
+      "NZCV",
+      "all active frame/header/home memory",
+      "guest memory",
+      "fuel/trap outcome"
+    ],
+    "premises": [
+      "sameF complete map and exact certified current emitted words",
+      "active private frame/header readable+writable already established by original prologue; fused adds no new address",
+      "frame/home memory cannot escape through runtime/capability/vector/unknown-call aliases",
+      "only admitted compiler-owned private entries; public entries untouched",
+      "no observable trap within ordinary certified restore/prologue memory operations of valid private frame; target fuel/nonfuel trap state unchanged",
+      "same code counts and unchanged target fuel/body words preserve synchronous trap PC and FP/LR unwind state; asynchronous instruction-step observation of the removed intermediate restore/reallocate is outside this rule contract"
+    ],
+    "nativeCalls": 0,
+    "optimizerCorrectnessQualified": false
+  }
+}

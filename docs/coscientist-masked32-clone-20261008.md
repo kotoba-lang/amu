@@ -515,3 +515,25 @@ Next prospective runtime compares95 unchanged profiles in exact currentOFF andTC
 検査はファイル内265 defnをFN table数と誤認し、暗黙のソース追加をtoken範囲へ含めていなかった。rootと独立SOURCEレビューの見落としとして記録する。一次実装のscannerを独立に照合すると、remのcall head4か所だけがgroup64を要求し、leading LFとrem定義を追加する。null sentinelも含めてFN-Nは267、展開後ソースは30,443 B・SHA256 `0d98333cf7a1fc31ad3e338dd10f4a82108565e4864db03eae431c878d9ae968`となる。元拒否を成功へ書き換えず、この完全な展開ソースを使った別の保存raw構造検査だけを条件付き証拠とする。
 
 その検査で12 owner（132〜143）・150 SIR・24辺、boundary owner2／4／144、全CODE／FIXの再配置とsource／node／token対応を確認した。元nsichneuの37,591 B containerは完全一致する。transient frameは80／96 Bで、returning helperはBL、unary tailはBだった。これは共有フレームの意味保存や速度の証拠ではない。まず同じframeサイズ・callee-save／context配置の区間を候補にし、incoming entry、parameter move、レジスタ、stack trap、fuel・vector・17arenaを証明する。最大frameへの拡大を既定にしない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/shared-frame-observer3-failure-conditional-typed-v1/snapshot.json)。
+
+## 公開x8候補のselfhostビルドと、scalar fixtureの限界
+
+コピーしたKotoba候補を既存のselfhostコンパイラでbuild／extractし、旧scalar fixtureをOFF／ONでcompile／extractする固定6呼出は、一度だけ実行してすべてclosed0となった。候補nativeは866,680 B・SHA256 `e8746fa1`、whole KSEEDは866,706 Bでmain0だけをexportする。[独立保存監査](evidence/coscientist-masked32-clone-20261008/published-mode2-x8-build6-scalar-certificate-v1/reviews/independent-actual/report.json)は全pin、旧builder、seal、resource、73有限samples、全container／payloadとexportを確認した。これは候補のビルド成功であり、候補自身の3世代固定点や製品採用ではない。
+
+scalar fixtureのOFF／ONはともに236 Bで、変更は公開入口のLDR／SUBS／STRの3命令のregister fieldだけだった。全59 wordと56 reachable CFG、60有限fuel／trap／state traceと5負例の[保存命令検査](evidence/coscientist-masked32-clone-20261008/published-mode2-x8-build6-scalar-certificate-v1/reviews/independent-emission/report.json)は通る。ただしこのfixtureは複数debitの再利用もprivate target+1も通らない。命令数削減・実行速度改善・一般のABI／clobber証明へ拡張しない。次のvector-chain fixtureと元statemateのコンパイルで、その不足を検査する。
+
+ComputeCIDはこの候補の意味保存証明を代替しない。規則・実装・typed CFG・依存閉包・ABI／effect／trap／fuelを要求へ封じ、保存した結果を現在のregister writerとentry placementへ再適用できることを別Transitionとして検証する。解析cacheのcold／warm費用と生成コードのEmbench時間は別々に測る。C2 OFF・キー除外なし・新しい解析省略0を保持する。
+
+## 同サイズ共有フレーム規則のラベル閉包修正
+
+新しいコピーKotoba SOURCEは、元の生成・割当てを再実行せず、生成済みtyped／word条件で最初の同サイズframe辺だけを選ぶ。元のtail restoreをLR reload＋2 NOPへ変え、対象のparameter moveへcompiler-owned labelで分岐する。LR reloadなしの3 NOP案は全register比較で拒否した。frame80／96、context／x19 home、CODE／FIX数と公開entryを保持し、異なるframeの境界は対象外とする。native build、helper ABI／private stack ownership、実fuel／trap／17arena、固定点と速度は未資格である。
+
+旧V1は、既存FIXの未使用label targetが新ラベル割当てで解決される反例を独立レビューが発見したためHOLDのまま保存した。V2は全既存FIXを変更前に検査し、old LABEL-N／FN-N内の実targetとdisplacementを要求する。未解決／unknown／literal／AUXの非対応経路は変更せず汎用生成へ戻す。16保存word負例とLRを含む有限モデルは通り、[独立SOURCEレビュー](evidence/coscientist-masked32-clone-20261008/equal-frame-tail-v2-namespace-closure-source/reviews/independent-v2/report.json)がその狭い条件を確認した。これは規則のSOURCE点検であり、製品適用やnative意味保存ではない。[旧反例も含むsnapshot](evidence/coscientist-masked32-clone-20261008/equal-frame-tail-v2-namespace-closure-source/snapshot.json)。
+
+## vector-chain／元statemateの生成物比較
+
+新fixtureと元statemateの固定6 compile／extract登録V1は、最初の呼出でloader sandbox初期化がOperation not permittedを返してwait125となった。guest compiler呼出より前に停止し、artifactはない。外側の実行制限を考慮しなかったroot起動の誤りを記録し、元FAIL・一回の試行を保存する。保存terminalのallChildrenClosedはdirect childのwaitを表し、観測fork memberの独立wait証拠ではない。新V2では別namespace・GOへhost escalationを明示し、loader自身のsandbox・17環境変数・資源制限を維持した。
+
+V2の6呼出は一度だけ実行して全wait0、22有限samplesがstrict sampled admissionを通った。[独立保存監査](evidence/coscientist-masked32-clone-20261008/published-mode2-x8-vector-statemate6-v2-artifacts/reviews/independent-actual-v2/report.json)は全22 SOURCE／80入力、旧候補producer・旧build GO、各seal、raw、資源6行、17arena、wholecontainer／payloadと固有exportを再検証した。OFF／ON vectorは668／660 B、bench offset464／456、元statemateはOFF87,716／ON86,184 B、batch offset85,576／84,044だった。旧V1の失敗をV2成功へ書き換えない。
+
+この段階はartifact形成の比較だけで、guest実行はない。8 B／1,532 Bのサイズ減少を速度改善に換算しない。複数debit・private entry・現在x8／x7／contextの寿命とaliasを実生成CFGへ結び付け、fuel／trap／17arenaの実行比較、候補の3世代固定点、原19本、quiet samehostのfresh C比較を別々に検証する。C2 OFF・CIDによる新しい解析省略0、製品採用未資格を維持する。[失敗も含む選択snapshot](evidence/coscientist-masked32-clone-20261008/published-mode2-x8-vector-statemate6-v2-artifacts/snapshot.json)。

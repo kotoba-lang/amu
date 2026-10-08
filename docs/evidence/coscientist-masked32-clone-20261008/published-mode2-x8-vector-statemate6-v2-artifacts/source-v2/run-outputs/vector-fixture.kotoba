@@ -1,0 +1,16 @@
+(ns published-mode2-x8-vector-chain-fixture (:export [bench]))
+;; Novel diagnostic fixture, not an original19 workload rewrite.
+;; Natural 3-argument wrapper required by gn-wrapper; unary constants fail it.
+(defn- set-at [v :vector-i64 i :i64 x :i64] :vector-i64
+ (vector-assoc! v i x))
+;; Unary constants make finish a genuine callee, not gn-wrapper identity/RT shape.
+(defn- finish [v :vector-i64] :vector-i64
+ (vector-assoc! v 0 3))
+(defn- stage-b [v :vector-i64] :vector-i64
+ (finish (set-at v 0 2)))
+(defn- stage-a [v :vector-i64] :vector-i64
+ (stage-b (set-at v 0 1)))
+(defn bench [n :i64] :i64
+ (let [v [n]
+       w (stage-a v)]
+  (vector-at w 0)))

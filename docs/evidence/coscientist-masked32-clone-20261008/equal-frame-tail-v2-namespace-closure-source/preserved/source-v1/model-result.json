@@ -1,0 +1,75 @@
+{
+  "status": "PASS_PURE_SYMBOLIC_EQUAL_FRAME_TRANSITION_MODEL_ONLY",
+  "arbitraryValues": "independent opaque callerFP/callerLR/callerx19/context/vector/volatile registers/frame homes/guest memory/NZCV atoms; no equality assumptions between atoms",
+  "cases": [
+    {
+      "F": 80,
+      "fuel": 0,
+      "allRegistersFlagsFrameHomesGuestMemoryEqual": true
+    },
+    {
+      "F": 80,
+      "fuel": 1,
+      "allRegistersFlagsFrameHomesGuestMemoryEqual": true
+    },
+    {
+      "F": 80,
+      "fuel": 2,
+      "allRegistersFlagsFrameHomesGuestMemoryEqual": true
+    },
+    {
+      "F": 80,
+      "fuel": 18446744073709551615,
+      "allRegistersFlagsFrameHomesGuestMemoryEqual": true
+    },
+    {
+      "F": 96,
+      "fuel": 0,
+      "allRegistersFlagsFrameHomesGuestMemoryEqual": true
+    },
+    {
+      "F": 96,
+      "fuel": 1,
+      "allRegistersFlagsFrameHomesGuestMemoryEqual": true
+    },
+    {
+      "F": 96,
+      "fuel": 2,
+      "allRegistersFlagsFrameHomesGuestMemoryEqual": true
+    },
+    {
+      "F": 96,
+      "fuel": 18446744073709551615,
+      "allRegistersFlagsFrameHomesGuestMemoryEqual": true
+    }
+  ],
+  "negatives": {
+    "bareNOP3-wrong-LR": true,
+    "mismatched-F": true,
+    "mismatched-context": true,
+    "mismatched-callee-save-map": true,
+    "wrong-private-entry-skips-param": true,
+    "unknown-incoming": true,
+    "helper-stack-alias": true,
+    "extra-observable-trap": true
+  },
+  "closure": "returning helper may clobber every volatile register including x30; must obey ABI preserving active frame/home/context memory and x19. x9 stores its returned vector after existing gn-take. Fusion reloads saved callerLR explicitly.",
+  "exactObservableState": [
+    "x0..x30",
+    "SP",
+    "NZCV",
+    "all active frame/header/home memory",
+    "guest memory",
+    "fuel/trap outcome"
+  ],
+  "premises": [
+    "sameF complete map and exact certified current emitted words",
+    "active private frame/header readable+writable already established by original prologue; fused adds no new address",
+    "frame/home memory cannot escape through runtime/capability/vector/unknown-call aliases",
+    "only admitted compiler-owned private entries; public entries untouched",
+    "no observable trap within ordinary certified restore/prologue memory operations of valid private frame; target fuel/nonfuel trap state unchanged",
+    "same code counts and unchanged target fuel/body words preserve synchronous trap PC and FP/LR unwind state; asynchronous instruction-step observation of the removed intermediate restore/reallocate is outside this rule contract"
+  ],
+  "nativeCalls": 0,
+  "optimizerCorrectnessQualified": false
+}

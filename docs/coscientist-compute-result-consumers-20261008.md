@@ -60,3 +60,9 @@ Resultのpayloadへ要求CIDや可変global scratchを混ぜない。ただし�
 | 実費用 | 封印から失効までの全費用を含むcold／warm、ヒット率、全体解析時間を比較 | 観測した純改善だけ採用候補にする |
 
 共有・永続化はcanonical ComputeCIDでbindingを検証し、単一不変snapshot内の小さなキー比較はそのsnapshotへの所属を検証する。この二層の使い分けによる利益も、hash費用を含めて測る。解析時間の改善はコンパイル時間の成果であり、Embenchの実行速度改善として加算しない。現時点ではC2 OFF、新しい解析省略0、キー除外なしを維持する。
+
+## 現在の候補で再利用できるもの、毎回確認するもの
+
+公開x8 fuel候補のselfhost build／extractが成立したので、保存できるResultの候補を「規則が一致したtyped構造と必要な条件」に限定する。native byte列を現在の配置へそのまま戻さず、現在のentry／private target、register writer、context alias、各debitの公開、FIX／LABEL配置をTransitionで再検査する。旧scalar fixtureは一回debitしか通らず、その成功Resultを複数debit／private-chainの資格へ転用しない。規則群のCIDはDefCIDと分け、Compute要求とbuild provenanceへ結び付ける。
+
+共有フレームSOURCEの旧版には、未使用ラベルIDが新private labelの割当てで解決される反例があった。修正版は変更前の全既存FIXのtarget閉包を検査し、未知／未解決／literal／AUXの非対応経路を汎用生成へ戻す。保存した一致結果だけで旧FIX検査を省略してはいけない。既存再配置・旧LABEL-N／FN-N・mapped code・出力schemaと規則版を読取依存へ封じ、現在のclosureを確かめてから適用する。これはcache条件の具体化であり、cache実装・速度改善・一般の意味保存証明ではない。
