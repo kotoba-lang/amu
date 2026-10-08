@@ -359,3 +359,11 @@ current7618でTC候補と観測用compilerをcompile／extractし、元CRC32を�
 V1は記述に旧8-group資源集計が残るため未実行のHOLDとして保存した。V2 rootレビューの文字列比較ミスも診断として保存し、凍結SOURCEを変更せずレビュー側を訂正した。旧7呼出のnamespaceはFAILのまま、再実行0、旧completionと旧観測側nativeは不在を維持する。[選択snapshot](evidence/coscientist-masked32-clone-20261008/table-remaining-extract1-v2-actual/snapshot.json)は392 MBの全依存archiveではない。
 
 この試験は抽出とバイト一致だけの資格である。元CRCのprefix 1・2・1,024とbench 1を各OFF／ONで実行し、値・fuel・全arenaを比較する次の8-call SOURCEを準備する。trap・fuel境界、fallback、原19本、selfhost固定点、quiet hostでのC性能比較、ComputeCIDによる解析省略は未資格である。C2はOFFを維持する。
+
+## 元CRC guest8：2回目の観測処理で停止
+
+8-call SOURCEは全11ファイル・2,032入力を2担当が照合した後、別GOで一度実行した。[独立保存失敗監査](evidence/coscientist-masked32-clone-20261008/table-original-guest8-sampler-failure-v1/reviews/actual-failure-independent/report.json)はprefix-crc(1)のOFF／ONのみ2呼出、各parent reap0、6-row環境・資源journal、全17 arena countersが0、計3 accepted memory sampleを確認した。OFFは期待値3,523,407,757、initial fuel1,000,000／remaining999,996だった。
+
+ONはsamplerの`ProcessLookupError`とcleanupの`killgroup:PermissionError`で失敗した。捕捉したstdoutは0 Bで、stderrは完全なarena行だった。adapterのowner／member照合は複数箇所で`os.getpgid`を呼ぶが、保存exceptionには内側tracebackがなく、失敗した呼出・PID・原因は特定できない。cleanupはpipeを完全にdrainせず閉じるため、空の保存stdoutをguestが出力しなかった証拠と扱わない。
+
+残る6呼出とcompletionは不在、accepted pairは0で、凍結campaignはFAILのまま再実行0である。[選択snapshot](evidence/coscientist-masked32-clone-20261008/table-original-guest8-sampler-failure-v1/snapshot.json)は全393 MB依存archiveではない。tool session3728のouter exit1はrootのtool観測に限る。次は有限pipe捕捉と所有権を維持したsamplerの試験を別SOURCEで設計する。今回の失敗から意味の不一致や性能改善を推定せず、guest parity・full19・固定点・C比較は未資格を保持する。
