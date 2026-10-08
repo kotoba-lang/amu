@@ -146,3 +146,9 @@ default-OFFのLC候補が出力したMD5/SHAを、それぞれ通常経路とrea
 MD5のFN4（SIR146..183）とSHAのFN3（77..114）に各1 ownerがあり、各4 vector readがmode3に入った。frame112、saved registers3。独立したraw/table再構成と実CODE wordsの確認ではx19/x20のSTP、x21のSTR、flag21=0、復元LDP/LDR、全8 readのCMP/BLO/UDFが残っていた。これは静的予測だけでなく実候補のowner・layout証拠であるが、CPUでの高位レジスタ保存・trap・fuel・ABIの実行検証ではない。
 
 [選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-owner10-v2/snapshot.json)は完全な依存archiveではない。元19本の新候補実行・候補自身の固定点・quiet C比較・採用は未資格。ComputeCID解析再利用の性能効果とも区別する。
+
+## Scalar DAGの実命令列8ビルドとguest10 HOLD
+
+2つの型付きfixtureをOFF/ONでcompile/extractし、全8呼出が正常終了した。[独立actual監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-emitted-build8-v1/reviews/actual-independent/report.json)が全入力とraw・資源counter・payloadを確認し、全232/272/216/216Bを独立decode/reencodeした。正例はbench入口140、196Bまで同一で、OFFのBL196→private entry16をONの5命令fuel196..212と6命令算術216..236へ置換していた。末尾は40B移動、負例は全KSEED/native一致。固定benchから到達する経路の入口charge1＋outer charge1、追加charge0、x7保持とfuel内部への不正入口なしを静的に確認した。これは実CPUのtrap試験ではない。
+
+[guest HOLD](evidence/coscientist-masked32-clone-20261008/fuel-dag-emitted-build8-v1/go/guest-hold.json)。事前登録が要求したordinary typed SIRのowner/caller対応と2つの静的mask参照の記録はbuild rawにない。機械語のprivate entryを型付きFNIDの証拠に読み替えず、guest10はGOなし・実行0で保持した。次は同じ成果物と一致するreadonly SIR/FREC観測を別有限pilotとして準備する。基準を緩めず、旧8件も再実行しない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/fuel-dag-emitted-build8-v1/snapshot.json)は完全な依存archiveではない。C性能・元19本・新候補固定点は引き続き未資格。
