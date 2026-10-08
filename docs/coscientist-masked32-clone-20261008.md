@@ -101,3 +101,10 @@ V3のcompile／extractと34ケースの計36呼出は正常に閉じ、[独立�
 | nettle-sha256 | 79084 | 0 | 3 | 290 | 0 |
 
 このterminal値は子の終了後に共有状態から読む値で、compiler診断の独立peakではない。nativeはsource-bound e14 loaderの同一contextで実行し、以前のself-contained285とは範囲を分ける。CはOS26.2／SDK26.2／Clang17で作成済みのimmutable consumerをローカルで機能確認に再利用した。新しいローカルCビルドや現在のtoolchain一致、elapsed／RSSによる速度比較は認定しない。有限5入力の一致は一般のX10／NZCV／CFG安全性、元19本の全機能、自己再ビルド固定点、公式Embenchスコア、製品採用、CIDによる効果の証明ではない。[selected snapshot](evidence/coscientist-masked32-clone-20261008/shift-orr-functional30-v1/snapshot.json)にはsource・raw30・生成物・実監査を保存し、全依存closureの実バイトは重複保存していない。
+
+
+## SR版の元19本生成と3世代自己再ビルド
+
+残る17本のcompile／extract34呼出と、自己再ビルドG2／G3／G4の6呼出がすべて正常に閉じ、[独立監査](evidence/coscientist-masked32-clone-20261008/shift-orr-full19-selfbuild40-v1/independent-report.json)がraw・環境・17 counters・入力・完全な生成物を照合した。17本は旧maskedONのKSEED／nativeと全バイト一致した。保存済みAES／SHA4呼出を再実行せずに結合し、元19本の生成経路を確認した。
+
+G1からG2も全バイト一致し、G2・G3・G4のコンテナとnativeはすべて同一である。nativeは961,272 B、SHA256 `5404f22ac455d66c1295a4ad0d90987722262b86b1aacd9bc9d69c8ad5cafd69`。同じunityソースを各世代がコンパイルし、`main` offset0／arity0を保持した。これはSRコンパイラの固定点であり、製品CLIの完全selfhostや残る17本の新guest実行、C以上の速度・公式スコア・製品採用を認定しない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/shift-orr-full19-selfbuild40-v1/snapshot.json)は全依存closureの実バイトを重複保存したportable archiveではない。
