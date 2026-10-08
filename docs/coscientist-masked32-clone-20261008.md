@@ -117,3 +117,16 @@ G1からG2も全バイト一致し、G2・G3・G4のコンテナとnativeはす�
 [独立SOURCEレビューと実raw監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-build4-v2/reviews/actual-independent/report.json)付きのcompile／extract4呼出は全終了した。OFFは元のSR5404の全KSEED／nativeと一致した。ONは969,864B、SHA-256 `d3a0e2ffe5887a1b77ace0e0a366dd8bda180f3e9ef2f7067a1e3436f9c3d15a`、単独main offset0の完全payloadを抽出した。増加8,592Bはcompilerサイズであり、速さではない。SOURCEのword計上135はvclear1を加えた136へ補正し、192 reserve内とした。旧v1 driverは実行せず保持した。
 
 [選択snapshot](evidence/coscientist-masked32-clone-20261008/fuel-dag-build4-v2/snapshot.json)は全1,700依存の実バイトarchiveではない。生成したONコンパイラの実行、燃料0／1／2と呼び出し元状態のnative controls、Embench全19本、selfhost固定点、quiet C比較は未資格である。製品採用はしない。
+
+
+## leafのvector descriptor再利用：native build4
+
+default-OFFの別候補として、frameがなかった短いleaf関数に保存レジスタx19..21を予約し、元のmode3 descriptor再利用を適用するKotoba helperを実装した。元のsl-assignを先に実行し、単一typed vector・全到達経路の同一local由来・branch/call/allocator不在を確認する。元のhandle検査、毎回のindex検査、fuelと返り値ABIは保持する。新frameは最大160BとFP/LR16Bで、実行資源・CODE容量の条件が変わる実験である。静的なSHA／MD5の候補は実採用や頻度ではない。
+
+[独立実監査](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-build4-v2/reviews/actual-independent/report.json)で、selfhost Amuのcompile／extract4呼出の終了・全17 counters・OFFの全SR5404一致、ONのsole main0／完全payloadを確認した。ONは966,320B、SHA-256 `258670d2371f3c03167fb02f574c6597479a1ce3e0af9a42cac8e41499d56931`。入力registryの形式を誤認した旧driver v1はSOURCE段階でHOLDし、未実行のまま保存した。[選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-build4-v2/snapshot.json)は全1,726依存の実バイトarchiveではない。生成したONの実行、採用owner、saved register／fuel／trap／ABI、元19本、固定点、性能は未資格である。
+
+## fuel DAG component18：native3成功・host検証FAILを保持
+
+[独立失敗監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-component18-failure3-v1/reviews/actual-independent/report.json)で、diagnostic compile／extractと最初のcase0の3呼出はnative rc0・全17 countersで閉じた一方、host validatorがALLOCの成功値をMM-R1=0と期待して停止したことを確認した。原実装は成功時1、失敗時0であり、実rawはR1=1／error0だった。case0にはSTATE成功／END777と元の5 fuel命令が記録されたが、失敗campaignを18件成功と読み替えない。残る15件は未実行。
+
+修正対象はhost validatorの期待値だけで、native helper／fixture／imageを変更せず、case0を再実行しない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/fuel-dag-component18-failure3-v1/snapshot.json)に旧FAILを保存した。SOURCEレビューでも対応を見落としたことをreportへ明記した。保存raw再検証と未実行case1..15は別の有限継続とし、生成CODEのCPU実行・nonresuming fuel trap・性能の資格とは区別する。

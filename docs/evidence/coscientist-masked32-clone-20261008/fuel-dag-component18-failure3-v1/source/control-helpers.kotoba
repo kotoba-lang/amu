@@ -1,0 +1,63 @@
+;; Read-only interception and copied scalar state controls; not generated-code execution.
+(defn- dc-enabled [] :bool (and (> (io-argc) 2) (string=? (io-arg 0) "probe")))
+(defn- dc-case [] :i64 (let [s (io-arg 1)] (loop [j 0 n 0] (if (>= j (string-length s)) n (recur (inc j) (+ (* n 10) (- (string-code-point-at s j) 48)))))))
+(defn- dc-print [tag :string xs :vector-i64] :i64
+ (let [a (io-out tag) b (loop [j 0] (if (>= j (vector-count xs)) 0 (let [v (io-out (string-concat " " (string-from-i64 (vector-at xs j))))] (recur (inc j)))))] (io-out "\n")))
+(defn- dc-copy [M :vector-i64] :vector-i64 (loop [j 0 V (vector-alloc (vector-count M))] (if (>= j (vector-count M)) V (recur (inc j) (vector-assoc! V j (vector-at M j))))))
+(defn- dc-sirput [M :vector-i64 i :i64 k :i64 v :i64] :vector-i64 (gn-put M (+ MM-SIR-BASE (* i MM-SIR-W) k) v))
+(defn- dc-mut [M :vector-i64 i :i64 f :i64 t :i64 end :i64 c :i64] :vector-i64
+ (cond (= c 3) (gn-dset M 0 gn-k-reg 0) (= c 4) (gn-dset M 0 gn-k-home 0)
+       (= c 5) (gn-dset M t gn-k-local 1)
+       (= c 6) (gn-put M MM-CODE-N MM-CODE-CAP) (= c 7) (gn-put M MM-CODE-N (- MM-CODE-CAP 6)) (= c 8) (gn-put M MM-CODE-N (- MM-CODE-CAP 191))
+       (= c 9) (gn-put M MM-ERR 901) (= c 10) (gn-gs M gn-f-leaf 1) (= c 11) (gn-gs M gn-f-freg 1) (= c 12) (gn-gs M gn-f-fb 0)
+       (= c 13) (let [g (gn-sir M (- end 2) IF-A)] (gn-put M (+ MM-FN-BASE (* g MM-FN-W) FF-FUEL) 1))
+       (= c 14) (dc-sirput M (dec end) IF-OP OP-LGET)
+       (= c 15) (dc-sirput (dc-sirput M i IF-OP OP-BR) i IF-A (gn-sir M (+ (gn-fnf M f FF-SIR) 2) IF-A))
+       :else M))
+(defn- dc-equal [A :vector-i64 B :vector-i64 start :i64 stop :i64 fix :i64 base :i64] :bool
+ (and (= (vector-count A) (vector-count B)) (loop [j 0]
+  (cond (>= j (vector-count A)) true
+   (or (= j MM-CODE-N) (= j MM-FIX-N)
+       (and (>= j (+ MM-CODE-BASE start)) (< j (+ MM-CODE-BASE stop)))
+       (and (>= j (+ MM-FIX-BASE (* fix MM-FIX-W))) (< j (+ MM-FIX-BASE (* (inc fix) MM-FIX-W))))
+       (= j (+ base di-used)) (= j (+ base di-sites))
+       (and (>= j (+ base di-snap)) (< j (+ base di-snap 76)))) (recur (inc j))
+   (not= (vector-at A j) (vector-at B j)) false :else (recur (inc j))))))
+(defn- dc-identical [A :vector-i64 B :vector-i64] :bool
+ (and (= (vector-count A) (vector-count B)) (loop [j 0] (cond (>= j (vector-count A)) true (not= (vector-at A j) (vector-at B j)) false :else (recur (inc j))))))
+(defn- dc-check [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
+ (let [c (dc-case) end (df-admit M i f t n) p (gn-fnf M f FF-SIR)
+       base (vector-at M gn-cell) top (vector-at M MM-HEAP-TOP)
+       root (dc-print "ROOT" [c i f t n end p base top (vector-count M) (vector-at M MM-SIR-N) (vector-at M MM-FN-N) (gn-g M gn-f-h) (gn-g M gn-f-dp) (gn-g M gn-f-fb) (gn-g M gn-f-leaf) (gn-g M gn-f-freg)])
+       body (loop [j p] (if (> j end) 0 (let [w (dc-print "SIR" [j (gn-op M j) (gn-sir M j IF-A) (gn-sir M j IF-B) (gn-sir M j IF-C)])] (recur (inc j)))))
+       fields (loop [j 0] (if (= j 16) 0 (let [w (dc-print "FREC" [f j (gn-fnf M f j)])] (recur (inc j)))))
+       inner (gn-sir M (- end 2) IF-A) innerp (gn-fnf M inner FF-SIR)
+       innerbody (loop [j innerp] (if (> j (+ innerp 6)) 0 (let [w (dc-print "INNER" [j (gn-op M j) (gn-sir M j IF-A) (gn-sir M j IF-B) (gn-sir M j IF-C)])] (recur (inc j)))))
+       innerfields (loop [j 0] (if (= j 16) 0 (let [w (dc-print "IFREC" [inner j (gn-fnf M inner j)])] (recur (inc j)))))
+       input (dc-mut (dc-copy M) i f t end c) before (dc-copy input) ready (df-admit input i f t n)]
+  (cond (or (< c 0) (> c 15) (<= end 0) (<= base 0) (<= top base) (> top (vector-count M))) (gn-put M MM-ERR 778)
+   (>= c 6) (let [same (dc-identical before input) out (dc-print "GUARD" [c ready (vector-at input MM-ERR) (if same 1 0)])] (gn-put M MM-ERR (if (and (= ready 0) same) 777 778)))
+   :else
+   (let [start (vector-at input MM-CODE-N) fix (vector-at input MM-FIX-N)
+         prefix (-> (dc-copy input) (gn-save 0 t) (gn-args t 0 n) (gn-ctx)) fuelat (vector-at prefix MM-CODE-N)
+         ref (gn-call-generic (dc-copy input) i f t n) on (df-call input i f t n ready)
+         stop (gn-max (vector-at ref MM-CODE-N) (vector-at on MM-CODE-N))
+         same (dc-equal ref on start stop fix base)
+         fuel (and (= (vector-at on (+ MM-CODE-BASE fuelat)) (enc-ldr 16 7 CTX-FUEL))
+              (= (vector-at on (+ MM-CODE-BASE fuelat 1)) (enc-subs-i 16 16 1))
+              (= (vector-at on (+ MM-CODE-BASE fuelat 2)) (enc-bcond (enc-cond-hs) 2))
+              (= (vector-at on (+ MM-CODE-BASE fuelat 3)) (enc-brk 0))
+              (= (vector-at on (+ MM-CODE-BASE fuelat 4)) (enc-str 16 7 CTX-FUEL)))
+         words (- (vector-at on MM-CODE-N) start)
+         ok (and (> ready 0) same fuel (= (vector-at on MM-ERR) 0) (= (vector-at ref MM-ERR) 0)
+                 (= (vector-at on MM-FIX-N) fix) (= (vector-at ref MM-FIX-N) (inc fix)) (> words 0) (<= words 192)
+                 (= (gn-g on gn-f-ctx) 1) (= (gn-g on gn-f-skip) (gn-g ref gn-f-skip)))
+         out (dc-print "STATE" [c ready start (vector-at on MM-CODE-N) (vector-at ref MM-CODE-N) fix (vector-at on MM-FIX-N) (vector-at ref MM-FIX-N) (vector-at on MM-ERR) (vector-at ref MM-ERR) (if same 1 0) (if fuel 1 0) words (if ok 1 0)])
+         code (loop [j fuelat] (if (>= j (+ fuelat 5)) 0 (let [w (dc-print "FUELWORD" [j (vector-at on (+ MM-CODE-BASE j))])] (recur (inc j)))))
+         model (if (< c 3) (dc-print "FUELMODEL" [c (if (= c 0) 1 0) (if (= c 0) 0 (dec c)) 0]) 0)]
+    (gn-put M MM-ERR (if ok 777 778))))))
+(defn- dc-finish [M :vector-i64] :i64
+ (let [out (dc-print "PIPELINE" [(vector-at M MM-ERR) (vector-at M MM-SIR-N) (vector-at M MM-FN-N)])
+       result (gn-run M) end (dc-print "END" [(dc-case) (vector-at result MM-ERR)])]
+  (if (= (vector-at result MM-ERR) 777) 0 91)))
+(defn- dc-main [] :i64 (drv-run (io-arg 2) 1 ""))

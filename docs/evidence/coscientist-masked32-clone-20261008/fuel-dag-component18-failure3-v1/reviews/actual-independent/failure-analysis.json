@@ -1,0 +1,63 @@
+{
+  "status": "FAIL_HOST_ALLOCATOR_RECEIPT_EXPECTATION_WITH_NATIVE_CASE0_SUCCESS_RECORDED",
+  "nativeChildren": 3,
+  "nativeReturncodes": [
+    0,
+    0,
+    0
+  ],
+  "nativeCase0END": [
+    0,
+    777
+  ],
+  "nativeCase0STATE": [
+    0,
+    18,
+    47,
+    62,
+    52,
+    2,
+    2,
+    3,
+    0,
+    0,
+    1,
+    1,
+    15,
+    1
+  ],
+  "actualALLOC": [
+    6714137,
+    149610,
+    6714137,
+    6863747,
+    1,
+    0
+  ],
+  "validatorExpectedR1Err": [
+    0,
+    0
+  ],
+  "actualR1Err": [
+    1,
+    0
+  ],
+  "preciseFailingExpression": "al[4:]==[0,0] in validate.verify (line19)",
+  "sourceAnchor": {
+    "path": "/Users/junkawasaki/github/workspaces/codex/vector-fuel-scalar-dag-source-v1-width/unity-df-on.kotoba",
+    "lineStart": 779,
+    "lineEnd": 802,
+    "excerpt": "(defn- mem-fits [top :i64 end :i64 words :i64] :i64\n  (cond (< words 0) 0\n        (< end top) 0\n        (> end MM-HEAP-END) 0\n        :else 1))\n\n;; the error words after an allocation: ok = 1 leaves them, ok = 0 sets E-HEAP-FULL / pos -1 if no error is recorded\n(defn- mem-alloc-fin [M0 :vector-i64 ok :i64 newtop :i64 r0 :i64] :vector-i64\n  (let [e (vector-at M0 MM-ERR)\n        p (vector-at M0 MM-ERR-POS)\n        e1 (mem-sel e e E-HEAP-FULL)\n        p1 (mem-sel e p -1)]\n    (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! M0 MM-HEAP-TOP newtop) MM-R0 r0) MM-R1 ok)\n                                  MM-ERR (mem-sel ok e e1))\n                   MM-ERR-POS (mem-sel ok p p1))))\n\n;; R0 = first word of the block (240 on failure), R1 = 1 / 0\n(defn- mem-alloc [M0 :vector-i64 words :i64] :vector-i64\n  (let [top (vector-at M0 MM-HEAP-TOP)\n        end (+ top words)\n        ok (mem-fits top end words)]\n    (mem-alloc-fin M0 ok (mem-sel ok end top) (mem-sel ok top 240))))\n\n",
+    "sha256": "5fde80c8d567b6ce73ec0ce56e3766aef5e37484080a16be4da28923b2be5053"
+  },
+  "allocatorMeaning": "mem-fits returns1 on success, mem-alloc-fin writes ok into MM-R1. R0=base and top advances149610 words; actual success is R1=1/MMERR=0.",
+  "recordedFiveFuelWordsMatch": true,
+  "remainingCasesExecuted": 0,
+  "priorV1OverallFailurePreserved": true,
+  "nativeCase0ValidatedAgainstCorrectedKernel": false,
+  "sourceReviewMissDisclosure": "Prior independent SOURCE review accepted the synthetic ALLOC R1=0 expectation and missed correspondence to original allocator success flag. This actual audit corrects that interpretation without amending V1 validator or converting its run to PASS.",
+  "actualGeneratedCodeExecution": false,
+  "actualNonresumingTrapQualified": false,
+  "performanceQualified": false,
+  "nativeCompilerSSHCallsByReviewer": 0
+}
