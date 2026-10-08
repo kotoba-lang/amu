@@ -152,3 +152,15 @@ MD5のFN4（SIR146..183）とSHAのFN3（77..114）に各1 ownerがあり、各4
 2つの型付きfixtureをOFF/ONでcompile/extractし、全8呼出が正常終了した。[独立actual監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-emitted-build8-v1/reviews/actual-independent/report.json)が全入力とraw・資源counter・payloadを確認し、全232/272/216/216Bを独立decode/reencodeした。正例はbench入口140、196Bまで同一で、OFFのBL196→private entry16をONの5命令fuel196..212と6命令算術216..236へ置換していた。末尾は40B移動、負例は全KSEED/native一致。固定benchから到達する経路の入口charge1＋outer charge1、追加charge0、x7保持とfuel内部への不正入口なしを静的に確認した。これは実CPUのtrap試験ではない。
 
 [guest HOLD](evidence/coscientist-masked32-clone-20261008/fuel-dag-emitted-build8-v1/go/guest-hold.json)。事前登録が要求したordinary typed SIRのowner/caller対応と2つの静的mask参照の記録はbuild rawにない。機械語のprivate entryを型付きFNIDの証拠に読み替えず、guest10はGOなし・実行0で保持した。次は同じ成果物と一致するreadonly SIR/FREC観測を別有限pilotとして準備する。基準を緩めず、旧8件も再実行しない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/fuel-dag-emitted-build8-v1/snapshot.json)は完全な依存archiveではない。C性能・元19本・新候補固定点は引き続き未資格。
+
+## Leaf descriptor cache：MD5／SHAの有限runtime30
+
+5入力（0、1、2、17、32）をOFF／ON／現在Cの3経路で実行し、全30呼出が正常終了した。[独立saved-raw監査](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-functional30-v2/reviews/actual-independent/report.json)で10組のC結果一致と、OFF／ONの返り値・残りfuel・pairs／string／vectors／itemsのterminal使用量一致を確認した。既存のAmu製nativeを使い、再compileは0。C consumerは現在のC image全バイトを指定位置で照合したが、新しいC toolchain buildや公式Embenchスコアとは呼ばない。
+
+旧V1の未実行SOURCE HOLDを保持し、V2は既存の有限SR driverをLC成果物へ適合した。[選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-functional30-v2/snapshot.json)は完全な依存archiveではない。高位レジスタの専用canary、異常入力trap、残る17本のruntime、quiet C時間比較は別の検証とする。今回の返り値一致をC以上の速度やCIDによる高速化に読み替えない。
+
+## LC候補：原19本コンパイルと3世代固定点
+
+保持済みMD5／SHAを再実行せず、残る17本のcompile／extract34呼出と自己再ビルド6呼出を終了した。[独立actual監査](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-full19-selfbuild40-v1/reviews/actual-independent/report.json)が全40呼出・原ソース・producer連鎖・全KSEED/native/export/offsetを確認した。G1／G2／G3は完全なコンテナとnativeがバイト一致し、native966,824B、SHA-256 `5f4f591a1eb3bb46d3042a3463805a5cfb0897b766ee2de4909088be3369e1af`。G0→G1は504B増加して異なるが、事前登録はG1からの固定点を要求しており、その差も保持した。
+
+原19本の成果物はG0によるものなので、G3での原19本出力一致は別の有限38呼出で検証する。今回のコンパイルと固定点は、全19本runtime・製品CLI完全selfhost・性能・公式スコアを認定しない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-full19-selfbuild40-v1/snapshot.json)は全2001依存のportable実バイトarchiveではない。

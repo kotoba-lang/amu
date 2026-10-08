@@ -1,0 +1,34 @@
+(ns embench.tarfind-full (:export [bench observe bounds-probe]))
+;; tarfind MIT; BEEBS RNG GPL-3.0-or-later. Original 35 full 257-byte headers.
+(defn- put [v :vector-i64 i :i64 x :i64] :vector-i64 (vector-assoc! v i x))
+(defn- clear [v :vector-i64 base :i64 i :i64] :vector-i64
+ (if (= i 257) v (clear (put v (+ base i) 0) base (+ i 1))))
+(defn- name [v :vector-i64 base :i64 len :i64 i :i64] :vector-i64
+ (if (= i len) v
+  (let [seed (bit-and (+ (* (vector-at v 8995) 1103515245) 12345) 2147483647) byte (+ 65 (rem (u64-shift-right seed 16) 26))]
+   (name (put (put v 8995 seed) (+ base i) byte) base len (+ i 1)))))
+(defn- headers [v :vector-i64 file :i64] :vector-i64
+ (if (= file 35) v
+  (let [base (* file 257) clean (clear v base 0) flags (put (put clean (+ base 156) 48) (+ base 124) 48)]
+   (headers (name flags base (+ file 5) 0) (+ file 1)))))
+(defn- same [v :vector-i64 left :i64 right :i64 pos :i64] :bool
+ (let [a (vector-at v (+ (* left 257) pos)) b (vector-at v (+ (* right 257) pos))]
+  (if (and (= a 0) (= b 0)) true
+   (if (and (and (> a 0) (> b 0)) (= a b)) (same v left right (+ pos 1)) false))))
+(defn- find [v :vector-i64 target :i64 file :i64] :bool
+ (if (= file 35) false (if (same v file target 0) true (find v target (+ file 1)))))
+(defn- searches [v :vector-i64 p :i64 found :i64] :i64
+ (if (= p 5) found (searches v (+ p 1) (+ found (if (find v (+ p 17) 0) 1 0)))))
+(defn- body [v :vector-i64] :vector-i64
+ (let [h (headers v 0) count (searches h 0 0)] (put h 8996 (if (= count 5) 1 0))))
+(defn- bodies [v :vector-i64 n :i64 i :i64] :vector-i64
+ (if (= i n) v (bodies (body v) n (+ i 1))))
+(defn- state [n :i64] :vector-i64 (bodies (vector-alloc 8997) n 0))
+(defn bench [n :i64] :i64 (if (= n 0) 0 (if (= (vector-at (state n) 8996) 1) 1 0)))
+;; Eight bytes packed injectively: all initialized bytes are 0..90 (<128).
+(defn- pack [v :vector-i64 base :i64 i :i64 acc :i64] :i64
+ (if (= i 8) acc (pack v base (+ i 1) (+ (* acc 256) (if (< (+ base i) 8995) (vector-at v (+ base i)) 0)))))
+(defn observe [encoded :i64] :i64
+ (let [v (state (quot encoded 2048)) field (rem encoded 2048)]
+  (if (< field 1125) (pack v (* field 8) 0 0) (vector-at v (+ 8995 (- field 1125))))))
+(defn bounds-probe [i :i64] :i64 (vector-at (vector-alloc 8997) i))
