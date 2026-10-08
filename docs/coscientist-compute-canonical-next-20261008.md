@@ -87,3 +87,13 @@ work／既存集計／controlの9組は、同じpayloadの符号化対照だけ�
 4,212 queryのうち既存memo hitは3,404（80.8%）、missは808だった。[保存rawの費用調査](evidence/coscientist-compute-canonical-20261008/query-census40-v2/cost-report.json)では、missを初回対象539と4bound変更の再問い合わせ269へ分解した。論理解析tickはhitの中央値2,304、missの中央値199,424、合計10,497,920／226,455,168だった。これはVWの論理workで、時間・CPU・診断IOの費用ではない。slreの初回1queryではsupportが1から0へ変わった。投影形式のunsupportedとVW errorは0でも、すべての解析結果が再利用可能とは言わない。
 
 同じ小さな入力を繰り返す経路は、すでに既存memoが扱っている。新しいComputeCID cacheを加えればこの80.8%をさらに省ける、とは推定しない。次は269回のbound変更と539個の初回対象、順序付き寄与の再適用、context封印・hash・lookupの費用を検証する。異なる要求のResultCID一致と下流停止には完全な出力・更新契約が要る。今回の4bound頻度は完全なkeyでもResultCIDでもなく、fullComputeCIDの資格付与はfalse、新cacheの省略0、C2はOFFである。元のVWのFN128／edge512領域を観測し、canonical codecを切り詰めたCIDは作らない。[選択snapshot](evidence/coscientist-compute-canonical-20261008/query-census40-v2/snapshot.json)は全763依存の実バイトarchiveではない。生成コードの速度は、quietなC比較で別に判断する。
+
+## 保存queryの出力projectionと次の実装範囲
+
+269件の4bound変更missを同じworkload／activation／fnの直前queryと比較した。[保存rawのprojection調査](evidence/coscientist-compute-canonical-20261008/result-projection-v1/report.json)では、終了status・support・poisonと順序付きedge寄与の完全な記録バイトが60件で一致し、209件で異なった。空列、重複edge、site／target／base、-1 neutralと0 poisonを保持し、hash一致だけで判断していない。support低下のslre初回queryは成功projectionの集合から除外した。成功した538 subjectは329個が1種類、209個が2種類のprojectionを持ち、subject別の異なるprojectionは合計747だった。
+
+これは現在記録した出力の一致であり、full ResultCIDではない。CQ-EDGEにはarityがなく、CQ-EXITには最終summary／certificateのcontrol9..14、完全なscratch／memo／aggregate更新、trap・budget guardの順序やread closureがない。60件は追加出力を閉じて調べる候補で、下流停止・production reuse・速度改善を認定しない。既存3,404 memo hitを新しい利得にも数えない。
+
+[実装前の資源確認](evidence/coscientist-compute-canonical-20261008/result-projection-v1/feasibility.md)では、MM-WORDS=8,388,608の全Mをi64で符号化すると正確に64MiBとなり、stdoutへframingや診断を加えるだけで既存64MiB上限を超えることが分かった。まず読み取り専用observerへ完全なarityと宣言したsummary／certificate出力を追加する小さなshadow実装を行う。全M／read closureは別段階とし、raw64MiB snapshotファイル、別の上限64MiB journal、別metadata、再利用するchunk bufferとfirst-failureを設計・レビューする。出力roleを閉じる前に完全結果と呼ばず、journal上限も表現の切り詰めに使わない。[今回の選択snapshot](evidence/coscientist-compute-canonical-20261008/result-projection-v1/snapshot.json)はrawの重複archiveではなく、既存公開rawへのexact hash参照と269比較を保持する不完全な入力閉包である。追加native／SSH呼出0、解析省略0、C2 OFFのままである。
+
+[独立再構成](evidence/coscientist-compute-canonical-20261008/result-projection-v1/independent/report.json)も4,212記録から60／209と538／747を確認した。公開入力参照は23件で全バイト一致した。同一projection60件の現行解析workは合計16,808,960・中央値239,744、異なる209件は合計61,000,960・中央値207,488だった。これは論理workの観測で、実時間、実際に省略したwork、再利用の可否や下流停止の利益を意味しない。独立readerのDEACTIVATE対応・JSON整数key修正の途中診断も保存し、nativeや元ソースを変更・再実行していない。
