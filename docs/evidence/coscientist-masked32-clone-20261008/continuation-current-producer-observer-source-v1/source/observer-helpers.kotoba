@@ -1,0 +1,33 @@
+;; Readonly compiler diagnostic; no M/G writes, no predicate re-evaluation.
+(defn- ct-print [tag :string xs :vector-i64] :i64
+ (let [head (io-out tag)
+       body (loop [j 0] (if (= j (vector-count xs)) 0
+         (let [v (io-out (string-concat " " (string-from-i64 (vector-at xs j))))] (recur (inc j)))))]
+  (io-out "\n")))
+(defn- ct-ready [M :vector-i64] :bool
+ (and (= (vector-at M MM-ERR) 0)
+      (> (vector-at M MM-SIR-N) 1) (<= (vector-at M MM-SIR-N) 32768)
+      (> (vector-at M MM-FN-N) 1) (<= (vector-at M MM-FN-N) 1024)
+      (> (vector-at M MM-CODE-N) 0) (<= (vector-at M MM-CODE-N) 131072)
+      (> (vector-at M MM-FIX-N) 0) (<= (vector-at M MM-FIX-N) 16384)))
+(defn- ct-call-done [M :vector-i64 xs :vector-i64] :vector-i64
+ (if (not (ct-ready M)) M
+ (let [a (ct-print "CTCALL" xs)
+       b (ct-print "CTCALL-END" [(vector-at xs 0) (vector-at xs 4)
+          (vector-at M MM-CODE-N) (vector-at M MM-FIX-N)
+          (gn-g M gn-f-leaf) (gn-g M gn-f-fb) (gn-g M gn-f-ctx) (vector-at M MM-ERR)
+          (gn-g M gn-f-vmode) (gn-g M gn-f-vslot) (gn-g M gn-f-h)])] M)))
+(defn- ct-dump [M :vector-i64 phase :i64] :i64
+ (if (not (ct-ready M)) (ct-print "CTHOLD" [phase (vector-at M MM-ERR)])
+  (let [h (ct-print "CTTABLES" [phase (vector-at M MM-SIR-N) (vector-at M MM-FN-N)
+             (vector-at M MM-CODE-N) (vector-at M MM-FIX-N)])
+        s (loop [j 1] (if (= j (vector-at M MM-SIR-N)) 0
+             (let [v (ct-print "CTSIR" [phase j (gn-op M j) (gn-sir M j IF-A) (gn-sir M j IF-B) (gn-sir M j IF-C)])] (recur (inc j)))))
+        f (loop [j 1] (if (= j (vector-at M MM-FN-N)) 0
+             (let [v (loop [k 0] (if (= k 16) 0 (let [w (ct-print "CTFN" [phase j k (gn-fnf M j k)])] (recur (inc k)))))] (recur (inc j)))))
+        c (if (= phase 0) 0 (loop [j 0] (if (= j (vector-at M MM-CODE-N)) 0
+             (let [v (ct-print "CTCODE" [j (vector-at M (+ MM-CODE-BASE j))])] (recur (inc j))))))
+        x (if (= phase 0) 0 (loop [j 1] (if (= j (vector-at M MM-FIX-N)) 0
+             (let [v (loop [k 0] (if (= k MM-FIX-W) 0
+                   (let [w (ct-print "CTFIX" [j k (vector-at M (+ MM-FIX-BASE (* j MM-FIX-W) k))])] (recur (inc k)))))] (recur (inc j))))))]
+    (ct-print "CTDUMP-END" [phase 1]))))

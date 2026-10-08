@@ -175,3 +175,9 @@ LC timing V2は11本のstable30を得たが、C以上は0本、MD5の採用条�
 ## 資源admission失敗も成功Resultへ登録しない
 
 current typed bindingの最初のPopenはpreexecの資源設定例外で停止した。別の1-child診断はFSIZE／CPUの設定成功とAS4GiBの設定拒否を記録した。[失敗と資格の範囲](coscientist-masked32-clone-20261008.md)。いずれもcompiler結果はなく、成功ComputeCID→ResultCID bindingへ登録しない。旧失敗の正確なsetterは未確定のまま保持する。資源契約やplatform readerを変える次の要求は別ComputeRequestとして扱い、現在のadmissionを別Transitionで検証する。失敗receiptの再利用と成功解析結果の再利用を同じ状態にしない。C2の解析省略はOFFである。
+
+## 起動環境の役割と、現在のreader閉包
+
+portable native8の別要求でも、Python内部環境と渡した17項目を同一視した検査が失敗した。別診断で追加key名を確認した後、fresh版は渡した17値・Pythonの観測環境・native execの17値を分け、元の値の変更と未知keyを拒否した。runtime metadataをnativeへ転送する理由にせず、正規化処理とその契約も要求の実装・reader・provenanceへ結びつける。[失敗とfresh V4実証](coscientist-masked32-clone-20261008.md)。これは一般の環境key除外や既存cacheの資格ではない。
+
+fresh V4の8呼出と独立raw監査で、現在のCRC reader FN／SIR、256通りの値、連続literal pool、callerの適用siteと通常／観測生成物の完全一致を確認した。TC規則の次の実guest検証はこの現在閉包を根拠にする。読み取り規則の候補が適用できることと、今回のnative変換のfuel・trap・prefix・arenaが一致することは別の検証であり、まだ候補コードを実行した証拠ではない。ComputeCID／ResultCID cache、C2の解析省略、生成コードのC以上の性能も未資格のまま保持する。

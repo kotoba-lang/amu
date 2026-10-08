@@ -318,3 +318,21 @@ V4の固定fixtureを1回実行したが、2つのleader-only sample後にhelper
 固定canonical interpreterを明示し、起動前に実行ファイルとfixture sourceを検査するfresh V5を2レビュー後に1回実行した。[独立raw監査](evidence/coscientist-masked32-clone-20261008/owned-group-memory-v5-qualified-fixture/reviews/actual/report.json)は全8 sample、member数1・1・2・2・2・2・1・1、PIDごとのbirth／UUID、footprint合計を照合した。合計は10,355,144 Bを2回、20,693,904 Bを4回、10,420,680 Bを2回。helper wait0のhandshake・stable one-again 2 sample・leader wait0、signalなし・wait uncertaintyなしを確認した。旧V4の失敗は保存したままである。
 
 この成功は固定2子プロセスの有限adapter試験の資格だけで、hard memory peak・native8・current compiler binding・性能の資格ではない。次のnative8要求は、sampled footprint契約とCPU soft1800／hard1801、file／wall／arenaの契約を別に登録し、レビューしてから実行する。AS上限を黙って省く同一要求として扱わない。
+
+## 新しいnative8要求の環境検査と、継続領域の観測ソース
+
+V5の独立証拠を封じた新しいportable native8要求を2レビュー後に1回実行したが、最初のwrapperがPython内部環境と登録済み17項目の完全一致検査でexit1となった。[独立保存失敗監査](evidence/coscientist-masked32-clone-20261008/table-current-bind8-portable-v3-env-failure/reviews/actual/report.json)はwrapper reap1、2 memory sample、空のsetter journal、exec-readyとnative成果物がないことを確認した。親が渡した17項目は登録値と一致していた。失敗したwrapperの実際の追加keyは記録していないので、後から断定しない。native execは観測されておらず、syscall traceによる非実行証明とは区別する。
+
+別の固定Python起動1回では、同じ17項目に対して__CF_USER_TEXT_ENCODINGだけが追加され、元の項目の欠落・変更はなかった。[診断sourceと結果](evidence/coscientist-masked32-clone-20261008/table-current-bind8-portable-v3-env-failure/separate-env-diagnostic/report.json)はkey名だけを記録し、環境値は出力しない。[Appleの公開CF実装](https://github.com/apple-oss-distributions/CF/blob/main/CFRuntime.c)にも初期化時のencoding関数によるsetenvの可能性が記されているが、インストール済みframeworkの実行traceではない。次の別要求は、渡した環境・Python観測環境・native execへ明示して渡す環境を分け、元の17値と未知key拒否を保持する。旧試験の再実行は0である。
+
+並行して[現在producerの継続・tail・descriptor-cache観測用Kotoba SOURCE](evidence/coscientist-masked32-clone-20261008/continuation-current-producer-observer-source-v1/source/DESIGN.md)を凍結した。元のpredicateを再評価せず、実際に選んだcall arm、frame／fuel／cache状態とcode／fixup範囲を記録する。baseline unity sourceはnative8の現ソースと完全一致するが、native baselineの再利用資格はまだない。runner・nativeコンパイル・2本の生成物一致検証は未実施で、call除去やdescriptor保持の採用根拠・性能結果とはしない。
+
+## 現ソースでの8呼出・CRC型付き閉包の実確認
+
+fresh portable V4は渡した17項目を厳密に検査し、Python内の追加keyを__CF_USER_TEXT_ENCODINGだけに限定し、native execには元の17項目を明示して渡す。2レビュー後の1回の実行で固定8呼出すべてが正常終了した。[独立raw監査](evidence/coscientist-masked32-clone-20261008/table-current-bind8-portable-v4-actual/reviews/actual/report.json)は全23 SOURCE・1,835入力、8起動引数、環境と6-row journal、FSIZE64MiB／CPU1800・1801、17 arena counters、141 memory witnessを照合した。親のreap0は8件、guest子の終了は封じたloader supervisionに依存する。memory sampleは最大2 memberでbirthと合計を照合し、hard peakは主張しない。
+
+現baseline compilerは858,392 B／SHA256 `761856bb455de5d36021e177be8f3a0bbf65772dd66cbdf29c8e114f8cbe3d93`、readonly observerは876,648 B／`8f5fdf02193733ec84fd14d7de8b55b0f5b556bc85be11a407d76a0aca230c2d`。通常版と観測版で元CRC32のKSEED 3,724 B・native 3,640 B・4 exportとbench offset 1,224が完全一致した。native SHAは`8c5ab9f7a78b4df15a735d655bdcbee8b4b3bef6613cdcf99e639b153332b7d4`である。
+
+現在の型付きrawからreader FN1／SIR1..174、caller FN3・eligible SIR220、256 finite paths・2,048 Bのtable poolを再構成し、48 resolved branch fixupも独立照合した。歴史的v8だけを適用根拠にせず、現在の入力閉包とのbindingが得られた。typed gateは8番目のextractより前にsource上で強制されるが、外部event traceによる工程観測とは区別する。
+
+これはreadonly bindingと成果物一致の資格で、TC emitterや生成workloadの実行、compiler arena同等性、3世代固定点、C以上の性能の資格ではない。次はこの現baselineと証拠を封じてTC候補をビルドし、実guestの値・prefix・fuel・trap・arenaを通常経路と比較する別試験へ進む。継続領域observerもsourceが同じ現baselineを使えるが、runnerと別登録の検証は引き続き必要である。

@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "status",
+    "maximumLoaderCalls",
+    "outputRoot",
+    "outerExecution",
+    "noRetry",
+    "TCEmitterExecutionAuthorized",
+    "generatedWorkloadExecutionAuthorized",
+    "timingAuthorized",
+    "sha256",
+    "sourceReviews"
+  ],
+  "properties": {
+    "status": {
+      "const": "ROOT_GO_READONLY_TC_CURRENT_BIND8_PORTABLE_MEMORY_ONLY"
+    },
+    "maximumLoaderCalls": {
+      "const": 8
+    },
+    "outputRoot": {
+      "const": "/Users/junkawasaki/github/workspaces/codex/crc-table-decision-collapse-native-component-v3-portable-draft-20261008/run-outputs"
+    },
+    "outerExecution": {
+      "const": "require_escalated"
+    },
+    "noRetry": {
+      "const": true
+    },
+    "TCEmitterExecutionAuthorized": {
+      "const": false
+    },
+    "generatedWorkloadExecutionAuthorized": {
+      "const": false
+    },
+    "timingAuthorized": {
+      "const": false
+    },
+    "sha256": {
+      "type": "object",
+      "required": [
+        "run.py",
+        "preregistration.json",
+        "source-pins.json",
+        "input-pins.json"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "run.py": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "preregistration.json": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source-pins.json": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "input-pins.json": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "sourceReviews": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "bytes",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
