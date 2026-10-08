@@ -73,3 +73,9 @@ native fuel消費は1〜11079189。terminal使用量の最大はpairs256／vecto
 private cloneの9行SIRパターンと直後の1引数CALLを構造で照合し、元の3 CODE語を`LSR + ORR shifted + NOP`へ置換する隔離Kotoba emitterを実装した。workload名では分岐せず、元のgeneratorの状態更新を実行してから、語数・descriptor・補助tableが一致した場合だけ3語を書き換える。fuel・引数評価・nested CALLは残す。逆順パターンではinactiveなX10の値が変わるため、temp1／2／3が次のCALL以降で読まれない条件を要する。任意の物理register一致は主張しない。
 
 診断stderrの契約不足をSOURCE段階でHOLDにし、fresh driverで17 counterを厳密に読み取るよう修正した。その後OFF／ON compile・extractの4呼出は正常に閉じ、[独立監査](evidence/coscientist-masked32-clone-20261008/shift-orr-build4-v2/independent-report.json)が715入力、source copy、全KSEED／native、argv・環境・rawを確認した。生成したコンパイラの実行は0であり、この変換の実状態・容量・liveness、元19本の機能、自己再ビルド固定点、速度はまだ認定しない。[保存sourceと生成物](evidence/coscientist-masked32-clone-20261008/shift-orr-build4-v2/snapshot.json)も完全な依存archiveではない。
+
+## 次の仮説: scalar clone の呼出・frame コスト
+
+[静的 census と事前設計](evidence/coscientist-masked32-clone-20261008/scalar-cost-and-fuel-design-v1/snapshot.json)は、AESの3 clone／4サイトとSHAの10 clone／10サイトを元SIR・FREC・CODEから再照合した。全13 cloneは各25語、80 B frameで、成功経路はRETを含め23命令を実行する。そのうちshift／shift／OR／maskは4語、entry fuel transactionは5語である。元SHAソースの固定ループから、正の1 bodyにつき2ブロック×（48 schedule更新×4 rotation＋64 rounds×6 rotation）＝1152 clone呼出、clone内26,496命令と数えられる。これはソース由来の命令実行数であり、実測時間や支配的な時間割合ではない。shift／OR融合だけでは呼出・frame・fuelメモリ操作が残る。
+
+次の汎用仮説は、閉じた純粋scalar bodyと検証済みmaskの呼出展開である。現在の`di-body`は`OP-FUEL`と`OP-CALL`を拒否する。単に許可へ変えると、`di-init`がleafモードへ切り替えるため、元のnonleaf fuel publication／枯渇trapを変えるおそれがある。`OP-FUEL [0,0,0]`の0はcharge無しを意味しない。元の減算・分岐・trap・成功時storeを同じ順序で保存し、最初はfuelを持たない閉じたmask calleeだけを展開する設計を登録した。引数評価、live register／context、未知effect、label ingress、部分的CODEエラーと新しいcompiler資源契約も別々に検査する。実装GO・native control・元19件の機能・quiet速度・製品採用はこの設計からは認定しない。
