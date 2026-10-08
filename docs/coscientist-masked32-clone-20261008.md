@@ -537,3 +537,27 @@ ComputeCIDはこの候補の意味保存証明を代替しない。規則・実�
 V2の6呼出は一度だけ実行して全wait0、22有限samplesがstrict sampled admissionを通った。[独立保存監査](evidence/coscientist-masked32-clone-20261008/published-mode2-x8-vector-statemate6-v2-artifacts/reviews/independent-actual-v2/report.json)は全22 SOURCE／80入力、旧候補producer・旧build GO、各seal、raw、資源6行、17arena、wholecontainer／payloadと固有exportを再検証した。OFF／ON vectorは668／660 B、bench offset464／456、元statemateはOFF87,716／ON86,184 B、batch offset85,576／84,044だった。旧V1の失敗をV2成功へ書き換えない。
 
 この段階はartifact形成の比較だけで、guest実行はない。8 B／1,532 Bのサイズ減少を速度改善に換算しない。複数debit・private entry・現在x8／x7／contextの寿命とaliasを実生成CFGへ結び付け、fuel／trap／17arenaの実行比較、候補の3世代固定点、原19本、quiet samehostのfresh C比較を別々に検証する。C2 OFF・CIDによる新しい解析省略0、製品採用未資格を維持する。[失敗も含む選択snapshot](evidence/coscientist-masked32-clone-20261008/published-mode2-x8-vector-statemate6-v2-artifacts/snapshot.json)。
+
+## 公開x8候補の保存命令を元生成物へ対応付ける
+
+[独立保存命令点検](evidence/coscientist-masked32-clone-20261008/published-x8-vector-statemate-normalized-words-v1/reviews/independent/report.json)はvectorの5領域とstatemateの539領域を全word・論理branch targetで比較した。vectorは2領域で各4 B減り、各領域に公開x8の2 debitパターン、private Bのtarget+1にLDR x8がある。statemateは383領域で各4 B減り、計1,532 B、289のprivate+1分岐を観測した。非fuel命令の正規化された対応と論理分岐先は一致し、8境界値のdebitモデルと4構造負例も確認した。
+
+この対応付けは「同じソース・SIR順、BRK1がEND sentinelでliteral内に現れない」という明示した仮定に依存する条件付き構造点検である。全opcodeのregister writer、x7／x8／context alias・descriptor寿命、typed admission、実fuel／trap／17arenaは未資格であり、一般のmachine certificateや速度証拠と呼ばない。[snapshot](evidence/coscientist-masked32-clone-20261008/published-x8-vector-statemate-normalized-words-v1/snapshot.json)。次の対照は元statemateの5条件をOFF／ONで実行し、戻り値・論理fuel・全17arenaを比較する。
+
+
+## 公開x8と同一サイズの末尾フレーム候補の有限実行
+
+[公開x8 runtime12の独立保存監査](evidence/coscientist-masked32-clone-20261008/published-mode2-x8-runtime12-v1/reviews/actual-independent/report.json)は、元statemateの0／1／2／17／32とvector fixture1の計6組・12呼出を確認した。OFF／ONの戻り値、fuel、17種のarenaが一致した。statemateのfuelは1／806／1,545／12,630／23,715、fixtureは双方6である。31件の有限sample、11 strictと1件の既登録termination-gap診断を区別する。これは元19本全部や一般のx8 clobber契約を完了する証拠ではない。
+
+[同一サイズ末尾フレームの選択snapshot](evidence/coscientist-masked32-clone-20261008/homogeneous-tail-frame-corrected-native4-v2/snapshot.json)は、初回V1の1呼出FAILを保持する。追加した2箇所が一次encoderにない`enc-mov`を参照していた。SOURCEレビューでも見逃したため、V3は正しい`enc-mov-r`へ2 headだけ修正し、現在16モジュールのhelper参照閉包を追加検査した。fresh native4 V2は4呼出で完走し、元nsichneuのheader・export・全payloadのうち4命令だけが事前登録どおり変わった。4件全strictとはせず、3 strictと1 termination-gap診断である。
+
+[元nsichneu runtime10の選択snapshot](evidence/coscientist-masked32-clone-20261008/homogeneous-tail-frame-original-ns-runtime10-v1/snapshot.json)は0／1／2／17／32の5組を確認した。戻り値0／1／1／1／1、fuel1／272／527／4,352／8,177と17種のarenaがOFF／ONで一致した。10呼出全strict、21件の有限sample。適用した末尾辺は1本だけであり、一般ABI、複数辺の合成、候補全19本、自己固定点、Cとの速度比較は未資格である。
+
+これらは生成命令の正しさを検証する診断であり、ComputeCIDキャッシュの速度向上を測ったものではない。元の本体・profile・fuel・arena・effect・trap契約を変更していない。
+
+
+## 公開x8候補のG2・G3・G4自己固定点
+
+同じcurrent16候補ソース1,065,755 BをG1でG2へ、G2でG3へ、G3でG4へcompile／extractしたfresh6呼出は全closed0となった。[独立保存監査](evidence/coscientist-masked32-clone-20261008/published-mode2-x8-g2-g3-g4-fixedpoint6-v1/reviews/actual-independent/report.json)は全SOURCE／input、GO、6 seal・raw・資源journalと前世代producerの再帰的受入を確認した。G2／G3／G4は全native866,680 B（SHA256 `6b410b003a428a40098bdd330539ccf3fef5fdd6d8e9bad23758f941b347462d`）、全KSEED866,706 B（`3ebef5afb6b2b7cd826499722dbbbc250c8e71ed54afc893f5124ee8d6f952da`）、main0のexportが一致した。G1は別hashであり、最初の遷移の一致は要求していない。
+
+185件の有限sample、4 strictとG2／G3 compileの2件の既登録termination-gap診断を区別する。この自己固定点を、先のG1による元statemate／vector有限runtimeと混ぜてG4の全19本runtime成功とは呼ばない。G4からの元19本compile／runtime、一般register／alias契約、quiet hostのC比較、製品採用は残る。ComputeCID cacheの実装・速度効果も未資格である。[選択snapshot](evidence/coscientist-masked32-clone-20261008/published-mode2-x8-g2-g3-g4-fixedpoint6-v1/snapshot.json)。

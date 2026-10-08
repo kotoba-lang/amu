@@ -221,3 +221,10 @@ current OFF/TCの機能V3でも、SLRE32の保存rawは戻り値・fuel・17aren
 [共有フレーム観測の保存失敗](coscientist-masked32-clone-20261008.md)で、ファイル内の定義数と解析器のFN table数、元ファイル範囲と暗黙ライブラリ追加後のtoken範囲を同一視した検査が拒否された。独立一次SOURCE照合は、元ソース30,386 Bにleading LFとrem定義を追加した30,443 Bを封じ、null sentinelを含む267 FNと24追加tokenを確認した。要求のread閉包には、元ファイル・追加ライブラリの内容と選択処理・展開後ソース・schema／sentinel契約を含める。元ファイルCIDだけで保存証拠を別展開へ移さない。
 
 展開後ソースを用いた保存rawの構造一致は、元のadmission拒否を覆さない。Resultの内容一致と現在のTransition成功を分け、元FAIL／REFUSEを保持する。C2 OFF・新しい解析省略0・キー除外なしであり、この条件付き構造検査をcache実装や性能向上として扱わない。
+
+
+## 成功結果の内容と、その計算を受け入れた記録
+
+今回のx8／同一サイズ末尾フレーム診断では、元の入力条件で戻り値・fuel・17arenaの一致を保存rawから独立確認した。一方、同一内容でも各呼出の現在の資源・sample・終了・capture受入条件は別に検査した。初回の未知encoder FAILを、修正版の成功Resultで置き換えない。[有限実行の証拠](coscientist-masked32-clone-20261008.md)。
+
+この区別をComputeCID→ResultCIDへ使う。要求は現在の全reader閉包・実装／規則版・展開ソース・入力状態・ABI／effect／trap／予算を識別し、Resultは所有した答えと順序付き更新寄与を封じる。TransitionReceiptは現在の集計・poison・権限・消費・admissionを検査する。同じResultでも現在のTransition成功を推定せず、失敗・途中公開・予算切れを成功bindingへ登録しない。C2 OFF・キー除外なし・新しい解析省略0を維持する。
