@@ -1,0 +1,37 @@
+{
+  "argv": [
+    "/usr/bin/ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "ConnectionAttempts=1",
+    "zebulun@100.66.28.79",
+    "python3 -c '\"\"\"Read-only saved-evidence collector; never imports or runs functional driver.\"\"\"\nfrom pathlib import Path\nimport sys,json,hashlib,tarfile,io,gzip,signal,stat\nroot=Path('\"'\"'/Users/zebulun/github/workspaces/codex/vector-leaf-straight-read-cache-fresh-consumer-functional285-v1-root'\"'\"')\nSP='\"'\"'120c90f7823f649fae7f6998c5daa314396d0da97998db88ebf7676d04a191d8'\"'\"'\nH=lambda b:hashlib.sha256(b).hexdigest()\nsignal.alarm(120)\nassert root.is_dir() and not root.is_symlink()\nassert H((root/'\"'\"'source/source-pins.json'\"'\"').read_bytes())==SP\nfiles={};present=[];absent=[]\nfor dirname in ['\"'\"'source'\"'\"','\"'\"'control'\"'\"','\"'\"'functional285'\"'\"']:\n parent=root/dirname\n if not parent.exists():\n  assert dirname=='\"'\"'functional285'\"'\"';absent.append(dirname);continue\n present.append(dirname)\n assert stat.S_ISDIR(parent.lstat().st_mode) and not parent.is_symlink()\n for p in sorted(parent.rglob('\"'\"'*'\"'\"')):\n  st=p.lstat();assert not p.is_symlink()\n  if stat.S_ISDIR(st.st_mode):continue\n  assert stat.S_ISREG(st.st_mode) and st.st_size<=16777216\n  assert len(files)<4095 and sum(map(len,files.values()))+st.st_size<=67108864\n  b=p.read_bytes();assert len(b)==st.st_size;files[str(p.relative_to(root))]=b\nregistry=json.loads(files['\"'\"'source/source-pins.json'\"'\"'])\nassert {n.removeprefix('\"'\"'source/'\"'\"') for n in files if n.startswith('\"'\"'source/'\"'\"')}==set(registry)|{'\"'\"'source-pins.json'\"'\"'}\nfor n,r in registry.items():assert len(files['\"'\"'source/'\"'\"'+n])==r['\"'\"'bytes'\"'\"'] and H(files['\"'\"'source/'\"'\"'+n])==r['\"'\"'sha256'\"'\"']\nreceipt=dict(status='\"'\"'READONLY_FRESH_FUNCTIONAL285_RECEIPT_COLLECTION_ONLY'\"'\"',members=[dict(path=n,bytes=len(b),sha256=H(b)) for n,b in sorted(files.items())],sourcePinsSHA256=SP,root=str(root),presentSubtrees=present,absentSubtrees=absent,functionalTerminalPresent='\"'\"'functional285/terminal.json'\"'\"' in files,functionalReportPresent='\"'\"'functional285/report.json'\"'\"' in files,compilerCalls=0,nativeCalls=0,guestCalls=0,timingCalls=0)\nfiles['\"'\"'collection-receipt.json'\"'\"']=json.dumps(receipt,indent=2).encode()+b'\"'\"'\\n'\"'\"'\nassert len(files)<=4096 and sum(map(len,files.values()))<=67108864\nbuf=io.BytesIO()\nwith gzip.GzipFile(fileobj=buf,mode='\"'\"'wb'\"'\"',mtime=0) as z,tarfile.open(fileobj=z,mode='\"'\"'w|'\"'\"',format=tarfile.USTAR_FORMAT) as t:\n for n,b in sorted(files.items()):\n  q=tarfile.TarInfo(n);q.size=len(b);q.mode=0o444;q.mtime=0;t.addfile(q,io.BytesIO(b))\nassert len(buf.getvalue())<=67108864\nsys.stdout.buffer.write(buf.getvalue());sys.stdout.buffer.flush()\n'"
+  ],
+  "environment": {
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "HOME": "/Users/junkawasaki",
+    "LANG": "C",
+    "LC_ALL": "C",
+    "TZ": "UTC",
+    "TMPDIR": "/private/tmp"
+  },
+  "maximumChildren": 1,
+  "noRetry": true,
+  "timeoutSeconds": 180,
+  "remoteAlarmSeconds": 120,
+  "archiveBytesMaximum": 67108864,
+  "memberBytesMaximum": 16777216,
+  "memberCountMaximum": 4096,
+  "remoteCollectorSHA256": "57296c7bc9b8787354d76b6b6dc975a64eb613a90d591529bac8fa4ec7adf586",
+  "state": "terminal",
+  "returncode": 0,
+  "exception": null,
+  "cleanupException": null,
+  "archiveBytes": 305517,
+  "archiveSHA256": "88654e2fca5a07bda6da1a7d659b38d0f5d25b3e8c77570c2863f6e9ea975516",
+  "stderrBytes": 0,
+  "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

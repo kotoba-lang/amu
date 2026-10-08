@@ -1,0 +1,42 @@
+[
+  {
+    "index": 1,
+    "label": "fresh-functional285-launch",
+    "argv": [
+      "/usr/bin/ssh",
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "ConnectTimeout=10",
+      "-o",
+      "ConnectionAttempts=1",
+      "zebulun@100.66.28.79",
+      "python3 -c 'import pathlib,json,hashlib,base64,sys,signal,runpy,os\nsignal.alarm(9420)\nroot=pathlib.Path('\"'\"'/Users/zebulun/github/workspaces/codex/vector-leaf-straight-read-cache-fresh-consumer-functional285-v1-root'\"'\"')\nassert pathlib.Path.home()==pathlib.Path('\"'\"'/Users/zebulun'\"'\"') and not root.exists()\nb=sys.stdin.buffer.read(8388609);assert len(b)<=8388608\nreq=json.loads(b);assert set(req)=={'\"'\"'files'\"'\"','\"'\"'sourcePinsSHA256'\"'\"','\"'\"'remoteGOSHA256'\"'\"'}\nroot.mkdir();(root/'\"'\"'source'\"'\"').mkdir();(root/'\"'\"'control'\"'\"').mkdir()\nfor n,t in req['\"'\"'files'\"'\"'].items():\n p=pathlib.PurePosixPath(n);assert not p.is_absolute() and len(p.parts)==2 and p.parts[0] in ['\"'\"'source'\"'\"','\"'\"'control'\"'\"'] and '\"'\"'..'\"'\"' not in p.parts and str(p)==n\n data=base64.b64decode(t,validate=True);assert len(data)<=2097152\n target=root/n\n with target.open('\"'\"'xb'\"'\"') as f:f.write(data)\n target.chmod(0o444)\nassert hashlib.sha256((root/'\"'\"'source/source-pins.json'\"'\"').read_bytes()).hexdigest()==req['\"'\"'sourcePinsSHA256'\"'\"']\nfor n,r in json.loads((root/'\"'\"'source/source-pins.json'\"'\"').read_bytes()).items():\n assert '\"'\"'/'\"'\"' not in n and n not in ['\"'\"'.'\"'\"','\"'\"'..'\"'\"']\n p=root/'\"'\"'source'\"'\"'/n;assert p.stat().st_size==r['\"'\"'bytes'\"'\"'] and hashlib.sha256(p.read_bytes()).hexdigest()==r['\"'\"'sha256'\"'\"']\nassert hashlib.sha256((root/'\"'\"'control/root-go.json'\"'\"').read_bytes()).hexdigest()==req['\"'\"'remoteGOSHA256'\"'\"']\nsys.dont_write_bytecode=True;sys.path.insert(0,str(root/'\"'\"'source'\"'\"'));sys.argv=[str(root/'\"'\"'source/functional285.py'\"'\"'),str(root/'\"'\"'control/root-go.json'\"'\"')]\nrunpy.run_path(sys.argv[0],run_name='\"'\"'__main__'\"'\"')\nprint('\"'\"'LC_FRESH_CONSUMER_FUNCTIONAL285_REMOTE_TERMINAL'\"'\"',flush=True)\n'"
+    ],
+    "environment": {
+      "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+      "LANG": "C",
+      "LC_ALL": "C",
+      "TZ": "UTC",
+      "HOME": "/Users/junkawasaki",
+      "TMPDIR": "/private/tmp"
+    },
+    "timeoutSeconds": 9420,
+    "state": "terminal",
+    "stdoutPath": "/Users/junkawasaki/github/workspaces/codex/vector-leaf-straight-read-cache-fresh-consumer-functional285-source-v1/launch-outputs/children/1.stdout",
+    "stderrPath": "/Users/junkawasaki/github/workspaces/codex/vector-leaf-straight-read-cache-fresh-consumer-functional285-source-v1/launch-outputs/children/1.stderr",
+    "returncode": 0,
+    "exception": null,
+    "cleanupException": null,
+    "stdout": {
+      "path": "/Users/junkawasaki/github/workspaces/codex/vector-leaf-straight-read-cache-fresh-consumer-functional285-source-v1/launch-outputs/children/1.stdout",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stderr": {
+      "path": "/Users/junkawasaki/github/workspaces/codex/vector-leaf-straight-read-cache-fresh-consumer-functional285-source-v1/launch-outputs/children/1.stderr",
+      "bytes": 2059,
+      "sha256": "bb7183b355e211ccba94b4710e3b5a15aead4f9d36d36b7fdb40ff09d3ee3555"
+    }
+  }
+]

@@ -219,3 +219,10 @@ zebulunの専用領域で、環境照会7・元のC19本・新consumer19本・�
 外側launcherを`functions.exec_command`の`require_escalated`で実行する条件だけを加えたfresh V2を別に事前登録・SOURCEレビュー・GO承認し、285呼出が正常に閉じた。[独立保存raw監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-original19-functional285-v2/reviews/actual-independent/report.json)は元19本×5 profiles＝95 triplesのOFF／scalar ON／historical C、全285 argv・環境・raw SHA・exit0・終了状態、全source・export・payload・offsetとwhole C consumer anchorを照合した。native190呼出ではBoolean結果、16M初期fuelと残fuel、4 terminal arenaのcapacity／usedがOFF／ONで完全一致し、C95呼出のBoolean結果も一致した。C arenaはunavailable-C／null、terminal usedはpeakではない。depthconvの最終profile2000も保持した。
 
 [受理receipt](evidence/coscientist-masked32-clone-20261008/fuel-dag-original19-functional285-v2/go/functional285-acceptance.json)はこの有限機能範囲を受理する。retained candidateは0、V1失敗1＋V2新規285＝累計286呼出である。この285は成功returnだけを受け入れる試験で、新しいbudget境界trapの証拠ではない。固定fixtureのGuest10 CPU trap確認とは区別する。timing、C2、register canary、official scoreとfull selfhost目標達成はfalseのまま。[選択snapshot](evidence/coscientist-masked32-clone-20261008/fuel-dag-original19-functional285-v2/snapshot.json)は依存pinと選択rawを保存するが、完全依存の実バイトarchiveではない。
+
+
+## fresh consumer285初回：入力証跡の配置で実行前停止
+
+新consumerの元19本・計95 profiles×3 armsを実行するSOURCEをレビューし、一度だけSSHで起動したが、最初の入力閉包検査が停止した。build52の読み取り専用collectorがstreamに生成した`collection-receipt.json`を、リモートbuild領域に存在する入力として扱っていたためである。SSH自体はexit0でもstdoutは空、stderrは2,059 Bのtracebackで完了sealがないため、成功とはしない。元SOURCE・GO・失敗rawを保存した。
+
+[独立保存失敗監査](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-fresh-functional285-v1-failure/reviews/failure-independent/report.json)は、読み取り専用collection20 filesと`functional285`領域の不在、native／compiler／guest呼出0を確認した。旧領域の再試行は行わない。次のfresh SOURCEでは、同じ証跡bytesをsourceとして転送し、新領域での配置と役割を封じる。元19本のbody・profile・ABI・fuel・arena比較条件は維持する。内容hash一致だけではファイルの存在・入力解釈・計算の成功は保証されない具体例として、ComputeCID要求に配置役割とreader契約を含める設計へ反映する。[選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-fresh-functional285-v1-failure/snapshot.json)は完全な依存実バイトarchiveではない。機能285とquiet timingは未認定である。
