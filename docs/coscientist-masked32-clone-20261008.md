@@ -28,3 +28,18 @@ schemaを修正したfresh V4をrootとcontrolsがSOURCEレビューし、OFF専
 | nettle-sha256 | 8238 | 942586 | 5 | 8417819 | 68417026 |
 
 heap指標は4 arenaの別々のpeakに対応するサイズを掛けた和で、同時使用最大値・RSS・時間ではない。残る12 fieldは操作回数などの活動総数で、全17 fieldをpeakとは呼ばない。`KEXE_FUEL=off`は従来のcompiler診断と同じ非計量モードを明示したもので、生成workloadのfuel契約を変えない。ONの追加M・暗黙pair・出力処理の余裕やphysical fuelはまだ証明していない。元19本の実行・selfhost固定点・C性能比較も別のgateに残す。
+
+## ONによる元19本のコンパイルと観測器の失敗
+
+固定した資源上限でON compilerを初めて実行した。[独立監査](evidence/coscientist-masked32-clone-20261008/first-on-v1/independent-report.json)は元AES／SHAのcompile・extract計4呼出の終了、566入力、生成物と17資源fieldを照合した。AES native40432 B（従来比+312 B）／`627fdd61…`、SHA10548 B（+1000 B）／`42aabf57…`を生成し、公開exportの名前・順序・arityを保持した。AESのexport offsetは+12 B、SHAは不変だった。サイズ増加だけからcloneの実際の所有者や意味保存は断定しない。
+
+| ONコンパイル対象 | pair peak | string byte peak | vector descriptor peak | vector item peak | 報告heap指標（B） |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| nettle-aes | 14880 | 1102720 | 7 | 16899647 | 136538088 |
+| nettle-sha256 | 8240 | 944288 | 6 | 16809398 | 135551408 |
+
+続く17本のcompile・extract計34呼出も終了した。[元19本の独立監査](evidence/coscientist-masked32-clone-20261008/original19-v1/independent-report.json)は746入力と元matrixのsource・symbol・arity・入力profileを照合し、17本の全KSEEDが従来とバイト一致することを確認した。最初の2本は再実行せず、計38呼出を19本のコンパイル証拠として結合した。これは生成workloadを実行した証拠ではない。次は同じC参照・OFF・ONを元19本の95入力で比較し、nativeのresult／fuel／4 arenaを確認する。比較runnerのビルド33呼出と機能確認285呼出を別段階として登録する。
+
+clone・call・frameを読み取り専用で観測する版は、初回compileで停止した。[失敗の独立監査](evidence/coscientist-masked32-clone-20261008/observer-failure-v1/independent-report.json)は599入力、最初の1呼出の終了、未実行の残り5呼出、再試行なしを照合した。stdoutは空で、stderrに`E2104 type mismatch in 'case': expected :i64 (byte 959829)`と17資源fieldがある。整数`case`の既定値にkeyword `:else`を置いた新しい診断helperの型エラーで、資源枯渇の診断ではない。旧source・失敗namespaceを保存し、修正はfresh版として再レビューする。観測器の6呼出成功、実際のclone所有者、機能・性能は未認定である。
+
+上記3 snapshotは選択したsource・生成物・raw・監査のコピーで、完全な依存archiveではない。元入力はworkspaceの内容とpinで保持する。製品のdefaultOFF、既存C性能結果、selfhost固定点の認定は変更していない。
