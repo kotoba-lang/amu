@@ -203,3 +203,10 @@ Guest10の独立監査を受理した後、元19本のcompile／extract38呼出�
 coscientistの判定を二つに分ける。解析再利用はcacheなし／shadow／replayの意味・失効・valid-last公開と、封印・hash・lookup・replayを含むコンパイル時間で判定する。生成コード最適化は元19本の意味・資源契約・selfhost固定点と、同一ホストでのC比較で判定する。既存memo hitを新cacheの利益へ加算せず、CIDの一致を意味保存証明やEmbench高速化として扱わない。
 
 [zebulunの読み取り専用調査](evidence/coscientist-masked32-clone-20261008/zebulun-host-survey-v1/survey/report.json)はarm64／Mac16,10、macOS26.2／SDK26.2／Apple clang17を確認した。Tailscale SSHのDNS失敗と、同じIPへの通常SSHの成功を両方保存した。8秒のCPU調査はstable quiet hostの資格ではなく、性能結果は未取得である。
+## 同一ホストのC19本・新consumer19本：52呼出の独立確認
+
+zebulunの専用領域で、環境照会7・元のC19本・新consumer19本・環境照会7の計52呼出を実施した。[独立保存raw監査](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-fresh-build52-v2/reviews/actual-independent/report.json)は全引数・順序・環境・timeout・104 raw streams・正常終了とreap、前後のclang／SDK／OS identity、全C recipeとcb3f consumer recipeを確認した。19 headerはOFF／LCの全payload・offset・symbol・featureと、そのホストで新しく作ったC imageの全bytesに一致し、38成果物はthin ARM64である。
+
+封印済み121,263,001 Bのパッケージは全3,493 originの415,361,908 Bを保持する。64MiBを超える歴史的clang資料だけをlossless chunkへ分割し、順序・全origin SHAを検証した。runtime operandはchunkを受理しない。独立assembly／transfer監査、3転送呼出、1launch、読み取り専用1回収も保存した。[選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-fresh-build52-v2/snapshot.json)は完全な依存archiveではなく、全workspaceパッケージの正確な参照を保持する。
+
+これは同一ホストのビルドidentityと全imageの対応の証拠である。SDK tree全体のhash、fresh consumerの全19本・285呼出、quiet条件、実時間比較は別の段階であり、この52件から性能を主張しない。
