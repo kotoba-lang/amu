@@ -1,0 +1,38 @@
+from pathlib import Path
+import hashlib,json,stat,ast
+W=Path('/Users/junkawasaki/github/workspaces/codex');D=W/'crc-original-guest-native-controller-source-v4-20261009-dense';O=Path(__file__).resolve().parent
+sha=lambda b:hashlib.sha256(b).hexdigest()
+def pin(p):
+ b=p.read_bytes();return dict(path=str(p),bytes=len(b),sha256=sha(b))
+def check(p,v):
+ a=p.lstat();assert stat.S_ISREG(a.st_mode)and not p.is_symlink();b=p.read_bytes();assert len(b)==v['bytes']and sha(b)==v['sha256'],str(p)
+f=json.loads((D/'freeze.json').read_text());sp=json.loads((D/'source-pins.json').read_text());ip=json.loads((D/'input-pins.json').read_text());pr=json.loads((D/'preregistration.json').read_text())
+assert sha((D/'source-pins.json').read_bytes())=='0653ae78eb638c10074ed2c32bb4ed5e23c3d016c72fb3f5518f1e0b291d469f'
+for n,v in sp.items():check(D/n,v)
+for n,v in ip.items():check(Path(n),v)
+assert len(sp)==f['sourceFiles']==20 and len(ip)==f['inputFiles']==2135 and sum(v['bytes']for v in ip.values())==f['inputBytes']==405117441
+for p in D.glob('*.py'):ast.parse(p.read_text())
+assert len(pr['cases'])==8 and len(pr['environment'])==17 and pr['maximumPythonWrapperStarts']==8 and pr['maximumNativeGuestChildStarts']==8 and pr['maximumNativeCompilerChildStarts']==0
+expected=[('prefix-crc',1,3523407757),('prefix-crc',2,3468463104),('prefix-crc',1024,1703161001),('bench',1,1)]
+for j,(symbol,arg,answer)in enumerate(expected):
+ for k,arm in enumerate(['OFF','ON']):
+  c=pr['cases'][2*j+k];assert c['arm']==arm and c['symbol']==symbol and c['argument']==arg and c['expectedResult']==answer
+  assert c['offset']==(1352 if arm=='OFF'else 1392)if symbol=='prefix-crc'else c['offset']==(1224 if arm=='OFF'else 1264)
+  assert c['nativeArgv'][0]==pr['loader']['path'] and c['nativeArgv'][1]==pr['offArtifact'if arm=='OFF'else'onArtifact']['path']
+  assert c['nativeArgv'][2:]==[str(c['offset']),'1','aarch64','-',str(arg)]
+assert pr['producer']['sha256']=='761856bb455de5d36021e177be8f3a0bbf65772dd66cbdf29c8e114f8cbe3d93'and pr['baseline41SHA256']=='4ed9b5600505c33013c966d266a977a3d4ccd56ad3cdc425b1805acf390b95f3'
+# Pure runtime decoder, saved original OFF data only. No driver/call import.
+rn={};exec(compile((D/'runtime.py').read_bytes(),'runtime-pure','exec'),rn)
+old=W/'crc-table-decision-collapse-original-crc-guest8-source-v1-20261009-dense/run-outputs';out=(old/'prefix-crc-1-off.stdout').read_bytes();err=(old/'prefix-crc-1-off.stderr').read_bytes();rpt=rn['parse_report'](out);count=rn['counters'](err);assert rpt['result']==3523407757 and rpt['initialFuel']==1000000 and rpt['remainingFuel']==999996 and count['status']=='valid'and len(count['values'])==17
+for bad in [out+b'EXTRA\n',b'EXTRA\n'+out]:
+ try:rn['parse_report'](bad)
+ except AssertionError:pass
+ else:raise AssertionError('extra stdout admitted')
+for bad in [err+b'EXTRA\n',b'EXTRA\n'+err,err.replace(b':pairs ',b':unknown ',1)]:assert rn['counters'](bad)['status']!='valid'
+fixture=W/'crc-capture-popen-transfer-fixture-v2-actual-review-independent-20261009/report.json';fr=json.loads(fixture.read_text());assert fr['status']=='PASS_INDEPENDENT_SAVED_FILEIO_CAPTURE_CONTROLLER_FIXTURE_ONLY'
+for n,key in [('capture.py','captureSHA256'),('integration.py','integrationSHA256'),('controller.py','controllerSHA256')]:assert sha((D/n).read_bytes())==fr[key]
+r={'status':'PASS_SOURCE_ONLY_CURRENT_ORIGINAL_TC_GUEST8_NATIVE_CAPTURE_V4','independent':True,'priorAuthorship':False,'sourcePinsSHA256':sha((D/'source-pins.json').read_bytes()),'driverSHA256':sha((D/'run.py').read_bytes()),'subject':str(D),'freeze':pin(D/'freeze.json'),'inputPins':pin(D/'input-pins.json'),'verifiedClosure':{'sourceFiles':20,'inputFiles':2135,'inputBytes':405117441,'allDeclaredFilesExactRegularNonSymlink':True},'acceptedIntegrationFixture':pin(fixture),'verifiedScope':{'guestCalls':8,'compilerCalls':0,'wrapperStarts':8,'nativeGuestStarts':8,'simultaneousOwnedMembers':2,'pairs':4,'cases':['prefix-crc1','prefix-crc2','prefix-crc1024','bench1'],'fuelPerCall':1000000,'totalFuel':8000000,'environmentFields':17,'zeroGrants':True},
+'verifiedSourceObservations':['run main refuses without exact GO keys/four hashes/two exact independent source reviews, full input/source guards, matching saved fixture three components and fresh output. Original current7618/source4ed9,984169 emission/f746511 extraction/old failed7 proof bindings preserved; own OFF/ON container payload/export offsets checked before any call.', 'Sample API callback exception permanently retires inside Controller.lock before unlocking; watchdog uses same group authority. Retirement precedes every potential direct wait; no poll or group restoration. native-call final cleanup attempts one bounded direct wait even when controller/capture/watchdog callbacks fail, with local waitCalled guarding retries and wait uncertainty retained.', 'Capture owns only duplicate readFDs after original unbuffered FileIO wrappers close; parent does not cross-close worker duplicates. Failure preserves denied/granted ownership, stopack and hashes only for stopped/closed writer. Complete raw with non-sampling firstFailure is refused; zero accepted samples/birth mismatch/loader-unbound refuse.', 'Ordered compact sample/PID/birth/footprint journal is prebounded4096B per row/16MiB total/90502 rows and fsynced before accepted sample append. Failed persistence refuses. Birth bound comes from first accepted owner sample; subsequent births must match. Six limit rows require17env exact values through wrapper source,FSIZE64MiB andCPU1800/1801 without finite inherited limits raised,noAS; original17 native env explicitly forwarded.', 'Whole exact stdout result/fuel/metering/4arena capacities/used is decoded separately from exact17 stderr counter line; expected answer and structured/counter equality required. Adjacent OFF/ON whole reports/rawstream hashes/all17 counters/normal exits equal. Independent pure saved parser positive plus five malformed/extra-output negatives pass.', 'All failures stop/no retry and preserve old failed namespaces. Valid-last completion requires eight terminal rows and final guards. Semantic diagnostic termination gap stays distinct from strict old memory policy; missing footprint never synthesized0.'],
+'limitations':['SOURCE acceptance only, no native execution or actual Popen/libproc/kernel API qualification performed by reviewer. Separate root GO and actual saved audit required.', 'Matching fixed FileIO/lock fixture does not dynamically qualify native Popen creation, arbitrary grant interruption or descendant closure. Ambiguous unreturned Popen handle and wait timeout remain unclosed; supervisor/runtime resource limits are not proof of all descendant reap.', 'Sampled physical footprint soft4GiB is not hard peak/atomic census/general AS cap. Late typed ESRCH can qualify only unavailable diagnostic gap under exact premises; old failure is not relabeled.', 'Regular-file fsync/write/close and thread scheduling deadlines are cooperative. Controlled FD ledger excludes arbitrary dyld/CPython/library transient descriptors; no universal hard FD bound.', 'No full256 candidate reach, extra1081 case, trap/fuel stress, fallback/FADDR/caps/fixedpoint/original19/performance qualification. Original four pairs retained.'],
+'reviewerDiagnostic':'Initial reviewer checker SyntaxError before execution, preserved in audit-initial-syntax-failure.py; fixed spacing only, no frozen source changes.', 'operationalCalls':0,'actualThreadsFDsProcessesNativeNetworkAPICalls':0,'subjectEdits':0,'reviewerSource':pin(Path(__file__))}
+(O/'report.json').write_text(json.dumps(r,indent=2)+'\n');print(json.dumps(pin(O/'report.json')))

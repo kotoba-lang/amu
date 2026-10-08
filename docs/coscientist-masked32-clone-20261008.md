@@ -401,3 +401,18 @@ pipe捕捉V1はsetup失敗時のFD所有権が不十分なため、未実行HOLD
 最初のfixture SOURCEにはPython runtimeのsymlink aliasがあり、rootのregular-file pinで起動前HOLDになった。新V2は同じcanonical targetへの重複pinを整理し、全9 SOURCE／1,944入力をregular・nonsymlinkとして2担当が照合した。11ケースのPython本体は同一で、旧V1は未実行を維持する。最初のsupervisorも固定child bindingと不確実waitの扱いを修正し、各SOURCEとHOLDを保存した。
 
 この結果は制御したFD／thread fixtureの資格であり、全scheduleの証明やsyscall trace、native sampler／Popen全体、hard peak・任意library内部FD数の保証ではない。V4 native driverには耐久sample journal、元の6-row資源証拠、17 counters、結果・fuel・rawのpair比較を配線し、追加SOURCEレビュー後にfresh8呼出へ進む。旧guest8の2-call failureを成功へ変更せず、再試行も0を維持する。
+
+## fresh V4：元CRCの4組・8呼出が正常終了
+
+2担当のSOURCEレビューと実FileIO fixtureを前提に、別driver・別出力領域のV4を一度実行し、8呼出すべてをrc0でreapした。OFF／ONの完全なstdout・stderr、構造化report、fuel、17 arena countersは各pairで一致し、全arena値は0だった。
+
+| 対象 | OFF＝ONの答え | OFF＝ONのfuel消費 |
+| --- | ---: | ---: |
+| prefix 1 | 3,523,407,757 | 4 |
+| prefix 2 | 3,468,463,104 | 6 |
+| prefix 1024 | 1,703,161,001 | 2050 |
+| bench 1 | 1 | 2052 |
+
+有限memory sampleは19件で、この実行にはsampler failure／termination gapはなかった。[独立保存監査](evidence/coscientist-masked32-clone-20261008/crc-original-native8-v4-actual/reviews/actual-independent/report.json)は全20 SOURCE／2,135入力、8 argv／17 env、各6 setter行、両EOF、4 pairのraw・report・fuel・17 arena一致を確認した。これはhard peak、OS stack上限、全scheduleの証明ではない。旧guest8の2-call failureと残り6件の未実行はそのまま保持する。[選択snapshot](evidence/coscientist-masked32-clone-20261008/crc-original-native8-v4-actual/snapshot.json)は全依存archiveではない。
+
+全256項目の実到達、専用fuel／trap境界、fallback／FADDR、cap rollback、原19本、候補の自己再ビルド固定点、quiet C性能比較は未資格。元1024だけで全tableを検証したとは扱わず、追加prefix1081は別試験とする。ComputeCID／ResultCID解析reuseの性能効果とも区別し、C2 OFFを維持する。

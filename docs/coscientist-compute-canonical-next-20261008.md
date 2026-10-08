@@ -1,5 +1,19 @@
 # ComputeCID／ResultCIDを解析の再利用へ適用する次段階
 
+追加のユーザー提案も同じ検証計画へ取り込む。ここでのcompute addressは、計算を指定する正規化された要求のcontent addressであり、結果の正しさを保証する別種のhashではない。型付き定義のDefCID、要求のComputeCID、結果のResultCIDを区別する。異なる要求が同じ意味結果を得る場合は、出力契約のscope内で同じResultCIDを共有できるが、要求と結果の対応は個別に検証する。
+
+再利用の処理順序は、要求の完全性確認、完全な保存結果の照合、現在のadmission、順序付き寄与の再適用、観測可能な消費の反映、最後の公開とする。現在の権限・失効・外部書込みは保存結果で代替しない。コンパイラ内部の探索上限と、言語から観測できるfuel・課金を別fieldとして扱い、同じ予算値をキーへ入れたことだけで消費の意味保存と判断しない。
+
+| 比較対象 | 合格に必要な実証 |
+| --- | --- |
+| cacheなし／shadow／replay | owned answer、ordered edge寄与、更新後aggregate、support／poison、診断、trap、論理消費の一致 |
+| 要求の失効 | 解析器・依存本文・入力状態・規則・ABI・effect・trap・予算の変更を実lookupへ渡し、旧bindingを拒否 |
+| 公開の原子性 | 途中計算・途中書込み・予算切れ・不完全寄与が成功bindingとして見えない |
+| 下流停止 | 完全なconsumer read viewと循環依存のpending更新が安定し、現在の再適用も完了 |
+| 性能 | cold／warmのseal、hash、lookup、検証、replay、失効、missまで含む実費用を比較 |
+
+この表は受入条件であり、実装済み機能の一覧ではない。最初の検証対象は所有した解析結果と状態更新の再利用である。元19本と自己再ビルドは維持し、解析時間と生成コードのEmbench実行時間を別に測る。現時点ではC2 OFF、key除外なし、追加省略0を維持する。
+
 ユーザーの提案を[既存の設計](coscientist-compute-addressed-analysis-20261007.md)と[C1bのnative前提試験](coscientist-compute-c1b-native-20261008.md)へ統合する。ComputeCIDは計算前に確定できる要求のcontent address、ResultCIDは計算後の意味上の結果と順序付き更新寄与のcontent addressである。現在状態への再適用前提と更新前後の証拠は、別のTransitionReceiptCIDに保持する。対応の正しさはCIDだけから導けない。最初は直接計算を毎回実行して照合するshadow診断とし、解析を省略するC2はOFFのままにする。
 
 要求には、正確な同一snapshotの型付き対象・依存・解析器・規則・ABI・整数／effect／trap・資源契約に加え、4つの入口bound、呼び出し先の既存集計値、support／poison、work／admission状態を含める。既存集計値は更新と消費量へ影響するので、boundだけをキーにして完全性を主張しない。contextは一度封じ、queryごとの全メモリhashを避ける。ただし全61定義の参照閉包と11 readerについて、immutable入力、query入力、reset-before-read scratch、出力の役割と所有期間を閉じる必要がある。未分類readや外部writer／aliasはHOLDとする。
