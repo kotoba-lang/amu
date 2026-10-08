@@ -79,3 +79,13 @@ private cloneの9行SIRパターンと直後の1引数CALLを構造で照合し�
 [静的 census と事前設計](evidence/coscientist-masked32-clone-20261008/scalar-cost-and-fuel-design-v1/snapshot.json)は、AESの3 clone／4サイトとSHAの10 clone／10サイトを元SIR・FREC・CODEから再照合した。全13 cloneは各25語、80 B frameで、成功経路はRETを含め23命令を実行する。そのうちshift／shift／OR／maskは4語、entry fuel transactionは5語である。元SHAソースの固定ループから、正の1 bodyにつき2ブロック×（48 schedule更新×4 rotation＋64 rounds×6 rotation）＝1152 clone呼出、clone内26,496命令と数えられる。これはソース由来の命令実行数であり、実測時間や支配的な時間割合ではない。shift／OR融合だけでは呼出・frame・fuelメモリ操作が残る。
 
 次の汎用仮説は、閉じた純粋scalar bodyと検証済みmaskの呼出展開である。現在の`di-body`は`OP-FUEL`と`OP-CALL`を拒否する。単に許可へ変えると、`di-init`がleafモードへ切り替えるため、元のnonleaf fuel publication／枯渇trapを変えるおそれがある。`OP-FUEL [0,0,0]`の0はcharge無しを意味しない。元の減算・分岐・trap・成功時storeを同じ順序で保存し、最初はfuelを持たない閉じたmask calleeだけを展開する設計を登録した。引数評価、live register／context、未知effect、label ingress、部分的CODEエラーと新しいcompiler資源契約も別々に検査する。実装GO・native control・元19件の機能・quiet速度・製品採用はこの設計からは認定しない。
+
+## shift／OR の元AES・SHAへの実生成
+
+新しいAmuで元AES／SHAのcompile・extract4呼出が正常に閉じ、[独立監査](evidence/coscientist-masked32-clone-20261008/shift-orr-original-aes-sha4-v1/independent-report.json)が全入力・argv・環境・raw・17 arena counters・完全なKSEED／nativeを照合した。AESは3か所、SHAは10か所が登録済みの3命令へ置換された。長さ（40,432／10,548 B）、全export・offset・arity、残る全バイトと末尾は一致した。これは命令パターンの実生成の観測であり、owner／CFG・X10の実行時安全性・guest機能・速度の保証ではない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/shift-orr-original-aes-sha4-v1/snapshot.json)は全755依存の実バイトを含むportable archiveではない。
+
+## 実状態・容量・拒否の34ケース
+
+診断ハーネスの初回は成功マーカー777を通常のMC fallbackが失敗と扱って再生成し、3呼出でFAILした。修正版の3呼出はnativeで正常終了したが、host検証器が生成前の件数でclone ownerを調べたためFAILした。どちらも再分類せず保存した。V3は診断結果を保持し、実際の生成後SIR／FN件数を出力してowner・END・CALLを厳密に検査する。
+
+V3のcompile／extractと34ケースの計36呼出は正常に閉じ、[独立監査](evidence/coscientist-masked32-clone-20261008/shift-orr-components-v3/independent-report.json)が全raw・環境・入力・17 counters・34比較を照合した。元AES／SHAの2方向で、scalar Mの8,388,608項目と全G、容量0〜4、dirty error、高さ・skip・shift範囲・レジスタ重なり・frame・後続使用・FUEL境界を確認した。成功時は登録した3 CODE語だけを比較対象から除き、拒否時は全状態一致を要求した。これはnativeソース拘束の有限述語による比較であり、全メモリの外部dumpや物理X10／NZCV・runtime fuel・一般の意味保存証明ではない。過去6FAILと新36を合わせ累計42呼出として保持し、guest機能、元19本、自己再ビルド、quiet C比較は別のゲートとして続ける。[選択snapshot](evidence/coscientist-masked32-clone-20261008/shift-orr-components-v3/snapshot.json)。
