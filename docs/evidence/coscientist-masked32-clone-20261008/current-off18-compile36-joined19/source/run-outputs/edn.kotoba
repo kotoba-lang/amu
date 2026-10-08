@@ -1,0 +1,163 @@
+(ns embench.edn-full (:export [batch stage-hash stage-cell test-edn]))
+;; Complete Embench 2.0rc2 EDN fixed workload. SPDX-License-Identifier: GPL-3.0-or-later.
+(def input-a-0 [0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024])
+(def input-a-1 [0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024 0 2047 3072 2048 512 -2048 -3328 1024])
+(defn- input-a-at [i :i64] :i64 (if (< i 128) (vector-at input-a-0 i) (vector-at input-a-1 (- i 128))))
+(def input-b-0 [3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096])
+(def input-b-1 [3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096 3168 3136 3104 3072 -2560 -3072 -3584 -4096])
+(defn- input-b-at [i :i64] :i64 (if (< i 128) (vector-at input-b-0 i) (vector-at input-b-1 (- i 128))))
+(def expected-output-0 [3760 4269 3126 1030 2453 -4601 1981 -1056 2621 4269 3058 1030 2378 -4601 1902 -1056 2548 4269 2988 1030 2300 -4601 1822 -1056 2474 4269 2917 1030 2220 -4601 1738 -1056 2398 4269 2844 1030 2140 -4601 1655 -1056 2321 4269 2770 1030 2058 -4601 1569 -1056 2242 4269 2152 1030 1683 -4601 1627 -1056 2030 4269 2080 1030 1611 -4601 1555 -1056 1958 4269 2008 1030 1539 -4601 1483 -1056 1886 4269 1935 1030 1466 -4601 1410 -1056 1813 4269 1862 1030 1393 -4601 1337 -1056 1740 4269 1789 1030 1320 -4601 1264 -1056 1667 4269 1716 1030 1968 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0])
+(def expected-output-1 [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0])
+(defn- expected-output-at [i :i64] :i64 (if (< i 128) (vector-at expected-output-0 i) (vector-at expected-output-1 (- i 128))))
+(defn- short-value [x :i64] :i64
+  (let [v (bit-and x 65535)] (if (> v 32767) (- v 65536) v)))
+;; New complete fixed-workload EDN algorithm. Generated tables precede this body.
+;; Derived from Embench EDN, copyright 2014-2019 Embecosm Limited and
+;; University of Bristol; contributors James Pallister and Jeremy Bennett.
+;; SPDX-License-Identifier: GPL-3.0-or-later.
+;; Signed short conversions and arithmetic shifts follow the Darwin arm64 C profile.
+(defn- vec-mpy [s :vector-i64 i :i64] :vector-i64
+  (if (= i 150) s
+    (let [old (vector-at s i)
+          value (short-value (+ old
+                  (i64-shift-right (* 3 (input-b-at i)) 15)))
+          next (vector-assoc! s i value)]
+      (vec-mpy next (+ i 1)))))
+(defn- mac-step [s :vector-i64 i :i64 sqr :i64 sum :i64] :vector-i64
+  (if (= i 150)
+    (let [next (vector-assoc! s 200 sum)]
+      (vector-assoc! next 400 (short-value sqr)))
+    (let [a (vector-at s i) b (input-b-at i)]
+      (mac-step s (+ i 1) (+ sqr (* b b)) (+ sum (* b a))))))
+(defn- fir-sum [s :vector-i64 i :i64] :i64
+  (loop [j 0 sum 0]
+    (if (= j 50) (i64-shift-right sum 15)
+      (recur (+ j 1) (+ sum (* (vector-at s (+ i j)) (input-b-at j)))))))
+(defn- fir-step [s :vector-i64 i :i64] :vector-i64
+  (if (= i 50) s
+    (let [value (loop [j 0 sum 0]
+                  (if (= j 50) (i64-shift-right sum 15)
+                    (recur (+ j 1) (+ sum (* (vector-at s (+ i j)) (input-b-at j))))))
+          next (vector-assoc! s (+ 200 i) value)]
+      (fir-step next (+ i 1)))))
+(defn- fir-red-inner [s :vector-i64 j :i64 i :i64 x0 :i64 sum0 :i64 sum1 :i64] :vector-i64
+  (if (= i 32)
+    (let [next (vector-assoc! s (+ 200 j) (i64-shift-right sum0 15))]
+      (vector-assoc! next (+ 201 j) (i64-shift-right sum1 15)))
+    (let [x1 (vector-at s (+ j i 1)) xn (vector-at s (+ j i 2))
+          h0 (input-b-at i) h1 (input-b-at (+ i 1))]
+      (fir-red-inner s j (+ i 2) xn
+        (+ sum0 (* x0 h0) (* x1 h1))
+        (+ sum1 (* x1 h0) (* xn h1))))))
+(defn- fir-red-step [s :vector-i64 j :i64] :vector-i64
+  (if (= j 100) s
+    (let [first (vector-at s j)]
+      (fir-red-step (fir-red-inner s j 0 first 0 0) (+ j 2)))))
+(defn- lattice-step [s :vector-i64 i :i64 f :i64] :vector-i64
+  (if (< i 0)
+    (let [next (vector-assoc! s 0 (short-value (i64-shift-right f 16)))]
+      (vector-assoc! next 401 f))
+    (let [b (vector-at s i) k (input-b-at i)
+          nf (- f (* b k))
+          value (short-value (+ b (i64-shift-right (* k (i64-shift-right nf 16)) 16)))
+          next (vector-assoc! s (+ i 1) value)]
+      (lattice-step next (- i 1) nf))))
+(defn- lattice [s :vector-i64] :vector-i64
+  (let [f (- (vector-at s 401) (* (vector-at s 99) (input-b-at 99)))]
+    (lattice-step s 98 f)))
+(defn- iir-step [s :vector-i64 n :i64 x :i64] :vector-i64
+  (if (= n 50) (vector-assoc! s 300 x)
+    (let [co (* n 4) st (+ 200 (* n 2))
+          s0 (vector-at s st) s1 (vector-at s (+ st 1))
+          t (+ x (i64-shift-right (+ (* (vector-at s (+ co 2)) s0)
+                                      (* (vector-at s (+ co 3)) s1)) 15))
+          nx (+ t (i64-shift-right (+ (* (vector-at s co) s0)
+                                       (* (vector-at s (+ co 1)) s1)) 15))
+          next (vector-assoc! s (+ st 1) s0)
+          updated (vector-assoc! next st t)]
+      (iir-step updated (+ n 1) nx))))
+;; Upstream codebook has an empty loop and returns g. At -O2 the loop vanishes.
+(defn- codebook-step [s :vector-i64] :vector-i64
+  (let [g (vector-at s 401)] (vector-assoc! s 402 g)))
+(defn- dct-row [s :vector-i64 base :i64 k :i64 m :i64 n :i64] :vector-i64
+  (let [d0 (vector-at s base) d1 (vector-at s (+ base k))
+        d2 (vector-at s (+ base (* k 2))) d3 (vector-at s (+ base (* k 3)))
+        d4 (vector-at s (+ base (* k 4))) d5 (vector-at s (+ base (* k 5)))
+        d6 (vector-at s (+ base (* k 6))) d7 (vector-at s (+ base (* k 7)))
+        t0 (+ d0 d7) t1 (+ d1 d6) t2 (+ d2 d5) t3 (+ d3 d4)
+        t4 (- d3 d4) t5 (- d2 d5) t6 (- d1 d6) t7 (- d0 d7)
+        t8 (+ t0 t3) t9 (- t0 t3) t10 (+ t1 t2) t11 (- t1 t2)
+        even (* (short-value (+ t11 t9)) (input-b-at 10))
+        o0 (* (short-value (+ t4 t7)) (input-b-at 2))
+        o1 (* (short-value (+ t5 t6)) (input-b-at 0))
+        o2 (+ t4 t6) o3 (+ t5 t7)
+        odd (* (short-value (+ o2 o3)) (input-b-at 8))
+        p2 (+ (* (short-value o2) (input-b-at 1)) odd)
+        p3 (+ (* (short-value o3) (input-b-at 3)) odd)
+        v0 (short-value (i64-shift-right (+ t8 t10) m))
+        v4 (short-value (i64-shift-right (- t8 t10) m))
+        v2 (short-value (+ even (short-value (i64-shift-right (* t9 (input-b-at 9)) n))))
+        v6 (short-value (+ even (short-value (i64-shift-right (* t11 (input-b-at 11)) n))))
+        v7 (i64-shift-right (short-value (+ (* t4 (input-b-at 4)) o0 p2)) n)
+        v5 (i64-shift-right (short-value (+ (* t5 (input-b-at 6)) o1 p3)) n)
+        v3 (i64-shift-right (short-value (+ (* t6 (input-b-at 5)) o1 p2)) n)
+        v1 (i64-shift-right (short-value (+ (* t7 (input-b-at 7)) o0 p3)) n)
+        s1 (vector-assoc! s base v0)
+        s2 (vector-assoc! s1 (+ base (* k 4)) v4)
+        s3 (vector-assoc! s2 (+ base (* k 2)) v2)
+        s4 (vector-assoc! s3 (+ base (* k 6)) v6)
+        s5 (vector-assoc! s4 (+ base (* k 7)) v7)
+        s6 (vector-assoc! s5 (+ base (* k 5)) v5)
+        s7 (vector-assoc! s6 (+ base (* k 3)) v3)]
+    (vector-assoc! s7 (+ base k) v1)))
+(defn- dct-pass [s :vector-i64 i :i64 pass :i64] :vector-i64
+  (if (= i 8) s
+    (dct-pass (if (= pass 0) (dct-row s (* i 8) 1 0 13)
+                               (dct-row s i 8 3 16)) (+ i 1) pass)))
+(defn- mac [s :vector-i64] :vector-i64
+  (let [sum (vector-at s 200)] (mac-step s 0 3 sum)))
+(defn- stage [s :vector-i64 count :i64] :vector-i64
+  (case count
+    0 s
+    1 (vec-mpy s 0)
+    2 (mac (vec-mpy s 0))
+    3 (fir-step (mac (vec-mpy s 0)) 0)
+    4 (fir-red-step (fir-step (mac (vec-mpy s 0)) 0) 0)
+    5 (lattice (fir-red-step (fir-step (mac (vec-mpy s 0)) 0) 0))
+    6 (iir-step (lattice (fir-red-step (fir-step (mac (vec-mpy s 0)) 0) 0)) 0 (input-b-at 0))
+    7 (codebook-step (iir-step (lattice (fir-red-step (fir-step (mac (vec-mpy s 0)) 0) 0)) 0 (input-b-at 0)))
+    (dct-pass (dct-pass (codebook-step (iir-step (lattice (fir-red-step (fir-step (mac (vec-mpy s 0)) 0) 0)) 0 (input-b-at 0))) 0 0) 0 1)))
+(defn- reset-step [s :vector-i64 i :i64] :vector-i64
+  (if (= i 200)
+    (let [s1 (vector-assoc! s 400 3) s2 (vector-assoc! s1 401 43690)]
+      (vector-assoc! s2 402 61166))
+    (let [next (vector-assoc! s i (input-a-at i))]
+      (reset-step next (+ i 1)))))
+;; C resets a/b/c/d/e per iteration; output persists across iterations.
+(defn- batch-step [s :vector-i64 remaining :i64] :vector-i64
+  (if (= remaining 0) s
+    (batch-step (stage (reset-step s 0) 8) (- remaining 1))))
+(defn- verify-output [s :vector-i64] :i64
+  (loop [i 0 ok 1]
+    (if (= i 200)
+      (if (and (= ok 1) (= (vector-at s 400) 10243)
+               (= (vector-at s 401) -441886230) (= (vector-at s 402) -441886230)) 1 0)
+      (recur (+ i 1) (if (= (vector-at s (+ 200 i)) (expected-output-at i)) ok 0)))))
+(defn batch [iterations :i64] :i64
+  (if (<= iterations 0) 0
+    (verify-output (batch-step (vector-alloc 403) iterations))))
+(defn- hash-state [s :vector-i64] :i64
+  (loop [i 0 hash -3750763034362895579]
+    (if (= i 603) hash
+      (let [value (if (< i 200) (vector-at s i)
+                   (if (< i 400) (input-b-at (- i 200))
+                     (vector-at s (- i 200))))]
+        (recur (+ i 1) (* (bit-xor hash value) 1099511628211))))))
+(defn stage-hash [count :i64] :i64
+  (hash-state (stage (reset-step (vector-alloc 403) 0) count)))
+(defn stage-cell [encoded :i64] :i64
+  (let [count (quot encoded 1024) i (- encoded (* count 1024))
+        done (stage (reset-step (vector-alloc 403) 0) count)]
+    (if (< i 200) (vector-at done i)
+      (if (< i 400) (input-b-at (- i 200)) (vector-at done (- i 200))))))
+(defn test-edn [] :i64 (batch 1))

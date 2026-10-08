@@ -1,0 +1,36 @@
+(ns embench.depthconv-batch (:export [batch test-depthconv output-channel]))
+;; Generated fixed-workload port of Embench 2.0rc2 depthconv.c.
+;; Copyright 2024 The TensorFlow Authors. SPDX-License-Identifier: Apache-2.0.
+;; Representation: table. Inner loop unrolled: True. Channel inline: True.
+;; No expected answer substitutes for the kernel.
+(def input-data [60 57 62 68 56 34 34 42 63 57 28 26 36 24 7 25 31 0 29 35 1 11 1 30 27 18 12 19 9 8 -2 -3 59 61 60 63 52 30 30 44 63 57 24 22 29 23 -9 27 35 12 28 34 -2 18 10 28 25 26 24 13 6 15 -4 -5 49 57 61 59 42 37 38 45 62 53 19 17 34 25 -9 32 39 8 29 35 0 25 17 26 24 27 24 8 9 23 -8 -3 65 60 54 55 41 27 27 38 54 46 18 22 38 30 0 29 37 10 30 35 4 36 27 33 31 22 17 9 19 35 -2 1])
+(def filter-data [-49 -59 43 -70 -27 47 1 92 -51 41 46 -51 -42 44 55 52 -59 63 68 -60 -73 56 60 48 76 54 -65 -46 63 -87 61 75 -125 -17 -98 -18 -29 61 -32 42 -77 -49 39 -55 -11 43 -18 71 -3 127 39 -70 -67 -16 -63 55 -44 37 38 -32 -23 37 31 45 82 52 -57 -54 50 -83 58 63 -90 -78 -96 6 -7 73 -13 20 -55 60 61 -42 -58 52 40 43 40 41 -42 -52 40 -50 42 25 -43 -31 54 14 62 -66 -46 -47 46 101 94 -62 -62 -29 -50 37 30 41 -49 -45 50 -55 46 38 -11 -38 42 13 64 -86 -32 -69])
+(def biases [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0])
+(def expected [-55 -22 -23 -52 18 -14 -5 54 -70 4 27 -51 -42 41 -6 59 -30 83 39 -74 -39 9 25 61 20 30 -8 -35 43 -59 26 19])
+
+(defn output-channel [channel :i64] :i64 (let [acc (+ (+ (* (vector-at filter-data (+ channel 0)) (+ (vector-at input-data (+ channel 0)) 128)) (* (vector-at filter-data (+ channel 32)) (+ (vector-at input-data (+ channel 32)) 128))) (+ (* (vector-at filter-data (+ channel 64)) (+ (vector-at input-data (+ channel 64)) 128)) (* (vector-at filter-data (+ channel 96)) (+ (vector-at input-data (+ channel 96)) 128))))
+        with-bias (+ acc (vector-at biases channel))
+        rounded (+ (* with-bias 1152862902) 274877906944)
+        scaled (i64-shift-right rounded 39)]
+    (if (< scaled -128) -128 (if (> scaled 127) 127 scaled))))
+(defn- kernel-step [out :vector-i64 channel :i64] :vector-i64
+  (if (= channel 32) out
+    (let [updated (vector-assoc! out channel (let [acc (+ (+ (* (vector-at filter-data (+ channel 0)) (+ (vector-at input-data (+ channel 0)) 128)) (* (vector-at filter-data (+ channel 32)) (+ (vector-at input-data (+ channel 32)) 128))) (+ (* (vector-at filter-data (+ channel 64)) (+ (vector-at input-data (+ channel 64)) 128)) (* (vector-at filter-data (+ channel 96)) (+ (vector-at input-data (+ channel 96)) 128))))
+        with-bias (+ acc (vector-at biases channel))
+        rounded (+ (* with-bias 1152862902) 274877906944)
+        scaled (i64-shift-right rounded 39)]
+    (if (< scaled -128) -128 (if (> scaled 127) 127 scaled))))]
+      (kernel-step updated (+ channel 1)))))
+(defn- kernel [out :vector-i64] :vector-i64 (kernel-step out 0))
+(defn- verify-output [out :vector-i64] :i64
+  (loop [channel 0 matches 0]
+    (if (= channel 32) (if (= matches 32) 1 0)
+      (recur (+ channel 1)
+        (+ matches (if (= (vector-at out channel) (vector-at expected channel)) 1 0))))))
+(defn batch [iterations :i64] :i64
+  (let [out (vector-alloc 32)
+        result (loop [i 0 current out]
+                 (if (= i iterations) current
+                   (recur (+ i 1) (kernel current))))]
+    (verify-output result)))
+(defn test-depthconv [] :i64 (batch 1))
