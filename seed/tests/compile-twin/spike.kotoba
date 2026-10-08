@@ -1,0 +1,60 @@
+;; Spike: the Kotoba route from source to native code, the steps of nbb.cli `compile-native!` for aarch64:
+;; analyze -> effect-row/check -> kir/lower -> native-program -> aarch64/emit-program. Writes the emitted map's
+;; printed text to <out>. args: <source> <out> [--policy <file>]
+(ns cstest.compile
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.nbb.cli-support :as support]
+            [kotoba.compiler.nbb.io :as nbb-io]
+            [kotoba.compiler.effect-row :as effect-row]
+            [kotoba.compiler.project :as project]
+            [kotoba.sema :as sema]
+            [kotoba.kir :as ir]
+            [kotoba.native.aarch64 :as a64]
+            [kotoba.form :as form])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]] [:phase :string] [:data [:ref :form/r]]]]
+             :ana/ir [:record :ana/ir [[:ok :bool] [:val [:ref :form/r]] [:err [:ref :fe/err]]]]
+             :kotoba.kir/run [:record :kotoba.kir/run [[:ok :bool] [:value [:ref :form/r]] [:trap :string] [:message :string]]]}))
+
+(defn- kw [k :keyword] [:ref :form/r] (form/keyword-form k))
+(defn- get-k [m [:ref :form/r] k :keyword] [:ref :form/r] (form/form-get m (kw k)))
+(defn- empty-map [] [:ref :form/r] (form/form-map (form/no-forms)))
+(defn- copy-key [out [:ref :form/r] m [:ref :form/r] k :keyword] [:ref :form/r]
+  (if (form/form-has? m (kw k)) (form/assoc-form out (kw k) (get-k m k)) out))
+
+(defn- analyze! [source :string] [:ref :form/r]
+  (let [r (sema/analyze source (empty-map))]
+    (if (record-get [:ref :ana/ir] r :ok)
+      (record-get [:ref :ana/ir] r :val)
+      (throw (ex-info (record-get [:ref :fe/err] (record-get [:ref :ana/ir] r :err) :msg) {:phase :subset})))))
+
+(defn- lower! [hir [:ref :form/r]] [:ref :form/r]
+  (let [r (ir/lower hir)]
+    (if (record-get [:ref :kotoba.kir/run] r :ok)
+      (record-get [:ref :kotoba.kir/run] r :value)
+      (throw (ex-info (string-concat (record-get [:ref :kotoba.kir/run] r :trap)
+                                     (string-concat ": " (record-get [:ref :kotoba.kir/run] r :message)))
+                      {:phase :subset})))))
+
+;; host `kotoba.kir/native-program` without the recursive-schema clause
+(defn- native-program [kir [:ref :form/r]] [:ref :form/r]
+  (copy-key (copy-key (copy-key (copy-key (copy-key (copy-key (empty-map) kir :format) kir :entry) kir :exports)
+                                kir :signature) kir :effects) kir :functions))
+
+(defn- run [args [:list :string]] :string
+  (let [source (nbb-io/read-text-file (typed-list-nth [:list :string] args 0))
+        hir (analyze! source)
+        admission (effect-row/check hir (support/capability-policy (support/read-policy args)))
+        kir (lower! hir)
+        emitted (a64/emit-program (native-program kir))
+        out (form/assoc-form (form/assoc-form (form/assoc-form (empty-map) (kw :code) (get-k emitted :code))
+                                              (kw :exports) (get-k emitted :exports))
+                             (kw :kir-format) (get-k kir :format))
+        w (nbb-io/write-text! (typed-list-nth [:list :string] args 1) (project/pr-text out))]
+    "ok"))
+
+(defn main [] :i64
+  (let [args (support/command-line-args)]
+    (try (let [r (run args)] 0)
+         (catch e (let [w (io/write-error (string-concat (ex-message e) "\n"))] 65)))))
