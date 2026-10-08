@@ -187,29 +187,29 @@
 ;; why that stays out of scope).
 (defn- resolve-hir! [source opts stage-cache]
   (support/timed "frontend"
-                 #(compile-cache/resolve-stage!
-                   stage-cache :hir
-                   ;; The whole options map, not just :language-profile. A
-                   ;; linked project carries :admit-linked-synthetics?, and a
-                   ;; key blind to it would answer a linked question with an
-                   ;; unlinked HIR -- inside one worker process, where the two
-                   ;; kinds of compile share a stage cache. Tag raised to v3 so
-                   ;; entries written under the old key miss rather than being
-                   ;; read under the new meaning.
-                   (pr-str [:kotoba.hir-cache/v3 source opts])
-                   (fn [] (sema/analyze source opts)))))
+                 (fn [] (compile-cache/resolve-stage!
+                         stage-cache :hir
+                         ;; The whole options map, not just :language-profile. A
+                         ;; linked project carries :admit-linked-synthetics?, and a
+                         ;; key blind to it would answer a linked question with an
+                         ;; unlinked HIR -- inside one worker process, where the two
+                         ;; kinds of compile share a stage cache. Tag raised to v3 so
+                         ;; entries written under the old key miss rather than being
+                         ;; read under the new meaning.
+                         (pr-str [:kotoba.hir-cache/v3 source opts])
+                         (fn [] (sema/analyze source opts))))))
 
 (defn- resolve-kir! [hir stage-cache oracle-fuel]
   (support/timed "kir-lower"
-                 #(compile-cache/resolve-stage!
-                   ;; Native oracle evaluation is reusable only when the
-                   ;; admitted HIR is byte-for-byte semantically identical --
-                   ;; and now also only under the same oracle budget, which is
-                   ;; part of the key for the same reason the HIR is: a
-                   ;; different budget is a different execution and can seal a
-                   ;; different value (or none).
-                   stage-cache :kir (pr-str [hir oracle-fuel])
-                   (fn [] (ir/lower hir {:oracle-fuel oracle-fuel})))))
+                 (fn [] (compile-cache/resolve-stage!
+                         ;; Native oracle evaluation is reusable only when the
+                         ;; admitted HIR is byte-for-byte semantically identical --
+                         ;; and now also only under the same oracle budget, which is
+                         ;; part of the key for the same reason the HIR is: a
+                         ;; different budget is a different execution and can seal a
+                         ;; different value (or none).
+                         stage-cache :kir (pr-str [hir oracle-fuel])
+                         (fn [] (ir/lower hir {:oracle-fuel oracle-fuel}))))))
 
 ;; Naming the feature a native target refused (ADR 0351).
 ;;
@@ -241,7 +241,7 @@
           :else [])))
 
 (defn- refused-form [hir form]
-  (if-let [child (some #(when-not (probe-body-admitted? hir %) %) (form-children form))]
+  (if-let [child (some (fn [x] (when-not (probe-body-admitted? hir x) x)) (form-children form))]
     (recur hir child)
     form))
 
@@ -445,7 +445,7 @@
   (uefi/reject-rodata-literals-outside-native-targets! target hir)
   (let [admission (support/timed
                    "admission"
-                   #(effect-row/check hir (support/capability-policy policy)))
+                   (fn [] (effect-row/check hir (support/capability-policy policy))))
         ;; The DECLARED budget, computed before lowering rather than after,
         ;; because `kotoba.kir/lower` seals the entry's value by executing it
         ;; and that execution used to have a private budget no caller could
@@ -481,9 +481,9 @@
         ;; ADR 0365: the seed backend first when asked for; any refusal or
         ;; failure falls back to machine_ir (reason in the report). The seed
         ;; gets --metered exactly when this artifact is metered.
-        seed-attempt (when seed (support/timed "seed-emit" #(seed-emit seed program metered?)))
+        seed-attempt (when seed (support/timed "seed-emit" (fn [] (seed-emit seed program metered?))))
         seed-emitted (:emitted seed-attempt)
-        emitted (or seed-emitted (support/timed "native-emit" #(emit-program program)))
+        emitted (or seed-emitted (support/timed "native-emit" (fn [] (emit-program program))))
         code (:code emitted)
         ;; A kexe-loader program carrying the token of an :fs/app-data form
         ;; the loader does not answer (kotoba-lang lang/capability-catalog.edn
@@ -558,7 +558,7 @@
              ;; shaped exactly as before P4.
              :limits (cond-> {:memory-bytes 65536 :fuel declared-fuel :stack-bytes 4096}
                        (not metered?) (assoc :fuel-metering :off))
-             :code (mapv #(bit-and (int %) 0xff) code)
+             :code (mapv (fn [x] (bit-and (int x) 0xff)) code)
              :program program :exports (:exports emitted)}
               ;; The artifact says its value was NOT oracle-verified. Present
               ;; only then, so every other artifact is shaped as before.
@@ -580,18 +580,18 @@
         ;; checks. A refusal is replayed with the same message and ex-data.
         verify (support/timed
                 "native-verify"
-                #(verdict-cache/resolve!
-                  ;; ADR 0365: a seed-emitted artifact is a different
-                  ;; validator input (the re-emission runs the recorded seed),
-                  ;; so its verdicts live under their own kind; the subject
-                  ;; (the sealed artifact) also binds the seed's sha256.
-                  (verdict-cache/open-store)
-                  (if seed-emitted :kotoba.verdict/native-verify-seed :kotoba.verdict/native-verify)
-                  {:definitions (definition-identity/cache-material report (:exports hir))
-                   :subject (artifact/sha256 artifact-map)
-                   :target target
-                   :capabilities (artifact/sha256 (support/capability-policy policy))}
-                  (fn [] (verify-native! seed artifact-map))))]
+                (fn [] (verdict-cache/resolve!
+                        ;; ADR 0365: a seed-emitted artifact is a different
+                        ;; validator input (the re-emission runs the recorded seed),
+                        ;; so its verdicts live under their own kind; the subject
+                        ;; (the sealed artifact) also binds the seed's sha256.
+                        (verdict-cache/open-store)
+                        (if seed-emitted :kotoba.verdict/native-verify-seed :kotoba.verdict/native-verify)
+                        {:definitions (definition-identity/cache-material report (:exports hir))
+                         :subject (artifact/sha256 artifact-map)
+                         :target target
+                         :capabilities (artifact/sha256 (support/capability-policy policy))}
+                        (fn [] (verify-native! seed artifact-map)))))]
     (cond-> {:format :kexe/v1 :target target :hir hir :kir kir
              :definitions report
              :admission admission :artifact artifact-map :compatibility compat
@@ -605,21 +605,21 @@
 
 (defn- serialized-native [source policy emit-metadata result package artifact-kind]
   (let [provenance-result (support/timed "provenance"
-                                         #(provenance/attach source policy emit-metadata result))]
+                                         (fn [] (provenance/attach source policy emit-metadata result)))]
     (cond-> {:artifact-text (support/timed
                              "artifact-serialize"
-                             #(pr-str (artifact/edn-safe (:artifact provenance-result))))
+                             (fn [] (pr-str (artifact/edn-safe (:artifact provenance-result)))))
              :provenance-text (support/timed
                                "provenance-serialize"
-                               #(pr-str (artifact/edn-safe (:provenance provenance-result))))}
+                               (fn [] (pr-str (artifact/edn-safe (:provenance provenance-result)))))}
       ;; Packaged from the sealed artifact map, never from the EDN text above.
       ;; `artifact/edn-safe` prints an i64 as a plain integer token, so text
       ;; that round-trips is not the same value -- packaging the reparse would
       ;; be packaging a lossy copy of what was verified.
       package (assoc :binary (support/timed
                               "native-package"
-                              #(package (:target result) (:artifact result)
-                                        artifact-kind policy))))))
+                              (fn [] (package (:target result) (:artifact result)
+                                              artifact-kind policy)))))))
 
 (defn- write-native! [output {:keys [artifact-text provenance-text binary]} target]
   (let [;; adr-2609251400 C2: a static ELF is the program itself, so it is
@@ -639,17 +639,17 @@ provenance-output (str output ".provenance.edn")
         publication-text (output-set/serialize output published provenance-text)]
     (support/timed
      "output-set-write"
-     #(nbb-io/write-set! [(if binary
-                        (cond-> {:path output :bytes binary} mode (assoc :mode mode))
-                        {:path output :text artifact-text})
-                      {:path provenance-output :text provenance-text}
-                      {:path publication-output :text publication-text}]))
+     (fn [] (nbb-io/write-set! [(if binary
+                              (cond-> {:path output :bytes binary} mode (assoc :mode mode))
+                              {:path output :text artifact-text})
+                            {:path provenance-output :text provenance-text}
+                            {:path publication-output :text publication-text}])))
     (cond-> {:provenance-output provenance-output
              :publication-output publication-output}
       binary (assoc :artifact-bytes (.-length binary)))))
 
 (defn- compile-uncached! [args source linked? target backend output emit-program package seed]
-  (let [policy (support/timed "policy-read" #(read-policy! args))
+  (let [policy (support/timed "policy-read" (fn [] (read-policy! args)))
         emit-metadata (support/emit-metadata args)
         artifact-kind (support/option args "--artifact")
         hir (:value (resolve-hir! source
@@ -671,35 +671,35 @@ provenance-output (str output ".provenance.edn")
 (defn- compile-cached! [args source linked? target backend output emit-program package context seed]
   (let [policy-attempt (support/timed
                         "policy-read"
-                        #(try {:material (support/read-policy-material args)}
-                              (catch :default error {:error error})))
+                        (fn [] (try {:material (support/read-policy-material args)}
+                                    (catch :default error {:error error}))))
         material (:material policy-attempt)
         emit-metadata (support/emit-metadata args)
         artifact-kind (support/option args "--artifact")
         key (when material
               (support/timed "cache-key"
-                             #(compile-cache/key-for target source material
-                                                     ;; ADR 0365: the requested emitter is part
-                                                     ;; of the artifact-cache key (key only; the
-                                                     ;; build metadata provenance hashes is
-                                                     ;; unchanged)
-                                                     (cond-> emit-metadata
-                                                       seed (assoc :kotoba/emitter (:record seed)))
-                                                     linked?
-                                                     artifact-kind)))
+                             (fn [] (compile-cache/key-for target source material
+                                                           ;; ADR 0365: the requested emitter is part
+                                                           ;; of the artifact-cache key (key only; the
+                                                           ;; build metadata provenance hashes is
+                                                           ;; unchanged)
+                                                           (cond-> emit-metadata
+                                                             seed (assoc :kotoba/emitter (:record seed)))
+                                                           linked?
+                                                           artifact-kind))))
         artifact-cache (:artifacts context)
         stage-cache (:stages context)
         cached (when key (support/timed "cache-lookup"
-                                        #(compile-cache/lookup! artifact-cache key)))]
+                                        (fn [] (compile-cache/lookup! artifact-cache key))))]
     (if cached
       (let [artifact-valid? (support/timed
                              "cache-artifact-integrity"
-                             #(= (:artifact-sha256 cached)
-                                 (compile-cache/sha256 (:artifact-text cached))))
+                             (fn [] (= (:artifact-sha256 cached)
+                                       (compile-cache/sha256 (:artifact-text cached)))))
             provenance-valid? (support/timed
                                "cache-provenance-integrity"
-                               #(= (:provenance-sha256 cached)
-                                   (compile-cache/sha256 (:provenance-text cached))))
+                               (fn [] (= (:provenance-sha256 cached)
+                                         (compile-cache/sha256 (:provenance-text cached)))))
             ;; A packaged target's `--output` is the ELF64/PE32+ bytes, so a
             ;; hit that restored only the two EDN texts would republish the
             ;; artifact EDN under a path named `.o`. Cached base64 is checked
@@ -707,9 +707,9 @@ provenance-output (str output ".provenance.edn")
             ;; what it holds is evicted, never served short.
             binary-valid? (support/timed
                            "cache-binary-integrity"
-                           #(or (nil? (:binary-base64 cached))
-                                (= (:binary-sha256 cached)
-                                   (compile-cache/sha256 (:binary-base64 cached)))))]
+                           (fn [] (or (nil? (:binary-base64 cached))
+                                      (= (:binary-sha256 cached)
+                                         (compile-cache/sha256 (:binary-base64 cached))))))]
         (when-not (and artifact-valid? provenance-valid? binary-valid?)
           (compile-cache/remove! artifact-cache key)
           (throw (ex-info "compiler cache integrity mismatch" {:cache-key key})))
@@ -728,7 +728,7 @@ provenance-output (str output ".provenance.edn")
             seed (assoc :backend {:requested :seed :cache :hit}))))
       (let [_ (when-let [error (:error policy-attempt)] (throw error))
             policy (support/timed "policy-decode"
-                                  #(decode-policy! material))
+                                  (fn [] (decode-policy! material)))
             hir-result (resolve-hir! source
                                      (project-source/analyze-opts (admission-policy policy) linked?)
                                      stage-cache)
@@ -750,7 +750,7 @@ provenance-output (str output ".provenance.edn")
                     (if binary-base64
                       (text-bytes/utf8-length binary-base64)
                       0))]
-        (support/timed "cache-store" #(compile-cache/put! artifact-cache key sealed size))
+        (support/timed "cache-store" (fn [] (compile-cache/put! artifact-cache key sealed size)))
         (cond-> {:ok true :target target :output output
                  :provenance-output provenance-output
                  :publication-output publication-output

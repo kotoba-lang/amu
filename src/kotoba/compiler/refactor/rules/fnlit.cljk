@@ -1,0 +1,119 @@
+;; Rule (g): an anonymous-function literal becomes the `fn` form the reader expands it to.
+;;
+;;   #(run! % context)        ->  (fn [x] (run! x context))
+;;   #(f %1 %2)               ->  (fn [x1 x2] (f x1 x2))
+;;   #(apply f %2 %&)         ->  (fn [_x1 x2 & xs] (apply f x2 xs))
+;;   #(timed-body)            ->  (fn [] (timed-body))
+;;
+;; The Clojure reader turns #(BODY) into (fn* [p1 .. pN & rest] (BODY)) with N the highest %N used (% is %1), so the
+;; output is the same function on the host.  The seed and the Kotoba reader do not read `#(` (E1005); this is the wall
+;; of the product entries nbb.cli / nbb.aarch64-cli.  Parameter names never collide with a symbol of the body, so no
+;; outer local is shadowed.  Continuation lines move right by the width the opener grew, so the layout stays aligned;
+;; lines inside a string literal are left as they are.  A literal under ' or ` is data (the reader's gensym'd
+;; parameters are part of it) and is reported, not rewritten.
+(ns kotoba.compiler.refactor.rules.fnlit
+  (:require [clojure.string :as str]
+            [kotoba.compiler.refactor.cst :as cst]
+            [kotoba.compiler.refactor.edit :as edit]))
+
+(def ^:private digits "0123456789")
+
+(defn- digit-value [c] (str/index-of digits c))
+
+(defn arg-index
+  "% and %1 -> 1, %N -> N, %& -> :rest; nil for any other symbol text."
+  [t]
+  (cond
+    (= t "%") 1
+    (= t "%&") :rest
+    (and (> (count t) 1) (= "%" (subs t 0 1)) (not= "0" (subs t 1 2))
+         (every? (fn [c] (digit-value (str c))) (subs t 1)))
+    (reduce (fn [acc c] (+ (* 10 acc) (digit-value (str c)))) 0 (subs t 1))))
+
+(defn- descendants
+  "Every node below n, pre-order."
+  [n]
+  (mapcat (fn [k] (cons k (descendants k))) (:kids n)))
+
+(defn- fresh
+  "base, or base__1, base__2 ... : the first that is not a symbol of the body."
+  [base used]
+  (if-not (contains? used base)
+    base
+    (loop [k 1] (let [c (str base "__" k)] (if (contains? used c) (recur (inc k)) c)))))
+
+(defn param-names
+  "{:params [names in order] :by-index {1 name .. :rest name}} for the highest index n and rest?."
+  [n rest? referenced used]
+  (let [one? (and (= n 1) (not rest?))
+        pos (vec (for [i (range 1 (inc n))]
+                   (let [base (if one? "x" (str "x" i))]
+                     (fresh (if (contains? referenced i) base (str "_" base)) used))))
+        rest-name (when rest? (fresh "xs" used))]
+    {:params (if rest-name (conj pos "&" rest-name) pos)
+     :by-index (cond-> (zipmap (range 1 (inc n)) pos) rest-name (assoc :rest rest-name))}))
+
+(defn- string-ranges [nodes]
+  (vec (for [d nodes :when (contains? #{:str :regex} (:type d))] [(:s d) (:e d)])))
+
+(defn- reindent-edits
+  "Insertions of `delta` spaces after every newline in [s, e) that is not inside a string literal and does not end a
+  blank line."
+  [src s e strings delta]
+  (let [pad (apply str (repeat delta " "))]
+    (loop [i s out []]
+      (let [j (str/index-of src "\n" i)]
+        (if (or (nil? j) (>= j e))
+          out
+          (let [nxt (inc j)
+                in-str? (some (fn [[a b]] (and (> j a) (< j b))) strings)
+                blank? (or (>= nxt e) (contains? #{"\n" "\r"} (subs src nxt (inc nxt))))]
+            (recur nxt (if (or in-str? blank?) out (conj out (edit/insert-at nxt pad :fnlit))))))))))
+
+(defn rewrite-text
+  "The (fn [..] (BODY)) text of the #( ) node n."
+  [src n]
+  (let [ds (descendants n)
+        syms (filter cst/sym? ds)
+        arg-syms (filter (fn [d] (arg-index (:text d))) syms)
+        idx (map (fn [d] (arg-index (:text d))) arg-syms)
+        nums (filter number? idx)
+        n-max (if (seq nums) (apply max nums) 0)
+        rest? (some (fn [i] (= i :rest)) idx)
+        used (set (map :text (remove (fn [d] (arg-index (:text d))) syms)))
+        {:keys [params by-index]} (param-names n-max rest? (set nums) used)
+        opener (str "(fn [" (str/join " " params) "] (")
+        b (+ (:s n) 2)
+        e (dec (:e n))
+        renames (map (fn [d] {:s (- (:s d) b) :e (- (:e d) b) :text (get by-index (arg-index (:text d))) :rule :fnlit})
+                     arg-syms)
+        inserts (map (fn [ed] (-> ed (update :s - b) (update :e - b)))
+                     (reindent-edits src b e (string-ranges ds) (- (count opener) 2)))]
+    (str opener (edit/apply-edits (subs src b e) (concat renames inserts)) "))")))
+
+(defn find-all [{:keys [src nodes]}]
+  (let [out (atom [])
+        starts (edit/line-starts src)]
+    (cst/walk
+     (fn [n {:keys [region path]}]
+       (when (= :fnlit (:type n))
+         (let [fin (fn [status extra]
+                     (swap! out conj (merge {:rule :fnlit :s (:s n) :e (:e n) :region region :status status
+                                             :line (edit/offset->line starts (:s n)) :context (cst/call-head-text n)}
+                                            extra)))
+               quoted (some (fn [p] (when (and (= :prefix (:type p)) (contains? #{"'" "`"} (:prefix p))) p)) path)]
+           (cond
+             quoted (fin :human {:reason (str "#( ) under " (:prefix quoted) " is data, not a function")})
+             (some (fn [d] (= :fnlit (:type d))) (descendants n)) (fin :human {:reason "nested #( ) (the reader refuses it)"})
+             ;; host-equivalent by construction, so it also applies inside the host arm of a ported definition
+             :else (fin :auto {:force-apply true
+                               :kind (if (some (fn [d] (and (cst/sym? d) (arg-index (:text d)))) (descendants n))
+                                       :with-args :thunk)
+                               :edits [(edit/replace-node n (rewrite-text src n) :fnlit)]}))
+           :skip)))
+     nodes)
+    @out))
+
+(def rule
+  ;; every arm: the reader rejects `#(` wherever it stands, and the rewrite is what the host reader produces
+  {:id :fnlit :find find-all :regions #{:shared :default :kotoba}})

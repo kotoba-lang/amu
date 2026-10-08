@@ -41,5 +41,5 @@
             (support/usage-error!
              (str "error: AArch64 worker does not cover target " target-name)))
         context (assoc (compile-cache/create-context) :target target)]
-    (support/serve! #(run! % context) target))
-  (support/execute! #(run! % nil))))
+    (support/serve! (fn [x] (run! x context)) target))
+  (support/execute! (fn [x] (run! x nil)))))

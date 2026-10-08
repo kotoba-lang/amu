@@ -10,7 +10,8 @@
             [kotoba.compiler.refactor.rules.dynvars :as c]
             [kotoba.compiler.refactor.rules.kwcallback :as d]
             [kotoba.compiler.refactor.rules.letdestructure :as e]
-            [kotoba.compiler.refactor.rules.lowerloops :as f]))
+            [kotoba.compiler.refactor.rules.lowerloops :as f]
+            [kotoba.compiler.refactor.rules.fnlit :as g]))
 
 (def library
   "Ordered; the id is what the command line takes."
@@ -31,7 +32,10 @@
     :host-effect "none"}
    {:id "f" :name "lowerloops" :rule f/rule
     :summary "mapv/map/filter/filterv/reduce with a one-lambda callback -> a loop over kotoba.form as the :kotoba arm"
-    :host-effect "none: the :default arm is the original call"}])
+    :host-effect "none: the :default arm is the original call"}
+   {:id "g" :name "fnlit" :rule g/rule
+    :summary "anonymous-function literals #(f % y) -> (fn [x] (f x y)), the form the reader expands them to (seed/Kotoba reader E1005)"
+    :host-effect "none: the Clojure reader reads #(BODY) as (fn* [p1 .. & rest] (BODY))"}])
 
 (def standard-order
   "A full run: these on the source (in this order), then `c` on that output (it replaces whole defns and runs once)."

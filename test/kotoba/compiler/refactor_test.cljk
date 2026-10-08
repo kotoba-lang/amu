@@ -13,7 +13,8 @@
             [kotoba.compiler.refactor.rules.dynvars :as c]
             [kotoba.compiler.refactor.rules.kwcallback :as d]
             [kotoba.compiler.refactor.rules.letdestructure :as e]
-            [kotoba.compiler.refactor.rules.lowerloops :as f]))
+            [kotoba.compiler.refactor.rules.lowerloops :as f]
+            [kotoba.compiler.refactor.rules.fnlit :as g]))
 
 (def here "test/fixtures/refactor")
 
@@ -205,6 +206,45 @@
   (testing "destructuring callbacks wait for rule (a)"
     (is (= :human (:status (first (real (find* "(mapv (fn [[a b]] a) f)" [f/rule] {}))))))
     (is (str/includes? (rewrite "(ns x)\n(defn g [f] (mapv (fn [[a b]] a) f))" [a/rule f/rule]) "(typed-list-nth [:list [:ref :form/r]]"))))
+
+;; ---- (g) anonymous-function literals ---------------------------------------------------------------------------------
+
+(deftest fnlit-shapes
+  (is (= "(map (fn [x] (inc x)) xs)" (rewrite "(map #(inc %) xs)" [g/rule])))
+  (is (= "(fn [x1 x2] (f x1 x2 x1))" (rewrite "#(f %1 %2 %)" [g/rule])) "% and %1 are one parameter")
+  (is (= "(fn [_x1 x2 & xs] (apply f x2 xs))" (rewrite "#(apply f %2 %&)" [g/rule])) "an unused position keeps its arity")
+  (is (= "(fn [] (timed \"t\"))" (rewrite "#(timed \"t\")" [g/rule])))
+  (is (= "(fn [x__1] (+ x__1 x))" (rewrite "#(+ % x)" [g/rule])) "no outer local is shadowed")
+  (is (= "(fn [x] (str \"%\" x))" (rewrite "#(str \"%\" %)" [g/rule])) "% inside a string is text")
+  (is (= "(f #?(:kotoba (fn [x] (g x)) :default (fn [x] (h x))))"
+         (rewrite "(f #?(:kotoba #(g %) :default #(h %)))" [g/rule])) "every reader-conditional arm"))
+
+(deftest fnlit-layout
+  (is (= "(t (fn [] (resolve! a\n                     b)))"
+         (rewrite "(t #(resolve! a\n               b))" [g/rule])) "continuation lines move by the opener's growth")
+  (is (= "(t (fn [] (f \"a\nb\"\n\n         c)))"
+         (rewrite "(t #(f \"a\nb\"\n\n   c))" [g/rule])) "string lines and blank lines are left alone"))
+
+(deftest fnlit-human
+  (is (= :human (:status (first (real (find* "`(map #(inc %) xs)" [g/rule] {}))))))
+  (is (= :human (:status (first (real (find* "'#(inc %)" [g/rule] {}))))))
+  (is (= "`(map #(inc %) xs)" (rewrite "`(map #(inc %) xs)" [g/rule]))))
+
+(deftest fnlit-host-equivalence
+  (let [src (str "(ns equiv.NS)\n"
+                 "(defn a [xs] (mapv #(* 2 %) xs))\n"
+                 "(defn b [m] (reduce-kv #(assoc %1 %3 %2) {} m))\n"
+                 "(defn c [xs] (apply map #(vector %& %1) xs))\n"
+                 "(defn d [x] (let [f #(+ x 1)] (f)))\n"
+                 "(defn e [xs] (filter #(when (odd? %)\n"
+                 "                        %) xs))\n")
+        out (rewrite src [g/rule])]
+    (is (not (str/includes? out "#(")))
+    (load-ns! src "equiv.origg")
+    (load-ns! out "equiv.newg")
+    (doseq [[nm args] [["a" [[1 2 3]]] ["b" [{:p 1 :q 2}]] ["c" [[[1 2] [3 4]]]] ["d" [4]] ["e" [[1 2 3]]]]]
+      (is (= (call "equiv.origg" nm args) (call "equiv.newg" nm args)) (str "g " nm)))
+    (is (= out (rewrite out [g/rule])) "idempotent")))
 
 ;; ---- unified diff ---------------------------------------------------------------------------------------------------------
 
