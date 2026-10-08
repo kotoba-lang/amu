@@ -1,6 +1,6 @@
 # ComputeCID／ResultCIDを解析の再利用へ適用する次段階
 
-ユーザーの提案を[既存の設計](coscientist-compute-addressed-analysis-20261007.md)と[C1bのnative前提試験](coscientist-compute-c1b-native-20261008.md)へ統合する。ComputeCIDは計算前に確定できる要求のcontent address、ResultCIDは計算後の結果と再適用する状態更新のcontent addressである。対応の正しさはCIDだけから導けない。最初は直接計算を毎回実行して照合するshadow診断とし、解析を省略するC2はOFFのままにする。
+ユーザーの提案を[既存の設計](coscientist-compute-addressed-analysis-20261007.md)と[C1bのnative前提試験](coscientist-compute-c1b-native-20261008.md)へ統合する。ComputeCIDは計算前に確定できる要求のcontent address、ResultCIDは計算後の意味上の結果と順序付き更新寄与のcontent addressである。現在状態への再適用前提と更新前後の証拠は、別のTransitionReceiptCIDに保持する。対応の正しさはCIDだけから導けない。最初は直接計算を毎回実行して照合するshadow診断とし、解析を省略するC2はOFFのままにする。
 
 要求には、正確な同一snapshotの型付き対象・依存・解析器・規則・ABI・整数／effect／trap・資源契約に加え、4つの入口bound、呼び出し先の既存集計値、support／poison、work／admission状態を含める。既存集計値は更新と消費量へ影響するので、boundだけをキーにして完全性を主張しない。contextは一度封じ、queryごとの全メモリhashを避ける。ただし全61定義の参照閉包と11 readerについて、immutable入力、query入力、reset-before-read scratch、出力の役割と所有期間を閉じる必要がある。未分類readや外部writer／aliasはHOLDとする。
 
@@ -35,3 +35,17 @@ canonical native C1の最初のSOURCE案は、結果の符号化scopeにComputeC
 最初のcase0の独立監査をrootが受理し、同じnative／containerと修正済み検証器を用いるcase1・2専用の新SOURCEを登録した。rootとwidthのSOURCEレビュー後、未実行の2呼出だけを新領域で実行し、終了コード0・stderr空で閉じた。[独立raw監査](evidence/coscientist-compute-canonical-20261008/remaining2-v1/independent-report.json)は182依存、元case0の75依存と失敗記録、2 argv・raw・CID・512項目の投影・順序付き-1／0寄与・集計・status／workを照合した。case1は論理消費112640／診断375628772、case2は164096／377750244で元の診断上限内だった。
 
 全体として固定3ケース・native計5呼出の証拠が揃ったが、元campaignのFAILはFAILのまま保存する。case0の再実行と再コンパイルは0である。[選択snapshot](evidence/coscientist-compute-canonical-20261008/remaining2-v1/snapshot.json)は完全なportable依存archiveではない。full-Mとfresh direct／replayの一致はnativeソース拘束flagに基づく有限確認、Resultの異なる要求への一致は符号化対照である。一般のread／reset完全性、C2・共有reuse、下流停止、性能への効果、C以上のEmbenchは未認定のまま保持する。
+
+## 再利用条件の分離と、重複要求の測定
+
+ComputeCIDを計算前の検索キー、ResultCIDを計算結果の識別子として使う提案を、次の実験へ組み込む。現在の完全要求は資源・既存集計・memo状態も含むため、安全な実行証拠を特定できる一方、そのまま実用的な再利用キーになるとは限らない。[保存済み3ケースの調査](evidence/coscientist-compute-canonical-20261008/exact-key-feasibility-v1/report.json)では、同じsnapshotに対する実要求3個はすべて異なり、違う項目は対象関数と診断case番号だけだった。同一対象の繰り返しを採取していないため、キャッシュのヒット率も速度も推定できない。workの変化がこの3ケースの不一致を引き起こした、という観測でもない。
+
+次の仮説は、意味を決めるquery入力と、現在の状態で実行・再適用を許可するadmission／transitionを分けることだ。SemanticQueryCIDには対象・依存・解析器・規則・入口boundと、答え・寄与・poison・診断へ影響する全readを含める。現在の完全ComputeCIDは保持し、work・予算・既存集計・memo状態を新しいキーから外してよいとはまだ認定しない。どのreadが単なる集約更新かを証明してから、新しいschemaを登録する。
+
+Resultは順序付き呼び出し辺の寄与とsupport／poison／診断を保持する。ヒット時も、現在の集計へ同じ規則で寄与を再適用し、現在の権限・effect・trap・予算条件を確認する。論理的な消費とhash・lookup・replayの実作業を区別し、観測可能なfuelや課金を省略しない。途中結果・拒否・予算切れは成功対応として公開せず、全検証後にだけ有効化する。未知の条件や失効は元の直接解析へ戻す。
+
+[次段階の設計](evidence/coscientist-compute-canonical-20261008/exact-key-feasibility-v1/DESIGN.md)では、work・既存集計・control・memo状態を各1項目変更した直接解析とshadowの比較、誤ヒット・部分公開の負例、同一対象の実重複数、context封印・hash・lookup・replayを含む費用を検証対象とする。既存の有限CID符号化試験を、異なる2要求を実際に解析した意味保存の証明へ読み替えない。再解析後のResultCID一致による下流停止には、下流が読む依存と更新契約の別検証が必要である。
+
+最適化規則のCIDは定義CIDと分けてquery契約・成果物provenanceへ結び付ける。局所graph rewriteの意味保存検証と、cache公開／失効／再適用の状態遷移検証を別の仮説として扱う。ここで一般的なモデル検査や定理証明が実装済みとは主張しない。解析時間の短縮と生成コードの実行時間は別に測定し、最終判断には元19本、selfhost固定点、同一quiet hostでのC比較を維持する。C2はOFFのままである。
+
+[新しい事前登録](evidence/coscientist-compute-canonical-20261008/semantic-transition-prereg-v1/preregistration.json)を凍結し、[独立SOURCEレビュー](evidence/coscientist-compute-canonical-20261008/semantic-transition-prereg-v1/independent-source-review.json)で設計の整合性を確認した。固定3対象×5条件の15 shadow commandとcompile／extract2呼出は将来の計画で、実行済みではない。初期キー除外は空、現在の完全requestとResult／Transitionは維持する。具体的な実装・変異offset・資源ledgerの検証後に実行する。同一対象の実query数を元19本から採取する別phaseと、費用を含むquiet計測も登録した。設計レビューをキー完全性・意味保存の一般証明やcache採用の承認とは呼ばない。
