@@ -424,3 +424,19 @@ pipe捕捉V1はsetup失敗時のFD所有権が不十分なため、未実行HOLD
 ONは3回目のgroup操作で例外となり、同じlock内でgroup権限を退役し、sampler不確定としてREFUSEした。両EOF、停止後hash、正常reapは保存できたが、completionは存在せず、campaignはFAILのままである。再試行は0。元の8-call PASSと旧2-call failureの領域も変更していない。
 
 今回のcontrollerは失敗contextとotherRefusalsを内部recordに作る一方、返却値へ含めていなかった。保存証拠からerrno・stage・PIDやpolicy refusalの種類を特定できず、終了raceやESRCHが原因だったとは言えない。次の版ではこの有限recordを保存し、admissionを緩めず、変更したcomponentを改めて検証する。[選択snapshot](evidence/coscientist-masked32-clone-20261008/crc-prefix1081-v1-sampler-refusal/snapshot.json)は全依存archiveではない。出力一致をmemory admissionのPASS、TC採用、固定点、原19本やC性能達成へ昇格しない。
+
+## 失敗recordの保存：判定を変えず部品を再検証
+
+新controllerは既存の判定を保ち、内部のmemoryAdmissionRecordを返却値へ追加する。AST比較はこの1 fieldだけの差分を確認した。2担当が型付き例外・policy拒否・wait不確定・正常終了など16個の純粋な注入対照を再計算し、failureとotherRefusalsの保持を照合した。実kernel・FD・thread操作はこの対照に含まれない。
+
+新しい同一componentの実FileIO／thread11ケースを一度実行し、[独立保存監査](evidence/coscientist-masked32-clone-20261008/capture-fileio-fixture11-v3-record-actual/reviews/actual-independent/report.json)が全12 SOURCE／1,950入力、GO／レビュー／supervisor、11 receipts、8 FD台帳、最大9 controlled FD、6 raw計7 Bを確認した。supervisorはdriver1件をwait rc0でreapし、kill・wait不確定はなかった。停止前hashは未公開で、起動を拒否したcaptureを停止済みworkerとは扱わない。controllerは6a78a0ff、capture／integrationは旧版と同じ実バイトである。
+
+[選択snapshot](evidence/coscientist-masked32-clone-20261008/capture-fileio-fixture11-v3-record-actual/snapshot.json)は全依存archiveではない。native sampler、元19本、固定点、C比較の資格ではなく、旧prefix1081 FAILも変更しない。44-call SOURCEは元19本のcompile／extractと同一TC全ソースからのG1／G2／G3を対象にする。最初のハーネスはCRC専用wrapperの入力schemaと、terminal保存前のCOMPLETE公開が独立レビューでHOLDになった。別V2で各呼出のproducer／全container／入力／GOを封じ、terminalと最終検査の後にだけ完了を公開するよう修正した。この部品監査の時点では44-callの実行は0だった。次節の実行には2担当のSOURCEレビューと別GOを用いた。
+
+## TC44 V2：ahaの成果物は一致、strict samplingはFAIL
+
+2担当のSOURCEレビューと新fixtureの独立監査後、別GOでV2を一度実行した。[独立保存失敗監査](evidence/coscientist-masked32-clone-20261008/tc-original19-v2-extract-termination-gap-failure/reviews/actual-failure-independent/report.json)は全17 SOURCE／2,563入力、最初の2 argv／17 env、封印済み入力・producer、6-row資源journal、17 arena counters、6 memory samples、2 wait rc0を確認した。aha-mont64の全container4,039 Bから得たpayload3,976 Bはnative全体と一致し、bench3456／observe3644／bounds-probe3824はすべてarity1だった。これはこの保存成果物の条件付きidentity資格であり、guestの実行結果ではない。
+
+extractの4回目のgroup操作は、既存のleader-getpgidに対してPID52693／queryOrdinal29／errno3の型付き失敗を記録した。以前の3 sampleでleader birthは確認済みで、両EOF・完全hash・正常wait・資源証拠は揃っていた。controllerは既存policy v2のSEMANTIC_DIAGNOSTIC_TERMINATION_GAPを返したが、V2のstrict sampling条件は拒否した。欠けたfootprintはnullであり、0にもPASSにも置き換えない。今回のAPI失敗箇所は特定できたが、kernelのタイミング原因や欠測値は不明である。
+
+V2はFAIL、report／images／generationsは存在せず、残り42件は未実行。再試行は0。[選択snapshot](evidence/coscientist-masked32-clone-20261008/tc-original19-v2-extract-termination-gap-failure/snapshot.json)は全依存archiveではない。次の別SOURCEは、監査済みaha identityを保持し、残る18本とG1／G2／G3を検証する案である。型付きtermination-gapが既存の意味上のadmissionを満たす場合にも、成果物identityとstrict memory資格を分けて記録する。arena・fuel・CPU・FSIZE・raw・権限の条件は変えず、未知のsampling拒否は受理しない。元19本のruntime／固定点／C性能は依然未達である。
