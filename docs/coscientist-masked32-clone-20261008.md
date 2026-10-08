@@ -381,3 +381,9 @@ pipe捕捉V1はsetup失敗時のFD所有権が不十分なため、未実行HOLD
 [元statemate／nsichneuのSOURCE調査](evidence/coscientist-masked32-clone-20261008/vector-state-source-frontier-v1/source/report.md)は、両者がaffine mutable vector-assoc!を使い、状態vectorを反復外で一度確保することを確認した。persistent vector-assocは0で、ループ内のimmutableコピー除去という仮説を退けた。syntax上のcall／read数を生成後の命令数やCとの差の原因と扱わない。
 
 次の候補は、実allocationとchecked storeを保持したまま、同じhandle・定数indexの直線区間で値をforwardできるかである。alias、write、call、join、寿命、fuel／trapの条件が未確認なら通常経路を維持する。実typed eligibilityは未確定であり、SOURCE上の数から推定しない。元19本、3世代固定点、同一quiet hostのC比較は引き続き最終条件である。
+
+## 観測controllerの成功判定をSOURCE負例で修正
+
+独立レビューはcontroller V2の正常分岐がPID／birthとloader証拠のbindingを参照せず、3負例を成功として返すことを見つけた。V2を変更せず、新V3で全admissionにbindingを必須化した。[独立V3レビュー](evidence/coscientist-masked32-clone-20261008/capture-controller-v3-source-hold/reviews/independent/report.json)は元9対照・正常1対照・追加3負例を注入して再計算し、3件すべての拒否を確認した。これはsequential SOURCE検査で、実kernel／thread／native操作は0である。
+
+型付きESRCHのtermination-gapを扱う観測policyは別の版とし、missing sampleを0にも旧strict policyのPASSにも変換しない。旧guest8 failureはそのまま保存する。耐久sample journal、native callback、完全FD台帳、Popen transferとwatchdogの統合fixtureは未資格で、V3もruntime HOLD／GOなしを維持する。
