@@ -440,3 +440,16 @@ ONは3回目のgroup操作で例外となり、同じlock内でgroup権限を退
 extractの4回目のgroup操作は、既存のleader-getpgidに対してPID52693／queryOrdinal29／errno3の型付き失敗を記録した。以前の3 sampleでleader birthは確認済みで、両EOF・完全hash・正常wait・資源証拠は揃っていた。controllerは既存policy v2のSEMANTIC_DIAGNOSTIC_TERMINATION_GAPを返したが、V2のstrict sampling条件は拒否した。欠けたfootprintはnullであり、0にもPASSにも置き換えない。今回のAPI失敗箇所は特定できたが、kernelのタイミング原因や欠測値は不明である。
 
 V2はFAIL、report／images／generationsは存在せず、残り42件は未実行。再試行は0。[選択snapshot](evidence/coscientist-masked32-clone-20261008/tc-original19-v2-extract-termination-gap-failure/snapshot.json)は全依存archiveではない。次の別SOURCEは、監査済みaha identityを保持し、残る18本とG1／G2／G3を検証する案である。型付きtermination-gapが既存の意味上のadmissionを満たす場合にも、成果物identityとstrict memory資格を分けて記録する。arena・fuel・CPU・FSIZE・raw・権限の条件は変えず、未知のsampling拒否は受理しない。元19本のruntime／固定点／C性能は依然未達である。
+
+
+## TC remaining42 V3: saved prefix32 and unbound-PID refusal
+
+The separately frozen remaining42 SOURCE `2f261d0c` passed root and independent SOURCE reviews. Exact GO `b41dee69` permitted only 18 new original workload compile/extract pairs and six G1/G2/G3 compiler calls; saved aha commands were not repeated. The inherited descriptive `44` process string denotes older accounting; operative limits were 42 calls and 126 conservative stages.
+
+One launch (tool session33398, CLOSED1) closed 32 direct children, all exit0. The first31 observations passed strict sampled-memory admission; 99 accepted samples were retained. Joined images contain saved aha plus15 newly admitted workloads (16 total). No guest execution or timing was authorized. New source bodies, canonical symbols/iteration profiles, fuel, arenas, ABI and compiler resources stayed fixed.
+
+Call32 `ud-extract` retained complete stdout, stderr, counters, resources and normal wait0, but the memory record refused: fresh typed `member-getpgid`, PID67249, queryOrdinal21, errno3, with `failure-pid-not-previously-bound`. Two previous samples bound leader67248, not the failing member. This is **not** the eligible diagnostic termination gap: semanticQualification=false and strictOldMemoryPolicyPassed=false. The V3 campaign remains FAIL; the saved native output can only receive a separate conditional artifact-identity audit. Do not infer a footprint, group membership, kernel timing cause or successful admission from exit0.
+
+The final COMPLETE report and generations are absent. Remaining10 (wikisort/xgboost compile/extract4 and three-generation compile/extract6) were not invoked; no old32 or aha calls were retried. Independent saved-result audit is required before using conditional UD identity in a fresh request. C2 remains OFF, no additional analysis skips, no CID performance qualification and no C-or-better or official Embench claim.
+
+Independent saved audit `f253472e` verified all19 SOURCE files/2589 input pins, GO/reviews/fixture, all32 argv/seals/environment/resource journals,99 samples, complete raw and exact direct waits0. It also verified full UD container/native payload identity separately from refused observation. Thus17 conditional whole-payload identities (savedaha plus16fresh) are available; only16 image records were admitted by the joined driver. [Selected saved evidence](evidence/coscientist-masked32-clone-20261008/tc-remaining42-v3-prefix32-unbound-pid-failure/snapshot.json) preserves the refusal and ten absent calls. This selected snapshot is not the full dependency archive.
