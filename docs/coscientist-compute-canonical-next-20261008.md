@@ -11,3 +11,13 @@ schema・規則・ABI・bound・既存集計・依存・型・effect・trap・�
 次のSOURCE実装はstrict canonical encoder／decoder、同一snapshotの型付きresolver、read-role／所有期間の検査、ordered replay、valid-last取引を対象にする。8193個のLABEL indexを省略せず、符号化領域の増分を明記し、元の解析work上限268,435,456と診断scalar上限536,870,912は維持する。seal・hash・resolve・replay・read検証の費用も計上し、超過は拒否する。
 
 これはコンパイル時の解析再利用の検証である。Embenchの生成コード実行時間への効果、canonical shape C1、C2、跨snapshot／process共有は未認定。将来のResultCID一致による下流再解析の停止も、query依存と結果更新の完全性を確認した別段階で検証する。生成コードの最適化は、元19本の意味保存・selfhost固定点・同一quiet hostのC比較で別に判定する。
+
+## ResultCIDと要求に従属する実行証拠の分離
+
+canonical native C1の最初のSOURCE案は、結果の符号化scopeにComputeCIDを含めていた。この構成では結果内容が同じでも要求が変われば識別子が必ず変わるため、ユーザーの「異なる計算から同じResultCIDへ到達する」「再解析後にResultCIDが変わらなければ下流を止める」用途には適合しない。旧SOURCEを保存し、native実行前にHOLDとした。
+
+次案では3つを明示する。ComputeCIDは全要求の識別子、ResultCIDは明示した出力契約に従う意味上の答え・順序付き寄与・意味上の診断・論理消費量の識別子、TransitionReceiptCIDは要求と既存集計に結びつく更新前後の状態・実消費・実行証拠の識別子である。Compute→Resultの検証済み対応には、必要なreplay前提とtransition証拠を別に関連づけ、最後にだけ公開する。same-snapshot段階のResultはsnapshotと出力契約をscopeに持つので、snapshotを跨ぐ一致はまだ保証しない。
+
+既存集計や絶対work値を結果から外す場合は、各fieldの役割を出力契約に列挙し、その値が意味上の答え・拒否・trap・poison・寄与・課金に影響しないという根拠が必要である。単に値を0にするだけでは意味保存の証拠にならない。transition全体を意味上のresultと呼ばず、両方を保持して直接計算／既存集計へのreplay／fresh集計へのreplayを照合する。
+
+最初の追加負例は、同じResult payloadを異なるCompute要求へ関連づけてもResultCIDが変わらず、要求またはtransitionの識別子は変わることを符号化で確認する。ただし同一payloadの符号化対照だけでは、変更した2要求を実際に解析して同じ結果を得たとは言えない。実queryの再評価、省略、下流停止の効果と費用は後続の別試験とする。C1では毎回直接解析を行い、途中結果・予算切れ・古い前提の利用は拒否し、C2は引き続きOFFにする。
