@@ -21,5 +21,6 @@ launchers and wrote no marker.
 This is a Node bootstrap compiler qualification. It is not native selfhost,
 actual browser execution, escaping host callbacks, unbounded per-instance calls,
 full package migration or complete harness API/plugin parity. System One had no
-model attempt for this change. Exact-head CI/main publication are pending and
-are separate from these local receipts.
+model attempt for this change. PR1250 passed all ten required checks and was merged as a0604488.
+The tested and published source trees match. That publication is separate from
+these local receipts; no additional runtime coverage is implied.
