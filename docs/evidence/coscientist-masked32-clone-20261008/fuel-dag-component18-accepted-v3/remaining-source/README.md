@@ -1,0 +1,2 @@
+SOURCE only. Fresh V2 preserves remaining15 V1. Only validator import is replaced by hash-pinned source-byte compile/exec. Current V3 saved-case0 root acceptance is mandatory, not guessed. Exactly retained cases1..15; no recompile/extract/case0 rerun. Same helper/image/fixture/ledger/pools/caps. Native0.
+V3 additionally hashes the actual byte buffer passed to compile, closing a path-pin/reread authority gap noticed before submission. V2 remains frozen and unexecuted.

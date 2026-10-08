@@ -130,3 +130,11 @@ default-OFFの別候補として、frameがなかった短いleaf関数に保存
 [独立失敗監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-component18-failure3-v1/reviews/actual-independent/report.json)で、diagnostic compile／extractと最初のcase0の3呼出はnative rc0・全17 countersで閉じた一方、host validatorがALLOCの成功値をMM-R1=0と期待して停止したことを確認した。原実装は成功時1、失敗時0であり、実rawはR1=1／error0だった。case0にはSTATE成功／END777と元の5 fuel命令が記録されたが、失敗campaignを18件成功と読み替えない。残る15件は未実行。
 
 修正対象はhost validatorの期待値だけで、native helper／fixture／imageを変更せず、case0を再実行しない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/fuel-dag-component18-failure3-v1/snapshot.json)に旧FAILを保存した。SOURCEレビューでも対応を見落としたことをreportへ明記した。保存raw再検証と未実行case1..15は別の有限継続とし、生成CODEのCPU実行・nonresuming fuel trap・性能の資格とは区別する。
+
+## Fuel DAG component16ケースの受理（旧FAIL3を保持）
+
+[保存済みcase0の独立offline監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-component18-accepted-v3/reviews/offline-actual-independent/report.json)がV3の1回だけの再判定を受理した。修正はallocatorの成功値MM-R1=1を期待する1箇所で、fixture・ネイティブ成果物は変えていない。検証器はハッシュ確認済みのソースバッファを直接実行し、未固定のPython bytecode cacheに依存しない。旧3呼出のFAILED terminalを保存し、case0・compile・extractを繰り返さなかった。
+
+別登録の残り15呼出は全てrc0・reapedで終了した。[独立actual監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-component18-accepted-v3/reviews/remaining-actual-independent/report.json)が全raw、17資源counter、状態guardとfuel命令を確認した。保存済みcase0との合計16ケースを受理し、累計native呼出は18である。live REG/HOME/LOCALalias、CODE容量、dirty error、leaf/freg/frame、charged inner、非terminal call、branch ingressの各条件を含む。これは凍結したnative診断の全状態比較predicateに拘束された有限証拠で、M/G全体を独立serializeした一般証明ではない。
+
+fuel0/1/2は抽象モデルで、5つの出力命令を確認した。生成コードのCPU上の非復帰trap・fuel・ABI・arena同等性、元19本の新候補実行、候補自身の固定点、C性能比較は未資格である。[選択snapshot](evidence/coscientist-masked32-clone-20261008/fuel-dag-component18-accepted-v3/snapshot.json)は完全な依存archiveではない。ComputeCID／ResultCIDによる解析再利用の意味契約と、生成コード最適化のfuel保存を分けて検証する方針を維持する。
