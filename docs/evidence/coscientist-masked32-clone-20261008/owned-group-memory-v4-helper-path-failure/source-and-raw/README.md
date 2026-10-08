@@ -1,0 +1,9 @@
+# Owned-group qualification V4 SOURCE HOLD
+
+Two fixed Python children form one owned group. Controlled ready/release handshakes admit two stable one-member samples, four stable two-member samples, then two one-member samples after helper wait0. No sample occurs during spawn/drop transitions. The copied adapter and fixture remain byte-identical. Metric is sum-ri_phys_footprint only, soft4GiB, without shared-page deduplication; no atomic/transient completeness, hard peak cap, AS equivalence or finite overshoot is established.
+
+The parent bounds supervision to10s wall and5s cleanup, retaining64KiB per raw stream and fsynced journal. One shared lock serializes signaling and wait. Signaling authority is permanently retired BEFORE any potentially reaping wait. Watchdog stops/joins before normal wait; cleanup may signal only while no wait has ever entered and its anchor remains retained, then retires authority before cleanup wait. No leader poll and no post-wait group query or signal occurs.
+
+A wait exception may leave OS ownership uncertain even with returncode None. That case is retained as uncertain/unclosed failure; it never restores signaling authority, retries wait, or publishes success. Pure controls cover waitpid releasing the PID before returncode publication and the later published-returncode exception gap. Normal closure is helper wait0, stable one-again samples, then leader wait0. This implements root's correction to omit postclosure groupabsence checks. Frozen V1–V3 remain preserved.
+
+No process/API/setter/compiler/native/SSH execution occurred during authoring. Exact argv/env, interpreter, copied adapter, local subprocess implementation and V3 HOLD are pinned. Two exact SOURCE reviews are required before a fixture GO. Native8 and current typed binding remain unqualified.

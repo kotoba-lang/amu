@@ -312,3 +312,9 @@ SOURCEと1,769入力371,271,887 Bの照合、rootと独立レビュー後にV2�
 [静的census](evidence/coscientist-masked32-clone-20261008/dense-dispatch-frontier-v1/source/proposal.md)では、元のstatemate／nsichneuに認識対象のdense dispatch chainはなかった。現在のscalarDAGはboolも許可済みで、主な境界はvector引数・分岐・fuel・runtime操作だった。歴史的typed observerと測定済みLC、現在の41-a64genを別のproducerとして記録した。状態更新やfuelを飛ばす置換は採用せず、既存tail loweringの適用を現在のproducerで観測してから、順序を保持した継続領域の融合を検討する。これはSOURCE仮説で、性能改善を測定した結果ではない。
 
 [owned-group memory adapterと旧fixtureのSOURCE記録](evidence/coscientist-masked32-clone-20261008/owned-group-memory-source-and-holds-v1/snapshot.json)を保存した。メトリックは所有する最大2プロセスのri_phys_footprintの合計、4GiBを超えたsampleで拒否する別契約である。AS・RSS・hard peakの上限とは同等でない。V1〜V3で見つかった終了処理の競合を保存し、V4はwaitに入る前にシグナル送信権を永久に取り下げる。割り込みで所有権が曖昧なら、成功や終了済みとは推定しない。
+
+V4の固定fixtureを1回実行したが、2つのleader-only sample後にhelper argvの完全一致検査で停止した。[独立保存raw監査](evidence/coscientist-masked32-clone-20261008/owned-group-memory-v4-helper-path-failure/reviews/actual/report.json)は各9,257,392 Bのsample、固定登録したCellar pathとsys.executableが返した互換リンクpathの差、leaderの-9終了とreapを確認した。helperの開始は記録したが別のreap証拠はなく、2プロセス群の正常終了も8 sampleの資格も主張しない。failure terminalのnormalClosureProof文字列は期待する形のテンプレートであり、実証として採用しない。再実行は0、native呼出0である。
+
+固定canonical interpreterを明示し、起動前に実行ファイルとfixture sourceを検査するfresh V5を2レビュー後に1回実行した。[独立raw監査](evidence/coscientist-masked32-clone-20261008/owned-group-memory-v5-qualified-fixture/reviews/actual/report.json)は全8 sample、member数1・1・2・2・2・2・1・1、PIDごとのbirth／UUID、footprint合計を照合した。合計は10,355,144 Bを2回、20,693,904 Bを4回、10,420,680 Bを2回。helper wait0のhandshake・stable one-again 2 sample・leader wait0、signalなし・wait uncertaintyなしを確認した。旧V4の失敗は保存したままである。
+
+この成功は固定2子プロセスの有限adapter試験の資格だけで、hard memory peak・native8・current compiler binding・性能の資格ではない。次のnative8要求は、sampled footprint契約とCPU soft1800／hard1801、file／wall／arenaの契約を別に登録し、レビューしてから実行する。AS上限を黙って省く同一要求として扱わない。
