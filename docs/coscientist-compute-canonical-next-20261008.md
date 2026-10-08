@@ -207,3 +207,5 @@ fresh V4の8呼出と独立raw監査で、現在のCRC reader FN／SIR、256通�
 有限Python診断モデルは25の要求field変更、digest bucketの衝突を模した不一致、9の結果・replay改変、予算不足・support低下・途中valid公開を拒否した。rootも全5 source／5 input pinsとcontrol結果を再確認した。これはsynthetic JSON/SHA契約の確認で、Kotoba解析の実装、IPLD canonical encoding、native importer、一般の健全性証明や性能測定ではない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/compute-owned-query-shadow-proposal-v1/snapshot.json)。
 
 最初の未解決条件は、正確なhistorical snapshotでの全reader・alias・writer・reset-before-read・出力所有期間の閉包である。current16には同じ解析経路がないため、historical queryの証拠を現在の製品cacheの資格へ移さない。次のobserverも毎回direct解析を実行するshadow診断とし、C2 OFF・キー除外なし・追加省略0を維持する。hash／lookup／replayと失敗経路を含む費用を実測するまで、CIDによる性能向上を主張しない。
+
+current OFF/TCの機能V3でも、SLRE32の保存rawは戻り値・fuel・17arenaで一致した一方、未登録childのsampling拒否でcampaignは停止した。[保存失敗の範囲](coscientist-masked32-clone-20261008.md)。結果内容の一致と現在のadmission成功は別である。raw一致を理由に拒否を成功bindingへ書き換えず、成功した結果の再利用契約と失敗TransitionReceiptを分けて保持する。
