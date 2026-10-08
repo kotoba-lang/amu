@@ -21,7 +21,7 @@
   that compares one has to say so with `kotoba.verifier/guest-integer?`
   rather than `integer?` -- `kotoba.verifier.signing` learned that on
   2026-09-11 (kotoba-verifier f1efb423)."
-  {:kotoba/export #?(:kotoba [max-edn-bytes max-source-bytes read-edn-text read-file read-text-file]
+  {:kotoba/export #?(:kotoba [max-edn-bytes max-source-bytes read-edn-text read-edn-text-limits read-file read-text-file]
                      :default [max-edn-bytes max-source-bytes read-file read-string read-text-file])}
   (:refer-clojure :exclude [read-string])
   (:require #?@(:clj [[clojure.edn :as edn]
@@ -223,7 +223,7 @@
    ;; nesting, 3 token. Positions are bytes: a multi-byte character is
    ;; several token bytes, so the token ceiling is reached earlier on
    ;; non-ASCII text (the reader twin counts the same way).
-   (defn- preflight-code [text :string] :i64
+   (defn- preflight-code [text :string depth-limit :i64] :i64
      (let [raw (string-to-utf8 text)
            n (bytes-count raw)]
        (loop [index 0 depth 0 token 0 in-string 0 escaped 0 in-comment 0]
@@ -258,7 +258,7 @@
                1
 
                (or (= ch 40) (= ch 91) (= ch 123))
-               (if (> (+ depth 1) (max-depth))
+               (if (> (+ depth 1) depth-limit)
                  2
                  (recur (+ index 1) (+ depth 1) 0 0 0 0))
 
@@ -333,27 +333,27 @@
    ;; negative code (-1 depth, -2 nodes, -3 string) the caller refuses on.
    ;; A node's children are its kids, which for a map are k v k v ...; key
    ;; before value, each one level down, as on the host.
-   (defn- shape-walk [x [:ref :form/r] depth :i64 nodes :i64] :i64
-     (if (> depth (max-depth))
+   (defn- shape-walk [x [:ref :form/r] depth :i64 nodes :i64 depth-limit :i64 node-limit :i64] :i64
+     (if (> depth depth-limit)
        -1
        (let [nodes (+ nodes 1)]
-         (if (> nodes (max-nodes))
+         (if (> nodes node-limit)
            -2
            (if (and (= 3 (record-get [:ref :form/r] x :tag))
                     (> (string-byte-length (record-get [:ref :form/r] x :s)) (max-string-chars)))
              -3
-             (shape-walk-kids (record-get [:ref :form/r] x :kids) 0 (+ depth 1) nodes))))))
+             (shape-walk-kids (record-get [:ref :form/r] x :kids) 0 (+ depth 1) nodes depth-limit node-limit))))))
    :default
    nil)
 
 #?(:kotoba
-   (defn- shape-walk-kids [kids [:list [:ref :form/r]] i :i64 depth :i64 nodes :i64] :i64
+   (defn- shape-walk-kids [kids [:list [:ref :form/r]] i :i64 depth :i64 nodes :i64 depth-limit :i64 node-limit :i64] :i64
      (if (>= i (vector-count kids))
        nodes
-       (let [r (shape-walk (typed-list-nth [:list [:ref :form/r]] kids i) depth nodes)]
+       (let [r (shape-walk (typed-list-nth [:list [:ref :form/r]] kids i) depth nodes depth-limit node-limit)]
          (if (< r 0)
            r
-           (shape-walk-kids kids (+ i 1) depth r)))))
+           (shape-walk-kids kids (+ i 1) depth r depth-limit node-limit)))))
    :default
    nil)
 
@@ -376,8 +376,8 @@
       value))))
 
 #?(:kotoba
-   (defn- read-one! [text :string] [:ref :form/r]
-     (let [out (kr/read-forms-bounded text (max-depth) (max-token-chars))
+   (defn- read-one! [text :string depth-limit :i64] [:ref :form/r]
+     (let [out (kr/read-forms-bounded text depth-limit (max-token-chars))
            err (record-get [:ref :kotoba.reader/out] out :err)
            forms (record-get [:ref :kotoba.reader/out] out :forms)
            n (vector-count forms)]
@@ -412,15 +412,24 @@
    ;; Kotoba: `read-string` is a reserved function name, so the reading is
    ;; `read-edn-text`, and its value is a Form.
    (defn read-edn-text [text :string] [:ref :form/r]
-     (let [code (preflight-code text)]
+     (read-edn-text-limits text (max-nodes) (max-depth)))
+   :default
+   nil)
+
+#?(:kotoba
+   ;; The same reading under caller-chosen node and depth ceilings (token and
+   ;; string ceilings unchanged): a sealed artifact is a larger input class than
+   ;; a policy file (`kotoba.compiler.nbb.cli-support/read-artifact-file!`).
+   (defn read-edn-text-limits [text :string node-limit :i64 depth-limit :i64] [:ref :form/r]
+     (let [code (preflight-code text depth-limit)]
        (if (= code 1)
          (reject-form! "EDN dispatch forms are forbidden")
          (if (= code 2)
            (reject-form! "EDN nesting exceeds limit")
            (if (= code 3)
              (reject-form! "EDN token exceeds limit")
-             (let [value (read-one! text)
-                   walked (shape-walk value 0 0)]
+             (let [value (read-one! text depth-limit)
+                   walked (shape-walk value 0 0 depth-limit node-limit)]
                (if (= walked -1)
                  (reject-form! "EDN value nesting exceeds limit")
                  (if (= walked -2)
