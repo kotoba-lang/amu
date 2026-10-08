@@ -43,3 +43,13 @@ heap指標は4 arenaの別々のpeakに対応するサイズを掛けた和で�
 clone・call・frameを読み取り専用で観測する版は、初回compileで停止した。[失敗の独立監査](evidence/coscientist-masked32-clone-20261008/observer-failure-v1/independent-report.json)は599入力、最初の1呼出の終了、未実行の残り5呼出、再試行なしを照合した。stdoutは空で、stderrに`E2104 type mismatch in 'case': expected :i64 (byte 959829)`と17資源fieldがある。整数`case`の既定値にkeyword `:else`を置いた新しい診断helperの型エラーで、資源枯渇の診断ではない。旧source・失敗namespaceを保存し、修正はfresh版として再レビューする。観測器の6呼出成功、実際のclone所有者、機能・性能は未認定である。
 
 上記3 snapshotは選択したsource・生成物・raw・監査のコピーで、完全な依存archiveではない。元入力はworkspaceの内容とpinで保持する。製品のdefaultOFF、既存C性能結果、selfhost固定点の認定は変更していない。
+
+## 観測器V3の実行と保存済みAESの検査
+
+新しいCST規則で整数`case`の末尾`:else`を2箇所削除し、helperの逆変換とvalidatorのバイト一致を確認した。既存refactor規則には該当規則がないため、新しい診断コードの`:human` authoring規則として適用し、native `amu refactor verify`の成功とは扱わない。別のSOURCE／driverレビュー後、fresh namespaceで観測器compile・extractと元AES compileの3呼出が正常終了した。[独立raw監査](evidence/coscientist-masked32-clone-20261008/observer-v3-failure-and-saved-aes-v4/independent-failure-v2/report.json)は648入力、観測器native963376 B／`f93645d6…`、AESの全KSEED／exportが通常ONと一致することと17資源fieldを照合した。
+
+その後のホストvalidatorが、V3のフォルダーに配置されていない`proposed-packets.json`を読もうとして停止した。旧型エラー1呼出とは別のFAILで、native3呼出は正常終了、AES extractとSHAの2呼出は未実行である。6呼出PASSへ再分類しない。
+
+fresh V4はvalidatorのコードを一切変えず、元の固定packetを配置した。SOURCEレビュー後、保存済みAES stdout／containerを1回だけ読み取り検証し、4呼出箇所・3 clone・45追加SIR行と通常ONの全バイト一致を確認した。cloneを呼ぶBLとFREC／CODEの対応も得たが、opcodeの静的数はCFG・physical frame・fuelの証明ではない。[root検査結果](evidence/coscientist-masked32-clone-20261008/observer-v3-failure-and-saved-aes-v4/offline-validator-v4/offline-outputs/report.json)は独立actual監査待ちで、nativeの再実行は0である。残る3呼出は既存の観測器とAES成果物を使う別の実行として登録し、SHAと機能比較の認定は保留する。
+
+このsnapshotも選択保存であり、完全な依存archiveではない。高速化、元19本の生成プログラム実行、quiet C比較、自己再ビルドの固定点はまだ認定していない。

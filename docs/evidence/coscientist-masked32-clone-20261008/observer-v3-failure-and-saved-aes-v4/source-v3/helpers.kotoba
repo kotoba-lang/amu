@@ -1,0 +1,51 @@
+;; Readonly observer. No M/G writes, no borrowed bank, no persistent counter.
+;; io-out and decimal formatting allocate host-managed strings; not free fuel/resources.
+(defn- mo-prefix [phase :i64 tag :string i :i64] :string
+ (string-concat (string-concat (string-concat (string-concat "MO " (mem-u2dec phase)) " ") tag) (string-concat " " (mem-u2dec i))))
+(defn- mo-fields [M :vector-i64 base :i64 width :i64 k :i64 s :string] :string
+ (if (>= k width) s
+  (mo-fields M base width (inc k) (string-concat s (string-concat " " (mem-u2dec (vector-at M (+ base k))))))))
+(defn- mo-table [M :vector-i64 phase :i64 tag :string base :i64 stride :i64 width :i64 count :i64 i :i64] :i64
+ (if (>= i count) 0
+  (let [p (io-out (string-concat (mo-fields M (+ base (* i stride)) width 0 (mo-prefix phase tag i)) "\n"))]
+   (mo-table M phase tag base stride width count (inc i)))))
+(defn- mo-header-index [k :i64] :i64
+ (case k 0 MM-ERR 1 MM-FN-N 2 MM-SIR-N 3 MM-LABEL-N 4 MM-CODE-N 5 MM-FIX-N 6 MM-LIT-N 7 MM-LITB-N 8 MM-CODE-BYTES 9 MM-OUT-N 10 MM-EXP-N  MM-ERR))
+(defn- mo-header-fields [M :vector-i64 k :i64 s :string] :string
+ (if (>= k 11) s
+  (mo-header-fields M (inc k) (string-concat s (string-concat " " (mem-u2dec (vector-at M (mo-header-index k))))))))
+(defn- mo-domains [M :vector-i64] :bool
+ (and (= (vector-count M) MM-WORDS)
+      (> (vector-at M MM-FN-N) 0) (<= (vector-at M MM-FN-N) 128)
+      (> (vector-at M MM-SIR-N) 0) (<= (vector-at M MM-SIR-N) 66016)
+      (> (vector-at M MM-LABEL-N) 0) (<= (vector-at M MM-LABEL-N) 65536)
+      (> (vector-at M MM-CODE-N) 0) (<= (vector-at M MM-CODE-N) MM-CODE-CAP)
+      (> (vector-at M MM-FIX-N) 0) (<= (vector-at M MM-FIX-N) MM-FIX-CAP)
+      (> (vector-at M MM-LIT-N) 0) (<= (vector-at M MM-LIT-N) MM-LIT-CAP)
+      (> (vector-at M MM-EXP-N) 0) (<= (vector-at M MM-EXP-N) MM-EXP-CAP)
+      (>= (vector-at M MM-LITB-N) 0) (<= (vector-at M MM-LITB-N) MM-LITB-CAP)))
+(defn- mo-code-tables [M :vector-i64 phase :i64] :i64
+ (let [a (mo-table M phase "CODE" MM-CODE-BASE MM-CODE-W MM-CODE-W (vector-at M MM-CODE-N) 1)
+       b (mo-table M phase "FIX" MM-FIX-BASE MM-FIX-W MM-FIX-W (vector-at M MM-FIX-N) 1)
+       c (mo-table M phase "LIT" MM-LIT-BASE MM-LIT-W MM-LIT-W (vector-at M MM-LIT-N) 1)
+       d (mo-table M phase "LITB" MM-LITB-BASE MM-LITB-W MM-LITB-W (vector-at M MM-LITB-N) 0)]
+  (let [e (mo-table M phase "EXP" MM-EXP-BASE MM-EXP-W MM-EXP-W (vector-at M MM-EXP-N) 1)]
+   (mo-table M phase "LABEL" MM-LABEL-BASE MM-LABEL-W MM-LABEL-W (vector-at M MM-LABEL-N) 1))))
+(defn- mo-snapshot [M :vector-i64 phase :i64] :vector-i64
+ (if (not (mo-domains M))
+  (let [p (io-out (string-concat (mo-prefix phase "HOLD" 0) "\n"))] M)
+  (let [p (io-out (string-concat (mo-header-fields M 0 (mo-prefix phase "HEADER" 0)) "\n"))
+        a (mo-table M phase "SIR" MM-SIR-BASE MM-SIR-W MM-SIR-W (vector-at M MM-SIR-N) 1)
+        b (mo-table M phase "FREC" MM-FN-BASE MM-FN-W MM-FN-W (vector-at M MM-FN-N) 1)
+        c (if (>= phase 3) (mo-code-tables M phase) 0)
+        z (io-out (string-concat (mo-prefix phase "END" 0) "\n"))] M)))
+(defn- mo-call-field [M :vector-i64 i :i64 f :i64 t :i64 n :i64 k :i64] :i64
+ (case k 0 i 1 f 2 t 3 n 4 (vector-at M MM-CODE-N) 5 (vector-at M MM-FIX-N) 6 (vector-at M MM-ERR)
+  7 (gn-g M gn-f-fb) 8 (gn-g M gn-f-leaf) 9 (gn-g M gn-f-h)  (gn-g M gn-f-vmode)))
+(defn- mo-call-fields [M :vector-i64 i :i64 f :i64 t :i64 n :i64 k :i64 s :string] :string
+ (if (>= k 11) s
+  (mo-call-fields M i f t n (inc k) (string-concat s (string-concat " " (mem-u2dec (mo-call-field M i f t n k)))))))
+(defn- mo-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64 after :i64] :i64
+ (io-out (string-concat (mo-call-fields M i f t n 0 (mo-prefix 0 "CALL" after)) "\n")))
+(defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
+ (let [p (mo-call M i f t n 0) m (mo-base-op-call M i f t n) q (mo-call m i f t n 1)] m))
