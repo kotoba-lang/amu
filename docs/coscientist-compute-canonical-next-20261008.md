@@ -29,3 +29,9 @@ canonical native C1の最初のSOURCE案は、結果の符号化scopeにComputeC
 別V3の修正は旧検証器の正確なpathをnamespaceへ加える1箇所だけで、fixtureとnative sourceは同じ内容に固定する。rootとwidthのSOURCEレビュー後、保存済みcase0 rawを1回だけoffline判定し、[独立監査](evidence/coscientist-compute-canonical-20261008/case0-v3/independent-report.json)が結果を確認した。context12643／request3024／Result・Transition各512語、SHA-256 raw CIDの6出力、全投影field、順序付きedge寄与とsaved集計へのreplayが一致した。論理解析消費132736、診断ledger376445092は元の536870912上限内だった。fresh direct／replayとstatus／poisonはソース拘束の出力flagに基づく有限確認であり、全メモリを外部serialize比較したとは呼ばない。
 
 異なる要求に対する同一ResultCIDは同じpayloadの符号化対照で確認し、変更した2要求を実際に解析した成功とは区別する。元の3 native呼出と失敗を再実行せず、offline段階のnative実行は0である。[選択snapshot](evidence/coscientist-compute-canonical-20261008/case0-v3/snapshot.json)はrawと監査の保存コピーで、完全な依存実バイトarchiveではない。作者・SOURCE reviewer・実監査の参加をreportに明記した。残るcase1・2の別登録検証、一般のcanonical shape C1、C2、共有cache、省略・下流停止、実性能は未認定である。
+
+## 未実行だった2ケースの有限継続
+
+最初のcase0の独立監査をrootが受理し、同じnative／containerと修正済み検証器を用いるcase1・2専用の新SOURCEを登録した。rootとwidthのSOURCEレビュー後、未実行の2呼出だけを新領域で実行し、終了コード0・stderr空で閉じた。[独立raw監査](evidence/coscientist-compute-canonical-20261008/remaining2-v1/independent-report.json)は182依存、元case0の75依存と失敗記録、2 argv・raw・CID・512項目の投影・順序付き-1／0寄与・集計・status／workを照合した。case1は論理消費112640／診断375628772、case2は164096／377750244で元の診断上限内だった。
+
+全体として固定3ケース・native計5呼出の証拠が揃ったが、元campaignのFAILはFAILのまま保存する。case0の再実行と再コンパイルは0である。[選択snapshot](evidence/coscientist-compute-canonical-20261008/remaining2-v1/snapshot.json)は完全なportable依存archiveではない。full-Mとfresh direct／replayの一致はnativeソース拘束flagに基づく有限確認、Resultの異なる要求への一致は符号化対照である。一般のread／reset完全性、C2・共有reuse、下流停止、性能への効果、C以上のEmbenchは未認定のまま保持する。
