@@ -1470,3 +1470,50 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   else open the falsification cycle on the :string marshal boundary cost
   (amu runtime, cross-team).
 - tick 2026-10-07 (JST) amu-lang-cosientist: NO-RUN — runtime budget exhausted during discovery (git/terminal probe only); no measurement, no implementation, no evidence this tick. NEXT unchanged: select from jvm-dep-migrator measured gaps (string literals / str / count / reduce / #() / (:k m)).
+
+
+## Iteration 49 - state re-check: pin unchanged, merge-pending branches unmerged, quiet gate NOT met (2026-10-08, no verdict)
+
+- Target (carried from iter 48): rebase-check merge-pending alias branches if the
+  kotoba-sema pin advanced; else hold.
+- Measured (file-redirect; plain stdout empty persists; loadavg 83.56/86.61/96.17,
+  quiet gate NOT met - no speed measurement, no bench):
+  - deps-lock.edn:132-133 still pins kotoba-sema 15cc6e25c5b9d5946efe1ad3d869f6aff64fda05
+    (unchanged since iters 41/45) -> no rebase needed for bot/lang-seq-20261002 (base
+    15cc6e25); kwproj/somethread/long-cast branches (base 9898f0e) remain pre-pin but
+    their gates were green on their own classpaths (iters 23/37/38).
+  - merge-base --is-ancestor vs kotoba-lang/main (origin fetched this tick): NONE of
+    bot/lang-seq-20261002, bot/lang-kwproj-20260919b, bot/lang-somethread-rebase-20260920,
+    bot/lang-long-cast-20260925, bot/lang-fn-shorthand-20260904 is merged into sema main
+    (5 open merge-pending lang branches - merge-pending backlog, not a new gap).
+  - lang-side ledger `:gap` alias-shaped rows remain exhausted (iters 38-48); reduce-kv
+    and keys/vals stay backend-lowering family (iters 47/48, cross-team handoff stands).
+- No probe run this tick (host overloaded; check-only work was exhausted in iter 48).
+  No commit. Hypothesis population unchanged.
+- Next (1 hypothesis): the :string marshal boundary cost falsification cycle (iters
+  4/5 blocker; guest-side byte access op vs host intrinsic) requires a quiet gate
+  (loadavg well under the ~7.5 discipline line) for any bench - blocked this tick.
+  When quiet: re-baseline 1 host-call cost (string-split-count 1e6 calls) on the
+  current pin before designing the boundary hypothesis.
+
+## Iteration 50 - merge-pending branch rebase-check: 2 clean, 2 conflicting, 1 dead-base (2026-10-08 06:5x JST, no bench)
+- Measured (git merge-tree --write-tree vs fetched kotoba-lang/main b379f353bb810322faf3d7f3ac4ddd993bfcc3c0; sema remote is named kotoba-lang): loadavg 132.88 - quiet gate NOT met, :string boundary bench deferred; git-only triage.
+  - deps-lock.edn:132 still pins kotoba-sema 15cc6e25; 15cc6e25 IS ancestor of b379f35 -> pin stable, bot/lang-seq-20261002 (base 15cc6e25) no rebase needed.
+  - bot/lang-seq-20261002: merges CLEAN (exit 0). bot/lang-long-cast-20260925 (base 9898f0e): merges CLEAN (exit 0) - merge-ready.
+  - bot/lang-kwproj-20260919b and bot/lang-somethread-rebase-20260920: CONFLICT (content) in src/kotoba/compiler/frontend.cljk - rebase onto b379f35 + re-gate (parity canon re-measure) required.
+  - bot/lang-fn-shorthand-20260904: merge-tree refuses (not something we can merge) - pre-.cljc->.cljk base; needs port onto current main (iter 26/42 exact-replace route), not git rebase.
+- Verdict: no hypothesis tested (backlog triage only). perfgate N/A. Handoff: merge-ready = seq + long-cast; rebase = kwproj + somethread; port = fn-shorthand.
+- Next (1 hypothesis): when quiet gate met, :string marshal boundary baseline (string-split-count 1e6 calls on current pin, iters 4/5 handoff); meanwhile fn-shorthand port onto b379f35 is the next lang implementation candidate (hand twin canon bafyreicptlqjvu5hh... re-measure required).
+
+## Iteration 51 - #() shorthand gap CLOSED upstream on current pin; fn-shorthand port superseded (2026-10-08 12:4x JST, amu pin sema 15cc6e25, sema main d34fb53)
+
+- Target (iter 50 handoff): port bot/lang-fn-shorthand-20260904 @ee4c5155 (reader-layer #() sugar, +91 kotoba_reader.cljc, pre-.cljk era) onto current sema main; falsify-first re-probe FIRST.
+- Measured (bin/amu check/compile --jvm-free, pin 15cc6e25 confirmed at deps-lock.edn:132; probe /tmp/langcos/it51-fns-probe.kotoba `(reduce + 0 (mapv #(* % 2) v))`):
+  - check **PASS exit 0** - `#(* % 2)` is ALREADY admitted on the current pin. Definition CIDs are EXACTLY the iter 3 parity canon (the (fn [x]) expansion): t `bafyreidsqpt3jj23feploxzxetqdnczpiuxh3nizxj4e3ey6xwz4bfmsd4`, loop_1 `bafyreicptlqjvu5hhcjqagofvuqkmxfolr2kk3rhtydvbft5v3623n6eti`, loop_2 `bafyreieuoy7c66duftjm6uxs22gz23wsmjzj6uc7pvecgc7cfqamgcdwbq` - KIR byte-for-byte identical to the (fn) spelling.
+  - wasm32 compile PASS exit 0 (4 definitions recompiled, provenance + publication sidecars).
+  - fail-closed: `#()` empty body -> reader REJECT exit 65 (:kotoba/source-read-failed) (r-it51-0body.txt).
+  - ee4c5155 is NOT an ancestor of sema main d34fb53 (merge-base exit 1) - upstream implemented #() support independently; the old branch is superseded, do NOT port it.
+- Verdict: hypothesis FALSIFIED in the favorable direction - the #() shorthand gap is CLOSED upstream on 15cc6e25 with parity matching the iter 3 canon. bot/lang-fn-shorthand-20260904 is superseded (status rewrite = amu-rank). perfgate N/A (parity-only; loadavg 18-20, quiet gate NOT met, no bench).
+- Ledger handoff (amu-rank / jvm-dep-migrator): jvm-dep-ledger `#() shorthand` row is STALE - PASS on current pin (evidence above).
+- Merge-pending backlog re-check (iter 50): seq + long-cast merge-clean; kwproj + somethread need content rebase (b379f35 family); fn-shorthand now dropped from the port list.
+- Next (1 hypothesis): :string marshal boundary baseline (iters 4/5 handoff) when quiet gate met - 1 host-call cost re-baseline (string-split-count 1e6 calls) on the current pin; else re-probe remaining ledger blocked rows on the advancing pin.

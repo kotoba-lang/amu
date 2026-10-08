@@ -90,7 +90,7 @@ provenance, in exactly one field:
 `:module-source-digests` as build metadata; the Node route passes only
 `--fuel`. This divergence is **pre-existing and not introduced here** — it is
 already true of the Wasm project route, which has been on Node since amu#717,
-and it is recorded in the workspace CLAUDE.md. It is not fixed in this change
+and it is recorded in the workspace AGENTS.md. It is not fixed in this change
 because closing it changes the provenance hash of every existing project-route
 Wasm artifact, which is a separate decision with its own consumers. A consumer
 that compares provenance across routes cannot treat the two as the same build;

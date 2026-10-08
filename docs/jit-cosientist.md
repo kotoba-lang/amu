@@ -834,3 +834,104 @@ arm. J-A remains not-actionable (no chicory host); J-C untouched.
   worktree compile (ascii-token blocker check).
 
 - 2026-10-07 (JIT tick 56): quiet gate UNMEASURED this tick - the iostat/load probe group was blocked by the security scanner (no reading taken, no number invented). Main-worktree compile retry: STILL RED - reproduced (exit=1), same ascii-token :analysis error at src/kotoba/compiler/kexe_fs_forms.cljk:111 (uncommitted S5 edit persists; untouched, blocker for AOT axis too). kexe runner prep (static, no quiet gate needed): candidates LOCATED - bench/runtime-comparison/kexe-benchmark.c and kexe-batch-benchmark.c, plus bin/amu run (signed-kexe loader route, line 218-45) and kotoba-loader; smoke-test of the /tmp/jit_t49/out kexe artifacts is next. J-C lever unchanged: confirmed-present post-inline (sdiv 0 / smulh >=1, reproduced 3x). J-B stays open, not-killed/not-confirmed (under-qualified band 5.9-8.8 percent, ticks 27-36). No compiler change, no policy change, no sealed claim. Next tick first actions: (1) smoke-test kexe-benchmark.c against the tick-49 kexe artifacts and, if it runs, the end-to-end inlined-vs-noninlined timing (V2 still needs idle >=90 percent); (2) qualified three-arm J-B control if quiet; (3) main worktree compile retry.
+
+- 2026-10-07 (JIT tick 57): quiet gate failed a 47th consecutive time -
+load1 116.62 (5m 103.76, 15m 91.45) on 10 CPUs at 18:46 JST, iostat cpu
+idle 34-38 percent across 3 samples, never >=90 percent (second-worst
+load1 recorded; J-B and V2 both deferred, no measurement of any kind).
+kexe runner prep (static, no quiet gate needed) advanced to a ROOT-CAUSE
+candidate: built kexe-benchmark.c (clang -O2 -arch arm64, exit 0) and
+smoke-tested it raw against the tick-49 artifacts (/tmp/jit_t49/out
+ks_noninline.bin @420, ks_inline.bin @368) - BOTH arms SIGSEGV (exit
+139). Full .incbin objdump of ks_noninline.bin (durable:
+scratch jit-t57/disasm_noninline.txt) shows the guest reads its context
+from x7 (matches the harness's 8th-arg placement) and DEREFS two slots
+beyond everything the harness populates: ldr x16,[x7,#0x120] (=288) then
+ldr x16,[x16] at kernel+0x294-0x2a4 (and a paired ldr x16,[x7,#0x128]
+=296 at 0x2ac). kexe_loader.c's own asserts name these exactly:
+pair_used_pointer == 288, pairs_base == 296. The benchmark harness
+zero-memsets its independent v11 struct copy, resets shared.pair_used /
+string_pool_used per call, but never populates the 288/296 pointer slots
+- guest derefs NULL -> SIGSEGV. Verdict (static, deterministic): the V2
+runner blocker is CONTEXT ABI DRIFT in kexe-benchmark.c's struct copy -
+the file's own comment anticipated exactly this class. Fix path (bench
+scaffolding, not a tracked-tree compiler change): populate
+pair_used_pointer/pairs_base (and audit every guest-referenced slot
+0x8/0x38/0x70/0x78/0x88/0x90/0x120/0x128 against the current loader
+layout), rebuild, re-smoke; then the inlined-vs-noninlined end-to-end
+comparison still needs idle >=90 percent. Main-worktree compile retry:
+STILL RED - same ascii-token :analysis error at
+src/kotoba/compiler/kexe_fs_forms.cljk:111 (uncommitted S5 edit
+persists, 6th consecutive tick; untouched, blocker for AOT axis too).
+J-B stays open, not-killed/not-confirmed (under-qualified band 5.9-8.8
+percent, ticks 27-36). J-A remains not-actionable (no chicory host).
+J-C lever unchanged: confirmed-present post-inline (sdiv 0 / smulh >=1,
+reproduced 3x). No compiler change, no policy change, no sealed claim.
+Next tick first actions: (1) populate the 288/296 slots (plus a full
+slot audit vs kexe_loader.c) in a scratch copy of kexe-benchmark.c,
+rebuild, re-smoke both tick-49 artifacts (correctness only - no quiet
+gate needed); (2) if idle >=90 percent, V2 end-to-end + qualified
+three-arm J-B control; (3) main worktree compile retry.
+
+- 2026-10-08 06:50 JST tick 58 (JIT): quiet gate failed a 48th consecutive
+  time - load1 99.27-101.81 on 10 CPUs (uptime 06:45), iostat cpu idle
+  39-55 percent across 3 samples, never >=90 percent. Tick-57 plan branch
+  (1) EXECUTED with a deterministic success (correctness only, no quiet
+  gate needed): the kexe-benchmark.c CONTEXT ABI DRIFT was FIXED in a
+  scratch copy (profile scratch jit-t58/kexe-benchmark-fixed.c; tracked
+  file untouched) - the six ABI-v9 inline-operation slots (pair_used_
+  pointer 288 / pairs_base 296 / pair_validated_base 304 / vector_used_
+  pointer 312 / vectors_base 320 / vector_items_base 328, audit vs
+  tools/kexe_loader.c:10270-10275 + its _Static_asserts 3598-3603) are
+  now populated after code_base/code_length exactly as the loader does.
+  Rebuild clang -O2 -arch arm64 exit 0; SMOKE TEST PASSED on both tick-49
+  artifacts: ks_noninline.bin @420 and ks_inline.bin @368 both ran to
+  completion (tick-57 exit 139 SIGSEGV on both), result 95351 IDENTICAL
+  across arms, fuel consumed 75/call identical. The V2 runner blocker is
+  GONE; the inlined-vs-noninline end-to-end TIMING comparison is now
+  waiting only on the quiet gate (this tick's smoke numbers are heavily
+  under-qualified busy-host diagnostics, no timing verdict recorded).
+  Branch (1) main-worktree compile retry: GREEN - ascii-token blocker
+  RESOLVED (bin/amu compile kernel_strings --target aarch64 --jvm-free
+  -> {:ok true} exit 0 at 06:5x JST; the kexe_fs_forms.cljk edit landed
+  or was reverted - the AOT axis is unblocked, notify amu-rank/amu-bench
+  via docs). J-B stays open, not-killed/not-confirmed (under-qualified
+  band 5.9-8.8 percent, ticks 27-36). J-A remains not-actionable. J-C
+  lever unchanged: confirmed-present post-inline (sdiv 0 / smulh >=1,
+  reproduced 3x). No compiler change in any tracked tree (scratch only),
+  no policy change, no sealed claim. Next tick first actions: (1) if
+  idle >=90 percent, run the V2 end-to-end inlined-vs-noninlined timing
+  via /tmp/jit_t58_bench (regenerate from scratch copy if /tmp cleaned)
+  AND the qualified three-arm J-B control (ratio of medians); (2) retry
+  main worktree compile for AOT-unblock confirmation is DONE (green),
+  no repeat needed; (3) if busy, proceed to the clone-pass wiring (V1)
+  on the scratch kotoba-mir copy per tick-54 plan (the two tiny mir.cljk
+  edits via a python file-rewrite script, not the patch tool).
+
+- 2026-10-08 12:5x JST tick 59 (JIT): quiet gate failed a 49th consecutive
+  time - load1 27.27 (5m 22.65, 15m 19.96) on 10 CPUs at 12:49 JST; the
+  iostat probe timed out at 60 s, but load1 27 alone disqualifies (idle
+  cannot be >=90 percent at that level on 10 CPUs). V2 end-to-end
+  inlined-vs-noninlined timing and the qualified three-arm J-B control
+  both deferred, no compiler change, no policy change, no sealed claim.
+  Branch (3) clone-pass wiring (V1) NOT advanced this tick - a NEW BLOCKER
+  was found while resuming: the tick-53 scratch kotoba-mir checkout
+  (jit-t53/mir-patch) is GONE (scratch pruned; the profile scratch
+  find shows only jit-t54/57/58 dirs). SURVIVORS: the tick-54 clone-pass
+  source is INTACT (profile scratch jit-t54/clone_patch.cljk, 10002
+  bytes, Oct 6) and the tick-49 kexe artifacts remain at /tmp/jit_t49/out
+  (both .kexe + .bin, tick-58-smokeable), /tmp/jit_t58_bench binary
+  present. So next tick's first action is REGENERATION of the pinned
+  kotoba-mir checkout (kotoba-mir 6d92aea9 per tick-50 spec, from the
+  gitlibs cache, to a DURABLE path) before the two mir.cljk wiring edits
+  (ns require + program-shadowing binding after gmir/validate! via the
+  python file-rewrite script, patch tool unreliable) can be applied and
+  V1 word-scanned (sdiv 0 / smulh >=1). J-C lever unchanged:
+  confirmed-present post-inline (sdiv 0 / smulh >=1, reproduced 3x,
+  tick-55). J-B stays open, not-killed/not-confirmed (under-qualified
+  band 5.9-8.8 percent, ticks 27-36). J-A remains not-actionable (no
+  chicory host). Main-worktree compile was green at tick 58 (AOT
+  unblocked) - no repeat needed this tick. Next tick first actions:
+  (1) regenerate scratch kotoba-mir checkout durably; (2) apply the two
+  wiring edits + syntax check; (3) V1 word-scan; (4) if idle >=90
+  percent, V2 + the qualified three-arm J-B control.
