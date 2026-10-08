@@ -387,3 +387,17 @@ pipe捕捉V1はsetup失敗時のFD所有権が不十分なため、未実行HOLD
 独立レビューはcontroller V2の正常分岐がPID／birthとloader証拠のbindingを参照せず、3負例を成功として返すことを見つけた。V2を変更せず、新V3で全admissionにbindingを必須化した。[独立V3レビュー](evidence/coscientist-masked32-clone-20261008/capture-controller-v3-source-hold/reviews/independent/report.json)は元9対照・正常1対照・追加3負例を注入して再計算し、3件すべての拒否を確認した。これはsequential SOURCE検査で、実kernel／thread／native操作は0である。
 
 型付きESRCHのtermination-gapを扱う観測policyは別の版とし、missing sampleを0にも旧strict policyのPASSにも変換しない。旧guest8 failureはそのまま保存する。耐久sample journal、native callback、完全FD台帳、Popen transferとwatchdogの統合fixtureは未資格で、V3もruntime HOLD／GOなしを維持する。
+
+## CRCの全table到達：元1024は255項目まで
+
+[独立SOURCE評価](evidence/coscientist-masked32-clone-20261008/crc-source-table-reach-v1/reviews/independent/report.json)は、元の1024バイトCRCが256項目中255項目を読み、index154だけを通らないことを確認した。prefix1080までは255、1081で初めて全256に到達し、CRCは4,018,572,661になる。通常nativeのpool1592と候補nativeのpool1632の全256 little-endian値も元SOURCEと一致する。index154を一ビット変える反例は1024の答えを変えず1081を変えるため、1024だけを全項目の実行検証と扱えない。
+
+これは元SOURCEの分岐木とrecurrenceを評価した有限結果であり、候補の実compiled site到達やfuel／trap状態の検証ではない。元19本のbody／profileを変えず、追加OFF／ON prefix1081を別の到達試験として登録する。既存の元CRC8-call scopeも置き換えない。
+
+## 実FileIO移譲と所有権の11ケース
+
+[独立保存監査](evidence/coscientist-masked32-clone-20261008/capture-fileio-fixture11-v2-actual/reviews/actual-independent/report.json)は、V4と同じcapture／integration／controllerで11ケースを一度実行した結果を照合した。8件のFD ledgerは収支が一致し、最大9 controlled FD、6 rawファイルの合計7 B、停止前のhash不公開を確認した。実threadによるretire-before-wait、不確実なwait、callback例外時の同じlock内での退役も対象にした。process callbackは注入で、fixture内Popen／native／group APIは0。外部supervisorがdriver1件をclosed0でreapし、stdout／stderrは各0 Bだった。
+
+最初のfixture SOURCEにはPython runtimeのsymlink aliasがあり、rootのregular-file pinで起動前HOLDになった。新V2は同じcanonical targetへの重複pinを整理し、全9 SOURCE／1,944入力をregular・nonsymlinkとして2担当が照合した。11ケースのPython本体は同一で、旧V1は未実行を維持する。最初のsupervisorも固定child bindingと不確実waitの扱いを修正し、各SOURCEとHOLDを保存した。
+
+この結果は制御したFD／thread fixtureの資格であり、全scheduleの証明やsyscall trace、native sampler／Popen全体、hard peak・任意library内部FD数の保証ではない。V4 native driverには耐久sample journal、元の6-row資源証拠、17 counters、結果・fuel・rawのpair比較を配線し、追加SOURCEレビュー後にfresh8呼出へ進む。旧guest8の2-call failureを成功へ変更せず、再試行も0を維持する。
