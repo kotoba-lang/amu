@@ -75,3 +75,9 @@ literal2の実typed owner FN1／SIR5、x0→d9の1 siteが、MOVZ17=2／SDIVか�
 6イメージの条件付きfeature receiptを別のoffline工程で合成し、全342依存とsource/構造/feature判定の一致を独立監査した。これを受けたrunner buildは3ビルドと14ツール識別の計17子プロセスが終了コード0・stderr空で閉じ、3 runnerと6個のembedded native imageが独立監査に一致した。これはbuild成功でありguest実行成功ではない。
 
 次の6 guest呼出しは、実行前の証拠閉包容量検査で停止した。417依存の合計288,615,765 Bが登録上限268,435,456 Bを20,180,309 B超過し、そのうち264,942,528 Bは正確なCLT clang本体だった。失敗terminalは子プロセス0・全閉鎖・failure=trueで保存した。旧guest namespaceを再実行せず、全依存を保持する新しいSOURCE/容量契約/出力namespaceをレビューする。実際のguest fuel/arena、速度、製品採用は未認定のままである。証拠保管の容量契約と、言語・guestのfuel/arena契約は区別する。
+
+## 新領域の6 guest呼出し
+
+証拠読取上限だけを384 MiBへ事前登録した新V3は、全417依存を維持し、fixture／ABI／fuel／arena／期待値／終了処理を変更しなかった。rootとwidthのSOURCEレビュー後、新規領域で6呼出が終了コード0・stderr空で閉じた。[独立raw監査](evidence/coscientist-quotient-two-20261008/guest-v3/independent-report.json)は460依存、6 argv・raw・生成runner・全native/containerとGOを照合した。3 OFF／ONペアは期待mask4095、fuel消費13、terminal arena使用量pairs0／string0／vectors2／items24が一致した。12個の符号付き入力の数学的期待値も独立に確認した。旧0-child停止は上書きしていない。
+
+[保存snapshot](evidence/coscientist-quotient-two-20261008/guest-v3/snapshot.json)は今回のraw・GO・source登録・監査報告と全依存pin表の選択コピーであり、460依存の実バイトすべてを含むportable封印archiveではない。完全な入力は元workspaceに保持される。SOURCEレビューへの監査者widthの参加を明記する。実NZCV／全register状態、原19本、quiet-host性能、公式スコア、C以上の達成、製品採用はこの有限3fixtureの結果からは認定しない。
