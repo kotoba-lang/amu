@@ -36,3 +36,13 @@ Resultのpayloadへ要求CIDや可変global scratchを混ぜない。ただし�
 その後、実native importer／admissionへ失効・owner・辺・公開・予算の負例を渡す。cacheなし／shadow／replayのAnswerと全transitionが一致してから、seal・encode・hash・lookup・検証・再適用・公開・失敗経路を含むcold／warm実費用を測る。consumer停止はその先の独立した仮説とする。
 
 解析時間の改善と、生成コードのEmbench実行時間は別の測定である。局所graph rewriteの型・effect・trap条件と、cache公開／失効／再適用の状態遷移も別に検証する。有限対照を一般の定理証明やモデル検査と呼ばない。最終性能条件は元19本、selfhost固定点、同一quiet hostでのCとの比較を維持する。
+
+## 追加提案の独立点検と、次の事前登録への具体化
+
+[独立点検の7受入条件](evidence/coscientist-masked32-clone-20261008/compute-user-integration-review-v2/review/REVIEW.md)は、今回のComputeCID／ResultCID案の主要条件が既存契約に含まれることを確認した。これは設計の点検であり、実装済みcacheの資格ではない。次の実験では、以下の三点を具体的な入力・receipt・測定項目として登録する。
+
+- 呼び出し先の名前・署名・ABIを維持したまま本体または推移的な型付き依存を変更する負例を加える。旧要求の失効と実際の再解析を確認し、再解析後にowned Answerが同じだった場合も、現在のtransitionとconsumer入力を照合する。同じpayloadを再符号化するだけの対照とは区別する。
+- owner・snapshot・出力schema・read-roleと、consumerが読む全入力の版・値を明示する。SCCの構成員、pending更新、worklist revisionをreceiptに含め、一つのResult一致だけで全下流を停止しない。現在の集計やcaller poisonが変わる場合は、その変化を伝播する。
+- 費用記録にはcontext封印・符号化・hash・参照解決・lookup・検証・replay・公開・失効、miss／拒否経路を含める。cold／warmと同一対象の実ヒット率、context費用の償却単位を分け、cacheなしの全体解析時間と比較する。既存memo hit数や論理work減少を、新しいCID cacheの速度改善として数えない。
+
+観測対象の解析lineageと上記schemaが確定するまでは、キー除外は空、新しい解析省略は0、C2はOFFを維持する。現在のCRC生成コードの比較実行は別の意味保存試験であり、このcacheの実装・高速化を証明するものではない。

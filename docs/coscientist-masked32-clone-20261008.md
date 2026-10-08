@@ -351,3 +351,11 @@ current7618でTC候補と観測用compilerをcompile／extractし、元CRC32を�
 レジスタをTCGのslot値と`gn-sreg`から復号する修正版を別ソースとして凍結し、2 SOURCEレビュー後に保存データだけの検証を1回実行した。[独立保存監査](evidence/coscientist-masked32-clone-20261008/table-emitted7-saved-repair-v1/reviews/actual-independent/report.json)は全7 SOURCE／1,976入力、GO・レビュー・新reportを照合し、完全なraw検証を別に再構成した。13命令・407 code words、sourceRegister24／destination9、literal fixup `[49,252,5,1,0]`、全76 descriptor値、移動したliteral即値だけ正規化したgeneric readerの一致を確認した。15種類の保存モデル負例も拒否した。追加native／setter／process API呼出は0である。
 
 これは保存済みの実生成についての正式な修正版検証であり、旧build8の成功への書換えではない。旧7呼出のfailure、未実行の観測側extract、guest・固定点・性能の未資格を保持する。新reportは通常側nativeが両KSEED payloadと一致することを確認するが、未実行のextractを代行したとは扱わない。残るextractは別SOURCE・別出力rootの1呼出として登録する。元CRCのprefix／benchで置換siteを通るguest比較、fuel／trap／arena／fallback、元19本・3世代固定点・fresh quiet C比較が次の条件である。
+
+## 残るextractの別試験：生成物の完全一致
+
+残る観測側extractだけをfresh V2の1呼出として実行し、正常終了した。[独立保存raw監査](evidence/coscientist-masked32-clone-20261008/table-remaining-extract1-v2-actual/reviews/actual-independent/report.json)は2,004入力・10 SOURCE、1 reap0、2 memory witness、環境・資源journal・17 countersと4 exportを確認した。観測側nativeは3,680 B／`5187d8338730957bf4611f294117c811099af65c9d1117492dd57430e8fa8999`で、通常側と両saved KSEED payloadに全バイト一致した。bench offsetは1,264である。
+
+V1は記述に旧8-group資源集計が残るため未実行のHOLDとして保存した。V2 rootレビューの文字列比較ミスも診断として保存し、凍結SOURCEを変更せずレビュー側を訂正した。旧7呼出のnamespaceはFAILのまま、再実行0、旧completionと旧観測側nativeは不在を維持する。[選択snapshot](evidence/coscientist-masked32-clone-20261008/table-remaining-extract1-v2-actual/snapshot.json)は392 MBの全依存archiveではない。
+
+この試験は抽出とバイト一致だけの資格である。元CRCのprefix 1・2・1,024とbench 1を各OFF／ONで実行し、値・fuel・全arenaを比較する次の8-call SOURCEを準備する。trap・fuel境界、fallback、原19本、selfhost固定点、quiet hostでのC性能比較、ComputeCIDによる解析省略は未資格である。C2はOFFを維持する。
