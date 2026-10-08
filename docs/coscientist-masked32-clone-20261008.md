@@ -176,3 +176,30 @@ MD5のFN4（SIR146..183）とSHAのFN3（77..114）に各1 ownerがあり、各4
 readonly SIR／FREC observerはcompile／extractと正例compileの3呼出が全rc0で閉じ、正例の全KSEED298B／native272Bは元のON成果物と一致した。しかしhost検証器がstack高さ減少後の再admission、lazy context更新、CODE0 sentinel、1-based CODE offsetを誤認して停止した。[独立失敗監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-typed-owner-failure3-offline-failure1-v2/reviews/native-failure-independent/report.json)。4つ目のextractは実行せず、native FAIL3を保持した。
 
 ソース契約で修正したV2は保存rawをoffline1回だけ再判定したが、FX-BL26 kind4をBL opcodeの保証と誤認して再度停止した。実際のtail-callはB `0x17ffffdf`、変位−33でmask入口へ向かい、relocationはopcodeを保持する。[独立offline失敗監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-typed-owner-failure3-offline-failure1-v2/reviews/offline-failure-independent/report.json)。この期待値はrootと独立SOURCEレビューでも見落とした。V2のFAIL1とSOURCE承認を保存し、候補やfixtureを変更しない。次のV3は厳密なB判定1箇所だけを修正し、typed tail関係と全FIX／target／payload検査を保持する。
+
+## LC：残る17本runtime255、原19本285への結合
+
+残る17本×各5入力×OFF／ON／現在Cの255呼出を終了し、保持済みMD5／SHAの30呼出と結合した。[独立saved-raw監査](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-functional255-v1/reviews/actual-independent/report.json)が全raw・argv・環境・原ソース・container/native/export・C consumer内の全C image位置を照合した。原19本・95入力・285呼出でC結果一致、OFF／ONの残りfuelと4 terminal arenasが一致。診断のfile上限は全2787依存を保持するため事前登録で448MiB／3072へ明示したが、runtimeの16M fuel・全pool・入力・timeoutを変えていない。
+
+これらのON成果物はG0で作ったが、別のG3原19本全バイト一致38の監査で固定点G3との対応も確認している。新consumerでのABI・専用saved-register canary・異常入力trap・quiet時間比較・公式スコアは別の検証である。[選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-functional255-v1/snapshot.json)は完全依存archiveではない。
+
+## Scalar DAG：typed owner保存raw受理とCPU guest10
+
+V3はvalidatorの厳密なopcodeをBLからBへ変える1箇所だけを修正し、typed tail関係、全FIX target、35 SIR行、4 typed functions、全272Bの対応を保持した。保存rawをoffline1回だけ再判定しnative0で終了、[独立closeout](evidence/coscientist-masked32-clone-20261008/fuel-dag-typed-owner-v3-guest10-v1/reviews/observer-receipt-closeout/receipt.json)と既存auditorの照合を受理した。旧native FAIL3とoffline FAIL1を保存し、4つ目のextractは実行しない。
+
+component16・実machine build8・typed owner対応をrootが結合して受理し、固定2 fixtureのguest10を実行した。[独立saved-raw監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-typed-owner-v3-guest10-v1/reviews/guest-actual-independent/receipt.json)は全1998依存、10 argv／環境／raw／終了記録、5組のOFF／ON全結果・fuel・4arena一致と全17 counterゼロを確認した。正例n7は初期fuel1で非復帰SIGTRAP／exit120・remaining0、初期2／3でresult16・remaining0／1。負例n−1は初期2／3でresult4294967289・remaining0／1だった。
+
+CPUのfuel／trapを確認した範囲はこの固定2 fixtureだけで、原19本への一般保証や性能認定ではない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/fuel-dag-typed-owner-v3-guest10-v1/snapshot.json)は完全依存archiveではない。次はscalar候補による原19本compile／extract38と3世代自己再ビルド6を別の有限44呼出で検証し、quiet C比較へ進む。
+## Scalar DAG：元19本のコンパイルと3世代固定点
+
+Guest10の独立監査を受理した後、元19本のcompile／extract38呼出と自己再ビルド6呼出を実行した。[独立保存raw監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-original19-selfbuild44-v1/reviews/actual-independent/report.json)は44呼出の終了、全raw・引数・環境・17 counters、元のbody・symbol・profile、全export・payload、生成compilerの使用を確認した。G0・G1・G2・G3のnativeはすべて969,864 B、SHA-256 `d3a0e2ffe5887a1b77ace0e0a366dd8bda180f3e9ef2f7067a1e3436f9c3d15a`で一致した。監査readerのfield名取り違えによる初回HOLDも保存し、nativeを再実行せず修正した。
+
+[全19本の静的比較](evidence/coscientist-masked32-clone-20261008/fuel-dag-original19-selfbuild44-v1/go/original19-static-baseline-comparison.json)でSR基準とnative bytesが異なるのはnettle-sha256だけだった。これは速度改善の証拠ではない。新candidateで全19本・95 profiles・285呼出の返り値／fuel／terminal arenaを確認し、同じquiet hostのC測定へ進む。選択snapshotは完全な依存archiveではない。
+
+## Compute addressの検証と実行速度の測定
+
+ユーザーのComputeCID／ResultCID案は[解析再利用契約](coscientist-compute-canonical-next-20261008.md)に統合する。要求には解析器・対象依存・入力状態・規則・ABI・effect／trap・予算を含め、Resultには問い合わせが所有する答えと順序付き寄与を保存する。現在の集計への再適用、更新前後・観測可能な消費はTransitionReceiptで別に検証する。完全なread／output契約を閉じるまで、Result一致による下流停止やC2の解析省略は有効にしない。
+
+coscientistの判定を二つに分ける。解析再利用はcacheなし／shadow／replayの意味・失効・valid-last公開と、封印・hash・lookup・replayを含むコンパイル時間で判定する。生成コード最適化は元19本の意味・資源契約・selfhost固定点と、同一ホストでのC比較で判定する。既存memo hitを新cacheの利益へ加算せず、CIDの一致を意味保存証明やEmbench高速化として扱わない。
+
+[zebulunの読み取り専用調査](evidence/coscientist-masked32-clone-20261008/zebulun-host-survey-v1/survey/report.json)はarm64／Mac16,10、macOS26.2／SDK26.2／Apple clang17を確認した。Tailscale SSHのDNS失敗と、同じIPへの通常SSHの成功を両方保存した。8秒のCPU調査はstable quiet hostの資格ではなく、性能結果は未取得である。

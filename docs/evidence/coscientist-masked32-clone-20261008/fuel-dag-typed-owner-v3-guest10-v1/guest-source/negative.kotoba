@@ -1,0 +1,6 @@
+(ns fuel.dag.emitted.negative (:export [bench]))
+(defn- mask [x :i64] :i64 (bit-and x 4294967295))
+(defn- mix [a :i64 b :i64] :i64 (mask (bit-xor (i64-shift-left a 1) b)))
+(defn- extra [x :i64] :i64 (mask x))
+;; Exact ordinary tail call: new df-admit must refuse this caller shape.
+(defn bench [n :i64] :i64 (mix n 7))

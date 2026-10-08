@@ -1,0 +1,53 @@
+def main():
+ need(len(sys.argv)==2 and platform.machine()=='arm64'and platform.system()=='Darwin','root GO local Darwin arm64');gp=regular(sys.argv[1],1048576);gb=gp.read_bytes();g=json.loads(gb);pr=load(D/'preregistration.json');sp=load(D/'source-pins.json');cl=load(D/'input-closure.json')
+ need(g['status']==pr['rootGOStatus']and g['outputRoot']==str(O)and g['maximumChildCalls']==255 and g['functionalAuthorized']is True and g['timingAuthorized']is False and g['compilerSSHAuthorized']is False and g['noRetry']is True,'specific finite255 root GO')
+ for n,k in [('source-pins.json','sourcePinsSHA256'),('run.py','driverSHA256'),('preregistration.json','preregistrationSHA256'),('input-closure.json','inputClosureSHA256')]:need(H((D/n).read_bytes())==g[k],'exact SOURCE registry '+n)
+ need(len(g['sourceReviews'])==2 and len({v['path']for v in g['sourceReviews']})==2,'two SOURCE receipts')
+ allpins={p:{'path':p,**v}for p,v in cl.items()}
+ for n,v in sp.items():allpins[str(D/n)]={'path':str(D/n),**v}
+ for v in g['sourceReviews']+[g['LC40RootAcceptance']]:allpins[v['path']]=v
+ allpins[str(gp)]={'path':str(gp),'bytes':len(gb),'sha256':H(gb)}
+ need(len(allpins)<=pr['maximumInputFiles']and sum(v['bytes']for v in allpins.values())<=pr['maximumInputLogicalBytes'],'bounded full evidence closure BEFORE hash or spawn')
+ def guard():
+  need(gp.read_bytes()==gb,'immutable GO')
+  for n,k in [('source-pins.json','sourcePinsSHA256'),('run.py','driverSHA256'),('preregistration.json','preregistrationSHA256'),('input-closure.json','inputClosureSHA256')]:need(H((D/n).read_bytes())==g[k],'immutable registry')
+  for v in allpins.values():regular(v['path'],v['bytes'])
+  for v in allpins.values():pin(v)
+ guard()
+ for v in g['sourceReviews']:
+  q=load(v['path']);need(q['status']==pr['sourceReviewStatus']and all(q[k]==g[k]for k in ['sourcePinsSHA256','driverSHA256','preregistrationSHA256']),'specific SOURCE review')
+ for role,p in pr['proofs'].items():
+  q=load(p['report']['path']);need(q['status']==p['status']and q['inputPinsSHA256']==p['inputPins']['sha256'],'specific actual proof '+role)
+  for path,v in load(p['inputPins']['path']).items():need(cl[path]==v,'full inherited dependency closure')
+ a40=load(g['LC40RootAcceptance']['path']);need(a40['status']==pr['root40AcceptanceRequired']and a40['independentReport']==pr['proofs']['LC40']['report']and a40['originalWorkloads']==19 and a40['closedLoaderCalls']==40,'actual40 ROOT accepted exact independent report')
+ a30=load(pr['LC30Acceptance']['path']);need(a30['status']=='ROOT_ACCEPTED_FINITE_LC_MD5_SHA30_FUNCTIONAL_ONLY'and a30['actualCalls']==30 and a30['independentReport']==pr['proofs']['LC30']['report']and a30['OFFONFuelAndFourTerminalArenasParity']is True,'retained actual30 ROOT accepted')
+ lc40=load(pr['proofs']['LC40']['report']['path']);need(lc40['counts']['closedLoaderCalls']==40 and lc40['counts']['originalWorkloads']==19 and lc40['G1G2G3WholeContainerAndNativeByteFixedpoint']is True,'LC40 actual schema')
+ old285=load(pr['proofs']['resourceProfiles']['report']['path']);need(old285['closedFunctionalCalls']==285 and old285['workloads']==19 and old285['comparisons']==95 and old285['nativeFuelAndFourTerminalArenaPairExact']is True,'actual matched original19 resource precedent')
+ matrix=load(pr['canonicalMatrix']['path']);need(len(matrix['entries'])==19,'original19 matrix');expected=[e for e in matrix['entries']if e['workload']not in ['md5sum','nettle-sha256']];need(len(expected)==len(pr['cases'])==17,'exact17 complement')
+ profiles=load(pr['resourceProfiles']['path']);rr=load(pr['proofs']['CConsumer19']['report']['path']);cr=load(pr['proofs']['C19']['report']['path'])
+ for c,e in zip(pr['cases'],expected):
+  need(c['workload']==e['workload']and c['symbol']==e['symbol']and c['iterations']==e['iterations']and c['source']['sha256']==e['expectedSourceSha256'],'unchanged original source/symbol/profiles')
+  p=[v for v in profiles if v['workload']==c['workload']];need(p==c['resourceReferenceProfiles']and [v['n']for v in p]==e['iterations'],'perworkload actual resource references')
+  for v in p:need(0<v['nativeFuelConsumed']<pr['nativeFuel']and all(x['used']<=x['capacity']for x in v['nativeArenas'].values()),'finite previous resource margin; never peak')
+  z=next(v for v in lc40['images']if v['workload']==c['workload']);need(c['ON']==z['native']and c['ONContainer']==z['container']and c['ONOffset']==z['offset'],'G0 LC actual full artifact identity')
+  for arm in ['OFF','ON']:
+   exports,payload=container(c[arm+'Container']);need(payload==pin(c[arm]).read_bytes()and dict(name=c['symbol'],offset=c[arm+'Offset'],arity=1)in exports,'full native/container/export binding')
+  z=next(v for v in cr['images']if v['workload']==c['workload']);need(c['C']['sha256']==z['sha256']and c['C']['bytes']==z['bytes']and c['CSymbol']==z['cSymbolPlannedOnly'],'actual C dylib symbol identity')
+  z=next(v for v in rr['images']if v['workload']==c['workload']);need(c['CRunner']['sha256']==z['runnerSHA256']and c['CRunner']['bytes']==z['runnerBytes'],'historical C consumer exact');cb=pin(c['C']).read_bytes();rb=pin(c['CRunner']).read_bytes();need(rb.count(cb)==1 and rb.find(cb)==z['immutableImageByteAnchors']['C'],'whole current C embedded byte position')
+ need(not O.exists(),'fresh output/no retry');O.mkdir();(O/'tmp').mkdir();base={'PATH':'/usr/bin:/bin:/usr/sbin:/sbin','HOME':'/Users/junkawasaki','TMPDIR':str(O/'tmp'),'LANG':'C','LC_ALL':'C','TZ':'UTC'};env={**base,'KEXE_ARG_TYPES':'i64','KEXE_RESULT_TYPE':'i64','KEXE_STRUCTURED_REPORT':'1','KEXE_FUEL':'16777216','KEXE_PAIRS':'2097152','KEXE_STRING_POOL':'65536','KEXE_VECTORS':'4096','KEXE_VECTOR_ITEMS':'65536','KEXE_CPU_SECONDS':'30','KEXE_WALL_SECONDS':'30'};need('KEXE_COMMAND'not in env,'ordinary return ABI');save(O/'effective-environment.json',{'native':env,'C':base,'allInheritedRemoved':True});led=Ledger();completed=[];ok=False
+ try:
+  for c in pr['cases']:
+   for n in c['iterations']:
+    pair={}
+    for arm in ['OFF','ON','C']:
+     guard();label=c['workload']+'-'+arm+'-n'+str(n)
+     if arm=='C':argv=[c['CRunner']['path'],'dylib',c['C']['path'],c['CSymbol'],'aarch64',str(n),'1','0','16777216'];e=base
+     else:argv=[pr['loader']['path'],c[arm]['path'],str(c[arm+'Offset']),'1','aarch64','-',str(n)];e=env
+     out,err=led.call(label,argv,e);guard();pair[arm]=csample(out,err,n)if arm=='C'else native(out,err,n)
+     if arm=='ON':need(pair['OFF']==pair['ON'],'native status/result/fuel/four terminal arenas exact before C')
+    completed.append({'workload':c['workload'],'n':n,'arms':pair});save(O/'comparisons.json',completed)
+  need(len(led.rows)==255 and len(completed)==85,'255 calls85triples');ok=True
+ except BaseException as ex:save(O/'failure.json',{'exception':repr(ex),'calls':len(led.rows),'completedTriples':len(completed),'policy':'STOP_FIRST_FAILURE_NO_RETRY'});raise
+ finally:
+  save(O/'report.json',{'status':'PASS_FINITE_LC_REMAINING17_FUNCTIONAL255_ONLY'if ok else'FAIL_FINITE_LC_REMAINING17_FUNCTIONAL255_FIRST_FAILURE','calls':len(led.rows),'completedTriples':len(completed),'joinedOriginal19Calls':285 if ok else None,'retainedAcceptedCalls':30,'nativePairTerminalArenaFuelExact':ok,'CNativeArenas':'unavailable-C/null','producerScope':pr['parentProducerScope'],'timingQualified':False,'officialScore':False,'registerCanaryQualified':False,'comparisons':completed});save(O/'terminal.json',{'calls':len(led.rows),'allCallsClosed':all(r['state']=='terminal'for r in led.rows),'failure':not ok,'noRetry':True})
+if __name__=='__main__':main()
