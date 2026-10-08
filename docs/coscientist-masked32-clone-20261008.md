@@ -416,3 +416,11 @@ pipe捕捉V1はsetup失敗時のFD所有権が不十分なため、未実行HOLD
 有限memory sampleは19件で、この実行にはsampler failure／termination gapはなかった。[独立保存監査](evidence/coscientist-masked32-clone-20261008/crc-original-native8-v4-actual/reviews/actual-independent/report.json)は全20 SOURCE／2,135入力、8 argv／17 env、各6 setter行、両EOF、4 pairのraw・report・fuel・17 arena一致を確認した。これはhard peak、OS stack上限、全scheduleの証明ではない。旧guest8の2-call failureと残り6件の未実行はそのまま保持する。[選択snapshot](evidence/coscientist-masked32-clone-20261008/crc-original-native8-v4-actual/snapshot.json)は全依存archiveではない。
 
 全256項目の実到達、専用fuel／trap境界、fallback／FADDR、cap rollback、原19本、候補の自己再ビルド固定点、quiet C性能比較は未資格。元1024だけで全tableを検証したとは扱わず、追加prefix1081は別試験とする。ComputeCID／ResultCID解析reuseの性能効果とも区別し、C2 OFFを維持する。
+
+## prefix1081：出力は一致、sampler拒否で試験はFAIL
+
+全256 indexを通るSOURCE期待値を別の2呼出へ登録し、一度実行した。[独立保存失敗監査](evidence/coscientist-masked32-clone-20261008/crc-prefix1081-v1-sampler-refusal/reviews/actual-failure-independent/report.json)は全18 SOURCE／2,141入力、2 argv／17 env、各6 setter行、5 memory samples、2 wait rc0を照合した。OFF／ONともCRC 4,018,572,661、fuel消費2164・残量997836、17 arena値0であり、完全なstdout235 Bとstderr291 Bのhashも一致した。全256への到達は元SOURCE／typed recurrenceと保存済みemissionからの推論であり、各indexの動的トレースではない。
+
+ONは3回目のgroup操作で例外となり、同じlock内でgroup権限を退役し、sampler不確定としてREFUSEした。両EOF、停止後hash、正常reapは保存できたが、completionは存在せず、campaignはFAILのままである。再試行は0。元の8-call PASSと旧2-call failureの領域も変更していない。
+
+今回のcontrollerは失敗contextとotherRefusalsを内部recordに作る一方、返却値へ含めていなかった。保存証拠からerrno・stage・PIDやpolicy refusalの種類を特定できず、終了raceやESRCHが原因だったとは言えない。次の版ではこの有限recordを保存し、admissionを緩めず、変更したcomponentを改めて検証する。[選択snapshot](evidence/coscientist-masked32-clone-20261008/crc-prefix1081-v1-sampler-refusal/snapshot.json)は全依存archiveではない。出力一致をmemory admissionのPASS、TC採用、固定点、原19本やC性能達成へ昇格しない。
