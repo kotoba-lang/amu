@@ -108,3 +108,12 @@ V3のcompile／extractと34ケースの計36呼出は正常に閉じ、[独立�
 残る17本のcompile／extract34呼出と、自己再ビルドG2／G3／G4の6呼出がすべて正常に閉じ、[独立監査](evidence/coscientist-masked32-clone-20261008/shift-orr-full19-selfbuild40-v1/independent-report.json)がraw・環境・17 counters・入力・完全な生成物を照合した。17本は旧maskedONのKSEED／nativeと全バイト一致した。保存済みAES／SHA4呼出を再実行せずに結合し、元19本の生成経路を確認した。
 
 G1からG2も全バイト一致し、G2・G3・G4のコンテナとnativeはすべて同一である。nativeは961,272 B、SHA256 `5404f22ac455d66c1295a4ad0d90987722262b86b1aacd9bc9d69c8ad5cafd69`。同じunityソースを各世代がコンパイルし、`main` offset0／arity0を保持した。これはSRコンパイラの固定点であり、製品CLIの完全selfhostや残る17本の新guest実行、C以上の速度・公式スコア・製品採用を認定しない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/shift-orr-full19-selfbuild40-v1/snapshot.json)は全依存closureの実バイトを重複保存したportable archiveではない。
+
+
+## 燃料を維持したscalar DAGのnative build4
+
+現在のC比較では高速化を採用できなかったため、次の仮説として、private i64関数の限定された呼び出しを局所展開するdefault-OFF候補をKotobaで実装した。元の燃料消費をframe初期化前に1回行い、引数評価・呼び出し元descriptor・contextを保存して戻す。単一の末尾mask呼び出し、型・effect・entry label・branch/address ingress・CODE容量を検査し、未対応形は元の経路へ戻す。書込み開始後の失敗はgeneric fallbackへ戻さず拒否する。
+
+[独立SOURCEレビューと実raw監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-build4-v2/reviews/actual-independent/report.json)付きのcompile／extract4呼出は全終了した。OFFは元のSR5404の全KSEED／nativeと一致した。ONは969,864B、SHA-256 `d3a0e2ffe5887a1b77ace0e0a366dd8bda180f3e9ef2f7067a1e3436f9c3d15a`、単独main offset0の完全payloadを抽出した。増加8,592Bはcompilerサイズであり、速さではない。SOURCEのword計上135はvclear1を加えた136へ補正し、192 reserve内とした。旧v1 driverは実行せず保持した。
+
+[選択snapshot](evidence/coscientist-masked32-clone-20261008/fuel-dag-build4-v2/snapshot.json)は全1,700依存の実バイトarchiveではない。生成したONコンパイラの実行、燃料0／1／2と呼び出し元状態のnative controls、Embench全19本、selfhost固定点、quiet C比較は未資格である。製品採用はしない。

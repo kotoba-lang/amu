@@ -1,0 +1,98 @@
+;; Experimental charged scalar DAG edge expansion. Default OFF, no SIR mutation.
+(def df-feature 0)
+;; Bounded stack/definite-assignment and per-emitter word certificate.
+(defn- df-body [M :vector-i64 p :i64 f :i64 ns :i64 dp :i64 n :i64] :i64
+ (loop [j (+ p 3) h 0 locals (dec (di-bit (inc n))) work 29 cost 0 terminal false]
+  (if (or (<= work 0) (>= (inc j) (vector-at M MM-SIR-N)) (> cost 96)) 0
+   (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) c (gn-sir M j IF-C)
+         dst (if (or (= op OP-CONST) (= op OP-LGET)) a b)
+         valid (case op
+          OP-CONST (and (not terminal) (>= a 0) (<= a h) (< a dp) (= c 0))
+          OP-LGET (and (not terminal) (>= a 0) (<= a h) (< a dp) (> b 0) (<= b ns) (di-have locals b) (= c 0))
+          OP-LSET (and (not terminal) (> a 0) (<= a ns) (>= b 0) (< b h) (= c 0))
+          OP-BIN (and (not terminal) (di-bin a) (>= b 0) (< (inc b) h) (= c 0))
+          OP-CMP (and (not terminal) (>= a CC-EQ) (<= a CC-GE) (>= b 0) (< (inc b) h) (= c 0))
+          OP-UN (and (not terminal) (or (= a UOP-NOT) (= a UOP-BITNOT)) (>= b 0) (< b h) (= c 0))
+          OP-CALL
+          (if (or terminal (>= (+ j 2) (vector-at M MM-SIR-N)) (<= a 0) (>= a (vector-at M MM-FN-N)) (= a f) (not= b 0) (not= c 1) (< h 1)) false
+           (let [mp (gn-fnf M a FF-SIR)]
+            (and (> mp 0) (< (+ mp 6) (vector-at M MM-SIR-N))
+             (= (gn-fnf M a FF-KIND) FK-PRIV) (= (gn-fnf M a FF-FUEL) 0) (= (gn-fnf M a FF-EXPORT) 0) (not (gn-clamp-open M a))
+             (= (gn-fnf M a FF-NPARAMS) 1) (= (gn-fnf M a FF-NSLOTS) 1)
+             (= (gn-fnf M a FF-PT0) TY-I64) (= (gn-fnf M a FF-RTYPE) TY-I64)
+             (= (gn-op M mp) OP-FN) (= (gn-sir M mp IF-A) a) (= (gn-sir M mp IF-B) 1) (= (gn-sir M mp IF-C) 1)
+             (= (gn-op M (inc mp)) OP-LABEL) (> (gn-sir M (inc mp) IF-A) 0) (= (gn-sir M (inc mp) IF-B) 0) (= (gn-sir M (inc mp) IF-C) 0)
+             (= (gn-op M (+ mp 2)) OP-LGET) (= (gn-sir M (+ mp 2) IF-A) 0) (= (gn-sir M (+ mp 2) IF-B) 1) (= (gn-sir M (+ mp 2) IF-C) 0)
+             (= (gn-op M (+ mp 3)) OP-CONST) (= (gn-sir M (+ mp 3) IF-A) 1) (= (gn-sir M (+ mp 3) IF-C) 0)
+             (= (gn-op M (+ mp 4)) OP-BIN) (= (gn-sir M (+ mp 4) IF-A) BOP-AND) (= (gn-sir M (+ mp 4) IF-B) 0) (= (gn-sir M (+ mp 4) IF-C) 0)
+             (= (gn-op M (+ mp 5)) OP-RET) (= (gn-sir M (+ mp 5) IF-A) 0) (= (gn-sir M (+ mp 5) IF-B) 0) (= (gn-sir M (+ mp 5) IF-C) 0)
+             (= (gn-op M (+ mp 6)) OP-END) (= (gn-sir M (+ mp 6) IF-A) a) (= (gn-sir M (+ mp 6) IF-B) 0) (= (gn-sir M (+ mp 6) IF-C) 0)
+             (> (gn-scalar-mask M j a 1) 0) (< (gn-scalar-mask M j a 1) 64)
+             (= (gn-op M (inc j)) OP-RET) (= (gn-sir M (inc j) IF-A) 0) (= (gn-sir M (inc j) IF-B) 0) (= (gn-sir M (inc j) IF-C) 0)
+             (= (gn-op M (+ j 2)) OP-END) (= (gn-sir M (+ j 2) IF-A) f) (= (gn-sir M (+ j 2) IF-B) 0) (= (gn-sir M (+ j 2) IF-C) 0))))
+          OP-RET (and terminal (= a 0) (= b 0) (= c 0) (= (gn-op M (inc j)) OP-END) (= (gn-sir M (inc j) IF-A) f) (= (gn-sir M (inc j) IF-B) 0) (= (gn-sir M (inc j) IF-C) 0))
+          false)
+         charge (case op OP-BIN 16 OP-CMP 16 OP-UN 12 OP-LSET 10 OP-CALL 6 OP-RET 4 0)]
+    (cond (not valid) 0 (> (+ cost charge) 96) 0
+          (= op OP-RET) (inc j)
+          :else (recur (inc j) (if (= op OP-CALL) 1 (if (or (= op OP-CONST) (= op OP-LGET) (= op OP-BIN) (= op OP-CMP) (= op OP-UN)) (inc dst) h))
+                      (if (= op OP-LSET) (bit-or locals (di-bit a)) locals) (dec work) (+ cost charge) (= op OP-CALL)))))))
+;; Complete bounded scan: unique owned entry labels and no other label ingress.
+(defn- df-shape [M :vector-i64 f :i64 n :i64] :i64
+ (if (or (<= f 0) (>= f (vector-at M MM-FN-N)) (< n 1) (> n 5) (> (vector-at M MM-SIR-N) 32768) (gn-clamp-open M f)) 0
+  (let [p (gn-fnf M f FF-SIR) ns (gn-fnf M f FF-NSLOTS) dp (gn-fnf M f FF-DEPTH)]
+   (if (not (and (> p 0) (< (+ p 5) (vector-at M MM-SIR-N)) (= (gn-fnf M f FF-KIND) FK-PRIV) (= (gn-fnf M f FF-EXPORT) 0) (= (gn-fnf M f FF-FUEL) 1)
+       (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) f) (= (gn-sir M p IF-B) n) (= (gn-sir M p IF-C) ns)
+       (= (gn-fnf M f FF-NPARAMS) n) (>= ns n) (<= ns 7) (> dp 0) (<= dp 7)
+       (= (gn-fnf M f FF-RTYPE) TY-I64) (di-params M f 0 n)
+       (= (gn-op M (inc p)) OP-FUEL) (= (gn-sir M (inc p) IF-A) 0) (= (gn-sir M (inc p) IF-B) 0) (= (gn-sir M (inc p) IF-C) 0)
+       (= (gn-op M (+ p 2)) OP-LABEL) (> (gn-sir M (+ p 2) IF-A) 0) (< (gn-sir M (+ p 2) IF-A) MM-LABEL-CAP) (= (gn-sir M (+ p 2) IF-B) 0) (= (gn-sir M (+ p 2) IF-C) 0))) 0
+    (let [end (df-body M p f ns dp n)]
+     (if (<= end 0) 0
+      (let [g (gn-sir M (- end 2) IF-A) mp (gn-fnf M g FF-SIR) l (gn-sir M (+ p 2) IF-A) ml (gn-sir M (inc mp) IF-A)]
+       (if (or (= l ml) (<= ml 0) (>= ml MM-LABEL-CAP)) 0
+        (loop [j 1 owner 0 seen 0 mseen 0 good true]
+         (cond (not good) 0
+          (>= j (vector-at M MM-SIR-N)) (if (and (= seen 1) (= mseen 1)) end 0)
+          :else (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B)
+                     newowner (if (= op OP-FN) a owner)
+                     bad (or (= op OP-TAB) (and (= op OP-FADDR) (or (= b f) (= b g)))
+                          (and (= op OP-BR) (or (= a l) (= a ml)))
+                          (and (or (= op OP-BRZ) (= op OP-BRNZ)) (or (= b l) (= b ml)))
+                          (and (= op OP-LABEL) (= a l) (not (and (= j (+ p 2)) (= owner f))))
+                          (and (= op OP-LABEL) (= a ml) (not (and (= j (inc mp)) (= owner g))))) ]
+           (recur (inc j) (if (= op OP-END) 0 newowner) (+ seen (if (and (= op OP-LABEL) (= a l)) 1 0)) (+ mseen (if (and (= op OP-LABEL) (= a ml)) 1 0)) (not bad))))))))))))
+)
+(defn- df-admit [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :i64
+ (if (and (= (vector-at M MM-ERR) 0) (= (gn-g M gn-f-leaf) 0) (= (gn-g M gn-f-freg) 0) (> (gn-g M gn-f-fb) 0)
+          (> i 0) (< (inc i) (vector-at M MM-SIR-N)) (>= t 0) (<= t 6) (> n 0) (<= n 5)
+          (<= (+ t n) 7) (<= (+ t n) (gn-g M gn-f-h)) (<= (+ t n) (gn-g M gn-f-dp))
+          (not= (gn-op M (inc i)) OP-RET) (not= (gn-op M (inc i)) OP-RES2)
+          (>= (gn-g M di-sites) 0) (< (gn-g M di-sites) 256) (>= (gn-g M di-used) 0) (<= (+ (gn-g M di-used) 192) 4096)
+          (<= (vector-at M MM-SIR-N) 32768) (>= (vector-at M MM-CODE-N) 0) (<= (+ (vector-at M MM-CODE-N) 192) MM-CODE-CAP) (di-args-safe M t n))
+  (let [owner (loop [j 1 own 0]
+               (if (> j i) own
+                (recur (inc j) (cond (= (gn-op M j) OP-FN) (gn-sir M j IF-A) (= (gn-op M j) OP-END) 0 :else own))))
+        end (if (and (> owner 0) (not= owner f)) (df-shape M f n) 0)]
+   (if (and (> end 0) (not= owner (gn-sir M (- end 2) IF-A))) end 0)) 0))
+(defn- df-emit-body [M :vector-i64 j :i64 end :i64] :vector-i64
+ (if (or (>= j end) (not= (vector-at M MM-ERR) 0)) M
+  (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B)
+        m1 (case op OP-CONST (gn-def M a gn-k-const b) OP-LGET (gn-def M a gn-k-local b)
+             OP-LSET (gn-op-lset M a b) OP-BIN (gn-op-bin M j a b) OP-CMP (gn-op-cmp M j a b) OP-UN (gn-op-un M j a b)
+             OP-CALL (gn-call-scalar-mask M j 0 (gn-scalar-mask M j a 1))
+             OP-RET (gn-into M 0 a) (gn-err M E-GEN-OP op))
+        skip (gn-g m1 gn-f-skip)]
+   (df-emit-body (gn-gs m1 gn-f-skip 0) (+ j 1 skip) end))))
+(defn- df-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64 end :i64] :vector-i64
+ (let [code (vector-at M MM-CODE-N) fix (vector-at M MM-FIX-N)
+       m0 (di-save M 0 0)
+       m1 (-> m0 (gn-save 0 t) (gn-args t 0 n) (gn-ctx) (di-save 1 0))
+       ;; Freg0 and known context before any scalar frame reset: original5 words.
+       m2 (gn-op-fuel m1)
+       m3 (df-emit-body (gn-gs (di-init m2 f) gn-f-ctx 1) (+ (gn-fnf M f FF-SIR) 3) end)
+       m4 (-> m3 (di-restore 1 0) (gn-vclear) (gn-gs gn-f-ctx 1) (gn-take i t 0))
+       words (- (vector-at m4 MM-CODE-N) code)]
+  (cond (not= (vector-at m4 MM-ERR) 0) m4
+        (or (< words 0) (> words 192) (not= (vector-at m4 MM-FIX-N) fix)) (gn-err m4 E-GEN-OP OP-CALL)
+        :else (-> m4 (gn-gs di-used (+ (gn-g m4 di-used) words)) (gn-gs di-sites (inc (gn-g m4 di-sites)))))))
