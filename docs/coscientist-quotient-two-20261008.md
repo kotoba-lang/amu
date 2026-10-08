@@ -57,3 +57,21 @@ typed fixture3種×OFF／ONのcompile／extract12呼出は全6成果物を生成
 literal2の実typed owner FN1／SIR5、x0→d9の1 siteが、MOVZ17=2／SDIVからADD sign bias／ASR1／MOVZ17=2に対応する。native624→628 B・bench offset20→24で、それ以外の全wordと再配置・exportの対応を確認した。literal3／runtime-divisorのnegativeはQ2 site0、native668／708 Bの全KSEED／nativeが一致した。新native／SSH／再buildは0である。これは保存されたコードの構造検証で、CPU・scoped feature・runtime・NZCV・fuel／arena・性能の認定ではない。
 
 [全内容packet](evidence/coscientist-quotient-two-20261008/offline-v3/content.tgz)はSHA-256 `d8007eb7d411922af0bad90ed94dc8bc658fef6e5b31fac6f73aafe276184c3f`、4,190,503 B・187 member・281元パス。[独立内容監査](evidence/coscientist-quotient-two-20261008/offline-v3/independent-packet-report.json)は全279依存の内容閉包と保存された構造判定を確認した。source作者controlsの内容監査への参加と、root構築・width実監査をreportに明記した。C以上の性能・採用は未達である。
+
+## 保存済み6イメージの命令・context検証
+
+全CODEを合法なA64命令へ分類・再構成するSOURCE検査器を作り、全CFGでprivate context、callback、stack、return状態、fuel区間を追跡した。V1の直線prefixでは分岐後のcallbackを扱えずHOLD、V2ではcallbackの直前の定数設定を分岐が飛び越す改変例を誤受理した。いずれも保存し、V3でcallback setupへの途中入口と、fuel区間への所定の成功辺以外の入口を拒否した。rootとnative_controlsの独立SOURCEレビュー後、保存済み6イメージに1回のoffline実判定を行った。
+
+[独立成果物監査](evidence/coscientist-quotient-two-20261008/features-v3/independent-report.json)は1,001命令のnative／reencoder一致、6個の全container、前段の構造判定との一致、各2 callback・2 fuel区間・1正常return、322依存資料を確認した。rootのtool終了観測と、監査者が独立に確認した成果物／terminalを区別し、独立したOS-level exec traceとは呼ばない。native／SSH／compiler／CLT／guest実行はこのoffline段階では0である。
+
+この判定は正確な6イメージと、信頼するtyped producer、固定したC consumerのCABI、private arena／stackの分離、外部並行書込みなし、trapから再開しないことに条件を置く。任意のguestの配列境界安全性や実行時の全状態の証明ではない。実際のrunner buildとguest機能試験は未実行で、最終feature receiptも別の監査結果合成を待つ。
+
+[全内容packet](evidence/coscientist-quotient-two-20261008/features-v3/content.tgz)はSHA-256 `ebba957e6b288bb5c117fe97350b0bb6e9b1a791cb726ff60056cf5c18e21322`、4,335,966 B・228 member・324元パス・展開18,338,955 B。前段の全内容、SOURCE修正・HOLD・レビュー・GO、今回のoffline成果物と監査を保持する。性能・公式Embenchスコア・C以上の達成・製品採用は認定しない。
+
+[独立packet内容監査](evidence/coscientist-quotient-two-20261008/features-v3/independent-packet-report.json)は全322依存と324元パス・228安全なmemberの一致を、展開・再実行なしで確認した。SOURCE作者widthの監査参加、native_controlsの実監査、rootのpacket構築を区別して記録した。
+
+## feature receipt合成・runner buildとguest実行前の停止
+
+6イメージの条件付きfeature receiptを別のoffline工程で合成し、全342依存とsource/構造/feature判定の一致を独立監査した。これを受けたrunner buildは3ビルドと14ツール識別の計17子プロセスが終了コード0・stderr空で閉じ、3 runnerと6個のembedded native imageが独立監査に一致した。これはbuild成功でありguest実行成功ではない。
+
+次の6 guest呼出しは、実行前の証拠閉包容量検査で停止した。417依存の合計288,615,765 Bが登録上限268,435,456 Bを20,180,309 B超過し、そのうち264,942,528 Bは正確なCLT clang本体だった。失敗terminalは子プロセス0・全閉鎖・failure=trueで保存した。旧guest namespaceを再実行せず、全依存を保持する新しいSOURCE/容量契約/出力namespaceをレビューする。実際のguest fuel/arena、速度、製品採用は未認定のままである。証拠保管の容量契約と、言語・guestのfuel/arena契約は区別する。
