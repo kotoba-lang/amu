@@ -231,7 +231,7 @@
 ;; admits wholesale, so their elements are searched as children.
 (defn- probe-body-admitted? [hir body]
   (ir/only-native-word-typed-features?
-   (assoc hir :functions [{:name '__amu_native_probe :params [] :param-types []
+   (assoc hir :functions [{:name (symbol "__amu_native_probe") :params [] :param-types []
                            :result :i64 :body body}])))
 
 (defn- form-children [form]
@@ -383,7 +383,7 @@
   and the compile falls back, saying why."
   [seed program metered?]
   #?(:cljs (when seed
-             (if (resolve 'kotoba.verifier/*emitters*)
+             (if (resolve (symbol "kotoba.verifier" "*emitters*"))
                (seed-backend/emit seed program metered?)
                {:fallback {:kind :failed :code nil
                            :message "the loaded kotoba-verifier has no emitter registry (kotoba-verifier ADR 0052)"}}))
@@ -398,7 +398,7 @@
   schema check."
   [seed artifact]
   #?(:cljs (if-let [registry (when (and seed (:emitter artifact))
-                               (resolve 'kotoba.verifier/*emitters*))]
+                               (resolve (symbol "kotoba.verifier" "*emitters*")))]
              (with-bindings {registry (seed-backend/emitters-for seed artifact)}
                (verifier/verify-artifact! artifact))
              (verifier/verify-artifact! artifact))
