@@ -138,3 +138,11 @@ default-OFFの別候補として、frameがなかった短いleaf関数に保存
 別登録の残り15呼出は全てrc0・reapedで終了した。[独立actual監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-component18-accepted-v3/reviews/remaining-actual-independent/report.json)が全raw、17資源counter、状態guardとfuel命令を確認した。保存済みcase0との合計16ケースを受理し、累計native呼出は18である。live REG/HOME/LOCALalias、CODE容量、dirty error、leaf/freg/frame、charged inner、非terminal call、branch ingressの各条件を含む。これは凍結したnative診断の全状態比較predicateに拘束された有限証拠で、M/G全体を独立serializeした一般証明ではない。
 
 fuel0/1/2は抽象モデルで、5つの出力命令を確認した。生成コードのCPU上の非復帰trap・fuel・ABI・arena同等性、元19本の新候補実行、候補自身の固定点、C性能比較は未資格である。[選択snapshot](evidence/coscientist-masked32-clone-20261008/fuel-dag-component18-accepted-v3/snapshot.json)は完全な依存archiveではない。ComputeCID／ResultCIDによる解析再利用の意味契約と、生成コード最適化のfuel保存を分けて検証する方針を維持する。
+
+## Leaf descriptor read cacheの実owner観測10
+
+default-OFFのLC候補が出力したMD5/SHAを、それぞれ通常経路とreadonly観測経路で作成した。計10 compile/extract呼出がrc0・reapedで閉じ、[独立actual監査](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-owner10-v2/reviews/actual-independent/report.json)が全入力、raw、17資源counter、全KSEED/native/export/offset一致を確認した。観測V1は未固定bytecode importを理由に実行前HOLDとし、V2は検証済みdecoderソースバッファを直接実行する。旧HOLDを保存した。
+
+MD5のFN4（SIR146..183）とSHAのFN3（77..114）に各1 ownerがあり、各4 vector readがmode3に入った。frame112、saved registers3。独立したraw/table再構成と実CODE wordsの確認ではx19/x20のSTP、x21のSTR、flag21=0、復元LDP/LDR、全8 readのCMP/BLO/UDFが残っていた。これは静的予測だけでなく実候補のowner・layout証拠であるが、CPUでの高位レジスタ保存・trap・fuel・ABIの実行検証ではない。
+
+[選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-owner10-v2/snapshot.json)は完全な依存archiveではない。元19本の新候補実行・候補自身の固定点・quiet C比較・採用は未資格。ComputeCID解析再利用の性能効果とも区別する。
