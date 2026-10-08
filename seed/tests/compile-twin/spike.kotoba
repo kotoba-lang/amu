@@ -1,11 +1,12 @@
 ;; Spike: the Kotoba route from source to native code, the steps of nbb.cli `compile-native!` for aarch64:
-;; analyze -> effect-row/check -> kir/lower -> native-program -> aarch64/emit-program. Writes the emitted map's
+;; analyze -> native admission gate -> effect-row/check -> kir/lower -> native-program -> aarch64/emit-program. Writes the emitted map's
 ;; printed text to <out>. args: <source> <out> [--policy <file>]
 (ns cstest.compile
   {:kotoba/export [main]}
   (:require [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.io :as nbb-io]
             [kotoba.compiler.effect-row :as effect-row]
+            [kotoba.compiler.native-admission :as native-admission]
             [kotoba.compiler.project :as project]
             [kotoba.sema :as sema]
             [kotoba.kir :as ir]
@@ -42,9 +43,17 @@
   (copy-key (copy-key (copy-key (copy-key (copy-key (copy-key (empty-map) kir :format) kir :entry) kir :exports)
                                 kir :signature) kir :effects) kir :functions))
 
+;; compile-native!'s first refusal: a typed (v3) module native does not qualify is refused before anything is emitted
+(defn- admit! [hir [:ref :form/r]] [:ref :form/r]
+  (if (and (form/eq (get-k hir :format) (kw :kotoba.hir/v3))
+           (not (native-admission/only-native-word-typed-features? hir)))
+    (throw (ex-info "native target aarch64-macos does not qualify this typed module (kotoba.compiler.native-admission)"
+                    {:phase :target}))
+    hir))
+
 (defn- run [args [:list :string]] :string
   (let [source (nbb-io/read-text-file (typed-list-nth [:list :string] args 0))
-        hir (analyze! source)
+        hir (admit! (analyze! source))
         admission (effect-row/check hir (support/capability-policy (support/read-policy args)))
         kir (lower! hir)
         emitted (a64/emit-program (native-program kir))

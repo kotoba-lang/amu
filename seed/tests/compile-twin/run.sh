@@ -23,6 +23,7 @@ comp $R/src/kotoba/compiler/nbb/cli_support.cljk kotoba.compiler.nbb.cli-support
 # not in the image's frontend objects: the admission check of the compile route
 [ -f $O/kotoba.compiler.effect-classification.kso ] || comp $R/src/kotoba/compiler/effect_classification.cljk kotoba.compiler.effect-classification
 [ -f $O/kotoba.compiler.effect-row.kso ] || comp $R/src/kotoba/compiler/effect_row.cljk kotoba.compiler.effect-row
+comp $R/src/kotoba/compiler/native_admission.kotoba kotoba.compiler.native-admission
 comp $H/spike.kotoba cstest.compile --entry
 run $SB 0 link $O/cstest.compile.kso --object-dir $O --output $W/spike.kseed > $W/link.log 2>&1 || { tail -3 $W/link.log; exit 1; }
 off=$(run $SB 0 extract-native $W/spike.kseed --symbol main --output $W/spike.bin | sed -n 's/.*:offset \([0-9]*\).*/\1/p')

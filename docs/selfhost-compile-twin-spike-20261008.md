@@ -58,3 +58,19 @@ Of the 309 programs the host compiles, the Kotoba route emits identical native c
   artifacts by entries and seal, not by text.
 
 Out of scope of the spike: the artifact map, seal, provenance, verifier, caches, `--source-path`, x86-64.
+
+## Addendum: the native admission gate (same day)
+
+`src/kotoba/compiler/native_admission.kotoba` is osaho's `only-native-word-typed-features?` (with its type predicates,
+operation tables and provider contracts) over `:form/r`, clause for clause in the host's order. The spike now refuses a
+v3 module the gate rejects before anything is emitted, as `compile-native!` does: `42-rec-assoc` and
+`canonical-bytes-closure-result` move from GUEST-ONLY to BOTH-REFUSE. The third GUEST-ONLY, `local-uleb128-130`, is
+refused by the host's VERIFIER ("runtime KIR module shape rejected"), not the gate: it belongs to the artifact/verify
+step, which the spike does not run yet.
+
+`seed/tests/native-admission/run.sh` checks it against the host gate on every function (alone in its module), every body
+sub-form (nbb.cli's probe) and mutations of every call (arity -1/+1, a broken type descriptor or first element in each
+vector operand, each integer operand at -1/0/63/64/255/256, an unknown member keyword) of the 174 v3 programs: 28,856
+cases, 3,897 of them refused by the host, all agree (24 mutations the host gate itself throws on are left out). Four
+deliberately wrong gates (shift bound 64, cap id bound 256, `let` binders not checked, document-map arity not checked)
+each FAIL it.
