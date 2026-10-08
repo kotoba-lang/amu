@@ -226,3 +226,12 @@ zebulunの専用領域で、環境照会7・元のC19本・新consumer19本・�
 新consumerの元19本・計95 profiles×3 armsを実行するSOURCEをレビューし、一度だけSSHで起動したが、最初の入力閉包検査が停止した。build52の読み取り専用collectorがstreamに生成した`collection-receipt.json`を、リモートbuild領域に存在する入力として扱っていたためである。SSH自体はexit0でもstdoutは空、stderrは2,059 Bのtracebackで完了sealがないため、成功とはしない。元SOURCE・GO・失敗rawを保存した。
 
 [独立保存失敗監査](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-fresh-functional285-v1-failure/reviews/failure-independent/report.json)は、読み取り専用collection20 filesと`functional285`領域の不在、native／compiler／guest呼出0を確認した。旧領域の再試行は行わない。次のfresh SOURCEでは、同じ証跡bytesをsourceとして転送し、新領域での配置と役割を封じる。元19本のbody・profile・ABI・fuel・arena比較条件は維持する。内容hash一致だけではファイルの存在・入力解釈・計算の成功は保証されない具体例として、ComputeCID要求に配置役割とreader契約を含める設計へ反映する。[選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-fresh-functional285-v1-failure/snapshot.json)は完全な依存実バイトarchiveではない。機能285とquiet timingは未認定である。
+
+
+## fresh consumer285修正版：同一ホスト全19本の機能受理
+
+証跡31372Bを同じbytesのままfresh V2 SOURCEとして転送する修正を登録し、rootと独立レビュー後に一度だけ起動した。元の3896 local参照、3592 installed package member、228 actual build参照を保持し、変えたremote参照は証跡の配置1件だけである。本文・95 profiles・判定処理・ABI・16M fuel・4 arena・timeout・reap条件は変えない。
+
+新しい同一zebulunホストのconsumerとCを使い、全285呼出が終了した。[独立保存raw監査](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-fresh-functional285-v2/reviews/actual-independent/report.json)は全285 argv／環境／正常終了、570 raw streams、strict14-field JSON、95 OFF／LCの結果・fuel・4 terminal arenaの完全一致、CのBoolean結果・課金なし・unavailable arena、全19本の152 runtime資料、SOURCE・2GO・完了sealと601 collection memberを照合した。旧failed launch1／native0は保存し、累計native/C285・launch2と区別する。
+
+[root受理receipt](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-fresh-functional285-v2/go-and-actual-collection/functional285-acceptance.json)と19 nmaxの意味baselineを次のタイミングSOURCEに渡した。これは成功returnの機能範囲であり、新しいtrap境界・register canary・quiet条件・性能・official scoreの認定ではない。C2はOFF。[選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-fresh-functional285-v2/snapshot.json)は完全な依存実バイトarchiveではない。次の性能測定は全19本・同一ホスト・30組のpaired sampleと実測quiet条件で判定する。
