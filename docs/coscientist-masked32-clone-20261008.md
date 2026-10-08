@@ -210,3 +210,12 @@ zebulunの専用領域で、環境照会7・元のC19本・新consumer19本・�
 封印済み121,263,001 Bのパッケージは全3,493 originの415,361,908 Bを保持する。64MiBを超える歴史的clang資料だけをlossless chunkへ分割し、順序・全origin SHAを検証した。runtime operandはchunkを受理しない。独立assembly／transfer監査、3転送呼出、1launch、読み取り専用1回収も保存した。[選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-fresh-build52-v2/snapshot.json)は完全な依存archiveではなく、全workspaceパッケージの正確な参照を保持する。
 
 これは同一ホストのビルドidentityと全imageの対応の証拠である。SDK tree全体のhash、fresh consumerの全19本・285呼出、quiet条件、実時間比較は別の段階であり、この52件から性能を主張しない。
+
+
+## scalar DAG元19本の機能285呼出：V1 FAIL1保存とV2受理
+
+初回V1は最初のOFF aha-mont64 n0でloaderのsandbox初期化が`Operation not permitted`となり、exit125で停止した。[独立FAIL1監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-original19-functional285-v2/preserved/v1-reviews/failure-independent/report.json)と元のSOURCE・GO・raw・terminalを保存した。fuelは16,777,216のまま、4 arenaの使用量は0で、body返り値、candidate ON、C、完了triplesの証拠は0である。rootの外側launcher権限の誤りを記録し、この失敗を成功基準へ読み替えない。
+
+外側launcherを`functions.exec_command`の`require_escalated`で実行する条件だけを加えたfresh V2を別に事前登録・SOURCEレビュー・GO承認し、285呼出が正常に閉じた。[独立保存raw監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-original19-functional285-v2/reviews/actual-independent/report.json)は元19本×5 profiles＝95 triplesのOFF／scalar ON／historical C、全285 argv・環境・raw SHA・exit0・終了状態、全source・export・payload・offsetとwhole C consumer anchorを照合した。native190呼出ではBoolean結果、16M初期fuelと残fuel、4 terminal arenaのcapacity／usedがOFF／ONで完全一致し、C95呼出のBoolean結果も一致した。C arenaはunavailable-C／null、terminal usedはpeakではない。depthconvの最終profile2000も保持した。
+
+[受理receipt](evidence/coscientist-masked32-clone-20261008/fuel-dag-original19-functional285-v2/go/functional285-acceptance.json)はこの有限機能範囲を受理する。retained candidateは0、V1失敗1＋V2新規285＝累計286呼出である。この285は成功returnだけを受け入れる試験で、新しいbudget境界trapの証拠ではない。固定fixtureのGuest10 CPU trap確認とは区別する。timing、C2、register canary、official scoreとfull selfhost目標達成はfalseのまま。[選択snapshot](evidence/coscientist-masked32-clone-20261008/fuel-dag-original19-functional285-v2/snapshot.json)は依存pinと選択rawを保存するが、完全依存の実バイトarchiveではない。

@@ -1,0 +1,124 @@
+"""Finite SOURCE functional-only driver. Root GO and two specific reviews required."""
+from pathlib import Path
+import os,sys,json,re,hashlib,stat,subprocess,signal,platform
+D=Path(__file__).resolve().parent;O=D/'run-outputs';H=lambda b:hashlib.sha256(b).hexdigest()
+def need(c,m):
+ if not c:raise AssertionError(m)
+def load(p):return json.loads(Path(p).read_bytes())
+def save(p,v):Path(p).write_text(json.dumps(v,indent=2)+'\n')
+def regular(p,n):
+ p=Path(p);s=p.lstat();need(stat.S_ISREG(s.st_mode)and not p.is_symlink()and s.st_size<=n,'regular bounded file '+str(p));return p
+def pin(v):
+ p=regular(v['path'],v['bytes']);need(p.stat().st_size==v['bytes'],'exact size');h=hashlib.sha256()
+ with p.open('rb')as f:
+  for b in iter(lambda:f.read(1048576),b''):h.update(b)
+ need(h.hexdigest()==v['sha256'],'exact hash '+str(p));return p
+
+def container(v):
+ b=pin(v).read_bytes();head,payload=b.split(b'\n\n',1);ls=head.decode('ascii').splitlines();need(ls[0]==f'KSEED1 {len(payload)} {len(ls)-1}','full KSEED sizes');ex=[]
+ for x in ls[1:]:
+  m=re.fullmatch(r'([A-Za-z0-9_-]+) ([0-9]+) ([0-9]+)',x);need(m is not None,'export syntax');s,p,a=m.groups();p=int(p);a=int(a);need(p%4==0 and p+4<=len(payload),'export range');ex.append({'name':s,'offset':p,'arity':a})
+ need(len({r['name']for r in ex})==len(ex),'unique exports');return ex,payload
+NATIVE=re.compile(rb'\{:status :ok :result ([01]) :fuel \{:initial ([0-9]{1,20}) :remaining ([0-9]{1,20})\} :heap \{:capacity ([0-9]{1,20}) :used ([0-9]{1,20})\} :string-pool \{:capacity ([0-9]{1,20}) :used ([0-9]{1,20})\} :vectors \{:capacity ([0-9]{1,20}) :used ([0-9]{1,20})\} :vector-items \{:capacity ([0-9]{1,20}) :used ([0-9]{1,20})\}\}\n')
+CAPS={'heap':2097152,'string-pool':65536,'vectors':4096,'vector-items':65536}
+def native(out,err,n):
+ need(not err,'native stderr empty, no peak diagnostics');m=NATIVE.fullmatch(out);need(m is not None,'exact terminal native report');v=list(map(int,m.groups()));need(all(x<2**64 for x in v),'uint64 fields');result,initial,remaining=v[:3];need(result==(0 if n==0 else 1)and initial==16777216 and 0<remaining<=initial,'native bool oracle/fuel');a={}
+ for i,(k,cap)in enumerate(CAPS.items()):
+  c,u=v[3+2*i:5+2*i];need(c==cap and 0<=u<=cap,'actual terminal arena');a[k]={'capacity':c,'used':u}
+ return {'status':'ok','result':result,'fuel':{'initial':initial,'remaining':remaining},'terminalArenas':a,'trap':None,'resumed':False}
+CFIELDS={'format','calls','warmupCalls','elapsedNanoseconds','result','maxRssBytes','fuelPerCall','contextFuelBefore','contextFuelAfter','contextFuelConsumed','nativeArtifactAbi','artifactKind','nativeArenaStatus','nativeArenas'}
+def unique(p):
+ d={}
+ for k,v in p:need(k not in d,'duplicate JSON key');d[k]=v
+ return d
+def csample(out,err,n):
+ need(not err and out.endswith(b'\n')and out.count(b'\n')==1,'C single JSON empty stderr');q=json.loads(out,object_pairs_hook=unique);need(set(q)==CFIELDS and q['format']=='kotoba.runtime-sample/v1','C exact schema')
+ for k in ['calls','warmupCalls','elapsedNanoseconds','result','maxRssBytes','fuelPerCall','contextFuelBefore','contextFuelAfter','contextFuelConsumed']:need(type(q[k])is int and 0<=q[k]<2**64,'C uint64 int')
+ need(q['calls']==1 and q['warmupCalls']==0 and q['result']==(0 if n==0 else 1),'C bool source oracle');need(q['fuelPerCall']==q['contextFuelBefore']==q['contextFuelAfter']==16777216 and q['contextFuelConsumed']==0,'C no fuel charge');need(q['nativeArtifactAbi']=='kotoba.native-artifact-i64x8-to-i64-indirect/v1'and q['artifactKind']=='dylib'and q['nativeArenaStatus']=='unavailable-C'and q['nativeArenas']is None,'C arena unavailable/null');return {k:v for k,v in q.items()if k not in ['elapsedNanoseconds','maxRssBytes']}
+
+class Ledger:
+ def __init__(self):self.rows=[]
+ def call(self,label,argv,env):
+  need(len(self.rows)<285,'finite285');r={'index':len(self.rows)+1,'label':label,'argv':argv,'environment':env,'state':'started','timeoutSeconds':40};self.rows.append(r);save(O/'attempts.json',self.rows);p=None;out=err=b'';failure=cleanup=None
+  try:
+   p=subprocess.Popen(argv,cwd=O,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True);out,err=p.communicate(timeout=40)
+  except BaseException as e:
+   failure=repr(e)
+   if p is not None:
+    try:
+     try:os.killpg(p.pid,signal.SIGKILL)
+     except ProcessLookupError:pass
+     out,err=p.communicate(timeout=30)
+    except BaseException as e2:
+     cleanup=repr(e2)
+     try:p.wait(timeout=30)
+     except BaseException as e3:cleanup+=';reap='+repr(e3)
+  (O/(label+'.stdout')).write_bytes(out);(O/(label+'.stderr')).write_bytes(err);closed=p is None or p.returncode is not None;r.update(state='terminal'if closed else'unclosed',returncode=None if p is None else p.returncode,failure=failure,cleanupException=cleanup,stdoutSHA256=H(out),stderrSHA256=H(err));save(O/'attempts.json',self.rows)
+  need(closed and p is not None and p.returncode==0 and failure is None and cleanup is None,'first child failure STOP');need(len(out)<=1048576 and len(err)<=1048576,'raw bounded validation');return out,err
+
+def main():
+ need(len(sys.argv)==2 and platform.machine()=='arm64'and platform.system()=='Darwin','root GO local Darwin arm64');gp=regular(sys.argv[1],1048576);gb=gp.read_bytes();g=json.loads(gb);pr=load(D/'preregistration.json');sp=load(D/'source-pins.json');cl=load(D/'input-closure.json')
+ need(g['status']==pr['rootGOStatus']and g['outputRoot']==str(O)and g['maximumChildCalls']==285 and type(g['maximumChildCalls'])is int and g['functionalAuthorized']is True and g['timingAuthorized']is False and g['compilerSSHAuthorized']is False and g['noRetry']is True,'specific finite285 root GO')
+ need(g['launcherTool']=='functions.exec_command'and g['launcherSandboxPermissions']=='require_escalated'and g['nativeLauncherAuthorized']is True and g['priorFailedAttempts']==1 and g['maximumCumulativeAttempts']==286,'root outer-launcher authorization and cumulative286 boundary')
+ for n,k in [('source-pins.json','sourcePinsSHA256'),('run.py','driverSHA256'),('preregistration.json','preregistrationSHA256'),('input-closure.json','inputClosureSHA256')]:need(H((D/n).read_bytes())==g[k],'exact SOURCE registry '+n)
+ need(len(g['sourceReviews'])==2 and len({v['path']for v in g['sourceReviews']})==2,'two SOURCE receipts')
+ allpins={p:{'path':p,**v}for p,v in cl.items()}
+ for n,v in sp.items():allpins[str(D/n)]={'path':str(D/n),**v}
+ for v in g['sourceReviews']+[g['scalar44RootAcceptance']]:allpins[v['path']]=v
+ allpins[str(gp)]={'path':str(gp),'bytes':len(gb),'sha256':H(gb)}
+ need(len(allpins)<=pr['maximumInputFiles']and sum(v['bytes']for v in allpins.values())<=pr['maximumInputLogicalBytes'],'bounded full evidence closure BEFORE hash or spawn')
+ def guard():
+  need(gp.read_bytes()==gb,'immutable GO')
+  for n,k in [('source-pins.json','sourcePinsSHA256'),('run.py','driverSHA256'),('preregistration.json','preregistrationSHA256'),('input-closure.json','inputClosureSHA256')]:need(H((D/n).read_bytes())==g[k],'immutable registry')
+  actualTotal=0
+  for v in allpins.values():
+   p=regular(v['path'],v['bytes']);size=p.stat().st_size;need(size==v['bytes'],'exact stat before hash');actualTotal+=size;need(actualTotal<=pr['maximumInputLogicalBytes'],'actual aggregate BEFORE hash')
+  for v in allpins.values():pin(v)
+ guard()
+ prior=pr['priorFailedNamespace'];v1=load(prior['report']['path']);terminal=load(prior['terminal']['path']);rows=load(prior['attempts']['path']);failed=load(prior['failure']['path']);v1review=load(prior['independentReview']['path'])
+ need(v1review['status']=='CLOSED_FAIL1_FUEL_DAG_ORIGINAL19_FUNCTIONAL285_SANDBOX_INIT_ONLY'and v1['status']=='FAIL_FINITE_FUEL_DAG_ORIGINAL19_FUNCTIONAL285_FIRST_FAILURE'and v1['calls']==1 and v1['completedTriples']==0 and v1['comparisons']==[] and terminal=={'calls':1,'allCallsClosed':True,'failure':True,'noRetry':True}and failed['calls']==1 and failed['completedTriples']==0 and failed['policy']=='STOP_FIRST_FAILURE_NO_RETRY','preserved V1 CLOSED_FAIL1 only')
+ need(v1review['independent']is True and v1review['rootGO']==prior['GO']and v1review['auditInputPinsSHA256']==prior['independentReviewInputPins']['sha256']and v1review['sourcePinsSHA256']==prior['sourcePins']['sha256']and v1review['driverSHA256']==prior['driver']['sha256']and v1review['preregistrationSHA256']==prior['preregistration']['sha256']and v1review['inputClosureSHA256']==prior['inputClosure']['sha256']and v1review['rawStdout']==prior['stdout']and v1review['rawStderr']==prior['stderr']and v1review['bodyResultEvidence']is False and v1review['candidateONCalls']==v1review['CCalls']==v1review['completedTriples']==0,'saved independent FAIL1 exact source GO raw closure correspondence')
+ for path,v in load(prior['independentReviewInputPins']['path']).items():need(cl[path]==v,'full prior FAIL1 review closure retained')
+ need(len(rows)==1 and rows[0]['state']=='terminal'and rows[0]['returncode']==125 and rows[0]['label']=='aha-mont64-OFF-n0'and rows[0]['stdoutSHA256']==prior['stdout']['sha256']and rows[0]['stderrSHA256']==prior['stderr']['sha256'],'exact prior failed raw ledger')
+ need(pin(prior['stderr']).read_bytes()==b'sandbox initialization failed: Operation not permitted\nkexe-loader: sandbox_init: Operation not permitted\n'and pin(prior['stdout']).read_bytes()==b'{:status :trap :exit 125 :fuel {:initial 16777216 :remaining 16777216} :heap {:capacity 2097152 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n','prior sandbox initialization failure exact, never accepted as guest result')
+ for v in g['sourceReviews']:
+  q=load(v['path']);need(q['status']==pr['sourceReviewStatus']and all(q[k]==g[k]for k in ['sourcePinsSHA256','driverSHA256','preregistrationSHA256','inputClosureSHA256'])and q['independent']is True and q['priorAuthorship']is False,'specific SOURCE review')
+ for role,p in pr['proofs'].items():
+  q=load(p['report']['path']);need(q['status']==p['status']and q[p.get('inputPinsSHA256Field','inputPinsSHA256')]==p['inputPins']['sha256'],'specific actual proof '+role)
+  for path,v in load(p['inputPins']['path']).items():need(cl[path]==v,'full inherited dependency closure')
+ a44=load(g['scalar44RootAcceptance']['path']);need(g['scalar44RootAcceptance']==pr['scalar44RootAcceptance']and a44['status']==pr['root44AcceptanceRequired']and a44['independentActualReceipt']==pr['proofs']['scalar44']['report']and a44['sourcePinsSHA256']==pr['root44SourcePinsSHA256']and a44['closedLoaderCalls']==44 and a44['original19CompileExtractCalls']==38 and a44['selfbuildCalls']==6 and a44['G0G1G2G3NativeSHA256']=='d3a0e2ffe5887a1b77ace0e0a366dd8bda180f3e9ef2f7067a1e3436f9c3d15a'and a44['nativeBytes']==969864 and a44['original19RuntimeQualified']is False and a44['timingQualified']is False and a44['C2Enabled']is False,'root44 exact SOURCE-bound fixedpoint acceptance')
+ scalar44=load(pr['proofs']['scalar44']['report']['path']);need(scalar44['sourcePinsSHA256']==a44['sourcePinsSHA256']and scalar44['loaderCalls']==44 and scalar44['allChildrenClosed']is True and scalar44['failure']is False and scalar44['wholeOriginal19BodiesSymbolsProfilesExportsPayloads']is True and scalar44['wholeUnitySourceAndProducerSequence']is True and scalar44['G1G2G3WholeContainerNativeSoleMain0']is True,'scalar44 independent actual fixedpoint schema')
+ onimages=load(pr['scalar44Images']['path']);need(len(onimages)==19,'exact scalar44 all19 image registry')
+ lr=load(pr['proofs']['loader16']['report']['path']);need(lr['loader']==pr['loader']and pr['loader']['sha256']=='e14c2919ac5afd0960d9e6a4ac30ed90da26047c99842ef4d66428322764a77f','exact diagnostic loader source binding')
+ raw=load(pr['CConsumerRawReport']['path']);need(raw['sourceSHA256']==pr['CConsumerSource']['sha256']and raw['builds']==19,'C consumer historical source binding')
+ old285=load(pr['proofs']['resourceProfiles']['report']['path']);need(old285['closedFunctionalCalls']==285 and old285['workloads']==19 and old285['comparisons']==95 and old285['nativeFuelAndFourTerminalArenaPairExact']is True,'actual matched original19 resource precedent')
+ matrix=load(pr['canonicalMatrix']['path']);need(len(matrix['entries'])==19,'original19 matrix');expected=matrix['entries'];need(len(expected)==len(pr['cases'])==19 and sum(len(c['iterations'])for c in pr['cases'])==95,'exact original19 and95 profiles')
+ profiles=load(pr['resourceProfiles']['path']);rr=load(pr['proofs']['CConsumer19']['report']['path']);cr=load(pr['proofs']['C19']['report']['path']);need(cr['compilerBuilds']==19 and cr['identityQueries']==14 and rr['runnerBuilds']==19 and rr['all19ImmutableNativeAndCByteAnchorsPresent']is True,'historical19 C/consumer counts')
+ for c,e in zip(pr['cases'],expected):
+  need(c['workload']==e['workload']and c['symbol']==e['symbol']and c['iterations']==e['iterations']and c['source']['sha256']==e['expectedSourceSha256'],'unchanged original source/symbol/profiles')
+  p=[v for v in profiles if v['workload']==c['workload']];need(p==c['resourceReferenceProfiles']and [v['n']for v in p]==e['iterations'],'perworkload actual resource references')
+  for v in p:need(0<v['nativeFuelConsumed']<pr['nativeFuel']and all(x['used']<=x['capacity']for x in v['nativeArenas'].values()),'finite previous resource margin; never peak')
+  sr=load(pr['proofs']['SR4'if c['workload']in ['nettle-aes','nettle-sha256']else'SR40']['report']['path']);off=next(v for v in(sr['images']if c['workload']in ['nettle-aes','nettle-sha256']else sr['remaining17'])if v.get('workload',v.get('label'))==c['workload']);need(c['OFF']==off['native']and c['OFFContainer']==off['container']and c['OFFOffset']==off['offset'],'actual SR OFF correspondence')
+  z=next(v for v in onimages if v['workload']==c['workload']);need(c['ON']==z['native']and c['ONContainer']==z['container']and c['ONOffset']==z['offset']and c['source']==z['source']and c['iterations']==z['iterations']and c['ONExports']==[{'name':n,'offset':o,'arity':a}for n,o,a in z['exports']],'G0 scalar actual full artifact identity')
+  for arm in ['OFF','ON']:
+   exports,payload=container(c[arm+'Container']);need(exports==c[arm+'Exports']and payload==pin(c[arm]).read_bytes()and dict(name=c['symbol'],offset=c[arm+'Offset'],arity=1)in exports,'full native/container/ALL exports exact binding')
+  need([(v['name'],v['arity'])for v in c['OFFExports']]==[(v['name'],v['arity'])for v in c['ONExports']],'whole OFF ON exported ABI parity')
+  z=next(v for v in cr['images']if v['workload']==c['workload']);need(c['C']['sha256']==z['sha256']and c['C']['bytes']==z['bytes']and c['CSymbol']==z['cSymbolPlannedOnly'],'actual C dylib symbol identity')
+  z=next(v for v in rr['images']if v['workload']==c['workload']);need(c['CRunner']['sha256']==z['runnerSHA256']and c['CRunner']['bytes']==z['runnerBytes'],'historical C consumer exact');cb=pin(c['C']).read_bytes();rb=pin(c['CRunner']).read_bytes();need(rb.count(cb)==1 and rb.find(cb)==z['immutableImageByteAnchors']['C'],'whole current C embedded byte position')
+ need(not O.exists(),'fresh output/no retry');O.mkdir();(O/'tmp').mkdir();base={'PATH':'/usr/bin:/bin:/usr/sbin:/sbin','HOME':'/Users/junkawasaki','TMPDIR':str(O/'tmp'),'LANG':'C','LC_ALL':'C','TZ':'UTC'};env={**base,'KEXE_ARG_TYPES':'i64','KEXE_RESULT_TYPE':'i64','KEXE_STRUCTURED_REPORT':'1','KEXE_FUEL':'16777216','KEXE_PAIRS':'2097152','KEXE_STRING_POOL':'65536','KEXE_VECTORS':'4096','KEXE_VECTOR_ITEMS':'65536','KEXE_CPU_SECONDS':'30','KEXE_WALL_SECONDS':'30'};need('KEXE_COMMAND'not in env,'ordinary return ABI');save(O/'effective-environment.json',{'native':env,'C':base,'allInheritedRemoved':True});led=Ledger();completed=[];ok=False
+ try:
+  for c in pr['cases']:
+   for n in c['iterations']:
+    pair={}
+    for arm in ['OFF','ON','C']:
+     guard();label=c['workload']+'-'+arm+'-n'+str(n)
+     if arm=='C':argv=[c['CRunner']['path'],'dylib',c['C']['path'],c['CSymbol'],'aarch64',str(n),'1','0','16777216'];e=base
+     else:argv=[pr['loader']['path'],c[arm]['path'],str(c[arm+'Offset']),'1','aarch64','-',str(n)];e=env
+     out,err=led.call(label,argv,e);guard();pair[arm]=csample(out,err,n)if arm=='C'else native(out,err,n)
+     if arm=='ON':need(pair['OFF']==pair['ON'],'native status/result/fuel/four terminal arenas exact before C')
+    completed.append({'workload':c['workload'],'n':n,'arms':pair});save(O/'comparisons.json',completed)
+  need(len(led.rows)==285 and len(completed)==95,'285 calls95triples');ok=True
+ except BaseException as ex:save(O/'failure.json',{'exception':repr(ex),'calls':len(led.rows),'completedTriples':len(completed),'policy':'STOP_FIRST_FAILURE_NO_RETRY'});raise
+ finally:
+  save(O/'report.json',{'status':'PASS_FINITE_FUEL_DAG_ORIGINAL19_FUNCTIONAL285_V2_ONLY'if ok else'FAIL_FINITE_FUEL_DAG_ORIGINAL19_FUNCTIONAL285_V2_FIRST_FAILURE','calls':len(led.rows),'completedTriples':len(completed),'joinedOriginal19Calls':285 if ok else None,'retainedAcceptedCalls':0,'nativePairTerminalArenaFuelExact':ok,'nativeNonresumingTrapStatusExact':ok,'noGuestTrapOrResumeAccepted':ok,'freshOriginal19Calls':len(led.rows),'priorFailedAttempts':1,'cumulativeAttempts':1+len(led.rows),'maximumCumulativeAttempts':286,'CNativeArenas':'unavailable-C/null','producerScope':pr['parentProducerScope'],'timingQualified':False,'officialScore':False,'registerCanaryQualified':False,'comparisons':completed});save(O/'terminal.json',{'calls':len(led.rows),'allCallsClosed':all(r['state']=='terminal'for r in led.rows),'failure':not ok,'noRetry':True})
+if __name__=='__main__':main()
