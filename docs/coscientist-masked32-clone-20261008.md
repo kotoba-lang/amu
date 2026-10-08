@@ -345,3 +345,9 @@ current7618でTC候補と観測用compilerをcompile／extractし、元CRC32を�
 保存rawではsite220に13命令のTCEMITがあり、入力captureは`MOV X0,X24`、結果は`MOV X9,X0`だった。検証器のx25固定は、slot7に保存した値25を実レジスタ番号と取り違えたものだった。`gn-sreg`は保存値から1を引くため、正しい番号は24である。[sourceと命令の復号](evidence/coscientist-masked32-clone-20261008/table-emitted7-register-gate-failure-v1/reviews/saved-failure-independent/DECODE.md)。SOURCEレビュー時のsynthetic positiveも同じ推測を用いており、この誤りを検出できなかった。
 
 独立担当が検証器をメモリ内でその1命令だけ訂正すると、残るassertionはすべて通った。OFFとのphaseを対応させた全76 TCG値、元reader本体、型付きSIR、literalとfixupも一致した。担当の途中のTCG差分仮説はpreとpostを取り違えた比較だったため撤回し、rawと報告に保存した。凍結検証器・旧試験の失敗は書き換えず、正式な保存raw修正版のレビューと、未実行のextractを行う別の有限試験を次に登録する。guestの値・fuel・trap・arena、元19本、3世代固定点、quiet hostでのC比較は未実施・未資格である。TCやCIDによるC以上の性能は主張しない。
+
+## 保存raw修正版の正式なoffline検証
+
+レジスタをTCGのslot値と`gn-sreg`から復号する修正版を別ソースとして凍結し、2 SOURCEレビュー後に保存データだけの検証を1回実行した。[独立保存監査](evidence/coscientist-masked32-clone-20261008/table-emitted7-saved-repair-v1/reviews/actual-independent/report.json)は全7 SOURCE／1,976入力、GO・レビュー・新reportを照合し、完全なraw検証を別に再構成した。13命令・407 code words、sourceRegister24／destination9、literal fixup `[49,252,5,1,0]`、全76 descriptor値、移動したliteral即値だけ正規化したgeneric readerの一致を確認した。15種類の保存モデル負例も拒否した。追加native／setter／process API呼出は0である。
+
+これは保存済みの実生成についての正式な修正版検証であり、旧build8の成功への書換えではない。旧7呼出のfailure、未実行の観測側extract、guest・固定点・性能の未資格を保持する。新reportは通常側nativeが両KSEED payloadと一致することを確認するが、未実行のextractを代行したとは扱わない。残るextractは別SOURCE・別出力rootの1呼出として登録する。元CRCのprefix／benchで置換siteを通るguest比較、fuel／trap／arena／fallback、元19本・3世代固定点・fresh quiet C比較が次の条件である。
