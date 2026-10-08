@@ -79,6 +79,6 @@ each FAIL it.
 
 The four CODE-DIFF programs were a host bug in kotoba-mir, not in kotoba-native: `counted-self-recur-plan` tested the
 decrement constant with `(= 1 (:mir/value one))`, and on nbb a literal from the reader is a BigInt, so `(= 1 1n)` refused
-every source-written countdown (the JVM and the Kotoba arm admit it). kotoba-mir #72 (db37671a) compares through
+every source-written countdown (the JVM and the Kotoba arm admit it). kotoba-mir #72 (merged as 4bd4d583) compares through
 `host-number`; amu's lock now pins it. Measured with `bin/amu compile`: the four programs equal the Kotoba route's code;
 the 254 programs that already agreed are byte-identical to their pre-change host code.
