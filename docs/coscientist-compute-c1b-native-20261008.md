@@ -13,3 +13,15 @@ sourceは61定義の保守的参照閉包、11 reader・1 writerの計測、GN�
 full shape C1・native解析用canonical CID・共有cache C2・解析省略・性能改善・C以上のEmbench達成は未認定。IPLD/CIDの内容一致と、入力キー完全性・更新再適用の意味保存の検証を混同しない。製品既定OFFを維持する。
 
 [失敗packetの独立内容監査](evidence/coscientist-compute-analysis-20261008/c1b-native-v1-failure/independent-packet-report.json)は全43 member・50元パスと実監査依存の一致を、展開・再実行なしで確認した。
+
+## 別登録した失敗箇所観測（旧FAILは保持）
+
+failure-only recordを追加し、元のinput predicate・536,870,912の診断scalar上限を維持した新しい3呼出を実行した。compile／extract／case0の全3子プロセスは終了した。case0は契約どおりexit93・inputflag0を保持するので、観測完了はC1b成功を意味しない。
+
+rawは `C1BFAIL 2 2893317 536870888 536870928 0 9733 0 0 0 0 536870912` である。address2,893,317の探索開始時、累積536,870,888に次の40を加えると上限を16超える。key／written／A値／B値はすべて0だった。したがって、この実行の停止原因は入力照合の診断予算切れであり、この停止cellの内容不一致ではない。未走査cellの一致を保証したわけではない。旧5呼出と新3呼出を合わせて8で、旧残り2caseは放棄した。
+
+次の仮説は、A/Bが既に同じcellでは等値でinput predicateを満たすため、異なるcellだけ既存tableでwrite分類する方式である。同じ診断上限のまま不要なhash探索を省ける可能性がある。受理predicate、入力改変拒否、全cell走査、direct／fresh replay、support／poison、cleanupを別SOURCEと有限runで再確認する。現時点でこの方式は未実装・未実行であり、言語のfuel・課金契約やEmbench実行性能の変更ではない。
+
+[失敗箇所観測の独立実監査](evidence/coscientist-compute-analysis-20261008/c1b-failure-location-v1/independent-report.json)は全3呼出の閉鎖・厳密argv／入力・KSEEDとnative一致・原因計算を確認し、追加C1BFAILを除くrawが旧失敗とバイト一致することを確認した。[全内容packet](evidence/coscientist-compute-analysis-20261008/c1b-failure-location-v1/content.tgz)は SHA-256 `338451e2fa18d8dd1594cdd48be020228b6265298ac4abf1136eb9a860114a39`、2,227,533 B・70 member・82元パスである。
+
+[独立packet内容監査](evidence/coscientist-compute-analysis-20261008/c1b-failure-location-v1/independent-packet-report.json)は全80依存ファイルと82元パスの内容閉包、70安全なmember、余分なmemberがないことを、展開・再実行なしで確認した。原witness作者による実監査・内容監査参加と、rootによるpacket構築の分担はreportに明記している。
