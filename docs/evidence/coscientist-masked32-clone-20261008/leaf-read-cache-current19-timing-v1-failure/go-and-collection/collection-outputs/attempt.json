@@ -1,0 +1,37 @@
+{
+  "argv": [
+    "/usr/bin/ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "ConnectionAttempts=1",
+    "zebulun@100.66.28.79",
+    "python3 -c '\"\"\"Read-only finite saved-output streaming collector. Never imports timing driver.\"\"\"\nfrom pathlib import Path\nimport json,hashlib,sys,stat,tarfile,gzip,signal,io\nROOT=Path('\"'\"'/Users/zebulun/github/workspaces/codex/vector-leaf-straight-read-cache-current19-timing-v1-root'\"'\"');CAP=805306368;COUNT=65536;H=lambda b:hashlib.sha256(b).hexdigest()\ndef main():\n signal.alarm(600);assert ROOT.is_dir()and not ROOT.is_symlink();registry=json.loads((ROOT/'\"'\"'source/source-pins.json'\"'\"').read_bytes());files=[];total=0\n for dirname in ['\"'\"'source'\"'\"','\"'\"'control'\"'\"','\"'\"'timing'\"'\"']:\n  folder=ROOT/dirname\n  if not folder.exists():assert dirname=='\"'\"'timing'\"'\"';continue\n  for p in sorted(folder.rglob('\"'\"'*'\"'\"')):\n   s=p.lstat();assert not p.is_symlink()\n   if stat.S_ISDIR(s.st_mode):continue\n   assert stat.S_ISREG(s.st_mode)and s.st_size<=16777216\n   total+=s.st_size;assert total<=CAP and len(files)<COUNT-1;files.append((p,str(p.relative_to(ROOT)),s.st_size))\n assert {n.removeprefix('\"'\"'source/'\"'\"')for _,n,_ in files if n.startswith('\"'\"'source/'\"'\"')}==set(registry)|{'\"'\"'source-pins.json'\"'\"'}\n members=[];hashed={}\n for p,n,size in files:\n  b=p.read_bytes();assert len(b)==size\n  r=dict(path=n,bytes=size,sha256=H(b));members.append(r);hashed[n]=r['\"'\"'sha256'\"'\"']\n  if n.startswith('\"'\"'source/'\"'\"')and n!='\"'\"'source/source-pins.json'\"'\"':assert {k:r[k]for k in ['\"'\"'bytes'\"'\"','\"'\"'sha256'\"'\"']}==registry[n[7:]]\n receipt=(json.dumps(dict(status='\"'\"'READONLY_TIMING_COLLECTION_ONLY_NOT_ACTUAL_ACCEPTANCE'\"'\"',root=str(ROOT),sourcePinsSHA256=H((ROOT/'\"'\"'source/source-pins.json'\"'\"').read_bytes()),members=members,maximumMembers=COUNT,maximumExpandedBytes=CAP,compilerCalls=0,nativeCalls=0,timingCalls=0),indent=2)+'\"'\"'\\n'\"'\"').encode();assert len(receipt)<=16777216 and total+len(receipt)<=CAP\n assert sum(512+((size+511)//512)*512 for _,_,size in files)+512+((len(receipt)+511)//512)*512+10240<=872415232\n class Bounded:\n  def __init__(self,out):self.out=out;self.n=0\n  def write(self,b):self.n+=len(b);assert self.n<=872415232;return self.out.write(b)\n  def flush(self):self.out.flush()\n with gzip.GzipFile(fileobj=Bounded(sys.stdout.buffer),mode='\"'\"'wb'\"'\"',mtime=0)as z,tarfile.open(fileobj=z,mode='\"'\"'w|'\"'\"',format=tarfile.USTAR_FORMAT)as tar:\n  for p,n,size in files:\n   b=p.read_bytes();assert len(b)==size and H(b)==hashed[n];q=tarfile.TarInfo(n);q.size=size;q.mode=0o444;q.mtime=0;tar.addfile(q,io.BytesIO(b))\n  q=tarfile.TarInfo('\"'\"'collection-receipt.json'\"'\"');q.size=len(receipt);q.mode=0o444;q.mtime=0;tar.addfile(q,io.BytesIO(receipt))\nif __name__=='\"'\"'__main__'\"'\"':main()\n'"
+  ],
+  "environment": {
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "HOME": "/Users/junkawasaki",
+    "LANG": "C",
+    "LC_ALL": "C",
+    "TZ": "UTC",
+    "TMPDIR": "/private/tmp"
+  },
+  "maximumChildren": 1,
+  "noRetry": true,
+  "timeoutSeconds": 660,
+  "remoteAlarmSeconds": 600,
+  "archiveBytesMaximum": 872415232,
+  "memberBytesMaximum": 16777216,
+  "memberCountMaximum": 65536,
+  "remoteCollectorSHA256": "94e723e0f09191cfdb839b7fbf882f7e42c86c0ae7e2360939761745e85c42ea",
+  "state": "terminal",
+  "returncode": 0,
+  "exception": null,
+  "cleanupException": null,
+  "archiveBytes": 844917,
+  "archiveSHA256": "c300a00dd97a45fdff0aa9dc39810fde1820303cc68d983a42eba35351ed35fc",
+  "stderrBytes": 0,
+  "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

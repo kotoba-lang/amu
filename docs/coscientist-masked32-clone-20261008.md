@@ -235,3 +235,10 @@ zebulunの専用領域で、環境照会7・元のC19本・新consumer19本・�
 新しい同一zebulunホストのconsumerとCを使い、全285呼出が終了した。[独立保存raw監査](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-fresh-functional285-v2/reviews/actual-independent/report.json)は全285 argv／環境／正常終了、570 raw streams、strict14-field JSON、95 OFF／LCの結果・fuel・4 terminal arenaの完全一致、CのBoolean結果・課金なし・unavailable arena、全19本の152 runtime資料、SOURCE・2GO・完了sealと601 collection memberを照合した。旧failed launch1／native0は保存し、累計native/C285・launch2と区別する。
 
 [root受理receipt](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-fresh-functional285-v2/go-and-actual-collection/functional285-acceptance.json)と19 nmaxの意味baselineを次のタイミングSOURCEに渡した。これは成功returnの機能範囲であり、新しいtrap境界・register canary・quiet条件・性能・official scoreの認定ではない。C2はOFF。[選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-fresh-functional285-v2/snapshot.json)は完全な依存実バイトarchiveではない。次の性能測定は全19本・同一ホスト・30組のpaired sampleと実測quiet条件で判定する。
+
+
+## LC quiet timing V1：C校正で停止、性能未認定
+
+2件の独立SOURCEレビューとroot GOで同一hostの元19本3arm計測を1回起動した。[独立保存失敗監査](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-current19-timing-v1-failure/reviews/actual-failure/failure-report.json)はread-only collection88 members、14 children（runner5／load9）全終了、OFF／LC校正4成功、最初のC校正のSIGXFSZ・stdout／stderr空を確認した。測定paired tripleは0、statisticsなし、性能未認定である。旧namespaceは再試行しない。
+
+[ソースに基づく診断](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-current19-timing-v1-failure/diagnosis/report.json)では、変更していないC比較runnerが計測前に17,432 Bの埋込みlibraryを一時ファイルへ書く一方、ledgerが全regular fileへ16 KiB上限を与えていた。これは有力な停止原因仮説であり、実際の失敗syscallは未追跡。次のSOURCEではstdout／stderrのbounded pipeとregular-file上限を分け、元19本・ABI・fuel・arena・生成成果物・quiet条件・統計を維持する。ComputeCID設計へ[readerと資源契約の分離](coscientist-compute-canonical-next-20261008.md)を反映した。[選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-current19-timing-v1-failure/snapshot.json)は全依存の実バイトarchiveではない。C2 OFF、公式スコア／CID実行時効果／C以上の性能は未認定のままである。
