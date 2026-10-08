@@ -1,7 +1,5 @@
 # Compute結果の再利用と下流停止：次の検証契約
 
-[2026-10-09の追加検証](coscientist-compute-replay-checkpoint-20261009.md)では、辺の置換・寄与撤回・fresh消費・保存ResultCIDの照合を有限モデルで検査した。29対照・27拒否が通ったが、製品cache、native importer、性能の資格はない。G4実行比較の途中拒否も成功bindingへ移さず保存する。
-
 ユーザーのComputeCID／ResultCID案を、[現行の再利用契約](coscientist-compute-canonical-next-20261008.md)と[独立gap監査](evidence/coscientist-masked32-clone-20261008/compute-replay-gap-audit-v1/source/AUDIT.md)へ統合する。これは実装・検証を進めるための受入条件であり、再利用や高速化の資格ではない。C2はOFF、キー除外は空、新しい解析省略は0を維持する。
 
 [独立SOURCEレビューの13対照](evidence/coscientist-masked32-clone-20261008/compute-result-consumer-review-v1/review/CONTRACT.md)も保存した。受入条件の確認にとどまり、完全なread閉包、owned Result、下流停止、native負例の実拒否、費用計測は未資格である。

@@ -1,0 +1,633 @@
+;; VW1 isolated analysis-only experiment. No emitter or CODE/FIX mutation.
+(def vw-feature 0)
+(def vw-labels gn-a-lp)
+(def vw-lp (+ gn-a-lp 16384))
+(def vw-end (+ vw-lp 33792))
+(def vw-current (+ vw-lp 32768))
+(def vw-cfg (+ vw-current 512))
+(def vw-control (+ vw-cfg 256))
+(def vw-fns (+ gn-a-use 256))
+(def vw-sites (+ gn-a-sreg 256))
+(def vw-edges (+ gn-a-dk 256))
+(def vw-old (+ gn-a-dv 256))
+(def vw-work-cap 268435456)
+;; control0 work,1 refusal,2 FNcount,3 edgecount,4 sitecount,5 currentFN,
+;; 6 blocks,7 currentblock,8 changed,9 normalRETcount,10 aliascandidate,
+;; 11 allRETidentity,12 existentialbase,13 returnlength,14 visits,
+;; 15 boundschanged,16 wholegraphclosed,17 currentinstruction.
+(defn- vw-c [M :vector-i64 k :i64] :i64 (gn-g M (+ vw-control k)))
+(defn- vw-cs [M :vector-i64 k :i64 v :i64] :vector-i64 (gn-gs M (+ vw-control k) v))
+(defn- vw-tick [M :vector-i64] :vector-i64
+ (if (> (vw-c M 0) (- vw-work-cap 128)) (vw-cs M 1 1) (vw-cs M 0 (+ (vw-c M 0) 128))))
+(defn- vw-write [M :vector-i64 a :i64 v :i64] :vector-i64
+ (let [m (vw-tick M)] (if (= (vw-c m 1) 0) (gn-gs m a v) m)))
+(defn- vw-f [M :vector-i64 f :i64 k :i64] :i64 (gn-g M (+ vw-fns (* f 16) k)))
+(defn- vw-fs [M :vector-i64 f :i64 k :i64 v :i64] :vector-i64 (vw-write M (+ vw-fns (* f 16) k) v))
+(defn- vw-e [M :vector-i64 e :i64 k :i64] :i64 (gn-g M (+ vw-edges (* e 4) k)))
+(defn- vw-es [M :vector-i64 e :i64 k :i64 v :i64] :vector-i64 (vw-write M (+ vw-edges (* e 4) k) v))
+(defn- vw-b [M :vector-i64 b :i64 k :i64] :i64 (gn-g M (+ vw-cfg (* b 4) k)))
+(defn- vw-bs [M :vector-i64 b :i64 k :i64 v :i64] :vector-i64 (vw-write M (+ vw-cfg (* b 4) k) v))
+(defn- vw-zero? [M :vector-i64 a :i64 end :i64] :bool
+ (if (>= a end) true (and (= (gn-g M a) 0) (vw-zero? M (inc a) end))))
+;; Cleanup is not work-capped: it must restore every owned cell even on refusal.
+(defn- vw-clear [M :vector-i64 a :i64 end :i64] :vector-i64
+ (if (>= a end) M (vw-clear (gn-gs M a 0) (inc a) end)))
+(defn- vw-reserved-zero? [M :vector-i64] :bool
+ (and (vw-zero? M vw-labels (+ vw-labels 8193))
+      (vw-zero? M vw-lp vw-end)
+      (vw-zero? M vw-fns (+ vw-fns 2048))
+      (vw-zero? M vw-sites (+ vw-sites 2048))
+      (vw-zero? M vw-edges (+ vw-edges 2048))
+      (vw-zero? M vw-old (+ vw-old 2048))))
+(defn- vw-cleanup [M :vector-i64] :vector-i64
+ (-> M (vw-clear vw-labels (+ vw-labels 8193))
+       (vw-clear vw-fns (+ vw-fns 2048))
+       (vw-clear vw-sites (+ vw-sites 2048))
+       (vw-clear vw-edges (+ vw-edges 2048))
+       (vw-clear vw-old (+ vw-old 2048)) (vw-clear vw-lp vw-end)))
+;; No gn-lpos while scratch active. Every rescan consumes query work.
+(defn- vw-label [M :vector-i64 f :i64 l :i64 j :i64] :vector-i64
+ ;; Persistent complete LABEL index; keep original initial scan lowerbound.
+ (let [m (vw-tick M)]
+  (cond (not= (vw-c m 1) 0) (vw-cs m 18 0)
+        (or (<= f 0) (>= f (vector-at m MM-FN-N))) (vw-cs m 18 0)
+        (or (<= l 0) (> l 8192) (< j 1)) (vw-cs m 18 0)
+        (> j (vw-f m f 1)) (vw-cs m 18 0)
+        :else (let [p (gn-g m (+ vw-labels l)) sn (vector-at m MM-SIR-N)]
+          (cond (or (<= p 0) (>= p sn) (< p j) (<= p (vw-f m f 0)) (>= p (vw-f m f 1))) (vw-cs m 18 0)
+                (or (not= (gn-op m p) OP-LABEL) (not= (gn-sir m p IF-A) l)) (vw-cs m 18 0)
+                :else (vw-cs m 18 p))))))
+(defn- vw-end-fn [M :vector-i64 f :i64 j :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (cond (or (not= (vw-c m 1) 0) (>= j (vector-at m MM-SIR-N))) (vw-cs m 1 1)
+        (= (gn-op m j) OP-END) (if (and (= (gn-sir m j IF-A) f) (= (gn-sir m j IF-B) 0) (= (gn-sir m j IF-C) 0)) (vw-fs m f 1 j) (vw-cs m 1 1))
+        (= (gn-op m j) OP-FN) (vw-cs m 1 1)
+        :else (vw-end-fn m f (inc j)))))
+(defn- vw-map-params [M :vector-i64 f :i64 k :i64 ordinal :i64] :vector-i64
+ (let [m (vw-tick M) np (gn-fnf m f FF-NPARAMS)]
+  (if (or (>= k np) (>= k 5) (not= (vw-c m 1) 0)) m
+   (if (= (gn-fnf m f (+ FF-PT0 k)) TY-VEC)
+    (if (>= ordinal 4) (vw-fs m f 14 1)
+     (vw-map-params (vw-fs m f (+ 10 ordinal) (inc k)) f (inc k) (inc ordinal)))
+    (vw-map-params m f (inc k) ordinal)))))
+(defn- vw-runtime-ok [wire :i64 n :i64] :bool
+ (or (and (= wire 200) (= n 1)) (and (= wire 208) (= n 3))
+     (and (= wire 168) (= n 1)) (and (= wire 176) (= n 2))
+     (and (= wire 72) (= n 1)) (and (= wire 144) (= n 2))))
+;; Operand-domain validation mirrors the actual generator address-bearing fields.
+(defn- vw-operands-ok [op :i64 a :i64 b :i64 c :i64] :bool
+ (and (>= op 3) (<= op 26)
+  (cond (= op OP-LGET) (and (>= a 0) (< a 128) (> b 0) (<= b 128) (= c 0))
+        (= op OP-LSET) (and (> a 0) (<= a 128) (>= b 0) (< b 128) (= c 0))
+        (or (= op OP-BIN) (= op OP-CMP) (= op OP-UN)) (and (>= b 0) (<= b (if (= op OP-UN) 127 126)) (= c 0))
+        (= op OP-LABEL) (and (> a 0) (<= a 8192) (= b 0) (= c 0))
+        (= op OP-BR) (and (> a 0) (<= a 8192) (= b 0) (= c 0))
+        (or (= op OP-BRZ) (= op OP-BRNZ)) (and (>= a 0) (< a 128) (> b 0) (<= b 8192) (= c 0))
+        (or (= op OP-CALL) (= op OP-RT)) (and (>= b 0) (< b 128) (>= c 0) (<= c 128) (<= (gn-max c 1) (- 128 b)))
+        (= op OP-CAP) (and (>= c 0) (< c 128))
+        (= op OP-VEC) (and (>= a 0) (< a 128) (>= b 0) (<= b 128) (<= (gn-max b 1) (- 128 a)) (= c 0))
+        (= op OP-VECP) (and (>= a 0) (< a 128) (> b 0) (>= c 0) (<= c 65536))
+        (= op OP-FUEL) (and (= a 0) (= b 0) (= c 0))
+        (= op OP-RET) (and (>= a 0) (< a (if (= op OP-RET2) 127 128)) (= b 0) (= c 0))
+        (= op OP-TRAP) (and (= b 0) (= c 0))
+        (or (= op OP-CONST) (= op OP-STR) (= op OP-FADDR) (= op OP-RES2)) (and (>= a 0) (< a 128) (= c 0))
+        (= op OP-TAB) (and (>= a 0) (< a 128))
+        (= op OP-CALLI) (and (= a 0) (>= b 0) (< b 128) (>= c 0) (< c 128) (<= c (- 127 b)))
+        (= op OP-RET2) (and (>= a 0) (< a (if (= op OP-RET2) 127 128)) (= b 0) (= c 0))
+        :else false)))
+(defn- vw-width-at [M :vector-i64 f :i64 k :i64] :i64
+ (let [n (vector-at M MM-FN-N)]
+  (if (or (<= f 0) (>= f n) (> n 128) (< k 0) (> k 1)) -1
+   (gn-g M (+ vw-old 640 (* f 2) k)))))
+(defn- vw-width-store [M :vector-i64 f :i64 ns :i64 dp :i64] :vector-i64
+ (let [n (vector-at M MM-FN-N)]
+  (if (or (not= (vw-c M 1) 0) (<= f 0) (>= f n) (> n 128)
+          (< ns 0) (> ns 64) (< dp 0) (> dp 64)) (vw-cs M 1 1)
+   (-> M (vw-write (+ vw-old 640 (* f 2)) ns)
+         (vw-write (+ vw-old 641 (* f 2)) dp)))))
+(defn- vw-width-cursor [M :vector-i64 s :i64] :i64
+ (let [f (vw-c M 5) ns (vw-width-at M f 0) dp (vw-width-at M f 1)]
+  (cond (or (< ns 0) (> ns 64) (< dp 0) (> dp 64) (< s 0) (> s 128)) -1
+        (< s ns) s
+        (< s 64) (if (> dp 0) 64 128)
+        (< s (+ 64 dp)) s
+        :else 128)))
+(defn- vw-scan-body [M :vector-i64 f :i64 j :i64 ns :i64 dp :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (if (or (not= (vw-c m 1) 0) (>= j (vw-f m f 1)))
+   (cond (not= (vw-c m 1) 0) m
+         (not= j (vw-f m f 1)) (vw-cs m 1 1)
+         (or (< ns 0) (< dp 0) (> ns 128) (> dp 128)) (vw-cs m 1 1)
+         (or (> ns 64) (> dp 64)) (vw-fs m f 15 0)
+         :else (vw-width-store m f ns dp))
+   (let [op (gn-op m j) a (gn-sir m j IF-A) b (gn-sir m j IF-B) c (gn-sir m j IF-C)
+         n (vw-c m 3)
+         bad (not (vw-operands-ok op a b c))
+         m1 (if bad (vw-cs m 1 1) m)
+         m2 (if (= op OP-CALL)
+              (if (or (<= a 0) (>= a (vw-c m 2)) (not= c (gn-fnf m a FF-NPARAMS)) (>= n 512))
+               (vw-cs m1 1 1)
+               (-> m1 (vw-es n 0 f) (vw-es n 1 j) (vw-es n 2 a) (vw-es n 3 b) (vw-cs 3 (inc n)))) m1)
+         m2a (if (and (= op OP-CALL) (> a 0) (< a (vw-c m2 2)) (= (vw-f m2 a 0) 0)) (vw-cs m2 16 0) m2)
+         m3 (if (or (= op OP-CAP) (= op OP-CALLI)) (-> m2a (vw-fs f 2 0) (vw-cs 16 0)) m2a)
+         m4 (if (and (= op OP-RT) (not (vw-runtime-ok a c))) (-> m3 (vw-fs f 2 0) (vw-fs f 14 1) (vw-cs 16 0)) m3)
+         m5 (if (or (= op OP-RES2) (= op OP-RET2)) (vw-fs m4 f 14 1) m4)
+         m6 (if (= op OP-FADDR)
+              (if (and (> b 0) (< b (vw-c m5 2))) (-> m5 (vw-fs b 3 1) (vw-write (+ vw-old 1024 b) 1)) (vw-cs m5 1 1)) m5)
+         ns1 (if (and (or (= op OP-LGET) (= op OP-LSET)) (> (if (= op OP-LGET) b a) ns)) (if (= op OP-LGET) b a) ns)
+         dp1 (if bad dp (gn-max dp (gn-need-t m6 j)))]
+    (vw-scan-body m6 f (inc j) ns1 dp1)))))
+;; All FN/edge/effect metadata is collected before any detailed-summary refusal.
+(defn- vw-index-fns [M :vector-i64 f :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (if (or (>= f (vw-c m 2)) (not= (vw-c m 1) 0)) m
+   (let [p (gn-fnf m f FF-SIR) np (gn-fnf m f FF-NPARAMS)
+         nonbody (= p 0)
+         ok (and (>= np 0) (<= np 128) (> p 0) (< p (vector-at m MM-SIR-N)) (= (gn-op m p) OP-FN) (= (gn-sir m p IF-A) f) (= (gn-sir m p IF-B) np) (>= (gn-sir m p IF-C) 0) (<= (gn-sir m p IF-C) 128) (>= (gn-fnf m f FF-NSLOTS) 0) (<= (gn-fnf m f FF-NSLOTS) 128) (>= (gn-fnf m f FF-DEPTH) 0) (<= (gn-fnf m f FF-DEPTH) 128))
+         m1 (if nonbody (-> m (vw-fs f 2 0) (vw-fs f 14 1) (vw-fs f 15 0)) (if ok (-> m (vw-fs f 0 p) (vw-fs f 2 1) (vw-fs f 15 1) (vw-fs f 3 (if (or (not= (gn-fnf m f FF-KIND) FK-PRIV) (not= (gn-fnf m f FF-EXPORT) 0)) 1 0))) (vw-cs m 1 1)))
+         m2 (if ok (vw-end-fn m1 f (inc p)) m1)
+         m3 (if nonbody m2 (vw-map-params m2 f 0 0))]
+    (vw-index-fns m3 (inc f))))))
+(defn- vw-index-bodies [M :vector-i64 f :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (if (or (>= f (vw-c m 2)) (not= (vw-c m 1) 0)) m
+   (let [p (vw-f m f 0)]
+    (if (= p 0) (vw-index-bodies m (inc f))
+     (let [end (vw-f m f 1)
+           ns (gn-max (gn-sir m p IF-C) (gn-max (gn-fnf m f FF-NSLOTS) (gn-fnf m f FF-NPARAMS)))
+           dp (gn-fnf m f FF-DEPTH)
+           m1 (if (> (- end p) 8192) (vw-cs m 1 1) (vw-scan-body m f (inc p) ns dp))]
+      (vw-index-bodies m1 (inc f))))))))
+(defn- vw-closure-pass [M :vector-i64 e :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (if (or (>= e (vw-c m 3)) (not= (vw-c m 1) 0)) m
+   (let [f (vw-e m e 0) g (vw-e m e 2)
+         m1 (if (and (= (vw-f m f 3) 1) (= (vw-f m g 3) 0)) (-> m (vw-fs g 3 1) (vw-cs 8 1)) m)
+         m2 (if (and (= (vw-f m g 2) 0) (= (vw-f m f 2) 1)) (-> m1 (vw-fs f 2 0) (vw-cs 8 1)) m1)]
+    (vw-closure-pass m2 (inc e))))))
+(defn- vw-closure [M :vector-i64 round :i64] :vector-i64
+ (let [m (vw-closure-pass (vw-cs M 8 0) 0)]
+  (cond (not= (vw-c m 1) 0) m (= (vw-c m 8) 0) m
+        (>= round 128) (vw-cs m 1 1) :else (vw-closure m (inc round)))))
+;; Diagnostic hook is the identity in every ordinary source variant.
+(defn- vw-publish [M :vector-i64] :vector-i64 M)
+
+;; Four-word fact: kind(0 unknown,1 scalar,2 vector), token/lo,
+;; minimumLength/hi, existential nonself basepath anchor. Epoch invalidation
+;; removes the complete vector fact; it is not an untracked fifth field.
+(defn- vw-a [slot :i64 field :i64] :i64 (+ vw-current (* slot 4) field))
+(defn- vw-v [M :vector-i64 slot :i64 field :i64] :i64 (gn-g M (vw-a slot field)))
+(defn- vw-vset [M :vector-i64 slot :i64 kind :i64 token :i64 bound :i64 anchor :i64] :vector-i64
+ (-> M (vw-write (vw-a slot 0) kind) (vw-write (vw-a slot 1) token)
+       (vw-write (vw-a slot 2) bound) (vw-write (vw-a slot 3) anchor)))
+(defn- vw-vcopy [M :vector-i64 dst :i64 src :i64] :vector-i64
+ (vw-vset M dst (vw-v M src 0) (vw-v M src 1) (vw-v M src 2) (vw-v M src 3)))
+(defn- vw-kill-vectors [M :vector-i64 s :i64] :vector-i64
+ (let [m (vw-tick M) t (vw-width-cursor m s)]
+  (cond (not= (vw-c m 1) 0) m
+        (< t 0) (vw-cs m 1 1)
+        (>= t 128) m
+        :else (vw-kill-vectors (if (= (vw-v m t 0) 2) (vw-vset m t 0 0 0 0) m) (inc t)))))
+(defn- vw-block-find [M :vector-i64 j :i64 b :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (cond (not= (vw-c m 1) 0) (vw-cs m 19 -1)
+        (>= b (vw-c m 6)) (vw-cs m 19 -1)
+        (= (vw-b m b 0) j) (vw-cs m 19 b)
+        :else (vw-block-find m j (inc b)))))
+(defn- vw-block-add [M :vector-i64 j :i64] :vector-i64
+ (let [m (vw-block-find M j 0) n (vw-c m 6)]
+  (cond (not= (vw-c m 1) 0) m (>= (vw-c m 19) 0) m
+        (>= n 64) (vw-fs m (vw-c m 5) 15 0)
+        :else (-> m (vw-bs n 0 j) (vw-cs 6 (inc n))))))
+(defn- vw-block-build [M :vector-i64 f :i64 j :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (if (or (not= (vw-c m 1) 0) (= (vw-f m f 15) 0) (> j (vw-f m f 1))) m
+   (let [op (gn-op m j) a (gn-sir m j IF-A) b (gn-sir m j IF-B)
+         m1 (if (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ))
+              (vw-label m f (if (= op OP-BR) a b) (vw-f m f 0)) m)
+         m2 (if (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ))
+              (if (> (vw-c m1 18) 0) (vw-block-add m1 (vw-c m1 18)) (vw-cs m1 1 1)) m1)
+         m3 (if (and (< j (vw-f m f 1)) (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ) (= op OP-RET) (= op OP-TRAP) (= op OP-RET2))) (vw-block-add m2 (inc j)) m2)]
+    (vw-block-build m3 f (inc j))))))
+(defn- vw-block-sort [M :vector-i64 p :i64 q :i64] :vector-i64
+ (let [m (vw-tick M) n (vw-c m 6)]
+  (cond (or (not= (vw-c m 1) 0) (>= p n)) m
+        (>= q n) (vw-block-sort m (inc p) (+ p 2))
+        :else (let [x (vw-b m p 0) y (vw-b m q 0)
+                    m1 (if (< y x) (-> m (vw-bs p 0 y) (vw-bs q 0 x)) m)]
+                (vw-block-sort m1 p (inc q))))))
+(defn- vw-block-ends [M :vector-i64 f :i64 b :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (if (or (>= b (vw-c m 6)) (not= (vw-c m 1) 0)) m
+   (vw-block-ends (vw-bs m b 1 (if (< (inc b) (vw-c m 6)) (dec (vw-b m (inc b) 0)) (vw-f m f 1))) f (inc b)))))
+(defn- vw-current-load [M :vector-i64 b :i64 s :i64] :vector-i64
+ (let [m (vw-tick M) t (vw-width-cursor m s)]
+  (cond (not= (vw-c m 1) 0) m
+        (< t 0) (vw-cs m 1 1)
+        (>= t 128) m
+        :else (let [p (+ vw-lp (* b 512) (* t 4))]
+          (vw-current-load (vw-vset m t (gn-g m p) (gn-g m (inc p)) (gn-g m (+ p 2)) (gn-g m (+ p 3))) b (inc t))))))
+(defn- vw-merge-slot [M :vector-i64 b :i64 s :i64 back :bool fresh :bool] :vector-i64
+ (let [m (vw-tick M) p (+ vw-lp (* b 512) (* s 4))
+       k (vw-v m s 0) token (vw-v m s 1) len (vw-v m s 2) anchor (vw-v m s 3)]
+  (if fresh
+   ;; A fresh block owns no old payload. Canonical full store precedes seen.
+   (-> m (vw-write p k) (vw-write (inc p) (if (= k 0) 0 token))
+         (vw-write (+ p 2) (if (= k 0) 0 len))
+         (vw-write (+ p 3) (if (= k 2) anchor 0)) (vw-cs 8 1))
+   (let [old (gn-g m p)
+         kind (cond (= old 0) 0 (not= k old) 0
+                    (= k 2) (if (= token (gn-g m (inc p))) 2 0)
+                    (= k 1) (if (and back (or (not= token (gn-g m (inc p))) (not= len (gn-g m (+ p 2))))) 0 1)
+                    :else 0)
+         tk (if (= kind 1) (gn-min token (gn-g m (inc p))) (if (= kind 2) token 0))
+         ln (if (= kind 1) (gn-max len (gn-g m (+ p 2))) (if (= kind 2) (gn-min len (gn-g m (+ p 2))) 0))
+         an (if (= kind 2) (if (or (= anchor 1) (= (gn-g m (+ p 3)) 1)) 1 0) 0)
+         changed (or (not= kind old) (not= tk (gn-g m (inc p))) (not= ln (gn-g m (+ p 2))) (not= an (gn-g m (+ p 3))))]
+    (if changed (-> m (vw-write p kind) (vw-write (inc p) tk) (vw-write (+ p 2) ln) (vw-write (+ p 3) an) (vw-cs 8 1)) m)))))
+(defn- vw-merge-state [M :vector-i64 b :i64 s :i64 back :bool fresh :bool] :vector-i64
+ (if (not= (vw-c M 1) 0) M
+  (let [t (vw-width-cursor M s)]
+   (cond (< t 0) (vw-cs M 1 1)
+         (>= t 128) M
+         :else (vw-merge-state (vw-merge-slot M b t back fresh) b (inc t) back fresh)))))
+(defn- vw-edge-state [M :vector-i64 j :i64 from :i64] :vector-i64
+ (let [m (vw-block-find M j 0) b (vw-c m 19)]
+  (if (< b 0) (vw-cs m 1 1)
+   (let [fresh (= (vw-b m b 2) 0)
+         m1 (vw-merge-state (vw-cs m 8 0) b 0 (<= j from) fresh)]
+    (if (not= (vw-c m1 1) 0) m1
+     (-> m1 (vw-bs b 2 1) (vw-bs b 3 (if (or fresh (= (vw-c m1 8) 1)) 1 (vw-b m1 b 3)))))))))
+(defn- vw-param-ordinal [M :vector-i64 f :i64 position :i64 k :i64] :i64
+ (cond (>= k 4) -1 (= (vw-f M f (+ 10 k)) position) k
+       :else (vw-param-ordinal M f position (inc k))))
+(defn- vw-seed-params [M :vector-i64 f :i64 k :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (if (or (>= k 4) (not= (vw-c m 1) 0)) m
+   (let [pos (vw-f m f (+ 10 k))
+         L (if (= (vw-c m 20) 1) (gn-g m (+ vw-old (* f 4) k)) (vw-f m f (+ 6 k)))
+         m1 (if (> pos 0) (vw-vset m (dec pos) 2 pos L 1) m)]
+    (vw-seed-params m1 f (inc k))))))
+;; Exact scalar arithmetic only: no unchecked signed wrap and no division/trap
+;; reasoning. Non-exact scalar intervals are propagated by join but not folded.
+(defn- vw-bin-value [M :vector-i64 operation :i64 t :i64] :vector-i64
+ (let [s (+ 64 t) x (vw-v M s 1) y (vw-v M (inc s) 1)
+       exact (and (= (vw-v M s 0) 1) (= (vw-v M (inc s) 0) 1)
+                  (= x (vw-v M s 2)) (= y (vw-v M (inc s) 2)))
+       small (and (>= x -1073741824) (<= x 1073741824) (>= y -1073741824) (<= y 1073741824))]
+  (if (and exact small (or (= operation 1) (= operation 2) (= operation 3)))
+   (let [z (cond (= operation 1) (+ x y) (= operation 2) (- x y) :else (* x y))]
+    (vw-vset M s 1 z z 0)) (vw-vset M s 0 0 0 0))))
+
+;; Shape accumulator is separate from previous-round entry bounds. Unknown
+;; entry, unsupported caller and absent external anchor all become zero.
+(defn- vw-arg-bound [M :vector-i64 target :i64 k :i64 base :i64 arity :i64] :vector-i64
+ (let [m (vw-tick M) pos (if (< k 4) (vw-f m target (+ 10 k)) 0)]
+  (if (or (>= k 4) (not= (vw-c m 1) 0)) m
+   (let [slot (+ 64 base (dec pos))
+         known (and (> pos 0) (<= pos arity) (< slot 128) (= (vw-v m slot 0) 2))
+         L (if known (vw-v m slot 2) 0) old (vw-f m target (+ 6 k))
+         preservesSelf (and (= (vw-c m 5) target) known (= (vw-v m slot 1) pos))
+         m1 (if (and (> pos 0) (not preservesSelf)) (vw-fs m target (+ 6 k) (if (< old 0) L (gn-min old L))) m)]
+    (vw-arg-bound m1 target (inc k) base arity)))))
+(defn- vw-call [M :vector-i64 target :i64 base :i64 arity :i64] :vector-i64
+ (let [m (vw-tick M) caller (vw-c m 5) self (= caller target)
+       assumed (and self (> (vw-c m 10) 0))
+       alias (if assumed (vw-c m 10) (vw-f m target 4))
+       src (+ 64 base (dec alias)) dst (+ 64 base)
+       m1 (if (= (vw-c m 20) 1) (vw-arg-bound m target 0 base arity) m)
+       m2 (if (= (vw-f m target 2) 0) (vw-kill-vectors m1 0) m1)]
+  (cond (= (vw-f m2 target 2) 0) (vw-vset m2 dst 0 0 0 0)
+        (and (> alias 0) (<= alias arity) (< src 128) (= (vw-v m2 src 0) 2))
+         (let [token (vw-v m2 src 1) L (vw-v m2 src 2) anchor (if assumed 0 (vw-v m2 src 3))]
+          (vw-vset m2 dst 2 token L anchor))
+        (> (vw-f m2 target 5) 0) (vw-vset m2 dst 2 (- -65536 (vw-c m2 17)) (vw-f m2 target 5) 1)
+        :else (vw-vset m2 dst 0 0 0 0))))
+(defn- vw-read-certificate [M :vector-i64 base :i64] :vector-i64
+ (let [s (+ 64 base) f (vw-c M 5) n (vw-c M 4)
+       good (and (= (vw-c M 20) 2) (= (vw-f M f 2) 1)
+         (= (vw-f M f 14) 0) (= (vw-f M f 3) 1)
+         (<= (vw-c M 6) 8) (<= base 5)
+         (= (vw-v M s 0) 2) (> (vw-v M s 2) 0)
+         (= (vw-v M (inc s) 0) 1) (= (vw-v M (inc s) 1) (vw-v M (inc s) 2))
+         (>= (vw-v M (inc s) 1) 0) (< (vw-v M (inc s) 1) (vw-v M s 2)))]
+  (if good
+   (if (>= n 256) (vw-cs M 1 1)
+    (let [p (+ vw-sites (* n 8))]
+     (-> M (vw-write p (vw-c M 17)) (vw-write (+ p 1) f)
+       (vw-write (+ p 2) (vw-v M s 1)) (vw-write (+ p 3) (vw-v M s 2))
+       (vw-write (+ p 4) (vw-v M (inc s) 1)) (vw-write (+ p 5) base)
+       (vw-write (+ p 6) 1) (vw-write (+ p 7) 1) (vw-cs 4 (inc n))))) M)))
+(defn- vw-runtime [M :vector-i64 wire :i64 base :i64 arity :i64] :vector-i64
+ (let [s (+ 64 base)]
+  (cond (= wire 200)
+         (if (and (= (vw-v M s 0) 1) (>= (vw-v M s 1) 0))
+          (vw-vset M s 2 (- 0 (vw-c M 17)) (vw-v M s 1) 1)
+          (vw-vset M s 0 0 0 0))
+        (= wire 208) M
+        (= wire 176) (vw-vset (vw-read-certificate M base) s 0 0 0 0)
+        (or (= wire 168) (= wire 72) (= wire 144)) (vw-vset M s 0 0 0 0)
+        :else (vw-vset (vw-kill-vectors M 0) s 0 0 0 0))))
+(defn- vw-ret [M :vector-i64 t :i64] :vector-i64
+ (let [s (+ 64 t) kind (vw-v M s 0) token (vw-v M s 1) L (vw-v M s 2)
+       count (vw-c M 9) minimum (vw-c M 13)
+       identity (and (= kind 2) (= token (vw-c M 10)))
+       m1 (-> M (vw-cs 9 (inc count))
+             (vw-cs 11 (if (and (= (vw-c M 11) 1) identity) 1 0))
+             (vw-cs 12 (if (and identity (= (vw-v M s 3) 1)) 1 (vw-c M 12)))
+             (vw-cs 13 (if (= kind 2) (if (= count 0) L (gn-min minimum L)) 0)))] m1))
+(defn- vw-transfer [M :vector-i64 j :i64] :vector-i64
+ (let [m (vw-cs (vw-tick M) 17 j) op (gn-op m j)
+       a (gn-sir m j IF-A) b (gn-sir m j IF-B) c (gn-sir m j IF-C)]
+  (cond (or (= op OP-CONST)) (vw-vset m (+ 64 a) 1 b b 0)
+        (= op OP-LGET) (vw-vcopy m (+ 64 a) (dec b))
+        (= op OP-LSET) (vw-vcopy m (dec a) (+ 64 b))
+        (= op OP-BIN) (vw-bin-value m a b)
+        (or (= op OP-CMP) (= op OP-UN)) (vw-vset m (+ 64 b) 0 0 0 0)
+        (or (= op OP-VEC) (= op OP-VECP)) (vw-vset m (+ 64 a) 2 (- 0 j) (if (= op OP-VEC) b c) 1)
+        (= op OP-CALL) (vw-call m a b c)
+        (= op OP-RT) (vw-runtime m a b c)
+        (= op OP-RET) (vw-ret m a)
+        (= op OP-CAP) (vw-vset (vw-kill-vectors m 0) (+ 64 c) 0 0 0 0)
+        (= op OP-CALLI) (vw-vset (vw-kill-vectors m 0) (+ 64 b) 0 0 0 0)
+        (or (= op OP-STR) (= op OP-TAB) (= op OP-FADDR) (= op OP-RES2)) (vw-vset m (+ 64 a) 0 0 0 0)
+        :else m)))
+(defn- vw-block-exec [M :vector-i64 b :i64 j :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (if (or (not= (vw-c m 1) 0) (> j (vw-b m b 1))) m
+   (vw-block-exec (vw-transfer m j) b (inc j)))))
+(defn- vw-block-successors [M :vector-i64 b :i64] :vector-i64
+ (let [end (vw-b M b 1) op (gn-op M end) f (vw-c M 5)
+       a (gn-sir M end IF-A) target (gn-sir M end IF-B)]
+  (cond (or (= op OP-RET) (= op OP-TRAP) (= op OP-END) (= op OP-RET2)) M
+        (= op OP-BR) (let [m (vw-label M f a (vw-f M f 0))] (vw-edge-state m (vw-c m 18) end))
+        (or (= op OP-BRZ) (= op OP-BRNZ))
+         (let [m (vw-label M f target (vw-f M f 0)) m1 (vw-edge-state m (vw-c m 18) end)]
+          (vw-edge-state m1 (inc end) end))
+        :else (vw-edge-state M (inc end) end))))
+(defn- vw-next-block [M :vector-i64 b :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (cond (not= (vw-c m 1) 0) (vw-cs m 19 -1)
+        (>= b (vw-c m 6)) (vw-cs m 19 -1)
+        (= (vw-b m b 3) 1) (vw-cs m 19 b)
+        :else (vw-next-block m (inc b)))))
+(defn- vw-flow [M :vector-i64] :vector-i64
+ (let [m (vw-next-block M 0) b (vw-c m 19)]
+  (cond (not= (vw-c m 1) 0) m (< b 0) m
+        (>= (vw-c m 14) 65536) (vw-cs m 1 1)
+        :else (let [m1 (-> m (vw-bs b 3 0) (vw-cs 14 (inc (vw-c m 14))) (vw-current-load b 0))
+                    m2 (vw-block-exec m1 b (vw-b m1 b 0))]
+                (vw-flow (vw-block-successors m2 b))))))
+;; Final certificate walk uses stable incoming states only; early optimistic
+;; facts seen before all predecessor meets never become certificates.
+(defn- vw-final-reads [M :vector-i64 b :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (if (or (>= b (vw-c m 6)) (not= (vw-c m 1) 0)) m
+   (let [m1 (if (= (vw-b m b 2) 1)
+              (let [q (vw-current-load m b 0)] (vw-block-exec q b (vw-b q b 0))) m)]
+    (vw-final-reads m1 (inc b))))))
+
+(defn- vw-zero-work [M :vector-i64 a :i64 end :i64] :vector-i64
+ (let [cost (* 128 (- end a)) work (vw-c M 0)]
+  (if (or (< cost 0) (> cost (- vw-work-cap work))) (vw-cs M 1 1)
+   (vw-clear (vw-cs M 0 (+ work cost)) a end))))
+(defn- vw-reset-flow [M :vector-i64 f :i64 candidate :i64 mode :i64] :vector-i64
+ (-> M (vw-zero-work vw-current vw-control)
+  (vw-cs 5 f) (vw-cs 6 0) (vw-cs 9 0) (vw-cs 10 candidate)
+  (vw-cs 11 1) (vw-cs 12 0) (vw-cs 13 0) (vw-cs 14 0) (vw-cs 20 mode)))
+(defn- vw-run-fn [M :vector-i64 f :i64 candidate :i64 mode :i64] :vector-i64
+ (cond (not= (vw-c M 1) 0) M
+       (or (<= f 0) (>= f (vector-at M MM-FN-N)) (> (vector-at M MM-FN-N) 128)) (vw-cs M 1 1)
+       (or (= (vw-f M f 0) 0) (= (vw-f M f 15) 0) (not= (vw-f M f 14) 0))
+        (-> M (vw-cs 9 0) (vw-cs 11 0) (vw-cs 12 0) (vw-cs 13 0))
+       (or (< (vw-width-at M f 0) 0) (> (vw-width-at M f 0) 64)
+           (< (vw-width-at M f 1) 0) (> (vw-width-at M f 1) 64)) (vw-cs M 1 1)
+       :else
+ (let [m (vw-reset-flow M f candidate mode)
+       m1 (vw-block-add m (vw-f m f 0))
+       m2 (vw-block-build m1 f (vw-f m1 f 0))
+       m3 (vw-block-ends (vw-block-sort m2 0 1) f 0)]
+  (if (or (not= (vw-c m3 1) 0) (= (vw-f m3 f 15) 0) (not= (vw-f m3 f 14) 0))
+   (-> m3 (vw-cs 9 0) (vw-cs 11 0) (vw-cs 12 0) (vw-cs 13 0))
+   (let [m4 (vw-seed-params m3 f 0)
+         m5 (vw-edge-state m4 (vw-f m4 f 0) 0)
+         ;; Collect nothing while the fixed point is provisional.
+         m6 (vw-flow (vw-cs m5 20 (if (= mode 2) 0 mode)))]
+    (if (= mode 2) (vw-final-reads (vw-cs m6 20 2) 0) m6))))))
+(defn- vw-all-reachable [M :vector-i64 f :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (if (or (>= f (vw-c m 2)) (not= (vw-c m 1) 0)) m
+   (vw-all-reachable (vw-fs m f 3 1) (inc f)))))
+;; Directed path query excludes the candidate's direct selfedge. Any other
+;; route back is a mutual SCC and conservatively disables alias summaries.
+;; V7 outgoing adjacency uses existing scratch; zero sentinel, edge e encoded e+1.
+(defn- vw-out-head [M :vector-i64 f :i64] :i64
+ (let [n (vector-at M MM-FN-N) count (vw-c M 3)]
+  (if (or (<= n 1) (> n 128) (<= f 0) (>= f n) (< count 0) (> count 512)) -1
+   (let [link (gn-g M (+ vw-old 1152 f))]
+    (if (or (< link 0) (> link count)) -1 link)))))
+(defn- vw-out-checked [M :vector-i64 node :i64 link :i64 previous :i64] :i64
+ (let [n (vector-at M MM-FN-N) count (vw-c M 3)]
+  (cond (or (<= n 1) (> n 128) (<= node 0) (>= node n) (< count 0) (> count 512)
+            (< previous 0) (> previous count) (< link 0) (> link count)) -1
+        (= link 0) 0
+        (<= link previous) -1
+        :else (let [e (dec link) caller (vw-e M e 0) target (vw-e M e 2)]
+          (if (or (not= caller node) (<= caller 0) (>= caller n) (<= target 0) (>= target n)) -1
+           (let [next (gn-g M (+ vw-old 1280 e))]
+            (if (or (< next 0) (> next count) (and (not= next 0) (<= next link))) -1 link)))))))
+(defn- vw-out-build [M :vector-i64 e :i64] :vector-i64
+ (let [m (vw-tick M) n (vector-at m MM-FN-N) count (vw-c m 3)]
+  (cond (not= (vw-c m 1) 0) m
+        (or (<= n 1) (> n 128) (< count 0) (> count 512) (< e -1) (>= e count)) (vw-cs m 1 1)
+        (= e -1) m
+        :else (let [caller (vw-e m e 0) target (vw-e m e 2)]
+          (if (or (<= caller 0) (>= caller n) (<= target 0) (>= target n)) (vw-cs m 1 1)
+           (let [head (vw-out-head m caller) checked (vw-out-checked m caller head (inc e))]
+            (if (< checked 0) (vw-cs m 1 1)
+             (let [m1 (vw-write m (+ vw-old 1280 e) head)
+                   m2 (if (= (vw-c m1 1) 0) (vw-write m1 (+ vw-old 1152 caller) (inc e)) m1)]
+              (vw-out-build m2 (dec e))))))))))
+(defn- vw-path-links [M :vector-i64 node :i64 target :i64 depth :i64 link :i64 previous :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (cond (or (= (vw-c m 24) 1) (not= (vw-c m 1) 0)) m
+        (or (<= target 0) (>= target (vector-at m MM-FN-N)) (> (vector-at m MM-FN-N) 128)) (vw-cs m 1 1)
+        :else (let [checked (vw-out-checked m node link previous)]
+          (cond (< checked 0) (vw-cs m 1 1)
+                (= checked 0) m
+                :else (let [e (dec checked) g (vw-e m e 2) next (gn-g m (+ vw-old 1280 e))
+                            m1 (vw-path m g target (inc depth))]
+                  (vw-path-links m1 node target depth next checked)))))))
+(defn- vw-mutual-links [M :vector-i64 f :i64 link :i64 previous :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (if (or (= (vw-c m 24) 1) (not= (vw-c m 1) 0)) m
+   (let [checked (vw-out-checked m f link previous)]
+    (cond (< checked 0) (vw-cs m 1 1)
+          (= checked 0) m
+          :else (let [e (dec checked) g (vw-e m e 2) next (gn-g m (+ vw-old 1280 e))
+                      m1 (if (not= g f) (vw-path (vw-zero-work m (+ vw-old 512) (+ vw-old 640)) g f 0) m)]
+            (vw-mutual-links m1 f next checked)))))))
+(defn- vw-path [M :vector-i64 node :i64 target :i64 depth :i64] :vector-i64
+ (let [m (vw-tick M) visited (+ vw-old 512 node)]
+  (cond (not= (vw-c m 1) 0) m (= node target) (vw-cs m 24 1)
+        (= (gn-g m visited) 1) m
+        (>= depth 64) (vw-cs m 24 1)
+        :else (vw-path-edges (vw-write m visited 1) node target depth 0))))
+(defn- vw-path-edges [M :vector-i64 node :i64 target :i64 depth :i64 e :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (cond (or (= (vw-c m 24) 1) (not= (vw-c m 1) 0)) m
+        (or (not= e 0) (<= target 0) (>= target (vector-at m MM-FN-N)) (> (vector-at m MM-FN-N) 128)) (vw-cs m 1 1)
+        :else (let [head (vw-out-head m node)]
+          (if (< head 0) (vw-cs m 1 1) (vw-path-links m node target depth head 0))))))
+(defn- vw-mutual [M :vector-i64 f :i64 e :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (cond (or (= (vw-c m 24) 1) (not= (vw-c m 1) 0)) m
+        (not= e 0) (vw-cs m 1 1)
+        :else (let [head (vw-out-head m f)]
+          (if (< head 0) (vw-cs m 1 1) (vw-mutual-links m f head 0))))))
+(defn- vw-alias-params [M :vector-i64 f :i64 ordinal :i64] :vector-i64
+ (let [m (vw-tick M) pos (if (< ordinal 4) (vw-f m f (+ 10 ordinal)) 0)]
+  (if (or (>= ordinal 4) (not= (vw-c m 1) 0)) m
+   (if (> pos 0)
+    (let [m1 (vw-run-fn m f pos 0)
+          good (and (> (vw-c m1 9) 0) (= (vw-c m1 11) 1) (= (vw-c m1 12) 1))
+          m2 (if good (vw-fs m1 f 4 pos) m1)]
+     (if good m2 (vw-alias-params m2 f (inc ordinal))))
+    (vw-alias-params m f (inc ordinal))))))
+(defn- vw-alias-pass [M :vector-i64 f :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (if (or (>= f (vw-c m 2)) (not= (vw-c m 1) 0)) m
+   (let [before (vw-f m f 4) beforeL (vw-f m f 5)
+         m1 (vw-mutual (vw-cs m 24 0) f 0)
+         supported (and (= (vw-c m1 24) 0) (= (vw-f m1 f 2) 1) (= (vw-f m1 f 14) 0) (= (vw-f m1 f 15) 1))
+         m2 (if supported (vw-alias-params m1 f 0) m1)
+         m3 (if supported (vw-run-fn m2 f 0 0) m2)
+         L (if (and supported (> (vw-c m3 9) 0)) (vw-c m3 13) 0)
+         m4 (if (> L beforeL) (vw-fs m3 f 5 L) m3)
+         m5 (if (or (not= before (vw-f m4 f 4)) (not= beforeL (vw-f m4 f 5))) (vw-cs m4 25 1) m4)]
+    (vw-alias-pass m5 (inc f))))))
+(defn- vw-clear-alias [M :vector-i64 f :i64] :vector-i64
+ (if (>= f (vw-c M 2)) M
+  (vw-clear-alias (-> M (vw-fs f 4 0) (vw-fs f 5 0)) (inc f))))
+(defn- vw-alias-fixed [M :vector-i64 round :i64] :vector-i64
+ (let [m (vw-alias-pass (vw-cs M 25 0) 1)]
+  (cond (not= (vw-c m 1) 0) m (= (vw-c m 25) 0) m
+        (>= round 7) (vw-cs m 1 1)
+        :else (vw-alias-fixed m (inc round)))))
+(defn- vw-bounds-save [M :vector-i64 f :i64 k :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (cond (or (>= f (vw-c m 2)) (not= (vw-c m 1) 0)) m
+        (>= k 4) (vw-bounds-save m (inc f) 0)
+        :else (let [p (+ vw-old (* f 4) k) L (vw-f m f (+ 6 k))]
+                (vw-bounds-save (-> m (vw-write p L) (vw-fs f (+ 6 k) -1)) f (inc k))))))
+(defn- vw-bounds-load-entry [M :vector-i64 f :i64 k :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (if (or (>= k 4) (not= (vw-c m 1) 0)) m
+   (vw-bounds-load-entry (vw-fs m f (+ 6 k) (gn-g m (+ vw-old (* f 4) k))) f (inc k)))))
+(defn- vw-poison-edges [M :vector-i64 f :i64 e :i64 k :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (cond (or (>= e (vw-c m 3)) (not= (vw-c m 1) 0)) m
+        (not= (vw-e m e 0) f) (vw-poison-edges m f (inc e) 0)
+        (>= k 4) (vw-poison-edges m f (inc e) 0)
+        :else (vw-poison-edges (vw-fs m (vw-e m e 2) (+ 6 k) 0) f e (inc k)))))
+;; Restore entry bounds after a function query without overwriting its outgoing
+;; accumulated facts: query-local entry seed reads the previous snapshot.
+(defn- vw-shape-functions [M :vector-i64 f :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (if (or (>= f (vw-c m 2)) (not= (vw-c m 1) 0)) m
+   (let [supported (and (= (vw-f m f 15) 1) (= (vw-f m f 14) 0))
+         m1 (cond (= (vw-f m f 3) 0) m
+                  supported (vw-run-fn m f 0 1)
+                  :else (vw-poison-edges m f 0 0))
+         ;; A supported query may discover the existing detailed64 refusal.
+         ;; Use its resulting M and poison all outgoing bounds before nextcaller.
+         m2 (if (and supported (= (vw-c m1 1) 0) (= (vw-f m1 f 15) 0))
+              (vw-poison-edges m1 f 0 0) m1)]
+    (vw-shape-functions m2 (inc f))))))
+(defn- vw-bounds-finish [M :vector-i64 f :i64 k :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (cond (or (>= f (vw-c m 2)) (not= (vw-c m 1) 0)) m
+        (>= k 4) (vw-bounds-finish m (inc f) 0)
+        :else (let [unknown (or (not= (gn-fnf m f FF-KIND) FK-PRIV) (not= (gn-fnf m f FF-EXPORT) 0) (= (gn-g m (+ vw-old 1024 f)) 1) (= (vw-f m f 3) 0))
+                    L (if unknown 0 (gn-max 0 (vw-f m f (+ 6 k))))
+                    old (gn-g m (+ vw-old (* f 4) k))
+                    m1 (vw-fs m f (+ 6 k) L)
+                    m2 (if (not= L old) (vw-cs m1 25 1) m1)]
+                (vw-bounds-finish m2 f (inc k))))))
+(defn- vw-shape-fixed [M :vector-i64 round :i64] :vector-i64
+ (let [m (vw-bounds-save (vw-cs M 25 0) 1 0)
+       m1 (vw-shape-functions m 1)
+       m2 (vw-bounds-finish m1 1 0)]
+  (cond (not= (vw-c m2 1) 0) m2 (= (vw-c m2 25) 0) m2
+        (>= round 127) (vw-cs m2 1 1)
+        :else (vw-shape-fixed m2 (inc round)))))
+(defn- vw-certificates [M :vector-i64 f :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (if (or (>= f (vw-c m 2)) (not= (vw-c m 1) 0)) m
+   (let [m1 (if (and (= (vw-f m f 3) 1) (= (vw-f m f 15) 1) (= (vw-f m f 14) 0) (= (vw-f m f 2) 1)) (vw-run-fn m f 0 2) m)]
+    (vw-certificates m1 (inc f))))))
+
+;; V3: complete module label-location table owns LP slots1..8192 only
+;; during domain validation. Later reach/transfer keep vw-label rescans.
+(defn- vw-index-labels [M :vector-i64 j :i64] :vector-i64
+ (let [m (vw-tick M) sn (vector-at m MM-SIR-N)]
+  (cond (not= (vw-c m 1) 0) m
+        (or (< j 1) (> j sn)) (vw-cs m 1 1)
+        (= j sn) m
+        :else (let [op (gn-op m j)
+                    m1 (if (= op OP-LABEL)
+                         (let [label (gn-sir m j IF-A)]
+                          (cond (or (<= label 0) (> label 8192)) (vw-cs m 1 1)
+                                (or (not= (gn-sir m j IF-B) 0) (not= (gn-sir m j IF-C) 0)) (vw-cs m 1 1)
+                                (not= (gn-g m (+ vw-labels label)) 0) (vw-cs m 1 1)
+                                :else (vw-write m (+ vw-labels label) j))) m)]
+                (vw-index-labels m1 (inc j))))))
+(defn- vw-domain-label [M :vector-i64 f :i64 label :i64] :vector-i64
+ (vw-label M f label 1))
+(defn- vw-domain-all [M :vector-i64 f :i64 j :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (cond (not= (vw-c m 1) 0) m
+        (>= f (vw-c m 2)) (if (= j (vector-at m MM-SIR-N)) m (vw-cs m 1 1))
+        (= (vw-f m f 0) 0) (vw-domain-all m (inc f) j)
+        (= j (vw-f m f 0)) (vw-domain-all m f (inc j))
+        (= j (vw-f m f 1)) (if (= (gn-op m j) OP-END) (vw-domain-all m (inc f) (inc j)) (vw-cs m 1 1))
+        (or (< j (vw-f m f 0)) (> j (vw-f m f 1))) (vw-cs m 1 1)
+        :else (let [op (gn-op m j) a (gn-sir m j IF-A) b (gn-sir m j IF-B) c (gn-sir m j IF-C)
+                    m1 m
+                    m2 (if (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ))
+                         (let [q (vw-domain-label m1 f (if (= op OP-BR) a b))]
+                          (if (= (vw-c q 18) 0) (vw-cs q 1 1) q)) m1)
+                    m3 (if (and (or (= op OP-STR) (= op OP-TAB) (= op OP-VECP)) (or (<= b 0) (>= b (vector-at m2 MM-LIT-N)))) (vw-cs m2 1 1) m2)]
+                (vw-domain-all m3 f (inc j))))))
+;; Entry is after original gn-run-open allocated/initialized G, before gn-loop.
+;; It returns M byte-for-byte apart from diagnostic observer output. MMERR,
+;; MMR0, CODE, FIX, FN frames and old G prefixes are never modified here.
+(defn- vw-entry-status [M :vector-i64] :i64
+ (let [n (vector-count M)]
+  (cond (= vw-feature 0) 1
+        (< n MM-HEAP-BASE) 6
+        (not= (vector-at M MM-ERR) 0) 2
+        :else (let [base (vector-at M gn-cell) need (+ gn-a-lp MM-LABEL-CAP 82)
+                    fnn (vector-at M MM-FN-N) sn (vector-at M MM-SIR-N)]
+          (cond (or (< base MM-HEAP-BASE) (> base n) (> need (- n base)) (< (vector-at M MM-HEAP-TOP) base) (> (vector-at M MM-HEAP-TOP) n) (> need (- (vector-at M MM-HEAP-TOP) base))) 6
+                (or (not= (gn-g M gn-g-open) 0) (not= (gn-g M gn-g-open-n) 0)) 3
+                (or (<= fnn 1) (> fnn 128)) 4
+                (or (<= sn 1) (> sn 65536)) 5
+                (not (vw-reserved-zero? M)) 7 :else 0)))))
+(defn- vw-stage [M :vector-i64 stage :i64] :vector-i64 (if (= (vw-c M 1) 0) (vw-cs M 26 stage) M))
+(defn- vw-run [M :vector-i64] :vector-i64
+ (if (not= (vw-entry-status M) 0) M
+  (let [m (-> M (vw-cs 2 (vector-at M MM-FN-N)) (vw-cs 16 1) (vw-cs 26 1))
+        m1 (vw-index-fns m 1)
+        m2 (vw-index-bodies (vw-stage m1 2) 1)
+        m2i (if (= (vw-c m2 1) 0) (vw-out-build m2 (dec (vw-c m2 3))) m2)
+        m2a (vw-index-labels (vw-stage m2i 3) 1)
+        m3 (vw-domain-all m2a 1 1)
+        ;; LABELseen ownership ends before any blockincoming state is reused.
+        m3a (if (= (vw-c m3 1) 0) (vw-zero-work m3 vw-lp (+ vw-lp 8193)) m3)
+        m4 (if (= (vw-c m3a 16) 0) (vw-cs m3a 1 1) (vw-closure (vw-stage m3a 4) 0))
+        m5 (if (= (vw-c m4 1) 0) (vw-alias-fixed (vw-cs m4 26 5) 0) m4)
+        m6 (if (= (vw-c m5 1) 0) (vw-shape-fixed (vw-cs m5 26 6) 0) m5)
+        m7 (if (= (vw-c m6 1) 0) (vw-certificates (vw-cs m6 26 7) 1) m6)
+        m8 (vw-publish (if (= (vw-c m7 1) 0) m7 (vw-cs m7 4 0)))]
+   (vw-cleanup m8))))
