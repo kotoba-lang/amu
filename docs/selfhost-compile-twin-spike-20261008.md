@@ -74,3 +74,11 @@ vector operand, each integer operand at -1/0/63/64/255/256, an unknown member ke
 cases, 3,897 of them refused by the host, all agree (24 mutations the host gate itself throws on are left out). Four
 deliberately wrong gates (shift bound 64, cap id bound 256, `let` binders not checked, document-map arity not checked)
 each FAIL it.
+
+## Addendum: the counted self-recur divergence (same day)
+
+The four CODE-DIFF programs were a host bug in kotoba-mir, not in kotoba-native: `counted-self-recur-plan` tested the
+decrement constant with `(= 1 (:mir/value one))`, and on nbb a literal from the reader is a BigInt, so `(= 1 1n)` refused
+every source-written countdown (the JVM and the Kotoba arm admit it). kotoba-mir #72 (db37671a) compares through
+`host-number`; amu's lock now pins it. Measured with `bin/amu compile`: the four programs equal the Kotoba route's code;
+the 254 programs that already agreed are byte-identical to their pre-change host code.
