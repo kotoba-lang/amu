@@ -1,0 +1,8 @@
+{
+  "oldLoop": "(defn- gn-loop [M :vector-i64 i :i64] :vector-i64\n  (if (and (< i (vector-at M MM-SIR-N)) (= (vector-at M MM-ERR) 0))\n    (let [M1 (gn-ins M i (gn-op M i))\n          k (gn-g M1 gn-f-skip)]\n      (gn-loop (gn-gs M1 gn-f-skip 0) (+ i 1 k)))\n    M))\n\n",
+  "newLoop": "(defn- fr-loop [M :vector-i64 i :i64 Q :vector-i64] :vector-i64\n  (if (and (< i (vector-at M MM-SIR-N)) (= (vector-at M MM-ERR) 0))\n    (let [before (vector-at M MM-CODE-N) selected (fr-has M Q i 0)\n          freg (gn-g M gn-f-freg) leaf (gn-g M gn-f-leaf) ctx (gn-g M gn-f-ctx)\n          M1 (gn-ins M i (gn-op M i)) k (gn-g M1 gn-f-skip)\n          note (if selected (fr-row \"RI\" [i before (vector-at M1 MM-CODE-N) k freg leaf ctx (vector-at M1 MM-ERR)]) 0)]\n      (fr-loop (gn-gs M1 gn-f-skip 0) (+ i 1 k) Q))\n    M))\n(defn- gn-loop [M :vector-i64 i :i64] :vector-i64 (fr-loop M i (fr-pick M)))\n\n",
+  "oldDriver": "(drv-c6 (gn-run M) S path out)",
+  "newDriver": "(drv-c6 (fr-run M) S path out)",
+  "originalGnInsCallsPerIteration": 1,
+  "reverseExact": true
+}

@@ -1,0 +1,19 @@
+--- /Users/junkawasaki/github/workspaces/codex/tc-current7618-off18-compile36-source-v1-20261009/launch-wrapper.py
++++ /Users/junkawasaki/github/workspaces/codex/tc-published-x16-current-observer-source-v2-20261009/launch-wrapper.py
+@@ -30,13 +30,13 @@
+  import re
+  raw=Path(expectedContainer).read_bytes();m=re.match(rb'KSEED1 ([1-9][0-9]{0,9}) 1\nmain 0 0\n\n',raw);assert m is not None
+  payload=raw[m.end():];assert 0<len(payload)<=4194304 and len(payload)==int(m[1]) and payload==Path(producer).read_bytes()
+- if producer==pr['producer']:assert seal['producer']['sha256']=='761856bb455de5d36021e177be8f3a0bbf65772dd66cbdf29c8e114f8cbe3d93'
++ if producer==pr['producer']:assert seal['producer']['sha256']=='5cda246fec1d653b5ff044a56491069874f7a0b58da87785887c369573ccec8c'
+  else:
+-  raise AssertionError('only pinned current7618 producer permitted')
++  assert producer in [str(Path(pr['freshOutputRoot'])/'G1.bin'),str(Path(pr['freshOutputRoot'])/'G2.bin')]
+  assert seal['input']['path']==argv[8] and seal['input']['bytes']<=4194560;checked(argv[8],seal['input'])
+  if row['kind']=='compile':
+   assert argv[7]=='compile' and argv[9:]==['--target','aarch64-macos','--output',row['outputPath']]
+-  if row['arity']==0:assert seal['input']['sha256']=='953f80e04da6819bfacea3a867c3e07d7492f4230dcb2618be53691df4be9418'
++  if row['arity']==0:assert seal['input']['sha256']==pr['observerSourceSHA256']
+   else:
+    entries=[e for e in pr['entries']if row['label']==e['workload']+'-compile'];assert len(entries)==1 and {k:seal['input'][k]for k in ['bytes','sha256']}=={k:entries[0]['source'][k]for k in ['bytes','sha256']}
+  else:assert row['kind']=='extract' and argv[7]=='extract-native' and argv[9:]==['--symbol',row['symbol'],'--output',row['outputPath']]

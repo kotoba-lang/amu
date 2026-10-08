@@ -199,3 +199,11 @@ fresh V4の8呼出と独立raw監査で、現在のCRC reader FN／SIR、256通�
 ## 計算結果CIDと下流consumerの停止条件
 
 ユーザーの追加案を[consumerの受入条件](coscientist-compute-result-consumers-20261008.md)へ具体化した。ResultCID一致後も現在のtarget集計・caller poison・権限・予算を検査し、consumerが読む全入力と循環依存のpending更新が安定した場合だけ、追加再解析停止の候補とする。Answer一致だけでworklistを消さない。SOURCE照合ではcurrent16に旧stage6の`vw-*`経路がないことも確認した。旧解析を現在のbuilderで組む診断と、現在の製品解析を観測する検証を別lineageとして扱う。追加native呼出0、解析省略0、C2 OFFであり、CIDの実測性能効果はまだない。
+
+## Owned queryと順序付き更新の有限契約モデル
+
+[新しいsource proposal](evidence/coscientist-masked32-clone-20261008/compute-owned-query-shadow-proposal-v1/source/PROPOSAL.md)はhistorical V7のdirect mode1 queryとcallerのsupport低下・poison処理を分ける。global scratch summaryはdirect return直後に所有したcopyを作り、既存hitに所有者がなければ未資格とする。全辺の寄与は順序と重複targetを保持し、-1と0を区別する。現在の集計・work・admissionは要求に保守的に含め、更新前後と観測可能な消費をTransitionへ保存する。ResultにはComputeCID自身を含めない。
+
+有限Python診断モデルは25の要求field変更、digest bucketの衝突を模した不一致、9の結果・replay改変、予算不足・support低下・途中valid公開を拒否した。rootも全5 source／5 input pinsとcontrol結果を再確認した。これはsynthetic JSON/SHA契約の確認で、Kotoba解析の実装、IPLD canonical encoding、native importer、一般の健全性証明や性能測定ではない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/compute-owned-query-shadow-proposal-v1/snapshot.json)。
+
+最初の未解決条件は、正確なhistorical snapshotでの全reader・alias・writer・reset-before-read・出力所有期間の閉包である。current16には同じ解析経路がないため、historical queryの証拠を現在の製品cacheの資格へ移さない。次のobserverも毎回direct解析を実行するshadow診断とし、C2 OFF・キー除外なし・追加省略0を維持する。hash／lookup／replayと失敗経路を含む費用を実測するまで、CIDによる性能向上を主張しない。
