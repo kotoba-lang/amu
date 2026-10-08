@@ -160,3 +160,8 @@ coscientistの次の対照は、同じ入力状態からcacheなし／shadowあ�
 再適用時には現在のliteral配置・fixup・register／context publicationを検査し、元fuel debitとadmissionを保存する。code／fixup cap失敗はrollbackしgeneric経路へ戻す。古いmachine bytesを新しい配置へ単純コピーせず、現在状態のTransitionとして検証する。規則・layout・mask・reader edge・effect・entry fuel・ABIを一つずつ変える負例、途中公開とrollback拒否をSOURCE／native段階で分けて検証する。同じAnswerCIDでもcaller条件が変われば現在のadmissionを省略しない。
 
 LC timing V2は11本のstable30を得たが、C以上は0本、MD5の採用条件も未達だった。この[負の測定結果](coscientist-masked32-clone-20261008.md)は生成コードの評価であり、解析再利用のhash／lookup／replay費用を測った結果ではない。C2はOFF、解析reuseとEmbench速度の資格は別に維持する。
+
+
+## 資源admission失敗も成功Resultへ登録しない
+
+current typed bindingの最初のPopenはpreexecの資源設定例外で停止した。別の1-child診断はFSIZE／CPUの設定成功とAS4GiBの設定拒否を記録した。[失敗と資格の範囲](coscientist-masked32-clone-20261008.md)。いずれもcompiler結果はなく、成功ComputeCID→ResultCID bindingへ登録しない。旧失敗の正確なsetterは未確定のまま保持する。資源契約やplatform readerを変える次の要求は別ComputeRequestとして扱い、現在のadmissionを別Transitionで検証する。失敗receiptの再利用と成功解析結果の再利用を同じ状態にしない。C2の解析省略はOFFである。

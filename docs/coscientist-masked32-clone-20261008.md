@@ -285,3 +285,25 @@ historical同一sourceの256 paths、13 reader mutations、6 caller mutations、
 ## 次の測定hostのread-only確認
 
 [有限read-only survey](evidence/coscientist-masked32-clone-20261008/quiet-host-recon-v1/recon/report.json)では3回のSSHが閉じ、ZebulunはApple M4・10 logical cores、10秒のidle93.11%、load1.88→1.75でsurvey条件を満たした。AsherはSSH timeoutで未確認。単一Tailscale inventoryは非JSONでwrapperが停止し、最初の元診断を永続保存し損ねたことを記録した。他の端末は未確認である。surveyは新しいtiming資格ではない。次のcampaignは元のquiet条件を緩めず、有限の待機・readiness条件を別に事前登録する。今回bench／compiler／転送／remote変更は0。
+
+
+## current typed binding8：実行前資源設定で停止
+
+次の有限8-call gateは、native scalar d3を明示したstage0として、現在のMANIFEST／41(4ed9)から通常版とread-only observerを作り、その後に元CRCをcompile／extractする計画である。測定済みLC5fとcurrent41の系統を同じとはしない。全FN／SIR／node／symbol／token／call／38-cell context／literal／label／fixup／exportの順序付きinventoryを検査する。V1はreader IDが最後のexport IDへ上書きされるSOURCE不具合をrootと独立担当が確認し、未実行のまま保存した。V2で所有者を分離し、返す証拠のowner／range／siteも照合した。
+
+SOURCEと1,769入力371,271,887 Bの照合、rootと独立レビュー後にV2を一度実行したが、最初のPopenが`preexec_fn`例外で停止した。[独立保存失敗監査](evidence/coscientist-masked32-clone-20261008/table-current-bind8-v2-preexec-failure/reviews/actual-failure/report.json)は試行1、stdout／stderr0 B、実compiler0・native成果物0、retryなしを確認した。どのFSIZE／CPU／AS setterが失敗したかは不明。返されたprocess objectはなく、内部fork不在やledgerのallClosedをnative wait証明とは扱わない。outer exit1はrootのtool観測で、保存outer raw receiptはない。current typed binding・byte identity・最適化実行は未認定のまま。
+
+[選択snapshot](evidence/coscientist-masked32-clone-20261008/table-current-bind8-v2-preexec-failure/snapshot.json)はSOURCE・失敗・レビューを保存し、371 MBの全依存実バイトbankは含まない。次はloaderを起動しない1子プロセスの診断で、各resource setterのbefore／desired／outcome／readbackを記録する。有限の継承hard／softを引き上げず、ASを黙って除去しない。これは別の事前登録で、旧V2は再試行しない。
+
+## Tailscale一覧と代替hostの有限survey
+
+新しい一覧取得はstatus子プロセスexit0で44 entriesを保存したが、outer writerのduplicate keywordでexit1となった。[独立保存監査](evidence/coscientist-masked32-clone-20261008/inventory-alternative-host-surveys-v2/selected/inventory/reviews/independent/report.json)はprivate rawからhost／OS／online／IPの4 fieldsだけを再構成した。保存された一覧だけを受理し、outer completionは受理しない。RawJSONは公開しない。Asherは一覧でもofflineだった。
+
+既存identityとonline Mac一覧を根拠に、Benjamin／Levi／Issacharへ各1回のread-only surveyを行った。[独立監査](evidence/coscientist-masked32-clone-20261008/inventory-alternative-host-surveys-v2/selected/surveys/reviews/independent/report.json)は3 SSH closed0（旧3＋新3＝累計6）、10秒のticksからidleとquiet条件を再計算した。全3台M4／10 cores／arm64／macOS26.2(25C56)。Levi94.46254%・load1.79199→1.97119、Issachar93.00257%・2.36035→3.01855はsurvey条件を満たし、Benjamin89.74765%は満たさない。bench／compiler／転送／remote設定変更は0。短いsnapshotの適格性で、持続quiet・SDK／toolchain・タイミング資格ではない。process countsはschema照合のみで、元ps rawの独立再構成ではない。次のC比較host候補はLeviとし、実際のcampaignでは新しいCビルドと各sampleのquiet条件が必要である。
+
+
+## 1-child資源診断：AS4GiBの設定拒否を記録
+
+[独立保存監査](evidence/coscientist-masked32-clone-20261008/table-resource-diagnostic1-as-failure/reviews/actual-independent/report.json)は、loaderを呼ばない1 Python診断childのargv／環境、10 SOURCE／9 input pins、6保存outputs、1,065 Bのjournal／stdout完全一致・stderr0を検査した。通常のchild bodyでFSIZE64MiB、CPU1800の設定とreadbackが一致し、AS4GiBは`ValueError('current limit exceeds maximum limit')`で失敗しreadbackはinfinityのままだった。childはexit78でreap済み、first failureで終了しcompletionなし、retryなし。外側exit78はrootのtool観測に限る。
+
+これは今回の診断のAS設定拒否であり、旧native V2の失敗setterを確定する証拠でも、すべてのmacOS／AS値で未対応という証拠でもない。次のnative adapterは平台の有限メモリ契約を明示して別SOURCE／GOで扱う。ASを黙って除去せず、resident memoryやarena契約との意味差を混ぜない。現時点のcompiler／native execution0、TC生成・current typed binding・C以上の性能は未認定のままである。[選択snapshot](evidence/coscientist-masked32-clone-20261008/table-resource-diagnostic1-as-failure/snapshot.json)は完全なPython／OS／共有library閉包ではない。

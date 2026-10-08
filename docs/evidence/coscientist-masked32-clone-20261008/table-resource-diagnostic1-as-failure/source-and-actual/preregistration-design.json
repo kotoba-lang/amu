@@ -1,0 +1,54 @@
+{
+  "status": "PREREG_DESIGN_HOLD_SOURCE_REVIEW_NO_EXECUTION_GO",
+  "scope": "one resource-install diagnostic Python child only; no loader/compiler/producer exec",
+  "maximumDiagnosticChildren": 1,
+  "maximumNativeLoaderCalls": 0,
+  "maximumCompilerCalls": 0,
+  "noRetry": true,
+  "preserveV2Unchanged": true,
+  "currentReadOnlyLimitsFile": "readonly-limits.json",
+  "causeEstablished": false,
+  "resourcePolicy": {
+    "orderedLimits": [
+      [
+        "RLIMIT_FSIZE",
+        67108864
+      ],
+      [
+        "RLIMIT_CPU",
+        1800
+      ],
+      [
+        "RLIMIT_AS",
+        4294967296
+      ]
+    ],
+    "desiredHard": "budget when inherited hard equals exact RLIM_INFINITY; otherwise min(inherited hard,budget)",
+    "desiredSoft": "min(desired hard,budget,inherited soft when finite)",
+    "mayRaiseInheritedHard": false,
+    "mayRaiseInheritedSoft": false,
+    "requiresAllThreeInstallAndExactReadback": true,
+    "missingASOrInstallError": "retain named limit, before/desired/readback if possible, exact exception and failure terminal; no fallback"
+  },
+  "diagnosticRecordPolicy": "ordinary child body logs before and flushed success/failure after each limit setter; do not use preexec_fn; bounded three limits in fixed order; stop on first failure",
+  "outerWallSeconds": 10,
+  "maximumReapSeconds": 5,
+  "softStdoutBytes": 65536,
+  "softStderrBytes": 65536,
+  "hardFSIZEBytes": 67108864,
+  "addressBudgetBytes": 4294967296,
+  "retention": "overcap raw retained/hashed without decoding; completion only after exact ordered receipt validation and child reap",
+  "limitations": [
+    "read-only current limits do not reproduce the failed child environment",
+    "preexec failure does not identify the failing setter",
+    "successful get/set/readback does not prove kernel physical-memory enforcement",
+    "Python child bootstrap runs before child-body installation; parent outer wall/raw supervision still applies",
+    "no OSstack/arena/native workload equivalence claim"
+  ],
+  "execution": {
+    "setrlimitTrials": 0,
+    "compiler": 0,
+    "nativeProducer": 0,
+    "ssh": 0
+  }
+}
