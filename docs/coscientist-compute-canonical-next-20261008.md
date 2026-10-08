@@ -97,3 +97,12 @@ work／既存集計／controlの9組は、同じpayloadの符号化対照だけ�
 [実装前の資源確認](evidence/coscientist-compute-canonical-20261008/result-projection-v1/feasibility.md)では、MM-WORDS=8,388,608の全Mをi64で符号化すると正確に64MiBとなり、stdoutへframingや診断を加えるだけで既存64MiB上限を超えることが分かった。まず読み取り専用observerへ完全なarityと宣言したsummary／certificate出力を追加する小さなshadow実装を行う。全M／read closureは別段階とし、raw64MiB snapshotファイル、別の上限64MiB journal、別metadata、再利用するchunk bufferとfirst-failureを設計・レビューする。出力roleを閉じる前に完全結果と呼ばず、journal上限も表現の切り詰めに使わない。[今回の選択snapshot](evidence/coscientist-compute-canonical-20261008/result-projection-v1/snapshot.json)はrawの重複archiveではなく、既存公開rawへのexact hash参照と269比較を保持する不完全な入力閉包である。追加native／SSH呼出0、解析省略0、C2 OFFのままである。
 
 [独立再構成](evidence/coscientist-compute-canonical-20261008/result-projection-v1/independent/report.json)も4,212記録から60／209と538／747を確認した。公開入力参照は23件で全バイト一致した。同一projection60件の現行解析workは合計16,808,960・中央値239,744、異なる209件は合計61,000,960・中央値207,488だった。これは論理workの観測で、実時間、実際に省略したwork、再利用の可否や下流停止の利益を意味しない。独立readerのDEACTIVATE対応・JSON整数key修正の途中診断も保存し、nativeや元ソースを変更・再実行していない。
+
+
+## arity・summary追加の実6-call pilot
+
+新しいKotoba observerをAmuでcompile／extractし、元CRC32／SLREのcompile／extractを加えた6呼出が全終了した。[独立監査](evidence/coscientist-compute-canonical-20261008/output-role-pilot6-v1/reviews/actual-width/report.json)は全raw・環境・17 counters・全16 subject VW／FN fields・control9..14・ordered edge arity／IF-A/B/C／4寄与・CR-ENDを再構成し、両成果物のKSEED／native／export／offsetの全バイト一致を確認した。query161件のうちCRC8件は全成功、SLRE153件は152成功／1 support低下。既存memo hitは111、新しい解析省略は0だった。
+
+111 hitのcontrol9..14はすべて直前のglobal queryの値と一致し、106件で同じfnの前回値と異なった。これはscratchの寿命を示す実証であり、control9..14を現在のfn固有の意味結果としてResultCIDへ封じてはいけない。全subject VW fieldsにも入口bound6..9があり、全記録状態を意味結果と呼ばない。SLREの3件のbound変更missは以前の小projectionでも追加記録でも一致0件だったが、このpilotを元19件の60候補全体へ広げない。
+
+[著者参加を明示した再確認](evidence/coscientist-compute-canonical-20261008/output-role-pilot6-v1/reviews/actual-census-review/report.json)も保存した。出力role・read closure・現在のaggregateへの再適用・完全なResultCID／ComputeCIDは未資格、C2 OFFである。[選択snapshot](evidence/coscientist-compute-canonical-20261008/output-role-pilot6-v1/snapshot.json)は全763依存の実バイトarchiveではない。残る17件は既存observerと終了済みCRC／SLREを再実行せず、別の有限34-call実験として扱う。
