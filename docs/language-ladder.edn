@@ -395,9 +395,10 @@
   {:id :browser-surface :gate "browser-surface-native-test"
    :blocked-by [:empty-vector-field :list-item-from-expression :merge-literal-reads-its-row :integer-str :native-rebound-row-update :row-tuple-element-argument :destructured-key-fallback :input-log-events :record-list-field-literal :absent-field-from-expression :browser-text-edit]
    :goal "browser.surface with cssom.layout and kotoba.wasm.dom the same"}
-  ;; Measured 2026-10-08 (amu a0604488, browser b50c21a): the hosted engine's
-  ;; reducers are what this floor switches, and none compiles yet --
-  ;; `amu check src/browser/text_edit.cljk` exit 65 "function body is empty
+  ;; Measured 2026-10-08 (amu a0604488, browser b50c21a; Node/nbb bootstrap
+  ;; reference, the repository launcher `bin/amu check ... --jvm-free`): the
+  ;; hosted engine's reducers are what this floor switches, and none
+  ;; compiles yet -- `bin/amu check src/browser/text_edit.cljk --jvm-free` exit 65 "function body is empty
   ;; ... a `#?(:clj ...)` with no :kotoba or :default clause reads as
   ;; nothing"; input.cljk / surface.cljk with --source-path src exit 65
   ;; "required module cssom.layout is missing from the explicit source
