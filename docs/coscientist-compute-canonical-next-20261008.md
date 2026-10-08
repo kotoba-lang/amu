@@ -209,3 +209,9 @@ fresh V4の8呼出と独立raw監査で、現在のCRC reader FN／SIR、256通�
 最初の未解決条件は、正確なhistorical snapshotでの全reader・alias・writer・reset-before-read・出力所有期間の閉包である。current16には同じ解析経路がないため、historical queryの証拠を現在の製品cacheの資格へ移さない。次のobserverも毎回direct解析を実行するshadow診断とし、C2 OFF・キー除外なし・追加省略0を維持する。hash／lookup／replayと失敗経路を含む費用を実測するまで、CIDによる性能向上を主張しない。
 
 current OFF/TCの機能V3でも、SLRE32の保存rawは戻り値・fuel・17arenaで一致した一方、未登録childのsampling拒否でcampaignは停止した。[保存失敗の範囲](coscientist-masked32-clone-20261008.md)。結果内容の一致と現在のadmission成功は別である。raw一致を理由に拒否を成功bindingへ書き換えず、成功した結果の再利用契約と失敗TransitionReceiptを分けて保持する。
+
+## 現在のfuel規則にも要求・結果・再適用を分ける
+
+[公開型x8 fuel候補](coscientist-masked32-clone-20261008.md)の適用証拠を将来再利用する場合も、ComputeRequestは現在のtyped FN／SIR、call／CFG・private entry・layout、規則の実装、register／context reader、ABI・effect・trap・fuel契約を封じる。Owned Answerは適用可否と意味保存の条件を持ち、過去のcode offsetや可変register scratchをそのままコピーしない。実際の現在配置、x8／contextの全writer、entry初期化とfuel公開をTransitionで検査する。規則の条件を証明できたことと、現在のnative codeが条件を満たすことを分ける。
+
+残り50件を含む95組の保存raw一致でも、SLREの旧admission拒否は残った。Resultが一致しても現在のadmissionを省略できない具体例として保持する。今回の214 tickモデルは生成命令の有限契約検査であり、ComputeCID cacheの実装・IPLD符号化・解析費用の改善ではない。cacheなし／shadow／replayのowned Answerと順序付き寄与・現在の更新を一致させ、実lookup失効・途中公開拒否と全費用の測定を通すまではC2をOFFに保つ。

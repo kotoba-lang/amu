@@ -497,3 +497,13 @@ The campaign remains FAIL, completion report absent, remaining50 calls unexecute
 The root GO creator initially referenced old V2 review paths and refused before creating a GO; a driver attempted without that absent GO created no output namespace or native child. Corrected exact V3 paths produced GO `255b7319` and only then the once140 native launch. These root orchestration errors are preserved alongside the original V2 review error. Sealed source/raw snapshots retain their exact whitespace, including blank-line/trailing-space bytes; edited prose passes whitespace checking without changing evidence hashes.
 
 Next prospective runtime compares95 unchanged profiles in exact currentOFF andTC paths (190new native calls), then saved C95 answers, preserving native fuel16777216 and pairs2097152/string65536/vectors4096/items65536. All17 native terminal arena counters must be parsed honestly; Cfuel/arenas stay unavailable. Runtime SOURCE/independent reviews/GO remain pending. Quiet samehost repeated C performance is a separate required gate; unchanged18 code is not substituted for its measurement.
+
+## 残り50件の機能比較と、公開fuelの次候補
+
+未実行だったstatemate／tarfind／ud／wikisort／xgboostの原5条件・OFF／TC計50呼出を、別登録の固定scopeで一度だけ実行した。50件すべてdirect wait0と現在のsemantic admissionを通過し、45件がstrict sampled policy、5件が既定のtyped termination-gap診断だった。[独立保存監査](evidence/coscientist-masked32-clone-20261008/functional-remaining50-joined95-conditional-v1/reviews/actual-independent/report.json)は全source／3,620入力、各呼出のseal・環境・resource・raw・fuel・17arenaと保存prefix140を再検証した。過去140件の再実行はない。
+
+保存済みprefixと合わせた原19本×5条件の95組で、OFF／TCの戻り値・fuel・17arenaは一致し、戻り値は保存C95 oracleとも一致した。ただし189呼出・94組だけがadmission済みで、SLRE TC32の旧REFUSEは条件付きraw比較のまま残る。元campaignのFAILを成功へ書き換えない。これは機能比較で、Cのfuel／arena比較、現在hostでのC速度比較、公式Embenchスコア、hard physical-memory peakの資格ではない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/functional-remaining50-joined95-conditional-v1/snapshot.json)。
+
+次の[公開型x8 fuel候補SOURCE](evidence/coscientist-masked32-clone-20261008/published-mode2-x8-fuel-candidate-source-v1/source/AUDIT.md)は、certified small-tail mode2・frame0・fuelありの場合に、専用x8へ一度読み込み、元の各FUELでdebit後の値をcontextへ公開する。ゼロ時のBRKとcontext値、元のprivate freg1は保持する。descriptor clearの後へ初期loadを置き、private entryのtarget+1を維持する。これは新しい一般規則をコピーした診断workspaceで作る一回限りの手編集例外であり、製品ソースは変更していない。
+
+有限instructionモデルは214 tick比較とゼロ／u64境界、branch offset、非fuel trap前のcontext値を検査し、stale contextと未知x8 writerの反例を保持した。実際の生成命令・全x8/context破壊経路・ABI entryの寿命の証明は未完了で、ネイティブ候補の採用はまだ行わない。静的にはstatemateの383 bodyが候補だが、速度への寄与は未測定であり、この一規則でCとの差を埋める根拠はない。C2 OFF・CIDによる新しい解析省略0を維持する。

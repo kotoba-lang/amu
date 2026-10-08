@@ -1,0 +1,11 @@
+--- /Users/junkawasaki/github/workspaces/codex/tc-original19-functional190-source-v3-20261009/launch-wrapper.py
++++ /Users/junkawasaki/github/workspaces/codex/tc-original19-functional-remaining50-source-v1-20261009/launch-wrapper.py
+@@ -30,7 +30,7 @@
+  for k in ['label','workload','arm','profile','symbol','offset','arity','native','container','source']:assert seal[k]==row[k]
+  runtime_case(argv,pr,row)
+  assert seal['sourcePinsSHA256']==hashlib.sha256((D/'source-pins.json').read_bytes()).hexdigest() and seal['preregistrationSHA256']==sp['preregistration.json']['sha256']
+- checked(seal['rootGO']['path'],seal['rootGO']);go=json.loads(Path(seal['rootGO']['path']).read_bytes());assert go['status']==pr['rootGOStatus'] and go['sourcePinsSHA256']==seal['sourcePinsSHA256'] and go['preregistrationSHA256']==seal['preregistrationSHA256'] and go['C2']is False and go['maximumLoaderCalls']==190 and go['runtimeGuestAuthorized']is True and go['timingAuthorized']is False
++ checked(seal['rootGO']['path'],seal['rootGO']);go=json.loads(Path(seal['rootGO']['path']).read_bytes());assert go['status']==pr['rootGOStatus'] and go['sourcePinsSHA256']==seal['sourcePinsSHA256'] and go['preregistrationSHA256']==seal['preregistrationSHA256'] and go['C2']is False and go['maximumLoaderCalls']==50 and go['runtimeGuestAuthorized']is True and go['timingAuthorized']is False
+  for k in ['native','container','source']:checked(row[k]['path'],row[k])
+  from run import container
+  payload,exports=container(Path(row['container']['path']).read_bytes())

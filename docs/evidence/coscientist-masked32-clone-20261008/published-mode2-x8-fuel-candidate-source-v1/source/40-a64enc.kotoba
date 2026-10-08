@@ -1,0 +1,180 @@
+;; seed/40-a64enc.kotoba -- AArch64 instruction encoders of the seed compiler (R0). Prefix enc-. Owner: 40-a64enc.
+;; Pure functions over i64: register numbers (0..30, 31 = sp or xzr by instruction), immediates in the units
+;; named per function, result = the 32-bit instruction word (0..2^32-1). An operand out of range gives -1; the
+;; caller (41-a64gen, 42-layout) turns -1 into E-ENC-IMM. All forms are 64-bit (sf = 1). Opcode bases are written
+;; in decimal (R0 has no hex literals); the hex is in the comment. Bit patterns follow kotoba-native aarch64.cljk
+;; and the Arm ARM; the oracle is clang + otool (scripts/seed/a64enc-oracle.py, seed/tests/unit/40-a64enc_t).
+;; Condition codes are the A64 cond field values (enc-cond-*); enc-cond-of-cc maps SIR CC-* to them.
+
+;; ---- helpers ------------------------------------------------------------------------------------------------
+(defn- enc-r [r :i64] :i64 (bit-and r 31))
+;; enc-in: 1 when lo <= x <= hi, else 0. enc-z: 1 when x = 0. (i64 flags, combined with *: the stable stage-0
+;; native image answers "internal compiler error" on every and/or/not, seed/CONTRACT-REQUESTS.md 2026-10-02.)
+(defn- enc-in [x :i64 lo :i64 hi :i64] :i64 (if (< x lo) 0 (if (> x hi) 0 1)))
+(defn- enc-z [x :i64] :i64 (if (= x 0) 1 0))
+(defn- enc-sh [x :i64 n :i64] :i64 (i64-shift-left x n))
+(defn- enc-word-ok [w :i64] :bool (>= w 0))
+
+;; ---- condition codes ------------------------------------------------------------------------------------------
+(defn- enc-cond-eq [] :i64 0)
+(defn- enc-cond-ne [] :i64 1)
+(defn- enc-cond-hs [] :i64 2)
+(defn- enc-cond-lo [] :i64 3)
+(defn- enc-cond-vs [] :i64 6)
+(defn- enc-cond-vc [] :i64 7)
+(defn- enc-cond-ge [] :i64 10)
+(defn- enc-cond-lt [] :i64 11)
+(defn- enc-cond-gt [] :i64 12)
+(defn- enc-cond-le [] :i64 13)
+(defn- enc-cond-of-cc [cc :i64] :i64
+  (cond (>= cc CC-F64-EQ) (enc-fcond (bit-and cc 7))   ; FLOAT (r6j): after fcmp
+        (= cc CC-EQ) 0
+        (= cc CC-LT) 11
+        (= cc CC-GT) 12
+        (= cc CC-LE) 13
+        (= cc CC-GE) 10
+        :else -1))
+
+;; FLOAT (r6j): the A64 condition after `fcmp` for float compare k = CC-F*-* mod 8 (0 eq 1 lt 2 le 3 gt 4 ge 5 unordered):
+;; eq, mi, ls, gt, ge, vs -- each is false on unordered operands except vs (the Arm ARM fcmp flag table: unordered = 0011)
+(defn- enc-fcond [k :i64] :i64
+  (cond (= k 0) 0 (= k 1) 4 (= k 2) 9 (= k 3) 12 (= k 4) 10 (= k 5) 6 :else -1))
+
+;; ---- data processing, register forms: base + Rm<<16 + Rn<<5 + Rd ------------------------------------------------
+(defn- enc-rrr [base :i64 d :i64 n :i64 m :i64] :i64
+  (+ base (enc-sh (enc-r m) 16) (enc-sh (enc-r n) 5) (enc-r d)))
+(defn- enc-add-r [d :i64 n :i64 m :i64] :i64 (enc-rrr 2332033024 d n m))   ; 8b000000 add xd, xn, xm
+(defn- enc-sub-r [d :i64 n :i64 m :i64] :i64 (enc-rrr 3405774848 d n m))   ; cb000000 sub
+(defn- enc-adds-r [d :i64 n :i64 m :i64] :i64 (enc-rrr 2868903936 d n m))  ; ab000000 adds
+(defn- enc-subs-r [d :i64 n :i64 m :i64] :i64 (enc-rrr 3942645760 d n m))  ; eb000000 subs
+(defn- enc-and-r [d :i64 n :i64 m :i64] :i64 (enc-rrr 2315255808 d n m))   ; 8a000000 and
+(defn- enc-orr-r [d :i64 n :i64 m :i64] :i64 (enc-rrr 2852126720 d n m))   ; aa000000 orr
+(defn- enc-eor-r [d :i64 n :i64 m :i64] :i64 (enc-rrr 3388997632 d n m))   ; ca000000 eor
+(defn- enc-orn-r [d :i64 n :i64 m :i64] :i64 (enc-rrr 2854223872 d n m))   ; aa200000 orn
+(defn- enc-sdiv [d :i64 n :i64 m :i64] :i64 (enc-rrr 2596277248 d n m))    ; 9ac00c00 sdiv
+(defn- enc-lslv [d :i64 n :i64 m :i64] :i64 (enc-rrr 2596282368 d n m))    ; 9ac02000 lsl (register)
+(defn- enc-lsrv [d :i64 n :i64 m :i64] :i64 (enc-rrr 2596283392 d n m))    ; 9ac02400 lsr (register)
+(defn- enc-asrv [d :i64 n :i64 m :i64] :i64 (enc-rrr 2596284416 d n m))    ; 9ac02800 asr (register)
+(defn- enc-madd [d :i64 n :i64 m :i64 a :i64] :i64                         ; 9b000000 madd xd, xn, xm, xa
+  (+ (enc-rrr 2600468480 d n m) (enc-sh (enc-r a) 10)))
+(defn- enc-mul [d :i64 n :i64 m :i64] :i64 (enc-madd d n m 31))
+(defn- enc-mov-r [d :i64 m :i64] :i64 (enc-orr-r d 31 m))                  ; mov xd, xm (orr xd, xzr, xm)
+(defn- enc-mvn [d :i64 m :i64] :i64 (enc-orn-r d 31 m))                    ; mvn xd, xm (orn xd, xzr, xm)
+(defn- enc-cmp-r [n :i64 m :i64] :i64 (enc-subs-r 31 n m))                 ; cmp xn, xm
+(defn- enc-cmn-r [n :i64 m :i64] :i64 (enc-adds-r 31 n m))                 ; cmn xn, xm
+(defn- enc-csinc [d :i64 n :i64 m :i64 c :i64] :i64                       ; 9a800400 csinc xd, xn, xm, c
+  (if (= 1 (enc-in c 0 15)) (+ (enc-rrr 2592080896 d n m) (enc-sh c 12)) -1))
+(defn- enc-csel [d :i64 n :i64 m :i64 c :i64] :i64                        ; 9a800000 csel xd, xn, xm, c
+  (if (= 1 (enc-in c 0 15)) (+ (enc-rrr 2592079872 d n m) (enc-sh c 12)) -1))
+(defn- enc-cset [d :i64 c :i64] :i64                                       ; cset xd, c = csinc xd, xzr, xzr, !c
+  (if (= 1 (enc-in c 0 13)) (enc-csinc d 31 31 (bit-xor c 1)) -1))
+(defn- enc-eor-1 [d :i64 n :i64] :i64                                      ; d2400000 eor xd, xn, #1
+  (+ 3527409664 (enc-sh (enc-r n) 5) (enc-r d)))
+
+;; ---- add/sub immediate: imm 0..4095, or a multiple of 4096 below 2^24 (lsl #12). Register 31 = sp. ----------
+(defn- enc-addsub-i [base :i64 d :i64 n :i64 imm :i64] :i64
+  (cond (= 1 (enc-in imm 0 4095)) (+ base (enc-sh imm 10) (enc-sh (enc-r n) 5) (enc-r d))
+        (= 1 (* (enc-in imm 4096 16777215) (enc-z (bit-and imm 4095))))
+        (+ base 4194304 (enc-sh (u64-shift-right imm 12) 10) (enc-sh (enc-r n) 5) (enc-r d))
+        :else -1))
+(defn- enc-add-i [d :i64 n :i64 imm :i64] :i64 (enc-addsub-i 2432696320 d n imm))   ; 91000000
+(defn- enc-adds-i [d :i64 n :i64 imm :i64] :i64 (enc-addsub-i 2969567232 d n imm))  ; b1000000
+(defn- enc-sub-i [d :i64 n :i64 imm :i64] :i64 (enc-addsub-i 3506438144 d n imm))   ; d1000000
+(defn- enc-subs-i [d :i64 n :i64 imm :i64] :i64 (enc-addsub-i 4043309056 d n imm))  ; f1000000
+(defn- enc-cmp-i [n :i64 imm :i64] :i64 (enc-subs-i 31 n imm))
+(defn- enc-cmn-i [n :i64 imm :i64] :i64 (enc-adds-i 31 n imm))
+(defn- enc-mov-sp [d :i64 n :i64] :i64 (enc-add-i d n 0))                  ; mov to/from sp
+
+;; ---- wide moves: imm16 0..65535 at halfword hw 0..3 --------------------------------------------------------------
+(defn- enc-movw [base :i64 d :i64 imm :i64 hw :i64] :i64
+  (if (= 1 (* (enc-in imm 0 65535) (enc-in hw 0 3)))
+    (+ base (enc-sh hw 21) (enc-sh imm 5) (enc-r d))
+    -1))
+(defn- enc-movz [d :i64 imm :i64 hw :i64] :i64 (enc-movw 3531603968 d imm hw))  ; d2800000
+(defn- enc-movk [d :i64 imm :i64 hw :i64] :i64 (enc-movw 4068474880 d imm hw))  ; f2800000
+(defn- enc-movn [d :i64 imm :i64 hw :i64] :i64 (enc-movw 2457862144 d imm hw))  ; 92800000
+
+;; ---- loads and stores (64-bit) -----------------------------------------------------------------------------------
+;; ldr/str [xn, #off]: off in BYTES, a multiple of 8, 0..32760
+(defn- enc-ldst-u [base :i64 t :i64 n :i64 off :i64] :i64
+  (if (= 1 (* (enc-in off 0 32760) (enc-z (bit-and off 7))))
+    (+ base (enc-sh (u64-shift-right off 3) 10) (enc-sh (enc-r n) 5) (enc-r t))
+    -1))
+(defn- enc-ldr [t :i64 n :i64 off :i64] :i64 (enc-ldst-u 4181721088 t n off))   ; f9400000
+(defn- enc-str [t :i64 n :i64 off :i64] :i64 (enc-ldst-u 4177526784 t n off))   ; f9000000
+;; ldur/stur [xn, #off]: off in bytes, -256..255
+(defn- enc-ldst-s [base :i64 t :i64 n :i64 off :i64] :i64
+  (if (= 1 (enc-in off -256 255))
+    (+ base (enc-sh (bit-and off 511) 12) (enc-sh (enc-r n) 5) (enc-r t))
+    -1))
+(defn- enc-ldur [t :i64 n :i64 off :i64] :i64 (enc-ldst-s 4164943872 t n off))  ; f8400000
+(defn- enc-stur [t :i64 n :i64 off :i64] :i64 (enc-ldst-s 4160749568 t n off))  ; f8000000
+;; stp/ldp t1, t2, [xn, #off] (signed offset, pre-index !, post-index): off in bytes, multiple of 8, -512..504
+(defn- enc-ldstp [base :i64 t1 :i64 t2 :i64 n :i64 off :i64] :i64
+  (if (= 1 (* (enc-in off -512 504) (enc-z (bit-and off 7))))
+    (+ base (enc-sh (bit-and (i64-shift-right off 3) 127) 15) (enc-sh (enc-r t2) 10) (enc-sh (enc-r n) 5) (enc-r t1))
+    -1))
+(defn- enc-stp-pre [t1 :i64 t2 :i64 n :i64 off :i64] :i64 (enc-ldstp 2843738112 t1 t2 n off))  ; a9800000
+(defn- enc-ldp-post [t1 :i64 t2 :i64 n :i64 off :i64] :i64 (enc-ldstp 2831155200 t1 t2 n off)) ; a8c00000
+(defn- enc-stp [t1 :i64 t2 :i64 n :i64 off :i64] :i64 (enc-ldstp 2835349504 t1 t2 n off))      ; a9000000
+(defn- enc-ldp [t1 :i64 t2 :i64 n :i64 off :i64] :i64 (enc-ldstp 2839543808 t1 t2 n off))      ; a9400000
+
+;; ---- branches: offsets in WORDS relative to the instruction (adr: in BYTES) ----------------------------------------
+(defn- enc-b26 [base :i64 off :i64] :i64
+  (if (= 1 (enc-in off -33554432 33554431)) (+ base (bit-and off 67108863)) -1))
+(defn- enc-b [off :i64] :i64 (enc-b26 335544320 off))     ; 14000000
+(defn- enc-bl [off :i64] :i64 (enc-b26 2483027968 off))   ; 94000000
+(defn- enc-bcond [c :i64 off :i64] :i64                   ; 54000000 b.c
+  (if (= 1 (* (enc-in c 0 15) (enc-in off -262144 262143)))
+    (+ 1409286144 (enc-sh (bit-and off 524287) 5) c)
+    -1))
+(defn- enc-cb [base :i64 t :i64 off :i64] :i64
+  (if (= 1 (enc-in off -262144 262143)) (+ base (enc-sh (bit-and off 524287) 5) (enc-r t)) -1))
+(defn- enc-cbz [t :i64 off :i64] :i64 (enc-cb 3019898880 t off))    ; b4000000
+(defn- enc-cbnz [t :i64 off :i64] :i64 (enc-cb 3036676096 t off))   ; b5000000
+(defn- enc-adr [d :i64 off :i64] :i64                                 ; 10000000 adr xd, #off (bytes)
+  (if (= 1 (enc-in off -1048576 1048575))
+    (+ 268435456 (enc-sh (bit-and off 3) 29) (enc-sh (bit-and (i64-shift-right off 2) 524287) 5) (enc-r d))
+    -1))
+(defn- enc-br [n :i64] :i64 (+ 3592355840 (enc-sh (enc-r n) 5)))    ; d61f0000
+(defn- enc-blr [n :i64] :i64 (+ 3594452992 (enc-sh (enc-r n) 5)))   ; d63f0000
+(defn- enc-ret [] :i64 3596551104)                                   ; d65f03c0 ret (x30)
+(defn- enc-brk [imm :i64] :i64                                        ; d4200000 brk #imm
+  (if (= 1 (enc-in imm 0 65535)) (+ 3558866944 (enc-sh imm 5)) -1))
+(defn- enc-nop [] :i64 3573751839)                                   ; d503201f
+
+;; ---- patching (42-layout): replace the offset field of an already encoded word ------------------------------------
+;; imm26 (b, bl), off in words
+(defn- enc-patch-imm26 [w :i64 off :i64] :i64
+  (if (= 1 (enc-in off -33554432 33554431)) (+ (bit-and w 4227858432) (bit-and off 67108863)) -1))   ; keep fc000000
+;; imm19 at bits 5..23 (b.cond, cbz, cbnz), off in words
+(defn- enc-patch-imm19 [w :i64 off :i64] :i64
+  (if (= 1 (enc-in off -262144 262143)) (+ (bit-and w 4278190111) (enc-sh (bit-and off 524287) 5)) -1)) ; keep ff00001f
+;; imm16 at bits 5..20 (movz, movk, movn)
+(defn- enc-patch-imm16 [w :i64 imm :i64] :i64
+  (if (= 1 (enc-in imm 0 65535)) (+ (bit-and w 4292870175) (enc-sh imm 5)) -1))                        ; keep ffe0001f
+
+;; ---- FLOAT (agent FLOAT, rung r6j, 2026-10-04): scalar floating point. sz = 1 double (d registers), 0 single (s). ------
+;; Words checked against clang -c + objdump (scripts/seed/a64enc-oracle.py style; seed/tests/float/enc.s).
+(defn- enc-ftype [sz :i64] :i64 (if (= sz 1) 0x00400000 0))
+;; fmov dN, xM / sN, wM (general -> fp) and xD, dN / wD, sN (fp -> general)
+(defn- enc-fmov-to-fp [sz :i64 d :i64 n :i64] :i64 (+ (if (= sz 1) 0x9e670000 0x1e270000) (enc-sh (enc-r n) 5) (enc-r d)))
+(defn- enc-fmov-from-fp [sz :i64 d :i64 n :i64] :i64 (+ (if (= sz 1) 0x9e660000 0x1e260000) (enc-sh (enc-r n) 5) (enc-r d)))
+;; fadd/fsub/fmul/fdiv/fmin/fmax d|s: k = 0 add 1 sub 2 mul 3 div 4 min 5 max
+(defn- enc-fop2-base [k :i64] :i64
+  (cond (= k 0) 0x1e202800 (= k 1) 0x1e203800 (= k 2) 0x1e200800 (= k 3) 0x1e201800 (= k 4) 0x1e205800 (= k 5) 0x1e204800 :else -1))
+(defn- enc-fop2 [k :i64 sz :i64 d :i64 n :i64 m :i64] :i64
+  (if (< (enc-fop2-base k) 0) -1 (+ (enc-rrr (enc-fop2-base k) d n m) (enc-ftype sz))))
+;; fneg/fabs/fsqrt d|s: k = 0 neg 1 abs 2 sqrt
+(defn- enc-fop1-base [k :i64] :i64 (cond (= k 0) 0x1e214000 (= k 1) 0x1e20c000 (= k 2) 0x1e21c000 :else -1))
+(defn- enc-fop1 [k :i64 sz :i64 d :i64 n :i64] :i64
+  (if (< (enc-fop1-base k) 0) -1 (+ (enc-fop1-base k) (enc-ftype sz) (enc-sh (enc-r n) 5) (enc-r d))))
+;; fcmp dN, dM / sN, sM
+(defn- enc-fcmp [sz :i64 n :i64 m :i64] :i64 (+ 0x1e202000 (enc-ftype sz) (enc-sh (enc-r m) 16) (enc-sh (enc-r n) 5)))
+;; fcvtzs xD, dN|sN (round toward zero, saturating, NaN -> 0); scvtf dD|sD, xN (round to nearest even)
+(defn- enc-fcvtzs [sz :i64 d :i64 n :i64] :i64 (+ 0x9e380000 (enc-ftype sz) (enc-sh (enc-r n) 5) (enc-r d)))
+(defn- enc-scvtf [sz :i64 d :i64 n :i64] :i64 (+ 0x9e220000 (enc-ftype sz) (enc-sh (enc-r n) 5) (enc-r d)))
+;; fcvt sD, dN (sz = 1: narrow) / fcvt dD, sN (sz = 0: widen)
+(defn- enc-fcvt [sz :i64 d :i64 n :i64] :i64 (+ (if (= sz 1) 0x1e624000 0x1e22c000) (enc-sh (enc-r n) 5) (enc-r d)))
+;; sxtw xD, wN (sbfm xD, xN, #0, #31)
+(defn- enc-sxtw [d :i64 n :i64] :i64 (+ 0x93407c00 (enc-sh (enc-r n) 5) (enc-r d)))
