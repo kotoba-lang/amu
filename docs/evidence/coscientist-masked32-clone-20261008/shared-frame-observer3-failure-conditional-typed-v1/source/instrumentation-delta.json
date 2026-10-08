@@ -1,0 +1,12 @@
+{
+  "oldLoop": "(defn- gn-loop [M :vector-i64 i :i64] :vector-i64\n  (if (and (< i (vector-at M MM-SIR-N)) (= (vector-at M MM-ERR) 0))\n    (let [M1 (gn-ins M i (gn-op M i))\n          k (gn-g M1 gn-f-skip)]\n      (gn-loop (gn-gs M1 gn-f-skip 0) (+ i 1 k)))\n    M))\n\n",
+  "newLoop": "(defn- sr-loop [M :vector-i64 i :i64 Q :vector-i64] :vector-i64\n  (if (and (< i (vector-at M MM-SIR-N)) (= (vector-at M MM-ERR) 0))\n    (let [op (gn-op M i) selected (sr-has M Q i 0) before (vector-at M MM-CODE-N)\n          pre (if (and selected (= op OP-CALL)) (sr-state M i 0) 0)\n          M1 (gn-ins M i op) k (gn-g M1 gn-f-skip)\n          note (if selected (sr-row \"SI\" [i before (vector-at M1 MM-CODE-N) k op (vector-at M1 MM-ERR)]) 0)\n          post (if (and selected (or (= op OP-FN) (= op OP-CALL))) (sr-state M1 i 1) 0)]\n      (sr-loop (gn-gs M1 gn-f-skip 0) (+ i 1 k) Q))\n    M))\n(defn- gn-loop [M :vector-i64 i :i64] :vector-i64 (sr-loop M i (sr-pick M)))\n\n",
+  "oldDriver": "(drv-c6 (gn-run M) S path out)",
+  "newDriver": "(drv-c6 (sr-run M) S path out)",
+  "oldLayout": "(drv-c7 (ly-run M) S path out)",
+  "newLayout": "(drv-c7 (sr-layout M) S path out)",
+  "originalGnInsCallsPerIteration": 1,
+  "originalGnRunCalls": 1,
+  "originalLyRunCalls": 1,
+  "reverseExact": true
+}

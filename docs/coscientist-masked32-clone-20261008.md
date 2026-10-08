@@ -507,3 +507,11 @@ Next prospective runtime compares95 unchanged profiles in exact currentOFF andTC
 次の[公開型x8 fuel候補SOURCE](evidence/coscientist-masked32-clone-20261008/published-mode2-x8-fuel-candidate-source-v1/source/AUDIT.md)は、certified small-tail mode2・frame0・fuelありの場合に、専用x8へ一度読み込み、元の各FUELでdebit後の値をcontextへ公開する。ゼロ時のBRKとcontext値、元のprivate freg1は保持する。descriptor clearの後へ初期loadを置き、private entryのtarget+1を維持する。これは新しい一般規則をコピーした診断workspaceで作る一回限りの手編集例外であり、製品ソースは変更していない。
 
 有限instructionモデルは214 tick比較とゼロ／u64境界、branch offset、非fuel trap前のcontext値を検査し、stale contextと未知x8 writerの反例を保持した。実際の生成命令・全x8/context破壊経路・ABI entryの寿命の証明は未完了で、ネイティブ候補の採用はまだ行わない。静的にはstatemateの383 bodyが候補だが、速度への寄与は未測定であり、この一規則でCとの差を埋める根拠はない。C2 OFF・CIDによる新しい解析省略0を維持する。
+
+## 共有フレーム観測3の拒否と、展開ソースを封じた条件付き構造証拠
+
+読み取り専用current16観測器を固定3呼出で一度実行し、compiler build／extractと元nsichneu compileはすべてdirect wait0だった。最初の2件だけがadmission済みで、最後は検査のAssertionErrorでREFUSEとなり、campaignはFAIL・完了reportなしのまま保持する。[独立保存監査](evidence/coscientist-masked32-clone-20261008/shared-frame-observer3-failure-conditional-typed-v1/reviews/actual-independent/report.json)は全23 source／2,841入力、seal・資源設定6行・raw・70samplesと元拒否を検証した。初回の自動承認レビュー時間切れはプロセス起動前で、その後の唯一のnative launchと区別する。再コンパイルはしない。
+
+検査はファイル内265 defnをFN table数と誤認し、暗黙のソース追加をtoken範囲へ含めていなかった。rootと独立SOURCEレビューの見落としとして記録する。一次実装のscannerを独立に照合すると、remのcall head4か所だけがgroup64を要求し、leading LFとrem定義を追加する。null sentinelも含めてFN-Nは267、展開後ソースは30,443 B・SHA256 `0d98333cf7a1fc31ad3e338dd10f4a82108565e4864db03eae431c878d9ae968`となる。元拒否を成功へ書き換えず、この完全な展開ソースを使った別の保存raw構造検査だけを条件付き証拠とする。
+
+その検査で12 owner（132〜143）・150 SIR・24辺、boundary owner2／4／144、全CODE／FIXの再配置とsource／node／token対応を確認した。元nsichneuの37,591 B containerは完全一致する。transient frameは80／96 Bで、returning helperはBL、unary tailはBだった。これは共有フレームの意味保存や速度の証拠ではない。まず同じframeサイズ・callee-save／context配置の区間を候補にし、incoming entry、parameter move、レジスタ、stack trap、fuel・vector・17arenaを証明する。最大frameへの拡大を既定にしない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/shared-frame-observer3-failure-conditional-typed-v1/snapshot.json)。

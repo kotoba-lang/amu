@@ -215,3 +215,9 @@ current OFF/TCの機能V3でも、SLRE32の保存rawは戻り値・fuel・17aren
 [公開型x8 fuel候補](coscientist-masked32-clone-20261008.md)の適用証拠を将来再利用する場合も、ComputeRequestは現在のtyped FN／SIR、call／CFG・private entry・layout、規則の実装、register／context reader、ABI・effect・trap・fuel契約を封じる。Owned Answerは適用可否と意味保存の条件を持ち、過去のcode offsetや可変register scratchをそのままコピーしない。実際の現在配置、x8／contextの全writer、entry初期化とfuel公開をTransitionで検査する。規則の条件を証明できたことと、現在のnative codeが条件を満たすことを分ける。
 
 残り50件を含む95組の保存raw一致でも、SLREの旧admission拒否は残った。Resultが一致しても現在のadmissionを省略できない具体例として保持する。今回の214 tickモデルは生成命令の有限契約検査であり、ComputeCID cacheの実装・IPLD符号化・解析費用の改善ではない。cacheなし／shadow／replayのowned Answerと順序付き寄与・現在の更新を一致させ、実lookup失効・途中公開拒否と全費用の測定を通すまではC2をOFFに保つ。
+
+## ファイル内容と、解析器が実際に読む展開ソース
+
+[共有フレーム観測の保存失敗](coscientist-masked32-clone-20261008.md)で、ファイル内の定義数と解析器のFN table数、元ファイル範囲と暗黙ライブラリ追加後のtoken範囲を同一視した検査が拒否された。独立一次SOURCE照合は、元ソース30,386 Bにleading LFとrem定義を追加した30,443 Bを封じ、null sentinelを含む267 FNと24追加tokenを確認した。要求のread閉包には、元ファイル・追加ライブラリの内容と選択処理・展開後ソース・schema／sentinel契約を含める。元ファイルCIDだけで保存証拠を別展開へ移さない。
+
+展開後ソースを用いた保存rawの構造一致は、元のadmission拒否を覆さない。Resultの内容一致と現在のTransition成功を分け、元FAIL／REFUSEを保持する。C2 OFF・新しい解析省略0・キー除外なしであり、この条件付き構造検査をcache実装や性能向上として扱わない。
