@@ -164,3 +164,15 @@ MD5のFN4（SIR146..183）とSHAのFN3（77..114）に各1 ownerがあり、各4
 保持済みMD5／SHAを再実行せず、残る17本のcompile／extract34呼出と自己再ビルド6呼出を終了した。[独立actual監査](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-full19-selfbuild40-v1/reviews/actual-independent/report.json)が全40呼出・原ソース・producer連鎖・全KSEED/native/export/offsetを確認した。G1／G2／G3は完全なコンテナとnativeがバイト一致し、native966,824B、SHA-256 `5f4f591a1eb3bb46d3042a3463805a5cfb0897b766ee2de4909088be3369e1af`。G0→G1は504B増加して異なるが、事前登録はG1からの固定点を要求しており、その差も保持した。
 
 原19本の成果物はG0によるものなので、G3での原19本出力一致は別の有限38呼出で検証する。今回のコンパイルと固定点は、全19本runtime・製品CLI完全selfhost・性能・公式スコアを認定しない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-full19-selfbuild40-v1/snapshot.json)は全2001依存のportable実バイトarchiveではない。
+
+## LC固定点G3の原19本出力対応38
+
+固定点G3で原19本を改めてcompile／extractし、全38呼出が終了した。[独立saved-raw監査](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-g3-original19-compile38-v1/reviews/actual-independent/report.json)は各containerがextract前にG0と全バイト一致し、native・全export・arity・offsetも一致することを確認した。原ソースを保持し、G3が実際に同じベンチマーク成果物を作れることを確認した。以前のG0出力を固定点だけからG3の出力と推測していない。
+
+監査者は先のactual40と次のfunctional255 SOURCEに参加し、今回のdriver author／SOURCE reviewer／native実行者とは異なる。読み取り専用の監査で、元呼出を繰り返さない。[選択snapshot](evidence/coscientist-masked32-clone-20261008/leaf-read-cache-g3-original19-compile38-v1/snapshot.json)は全依存のportable archiveではない。全19本のruntimeとquiet C比較は次段階で、今回の一致は性能認定ではない。
+
+## Scalar typed owner：native成功3とoffline失敗1を保持
+
+readonly SIR／FREC observerはcompile／extractと正例compileの3呼出が全rc0で閉じ、正例の全KSEED298B／native272Bは元のON成果物と一致した。しかしhost検証器がstack高さ減少後の再admission、lazy context更新、CODE0 sentinel、1-based CODE offsetを誤認して停止した。[独立失敗監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-typed-owner-failure3-offline-failure1-v2/reviews/native-failure-independent/report.json)。4つ目のextractは実行せず、native FAIL3を保持した。
+
+ソース契約で修正したV2は保存rawをoffline1回だけ再判定したが、FX-BL26 kind4をBL opcodeの保証と誤認して再度停止した。実際のtail-callはB `0x17ffffdf`、変位−33でmask入口へ向かい、relocationはopcodeを保持する。[独立offline失敗監査](evidence/coscientist-masked32-clone-20261008/fuel-dag-typed-owner-failure3-offline-failure1-v2/reviews/offline-failure-independent/report.json)。この期待値はrootと独立SOURCEレビューでも見落とした。V2のFAIL1とSOURCE承認を保存し、候補やfixtureを変更しない。次のV3は厳密なB判定1箇所だけを修正し、typed tail関係と全FIX／target／payload検査を保持する。

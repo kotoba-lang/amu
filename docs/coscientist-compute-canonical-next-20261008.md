@@ -136,3 +136,9 @@ coscientistの次の対照は、同じ入力状態からcacheなし／shadowあ�
 全3,404 hitのcontrol9..14は直前global queryと一致し、2,968件で同じ対象の前回値と異なった。[SOURCEのrole／寿命確認](evidence/coscientist-compute-canonical-20261008/output-role-joined40-v1/source/result-role-contract.md)ではstage6のhitはfresh flowを走らせず、現在のcallerもこのglobal summaryを読まないことを確認した。一方、同じ辺の寄与は現在のtarget集計へ再適用される。保存する答えの所有者と、集計更新・support低下後のcaller処理を別契約にする根拠として使う。現在の処理をこの観測だけで不正と扱わない。
 
 [選択snapshot](evidence/coscientist-compute-canonical-20261008/output-role-joined40-v1/snapshot.json)と封印済みraw34 archive／inventoryを保存した。全828依存の実バイトarchiveではない。read closure、owned summary、現在状態への再適用、予算・trap契約、hash／lookup費用は未資格で、C2はOFFのままである。
+
+## 生成コードの候補検証との接続
+
+ユーザーのComputeCID／ResultCID案は、解析器・不変な対象依存・入力状態・規則群・段階・ABI・effect・trap・予算の契約を要求へ封じ、答えと順序付き寄与をResultへ、現在状態の更新・admission・消費の証拠をTransitionへ分ける方針として維持する。同じResultを得る要求の対応は検証済みbindingへ置き、valid-lastで公開する。Resultから現在の権限や外部書込みを代替せず、途中拒否・予算切れを初期reuse対象に含めない。
+
+生成コードの性能候補は、この再利用資格と分けて測る。[LCの有限runtime・原19本コンパイル・3世代固定点・G3出力一致の証拠](coscientist-masked32-clone-20261008.md)は、返り値・fuel・資源と再現性の確認であり、ComputeCIDキャッシュの効果ではない。規則群の識別子はDefCIDを改変するために使わず、ビルド要求とprovenanceへ関連付ける。次の解析reuse試験も、cacheなし／shadow／replayのowned answer、順序付き寄与、poison／diagnostics／現在aggregateを比較し、各key field失効と部分公開拒否を先に検証する。hash・lookup・replayを含む実時間を別に測るまでC2の省略はOFFである。

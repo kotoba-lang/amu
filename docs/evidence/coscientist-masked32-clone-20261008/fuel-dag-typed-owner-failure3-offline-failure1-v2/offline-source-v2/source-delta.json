@@ -1,0 +1,49 @@
+{
+  "priorValidator": {
+    "path": "/Users/junkawasaki/github/workspaces/codex/vector-fuel-scalar-dag-emitted-observer4-source-v1-width/validate.py",
+    "bytes": 5407,
+    "sha256": "eae932df9def579b705154a0cbceb18776ba02e17db0789ad6654066b4cd490d"
+  },
+  "newValidator": {
+    "path": "/Users/junkawasaki/github/workspaces/codex/vector-fuel-scalar-dag-emitted-observer4-offline-validator-v2-controls/validate.py",
+    "bytes": 6081,
+    "sha256": "d356d3d2988ecb1bd0ce5edc589d4cffaff7d60ce6016522ce1adf687551ed36"
+  },
+  "exactReverse": true,
+  "replacements": [
+    {
+      "old": "before==after==end",
+      "new": "before==end and after==0"
+    },
+    {
+      "old": "ctx==newctx==1",
+      "new": "ctx==0 and newctx==1"
+    },
+    {
+      "old": "and values[7]==1 and values[11]==0",
+      "new": "and values[7]==phase and values[11]==0"
+    },
+    {
+      "old": "if phase==0:assert values[6]>=call[3]+call[4]",
+      "new": "assert values[6]==(2 if phase==0 else 1)\n    if phase==0:assert values[6]==call[3]+call[4]"
+    },
+    {
+      "old": "assert cn<=256 and cb==len(native)and cn*4<=cb and ltn==lbn==1",
+      "new": "assert 1<cn<=256 and cb==len(native)and (cn-1)*4==cb and ltn==lbn==1"
+    },
+    {
+      "old": "and b''.join(struct.pack('<I',z[1])for z in code)==native[:cn*4];assert native[cn*4:]==bytes(cb-cn*4)",
+      "new": "and code[0]==[0,0]and all(0<=z[1]<2**32 for z in code);assert b''.join(struct.pack('<I',z[1])for z in code[1:])==native"
+    },
+    {
+      "old": "F[1][bench][13]*4==offset and F[1][mix][13]*4<offset",
+      "new": "(F[1][bench][13]-1)*4==offset and 0< F[1][mix][13] <F[1][bench][13]"
+    },
+    {
+      "old": " return {'status':'PASS_FINITE_TYPED_OWNER_OBSERVER_RECORDS_ONLY'",
+      "new": " # Exact current fixedfixture physical transition: original context reload then original five fuel words.\n words={j:w for j,w in code};assert start==47 and stop==62 and sites==0 and newsites==1\n assert [words[j]for j in range(start,start+3)]==[0xaa1303e0,0xd28000e1,0xf9401fe7]\n assert [words[j]for j in range(start+3,start+8)]==[0xf94004f0,0xf1000610,0x54000042,0xd4200000,0xf90004f0]\n assert rows['FFIX']==[[1,34,4,mask,0]];pc=34;w=words[pc];assert w>>26==0b100101\n disp=w&0x03ffffff;disp=disp-(1<<26)if disp&(1<<25)else disp\n assert (pc-1)*4+disp*4==(F[1][mask][13]-1)*4\n return {'status':'PASS_FINITE_TYPED_OWNER_OBSERVER_RECORDS_ONLY'"
+    }
+  ],
+  "oldEmittedObserverSourceUntouched": true,
+  "newNativeCalls": 0
+}
