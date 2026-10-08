@@ -1,0 +1,11 @@
+# Saved TC emission failure and offline repair boundary
+
+The original seven-call launch is a saved failure. All seven parent leaders have terminal return code 0 and signaling authority retired before wait; call 8 was never attempted. No successful build8 completion exists. The observed and ordinary original-CRC KSEED files are byte identical, and the preserved typed validator passes.
+
+The selected captured span begins at CODE244 with `aa1803e0` (MOV X0,X24) and ends at CODE256 with `aa0003e9` (MOV X9,X0). The source defines gn-k-local=3 and gn-a-sreg=16; gn-sreg subtracts one from the stored slot-register value (candidate lines 134,159). TCG pre descriptor kind0=3 and value0=7 identify local slot 7. TCG pre field16+7=23 has value25, hence physical register24. gn-sr/gn-into (lines207..229) use this mapping. gn-take/gn-dreg (lines369..383) publish temp0 into X9 when gn-co returns0. The original typed SIR has LGET temp0/local7 at219 and CALL reader1/temp0/arity1 at220.
+
+The frozen certificate guessed X25. Its synthetic source-control input also used X25, so it could not expose this mismatch. Independent SOURCE review missed the register-map derivation. This is a validator defect; these saved artifacts do not imply a guest execution result.
+
+A separate offline repair can derive the input MOV word from the complete typed local-slot origin, pre descriptor kind/value and stored register+1 map, validate the decoded source/destination register fields, retain the full literal/fuel/context/resource/typed/output checks and test inconsistent or missing origin/maps. No fields should be dropped: all 76 phase-paired TCG records equal saved OFF. My initial warning incorrectly compared pre with post and is withdrawn. A pure in-memory counterfactual replacing only the guessed first word with X24 passes every remaining frozen assertion, but is diagnostic only, not a separately reviewed repair certificate.
+
+Do not repeat calls1..7. A newly frozen standalone offline validator may review the saved capture. Call8 requires its own concrete authority and should not be inferred from this failure report. No runtime guest/fixedpoint/full19 performance, compile arena equivalence or hardpeak memory claim follows.

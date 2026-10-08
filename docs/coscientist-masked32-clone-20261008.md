@@ -336,3 +336,12 @@ fresh portable V4は渡した17項目を厳密に検査し、Python内の追加k
 現在の型付きrawからreader FN1／SIR1..174、caller FN3・eligible SIR220、256 finite paths・2,048 Bのtable poolを再構成し、48 resolved branch fixupも独立照合した。歴史的v8だけを適用根拠にせず、現在の入力閉包とのbindingが得られた。typed gateは8番目のextractより前にsource上で強制されるが、外部event traceによる工程観測とは区別する。
 
 これはreadonly bindingと成果物一致の資格で、TC emitterや生成workloadの実行、compiler arena同等性、3世代固定点、C以上の性能の資格ではない。次はこの現baselineと証拠を封じてTC候補をビルドし、実guestの値・prefix・fuel・trap・arenaを通常経路と比較する別試験へ進む。継続領域observerもsourceが同じ現baselineを使えるが、runnerと別登録の検証は引き続き必要である。
+## TC候補の実生成7呼出と、レジスタ推測を固定した検証器の失敗
+
+current7618でTC候補と観測用compilerをcompile／extractし、元CRC32を双方でコンパイルした。8呼出として登録した試験は、7呼出がすべてexit0でreapされた後、命令検証器のassertionで停止した。8回目のextractは実行しておらず、旧namespaceを再試行していない。[独立保存raw監査](evidence/coscientist-masked32-clone-20261008/table-emitted7-register-gate-failure-v1/reviews/saved-failure-independent/report.json)は全18 SOURCE・1,911入力、GOと2レビュー、140 memory witness、環境・資源journal、17 counters、生成物hashを照合した。これは失敗した試験の記録であり、build8成功ではない。
+
+候補compilerは866,384 B／`5cda246fec1d653b5ff044a56491069874f7a0b58da87785887c369573ccec8c`、観測用は878,888 B／`f5bce9fe13a9a11a602be4d2272a053c5ce9e6eb96849ebd97b2d10eb4b75ecc`。元CRCの両KSEEDは3,764 B／`c7b2b04eed1c0e5b07b4ac9d217c5f27c96b81b86b9003dc8767ea90312a68d3`で全バイト一致した。通常側のnative payloadは3,680 B／`5187d8338730957bf4611f294117c811099af65c9d1117492dd57430e8fa8999`。いずれも固定点や実行時間の資格ではない。
+
+保存rawではsite220に13命令のTCEMITがあり、入力captureは`MOV X0,X24`、結果は`MOV X9,X0`だった。検証器のx25固定は、slot7に保存した値25を実レジスタ番号と取り違えたものだった。`gn-sreg`は保存値から1を引くため、正しい番号は24である。[sourceと命令の復号](evidence/coscientist-masked32-clone-20261008/table-emitted7-register-gate-failure-v1/reviews/saved-failure-independent/DECODE.md)。SOURCEレビュー時のsynthetic positiveも同じ推測を用いており、この誤りを検出できなかった。
+
+独立担当が検証器をメモリ内でその1命令だけ訂正すると、残るassertionはすべて通った。OFFとのphaseを対応させた全76 TCG値、元reader本体、型付きSIR、literalとfixupも一致した。担当の途中のTCG差分仮説はpreとpostを取り違えた比較だったため撤回し、rawと報告に保存した。凍結検証器・旧試験の失敗は書き換えず、正式な保存raw修正版のレビューと、未実行のextractを行う別の有限試験を次に登録する。guestの値・fuel・trap・arena、元19本、3世代固定点、quiet hostでのC比較は未実施・未資格である。TCやCIDによるC以上の性能は主張しない。
