@@ -181,3 +181,7 @@ current typed bindingの最初のPopenはpreexecの資源設定例外で停止�
 portable native8の別要求でも、Python内部環境と渡した17項目を同一視した検査が失敗した。別診断で追加key名を確認した後、fresh版は渡した17値・Pythonの観測環境・native execの17値を分け、元の値の変更と未知keyを拒否した。runtime metadataをnativeへ転送する理由にせず、正規化処理とその契約も要求の実装・reader・provenanceへ結びつける。[失敗とfresh V4実証](coscientist-masked32-clone-20261008.md)。これは一般の環境key除外や既存cacheの資格ではない。
 
 fresh V4の8呼出と独立raw監査で、現在のCRC reader FN／SIR、256通りの値、連続literal pool、callerの適用siteと通常／観測生成物の完全一致を確認した。TC規則の次の実guest検証はこの現在閉包を根拠にする。読み取り規則の候補が適用できることと、今回のnative変換のfuel・trap・prefix・arenaが一致することは別の検証であり、まだ候補コードを実行した証拠ではない。ComputeCID／ResultCID cache、C2の解析省略、生成コードのC以上の性能も未資格のまま保持する。
+
+## 計算結果CIDと下流consumerの停止条件
+
+ユーザーの追加案を[consumerの受入条件](coscientist-compute-result-consumers-20261008.md)へ具体化した。ResultCID一致後も現在のtarget集計・caller poison・権限・予算を検査し、consumerが読む全入力と循環依存のpending更新が安定した場合だけ、追加再解析停止の候補とする。Answer一致だけでworklistを消さない。SOURCE照合ではcurrent16に旧stage6の`vw-*`経路がないことも確認した。旧解析を現在のbuilderで組む診断と、現在の製品解析を観測する検証を別lineageとして扱う。追加native呼出0、解析省略0、C2 OFFであり、CIDの実測性能効果はまだない。
