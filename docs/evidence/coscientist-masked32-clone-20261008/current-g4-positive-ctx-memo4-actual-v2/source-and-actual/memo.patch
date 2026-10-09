@@ -1,0 +1,72 @@
+--- current626
++++ pass-local-positive-memo
+@@ -1349,6 +1349,39 @@
+ ;; A shared remaining-work budget counts all transitive SIR instructions; it
+ ;; prevents exponential rescanning. Unknown effects/operations fail closed.
+ ;; Caller frame, real call and every fuel/trap/publication boundary remain.
++;; SOURCE candidate only. Pass-local positive structural answers; never persistent CID.
++;; Eight words per entry: valid,f,n,openFirst,openCount,FNcount,SIRcount,answer.
++(def qm-base (+ gn-g-open 80))
++(def qm-end (+ qm-base 128))
++(defn- qm-slot [f :i64] :i64 (+ qm-base (* 8 (bit-and f 15))))
++(defn- qm-hit [M :vector-i64 f :i64 n :i64] :bool
++ (let [b (qm-slot f)]
++  (and (= (gn-g M b) 1) (= (gn-g M (+ b 1)) f) (= (gn-g M (+ b 2)) n)
++       (= (gn-g M (+ b 3)) (gn-g M gn-g-open))
++       (= (gn-g M (+ b 4)) (gn-g M gn-g-open-n))
++       (= (gn-g M (+ b 5)) (vector-at M MM-FN-N))
++       (= (gn-g M (+ b 6)) (vector-at M MM-SIR-N))
++       (>= (gn-g M (+ b 7)) 0) (<= (gn-g M (+ b 7)) 512))))
++;; N is the threaded current writer; original is original lexical M.
++;; Miss invalidates before query; full key/answer written before final valid1.
++(defn- qm-top [N :vector-i64 original :vector-i64 f :i64 n :i64] :vector-i64
++ (if (and (> f 0) (< f (vector-at original MM-FN-N)) (>= n 0) (<= n 7))
++  (if (qm-hit original f n)
++   (gn-gs N gn-f-ctx 1)
++   (let [b (qm-slot f) open-first (gn-g original gn-g-open)
++         open-count (gn-g original gn-g-open-n)
++         fn-count (vector-at original MM-FN-N) sir-count (vector-at original MM-SIR-N)
++         m0 (gn-gs N b 0)
++         answer (gn-ctx-safe original f n 8 512)
++         m1 (if (>= answer 0)
++          (-> m0 (gn-gs (+ b 1) f) (gn-gs (+ b 2) n)
++              (gn-gs (+ b 3) open-first) (gn-gs (+ b 4) open-count)
++              (gn-gs (+ b 5) fn-count) (gn-gs (+ b 6) sir-count)
++              (gn-gs (+ b 7) answer) (gn-gs b 1)) m0)]
++    (gn-gs m1 gn-f-ctx (if (>= answer 0) 1 0))))
++  ;; Preserve invalid-domain original evaluation; no diagnostic header read.
++  (gn-gs N gn-f-ctx (if (>= (gn-ctx-safe original f n 8 512) 0) 1 0))))
++
+ (defn- gn-ctx-safe [M :vector-i64 f :i64 n :i64 depth :i64 work :i64] :i64
+   (let [p (gn-fnf M f FF-SIR)]
+     (if (and (> f 0) (< f (vector-at M MM-FN-N)) (> p 0) (> depth 0) (> work 0)
+@@ -1744,7 +1777,7 @@
+       (gn-fix FX-BL26 f)
+       (gn-emit (enc-bl 0))
+       (gn-vclear)
+-      (gn-gs gn-f-ctx (if (>= (gn-ctx-safe M f n 8 512) 0) 1 0))
++      (qm-top M f n)
+       (gn-take i t 0))))
+ ;; A direct call whose only successor returns its scalar result can restore
+ ;; this frame and branch to the callee. Stack arguments and RET2 are excluded.
+@@ -2309,13 +2342,16 @@
+ (defn- gn-run-open [M :vector-i64 first :i64 count :i64] :vector-i64
+   (let [top (vector-at M MM-HEAP-TOP)
+         M0 (if (< top MM-HEAP-BASE) (gn-put M MM-HEAP-TOP MM-HEAP-BASE) M)
+-        M1 (mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 80))
++        M1 (mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 208))
+         M2 (-> (gn-put M1 gn-cell (vector-at M1 MM-R0))
+                (gn-gs gn-g-open first) (gn-gs gn-g-open-n count)
+                (gn-gs di-used 0) (gn-gs di-sites 0))
+-        M3 (if (= (vector-at M2 MM-ERR) 0) (gn-loop M2 1) M2)
+-        n (vector-at M3 MM-CODE-N)]
+-    (gn-put M3 MM-R0 (- n 1))))
++        qm-active (= (vector-at M2 MM-ERR) 0)
++        M2q (if qm-active (gn-zero M2 qm-base qm-end) M2)
++        M3 (if qm-active (gn-loop M2q 1) M2q)
++        M4 (if qm-active (gn-zero M3 qm-base qm-end) M3)
++        n (vector-at M4 MM-CODE-N)]
++    (gn-put M4 MM-R0 (- n 1))))
+ 
+ ;; Unity compilation has no link-time replacement of function bodies.
+ ;; One-off novel algorithm SOURCE candidate: no product/native qualification.

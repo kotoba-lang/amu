@@ -1,0 +1,20 @@
+--- seed/41-a64gen.kotoba
++++ dead-protection/41-a64gen.kotoba
+@@ -305,0 +306,9 @@
++;; Before an explicit local update, only preserve aliases that may be read.
++;; The existing bounded kill proof refuses branches/unknown paths. A proved
++;; dead alias needs no old-value materialization, including at a later flush.
++(defn- gn-prot-live [M :vector-i64 lo :i64 hi :i64 x :i64 s :i64 j :i64] :vector-i64
++  (cond (>= lo hi) M
++        (and (not= lo x) (gn-isk M lo gn-k-local) (= (gn-dv M lo) s))
++        (let [next (if (gn-kills M j lo 16) (gn-dset M lo gn-k-reg 0) (gn-mat M lo))]
++          (gn-prot-live next (inc lo) hi x s j))
++        :else (gn-prot-live M (inc lo) hi x s j)))
+@@ -854,2 +863,2 @@
+-(defn- gn-op-lset [M :vector-i64 s :i64 t :i64] :vector-i64
+-  (let [M1 (gn-prot M 0 (gn-g M gn-f-h) t s)
++(defn- gn-op-lset [M :vector-i64 i :i64 s :i64 t :i64] :vector-i64
++  (let [M1 (gn-prot-live M 0 (gn-g M gn-f-h) t s (inc i))
+@@ -1144 +1153 @@
+-        OP-LSET (gn-op-lset M a b)
++        OP-LSET (gn-op-lset M i a b)

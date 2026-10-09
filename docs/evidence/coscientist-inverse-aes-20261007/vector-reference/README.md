@@ -1,0 +1,9 @@
+# Offline vector reference checkpoint
+
+Copy `reference-proof.tgz`, `reference-proof.manifest.json`, and `replay-reference-proof.py` into an unrelated directory, then run `python3 replay-reference-proof.py`. Python standard library only; no compiler, solver, native guest, network, or timing runs.
+
+The reader checks the envelope and selected input inventories, recomputes frozen V5 reference rows from all 19 actual observer SIR inputs, repeats 13 diagnostic controls, and reconstructs the LP V3 arithmetic/layout report. It reproduces 60 conditional sites in the five priority bodies. These are reference-model possibilities, not compiler admissions. LP reservation is 33,792 words and the current required-summary maximum is 40 blocks; typed layout, shared work bounds, and native qualification remain **HOLD**.
+
+Prior V2/V3/V4 negative snapshots and initial runtime-arity failure are retained verbatim with hashes, without claiming that their old analyses were re-executed. The initial domain report is intentionally omitted: its precise origin hash is recorded and the V5 domain algorithm is rerun against the raw 19 inputs. The separately published epoch checkpoint at commit `38b6502ec` is referenced, not duplicated. Evolving typed implementation evidence is excluded.
+
+Source algorithms are frozen snapshot code. Only their absolute private-root location is rewritten inside the offline reader, and computed integer keys/tuples are normalized through the same JSON serialization used by the original writers. The first reader representation mismatch and correction are retained outside the fixed envelope. A fresh copied three-file replay passed; both archive and manifest corruption controls were rejected. No product, performance, goal, universal compiler-resource, ABI, or asynchronous-observation claim follows from this packet.

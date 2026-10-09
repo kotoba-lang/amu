@@ -1,0 +1,27 @@
+# Next C-gap hypotheses from actual private-clone code
+
+SOURCE/raw analysis only; no native calls or compiler edits. Prior participation: reviewer of SR32f7 and compiler build4, author of observer remaining3 driver. This is an independently reproduced static cost assessment, not a performance profile or proof of the dominant runtime bottleneck. Current full19 correctness acceptance is supplied by root and is not re-certified here.
+
+## Chosen next experiment: fuel-preserving scalar clone call expansion
+
+All 13 actual clones have 25 owned words: 24 through RET and a trailing unreachable guard BRK. On a successful entry the fuel-exhaustion BRK is skipped, so 23 instructions execute inside each clone. Only four words compute shift/shift/OR and the low32 mask. Their frame is 80 bytes; prologue saves FP/LR and x19, stores context and otherwise dead constant argument x1; epilogue restores them. Ten actual SHA call edges and four AES edges still resolve as direct BL. The count is from actual phase4 CODE/FREC and phase2 SIR; census.json retains all words and joins.
+
+The SHA original body performs two compressions, each with 48 nontrivial schedule updates using four rotations and 64 rounds using six rotations. Thus it enters these clones 1152 times per positive body: 26496 successful clone-internal instructions, including 5760 fuel transaction instructions, excluding caller setup and unexecuted branch arms. This is a source-derived execution count under the workload's fixed loop bounds, not a time attribution. SR32f7 changes only the three arithmetic words to LSR/ORR/NOP, preserving the frame, calls and instruction count.
+
+The reason existing DAG expansion does not take these bodies is concrete: di-body's whitelist rejects OP-FUEL and OP-CALL. Each appended clone retains entry OP-FUEL and a final scalar mask call. gn-scalar-mask already knows that closed mask body; the actual emitted mask is inline UBFM. Clone specialization removed the dynamic shift count but retained the nonleaf calling frame. This is a narrower next target than a general inliner.
+
+Prospective generic rule: certify a closed, single-block typed i64 body with exactly one entry fuel, constant shift operations and a certified scalar mask return. Expand the mathematical body at the call edge while replaying its exact entry-fuel decrement/publication and exhaustion behavior. Do not key eligibility on workload names. Preserve actual caller temp descriptors, live registers, x7, scratch and NZCV-observable continuations; account for original saved temporaries and result aliases. The existing SR right-first x10 deadness obligation remains necessary if fusion is applied as well. Keep the generic callee and OFF image immutable. Unknown branch ingress, recursion, effects, callback, export escape or body shape refuses. A semantic-result CID alone cannot authorize this rewrite.
+
+Minimum falsification: arbitrary full64 positive/negative inputs and all shifts 1..31, both orientations, alias/home/register argument placements, future x10 reads, fuel 0/1/2 and trap publication, dirty compiler error, CODE capacity boundaries and exact fullM/G component differences; then actual emitted fixtures and unchanged original19/95/285 correctness. Inline output has an explicitly preregistered compiler CODE resource contract; do not silently assert original capacity refusal parity after shortening. Follow with the full19 matched quiet timing campaign. No speed estimate or C-goal victory follows from the static count.
+
+## Second hypothesis: validated descriptor survives an inline scalar writer
+
+Actual SHA source schedule/finish and AES table lookup/mixing repeatedly operate on the same vector handle. gn-hchk emits eight instructions; gn-vidx another six before the payload read. Existing gn-vread dynamic cache owns x3(length), x4(items base), x5(handle), and gn-vpair can omit only its validated-key part. gn-vstep resets its compile-time slot on calls/unknown operations, so arbitrary call-to-read elimination is unsafe and an existing descriptor census is needed rather than another broad textual matcher.
+
+A narrowly classified inlined same-handle writer could preserve x3..5 and the witness across its payload store, removing a subsequent revalidation while retaining that read's independent index check. Count candidate sites only after actual SIR/FREC/CODE chronology, physical clobber, handle reassignment, CFG ingress, pool lifetime/arena reset and callback effects joins. Current report does not provide eligible counts and does not qualify guard removal. Zero qualified joins is STOP; allocator failure and reset are not discharged by length/type facts or content hashes.
+
+## Rejected easy shortcut
+
+SHA rounds has eleven parameters, but it already lowers self recursion to LSETs for slots1..11, OP-FUEL and a backedge (actual SIR710..722). A proposed 'turn recursive rounds into a loop' would repeat implemented work. The surviving pressure is parallel assignment and register/home traffic, not a recursive call. Frame/register allocation improvements need their own actual home/liveness census before a third implementation candidate is selected.
+
+Source anchors in unity-sr-on.kotoba: gn-vread14365; di-body15028; di-admit15070; gn-op-call15446; gn-call-generic15457; gn-hchk15520; gn-op-fuel15906; sr-ready16278. Line numbers are this frozen file only. Clone ranges and original source functions are pinned in input-pins.json. No new timing, native/compiler execution, SSH, product edit, full19 result or adoption claim.

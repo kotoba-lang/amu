@@ -1,0 +1,47 @@
+{
+  "status": "SOURCE_POLICY_PROPOSAL_HOLD_NO_EXECUTION",
+  "newExplicitPolicy": "hard bounded guest arenas + soft polled aggregate process-group resident-size and physical-footprint ceilings, not AS-equivalent",
+  "arenaCapsUnchanged": {
+    "pairs": 16777216,
+    "stringPoolBytes": 268435456,
+    "vectors": 4194304,
+    "vectorItems": 134217728
+  },
+  "sumBoundedArenaPayloadBytes": 1677721600,
+  "physicalThresholdBytes": 4294967296,
+  "metricPolicy": "at each successful complete group sample, separately sum ri_resident_size and ri_phys_footprint for every member; refuse if either total exceeds4GiB; conservative shared-page double counting permitted",
+  "processGroupPolicy": {
+    "loaderSession": true,
+    "expectedMaximumMembers": 2,
+    "enumerationBufferMembers": 4,
+    "unknownExtraMember": "refuse and terminate group",
+    "sourceReason": "loader parent forks native compiler child; outer-PID-only sampling is insufficient"
+  },
+  "APIProposal": "Darwin libproc proc_listpgrppids + proc_pid_rusage RUSAGE_INFO_V0 through host Python ctypes; not a workload implementation; no new C compiler or native loader",
+  "pollSeconds": 0.02,
+  "sampleBudgetPerChild": 90502,
+  "recordBudgetBytesPerChild": 16777216,
+  "missingOrMalformedSample": "refuse; no ps fallback or guessed zero",
+  "CPUContractDelta": "existing loader soft1800/hard1801 kernel grace conflicts with V2 outer hard1800. Fresh SOURCE must explicitly preregister soft1800/hard1801, never raise inherited finite limits, or preserve historical loader-only CPU install with finite outerwall1810. Neither is silently equivalent to V2 hard1800.",
+  "fileHardBytes": 67108864,
+  "outerWallSeconds": 1810,
+  "reapSeconds": 30,
+  "nativeLoaderChildScope": 8,
+  "sourceVariantsUnchanged": true,
+  "limitations": [
+    "process-memory sampling is a soft refusal threshold, not an OS hard allocation cap",
+    "unbounded scheduler gaps/unsampled spikes remain; no finite overshoot proof",
+    "resident-size/phys-footprint are not virtual address-space or private-bytes metrics",
+    "process-group enumeration races and kernel API availability need a smaller qualification gate",
+    "stdlib/sharedlib/header ABI needs explicit source qualification; local declarations are not runtime capability",
+    "no preserved OSstack/arena-limit equivalence or native component/performance conclusion"
+  ],
+  "nextConcreteGate": "author and independently review one small process-memory adapter qualification SOURCE with synthetic completeness/error/overflow controls; actual process API calls need a new bounded reviewed GO before native8",
+  "execution": {
+    "newSetters": 0,
+    "processMemoryAPICalls": 0,
+    "compiler": 0,
+    "nativeProducer": 0,
+    "ssh": 0
+  }
+}

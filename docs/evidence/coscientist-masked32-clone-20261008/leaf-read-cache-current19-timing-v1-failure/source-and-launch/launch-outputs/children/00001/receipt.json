@@ -1,0 +1,48 @@
+{
+  "index": 1,
+  "label": "current19-timing-launch",
+  "kind": "transport",
+  "argv": [
+    "/usr/bin/ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "ConnectionAttempts=1",
+    "zebulun@100.66.28.79",
+    "python3 -c 'import pathlib,json,hashlib,base64,sys,signal,runpy\nsignal.alarm(172860)\nroot=pathlib.Path('\"'\"'/Users/zebulun/github/workspaces/codex/vector-leaf-straight-read-cache-current19-timing-v1-root'\"'\"')\nassert pathlib.Path.home()==pathlib.Path('\"'\"'/Users/zebulun'\"'\"') and not root.exists()\nb=sys.stdin.buffer.read(8388609);assert len(b)<=8388608\nreq=json.loads(b);assert set(req)=={'\"'\"'files'\"'\"','\"'\"'sourcePinsSHA256'\"'\"','\"'\"'remoteGOSHA256'\"'\"'}\nroot.mkdir();(root/'\"'\"'source'\"'\"').mkdir();(root/'\"'\"'control'\"'\"').mkdir()\nfor n,t in req['\"'\"'files'\"'\"'].items():\n p=pathlib.PurePosixPath(n);assert not p.is_absolute() and len(p.parts)==2 and p.parts[0]in ['\"'\"'source'\"'\"','\"'\"'control'\"'\"'] and '\"'\"'..'\"'\"'not in p.parts and str(p)==n\n data=base64.b64decode(t,validate=True);assert len(data)<=16777216\n with (root/n).open('\"'\"'xb'\"'\"')as f:f.write(data)\n (root/n).chmod(0o444)\nassert hashlib.sha256((root/'\"'\"'source/source-pins.json'\"'\"').read_bytes()).hexdigest()==req['\"'\"'sourcePinsSHA256'\"'\"']\nfor n,r in json.loads((root/'\"'\"'source/source-pins.json'\"'\"').read_bytes()).items():\n assert '\"'\"'/'\"'\"'not in n and n not in ['\"'\"'.'\"'\"','\"'\"'..'\"'\"']\n p=root/'\"'\"'source'\"'\"'/n;assert p.stat().st_size==r['\"'\"'bytes'\"'\"']and hashlib.sha256(p.read_bytes()).hexdigest()==r['\"'\"'sha256'\"'\"']\nassert hashlib.sha256((root/'\"'\"'control/root-go.json'\"'\"').read_bytes()).hexdigest()==req['\"'\"'remoteGOSHA256'\"'\"']\nsys.dont_write_bytecode=True;sys.path.insert(0,str(root/'\"'\"'source'\"'\"'));sys.argv=[str(root/'\"'\"'source/timing.py'\"'\"'),str(root/'\"'\"'control/root-go.json'\"'\"')]\nrunpy.run_path(sys.argv[0],run_name='\"'\"'__main__'\"'\"')\nprint('\"'\"'LC_CURRENT19_TIMING_REMOTE_TERMINAL'\"'\"',flush=True)\n'"
+  ],
+  "environment": {
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "LANG": "C",
+    "LC_ALL": "C",
+    "TZ": "UTC",
+    "HOME": "/Users/junkawasaki",
+    "TMPDIR": "/private/tmp"
+  },
+  "timeoutSeconds": 172920,
+  "state": "terminal",
+  "rawBytesMaximumPerStream": 8388608,
+  "pid": 8346,
+  "returncode": 0,
+  "exception": null,
+  "cleanupException": null,
+  "stdout": {
+    "path": "/Users/junkawasaki/github/workspaces/codex/vector-leaf-straight-read-cache-current19-timing-source-v1/launch-outputs/children/00001/stdout",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "stderr": {
+    "path": "/Users/junkawasaki/github/workspaces/codex/vector-leaf-straight-read-cache-current19-timing-source-v1/launch-outputs/children/00001/stderr",
+    "bytes": 3941,
+    "sha256": "d829cd3bd8af9a3a1c72e9814a29ee1d47404604a98137100cfac858f032d6a7"
+  },
+  "waitedCPU": {
+    "userSeconds": 0.022736,
+    "systemSeconds": 0.007809,
+    "childCpuNs": 30545000
+  },
+  "CPUbefore": null,
+  "CPUafter": null
+}

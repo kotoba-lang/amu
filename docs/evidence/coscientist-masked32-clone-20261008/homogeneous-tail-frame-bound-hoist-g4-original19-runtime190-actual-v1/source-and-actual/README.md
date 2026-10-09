@@ -1,0 +1,11 @@
+# SOURCE only: HFT current G4, held V6, original19 runtime190
+
+Exactly 95 original source/symbol/profiles in adjacent OFF/ON order, 190 fresh calls. OFF is current7618 whole original19 proof9a7f; ON is current HFT G4 compile38 proof005b with fixedpoint0c90, producer c350/cf3e. No historical x8 G4 substitution. C95 oracle provides Boolean results only: C fuel/arena remain unavailable.
+
+Loader215224B/35441 is bound by independent actual buildbcb637. Existing heldV6 fixture4 independently audited5dd820 qualifies its limited channel/FD/birth/retirement path; it gives zero original95 credit. Nine lifecycle components are byte identical; only parent case-count guards change 2→190 in native-call and wrapper. C/loader/ownership/capture/controller/sampler semantics do not change. All old failures and noRetry namespaces remain preserved.
+
+All17 guest environment fields, fuel16777216, pairs2097152/string65536/vectors4096/items65536, no grants, CPU30/hard31, loader wall30, direct cleanup30, typed i64 argv without -- are unchanged. Parent initial FD<=32, controlled extra12/total44 conditional ledger, three auxiliary threads per call/570 cumulative, ownership records8/partialIO4096/ownership journal64KiB. Each successful call must acknowledge all workers/waits before proceeding. Unknown PID/birth, nonkernel/policy, raw/ownership errors still refuse; no synthesized zero or relaxed memory gate.
+
+Finite campaign12000s; minimum60s remaining before each new call. Retained raw8MiB+1MiB, memory8MiB/2048samples/4096-row, ownership64KiB/resource64KiB/percase64KiB plus seal, and bounded16MiB aggregate metadata remain under reviewed 4GiB controlled reservation. Reservation is accounting, not a filesystem quota or hard OS peak guarantee. 190 starts /570 conservative wrapper-loader-guest stages; loader internal fork source contract is not actual universal fork tracing.
+
+Two exact new SOURCE reviews and exact root GO precede any operation. Frozen registrations are not execution. Success is valid-last after durable terminal/all190 admissions, exact result/fuel/all17 arena parity and Boolean C oracle. Even success does not establish general ABI/clobber correctness, performance, hardpeak, dynamic runtime closure, product adoption or C2 cache. Failure stops once and preserves available stopped-writer evidence.

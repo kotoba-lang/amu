@@ -1,0 +1,49 @@
+;; Diagnostic rooted rewrite/worklist prototype. Pure value graph only.
+;; No product optimizer, GP2/DPO engine, SSA or memory rewrite is claimed.
+(ns research.graph-proof (:export [batch]))
+(defn- root [op :vector-i64 left :vector-i64 i :i64 budget :i64] :i64
+ (if (<= budget 0) -1
+  (if (= (vector-at op i) 3) (root op left (vector-at left i) (dec budget)) i)))
+(defn- evaluate [op :vector-i64 left :vector-i64 right :vector-i64 lit :vector-i64 i :i64 values :vector-i64] :i64
+ (if (= i 6) (vector-at values 5)
+  (let [tag (vector-at op i)
+        v (cond (or (= tag 0) (= tag 1)) (vector-at lit i)
+                (= tag 3) (vector-at values (vector-at left i))
+                :else (+ (vector-at values (vector-at left i)) (vector-at values (vector-at right i))))]
+   (evaluate op left right lit (inc i) (vector-assoc! values i v)))))
+;; Explicit reverse-use lists; no graph-wide matcher search.
+(defn- queue-users [queue :vector-i64 tail :i64 uses :vector-i64 i :i64 k :i64] :i64
+ (if (= k 2) tail
+  (let [u (vector-at uses (+ (* 2 i) k))]
+   (if (< u 0) (queue-users queue tail uses i (inc k))
+    (do (vector-assoc! queue tail u) (queue-users queue (inc tail) uses i (inc k)))))))
+;; Six-node fixture, three initial roots, at most twelve dependent enqueues.
+;; Accepted rewrites remove an Add and create no Add. Exhaustion is a failure.
+(defn- work [op :vector-i64 left :vector-i64 right :vector-i64 lit :vector-i64 uses :vector-i64 queue :vector-i64 head :i64 tail :i64 budget :i64 mutation :i64] :i64
+ (cond (= head tail) 0
+       (<= budget 0) -1
+       :else
+       (let [i (vector-at queue head)]
+        (if (not= (vector-at op i) 2) (work op left right lit uses queue (inc head) tail (dec budget) mutation)
+         (let [a (root op left (vector-at left i) 6)
+               b (root op left (vector-at right i) 6)
+               cb (= (vector-at op b) 1)
+               zero (and cb (= (vector-at lit b) 0))]
+          (if (not zero) (work op left right lit uses queue (inc head) tail (dec budget) mutation)
+           (do (vector-assoc! op i 3)
+               (vector-assoc! left i (if (= mutation 1) b a))
+               (let [next-tail (if (= mutation 3) tail (queue-users queue tail uses i 0))]
+                (work op left right lit uses queue (inc head) next-tail (dec budget) mutation)))))))))
+(defn- sample [x :i64 mutation :i64] :i64
+ (let [op [0 1 2 2 1 2] left [-1 -1 1 0 -1 3] right [-1 -1 1 2 -1 4]
+       lit [x 0 0 0 7 0] uses [3 -1 2 -1 3 -1 5 -1 5 -1 -1 -1]
+       queue [3 2 5 0 0 0 0 0 0 0 0 0 0 0 0 0]
+       before (evaluate op left right lit 0 [0 0 0 0 0 0])
+       status (work op left right lit uses queue 0 3 (if (= mutation 2) 0 16) mutation)
+       after (evaluate op left right lit 0 [0 0 0 0 0 0])]
+  (if (and (= status 0) (= before after) (= after (+ x 7))
+           (= (vector-at op 2) 3) (= (vector-at op 3) 3)) 0 1)))
+(defn- samples [i :i64 mutation :i64 failures :i64] :i64
+ (if (= i 256) (+ failures (sample -9223372036854775808 mutation) (sample 9223372036854775807 mutation))
+  (samples (inc i) mutation (+ failures (sample i mutation)))))
+(defn batch [mutation :i64] :i64 (samples 0 mutation 0))

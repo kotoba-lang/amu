@@ -1,0 +1,78 @@
+--- seed/41-a64gen.kotoba
++++ vector-descriptor/41-a64gen.kotoba
+@@ -127,6 +127,7 @@
+ (def gn-f-dead 9)     ; 1 = the current point is unreachable (after br/ret/trap, until a label)
+ (def gn-f-skip 10)    ; SIR instructions after the current one that it consumed
+ (def gn-f-freg 11)    ; 1 = the fuel counter is in x8
++(def gn-f-vkey 13)    ; proven unchanged local handle whose descriptor is in free x6
+ (def gn-f-out 12)     ; R4B: bytes of the outgoing argument area at [sp,#0..] (calls with more than 7 arguments)
+ (def gn-cap 4096)     ; slots and temps per function (the frame limit F <= 32768 is lower)
+ (def gn-a-sreg 16)    ; slot -> register + 1 (0 = frame slot); gn-cap words
+@@ -367,7 +368,7 @@
+ (defn- gn-protect [M :vector-i64 t :i64 s :i64] :vector-i64 (if (> s 0) (gn-prot M 0 t t s) M))
+ ;; the result is in register d: record it (and skip the LSET that was folded in)
+ (defn- gn-fin [M :vector-i64 t :i64 s :i64 d :i64] :vector-i64
+-  (cond (> s 0) (-> M (gn-def t gn-k-local s) (gn-gs gn-f-skip 1))
++  (cond (> s 0) (-> M (cond-> (= s (gn-g M gn-f-vkey)) (gn-gs gn-f-vkey 0)) (gn-def t gn-k-local s) (gn-gs gn-f-skip 1))
+         (>= t 7) (-> M (gn-st d (gn-home M t)) (gn-def t gn-k-reg 0))
+         :else (gn-def M t gn-k-reg 0)))
+ ;; the result of a call is in register r
+@@ -964,6 +965,17 @@
+       (gn-emit (enc-ldr 16 7 base))
+       (gn-emit (gn-e-addsl 16 16 17 4))))
+ ;; after gn-hchk on the vector table: x17 := offset + index (checked index < length), x16 := items base
++;; x6 is unused by locals in non-leaves and in leaves with fewer than seven
++;; local slots. Calls/control-flow/unknown effects invalidate this cache.
++(defn- gn-vkey [M :vector-i64 t :i64] :i64
++  (if (and (gn-isk M t gn-k-local)
++           (or (= (gn-g M gn-f-leaf) 0) (< (gn-g M gn-f-ns) 7)))
++      (gn-dv M t) 0))
++(defn- gn-vhchk [M :vector-i64 rv :i64 key :i64] :vector-i64
++  (if (and (> key 0) (= key (gn-g M gn-f-vkey)))
++      (gn-mov M 16 6)
++      (let [M1 (gn-hchk M rv 312 320)]
++        (if (> key 0) (-> M1 (gn-mov 6 16) (gn-gs gn-f-vkey key)) M1))))
+ (defn- gn-vidx [M :vector-i64 ri :i64] :vector-i64
+   (-> M
+       (gn-emit (enc-ldp 17 16 16 0))
+@@ -974,20 +986,22 @@
+       (gn-emit (enc-add-r 17 17 ri))))
+ ;; (vector-at v i), v = temp t, i = temp t+1 (t <= 5)
+ (defn- gn-rt-at [M :vector-i64 i :i64 t :i64] :vector-i64
+-  (let [M1 (gn-pin M (inc t))
++  (let [key (gn-vkey M t)
++        M1 (gn-pin M (inc t))
+         ri (gn-pinned M1 (inc t))
+         rv (gn-src M1 t 17 0)
+         s (gn-co M1 i t)
+         d (gn-dreg M1 t s)]
+-    (-> M1 (gn-protect t s) (gn-ctx) (gn-ldt t 17 0) (gn-hchk rv 312 320) (gn-vidx ri) (gn-emit (gn-e-ldrr d 16 17 1)) (gn-fin t s d))))
++    (-> M1 (gn-protect t s) (gn-ctx) (gn-ldt t 17 0) (gn-vhchk rv key) (gn-vidx ri) (gn-emit (gn-e-ldrr d 16 17 1)) (gn-fin t s d))))
+ ;; (vector-assoc! v i x), temps t, t+1, t+2 (t <= 4); the result is v (its descriptor is kept)
+ (defn- gn-rt-set [M :vector-i64 t :i64] :vector-i64
+-  (let [M1 (-> M (gn-pin t) (gn-pin (inc t)))
++  (let [key (gn-vkey M t)
++        M1 (-> M (gn-pin t) (gn-pin (inc t)))
+         M2 (if (and (gn-isk M1 (+ t 2) gn-k-const) (= (gn-dv M1 (+ t 2)) 0)) M1 (gn-pin M1 (+ t 2)))
+         rv (gn-pinned M2 t)
+         ri (gn-pinned M2 (inc t))
+         rx (if (gn-isk M2 (+ t 2) gn-k-const) 31 (gn-pinned M2 (+ t 2)))]
+-    (-> M2 (gn-ctx) (gn-hchk rv 312 320) (gn-vidx ri) (gn-emit (gn-e-strr3 rx 16 17)) (gn-gs gn-f-h (inc t)))))
++    (-> M2 (gn-ctx) (gn-vhchk rv key) (gn-vidx ri) (gn-emit (gn-e-strr3 rx 16 17)) (gn-gs gn-f-h (inc t)))))
+ ;; one-handle reads: sel 0 = pair-first, 1 = pair-second, 2 = vector-count
+ (defn- gn-rt-get [M :vector-i64 i :i64 t :i64 sel :i64] :vector-i64
+   (let [rv (gn-src M t 17 0)
+@@ -1135,7 +1149,12 @@
+ (defn- gn-ins [M :vector-i64 i :i64 op :i64] :vector-i64
+   (let [a (gn-sir M i IF-A)
+         b (gn-sir M i IF-B)
+-        c (gn-sir M i IF-C)]
++        c (gn-sir M i IF-C)
++        safe (or (= op OP-CONST) (= op OP-LGET) (= op OP-BIN) (= op OP-UN) (= op OP-FUEL)
++                 (and (= op OP-LSET) (not= a (gn-g M gn-f-vkey)))
++                 (and (= op OP-RT) (gn-inl a b c)
++                      (or (= a RT-VECTOR-AT) (= a RT-VECTOR-ASSOC-IN-PLACE))))
++        M (if safe M (gn-gs M gn-f-vkey 0))]
+     (if (and (= (gn-g M gn-f-dead) 1) (not (or (= op OP-LABEL) (= op OP-FN) (= op OP-END))))
+       M
+       (case op

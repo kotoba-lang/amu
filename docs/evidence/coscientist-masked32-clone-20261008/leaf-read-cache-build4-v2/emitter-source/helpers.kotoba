@@ -1,0 +1,87 @@
+;; Newly framed straight-line leaf cache; existing mode3 proof/read/ABI reused.
+;; Default OFF; original sl-assign is always the first assignment path.
+(def lc-feature 0)
+(defn- lc-locals? [M :vector-i64 k :i64 ns :i64] :bool
+ (if (> k ns) true
+  (let [r (gn-sreg M k)]
+   (and (or (= r -1) (and (>= r 0) (<= r 6))) (lc-locals? M (inc k) ns)))))
+(defn- lc-entry [M :vector-i64 i :i64] :i64
+ (let [j (if (= (gn-op M (inc i)) OP-FUEL) (+ i 2) (inc i))]
+  (if (= (gn-op M j) OP-LABEL) j 0)))
+(defn- lc-ingress? [M :vector-i64 j :i64 n :i64 label :i64 seen :i64] :bool
+ (if (>= j n) (= seen 1)
+  (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B)
+        target (if (= op OP-BR) a b)
+        branch (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ))]
+   (and (not (and branch (= target label)))
+        (lc-ingress? M (inc j) n label (if (and (= op OP-LABEL) (= a label)) (inc seen) seen))))))
+(defn- lc-linear? [M :vector-i64 j :i64 end :i64 entry :i64] :bool
+ (if (>= j end) false
+  (let [op (gn-op M j) a (gn-sir M j IF-A)]
+   (if (= op OP-RET) (= (inc j) end)
+    (and (or (and (= op OP-LABEL) (= j entry)) (= op OP-CONST) (= op OP-LGET) (= op OP-LSET) (= op OP-FUEL)
+             (and (= op OP-BIN) (>= a BOP-ADD) (<= a BOP-SSHR))
+             (and (= op OP-CMP) (>= a CC-EQ) (<= a CC-GE))
+             (and (= op OP-UN) (or (= a UOP-NOT) (= a UOP-BITNOT)))
+             (and (= op OP-RT) (= a RT-VECTOR-AT) (= (gn-sir M j IF-C) 2)
+                  (>= (gn-sir M j IF-B) 0) (<= (gn-sir M j IF-B) 5)))
+         (lc-linear? M (inc j) end entry))))))
+(defn- lc-guard? [M :vector-i64 i :i64 f :i64 np :i64 end :i64 slot :i64] :bool
+ (and (= lc-feature 1) (= (vector-at M MM-ERR) 0)
+      (> i 0) (< i (vector-at M MM-SIR-N)) (> f 0) (< f (vector-at M MM-FN-N))
+      (= (gn-op M i) OP-FN) (= (gn-sir M i IF-A) f) (= (gn-sir M i IF-B) np) (= (gn-sir M i IF-C) (gn-g M gn-f-ns))
+      (= (gn-fnf M f FF-SIR) i) (= (gn-fnf M f FF-NPARAMS) np)
+      (= (gn-fnf M f FF-NSLOTS) (gn-g M gn-f-ns))
+      (= (gn-fnf M f FF-DEPTH) (gn-g M gn-f-dp))
+      (= (gn-g M gn-f-leaf) 1) (= (gn-g M gn-f-vmode) 0)
+      (= (gn-g M gn-f-out) 0) (= (gn-g M gn-f-fb) 0) (= (gn-g M gn-f-nsv) 0)
+      (> np 0) (<= np 5) (> slot 0) (<= slot np) (<= slot (gn-g M gn-f-ns))
+      (>= (gn-g M gn-f-ns) np)
+      (> (gn-g M gn-f-ns) 0) (<= (gn-g M gn-f-ns) 7)
+      (> (gn-g M gn-f-dp) 0) (<= (gn-g M gn-f-dp) 7)
+      (lc-locals? M 1 (gn-g M gn-f-ns))
+      (> end (inc i)) (< end (vector-at M MM-SIR-N)) (<= (- end (inc i)) 8190)
+      (= (gn-op M end) OP-END) (= (gn-sir M end IF-A) f)
+      (= (gn-sir M end IF-B) 0) (= (gn-sir M end IF-C) 0)
+      (<= (vector-at M MM-SIR-N) MM-SIR-CAP)
+      (let [entry (lc-entry M i) label (if (> entry 0) (gn-sir M entry IF-A) 0)]
+       (and (or (= entry 0)
+                (and (> label 0) (< label MM-LABEL-CAP) (= (gn-lpos M label) entry)
+                     (lc-ingress? M 1 (vector-at M MM-SIR-N) label 0)))
+            (lc-linear? M (inc i) end entry)))))
+(defn- lc-build [M :vector-i64 start :i64 end :i64 slot :i64] :vector-i64
+ (let [n (- end (inc start)) S (-> (vector-alloc (+ 8 (* 8 (inc n))))
+         (vector-assoc! 0 131072) (vector-assoc! 1 1) (vector-assoc! 2 n)
+         (vector-assoc! 3 start) (vector-assoc! 4 end) (vector-assoc! 5 slot))]
+  (loop [j (inc start) reads 0 backs 0]
+   (if (or (= (vector-at S 1) 0) (= j end))
+    (if (>= reads 2) S (sc-fail S))
+    (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) c (gn-sir M j IF-C)
+          target (if (= op OP-BR) a b)
+          branch (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ))
+          valid (cond (or (= op OP-CONST) (= op OP-LGET) (= op OP-LSET) (= op OP-RET) (= op OP-FUEL)) true
+                      (= op OP-BIN) (< a BOP-F64-ADD)
+                      (= op OP-CMP) (< a CC-F64-EQ)
+                      (= op OP-UN) (< a UOP-F64-NEG)
+                      (= op OP-RT) (and (= a RT-VECTOR-AT) (= c 2) (>= b 0) (<= b 5))
+                      (= op OP-LABEL) (and (> a 0) (< a MM-LABEL-CAP) (= (sl-count-label M (inc start) end a 0) 1))
+                      branch (sl-label-valid M target start end)
+                      :else false)
+          k (- j start)
+          S1 (cond (not valid) (sc-fail S)
+                   (= op OP-RET) S
+                   branch (sc-edge S k (- (gn-lpos M target) start))
+                   :else (sc-edge S k (inc k)))
+          S2 (if (and valid (or (= op OP-BRZ) (= op OP-BRNZ))) (sc-edge S1 k (inc k)) S1)]
+      (recur (inc j) (if (= op OP-RT) (inc reads) reads)
+                    (if (and branch valid (< (gn-lpos M target) j)) (inc backs) backs)))))))
+(defn- lc-assign [M :vector-i64 i :i64 f :i64 np :i64] :vector-i64
+ (let [M1 (sl-assign M i f np)]
+  (if (= lc-feature 0) M1
+   (let [end (sl-end M1 (inc i) f 8192)
+         slot (if (and (> np 0) (<= np 5)) (sl-pick M1 f np 0 0) 0)
+         frame (+ (gn-r16 (* 8 (+ (gn-g M1 gn-f-ns) (gn-g M1 gn-f-dp) 2))) 32)]
+    (if (and (lc-guard? M1 i f np end slot) (> frame 0) (<= frame 160))
+     (let [proof (sc-queries M1 (lc-build M1 i end slot))]
+      (if (= (vector-at proof 1) 1)
+       (-> M1 (gn-gs gn-f-nsv 3) (gn-gs gn-f-fb frame) (gn-gs gn-f-vmode 3) (gn-gs 15 slot)) M1)) M1)))))

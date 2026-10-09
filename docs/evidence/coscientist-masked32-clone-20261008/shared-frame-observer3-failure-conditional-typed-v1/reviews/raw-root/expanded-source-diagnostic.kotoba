@@ -1,0 +1,694 @@
+(ns embench.nsichneu-full (:export [batch stage-cell test-nsichneu]))
+;; Complete pinned Embench NSichneu: all 6 T1 and 120 T2 transitions.
+;; Copyright 1998/1999 C-LAB Paderborn, 2014-2019 Embecosm/University of Bristol.
+;; Contributors Friedhelm Stappert, James Pallister, Jeremy Bennett.
+;; SPDX-License-Identifier: GPL-3.0-or-later.
+;; State: 3 marking counts, P1[3], P2[5], P3[6].
+(defn- put-output [s :vector-i64 x :i64 y :i64 z :i64] :vector-i64
+  (let [n (vector-at s 2) s1 (vector-assoc! s (+ 11 n) x)
+        s2 (vector-assoc! s1 (+ 12 n) y) s3 (vector-assoc! s2 (+ 13 n) z)]
+    (vector-assoc! s3 2 (+ n 3))))
+(defn- t1 [s :vector-i64 ix :i64 iy :i64 iz :i64] :vector-i64
+  (if (and (>= (vector-at s 0) 3) (<= (+ (vector-at s 2) 3) 6)
+           (= (vector-at s (+ 3 iy)) (vector-at s (+ 3 iz))))
+    (let [x (vector-at s (+ 3 ix)) y (vector-at s (+ 3 iy))]
+      (if (< x y)
+        (let [n (vector-at s 0) next (vector-assoc! s 0 (- n 3))]
+          (put-output next x y (- x y))) s)) s))
+(defn- demark2 [s :vector-i64 x :i64 y :i64 missing :i64] :vector-i64
+  (let [n (vector-at s 1)]
+    (if (< missing 0)
+      (put-output (vector-assoc! s 1 (- n 4)) x y (+ x y))
+      (let [left (vector-at s (+ 6 missing)) s1 (vector-assoc! s 6 left)
+            s2 (vector-assoc! s1 1 (- n 4))] (put-output s2 x y (+ x y))))))
+(defn- t2 [s :vector-i64 ia :i64 ib :i64 ic :i64 id :i64 minimum :i64 missing :i64] :vector-i64
+  (if (and (>= (vector-at s 1) minimum) (<= (+ (vector-at s 2) 3) 6)
+           (= (vector-at s (+ 6 ib)) (vector-at s (+ 6 ic)))
+           (= (vector-at s (+ 6 ib)) (vector-at s (+ 6 id))))
+    (let [x (vector-at s (+ 6 ia)) y (vector-at s (+ 6 ib))]
+      (if (> y x)
+        (demark2 s x y missing) s)) s))
+(defn- reset-counts [s :vector-i64] :vector-i64
+  (let [s1 (vector-assoc! s 0 3) s2 (vector-assoc! s1 1 5)] (vector-assoc! s2 2 0)))
+(defn- step-1 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t1 s 0 1 2)]
+    (if (= limit 1) next (step-2 next limit))))
+(defn- step-2 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t1 s 0 2 1)]
+    (if (= limit 2) next (step-3 next limit))))
+(defn- step-3 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t1 s 1 0 2)]
+    (if (= limit 3) next (step-4 next limit))))
+(defn- step-4 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t1 s 1 2 0)]
+    (if (= limit 4) next (step-5 next limit))))
+(defn- step-5 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t1 s 2 0 1)]
+    (if (= limit 5) next (step-6 next limit))))
+(defn- step-6 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t1 s 2 1 0)]
+    (if (= limit 6) next (step-7 next limit))))
+(defn- step-7 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 1 2 3 4 -1)]
+    (if (= limit 7) next (step-8 next limit))))
+(defn- step-8 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 1 3 2 4 -1)]
+    (if (= limit 8) next (step-9 next limit))))
+(defn- step-9 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 2 1 3 4 -1)]
+    (if (= limit 9) next (step-10 next limit))))
+(defn- step-10 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 2 3 1 4 -1)]
+    (if (= limit 10) next (step-11 next limit))))
+(defn- step-11 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 3 1 2 4 -1)]
+    (if (= limit 11) next (step-12 next limit))))
+(defn- step-12 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 3 2 1 4 -1)]
+    (if (= limit 12) next (step-13 next limit))))
+(defn- step-13 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 0 2 3 4 -1)]
+    (if (= limit 13) next (step-14 next limit))))
+(defn- step-14 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 0 3 2 4 -1)]
+    (if (= limit 14) next (step-15 next limit))))
+(defn- step-15 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 2 0 3 4 -1)]
+    (if (= limit 15) next (step-16 next limit))))
+(defn- step-16 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 2 3 0 4 -1)]
+    (if (= limit 16) next (step-17 next limit))))
+(defn- step-17 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 3 0 2 4 -1)]
+    (if (= limit 17) next (step-18 next limit))))
+(defn- step-18 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 3 2 0 4 -1)]
+    (if (= limit 18) next (step-19 next limit))))
+(defn- step-19 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 0 1 3 4 -1)]
+    (if (= limit 19) next (step-20 next limit))))
+(defn- step-20 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 0 3 1 4 -1)]
+    (if (= limit 20) next (step-21 next limit))))
+(defn- step-21 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 1 0 3 4 -1)]
+    (if (= limit 21) next (step-22 next limit))))
+(defn- step-22 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 1 3 0 4 -1)]
+    (if (= limit 22) next (step-23 next limit))))
+(defn- step-23 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 3 0 1 4 -1)]
+    (if (= limit 23) next (step-24 next limit))))
+(defn- step-24 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 3 1 0 4 -1)]
+    (if (= limit 24) next (step-25 next limit))))
+(defn- step-25 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 0 1 2 4 -1)]
+    (if (= limit 25) next (step-26 next limit))))
+(defn- step-26 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 0 2 1 4 -1)]
+    (if (= limit 26) next (step-27 next limit))))
+(defn- step-27 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 1 0 2 4 -1)]
+    (if (= limit 27) next (step-28 next limit))))
+(defn- step-28 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 1 2 0 4 -1)]
+    (if (= limit 28) next (step-29 next limit))))
+(defn- step-29 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 2 0 1 4 -1)]
+    (if (= limit 29) next (step-30 next limit))))
+(defn- step-30 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 2 1 0 4 -1)]
+    (if (= limit 30) next (step-31 next limit))))
+(defn- step-31 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 1 2 4 5 3)]
+    (if (= limit 31) next (step-32 next limit))))
+(defn- step-32 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 1 3 4 5 2)]
+    (if (= limit 32) next (step-33 next limit))))
+(defn- step-33 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 1 4 2 5 3)]
+    (if (= limit 33) next (step-34 next limit))))
+(defn- step-34 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 1 4 3 5 2)]
+    (if (= limit 34) next (step-35 next limit))))
+(defn- step-35 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 2 1 4 5 3)]
+    (if (= limit 35) next (step-36 next limit))))
+(defn- step-36 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 2 3 4 5 1)]
+    (if (= limit 36) next (step-37 next limit))))
+(defn- step-37 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 2 4 1 5 3)]
+    (if (= limit 37) next (step-38 next limit))))
+(defn- step-38 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 2 4 3 5 1)]
+    (if (= limit 38) next (step-39 next limit))))
+(defn- step-39 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 3 1 4 5 2)]
+    (if (= limit 39) next (step-40 next limit))))
+(defn- step-40 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 3 2 4 5 1)]
+    (if (= limit 40) next (step-41 next limit))))
+(defn- step-41 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 3 4 1 5 2)]
+    (if (= limit 41) next (step-42 next limit))))
+(defn- step-42 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 3 4 2 5 1)]
+    (if (= limit 42) next (step-43 next limit))))
+(defn- step-43 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 4 1 2 5 3)]
+    (if (= limit 43) next (step-44 next limit))))
+(defn- step-44 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 4 1 3 5 2)]
+    (if (= limit 44) next (step-45 next limit))))
+(defn- step-45 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 4 2 1 5 3)]
+    (if (= limit 45) next (step-46 next limit))))
+(defn- step-46 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 4 2 3 5 1)]
+    (if (= limit 46) next (step-47 next limit))))
+(defn- step-47 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 4 3 1 5 2)]
+    (if (= limit 47) next (step-48 next limit))))
+(defn- step-48 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 0 4 3 2 5 1)]
+    (if (= limit 48) next (step-49 next limit))))
+(defn- step-49 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 0 2 4 5 3)]
+    (if (= limit 49) next (step-50 next limit))))
+(defn- step-50 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 0 3 4 5 2)]
+    (if (= limit 50) next (step-51 next limit))))
+(defn- step-51 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 0 4 2 5 3)]
+    (if (= limit 51) next (step-52 next limit))))
+(defn- step-52 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 0 4 3 5 2)]
+    (if (= limit 52) next (step-53 next limit))))
+(defn- step-53 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 2 0 4 5 3)]
+    (if (= limit 53) next (step-54 next limit))))
+(defn- step-54 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 2 3 4 5 -1)]
+    (if (= limit 54) next (step-55 next limit))))
+(defn- step-55 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 2 4 0 5 3)]
+    (if (= limit 55) next (step-56 next limit))))
+(defn- step-56 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 2 4 3 5 -1)]
+    (if (= limit 56) next (step-57 next limit))))
+(defn- step-57 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 3 0 4 5 2)]
+    (if (= limit 57) next (step-58 next limit))))
+(defn- step-58 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 3 2 4 5 -1)]
+    (if (= limit 58) next (step-59 next limit))))
+(defn- step-59 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 3 4 0 5 2)]
+    (if (= limit 59) next (step-60 next limit))))
+(defn- step-60 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 3 4 2 5 -1)]
+    (if (= limit 60) next (step-61 next limit))))
+(defn- step-61 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 4 0 2 5 3)]
+    (if (= limit 61) next (step-62 next limit))))
+(defn- step-62 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 4 0 3 5 2)]
+    (if (= limit 62) next (step-63 next limit))))
+(defn- step-63 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 4 2 0 5 3)]
+    (if (= limit 63) next (step-64 next limit))))
+(defn- step-64 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 4 2 3 5 -1)]
+    (if (= limit 64) next (step-65 next limit))))
+(defn- step-65 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 4 3 0 5 2)]
+    (if (= limit 65) next (step-66 next limit))))
+(defn- step-66 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 1 4 3 2 5 -1)]
+    (if (= limit 66) next (step-67 next limit))))
+(defn- step-67 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 0 1 4 5 3)]
+    (if (= limit 67) next (step-68 next limit))))
+(defn- step-68 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 0 3 4 5 1)]
+    (if (= limit 68) next (step-69 next limit))))
+(defn- step-69 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 0 4 1 5 3)]
+    (if (= limit 69) next (step-70 next limit))))
+(defn- step-70 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 0 4 3 5 1)]
+    (if (= limit 70) next (step-71 next limit))))
+(defn- step-71 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 1 0 4 5 3)]
+    (if (= limit 71) next (step-72 next limit))))
+(defn- step-72 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 1 3 4 5 -1)]
+    (if (= limit 72) next (step-73 next limit))))
+(defn- step-73 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 1 4 0 5 3)]
+    (if (= limit 73) next (step-74 next limit))))
+(defn- step-74 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 1 4 3 5 -1)]
+    (if (= limit 74) next (step-75 next limit))))
+(defn- step-75 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 3 0 4 5 1)]
+    (if (= limit 75) next (step-76 next limit))))
+(defn- step-76 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 3 1 4 5 -1)]
+    (if (= limit 76) next (step-77 next limit))))
+(defn- step-77 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 3 4 0 5 1)]
+    (if (= limit 77) next (step-78 next limit))))
+(defn- step-78 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 3 4 1 5 -1)]
+    (if (= limit 78) next (step-79 next limit))))
+(defn- step-79 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 4 0 1 5 3)]
+    (if (= limit 79) next (step-80 next limit))))
+(defn- step-80 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 4 0 3 5 1)]
+    (if (= limit 80) next (step-81 next limit))))
+(defn- step-81 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 4 1 0 5 3)]
+    (if (= limit 81) next (step-82 next limit))))
+(defn- step-82 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 4 1 3 5 -1)]
+    (if (= limit 82) next (step-83 next limit))))
+(defn- step-83 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 4 3 0 5 1)]
+    (if (= limit 83) next (step-84 next limit))))
+(defn- step-84 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 2 4 3 1 5 -1)]
+    (if (= limit 84) next (step-85 next limit))))
+(defn- step-85 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 0 1 4 5 2)]
+    (if (= limit 85) next (step-86 next limit))))
+(defn- step-86 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 0 2 4 5 1)]
+    (if (= limit 86) next (step-87 next limit))))
+(defn- step-87 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 0 4 1 5 2)]
+    (if (= limit 87) next (step-88 next limit))))
+(defn- step-88 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 0 4 2 5 1)]
+    (if (= limit 88) next (step-89 next limit))))
+(defn- step-89 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 1 0 4 5 2)]
+    (if (= limit 89) next (step-90 next limit))))
+(defn- step-90 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 1 2 4 5 -1)]
+    (if (= limit 90) next (step-91 next limit))))
+(defn- step-91 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 1 4 0 5 2)]
+    (if (= limit 91) next (step-92 next limit))))
+(defn- step-92 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 1 4 2 5 -1)]
+    (if (= limit 92) next (step-93 next limit))))
+(defn- step-93 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 2 0 4 5 1)]
+    (if (= limit 93) next (step-94 next limit))))
+(defn- step-94 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 2 1 4 5 -1)]
+    (if (= limit 94) next (step-95 next limit))))
+(defn- step-95 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 2 4 0 5 1)]
+    (if (= limit 95) next (step-96 next limit))))
+(defn- step-96 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 2 4 1 5 -1)]
+    (if (= limit 96) next (step-97 next limit))))
+(defn- step-97 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 4 0 1 5 2)]
+    (if (= limit 97) next (step-98 next limit))))
+(defn- step-98 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 4 0 2 5 1)]
+    (if (= limit 98) next (step-99 next limit))))
+(defn- step-99 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 4 1 0 5 2)]
+    (if (= limit 99) next (step-100 next limit))))
+(defn- step-100 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 4 1 2 5 -1)]
+    (if (= limit 100) next (step-101 next limit))))
+(defn- step-101 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 4 2 0 5 1)]
+    (if (= limit 101) next (step-102 next limit))))
+(defn- step-102 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 3 4 2 1 5 -1)]
+    (if (= limit 102) next (step-103 next limit))))
+(defn- step-103 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 0 1 2 5 3)]
+    (if (= limit 103) next (step-104 next limit))))
+(defn- step-104 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 0 1 3 5 2)]
+    (if (= limit 104) next (step-105 next limit))))
+(defn- step-105 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 0 2 1 5 3)]
+    (if (= limit 105) next (step-106 next limit))))
+(defn- step-106 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 0 2 3 5 1)]
+    (if (= limit 106) next (step-107 next limit))))
+(defn- step-107 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 0 3 1 5 2)]
+    (if (= limit 107) next (step-108 next limit))))
+(defn- step-108 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 0 3 2 5 1)]
+    (if (= limit 108) next (step-109 next limit))))
+(defn- step-109 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 1 0 2 5 3)]
+    (if (= limit 109) next (step-110 next limit))))
+(defn- step-110 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 1 0 3 5 2)]
+    (if (= limit 110) next (step-111 next limit))))
+(defn- step-111 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 1 2 0 5 3)]
+    (if (= limit 111) next (step-112 next limit))))
+(defn- step-112 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 1 2 3 5 -1)]
+    (if (= limit 112) next (step-113 next limit))))
+(defn- step-113 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 1 3 0 5 2)]
+    (if (= limit 113) next (step-114 next limit))))
+(defn- step-114 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 1 3 2 5 -1)]
+    (if (= limit 114) next (step-115 next limit))))
+(defn- step-115 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 2 0 1 5 3)]
+    (if (= limit 115) next (step-116 next limit))))
+(defn- step-116 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 2 0 3 5 1)]
+    (if (= limit 116) next (step-117 next limit))))
+(defn- step-117 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 2 1 0 5 3)]
+    (if (= limit 117) next (step-118 next limit))))
+(defn- step-118 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 2 1 3 5 -1)]
+    (if (= limit 118) next (step-119 next limit))))
+(defn- step-119 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 2 3 0 5 1)]
+    (if (= limit 119) next (step-120 next limit))))
+(defn- step-120 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 2 3 1 5 -1)]
+    (if (= limit 120) next (step-121 next limit))))
+(defn- step-121 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 3 0 1 5 2)]
+    (if (= limit 121) next (step-122 next limit))))
+(defn- step-122 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 3 0 2 5 1)]
+    (if (= limit 122) next (step-123 next limit))))
+(defn- step-123 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 3 1 0 5 2)]
+    (if (= limit 123) next (step-124 next limit))))
+(defn- step-124 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 3 1 2 5 -1)]
+    (if (= limit 124) next (step-125 next limit))))
+(defn- step-125 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 3 2 0 5 1)]
+    (if (= limit 125) next (step-126 next limit))))
+(defn- step-126 [s :vector-i64 limit :i64] :vector-i64
+  (let [next (t2 s 4 3 2 1 5 -1)]
+    (if (= limit 126) next next)))
+(defn- full-1 [s :vector-i64] :vector-i64
+  (full-2 (t1 s 0 1 2)))
+(defn- full-2 [s :vector-i64] :vector-i64
+  (full-3 (t1 s 0 2 1)))
+(defn- full-3 [s :vector-i64] :vector-i64
+  (full-4 (t1 s 1 0 2)))
+(defn- full-4 [s :vector-i64] :vector-i64
+  (full-5 (t1 s 1 2 0)))
+(defn- full-5 [s :vector-i64] :vector-i64
+  (full-6 (t1 s 2 0 1)))
+(defn- full-6 [s :vector-i64] :vector-i64
+  (full-7 (t1 s 2 1 0)))
+(defn- full-7 [s :vector-i64] :vector-i64
+  (full-8 (t2 s 0 1 2 3 4 -1)))
+(defn- full-8 [s :vector-i64] :vector-i64
+  (full-9 (t2 s 0 1 3 2 4 -1)))
+(defn- full-9 [s :vector-i64] :vector-i64
+  (full-10 (t2 s 0 2 1 3 4 -1)))
+(defn- full-10 [s :vector-i64] :vector-i64
+  (full-11 (t2 s 0 2 3 1 4 -1)))
+(defn- full-11 [s :vector-i64] :vector-i64
+  (full-12 (t2 s 0 3 1 2 4 -1)))
+(defn- full-12 [s :vector-i64] :vector-i64
+  (full-13 (t2 s 0 3 2 1 4 -1)))
+(defn- full-13 [s :vector-i64] :vector-i64
+  (full-14 (t2 s 1 0 2 3 4 -1)))
+(defn- full-14 [s :vector-i64] :vector-i64
+  (full-15 (t2 s 1 0 3 2 4 -1)))
+(defn- full-15 [s :vector-i64] :vector-i64
+  (full-16 (t2 s 1 2 0 3 4 -1)))
+(defn- full-16 [s :vector-i64] :vector-i64
+  (full-17 (t2 s 1 2 3 0 4 -1)))
+(defn- full-17 [s :vector-i64] :vector-i64
+  (full-18 (t2 s 1 3 0 2 4 -1)))
+(defn- full-18 [s :vector-i64] :vector-i64
+  (full-19 (t2 s 1 3 2 0 4 -1)))
+(defn- full-19 [s :vector-i64] :vector-i64
+  (full-20 (t2 s 2 0 1 3 4 -1)))
+(defn- full-20 [s :vector-i64] :vector-i64
+  (full-21 (t2 s 2 0 3 1 4 -1)))
+(defn- full-21 [s :vector-i64] :vector-i64
+  (full-22 (t2 s 2 1 0 3 4 -1)))
+(defn- full-22 [s :vector-i64] :vector-i64
+  (full-23 (t2 s 2 1 3 0 4 -1)))
+(defn- full-23 [s :vector-i64] :vector-i64
+  (full-24 (t2 s 2 3 0 1 4 -1)))
+(defn- full-24 [s :vector-i64] :vector-i64
+  (full-25 (t2 s 2 3 1 0 4 -1)))
+(defn- full-25 [s :vector-i64] :vector-i64
+  (full-26 (t2 s 3 0 1 2 4 -1)))
+(defn- full-26 [s :vector-i64] :vector-i64
+  (full-27 (t2 s 3 0 2 1 4 -1)))
+(defn- full-27 [s :vector-i64] :vector-i64
+  (full-28 (t2 s 3 1 0 2 4 -1)))
+(defn- full-28 [s :vector-i64] :vector-i64
+  (full-29 (t2 s 3 1 2 0 4 -1)))
+(defn- full-29 [s :vector-i64] :vector-i64
+  (full-30 (t2 s 3 2 0 1 4 -1)))
+(defn- full-30 [s :vector-i64] :vector-i64
+  (full-31 (t2 s 3 2 1 0 4 -1)))
+(defn- full-31 [s :vector-i64] :vector-i64
+  (full-32 (t2 s 0 1 2 4 5 3)))
+(defn- full-32 [s :vector-i64] :vector-i64
+  (full-33 (t2 s 0 1 3 4 5 2)))
+(defn- full-33 [s :vector-i64] :vector-i64
+  (full-34 (t2 s 0 1 4 2 5 3)))
+(defn- full-34 [s :vector-i64] :vector-i64
+  (full-35 (t2 s 0 1 4 3 5 2)))
+(defn- full-35 [s :vector-i64] :vector-i64
+  (full-36 (t2 s 0 2 1 4 5 3)))
+(defn- full-36 [s :vector-i64] :vector-i64
+  (full-37 (t2 s 0 2 3 4 5 1)))
+(defn- full-37 [s :vector-i64] :vector-i64
+  (full-38 (t2 s 0 2 4 1 5 3)))
+(defn- full-38 [s :vector-i64] :vector-i64
+  (full-39 (t2 s 0 2 4 3 5 1)))
+(defn- full-39 [s :vector-i64] :vector-i64
+  (full-40 (t2 s 0 3 1 4 5 2)))
+(defn- full-40 [s :vector-i64] :vector-i64
+  (full-41 (t2 s 0 3 2 4 5 1)))
+(defn- full-41 [s :vector-i64] :vector-i64
+  (full-42 (t2 s 0 3 4 1 5 2)))
+(defn- full-42 [s :vector-i64] :vector-i64
+  (full-43 (t2 s 0 3 4 2 5 1)))
+(defn- full-43 [s :vector-i64] :vector-i64
+  (full-44 (t2 s 0 4 1 2 5 3)))
+(defn- full-44 [s :vector-i64] :vector-i64
+  (full-45 (t2 s 0 4 1 3 5 2)))
+(defn- full-45 [s :vector-i64] :vector-i64
+  (full-46 (t2 s 0 4 2 1 5 3)))
+(defn- full-46 [s :vector-i64] :vector-i64
+  (full-47 (t2 s 0 4 2 3 5 1)))
+(defn- full-47 [s :vector-i64] :vector-i64
+  (full-48 (t2 s 0 4 3 1 5 2)))
+(defn- full-48 [s :vector-i64] :vector-i64
+  (full-49 (t2 s 0 4 3 2 5 1)))
+(defn- full-49 [s :vector-i64] :vector-i64
+  (full-50 (t2 s 1 0 2 4 5 3)))
+(defn- full-50 [s :vector-i64] :vector-i64
+  (full-51 (t2 s 1 0 3 4 5 2)))
+(defn- full-51 [s :vector-i64] :vector-i64
+  (full-52 (t2 s 1 0 4 2 5 3)))
+(defn- full-52 [s :vector-i64] :vector-i64
+  (full-53 (t2 s 1 0 4 3 5 2)))
+(defn- full-53 [s :vector-i64] :vector-i64
+  (full-54 (t2 s 1 2 0 4 5 3)))
+(defn- full-54 [s :vector-i64] :vector-i64
+  (full-55 (t2 s 1 2 3 4 5 -1)))
+(defn- full-55 [s :vector-i64] :vector-i64
+  (full-56 (t2 s 1 2 4 0 5 3)))
+(defn- full-56 [s :vector-i64] :vector-i64
+  (full-57 (t2 s 1 2 4 3 5 -1)))
+(defn- full-57 [s :vector-i64] :vector-i64
+  (full-58 (t2 s 1 3 0 4 5 2)))
+(defn- full-58 [s :vector-i64] :vector-i64
+  (full-59 (t2 s 1 3 2 4 5 -1)))
+(defn- full-59 [s :vector-i64] :vector-i64
+  (full-60 (t2 s 1 3 4 0 5 2)))
+(defn- full-60 [s :vector-i64] :vector-i64
+  (full-61 (t2 s 1 3 4 2 5 -1)))
+(defn- full-61 [s :vector-i64] :vector-i64
+  (full-62 (t2 s 1 4 0 2 5 3)))
+(defn- full-62 [s :vector-i64] :vector-i64
+  (full-63 (t2 s 1 4 0 3 5 2)))
+(defn- full-63 [s :vector-i64] :vector-i64
+  (full-64 (t2 s 1 4 2 0 5 3)))
+(defn- full-64 [s :vector-i64] :vector-i64
+  (full-65 (t2 s 1 4 2 3 5 -1)))
+(defn- full-65 [s :vector-i64] :vector-i64
+  (full-66 (t2 s 1 4 3 0 5 2)))
+(defn- full-66 [s :vector-i64] :vector-i64
+  (full-67 (t2 s 1 4 3 2 5 -1)))
+(defn- full-67 [s :vector-i64] :vector-i64
+  (full-68 (t2 s 2 0 1 4 5 3)))
+(defn- full-68 [s :vector-i64] :vector-i64
+  (full-69 (t2 s 2 0 3 4 5 1)))
+(defn- full-69 [s :vector-i64] :vector-i64
+  (full-70 (t2 s 2 0 4 1 5 3)))
+(defn- full-70 [s :vector-i64] :vector-i64
+  (full-71 (t2 s 2 0 4 3 5 1)))
+(defn- full-71 [s :vector-i64] :vector-i64
+  (full-72 (t2 s 2 1 0 4 5 3)))
+(defn- full-72 [s :vector-i64] :vector-i64
+  (full-73 (t2 s 2 1 3 4 5 -1)))
+(defn- full-73 [s :vector-i64] :vector-i64
+  (full-74 (t2 s 2 1 4 0 5 3)))
+(defn- full-74 [s :vector-i64] :vector-i64
+  (full-75 (t2 s 2 1 4 3 5 -1)))
+(defn- full-75 [s :vector-i64] :vector-i64
+  (full-76 (t2 s 2 3 0 4 5 1)))
+(defn- full-76 [s :vector-i64] :vector-i64
+  (full-77 (t2 s 2 3 1 4 5 -1)))
+(defn- full-77 [s :vector-i64] :vector-i64
+  (full-78 (t2 s 2 3 4 0 5 1)))
+(defn- full-78 [s :vector-i64] :vector-i64
+  (full-79 (t2 s 2 3 4 1 5 -1)))
+(defn- full-79 [s :vector-i64] :vector-i64
+  (full-80 (t2 s 2 4 0 1 5 3)))
+(defn- full-80 [s :vector-i64] :vector-i64
+  (full-81 (t2 s 2 4 0 3 5 1)))
+(defn- full-81 [s :vector-i64] :vector-i64
+  (full-82 (t2 s 2 4 1 0 5 3)))
+(defn- full-82 [s :vector-i64] :vector-i64
+  (full-83 (t2 s 2 4 1 3 5 -1)))
+(defn- full-83 [s :vector-i64] :vector-i64
+  (full-84 (t2 s 2 4 3 0 5 1)))
+(defn- full-84 [s :vector-i64] :vector-i64
+  (full-85 (t2 s 2 4 3 1 5 -1)))
+(defn- full-85 [s :vector-i64] :vector-i64
+  (full-86 (t2 s 3 0 1 4 5 2)))
+(defn- full-86 [s :vector-i64] :vector-i64
+  (full-87 (t2 s 3 0 2 4 5 1)))
+(defn- full-87 [s :vector-i64] :vector-i64
+  (full-88 (t2 s 3 0 4 1 5 2)))
+(defn- full-88 [s :vector-i64] :vector-i64
+  (full-89 (t2 s 3 0 4 2 5 1)))
+(defn- full-89 [s :vector-i64] :vector-i64
+  (full-90 (t2 s 3 1 0 4 5 2)))
+(defn- full-90 [s :vector-i64] :vector-i64
+  (full-91 (t2 s 3 1 2 4 5 -1)))
+(defn- full-91 [s :vector-i64] :vector-i64
+  (full-92 (t2 s 3 1 4 0 5 2)))
+(defn- full-92 [s :vector-i64] :vector-i64
+  (full-93 (t2 s 3 1 4 2 5 -1)))
+(defn- full-93 [s :vector-i64] :vector-i64
+  (full-94 (t2 s 3 2 0 4 5 1)))
+(defn- full-94 [s :vector-i64] :vector-i64
+  (full-95 (t2 s 3 2 1 4 5 -1)))
+(defn- full-95 [s :vector-i64] :vector-i64
+  (full-96 (t2 s 3 2 4 0 5 1)))
+(defn- full-96 [s :vector-i64] :vector-i64
+  (full-97 (t2 s 3 2 4 1 5 -1)))
+(defn- full-97 [s :vector-i64] :vector-i64
+  (full-98 (t2 s 3 4 0 1 5 2)))
+(defn- full-98 [s :vector-i64] :vector-i64
+  (full-99 (t2 s 3 4 0 2 5 1)))
+(defn- full-99 [s :vector-i64] :vector-i64
+  (full-100 (t2 s 3 4 1 0 5 2)))
+(defn- full-100 [s :vector-i64] :vector-i64
+  (full-101 (t2 s 3 4 1 2 5 -1)))
+(defn- full-101 [s :vector-i64] :vector-i64
+  (full-102 (t2 s 3 4 2 0 5 1)))
+(defn- full-102 [s :vector-i64] :vector-i64
+  (full-103 (t2 s 3 4 2 1 5 -1)))
+(defn- full-103 [s :vector-i64] :vector-i64
+  (full-104 (t2 s 4 0 1 2 5 3)))
+(defn- full-104 [s :vector-i64] :vector-i64
+  (full-105 (t2 s 4 0 1 3 5 2)))
+(defn- full-105 [s :vector-i64] :vector-i64
+  (full-106 (t2 s 4 0 2 1 5 3)))
+(defn- full-106 [s :vector-i64] :vector-i64
+  (full-107 (t2 s 4 0 2 3 5 1)))
+(defn- full-107 [s :vector-i64] :vector-i64
+  (full-108 (t2 s 4 0 3 1 5 2)))
+(defn- full-108 [s :vector-i64] :vector-i64
+  (full-109 (t2 s 4 0 3 2 5 1)))
+(defn- full-109 [s :vector-i64] :vector-i64
+  (full-110 (t2 s 4 1 0 2 5 3)))
+(defn- full-110 [s :vector-i64] :vector-i64
+  (full-111 (t2 s 4 1 0 3 5 2)))
+(defn- full-111 [s :vector-i64] :vector-i64
+  (full-112 (t2 s 4 1 2 0 5 3)))
+(defn- full-112 [s :vector-i64] :vector-i64
+  (full-113 (t2 s 4 1 2 3 5 -1)))
+(defn- full-113 [s :vector-i64] :vector-i64
+  (full-114 (t2 s 4 1 3 0 5 2)))
+(defn- full-114 [s :vector-i64] :vector-i64
+  (full-115 (t2 s 4 1 3 2 5 -1)))
+(defn- full-115 [s :vector-i64] :vector-i64
+  (full-116 (t2 s 4 2 0 1 5 3)))
+(defn- full-116 [s :vector-i64] :vector-i64
+  (full-117 (t2 s 4 2 0 3 5 1)))
+(defn- full-117 [s :vector-i64] :vector-i64
+  (full-118 (t2 s 4 2 1 0 5 3)))
+(defn- full-118 [s :vector-i64] :vector-i64
+  (full-119 (t2 s 4 2 1 3 5 -1)))
+(defn- full-119 [s :vector-i64] :vector-i64
+  (full-120 (t2 s 4 2 3 0 5 1)))
+(defn- full-120 [s :vector-i64] :vector-i64
+  (full-121 (t2 s 4 2 3 1 5 -1)))
+(defn- full-121 [s :vector-i64] :vector-i64
+  (full-122 (t2 s 4 3 0 1 5 2)))
+(defn- full-122 [s :vector-i64] :vector-i64
+  (full-123 (t2 s 4 3 0 2 5 1)))
+(defn- full-123 [s :vector-i64] :vector-i64
+  (full-124 (t2 s 4 3 1 0 5 2)))
+(defn- full-124 [s :vector-i64] :vector-i64
+  (full-125 (t2 s 4 3 1 2 5 -1)))
+(defn- full-125 [s :vector-i64] :vector-i64
+  (full-126 (t2 s 4 3 2 0 5 1)))
+(defn- full-126 [s :vector-i64] :vector-i64
+  (t2 s 4 3 2 1 5 -1))
+(defn- run-full [s :vector-i64] :vector-i64 (full-1 (reset-counts s)))
+(defn- run-stages [s :vector-i64 limit :i64] :vector-i64
+  (let [start (reset-counts s)] (if (= limit 0) start (step-1 start limit))))
+(defn- repeats [s :vector-i64 remaining :i64] :vector-i64
+  (if (= remaining 0) s (repeats (run-full s) (- remaining 1))))
+(defn- verify [s :vector-i64] :i64
+  (if (and (= (vector-at s 0) 3) (= (vector-at s 1) 5) (= (vector-at s 2) 0))
+    (loop [i 3] (if (= i 17) 1 (if (= (vector-at s i) 0) (recur (+ i 1)) 0))) 0))
+(defn batch [iterations :i64] :i64
+  (if (<= iterations 0) 0 (verify (repeats (vector-alloc 17) iterations))))
+(defn- seed-case [s :vector-i64 test :i64 i :i64] :vector-i64
+  (if (= i 17) s
+    (let [value (if (= test 0) 0
+                  (if (= test 1) (if (= i 3) -2 (if (< i 6) 1 (if (= i 6) -3 2)))
+                    (if (= test 2) (if (= i 4) -2 (if (< i 6) 1 (if (= i 7) -3 2)))
+                      (if (= test 3) (if (< i 6) (- i 4) (- (rem i 3) 1))
+                        (if (= test 4) -7
+                          (if (= test 5) (+ 5 (rem (* i 7) 3))
+                            (if (< i 6) 0
+                              (if (>= i 11) 9
+                                (if (= test 6) (if (= i 6) -3 (if (= i 9) 3 2))
+                                  (if (= i 6) 7 (if (= i 7) -3 2)))))))))))
+          next (vector-assoc! s i value)]
+      (seed-case next test (+ i 1)))))
+(defn stage-cell [encoded :i64] :i64
+  (let [test (quot encoded 4096) code (rem encoded 4096)
+        stage (quot code 17) cell (rem code 17)
+        seeded (seed-case (vector-alloc 17) test 3)
+        done (run-stages seeded stage)] (vector-at done cell)))
+(defn test-nsichneu [] :i64 (batch 1))
+
+(defn- rem [a :i64 b :i64] :i64 (- a (* b (quot a b))))

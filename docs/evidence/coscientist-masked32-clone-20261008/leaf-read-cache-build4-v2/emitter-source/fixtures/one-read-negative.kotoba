@@ -1,0 +1,6 @@
+(ns lc-one-read-negative)
+(defn- read-one [v :vector-i64 n :i64] :i64
+ (vector-at v 0))
+(defn bench [n :i64] :i64
+ (let [v (vector-alloc 2) w (vector-assoc! v 0 n) z (vector-assoc! w 1 (+ n 1))]
+  (read-one z n)))

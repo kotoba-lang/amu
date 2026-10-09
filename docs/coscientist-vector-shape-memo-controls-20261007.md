@@ -1,0 +1,19 @@
+# V8 shape memo：scalar native制御試験
+
+新しい512語を含むV8のキャッシュ制御を、Amu製ネイティブコンパイラで作った隔離プログラムで検査した。21ケースを実行し、通常版の小プログラムの172 Bとexport位置も従来結果に一致した。計25 loader呼び出しは全て終了コード0で、ベンチマーク本体と性能測定は0件。
+
+実際のlx/rd/nm/ck/lwで作ったM8388608セルと、確保したG147554語を比較した。新しい領域の先頭・中間・末尾を汚す3件はentry status7で全M/Gを変更せず拒否した。正しい入力は同じMで二度vw-runを実行し、どちらも全M/Gが元に戻り、全50689所有語がゼロだった。admission後に汚した末尾もcleanupで消えた。外部arenaや任意のMについての保証ではない。
+
+元のSIR/FRECにある二つの呼び出しを使い、phase5からneutral miss・key公開・hitを確認した。hitの作業差2048は128*(6+5*2)と一致し、元のcurrent768セルは変化しない。これはCPU時間ではない。4keyそれぞれの変更は再解析で上書きされ、注入した古い寄与も消えた。vector引数がない固定scalar fixtureであり、正値・未知値0・preservesSelfの寄与は未検証である。
+
+直接key-saveを作業上限直前で止める6件は、保存済みprefix0/1/2/3/4/4、valid0を確認した。reset・元のquery開始の中断もvalid0である。invalidate自身の中断で古いvalid1が残る場合と、既存のvalid1にglobal refusalを立てる場合は、current768・contribution2048・lastkey512が変わらず再生されなかった。直接component注入は、その状態の製品経路での到達可能性を証明しない。
+
+最初のnative case0は正常終了したが、検証器がGの開始位置をMM-HEAP-BASEと誤認して拒否した。元のpipelineは先にheapを使い、既存の固定ログにも開始6714137・終了6861691が記録されていた。この古いALLOCとの完全一致とアロケーターの範囲契約を使う追記版へ訂正した。元のソースレビューで見落とした前提と3呼び出し時点の失敗を保存し、既存case0をオフラインで再判定した。ビルドとcase0は再実行せず、残り20件と通常版生成抽出2件だけを続けた。
+
+独立担当二人とrootのオフライン照合はPASS。baseline前GOが封印した23行と最終25行は同一ファイルの同一hashだと扱わず、元の23行の完全なprefixと最後の2行の追加を照合した。全25 argv・cap・終了記録を厳密に再検査し、製品のソース・emitterは変更していない。
+
+[固定した証拠と再生手順](evidence/coscientist-inverse-aes-20261007/vector-shape-memo-scalar/README.md)は2,009,441 B、SHA-256 `3a5e3f8696e3223878fe1f9e4b8f61366aa3849164f9188f61ec1cad5e278d90`。159ファイル・raw7,903,953 Bで4 MiB／32 MiB上限内。新しいコピーから、外部read・writeを拒否するreaderで21件・25記録を再計算した。V8の4世代自己ビルドは[別の証拠](coscientist-vector-typed-v8-20261007.md)に帰属し、このscalar packetが8ビルドを再証明したとは数えない。
+
+次は実際の型付きvectorから正値4・未知値0・自己呼び出しのneutralを採取し、新しくリセットしたcallee集計に再生して比較する。型付き検査のソースと7呼び出しの計画は別途準備中で、まだnative結果ではない。実際の検査省略0、低負荷性能・C以上・公式Embenchスコア・製品100% selfhostは未達成である。
+
+追記：この後、[型付き vector の3ケース・7呼び出し](coscientist-vector-shape-memo-typed-controls-20261007.md)が完了した。固定した fixture の正値4・未知長0・自己呼び出し neutral と、初期化した集計への再生一致を二人が独立に確認した。上の「準備中」は scalar 試験の記録時点を示す。

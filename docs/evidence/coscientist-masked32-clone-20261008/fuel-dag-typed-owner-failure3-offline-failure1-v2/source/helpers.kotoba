@@ -1,0 +1,52 @@
+;; Diagnostic stdout only; every M/G read is bounded by fixed observer admission.
+(defn- fo-enabled [] :bool (and (> (io-argc) 0) (string=? (io-arg 0) "compile")))
+(defn- fo-print [tag :string xs :vector-i64] :i64
+ (let [a (io-out tag) b (loop [j 0] (if (>= j (vector-count xs)) 0 (let [w (io-out (string-concat " " (string-from-i64 (vector-at xs j))))] (recur (inc j)))))] (io-out "\n")))
+(defn- fo-ready [M :vector-i64] :bool
+ (and (= (vector-at M MM-ERR) 0)
+      (> (vector-at M MM-NODE-N) 0) (<= (vector-at M MM-NODE-N) MM-NODE-CAP)
+      (> (vector-at M MM-SYM-N) 0) (<= (vector-at M MM-SYM-N) MM-SYM-CAP)
+      (> (vector-at M MM-TOK-N) 0) (<= (vector-at M MM-TOK-N) MM-TOK-CAP) (> (vector-at M MM-SIR-N) 1) (<= (vector-at M MM-SIR-N) 128)
+      (> (vector-at M MM-FN-N) 1) (<= (vector-at M MM-FN-N) 16)
+      (>= (vector-at M MM-CODE-N) 0) (<= (vector-at M MM-CODE-N) 256)
+      (> (vector-at M MM-LABEL-N) 0) (<= (vector-at M MM-LABEL-N) 128)
+      (> (vector-at M MM-FIX-N) 0) (<= (vector-at M MM-FIX-N) 128)
+      (> (vector-at M MM-LIT-N) 0) (<= (vector-at M MM-LIT-N) 16)
+      (> (vector-at M MM-LITB-N) 0) (<= (vector-at M MM-LITB-N) 4096)
+      (> (vector-at M MM-EXP-N) 0) (<= (vector-at M MM-EXP-N) 16)))
+(defn- fo-owner [M :vector-i64 i :i64] :i64
+ (loop [j 1 f 0] (if (> j i) f (recur (inc j) (if (= (gn-op M j) OP-FN) (gn-sir M j IF-A) (if (= (gn-op M j) OP-END) 0 f))))))
+(defn- fo-dump-typed [M :vector-i64 phase :i64] :i64
+ (let [a (fo-print "FH" [phase (vector-at M MM-ERR) (vector-at M MM-SIR-N) (vector-at M MM-FN-N) (vector-at M MM-NODE-N) (vector-at M MM-SYM-N) (vector-at M MM-TOK-N)])
+       b (loop [j 1] (if (>= j (vector-at M MM-SIR-N)) 0 (let [w (fo-print "FSIR" [phase j (gn-op M j) (gn-sir M j IF-A) (gn-sir M j IF-B) (gn-sir M j IF-C)])] (recur (inc j)))))
+       c (loop [f 1] (if (>= f (vector-at M MM-FN-N)) 0
+           (let [w (loop [k 0] (if (= k 16) 0 (let [v (fo-print "FF" [phase f k (gn-fnf M f k)])] (recur (inc k)))))
+                 node (gn-fnf M f FF-NODE) sym (gn-fnf M f FF-SYM)
+                 q (if (and (> node 0) (< node (vector-at M MM-NODE-N)) (> sym 0) (< sym (vector-at M MM-SYM-N)))
+                     (let [v (loop [k 0] (if (= k 8) 0 (let [n (fo-print "FNODE" [phase f node k (vector-at M (+ MM-NODE-BASE (* node MM-NODE-W) k))]) s (fo-print "FSYM" [phase f sym k (vector-at M (+ MM-SYM-BASE (* sym MM-SYM-W) k))])] (recur (inc k)))))
+                           tok (vector-at M (+ MM-NODE-BASE (* node MM-NODE-W) NF-TOK))
+                           tr (if (and (> tok 0) (< tok (vector-at M MM-TOK-N))) (loop [k 0] (if (= k 4) 0 (let [w (fo-print "FTOK" [phase f tok k (vector-at M (+ MM-TOK-BASE (* tok MM-TOK-W) k))])] (recur (inc k))))) (fo-print "FREFUSE" [phase f tok 0]))] 0)
+                     (fo-print "FREFUSE" [phase f node sym]))]
+             (recur (inc f)))))] 0))
+(defn- fo-pre [M :vector-i64] :i64
+ (if (fo-ready M) (fo-dump-typed M 0) (fo-print "FREFUSE" [0 (vector-at M MM-ERR) (vector-at M MM-SIR-N) (vector-at M MM-FN-N)])))
+(defn- fo-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
+ (if (not (and (fo-enabled) (fo-ready M))) (fo-original-call M i f t n)
+  (let [before (df-admit M i f t n) start (vector-at M MM-CODE-N) sites (gn-g M di-sites)
+        ctx (gn-g M gn-f-ctx) leaf (gn-g M gn-f-leaf) freg (gn-g M gn-f-freg) err (vector-at M MM-ERR)
+        gb (loop [k 0] (if (= k 16) 0 (let [w (fo-print "FG" [i 0 k (gn-g M k)])] (recur (inc k)))))
+        result (fo-original-call M i f t n) after (df-admit result i f t n)
+        ga (loop [k 0] (if (= k 16) 0 (let [w (fo-print "FG" [i 1 k (gn-g result k)])] (recur (inc k)))))
+        out (fo-print "FCALL" [i (fo-owner M i) f t n before after start (vector-at result MM-CODE-N) sites (gn-g result di-sites) ctx (gn-g result gn-f-ctx) leaf freg err (vector-at result MM-ERR)])]
+   result)))
+(defn- fo-final [M :vector-i64] :i64
+ (if (not (fo-ready M)) (fo-print "FREFUSE" [1 (vector-at M MM-ERR) (vector-at M MM-SIR-N) (vector-at M MM-FN-N)])
+  (let [d (fo-dump-typed M 1)
+        h (fo-print "FOUT" [(vector-at M MM-CODE-N) (vector-at M MM-CODE-BYTES) (vector-at M MM-LABEL-N) (vector-at M MM-FIX-N) (vector-at M MM-LIT-N) (vector-at M MM-LITB-N) (vector-at M MM-EXP-N)])
+        c (loop [j 0] (if (>= j (vector-at M MM-CODE-N)) 0 (let [w (fo-print "FCODE" [j (vector-at M (+ MM-CODE-BASE j))])] (recur (inc j)))))
+        la (loop [j 1] (if (>= j (vector-at M MM-LABEL-N)) 0 (let [w (fo-print "FLABEL" [j (vector-at M (+ MM-LABEL-BASE j))])] (recur (inc j)))))
+        fx (loop [j 1] (if (>= j (vector-at M MM-FIX-N)) 0 (let [w (fo-print "FFIX" [j (vector-at M (+ MM-FIX-BASE (* j MM-FIX-W))) (vector-at M (+ MM-FIX-BASE (* j MM-FIX-W) 1)) (vector-at M (+ MM-FIX-BASE (* j MM-FIX-W) 2)) (vector-at M (+ MM-FIX-BASE (* j MM-FIX-W) 3))])] (recur (inc j)))))
+        li (loop [j 1] (if (>= j (vector-at M MM-LIT-N)) 0 (let [w (fo-print "FLIT" [j (vector-at M (+ MM-LIT-BASE (* j MM-LIT-W))) (vector-at M (+ MM-LIT-BASE (* j MM-LIT-W) 1)) (vector-at M (+ MM-LIT-BASE (* j MM-LIT-W) 2)) (vector-at M (+ MM-LIT-BASE (* j MM-LIT-W) 3))])] (recur (inc j)))))
+        lb (loop [j 1] (if (>= j (vector-at M MM-LITB-N)) 0 (let [w (fo-print "FLITB" [j (vector-at M (+ MM-LITB-BASE j))])] (recur (inc j)))))
+        ex (loop [j 1] (if (>= j (vector-at M MM-EXP-N)) 0 (let [w (fo-print "FEXP" [j (vector-at M (+ MM-EXP-BASE (* j MM-EXP-W))) (vector-at M (+ MM-EXP-BASE (* j MM-EXP-W) 1)) (vector-at M (+ MM-EXP-BASE (* j MM-EXP-W) 2)) (vector-at M (+ MM-EXP-BASE (* j MM-EXP-W) 3))])] (recur (inc j)))))
+        done (fo-print "FEND" [1 (vector-at M MM-ERR)])] 0)))

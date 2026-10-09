@@ -1,0 +1,216 @@
+{
+  "status": "PASS_FINITE_SAVED_AARCH64_INTEGER_TABLE_SUBSTITUTION_MODEL_ONLY",
+  "independent": true,
+  "priorImplementationAuthorship": false,
+  "acceptedEmissionProofSHA256": "98416905a0b6afad3a7cd04e1e73d50c04e10b9f667aac70a710f3271801c693",
+  "acceptedExtractionProofSHA256": "f74651159f7339cc591c8c28575605a87ffd80df6922824e16d24e12684e7056",
+  "extractedNative": {
+    "path": "/Users/junkawasaki/github/workspaces/codex/crc-table-decision-collapse-tc-remaining-extract1-source-v2-20261009/run-outputs/observed-on-input.bin",
+    "bytes": 3680,
+    "sha256": "5187d8338730957bf4611f294117c811099af65c9d1117492dd57430e8fa8999"
+  },
+  "rawSHA256": "74e21e363848d9f4c98325bbe9ab3b9a45a5db81d2c102b993a57755cb19954a",
+  "selectedSite": 220,
+  "spanCODE": [
+    244,
+    257
+  ],
+  "wordsHex": [
+    "aa1803e0",
+    "f94004e8",
+    "f1000508",
+    "54000062",
+    "f90004ff",
+    "d4200000",
+    "f940c0f1",
+    "8b000e31",
+    "d280cc10",
+    "f2a00010",
+    "f8706a20",
+    "f90004e8",
+    "aa0003e9"
+  ],
+  "decoded": [
+    [
+      "MOV64",
+      0,
+      24
+    ],
+    [
+      "LDR64",
+      8,
+      7,
+      8
+    ],
+    [
+      "SUBS64",
+      8,
+      8,
+      1
+    ],
+    [
+      "B.COND",
+      2,
+      3
+    ],
+    [
+      "STR64",
+      31,
+      7,
+      8
+    ],
+    [
+      "BRK",
+      0
+    ],
+    [
+      "LDR64",
+      17,
+      7,
+      384
+    ],
+    [
+      "ADD64.LSL",
+      17,
+      17,
+      0,
+      3
+    ],
+    [
+      "MOVZ64",
+      16,
+      1632,
+      0
+    ],
+    [
+      "MOVK64",
+      16,
+      0,
+      16
+    ],
+    [
+      "LDR64.REG",
+      0,
+      17,
+      16
+    ],
+    [
+      "STR64",
+      8,
+      7,
+      8
+    ],
+    [
+      "MOV64",
+      9,
+      0
+    ]
+  ],
+  "literalFixup": [
+    49,
+    252,
+    5,
+    1,
+    0
+  ],
+  "literalPoolOffset": 1632,
+  "originalTypedReaderFN": 1,
+  "originalTypedReaderRange": [
+    1,
+    174
+  ],
+  "typedPathsCompared": 256,
+  "instructionInputFuelCases": 768,
+  "cases": [
+    {
+      "fuel": 0,
+      "inputs": 256,
+      "trap": true,
+      "remainingFuel": 0,
+      "successValueMatchesAllTypedPaths": false
+    },
+    {
+      "fuel": 1,
+      "inputs": 256,
+      "trap": false,
+      "remainingFuel": 0,
+      "successValueMatchesAllTypedPaths": true
+    },
+    {
+      "fuel": 2,
+      "inputs": 256,
+      "trap": false,
+      "remainingFuel": 1,
+      "successValueMatchesAllTypedPaths": true
+    }
+  ],
+  "mutatedInstructionRefusals": [
+    "wrongX25capture",
+    "wrongFuelCell",
+    "charge2",
+    "wrongBranchDisplacement",
+    "wrongZeroStoreValue",
+    "wrongCodeBaseCell",
+    "stride4",
+    "literalOffsetPlus8",
+    "wrongResultX8",
+    "narrowLoadClass"
+  ],
+  "outOfPremiseInputRefusals": [
+    "outOfPremiseInput:-1",
+    "outOfPremiseInput:256",
+    "outOfPremiseInput:9223372036854775808"
+  ],
+  "allowedClobbersDerivedFromSelectedSource": {
+    "integerRegisters": [
+      0,
+      8,
+      9,
+      16,
+      17
+    ],
+    "NZCV": true,
+    "soleMemoryWrite": "context X7 +8 fuel",
+    "source": "Selected retained nonleaf caller frame176; temp0LOCALslot7 rawmap25->X24, currentX7contextvalid. Source documents X0/X8 free, X16/X17 scratch, gn-take publishes temp0X9; gn-save 0,t witht0 has no earlier live temps.",
+    "preserved": "All other X registers including X7/X24, SP and instruction model memory outside fuel; no floating/vector instructions are present."
+  },
+  "trapObservation": "Fuel0: LDRfuel,SUBS1 carry0,zero publication then BRK0; no table/codebase read or result publication. Machine trap handler/OS/caller stack state not modeled.",
+  "premises": [
+    "Typed i64 domain0..255 comes from selected caller mask255 and prior owned typed proof. Instructions themselves do not perform bounds checks.",
+    "X7 points to live readable/writable aligned context with fuel at8 and codebase pointer at384; pool literal memory immutable/readable little-endian and disjoint from fuel/context.",
+    "Codebase+1632+i*8 is mapped and does not wrap; this finite model uses separate aligned addresses. Real mappings/trap handlers are not independently executed.",
+    "Model implements stated AArch64 integer subset semantics, not a formally verified architecture emulator. Decoder derives operand/immediate fields from actual saved words.",
+    "Original generic reader may clobber different scratch/flags/frame bytes; comparison is typed value/one fuel debit/fuel exhaustion plus substitution local write-set, not full original machine register/stack equivalence."
+  ],
+  "sourceEvidence": [
+    {
+      "path": "/Users/junkawasaki/github/workspaces/codex/crc-table-decision-collapse-tc-emitted-build8-source-v1-20261008/41-a64gen-candidate.kotoba",
+      "bytes": 133738,
+      "sha256": "3d7c169818cdf0fabc151da98017d3b28bbe38fc3407d9b42921b646520c2aba"
+    },
+    {
+      "path": "/Users/junkawasaki/github/workspaces/codex/crc-table-decision-collapse-tc-emitted-build8-source-v1-20261008/original-input.kotoba",
+      "bytes": 4418,
+      "sha256": "d3ef82a6a6f973002aef29ac6a443d46437fc60d9e1151808220a4635a3d01c3"
+    },
+    {
+      "path": "/Users/junkawasaki/github/wt/amu-seed17/seed/40-a64enc.kotoba",
+      "bytes": 12913,
+      "sha256": "3e6be7a2320c27a95ffc8e3b831edd6d1e4f18b19ebdd38a4c22579e5e5efbed"
+    },
+    {
+      "path": "/Users/junkawasaki/github/wt/amu-seed17/seed/00-ns.kotoba",
+      "bytes": 14489,
+      "sha256": "568ba190794ee12b4629007d087eb759849a6886c60e54c4e1ead0953e094bba"
+    }
+  ],
+  "hardwareExecutionByReviewer": 0,
+  "compilerProcessNetworkAPICalls": 0,
+  "runtimeQualified": false,
+  "full19Qualified": false,
+  "selfhostFixedpointQualified": false,
+  "performanceQualified": false,
+  "C2Enabled": false,
+  "sourceAndRawEvidencePinnedToAcceptedClosure": true,
+  "auditModelSHA256": "1c6a42604ae6ffa19a1f5a84f0f98cd99eaf6933c7644ae73f237706c65db2ec"
+}

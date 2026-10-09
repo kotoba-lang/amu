@@ -1,0 +1,17 @@
+--- seed/41-a64gen.kotoba
++++ diagnostic/41-a64gen-profile.kotoba
+@@ -559,0 +560 @@
++                     (gn-gs 13 f)
+@@ -1123 +1124 @@
+-(defn- gn-op-fuel [M :vector-i64] :vector-i64
++(defn- gn-op-fuel-original [M :vector-i64] :vector-i64
+@@ -1132,0 +1134,9 @@
++
++ ;; Diagnostic-only successful fuel counters, attributed to emitting function.
++;; x16 is reserved scratch. Existing charge executes first, so failed charges
++;; are not counted; calls/branches/fuel traps retain their original order.
++(defn- gn-op-fuel [M :vector-i64] :vector-i64
++  (let [f (gn-g M 13) offset (+ 400 (* f 8)) M1 (gn-op-fuel-original M)]
++    (if (> offset 32760) (gn-err M1 E-GEN-OP f)
++      (-> M1 (gn-ctx) (gn-emit (enc-ldr 16 7 offset))
++          (gn-emit (enc-add-i 16 16 1)) (gn-emit (enc-str 16 7 offset))))))

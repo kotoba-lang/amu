@@ -4337,3 +4337,342 @@ ple Clang C11, Zig, Go
 - **411 (2026-09-24 05:0x JST, amu-rank cron, rank-only pass, host busy load1 32.37 / 5m 33.12 / 15m 36.14 at 05:02 monitor, live 22.09 / 28.85 / 33.75 at 05:05:51, threshold 7.5)**: no measurement by rank role (gate load1<7.5 unmet ~4.3x monitor / ~2.9x live), n=0, verdict none. git fetch: origin/main UNCHANGED at c9dd2ef6 since tick 409 -- no new merges, no re-rank basis. Local HEAD 8c34444f is 4 ahead / 20 behind origin/main (merge deferred, nothing pushed). Evidence reviewed since tick 410 (present in working tree, committed with this tick): sibling amu-falsify 2026-09-24 02:4x JST busy-refusal (live load1 26.40 / 5m 30.12 / 15m 30.12 at 02:47:13; pre-run monitor load1 47.07 at 02:38, probes 26.03-27.43 over 02:46:23-02:47:13, threshold 7.5, gate unmet, load1 never below gate during tick; no measurement attempted, n=0; NEXT remains H-C2) -- text unchanged, committed verbatim into the H-C2 evidence cell this tick per convention. Sibling amu-bench 04:1x JST busy-refusal present uncommitted in working tree: host busy (load1 34.14 / 5m 36.13 / 15m 35.70 live at 04:09:14, up 5 days 12:20, threshold 7.5 unmet ~4.6x, n=0); fleet escape-hatch probe ANSWERED at 04:11:38 JST (kbb --backend sci scripts/quiet-host.cljk exit 0, 9/9 probed, 6 qualified: naphtali 0.03 / issachar 0.03 / levi 0.04 / joseph 0.06 / dan 0.07 / benjamin 0.08, chosen naphtali load1 1.37) -- quiet-host window OPEN but H-C2 fleet lane still blocked by the two measured tick-401 blockers: remote-bench dirty-check scope counts 211 untracked scripts/ files (re-verified this tick: 211 of 267 repo-wide untracked) and local HEAD 4-ahead/20-behind unpushed; text unchanged, committed verbatim this tick per convention. No new measured numbers against any open hypothesis, no new codegen ADR (0350 remains newest) -> no re-rank, no status transition, no new hypothesis. Population unchanged: H-Z3 top of the codegen ladder on tick-36 measured +6.5% lever1 (sdiv->mulh, sign 6/6, under-qualified, only separation missing); H-C2 / H-D / H-B / H-Y1 / H-Z1 open. NEXT unchanged per Iteration log: H-C2 (highest expected qualified gain x probability) -- the quiet-host window is OPEN (naphtali 0.03) but blocker (a) 211-file untracked scripts/ residue and blocker (b) unpushed local commits remain the binding constraints, both re-verified live this tick (211 scripts/ untracked; HEAD 4 ahead / 20 behind origin/main c9dd2ef6 unpushed). Fallback: H-Z3 quiet-host 3-arm rerun on naphtali. Continuous busy: 27th+ consecutive workstation busy tick, no qualify window >24h (load1 32.37 ~4.3x gate). Decoy note: working-tree docs/codegen-cosientist.md (no 'c', untracked) is now 463177 bytes and its tail mirrors committed main -- it is NOT the live state doc; live doc verified 462249 bytes with working-tree diff being the uncommitted bench 04:1x entry only (1 insertion / 1 deletion in the H-C2 cell region plus the appended log line). Appended via python script file (no heredoc, no -e/-c, no rm -rf).
 - 2026-09-24 10:1x JST (amu-bench cron): host busy (pre-run monitor 10:07 load1 30.31 / 5m 35.06 / 15m 40.76, up 5 days 18:18, 3 users, threshold 7.5); live probes load1 14.54 / 5m 22.28 / 15m 32.44 at 10:14:46 and 16.44 / 21.61 / 31.56 at 10:15:44 (gate 7.5 unmet ~1.9x-4.0x) -- no bench/runtime-comparison or perfgate run, n=0, verdict none. NEXT unchanged: H-C2 quiet-host bench/perfgate (fallback H-Z3 quiet-host 3-arm rerun); tick-401 blockers re-verified live this tick: 211 untracked scripts/ cron-residue files (of 270 repo-wide untracked) still refuse remote-bench's dirty-check, and local HEAD 98f16bff is 1 ahead / 23 behind origin/main 778aeef8 (advanced c9dd2ef6 -> 778aeef8 during this tick's fetch) and unpushed. Appended via python script (no heredoc, no -e/-c, no redirect).
 - 2026-09-24 13:1x JST (amu-bench cron): host busy (pre-run monitor 13:08 load1 76.27 / 5m 108.83 / 15m 88.21, up 5 days 21:19, 7 users; live probes load1 64.48 / 5m 79.75 / 15m 80.75 at 13:14:14 and load1 118.61 / 5m 91.42 / 15m 84.85 at 13:16:52, threshold 7.5 unmet ~8.6x-15.8x) -- no bench/runtime-comparison or perfgate run, n=0, verdict none. NEXT unchanged: H-C2 quiet-host bench/perfgate (fallback H-Z3 quiet-host 3-arm rerun); tick-401 blockers re-verified live this tick: 211 untracked scripts/ cron-residue files (of 290 repo-wide untracked) still refuse remote-bench's dirty-check, and local HEAD a779bc34 is 2 ahead / 24 behind origin/main 52b8c6d5 and unpushed. Appended via python script (no heredoc, no -e/-c, no redirect).
+
+## Native seed / C comparison, 2026-10-04
+
+Bounded first implementation toward the user-requested C comparison:
+[identity division research](coscientist-identity-division-20261004.md),
+[ADR 0368](adr/0368-measured-seed-identity-division.md).
+A hand-patched `quot x 1` prototype survives Reflect (2.751x vs r6m,
+30 rotated pairs on asher). The implemented seed artifact measures 2.762x
+vs r6m but no separated win vs Clang C11 -O2. All 786 generator execution
+cases pass and three native selfbuild generations are byte-identical.
+All 19 Embench ports remain byte-identical to r6m, so Embench performance
+has not improved. Other exploratory prototypes have no adoption verdict.
+The JVM perfgate launcher is still REFUSED; numerical separation is a
+research diagnostic, not formal qualification. This bounded seed work
+neither changes nor satisfies the six-domain / five-comparator contract.
+
+Follow-up: [selfhost depthconv research](coscientist-depthconv-20261004.md).
+The generated benchmark port uses literal tables, expands four fixed rows,
+and places the channel expression in its kernel. Both native check and
+compile accept the final helper formulation. In the final matched batch run,
+it measures 123.510 ns versus Base64 3038.023 ns (24.597x faster), but C is
+42.582 ns (Kotoba remains 2.901x slower). Two table-address prototypes fail
+Reflect and are not implemented. This is benchmark-source improvement, not
+a generic compiler speedup, full-suite score or formal perfgate qualification.
+Next rank: native inlining/constant-trip lowering with fuel semantics intact;
+the C-or-better goal remains open.
+
+Next complete workload: [selfhost EDN](coscientist-edn-20261004.md). All eight
+upstream operations now have a native check/compile accepted alternative;
+5,427 state cells agree with unchanged C at all nine stages, including DCT.
+The first matched run is 13,645.480 ns/body versus C 950.431 ns (14.357x
+slower). A two-shift signed-short source candidate is 18.51% slower than its
+same-run reference; the layout-preserving Reflect patch saves 2.84% without
+separation, below the research threshold. Both are rejected, despite fewer
+emitted instructions and 327,680 conversion checks. No compiler change or
+formal qualification follows. Nine adapted workloads still lack complete
+alternatives; the historical suite and score claims remain unchanged.
+
+Next complete workload: [selfhost Huffbench](coscientist-huffbench-20261004.md).
+The pinned 500-byte full codec passes native check/compile and 3,309 C state
+comparisons, plus 1,001 output-byte checks against unchanged C. Matched
+32-body timing is 60,339.107 ns/body versus C 8,278.511 ns (7.289x slower).
+Two handle-validation Reflect prototypes save about 4.2%/4.0% without
+sample-spread separation and are rejected. Their completed summaries were
+observed, but raw reports await recovery from offline asher; baseline raw
+reports were retrieved. Fresh per-body allocation passes one-body state
+checks but exceeds the 65,536-item arena at 19 bodies, so it is also rejected
+without timing. No compiler optimization or formal qualification follows.
+Eight adapted workloads still lack complete alternatives. Next investigate
+bounded reusable-buffer initialization rather than increasing measurement
+resource limits to hide the allocation failure.
+
+Huffbench follow-up: [bounded reset candidates](coscientist-huffbench-reset-20261004.md).
+Split/4-store/8-store initialization preserves every write and the existing
+arena limit. All three pass 6,618 poisoned-workspace cell comparisons, five
+batch counts and boundary/fuel traps through native selfhost Amu. The default
+source remains byte-identical. Fuel counts decrease for grouped source loops,
+but this is not timing evidence. asher is offline and local load is high:
+no candidate is ranked or promoted, and no compiler optimization is made.
+A replay bundle is prepared for the same-host C/reference timing gate.
+
+Next complete workload: [selfhost NSichneu](coscientist-nsichneu-20261004.md).
+The new alternative executes every upstream transition (6 T1, 120 T2),
+including five-token guards and P2 compaction. Native check/compile accept
+its typed helper-chain formulation. All 17,272 state cells match across
+8 inputs and 127 boundaries; an independent export exercises the production
+chain and matches 136 final values. Five batch counts and fuel exhaustion
+also agree. A wide ownership let was refused and replaced with accepted
+source without changing the compiler or weakening validation. asher remains
+offline: no timing, ranking, promotion or C-or-better claim. Seven adapted
+workloads still lack complete alternatives. Source pins refuse changed C
+under Python -O; raw correctness evidence and a timing replay bundle are saved.
+
+Next complete workload: [selfhost Nettle-AES](coscientist-aes-20261004.md).
+The alternative performs both schedules, inversion and all 16 encryption /
+decryption blocks. Native check/compile pass; 12,680 state cells agree across
+four inputs and five phases, with 634 extra production-body comparisons,
+five batch counts and bounds/fuel trap checks. This preserves all AES rounds
+rather than using the historical simplified model. A typed scratch-store
+helper resolves a source check refusal without compiler/guard changes. asher
+is still offline, so this is correctness evidence only: no timing, ranking,
+optimization promotion or official score. Six adapted workloads remain
+without complete alternatives; replay and source-pinned artifacts are saved.
+
+Next complete workload: [selfhost Statemate](coscientist-statemate-20261004.md).
+A hash-locked C AST bootstrap generator emits static typed Kotoba functions
+for all seven controllers, including switch fallthrough, early breaks and
+the stabilization loop. The native selfhost compiler accepts and compiles
+it. All 2,028 staged state values, 169 actual-body values and 676 values after
+1/2/17/32 bodies match C; bounds and fuel guards pass. PRODUCT inventory is
+unchanged. Generation and optimized-Python pin refusal are checked. asher
+remains offline: no timing, ranking, promotion or official score is claimed.
+Five adapted workloads still need complete alternatives; raw evidence and
+a fresh timing replay bundle are saved. C-or-better remains unachieved.
+
+Next complete workload: [selfhost SLRE](coscientist-slre-20261004.md).
+The port runs the original regex parser and recursive matcher rather than
+four specialized recognizers. Native check/compile pass. All 33,810 state/
+result values across 42 fixtures match C, plus 15 production-body values,
+five batch counts and bounds/fuel checks. The first version discarded the
+last named error on failed unanchored search; the differential rejects it,
+and the accepted version preserves -2 for `*a`. Padded short regex buffers
+make the upstream four-byte flag probe valid; every recorded native value
+also matches that oracle, whose access sanitizer checks pass. PRODUCT counts
+remain unchanged. No timing, ranking or promotion while asher is offline;
+four adapted workloads remain without complete alternatives. Raw artifacts
+and a fresh timing replay bundle are saved. C-or-better remains the goal.
+
+Next complete workload: [selfhost SGLIB combined](coscientist-sglib-20261004.md).
+The alternative executes all six original container algorithms rather than
+insertion sorting and reconstructing sums. Native check/compile pass. All
+3,805 staged values, 1,128 production-body values and 4,512 values after
+1/2/17/32 bodies match C, including tree shape/colors and 100 iterator yields.
+The failed first draft is retained; list-run and parent-yield continuations
+are corrected. Bounds/fuel, C oracle sanitizers, four profile-pin refusals,
+byte-identical regeneration and unchanged PRODUCT counts pass. asher remains
+unreachable, so no timing/ranking/promotion or official score is claimed.
+Three adapted workloads still need complete alternatives. Raw artifacts and
+a fresh timing replay bundle are saved; C-or-better remains the goal.
+
+Next workload in progress: [QR codeword fragment](coscientist-qr-codewords-20261004.md).
+Replace the historical unrelated-prefix parity kernel with the actual
+version-2/L byte-mode and Reed–Solomon pipeline. Native selfhost check/compile
+pass. Four initialized inputs across five phases yield 20,480 matching
+workspace values, all 512 GF table entries match, and final buffers/codewords
+agree with unchanged stringtoqr. Native bounds/fuel and C profile/access
+sanitizers pass; four source-pin refusals, regeneration and unchanged PRODUCT
+counts pass. This is explicitly a fragment: frame construction, placement,
+eight masks, scoring and final format still need implementation. Three
+adapted workloads still lack complete alternatives. asher remains unreachable;
+no timing, ranking, official score or optimization promotion follows.
+
+QR in progress: [active v2 frame construction](coscientist-qr-frame-20261004.md).
+Native selfhost check/compile pass; all 1,269 base/reservation-byte comparisons
+at nine boundaries match C. The fragment preserves finders, alignment, gaps,
+format/timing reservations and the original v2 version-information no-op.
+Unchanged initframe agrees after 1/2/17/32 fresh setups; C profile/access
+sanitizers, native bounds/fuel, regeneration, three source-pin refusals and
+unchanged PRODUCT counts pass. Data placement, eight mask penalties/selection
+and final format are still required, so QR stays incomplete. Three workloads
+still lack complete alternatives. asher remains unreachable: no timing,
+ranking, promotion or official score follows. Raw evidence/replay are saved.
+
+QR in progress: [selfhost data placement](coscientist-qr-placement-20261004.md).
+AST composition connects the checked codewords/base frame in one 2,048-cell
+workspace, preserving components. Native check/compile pass; all 7,144 image,
+cursor and component comparisons match C, including all 352 bits and the
+original final advance. Four final images agree with unchanged fillframe.
+Bounds/fuel, C ASan/UBSan, regeneration, three pin refusals and unchanged
+PRODUCT entries pass. Eight masks, penalties/selection and final format
+still remain; three complete alternatives are outstanding. asher is offline;
+no timing, ranking, optimization promotion or official score follows.
+
+Next complete workload: [selfhost qrduino](coscientist-qr-full-20261004.md).
+The original v2/L encoder now includes all eight mask predicates, N1–N4
+penalties, strict best-mask selection, reset/reapplication and format bits.
+Native selfhost check/compile pass. All 8,640 staged and 1,408 repeated-body
+values match C; full unmasked/final images, all scores and selection state
+are included. Original input's mask-1/6 tie and long input's mask-7 break
+match. Unchanged qrencode and original benchmark/verify selfchecks,
+ASan/UBSan, bounds/fuel, five pin refusals, regeneration and unchanged 97
+PRODUCT entries pass. One 2,048-cell workspace supports 32 full bodies within
+fuel/arena limits. Two alternatives remain incomplete (picojpeg, wikisort).
+asher is offline; no timing, rank, optimization promotion or official score
+is claimed. Fresh comparator replay and exact evidence are archived.
+
+Next complete active-profile workload: [selfhost WikiSort](coscientist-wikisort-full-20261004.md).
+All nine original generators, 400 stable value/index pairs, insertion chunks,
+reverse rotation, cached merges and ordered skips execute on selfhost.
+Native check/compile and 14,490 staged + 3,220 repeated-body C matches pass;
+original verifier, bounds/fuel, 32 bodies, source-pin refusals, byte regeneration
+and unchanged 97 PRODUCT entries pass. The original cache-512 profile never
+enters internal-block merging (proved by retained C branch instrumentation).
+Plain C UBSan exposes upstream input-generator signed overflow; the receipt
+is retained, explicit -fwrapv sanitizer passes, and all 14,490 C states agree
+between plain -O2 and -O2 -fwrapv. This is an actual-host profile agreement,
+not portable ISO C proof or plain-C sanitizer success. Only picojpeg lacks
+a complete alternative. asher is offline; no timing/rank/promotion or official
+score follows. Comparator uses original plain -O2 C; evidence/replay saved.
+
+Picojpeg in progress: [selfhost reader fragment](coscientist-picojpeg-reader-20261004.md).
+Original 570-byte input, refill/pushback/FF checking, bit reservoir, priming and
+fixInBuffer now pass native check/compile and 9,504 C primitive state matches.
+Original C decoder/verify passes repeated bodies and ASan/UBSan, as do native
+bounds/fuel, three pin refusals, byte regeneration and unchanged 97 PRODUCT
+entries. C profile probe establishes 51×64 YH1V1, 56 MCUs, three blocks/MCU.
+The scripts are controlled reader diagnostics, not native JPEG decoding.
+Marker/Huffman/quantization/coefficient/IDCT/color still remain; picojpeg is
+still incomplete. asher is offline; no timing/rank/promotion/official score
+follows. Raw evidence and fresh fragment replay are archived.
+
+Picojpeg in progress: [selfhost headers/tables](coscientist-picojpeg-headers-20261004.md).
+Checked-reader AST composition adds actual marker/DQT/DHT/SOF/SOS parsing,
+Winograd quant scaling, canonical Huffman fields, component/MCU geometry and
+scan validation/fixup. Native check/compile and 4,712 C state matches pass.
+Final staged state agrees with unchanged full init API; original C RGB
+verifier, ASan/UBSan, native bounds/fuel, three pin refusals, regeneration,
+unchanged reader and unchanged 97 PRODUCT entries pass. Source bits produce
+51×64 YH1V1, 56 MCUs, both quant/four Huffman tables. Only the original fixture
+is qualified. Native coefficient/IDCT/color and reused whole bodies remain;
+picojpeg stays incomplete. asher is offline: no timing/rank/promotion/official
+score follows. Exact artifacts and fresh fragment replay are archived.
+
+
+Picojpeg DC/AC coefficients (2026-10-04): native selfhost Kotoba now decodes
+all 168 original blocks; 14,740 coefficient/reader/terminal fields match C.
+The original C transforms and verifier are retained in the observation
+adapter, independently checked with ASan/UBSan (1..32 iterations). A draft
+adapter pointer-initialization failure is retained and corrected. IDCT/color
+and full reused native bodies remain open; no timing, score or performance
+ranking changed. See `coscientist-picojpeg-coefficients-20261004.md`.
+
+
+Picojpeg complete original active profile (2026-10-04): native selfhost Kotoba
+now performs all IDCT/color work for all 56 MCUs, with 33,356 staged and 4,400
+reused-body values matching C. Full 1/2/17/32 bodies and original verifier
+pass; 32 bodies fit one reused 4,096-cell workspace and minimum passing fuel
+7,102,019 without changing bounds/fuel/ABI. Original C ASan/UBSan checks pass
+1..32 bodies and all initialized observations. The prior picojpeg coefficient/
+IDCT/color/reuse gap is closed for this original input; alternate JPEG APIs
+are unqualified. asher is offline, so timing/ranking/official-score claims
+remain unchanged. See `coscientist-picojpeg-full-20261004.md`.
+
+
+Canonical Embench matrix (2026-10-04): all 19 current sources rebuild with
+native selfhost Amu and produce the qualified native bytes; fresh correctness
+and fuel checks pass. Eleven matched active-profile alternatives coexist with
+eight single-body paths still needing timing/init/repetition alignment. No
+full-suite timing or score follows from prior algorithm completion. Source/
+compiler/upstream/identity pins fail closed under Python -O; 97 PRODUCT entries
+unchanged. asher offline; no new timing/ranking/promotion. See
+`coscientist-comparison-matrix-20261004.md` before selecting the next measured gap.
+
+
+CRC32 matched repeated body (2026-10-04): both chunked/scalar table paths
+match 2,306 table/prefix/RNG observations each and unchanged C body/verifier
+through 32 bodies. Verification occurs once after all bodies; RNG resets
+exactly as C at each body. Chunked remains canonical; scalar is an unmeasured
+candidate, despite lower fuel. Original C sanitizer checks 1..32 pass. Matrix
+coverage becomes 12 matched profiles / seven pending alignments. asher offline;
+no new timing, score, ranking or performance promotion. See
+`coscientist-crc32-full-20261004.md`.
+
+
+Aha-mont64 matched full repeated body (2026-10-04): unchanged unsigned helper
+AST, ordinary/Montgomery result, partial inverse check and errors agree with
+original C at 1/2/17/32 bodies. Original verifier and C ASan/UBSan pass 1..32.
+A draft constant-vector bounds exit-code expectation was corrected against
+generated comparison/BRK instructions, with failed evidence retained and no
+guard change. Matrix coverage becomes 13 matched profiles / six pending
+alignments. asher offline; no new timing/score/promotion. See
+`coscientist-mont64-full-20261004.md`.
+
+
+Matmult-int matched repeated body (2026-10-05): original 800 RNG inputs,
+800 copied input cells/body, all 8,000 MACs and 400 final output values are
+retained. All 10,005 init/1/2/17/32 states agree with C; original verifier and
+ASan/UBSan pass 1..32. One reused 2,001-cell owned workspace and 347,702 fuel
+fit unchanged budgets. A draft unknown-operation refusal is retained;
+existing vector-assoc! was used without checker/runtime changes. Matrix
+coverage becomes 14 matched profiles / five pending paths; asher offline,
+no timing/score/promotion. See `coscientist-matmult-full-20261005.md`.
+
+### 2026-10-05: UD repeated original profile
+
+[UD full qualification](coscientist-ud-full-20261005.md) adds original
+initialization, LU, forward/backward substitution and final verification for
+0/1/2/17/32 bodies. All 2,235 initialized native/C observations match; C
+ASan/UBSan passes 1..32 bodies and 14,751 initialized reads. One owned
+541-cell workspace uses 16,280 fuel for 32 bodies, with guards intact.
+The canonical native matrix has 15 matched profiles and four paths pending
+alignment (md5sum, nettle-sha256, tarfind, xgboost). asher is still offline;
+this changes correctness coverage, not historical timings or official scores.
+
+### 2026-10-05: tarfind carried-RNG repeated original profile
+
+[Full tarfind qualification](coscientist-tarfind-full-20261005.md) adds all
+35 full 257-byte header initializations and five searches per body, carrying
+the BEEBS RNG between 0/1/2/17/32 bodies. All 5,635 packed/state observations
+match C; injective eight-byte packing covers 44,975 header bytes. C ASan/UBSan
+checks 296,835 initialized header bytes and 37,191 packed/state reads. Guards
+and PRODUCT inventory remain intact. The canonical native matrix has 16
+matched profiles and three pending (md5sum, nettle-sha256, xgboost). asher is
+offline; historical timings and official scores are unchanged.
+
+### 2026-10-05: complete repeated MD5 original profile
+
+[MD5 full qualification](coscientist-md5-full-20261005.md) adds original input
+generation, padded allocation clearing/copy, 16x64 rounds and once-per-batch
+XOR verification. All 2,940 packed/state observations match, including all
+input/padding bytes, final digest and 16 post-block states. C ASan/UBSan passes
+32 original bodies and 19,404 observations. Diagnostic block stores are excluded
+from the accepted benchmark path and retained on the observation path. Native
+canonical coverage is 17 matched profiles; SHA-256 and xgboost remain pending.
+asher is offline: no new timings, official score or C speedup is claimed.
+
+### 2026-10-05: SHA-256 context lifecycle and repeated original profile
+
+[Full SHA-256 qualification](coscientist-sha256-full-20261005.md) adds original
+init/update/padding/compression/serialization/reset and once-per-batch verifier.
+All 1,510 initialized packed/state observations match C; all 32 digest bytes
+also match the complete original golden. C ASan/UBSan passes 32 original
+bodies/full golden digests and 9,966 observations. The original C timed
+verifier checks eight bytes; qualification separately checks all 32. Diagnostic
+stores stay off the benchmark path. The native matrix now has 18 matched
+profiles, with xgboost pending. asher is offline; no timing/score is inferred.
+
+### 2026-10-05: complete xgboost model and repeated inference
+
+[Full xgboost qualification](coscientist-xgboost-full-20261005.md) keeps all
+400 trees and 128x64 inputs. All 39,555 bytes match through 9,889 injective
+packed groups; 4,227 count/prediction/vote observations match at 0/1/32 bodies.
+Exact counts 0/126/252/2142/4032 qualify 0/1/2/17/32 bodies. C ASan/UBSan passes
+32 original bodies, 46,497 snapshot reads and all model groups. Native decodes
+once, carries offsets and reuses owned storage, with diagnostics off bench.
+All 19 canonical paths now have matched active profiles. Whole-suite timing/
+official scores remain unqualified; asher SSH times out. C-or-better speed is
+still unproven.
+
+### 2026-10-05: common paired-timing preparation
+
+[Shared 19-profile timing harness](embench-paired-timing-20261005.md) pins
+qualified native bytes and explicit C archive members. Both arms pass repeated
+ABI calls and untimed warmup for all 19. Wrong-host measurement and changed
+source refuse under Python -O; PRODUCT stays 97. Thirty alternating pairs
+will report mean/SD/time ratios and retain nonseparated hypotheses. Timing
+remains provisional without CPU-idle/official-driver evidence. asher is
+offline; no new elapsed measurement or C speedup is claimed.
+
+### 2026-10-05: CPU activity envelope
+
+Darwin CPU tick deltas now accompany each measurement row. Missing/invalid
+counters or idle below 90% refuse the run; the rejected row is retained.
+Boundary/32-bit wrap/zero-tick/invalid-field checks and a live local counter
+probe pass; wrong-host timing refuses under Python -O and PRODUCT stays 97.
+Counters enclose runner setup, warmup and timing, so exact-boundary and
+official-driver qualification remain unmet. No benchmark timing was taken.
+API layout was verified against the installed SDK and
+[Apple XNU host_info.h](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/mach/host_info.h).

@@ -1,0 +1,110 @@
+;; SOURCE-ONLY isolated native diagnostic. Every element of M is a scalar i64.
+(defn- sx-enabled [] :bool
+ (and (> (io-argc) 2) (string=? (io-arg 0) "probe")))
+(defn- sx-case [] :i64
+ (let [s (io-arg 1)]
+  (loop [i 0 n 0] (if (>= i (string-length s)) n
+   (recur (inc i) (+ (* n 10) (- (string-code-point-at s i) 48)))))))
+(defn- sx-print [tag :string xs :vector-i64] :i64
+ (let [a (io-out tag) b (loop [i 0] (if (>= i (vector-count xs)) 0
+  (let [w (io-out (string-concat " " (string-from-i64 (vector-at xs i))))] (recur (inc i)))))] (io-out "\n")))
+(defn- sx-copy [M :vector-i64] :vector-i64
+ (loop [i 0 V (vector-alloc (vector-count M))]
+  (if (>= i (vector-count M)) V
+   (recur (inc i) (vector-assoc! V i (vector-at M i))))))
+(defn- sx-equal [A :vector-i64 B :vector-i64 lo :i64 hi :i64 ignore :i64 words :i64] :bool
+ (and (= (vector-count A) (vector-count B)) (>= lo 0) (<= hi (vector-count A))
+  (loop [i lo] (cond (>= i hi) true
+   (and (>= i ignore) (< i (+ ignore words))) (recur (inc i))
+   (not= (vector-at A i) (vector-at B i)) false :else (recur (inc i))))))
+(defn- sx-sirput [M :vector-i64 i :i64 f :i64 v :i64] :vector-i64
+ (gn-put M (+ MM-SIR-BASE (* i MM-SIR-W) f) v))
+(defn- sx-left [M :vector-i64 i :i64] :bool (= (gn-sir M (+ i 2) IF-A) BOP-SHL))
+(defn- sx-target [M :vector-i64 i :i64] :bool
+ (= (sx-left M i) (< (sx-case) 17)))
+(defn- sx-mut [M :vector-i64 i :i64 c :i64] :vector-i64
+ (cond (and (>= c 1) (<= c 5)) (gn-put M MM-CODE-N (- MM-CODE-CAP (dec c)))
+       (= c 6) (gn-put M MM-ERR 901)
+       (= c 7) (gn-gs M gn-f-h 2)
+       (= c 8) (gn-gs M gn-f-skip 1)
+       (= c 9) (sx-sirput M (inc i) IF-B 0)
+       (= c 10) (sx-sirput M (inc i) IF-B 32)
+       (= c 11) (gn-gs M (+ gn-a-sreg (gn-sir M i IF-B)) 10)
+       (= c 12) (gn-gs M (+ gn-a-sreg (gn-sir M i IF-B)) 11)
+       (= c 13) (gn-gs M gn-f-fb 0)
+       (= c 14) (sx-sirput M (+ i 9) IF-B 1)
+       (= c 15) (sx-sirput M (+ i 8) IF-OP OP-FUEL)
+       (= c 16) (gn-gs M gn-f-h 1)
+       :else M))
+(defn- sx-original [M :vector-i64 i :i64] :vector-i64
+ (let [m (xf-replay M i (+ i 8))]
+  (if (not= (vector-at m MM-ERR) 0) m
+   (gn-gs m gn-f-skip (+ 8 (gn-g m gn-f-skip))))))
+(defn- sx-owner [M :vector-i64 i :i64] :i64
+ (loop [j 1 f 0] (if (> j i) f
+  (recur (inc j) (if (= (gn-op M j) OP-FN) (gn-sir M j IF-A) f)))))
+(defn- sx-end [M :vector-i64 f :i64] :i64
+ (loop [j (inc (gn-fnf M f FF-SIR))]
+  (cond (>= j (vector-at M MM-SIR-N)) 0
+        (= (gn-op M j) OP-END) (if (= (gn-sir M j IF-A) f) j -1)
+        :else (recur (inc j)))))
+(defn- sx-check [M :vector-i64 i :i64] :vector-i64
+ (let [c (sx-case) k (if (< c 17) c (- c 17)) base (vector-at M gn-cell) top (vector-at M MM-HEAP-TOP)
+       f (sx-owner M i) end (sx-end M f) x (gn-sreg M (gn-sir M i IF-B)) n (gn-sir M (inc i) IF-B)
+       left-first (sx-left M i) left (if left-first n (- 32 n)) right (if left-first (- 32 n) n)
+       owner (sx-print "OWNER" [f (gn-fnf M f FF-SIR) (gn-fnf M f FF-NSLOTS) (gn-fnf M f FF-DEPTH) end
+         (gn-op M (gn-fnf M f FF-SIR)) (gn-sir M (gn-fnf M f FF-SIR) IF-A)])
+       witness (sx-print "ROOT" [c k (if left-first 1 0) i (vector-count M) base top MM-CODE-CAP
+         (gn-g M gn-f-h) (gn-g M gn-f-skip) (gn-g M gn-f-fb) (gn-g M gn-f-ns)
+         x n (gn-sir M (+ i 2) IF-A) (gn-sir M (+ i 7) IF-A) (gn-co M (+ i 8) 0)
+         (if (gn-kills M (+ i 9) 1 16) 1 0) (if (gn-kills M (+ i 9) 2 16) 1 0)
+         (if (gn-kills M (+ i 9) 3 16) 1 0) (vector-at M MM-SIR-N) (vector-at M MM-FN-N)])
+       sir (loop [j i] (if (> j (+ i 9)) 0
+         (let [w (sx-print "SIR" [j (gn-op M j) (gn-sir M j IF-A) (gn-sir M j IF-B) (gn-sir M j IF-C)])] (recur (inc j)))))
+       input (sx-mut (sx-copy M) i k)
+       guard-case (and (>= k 7) (< k 16))
+       before (if guard-case (sx-copy input) input)
+       ready (sr-ready input i)]
+  (if (or (< c 0) (> c 33) (<= f 0) (>= f (vector-at M MM-FN-N))
+          (<= (gn-fnf M f FF-SIR) 0) (>= (gn-fnf M f FF-SIR) i)
+          (not= (gn-op M (gn-fnf M f FF-SIR)) OP-FN)
+          (not= (gn-sir M (gn-fnf M f FF-SIR) IF-A) f) (<= end (+ i 9)) (<= base 0) (<= top base) (> top (vector-count M)))
+   (gn-put M MM-ERR 778)
+   (if guard-case
+    (let [same (sx-equal before input 0 (vector-count input) -1 0)
+          gs (sx-equal before input base top -1 0)
+          out (sx-print "GUARD" [c (if ready 1 0) (if same 1 0) (if gs 1 0)])]
+     (gn-put M MM-ERR (if (and (not ready) same gs) 777 778)))
+    (let [start (vector-at input MM-CODE-N)
+          ref (sx-original (sx-copy input) i)
+          on (sr-rewrite input i) err (vector-at on MM-ERR)
+          patch (and (= err 0) (= (vector-at on MM-CODE-N) (+ start 3)))
+          words (if patch 3 0) at (+ MM-CODE-BASE start)
+          all (sx-equal ref on 0 (vector-count on) at words)
+          gs (sx-equal ref on base top -1 0)
+          code (if patch
+            (and (= (vector-at ref at) (if left-first (gn-e-lsl 9 x left) (gn-e-lsr 9 x right)))
+                 (= (vector-at ref (inc at)) (if left-first (gn-e-lsr 10 x right) (gn-e-lsl 10 x left)))
+                 (= (vector-at ref (+ at 2)) (enc-orr-r 9 9 10))
+                 (= (vector-at on at) (gn-e-lsr 10 x right))
+                 (= (vector-at on (inc at)) (bit-or (enc-orr-r 9 10 x) (i64-shift-left left 10)))
+                 (= (vector-at on (+ at 2)) 0xd503201f)) true)
+          expected (cond (= k 6) (= err 901)
+                         (and (>= k 1) (<= k 3)) (= err E-GEN-FULL)
+                         :else (= err 0))
+          ok (and all gs code expected (= err (vector-at ref MM-ERR))
+                  (= (vector-at on MM-CODE-N) (vector-at ref MM-CODE-N))
+                  (= (gn-g on gn-f-skip) (gn-g ref gn-f-skip))
+                  (if (= k 6) (not ready) ready))
+          out (sx-print "STATE" [c start (vector-at on MM-CODE-N) (vector-at ref MM-CODE-N)
+            err (vector-at ref MM-ERR) E-GEN-FULL (gn-g on gn-f-skip) (gn-g ref gn-f-skip)
+            (if all 1 0) (if gs 1 0) (if code 1 0) words (if ok 1 0)])]
+     (gn-put M MM-ERR (if ok 777 778)))))))
+(defn- sx-finish [M :vector-i64] :i64
+ (let [pipeline (sx-print "PIPELINE" [(vector-at M MM-ERR) (vector-at M MM-SIR-N) (vector-at M MM-FN-N)])
+       result (gn-run M)
+       end (sx-print "END" [(sx-case) (vector-at result MM-ERR)])]
+  (if (= (vector-at result MM-ERR) 777) 0 91)))
+;; Delegate unchanged fixture through the real compiler entry, including library,
+;; project routing and all strict/refinement/probe/reread phases. No substitute.
+(defn- sx-main [] :i64 (drv-run (io-arg 2) 1 ""))

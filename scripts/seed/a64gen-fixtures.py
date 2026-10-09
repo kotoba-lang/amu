@@ -177,11 +177,16 @@ fx('r2_qmin', 0, 0, [('CONST', 0, MIN), ('CONST', 1, -1), ('BIN', 'BOP-QUOT', 0)
 IMM = [('ADD', 4095), ('ADD', -4095), ('ADD', 4096), ('SUB', 4095), ('SUB', -1), ('SUB', 0), ('SHL', 0), ('SHL', 1),
        ('SHL', 63), ('SHL', 64), ('USHR', 65), ('USHR', 63), ('SSHR', 63), ('SSHR', 4), ('AND', 255),
        ('AND', s64(0xffffffff00000000)), ('AND', MIN), ('OR', 0x7ff0), ('XOR', MAX), ('AND', 0x5555), ('MUL', 16),
-       ('MUL', 1 << 62), ('MUL', 3), ('QUOT', 3), ('QUOT', -7), ('QUOT', -1), ('QUOT', 1 << 40)]
+       ('MUL', 1 << 62), ('MUL', 3), ('QUOT', 3), ('QUOT', -7), ('QUOT', -1), ('QUOT', 1 << 40), ('QUOT', 1)]
 for n, (b, k) in enumerate(IMM):
     fx('r2_i%d' % n, 1, 1, [('LGET', 0, 1), ('CONST', 1, k), ('BIN', 'BOP-' + b, 0), ('RET', 0)])
     fx('r2_j%d' % n, 1, 1, [('CONST', 0, k), ('LGET', 1, 1), ('BIN', 'BOP-' + b, 0), ('RET', 0)])
 CIMM = [('LT', 4095), ('LT', -4095), ('EQ', 0), ('GE', 4096), ('GT', -1)]
+fx('quot_one_alias', 1, 1, [('LGET', 0, 1), ('CONST', 1, 1), ('BIN', 'BOP-QUOT', 0),
+                           ('LSET', 1, 0), ('LGET', 0, 1), ('RET', 0)])
+fx('quot_one_deep', 1, 1, [('CONST', t, 0) for t in range(7)] +
+   [('LGET', 7, 1), ('CONST', 8, 1), ('BIN', 'BOP-QUOT', 7)] +
+   [('BIN', 'BOP-ADD', t) for t in range(6, -1, -1)] + [('RET', 0)])
 for n, (cc, k) in enumerate(CIMM):
     fx('r2_c%d' % n, 1, 1, [('LGET', 0, 1), ('CONST', 1, k), ('CMP', 'CC-' + cc, 0), ('RET', 0)])
 # a leaf with 12 locals (x0..x6 + callee-saved x19..), called by a non-leaf that keeps a value in x19 across the call
@@ -208,10 +213,39 @@ fx('r2_cbr', 1, 1, [('CONST', 0, 1), ('BRZ', 0, 'cb_a'), ('CONST', 0, 0), ('BRNZ
 # ---------------------------------------------------------------------------------------------------------------
 # runs: (fixture, args, expect, opts) ; expect = int result | 'trap' ; opts: fuel, cmd (argv list), stdout, file
 # ---------------------------------------------------------------------------------------------------------------
+# Direct scalar tail-call regression: argument permutation, high operand temp,
+# caller-frame restoration and fuel crossing the direct branch.
+fx('tail_target3', 3, 3, [('FUEL',), ('LGET', 0, 1), ('LGET', 1, 2),
+                         ('BIN', 'BOP-MUL', 0), ('LGET', 1, 3), ('BIN', 'BOP-ADD', 0), ('RET', 0)])
+fx('tail_direct3', 3, 3, [('FUEL',), ('LGET', 0, 3), ('LGET', 1, 1), ('LGET', 2, 2),
+                         ('CALL', 'tail_target3', 0, 3), ('RET', 0)])
+fx('tail_high3', 3, 3, [('CONST', t, 99) for t in range(6)] +
+                      [('FUEL',), ('LGET', 6, 3), ('LGET', 7, 1), ('LGET', 8, 2),
+                       ('CALL', 'tail_target3', 6, 3), ('RET', 6)])
+fx('wrapper_id',1,1,[('FUEL',),('LGET',0,1),('RET',0)])
+fx('wrapper_at',2,2,[('FUEL',),('LGET',0,1),('LGET',1,2),('RT','RT-VECTOR-AT',0,2),('RET',0)])
+fx('wrapper_set',3,3,[('FUEL',),('LGET',0,1),('LGET',1,2),('LGET',2,3),('RT','RT-VECTOR-ASSOC-IN-PLACE',0,3),('RET',0)])
+fx('wrapper_leaf',1,1,[('FUEL',),('LGET',0,1),('CALL','wrapper_id',0,1),('RET',0)])
+fx('wrapper_work',0,2,[('FUEL',),('CONST',0,11),('CONST',1,22),('CONST',2,33),('VEC',0,3),('LSET',1,0),('LGET',0,1),('CONST',1,1),('CALL','wrapper_at',0,2),('LSET',2,0),('LGET',0,1),('CONST',1,2),('LGET',2,2),('CALL','wrapper_set',0,3),('CONST',1,2),('CALL','wrapper_at',0,2),('CALL','wrapper_id',0,1),('RET',0)])
+fx('wrapper_bad_index',0,1,[('FUEL',),('CONST',0,11),('VEC',0,1),('CONST',1,1),('CALL','wrapper_at',0,2),('RET',0)])
+fx('wrapper_high',1,1,[('FUEL',),('LGET',8,1),('CALL','wrapper_id',8,1),('RET',8)])
 RUNS = []
 
 def run(name, args, expect, **o):
     RUNS.append((name, args, expect, o))
+
+for wrapper_fixture in ('wrapper_leaf','wrapper_high'):
+    run(wrapper_fixture,[42],42,fuel=2)
+    run(wrapper_fixture,[-7],-7,fuel=2)
+    run(wrapper_fixture,[42],'trap',fuel=1)
+run('wrapper_work',[],22,fuel=5)
+run('wrapper_work',[],'trap',fuel=4)
+run('wrapper_bad_index',[],'trap',fuel=2)
+
+for tail_fixture in ('tail_direct3', 'tail_high3'):
+    run(tail_fixture, [3, 5, 7], 26, fuel=2)
+    run(tail_fixture, [-3, 5, 7], -16, fuel=2)
+    run(tail_fixture, [3, 5, 7], 'trap', fuel=1)
 
 def q(a, b):
     if b == 0 or (a == MIN and b == -1):
@@ -299,6 +333,9 @@ for n, (b, k) in enumerate(IMM):
 for n, (cc, k) in enumerate(CIMM):
     for x in [k - 1, k, k + 1, MIN, MAX, 0]:
         run('r2_c%d' % n, [x], int(CMPS[cc](x, k)))
+for x in [MIN, MAX, -1, 0, 1, -98765, 12345]:
+    run('quot_one_alias', [x], x)
+    run('quot_one_deep', [x], x)
 def many(a):
     v = [0, a, a + 1]
     for k in range(3, 13): v.append(v[k - 1] + v[k - 2])
@@ -313,6 +350,46 @@ for a, b in [(1, 2), (100, -5), (MIN, 3)]:
 run('r2_cbr', [42], 42)
 
 # ---------------------------------------------------------------------------------------------------------------
+# Scalar sign-extension wrappers: hand-computed results and positive-fuel guards.
+for width,charged in [(1,False),(8,False),(16,False),(32,False),(8,True)]:
+ name=f'sx{width}'+('_fuel' if charged else '')
+ mask=(1<<width)-1;half=1<<(width-1);mod=1<<width
+ body=[('FUEL',)] if charged else []
+ body += [('LGET',0,1),('CONST',1,mask),('BIN','BOP-AND',0),('LSET',2,0),('LGET',0,2),('CONST',1,half),('CMP','CC-GE',0),('BRZ',0,name+'_else'),('LGET',0,2),('CONST',1,mod),('BIN','BOP-SUB',0),('BR',name+'_exit'),('LABEL',name+'_else'),('LGET',0,2),('LABEL',name+'_exit'),('RET',0)]
+ fx(name,1,2,body)
+ caller='caller_'+name;fx(caller,1,1,[('FUEL',),('FUEL',),('LGET',0,1),('CALL',name,0,1),('RET',0)])
+ for n in [MIN,-(1<<32),-65536,-32769,-129,-128,-1,0,1,127,128,255,32768,65535,2147483648,MAX]:
+  v=n&mask;expect=v-mod if v>=half else v;run(caller,[n],expect,fuel=3 if charged else 2)
+ run(caller,[1],'trap',fuel=2 if charged else 1)
+fx('caller_sx_high',1,1,[('FUEL',),('LGET',8,1),('CALL','sx16',8,1),('RET',8)])
+for n in [-32769,-32768,-1,0,32767,32768,MAX]:
+ v=n&65535;run('caller_sx_high',[n],v-65536 if v>=32768 else v,fuel=1)
+fx('caller_sx_const',0,0,[('FUEL',),('CONST',0,65535),('CALL','sx16',0,1),('RET',0)]);run('caller_sx_const',[],-1,fuel=1)
+
+# Exact scalar-mask leaf composition: typed metadata, real entry labels,
+# repeated direct sites, live register/home operands and unchanged fuel.
+# Keep the generator authoritative for the checked-in unit artifacts.
+MASK_TYPED_FIRST = len(FIX) + 1
+for width in [1, 8, 16, 32, 63]:
+ for charged in [0, 1]:
+  leaf = 'mask_leaf_%d_%d' % (width, charged)
+  mask = (1 << width) - 1
+  body = ([('FUEL',)] if charged else []) + [('LABEL', leaf+'_entry'),
+          ('LGET', 0, 1), ('CONST', 1, mask), ('BIN', 'BOP-AND', 0), ('RET', 0)]
+  fx(leaf, 1, 1, body)
+  for t in [0, 7]:
+   caller = leaf+'_call%d' % t
+   fx(caller, 2, 2, [('FUEL',), ('LGET', t, 1), ('CALL', leaf, t, 1),
+                    ('LGET', t+1, 2), ('BIN', 'BOP-ADD', t), ('RET', t)])
+   for x in [MIN, -1, 0, 1, MAX]:
+    for live in [MIN, 37, MAX]:run(caller, [x, live], s64((x & mask)+live), fuel=1+charged)
+   if charged:run(caller, [MAX, 37], 'trap', fuel=1)
+fx('mask_single', 1, 1, [('FUEL',), ('LABEL', 'mask_single_entry'),
+   ('LGET', 0, 1), ('CONST', 1, 7), ('BIN', 'BOP-AND', 0), ('RET', 0)])
+fx('mask_single_call', 1, 1, [('FUEL',), ('LGET', 0, 1), ('CALL', 'mask_single', 0, 1), ('RET', 0)])
+for x in [MIN, -1, 0, MAX]:run('mask_single_call', [x], x & 7, fuel=2)
+run('mask_single_call', [0], 'trap', fuel=1)
+
 def layout_tables():
     """number functions (FN index = position + 1), labels, literals; return the flat SIR words and records."""
     fns = {name: i + 1 for i, (name, *_) in enumerate(FIX)}
@@ -349,6 +426,454 @@ def layout_tables():
         sir.append([C['OP-END'], f, 0, 0])
         fnrecs.append((f, np, ns, maxt if dp is None else dp))
     return fns, labels, lits, sir, fnrecs
+
+# Complete scalar threshold trees: authoring new backend tests, not a source refactor.
+# Canonicalization of data below is not a DefCID or result memoization mechanism.
+def _add_scalar_tree_fixtures():
+    leaves=[MIN,MAX,-1,0,1,-4294967297,4294967297,65535]*8
+    values=[MIN,MIN+1,-65537,-65,-2,-1,*range(66),127,65535,MAX-1,MAX]
+    def rows(name,lo,hi,mode='lt',outer=False):
+     if hi-lo==1:return [('LGET',0,1)] if mode=='value' and lo==3 else [('CONST',0,leaves[lo])]
+     mid=(lo+hi)//2;threshold=mid if mode not in ['negative','outside'] or not outer else -1 if mode=='negative' else 65
+     le=f'{name}_{lo}_{hi}_else';lx=f'{name}_{lo}_{hi}_end';cc='CC-EQ' if mode=='eq' and outer else 'CC-LT'
+     return [('LGET',0,1),('CONST',1,threshold),('CMP',cc,0),('BRZ',0,le)]+rows(name,lo,mid,mode)+[('BR',lx),('LABEL',le)]+rows(name,mid,hi,mode)+[('LABEL',lx)]
+    def expected(x,lo,hi,mode='lt',outer=False):
+     if hi-lo==1:return x if mode=='value' and lo==3 else leaves[lo]
+     mid=(lo+hi)//2;t=mid if mode not in ['negative','outside'] or not outer else -1 if mode=='negative' else 65;pick=x==t if mode=='eq' and outer else x<t
+     return expected(x,lo,mid,mode) if pick else expected(x,mid,hi,mode)
+    for charge in [0,1]:
+     for tag,size,mode in [('lt64',64,'lt'),('lt32',32,'lt'),('lt16',16,'lt'),('negative',64,'negative'),('outside',64,'outside'),('eq',64,'eq'),('value',64,'value')]:
+      name=f'tree{charge}_{tag}';body=([('FUEL',)] if charge else [])+[('LABEL',name+'_root')]+rows(name,0,size,mode,True)+[('RET',0)];fx(name,1,1,body)
+      caller='call_'+name;fx(caller,1,1,[('FUEL',),('FUEL',),('LGET',0,1),('CALL',name,0,1),('RET',0)])
+      for x in values:run(caller,[x],expected(x,0,size,mode,True),fuel=2+charge)
+      for fuel in range(1,2+charge):run(caller,[MIN],'trap',fuel=fuel)
+
+_add_scalar_tree_fixtures()
+
+# Exact admitted shape and refused neighborhoods, caller temp heights0..5.
+fx('mw_unknown',1,1,[('LGET',0,1),('CONST',1,1),('BIN','BOP-ADD',0),('RET',0)])
+for charged in [0,1]:
+ fx('mw_put'+str(charged),3,3,([('FUEL',)] if charged else [])+[('LGET',0,1),('LGET',1,2),('LGET',2,3),('RT','RT-VECTOR-ASSOC-IN-PLACE',0,3),('RET',0)])
+masktargets=[]
+for outer,inner,mask in [(1,1,255),(0,1,255),(1,0,255),(1,1,65535)]:
+ writer=f'mw_mask_{outer}{inner}_{mask}'
+ body=([('FUEL',)] if outer else [])+[('LGET',0,1),('LGET',1,2),('LGET',2,3),('CONST',3,mask),('BIN','BOP-AND',2),('CALL','mw_put'+str(inner),0,3),('RET',0)]
+ fx(writer,3,3,body)
+ for t in ([0,1,4,5] if (outer,inner,mask)==(1,1,255) else [0]):
+  for restore in [0,1]:
+   caller=f'mw_call_{outer}{inner}_{mask}_{t}_{restore}';body=[('CONST',0,11),('CONST',1,-22),('CONST',2,33),('CONST',3,-44),('VEC',0,4),('LSET',3,0)]
+   if restore:body+=[('CONST',0,7),('CALL','mw_unknown',0,1)]
+   # One valid write followed by a possibly invalid write: observe partial arena.
+   for ix in [0,1]:
+    body+=[('CONST',j,100+j) for j in range(t)]+[('LGET',t,3)]
+    body+=[('CONST',t+1,0)] if ix==0 else [('LGET',t+1,1)]
+    body+=[('LGET',t+2,2),('CALL',writer,t,3),('RT','RT-VECTOR-COUNT',t,1)]
+    for j in range(t-1,-1,-1):body+=[('BIN','BOP-ADD',j)]
+    body+=[('LSET',4,0)]
+   body+=[('LGET',0,3),('CONST',1,0),('RT','RT-VECTOR-AT',0,2),('LGET',1,4),('BIN','BOP-ADD',0),('RET',0)];fx(caller,2,4,body);masktargets.append((caller,(outer,inner,mask)==(1,1,255) and t<=4,restore))
+
+# Hand-derived result includes the stored mask value, vector length and live temps.
+for name,admitted,restore in masktargets:
+ _,_,charges,mask,t,restore = name.split('_')
+ mask=int(mask);t=int(t);cost=2*(int(charges[0])+int(charges[1]));live=sum(100+j for j in range(t))
+ for value in [MIN,-257,-1,0,255,256,MAX]:
+  for index in [0,1,3]:run(name,[index,value],(value&mask)+4+live,fuel=max(cost,1))
+ for index in [-1,4,MIN,MAX]:run(name,[index,-1],'trap',fuel=100)
+ for fuel in range(1,cost):run(name,[1,256],'trap',fuel=fuel)
+
+# Context preservation facts, refused effects/depth/work neighborhoods.
+fx('cp_scalar',1,1,[('FUEL',),('LGET',0,1),('CONST',1,1),('BIN','BOP-ADD',0),('RET',0)])
+fx('cp_vector',2,2,[('FUEL',),('LGET',0,1),('LGET',1,2),('RT','RT-VECTOR-AT',0,2),('CONST',1,1),('BIN','BOP-ADD',0),('RET',0)])
+fx('cp_alloc',1,1,[('LGET',0,1),('RT','RT-VECTOR-ALLOC',0,1),('RET',0)])
+fx('cp_cap',1,1,[('LGET',0,1),('CAP',39,1,0),('RET',0)])
+fx('cp_indirect',1,1,[('LGET',0,1),('FADDR',1,next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_scalar')),('CALLI',0,0,1),('RET',0)])
+fx('cp_cycle',1,1,[('CONST',0,0),('BRZ',0,'cp_cycle_done'),('LGET',0,1),('CALL','cp_cycle',0,1),('LABEL','cp_cycle_done'),('CONST',0,17),('RET',0)])
+fx('cp_big',1,1,[('CONST',0,k) for k in range(520)]+[('RET',0)])
+for k in range(9):fx('cp_chain'+str(k),1,1,[('LGET',0,1),('CALL','cp_scalar' if k==0 else 'cp_chain'+str(k-1),0,1),('RET',0)])
+cp_targets=[]
+for callee,admitted in [('cp_scalar',True),('cp_vector',True),('cp_alloc',False),('cp_cap',False),('cp_indirect',False),('cp_cycle',False),('cp_big',False),('cp_chain0',True),('cp_chain8',False)]:
+ name='call_'+callee;body=[('CONST',0,11),('CONST',1,-22),('VEC',0,2),('LSET',3,0)]
+ body+=([('LGET',0,3),('LGET',1,1)] if callee=='cp_vector' else [('LGET',0,2)])+[('CALL',callee,0,2 if callee=='cp_vector' else 1),('LSET',4,0),('FUEL',),('LGET',0,3),('RT','RT-VECTOR-COUNT',0,1),('LGET',1,4),('BIN','BOP-ADD',0),('RET',0)]
+ fx(name,2,4,body);cp_targets.append((name,callee,admitted))
+
+# Hand-derived values plus original low-fuel and bounds traps.
+for name,callee,admitted in cp_targets:
+ if callee=='cp_cap':continue # refusal/audit and denied-cap state are covered separately
+ if callee=='cp_vector':
+  for index,value in [(0,14),(1,-19)]:run(name,[index,1],value,fuel=2)
+  for index in [-1,2,MIN,MAX]:run(name,[index,1],'trap',fuel=2)
+ elif callee=='cp_alloc':
+  for n in [0,1,4]:run(name,[0,n],4,fuel=1) # second fresh handle2 + root vector length2
+  run(name,[0,-1],'trap',fuel=1)
+ elif callee in ['cp_cycle','cp_big']:run(name,[0,1],19 if callee=='cp_cycle' else 521,fuel=1)
+ else:
+  for value in [MIN,-1,0,1,MAX]:run(name,[0,value],s64(value+3),fuel=2)
+ if callee not in ['cp_alloc','cp_cycle','cp_big']:run(name,[0,1],'trap',fuel=1)
+
+# Exact signed-clamp composition; hand-derived results and exhaustion/bounds traps.
+def sign(name,width,charged):
+ mask=(1<<width)-1;half=1<<(width-1)
+ fx(name,1,2,([('FUEL',)] if charged else [])+[('LGET',0,1),('CONST',1,mask),('BIN','BOP-AND',0),('LSET',2,0),('LGET',0,2),('CONST',1,half),('CMP','CC-GE',0),('BRZ',0,name+'_lo'),('LGET',0,2),('CONST',1,1<<width),('BIN','BOP-SUB',0),('BR',name+'_end'),('LABEL',name+'_lo'),('LGET',0,2),('LABEL',name+'_end'),('RET',0)])
+cases=[(1,0,0,-1,0),(8,1,0,0,127),(16,0,1,0,255),(32,1,1,-7,13),(16,1,1,MIN,MAX),(8,0,0,-1,-1),(16,1,0,-100000,-99999),(16,1,1,10,-10)]
+clamp_targets=[]
+for k,(width,outer,inner,lo,hi) in enumerate(cases):
+ s=f'cl_sign{k}';f=f'cl_bound{k}';sign(s,width,inner)
+ body=([('FUEL',)] if outer else [])+[('LABEL',f+'_entry'),('LGET',0,1),('CALL',s,0,1),('LSET',2,0),('LGET',0,2),('CONST',1,lo),('CMP','CC-LT',0),('BRZ',0,f+'_notlo'),('CONST',0,lo),('BR',f+'_done'),('LABEL',f+'_notlo'),('LGET',0,2),('CONST',1,hi),('CMP','CC-GT',0),('BRZ',0,f+'_nothi'),('CONST',0,hi),('BR',f+'_innerdone'),('LABEL',f+'_nothi'),('LGET',0,2),('LABEL',f+'_innerdone'),('LABEL',f+'_done'),('RET',0)]
+ fx(f,1,2,body)
+ for t in [0,3,6,7,8]:
+  c=f'cl_call{k}_{t}'
+  cb=[('FUEL',),('CONST',0,11),('CONST',1,-22),('VEC',0,2),('LSET',3,0)]+[('CONST',j,100+j) for j in range(t)]+[('LGET',t,1),('CALL',f,t,1)]
+  for j in range(t-1,-1,-1):cb+=[('BIN','BOP-ADD',j)]
+  cb+=[('LSET',4,0),('LGET',0,3),('LGET',1,2),('RT','RT-VECTOR-AT',0,2),('LGET',1,4),('BIN','BOP-ADD',0),('RET',0)]
+  fx(c,2,4,cb);clamp_targets.append((c,f,width,outer,inner,lo,hi,t,lo<=hi))
+  if k<7:
+   vals=[MIN,-65537,-32769,-32768,-129,-128,-1,0,1,127,128,255,256,32767,32768,65535,MAX]
+   for v in vals:
+    sv=v&((1<<width)-1);sv=sv-(1<<width) if sv>=(1<<(width-1)) else sv
+    result=s64(min(max(sv,lo),hi)+sum(100+j for j in range(t))+11)
+    run(c,[v,0],result,fuel=1+outer+inner)
+    run(c,[v,-1],'trap',fuel=1+outer+inner)
+   for fuel in range(1,1+outer+inner):run(c,[0,0],'trap',fuel=fuel)
+
+# Exact affine-index vector readers: wrapping multiplication, actual entry
+# labels, live register/home operands, invalid indices and private entry fuel.
+# New algorithm authoring; generated artifacts continue to come from this table.
+READER_TYPED_FIRST = len(FIX) + 1
+for k, charged in [(2,1), (3,0), (0,1), (-1,1), (MIN,1)]:
+ leaf = 'reader_leaf_%d_%d' % (k,charged)
+ fx(leaf,2,2,([('FUEL',)] if charged else [])+[('LABEL',leaf+'_entry'),
+     ('LGET',0,1),('LGET',1,2),('CONST',2,k),('BIN','BOP-MUL',1),
+     ('RT','RT-VECTOR-AT',0,2),('RET',0)])
+ for t in [0,7]:
+  caller = leaf+'_call%d' % t
+  body=[('FUEL',),('CONST',0,11),('CONST',1,-22),('CONST',2,33),('CONST',3,-44),
+        ('VEC',0,4),('LSET',3,0)]+[('CONST',j,100+j) for j in range(t)]+[
+        ('LGET',t,3),('LGET',t+1,1),('CALL',leaf,t,2)]
+  body += [('BIN','BOP-ADD',j) for j in range(t-1,-1,-1)]+[
+          ('LGET',1,2),('BIN','BOP-ADD',0),('RET',0)]
+  fx(caller,2,3,body)
+  for index in [MIN,-1,0,1,2,3,4,MAX]:
+   ix=s64(index*k)
+   for live in [MIN,37,MAX]:
+    answer=s64([11,-22,33,-44][ix]+sum(100+j for j in range(t))+live) if 0<=ix<4 else 'trap'
+    run(caller,[index,live],answer,fuel=1+charged)
+  if charged:run(caller,[0,37],'trap',fuel=1)
+for mode in ['wrong-type','extra','frame','other-op']:
+ leaf='reader_refuse_'+mode
+ body=[('FUEL',),('LGET',0,1),('LGET',1,2),('CONST',2,2),
+       ('BIN','BOP-ADD' if mode=='other-op' else 'BOP-MUL',1),('RT','RT-VECTOR-AT',0,2)]
+ if mode=='extra':body += [('CONST',1,1),('BIN','BOP-ADD',0)]
+ body += [('RET',0)];fx(leaf,2,3 if mode=='frame' else 2,body)
+ caller=leaf+'_call';fx(caller,1,2,[('FUEL',),('CONST',0,11),('CONST',1,-22),('CONST',2,33),('CONST',3,-44),
+  ('VEC',0,4),('LSET',2,0),('LGET',0,2),('LGET',1,1),('CALL',leaf,0,2),('RET',0)])
+ run(caller,[0],33 if mode=='other-op' else 12 if mode=='extra' else 11,fuel=2)
+ run(caller,[0],'trap',fuel=1)
+
+HOT_CASES=[]
+fx('ht_clobber',7,7,[('FUEL',),('CONST',0,77),('RET',0)])
+fx('ht_alloc',0,0,[('FUEL',),('CONST',0,1),('RT','RT-VECTOR-ALLOC',0,1),('CONST',0,77),('RET',0)])
+for t,mode in [(t,mode) for t in [6,7,10,31] for mode in ['plain','coalesced','beforecall','aftercall','alias','loop','walk','skip']]+[(63,'plain')]:
+ name=f'ht_case_{len(HOT_CASES)}';body=[('FUEL',)]+[('CONST',j,11-3*j) for j in range(8)]+[('VEC',0,8),('CONST',0,99),('VEC',0,1)]
+ if mode in ['loop','walk']:body += [('CONST',0,2),('LSET',7,0),('CONST',0,0),('LSET',8,0),('LABEL',name+'_loop'),('LGET',0,7),('BRZ',0,name+'_end')]
+ for j in range(t):body += [('LGET',j,3 if j%2==0 else 4),('CONST',j+1,-19+7*j),('BIN','BOP-ADD',j)]
+ if mode=='beforecall':body += [('CONST',t+j,v) for j,v in enumerate([1,99,98,1,0,1,66])]+[('CALL','ht_clobber',t,7)]
+ if mode=='skip':body += [('LGET',t,2),('CONST',t+1,8),('CMP','CC-GE',t),('BRNZ',t,name+'_skip')]
+ body += [('LGET',t,1),('LGET',t+1,2),('RT','RT-VECTOR-AT',t,2)]
+ if mode=='coalesced':body += [('LSET',5,t),('LGET',t,5)]
+ if mode=='aftercall':body += [('CALL','ht_alloc',t+1,0),('BIN','BOP-ADD',t)]
+ if mode=='alias':body += [('LSET',1,t),('LGET',t,1),('CONST',t+1,0),('RT','RT-VECTOR-AT',t,2)]
+ if mode=='skip':body += [('BR',name+'_join'),('LABEL',name+'_skip'),('CONST',t,77),('LABEL',name+'_join')]
+ body += [('BIN','BOP-ADD',j) for j in range(t-1,-1,-1)]
+ if mode in ['loop','walk']:
+  body += [('LGET',1,8),('BIN','BOP-ADD',0),('LSET',8,0)]
+  if mode=='walk':body += [('LGET',0,2),('CONST',1,1),('BIN','BOP-ADD',0),('LSET',2,0)]
+  body += [('LGET',0,7),('CONST',1,1),('BIN','BOP-SUB',0),('LSET',7,0),('FUEL',),('BR',name+'_loop'),('LABEL',name+'_end'),('LGET',0,8)]
+ body += [('RET',0)];fx(name,4,8,body);HOT_CASES.append({'name':name,'t':t,'mode':mode})
+# Author one-iteration enclosing loop for every hand caller so the new
+# profitability guard admits each access, including call/alias/resource paths.
+for c in HOT_CASES:
+ k=next(j for j,x in enumerate(FIX) if x[0]==c['name']);name,np,ns,dp,body=FIX[k];at=body.index(('VEC',0,1))+1;label=name+'_outer'
+ assert body[-1]==('RET',0)
+ body=body[:at]+[('CONST',0,1),('LSET',6,0),('LABEL',label)]+body[at:-1]+[('LSET',9,0),('LGET',0,6),('CONST',1,1),('BIN','BOP-SUB',0),('LSET',6,0),('FUEL',),('BRNZ',0,label),('LGET',0,9),('RET',0)]
+ FIX[k]=(name,np,9,dp,body)
+HOT_OWN_CASES=[]
+for t in [6,7,10,31]:
+ for mode in ['raw','coalesced-alias','join']:
+  raw=f'ns_raw_{t}_{mode}';caller=raw+'_caller';body=[('FUEL',)]+[('LGET',j,3 if j%2==0 else 4) for j in range(t)]
+  if mode=='join':body += [('LGET',t,3),('BRZ',t,raw+'_zero'),('CONST',t,5),('BIN','BOP-ADD',t-1),('BR',raw+'_join'),('LABEL',raw+'_zero'),('CONST',t-1,-7),('LABEL',raw+'_join')]
+  body += [('LGET',t,1),('LGET',t+1,2),('RT','RT-VECTOR-AT',t,2)]
+  if mode=='coalesced-alias':body += [('LSET',3,t),('LGET',t,3)]
+  body += [('BIN','BOP-ADD',j) for j in range(t-1,-1,-1)]+[('LGET',1,3),('BIN','BOP-ADD',0),('RET',0)];fx(raw,4,4,body)
+  wrapper=[('FUEL',)]+[('CONST',j,11-3*j) for j in range(8)]+[('VEC',0,8),('CONST',0,99),('VEC',0,1)]+[('LGET',j,j+1) for j in range(4)]+[('CALL',raw,0,4),('RET',0)];fx(caller,4,4,wrapper);HOT_OWN_CASES.append({'raw':raw,'caller':caller,'t':t,'mode':mode})
+# The raw function has no call/allocation; only its high read makes it nonleaf.
+# Enclose its authored alias/join cases in a one-iteration backward-branch region.
+for c in HOT_OWN_CASES:
+ k=next(j for j,x in enumerate(FIX) if x[0]==c['raw']);name,np,ns,dp,body=FIX[k];label=name+'_outer';assert body[0]==('FUEL',) and body[-1]==('RET',0)
+ body=body[:1]+[('CONST',0,1),('LSET',5,0),('LABEL',label)]+body[1:-1]+[('LSET',6,0),('LGET',0,5),('CONST',1,1),('BIN','BOP-SUB',0),('LSET',5,0),('FUEL',),('BRNZ',0,label),('LGET',0,6),('RET',0)]
+ FIX[k]=(name,np,6,dp,body)
+
+# Pure hand model for the authored SIR (not compiler lowering or measured output).
+def _hot_expect(c,handle,index,live,other,fuel):
+ remaining=fuel-1;items=[11-3*j for j in range(8)]+[99]
+ def charge():
+  nonlocal remaining
+  if remaining<1:remaining=0;return False
+  remaining-=1;return True
+ def read(h,ix):
+  n=8 if h==1 else 1 if h==2 else 0
+  return items[(0 if h==1 else 8)+ix] if 0<=ix<n else None
+ prefix=s64(sum(s64((live if j%2==0 else other)+(-19+7*j)) for j in range(c['t'])));total=0
+ for it in range(2 if c['mode'] in ['loop','walk'] else 1):
+  if c['mode']=='beforecall' and not charge():return 'trap'
+  value=77 if c['mode']=='skip' and index>=8 else read(handle,index)
+  if value is None:return 'trap'
+  if c['mode']=='aftercall':
+   if not charge():return 'trap'
+   value=s64(value+77)
+  if c['mode']=='alias':
+   handle=value;value=read(handle,0)
+   if value is None:return 'trap'
+  total=s64(total+prefix+value)
+  if c['mode'] in ['loop','walk']:
+   if c['mode']=='walk':index=s64(index+1)
+   if not charge():return 'trap'
+ return total if charge() else 'trap'
+for c in HOT_CASES:
+ for handle,index in [(1,0),(1,7),(1,8),(2,0),(0,0),(MIN,-1),(MAX,MAX),(1,MIN)]:
+  for live,other in [(MIN,37),(37,MAX)]:
+   for fuel in [1,2,3,4,16777216]:run(c['name'],[handle,index,live,other],_hot_expect(c,handle,index,live,other,fuel),fuel=fuel)
+for c in HOT_OWN_CASES:
+ for handle,index in [(1,0),(1,7),(1,8),(2,0),(2,1),(0,0),(MIN,0),(MAX,MAX)]:
+  for live,other in [(MIN,37),(0,MAX),(37,MAX)]:
+   for fuel in [1,2,3,16777216]:
+    valid=fuel>=3 and ((handle==1 and 0<=index<8) or(handle==2 and index==0));value=(11-3*index if handle==1 else 99) if valid else 0;prefix=s64(sum(live if j%2==0 else other for j in range(c['t'])))
+    if c['mode']=='join':prefix=s64(prefix+5) if live!=0 else s64(prefix-(live if (c['t']-1)%2==0 else other)-7)
+    answer=s64(prefix+value+(value if c['mode']=='coalesced-alias' else live)) if valid else 'trap'
+    run(c['caller'],[handle,index,live,other],answer,fuel=fuel)
+# A cold high-depth access has no backward branch and retains the original path.
+fx('ht_cold_control',0,1,[('FUEL',)]+[('CONST',j,11-3*j) for j in range(8)]+[('VEC',0,8),('LSET',1,0)]+[('CONST',j,100+j) for j in range(6)]+[('LGET',6,1),('CONST',7,0),('RT','RT-VECTOR-AT',6,2)]+[('BIN','BOP-ADD',j) for j in range(5,-1,-1)]+[('RET',0)])
+run('ht_cold_control',[],626,fuel=1)
+
+# Exact affine-index/checked-read composition. One-off hand SIR test authoring;
+# original fixture/run prefix is preserved. Expected math does not use compiler output.
+AFFINE_READ_CASES=[]
+def _affine_read_fixture(name,t,factor,prefix,mode,admit):
+ out=t-2;label=name+'_loop';values=[11-3*j for j in range(8)]
+ body=[('FUEL',)]+[('CONST',j,values[j]) for j in range(8)]+[('VEC',0,8),('CONST',0,1),('LSET',5,0),('LABEL',label)]+[('LGET',j,1) for j in range(out)]+[('LGET',out,3),('CONST',t-1,prefix),('LGET',t,1),('CONST',t+1,factor),('BIN','BOP-MUL',t),('LGET',t+1,2),('BIN','BOP-ADD',t),('BIN','BOP-ADD',t-1),('RT','RT-VECTOR-AT',out,2)]
+ if mode=='live-index':body += [('RET2',out),('FUEL',),('BR',label)]
+ else:
+  if mode.startswith('alias'):
+   dest={'alias-a':1,'alias-b':2,'alias-handle':3}[mode];body += [('LSET',dest,out),('LGET',out,dest)]
+  body += [('BIN','BOP-ADD',j) for j in range(out-1,-1,-1)]+[('LSET',6,0),('LGET',0,5),('CONST',1,1),('BIN','BOP-SUB',0),('LSET',5,0),('FUEL',)]
+  if mode!='cold':body += [('BRNZ',0,label)]
+  body += [('LGET',0,6),('RET',0)]
+ fx(name,3,6,body);entry=name
+ if mode=='live-index':
+  entry=name+'_wrapper';fx(entry,3,3,[('FUEL',),('LGET',0,1),('LGET',1,2),('LGET',2,3),('CALL',name,0,3),('RES2',1),('BIN','BOP-ADD',0),('RET',0)])
+ AFFINE_READ_CASES.append({'name':name,'entry':entry,'t':t,'factor':factor,'prefix':prefix,'mode':mode,'admit':admit})
+for t in [7,8,17]:
+ for factor in [20,MIN]:
+  for mode in ['plain','alias-a','alias-b','alias-handle']:_affine_read_fixture('ar_permanent_'+str(len(AFFINE_READ_CASES)),t,factor,-4095,mode,True)
+for mode in ['live-index','cold','large-prefix','factor0','factor1','factor-1']:
+ _affine_read_fixture('ar_refuse_'+mode,7,0 if mode=='factor0' else 1 if mode=='factor1' else -1 if mode=='factor-1' else 20,4096 if mode=='large-prefix' else 800,mode,False)
+for c in AFFINE_READ_CASES:
+ for a,ix in [(MIN,0),(MAX,7),(-1,8),(0,-1),(123,MIN)]:
+  b=s64(ix-c['prefix']-s64(a*c['factor']))
+  for h in [0,1,MIN]:
+   for fuel in [1,2,16777216]:
+    valid=h==1 and 0<=ix<8 and fuel>=2
+    expected=s64(11-3*ix+(ix if c['mode']=='live-index' else (c['t']-2)*a)) if valid else 'trap'
+    run(c['entry'],[a,b,h],expected,fuel=fuel)
+# Retain the original final-function state used by existing guard tests.
+_sentinel=next(f for f in FIX if f[0]=='ht_cold_control');FIX.append(('ar_cold_sentinel',*_sentinel[1:]))
+
+# Same-local descriptor reuse: new algorithm / hand fixtures.
+fx('sl_pair_clobber',7,7,[('FUEL',),('CONST',0,77),('RET',0)]);fx('sl_pair_alloc',0,0,[('FUEL',),('CONST',0,1),('RT','RT-VECTOR-ALLOC',0,1),('CONST',0,77),('RET',0)])
+SL_VALUES=[11-3*j for j in range(8)]+[99-3*j for j in range(8)];SAME_LOCAL_READ_CASES=[]
+def _sl_read(t,slot,ixlocal):
+ out=t-2
+ return [('CONST',j,0) for j in range(out)]+[('LGET',out,slot),('CONST',t-1,0),('LGET',t,1),('CONST',t+1,20),('BIN','BOP-MUL',t),('LGET',t+1,ixlocal),('BIN','BOP-ADD',t),('BIN','BOP-ADD',t-1),('RT','RT-VECTOR-AT',out,2)]
+for t in [7,8,17]:
+ for mode in ['same','different','alias-source','write','reassign','co-result','co-bin','call','alloc','fuel','join']:
+  name='sl_pair_'+str(len(SAME_LOCAL_READ_CASES));loop=name+'_loop';body=[('FUEL',)]+[('CONST',j,SL_VALUES[j]) for j in range(8)]+[('VEC',0,8),('LSET',4,0)]+[('CONST',j,SL_VALUES[j+8]) for j in range(8)]+[('VEC',0,8),('LSET',5,0)]
+  if mode=='alias-source':body += [('LGET',0,4),('LSET',5,0)]
+  body += [('CONST',0,2),('LSET',9,0),('CONST',0,0),('LSET',10,0),('LABEL',loop)]
+  if mode=='join':body += [('LGET',0,2),('BRZ',0,name+'_skip')]
+  body += _sl_read(t,4,2)+[('LSET',4 if mode=='co-result' else 7,t-2)]
+  if mode=='co-result':body += [('LGET',0,4),('LSET',7,0)]
+  if mode=='join':body += [('BR',name+'_join'),('LABEL',name+'_skip'),('CONST',0,17),('LSET',7,0),('LABEL',name+'_join')]
+  if mode=='write':body += [('LGET',0,4),('CONST',1,0),('CONST',2,77),('RT','RT-VECTOR-ASSOC-IN-PLACE',0,3)]
+  if mode=='reassign':body += [('LGET',0,5),('LSET',4,0)]
+  if mode=='co-bin':body += [('LGET',0,4),('CONST',1,1),('BIN','BOP-ADD',0),('LSET',4,0)]
+  if mode=='call':body += [('LGET',0,4)]+[('CONST',j,v) for j,v in enumerate([99,98,1,0,1,66],1)]+[('CALL','sl_pair_clobber',0,7)]
+  if mode=='alloc':body += [('CALL','sl_pair_alloc',0,0)]
+  if mode=='fuel':body += [('FUEL',)]
+  body += _sl_read(t+1,5 if mode in ['different','alias-source'] else 4,3)+[('LSET',8,t-1),('LGET',0,7),('LGET',1,8),('BIN','BOP-ADD',0),('LGET',1,10),('BIN','BOP-ADD',0),('LSET',10,0),('LGET',0,9),('CONST',1,1),('BIN','BOP-SUB',0),('LSET',9,0),('FUEL',),('BRNZ',0,loop),('LGET',0,10),('CONST',1,37),('BIN','BOP-ADD',0),('RET',0)]
+  fx(name,3,10,body);SAME_LOCAL_READ_CASES.append({'name':name,'t':t,'mode':mode,'staticHitExpected':mode=='same'})
+
+# Independent scalar/vector hand oracle. No generator/native code is consulted.
+def _sl_answer(c, av, ix1, ix2, b1, fuel):
+    remaining=fuel; items=list(SL_VALUES); descs=[(0,8),(8,8)]
+    handle=1; other=1 if c['mode']=='alias-source' else 2; total=0
+    def charge():
+        nonlocal remaining
+        if remaining<1:
+            remaining=0; return False
+        remaining-=1; return True
+    def at(h, ix):
+        if not 1<=h<=len(descs): return None
+        off,n=descs[h-1]
+        return items[off+ix] if 0<=ix<n else None
+    if not charge(): return 'trap'
+    for iteration in range(2):
+        first=17 if c['mode']=='join' and b1==0 else at(handle,ix1)
+        if first is None: return 'trap'
+        mode=c['mode']
+        if mode=='co-result': handle=first
+        if mode=='write': items[descs[handle-1][0]]=77
+        if mode=='reassign': handle=other
+        if mode=='co-bin': handle=s64(handle+1)
+        if mode in ['call','alloc','fuel']:
+            if not charge(): return 'trap'
+            if mode=='alloc': descs.append((len(items),1)); items.append(0)
+        second=at(other if mode in ['different','alias-source'] else handle,ix2)
+        if second is None: return 'trap'
+        total=s64(total+first+second)
+        if not charge(): return 'trap'
+    return s64(total+37)
+
+for c in SAME_LOCAL_READ_CASES:
+    for av,ix1,ix2 in [(0,0,7),(MIN,7,0),(MAX,0,0),(-1,8,0),(0,0,8),(123,-1,0),(MIN,0,-1),(MAX,7,7)]:
+        b1=s64(ix1-s64(av*20)); b2=s64(ix2-s64(av*20))
+        for fuel in [1,2,3,4,5,6,16777216]:
+            run(c['name'],[av,b1,b2],_sl_answer(c,av,ix1,ix2,b1,fuel),fuel=fuel)
+_sl_sentinel=next(f for f in FIX if f[0]=='ht_cold_control')
+FIX.append(('sl_pair_cold_sentinel',*_sl_sentinel[1:]))
+
+
+# Guarded whole-dot expansion: independent i64/vector/fuel oracle.
+DOT_UNROLL_TEMPLATE = [('OP-FN', 'f', 5, 5), ('OP-FUEL', 0, 0, 0), ('OP-LABEL', 'head', 0, 0), ('OP-LGET', 0, 4, 0), ('OP-CONST', 1, 'n', 0), ('OP-CMP', 'CC-EQ', 0, 0), ('OP-BRZ', 0, 'body', 0), ('OP-LGET', 0, 5, 0), ('OP-BR', 'exit', 0, 0), ('OP-LABEL', 'body', 0, 0), ('OP-LGET', 0, 1, 0), ('OP-LGET', 1, 2, 0), ('OP-LGET', 2, 3, 0), ('OP-LGET', 3, 4, 0), ('OP-CONST', 4, 1, 0), ('OP-BIN', 'BOP-ADD', 3, 0), ('OP-LGET', 4, 5, 0), ('OP-LGET', 5, 1, 0), ('OP-CONST', 6, 'oa', 0), ('OP-LGET', 7, 2, 0), ('OP-CONST', 8, 'sa', 0), ('OP-BIN', 'BOP-MUL', 7, 0), ('OP-LGET', 8, 4, 0), ('OP-BIN', 'BOP-ADD', 7, 0), ('OP-BIN', 'BOP-ADD', 6, 0), ('OP-RT', 'RT-VECTOR-AT', 5, 2), ('OP-LGET', 6, 1, 0), ('OP-CONST', 7, 'ob', 0), ('OP-LGET', 8, 4, 0), ('OP-CONST', 9, 'sb', 0), ('OP-BIN', 'BOP-MUL', 8, 0), ('OP-LGET', 9, 3, 0), ('OP-BIN', 'BOP-ADD', 8, 0), ('OP-BIN', 'BOP-ADD', 7, 0), ('OP-RT', 'RT-VECTOR-AT', 6, 2), ('OP-BIN', 'BOP-MUL', 5, 0), ('OP-BIN', 'BOP-ADD', 4, 0), ('OP-LSET', 1, 0, 0), ('OP-LSET', 2, 1, 0), ('OP-LSET', 3, 2, 0), ('OP-LSET', 4, 3, 0), ('OP-LSET', 5, 4, 0), ('OP-FUEL', 0, 0, 0), ('OP-BR', 'head', 0, 0), ('OP-LABEL', 'exit', 0, 0), ('OP-RET', 0, 0, 0), ('OP-END', 'f', 0, 0)]
+DOT_UNROLL_CASES = []
+for _name,_n,_sa,_sb,_oa,_ob,_length in [
+ ('du_small',3,3,3,0,0,9),('du_overlap',3,1,1,0,0,9),
+ ('du_wide',64,64,64,4095,4095,8192),('du_refused',65,1,1,0,0,129)]:
+ _values={j:v for j,v in enumerate([MIN,MAX,-1,0,1,7,-3,9,11])}
+ if _name=='du_wide':
+  _values={4095+j:v for j,v in enumerate([MIN,MAX,-1,0,1,7,-3,9,11])}
+  _values.update({4095+64*j:v for j,v in enumerate([MIN,MAX,-1,0,1,7,-3,9,11]) if j>0})
+ _capture={'n':_n,'sa':_sa,'sb':_sb,'oa':_oa,'ob':_ob,
+           'head':_name+'_head','body':_name+'_body','exit':_name+'_exit'}
+ _body=[tuple([ins[0][3:]]+[_capture.get(x,x) for x in ins[1:]]) for ins in DOT_UNROLL_TEMPLATE[1:-1]]
+ fx(_name,5,5,_body)
+ _wrapper=[('FUEL',),('CONST',0,_length),('RT','RT-VECTOR-ALLOC',0,1),('LSET',4,0)]
+ for _ix,_v in sorted(_values.items()):
+  _wrapper += [('LGET',0,4),('CONST',1,_ix),('CONST',2,_v),('RT','RT-VECTOR-ASSOC-IN-PLACE',0,3)]
+ _wrapper += [('LGET',0,4),('LGET',1,1),('LGET',2,2),('LGET',3,3),('CONST',4,MAX),('CALL',_name,0,5),('RET',0)]
+ fx(_name+'_run',3,4,_wrapper)
+ DOT_UNROLL_CASES.append({'name':_name,'trip':_n,'sa':_sa,'sb':_sb,'oa':_oa,'ob':_ob,'length':_length,'values':_values})
+
+def _du_answer(c,row,col,k,fuel):
+ # No native generator is consulted. Charge the wrapper and dot entries first.
+ if fuel<2:return 'trap'
+ fuel-=2;total=MAX
+ for _ in range(c['length']+5):
+  if k==c['trip']:return total
+  a=s64(c['oa']+s64(s64(row*c['sa'])+k));b=s64(c['ob']+s64(s64(k*c['sb'])+col))
+  if not (0<=a<c['length'] and 0<=b<c['length']):return 'trap'
+  total=s64(total+s64(c['values'].get(a,0)*c['values'].get(b,0)));k=s64(k+1)
+  if fuel==0:return 'trap'
+  fuel-=1
+ raise AssertionError('dot oracle did not reach its bounded range or fuel trap')
+
+for c in DOT_UNROLL_CASES:
+ n=c['trip']
+ for row,col,k in [(0,0,0),(0,n-1,0),(n-1,0,0),(n-1,n-1,0),(1,1,0),
+                   (n,0,0),(-1,0,0),(MIN,MAX,0),(MAX,MIN,0),
+                   (0,0,n),(0,0,1),(0,0,n-1),(0,0,n+1),(0,0,-1),
+                   (0,0,MIN),(0,0,MAX),(0,MIN,0),(0,MAX,0)]:
+  for fuel in sorted(set([1,2,3,n+1,n+2,n+3,16777216,(1<<53)-1])):
+   run(c['name']+'_run',[row,col,k],_du_answer(c,row,col,k,fuel),fuel=fuel)
+fx('du_bad_handle',3,3,[('FUEL',),('LGET',0,1),('CONST',1,0),('CONST',2,0),
+                      ('LGET',3,2),('LGET',4,3),('CALL','du_small',0,5),('RET',0)])
+for h in [MIN,-1,0,1,MAX]:
+ for k in [0,3,-1,MAX]:
+  for fuel in [1,2,3,16777216]:
+   run('du_bad_handle',[h,k,MAX],MAX if fuel>=2 and k==3 else 'trap',fuel=fuel)
+_du_sentinel=next(f for f in FIX if f[0]=='ht_cold_control')
+FIX.append(('du_cold_sentinel',*_du_sentinel[1:]))
+
+
+# Exact forward-copy semantic fixtures; independent observable-value oracle.
+COPY_FORWARD_TEMPLATE = [['OP-FN', 'f', 2, 2], ['OP-FUEL', 0, 0, 0], ['OP-LABEL', 'head', 0, 0], ['OP-LGET', 0, 2, 0], ['OP-CONST', 1, 'n', 0], ['OP-CMP', 'CC-EQ', 0, 0], ['OP-BRZ', 0, 'body', 0], ['OP-LGET', 0, 1, 0], ['OP-BR', 'exit', 0, 0], ['OP-LABEL', 'body', 0, 0], ['OP-LGET', 0, 1, 0], ['OP-CONST', 1, 'dest', 0], ['OP-LGET', 2, 2, 0], ['OP-BIN', 'BOP-ADD', 1, 0], ['OP-LGET', 2, 1, 0], ['OP-LGET', 3, 2, 0], ['OP-RT', 'RT-VECTOR-AT', 2, 2], ['OP-CALL', 'writer', 0, 3], ['OP-LGET', 1, 2, 0], ['OP-CONST', 2, 1, 0], ['OP-BIN', 'BOP-ADD', 1, 0], ['OP-LSET', 1, 0, 0], ['OP-LSET', 2, 1, 0], ['OP-FUEL', 0, 0, 0], ['OP-BR', 'head', 0, 0], ['OP-LABEL', 'exit', 0, 0], ['OP-RET', 0, 0, 0], ['OP-END', 'f', 0, 0]]
+fx('cf_writer',3,3,[('FUEL',),('LABEL','cf_writer_entry'),('LGET',0,1),('LGET',1,2),('LGET',2,3),
+                   ('RT','RT-VECTOR-ASSOC-IN-PLACE',0,3),('RET',0)])
+COPY_FORWARD_CASES=[]
+for name,n,dest,length in [('cf_small',3,3,8),('cf_overlap',8,1,10),('cf_short',8,5,10),
+                            ('cf_wide',2047,2047,4094),('cf_refused',2048,0,2048),('cf_negative',3,-1,4)]:
+ values={j:v for j,v in enumerate([MIN,MAX,-1,0,1,7,-3,9,11,37,-99,47,67,-101,127,257]) if j<length}
+ capture={'n':n,'dest':dest,'writer':'cf_writer','head':name+'_head','body':name+'_body','exit':name+'_exit'}
+ fx(name,2,2,[tuple([x[0][3:]]+[capture.get(a,a) for a in x[1:]]) for x in COPY_FORWARD_TEMPLATE[1:-1]])
+ body=[('FUEL',),('CONST',0,length),('RT','RT-VECTOR-ALLOC',0,1),('LSET',3,0)]
+ for ix,v in sorted(values.items()):
+  body += [('LGET',0,3),('CONST',1,ix),('CONST',2,v),('RT','RT-VECTOR-ASSOC-IN-PLACE',0,3)]
+ body += [('LGET',0,3),('LGET',1,1),('CALL',name,0,2),('LGET',1,2),('RT','RT-VECTOR-AT',0,2),('RET',0)]
+ fx(name+'_run',2,3,body)
+ COPY_FORWARD_CASES.append({'name':name,'n':n,'dest':dest,'length':length,'values':values})
+
+def _cf_answer(c,i,probe,fuel):
+ # Wrapper publishes its entry; copy entry/writer/backedges use private leaf fuel.
+ if fuel<2:return 'trap'
+ remaining=fuel-2;values=dict(c['values'])
+ for _ in range(c['length']+4):
+  if i==c['n']:return values.get(probe,0) if 0<=probe<c['length'] else 'trap'
+  if not 0<=i<c['length']:return 'trap'
+  value=values.get(i,0)
+  if remaining==0:return 'trap'
+  remaining-=1;to=s64(c['dest']+i)
+  if not 0<=to<c['length']:return 'trap'
+  values[to]=value
+  if remaining==0:return 'trap'
+  remaining-=1;i=s64(i+1)
+ raise AssertionError('forward-copy oracle exceeded bounded input/fuel')
+
+for c in COPY_FORWARD_CASES:
+ n=c['n']
+ for i in sorted(set([0,1,n-1,n,n+1,-1,MIN,MAX])):
+  for probe in sorted(set([0,1,c['dest'],c['dest']+1,c['dest']+n-1,c['length']-1,-1])):
+   for fuel in sorted(set([1,2,3,4,2*n+1,2*n+2,16777216,(1<<53)-1])):
+    run(c['name']+'_run',[i,probe],_cf_answer(c,i,probe,fuel),fuel=fuel)
+_cf_sentinel=next(f for f in FIX if f[0]=='ht_cold_control')
+FIX.append(('cf_cold_sentinel',*_cf_sentinel[1:]))
+
+# Small terminal-only frames: independent scalar, branch, fuel and vector oracles.
+SMALL_TAIL_START=len(FIX)
+fx('st_id',1,1,[('LGET',0,1),('RET',0)])
+fx('st_target',1,1,[('FUEL',),('LGET',0,1),('CONST',1,2),('BIN','BOP-MUL',0),('CONST',1,3),('BIN','BOP-ADD',0),('RET',0)])
+locals=[('LGET',0,1),('CONST',1,7),('BIN','BOP-ADD',0),('LSET',2,0),('LGET',0,1),('CONST',1,5),('BIN','BOP-SUB',0),('LSET',3,0),('LGET',0,2),('LGET',1,3),('BIN','BOP-MUL',0),('LSET',4,0),('LGET',0,4)]
+fx('st_scalar',1,4,[('FUEL',)]+locals+[('CALL','st_target',0,1),('RET',0)])
+fx('st_wrap',1,4,[('FUEL',)]+locals+[('CALL','st_id',0,1),('CALL','st_target',0,1),('RET',0)])
+fx('st_branch',1,1,[('FUEL',),('LGET',0,1),('BRZ',0,'st_else'),('LGET',0,1),('CALL','st_target',0,1),('RET',0),('LABEL','st_else'),('CONST',0,19),('CALL','st_target',0,1),('RET',0)])
+fx('st_vtarget',1,1,[('FUEL',),('LGET',0,1),('CONST',1,0),('RT','RT-VECTOR-AT',0,2),('LGET',1,1),('CONST',2,1),('RT','RT-VECTOR-AT',1,2),('BIN','BOP-ADD',0),('RET',0)])
+fx('st_vec',1,1,[('FUEL',),('LGET',0,1),('CONST',1,0),('CONST',2,7),('RT','RT-VECTOR-ASSOC-IN-PLACE',0,3),('LGET',0,1),('CALL','st_vtarget',0,1),('RET',0)])
+fx('st_driver',1,1,[('FUEL',),('CONST',0,0),('LGET',1,1),('CONST',2,-3),('VEC',0,3),('CALL','st_vec',0,1),('RET',0)])
+fx('st_ref_np2',2,2,[('FUEL',),('LGET',0,2),('CALL','st_target',0,1),('RET',0)])
+fx('st_ref_d8',1,1,[('FUEL',),('CONST',7,17),('LGET',0,1),('CALL','st_target',0,1),('RET',0)])
+fx('st_ref_return',1,1,[('FUEL',),('LGET',0,1),('CALL','st_target',0,1),('LGET',1,1),('BIN','BOP-ADD',0),('RET',0)])
+fx('st_alloc',1,1,[('FUEL',),('LGET',0,1),('VEC',0,1),('RET',0)])
+fx('st_ref_vec',1,1,[('FUEL',),('LGET',0,1),('CALL','st_alloc',0,1),('RT','RT-VECTOR-COUNT',0,1),('RET',0)])
+fx('st_ref_driver',1,1,[('FUEL',),('LGET',0,1),('VEC',0,1),('CALL','st_ref_vec',0,1),('RET',0)])
+
+for name in ['st_scalar','st_wrap','st_branch','st_driver','st_ref_np2','st_ref_d8','st_ref_return','st_ref_driver']:
+ for x in [0,1,-1,3,-7,17,MIN,MAX,65536]:
+  value=s64(2*s64((x+7)*(x-5))+3) if name in ['st_scalar','st_wrap'] else 41 if name=='st_branch' and x==0 else s64(x+7) if name=='st_driver' else s64(3*x+3) if name=='st_ref_return' else 1 if name=='st_ref_driver' else s64(2*x+3)
+  charges=3 if name in ['st_driver','st_ref_driver'] else 2
+  for fuel in [1,2,3,4,5,16777216,(1<<53)-1]:
+   run(name,[99,x] if name=='st_ref_np2' else [x],value if fuel>=charges else 'trap',fuel=fuel)
+
+# Native private vector chains: preserve the original fixture/run prefixes.
+VECTOR_CHAIN_START=len(FIX)
+from a64gen_vector_chain_fixtures import add_fixtures as _add_vector_chain_fixtures
+_add_vector_chain_fixtures(fx,run,MIN,MAX,s64)
 
 def kotoba(real_layout=False):
     fns, labels, lits, sir, fnrecs = layout_tables()
@@ -417,10 +942,13 @@ def kotoba(real_layout=False):
          '        w (t-code M at)',
          '        w2 (t-code M (+ at 1))',
          '        lab (vector-at M (+ MM-LABEL-BASE g))',
-         '        fnc (vector-at M (+ MM-FN-BASE (* g MM-FN-W) FF-CODE))',
+         '        fn0 (vector-at M (+ MM-FN-BASE (* g MM-FN-W) FF-CODE))',
+         '        aux (t-fixf M i XF-AUX)',
+         '        fnc (if (= aux 0) fn0 (if (and (= aux 1) (= k FX-BL26) (= (bit-and w 0xfc000000) 0x14000000) (= (t-code M fn0) 0xd2800005)) (inc fn0) -1))',
          '        pool (t-litf M g LF-POOL)]',
          '    (cond (= k FX-B26) (t-patch1 M at (enc-patch-imm26 w (- lab at)))',
-         '          (= k FX-BL26) (t-patch1 M at (enc-patch-imm26 w (- fnc at)))',
+         '          (= k FX-BL26) (if (< fnc 0) (t-put M MM-ERR 9999) (t-patch1 M at (enc-patch-imm26 w (- fnc at))))',
+         '          (= k FX-ADR19) (t-patch1 M at (enc-patch-imm19 w (- fnc at)))',
          '          (= k FX-CB19) (t-patch1 M at (enc-patch-imm19 w (- lab at)))',
          '          (= k FX-BC19) (t-patch1 M at (enc-patch-imm19 w (- lab at)))',
          '          (= k FX-LIT32) (t-patch1 (t-patch1 M at (enc-patch-imm16 w (bit-and pool 65535)))',
@@ -446,7 +974,8 @@ def kotoba(real_layout=False):
          '  (if (>= l (vector-at M MM-LIT-N))',
          '    0',
          '    (let [b (t-litf M l LF-B)',
-         '          o (t-out (string-concat (string-concat (string-concat "lit " (t-dec (t-litf M l LF-POOL))) " ")',
+         '          o (t-out (string-concat (string-concat (string-concat "lit " (t-dec (t-litf M l LF-POOL)))',
+         '                                             (if (= (t-litf M l LF-LEN) 0) "" " "))',
          '                                  (string-concat (t-bl M b (+ b (t-litf M l LF-LEN)) "") "\\n")))]',
          '      (t-pl M (+ l 1)))))',
          '(defn- t-pf [M :vector-i64 f :i64] :i64',
@@ -463,6 +992,9 @@ def kotoba(real_layout=False):
         stmts.append('(t-sir M%%d [%s] %d)' % (' '.join(str(x) for x in ch), len(ch)))
     for f, np, ns, dp in fnrecs:
         stmts.append('(t-fnrec M%%d %d %d %d %d)' % (f, np, ns, dp))
+    for j, instruction in enumerate(sir, start=1):
+        if instruction[0] == C['OP-FN']:
+            stmts.append('(t-put M%%d %d %d)' % (C['MM-FN-BASE'] + instruction[1]*C['MM-FN-W'] + C['FF-SIR'],j))
     b = 1
     for l, s in enumerate(lits, start=1):
         bs = s.encode()
@@ -481,10 +1013,91 @@ def kotoba(real_layout=False):
     for g in range(len(groups)):
         expr = '(t-load%d %s)' % (g, expr)
     o.append('  %s)' % expr)
-    o += ['(defn- seed-main [] :i64',
+    affine = AFFINE_READ_CASES[0]; af=fns[affine['name']]; ast=next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-FN'] and x[1]==af)
+    ai=next(i+1 for i,x in enumerate(sir) if i+1>ast and x[0]==C['OP-LGET'] and x[1]==affine['t'])
+    alp=labels[affine['name']+'_loop']; ati=next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-LABEL'] and x[1]==alp)
+    guard_exprs=[('(gn-affine-read? (t-ar-state) %d %d)'%(ai,affine['t']),True),
+      ('(gn-affine-read? (gn-gs (t-ar-state) gn-f-leaf 1) %d %d)'%(ai,affine['t']),False),
+      ('(gn-affine-read? (gn-gs (t-ar-state) (+ gn-a-sreg 1) 0) %d %d)'%(ai,affine['t']),False),
+      ('(gn-affine-read? (gn-def (t-ar-state) %d gn-k-local 1) %d %d)'%(affine['t']-1,ai,affine['t']),False),
+      ('(gn-affine-read? (gn-def (t-ar-state) %d gn-k-const 4096) %d %d)'%(affine['t']-1,ai,affine['t']),False),
+      ('(gn-affine-read? (gn-gs (t-ar-state) (+ gn-a-lp %d) %d) %d %d)'%(alp,ast,ai,affine['t']),False)]
+    for ins,field,value in [(ai,'IF-C',1),(ai,'IF-B',0),(ai+6,'IF-A',C['RT-VECTOR-COUNT']),(ai+6,'IF-B',affine['t']-1),(ai+6,'IF-C',1),(ati,'IF-A',alp+1)]:
+      guard_exprs.append(('(gn-affine-read? (t-put (t-ar-state) %d %d) %d %d)'%(C['MM-SIR-BASE']+ins*C['MM-SIR-W']+C[field],value,ai,affine['t']),False))
+    o += ['(defn- t-ar-state [] :vector-i64 (gn-def (gn-op-fn (gn-run (t-load (t-init))) %d %d 3) %d gn-k-const %d))'%(ast,af,affine['t']-1,affine['prefix']),
+          '(defn- t-ar-guards [] :bool (and '+' '.join(expr if want else '(not '+expr+')' for expr,want in guard_exprs)+'))']
+    hot_fn = fns['ht_case_0']; cold_fn = fns['ht_cold_control']
+    hot_start = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-FN'] and x[1]==hot_fn)
+    cold_start = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-FN'] and x[1]==cold_fn)
+    hot_i = next(i+1 for i,x in enumerate(sir) if i+1>hot_start and i+1<cold_start and x[0]==C['OP-RT'] and x[1]==C['RT-VECTOR-AT'] and x[2]==6)
+    cold_i = next(i+1 for i,x in enumerate(sir) if i+1>cold_start and x[0]==C['OP-RT'])
+    hot_label = labels['ht_case_0_outer']
+    clamp_fn = next(i+1 for i,x in enumerate(FIX) if x[0]=='cl_bound2')
+    sign_fn = next(i+1 for i,x in enumerate(FIX) if x[0]=='cl_sign2')
+    clamp_call = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-CALL'] and x[1]==clamp_fn)
+    reader_leaf_ids = [i+1 for i,x in enumerate(FIX) if i+1 >= READER_TYPED_FIRST and x[1] == 2 and not x[0].endswith(('_call', '_call0', '_call7'))]
+    reader_is_leaf = '(or ' + ' '.join('(= f %d)' % f for f in reader_leaf_ids) + ')'
+    reader_fn = next(i+1 for i,x in enumerate(FIX) if x[0]=='reader_leaf_2_1')
+    reader_bad = next(i+1 for i,x in enumerate(FIX) if x[0]=='reader_refuse_wrong-type')
+    reader_call = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-CALL'] and x[1]==reader_fn)
+    reader_bad_call = next(i+1 for i,x in enumerate(sir) if x[0]==C['OP-CALL'] and x[1]==reader_bad)
+    cf_ids=[fns[c['name']] for c in COPY_FORWARD_CASES]
+    cf_members='(or '+' '.join('(= f %d)'%f for f in cf_ids)+')'
+    cf_writer=fns['cf_writer']
+    o += ['(defn- t-cf-types [M :vector-i64 f :i64] :vector-i64',
+          ' (if (>= f (vector-at M MM-FN-N)) M',
+          '  (let [b (+ MM-FN-BASE (* f MM-FN-W))',
+          '        M1 (if (or %s (= f %d)) (-> M (t-put (+ b FF-PT0) TY-VEC)'%(cf_members,cf_writer),
+          '              (t-put (+ b FF-PT0 1) TY-I64) (t-put (+ b FF-RTYPE) TY-VEC)) M)',
+          '        M2 (if (= f %d) (t-put M1 (+ b FF-PT0 2) TY-I64) M1)] (t-cf-types M2 (inc f)))))'%cf_writer]
+    small_types={x[0]:('TY-VEC' if x[0] in ['st_vtarget','st_vec','st_alloc','st_ref_vec'] else 'TY-I64','TY-VEC' if x[0]=='st_alloc' else 'TY-I64') for x in FIX[SMALL_TAIL_START:]}
+    o += ['(defn- t-vector-chain-types [M :vector-i64] :vector-i64',
+          ' (-> M '+' '.join('(t-put '+str(C['MM-FN-BASE']+fns[name]*C['MM-FN-W']+fld)+' '+ty+')' for name,np,ns,dp,body in FIX[VECTOR_CHAIN_START:] for fld,ty in [(C['FF-RTYPE'],'TY-I64' if name.endswith('_driver') else 'TY-VEC')]+[(C['FF-PT0']+j,'TY-I64' if name.endswith('_driver') or j>0 else 'TY-VEC') for j in range(np)])+'))']
+    o += ['(defn- t-small-types [M :vector-i64] :vector-i64',
+          ' (-> M '+' '.join('(t-put '+str(C['MM-FN-BASE']+fns[name]*C['MM-FN-W']+fld)+' '+ty+')' for name,(pt,rt) in small_types.items() for fld,ty in [(C['FF-RTYPE'],rt)]+[(C['FF-PT0']+j,pt) for j in range(next(x[1] for x in FIX if x[0]==name))])+'))']
+    du_ids=[fns[c['name']] for c in DOT_UNROLL_CASES]
+    du_members='(or '+' '.join('(= f %d)'%f for f in du_ids)+')'
+    o += ['(defn- t-du-types [M :vector-i64 f :i64] :vector-i64',
+          ' (if (>= f (vector-at M MM-FN-N)) M',
+          '  (let [b (+ MM-FN-BASE (* f MM-FN-W))',
+          '        M1 (if %s (-> M (t-put (+ b FF-PT0) TY-VEC)'%du_members,
+          '              (t-put (+ b FF-PT0 1) TY-I64) (t-put (+ b FF-PT0 2) TY-I64)',
+          '              (t-put (+ b FF-PT0 3) TY-I64) (t-put (+ b FF-PT0 4) TY-I64)',
+          '              (t-put (+ b FF-RTYPE) TY-I64)) M)] (t-du-types M1 (inc f)))))']
+    o += ['(defn- t-reader-types [M :vector-i64 f :i64] :vector-i64',
+          '  (if (>= f (vector-at M MM-FN-N)) M',
+          '    (t-reader-types (-> M (t-put (+ MM-FN-BASE (* f MM-FN-W) FF-PT0) (if %s TY-VEC TY-I64))' % reader_is_leaf,
+          '                         (t-put (+ MM-FN-BASE (* f MM-FN-W) (+ FF-PT0 1)) TY-I64)',
+          '                         (t-put (+ MM-FN-BASE (* f MM-FN-W) FF-RTYPE) TY-I64)) (inc f))))']
+    o += ['(defn- t-mask-types [M :vector-i64 f :i64] :vector-i64',
+          '  (if (>= f (vector-at M MM-FN-N)) M',
+          '    (t-mask-types (-> M (t-put (+ MM-FN-BASE (* f MM-FN-W) FF-PT0) TY-I64)',
+          '                       (t-put (+ MM-FN-BASE (* f MM-FN-W) FF-RTYPE) TY-I64)) (inc f))))',
+          '(defn- seed-main [] :i64',
           '  (let [a (typed-cap-call :cli/args :string :string "")',
-          '        M0 (t-load (t-init))',
-          '        M1 (gn-run M0)',
+          '        MT (t-mask-types (t-load (t-init)) %d)' % MASK_TYPED_FIRST,
+          '        MR (t-reader-types MT %d)' % READER_TYPED_FIRST,
+          '        M0 (t-put (t-cf-types (t-du-types MR 1) 1) (+ MM-FN-BASE (* %d MM-FN-W) FF-PT0) TY-I64)' % reader_bad,
+          '        reader_closed (gn-affine-reader M0 %d %d 2)' % (reader_call,reader_fn),
+          '        reader_wrong (gn-affine-reader M0 %d %d 2)' % (reader_bad_call,reader_bad),
+          '        MI (-> M0 (gn-gs gn-g-open %d) (gn-gs gn-g-open-n 1))' % reader_fn,
+          '        reader_open (gn-affine-reader MI %d %d 2)' % (reader_call,reader_fn),
+          '        mask_shared (gn-mask-reused M0 %d 1 0 16384)' % MASK_TYPED_FIRST,
+          '        mask_single (gn-mask-reused M0 %d 1 0 16384)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='mask_single')),
+          '        mask_limit (gn-mask-reused M0 %d 1 0 0)' % MASK_TYPED_FIRST,
+          '        M1 (gn-run (t-vector-chain-types (t-small-types M0)))',
+          '        hot_guard (gn-high-loop M1 %d)' % hot_i,
+          '        cold_guard (gn-high-loop M1 %d)' % cold_i,
+          '        hot_limit (gn-high-loop-scan M1 %d %d %d 0)' % (hot_i,hot_i+1,hot_start),
+          '        start_limit (gn-high-start M1 %d 0)' % hot_i,
+          '        MH (gn-gs M1 (+ gn-a-lp %d) %d)' % (hot_label,hot_start+1),
+          '        bad_label_guard (gn-high-loop MH %d)' % hot_i,
+          '        MF (gn-gs MH (+ gn-a-lp %d) %d)' % (hot_label,cold_start),
+          '        foreign_guard (gn-high-loop MF %d)' % hot_i,
+
+          # Import bodies are substituted after generation. A pure-looking stub
+          # and every transitive caller must refuse context-preservation proof.
+          '        closed (gn-ctx-safe M1 %d 1 8 512)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_scalar')),
           '        nw (vector-at M1 MM-R0)',
           '        e1 (vector-at M1 MM-ERR)',
           '        o1 (t-out (string-concat (string-concat (string-concat "gen err " (t-dec e1)) " words ")',
@@ -496,8 +1109,22 @@ def kotoba(real_layout=False):
           '        o3 (t-pf M3 1)',
           '        o4 (t-pw M3 1 (+ nw 1))',
           '        o5 (t-pl M3 1)',
-          '        o6 (t-out (string-concat (string-concat "end " (t-dec (vector-at M3 MM-CODE-BYTES))) "\\n"))]',
-          '    (if (= e3 0) 0 1)))']
+          '        o6 (t-out (string-concat (string-concat "end " (t-dec (vector-at M3 MM-CODE-BYTES))) "\\n"))',
+          '        MC (gn-run-open (t-put (t-put M3 MM-CODE-N 1) MM-FIX-N 1) %d 1)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_scalar')),
+          '        direct (gn-ctx-safe MC %d 1 8 512)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_scalar')),
+          '        transitive (gn-ctx-safe MC %d 1 8 512)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_chain0')),
+          '        independent (gn-ctx-safe MC %d 2 8 512)' % (next(i+1 for i,x in enumerate(FIX) if x[0]=='cp_vector')),
+          '        clamp_closed (gn-clamp MC %d %d 1)' % (clamp_call,clamp_fn),
+          '        MO (-> MC (gn-gs gn-g-open %d) (gn-gs gn-g-open-n 1))' % clamp_fn,
+          '        clamp_open (gn-clamp MO %d %d 1)' % (clamp_call,clamp_fn),
+          '        MS (gn-gs MO gn-g-open %d)' % sign_fn,
+          '        sign_open (gn-clamp MS %d %d 1)]' % (clamp_call,clamp_fn),
+          '    (if (and mask_shared (not mask_single) (not mask_limit)',
+          '             (t-ar-guards)',
+          '             hot_guard (not cold_guard) (not hot_limit) (= start_limit 0) (not bad_label_guard) (not foreign_guard)',
+          '             (> reader_closed 0) (= reader_wrong 0) (= reader_open 0)',
+          '             (= e3 0) (>= closed 0) (= direct -1) (= transitive -1) (>= independent 0)',
+          '             (> clamp_closed 0) (= clamp_open 0) (= sign_open 0)) 0 1)))']
     return '\n'.join(o) + '\n'
 
 def gen():
@@ -527,12 +1154,13 @@ def blob_from(stdout):
 
 def build_with_layout():
     """00-ns + 40 + 41 + 42 + the same fixtures, laid out by the REAL ly-run; returns its stdout."""
-    w = os.path.join(R, 'build/seed/a64gen-ly')
+    w = os.path.join(os.environ.get('SEED_BUILD', os.path.join(R, 'build/seed')), 'a64gen-ly')
     os.makedirs(w, exist_ok=True)
     src = ''.join(open(os.path.join(R, f)).read() + '\n' for f in
-                  ['seed/00-ns.kotoba', 'seed/40-a64enc.kotoba', 'seed/41-a64gen.kotoba', 'seed/42-layout.kotoba'])
+                  ['seed/00-ns.kotoba', 'seed/01-mem.kotoba', 'seed/02-io.kotoba',
+                   'seed/40-a64enc.kotoba', 'seed/41-a64gen.kotoba', 'seed/42-layout.kotoba'])
     open(w + '/unit.kotoba', 'w').write(src + kotoba(real_layout=True))
-    sh = ('source %s/scripts/seed/lib.sh; seed_stage0_build %s/unit.kotoba %s/unit || exit 1; '
+    sh = ('source %s/scripts/seed/lib.sh; seed_modbuild %s/unit.kotoba %s/unit || exit 1; '
           'cd %s; seed_run %s/unit.bin $(cat %s/unit.offset) %s %s > %s/stdout 2> %s/stderr; echo exit=$? >> %s/stdout'
           % (R, w, w, w, w, w, R, w, w, w, w))
     r = subprocess.run(['zsh', '-c', sh], capture_output=True, text=True)
@@ -572,6 +1200,7 @@ def runs(update):
         off = fns[names.index(name) + 1]
         e = dict(os.environ, KEXE_CAP_RESOURCES_35=d)
         if 'fuel' in o: e['KEXE_FUEL'] = str(o['fuel'])
+        if 'fuel_remaining' in o: e['KEXE_STRUCTURED_REPORT'] = '1'
         if 'mkfile' in o: open(os.path.join(d, o['mkfile'][0]), 'wb').write(o['mkfile'][1])
         if 'cmd' in o:
             e['KEXE_COMMAND'] = '1'
@@ -590,6 +1219,12 @@ def runs(update):
             lines = so.splitlines()
             good = p.returncode == 0 and lines and lines[-1] == str(expect)
             got = 'exit %d out %r err %r' % (p.returncode, so[-40:], p.stderr.decode('latin1')[:80])
+        if 'fuel_remaining' in o:
+            import re
+            left=re.search(r':remaining (-?\d+)',so)
+            result=re.search(r':result (-?\d+)',so)
+            good=(p.returncode != 0 and b'KEXE_TRAP' in p.stderr) if expect=='trap' else (p.returncode==0 and result is not None and int(result[1])==expect)
+            good=good and left is not None and int(left[1])==o['fuel_remaining']
         if good and 'stdout' in o:
             good = so.startswith(o['stdout'])
         if good and 'file' in o:

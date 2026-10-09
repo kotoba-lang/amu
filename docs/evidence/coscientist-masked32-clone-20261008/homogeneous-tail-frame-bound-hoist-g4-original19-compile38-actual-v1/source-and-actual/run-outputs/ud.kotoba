@@ -1,0 +1,46 @@
+(ns embench.ud-full (:export [bench observe bounds-probe]))
+;; Original 6 active equations, 20x20 storage, LU and both substitutions.
+;; Copyright 2014-2019 Embecosm/Bristol; SPDX-License-Identifier: GPL-3.0-or-later.
+(defn- put [v :vector-i64 i :i64 x :i64] :vector-i64 (vector-assoc! v i x))
+(defn- at [v :vector-i64 row :i64 col :i64] :i64 (vector-at v (+ (* row 20) col)))
+(defn- init [v :vector-i64 row :i64 col :i64 sum :i64] :vector-i64
+ (if (= row 6) v
+  (if (= col 6) (init (put v (+ 400 row) sum) (+ row 1) 0 0)
+   (let [base (+ row col 2) value (if (= row col) (* base 2) base)]
+    (init (put v (+ (* row 20) col) value) row (+ col 1) (+ sum value))))))
+(defn- lower-sum [v :vector-i64 row :i64 col :i64 k :i64 sum :i64] :i64
+ (if (= k col) sum (lower-sum v row col (+ k 1) (- sum (* (at v row k) (at v k col))))))
+(defn- lower [v :vector-i64 i :i64 j :i64] :vector-i64
+ (if (= j 6) v
+  (let [w (lower-sum v j i 0 (at v j i)) value (quot w (at v i i))]
+   (lower (put v (+ (* j 20) i) value) i (+ j 1)))))
+(defn- upper-sum [v :vector-i64 i :i64 j :i64 k :i64 sum :i64] :i64
+ (if (> k i) sum (upper-sum v i j (+ k 1) (- sum (* (at v (+ i 1) k) (at v k j))))))
+(defn- upper [v :vector-i64 i :i64 j :i64] :vector-i64
+ (if (= j 6) v
+  (let [value (upper-sum v i j 0 (at v (+ i 1) j))]
+   (upper (put v (+ (* (+ i 1) 20) j) value) i (+ j 1)))))
+(defn- lu [v :vector-i64 i :i64] :vector-i64
+ (if (= i 5) v (lu (upper (lower v i (+ i 1)) i (+ i 1)) (+ i 1))))
+(defn- forward-sum [v :vector-i64 i :i64 j :i64 w :i64] :i64
+ (if (= j i) w (forward-sum v i (+ j 1) (- w (* (at v i j) (vector-at v (+ 440 j)))))))
+(defn- forward [v :vector-i64 i :i64] :vector-i64
+ (if (= i 6) v
+  (let [w (forward-sum v i 0 (vector-at v (+ 400 i)))] (forward (put v (+ 440 i) w) (+ i 1)))))
+(defn- backward-sum [v :vector-i64 i :i64 j :i64 w :i64] :i64
+ (if (= j 6) w (backward-sum v i (+ j 1) (- w (* (at v i j) (vector-at v (+ 420 j)))))))
+(defn- backward [v :vector-i64 i :i64] :vector-i64
+ (if (< i 0) v
+  (let [w (backward-sum v i (+ i 1) (vector-at v (+ 440 i))) value (quot w (at v i i))]
+   (backward (put v (+ 420 i) value) (- i 1)))))
+(defn- body [v :vector-i64] :vector-i64 (put (backward (forward (lu (init v 0 0 0) 0) 0) 5) 540 0))
+(defn- bodies [v :vector-i64 n :i64 i :i64] :vector-i64
+ (if (= i n) v (bodies (body v) n (+ i 1))))
+(defn- state [n :i64] :vector-i64 (bodies (vector-alloc 541) n 0))
+(defn- expected [i :i64] :i64 (if (< i 2) 0 (if (< i 5) 1 (if (= i 5) 2 0))))
+(defn- verify [v :vector-i64 i :i64] :bool
+ (if (= i 20) (= (vector-at v 540) 0)
+  (and (= (vector-at v (+ 420 i)) (expected i)) (verify v (+ i 1)))))
+(defn bench [n :i64] :i64 (if (= n 0) 0 (if (verify (state n) 0) 1 0)))
+(defn observe [encoded :i64] :i64 (vector-at (state (quot encoded 1024)) (rem encoded 1024)))
+(defn bounds-probe [i :i64] :i64 (vector-at (vector-alloc 541) i))

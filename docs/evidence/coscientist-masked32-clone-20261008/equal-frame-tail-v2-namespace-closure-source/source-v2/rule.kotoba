@@ -1,0 +1,104 @@
+;; One-off novel algorithm SOURCE candidate: no product/native qualification.
+;; Post-emission proof reads original decisions/words. One first bounded pair only.
+(defn- sf-word [M :vector-i64 i :i64] :i64 (vector-at M (+ MM-CODE-BASE i)))
+(defn- sf-x [M :vector-i64 i :i64 k :i64] :i64 (vector-at M (+ MM-FIX-BASE (* i MM-FIX-W) k)))
+(defn- sf-body [M :vector-i64 f :i64] :i64
+ (let [p (gn-fnf M f FF-SIR) sn (vector-at M MM-SIR-N)]
+  (if (and (> f 0) (< f (vector-at M MM-FN-N)) (> p 0) (<= p (- sn 16))
+   (or (= (gn-fnf M f FF-KIND) FK-DEFN) (= (gn-fnf M f FF-KIND) FK-PRIV))
+   (= (gn-fnf M f FF-NPARAMS) 1) (= (gn-fnf M f FF-PT0) TY-VEC) (= (gn-fnf M f FF-RTYPE) TY-VEC)
+   (= (gn-fnf M f FF-NSLOTS) 1) (or (= (gn-fnf M f FF-DEPTH) 4) (= (gn-fnf M f FF-DEPTH) 7))
+   (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) f) (= (gn-sir M p IF-B) 1)
+   (= (gn-op M (inc p)) OP-FUEL) (= (gn-op M (+ p 2)) OP-LABEL))
+   (loop [j (+ p 3)]
+    (cond (>= j (+ p 13)) 0
+     (= (gn-op M j) OP-CALL)
+     (let [h (gn-sir M j IF-A) n (gn-sir M j IF-C) g (gn-sir M (inc j) IF-A)]
+      (if (and (or (= n 4) (= n 7)) (= (gn-sir M j IF-B) 0)
+       (> h 0) (< h (vector-at M MM-FN-N))
+       (or (= (gn-fnf M h FF-KIND) FK-DEFN) (= (gn-fnf M h FF-KIND) FK-PRIV))
+       (> (gn-fnf M h FF-SIR) 0) (= (gn-fnf M h FF-NPARAMS) n) (= (gn-fnf M h FF-RTYPE) TY-VEC)
+       (= (gn-op M (inc j)) OP-CALL) (= (gn-sir M (inc j) IF-B) 0) (= (gn-sir M (inc j) IF-C) 1)
+       (> g 0) (< g (vector-at M MM-FN-N)) (not= g f)
+       (= (gn-op M (+ j 2)) OP-RET) (= (gn-sir M (+ j 2) IF-A) 0)
+       (= (gn-op M (+ j 3)) OP-END) (= (gn-sir M (+ j 3) IF-A) f)) j 0))
+     (= (gn-op M j) OP-LGET) (if (and (= (gn-sir M j IF-B) 1) (= (gn-sir M j IF-C) 0)) (recur (inc j)) 0)
+     (= (gn-op M j) OP-CONST) (if (= (gn-sir M j IF-C) 0) (recur (inc j)) 0)
+     :else 0)) 0)))
+;; Exact current ordinary single-x19-save/frame/context/parameter entry. No prescan rerun.
+(defn- sf-frame [M :vector-i64 f :i64] :i64
+ (let [at (gn-fnf M f FF-CODE) dp (gn-fnf M f FF-DEPTH) F (if (= dp 4) 80 96)]
+  (if (and (> at 0) (<= at (- (vector-at M MM-CODE-N) 6))
+   (= (sf-word M at) (enc-stp-pre 29 30 31 -16)) (= (sf-word M (inc at)) (enc-mov-sp 29 31))
+   (= (sf-word M (+ at 2)) (enc-sub-i 31 31 F)) (= (sf-word M (+ at 3)) (enc-str 19 31 0))
+   (= (sf-word M (+ at 4)) (enc-str 7 31 (- F 8))) (= (sf-word M (+ at 5)) (enc-mov 19 0))) F 0)))
+(defn- sf-codeend [M :vector-i64 f :i64 k :i64 end :i64] :i64
+ (if (>= k (vector-at M MM-FN-N)) end
+  (let [p (gn-fnf M k FF-CODE) start (gn-fnf M f FF-CODE)]
+   (sf-codeend M f (inc k) (if (and (> p start) (< p end)) p end)))))
+;; Require exactly one BL-kind function fixup for this target inside this caller's final five-word tail.
+(defn- sf-tailfix [M :vector-i64 f :i64 g :i64 k :i64 found :i64] :i64
+ (if (>= k (vector-at M MM-FIX-N)) found
+  (let [at (sf-x M k XF-AT) start (gn-fnf M f FF-CODE) stop (sf-codeend M f 1 (vector-at M MM-CODE-N))]
+   (if (and (>= at (+ start 6)) (< at stop) (= (sf-x M k XF-KIND) FX-BL26) (= (sf-x M k XF-TARGET) g))
+    (if (or (> found 0) (not= (sf-x M k XF-AUX) 0) (< at 4)
+      (not= (sf-word M (- at 4)) (enc-mov 0 9)) (not= (sf-word M (- at 3)) (enc-ldr 19 31 0))
+      (not= (sf-word M (- at 2)) (enc-mov-sp 31 29)) (not= (sf-word M (dec at)) (enc-ldp-post 29 30 31 16))
+      (not= (sf-word M at) (enc-b 0)) (not= (+ at 2) stop)
+      (not= (sf-word M (inc at)) (enc-brk 1))) -1 (sf-tailfix M f g (inc k) k))
+    (sf-tailfix M f g (inc k) found)))))
+;; No pre-existing label or fixup can enter/patch removed restore words or header prefix.
+(defn- sf-clearlabels [M :vector-i64 k :i64 a :i64 b :i64 target :i64] :bool
+ (if (>= k (vector-at M MM-LABEL-N)) true
+  (let [p (vector-at M (+ MM-LABEL-BASE k))]
+   (and (not (and (>= p a) (<= p b))) (not (and (> p target) (<= p (+ target 5))))
+    (sf-clearlabels M (inc k) a b target)))))
+(defn- sf-clearfix [M :vector-i64 k :i64 a :i64 b :i64 target :i64 keep :i64] :bool
+ (if (>= k (vector-at M MM-FIX-N)) true
+  (let [at (sf-x M k XF-AT)]
+   (and (or (= k keep) (and (not (and (>= at a) (<= at b))) (not (and (>= at target) (< at (+ target 6))))))
+    (sf-clearfix M (inc k) a b target keep)))))
+(defn- sf-pair [M :vector-i64 f :i64] :i64
+ (let [j (sf-body M f) g (if (> j 0) (gn-sir M (inc j) IF-A) 0)
+       gj (if (> g 0) (sf-body M g) 0) F (if (> gj 0) (sf-frame M f) 0)]
+  (if (and (> F 0) (> gj 0) (= F (sf-frame M g)) (= (gn-fnf M f FF-DEPTH) (gn-fnf M g FF-DEPTH))
+   (= (gn-fnf M f FF-FUEL) 1) (= (gn-fnf M g FF-FUEL) 1)
+   (< (gn-fnf M f FF-CODE) (gn-fnf M g FF-CODE)))
+   (let [k (sf-tailfix M f g 1 0) at (if (> k 0) (sf-x M k XF-AT) 0) target (gn-fnf M g FF-CODE)]
+    (if (and (> k 0) (sf-clearlabels M 1 (- at 4) at target)
+      (sf-clearfix M 1 (- at 4) at target k)) k 0)) 0)))
+;; V2 complete existing branch-FIX closure BEFORE allocating any new label.
+;; Narrow initial admission excludes literal pools/FIX-LIT32 and nonzero AUX;
+;; those legitimate or malformed cases keep the original generator result.
+(defn- sf-old-fix [M :vector-i64 k :i64] :bool
+ (if (>= k (vector-at M MM-FIX-N)) true
+  (let [at (sf-x M k XF-AT) kind (sf-x M k XF-KIND) t (sf-x M k XF-TARGET)
+        cn (vector-at M MM-CODE-N) ln (vector-at M MM-LABEL-N) fnn (vector-at M MM-FN-N)]
+   (if (and (> at 0) (< at cn) (= (sf-x M k XF-AUX) 0))
+    (let [target
+      (cond (or (= kind FX-B26) (= kind FX-BC19) (= kind FX-CB19))
+            (if (and (> t 0) (< t ln)) (vector-at M (+ MM-LABEL-BASE t)) 0)
+            (or (= kind FX-BL26) (= kind FX-ADR19))
+            (if (and (> t 0) (< t fnn)) (gn-fnf M t FF-CODE) 0)
+            :else 0)]
+     (and (> target 0) (< target cn) (>= (sf-word M at) 0) (<= (sf-word M at) 0xffffffff)
+      (if (or (= kind FX-B26) (= kind FX-BL26))
+       (and (>= (- target at) -33554432) (< (- target at) 33554432))
+       (and (>= (- target at) -262144) (< (- target at) 262144)))
+      (sf-old-fix M (inc k)))) false))))
+(defn- sf-collapse [M :vector-i64] :vector-i64
+ (let [fnn (vector-at M MM-FN-N) sn (vector-at M MM-SIR-N) cn (vector-at M MM-CODE-N)
+       xn (vector-at M MM-FIX-N) ln (vector-at M MM-LABEL-N)]
+  (if (and (= (vector-at M MM-ERR) 0) (> fnn 0) (<= fnn 512) (>= sn 16) (<= sn MM-SIR-CAP)
+    (> cn 6) (<= cn MM-CODE-CAP) (= (vector-at M MM-LIT-N) 1) (> xn 0) (<= xn MM-FIX-CAP) (> ln 0) (< ln MM-LABEL-CAP) (sf-old-fix M 1))
+   (loop [f 1]
+    (if (>= f fnn) M
+     (let [k (sf-pair M f)]
+      (if (> k 0)
+       (let [at (sf-x M k XF-AT) j (sf-body M f) g (gn-sir M (inc j) IF-A)
+             target (+ (gn-fnf M g FF-CODE) 5) xb (+ MM-FIX-BASE (* k MM-FIX-W))]
+        (-> M (gn-put (+ MM-CODE-BASE (- at 3)) (enc-ldr 30 29 8))
+         (gn-put (+ MM-CODE-BASE (- at 2)) 0xd503201f) (gn-put (+ MM-CODE-BASE (dec at)) 0xd503201f)
+         (gn-put (+ MM-LABEL-BASE ln) target) (gn-put MM-LABEL-N (inc ln))
+         (gn-put (+ xb XF-KIND) FX-B26) (gn-put (+ xb XF-TARGET) ln)))
+       (recur (inc f)))))) M)))

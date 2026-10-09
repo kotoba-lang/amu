@@ -1,0 +1,53 @@
+{
+  "status": "HOLD_SOURCE_ONLY_FIXED_CHILD_BINDING_AND_UNCERTAIN_WAIT",
+  "independent": true,
+  "priorImplementationAuthorship": false,
+  "subject": {
+    "path": "/Users/junkawasaki/github/workspaces/codex/crc-capture-popen-transfer-fixture-supervisor-source-root-20261009/supervise.py",
+    "bytes": 3594,
+    "sha256": "868bd4f57e85859da3d295e53bba2673e5c9b55d8a0d239a4b45f87aae5b8133"
+  },
+  "fixturePreregistrationReviewed": {
+    "path": "/Users/junkawasaki/github/workspaces/codex/crc-capture-popen-transfer-fixture-source-v1-20261009/preregistration.json",
+    "bytes": 2280,
+    "sha256": "d4323c7c117ceec768ff7d59ed33b452d8bc8bf34cd9b1d993c91acff6180337"
+  },
+  "blockers": [
+    {
+      "finding": "GO preregistration path and fixed child argv[1] are not required members of g.pins. Only interpreter pinned explicitly; sourceReviews map may be empty and statuses/source binding are never inspected. Supervisor accepts len2argv/len8env rather than fixed fixture identity.",
+      "sourceLines": [
+        19,
+        20,
+        21,
+        22
+      ],
+      "minimalRepair": "Require exact GO fields; require pinned fixed preregistration/driver and full child source registry; validate exactly two specific source reviews bound to those source/driver hashes. Keep one fixed fixture scope."
+    },
+    {
+      "finding": "Non-TimeoutExpired BaseException from direct wait falls into generic cleanup; returncodeNone triggers kill and another wait. Interrupted wait can have uncertain reaping/identity state. This is different from known TimeoutExpired branch and must not authorize later signal or wait.",
+      "sourceLines": [
+        28,
+        29,
+        33,
+        35,
+        37,
+        38
+      ],
+      "minimalRepair": "Track wait uncertainty. For arbitrary wait exception retire direct signal/wait authority, record unclosed and raw hash unavailable. Known timeout may perform its registered direct kill then one bounded5s wait; interruption during that wait also retires. Never infer closed from stale returncode after uncertainty."
+    }
+  ],
+  "acceptedSourceChecks": [
+    "One visible Popen call; fixture itself has no Popen/group/native API.",
+    "Named FSIZE65536 CPU10/11 readback; inherited finite limits below desired refuse rather than raised.",
+    "Known timeout branch uses direct child kill and5s wait.",
+    "rcNone leaves raw hashes unavailable; normal branch reads each rawfile only after wait.",
+    "Fresh fixed supervisor output namespace no retry."
+  ],
+  "limits": [
+    "SOURCE AST/literal review only; no GO or syscall/thread/Popen/resource execution.",
+    "No assertion of a successful fixture or root supervisor dynamic cleanup."
+  ],
+  "operationalCalls": 0,
+  "nativeCalls": 0,
+  "subjectEdited": false
+}

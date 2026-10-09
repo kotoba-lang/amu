@@ -1,0 +1,40 @@
+--- OFF41
++++ candidate41
+@@ -128,7 +128,7 @@
+ (def gn-f-vslot 13) ; compile-time dominated stable-local descriptor witness
+ (def gn-f-dead 9)     ; 1 = the current point is unreachable (after br/ret/trap, until a label)
+ (def gn-f-skip 10)    ; SIR instructions after the current one that it consumed
+-(def gn-f-freg 11)    ; 1 = the fuel counter is in x8
++(def gn-f-freg 11)    ; 1 = private x8 leaf counter; 2 = published x8 frame-free small-tail counter
+ (def gn-f-out 12)     ; R4B: bytes of the outgoing argument area at [sp,#0..] (calls with more than 7 arguments)
+ (def gn-cap 4096)     ; slots and temps per function (the frame limit F <= 32768 is lower)
+ (def gn-a-sreg 16)    ; slot -> register + 1 (0 = frame slot); gn-cap words
+@@ -963,7 +963,12 @@
+                   (gn-params 1 np)
+                   (cond-> (and (= leaf 1) (= (gn-g M2 gn-f-fuel) 1)) (-> (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-gs gn-f-freg 1)))
+                   (gn-gs gn-f-ctx 1)
+-                  (gn-gs gn-f-h 0) (sl-clear) (gn-gs gn-f-vslot (if (= (gn-g M2 gn-f-vmode) 2) -1 0)) (gn-tree-entry f)))))))
++                  (gn-gs gn-f-h 0) (sl-clear)
++                  ;; One-off generic backend rule: published x8 fuel for certified frame-free small-tail functions.
++                  ;; AFTER sl-clear: private chain FF-CODE+1 must still skip only the original MOVZ x5,0.
++                  (cond-> (and (= leaf 2) (= F 0) (= (gn-g M2 gn-f-fuel) 1))
++                    (-> (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-gs gn-f-freg 2)))
++                  (gn-gs gn-f-vslot (if (= (gn-g M2 gn-f-vmode) 2) -1 0)) (gn-tree-entry f)))))))
+ 
+ (defn- gn-op-ret [M :vector-i64 t :i64] :vector-i64 (gn-epilogue (gn-into M 0 t)))
+ ;; R5B: RET2 t -- x0 := temp t, x1 := temp t+1 (through x16: either source may be x0 or x1 in a leaf), then the epilogue
+@@ -1992,9 +1997,12 @@
+ ;; str x16,[x7,#8]. SEEDFIX (F4): the leaf's exhaustion path stores 0 to the context before brk, as the memory sequence
+ ;; leaves it, so the loader reports :budget/fuel (not a bare SIGTRAP) when a leaf runs out (x8 was never written back)
+ (defn- gn-op-fuel [M :vector-i64] :vector-i64
+-  (if (= (gn-g M gn-f-freg) 1)
++  (cond (= (gn-g M gn-f-freg) 1)
+     (-> M (gn-emit (enc-subs-i 8 8 1)) (gn-emit (enc-bcond (enc-cond-hs) 3)) (gn-emit (enc-str 31 7 CTX-FUEL)) (gn-emit (enc-brk 0)))
+-    (-> M
++    (= (gn-g M gn-f-freg) 2)
++    ;; Success publishes after every original FUEL; zero traps before STR with CTX-FUEL still zero.
++    (-> M (gn-emit (enc-subs-i 8 8 1)) (gn-emit (enc-bcond (enc-cond-hs) 2)) (gn-emit (enc-brk 0)) (gn-emit (enc-str 8 7 CTX-FUEL)))
++    :else (-> M
+         (gn-ctx)
+         (gn-emit (enc-ldr 16 7 CTX-FUEL))
+         (gn-emit (enc-subs-i 16 16 1))

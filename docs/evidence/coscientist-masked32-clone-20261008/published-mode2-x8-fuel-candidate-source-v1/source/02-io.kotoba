@@ -1,0 +1,191 @@
+;; seed/02-io.kotoba -- the seed's file, argv and stream access (prefix io-). Owner: module 02-io.
+;; Capabilities used (HEADS :caps), nothing else: wire 35 :fs/app-data (:string -> :string forms: read the whole file at
+;; an absolute path, "<path>EXISTS_SEP", "<path>RANGE_SEP<off>:<len>", "<path>WRITE_SEP<text>"), wire 38 :cli/args,
+;; wire 39 :io/write-error, wire 37 :io/write. The path must lie inside KEXE_CAP_RESOURCES_35, otherwise the loader
+;; traps (SIGILL): that is not an error value, so callers print their usage line first and check io-exists.
+;;
+;; API (readers return :i64/:string and never touch M; writers return M and follow MEMORY-MAP rules L1/L4/L10):
+;;   io-out s               -> 0       write s to stdout (wire 37)
+;;   io-err s               -> 0       write s to stderr (wire 39); no "seed: " prefix, no newline added
+;;   io-argc                -> i64     number of guest arguments (wire 38, "")
+;;   io-arg i               -> string  argument i (0-based), "" past the end
+;;   io-exists path         -> 1/0     "<path>EXISTS_SEP"
+;;   io-read-file M path    -> string  the whole file (M is only there for the call shape of the design; unused)
+;;   io-slice path off len  -> string  bytes off..off+len-1 of the file ("RANGE_SEP"): the substring primitive the seed
+;;                                     has, because HEADS has no substring: diagnostics print {name} with it
+;;   io-write-text path s   -> i64     "<path>WRITE_SEP<s>" (text, ASCII); the file content length is returned
+;;   io-check-read M path   -> M       E-IO-READ (201) into MM-ERR (first error wins) unless the file exists; R0 = 1/0
+;;   io-check-write M path  -> M       E-IO-WRITE (202) unless the file exists afterwards; R0 = 1/0
+;;   io-write-hex M base len-> i64     M[base..base+len) (one byte per word, low 8 bits) as lowercase hex on stdout,
+;;                                     64 bytes per line, each line ends in "\n"; `xxd -r -p` recovers the bytes. THE
+;;                                     OUTPUT PATH OF THE STABLE STAGE-0 (the :bytes write below is refused by it)
+;;   io-write-bytes M path base len -> i64  M[base..base+len) (one byte per word, low 8 bits) to the file `path` as raw
+;;                                     bytes, "<path>WRITE_SEP<bytes>" over :fs/app-data-bytes (wire 35, kind 8). Returns len.
+;;                                     At most 8 MiB - path - 9 bytes (loader KEXE_BYTES_VALUE_LIMIT); the loader budgets
+;;                                     must hold string pool >= 6x and vector items >= 8x len. Check with io-exists.
+;;   io-read-bytes path     -> vector  the whole file as one item (0..255) per byte (:fs/app-data-bytes request = the
+;;                                     path's bytes, then vector-i64-from-bytes). Byte-safe, unlike io-read-file.
+;; The :bytes functions were seed/02-io-bytes.snippet.kotoba until the rebuilt stage-0 (sha d2cb84f6, 2026-10-02)
+;; admitted a computed :bytes argument (T3); merged by the R0 integration with io-read-bytes added.
+;;
+;; Stage-0 rules respected here (01-mem header H1-H5): if/cond only in tail position, no and/or/not, the handle only in
+;; straight-line chains.
+
+(defn- io-out [s :string] :i64
+  (let [r (typed-cap-call :io/write :string :string s)] 0))
+
+(defn- io-err [s :string] :i64
+  (let [r (typed-cap-call :io/write-error :string :string s)] 0))
+
+(defn- io-argc [] :i64
+  (let [s (typed-cap-call :cli/args :string :string "")]
+    (mem-parse-dec s 0 (string-length s))))
+
+(defn- io-arg [i :i64] :string
+  (typed-cap-call :cli/args :string :string (mem-u2dec i)))
+
+;; first byte of the answer is '1' (49)
+(defn- io-first-is-one [s :string] :i64
+  (cond (= (string-length s) 0) 0
+        (= (string-code-point-at s 0) 49) 1
+        :else 0))
+
+;; "<word>_SEP", built at run time: the loader's wire 35 looks for its tokens (WRITE_SEP, RANGE_SEP, EXISTS_SEP ..)
+;; ANYWHERE in a request, content included, and refuses a write whose content holds its own token (SIGILL, measured
+;; 2026-10-02 when seed-0 wrote seed-1's container). A whole token must therefore never be a literal of the seed: its
+;; literal pool is part of every container and code slice the seed writes. The pool pads literals to 8 bytes.
+(defn- io-sep [w :string] :string (string-concat w "_SEP"))
+
+(defn- io-exists [path :string] :i64
+  (io-first-is-one (typed-cap-call :fs/app-data :string :string (string-concat path (io-sep "EXISTS")))))
+
+(defn- io-read-file [M :vector-i64 path :string] :string
+  (typed-cap-call :fs/app-data :string :string path))
+
+(defn- io-slice [path :string off :i64 len :i64] :string
+  (typed-cap-call :fs/app-data :string :string
+    (string-concat path (string-concat (io-sep "RANGE") (string-concat (mem-u2dec off) (string-concat ":" (mem-u2dec len)))))))
+
+(defn- io-write-text [path :string s :string] :i64
+  (let [r (typed-cap-call :fs/app-data :string :string (string-concat path (string-concat (io-sep "WRITE") s)))]
+    (string-length r)))
+
+;; error word after a check: ok = 1 keeps the recorded error; ok = 0 records `code` unless an error is already there
+(defn- io-check-fin [M0 :vector-i64 ok :i64 code :i64] :vector-i64
+  (let [e (vector-at M0 MM-ERR)
+        p (vector-at M0 MM-ERR-POS)
+        e1 (mem-sel e e code)
+        p1 (mem-sel e p -1)]
+    (vector-assoc! (vector-assoc! (vector-assoc! M0 MM-R0 ok) MM-ERR (mem-sel ok e e1)) MM-ERR-POS (mem-sel ok p p1))))
+
+(defn- io-check-read [M0 :vector-i64 path :string] :vector-i64
+  (io-check-fin M0 (io-exists path) E-IO-READ))
+
+(defn- io-check-write [M0 :vector-i64 path :string] :vector-i64
+  (io-check-fin M0 (io-exists path) E-IO-WRITE))
+
+;; ---- hex on stdout ---------------------------------------------------------------------------------------
+(defn- io-hexd [d :i64] :string
+  (cond (= d 0) "0" (= d 1) "1" (= d 2) "2" (= d 3) "3" (= d 4) "4" (= d 5) "5" (= d 6) "6" (= d 7) "7"
+        (= d 8) "8" (= d 9) "9" (= d 10) "a" (= d 11) "b" (= d 12) "c" (= d 13) "d" (= d 14) "e" :else "f"))
+
+(defn- io-hex2 [b :i64] :string
+  (string-concat (io-hexd (u64-shift-right b 4)) (io-hexd (bit-and b 15))))
+
+;; hex of M[i..end) appended to acc
+(defn- io-hex-line [M :vector-i64 i :i64 end :i64 acc :string] :string
+  (cond (>= i end) acc
+        :else (io-hex-line M (+ i 1) end (string-concat acc (io-hex2 (bit-and (vector-at M i) 255))))))
+
+(defn- io-min [a :i64 b :i64] :i64 (if (< a b) a b))
+
+(defn- io-hex-run [M :vector-i64 i :i64 end :i64] :i64
+  (cond (>= i end) 0
+        :else (io-hex-step M i end (io-min end (+ i 64)))))
+
+(defn- io-hex-step [M :vector-i64 i :i64 end :i64 e :i64] :i64
+  (let [w (typed-cap-call :io/write :string :string (string-concat (io-hex-line M i e "") "\n"))]
+    (io-hex-run M e end)))
+
+(defn- io-write-hex [M :vector-i64 base :i64 len :i64] :i64
+  (io-hex-run M base (+ base len)))
+
+;; ---- binary files (:fs/app-data-bytes, wire 35 kind 8) ------------------------------------------------
+;; T[i + delta] = byte i of S for i in [i, end)
+(defn- io-bput-str [T :vector-i64 S :string i :i64 end :i64 delta :i64] :vector-i64
+  (if (>= i end)
+    (mem-keep T)
+    (io-bput-str (vector-assoc! T (+ i delta) (string-code-point-at S i)) S (+ i 1) end delta)))
+
+;; T[i + delta] = M[i] & 255 for i in [i, end)
+(defn- io-bput-words [T :vector-i64 M :vector-i64 i :i64 end :i64 delta :i64] :vector-i64
+  (if (>= i end)
+    (mem-keep T)
+    (io-bput-words (vector-assoc! T (+ i delta) (bit-and (vector-at M i) 255)) M (+ i 1) end delta)))
+
+(defn- io-bsend [T :vector-i64] :i64
+  (let [r (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 T))] 0))
+
+;; ==== BEGIN KIR5 write pieces (agent KIR5, 2026-10-03; CONTRACT-REQUESTS R4B line "the compile SIGILL") ==========
+;; The loader's WRITE form refuses (SIGILL) a request whose content holds "WRITE_SEP", the APPEND form one whose content
+;; holds "APPEND_SEP" (tools/kexe_loader.c fs_app_data_write_provider, single-occurrence rule). A compiled program whose
+;; string pool spells either token put it into the container (and into an extracted code slice): the compile trapped.
+;; io-write-bytes therefore cuts the content one byte into every occurrence of either token; the first piece is written
+;; ("<path>WRITE_SEP<piece>"), the others appended ("<path>APPEND_SEP<piece>", the loader's buffered sink for the same
+;; file; the next wire-35 request, io-exists in the callers, closes it). No piece holds a whole token, and none forms
+;; across "<TOKEN>" + piece (neither token has a proper suffix that is a prefix of a token). Content without a token is
+;; ONE write, as before. Both token texts are built at run time (byte tables / io-sep): never a literal of the seed.
+;; byte k of token tw (0 WRITE_SEP, 9 bytes; 1 APPEND_SEP, 10 bytes)
+(defn- io-tokb [tw :i64 k :i64] :i64
+  (if (= tw 0) (vector-at [87 82 73 84 69 95 83 69 80] k) (vector-at [65 80 80 69 78 68 95 83 69 80] k)))
+
+(defn- io-tokn [tw :i64] :i64 (if (= tw 0) 9 10))
+
+;; 1 when M[i ..] (low 8 bits per word, below end) spells token tw
+(defn- io-tok-at [M :vector-i64 i :i64 end :i64 tw :i64] :i64
+  (if (> (+ i (io-tokn tw)) end)
+    0
+    (loop [k 0]
+      (cond (>= k (io-tokn tw)) 1
+            (= (bit-and (vector-at M (+ i k)) 255) (io-tokb tw k)) (recur (+ k 1))
+            :else 0))))
+
+;; the end of the piece that starts at i: one past the first byte of the first token occurrence at or after i, else end
+(defn- io-cut [M :vector-i64 i :i64 end :i64] :i64
+  (loop [p i]
+    (cond (>= p end) end
+          (= (io-tok-at M p end 0) 1) (+ p 1)
+          (= (io-tok-at M p end 1) 1) (+ p 1)
+          :else (recur (+ p 1)))))
+
+;; token tw at T[at ..]
+(defn- io-bput-tok [T :vector-i64 at :i64 tw :i64] :vector-i64
+  (loop [k 0 V T]
+    (if (>= k (io-tokn tw)) V (recur (+ k 1) (vector-assoc! V (+ at k) (io-tokb tw k))))))
+
+;; one request "<path><token tw><M[i..j)>"
+(defn- io-piece [M :vector-i64 path :string i :i64 j :i64 tw :i64] :i64
+  (let [plen (string-length path)
+        n (io-tokn tw)
+        T0 (vector-alloc (+ plen (+ n (- j i))))
+        T1 (io-bput-str T0 path 0 plen 0)
+        T2 (io-bput-tok T1 plen tw)
+        T3 (io-bput-words T2 M i j (- (+ plen n) i))]
+    (io-bsend T3)))
+
+(defn- io-pieces [M :vector-i64 path :string i :i64 end :i64 tw :i64] :i64
+  (let [j (io-cut M i end)
+        z (io-piece M path i j tw)]
+    (if (< j end) (io-pieces M path j end 1) 0)))
+
+(defn- io-write-bytes [M :vector-i64 path :string base :i64 len :i64] :i64
+  (let [z (io-pieces M path base (+ base len) 0)]
+    len))
+;; ==== END KIR5 write pieces ============================================================================================
+
+;; the bytes of path as a fresh vector (one item per byte)
+(defn- io-path-vec [path :string] :vector-i64
+  (io-bput-str (vector-alloc (string-length path)) path 0 (string-length path) 0))
+
+(defn- io-read-bytes [path :string] :vector-i64
+  (vector-i64-from-bytes (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 (io-path-vec path)))))

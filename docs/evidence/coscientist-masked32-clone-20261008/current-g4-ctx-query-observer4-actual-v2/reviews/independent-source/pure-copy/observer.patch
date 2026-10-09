@@ -1,0 +1,117 @@
+--- current62644967
++++ diagnostic-observer
+@@ -1349,14 +1349,72 @@
+ ;; A shared remaining-work budget counts all transitive SIR instructions; it
+ ;; prevents exponential rescanning. Unknown effects/operations fail closed.
+ ;; Caller frame, real call and every fuel/trap/publication boundary remain.
++;; Diagnostic observation only: own8 words; never skip original query.
++(def qo-base (+ gn-g-open 80))
++(def qo-end (+ qo-base 8))
++;; seq, scan-entry count, safe-entry count, previous f/n/openFirst/openCount/answer.
++(defn- qo-row [tag :string xs :vector-i64] :i64
++ (let [a (io-out tag)
++       b (loop [k 0] (if (>= k (vector-count xs)) 0
++           (let [w (io-out (string-concat " " (string-from-i64 (vector-at xs k))))] (recur (inc k)))))]
++  (io-out "\n")))
++(defn- qo-init [M :vector-i64] :vector-i64
++ (let [m (gn-zero M qo-base qo-end)
++       w (qo-row "QINIT" [qo-base qo-end (+ gn-a-lp MM-LABEL-CAP 88) (vector-at m MM-FN-N) (vector-at m MM-SIR-N)])] m))
++(defn- qo-safe-note [M :vector-i64 f :i64 n :i64 depth :i64 work :i64] :i64
++ (let [m (gn-gs M (+ qo-base 2) (inc (gn-g M (+ qo-base 2))))
++       valid-f (and (> f 0) (< f (vector-at m MM-FN-N)))
++       p (if valid-f (gn-fnf m f FF-SIR) -1)
++       valid-p (and (> p 0) (< p (vector-at m MM-SIR-N)))
++       w (if (<= (gn-g m qo-base) 16)
++           (qo-row "QCALL" [(gn-g m qo-base) f n depth work p
++                 (if valid-p (gn-op m p) -1)
++                 (if valid-p (gn-sir m p IF-A) 0)
++                 (if valid-p (gn-sir m p IF-B) 0)]) 0)] 0))
++(defn- qo-scan-note [M :vector-i64 j :i64 f :i64 depth :i64 work :i64] :i64
++ (let [m (gn-gs M (+ qo-base 1) (inc (gn-g M (+ qo-base 1))))
++       valid (and (> j 0) (< j (vector-at m MM-SIR-N)) (> work 0))
++       w (if (<= (gn-g m qo-base) 16)
++           (qo-row "QSCAN" [(gn-g m qo-base) j f depth work (if valid 1 0)
++                    (if valid (gn-op m j) -1) (if valid (gn-sir m j IF-A) 0)
++                    (if valid (gn-sir m j IF-B) 0) (if valid (gn-sir m j IF-C) 0)]) 0)] 0))
++;; First256 complete top keys/results; first16 include full recursive traces.
++;; Previous-key equality is an observer fact only, never cache admission.
++(defn- qo-top [N :vector-i64 original :vector-i64 i :i64 f :i64 n :i64] :vector-i64
++ (let [seq (inc (gn-g N qo-base))
++       repeated (and (> seq 1) (= (gn-g N (+ qo-base 3)) f)
++          (= (gn-g N (+ qo-base 4)) n)
++          (= (gn-g N (+ qo-base 5)) (gn-g original gn-g-open))
++          (= (gn-g N (+ qo-base 6)) (gn-g original gn-g-open-n)))
++       m (-> N (gn-gs qo-base seq) (gn-gs (+ qo-base 1) 0) (gn-gs (+ qo-base 2) 0))
++       start (if (<= seq 256) (qo-row "QBEGIN" [seq i f n 8 512
++            (gn-g original gn-g-open) (gn-g original gn-g-open-n)
++            (if repeated 1 0) (gn-g m (+ qo-base 7))]) 0)
++       answer (gn-ctx-safe original f n 8 512)
++       finish (if (<= seq 256) (qo-row "QEND" [seq answer (gn-g m (+ qo-base 1))
++                (gn-g m (+ qo-base 2))]) 0)
++       m1 (-> m (gn-gs (+ qo-base 3) f) (gn-gs (+ qo-base 4) n)
++                (gn-gs (+ qo-base 5) (gn-g original gn-g-open))
++                (gn-gs (+ qo-base 6) (gn-g original gn-g-open-n))
++                (gn-gs (+ qo-base 7) answer))]
++  (gn-gs m1 gn-f-ctx (if (>= answer 0) 1 0))))
++(defn- qo-clean [M :vector-i64] :vector-i64
++ (let [count (gn-g M qo-base) w (qo-row "QSTOP" [count (gn-min count 256) (gn-min count 16)])
++       m (gn-zero M qo-base qo-end)
++       z (qo-row "QCLEAN" [(gn-g m qo-base) (gn-g m (+ qo-base 1))
++          (gn-g m (+ qo-base 2)) (gn-g m (+ qo-base 3)) (gn-g m (+ qo-base 4))
++          (gn-g m (+ qo-base 5)) (gn-g m (+ qo-base 6)) (gn-g m (+ qo-base 7))])] m))
++
+ (defn- gn-ctx-safe [M :vector-i64 f :i64 n :i64 depth :i64 work :i64] :i64
+-  (let [p (gn-fnf M f FF-SIR)]
++ (let [qo-observation (qo-safe-note M f n depth work)]
++   (let [p (gn-fnf M f FF-SIR)]
+     (if (and (> f 0) (< f (vector-at M MM-FN-N)) (> p 0) (> depth 0) (> work 0)
+              (not (and (>= f (gn-g M gn-g-open)) (< f (+ (gn-g M gn-g-open) (gn-g M gn-g-open-n)))))
+              (<= n 7) (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) f) (= (gn-sir M p IF-B) n))
+-      (gn-ctx-scan M (inc p) f depth (dec work)) -1)))
++      (gn-ctx-scan M (inc p) f depth (dec work)) -1))))
+ (defn- gn-ctx-scan [M :vector-i64 j :i64 f :i64 depth :i64 work :i64] :i64
+-  (if (or (>= j (vector-at M MM-SIR-N)) (<= work 0)) -1
++ (let [qo-observation (qo-scan-note M j f depth work)]
++   (if (or (>= j (vector-at M MM-SIR-N)) (<= work 0)) -1
+     (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) c (gn-sir M j IF-C)
+           left (dec work)]
+       (case op
+@@ -1366,7 +1424,7 @@
+         OP-RT (if (gn-inl a b c) (gn-ctx-scan M (inc j) f depth left) -1)
+         OP-CALL (let [remain (gn-ctx-safe M a c (dec depth) left)]
+                   (if (< remain 0) -1 (gn-ctx-scan M (inc j) f depth remain)))
+-        -1))))
++        -1)))))
+ 
+ ;; Exact closed frameless scalar low-bit mask. Optional one entry charge.
+ ;; Keep separate from gn-call-wrapper: original caller nonleaf prescan remains.
+@@ -1744,7 +1802,7 @@
+       (gn-fix FX-BL26 f)
+       (gn-emit (enc-bl 0))
+       (gn-vclear)
+-      (gn-gs gn-f-ctx (if (>= (gn-ctx-safe M f n 8 512) 0) 1 0))
++      (qo-top M i f n)
+       (gn-take i t 0))))
+ ;; A direct call whose only successor returns its scalar result can restore
+ ;; this frame and branch to the callee. Stack arguments and RET2 are excluded.
+@@ -2309,13 +2367,16 @@
+ (defn- gn-run-open [M :vector-i64 first :i64 count :i64] :vector-i64
+   (let [top (vector-at M MM-HEAP-TOP)
+         M0 (if (< top MM-HEAP-BASE) (gn-put M MM-HEAP-TOP MM-HEAP-BASE) M)
+-        M1 (mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 80))
++        M1 (mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 88))
+         M2 (-> (gn-put M1 gn-cell (vector-at M1 MM-R0))
+                (gn-gs gn-g-open first) (gn-gs gn-g-open-n count)
+                (gn-gs di-used 0) (gn-gs di-sites 0))
+-        M3 (if (= (vector-at M2 MM-ERR) 0) (gn-loop M2 1) M2)
+-        n (vector-at M3 MM-CODE-N)]
+-    (gn-put M3 MM-R0 (- n 1))))
++        qo-active (= (vector-at M2 MM-ERR) 0)
++        M2q (if qo-active (qo-init M2) M2)
++        M3 (if qo-active (gn-loop M2q 1) M2q)
++        M4 (if qo-active (qo-clean M3) M3)
++        n (vector-at M4 MM-CODE-N)]
++    (gn-put M4 MM-R0 (- n 1))))
+ 
+ ;; Unity compilation has no link-time replacement of function bodies.
+ ;; One-off novel algorithm SOURCE candidate: no product/native qualification.

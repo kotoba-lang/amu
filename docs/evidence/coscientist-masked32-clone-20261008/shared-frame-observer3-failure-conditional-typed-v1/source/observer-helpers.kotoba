@@ -1,0 +1,110 @@
+;; One-off readonly diagnostic: own Q only; original gn-ins/gn-run/ly-run once.
+(defn- sr-row [tag :string xs :vector-i64] :i64
+ (let [a (io-out tag) b (loop [k 0] (if (>= k (vector-count xs)) 0
+  (let [w (io-out (string-concat " " (string-from-i64 (vector-at xs k))))] (recur (inc k)))))] (io-out "\n")))
+(defn- sr-table [M :vector-i64 tag :string phase :i64 base :i64 width :i64 n :i64] :i64
+ (loop [i 0] (if (>= i n) 0
+  (let [a (io-out (string-concat tag (string-concat " " (string-from-i64 phase))))
+        b (io-out (string-concat " " (string-from-i64 i)))
+        c (loop [k 0] (if (>= k width) 0
+          (let [w (io-out (string-concat " " (string-from-i64 (vector-at M (+ base (* i width) k)))))] (recur (inc k)))))
+        z (io-out "\n")] (recur (inc i))))))
+(defn- sr-body [M :vector-i64 f :i64] :i64
+ (let [p (gn-fnf M f FF-SIR)]
+  (if (and (> f 0) (< f (vector-at M MM-FN-N)) (> p 0) (< (+ p 15) (vector-at M MM-SIR-N))
+    (or (= (gn-fnf M f FF-KIND) FK-DEFN) (= (gn-fnf M f FF-KIND) FK-PRIV))
+    (= (gn-fnf M f FF-NPARAMS) 1) (= (gn-fnf M f FF-PT0) TY-VEC) (= (gn-fnf M f FF-RTYPE) TY-VEC)
+    (>= (gn-fnf M f FF-NSLOTS) 0) (<= (gn-fnf M f FF-NSLOTS) 16) (>= (gn-fnf M f FF-DEPTH) 0) (<= (gn-fnf M f FF-DEPTH) 16)
+    (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) f) (= (gn-sir M p IF-B) 1)
+    (= (gn-op M (+ p 1)) OP-FUEL) (= (gn-op M (+ p 2)) OP-LABEL))
+   (loop [j (+ p 3)]
+    (cond (>= j (+ p 13)) 0
+      (= (gn-op M j) OP-CALL)
+      (let [n (gn-sir M j IF-C) h (gn-sir M j IF-A) tail (gn-sir M (+ j 1) IF-A)]
+       (if (and (or (= n 4) (= n 7)) (= (gn-sir M j IF-B) 0)
+        (> h 0) (< h (vector-at M MM-FN-N)) (= (gn-fnf M h FF-NPARAMS) n) (= (gn-fnf M h FF-RTYPE) TY-VEC)
+        (= (gn-op M (+ j 1)) OP-CALL) (= (gn-sir M (+ j 1) IF-B) 0) (= (gn-sir M (+ j 1) IF-C) 1)
+        (> tail 0) (< tail (vector-at M MM-FN-N)) (= (gn-fnf M tail FF-NPARAMS) 1)
+        (= (gn-fnf M tail FF-PT0) TY-VEC) (= (gn-fnf M tail FF-RTYPE) TY-VEC)
+        (= (gn-op M (+ j 2)) OP-RET) (= (gn-sir M (+ j 2) IF-A) 0)
+        (= (gn-op M (+ j 3)) OP-END) (= (gn-sir M (+ j 3) IF-A) f)) j 0))
+      (or (= (gn-op M j) OP-LGET) (= (gn-op M j) OP-CONST)) (recur (inc j))
+      :else 0)) 0)))
+(defn- sr-tail [M :vector-i64 f :i64] :i64
+ (let [j (sr-body M f)] (if (> j 0) (gn-sir M (inc j) IF-A) 0)))
+(defn- sr-incoming [M :vector-i64 f :i64 g :i64] :bool
+ (if (>= g (vector-at M MM-FN-N)) false
+  (or (= (sr-tail M g) f) (sr-incoming M f (inc g)))))
+(defn- sr-seen [Q :vector-i64 f :i64 k :i64] :bool
+ (if (>= k (vector-at Q 0)) false
+  (or (= (vector-at Q (+ 4 k)) f) (sr-seen Q f (inc k)))))
+;; At most one external returning helper per arity role; <=15 owners incl exit.
+(defn- sr-roles [M :vector-i64 Q :vector-i64 k :i64 h4 :i64 h7 :i64] :bool
+ (if (>= k (vector-at Q 0)) true
+  (let [f (vector-at Q (+ 4 k)) j (sr-body M f) helper (gn-sir M j IF-A) n (gn-sir M j IF-C)]
+   (and (not (sr-seen Q helper 0)) (not= helper (vector-at Q 3))
+    (if (= n 4) (and (or (= h4 0) (= h4 helper)) (sr-roles M Q (inc k) helper h7))
+     (and (or (= h7 0) (= h7 helper)) (sr-roles M Q (inc k) h4 helper)))))))
+;; [count,SIR,edges,exit,12 owners]. 0 count is explicit bounded rejection.
+(defn- sr-pick [M :vector-i64] :vector-i64
+ (let [Q [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
+       root (loop [f 1] (cond (>= f (vector-at M MM-FN-N)) 0
+        (and (> (sr-body M f) 0) (not (sr-incoming M f 1))) f :else (recur (inc f))))]
+  (loop [f root]
+   (let [j (if (> f 0) (sr-body M f) 0) p (if (> j 0) (gn-fnf M f FF-SIR) 0)
+         n (+ (vector-at Q 1) (if (> j 0) (+ 4 (- j p)) 0))]
+    (cond (= (vector-at Q 0) 12) (if (sr-roles M Q 0 0 0) Q [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0])
+      (or (= j 0) (sr-seen Q f 0) (> n 256)) [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
+      :else (let [a (vector-assoc! Q (+ 4 (vector-at Q 0)) f)
+        b (vector-assoc! Q 0 (inc (vector-at Q 0))) c (vector-assoc! Q 1 n)
+        d (vector-assoc! Q 2 (+ (vector-at Q 2) 2)) tail (sr-tail M f)
+        e (vector-assoc! Q 3 tail)] (recur tail)))))))
+(defn- sr-has [M :vector-i64 Q :vector-i64 i :i64 k :i64] :bool
+ (if (>= k (vector-at Q 0)) false
+  (let [f (vector-at Q (+ 4 k)) p (gn-fnf M f FF-SIR) j (sr-body M f)]
+   (or (and (>= i p) (<= i (+ j 3))) (sr-has M Q i (inc k))))))
+(defn- sr-budget [M :vector-i64] :bool
+ (and (> (vector-at M MM-FN-N) 0) (<= (vector-at M MM-FN-N) 512)
+  (> (vector-at M MM-SIR-N) 0) (<= (vector-at M MM-SIR-N) MM-SIR-CAP)
+  (> (vector-at M MM-NODE-N) 0) (<= (vector-at M MM-NODE-N) MM-NODE-CAP)
+  (> (vector-at M MM-TOK-N) 0) (<= (vector-at M MM-TOK-N) MM-TOK-CAP)
+  (> (vector-at M MM-SYM-N) 0) (<= (vector-at M MM-SYM-N) MM-SYM-CAP)
+  (> (vector-at M MM-CODE-N) 0) (<= (vector-at M MM-CODE-N) MM-CODE-CAP)
+  (> (vector-at M MM-FIX-N) 0) (<= (vector-at M MM-FIX-N) MM-FIX-CAP)
+  (>= (vector-at M MM-LABEL-N) 0) (<= (vector-at M MM-LABEL-N) MM-LABEL-CAP)
+  (>= (vector-at M MM-EXP-N) 0) (<= (vector-at M MM-EXP-N) MM-EXP-CAP)
+  (= (vector-at M MM-LIT-N) 1)
+  (<= (+ (* (vector-at M MM-TOK-N) 120) (* (vector-at M MM-NODE-N) 240)
+   (* (vector-at M MM-SYM-N) 240) (* (vector-at M MM-SIR-N) 140)
+   (* (vector-at M MM-FN-N) 1200) (* (vector-at M MM-CODE-N) 48)
+   (* (vector-at M MM-FIX-N) 240) (* (vector-at M MM-LABEL-N) 120)
+   (* (vector-at M MM-EXP-N) 120) 1048576) 8388608)))
+(defn- sr-dump [M :vector-i64 Q :vector-i64 phase :i64] :i64
+ (let [h (sr-row "SH" [phase (vector-at M MM-ERR) (vector-at M MM-FN-N) (vector-at M MM-SIR-N)
+       (vector-at M MM-NODE-N) (vector-at M MM-TOK-N) (vector-at M MM-SYM-N)
+       (vector-at M MM-CODE-N) (vector-at M MM-FIX-N) (vector-at M MM-LABEL-N) (vector-at M MM-EXP-N)])
+  q (sr-row "SQ" Q) f (sr-table M "SF" phase MM-FN-BASE MM-FN-W (vector-at M MM-FN-N))
+  front (if (= phase 0) (let [a (sr-table M "SN" phase MM-NODE-BASE MM-NODE-W (vector-at M MM-NODE-N))
+   b (sr-table M "ST" phase MM-TOK-BASE MM-TOK-W (vector-at M MM-TOK-N))
+   c (sr-table M "SY" phase MM-SYM-BASE MM-SYM-W (vector-at M MM-SYM-N))
+   d (sr-table M "SS" phase MM-SIR-BASE MM-SIR-W (vector-at M MM-SIR-N))] 0) 0)
+  emitted (if (> phase 0) (let [a (sr-table M "SC" phase MM-CODE-BASE 1 (vector-at M MM-CODE-N))
+   b (sr-table M "SX" phase MM-FIX-BASE MM-FIX-W (vector-at M MM-FIX-N))
+   c (sr-table M "SB" phase MM-LABEL-BASE MM-LABEL-W (vector-at M MM-LABEL-N))
+   d (if (= phase 2) (sr-table M "SE" phase MM-EXP-BASE MM-EXP-W (vector-at M MM-EXP-N)) 0)] 0) 0)
+  z (sr-row "SZ" [phase])] 0))
+(defn- sr-state [M :vector-i64 i :i64 phase :i64] :i64
+ (let [ns (gn-g M gn-f-ns) dp (gn-g M gn-f-dp)]
+  (if (or (< ns 0) (> ns 16) (< dp 0) (> dp 16)) (sr-row "SREFUSE" [i ns dp])
+   (let [g (sr-row "SG" [phase i (gn-g M 0) (gn-g M 1) (gn-g M 2) (gn-g M 3)
+       ns dp (gn-g M 6) (gn-g M 7) (gn-g M 8) (gn-g M 9) (gn-g M 10)
+       (gn-g M 11) (gn-g M 12) (gn-g M 13) (gn-g M 14) (gn-g M 15)])
+    s (loop [k 0] (if (> k ns) 0 (let [w (sr-row "SL" [phase i k (gn-g M (+ gn-a-sreg k)) (gn-g M (+ gn-a-use k))])] (recur (inc k)))))
+    t (loop [k 0] (if (>= k dp) 0 (let [w (sr-row "SD" [phase i k (gn-dk M k) (gn-dv M k)])] (recur (inc k)))))] 0))))
+(defn- sr-run [M :vector-i64] :vector-i64
+ (if (not (sr-budget M)) (let [r (sr-row "SREFUSE" [0])] (gn-run M))
+  (let [Q (sr-pick M) a (sr-dump M Q 0) result (gn-run M)
+   b (if (and (= (vector-at result MM-ERR) 0) (sr-budget result)) (sr-dump result Q 1) (sr-row "SREFUSE" [1]))] result)))
+(defn- sr-layout [M :vector-i64] :vector-i64
+ (let [Q (sr-pick M) result (ly-run M)
+  a (if (and (= (vector-at result MM-ERR) 0) (sr-budget result)) (sr-dump result Q 2) (sr-row "SREFUSE" [2]))] result))

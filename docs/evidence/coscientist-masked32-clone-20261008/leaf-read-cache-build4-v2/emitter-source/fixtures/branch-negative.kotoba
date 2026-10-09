@@ -1,0 +1,8 @@
+(ns lc-branch-negative)
+(defn- read-branch [v :vector-i64 n :i64] :i64
+ (if (= n 0)
+  (+ (vector-at v 0) (vector-at v 1))
+  (+ (+ (vector-at v 0) (vector-at v 1)) 2)))
+(defn bench [n :i64] :i64
+ (let [v (vector-alloc 2) w (vector-assoc! v 0 n) z (vector-assoc! w 1 (+ n 1))]
+  (read-branch z n)))

@@ -1,0 +1,32 @@
+;; SOURCE candidate only. Pass-local positive structural answers; never persistent CID.
+;; Eight words per entry: valid,f,n,openFirst,openCount,FNcount,SIRcount,answer.
+(def qm-base (+ gn-g-open 80))
+(def qm-end (+ qm-base 128))
+(defn- qm-slot [f :i64] :i64 (+ qm-base (* 8 (bit-and f 15))))
+(defn- qm-hit [M :vector-i64 f :i64 n :i64] :bool
+ (let [b (qm-slot f)]
+  (and (= (gn-g M b) 1) (= (gn-g M (+ b 1)) f) (= (gn-g M (+ b 2)) n)
+       (= (gn-g M (+ b 3)) (gn-g M gn-g-open))
+       (= (gn-g M (+ b 4)) (gn-g M gn-g-open-n))
+       (= (gn-g M (+ b 5)) (vector-at M MM-FN-N))
+       (= (gn-g M (+ b 6)) (vector-at M MM-SIR-N))
+       (>= (gn-g M (+ b 7)) 0) (<= (gn-g M (+ b 7)) 512))))
+;; N is the threaded current writer; original is original lexical M.
+;; Miss invalidates before query; full key/answer written before final valid1.
+(defn- qm-top [N :vector-i64 original :vector-i64 f :i64 n :i64] :vector-i64
+ (if (and (> f 0) (< f (vector-at original MM-FN-N)) (>= n 0) (<= n 7))
+  (if (qm-hit original f n)
+   (gn-gs N gn-f-ctx 1)
+   (let [b (qm-slot f) open-first (gn-g original gn-g-open)
+         open-count (gn-g original gn-g-open-n)
+         fn-count (vector-at original MM-FN-N) sir-count (vector-at original MM-SIR-N)
+         m0 (gn-gs N b 0)
+         answer (gn-ctx-safe original f n 8 512)
+         m1 (if (>= answer 0)
+          (-> m0 (gn-gs (+ b 1) f) (gn-gs (+ b 2) n)
+              (gn-gs (+ b 3) open-first) (gn-gs (+ b 4) open-count)
+              (gn-gs (+ b 5) fn-count) (gn-gs (+ b 6) sir-count)
+              (gn-gs (+ b 7) answer) (gn-gs b 1)) m0)]
+    (gn-gs m1 gn-f-ctx (if (>= answer 0) 1 0))))
+  ;; Preserve invalid-domain original evaluation; no diagnostic header read.
+  (gn-gs N gn-f-ctx (if (>= (gn-ctx-safe original f n 8 512) 0) 1 0))))

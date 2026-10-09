@@ -1,0 +1,152 @@
+== Counts
+
+scanned root: /Users/junkawasaki/github/wt/amu-seed17
+src files scanned (.cljk/.kotoba/.cljc/.cljs): 109
+
+| area | PRODUCT | BOOTSTRAP-TOOL |
+|---|---|---|
+| launchers (bin/*) | 4 | 2 |
+| nbb-only entry points (*_cli.cljk) | 16 (7 with no :kotoba arm) | 0 |
+| modules with a nil/refusal Kotoba reading, from the audit doc (docs/selfhost-real-vs-hollow-20261001.md, HOLLOW+PARTIAL rows of this repo) | 16 | 0 |
+| modules with `#?(:kotoba nil ...)` forms or no :kotoba arm, computed from source | 50 | 0 |
+| src files with unguarded host tokens (node:*, js/*, java.*, :import, host requires) | 10 (36 tokens; 204 more are guarded) | 0 |
+| src files with at least one :kotoba arm | 62 of 109 | |
+| `#?(:kotoba nil ...)` forms in src | 152 | |
+| distinct PRODUCT src files in any list above (the union) | 58 | |
+| scripts/test/bench/tools files (bootstrap scaffolding) | | 1446 |
+| of which scripts/selfhost-wall (wall harness; 20 .cljs, 18 .py, 34 .sh) | | 114 |
+
+== 1. Launchers (bin/*)
+
+  PRODUCT         bin/amu                                                        node(shebang)+host-calls 677 lines
+  PRODUCT         bin/amu.cmd                                                    (delegates) 2 lines
+  BOOTSTRAP-TOOL  bin/build-native-image                                         python/graal 14 lines
+  BOOTSTRAP-TOOL  bin/kbb                                                        node(shebang)+host-calls 51 lines
+  PRODUCT         bin/kotoba                                                     nbb(shebang)+host-calls 311 lines
+  PRODUCT         bin/kotoba-compiler                                            (delegates) 4 lines
+
+== 2. nbb-only entry points
+
+  PRODUCT         src/kotoba/compiler/nbb/aarch64_cli.cljk                       nbb entry (nbb/*_cli) NO-:kotoba-arm
+  PRODUCT         src/kotoba/compiler/nbb/check_cli.cljk                         nbb entry (nbb/*_cli) has-:kotoba-arm
+  PRODUCT         src/kotoba/compiler/nbb/cli.cljk                               nbb entry (nbb/*_cli) NO-:kotoba-arm
+  PRODUCT         src/kotoba/compiler/nbb/evm_cli.cljk                           nbb entry (nbb/*_cli) has-:kotoba-arm
+  PRODUCT         src/kotoba/compiler/nbb/js_cli.cljk                            nbb entry (nbb/*_cli) NO-:kotoba-arm
+  PRODUCT         src/kotoba/compiler/nbb/output_set_cli.cljk                    nbb entry (nbb/*_cli) NO-:kotoba-arm
+  PRODUCT         src/kotoba/compiler/nbb/refactor_cli.cljk                      nbb entry (nbb/*_cli) has-:kotoba-arm
+  PRODUCT         src/kotoba/compiler/nbb/run_cli.cljk                           nbb entry (nbb/*_cli) NO-:kotoba-arm
+  PRODUCT         src/kotoba/compiler/nbb/test_cli.cljk                          nbb entry (nbb/*_cli) has-:kotoba-arm
+  PRODUCT         src/kotoba/compiler/nbb/trust_cli.cljk                         nbb entry (nbb/*_cli) has-:kotoba-arm
+  PRODUCT         src/kotoba/compiler/nbb/wasm_cli.cljk                          nbb entry (nbb/*_cli) NO-:kotoba-arm
+  PRODUCT         src/kotoba/compiler/nbb/x86_64_cli.cljk                        nbb entry (nbb/*_cli) NO-:kotoba-arm
+  PRODUCT         src/kotoba/compiler/refactor_cli.cljk                          cli entry (non-nbb twin or shared) has-:kotoba-arm
+  PRODUCT         src/kotoba/compiler/run_cli.cljk                               cli entry (non-nbb twin or shared) has-:kotoba-arm
+  PRODUCT         src/kotoba/compiler/test_cli.cljk                              cli entry (non-nbb twin or shared) has-:kotoba-arm
+  PRODUCT         src/kotoba/compiler/trust_cli.cljk                             cli entry (non-nbb twin or shared) has-:kotoba-arm
+
+== 3. Modules whose Kotoba reading is nil or refusal
+
+-- 3a. From docs/selfhost-real-vs-hollow-20261001.md (HOLLOW / PARTIAL, this repo)
+
+  PRODUCT         src/kotoba/compiler/backend/cljs.cljk                          audit:HOLLOW 
+  PRODUCT         src/kotoba/compiler/module_lock.cljk                           audit:HOLLOW 
+  PRODUCT         src/kotoba/compiler/nbb/compile_cache.cljk                     audit:PARTIAL 
+  PRODUCT         src/kotoba/compiler/nbb/evm_cli.cljk                           audit:HOLLOW 
+  PRODUCT         src/kotoba/compiler/nbb/test_cli.cljk                          audit:HOLLOW 
+  PRODUCT         src/kotoba/compiler/nbb/trust_cli.cljk                         audit:HOLLOW 
+  PRODUCT         src/kotoba/compiler/reference_runtime.cljk                     audit:HOLLOW 
+  PRODUCT         src/kotoba/compiler/run_cli.cljk                               audit:HOLLOW 
+  PRODUCT         src/kotoba/compiler/test_cli.cljk                              audit:HOLLOW 
+  PRODUCT         src/kotoba/compiler/trust_cli.cljk                             audit:HOLLOW 
+  PRODUCT         src/kotoba/compiler/atomic_output.cljk                         audit:PARTIAL 
+  PRODUCT         src/kotoba/compiler/nbb/cli_support.cljk                       audit:PARTIAL 
+  PRODUCT         src/kotoba/compiler/nbb/host/sys.cljk                          audit:PARTIAL 
+  PRODUCT         src/kotoba/compiler/nbb/output_admission.cljk                  audit:PARTIAL 
+  PRODUCT         src/kotoba/compiler/nbb/project_source.cljk                    audit:PARTIAL 
+  PRODUCT         src/kotoba/compiler/nbb/verdict_cache.cljk                     audit:PARTIAL 
+
+-- 3b. Computed from source (#?(:kotoba nil ...) or no :kotoba arm with host tokens)
+
+  PRODUCT         src/kotoba/compiler/atomic_output.cljk                         kotoba-nil-forms=2 
+  PRODUCT         src/kotoba/compiler/backend/cljs.cljk                          kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/backend/evm.cljk                           kotoba-nil-forms=16 
+  PRODUCT         src/kotoba/compiler/bounded_edn.cljk                           kotoba-nil-forms=2 
+  PRODUCT         src/kotoba/compiler/cache.cljk                                 kotoba-nil-forms=10 
+  PRODUCT         src/kotoba/compiler/capability_names.cljk                      kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/core.cljk                                  no-:kotoba-arm-with-host-refs 
+  PRODUCT         src/kotoba/compiler/coverage_evidence.cljk                     kotoba-nil-forms=10 
+  PRODUCT         src/kotoba/compiler/definition_identity.cljk                   kotoba-nil-forms=37 
+  PRODUCT         src/kotoba/compiler/effect_classification.cljk                 kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/effect_row.cljk                            kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/fuel_estimate.cljk                         no-:kotoba-arm-with-host-refs 
+  PRODUCT         src/kotoba/compiler/host_integer.cljk                          no-:kotoba-arm-with-host-refs 
+  PRODUCT         src/kotoba/compiler/host_profile.cljk                          no-:kotoba-arm-with-host-refs 
+  PRODUCT         src/kotoba/compiler/ios_aot.cljk                               kotoba-nil-forms=6 
+  PRODUCT         src/kotoba/compiler/ipld_adl.cljk                              no-:kotoba-arm-with-host-refs 
+  PRODUCT         src/kotoba/compiler/ipld_adl_source.cljk                       no-:kotoba-arm-with-host-refs 
+  PRODUCT         src/kotoba/compiler/module_lock.cljk                           kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/nbb/check_cli.cljk                         kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/nbb/check_driver.cljk                      kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/nbb/cli_support.cljk                       kotoba-nil-forms=7 
+  PRODUCT         src/kotoba/compiler/nbb/compile_cache.cljk                     kotoba-nil-forms=2 
+  PRODUCT         src/kotoba/compiler/nbb/evm_cli.cljk                           kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/nbb/host/clock.cljk                        no-:kotoba-arm-with-host-refs 
+  PRODUCT         src/kotoba/compiler/nbb/host/entry.cljk                        no-:kotoba-arm-with-host-refs 
+  PRODUCT         src/kotoba/compiler/nbb/host/env.cljk                          no-:kotoba-arm-with-host-refs 
+  PRODUCT         src/kotoba/compiler/nbb/js_cli.cljk                            no-:kotoba-arm-with-host-refs 
+  PRODUCT         src/kotoba/compiler/nbb/native_package.cljk                    no-:kotoba-arm-with-host-refs 
+  PRODUCT         src/kotoba/compiler/nbb/output_admission.cljk                  kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/nbb/output_attestation.cljk                kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/nbb/output_set.cljk                        kotoba-nil-forms=8 
+  PRODUCT         src/kotoba/compiler/nbb/package_authoring.cljk                 kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/nbb/package_lock.cljk                      kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/nbb/project_source.cljk                    kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/nbb/refactor_cli.cljk                      kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/nbb/test_cli.cljk                          kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/nbb/verdict_cache.cljk                     kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/nbb/wasm_cli.cljk                          no-:kotoba-arm-with-host-refs 
+  PRODUCT         src/kotoba/compiler/project.cljk                               no-:kotoba-arm-with-host-refs 
+  PRODUCT         src/kotoba/compiler/project_files.cljk                         no-:kotoba-arm-with-host-refs 
+  PRODUCT         src/kotoba/compiler/provenance.cljk                            kotoba-nil-forms=6 
+  PRODUCT         src/kotoba/compiler/refactor_cli.cljk                          kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/reference_runtime.cljk                     kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/release.cljk                               kotoba-nil-forms=14 
+  PRODUCT         src/kotoba/compiler/run_cli.cljk                               kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/test_cli.cljk                              kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/test_profile.cljk                          no-:kotoba-arm-with-host-refs 
+  PRODUCT         src/kotoba/compiler/trust_cli.cljk                             kotoba-nil-forms=1 
+  PRODUCT         src/kotoba/compiler/uefi_operations.cljk                       kotoba-nil-forms=10 
+  PRODUCT         src/kotoba/compiler/value_codec.cljk                           kotoba-nil-forms=1 
+
+== 4. Host-only tokens not guarded by #?(:cljs / :clj / :default)
+
+  BOOTSTRAP-TOOL  src/kotoba/compiler/cli.cljk                                   unguarded-host-tokens=1 guarded=0 
+  PRODUCT         src/kotoba/compiler/host_profile.cljk                          unguarded-host-tokens=1 guarded=0 
+  PRODUCT         src/kotoba/compiler/ipld_adl.cljk                              unguarded-host-tokens=10 guarded=0 
+  BOOTSTRAP-TOOL  src/kotoba/compiler/lang_conformance.cljk                      unguarded-host-tokens=4 guarded=0 
+  BOOTSTRAP-TOOL  src/kotoba/compiler/lang_native_conformance.cljk               unguarded-host-tokens=1 guarded=0 
+  PRODUCT         src/kotoba/compiler/nbb/host/clock.cljk                        unguarded-host-tokens=2 guarded=0 
+  PRODUCT         src/kotoba/compiler/nbb/host/entry.cljk                        unguarded-host-tokens=6 guarded=0 
+  PRODUCT         src/kotoba/compiler/nbb/host/env.cljk                          unguarded-host-tokens=1 guarded=0 
+  PRODUCT         src/kotoba/compiler/nbb/js_cli.cljk                            unguarded-host-tokens=3 guarded=0 
+  PRODUCT         src/kotoba/compiler/nbb/native_package.cljk                    unguarded-host-tokens=2 guarded=0 
+  PRODUCT         src/kotoba/compiler/nbb/wasm_cli.cljk                          unguarded-host-tokens=1 guarded=0 
+  PRODUCT         src/kotoba/compiler/posix_path.cljk                            unguarded-host-tokens=3 guarded=0 
+  PRODUCT         src/kotoba/compiler/project.cljk                               unguarded-host-tokens=1 guarded=0 
+
+== 5. Packaging and dependency manifests
+
+  BOOTSTRAP-TOOL  package.json                                                   node package manifest (nbb pin, playwright; npm scripts run node/nbb) 
+  BOOTSTRAP-TOOL  nbb.edn                                                        nbb classpath config (read only by nbb) 
+  BOOTSTRAP-TOOL  deps.edn                                                       Clojure CLI (JVM) deps; JVM compatibility route only 
+  PRODUCT         bin/amu -> node + nbb                                          launcher resolves classpath and spawns nbb on src/kotoba/compiler/nbb/*_cli.cljk 
+
+== 6. Bootstrap tooling (may stay until the self-built compiler exists)
+
+  BOOTSTRAP-TOOL  scripts/                                                       files=379 py=63 mjs/js=28 clj*=162 sh=107 
+  BOOTSTRAP-TOOL  test/                                                          files=391 py=0 mjs/js=7 clj*=247 sh=0 
+  BOOTSTRAP-TOOL  tests/                                                         files=9 py=0 mjs/js=5 clj*=0 sh=0 
+  BOOTSTRAP-TOOL  bench/                                                         files=638 py=10 mjs/js=1 clj*=8 sh=0 
+  BOOTSTRAP-TOOL  tools/                                                         files=9 py=0 mjs/js=0 clj*=0 sh=0 
+  BOOTSTRAP-TOOL  fuzz/                                                          files=20 py=0 mjs/js=0 clj*=0 sh=0 
+

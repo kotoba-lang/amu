@@ -1,0 +1,171 @@
+{
+  "status": "PASS terminal independent single-campaign two-workload raw timing audit with fault controls and portable replay",
+  "nativeSeedSha256": "eab3a7c26eac2fdf32a3d4736fd8dd1c159b811a6dc6b5ef0f69c1d44b798406",
+  "campaign": {
+    "acceptedTriples": 60,
+    "attemptedTriples": 62,
+    "rawArmSamples": 186,
+    "rejectedTriples": 2,
+    "workloads": [
+      "qrduino",
+      "xgboost"
+    ],
+    "allStable": true,
+    "auditLaunchedNewMeasurements": false
+  },
+  "qualification": {
+    "minimumSpeedup": 1.05,
+    "strictMeanGapAboveSumSd": true,
+    "maxRelativeSd": 0.1,
+    "qualifiedImprovements": [
+      "xgboost"
+    ],
+    "qualifiedRegressions": [],
+    "qualifiedCOrBetter": [],
+    "performanceAllowsFurtherAdoptionGates": true,
+    "productPromoted": false,
+    "all19GoalAchieved": false,
+    "officialEmbenchScore": false
+  },
+  "rows": [
+    {
+      "workload": "qrduino",
+      "baseline": {
+        "meanNsPerBody": 280841.8294270833,
+        "sdNs": 9199.84957059918,
+        "relativeSd": 0.032758117226934655,
+        "samples": 30
+      },
+      "candidate": {
+        "meanNsPerBody": 280597.2005208333,
+        "sdNs": 6094.037747434874,
+        "relativeSd": 0.02171809888382124,
+        "samples": 30
+      },
+      "C": {
+        "meanNsPerBody": 21452.711925287356,
+        "sdNs": 210.22235396053782,
+        "relativeSd": 0.009799337011221342,
+        "samples": 30
+      },
+      "stable": true,
+      "qualifiedImprovement": false,
+      "qualifiedRegression": false,
+      "qualifiedCOrBetter": false,
+      "timeReductionPercent": 0.08710558065693208,
+      "candidateOverC": 13.079800889419474,
+      "attemptedTriples": 32
+    },
+    {
+      "workload": "xgboost",
+      "baseline": {
+        "meanNsPerBody": 1324127.9761904762,
+        "sdNs": 41698.71850834558,
+        "relativeSd": 0.031491456458999555,
+        "samples": 30
+      },
+      "candidate": {
+        "meanNsPerBody": 1186878.3854166667,
+        "sdNs": 29236.42572432167,
+        "relativeSd": 0.024633042511813797,
+        "samples": 30
+      },
+      "C": {
+        "meanNsPerBody": 179410.4525862069,
+        "sdNs": 10443.698624074044,
+        "relativeSd": 0.05821120494111589,
+        "samples": 30
+      },
+      "stable": true,
+      "qualifiedImprovement": true,
+      "qualifiedRegression": false,
+      "qualifiedCOrBetter": false,
+      "timeReductionPercent": 10.365281395887227,
+      "candidateOverC": 6.615436103681699,
+      "attemptedTriples": 30
+    }
+  ],
+  "auditFaultControls": 9,
+  "portableArchive": {
+    "status": "PASS fresh isolated copied artifact replay; no native execution",
+    "archive": "timing-replay.tgz",
+    "sha256": "da60be47edb4f5c0c986ea4119d45b82dbcf2b6f4603407a7c52ee7e564d271b",
+    "bytes": 879195,
+    "logs": [
+      {
+        "script": "timing-audit.py",
+        "exit": 0,
+        "stdout": "PASS independent raw triples/stats/source/native/C/fuel controls {'status': 'complete-independent-all2-changed-native-product-candidate-C-timing-audit', 'acceptedTriples': 60, 'unstable': [], 'qualifiedImprovements': ['xgboost'], 'qualifiedRegressions': [], 'qualifiedCOrBetter': [], 'performanceAllowsFurtherAdoptionGates': True, 'productPromoted': False, 'all19GoalAchieved': False, 'officialEmbenchScore': False, 'nativeOSStackBoundaryParityProved': False, 'nativeOSStackCaveat': 'Candidate expands original frames; OS stack limit boundary parity unproved even when guest fuel/arena states agree.'}\n",
+        "stderr": ""
+      },
+      {
+        "script": "checker-calibrate.py",
+        "exit": 0,
+        "stdout": "PASS 9 audit fault controls\n",
+        "stderr": ""
+      }
+    ]
+  },
+  "limitations": [
+    "This one fixed low-load native product/candidate/C campaign covers the two changed bodies only; results are not official Embench scores.",
+    "OS stack ceiling boundary parity remains unproved; guest fuel/arena resource equality is independently tested.",
+    "xgboost passes improvement criteria, but product adoption and full19 C-or-better goal are not inferred."
+  ],
+  "inputPins": {
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/batch-status.json": "6c8de6f99fafe6e7cc5e5f3bc52e151e7ffe0728fe4b0ae8ec74b74d6945f066",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/candidate-proof.json": "173f4cf18284b90d51d96e1e95807d70dfbf30c6b2228e79832f57f854b6774e",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/paired-timing-spec.json": "af1721c11ffd1db9dea1330404caf3ede5e7e1942b953341aa20d689043707f2",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/machine-proof.json": "493a1572fc6d815cca2db2b44314b448f865b80aeadba34a4cf134c0d1e712d4",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/comparison-matrix.json": "b3c4fcf09e51d9a42e7c8cdd9467dca401b8f99d9922b6b7fc086a3a0ba2721c",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/cfg-native.kotoba": "042f5946c0deabecb1b394b1952fa8d3a6217b595b4cd4edec413bc9961bb7b9",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/measure-native-candidate-v2.py": "f24a6c70b24bc4417f4e5f05ae330fba7670c0b818e0fdb093e3b096e6808a44",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/product-proof.json": "298c545fc9ae71cd6b9949092bca6f5857cad879b7984cc575b991c9bc31dedb",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/stable-native.kotoba": "23b126880aa5826372ea4feb999da6c901579f9a0ff64ce1054c60c1f66a8c2f",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/fixed-point.json": "9c530bf9a932b8aaa387b24d9dca20ed45cf7322ec67a3074582616384bd05a3",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/resource-proof.json": "f50312d0236760d647b4638ff6edc97fd445fc40151ceb00434d15e56dc39e4c",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/constructor-proof.json": "07e816cc478fb3314ea1a1684fa22aa5c5a698a8705b56c66aac23ef29f84394",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/hypothesis.json": "e7697d3ccb4a886e94399287990cb0baefad294df35b4d1e17d6a571e536f916",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/ports-state.json": "d54d2ed4a66afafc68be4baf39f209a9d5b48cec52c3047aa31b3542e6d717f2",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/native-origin-predicate-controls.json": "66bb01e8e77f7b8652ec9f37f6279c48b2dcd026ae7dd8d8a4ee154c480952d7",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/41-a64gen-prototype.kotoba": "14f5480bb85ab15d3d90f519d7b54e4ddc8169cdc73acc59d3d97fe0c5433660",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/permanent-proof.json": "4f22629c8c9bc4dd60d54ecb97c46084f7602ea7095e6e9857f50cc47156b1f8",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/read-law.json": "ce029f048efec8cb89cdda37fdded99b66d6d4e6c6cf9f2b2222a79f02877b1c",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/preflight.json": "5f9de62b1cf725da94951b3e284f5b2cf80e3cd8723db74a7300836eddca2b50",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/source-fixedpoint.json": "d241e977d6c4eeab9a05cbc435093f26a1f0418e9850903d13db7438d2dec7e3",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/42-layout-prototype.kotoba": "413c08728156173f162602f691a33fdca2ed0f4ae034063a85f546c9cfb11eb8",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/qrduino/baseline-native.bin": "b553e89bfd533101c8c9a341e88d5394841a1f235a2582f5c3dcf0b673fa665e",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/qrduino/timing.log": "800bc300776622a52e09f538be137cca374cc040d51e186f577581801ef8bf8f",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/xgboost/baseline-native.bin": "5cb72cd1cdb4bb021bf395b99b2e22812b64002340bad6b8c44c1d5024ee50d0",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/xgboost/timing.log": "ea50284734f79837153b8c27bfd842d0b580f55a22dbd20730b3fe3e71744a49",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/xgboost/candidate/native.bin": "08f888780c513ded59546967574021e8ab7bc9dc47956e981daa5c5c5ab1b6f1",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/xgboost/candidate/manifest.json": "7e782c185d313977b0497c1aded43407344babcdc5d02942b86dbc0ac01b4845",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/xgboost/baseline/results.json": "9b2fdb5dbe711508b4e44ac06aa0f7390b3a11373d33860ef5b354dec958c138",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/xgboost/timing/results.json": "ed28e618d38fd65e990a1bf252eaa53d3cb7073ced3c0b9b5499c9105bf0b567",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/xgboost/baseline/xgboost/native.bin": "5cb72cd1cdb4bb021bf395b99b2e22812b64002340bad6b8c44c1d5024ee50d0",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/xgboost/baseline/xgboost/c.dylib": "90fda2e86d5567df0fdecc545b1e7a6b49459b30e166e97c4e2cc435c5aff9a6",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/qrduino/candidate/native.bin": "7fb242c86a4a287e57d10d3a150bc88451d523fe2ad27dcce8045190deff48e1",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/qrduino/candidate/manifest.json": "1f4ccfc02276c620d3147142559bb2b7a2c5d0150cbf9cf2944d706400b7a20f",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/qrduino/baseline/results.json": "5ea0b4c8c9469a9b07870d491ad5fdfe657a3f37b4c186027793d68fe944f366",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/qrduino/timing/results.json": "39b7125cd414d3602fe36d88bbd6a9537375a707ba2a038b0ae272fe19d5d693",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/qrduino/baseline/qrduino/native.bin": "b553e89bfd533101c8c9a341e88d5394841a1f235a2582f5c3dcf0b673fa665e",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/remote-evidence/timing-package/qrduino/baseline/qrduino/c.dylib": "c5eb275188cc959bc423e6c053c70e5de7af89fc5c2b5ca278db4308c14e1d92",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/preflight.json": "5f9de62b1cf725da94951b3e284f5b2cf80e3cd8723db74a7300836eddca2b50",
+    "/private/tmp/amu-stable-vector-cfg-20261006/root-proof/timing-results.tgz": "bbccf33bcc40fe1fcad372600a6e1ad34562728d432092bdffb7ab4a0c5225fc",
+    "/private/tmp/amu-stable-vector-cfg-20261006/implementation/seed-4.bin": "eab3a7c26eac2fdf32a3d4736fd8dd1c159b811a6dc6b5ef0f69c1d44b798406",
+    "/private/tmp/amu-stable-vector-cfg-20261006/implementation/ports/qrduino/native.bin": "7fb242c86a4a287e57d10d3a150bc88451d523fe2ad27dcce8045190deff48e1",
+    "/private/tmp/amu-stable-vector-cfg-20261006/implementation/ports/xgboost/native.bin": "08f888780c513ded59546967574021e8ab7bc9dc47956e981daa5c5c5ab1b6f1"
+  },
+  "evidencePins": {
+    "package.py": "41171fe2ad54a91ab42676afa0c7df122748f761db4b81e613041f15a1f8bd1f",
+    "runner": "a1b8778cf9af255f66bba3e3cad20e3baadd9653e18defe429bfa179840665ac",
+    "sample_checks.py": "a5d5d27e0f8614a70eddeebedc162097719f2f7f0d61c47e1b284352a78f2361",
+    "timing-replay.tgz": "da60be47edb4f5c0c986ea4119d45b82dbcf2b6f4603407a7c52ee7e564d271b",
+    "timing-audit.json": "f44607e3ed8b18a2da716eaf526dcede6d0dfc6585a7bf2a0dbc5e2174ce7fa2",
+    "checker-calibrate.py": "40e872ac53651e493564bf4593fd5e28641dba95fd06bff031942ab67f914166",
+    "timing-audit.py": "5c88763f266cc8d4419c96d29afc0eeb0dbfcfb75c01345842168a02e33a7d40",
+    "checker-mutations.json": "b61e7537a8a8dcdb27720459933e730516c70a7f1d4bcf980fc2aa52a6b48642",
+    "portable-replay.json": "a347075acc2643bb676b1f85daa60f9f49776d6aace2ba9b2f75bbd8a3814ec1",
+    "finish.py": "935250c6d67124364f5b63e853e0cf56c3b024794926c9e2d0b30c4a3d3cc4a8"
+  },
+  "writesComplete": true
+}

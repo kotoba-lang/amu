@@ -1,0 +1,93 @@
+{
+  "status": "PASS_SOURCE_ONLY_FIXED_FILEIO_CAPTURE_CONTROLLER_FIXTURE",
+  "independent": true,
+  "priorAuthorship": false,
+  "sourcePinsSHA256": "65229d7a9b17b28f29a5896287c68410009366fd1d823d2a946c1231d3812c6f",
+  "driverSHA256": "a946e16a0409d354ca02121b64d52e98f79c0a3f566dfb5caca82d8c534ef722",
+  "subject": "/Users/junkawasaki/github/workspaces/codex/crc-capture-popen-transfer-fixture-source-v1-20261009",
+  "freeze": {
+    "path": "/Users/junkawasaki/github/workspaces/codex/crc-capture-popen-transfer-fixture-source-v1-20261009/freeze.json",
+    "bytes": 1025,
+    "sha256": "0508f3f5799ed49bbee6f55a4f326d3d3b1804f1701c1010a3aaaf549b866be1"
+  },
+  "inputPins": {
+    "path": "/Users/junkawasaki/github/workspaces/codex/crc-capture-popen-transfer-fixture-source-v1-20261009/input-pins.json",
+    "bytes": 461269,
+    "sha256": "2f992d554465b3fe493018671f9d3d74581e2b864c6cc9979ce86d343c7cabde"
+  },
+  "verifiedClosure": {
+    "sourceFiles": 8,
+    "sourceBytes": 500886,
+    "inputFiles": 1945,
+    "inputBytes": 55942255,
+    "componentSourcePins": {
+      "capture.py": {
+        "bytes": 5560,
+        "sha256": "d4917600e03a1cc6a7e55e87c8984cc1402be204c01dc9e527f1de9313c46336"
+      },
+      "integration.py": {
+        "bytes": 3544,
+        "sha256": "ce50e64921ffd282d39c7e9fbb8f539e9fa1667b2cbfcdd3de783652bff7cff6"
+      },
+      "controller.py": {
+        "bytes": 5686,
+        "sha256": "4a9fa75908331f34c160f718bd9d0a8a15f4a5ee92c8d5d299565b8aebb885ee"
+      }
+    }
+  },
+  "fixedScope": {
+    "cases": [
+      "second-dup",
+      "original-close",
+      "construct",
+      "start-before",
+      "ambiguous-start",
+      "grant-ack",
+      "grant-no-ack",
+      "delayed-eof",
+      "retire-before-wait",
+      "uncertain-wait",
+      "atomic-callback-exception"
+    ],
+    "driverLaunches": 1,
+    "auxThreadStarts": 10,
+    "simultaneousAuxThreads": 2,
+    "threadsIncludingMain": 3,
+    "pipes": 17,
+    "duplicates": 16,
+    "ownedFDPeak": 9,
+    "totalFDsWithOnlyInheritedStdio": 12,
+    "rawFilesAtMost": 6,
+    "expectedRawBytes": 7,
+    "bodySeconds": 9,
+    "rootOuterSeconds": 10,
+    "rootReapSeconds": 5,
+    "receiptBytes": 32768,
+    "totalJSONBytes": 458752,
+    "noPopenNativeGroupOperationsInsideFixture": true
+  },
+  "verifiedObservations": [
+    "All actual pipe/FileIO/selector/thread/IO operations are deferred behind exact GO/pin/interpreter/eight-env/fresh-output main guard. Only optional CF runtime metadata extra is admitted.",
+    "Initial pipe and FileIO acquisition now lies inside owning try/finally; pending original reads, writes and reuse endpoints retained for failure cleanup. After grant only worker closes duplicate reads, with partial-failure ledger/hash-unavailable on uncertainty.",
+    "Expected pregrant seconddup/close/construct/start failures permanently deny worker ownership; ambiguous start joins the actual started thread before case PASS. Grant-ack and grant-no-ack distinguish stopped acknowledgement from controlled active writer, then require dead worker.",
+    "Delayed EOF checks active hashes unavailable, idempotent original FileIO close leaves new pipe ownership intact, writes seven bytes, closes both writers, waits for full EOF and explicitly joins/requires dead capture thread before PASS.",
+    "Three authority cases cover serialized explicit retirement, uncertain injected wait with permanently retired authority, and callback-exception atomic retirement. All require dead auxiliary threads. Pure synchronous FakeLock independent check confirms retirement before group exception returns, reentry/second wait refused.",
+    "All reads retain copied 4096/16MiB observed bounds,8MiB/1MiB prefixes and first-refusal1s drain clamped to absolute deadline. Controlled handshake waits and joins are bounded by fixed/original times. Receipts capped32KiB; completion written after fixed receipts and raw count/byte check."
+  ],
+  "limitations": [
+    "This SOURCE review admits only a separately GO-ed fixed11 FileIO/thread fixture with required reviewed root supervisor. Supervisor is not yet reviewed by this report; no execution authorization or actual fixture proof is supplied here.",
+    "No actual Popen creation, native guest, OS child wait/group/process API, sampler memory, counter/fuel semantic qualification or nativeV4 wiring proof. Controller observe method callback cleanup/durability is outside these fixed cases.",
+    "Exact old FD integer reuse is not forced; arbitrary grant-boundary asynchronous interruption, unreturned syscall descriptors, constructor side effects beyond controlled cases and universal OS ownership proof remain unqualified.",
+    "Wall/fsync/regular-file/event/joins are cooperative. Outer10s plus5s reap supervision and fixed inherited-FD assumption must hold; missing acknowledgement or partial ledger cannot prove all closure.",
+    "Thread chronology is checked by fixed source-bound events/assertions, not independent OS scheduling trace. Atomic-case second thread starts only after done event, while source lock/exception placement establishes pre-return retirement."
+  ],
+  "draftFindingsDisposition": "Setup scope, reuse ownership, explicit positive dead-thread ack,17-pipe narrative and exact environment admission all repaired before this freeze; one extra atomic exception case added. Earlier preflight stays a draft observation, not frozen failure.",
+  "operationalCalls": 0,
+  "actualFDThreadProcessNativeNetworkAPICalls": 0,
+  "subjectEdits": 0,
+  "reviewerSource": {
+    "path": "/Users/junkawasaki/github/workspaces/codex/crc-capture-popen-transfer-fixture-source-review-independent-20261009/audit.py",
+    "bytes": 7020,
+    "sha256": "70ea9281422174fc1822d2942b6047eafcb7792d29a673aff2f36d6721155239"
+  }
+}

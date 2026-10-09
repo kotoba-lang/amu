@@ -1,0 +1,73 @@
+from pathlib import Path
+import json,hashlib,stat,sys,re,struct
+W=Path('/Users/junkawasaki/github/workspaces/codex');D=W/'tc-homogeneous-tail-frame-compose10-native4-source-v1-20261009';S=D/'run-outputs';O=Path(__file__).resolve().parent;sys.dont_write_bytecode=True;sys.path.insert(0,str(D))
+def rec(p):
+ p=Path(p);a=p.lstat();assert stat.S_ISREG(a.st_mode)and not p.is_symlink();b=p.read_bytes();z=p.lstat();assert (a.st_dev,a.st_ino,a.st_size,a.st_mtime_ns)==(z.st_dev,z.st_ino,z.st_size,z.st_mtime_ns);return dict(path=str(p),bytes=len(b),sha256=hashlib.sha256(b).hexdigest())
+def ck(p,r):a=rec(p);assert all(a[k]==r[k]for k in ['bytes','sha256']);return Path(p).read_bytes()
+def load(p):return json.loads(Path(p).read_bytes())
+sp=load(D/'source-pins.json');ip=load(D/'input-pins.json');pr=load(D/'preregistration.json');report=load(S/'report.json')
+for n,r in sp.items():ck(D/n,r)
+for p,r in ip.items():ck(p,r)
+G=Path(report['rootGO']['path']);g=json.loads(ck(G,report['rootGO']));assert set(g)=={'status','maximumLoaderCalls','outputRoot','noRetry','timingAuthorized','runtimeGuestAuthorized','C2','sourcePinsSHA256','inputPinsSHA256','preregistrationSHA256','driverSHA256','sourceReviews','integrationFixtureProof','hostAuthorizedOuterEscalation'}and g['status']==pr['rootGOStatus']and g['maximumLoaderCalls']==4 and g['outputRoot']==str(S)and g['noRetry']and not g['runtimeGuestAuthorized']and not g['timingAuthorized']and not g['C2']and g['hostAuthorizedOuterEscalation']is True
+for n,k in [('source-pins.json','sourcePinsSHA256'),('input-pins.json','inputPinsSHA256'),('run.py','driverSHA256'),('preregistration.json','preregistrationSHA256')]:assert rec(D/n)['sha256']==g[k]
+assert len(g['sourceReviews'])==2 and len({r['path']for r in g['sourceReviews']})==2
+for rp in g['sourceReviews']:
+ q=json.loads(ck(rp['path'],rp));assert q['status']==pr['sourceReviewStatus']and all(q[k]==g[k]for k in ['sourcePinsSHA256','driverSHA256','preregistrationSHA256'])
+assert g['integrationFixtureProof']==pr['qualifiedIntegrationFixtureProof'];fp=json.loads(ck(g['integrationFixtureProof']['path'],g['integrationFixtureProof']))
+for n,k in [('capture.py','captureSHA256'),('integration.py','integrationSHA256'),('controller.py','controllerSHA256')]:assert fp[k]==sp[n]['sha256']
+for p,r in load(S/'generated-pins.json').items():ck(p,r)
+assert (S/'candidate-current16.kotoba').read_bytes()==(D/'candidate-current16.kotoba').read_bytes()and (S/'nsichneu.kotoba').read_bytes()==(D/'nsichneu.kotoba').read_bytes()
+from run import container,source_scope,build_guard
+assert source_scope(pr)
+build=load(S/'candidate-build-receipt.json');build_guard(build,pr,rec(S/'G1.bin'),rec(S/'G1.kseed'),rec(G))
+assert build['attempts']==load(S/'attempts.json')[:2]
+from runtime import FIELDS
+rows=load(S/'attempts.json');results=load(S/'results.json');assert len(rows)==len(results)==len(pr['cases'])==4;summ=[];arts=[];gaps=[]
+for i,(r,c,res)in enumerate(zip(rows,pr['cases'],results),1):
+ label=c['label'];assert r['index']==i and r['label']==label and r['nativeArgv']==c['nativeArgv']and r['environment']==pr['environment']and len(r['environment'])==17 and r['state']=='terminal'and r['returncode']==0 and r['failure']is None and r['waitEntered']and not r['waitUncertain']and r['signalingAuthorityRetired']and r['captureStopAcknowledged']and not r['watchdogErrors']
+ sealP=S/(label+'.admission.json');seal=load(sealP);assert rec(sealP)['bytes']<=4096 and sealP.stat().st_mode&0o222==0
+ assert seal['nativeArgv']==c['nativeArgv']and seal['index']==i and seal['label']==label and seal['rootGO']==rec(G)and seal['sourcePinsSHA256']==g['sourcePinsSHA256']and seal['preregistrationSHA256']==g['preregistrationSHA256']and seal['outputPath']==c['outputPath']
+ assert r['argv'][:3]==[pr['interpreter']['path'],str(D/'launch-wrapper.py'),'--journal-fd']and r['argv'][3].isdigit()and r['argv'][4:6]==['--admission-sha',rec(sealP)['sha256']]and r['argv'][6:]==['--',*c['nativeArgv']]
+ for k in ['producer','producerContainer','input']:ck(seal[k]['path'],seal[k])
+ p,es=container(Path(seal['producerContainer']['path']).read_bytes());assert p==Path(seal['producer']['path']).read_bytes()and es==[('main',0,0)]and seal['producer']['path']==c['nativeArgv'][1]
+ assert seal['producer']['path']==(pr['producer']if i<=2 else str(S/'G1.bin'))
+ if i<=2:assert seal['producerBuild']is None
+ else:
+  assert seal['producerBuild']==rec(S/'candidate-build-receipt.json');ck(seal['producerBuild']['path'],seal['producerBuild']);build_guard(load(seal['producerBuild']['path']),pr,seal['producer'],seal['producerContainer'],seal['rootGO'])
+ raw={k:ck(S/(label+ext),r[k])for k,ext in [('stdout','.stdout'),('stderr','.stderr'),('limitJournal','.limit-journal.jsonl'),('memoryJournal','.memory-journal.jsonl')]};obs=r['controllerObservation'];cap=obs['capture'];mr=obs['memoryAdmissionRecord'];assert cap['completeRaw']and cap['stoppedWriter']and cap['EOF']==dict(stdout=True,stderr=True)and not any(cap['dropped'].values())and not cap['errors']and cap['hashes']=={k:r[k]for k in ['stdout','stderr']}
+ outP=Path(c['outputPath']);out=outP.read_bytes();assert res['artifact']==rec(outP);path=re.escape(json.dumps(c['outputPath']).encode())
+ if c['kind']=='compile':
+  m=re.fullmatch(rb'\{:ok true, :target :aarch64-macos, :output '+path+rb', :bytes ([0-9]{1,10})\}\n',raw['stdout']);assert m and int(m[1])==len(out);container(out);expected={'kind':'compile','containerBytes':len(out)}
+ else:
+  m=re.fullmatch(rb'\{:ok true, :output '+path+rb', :offset ([0-9]{1,10}), :length ([0-9]{1,10}), :arity ([0-9]{1,2})\}\n',raw['stdout']);assert m;pp,ex=container(Path(c['nativeArgv'][8]).read_bytes());entries=[x for x in ex if x[0]==c['symbol']];assert len(entries)==1 and entries[0][2]==c['arity']and pp==out;expected=dict(kind='extract',offset=entries[0][1],nativeBytes=len(out),arity=c['arity']);assert tuple(map(int,m.groups()))==(expected['offset'],expected['nativeBytes'],expected['arity']);arts.append(dict(label=label,native=rec(outP),container=rec(Path(c['nativeArgv'][8])),exports=ex,selectedExport=entries[0]))
+ assert res['report']==r['structuredReportObservation']==expected and res['label']==label
+ pairs=re.findall(rb':([a-z-]+) ([0-9]{1,20})',raw['stderr']);ar={k.decode():int(v)for k,v in pairs};assert list(ar)==FIELDS and len(pairs)==17 and b'KEXE_ARENA_USE {'+b' '.join(b':'+k+b' '+v for k,v in pairs)+b'}\n'==raw['stderr']
+ assert all(0<=z<2**64 for z in ar.values())and ar['heap-bytes']==16*ar['pairs']+ar['string-pool-bytes']+16*ar['vectors']+8*ar['vector-items']and ar['pairs']<=16777216 and ar['string-pool-bytes']<=268435456 and ar['vectors']<=4194304 and ar['vector-items']<=134217728 and r['counterObservation']==dict(status='valid',values=ar,entireStderrIsCounterLine=True)
+ jl=[json.loads(x)for x in raw['limitJournal'].splitlines()];assert len(jl)==6 and len(raw['limitJournal'])<=65536;ew=jl[0];keys=sorted(pr['environment']);assert ew==dict(stage='environment-admission',suppliedKeyNames=keys,runtimeExtraKeyNames=ew['runtimeExtraKeyNames'],missingKeyNames=[],changedExpectedKeyNames=[],nativeExecKeyNames=keys,nativeExecEnvironmentExact=True)and ew['runtimeExtraKeyNames']in [[],['__CF_USER_TEXT_ENCODING']]
+ for z,(nm,want)in enumerate([('RLIMIT_FSIZE',[67108864,67108864]),('RLIMIT_CPU',[1800,1801])],1):
+  bef,aft=jl[2*z-1:2*z+1];assert bef['index']==z and bef['limit']==nm and bef['stage']=='before'and bef['desired']==want and all(v==9223372036854775807 or v>=w for v,w in zip(bef['before'],want))and aft==dict(index=z,limit=nm,stage='outcome',outcome='installed',readback=want)
+ assert jl[-1]==dict(stage='exec-ready',argv=c['nativeArgv'],ASSetterRequested=False,CPUGraceHardSeconds=1801)
+ sm=[json.loads(x)for x in raw['memoryJournal'].splitlines()];assert len(sm)==r['memorySamples']==obs['sampleCount']==mr['acceptedSamples']and len(raw['memoryJournal'])==r['memoryJournalBytes']<=16777216 and len(sm)<=90502;sums=[];births={};prev=0
+ for j,tm,pg,members in sm:
+  assert j==len(sums)+1 and tm>prev and pg==r['pid']and 1<=len(members)<=2 and len({m[0]for m in members})==len(members)and len([m for m in members if m[0]==pg])==1;prev=tm
+  for pid,bt,foot in members:assert bt>0 and 0<=foot<2**64 and(pid not in births or births[pid]==bt);births[pid]=bt
+  total=sum(m[2]for m in members);assert total<=4294967296;sums.append(total)
+ assert obs['semanticQualification']and obs['sampleReceiptPersistenceQualified']and mr['acceptedLeaderBirthBound']and mr['completePipeEOF']and mr['stoppedClosedCapture']and not mr['rawTruncated']and not mr['captureErrors']and mr['exactDirectChildWait']=='closed0'and not mr['waitUncertain']and mr['withinOriginalDeadline']and mr['groupAuthorityRetired']and mr['groupOperationsAfterWait']==mr['groupOperationsAfterUncertainty']==0 and not mr['otherRefusals']
+ if mr['failure']is None:assert obs['status']=='COMPLETE_SEMANTIC_SAMPLED_MEMORY'and obs['strictOldMemoryPolicyPassed']
+ else:
+  f=mr['failure'];assert f['contextVersion']=='owned-group-sampling-failure-context-v1'and f['typedOrigin']=='fresh-owned-group-api-v1'and f['failureClass']in ['kernel-oserror','kernel-failed-return']and f['errno']==3 and f['stage']in ['leader-getpgid','member-getpgid','member-rusage']and f['pid']in births and f['queryOrdinal']>0 and obs['status']=='SEMANTIC_DIAGNOSTIC_TERMINATION_GAP'and not obs['strictOldMemoryPolicyPassed']and cap['firstFailure']=='sampling-uncertainty'and obs['memoryObservation']['missingFootprint']is None and not obs['memoryObservation']['zeroSynthesized'];gaps.append(dict(label=label,failure=f))
+ assert res['memoryObservation']==obs['memoryObservation']and res['strictOldMemoryPolicyPassed']==obs['strictOldMemoryPolicyPassed'];ev=obs['controllerEvents'];assert ev.count('wait-enter')==1 and ev.index('retire:before-watchdog-stop-and-wait')<ev.index('wait-enter')and 'group-operation'not in ev[ev.index('wait-enter')+1:]
+ summ.append(dict(label=label,wait=0,acceptedSamples=len(sm),sums=sums,memoryAdmissionRecord=mr,strictOldSamplingPassed=obs['strictOldMemoryPolicyPassed'],arena17=ar,report=expected,raw={k:r[k]for k in ['stdout','stderr','limitJournal','memoryJournal']},seal=rec(sealP),artifact=rec(outP)))
+assert sum(x['strictOldSamplingPassed']for x in summ)+len(gaps)==4
+assert load(S/'terminal.json')==dict(calls=4,closed=True,failure=False)and not(S/'failure.json').exists();assert report['status']=='COMPLETE_HFT_COMPOSE10_BUILD_EXTRACT_ORIGINAL_NS_NATIVE4_V1_CODE_ONLY'and report['results']==results and report['calls']==4
+for n,r in report['evidence'].items():ck(S/n,r)
+for k in ['globalApplicabilityClaim','optimizerRuntimeQualified','guestExecuted','speedQualified','C2']:assert report[k]is False
+# Complete actual NS changed-byte set, not only desired word reads.
+ec=load(D/'emission-certificate.json');old=ck(ec['originalOffContainer']['path'],ec['originalOffContainer']);new=(S/'nsichneu.kseed').read_bytes();op,oe=container(old);np,ne=container(new);assert len(new)==len(old)==ec['expectedContainerBytes']and oe==ne and rec(S/'nsichneu.kseed')['sha256']==ec['expectedContainerSHA256']and rec(S/'nsichneu.bin')==dict(path=str(S/'nsichneu.bin'),bytes=ec['expectedWholeNativeBytes'],sha256=ec['expectedWholeNativeSHA256']);assert np==(S/'nsichneu.bin').read_bytes()
+wordsBefore=struct.unpack('<'+'I'*(len(op)//4),op);wordsAfter=struct.unpack('<'+'I'*(len(np)//4),np);diff=[dict(wordIndex=i+1,physicalByteOffset=i*4,before=a,after=b)for i,(a,b)in enumerate(zip(wordsBefore,wordsAfter))if a!=b];assert diff==ec['changes'];assert old[:-len(op)]==new[:-len(np)]
+assert len(diff)==40 and len(pr['environment'])==17
+for n,r in sp.items():ck(D/n,r)
+for p,r in ip.items():ck(p,r)
+ck(pr['previousNative4FailureIndependentReceipt']['path'],pr['previousNative4FailureIndependentReceipt'])
+out={'status':'PASS_INDEPENDENT_SAVED_HFT_COMPOSE10_NATIVE4_COMPILER_EMISSION40_CODE_ONLY','independent':True,'priorImplementationAuthorship':True,'authorshipScope':'reviewer authored diagnostic native4 driver/source, not compose10 algorithm; root executed once; this saved byte/raw audit discloses authorship and is not an independent SOURCE review of own driver','sourcePinsSHA256':g['sourcePinsSHA256'],'inputPinsSHA256':g['inputPinsSHA256'],'driverSHA256':g['driverSHA256'],'preregistrationSHA256':g['preregistrationSHA256'],'rootGO':rec(G),'sourceReviews':g['sourceReviews'],'generatedProducerBuildReceipt':rec(S/'candidate-build-receipt.json'),'compose10ArchitectureReviews':pr['compose10ArchitecturalReviews'],'completion':rec(S/'report.json'),'verifiedClosure':dict(sourceFiles=len(sp),inputFiles=len(ip),inputLogicalBytes=sum(x['bytes']for x in ip.values())),'calls':summ,'closedCompilerCalls':4,'acceptedFiniteSamples':sum(x['acceptedSamples']for x in summ),'strictSamplingPassedCalls':sum(x['strictOldSamplingPassed']for x in summ),'admittedTypedTerminationGaps':gaps,'wholeArtifactsAndOwnExports':arts,'actualFullNativeWordDifferences':diff,'prospectiveCertificate':ec,'previousFailureImmutable':pr['previousNative4FailureIndependentReceipt'],'conclusion':'Current7618 successfully produced/extracted compose10 HFT compiler main0, and own generated G1 produced/extracted unchanged originalNS whole code with exactly prospective forty-word change and identical public header/exports. Compiler artifact formation/code identity only. All four specific admitted sampled/typed-gap observations are preserved individually; no hardpeak claim.','qualification':dict(actualCandidateCompilerFormation=True,actualOriginalNSFortyWordEmission=True,optimizerRuntime=False,benchmarkGuest=False,privateFrameHelperABIClosure=False,fullOriginal19=False,selfhostFixedpoint=False,performance=False,productAdoption=False,hardPeak=False),'limitations':['Saved source-bound receipts/assertions, not external syscall chronology; direct child waits do not separately prove all descendant wait chronology.','Any typed termination gaps retain exact bound PID/phase/errno/query context; no kernel cause inferred or missing footprint synthesized.','Root reported once host require_escalated session61721 closed0; outer result attribution separate from durable four directwait0.','Candidate compiler CLI native execution occurred; no benchmark guest/fuel/trap/17arena equivalence was executed by this four-call registration.','Old E2101 first-call failure remains immutable, no oldnamespace retry/reclassification.'],'operationalCalls':0,'subjectWrites':False,'auditSHA256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
+p=O/'report.json';p.write_text(json.dumps(out,indent=2)+'\n');print(rec(p))

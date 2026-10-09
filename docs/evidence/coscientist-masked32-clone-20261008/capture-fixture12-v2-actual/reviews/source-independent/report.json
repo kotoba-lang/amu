@@ -1,0 +1,61 @@
+{
+  "status": "PASS_SOURCE_ONLY_REAL_PIPE_CAPTURE_FIXTURE_V2_12",
+  "independent": true,
+  "priorImplementationAuthorship": false,
+  "priorParticipation": "Independent V1 HOLD reviewer. Parent explicitly selected finite controlled fixture scope and exact frozen driver status.",
+  "sourcePinsSHA256": "2c45a5d4c306dd4bdc9ca1b20aa47d436c3838999864bc2adf280713703e686e",
+  "driverSHA256": "0b4daa29625cd4452710e0fc8c7dc3ebaf4b252f03e9493dd5fbba53f74863a0",
+  "inputPinsSHA256": "5739d7a40ce0fbdb45dd0e5a0acfc9ec98d4e0dc175858104f6b984c3ffa9961",
+  "preregistrationSHA256": "ec9d5885f4767de7b40f983380e27bc8cefeaf0aebdd3740f7e95759c5fd389a",
+  "freezeSHA256": "5413c064780bee0809c4fd3c2351df74163195678d1eea0fb7db4a97081cf7d4",
+  "freshHashClosure": [
+    [
+      10,
+      29079
+    ],
+    [
+      12,
+      27524
+    ]
+  ],
+  "checks": [
+    "Complete transactional setup/worker/fixture/driver and V1->V2 diff inspected. Worker waits for one-way parent decision before selector/sink/read FD access; denial is irreversible.",
+    "Second pipe/constructor/beforestart/afteractualstart controlled failures close parent-owned allocated FDs. A delayed denied worker cannot access those FDs; no reliance on thread-ident absence.",
+    "Worker-granted branch remains worker-only read ownership. Parent writes are separately closed. Stoppedwriter+closed sinks+granted gates hashes; no active/denied writer file reads.",
+    "Eight capture cases and four setup negatives registered. Blocked-read acknowledgement added before first join timeout; gate delay bounded0.5 and release onfinally. No actual process/group APIs or native starts.",
+    "Fixed3s absolutecase deadlines, firstfailure+1s clamp, two joins maximum, 4096reads/16MiBobserved and8MiB/1MiB prefixes, fair64KiB rounds and shortwrite deadline checks remain.",
+    "AsymmetricEOF/cap+1/shortwrite/fsync/openexpiry/jointimeout assertions reviewed. Errors, partialraw, EOF and memoryAdmission remain separate; fixture completion claims capture only.",
+    "Exact GO schema/status/output/max12/noretry/two specific SOURCE reports/source+input closure required; completion only after8 stopped capture cases plus4 setup receipts."
+  ],
+  "pureControls": {
+    "synchronousWorkerRuns": 3,
+    "transactionalSetupNegatives": 4,
+    "denialIrreversible": true,
+    "delayedDeniedWorkerNoFDTouches": true,
+    "metadataOnlySnapshotWhileActive": true,
+    "ownershipModel": {
+      "status": "PASS_PURE_POLICY_MODEL_ONLY",
+      "negativeOwnershipTraces": 5,
+      "positiveCaptureBoundaries": 5,
+      "nativeCalls": 0,
+      "processAPICalls": 0,
+      "threadedFDOwnershipQualified": false
+    },
+    "realThreads": 0,
+    "realPipes": 0,
+    "frozenWrites": 0
+  },
+  "qualificationLimits": [
+    "Admits the exact separately GOed twelve-case real pipe/thread fixture only, not native sampler admission or generic process ownership implementation.",
+    "Grant-boundary asynchronous interruption after worker grant but before setup return is not one of the four controlled tests; a worker-granted SetupFailure closes parent writes and refuses worker but caller setup lies outside its case finally, so generic guaranteed cleanup acknowledgement is not established. Future operational integration must address that boundary explicitly.",
+    "Pipe-return/recording asynchronous interruption and arbitrary regularfile write/fsync/close blocking remain outside qualification; cooperative deadlines are not hard OS wall bounds.",
+    "Blocked-read ack reduces scheduling ambiguity but wait0.5 timeout can still safely fail under arbitrary descheduling.",
+    "Join uses original absolute deadline, while worker drain uses clamped firstfailure deadline; hashes remain unavailable until acknowledged writer stop.",
+    "No real thread/pipe/fixture execution by reviewer. V1 held/source preserved; no guest/memory/runtime/full19/fixedpoint/performance/C2 qualification."
+  ],
+  "operationalCallsByReviewer": 0,
+  "actualThreadStartsByReviewer": 0,
+  "actualPipeCallsByReviewer": 0,
+  "runtimeFixtureExecutedByReviewer": false,
+  "blockersForFixedControlledFixture": []
+}

@@ -1,0 +1,43 @@
+--- a/seed/41-a64gen.kotoba
++++ b/seed/41-a64gen.kotoba
+@@ -428,0 +429,19 @@
++;; Exact masked checked-store wrappers, one known helper deep. 65536 marks
++;; the shape; low 16 bits hold the mask; bits 17/18 hold outer/inner fuel.
++;; Extra scratch is a constant descriptor, never an added argument/home slot.
++(defn- gn-mask-wrapper [M :vector-i64 f :i64 t :i64 n :i64] :i64
++  (let [p (gn-fnf M f FF-SIR)]
++    (if (or (< p 1) (not= n 3) (> t 3) (not= (gn-op M p) OP-FN)
++            (not= (gn-sir M p IF-A) f) (not= (gn-sir M p IF-B) 3)) 0
++      (let [fuel (if (= (gn-op M (inc p)) OP-FUEL) 1 0)
++            q (gn-skiplab M (+ p 1 fuel)) j (gn-wparams M q 0 3)
++            mask (gn-sir M j IF-B) call (+ j 2)
++            inner (if (= (gn-op M call) OP-CALL) (gn-wrapper M (gn-sir M call IF-A) t 3) 0)]
++        (if (and (> j 0) (= (gn-op M j) OP-CONST) (= (gn-sir M j IF-A) 3)
++                 (> mask 0) (<= mask 65535) (= (bit-and mask (inc mask)) 0)
++                 (= (gn-op M (inc j)) OP-BIN) (= (gn-sir M (inc j) IF-A) BOP-AND) (= (gn-sir M (inc j) IF-B) 2)
++                 (> inner 0) (= (bit-and inner 255) RT-VECTOR-ASSOC-IN-PLACE)
++                 (= (gn-sir M call IF-B) 0) (= (gn-sir M call IF-C) 3)
++                 (= (gn-op M (inc call)) OP-RET) (= (gn-sir M (inc call) IF-A) 0)
++                 (= (gn-op M (+ call 2)) OP-END))
++          (+ 65536 mask (* 131072 (+ fuel (if (>= inner 256) 2 0)))) 0)))))
+@@ -430 +449,3 @@
+-  (if (= (gn-op M (inc i)) OP-RES2) 0 (gn-wrapper M f t n)))
++  (if (= (gn-op M (inc i)) OP-RES2) 0
++      (let [w (gn-wrapper M f t n)] (if (> w 0) w (gn-mask-wrapper M f t n)))))
++
+@@ -449 +470 @@
+-                (if (> w 0) (if (>= w 256) (gn-gs M gn-f-fuel 1) M)
++                (if (> w 0) (if (if (>= w 65536) (>= w 131072) (>= w 256)) (gn-gs M gn-f-fuel 1) M)
+@@ -846,0 +868,8 @@
++(defn- gn-call-mask [M :vector-i64 i :i64 t :i64 w :i64] :vector-i64
++  (let [fuel (quot w 131072)]
++    (-> M
++        (cond-> (= (bit-and fuel 1) 1) (gn-op-fuel))
++        (gn-def (+ t 3) gn-k-const (bit-and w 65535))
++        (gn-op-bin i BOP-AND (+ t 2))
++        (cond-> (= (bit-and fuel 2) 2) (gn-op-fuel))
++        (gn-op-rt i RT-VECTOR-ASSOC-IN-PLACE t 3))))
+@@ -849 +878,2 @@
+-   (cond (> w 0) (let [M1 (if (>= w 256) (gn-op-fuel M) M)
++   (cond (>= w 65536) (gn-call-mask M i t w)
++         (> w 0) (let [M1 (if (>= w 256) (gn-op-fuel M) M)

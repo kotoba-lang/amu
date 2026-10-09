@@ -1,0 +1,62 @@
+{
+  "status": "HOLD_SOURCE_ONLY_REAL_PIPE_CAPTURE_FIXTURE8_SETUP_OWNERSHIP",
+  "independent": true,
+  "priorImplementationAuthorship": false,
+  "sourcePinsSHA256": "de6112a9364b80165c411e281d80f86f4b5ea01fa47d1018dc785b038e40e4cf",
+  "driverSHA256": "00576df582cf904684f596d2944bffc58ffe72de2d1499ee8dde36fcf8ab6419",
+  "inputPinsSHA256": "cba0c83b66ba5bd3fc4be6540cab0c23595f65432eef66d6280bdf5be2129dd4",
+  "freezeSHA256": "f2412aed6ef6babe479ef2fc53033aa4b2047dfa588f206641d862d70092400b",
+  "freshHashClosure": [
+    [
+      9,
+      22204
+    ],
+    [
+      8,
+      20923
+    ]
+  ],
+  "blockers": [
+    {
+      "file": "/Users/junkawasaki/github/workspaces/codex/crc-guest-bounded-capture-fixture-source-v1-20261009-dense/fixture.py",
+      "lines": {
+        "allocatePipes": 16,
+        "startThread": 23,
+        "protectedTry": 24
+      },
+      "finding": "Both os.pipe allocations, Capture construction and cap.start() precede the try/finally. Second pipe allocation or construction/start failure bypasses all FD cleanup. If thread never starts, no worker owns cleanup of reads.",
+      "requiredRevision": "Fresh version with transactional per-case setup and explicit pre-start parent ownership. Clean parent-owned read/write FDs on partial setup failure; transfer read ownership once worker start/claim is established. If start state is uncertain, do not cross-close active reader FDs; retain uncertainty/no hashes/no completion. Test allocation and thread-start exceptions with injected APIs before real fixture GO."
+    }
+  ],
+  "otherChecks": [
+    "Single worker readFD/selector/sink ownership and no process/group APIs in capture reviewed.",
+    "Fair64KiB rounds, exact rawcaps,4096read/16MiBobserved work bounds, inner short-write deadlines, firstfailure+1s clamp, both absolute3s deadlines retained.",
+    "Stopped+closed sink acknowledgement gates hashing; active writer snapshot hash unavailable, EOF/truncation/error distinguish semanticObservation from memory qualification.",
+    "Eight fixture cases finite; old firstjoin timeout remains failure even after cleanup join. Post-start finally closes parent writes/releases readgate and bounds cleanup join.",
+    "Complete8/stoppedWriter only publishes completion; firsterror stops/no retry. Full2review/GO and source/input guards inspected."
+  ],
+  "pureControls": {
+    "synchronousInjectedWorkerRuns": 3,
+    "metadataOnlyActiveWriterSnapshot": true,
+    "ownershipModel": {
+      "status": "PASS_PURE_POLICY_MODEL_ONLY",
+      "negativeOwnershipTraces": 5,
+      "positiveCaptureBoundaries": 5,
+      "nativeCalls": 0,
+      "processAPICalls": 0,
+      "threadedFDOwnershipQualified": false
+    },
+    "actualThreadsOrPipesRun": false
+  },
+  "additionalFixtureLimits": [
+    "Join-timeout uses gate wait0.2s but lacks an acknowledged blocked-read phase before initial join; arbitrary scheduling can make it a safe fixture failure. Make deterministic controlled ordering explicit in revision.",
+    "Regularfile write/fsync/close may block despite cooperative deadline; no hard wall guarantee.",
+    "Capture.snapshot may expose completeRaw after semantic-free capture even with earlier sampler refusal; memoryAdmissionQualified staysfalse, correct boundary."
+  ],
+  "runtimeGO": false,
+  "operationalCallsByReviewer": 0,
+  "nativeCallsByReviewer": 0,
+  "actualThreadStartsByReviewer": 0,
+  "actualPipeCallsByReviewer": 0,
+  "productOrFrozenSourceEdits": 0
+}

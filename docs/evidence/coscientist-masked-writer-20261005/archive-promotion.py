@@ -1,0 +1,23 @@
+from pathlib import Path
+import json,tarfile,hashlib,shutil
+r=Path('/Users/junkawasaki/github/wt/amu-seed17');w=Path('/private/tmp/amu-masked-writer-20261005');i=Path('/private/tmp/amu-masked-writer-integrated-20261005');p=Path('/private/tmp/amu-masked-writer-integrated-20261005-parity');d=r/'docs/evidence/coscientist-masked-writer-20261005';sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+shutil.copyfile(w/'integrated-summary.json',d/'integrated-summary.json');shutil.copyfile(w/'gates.tsv',d/'gates.tsv')
+with tarfile.open(d/'product-validation.tgz','w:gz') as a:
+ for n in ['bootstrap-before.txt','bootstrap-after.txt','gates.tsv','failed-gate-source-scope','failed-canonical-source-scope.txt','integrated-ports.py','integrated-proof.py','integrated-summary.json','integrated-parity.log']:a.add(w/n,arcname=n)
+ for n in ['gates','g5']:
+  path=w/'gate-build'/n
+  if path.exists():
+   for f in sorted(path.rglob('*')):
+    if f.is_file() and f.suffix in ['.log','.tsv','.txt','.json','.out','.stderr']:a.add(f,arcname='gate-build/'+str(f.relative_to(w/'gate-build')))
+ for n in ['check.tsv','compile.tsv','exports.tsv','summary.txt','policy.edn']:a.add(p/n,arcname='corpus/'+n)
+ for n in ['inputs.sha256','input-check.log','objects1.sha','objects2.sha','objects3.sha','ports.json','front1.out','front2.out','front3.out','g1.out','g2.out','g3.out']:a.add(i/n,arcname='integrated/'+n)
+ for g in [1,2,3]:
+  for n in ['amu','amu.bin','amu.kseed']:a.add(i/f'g{g}'/n,arcname=f'integrated/g{g}/'+n)
+ unit=w/'canonical-fixtures/unit/41-a64gen'
+ for n in ['stdout','stderr','unit.log','parts.txt','unit.bin','unit.offset']:a.add(unit/n,arcname='native-unit/'+n)
+ # External input source snapshots remain local. Only hash metadata, generated
+ # machine artifacts and diagnostics are archived above.
+s=json.loads((d/'summary.json').read_text());s.update(productChanged=True,productPromoted=True,promotionSourceCommit='3510b765960f8010be0a84a8863fc1e565e9b3b2',decision='Promote exact masked-writer lowering: native state proof, quiet >=5% timing, six gates, unchanged bootstrap inventory and3-generation integrated product validation pass. C-or-better remains unachieved.',nativeProductRegressionRuns=2363,nativeProductFixtures=206,integratedQualification=json.loads((d/'integrated-summary.json').read_text()),launcherEntryChanged=False);(d/'summary.json').write_text(json.dumps(s,indent=2)+'\n')
+next={'status':'registered-unimplemented-context-preserving-call-hypothesis','baseline':'Qualified masked-writer product, native seed SHA ff6ac028ee32572b88c517daaccf78f823596f3986d588f98c9ae5c5a4298df1, integrated711f9d40e7dc51092b307cd34550176061ccf865edafc292ffeebc5177812019. Original19 canonical sources/C/runner remain pinned.','hypothesis':'Prove that a direct callee preserves context register x7 from exact typed SIR and admitted dependencies; retain the actual call, ABI, caller classification/frame, fuel and all trap/commit boundaries, but keep gn-f-ctx known when the proof succeeds. Start with finite exact bodies and bounded depth; unknown calls, cycles without proof, capabilities, allocation, opaque runtime operations and indirect calls must retain legacy context invalidation. No source/function/benchmark names or effects guessed from text.','rationale':'Successful masked-writer inlining preserves the original nonleaf caller, while generic calls still invalidate context knowledge unconditionally. Existing scalar/inline vector operations do not write x7. A structural callee fact may avoid repeated reloads in fresh execution. Fuel counts are not exclusive time; do not predict a gain or alter ABI based on them.','proof':'Native fixedpoint, all19 source/result/exactfuel/exhaustion, fullPico arena, full supervisor/partialstate tests including genuinely context-clobbering runtime/cap/callback paths and conservative refusal neighborhoods; independent instruction audit of admitted reload removal and unchanged clobbering-call restoration.','timing':'Fresh30 rotating quiet current-product/candidate/original-C triples for every changed workload; >=1.05 and gain>sumSD, no separated regressions. Same fixed90attempt cap/load/idle/RSD bounds; no unchanged-code retiming. Product/integration only after all proof and timing gates pass.'};(d/'next-hypothesis.json').write_text(json.dumps(next,indent=2)+'\n')
+shutil.copyfile(w/'archive-promotion.py',d/'archive-promotion.py')
+files=sorted(x for x in d.iterdir() if x.is_file() and x.name!='checksums.sha256');(d/'checksums.sha256').write_text(''.join(sha(x)+'  '+x.name+'\n' for x in files));print('PASS promoted product archive; external snapshots remain local')

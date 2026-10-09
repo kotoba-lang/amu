@@ -1,0 +1,81 @@
+ def call(label,args,producer):
+  guard();need(len(rows)<8 and label not in [r['label']for r in rows],'finite8 no retry')
+  nativeArgv=[pr['loader']['path'],str(producer),'0','0','aarch64','35,37,38,39','--',*args]
+  r={'index':len(rows)+1,'label':label,'nativeArgv':nativeArgv,'environment':env.copy(),'state':'started'}
+  rows.append(r);save(O/'attempts.json',rows);out=O/(label+'.stdout');err=O/(label+'.stderr');lj=O/(label+'.limit-journal.jsonl');mj=O/(label+'.memory-journal.jsonl')
+  proc=None;reason=None;exception=None;cleanup=[];reaped=False;signalAuthority=False;waitEntered=False;waitUncertain=False
+  anchor=threading.Lock();stop=threading.Event();expired=threading.Event();watch=None;sel=selectors.DefaultSelector();bytesOut={'stdout':0,'stderr':0};sampleCount=0;peakFootprint=0;memoryBytes=0
+  with out.open('xb',buffering=0)as of,err.open('xb',buffering=0)as ef,lj.open('xb',buffering=0)as limits,mj.open('xb',buffering=0)as memory:
+   argv=[pr['interpreter']['path'],str(D/'launch-wrapper.py'),'--journal-fd',str(limits.fileno()),'--',*nativeArgv];r['argv']=argv;save(O/'attempts.json',rows)
+   deadline=time.monotonic()+1810
+   def watchdog():
+    nonlocal reason
+    if not stop.wait(max(0,deadline-time.monotonic())):
+     expired.set();reason='outerwall1810'
+     with anchor:
+      if proc is not None and signalAuthority and not waitEntered and proc.returncode is None:
+       try:os.killpg(proc.pid,signal.SIGKILL)
+       except ProcessLookupError:pass
+       except BaseException as ex:cleanup.append('watchdog:'+repr(ex))
+   try:
+    proc=subprocess.Popen(argv,cwd=O,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,pass_fds=(limits.fileno(),),start_new_session=True)
+    signalAuthority=True;r['pid']=proc.pid;save(O/'attempts.json',rows);watch=threading.Thread(target=watchdog,daemon=True);watch.start()
+    for name,pipe,file in [('stdout',proc.stdout,of),('stderr',proc.stderr,ef)]:os.set_blocking(pipe.fileno(),False);sel.register(pipe,selectors.EVENT_READ,(name,file))
+    sampler=memoryModule.OwnedGroupSampler(memoryModule.DarwinOwnedGroupAPI(),proc.pid);nextSample=time.monotonic()
+    while sel.get_map():
+     need(not expired.is_set()and time.monotonic()<deadline,'outerwall1810')
+     for key,_ in sel.select(.02):
+      b=os.read(key.fd,65536);name,file=key.data
+      if not b:sel.unregister(key.fileobj);key.fileobj.close();continue
+      cap=8388608 if name=='stdout'else 1048576;room=cap-bytesOut[name];need(file.write(b[:room])==min(room,len(b)),'complete bounded raw write');bytesOut[name]+=min(room,len(b));need(len(b)<=room,'raw capture overflow')
+     if not sel.get_map():break
+     if time.monotonic()>=nextSample:
+      q=sampler.sample();sampleCount+=1;peakFootprint=max(peakFootprint,q['aggregateBytes'])
+      # Compact full accepted witness; at most2 [PID,birth,footprint] rows, no guessed zeros.
+      witness=[q['sample'],time.monotonic_ns(),q['ownedPGID'],[[x['pid'],x['start'],x['physicalFootprintBytes']]for x in q['members']]]
+      b=(json.dumps(witness,separators=(',',':'))+'\n').encode();need(sampleCount<=90502 and memoryBytes+len(b)<=16777216,'finite memory receipt budget');need(memory.write(b)==len(b),'full memory receipt');os.fsync(memory.fileno());memoryBytes+=len(b);nextSample=time.monotonic()+.02
+    stop.set();watch.join(timeout=.1);need(not watch.is_alive(),'watchdog joined before reap')
+    need(anchor.acquire(timeout=max(.001,deadline-time.monotonic())),'normal ownership lock')
+    try:
+     signalAuthority=False;waitEntered=True
+     try:proc.wait(timeout=min(30,max(.001,deadline-time.monotonic())))
+     except BaseException:waitUncertain=True;raise
+     finally:reaped=proc.returncode is not None
+    finally:anchor.release()
+    need(not expired.is_set()and time.monotonic()<deadline,'normal closed before outerwall')
+   except BaseException as ex:exception=repr(ex);reason=reason or'exception'
+   finally:
+    cleanupDeadline=time.monotonic()+30;stop.set()
+    if watch is not None:
+     watch.join(timeout=.1)
+     if watch.is_alive():cleanup.append('watchdog unjoined')
+    locked=anchor.acquire(timeout=max(.001,cleanupDeadline-time.monotonic()))
+    if not locked:cleanup.append('ownership lock unavailable; no signal/reap')
+    try:
+     if locked and proc is not None and signalAuthority and not waitEntered and proc.returncode is None:
+      try:os.killpg(proc.pid,signal.SIGKILL)
+      except ProcessLookupError:pass
+      except BaseException as ex:cleanup.append('killgroup:'+repr(ex))
+      signalAuthority=False;waitEntered=True
+      try:proc.wait(timeout=max(.001,cleanupDeadline-time.monotonic()))
+      except BaseException as ex:waitUncertain=True;cleanup.append('wait:'+repr(ex))
+      finally:reaped=proc.returncode is not None
+    finally:
+     if locked:anchor.release()
+    if waitUncertain:cleanup.append('wait ownership uncertain; authority retired/no later group operations')
+    if proc is not None:
+     for pipe in [proc.stdout,proc.stderr]:
+      if pipe is not None and not pipe.closed:pipe.close()
+    sel.close();os.fsync(of.fileno());os.fsync(ef.fileno());os.fsync(limits.fileno());os.fsync(memory.fileno())
+  r.update(state='terminal'if proc is None or reaped else'unclosed',spawned=proc is not None,reaped=reaped,returncode=None if proc is None else proc.returncode,reason=reason,exception=exception,cleanup=cleanup,waitEntered=waitEntered,waitUncertain=waitUncertain,signalingAuthorityRetired=not signalAuthority,stdout=receipt(out),stderr=receipt(err),limitJournal=receipt(lj),memoryJournal=receipt(mj),memorySamples=sampleCount,peakObservedAggregateFootprintBytes=peakFootprint,hardMemoryCapEstablished=False)
+  if err.stat().st_size<=1048576:r['counterObservation']=counters(err.read_bytes())
+  save(O/'attempts.json',rows)
+  need(proc is not None and reaped and proc.returncode==0 and not reason and not exception and not cleanup,'first failure stop closed')
+  need(0<lj.stat().st_size<=65536,'bounded limit journal');limitsRows=[json.loads(x)for x in lj.read_bytes().splitlines()]
+  need(len(limitsRows)==5,'exact two named setters plus exec witness')
+  for k,(name,soft,hard)in enumerate([('RLIMIT_FSIZE',67108864,67108864),('RLIMIT_CPU',1800,1801)]):
+   before,after=limitsRows[2*k:2*k+2];need(before['index']==k+1 and before['limit']==name and before['stage']=='before'and before['desired']==[soft,hard],'exact desired resource')
+   need(after=={'index':k+1,'limit':name,'stage':'outcome','outcome':'installed','readback':[soft,hard]},'exact named setter/readback')
+  need(limitsRows[-1]=={'stage':'exec-ready','argv':nativeArgv,'ASSetterRequested':False,'CPUGraceHardSeconds':1801},'exact pinned native exec witness')
+  need(sampleCount>0 and r.get('counterObservation',{}).get('status')=='valid','observed process memory and exact17 counters')
+  raw=out.read_bytes();need(b':ok true'in raw and b':ok false'not in raw,'compiler/extract normal success');guard();return raw

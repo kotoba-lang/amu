@@ -1,0 +1,11 @@
+Draft SOURCE preflight only; no qualification, no actual thread/FD/process/native/network operations and no subject edits. Read run.py, DESIGN.md, preregistration.json in crc-capture-popen-transfer-fixture-source-v1-20261009 before freeze. These observations must be reconciled against later frozen bytes.
+
+Concrete cleanup/admission observations sent to author and root:
+
+1. Initial pipe/FileIO acquisitions precede transfer_case try/finally. A returned first pipe or second pipe endpoint may remain owned without cleanup when subsequent construction fails. Move acquisition into ownership cleanup scope; unreturned FD syscall interruption remains explicitly outside qualification.
+2. Delayed-eof reuse pipe rr/rw is not retained in finally's parent-owned collections. Failure during wrapper-close/idempotence or reuse read/write assertions can leave these endpoints unclosed. Track parent endpoints separately from worker-granted duplicate reads.
+3. Delayed-eof positive path checks Capture.join_once's stopped event but no explicit thread dead acknowledgement before PASS. Require join/dead state; the final conditional join lacks outcome assertion. Grant and authority cases already require dead state.
+4. DESIGN's eighteen/actually17 pipe sentence contradicts itself; operative prereg maximum17 agrees with static count: 8 transfer cases x2 +1 reuse pipe.
+5. DESIGN claims fixed supplied-environment source gate; driver presently verifies fixed interpreter and argv count, pins and GO but not environment. Exact root launch supplied-env receipt can establish this boundary, or driver can admit exact specified expected/runtime-extra policy; do not claim unseen verification.
+
+Verified draft observations: all operational calls are deferred to main/case methods; no Popen/native/group sampler or setter invocation; 10 fixed cases, at most8 auxiliary thread starts, at most2 simultaneous auxiliaries. Actual fixture FD ledger bound9 plus inherited stdio3 is narrow and assumes no extra inherited FDs. Exact old-integer FD reuse is not promised. Postgrant no-ack case forces controlled selector handoff and forbids active-writer hashes, then releases and requires dead worker before case receipt. Complete native controller/process lifecycle and memory remain unqualified.

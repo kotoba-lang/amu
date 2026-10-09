@@ -1,0 +1,19 @@
+{
+  "status": "ROOT_SOURCE_HOLD_QUALIFICATION_V2_WAIT_REAPS_THEN_RAISES",
+  "sourcePinsSHA256": "508a73aa7c60bfe47a50b6a499d186f5f1beab33ae0e6dd9dcedf1b44b7af5af",
+  "driverSHA256": "ebbbe7967816c745af06449fb6a2edfba3d488a01d9c46619a4a1172bddfe36b",
+  "finding": "Popen.wait KeyboardInterrupt path can call _wait/setreturncode then reraises; separate reaped flag may stayfalse; cleanupkillpg only flag risks post-reap signaling",
+  "primaryLocalSource": {
+    "path": "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py",
+    "bytes": 90732,
+    "sha256": "6628ffdd65c093a6c08cae01ffe82877d3ced515aac9e7be0cff16512c30a7d9",
+    "lines": [
+      1274,
+      1295
+    ]
+  },
+  "requiredFix": "Under same anchor lock check authoritative returncode before kill; reconcile wait outcome in finally; fake wait sets returncode then raises must never signal",
+  "GOIssued": false,
+  "childExecutions": 0,
+  "processAPICalls": 0
+}

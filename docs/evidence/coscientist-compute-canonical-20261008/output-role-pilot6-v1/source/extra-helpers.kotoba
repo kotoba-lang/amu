@@ -1,0 +1,19 @@
+;; Declared output-role shadow only: no M/G writes, analysis ticks, or query skip.
+(defn- cr-fields [M :vector-i64 f :i64 k :i64] :i64
+ (if (>= k 16) 0
+  (let [a (cq-print "CR-WVF" [f k (vw-f M f k)])
+        b (cq-print "CR-FNF" [f k (gn-fnf M f k)])]
+   (cr-fields M f (inc k)))))
+(defn- cr-result [M :vector-i64 f :i64] :i64
+ (cq-print "CR-RESULT" [f (vw-c M 1) (vw-f M f 15) (vw-f M f 14)
+   (gn-g M (+ vw-old 1792 f))
+   (vw-c M 9) (vw-c M 10) (vw-c M 11) (vw-c M 12) (vw-c M 13) (vw-c M 14)]))
+(defn- cr-edge [M :vector-i64 f :i64 e :i64] :i64
+ (let [site (vw-e M e 1)]
+  (if (or (<= site 0) (>= site (vector-at M MM-SIR-N)))
+   (cq-print "CR-EDGE-INVALID" [f e site])
+   (cq-print "CR-EDGE" [f e site (vw-e M e 2) (vw-e M e 3)
+     (gn-sir M site IF-C) (gn-op M site)
+     (gn-sir M site IF-A) (gn-sir M site IF-B) (gn-sir M site IF-C)
+     (gn-g M (+ vw-sites (* e 4))) (gn-g M (+ vw-sites (* e 4) 1))
+     (gn-g M (+ vw-sites (* e 4) 2)) (gn-g M (+ vw-sites (* e 4) 3))]))))

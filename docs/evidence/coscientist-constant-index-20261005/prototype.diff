@@ -1,0 +1,45 @@
+--- seed/41-a64gen.kotoba
++++ constant-index-experiment/41-a64gen.kotoba
+@@ -972,22 +972,36 @@
+       (gn-emit (gn-e-udf))
+       (gn-emit (enc-ldr 16 7 328))
+       (gn-emit (enc-add-r 17 17 ri))))
++;; A known index 0..4095 needs no temporary materialization: length > index
++;; unsigned is exactly the original index < length check. Bounds trap stays.
++(defn- gn-vidx-k [M :vector-i64 index :i64] :vector-i64
++  (-> M
++      (gn-emit (enc-ldp 17 16 16 0))
++      (gn-emit (enc-cmp-i 16 index))
++      (gn-emit (enc-bcond 8 2))
++      (gn-emit (gn-e-udf))
++      (gn-emit (enc-ldr 16 7 328))
++      (gn-emit (enc-add-i 17 17 index))))
+ ;; (vector-at v i), v = temp t, i = temp t+1 (t <= 5)
+ (defn- gn-rt-at [M :vector-i64 i :i64 t :i64] :vector-i64
+-  (let [M1 (gn-pin M (inc t))
+-        ri (gn-pinned M1 (inc t))
++  (let [k (gn-dv M (inc t))
++        known (and (gn-isk M (inc t) gn-k-const) (>= k 0) (<= k 4095))
++        M1 (if known M (gn-pin M (inc t)))
++        ri (if known 0 (gn-pinned M1 (inc t)))
+         rv (gn-src M1 t 17 0)
+         s (gn-co M1 i t)
+         d (gn-dreg M1 t s)]
+-    (-> M1 (gn-protect t s) (gn-ctx) (gn-ldt t 17 0) (gn-hchk rv 312 320) (gn-vidx ri) (gn-emit (gn-e-ldrr d 16 17 1)) (gn-fin t s d))))
++    (-> M1 (gn-protect t s) (gn-ctx) (gn-ldt t 17 0) (gn-hchk rv 312 320) (cond-> known (gn-vidx-k k) (not known) (gn-vidx ri)) (gn-emit (gn-e-ldrr d 16 17 1)) (gn-fin t s d))))
+ ;; (vector-assoc! v i x), temps t, t+1, t+2 (t <= 4); the result is v (its descriptor is kept)
+ (defn- gn-rt-set [M :vector-i64 t :i64] :vector-i64
+-  (let [M1 (-> M (gn-pin t) (gn-pin (inc t)))
++  (let [k (gn-dv M (inc t))
++        known (and (gn-isk M (inc t) gn-k-const) (>= k 0) (<= k 4095))
++        M1 (cond-> (gn-pin M t) (not known) (gn-pin (inc t)))
+         M2 (if (and (gn-isk M1 (+ t 2) gn-k-const) (= (gn-dv M1 (+ t 2)) 0)) M1 (gn-pin M1 (+ t 2)))
+         rv (gn-pinned M2 t)
+-        ri (gn-pinned M2 (inc t))
++        ri (if known 0 (gn-pinned M2 (inc t)))
+         rx (if (gn-isk M2 (+ t 2) gn-k-const) 31 (gn-pinned M2 (+ t 2)))]
+-    (-> M2 (gn-ctx) (gn-hchk rv 312 320) (gn-vidx ri) (gn-emit (gn-e-strr3 rx 16 17)) (gn-gs gn-f-h (inc t)))))
++    (-> M2 (gn-ctx) (gn-hchk rv 312 320) (cond-> known (gn-vidx-k k) (not known) (gn-vidx ri)) (gn-emit (gn-e-strr3 rx 16 17)) (gn-gs gn-f-h (inc t)))))
+ ;; one-handle reads: sel 0 = pair-first, 1 = pair-second, 2 = vector-count
+ (defn- gn-rt-get [M :vector-i64 i :i64 t :i64 sel :i64] :vector-i64
+   (let [rv (gn-src M t 17 0)

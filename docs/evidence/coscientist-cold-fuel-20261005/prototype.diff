@@ -1,0 +1,36 @@
+--- product/seed/41-a64gen.kotoba
++++ prototype/seed/41-a64gen.kotoba
+@@ -567,0 +568,10 @@
++;; Failure blocks precede the callable entry. Direct/indirect/export/tail
++;; references still point to FF-CODE after the block; ordinary execution never
++;; passes through failure code. Field13 is private and reset for every FN.
++(defn- gn-cold-entry [M :vector-i64 f :i64] :vector-i64
++  (let [at (vector-at M MM-CODE-N)
++        M1 (if (= (gn-g M gn-f-fuel) 1)
++             (-> M (cond-> (= (gn-g M gn-f-leaf) 1) (gn-emit (enc-str 31 7 CTX-FUEL)))
++                   (gn-emit (enc-brk 0)) (gn-gs 13 at)) M)]
++    (gn-put M1 (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) (vector-at M1 MM-CODE-N))))
++
+@@ -579 +589 @@
+-                  (gn-put (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) (vector-at M2 MM-CODE-N))
++                  (gn-cold-entry f)
+@@ -1172,3 +1182,13 @@
+-  (if (= (gn-g M gn-f-freg) 1)
+-    (-> M (gn-emit (enc-subs-i 8 8 1)) (gn-emit (enc-bcond (enc-cond-hs) 3)) (gn-emit (enc-str 31 7 CTX-FUEL)) (gn-emit (enc-brk 0)))
+-    (-> M
++  (let [target (gn-g M 13) at (+ (vector-at M MM-CODE-N) (if (= (gn-g M gn-f-freg) 1) 1 2))
++        ;; gn-ctx can emit one instruction. Evaluate it before proving distance.
++        M1 (if (= (gn-g M gn-f-freg) 1) M (gn-ctx M))
++        branch (+ (vector-at M1 MM-CODE-N) (if (= (gn-g M1 gn-f-freg) 1) 1 2))
++        delta (- target branch)]
++    (if (and (> target 0) (>= delta -262144) (<= delta 262143))
++      (if (= (gn-g M1 gn-f-freg) 1)
++        (-> M1 (gn-emit (enc-subs-i 8 8 1)) (gn-emit (enc-bcond (enc-cond-lo) delta)))
++        (-> M1 (gn-emit (enc-ldr 16 7 CTX-FUEL)) (gn-emit (enc-subs-i 16 16 1))
++               (gn-emit (enc-bcond (enc-cond-lo) delta)) (gn-emit (enc-str 16 7 CTX-FUEL))))
++      (if (= (gn-g M1 gn-f-freg) 1)
++    (-> M1 (gn-emit (enc-subs-i 8 8 1)) (gn-emit (enc-bcond (enc-cond-hs) 3)) (gn-emit (enc-str 31 7 CTX-FUEL)) (gn-emit (enc-brk 0)))
++    (-> M1
+@@ -1180 +1200 @@
+-        (gn-emit (enc-str 16 7 CTX-FUEL)))))
++        (gn-emit (enc-str 16 7 CTX-FUEL)))))))

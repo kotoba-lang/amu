@@ -1,0 +1,33 @@
+--- /Users/junkawasaki/github/workspaces/codex/tc-current7618-off18-compile36-source-v1-20261009/compiler_output.py
++++ /Users/junkawasaki/github/workspaces/codex/tc-published-x16-current-observer-source-v2-20261009/compiler_output.py
+@@ -1,15 +1,20 @@
+-"""Exact whole compiler-command output validator, no operational APIs."""
++"""Exact command output; observed workload prefix validated as finite saved data."""
+ import re,json
++from pathlib import Path
++from validate_observer import split,validate
+ def parse_output(raw,case):
+- assert isinstance(raw,bytes) and 0<len(raw)<=8388608
++ assert type(raw)is bytes and 0<len(raw)<=8388608
++ observed='ordinaryContainer'in case
++ if observed:lines,raw=split(raw)
+  path=json.dumps(case['outputPath'],ensure_ascii=True).encode()
+  if case['kind']=='compile':
+-  pattern=rb'\{:ok true, :target :aarch64-macos, :output '+re.escape(path)+rb', :bytes ([0-9]{1,10})\}\n'
+-  m=re.fullmatch(pattern,raw);assert m is not None,'whole compile output'
++  m=re.fullmatch(rb'\{:ok true, :target :aarch64-macos, :output '+re.escape(path)+rb', :bytes ([0-9]{1,10})\}\n',raw);assert m is not None
+   n=int(m[1]);assert 0<n<=4194560
+-  return {'kind':'compile','containerBytes':n}
+- assert case['kind']=='extract'
+- pattern=rb'\{:ok true, :output '+re.escape(path)+rb', :offset ([0-9]{1,10}), :length ([0-9]{1,10}), :arity ([0-9]{1,2})\}\n'
+- m=re.fullmatch(pattern,raw);assert m is not None,'whole extract output'
+- offset,length,arity=map(int,m.groups());assert offset%4==0 and 0<=offset<length<=4194304 and arity==case['arity']
+- return {'kind':'extract','offset':offset,'nativeBytes':length,'arity':arity}
++  result={'kind':'compile','containerBytes':n}
++  if observed:
++   actual=Path(case['outputPath']).read_bytes();ordinary=Path(case['ordinaryContainer']).read_bytes();assert actual==ordinary and len(actual)==n,'whole ordinary container identity'
++   cut=actual.find(b'\n\n');assert cut>=0;payload=actual[cut+2:];result['observer']=validate(lines,payload)
++  return result
++ m=re.fullmatch(rb'\{:ok true, :output '+re.escape(path)+rb', :offset ([0-9]{1,10}), :length ([0-9]{1,10}), :arity ([0-9]{1,2})\}\n',raw);assert m is not None
++ off,n,arity=map(int,m.groups());assert 0<=off<n<=4194304 and off%4==0 and arity==case['arity']
++ return {'kind':'extract','offset':off,'nativeBytes':n,'arity':arity}

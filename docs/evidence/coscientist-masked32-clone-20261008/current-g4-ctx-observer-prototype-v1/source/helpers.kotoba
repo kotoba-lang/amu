@@ -1,0 +1,52 @@
+;; Diagnostic observation only: own8 words; never skip original query.
+(def qo-base (+ gn-g-open 80))
+(def qo-end (+ qo-base 8))
+;; seq, scan-entry count, safe-entry count, previous f/n/openFirst/openCount/answer.
+(defn- qo-row [tag :string xs :vector-i64] :i64
+ (let [a (io-out tag)
+       b (loop [k 0] (if (>= k (vector-count xs)) 0
+           (let [w (io-out (string-concat " " (string-from-i64 (vector-at xs k))))] (recur (inc k)))))]
+  (io-out "\n")))
+(defn- qo-init [M :vector-i64] :vector-i64
+ (let [m (gn-zero M qo-base qo-end)
+       w (qo-row "QINIT" [qo-base qo-end (+ gn-a-lp MM-LABEL-CAP 88) (vector-at m MM-FN-N) (vector-at m MM-SIR-N)])] m))
+(defn- qo-safe-note [M :vector-i64 f :i64 n :i64 depth :i64 work :i64] :i64
+ (let [m (gn-gs M (+ qo-base 2) (inc (gn-g M (+ qo-base 2))))
+       w (if (<= (gn-g m qo-base) 16)
+           (qo-row "QCALL" [(gn-g m qo-base) f n depth work (gn-fnf m f FF-SIR)
+                 (let [p (gn-fnf m f FF-SIR)] (if (and (> p 0) (< p (vector-at m MM-SIR-N))) (gn-op m p) -1))
+                 (let [p (gn-fnf m f FF-SIR)] (if (and (> p 0) (< p (vector-at m MM-SIR-N))) (gn-sir m p IF-A) 0))
+                 (let [p (gn-fnf m f FF-SIR)] (if (and (> p 0) (< p (vector-at m MM-SIR-N))) (gn-sir m p IF-B) 0))]) 0)] 0))
+(defn- qo-scan-note [M :vector-i64 j :i64 f :i64 depth :i64 work :i64] :i64
+ (let [m (gn-gs M (+ qo-base 1) (inc (gn-g M (+ qo-base 1))))
+       valid (and (< j (vector-at m MM-SIR-N)) (> work 0))
+       w (if (<= (gn-g m qo-base) 16)
+           (qo-row "QSCAN" [(gn-g m qo-base) j f depth work (if valid 1 0)
+                    (if valid (gn-op m j) -1) (if valid (gn-sir m j IF-A) 0)
+                    (if valid (gn-sir m j IF-B) 0) (if valid (gn-sir m j IF-C) 0)]) 0)] 0))
+;; First256 complete top keys/results; first16 include full recursive traces.
+;; Previous-key equality is an observer fact only, never cache admission.
+(defn- qo-top [N :vector-i64 original :vector-i64 i :i64 f :i64 n :i64] :vector-i64
+ (let [seq (inc (gn-g N qo-base))
+       repeated (and (> seq 1) (= (gn-g N (+ qo-base 3)) f)
+          (= (gn-g N (+ qo-base 4)) n)
+          (= (gn-g N (+ qo-base 5)) (gn-g original gn-g-open))
+          (= (gn-g N (+ qo-base 6)) (gn-g original gn-g-open-n)))
+       m (-> N (gn-gs qo-base seq) (gn-gs (+ qo-base 1) 0) (gn-gs (+ qo-base 2) 0))
+       start (if (<= seq 256) (qo-row "QBEGIN" [seq i f n 8 512
+            (gn-g original gn-g-open) (gn-g original gn-g-open-n)
+            (if repeated 1 0) (gn-g m (+ qo-base 7))]) 0)
+       answer (gn-ctx-safe original f n 8 512)
+       finish (if (<= seq 256) (qo-row "QEND" [seq answer (gn-g m (+ qo-base 1))
+                (gn-g m (+ qo-base 2))]) 0)
+       m1 (-> m (gn-gs (+ qo-base 3) f) (gn-gs (+ qo-base 4) n)
+                (gn-gs (+ qo-base 5) (gn-g original gn-g-open))
+                (gn-gs (+ qo-base 6) (gn-g original gn-g-open-n))
+                (gn-gs (+ qo-base 7) answer))]
+  (gn-gs m1 gn-f-ctx (if (>= answer 0) 1 0))))
+(defn- qo-clean [M :vector-i64] :vector-i64
+ (let [count (gn-g M qo-base) w (qo-row "QSTOP" [count (gn-min count 256) (gn-min count 16)])
+       m (gn-zero M qo-base qo-end)
+       z (qo-row "QCLEAN" [(gn-g m qo-base) (gn-g m (+ qo-base 1))
+          (gn-g m (+ qo-base 2)) (gn-g m (+ qo-base 3)) (gn-g m (+ qo-base 4))
+          (gn-g m (+ qo-base 5)) (gn-g m (+ qo-base 6)) (gn-g m (+ qo-base 7))])] m))

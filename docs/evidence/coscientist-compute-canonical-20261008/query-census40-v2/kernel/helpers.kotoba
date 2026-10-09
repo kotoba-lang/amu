@@ -1,0 +1,31 @@
+;; SOURCE-only actual query census. No new cache/key exclusions and no M/G writes.
+(defn- cq-print [tag :string xs :vector-i64] :i64
+ (let [a (io-out tag) b (loop [i 0] (if (>= i (vector-count xs)) 0
+   (let [w (io-out (string-concat " " (string-from-i64 (vector-at xs i))))] (recur (inc i)))))] (io-out "\n")))
+(defn- cq-valid [M :vector-i64 f :i64] :bool
+ (and (> f 0) (< f (vw-c M 2)) (<= (vw-c M 2) 128)
+      (>= (vw-c M 3) 0) (<= (vw-c M 3) 512)))
+(defn- cq-entry [M :vector-i64 f :i64] :i64
+ (if (not (cq-valid M f)) (cq-print "CQ-UNSUPPORTED" [f])
+  (cq-print "CQ-ENTRY" [f (vw-c M 26) (vw-c M 0) (vw-c M 1) (vw-c M 2) (vw-c M 3)
+    (gn-g M (+ vw-old 1792 f))
+    (gn-g M (+ vw-old (* f 4))) (gn-g M (+ vw-old (* f 4) 1))
+    (gn-g M (+ vw-old (* f 4) 2)) (gn-g M (+ vw-old (* f 4) 3))
+    (gn-g M (+ vw-labels 8193 (* f 4))) (gn-g M (+ vw-labels 8193 (* f 4) 1))
+    (gn-g M (+ vw-labels 8193 (* f 4) 2)) (gn-g M (+ vw-labels 8193 (* f 4) 3))
+    (vw-f M f 3) (vw-f M f 15) (vw-f M f 14)
+    (vw-c M 20) (vw-c M 25) (vw-c M 29)])))
+(defn- cq-edges [M :vector-i64 f :i64 e :i64] :i64
+ (if (>= e (vw-c M 3)) 0
+  (let [out (if (= (vw-e M e 0) f)
+    (cq-print "CQ-EDGE" [f e (vw-e M e 1) (vw-e M e 2) (vw-e M e 3)
+      (gn-g M (+ vw-sites (* e 4))) (gn-g M (+ vw-sites (* e 4) 1))
+      (gn-g M (+ vw-sites (* e 4) 2)) (gn-g M (+ vw-sites (* e 4) 3))]) 0)]
+   (cq-edges M f (inc e)))))
+(defn- vw-memo-query [M :vector-i64 f :i64] :vector-i64
+ (let [valid (cq-valid M f) before (cq-entry M f) m (cq-original-query M f)
+       after (if (and valid (cq-valid m f))
+         (cq-print "CQ-EXIT" [f (vw-c m 26) (vw-c m 0) (vw-c m 1) (vw-c m 29)
+           (vw-f m f 15) (vw-f m f 14) (gn-g m (+ vw-old 1792 f))])
+         (cq-print "CQ-EXIT-UNSUPPORTED" [f]))
+       edges (if (and valid (cq-valid m f)) (cq-edges m f 0) 0)] m))

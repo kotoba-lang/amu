@@ -1,0 +1,196 @@
+{
+  "status": "abstract-laws-and-native-finite-model-qualified",
+  "obligations": [
+    {
+      "name": "add-zero",
+      "result": "unsat",
+      "scope": "all 64-bit wrapping integers; operands already evaluated"
+    },
+    {
+      "name": "constant-index-bound",
+      "result": "unsat",
+      "scope": "all unsigned 64-bit lengths and admitted indices"
+    },
+    {
+      "name": "constant-index-address",
+      "result": "unsat",
+      "scope": "64-bit address arithmetic; valid allocation and same original bounds required externally"
+    },
+    {
+      "name": "store-load-law",
+      "result": "unsat",
+      "scope": "same address in abstract sequential memory; no intervening effects, trap or concurrency claim"
+    },
+    {
+      "name": "authority-no-expansion",
+      "result": "unsat",
+      "scope": "all 64-bit permission masks; intersection cannot expand authority; not actual runtime verification"
+    },
+    {
+      "name": "revoke-rechecked",
+      "result": "unsat",
+      "scope": "atomic use rechecks current validity; concurrency/linearization must match this model"
+    },
+    {
+      "name": "strict-decrease",
+      "result": "unsat",
+      "scope": "each accepted rewrite removes one eligible root, adds none; dependency updates cannot restore it"
+    },
+    {
+      "name": "mutation-signed-bounds",
+      "result": "sat",
+      "scope": "bad signed comparison; mutation must be caught",
+      "counterexample": "[length = 9223372036854775808, index = 0]"
+    },
+    {
+      "name": "mutation-omit-zero-bound",
+      "result": "sat",
+      "scope": "bad omission of length check for zero index",
+      "counterexample": "[index = 0, length = 0]"
+    },
+    {
+      "name": "mutation-wrong-scale",
+      "result": "sat",
+      "scope": "bad scaled address emission",
+      "counterexample": "[index = 3509]"
+    },
+    {
+      "name": "mutation-drop-fuel",
+      "result": "sat",
+      "scope": "a rewrite cannot erase a semantic charge",
+      "counterexample": "[]"
+    },
+    {
+      "name": "mutation-stale-authority",
+      "result": "sat",
+      "scope": "cached issue witness alone cannot authorize a current use",
+      "counterexample": "[current = False, cached = True]"
+    }
+  ],
+  "models": [
+    {
+      "mutation": false,
+      "reachableStates": 64,
+      "edges": 770,
+      "counterexample": null,
+      "scope": "five Boolean authority inputs, cached witness, atomic use; no liveness or concurrent interleaving guarantee"
+    },
+    {
+      "mutation": true,
+      "reachableStates": 128,
+      "edges": 1540,
+      "counterexample": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        10,
+        5,
+        12
+      ],
+      "scope": "five Boolean authority inputs, cached witness, atomic use; no liveness or concurrent interleaving guarantee"
+    }
+  ],
+  "native": [
+    {
+      "kernel": "kernel",
+      "mutation": 0,
+      "expected": 0,
+      "result": 0,
+      "exit": 0,
+      "imageSha256": "bdcabe48b5c15f47632ca16bf52c1d577d78e3afd486d87d43cffd6b34ba7542"
+    },
+    {
+      "kernel": "kernel",
+      "mutation": 1,
+      "expected": 341,
+      "result": 341,
+      "exit": 0,
+      "imageSha256": "bdcabe48b5c15f47632ca16bf52c1d577d78e3afd486d87d43cffd6b34ba7542"
+    },
+    {
+      "kernel": "graph",
+      "mutation": 0,
+      "expected": 0,
+      "result": 0,
+      "exit": 0,
+      "imageSha256": "065221a13dc26e422b878d8298557240419ecfc0f5d84baffee1cbcde9815a86"
+    },
+    {
+      "kernel": "graph",
+      "mutation": 1,
+      "expected": 257,
+      "result": 257,
+      "exit": 0,
+      "imageSha256": "065221a13dc26e422b878d8298557240419ecfc0f5d84baffee1cbcde9815a86"
+    },
+    {
+      "kernel": "graph",
+      "mutation": 2,
+      "expected": 258,
+      "result": 258,
+      "exit": 0,
+      "imageSha256": "065221a13dc26e422b878d8298557240419ecfc0f5d84baffee1cbcde9815a86"
+    },
+    {
+      "kernel": "graph",
+      "mutation": 3,
+      "expected": 258,
+      "result": 258,
+      "exit": 0,
+      "imageSha256": "065221a13dc26e422b878d8298557240419ecfc0f5d84baffee1cbcde9815a86"
+    }
+  ],
+  "schemaMutationsRefused": [
+    "replace",
+    "requires",
+    "phase"
+  ],
+  "recipe": {
+    "domain": "amu.rewrite-proof-recipe/v1",
+    "sources": {
+      "graph.kotoba": "11dbea0d20c7243076c224a4aca380e731eaf1e00a5844f6508d3f40add8bb5a",
+      "Capability.tla": "642d9338c4c902cf2b68eecdedf0ef4f4b9b897753f54e35cccffa0c98b8c3c0",
+      "Capability.cfg": "a47b33779c1527e8aa4d27ac720e7310b60494526bb216289f4f610f19190802",
+      "translation.py": "76c5db2b2325e28b3e728ca4e6e92da11449e190777084e6ea752fa72606fc23",
+      "rules.json": "b0892c9c770ead42a998df2cb89c968abec50d8448bcb679c0ec06d1be73d1d5",
+      "kernel.kotoba": "a780fd98418c09d02360afb6b369e547d55f319a8f8c75ab542a16f4d42b16d5",
+      "verify.py": "bdad2b590566bdc59e34ca9e36ce5dd7e230ec38eaea76eb754d4a58032b155d"
+    },
+    "solver": "5.1.0",
+    "seedSha256": "f00e38312ac7278b1b597207054cba521fafa28f30f03d20d237a07fd59647e2",
+    "loaderSha256": "8fc787ca556773b6991b44f51e0d4fdec52cf93ef37673cb289eb726c98dff64",
+    "seedEntryOffset": "0",
+    "rulesSha256": "b0892c9c770ead42a998df2cb89c968abec50d8448bcb679c0ec06d1be73d1d5",
+    "nativeImages": {
+      "kernel": "bdcabe48b5c15f47632ca16bf52c1d577d78e3afd486d87d43cffd6b34ba7542",
+      "graph": "065221a13dc26e422b878d8298557240419ecfc0f5d84baffee1cbcde9815a86"
+    },
+    "target": "aarch64-macos",
+    "semanticDefCID": "not-derived-by-this-diagnostic",
+    "productEmitterChanged": false
+  },
+  "recipeSha256": "c28999d4f3b9eb672d6301a6b9474b7cf84a4723463117646390b5194a31ffa6",
+  "translationValidation": {
+    "syntheticAdapterControls": true,
+    "matchingCases": 1,
+    "mutationsRefused": [
+      "result",
+      "exit",
+      "trap",
+      "trapSite",
+      "fuel",
+      "resources",
+      "arena",
+      "effects",
+      "missing-field",
+      "missing-case",
+      "source-change"
+    ],
+    "productCandidateValidated": false
+  },
+  "tla": "specification saved; TLC/TLAPS not run",
+  "performance": "no new timing or speedup claim",
+  "adoption": "not eligible: generator, translation, fixed-point, timing and integrated gates remain"
+}

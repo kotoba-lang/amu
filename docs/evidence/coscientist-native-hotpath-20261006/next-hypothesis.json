@@ -1,0 +1,34 @@
+{
+  "status": "registered-after-qualified-diagnostic-evidence-before-implementation",
+  "hypothesis": "A statically stable vector parameter in a closed read-only loop can retain validated descriptor metadata across dominated reads without dynamic handle-key checks at every read.",
+  "actualEvidence": {
+    "xgboostLargestOriginalInput": 32,
+    "xgboostPhysicalFunction15EntriesModulo": 1638400,
+    "function15OriginalSIR": [267, 343],
+    "function15OriginalWords": 122,
+    "function15OriginalFrameBytes": 144,
+    "function15StaticReads": [284, 293, 301, 311, 327],
+    "observedLimits": "Entry counts do not reveal read/loop trip counts or time share. Source walk retains v across recursive loop lowering."
+  },
+  "generalRuleRequirements": [
+    "Use actual typed source/SIR dominance and stable-local proof, not workload or function names",
+    "Only closed read-only vector regions without returning/unknown/indirect calls, allocation or descriptor-changing effects",
+    "Keep the first original handle validation at its original read after original fuel charges",
+    "Carry only length/data metadata along paths dominated by successful validation",
+    "Retain each index check, fresh item read, original fuel charge and trap order",
+    "Prove exact live-register ownership before retaining metadata; refuse absent spare registers",
+    "Bound new CFG/code growth and preserve function address/private entry contracts",
+    "Fail closed if loop/backedge/join witness is missing or vector-local value changes"
+  ],
+  "differenceFromRejectedDynamicKeyLoopCache": "The earlier cache compared a nonzero key and handle at every read using x3/x4/x5. This proposal requires a static stable-local dominance witness before removing those dynamic checks; its register and lifetime admission is separate and must be proved from actual machine metadata.",
+  "nextRequiredObservation": "First inspect emitted read/loop ranges and actual spare register ownership across original19. If entry evidence is insufficient for body selection, qualify a finer emitted-read/loop trace before implementation.",
+  "mustNotDo": [
+    "delete functions merely because they were not observed",
+    "remove unsigned bounds checks using entry counts",
+    "pool previous timing campaigns",
+    "treat metadata or capability CID as reusable runtime authorization"
+  ],
+  "implementationComplete": false,
+  "performanceClaim": false,
+  "adoption": false
+}

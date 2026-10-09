@@ -1,0 +1,5 @@
+# Published x8 original statemate and vector-chain runtime12
+
+Frozen executable SOURCE for two reviews and root GO. It runs original statemate five profiles in adjacent OFF/ON pairs, then the frozen vector fixture n1 OFF/ON. Own-export arity1 typed numeric argv, original16777216fuel and17-arena reporting are fixed. Candidate artifact8c500dbe and conditional emitted-word association08475 are prerequisites; general machine/candidate adoption remains HOLD.
+
+`run.py` is inert on import. No GO is supplied here. `pure-controls.py` and `wrapper-controls.py` use only ordinary file reads and injected data; their retained JSON is model evidence, not runtime qualification. `CONTRACT.md` states closure, resources, ownership, old-failure preservation and memory limits. `go-schema.json` is a schema description, never an executable approval. Any actual runtime12 needs independent and root SOURCE reviews plus a root-created exact GO in a separate namespace. No native operations were performed by the author.

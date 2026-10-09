@@ -1,0 +1,135 @@
+{
+  "status": "measured-and-rejected-for-performance-promotion",
+  "productionCompilerChanged": false,
+  "canonicalSourcesChanged": false,
+  "hypothesis": {
+    "hypothesis": "Known i64 vector indices 0..4095 can use unsigned length>immediate checks and immediate offset addition, avoiding index temporary materialization while preserving handle/bounds/fuel/traps.",
+    "admission": "Exact constant descriptor only, 0..4095. Other indices retain existing path.",
+    "canonicalSourcesChanged": false,
+    "promotion": "Fresh 30 baseline/candidate/C rotating triples, same existing noise policy, speedup >=1.05 and mean gap > summed SD; correctness and selfhost gates required.",
+    "sourceHead": "fa391957901cef14b2a6021e3a22104ec08c27ba",
+    "exception": "One-off new compiler algorithm prototype; no mechanical source refactor."
+  },
+  "compilerGenerations": {
+    "2": "1a704bad9f2494239e0a73b4584c0ff8a23909a192f34ba0f5ad4e5d313f46f6",
+    "3": "1a704bad9f2494239e0a73b4584c0ff8a23909a192f34ba0f5ad4e5d313f46f6",
+    "4": "1a704bad9f2494239e0a73b4584c0ff8a23909a192f34ba0f5ad4e5d313f46f6"
+  },
+  "compilerBytes": 817568,
+  "canonicalResultAndExactFuelParity": "complete-result-and-exact-fuel-parity",
+  "canonicalWorkloads": 19,
+  "changedNativeWorkloads": [
+    "aha-mont64",
+    "edn",
+    "huffbench",
+    "matmult-int",
+    "md5sum",
+    "nettle-aes",
+    "nettle-sha256",
+    "nsichneu",
+    "picojpeg",
+    "qrduino",
+    "sglib-combined",
+    "slre",
+    "statemate",
+    "ud",
+    "wikisort"
+  ],
+  "sourceProbeComparisons": 1448,
+  "picoWorkspace": {
+    "status": "complete-exact-8192-cell-parity",
+    "bodies": [
+      1,
+      2
+    ],
+    "cellsPerBody": 4096,
+    "stdoutSha256": "76f80ab5a80a2de8d2f1e9d0a01340169d9f8a3a606e6fb44e7c1a1a8218719a",
+    "observerSourceSha256": "26fbe3078519121c43292a5624a1f44d7697a8f6449b9cf9554d19591f1303a8",
+    "timedSourceUnchanged": true
+  },
+  "fixtureProof": {
+    "runs": 1014,
+    "fixtures": 217,
+    "realTestLayoutIdentical": true,
+    "instructionAudit": {
+      "ki_read_0_0": {
+        "exactUnsignedLengthGtImmediateAndBranch": 1,
+        "bytes": 168
+      },
+      "ki_read_0_4": {
+        "exactUnsignedLengthGtImmediateAndBranch": 1,
+        "bytes": 168
+      },
+      "ki_read_0_5": {
+        "exactUnsignedLengthGtImmediateAndBranch": 1,
+        "bytes": 168
+      },
+      "ki_read_1_0": {
+        "exactUnsignedLengthGtImmediateAndBranch": 1,
+        "bytes": 168
+      },
+      "ki_read_1_4": {
+        "exactUnsignedLengthGtImmediateAndBranch": 1,
+        "bytes": 168
+      },
+      "ki_read_1_5": {
+        "exactUnsignedLengthGtImmediateAndBranch": 1,
+        "bytes": 168
+      },
+      "ki_read_31_0": {
+        "exactUnsignedLengthGtImmediateAndBranch": 1,
+        "bytes": 168
+      },
+      "ki_read_31_4": {
+        "exactUnsignedLengthGtImmediateAndBranch": 1,
+        "bytes": 168
+      },
+      "ki_read_31_5": {
+        "exactUnsignedLengthGtImmediateAndBranch": 1,
+        "bytes": 168
+      },
+      "ki_read_4095_0": {
+        "exactUnsignedLengthGtImmediateAndBranch": 1,
+        "bytes": 168
+      },
+      "ki_read_4095_4": {
+        "exactUnsignedLengthGtImmediateAndBranch": 1,
+        "bytes": 168
+      },
+      "ki_read_4095_5": {
+        "exactUnsignedLengthGtImmediateAndBranch": 1,
+        "bytes": 168
+      }
+    }
+  },
+  "timing": {
+    "baseline": {
+      "meanNsPerBody": 260473.19240196078,
+      "sdNs": 8239.185985571552,
+      "relativeSd": 0.03163160826491843,
+      "samples": 30
+    },
+    "candidate": {
+      "meanNsPerBody": 258854.28921568627,
+      "sdNs": 6839.707371353032,
+      "relativeSd": 0.026423001882939452,
+      "samples": 30
+    },
+    "C": {
+      "meanNsPerBody": 10745.189267113095,
+      "sdNs": 114.119939554086,
+      "relativeSd": 0.010620561138309902,
+      "samples": 30
+    },
+    "stable": true,
+    "baselineOverCandidate": 1.006254109951895,
+    "candidateOverC": 24.090249392622614,
+    "candidateImprovesBaseline": false
+  },
+  "acceptedTriples": 30,
+  "attemptedTriples": 30,
+  "candidateBytes": 44616,
+  "baselineBytes": 45092,
+  "officialEmbenchScore": false,
+  "newFullSuiteMean": false
+}

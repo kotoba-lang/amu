@@ -1,0 +1,108 @@
+diff --git a/private/tmp/amu-callee-temp-20261006/baseline-41-a64gen.kotoba b/private/tmp/amu-callee-temp-20261006/41-a64gen-prototype.kotoba
+index 2b745db90..0350d4eda 100644
+--- a/private/tmp/amu-callee-temp-20261006/baseline-41-a64gen.kotoba
++++ b/private/tmp/amu-callee-temp-20261006/41-a64gen-prototype.kotoba
+@@ -128,6 +128,7 @@
+ (def gn-f-skip 10)    ; SIR instructions after the current one that it consumed
+ (def gn-f-freg 11)    ; 1 = the fuel counter is in x8
+ (def gn-f-out 12)     ; R4B: bytes of the outgoing argument area at [sp,#0..] (calls with more than 7 arguments)
++(def gn-f-nt 13)      ; additional callee registers for temps, after locals
+ (def gn-cap 4096)     ; slots and temps per function (the frame limit F <= 32768 is lower)
+ (def gn-a-sreg 16)    ; slot -> register + 1 (0 = frame slot); gn-cap words
+ (def gn-a-use 4112)   ; slot -> weighted use count; gn-cap words
+@@ -164,6 +165,14 @@
+ (defn- gn-st [M :vector-i64 r :i64 k :i64] :vector-i64 (gn-emit M (enc-str r 31 (gn-soff M k))))
+ (defn- gn-mov [M :vector-i64 d :i64 s :i64] :vector-i64 (if (= d s) M (gn-emit M (enc-mov-r d s))))
+ 
++;; Canonical expression registers: low caller-saved, then unused callee-saved.
++;; Locals retain the original allocation. Mapped homes hold caller register
++;; backups only, never expression values; original frame size is unchanged.
++(defn- gn-treg [M :vector-i64 t :i64] :i64
++ (cond (< t 7) (+ 9 t)
++       (< t (+ 7 (gn-g M gn-f-nt))) (+ 19 (gn-g M gn-f-nsv) (- t 7))
++       :else -1))
++
+ ;; ---- constants --------------------------------------------------------------------------------------------------
+ (defn- gn-hw [k :i64 i :i64] :i64 (bit-and (u64-shift-right k (* 16 i)) 65535))
+ ;; number of halfwords i..3 of k equal to v
+@@ -208,8 +217,7 @@
+     (cond (= k gn-k-const) (if (and (= z 1) (= v 0)) 31 -1)
+           (= k gn-k-local) (gn-sreg M v)
+           (= k gn-k-home) -1
+-          (< t 7) (+ 9 t)
+-          :else -1)))
++          :else (gn-treg M t))))
+ (defn- gn-src [M :vector-i64 t :i64 s :i64 z :i64] :i64 (let [r (gn-sr M t z)] (if (< r 0) s r)))
+ ;; load temp t into scratch s when gn-sr is -1
+ (defn- gn-ldt [M :vector-i64 t :i64 s :i64 z :i64] :vector-i64
+@@ -229,7 +237,7 @@
+ (defn- gn-mat [M :vector-i64 t :i64] :vector-i64
+   (let [k (gn-dk M t)]
+     (cond (or (= k 0) (= k gn-k-reg)) M
+-          (< t 7) (-> M (gn-into (+ 9 t) t) (gn-dset t gn-k-reg 0))
++          (>= (gn-treg M t) 0) (-> M (gn-into (gn-treg M t) t) (gn-dset t gn-k-reg 0))
+           :else (let [q (gn-sr M t 1)
+                       h (gn-home M t)]
+                   (if (>= q 0)
+@@ -365,17 +373,17 @@
+         s (gn-sir M j IF-A)]
+     (if (and (= (gn-op M j) OP-LSET) (= (gn-sir M j IF-B) t) (>= (gn-sreg M s) 0) (gn-kills M (inc j) t 16)) s 0)))
+ ;; destination register: the local's (s > 0), x(9+t), or x16 for a temp in its home
+-(defn- gn-dreg [M :vector-i64 t :i64 s :i64] :i64 (cond (> s 0) (gn-sreg M s) (< t 7) (+ 9 t) :else 16))
++(defn- gn-dreg [M :vector-i64 t :i64 s :i64] :i64 (cond (> s 0) (gn-sreg M s) (>= (gn-treg M t) 0) (gn-treg M t) :else 16))
+ (defn- gn-protect [M :vector-i64 t :i64 s :i64] :vector-i64 (if (> s 0) (gn-prot M 0 t t s) M))
+ ;; the result is in register d: record it (and skip the LSET that was folded in)
+ (defn- gn-fin [M :vector-i64 t :i64 s :i64 d :i64] :vector-i64
+   (cond (> s 0) (-> M (gn-def t gn-k-local s) (gn-gs gn-f-skip 1))
+-        (>= t 7) (-> M (gn-st d (gn-home M t)) (gn-def t gn-k-reg 0))
++        (< (gn-treg M t) 0) (-> M (gn-st d (gn-home M t)) (gn-def t gn-k-reg 0))
+         :else (gn-def M t gn-k-reg 0)))
+ ;; the result of a call is in register r
+ (defn- gn-take [M :vector-i64 i :i64 t :i64 r :i64] :vector-i64
+   (let [s (gn-co M i t)
+-        d (if (and (= s 0) (>= t 7)) r (gn-dreg M t s))]
++        d (if (and (= s 0) (< (gn-treg M t) 0)) r (gn-dreg M t s))]
+     (-> M (gn-protect t s) (gn-mov d r) (gn-fin t s d))))
+ 
+ ;; ---- prescan of one function ------------------------------------------------------------------------------------
+@@ -588,7 +596,8 @@
+         nsv (gn-g M2 gn-f-nsv)
+         dp (gn-g M2 gn-f-dp)
+         framed (or (= leaf 0) (> nsv 0) (> dp 7) (gn-memslot M2 1 ns))]
+-    (gn-gs M2 gn-f-fb (if framed (+ (gn-r16 (* 8 (+ ns dp 2))) (gn-r16 (* 8 nsv)) (gn-g M2 gn-f-out)) 0))))
++    (-> M2 (gn-gs gn-f-nt (gn-min (gn-max 0 (- dp 7)) (- 10 nsv)))
++        (gn-gs gn-f-fb (if framed (+ (gn-r16 (* 8 (+ ns dp 2))) (gn-r16 (* 8 nsv)) (gn-g M2 gn-f-out)) 0)))))
+ 
+ ;; ---- prologue and epilogue -----------------------------------------------------------------------------------------
+ (defn- gn-subsp [M :vector-i64 amt :i64] :vector-i64
+@@ -600,6 +609,11 @@
+           (< (inc i) n) (gn-csave (gn-emit M (if (= ld 1) (enc-ldp (+ 19 i) (+ 20 i) 31 o) (enc-stp (+ 19 i) (+ 20 i) 31 o)))
+                                   (+ i 2) n ld)
+           :else (gn-emit M (if (= ld 1) (enc-ldr (+ 19 i) 31 o) (enc-str (+ 19 i) 31 o))))))
++;; Save/restore added callee registers in their unused original temp homes.
++(defn- gn-tsave [M :vector-i64 i :i64 ld :i64] :vector-i64
++ (if (>= i (gn-g M gn-f-nt)) M
++  (let [t (+ 7 i) reg (gn-treg M t)]
++   (gn-tsave (if (= ld 1) (gn-ld M reg (gn-home M t)) (gn-st M reg (gn-home M t))) (inc i) ld))))
+ ;; params x0.. -> their slots (register or frame). R4B: parameter k-1 >= 7 arrives at [x29, #16+8*(k-8)] (the caller's
+ ;; outgoing area; a function that uses such a parameter always has a frame); an unused one is not loaded
+ (defn- gn-params [M :vector-i64 k :i64 np :i64] :vector-i64
+@@ -641,7 +655,8 @@
+                                       (gn-emit (enc-mov-sp 29 31))
+                                       (gn-subsp (bit-and F -4096))
+                                       (gn-subsp (bit-and F 4095))
+-                                      (gn-csave 0 (gn-g M2 gn-f-nsv) 0)))
++                                      (gn-csave 0 (gn-g M2 gn-f-nsv) 0)
++                                      (gn-tsave 0 0)))
+                   (cond-> (= leaf 0) (gn-st 7 0))
+                   (gn-params 1 np)
+                   (cond-> (and (= leaf 1) (= (gn-g M2 gn-f-fuel) 1)) (-> (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-gs gn-f-freg 1)))
+@@ -658,7 +673,7 @@
+   (let [F (gn-g M gn-f-fb)]
+     (-> M
+         (cond-> (= (gn-g M gn-f-freg) 1) (gn-emit (enc-str 8 7 CTX-FUEL)))
+-        (cond-> (> F 0) (-> (gn-csave 0 (gn-g M gn-f-nsv) 1)
++        (cond-> (> F 0) (-> (gn-tsave 0 1) (gn-csave 0 (gn-g M gn-f-nsv) 1)
+                             (gn-emit (enc-mov-sp 31 29))
+                             (gn-emit (enc-ldp-post 29 30 31 16))))
+         (gn-emit (enc-ret))

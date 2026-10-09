@@ -1,0 +1,244 @@
+diff --git a/private/tmp/amu-static-arg-20261005/baseline-41-a64gen.kotoba b/private/tmp/amu-static-arg-20261005/41-a64gen-prototype.kotoba
+index 81ebc13..78c1188 100644
+--- a/private/tmp/amu-static-arg-20261005/baseline-41-a64gen.kotoba
++++ b/private/tmp/amu-static-arg-20261005/41-a64gen-prototype.kotoba
+@@ -1308,7 +1308,7 @@
+       M
+       (case op
+         OP-CONST (gn-def M a gn-k-const b)
+-        OP-LGET (gn-def M a gn-k-local b)
++        OP-LGET (gn-sp-lget M a b)
+         OP-LSET (gn-op-lset M a b)
+         OP-BIN (gn-op-bin M i a b)
+         OP-CMP (gn-op-cmp M i a b)
+@@ -1331,10 +1331,186 @@
+         OP-RET2 (gn-op-ret2 M a)       ; R5B
+         OP-RES2 (gn-op-res2 M i a)     ; R5B
+         OP-TRAP (-> M (gn-emit (enc-brk a)) (gn-gs gn-f-dead 1))
+-        OP-FN (gn-op-fn M i a b)
++        OP-FN (gn-op-fn (if (gn-sp-enabled M) (gn-gs M gn-sp-current a) M) i a b)
+         OP-END (-> M (gn-emit (enc-brk 1)) (gn-gs gn-f-dead 0))
+         (gn-err M E-GEN-OP op)))))
+ 
++(defn- gn-const-fn [M :vector-i64 j :i64 work :i64] :i64
++  (cond (or (<= j 0) (<= work 0)) 0
++        (= (gn-op M j) OP-FN) j
++        (= (gn-op M j) OP-END) 0
++        :else (gn-const-fn M (dec j) (dec work))))
++(defn- gn-const-edges [M :vector-i64 j :i64 lo :i64 hi :i64 f :i64 work :i64] :bool
++  (if (or (>= j (vector-at M MM-SIR-N)) (<= work 0)) false
++    (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B)
++          l (cond (= op OP-BR) a (or (= op OP-BRZ) (= op OP-BRNZ)) b :else 0)
++          dest (if (> l 0) (gn-lpos M l) 0)]
++      (cond (= op OP-END) (= a f)
++            (= op OP-FN) false
++            (and (> l 0) (= dest 0)) false
++            (and (> dest lo) (<= dest hi) (or (< j lo) (> j hi))) false
++            :else (gn-const-edges M (inc j) lo hi f (dec work))))))
++
++;; 40-a64enc stat word101 is unused; private owner of the extended G block.
++;; Never assume a G from another backend owns clone metadata. Disabled state
++;; must not read beyond the original G allocation (including heap headroom).
++(def gn-sp-owner 101)
++(defn- gn-sp-enabled [M :vector-i64] :bool
++  (let [p (vector-at M gn-sp-owner)]
++    (and (>= p MM-HEAP-BASE) (= p (vector-at M gn-cell))
++         (<= (+ p gn-sp-size) (vector-at M MM-HEAP-TOP)) (<= (+ p gn-sp-size) MM-HEAP-END))))
++;; Internal closed-body variants, one invariant scalar bit argument per variant.
++;; All source SIR, ABI argument transport and original prescan/frame inputs stay.
++;; Only emission of a proven invariant LGET changes to an immutable CONST.
++(def gn-sp-base (inc gn-g-open-n))
++(def gn-sp-count gn-sp-base)
++(def gn-sp-original-fn (+ gn-sp-base 1))
++(def gn-sp-original-sir (+ gn-sp-base 2))
++(def gn-sp-original-label (+ gn-sp-base 3))
++(def gn-sp-current (+ gn-sp-base 4))
++(def gn-sp-total (+ gn-sp-base 5))
++(def gn-sp-records (+ gn-sp-base 6))
++(def gn-sp-size (+ gn-sp-records 48))
++(defn- gn-sp-original [M :vector-i64 f :i64] :i64
++  (let [k (- f (gn-g M gn-sp-original-fn))]
++    (if (and (>= k 0) (< k (gn-g M gn-sp-count))) (gn-g M (+ gn-sp-records (* k 3))) f)))
++(defn- gn-sp-slot [M :vector-i64 f :i64] :i64
++  (if (gn-sp-enabled M)
++    (let [k (- f (gn-g M gn-sp-original-fn))]
++      (if (and (>= k 0) (< k (gn-g M gn-sp-count))) (gn-g M (+ gn-sp-records (* k 3) 1)) 0)) 0))
++(defn- gn-sp-bit [M :vector-i64 f :i64] :i64
++  (let [k (- f (gn-g M gn-sp-original-fn))]
++    (if (and (>= k 0) (< k (gn-g M gn-sp-count))) (gn-g M (+ gn-sp-records (* k 3) 2)) 0)))
++;; Copies are proof-bearing only if no temporary at/below t or source slot s
++;; changes, and no outside edge enters after the copy. Function bounds stop scan.
++(defn- gn-sp-origin [M :vector-i64 j :i64 t :i64 s :i64 work :i64] :i64
++  (if (or (<= j 0) (<= work 0)) 0
++    (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) c (gn-sir M j IF-C)]
++      (cond (and (= op OP-CONST) (= a t)) (if (= s 0) j 0)
++            (and (= op OP-LGET) (= a t)) (if (or (= s 0) (= b s)) j 0)
++            (or (= op OP-FN) (= op OP-END) (= op OP-RET) (= op OP-RET2) (= op OP-TRAP) (= op OP-RES2)) 0
++            (and (= op OP-LSET) (> s 0) (= a s)) 0
++            (or (and (or (= op OP-CONST) (= op OP-LGET) (= op OP-STR) (= op OP-VEC) (= op OP-TAB) (= op OP-FADDR) (= op OP-VECP)) (<= a t))
++                (and (or (= op OP-BIN) (= op OP-CMP) (= op OP-UN) (= op OP-CALL) (= op OP-CALLI) (= op OP-RT)) (<= b t))
++                (and (= op OP-CAP) (<= c t))) 0
++            (or (= op OP-CONST) (= op OP-LGET) (= op OP-STR) (= op OP-VEC) (= op OP-TAB) (= op OP-FADDR) (= op OP-VECP)
++                (= op OP-BIN) (= op OP-CMP) (= op OP-UN) (= op OP-CALL) (= op OP-CALLI) (= op OP-RT) (= op OP-CAP)
++                (= op OP-LSET) (= op OP-LABEL) (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ) (= op OP-FUEL))
++            (gn-sp-origin M (dec j) t s (dec work))
++            :else 0))))
++(defn- gn-sp-labels [M :vector-i64 j :i64 work :i64] :vector-i64
++  (if (or (>= j (vector-at M MM-SIR-N)) (<= work 0) (= (gn-op M j) OP-END)) M
++    (let [a (gn-sir M j IF-A)]
++      (gn-sp-labels (if (and (= (gn-op M j) OP-LABEL) (> a 0) (< a MM-LABEL-CAP)) (gn-gs M (+ gn-a-lp a) j) M) (inc j) (dec work)))))
++(defn- gn-sp-end [M :vector-i64 j :i64 f :i64 work :i64] :i64
++  (if (or (>= j (vector-at M MM-SIR-N)) (<= work 0)) 0
++    (let [op (gn-op M j)]
++      (cond (= op OP-END) (if (= (gn-sir M j IF-A) f) j 0)
++            (or (= op OP-FN) (= op OP-RET2) (= op OP-RES2)) 0
++            :else (gn-sp-end M (inc j) f (dec work))))))
++(defn- gn-sp-invariant [M :vector-i64 j :i64 p :i64 f :i64 s :i64 work :i64] :bool
++  (if (or (>= j (vector-at M MM-SIR-N)) (<= work 0)) false
++    (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B)]
++      (cond (= op OP-END) (= a f)
++            (or (= op OP-FN) (= op OP-RET2) (= op OP-RES2)) false
++            (and (= op OP-LSET) (= a s))
++            (let [origin (gn-sp-origin M (dec j) b s 256)]
++              (and (> origin p) (gn-const-edges M (inc p) origin (dec j) f 4096)
++                   (gn-sp-invariant M (inc j) p f s (dec work))))
++            :else (gn-sp-invariant M (inc j) p f s (dec work))))))
++(defn- gn-sp-used [M :vector-i64 j :i64 s :i64 work :i64] :bool
++  (if (or (>= j (vector-at M MM-SIR-N)) (<= work 0) (= (gn-op M j) OP-END)) false
++    (if (and (= (gn-op M j) OP-LGET) (= (gn-sir M j IF-B) s)
++             (or (= (gn-op M (inc j)) OP-BRZ) (= (gn-op M (inc j)) OP-BRNZ))
++             (= (gn-sir M j IF-A) (gn-sir M (inc j) IF-A))) true
++      (gn-sp-used M (inc j) s (dec work)))))
++;; Return encoded constant bit+1; zero means no complete proof.
++(defn- gn-sp-value [M :vector-i64 i :i64 t :i64 caller :i64] :i64
++  (let [o (gn-sp-origin M (dec i) t 0 256) p (gn-fnf M caller FF-SIR)
++        op (if (> o 0) (gn-op M o) 0) v (if (> o 0) (gn-sir M o IF-B) -1)
++        bit (cond (and (= op OP-CONST) (or (= v 0) (= v 1))) (inc v)
++                  (and (= op OP-LGET) (> (gn-sp-slot M caller) 0) (= v (gn-sp-slot M caller))) (inc (gn-sp-bit M caller))
++                  :else 0)]
++    (if (and (> bit 0) (> o p) (gn-const-edges M (inc p) o (dec i) caller 4096)) bit 0)))
++(defn- gn-sp-find [M :vector-i64 f :i64 s :i64 v :i64 k :i64] :i64
++  (if (>= k (gn-g M gn-sp-count)) 0
++    (let [a (+ gn-sp-records (* k 3))]
++      (if (and (= (gn-g M a) f) (= (gn-g M (inc a)) s) (= (gn-g M (+ a 2)) v)) (+ (gn-g M gn-sp-original-fn) k)
++        (gn-sp-find M f s v (inc k))))))
++(defn- gn-sp-label-bound [M :vector-i64 j :i64 end :i64 minimum :bool acc :i64] :i64
++  (if (> j end) acc
++    (let [op (gn-op M j) a (gn-sir M j IF-A)]
++      (gn-sp-label-bound M (inc j) end minimum
++        (if (= op OP-LABEL) (if minimum (gn-min acc a) (gn-max acc a)) acc)))))
++(defn- gn-sp-record-copy [M :vector-i64 src :i64 dst :i64 k :i64] :vector-i64
++  (if (>= k MM-FN-W) M
++    (gn-sp-record-copy (gn-put M (+ MM-FN-BASE (* dst MM-FN-W) k) (gn-fnf M src k)) src dst (inc k))))
++(defn- gn-sp-sir-copy [M :vector-i64 j :i64 end :i64 dst :i64 f :i64 delta :i64] :vector-i64
++  (if (> j end) M
++    (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) c (gn-sir M j IF-C)
++          aa (cond (or (= op OP-FN) (= op OP-END)) f (or (= op OP-LABEL) (= op OP-BR)) (+ a delta) :else a)
++          bb (if (or (= op OP-BRZ) (= op OP-BRNZ)) (+ b delta) b)
++          at (+ MM-SIR-BASE (* dst MM-SIR-W))]
++      (gn-sp-sir-copy (-> M (gn-put at op) (gn-put (inc at) aa) (gn-put (+ at 2) bb) (gn-put (+ at 3) c)) (inc j) end (inc dst) f delta))))
++(defn- gn-sp-register [M :vector-i64 f :i64 s :i64 v :i64 end :i64] :vector-i64
++  (let [found (gn-sp-find M f s v 0) p (gn-fnf M f FF-SIR) len (+ 1 (- end p)) n (gn-g M gn-sp-count)
++        next (vector-at M MM-FN-N) sir (vector-at M MM-SIR-N) labels (vector-at M MM-LABEL-N)
++        lo (gn-sp-label-bound M p end true labels) hi (gn-sp-label-bound M p end false 0)
++        span (if (= hi 0) 0 (+ 1 (- hi lo))) delta (if (= hi 0) 0 (- labels lo))]
++    (cond (> found 0) (gn-put M MM-R0 found)
++          (or (>= n 16) (>= next MM-FN-CAP) (>= (+ sir len) MM-SIR-CAP) (>= (+ labels span) MM-LABEL-CAP) (> (+ (gn-g M gn-sp-total) len) 4096)) (gn-put M MM-R0 0)
++          :else
++          (-> M (gn-sp-record-copy f next 0) (gn-sp-sir-copy p end sir next delta)
++              (gn-put (+ MM-FN-BASE (* next MM-FN-W) FF-SIR) sir)
++              (gn-put (+ MM-FN-BASE (* next MM-FN-W) FF-EXPORT) 0)
++              (gn-put (+ MM-FN-BASE (* next MM-FN-W) FF-KIND) FK-PRIV)
++              (gn-gs (+ gn-sp-records (* n 3)) f) (gn-gs (+ gn-sp-records (* n 3) 1) s) (gn-gs (+ gn-sp-records (* n 3) 2) v)
++              (gn-gs gn-sp-count (inc n)) (gn-gs gn-sp-total (+ (gn-g M gn-sp-total) len))
++              (gn-put MM-FN-N (inc next)) (gn-put MM-SIR-N (+ sir len)) (gn-put MM-LABEL-N (+ labels span)) (gn-put MM-R0 next)))))
++(defn- gn-sp-choice [M :vector-i64 i :i64 f :i64 t :i64 n :i64 s :i64 end :i64] :vector-i64
++  (if (> s n) (gn-put M MM-R0 0)
++    (let [bit (gn-sp-value M i (+ t s -1) (gn-g M gn-sp-current)) p (gn-fnf M f FF-SIR)]
++      (if (and (> bit 0) (gn-sp-used M (inc p) s 512))
++        (let [ML (gn-sp-labels M (inc p) 512)]
++          (if (gn-sp-invariant ML (inc p) p f s 512) (gn-sp-register ML f s (dec bit) end)
++            (gn-sp-choice ML i f t n (inc s) end)))
++        (gn-sp-choice M i f t n (inc s) end)))))
++(defn- gn-sp-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
++  (let [p (gn-fnf M f FF-SIR) end (if (> p 0) (gn-sp-end M (inc p) f 512) 0)]
++    (if (and (> f 0) (< f (gn-g M gn-sp-original-fn)) (not (gn-clamp-open M f))
++             (> n 0) (<= n 7) (= n (gn-fnf M f FF-NPARAMS)) (> end p)
++             (<= (gn-fnf M f FF-NSLOTS) 64) (<= (gn-fnf M f FF-DEPTH) 16))
++      (let [M1 (gn-sp-choice M i f t n 1 end) target (vector-at M1 MM-R0)]
++        (if (> target 0) (gn-put M1 (+ MM-SIR-BASE (* i MM-SIR-W) IF-A) target) M1)) M)))
++(defn- gn-sp-prepare [M :vector-i64 i :i64] :vector-i64
++  (if (>= i (vector-at M MM-SIR-N)) M
++    (let [op (gn-op M i) a (gn-sir M i IF-A)
++          M1 (cond (= op OP-FN) (-> M (gn-gs gn-sp-current a) (gn-sp-labels (inc i) 4096))
++                   (= op OP-CALL) (gn-sp-call M i a (gn-sir M i IF-B) (gn-sir M i IF-C))
++                   :else M)]
++      (gn-sp-prepare M1 (inc i)))))
++;; Optional growth failure rolls original direct targets/SIR/table fills back and
++;; reruns native code generation. No host fallback or language-scope narrowing.
++(defn- gn-sp-undo [M :vector-i64 i :i64 end :i64] :vector-i64
++  (if (>= i end) M
++    (let [op (gn-op M i) f (gn-sir M i IF-A)]
++      (gn-sp-undo (if (= op OP-CALL) (gn-put M (+ MM-SIR-BASE (* i MM-SIR-W) IF-A) (gn-sp-original M f)) M) (inc i) end))))
++
++(defn- gn-sp-lget [M :vector-i64 t :i64 s :i64] :vector-i64
++  (if (gn-sp-enabled M)
++    (let [f (gn-g M gn-sp-current)]
++      (if (and (> (gn-sp-slot M f) 0) (= s (gn-sp-slot M f)))
++        (gn-def M t gn-k-const (gn-sp-bit M f)) (gn-def M t gn-k-local s)))
++    (gn-def M t gn-k-local s)))
++;; Regeneration must restore direct references before installing a new import
++;; boundary. Existing code/fixups remain for the caller to reset as usual.
++(defn- gn-sp-unprepare [M :vector-i64] :vector-i64
++  (if (gn-sp-enabled M)
++    (let [sir (gn-g M gn-sp-original-sir)]
++      (-> M (gn-sp-undo 1 sir) (gn-put MM-SIR-N sir)
++          (gn-put MM-FN-N (gn-g M gn-sp-original-fn))
++          (gn-put MM-LABEL-N (gn-g M gn-sp-original-label)) (gn-put gn-sp-owner 0))) M))
++
+ ;; every instruction from i (an instruction may consume the next ones: gn-f-skip)
+ (defn- gn-loop [M :vector-i64 i :i64] :vector-i64
+   (if (and (< i (vector-at M MM-SIR-N)) (= (vector-at M MM-ERR) 0))
+@@ -1345,14 +1521,35 @@
+ 
+ ;; the module entry: SIR -> CODE (+ FIX, LABEL, FF-CODE). MM-R0 = code words emitted in total.
+ (defn- gn-run-open [M :vector-i64 first :i64 count :i64] :vector-i64
+-  (let [top (vector-at M MM-HEAP-TOP)
+-        M0 (if (< top MM-HEAP-BASE) (gn-put M MM-HEAP-TOP MM-HEAP-BASE) M)
+-        M1 (mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 2))
+-        M2 (-> (gn-put M1 gn-cell (vector-at M1 MM-R0))
++  (let [MR (gn-sp-unprepare M) top (vector-at MR MM-HEAP-TOP)
++        M0 (if (< top MM-HEAP-BASE) (gn-put MR MM-HEAP-TOP MM-HEAP-BASE) MR)
++        room (<= (+ (vector-at M0 MM-HEAP-TOP) gn-sp-size) MM-HEAP-END)
++        M1 (mem-alloc M0 (if room gn-sp-size (+ gn-a-lp MM-LABEL-CAP 2)))
++        code (vector-at M1 MM-CODE-N) fix (vector-at M1 MM-FIX-N)
++        enabled (and room (= (vector-at M1 MM-ERR) 0))
++        MB (-> (gn-put M1 gn-cell (vector-at M1 MM-R0))
+                (gn-gs gn-g-open first) (gn-gs gn-g-open-n count))
+-        M3 (if (= (vector-at M2 MM-ERR) 0) (gn-loop M2 1) M2)
+-        n (vector-at M3 MM-CODE-N)]
+-    (gn-put M3 MM-R0 (- n 1))))
++        M2 (if enabled
++             (-> MB (gn-put gn-sp-owner (vector-at MB gn-cell))
++                    (gn-gs gn-sp-count 0) (gn-gs gn-sp-total 0) (gn-gs gn-sp-current 0)
++                    (gn-gs gn-sp-original-fn (vector-at MB MM-FN-N))
++                    (gn-gs gn-sp-original-sir (vector-at MB MM-SIR-N))
++                    (gn-gs gn-sp-original-label (vector-at MB MM-LABEL-N)))
++             (gn-put MB gn-sp-owner 0))
++        MP (if enabled (gn-sp-prepare M2 1) M2)
++        M3 (if (= (vector-at MP MM-ERR) 0) (gn-loop MP 1) MP)
++        overflow (and enabled (> (gn-g M3 gn-sp-count) 0) (or (= (vector-at M3 MM-ERR) E-GEN-FULL) (= (vector-at M3 MM-ERR) E-GEN-FRAME)))
++        M4 (if overflow
++             (let [sir (gn-g M3 gn-sp-original-sir)
++                   MU (-> M3 (gn-sp-undo 1 sir) (gn-put MM-SIR-N sir)
++                          (gn-put MM-FN-N (gn-g M3 gn-sp-original-fn))
++                          (gn-put MM-LABEL-N (gn-g M3 gn-sp-original-label))
++                          (gn-put MM-CODE-N code) (gn-put MM-FIX-N fix)
++                          (gn-put MM-ERR 0) (gn-put MM-ERR-POS 0) (gn-put MM-ERR-N 0)
++                          (gn-gs gn-sp-count 0) (gn-gs gn-sp-total 0) (gn-gs gn-sp-current 0))]
++               (gn-loop MU 1)) M3)
++        n (vector-at M4 MM-CODE-N)]
++    (gn-put M4 MM-R0 (- n 1))))
+ 
+ ;; Unity compilation has no link-time replacement of function bodies.
+ (defn- gn-run [M :vector-i64] :vector-i64 (gn-run-open M 0 0))

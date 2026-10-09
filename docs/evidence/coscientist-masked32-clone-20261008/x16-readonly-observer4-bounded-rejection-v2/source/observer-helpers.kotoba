@@ -1,0 +1,74 @@
+;; One-off decision-readonly diagnostic. Own selection vector, never mutate M.
+(defn- fr-row [tag :string xs :vector-i64] :i64
+ (let [a (io-out tag) b (loop [k 0] (if (>= k (vector-count xs)) 0
+  (let [w (io-out (string-concat " " (string-from-i64 (vector-at xs k))))] (recur (inc k)))))] (io-out "\n")))
+(defn- fr-end [M :vector-i64 f :i64 j :i64 work :i64] :i64
+ (cond (or (<= work 0) (>= j (vector-at M MM-SIR-N))) 0
+       (= (gn-op M j) OP-END) (if (= (gn-sir M j IF-A) f) (inc j) 0)
+       (= (gn-op M j) OP-FN) 0
+       :else (fr-end M f (inc j) (dec work))))
+;; Potential only: LGET affine dispatch is NOT reevaluated. Raw emitted words decide.
+(defn- fr-pairs [M :vector-i64 j :i64 end :i64 prior :i64 n :i64] :i64
+ (if (>= j end) n
+  (let [op (gn-op M j)]
+   (fr-pairs M (inc j) end
+    (if (= op OP-FUEL) 1 (if (or (= op OP-CONST) (= op OP-LGET)) prior 0))
+    (+ n (if (and (= op OP-FUEL) (= prior 1)) 1 0))))))
+(defn- fr-edges [M :vector-i64 j :i64 end :i64 n :i64] :i64
+ (if (>= j end) n (let [op (gn-op M j)]
+  (fr-edges M (inc j) end (+ n (if (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ) (= op OP-CALL) (= op OP-CALLI)) 1 0))))))
+;; [selected-count, selected-SIR, selected-edges, all-potential-pairs, omitted-large,
+;;  omitted-budget, followed by16selected FN ids]. All writes own Q only.
+(defn- fr-pick [M :vector-i64] :vector-i64
+ (let [Q [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]]
+  (loop [f 1]
+   (if (>= f (vector-at M MM-FN-N)) Q
+    (let [p (gn-fnf M f FF-SIR) valid (and (> p 0) (< p (vector-at M MM-SIR-N)) (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) f))
+          end (if valid (fr-end M f (inc p) 255) 0)
+          pairs (if (> end p) (fr-pairs M (inc p) end 0 0) 0)
+          edges (if (> end p) (fr-edges M p end 0) 0)
+          admit (and (> pairs 0) (< (vector-at Q 0) 16) (<= (+ (vector-at Q 1) (- end p)) 256) (<= (+ (vector-at Q 2) edges) 64))
+          a (vector-assoc! Q 3 (+ (vector-at Q 3) pairs))
+          b (if (and valid (= end 0)) (vector-assoc! Q 4 (inc (vector-at Q 4))) Q)
+          c (if (and (> pairs 0) (not admit)) (vector-assoc! Q 5 (inc (vector-at Q 5))) Q)
+          d (if admit (let [w (vector-assoc! Q (+ 6 (vector-at Q 0)) f)
+                    x (vector-assoc! Q 0 (inc (vector-at Q 0)))
+                    y (vector-assoc! Q 1 (+ (vector-at Q 1) (- end p)))
+                    z (vector-assoc! Q 2 (+ (vector-at Q 2) edges))] Q) Q)]
+     (recur (inc f)))))))
+(defn- fr-nextcode [M :vector-i64 f :i64 start :i64 best :i64] :i64
+ (if (>= f (vector-at M MM-FN-N)) best
+  (let [p (gn-fnf M f FF-CODE)] (fr-nextcode M (inc f) start (if (and (> p start) (< p best)) p best)))))
+(defn- fr-dump [M :vector-i64 Q :vector-i64 phase :i64] :i64
+ (let [a (fr-row "RH" [phase (vector-at M MM-ERR) (vector-at M MM-FN-N) (vector-at M MM-SIR-N) (vector-at M MM-CODE-N)])
+       b (fr-row "RQ" Q)
+       c (loop [f 0] (if (>= f (vector-at M MM-FN-N)) 0
+           (let [r (fr-row "RF" [phase f (gn-fnf M f FF-SIR) (gn-fnf M f FF-CODE) (gn-fnf M f FF-NPARAMS) (gn-fnf M f FF-FUEL)])] (recur (inc f)))))
+       d (loop [k 0] (if (>= k (vector-at Q 0)) 0
+           (let [f (vector-at Q (+ 6 k)) p (gn-fnf M f FF-SIR) end (fr-end M f (inc p) 255)
+                 r (loop [j p] (if (>= j end) 0 (let [w (fr-row "RS" [phase f j (gn-op M j) (gn-sir M j IF-A) (gn-sir M j IF-B) (gn-sir M j IF-C)])] (recur (inc j)))))
+                 start (gn-fnf M f FF-CODE) stop (fr-nextcode M 1 start (vector-at M MM-CODE-N))
+                 words (if (= phase 1) (let [head (io-out (string-concat "RC " (string-from-i64 f)))
+                         first (io-out (string-concat " " (string-from-i64 start)))
+                         last (io-out (string-concat " " (string-from-i64 stop)))
+                         body (loop [j start] (if (>= j stop) 0 (let [w (io-out (string-concat " " (string-from-i64 (vector-at M (+ MM-CODE-BASE j)))))] (recur (inc j)))))
+                         tail (io-out "\n")] 0) 0)] (recur (inc k)))))
+       z (fr-row "RE" [phase])] 0))
+(defn- fr-run [M :vector-i64] :vector-i64
+ (let [fn (vector-at M MM-FN-N) sir (vector-at M MM-SIR-N)
+       allowed (and (> fn 0) (<= fn MM-FN-CAP) (> sir 0) (<= sir MM-SIR-CAP) (<= (+ (* fn 1000) (* MM-CODE-CAP 12) 262144) 8388608))]
+  (if (not allowed) (let [w (fr-row "RREFUSE" [fn sir])] (gn-run M))
+   (let [Q (fr-pick M) before (fr-dump M Q 0) result (gn-run M)
+         after (if (and (= (vector-at result MM-ERR) 0) (> (vector-at result MM-CODE-N) 0) (<= (vector-at result MM-CODE-N) MM-CODE-CAP) (fr-codes-ok result Q 0 0)) (fr-dump result Q 1) (fr-row "RREFUSE" [(vector-at result MM-ERR) (vector-at result MM-CODE-N)]))] result))))
+
+(defn- fr-has [M :vector-i64 Q :vector-i64 i :i64 k :i64] :bool
+ (if (>= k (vector-at Q 0)) false
+  (let [f (vector-at Q (+ 6 k)) p (gn-fnf M f FF-SIR)]
+   (or (and (>= i p) (< i (+ p 256)) (< i (fr-end M f (inc p) 255))) (fr-has M Q i (inc k))))))
+
+(defn- fr-codes-ok [M :vector-i64 Q :vector-i64 k :i64 j :i64] :bool
+ (if (>= k (vector-at Q 0)) true
+  (let [p (gn-fnf M (vector-at Q (+ 6 k)) FF-CODE)]
+   (and (> p 0) (< p (vector-at M MM-CODE-N))
+    (if (>= j k) (fr-codes-ok M Q (inc k) 0)
+     (and (not= p (gn-fnf M (vector-at Q (+ 6 j)) FF-CODE)) (fr-codes-ok M Q k (inc j))))))))

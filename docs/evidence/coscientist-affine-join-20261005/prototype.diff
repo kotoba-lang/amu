@@ -1,0 +1,134 @@
+diff --git a/private/tmp/amu-affine-join-20261005/baseline-41-a64gen.kotoba b/private/tmp/amu-affine-join-20261005/41-a64gen-prototype.kotoba
+index 81ebc13..f05eba0 100644
+--- a/private/tmp/amu-affine-join-20261005/baseline-41-a64gen.kotoba
++++ b/private/tmp/amu-affine-join-20261005/41-a64gen-prototype.kotoba
+@@ -520,6 +520,27 @@
+              (= (gn-op M (+ q 20)) OP-RET) (= (gn-sir M (+ q 20) IF-A) 0)
+              (= (gn-op M (+ q 21)) OP-END) (= (gn-sir M (+ q 21) IF-A) f)) q 0)))
+ 
++;; Exact five-argument affine-index/signed-value checked vector write.
++;; Keep original nonleaf caller, closed dependencies and leaf fuel transaction.
++(defn- gn-affine-writer [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :i64
++  (let [p (gn-fnf M f FF-SIR) fuel (if (= (gn-op M (inc p)) OP-FUEL) 1 0)
++        q (gn-skiplab M (+ p 1 fuel)) sign (gn-sir M (+ q 7) IF-A)
++        writer (gn-sir M (+ q 8) IF-A) w (gn-wrapper M writer 0 3)]
++    (if (and (> p 0) (= n 5) (<= t 2) (= (gn-g M gn-f-leaf) 0)
++             (not (gn-clamp-open M f)) (not (gn-clamp-open M sign)) (not (gn-clamp-open M writer))
++             (not= (gn-op M (inc i)) OP-RES2)
++             (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) f) (= (gn-sir M p IF-B) 5)
++             (= (gn-wparams M q 0 4) (+ q 4))
++             (= (gn-op M (+ q 4)) OP-BIN) (= (gn-sir M (+ q 4) IF-A) BOP-MUL) (= (gn-sir M (+ q 4) IF-B) 2)
++             (= (gn-op M (+ q 5)) OP-BIN) (= (gn-sir M (+ q 5) IF-A) BOP-ADD) (= (gn-sir M (+ q 5) IF-B) 1)
++             (= (gn-op M (+ q 6)) OP-LGET) (= (gn-sir M (+ q 6) IF-A) 2) (= (gn-sir M (+ q 6) IF-B) 5)
++             (= (gn-op M (+ q 7)) OP-CALL) (= (gn-sir M (+ q 7) IF-B) 2) (= (gn-sir M (+ q 7) IF-C) 1)
++             (> (gn-sign-wrapper M sign 1) 0)
++             (= (gn-op M (+ q 8)) OP-CALL) (= (gn-sir M (+ q 8) IF-B) 0) (= (gn-sir M (+ q 8) IF-C) 3)
++             (or (= w RT-VECTOR-ASSOC-IN-PLACE) (= w (+ RT-VECTOR-ASSOC-IN-PLACE 256)))
++             (= (gn-op M (+ q 9)) OP-RET) (= (gn-sir M (+ q 9) IF-A) 0)
++             (= (gn-op M (+ q 10)) OP-END) (= (gn-sir M (+ q 10) IF-A) f)) q 0)))
++
+ (defn- gn-use [M :vector-i64 s :i64 w :i64] :vector-i64
+   (if (and (>= s 0) (< s gn-cap)) (gn-gs M (+ gn-a-use s) (+ w (gn-g M (+ gn-a-use s)))) M))
+ (defn- gn-use1 [M :vector-i64 j :i64 w :i64] :vector-i64
+@@ -1028,6 +1049,90 @@
+         (cond-> charged (gn-emit (enc-str 8 7 CTX-FUEL)))
+         (gn-take i t 0))))
+ 
++;; Bounded dominance proof of an unchanged integer temporary across labels.
++;; Find its nearest textual CONST while every intervening writer starts above t.
++;; Then reject ALL edges entering that span from outside, including backedges.
++;; The CONST dominates every admitted path; operations still execute unchanged.
++;; No CFG edge assumptions based on names, emitted fallthrough or profiling.
++(defn- gn-const-origin [M :vector-i64 j :i64 t :i64 work :i64] :i64
++  (if (or (<= j 0) (<= work 0)) 0
++    (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) c (gn-sir M j IF-C)]
++      (cond (and (= op OP-CONST) (= a t)) j
++            (or (= op OP-FN) (= op OP-END) (= op OP-RET) (= op OP-RET2) (= op OP-TRAP) (= op OP-RES2)) 0
++            (or (and (or (= op OP-CONST) (= op OP-LGET) (= op OP-STR) (= op OP-VEC) (= op OP-TAB) (= op OP-FADDR) (= op OP-VECP)) (<= a t))
++                (and (or (= op OP-BIN) (= op OP-CMP) (= op OP-UN) (= op OP-CALL) (= op OP-CALLI) (= op OP-RT)) (<= b t))
++                (and (= op OP-CAP) (<= c t))) 0
++            (or (= op OP-CONST) (= op OP-LGET) (= op OP-STR) (= op OP-VEC) (= op OP-TAB) (= op OP-FADDR) (= op OP-VECP)
++                (= op OP-BIN) (= op OP-CMP) (= op OP-UN) (= op OP-CALL) (= op OP-CALLI) (= op OP-RT) (= op OP-CAP)
++                (= op OP-LSET) (= op OP-LABEL) (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ) (= op OP-FUEL))
++            (gn-const-origin M (dec j) t (dec work))
++            :else 0))))
++(defn- gn-const-fn [M :vector-i64 j :i64 work :i64] :i64
++  (cond (or (<= j 0) (<= work 0)) 0
++        (= (gn-op M j) OP-FN) j
++        (= (gn-op M j) OP-END) 0
++        :else (gn-const-fn M (dec j) (dec work))))
++(defn- gn-const-edges [M :vector-i64 j :i64 lo :i64 hi :i64 f :i64 work :i64] :bool
++  (if (or (>= j (vector-at M MM-SIR-N)) (<= work 0)) false
++    (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B)
++          l (cond (= op OP-BR) a (or (= op OP-BRZ) (= op OP-BRNZ)) b :else 0)
++          dest (if (> l 0) (gn-lpos M l) 0)]
++      (cond (= op OP-END) (= a f)
++            (= op OP-FN) false
++            (and (> l 0) (= dest 0)) false
++            (and (> dest lo) (<= dest hi) (or (< j lo) (> j hi))) false
++            :else (gn-const-edges M (inc j) lo hi f (dec work))))))
++(defn- gn-restore-const [M :vector-i64 i :i64 t :i64] :vector-i64
++  (if (gn-isk M t gn-k-const) M
++    (let [origin (gn-const-origin M (dec i) t 256) start (gn-const-fn M (dec i) 4096)
++          v (if (> origin 0) (gn-sir M origin IF-B) -1)]
++      (if (and (> origin 0) (> start 0) (or (= v 0) (= v 1) (> (gn-pow2 v) 0))
++               (gn-const-edges M (inc start) origin (dec i) (gn-sir M start IF-A) 4096))
++        (gn-dset M t gn-k-const v) M))))
++
++;; Proven already-evaluated immutable descriptors only. Shifted-register ADD
++;; wraps exactly like multiply/add; no flags or resource observations are lost.
++;; Modes: base only, stride+k with one operand1, shifted ADD, generic MADD.
++(defn- gn-affine-index-kind [M :vector-i64 t :i64] :i64
++  (let [ks (gn-isk M (+ t 2) gn-k-const) kk (gn-isk M (+ t 3) gn-k-const)
++        vs (gn-dv M (+ t 2)) vk (gn-dv M (+ t 3))]
++    (cond (or (and ks (= vs 0)) (and kk (= vk 0))) 1
++          (and kk (= vk 1)) 2
++          (and ks (= vs 1)) 3
++          (and kk (> (gn-pow2 vk) 0)) 4
++          (and ks (> (gn-pow2 vs) 0)) 5
++          :else 0)))
++(defn- gn-affine-index [M :vector-i64 t :i64 kind :i64] :vector-i64
++  (let [rb (gn-src M (inc t) 0 1) rs (gn-src M (+ t 2) 16 1)
++        rk (gn-src M (+ t 3) 17 1) B (gn-ldt M (inc t) 0 1)]
++    (case kind
++      1 (gn-mov B 1 rb)
++      2 (-> B (gn-ldt (+ t 2) 16 1) (gn-emit (enc-add-r 1 rb rs)))
++      3 (-> B (gn-ldt (+ t 3) 17 1) (gn-emit (enc-add-r 1 rb rk)))
++      4 (-> B (gn-ldt (+ t 2) 16 1) (gn-emit (gn-e-addsl 1 rb rs (gn-pow2 (gn-dv M (+ t 3))))))
++      5 (-> B (gn-ldt (+ t 3) 17 1) (gn-emit (gn-e-addsl 1 rb rk (gn-pow2 (gn-dv M (+ t 2))))))
++      (-> B (gn-ldt (+ t 2) 16 1) (gn-ldt (+ t 3) 17 1) (gn-emit (enc-madd 1 rs rk rb))))))
++
++;; x0 is the signed value, x1 the wrapping affine index; operands read
++;; existing caller registers or distinct x0/x16/x17 scratch words. Pinned vector stays in x9..x11.
++(defn- gn-call-affine-writer [M :vector-i64 i :i64 f :i64 t :i64 q :i64] :vector-i64
++  (let [p (gn-fnf M f FF-SIR) outer (= (gn-op M (inc p)) OP-FUEL)
++        sw (gn-sign-wrapper M (gn-sir M (+ q 7) IF-A) 1)
++        ww (gn-wrapper M (gn-sir M (+ q 8) IF-A) 0 3)
++        charged (or outer (>= sw 1536) (>= ww 256)) width (bit-and sw 511)
++        M1 (-> M (gn-restore-const i (+ t 2)) (gn-restore-const i (+ t 3)) (gn-pin t)) rv (gn-pinned M1 t)
++        kind (gn-affine-index-kind M1 t) rx (gn-src M1 (+ t 4) 0 1)]
++    (-> M1 (gn-ctx)
++        (cond-> charged (gn-emit (enc-ldr 8 7 CTX-FUEL))
++                outer (gn-mask-charge))
++        (gn-affine-index t kind)
++        (cond-> (>= sw 1536) (gn-mask-charge))
++        (gn-ldt (+ t 4) 0 1) (gn-emit (gn-e-bf 0x93400000 0 rx 0 (dec width)))
++        (cond-> (>= ww 256) (gn-mask-charge))
++        (gn-hchk rv 312 320) (gn-vidx 1) (gn-emit (gn-e-strr3 0 16 17))
++        (cond-> charged (gn-emit (enc-str 8 7 CTX-FUEL)))
++        (gn-into 0 t) (gn-take i t 0))))
++
+ ;; Bounded structural proof that a direct callee returns with input x7.
+ ;; A shared remaining-work budget counts all transitive SIR instructions; it
+ ;; prevents exponential rescanning. Unknown effects/operations fail closed.
+@@ -1052,8 +1157,8 @@
+         -1))))
+ 
+ (defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
+-  (let [w (gn-call-wrapper M i f t n) q (gn-clamp M i f n)]
+-   (cond (> q 0) (gn-call-clamp M i f t q) (gn-mask-writer M i f t n) (gn-call-mask-writer M t)
++  (let [w (gn-call-wrapper M i f t n) q (gn-clamp M i f n) aw (gn-affine-writer M i f t n)]
++   (cond (> aw 0) (gn-call-affine-writer M i f t aw) (> q 0) (gn-call-clamp M i f t q) (gn-mask-writer M i f t n) (gn-call-mask-writer M t)
+          (>= w 1024) (gn-call-sign M i t w)
+          (> w 0) (let [M1 (if (>= w 256) (gn-op-fuel M) M)
+                        slot (bit-and w 255)]

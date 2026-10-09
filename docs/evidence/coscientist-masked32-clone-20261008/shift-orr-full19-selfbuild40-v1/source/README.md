@@ -1,0 +1,11 @@
+SOURCE FROZEN finite remaining17+selfbuild40
+
+34 calls compile/extract the exact complement17 of accepted original19 (AES/SHA4 retained, never rerun). All17 require whole old maskedON KSEED/header/export/offset/arity/payload/native equality. A mismatch known after compile stops before extraction. Canonical matrix19/sourcehash/symbol/profile joins are mandatory. Original workload bodies unchanged.
+
+Only after all34 pass, G15404 compiles exact unity-sr-on2b00 toG2; G2 compiles same source toG3; G3 toG4. Extraction uses the same producing compiler. Three generations each solemain0arity0/fullpayload. G1->G2 requires equality or only exact aligned LSL/LSR/ORR->LSR10/ORR9shifted/NOP substitution with unchanged fullheader/length/tail/complement. Pattern diagnostic alone is not owner/CFG proof. G2/G3/G4 require complete KSEED AND native byteidentity. Failure stops immediately, no later extract/generation and no retry.
+
+Current prerequisites: audited SRbuild4/e14loader16/component36 scalarM/G/originalAES_SHA4/functional30/originalmaskedON19 and complete nested input closures. All1506 fixedfiles347642502B; finalGO/source2reviews fit2048files/384MiB before read/hash/spawn. Compiler source and pools match accepted experiments; compilerfueloff and ARENA_USE17 diagnostics. Workload runtime not executed and runtimefuel not relaxed. ExtraM allocation/copy nonrollback, finite resource refusal remains outcome.
+
+RootGO ROOT_AUTHORIZED_SR_REMAINING17_SELFBUILD40_ONLY/max40/exactsource/prereg/closure/outputRoot+two PASS_SOURCE_ONLY_SR_REMAINING17_SELFBUILD40 receipts required. Each1810s timeout+30drain+30reap;40 child allowance74800s (hash/host orchestration time separate). Kill/reap/raw-first on interruption retained from accepted SR4 driver. Raw compiler success requires exact17field stderr, all errors stop. Local only; no SSH/clang/workload guest/timing.
+
+Pure fake-process full40 success and first compiled unknown delta stops at1 with zero extract; three malformed registered-pattern/tail mutations rejected. Additional exact current matrix19 join tested after final metadata guard addition. No actual process spawned by author. Not productadoption/full100%/full19functional/CID/performance/officialScore.

@@ -1,0 +1,8 @@
+(defn- tc-call [M :vector-i64 i :i64 f :i64 t :i64 base :i64] :vector-i64
+ (if (not (and (fo-enabled) (fo-ready M))) (fo-original-tc-call M i f t base)
+  (let [start (vector-at M MM-CODE-N) fix (vector-at M MM-FIX-N)
+        used (gn-g M di-used) sites (gn-g M di-sites)
+        result (fo-original-tc-call M i f t base)
+        out (fo-print "TCEMIT" [i f t base (tc-mask M i t) start (vector-at result MM-CODE-N)
+              fix (vector-at result MM-FIX-N) used (gn-g result di-used)
+              sites (gn-g result di-sites) (vector-at result MM-ERR)])] result)))

@@ -1,0 +1,138 @@
+;; Excluded new candidate. D sparse final facts: context, original site, kind, target, index.
+(defn- pc-fact [D :vector-i64 ctx :i64 site :i64 kind :i64 target :i64 index :i64] :vector-i64
+ (let [n (inc (vector-at D 0)) at (+ 16 (* 5 n))]
+  (if (> n 16384) (mem-set D 4 1)
+   (-> D (mem-set 0 n) (mem-set at ctx) (mem-set (inc at) site) (mem-set (+ at 2) kind) (mem-set (+ at 3) target) (mem-set (+ at 4) index)))))
+(defn- pc-find [D :vector-i64 ctx :i64 site :i64 kind :i64 j :i64] :i64
+ (cond (> j (vector-at D 0)) 0
+       (and (= (vector-at D (+ 16 (* 5 j))) ctx) (= (vector-at D (+ 17 (* 5 j))) site) (= (vector-at D (+ 18 (* 5 j))) kind)) j
+       :else (pc-find D ctx site kind (inc j))))
+(defn- pc-labels [M :vector-i64 i :i64 end :i64] :i64
+ (if (> i end) 0 (+ (if (= (gn-op M i) OP-LABEL) 1 0) (pc-labels M (inc i) end))))
+(defn- pc-plan [M :vector-i64 J :vector-i64 j :i64] :vector-i64
+ (if (> j (vector-at J 0)) J
+  (let [f (vector-at J (+ 16 (* 4 j))) len (vector-at J (+ 17 (* 4 j))) status (vector-at J (+ 18 (* 4 j)))
+        p (gn-fnf M f FF-SIR) end (if (> p 0) (sh-end M (inc p) f 8192) 0)
+        chosen (and (>= len 0) (= status 1) (> end p))
+        id (vector-at J 5) pos (vector-at J 6) labels (vector-at J 7)
+        j0 (if chosen (-> J (mem-set (+ 19 (* 4 j)) id) (mem-set 5 (inc id)) (mem-set 6 (+ pos 1 (- end p)))
+                         (mem-set 7 (+ labels (pc-labels M p end)))) J)] (pc-plan M j0 (inc j)))))
+(defn- pc-record [M :vector-i64 f :i64 target :i64 k :i64 pos :i64] :vector-i64
+ (if (= k MM-FN-W) M
+  (let [value (cond (= k FF-SIR) pos (= k FF-CODE) 0 (= k FF-EXPORT) 0 (= k FF-KIND) FK-PRIV
+                    (or (= k FF-SYM) (= k FF-NODE)) 0 :else (gn-fnf M f k))
+        m0 (gn-put M (+ MM-FN-BASE (* target MM-FN-W) k) value)] (pc-record m0 f target (inc k) pos))))
+(defn- pc-maplabels [M :vector-i64 L :vector-i64 J :vector-i64 i :i64 end :i64] :vector-i64
+ (if (> i end) J
+  (let [op (gn-op M i) a (gn-sir M i IF-A) next (vector-at J 8)
+        l0 (if (= op OP-LABEL) (mem-set L a next) L) j0 (if (= op OP-LABEL) (mem-set J 8 (inc next)) J)]
+   (pc-maplabels M l0 j0 (inc i) end))))
+(defn- pc-target [J :vector-i64 D :vector-i64 ctx :i64 i :i64 original :i64] :i64
+ (let [record (pc-find D ctx i 1 1) job (if (> record 0) (vector-at D (+ 19 (* 5 record))) 0)
+       clone (if (> job 0) (vector-at J (+ 19 (* 4 job))) 0)] (if (> clone 0) clone original)))
+(defn- pc-copy [M :vector-i64 J :vector-i64 D :vector-i64 L :vector-i64 Safe :vector-i64 ctx :i64 clone :i64 i :i64 end :i64 pos :i64] :vector-i64
+ (if (> i end) M
+  (let [op (gn-op M i) a (gn-sir M i IF-A) b (gn-sir M i IF-B) c (gn-sir M i IF-C)
+        aa (cond (or (= op OP-FN) (= op OP-END)) clone
+                 (or (= op OP-LABEL) (= op OP-BR)) (vector-at L a)
+                 (= op OP-CALL) (pc-target J D ctx i a) :else a)
+        bb (if (or (= op OP-BRZ) (= op OP-BRNZ)) (vector-at L b) b)
+        at (+ MM-SIR-BASE (* pos MM-SIR-W))
+        m0 (-> M (gn-put at op) (gn-put (inc at) aa) (gn-put (+ at 2) bb) (gn-put (+ at 3) c))
+        record (pc-find D ctx i 2 1) sf (if (> record 0) (mem-set Safe pos 1) Safe)]
+   (pc-copy m0 J D L sf ctx clone (inc i) end (inc pos)))))
+(defn- pc-clone [M :vector-i64 J :vector-i64 D :vector-i64 L :vector-i64 Safe :vector-i64 j :i64] :vector-i64
+ (if (> j (vector-at J 0)) M
+  (let [f (vector-at J (+ 16 (* 4 j))) clone (vector-at J (+ 19 (* 4 j))) p (gn-fnf M f FF-SIR)
+        end (if (> clone 0) (sh-end M (inc p) f 8192) 0) pos (vector-at J 9)
+        j0 (if (> clone 0) (pc-maplabels M L J p end) J)
+        m0 (if (> clone 0) (pc-copy (pc-record M f clone 0 pos) j0 D L Safe j clone p end pos) M)
+        j1 (if (> clone 0) (mem-set j0 9 (+ pos 1 (- end p))) j0)] (pc-clone m0 j1 D L Safe (inc j)))))
+(defn- pc-public [M :vector-i64 J :vector-i64 D :vector-i64 k :i64] :vector-i64
+ (if (> k (vector-at D 0)) M
+  (let [at (+ 16 (* 5 k)) ctx (vector-at D at) i (vector-at D (inc at)) kind (vector-at D (+ at 2))
+        generic (= (vector-at J (+ 17 (* 4 ctx))) -1)
+        target (if (and generic (= kind 1)) (pc-target J D ctx i (gn-sir M i IF-A)) 0)
+        m0 (if (> target 0) (gn-put M (+ MM-SIR-BASE (* i MM-SIR-W) IF-A) target) M)]
+    (pc-public m0 J D (inc k)))))
+(defn- pc-span [M :vector-i64 f :i64 acc :i64] :i64
+ (if (>= f (vector-at M MM-FN-N)) acc
+  (let [p (gn-fnf M f FF-SIR) np (gn-fnf M f FF-NPARAMS) end (if (> p 0) (sh-end M (inc p) f 8192) 0)
+        ns (if (> end p) (gn-max (gn-max np (gn-sir M p IF-C)) (gn-max (gn-fnf M f FF-NSLOTS) (gn-scan M (inc p) 2 0))) 0)
+        dp (if (> end p) (gn-max (gn-fnf M f FF-DEPTH) (gn-scan M (inc p) 1 0)) 0)
+        valid (and (> p 0) (> end p) (>= np 0) (<= np 16) (>= ns np) (<= ns 16) (> dp 0) (<= dp 16))]
+   (pc-span M (inc f) (if valid (gn-max acc (+ 1 (- end p))) acc)))))
+;; Persistent undo record in M's owned heap; G origin+magic are outside the per-FN reset.
+(defn- pc-save-count [J :vector-i64 D :vector-i64 k :i64 n :i64] :i64
+ (if (> k (vector-at D 0)) n
+  (let [at (+ 16 (* 5 k)) ctx (vector-at D at) site (vector-at D (inc at)) kind (vector-at D (+ at 2))
+        job (vector-at D (+ at 3)) clone (if (= kind 1) (vector-at J (+ 19 (* 4 job))) 0)
+        keep (and (= (vector-at J (+ 17 (* 4 ctx))) -1) (= kind 1) (> clone 0))]
+   (pc-save-count J D (inc k) (+ n (if keep 1 0))))))
+(defn- pc-save-edges [M :vector-i64 J :vector-i64 D :vector-i64 origin :i64 k :i64 n :i64] :vector-i64
+ (if (> k (vector-at D 0)) M
+  (let [at (+ 16 (* 5 k)) ctx (vector-at D at) site (vector-at D (inc at)) kind (vector-at D (+ at 2))
+        job (vector-at D (+ at 3)) clone (if (= kind 1) (vector-at J (+ 19 (* 4 job))) 0)
+        keep (and (= (vector-at J (+ 17 (* 4 ctx))) -1) (= kind 1) (> clone 0))
+        p (+ origin 4 (* 2 n)) m0 (if keep (-> M (gn-put p site) (gn-put (inc p) (gn-sir M site IF-A))) M)]
+   (pc-save-edges m0 J D origin (inc k) (+ n (if keep 1 0))))))
+(defn- pc-restore-edges [M :vector-i64 origin :i64 k :i64 count :i64 sir :i64 fns :i64] :vector-i64
+ (if (= k count) M
+  (let [at (+ origin 4 (* 2 k)) site (vector-at M at) target (vector-at M (inc at))
+        valid (and (> site 0) (< site sir) (> target 0) (< target fns) (= (gn-op M site) OP-CALL))]
+   (if (not valid) (gn-err M E-GEN-OP OP-CALL)
+    (pc-restore-edges (gn-put M (+ MM-SIR-BASE (* site MM-SIR-W) IF-A) target) origin (inc k) count sir fns)))))
+(defn- pc-restore [M :vector-i64] :vector-i64
+ (let [g (vector-at M gn-cell) top (vector-at M MM-HEAP-TOP)
+       tagged (and (>= g MM-HEAP-BASE) (< (+ g gn-g-open-n 3) top) (<= top MM-HEAP-END)
+                   (= (vector-at M (+ g gn-g-open-n 3)) 0x50434c43))
+       origin (if tagged (vector-at M (+ g gn-g-open-n 2)) 0)]
+  (if (= origin 0) M
+   (if (or (< origin MM-HEAP-BASE) (> (+ origin 4) top)) (gn-err M E-GEN-OP OP-CALL)
+    (let [fns (vector-at M origin) sir (vector-at M (inc origin)) labels (vector-at M (+ origin 2)) n (vector-at M (+ origin 3))
+          valid (and (> fns 0) (<= fns (vector-at M MM-FN-N)) (> sir 0) (<= sir (vector-at M MM-SIR-N))
+                     (> labels 0) (<= labels (vector-at M MM-LABEL-N)) (>= n 0) (<= n 16384) (<= (+ origin 4 (* 2 n)) top))]
+     (if (not valid) (gn-err M E-GEN-OP OP-CALL)
+      (let [m0 (pc-restore-edges M origin 0 n sir fns)]
+       (-> m0 (gn-put MM-FN-N fns) (gn-put MM-SIR-N sir) (gn-put MM-LABEL-N labels)))))))))
+(defn- pc-run [M :vector-i64 Safe :vector-i64 first :i64 count :i64] :vector-i64
+ (if (or (not= first 0) (not= count 0) (not= (vector-at M MM-ERR) 0) (> (vector-at M MM-FN-N) 4096)) (gn-put M MM-R0 0)
+  (let [F (vector-alloc (+ 16 (* 5 (vector-at M MM-FN-N)))) Q (vector-alloc (+ 16 (* 5 (vector-at M MM-SIR-N))))
+        E (vector-alloc (+ 16 (vector-at M MM-FN-N) (* 2 (vector-at M MM-SIR-N)))) L (vector-alloc MM-LABEL-CAP)
+        e0 (sh-edge M E L 1) f0 (sh-init M F 1) f1 (sh-solve M f0 Q e0 L)
+        V (vector-alloc (+ 16 (* 64 (pc-span M 1 1)))) H (vector-alloc 64) J (vector-alloc 16404) D (vector-alloc 81946)
+        j0 (lc-init M J 1) j1 (if (= (vector-at f1 3) 0) (lc-jobs M f1 V H Q L j0 D 1) (mem-set j0 4 1))
+        j2 (-> j1 (mem-set 5 (vector-at M MM-FN-N)) (mem-set 6 (vector-at M MM-SIR-N)) (mem-set 7 (vector-at M MM-LABEL-N)))
+        j3 (pc-plan M j2 1)
+        edge_count (pc-save-count j3 D 1 0)
+        heap_need (+ 4 (* 2 edge_count) gn-a-lp MM-LABEL-CAP 5)
+        fit (and (<= (+ (vector-at M MM-HEAP-TOP) heap_need) MM-HEAP-END) (= (vector-at j3 4) 0) (= (vector-at D 4) 0)
+                 (< (vector-at j3 5) MM-FN-CAP) (< (vector-at j3 6) MM-SIR-CAP) (< (vector-at j3 7) MM-LABEL-CAP))]
+   (if (or (not fit) (= (vector-at j3 5) (vector-at M MM-FN-N))) (gn-put M MM-R0 0)
+    (let [saved (mem-alloc M (+ 4 (* 2 edge_count))) origin (vector-at saved MM-R0)
+          ms (-> saved (gn-put origin (vector-at M MM-FN-N)) (gn-put (inc origin) (vector-at M MM-SIR-N))
+                        (gn-put (+ origin 2) (vector-at M MM-LABEL-N)) (gn-put (+ origin 3) edge_count))
+          me (pc-save-edges ms j3 D origin 1 0)
+          j4 (-> j3 (mem-set 8 (vector-at M MM-LABEL-N)) (mem-set 9 (vector-at M MM-SIR-N)))
+          m0 (pc-clone me j4 D L Safe 1) m1 (pc-public m0 j4 D 1)
+          m2 (-> m1 (gn-put MM-FN-N (vector-at j4 5)) (gn-put MM-SIR-N (vector-at j4 6)) (gn-put MM-LABEL-N (vector-at j4 7)) (gn-put MM-R0 origin))] m2)))))
+(defn- pc-safe [M :vector-i64] :bool (= (gn-g M (+ gn-g-open-n 1)) 1))
+(defn- pc-vidx [M :vector-i64 ri :i64] :vector-i64
+ (-> M (gn-emit (enc-ldp 17 16 16 0)) (gn-emit (enc-ldr 16 7 328)) (gn-emit (enc-add-r 17 17 ri))))
+(defn- pc-read [M :vector-i64 rv :i64 ri :i64 d :i64 slot :i64] :vector-i64
+ (case (gn-g M gn-f-vmode)
+  2 (-> M (gn-chain-base rv slot) (gn-emit (gn-e-ldrr d 4 ri 1)))
+  0 (-> M (gn-hchk rv 312 320) (pc-vidx ri) (gn-emit (gn-e-ldrr d 16 17 1)))
+  (gn-chain-read M rv ri d slot)))
+(defn- pc-store [M :vector-i64 rv :i64 ri :i64 rx :i64 slot :i64] :vector-i64
+ (if (= (gn-g M gn-f-vmode) 2) (-> M (gn-chain-base rv slot) (gn-emit (gn-e-strr3 rx 4 ri)))
+  (-> M (gn-hchk rv 312 320) (pc-vidx ri) (gn-emit (gn-e-strr3 rx 16 17)))))
+(defn- pc-at [M :vector-i64 i :i64 t :i64] :vector-i64
+ (let [slot (if (gn-isk M t gn-k-local) (gn-dv M t) 0) M1 (gn-pin M (inc t)) ri (gn-pinned M1 (inc t))
+       rv (gn-src M1 t 17 0) s (gn-co M1 i t) d (gn-dreg M1 t s)]
+  (-> M1 (gn-protect t s) (gn-ctx) (gn-ldt t 17 0) (pc-read rv ri d slot) (gn-fin t s d))))
+(defn- pc-set [M :vector-i64 t :i64] :vector-i64
+ (let [slot (if (gn-isk M t gn-k-local) (gn-dv M t) 0) M1 (-> M (gn-pin t) (gn-pin (inc t)))
+       M2 (if (and (gn-isk M1 (+ t 2) gn-k-const) (= (gn-dv M1 (+ t 2)) 0)) M1 (gn-pin M1 (+ t 2)))
+       rv (gn-pinned M2 t) ri (gn-pinned M2 (inc t)) rx (if (gn-isk M2 (+ t 2) gn-k-const) 31 (gn-pinned M2 (+ t 2)))]
+  (-> M2 (gn-ctx) (pc-store rv ri rx slot) (gn-gs gn-f-h (inc t)))))

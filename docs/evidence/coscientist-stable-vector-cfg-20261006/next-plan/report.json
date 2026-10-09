@@ -1,0 +1,195 @@
+{
+  "status": "TERMINAL READ-ONLY PLAN",
+  "noImplementation": true,
+  "noTiming": true,
+  "measurementFromParentIndependentAudit": {
+    "xgboostBaselineNs": 1324127.976,
+    "candidateNs": 1186878.385,
+    "Cns": 179410.453,
+    "timeReductionPercent": 10.3653,
+    "candidateOverC": 6.6154,
+    "qr": "neutral",
+    "qualifiedRegressions": false
+  },
+  "hypotheses": [
+    {
+      "rank": 1,
+      "rule": "bounded pure scalar DAG inlining at closed direct-call edges",
+      "scope": {
+        "functions": 11,
+        "workloads": 5,
+        "retainedActualBLSites": 132
+      },
+      "evidence": "scalar-census.json",
+      "guards": [
+        "typed i64/bool result and 1..5 parameters",
+        "frameless leaf, depth<=7, body<=32 SIR",
+        "no calls, memory, RT, fuel, branch, division or f64",
+        "explicit opcode semantics including shifts",
+        "closed unreplaceable call edge; preserve generic export/FADDR body"
+      ],
+      "proof": [
+        "exact expression substitution and caller liveness",
+        "original argument evaluation and trap/fuel/effect order",
+        "actual frame/register/scratch ownership",
+        "full projected machine edges/literals and bounded code growth"
+      ],
+      "finite": "Rooted 32-node DAG; reject unknown opcode or register/growth budget exhaustion. Prospective exact growth budget must precede implementation.",
+      "counterexamples": [
+        "open or replaceable call target",
+        "hidden fuel/division trap",
+        "caller live register clobber",
+        "unbounded duplicated body growth"
+      ],
+      "decision": "Best next broad investigation. Actual call costs and code growth need proof/census before implementation; no measured speedup claim."
+    },
+    {
+      "rank": 2,
+      "rule": "leaf fuel-charge/backedge branch fusion",
+      "scope": {
+        "actualMachineSites": 54,
+        "workloads": 16
+      },
+      "evidence": "fuel-census.json",
+      "guards": [
+        "exact SUBS/B.HS/STR-zero/BRK/B sequence",
+        "jump flush emits no other word",
+        "signed conditional displacement fits",
+        "no incoming edge into removed branch interior"
+      ],
+      "proof": [
+        "identical x8/NZCV transition",
+        "identical zero fuel publication and BRK path",
+        "exact branch target projection and fixups"
+      ],
+      "finite": "Opcode-rooted five-word matcher, constant-size conditions, bounded fixup rewrite.",
+      "counterexamples": [
+        "jump requires materialization",
+        "out-of-range conditional target",
+        "external entry into middle",
+        "fuel trap moved or ctx zero store omitted"
+      ],
+      "decision": "Broad low-growth candidate, one branch saved per matched backedge; not sufficient evidence for closing C gap."
+    },
+    {
+      "rank": 3,
+      "rule": "must-successful-validation guard elimination",
+      "scope": {
+        "xgboostSites": [
+          301,
+          311,
+          327
+        ],
+        "qrduinoSites": [
+          6654,
+          6662,
+          6669,
+          6678,
+          6689,
+          6705,
+          6721,
+          6735
+        ],
+        "staticWordReduction": 143
+      },
+      "evidence": "analysis.json",
+      "guards": [
+        "entry fact false",
+        "every predecessor has same still-valid descriptor",
+        "successful read establishes fact only after validation",
+        "loop header includes entry/preheader",
+        "no descriptor/local invalidation"
+      ],
+      "proof": [
+        "bounded forward must fixedpoint with independently checked certificate",
+        "first validation and bounds/fresh load/fuel unchanged"
+      ],
+      "finite": "Boolean finite lattice over capped N/E; monotonic worklist and explicit shared visit budget; refuse exhaustion.",
+      "counterexamples": [
+        "conditional first read",
+        "entry undef on loop header",
+        "alternate vector or local write",
+        "unknown effect invalidates descriptor"
+      ],
+      "decision": "Only one executed CBNZ removed per hit; cold capture block was already skipped. Useful cleanup, not a large-gap explanation."
+    },
+    {
+      "rank": 4,
+      "rule": "affine parameter representation in proven read-only selftail loop",
+      "scope": {
+        "actualIndexSir": 311,
+        "function": 15,
+        "sampleLocalReads": [
+          305,
+          330
+        ],
+        "sampleLocalWrites": [
+          335
+        ],
+        "oldIndexInstructions": 4,
+        "proposedIndexInstructions": 1
+      },
+      "evidence": "affine-law.py; optional solver unavailable (affine-law-status.json)",
+      "guards": [
+        "all uses of original scalar proven affine or exact selfcopy",
+        "i64 modular arithmetic semantics",
+        "entry ABI materialization unchanged",
+        "use original assigned scalar register, no extra saved registers"
+      ],
+      "proof": [
+        "whole-function def-use/CFG/selfcopy induction",
+        "bit-pattern-identical index and retained bounds",
+        "nonflag nontrapping entry arithmetic and unchanged fuel/traps"
+      ],
+      "finite": "Bounded all-use traversal and finite affine lattice, fail closed on non-affine use, call or unresolved cycle.",
+      "counterexamples": [
+        "unbiased scalar needed later",
+        "wrong scale or constant",
+        "signed-overflow trap semantics",
+        "alternate selftail parameter"
+      ],
+      "decision": "Concrete XGB index headroom with no new frame; algebraic hypothesis only, no native implementation or solver PASS."
+    },
+    {
+      "rank": 5,
+      "rule": "proved readonly narrow region layout plus affine memory views",
+      "scope": {
+        "CConstBytePayload": 39555,
+        "KotobaStateI64Payload": 316528,
+        "payloadRatio": 8.002224750347617
+      },
+      "evidence": "analysis.json",
+      "guards": [
+        "ownership and no address/handle escape",
+        "all write values proven in narrow range",
+        "closed reads preserve arbitrary public fallback",
+        "logical resource and full-state contract preserved"
+      ],
+      "proof": [
+        "memory SSA / region alias certificate",
+        "identity, offset, overflow and bounds equivalence",
+        "allocation budget, low-fuel prefixes and partial writes",
+        "loader provenance/DefCID/build-profile separation"
+      ],
+      "finite": "Bounded region/alias/range analysis with conservative fallback. Actual algorithm and caps must be preregistered separately.",
+      "counterexamples": [
+        "later wide write",
+        "observable representation/alias escape",
+        "different arbitrary vector input",
+        "allocation/fuel prefix changed"
+      ],
+      "decision": "Large structural representation difference is real, cache/time cause unproved. Architectural investigation, not quick promotion."
+    }
+  ],
+  "interpretation": [
+    "Static sites are not execution frequencies. Physical baseline entry counts are modulo-u64 and not time shares.",
+    "Fixed C data traversal is not a generic vector bound proof.",
+    "Earlier clone audit contradicted wrapper/tree/private-ABI/fusion loss; code growth/layout established, i-cache cause unproved.",
+    "No benchmark names may enter optimizer predicates.",
+    "No unchanged negative-candidate timing retry."
+  ],
+  "harnessCorrections": [
+    "Fuel census initially tried to unpack an entire binary containing a trailing partial literal-pool word. Corrected diagnostic read to inspect complete words and actual code event ranges; no source or binaries changed.",
+    "Optional affine solver missing z3 in both available Python interpreters; retained script/status, no solver result claimed."
+  ]
+}

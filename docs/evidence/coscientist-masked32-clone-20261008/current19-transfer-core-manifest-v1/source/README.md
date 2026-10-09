@@ -1,0 +1,9 @@
+# Current19 packet core manifest — SOURCE only
+
+156 regular files, 4,299,692 logical bytes: original19 Kotoba sources, current OFF/ON whole native+container images (38 each), 53 unchanged C bridges/upstream/support sources, new source-only C recipes, and seven result/artifact/provenance metadata owners. No stale LC image/header/runner/C binary, whole SDK, historic archive, compiler executable or new transfer is included.
+
+Paths agree with consumer draft: inputs/<workload>/OFF.bin and ON.bin, future fresh inputs/<workload>/C.dylib, and future generated build/<workload>/timing-packet-generated.h. C sources retain inputs/<workload>/c-bridge.c plus relative upstream/src and support includes. The generated header must be built from fresh reviewed C artifact receipts. Draft consumer SOURCE is intentionally not pinned until frozen; materialization/transfer requires a fresh completed manifest version binding its exact files.
+
+Owned C literal include union is checked against the saved C95 source manifest. config.h and boardsupport.h are optional HAVE_CONFIG_H/HAVE_BOARDSUPPORT_H branches; depthconv's quoted stdint.h resolves through the compiler's system search. This source inventory is not an actual compiler -M closure. No SDK headers are copied; fresh host compiler/dependency closure and explicit architecture/macro choices remain prerequisites. Original C build recipes are source recipes only, not reuse of previous host/toolchain/binaries/timing qualification.
+
+Manifest gives fixed source bytes and path maps, not archive/transfer/build/run authorization. It contains original local evidence JSON paths; remote provenance needs explicit relative-map binding and cannot silently execute old absolute paths. Fresh same-host 19 C builds/19 consumers,285 semantic and57 repeated-reset controls precede quiet calibrated timing. Original95 profiles/fuel16777216/four arena capacities remain unchanged. No timing or official Embench claim.

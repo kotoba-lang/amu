@@ -1,0 +1,78 @@
+--- 41-vector-analysis-on.kotoba
++++ 41-funnel-off.kotoba
+@@ -2631,10 +2631,74 @@
+         OP-END (-> M (gn-emit (enc-brk 1)) (gn-gs gn-f-dead 0))
+         (gn-err M E-GEN-OP op)))))
+ 
++;; XF1 isolated default-OFF pure funnel fusion. Preserve all three code words.
++;; No logical fuel, compiler CODE capacity, offset, FIX or label shortening.
++(def xf-feature 0)
++(defn- xf-at [M :vector-i64 i :i64 op :i64 a :i64 b :i64 c :i64] :bool
++ (and (= (gn-op M i) op) (= (gn-sir M i IF-A) a)
++      (= (gn-sir M i IF-B) b) (= (gn-sir M i IF-C) c)))
++(defn- xf-ready [M :vector-i64 i :i64] :bool
++ (and (= xf-feature 1) (= (vector-at M MM-ERR) 0)
++      (> i 0) (< (+ i 8) (vector-at M MM-SIR-N))
++      (= (gn-g M gn-f-leaf) 0) (> (gn-g M gn-f-fb) 0)
++      (= (gn-g M gn-f-vmode) 0) (= (gn-g M gn-f-vslot) 0)
++      (= (gn-g M gn-f-dead) 0) (= (gn-g M 14) 0)
++      (= (gn-g M gn-f-skip) 0) (>= (gn-g M gn-f-h) 0) (<= (gn-g M gn-f-h) 1)
++      (>= (vector-at M MM-CODE-N) 0) (<= (vector-at M MM-CODE-N) MM-CODE-CAP)
++      (let [a (gn-sir M i IF-B) b (gn-sir M (+ i 3) IF-B)
++            s (gn-sir M (+ i 7) IF-A)]
++       (and (> a 0) (<= a (gn-g M gn-f-ns)) (> b 0) (<= b (gn-g M gn-f-ns))
++            (> s 0) (<= s (gn-g M gn-f-ns))
++            (not= a b) (not= s a) (not= s b)
++            (>= (gn-sreg M a) 19) (<= (gn-sreg M a) 28)
++            (>= (gn-sreg M b) 19) (<= (gn-sreg M b) 28)
++            (>= (gn-sreg M s) 19) (<= (gn-sreg M s) 28)
++            (xf-at M i OP-LGET 0 a 0)
++            (xf-at M (inc i) OP-CONST 1 1 0)
++            (xf-at M (+ i 2) OP-BIN BOP-SHL 0 0)
++            (xf-at M (+ i 3) OP-LGET 1 b 0)
++            (xf-at M (+ i 4) OP-CONST 2 63 0)
++            (xf-at M (+ i 5) OP-BIN BOP-USHR 1 0)
++            (xf-at M (+ i 6) OP-BIN BOP-OR 0 0)
++            (xf-at M (+ i 7) OP-LSET s 0 0)
++            (= (gn-co M (+ i 6) 0) s)
++            (gn-kills M (+ i 8) 1 16) (gn-kills M (+ i 8) 2 16)))))
++;; Exactly the original chain/cache/protect/descriptor/coalescing transitions.
++;; The matched two shifts cannot consume successors; OR consumes its LSET once.
++;; On original MMERR stop immediately; no replacement and no added skip.
++(defn- xf-replay [M :vector-i64 j :i64 end :i64] :vector-i64
++ (if (or (> j end) (not= (vector-at M MM-ERR) 0)) M
++  (let [m (gn-ins M j (gn-op M j))]
++   (if (= j end) m (xf-replay (gn-gs m gn-f-skip 0) (inc j) end)))))
++(defn- xf-rewrite [M :vector-i64 i :i64] :vector-i64
++ (let [start (vector-at M MM-CODE-N)
++       fix (vector-at M MM-FIX-N) lit (vector-at M MM-LIT-N)
++       litb (vector-at M MM-LITB-N) label (vector-at M MM-LABEL-N)
++       x (gn-sreg M (gn-sir M i IF-B)) y (gn-sreg M (gn-sir M (+ i 3) IF-B))
++       s (gn-sir M (+ i 7) IF-A) d (gn-sreg M s)
++       m (xf-replay M i (+ i 6))]
++  (if (not= (vector-at m MM-ERR) 0) m
++   (let [next (gn-g m gn-f-skip)
++         full (gn-gs m gn-f-skip (+ 6 next))]
++    (if (and (= next 1) (= (vector-at m MM-CODE-N) (+ start 3))
++             (= (vector-at m MM-FIX-N) fix) (= (vector-at m MM-LIT-N) lit)
++             (= (vector-at m MM-LITB-N) litb) (= (vector-at m MM-LABEL-N) label)
++             (= (gn-g m gn-f-h) 1) (= (gn-dk m 0) gn-k-local) (= (gn-dv m 0) s)
++             (= (gn-dk m 1) gn-k-reg) (= (gn-dv m 1) 0)
++             (= (gn-g m gn-f-vmode) 0) (= (gn-g m gn-f-vslot) 0)
++             (= (vector-at m (+ MM-CODE-BASE start)) (gn-e-lsl 9 x 1))
++             (= (vector-at m (+ MM-CODE-BASE start 1)) (gn-e-lsr 10 y 63))
++             (= (vector-at m (+ MM-CODE-BASE start 2)) (enc-orr-r d 9 10)))
++     ;; EXTR d,x,y,#63; two NOPs retain every original word-budget decision.
++     (-> full (gn-put (+ MM-CODE-BASE start) (enc-rrr 0x93c0fc00 d x y))
++              (gn-put (+ MM-CODE-BASE start 1) 0xd503201f)
++              (gn-put (+ MM-CODE-BASE start 2) 0xd503201f))
++     full)))))
++
+ ;; every instruction from i (an instruction may consume the next ones: gn-f-skip)
+ (defn- gn-loop [M :vector-i64 i :i64] :vector-i64
+   (if (and (< i (vector-at M MM-SIR-N)) (= (vector-at M MM-ERR) 0))
+-    (let [M1 (gn-ins M i (gn-op M i))
++    (let [M1 (if (xf-ready M i) (xf-rewrite M i) (gn-ins M i (gn-op M i)))
+           k (gn-g M1 gn-f-skip)]
+       (gn-loop (gn-gs M1 gn-f-skip 0) (+ i 1 k)))
+     M))

@@ -1,0 +1,21 @@
+{
+  "status": "HOLD_SOURCE_OWNED_GROUP_MEMORY_QUALIFICATION2_POST_REAP_PGID_RACE",
+  "independent": true,
+  "priorOperationalAuthorship": false,
+  "sourcePinsSHA256": "14b4e0312f651a9c84265c41d07239a47df303dd606ee52d666a151749f45255",
+  "driverSHA256": "4b1a74abe56210b9224fa6b67253cec638bca9ad5e3b8aea2231dcd031d6bf4f",
+  "freezeSHA256": "d36533f28c9f86b4b2500c646d0c711cf2f83c6fe875c833a018f8c7067e5a45",
+  "findings": [
+    "Normal leader wait reaps before watchdog stop; finally unconditionally killpg afterward. Both can address reused PGID.",
+    "Watchdog stop plus bounded join is insufficient unless terminated or serialized with reap; lock/ownership state must prohibit signaling after any wait/poll implicit reap.",
+    "Post-reap killpg0 may inspect reused PGID and cannot establish original group disappearance."
+  ],
+  "otherInspections": [
+    "No driver poll calls found in V1.",
+    "Fixed helper single creation, ready handshake, drop release and wait0 precede one-again sampling.",
+    "Explicit footprint-only contract supersedes preserved earlier two-metric proposal, soft/non-atomic/spike limitations retained."
+  ],
+  "reviewerOperationalCalls": 0,
+  "fixtureQualified": false,
+  "native8Authorized": false
+}

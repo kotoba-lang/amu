@@ -32,6 +32,12 @@ case "$(uname -s)" in
     PROGS=$(sed -nE 's/.*execve\("([^"]+)".*/\1/p' "$OUT") ;;
   *) echo "no-host-processes: unsupported OS (fail closed)" >&2; exit 2 ;;
 esac
+# A successful command with an empty/failed trace is not execution evidence.
+# In particular dtruss can fail to attach under SIP while the target still runs.
+if ! grep -q 'execve' "$OUT"; then
+  echo "no-host-processes: no exec events captured (fail closed)" >&2
+  exit 2
+fi
 [ "$LIST" -eq 1 ] && printf '%s\n' "$PROGS"
 BAD=$(printf '%s\n' "$PROGS" | awk -F/ '{print $NF}' | grep -E '^(node|nodejs|nbb|java|javac|jshell|clojure|clj|bb|python[0-9.]*|native-image|bun|deno|npx|npm)$' | sort | uniq -c)
 if [ -n "$BAD" ]; then echo "no-host-processes: FORBIDDEN processes ran:" >&2; echo "$BAD" >&2; exit 3; fi

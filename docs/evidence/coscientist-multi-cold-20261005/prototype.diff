@@ -1,0 +1,84 @@
+diff --git a/Users/junkawasaki/github/wt/amu-seed17/seed/41-a64gen.kotoba b/private/tmp/amu-multi-cold-20261005/41-a64gen-prototype.kotoba
+index 58f8584..766dc5d 100644
+--- a/Users/junkawasaki/github/wt/amu-seed17/seed/41-a64gen.kotoba
++++ b/private/tmp/amu-multi-cold-20261005/41-a64gen-prototype.kotoba
+@@ -493,11 +493,22 @@
+   (cond (>= i (vector-at M MM-SIR-N)) acc
+         (= (gn-op M i) OP-END) acc
+         :else (gn-scan M (+ i 1) what (gn-max acc (if (= what 1) (gn-need-t M i) (gn-need-s M i))))))
++;; Count syntactic charge sites, not dynamic executions. Only charges of
++;; already proved inline wrappers are included; unknown calls are not counted.
++;; Field15 is private and reset before the existing function prescan.
++(defn- gn-cold-count [M :vector-i64 j :i64] :vector-i64
++  (let [op (gn-op M j)
++        charge (if (= op OP-FUEL) true
++                 (if (= op OP-CALL)
++                   (let [w (gn-call-wrapper M j (gn-sir M j IF-A) (gn-sir M j IF-B) (gn-sir M j IF-C))]
++                     (if (>= w 1024) (>= w 1536) (>= w 256))) false))]
++    (if charge (gn-gs M 15 (inc (gn-g M 15))) M)))
++
+ (defn- gn-pre [M :vector-i64 j :i64] :vector-i64
+   (let [op (gn-op M j)]
+     (if (or (>= j (vector-at M MM-SIR-N)) (= op OP-END))
+       M
+-      (gn-pre (gn-pre-op M j) (inc j)))))
++      (gn-pre (gn-cold-count (gn-pre-op M j) j) (inc j)))))
+ 
+ ;; ---- register assignment ----------------------------------------------------------------------------------------
+ (defn- gn-lowregs [M :vector-i64 k :i64 n :i64] :vector-i64
+@@ -565,6 +576,16 @@
+                      (gn-gs gn-f-dp dp0)
+                      (gn-pre (inc i)))
+                  i f np))))
++;; Failure blocks precede the callable entry. Direct/indirect/export/tail
++;; references still point to FF-CODE after the block; ordinary execution never
++;; passes through failure code. Field13 is private and reset for every FN.
++(defn- gn-cold-entry [M :vector-i64 f :i64] :vector-i64
++  (let [at (vector-at M MM-CODE-N)
++        M1 (if (>= (gn-g M 15) 2)
++             (-> M (cond-> (= (gn-g M gn-f-leaf) 1) (gn-emit (enc-str 31 7 CTX-FUEL)))
++                   (gn-emit (enc-brk 0)) (gn-gs 13 at)) M)]
++    (gn-put M1 (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) (vector-at M1 MM-CODE-N))))
++
+ (defn- gn-op-fn2 [M1 :vector-i64 i :i64 f :i64 np :i64] :vector-i64
+   (let [ns (gn-g M1 gn-f-ns)
+         dp (gn-g M1 gn-f-dp)]
+@@ -576,7 +597,7 @@
+             (if (> F 32768)
+               (gn-err M2 E-GEN-FRAME (+ ns dp))
+               (-> M2
+-                  (gn-put (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) (vector-at M2 MM-CODE-N))
++                  (gn-cold-entry f)
+                   (cond-> (> F 0) (-> (gn-emit (enc-stp-pre 29 30 31 -16))
+                                       (gn-emit (enc-mov-sp 29 31))
+                                       (gn-subsp (bit-and F -4096))
+@@ -1169,15 +1190,25 @@
+ ;; str x16,[x7,#8]. SEEDFIX (F4): the leaf's exhaustion path stores 0 to the context before brk, as the memory sequence
+ ;; leaves it, so the loader reports :budget/fuel (not a bare SIGTRAP) when a leaf runs out (x8 was never written back)
+ (defn- gn-op-fuel [M :vector-i64] :vector-i64
+-  (if (= (gn-g M gn-f-freg) 1)
+-    (-> M (gn-emit (enc-subs-i 8 8 1)) (gn-emit (enc-bcond (enc-cond-hs) 3)) (gn-emit (enc-str 31 7 CTX-FUEL)) (gn-emit (enc-brk 0)))
+-    (-> M
++  (let [target (gn-g M 13) at (+ (vector-at M MM-CODE-N) (if (= (gn-g M gn-f-freg) 1) 1 2))
++        ;; gn-ctx can emit one instruction. Evaluate it before proving distance.
++        M1 (if (= (gn-g M gn-f-freg) 1) M (gn-ctx M))
++        branch (+ (vector-at M1 MM-CODE-N) (if (= (gn-g M1 gn-f-freg) 1) 1 2))
++        delta (- target branch)]
++    (if (and (> target 0) (>= delta -262144) (<= delta 262143))
++      (if (= (gn-g M1 gn-f-freg) 1)
++        (-> M1 (gn-emit (enc-subs-i 8 8 1)) (gn-emit (enc-bcond (enc-cond-lo) delta)))
++        (-> M1 (gn-emit (enc-ldr 16 7 CTX-FUEL)) (gn-emit (enc-subs-i 16 16 1))
++               (gn-emit (enc-bcond (enc-cond-lo) delta)) (gn-emit (enc-str 16 7 CTX-FUEL))))
++      (if (= (gn-g M1 gn-f-freg) 1)
++    (-> M1 (gn-emit (enc-subs-i 8 8 1)) (gn-emit (enc-bcond (enc-cond-hs) 3)) (gn-emit (enc-str 31 7 CTX-FUEL)) (gn-emit (enc-brk 0)))
++    (-> M1
+         (gn-ctx)
+         (gn-emit (enc-ldr 16 7 CTX-FUEL))
+         (gn-emit (enc-subs-i 16 16 1))
+         (gn-emit (enc-bcond (enc-cond-hs) 2))
+         (gn-emit (enc-brk 0))
+-        (gn-emit (enc-str 16 7 CTX-FUEL)))))
++        (gn-emit (enc-str 16 7 CTX-FUEL)))))))
+ 
+ ;; one SIR instruction (unreachable ones are dropped until the next LABEL / FN / END)
+ (defn- gn-ins [M :vector-i64 i :i64 op :i64] :vector-i64

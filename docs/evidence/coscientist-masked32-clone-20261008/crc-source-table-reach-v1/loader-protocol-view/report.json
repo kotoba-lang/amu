@@ -1,0 +1,71 @@
+{
+  "status": "SOURCE_PROTOCOL_VIEW_ONLY_NOT_DYNAMIC_PROCESS_PROOF",
+  "pins": [
+    {
+      "path": "/Users/junkawasaki/github/workspaces/codex/vector-masked32-source-bound-loader-build-plan-v2-native-controls/kexe_loader.c",
+      "bytes": 698176,
+      "sha256": "f44b50995a0e45db4be35244da34dd61538a484c7d5ea2f15f7f5a73d9daa8c3"
+    },
+    {
+      "path": "/Users/junkawasaki/github/workspaces/codex/vector-masked32-source-bound-loader-actual-review-v2-width/report.json",
+      "bytes": 4070,
+      "sha256": "5f7c433cf349362457887d0bdc01eb31b4e96413de2efe9a83b669675bcd6484"
+    },
+    {
+      "path": "/Users/junkawasaki/github/workspaces/codex/vector-masked32-source-bound-loader-build-plan-v2-native-controls/run-outputs/kexe-loader",
+      "bytes": 197736,
+      "sha256": "e14c2919ac5afd0960d9e6a4ac30ed90da26047c99842ef4d66428322764a77f"
+    },
+    {
+      "path": "/Users/junkawasaki/github/workspaces/codex/crc-table-decision-collapse-original-crc-guest8-source-v1-20261009-dense/launch-wrapper.py",
+      "bytes": 3458,
+      "sha256": "dfd2317a7381e5e6b8c8f5db24e3f46085736295302b7b810cd0278a6289cedf"
+    }
+  ],
+  "savedBuildProofStatus": "PASS_INDEPENDENT_ACTUAL_SOURCE_BOUND_DIAGNOSTIC_LOADER16_BUILD_IDENTITY_ONLY",
+  "spans": [
+    {
+      "label": "brokergrantgates",
+      "start": 12862,
+      "end": 12890,
+      "text": "  /* :process/spawn: only when the grant names wire 20, and only with a\n   * well-formed :process/spawn grant (an absent one grants no program). */\n  if (kexe_cap_admitted(shared->context.allow, 20)) {\n    if (kexe_spawn_grant_init() != 0) {\n      fprintf(stderr, \"kexe-loader: malformed :process/spawn grant (KEXE_CAP_RESOURCES_20 / KEXE_SPAWN_ENV / KEXE_SPAWN_PATH_LOOKUP)\\n\");\n      return 2;\n    }\n    if (pipe(kspawn_req_pipe) != 0 || pipe(kspawn_resp_pipe) != 0) fail(\"spawn broker pipe\");\n    kspawn_broker_active = 1;\n  }\n  kexe_entropy_granted = kexe_cap_admitted(shared->context.allow, 23);\n  /* Native TCP: only when the grant names one of wires 43..47, and only with\n   * well-formed address scopes (an absent one grants no address). */\n  if (kexe_cap_admitted(shared->context.allow, 43) || kexe_cap_admitted(shared->context.allow, 44) ||\n      kexe_cap_admitted(shared->context.allow, 45) || kexe_cap_admitted(shared->context.allow, 46) ||\n      kexe_cap_admitted(shared->context.allow, 47)) {\n    if (knet_grant_init() != 0) {\n      fprintf(stderr, \"kexe-loader: malformed native TCP grant (KEXE_CAP_RESOURCES_43 / KEXE_CAP_RESOURCES_45: comma-separated <ipv4>:<port>)\\n\");\n      return 2;\n    }\n    if (pipe(knet_req_pipe) != 0 || pipe(knet_resp_pipe) != 0) fail(\"net broker pipe\");\n    knet_broker_active = 1;\n  }\n#ifdef KEXE_GPU_VULKAN\n  /* :gpu/compute: only when the grant names wire 42. The pipes exist before\n   * the fork so both sides hold them; the supervisor serves, the guest asks. */\n  if (kexe_cap_admitted(shared->context.allow, 42)) {\n    if (pipe(kgpu_req_pipe) != 0 || pipe(kgpu_resp_pipe) != 0) fail(\"gpu broker pipe\");\n    kgpu_broker_active = 1;\n",
+      "sha256": "ba5a909bae5d815ec0cd03a7c6744db0aeb2cea8fa9b8df92150c022fe75f973"
+    },
+    {
+      "label": "normalforkandreport",
+      "start": 12910,
+      "end": 12954,
+      "text": "  pid_t child = fork();\n  if (child < 0) fail(\"fork\");\n  if (child > 0) {\n    int child_status = supervise(child);\n    report_budget_trap(shared, child_status);\n    if (kexe_census_sites != NULL) kexe_arena_census(shared, getenv(\"KEXE_ARENA_CENSUS\"));\n    if (kexe_use != NULL) {\n      /* KEXE_ARENA_USE: one EDN line on stderr -- the high-water mark of each\n       * arena (the final use, or the largest use seen before an arena-scope\n       * release, whichever is larger) and what the vector conj path did. */\n      uint64_t peak_pairs = shared->pair_used > kexe_use->peak_pairs ? shared->pair_used : kexe_use->peak_pairs;\n      uint64_t peak_pool = shared->string_pool_used > kexe_use->peak_string_pool ? shared->string_pool_used : kexe_use->peak_string_pool;\n      uint64_t peak_vectors = shared->vector_used > kexe_use->peak_vectors ? shared->vector_used : kexe_use->peak_vectors;\n      uint64_t peak_items = shared->vector_item_used > kexe_use->peak_vector_items ? shared->vector_item_used : kexe_use->peak_vector_items;\n      fprintf(stderr,\n              \"KEXE_ARENA_USE {:pairs %\" PRIu64 \" :string-pool-bytes %\" PRIu64\n              \" :vectors %\" PRIu64 \" :vector-items %\" PRIu64\n              \" :heap-bytes %\" PRIu64\n              \" :conj %\" PRIu64 \" :conj-tail %\" PRIu64 \" :conj-region %\" PRIu64\n              \" :conj-copy %\" PRIu64 \" :copied-words %\" PRIu64\n              \" :reserved-words %\" PRIu64 \" :regions %\" PRIu64\n              \" :scope-releases %\" PRIu64\n              \" :string-regions %\" PRIu64 \" :string-region-appends %\" PRIu64\n              \" :string-copied-bytes %\" PRIu64 \" :string-reserved-bytes %\" PRIu64 \"}\\n\",\n              peak_pairs, peak_pool, peak_vectors, peak_items,\n              peak_pairs * (uint64_t)sizeof(struct kexe_pair_v1) + peak_pool +\n                  peak_vectors * (uint64_t)sizeof(struct kexe_vector_v1) +\n                  peak_items * 8u,\n              kexe_use->conj_calls, kexe_use->conj_tail, kexe_use->conj_region,\n              kexe_use->conj_copy, kexe_use->copied_words,\n              kexe_use->reserved_words, kexe_use->regions,\n              kexe_use->scope_releases, kexe_use->string_regions,\n              kexe_use->string_region_appends, kexe_use->string_copied_bytes,\n              kexe_use->string_reserved_bytes);\n      if (kexe_hashcons != NULL)\n        fprintf(stderr, \"KEXE_HASHCONS {:entries-log2 %u :ways %u :pair-hits %\" PRIu64 \" :empty-vector-shared %\" PRIu64 \"}\\n\",\n                kexe_hashcons_bits, KEXE_HASHCONS_WAYS, kexe_use->hashcons_hits, kexe_use->empty_vector_shared);\n    }\n    if (structured_report)\n      child_status = write_supervisor_report(shared, child_status, result_type,\n                                             record_field_count,\n                                             variant_case_count,\n                                             variant_bool_mask);\n    if (munmap(shared, sizeof(*shared)) != 0) fail(\"supervisor shared munmap\");\n    if (munmap(memory, mapped) != 0) fail(\"supervisor munmap\");\n",
+      "sha256": "21959b1753f5a3715af6453dd474870b18724266e1ba93f428746a30bf03bc66"
+    },
+    {
+      "label": "normalwait",
+      "start": 11770,
+      "end": 11781,
+      "text": "  int status = 0;\n  while (waitpid(child, &status, 0) < 0) {\n    if (errno == EINTR) continue;\n    fail(\"waitpid\");\n  }\n  alarm(0);\n  supervised_pid = -1;\n  if (supervisor_timed_out) {\n    write_trap_line(KEXE_TRAP_LINE_WALL_TIMEOUT);\n    return 122;\n  }\n  if (WIFEXITED(status)) return WEXITSTATUS(status);\n",
+      "sha256": "19d48fd02a62c833455fc402cfce83b4f038ff8d6a28250514be739a3bd18e76"
+    }
+  ],
+  "conditionalPremises": [
+    "exact zero capability argv minus token",
+    "exact17 environment excludes process/net/GPU grants and timeoutprobes",
+    "pinned saved source-to-binary build identity",
+    "normal direct loader closed0 plus complete expected structuredreport and exact17arena line"
+  ],
+  "sourceImplications": [
+    "spawn/net/GPU brokers remain inactive under zero grants",
+    "normalloader creates one guest with fork",
+    "supervisor loops waitpid across EINTR before handling normalstatus",
+    "arena/report branch follows supervisor return",
+    "setter journal FD marked noninheritable beforeexec"
+  ],
+  "nativeCalls": 0,
+  "processAPIQueries": 0,
+  "OSClosureTraceQualified": false,
+  "universalCompilerProof": false,
+  "limitations": [
+    "Source inspection and saved build correspondence are conditional evidence, not independent guest waitpid trace.",
+    "Unexpected kernel/interrupt/kill/uncertainwait cases must remain failure; no source premise licenses absent birth or absent memory samples.",
+    "Dynamic linker/internal library FD activity is outside this source-owned descriptor accounting."
+  ]
+}

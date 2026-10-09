@@ -1,0 +1,531 @@
+{
+  "status": "STATIC_QUERY_CLOSURE_WRITE_SITE_INVENTORY_OUTPUT_ROLE_NOT_CLOSED",
+  "root": "cq-original-query",
+  "closureFunctions": [
+    "cq-original-query",
+    "gn-g",
+    "gn-gs",
+    "gn-max",
+    "gn-min",
+    "gn-op",
+    "gn-put",
+    "gn-sir",
+    "vw-a",
+    "vw-arg-bound",
+    "vw-b",
+    "vw-bin-value",
+    "vw-block-add",
+    "vw-block-build",
+    "vw-block-ends",
+    "vw-block-exec",
+    "vw-block-find",
+    "vw-block-sort",
+    "vw-block-successors",
+    "vw-bs",
+    "vw-c",
+    "vw-call",
+    "vw-clear",
+    "vw-cs",
+    "vw-current-load",
+    "vw-e",
+    "vw-edge-state",
+    "vw-f",
+    "vw-final-reads",
+    "vw-flow",
+    "vw-fs",
+    "vw-kill-vectors",
+    "vw-label",
+    "vw-memo-capture",
+    "vw-memo-find",
+    "vw-memo-fn?",
+    "vw-memo-key-match",
+    "vw-memo-key-save",
+    "vw-memo-replay",
+    "vw-memo-reset",
+    "vw-memo-valid-store",
+    "vw-merge-slot",
+    "vw-merge-state",
+    "vw-next-block",
+    "vw-out-checked",
+    "vw-out-head",
+    "vw-read-certificate",
+    "vw-reset-flow",
+    "vw-ret",
+    "vw-run-fn",
+    "vw-runtime",
+    "vw-seed-params",
+    "vw-tick",
+    "vw-transfer",
+    "vw-v",
+    "vw-vcopy",
+    "vw-vset",
+    "vw-width-at",
+    "vw-width-cursor",
+    "vw-write",
+    "vw-zero-work"
+  ],
+  "writeSites": [
+    {
+      "function": "cq-original-query",
+      "lineStart": 3063,
+      "sourceSHA256": "de83e458ae8dd9e7d2d9cceee2293f7614c2e9445f3cc6c845c04020eed32ee1",
+      "writePrimitives": [
+        "vw-cs"
+      ],
+      "body": "(defn- cq-original-query [M :vector-i64 f :i64] :vector-i64\n (cond (not= (vw-c M 1) 0) M\n       (not (vw-memo-fn? M f)) (vw-cs M 1 1)\n       (or (not= (vw-f M f 15) 1) (not= (vw-f M f 14) 0)) (vw-cs M 1 1)\n       :else (let [valid (gn-g M (+ vw-old 1792 f)) head (vw-out-head M f)\n                   m (if (= valid 1) (vw-memo-key-match (vw-cs M 29 1) f 0) (vw-cs M 29 0))]\n         (cond (not= (vw-c m 1) 0) m\n               (or (and (not= valid 0) (not= valid 1)) (< head 0)) (vw-cs m 1 1)\n               (= (vw-c m 29) 1) (vw-memo-replay m f head 0 0)\n               :else (let [m0 (vw-memo-valid-store m f 0)\n                           m1 (vw-memo-reset m0 f head 0 0)\n                           m2 (if (= (vw-c m1 1) 0) (vw-run-fn m1 f 0 1) m1)]\n                 (if (and (= (vw-c m2 1) 0) (= (vw-f m2 f 15) 1) (= (vw-f m2 f 14) 0))\n                  (vw-memo-key-save m2 f 0) m2))))))"
+    },
+    {
+      "function": "gn-gs",
+      "lineStart": 148,
+      "sourceSHA256": "c39c8bf3a4e188bdfede63b4bc674f562bb646e4dbfd9219fe0539493a777e4a",
+      "writePrimitives": [
+        "gn-put"
+      ],
+      "body": "(defn- gn-gs [M :vector-i64 f :i64 v :i64] :vector-i64 (gn-put M (+ (vector-at M gn-cell) f) v))"
+    },
+    {
+      "function": "gn-put",
+      "lineStart": 41,
+      "sourceSHA256": "3a05975203505575b02b62c2ea14a58f0d4a6888a62dd93f4ab3e5fce73725ae",
+      "writePrimitives": [
+        "vector-assoc!"
+      ],
+      "body": "(defn- gn-put [M :vector-i64 a :i64 w :i64] :vector-i64 (vector-assoc! M a w))"
+    },
+    {
+      "function": "vw-arg-bound",
+      "lineStart": 3132,
+      "sourceSHA256": "ac3bd946ac8dca785d037d0744296880d238a8280020e8c03fddc5f73a950360",
+      "writePrimitives": [
+        "vw-fs"
+      ],
+      "body": "(defn- vw-arg-bound [M :vector-i64 target :i64 k :i64 base :i64 arity :i64] :vector-i64\n (let [m (vw-tick M) pos (if (< k 4) (vw-f m target (+ 10 k)) 0)]\n  (if (or (>= k 4) (not= (vw-c m 1) 0)) m\n   (let [slot (+ 64 base (dec pos))\n         known (and (> pos 0) (<= pos arity) (< slot 128) (= (vw-v m slot 0) 2))\n         L (if known (vw-v m slot 2) 0) old (vw-f m target (+ 6 k))\n         preservesSelf (and (= (vw-c m 5) target) known (= (vw-v m slot 1) pos))\n         m1 (if (and (> pos 0) (not preservesSelf)) (vw-fs m target (+ 6 k) (if (< old 0) L (gn-min old L))) m)]\n    (let [m2 (if (and (= (vw-c m1 20) 1) (> pos 0) (not preservesSelf))\n                (vw-memo-capture m1 target k base L) m1)]\n     (vw-arg-bound m2 target (inc k) base arity))))))"
+    },
+    {
+      "function": "vw-bin-value",
+      "lineStart": 2978,
+      "sourceSHA256": "8d2c7f5f0d3b816de2f34c79c985302014846828a575e377f515548ea1c02080",
+      "writePrimitives": [
+        "vw-vset"
+      ],
+      "body": "(defn- vw-bin-value [M :vector-i64 operation :i64 t :i64] :vector-i64\n (let [s (+ 64 t) x (vw-v M s 1) y (vw-v M (inc s) 1)\n       exact (and (= (vw-v M s 0) 1) (= (vw-v M (inc s) 0) 1)\n                  (= x (vw-v M s 2)) (= y (vw-v M (inc s) 2)))\n       small (and (>= x -1073741824) (<= x 1073741824) (>= y -1073741824) (<= y 1073741824))]\n  (if (and exact small (or (= operation 1) (= operation 2) (= operation 3)))\n   (let [z (cond (= operation 1) (+ x y) (= operation 2) (- x y) :else (* x y))]\n    (vw-vset M s 1 z z 0)) (vw-vset M s 0 0 0 0))))"
+    },
+    {
+      "function": "vw-block-add",
+      "lineStart": 2902,
+      "sourceSHA256": "b43a51f080a45cff9114429d034d9938c78521e5ba942ae8fa70662c25b87ac3",
+      "writePrimitives": [
+        "vw-cs",
+        "vw-fs",
+        "vw-bs"
+      ],
+      "body": "(defn- vw-block-add [M :vector-i64 j :i64] :vector-i64\n (let [m (vw-block-find M j 0) n (vw-c m 6)]\n  (cond (not= (vw-c m 1) 0) m (>= (vw-c m 19) 0) m\n        (>= n 64) (vw-fs m (vw-c m 5) 15 0)\n        :else (-> m (vw-bs n 0 j) (vw-cs 6 (inc n))))))"
+    },
+    {
+      "function": "vw-block-build",
+      "lineStart": 2907,
+      "sourceSHA256": "ee20c3eee40cf4c6f3e6da41139019ad61415687db5600c3bab3e39ee6a4ec29",
+      "writePrimitives": [
+        "vw-cs"
+      ],
+      "body": "(defn- vw-block-build [M :vector-i64 f :i64 j :i64] :vector-i64\n (let [m (vw-tick M)]\n  (if (or (not= (vw-c m 1) 0) (= (vw-f m f 15) 0) (> j (vw-f m f 1))) m\n   (let [op (gn-op m j) a (gn-sir m j IF-A) b (gn-sir m j IF-B)\n         m1 (if (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ))\n              (vw-label m f (if (= op OP-BR) a b) (vw-f m f 0)) m)\n         m2 (if (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ))\n              (if (> (vw-c m1 18) 0) (vw-block-add m1 (vw-c m1 18)) (vw-cs m1 1 1)) m1)\n         m3 (if (and (< j (vw-f m f 1)) (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ) (= op OP-RET) (= op OP-TRAP) (= op OP-RET2))) (vw-block-add m2 (inc j)) m2)]\n    (vw-block-build m3 f (inc j))))))"
+    },
+    {
+      "function": "vw-block-ends",
+      "lineStart": 2924,
+      "sourceSHA256": "8706052a66c5cc986767ae7ba280fd8bf08c75cc0e6bb72100c13af015839196",
+      "writePrimitives": [
+        "vw-bs"
+      ],
+      "body": "(defn- vw-block-ends [M :vector-i64 f :i64 b :i64] :vector-i64\n (let [m (vw-tick M)]\n  (if (or (>= b (vw-c m 6)) (not= (vw-c m 1) 0)) m\n   (vw-block-ends (vw-bs m b 1 (if (< (inc b) (vw-c m 6)) (dec (vw-b m (inc b) 0)) (vw-f m f 1))) f (inc b)))))"
+    },
+    {
+      "function": "vw-block-find",
+      "lineStart": 2896,
+      "sourceSHA256": "590ccc41569a6b7b75700da274848adbfacd62cf3ade5dde1bc258c31d914ab4",
+      "writePrimitives": [
+        "vw-cs"
+      ],
+      "body": "(defn- vw-block-find [M :vector-i64 j :i64 b :i64] :vector-i64\n (let [m (vw-tick M)]\n  (cond (not= (vw-c m 1) 0) (vw-cs m 19 -1)\n        (>= b (vw-c m 6)) (vw-cs m 19 -1)\n        (= (vw-b m b 0) j) (vw-cs m 19 b)\n        :else (vw-block-find m j (inc b)))))"
+    },
+    {
+      "function": "vw-block-sort",
+      "lineStart": 2917,
+      "sourceSHA256": "5275a44df1e7284b4fccbb9ec8ac265e0ad8d2dc6e128dd723df90097d27b3ec",
+      "writePrimitives": [
+        "vw-bs"
+      ],
+      "body": "(defn- vw-block-sort [M :vector-i64 p :i64 q :i64] :vector-i64\n (let [m (vw-tick M) n (vw-c m 6)]\n  (cond (or (not= (vw-c m 1) 0) (>= p n)) m\n        (>= q n) (vw-block-sort m (inc p) (+ p 2))\n        :else (let [x (vw-b m p 0) y (vw-b m q 0)\n                    m1 (if (< y x) (-> m (vw-bs p 0 y) (vw-bs q 0 x)) m)]\n                (vw-block-sort m1 p (inc q))))))"
+    },
+    {
+      "function": "vw-bs",
+      "lineStart": 2734,
+      "sourceSHA256": "293259d85de5b9bd0c9edf89395989ef7938976d5d60e7ad24d71186787f9360",
+      "writePrimitives": [
+        "vw-write"
+      ],
+      "body": "(defn- vw-bs [M :vector-i64 b :i64 k :i64 v :i64] :vector-i64 (vw-write M (+ vw-cfg (* b 4) k) v))"
+    },
+    {
+      "function": "vw-call",
+      "lineStart": 3143,
+      "sourceSHA256": "d192b6d7ff4bba97343441fe7edf3f9f18d677d405d4de7c5dabc2271fcd7afb",
+      "writePrimitives": [
+        "vw-cs",
+        "vw-vset"
+      ],
+      "body": "(defn- vw-call [M :vector-i64 target :i64 base :i64 arity :i64] :vector-i64\n (let [m (vw-tick M) caller (vw-c m 5) self (= caller target)\n       assumed (and self (> (vw-c m 10) 0))\n       alias (if assumed (vw-c m 10) (vw-f m target 4))\n       src (+ 64 base (dec alias)) dst (+ 64 base)\n       lookup (if (= (vw-c m 20) 1)\n                (vw-memo-find (vw-cs m 28 0) target base arity (vw-out-head m caller) 0) m)\n       m1 (if (and (= (vw-c lookup 20) 1) (= (vw-c lookup 1) 0)) (vw-arg-bound lookup target 0 base arity) lookup)\n       m2 (if (= (vw-f m target 2) 0) (vw-kill-vectors m1 0) m1)]\n  (cond (= (vw-f m2 target 2) 0) (vw-vset m2 dst 0 0 0 0)\n        (and (> alias 0) (<= alias arity) (< src 128) (= (vw-v m2 src 0) 2))\n         (let [token (vw-v m2 src 1) L (vw-v m2 src 2) anchor (if assumed 0 (vw-v m2 src 3))]\n          (vw-vset m2 dst 2 token L anchor))\n        (> (vw-f m2 target 5) 0) (vw-vset m2 dst 2 (- -65536 (vw-c m2 17)) (vw-f m2 target 5) 1)\n        :else (vw-vset m2 dst 0 0 0 0))))"
+    },
+    {
+      "function": "vw-clear",
+      "lineStart": 2738,
+      "sourceSHA256": "e1040d72cf54b09d526d13ae471c10b6fdf84927897baa03b4af90548ad56f99",
+      "writePrimitives": [
+        "gn-gs"
+      ],
+      "body": "(defn- vw-clear [M :vector-i64 a :i64 end :i64] :vector-i64\n (if (>= a end) M (vw-clear (gn-gs M a 0) (inc a) end)))"
+    },
+    {
+      "function": "vw-cs",
+      "lineStart": 2724,
+      "sourceSHA256": "9428303978ee2ec9777f82d1255c34d85788e9c6cf1407f264d56d290e60b8e2",
+      "writePrimitives": [
+        "gn-gs"
+      ],
+      "body": "(defn- vw-cs [M :vector-i64 k :i64 v :i64] :vector-i64 (gn-gs M (+ vw-control k) v))"
+    },
+    {
+      "function": "vw-current-load",
+      "lineStart": 2928,
+      "sourceSHA256": "36f4a43c5972b47f6e3171217370503244d7f66f19071efed41f557e9499db98",
+      "writePrimitives": [
+        "vw-cs",
+        "vw-vset"
+      ],
+      "body": "(defn- vw-current-load [M :vector-i64 b :i64 s :i64] :vector-i64\n (let [m (vw-tick M) t (vw-width-cursor m s)]\n  (cond (not= (vw-c m 1) 0) m\n        (< t 0) (vw-cs m 1 1)\n        (>= t 128) m\n        :else (let [p (+ vw-lp (* b 512) (* t 4))]\n          (vw-current-load (vw-vset m t (gn-g m p) (gn-g m (inc p)) (gn-g m (+ p 2)) (gn-g m (+ p 3))) b (inc t))))))"
+    },
+    {
+      "function": "vw-edge-state",
+      "lineStart": 2959,
+      "sourceSHA256": "9627f2f7b253f2fb53d72c5417b4408e9070cb2e89d73eaaeffede95b80a5626",
+      "writePrimitives": [
+        "vw-cs",
+        "vw-bs"
+      ],
+      "body": "(defn- vw-edge-state [M :vector-i64 j :i64 from :i64] :vector-i64\n (let [m (vw-block-find M j 0) b (vw-c m 19)]\n  (if (< b 0) (vw-cs m 1 1)\n   (let [fresh (= (vw-b m b 2) 0)\n         m1 (vw-merge-state (vw-cs m 8 0) b 0 (<= j from) fresh)]\n    (if (not= (vw-c m1 1) 0) m1\n     (-> m1 (vw-bs b 2 1) (vw-bs b 3 (if (or fresh (= (vw-c m1 8) 1)) 1 (vw-b m1 b 3)))))))))"
+    },
+    {
+      "function": "vw-flow",
+      "lineStart": 3226,
+      "sourceSHA256": "23d38f3801a77d19a269360dbe07b9cdda43e35a608b08a822d1a3d15151cb91",
+      "writePrimitives": [
+        "vw-cs",
+        "vw-bs"
+      ],
+      "body": "(defn- vw-flow [M :vector-i64] :vector-i64\n (let [m (vw-next-block M 0) b (vw-c m 19)]\n  (cond (not= (vw-c m 1) 0) m (< b 0) m\n        (>= (vw-c m 14) 65536) (vw-cs m 1 1)\n        :else (let [m1 (-> m (vw-bs b 3 0) (vw-cs 14 (inc (vw-c m 14))) (vw-current-load b 0))\n                    m2 (vw-block-exec m1 b (vw-b m1 b 0))]\n                (vw-flow (vw-block-successors m2 b))))))"
+    },
+    {
+      "function": "vw-fs",
+      "lineStart": 2730,
+      "sourceSHA256": "127b2e6cd0ec0fff91baf731b6a8aa361204f1b74581a5b9dfeabd89c9fd7690",
+      "writePrimitives": [
+        "vw-write"
+      ],
+      "body": "(defn- vw-fs [M :vector-i64 f :i64 k :i64 v :i64] :vector-i64 (vw-write M (+ vw-fns (* f 16) k) v))"
+    },
+    {
+      "function": "vw-kill-vectors",
+      "lineStart": 2890,
+      "sourceSHA256": "dcf972650d0010119e6a7a36853e31f9ce90f1fe955fbe7d27236575cd0c7296",
+      "writePrimitives": [
+        "vw-cs",
+        "vw-vset"
+      ],
+      "body": "(defn- vw-kill-vectors [M :vector-i64 s :i64] :vector-i64\n (let [m (vw-tick M) t (vw-width-cursor m s)]\n  (cond (not= (vw-c m 1) 0) m\n        (< t 0) (vw-cs m 1 1)\n        (>= t 128) m\n        :else (vw-kill-vectors (if (= (vw-v m t 0) 2) (vw-vset m t 0 0 0 0) m) (inc t)))))"
+    },
+    {
+      "function": "vw-label",
+      "lineStart": 2754,
+      "sourceSHA256": "d3cb347aa774b959512eea19214407f7a346268d9f73c0819d0a7612d0765ff9",
+      "writePrimitives": [
+        "vw-cs"
+      ],
+      "body": "(defn- vw-label [M :vector-i64 f :i64 l :i64 j :i64] :vector-i64\n ;; Persistent complete LABEL index; keep original initial scan lowerbound.\n (let [m (vw-tick M)]\n  (cond (not= (vw-c m 1) 0) (vw-cs m 18 0)\n        (or (<= f 0) (>= f (vector-at m MM-FN-N))) (vw-cs m 18 0)\n        (or (<= l 0) (> l 8192) (< j 1)) (vw-cs m 18 0)\n        (> j (vw-f m f 1)) (vw-cs m 18 0)\n        :else (let [p (gn-g m (+ vw-labels l)) sn (vector-at m MM-SIR-N)]\n          (cond (or (<= p 0) (>= p sn) (< p j) (<= p (vw-f m f 0)) (>= p (vw-f m f 1))) (vw-cs m 18 0)\n                (or (not= (gn-op m p) OP-LABEL) (not= (gn-sir m p IF-A) l)) (vw-cs m 18 0)\n                :else (vw-cs m 18 p))))))"
+    },
+    {
+      "function": "vw-memo-capture",
+      "lineStart": 3037,
+      "sourceSHA256": "88752675fb133fdbb97f85f07de47d2f8cf7cdbcbe52c506944066cdfce09fa4",
+      "writePrimitives": [
+        "vw-write",
+        "vw-cs"
+      ],
+      "body": "(defn- vw-memo-capture [M :vector-i64 target :i64 k :i64 base :i64 contribution :i64] :vector-i64\n (let [m (vw-tick M) caller (vw-c m 5) link (vw-c m 28)]\n  (cond (not= (vw-c m 1) 0) m\n        (or (not= (vw-c m 20) 1) (not (vw-memo-fn? m caller)) (not (vw-memo-fn? m target))\n            (< k 0) (>= k 4) (< contribution 0)) (vw-cs m 1 1)\n        :else (let [checked (vw-out-checked m caller link 0)]\n          (if (<= checked 0) (vw-cs m 1 1)\n           (let [e (dec checked)]\n            (if (or (not= (vw-e m e 1) (vw-c m 17)) (not= (vw-e m e 2) target) (not= (vw-e m e 3) base)) (vw-cs m 1 1)\n             (let [p (+ vw-sites (* e 4) k) old (gn-g m p)]\n              (if (< old -1) (vw-cs m 1 1) (vw-write m p (if (= old -1) contribution (gn-min old contribution))))))))))))"
+    },
+    {
+      "function": "vw-memo-find",
+      "lineStart": 3022,
+      "sourceSHA256": "8ecd6bca8c26f9c49d0e18e222cb73cf486b207a30a5276761343a8479cda8fe",
+      "writePrimitives": [
+        "vw-cs"
+      ],
+      "body": "(defn- vw-memo-find [M :vector-i64 target :i64 base :i64 arity :i64 link :i64 previous :i64] :vector-i64\n (let [m (vw-tick M) caller (vw-c m 5) site (vw-c m 17)]\n  (cond (not= (vw-c m 1) 0) m\n        (or (not (vw-memo-fn? m caller)) (not (vw-memo-fn? m target)) (< base 0) (>= base 128)\n            (< arity 0) (> arity 128) (<= site 0) (>= site (vector-at m MM-SIR-N))) (vw-cs m 1 1)\n        (or (<= site (vw-f m caller 0)) (>= site (vw-f m caller 1))) (vw-cs m 1 1)\n        :else (let [checked (vw-out-checked m caller link previous)]\n          (cond (<= checked 0) (vw-cs m 1 1)\n                :else (let [e (dec checked)]\n                  (if (= (vw-e m e 1) site)\n                   (if (or (not= (vw-e m e 2) target) (not= (vw-e m e 3) base)\n                           (not= (gn-op m site) OP-CALL) (not= (gn-sir m site IF-A) target)\n                           (not= (gn-sir m site IF-B) base) (not= (gn-sir m site IF-C) arity)) (vw-cs m 1 1)\n                    (vw-cs m 28 checked))\n                   (vw-memo-find m target base arity (gn-g m (+ vw-old 1280 e)) checked))))))))"
+    },
+    {
+      "function": "vw-memo-key-match",
+      "lineStart": 2997,
+      "sourceSHA256": "d36ae194fb8dbaac020b0dfea2e7489855a32936aa54ca636643906bb31d556a",
+      "writePrimitives": [
+        "vw-cs"
+      ],
+      "body": "(defn- vw-memo-key-match [M :vector-i64 f :i64 k :i64] :vector-i64\n (let [m (vw-tick M)]\n  (cond (not= (vw-c m 1) 0) m\n        (or (not (vw-memo-fn? m f)) (< k 0) (> k 4)) (vw-cs m 1 1)\n        (= k 4) m\n        :else (let [old (gn-g m (+ vw-old (* f 4) k)) last (gn-g m (+ gn-a-lp 8193 (* f 4) k))]\n          (if (or (< old 0) (< last 0)) (vw-cs m 1 1)\n           (vw-memo-key-match (if (not= old last) (vw-cs m 29 0) m) f (inc k)))))))"
+    },
+    {
+      "function": "vw-memo-key-save",
+      "lineStart": 3005,
+      "sourceSHA256": "3b18b5a3389642cfe46d3d39e5b7482b2bcfcb250b2f3366547fba35ed4160fb",
+      "writePrimitives": [
+        "vw-write",
+        "vw-cs"
+      ],
+      "body": "(defn- vw-memo-key-save [M :vector-i64 f :i64 k :i64] :vector-i64\n (let [m (vw-tick M)]\n  (cond (not= (vw-c m 1) 0) m\n        (or (not (vw-memo-fn? m f)) (< k 0) (> k 4)) (vw-cs m 1 1)\n        (= k 4) (vw-memo-valid-store m f 1)\n        :else (let [value (gn-g m (+ vw-old (* f 4) k))]\n          (if (< value 0) (vw-cs m 1 1)\n           (vw-memo-key-save (vw-write m (+ gn-a-lp 8193 (* f 4) k) value) f (inc k)))))))"
+    },
+    {
+      "function": "vw-memo-replay",
+      "lineStart": 3048,
+      "sourceSHA256": "9efea2111b8fdddc74ba72ffdd2923be757c877f09963ed6e5178b47c81bbf2c",
+      "writePrimitives": [
+        "vw-cs",
+        "vw-fs"
+      ],
+      "body": "(defn- vw-memo-replay [M :vector-i64 f :i64 link :i64 previous :i64 k :i64] :vector-i64\n (let [m (vw-tick M)]\n  (cond (not= (vw-c m 1) 0) m\n        (or (< k 0) (> k 4)) (vw-cs m 1 1)\n        :else (let [checked (vw-out-checked m f link previous)]\n          (cond (< checked 0) (vw-cs m 1 1)\n                (= checked 0) m\n                (= k 4) (vw-memo-replay m f (gn-g m (+ vw-old 1280 (dec checked))) checked 0)\n                :else (let [e (dec checked) target (vw-e m e 2) value (gn-g m (+ vw-sites (* e 4) k))]\n                  (cond (< value -1) (vw-cs m 1 1)\n                        (= value -1) (vw-memo-replay m f link previous (inc k))\n                        (<= (vw-f m target (+ 10 k)) 0) (vw-cs m 1 1)\n                        :else (let [old (vw-f m target (+ 6 k))\n                                    next (vw-fs m target (+ 6 k) (if (< old 0) value (gn-min old value)))]\n                          (vw-memo-replay next f link previous (inc k))))))))))"
+    },
+    {
+      "function": "vw-memo-reset",
+      "lineStart": 3013,
+      "sourceSHA256": "882c7ecb41f78ef3bd18e01c37bc1684ecf981e0477fce9d8566d6884589419e",
+      "writePrimitives": [
+        "vw-write",
+        "vw-cs"
+      ],
+      "body": "(defn- vw-memo-reset [M :vector-i64 f :i64 link :i64 previous :i64 k :i64] :vector-i64\n (let [m (vw-tick M)]\n  (cond (not= (vw-c m 1) 0) m\n        (or (< k 0) (> k 4)) (vw-cs m 1 1)\n        :else (let [checked (vw-out-checked m f link previous)]\n          (cond (< checked 0) (vw-cs m 1 1)\n                (= checked 0) m\n                (= k 4) (vw-memo-reset m f (gn-g m (+ vw-old 1280 (dec checked))) checked 0)\n                :else (vw-memo-reset (vw-write m (+ vw-sites (* (dec checked) 4) k) -1) f link previous (inc k)))))))"
+    },
+    {
+      "function": "vw-memo-valid-store",
+      "lineStart": 2992,
+      "sourceSHA256": "600cfec6f1f6cd166708a648ed71b449eb11a5e542bbff61579f40f69ecaa4da",
+      "writePrimitives": [
+        "vw-write",
+        "vw-cs"
+      ],
+      "body": "(defn- vw-memo-valid-store [M :vector-i64 f :i64 value :i64] :vector-i64\n (cond (not= (vw-c M 1) 0) M\n       (or (not (vw-memo-fn? M f)) (and (not= value 0) (not= value 1))) (vw-cs M 1 1)\n       (and (= value 1) (or (not= (vw-f M f 15) 1) (not= (vw-f M f 14) 0))) (vw-cs M 1 1)\n       :else (vw-write M (+ vw-old 1792 f) value)))"
+    },
+    {
+      "function": "vw-merge-slot",
+      "lineStart": 2935,
+      "sourceSHA256": "a8e72da8842104f2304010df61e0eac5267d38034728a42aad23a8c0480ac6a6",
+      "writePrimitives": [
+        "vw-write",
+        "vw-cs"
+      ],
+      "body": "(defn- vw-merge-slot [M :vector-i64 b :i64 s :i64 back :bool fresh :bool] :vector-i64\n (let [m (vw-tick M) p (+ vw-lp (* b 512) (* s 4))\n       k (vw-v m s 0) token (vw-v m s 1) len (vw-v m s 2) anchor (vw-v m s 3)]\n  (if fresh\n   ;; A fresh block owns no old payload. Canonical full store precedes seen.\n   (-> m (vw-write p k) (vw-write (inc p) (if (= k 0) 0 token))\n         (vw-write (+ p 2) (if (= k 0) 0 len))\n         (vw-write (+ p 3) (if (= k 2) anchor 0)) (vw-cs 8 1))\n   (let [old (gn-g m p)\n         kind (cond (= old 0) 0 (not= k old) 0\n                    (= k 2) (if (= token (gn-g m (inc p))) 2 0)\n                    (= k 1) (if (and back (or (not= token (gn-g m (inc p))) (not= len (gn-g m (+ p 2))))) 0 1)\n                    :else 0)\n         tk (if (= kind 1) (gn-min token (gn-g m (inc p))) (if (= kind 2) token 0))\n         ln (if (= kind 1) (gn-max len (gn-g m (+ p 2))) (if (= kind 2) (gn-min len (gn-g m (+ p 2))) 0))\n         an (if (= kind 2) (if (or (= anchor 1) (= (gn-g m (+ p 3)) 1)) 1 0) 0)\n         changed (or (not= kind old) (not= tk (gn-g m (inc p))) (not= ln (gn-g m (+ p 2))) (not= an (gn-g m (+ p 3))))]\n    (if changed (-> m (vw-write p kind) (vw-write (inc p) tk) (vw-write (+ p 2) ln) (vw-write (+ p 3) an) (vw-cs 8 1)) m)))))"
+    },
+    {
+      "function": "vw-merge-state",
+      "lineStart": 2953,
+      "sourceSHA256": "92ecfa2133a8ba555002ef23000e23f1c68442a794d645368f3e2c6df90f1d65",
+      "writePrimitives": [
+        "vw-cs"
+      ],
+      "body": "(defn- vw-merge-state [M :vector-i64 b :i64 s :i64 back :bool fresh :bool] :vector-i64\n (if (not= (vw-c M 1) 0) M\n  (let [t (vw-width-cursor M s)]\n   (cond (< t 0) (vw-cs M 1 1)\n         (>= t 128) M\n         :else (vw-merge-state (vw-merge-slot M b t back fresh) b (inc t) back fresh)))))"
+    },
+    {
+      "function": "vw-next-block",
+      "lineStart": 3220,
+      "sourceSHA256": "0fff08cc61b6dad374f965627148e1beefa60a1fb1f93b5df3299545c3c17d68",
+      "writePrimitives": [
+        "vw-cs"
+      ],
+      "body": "(defn- vw-next-block [M :vector-i64 b :i64] :vector-i64\n (let [m (vw-tick M)]\n  (cond (not= (vw-c m 1) 0) (vw-cs m 19 -1)\n        (>= b (vw-c m 6)) (vw-cs m 19 -1)\n        (= (vw-b m b 3) 1) (vw-cs m 19 b)\n        :else (vw-next-block m (inc b)))))"
+    },
+    {
+      "function": "vw-read-certificate",
+      "lineStart": 3158,
+      "sourceSHA256": "d27c22b08a51327e442c76255e651193e800f131b4538a4ed3621fadd0e1b8c6",
+      "writePrimitives": [
+        "vw-write",
+        "vw-cs"
+      ],
+      "body": "(defn- vw-read-certificate [M :vector-i64 base :i64] :vector-i64\n (let [s (+ 64 base) f (vw-c M 5) n (vw-c M 4)\n       good (and (= (vw-c M 20) 2) (= (vw-f M f 2) 1)\n         (= (vw-f M f 14) 0) (= (vw-f M f 3) 1)\n         (<= (vw-c M 6) 8) (<= base 5)\n         (= (vw-v M s 0) 2) (> (vw-v M s 2) 0)\n         (= (vw-v M (inc s) 0) 1) (= (vw-v M (inc s) 1) (vw-v M (inc s) 2))\n         (>= (vw-v M (inc s) 1) 0) (< (vw-v M (inc s) 1) (vw-v M s 2)))]\n  (if good\n   (if (>= n 256) (vw-cs M 1 1)\n    (let [p (+ vw-sites (* n 8))]\n     (-> M (vw-write p (vw-c M 17)) (vw-write (+ p 1) f)\n       (vw-write (+ p 2) (vw-v M s 1)) (vw-write (+ p 3) (vw-v M s 2))\n       (vw-write (+ p 4) (vw-v M (inc s) 1)) (vw-write (+ p 5) base)\n       (vw-write (+ p 6) 1) (vw-write (+ p 7) 1) (vw-cs 4 (inc n))))) M)))"
+    },
+    {
+      "function": "vw-reset-flow",
+      "lineStart": 3246,
+      "sourceSHA256": "821914a71f0bd16f9260fd94a6581451c44e0cbbbd87d0295e93f8152a8c40a1",
+      "writePrimitives": [
+        "vw-cs"
+      ],
+      "body": "(defn- vw-reset-flow [M :vector-i64 f :i64 candidate :i64 mode :i64] :vector-i64\n (-> M (vw-zero-work vw-current vw-control)\n  (vw-cs 5 f) (vw-cs 6 0) (vw-cs 9 0) (vw-cs 10 candidate)\n  (vw-cs 11 1) (vw-cs 12 0) (vw-cs 13 0) (vw-cs 14 0) (vw-cs 20 mode)))"
+    },
+    {
+      "function": "vw-ret",
+      "lineStart": 3183,
+      "sourceSHA256": "9d3d513664c87ec34af71005393f6ce8ef34bf838295478599325762099780a9",
+      "writePrimitives": [
+        "vw-cs"
+      ],
+      "body": "(defn- vw-ret [M :vector-i64 t :i64] :vector-i64\n (let [s (+ 64 t) kind (vw-v M s 0) token (vw-v M s 1) L (vw-v M s 2)\n       count (vw-c M 9) minimum (vw-c M 13)\n       identity (and (= kind 2) (= token (vw-c M 10)))\n       m1 (-> M (vw-cs 9 (inc count))\n             (vw-cs 11 (if (and (= (vw-c M 11) 1) identity) 1 0))\n             (vw-cs 12 (if (and identity (= (vw-v M s 3) 1)) 1 (vw-c M 12)))\n             (vw-cs 13 (if (= kind 2) (if (= count 0) L (gn-min minimum L)) 0)))] m1))"
+    },
+    {
+      "function": "vw-run-fn",
+      "lineStart": 3250,
+      "sourceSHA256": "5b75b51340782bdda58e8f7071622401362ed5d297ada904de7f03ba18f7ed59",
+      "writePrimitives": [
+        "vw-cs"
+      ],
+      "body": "(defn- vw-run-fn [M :vector-i64 f :i64 candidate :i64 mode :i64] :vector-i64\n (cond (not= (vw-c M 1) 0) M\n       (or (<= f 0) (>= f (vector-at M MM-FN-N)) (> (vector-at M MM-FN-N) 128)) (vw-cs M 1 1)\n       (or (= (vw-f M f 0) 0) (= (vw-f M f 15) 0) (not= (vw-f M f 14) 0))\n        (-> M (vw-cs 9 0) (vw-cs 11 0) (vw-cs 12 0) (vw-cs 13 0))\n       (or (< (vw-width-at M f 0) 0) (> (vw-width-at M f 0) 64)\n           (< (vw-width-at M f 1) 0) (> (vw-width-at M f 1) 64)) (vw-cs M 1 1)\n       :else\n (let [m (vw-reset-flow M f candidate mode)\n       m1 (vw-block-add m (vw-f m f 0))\n       m2 (vw-block-build m1 f (vw-f m1 f 0))\n       m3 (vw-block-ends (vw-block-sort m2 0 1) f 0)]\n  (if (or (not= (vw-c m3 1) 0) (= (vw-f m3 f 15) 0) (not= (vw-f m3 f 14) 0))\n   (-> m3 (vw-cs 9 0) (vw-cs 11 0) (vw-cs 12 0) (vw-cs 13 0))\n   (let [m4 (vw-seed-params m3 f 0)\n         m5 (vw-edge-state m4 (vw-f m4 f 0) 0)\n         ;; Collect nothing while the fixed point is provisional.\n         m6 (vw-flow (vw-cs m5 20 (if (= mode 2) 0 mode)))]\n    (if (= mode 2) (vw-final-reads (vw-cs m6 20 2) 0) m6))))))"
+    },
+    {
+      "function": "vw-runtime",
+      "lineStart": 3173,
+      "sourceSHA256": "2a515798f1561382d050bcf880077293fe96b227ac42f12705795364b930a1a9",
+      "writePrimitives": [
+        "vw-vset"
+      ],
+      "body": "(defn- vw-runtime [M :vector-i64 wire :i64 base :i64 arity :i64] :vector-i64\n (let [s (+ 64 base)]\n  (cond (= wire 200)\n         (if (and (= (vw-v M s 0) 1) (>= (vw-v M s 1) 0))\n          (vw-vset M s 2 (- 0 (vw-c M 17)) (vw-v M s 1) 1)\n          (vw-vset M s 0 0 0 0))\n        (= wire 208) M\n        (= wire 176) (vw-vset (vw-read-certificate M base) s 0 0 0 0)\n        (or (= wire 168) (= wire 72) (= wire 144)) (vw-vset M s 0 0 0 0)\n        :else (vw-vset (vw-kill-vectors M 0) s 0 0 0 0))))"
+    },
+    {
+      "function": "vw-seed-params",
+      "lineStart": 2969,
+      "sourceSHA256": "1bfbee2da2f3811208736ae6ff530e7b9af25b58006213a3ac945c42b2a9949f",
+      "writePrimitives": [
+        "vw-vset"
+      ],
+      "body": "(defn- vw-seed-params [M :vector-i64 f :i64 k :i64] :vector-i64\n (let [m (vw-tick M)]\n  (if (or (>= k 4) (not= (vw-c m 1) 0)) m\n   (let [pos (vw-f m f (+ 10 k))\n         L (if (= (vw-c m 20) 1) (gn-g m (+ vw-old (* f 4) k)) (vw-f m f (+ 6 k)))\n         m1 (if (> pos 0) (vw-vset m (dec pos) 2 pos L 1) m)]\n    (vw-seed-params m1 f (inc k))))))"
+    },
+    {
+      "function": "vw-tick",
+      "lineStart": 2725,
+      "sourceSHA256": "c3dff35e94bc31860252f6264970ff886b83640099db6718141bce670192c494",
+      "writePrimitives": [
+        "vw-cs"
+      ],
+      "body": "(defn- vw-tick [M :vector-i64] :vector-i64\n (if (> (vw-c M 0) (- vw-work-cap 128)) (vw-cs M 1 1) (vw-cs M 0 (+ (vw-c M 0) 128))))"
+    },
+    {
+      "function": "vw-transfer",
+      "lineStart": 3191,
+      "sourceSHA256": "509d1de118809e7c9436d18078122637d5a7fc715fe9700bb9360a5357b43c58",
+      "writePrimitives": [
+        "vw-cs",
+        "vw-vset"
+      ],
+      "body": "(defn- vw-transfer [M :vector-i64 j :i64] :vector-i64\n (let [m (vw-cs (vw-tick M) 17 j) op (gn-op m j)\n       a (gn-sir m j IF-A) b (gn-sir m j IF-B) c (gn-sir m j IF-C)]\n  (cond (or (= op OP-CONST)) (vw-vset m (+ 64 a) 1 b b 0)\n        (= op OP-LGET) (vw-vcopy m (+ 64 a) (dec b))\n        (= op OP-LSET) (vw-vcopy m (dec a) (+ 64 b))\n        (= op OP-BIN) (vw-bin-value m a b)\n        (or (= op OP-CMP) (= op OP-UN)) (vw-vset m (+ 64 b) 0 0 0 0)\n        (or (= op OP-VEC) (= op OP-VECP)) (vw-vset m (+ 64 a) 2 (- 0 j) (if (= op OP-VEC) b c) 1)\n        (= op OP-CALL) (vw-call m a b c)\n        (= op OP-RT) (vw-runtime m a b c)\n        (= op OP-RET) (vw-ret m a)\n        (= op OP-CAP) (vw-vset (vw-kill-vectors m 0) (+ 64 c) 0 0 0 0)\n        (= op OP-CALLI) (vw-vset (vw-kill-vectors m 0) (+ 64 b) 0 0 0 0)\n        (or (= op OP-STR) (= op OP-TAB) (= op OP-FADDR) (= op OP-RES2)) (vw-vset m (+ 64 a) 0 0 0 0)\n        :else m)))"
+    },
+    {
+      "function": "vw-vcopy",
+      "lineStart": 2888,
+      "sourceSHA256": "225b19903fd8353f7008c0d43d152fdb12eda43aa8e21ee8f27a1a8e576a72ea",
+      "writePrimitives": [
+        "vw-vset"
+      ],
+      "body": "(defn- vw-vcopy [M :vector-i64 dst :i64 src :i64] :vector-i64\n (vw-vset M dst (vw-v M src 0) (vw-v M src 1) (vw-v M src 2) (vw-v M src 3)))"
+    },
+    {
+      "function": "vw-vset",
+      "lineStart": 2885,
+      "sourceSHA256": "709c88dbd3d4b992fbdfd2a1dc95ef6923f0a4910657e0f6e318d4805da2c157",
+      "writePrimitives": [
+        "vw-write"
+      ],
+      "body": "(defn- vw-vset [M :vector-i64 slot :i64 kind :i64 token :i64 bound :i64 anchor :i64] :vector-i64\n (-> M (vw-write (vw-a slot 0) kind) (vw-write (vw-a slot 1) token)\n       (vw-write (vw-a slot 2) bound) (vw-write (vw-a slot 3) anchor)))"
+    },
+    {
+      "function": "vw-write",
+      "lineStart": 2727,
+      "sourceSHA256": "d546ebe3ea4f0d89e717a38591e098c49a6b973e6e53fa26d53aa37b7d472c93",
+      "writePrimitives": [
+        "gn-gs"
+      ],
+      "body": "(defn- vw-write [M :vector-i64 a :i64 v :i64] :vector-i64\n (let [m (vw-tick M)] (if (= (vw-c m 1) 0) (gn-gs m a v) m)))"
+    },
+    {
+      "function": "vw-zero-work",
+      "lineStart": 3242,
+      "sourceSHA256": "b980d18a0d6852a10c525a46fb79ff94fc5a3569908f058803c5b9b4ab018600",
+      "writePrimitives": [
+        "vw-cs"
+      ],
+      "body": "(defn- vw-zero-work [M :vector-i64 a :i64 end :i64] :vector-i64\n (let [cost (* 128 (- end a)) work (vw-c M 0)]\n  (if (or (< cost 0) (> cost (- vw-work-cap work))) (vw-cs M 1 1)\n   (vw-clear (vw-cs M 0 (+ work cost)) a end))))"
+    }
+  ],
+  "semanticRoles": [
+    {
+      "role": "summary/certificate controls9..14",
+      "writers": [
+        "vw-ret",
+        "vw-reset-flow",
+        "vw-run-fn"
+      ],
+      "captured": true
+    },
+    {
+      "role": "subject VW16 and FN16 fields including support/poison",
+      "writers": [
+        "vw-width-store",
+        "vw-run-fn",
+        "vw-arg-bound"
+      ],
+      "capturedSubject": true,
+      "allTargetsCaptured": false
+    },
+    {
+      "role": "ordered outgoing per-site four contributions and exact call arity",
+      "writers": [
+        "vw-memo-reset",
+        "vw-memo-capture"
+      ],
+      "captured": true
+    },
+    {
+      "role": "caller aggregate target bounds fields6..9",
+      "writers": [
+        "vw-arg-bound",
+        "vw-memo-replay"
+      ],
+      "capturedSubjectOnly": true,
+      "completeTransitionCaptured": false
+    },
+    {
+      "role": "existing memo validity and saved fourbounds",
+      "writers": [
+        "vw-memo-valid-store",
+        "vw-memo-key-save"
+      ],
+      "capturedValidity": true,
+      "savedKeyNotNewResult": true
+    },
+    {
+      "role": "certificate bank",
+      "writer": "vw-read-certificate",
+      "mode2Guard": true,
+      "queryIntendedMode": 1,
+      "capturedWholeBank": false
+    },
+    {
+      "role": "work/status/control and scratch CFG/current/blockbank",
+      "writers": [
+        "vw-tick",
+        "vw-zero-work",
+        "vw-reset-flow",
+        "vw-merge-slot",
+        "vw-flow"
+      ],
+      "recordedWorkStatus": true,
+      "completeEffectsCaptured": false
+    }
+  ],
+  "outputRoleClosed": false,
+  "readClosureQualified": false,
+  "reapplicationQualified": false
+}

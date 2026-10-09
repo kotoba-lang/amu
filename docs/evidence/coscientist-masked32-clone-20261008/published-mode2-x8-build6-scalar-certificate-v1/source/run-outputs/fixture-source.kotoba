@@ -1,0 +1,8 @@
+;; Identical synthetic guest source for OFF/ON later. No workload rewrite.
+;; Intended to expose certified small-tail terminal generic calls with repeated FUEL.
+;; Actual emitted-path/admission must be observed; SOURCE intent is not proof.
+(defn- mode2-left [n :i64] :i64
+ (if (= n 0) 17 (mode2-right (dec n))))
+(defn- mode2-right [n :i64] :i64
+ (if (= n 0) 17 (mode2-left (dec n))))
+(defn bench [n :i64] :i64 (mode2-left n))

@@ -1,0 +1,43 @@
+{
+  "status": "PASS_SOURCE_ONLY_OWNED_GROUP_MEMORY_ADAPTER",
+  "independent": true,
+  "priorOperationalAuthorship": false,
+  "sourcePinsSHA256": "7dc70b599ebf465ba71a995586156063f12f438a4c2024cfee707914233f848b",
+  "adapterSHA256": "e3d8d9090157165809ce64234704b6b0321286dcbab9e7ba2b0f4682d4daf8e0",
+  "freezeSHA256": "3b9c815950226b91498b3555bc94f6fe719d78efb81dbc31fe2a59656f06bc46",
+  "policyFreezeSHA256": "9ba33071d025df9cb333ad2f2e160bf33de7cfa1fb4bf83775e7c9019d55bc1b",
+  "policyProposalSHA256": "a95cc777ef8b125282c5277af87c5271a3502766607efcf4a5ecf9e06aac75c8",
+  "wholeSourceFilesHashed": 6,
+  "wholeInputFilesHashed": 14,
+  "syntheticPositiveMemberCounts": [
+    1,
+    2
+  ],
+  "independentSyntheticRefusals": [
+    "third lifetime PID",
+    "within-sample birth changed",
+    "threshold plus1"
+  ],
+  "thresholdEqualityAccepted": true,
+  "primarySources": [
+    "https://github.com/apple-oss-distributions/xnu/blob/main/libsyscall/wrappers/libproc/libproc.c",
+    "https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/resource.h"
+  ],
+  "checks": [
+    "Apple libproc wrapper returns proc_listpgrppids PID count by dividing lower byte count by sizeof(int); four-slot buffer and accepted1..2 counts refuse observed extra/truncation.",
+    "Pinned SDK V0 layout matches 16-byte UUID plus10uint64,96 bytes,footprint72,birth80; typed API returns0 on successful rusage.",
+    "Only owned PGID inventory and member reads; owner inclusion, unique positive bounded PIDs, live birth, before/after inventories, birth rereads, lifetime maximum2 distinct PIDs, sample maximum90502.",
+    "Returned aggregate sums first rusage ri_phys_footprint only, threshold inclusive4GiB; failure leaves accepted-sample state unchanged.",
+    "No API load until explicit API construction; no process launch, resource setter or native/compiler path in adapter.",
+    "Pinned loader Darwin excludes AS and CPU requests configured soft plus1 hard; adapter proposal explicitly distinguishes1800/1801 from failed wrapper1800/1800."
+  ],
+  "limitations": [
+    "SOURCE only; reviewer libproc loads, process API calls, resource setters, compiler/native/SSH calls0.",
+    "Adapter narrows historical portable proposal: physical footprint alone, not resident-size plus footprint; cannot satisfy/adopt the historical two-metric proposal without fresh explicit policy.",
+    "Group/member checks are sequential, not atomic. Transient members and spikes between samples, group departure/reentry, and post-final-read exit cannot be excluded.",
+    "First sample birth is observed, not externally authenticated; future owned fixture must retain live Popen ownership/readiness and refuse lifecycle races.",
+    "Metric sums per-process reports without shared-page deduplication; no AS/private-byte equivalence, hard cap or finite overshoot bound.",
+    "Local SDK and Apple primary source ABI match do not qualify running libproc/OS/shared-library closure; actual bounded fixture remains required.",
+    "No native8 GO or current producer/artifact/fixedpoint/timing qualification."
+  ]
+}

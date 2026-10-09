@@ -1,0 +1,21 @@
+{
+  "hypothesis": "Exact bounded vector-fill loop with verified index-write dependency and immutable context/descriptor. Runtime precondition proves every remaining index valid; fast loop avoids repeated handles/bounds/call frames, retaining each loop charge and a transactional helper x8 charge/commit after each write. Guard failure uses original loop unchanged.",
+  "motivation": "set-lane43008/fill-lane19440 successful charges at n1 versus multiply2640; isolated hot index-write still below5% and variation separation.",
+  "guards": "Natural five parameters, bound8, incoming0<=k<=8, valid handle, base<len and stride>=0 with stride <= (len-1-base)>>3. This stronger range guarantees base+7*stride in range without wrapped overflow. All other inputs fall back before any mutation or charge.",
+  "fuel": "Preserve original entry charge, each backedge charge including terminal iteration, original optional helper charges and save after each successful write. Do not batch or defer observed fuel across iterations, delete charges, or relax failure outputs.",
+  "proofRequired": "Exact complete loop SIR, backedge/parallel-parameter updates, and complete scalar/index/write dependency SIR. No names; no allocator, callback or unknown effect in fast region. Guard loads validate handle before descriptor dereference.",
+  "validation": "All19 exact result/fuel and exhaustion, signed source structured reports, hand SIR all optional charges, budget boundaries, fast/fallback paths, empty/invalid/wrapped indices, complete8192 state, opcode audits and3gen fixedpoint. Fresh same-host baseline/candidate/C30 triples, >=5% and gap>sumSD.",
+  "status": "unimplemented design hypothesis",
+  "sourceHead": "382fb4f20488843a1bfecc4a7a5db8e1ecd81e8e",
+  "nativeCountDerivation": {
+    "setLaneCharges": 43008,
+    "chargesPerSuccessfulSetLaneCall": 2,
+    "setLaneCalls": 21504,
+    "multiplyCalls": 2640,
+    "fillLoopCharges": 19440,
+    "chargesPerFillK0Invocation": 9,
+    "fillInvocations": 2160,
+    "setLaneCallsInsideFill": 17280,
+    "scope": "Specific exact SIR bodies on the complete successful n1 canonical run. Earlier conversational16x was charge ratio, not call ratio."
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "status": "SOURCE_HOLD_NO_PROCESS_API_GO",
+  "qualificationScope": "read-only adapter against owned child process-group only; no native/compiler execution authorized",
+  "metric": "sum-ri_phys_footprint across exact owned group",
+  "thresholdBytes": 4294967296,
+  "thresholdSemantics": "soft sampled refusal; raw per-process footprint sums without shared-page deduplication. Not RSS/private bytes/AS, no hard physical cap or overshoot bound.",
+  "expectedMaxGroupMembers": 2,
+  "lifetimeMaxDistinctMembers": 2,
+  "enumerationBufferPIDs": 4,
+  "APIResultUnit": "proc_listpgrppids returns PID count, not bytes, per primary libproc wrapper",
+  "ABI": {
+    "RUSAGE_INFO_V0": 0,
+    "bytes": 96,
+    "ri_phys_footprintOffset": 72,
+    "ri_proc_start_abstimeOffset": 80
+  },
+  "refusalConditions": [
+    "no owner/empty/duplicate/extra group member",
+    "read error/errno/API absence",
+    "different group inventories before and after",
+    "birth/start identity changed/PID reuse",
+    "non-live member",
+    "sample limit/metric above threshold"
+  ],
+  "sampleCap": 90502,
+  "pollSeconds": 0.02,
+  "nativeCPUContract": {
+    "soft": 1800,
+    "hard": 1801,
+    "reason": "unchanged pinned loader CPU1800+1 grace; explicit difference from failed V2 hard1800"
+  },
+  "currentBinding8Qualified": false,
+  "artifactIdentityQualified": false,
+  "execution": {
+    "libprocLoads": 0,
+    "processAPICalls": 0,
+    "setters": 0,
+    "compiler": 0,
+    "nativeProducer": 0,
+    "SSH": 0
+  },
+  "nextBoundedGate": "author separately reviewed one-owned-group fixture driver: at most2 fixed Python child processes,10s wall,5s reap,64KiB stdout/stderr,8 read-only samples; no user-supplied PIDs/commands or loader, no resource setters. Controls must cover stable one/two-member inventory before authoring fresh native8 policy."
+}

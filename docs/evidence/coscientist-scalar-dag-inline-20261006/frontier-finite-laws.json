@@ -1,0 +1,43 @@
+{
+  "status": "PASS excluded finite source table/field model certificates; no hardware execution or compiler implementation",
+  "crc": {
+    "tableEntries": 256,
+    "polynomialReflected": "0xedb88320",
+    "polynomialNormal": "0x04c11db7",
+    "basisAndZeroCases": 41,
+    "law": "u32(c), byte(d): T[(c XOR d)&255] XOR(c>>8) ==8 IEEE reflected shift/XOR steps. LinearGF2 basis completeness explicit; numeric addition is not used.",
+    "originRequired": "c remainsu32, inputlow8, tableexactimmutable; no CRC32C substitution",
+    "modelFaults": [
+      {
+        "fault": "unbounded high accumulator",
+        "old": 4294967296,
+        "replacement": 0
+      },
+      {
+        "fault": "Castagnoli instruction polynomial",
+        "old": 1996959894,
+        "replacement": 4067132163
+      },
+      {
+        "fault": "mutable/different table",
+        "old": 1996959895,
+        "replacement": 1996959894
+      }
+    ]
+  },
+  "aes": {
+    "fullTableElementsVerified": 2816,
+    "encSbox256": true,
+    "decSbox256": true,
+    "encTables4x256": true,
+    "decTables4x256": true,
+    "inverseMixTable256": true,
+    "sourceByteOrder": "little-endian columnwords: lowbyte row0,T0 coefficients2/1/1/3; Ti=ROL32(T0,8i)",
+    "keyPhaseFault": {
+      "fault": "key XOR before instead of after substitution",
+      "sourceByte": 98,
+      "wrongByte": 124
+    },
+    "notProved": "Actual NEON instruction mapping, allCFG/liveness/arena/fuel contracts and machine behavior remain future native proof obligations."
+  }
+}

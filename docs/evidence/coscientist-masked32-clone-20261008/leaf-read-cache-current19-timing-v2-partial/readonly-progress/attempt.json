@@ -1,0 +1,18 @@
+{
+  "argv": [
+    "/usr/bin/ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "ConnectionAttempts=1",
+    "zebulun@100.66.28.79",
+    "python3 -c 'from pathlib import Path\nimport json,signal\nsignal.alarm(15)\nr=Path('\"'\"'/Users/zebulun/github/workspaces/codex/vector-leaf-straight-read-cache-current19-timing-v2-root/timing'\"'\"')\nfolders=sorted(p for p in (r/'\"'\"'children'\"'\"').iterdir() if p.is_dir()) if (r/'\"'\"'children'\"'\"').exists() else []\nlatest=[]\nfor p in folders[-4:]:\n try:\n  q=json.loads((p/'\"'\"'receipt.json'\"'\"').read_bytes());latest.append({k:q.get(k) for k in ('\"'\"'index'\"'\"','\"'\"'label'\"'\"','\"'\"'kind'\"'\"','\"'\"'state'\"'\"','\"'\"'returncode'\"'\"')})\n except (FileNotFoundError,json.JSONDecodeError):latest.append({'\"'\"'folder'\"'\"':p.name,'\"'\"'state'\"'\"':'\"'\"'receipt-transition'\"'\"'})\nstates=[]\nfor p in sorted(r.glob('\"'\"'*-state.json'\"'\"')):\n q=json.loads(p.read_bytes());states.append({'\"'\"'workload'\"'\"':q['\"'\"'workload'\"'\"'],'\"'\"'status'\"'\"':q.get('\"'\"'status'\"'\"'),'\"'\"'calibrations'\"'\"':len(q['\"'\"'calibration'\"'\"']),'\"'\"'triples'\"'\"':len(q['\"'\"'triples'\"'\"']),'\"'\"'accepted'\"'\"':len(q['\"'\"'accepted'\"'\"'])})\nq={'\"'\"'scope'\"'\"':'\"'\"'readonly saved progress, no timing qualification'\"'\"','\"'\"'receiptFolders'\"'\"':len(folders),'\"'\"'latest'\"'\"':latest,'\"'\"'states'\"'\"':states,'\"'\"'terminalPresent'\"'\"':(r/'\"'\"'terminal.json'\"'\"').exists(),'\"'\"'failurePresent'\"'\"':(r/'\"'\"'failure.json'\"'\"').exists()}\nb=(json.dumps(q)+'\"'\"'\\n'\"'\"').encode();assert len(b)<=65536\nimport sys\nsys.stdout.buffer.write(b)\n'"
+  ],
+  "maximumChildren": 1,
+  "readOnly": true,
+  "noRetry": true,
+  "timeoutSeconds": 30,
+  "state": "started"
+}

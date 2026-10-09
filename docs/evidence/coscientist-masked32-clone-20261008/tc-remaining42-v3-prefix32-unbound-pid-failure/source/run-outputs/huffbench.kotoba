@@ -1,0 +1,159 @@
+(ns embench.huffbench-full (:export [batch state-cell test-huffbench]))
+(def RESET-LIMIT 3309)
+(def original-0 [74 50 79 90 70 53 48 70 89 76 68 53 85 84 86 89 89 82 77 84 48 86 88 79 48 49 86 67 53 70 78 73 66 49 67 71 49 50 77 84 73 80 84 50 67 73 86 48 48 66 79 85 87 70 68 82 65 89 84 65 51 65 73 52 50 75 70 88 72 82 75 80 65 51 76 67 71 65 51 65 66 76 85 89 81 88 74 82 81 50 82 78 50 90 77 89 69 82 80 76 67 48 48 67 88 70 69 51 71 66 51 72 77 83 53 51 74 73 79 90 69 53 72 66 89 84 90 50])
+(def original-1 [69 74 72 71 68 66 73 48 72 77 89 78 79 86 85 48 72 85 88 82 50 70 75 66 69 82 67 51 69 49 90 73 69 66 79 72 67 87 67 74 68 48 87 82 80 76 76 88 53 68 73 49 73 83 50 78 69 52 75 73 48 68 82 52 69 53 71 72 87 73 81 90 67 72 75 82 83 86 73 82 89 81 77 66 68 74 79 72 72 89 80 66 49 65 65 65 65 71 72 87 79 88 80 81 52 90 66 81 79 75 66 72 48 79 73 51 88 87 69 52 79 85 65 74 85 65 74 85])
+(def original-2 [71 81 75 85 73 90 69 71 83 70 88 66 80 89 73 75 71 81 72 51 71 77 50 85 65 50 51 85 50 72 74 67 88 84 87 53 78 48 71 53 53 51 65 80 86 73 90 50 89 65 90 52 77 86 83 77 82 81 66 78 88 75 80 79 51 70 79 75 53 85 75 53 82 75 79 71 84 72 67 76 72 50 75 85 82 50 65 68 77 66 81 68 76 65 83 74 70 65 84 70 85 51 69 70 73 83 76 49 90 79 71 65 75 81 85 49 78 86 52 90 87 80 51 67 80 80 76 85])
+(def original-3 [80 52 90 68 50 51 73 69 80 84 53 73 66 70 74 76 87 51 72 68 83 70 50 74 85 90 76 68 73 87 89 88 85 82 48 81 80 67 85 52 87 84 72 88 90 81 68 80 78 75 83 65 80 79 74 69 73 85 72 81 75 53 73 52 82 67 80 65 70 68 52 49 88 70 83 81 86 86 53 68 53 82 68 80 53 77 84 72 65 48 89 75 48 65 73 76 67 88 76 72 49 74 67 83 80 86 67 69 75 66 72 75 83 75 90 82])
+(defn- original-at [i :i64] :i64
+  (if (< i 128) (vector-at original-0 i)
+    (if (< i 256) (vector-at original-1 (- i 128))
+      (if (< i 384) (vector-at original-2 (- i 256)) (vector-at original-3 (- i 384))))))
+;; Complete pinned Embench Huffbench compression/decompression algorithm.
+;; Derived from Scott Robert Ladd (2003, public domain), Embench version
+;; copyright 2014-2019 Embecosm Limited and University of Bristol.
+;; Contributors James Pallister and Jeremy Bennett. SPDX-License-Identifier: GPL-3.0-or-later.
+;; One owned i64 vector holds data[500], comp[501], freq[512], heap[256],
+;; link[512], code[256], clen[256], heap2[256], outc[256] and scalar scratch.
+(def COMP 500)
+(def FREQ 1001)
+(def HEAP 1513)
+(def LINK 1769)
+(def CODE 2281)
+(def CLEN 2537)
+(def HEAP2 2793)
+(def OUTC 3049)
+(def LENGTH 3305)
+(def DISTINCT 3306)
+(def MAX-CODE 3307)
+(def MAX-LENGTH 3308)
+(defn- reset [s :vector-i64 i :i64] :vector-i64
+  (if (= i RESET-LIMIT) s
+    (let [value (if (< i 500) (original-at i) 0)
+          next (vector-assoc! s i value)]
+      (reset next (+ i 1)))))
+(defn- count-frequencies [s :vector-i64 i :i64] :vector-i64
+  (if (= i 500) s
+    (let [symbol (vector-at s i) at (+ FREQ symbol)
+          value (+ (vector-at s at) 1) next (vector-assoc! s at value)]
+      (count-frequencies next (+ i 1)))))
+(defn- fill-heap [s :vector-i64 i :i64 n :i64] :vector-i64
+  (if (= i 256) (vector-assoc! s DISTINCT n)
+    (if (= (vector-at s (+ FREQ i)) 0) (fill-heap s (+ i 1) n)
+      (fill-heap (vector-assoc! s (+ HEAP n) i) (+ i 1) (+ n 1)))))
+(defn- adjust-step [s :vector-i64 n :i64 k :i64 v :i64] :vector-i64
+  (if (> k (quot n 2)) (vector-assoc! s (+ HEAP (- k 1)) v)
+    (let [j0 (* k 2)
+          left (vector-at s (+ HEAP (- j0 1)))
+          right (if (< j0 n) (vector-at s (+ HEAP j0)) left)
+          j (if (and (< j0 n) (> (vector-at s (+ FREQ left)) (vector-at s (+ FREQ right)))) (+ j0 1) j0)
+          chosen (vector-at s (+ HEAP (- j 1)))]
+      (if (< (vector-at s (+ FREQ v)) (vector-at s (+ FREQ chosen)))
+        (vector-assoc! s (+ HEAP (- k 1)) v)
+        (adjust-step (vector-assoc! s (+ HEAP (- k 1)) chosen) n j v)))))
+(defn- adjust [s :vector-i64 n :i64 k :i64] :vector-i64
+  (let [v (vector-at s (+ HEAP (- k 1)))] (adjust-step s n k v)))
+(defn- heapify [s :vector-i64 n :i64 i :i64] :vector-i64
+  (if (= i 0) s (heapify (adjust s n i) n (- i 1))))
+(defn- merge-pair [s :vector-i64 n :i64 temp :i64] :vector-i64
+  (let [top (vector-at s HEAP) parent (+ 256 n)
+        frequency (+ (vector-at s (+ FREQ top)) (vector-at s (+ FREQ temp)))
+        s1 (vector-assoc! s (+ FREQ parent) frequency)
+        s2 (vector-assoc! s1 (+ LINK temp) parent)
+        s3 (vector-assoc! s2 (+ LINK top) (- 0 parent))
+        s4 (vector-assoc! s3 HEAP parent)]
+    (adjust s4 n 1)))
+(defn- build-trie [s :vector-i64 n :i64] :vector-i64
+  (if (= n 1) (vector-assoc! s (+ LINK 256 n) 0)
+    (let [nn (- n 1) temp (vector-at s HEAP) last (vector-at s (+ HEAP nn))]
+      (build-trie (merge-pair (adjust (vector-assoc! s HEAP last) nn 1) nn temp) nn))))
+(defn- build-codes [s :vector-i64 m :i64 l :i64 j :i64 x :i64 length :i64] :vector-i64
+  (if (= l 0)
+    (let [mx (vector-at s MAX-CODE) ml (vector-at s MAX-LENGTH)
+          s1 (vector-assoc! s (+ CODE m) x)
+          s2 (vector-assoc! s1 (+ CLEN m) length)
+          s3 (vector-assoc! s2 MAX-CODE (if (> x mx) x mx))]
+      (vector-assoc! s3 MAX-LENGTH (if (> length ml) length ml)))
+    (let [nx (if (< l 0) (+ x j) x) index (if (< l 0) (- 0 l) l)
+          next-link (vector-at s (+ LINK index))]
+      (build-codes s m next-link (i64-shift-left j 1) nx (+ length 1)))))
+(defn- codes [s :vector-i64 m :i64] :vector-i64
+  (if (= m 256) s
+    (if (= (vector-at s (+ FREQ m)) 0) (codes s (+ m 1))
+      (let [l (vector-at s (+ LINK m))]
+        (codes (build-codes s m l 1 0 0) (+ m 1))))))
+(defn- encode-bits [s :vector-i64 j :i64 remaining :i64 mask :i64 bout :i64 bit :i64 length :i64] :vector-i64
+  (if (= remaining 0)
+    (if (= (+ j 1) 500)
+      (let [byte (bit-and (i64-shift-left bout (- 7 bit)) 255)
+            next (vector-assoc! s (+ COMP length) byte)]
+        (vector-assoc! next LENGTH (+ length 1)))
+      (let [symbol (vector-at s (+ j 1)) bits (vector-at s (+ CLEN symbol))
+            nm (i64-shift-left 1 (- bits 1))]
+        (encode-bits s (+ j 1) bits nm bout bit length)))
+    (let [symbol (vector-at s j) value (vector-at s (+ CODE symbol))
+          one (if (= (bit-and value mask) 0) 0 1) nm (u64-shift-right mask 1)]
+      (if (= bit 7)
+        (if (= (+ length 1) 500) (vector-assoc! s (+ COMP length) bout)
+          (encode-bits (vector-assoc! s (+ COMP length) bout) j (- remaining 1) nm one 0 (+ length 1)))
+        (encode-bits s j (- remaining 1) nm (bit-or (bit-and (i64-shift-left bout 1) 255) one) (+ bit 1) length)))))
+(defn- encode [s :vector-i64] :vector-i64
+  (let [symbol (vector-at s 0) bits (vector-at s (+ CLEN symbol))
+        mask (i64-shift-left 1 (- bits 1))]
+    (encode-bits s 0 bits mask 0 -1 0)))
+(defn- decode-key [value :i64 length :i64] :i64
+  (loop [i 0 k 0 mask (i64-shift-left 1 (- length 1))]
+    (if (= i length) k
+      (recur (+ i 1) (+ (* k 2) 1 (if (= (bit-and value mask) 0) 0 1)) (u64-shift-right mask 1)))))
+(defn- decode-table [s :vector-i64 j :i64] :vector-i64
+  (if (= j 256) s
+    (let [value (vector-at s (+ CODE j)) length (vector-at s (+ CLEN j))
+          key (if (= (bit-or value length) 0) 0 (decode-key value length))
+          next (vector-assoc! s (+ OUTC j) j)
+          updated (vector-assoc! next (+ HEAP2 j) key)]
+      (decode-table updated (+ j 1)))))
+(defn- sort-insert [s :vector-i64 j :i64 key :i64 c :i64] :vector-i64
+  (if (= j 0)
+    (let [next (vector-assoc! s HEAP2 key)] (vector-assoc! next OUTC c))
+    (let [previous (vector-at s (+ HEAP2 (- j 1))) previous-c (vector-at s (+ OUTC (- j 1)))]
+      (if (> previous key)
+        (let [next (vector-assoc! s (+ HEAP2 j) previous)
+              updated (vector-assoc! next (+ OUTC j) previous-c)]
+          (sort-insert updated (- j 1) key c))
+        (let [next (vector-assoc! s (+ HEAP2 j) key)]
+          (vector-assoc! next (+ OUTC j) c))))))
+(defn- sort-table [s :vector-i64 i :i64] :vector-i64
+  (if (= i 256) s
+    (let [key (vector-at s (+ HEAP2 i)) c (vector-at s (+ OUTC i))]
+      (sort-table (sort-insert s i key c) (+ i 1)))))
+(defn- decode-bits [s :vector-i64 n :i64 i :i64 k :i64 mask :i64 ptr :i64 first :i64] :vector-i64
+  (if (= n 500) s
+    (let [byte (vector-at s (+ COMP ptr))
+          nk (+ (* k 2) 1 (if (= (bit-and byte mask) 0) 0 1))
+          at (loop [scan i] (if (< (vector-at s (+ HEAP2 scan)) nk) (recur (+ scan 1)) scan))
+          key (vector-at s (+ HEAP2 at)) c (vector-at s (+ OUTC at))
+          nm (if (> mask 1) (u64-shift-right mask 1) 128)
+          np (if (> mask 1) ptr (+ ptr 1))]
+      (if (= nk key)
+        (decode-bits (vector-assoc! s n c) (+ n 1) first 0 nm np first)
+        (decode-bits s n at nk nm np first)))))
+(defn- decode [s :vector-i64] :vector-i64
+  (let [first (loop [j 0] (if (= (vector-at s (+ HEAP2 j)) 0) (recur (+ j 1)) j))]
+    (decode-bits s 0 first 0 128 0 first)))
+(defn- finish-codes [s :vector-i64] :vector-i64
+  (if (or (> (vector-at s MAX-LENGTH) 64) (= (vector-at s MAX-CODE) 0)) s
+    (decode (sort-table (decode-table (encode s) 0) 1))))
+(defn- finish-heap [s :vector-i64] :vector-i64
+  (let [n (vector-at s DISTINCT)]
+    (finish-codes (codes (build-trie (heapify s n n) n) 0))))
+(defn- body [s :vector-i64] :vector-i64
+  (finish-heap (fill-heap (count-frequencies (reset s 0) 0) 0 0)))
+(defn- repeats [s :vector-i64 remaining :i64] :vector-i64
+  (if (= remaining 0) s (repeats (body s) (- remaining 1))))
+(defn- verify [s :vector-i64] :i64
+  (loop [i 0] (if (= i 500) 1
+    (if (= (vector-at s i) (original-at i)) (recur (+ i 1)) 0))))
+(defn batch [iterations :i64] :i64
+  (if (<= iterations 0) 0 (verify (repeats (vector-alloc 3309) iterations))))
+(defn state-cell [i :i64] :i64
+  (let [done (body (vector-alloc 3309))] (vector-at done i)))
+(defn test-huffbench [] :i64 (batch 1))

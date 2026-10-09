@@ -1,0 +1,34 @@
+--- 41-funnel-on.kotoba
++++ 41-quot2-off.kotoba
+@@ -1135,6 +1135,20 @@
+         (and (= bop BOP-MUL) (> (gn-pow2 k) 0)) 4
+         (and (= bop BOP-QUOT) (not= k 0) (not= k -1)) 5
+         :else 0))
++;; Q2 isolated integer quotient by literal+2 experiment. Default OFF.
++;; Three physical words restore x17=2; CODE admission/layout can differ on ON.
++(def q2-feature 0)
++(defn- q2-register? [r :i64] :bool
++ (and (>= r 0) (< r 31) (not= r 17)))
++(defn- q2-ready? [M :vector-i64 bop :i64 d :i64 x :i64 k :i64] :bool
++ (and (= q2-feature 1) (= (vector-at M MM-ERR) 0)
++      (= bop BOP-QUOT) (= k 2) (q2-register? d) (q2-register? x)))
++(defn- q2-emit [M :vector-i64 d :i64 x :i64] :vector-i64
++ (-> M
++  (gn-emit (+ 0x8b40fc00 (i64-shift-left x 16) (i64-shift-left x 5) d))
++  (gn-emit (gn-e-asr d d 1))
++  (gn-emit (enc-movz 17 2 0))))
++
+ ;; d := x (bop) k in the immediate form ik; x = the operand register (never xzr)
+ (defn- gn-bin-imm [M :vector-i64 bop :i64 d :i64 x :i64 k :i64] :vector-i64
+   (case (gn-imm-kind bop k)
+@@ -1154,7 +1168,9 @@
+     ;; of serializing it through SDIV. Zero and -1 still use guarded gn-quot.
+     (if (and (= bop BOP-QUOT) (= k 1))
+       (gn-mov M d x)
+-      (-> M (gn-mov-imm 17 k) (gn-emit (enc-sdiv d x 17))))))
++      (if (q2-ready? M bop d x k)
++       (q2-emit M d x)
++       (-> M (gn-mov-imm 17 k) (gn-emit (enc-sdiv d x 17)))))))
+ (defn- gn-bin-emit [M :vector-i64 bop :i64 t :i64 d :i64] :vector-i64
+   (let [ky (gn-dk M (inc t))
+         vy (gn-dv M (inc t))

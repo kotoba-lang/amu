@@ -1,0 +1,892 @@
+#define _GNU_SOURCE
+
+#include <errno.h>
+#include <dlfcn.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <signal.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <sys/resource.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <unistd.h>
+
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#elif defined(__SSE2__)
+#include <emmintrin.h>
+#endif
+
+typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t, int64_t,
+                            int64_t, int64_t, int64_t);
+
+static const char *const native_artifact_abi =
+    "kotoba.native-artifact-i64x8-to-i64-indirect/v1";
+
+/* The benchmark context now carries the pair/string slots of the real v3
+ * contract (ABI offsets asserted below, mirroring tools/kexe_loader.c), so
+ * string-bearing kernels can run under the same harness as arithmetic ones.
+ * kgraph/cap slots stay NULL: a guest touching them crashes loudly
+ * instead of being silently mis-measured. This remains benchmark
+ * scaffolding, not an alternate production loader or safety boundary. */
+struct kexe_context_v11 {
+  uint64_t version;
+  uint64_t fuel;
+  uint64_t allow[4];
+  int64_t (*cap_call)(struct kexe_context_v11 *, uint64_t, int64_t);
+  int64_t (*pair_new)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*pair_first)(struct kexe_context_v11 *, int64_t);
+  int64_t (*pair_second)(struct kexe_context_v11 *, int64_t);
+  int64_t (*kgraph_assert)(struct kexe_context_v11 *, int64_t, int64_t, int64_t);
+  int64_t (*kgraph_get)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*kgraph_count)(struct kexe_context_v11 *, int64_t);
+  int64_t (*kgraph_entity_at)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*string_equal)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*string_concat)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*typed_cap_call)(struct kexe_context_v11 *, uint64_t, uint64_t,
+                            uint64_t, int64_t);
+  int64_t (*string_substring)(struct kexe_context_v11 *, int64_t, int64_t,
+                              int64_t);
+  int64_t (*string_code_point_at)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*vector_new_empty)(struct kexe_context_v11 *);
+  int64_t (*vector_conj)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*vector_count)(struct kexe_context_v11 *, int64_t);
+  int64_t (*vector_at)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*vector_assoc)(struct kexe_context_v11 *, int64_t, int64_t, int64_t);
+  int64_t (*vector_drop)(struct kexe_context_v11 *, int64_t, int64_t);
+  /* ABI v4 (superproject ADR-2609010200). This struct is an INDEPENDENT copy
+   * of tools/kexe_loader.c's, so it has to move with it: the guest bakes the
+   * offsets in, and a v3 host beside a v4 guest is exactly the drift the
+   * `_Static_assert`s below are named for. Measured 2026-09-01: this file did
+   * not break when the loader went to v4, because today's benchmark kernels
+   * are arithmetic and never read `version` -- which is a reason to fix it
+   * now rather than a reason it is fine. */
+  int64_t (*vector_alloc)(struct kexe_context_v11 *, int64_t);
+  int64_t (*vector_assoc_in_place)(struct kexe_context_v11 *, int64_t, int64_t,
+                                   int64_t);
+  /* ABI v5 (2026-09-15): the byte search at 216, moved here for the same
+   * reason the v4 pair was. Left NULL below like the kgraph/cap slots: a
+   * benchmark kernel that searches crashes loudly rather than being
+   * silently mis-measured. */
+  int64_t (*string_index_of)(struct kexe_context_v11 *, int64_t, int64_t);
+  /* ABI v6 (2026-09-16): the region reset pair at 224 / 232, NULL here
+   * like the other host-only slots. */
+  int64_t (*arena_enter)(struct kexe_context_v11 *);
+  int64_t (*arena_leave)(struct kexe_context_v11 *);
+  /* ABI v7 (2026-09-16): the four text slots, NULL here like the others. */
+  int64_t (*string_compare)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*string_fold_ascii)(struct kexe_context_v11 *, int64_t);
+  int64_t (*string_find_blank)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*string_skip_blank)(struct kexe_context_v11 *, int64_t, int64_t);
+  /* ABI v8 (2026-09-16): the two line slots, NULL here like the others. */
+  int64_t (*string_index_of_from)(struct kexe_context_v11 *, int64_t, int64_t, int64_t);
+  int64_t (*string_compare_lines)(struct kexe_context_v11 *, int64_t, int64_t, int64_t, int64_t);
+  /* ABI v9 (2026-09-16): the six inline-operation pointers, NULL here. */
+  uint64_t *pair_used_pointer;
+  void *pairs_base;
+  uint8_t *pair_validated_base;
+  uint64_t *vector_used_pointer;
+  void *vectors_base;
+  int64_t *vector_items_base;
+  /* ABI v10 (2026-09-16): the two range slots, NULL here like the others. */
+  int64_t (*string_find_byte)(struct kexe_context_v11 *, int64_t, int64_t, int64_t);
+  int64_t (*string_append_range)(struct kexe_context_v11 *, int64_t, int64_t, int64_t, int64_t);
+  /* ABI v11 (2026-09-25): the string constructor and three bytes slots;
+   * unserved by this benchmark host (NULL). */
+  void *string_from_utf8;
+  void *bytes_from_vector;
+  void *bytes_slice;
+  void *bytes_concat;
+  const uint8_t *code_base;
+  uint64_t code_length;
+};
+
+_Static_assert(offsetof(struct kexe_context_v11, fuel) == 8, "fuel ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, allow) == 16, "allow ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, cap_call) == 48, "cap ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, pair_new) == 56, "pair ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, pair_first) == 64, "pair ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, pair_second) == 72, "pair ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_equal) == 112, "string ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_concat) == 120, "string ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, typed_cap_call) == 128, "typed cap ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_substring) == 136, "string ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_code_point_at) == 144, "string ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, vector_alloc) == 200, "vector ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, vector_assoc_in_place) == 208, "vector ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_index_of) == 216, "string ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, arena_enter) == 224, "region ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, arena_leave) == 232, "region ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_skip_blank) == 264, "text ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_compare_lines) == 280, "line ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, vector_items_base) == 328, "inline ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_append_range) == 344, "range ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, bytes_concat) == 376, "bytes ABI drift");
+
+/* Large constant-heavy kernels (for example Embench xgboost's 400 trees)
+ * materialize a string handle at each literal access. Keep enough handles for
+ * a complete measured call plus warmup; the old 4096-entry test capacity
+ * trapped partway through the sixth output class. */
+#define BENCH_PAIR_CAPACITY 2097152u
+#define BENCH_STRING_POOL_BYTES 65536u
+#define BENCH_VECTOR_CAPACITY 4096u
+#define BENCH_VECTOR_ITEM_CAPACITY 65536u
+
+struct kexe_pair_v1 { int64_t first; int64_t second; };
+struct kexe_vector_v1 { uint64_t offset; uint64_t length; };
+
+struct bench_shared {
+  struct kexe_context_v11 context;
+  uint64_t pair_used;
+  struct kexe_pair_v1 pairs[BENCH_PAIR_CAPACITY];
+  /* One flag per pair handle: the (offset, length) bytes this handle
+   * addresses are known-valid canonical UTF-8. Sound because the bytes
+   * under a handle never change after creation -- the code+literal
+   * region is read-only and the pool is append-only within a call -- so
+   * validity, once established, holds for the handle's lifetime. Cleared
+   * per handle at pair_new (O(1)), not per call (no 4 KiB memset). */
+  uint8_t pair_validated[BENCH_PAIR_CAPACITY];
+  uint64_t string_pool_used;
+  uint8_t string_pool[BENCH_STRING_POOL_BYTES];
+  uint64_t vector_used;
+  struct kexe_vector_v1 vectors[BENCH_VECTOR_CAPACITY];
+  uint64_t vector_item_used;
+  int64_t vector_items[BENCH_VECTOR_ITEM_CAPACITY];
+};
+
+/* pair/string machinery ported from tools/kexe_loader.c: same trapping
+ * behaviour (raise(SIGILL) on contract violation), same one-byte-space
+ * addressing (non-negative offsets index code+literal data, negative
+ * offsets index the dynamic pool via -offset - 1). */
+
+static int64_t checked_pair_new(struct kexe_context_v11 *context,
+                                int64_t first, int64_t second) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 11 ||
+      shared->pair_used >= BENCH_PAIR_CAPACITY) {
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t index = shared->pair_used++;
+  shared->pairs[index].first = first;
+  shared->pairs[index].second = second;
+  shared->pair_validated[index] = 0;
+  return (int64_t)(index + 1);
+}
+
+static int64_t checked_pair_get(struct kexe_context_v11 *context,
+                                int64_t handle, int second) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 11 || handle <= 0 ||
+      (uint64_t)handle > shared->pair_used) {
+    raise(SIGILL);
+    return 0;
+  }
+  struct kexe_pair_v1 *pair = &shared->pairs[(uint64_t)handle - 1];
+  return second ? pair->second : pair->first;
+}
+
+static int64_t checked_pair_first(struct kexe_context_v11 *context, int64_t handle) {
+  return checked_pair_get(context, handle, 0);
+}
+
+static int64_t checked_pair_second(struct kexe_context_v11 *context, int64_t handle) {
+  return checked_pair_get(context, handle, 1);
+}
+
+static const uint8_t *resolve_string_bytes(struct kexe_context_v11 *context,
+                                           int64_t offset, int64_t length) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (length < 0) { raise(SIGILL); return NULL; }
+  if (offset >= 0) {
+    if ((uint64_t)offset + (uint64_t)length > context->code_length) {
+      raise(SIGILL);
+      return NULL;
+    }
+    return context->code_base + offset;
+  }
+  uint64_t pool_offset = (uint64_t)(-(offset + 1));
+  if (pool_offset + (uint64_t)length > BENCH_STRING_POOL_BYTES ||
+      pool_offset + (uint64_t)length < pool_offset) {
+    raise(SIGILL);
+    return NULL;
+  }
+  return shared->string_pool + pool_offset;
+}
+
+static int valid_utf8(const uint8_t *bytes, uint64_t length) {
+  uint64_t i = 0;
+  while (i < length) {
+    uint8_t a = bytes[i++];
+    if (a <= 0x7f) continue;
+    if (a >= 0xc2 && a <= 0xdf) {
+      if (i >= length || (bytes[i++] & 0xc0) != 0x80) return 0;
+      continue;
+    }
+    if (a >= 0xe0 && a <= 0xef) {
+      if (i + 1 >= length) return 0;
+      uint8_t b = bytes[i++], c = bytes[i++];
+      if ((b & 0xc0) != 0x80 || (c & 0xc0) != 0x80 ||
+          (a == 0xe0 && b < 0xa0) || (a == 0xed && b >= 0xa0)) return 0;
+      continue;
+    }
+    if (a >= 0xf0 && a <= 0xf4) {
+      if (i + 2 >= length) return 0;
+      uint8_t b = bytes[i++], c = bytes[i++], d = bytes[i++];
+      if ((b & 0xc0) != 0x80 || (c & 0xc0) != 0x80 || (d & 0xc0) != 0x80 ||
+          (a == 0xf0 && b < 0x90) || (a == 0xf4 && b >= 0x90)) return 0;
+      continue;
+    }
+    return 0;
+  }
+  return 1;
+}
+
+/* Validate the string behind HANDLE once and remember it on the handle.
+ * Every accessor that previously ran valid_utf8 over the whole string on
+ * every call goes through here instead, which turns an O(length) check
+ * per access -- O(n^2) for a scan -- into O(length) once per handle. */
+static int ensure_valid_string(struct kexe_context_v11 *context, int64_t handle,
+                               const uint8_t *bytes, int64_t length) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  uint64_t index = (uint64_t)handle - 1;
+  if (shared->pair_validated[index]) return 1;
+  if (!valid_utf8(bytes, (uint64_t)length)) return 0;
+  shared->pair_validated[index] = 1;
+  return 1;
+}
+
+/* Mark a freshly minted handle whose validity is established by
+ * construction: a substring view of a validated string with checked
+ * code-point boundaries, or a concatenation of two validated strings. */
+static int64_t mark_validated(struct kexe_context_v11 *context, int64_t handle) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (handle > 0) shared->pair_validated[(uint64_t)handle - 1] = 1;
+  return handle;
+}
+
+static int simd_bytes_equal(const uint8_t *a, const uint8_t *b, size_t length) {
+  size_t i = 0;
+#if defined(__aarch64__)
+  for (; i + 16u <= length; i += 16u) {
+    uint8x16_t av = vld1q_u8(a + i);
+    uint8x16_t bv = vld1q_u8(b + i);
+    if (vminvq_u8(vceqq_u8(av, bv)) != UINT8_MAX) return 0;
+  }
+#elif defined(__SSE2__)
+  for (; i + 16u <= length; i += 16u) {
+    __m128i av = _mm_loadu_si128((const __m128i *)(const void *)(a + i));
+    __m128i bv = _mm_loadu_si128((const __m128i *)(const void *)(b + i));
+    if (_mm_movemask_epi8(_mm_cmpeq_epi8(av, bv)) != 0xffff) return 0;
+  }
+#endif
+  return memcmp(a + i, b + i, length - i) == 0;
+}
+
+static int64_t checked_string_equal(struct kexe_context_v11 *context,
+                                    int64_t handle_a, int64_t handle_b) {
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  int64_t offset_a = checked_pair_get(context, handle_a, 0);
+  int64_t length_a = checked_pair_get(context, handle_a, 1);
+  int64_t offset_b = checked_pair_get(context, handle_b, 0);
+  int64_t length_b = checked_pair_get(context, handle_b, 1);
+  if (length_a != length_b) return 0;
+  const uint8_t *a = resolve_string_bytes(context, offset_a, length_a);
+  const uint8_t *b = resolve_string_bytes(context, offset_b, length_b);
+  return simd_bytes_equal(a, b, (size_t)length_a) ? 1 : 0;
+}
+
+static int64_t checked_string_concat(struct kexe_context_v11 *context,
+                                     int64_t handle_a, int64_t handle_b) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  int64_t offset_a = checked_pair_get(context, handle_a, 0);
+  int64_t length_a = checked_pair_get(context, handle_a, 1);
+  int64_t offset_b = checked_pair_get(context, handle_b, 0);
+  int64_t length_b = checked_pair_get(context, handle_b, 1);
+  if (length_a < 0 || length_b < 0 || length_a > INT64_MAX - length_b) {
+    raise(SIGILL);
+    return 0;
+  }
+  int64_t total = length_a + length_b;
+  if (shared->string_pool_used + (uint64_t)total > BENCH_STRING_POOL_BYTES ||
+      shared->string_pool_used + (uint64_t)total < shared->string_pool_used) {
+    raise(SIGILL);
+    return 0;
+  }
+  const uint8_t *a = resolve_string_bytes(context, offset_a, length_a);
+  const uint8_t *b = resolve_string_bytes(context, offset_b, length_b);
+  int inputs_validated =
+      shared->pair_validated[(uint64_t)handle_a - 1] &&
+      shared->pair_validated[(uint64_t)handle_b - 1];
+  uint64_t pool_offset = shared->string_pool_used;
+  memcpy(shared->string_pool + pool_offset, a, (size_t)length_a);
+  memcpy(shared->string_pool + pool_offset + (uint64_t)length_a, b, (size_t)length_b);
+  shared->string_pool_used += (uint64_t)total;
+  int64_t result = checked_pair_new(context, -((int64_t)pool_offset) - 1, total);
+  /* Concatenation of two valid UTF-8 strings is valid UTF-8. */
+  if (inputs_validated) mark_validated(context, result);
+  return result;
+}
+
+static int64_t checked_string_substring(struct kexe_context_v11 *context,
+                                        int64_t handle, int64_t start,
+                                        int64_t end) {
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  int64_t offset = checked_pair_get(context, handle, 0);
+  int64_t length = checked_pair_get(context, handle, 1);
+  if (length < 0 || start < 0 || end < start || end > length) {
+    raise(SIGILL);
+    return 0;
+  }
+  const uint8_t *bytes = resolve_string_bytes(context, offset, length);
+  if (bytes == NULL) { raise(SIGILL); return 0; }
+  if (!ensure_valid_string(context, handle, bytes, length)) { raise(SIGILL); return 0; }
+  if (start < length && (bytes[start] & 0xc0) == 0x80) { raise(SIGILL); return 0; }
+  if (end < length && (bytes[end] & 0xc0) == 0x80) { raise(SIGILL); return 0; }
+  int64_t result_offset = offset >= 0 ? offset + start : offset - start;
+  /* A code-point-bounded view of a valid string is itself valid. */
+  return mark_validated(context,
+                        checked_pair_new(context, result_offset, end - start));
+}
+
+static int64_t checked_string_code_point_at(struct kexe_context_v11 *context,
+                                            int64_t handle, int64_t byte_offset) {
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  int64_t offset = checked_pair_get(context, handle, 0);
+  int64_t length = checked_pair_get(context, handle, 1);
+  if (length < 0 || byte_offset < 0 || byte_offset >= length) {
+    raise(SIGILL);
+    return 0;
+  }
+  const uint8_t *bytes = resolve_string_bytes(context, offset, length);
+  if (bytes == NULL) { raise(SIGILL); return 0; }
+  if (!ensure_valid_string(context, handle, bytes, length)) { raise(SIGILL); return 0; }
+  const uint8_t *p = bytes + byte_offset;
+  uint8_t a = p[0];
+  if ((a & 0xc0) == 0x80) { raise(SIGILL); return 0; }
+  if (a <= 0x7f) return a;
+  if (a >= 0xc2 && a <= 0xdf) return ((int64_t)(a & 0x1f) << 6) | (p[1] & 0x3f);
+  if (a >= 0xe0 && a <= 0xef)
+    return ((int64_t)(a & 0x0f) << 12) | ((int64_t)(p[1] & 0x3f) << 6) | (p[2] & 0x3f);
+  if (a >= 0xf0 && a <= 0xf4)
+    return ((int64_t)(a & 0x07) << 18) | ((int64_t)(p[1] & 0x3f) << 12) |
+           ((int64_t)(p[2] & 0x3f) << 6) | (p[3] & 0x3f);
+  raise(SIGILL);
+  return 0;
+}
+
+/* vector-i64/f64 machinery ported from tools/kexe_loader.c: handles are
+ * immutable values over a shared arena; conj appends in place only when the
+ * slice already ends at the arena top, and copies otherwise. */
+
+static struct kexe_vector_v1 *resolve_vector(struct bench_shared *shared,
+                                             int64_t handle) {
+  if (handle <= 0 || (uint64_t)handle > shared->vector_used) return NULL;
+  return &shared->vectors[(uint64_t)handle - 1];
+}
+
+static int64_t intern_vector(struct bench_shared *shared,
+                             uint64_t offset, uint64_t length) {
+  if (shared->vector_used >= BENCH_VECTOR_CAPACITY) return 0;
+  uint64_t index = shared->vector_used++;
+  shared->vectors[index].offset = offset;
+  shared->vectors[index].length = length;
+  return (int64_t)(index + 1);
+}
+
+static int64_t checked_vector_new_empty(struct kexe_context_v11 *context) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  int64_t handle = intern_vector(shared, shared->vector_item_used, 0);
+  if (handle == 0) { raise(SIGILL); return 0; }
+  return handle;
+}
+
+static int64_t checked_vector_count(struct kexe_context_v11 *context,
+                                    int64_t handle) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
+  if (vector == NULL) { raise(SIGILL); return 0; }
+  return (int64_t)vector->length;
+}
+
+static int64_t checked_vector_at(struct kexe_context_v11 *context,
+                                 int64_t handle, int64_t index) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
+  if (vector == NULL || index < 0 || (uint64_t)index >= vector->length) {
+    raise(SIGILL);
+    return 0;
+  }
+  return shared->vector_items[vector->offset + (uint64_t)index];
+}
+
+static int64_t checked_vector_conj(struct kexe_context_v11 *context,
+                                   int64_t handle, int64_t item) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
+  if (vector == NULL) { raise(SIGILL); return 0; }
+  uint64_t offset = vector->offset;
+  uint64_t length = vector->length;
+  if (length >= 16777216u) { raise(SIGILL); return 0; }
+  if (offset + length != shared->vector_item_used) {
+    if (shared->vector_item_used + length + 1u > BENCH_VECTOR_ITEM_CAPACITY) {
+      raise(SIGILL);
+      return 0;
+    }
+    uint64_t destination = shared->vector_item_used;
+    memmove(&shared->vector_items[destination], &shared->vector_items[offset],
+            (size_t)length * sizeof(int64_t));
+    shared->vector_item_used += length;
+    offset = destination;
+  }
+  if (shared->vector_item_used >= BENCH_VECTOR_ITEM_CAPACITY) {
+    raise(SIGILL);
+    return 0;
+  }
+  shared->vector_items[shared->vector_item_used++] = item;
+  int64_t result = intern_vector(shared, offset, length + 1u);
+  if (result == 0) { raise(SIGILL); return 0; }
+  return result;
+}
+
+static int64_t checked_vector_assoc(struct kexe_context_v11 *context,
+                                    int64_t handle, int64_t index,
+                                    int64_t item) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
+  if (vector == NULL || index < 0 || (uint64_t)index >= vector->length) {
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t offset = vector->offset;
+  uint64_t length = vector->length;
+  if (shared->vector_item_used + length > BENCH_VECTOR_ITEM_CAPACITY) {
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t destination = shared->vector_item_used;
+  memmove(&shared->vector_items[destination], &shared->vector_items[offset],
+          (size_t)length * sizeof(int64_t));
+  shared->vector_items[destination + (uint64_t)index] = item;
+  shared->vector_item_used += length;
+  int64_t result = intern_vector(shared, destination, length);
+  if (result == 0) { raise(SIGILL); return 0; }
+  return result;
+}
+
+static int64_t checked_vector_alloc(struct kexe_context_v11 *context,
+                                    int64_t count) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (count < 0 || count > 16777216) { raise(SIGILL); return 0; }
+  if (shared->vector_item_used + (uint64_t)count > BENCH_VECTOR_ITEM_CAPACITY) {
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t offset = shared->vector_item_used;
+  for (uint64_t i = 0; i < (uint64_t)count; i++) shared->vector_items[offset + i] = 0;
+  shared->vector_item_used += (uint64_t)count;
+  int64_t result = intern_vector(shared, offset, (uint64_t)count);
+  if (result == 0) { raise(SIGILL); return 0; }
+  return result;
+}
+
+static int64_t checked_vector_assoc_in_place(struct kexe_context_v11 *context,
+                                             int64_t handle, int64_t index,
+                                             int64_t item) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
+  if (vector == NULL || index < 0 || (uint64_t)index >= vector->length) {
+    raise(SIGILL);
+    return 0;
+  }
+  shared->vector_items[vector->offset + (uint64_t)index] = item;
+  return handle;
+}
+
+static int64_t checked_vector_drop(struct kexe_context_v11 *context,
+                                   int64_t handle, int64_t count) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
+  if (vector == NULL || count < 0 || (uint64_t)count > vector->length) {
+    raise(SIGILL);
+    return 0;
+  }
+  int64_t result = intern_vector(shared, vector->offset + (uint64_t)count,
+                                 vector->length - (uint64_t)count);
+  if (result == 0) { raise(SIGILL); return 0; }
+  return result;
+}
+
+static void fail(const char *operation) {
+  perror(operation);
+  exit(1);
+}
+
+static uint64_t bounded(const char *text, const char *name, int allow_zero,
+                        uint64_t maximum) {
+  if (text == NULL || *text < '0' || *text > '9') {
+    fprintf(stderr, "%s must be a decimal integer\n", name);
+    exit(2);
+  }
+  char *end = NULL;
+  errno = 0;
+  unsigned long long value = strtoull(text, &end, 10);
+  if (errno == ERANGE || *end != '\0' || (!allow_zero && value == 0) ||
+      value > maximum) {
+    fprintf(stderr, "%s is outside the admitted range\n", name);
+    exit(2);
+  }
+  return (uint64_t)value;
+}
+
+static uint64_t nanoseconds(void) {
+  struct timespec value;
+  if (clock_gettime(CLOCK_MONOTONIC, &value) != 0) fail("clock_gettime");
+  return (uint64_t)value.tv_sec * UINT64_C(1000000000) +
+         (uint64_t)value.tv_nsec;
+}
+
+/* Resolve isa once. strcmp inside the timed loop was ~5 ns on a 4-byte
+ * `ret` identity (codegen co-scientist iteration 13). That is harness
+ * overhead, not guest work. Fuel is still stored every call so recursive
+ * exports keep a bound; a leaf does not read it. Pair and string-pool
+ * cursors are likewise reset every call: each timed call runs as a fresh
+ * instance, which is also what keeps a million-call loop from exhausting
+ * the bounded arenas. */
+
+static struct bench_shared shared;
+
+/* Experimental embedded-only immutable host-feature contract. The required
+ * mask and kexe_embedded_code arrive in one compiled immutable header.
+ * This does not extend generic context ABI v11 or trust raw sidecars. */
+#define KEXE_HF_CRC32 UINT64_C(1)
+#define KEXE_HF_AES UINT64_C(2)
+#define KEXE_HF_FUEL_EXCLUSIVE UINT64_C(4)
+#define KEXE_HF_KNOWN (KEXE_HF_CRC32 | KEXE_HF_AES | KEXE_HF_FUEL_EXCLUSIVE)
+#ifndef KEXE_EMBEDDED_REQUIRED_HOST_FEATURES
+#define KEXE_EMBEDDED_REQUIRED_HOST_FEATURES 0
+#endif
+#ifndef KEXE_EMBEDDED
+#if KEXE_EMBEDDED_REQUIRED_HOST_FEATURES != 0
+#error nonempty_required_host_features_are_embedded_only
+#endif
+#endif
+#if defined(__APPLE__)
+#include <sys/sysctl.h>
+#endif
+#ifdef KEXE_HOST_GATE_TEST
+#define HG_STAGE(name) ((void)write(STDERR_FILENO, "HG_STAGE " name "\n", sizeof("HG_STAGE " name "\n")-1))
+#else
+#define HG_STAGE(name) ((void)0)
+#endif
+#ifdef KEXE_EMBEDDED
+static const uint64_t kexe_required_host_features = (uint64_t)KEXE_EMBEDDED_REQUIRED_HOST_FEATURES;
+static int kexe_host_feature_refuse(const char *reason) {
+  fprintf(stderr,"kexe-command: host feature gate refused: %s\n",reason);
+  return 0;
+}
+static int kexe_host_cpu_feature(const char *name) {
+#if defined(__APPLE__) && defined(__aarch64__)
+  int value=0;size_t length=sizeof value;
+#ifdef KEXE_HOST_GATE_TEST
+  /* Test-only host-detection fault boundary. Not present in normal binaries. */
+  extern int hg_test_sysctl(const char *,void *,size_t *,const void *,size_t);
+  int status=hg_test_sysctl(name,&value,&length,NULL,0);
+#else
+  int status=sysctlbyname(name,&value,&length,NULL,0);
+#endif
+  if(status!=0 || length!=sizeof value || (value!=0 && value!=1))return -1;
+  return value;
+#else
+  (void)name;
+  return -1;
+#endif
+}
+static int kexe_embedded_host_gate(const char *isa) {
+  const uint64_t required=kexe_required_host_features;
+#if defined(__aarch64__)
+  if(strcmp(isa,"aarch64")!=0)return kexe_host_feature_refuse("isa mismatch");
+#elif defined(__x86_64__)
+  if(strcmp(isa,"x86_64")!=0)return kexe_host_feature_refuse("isa mismatch");
+#else
+  return kexe_host_feature_refuse("unsupported host isa");
+#endif
+  if((required & ~KEXE_HF_KNOWN)!=0)return kexe_host_feature_refuse("unknown required feature");
+  if((required & (KEXE_HF_CRC32|KEXE_HF_AES))!=0 && strcmp(isa,"aarch64")!=0)
+    return kexe_host_feature_refuse("cpu feature isa mismatch");
+  if((required & KEXE_HF_CRC32)!=0){
+    int supported=kexe_host_cpu_feature("hw.optional.arm.FEAT_CRC32");
+    if(supported<0)return kexe_host_feature_refuse("crc32 detection error");
+    if(!supported)return kexe_host_feature_refuse("crc32 unavailable");
+  }
+  if((required & KEXE_HF_AES)!=0){
+    int supported=kexe_host_cpu_feature("hw.optional.arm.FEAT_AES");
+    if(supported<0)return kexe_host_feature_refuse("aes detection error");
+    if(!supported)return kexe_host_feature_refuse("aes unavailable");
+  }
+  /* NEW scoped timing-host contract, not frozen-loader or generic ABI:
+   * private context and one main thread; resets occur before each guestcall;
+   * no installed resuming handlers or normal concurrent writers. Certified
+   * resident regions exclude callbacks/context writes apart from fuel stores.
+   * Immutable known images/offsets checked before RX below. Trusted producer,
+   * compiler and OS are assumptions; declaration completeness is separate. */
+  return 1;
+}
+#endif
+
+#ifndef TIMING_KNOWN_IMAGES
+#error owned_timing_host_requires_immutable_known_images
+#endif
+static int timing_known_image(const void *bytes,size_t size,uint64_t offset) {
+  for(size_t i=0;i<TIMING_KNOWN_IMAGES;i++) {
+    if(size==timing_known_sizes[i] && offset==timing_known_offsets[i] &&
+       memcmp(bytes,timing_known_images[i],size)==0)return 1;
+  }
+  fprintf(stderr,"timing-host: unknown native bytes or offset\n");
+  return 0;
+}
+
+
+/* C comparison uses the same immutable recipe: native bytes and C artifact
+ * bytes/export are embedded together. Never dlopen a caller-selected file. */
+static void *timing_known_c_library(const char *path,const char *symbol) {
+#ifndef TIMING_KNOWN_DYLIB
+  (void)path; (void)symbol;
+  fprintf(stderr,"timing-host: no immutable C library declared\n");
+  return NULL;
+#else
+  if(strcmp(symbol,TIMING_KNOWN_C_SYMBOL)!=0) {
+    fprintf(stderr,"timing-host: unknown C export\n"); return NULL;
+  }
+  FILE *input=fopen(path,"rb");
+  if(!input)return NULL;
+  unsigned char buf[4096];size_t pos=0;int same=1;
+  while(pos<sizeof(timing_known_c_bytes)) {
+    size_t need=sizeof(timing_known_c_bytes)-pos;
+    if(need>sizeof(buf))need=sizeof(buf);
+    if(fread(buf,1,need,input)!=need ||
+       memcmp(buf,timing_known_c_bytes+pos,need)!=0) {same=0;break;}
+    pos+=need;
+  }
+  if(same && fgetc(input)!=EOF)same=0;
+  if(ferror(input))same=0;
+  fclose(input);
+  if(!same) {fprintf(stderr,"timing-host: unknown C bytes\n");return NULL;}
+  /* Load the immutable bytes, not the checked external pathname. */
+  char dir[]="/private/tmp/amu-timing-C-XXXXXX",file[256];
+  if(!mkdtemp(dir))return NULL;
+  if(snprintf(file,sizeof(file),"%s/known.dylib",dir)>=(int)sizeof(file)) {
+    rmdir(dir);return NULL;
+  }
+  int fd=open(file,O_WRONLY|O_CREAT|O_EXCL,0600);
+  if(fd<0) {rmdir(dir);return NULL;}
+  pos=0;int ok=1;
+  while(pos<sizeof(timing_known_c_bytes)) {
+    ssize_t n=write(fd,timing_known_c_bytes+pos,sizeof(timing_known_c_bytes)-pos);
+    if(n<0 && errno==EINTR)continue;
+    if(n<=0) {ok=0;break;} pos+=(size_t)n;
+  }
+  if(ok && fchmod(fd,0400)!=0)ok=0;
+  if(close(fd)!=0)ok=0;
+  void *library=ok?dlopen(file,RTLD_NOW|RTLD_LOCAL):NULL;
+  unlink(file);rmdir(dir);
+  return library;
+#endif
+}
+
+int main(int argc, char **argv) {
+  if(!kexe_embedded_host_gate(KEXE_EMBEDDED_ISA))return 2;
+  if (argc != 9) {
+    fprintf(stderr,
+            "usage: kexe-benchmark <raw|dylib> <artifact> <entry> <isa> <n> <calls> <warmup> <fuel>\n");
+    return 2;
+  }
+  if(strcmp(argv[4],KEXE_EMBEDDED_ISA)!=0) {
+    fprintf(stderr,"timing-host: argument isa differs from immutable isa\n");
+    return 2;
+  }
+  int raw = strcmp(argv[1], "raw") == 0;
+  int dylib = strcmp(argv[1], "dylib") == 0;
+  if (!raw && !dylib) {
+    fprintf(stderr, "artifact kind must be raw or dylib\n");
+    return 2;
+  }
+  int aarch64 = strcmp(argv[4], "aarch64") == 0;
+  if (!aarch64 && strcmp(argv[4], "x86_64") != 0) {
+    fprintf(stderr, "isa must be x86_64 or aarch64\n");
+    return 2;
+  }
+  int64_t input = (int64_t)bounded(argv[5], "n", 1, UINT64_C(2147483646));
+  uint64_t calls = bounded(argv[6], "calls", 0, UINT64_C(100000000));
+  uint64_t warmup = bounded(argv[7], "warmup", 1, UINT64_C(100000000));
+  uint64_t fuel = bounded(argv[8], "fuel", 0, UINT64_C(16777216));
+  size_t mapped = 0;
+  size_t artifact_bytes = 0;
+  void *memory = NULL;
+  void *library = NULL;
+  kexe_fn8 fn = NULL;
+  if (raw) {
+    uint64_t offset = bounded(argv[3], "offset", 1, UINT64_MAX);
+    int fd = open(argv[2], O_RDONLY);
+    if (fd < 0) fail("open");
+    struct stat metadata;
+    if (fstat(fd, &metadata) != 0) fail("fstat");
+    if (metadata.st_size <= 0 || offset >= (uint64_t)metadata.st_size) {
+      fprintf(stderr, "offset outside code artifact\n");
+      return 2;
+    }
+    long page = sysconf(_SC_PAGESIZE);
+    if (page <= 0) fail("sysconf");
+    artifact_bytes = (size_t)metadata.st_size;
+    mapped = (artifact_bytes + (size_t)page - 1) /
+             (size_t)page * (size_t)page;
+#if defined(MAP_ANONYMOUS)
+    int anonymous = MAP_ANONYMOUS;
+#else
+    int anonymous = MAP_ANON;
+#endif
+    memory = mmap(NULL, mapped, PROT_READ | PROT_WRITE,
+                  MAP_PRIVATE | anonymous, -1, 0);
+    if (memory == MAP_FAILED) fail("mmap");
+    size_t consumed = 0;
+    while (consumed < artifact_bytes) {
+      ssize_t count = read(fd, (uint8_t *)memory + consumed,
+                           artifact_bytes - consumed);
+      if (count <= 0) fail("read");
+      consumed += (size_t)count;
+    }
+    if (close(fd) != 0) fail("close");
+    if(!timing_known_image(memory,artifact_bytes,offset))return 2;
+    HG_STAGE("RX");
+    if (mprotect(memory, mapped, PROT_READ | PROT_EXEC) != 0) fail("mprotect");
+    fn = (kexe_fn8)((uint8_t *)memory + offset);
+  } else {
+    library = timing_known_c_library(argv[2],argv[3]);
+    if (library == NULL) {
+      const char *load_error=dlerror();
+      fprintf(stderr, "dlopen: %s\n",load_error?load_error:"immutable C admission refused");
+      return 1;
+    }
+    dlerror();
+    fn = (kexe_fn8)dlsym(library, argv[3]);
+    const char *symbol_error = dlerror();
+    if (symbol_error != NULL) {
+      fprintf(stderr, "dlsym: %s\n", symbol_error);
+      return 1;
+    }
+  }
+
+  memset(&shared, 0, sizeof(shared));
+  struct kexe_context_v11 *context = &shared.context;
+  context->version = 11;
+  context->pair_new = checked_pair_new;
+  context->pair_first = checked_pair_first;
+  context->pair_second = checked_pair_second;
+  context->string_equal = checked_string_equal;
+  context->string_concat = checked_string_concat;
+  context->string_substring = checked_string_substring;
+  context->string_code_point_at = checked_string_code_point_at;
+  context->vector_new_empty = checked_vector_new_empty;
+  context->vector_conj = checked_vector_conj;
+  context->vector_count = checked_vector_count;
+  context->vector_at = checked_vector_at;
+  context->vector_assoc = checked_vector_assoc;
+  context->vector_drop = checked_vector_drop;
+  context->vector_alloc = checked_vector_alloc;
+  context->vector_assoc_in_place = checked_vector_assoc_in_place;
+  /* Native vector lowering reads these ABI v9 arena pointers directly. */
+  context->pair_used_pointer = &shared.pair_used;
+  context->pairs_base = shared.pairs;
+  context->pair_validated_base = shared.pair_validated;
+  context->vector_used_pointer = &shared.vector_used;
+  context->vectors_base = shared.vectors;
+  context->vector_items_base = shared.vector_items;
+  /* String literals resolve into the mapped artifact itself: raw extraction
+   * appends literal data past the last function's code, so the whole file is
+   * the code+literal-data region. dylib twins are plain C and never receive
+   * this context, so the zero length there just means any stray string call
+   * traps instead of reading wild memory. */
+  context->code_base = (const uint8_t *)memory;
+  context->code_length = raw ? (uint64_t)artifact_bytes : 0;
+  int64_t result = 0;
+  uint64_t started;
+  uint64_t elapsed;
+  HG_STAGE("ENTRY");
+  for (uint64_t index = 0; index < warmup; index++) {
+    context->fuel = fuel;
+    shared.pair_used = 0;
+    shared.string_pool_used = 0;
+    shared.vector_used = 0;
+    shared.vector_item_used = 0;
+    if (aarch64) {
+      result = fn(input, 0, 0, 0, 0, 0, 0, (int64_t)(uintptr_t)context);
+    } else {
+      result = fn(input, 0, 0, 0, 0, (int64_t)(uintptr_t)context, 0, 0);
+    }
+  }
+  started = nanoseconds();
+  for (uint64_t index = 0; index < calls; index++) {
+    context->fuel = fuel;
+    shared.pair_used = 0;
+    shared.string_pool_used = 0;
+    shared.vector_used = 0;
+    shared.vector_item_used = 0;
+    if (aarch64) {
+      result = fn(input, 0, 0, 0, 0, 0, 0, (int64_t)(uintptr_t)context);
+    } else {
+      result = fn(input, 0, 0, 0, 0, (int64_t)(uintptr_t)context, 0, 0);
+    }
+  }
+  elapsed = nanoseconds() - started;
+  uint64_t context_fuel_after = context->fuel;
+  uint64_t context_fuel_consumed = fuel >= context_fuel_after
+                                     ? fuel - context_fuel_after : 0;
+  struct rusage usage;
+  if (getrusage(RUSAGE_SELF, &usage) != 0) fail("getrusage");
+#if defined(__APPLE__)
+  uint64_t rss = (uint64_t)usage.ru_maxrss;
+#else
+  uint64_t rss = (uint64_t)usage.ru_maxrss * UINT64_C(1024);
+#endif
+  printf("{\"format\":\"kotoba.runtime-sample/v1\","
+         "\"calls\":%" PRIu64 ",\"warmupCalls\":%" PRIu64 ","
+         "\"elapsedNanoseconds\":%" PRIu64 ",\"result\":%" PRId64 ","
+         "\"maxRssBytes\":%" PRIu64 ",\"fuelPerCall\":%" PRIu64 ","
+         "\"contextFuelBefore\":%" PRIu64 ",\"contextFuelAfter\":%" PRIu64 ","
+         "\"contextFuelConsumed\":%" PRIu64 ","
+         "\"nativeArtifactAbi\":\"%s\",\"artifactKind\":\"%s\"",
+         calls, warmup, elapsed, result, rss, fuel, fuel, context_fuel_after,
+         context_fuel_consumed, native_artifact_abi,
+         raw ? "raw" : "dylib");
+  /* Read-only diagnostics after elapsed is finalized. No context/arena writes. */
+  if (raw) {
+    printf(",\"nativeArenaStatus\":\"available\",\"nativeArenas\":{"
+           "\"pairs\":{\"capacity\":%" PRIu64 ",\"used\":%" PRIu64 "},"
+           "\"stringPoolBytes\":{\"capacity\":%" PRIu64 ",\"used\":%" PRIu64 "},"
+           "\"vectors\":{\"capacity\":%" PRIu64 ",\"used\":%" PRIu64 "},"
+           "\"vectorItems\":{\"capacity\":%" PRIu64 ",\"used\":%" PRIu64 "}}}\n",
+           (uint64_t)BENCH_PAIR_CAPACITY, shared.pair_used,
+           (uint64_t)BENCH_STRING_POOL_BYTES, shared.string_pool_used,
+           (uint64_t)BENCH_VECTOR_CAPACITY, shared.vector_used,
+           (uint64_t)BENCH_VECTOR_ITEM_CAPACITY, shared.vector_item_used);
+  } else {
+    printf(",\"nativeArenaStatus\":\"unavailable-C\",\"nativeArenas\":null}\n");
+  }
+  if (raw && munmap(memory, mapped) != 0) fail("munmap");
+  if (dylib && dlclose(library) != 0) fail("dlclose");
+  return 0;
+}

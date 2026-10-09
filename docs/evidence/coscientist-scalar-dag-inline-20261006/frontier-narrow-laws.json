@@ -1,0 +1,52 @@
+{
+  "status": "PASS finite source semantic laws and unsafe generalization controls; no native instruction run",
+  "picoMultiplyRows": [
+    {
+      "factor": 196,
+      "signed16Inputs": 65536,
+      "noSigned32Overflow": true,
+      "sourceFloorMatchesASR8ThenWrap16": true
+    },
+    {
+      "factor": 277,
+      "signed16Inputs": 65536,
+      "noSigned32Overflow": true,
+      "sourceFloorMatchesASR8ThenWrap16": true
+    },
+    {
+      "factor": 669,
+      "signed16Inputs": 65536,
+      "noSigned32Overflow": true,
+      "sourceFloorMatchesASR8ThenWrap16": true
+    },
+    {
+      "factor": 362,
+      "signed16Inputs": 65536,
+      "noSigned32Overflow": true,
+      "sourceFloorMatchesASR8ThenWrap16": true
+    }
+  ],
+  "picoDescaleBoundedValues": 131071,
+  "faults": [
+    {
+      "fault": "generic i64 floor loses source signed-overflow behavior",
+      "source": 36028797018963967,
+      "ASR": -36028797018963968
+    },
+    {
+      "fault": "signed versus saturating16 narrowing",
+      "wrap16": 20093,
+      "saturated": 32767
+    },
+    {
+      "fault": "treat unsigned-offset depth operand as signed8",
+      "input": 196,
+      "signed8": -60,
+      "filter": 1,
+      "sourceProduct": 196,
+      "wrongSDOTProduct": -60
+    }
+  ],
+  "fullI64SignExtend16Law": "Source masklow16/branchsubtract65536 equals signextend16 on every low16 pattern; arbitraryhigherbits ignored.",
+  "notProved": "Actual bounded CFG/rooted match, SIMD lane ordering/rounding/store/fuel/register contracts remain future proof."
+}

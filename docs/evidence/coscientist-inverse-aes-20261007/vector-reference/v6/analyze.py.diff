@@ -1,0 +1,40 @@
+--- frozen-V5/analyze.py
++++ prospective-V6/analyze.py
+@@ -158,6 +158,20 @@
+      if m!=incoming[j]:incoming[j]=m;queue.append(j)
+    if visits>65536:raise RuntimeError('function-work-budget')
+   return {'returns':returns,'calls':calls,'reads':reads,'baseRets':baseRets,'states':incoming}
++ def globally_refuse(self,reason,aliasConverged):
++  # Prospective V6: no partially positive facts survive any nonconvergence.
++  self.alias={};self.retLen={};self.bounds={f:{k:0 for k in self.vecparams(f)}for f in self.fn}
++  reads=[{'sir':i,'fn':f,'handleFact':None,'indexFact':None,'generatorMode':self.cache.get(i),
++          'admittedReference':False,'reasons':[reason],'CMPKept':True,'handleValidationKept':True,
++          'preciseNFElementTypeCertificate':False,'typedEmitterQualification':False}
++         for f,ids in self.fn.items()for i in ids if self.sir[i][0]==14 and self.sir[i][1]==176]
++  return {'summaries':{'lifetimeClean':self.clean,'lifetimeRefusals':self.cleanReasons,
++          'returnAlias':{},'returnMinLength':{},'parameterLowerBounds':self.bounds,
++          'invalidFunctions':self.invalid,'closedGraph':self.closedGraph,
++          'publicAddressedRoots':sorted(self.roots),'reachableFunctions':sorted(self.reachable),
++          'FADDRTargets':sorted(self.addressed),'allDeclaredDirectEdges':self.edges,
++          'rootedBoundsConverged':False,'aliasSummariesConverged':aliasConverged,
++          'globalRefusal':reason},'reads':reads,'transferSteps':self.steps}
+  def solve(self):
+   # Self-recursive alias hypothesis is checked against every normal RET and a direct base return.
+   aliasConverged=False
+@@ -173,7 +187,7 @@
+     q=self.run(f);rets=list(q['returns'].values());L=min((v[3]if v and v[0]=='v'else 0 for v in rets),default=0)
+     if L>self.retLen.get(f,0):self.retLen[f]=L;changed=True
+    if not changed:aliasConverged=True;break
+-  if not aliasConverged:self.alias={};self.retLen={}
++  if not aliasConverged:return self.globally_refuse('global-alias-summary-nonconvergence',False)
+   # Caller-before-callee condensation traversal; no global depth iteration cap.
+   converged=True;runCache={}
+   for group in reversed(self.groups):
+@@ -203,6 +217,7 @@
+     self.bounds[f]=trial if stable else {k:0 for k in self.vecparams(f)}
+     if not stable:converged=False
+    runCache[f]=self.run(f,self.bounds[f])
++  if not converged:return self.globally_refuse('global-rooted-bound-nonconvergence',True)
+   # Every incoming edge receives the final value/epoch transfer, including self.
+   for f in self.fn:
+    for k,L in self.bounds[f].items():

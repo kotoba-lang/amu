@@ -1,0 +1,11 @@
+--- 
++++ 
+@@ -54,7 +54,7 @@
+    q=load(pin(r['path'],r));need(q['status']=='PASS_SOURCE_ONLY_TC_SAVED_OBSERVER_EXTRACT1'
+       and q['sourcePinsSHA256']==g['sha256']['source-pins.json']
+       and q['driverSHA256']==g['sha256']['run.py'],'specific reviewed driver')
+-  pp=load(pr['actualProducerProof']);need(pp['status']==pr['actualProducerProofStatus'],'actual stage0 producer proof')
++  pp=load(pr['actualProducerProof']);need(pp['status']==pr['actualProducerProofStatus'],'actual current producer proof')
+   need(pp['wholeBaselineNative']=={k:pr['producer'][k]for k in ['bytes','sha256']} and pp['currentProducerBindingQualified']is True and pp['TCEmitterExecuted']is False,'accepted current producer binding; no prior TC claim')
+   pc=load(pin(pr['currentProducerCompletion']['path'],pr['currentProducerCompletion']))
+   need(pc['status']=='COMPLETE_CURRENT_TYPED_BIND8_READONLY_IDENTITY_ONLY' and pc['images'][0]['native']==pr['producer'] and pc['sourcePinsSHA256']==pp['sourcePinsSHA256'],'current native/source completion')
