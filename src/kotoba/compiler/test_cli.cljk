@@ -11,6 +11,7 @@
   {:kotoba/export [run]}
   (:require [kotoba.compiler.bounded-edn :as bounded-edn]
             [kotoba.compiler.manifest-mode :as manifest-mode]
+            [kotoba.compiler.manifest-native :as manifest-native]
             [kotoba.compiler.posix-path :as posix-path]
             [kotoba.compiler.project :as project]
             [kotoba.compiler.project-files :as project-files]
@@ -70,13 +71,36 @@
                       {:phase :usage :fuel text})))
     #?(:clj (Long/parseLong text) :cljs (js/parseInt text 10))))
 
+(defn- native-option
+  "`{:runtime-dir d :parallel n}` from `--native-runtime <dir>` or
+  `--native-prepare <dir>` (which first measures a runtime into DIR,
+  honouring `--loader-source-dir <dir>` / KOTOBA_LOADER_SOURCE_DIR), and
+  `--native-jobs <n>` (parallel native cases, default 4); nil without either."
+  [args]
+  (let [runtime (option args "--native-runtime")
+        prepare (option args "--native-prepare")
+        jobs (option args "--native-jobs")]
+    (when (and runtime prepare)
+      (throw (ex-info "--native-runtime and --native-prepare are exclusive: --native-prepare <dir> measures a runtime into <dir> and uses it"
+                      {:phase :usage})))
+    (when (and jobs (not (re-matches #"[1-9][0-9]?" jobs)))
+      (throw (ex-info "--native-jobs must be an integer from 1 to 99" {:phase :usage :native-jobs jobs})))
+    (when prepare
+      (manifest-native/prepare! prepare {:loader-source-dir (option args "--loader-source-dir")}))
+    (when-let [dir (or runtime prepare)]
+      (cond-> {:runtime-dir dir}
+        jobs (assoc :parallel #?(:clj (Long/parseLong jobs) :cljs (js/parseInt jobs 10)))))))
+
 (defn- run-manifest
   "`test --manifest <manifest.edn> [--conformance-root <dir>] [--case <id> ...]
-  [--json] [--fuel <n>]` (root ADR-2610092330 C0). The conformance root --
-  the directory each case's :entry is relative to -- defaults to the
-  manifest's own directory."
+  [--json] [--fuel <n>] [--native-runtime <dir> | --native-prepare <dir>
+  [--loader-source-dir <dir>]] [--native-jobs <n>]` (root ADR-2610092330 C0,
+  C1). The conformance root -- the directory each case's :entry is relative
+  to -- defaults to the manifest's own directory. Without a native runtime the
+  native backends are :skipped with the reason saying how to supply one."
   [args]
   (let [manifest-path (option args "--manifest")
+        native (native-option args)
         root (or (option args "--conformance-root") (posix-path/dirname manifest-path))
         only (set (map #(keyword (str/replace-first % #"^:" "")) (options args "--case")))
         manifest (bounded-edn/read-file manifest-path)]
@@ -86,6 +110,7 @@
     {:report (manifest-mode/run-manifest manifest root
                                          (cond-> {:manifest-path manifest-path}
                                            (seq only) (assoc :only only)
+                                           native (assoc :native native)
                                            (fuel-option args) (assoc :fuel (fuel-option args))))
      :json? (boolean (some #{"--json"} args))}))
 

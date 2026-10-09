@@ -14,9 +14,17 @@
   Backends driven (C0): `:kir`, `:js-kotoba-v1`, `:wasm32-kotoba-v1` -- the
   three targets `amu test` already runs, through the same emitters and probes
   (`kotoba.compiler.test-profile/call-source`) -- and `:compiler-admit`, the
-  frontend admission an `:expect-error` case is about. Native
-  (`:native-aarch64` / `:native-x86_64`) is C1: it appears as `:skipped` with
-  that reason wherever a class lists it.
+  frontend admission an `:expect-error` case is about.
+
+  Native (C1): given a measured runtime (`:native {:runtime-dir d}`), the
+  host's own native backend (`:native-aarch64` on an arm64 host,
+  `:native-x86_64` on an x64 one) runs every in-scope :run case whose class
+  lists it: compile for the host target, sign with the runtime's key, run
+  under its measured loader, compare `[:result :result]` with :expect
+  (`kotoba.compiler.manifest-native`). A compile refusal is `:refused` with
+  the compiler's message. The other ISA's native backend, and the host's
+  without a runtime, are `:skipped` with a reason that says why and, for the
+  latter, how to supply one.
 
   Out of scope, reported under `:skipped-cases` with a reason rather than run:
   every case whose class has `:profile :host-compat` (the host-clj /
@@ -27,9 +35,11 @@
   a vacuous pass (ADR-2610092330 decision 7). An optional backend's `:fail`,
   `:refused` or `:skipped` is reported with its reason and does not change
   `:ok`."
-  {:kotoba/export [backend-targets driven-backends human-lines run-manifest runner-name]}
+  {:kotoba/export [backend-targets driven-backends human-lines native-backends no-runtime-reason
+                  run-manifest runner-name]}
   (:require [kotoba.compiler.bounded-edn :as bounded-edn]
             [kotoba.compiler.core :as compiler]
+            [kotoba.compiler.manifest-native :as manifest-native]
             [kotoba.compiler.posix-path :as posix-path]
             [kotoba.compiler.project :as project]
             [kotoba.compiler.project-files :as project-files]
@@ -53,10 +63,16 @@
 (def driven-backends
   (conj (set (keys backend-targets)) :compiler-admit))
 
+(def native-backends #{:native-aarch64 :native-x86_64})
+
+(def no-runtime-reason
+  (str "no measured native runtime: pass --native-runtime <dir> (key.edn,"
+       " pinned-trust.edn, runtime.edn, kotoba-loader), or --native-prepare <dir>"
+       " to measure one there first (KOTOBA_LOADER_SOURCE_DIR / --loader-source-dir"
+       " names the reviewed kexe_loader.c)"))
+
 (def ^:private not-yet-driven
-  {:native-aarch64 "native execution is ADR-2610092330 step C1; not driven by C0"
-   :native-x86_64 "native execution is ADR-2610092330 step C1; not driven by C0"
-   :host-clj "host-compat backend; driven by kotoba-lang's host runners, not amu"
+  {:host-clj "host-compat backend; driven by kotoba-lang's host runners, not amu"
    :host-cljs "host-compat backend; driven by kotoba-lang's host runners, not amu"})
 
 (def ^:private run-kinds #{:run :compile-expr})
@@ -132,6 +148,75 @@
 (defn- row
   ([status required?] {:status status :required? required?})
   ([status required? more] (merge {:status status :required? required?} more)))
+
+;; --- native -----------------------------------------------------------------
+
+(defn- native-job
+  "The `manifest-native/run-jobs` job for KASE, or `{:refused why}` when its
+  source cannot be named."
+  [root kase]
+  (try
+    (case (:kind kase)
+      :compile-expr
+      {:id (:id kase) :source (:source (case-source root kase))
+       :function (or (:function kase) "main") :args (vec (or (:args kase) []))}
+      (let [entry (:entry kase)
+            _ (when-not (string? entry)
+                (throw (ex-info "the case names no :entry" {:phase :manifest})))
+            path (source-path/admit! (entry-path root entry))]
+        {:id (:id kase) :entry path
+         :source-paths (mapv #(posix-path/join root %) (:source-paths kase))
+         :function (or (:function kase) "main") :args (vec (or (:args kase) []))}))
+    (catch #?(:clj Exception :cljs :default) error
+      {:id (:id kase) :refused (or (ex-message error) (str error))})))
+
+(defn- backends-of [manifest kase]
+  (into (required-of manifest kase) (optional-of manifest kase)))
+
+(defn- native-results
+  "Run every in-scope :run / :compile-expr case whose backends include the
+  host's native backend, when NATIVE names a runtime. Answers `{case-id
+  answer}` (see `manifest-native/run-jobs`)."
+  [root manifest cases native host]
+  (when (and native host)
+    (let [wanted (filter #(and (run-kinds (:kind %))
+                               (contains? (:expect %) :kotoba)
+                               (contains? (backends-of manifest %) host))
+                         cases)
+          jobs (map #(native-job root %) wanted)
+          refused (into {} (for [j jobs :when (:refused j)]
+                             [(:id j) {:refused (str "source: " (:refused j)) :phase :source}]))
+          ran (manifest-native/run-jobs (remove :refused jobs) (:runtime-dir native)
+                                        {:parallel (:parallel native)})]
+      (merge (:results ran) refused))))
+
+(defn- native-row [kase backend required native host answers]
+  (let [req? (contains? required backend)
+        expect (get-in kase [:expect :kotoba])
+        answer (get answers (:id kase))]
+    (cond
+      (admit-kinds (:kind kase))
+      (row :skipped req? {:reason "an admission case has nothing to execute"})
+      (not (run-kinds (:kind kase)))
+      (row :skipped req? {:reason (str "unknown case :kind " (pr-str (:kind kase)))})
+      (not= host backend)
+      (row :skipped req? {:reason (str "native backends run on their own ISA only; this host's is "
+                                       (if host (name host) "none"))})
+      (nil? native)
+      (row :skipped req? {:reason no-runtime-reason})
+      (not (contains? (:expect kase) :kotoba))
+      (row :skipped req? {:reason "the case has no :expect :kotoba value"})
+      (contains? answer :value)
+      (if (same-value? expect (:value answer))
+        (row :pass req? {:value (:value answer)})
+        (row :fail req? {:value (:value answer)
+                         :reason (str "expected " (show expect) ", got " (show (:value answer)))}))
+      (contains? answer :trap)
+      (row :fail req? {:reason (str "trap: " (:trap answer))})
+      (contains? answer :refused)
+      (row :refused req? {:reason (str (name (:phase answer)) ": " (:refused answer))})
+      :else
+      (row :skipped req? {:reason "the native run answered nothing for this case"}))))
 
 (defn- run-rows
   "Rows for a :run / :compile-expr case on its driven execution backends."
@@ -209,17 +294,20 @@
                             :reason (str "refused for another reason; expected the message to contain "
                                          (pr-str needle))}))))
 
-(defn- case-rows [root manifest kase fuel]
+(defn- case-rows [root manifest kase fuel native host native-answers]
   (let [required (required-of manifest kase)
         optional (optional-of manifest kase)
         backends (sort (into required optional))
         kind (:kind kase)
         undriven (into {}
-                       (for [b backends :when (not (driven-backends b))]
+                       (for [b backends :when (and (not (driven-backends b))
+                                                   (not (native-backends b)))]
                          [b (row :skipped (contains? required b)
                                  {:reason (get not-yet-driven b
                                                (str "backend " b " is not known to this runner"))})]))]
     (merge undriven
+           (into {} (for [b backends :when (native-backends b)]
+                      [b (native-row kase b required native host native-answers)]))
            (cond
              (run-kinds kind)
              (merge (run-rows root kase backends required fuel)
@@ -288,8 +376,10 @@
 
 (defn run-manifest
   "Run MANIFEST (a map) with fixtures under ROOT. `opts`: `:fuel`,
-  `:only` (a set of kase ids). Answers the report."
-  [manifest root {:keys [fuel only manifest-path]}]
+  `:only` (a set of kase ids), `:native` (`{:runtime-dir d :parallel n}`, a
+  measured native runtime; absent, native rows are :skipped saying how to
+  supply one). Answers the report."
+  [manifest root {:keys [fuel only manifest-path native]}]
   (let [cases (cond->> (:cases manifest)
                 (seq only) (filter #(contains? only (:id %))))
         skipped (into (sorted-map)
@@ -297,8 +387,11 @@
                                       [(:id c) why])))
                       cases)
         in-scope (remove #(contains? skipped (:id %)) cases)
+        host (manifest-native/host-backend)
+        native-answers (native-results root manifest in-scope native host)
         results (into (sorted-map)
-                      (map (fn [c] [(:id c) (apply-deferrals c (case-rows root manifest c fuel))]))
+                      (map (fn [c] [(:id c) (apply-deferrals c (case-rows root manifest c fuel
+                                                                          native host native-answers))]))
                       in-scope)
         ran (count (filter ran? (vals results)))
         failures (required-failures results)]
@@ -306,7 +399,10 @@
      :runner runner-name
      :manifest manifest-path
      :conformance-root root
-     :driven-backends (vec (sort driven-backends))
+     :driven-backends (vec (sort (cond-> driven-backends (and native host) (conj host))))
+     :native (if (and native host)
+               {:backend host :runtime-dir (:runtime-dir native)}
+               {:backend host :skipped (if host no-runtime-reason "this host has no native backend")})
      :ok (boolean (and (pos? ran) (empty? failures)))
      :totals {:cases (count cases)
               :in-scope (count in-scope)
@@ -327,10 +423,14 @@
                       " cases=" cases " in-scope=" in-scope " ran=" ran
                       " skipped-cases=" skipped-cases
                       " required-failures=" required-failures)]
-                (for [[backend counts] by-backend]
-                  (str "  " (name backend) ": "
-                       (str/join " " (for [s [:pass :fail :refused :skipped]]
-                                       (str (name s) "=" (get counts s 0)))))))
+                (concat
+                 (for [[backend counts] by-backend]
+                   (str "  " (name backend) ": "
+                        (str/join " " (for [s [:pass :fail :refused :skipped]]
+                                        (str (name s) "=" (get counts s 0))))))
+                 (let [{:keys [backend runtime-dir skipped]} (:native report)]
+                   [(str "  native: " (if backend (name backend) "none")
+                         (if runtime-dir (str " runtime=" runtime-dir) (str " skipped: " skipped)))])))
      :err (vec (concat
                 (for [[id rows] (:results report)
                       [backend r] (sort-by key rows)

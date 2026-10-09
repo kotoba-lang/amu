@@ -13,6 +13,12 @@
   cases run -- must fail rather than pass vacuously (ADR-2610092330
   decision 7).
 
+  Native (C1): without KOTOBA_NATIVE_RUNTIME_DIR both native backends must be
+  :skipped with a reason saying how to supply a runtime; with it (a directory
+  holding key.edn, pinned-trust.edn, runtime.edn and kotoba-loader -- what
+  `--native-prepare <dir>` writes), the host's native backend must pass the
+  passing case and fail the wrong one with the real value, 42.
+
   Counts asserted here are about this fixture, which this file owns. Against
   kotoba-lang's real manifest only FLOORS are meaningful; set
   KOTOBA_LANG_CONFORMANCE_MANIFEST to run that check too.
@@ -43,6 +49,9 @@
   (println (str (if ok? "PASS " "FAIL ") label (when-not ok? (str " -- " detail)))))
 
 (def ^:private executed [:kir :js-kotoba-v1 :wasm32-kotoba-v1])
+(def ^:private native-backends [:native-aarch64 :native-x86_64])
+(def ^:private host-native
+  (case (.-arch js/process) "arm64" :native-aarch64 "x64" :native-x86_64 nil))
 
 (try
   (let [r (amu "test" "--manifest" fixture "--json")
@@ -61,8 +70,10 @@
              "the failing rows carry the value each backend answered (42)" (pr-str (:adds-wrong-expect results)))
     (report! (= :pass (get-in results [:unbound-is-refused :compiler-admit :status]))
              "the :expect-error case passes on :compiler-admit" (pr-str (:unbound-is-refused results)))
-    (report! (= :skipped (get-in results [:adds-passes :native-aarch64 :status]))
-             "an optional native backend is :skipped with a reason (C1)" (pr-str (:adds-passes results)))
+    (report! (and (every? #(= :skipped (get-in results [:adds-passes % :status])) native-backends)
+                  (.includes (str (get-in results [:adds-passes host-native :reason])) "--native-runtime"))
+             "without a runtime, native is :skipped and the host's row says how to supply one (C1)"
+             (pr-str (:adds-passes results)))
     (report! (and (contains? (:skipped-cases report) :host-only)
                   (not (contains? results :host-only)))
              "the host-compat case is skipped by name and not run" (pr-str (:skipped-cases report)))
@@ -93,6 +104,35 @@
     (let [r (amu "test" "--manifest" only-host)]
       (report! (= 1 (.-status r)) "a manifest where zero cases run exits 1" (str (.-stdout r) (.-stderr r)))
       (report! (.includes (str (.-stderr r)) "no case ran") "and says no case ran" (str (.-stderr r)))))
+;; A runtime directory that lacks a file is a usage refusal, not a row.
+  (let [r (amu "test" "--manifest" fixture "--case" "adds-passes" "--native-runtime" directory)]
+    (report! (= 64 (.-status r)) "an incomplete --native-runtime directory exits 64"
+             (str "exit " (.-status r) " " (.-stderr r)))
+    (report! (.includes (str (.-stderr r)) "holds no key.edn") "and names the missing file" (str (.-stderr r))))
+  ;; Native (root ADR-2610092330 C1), when a measured runtime directory is
+  ;; named: key.edn, pinned-trust.edn, runtime.edn, kotoba-loader -- what
+  ;; `amu test --manifest M --native-prepare <dir>` writes.
+  (when-let [runtime (aget js/process.env "KOTOBA_NATIVE_RUNTIME_DIR")]
+    (let [r (amu "test" "--manifest" fixture "--case" "adds-passes" "--case" "adds-wrong-expect"
+                 "--native-runtime" runtime "--json")
+          report (read-report r)
+          results (:results report)
+          other (first (remove #{host-native} native-backends))]
+      (report! (some? host-native) "this host has a native backend" (.-arch js/process))
+      (report! (= :pass (get-in results [:adds-passes host-native :status]))
+               (str "native: the passing case passes on " (some-> host-native name))
+               (pr-str (:adds-passes results)))
+      (report! (and (= :fail (get-in results [:adds-wrong-expect host-native :status]))
+                    (= "42" (str (get-in results [:adds-wrong-expect host-native :value]))))
+               "native: the wrong expectation is :fail with the value the kexe answered (42)"
+               (pr-str (:adds-wrong-expect results)))
+      (report! (false? (get-in results [:adds-wrong-expect host-native :required?]))
+               "native: an optional backend's failure is not a required failure"
+               (pr-str (:required-failures report)))
+      (report! (and (= :skipped (get-in results [:adds-passes other :status]))
+                    (.includes (str (get-in results [:adds-passes other :reason])) "own ISA"))
+               "native: the other ISA's backend is :skipped by name"
+               (pr-str (:adds-passes results)))))
   ;; kotoba-lang's real manifest, when a checkout is named. Floors only.
   (when-let [real (aget js/process.env "KOTOBA_LANG_CONFORMANCE_MANIFEST")]
     (let [r (amu "test" "--manifest" real "--json")
