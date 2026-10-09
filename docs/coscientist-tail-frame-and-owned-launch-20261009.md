@@ -1,0 +1,31 @@
+# フレーム再利用の10辺合成と、実行前のプロセス帰属確認
+
+最終条件は元Embench19本を変えず、Kotoba／Amu selfhostでC以上の実行性能を同じquiet hostで示すことである。今回の成果は生成コードと検証経路の前進であり、性能条件の達成ではない。C2はOFF、解析省略0、キー除外なしを維持する。
+
+汎用の同サイズ末尾フレーム再利用候補は、FN走査・作業量・LABEL容量を制限し、変更のたびに現在のFIX target閉包を再確認する。`gn-put`は可変`vector-assoc!`であり、不変グラフと仮定しない。元のCODE／FIX数、公開prologue／export、frameサイズを維持し、対応した末尾辺だけを同一frameのprivate引数入口へ分岐させる。入力源の名前を選択条件にはしない。
+
+[固定4回のbuild／extractと独立保存監査](evidence/coscientist-masked32-clone-20261008/homogeneous-tail-frame-compose10-native4-actual-v1/snapshot.json)が通った。current7618が新しい候補コンパイラを生成し、その候補が変更していない元nsichneuを生成した。候補nativeは874,264 B、SHA256 `552939e18c86c6e7f9f8dcc5aba961ab15bc91330132b5821993c911065133f2`、sole `main@0/0`である。元nsichneu nativeは37,520 B、SHA256 `c6d22d3f547832430d7263892e8ddd9697f04317ddc16f76edddde2baf548af2`、`batch@36440/1`である。
+
+元nsichneuは、事前登録した10辺・40ワードだけが変更され、その他の全バイト、全export、header、長さは一致した。4子プロセスはclosed0、74有限サンプル、4件すべて既存の厳密サンプリング方針を通った。これはhard peakの証明ではない。独立保存監査の担当は診断driverの作者であり、変換規則の作者・実行担当とは別である。driver自体のSOURCEレビューは別の2名が担当した。
+
+[元5入力の新しいruntime10](evidence/coscientist-masked32-clone-20261008/homogeneous-tail-frame-compose10-runtime10-v1/snapshot.json)も一度だけ実行し、独立保存監査を通った。入力0／1／2／17／32のOFF／ONは結果0／1／1／1／1、fuel1／272／527／4352／8177、17 arenaの全値で一致した。10子プロセスはclosed0、25有限サンプル、10件すべて既存の厳密サンプリング方針を通った。旧1辺候補の成功を10辺候補へ移したわけではない。複数辺の一般的なprivate ABI／alias／trap、全19本、候補自身の固定点、quiet hostのC比較はまだ成立していない。10辺は試験の作業上限であり、性能上の最適値と決めていない。
+
+実行前にGO schema欠落という誤指摘が出たが、正確な凍結バイトには必須項目が含まれていた。rootと独立レビューで19項目・19種類・該当項目1回を照合し、正しいV1でのみ実行した。誤指摘に基づく未使用V2は該当項目が重複しており、未実行のまま訂正記録と保存した。SOURCE誤読と候補コードの失敗を分ける。
+
+[同じ汎用判定による全走査の有限census](evidence/coscientist-masked32-clone-20261008/homogeneous-tail-frame-full-scan-frontier-v1/snapshot.json)では、267 FN中の266 ownerを走査し、逐次変更するFIX閉包を各変更の前後で検査した。適用可能辺は123、10辺より113多く、LABELは587から710へ増える。上限131,072以内であり、次の汎用作業上限511は既存FN容量512から導く。123という発見数をソースの選択条件にはしない。モデルでは492ワードの変更を予測するが、全走査版の実native生成・実行はまだない。
+
+同じABI前提の下では、実行された各辺につき公開prologueの5命令と48 Bのframe成長を省ける。末尾restoreの3命令はLDRと2 NOPへ置換するため、その3命令が消えたとは数えない。123辺が各1回走る仮定なら615命令・5,904 B、10辺なら50命令・480 Bだが、動的実行回数や実時間ではない。fuelのdebitは0件も省略しない。全走査候補を実装・生成し、元入力の意味保存と自己再ビルドを検証した後、Cと同じquiet hostで実費用を測る。
+
+G4の190回比較を止めた別の課題については、[実行前帰属確認のSOURCE設計](evidence/coscientist-masked32-clone-20261008/runtime-owned-child-handshake-design-v1/source/README.md)を保存した。現在のC loaderはfork後に子をすぐ走らせ、親がwaitpidで回収する。20msサンプリングの間に子の生存期間が収まり、最初の帰属問い合わせがESRCHになることが可能である。保存ログは子のbirthを一度も受理しておらず、旧拒否は維持する。具体的にどのwaitと競合したかを動的に証明したわけではない。
+
+新しい診断経路はleaderとguestを保持し、専用channelで現在GOに結び付いたPID／birthを確認して耐久化してからguestを解放する。未知PIDは引き続き拒否し、既知birthの終了ギャップはfootprintをnullのまま、正確なchild waitの証跡と分ける。元のguest argv・17環境値・fuel・arena・capabilityは維持し、追加host descriptorは別の予算に明記する。待機費用は将来のguest測定区間の外に置く。
+
+V1は18有限対照を通した設計段階で、channel I/O、割込み、FD cleanupの完全実装はない。rootレビューはstageとPIDの不整合をモデルが受理できる欠落も記録した。V2で型付きエラー由来・stage／PID／queryの照合と部分I/O／重複ACK／終了時cleanupを実装・検証する。宣言だけのAPIを稼働経路として数えず、実機でのloader lineage、sandbox、birth取得、channel所有と終了確認を通すまで、新しい全19本比較の資格へ用いない。
+
+V2のSOURCE実装には、終了したchildを帰属確認後すぐ回収しない段階も加える。現在のDarwin SDKは`waitid`と「processをwaitableのまま残す」`WNOWAIT`を宣言している。loaderが終了を観測して保持し、監視側が同じlockの下でgroup照会・signal権限を退役してからREAP_ACKを送り、その後だけ元のwaitpidで回収する設計である。これにより照会中の数値PID再利用を防ぐ条件を置く。SDK宣言は実機挙動の証拠ではなく、zombie、WNOWAIT、割込み、deadlineとcleanupの実機資格確認は未完了である。元30秒の絶対期限を後段のsuperviseで更新しない条件も検査する。
+
+ComputeCID／ResultCID案は、[再適用契約](coscientist-compute-replay-checkpoint-20261009.md)とこの候補を接続する。全走査の費用を下げる最初の候補は、FNのコード区間終端を各FIXごとに読み直す処理を、同じFNの検査開始時に一度だけ計算して渡すことである。共有キャッシュを先に有効化するのではなく、その計算が読むFN表・FN数・CODE数を列挙し、同じ工程のwriterがCODE／FIX／LABELだけを更新することと、各領域が重ならないことを検査する。可変M全体を不変と仮定してはいけない。FIX target閉包は変化するため、各変更時に引き続き検査する。
+
+この工程内の不変条件の検証は、後のCompute要求のread-setを具体化する証拠になる。永続化する場合は、解析実装・規則版・対象・その読取snapshot・ABIと資源契約をComputeCIDへ封じ、区間終端というAnswerをResultCIDへ封じる。ResultCID一致だけでFIX／LABEL検査や現在の作業量確認を省かない。辺のbound更新を持つshape解析では、Answerだけでなく順序付き寄与・support／poison・診断を保存し、現在の集約器への置換と再集約をTransitionで検査する。途中拒否・予算切れは成功bindingの対象から外す。
+
+比較は元の再計算版と候補について、適用辺・全変更バイト・拒否・容量条件を一致させ、読取箇所だけを一つずつ変更した対照で失効を確認する。その後のnative生成と自己再ビルドを通してから、解析時間を計測する。観測可能なfuelはヒット時も契約に従って消費し、物理的な探索費用と分ける。生成コードのEmbench実行時間は別の比較であり、この工程内の省略をIPLD／CIDの高速化と呼ばない。現時点では新しい共有解析再利用は未実装である。
