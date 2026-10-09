@@ -1,0 +1,36 @@
+{
+  "status": "SOURCE_ONLY_READ_ONLY_SELECTED_ZEBULUN_IDENTITY_V2",
+  "argv": [
+    "/usr/bin/ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "ConnectionAttempts=1",
+    "zebulun@100.66.28.79",
+    "exec /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME=/Users/zebulun LANG=C LC_ALL=C TZ=UTC /Library/Developer/CommandLineTools/usr/bin/python3 -I -c '\"\"\"Read-only selected host identity; no compiler/guest execution or mutations.\"\"\"\nfrom pathlib import Path\nimport os,sys,json,hashlib,platform,signal,stat\nsignal.alarm(20)\nMAX_FILE=512*1024*1024\nCHUNK=1024*1024\nsupplied={'\"'\"'PATH'\"'\"':'\"'\"'/usr/bin:/bin:/usr/sbin:/sbin'\"'\"','\"'\"'HOME'\"'\"':'\"'\"'/Users/zebulun'\"'\"','\"'\"'LANG'\"'\"':'\"'\"'C'\"'\"','\"'\"'LC_ALL'\"'\"':'\"'\"'C'\"'\"','\"'\"'TZ'\"'\"':'\"'\"'UTC'\"'\"'}\ndef snapshot(s):\n return {k:getattr(s,k) for k in ('\"'\"'st_dev'\"'\"','\"'\"'st_ino'\"'\"','\"'\"'st_mode'\"'\"','\"'\"'st_uid'\"'\"','\"'\"'st_gid'\"'\"','\"'\"'st_size'\"'\"','\"'\"'st_mtime_ns'\"'\"','\"'\"'st_ctime_ns'\"'\"')}\ndef pin(alias):\n alias=Path(alias);p=alias.resolve(strict=True);before=p.lstat()\n assert stat.S_ISREG(before.st_mode) and 0<=before.st_size<=MAX_FILE\n h=hashlib.sha256();total=0;reads=0\n with p.open('\"'\"'rb'\"'\"')as f:\n  assert snapshot(os.fstat(f.fileno()))==snapshot(before)\n  while True:\n   b=f.read(CHUNK);reads+=1;assert reads<=513\n   if not b:break\n   total+=len(b);assert total<=before.st_size<=MAX_FILE;h.update(b)\n  assert snapshot(os.fstat(f.fileno()))==snapshot(before)\n after=p.lstat();assert snapshot(before)==snapshot(after) and total==before.st_size and alias.resolve(strict=True)==p\n return {'\"'\"'pin'\"'\"':{'\"'\"'path'\"'\"':str(p),'\"'\"'bytes'\"'\"':total,'\"'\"'sha256'\"'\"':h.hexdigest()},'\"'\"'alias'\"'\"':str(alias),'\"'\"'before'\"'\"':snapshot(before),'\"'\"'after'\"'\"':snapshot(after),'\"'\"'streamReads'\"'\"':reads,'\"'\"'maximumFileBytes'\"'\"':MAX_FILE}\nbase=Path('\"'\"'/Library/Developer/CommandLineTools'\"'\"');sdkAlias=base/'\"'\"'SDKs/MacOSX.sdk'\"'\"';sdk=sdkAlias.resolve(strict=True);resource=(base/'\"'\"'usr/lib/clang/17'\"'\"').resolve(strict=True)\nassert platform.system()=='\"'\"'Darwin'\"'\"' and platform.machine()=='\"'\"'arm64'\"'\"' and resource.is_dir() and sdk.is_dir()\ndirs={str(p):snapshot(p.stat())for p in (sdk,resource)}\nroles={'\"'\"'runtime'\"'\"':pin(sys.executable),'\"'\"'compiler'\"'\"':pin(base/'\"'\"'usr/bin/clang'\"'\"'),'\"'\"'linker'\"'\"':pin(base/'\"'\"'usr/bin/ld'\"'\"'),'\"'\"'libSystemTBD'\"'\"':pin(sdk/'\"'\"'usr/lib/libSystem.tbd'\"'\"')}\nassert all(snapshot(Path(p).stat())==s for p,s in dirs.items())\nenv=dict(os.environ)\nresult={'\"'\"'status'\"'\"':'\"'\"'READ_ONLY_SELECTED_ZEBULUN_HOST_IDENTITY_V2'\"'\"','\"'\"'host'\"'\"':'\"'\"'zebulun@100.66.28.79'\"'\"','\"'\"'runtime'\"'\"':roles['\"'\"'runtime'\"'\"']['\"'\"'pin'\"'\"'],'\"'\"'environment'\"'\"':env,'\"'\"'environmentWitness'\"'\"':{'\"'\"'suppliedKeyNames'\"'\"':sorted(supplied),'\"'\"'missingKeyNames'\"'\"':sorted(set(supplied)-set(env)),'\"'\"'changedExpectedKeyNames'\"'\"':sorted(k for k in supplied if env.get(k)!=supplied[k]),'\"'\"'runtimeExtraKeyNames'\"'\"':sorted(set(env)-set(supplied)),'\"'\"'CFGeneratedKeyNames'\"'\"':sorted(k for k in env if k.startswith('\"'\"'__CF'\"'\"'))},'\"'\"'hostBinding'\"'\"':{'\"'\"'machine'\"'\"':'\"'\"'arm64'\"'\"','\"'\"'compiler'\"'\"':roles['\"'\"'compiler'\"'\"']['\"'\"'pin'\"'\"'],'\"'\"'interpreter'\"'\"':roles['\"'\"'runtime'\"'\"']['\"'\"'pin'\"'\"'],'\"'\"'linker'\"'\"':roles['\"'\"'linker'\"'\"']['\"'\"'pin'\"'\"'],'\"'\"'sdkAlias'\"'\"':str(sdkAlias),'\"'\"'sdk'\"'\"':str(sdk),'\"'\"'resourceDirectory'\"'\"':str(resource),'\"'\"'libraryPins'\"'\"':[roles['\"'\"'libSystemTBD'\"'\"']['\"'\"'pin'\"'\"']]},'\"'\"'stableFileSnapshots'\"'\"':roles,'\"'\"'directorySnapshots'\"'\"':dirs,'\"'\"'maximumPinnedFiles'\"'\"':4,'\"'\"'maximumFileBytes'\"'\"':MAX_FILE,'\"'\"'maximumTotalBytes'\"'\"':4*MAX_FILE,'\"'\"'nativeCompilerGuestCalls'\"'\"':0,'\"'\"'readOnly'\"'\"':True}\nb=(json.dumps(result,sort_keys=True)+'\"'\"'\\n'\"'\"').encode();assert len(b)<=65536\nsys.stdout.buffer.write(b);sys.stdout.flush()\n'"
+  ],
+  "sourceSHA256": "51559ad552c0bb0f8f38fe0291908bb34d05307225920438b772b01f57e3fd5b",
+  "SSHCallsMaximum": 1,
+  "SCPCalls": 0,
+  "nativeCompilerGuestCalls": 0,
+  "remoteAlarmSeconds": 20,
+  "maximumFileBytes": 536870912,
+  "maximumFiles": 4,
+  "maximumTotalFileReadBytes": 2147483648,
+  "maximumReadBufferBytes": 1048576,
+  "maximumOutputBytes": 65536,
+  "outputRootFreshRequired": true,
+  "sameSuppliedEnvironmentAsFailedV1": {
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "HOME": "/Users/zebulun",
+    "LANG": "C",
+    "LC_ALL": "C",
+    "TZ": "UTC"
+  },
+  "beforeAfterStatSnapshots": true,
+  "previousFailurePreserved": "/Users/junkawasaki/github/workspaces/codex/compute-address-continuation-20261008-root/selected-host-identity.stderr",
+  "freshQueryNotRetryOfOldOutput": true,
+  "quietBuildTimingQualification": false
+}

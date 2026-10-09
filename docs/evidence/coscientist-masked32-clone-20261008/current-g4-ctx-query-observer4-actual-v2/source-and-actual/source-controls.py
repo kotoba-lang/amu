@@ -1,0 +1,51 @@
+"""Pure SOURCE/saved text controls. No live threads, FDs, APIs or processes."""
+from pathlib import Path
+import ast,json,copy,hashlib,itertools,importlib.util
+D=Path(__file__).parent
+
+def module(n):
+ s=importlib.util.spec_from_file_location(n,D/(n+'.py'));m=importlib.util.module_from_spec(s);s.loader.exec_module(m);return m
+parser=module('compiler_output');decoder=module('decode_protocol')
+def refuse(f):
+ try:f()
+ except (AssertionError,ValueError,UnicodeError,KeyError,IndexError):return
+ raise AssertionError('negative unexpectedly admitted')
+pr=json.loads((D/'preregistration.json').read_bytes());c=pr['cases'][2]
+ok=('{:ok true, :target :aarch64-macos, :output '+json.dumps(c['outputPath'])+', :bytes 42}\n').encode()
+prefix=b'QINIT 147552 147560 147560 10 100\nQSTOP 0 0 0\nQCLEAN 0 0 0 0 0 0 0 0\n'
+assert parser.parse_output(prefix+ok,c)['observerSummary']['totalTopQueries']==0
+negatives=[ok,prefix+ok+b'x',prefix.replace(b'QCLEAN 0',b'QCLEAN 1')+ok,prefix.replace(b'147560 147560',b'147559 147560')+ok,prefix.replace(b'QSTOP 0 0 0',b'QSTOP 1 1 1')+ok,prefix.replace(b'QSTOP 0',b'QSTOP +0')+ok,prefix+prefix+ok,b'unknown\n'+prefix+ok,b'x'*8388609,prefix+ok.replace(b':bytes 42',b':bytes 0')]
+for raw in negatives:refuse(lambda raw=raw:parser.parse_output(raw,c))
+# Every new FN/SIR diagnostic read guard is tested independently; original
+# query byte preservation is covered by reverseCurrentCandidateExact controls.
+h=(D/'helpers.kotoba').read_text();assert 'valid-f (and (> f 0) (< f (vector-at m MM-FN-N)))'in h
+assert 'p (if valid-f (gn-fnf m f FF-SIR) -1)'in h
+assert 'valid-p (and (> p 0) (< p (vector-at m MM-SIR-N)))'in h
+assert 'valid (and (> j 0) (< j (vector-at m MM-SIR-N)) (> work 0))'in h
+boundaries=0
+for f,p,j,work in itertools.product([-1,0,1,9,10,11],[-1,0,1,99,100,101],[-1,0,1,99,100,101],[-1,0,1,512]):
+ reads=[]
+ validf=0<f<10
+ pp=p if validf else -1
+ if validf:reads.append(('FN',f))
+ if 0<pp<100:reads.append(('SIR',pp))
+ if 0<j<100 and work>0:reads.append(('SIR',j))
+ assert all(0<k<(10 if kind=='FN'else 100)for kind,k in reads);boundaries+=1
+# Actual launch wrapper fixed argv predicate and inherited target/env helpers.
+w=module('launch-wrapper');assert all(w.allowed(q['nativeArgv'],pr)for q in pr['cases'])
+for i in range(4):
+ a=copy.deepcopy(pr['cases'][i]['nativeArgv']);a[-1]+='-wrong';assert not w.allowed(a,pr)
+assert w.environment_admission(pr['environment'],pr['environment'])['nativeExecEnvironmentExact']
+extra=dict(pr['environment'],__CF_USER_TEXT_ENCODING='uninspected');assert w.environment_admission(pr['environment'],extra)['runtimeExtraKeyNames']==['__CF_USER_TEXT_ENCODING']
+for field,value in [('KEXE_FUEL','0'),('UNKNOWN','x')]:
+ q=dict(pr['environment']);q[field]=value;refuse(lambda q=q:w.environment_admission(pr['environment'],q))
+q=dict(pr['environment']);q.pop('KEXE_COMMAND');refuse(lambda:w.environment_admission(pr['environment'],q))
+assert w.target((1800,1801),1800,1801)==(1800,1801)
+refuse(lambda:w.target((1799,1801),1800,1801));refuse(lambda:w.target((1800,1800),1800,1801))
+# Parse all Python; operational calls are deferred to explicit main/call only.
+for p in D.glob('*.py'):ast.parse(p.read_text(),filename=str(p))
+s=(D/'run.py').read_text();assert "need(not O.exists(),'fresh singleattempt')"in s and s.index("save(O/'terminal.json'")<s.index("guard();terminal=load")<s.index("save(O/'report.json'")
+assert 'validate_producer'in s and 'validate_producer'in(D/'launch-wrapper.py').read_text()
+assert "'observerSummary'in r['report']"in s and "out.read_bytes()==ordinary"in s
+result={'status':'PASS_PURE_SOURCE_OBSERVER4_CONTROLS_ONLY','parserPositiveZeroQueries':1,'parserRefusals':len(negatives),'diagnosticReadBoundaryModels':boundaries,'exactArgvPositives':4,'argvRefusals':4,'environmentPositives':2,'environmentRefusals':3,'inheritedResourceRefusals':2,'validLastOrderingAST':True,'actualOperations':0,'noNativeQualification':True}
+(D/'source-controls.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result))
