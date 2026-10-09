@@ -160,3 +160,144 @@ Build: seed r6m `8d3338e1`, the seed17 front0 objects, osaho 23c329e `kir/interp
    abort during re-derivation propagates instead of "runtime KIR cannot be safely lowered".
 7. **Not on this route:** `--backend seed` (`:emitter`), the stage / verdict / compile caches, packaging (`:binary`),
    and the `.publication.edn` output set.
+
+## Addendum: nbb.cli and nbb.aarch64-cli compile from source (2026-10-09, compile-cli)
+
+The spike is gone from the measured path: the product entries themselves now have a Kotoba reading and the seed builds
+the entry from source.
+
+### Structure
+
+- `src/kotoba/compiler/nbb/cli.cljk`: the host reading is the same program (every top-level form read under `:cljs` and
+  under `:clj` is equal before and after, measured with edamame; the host forms now sit in the `:default` branch
+  `(do ...)` of one `#?(:kotoba <run!> :default (do ...))`, whose `:kotoba` branch is the twin's `run!` (its helpers are
+  `#?(:kotoba ...)` forms before it), the requires in one `#?@(:kotoba [...] :default [...])`, the export list in one
+  `#?(:kotoba [run!] :default [...])`). The Kotoba reading sees only the twin: `run!` over `[:list :string]`,
+  answering the stdout text. `compile <source> --target aarch64-macos [--output] [--policy] [--fuel] [--source-path ...]`
+  is `compile-uncached!` over `kotoba.compiler.native-artifact/compile-native` plus provenance, and writes the `.kexe`,
+  `.provenance.edn` and `.publication.edn` (the Kotoba `output-set/serialize` over the bytes written) in one
+  `nbb-io/write-set!`. `--source-path` links through the project twins as check-driver's Kotoba reading does.
+- Refused by name (usage, 64, unless noted): every command but `compile` (`extract-native` included); every target but
+  aarch64-macos (an unknown name and the x86-64 names with the host entry's own messages); `--artifact object|image`
+  (packaging; an unknown kind is the host's `:artifact-target`, 70); `--backend`; `--module-lock`; `--package-lock`;
+  `worker` (in aarch64-cli's `main`). There is no compile / stage / verdict cache on this route.
+- `src/kotoba/compiler/nbb/aarch64_cli.cljk`: a Kotoba `main` in check-cli's style (`worker` refused, else cli's `run!`,
+  try/catch), as the `:kotoba` branch of `#?(:kotoba <main> :default (do ...host entry...))`; the host entry is the same
+  program (same check). Neither file adds a `#?(:kotoba nil ...)` form.
+- `src/kotoba/compiler/nbb/cli_support.cljk`: three Kotoba-only exports for an entry's error contract: `error-phase`
+  (`:phase` of the caught refusal's ex-info data, `:internal` without one), `exit-code` (the host table entry for entry)
+  and `refusal-text` (a reduced `:kotoba.cli-error/v1` report: format, ok, error, message).
+- Size: the linked entry is 8,275,577 bytes (8,275,177 before the nbb.io path fix); the seed's `extract-native` reads the image as one bytes value, at most
+  8 MiB (`KEXE_BYTES_VALUE_LIMIT`, ADR 0362), so the headroom is 113,031 bytes. A first build that reached the project
+  twins through `check-driver` (whose Kotoba reading also requires package-lock and compile-cache) linked
+  8,848,289 bytes and could not be extracted; cli.cljk calls the twins directly instead.
+
+### Build (seed r6m `8d3338e1`, no spike)
+
+The seed17 farm (`build/seed17/inputs/scan`) with osaho 464cb04's `kotoba/kir/interp.cljk` and `kotoba/kir/target.cljk`,
+this tree's `bounded_edn`, `cli_support`, `refactor/rules`, `cli`, `aarch64_cli`, `native_admission`, `native_artifact`;
+the objects of every module that transitively requires a changed one deleted and recompiled dependency-first
+(`scan.zsh` with the AGENT-ENV compile budgets; workspace `workspaces/claude/compile-twin-cli`).
+
+| module | before (this tree's host-only cli.cljk) | after |
+|---|---|---|
+| `kotoba.compiler.nbb.cli` | refused: `E6004 qualified call is not an admitted exported import: compile-cache/resolve-stage!` | OK, 200,361 B object |
+| `kotoba.compiler.nbb.aarch64-cli` | BLOCKED (requires nbb.cli) | OK, 252,824 B object (with `--entry`) |
+| `kotoba.compiler.native-admission` / `native-artifact` (not in the 138) | - | OK |
+
+Selfbuild picture (the 138 modules of `inputs/scan/order.txt`): **122 / 138** compile (was 120). The 16 left are all
+`kotoba.compiler.refactor.*`: `cst` (E2003 top-level `declare`), `edit`, `diff`, `verify` (E1005 `#` reader syntax),
+`prelude` (E6009 exports nothing), and 11 BLOCKED behind them.
+
+The entry links (`link`), extracts (`extract-native --symbol main`) and runs with the native image's budgets
+(`kexe-loader-1mi`, `KEXE_KGRAPH=1048576`).
+
+### Differential (full corpus, 372 programs)
+
+`seed/tests/compile-cli/run.sh <objects> <work> [list]` builds the entry as above and runs every program of the
+compile-twin corpus through `bin/amu compile --target aarch64-macos` (BOOTSTRAP-REFERENCE, `KOTOBA_VERDICT_CACHE=off`)
+and through the guest with the same command line: exit code, then for both-accept `compare_artifact.py` (kexe and
+provenance: seal, then key by key) and `compare_cli.py` (the stdout answer as data with the output directory
+normalised, and the `.publication.edn` markers).
+
+| class | n | detail |
+|---|---:|---|
+| BOTH-ACCEPT | 291 | seal SAME 291, artifact keys differing 0, provenance SAME 291 (0 keys), stdout answer SAME 291 (0 keys), publication SAME-SHAPE 289 + SIZE-DIFF 2 |
+| BOTH-REFUSE (same exit code) | 62 | 65: 24 `:subset`, 4 `:admission`, 3 `:verify` (same messages as the host verifier); 70: 29 `:target`, 1 `:effect-ceiling`, 1 emitter (host phase `:kir-to-gmir`, guest `:ir`) |
+| BOTH-REFUSE, exit code differs | 1 | `examples/w1-effect-named`: host 65 `:admission`; guest 70 `:target`: the two frontends type `clock/now` differently (amu's kotoba-sema lock vs the guest's snapshot); see the diagnosis below |
+| HOST-ONLY | 18 | 14 verifier strictness (owner decision: kept): 7 `:abort` "unsupported effect", 5 "runtime KIR function shape rejected", 2 "runtime KIR operation rejected"; 3 `kotoba.kir/oracle-unavailable` (`recursive-tree`, `ex_info_round_trip`, `typed-closure-parameters`); 1 `lazy-sequence` (vector table exhausted, exit 120) |
+| GUEST-ONLY | 0 | |
+
+The two SIZE-DIFF markers (`recursive-generic`, `recursive-list`): the host prints `:schemas` with the namespaced-map
+syntax (`#:app{:cell ...}`), the guest with full keys; the data and the seal are equal. Every publication marker on both
+sides describes its own files (sha256 and size of the bytes written, marker digest over its payload).
+
+### Refusals (`seed/tests/compile-cli/refusals.sh`)
+
+26 cases against the host ENTRY (`aarch64_cli.cljk` under nbb with the locked classpath, without bin/amu's routing).
+The guest writes no artifact in any case and answers every one with a report. Equal exit code in 16: no command,
+`check`, missing / unknown / two x86-64 targets, `--artifact bogus` (70), `--backend seed`, `--fuel abc`, missing
+source, wrong extension, and the five path cases (absent source, a directory, an unreadable file, an absent policy:
+65 `:decode` "input could not be read"; an absent output directory: 74 `:output`). Different, by design: the guest
+refuses by name (64) what the host entry serves or fails on otherwise: `aarch64`, `aarch64-linux` (host 0),
+`aarch64-linux-static`, `aarch64-aiueos-kernel-v1` (host 70: packager not loaded), `--artifact object` (host 0),
+`worker` (host 0 on empty stdin), `extract-native` of an absent file (host 65), `--module-lock` (host 65) and
+`--package-lock` (host 70) with absent locks; `--fuel 5000` is native-artifact's metered-compile difference (65, host 0).
+
+**Unreadable paths (fixed).** nbb.io's Kotoba `read-text-file` READ the path through wire 35, and the loader's READ
+raises SIGILL when its `O_RDONLY | O_NOFOLLOW` open fails or the read fails: an absent source, a directory, an
+unreadable file and an absent `--policy` all ended the guest with exit 120 and no report (host: 65 `:decode` "input
+could not be read"). The Kotoba reading now refuses them first, from the STAT answer (STAT opens the path the same way
+and answers "" when that open fails; its fourth field is 1 for a directory), with the host's phase and message. The
+host reading is unchanged (same forms under `:cljs` and `:clj`). Before -> after (guest exit): absent 120 -> 65,
+directory 120 -> 65, unreadable 120 -> 65, absent policy 120 -> 65; absent output directory 74 -> 74 (already the host's,
+from `write-set!`). Still a trap: an invalid UTF-8 file (READ traps; the host answers "input is not valid UTF-8") and a
+path outside the loader's scope.
+
+### Diagnosis: `examples/w1-effect-named` (host 65 `:admission`, guest 70 `:target`)
+
+Not the gate and not the phase mapping: the two FRONTENDS build different HIR. `(defn read-clock [seed] (clock/now
+seed))` is `(typed-cap-call 7 :i64 :i64 seed)` with result `:i64` on the host and `(typed-cap-call 7 :i64 :string seed)`
+with result `:string` on the guest (HIR of both dumped, `workspaces/claude/compile-twin-cli/dbg/w1.{host,guest}.edn`).
+Each gate agrees with the other on each HIR: the host's `only-native-word-typed-features?` answers true on the host HIR
+and false on the guest HIR; `kotoba.compiler.native-admission` answers true on the host HIR and false on the guest HIR
+(and `seed/tests/native-admission/run.sh` on this program: 26 cases, 26 agree). So the guest refuses at the native gate
+(`:target`, 70) and the host passes it and refuses at the capability admission (`:admission`, 65).
+
+Cause: kotoba-sema a2fc0b4 (2026-09-30, "text-result host-command ops (env/read, clock/now, cli/args, io/*, sys/cwd,
+process/spawn, entropy/draw) need no result context") gives `clock/now` its catalog result type `:string` by name. It is
+in the guest's frontend (the seed17 snapshot, kotoba-sema c2e1343, branch agent/walls-sema) and not in the host's lock
+(kotoba-sema 97347531 on main), which infers the result from context (`:i64` here). The guest's typing is the catalog's
+(`:string -> :string`, the answer is decimal text). Closing it means one frontend for both routes: bump amu's
+kotoba-sema lock to a commit containing a2fc0b4, or build the guest from the locked sema. That is a lock decision for
+the owner; nothing was changed here. Either way both sides then build one HIR and agree (the native gate, 70, with
+a2fc0b4; the admission, 65, without).
+
+### Named differences of the twin (also in cli.cljk's header)
+
+1. `:verdict-cache` is `{:native-verify :disabled}` (no store on this route): what the host answers with
+   `KOTOBA_VERDICT_CACHE=off`; with its store on the host answers `:miss` / `:hit`.
+2. Artifact and provenance texts are printed in entry order (the host: hash order, and `#:ns{}` maps), so they are equal
+   as data, not as bytes, and the publication marker carries this route's sha256 / size / digest.
+3. Refusal reports are reduced (no `:diagnostic`, no `:details`, message not refined); the native admission gate's
+   message names no feature; a linked graph's refusal is not attributed to module and line; the frontend's refusal
+   phase is the frontend error's own (`subset`, `read`, ...).
+4. Everything native-artifact names (kexe-fs-forms not called, metered compiles only at 100000, verifier strictness).
+5. `examples/w1-effect-named` exits 70 `:target` here and 65 `:admission` on the host. **Decided (owner, 2026-10-09):
+   kept as a named difference.** The cause is the kotoba-sema lineage, not this twin: the guest's frontend snapshot
+   (c2e1343) carries a2fc0b4 (text-answering host operations typed `:string`), amu's lock (97347531, main) does not,
+   and a2fc0b4 is on agent branches only, not on kotoba-sema main (c2e1343 is 88 commits off main, main 69 commits off
+   it). Reconciling the two sema lines is a separate task; when one HIR is built on both routes, they agree.
+
+### Bootstrap boundary (`scripts/selfhost-wall/bootstrap-boundary.sh`, before -> after)
+
+Every line that differs from the base (c290f734b):
+
+- nbb entries with no `:kotoba` arm: **7 -> 5** (cli.cljk and aarch64_cli.cljk are now `has-:kotoba-arm` in list 2).
+- src files with at least one `:kotoba` arm: 62 -> 64 of 112.
+
+Unchanged: modules with `#?(:kotoba nil ...)` forms or no `:kotoba` arm 50, `#?(:kotoba nil ...)` forms in src 151,
+union of PRODUCT src files 58, launchers 4, unguarded host tokens 10 files. (A first cut with a
+`#?(:kotoba nil :default (do ...))` host region put both files into list 3b, 50 -> 52; the twin is the `:kotoba` branch
+of that conditional instead.) The host modes inside the host branch (caches, worker, x86-64, packaging,
+extract-native, `--backend seed`, locks) are refused by name on the Kotoba route and remain debt.

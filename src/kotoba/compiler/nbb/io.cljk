@@ -75,20 +75,27 @@
     (decimal-text/fields answer))))
 
 #?(:kotoba
-   ;; The host answers a failing read by trapping (the fs/app-data ability has
-   ;; no catchable failure), so the JVM/nbb path's re-labelling of an invalid
-   ;; UTF-8 or unreadable file has nothing to catch here.
+   ;; The host answers a failing READ by trapping (the fs/app-data ability has
+   ;; no catchable failure), so a file the READ cannot open is refused BEFORE
+   ;; it, from the STAT answer: STAT opens the path exactly as READ does
+   ;; (O_RDONLY | O_NOFOLLOW, inside the scope) and answers "" when that open
+   ;; fails (absent, unreadable, a symlink), and its fourth field is 1 for a
+   ;; directory (which READ opens and then cannot read). Both are the host's
+   ;; `:decode` "input could not be read". An invalid UTF-8 file still traps
+   ;; in READ (the host's "input is not valid UTF-8" has nothing to catch).
    (defn- read-text-file-bounded [p :string limit :i64] :string
      (if (= 0 (string-byte-length p))
        (throw (ex-info "input path is required" {:phase :decode}))
        (let [stat (fields (fs/app-data (str p "STAT_SEP")))]
-         (if (and (> (vector-count stat) 1) (> (vector-at stat 1) limit))
+         (if (or (< (vector-count stat) 4) (= 1 (vector-at stat 3)))
+           (throw (ex-info "input could not be read" {:phase :decode :path p}))
+         (if (> (vector-at stat 1) limit)
            (throw (ex-info "input exceeds byte limit" {:phase :decode :path p :limit limit}))
            (let [content (fs/app-data p)]
              ;; The file may have grown between STAT and READ.
              (if (> (text-bytes/utf8-length content) limit)
                (throw (ex-info "input exceeds byte limit" {:phase :decode :path p :limit limit}))
-               content))))))
+               content)))))))
    :default
 (defn- read-text-file-bounded [p limit]
   (when-not (and (string? p) (seq p))

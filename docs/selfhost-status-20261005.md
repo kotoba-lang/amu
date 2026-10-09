@@ -15,13 +15,13 @@ on its own sources, with no host process (rule 11 trace); then a QUIET Embench o
 | part | state | evidence |
 |---|---|---|
 | seed rungs | r0 .. **r6m** (22 records), each its own fixed point, no bridge since r6d; r6m `8d3338e1` 787,232 B, unity 17,890 lines | `seed/rungs/*.record`; r6m: bootstrap r0..r6l == records, gates 14/14 PASS (SEEDLANG) |
-| seed compiles the compiler from source (selfbuild `--no-link`, 138 modules) | **120 / 138** with r6l + kotoba-sema c2e1343 + kotoba-lang agent/wall2-project-twin (FOLD 111, FRONTSRC 113) | WALL2 `9c97473be`; walls left: nbb.cli (E1005 `#(`), aarch64-cli behind it, 12 refactor modules (have twins) |
+| seed compiles the compiler from source (selfbuild `--no-link`, 138 modules) | **122 / 138** on r6m (2026-10-09: nbb.cli and nbb.aarch64-cli now compile from source; was 120 / 138 with r6l + kotoba-sema c2e1343 + kotoba-lang agent/wall2-project-twin, FOLD 111, FRONTSRC 113) | WALL2 `9c97473be`; compile-cli addendum of `docs/selfhost-compile-twin-spike-20261008.md`; walls left: 16 `kotoba.compiler.refactor.*` modules (5 refused, 11 blocked; have twins) |
 | frontend from source | 33 modules / 64,457 lines compiled by the seed, no kir-dump; amu-one-src rebuilds itself byte-identically for 3 generations on r6l | REBUILD `cf201da75`, `scripts/seed/launcher/rebuild-r6l.record` |
 | native `amu` (one Mach-O, C loader + seed-built code, libSystem only, wires 3,34,35,37,38,39, never 20) | unified image = launcher + check + compile + refactor; REBUILD's `fc691d84` rebuilds itself 3 generations; CHECKFULL's `994fb5ed` (6,043,128 B) adds check's policy/project route | `launcher/test.sh` on `994fb5ed`: L1 34 SAME + 3 DECLARED, L2 Embench 19/19 (114 export runs, 19 kexe/v1 seals), L3 0 exec/spawn/system/popen in 6 runs, L4 PASS |
 | `check` | **391/391** corpus programs = stage-0 (verdict, line, exit) without a policy and with two policies (grants 35,37,38,39; all 42 catalog names); `--policy`/`--profile` 150 SAME + 9 SAME-NORM + 5 DECLARED + 9 STUB, 0 DIFF; `--source-path`: WALL2's 17 trees x 2 = **34/34 byte-identical**, CHECKFULL's 9 trees x 2 = 14/18 | `seed/amu-main/CHECK.md`, `seed/tests/checkfull/*.sh` |
 | `compile` (aarch64-macos) | 264 of 315 stage-0-compilable programs behaviour-same, 646 export runs SAME, 0 DIFF (launcher on r6l); r6m compiles 35 of the 47 refusals seed-direct (33 behaviour-same), **not yet in an image** | REBUILD record; SEEDLANG `1f1e69a62` |
 | `refactor` | every sub-command real on the Kotoba route except `verify`'s process runs (needs wire 20, never granted); 0 differ in 10 suites vs bin/amu (args 31, graph 20, plan 18, partition 19, dynvars 44, graph-src 109, plan-src 128, apply 40, split 10, verify twin 5); content holding `WRITE_SEP` now applies (6/6 SAME; was SIGILL) | `scripts/seed/refactor/all.sh` on CHECKFULL's code; `seed/tests/checkfull/refactor-writesep.sh` |
-| product boundary (`bootstrap-boundary.sh`) | 4 launchers (bin/amu still node + nbb), 16 nbb entries (7 with no `:kotoba` arm), union **58** PRODUCT src files | measured this wave; the native image is not yet what `bin/amu` runs |
+| product boundary (`bootstrap-boundary.sh`) | 4 launchers (bin/amu still node + nbb), 16 nbb entries (7 with no `:kotoba` arm; 5 since 2026-10-09 compile-cli), union **58** PRODUCT src files | measured this wave; the native image is not yet what `bin/amu` runs |
 
 ## 3. Declared stubs and differences of the native `amu` (never counted)
 
@@ -45,7 +45,8 @@ on its own sources, with no host process (rule 11 trace); then a QUIET Embench o
 3. **Rebuild on r6m**: compile parity should move from 264 toward ~297 of 315 (**E**: 33 more seed-direct behaviour-same).
 4. **Remaining compile gaps** (12 of the 47): protocols/multimethods (20-names), multi-arity export names (50-out), pinned
    f64 narrowings (R6C/R3 decision).
-5. **nbb.cli / aarch64-cli from source** (E1005 `#(`, 22 uses) and the 7 nbb entries with no `:kotoba` arm: rule 10.
+5. ~~**nbb.cli / aarch64-cli from source**~~ (done 2026-10-09: compile-cli addendum; 291/291 accepted programs give the
+   host's seal, provenance and answer) and the 5 nbb entries still with no `:kotoba` arm: rule 10.
 6. **Rule 11 on the self-built binary over its own sources** (`check` and `refactor` of src/**, `compile` of the seed):
    per-command traces exist (L3, frontsrc T6) but not the full-source run.
 7. A QUIET Embench of the native image (needs a reserved window; this wave never saw load < 15).

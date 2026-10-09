@@ -4,7 +4,7 @@
   Keeping policy decoding and the CLI error contract here is important: the
   Wasm/native split may reduce namespace load time, but must not create two
   subtly different admission boundaries."
-  {:kotoba/export #?(:kotoba [capability-policy command-line-args emit-metadata execute! oracle-fuel option options parse-policy-material read-artifact-file! read-edn-file! read-policy read-policy-material serve! source! timed usage-error!] :default [analyze-options capability-policy command-line-args emit-metadata execute! invoke option options oracle-fuel parse-policy-material read-artifact-file! read-artifact-text! read-edn-file! read-policy read-policy-material refusal serve! source! timed usage-error!])}
+  {:kotoba/export #?(:kotoba [capability-policy command-line-args emit-metadata error-phase execute! exit-code oracle-fuel option options parse-policy-material read-artifact-file! read-edn-file! read-policy read-policy-material refusal-text serve! source! timed usage-error!] :default [analyze-options capability-policy command-line-args emit-metadata execute! invoke option options oracle-fuel parse-policy-material read-artifact-file! read-artifact-text! read-edn-file! read-policy read-policy-material refusal serve! source! timed usage-error!])}
   (:require [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.kotoba-reader :as kr]
             [kotoba.compiler.posix-path :as posix-path]
@@ -596,6 +596,36 @@
     (when (seq stderr) (io/write-error stderr))
     #?(:cljs (when-not (zero? status) (host-entry/exit! status)))
     status)))
+
+;; Kotoba reading of the error contract for an entry's `main` (the host's `invoke*`, `error-report` and
+;; `exit-code` in the region above): the phase of a caught refusal (`:phase` of its ex-info data, `:internal`
+;; without one), the host's exit-code table entry for entry, and a REDUCED `:kotoba.cli-error/v1` report (format,
+;; ok, error, message; no `:diagnostic`/`:details`, the message is not refined by kotoba.compiler.diagnostic).
+#?(:kotoba
+   (defn error-phase [e :document] :keyword
+     (option-or (document-keyword-value (option-or (document-get (ex-data e) (document-keyword :phase)) (document-null)))
+                :internal)))
+
+#?(:kotoba
+   (defn exit-code [phase :keyword] :i64
+     (cond
+       (= phase :usage) 64
+       (or (= phase :decode) (= phase :read) (= phase :subset) (= phase :admission) (= phase :verify)
+           (= phase :coverage) (= phase :project-link) (= phase :module-lock) (= phase :test)) 65
+       (= phase :definition-identity) 66
+       (or (= phase :signature) (= phase :sign) (= phase :trust) (= phase :runtime-identity)) 77
+       (= phase :output) 74
+       (or (= phase :execute) (= phase :native-executor)) 69
+       (= phase :receipt) 76
+       :else 70)))
+
+#?(:kotoba
+   (defn refusal-text [phase :keyword message :string] :string
+     (string-concat "{:format :kotoba.cli-error/v1, :ok false, :error "
+      (string-concat (document-edn-print (document-keyword phase))
+       (string-concat ", :message "
+        (string-concat (document-edn-print (document-string (if (= phase :internal) "internal compiler error" message)))
+                       "}\n"))))))
 
 #?(:kotoba
    ;; The NDJSON worker is a long-lived host process (stdin events, module
