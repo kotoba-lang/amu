@@ -301,3 +301,20 @@ union of PRODUCT src files 58, launchers 4, unguarded host tokens 10 files. (A f
 `#?(:kotoba nil :default (do ...))` host region put both files into list 3b, 50 -> 52; the twin is the `:kotoba` branch
 of that conditional instead.) The host modes inside the host branch (caches, worker, x86-64, packaging,
 extract-native, `--backend seed`, locks) are refused by name on the Kotoba route and remain debt.
+
+## Combined measurement (2026-10-10)
+
+One build with every fix: seed17 objects with osaho `agent/dual-runtime-port-D` d2cc281 (interp families, kir.target
+text) and amu's `definition_identity.cljk` (lazy-sequence) and `nbb/io.cljk` (unreadable paths), dependents rebuilt;
+`seed/tests/compile-cli/run.sh` on the real `nbb.aarch64-cli` entry (linked 8,287,161 B of the 8,388,608 B extract
+limit), full corpus of 372 against `bin/amu compile --target aarch64-macos`:
+
+| class | n |
+|---|---:|
+| BOTH-ACCEPT, seal / provenance / stdout SAME | 293 (publication: 290 same shape, 3 size only: `#:ns{}` printing) |
+| BOTH-REFUSE, same exit code | 62 |
+| BOTH-REFUSE-CLASS-DIFF | 1 (`w1-effect-named`, named difference: kotoba-sema lines) |
+| HOST-ONLY | 16, all the verifier twin's stricter `:verify` refusals (owner decision: keep) |
+| GUEST-ONLY | 0 |
+
+No `oracle-unavailable`, kgraph or vector-table refusal remains in the corpus.
