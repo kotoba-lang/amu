@@ -1,0 +1,343 @@
+#!/usr/bin/env kbb
+(ns test-fuel-differential
+  "Fuel differential across the four backends (superproject
+  adr-2610092340 D12): the SAME program, the SAME function, and the smallest
+  fuel budget that answers instead of trapping :budget/fuel, measured on
+
+    ref      osaho's reference interpreter (`kotoba.kir/execute {:fuel n}`)
+    wasm32   kotoba-wasm (`kotoba.wasm.core/emit kir {:fuel n}`, instantiated
+             through runtime/browser-host.mjs)
+    aarch64  native, tools/kexe_loader.c with KEXE_FUEL
+    x86_64   native, the same loader built -arch x86_64 (Rosetta 2 on an
+             arm64 Mac)
+
+  The measure is B*, the least budget that answers. It is the one quantity
+  every backend can be asked for: ref and wasm32 report only trap-or-answer,
+  so they are binary-searched; native reports `{:fuel {:initial N
+  :remaining R}}`, so B* is read as N - R from one generous run. EVERY B* is
+  then confirmed by two runs: B* answers with the reference's value, and
+  B* - 1 traps :budget/fuel (native: exit 120 with the KEXE_TRAP line). A B*
+  without both confirmations is not printed as a number.
+
+  What this asserts, and what it only records:
+
+  - ASSERTED: every backend that ran answers with the reference's value;
+    aarch64 and x86_64 agree on B*; recursive-list's native B* equals the
+    6,006 that limits.cljk / examples/recursive-list.kotoba record (measured
+    by hand on both ISAs). That last check FAILS as of 2026-10-09: both ISAs
+    measure 8,007 (8,006 traps), i.e. the record predates native charging
+    the run's 2,001 constructed cells as fuel. The record is vendored from
+    kotoba-lang `lang/limits.edn`; it is fixed there, not here.
+  - RECORDED, not asserted: whether the backend FAMILIES (ref / wasm32 /
+    native) agree. `limits.edn` says they need not -- a loop-helper re-entry
+    is free on ref and wasm32 and charged on native, and native does not
+    charge an acyclic leaf. A consensus gas schedule needs them equal, and
+    this table is the measurement that says how far apart they are.
+    `--strict` turns any family disagreement into a failure: that is the
+    gate adr-2610092340 D12 asks for, and it is expected to fail today.
+
+  Measured 2026-10-09 on an arm64 Mac (x86_64 under Rosetta 2):
+
+    program         ref    wasm32  aarch64  x86_64
+    loop-only         2         1     1002    1002   DIVERGE
+    leaf-calls      102       101      102     102   DIVERGE
+    fib            1974      1974     1974    1974   AGREE
+    mutual          102       102      102     102   AGREE
+    recursive-list 6007      6005     8007    8007   DIVERGE
+
+  The two ISAs agree on every program. The families agree only where every
+  charge is a non-tail function entry; a loop costs 1 or 2 on ref/wasm32 and
+  one unit per iteration on native, and constructors cost differently on all
+  three.
+
+    kbb --backend sci --classpath . scripts/test-fuel-differential.cljk [--strict] [--only <name>]
+
+  Exit: 0 pass, 1 a failed assertion (or, under --strict, a family
+  disagreement), 3 UNMEASURED (a backend could not be measured on this host
+  and nothing failed)."
+  (:require [clojure.edn :as edn]
+            [kotoba.lang.text :as str]
+            [scripts.lib :as lib]
+            ["node:fs" :as fs]))
+
+(def args (vec *command-line-args*))
+(def strict? (some #{"--strict"} args))
+(def only (let [i (.indexOf (clj->js args) "--only")] (when-not (neg? i) (nth args (inc i)))))
+(def amu (lib/join lib/root "bin" "amu"))
+(def loader-path (lib/join lib/root "tools" "kexe_loader.c"))
+(def failures (atom []))
+(def unmeasured (atom []))
+(def checks (atom 0))
+(defn fail! [message] (swap! failures conj message) (.error js/console (str "FAIL " message)))
+(defn check! [ok? message] (swap! checks inc) (when-not ok? (fail! message)))
+(defn unmeasured! [message] (swap! unmeasured conj message) (println (str "UNMEASURED\t" message)))
+
+;; Upper bound for every search. A program whose B* is above it is reported
+;; UNMEASURED rather than searched further.
+(def ceiling 1000000)
+
+;; ---------------------------------------------------------------------------
+;; corpus: each program exports `main [] :i64`. The shapes are chosen to hit
+;; the charging rules the backends are documented to disagree on.
+
+(def corpus
+  [{:name "loop-only"
+    :why "one loop, no calls"
+    :expect "499500"
+    :source "(ns probe.loop-only (:export [main]))
+(defn main [] :i64
+  (loop [i 0 acc 0] (if (< i 1000) (recur (+ i 1) (+ acc i)) acc)))
+"}
+   {:name "leaf-calls"
+    :why "a loop calling a non-recursive leaf 100 times"
+    :expect "328350"
+    :source "(ns probe.leaf-calls (:export [main]))
+(defn sq [x :i64] :i64 (* x x))
+(defn main [] :i64
+  (loop [i 0 acc 0] (if (< i 100) (recur (+ i 1) (+ acc (sq i))) acc)))
+"}
+   {:name "fib"
+    :why "non-tail self-recursion"
+    :expect "610"
+    :source "(ns probe.fib (:export [main]))
+(defn fib [n :i64] :i64 (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
+(defn main [] :i64 (fib 15))
+"}
+   {:name "mutual"
+    :why "two functions calling each other (non-tail)"
+    :expect "1"
+    :source "(ns probe.mutual (:export [main]))
+(defn ev [n :i64] :i64 (if (= n 0) 1 (od (- n 1))))
+(defn od [n :i64] :i64 (if (= n 0) 0 (ev (- n 1))))
+(defn main [] :i64 (ev 100))
+"}
+   {:name "recursive-list"
+    :why "examples/recursive-list.kotoba: 2,001 constructed cells as well as entries"
+    :expect "500500"
+    :native-expect 6006
+    :file "examples/recursive-list.kotoba"}])
+
+(defn source-of [{:keys [source file]}]
+  (or source (lib/read-text (lib/join lib/root file))))
+
+;; ---------------------------------------------------------------------------
+;; ref + wasm32: one nbb process searches both for every program and prints
+;; one EDN map per program.
+
+(def driver
+  "(ns fuel-differential-driver
+  (:require [kotoba.compiler.core :as compiler] [kotoba.kir :as ir]
+            [kotoba.wasm.core :as wasm] [cljs.reader :as reader]
+            [\"node:fs\" :as fs] [HOST :as host]))
+
+(def ceiling CEILING)
+
+(defn ref-run [kir n]
+  (try {:value (str ;; frames raised so only fuel can stop the run (native and wasm32 meter no frames here)
+       (ir/execute kir 'main [] {:fuel n :frames 100000}))}
+       (catch :default e
+         (let [trap (:trap (ex-data e))]
+           (if (= trap :budget/fuel) {:trap :budget/fuel} {:other (str trap \" \" (.-message e))})))))
+
+(defn wasm-run [kir n]
+  (-> (host/instantiateKotoba (wasm/emit kir :wasm32-kotoba-v1 {:fuel n}) #js {})
+      (.then (fn [r] {:value (str (.main (.-exports (.-instance r))))}))
+      ;; Fuel exhaustion is `unreachable`; so is every other Wasm trap. The
+      ;; confirmation at B* (the reference's value) is what tells them apart.
+      (.catch (fn [e] (if (or (= \"RuntimeError\" (.-name e)) (= \"unreachable\" (.-message e)))
+                        {:trap :wasm/unreachable}
+                        {:other (str (.-message e))})))))
+
+(defn search
+  \"Least n in [1, ceiling] whose run answers, given run-fn n -> promise of
+  {:value v} | {:trap t} | {:other msg}. Resolves to {:b n :value v} or
+  {:unmeasured why}.\"
+  [run-fn]
+  (-> (run-fn ceiling)
+      (.then (fn [top]
+               (if-not (:value top)
+                 {:unmeasured (str \"no answer at the ceiling \" ceiling \": \" (pr-str top))}
+                 (letfn [(step [lo hi]
+                           ;; invariant: hi answers, lo (if > 0) does not
+                           (if (<= (- hi lo) 1)
+                             (js/Promise.resolve {:b hi :value (:value top)})
+                             (let [mid (quot (+ lo hi) 2)]
+                               (-> (run-fn mid)
+                                   (.then (fn [r]
+                                            (cond (:value r) (step lo mid)
+                                                  (:trap r) (step mid hi)
+                                                  :else (js/Promise.resolve
+                                                         {:unmeasured (str \"at \" mid \": \" (:other r))}))))))))]
+                   (step 0 ceiling)))))))
+
+(defn confirm [run-fn {:keys [b] :as found}]
+  (if-not b
+    (js/Promise.resolve found)
+    (-> (js/Promise.all #js [(run-fn b) (if (> b 1) (run-fn (dec b)) (js/Promise.resolve {:trap :none-below}))])
+        (.then (fn [rs] (assoc found :at-b (aget rs 0) :below-b (aget rs 1)))))))
+
+(defn measure [kir sync?]
+  (let [run-fn (if sync? #(js/Promise.resolve (ref-run kir %)) #(wasm-run kir %))]
+    (-> (search run-fn) (.then #(confirm run-fn %)))))
+
+(defn one [{:keys [name source]}]
+  (let [kir (try (:kir (compiler/compile-source source :wasm32-kotoba-v1 {} {}))
+                 (catch :default e {:compile-error (.-message e)}))]
+    (if (:compile-error kir)
+      (do (println \"RESULT\" (pr-str {:name name :compile-error (:compile-error kir)}))
+          (js/Promise.resolve nil))
+      (-> (measure kir true)
+          (.then (fn [ref]
+                   (.then (measure kir false)
+                          (fn [w] (println \"RESULT\" (pr-str {:name name :ref ref :wasm32 w}))))))))))
+
+(let [programs (reader/read-string (str (fs/readFileSync (last (js->clj js/process.argv)) \"utf8\")))]
+  (reduce (fn [p program] (.then p (fn [_] (one program))))
+          (js/Promise.resolve nil)
+          programs))
+")
+
+(defn ref-and-wasm [tmp programs]
+  (let [driver-file (lib/join tmp "fuel_differential_driver.cljs")
+        programs-file (lib/join tmp "programs.edn")
+        _ (lib/write-text! driver-file
+                           (-> driver
+                               (str/replace "HOST" (pr-str (lib/join lib/root "runtime" "browser-host.mjs")))
+                               (str/replace "CEILING" (str ceiling))))
+        _ (lib/write-text! programs-file (pr-str (mapv (fn [p] {:name (:name p) :source (source-of p)}) programs)))
+        cp (str (lib/join lib/root "src") ":" (lib/join lib/root "resources") ":" (lib/lock-classpath))
+        r ;; The reference interpreter runs as SCI-interpreted source here and
+        ;; spends host stack per interpreted call: give the driver a deeper one.
+        (lib/run js/process.execPath ["--stack-size=7000" (lib/nbb-cli) "--classpath" cp driver-file programs-file]
+                   {:allow-failure? true :max-buffer (* 64 1024 1024)})
+        results (->> (str/split-lines (:stdout r))
+                     (filter #(str/starts-with? % "RESULT "))
+                     (map #(edn/read-string (subs % 7))))]
+    (when (or (not (zero? (:status r))) (empty? results))
+      (fail! (str "ref/wasm32 driver: " (lib/describe-exit r) " "
+                  (subs (:stderr r) 0 (min 1200 (count (:stderr r)))))))
+    (into {} (map (juxt :name identity) results))))
+
+;; ---------------------------------------------------------------------------
+;; native
+
+(defn build-loader! [tmp isa cross?]
+  ;; -arch is Apple's; on Linux only the host ISA is built.
+  (let [out (lib/join tmp (str "kexe-loader-" isa))]
+    (lib/run "cc" (concat ["-std=c11" "-O2"] (when cross? ["-arch" isa]) [loader-path "-o" out]))
+    out))
+
+(defn compile-native! [tmp program isa]
+  (let [src (lib/join tmp (str (:name program) ".kotoba"))
+        kexe (lib/join tmp (str (:name program) "-" isa ".kexe"))
+        bin (lib/join tmp (str (:name program) "-" isa ".bin"))]
+    (lib/write-text! src (source-of program))
+    (let [c (lib/run js/process.execPath [amu "compile" src "--target" isa "--output" kexe] {:allow-failure? true})]
+      (if-not (zero? (:status c))
+        {:compile-error (str (lib/describe-exit c) " " (subs (:stderr c) 0 (min 400 (count (:stderr c)))))}
+        (let [x (lib/run js/process.execPath [amu "extract-native" kexe "--symbol" "main" "--output" bin] {:allow-failure? true})
+              answer (when (zero? (:status x)) (edn/read-string (last (remove str/blank? (str/split-lines (:stdout x))))))]
+          (if (:offset answer)
+            {:bin bin :offset (str (:offset answer))}
+            {:compile-error (str "extract-native: " (lib/describe-exit x) " " (:stderr x))}))))))
+
+(def fuel-trap-line "KEXE_TRAP {:kind :budget :reason :budget/fuel}")
+
+(defn native-run [loader {:keys [bin offset]} isa fuel]
+  (let [r (lib/run loader [bin offset "0" isa "-"]
+                   {:allow-failure? true
+                    :env {:KEXE_STRUCTURED_REPORT "1" :KEXE_FUEL (str fuel) :KEXE_CPU_SECONDS "30"}})
+        line (last (filter #(str/starts-with? % "{:status") (str/split-lines (:stdout r))))]
+    (cond
+      (and line (str/starts-with? line "{:status :ok"))
+      {:value (second (re-find #":result (-?\d+)" line))
+       :remaining (some-> (re-find #":remaining (\d+)" line) second js/parseInt)}
+      (and (= 120 (:status r)) (some #(= fuel-trap-line %) (str/split-lines (:stderr r))))
+      {:trap :budget/fuel}
+      :else {:other (str (lib/describe-exit r) " " (str/trim (:stderr r)))})))
+
+(defn native-measure [loader compiled isa]
+  (let [top (native-run loader compiled isa ceiling)]
+    (if-not (:value top)
+      {:unmeasured (str "no answer at the ceiling " ceiling ": " (pr-str top))}
+      (let [;; N - R from the report, else a binary search.
+            from-report (when (:remaining top) (- ceiling (:remaining top)))
+            b (or (when (and from-report
+                             (:value (native-run loader compiled isa from-report))
+                             (or (<= from-report 1)
+                                 (:trap (native-run loader compiled isa (dec from-report)))))
+                    from-report)
+                  (loop [lo 0 hi ceiling]
+                    (if (<= (- hi lo) 1) hi
+                        (let [mid (quot (+ lo hi) 2) r (native-run loader compiled isa mid)]
+                          (if (:value r) (recur lo mid) (recur mid hi))))))]
+        {:b b :value (:value top)
+         :from-report from-report
+         :at-b (native-run loader compiled isa b)
+         :below-b (if (> b 1) (native-run loader compiled isa (dec b)) {:trap :none-below})}))))
+
+;; ---------------------------------------------------------------------------
+
+(defn confirmed-b
+  "B* only when both confirmations hold, else nil (and a failure recorded)."
+  [backend program-name expect {:keys [b at-b below-b unmeasured]}]
+  (cond
+    unmeasured (do (unmeasured! (str program-name " " backend ": " unmeasured)) nil)
+    (nil? b) (do (unmeasured! (str program-name " " backend ": no measurement")) nil)
+    :else
+    (do (check! (= expect (:value at-b))
+                (str program-name " " backend ": at B*=" b " expected " expect ", got " (pr-str at-b)))
+        (check! (some? (:trap below-b))
+                (str program-name " " backend ": at B*-1=" (dec b) " expected a fuel trap, got " (pr-str below-b)))
+        (when (and (= expect (:value at-b)) (:trap below-b)) b))))
+
+(let [tmp (lib/temp-dir "fuel-differential-")
+      platform (.-platform js/process)
+      host ({"arm64" "aarch64" "x64" "x86_64"} (.-arch js/process))
+      runnable (cond
+                 (and (= "darwin" platform) (= "aarch64" host)) [["aarch64" false] ["x86_64" true]]
+                 (and host (#{"darwin" "linux"} platform)) [[host false]]
+                 :else [])
+      programs (vec (filter #(or (nil? only) (= only (:name %))) corpus))
+      rows (atom [])]
+  (try
+    (doseq [isa ["aarch64" "x86_64"] :when (not-any? #(= isa (first %)) runnable)]
+      (unmeasured! (str isa " (this " platform " " (.-arch js/process) " host cannot run it)")))
+    (let [rw (ref-and-wasm tmp programs)
+          loaders (into {} (for [[isa cross?] runnable] [isa (build-loader! tmp isa cross?)]))]
+      (doseq [{:keys [name expect native-expect] :as program} programs]
+        (let [m (get rw name)
+              native (into {} (for [[isa _] runnable
+                                    :let [compiled (compile-native! tmp program isa)]]
+                                [isa (if (:compile-error compiled)
+                                       {:unmeasured (str "compile: " (:compile-error compiled))}
+                                       (native-measure (get loaders isa) compiled isa))]))
+              bs (into {} (for [[backend result] (concat [["ref" (:ref m)] ["wasm32" (:wasm32 m)]] native)]
+                            [backend (confirmed-b backend name expect
+                                                  (or result {:unmeasured (or (:compile-error m) "the driver returned nothing")}))]))]
+          (swap! rows conj [name bs (:why program)])
+          (when (and (bs "aarch64") (bs "x86_64"))
+            (check! (= (bs "aarch64") (bs "x86_64"))
+                    (str name ": aarch64 B*=" (bs "aarch64") " but x86_64 B*=" (bs "x86_64"))))
+          (when native-expect
+            (doseq [isa ["aarch64" "x86_64"] :when (bs isa)]
+              (check! (= native-expect (bs isa))
+                      (str name " " isa ": B*=" (bs isa) ", limits.cljk records " native-expect)))))))
+    (finally (lib/remove-tree! tmp)))
+  ;; the table
+  (println (str "PROGRAM\tref\twasm32\taarch64\tx86_64\tfamilies"))
+  (doseq [[name bs why] @rows]
+    (let [fam (distinct (remove nil? [(bs "ref") (bs "wasm32") (or (bs "aarch64") (bs "x86_64"))]))
+          agree? (and (bs "ref") (bs "wasm32") (or (bs "aarch64") (bs "x86_64")) (= 1 (count fam)))
+          verdict (cond agree? "AGREE"
+                        (< (count (remove nil? [(bs "ref") (bs "wasm32") (or (bs "aarch64") (bs "x86_64"))])) 3) "PARTIAL"
+                        :else "DIVERGE")]
+      (println (str name "\t" (or (bs "ref") "-") "\t" (or (bs "wasm32") "-") "\t"
+                    (or (bs "aarch64") "-") "\t" (or (bs "x86_64") "-") "\t" verdict "\t# " why))
+      (when (and strict? (= "DIVERGE" verdict))
+        (fail! (str name ": the backend families disagree on B* (--strict)")))))
+  (println (str "SCANNED\t" (count @rows) "\tprograms\t" @checks "\tchecks"))
+  (cond
+    (seq @failures) (do (println (str "FAILED\t" (count @failures))) (.exit js/process 1))
+    (seq @unmeasured) (do (println (str "UNMEASURED\t" (count @unmeasured))) (.exit js/process 3))
+    :else (println "PASS")))
