@@ -23,11 +23,11 @@
 
   - ASSERTED: every backend that ran answers with the reference's value;
     aarch64 and x86_64 agree on B*; recursive-list's native B* equals the
-    6,006 that limits.cljk / examples/recursive-list.kotoba record (measured
-    by hand on both ISAs). That last check FAILS as of 2026-10-09: both ISAs
-    measure 8,007 (8,006 traps), i.e. the record predates native charging
-    the run's 2,001 constructed cells as fuel. The record is vendored from
-    kotoba-lang `lang/limits.edn`; it is fixed there, not here.
+    8,007 that limits.cljk / examples/recursive-list.kotoba record. The record
+    said 6,006 until 2026-10-09: it was measured 2026-09-24, before ADR 0353
+    floor :allocation-budget-native (2026-09-30) made native charge the run's
+    2,001 constructors as fuel. The record is vendored from kotoba-lang
+    `lang/limits.edn`; it is changed there, not here.
   - RECORDED, not asserted: whether the backend FAMILIES (ref / wasm32 /
     native) agree. `limits.edn` says they need not -- a loop-helper re-entry
     is free on ref and wasm32 and charged on native, and native does not
@@ -114,7 +114,7 @@
    {:name "recursive-list"
     :why "examples/recursive-list.kotoba: 2,001 constructed cells as well as entries"
     :expect "500500"
-    :native-expect 6006
+    :native-expect 8007
     :file "examples/recursive-list.kotoba"}])
 
 (defn source-of [{:keys [source file]}]
