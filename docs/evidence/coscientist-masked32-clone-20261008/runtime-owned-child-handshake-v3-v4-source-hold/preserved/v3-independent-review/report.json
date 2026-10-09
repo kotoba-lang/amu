@@ -1,0 +1,115 @@
+{
+  "status": "HOLD_SOURCE_ONLY_DIAGNOSTIC_HELD_OWNERSHIP_V3_PRE_TICKET_LEADER_FAILURE_CLEANUP",
+  "subject": "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v3-20261009-crc",
+  "independent": true,
+  "priorImplementationAuthorship": false,
+  "reviewerScope": "Read-only frozen SOURCE and exact regular-file pins; reproduced injected controls only. Earlier independent diagnostic reviews do not constitute implementation authorship.",
+  "sourcePinsSHA256": "f531cb5d9a59d6686e71fba78d5eaf95afe140175779f8119cbc124017e1ce05",
+  "inputPinsSHA256": "fc8c938becedc5e623b4026b1e5aff6309195a1a3b4f29656fc0bbda76d08c87",
+  "driverSHA256": "c4c139ddb19a44cee01c4aedf1216d0edf1ddf53b432aa2986f3af3435fc0ac3",
+  "preregistrationSHA256": "cbe3ba989503985c5819620d40278125da5bd9bb0aabe3920f3a9f02dbbe438c",
+  "freeze": {
+    "path": "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v3-20261009-crc/freeze.json",
+    "bytes": 919,
+    "sha256": "5d8349dba09f7d23a0f326d62f0ceed4d2cf4c196b075eb8a179d7f81d36dca3"
+  },
+  "sourceFilesVerified": 24,
+  "inputFilesVerified": 30,
+  "inputLogicalBytes": 1493026,
+  "allPinsRereadAfterControls": true,
+  "checks": {
+    "path": "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v3-review-independent-20261009/pin-checks.json",
+    "bytes": 13151,
+    "sha256": "91f4b1f66f4a7dcead37704507a19b9cde98414b26718c82d7778a34c1cd4162"
+  },
+  "pureControls": {
+    "path": "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v3-review-independent-20261009/pure-control-checks.json",
+    "bytes": 1654,
+    "sha256": "cae1feafae3fa7db5f0bcbf1d19c421905de4853c8b9739458af2c9c4a857d5d"
+  },
+  "pureControlScope": {
+    "positive": 9,
+    "negative": 29,
+    "registrationTypedPositives": 2,
+    "registrationSeparatorRefusals": 2,
+    "frozenOutputWritesRemovedOnlyFromTopLevelControlAST": true,
+    "sourceAssertionsNotActualFixtures": true
+  },
+  "findings": [
+    {
+      "id": "F3-V3",
+      "severity": "high",
+      "file": "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v3-20261009-crc/native-call.py",
+      "lines": [
+        77,
+        78,
+        80,
+        111,
+        120
+      ],
+      "title": "Controller creation excludes pre-TICKET peer-close failure from exact leader cleanup",
+      "evidence": {
+        "status": "CONFIRMED_SOURCE_F3_PRE_TICKET_PEER_CLOSE_REFUSAL_GAP",
+        "frozenKillPredicate": "proc is not None and ctl is None and (not waitCalled) and earlyLeaderSignalAuthority",
+        "line": 111,
+        "afterReturnedPopenDurablePID": true,
+        "controllerAlreadyExists": true,
+        "peerCloseRaises": true,
+        "protocol": null,
+        "TICKETSent": false,
+        "watchdogStarted": false,
+        "controllerRetired": true,
+        "directLeaderSignalPredicate": false,
+        "directWaitPredicate": true,
+        "legalIllustrativeClockSchedule": {
+          "hostDeadline": 30.0,
+          "loaderStart": 0.5,
+          "loaderOwnAdmissionDeadline": 30.5
+        },
+        "conclusion": "No earlier exact-child termination is attempted on this path; remaining host wait can expire before native admission deadline. This is refusal/possible unclosed evidence, not observed false success.",
+        "actualProcessOrFDCalls": 0
+      },
+      "requiredChange": "In a fresh version, cover the pre-TICKET exact direct leader failure while safe unreaped handle authority exists, independent of Controller existence, or move Controller setup after fallible peer close. Permanently retire signaling before wait. Do not restore authority after uncertain wait.",
+      "falseSuccessObserved": false
+    }
+  ],
+  "positiveObservations": [
+    "F1: worker-finally stop event and actual thread death jointly gate ownership-journal fsync/close/hash; unresolved worker/file references retained and journal explicitly unhashed. Four inert stop/death combinations were checked.",
+    "F2: exact C fork-child states ANCHORED/EXIT_HELD/WAIT_ENTERED/REAPED/UNCERTAIN; post-fork diagnostic sigaction/timer/held-exit/deadline failure paths route cleanup, alarm target retired before signal/wait; no second signal after wait-entered/reaped/uncertain. Eighteen pure cleanup orderings reproduced.",
+    "F3 durable PID/current invocation publication now precedes peer close; early ctl-None direct handle cleanup avoids PGID inference and permanently retires before sole wait. Residual ctl-present pre-ticket path remains HOLD.",
+    "Fixed128B/eight-record protocol, original ticket deadline, strict held kernel birth/current API ordinal/invocation admission, fsync-before-ACK, group-lock retirement before REAP_ACK retained.",
+    "Exact paired2 current aha n2 own bench3456/arity1 images/source/C answer, numeric no-separator grammar, seventeen supplied environment values/fuel16777216/zero grants retained.",
+    "Fresh output/no retry, exact GO/two reviews, new exact copied-C build proof and new source-bound FD/channel/ownership fixture prerequisite gates retained; no GO/build/fixture qualification granted by this report."
+  ],
+  "limitations": [
+    "No C compilation/type/SDK/ABI/WNOWAIT/zombie/clock/FD/channel/signal behavior qualification. Copied f44 primary source is not new binary evidence.",
+    "Actual delayed-fsync writer/start ambiguity/thread cancellation/death/endpoint-close fixtures remain required; pure mocks do not establish OS chronology.",
+    "Regular-file write/fsync/select/join/cleanup polling are cooperative bounds, not hard latency/physical-memory/OS ownership guarantees. Missing or partial cleanup stderr is not a durable child closure receipt.",
+    "Arbitrary interruption immediately around Popen/assignment/publication remains explicit uncertainty, not a universal ownership theorem.",
+    "Prior V2 HOLD and old runtime failures remain immutable; no semantic/performance/full19/adoption/hardpeak qualification."
+  ],
+  "preservedV2Holds": [
+    {
+      "path": "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v2-review-root-20261009/report.json",
+      "bytes": 1158,
+      "sha256": "1cbb626d329d73c9bfe24ccf2103152dc2c7d396ee27c0ba0d5704007e9755f3"
+    },
+    {
+      "path": "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v2-review-independent-20261009-dense/report.json",
+      "bytes": 7275,
+      "sha256": "0277f244a46d87dc7f417031e9b195fe54d130d80548808b9f51163c090533d7"
+    }
+  ],
+  "operations": {
+    "native": 0,
+    "Clang": 0,
+    "Popen": 0,
+    "actualFD": 0,
+    "threadStarts": 0,
+    "kernelOrProcessAPI": 0,
+    "network": 0,
+    "GO": 0,
+    "productEdits": 0
+  },
+  "operationalQualification": false
+}

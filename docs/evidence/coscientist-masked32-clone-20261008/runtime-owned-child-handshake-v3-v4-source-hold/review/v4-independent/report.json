@@ -1,0 +1,61 @@
+{
+  "status": "HOLD_SOURCE_ONLY_HELD_LAUNCH_V4_PRE_TICKET_TRANSFER_CLEANUP_GAP",
+  "subject": "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v4-20261009-independent",
+  "reviewerRole": "Independent of LC-authored V4 peer/controller-order change; reviewer authored earlier V3 implementation, disclosed. No self-independent qualification of unchanged V3 mechanics.",
+  "sourcePinsSHA256": "ccda4f7a66edcf6c30b8da7c006bf7018ebb50219fed244fc48502f958e9e91e",
+  "inputPinsSHA256": "a754f2da1c5082f2a97767c92fb9316617787af810c9a11609ef121cae4a55f0",
+  "driverSHA256": "2ce5892742cc0fff108fa946e2454ffcaaf980c82a8eae681be7db8487d67157",
+  "preregistrationSHA256": "eaad0794c9727cfa82c0558b4bae917a3e43175ef80e7ee5e8b55528281f2e88",
+  "sourceFilesVerified": 24,
+  "inputFilesVerified": 34,
+  "inputLogicalBytes": 1504693,
+  "pinsRereadAfterControls": true,
+  "existingPureControlsByteCompared": 2,
+  "newExactASTFailureControl": {
+    "events": [
+      "durable-PID",
+      "peer-close-ok",
+      "transfer-second-dup-refusal",
+      "retire-controller"
+    ],
+    "controllerCreatedBeforeTransfer": true,
+    "currentPIDPublished": true,
+    "noTicketOrWatchdogYet": true,
+    "cleanupExactLeaderSignalSkipped": true,
+    "modelOuterDeadline": 30,
+    "modelLaterLoaderAdmissionDeadline": 32,
+    "actualProcessOrClockTrace": false
+  },
+  "finding": {
+    "id": "F3-transfer-before-ticket",
+    "file": "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v4-20261009-independent/native-call.py",
+    "trigger": "transfer_popen_reads fails after Controller assignment but before watchdog/protocol/TICKET (e.g. concrete previously fixture-supported second dup failure).",
+    "evidence": "Finally retires controller, but early exact-leader cleanup requires ctl is None and skips. Remaining outer deadline wait precedes host socket close. Pinned loader oh_begin starts a later30s deadline. The same prior peer-close cleanup gap remains for a different supported fallible setup step; eventual wait may be uncertain/unclosed.",
+    "requiredChange": "Preserve V4. Fresh version must cover every pre-TICKET setup failure with exact local unreaped direct-leader authority independent of controller presence after synchronized stop, or cancel owned channel before wait with correct worker/journal ownership. No post-wait numeric signaling, unknown-member forgiveness or extra guest deadline. Add source-bound transfer/start/sampler setup negatives before future actual qualification.",
+    "falseSuccessObserved": false
+  },
+  "positiveScope": [
+    "V4 fixes known peer.close ordering and retains exact current PID publication.",
+    "C/hooks byteexact V3 and F1 writer-stop acknowledgment journal gates unchanged.",
+    "Unknown birth/member/stage and all old failures remain refused; exact17 guest contracts and finite diagnostic resource declarations unchanged."
+  ],
+  "limitations": [
+    "SOURCE/injected AST only; no actual transfer/FD/Popen/child/timing trace.",
+    "No new C build/WNOWAIT/thread/FD qualification or GO; shared sampled memory remains soft."
+  ],
+  "operations": {
+    "native": 0,
+    "Clang": 0,
+    "Popen": 0,
+    "FD": 0,
+    "threadStart": 0,
+    "kernel": 0,
+    "network": 0,
+    "frozenWrites": 0
+  },
+  "audit": {
+    "path": "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v4-review-independent-20261009-crc/audit.py",
+    "bytes": 7218,
+    "sha256": "78e8ff3ab6d5ffa7b084ee5943caa35c3dcec34b1e22fc284013aa2a1501f458"
+  }
+}
