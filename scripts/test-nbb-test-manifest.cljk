@@ -1,0 +1,107 @@
+#!/usr/bin/env nbb
+(ns test-nbb-test-manifest
+  "`amu test --manifest` through `bin/amu` on the Node route (root
+  ADR-2610092330 step C0): one conformance runner over a manifest in
+  kotoba-lang's lang/conformance/manifest.edn shape, on :kir,
+  :js-kotoba-v1 and :wasm32-kotoba-v1 plus :compiler-admit.
+
+  The fixture manifest (test/fixtures/manifest-mode/manifest.edn) holds a
+  case that must pass on all three execution backends, a case whose
+  expectation is WRONG and must be reported :fail with the value each backend
+  actually answered, an :expect-error case, and a host-compat case that must
+  be skipped by name. A manifest whose cases all fall out of scope -- zero
+  cases run -- must fail rather than pass vacuously (ADR-2610092330
+  decision 7).
+
+  Counts asserted here are about this fixture, which this file owns. Against
+  kotoba-lang's real manifest only FLOORS are meaningful; set
+  KOTOBA_LANG_CONFORMANCE_MANIFEST to run that check too.
+
+  Run from the repo root: `nbb --classpath . scripts/test-nbb-test-manifest.cljk`."
+  (:require [cljs.reader :as reader]
+            [scripts.lib :as lib]
+            ["node:child_process" :as child]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
+
+(def fixture (lib/join lib/root "test" "fixtures" "manifest-mode" "manifest.edn"))
+(def directory (.mkdtempSync fs (.join path (.tmpdir os) "amu-test-manifest-")))
+
+(defn- amu [& args]
+  (.spawnSync child js/process.execPath
+              (clj->js (into [(lib/join lib/root "bin" "amu")] args))
+              #js {:cwd lib/root :encoding "utf8" :timeout 1200000
+                   :maxBuffer (* 64 1024 1024)}))
+
+(defn- read-report [r]
+  (reader/read-string {:readers {'object (fn [v] (str (last v)))}} (str (.-stdout r))))
+
+(def ^:private checks (volatile! {:pass 0 :fail 0}))
+(defn- report! [ok? label detail]
+  (vswap! checks update (if ok? :pass :fail) inc)
+  (println (str (if ok? "PASS " "FAIL ") label (when-not ok? (str " -- " detail)))))
+
+(def ^:private executed [:kir :js-kotoba-v1 :wasm32-kotoba-v1])
+
+(try
+  (let [r (amu "test" "--manifest" fixture "--json")
+        report (read-report r)
+        results (:results report)]
+    (report! (= 1 (.-status r)) "a manifest with a failing required backend exits 1"
+             (str "exit " (.-status r) " " (.-stderr r)))
+    (report! (= :kotoba.conformance-report/v1 (:format report)) "--json answers the conformance report"
+             (subs (str (.-stdout r)) 0 (min 400 (count (str (.-stdout r))))))
+    (report! (false? (:ok report)) ":ok false" (pr-str (:ok report)))
+    (report! (every? #(= :pass (get-in results [:adds-passes % :status])) executed)
+             "the passing case passes on kir, js and wasm" (pr-str (:adds-passes results)))
+    (report! (every? #(= :fail (get-in results [:adds-wrong-expect % :status])) executed)
+             "the wrong expectation is :fail on kir, js and wasm" (pr-str (:adds-wrong-expect results)))
+    (report! (every? #(= "42" (str (get-in results [:adds-wrong-expect % :value]))) executed)
+             "the failing rows carry the value each backend answered (42)" (pr-str (:adds-wrong-expect results)))
+    (report! (= :pass (get-in results [:unbound-is-refused :compiler-admit :status]))
+             "the :expect-error case passes on :compiler-admit" (pr-str (:unbound-is-refused results)))
+    (report! (= :skipped (get-in results [:adds-passes :native-aarch64 :status]))
+             "an optional native backend is :skipped with a reason (C1)" (pr-str (:adds-passes results)))
+    (report! (and (contains? (:skipped-cases report) :host-only)
+                  (not (contains? results :host-only)))
+             "the host-compat case is skipped by name and not run" (pr-str (:skipped-cases report)))
+    (report! (= #{[:adds-wrong-expect :kir] [:adds-wrong-expect :wasm32-kotoba-v1]}
+                (set (map (juxt :case :backend) (:required-failures report))))
+             "required failures are exactly the wrong case's required backends (js is optional)"
+             (pr-str (:required-failures report)))
+    (report! (= 3 (get-in report [:totals :ran])) "three in-scope cases ran" (pr-str (:totals report))))
+  (let [r (amu "test" "--manifest" fixture "--case" "adds-passes" "--case" "unbound-is-refused")]
+    (report! (zero? (.-status r)) "--case selects passing cases: exit 0" (str (.-stdout r) (.-stderr r)))
+    (report! (.includes (str (.-stdout r)) "kotoba test --manifest: ok cases=2")
+             "the human summary line" (str (.-stdout r))))
+  (let [r (amu "test" "--manifest" fixture "--case" "adds-wrong-expect")
+        err (str (.-stderr r))]
+    (report! (= 1 (.-status r)) "the wrong case alone exits 1" err)
+    (report! (.includes err "FAIL adds-wrong-expect backend=kir status=fail required expected 43, got 42")
+             "a FAIL line names the case, backend, expectation and value" err))
+  ;; Zero cases run is a failure: a manifest whose only case is host-compat.
+  (let [only-host (lib/join directory "manifest.edn")]
+    (lib/write-text! only-host
+                     (str "{:case-classes {:host {:required-backends #{:host-clj} :profile :host-compat}}"
+                          " :cases [{:id :h :kind :run :entry \"x.kotoba\" :class :host :expect {:clj 1}}]}"))
+    (let [r (amu "test" "--manifest" only-host)]
+      (report! (= 1 (.-status r)) "a manifest where zero cases run exits 1" (str (.-stdout r) (.-stderr r)))
+      (report! (.includes (str (.-stderr r)) "no case ran") "and says no case ran" (str (.-stderr r)))))
+  ;; kotoba-lang's real manifest, when a checkout is named. Floors only.
+  (when-let [real (aget js/process.env "KOTOBA_LANG_CONFORMANCE_MANIFEST")]
+    (let [r (amu "test" "--manifest" real "--json")
+          report (read-report r)
+          passes (fn [backend] (get-in report [:totals :by-backend backend :pass] 0))]
+      (report! (<= 40 (get-in report [:totals :ran] 0)) "real manifest: at least 40 cases ran" (pr-str (:totals report)))
+      (report! (every? #(<= 35 (passes %)) executed) "real manifest: at least 35 passes on each of kir, js, wasm"
+               (pr-str (get-in report [:totals :by-backend])))
+      (doseq [id [:document-traversal :document-sha256-anchors]]
+        (report! (every? #(= :pass (get-in report [:results id % :status])) executed)
+                 (str "real manifest: " (name id) " passes on kir, js, wasm")
+                 (pr-str (get-in report [:results id]))))))
+  (finally (lib/remove-tree! directory)))
+
+(let [{:keys [pass fail]} @checks]
+  (println (str "SCANNED\t" (+ pass fail) "\tchecks; " pass " passed, " fail " failed"))
+  (when (or (zero? pass) (pos? fail)) (set! (.-exitCode js/process) 1)))
