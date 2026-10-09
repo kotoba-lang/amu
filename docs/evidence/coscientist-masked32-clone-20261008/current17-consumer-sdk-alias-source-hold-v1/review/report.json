@@ -1,0 +1,78 @@
+{
+  "status": "HOLD_SOURCE_ONLY_CURRENT17_CONSUMER_BUILD38_V1",
+  "sourcePinsSHA256": "aa9f711230999739cf70ddc4aa2b4ec46cf4c2998a6832960e32dad9f763c012",
+  "inputPinsSHA256": "7454891786ad19795420801d654842dd93e544378707b27fd59c7dcfdcba872f",
+  "driverSHA256": "50ba97dac504e33e43c06176564e1f655f53c3986f455ea636033589dbc7231e",
+  "preregistrationSHA256": "e4be58b8ebceb7bf8ef8fce870bf6abd267974c8da730c3e4b7715513fd92c14",
+  "independent": true,
+  "priorImplementationAuthorship": false,
+  "verifiedSubset": {
+    "sourceFiles": 14,
+    "inputFiles": 108,
+    "inputBytes": 2931240,
+    "consumerSourceFiles": 13,
+    "originalWorkloads": 19,
+    "headerReconstructionFromActualCProofs": 19,
+    "headerSizes": {
+      "aha-mont64": 64804,
+      "crc32": 96066,
+      "depthconv": 171810,
+      "edn": 169223,
+      "huffbench": 152720,
+      "matmult-int": 144314,
+      "md5sum": 118474,
+      "nettle-aes": 346640,
+      "nettle-sha256": 174426,
+      "nsichneu": 470258,
+      "picojpeg": 471709,
+      "qrduino": 314616,
+      "sglib-combined": 295977,
+      "slre": 210323,
+      "statemate": 636492,
+      "tarfind": 91931,
+      "ud": 102982,
+      "wikisort": 254768,
+      "xgboost": 561217
+    },
+    "pureControls": {
+      "Python39AST": 5,
+      "actualCalls": 0,
+      "consumerArgvPositives": 19,
+      "dependencyArgvPositives": 19,
+      "environmentPositives": 2,
+      "refusals": 31,
+      "scopePositive": 1
+    },
+    "operations": 0
+  },
+  "blockers": [
+    {
+      "code": "SELECTED_LIBPROC_ALIAS_CANONICAL_PIN_MISMATCH",
+      "source": "build.py go_guard",
+      "detail": "Requires a library receipt basename libproc.tbd and receipt requires a regular non-symlink file. Saved selected SDK witness instead supplies canonical libSystem.B.tbd. An explicit separately declared libproc alias-to-canonical receipt contract is missing; do not invent an extra regular stub or fake host identity.",
+      "canonicalPin": {
+        "path": "/Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/lib/libSystem.B.tbd",
+        "bytes": 337542,
+        "sha256": "607d9993892c95703a0909ff06f5843058ff1ec30b08337f42ab056d9bf325ea"
+      }
+    },
+    {
+      "code": "EXPECTED_MACHO_LOAD_NAMES_UNBOUND_TO_SELECTED_SDK",
+      "source": "build.py macho",
+      "detail": "Requires both /usr/lib/libSystem.B.dylib and /usr/lib/libproc.dylib. Canonical libproc selection is the System stub in the selected SDK witness, so two distinct load-name expectation is not justified. Expected load closure must be explicitly SOURCE-bound to the selected canonical SDK stub; no actual consumer build has tested this assumption."
+    }
+  ],
+  "savedSDKWitness": {
+    "path": "/Users/junkawasaki/github/workspaces/codex/current17-consumer-libproc-identity-root-20261009/actual.stdout",
+    "bytes": 267,
+    "sha256": "4550acb0429bc2defee07d423c8b032d2651b97fbb7fa4273e22f47cafd5a70a"
+  },
+  "limits": [
+    "No actual consumer/compiler/guest/thread/FD/network operations; source and saved bytes only.",
+    "342 draft excluded; 38 prospective compiler calls have not run.",
+    "Pure header19 reconstruction and 31 refusal controls pass but do not qualify selected linker/library behavior, ABI execution, held process lifecycle, counters or timing.",
+    "Selected SDK alias observation was supplied by root; saved stdout pins canonical target but is not a kernel filesystem trace."
+  ],
+  "operationalCalls": 0,
+  "launchEligible": false
+}
