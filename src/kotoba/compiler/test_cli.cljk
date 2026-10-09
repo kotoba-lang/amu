@@ -10,10 +10,13 @@
   reads the status."
   {:kotoba/export [run]}
   (:require [kotoba.compiler.bounded-edn :as bounded-edn]
+            [kotoba.compiler.manifest-mode :as manifest-mode]
+            [kotoba.compiler.posix-path :as posix-path]
             [kotoba.compiler.project :as project]
             [kotoba.compiler.project-files :as project-files]
             [kotoba.compiler.source-path :as source-path]
-            [kotoba.compiler.test-profile :as test-profile]))
+            [kotoba.compiler.test-profile :as test-profile]
+            [kotoba.lang.text :as str]))
 
 (defn- source-paths
   "Every `--source-path <dir>` in ARGS, in order."
@@ -29,8 +32,11 @@
 
 (defn human-lines
   "The `kotoba test:` summary line and one ` FAIL` line per failing case
-  (the latter go to stderr on both routes)."
+  (the latter go to stderr on both routes). A `--manifest` report has its
+  own lines (`kotoba.compiler.manifest-mode/human-lines`)."
   [report]
+  (if (= :kotoba.conformance-report/v1 (:format report))
+    (manifest-mode/human-lines report)
   (let [flat (flat-results report)
         passed (count (filter :ok flat))]
     {:out [(str "kotoba test: " passed "/" (count flat)
@@ -38,7 +44,50 @@
                 " tests=" (pr-str (or (:tests report) []))
                 " targets=" (pr-str (or (:targets report) [])))]
      :err (vec (for [r flat :when (not (:ok r))]
-                 (str " FAIL " (:test r) " target=" (:target r) " " (or (:error r) ""))))}))
+                 (str " FAIL " (:test r) " target=" (:target r) " " (or (:error r) ""))))})))
+
+(defn- option
+  "The value after the first FLAG in ARGS; a flag given without one is
+  refused by name."
+  [args flag]
+  (when (some #{flag} args)
+    (let [value (second (drop-while #(not= flag %) args))]
+      (when (or (nil? value) (str/starts-with? value "--"))
+        (throw (ex-info (str flag " requires a value") {:phase :usage :flag flag})))
+      value)))
+
+(defn- options [args flag]
+  (loop [args args acc []]
+    (cond (empty? args) acc
+          (= flag (first args)) (recur (nnext args) (conj acc (second args)))
+          :else (recur (next args) acc))))
+
+(defn- fuel-option [args]
+  (when-let [text (when (some #{"--fuel"} args)
+                    (or (second (drop-while #(not= "--fuel" %) args)) ""))]
+    (when-not (re-matches #"[1-9][0-9]*" text)
+      (throw (ex-info "--fuel must be a positive decimal integer"
+                      {:phase :usage :fuel text})))
+    #?(:clj (Long/parseLong text) :cljs (js/parseInt text 10))))
+
+(defn- run-manifest
+  "`test --manifest <manifest.edn> [--conformance-root <dir>] [--case <id> ...]
+  [--json] [--fuel <n>]` (root ADR-2610092330 C0). The conformance root --
+  the directory each case's :entry is relative to -- defaults to the
+  manifest's own directory."
+  [args]
+  (let [manifest-path (option args "--manifest")
+        root (or (option args "--conformance-root") (posix-path/dirname manifest-path))
+        only (set (map #(keyword (str/replace-first % #"^:" "")) (options args "--case")))
+        manifest (bounded-edn/read-file manifest-path)]
+    (when-not (and (map? manifest) (sequential? (:cases manifest)))
+      (throw (ex-info "a conformance manifest is a map with a :cases vector"
+                      {:phase :usage :manifest manifest-path})))
+    {:report (manifest-mode/run-manifest manifest root
+                                         (cond-> {:manifest-path manifest-path}
+                                           (seq only) (assoc :only only)
+                                           (fuel-option args) (assoc :fuel (fuel-option args))))
+     :json? (boolean (some #{"--json"} args))}))
 
 (defn run
   "ARGS as `bin/amu` hands them: `test <file> [--json] [--fuel <n>]
@@ -56,6 +105,8 @@
   as a malformed `:export` / unresolved namespace, so a project's tests
   could be compiled but never run."
   [args]
+  (if (some #{"--manifest"} args)
+    (run-manifest args)
   (let [input (source-path/admit! (second args))
         roots (source-paths args)
         linked (when (seq roots)
@@ -72,4 +123,4 @@
                                         (cond-> {}
                                           fuel (assoc :fuel fuel)
                                           linked (assoc :admit-linked-synthetics? true)))]
-    {:report report :json? json?}))
+    {:report report :json? json?})))

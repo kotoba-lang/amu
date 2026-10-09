@@ -1,0 +1,74 @@
+;; A tiny conformance manifest in kotoba-lang's lang/conformance/manifest.edn
+;; shape, for `amu test --manifest` (root ADR-2610092330 C0). Read by
+;; scripts/test-nbb-test-manifest.cljk, which asserts per case and backend:
+;;   :adds-passes          passes on :kir :js-kotoba-v1 :wasm32-kotoba-v1
+;;   :adds-wrong-expect    a WRONG expectation; must be reported :fail with the
+;;                         value every backend actually answered (42)
+;;   :unbound-is-refused   an :expect-error case; :compiler-admit passes
+;;   :host-only            a host-compat class; skipped by name, never run
+;;   :wrong-but-deferred   the wrong expectation again, with :kir and :wasm
+;;                         recorded in :unexecuted-backends: :deferred, not a
+;;                         required failure
+;;   :passes-but-deferred  passes, but :kir is recorded as unexecuted: the
+;;                         deferral outlived what it excused, a required failure
+{:kotoba.lang.conformance/version 2
+ :case-classes
+ {:pure-product-run
+  {:required-backends #{:kir :wasm32-kotoba-v1}
+   :optional-backends #{:js-kotoba-v1 :native-aarch64}
+   :profile :pure-product
+   :kinds #{:run}}
+  :negative-admit
+  {:required-backends #{:compiler-admit}
+   :optional-backends #{}
+   :profile :security
+   :kinds #{:expect-error}}
+  :host-reader-target
+  {:required-backends #{:host-clj :host-cljs}
+   :optional-backends #{:kir}
+   :profile :host-compat
+   :kinds #{:run}}}
+ :cases
+ [{:id :adds-passes
+   :kind :run
+   :entry "run/adds.kotoba"
+   :function "add-two"
+   :args [40]
+   :expect {:kotoba 42}
+   :class :pure-product-run}
+  {:id :adds-wrong-expect
+   :kind :run
+   :entry "run/adds.kotoba"
+   :function "add-two"
+   :args [40]
+   :expect {:kotoba 43}
+   :class :pure-product-run}
+  {:id :unbound-is-refused
+   :kind :expect-error
+   :entry "negative/unbound.kotoba"
+   :error-contains "unbound or dynamic symbol is forbidden: nowhere"
+   :class :negative-admit}
+  {:id :host-only
+   :kind :run
+   :entry "run/adds.kotoba"
+   :function "add-two"
+   :args [1]
+   :expect {:clj 3}
+   :class :host-reader-target}
+  {:id :wrong-but-deferred
+   :kind :run
+   :entry "run/adds.kotoba"
+   :function "add-two"
+   :args [40]
+   :expect {:kotoba 43}
+   :class :pure-product-run
+   :unexecuted-backends {:kir {:as-of "2026-10-09" :reason "fixture" :closes-when "never"}
+                         :wasm32-kotoba-v1 {:as-of "2026-10-09" :reason "fixture" :closes-when "never"}}}
+  {:id :passes-but-deferred
+   :kind :run
+   :entry "run/adds.kotoba"
+   :function "add-two"
+   :args [40]
+   :expect {:kotoba 42}
+   :class :pure-product-run
+   :unexecuted-backends {:kir {:as-of "2026-10-09" :reason "fixture" :closes-when "never"}}}]}
