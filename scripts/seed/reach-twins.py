@@ -54,7 +54,8 @@ def main():
         return None, 'ambiguous'
 
     paths = [l.strip() for l in open(lst) if l.strip()]
-    mods, swapped, notes, would = {}, [], [], []
+    mods, swapped, changed, notes, would = {}, [], [], [], []
+    moved = 0
     todo = []
     for p in paths:
         nm, _ = ns_form(open(p, encoding='utf-8', errors='replace').read())
@@ -66,7 +67,12 @@ def main():
         if os.path.realpath(q) != os.path.realpath(p) and only is not None and nm not in only:
             would.append('%s: %s -> %s' % (nm, p, q)); q = p
         if os.path.realpath(q) != os.path.realpath(p):
-            swapped.append('%s: %s -> %s' % (nm, p, q))
+            if os.path.splitext(q)[1] != os.path.splitext(p)[1]:
+                swapped.append('%s: %s -> %s' % (nm, p, q))
+            elif open(q, 'rb').read() != open(p, 'rb').read():
+                changed.append('%s: %s -> %s' % (nm, p, q))
+            else:
+                moved += 1
         mods[nm] = q; todo.append(nm)
     added = []
     while todo:
@@ -81,10 +87,13 @@ def main():
             mods[r] = q; todo.append(r); added.append('%s (required by %s): %s' % (r, m, q))
     for nm in mods:
         print(mods[nm])
-    print('reach-twins: %d modules (%d in the input list), %d swapped to the loader\'s choice, %d added by closure'
-          % (len(mods), len(paths), len(swapped), len(added)), file=sys.stderr)
+    print('reach-twins: %d modules (%d in the input list), %d swapped to the loader\'s choice (another extension), '
+          '%d resolved to a file with other content, %d to an identical copy, %d added by closure'
+          % (len(mods), len(paths), len(swapped), len(changed), moved, len(added)), file=sys.stderr)
     for s in swapped:
         print('  swapped ' + s, file=sys.stderr)
+    for s in changed:
+        print('  changed ' + s, file=sys.stderr)
     for s in added:
         print('  added   ' + s, file=sys.stderr)
     for s in would:

@@ -159,3 +159,62 @@ already has `__linux__` paths, unbuilt here), aiueos only with a freestanding ru
   linked frontend at target admission); SEED vs SOURCE is therefore an optimistic split for the seed.
 - The size estimate (8.6 MB) extrapolates from 28,873 lines of mostly small library modules; the frontend/backend
   modules may be denser.
+
+## 8. Addendum 2026-10-10: the refactor modules through their kotoba-lang twins (agent claude, selfbuild-twins)
+
+Question: does the selfbuild count the 16 `kotoba.compiler.refactor.*` modules the way the project route resolves them
+(their kotoba-lang guest twins), and what is the count then? Seed r6m `8d3338e1`, `--no-link`, per-module separate mode.
+
+**Cause (why the twins were not picked).** Not the resolution rule: `reach-twins.py` already applies
+`project_files.cljk`'s rule (within a root `.kotoba` > `.cljk` > `.cljc`; across roots one `.kotoba` stands in for any
+number of `.cljk`/`.cljc`). Two input facts kept the twins out:
+1. The 138-module list of every scan since WALL2 (`build/seed17/inputs/scan/order.txt`, the 122/138 picture) was generated
+   with the kotoba-lang root at `agent/wall2-project-twin` 965c5f5. That commit carries the project twins only; it has
+   **no** `lang/compat/kotoba/compiler/refactor/` directory. The 18 refactor twins were on `agent/refactor-cst-twin`
+   289d718 (a sibling branch, neither contains the other), so the loader rule found only amu's `.cljk` for them.
+2. selfbuild.sh's defaults (`WALL_CP=/private/tmp/wall-cp-16.txt`, `WALL_K=/private/tmp/wt-K-kotoba-lang`,
+   `R6_REACH=/private/tmp/reach-minimal.txt`) no longer exist, so the script could not rerun the list at all; the 122
+   measurement replayed the frozen farm with `scan.zsh` instead.
+
+kotoba-lang `claude/refactor-twins-parity` e936dd8 is 965c5f5 plus the 18 refactor twins (refactor tree identical to
+289d718): one commit with both kinds of twin.
+
+**Wiring (no module special-cased).** `scripts/seed/selfbuild-inputs.sh <dir>` writes the three inputs from durable
+sources: `reach.txt` (the paths of the seed17 order.txt; reach-twins re-resolves each by namespace), `cp/src` (the seed17
+farm minus files from amu a93ee4068 `src/` (50) and from kotoba-lang `lang/compat` (21) = 67 classpath files, then
+overlays: osaho d2cc281 `kir/interp.cljk`, `kir/target.cljk`), `kotoba-lang/` (`git archive` of `lang/compat` +
+`lang/selfhost-compiler-grant.edn` at a named rev). amu's src is the live worktree. selfbuild.sh defaults to
+`build/selfbuild-inputs/` (`SELF_INPUTS`), refuses to start when an input is missing, defaults to rung r6m
+(`SELF_RUNG`), labels any seed by the rung record it matches, and copies `inputs.txt` into `provenance.txt`.
+reach-twins.py now reports extension swaps separately from same-extension content changes and identical copies.
+
+**Measured** (inputs: amu c78b96f3f, 0 dirty files in src; osaho d2cc281 2 files; seed17 order.txt sha256 `6e9adfc0`):
+
+| view | kotoba-lang | modules | OK | REFUSED | BLOCKED | of the 138 |
+|---|---|---:|---:|---:|---:|---:|
+| twins (project-route resolution) | `claude/refactor-twins-parity` **e936dd8** | 142 | **142** | 0 | 0 | **138 / 138** |
+| in place (amu's own refactor `.cljk`) | `agent/wall2-project-twin` 965c5f5 | 141 | 124 | 5 | 12 | 122 / 138 |
+
+- 142 = the 138 + `refactor.cljs-order` and `refactor.finding` (twin helpers required by verify / the rules) +
+  `native-artifact` and `native-admission` (required by c78b96f3f's `nbb.cli`). 16 entries resolve to another extension
+  (exactly the 16 refactor modules), 8 to same-extension files with other content (the 6 amu files changed since the
+  snapshot, osaho's 2), 114 to identical copies. Entries: check 82/82, compile 99/99, refactor 22/22 OK, each with a
+  Kotoba `main`. 0 walls.
+- In place, the walls are amu's src: `refactor.cst` E2003 top-level `declare`; `refactor.edit`, `refactor.diff`,
+  `refactor.verify` E1005 reader syntax `#`; `refactor.prelude` E6009 exports nothing; BLOCKED behind them: core, graph,
+  extract, partition, rules, rules.{destructure, reject, dynvars, kwcallback, letdestructure, lowerloops} and **rules.fnlit**
+  (rule g, new in c78b96f3f's rules.cljk; 141 = the 138 + fnlit + the two native modules). The stage-0 column was not run.
+- **fnlit (rule g) gap.** In the twins view `rules.fnlit` is not reached at all: the twin `rules.kotoba` at e936dd8 does
+  not require it, so the native refactor's rule set has no rule g while amu's host `rules.cljk` has. The count is complete
+  but the rule set is not. When the twins agent commits `rules/fnlit.kotoba` and a `rules.kotoba` that requires it, the
+  closure adds the fnlit twin (143 modules); not measured here (uncommitted in its worktree at the time).
+- Policy, not decided here: the twins view counts kotoba-lang files (a branch not on kotoba-lang main) for 18 amu
+  namespaces. Whether that satisfies AGENTS.md's "a product file gets a `:kotoba` reading", or amu's
+  `src/kotoba/compiler/refactor/*.cljk` must get their own readings (the in-place walls above), is an owner decision.
+
+Reproduce:
+
+```
+zsh scripts/seed/selfbuild-inputs.sh build/selfbuild-inputs                       # SB_KL_REV=965c5f5 for the in-place view
+zsh scripts/seed/selfbuild.sh --no-link build/selfbuild-twins                       # cat build/selfbuild-twins/report.txt
+```
