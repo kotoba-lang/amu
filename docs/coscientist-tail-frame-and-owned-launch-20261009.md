@@ -12,7 +12,7 @@
 
 実行前にGO schema欠落という誤指摘が出たが、正確な凍結バイトには必須項目が含まれていた。rootと独立レビューで19項目・19種類・該当項目1回を照合し、正しいV1でのみ実行した。誤指摘に基づく未使用V2は該当項目が重複しており、未実行のまま訂正記録と保存した。SOURCE誤読と候補コードの失敗を分ける。
 
-[同じ汎用判定による全走査の有限census](evidence/coscientist-masked32-clone-20261008/homogeneous-tail-frame-full-scan-frontier-v1/snapshot.json)では、267 FN中の266 ownerを走査し、逐次変更するFIX閉包を各変更の前後で検査した。適用可能辺は123、10辺より113多く、LABELは587から710へ増える。上限131,072以内であり、次の汎用作業上限511は既存FN容量512から導く。123という発見数をソースの選択条件にはしない。モデルでは492ワードの変更を予測するが、全走査版の実native生成・実行はまだない。
+[同じ汎用判定による全走査の有限census](evidence/coscientist-masked32-clone-20261008/homogeneous-tail-frame-full-scan-frontier-v1/snapshot.json)では、267 FN中の266 ownerを走査し、逐次変更するFIX閉包を各変更の前後で検査した。適用可能辺は123、10辺より113多く、LABELは587から710へ増える。上限131,072以内であり、次の汎用作業上限511はこの変換が受理するFN数の上限512（sentinelを含む）から導く。物理的なFN表容量は8,192であり、512ではない。123という発見数をソースの選択条件にはしない。モデルでは492ワードの変更を予測するが、全走査版の実native生成・実行はまだない。
 
 同じABI前提の下では、実行された各辺につき公開prologueの5命令と48 Bのframe成長を省ける。末尾restoreの3命令はLDRと2 NOPへ置換するため、その3命令が消えたとは数えない。123辺が各1回走る仮定なら615命令・5,904 B、10辺なら50命令・480 Bだが、動的実行回数や実時間ではない。fuelのdebitは0件も省略しない。全走査候補を実装・生成し、元入力の意味保存と自己再ビルドを検証した後、Cと同じquiet hostで実費用を測る。
 
@@ -29,3 +29,5 @@ ComputeCID／ResultCID案は、[再適用契約](coscientist-compute-replay-chec
 この工程内の不変条件の検証は、後のCompute要求のread-setを具体化する証拠になる。永続化する場合は、解析実装・規則版・対象・その読取snapshot・ABIと資源契約をComputeCIDへ封じ、区間終端というAnswerをResultCIDへ封じる。ResultCID一致だけでFIX／LABEL検査や現在の作業量確認を省かない。辺のbound更新を持つshape解析では、Answerだけでなく順序付き寄与・support／poison・診断を保存し、現在の集約器への置換と再集約をTransitionで検査する。途中拒否・予算切れは成功bindingの対象から外す。
 
 比較は元の再計算版と候補について、適用辺・全変更バイト・拒否・容量条件を一致させ、読取箇所だけを一つずつ変更した対照で失効を確認する。その後のnative生成と自己再ビルドを通してから、解析時間を計測する。観測可能なfuelはヒット時も契約に従って消費し、物理的な探索費用と分ける。生成コードのEmbench実行時間は別の比較であり、この工程内の省略をIPLD／CIDの高速化と呼ばない。現時点では新しい共有解析再利用は未実装である。
+
+[V2の独立SOURCE監査](evidence/coscientist-masked32-clone-20261008/runtime-owned-child-handshake-v2-source-hold/review/independent/report.json)はHOLDとした。正常終了の保持・lock下の権限退役・ACK・回収という順序を確認した一方、31有限対照では覆えなかった失敗cleanupの欠落を発見した。第三のreceipt workerの停止ACKがない状態でもjournalをclose／hashする経路、supervisorのdeadline／channel失敗時に未回収childをcleanupしない経路、Popen直後のpeer close失敗がPIDの耐久記録より先に起きる経路である。V2はbuild／GO／native実行0のまま保存する。V3ではwriter停止を記録公開の前提とし、childの未回収／回収済み／不確実状態を分け、cleanup wait前にalarmのsignal対象を退役する。有限の成功対照だけで失敗経路を資格化しない。

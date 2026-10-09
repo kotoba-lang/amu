@@ -1,0 +1,91 @@
+{
+  "status": "HOLD_SOURCE_ONLY_HELD_LAUNCH_V2_RECEIPT_WRITER_AND_CHILD_FAILURE_CLEANUP",
+  "subject": "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v2-20261009-crc",
+  "reviewerRole": "Independent of CRC implementation; SOURCE/read-only actual-byte pins and pure injected mocks only",
+  "sourcePinsSHA256": "5173dc3772cbc427ed1b53c255f08246d767760e28d6f1a97db9674fd7391598",
+  "inputPinsSHA256": "3af58ecf13f2e42998ff6e44233127c2e50d2e46e6ff791b63465a0cbcd94f1e",
+  "driverSHA256": "2fc8affaec5a62616b3c2e11b8f60c6f488962542b4bcd4c762d46c1e6e60cb7",
+  "preregistrationSHA256": "ef9e451c79d3f8aaa338a1df22c81db3a8c142b9932b89896c779b150b750cd6",
+  "sourceFilesVerified": 21,
+  "inputFilesVerified": 26,
+  "inputLogicalBytes": 1480133,
+  "allPinsRereadAfterControls": true,
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "high",
+      "files": [
+        "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v2-20261009-crc/ownership.py:75",
+        "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v2-20261009-crc/native-call.py:113",
+        "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v2-20261009-crc/native-call.py:125"
+      ],
+      "title": "Third receipt worker stop refusal does not gate journal closure or hash",
+      "evidence": "HeldProtocol.close closes its socket, joins only remaining original deadline and raises while worker remains alive. native-call catches that refusal but continues fsync, context-manager journal close and unconditional ownershipJournal hfile. A receipt worker blocked in persistOwnership/regular-file fsync can retain write ownership while parent closes/reuses the file and hashes it. Immutable stat checks do not establish writer stop acknowledgement. Injected FakeWorker stayed alive, close refused, and caller source continuation was verified.",
+      "requiredChange": "Make receipt-worker ownership/stop acknowledgement explicit. Only retire/close/hash its journal after positive writer-stop acknowledgement; on unresolved writer retain unclosed evidence without hashing or reusing its descriptors. Bound protocol cancellation/close access too; qualify actual delayed-writer/start/interruption cases in a new frozen subject.",
+      "falseSuccessObserved": false
+    },
+    {
+      "id": "F2",
+      "severity": "high",
+      "files": [
+        "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v2-20261009-crc/kexe_loader_diagnostic.c:11802",
+        "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v2-20261009-crc/kexe_loader_diagnostic.c:11871",
+        "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v2-20261009-crc/kexe_loader_diagnostic.c:13049"
+      ],
+      "title": "Supervise pre-reap failures return without exact child closure",
+      "evidence": "After guest release and supervised_pid installation, oh_arm_deadline failure and oh_exit_held/channel/deadline failures return78 directly. Caller only reports shared state, munmaps and exits; oh_abort_unwaited exists only for oh_parent_release failure before supervise. Thus an exact fork child can remain live/unreaped/orphaned on these paths, while host eventually waits only for direct loader parent. This is refused output, not normal-path false acceptance, but the claimed bounded exact child failure cleanup is incomplete. WNOWAIT success does not cover all error/early-return paths.",
+      "requiredChange": "Track unreaped/exit-held/reaped/uncertain child state and alarm target ownership explicitly. On pre-reap failure use bounded exact-owned child cleanup with alarm target permanently retired before any potentially reaping cleanup wait. Never signal numeric PID after reap/uncertain ownership. Persist child closure or explicit unclosed state; handle waitid/ACK/EINTR/timer failure and timeout edges in deterministic then actual fixtures.",
+      "falseSuccessObserved": false
+    },
+    {
+      "id": "F3",
+      "severity": "medium",
+      "files": [
+        "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v2-20261009-crc/native-call.py:67"
+      ],
+      "title": "Fallible peer close precedes durable direct-child PID publication",
+      "evidence": "After Popen returns, peer.close executes before assigning r.pid and saving attempts. If that close raises, cleanup has a local proc but saved/terminal row need not contain its PID; this loses durable handle identity on the failure boundary. Pure source ordering control verified the exact statement.",
+      "requiredChange": "Assign and durably publish proc.pid immediately after successful Popen return, before fallible endpoint cleanup/controller setup, while retaining one safe direct wait and explicit publication refusal.",
+      "falseSuccessObserved": false
+    }
+  ],
+  "positiveScope": [
+    "Typed fresh API context validates exact invocation/origin/version/last query ordinal/PID/stage; unknown or reused birth remains refused.",
+    "Held stable live leader and child samples plus fsynced journal-before-ACK logic present.",
+    "Successful EXIT_HELD path retires group authority under same controller lock before REAP_ACK; C normal alarm signal target retired before potentially reaping waitpid.",
+    "Fixed128B/eight-record framing, partial IO counters, original absolute deadline, capzero typed argv/environment17 and finite explicit44FD/third-thread declarations present.",
+    "Raw expected result/fuel17arena parser and valid-last final report remain separately gated."
+  ],
+  "pureControls": {
+    "copiedAuthorControls": {
+      "positive": 5,
+      "negative": 26,
+      "status": "PASS_PURE_DIAGNOSTIC_HELD_OWNERSHIP_V2_COMPONENTS_ONLY"
+    },
+    "independentFailureControls": {
+      "path": "/Users/junkawasaki/github/workspaces/codex/current-runtime-process-ownership-race-source-v2-review-independent-20261009-dense/injected-controls-result.json",
+      "bytes": 408,
+      "sha256": "90bdf85fea0c50ef16f1b2f248976c5b8462cc4163b843ed9b2235bafe0d653e"
+    }
+  },
+  "proofGateLimitations": [
+    "No current diagnostic C build/type/SDK/WNOWAIT artifact proof exists; original f44 identity is not new copied binary qualification.",
+    "Real waitid WNOWAIT nonreaping and Darwin zombie birth/group visibility, C/Python clock relation, FD4/gate exclusions and partial/ambiguous start/close need separately preregistered actual fixtures.",
+    "C peer-close/SIGPIPE and waitid alarm interruption behavior require source-bound build/actual fixture; no operational assumption accepted.",
+    "Third auxiliary worker lifecycle/cancellation and receipt durability are new, not covered by old two-thread capture fixture.",
+    "Regular-file write/fsync/select/join deadlines are cooperative, not hard OS/time/peak guarantees; output bound is not a disk quota."
+  ],
+  "operations": {
+    "native": 0,
+    "Clang": 0,
+    "Popen": 0,
+    "actualFD": 0,
+    "threadStarts": 0,
+    "kernelGroupOrWait": 0,
+    "network": 0,
+    "GO": 0,
+    "productEdits": 0
+  },
+  "operationalQualification": false,
+  "oldFailuresReclassified": false
+}
