@@ -2,7 +2,8 @@
 (ns test-browser-host-typed-ops
   "Compile .kotoba through `bin/amu compile --target wasm32-browser
   --jvm-free` and run the module on runtime/browser-host.mjs, for the
-  operations kotoba-wasm 83c8009e (#77) started lowering:
+  operations kotoba-wasm 83c8009e (#77) started lowering (and, since root
+  ADR-2610092310 S3, the four :bytes / :link document operations):
 
     bytes-count / bytes-at / bytes-slice / bytes-concat / string-index-of
       -- each imported as its own `kotoba:typed/<op>/function`, which the
@@ -101,6 +102,14 @@ process.stdout.write(JSON.stringify(out));")
 (def oversized "trap:bytes/too-large:typed bytes value is invalid or oversized")
 (def empty-needle "trap:invalid-typed-operation:empty string search needle rejected")
 
+;; root ADR-2610092310 S3 values (osaho 502b5ba kir_document_bytes_link_test).
+(defn- q [s] (js/JSON.stringify s))
+(def cid-hex "01551220e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+(def cid-text "bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku")
+(def bytes-digest "9a20ad21716d8ac7de1ab4e20a18e918538e89e094cb7561fb0abdab0f36a2b8")
+(def edn-text (str "{:cid #kotoba/cid \"" cid-text "\" :data #kotoba/bytes \"00ff10\"}"))
+(defn- edn-refused [why] (str "trap:invalid-typed-value:document-edn-read " why))
+
 ;; [label export provider args expected]
 (def suites
   {"bytes-ops"
@@ -149,7 +158,50 @@ process.stdout.write(JSON.stringify(out));")
    "cap-i64-request"
    [["11 > 10" "f" "reqi64" [(i64 11)] "true"]
     ["2^62 > 10" "f" "reqi64" [(i64 "4611686018427387904")] "true"]
-    ["3 > 10" "f" "reqi64" [(i64 3)] "false"]]})
+    ["3 > 10" "f" "reqi64" [(i64 3)] "false"]]
+   ;; root ADR-2610092310 S3: the :bytes and :link document kinds. Digests and
+   ;; canonical hex are osaho 502b5ba's (kir_document_bytes_link_test, taken
+   ;; outside Kotoba with Python hashlib); the S0 anchors are kotoba-lang
+   ;; lang/conformance/document/sha256_anchors.kotoba.
+   "document-bytes-link"
+   [["bytes 00ff10 sha256" "bytesDigest" "hex" ["00ff10"] (q bytes-digest)]
+    ["empty bytes sha256" "bytesDigest" "hex" [""] (q "5c5fc7941f031046baedb27ef5a3637fa70eb74e22892886eb516d33b84e4dba")]
+    ["bytes canonical x3:" "bytesPrint" "hex" ["00ff10"] (q "78333a00ff10")]
+    ["link of a CIDv1" "linkKind" "hex" [cid-hex] (q ":link")]
+    ["link sha256" "linkDigest" "hex" [cid-hex] (q "5b4949ac593035225cbf5f6c4137dd7771b8a4a80383633581ba30e81cd69139")]
+    ["link canonical c36:" "linkPrint" "hex" [cid-hex] (q (str "6333363a" cid-hex))]
+    ["CIDv1 of 128 bytes is a link" "linkKind" "hex" [(str "0155127c" (apply str (repeat 124 "07")))] (q ":link")]
+    ["CIDv1 of 129 bytes is none" "linkKind" "hex" [(str "0155127d" (apply str (repeat 125 "07")))] (q ":null")]
+    ["version 0 is none" "linkKind" "hex" [(str "00" (subs cid-hex 2))] (q ":null")]
+    ["short digest is none" "linkKind" "hex" [(subs cid-hex 0 (- (count cid-hex) 2))] (q ":null")]
+    ["trailing byte is none" "linkKind" "hex" [(str cid-hex "00")] (q ":null")]
+    ["non-minimal varint is none" "linkKind" "hex" ["0155128000"] (q ":null")]
+    ["empty bytes is none" "linkKind" "hex" [""] (q ":null")]
+    ["document-bytes-value round-trips" "bytesValue" "hex" ["00ff10"] "hex:00ff10"]
+    ["65536 bytes round-trip" "bytesValue" "hex" ["max"] "len:65536,fill:7"]
+    ["document-link-value reads the CID back" "linkValue" "hex" [cid-hex] "len:36,mixed"]
+    ["link-value of bytes is none" "linkOfBytes" "hex" ["00ff10"] "hex:"]
+    ["bytes-value of a link is none" "bytesOfLink" "hex" [cid-hex] "hex:"]
+    ["bytes-value of a string is none" "bytesOfString" "hex" ["x"] "hex:"]
+    ["EDN text" "edn" "hex" [cid-hex "00ff10"] (q edn-text)]
+    ["EDN text reads back" "ednRead" "hex" [edn-text] (q edn-text)]
+    ["EDN empty bytes" "ednRead" "hex" ["#kotoba/bytes \"\""] (q "#kotoba/bytes \"\"")]
+    ["EDN read then sha256" "ednDigest" "hex" ["#kotoba/bytes \"00ff10\""] (q bytes-digest)]
+    ["EDN uppercase hex refused" "ednRead" "hex" ["#kotoba/bytes \"00FF\""] (edn-refused "bytes literal must be lowercase hex")]
+    ["EDN odd hex refused" "ednRead" "hex" ["#kotoba/bytes \"0\""] (edn-refused "bytes literal must be lowercase hex")]
+    ["EDN two spaces refused" "ednRead" "hex" ["#kotoba/bytes  \"00\""] (edn-refused "tagged literal needs a string")]
+    ["EDN unquoted refused" "ednRead" "hex" ["#kotoba/bytes 1"] (edn-refused "tagged literal needs a string")]
+    ["EDN other tag refused" "ednRead" "hex" ["#inst \"2026\""] (edn-refused "dispatch forms are forbidden")]
+    ["EDN cid without multibase refused" "ednRead" "hex" [(str "#kotoba/cid \"" (subs cid-text 1) "\"")] (edn-refused "cid literal must be a canonical base32 binary CIDv1")]
+    ["EDN cid uppercase multibase refused" "ednRead" "hex" [(str "#kotoba/cid \"B" (subs cid-text 1) "\"")] (edn-refused "cid literal must be a canonical base32 binary CIDv1")]
+    ["EDN cid that is no CIDv1 refused" "ednRead" "hex" ["#kotoba/cid \"bafy\""] (edn-refused "cid literal must be a canonical base32 binary CIDv1")]
+    ["two 32768-byte payloads fit the 65536 budget" "pairCount" "hex"
+     [(apply str (repeat 16384 "07")) (apply str (repeat 16384 "07"))] "2n"]
+    ["two 32769-byte payloads exceed it" "pairCount" "hex"
+     [(apply str (repeat 16384 "07")) (apply str (repeat 16385 "07"))]
+     "trap:invalid-typed-value:document UTF-8 budget exceeded"]
+    ["S0 anchor: null unchanged" "nullDigest" "hex" [] (q "1b16b1df538ba12dc3f97edbb85caa7050d46c148134290feba80f8236c83db9")]
+    ["S0 anchor: {:a [true] :bb nil :zeta 1} unchanged" "mapDigest" "hex" [] (q "dd0e557677d6f5396976dd73f789b89ded541157a6d9de65360c37c6cd1d082a")]]})
 
 (doseq [[fixture cases] suites]
   (let [compiled (compile! fixture)
