@@ -130,6 +130,25 @@
     (refused! "a tampered statement field" 77 "Ed25519 signature verification failed"
               "verify-signed" tampered-statement "--trust" trust "--now" "1000")
 
+    ;; A closure program: compile verifies its oracle on the in-memory map,
+    ;; where `:closure-param-indexes` are host numbers; sign / verify /
+    ;; verify-signed re-run that oracle on the map read back from disk, where
+    ;; every integer is a BigInt. Until 2026-10-09 the read-back was refused
+    ;; as "native artifact oracle evaluation rejected" right after compile
+    ;; reported `:oracle {:status :verified}` (kotoba.compiler.kexe-indexes).
+    (let [closure-artifact (lib/join directory "closure.kexe")
+          closure-signed (lib/join directory "closure.signed.kexe")
+          compiled (ok! "compile a closure program to sign"
+                        "compile" (lib/join lib/root "examples" "closure-node.kotoba")
+                        "--target" "aarch64-macos" "--output" closure-artifact)]
+      (report! (= {:status :verified} (:oracle (stdout-edn compiled)))
+               "compile reports the closure program's oracle verified" (str (.-stdout compiled)))
+      (ok! "verify a closure artifact compile verified" "verify" closure-artifact)
+      (ok! "sign a closure artifact compile verified" "sign" closure-artifact "--key" key
+           "--not-before" "0" "--expires" "4102444800" "--output" closure-signed)
+      (ok! "verify-signed a signed closure artifact"
+           "verify-signed" closure-signed "--trust" trust "--now" "1000"))
+
     ;; verify (unsigned artifact) and inspect
     (ok! "verify" "verify" artifact)
     (refused! "verify of a tampered artifact" 65 "artifact integrity mismatch"
