@@ -60,7 +60,7 @@
 ;; dependency-free host artifact. One instantiation per case, because the
 ;; provider answer depends on the case.
 (def ^:private runner
-  "const [hostPath, wasmPath, casesJson] = process.argv.slice(1);
+  "const [hostPath, wasmPath, casesPath] = process.argv.slice(1);
 const { pathToFileURL } = await import('node:url');
 const { readFileSync } = await import('node:fs');
 const { instantiateKotoba, normalizeKotobaTrap } = await import(pathToFileURL(hostPath).href);
@@ -86,7 +86,7 @@ const show = v => {
 };
 const trap = (tag, e) => { const t = normalizeKotobaTrap(e) || {}; return tag + ':' + t.code + ':' + e.message; };
 const out = [];
-for (const c of JSON.parse(casesJson)) {
+for (const c of JSON.parse(readFileSync(casesPath, 'utf8'))) {
   let h;
   try { h = await instantiateKotoba(bytes, { allowCapabilities: [15], typedCapCall: providers[c.provider] }); }
   catch (e) { out.push({ label: c.label, result: trap('refused', e) }); continue; }
@@ -206,14 +206,21 @@ process.stdout.write(JSON.stringify(out));")
 (doseq [[fixture cases] suites]
   (let [compiled (compile! fixture)
         results (when-let [wasm (:ok compiled)]
-                  (let [r (.spawnSync child js/process.execPath
+                  ;; The cases go through a FILE, not argv: the document
+                  ;; budget cases carry 32 KiB hex payloads, and Linux caps
+                  ;; one argument at 128 KiB (E2BIG on ubuntu CI; macOS's
+                  ;; limit is the whole argv, so it passed there).
+                  (let [cases-path (.join path directory (str fixture ".cases.json"))
+                        _ (.writeFileSync fs cases-path
+                                          (js/JSON.stringify
+                                           (clj->js (for [[label ex provider args] cases]
+                                                      {:label label :export ex
+                                                       :provider provider :args args}))))
+                        r (.spawnSync child js/process.execPath
                                       (clj->js ["--input-type=module" "-e" runner
                                                 (join root "runtime" "browser-host.mjs")
                                                 wasm
-                                                (js/JSON.stringify
-                                                 (clj->js (for [[label ex provider args] cases]
-                                                            {:label label :export ex
-                                                             :provider provider :args args})))])
+                                                cases-path])
                                       #js {:cwd root :encoding "utf8" :timeout 120000
                                            :maxBuffer (* 64 1024 1024)})]
                     (if (and (nil? (.-error r)) (zero? (.-status r)))
