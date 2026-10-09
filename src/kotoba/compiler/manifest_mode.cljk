@@ -237,10 +237,41 @@
                         [b (row :skipped (contains? required b)
                                 {:reason (str "unknown case :kind " (pr-str kind))})]))))))
 
+;; A backend the case records in `:unexecuted-backends` is DEFERRED: it is
+;; expected not to pass, and its row says so instead of counting as a required
+;; failure. A deferral is not a parking space, so both ways out are checked:
+;; a deferred backend that passes is `:deferral-outlived` (the record outlived
+;; what it excused -- move the backend to :executed-by), and a deferral that
+;; names `:refused-with` must still be refused with that text.
+(defn- apply-deferrals [kase rows]
+  (reduce-kv
+   (fn [rows backend deferral]
+     (if-let [r (get rows backend)]
+       (assoc rows backend
+              (cond
+                (= :pass (:status r))
+                (assoc r :status :deferral-outlived
+                       :reason (str "recorded in :unexecuted-backends (as of " (:as-of deferral)
+                                    ") but it passes: move it to :executed-by"))
+
+                (and (string? (:refused-with deferral))
+                     (not (str/includes? (str (:reason r)) (:refused-with deferral))))
+                (assoc r :status :deferral-reason-changed
+                       :reason (str "deferred as refused with " (pr-str (:refused-with deferral))
+                                    ", measured " (pr-str (:reason r))))
+
+                :else
+                (assoc r :status :deferred :measured (:status r) :required? false)))
+       rows))
+   rows
+   (or (:unexecuted-backends kase) {})))
+
 ;; --- report -----------------------------------------------------------------
 
 (defn- ran? [rows]
-  (some #(contains? #{:pass :fail :refused} (:status %)) (vals rows)))
+  (some #(contains? #{:pass :fail :refused :deferred :deferral-outlived :deferral-reason-changed}
+                     (:status %))
+        (vals rows)))
 
 (defn- required-failures [results]
   (vec (for [[id rows] results
@@ -267,7 +298,7 @@
                       cases)
         in-scope (remove #(contains? skipped (:id %)) cases)
         results (into (sorted-map)
-                      (map (fn [c] [(:id c) (case-rows root manifest c fuel)]))
+                      (map (fn [c] [(:id c) (apply-deferrals c (case-rows root manifest c fuel))]))
                       in-scope)
         ran (count (filter ran? (vals results)))
         failures (required-failures results)]
@@ -303,7 +334,8 @@
      :err (vec (concat
                 (for [[id rows] (:results report)
                       [backend r] (sort-by key rows)
-                      :when (or (contains? #{:fail :refused} (:status r))
+                      :when (or (contains? #{:fail :refused :deferral-outlived :deferral-reason-changed}
+                                           (:status r))
                                 (and (:required? r) (= :skipped (:status r))))]
                   (str " " (if (:required? r) "FAIL" "WARN") " " (name id)
                        " backend=" (name backend) " status=" (name (:status r))

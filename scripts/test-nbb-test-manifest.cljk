@@ -66,11 +66,16 @@
     (report! (and (contains? (:skipped-cases report) :host-only)
                   (not (contains? results :host-only)))
              "the host-compat case is skipped by name and not run" (pr-str (:skipped-cases report)))
-    (report! (= #{[:adds-wrong-expect :kir] [:adds-wrong-expect :wasm32-kotoba-v1]}
+    (report! (= #{[:adds-wrong-expect :kir] [:adds-wrong-expect :wasm32-kotoba-v1]
+                  [:passes-but-deferred :kir]}
                 (set (map (juxt :case :backend) (:required-failures report))))
-             "required failures are exactly the wrong case's required backends (js is optional)"
+             "required failures: the wrong case's required backends, and the outlived deferral"
              (pr-str (:required-failures report)))
-    (report! (= 3 (get-in report [:totals :ran])) "three in-scope cases ran" (pr-str (:totals report))))
+    (report! (every? #(= :deferred (get-in results [:wrong-but-deferred % :status])) [:kir :wasm32-kotoba-v1])
+             "a recorded deferral that does not pass is :deferred" (pr-str (:wrong-but-deferred results)))
+    (report! (= :deferral-outlived (get-in results [:passes-but-deferred :kir :status]))
+             "a recorded deferral that passes is :deferral-outlived" (pr-str (:passes-but-deferred results)))
+    (report! (= 5 (get-in report [:totals :ran])) "five in-scope cases ran" (pr-str (:totals report))))
   (let [r (amu "test" "--manifest" fixture "--case" "adds-passes" "--case" "unbound-is-refused")]
     (report! (zero? (.-status r)) "--case selects passing cases: exit 0" (str (.-stdout r) (.-stderr r)))
     (report! (.includes (str (.-stdout r)) "kotoba test --manifest: ok cases=2")

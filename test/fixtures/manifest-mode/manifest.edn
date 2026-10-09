@@ -6,6 +6,11 @@
 ;;                         value every backend actually answered (42)
 ;;   :unbound-is-refused   an :expect-error case; :compiler-admit passes
 ;;   :host-only            a host-compat class; skipped by name, never run
+;;   :wrong-but-deferred   the wrong expectation again, with :kir and :wasm
+;;                         recorded in :unexecuted-backends: :deferred, not a
+;;                         required failure
+;;   :passes-but-deferred  passes, but :kir is recorded as unexecuted: the
+;;                         deferral outlived what it excused, a required failure
 {:kotoba.lang.conformance/version 2
  :case-classes
  {:pure-product-run
@@ -49,4 +54,21 @@
    :function "add-two"
    :args [1]
    :expect {:clj 3}
-   :class :host-reader-target}]}
+   :class :host-reader-target}
+  {:id :wrong-but-deferred
+   :kind :run
+   :entry "run/adds.kotoba"
+   :function "add-two"
+   :args [40]
+   :expect {:kotoba 43}
+   :class :pure-product-run
+   :unexecuted-backends {:kir {:as-of "2026-10-09" :reason "fixture" :closes-when "never"}
+                         :wasm32-kotoba-v1 {:as-of "2026-10-09" :reason "fixture" :closes-when "never"}}}
+  {:id :passes-but-deferred
+   :kind :run
+   :entry "run/adds.kotoba"
+   :function "add-two"
+   :args [40]
+   :expect {:kotoba 42}
+   :class :pure-product-run
+   :unexecuted-backends {:kir {:as-of "2026-10-09" :reason "fixture" :closes-when "never"}}}]}
