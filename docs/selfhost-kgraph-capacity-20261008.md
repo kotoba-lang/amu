@@ -119,3 +119,44 @@ launcher 32768 or more, and land the (e, a) index with it. (c1) is worth doing i
 registry today spends user programs' datom budget.
 
 Not verified: two or more compiles in one process (the registry would grow across them, deduplicated by text); x86-64.
+
+## Implemented: option (a) (2026-10-09, ADR 0369)
+
+The owner chose (a). `tools/kexe_loader.c` now maps the datoms over `KEXE_KGRAPH_MAX` (16 Mi, constant 27) and bounds
+them by a per-run budget: default `KEXE_KGRAPH_CAPACITY` 4096 (constant 2, the artifact ABI's `:kgraph-capacity`,
+unchanged), `KEXE_KGRAPH=<n>` for one run (refused by name when zero, not a decimal, or above 16 Mi), and
+`KEXE_EMBEDDED_KGRAPH` for a packaged command. `kgraph_get` answers through an (entity, attribute) index. The
+compiler-hosting images bake 1,048,576 (launcher, amu-main, amu-front, frontsrc, emit, seed package); user commands
+(`scripts/package-command.cljk`) keep 4096. `seed/tests/compile-twin/run.sh` runs the guest with 1,048,576.
+
+1 Mi rather than the suggested 32,768: 32,768 is 16% above the largest corpus program (28,285 datoms for 29.7 KB of
+emitted code), and need grows with emitted code (about 1.6 datoms a byte), so a program with about 35 KB of code would
+trap again. With the index, a larger budget costs only address space touched as used (24 MiB of datoms plus 8 MiB of
+index at 1 Mi), and the CPU and wall emergency stops still bound the run.
+
+Measured with the repo loader (no variant):
+
+- `npm run test-loader-warnings`: clean. `gen-loader-decisions.cljk --check`: region up to date.
+- `npm run test-loader-decisions`: 17 failures, identical to the unchanged base b9069e213 (17): the 16 `KEXE_VECTORS`
+  ceiling-text cases ADR 0364 records, plus the summary line. Classification, region, 4,201 driver cases: pass.
+- `seed/tests/kgraph-capacity/check.sh`: 19/19. With no override, 4096 datoms answer and 4097 trap
+  `:budget/cells :arena :kgraph` (exit 120). `KEXE_KGRAPH=4097` admits 4097 and traps at 4098. 1,000,000 datoms answer
+  under 1,048,576. 16,777,216 is admitted; 16,777,217, 0 and `1x` are refused by name (exit 2); an empty value is the
+  default. For N = 0, 1, 6, 7, 8, 100, 4095, 4096, 4097, output and exit status are identical to the previous loader,
+  which scans.
+- Compile twin (`run.sh`, committed spike, 52 programs). The 4 kgraph programs (i64_set, sorted_map,
+  approval-queue-app, kernel_state) move from a kgraph trap to SAME. All 43 sampled previously-SAME programs (every
+  6th SAME of the first full run, plus base64_kit) stay SAME. The other 5 refuse `kotoba.kir/oracle-unavailable`:
+  ex_info_round_trip, recursive-tree, lazy-sequence and typed-closure-parameters from the 8, and recursive-generic,
+  which was already GUEST-FAILS in the first run (I added it to the sample by mistake). None trap the kgraph.
+- Byte-identical: the 43 sample outputs under the new loader (index, budget 1 Mi) equal those of the previous loader
+  (scan, 4096) byte for byte. All 8 oracle-fallback outputs under the new loader equal the 65,536-datom scanning
+  variant's byte for byte.
+- Time: on ex_info_round_trip, the index removes 40,093,150,350 scanned datoms (6,022,187 lookups). Wall times
+  (seconds): ex_info_round_trip 108.0 vs 112.0, typed-closure-parameters 90.8 vs 118.7; the other six are within
+  1.1 s. The machine was at load average 140-190 while I measured, so these times are indicative only. On the day
+  before, under less load, ex_info_round_trip took 81 s with the index and 100 s with the scan.
+
+Follow-ups, not taken: (b) in kotoba-native, which would stop minting transient label, vreg and function identities as
+keywords (92-97% of the datoms); (c1), a separate table for the seed's keyword registry (needs a context slot); adding
+the kgraph lines to the upstream kotoba-lang `lang/limits.edn`; the Windows loader's fixed array.

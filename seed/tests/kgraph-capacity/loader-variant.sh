@@ -11,6 +11,8 @@
 # the decoded text.
 # A third argument `indexed` answers kgraph_get through an (e, a) hash kept by the guest process (same answers, no
 # linear scan): the cost model of option (c) in docs/selfhost-kgraph-capacity-20261008.md.
+# Against tools/kexe_loader.c after ADR 0369 (per-run budget, built-in index) <capacity> and `indexed` are ignored:
+# the variant only adds the census; name the budget with KEXE_KGRAPH.
 # Never install the result: the decided capacity lives in tools/kexe_loader_decisions.kotoba.
 emulate -L zsh; setopt pipefail
 H=${0:A:h}; R=${H:h:h:h}
@@ -19,12 +21,15 @@ cap=$1; out=${2:A}; src=$out.c
 python3 - $R/tools/kexe_loader.c $src $cap ${3:-} <<'PY'
 import sys
 s = open(sys.argv[1]).read(); cap = int(sys.argv[3])
-def sub(old, new):
+def sub(old, new, optional=False):
     global s
+    if optional and s.count(old) == 0: return
     assert s.count(old) == 1, old
     s = s.replace(old, new)
-sub("#define KEXE_KGRAPH_CAPACITY 4096u", "#define KEXE_KGRAPH_CAPACITY %du" % cap)
-sub("_Static_assert(sizeof(((struct kexe_shared_v11 *)0)->datoms) == 98304,",
+# a loader before ADR 0369 has a fixed array: resize it; a later one keeps its default (pass KEXE_KGRAPH instead)
+fixed = "_Static_assert(sizeof(((struct kexe_shared_v11 *)0)->datoms) == 98304," in s
+if fixed: sub("#define KEXE_KGRAPH_CAPACITY 4096u", "#define KEXE_KGRAPH_CAPACITY %du" % cap)
+if fixed: sub("_Static_assert(sizeof(((struct kexe_shared_v11 *)0)->datoms) == 98304,",
     "_Static_assert(sizeof(((struct kexe_shared_v11 *)0)->datoms) == %d * 24," % cap)
 sub("static void report_budget_trap(const struct kexe_shared_v11 *shared, int child_status) {\n",
     """static void report_budget_trap(const struct kexe_shared_v11 *shared, int child_status) {
@@ -76,7 +81,7 @@ sub("""  if (munmap(memory, mapped) != 0) fail("munmap");
   if (munmap(memory, mapped) != 0) fail("munmap");
   if (munmap(shared, sizeof(*shared)) != 0) fail("shared munmap");
   _exit(command_mode""")
-if len(sys.argv) > 4 and sys.argv[4] == "indexed":
+if fixed and len(sys.argv) > 4 and sys.argv[4] == "indexed":
     # point lookups through an (e, a) -> latest-datom-index hash in the guest process; same last-write-wins answer
     sub("""static unsigned long long kexe_kg_get_calls, kexe_kg_get_scanned;""",
         """static unsigned long long kexe_kg_get_calls, kexe_kg_get_scanned;
@@ -107,6 +112,13 @@ static uint64_t kexe_kg_slot(const struct kexe_shared_v11 *shared, int64_t e, in
         """  kexe_kg_get_calls++;
   { uint32_t x = kexe_kg_index[kexe_kg_slot(shared, e, a)]; return x == 0 ? INT64_MIN : shared->datoms[x - 1].v; }
   for (uint64_t i = 0; i < shared->kgraph_used; i++) {""")
+if not fixed:
+    s = s.replace("(unsigned long long)shared->kgraph_used, (unsigned)KEXE_KGRAPH_CAPACITY,",
+                  "(unsigned long long)shared->kgraph_used, (unsigned)kexe_kgraph_budget,")
+    sub("""  if (kexe_kgraph_index != NULL) {
+    uint32_t x = kexe_kgraph_index[kgraph_index_slot(shared, e, a)];""", """  if (kexe_kgraph_index != NULL) {
+    kexe_kg_get_calls++;
+    uint32_t x = kexe_kgraph_index[kgraph_index_slot(shared, e, a)];""")
 open(sys.argv[2], "w").write(s)
 PY
 cc $src -std=c11 -O2 -o $out
