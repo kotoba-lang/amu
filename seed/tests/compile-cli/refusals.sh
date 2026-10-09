@@ -24,7 +24,7 @@ t() {
   guest "$@" > $D/$name.g.out 2> $D/$name.g.err; local gs=$?
   local ge=$(sed -n 's/.*:error \(:[a-z0-9-]*\).*/\1/p' $D/$name.g.err | head -1)
   local gm=$(sed -n 's/.*:message "\(.*\)"}$/\1/p' $D/$name.g.err | head -1)
-  [ -e $D/o.kexe ] && gm="WROTE AN ARTIFACT: $gm"
+  [ -e $D/o.kexe ] || [ -e $D/no/such/dir/o.kexe ] && gm="WROTE AN ARTIFACT: $gm"
   printf '%s\t%s\t%s\t%s\t%s\n' $name $hs $gs "${ge:--}" "$gm" >> $W/refusals.tsv
 }
 t no-command
@@ -49,4 +49,11 @@ t fuel-metered-5000 compile $F --target aarch64-macos --fuel 5000 --output $D/o.
 t source-missing compile --target aarch64-macos
 t source-extension compile $R/README.md --target aarch64-macos --output $D/o.kexe
 t source-absent compile $R/no-such-file.kotoba --target aarch64-macos --output $D/o.kexe
+# paths the host refuses `:decode` "input could not be read" (65) and nbb.io's Kotoba read used to trap on (SIGILL)
+mkdir -p $D/a-directory.kotoba; cp $F $D/unreadable.kotoba; chmod 000 $D/unreadable.kotoba
+t source-directory compile $D/a-directory.kotoba --target aarch64-macos --output $D/o.kexe
+t source-unreadable compile $D/unreadable.kotoba --target aarch64-macos --output $D/o.kexe
+t policy-absent compile $F --target aarch64-macos --policy $D/no-such-policy.edn --output $D/o.kexe
+t output-dir-absent compile $F --target aarch64-macos --output $D/no/such/dir/o.kexe
+chmod 600 $D/unreadable.kotoba
 column -t -s$'\t' $W/refusals.tsv | cut -c1-200

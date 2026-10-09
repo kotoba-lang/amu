@@ -187,8 +187,8 @@ the entry from source.
 - `src/kotoba/compiler/nbb/cli_support.cljk`: three Kotoba-only exports for an entry's error contract: `error-phase`
   (`:phase` of the caught refusal's ex-info data, `:internal` without one), `exit-code` (the host table entry for entry)
   and `refusal-text` (a reduced `:kotoba.cli-error/v1` report: format, ok, error, message).
-- Size: the linked entry is 8,275,177 bytes; the seed's `extract-native` reads the image as one bytes value, at most
-  8 MiB (`KEXE_BYTES_VALUE_LIMIT`, ADR 0362), so the headroom is 113,431 bytes. A first build that reached the project
+- Size: the linked entry is 8,275,577 bytes (8,275,177 before the nbb.io path fix); the seed's `extract-native` reads the image as one bytes value, at most
+  8 MiB (`KEXE_BYTES_VALUE_LIMIT`, ADR 0362), so the headroom is 113,031 bytes. A first build that reached the project
   twins through `check-driver` (whose Kotoba reading also requires package-lock and compile-cache) linked
   8,848,289 bytes and could not be extracted; cli.cljk calls the twins directly instead.
 
@@ -234,16 +234,25 @@ sides describes its own files (sha256 and size of the bytes written, marker dige
 
 ### Refusals (`seed/tests/compile-cli/refusals.sh`)
 
-22 cases against the host ENTRY (`aarch64_cli.cljk` under nbb with the locked classpath, without bin/amu's routing).
-The guest writes no artifact in any case and answers 21 of 22 with a report. Equal exit code in 11 (no command, `check`,
-missing / unknown / two x86-64 targets, `--artifact bogus` 70, `--backend seed`, `--fuel abc`, missing source, wrong
-extension). Different, by design: the guest refuses by name (64) what the host entry serves or fails on otherwise:
-`aarch64`, `aarch64-linux` (host 0), `aarch64-linux-static`, `aarch64-aiueos-kernel-v1` (host 70: packager not loaded),
-`--artifact object` (host 0), `worker` (host 0 on empty stdin), `extract-native` of an absent file (host 65),
-`--module-lock` (host 65) and `--package-lock` (host 70) with absent locks; `--fuel 5000` is native-artifact's metered-compile
-difference (65, host 0). One trap: a source path that does not exist ends the guest with SIGILL (exit 120) where the
-host answers 65 "input could not be read": nbb.io's Kotoba `read-text-file` reads an absent file through wire 35, which
-traps; fix in nbb.io (stat first), not done here.
+26 cases against the host ENTRY (`aarch64_cli.cljk` under nbb with the locked classpath, without bin/amu's routing).
+The guest writes no artifact in any case and answers every one with a report. Equal exit code in 16: no command,
+`check`, missing / unknown / two x86-64 targets, `--artifact bogus` (70), `--backend seed`, `--fuel abc`, missing
+source, wrong extension, and the five path cases (absent source, a directory, an unreadable file, an absent policy:
+65 `:decode` "input could not be read"; an absent output directory: 74 `:output`). Different, by design: the guest
+refuses by name (64) what the host entry serves or fails on otherwise: `aarch64`, `aarch64-linux` (host 0),
+`aarch64-linux-static`, `aarch64-aiueos-kernel-v1` (host 70: packager not loaded), `--artifact object` (host 0),
+`worker` (host 0 on empty stdin), `extract-native` of an absent file (host 65), `--module-lock` (host 65) and
+`--package-lock` (host 70) with absent locks; `--fuel 5000` is native-artifact's metered-compile difference (65, host 0).
+
+**Unreadable paths (fixed).** nbb.io's Kotoba `read-text-file` READ the path through wire 35, and the loader's READ
+raises SIGILL when its `O_RDONLY | O_NOFOLLOW` open fails or the read fails: an absent source, a directory, an
+unreadable file and an absent `--policy` all ended the guest with exit 120 and no report (host: 65 `:decode` "input
+could not be read"). The Kotoba reading now refuses them first, from the STAT answer (STAT opens the path the same way
+and answers "" when that open fails; its fourth field is 1 for a directory), with the host's phase and message. The
+host reading is unchanged (same forms under `:cljs` and `:clj`). Before -> after (guest exit): absent 120 -> 65,
+directory 120 -> 65, unreadable 120 -> 65, absent policy 120 -> 65; absent output directory 74 -> 74 (already the host's,
+from `write-set!`). Still a trap: an invalid UTF-8 file (READ traps; the host answers "input is not valid UTF-8") and a
+path outside the loader's scope.
 
 ### Named differences of the twin (also in cli.cljk's header)
 
