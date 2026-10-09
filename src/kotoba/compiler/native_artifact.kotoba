@@ -1,0 +1,428 @@
+;; kotoba.compiler.native-artifact -- the sealed native artifact of nbb.cli `compile-native!` on the Kotoba route:
+;; fuel policy, target profile, compatibility descriptor, `native-program`, the `:kotoba.kexe/v1` map, its seal, the
+;; verifier step and the provenance record, over kotoba.form's `:form/r`. The later nbb.cli `compile!` twin calls it;
+;; seed/tests/compile-twin/spike.kotoba uses it today.
+;;
+;; THE CONTRACT (host reference: src/kotoba/compiler/nbb/cli.cljk `native-fuel!`, `fuel-policy!`, `compile-native!`,
+;; `verify-native!`, `native-value-abi`, `serialized-native`)
+;;   (metered? target policy metadata)          :bool  the host's P4 rule: a declared budget, or a target outside
+;;                                                     `unmetered-default-targets`
+;;   (declared-fuel target policy metadata)     :i64   `native-fuel!` of `fuel-policy!` when metered, else the
+;;                                                     unmetered oracle budget 100000; throws the host's messages
+;;   (lower! hir fuel)                          KIR    `kotoba.kir/lower`, refusing what it refuses
+;;   (native-program kir)                       Form   host `kotoba.kir/native-program`, recursive-schema clause included
+;;   (assemble hir kir target fuel metered)     Form  the compile RESULT: {:format :kexe/v1 :target :hir :kir
+;;                                                     :definitions :artifact :compatibility :oracle :fuel-metering}
+;;   (verify-message artifact)                  :string "" when accepted, else the host verifier's message
+;;   (provenance source policy metadata result) Form   `kotoba.compiler.provenance/attach`'s record
+;;   (compile-unverified source hir target policy metadata) compile-native without the verifier step
+;;   (compile-native source hir target policy metadata) the whole of `compile-native!` after the frontend:
+;;                                                     gates, admission, lowering, emission, seal, verify; THROWS the
+;;                                                     host's refusal (ex-info, :phase) and answers the result
+;;   The emitter is chosen by the target's backend (`emit`): kotoba.native.aarch64/emit-program. nbb.cli's host
+;;   entrypoints INJECT one emitter so an aarch64 compile never loads x86-64 code; the Kotoba route cannot inject it
+;;   (a fn literal may not abort, and the seed refuses a `try` around an injected function), and kotoba.native.x86-64
+;;   has no object on this route, so an x86-64 target is refused by name (NAMED DIFFERENCE 8).
+;;
+;; THE ARTIFACT is built as a Form, not a `:document`: a document's containers are bounded (kotoba.verifier.seal's
+;; header), and `:code` and `:program` are far larger. The seal is `kotoba.verifier.seal/sha256-form` -- the host's
+;; `artifact/seal` digest (SHA-256 of `pr-str` of `canonical`) over a Form. The profile and the compatibility
+;; descriptor are small and come from kotoba.kir.target / kotoba.kir.compatibility as documents, read into Forms.
+;;
+;; THE VERIFIER STEP composes the kotoba.verifier twin: `verify-artifact-structure-message` (schema, oracle marker,
+;; format, effects, code bytes, seal, KIR identity, target gates, profile, lowering, the whole runtime-KIR program
+;; verification, fuel/limits/fuel ABI/context ABI, compatibility), then the two steps the twin refuses by name, done
+;; here for real:
+;;   * code region: the program is re-emitted with `emit` (kotoba.native.aarch64/emit-program runs on the Kotoba route)
+;;     and :exports / :code must equal the artifact's ("native export table rejected" / "native instruction stream
+;;     rejected"). An emitter refusal here propagates as the emitter's own abort, where the host says "runtime KIR
+;;     cannot be safely lowered" (the twin keeps no try around the emitter, as above);
+;;   * oracle: the entry is re-executed with `kotoba.kir/execute` under `:limits :fuel`, exactly where the host
+;;     re-executes it, and judged with the host's messages.
+;;
+;; NAMED DIFFERENCES (not closed here; each is measured in docs/selfhost-compile-twin-spike-20261008.md)
+;;   1. Message order: the host checks the code region BEFORE fuel/limits/ABI/compatibility; this composition checks
+;;      it after them (the twin exports no prefix-only entry). Only an artifact failing both reports a different
+;;      first message.
+;;   2. Oracle re-run outside the ported interpreter subset: `kotoba.kir/execute` answers
+;;      `kotoba.kir/interpreter-unavailable`; that is refused as "native artifact oracle cannot be re-derived on the
+;;      Kotoba route: kotoba.kir/interpreter-unavailable", never accepted.
+;;   3. `:abort` effects: the verifier twin admits only `:state` beside capability calls; the host also admits `:abort`.
+;;   4. Metered compiles: `kotoba.kir/lower` on this route seals under its own 100000 budget and takes none, so a
+;;      metered compile whose declared fuel is not 100000 is refused by name rather than sealed under another budget.
+;;   5. kexe-fs-forms: `refuse-unanswered!` is not called (its Kotoba reading takes the code as a `:document`, and
+;;      `forms` traps on this route); it refuses nothing on the host today (every form is answered). See below.
+;;   6. Not on this route at all: `--backend seed` (`:emitter`), the stage / verdict / compile caches (the host
+;;      result's `:stage-cache` / `:verdict-cache`), packaging (`:binary`), and the `.publication.edn` output set.
+;;   7. `:definitions` is `kotoba.compiler.definition-identity/describe` over this route's HIR/KIR with the catalog
+;;      from `kotoba.sema/capability-id->name`; where the twin's report differs from the host's, the provenance
+;;      record (and only it) differs.
+;;   8. One emitter, kotoba.native.aarch64, chosen by the backend rather than injected (see the contract above).
+;;   9. `kotoba.kir.target`'s Kotoba reading parses its profile table with `document-edn-read`, which on the r6m seed
+;;      does not skip `;` comments and miscounts newlines inside nested maps: `(profile t)` answers nil and
+;;      `compatibility-form` traps. This module needs a target table the reader reads (measured with the same table
+;;      written comment-free on one line); the fix is upstream.
+
+(ns kotoba.compiler.native-artifact
+  (:require [kotoba.form :as form]
+            [kotoba.kir :as ir]
+            [kotoba.kir.target :as target-profile]
+            [kotoba.kir.compatibility :as compatibility]
+            [kotoba.verifier :as verifier]
+            [kotoba.verifier.seal :as seal]
+            [kotoba.verifier.ops :as ops]
+            [kotoba.compiler.provenance :as provenance]
+            [kotoba.compiler.definition-identity :as definition-identity]
+            [kotoba.compiler.uefi-operations :as uefi]
+            [kotoba.compiler.effect-row :as effect-row]
+            [kotoba.compiler.native-admission :as native-admission]
+            [kotoba.native.aarch64 :as a64]
+            [kotoba.sema :as sema])
+  (:export [metered? declared-fuel lower! native-program recursive-schema-table? value-abi profile-form
+            compatibility-form context-abi assemble verify-message verify! provenance compile-unverified compile-native
+            unmetered-oracle-fuel max-native-fuel])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :kotoba.kir/run [:record :kotoba.kir/run [[:ok :bool] [:value [:ref :form/r]] [:trap :string] [:message :string]]]}))
+
+;; ---- constants (cli.cljk) ----------------------------------------------------------------------------------------
+
+;; `unmetered-oracle-fuel`: the budget the compile-time oracle runs under when the artifact is unmetered
+(defn unmetered-oracle-fuel [] :i64 100000)
+;; `max-native-fuel` = `kotoba.kir/max-fuel`
+(defn max-native-fuel [] :i64 (ir/max-fuel))
+
+(defn- unmetered-default-target? [target :keyword] :bool
+  (or (= target :x86_64-kotoba-v1) (= target :x86_64-linux-kotoba-v1) (= target :x86_64-macos-kotoba-v1)
+      (= target :aarch64-kotoba-v1) (= target :aarch64-linux-kotoba-v1) (= target :aarch64-macos-kotoba-v1)
+      (= target :x86_64-linux-static-kotoba-v1) (= target :aarch64-linux-static-kotoba-v1)))
+
+;; ---- Form helpers ------------------------------------------------------------------------------------------------
+
+(defn- kf [k :keyword] [:ref :form/r] (form/keyword-form k))
+(defn- fld [m [:ref :form/r] k :keyword] [:ref :form/r] (form/form-get m (form/keyword-form k)))
+(defn- has? [m [:ref :form/r] k :keyword] :bool (form/form-has? m (form/keyword-form k)))
+(defn- empty-map [] [:ref :form/r] (form/form-map (form/no-forms)))
+(defn- put [m [:ref :form/r] k :keyword v [:ref :form/r]] [:ref :form/r]
+  (form/assoc-form m (form/keyword-form k) v))
+(defn- kw-is? [f [:ref :form/r] k :keyword] :bool (and (form/is-keyword? f) (= (form/keyword-value f) k)))
+(defn- copy-key [out [:ref :form/r] m [:ref :form/r] k :keyword] [:ref :form/r]
+  (if (has? m k) (put out k (fld m k)) out))
+
+(defn- refuse [message :string phase :keyword] [:ref :form/r]
+  (throw (ex-info message {:phase phase})))
+
+;; ---- fuel (`fuel-policy!`, `native-fuel!`, P4) --------------------------------------------------------------------
+
+(defn- policy-fuel [policy [:ref :form/r]] [:ref :form/r] (fld (fld policy :budgets) :fuel))
+
+(defn metered? [target :keyword policy [:ref :form/r] metadata [:ref :form/r]] :bool
+  (or (not (form/is-nil? (fld metadata :fuel)))
+      (not (form/is-nil? (policy-fuel policy)))
+      (not (unmetered-default-target? target))))
+
+;; `fuel-policy!` then `native-fuel!`: the flag and the policy must agree, the budget defaults to 512, and it must be
+;; an integer in [1, max-native-fuel]. (The host compares the two as decimal text because nbb mixes BigInt and
+;; number; both are i64 leaves here.)
+(defn- metered-fuel [policy [:ref :form/r] metadata [:ref :form/r]] :i64
+  (let [flag (fld metadata :fuel)
+        from-policy (policy-fuel policy)
+        twice (and (not (form/is-nil? flag)) (not (form/is-nil? from-policy)) (not (form/eq flag from-policy)))
+        declared (if (form/is-nil? flag) (if (form/is-nil? from-policy) (form/int-form 512) from-policy) flag)]
+    (if twice
+      (form/int-value (refuse "fuel declared twice with different values: --fuel and the policy's :budgets :fuel must agree" :usage))
+      (if (and (form/is-int? declared) (>= (form/int-value declared) 1) (<= (form/int-value declared) (max-native-fuel)))
+        (form/int-value declared)
+        (form/int-value (refuse "native fuel budget is not admitted" :verify))))))
+
+(defn declared-fuel [target :keyword policy [:ref :form/r] metadata [:ref :form/r]] :i64
+  (if (metered? target policy metadata) (metered-fuel policy metadata) (unmetered-oracle-fuel)))
+
+;; ---- lowering ------------------------------------------------------------------------------------------------------
+
+(defn lower! [hir [:ref :form/r] fuel :i64] [:ref :form/r]
+  (if (not (= fuel (unmetered-oracle-fuel)))
+    ;; NAMED DIFFERENCE 4: the Kotoba `lower` takes no oracle budget
+    (refuse "kotoba.kir/lower on the Kotoba route seals the oracle under 100000 fuel only: a metered compile with another declared budget cannot be sealed here" :subset)
+    (let [r (ir/lower hir)]
+      (if (ir/run-ok? r)
+        (ir/run-value r)
+        (refuse (string-concat (ir/run-trap r) (string-concat ": " (ir/run-message r))) :subset)))))
+
+;; ---- native-program (host kotoba.kir/native-program) -------------------------------------------------------------
+
+;; the names N such that some [:ref N] occurs in NODE, as `tree-seq coll? seq` sees them: a 2-vector (a map entry
+;; is one) whose first item is :ref
+(defn- refs-into [node [:ref :form/r] acc [:list [:ref :form/r]]] [:list [:ref :form/r]]
+  (cond
+    (form/is-map? node)
+    (loop [i 0 out acc]
+      (if (>= (+ i 1) (form/count-of node))
+        out
+        (let [k (form/nth-of node i)
+              v (form/nth-of node (+ i 1))
+              out1 (if (kw-is? k :ref) (form/append-form out v) out)]
+          (recur (+ i 2) (refs-into v (refs-into k out1))))))
+    (or (form/is-vec? node) (form/is-seq? node) (form/is-set? node))
+    (let [out0 (if (and (form/is-vec? node) (= 2 (form/count-of node)) (kw-is? (form/nth-of node 0) :ref))
+                 (form/append-form acc (form/nth-of node 1))
+                 acc)]
+      (loop [i 0 out out0]
+        (if (>= i (form/count-of node))
+          out
+          (recur (+ i 1) (refs-into (form/nth-of node i) out)))))
+    :else acc))
+
+(defn- member? [xs [:list [:ref :form/r]] x [:ref :form/r]] :bool
+  (loop [i 0]
+    (if (>= i (vector-count xs))
+      false
+      (if (form/eq (typed-list-nth [:list [:ref :form/r]] xs i) x) true (recur (+ i 1))))))
+
+(defn- reaches? [table [:ref :form/r] start [:ref :form/r]] :bool
+  (loop [frontier (refs-into (form/form-get table start) (form/no-forms)) i 0 seen (form/no-forms)]
+    (if (>= i (vector-count frontier))
+      false
+      (let [name (typed-list-nth [:list [:ref :form/r]] frontier i)]
+        (cond
+          (form/eq name start) true
+          (member? seen name) (recur frontier (+ i 1) seen)
+          :else (recur (refs-into (form/form-get table name) frontier) (+ i 1) (form/append-form seen name)))))))
+
+(defn recursive-schema-table? [table [:ref :form/r]] :bool
+  (if (form/is-map? table)
+    (loop [i 0]
+      (if (>= i (form/count-of table))
+        false
+        (if (reaches? table (form/nth-of table i)) true (recur (+ i 2)))))
+    false))
+
+(defn native-program [kir [:ref :form/r]] [:ref :form/r]
+  (let [base (copy-key (copy-key (copy-key (copy-key (copy-key (copy-key (empty-map) kir :format) kir :entry)
+                                                     kir :exports) kir :signature) kir :effects) kir :functions)]
+    (if (recursive-schema-table? (fld kir :schemas)) (put base :schemas (fld kir :schemas)) base)))
+
+;; ---- descriptors -----------------------------------------------------------------------------------------------------
+
+;; `native-value-abi`, from the KIR
+(defn value-abi [kir [:ref :form/r]] :keyword
+  (cond
+    (ir/uses-f32? kir) :kotoba.typed/mixed-f32-f64-v3
+    (ir/uses-f64? kir) :kotoba.typed/mixed-f64-v2
+    (kw-is? (fld kir :format) :kotoba.kir/v4) :kotoba.typed/externref-v1
+    :else :kotoba.i64/direct-v1))
+
+(defn profile-form [target :keyword] [:ref :form/r] (form/from-document (target-profile/profile target)))
+
+(defn- doc-keyword [f [:ref :form/r]] :document
+  (if (form/is-keyword? f) (document-keyword (form/keyword-value f)) (document-null)))
+
+(defn compatibility-form [hir [:ref :form/r] kir [:ref :form/r] target :keyword] [:ref :form/r]
+  (form/from-document
+   (compatibility/descriptor
+    (document-map :hir-format (doc-keyword (fld hir :format))
+                  :kir-format (doc-keyword (fld kir :format))
+                  :target (document-keyword target)
+                  :target-profile (target-profile/profile target)
+                  :value-abi (document-keyword (value-abi kir))))))
+
+;; `:context-abi`, version 11 (the constant compile-native! seals and verify-runtime! expects)
+(defn context-abi [] [:ref :form/r]
+  (form/edn-form "{:version 11 :fuel-offset 8 :allow-bitmap-offset 16 :allow-bitmap-bytes 32 :cap-call-offset 48 :pair-new-offset 56 :pair-first-offset 64 :pair-second-offset 72 :pair-capacity 4096 :kgraph-assert-offset 80 :kgraph-get-offset 88 :kgraph-count-offset 96 :kgraph-entity-at-offset 104 :kgraph-capacity 4096 :string-equal-offset 112 :string-concat-offset 120 :typed-cap-call-offset 128 :string-substring-offset 136 :string-code-point-at-offset 144 :string-pool-capacity 65536 :vector-new-empty-offset 152 :vector-conj-offset 160 :vector-count-offset 168 :vector-at-offset 176 :vector-assoc-offset 184 :vector-drop-offset 192 :vector-alloc-offset 200 :vector-assoc-in-place-offset 208 :string-index-of-offset 216 :arena-enter-offset 224 :arena-leave-offset 232 :string-compare-offset 240 :string-fold-ascii-offset 248 :string-find-blank-offset 256 :string-skip-blank-offset 264 :string-index-of-from-offset 272 :string-compare-lines-offset 280 :pair-used-pointer-offset 288 :pairs-base-offset 296 :pair-validated-base-offset 304 :vector-used-pointer-offset 312 :vectors-base-offset 320 :vector-items-base-offset 328 :string-find-byte-offset 336 :string-append-range-offset 344 :string-from-utf8-offset 352 :bytes-from-vector-offset 360 :bytes-slice-offset 368 :bytes-concat-offset 376 :vector-capacity 4096 :vector-item-capacity 65536}"))
+
+;; ---- kexe-fs-forms (NAMED DIFFERENCE 5) -----------------------------------------------------------------------------
+;; compile-native! calls `kexe-fs-forms/refuse-unanswered!` on the emitted code. It is NOT called here: its Kotoba
+;; reading takes the code as a `:document` (which cannot hold a code vector), and `kexe-fs-forms/forms` itself traps
+;; on this route (`form-table-read` assocs onto `(document-null)`). Today every form of the table is answered by the
+;; loader (`:kexe-loader? true` for all 16), so the host check refuses nothing; it returns when those two are fixed.
+
+;; ---- the artifact (compile-native!'s `artifact-map`) ----------------------------------------------------------------
+
+(defn- code-bytes [code [:ref :form/r]] [:ref :form/r]
+  (loop [i 0 acc (form/no-forms)]
+    (if (>= i (form/count-of code))
+      (form/form-vec acc)
+      (recur (+ i 1) (form/append-form acc (form/int-form (bit-and (form/int-value (form/nth-of code i)) 255)))))))
+
+(defn- lowering-of [backend :keyword] :keyword
+  (if (= backend :x86_64-kotoba-v1) :runtime-sysv-v1 :runtime-aapcs64-v1))
+
+(defn- fuel-abi [backend :keyword initial :i64] [:ref :form/r]
+  (put (put (empty-map) :mode (kf (if (= backend :x86_64-kotoba-v1) :hidden-context-r9 :hidden-context-x7)))
+       :initial (form/int-form initial)))
+
+(defn- limits [fuel :i64 metered :bool] [:ref :form/r]
+  (let [base (put (put (put (empty-map) :memory-bytes (form/int-form 65536)) :fuel (form/int-form fuel))
+                  :stack-bytes (form/int-form 4096))]
+    (if metered base (put base :fuel-metering (kf :off)))))
+
+(defn- seal-form [payload [:ref :form/r]] [:ref :form/r]
+  (let [p (form/dissoc-form payload (kf :sha256))]
+    (put p :sha256 (form/string-form (seal/sha256-form p)))))
+
+(defn- backend-of [target :keyword] :keyword
+  (option-value-of [:option :keyword] (target-profile/backend target) :none))
+
+;; the target's emitter (NAMED DIFFERENCE 8: aarch64 only on this route)
+(defn- emit [target :keyword program [:ref :form/r]] [:ref :form/r]
+  (if (= (backend-of target) :aarch64-kotoba-v1)
+    (a64/emit-program program)
+    (refuse (string-concat "native target " (string-concat (document-edn-print (document-keyword target))
+                                                           " has no emitter on the Kotoba route (only kotoba.native.aarch64 is linked)"))
+            :target)))
+
+(defn- artifact-map [hir [:ref :form/r] kir [:ref :form/r] target :keyword fuel :i64 metered :bool
+                     program [:ref :form/r] emitted [:ref :form/r] compat [:ref :form/r]] [:ref :form/r]
+  (let [backend (backend-of target)
+        base (put (put (put (put (put (put (put (put (put (put (put (put (put (put (empty-map)
+               :format (kf :kotoba.kexe/v1))
+               :target (kf target))
+               :target-profile (profile-form target))
+               :value (fld kir :oracle-value))
+               :kir-sha256 (form/string-form (seal/sha256-form program)))
+               :lowering (kf (lowering-of backend)))
+               :fuel-abi (fuel-abi backend (if metered fuel (max-native-fuel))))
+               :context-abi (context-abi))
+               :effects (fld hir :effects))
+               :compatibility compat)
+               :limits (limits fuel metered))
+               :code (code-bytes (fld emitted :code)))
+               :program program)
+               :exports (fld emitted :exports))
+        inconclusive (fld kir :oracle-inconclusive)]
+    (seal-form (if (form/is-nil? inconclusive)
+                 base
+                 (put base :oracle (put (put (put (empty-map) :status (kf :inconclusive)) :trap inconclusive)
+                                        :fuel (form/int-form fuel)))))))
+
+;; `oracle-report`
+(defn- oracle-report [kir [:ref :form/r]] [:ref :form/r]
+  (cond
+    (not (form/is-nil? (fld kir :oracle-inconclusive)))
+    (put (put (empty-map) :status (kf :inconclusive)) :trap (fld kir :oracle-inconclusive))
+    (not (form/is-nil? (fld kir :oracle-value))) (put (empty-map) :status (kf :verified))
+    :else (put (empty-map) :status (kf :not-applicable))))
+
+(defn assemble [hir [:ref :form/r] kir [:ref :form/r] target :keyword fuel :i64 metered :bool] [:ref :form/r]
+  (let [compat (compatibility-form hir kir target)
+        program (native-program kir)
+        emitted (emit target program)
+        artifact (artifact-map hir kir target fuel metered program emitted compat)
+        base (put (put (put (put (empty-map) :format (kf :kexe/v1)) :target (kf target)) :hir hir) :kir kir)
+        report (definition-identity/describe base (sema/capability-id->name))]
+    (put (put (put (put (put base :definitions report) :artifact artifact) :compatibility compat)
+              :oracle (oracle-report kir))
+         :fuel-metering (kf (if metered :on :off)))))
+
+;; ---- the verifier step -------------------------------------------------------------------------------------------------
+
+(defn- code-region-message [kexe [:ref :form/r]] :string
+  (let [expected (emit (form/keyword-value (fld kexe :target)) (fld kexe :program))]
+    (cond
+      (not (form/eq (fld expected :exports) (fld kexe :exports))) "native export table rejected"
+      (not (form/eq (code-bytes (fld expected :code)) (fld kexe :code))) "native instruction stream rejected"
+      :else "")))
+
+(defn- pure-effects? [effects [:ref :form/r]] :bool
+  (loop [i 0]
+    (if (>= i (form/count-of effects))
+      true
+      (if (or (kw-is? (form/nth-of effects i) :state) (kw-is? (form/nth-of effects i) :abort))
+        (recur (+ i 1))
+        false))))
+
+(defn- kernel-native-head? [opn :string] :bool
+  (or (>= (ops/kernel-memory-operation-arity opn) 0) (ops/kernel-native-tail-op? opn)))
+
+(defn- kernel-native? [node [:ref :form/r]] :bool
+  (or (and (form/is-seq? node) (> (form/count-of node) 0) (form/is-symbol? (form/first-of node))
+           (kernel-native-head? (form/symbol-value (form/first-of node))))
+      (and (or (form/is-seq? node) (form/is-vec? node) (form/is-set? node) (form/is-map? node))
+           (loop [i 0]
+             (if (>= i (form/count-of node))
+               false
+               (if (kernel-native? (form/nth-of node i)) true (recur (+ i 1))))))))
+
+(defn- oracle-message [kexe [:ref :form/r]] :string
+  (let [program (fld kexe :program)
+        entry (fld program :entry)
+        inconclusive (kw-is? (fld (fld kexe :oracle) :status) :inconclusive)
+        rerun (and (pure-effects? (fld kexe :effects))
+                   (not (kernel-native? (fld program :functions)))
+                   (not (form/is-nil? entry)))]
+    (if rerun
+      (let [r (ir/execute program (form/symbol-value entry) (form/no-forms)
+                          (put (empty-map) :fuel (fld (fld kexe :limits) :fuel)))]
+        (cond
+          (ir/run-ok? r)
+          (cond
+            inconclusive "native artifact oracle marker rejected: the oracle answered"
+            (not (form/eq (ir/run-value r) (fld kexe :value))) "native artifact oracle value rejected"
+            :else "")
+          (ir/trap-inconclusive? (ir/run-trap r))
+          (if inconclusive "" "native artifact oracle inconclusive: the sealed value cannot be re-derived")
+          ;; NAMED DIFFERENCE 2
+          (string=? (ir/run-trap r) "kotoba.kir/interpreter-unavailable")
+          "native artifact oracle cannot be re-derived on the Kotoba route: kotoba.kir/interpreter-unavailable"
+          :else "native artifact oracle evaluation rejected"))
+      (cond
+        inconclusive "native artifact oracle marker rejected: the oracle answered"
+        (form/is-nil? (fld kexe :value)) ""
+        :else "native artifact oracle value rejected"))))
+
+(defn verify-message [kexe [:ref :form/r]] :string
+  (let [s (verifier/verify-artifact-structure-message kexe)]
+    (if (not (string=? s ""))
+      s
+      (let [c (code-region-message kexe)]
+        (if (not (string=? c "")) c (oracle-message kexe))))))
+
+(defn verify! [kexe [:ref :form/r]] [:ref :form/r]
+  (let [m (verify-message kexe)]
+    (if (string=? m "") kexe (refuse m :verify))))
+
+;; ---- provenance -------------------------------------------------------------------------------------------------------
+
+(defn provenance [source :string policy [:ref :form/r] metadata [:ref :form/r] result [:ref :form/r]] [:ref :form/r]
+  (fld (provenance/attach source policy metadata result) :provenance))
+
+;; ---- compile-native! ----------------------------------------------------------------------------------------------------
+
+(defn- admission-policy [policy [:ref :form/r]] [:ref :form/r]
+  (form/dissoc-form (form/dissoc-form policy (kf :linux-static)) (kf :spawn)))
+
+;; the host's `capability-policy` (cli-support): the compiler controls are not grants
+(defn- capability-policy [policy [:ref :form/r]] [:ref :form/r]
+  (form/dissoc-form (form/dissoc-form policy (kf :language-profile)) (kf :budgets)))
+
+(defn- gate! [hir [:ref :form/r] target :keyword] [:ref :form/r]
+  (let [backend (backend-of target)
+        native (or (= backend :x86_64-kotoba-v1) (= backend :aarch64-kotoba-v1))]
+    (cond
+      (and (kw-is? (fld hir :format) :kotoba.hir/v3)
+           (not (and native (native-admission/only-native-word-typed-features? hir))))
+      (refuse (string-concat "native target " (string-concat (document-edn-print (document-keyword target))
+                                                             " does not qualify this typed module (kotoba.compiler.native-admission)"))
+              :target)
+      (and (form/is-nil? (fld hir :entry))
+           (not (and native (form/is-nil? (fld (profile-form target) :entry)))))
+      (refuse "entryless libraries currently require the kotoba-script web target, the Wasm target, or an entryless native target" :target)
+      :else (uefi/reject-rodata-literals-outside-native-targets! target (uefi/reject-outside-uefi-target! target hir)))))
+
+;; POLICY is the policy as read (wire form); the admission reads it without the packaging keys, as the host does.
+;; Everything of compile-native! except the verifier step: the result, its artifact sealed but not yet verified.
+(defn compile-unverified [source :string hir [:ref :form/r] target :keyword policy [:ref :form/r] metadata [:ref :form/r]]
+  [:ref :form/r]
+  (let [admitted (gate! hir target)
+        apol (admission-policy policy)
+        admission (effect-row/check hir (capability-policy apol))
+        metered (metered? target apol metadata)
+        fuel (declared-fuel target apol metadata)
+        kir (lower! hir fuel)]
+    (put (assemble hir kir target fuel metered) :admission admission)))
+
+(defn compile-native [source :string hir [:ref :form/r] target :keyword policy [:ref :form/r] metadata [:ref :form/r]]
+  [:ref :form/r]
+  (let [result (compile-unverified source hir target policy metadata)
+        checked (verify! (fld result :artifact))]
+    result))

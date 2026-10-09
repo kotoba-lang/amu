@@ -82,3 +82,77 @@ decrement constant with `(= 1 (:mir/value one))`, and on nbb a literal from the 
 every source-written countdown (the JVM and the Kotoba arm admit it). kotoba-mir #72 (merged as 4bd4d583) compares through
 `host-number`; amu's lock now pins it. Measured with `bin/amu compile`: the four programs equal the Kotoba route's code;
 the 254 programs that already agreed are byte-identical to their pre-change host code.
+
+## Addendum: artifact assembly, seal, provenance and verifier (2026-10-09)
+
+`src/kotoba/compiler/native_artifact.kotoba` (`kotoba.compiler.native-artifact`) is the rest of `compile-native!` on the
+Kotoba route, for the later nbb.cli `compile!` twin: the fuel policy (`fuel-policy!` / `native-fuel!`, metered vs
+unmetered by `unmetered-default-targets`, oracle budget 100000, ceiling `kotoba.kir/max-fuel`), the native admission /
+entryless / UEFI gates, `effect-row/check`, `kir/lower`, `native-program` with the recursive-schema clause, the target
+profile and compatibility descriptor (from `kotoba.kir.target` / `kotoba.kir.compatibility`), the whole
+`:kotoba.kexe/v1` map (`:lowering :fuel-abi :context-abi :limits :code :program :exports :effects :compatibility
+:kir-sha256 :value`, the `:oracle` inconclusive record), the seal, `definition-identity/describe` (catalog from
+`kotoba.sema/capability-id->name`), `provenance/attach`, and the verifier step. The spike now calls it and writes the
+`.kexe`, its `.provenance.edn` and the verifier's message. `compare_artifact.py` compares host and guest semantically:
+the `:sha256` seals first, then both maps key by key, then the provenance records the same way.
+
+The artifact is a Form, not a `:document` (a document is bounded to 32 items, depth 8), sealed with
+`kotoba.verifier.seal/sha256-form`. The verifier step is the `kotoba.verifier` twin's
+`verify-artifact-structure-message` followed by the two steps the twin refuses by name, now done for real: the code
+region is re-emitted with `kotoba.native.aarch64/emit-program` and compared, and the entry is re-executed with
+`kotoba.kir/execute` under `:limits :fuel` and judged with the host's messages.
+
+### Measured (full corpus, 372 programs, one build with every fix)
+
+Build: seed r6m `8d3338e1`, the seed17 front0 objects, osaho 23c329e `kir/interp.cljk` (dependents rebuilt), and the
+`kotoba.kir.target` fix below; guests run with `kexe-loader-1mi` and `KEXE_KGRAPH=1048576`. Host: `bin/amu compile
+--target aarch64-macos` of this worktree (BOOTSTRAP-REFERENCE). Rows: `workspaces/claude/artifact-verify/full/result.tsv`.
+
+| class | n | meaning |
+|---|---:|---|
+| BOTH-ACCEPT | 291 | both write the artifact and both verifiers accept it |
+| GUEST-VERIFY-REFUSES | 14 | identical artifact; the twin's verifier refuses what the host's accepts |
+| GUEST-FAILS | 4 | the host compiles, the Kotoba route refuses before an artifact |
+| BOTH-VERIFY-REFUSE | 3 | the host verifier refuses; the twin refuses with the same message |
+| BOTH-REFUSE | 60 | both refuse before the verifier |
+
+- **Seal:** of the 305 programs where both sides wrote an artifact, the `:sha256` seal is SAME for 305; no artifact key
+  differs. 149 of the 291 accepted artifacts seal a value, re-derived by the twin's oracle re-run; one carries the
+  `:oracle :inconclusive` record.
+- **Provenance:** SAME for 305 of 305 (seal and every key, `:definitions` included: the Kotoba
+  `definition-identity/describe` with the sema catalog gives the host's CIDs).
+- **Verifier:** the host verifier refuses 3 programs (`local-uleb128-130` "runtime KIR module shape rejected",
+  `computed-record-map` "runtime KIR record projection rejected", `composed_surface_kit` "native artifact oracle
+  evaluation rejected"); the twin refuses the same 3 with the same messages. The twin is stricter than the host on 14
+  (ADR 0024: stricter is sound, looser is not; none is looser): 7 `:abort` programs ("native artifact contains an
+  unsupported effect": the twin admits only `:state` beside capability calls, the host also admits `:abort`), 5
+  "runtime KIR function shape rejected" (`higher_order`, `indexed_map`, `closure_bytes_result`, `collections_12`,
+  `multi_map_12`) and 2 "runtime KIR operation rejected" (`collections/vector`, `dual-backend/11-minmax`). These are gaps of the `kotoba.verifier` twin's program verification, not of the assembly.
+- **GUEST-FAILS:** 3 `kotoba.kir/oracle-unavailable` (interpreter families not ported: `recursive-tree`,
+  `ex_info_round_trip`, `typed-closure-parameters`) and 1 resource trap (`lazy-sequence`: the frontend exhausts the
+  vector table).
+
+### Named differences that remain (also in the module header)
+
+1. **`kotoba.kir.target` is unreadable on this route as shipped.** Its Kotoba reading parses the profile table with
+   `document-edn-read`, and the r6m seed's document reader does not skip `;` comments and miscounts a newline inside a
+   nested map (`{:a 1 ;; x y\n :b 2}` counts 3 entries, `{:a {:x 1}\n :b {:y 2\n :z 3}\n :c 3}` counts 4): every
+   `(profile t)` answers nil, the compatibility descriptor traps, and the verifier twin would refuse every artifact
+   ("native target profile does not match target identity"). Measured: the spike built against the unpatched module
+   traps on `examples/fuel.kotoba`. The measurement above uses the same table with comments removed and whitespace
+   collapsed to one line (`workspaces/claude/artifact-verify/target-profiles-text.patch`, scratch only, same data).
+   The fix belongs upstream (the table text or the seed's reader) and needs its owner's decision.
+2. **kexe-fs-forms is not called.** `refuse-unanswered!`'s Kotoba reading takes the code as a `:document` (it cannot
+   hold a code vector) and `kexe-fs-forms/forms` traps on this route (`form-table-read` assocs onto `document-null`).
+   Every form of the table is answered by the loader today, so the host check refuses nothing.
+3. **Verifier message order:** the host checks the code region before fuel/limits/ABI/compatibility, the composition
+   after them (the twin exports no prefix-only entry). Not exercised by the corpus.
+4. **Oracle re-run outside the ported interpreter:** `kotoba.kir/execute`'s `interpreter-unavailable` is refused by its
+   own message, never accepted. Not exercised by the corpus (lowering refuses the same modules first).
+5. **Metered compiles:** the Kotoba `kir/lower` takes no oracle budget, so a metered compile whose declared fuel is not
+   100000 is refused by name. Not exercised (the corpus compiles unmetered aarch64-macos).
+6. **One emitter, chosen not injected:** a fn literal may not abort and the seed refuses a `try` around an injected
+   function, so the module calls `kotoba.native.aarch64/emit-program` itself and refuses other ISAs by name; an emitter
+   abort during re-derivation propagates instead of "runtime KIR cannot be safely lowered".
+7. **Not on this route:** `--backend seed` (`:emitter`), the stage / verdict / compile caches, packaging (`:binary`),
+   and the `.publication.edn` output set.
