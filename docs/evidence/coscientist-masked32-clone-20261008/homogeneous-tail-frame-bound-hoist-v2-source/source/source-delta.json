@@ -1,0 +1,41 @@
+{
+  "status": "EXACT_IN_PASS_FN_BOUND_HOIST_SOURCE_DELTA",
+  "base": "/Users/junkawasaki/github/workspaces/codex/tc-homogeneous-tail-frame-compose511-source-v1-20261009/41-a64gen-candidate.kotoba",
+  "baseSHA256": "6a775eeaa426b44403954957a27fe0664a81473da70b1e6a1b2721d6f1cf3fba",
+  "candidateSHA256": "62644967b69517b11936163a958b70e3ae3f8faeb21be185274aa2a57595f765",
+  "substitutions": [
+    [
+      "[M :vector-i64 f :i64 g :i64 k :i64 found :i64] :i64",
+      "[M :vector-i64 f :i64 g :i64 k :i64 found :i64 stop :i64] :i64"
+    ],
+    [
+      "start (gn-fnf M f FF-CODE) stop (sf-codeend M f 1 (vector-at M MM-CODE-N))",
+      "start (gn-fnf M f FF-CODE)"
+    ],
+    [
+      "(sf-tailfix M f g (inc k) k)",
+      "(sf-tailfix M f g (inc k) k stop)"
+    ],
+    [
+      "(sf-tailfix M f g (inc k) found)",
+      "(sf-tailfix M f g (inc k) found stop)"
+    ],
+    [
+      "(let [k (sf-tailfix M f g 1 0) at",
+      "(let [stop (if (> (vector-at M MM-FIX-N) 1) (sf-codeend M f 1 (vector-at M MM-CODE-N)) (vector-at M MM-CODE-N))\n         k (sf-tailfix M f g 1 0 stop) at"
+    ],
+    [
+      "Existing FN capacity bounds scans, work and additional labels to at most 511.",
+      "Existing FN-N<=512 admission bounds scans, work and additional labels to at most 511 (physical MM-FN-CAP8192)."
+    ]
+  ],
+  "newDefinitions": 0,
+  "parameterChange": "sf-tailfix5to6",
+  "zeroFixPreservesNoCodeendScan": true,
+  "novelAlgorithmException": "one-off parameterized analysis hoist authoring, no existing AST/refactor rule",
+  "C2": false,
+  "keyExclusions": [],
+  "newCIDQuerySkips": 0,
+  "productEdited": false,
+  "descriptiveOnlyCorrection": "FN-N<=512 admission ceiling, physical MM-FN-CAP8192; no predicate change"
+}
