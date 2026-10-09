@@ -42,7 +42,7 @@ for f in $files; do
   (cd $R && bin/amu compile $f --target aarch64-macos --policy $pol --output $W/h/$k.kexe > $W/h/$k.log 2>&1); hs=$?
   # the frontend's budgets as the native image runs them (scripts/seed/launcher/build.sh)
   KEXE_COMMAND=1 KEXE_CAP_RESOURCES_35=$R:$W KEXE_STRING_POOL=1073741824 KEXE_PAIRS=67108864 KEXE_VECTORS=67108864 \
-    KEXE_VECTOR_ITEMS=134217728 KEXE_HASHCONS=16 KEXE_CPU_SECONDS=300 KEXE_WALL_SECONDS=300 \
+    KEXE_VECTOR_ITEMS=134217728 KEXE_HASHCONS=16 KEXE_KGRAPH=1048576 KEXE_CPU_SECONDS=300 KEXE_WALL_SECONDS=300 \
     $L $W/spike.bin $off 0 aarch64 3,35,37,38,39 -- $f $W/g/$k.edn --policy $pol > $W/g/$k.log 2>&1; gs=$?
   if [ $hs -eq 0 ] && [ $gs -eq 0 ]; then cls=$(python3 $H/compare.py $W/h/$k.kexe $W/g/$k.edn)
   elif [ $hs -ne 0 ] && [ $gs -ne 0 ]; then cls=BOTH-REFUSE
