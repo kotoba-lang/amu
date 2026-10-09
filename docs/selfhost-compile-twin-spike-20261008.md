@@ -224,7 +224,7 @@ normalised, and the `.publication.edn` markers).
 |---|---:|---|
 | BOTH-ACCEPT | 291 | seal SAME 291, artifact keys differing 0, provenance SAME 291 (0 keys), stdout answer SAME 291 (0 keys), publication SAME-SHAPE 289 + SIZE-DIFF 2 |
 | BOTH-REFUSE (same exit code) | 62 | 65: 24 `:subset`, 4 `:admission`, 3 `:verify` (same messages as the host verifier); 70: 29 `:target`, 1 `:effect-ceiling`, 1 emitter (host phase `:kir-to-gmir`, guest `:ir`) |
-| BOTH-REFUSE, exit code differs | 1 | `examples/w1-effect-named`: host 65 `:admission`; guest 70 `:target`: the Kotoba native admission refuses a module the host gate admits (host `only-native-word-typed-features?` = true on the host HIR); not diagnosed here |
+| BOTH-REFUSE, exit code differs | 1 | `examples/w1-effect-named`: host 65 `:admission`; guest 70 `:target`: the two frontends type `clock/now` differently (amu's kotoba-sema lock vs the guest's snapshot); see the diagnosis below |
 | HOST-ONLY | 18 | 14 verifier strictness (owner decision: kept): 7 `:abort` "unsupported effect", 5 "runtime KIR function shape rejected", 2 "runtime KIR operation rejected"; 3 `kotoba.kir/oracle-unavailable` (`recursive-tree`, `ex_info_round_trip`, `typed-closure-parameters`); 1 `lazy-sequence` (vector table exhausted, exit 120) |
 | GUEST-ONLY | 0 | |
 
@@ -253,6 +253,25 @@ host reading is unchanged (same forms under `:cljs` and `:clj`). Before -> after
 directory 120 -> 65, unreadable 120 -> 65, absent policy 120 -> 65; absent output directory 74 -> 74 (already the host's,
 from `write-set!`). Still a trap: an invalid UTF-8 file (READ traps; the host answers "input is not valid UTF-8") and a
 path outside the loader's scope.
+
+### Diagnosis: `examples/w1-effect-named` (host 65 `:admission`, guest 70 `:target`)
+
+Not the gate and not the phase mapping: the two FRONTENDS build different HIR. `(defn read-clock [seed] (clock/now
+seed))` is `(typed-cap-call 7 :i64 :i64 seed)` with result `:i64` on the host and `(typed-cap-call 7 :i64 :string seed)`
+with result `:string` on the guest (HIR of both dumped, `workspaces/claude/compile-twin-cli/dbg/w1.{host,guest}.edn`).
+Each gate agrees with the other on each HIR: the host's `only-native-word-typed-features?` answers true on the host HIR
+and false on the guest HIR; `kotoba.compiler.native-admission` answers true on the host HIR and false on the guest HIR
+(and `seed/tests/native-admission/run.sh` on this program: 26 cases, 26 agree). So the guest refuses at the native gate
+(`:target`, 70) and the host passes it and refuses at the capability admission (`:admission`, 65).
+
+Cause: kotoba-sema a2fc0b4 (2026-09-30, "text-result host-command ops (env/read, clock/now, cli/args, io/*, sys/cwd,
+process/spawn, entropy/draw) need no result context") gives `clock/now` its catalog result type `:string` by name. It is
+in the guest's frontend (the seed17 snapshot, kotoba-sema c2e1343, branch agent/walls-sema) and not in the host's lock
+(kotoba-sema 97347531 on main), which infers the result from context (`:i64` here). The guest's typing is the catalog's
+(`:string -> :string`, the answer is decimal text). Closing it means one frontend for both routes: bump amu's
+kotoba-sema lock to a commit containing a2fc0b4, or build the guest from the locked sema. That is a lock decision for
+the owner; nothing was changed here. Either way both sides then build one HIR and agree (the native gate, 70, with
+a2fc0b4; the admission, 65, without).
 
 ### Named differences of the twin (also in cli.cljk's header)
 
