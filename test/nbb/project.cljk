@@ -1175,3 +1175,37 @@
       (let [own (try (project-files/load-closed-graph leaf [root]) nil
                      (catch :default e (ex-data e)))]
         (assert (= 'hx.leaf (:source-module own)) (pr-str own))))))
+
+;; A `recur` in a linked module is a loop, not a call. The linker renames every
+;; local, and until 2026-10-09 it renamed a `loop`'s `__kotoba_loop_N` helper
+;; to `kotoba_module__M__K` too -- a name the KIR trampoline does not
+;; recognise, so each iteration took a call frame and any loop past ~30
+;; iterations trapped `:budget/frames` at the default budget of 32, in the
+;; linked unit only (io-ipld dag_cbor_write test-link / test-map). Both kinds:
+;; a loop reached through an import, and the root module's own.
+(check "linked-loops-run-in-constant-frames"
+  (fn []
+    (let [{:keys [source]}
+          (project/link-source
+           {'lp.lib
+            "(ns lp.lib (:export [sum-below]))
+             (defn sum-below [n :i64] :i64
+               (loop [i 0 acc 0] (if (>= i n) acc (recur (+ i 1) (+ acc i)))))"
+            'lp.main
+            "(ns lp.main (:require [lp.lib :as lib]) (:export [linked local]))
+             (defn- count-up [n :i64] :i64
+               (loop [i 0] (if (>= i n) i (recur (+ i 1)))))
+             (defn linked [] :i64 (lib/sum-below 1000))
+             (defn local [] :i64 (count-up 1000))"}
+           'lp.main)
+          kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))
+          helpers (->> (:functions kir) (map (comp str :name))
+                       (filter #(re-matches #"__kotoba_loop_\d+" %)))]
+      (assert (= 2 (count (distinct helpers)))
+              (str "one loop helper per module, kept as __kotoba_loop_N: " (pr-str helpers)))
+      (assert (= 0 (project/linked-function-module (first (sort helpers)))))
+      (assert (= 1 (project/linked-function-module (last (sort helpers)))))
+      (assert (= 32 ir/default-frames))
+      ;; Default budget: no :frames passed.
+      (assert (= 499500 (js/Number (ir/execute kir 'linked []))))
+      (assert (= 1000 (js/Number (ir/execute kir 'local [])))))))

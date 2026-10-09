@@ -1,5 +1,5 @@
 (ns kotoba.compiler.project
-  {:kotoba/export [attribute-error attribute-linked-error instantiate-forms instantiation-key key-binding key-namespace link-source linked-position max-definition-closure-count max-linked-source-bytes max-project-dependency-edges max-project-depth max-project-exports max-project-expression-nodes max-project-functions max-project-literals max-project-modules max-project-source-bytes max-project-string-literal-bytes max-template-parameters module-info module-namespaces source-position with-module-file]}
+  {:kotoba/export [attribute-error attribute-linked-error instantiate-forms linked-function-module instantiation-key key-binding key-namespace link-source linked-position max-definition-closure-count max-linked-source-bytes max-project-dependency-edges max-project-depth max-project-exports max-project-expression-nodes max-project-functions max-project-literals max-project-modules max-project-source-bytes max-project-string-literal-bytes max-template-parameters module-info module-namespaces source-position with-module-file]}
   (:require [kotoba.lang.text :as str]
             [kotoba.sema :as sema]
             [kotoba.kir.value :as value]
@@ -887,6 +887,47 @@
 (defn- closure-apply-name? [name]
   (= '__kotoba_closure_apply name))
 
+;; A `loop` desugars to a `__kotoba_loop_N` helper, and that NAME is the whole
+;; contract by which a recur stays a loop: the KIR interpreter
+;; (`kotoba.kir/loop-helper-name?`) re-enters a self-tail call to such a helper
+;; in place -- no frame, no fuel (T7.1) -- and the cljs backend keys off the
+;; same prefix. Renamed to `kotoba_module__M__K` like any other local, a linked
+;; helper was an ordinary function calling itself, so every iteration took a
+;; call frame and any loop over ~30 items trapped `:budget/frames` under the
+;; default budget of 32 -- in the linked unit only; a single-file run of the
+;; same module never renames. So a linked helper keeps the shape.
+;;
+;; N must not collide with a helper the second analysis of the linked text
+;; mints from its own `*loop-counter*` (which starts again at 1). That counter
+;; ticks at most once per desugared form, so it stays under the frontend's
+;; `max-lowered-nodes` (100000), below this base; the per-module stride is the
+;; one `:lambda-id-base` uses, so two modules' helpers never share a number.
+(def ^:private linked-loop-helper-base 1000000)
+
+(defn- loop-helper-name? [name]
+  (and (symbol? name)
+       (nil? (namespace name))
+       (boolean (re-matches #"__kotoba_loop_\d+" (str name)))))
+
+(defn- linked-local-name [module-index function-index name]
+  (if (loop-helper-name? name)
+    (symbol (str "__kotoba_loop_" (+ linked-loop-helper-base
+                                     (* module-index sema/max-functions)
+                                     function-index)))
+    (symbol (str "kotoba_module__" module-index "__" function-index))))
+
+(defn linked-function-module
+  "The module index a linked local NAME (a string or symbol) came from, or nil
+  for a name the linker did not mint (an export wrapper, a dispatcher)."
+  [name]
+  (let [name (str name)]
+    (if-let [[_ m] (re-matches #"kotoba_module__(\d+)__\d+" name)]
+      (parse-long m)
+      (when-let [[_ n] (re-matches #"__kotoba_loop_(\d+)" name)]
+        (let [n (parse-long n)]
+          (when (>= n linked-loop-helper-base)
+            (quot (- n linked-loop-helper-base) sema/max-functions)))))))
+
 ;; `source-text` emits the linked module graph as text the reader has to read
 ;; back, so anything it prints unreadably breaks linking rather than merely
 ;; looking odd.
@@ -1478,9 +1519,9 @@
                        [(:name function) target])))
               stub-functions)
         local-names (into {} (map-indexed (fn [function-index {:keys [name]}]
-                                            [name (symbol (str "kotoba_module__"
-                                                               module-index "__"
-                                                               function-index))])
+                                            [name (linked-local-name module-index
+                                                                     function-index
+                                                                     name)])
                                           locals))
         global-dispatcher-names
         (into {}
