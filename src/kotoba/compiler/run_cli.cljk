@@ -21,7 +21,9 @@
             [kotoba.compiler.atomic-output :as atomic-output]
             [kotoba.compiler.bounded-edn :as bounded-edn]
             [kotoba.compiler.receipt :as receipt]
-            [kotoba.compiler.trust-cli :as trust-cli]))
+            [kotoba.compiler.trust-cli :as trust-cli]
+            #?(:cljs ["node:fs" :as fs]))
+  #?(:clj (:import [java.nio.file Files LinkOption Paths])))
 
 (def commands #{"measure-runtime" "run"})
 
@@ -53,6 +55,27 @@
       (nil? text) fallback
       :else (or (parse-long text)
                 (throw (ex-info (str flag " must be a decimal integer") {:phase :usage}))))))
+
+(defn- loader-path!
+  "`--loader`, refused by name when it is not an executable regular file. The
+  executor folds absent, not executable and wrong bytes into one sentence --
+  \"measured native loader does not match runtime identity\" -- which reads as
+  tampering; only the last one is."
+  [args]
+  (let [loader (option args "--loader")]
+    (when loader
+      (let [regular? #?(:clj (Files/isRegularFile (Paths/get loader (make-array String 0))
+                                                  (make-array LinkOption 0))
+                        :cljs (try (.isFile (.statSync fs loader)) (catch :default _ false)))
+            executable? #?(:clj (Files/isExecutable (Paths/get loader (make-array String 0)))
+                           :cljs (try (.accessSync fs loader (.-X_OK (.-constants fs))) true
+                                      (catch :default _ false)))]
+        (cond
+          (not regular?)
+          (throw (ex-info (str "native loader not found: " loader) {:phase :execute}))
+          (not executable?)
+          (throw (ex-info (str "native loader is not executable: " loader) {:phase :execute})))))
+    loader))
 
 (defn dispatch!
   "Run one command with EXECUTOR, a map `{:measure-runtime f :execute g}` (or
@@ -86,7 +109,7 @@
                      envelope trust policy input
                      {:now now :entry entry
                       :runtime (:runtime runtime-measurement)
-                      :loader-path (option args "--loader")})
+                      :loader-path (loader-path! args)})
           report (:report execution)
           evidence (:evidence execution)
           value (receipt/create

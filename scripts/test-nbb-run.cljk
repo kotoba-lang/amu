@@ -7,7 +7,8 @@
   iteration 8) these two were the last commands with no route at all.
 
   Every positive step has a refusal beside it: an untrusted runtime (77),
-  an input whose arity does not match the entry (69), a trapped execution
+  an input whose arity does not match the entry (69), a loader that is
+  absent or not executable (69, named as such), a trapped execution
   (exit 120, `:status :trap`, and the receipt still written). The loader is
   built twice by `measure-runtime` itself (reproducible double build); this
   script asserts the artifact it drives answers 42 and that the receipt
@@ -28,6 +29,14 @@
   (.spawnSync child js/process.execPath
               (clj->js (into [(lib/join lib/root "bin" "amu")] args))
               #js {:cwd lib/root :encoding "utf8" :timeout 600000
+                   :maxBuffer (* 64 1024 1024)}))
+(defn- invoke-in
+  "`invoke` from CWD instead of the repo root: what a caller standing next to
+  their files sees."
+  [cwd & args]
+  (.spawnSync child js/process.execPath
+              (clj->js (into [(lib/join lib/root "bin" "amu")] args))
+              #js {:cwd cwd :encoding "utf8" :timeout 600000
                    :maxBuffer (* 64 1024 1024)}))
 
 (def ^:private checks (volatile! {:pass 0 :fail 0}))
@@ -116,6 +125,31 @@
       (report! (= 120 (.-status r)) "a trapped execution exits 120" (str "exit " (.-status r) " " (.-stderr r)))
       (report! (and v (false? (:ok v)) (= :trap (:status v))) "and answers :status :trap" (str (.-stdout r)))
       (report! (.existsSync fs (f "forever.receipt.edn")) "and still writes the receipt" ""))
+    ;; a loader named relatively, from beside it: `kotoba-loader` has no
+    ;; separator and no extension, and until 2026-10-09 bin/amu left it
+    ;; relative to the Amu checkout, where the executor answered "measured
+    ;; native loader does not match runtime identity" for a file it never found
+    (let [r (invoke-in directory "run" "m.signed.kexe" "--trust" "runtime-trust.edn"
+                       "--runtime" "runtime.edn" "--loader" "kotoba-loader"
+                       "--policy" "policy.edn" "--input" "input.edn"
+                       "--executor-key" "key.edn" "--now" "1500"
+                       "--result-output" "relative.result.edn" "--output" "relative.receipt.edn")
+          v (try (edn-out r) (catch :default _ nil))]
+      (report! (and (zero? (.-status r)) (= 42 (get-in v [:result :result])))
+               "run with caller-relative paths, --loader kotoba-loader"
+               (str "exit " (.-status r) "\n" (.-stdout r) (.-stderr r))))
+    (refused! "run with a loader that does not exist" 69 "native loader not found: "
+              "run" (f "m.signed.kexe") "--trust" (f "runtime-trust.edn") "--runtime" (f "runtime.edn")
+              "--loader" (f "no-such-loader") "--policy" (f "policy.edn") "--input" (f "input.edn")
+              "--executor-key" (f "key.edn") "--now" "1500"
+              "--result-output" (f "never.result.edn") "--output" (f "never.receipt.edn"))
+    (.copyFileSync fs (f "kotoba-loader") (f "plain-loader"))
+    (.chmodSync fs (f "plain-loader") 384)
+    (refused! "run with a loader that is not executable" 69 "native loader is not executable: "
+              "run" (f "m.signed.kexe") "--trust" (f "runtime-trust.edn") "--runtime" (f "runtime.edn")
+              "--loader" (f "plain-loader") "--policy" (f "policy.edn") "--input" (f "input.edn")
+              "--executor-key" (f "key.edn") "--now" "1500"
+              "--result-output" (f "never.result.edn") "--output" (f "never.receipt.edn"))
     (refused! "run without --runtime" 64 "missing --runtime"
               "run" (f "m.signed.kexe") "--trust" (f "runtime-trust.edn") "--loader" (f "kotoba-loader")
               "--policy" (f "policy.edn") "--input" (f "input.edn") "--executor-key" (f "key.edn"))

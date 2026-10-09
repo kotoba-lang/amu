@@ -468,7 +468,14 @@ const PATH_VALUED_FLAGS = new Set(["--blocks", "--source-path", "--module-lock",
   "--output", "--policy", "--package-lock", "--packages", "--trust",
   // `amu test --manifest` (root ADR-2610092330 C0/C1): directories.
   "--conformance-root", "--native-runtime", "--native-prepare",
-  "--loader-source-dir"]);
+  "--loader-source-dir",
+  // `measure-runtime`, `run` and the receipt commands. The loader is named
+  // `kotoba-loader` by default and has no extension, so `run --loader
+  // kotoba-loader` reached the executor relative to the Amu checkout and was
+  // refused as "measured native loader does not match runtime identity" --
+  // a missing file reported as a tampered one (measured 2026-10-09).
+  "--loader", "--loader-output", "--runtime", "--executor-key",
+  "--result-output", "--input", "--parent", "--key", "--signed", "--result"]);
 
 // Flags whose value is NEVER a filesystem location, however much it looks
 // like one. A package name is `<org>/<name>` and a repository URL is full of
