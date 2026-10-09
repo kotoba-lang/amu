@@ -169,9 +169,10 @@ the entry from source.
 ### Structure
 
 - `src/kotoba/compiler/nbb/cli.cljk`: the host reading is the same program (every top-level form read under `:cljs` and
-  under `:clj` is equal before and after, measured with edamame; the host forms now sit in one
-  `#?(:kotoba nil :default (do ...))` region, the requires in one `#?@(:kotoba [...] :default [...])`, the export list in
-  one `#?(:kotoba [run!] :default [...])`). The Kotoba reading sees only the twin: `run!` over `[:list :string]`,
+  under `:clj` is equal before and after, measured with edamame; the host forms now sit in the `:default` branch
+  `(do ...)` of one `#?(:kotoba <run!> :default (do ...))`, whose `:kotoba` branch is the twin's `run!` (its helpers are
+  `#?(:kotoba ...)` forms before it), the requires in one `#?@(:kotoba [...] :default [...])`, the export list in one
+  `#?(:kotoba [run!] :default [...])`). The Kotoba reading sees only the twin: `run!` over `[:list :string]`,
   answering the stdout text. `compile <source> --target aarch64-macos [--output] [--policy] [--fuel] [--source-path ...]`
   is `compile-uncached!` over `kotoba.compiler.native-artifact/compile-native` plus provenance, and writes the `.kexe`,
   `.provenance.edn` and `.publication.edn` (the Kotoba `output-set/serialize` over the bytes written) in one
@@ -181,7 +182,8 @@ the entry from source.
   (packaging; an unknown kind is the host's `:artifact-target`, 70); `--backend`; `--module-lock`; `--package-lock`;
   `worker` (in aarch64-cli's `main`). There is no compile / stage / verdict cache on this route.
 - `src/kotoba/compiler/nbb/aarch64_cli.cljk`: a Kotoba `main` in check-cli's style (`worker` refused, else cli's `run!`,
-  try/catch); the host entry is the same program (same check).
+  try/catch), as the `:kotoba` branch of `#?(:kotoba <main> :default (do ...host entry...))`; the host entry is the same
+  program (same check). Neither file adds a `#?(:kotoba nil ...)` form.
 - `src/kotoba/compiler/nbb/cli_support.cljk`: three Kotoba-only exports for an entry's error contract: `error-phase`
   (`:phase` of the caught refusal's ex-info data, `:internal` without one), `exit-code` (the host table entry for entry)
   and `refusal-text` (a reduced `:kotoba.cli-error/v1` report: format, ok, error, message).
@@ -256,9 +258,13 @@ traps; fix in nbb.io (stat first), not done here.
 
 ### Bootstrap boundary (`scripts/selfhost-wall/bootstrap-boundary.sh`, before -> after)
 
-- nbb entries with no `:kotoba` arm: **7 -> 5** (cli.cljk and aarch64_cli.cljk now have one).
-- union of PRODUCT src files: 58 -> 58; launchers 4 -> 4; unguarded host tokens 10 files -> 10.
-- "modules with `#?(:kotoba nil ...)` forms or no :kotoba arm, computed from source": **50 -> 52**: the same two files
-  enter list 3b with `kotoba-nil-forms=1` (their host region), the shape cli_support / check_cli already have. The host
-  modes inside that region (caches, worker, x86-64, packaging, extract-native, `--backend seed`, locks) are refused by
-  name on the Kotoba route and remain debt.
+Every line that differs from the base (c290f734b):
+
+- nbb entries with no `:kotoba` arm: **7 -> 5** (cli.cljk and aarch64_cli.cljk are now `has-:kotoba-arm` in list 2).
+- src files with at least one `:kotoba` arm: 62 -> 64 of 112.
+
+Unchanged: modules with `#?(:kotoba nil ...)` forms or no `:kotoba` arm 50, `#?(:kotoba nil ...)` forms in src 151,
+union of PRODUCT src files 58, launchers 4, unguarded host tokens 10 files. (A first cut with a
+`#?(:kotoba nil :default (do ...))` host region put both files into list 3b, 50 -> 52; the twin is the `:kotoba` branch
+of that conditional instead.) The host modes inside the host branch (caches, worker, x86-64, packaging,
+extract-native, `--backend seed`, locks) are refused by name on the Kotoba route and remain debt.

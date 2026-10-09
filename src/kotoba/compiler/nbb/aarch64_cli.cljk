@@ -31,12 +31,9 @@
          (try (let [w (io/write (native-cli/run! args))] 0)
               (catch e (let [phase (support/error-phase e)
                              w (io/write-error (support/refusal-text phase (ex-message e)))]
-                         (support/exit-code phase))))))))
-
-;; ---------------------------------------------------------------------------
-;; Host reading (Clojure / nbb), unchanged.
-#?(:kotoba nil
+                         (support/exit-code phase)))))))
    :default
+   ;; Host reading (Clojure / nbb), unchanged.
    (do
 
 (def ^:private packaged-targets

@@ -235,6 +235,8 @@
            answer (cl-put a3 :kotoba.compile/inputs (cl-kw (if linked :unpinned-source-path :single-file)))]
        (string-concat (project/pr-text answer) "\n"))))
 
+;; ---------------------------------------------------------------------------
+;; `run!`: the Kotoba reading (above: its helpers) and the host reading (the whole host program, unchanged)
 #?(:kotoba
    (defn run! [args [:list :string]] :string
      (let [command (cl-arg args 0)]
@@ -242,11 +244,7 @@
          (string=? command "compile") (cl-compile args)
          (string=? command "extract-native")
          (support/usage-error! "error: extract-native is not available on the Kotoba route (the nbb.cli twin answers compile only)")
-         :else (support/usage-error! (string-concat "error: nbb native path does not cover command " command))))))
-
-;; ---------------------------------------------------------------------------
-;; Host reading (Clojure / nbb), unchanged.
-#?(:kotoba nil
+         :else (support/usage-error! (string-concat "error: nbb native path does not cover command " command)))))
    :default
    (do
 
