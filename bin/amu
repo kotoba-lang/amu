@@ -31,6 +31,8 @@ const usage = [
   "       amu worker [--target <target>]   (no --target: this host's native target)",
   "       amu inspect <file.kotoba|file.cljk|file.cljc> [--output interface.edn]",
   "       amu test <file.kotoba|file.cljk|file.cljc> [--json] [--fuel <n>] [--source-path <dir> ...]   (one instance per test)",
+  "       amu test --manifest <manifest.edn> [--conformance-root <dir>] [--case <id> ...] [--json]",
+  "         [--native-runtime <dir> | --native-prepare <dir> [--loader-source-dir <dir>]] [--native-jobs <n>]",
   "       amu module-lock <file.kotoba> --blocks <dir> --source-path <dir>",
   "       amu package-aiueos-boot <kernel> [--output BOOTX64.EFI]",
   "       amu extract-native <file> [--symbol main] [--output program.bin]",
@@ -463,7 +465,10 @@ function securityClasspath(root, nbbCli, alias) {
 // Flags whose value is always a filesystem location, including ones with no
 // extension to recognise it by.
 const PATH_VALUED_FLAGS = new Set(["--blocks", "--source-path", "--module-lock",
-  "--output", "--policy", "--package-lock", "--packages", "--trust"]);
+  "--output", "--policy", "--package-lock", "--packages", "--trust",
+  // `amu test --manifest` (root ADR-2610092330 C0/C1): directories.
+  "--conformance-root", "--native-runtime", "--native-prepare",
+  "--loader-source-dir"]);
 
 // Flags whose value is NEVER a filesystem location, however much it looks
 // like one. A package name is `<org>/<name>` and a repository URL is full of

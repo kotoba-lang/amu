@@ -5,7 +5,7 @@
   pass only when they return i64 1. `test-handler(cap-id,value)` is an optional
   Kotoba-defined deterministic ability handler used by every target. The same
   checked KIR is executed by the JVM oracle, restricted ESM, and Wasm."
-  {:kotoba/export [call-source run-source targets]}
+  {:kotoba/export [call-source node-run run-source targets]}
   (:require [kotoba.bytes :as kbytes] [json.data-json :as json]
             ["node:child_process" :as child]
             [kotoba.compiler.process-wire :as process-wire]
@@ -82,7 +82,12 @@
                 {:test test-name :ok false :error (or (ex-message error) "test trap")})))
           tests)))
 
-(defn- node-run [target program]
+(defn node-run
+  "Run PROGRAM (an ES module text) in a child node and answer the JSON it
+  printed on stdout, keywordized. TARGET names the caller in the refusal
+  when the child exits non-zero. Also `kotoba.compiler.manifest-native`'s
+  route to `bin/amu` (root ADR-2610092330 C1)."
+  [target program]
   ;; The js and wasm targets are executed by a CHILD node -- on both hosts.
   ;; Under nbb that is the same binary the compiler runs on; under the JVM it
   ;; is whatever `node` is on PATH. Either way the probe is a separate

@@ -1,7 +1,9 @@
 ;; A tiny conformance manifest in kotoba-lang's lang/conformance/manifest.edn
 ;; shape, for `amu test --manifest` (root ADR-2610092330 C0). Read by
 ;; scripts/test-nbb-test-manifest.cljk, which asserts per case and backend:
-;;   :adds-passes          passes on :kir :js-kotoba-v1 :wasm32-kotoba-v1
+;;   :adds-passes          passes on :kir :js-kotoba-v1 :wasm32-kotoba-v1, and
+;;                         on the host's native backend given a measured
+;;                         runtime (C1; KOTOBA_NATIVE_RUNTIME_DIR)
 ;;   :adds-wrong-expect    a WRONG expectation; must be reported :fail with the
 ;;                         value every backend actually answered (42)
 ;;   :unbound-is-refused   an :expect-error case; :compiler-admit passes
@@ -15,7 +17,7 @@
  :case-classes
  {:pure-product-run
   {:required-backends #{:kir :wasm32-kotoba-v1}
-   :optional-backends #{:js-kotoba-v1 :native-aarch64}
+   :optional-backends #{:js-kotoba-v1 :native-aarch64 :native-x86_64}
    :profile :pure-product
    :kinds #{:run}}
   :negative-admit
