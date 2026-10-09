@@ -75,7 +75,7 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
 /* KEXE-DECISIONS-GENERATED BEGIN -- written by scripts/gen-loader-decisions.cljk; do not
  * edit by hand. Regenerate after changing either source:
  *   tools/kexe_loader_decisions.kotoba sha256 c2a7e6ee4adb55139155f0962a2acb0aea62a98b6c0d69dfe9f70b148330601c
- *   tools/kexe_loader_names.kotoba     sha256 9ccaadfb815a920a3f39384b6b6a4860baef04ffd89377e9aa4de804f27d3ad4
+ *   tools/kexe_loader_names.kotoba     sha256 9fce0cf35cd1f95766e2a4944af387b07b4644cb7f99e8c4788ce36a692c0371
  *   tools/linux_static_handlers.kotoba sha256 c7619a1aebc42b039ce7d71f318b9d41e292c5f17b49f12733e7c3cb98b80bea
  *   tools/kexe_loader_boundary.kotoba  sha256 99ec1c85f7a5811266d0eae30f8f5a47adea71de496f08879cb9adc4df1ac6d7
  * The DECISIONS of this loader are Kotoba (superproject adr-2609251400 C1):
@@ -166,7 +166,8 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
 #define KEXE_TRAP_LINE_RESULT_OPTION_STRING 40u
 #define KEXE_TRAP_LINE_BOUNDARY_PREFIX 41u
 #define KEXE_TRAP_LINE_CAP_NET_PREFIX 42u
-#define KEXE_TRAP_LINE_COUNT 43u
+#define KEXE_TRAP_LINE_BUDGET_GAS 43u
+#define KEXE_TRAP_LINE_COUNT 44u
 static const char *const kexe_trap_lines[KEXE_TRAP_LINE_COUNT] = {
   "KEXE_TRAP {:kind :signal :signal :SIGILL}\n",
   "KEXE_TRAP {:kind :signal :signal :SIGTRAP}\n",
@@ -211,9 +212,10 @@ static const char *const kexe_trap_lines[KEXE_TRAP_LINE_COUNT] = {
   "KEXE_TRAP {:kind :result :reason :invalid-option-string}\n",
   "KEXE_TRAP {:kind :boundary :reason :",
   "KEXE_TRAP {:kind :capability :capability :",
+  "KEXE_TRAP {:kind :budget :reason :budget/gas}\n",
 };
 static const size_t kexe_trap_line_lengths[KEXE_TRAP_LINE_COUNT] = {
-  42u, 43u, 42u, 42u, 43u, 43u, 43u, 42u, 43u, 54u, 52u, 62u, 62u, 64u, 69u, 68u, 63u, 47u, 57u, 56u, 54u, 54u, 51u, 57u, 57u, 54u, 51u, 51u, 33u, 84u, 92u, 91u, 86u, 80u, 84u, 94u, 85u, 85u, 54u, 49u, 57u, 36u, 42u
+  42u, 43u, 42u, 42u, 43u, 43u, 43u, 42u, 43u, 54u, 52u, 62u, 62u, 64u, 69u, 68u, 63u, 47u, 57u, 56u, 54u, 54u, 51u, 57u, 57u, 54u, 51u, 51u, 33u, 84u, 92u, 91u, 86u, 80u, 84u, 94u, 85u, 85u, 54u, 49u, 57u, 36u, 42u, 46u
 };
 
 #define KEXE_VALUE_TRAP_COUNT 12u
@@ -4186,6 +4188,17 @@ static const uint8_t kexe_boundary_decisions_code[4123] = {
  * to metering for replay and determinism; KEXE_FUEL=off names the default. */
 static uint64_t kexe_initial_fuel = KEXE_FUEL_MAX;
 static int kexe_fuel_metered = 0;
+/* Consensus gas (superproject adr-2610092340 D12, context ABI v12). Off
+ * unless KEXE_GAS names a positive decimal no greater than 2^53-1 (the same
+ * ceiling as fuel: the reference interpreter's counter is exact up to it).
+ * Unmetered, the word starts at KEXE_GAS_UNMETERED, which no run counts down
+ * to KEXE_GAS_EXHAUSTED; metered, the structured report carries
+ * `:gas {:initial N :remaining R}`. */
+#define KEXE_GAS_EXHAUSTED UINT64_MAX
+#define KEXE_GAS_UNMETERED (UINT64_MAX - 1u)
+#define KEXE_GAS_MAX 9007199254740991ull
+static uint64_t kexe_initial_gas = KEXE_GAS_UNMETERED;
+static int kexe_gas_metered = 0;
 /* The string arena budget in force for this run: the default above unless
  * KEXE_STRING_POOL (or, in a packaged command, the baked constant) names
  * another positive decimal. Every allocation site checks THIS, never the
@@ -4530,6 +4543,18 @@ struct kexe_context_v11 {
   int64_t (*bytes_from_vector)(struct kexe_context_v11 *, int64_t);
   int64_t (*bytes_slice)(struct kexe_context_v11 *, int64_t, int64_t, int64_t);
   int64_t (*bytes_concat)(struct kexe_context_v11 *, int64_t, int64_t);
+  /* ABI v12 (2026-10-09, superproject adr-2610092340 D12): consensus GAS.
+   * A counter, not a slot. Code compiled with a gas schedule (kotoba-native
+   * charge-gas) decrements it in front of every evaluated application form,
+   * after checking that `version` is 12 -- because on a v11 host this word
+   * was `code_base`, and a loader learns no ABI version from the code it
+   * runs. Exhaustion leaves it at KEXE_GAS_EXHAUSTED (2^64-1) and traps;
+   * report_budget_trap names that budget/gas. An unmetered run starts it at
+   * KEXE_GAS_UNMETERED, which nothing counts down to the sentinel, and code
+   * compiled without a schedule never reads it: a v11 artifact runs on this
+   * v12 host unchanged, every offset below 384 being the same. The struct
+   * keeps its v11 name; its layout is v12. */
+  uint64_t gas;
   /* Data-only (not part of the compiler-checked context-abi): the mmap'd
    * code+literal-data region's base address and real (unpadded) byte
    * length, set once in main() before the guest runs. Never read by guest
@@ -4701,6 +4726,7 @@ _Static_assert(offsetof(struct kexe_context_v11, string_from_utf8) == 352, "byte
 _Static_assert(offsetof(struct kexe_context_v11, bytes_from_vector) == 360, "bytes ABI drift");
 _Static_assert(offsetof(struct kexe_context_v11, bytes_slice) == 368, "bytes ABI drift");
 _Static_assert(offsetof(struct kexe_context_v11, bytes_concat) == 376, "bytes ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, gas) == 384, "gas ABI drift (v12)");
 _Static_assert(sizeof(((struct kexe_shared_v11 *)0)->string_pool) == KEXE_STRING_POOL_MAX,
                "string pool size drift");
 _Static_assert(sizeof(((struct kexe_shared_v11 *)0)->vectors) == KEXE_VECTOR_MAX * 16u,
@@ -4785,7 +4811,7 @@ static const uint8_t *kexe_map_decision_code(const uint8_t *code, size_t length)
  * guest's syscall sandbox admits neither mmap nor mprotect. */
 static void kexe_decisions_init(void) {
   if (kexe_decision_code != NULL) return;
-  kexe_decision_context.version = 11;
+  kexe_decision_context.version = 12;
   kexe_decision_code = kexe_map_decision_code(kexe_decisions_code,
                                               sizeof(kexe_decisions_code));
   kexe_handler_decision_code =
@@ -4992,7 +5018,7 @@ static volatile sig_atomic_t supervised_pid = -1;
 
 static int64_t checked_cap_call(struct kexe_context_v11 *context,
                                 uint64_t cap_id, int64_t value) {
-  if (context == NULL || context->version != 11 ||
+  if (context == NULL || context->version != 12 ||
       !kexe_cap_admitted(context->allow, cap_id)) {
     raise(SIGILL);
     return 0;
@@ -5025,10 +5051,10 @@ static int64_t checked_pair_new(struct kexe_context_v11 *context,
  * where the compiler is looking. Clang (macOS, and every local build here)
  * did not warn, so this was invisible until CI compiled it with
  * -Wall -Wextra -Werror. */
-  if (context == NULL || context->version != 11 ||
+  if (context == NULL || context->version != 12 ||
       shared->pair_used >= kexe_pair_budget ||
       shared->pair_used >= KEXE_PAIR_MAX) {
-    if (context != NULL && context->version == 11) note_budget(KEXE_BUDGET_CELLS_PAIRS);
+    if (context != NULL && context->version == 12) note_budget(KEXE_BUDGET_CELLS_PAIRS);
     raise(SIGILL);
     return 0;
   }
@@ -5042,7 +5068,7 @@ static int64_t checked_pair_new(struct kexe_context_v11 *context,
 static int64_t checked_pair_get(struct kexe_context_v11 *context,
                                 int64_t handle, int second) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11 || handle <= 0 ||
+  if (context == NULL || context->version != 12 || handle <= 0 ||
       (uint64_t)handle > shared->pair_used) {
     raise(SIGILL);
     return 0;
@@ -5089,7 +5115,7 @@ static struct kexe_vector_v1 *resolve_vector(struct kexe_shared_v11 *shared,
  * `probe_denied` is: it is the one call that is safe here and permitted by
  * the syscall sandbox.
  *
- * Deliberately NOT used at the `context == NULL` or `version != 11` sites --
+ * Deliberately NOT used at the `context == NULL` or `version != 12` sites --
  * those are a malformed call, not a budget -- nor at the
  * `KEXE_VECTOR_ITEM_LIMIT` bound, which is
  * `kotoba.kir.value/vector-item-limit` and is checked separately BECAUSE the
@@ -5120,7 +5146,7 @@ static int64_t intern_vector(struct kexe_shared_v11 *shared,
  * its very first element. */
 static int64_t checked_vector_new_empty(struct kexe_context_v11 *context) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   int64_t handle = intern_vector(shared, shared->vector_item_used, 0);
   if (handle == 0) { arena_exhausted(KEXE_BUDGET_CELLS_VECTOR_TABLE); raise(SIGILL); return 0; }
   return handle;
@@ -5129,7 +5155,7 @@ static int64_t checked_vector_new_empty(struct kexe_context_v11 *context) {
 static int64_t checked_vector_count(struct kexe_context_v11 *context,
                                     int64_t handle) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
   if (vector == NULL) { raise(SIGILL); return 0; }
   return (int64_t)vector->length;
@@ -5141,7 +5167,7 @@ static int64_t checked_vector_count(struct kexe_context_v11 *context,
 static int64_t checked_vector_at(struct kexe_context_v11 *context,
                                  int64_t handle, int64_t index) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
   if (vector == NULL || index < 0 || (uint64_t)index >= vector->length) {
     raise(SIGILL);
@@ -5153,7 +5179,7 @@ static int64_t checked_vector_at(struct kexe_context_v11 *context,
 static int64_t checked_vector_conj(struct kexe_context_v11 *context,
                                    int64_t handle, int64_t item) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
   if (vector == NULL) { raise(SIGILL); return 0; }
   uint64_t offset = vector->offset;
@@ -5198,7 +5224,7 @@ static int64_t checked_vector_assoc(struct kexe_context_v11 *context,
                                     int64_t handle, int64_t index,
                                     int64_t item) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
   if (vector == NULL || index < 0 || (uint64_t)index >= vector->length) {
     raise(SIGILL);
@@ -5230,7 +5256,7 @@ static int64_t checked_vector_assoc(struct kexe_context_v11 *context,
 static int64_t checked_vector_alloc(struct kexe_context_v11 *context,
                                     int64_t count) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   if (count < 0 || (uint64_t)count > KEXE_VECTOR_ITEM_LIMIT) { raise(SIGILL); return 0; }
   if (shared->vector_item_used + (uint64_t)count > kexe_vector_item_budget) {
     raise(SIGILL);
@@ -5262,7 +5288,7 @@ static int64_t checked_vector_assoc_in_place(struct kexe_context_v11 *context,
                                              int64_t handle, int64_t index,
                                              int64_t item) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
   if (vector == NULL || index < 0 || (uint64_t)index >= vector->length) {
     raise(SIGILL);
@@ -5278,7 +5304,7 @@ static int64_t checked_vector_assoc_in_place(struct kexe_context_v11 *context,
 static int64_t checked_vector_drop(struct kexe_context_v11 *context,
                                    int64_t handle, int64_t count) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
   if (vector == NULL || count < 0 || (uint64_t)count > vector->length) {
     raise(SIGILL);
@@ -5293,9 +5319,9 @@ static int64_t checked_vector_drop(struct kexe_context_v11 *context,
 static int64_t checked_kgraph_assert(struct kexe_context_v11 *context,
                                      int64_t e, int64_t a, int64_t v) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11 ||
+  if (context == NULL || context->version != 12 ||
       shared->kgraph_used >= KEXE_KGRAPH_CAPACITY) {
-    if (context != NULL && context->version == 11) note_budget(KEXE_BUDGET_CELLS_KGRAPH);
+    if (context != NULL && context->version == 12) note_budget(KEXE_BUDGET_CELLS_KGRAPH);
     raise(SIGILL);
     return 0;
   }
@@ -5311,7 +5337,7 @@ static int64_t checked_kgraph_assert(struct kexe_context_v11 *context,
 static int64_t checked_kgraph_get(struct kexe_context_v11 *context,
                                   int64_t e, int64_t a) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) {
+  if (context == NULL || context->version != 12) {
     raise(SIGILL);
     return 0;
   }
@@ -5337,7 +5363,7 @@ static int kgraph_entity_seen_before(const struct kexe_shared_v11 *shared,
 
 static int64_t checked_kgraph_count(struct kexe_context_v11 *context, int64_t a) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) {
+  if (context == NULL || context->version != 12) {
     raise(SIGILL);
     return 0;
   }
@@ -5352,7 +5378,7 @@ static int64_t checked_kgraph_count(struct kexe_context_v11 *context, int64_t a)
 static int64_t checked_kgraph_entity_at(struct kexe_context_v11 *context,
                                         int64_t a, int64_t index) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11 || index < 0) {
+  if (context == NULL || context->version != 12 || index < 0) {
     raise(SIGILL);
     return 0;
   }
@@ -5963,7 +5989,7 @@ static const char ds_retract_notice[] =
 static int peek_pair(struct kexe_context_v11 *context, int64_t handle,
                      int second, int64_t *out) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11 || handle <= 0 ||
+  if (context == NULL || context->version != 12 || handle <= 0 ||
       (uint64_t)handle > shared->pair_used) return 0;
   struct kexe_pair_v1 *pair = &shared->pairs[(uint64_t)handle - 1];
   *out = second ? pair->second : pair->first;
@@ -5974,7 +6000,7 @@ static int peek_vector(struct kexe_context_v11 *context, int64_t handle,
                        uint64_t *length, const int64_t **items) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
   struct kexe_vector_v1 *vector;
-  if (context == NULL || context->version != 11) return 0;
+  if (context == NULL || context->version != 12) return 0;
   vector = resolve_vector(shared, handle);
   if (vector == NULL) return 0;
   if (vector->offset + vector->length > KEXE_VECTOR_ITEM_MAX) return 0;
@@ -5986,7 +6012,7 @@ static int peek_vector(struct kexe_context_v11 *context, int64_t handle,
 static const uint8_t *peek_string_bytes(struct kexe_context_v11 *context,
                                         int64_t offset, int64_t length) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11 || length < 0) return NULL;
+  if (context == NULL || context->version != 12 || length < 0) return NULL;
   if (offset >= 0) {
     if ((uint64_t)offset + (uint64_t)length > context->code_length) return NULL;
     return context->code_base + offset;
@@ -9489,7 +9515,7 @@ static int64_t net_broker_provider(struct kexe_context_v11 *context, uint64_t id
 static int64_t checked_typed_cap_call(struct kexe_context_v11 *context,
                                       uint64_t id, uint64_t request_kind,
                                       uint64_t result_kind, int64_t request) {
-  if (context == NULL || context->version != 11 ||
+  if (context == NULL || context->version != 12 ||
       !kexe_cap_admitted(context->allow, id) ||
       kexe_decide(KEXE_DECIDE_TYPED_KINDS, (int64_t)request_kind,
                   (int64_t)result_kind, 0, 0) != 1 ||
@@ -9704,7 +9730,7 @@ static int simd_bytes_equal(const uint8_t *a, const uint8_t *b, size_t length) {
 
 static int64_t checked_string_equal(struct kexe_context_v11 *context,
                                     int64_t handle_a, int64_t handle_b) {
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   int64_t offset_a = checked_pair_get(context, handle_a, 0);
   int64_t length_a = checked_pair_get(context, handle_a, 1);
   int64_t offset_b = checked_pair_get(context, handle_b, 0);
@@ -9721,7 +9747,7 @@ static int64_t checked_string_equal(struct kexe_context_v11 *context,
  * one and the reference interpreter refuses. */
 static int64_t checked_string_index_of(struct kexe_context_v11 *context,
                                        int64_t haystack, int64_t needle) {
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   int64_t offset_h = checked_pair_get(context, haystack, 0);
   int64_t length_h = checked_pair_get(context, haystack, 1);
   int64_t offset_n = checked_pair_get(context, needle, 0);
@@ -9744,7 +9770,7 @@ static int64_t checked_string_index_of(struct kexe_context_v11 *context,
 static int64_t checked_string_index_of_from(struct kexe_context_v11 *context,
                                             int64_t haystack, int64_t needle,
                                             int64_t from) {
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   int64_t offset_h = checked_pair_get(context, haystack, 0);
   int64_t length_h = checked_pair_get(context, haystack, 1);
   int64_t offset_n = checked_pair_get(context, needle, 0);
@@ -9829,7 +9855,7 @@ static int64_t kexe_compare_lines(const uint8_t *a, int64_t ra,
 static int64_t checked_string_compare_lines(struct kexe_context_v11 *context,
                                             int64_t handle_a, int64_t i,
                                             int64_t handle_b, int64_t j) {
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   int64_t offset_a = checked_pair_get(context, handle_a, 0);
   int64_t length_a = checked_pair_get(context, handle_a, 1);
   if (length_a < 0 || i < 0 || i > length_a) { raise(SIGILL); return 0; }
@@ -9861,7 +9887,7 @@ static int64_t checked_string_compare_lines(struct kexe_context_v11 *context,
 /* ABI v10 range operations: see the slots' comment in the context struct. */
 static int64_t checked_string_find_byte(struct kexe_context_v11 *context,
                                         int64_t handle, int64_t byte, int64_t from) {
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   int64_t offset = checked_pair_get(context, handle, 0);
   int64_t length = checked_pair_get(context, handle, 1);
   if (length < 0 || byte < 0 || byte > 127 || from < 0 || from > length) {
@@ -9883,7 +9909,7 @@ static int64_t checked_string_append_range(struct kexe_context_v11 *context,
                                            int64_t acc, int64_t handle,
                                            int64_t start, int64_t end) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   int64_t offset_a = checked_pair_get(context, acc, 0);
   int64_t length_a = checked_pair_get(context, acc, 1);
   int64_t offset_s = checked_pair_get(context, handle, 0);
@@ -9973,7 +9999,7 @@ static uint64_t utf8_invalid_reason(const int64_t *items, uint64_t n) {
 static int64_t checked_string_from_utf8(struct kexe_context_v11 *context,
                                         int64_t handle) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
   if (vector == NULL) { raise(SIGILL); return 0; }
   uint64_t n = vector->length;
@@ -10009,7 +10035,7 @@ static int64_t checked_string_from_utf8(struct kexe_context_v11 *context,
 static int64_t checked_bytes_from_vector(struct kexe_context_v11 *context,
                                          int64_t handle) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
   if (vector == NULL) { raise(SIGILL); return 0; }
   uint64_t offset = vector->offset;
@@ -10044,7 +10070,7 @@ static int64_t checked_bytes_from_vector(struct kexe_context_v11 *context,
 static int64_t checked_bytes_slice(struct kexe_context_v11 *context,
                                    int64_t handle, int64_t start, int64_t end) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
   if (vector == NULL) { raise(SIGILL); return 0; }
   if (start < 0 || end < start || (uint64_t)end > vector->length) {
@@ -10061,7 +10087,7 @@ static int64_t checked_bytes_slice(struct kexe_context_v11 *context,
 static int64_t checked_bytes_concat(struct kexe_context_v11 *context,
                                     int64_t left, int64_t right) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *a = resolve_vector(shared, left);
   struct kexe_vector_v1 *b = resolve_vector(shared, right);
   if (a == NULL || b == NULL) { raise(SIGILL); return 0; }
@@ -10091,7 +10117,7 @@ static int64_t checked_bytes_concat(struct kexe_context_v11 *context,
 /* arena-scope (ABI v6): see the slot's comment in the context struct. */
 static int64_t checked_arena_enter(struct kexe_context_v11 *context) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   if (shared->arena_scope_depth >= KEXE_ARENA_SCOPE_DEPTH) { raise(SIGILL); return 0; }
   uint64_t *mark = shared->arena_scope_marks[shared->arena_scope_depth];
   mark[0] = shared->pair_used;
@@ -10104,7 +10130,7 @@ static int64_t checked_arena_enter(struct kexe_context_v11 *context) {
 
 static int64_t checked_arena_leave(struct kexe_context_v11 *context) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   if (shared->arena_scope_depth == 0) { raise(SIGILL); return 0; }
   shared->arena_scope_depth--;
   const uint64_t *mark = shared->arena_scope_marks[shared->arena_scope_depth];
@@ -10127,7 +10153,7 @@ static int64_t checked_arena_leave(struct kexe_context_v11 *context) {
 /* ABI v7 text operations: see the slots' comment in the context struct. */
 static int64_t checked_string_compare(struct kexe_context_v11 *context,
                                       int64_t handle_a, int64_t handle_b) {
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   int64_t offset_a = checked_pair_get(context, handle_a, 0);
   int64_t length_a = checked_pair_get(context, handle_a, 1);
   int64_t offset_b = checked_pair_get(context, handle_b, 0);
@@ -10155,7 +10181,7 @@ static int64_t checked_string_compare(struct kexe_context_v11 *context,
 static int64_t checked_string_fold_ascii(struct kexe_context_v11 *context,
                                          int64_t handle) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   int64_t offset = checked_pair_get(context, handle, 0);
   int64_t length = checked_pair_get(context, handle, 1);
   if (length < 0) { raise(SIGILL); return 0; }
@@ -10192,7 +10218,7 @@ static int kexe_blank_byte(uint8_t c) {
 static int64_t checked_string_scan_blank(struct kexe_context_v11 *context,
                                          int64_t handle, int64_t from,
                                          int wanted, int missing_is_length) {
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   int64_t offset = checked_pair_get(context, handle, 0);
   int64_t length = checked_pair_get(context, handle, 1);
   if (length < 0 || from < 0 || from > length) { raise(SIGILL); return 0; }
@@ -10219,7 +10245,7 @@ static int64_t checked_string_skip_blank(struct kexe_context_v11 *context,
 static int64_t checked_string_concat(struct kexe_context_v11 *context,
                                      int64_t handle_a, int64_t handle_b) {
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   int64_t offset_a = checked_pair_get(context, handle_a, 0);
   int64_t length_a = checked_pair_get(context, handle_a, 1);
   int64_t offset_b = checked_pair_get(context, handle_b, 0);
@@ -10313,7 +10339,7 @@ static int64_t checked_string_concat(struct kexe_context_v11 *context,
 static int64_t checked_string_substring(struct kexe_context_v11 *context,
                                         int64_t handle, int64_t start,
                                         int64_t end) {
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   int64_t offset = checked_pair_get(context, handle, 0);
   int64_t length = checked_pair_get(context, handle, 1);
   if (length < 0 || start < 0 || end < start || end > length) {
@@ -10347,7 +10373,7 @@ static int64_t checked_string_substring(struct kexe_context_v11 *context,
  * string, which is why they are read without further bounds checks. */
 static int64_t checked_string_code_point_at(struct kexe_context_v11 *context,
                                             int64_t handle, int64_t byte_offset) {
-  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   int64_t offset = checked_pair_get(context, handle, 0);
   int64_t length = checked_pair_get(context, handle, 1);
   if (length < 0 || byte_offset < 0 || byte_offset >= length) {
@@ -11386,11 +11412,22 @@ static int supervise(pid_t child) {
  * a bound you can plan against; one you can see WRONG is worse than one you
  * cannot see. The string arena joins the report for the same reason -- it
  * had no line at all, so a guest that exhausted it had nothing to read. */
+/* A gas-metered run's report also carries `:gas {:initial N :remaining R}`
+ * (remaining 0 when exhausted); an unmetered run's report is byte-identical
+ * to what it was before gas. */
+static const char *kexe_gas_report(const struct kexe_shared_v11 *s) {
+  static char text[96];
+  if (!kexe_gas_metered) return "";
+  uint64_t remaining = s->context.gas == KEXE_GAS_EXHAUSTED ? 0 : s->context.gas;
+  snprintf(text, sizeof text, " :gas {:initial %" PRIu64 " :remaining %" PRIu64 "}",
+           kexe_initial_gas, remaining);
+  return text;
+}
 #define KEXE_REPORT_TAIL_FMT                                                  \
   "%s} :heap {:capacity %" PRIu64 " :used %" PRIu64                             \
   "} :string-pool {:capacity %" PRIu64 " :used %" PRIu64                      \
   "} :vectors {:capacity %" PRIu64 " :used %"                                 \
-  PRIu64 "} :vector-items {:capacity %" PRIu64 " :used %" PRIu64 "}}\n"
+  PRIu64 "} :vector-items {:capacity %" PRIu64 " :used %" PRIu64 "}%s}\n"
 /* An unmetered run says so inside its :fuel map (:metered false); a metered
  * run's report is byte-identical to what it was before P4. */
 #define KEXE_REPORT_TAIL_ARGS(s)                                              \
@@ -11398,7 +11435,7 @@ static int supervise(pid_t child) {
   kexe_pair_budget, (s)->pair_used,                                           \
       kexe_string_pool_budget, (s)->string_pool_used,                          \
       kexe_vector_budget, (s)->vector_used,                                    \
-      kexe_vector_item_budget, (s)->vector_item_used
+      kexe_vector_item_budget, (s)->vector_item_used, kexe_gas_report(s)
 
 /* Names the per-run budget a trapped guest exhausted (P4 of adr-2609242100),
  * on stderr AFTER the child's own signal line, so the first KEXE_TRAP line a
@@ -11427,7 +11464,10 @@ static void report_budget_trap(const struct kexe_shared_v11 *shared, int child_s
     case KEXE_BUDGET_CELLS_KGRAPH: line = KEXE_TRAP_LINE_BUDGET_KGRAPH; break;
     case KEXE_BUDGET_BYTES_STRING_POOL: line = KEXE_TRAP_LINE_BUDGET_STRING_POOL; break;
     default:
-      if (kexe_fuel_metered && shared->context.fuel == 0)
+      /* The gas debit is the only guest code that writes the sentinel. */
+      if (shared->context.gas == KEXE_GAS_EXHAUSTED)
+        line = KEXE_TRAP_LINE_BUDGET_GAS;
+      else if (kexe_fuel_metered && shared->context.fuel == 0)
         line = KEXE_TRAP_LINE_BUDGET_FUEL;
       else if (shared->pair_used >= kexe_pair_budget)
         line = KEXE_TRAP_LINE_BUDGET_PAIRS;
@@ -12065,7 +12105,7 @@ int main(int argc, char **argv) {
    * reaches it. Measured with the arena mapped over 256 MiB: with the memset
    * a run costs the whole mapping; without it, a run that allocates 64 KiB
    * faults 64 KiB. */
-  shared->context.version = 11;
+  shared->context.version = 12;
 #ifdef KEXE_EMBEDDED
   /* Fuel is a constant of a packaged command for the same reason its grant,
    * its scopes and its string arena are: a caller that could raise the fuel
@@ -12094,6 +12134,20 @@ int main(int argc, char **argv) {
     fprintf(stderr, "kexe-loader: KEXE_FUEL exceeds the maximum budget 9007199254740991 (2^53-1)\n");
     return 2;
   }
+  /* Consensus gas: absent or `off` means unmetered; present means a positive
+   * decimal within KEXE_GAS_MAX, and anything else is refused before the
+   * guest starts. A packaged command has no gas yet: it runs unmetered. */
+#ifndef KEXE_EMBEDDED
+  const char *gas_env = getenv("KEXE_GAS");
+  if (gas_env != NULL && gas_env[0] != '\0' && strcmp(gas_env, "off") != 0) {
+    if (parse_u64(gas_env, &kexe_initial_gas) != 0 || kexe_initial_gas == 0 ||
+        kexe_initial_gas > KEXE_GAS_MAX) {
+      fprintf(stderr, "kexe-loader: KEXE_GAS must be a positive decimal integer no greater than 9007199254740991 (2^53-1), or off\n");
+      return 2;
+    }
+    kexe_gas_metered = 1;
+  }
+#endif
   /* The string arena budget, in force for this run only. Same shape as
    * KEXE_FUEL above: absent means the default, present means a positive
    * decimal, and anything else is refused BEFORE the guest starts rather
@@ -12207,6 +12261,7 @@ int main(int argc, char **argv) {
     return 2;
   }
   shared->context.fuel = kexe_initial_fuel;
+  shared->context.gas = kexe_initial_gas;
   shared->context.cap_call = checked_cap_call;
   shared->context.pair_new = checked_pair_new;
   shared->context.pair_first = checked_pair_first;

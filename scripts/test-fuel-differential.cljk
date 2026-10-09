@@ -61,7 +61,17 @@
             ["node:fs" :as fs]))
 
 (def args (vec *command-line-args*))
-(def strict? (some #{"--strict"} args))
+(def gas?
+  "--gas: measure consensus gas (superproject adr-2610092340 D12) instead of
+  fuel, with schedule v0-draft -- osaho execute-metered, kotoba-wasm's gas
+  global, and native code compiled with --gas-schedule run with KEXE_GAS.
+  Unlike fuel, gas is DEFINED to agree across the families, so in this mode
+  a family disagreement always fails (--strict is implied)."
+  (some #{"--gas"} args))
+(def strict? (or gas? (some #{"--strict"} args)))
+(def gas-schedule-v0
+  {:gas-schedule/id :kotoba.gas/v0-draft :gas-schedule/version 0
+   :call 1 :default 1 :weights {}})
 (def only (let [i (.indexOf (clj->js args) "--only")] (when-not (neg? i) (nth args (inc i)))))
 (def amu (lib/join lib/root "bin" "amu"))
 (def loader-path (lib/join lib/root "tools" "kexe_loader.c"))
@@ -134,13 +144,24 @@
 
 (defn ref-run [kir n]
   (try {:value (str ;; frames raised so only fuel can stop the run (native and wasm32 meter no frames here)
-       (ir/execute kir 'main [] {:fuel n :frames 100000}))}
+       (ir/execute kir 'main [] (if GAS
+                                  {:fuel 9007199254740991 :frames 100000 :gas n :gas-schedule SCHEDULE}
+                                  {:fuel n :frames 100000})))}
        (catch :default e
          (let [trap (:trap (ex-data e))]
-           (if (= trap :budget/fuel) {:trap :budget/fuel} {:other (str trap \" \" (.-message e))})))))
+           (if (= trap (if GAS :budget/gas :budget/fuel)) {:trap trap} {:other (str trap \" \" (.-message e))})))))
 
+(declare wasm-run*)
 (defn wasm-run [kir n]
-  (-> (host/instantiateKotoba (wasm/emit kir :wasm32-kotoba-v1 {:fuel n}) #js {})
+  ;; `emit` refuses synchronously (a typed module asked for gas, say); that is
+  ;; an UNMEASURED backend, not a dead driver.
+  (try (wasm-run* kir n)
+       (catch :default e (js/Promise.resolve {:other (str \"emit refused: \" (.-message e))}))))
+
+(defn wasm-run* [kir n]
+  (-> (host/instantiateKotoba (wasm/emit kir :wasm32-kotoba-v1
+                                         (if GAS {:fuel 9007199254740991 :gas n :gas-schedule SCHEDULE} {:fuel n}))
+                              #js {})
       (.then (fn [r] {:value (str (.main (.-exports (.-instance r))))}))
       ;; Fuel exhaustion is `unreachable`; so is every other Wasm trap. The
       ;; confirmation at B* (the reference's value) is what tells them apart.
@@ -203,7 +224,9 @@
         _ (lib/write-text! driver-file
                            (-> driver
                                (str/replace "HOST" (pr-str (lib/join lib/root "runtime" "browser-host.mjs")))
-                               (str/replace "CEILING" (str ceiling))))
+                               (str/replace "CEILING" (str ceiling))
+                               (str/replace "SCHEDULE" (pr-str gas-schedule-v0))
+                               (str/replace "GAS" (str (boolean gas?)))))
         _ (lib/write-text! programs-file (pr-str (mapv (fn [p] {:name (:name p) :source (source-of p)}) programs)))
         cp (str (lib/join lib/root "src") ":" (lib/join lib/root "resources") ":" (lib/lock-classpath))
         r ;; The reference interpreter runs as SCI-interpreted source here and
@@ -232,7 +255,11 @@
         kexe (lib/join tmp (str (:name program) "-" isa ".kexe"))
         bin (lib/join tmp (str (:name program) "-" isa ".bin"))]
     (lib/write-text! src (source-of program))
-    (let [c (lib/run js/process.execPath [amu "compile" src "--target" isa "--output" kexe] {:allow-failure? true})]
+    (let [schedule-file (lib/join tmp "gas-schedule.edn")
+          _ (when gas? (lib/write-text! schedule-file (pr-str gas-schedule-v0)))
+          c (lib/run js/process.execPath (concat [amu "compile" src "--target" isa "--output" kexe]
+                                                 (when gas? ["--gas-schedule" schedule-file]))
+                     {:allow-failure? true})]
       (if-not (zero? (:status c))
         {:compile-error (str (lib/describe-exit c) " " (subs (:stderr c) 0 (min 400 (count (:stderr c)))))}
         (let [x (lib/run js/process.execPath [amu "extract-native" kexe "--symbol" "main" "--output" bin] {:allow-failure? true})
@@ -241,17 +268,20 @@
             {:bin bin :offset (str (:offset answer))}
             {:compile-error (str "extract-native: " (lib/describe-exit x) " " (:stderr x))}))))))
 
-(def fuel-trap-line "KEXE_TRAP {:kind :budget :reason :budget/fuel}")
+(def fuel-trap-line
+  (if gas? "KEXE_TRAP {:kind :budget :reason :budget/gas}" "KEXE_TRAP {:kind :budget :reason :budget/fuel}"))
 
 (defn native-run [loader {:keys [bin offset]} isa fuel]
   (let [r (lib/run loader [bin offset "0" isa "-"]
                    {:allow-failure? true
-                    :env {:KEXE_STRUCTURED_REPORT "1" :KEXE_FUEL (str fuel) :KEXE_CPU_SECONDS "30"}})
+                    :env (merge {:KEXE_STRUCTURED_REPORT "1" :KEXE_CPU_SECONDS "30"}
+                                (if gas? {:KEXE_GAS (str fuel)} {:KEXE_FUEL (str fuel)}))})
         line (last (filter #(str/starts-with? % "{:status") (str/split-lines (:stdout r))))]
     (cond
       (and line (str/starts-with? line "{:status :ok"))
       {:value (second (re-find #":result (-?\d+)" line))
-       :remaining (some-> (re-find #":remaining (\d+)" line) second js/parseInt)}
+       :remaining (some-> (re-find (if gas? #":gas \{:initial \d+ :remaining (\d+)\}" #":remaining (\d+)") line)
+                          second js/parseInt)}
       (and (= 120 (:status r)) (some #(= fuel-trap-line %) (str/split-lines (:stderr r))))
       {:trap :budget/fuel}
       :else {:other (str (lib/describe-exit r) " " (str/trim (:stderr r)))})))
@@ -319,7 +349,7 @@
           (when (and (bs "aarch64") (bs "x86_64"))
             (check! (= (bs "aarch64") (bs "x86_64"))
                     (str name ": aarch64 B*=" (bs "aarch64") " but x86_64 B*=" (bs "x86_64"))))
-          (when native-expect
+          (when (and native-expect (not gas?))
             (doseq [isa ["aarch64" "x86_64"] :when (bs isa)]
               (check! (= native-expect (bs isa))
                       (str name " " isa ": B*=" (bs isa) ", limits.cljk records " native-expect)))))))
