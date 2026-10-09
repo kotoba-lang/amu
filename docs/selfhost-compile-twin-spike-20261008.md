@@ -283,6 +283,11 @@ a2fc0b4; the admission, 65, without).
    message names no feature; a linked graph's refusal is not attributed to module and line; the frontend's refusal
    phase is the frontend error's own (`subset`, `read`, ...).
 4. Everything native-artifact names (kexe-fs-forms not called, metered compiles only at 100000, verifier strictness).
+5. `examples/w1-effect-named` exits 70 `:target` here and 65 `:admission` on the host. **Decided (owner, 2026-10-09):
+   kept as a named difference.** The cause is the kotoba-sema lineage, not this twin: the guest's frontend snapshot
+   (c2e1343) carries a2fc0b4 (text-answering host operations typed `:string`), amu's lock (97347531, main) does not,
+   and a2fc0b4 is on agent branches only, not on kotoba-sema main (c2e1343 is 88 commits off main, main 69 commits off
+   it). Reconciling the two sema lines is a separate task; when one HIR is built on both routes, they agree.
 
 ### Bootstrap boundary (`scripts/selfhost-wall/bootstrap-boundary.sh`, before -> after)
 
