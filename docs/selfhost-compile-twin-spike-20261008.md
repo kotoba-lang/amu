@@ -128,6 +128,8 @@ Build: seed r6m `8d3338e1`, the seed17 front0 objects, osaho 23c329e `kir/interp
   unsupported effect": the twin admits only `:state` beside capability calls, the host also admits `:abort`), 5
   "runtime KIR function shape rejected" (`higher_order`, `indexed_map`, `closure_bytes_result`, `collections_12`,
   `multi_map_12`) and 2 "runtime KIR operation rejected" (`collections/vector`, `dual-backend/11-minmax`). These are gaps of the `kotoba.verifier` twin's program verification, not of the assembly.
+  **Decision (owner, 2026-10-09): the twin's verifier keeps this strictness.** The 14 stay refused on the Kotoba route;
+  the verifier twin is not loosened to the host's admission.
 - **GUEST-FAILS:** 3 `kotoba.kir/oracle-unavailable` (interpreter families not ported: `recursive-tree`,
   `ex_info_round_trip`, `typed-closure-parameters`) and 1 resource trap (`lazy-sequence`: the frontend exhausts the
   vector table).
@@ -141,7 +143,9 @@ Build: seed r6m `8d3338e1`, the seed17 front0 objects, osaho 23c329e `kir/interp
    ("native target profile does not match target identity"). Measured: the spike built against the unpatched module
    traps on `examples/fuel.kotoba`. The measurement above uses the same table with comments removed and whitespace
    collapsed to one line (`workspaces/claude/artifact-verify/target-profiles-text.patch`, scratch only, same data).
-   The fix belongs upstream (the table text or the seed's reader) and needs its owner's decision.
+   **Decided (owner, 2026-10-09): the table text.** osaho commit 9387ddf (branch `claude/target-profiles-text`, from
+   `agent/dual-runtime-port-D`) writes `profiles-text` as one line without comments, equal to the host literal (27
+   targets); a seed r6m probe reads both checked profiles as maps and 27 entries (54 with the old text).
 2. **kexe-fs-forms is not called.** `refuse-unanswered!`'s Kotoba reading takes the code as a `:document` (it cannot
    hold a code vector) and `kexe-fs-forms/forms` traps on this route (`form-table-read` assocs onto `document-null`).
    Every form of the table is answered by the loader today, so the host check refuses nothing.
