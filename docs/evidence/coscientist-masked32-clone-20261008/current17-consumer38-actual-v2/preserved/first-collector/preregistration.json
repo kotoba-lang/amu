@@ -1,0 +1,20 @@
+{
+  "argv": [
+    "/usr/bin/ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "ConnectionAttempts=1",
+    "zebulun@100.66.28.79",
+    "exec /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME=/Users/zebulun LANG=C LC_ALL=C TZ=UTC /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9 -I -c 'from pathlib import Path\nimport json,hashlib,base64,sys,stat,signal\nsignal.alarm(60)\nroot=Path('\"'\"'/Users/zebulun/github/workspaces/codex/tc-hft-current19-quiet-c-packet-v3-20261009-root'\"'\"');report=root/'\"'\"'consumer-build-outputs/report.json'\"'\"';assert report.is_file()\nq=json.loads(report.read_bytes());assert q['\"'\"'status'\"'\"']=='\"'\"'COMPLETE_CURRENT17_CONSUMER_BUILD38_SOURCE_IDENTITY_ONLY_V2'\"'\"' and q['\"'\"'closedCompilerCalls'\"'\"']==38 and q['\"'\"'consumerBuildCalls'\"'\"']==19 and q['\"'\"'guestCalls'\"'\"']==0\nassert hashlib.sha256(Path(sys.executable).resolve().read_bytes()).hexdigest()=='\"'\"'6b24be8ba00c4abc8b3e7e2620bd710e2cf7a4312d00c147f8f05fbb6f3d297a'\"'\"'\nrows=[];total=0\nfor d in [root/'\"'\"'consumer-build-outputs'\"'\"',root/'\"'\"'root-current17-consumer-GO'\"'\"', root/'\"'\"'build'\"'\"']:\n for p in sorted(d.rglob('\"'\"'*'\"'\"')):\n  assert not p.is_symlink()\n  if p.is_dir():continue\n  a=p.lstat();assert stat.S_ISREG(a.st_mode) and a.st_size<=16777216\n  b=p.read_bytes();z=p.lstat();assert (a.st_dev,a.st_ino,a.st_size,a.st_mtime_ns)==(z.st_dev,z.st_ino,z.st_size,z.st_mtime_ns) and len(b)==a.st_size\n  total+=len(b);assert total<=67108864 and len(rows)<512\n  rows.append(dict(path=str(p.relative_to(root)),bytes=len(b),sha256=hashlib.sha256(b).hexdigest(),base64=base64.b64encode(b).decode('\"'\"'ascii'\"'\"')))\nb=(json.dumps(dict(status='\"'\"'READ_ONLY_CURRENT17_CONSUMER_BUILD38_CLOSED_OUTPUT_COLLECTION'\"'\"',root=str(root),files=rows,logicalBytes=total),separators=('\"'\"','\"'\"','\"'\"':'\"'\"'))+'\"'\"'\\n'\"'\"').encode();assert len(b)<=100663296\nsys.stdout.buffer.write(b);sys.stdout.flush()\n'"
+  ],
+  "SSHCalls": 1,
+  "readOnly": true,
+  "nativeCalls": 0,
+  "maxFiles": 512,
+  "maxLogicalBytes": 67108864,
+  "maxPayloadBytes": 100663296,
+  "sourceSHA256": "4066d82536ca229ab423dc1864ed818d021f20f6c49ca198605ef1dde22b5683"
+}

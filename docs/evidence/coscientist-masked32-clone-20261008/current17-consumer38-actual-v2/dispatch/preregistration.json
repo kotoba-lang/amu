@@ -1,0 +1,21 @@
+{
+  "argv": [
+    "/usr/bin/ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "ConnectionAttempts=1",
+    "zebulun@100.66.28.79",
+    "exec /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME=/Users/zebulun LANG=C LC_ALL=C TZ=UTC /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9 -I -c 'ROOT='\"'\"'/Users/zebulun/github/workspaces/codex/tc-hft-current19-quiet-c-packet-v3-20261009-root'\"'\"'\nPHASE='\"'\"'/Users/zebulun/github/workspaces/codex/tc-hft-current19-quiet-c-packet-v3-20261009-root/source/current17-phase'\"'\"'\nGODIR='\"'\"'/Users/zebulun/github/workspaces/codex/tc-hft-current19-quiet-c-packet-v3-20261009-root/root-current17-consumer-GO'\"'\"'\nLENGTH=238524\nDIGEST='\"'\"'d781a48c568269976304024db98924ccc6cfb8852a6985806e65bab7238c4659'\"'\"'\nPYTHON='\"'\"'/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9'\"'\"'\nGOPATH='\"'\"'/Users/zebulun/github/workspaces/codex/tc-hft-current19-quiet-c-packet-v3-20261009-root/root-current17-consumer-GO/root-go.json'\"'\"'\nfrom pathlib import Path\nimport os,sys,json,hashlib,base64\nroot=Path(ROOT); phase=Path(PHASE); out=Path(GODIR)\nassert root.resolve()==root and root.is_dir()\nassert json.loads((root/'\"'\"'install-receipt.json'\"'\"').read_bytes())['\"'\"'status'\"'\"']=='\"'\"'CLOSED_CURRENT19_PACKET_INSTALL_ONLY'\"'\"'\nraw=sys.stdin.buffer.read(1048577);assert len(raw)==LENGTH and hashlib.sha256(raw).hexdigest()==DIGEST\nfiles=json.loads(raw);decoded={}\nfor name,r in files.items():\n p=Path(name);assert p.parent in (phase,out) and p.name not in ('\"'\"''\"'\"','\"'\"'.'\"'\"', '\"'\"'..'\"'\"')\n b=base64.b64decode(r['\"'\"'base64'\"'\"'],validate=True);assert len(b)==r['\"'\"'bytes'\"'\"'] and hashlib.sha256(b).hexdigest()==r['\"'\"'sha256'\"'\"'];decoded[p]=b\nassert not phase.exists() and not out.exists()\nphase.mkdir(mode=0o700);out.mkdir(mode=0o700)\nfor p,b in decoded.items():\n with p.open('\"'\"'xb'\"'\"') as f:f.write(b);f.flush();os.fsync(f.fileno())\n p.chmod(0o400);assert p.read_bytes()==b\nargv=[PYTHON,str(phase/'\"'\"'build.py'\"'\"'),GOPATH]\nos.execve(PYTHON,argv,{'\"'\"'PATH'\"'\"':'\"'\"'/usr/bin:/bin:/usr/sbin:/sbin'\"'\"','\"'\"'HOME'\"'\"':'\"'\"'/Users/zebulun'\"'\"','\"'\"'LANG'\"'\"':'\"'\"'C'\"'\"','\"'\"'LC_ALL'\"'\"':'\"'\"'C'\"'\"','\"'\"'TZ'\"'\"':'\"'\"'UTC'\"'\"','\"'\"'PYTHONNOUSERSITE'\"'\"':'\"'\"'1'\"'\"','\"'\"'PYTHONDONTWRITEBYTECODE'\"'\"':'\"'\"'1'\"'\"'})\n'"
+  ],
+  "SSHCalls": 1,
+  "compilerCalls": 38,
+  "guestCalls": 0,
+  "payloadFiles": 39,
+  "payloadBytes": 238524,
+  "payloadSHA256": "d781a48c568269976304024db98924ccc6cfb8852a6985806e65bab7238c4659",
+  "bootstrapSHA256": "37967d44afff3da78c34217d88ba603a03a8903141e48339e4a4b484a27d49b6",
+  "noRetry": true
+}
