@@ -856,7 +856,11 @@
                     ;; one import resolved. The frontend's refusal is the one
                     ;; that names the thing.
                     (when (= "kotoba.reader" (namespace op)) op)
-                    (reject! "qualified call is not an admitted exported import" {:call op}))
+                    ;; The call is named in the sentence: the CLI prints only
+                    ;; the message, and a module with forty qualified calls
+                    ;; gave its reader no way to find the one refused
+                    ;; (measured 2026-10-09 on kotoba-lang/text).
+                    (reject! (str "qualified call is not an admitted exported import: " op) {:call op}))
                 op)]
       (list* op' (map #(rewrite-import-calls % imported) args)))
     (vector? form) (mapv #(rewrite-import-calls % imported) form)

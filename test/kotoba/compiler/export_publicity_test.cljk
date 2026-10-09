@@ -63,17 +63,17 @@
       (is (= ['main] (mapv :name (:exports value))))
       (is (interface/valid? value))))
   (testing "refused: a dependency's defn- is not callable"
-    (is (= "qualified call is not an admitted exported import"
+    (is (= "qualified call is not an admitted exported import: l/hidden"
            (refusal #(project/link-source {'lib lib-derived 'root (root-calling "(l/hidden 1)")} 'root)))))
   (testing "refused: a dependency's ^:private defn is not callable"
-    (is (= "qualified call is not an admitted exported import"
+    (is (= "qualified call is not an admitted exported import: l/also-hidden"
            (refusal #(project/link-source {'lib lib-derived 'root (root-calling "(l/also-hidden 1)")} 'root)))))
   (testing "an explicit :export still wins over publicity"
     (let [narrowed "(ns lib (:export [twice]))
                     (defn twice [x :i64] :i64 (* 2 x))
                     (defn thrice [x :i64] :i64 (* 3 x))"]
       (is (= '[twice] (:exports (project/module-info (sema/read-forms narrowed)))))
-      (is (= "qualified call is not an admitted exported import"
+      (is (= "qualified call is not an admitted exported import: l/thrice"
              (refusal #(project/link-source {'lib narrowed 'root (root-calling "(l/thrice 1)")} 'root))))))
   (testing "refused: a module whose every function is private exports nothing"
     (is (= "project module lib exports nothing: every top-level defn is private; declare one with defn, or add an explicit :export vector"

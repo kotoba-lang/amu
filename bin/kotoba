@@ -1,10 +1,7 @@
 #!/usr/bin/env -S npx --no-install nbb
 (ns kotoba-driver
   (:require ["node:child_process" :as child]
-            ["node:crypto" :as crypto]
             ["node:fs" :as fs]
-            ["node:module" :as node-module]
-            ["node:os" :as os]
             ["node:path" :as path]))
 
 (def usage
@@ -45,194 +42,22 @@
   (.error js/console message)
   (.exit js/process code))
 
-;; The wasm32 and ordinary (non-aiueos) native target names
-;; The split `kotoba.compiler.nbb.wasm-cli` / `kotoba.compiler.nbb.cli`
-;; entrypoints cover the targets below without loading the other backend.
-;; `x86_64-aiueos-*`/`aarch64-aiueos-*` (ELF64/PE32+ firmware/kernel
-;; packaging) stay JVM-only -- see that namespace's own comment for why.
-;; Any other `--target` value, or any subcommand besides `compile`/
-;; `check`, falls through to the JVM `kbb -M:run` path below
-;; unchanged.
-;; `nil` left this set on 2026-09-24 (amu ADR 0351): an omitted --target is
-;; resolved to a NAME by `bin/amu`'s `defaultTarget` before routing (see
-;; `with-default-target` below), so it no longer rides `nil` onto Wasm.
-(def ^:private nbb-native-targets
-  #{"wasm32" "wasm32-browser" "wasm32-wasi"
-    "x86_64" "x86_64-linux" "x86_64-macos" "x86_64-windows"
-    "aarch64" "aarch64-linux" "aarch64-macos" "aarch64-windows"
-    "aarch64-android" "aarch64-ios"})
-
-(defn- option [args flag] (second (drop-while #(not= flag %) args)))
-
-(defn- project-mode? [sub-args]
-  ;; Neither nbb entrypoint links a project: they compile the one file handed
-  ;; to them. Routing a project-mode invocation there drops --source-path /
-  ;; --module-lock silently and reports the entry module's `(:require ...)`
-  ;; clause as a malformed `:export`. Same guard as bin/amu's `projectMode`.
-  (boolean (some #{"--source-path" "--module-lock"} sub-args)))
-
-;; The trust-plane, release and iOS-packaging commands: one portable
-;; implementation (`kotoba.compiler.trust-cli`), Node entrypoint
-;; `nbb/trust_cli.cljk`. The same set `bin/amu` spells; spelled again here
-;; because this launcher decides the route before any Clojure is loaded.
-(def ^:private trust-commands
-  #{"keygen" "public-key" "inspect" "trust-key" "trust-runtime"
-    "sign" "verify-signed" "verify" "receipt" "verify-receipt" "verify-chain"
-    "sbom" "attest-release" "verify-release" "package-ios"})
-
-(defn- nbb-native-eligible? [sub-args]
-  (let [cmd (first sub-args)]
-    (and
-     (not (project-mode? sub-args))
-     (or (contains? #{"check" "extract-native" "run" "measure-runtime"} cmd)
-         (contains? trust-commands cmd)
-         (and (= cmd "worker") (contains? nbb-native-targets (option sub-args "--target")))
-         (and (= cmd "compile") (contains? nbb-native-targets (option sub-args "--target")))))))
-
-(defn- nbb-entrypoint [root sub-args]
-  (let [command (first sub-args)
-        target (option sub-args "--target")
-        wasm? (or (= command "check")
-                  (and (some? target) (.startsWith target "wasm32")))
-        filename (cond
-                   (contains? trust-commands command) "trust_cli.cljk"
-                   (contains? #{"run" "measure-runtime"} command) "run_cli.cljk"
-                   (= command "extract-native") "x86_64_cli.cljk"
-                   wasm? "wasm_cli.cljk"
-                   (.startsWith target "aarch64") "aarch64_cli.cljk"
-                   :else "x86_64_cli.cljk")]
-    (.join path root "src" "kotoba" "compiler" "nbb" filename)))
-
-;; Both nbb compiler entrypoint families require `kotoba.kir.admission`, whose
-;; transitive dependencies include the shared security controls. nbb has no
-;; concept of `deps.edn`/tools.deps -- it only
-;; resolves namespaces from directories on its own `--classpath`. `clojure
-;; -Spath` is the only thing that (a) fetches those pinned git SHAs into
-;; `~/.gitlibs` if it isn't already cached there and (b) prints the
-;; resulting directories, so it's used here purely as a classpath
-;; resolver, not to run any compiler code on the JVM. Its result is cached
-;; to a temp file keyed by a hash of `deps.edn`'s bytes so the fast path
-;; only pays the JVM-startup + dependency-resolution cost once per distinct
-;; `deps.edn` (e.g. once per CI job's checkout), not once per `compile`/
-;; `check` call -- callers like `scripts/fuzz-native.cljk` invoke this
-;; fast path thousands of times in a loop.
+;; This launcher is the compatibility front; `bin/amu` is the canonical one
+;; (amu ADR 0250: `:kotoba-compiler-delegates-to "bin/amu"`). It used to keep
+;; its own copy of amu's route table instead of delegating, and the copy
+;; drifted. `bin/amu` dropped its project-mode guard when the module linker
+;; became one namespace on both hosts (ADR 0348) -- "nothing about project mode
+;; forces the JVM now" -- but this file still sent every --source-path /
+;; --module-lock invocation to the removed JVM route. Measured 2026-10-09:
+;; `kotoba -M check <entry> --source-path <dir>` answered "has no
+;; implementation on the nbb/native route" for 930 of 930 files, while
+;; `amu check <entry> --source-path <dir>` linked the same graph and reported
+;; the real result. `test`, `definition-cids`, `module-lock` and the package
+;; commands were refused here for the same reason.
 ;;
-;; That is now the FALLBACK. `deps-lock.edn` records the closure `clojure
-;; -Spath` resolved, and `scripts/print-classpath.cljk` reproduces it from git
-;; alone -- so the whole fast path runs with no JDK present, which is what
-;; "the nbb path does not touch the JVM" was always supposed to mean. The lock
-;; is bound to `deps.edn`'s digest and the resolver fails closed on a stale
-;; one, so the fallback is for a checkout whose lock has not been regenerated
-;; yet, not a second way of getting an answer.
-;;
-;; Neither resolver may return "" any more. It used to, and the caller carried
-;; on with a truncated classpath, so a resolution failure surfaced as
-;; `Could not find namespace: kotoba.artifact.core` from somewhere else
-;; entirely -- measured directly by stubbing `clojure` out on a cold cache.
-(defn- resolver-failure [result]
-  (if-let [error (.-error result)]
-    (.-message error)
-    (let [lines (-> (or (.-stderr result) "")
-                    .trim
-                    (.split "\n")
-                    (.map (fn [line] (.trim line)))
-                    (.filter (fn [line] (not= "" line))))
-          tail (.join (.slice lines -3) " / ")]
-      (.slice (if (= "" tail) (str "exit " (.-status result)) tail) 0 400))))
-
-(defn- resolve-with-lock
-  "Answers {:classpath s} or {:reason s}.
-
-  The reason matters. `kotoba.compiler.nbb.classpath` distinguishes a missing
-  lock, a digest that no longer matches deps.edn, a pinned checkout that is not
-  at its commit, a lock path that does not exist, and a git clone that failed --
-  and only two of those are fixed by regenerating the lock. Collapsing all of
-  them into \"missing or stale\" sent a Windows runner's transient clone failure
-  to the wrong fix (measured 2026-08-18: the lock was byte-fresh, and the job
-  ten minutes earlier on the same image resolved it without complaint)."
-  [root nbb-cli alias]
-  (let [script (.join path root "scripts" "print-classpath.cljk")]
-    (cond
-      (not (.existsSync fs (.join path root "deps-lock.edn")))
-      {:reason "deps-lock.edn is not present"}
-
-      (not (.existsSync fs script))
-      {:reason "scripts/print-classpath.cljk is not present"}
-
-      :else
-      ;; Cold hosted runners clone the pinned closure. Preserve git's safe,
-      ;; content-addressed partial progress across bounded transient retries
-      ;; before considering the JVM fallback.
-      (loop [attempt 0 last "no attempt ran"]
-        (let [result (.spawnSync child js/process.execPath
-                                 (clj->js (into [nbb-cli "--classpath" (.join path root "src")
-                                                 script root]
-                                                (if alias ["--alias" alias] [])))
-                                 #js {:cwd root :encoding "utf8" :maxBuffer 16777216})
-              ok? (and (not (.-error result)) (zero? (or (.-status result) 1)))
-              joined (when ok?
-                       (-> (.split (.trim (.-stdout result)) "\n")
-                           (.map (fn [line] (.trim line)))
-                           (.filter (fn [line] (not= "" line)))
-                           (.join (.-delimiter path))))
-              last (cond (not ok?) (resolver-failure result)
-                         (= "" joined) "the resolver printed no entries"
-                         :else last)]
-          (if (and ok? (not= "" joined))
-            {:classpath joined}
-            (if (< attempt 2)
-              (recur (inc attempt) last)
-              {:reason (str "the lock resolver failed three times: " last)})))))))
-
-(defn- security-classpath-entry [root nbb-cli command]
-  (let [deps-edn (.join path root "deps.edn")
-        alias-used (when (contains? #{"run" "measure-runtime"} command) "native-run")
-        ;; The resolved directories are rooted under GITLIBS. A digest-only
-        ;; cache key lets an isolated clean-clone test publish temporary paths
-        ;; that a later normal invocation reuses after they have been deleted.
-        ;; Bind the cache to the dependency-store identity as well as deps.edn.
-        gitlibs-root (.resolve path (or (.-GITLIBS js/process.env)
-                                        (.join path (.homedir os) ".gitlibs")))
-        digest (-> (.createHash crypto "sha256")
-                   (.update (.readFileSync fs deps-edn))
-                   (.update "\u0000")
-                   (.update gitlibs-root)
-                   ;; Alias-bound cache: an executing command's classpath
-                   ;; (with :native-run) must never be read by a compile.
-                   (.update "\u0000")
-                   (.update (or alias-used ""))
-                   (.digest "hex"))
-        cache-file (.join path (.tmpdir os) (str "kotoba-security-classpath-" digest ".txt"))]
-    (if (.existsSync fs cache-file)
-      (.trim (.readFileSync fs cache-file "utf8"))
-      ;; The lock is the only resolver; the `kbb -Spath` fallback was
-      ;; removed on 2026-09-11 with the rest of the JVM route (owner decision:
-      ;; Kotoba and the amu native/nbb compiler only). A lock that does not
-      ;; match deps.edn is a refusal that names the fix, never a JVM spawn.
-      (let [attempt (resolve-with-lock root nbb-cli alias-used)]
-        (if-let [resolved (:classpath attempt)]
-          (do (.writeFileSync fs cache-file resolved) resolved)
-          (fail! (str "error: dependency resolution from deps-lock.edn failed: "
-                      (:reason attempt)
-                      "\n  There is no JVM fallback. Regenerate the lock with\n"
-                      "    kbb --backend sci scripts/lock-classpath.cljk\n"
-                      "  Diagnose with: kbb --backend sci --classpath src scripts/print-classpath.cljk")
-                 70))))))
-
-(defn- with-default-target
-  "SUB-ARGS with the default --target applied, and the origin of that target,
-  as `bin/amu` decides both -- by calling it, not by copying it. `bin/amu` is
-  plain CommonJS and exports `defaultTarget` when it is required rather than
-  run, so the two launchers share one host table (amu ADR 0351). A host with
-  no native target is refused here with the same text and exit 64."
-  [root sub-args]
-  (let [require-amu (.createRequire node-module (.join path root "bin" "amu"))
-        amu (require-amu (.join path root "bin" "amu"))
-        answer ((.-defaultTarget amu) (clj->js sub-args))]
-    (when-let [reason (.-reason answer)]
-      (fail! reason 64))
-    {:args (vec (js->clj (.-args answer)))
-     :origin (.-origin answer)}))
+;; So every compiler command now goes to `bin/amu` unchanged: one route table,
+;; one target-defaulting rule, one refusal text. The child runs in the
+;; caller's directory, so relative paths resolve exactly as they did.
 
 (let [args (vec *command-line-args*)
       boundary (first args)]
@@ -243,68 +68,12 @@
     (contains? #{"-M" "-M:compiler" "-M:compile"} boundary)
     (let [self (.realpathSync fs *file*)
           root (.resolve path (.dirname path self) "..")
-          {sub-args :args origin :origin} (with-default-target root (subvec args 1))
-          child-env (let [env (js/Object.assign #js {} js/process.env)]
-                      (if (contains? #{"host" "env"} origin)
-                        (aset env "AMU_TARGET_ORIGIN" origin)
-                        (js-delete env "AMU_TARGET_ORIGIN"))
-                      env)]
-      (if (nbb-native-eligible? sub-args)
-        ;; Fast path: no `clojure` (JVM) process is spawned at all. A fresh
-        ;; nbb process is spawned (not this one) purely so `--classpath`
-        ;; can point at `<root>/src` -- `bin/kotoba` itself is invoked via
-        ;; its shebang with no classpath flags, so it can't `:require`
-        ;; those namespaces directly in its own process. Spawns nbb's own
-        ;; `node_modules/nbb/cli.js` directly via `process.execPath`
-        ;; (same pattern `scripts/browser-matrix.cljk`'s `nbb!` already
-        ;; uses), NOT `npx` -- confirmed live: `spawnSync("npx", ...)`
-        ;; fails on Windows CI ("unable to start nbb-native compiler
-        ;; runtime") because `npx` resolves to `npx.cmd`, which needs
-        ;; shell interpretation `spawnSync` doesn't provide by default;
-        ;; `process.execPath` (the current `node`/`node.exe`) is a real,
-        ;; directly-executable binary on every platform.
-        (let [nbb-cli (.join path root "node_modules" "nbb" "cli.js")
-              security-cp (security-classpath-entry root nbb-cli (first sub-args))
-              ;; `<root>/resources` is joined explicitly rather than relying on
-              ;; the relative `resources` entry `kbb -Spath` happens to
-              ;; emit: the lock records dependency checkouts, and this
-              ;; repository's own directories are not a dependency of itself.
-              classpath (str (.join path root "src") (.-delimiter path)
-                             (.join path root "resources") (.-delimiter path)
-                             security-cp)
-              ;; Keep the compiler's recursive closed-form oracle below one
-              ;; explicit, cross-runner budget. Some hosted Node builds expose
-              ;; only ~512 KiB by default, which rejects the admitted lazy
-              ;; sequence fixture before Wasm emission.
-              result (.spawnSync child js/process.execPath
-                                 (clj->js (into ["--stack-size=4096"
-                                                 nbb-cli "--classpath"
-                                                 classpath
-                                                 (nbb-entrypoint root sub-args)]
-                                                sub-args))
-                                 ;; The CALLER's directory, not the checkout.
-                                 ;; Every path the nbb entrypoints take is
-                                 ;; resolved by them against the process cwd,
-                                 ;; and with `:cwd root` a relative `--output
-                                 ;; key.edn` landed INSIDE the Amu checkout while
-                                 ;; the caller's directory stayed empty and the
-                                 ;; command reported `:ok true` (measured
-                                 ;; 2026-09-11 with `kotoba -M keygen`). The
-                                 ;; classpath above is absolute, so nothing the
-                                 ;; child loads depends on where it starts.
-                                 #js {:cwd (.cwd js/process) :stdio "inherit" :env child-env})]
-          (when (.-error result)
-            (fail! "error: unable to start nbb-native compiler runtime" 70))
-          (.exit js/process (or (.-status result) 70)))
-        ;; The JVM route is gone (2026-09-11). Everything not on the nbb route
-        ;; above used to be handed to `kbb -M:run` / `-M:native-run`; now
-        ;; it is a refusal naming the command, the same exit 64 `bin/amu`
-        ;; gives. The gap ledger is amu docs/adr `jvm-route-removed`.
-        (fail! (str "error: `kotoba -M " (first sub-args)
-                    "` has no implementation on the nbb/native route, and the "
-                    "JVM route was removed on 2026-09-11 (Kotoba and the amu "
-                    "native compiler only). See amu docs/adr, jvm-route-removed.")
-               64)))
+          amu (.join path root "bin" "amu")
+          result (.spawnSync child js/process.execPath (clj->js (into [amu] args))
+                             #js {:cwd (.cwd js/process) :stdio "inherit" :env js/process.env})]
+      (when (.-error result)
+        (fail! "error: unable to start bin/amu" 70))
+      (.exit js/process (or (.-status result) 70)))
 
     :else
     (fail! "error: compiler commands require the -M execution boundary" 2)))
