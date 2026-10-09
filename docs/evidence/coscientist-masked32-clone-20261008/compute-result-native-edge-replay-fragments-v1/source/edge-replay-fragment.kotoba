@@ -1,0 +1,54 @@
+;; SOURCE prototype for HISTORICAL V7 only, NOT integrated current41.
+;; Requires checked phase6 closure, outgoing edge mapping and fixed module.
+;; feature0 must retain original query route. All activated ownership still
+;; needs reserved-zero/pre-certificate clearing/cleanup integration described.
+(def vm-input (+ gn-a-lp 8193))
+(def vm-valid (+ vw-old 1792))
+(defn- vm-value [M :vector-i64 e :i64 k :i64] :i64
+ (gn-g M (+ vw-sites (* e 4) k)))
+;; Called only for validated matching OP-CALL edge and k in0..3.
+;; Capture each provisional contribution, not just final stable facts.
+(defn- vm-capture [M :vector-i64 e :i64 k :i64 L :i64] :vector-i64
+ (let [old (vm-value M e k)]
+  (vw-write M (+ vw-sites (* e 4) k) (if (< old 0) L (gn-min old L)))))
+;; Reset only this caller's contributions before MISS; explicit -1 neutral.
+(defn- vm-reset [M :vector-i64 f :i64 e :i64 k :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (cond (not= (vw-c m 1) 0) m
+        (>= e (vw-c m 3)) m
+        (not= (vw-e m e 0) f) (vm-reset m f (inc e) 0)
+        (>= k 4) (vm-reset m f (inc e) 0)
+        :else (vm-reset (vw-write m (+ vw-sites (* e 4) k) -1) f e (inc k)))))
+;; A matching key checks all4 previous-round inputs; aliases/effects/bodies/
+;; parameters/adjacency are only exempted under SAME PASS immutable closure.
+(defn- vm-key-equal [M :vector-i64 f :i64 k :i64] :bool
+ (or (>= k 4)
+     (and (= (gn-g M (+ vm-input (* f 4) k)) (gn-g M (+ vw-old (* f 4) k)))
+          (vm-key-equal M f (inc k)))))
+(defn- vm-hit [M :vector-i64 f :i64] :bool
+ (and (= (vw-c M 1) 0) (= (vw-f M f 15) 1) (= (vw-f M f 14) 0)
+      (= (gn-g M (+ vm-valid f)) 1) (vm-key-equal M f 0)))
+;; Preserve original target accumulator meet; NEVER assign cached target totals.
+(defn- vm-replay [M :vector-i64 f :i64 e :i64 k :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (cond (not= (vw-c m 1) 0) m
+        (>= e (vw-c m 3)) m
+        (not= (vw-e m e 0) f) (vm-replay m f (inc e) 0)
+        (>= k 4) (vm-replay m f (inc e) 0)
+        :else (let [L (vm-value m e k) target (vw-e m e 2)
+                    old (vw-f m target (+ 6 k))
+                    m1 (if (< L 0) m
+                         (vw-fs m target (+ 6 k) (if (< old 0) L (gn-min old L))))]
+                (vm-replay m1 f e (inc k))))))
+;; Invalidate UNCAPPED before any fallible reset/key write. Refusal still wins.
+(defn- vm-invalidate [M :vector-i64 f :i64] :vector-i64
+ (gn-gs M (+ vm-valid f) 0))
+(defn- vm-store-key [M :vector-i64 f :i64 k :i64] :vector-i64
+ (let [m (vw-tick M)]
+  (cond (not= (vw-c m 1) 0) m
+        (>= k 4) (if (and (= (vw-f m f 15) 1) (= (vw-f m f 14) 0))
+                   (vw-write m (+ vm-valid f) 1) m)
+        :else (vm-store-key (vw-write m (+ vm-input (* f 4) k)
+                               (gn-g m (+ vw-old (* f 4) k))) f (inc k)))))
+;; Caller must complete all resets and whole vw-run-fn before vm-store-key;
+;; never publish if global refusal, unsupported result or unmapped edge.

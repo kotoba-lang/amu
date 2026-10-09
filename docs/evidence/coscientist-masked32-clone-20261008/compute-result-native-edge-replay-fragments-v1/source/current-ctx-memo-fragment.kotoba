@@ -1,0 +1,23 @@
+;; SOURCE design for actual current41 query; NOT integrated or compiled.
+;; Caller supplies audited own8-cell base, not guessed spare scratch.
+;; Record[valid,f,n,depth,work,openFirst,openCount,answer] needs8cells.
+;; module identity is implicit ONLY within one gn-run-open invocation;
+;; new module invocation must reset valid before any reads or output mutation.
+(defn- cm-match [M :vector-i64 p :i64 f :i64 n :i64] :bool
+ (and (= (gn-g M p) 1) (= (gn-g M (+ p 1)) f) (= (gn-g M (+ p 2)) n)
+      (= (gn-g M (+ p 3)) 8) (= (gn-g M (+ p 4)) 512)
+      (= (gn-g M (+ p 5)) (gn-g M gn-g-open))
+      (= (gn-g M (+ p 6)) (gn-g M gn-g-open-n))))
+;; Owned answer = exact integer, including remaining work/-1; Boolean-only
+;; internal memoization would corrupt the recursive shared-work contract.
+(defn- cm-fill [M :vector-i64 p :i64 f :i64 n :i64 answer :i64] :vector-i64
+ (-> M (gn-gs p 0) (gn-gs (+ p 1) f) (gn-gs (+ p 2) n)
+       (gn-gs (+ p 3) 8) (gn-gs (+ p 4) 512)
+       (gn-gs (+ p 5) (gn-g M gn-g-open))
+       (gn-gs (+ p 6) (gn-g M gn-g-open-n))
+       (gn-gs (+ p 7) answer) (gn-gs p 1)))
+;; Proposed gn-call-generic hook, only after generic non-tail admission:
+;; let answer = hit ? gn-g(M,p+7) : gn-ctx-safe(M,f,n,8,512)
+;; MISS performs cm-fill, HIT keeps all ordinary caller emission unchanged;
+;; gn-f-ctx gets (answer>=0 ?1:0) exactly where original code writes it.
+;; No caching recursive varying-depth/work calls. No emitter shortcut/fuel change.
