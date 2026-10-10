@@ -2,8 +2,8 @@
 # seed/tests/compile-cli/run.sh <front-objects> [work-dir] [list] -- the product entry nbb.aarch64-cli built FROM SOURCE
 # on the seed route (no spike): its Kotoba `main` dispatches to nbb.cli's Kotoba `run!`, whose `compile` is the host's
 # `compile-uncached!` over kotoba.compiler.native-artifact. Build: seed r6m compiles cli-support, native-admission,
-# native-artifact, nbb.cli and nbb.aarch64-cli (entry) of this tree against a copy of FRONT-OBJECTS, links the entry and
-# extracts `main`. Then each program of LIST (default: the parity corpus dirs of seed/amu-main/parity.sh that exist
+# native-artifact, nbb.cli and nbb.aarch64-cli of this tree against a copy of FRONT-OBJECTS, then guest.kotoba (the link
+# root: its `main` is aarch64-cli's `main`), links the root and extracts `main`. Then each program of LIST (default: the parity corpus dirs of seed/amu-main/parity.sh that exist
 # here) is compiled by `bin/amu compile --target aarch64-macos` (BOOTSTRAP-REFERENCE, KOTOBA_VERDICT_CACHE=off: the
 # guest has no verdict cache and answers :disabled) and by the guest with the same command line, and compared:
 #   - exit status (the host's exit-code class of the refusal's phase on both sides);
@@ -79,8 +79,13 @@ comp $R/src/kotoba/compiler/nbb/project_source.cljk kotoba.compiler.nbb.project-
 comp $R/src/kotoba/compiler/native_admission.kotoba kotoba.compiler.native-admission
 comp $R/src/kotoba/compiler/native_artifact.kotoba kotoba.compiler.native-artifact
 comp $R/src/kotoba/compiler/nbb/cli.cljk kotoba.compiler.nbb.cli
-comp $R/src/kotoba/compiler/nbb/aarch64_cli.cljk kotoba.compiler.nbb.aarch64-cli --entry
-run $SB 0 link $O/kotoba.compiler.nbb.aarch64-cli.kso --object-dir $O --output $W/a64cli.kseed > $W/link.log 2>&1 || { tail -3 $W/link.log; exit 1; }
+# 2026-10-11: aarch64-cli is a LIBRARY here, as in the image (amu.main is its root there). Since section 8 of the status doc
+# it exports `run [args [:list :string]]` beside `main`, and an --entry module's exports must pass the loader's export
+# codec (seed 21-check ck-sig-export: no list parameter), so `--entry` on it is refused E2104 "type mismatch in 'run':
+# expected :i64" (r6m and r6n). The link root is guest.kotoba, whose one export `main []` is the entry's `main`.
+comp $R/src/kotoba/compiler/nbb/aarch64_cli.cljk kotoba.compiler.nbb.aarch64-cli
+comp $H/guest.kotoba compile-cli.guest --entry
+run $SB 0 link $O/compile-cli.guest.kso --object-dir $O --output $W/a64cli.kseed > $W/link.log 2>&1 || { tail -3 $W/link.log; exit 1; }
 # the seed's extract-native reads the image as one bytes value: at most 8 MiB (KEXE_BYTES_VALUE_LIMIT, ADR 0362)
 echo "linked $(wc -c < $W/a64cli.kseed | tr -d ' ') bytes (extract-native limit 8388608)"
 run $SB 0 extract-native $W/a64cli.kseed --symbol main --output $W/a64cli.bin > $W/extract.log 2>&1 || { cat $W/extract.log; exit 1; }

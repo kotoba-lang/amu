@@ -1,0 +1,14 @@
+(ns compile-cli.guest
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.nbb.aarch64-cli :as product]))
+
+;; seed/tests/compile-cli/guest.kotoba -- the link root of run.sh's build-from-source guest (2026-10-11).
+;;
+;; nbb.aarch64-cli exports `main []` and `run [args [:list :string]]` (status doc section 8: the native image's
+;; amu.compile calls `run`). Compiled with `--entry`, the seed checks every export of the module against the loader's
+;; export codec (21-check ck-sig-export: :i64 :bool :string :vector-i64, records, variants, fn values; never a list), so
+;; `run` is refused (E2104 "type mismatch in 'run': expected :i64", r6m and r6n). Compiled as a library, its interface
+;; is the link table and `run` is admitted, as in the image, where amu.main is the root. So run.sh compiles aarch64-cli
+;; as a library and this module, whose only export is a `main []` that is the product entry's `main`, as the root.
+
+(defn main [] :i64 (product/main))
