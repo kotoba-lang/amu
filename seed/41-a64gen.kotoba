@@ -1,3 +1,78 @@
+;; Exact generic charged endzero UTF8 accessor; guarded ASCII call-edge only.
+(defn- sa-row [M :vector-i64 p :i64 f :i64 h :i64 a :i64 b :i64 k :i64] :bool
+ (case k
+  0 (uc-row M (+ p 0) 1 f 2 2)
+  1 (uc-row M (+ p 1) 18 0 0 0)
+  2 (uc-row M (+ p 2) 9 h 0 0)
+  3 (uc-row M (+ p 3) 4 0 2 0)
+  4 (uc-row M (+ p 4) 4 1 1 0)
+  5 (uc-row M (+ p 5) 14 72 1 1)
+  6 (uc-row M (+ p 6) 7 1 0 0)
+  7 (uc-row M (+ p 7) 11 0 a 0)
+  8 (uc-row M (+ p 8) 3 0 0 0)
+  9 (uc-row M (+ p 9) 10 b 0 0)
+  10 (uc-row M (+ p 10) 9 a 0 0)
+  11 (uc-row M (+ p 11) 4 0 1 0)
+  12 (uc-row M (+ p 12) 4 1 2 0)
+  13 (uc-row M (+ p 13) 14 144 0 2)
+  14 (uc-row M (+ p 14) 9 b 0 0)
+  15 (uc-row M (+ p 15) 19 0 0 0)
+  16 (uc-row M (+ p 16) 2 f 0 0)
+  false))
+(defn- sa-rows [M :vector-i64 p :i64 f :i64 h :i64 a :i64 b :i64 k :i64] :bool
+ (if (= k 17) true (and (sa-row M p f h a b k) (sa-rows M p f h a b (inc k)))))
+(defn- sa-admit [M :vector-i64 f :i64 n :i64] :bool
+ (and (= n 2) (= (gn-g M gn-f-leaf) 0) (= (gn-g M gn-f-freg) 0)
+  (> f 0) (< f MM-FN-CAP) (< f (vector-at M MM-FN-N))
+  (<= (vector-at M MM-FN-N) MM-FN-CAP) (not (gn-clamp-open M f))
+  (>= (vector-at M MM-SIR-N) 17) (<= (vector-at M MM-SIR-N) MM-SIR-CAP)
+  (> (gn-fnf M f FF-SIR) 0) (<= (gn-fnf M f FF-SIR) (- (vector-at M MM-SIR-N) 17))
+  (= (gn-fnf M f FF-NPARAMS) 2) (= (gn-fnf M f FF-NSLOTS) 2)
+  (= (gn-fnf M f FF-DEPTH) 2) (= (gn-fnf M f FF-FUEL) 1)
+  (= (gn-fnf M f FF-RTYPE) TY-I64) (= (gn-fnf M f FF-PT0) TY-STR)
+  (= (gn-fnf M f (inc FF-PT0)) TY-I64)
+  (< (gn-g M di-sites) 256) (<= (gn-g M di-used) 4032)
+  (>= (vector-at M MM-CODE-N) 0) (<= (vector-at M MM-CODE-N) (- MM-CODE-CAP 64))
+  (>= (vector-at M MM-FIX-N) 0) (<= (vector-at M MM-FIX-N) (- MM-FIX-CAP 1))
+  (let [p (gn-fnf M f FF-SIR) h (gn-sir M (+ p 2) IF-A)
+   a (gn-sir M (+ p 10) IF-A) b (gn-sir M (+ p 14) IF-A)]
+   (and (sa-rows M p f h a b 0) (qb-labels M p 17 0)))))
+;; x0handle and x1index survive every miss; endzero precedes ASCII restrictions.
+(defn- sa-transfer [M :vector-i64 f :i64] :vector-i64
+ (let [cn (vector-at M MM-CODE-N) fn (vector-at M MM-FIX-N)
+  m0 (-> M (gn-emit (enc-ldr 16 7 CTX-FUEL)) (gn-emit (enc-cmp-i 16 1)))
+  fuel (vector-at m0 MM-CODE-N) m1 (-> m0 (gn-emit (enc-bcond (enc-cond-lo) 0))
+   (gn-emit (enc-ldr 16 7 288)) (gn-emit (enc-ldr 16 16 0))
+   (gn-emit (enc-sub-i 17 0 1)) (gn-emit (enc-cmp-r 17 16)))
+  handle (vector-at m1 MM-CODE-N) m2 (-> m1 (gn-emit (enc-bcond (enc-cond-hs) 0))
+   (gn-emit (enc-ldr 16 7 296)) (gn-emit (gn-e-addsl 16 16 17 4))
+   (gn-emit (enc-ldp 3 4 16 0)) (gn-emit (enc-cmp-r 1 4)))
+  end (vector-at m2 MM-CODE-N) m3 (-> m2 (gn-emit (enc-bcond (enc-cond-eq) 0)))
+  index (vector-at m3 MM-CODE-N) m4 (-> m3 (gn-emit (enc-bcond (enc-cond-hs) 0))
+   (gn-emit (enc-cmp-i 3 0))) pool (vector-at m4 MM-CODE-N)
+  m5 (-> m4 (gn-emit (enc-bcond (enc-cond-lt) 0))
+   (gn-emit (enc-add-r 5 3 4)) (gn-emit (enc-cmp-r 5 3)))
+  wrap (vector-at m5 MM-CODE-N) m6 (-> m5 (gn-emit (enc-bcond (enc-cond-lo) 0))
+   (gn-emit (enc-ldr 16 7 392)) (gn-emit (enc-cmp-r 5 16)))
+  range (vector-at m6 MM-CODE-N) m7 (-> m6 (gn-emit (enc-bcond 8 0))
+   (gn-emit (enc-ldr 6 7 CTX-CODE-BASE)) (gn-emit (enc-add-r 6 6 3))
+   (gn-emit (gn-e-ldrb 2 6 1)) (gn-emit (enc-cmp-i 2 128)))
+  ascii (vector-at m7 MM-CODE-N) m8 (-> m7 (gn-emit (enc-bcond (enc-cond-hs) 0)) (gn-mov 5 2))
+  join (vector-at m8 MM-CODE-N) m9 (gn-emit m8 (enc-b 0)) zero (vector-at m9 MM-CODE-N)
+  m10 (gn-mov-imm m9 5 0) charge (vector-at m10 MM-CODE-N)
+  m11 (-> m10 (gn-emit (enc-ldr 16 7 CTX-FUEL)) (gn-emit (enc-sub-i 16 16 1))
+   (gn-emit (enc-str 16 7 CTX-FUEL)) (gn-mov 0 5) (gn-emit (enc-b 2)))
+  fallback (vector-at m11 MM-CODE-N) m12 (-> m11 (gn-fix FX-BL26 f) (gn-emit (enc-bl 0))
+   (gn-dot-patch fuel fallback (enc-cond-lo)) (gn-dot-patch handle fallback (enc-cond-hs))
+   (gn-dot-patch index fallback (enc-cond-hs)) (gn-dot-patch pool fallback (enc-cond-lt))
+   (gn-dot-patch wrap fallback (enc-cond-lo)) (gn-dot-patch range fallback 8)
+   (gn-dot-patch ascii fallback (enc-cond-hs)) (gn-dot-patch end zero (enc-cond-eq))
+   (gn-put (+ MM-CODE-BASE join) (enc-b (- charge join))))]
+  (if (= (vector-at m12 MM-ERR) 0)
+   (-> m12 (gn-gs di-sites (inc (gn-g m12 di-sites)))
+    (gn-gs di-used (+ (gn-g m12 di-used) (- (vector-at m12 MM-CODE-N) cn))))
+   (-> m12 (gn-put MM-CODE-N cn) (gn-put MM-FIX-N fn)))))
+
 ;; Unfrozen generic four ordered byte-store call transfer. Parent capacity-terminal V2 provisional.
 (defn- fw-row [M :vector-i64 p :i64 f :i64 h :i64 e :i64 k :i64] :bool
  (case k
@@ -5094,8 +5169,9 @@
    (if (fb-admit M f n) (fb-transfer M f)
     (if (tt-admit M f n) (tt-transfer M f)
      (if (fw-admit M f n) (fw-transfer M f)
-      (if (gc-admit M f n) (gc-transfer M f)
-       (-> M (gn-fix FX-BL26 f) (gn-emit (enc-bl 0))))))))))
+      (if (sa-admit M f n) (sa-transfer M f)
+       (if (gc-admit M f n) (gc-transfer M f)
+        (-> M (gn-fix FX-BL26 f) (gn-emit (enc-bl 0)))))))))))
 
 (defn- gn-call-generic [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
  (cond
