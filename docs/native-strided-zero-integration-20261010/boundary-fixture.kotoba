@@ -1,0 +1,21 @@
+(ns generic.strided-zero-boundary (:export [predicate bench batch bounds-probe empty-probe]))
+(defn predicate [v :vector-i64 base :i64 stride :i64 k :i64] :bool
+ (if (= k 8) true
+  (and (= (vector-at v (+ base (* stride k))) 0)
+       (predicate v base stride (+ k 1)))))
+(defn bench [selection :i64] :i64
+ (if (cond
+  (= selection 0) (predicate [0 0 0 0 0 0 0 0] 0 1 1)
+  (= selection 1) (predicate [1] 0 1 0)
+  (= selection 2) (predicate [0 0 0 0 0 0 0 0] 7 -1 0)
+  (= selection 3) (predicate [0 0 0 0 0 0 0 0] 0 0 0)
+  (= selection 4) (predicate [0 0 0 0 0 0 0 0] 8 1 0)
+  (= selection 5) (predicate [0 1 0 0 0 0 0 0] 1 1 -1)
+  (= selection 6) (predicate [0] 9223372036854775807 1 1)
+  (= selection 7) (predicate [1] 0 -9223372036854775808 2)
+  (= selection 8) (predicate [0] 0 1 9)
+  :else (predicate [0] 0 1 8)) 1 0))
+(defn batch [selection :i64] :i64 (bench selection))
+(defn bounds-probe [v :vector-i64] :i64 (if (predicate v 0 1 1) 1 0))
+(defn empty-probe [v :vector-i64] :i64
+ (if (predicate v 9223372036854775807 -9223372036854775808 8) 1 0))
