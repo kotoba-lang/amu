@@ -21,14 +21,16 @@
   that compares one has to say so with `kotoba.verifier/guest-integer?`
   rather than `integer?` -- `kotoba.verifier.signing` learned that on
   2026-09-11 (kotoba-verifier f1efb423)."
-  {:kotoba/export #?(:kotoba [max-edn-bytes max-source-bytes read-edn-text read-file read-text-file]
+  {:kotoba/export #?(:kotoba [max-edn-bytes max-source-bytes read-edn-text read-edn-text-limits read-file read-reader-text-limits read-text-file]
                      :default [max-edn-bytes max-source-bytes read-file read-string read-text-file])}
   (:refer-clojure :exclude [read-string])
   (:require #?@(:clj [[clojure.edn :as edn]
                       [kotoba.io :as io]]
                 :cljs [[kotoba.compiler.kotoba-reader :as kr]
                        [kotoba.compiler.nbb.io :as nbb-io]]
-                :kotoba [[kotoba.compiler.kotoba-reader :as kr]]))
+                :kotoba [[kotoba.compiler.kotoba-reader :as kr]
+                         [kotoba.compiler.decimal-text :as decimal-text]
+                         [kotoba.compiler.text-bytes :as text-bytes]]))
   ;; Kotoba: an EDN value is the recursive `:form/r` record of kotoba.form
   ;; (the same schema, so the same type), and the reader's answer is the
   ;; twin's `:kotoba.reader/out`. Nothing here needs kotoba.form's functions.
@@ -97,18 +99,29 @@
    :default nil)
 
 #?(:kotoba
-   ;; Kotoba: the bytes come through the app-data scope, which answers a
-   ;; regular file inside the granted root and traps on anything else (no
-   ;; symlink, directory or missing file gets through). The byte ceiling is
-   ;; checked on the answer; the host's growth-while-reading race does not
-   ;; exist here because the answer is one read.
+   ;; Kotoba: the bytes come through the app-data scope, whose READ answers a
+   ;; regular file inside the granted root and TRAPS on anything else, and so
+   ;; does STAT on a path outside the scope. So the path is asked first
+   ;; (2026-10-10), and refused by name as the host refuses it: EXISTS answers
+   ;; "0" (never a trap) for an absent, unreadable, symlinked or out-of-scope
+   ;; path ("input could not be read", the host's answer for a path it cannot
+   ;; open); STAT's fourth field is 1 for a directory ("input must be a regular
+   ;; file"). The byte ceiling is checked on the answer; the host's
+   ;; growth-while-reading race does not exist here because the answer is one
+   ;; read.
    (defn- read-bytes [path :string limit :i64 kind :keyword] :bytes
      (if (= 0 (string-byte-length path))
        (reject-bytes! "input path is required")
-       (let [data (fs/app-data-bytes path)]
-         (if (> (bytes-count data) limit)
-           (reject-bytes! "input exceeds byte limit")
-           data))))
+       (if (not (= "1" (fs/app-data (str path "EXISTS_SEP"))))
+         (reject-bytes! "input could not be read")
+         (let [stat (fs/app-data (str path "STAT_SEP"))
+               fields (if (= 0 (string-byte-length stat)) (vector-i64) (decimal-text/fields stat))]
+           (if (or (< (vector-count fields) 4) (not (= 0 (vector-at fields 3))))
+             (reject-bytes! "input must be a regular file")
+             (let [data (fs/app-data-bytes path)]
+               (if (> (bytes-count data) limit)
+                 (reject-bytes! "input exceeds byte limit")
+                 data)))))))
    :clj
    (defn- read-bytes [path limit kind]
      (when-not (and (string? path) (seq path))
@@ -158,11 +171,14 @@
                              {:phase :decode :kind kind :path path} error))))))))
 
 #?(:kotoba
-   ;; `string-from-utf8` accepts canonical UTF-8 only and traps by name on
-   ;; anything else, so malformed input cannot pass; it is not a raise, so
-   ;; there is nothing to catch and the refusal is the trap.
+   ;; `string-from-utf8` accepts canonical UTF-8 only and TRAPS on anything
+   ;; else (exit 120, nothing to catch). So the bytes are checked first with
+   ;; the same walk (`text-bytes/utf8-valid?`) and refused by the host's name,
+   ;; "input is not valid UTF-8" (2026-10-10; was the trap).
    (defn- decode-utf8 [bytes :bytes kind :keyword] :string
-     (string-from-utf8 bytes))
+     (if (text-bytes/utf8-valid? bytes)
+       (string-from-utf8 bytes)
+       (throw (ex-info "input is not valid UTF-8" {:phase :decode}))))
    :default
 (defn- decode-utf8 [bytes kind]
   (try
@@ -223,7 +239,7 @@
    ;; nesting, 3 token. Positions are bytes: a multi-byte character is
    ;; several token bytes, so the token ceiling is reached earlier on
    ;; non-ASCII text (the reader twin counts the same way).
-   (defn- preflight-code [text :string] :i64
+   (defn- preflight-code [text :string depth-limit :i64] :i64
      (let [raw (string-to-utf8 text)
            n (bytes-count raw)]
        (loop [index 0 depth 0 token 0 in-string 0 escaped 0 in-comment 0]
@@ -258,7 +274,7 @@
                1
 
                (or (= ch 40) (= ch 91) (= ch 123))
-               (if (> (+ depth 1) (max-depth))
+               (if (> (+ depth 1) depth-limit)
                  2
                  (recur (+ index 1) (+ depth 1) 0 0 0 0))
 
@@ -333,27 +349,27 @@
    ;; negative code (-1 depth, -2 nodes, -3 string) the caller refuses on.
    ;; A node's children are its kids, which for a map are k v k v ...; key
    ;; before value, each one level down, as on the host.
-   (defn- shape-walk [x [:ref :form/r] depth :i64 nodes :i64] :i64
-     (if (> depth (max-depth))
+   (defn- shape-walk [x [:ref :form/r] depth :i64 nodes :i64 depth-limit :i64 node-limit :i64] :i64
+     (if (> depth depth-limit)
        -1
        (let [nodes (+ nodes 1)]
-         (if (> nodes (max-nodes))
+         (if (> nodes node-limit)
            -2
            (if (and (= 3 (record-get [:ref :form/r] x :tag))
                     (> (string-byte-length (record-get [:ref :form/r] x :s)) (max-string-chars)))
              -3
-             (shape-walk-kids (record-get [:ref :form/r] x :kids) 0 (+ depth 1) nodes))))))
+             (shape-walk-kids (record-get [:ref :form/r] x :kids) 0 (+ depth 1) nodes depth-limit node-limit))))))
    :default
    nil)
 
 #?(:kotoba
-   (defn- shape-walk-kids [kids [:list [:ref :form/r]] i :i64 depth :i64 nodes :i64] :i64
+   (defn- shape-walk-kids [kids [:list [:ref :form/r]] i :i64 depth :i64 nodes :i64 depth-limit :i64 node-limit :i64] :i64
      (if (>= i (vector-count kids))
        nodes
-       (let [r (shape-walk (typed-list-nth [:list [:ref :form/r]] kids i) depth nodes)]
+       (let [r (shape-walk (typed-list-nth [:list [:ref :form/r]] kids i) depth nodes depth-limit node-limit)]
          (if (< r 0)
            r
-           (shape-walk-kids kids (+ i 1) depth r)))))
+           (shape-walk-kids kids (+ i 1) depth r depth-limit node-limit)))))
    :default
    nil)
 
@@ -376,8 +392,8 @@
       value))))
 
 #?(:kotoba
-   (defn- read-one! [text :string] [:ref :form/r]
-     (let [out (kr/read-forms-bounded text (max-depth) (max-token-chars))
+   (defn- read-one! [text :string depth-limit :i64] [:ref :form/r]
+     (let [out (kr/read-forms-bounded text depth-limit (max-token-chars))
            err (record-get [:ref :kotoba.reader/out] out :err)
            forms (record-get [:ref :kotoba.reader/out] out :forms)
            n (vector-count forms)]
@@ -409,18 +425,51 @@
        (first forms))))
 
 #?(:kotoba
+   ;; The reading of `kotoba.compiler.nbb.cli-support`'s host `read-edn-form!`
+   ;; (2026-10-10): `kr/read-forms` under the depth and token ceilings, one
+   ;; form, then the node and string walk -- and NO dispatch preflight. That
+   ;; host reading reads `--policy`, `.kexe` artifacts and module locks with
+   ;; the kotoba reader, which admits what it reads (`#_` discard, `#{}` sets,
+   ;; `#?` ...), so the policy `{:allow #{..}, #_ :x}` is a policy there.
+   ;; cli-support's Kotoba reading used `read-edn-text` above, whose preflight
+   ;; refuses every dispatch but `#{` (this namespace's own contract, kept for
+   ;; its own readers): the image refused that policy "EDN dispatch forms are
+   ;; forbidden" where bin/amu admitted it. The ceilings' refusals keep their
+   ;; texts (the reader's "EDN nesting exceeds limit" / "EDN token exceeds
+   ;; limit" are the preflight's).
+   (defn read-reader-text-limits [text :string node-limit :i64 depth-limit :i64] [:ref :form/r]
+     (let [value (read-one! text depth-limit)
+           walked (shape-walk value 0 0 depth-limit node-limit)]
+       (if (= walked -1)
+         (reject-form! "EDN value nesting exceeds limit")
+         (if (= walked -2)
+           (reject-form! "EDN value contains too many nodes")
+           (if (= walked -3)
+             (reject-form! "EDN string exceeds limit")
+             value))))))
+
+#?(:kotoba
    ;; Kotoba: `read-string` is a reserved function name, so the reading is
    ;; `read-edn-text`, and its value is a Form.
    (defn read-edn-text [text :string] [:ref :form/r]
-     (let [code (preflight-code text)]
+     (read-edn-text-limits text (max-nodes) (max-depth)))
+   :default
+   nil)
+
+#?(:kotoba
+   ;; The same reading under caller-chosen node and depth ceilings (token and
+   ;; string ceilings unchanged): a sealed artifact is a larger input class than
+   ;; a policy file (`kotoba.compiler.nbb.cli-support/read-artifact-file!`).
+   (defn read-edn-text-limits [text :string node-limit :i64 depth-limit :i64] [:ref :form/r]
+     (let [code (preflight-code text depth-limit)]
        (if (= code 1)
          (reject-form! "EDN dispatch forms are forbidden")
          (if (= code 2)
            (reject-form! "EDN nesting exceeds limit")
            (if (= code 3)
              (reject-form! "EDN token exceeds limit")
-             (let [value (read-one! text)
-                   walked (shape-walk value 0 0)]
+             (let [value (read-one! text depth-limit)
+                   walked (shape-walk value 0 0 depth-limit node-limit)]
                (if (= walked -1)
                  (reject-form! "EDN value nesting exceeds limit")
                  (if (= walked -2)

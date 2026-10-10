@@ -8,12 +8,37 @@
   else (aarch64-macos included) has no packaged form, so this entry's closure
   does not load them. A packaged target that reaches this entry anyway is
   refused by name, never written as artifact EDN under an executable's name."
-  {:kotoba/export []}
-  (:require [kotoba.compiler.nbb.cli :as native-cli]
+  {:kotoba/export #?(:kotoba [main run] :default [])}
+  (:require #?@(:kotoba [[kotoba.compiler.nbb.cli :as native-cli]
+                         [kotoba.compiler.nbb.cli-support :as support]]
+                :default [[kotoba.compiler.nbb.cli :as native-cli]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
             [kotoba.kir.target :as target-profile]
-            [kotoba.native.aarch64 :as aarch64]))
+            [kotoba.native.aarch64 :as aarch64]])))
+
+#?(:kotoba
+   ;; `run` is `main` over a given argument list: the native `amu` image (seed/amu-main, amu.compile) calls it with
+   ;; bin/amu's launcher layer applied to its argv (`--jvm-free` dropped, the host `--target` default added).
+   (defn run [args [:list :string]] :i64
+     (if (and (> (vector-count args) 0) (string=? (typed-list-nth [:list :string] args 0) "worker"))
+       (let [w (io/write-error (support/refusal-text :usage "error: worker mode is not available on the Kotoba route"))]
+         64)
+       (try (let [w (io/write (native-cli/run! args))] 0)
+            (catch e (let [phase (support/error-phase e)
+                           w (io/write-error (support/refusal-text phase (ex-message e)))]
+                       (support/exit-code phase)))))))
+
+#?(:kotoba
+   ;; Kotoba: the entry's `main`, in check-cli's style (the host's top-level form has no Kotoba reading: a module has
+   ;; no top-level effects). `worker` is refused by name (no NDJSON worker on this route); everything else is
+   ;; nbb.cli's Kotoba `run!` (`compile`, aarch64-macos, kotoba.native.aarch64 chosen by the backend rather than
+   ;; injected, no packager). Success: the host's stdout, status 0. Refusal: cli-support's reduced
+   ;; `:kotoba.cli-error/v1` report on stderr and the host's exit code for the refusal's phase.
+   (defn main [] :i64 (run (support/command-line-args)))
+   :default
+   ;; Host reading (Clojure / nbb), unchanged.
+   (do
 
 (def ^:private packaged-targets
   #{:aarch64-aiueos-kernel-v1 :aarch64-linux-static-kotoba-v1})
@@ -41,5 +66,5 @@
             (support/usage-error!
              (str "error: AArch64 worker does not cover target " target-name)))
         context (assoc (compile-cache/create-context) :target target)]
-    (support/serve! #(run! % context) target))
-  (support/execute! #(run! % nil))))
+    (support/serve! (fn [x] (run! x context)) target))
+  (support/execute! (fn [x] (run! x nil)))))))

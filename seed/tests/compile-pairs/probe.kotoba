@@ -1,0 +1,138 @@
+;; seed/tests/compile-pairs/probe.kotoba -- nbb.cli's compile steps on the Kotoba route one at a time, for the
+;; loader's KEXE_ARENA_USE high-water marks per phase (docs/selfhost-compile-pairs-20261010.md). Nothing the guest
+;; allocates is reclaimed on the seed route (arena-scope compiles as `do`), so the mark of a stage minus the mark of
+;; the stage it extends is that phase's allocation.
+;; args: <stage> <source> [--policy <file>]. Stages (each runs the frontend first):
+;;   analyze | lower | program | emit | compat | describe | unverified | structure | verify | provenance | full
+;;   inside emit (kotoba.native.aarch64/emit-program's steps): rewrite | gmir | plans | sel | hoist | alloc | coal |
+;;   lowermc | mc | encode0 (mc encoded without the fuel prefixes)
+;;   u:<what> -- 1,000,000 iterations of one Form operation (kwf intf get-hit get-miss strlit eqlit none)
+(ns cstest.compile-pairs
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.nbb.cli-support :as support]
+            [kotoba.compiler.nbb.io :as nbb-io]
+            [kotoba.compiler.capability-names :as cap-names]
+            [kotoba.compiler.native-artifact :as na]
+            [kotoba.compiler.definition-identity :as definition-identity]
+            [kotoba.compiler.project :as project]
+            [kotoba.native.aarch64 :as a64]
+            [kotoba.native.machine-ir :as machine-ir]
+            [kotoba.mir :as mir]
+            [kotoba.native.keyword-equality :as keyword-equality]
+            [kotoba.native.document :as document]
+            [kotoba.native.string-index :as string-index]
+            [kotoba.native.string-search :as string-search]
+            [kotoba.native.vector-region :as vector-region]
+            [kotoba.verifier :as verifier]
+            [kotoba.sema :as sema]
+            [kotoba.form :as form])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]] [:phase :string] [:data [:ref :form/r]]]]
+             :ana/ir [:record :ana/ir [[:ok :bool] [:val [:ref :form/r]] [:err [:ref :fe/err]]]]}))
+
+(defn- empty-map [] [:ref :form/r] (form/form-map (form/no-forms)))
+(defn- kf [k :keyword] [:ref :form/r] (form/keyword-form k))
+(defn- put [m [:ref :form/r] k :keyword v [:ref :form/r]] [:ref :form/r] (form/assoc-form m (kf k) v))
+(defn- fld [m [:ref :form/r] k :keyword] [:ref :form/r] (form/form-get m (kf k)))
+
+(defn- analyze! [source :string] [:ref :form/r]
+  (let [r (sema/analyze source (empty-map))]
+    (if (record-get [:ref :ana/ir] r :ok)
+      (record-get [:ref :ana/ir] r :val)
+      (throw (ex-info (record-get [:ref :fe/err] (record-get [:ref :ana/ir] r :err) :msg) {:phase :subset})))))
+
+(defn- say [s :string] :i64 (let [w (io/write (string-concat s "\n"))] 0))
+
+(defn- micro [what :string n :i64] :i64
+  (let [m (put (put (empty-map) :a (form/int-form 1)) :b (form/int-form 2))]
+    (loop [i 0 acc 0]
+      (if (>= i n) acc
+        (recur (+ i 1)
+               (+ acc (cond
+                        (string=? what "kwf") (form/tag-of (form/keyword-form :x))
+                        (string=? what "intf") (form/tag-of (form/int-form i))
+                        (string=? what "get-hit") (form/tag-of (form/form-get m (form/keyword-form :b)))
+                        (string=? what "get-miss") (form/tag-of (form/form-get m (form/keyword-form :c)))
+                        (string=? what "strlit") (string-length "abc")
+                        (string=? what "eqlit") (if (string=? what "zzz") 1 0)
+                        :else 0)))))))
+
+(defn- run2 [args [:list :string]] :i64
+  (let [stage (typed-list-nth [:list :string] args 0)
+        source (nbb-io/read-text-file (typed-list-nth [:list :string] args 1))
+        policy (cap-names/wire-policy (support/read-policy args))
+        metadata (support/emit-metadata args)
+        target :aarch64-macos-kotoba-v1
+        hir (analyze! source)]
+    (cond
+      (string=? stage "analyze") (say "analyze")
+      (string=? stage "lower") (let [kir (na/lower! hir 100000)] (say "lower"))
+      (string=? stage "program") (let [kir (na/lower! hir 100000) p (na/native-program kir)] (say "program"))
+      (string=? stage "emit")
+      (let [kir (na/lower! hir 100000) p (na/native-program kir) e (a64/emit-program p)]
+        (say (string-concat "emit code " (string-from-i64 (form/count-of (fld e :code))))))
+      (or (string=? stage "rewrite") (string=? stage "gmir") (string=? stage "mc") (string=? stage "encode0") (string=? stage "plans") (string=? stage "sel") (string=? stage "hoist") (string=? stage "alloc") (string=? stage "coal") (string=? stage "lowermc"))
+      (let [kir0 (na/native-program (na/lower! hir 100000))
+            k1 (vector-region/rewrite-program (keyword-equality/rewrite-program kir0))
+            fs2 (document/augment-functions (string-index/augment-functions (string-search/augment-functions (fld k1 :functions))))
+            kir (form/assoc-form k1 (kf :functions) fs2)]
+        (if (string=? stage "rewrite") (say "rewrite")
+          (let [gmir (machine-ir/lower-kir-module kir)]
+            (cond
+              (string=? stage "gmir") (say "gmir")
+              (string=? stage "plans") (let [x (machine-ir/counted-self-recur-plans-of-gmir :aarch64 gmir)] (say "plans"))
+              (or (string=? stage "sel") (string=? stage "hoist") (string=? stage "alloc") (string=? stage "coal") (string=? stage "lowermc"))
+              (let [selected (fld (mir/select-target-result (kf :aarch64) gmir) :program)]
+                (if (string=? stage "sel") (say "sel")
+                  (let [hoisted (machine-ir/hoist-program-consumers selected)]
+                    (if (string=? stage "hoist") (say "hoist")
+                      (let [allocated (fld (mir/allocate-registers-result hoisted) :program)]
+                        (if (string=? stage "alloc") (say "alloc")
+                          (let [co (machine-ir/coalesce-program-moves allocated)]
+                            (if (string=? stage "coal") (say "coal")
+                              (let [l (machine-ir/lower-mc co)] (say "lowermc"))))))))))
+              :else
+              (let [mc (machine-ir/compile-gmir :aarch64 gmir)]
+                (if (string=? stage "mc") (say "mc")
+                  (let [e (machine-ir/encode-mc-module mc (empty-map) (fld kir :exports))]
+                    (say (string-concat "encode0 " (string-from-i64 (form/count-of (fld e :code))))))))))))
+      (string=? stage "compat")
+      (let [kir (na/lower! hir 100000) c (na/compatibility-form hir kir target)] (say "compat"))
+      (string=? stage "describe")
+      (let [kir (na/lower! hir 100000)
+            base (put (put (put (put (empty-map) :format (kf :kexe/v1)) :target (kf target)) :hir hir) :kir kir)
+            d (definition-identity/describe base (sema/capability-id->name))]
+        (say "describe"))
+      (string=? stage "unverified")
+      (let [r (na/compile-unverified source hir target policy metadata)] (say "unverified"))
+      (string=? stage "structure")
+      (let [r (na/compile-unverified source hir target policy metadata)
+            m (verifier/verify-artifact-structure-message (fld r :artifact))]
+        (say (string-concat "structure " m)))
+      (string=? stage "verify")
+      (let [r (na/compile-unverified source hir target policy metadata)
+            m (na/verify-message (fld r :artifact))]
+        (say (string-concat "verify " m)))
+      (string=? stage "provenance")
+      (let [r (na/compile-unverified source hir target policy metadata)
+            p (na/provenance source policy metadata r)]
+        (say "provenance"))
+      (string=? stage "full")
+      (let [r (na/compile-native source hir target policy metadata)
+            p (na/provenance source policy metadata r)
+            a (project/pr-text (fld r :artifact))
+            t (project/pr-text p)]
+        (say (string-concat "full " (string-from-i64 (string-length a)))))
+      :else (say "unknown stage"))))
+
+(defn- run [args [:list :string]] :i64
+  (let [stage0 (typed-list-nth [:list :string] args 0)]
+    (if (string=? (string-substring stage0 0 2) "u:")
+      (say (string-concat "micro " (string-from-i64 (micro (string-substring stage0 2 (string-length stage0)) 1000000))))
+      (run2 args))))
+
+(defn main [] :i64
+  (let [args (support/command-line-args)]
+    (try (run args)
+         (catch e (let [w (io/write-error (string-concat (ex-message e) "\n"))] 65)))))

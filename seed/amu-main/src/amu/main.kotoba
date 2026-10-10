@@ -10,9 +10,17 @@
 ;; seed/amu-main/src/amu/main.kotoba -- the `amu` command as ONE Kotoba entry (agent MAINS, 2026-10-04; the native
 ;; launcher's command table: agent CMD, 2026-10-04, seed/amu-main/LAUNCHER.md).
 ;;
-;;   amu check <file> ..          -> amu.check/run      (stage-0 `amu check`)
-;;   amu compile <file> --target aarch64-macos [--output X] ..
-;;                                -> amu.compile/run    (stage-0 `amu compile`, :kotoba.kexe/v1)
+;;   amu check <file> ..          -> amu.check/run      (the product entry nbb.check-cli's Kotoba `run`: bin/amu check's
+;;                                   :kotoba.check/v1 answer; 2026-10-10, was amu.check-full = stage-0's report line)
+;;   amu compile <file> [--target aarch64-macos] [--output X] [--policy P] [--fuel N] [--source-path R ..]
+;;                                -> amu.compile/run    (the product entry nbb.aarch64-cli's Kotoba `run` = nbb.cli's
+;;                                   Kotoba `run!`: bin/amu compile's sealed artifact and answer; 2026-10-10, was the
+;;                                   seed compiler behind stage-0's texts)
+;;   amu compile <file> .. --emit-module [--entry] --object-dir D --output X.kso
+;;                                -> seed.main          (INTERNAL: the module compiler of the self-build, the seed
+;;                                   compiler linked in; not a bin/amu mode. With `link`, `modules` and the KSEED1 arm of
+;;                                   `extract-native` it is how the image rebuilds itself: scripts/seed/image/front.sh,
+;;                                   scripts/seed/launcher/build.sh --builder)
 ;;   amu refactor <sub> ..        -> amu.refactor/run   (bin/amu -> nbb refactor_cli)
 ;;   amu link | modules | extract-native ..
 ;;                                -> seed.main          (the seed driver's own build commands, so an amu image rebuilds
@@ -45,6 +53,11 @@
         (string=? c "sign-output-set") 1 (string=? c "verify-output-set") 1
         :else 0))
 
+;; the self-build's module compiler: the seed driver's `compile .. --emit-module` (status 1 = refused 65, 2 = usage 64)
+(defn- module-compile [] :i64
+  (let [r (seed/main)]
+    (cond (= r 1) 65 (= r 2) 64 :else r)))
+
 (defn- extract-native [] :i64
   (let [p (cli/argx 1)
         ks (cli/flag-value "--symbol" 1)
@@ -69,6 +82,7 @@
     (let [c (cli/argx 0)]
       (cond (string=? c "") (let [w (cli/err "error: missing Amu compiler command\n")] 2)   ; bin/amu: only --jvm-free given
             (string=? c "check") (check/run)
+            (and (string=? c "compile") (= (cli/has-flag "--emit-module" 1) 1)) (module-compile)
             (string=? c "compile") (compile/run)
             (string=? c "refactor") (refactor/run)
             (string=? c "link") (seed/main)

@@ -45,7 +45,11 @@
     (= k 0) 4096
     ;; :profile/native :cells :pair-arena-max -- 64 Mi handles, address space.
     (= k 1) 67108864
-    ;; kgraph datoms per run.
+    ;; :profile/native :cells :kgraph -- the kgraph datom budget per run
+    ;; (KEXE_KGRAPH / a packaged command's baked constant name another), and
+    ;; the artifact ABI's :kgraph-capacity. A DEFAULT since 2026-10-09; it was
+    ;; the fixed size of the datom array from 2026-07-19 (86df0919b, copied
+    ;; from the pair capacity for a 6-datom pilot, never measured).
     (= k 2) 4096
     ;; :profile/native :structural :arena-scope-depth.
     (= k 3) 256
@@ -98,6 +102,17 @@
     (= k 24) 30000
     (= k 25) 1000
     (= k 26) 16
+    ;; :profile/native :cells :kgraph-max -- the most datoms a run may ask
+    ;; for: 16 Mi, address space (24 B a datom, 384 MiB mapped, touched only
+    ;; as asserted). Seed rung r6l keeps run-time keyword texts in the kgraph
+    ;; and the frontend's need tracks the code it emits: measured 2026-10-09
+    ;; over the 311 corpus programs the compile-twin spike compiles, 417
+    ;; datoms for the smallest and about 1.6 per emitted aarch64 byte above
+    ;; that (Pearson 0.975), 28,285 for the largest (29.7 KB of code);
+    ;; amu docs/selfhost-kgraph-capacity-20261008.md. 16 Mi covers about
+    ;; 10 MB of emitted code in one process, more than the 6.9 MB frontend
+    ;; image itself.
+    (= k 27) 16777216
     :else -1))
 
 ;; ---------------------------------------------------------------------
@@ -252,7 +267,8 @@
 
 ;; A per-run budget the caller named (environment or packaged constant).
 ;; BUDGET: 0 fuel, 1 string pool, 2 pairs, 3 vectors, 4 vector items,
-;; 5 cpu seconds, 6 wall seconds. VALUE is the u64 the C parsed.
+;; 5 cpu seconds, 6 wall seconds, 7 kgraph datoms. VALUE is the u64 the C
+;; parsed.
 ;;   0 admitted, 1 refused as zero (must be positive), 2 above the ceiling.
 (defn- budget-ceiling [budget]
   (cond
@@ -263,6 +279,7 @@
     (= budget 4) (constant 16)
     (= budget 5) (constant 12)
     (= budget 6) (constant 12)
+    (= budget 7) (constant 27)
     :else 0))
 
 (defn- budget-verdict [budget value]

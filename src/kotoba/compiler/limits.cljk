@@ -779,7 +779,20 @@
        :copies
        [{:repo "kotoba-lang/amu",
          :path "tools/kexe_loader.c",
-         :pattern "#define KEXE_VECTOR_ITEM_CAPACITY (\\d+)u"}]}},
+         :pattern "#define KEXE_VECTOR_ITEM_CAPACITY (\\d+)u"}]},
+      :kgraph
+      {:value 4096,
+       :override "KEXE_KGRAPH",
+       :why
+       "The kgraph datom store per run (amu ADR 0369, 2026-10-09: a per-run budget, was the array's fixed size); exhaustion :budget/cells {:arena :kgraph}. Also the artifact ABI's :kgraph-capacity. Seed rung r6l keeps run-time keyword texts here, so the Kotoba-route compiler needs about 1.6 datoms per emitted code byte: its images bake a larger budget.",
+       :copies
+       [{:repo "kotoba-lang/amu",
+         :path "tools/kexe_loader.c",
+         :pattern "#define KEXE_KGRAPH_CAPACITY (\\d+)u"}]},
+      :kgraph-max
+      {:value 16777216,
+       :why
+       "16 Mi datoms (amu ADR 0369, 2026-10-09): address space, not memory -- 24 bytes of the shared mapping a datom, touched only when asserted; kgraph-get goes through an (entity, attribute) index sized by the budget."}},
      :bytes
      {:unit :byte,
       :trap :budget/bytes,

@@ -75,20 +75,41 @@
     (decimal-text/fields answer))))
 
 #?(:kotoba
-   ;; The host answers a failing read by trapping (the fs/app-data ability has
-   ;; no catchable failure), so the JVM/nbb path's re-labelling of an invalid
-   ;; UTF-8 or unreadable file has nothing to catch here.
+   ;; The host answers a failing READ by trapping (the fs/app-data ability has
+   ;; no catchable failure), so a file the READ cannot serve is refused BEFORE
+   ;; it, by name, with the host's `:decode` refusals:
+   ;; - EXISTS first (2026-10-10): STAT, like READ, TRAPS on a path outside the
+   ;;   image's granted scope (SIGILL, exit 120; measured on the image for
+   ;;   `check /Users/<x>.kotoba` and `--policy /Users/<x>.edn`), while EXISTS
+   ;;   answers "0" for such a path, as for an absent, unreadable or symlinked
+   ;;   one (O_RDONLY | O_NOFOLLOW inside the scope, the open READ makes):
+   ;;   "input could not be read", which is what the host answers for a path it
+   ;;   cannot open.
+   ;; - STAT next: its fourth field is 1 for a directory (which READ opens and
+   ;;   then cannot read), the same refusal; its size is checked against LIMIT
+   ;;   before any byte is read, as the host does.
+   ;; - the bytes are read as BYTES (the `:bytes` payload of the same READ),
+   ;;   not as text: the text READ traps on invalid UTF-8 (:utf8/invalid-byte,
+   ;;   exit 120). They are checked with `text-bytes/utf8-valid?` (the walk
+   ;;   `string-from-utf8` makes) and refused "input is not valid UTF-8", as
+   ;;   the host's fatal decoder does, before they become a string.
    (defn- read-text-file-bounded [p :string limit :i64] :string
      (if (= 0 (string-byte-length p))
        (throw (ex-info "input path is required" {:phase :decode}))
+       (if (not (= "1" (fs/app-data (str p "EXISTS_SEP"))))
+         (throw (ex-info "input could not be read" {:phase :decode :path p}))
        (let [stat (fields (fs/app-data (str p "STAT_SEP")))]
-         (if (and (> (vector-count stat) 1) (> (vector-at stat 1) limit))
+         (if (or (< (vector-count stat) 4) (= 1 (vector-at stat 3)))
+           (throw (ex-info "input could not be read" {:phase :decode :path p}))
+         (if (> (vector-at stat 1) limit)
            (throw (ex-info "input exceeds byte limit" {:phase :decode :path p :limit limit}))
-           (let [content (fs/app-data p)]
+           (let [content (fs/app-data-bytes p)]
              ;; The file may have grown between STAT and READ.
-             (if (> (text-bytes/utf8-length content) limit)
+             (if (> (text-bytes/bytes-length content) limit)
                (throw (ex-info "input exceeds byte limit" {:phase :decode :path p :limit limit}))
-               content))))))
+               (if (text-bytes/utf8-valid? content)
+                 (text-bytes/utf8-text content)
+                 (throw (ex-info "input is not valid UTF-8" {:phase :decode :path p})))))))))))
    :default
 (defn- read-text-file-bounded [p limit]
   (when-not (and (string? p) (seq p))

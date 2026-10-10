@@ -11,7 +11,8 @@
 
   `utf8-text` refuses what is not canonical UTF-8 in both readings: the
   fatal decoder throws, `string-from-utf8` traps by name."
-  {:kotoba/export [byte-at bytes-from-ints bytes-length concat-bytes empty-bytes index-of-byte slice-bytes utf8-bytes utf8-length utf8-text utf8-text-lossy]})
+  {:kotoba/export #?(:kotoba [byte-at bytes-from-ints bytes-length concat-bytes empty-bytes index-of-byte slice-bytes utf8-bytes utf8-length utf8-text utf8-text-lossy utf8-valid?]
+                     :default [byte-at bytes-from-ints bytes-length concat-bytes empty-bytes index-of-byte slice-bytes utf8-bytes utf8-length utf8-text utf8-text-lossy])})
 
 (defn utf8-length
   "The number of bytes TEXT occupies in UTF-8."
@@ -85,3 +86,41 @@
                 (cond (>= i (bytes-count bytes)) -1
                       (= b (bytes-at bytes i)) i
                       :else (recur (inc i))))))
+
+;; Kotoba only (2026-10-10): whether BYTES are canonical UTF-8, so a reader can
+;; refuse malformed input BY NAME before `string-from-utf8`, which traps (the
+;; loader's value trap :utf8/invalid-byte, exit 120) and leaves nothing to
+;; catch. The walk is the loader's utf8_invalid_reason (tools/kexe_loader.c,
+;; = osaho kotoba.kir.value/utf8-invalid-at): no stray continuation byte, no
+;; overlong lead (C0 C1, E0 below A0, F0 below 90), no surrogate (ED A0..),
+;; nothing above U+10FFFF (F4 90.., F5..), no truncated sequence. It accepts
+;; exactly what `string-from-utf8` accepts, and what the host's fatal
+;; TextDecoder accepts. The host readings keep their decoder's own refusal.
+#?(:kotoba
+   (defn- utf8-continuation? [b :i64] :bool
+     (= 128 (bit-and b 192))))
+
+#?(:kotoba
+   (defn utf8-valid? [bytes :bytes] :bool
+     (let [n (bytes-count bytes)]
+       (loop [i 0]
+         (if (>= i n)
+           true
+           (let [b0 (bytes-at bytes i)]
+             (cond
+               (< b0 128) (recur (+ i 1))
+               (or (< b0 194) (> b0 244)) false
+               (>= (+ i 1) n) false
+               :else
+               (let [b1 (bytes-at bytes (+ i 1))
+                     k (if (< b0 224) 1 (if (< b0 240) 2 3))]
+                 (if (or (not (utf8-continuation? b1))
+                         (and (= b0 224) (< b1 160))
+                         (and (= b0 240) (< b1 144))
+                         (and (= b0 237) (>= b1 160))
+                         (and (= b0 244) (>= b1 144))
+                         (>= (+ i k) n)
+                         (and (>= k 2) (not (utf8-continuation? (bytes-at bytes (+ i 2)))))
+                         (and (>= k 3) (not (utf8-continuation? (bytes-at bytes (+ i 3))))))
+                   false
+                   (recur (+ i (+ k 1))))))))))))

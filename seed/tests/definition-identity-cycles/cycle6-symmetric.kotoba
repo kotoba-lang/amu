@@ -1,0 +1,9 @@
+;; seed/tests/definition-identity-cycles/cycle6-symmetric.kotoba -- a recursive group for kotoba.compiler.definition-identity's ordering choice
+;; (best-candidate). Compare the Kotoba route with the host: seed/tests/compile-cli/run.sh <objects> <work> <list of these>.
+(defn t1 [n] (if (<= n 0) 0 (+ (t2 (- n 1)) (t4 (- n 2)))))
+(defn t2 [n] (if (<= n 0) 0 (+ (t3 (- n 1)) (t5 (- n 2)))))
+(defn t3 [n] (if (<= n 0) 0 (+ (t4 (- n 1)) (t6 (- n 2)))))
+(defn t4 [n] (if (<= n 0) 0 (+ (t5 (- n 1)) (t1 (- n 2)))))
+(defn t5 [n] (if (<= n 0) 0 (+ (t6 (- n 1)) (t2 (- n 2)))))
+(defn t6 [n] (if (<= n 0) 0 (+ (t1 (- n 1)) (t3 (- n 2)))))
+(defn main [] (t1 5))

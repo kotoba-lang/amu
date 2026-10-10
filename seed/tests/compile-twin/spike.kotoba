@@ -1,0 +1,50 @@
+;; Spike: nbb.cli `compile-native!` for aarch64-macos on the Kotoba route, artifact included:
+;; analyze -> kotoba.compiler.native-artifact/compile-unverified (native admission gate, entry / UEFI gates,
+;; effect-row/check, fuel policy, kir/lower, native-program, aarch64/emit-program, the sealed :kotoba.kexe/v1 map,
+;; definitions) -> provenance -> the verifier step.
+;; args: <source> <out> [--policy <file>] [--fuel <n>]. Writes <out> (the artifact's EDN text), <out>.provenance.edn
+;; and <out>.verify (the verifier's message, empty when accepted). Exit 0 accepted, 66 the verifier refused (both files
+;; are still written, for the comparison), 65 the compile refused (nothing written).
+(ns cstest.compile
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.nbb.cli-support :as support]
+            [kotoba.compiler.nbb.io :as nbb-io]
+            [kotoba.compiler.capability-names :as cap-names]
+            [kotoba.compiler.native-artifact :as na]
+            [kotoba.compiler.project :as project]
+            [kotoba.sema :as sema]
+            [kotoba.form :as form])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]] [:phase :string] [:data [:ref :form/r]]]]
+             :ana/ir [:record :ana/ir [[:ok :bool] [:val [:ref :form/r]] [:err [:ref :fe/err]]]]}))
+
+(defn- empty-map [] [:ref :form/r] (form/form-map (form/no-forms)))
+
+(defn- analyze! [source :string] [:ref :form/r]
+  (let [r (sema/analyze source (empty-map))]
+    (if (record-get [:ref :ana/ir] r :ok)
+      (record-get [:ref :ana/ir] r :val)
+      (throw (ex-info (record-get [:ref :fe/err] (record-get [:ref :ana/ir] r :err) :msg) {:phase :subset})))))
+
+;; 0 accepted, 66 refused by the verifier
+(defn- run [args [:list :string]] :i64
+  (let [source (nbb-io/read-text-file (typed-list-nth [:list :string] args 0))
+        out (typed-list-nth [:list :string] args 1)
+        policy (cap-names/wire-policy (support/read-policy args))
+        metadata (support/emit-metadata args)
+        result (na/compile-unverified source (analyze! source) :aarch64-macos-kotoba-v1 policy metadata)
+        artifact (form/form-get result (form/keyword-form :artifact))
+        prov (na/provenance source policy metadata result)
+        w1 (nbb-io/write-text! out (project/pr-text artifact))
+        w2 (nbb-io/write-text! (string-concat out ".provenance.edn") (project/pr-text prov))
+        message (na/verify-message artifact)
+        w3 (nbb-io/write-text! (string-concat out ".verify") message)]
+    (if (string=? message "")
+      0
+      (let [w (io/write-error (string-concat message "\n"))] 66))))
+
+(defn main [] :i64
+  (let [args (support/command-line-args)]
+    (try (run args)
+         (catch e (let [w (io/write-error (string-concat (ex-message e) "\n"))] 65)))))

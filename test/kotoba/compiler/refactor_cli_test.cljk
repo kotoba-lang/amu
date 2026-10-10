@@ -39,7 +39,7 @@
   (let [{:keys [value status]} (cli/run ["list-rules"] (memory-io (atom {})))]
     (is (= 0 status))
     (is (= :kotoba.refactor/v1 (:format value)))
-    (is (= [:a :b :c :d :e :f] (map :id (:rules value))))
+    (is (= [:a :b :c :d :e :f :g] (map :id (:rules value))))
     (is (= [:a :b :d :e :f] (:standard-order value)))
     (is (= [:list-rules :plan :apply :graph :partition :split :verify] (:commands value)))
     (is (= [:c] (map :id (filter :needs-target (:rules value)))))))

@@ -1,0 +1,6 @@
+;; seed/tests/definition-identity-cycles/cycle3-set-literal.kotoba -- a recursive group for kotoba.compiler.definition-identity's ordering choice
+;; (best-candidate). Compare the Kotoba route with the host: seed/tests/compile-cli/run.sh <objects> <work> <list of these>.
+(defn r1 [n] (if (<= n 0) 0 (+ (r2 (- n 1)) (count #{:a :b}))))
+(defn r2 [n] (if (<= n 0) 0 (r3 (- n 1))))
+(defn r3 [n] (if (<= n 0) 0 (r1 (- n 1))))
+(defn main [] (r1 5))

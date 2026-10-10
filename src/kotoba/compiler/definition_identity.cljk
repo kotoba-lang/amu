@@ -74,7 +74,8 @@
   gets nothing rather than something plausible."
   {:kotoba/export #?(:kotoba [alpha-normalize cache-material contract definition-count definitions describe desugar-contract-version format-lines joined max-recursive-group normalized-body profile-version scanned-line symbols-in]
                    :default [alpha-normalize cache-material contract definition-count definitions describe desugar-contract-version format-lines joined max-recursive-group normalized-body profile-version scanned-line symbols-in])}
-  (:require #?@(:kotoba [[kotoba.form :as form]]
+  (:require #?@(:kotoba [[kotoba.form :as form]
+                         [cbor.core :as cbor]]
                 :default [[kotoba.lang.text :as str]
                           [kotoba.kir :as ir]])
             [kotoba.kir.alpha-normalization :as an]
@@ -87,7 +88,8 @@
                         :di/link [:record :di/link [[:body [:ref :form/r]] [:deps [:ref :form/r]]]]
                         :di/one [:record :di/one [[:cid [:ref :form/r]] [:deps [:ref :form/r]] [:entry [:ref :form/r]]]]
                         :di/state [:record :di/state [[:pending [:ref :form/r]] [:rcid [:ref :form/r]]
-                                                      [:out [:ref :form/r]] [:done :i64]]]})))
+                                                      [:out [:ref :form/r]] [:done :i64]]]
+                        :di/tpl [:record :di/tpl [[:tmpl :vector-i64] [:hole :vector-i64] [:start :vector-i64] [:ok :bool]]]})))
 
 ;; ===========================================================================
 ;; The Kotoba reading of this namespace.
@@ -904,9 +906,10 @@
                   (kw "hex") (form/string-form (kir-id/canonical-hex payload)))
              (kw "dependencies") deps)))))
 
-;; the candidate ordering with the smallest canonical hex (the first of equals)
+;; the candidate ordering with the smallest canonical hex (the first of equals), by building and encoding every
+;; permutation's payload, as the host does (see `best-candidate` for when this is still the route)
 #?(:kotoba
-   (defn- best-candidate [sorted-component [:ref :form/r] prepared [:ref :form/r] names [:ref :form/r]
+   (defn- best-candidate-full [sorted-component [:ref :form/r] prepared [:ref :form/r] names [:ref :form/r]
                           rcid [:ref :form/r]] [:ref :form/r]
      (let [first-perm (range-vec (form/count-of sorted-component))]
        (loop [perm first-perm best (form/nil-form)]
@@ -924,6 +927,214 @@
                                                (form/string-value (fget best "hex")))
                                0))]
              (recur (next-permutation perm) (if better cand best))))))))
+
+;; --- a cycle's ordering from member templates -------------------------------------------------------------------
+;;
+;; `best-candidate-full` builds and encodes one group payload per permutation. On the Kotoba route nothing an iteration
+;; allocates is reclaimed (the seed compiles `arena-scope` as `do`), so for test/nbb/fixtures/lazy-sequence.kotoba's
+;; seven-member cycle its 7! = 5,040 payloads exhausted the 64 Mi vector table (measured 2026-10-09: 67,108,864 handles
+;; and 128.9 M items at the trap). The same choice, from one encoding per member:
+;;
+;;   1. Across permutations a group payload differs only in `:members`: its dependencies are sorted and its effect row
+;;      is a set when the identity encodes them, and its interface is the member count. `:members` encodes as a CBOR
+;;      array of the members' encodings, and CBOR items are prefix-free, so the payloads' byte order -- the order of
+;;      their hex -- is the byte order of the members' encodings concatenated in arrangement order.
+;;   2. A member's encoding depends on the arrangement only through `[:kotoba.definition/group g]`, g the position of a
+;;      member its body mentions, and g < 10 encodes as the one-character text "g". Unless a mention sits inside a set
+;;      element or a map key (where the identity's sorting could move it), the encoding is a fixed byte TEMPLATE with
+;;      HOLES at fixed offsets that take the digit of a named member's position.
+;;   3. So each member is encoded twice (positions j and j+1 mod n, n >= 2) to find its holes, and every permutation is
+;;      compared to the best so far by streaming the templates with the holes filled, allocating two n-item vectors.
+;;
+;; A mention inside a set element or a map key, a group of more than 9, or templates that do not line up send the
+;; group back to `best-candidate-full`. The chosen ordering is built by `group-candidate` either way.
+
+;; true when a symbol naming a member of COMPONENT (name indices) occurs in F at all
+#?(:kotoba
+   (defn- mentions-member? [f [:ref :form/r] names [:ref :form/r] component [:ref :form/r]] :bool
+     (let [t (form/tag-of f)]
+       (cond
+         (= t 5) (let [i (index-of (form/kids-of names) f)]
+                   (and (>= i 0) (list-has? (form/kids-of component) (form/int-form i))))
+         (or (= t 6) (= t 7) (= t 8) (= t 9))
+         (let [kids (form/kids-of f)
+               n (vector-count kids)]
+           (loop [j 0]
+             (if (>= j n)
+               false
+               (if (mentions-member? (typed-list-nth [:list [:ref :form/r]] kids j) names component)
+                 true
+                 (recur (+ j 1))))))
+         :else false))))
+
+;; true when F has a member mention inside a set element or inside a map key (where a position could move it)
+#?(:kotoba
+   (defn- sorted-mention? [f [:ref :form/r] names [:ref :form/r] component [:ref :form/r]] :bool
+     (let [t (form/tag-of f)
+           kids (form/kids-of f)
+           n (vector-count kids)]
+       (cond
+         (= t 8) (mentions-member? f names component)
+         (= t 9) (loop [j 0]
+                   (if (>= (+ j 1) n)
+                     false
+                     (if (or (mentions-member? (typed-list-nth [:list [:ref :form/r]] kids j) names component)
+                             (sorted-mention? (typed-list-nth [:list [:ref :form/r]] kids (+ j 1)) names component))
+                       true
+                       (recur (+ j 2)))))
+         (or (= t 6) (= t 7))
+         (loop [j 0]
+           (if (>= j n)
+             false
+             (if (sorted-mention? (typed-list-nth [:list [:ref :form/r]] kids j) names component)
+               true
+               (recur (+ j 1)))))
+         :else false))))
+
+;; GIDX (indexed by name) placing component member j at position (j + SHIFT) mod n
+#?(:kotoba
+   (defn- shifted-gidx [component [:ref :form/r] names [:ref :form/r] shift :i64] [:ref :form/r]
+     (let [n (form/count-of component)]
+       (loop [j 0 g (filled-vec (form/count-of names) (form/int-form -1))]
+         (if (>= j n)
+           g
+           (let [k (+ j shift)]
+             (recur (+ j 1) (vec-set g (int-at component j) (form/int-form (if (>= k n) (- k n) k))))))))))
+
+;; the canonical encoding of member P (a prepared function) linked under GIDX, as it sits in a group payload's
+;; `:members`
+#?(:kotoba
+   (defn- member-bytes [p [:ref :form/r] names [:ref :form/r] rcid [:ref :form/r] gidx [:ref :form/r]] :vector-i64
+     (let [normalized (fget p "normalized")
+           r (link-node (fget normalized "body") names rcid gidx (form/form-vec (form/no-forms)))]
+       (cbor/encode-form
+        (kir-id/normalize
+         (form/form-map (put (put (put (form/no-forms) (kw "params") (fget normalized "params"))
+                                  (kw "body") (record-get [:ref :di/link] r :body))
+                             (kw "interface") (fget p "interface"))))))))
+
+;; the holes of a template: per byte, -1 when fixed, else the component index whose position digit goes there; an
+;; empty vector when A (member j at j) and B (member j at j+1 mod n) do not line up as one template
+#?(:kotoba
+   (defn- template-holes [a :vector-i64 b :vector-i64 n :i64] :vector-i64
+     (if (not (= (vector-count a) (vector-count b)))
+       (vector-alloc 0)
+       (loop [i 0 out (vector-alloc 0)]
+         (if (>= i (vector-count a))
+           out
+           (let [x (vector-at a i)
+                 y (vector-at b i)]
+             (if (= x y)
+               (recur (+ i 1) (vector-conj out -1))
+               (let [j (- x 48)
+                     k (- y 48)]
+                 (if (and (>= j 0) (< j n) (= k (if (= (+ j 1) n) 0 (+ j 1))))
+                   (recur (+ i 1) (vector-conj out j))
+                   (vector-alloc 0))))))))))
+
+;; TMPL / HOLE: every member's template and holes concatenated; START: member j's are [START[j], START[j+1])
+;; byte I of member F's template with its holes filled from POS (component index -> arrangement position)
+#?(:kotoba
+   (defn- filled-byte [tmpl :vector-i64 hole :vector-i64 start :vector-i64 f :i64 i :i64 pos :vector-i64] :i64
+     (let [at (+ (vector-at start f) i)
+           h (vector-at hole at)]
+       (if (< h 0) (vector-at tmpl at) (+ 48 (vector-at pos h))))))
+
+;; -1 / 0 / 1: the byte order of two arrangements' member encodings concatenated (PERM-A / PERM-B: component indices in
+;; arrangement order; POS-A / POS-B their inverses)
+#?(:kotoba
+   (defn- member-length [start :vector-i64 perm :vector-i64 k :i64] :i64
+     (let [f (vector-at perm k)] (- (vector-at start (+ f 1)) (vector-at start f)))))
+
+#?(:kotoba
+   (defn- compare-filled [tmpl :vector-i64 hole :vector-i64 start :vector-i64
+                          perm-a :vector-i64 pos-a :vector-i64 perm-b :vector-i64 pos-b :vector-i64] :i64
+     (let [n (vector-count perm-a)]
+       (loop [ka 0 ia 0 kb 0 ib 0]
+         (cond
+           ;; step past a member's last byte first, so both sides reach their end together
+           (and (< ka n) (>= ia (member-length start perm-a ka))) (recur (+ ka 1) 0 kb ib)
+           (and (< kb n) (>= ib (member-length start perm-b kb))) (recur ka ia (+ kb 1) 0)
+           (and (>= ka n) (>= kb n)) 0
+           (>= ka n) -1
+           (>= kb n) 1
+           :else
+           (let [x (filled-byte tmpl hole start (vector-at perm-a ka) ia pos-a)
+                 y (filled-byte tmpl hole start (vector-at perm-b kb) ib pos-b)]
+             (cond
+               (< x y) -1
+               (> x y) 1
+               :else (recur ka (+ ia 1) kb (+ ib 1)))))))))
+
+;; V with every item of W appended
+#?(:kotoba
+   (defn- ints-append [v :vector-i64 w :vector-i64] :vector-i64
+     (loop [i 0 out v]
+       (if (>= i (vector-count w)) out (recur (+ i 1) (vector-conj out (vector-at w i)))))))
+
+#?(:kotoba
+   (defn- perm-ints [perm [:ref :form/r]] :vector-i64
+     (loop [k 0 v (vector-alloc 0)]
+       (if (>= k (form/count-of perm)) v (recur (+ k 1) (vector-conj v (int-at perm k)))))))
+
+#?(:kotoba
+   (defn- inverse-ints [perm :vector-i64] :vector-i64
+     (let [n (vector-count perm)]
+       (loop [k 0 v (vector-alloc n)]
+         (if (>= k n) v (recur (+ k 1) (vector-assoc v (vector-at perm k) k)))))))
+
+;; the name indices of COMPONENT in the order of PERM (component positions)
+#?(:kotoba
+   (defn- arranged [component [:ref :form/r] perm [:ref :form/r]] [:ref :form/r]
+     (form/form-vec
+      (loop [k 0 acc (form/no-forms)]
+        (if (>= k (form/count-of perm))
+          acc
+          (recur (+ k 1) (form/append-form acc (form/nth-of component (int-at perm k)))))))))
+
+;; the candidate ordering with the smallest canonical hex (the first of equals)
+#?(:kotoba
+   (defn- best-candidate [sorted-component [:ref :form/r] prepared [:ref :form/r] names [:ref :form/r]
+                          rcid [:ref :form/r]] [:ref :form/r]
+     (let [n (form/count-of sorted-component)
+           unsafe (or (< n 2) (> n 9)
+                      (loop [j 0]
+                        (if (>= j n)
+                          false
+                          (if (sorted-mention? (fget (fget (form/nth-of prepared (int-at sorted-component j)) "normalized") "body")
+                                               names sorted-component)
+                            true
+                            (recur (+ j 1))))))]
+       (if unsafe
+         (best-candidate-full sorted-component prepared names rcid)
+         (let [ga (shifted-gidx sorted-component names 0)
+               gb (shifted-gidx sorted-component names 1)
+               ;; [tmpl hole start lined-up]
+               built (loop [j 0 tmpl (vector-alloc 0) hole (vector-alloc 0) start (vector-conj (vector-alloc 0) 0) ok true]
+                       (if (or (>= j n) (not ok))
+                         (record-new [:ref :di/tpl] tmpl hole start ok)
+                         (let [p (form/nth-of prepared (int-at sorted-component j))
+                               a (member-bytes p names rcid ga)
+                               h (template-holes a (member-bytes p names rcid gb) n)]
+                           (recur (+ j 1) (ints-append tmpl a) (ints-append hole h)
+                                  (vector-conj start (+ (vector-count tmpl) (vector-count a)))
+                                  (= (vector-count h) (vector-count a))))))
+               tmpl (record-get [:ref :di/tpl] built :tmpl)
+               hole (record-get [:ref :di/tpl] built :hole)
+               start (record-get [:ref :di/tpl] built :start)
+               lined-up (record-get [:ref :di/tpl] built :ok)]
+           (if (not lined-up)
+             (best-candidate-full sorted-component prepared names rcid)
+             (loop [perm (range-vec n) best (form/nil-form) best-ints (vector-alloc 0) best-pos (vector-alloc 0)]
+               (if (= 0 (form/tag-of perm))
+                 (group-candidate (arranged sorted-component best) prepared names rcid)
+                 (let [ints (perm-ints perm)
+                       pos (inverse-ints ints)
+                       better (or (= 0 (form/tag-of best))
+                                  (< (compare-filled tmpl hole start ints pos best-ints best-pos) 0))]
+                   (if better
+                     (recur (next-permutation perm) perm ints pos)
+                     (recur (next-permutation perm) best best-ints best-pos)))))))))))
 
 ;; --- the walk over the module ----------------------------------------------------------------------------
 
