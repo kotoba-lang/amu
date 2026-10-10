@@ -48,7 +48,8 @@
 
 (defn- real-path [value]
   (try
-    #?(:clj (.toRealPath (.toPath (io/file value)) (make-array LinkOption 0))
+    #?(:clj (.toRealPath (if (instance? Path value) value (.toPath (io/file value)))
+                        (make-array LinkOption 0))
        :cljs (.realpathSync fs value))
     (catch #?(:clj java.io.IOException :cljs :default) _
       (reject! "project path is not readable" {}))))
