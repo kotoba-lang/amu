@@ -88,11 +88,17 @@
                  :linked? (form/bool-form false))))))
 
 #?(:kotoba
+   ;; a refusal keeps the frontend error's own phase (`:effect-ceiling`, `:read`, ...; `:subset` when it names none), as
+   ;; nbb.cli's Kotoba `cl-analyze` does, so the entry's exit code is the host's for that phase (2026-10-10; was always
+   ;; `:subset`, which made examples/w1-denial-ceiling exit 65 where `bin/amu check` exits 70)
    (defn- cd-analyze [source :string opts [:ref :form/r]] [:ref :form/r]
      (let [r (sema/analyze source opts)]
        (if (record-get [:ref :ana/ir] r :ok)
          (record-get [:ref :ana/ir] r :val)
-         (throw (ex-info (record-get [:ref :fe/err] (record-get [:ref :ana/ir] r :err) :msg) {:phase :subset}))))))
+         (let [e (record-get [:ref :ana/ir] r :err)
+               phase (record-get [:ref :fe/err] e :phase)]
+           (throw (ex-info (record-get [:ref :fe/err] e :msg)
+                           {:phase (if (string=? phase "") :subset (keyword-from-string phase))})))))))
 
 ;; Kotoba: `check` for one file or a `--source-path` graph (the twins), with `--policy`. The answer is the host's map
 ;; with ONE named difference: `:definitions` is definition-identity's explicit unavailability marker (`:reason
