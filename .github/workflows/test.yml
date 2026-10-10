@@ -204,3 +204,21 @@ jobs:
           KOTOBA_NATIVE_FUZZ_RUNS: "20000"
       - if: ${{ !cancelled() }}
         run: npx nbb scripts/test-review-fuzz-corpus.cljk
+
+  execution-v2:
+    name: Explicit v2 target binding, admission and completion
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: kotoba-lang/setup-kbb@a4586e48c72c69229ff1237a1246de63583b607d
+      - run: npm ci
+      - name: Execute generated pure Wasm, Script and bounded EVM artifacts
+        run: >-
+          kbb --backend sci --config scripts/execution-v2-nbb.edn
+          --classpath "src:$(kbb -Spath -M:execution-v2)"
+          scripts/test-execution-v2-targets.cljk
+      - name: Execute JVM-free native artifact through the measured executor
+        run: >-
+          kbb --backend sci --config scripts/execution-v2-nbb.edn
+          --classpath "src:$(kbb -Spath -M:execution-v2:native-run)"
+          scripts/test-execution-v2-native.cljk

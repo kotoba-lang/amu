@@ -107,7 +107,7 @@
                                    ;; Advanced 2026-09-11, 3abf80a1 -> b0dad3f8 (abi main, ahead 8, behind
                                    ;; 0, forward only): same wave as the text pin above -- `{:kotoba/export
                                    ;; [...]}` on every module.
-                                   :git/sha "4dd0b7b9898cec5432bbe60c2904c1546e5f524a"}
+                                   :git/sha "4e67b6fabc9e8584cb127fdb71b3fc47e2eadc59"}
         ;; Advanced 2026-09-03 (ADR 0330) with kotoba-lang/provider f040fc0,
         ;; which retires org.clojure/data.json for this namespace and needs
         ;; d5137c7's kwargs surface to be a drop-in.
@@ -1247,7 +1247,7 @@
          ;; Advanced 2026-09-26, 0274ce3b -> 4aca449e (artifact main tip, forward only): POSIX
          ;; loader identity daa8df69 -- the :fs/app-data OWNER form (superproject
          ;; adr-2609242330, selfhost stage 2).
-         :git/sha "5a37e8659296576254e75792d71b59119fae4f9e"}
+         :git/sha "70afa5725c244fb65f530b482c4ce7bb765c264d"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -1760,7 +1760,7 @@
          ;; definition block with cbor.core's typed encoder; definition CIDs
          ;; identical (adr-2609242330 S1c). The range also carries ef276ecb
          ;; (kotoba-migrate-all).
-         :git/sha "7d6a1183134fac7e8e2427f87d4250422b330563"} ;; Advanced 2026-09-24 6563b357 -> b1bbfe0d (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         :git/sha "00cfa8e29aaa3408e6594c6a55fd46867acc8bfd"} ;; Advanced 2026-09-24 6563b357 -> b1bbfe0d (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         ;; CIDv1 for `module-lock`: pinned module resolution has to prove the
         ;; bytes it read are the ones the lock names, and that is a hash, not a
         ;; path check. Same pin the codebase/semantic layers use, so a source
@@ -2127,7 +2127,11 @@
          ;; c1ba8322 -> 312dec87 (org-ietf-ed25519 main, ahead 24, behind 0)
          :git/sha "312dec875eb027021b7ad36c600151cd7bb22dc0"}
 }
- :aliases {:test {:extra-paths ["test"]
+ :aliases {
+ :execution-v2 {:extra-deps {io.github.kotoba-lang/kototama
+                           {:git/url "https://github.com/kotoba-lang/kototama.git"
+                            :git/sha "e36002c440bf118725b587caced7451cbc8b57dd"}}}
+:test {:extra-paths ["test"]
                   :extra-deps
                   {;; Only `test/kotoba/compiler/backend_cljs_test.cljk` and
                    ;; `test/kotoba/compiler/cli_test.cljk` require this, and both
