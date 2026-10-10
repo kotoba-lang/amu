@@ -51,8 +51,8 @@ PATCH=$(python3 $T/seed/amu-main/patch-split.py $T/seed/split) || die "patch-spl
 export SEED_REPO=$R SEED_BUILD=$W/sb; mkdir -p $SEED_BUILD; source $R/scripts/seed/lib.sh
 run() { SEED_RESOURCES_35=$R:$W${RK:+:$RK} SEED_VECTOR_ITEMS=134217728 SEED_SECONDS=1800 seed_run "$@"; }
 O=$W/o; rm -rf $O; mkdir -p $O; : > $W/emit.log
-# --builder AMU (REBUILD): every compile, modules, link and extract-native is done by a packaged amu image (its `compile`
-# = the seed compiler linked into it, `modules` / `link` / `extract-native` = its seed driver): the launcher rebuilds itself
+# --builder AMU (REBUILD): every compile, modules, link and extract-native is done by a packaged amu image (its `compile
+# --emit-module` = the seed compiler linked into it, the internal module compiler; `modules` / `link` / `extract-native` = its seed driver): the launcher rebuilds itself
 comp() {
   local f=$1 nm=$2; shift 2
   if [ -n "$builder" ]; then
@@ -168,7 +168,7 @@ cc -O2 -std=c11 -I $D -include $D/kexe_embedded.h $R/tools/kexe_loader.c -o $W/a
 mv $W/amu.tmp $W/amu
 deps=$(otool -L $W/amu | tail -n +2 | awk '{print $1}')
 echo "$deps" | grep -vq '^/usr/lib/' && die "unexpected library dependency"
-{ echo "label amu native launcher (amu.main: bin/amu's launcher layer + check REAL (frontend objects from $FRONT, compiled from source by the seed) + compile REAL (seed compiler from source, :kotoba.kexe/v1) + refactor ($RDESC); no node, nbb, JVM or shell at run time)"
+{ echo "label amu native launcher (amu.main: bin/amu's launcher layer + check = nbb.check-cli's Kotoba run + compile = nbb.aarch64-cli's Kotoba run (nbb.cli run!), objects from $FRONT compiled from source + compile --emit-module / link / modules / extract-native = the seed compiler (self-build) + refactor ($RDESC); no node, nbb, JVM or shell at run time)"
   echo "compiler ${builder:+builder $builder $(sha $builder) }seed ${LAUNCHER_SEED:+(LAUNCHER_SEED)}${LAUNCHER_SEED:-rung $RUNG} $(sha $SB) bytes $(wc -c < $SB | tr -d ' ')"
   echo "tree HEAD $(git -C $R rev-parse --short HEAD)${WT:+ + worktree seed/amu-main}${LAUNCHER_OVERLAY:+ + worktree $LAUNCHER_OVERLAY} ($PATCH)"
   for f in $S/amu/*.kotoba; do echo "source amu/${f:t} $(sha $f | cut -c1-16)"; done

@@ -1,14 +1,17 @@
 (ns amu.check
   {:kotoba/export [run]}
-  (:require [amu.check-full :as full]))
+  (:require [amu.launch :as launch]
+            [kotoba.compiler.nbb.check-cli :as product]))
 
-;; seed/amu-main/k/amu/check.kotoba -- `amu check` of the native launcher (agent MAINS, 2026-10-04; CHECKFULL, 2026-10-04).
+;; seed/amu-main/k/amu/check.kotoba -- the PRODUCT `amu check` of the native image (agent claude, 2026-10-10).
 ;;
-;; The command is amu.check-full (seed/amu-main/src/amu/check_full.kotoba): stage-0's argument order and texts, the
-;; frontend's analyze (kotoba.compiler.frontend.analyze, compiled from source by the seed: FRONTSRC), --policy (bounded
-;; EDN, wire-policy, the capability half of admission) and --profile; --source-path / --module-lock / --package-lock /
-;; --json are declared stubs (exit 69) naming what is missing. Before CHECKFULL this module ran seed/amu-front/check.cljk's
-;; main (default policy only, --policy ignored). The KIR route (build-k.sh, JVM kir-dump) is superseded and does not
-;; build this module.
+;; The command is the product entry nbb.check-cli's Kotoba `run` (the body of its `main`): check-driver's Kotoba
+;; `check!` for one file or a `--source-path` graph, with `--policy`, printing the host's `:kotoba.check/v1` answer map
+;; (`bin/amu check`'s answer; its named difference: `:definitions` is definition-identity's unavailability marker);
+;; a refusal is cli-support's `:kotoba.cli-error/v1` report with the host's exit code for its phase. The argument list
+;; is bin/amu's (amu.launch: `--jvm-free` dropped).
+;;
+;; Until 2026-10-10 this module ran amu.check-full (seed/amu-main/src/amu/check_full.kotoba, agent CHECKFULL): stage-0's
+;; human report line and texts. That module stays in the tree and is no longer linked.
 
-(defn run [] :i64 (full/run))
+(defn run [] :i64 (product/run (launch/args)))
