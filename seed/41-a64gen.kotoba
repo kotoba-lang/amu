@@ -1,3 +1,176 @@
+;; SOURCE prototype: exact pure tagged traversal, original mode3 cache is retained.
+(defn- gt-shape [M :vector-i64 p :i64 f :i64 k :i64] :bool
+ (let [h (gn-sir M (+ p 2) IF-A) b (gn-sir M (+ p 8) IF-B)
+       e (gn-sir M (+ p 18) IF-A) a (gn-sir M (+ p 50) IF-B) z (gn-sir M (+ p 52) IF-A)
+       flag (gn-sir M (+ p 4) IF-B) mask (dec flag)
+       leaf (gn-sir M (+ p 10) IF-B) feature (gn-sir M (+ p 21) IF-B)
+       threshold (gn-sir M (+ p 29) IF-B) input (gn-sir M (+ p 37) IF-B)
+       stride (gn-sir M (+ p 39) IF-B) left (gn-sir M (+ p 51) IF-B) right (gn-sir M (+ p 54) IF-B)]
+  (if (= k 77) true
+   (and (case k
+    0 (gn-dot-at? M (+ p 0) 1 f 5 9)
+    1 (gn-dot-at? M (+ p 1) 18 0 0 0)
+    2 (gn-dot-at? M (+ p 2) 9 h 0 0)
+    3 (gn-dot-at? M (+ p 3) 4 0 5 0)
+    4 (gn-dot-at? M (+ p 4) 3 1 flag 0)
+    5 (gn-dot-at? M (+ p 5) 6 5 0 0)
+    6 (gn-dot-at? M (+ p 6) 3 1 flag 0)
+    7 (gn-dot-at? M (+ p 7) 7 1 0 0)
+    8 (gn-dot-at? M (+ p 8) 11 0 b 0)
+    9 (gn-dot-at? M (+ p 9) 4 0 1 0)
+    10 (gn-dot-at? M (+ p 10) 3 1 leaf 0)
+    11 (gn-dot-at? M (+ p 11) 4 2 4 0)
+    12 (gn-dot-at? M (+ p 12) 4 3 5 0)
+    13 (gn-dot-at? M (+ p 13) 3 4 mask 0)
+    14 (gn-dot-at? M (+ p 14) 6 5 3 0)
+    15 (gn-dot-at? M (+ p 15) 6 1 2 0)
+    16 (gn-dot-at? M (+ p 16) 6 1 1 0)
+    17 (gn-dot-at? M (+ p 17) 14 176 0 2)
+    18 (gn-dot-at? M (+ p 18) 10 e 0 0)
+    19 (gn-dot-at? M (+ p 19) 9 b 0 0)
+    20 (gn-dot-at? M (+ p 20) 4 0 1 0)
+    21 (gn-dot-at? M (+ p 21) 3 1 feature 0)
+    22 (gn-dot-at? M (+ p 22) 4 2 3 0)
+    23 (gn-dot-at? M (+ p 23) 4 3 5 0)
+    24 (gn-dot-at? M (+ p 24) 6 1 2 0)
+    25 (gn-dot-at? M (+ p 25) 6 1 1 0)
+    26 (gn-dot-at? M (+ p 26) 14 176 0 2)
+    27 (gn-dot-at? M (+ p 27) 5 6 0 0)
+    28 (gn-dot-at? M (+ p 28) 4 0 1 0)
+    29 (gn-dot-at? M (+ p 29) 3 1 threshold 0)
+    30 (gn-dot-at? M (+ p 30) 4 2 3 0)
+    31 (gn-dot-at? M (+ p 31) 4 3 5 0)
+    32 (gn-dot-at? M (+ p 32) 6 1 2 0)
+    33 (gn-dot-at? M (+ p 33) 6 1 1 0)
+    34 (gn-dot-at? M (+ p 34) 14 176 0 2)
+    35 (gn-dot-at? M (+ p 35) 5 7 0 0)
+    36 (gn-dot-at? M (+ p 36) 4 0 1 0)
+    37 (gn-dot-at? M (+ p 37) 3 1 input 0)
+    38 (gn-dot-at? M (+ p 38) 4 2 2 0)
+    39 (gn-dot-at? M (+ p 39) 3 3 stride 0)
+    40 (gn-dot-at? M (+ p 40) 6 3 2 0)
+    41 (gn-dot-at? M (+ p 41) 4 3 6 0)
+    42 (gn-dot-at? M (+ p 42) 6 1 2 0)
+    43 (gn-dot-at? M (+ p 43) 6 1 1 0)
+    44 (gn-dot-at? M (+ p 44) 14 176 0 2)
+    45 (gn-dot-at? M (+ p 45) 5 8 0 0)
+    46 (gn-dot-at? M (+ p 46) 4 0 1 0)
+    47 (gn-dot-at? M (+ p 47) 4 1 8 0)
+    48 (gn-dot-at? M (+ p 48) 4 2 7 0)
+    49 (gn-dot-at? M (+ p 49) 7 2 1 0)
+    50 (gn-dot-at? M (+ p 50) 11 1 a 0)
+    51 (gn-dot-at? M (+ p 51) 3 1 left 0)
+    52 (gn-dot-at? M (+ p 52) 10 z 0 0)
+    53 (gn-dot-at? M (+ p 53) 9 a 0 0)
+    54 (gn-dot-at? M (+ p 54) 3 1 right 0)
+    55 (gn-dot-at? M (+ p 55) 9 z 0 0)
+    56 (gn-dot-at? M (+ p 56) 4 2 3 0)
+    57 (gn-dot-at? M (+ p 57) 4 3 5 0)
+    58 (gn-dot-at? M (+ p 58) 6 1 2 0)
+    59 (gn-dot-at? M (+ p 59) 6 1 1 0)
+    60 (gn-dot-at? M (+ p 60) 14 176 0 2)
+    61 (gn-dot-at? M (+ p 61) 5 9 0 0)
+    62 (gn-dot-at? M (+ p 62) 4 0 1 0)
+    63 (gn-dot-at? M (+ p 63) 4 1 2 0)
+    64 (gn-dot-at? M (+ p 64) 4 2 3 0)
+    65 (gn-dot-at? M (+ p 65) 4 3 4 0)
+    66 (gn-dot-at? M (+ p 66) 4 4 9 0)
+    67 (gn-dot-at? M (+ p 67) 5 1 0 0)
+    68 (gn-dot-at? M (+ p 68) 5 2 1 0)
+    69 (gn-dot-at? M (+ p 69) 5 3 2 0)
+    70 (gn-dot-at? M (+ p 70) 5 4 3 0)
+    71 (gn-dot-at? M (+ p 71) 5 5 4 0)
+    72 (gn-dot-at? M (+ p 72) 18 0 0 0)
+    73 (gn-dot-at? M (+ p 73) 10 h 0 0)
+    74 (gn-dot-at? M (+ p 74) 9 e 0 0)
+    75 (gn-dot-at? M (+ p 75) 19 0 0 0)
+    76 (gn-dot-at? M (+ p 76) 2 f 0 0)
+    false) (gt-shape M p f (inc k))))))
+
+(defn- gt-constants [M :vector-i64 p :i64 k :i64] :bool
+ (if (= k 6) true
+  (let [at (case k 0 10 1 21 2 29 3 37 4 51 5 54 0) n (gn-sir M (+ p at) IF-B)]
+   (and (>= n 0) (<= n 1048575) (gt-constants M p (inc k))))))
+
+(defn- gt-admit [M :vector-i64 i :i64] :bool
+ (let [sn (vector-at M MM-SIR-N) fnn (vector-at M MM-FN-N) p (dec i)]
+  (if (or (<= p 0) (> sn MM-SIR-CAP) (< sn 77) (> p (- sn 77))
+          (<= fnn 0) (> fnn MM-FN-CAP) (not= (gn-op M p) OP-FN)) false
+   (let [f (gn-sir M p IF-A) flag (gn-sir M (+ p 4) IF-B) stride (gn-sir M (+ p 39) IF-B)]
+    (and (> f 0) (< f fnn) (= (gn-fnf M f FF-SIR) p) (not (gn-clamp-open M f))
+     (= (gn-fnf M f FF-NPARAMS) 5) (= (gn-fnf M f FF-NSLOTS) 9)
+     (= (gn-fnf M f FF-DEPTH) 5) (= (gn-fnf M f FF-FUEL) 1)
+     (= (gn-fnf M f FF-RTYPE) TY-I64) (= (gn-fnf M f FF-PT0) TY-VEC)
+     (and (= (gn-fnf M f (+ FF-PT0 1)) TY-I64) (= (gn-fnf M f (+ FF-PT0 2)) TY-I64) (= (gn-fnf M f (+ FF-PT0 3)) TY-I64) (= (gn-fnf M f (+ FF-PT0 4)) TY-I64))
+     (= (gn-g M gn-f-leaf) 1) (= (gn-g M gn-f-freg) 1) (= (gn-g M gn-f-vmode) 3)
+     (= (gn-g M gn-f-ns) 9) (= (gn-g M gn-f-dp) 5) (= (gn-g M gn-f-nsv) 5)
+     (> (gn-g M gn-f-fb) 0) (<= (gn-g M gn-f-fb) 32768)
+     (= (gn-g M 15) 1) (= (gn-g M gn-f-h) 0) (= (gn-g M gn-f-skip) 0)
+     (= (gn-g M gn-f-ctx) 1) (= (gn-g M gn-f-dead) 0)
+     (and (= (gn-sreg M 1) 0) (= (gn-sreg M 2) 1) (= (gn-sreg M 3) 2) (= (gn-sreg M 4) 3) (= (gn-sreg M 5) 4))
+     (= (gn-sreg M 6) 5) (= (gn-sreg M 7) 6) (= (gn-sreg M 8) 19) (= (gn-sreg M 9) 20)
+     (> flag 1) (<= flag 256) (> (gn-pow2 flag) 0)
+     (> stride 1) (<= stride 256) (> (gn-pow2 stride) 0)
+     (>= (vector-at M MM-CODE-N) 0) (<= (vector-at M MM-CODE-N) (- MM-CODE-CAP 192))
+     (gt-constants M p 0) (gt-shape M p f 0) (qb-labels M p 77 0))))))
+(defn- gt-cold [M :vector-i64 G :vector-i64 cc :i64] :vector-i64
+ (let [n (vector-at G 0) mark (-> G (vector-assoc! (+ 1 (* n 2)) (vector-at M MM-CODE-N))
+   (vector-assoc! (+ 2 (* n 2)) cc) (vector-assoc! 0 (inc n)))]
+  (gn-emit M (enc-bcond cc 0))))
+(defn- gt-patch [M :vector-i64 G :vector-i64 k :i64 end :i64] :vector-i64
+ (if (= k (vector-at G 0)) M
+  (gt-patch (gn-dot-patch M (vector-at G (+ 1 (* k 2))) end (vector-at G (+ 2 (* k 2)))) G (inc k) end)))
+;; Conservative full affine union. Parameters <2^31 and constants <=2^20,
+;; stride<=256 make every admitted sum <2^40 without signed/unsigned wrap.
+(defn- gt-range [M :vector-i64 G :vector-i64 r :i64 base :i64 span :i64] :vector-i64
+ (-> M (gn-mov-imm 9 (+ base span)) (gn-emit (enc-add-r 9 r 9))
+  (gn-emit (enc-cmp-r 9 5)) (gt-cold G (enc-cond-hs))))
+(defn- gt-pointer [M :vector-i64 r :i64 input :i64 base :i64] :vector-i64
+ (-> M (gn-mov-imm 9 base) (gn-emit (enc-add-r 9 input 9))
+  (gn-emit (gn-e-addsl r 6 9 3))))
+;; Original entry debit has already executed. All misses retain params0..4,
+;; x7/private8 and mode3 cache21..23; unsupported continuation re-enters the
+;; original head WITHOUT another entry debit. Pure fresh reads have no observer.
+(defn- gt-emit [M :vector-i64 i :i64] :vector-i64
+ (let [cn (vector-at M MM-CODE-N) fn (vector-at M MM-FIX-N)
+   p (dec i) flag (gn-sir M (+ p 4) IF-B) mask (dec flag) stride (gn-sir M (+ p 39) IF-B)
+   leaf (gn-sir M (+ p 10) IF-B) feature (gn-sir M (+ p 21) IF-B)
+   threshold (gn-sir M (+ p 29) IF-B) input (gn-sir M (+ p 37) IF-B)
+   left (gn-sir M (+ p 51) IF-B) right (gn-sir M (+ p 54) IF-B) G (vector-alloc 33)
+   m0 (-> M (gn-mov-imm 9 2147483648) (gn-emit (enc-cmp-r 1 9)) (gt-cold G (enc-cond-hs))
+    (gn-emit (enc-cmp-r 2 9)) (gt-cold G (enc-cond-hs))
+    (gn-emit (enc-cmp-r 3 9)) (gt-cold G (enc-cond-hs))
+    (gn-emit (enc-ldr 16 7 312)) (gn-emit (enc-ldr 16 16 0))
+    (gn-emit (enc-sub-i 17 0 1)) (gn-emit (enc-cmp-r 17 16)) (gt-cold G (enc-cond-hs))
+    (gn-emit (enc-ldr 16 7 320)) (gn-emit (gn-e-addsl 16 16 17 4))
+    (gn-emit (enc-ldp 17 5 16 0)) (gn-emit (enc-ldr 6 7 328))
+    (gn-emit (gn-e-addsl 6 6 17 3))
+    (gt-range G 3 leaf mask) (gt-range G 2 feature mask) (gt-range G 2 threshold mask)
+    (gt-range G 2 left mask) (gt-range G 2 right mask)
+    (gn-emit (gn-e-lsl 11 1 (gn-pow2 stride))) (gt-range G 11 input (dec stride))
+    (gt-pointer 12 2 feature) (gt-pointer 13 2 threshold) (gt-pointer 14 11 input)
+    (gt-pointer 15 2 left) (gt-pointer 16 2 right) (gt-pointer 17 3 leaf))
+   head (vector-at m0 MM-CODE-N)
+   m1 (-> m0 (gn-emit (enc-cmp-i 4 (* 2 flag))) (gt-cold G (enc-cond-hs))
+    (gn-bin-imm BOP-AND 9 4 flag) (gn-emit (enc-cmp-i 9 flag))) terminal (vector-at m1 MM-CODE-N)
+   m2 (-> m1 (gn-emit (enc-bcond (enc-cond-eq) 0))
+    (gn-emit (gn-e-ldrr 9 12 4 1)) (gn-emit (gn-e-ldrr 10 13 4 1))
+    (gn-emit (enc-cmp-i 9 stride)) (gt-cold G (enc-cond-hs))
+    (gn-emit (gn-e-ldrr 11 14 9 1)) (gn-emit (enc-cmp-r 11 10))) select (vector-at m2 MM-CODE-N)
+   m3 (-> m2 (gn-emit (enc-bcond (enc-cond-ge) 0)) (gn-emit (gn-e-ldrr 4 15 4 1))) jump (vector-at m3 MM-CODE-N)
+   m4 (gn-emit m3 (enc-b 0)) righth (vector-at m4 MM-CODE-N)
+   m5 (gn-emit m4 (gn-e-ldrr 4 16 4 1)) charge (vector-at m5 MM-CODE-N)
+   m6 (gn-op-fuel m5) back (vector-at m6 MM-CODE-N) m7 (gn-emit m6 (enc-b (- head back)))
+   leafh (vector-at m7 MM-CODE-N)
+   m8 (-> m7 (gn-bin-imm BOP-AND 9 4 mask) (gn-emit (gn-e-ldrr 0 17 9 1))
+    (gn-epilogue) (gn-gs gn-f-dead 0)) cold (vector-at m8 MM-CODE-N)
+   m9 (-> m8 (gn-dot-patch terminal leafh (enc-cond-eq)) (gn-dot-patch select righth (enc-cond-ge))
+    (gn-put (+ MM-CODE-BASE jump) (enc-b (- charge jump))) (gt-patch G 0 cold))]
+  (if (= (vector-at m9 MM-ERR) 0) m9
+   (-> m9 (gn-put MM-CODE-N cn) (gn-put MM-FIX-N fn)))))
+(defn- gt-entry [M :vector-i64 i :i64] :vector-i64
+ (if (gt-admit M i) (gt-emit M i) M))
+
 ;; Exact generic charged endzero UTF8 accessor; guarded ASCII call-edge only.
 (defn- sa-row [M :vector-i64 p :i64 f :i64 h :i64 a :i64 b :i64 k :i64] :bool
  (case k
@@ -6642,7 +6815,7 @@
         OP-VEC (gn-op-vec M i a b)
         OP-TAB (gn-op-tab M i a b c)
         OP-VECP (gn-op-vecp M i a b c)
-        OP-FUEL (rl-entry (ir-entry (tf-entry (rb-entry (qb-entry (cb-entry (mf-entry (fc-entry (sz-entry (drc-entry (pc3-entry (gn-copy-entry (gn-dot-entry (ds-entry (vc-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i)
+        OP-FUEL (gt-entry (rl-entry (ir-entry (tf-entry (rb-entry (qb-entry (cb-entry (mf-entry (fc-entry (sz-entry (drc-entry (pc3-entry (gn-copy-entry (gn-dot-entry (ds-entry (vc-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i)
         OP-RET (gn-op-ret M a)
         OP-RET2 (gn-op-ret2 M a)       ; R5B
         OP-RES2 (gn-op-res2 M i a)     ; R5B
