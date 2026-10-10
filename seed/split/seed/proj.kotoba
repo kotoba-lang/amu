@@ -6,7 +6,7 @@
   (:require [seed.names :refer [nm-count nm-hash nm-run]])
   (:require [seed.check :refer [ck-hint-again? ck-hint-new ck-r6b-capwire ck-r6b-charend ck-r6b-fn ck-r6b-kwmerge ck-r6b-kwtab ck-r6b-lib-t ck-r6b-needs-kw? ck-r6b-strend ck-r6b-symend ck-run-h]])
   (:require [seed.lower :refer [lw-run]])
-  (:require [seed.gen :refer [gn-run]])
+  (:require [seed.gen :refer [gn-run-open]])
   (:require [seed.layout :refer [ly-base-slot ly-patch16 ly-run]])
   (:require [seed.out :refer [out-blob out-put out-put-dec out-put-magic out-put-span out-rq-new out-rq-send out-set-cs]]))
 
@@ -1205,7 +1205,7 @@
 (defn- pj-c4 [M :vector-i64 L :vector-i64 S :string H :vector-i64] :vector-i64
   (let [M1 (ck-run-h M S H)]   ; R6C: with the parameter refinements so far
     (if (pj-ok M1)
-      (let [M2 (lw-run M1)] (if (pj-ok M2) (let [M3 (gn-run M2)] (if (pj-ok M3) (pj-c5 M3 L) M3)) M2))
+      (let [M2 (lw-run M1)] (if (pj-ok M2) (let [M3 (gn-run-open M2 (pj-l L pj-k-stub0) (pj-l L pj-k-nstub))] (if (pj-ok M3) (pj-c5 M3 L) M3)) M2))
       M1)))
 (defn- pj-c3 [M :vector-i64 L :vector-i64 S :string H :vector-i64] :vector-i64
   (let [M1 (nm-run M S)]

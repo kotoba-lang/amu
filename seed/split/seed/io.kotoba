@@ -36,6 +36,8 @@
 ;;                                     must hold string pool >= 6x and vector items >= 8x len. Check with io-exists.
 ;;   io-read-bytes path     -> vector  the whole file as one item (0..255) per byte (:fs/app-data-bytes request = the
 ;;                                     path's bytes, then vector-i64-from-bytes). Byte-safe, unlike io-read-file.
+;;                                     Over 4 MiB: RANGE windows of 4 MiB into one vector (r6n), so a file over the
+;;                                     8 MiB bytes value bound reads (up to the 16 Mi vector items of one vector).
 ;; The :bytes functions were seed/02-io-bytes.snippet.kotoba until the rebuilt stage-0 (sha d2cb84f6, 2026-10-02)
 ;; admitted a computed :bytes argument (T3); merged by the R0 integration with io-read-bytes added.
 ;;
@@ -198,5 +200,51 @@
 (defn- io-path-vec [path :string] :vector-i64
   (io-bput-str (vector-alloc (string-length path)) path 0 (string-length path) 0))
 
+;; ==== BEGIN windowed read (agent claude, 2026-10-10, rung r6n) ====================================================
+;; A file larger than io-rwin (4 MiB) is read in RANGE windows over :fs/app-data-bytes ("<path>RANGE_SEP<off>:<len>",
+;; the same dispatch as the string wire, the answer bytes as :bytes with no UTF-8 check): each answer is one :bytes value
+;; of at most io-rwin bytes, under the loader's 8 MiB bytes value bound (KEXE_BYTES_VALUE_LIMIT, ADR 0362), copied into
+;; ONE vector of the file's size (STAT). Until r6n the whole file was one :bytes value, so extract-native of a kseed over
+;; 8 MiB trapped :bytes/too-large. The result is still one vector: at most the language's 16 Mi vector items.
+;; A file of at most io-rwin bytes is one request, as before.
+(def io-rwin 4194304)
+
+;; the index after the first space of s at or after i (the length when none)
+(defn- io-after-sp [s :string i :i64] :i64
+  (loop [j i]
+    (cond (>= j (string-length s)) j
+          (= (string-code-point-at s j) 32) (+ j 1)
+          :else (recur (+ j 1)))))
+
+;; the decimal number of s at i (stops at the first non-digit)
+(defn- io-dec-from [s :string i :i64] :i64
+  (loop [j i v 0]
+    (cond (>= j (string-length s)) v
+          (< (string-code-point-at s j) 48) v
+          (> (string-code-point-at s j) 57) v
+          :else (recur (+ j 1) (+ (* v 10) (- (string-code-point-at s j) 48))))))
+
+;; the file's size in bytes: the second field of the STAT answer "<mode> <size> <blocks> <isdir>"
+(defn- io-size [path :string] :i64
+  (let [s (typed-cap-call :fs/app-data :string :string (string-concat path (io-sep "STAT")))]
+    (io-dec-from s (io-after-sp s 0))))
+
+;; bytes [off, off+len) of the file as a fresh vector: one RANGE window over the :bytes wire
+(defn- io-window [path :string off :i64 len :i64] :vector-i64
+  (vector-i64-from-bytes (typed-cap-call :fs/app-data-bytes :bytes :bytes
+    (bytes-from-vector-i64 (io-path-vec (string-concat path (string-concat (io-sep "RANGE") (string-concat (mem-u2dec off) (string-concat ":" (mem-u2dec len))))))))))
+
+;; V[off .. n) = the file's bytes, one window of at most io-rwin at a time
+(defn- io-windows [V :vector-i64 path :string off :i64 n :i64] :vector-i64
+  (if (>= off n)
+    (mem-keep V)
+    (io-windows (io-bput-words V (io-window path off (io-min io-rwin (- n off))) 0 (io-min io-rwin (- n off)) off) path (+ off io-rwin) n)))
+
+(defn- io-read-sized [path :string n :i64] :vector-i64
+  (if (> n io-rwin)
+    (io-windows (vector-alloc n) path 0 n)
+    (vector-i64-from-bytes (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 (io-path-vec path))))))
+
 (defn io-read-bytes [path :string] :vector-i64
-  (vector-i64-from-bytes (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 (io-path-vec path)))))
+  (io-read-sized path (io-size path)))
+;; ==== END windowed read ===============================================================================================
