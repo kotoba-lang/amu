@@ -13,7 +13,7 @@
 #   2. objects (KSEEDO1, separate mode): the frontend closure + kotoba.amu-front.check are taken from --front DIR (default
 #      build/frontsrc/two/o: objects compiled FROM SOURCE by scripts/seed/frontsrc/build-one-src.sh, no kir-dump); the seed
 #      split, the amu.* modules amu.main reaches (src/, l/compile = the launcher's compile, k/check) and amu.main (--entry)
-#      are compiled here by the seed (rung r6m's recorded seed, checked against seed/rungs/r6m.record; LAUNCHER_RUNG /
+#      are compiled here by the seed (rung r6n's recorded seed, checked against seed/rungs/r6n.record; LAUNCHER_RUNG /
 #      LAUNCHER_SEED), or with --builder AMU by that packaged image (the self-rebuild); LAUNCHER_REFACTOR adds the refactor
 #      route (see below).
 #   3. link, extract-native main (the seed, or the builder), package (KEXE_EMBEDDED; wires 3,35,37,38,39, never 20; amu-one's budgets)
@@ -33,10 +33,10 @@ sha() { shasum -a 256 $1 | cut -c1-64; }
 die() { echo "launcher: FAIL: $*" >&2; exit 1; }
 step() { echo "launcher: $* (load $(sysctl -n vm.loadavg | awk '{print $2}'))"; }
 
-# rung $LAUNCHER_RUNG's recorded seed (default r6m; IMAGE 2026-10-05, was r6l), checked against its record; first of
+# rung $LAUNCHER_RUNG's recorded seed (default r6n since 2026-10-10: windowed extract of a container over 8 MiB; r6m from IMAGE 2026-10-05, r6l before), checked against its record; first of
 # build/seed-boot/<rung>/seed-1.bin, build/image/seed-<rung>.bin and build/rebuild/seed-<rung>.bin. LAUNCHER_SEED
 # overrides (no record check).
-RUNG=${LAUNCHER_RUNG:-r6m}
+RUNG=${LAUNCHER_RUNG:-r6n}
 SB=${LAUNCHER_SEED:-$R/build/seed-boot/$RUNG/seed-1.bin}
 [ -n "$LAUNCHER_SEED" ] || [ -s $SB ] || SB=$R/build/image/seed-$RUNG.bin
 [ -n "$LAUNCHER_SEED" ] || [ -s $SB ] || SB=$R/build/rebuild/seed-$RUNG.bin

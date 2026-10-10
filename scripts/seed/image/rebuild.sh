@@ -1,9 +1,10 @@
 #!/bin/zsh
-# BOOTSTRAP-TOOL. Rebuild r6m's unified image for three generations from a
+# BOOTSTRAP-TOOL. Rebuild the unified image (seed rung r6n, was r6m) for three generations from a
 # content-pinned selfbuild scan and compat snapshot. No stage-0 in these builds.
 # Usage: rebuild.sh INPUTS OUT
 # INPUTS: scan/{src,order.txt,o}, kotoba-lang/lang/compat.
-# Run inside a worktree whose build/seed-boot/r6m/seed-1.bin matches r6m.record.
+# Run inside a worktree whose build/seed-boot/r6n/seed-1.bin matches r6n.record (2026-10-10: r6n's extract-native reads
+# a container over 8 MiB in windows; the image with the product entries is 10.98 MB, which r6m's seed cannot extract).
 # A candidate uses REBUILD_SEED plus REBUILD_SEED_SHA256; both frontend and
 # launcher compilation use that pinned seed. The default record is unchanged.
 emulate -L zsh
@@ -13,12 +14,12 @@ I=${1:?usage: rebuild.sh INPUTS OUT}; I=${I:A}
 W=${2:?output}; mkdir -p $W; W=${W:A}
 [[ $W != $I && $W != $R && $W != "$I"/* && $I != "$W"/* ]] \
   || { echo 'input and output directories must be disjoint' >&2; exit 2; }
-S=${REBUILD_SEED:-$R/build/seed-boot/r6m/seed-1.bin}
+S=${REBUILD_SEED:-$R/build/seed-boot/r6n/seed-1.bin}
 if [ -n "$REBUILD_SEED" ]; then
   want=${REBUILD_SEED_SHA256:-}
   [[ $want =~ '^[0-9a-f]{64}$' ]] || { echo 'custom seed requires its explicit SHA-256 pin' >&2; exit 2; }
 else
-  want=$(sed -n 's/^seed1_sha256 //p' $R/seed/rungs/r6m.record)
+  want=$(sed -n 's/^seed1_sha256 //p' $R/seed/rungs/r6n.record)
 fi
 got=$(shasum -a 256 $S | awk '{print $1}')
 [[ -n $want && $got = $want ]] || { echo 'missing/mismatched pinned seed' >&2; exit 2; }
