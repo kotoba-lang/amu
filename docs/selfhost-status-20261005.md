@@ -130,3 +130,79 @@ The image fits; the seed is unchanged. Removing the bound would need a new seed 
 
 The twins build's prove-100 rows were the same (5 PASS, the same 10 FAIL, and the same corpus counts). The stage-0
 reference for G2, G3 and COMPILE_FULL is `d2cb84f6` (BOOTSTRAP-REFERENCE, a link to the seed17 worktree's copy).
+
+## 8. Addendum 2026-10-10: the image carries the product entries (agent claude, branch claude/image-product-entries)
+
+**Routing** (`seed/amu-main`): `amu.main` sends `compile` to `amu.compile` = `nbb.aarch64-cli`'s Kotoba `run` (the body
+of its `main`, i.e. `nbb.cli`'s Kotoba `run!`), and `check` to `amu.check` = `nbb.check-cli`'s Kotoba `run`, both over
+`amu.launch/args` (bin/amu's launcher layer: `--jvm-free` dropped, `--target aarch64-macos` appended to compile/worker
+without one). `compile .. --emit-module` is the **internal module compiler** of the self-build (`seed.main`, the seed
+compiler linked in), routed before `amu.compile`; `link`, `modules` and the KSEED1 arm of `extract-native` are unchanged.
+So the self-build path (front.sh, launcher/build.sh `--builder`) is untouched, and the product `compile` is one
+implementation with `bin/amu compile`. Both entries now export `run [args]` (their `main` = `(run (command-line-args))`);
+check-cli's refusals use cli-support's phase/exit table like aarch64-cli's, and check-driver keeps the frontend
+error's phase (w1-denial-ceiling: 70, as the host). front.sh no longer skips check-cli/check-driver. The old seed
+artifact compile and `amu.check-full` (stage-0's texts) are no longer linked.
+
+**Size and the 8 MiB limit**: the image's kseed is **10,978,347 B** (was 6,578,329 B). Sharing does not close it: the
+closure is 159 modules, and the parts only one command reaches are different programs (compile ~2.4 MB, refactor
+~1.3 MB, seed compiler ~0.8 MB, check ~0.6 MB of code). The limit was the seed's `extract-native` reading the container
+as one `:bytes` value. Rung **r6n** (record `seed/rungs/r6n.record`, unity 1cf67ec9a, bridge by r6m f11b6ce3, fixed point
+`b3f46d32`, 860,296 B; gates 14/14 PASS; `bootstrap.sh --no-head` reproduces r0..r6n) reads a file over 4 MiB in RANGE
+windows into one vector: extract input bound 16 Mi bytes (one vector), the 8 MiB value bound unchanged (ADR 0362
+addendum). rebuild.sh / launcher/build.sh default to r6n.
+
+**Fixed point** (`zsh scripts/seed/image/rebuild.sh build/rin build/fp`, inputs = a fresh `selfbuild.sh --no-link` scan
+143/143 of this branch's sources + kotoba-lang 965c5f5, manifest `9b8dee8d`): **g0 = g1 = g2 = g3**.
+
+| gen | built by | objects (172) manifest | kseed | native code | command |
+|---|---|---|---|---|---|
+| g0 | seed r6n `b3f46d32` | `eee918f3` (25,355,529 B) | `f3fbc62a` 10,978,347 B | `91c374de` 10,978,312 B | `27ffb605` 11,244,552 B |
+| g1 | g0's image | `eee918f3` | `f3fbc62a` | `91c374de` | `27ffb605` |
+| g2 | g1's image | `eee918f3` | `f3fbc62a` | `91c374de` | `27ffb605` |
+| g3 | g2's image | `eee918f3` | `f3fbc62a` | `91c374de` | `27ffb605` |
+
+g0 equals g1 now because r6n's seed IS the tree's seed compiler (at r6m it was older).
+
+**Corpus through the image's `compile`** (`seed/tests/compile-cli/run.sh --image build/fp/g3/amu`, 372 programs vs
+`bin/amu compile --target aarch64-macos`, `KOTOBA_VERDICT_CACHE=off`): BOTH-ACCEPT **293** (seal, artifact keys,
+provenance and answer SAME on all; publication 290 same shape + 3 size only, `#:ns{}` printing), BOTH-REFUSE same exit
+**62**, CLASS-DIFF **1** (w1-effect-named, named: kotoba-sema lines), HOST-ONLY **16** (verifier strictness, owner: keep),
+GUEST-ONLY **0** = the combined measurement's classes. Embench ports (not in that corpus; `bench/embench/ports`): 17 / 19
+BOTH-ACCEPT SAME; **crc32 and matmult-int trap the 64 Mi pair ceiling** (exit 120; the host compiles them; the loader
+refuses `KEXE_PAIRS` above 67,108,864).
+
+**`check` through the image** (`seed/tests/check-cli/image.sh`, same 372 vs `bin/amu check`): no policy 337 SAME (answer
+equal but check-driver's named `:definitions` marker), 24 SAME-REFUSE, 9 REFUSE-DIFF (same exit, frontend-snapshot
+message wording), 2 BOTH-ACCEPT-DIFF (`:exports`: synthetic helper names of the frontend snapshot), 0 exit-code
+differences; `corpus-policy` (wires 35..39) 338 / 23 / 9 / 2. **`corpus-policy-all` (42 grants): 347 HOST-ONLY, all
+SIGTRAP exit 120**: any `--policy` whose `:allow` holds more than 32 entries traps, in `check` and in `compile` (measured:
+32 grants answer, 33 trap). Cause: effect-row hands the policy to `kotoba.kir.admission`'s typed reading as a
+`:document`, whose containers hold at most 32 items. The previous image's check (amu.check-full) answered these.
+
+**L1-L4** (`scripts/seed/launcher/test.sh`): L1 PASS (39 cases: 11 SAME, 17 SAME-DATA, 11 DECLARED, 0 DIFF; compile/check
+cases now take `bin/amu` as oracle, see usage-parity.sh), L2 FAIL (the amu-embench checkout is absent here; see the
+Embench line above), L3 PASS (6 runs, 0 exec/spawn), L4 PASS.
+
+**prove-100** (`scripts/seed/prove-100.sh build/fp/g3/amu build/fp`): 5 PASS, 9 FAIL (14 rows).
+
+| row | verdict | cause |
+|---|---|---|
+| INPUTS | PASS | manifest `9b8dee8d` |
+| G4 | PASS | 3 generations equal, builder receipts present |
+| PRODUCT | FAIL | `bin/amu` is still node + nbb |
+| ENTRIES | PASS | check-cli and aarch64-cli objects in g3/o (both linked and routed) |
+| STATIC | PASS | libSystem only; wires 3,34,35,37,38,39 |
+| G1 | FAIL | L2: amu-embench absent (L1 PASS, L3 PASS, L4 PASS) |
+| INTERPOSER | PASS | L3 |
+| G2 | FAIL | reference is stage-0's human `check` line; the image now prints bin/amu's `:kotoba.check/v1` map, so corpus.sh finds no report line: 339 / 340 / 347 AMU-TRAP + 33 / 32 / 25 REFUSE-DIFF in the three modes; vs bin/amu see the check line above |
+| COMPILE_FULL | FAIL | now judged against bin/amu artifacts (gate changed: seal/provenance/answer, not export runs vs stage-0): 293 + 62 agree, 1 CLASS-DIFF + 16 HOST-ONLY named |
+| G3 | FAIL | checkfull/diff.sh compares with stage-0's check texts: 168 DIFF, 5 DECLARED (format change, as G2) |
+| CHECK_FULL | FAIL | the same diff: DECLARED rows remain |
+| G5 | FAIL | `sudo -n dtruss` needs a password |
+| REFACTOR_VERIFY | FAIL | declared stub (needs wire 20) |
+| QUIET_BENCH | FAIL | load1 167.87 |
+
+**Open (owner decisions)**: (1) policies over 32 grants trap in both product entries (kir.admission's document-typed
+reading, osaho; or the document container bound); (2) crc32 / matmult-int exceed the loader's 64 Mi pair ceiling on the
+Kotoba compile route; (3) G2/G3/CHECK_FULL still reference stage-0's check texts, not bin/amu's.
