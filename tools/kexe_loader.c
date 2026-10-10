@@ -7868,6 +7868,9 @@ static int kexe_scope_contains_fd(const struct kexe_scope *scope, int fd,
 #ifndef RESOLVE_NO_MAGICLINKS
 #define RESOLVE_NO_MAGICLINKS 0x02
 #endif
+#ifndef RESOLVE_NO_SYMLINKS
+#define RESOLVE_NO_SYMLINKS 0x04
+#endif
 #ifndef RESOLVE_BENEATH
 #define RESOLVE_BENEATH 0x08
 #endif
@@ -7904,7 +7907,28 @@ static int kexe_scope_open(const struct kexe_scope *scope, const char *candidate
                     0, 0) != 1) continue;
     const char *rest = candidate + base_length;
     while (*rest == '/') rest++;
-    if (*rest == '\0') rest = ".";
+    /* An exact grant may name one FILE, not only a directory. Opening that
+     * file as an O_DIRECTORY root refuses the grant itself. Resolve an exact
+     * canonical grant without following any symlink component; never widen
+     * its scope to the parent directory. Descendants still use beneath below.
+     * The provider retains the opened-fd containment check. */
+    if (*rest == '\0') {
+#if defined(__linux__)
+      struct kexe_open_how exact;
+      memset(&exact, 0, sizeof(exact));
+      exact.flags = (uint64_t)(unsigned)flags;
+      exact.mode = (flags & O_CREAT) ? (uint64_t)(unsigned)mode : 0u;
+      exact.resolve = RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS;
+      int fd = (int)syscall(SYS_openat2, AT_FDCWD, base, &exact, sizeof(exact));
+      if (fd < 0) *escaped = errno == ELOOP || errno == EXDEV || errno == ENOSYS;
+      return fd;
+#elif defined(__APPLE__)
+      int how = (flags & ~O_NOFOLLOW) | O_NOFOLLOW_ANY;
+      int fd = (flags & O_CREAT) ? open(base, how, (mode_t)mode) : open(base, how);
+      if (fd < 0) *escaped = errno == ELOOP;
+      return fd;
+#endif
+    }
 #if defined(__linux__)
     int root = open(base, O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
     if (root < 0) return -1;
