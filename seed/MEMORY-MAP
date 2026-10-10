@@ -20,9 +20,9 @@
  ;; Index 0 of every table is the NULL record: it is never written, fills start at 1, and a field value 0
  ;; means "none" (no child, no symbol, no function, no label ...). `mem-new` sets every *-N fill to 1.
  :constants
- [[:c MM-WORDS 9961472 "words in M (76 MiB); below the loader's 16M-item per-vector limit"]
+ [[:c MM-WORDS 10485760 "words in M (80 MiB); below the loader's 16M-item per-vector limit"]
   [:c MM-NULL 0 "the null index of every table"]
-  [:c MM-LAYOUT-VERSION 3 "value of M[MM-VERSION] after mem-new"]
+  [:c MM-LAYOUT-VERSION 4 "value of M[MM-VERSION] after mem-new"]
 
   ;; --- 1.1 header slots M[0..255] ---------------------------------------------------------------------
   [:c MM-VERSION 0 "layout version, = MM-LAYOUT-VERSION (01-mem)"]
@@ -74,22 +74,23 @@
   ;; seed: NODE 108,833, SIR 83,419, FIX 18,400, LITB 30,855, HEAP 243,318 words used), so TOK grows to 262,144 and NODE to
   ;; 196,608 records, paid by SIR 262,144 -> 196,608, FIX 131,072 -> 65,536, LITB 524,288 -> 262,144 and the HEAP (-262,144
   ;; words). M stays 8,388,608 words (the loader budgets are unchanged).
-  [:c MM-TOK-BASE 256] [:c MM-TOK-W 4] [:c MM-TOK-CAP 262144]
-  [:c MM-NODE-BASE 1048832] [:c MM-NODE-W 8] [:c MM-NODE-CAP 262144]
-  [:c MM-SYM-BASE 3145984] [:c MM-SYM-W 8] [:c MM-SYM-CAP 65536]
-  [:c MM-HASH-BASE 3670272] [:c MM-HASH-W 1] [:c MM-HASH-CAP 131072]
-  [:c MM-FN-BASE 3801344] [:c MM-FN-W 16] [:c MM-FN-CAP 8192]
-  [:c MM-SCOPE-BASE 3932416] [:c MM-SCOPE-W 2] [:c MM-SCOPE-CAP 65536]
-  [:c MM-SIR-BASE 4063488] [:c MM-SIR-W 4] [:c MM-SIR-CAP 196608]
-  [:c MM-LABEL-BASE 4849920] [:c MM-LABEL-W 1] [:c MM-LABEL-CAP 131072]
-  [:c MM-CODE-BASE 4980992] [:c MM-CODE-W 1] [:c MM-CODE-CAP 524288]
-  [:c MM-FIX-BASE 5505280] [:c MM-FIX-W 4] [:c MM-FIX-CAP 65536]
-  [:c MM-LIT-BASE 5767424] [:c MM-LIT-W 4] [:c MM-LIT-CAP 16384]
-  [:c MM-LITB-BASE 5832960] [:c MM-LITB-W 1] [:c MM-LITB-CAP 262144]
-  [:c MM-EXP-BASE 6095104] [:c MM-EXP-W 4] [:c MM-EXP-CAP 1024]
-  [:c MM-OUT-BASE 6099200] [:c MM-OUT-W 1] [:c MM-OUT-CAP 2097152]
-  [:c MM-HEAP-BASE 8196352] [:c MM-HEAP-END 9961472]
+  [:c MM-TOK-BASE 256] [:c MM-TOK-W 4] [:c MM-TOK-CAP 393216]
+  [:c MM-NODE-BASE 1573120] [:c MM-NODE-W 8] [:c MM-NODE-CAP 262144]
+  [:c MM-SYM-BASE 3670272] [:c MM-SYM-W 8] [:c MM-SYM-CAP 65536]
+  [:c MM-HASH-BASE 4194560] [:c MM-HASH-W 1] [:c MM-HASH-CAP 131072]
+  [:c MM-FN-BASE 4325632] [:c MM-FN-W 16] [:c MM-FN-CAP 8192]
+  [:c MM-SCOPE-BASE 4456704] [:c MM-SCOPE-W 2] [:c MM-SCOPE-CAP 65536]
+  [:c MM-SIR-BASE 4587776] [:c MM-SIR-W 4] [:c MM-SIR-CAP 196608]
+  [:c MM-LABEL-BASE 5374208] [:c MM-LABEL-W 1] [:c MM-LABEL-CAP 131072]
+  [:c MM-CODE-BASE 5505280] [:c MM-CODE-W 1] [:c MM-CODE-CAP 524288]
+  [:c MM-FIX-BASE 6029568] [:c MM-FIX-W 4] [:c MM-FIX-CAP 65536]
+  [:c MM-LIT-BASE 6291712] [:c MM-LIT-W 4] [:c MM-LIT-CAP 16384]
+  [:c MM-LITB-BASE 6357248] [:c MM-LITB-W 1] [:c MM-LITB-CAP 262144]
+  [:c MM-EXP-BASE 6619392] [:c MM-EXP-W 4] [:c MM-EXP-CAP 1024]
+  [:c MM-OUT-BASE 6623488] [:c MM-OUT-W 1] [:c MM-OUT-CAP 2097152]
+  [:c MM-HEAP-BASE 8720640] [:c MM-HEAP-END 10485760]
 
+  ;; TOK capacity bridge: TOK393216; all later bases +524288 words, unchanged heap budget.
   ;; Node capacity bootstrap: NODE262144; later bases shift524288 words; HEAP budget unchanged.
  ;; OUT capacity bootstrap: OUT2097152; HEAPBASE/END and WORDS shift1048576 words; HEAP budget unchanged.
  ;; --- 1.3 record fields (offset inside a record) -------------------------------------------------------
