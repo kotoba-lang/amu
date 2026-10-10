@@ -45,6 +45,18 @@
     mutual          102       102      102     102   AGREE
     recursive-list 6007      6005     8007    8007   DIVERGE
 
+  With --gas (consensus gas, schedule v0-draft), measured 2026-10-10 on the
+  same host -- every family agrees, typed modules included:
+
+    program         ref    wasm32  aarch64  x86_64
+    loop-only       5003    5003    5003     5003
+    leaf-calls       703     703     703      703
+    fib             8877    8877    8877     8877
+    mutual           403     403     403      403
+    record-sum       453     453     453      453
+    string-len       143     143     143      143
+    recursive-list 19011   19011   19011    19011
+
   The two ISAs agree on every program. The families agree only where every
   charge is a non-tail function entry; a loop costs 1 or 2 on ref/wasm32 and
   one unit per iteration on native, and constructors cost differently on all
@@ -120,6 +132,26 @@
 (defn ev [n :i64] :i64 (if (= n 0) 1 (od (- n 1))))
 (defn od [n :i64] :i64 (if (= n 0) 0 (ev (- n 1))))
 (defn main [] :i64 (ev 100))
+"}
+   {:name "record-sum"
+    :why "typed: a record built and read 50 times"
+    :expect "2450"
+    :source "(ns probe.record-sum (:export [main])
+  (:schemas {:app/pt [:record :app/pt [[:x :i64] [:y :i64]]]}))
+(defn mk [i :i64] [:ref :app/pt] (record-new [:record :app/pt [[:x :i64] [:y :i64]]] i (* i 2)))
+(defn main [] :i64
+  (loop [i 0 acc 0]
+    (if (< i 50)
+      (recur (+ i 1) (+ acc (record-get [:record :app/pt [[:x :i64] [:y :i64]]] (mk i) :y)))
+      acc)))
+"}
+   {:name "string-len"
+    :why "typed: a string built and measured 20 times"
+    :expect "100"
+    :source "(ns probe.string-len (:export [main]))
+(defn main [] :i64
+  (loop [i 0 acc 0]
+    (if (< i 20) (recur (+ i 1) (+ acc (string-byte-length (string-concat \"ab\" \"cde\")))) acc)))
 "}
    {:name "recursive-list"
     :why "examples/recursive-list.kotoba: 2,001 constructed cells as well as entries"
