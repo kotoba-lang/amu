@@ -8,7 +8,7 @@
   its closure is the check driver (`kotoba.compiler.nbb.check-driver`) alone.
   Same command, same answer, byte for byte: both entries call the same
   `check!`."
-  {:kotoba/export #?(:kotoba [main] :default [])}
+  {:kotoba/export #?(:kotoba [main run] :default [])}
   (:require [kotoba.compiler.nbb.check-driver :as driver]
             [kotoba.compiler.nbb.cli-support :as support]
             #?(:kotoba [kotoba.compiler.project :as project])
@@ -21,26 +21,28 @@
    ;; reading: a module has no top-level effects, and an aborting command cannot ride
    ;; in a fn literal, E2135). Same command table: `check`, else the usage refusal.
    ;; Success: the host's stdout (`pr-str` of the answer + newline), status 0. Refusal:
-   ;; a REDUCED `:kotoba.cli-error/v1` report on stderr (format, ok, message; no
-   ;; `:error` phase and no `:diagnostic`: the abort's data is not read here), status 65
-   ;; (64 for a command other than `check`).
+   ;; cli-support's REDUCED `:kotoba.cli-error/v1` report on stderr (format, ok, error
+   ;; phase, message; no `:diagnostic`) and the host's exit code for the refusal's phase
+   ;; (cli-support `error-phase` / `exit-code`, as aarch64-cli's `main`; until 2026-10-10
+   ;; every refusal was 65 with no `:error`).
    (defn- run-check [args [:list :string]] :string
      (string-concat (project/pr-text (driver/check! args)) "\n")))
 
 #?(:kotoba
-   (defn- report [message :string] :string
-     (string-concat "{:format :kotoba.cli-error/v1, :ok false, :message "
-                    (string-concat (project/pr-text (form/string-form message)) "}\n"))))
+   ;; `run` is `main` over a given argument list: the native `amu` image (seed/amu-main,
+   ;; amu.check) calls it with bin/amu's launcher layer applied (`--jvm-free` dropped).
+   (defn run [args [:list :string]] :i64
+     (if (and (> (vector-count args) 0) (string=? (typed-list-nth [:list :string] args 0) "check"))
+       (try (let [w (io/write (run-check args))] 0)
+            (catch e (let [phase (support/error-phase e)
+                           w (io/write-error (support/refusal-text phase (ex-message e)))]
+                       (support/exit-code phase))))
+       (let [w (io/write-error (support/refusal-text :usage (string-concat "error: nbb check path does not cover command "
+                                                                          (if (> (vector-count args) 0) (typed-list-nth [:list :string] args 0) ""))))]
+         64))))
 
 #?(:kotoba
-   (defn main [] :i64
-     (let [args (support/command-line-args)]
-       (if (and (> (vector-count args) 0) (string=? (typed-list-nth [:list :string] args 0) "check"))
-         (try (let [w (io/write (run-check args))] 0)
-              (catch e (let [w (io/write-error (report (ex-message e)))] 65)))
-         (let [w (io/write-error (report (string-concat "error: nbb check path does not cover command "
-                                                        (if (> (vector-count args) 0) (typed-list-nth [:list :string] args 0) ""))))]
-           64)))))
+   (defn main [] :i64 (run (support/command-line-args))))
 
 #?(:kotoba nil
    :default

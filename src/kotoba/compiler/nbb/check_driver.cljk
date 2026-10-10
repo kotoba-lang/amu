@@ -43,18 +43,28 @@
 #?(:kotoba
    (defn- cd-empty [] [:ref :form/r] (form/form-map (form/no-forms))))
 
-;; `--policy`, decoded by the bounded EDN reader, named grants canonicalised to wire ids; {} when absent
+;; `--policy`, decoded by the bounded EDN reader, named grants canonicalised to wire ids; {} when absent.
+;; The host's reading (`read-policy!` below): cli-support's `read-policy`, whose Kotoba file read is
+;; nbb-io's `read-text-file` -- it refuses a missing file or a directory by name (:decode "input could not
+;; be read", exit 65) from the STAT answer, as the source read does. Until 2026-10-10 this read through
+;; `read-edn-file!` (bounded-edn's `fs/app-data-bytes`), which TRAPS (SIGILL, exit 120) on such a path:
+;; measured on the image 27ffb605 by seed/tests/check-cli/args.sh (`--policy nosuch.edn`, `--policy sub`).
 #?(:kotoba
    (defn read-policy! [args [:list :string]] [:ref :form/r]
-     (let [path (support/option args "--policy")]
-       (if (option-some?-of [:option :string] path)
-         (cap-names/wire-policy (support/read-edn-file! (option-value-of [:option :string] path "")))
-         (cd-empty)))))
+     (if (option-some?-of [:option :string] (support/option args "--policy"))
+       (cap-names/wire-policy (support/read-policy args))
+       (cd-empty))))
 
-;; the policy keys consumed by the compiler rather than admission (`support/capability-policy`)
+;; the policy keys consumed by the compiler rather than admission (`support/capability-policy`): the host's
+;; `(dissoc policy :language-profile :budgets)`, so a policy that is not a map is handed on as it is
+;; (2026-10-10). kotoba.form's `dissoc-form` answers a MAP of any Form's kids: a `nil` policy became `{}` and
+;; was admitted (pure/abort) or denied (io/two) where bin/amu's admission refuses `nil` "malformed capability
+;; policy" (fixture p27).
 #?(:kotoba
    (defn- cd-capability-policy [policy [:ref :form/r]] [:ref :form/r]
-     (form/dissoc-form (form/dissoc-form policy (cd-kw :language-profile)) (cd-kw :budgets))))
+     (if (form/is-map? policy)
+       (form/dissoc-form (form/dissoc-form policy (cd-kw :language-profile)) (cd-kw :budgets))
+       policy)))
 
 #?(:kotoba
    (defn- cd-analyze-opts [policy [:ref :form/r] linked :bool] [:ref :form/r]
@@ -88,11 +98,17 @@
                  :linked? (form/bool-form false))))))
 
 #?(:kotoba
+   ;; a refusal keeps the frontend error's own phase (`:effect-ceiling`, `:read`, ...; `:subset` when it names none), as
+   ;; nbb.cli's Kotoba `cl-analyze` does, so the entry's exit code is the host's for that phase (2026-10-10; was always
+   ;; `:subset`, which made examples/w1-denial-ceiling exit 65 where `bin/amu check` exits 70)
    (defn- cd-analyze [source :string opts [:ref :form/r]] [:ref :form/r]
      (let [r (sema/analyze source opts)]
        (if (record-get [:ref :ana/ir] r :ok)
          (record-get [:ref :ana/ir] r :val)
-         (throw (ex-info (record-get [:ref :fe/err] (record-get [:ref :ana/ir] r :err) :msg) {:phase :subset}))))))
+         (let [e (record-get [:ref :ana/ir] r :err)
+               phase (record-get [:ref :fe/err] e :phase)]
+           (throw (ex-info (record-get [:ref :fe/err] e :msg)
+                           {:phase (if (string=? phase "") :subset (keyword-from-string phase))})))))))
 
 ;; Kotoba: `check` for one file or a `--source-path` graph (the twins), with `--policy`. The answer is the host's map
 ;; with ONE named difference: `:definitions` is definition-identity's explicit unavailability marker (`:reason

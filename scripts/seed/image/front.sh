@@ -6,9 +6,9 @@
 #                i.e. the frontend, kotoba.sema and kotoba-lang's compat twins compiled FROM SOURCE in separate mode
 #   TWINDIR      kotoba-lang lang/compat/kotoba/compiler holding project.kotoba / project_files.kotoba (the project route's
 #                guest twins); they are recompiled here so a twin newer than the scan's is what the image links
-#   OUT          the object dir written (scan objects minus the nbb check entry/driver, project twins from TWINDIR, + kotoba.amu-front.check)
-# FRONT_BUILDER=<amu image> (the self-rebuild): every object is compiled again here by that image's `compile` (the seed
-# compiler linked into it) from the scan's farm sources (SCAN-OBJDIR/../src, in SCAN-OBJDIR/../order.txt order), not copied.
+#   OUT          the object dir written (scan objects, the product entries included; project twins from TWINDIR, + kotoba.amu-front.check)
+# FRONT_BUILDER=<amu image> (the self-rebuild): every object is compiled again here by that image's `compile --emit-module`
+# (its internal module compiler: the seed compiler linked into it; the product `compile` is nbb.cli's) from the scan's farm sources (SCAN-OBJDIR/../src, in SCAN-OBJDIR/../order.txt order), not copied.
 emulate -L zsh; setopt pipefail; renice -n 10 $$ > /dev/null
 S=${1:?seed}; O0=${2:?scan objdir}; TW=${3:?twindir}; O=${4:?out}; H=${0:A:h}; R=${H:h:h:h}
 S=${S:A}; O0=${O0:A}; TW=${TW:A}; mkdir -p $O; O=${O:A}
@@ -22,7 +22,9 @@ c() {
     KEXE_CAP_RESOURCES_35=$SEED_RESOURCES_35 $B compile $1 --target aarch64-macos --emit-module --object-dir $O --output $O/$2.kso > $O.sb/$2.log 2>&1
   else seed_run $S 0 compile $1 --emit-module --object-dir $O --output $O/$2.kso > $O.sb/$2.log 2>&1; fi || die "$2: $(grep -m1 -E 'seed: E|error' $O.sb/$2.log)"
 }
-skip() { case $1 in kotoba.compiler.nbb.check-cli|kotoba.compiler.nbb.check-driver|amu.*|seed.*) return 0 ;; esac; return 1; }
+# 2026-10-10 (product entries): nbb.check-cli and nbb.check-driver are no longer skipped: the image's `check` is
+# check-cli's Kotoba `run` and its `compile` aarch64-cli's (seed/amu-main k/amu/check, l/amu/compile).
+skip() { case $1 in amu.*|seed.*) return 0 ;; esac; return 1; }
 # 2026-10-10 (fixed point on the integration sources): the scan now holds nbb.cli's Kotoba twin, whose closure needs
 # kotoba.compiler.effect-row (via native-artifact) and the project twins (via nbb.cli). So the effect modules are no longer
 # skipped, and the project twins are compiled from TWINDIR at their place in the scan order instead of after the loop.

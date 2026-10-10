@@ -4,12 +4,16 @@
 # BOOTSTRAP-REFERENCE oracle (build/native-image/amu-native), cached per (program, policy) sha in build/checkfull/s0cache.
 # Classes as parity.sh's check column: SAME-OK SAME-REFUSE (+ -RC when only the exit status differs) OK-DIFF REFUSE-DIFF
 # AMU-REFUSES AMU-ACCEPTS AMU-TRAP STUB. Both sides run in the program's directory with the program's absolute path.
+# Since 2026-10-10 prove-100 G2/G3/CHECK_FULL no longer call this script: the image's `check` is nbb.check-cli's
+# Kotoba run and is judged against bin/amu (seed/tests/check-cli/image.sh, args.sh). Kept for stage-0 history.
 emulate -L zsh; setopt pipefail nullglob
 H=${0:A:h}; R=${H:h:h:h}
 A=${1:?usage: corpus.sh <amu> <work-dir> [policy]}; A=${A:A}; W=${2:?}; mkdir -p $W; W=${W:A}
 P=${3:-}; [ -n "$P" ] && P=${P:A}
 S0=$R/build/native-image/amu-native; KC=$R/build/checkfull/s0cache; mkdir -p $KC
 E=/Users/junkawasaki/github/kotoba-lang/amu-embench/bench/embench/ports
+# 2026-10-10: the in-repo ports (bench/embench/ports, the same 19 workloads) when the amu-embench checkout is absent
+[ -d $E ] || E=$R/bench/embench/ports
 dirs=($E $R/seed/tests/r1/feat $R/seed/tests/r1/conf $R/seed/tests/corpus $R/resources/kotoba/lang-conformance/values
       $R/resources/kotoba/lang-conformance/control $R/resources/kotoba/lang-conformance/native $R/seed/tests/conformance/*(/)
       $R/examples $R/test/dual-backend $R/test/nbb/fixtures $R/test/nbb/fixtures/state $R/bench/runtime-comparison)

@@ -71,3 +71,33 @@ not walk capability results.
   relation with an explicit 64 KiB leaf.
 - Wasm (`kotoba-wasm`) and the cljs backend are deferred (owner decision 1) and were not touched. They enforce their
   own bounds and are not copies listed in the table.
+
+## Addendum 2026-10-10: the native amu image passes 8 MiB; the value bound stays (seed rung r6n)
+
+The owner allowed removing the 8 MiB limit on the self-built amu image. With the product entries linked
+(`nbb.aarch64-cli` and `nbb.check-cli` beside the seed compiler and the refactor route) the image's kseed is
+10,978,059 B (measured; it was 6,578,329 B without them, 78.4% of 8 MiB). Sharing modules does not close the gap: the
+closure of `amu.main` is 159 modules (24.25 MB of objects), and the parts only one command reaches are compile 32
+modules (about 2.39 MB of code), refactor 26 (1.28 MB), the seed compiler 12 (0.81 MB), check 15 (0.64 MB). They are
+different programs, not copies, and every one of them is needed.
+
+The limit was never the image's own: it was the seed's `extract-native`, which read the whole container as ONE `:bytes`
+value through wire 35 (`io-read-bytes`), so the loader's `KEXE_BYTES_VALUE_LIMIT` trapped `:bytes/too-large`. The
+seed's writes were already in 256 KiB pieces (50-out `out-write-v`, rung r6h).
+
+Decision: **the value bound is not changed** (8 MiB for one `:string` / `:bytes` value, every copy in the table above
+unchanged, the loader unchanged). Rung **r6n** changes the seed instead: `io-read-bytes` reads a file over 4 MiB in
+`RANGE` windows on the `:bytes` wire (the loader's existing `<path>RANGE_SEP<off>:<len>` form), each answer one `:bytes`
+value of at most 4 MiB, copied into one vector of the file's size. So:
+
+| what | bound before r6n | bound from r6n |
+|---|---|---|
+| a container `extract-native` reads | 8 MiB (one `:bytes` value) | 16 Mi bytes (one vector: `:language/value :vector-items`), and the run's vector-item budget (about 3x the file) |
+| a file the seed writes (kseed, code slice) | none of its own (256 KiB pieces) | unchanged |
+| one `:string` / `:bytes` value | 8 MiB | 8 MiB (unchanged) |
+
+Measured: `seed/tests/r6n/gate-r6n.sh` XBIG (a 12 MiB + 13 B synthetic container) extracts byte-identically with the
+r6n seed and traps `:bytes/too-large` with the r6m seed; the image (10,978,059 B kseed) rebuilds itself to a
+byte-identical fixed point (docs/selfhost-status-20261005.md section 8). The next bound an image meets is the 16 Mi
+items of one vector; passing it would need the extract to stream the code slice instead of holding it (no value bound
+involved either).

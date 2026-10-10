@@ -74,30 +74,59 @@ if grep -q '^PASS L3 ' $W/launcher.log; then
   row INTERPOSER PASS "supplementary process interposer only; $W/launcher.log"
 else row INTERPOSER FAIL "$W/launcher.log"; fi
 
-corpus_ok=1
+# G2 (2026-10-10): the image's `check` is the product entry nbb.check-cli's Kotoba `run` and prints bin/amu's
+# :kotoba.check/v1 answer map, so the reference is `bin/amu check` (the nbb route of the same entry,
+# BOOTSTRAP-REFERENCE), not stage-0 d2cb84f6 (whose human `ok ...` line the image no longer prints: against it every
+# case failed on format). seed/tests/check-cli/image.sh runs both with the same command line on the 391 programs
+# (372 corpus + 19 Embench ports) in the three policy modes; judge.py compares the exit code, then the answer (accept)
+# or the refusal report (refuse) as EDN data on the same stream. A difference passes only as a NORM row of
+# seed/tests/check-cli/named.tsv, which fixes program, key and BOTH values (the :definitions marker and the reduced
+# refusal report are whole-corpus rows with their own condition); a GAP row, a stub, a trap or an unnamed difference
+# fails. PASS iff each mode has exactly 391 rows, all SAME / SAME-DATA / NAMED with NORM rows only.
+corpus_ok=1; corpus_sum=""
 for p in none corpus-policy corpus-policy-all; do
   args=(); [ $p = none ] || args=($R/seed/tests/checkfull/fx/$p.edn)
-  zsh $R/seed/tests/checkfull/corpus.sh $A $W/corpus-$p $args > $W/corpus-$p.log 2>&1 || corpus_ok=0
-  awk -F '\t' '($6 != "SAME-OK" && $6 != "SAME-REFUSE") {bad++} END {exit (NR != 391 || bad > 0)}' \
-    $W/corpus-$p/check.tsv || corpus_ok=0
+  zsh $R/seed/tests/check-cli/image.sh $A $W/check-$p $args > $W/check-$p.log 2>&1 || corpus_ok=0
+  ct=$W/check-$p/result.tsv
+  awk -F '\t' '!($1 == "SAME" || $1 == "SAME-DATA" || ($1 == "NAMED" && $4 !~ /:GAP/)) {bad++} END {exit (NR != 391 || bad > 0)}' \
+    $ct 2>/dev/null || corpus_ok=0
+  corpus_sum="$corpus_sum$p: $(cut -f1 $ct 2>/dev/null | sort | uniq -c | tr -s ' ' | tr '\n' ' ')(rows $(wc -l < $ct 2>/dev/null | tr -d ' ')); "
 done
-[ $corpus_ok = 1 ] && row G2 PASS '391/391 check verdict, message and exit in three policy modes' \
-  || row G2 FAIL 'corpus difference, missing case or crash'
-AM_SEED=$R/build/seed-boot/r6m/seed-1.bin zsh $R/seed/amu-main/parity.sh $W/compile-corpus \
-  --compile $A > $W/compile-corpus.log 2>&1
+[ $corpus_ok = 1 ] && row G2 PASS "391/391 check exit and answer/refusal as data vs bin/amu in three policy modes; $corpus_sum" \
+  || row G2 FAIL "against bin/amu: $corpus_sum$W/check-*/result.tsv"
+# COMPILE_FULL (2026-10-10): the image's `compile` is the product entry nbb.aarch64-cli's Kotoba `run` (nbb.cli
+# `run!`), whose artifact is the host's sealed :kotoba.kexe/v1. So the reference is `bin/amu compile` (the nbb route of
+# the same code, BOOTSTRAP-REFERENCE) and the comparison is the ARTIFACT: seed/tests/compile-cli/run.sh --image drives
+# the image with the host's command line; both accept -> seal, then the artifact and .provenance.edn key by key, then
+# the stdout answer as data; both refuse -> the same exit code. Until 2026-10-10 the image's compile was the seed
+# compiler, so this gate ran exports from both codes against stage-0 (seed/amu-main/parity.sh, BEHAVIOUR-SAME); that
+# comparison no longer applies to an artifact that must BE the host's. PASS iff every program is BOTH-ACCEPT with seal,
+# provenance and answer SAME, or BOTH-REFUSE with the same exit code (no HOST-ONLY, GUEST-ONLY or class difference).
+zsh $R/seed/tests/compile-cli/run.sh --image $A $W/compile-corpus > $W/compile-corpus.log 2>&1
 compile_rc=$?
-if [ $compile_rc = 0 ] && awk -F '\t' \
-     '($4 != "BEHAVIOUR-SAME" && $4 != "BOTH-REFUSE") {bad++} END {exit (NR != 391 || bad > 0)}' \
-     $W/compile-corpus/compile.tsv; then
-  row COMPILE_FULL PASS '391 corpus programs: compile refusal and exported behaviour agree with reference'
-else row COMPILE_FULL FAIL "compile/behaviour difference or missing export; $W/compile-corpus/summary.txt"; fi
-zsh $R/seed/tests/checkfull/diff.sh $A $W/negative > $W/negative.log 2>&1
-if [ $? = 0 ] && [ -s $W/negative/result.tsv ] && ! grep -q '^DIFF' $W/negative/result.tsv; then
-  row G3 PASS 'argument and refusal differential; declared gaps evaluated separately'
-else row G3 FAIL "$W/negative.log"; fi
-if grep -q '^STUB\|^DECLARED' $W/negative/result.tsv; then
-  row CHECK_FULL FAIL 'declared or stub check paths remain'
-else row CHECK_FULL PASS 'no declared/stub case in check differential'; fi
+cc=$W/compile-corpus/result.tsv
+if [ $compile_rc = 0 ] && [ -s $cc ] && awk -F '\t' \
+     '!(($1 == "BOTH-ACCEPT" && $6 == "SAME" && $8 == "SAME" && $10 == "SAME") || $1 == "BOTH-REFUSE") {bad++} END {exit (bad > 0)}' $cc; then
+  row COMPILE_FULL PASS "$(wc -l < $cc | tr -d ' ') corpus programs: the image's artifact (seal, provenance, answer) or refusal class equals bin/amu's"
+else row COMPILE_FULL FAIL "$(cut -f1 $cc 2>/dev/null | sort | uniq -c | tr -s ' ' | tr '\n' ' ')against bin/amu; $cc"; fi
+# G3 / CHECK_FULL (2026-10-10): the argument and refusal differential, reference `bin/amu check` for the reason G2
+# gives (until 2026-10-10: seed/tests/checkfull/diff.sh against stage-0's check texts, which the image's product
+# entry no longer prints). seed/tests/check-cli/args.sh runs diff.sh's cases (cases-args.txt + 31 policy files x 4
+# programs) in seed/tests/checkfull/fx on both sides and judges them with judge.py / named.tsv as G2.
+# G3 PASS iff no DIFF (NAMED of either kind and STUB are listed, and judged by CHECK_FULL);
+# CHECK_FULL PASS iff no STUB and no GAP row: every check path the host answers, the image answers the same way.
+# Stage-0 is no longer the oracle of any check gate: bin/amu answers every case of both suites. It stays the oracle of
+# G1 only (launcher/test.sh: L1's stage-0 `S:`/`T:` argument cases and L2's Embench export runs), not changed here.
+zsh $R/seed/tests/check-cli/args.sh $A $W/negative > $W/negative.log 2>&1
+args_rc=$?
+nr=$W/negative/result.tsv
+args_sum="$(cut -f1 $nr 2>/dev/null | sort | uniq -c | tr -s ' ' | tr '\n' ' ')"
+if [ $args_rc = 0 ] && [ -s $nr ] && ! grep -q '^DIFF' $nr; then
+  row G3 PASS "argument and refusal differential vs bin/amu: $args_sum; stubs/gaps judged by CHECK_FULL"
+else row G3 FAIL "vs bin/amu: $args_sum$nr"; fi
+if [ -s $nr ] && ! grep -q '^STUB' $nr && ! awk -F '\t' '$1 == "NAMED" && $5 ~ /:GAP/ {f=1} END {exit !f}' $nr; then
+  row CHECK_FULL PASS 'no stub and no named behaviour gap in the check differential vs bin/amu'
+else row CHECK_FULL FAIL "stub or named gap paths remain: $(grep -c '^STUB' $nr 2>/dev/null) STUB, $(awk -F '\t' '$1 == "NAMED" && $5 ~ /:GAP/' $nr 2>/dev/null | wc -l | tr -d ' ') GAP; $nr"; fi
 
 # Full rule 11 needs an exec trace. An interposer is supplementary and is never
 # silently promoted to strace/dtruss evidence. sudo -n prevents an unattended prompt.

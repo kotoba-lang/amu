@@ -27,7 +27,7 @@
 (defn- enc-word-ok [w :i64] :bool (>= w 0))
 
 ;; ---- condition codes ------------------------------------------------------------------------------------------
-(defn- enc-cond-eq [] :i64 0)
+(defn enc-cond-eq [] :i64 0)
 (defn enc-cond-ne [] :i64 1)
 (defn enc-cond-hs [] :i64 2)
 (defn enc-cond-lo [] :i64 3)
@@ -35,7 +35,7 @@
 (defn enc-cond-vc [] :i64 7)
 (defn- enc-cond-ge [] :i64 10)
 (defn enc-cond-lt [] :i64 11)
-(defn- enc-cond-gt [] :i64 12)
+(defn enc-cond-gt [] :i64 12)
 (defn- enc-cond-le [] :i64 13)
 (defn enc-cond-of-cc [cc :i64] :i64
   (cond (>= cc CC-F64-EQ) (enc-fcond (bit-and cc 7))   ; FLOAT (r6j): after fcmp
@@ -66,7 +66,7 @@
 (defn enc-lslv [d :i64 n :i64 m :i64] :i64 (enc-rrr 2596282368 d n m))    ; 9ac02000 lsl (register)
 (defn enc-lsrv [d :i64 n :i64 m :i64] :i64 (enc-rrr 2596283392 d n m))    ; 9ac02400 lsr (register)
 (defn enc-asrv [d :i64 n :i64 m :i64] :i64 (enc-rrr 2596284416 d n m))    ; 9ac02800 asr (register)
-(defn- enc-madd [d :i64 n :i64 m :i64 a :i64] :i64                         ; 9b000000 madd xd, xn, xm, xa
+(defn enc-madd [d :i64 n :i64 m :i64 a :i64] :i64                         ; 9b000000 madd xd, xn, xm, xa
   (+ (enc-rrr 2600468480 d n m) (enc-sh (enc-r a) 10)))
 (defn enc-mul [d :i64 n :i64 m :i64] :i64 (enc-madd d n m 31))
 (defn enc-mov-r [d :i64 m :i64] :i64 (enc-orr-r d 31 m))                  ; mov xd, xm (orr xd, xzr, xm)
@@ -75,7 +75,7 @@
 (defn- enc-cmn-r [n :i64 m :i64] :i64 (enc-adds-r 31 n m))                 ; cmn xn, xm
 (defn- enc-csinc [d :i64 n :i64 m :i64 c :i64] :i64                       ; 9a800400 csinc xd, xn, xm, c
   (if (= 1 (enc-in c 0 15)) (+ (enc-rrr 2592080896 d n m) (enc-sh c 12)) -1))
-(defn- enc-csel [d :i64 n :i64 m :i64 c :i64] :i64                        ; 9a800000 csel xd, xn, xm, c
+(defn enc-csel [d :i64 n :i64 m :i64 c :i64] :i64                        ; 9a800000 csel xd, xn, xm, c
   (if (= 1 (enc-in c 0 15)) (+ (enc-rrr 2592079872 d n m) (enc-sh c 12)) -1))
 (defn enc-cset [d :i64 c :i64] :i64                                       ; cset xd, c = csinc xd, xzr, xzr, !c
   (if (= 1 (enc-in c 0 13)) (enc-csinc d 31 31 (bit-xor c 1)) -1))

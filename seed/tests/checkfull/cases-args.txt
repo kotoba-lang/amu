@@ -1,4 +1,5 @@
-# `amu check` argument cases (agent CHECKFULL, 2026-10-04): one per line, run in seed/tests/checkfull/fx by both sides.
+# `amu check` argument cases (agent CHECKFULL, 2026-10-04): one per line, run in seed/tests/checkfull/fx by both sides
+# (since 2026-10-10 also the malformed-input `compile` cases at the end).
 check io.kotoba
 check pure.kotoba
 check two.kotoba
@@ -36,3 +37,14 @@ check pure.kotoba --json
 check /private/tmp/nonexistent-checkfull.kotoba
 check /Users/junkawasaki/nonexistent-checkfull.kotoba
 check io.kotoba --policy /Users/junkawasaki/nonexistent-checkfull.edn
+# 2026-10-10 (final round): malformed input is refused by name, never trapped. The policy fixtures p05 (vector :allow),
+# p20 (#_ discard, admitted), p27 (nil), p32 (a map whose value is the symbol U+0007) and p34 (invalid UTF-8) run in
+# every args.sh pass (p*.edn x 4 programs); the two /Users/junkawasaki paths above are outside the image's baked scope.
+check bad-utf8.kotoba
+compile bad-utf8.kotoba --target aarch64-macos --output /private/tmp/checkfull-bad-utf8.kexe
+compile io.kotoba --policy p34.edn --target aarch64-macos --output /private/tmp/checkfull-p34.kexe
+compile pure.kotoba --policy p27.edn --target aarch64-macos --output /private/tmp/checkfull-p27.kexe
+compile pure.kotoba --policy p05.edn --target aarch64-macos --output /private/tmp/checkfull-p05.kexe
+compile io.kotoba --policy p32.edn --target aarch64-macos --output /private/tmp/checkfull-p32.kexe
+compile /Users/junkawasaki/nonexistent-checkfull.kotoba --target aarch64-macos --output /private/tmp/checkfull-scope.kexe
+compile pure.kotoba --policy /Users/junkawasaki/nonexistent-checkfull.edn --target aarch64-macos --output /private/tmp/checkfull-scope.kexe

@@ -23,6 +23,9 @@ if [ "$(cut -f2 $W/usage/usage.tsv | grep -c DIFF)" = 0 ] && [ -s $W/usage/usage
 
 # L2
 E=/Users/junkawasaki/github/kotoba-lang/amu-embench/bench/embench/ports
+# 2026-10-10: the in-repo ports (bench/embench/ports, the same 19 workloads) when the amu-embench checkout is absent
+[ -d $E ] || E=$R/bench/embench/ports
+echo "L2 ports $E" > $W/ports.src
 ls $E/*.kotoba > $W/ports.txt
 AM_FILES=$W/ports.txt zsh $R/seed/amu-main/parity.sh $W/embench --compile $A > $W/embench.out 2>&1
 n=$(cut -f4 $W/embench/compile.tsv | grep -c '^BEHAVIOUR-SAME$'); sl=$(cut -f12 $W/embench/compile.tsv | grep -c '^ok$')

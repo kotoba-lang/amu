@@ -13,7 +13,7 @@
 #   2. objects (KSEEDO1, separate mode): the frontend closure + kotoba.amu-front.check are taken from --front DIR (default
 #      build/frontsrc/two/o: objects compiled FROM SOURCE by scripts/seed/frontsrc/build-one-src.sh, no kir-dump); the seed
 #      split, the amu.* modules amu.main reaches (src/, l/compile = the launcher's compile, k/check) and amu.main (--entry)
-#      are compiled here by the seed (rung r6m's recorded seed, checked against seed/rungs/r6m.record; LAUNCHER_RUNG /
+#      are compiled here by the seed (rung r6n's recorded seed, checked against seed/rungs/r6n.record; LAUNCHER_RUNG /
 #      LAUNCHER_SEED), or with --builder AMU by that packaged image (the self-rebuild); LAUNCHER_REFACTOR adds the refactor
 #      route (see below).
 #   3. link, extract-native main (the seed, or the builder), package (KEXE_EMBEDDED; wires 3,35,37,38,39, never 20; amu-one's budgets)
@@ -33,10 +33,10 @@ sha() { shasum -a 256 $1 | cut -c1-64; }
 die() { echo "launcher: FAIL: $*" >&2; exit 1; }
 step() { echo "launcher: $* (load $(sysctl -n vm.loadavg | awk '{print $2}'))"; }
 
-# rung $LAUNCHER_RUNG's recorded seed (default r6m; IMAGE 2026-10-05, was r6l), checked against its record; first of
+# rung $LAUNCHER_RUNG's recorded seed (default r6n since 2026-10-10: windowed extract of a container over 8 MiB; r6m from IMAGE 2026-10-05, r6l before), checked against its record; first of
 # build/seed-boot/<rung>/seed-1.bin, build/image/seed-<rung>.bin and build/rebuild/seed-<rung>.bin. LAUNCHER_SEED
 # overrides (no record check).
-RUNG=${LAUNCHER_RUNG:-r6m}
+RUNG=${LAUNCHER_RUNG:-r6n}
 SB=${LAUNCHER_SEED:-$R/build/seed-boot/$RUNG/seed-1.bin}
 [ -n "$LAUNCHER_SEED" ] || [ -s $SB ] || SB=$R/build/image/seed-$RUNG.bin
 [ -n "$LAUNCHER_SEED" ] || [ -s $SB ] || SB=$R/build/rebuild/seed-$RUNG.bin
@@ -51,8 +51,8 @@ PATCH=$(python3 $T/seed/amu-main/patch-split.py $T/seed/split) || die "patch-spl
 export SEED_REPO=$R SEED_BUILD=$W/sb; mkdir -p $SEED_BUILD; source $R/scripts/seed/lib.sh
 run() { SEED_RESOURCES_35=$R:$W${RK:+:$RK} SEED_VECTOR_ITEMS=134217728 SEED_SECONDS=1800 seed_run "$@"; }
 O=$W/o; rm -rf $O; mkdir -p $O; : > $W/emit.log
-# --builder AMU (REBUILD): every compile, modules, link and extract-native is done by a packaged amu image (its `compile`
-# = the seed compiler linked into it, `modules` / `link` / `extract-native` = its seed driver): the launcher rebuilds itself
+# --builder AMU (REBUILD): every compile, modules, link and extract-native is done by a packaged amu image (its `compile
+# --emit-module` = the seed compiler linked into it, the internal module compiler; `modules` / `link` / `extract-native` = its seed driver): the launcher rebuilds itself
 comp() {
   local f=$1 nm=$2; shift 2
   if [ -n "$builder" ]; then
@@ -168,7 +168,7 @@ cc -O2 -std=c11 -I $D -include $D/kexe_embedded.h $R/tools/kexe_loader.c -o $W/a
 mv $W/amu.tmp $W/amu
 deps=$(otool -L $W/amu | tail -n +2 | awk '{print $1}')
 echo "$deps" | grep -vq '^/usr/lib/' && die "unexpected library dependency"
-{ echo "label amu native launcher (amu.main: bin/amu's launcher layer + check REAL (frontend objects from $FRONT, compiled from source by the seed) + compile REAL (seed compiler from source, :kotoba.kexe/v1) + refactor ($RDESC); no node, nbb, JVM or shell at run time)"
+{ echo "label amu native launcher (amu.main: bin/amu's launcher layer + check = nbb.check-cli's Kotoba run + compile = nbb.aarch64-cli's Kotoba run (nbb.cli run!), objects from $FRONT compiled from source + compile --emit-module / link / modules / extract-native = the seed compiler (self-build) + refactor ($RDESC); no node, nbb, JVM or shell at run time)"
   echo "compiler ${builder:+builder $builder $(sha $builder) }seed ${LAUNCHER_SEED:+(LAUNCHER_SEED)}${LAUNCHER_SEED:-rung $RUNG} $(sha $SB) bytes $(wc -c < $SB | tr -d ' ')"
   echo "tree HEAD $(git -C $R rev-parse --short HEAD)${WT:+ + worktree seed/amu-main}${LAUNCHER_OVERLAY:+ + worktree $LAUNCHER_OVERLAY} ($PATCH)"
   for f in $S/amu/*.kotoba; do echo "source amu/${f:t} $(sha $f | cut -c1-16)"; done

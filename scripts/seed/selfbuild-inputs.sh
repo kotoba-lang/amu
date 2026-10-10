@@ -20,8 +20,8 @@
 #
 # Defaults (env): the seed17 snapshot of AGENT-ENV (wt/amu-seed17/build/seed17/inputs/scan: order.txt + src, from amu
 # a93ee4068 with classpath roots osaho 660a544, kotoba-native 752cdf2, kotoba-sema c2e1343, ...), kotoba-lang
-# claude/refactor-twins-parity (965c5f5's project twins + the 18 refactor twins), osaho agent/dual-runtime-port-D d2cc281
-# kir/interp.cljk + kir/target.cljk.
+# 965c5f5 (lang/compat: the project and kotoba-reader twins; the refactor library is amu's own src since the fold), and the
+# OVERLAY below.
 emulate -L zsh
 setopt pipefail
 R=$(cd "$(dirname "$0")/../.." && pwd)
@@ -30,9 +30,16 @@ GH=${GH:-/Users/junkawasaki/github}
 SNAP=${SB_SNAP:-$GH/wt/amu-seed17/build/seed17/inputs/scan}
 ORDER=${SB_ORDER:-$SNAP/order.txt}; FARM=${SB_FARM:-$SNAP/src}
 AMU_SNAP=${SB_AMU_SNAP:-a93ee4068}
-KL_REPO=${SB_KL_REPO:-$GH/kotoba-lang/kotoba-lang}; KL_REV=${SB_KL_REV:-claude/refactor-twins-parity}
-OVERLAY=${SB_OVERLAY:-"$GH/kotoba-lang/osaho d2cc281 src/kotoba/kir/interp.cljk
-$GH/kotoba-lang/osaho d2cc281 src/kotoba/kir/target.cljk"}
+KL_REPO=${SB_KL_REPO:-$GH/kotoba-lang/kotoba-lang}; KL_REV=${SB_KL_REV:-965c5f5b2f574f6be8f0b9572ca6cd6bac28ce97}
+# 2026-10-10 (final round): the dual-runtime-port-D commits the image needs, pinned by full commit (the repos' local
+# branch refs may lag their remotes; a commit is what makes the farm reproducible): osaho 3d29ca9 (kir.admission takes
+# Form policies: more than 32 grants no longer trap, a vector :allow is refused as on the host; interp/target as
+# d2cc281), kotoba-mir e2cf973 (keyword lookups without a key Form), kotoba-native ca8bb09 (vt-put in place).
+OVERLAY=${SB_OVERLAY:-"$GH/kotoba-lang/osaho 3d29ca9e56320837567d65120fc53b09bd88c83f src/kotoba/kir/interp.cljk
+$GH/kotoba-lang/osaho 3d29ca9e56320837567d65120fc53b09bd88c83f src/kotoba/kir/target.cljk
+$GH/kotoba-lang/osaho 3d29ca9e56320837567d65120fc53b09bd88c83f src/kotoba/kir/admission.cljk
+$GH/kotoba-lang/kotoba-mir e2cf973cdda3c88d84f34b0a6e84d6ded93ed763 src/kotoba/mir.cljk
+$GH/kotoba-lang/kotoba-native ca8bb098e349226d623c48c7eb267f44de52d711 src/kotoba/native/machine_ir.cljk"}
 die() { echo "selfbuild-inputs: FAIL: $*" >&2; exit 1; }
 for p in $ORDER $FARM; do [ -e $p ] || die "missing $p"; done
 amu_c=$(git -C $R rev-parse --verify -q "$AMU_SNAP^{commit}") || die "amu snapshot commit $AMU_SNAP not in $R"

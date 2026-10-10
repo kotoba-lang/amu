@@ -388,12 +388,19 @@
 
 ;; ---- compile-native! ----------------------------------------------------------------------------------------------------
 
+;; The host's `dissoc`s: a policy that is not a map is handed on as it is (2026-10-10). kotoba.form's `dissoc-form`
+;; answers a MAP of any Form's kids, so a `nil` policy became `{}` here and was admitted, where the host's
+;; `(dissoc nil ..)` is nil and admission refuses it "malformed capability policy" (fixture p27).
 (defn- admission-policy [policy [:ref :form/r]] [:ref :form/r]
-  (form/dissoc-form (form/dissoc-form policy (kf :linux-static)) (kf :spawn)))
+  (if (form/is-map? policy)
+    (form/dissoc-form (form/dissoc-form policy (kf :linux-static)) (kf :spawn))
+    policy))
 
 ;; the host's `capability-policy` (cli-support): the compiler controls are not grants
 (defn- capability-policy [policy [:ref :form/r]] [:ref :form/r]
-  (form/dissoc-form (form/dissoc-form policy (kf :language-profile)) (kf :budgets)))
+  (if (form/is-map? policy)
+    (form/dissoc-form (form/dissoc-form policy (kf :language-profile)) (kf :budgets))
+    policy))
 
 (defn- gate! [hir [:ref :form/r] target :keyword] [:ref :form/r]
   (let [backend (backend-of target)
