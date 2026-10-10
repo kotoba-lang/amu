@@ -210,15 +210,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: kotoba-lang/setup-kbb@a4586e48c72c69229ff1237a1246de63583b607d
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.12.0"
+          cache: npm
       - run: npm ci
       - name: Execute generated pure Wasm, Script and bounded EVM artifacts
-        run: >-
-          kbb --backend sci --config scripts/execution-v2-nbb.edn
-          --classpath "src:$(kbb -Spath -M:execution-v2)"
-          scripts/test-execution-v2-targets.cljk
+        run: |
+          set -o pipefail
+          cp=$(node bin/kbb --backend sci --classpath src scripts/print-classpath.cljk "$PWD" --alias execution-v2 | paste -sd: -)
+          node bin/kbb --backend sci --config scripts/execution-v2-nbb.edn --classpath "src:$cp" scripts/test-execution-v2-targets.cljk
       - name: Execute JVM-free native artifact through the measured executor
-        run: >-
-          kbb --backend sci --config scripts/execution-v2-nbb.edn
-          --classpath "src:$(kbb -Spath -M:execution-v2:native-run)"
-          scripts/test-execution-v2-native.cljk
+        run: |
+          set -o pipefail
+          cp=$(node bin/kbb --backend sci --classpath src scripts/print-classpath.cljk "$PWD" --alias execution-v2 --alias native-run | paste -sd: -)
+          node bin/kbb --backend sci --config scripts/execution-v2-nbb.edn --classpath "src:$cp" scripts/test-execution-v2-native.cljk
