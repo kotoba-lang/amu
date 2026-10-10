@@ -6,6 +6,8 @@
 # Classes: SAME (exit status, stdout, stderr byte-identical), SAME-NORM (equal once each printed set's members are
 # sorted -- a host set prints in hash order -- and the `:line:col` after the file name of a refusal line is dropped; the
 # frontend's refusal carries no span), STUB (amu answers exit 69 :not-available), DECLARED (declared.txt), DIFF.
+# Since 2026-10-10 prove-100 G2/G3/CHECK_FULL no longer call this script: the image's `check` is nbb.check-cli's
+# Kotoba run and is judged against bin/amu (seed/tests/check-cli/image.sh, args.sh). Kept for stage-0 history.
 emulate -L zsh; setopt pipefail
 H=${0:A:h}; R=${H:h:h:h}
 A=${1:?usage: diff.sh <amu> <work-dir> [cases]}; A=${A:A}; W=${2:?}; mkdir -p $W; W=${W:A}
