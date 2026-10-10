@@ -18,7 +18,8 @@
             [kotoba.component.artifact :as component-artifact]
             [kotoba.component.core :as component-core]
             [kotoba.component.admission :as component-admission]
-            [kotoba.abi.contract :as abi]
+            [kotoba.abi.component :as abi]
+            [kotoba.core.execution :as execution]
             [kotoba.compiler.backend.cljs :as cljs]
             [kotoba.compiler.backend.evm :as evm]
             [kotoba.script :as script]
@@ -465,7 +466,7 @@
                               :required capability-ids
                               :supplied (set (keys component-abilities))})))
          _ (when (and component-abilities
-                      (not-every? abi/valid-ability? (vals component-abilities)))
+                      (not-every? execution/valid-ability? (vals component-abilities)))
              (throw (ex-info "Component ability descriptor is invalid"
                              {:phase :component-abilities})))
          _ (when (and (= capability-mode :linear-resource)
