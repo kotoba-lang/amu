@@ -16,18 +16,26 @@
 # modules and their dependents rebuilt (docs/selfhost-compile-twin-spike-20261008.md, compile-cli addendum).
 # Guests run with the native image's budgets and the 1 Mi kgraph (ADR 0369). CC_JOBS (default 6) programs at a time.
 # Seed: CS_SEED (default build/seed-boot/r6m/seed-1.bin, checked against seed/rungs/r6m.record).
+# --image AMU (2026-10-10): instead of building the entry, drive a packaged native amu image's `compile` (the image's
+# product entry) with the same command line; the rest (host run, classes, artifact and answer comparison) is unchanged.
 emulate -L zsh; setopt pipefail
 H=${0:A:h}; R=${H:h:h:h}
 if [ "$1" = --job ]; then
   # --job <work-dir> <file>: one program, one row in <work-dir>/rows/
-  W=$2; f=${3:A}; k=${${f#$R/}//\//.}; L=$(cat $W/loader); off=$(cat $W/offset)
+  W=$2; f=${3:A}; k=${${f#$R/}//\//.}; L=$(cat $W/loader 2>/dev/null); off=$(cat $W/offset 2>/dev/null)
   pol=$W/policy.edn; mkdir -p $W/h/$k $W/g/$k; rm -f $W/h/$k/*(N) $W/g/$k/*(N)
   (cd $R && KOTOBA_VERDICT_CACHE=off bin/amu compile $f --target aarch64-macos --policy $pol --output $W/h/$k/out.kexe \
      > $W/h/$k/stdout 2> $W/h/$k/stderr); hs=$?
+  if [ -s $W/image ]; then
+    # --image: the packaged amu image's own `compile` (its baked budgets and wires; scope = the repository + W)
+    KEXE_CAP_RESOURCES_35=$R:$W $(cat $W/image) compile $f --target aarch64-macos --policy $pol \
+      --output $W/g/$k/out.kexe > $W/g/$k/stdout 2> $W/g/$k/stderr; gs=$?
+  else
   KEXE_COMMAND=1 KEXE_CAP_RESOURCES_35=$R:$W KEXE_STRING_POOL=1073741824 KEXE_PAIRS=67108864 KEXE_VECTORS=67108864 \
     KEXE_VECTOR_ITEMS=134217728 KEXE_HASHCONS=16 KEXE_KGRAPH=1048576 KEXE_CPU_SECONDS=600 KEXE_WALL_SECONDS=900 \
     $L $W/a64cli.bin $off 0 aarch64 3,35,37,38,39 -- compile $f --target aarch64-macos --policy $pol \
     --output $W/g/$k/out.kexe > $W/g/$k/stdout 2> $W/g/$k/stderr; gs=$?
+  fi
   he=$(sed -n 's/.*:error \(:[a-z0-9-]*\).*/\1/p' $W/h/$k/stderr | head -1)
   ge=$(sed -n 's/.*:error \(:[a-z0-9-]*\).*/\1/p' $W/g/$k/stderr | head -1)
   gm=$(sed -n 's/.*:message "\(.*\)"}$/\1/p' $W/g/$k/stderr | head -1); [ -n "$gm" ] || gm=$(head -c 160 $W/g/$k/stderr | tr '\n\t' '  ')
@@ -45,8 +53,15 @@ if [ "$1" = --job ]; then
     ${f#$R/} "$gm" > $W/rows/$k.tsv
   exit 0
 fi
-[ -d "$1" ] || { echo "usage: run.sh <front-objects> [work-dir] [list]" >&2; exit 2; }
-FRONT=${1:A}; W=${2:-$R/build/compile-cli}; mkdir -p $W; W=${W:A}
+if [ "$1" = --image ]; then
+  # --image AMU [work-dir] [list] (2026-10-10): no entry is built; the guest is the packaged native amu image's PRODUCT
+  # `compile` (seed/amu-main l/amu/compile = nbb.aarch64-cli's Kotoba run), driven with the same command line.
+  IMG=${2:A}; [ -x "$IMG" ] || { echo "usage: run.sh --image AMU [work-dir] [list]" >&2; exit 2; }
+  W=${3:-$R/build/compile-cli-image}; mkdir -p $W; W=${W:A}; shift 1   # $3 = the list, as below
+  echo $IMG > $W/image; echo "image $IMG $(shasum -a 256 $IMG | cut -c1-16)"
+else
+[ -d "$1" ] || { echo "usage: run.sh <front-objects> [work-dir] [list] | run.sh --image AMU [work-dir] [list]" >&2; exit 2; }
+FRONT=${1:A}; W=${2:-$R/build/compile-cli}; mkdir -p $W; W=${W:A}; rm -f $W/image
 SB=${CS_SEED:-$R/build/seed-boot/r6m/seed-1.bin}
 sha() { shasum -a 256 $1 | cut -c1-64; }
 [ -n "$CS_SEED" ] || [ "$(sha $SB)" = "$(sed -n 's/^seed1_sha256 //p' $R/seed/rungs/r6m.record)" ] || { echo "compile-cli: $SB is not rung r6m's seed" >&2; exit 1; }
@@ -72,6 +87,7 @@ run $SB 0 extract-native $W/a64cli.kseed --symbol main --output $W/a64cli.bin > 
 sed -n 's/.*:offset \([0-9]*\).*/\1/p' $W/extract.log > $W/offset; [ -s $W/offset ] || { echo "compile-cli: extract-native failed" >&2; exit 1; }
 seed_loader > $W/loader || exit 2
 [ -n "$CC_BUILD_ONLY" ] && exit 0
+fi
 cd $R
 if [ -n "$3" ]; then files=(${(f)"$(cat $3)"})
 else

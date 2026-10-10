@@ -83,14 +83,21 @@ for p in none corpus-policy corpus-policy-all; do
 done
 [ $corpus_ok = 1 ] && row G2 PASS '391/391 check verdict, message and exit in three policy modes' \
   || row G2 FAIL 'corpus difference, missing case or crash'
-AM_SEED=$R/build/seed-boot/r6m/seed-1.bin zsh $R/seed/amu-main/parity.sh $W/compile-corpus \
-  --compile $A > $W/compile-corpus.log 2>&1
+# COMPILE_FULL (2026-10-10): the image's `compile` is the product entry nbb.aarch64-cli's Kotoba `run` (nbb.cli
+# `run!`), whose artifact is the host's sealed :kotoba.kexe/v1. So the reference is `bin/amu compile` (the nbb route of
+# the same code, BOOTSTRAP-REFERENCE) and the comparison is the ARTIFACT: seed/tests/compile-cli/run.sh --image drives
+# the image with the host's command line; both accept -> seal, then the artifact and .provenance.edn key by key, then
+# the stdout answer as data; both refuse -> the same exit code. Until 2026-10-10 the image's compile was the seed
+# compiler, so this gate ran exports from both codes against stage-0 (seed/amu-main/parity.sh, BEHAVIOUR-SAME); that
+# comparison no longer applies to an artifact that must BE the host's. PASS iff every program is BOTH-ACCEPT with seal,
+# provenance and answer SAME, or BOTH-REFUSE with the same exit code (no HOST-ONLY, GUEST-ONLY or class difference).
+zsh $R/seed/tests/compile-cli/run.sh --image $A $W/compile-corpus > $W/compile-corpus.log 2>&1
 compile_rc=$?
-if [ $compile_rc = 0 ] && awk -F '\t' \
-     '($4 != "BEHAVIOUR-SAME" && $4 != "BOTH-REFUSE") {bad++} END {exit (NR != 391 || bad > 0)}' \
-     $W/compile-corpus/compile.tsv; then
-  row COMPILE_FULL PASS '391 corpus programs: compile refusal and exported behaviour agree with reference'
-else row COMPILE_FULL FAIL "compile/behaviour difference or missing export; $W/compile-corpus/summary.txt"; fi
+cc=$W/compile-corpus/result.tsv
+if [ $compile_rc = 0 ] && [ -s $cc ] && awk -F '\t' \
+     '!(($1 == "BOTH-ACCEPT" && $6 == "SAME" && $8 == "SAME" && $10 == "SAME") || $1 == "BOTH-REFUSE") {bad++} END {exit (bad > 0)}' $cc; then
+  row COMPILE_FULL PASS "$(wc -l < $cc | tr -d ' ') corpus programs: the image's artifact (seal, provenance, answer) or refusal class equals bin/amu's"
+else row COMPILE_FULL FAIL "$(cut -f1 $cc 2>/dev/null | sort | uniq -c | tr -s ' ' | tr '\n' ' ')against bin/amu; $cc"; fi
 zsh $R/seed/tests/checkfull/diff.sh $A $W/negative > $W/negative.log 2>&1
 if [ $? = 0 ] && [ -s $W/negative/result.tsv ] && ! grep -q '^DIFF' $W/negative/result.tsv; then
   row G3 PASS 'argument and refusal differential; declared gaps evaluated separately'
