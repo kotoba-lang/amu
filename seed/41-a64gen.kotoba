@@ -1,3 +1,127 @@
+;; Generic range-certified packed immutable tables on adopted readonly loop.
+;; Current-M existing fb-table certificate owns both immutable 128-i64 halves.
+(defn- pt-value [M :vector-i64 a :i64 b :i64 k :i64] :i64
+ (if (< k 128) (lw-ix-tabv M a k) (lw-ix-tabv M b (- k 128))))
+(defn- pt-width [M :vector-i64 a :i64 b :i64 k :i64 w :i64] :i64
+ (if (= k 256) w
+  (let [v (pt-value M a b k)]
+   (if (or (< v 0) (> v 4294967295)) 0
+    (pt-width M a b (inc k) (if (> v 255) 4 w))))))
+(defn- pt-data [M :vector-i64 a :i64 b :i64 width :i64 base :i64 k :i64] :vector-i64
+ (if (= k 256) M
+  (let [v (pt-value M a b k)]
+   (do (dotimes [j width]
+    (gn-put M (+ MM-LITB-BASE (+ base (+ (* k width) j)))
+     (bit-and (u64-shift-right v (* j 8)) 255)))
+    (pt-data M a b width base (inc k))))))
+;; Only called after whole owner admission; no append on unsupported values/caps.
+;; Return literal0 refusal; caller stores (lit,width) in independent owner memo,
+;; reuses it for all lanes, and rolls LIT/LITB/CODE/FIX counts back on MM-ERR.
+(defn- pt-pack [M :vector-i64 child :i64] :i64
+ (if (not (fb-table M child)) 0
+  (let [p (gn-fnf M child FF-SIR) a (gn-sir M (+ p 8) IF-B)
+   b (gn-sir M (+ p 14) IF-B) w (pt-width M a b 0 1)
+   lit (vector-at M MM-LIT-N) base (vector-at M MM-LITB-N)]
+   (if (or (= w 0) (<= lit 0) (>= lit MM-LIT-CAP)
+    (< base 0) (> base (- MM-LITB-CAP (* w 256)))) 0
+    (let [r (+ MM-LIT-BASE (* lit MM-LIT-W))]
+     (do (-> M (pt-data a b w base 0)
+       (gn-put (+ r LF-B) base) (gn-put (+ r LF-LEN) (* w 256))
+       (gn-put (+ r LF-TOK) 0) (gn-put (+ r LF-POOL) 0)
+       (gn-put MM-LIT-N (inc lit)) (gn-put MM-LITB-N (+ base (* w 256))))
+      lit))))))
+;; LDRB Wdest / LDR Wdest zero-extends into Xdest: no sign extension.
+;; Address base + byte-index << (0 or2), no split branch/index adjustment.
+(defn- pt-load [M :vector-i64 lit :i64 width :i64] :vector-i64
+ (-> M (gn-emit (enc-ldr 17 7 CTX-CODE-BASE))
+  (gn-emit (gn-e-addsl 17 17 5 (if (= width 1) 0 2)))
+  (gn-fix FX-LIT32 lit) (gn-emit (enc-movz 4 0 0)) (gn-emit (enc-movk 4 0 1))
+  (gn-emit (+ (if (= width 1) 0x38606800 0xb8606800)
+   (+ (i64-shift-left 4 16) (+ (i64-shift-left 17 5) 4))))))
+(defn- pt-find [S :vector-i64 child :i64 n :i64 k :i64] :i64
+ (if (= k n) -1
+  (if (= (vector-at S (* k 3)) child) k (pt-find S child n (inc k)))))
+(defn- pt-memo [M :vector-i64 S :vector-i64 fp :i64 k :i64] :bool
+ (if (= k 8) true
+  (let [child (gn-sir M (+ (+ (+ fp 11) (* (bit-and k 3) 15)) (* (quot k 4) 6)) IF-A)
+   prev (pt-find S child k 0) at (* k 3)]
+   (if (>= prev 0)
+    (do (-> S (vector-assoc! at child)
+     (vector-assoc! (inc at) (vector-at S (inc (* prev 3))))
+     (vector-assoc! (+ at 2) (vector-at S (+ (* prev 3) 2))))
+     (pt-memo M S fp (inc k)))
+    (let [lit (pt-pack M child)]
+     (if (= lit 0) false
+      (do (-> S (vector-assoc! at child) (vector-assoc! (inc at) lit)
+       (vector-assoc! (+ at 2) (quot (gn-litf M lit LF-LEN) 256)))
+       (pt-memo M S fp (inc k)))))))))
+(defn- pt-lane [M :vector-i64 S :vector-i64 k :i64 r :i64 shift :i64] :vector-i64
+ (-> M (gn-emit (gn-e-bf 0xd3400000 5 r shift (+ shift 7)))
+  (pt-load (vector-at S (inc (* k 3))) (vector-at S (+ (* k 3) 2)))
+  (gn-emit (enc-eor-r 6 6 4))))
+(defn- pt-word [M :vector-i64 S :vector-i64 fp :i64 family :i64 out :i64 lane :i64] :vector-i64
+ (if (= lane 4) (gn-mov M out 6)
+  (let [idx (bit-and (+ out (if (= family 0) lane (- 4 lane))) 3)
+   child (gn-sir M (+ (+ (+ fp 11) (* lane 15)) (* family 6)) IF-A)]
+   (pt-word (pt-lane M S (+ (* family 4) lane) (+ 9 idx) (* lane 8)) S fp family out (inc lane)))))
+(defn- pt-four [M :vector-i64 S :vector-i64 fp :i64 family :i64 k :i64] :vector-i64
+ (if (= k 4) M
+  (pt-four (-> M (gn-emit (enc-ldr 6 13 (* k 8))) (pt-word S fp family k 0)) S fp family (inc k))))
+(defn- pt-loop [M :vector-i64 S :vector-i64 fp :i64 family :i64] :vector-i64
+ (let [head (vector-at M MM-CODE-N)
+  m0 (-> M (pt-four S fp family 0) (gn-mov 9 0) (gn-mov 10 1) (gn-mov 11 2) (gn-mov 12 3)
+   (gn-emit (enc-sub-i 8 8 25)) (gn-emit (enc-add-i 14 14 1))
+   (gn-emit (enc-add-i 13 13 32)) (gn-emit (enc-cmp-i 14 14)))
+  back (vector-at m0 MM-CODE-N)]
+  (gn-emit m0 (enc-bcond (enc-cond-ne) (- head back)))))
+(defn- pt-emit [M :vector-i64 S :vector-i64 i :i64] :vector-i64
+ (let [p (dec i) fp (gn-fnf M (gn-sir M (+ p 72) IF-A) FF-SIR)
+  m0 (-> M (gn-mov 14 (gn-sreg M 3)) (gn-emit (enc-cmp-i 14 1)))
+  first (vector-at m0 MM-CODE-N) m1 (-> m0 (gn-emit (enc-bcond (enc-cond-lo) 0))
+   (gn-emit (enc-cmp-i 14 14))) terminal (vector-at m1 MM-CODE-N)
+  m2 (-> m1 (gn-emit (enc-bcond (enc-cond-hs) 0))
+   (gn-emit (enc-ldr 16 7 312)) (gn-emit (enc-ldr 16 16 0))
+   (gn-emit (enc-sub-i 17 (gn-sreg M 1) 1)) (gn-emit (enc-cmp-r 17 16)))
+  badhandle (vector-at m2 MM-CODE-N)
+  m3 (-> m2 (gn-emit (enc-bcond (enc-cond-hs) 0))
+   (gn-emit (enc-ldr 4 7 320)) (gn-emit (gn-e-addsl 4 4 17 4)) (gn-emit (enc-ldp 17 4 4 0))
+   (gn-mov-imm 5 0) (gn-emit (enc-cmp-i (gn-sreg M 2) 0)))
+  baseselect (vector-at m3 MM-CODE-N) m4 (-> m3 (gn-emit (enc-bcond (enc-cond-eq) 2)) (gn-mov-imm 5 60))
+  m5 (-> m4 (gn-emit (enc-add-i 16 5 55)) (gn-emit (enc-cmp-r 16 4)))
+  badrange (vector-at m5 MM-CODE-N) m6 (-> m5 (gn-emit (enc-bcond (enc-cond-hs) 0))
+   (gn-emit (enc-ldr 13 7 328)) (gn-emit (gn-e-addsl 13 13 17 3))
+   (gn-emit (gn-e-addsl 5 5 14 2)) (gn-emit (gn-e-addsl 13 13 5 3))
+   (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-mov-imm 6 14) (gn-emit (enc-sub-r 6 6 14))
+   (gn-mov-imm 16 25) (gn-emit (enc-mul 6 6 16)) (gn-emit (enc-cmp-r 8 6)))
+  badfuel (vector-at m6 MM-CODE-N) m7 (-> m6 (gn-emit (enc-bcond (enc-cond-lo) 0))
+   (gn-mov 9 (gn-sreg M 4)) (gn-mov 10 (gn-sreg M 5))
+   (gn-mov 11 (gn-sreg M 6)) (gn-mov 12 (gn-sreg M 7))
+   (gn-emit (enc-cmp-i (gn-sreg M 2) 0)))
+  family (vector-at m7 MM-CODE-N) m8 (-> m7 (gn-emit (enc-bcond (enc-cond-ne) 0)) (pt-loop S fp 0))
+  join (vector-at m8 MM-CODE-N) m9 (gn-emit m8 (enc-b 0)) second (vector-at m9 MM-CODE-N)
+  m10 (pt-loop m9 S fp 1) publish (vector-at m10 MM-CODE-N)
+  m11 (-> m10 (gn-emit (enc-str 8 7 CTX-FUEL))
+   (gn-mov (gn-sreg M 3) 14) (gn-mov (gn-sreg M 4) 9) (gn-mov (gn-sreg M 5) 10)
+   (gn-mov (gn-sreg M 6) 11) (gn-mov (gn-sreg M 7) 12)) fallback (vector-at m11 MM-CODE-N)]
+  (-> m11 (gn-dot-patch first fallback (enc-cond-lo)) (gn-dot-patch terminal fallback (enc-cond-hs))
+   (gn-dot-patch badhandle fallback (enc-cond-hs)) (gn-dot-patch badrange fallback (enc-cond-hs))
+   (gn-dot-patch badfuel fallback (enc-cond-lo)) (gn-dot-patch family second (enc-cond-ne))
+   (gn-put (+ MM-CODE-BASE join) (enc-b (- publish join))))))
+(defn- pt-entry [M :vector-i64 i :i64] :vector-i64
+ (if (not (rl-admit M i)) M
+  (let [ln (vector-at M MM-LIT-N) lb (vector-at M MM-LITB-N)
+   cn (vector-at M MM-CODE-N) fn (vector-at M MM-FIX-N)]
+   (if (or (<= ln 0) (> ln (- MM-LIT-CAP 8))
+    (< lb 0) (> lb (- MM-LITB-CAP 8192))) (rl-emit M i)
+    (let [S (vector-alloc 24) fp (gn-fnf M (gn-sir M (+ (dec i) 72) IF-A) FF-SIR)
+     ready (pt-memo M S fp 0)]
+     (if (not ready)
+      (rl-emit (-> M (gn-put MM-LIT-N ln) (gn-put MM-LITB-N lb)) i)
+      (let [m1 (pt-emit M S i)]
+       (if (= (vector-at m1 MM-ERR) 0) m1
+        (-> m1 (gn-put MM-CODE-N cn) (gn-put MM-FIX-N fn)
+         (gn-put MM-LIT-N ln) (gn-put MM-LITB-N lb))))))))))
+
 ;; Generic bounded read-only vector/four-table scalar recurrence segment.
 ;; Terminal continuation and original frame remain unchanged.
 (defn- rl-row [M :vector-i64 p :i64 f :i64 k :i64] :bool
@@ -423,7 +547,7 @@
    (gn-dot-patch badfuel fallback (enc-cond-lo)) (gn-dot-patch family second (enc-cond-ne))
    (gn-put (+ MM-CODE-BASE join) (enc-b (- publish join))))))
 (defn- rl-entry [M :vector-i64 i :i64] :vector-i64
- (if (rl-admit M i) (rl-emit M i) M))
+ (pt-entry M i))
 
 ;; Generic charged selector over two closed immutable split tables.
 (defn- fb-table [M :vector-i64 f :i64] :bool
