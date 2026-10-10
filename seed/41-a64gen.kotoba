@@ -2026,23 +2026,25 @@
  (let [code (vector-at M MM-CODE-N) fix (vector-at M MM-FIX-N)
        k (gn-sir M (+ p 4) IF-B) a (gn-sir M (+ p 8) IF-B)
        b (gn-sir M (+ p 14) IF-B) nb (gn-sir M (+ p 14) IF-C)
+       safe (sb-range M i f t p)
        m0 (di-save M 0 0)
        m1 (-> m0 (cond-> (not (tp-prefix-safe M t 0)) (gn-save 0 t)) (gn-into 0 t) (gn-ctx)
                  (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-mask-charge)
                  (gn-emit (enc-cmp-i 0 k)))
        select (vector-at m1 MM-CODE-N)
        m2 (gn-emit m1 (enc-bcond (enc-cond-ge) 0))
-       left (vector-at m2 MM-CODE-N) m3 (ta-tab0 m2 a k)
+       left (vector-at m2 MM-CODE-N) m3 (if safe (sb-tab0 m2 a) (ta-tab0 m2 a k))
        join (vector-at m3 MM-CODE-N) m4 (gn-emit m3 (enc-b 0))
        right (vector-at m4 MM-CODE-N)
-       m5 (-> m4 (gn-emit (enc-sub-i 0 0 k)) (ta-tab0 b nb))
+       m5 (let [m (gn-emit m4 (enc-sub-i 0 0 k))]
+            (if safe (sb-tab0 m b) (ta-tab0 m b nb)))
        done (vector-at m5 MM-CODE-N)
        m6 (-> m5 (gn-put (+ MM-CODE-BASE select) (enc-bcond (enc-cond-ge) (- right select)))
                  (gn-put (+ MM-CODE-BASE join) (enc-b (- done join)))
                  (gn-emit (enc-str 8 7 CTX-FUEL)))
        words (- (vector-at m6 MM-CODE-N) code)]
   (cond (not= (vector-at m6 MM-ERR) 0) m6
-        (and (= (- join left) 8) (= (- done right) 9)
+        (and (= (- join left) (if safe 5 8)) (= (- done right) (if safe 6 9))
              (> words 0) (<= words 64) (<= (+ (gn-g m6 di-used) words) 4096)
              (= (vector-at m6 MM-FIX-N) (+ fix 2)))
          (-> m6 (gn-vclear) (gn-gs gn-f-ctx 1) (gn-take i t 0)
@@ -2135,6 +2137,27 @@
                         (let [r (gn-sreg M slot)] (or (< r 0) (and (>= r 19) (<= r 28)))))
                    :else false)
              (sx-prefix-safe M t (inc k))))))
+;; Pure callee certificate factored from sx-admit; independent of caller height.
+(defn- sx-body? [M :vector-i64 f :i64 p :i64] :bool
+ (if (or (<= f 0) (>= f MM-FN-CAP) (>= f (vector-at M MM-FN-N))
+         (> (vector-at M MM-FN-N) MM-FN-CAP) (gn-clamp-open M f)
+         (> (vector-at M MM-SIR-N) MM-SIR-CAP) (not= p (gn-fnf M f FF-SIR))) false
+  (let [fuel (gn-fnf M f FF-FUEL)]
+   (if (or (<= p 0) (>= p (- MM-SIR-CAP 9)) (>= (+ p 9) (vector-at M MM-SIR-N))
+           (< fuel 0) (> fuel 1)) false
+    (let [q (+ p 1 fuel) mask (gn-sir M (+ q 4) IF-B)]
+     (and (= (gn-fnf M f FF-NPARAMS) 2) (= (gn-fnf M f FF-NSLOTS) 2)
+          (= (gn-fnf M f FF-DEPTH) 2) (= (gn-fnf M f FF-RTYPE) TY-I64)
+          (= (gn-fnf M f FF-PT0) TY-I64) (= (gn-fnf M f (inc FF-PT0)) TY-I64)
+          (uc-row M p OP-FN f 2 2)
+          (or (= fuel 0) (uc-row M (inc p) OP-FUEL 0 0 0)) (aw-label M q)
+          (uc-row M (+ q 1) OP-LGET 0 1 0) (uc-row M (+ q 2) OP-LGET 1 2 0)
+          (uc-row M (+ q 3) OP-BIN BOP-USHR 0 0)
+          (uc-row M (+ q 4) OP-CONST 1 mask 0)
+          (uc-row M (+ q 5) OP-BIN BOP-AND 0 0)
+          (uc-row M (+ q 6) OP-RET 0 0 0) (uc-row M (+ q 7) OP-END f 0 0)
+          (> (sx-width mask) 0)))))))
+
 (defn- sx-admit [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :i64
  (if (or (not= n 2) (not= (gn-g M gn-f-leaf) 0) (not= (gn-g M gn-f-freg) 0)
          (not= (gn-g M gn-f-vmode) 0) (<= (gn-g M gn-f-fb) 0)
@@ -2149,21 +2172,8 @@
          (not (uc-row M i OP-CALL f t 2)) (= (gn-op M (inc i)) OP-RES2)
          (>= (gn-g M di-sites) 256) (>= (gn-g M di-used) 4096)
          (not (di-args-safe M t 2))) 0
-  (let [p (gn-fnf M f FF-SIR) fuel (gn-fnf M f FF-FUEL)]
-   (if (or (<= p 0) (>= p (- MM-SIR-CAP 9)) (>= (+ p 9) (vector-at M MM-SIR-N))
-           (< fuel 0) (> fuel 1)) 0
-    (let [q (+ p 1 fuel) mask (gn-sir M (+ q 4) IF-B)]
-     (if (and (= (gn-fnf M f FF-NPARAMS) 2) (= (gn-fnf M f FF-NSLOTS) 2)
-          (= (gn-fnf M f FF-DEPTH) 2) (= (gn-fnf M f FF-RTYPE) TY-I64)
-          (= (gn-fnf M f FF-PT0) TY-I64) (= (gn-fnf M f (inc FF-PT0)) TY-I64)
-          (uc-row M p OP-FN f 2 2)
-          (or (= fuel 0) (uc-row M (inc p) OP-FUEL 0 0 0)) (aw-label M q)
-          (uc-row M (+ q 1) OP-LGET 0 1 0) (uc-row M (+ q 2) OP-LGET 1 2 0)
-          (uc-row M (+ q 3) OP-BIN BOP-USHR 0 0)
-          (uc-row M (+ q 4) OP-CONST 1 mask 0)
-          (uc-row M (+ q 5) OP-BIN BOP-AND 0 0)
-          (uc-row M (+ q 6) OP-RET 0 0 0) (uc-row M (+ q 7) OP-END f 0 0)
-          (> (sx-width mask) 0)) p 0))))))
+  (let [p (gn-fnf M f FF-SIR)]
+   (if (sx-body? M f p) p 0))))
 (defn- sx-call [M :vector-i64 i :i64 f :i64 t :i64 p :i64] :vector-i64
  (let [code (vector-at M MM-CODE-N) fix (vector-at M MM-FIX-N)
        fuel (gn-fnf M f FF-FUEL) q (+ p 1 fuel)
@@ -2183,6 +2193,47 @@
                 (gn-gs di-sites (inc (gn-g m4 di-sites))))
         :else (-> m4 (gn-gs fr-bad 1) (di-restore 0 0) (gn-put MM-CODE-N code)
                      (gn-put MM-FIX-N fix) (gn-call-generic i f t 2)))))
+
+;; Recomputed immediate def/use certificate, never a descriptor memo.
+(defn- sb-owner-walk [M :vector-i64 j :i64 stop :i64 work :i64] :bool
+ (cond (= j stop) true
+       (or (<= work 0) (> j stop) (>= j MM-SIR-CAP) (>= j (vector-at M MM-SIR-N))) false
+       (or (= (gn-op M j) OP-FN) (= (gn-op M j) OP-END)) false
+       :else (sb-owner-walk M (inc j) stop (dec work))))
+(defn- sb-owner [M :vector-i64 i :i64] :bool
+ (let [f (gn-g M fr-owner)]
+  (if (or (<= f 0) (>= f MM-FN-CAP) (>= f (vector-at M MM-FN-N))
+          (> (vector-at M MM-FN-N) MM-FN-CAP)
+          (> (vector-at M MM-SIR-N) MM-SIR-CAP)) false
+   (let [p (gn-fnf M f FF-SIR) np (gn-fnf M f FF-NPARAMS) ns (gn-fnf M f FF-NSLOTS)]
+    (and (> p 0) (< p i) (< i (vector-at M MM-SIR-N)) (< i MM-SIR-CAP)
+         (>= np 0) (<= np 16) (>= ns np) (< ns gn-cap)
+         (= ns (gn-g M gn-f-ns)) (uc-row M p OP-FN f np ns)
+         (sb-owner-walk M (inc p) i 512))))))
+(defn- sb-range [M :vector-i64 i :i64 f :i64 t :i64 p :i64] :bool
+ (if (or (<= i 1) (>= i (vector-at M MM-SIR-N)) (>= i MM-SIR-CAP)
+         (<= f 0) (>= f MM-FN-CAP) (>= f (vector-at M MM-FN-N))
+         (<= p 0) (>= p (- MM-SIR-CAP 17)) (>= (+ p 17) (vector-at M MM-SIR-N))
+         (not= p (gn-fnf M f FF-SIR))
+         (not (sb-owner M i)) (not (uc-row M i OP-CALL f t 1))
+         (not= (gn-op M (dec i)) OP-CALL)
+         (not= (gn-sir M (dec i) IF-B) t) (not= (gn-sir M (dec i) IF-C) 2)) false
+  (let [g (gn-sir M (dec i) IF-A)]
+   (if (or (<= g 0) (>= g MM-FN-CAP) (>= g (vector-at M MM-FN-N))
+           (not (ta-shape? M p f))) false
+    (let [pg (gn-fnf M g FF-SIR)]
+     (if (not (sx-body? M g pg)) false
+      (let [q (+ pg 1 (gn-fnf M g FF-FUEL)) mask (gn-sir M (+ q 4) IF-B)
+            k (gn-sir M (+ p 4) IF-B) nb (gn-sir M (+ p 14) IF-C)]
+       (and (> mask 0) (> k 0) (< k 4096) (> nb 0) (< nb 4096)
+            (< mask (+ k nb))))))))))
+;; Caller certificate proves both selected unsigned index tests tautologies.
+;; Keep the exact original literal FIX/address/load sequence and fuel outside.
+(defn- sb-tab0 [M :vector-i64 lit :i64] :vector-i64
+ (-> M (gn-emit (enc-ldr 17 7 CTX-CODE-BASE))
+       (gn-emit (gn-e-addsl 17 17 0 3)) (gn-fix FX-LIT32 lit)
+       (gn-emit (enc-movz 16 0 0)) (gn-emit (enc-movk 16 0 1))
+       (gn-emit (gn-e-ldrr 0 17 16 0))))
 
 (defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
   (let [w (gn-call-wrapper M i f t n) q (if (= (gn-g M gn-f-leaf) 2) 0 (gn-clamp M i f n)) mask (if (= (gn-g M gn-f-leaf) 2) 0 (gn-scalar-mask M i f n)) reader (if (= (gn-g M gn-f-leaf) 2) 0 (gn-affine-reader M i f n)) dag (di-admit M i f t n) collapsed (tc-admit M i f t n) table (ta-admit M i f t n) associative (aw-admit M i f t n) extractor (sx-admit M i f t n)]
