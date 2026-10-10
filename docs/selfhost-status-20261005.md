@@ -205,4 +205,5 @@ Embench line above), L3 PASS (6 runs, 0 exec/spawn), L4 PASS.
 
 **Open (owner decisions)**: (1) policies over 32 grants trap in both product entries (kir.admission's document-typed
 reading, osaho; or the document container bound); (2) crc32 / matmult-int exceed the loader's 64 Mi pair ceiling on the
-Kotoba compile route; (3) G2/G3/CHECK_FULL still reference stage-0's check texts, not bin/amu's.
+Kotoba compile route (cause and upstream fix measured in docs/selfhost-compile-pairs-20261010.md:
+kotoba-mir key-Form lookups + kotoba-native copied vreg tables; with both, 46.5 M pairs and SAME artifacts); (3) G2/G3/CHECK_FULL still reference stage-0's check texts, not bin/amu's.
