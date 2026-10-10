@@ -1,3 +1,185 @@
+;; Closed read-only affine product-subtract recurrences. Historical rows are templates only.
+(defn- up-low-row [M :vector-i64 p :i64 f :i64 reader :i64 stride :i64 k :i64] :bool
+ (let [head (gn-sir M (+ p 2) IF-A) body (gn-sir M (+ p 6) IF-B) end (gn-sir M (+ p 8) IF-A)]
+  (case k
+   0 (gn-dot-at? M (+ p 0) 1 f 5 5)
+   1 (gn-dot-at? M (+ p 1) 18 0 0 0)
+   2 (gn-dot-at? M (+ p 2) 9 head 0 0)
+   3 (gn-dot-at? M (+ p 3) 4 0 4 0)
+   4 (gn-dot-at? M (+ p 4) 4 1 3 0)
+   5 (gn-dot-at? M (+ p 5) 7 1 0 0)
+   6 (gn-dot-at? M (+ p 6) 11 0 body 0)
+   7 (gn-dot-at? M (+ p 7) 4 0 5 0)
+   8 (gn-dot-at? M (+ p 8) 10 end 0 0)
+   9 (gn-dot-at? M (+ p 9) 9 body 0 0)
+   10 (gn-dot-at? M (+ p 10) 4 0 1 0)
+   11 (gn-dot-at? M (+ p 11) 4 1 2 0)
+   12 (gn-dot-at? M (+ p 12) 4 2 3 0)
+   13 (gn-dot-at? M (+ p 13) 4 3 4 0)
+   14 (gn-dot-at? M (+ p 14) 3 4 1 0)
+   15 (gn-dot-at? M (+ p 15) 6 1 3 0)
+   16 (gn-dot-at? M (+ p 16) 4 4 5 0)
+   17 (gn-dot-at? M (+ p 17) 4 5 1 0)
+   18 (gn-dot-at? M (+ p 18) 4 6 2 0)
+   19 (gn-dot-at? M (+ p 19) 4 7 4 0)
+   20 (gn-dot-at? M (+ p 20) 13 reader 5 3)
+   21 (gn-dot-at? M (+ p 21) 4 6 1 0)
+   22 (gn-dot-at? M (+ p 22) 4 7 4 0)
+   23 (gn-dot-at? M (+ p 23) 4 8 3 0)
+   24 (gn-dot-at? M (+ p 24) 13 reader 6 3)
+   25 (gn-dot-at? M (+ p 25) 6 3 5 0)
+   26 (gn-dot-at? M (+ p 26) 6 2 4 0)
+   27 (gn-dot-at? M (+ p 27) 5 1 0 0)
+   28 (gn-dot-at? M (+ p 28) 5 2 1 0)
+   29 (gn-dot-at? M (+ p 29) 5 3 2 0)
+   30 (gn-dot-at? M (+ p 30) 5 4 3 0)
+   31 (gn-dot-at? M (+ p 31) 5 5 4 0)
+   32 (gn-dot-at? M (+ p 32) 18 0 0 0)
+   33 (gn-dot-at? M (+ p 33) 10 head 0 0)
+   34 (gn-dot-at? M (+ p 34) 9 end 0 0)
+   35 (gn-dot-at? M (+ p 35) 19 0 0 0)
+   36 (gn-dot-at? M (+ p 36) 2 f 0 0)
+   false)))
+(defn- up-high-row [M :vector-i64 p :i64 f :i64 reader :i64 stride :i64 k :i64] :bool
+ (let [head (gn-sir M (+ p 2) IF-A) body (gn-sir M (+ p 6) IF-B) end (gn-sir M (+ p 8) IF-A)]
+  (case k
+   0 (gn-dot-at? M (+ p 0) 1 f 5 5)
+   1 (gn-dot-at? M (+ p 1) 18 0 0 0)
+   2 (gn-dot-at? M (+ p 2) 9 head 0 0)
+   3 (gn-dot-at? M (+ p 3) 4 0 4 0)
+   4 (gn-dot-at? M (+ p 4) 4 1 2 0)
+   5 (gn-dot-at? M (+ p 5) 7 3 0 0)
+   6 (gn-dot-at? M (+ p 6) 11 0 body 0)
+   7 (gn-dot-at? M (+ p 7) 4 0 5 0)
+   8 (gn-dot-at? M (+ p 8) 10 end 0 0)
+   9 (gn-dot-at? M (+ p 9) 9 body 0 0)
+   10 (gn-dot-at? M (+ p 10) 4 0 1 0)
+   11 (gn-dot-at? M (+ p 11) 4 1 2 0)
+   12 (gn-dot-at? M (+ p 12) 4 2 3 0)
+   13 (gn-dot-at? M (+ p 13) 4 3 4 0)
+   14 (gn-dot-at? M (+ p 14) 3 4 1 0)
+   15 (gn-dot-at? M (+ p 15) 6 1 3 0)
+   16 (gn-dot-at? M (+ p 16) 4 4 5 0)
+   17 (gn-dot-at? M (+ p 17) 4 5 1 0)
+   18 (gn-dot-at? M (+ p 18) 4 6 2 0)
+   19 (gn-dot-at? M (+ p 19) 3 7 1 0)
+   20 (gn-dot-at? M (+ p 20) 6 1 6 0)
+   21 (gn-dot-at? M (+ p 21) 4 7 4 0)
+   22 (gn-dot-at? M (+ p 22) 13 reader 5 3)
+   23 (gn-dot-at? M (+ p 23) 4 6 1 0)
+   24 (gn-dot-at? M (+ p 24) 4 7 4 0)
+   25 (gn-dot-at? M (+ p 25) 4 8 3 0)
+   26 (gn-dot-at? M (+ p 26) 13 reader 6 3)
+   27 (gn-dot-at? M (+ p 27) 6 3 5 0)
+   28 (gn-dot-at? M (+ p 28) 6 2 4 0)
+   29 (gn-dot-at? M (+ p 29) 5 1 0 0)
+   30 (gn-dot-at? M (+ p 30) 5 2 1 0)
+   31 (gn-dot-at? M (+ p 31) 5 3 2 0)
+   32 (gn-dot-at? M (+ p 32) 5 4 3 0)
+   33 (gn-dot-at? M (+ p 33) 5 5 4 0)
+   34 (gn-dot-at? M (+ p 34) 18 0 0 0)
+   35 (gn-dot-at? M (+ p 35) 10 head 0 0)
+   36 (gn-dot-at? M (+ p 36) 9 end 0 0)
+   37 (gn-dot-at? M (+ p 37) 19 0 0 0)
+   38 (gn-dot-at? M (+ p 38) 2 f 0 0)
+   false)))
+(defn- up-rows [M :vector-i64 p :i64 f :i64 reader :i64 stride :i64 upper :bool k :i64] :bool
+ (if (= k (if upper 39 37)) true
+  (and (if upper (up-high-row M p f reader stride k) (up-low-row M p f reader stride k))
+   (up-rows M p f reader stride upper (inc k)))))
+(defn- up-reader-row [M :vector-i64 p :i64 f :i64 stride :i64 k :i64] :bool
+ (let [head (gn-sir M (+ p 2) IF-A)]
+  (case k
+   0 (gn-dot-at? M p 1 f 3 3)
+   1 (gn-dot-at? M (+ p 1) 18 0 0 0)
+   2 (gn-dot-at? M (+ p 2) 9 head 0 0)
+   3 (gn-dot-at? M (+ p 3) 4 0 1 0)
+   4 (gn-dot-at? M (+ p 4) 4 1 2 0)
+   5 (gn-dot-at? M (+ p 5) 3 2 stride 0)
+   6 (gn-dot-at? M (+ p 6) 6 3 1 0)
+   7 (gn-dot-at? M (+ p 7) 4 2 3 0)
+   8 (gn-dot-at? M (+ p 8) 6 1 1 0)
+   9 (gn-dot-at? M (+ p 9) 14 176 0 2)
+   10 (gn-dot-at? M (+ p 10) 19 0 0 0)
+   11 (gn-dot-at? M (+ p 11) 2 f 0 0)
+   false)))
+(defn- up-reader-rows [M :vector-i64 p :i64 f :i64 stride :i64 k :i64] :bool
+ (if (= k 12) true (and (up-reader-row M p f stride k) (up-reader-rows M p f stride (inc k)))))
+(defn- up-reader [M :vector-i64 f :i64] :i64
+ (if (not (ir-bound M f 12 3 3 3)) 0
+  (let [p (gn-fnf M f FF-SIR) stride (gn-sir M (+ (gn-fnf M f FF-SIR) 5) IF-B)]
+   (if (and (= (gn-fnf M f FF-RTYPE) TY-I64) (= (gn-fnf M f FF-PT0) TY-VEC)
+    (qb-int-params M f 1 3) (> stride 0) (<= stride 4095)
+    (up-reader-rows M p f stride 0) (qb-labels M p 12 0)) stride 0))))
+(defn- up-distinct [M :vector-i64 k :i64 j :i64] :bool
+ (if (= j k) true (and (not= (gn-sreg M k) (gn-sreg M j)) (up-distinct M k (inc j)))))
+(defn- up-homes [M :vector-i64 k :i64] :bool
+ (if (= k 6) true (and (>= (gn-sreg M k) 19) (<= (gn-sreg M k) 28)
+  (up-distinct M k 1) (up-homes M (inc k)))))
+(defn- up-shape [M :vector-i64 p :i64 f :i64 upper :bool] :i64
+ (if (not (ir-bound M f (if upper 39 37) 5 5 9)) 0
+  (let [reader (gn-sir M (+ p (if upper 22 20)) IF-A) stride (up-reader M reader)]
+   (if (and (> stride 0) (= (gn-fnf M f FF-SIR) p)
+    (= (gn-fnf M f FF-RTYPE) TY-I64) (= (gn-fnf M f FF-PT0) TY-VEC)
+    (qb-int-params M f 1 5) (up-rows M p f reader stride upper 0)
+    (qb-labels M p (if upper 39 37) 0)) stride 0))))
+(defn- up-admit [M :vector-i64 i :i64 upper :bool] :i64
+ (if (or (<= i 1) (> i (- MM-SIR-CAP 38))
+         (> i (- (vector-at M MM-SIR-N) 38)) (not= (gn-op M (dec i)) OP-FN)) 0
+  (let [p (dec i) f (gn-sir M p IF-A)]
+   (if (and (= (gn-g M gn-f-ns) 5) (= (gn-g M gn-f-dp) 9)
+    (= (gn-g M gn-f-leaf) 0) (= (gn-g M gn-f-freg) 0) (= (gn-g M gn-f-vmode) 0)
+    (= (gn-g M gn-f-ctx) 1) (= (gn-g M gn-f-h) 0) (= (gn-g M gn-f-skip) 0)
+    (= (gn-g M gn-f-dead) 0) (= (gn-g M gn-f-nsv) 5) (= (gn-g M gn-f-out) 0)
+    (>= (gn-g M gn-f-fb) 0) (<= (gn-g M gn-f-fb) 32768)
+    (>= (vector-at M MM-CODE-N) 0) (<= (vector-at M MM-CODE-N) (- MM-CODE-CAP 128))
+    (up-homes M 1)) (up-shape M p f upper) 0))))
+;; Guard misses retain original homes/CTX. Success keeps the three individual
+;; debits, restores k=end/sum, then executes the original terminal head/return.
+;; Full ranges prove no read trap; shared intermediate publication is deferred
+;; only for this synchronous pure nontrapping region. Original entry is paid.
+(defn- up-emit [M :vector-i64 stride :i64 upper :bool] :vector-i64
+ (let [cn (vector-at M MM-CODE-N) fx (vector-at M MM-FIX-N)
+  rv (gn-sreg M 1) rh (gn-sreg M 2) ch (gn-sreg M 3)
+  kh (gn-sreg M 4) sh (gn-sreg M 5) G (vector-alloc 49)
+  m0 (-> M (gn-mov-imm 16 2147483648) (gm-limit G rh) (gm-limit G ch) (gm-limit G kh)
+   (gn-mov 14 (if upper rh ch)))
+  m1 (if upper (-> m0 (gn-emit (enc-add-i 14 14 1)) (gm-limit G 14)) m0)
+  m2 (-> m1 (gn-emit (enc-cmp-r kh 14)) (gm-cold G (enc-cond-hs))
+   (gn-mov 15 rh))
+  m3 (if upper (gn-emit m2 (enc-add-i 15 15 1)) m2)
+  m4 (-> m3 (gn-emit (enc-ldr 16 7 312)) (gn-emit (enc-ldr 16 16 0))
+   (gn-emit (enc-sub-i 17 rv 1)) (gn-emit (enc-cmp-r 17 16)) (gm-cold G (enc-cond-hs))
+   (gn-emit (enc-ldr 16 7 320)) (gn-emit (gn-e-addsl 16 16 17 4))
+   (gn-emit (enc-ldp 5 6 16 0)) (gn-mov-imm 13 stride)
+   (gn-emit (enc-mul 16 15 13)) (gn-emit (enc-add-r 16 16 14))
+   (gn-emit (enc-sub-i 16 16 1)) (gn-emit (enc-cmp-r 16 6)) (gm-cold G (enc-cond-hs))
+   (gn-emit (enc-sub-i 16 14 1)) (gn-emit (enc-mul 16 16 13))
+   (gn-emit (enc-add-r 16 16 ch)) (gn-emit (enc-cmp-r 16 6)) (gm-cold G (enc-cond-hs))
+   (gn-emit (enc-sub-r 12 14 kh)) (gn-emit (enc-add-r 16 12 12))
+   (gn-emit (enc-add-r 16 16 12)) (gn-emit (enc-ldr 8 7 CTX-FUEL))
+   (gn-emit (enc-cmp-r 8 16)) (gm-cold G (enc-cond-lo))
+   (gn-emit (enc-ldr 6 7 328)) (gn-emit (gn-e-addsl 6 6 5 3))
+   (gn-emit (enc-mul 16 15 13)) (gn-emit (enc-add-r 16 16 kh))
+   (gn-emit (gn-e-addsl 9 6 16 3)) (gn-emit (enc-mul 16 kh 13))
+   (gn-emit (enc-add-r 16 16 ch)) (gn-emit (gn-e-addsl 10 6 16 3))
+   (gn-emit (gn-e-lsl 13 13 3)) (gn-mov 11 sh))
+  head (vector-at m4 MM-CODE-N)
+  m5 (-> m4 (gn-emit (enc-sub-i 8 8 1)) (gn-emit (enc-ldr 4 9 0))
+   (gn-emit (enc-sub-i 8 8 1)) (gn-emit (enc-ldr 5 10 0))
+   (gn-emit (enc-mul 4 4 5)) (gn-emit (enc-sub-r 11 11 4))
+   (gn-emit (enc-sub-i 8 8 1)) (gn-emit (enc-add-i 9 9 8))
+   (gn-emit (enc-add-r 10 10 13)) (gn-emit (enc-subs-i 12 12 1))) back (vector-at m5 MM-CODE-N)
+  m6 (-> m5 (gn-emit (enc-bcond (enc-cond-ne) (- head back)))
+   (gn-emit (enc-str 8 7 CTX-FUEL)) (gn-mov kh 14) (gn-mov sh 11))
+  end (vector-at m6 MM-CODE-N) m7 (gm-patch m6 G 0 end)]
+  (if (= (vector-at m7 MM-ERR) 0) m7
+   (-> m7 (gn-put MM-CODE-N cn) (gn-put MM-FIX-N fx)))))
+(defn- up-entry [M :vector-i64 i :i64] :vector-i64
+ (let [lower (up-admit M i false)]
+  (if (> lower 0) (up-emit M lower false)
+   (let [upper (up-admit M i true)] (if (> upper 0) (up-emit M upper true) M)))))
+
 ;; Exact generic stable two-run record merge, original terminal copy retained.
 (defn- gm-row [M :vector-i64 p :i64 f :i64 reader :i64 item :i64 copy :i64 k :i64] :bool
  (let [h (gn-sir M (+ p 2) IF-A) body (gn-sir M (+ p 11) IF-B)
@@ -6992,7 +7174,7 @@
         OP-VEC (gn-op-vec M i a b)
         OP-TAB (gn-op-tab M i a b c)
         OP-VECP (gn-op-vecp M i a b c)
-        OP-FUEL (gm-entry (gt-entry (rl-entry (ir-entry (tf-entry (rb-entry (qb-entry (cb-entry (mf-entry (fc-entry (sz-entry (drc-entry (pc3-entry (gn-copy-entry (gn-dot-entry (ds-entry (vc-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i)
+        OP-FUEL (up-entry (gm-entry (gt-entry (rl-entry (ir-entry (tf-entry (rb-entry (qb-entry (cb-entry (mf-entry (fc-entry (sz-entry (drc-entry (pc3-entry (gn-copy-entry (gn-dot-entry (ds-entry (vc-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i)
         OP-RET (gn-op-ret M a)
         OP-RET2 (gn-op-ret2 M a)       ; R5B
         OP-RES2 (gn-op-res2 M i a)     ; R5B
