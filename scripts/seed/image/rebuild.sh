@@ -37,20 +37,29 @@ while read nm p deps; do
 done < $I/scan/order.txt > $W/inputs/scan/order.txt
 find $W/inputs -type f -exec shasum -a 256 {} + | LC_ALL=C sort > $W/inputs.sha256
 K=$W/inputs/kotoba-lang
-for g in 1 2 3; do
+# The refactor library (2026-10-10): kotoba-lang's twins when the snapshot's lang/compat carries them, else amu's own
+# folded src/kotoba/compiler/refactor from the scan farm (LAUNCHER_REFACTOR_SRC).
+if [ -d $K/lang/compat/kotoba/compiler/refactor ]; then refactor_env="LAUNCHER_REFACTOR=$K"
+else refactor_env="LAUNCHER_REFACTOR_SRC=$W/inputs/scan/src"; fi
+echo "refactor library: $refactor_env"
+# Generation 0 (2026-10-10) is the bootstrap: the pinned seed compiles everything. Its image links the compiler of the
+# tree's seed/ sources, which may be newer than the seed binary (since r6m: seed/41-a64gen, 42-layout, 60-proj), so g0
+# can differ from g1. Generations 1-3 are each built by the previous generation's image and must be byte-identical.
+for g in 0 1 2 3; do
   previous=$((g - 1)); builder=""; args=()
-  if [ $g -gt 1 ]; then builder=$W/g$previous/amu; args=(--builder $builder); fi
+  if [ $g -gt 0 ]; then builder=$W/g$previous/amu; args=(--builder $builder); fi
   FRONT_BUILDER=$builder zsh $R/scripts/seed/image/front.sh $S $W/inputs/scan/o \
     $K/lang/compat/kotoba/compiler $W/front$g > $W/front$g.out 2>&1 || exit 1
-  LAUNCHER_SEED=$S LAUNCHER_REFACTOR=$K zsh $R/scripts/seed/launcher/build.sh $args --front $W/front$g \
+  env LAUNCHER_SEED=$S $refactor_env zsh $R/scripts/seed/launcher/build.sh $args --front $W/front$g \
     $W/g$g > $W/g$g.out 2>&1 || exit 1
 done
 for f in amu amu.bin amu.kseed; do
   cmp -s $W/g1/$f $W/g2/$f && cmp -s $W/g2/$f $W/g3/$f || { echo "FAIL generations differ: $f"; exit 1; }
 done
-for g in 1 2 3; do
+for g in 0 1 2 3; do
   (cd $W/g$g/o && for f in *.kso; do shasum -a 256 $f; done) > $W/objects$g.sha || exit 1
 done
+cmp -s $W/g0/amu $W/g1/amu && echo 'g0 (seed-built) = g1' || echo 'g0 (seed-built) differs from g1: the tree seed/ compiler differs from the pinned seed'
 cmp -s $W/objects1.sha $W/objects2.sha && cmp -s $W/objects2.sha $W/objects3.sha || { echo 'FAIL object content differs'; exit 1; }
 (cd $R && shasum -a 256 -c $W/inputs.sha256 > $W/input-check.log) || exit 1
 echo "PASS 3 generations (objects, container, native code, command); $(shasum -a 256 $W/g3/amu)"

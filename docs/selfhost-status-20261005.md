@@ -66,3 +66,67 @@ kotoba.sema + project twins> --worktree <dir>`; `zsh scripts/seed/launcher/test.
 `seed/amu-main/CHECK.md`; `zsh scripts/seed/refactor/all.sh <rf-prefix> <out>`; `scripts/selfhost-wall/bootstrap-boundary.sh`.
 Open contract items: `seed/CONTRACT-REQUESTS.md` (CHECKFULL lines: loader wire 40, launcher scope + check objects,
 project-twin attribution, seed.io non-ASCII paths).
+
+## 7. Addendum 2026-10-10: the unified image rebuilds itself on the integration sources (agent claude, fixed point)
+
+**Inputs** (`scripts/seed/selfbuild-inputs.sh` with `SB_KL_REV=965c5f5`, then `selfbuild.sh --no-link`: 143/143 OK, 0
+refused, 0 blocked): amu `claude/selfbuild-fixed-point` = integration d9215ff91 (the refactor fold a10f588a8: the 20
+`kotoba.compiler.refactor.*` modules are amu's own `src/` files, no kotoba-lang refactor twin on the path) + this
+branch's build-script changes; classpath = the seed17 farm (67 files, order sha256 `6e9adfc0`) with osaho d2cc281
+`kir/interp.cljk` and `kir/target.cljk`; kotoba-lang 965c5f5 `lang/compat` (project, project-files and kotoba-reader
+twins only). Seed r6m `8d3338e1`. Rebuild input manifest sha256 `ee0eacea`.
+
+**Command**: `zsh scripts/seed/image/rebuild.sh <inputs> build/fixedpoint` (inputs = the scan's `r6/{src,order.txt,o}`
+as `scan/` + `kotoba-lang/`). The output dir must lie inside the launcher's baked scope (repo, amu-embench, /private/tmp,
+/tmp), so it is the worktree's `build/`. Script changes: `front.sh` no longer skips the effect modules and compiles the
+project twins at their place in the scan order (nbb.cli's twin needs effect-row via native-artifact, and the project
+twins); `rebuild.sh` adds a seed-built generation 0 and picks the refactor library from the farm when the kotoba-lang
+snapshot has no refactor twins; `launcher/build.sh` takes `LAUNCHER_REFACTOR_SRC=<farm>` (the refactor closure's 19
+modules then come from `--front`, compiled from the same farm files by the same compiler).
+
+| gen | built by | objects (170) manifest | kseed | native code | command |
+|---|---|---|---|---|---|
+| g0 | seed r6m | `bfd35ae4` | `948bc14a` 6,585,329 B | `91a67121` 6,585,296 B | `2e33ef22` 6,819,336 B |
+| g1 | g0's image | `ebcff3bc` | `e5dbcf10` 6,578,329 B | `4c37da6d` 6,578,296 B | `d23a21ec` 6,819,336 B |
+| g2 | g1's image | `ebcff3bc` | `e5dbcf10` | `4c37da6d` | `d23a21ec` |
+| g3 | g2's image | `ebcff3bc` | `e5dbcf10` | `4c37da6d` | `d23a21ec` |
+
+**Fixed point: yes**: g1 = g2 = g3 byte for byte (objects, container, native code, command). In each of g1-g3, the
+previous image compiles all 142 front objects (the frontend, kotoba.sema, nbb.cli's closure, project twins,
+amu-front.check), the 14 seed-split modules, the 13 amu modules and amu.main, then links and runs extract-native. g0
+differs from g1 (168 of 170 objects): the image's compiler is the tree's `seed/` source. Since r6m it has changed
+(`seed/41-a64gen.kotoba` +1084 lines, `42-layout`, `60-proj`), so it is a newer compiler than the r6m binary. The
+first image-built generation is already its fixed point. An earlier run on a8bb187da with the kotoba-lang 1c7260f
+refactor twins also reached a fixed point: g1 = g2 = g3, command `b9bc367a`, kseed 5,961,937 B, objects `a6b69ea9`.
+
+**Which `compile`**: the image builds itself with the **seed compiler linked into it** (`seed/amu-main/l/amu/compile.kotoba`
+-> `seed.main/drv-compile-file`; the seed split of the tree's `seed/`), **not** the nbb.cli Kotoba twin. The twin's
+modules (`kotoba.compiler.nbb.cli`, `aarch64-cli`, cli-support, native-artifact, ...) are compiled by the image as part
+of the object fixed point. They are not linked, because no module that `amu.main` reaches requires a `kotoba.compiler.nbb.*` module.
+
+**Size**: the kseed (read back whole as one `:bytes` value by `extract-native`) is 6,578,329 B. That is 78.4% of the
+8 MiB (8,388,608 B) value bound, with 1,810,279 B of headroom. The refactor fold added 616 KB against the twins build.
+The image fits; the seed is unchanged. Removing the bound would need a new seed rung (the loader's
+`KEXE_BYTES_VALUE_LIMIT` and the seed's `io-read-bytes`/`io-write-bytes` contract), with ADR 0362 amended by measurement.
+
+**prove-100** (`scripts/seed/prove-100.sh build/fixedpoint/g3/amu build/fixedpoint`): 5 PASS, 10 FAIL.
+
+| row | verdict | cause |
+|---|---|---|
+| INPUTS | PASS | manifest `ee0eacea` |
+| G4 | PASS | 3 generations equal, builder receipts present |
+| PRODUCT | FAIL | `bin/amu` is still node + nbb |
+| ENTRIES | FAIL | `nbb.check-cli` is skipped by front.sh (and is not linked); `aarch64-cli`'s object is present in g3/o, check-cli's is not |
+| STATIC | PASS | libSystem only; wires 3,34,35,37,38,39 |
+| G1 | FAIL | L2 Embench 0/19: `/Users/junkawasaki/github/kotoba-lang/amu-embench` is absent on this machine (L1 34 SAME + 3 DECLARED, L4 PASS) |
+| INTERPOSER | FAIL | L3: `build/seed/noproc/noproc.dylib` not built in this worktree |
+| G2 | FAIL | every case is the same as the reference (none 339+33, policy 340+32, all 347+25), but there are 372 rows, not the 391 the gate needs: the 19 Embench programs are missing |
+| COMPILE_FULL | FAIL | 372 programs: 281 BEHAVIOUR-SAME, 49 BOTH-REFUSE, 27 AMU-ACCEPTS, 12 AMU-REFUSES, 3 BOTH-OK-DIFF; 776 export runs (761 SAME, 15 DIFF, 1 MISSING); 311 seals ok |
+| G3 | PASS | 150 SAME, 9 SAME-NORM, 5 DECLARED, 9 STUB, 0 DIFF |
+| CHECK_FULL | FAIL | the 5 DECLARED + 9 STUB check paths |
+| G5 | FAIL | rule 11 trace: `sudo -n dtruss` needs a password (fail closed) |
+| REFACTOR_VERIFY | FAIL | declared stub (needs wire 20) |
+| QUIET_BENCH | FAIL | load1 10.85 (> 4) |
+
+The twins build's prove-100 rows were the same (5 PASS, the same 10 FAIL, and the same corpus counts). The stage-0
+reference for G2, G3 and COMPILE_FULL is `d2cb84f6` (BOOTSTRAP-REFERENCE, a link to the seed17 worktree's copy).
