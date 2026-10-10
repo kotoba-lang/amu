@@ -20,7 +20,11 @@ is still a declared stub? Oracle: `bin/amu refactor` (node + nbb, BOOTSTRAP-REFE
   summarize, and the write-through-tmp-and-rename of apply.
 - `src/amu/edn.kotoba`: cljs `pr-str`, byte for byte. That covers array-map insertion order versus PersistentHashMap
   HAMT order (cljs murmur3 hashes) and string escapes.
-- The library: kotoba-lang `lang/compat/kotoba/compiler/refactor/*.kotoba` guest twins (branch
+- The library (since 2026-10-10): amu's own `src/kotoba/compiler/refactor/*.cljk` read with `:kotoba` (the twins below,
+  folded in verbatim as each file's Kotoba reading; cst's `map?` is `map-node?` there) plus the Kotoba-only
+  `finding.kotoba` / `cljs_order.kotoba`. Build: `rf_compile_sep` (lib.sh; the in-process `rf_compile` of the entry stops
+  at E5001), see docs/selfhost-selfbuild-20261004.md section 8.0. Before: kotoba-lang
+  `lang/compat/kotoba/compiler/refactor/*.kotoba` guest twins (branch
   `agent/refactor-cst-twin`). PORT/INTEGRATE wrote cst, edit, diff and prelude. REFAC wrote graph, rules,
   cljs-order, finding, core, rules.{destructure,letdestructure,kwcallback,lowerloops,reject,dynvars}, partition,
   extract and verify.

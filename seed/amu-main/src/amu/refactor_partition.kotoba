@@ -41,7 +41,7 @@
   (let [src (io/read-file path)
         o (cst/parse src)
         ns (cst/out-nodes o)]
-    (if (or (> (string-byte-length (cst/out-err o)) 0) (not (= (vector-count ns) 1)) (not (cst/map? (typed-list-nth [:list [:ref :cst/node]] ns 0))))
+    (if (or (> (string-byte-length (cst/out-err o)) 0) (not (= (vector-count ns) 1)) (not (cst/map-node? (typed-list-nth [:list [:ref :cst/node]] ns 0))))
       (record-new [:ref :rpt/names] false (typed-list-new [:list :string]) (typed-list-new [:list :string]))
       (let [m (typed-list-nth [:list [:ref :cst/node]] ns 0)
             ks (cst/node-kids m)
