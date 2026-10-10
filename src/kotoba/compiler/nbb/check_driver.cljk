@@ -43,13 +43,17 @@
 #?(:kotoba
    (defn- cd-empty [] [:ref :form/r] (form/form-map (form/no-forms))))
 
-;; `--policy`, decoded by the bounded EDN reader, named grants canonicalised to wire ids; {} when absent
+;; `--policy`, decoded by the bounded EDN reader, named grants canonicalised to wire ids; {} when absent.
+;; The host's reading (`read-policy!` below): cli-support's `read-policy`, whose Kotoba file read is
+;; nbb-io's `read-text-file` -- it refuses a missing file or a directory by name (:decode "input could not
+;; be read", exit 65) from the STAT answer, as the source read does. Until 2026-10-10 this read through
+;; `read-edn-file!` (bounded-edn's `fs/app-data-bytes`), which TRAPS (SIGILL, exit 120) on such a path:
+;; measured on the image 27ffb605 by seed/tests/check-cli/args.sh (`--policy nosuch.edn`, `--policy sub`).
 #?(:kotoba
    (defn read-policy! [args [:list :string]] [:ref :form/r]
-     (let [path (support/option args "--policy")]
-       (if (option-some?-of [:option :string] path)
-         (cap-names/wire-policy (support/read-edn-file! (option-value-of [:option :string] path "")))
-         (cd-empty)))))
+     (if (option-some?-of [:option :string] (support/option args "--policy"))
+       (cap-names/wire-policy (support/read-policy args))
+       (cd-empty))))
 
 ;; the policy keys consumed by the compiler rather than admission (`support/capability-policy`)
 #?(:kotoba
