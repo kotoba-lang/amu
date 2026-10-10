@@ -206,3 +206,94 @@ Embench line above), L3 PASS (6 runs, 0 exec/spawn), L4 PASS.
 **Open (owner decisions)**: (1) policies over 32 grants trap in both product entries (kir.admission's document-typed
 reading, osaho; or the document container bound); (2) crc32 / matmult-int exceed the loader's 64 Mi pair ceiling on the
 Kotoba compile route; (3) G2/G3/CHECK_FULL still reference stage-0's check texts, not bin/amu's.
+
+## 9. Addendum 2026-10-10: G2, G3 and CHECK_FULL judged against bin/amu (agent claude, branch claude/prove-100-host-reference)
+
+**Why the reference changed**: since section 8 the image's `check` is nbb.check-cli's Kotoba `run` and prints bin/amu's
+`:kotoba.check/v1` map. Stage-0 `d2cb84f6` prints a human `ok ...` / `error: ...` line, so against it every case failed
+on format (section 8: G2 AMU-TRAP, G3 168 DIFF). The product the image replaces is `bin/amu`, so it is now the reference
+for G2, G3 and CHECK_FULL (BOOTSTRAP-REFERENCE, the nbb route of the same entry), as COMPILE_FULL already was.
+Stage-0 is no longer the oracle of any check gate. It is still the oracle of G1 only (launcher/test.sh: L1's `S:`/`T:`
+argument cases, L2's Embench export runs); this branch does not change G1.
+
+**How a case is judged** (`seed/tests/check-cli/judge.py`, used by `image.sh` for G2 and `args.sh` for G3):
+1. The exit code is compared first.
+2. If both accept, the stdout answer maps are compared as EDN data. If both refuse, the `:kotoba.cli-error/v1` reports
+   are compared as data, on the same stream.
+3. A difference passes only when it matches a row of `seed/tests/check-cli/named.tsv`. A row fixes the case, the key
+   and both values; there is no key-only ignore.
+4. A trap (exit 120) is always DIFF. Exit 69 `:not-available` is STUB.
+
+Row kinds: **NORM** means the verdict, exit and phase are the same and only the text or a marker differs. **GAP** means
+the behaviour differs. A GAP row may name a split between two refusals (exit or phase) or a declared missing
+capability. A verdict split caused by a bug is never named; neither is a trap.
+
+The gates:
+- **G2** = 391 rows per policy mode (372 corpus programs + the 19 Embench ports, which `image.sh` now includes when the
+  checkout exists), all SAME, SAME-DATA or NORM.
+- **G3** = no DIFF in the 173 argument cases (`cases-args.txt` + 34 policy files x 4 programs, run in `checkfull/fx`).
+- **CHECK_FULL** = no STUB and no GAP in those cases.
+
+**Named differences** (39 rows, 13 ids):
+
+| id | kind | where | what |
+|---|---|---|---|
+| definitions-marker | NORM | every accept | `:definitions` is `{:contract :kotoba.definition-identity/v1, :entries :unavailable, :reason :no-typed-kir}` (no typed KIR in check-driver's Kotoba reading). The host's `:contract` must be the same |
+| reduced-report-diagnostic / -details | NORM | every refusal | cli-support's reduced report has no `:diagnostic` / `:details` |
+| msg-effect-ceiling-set | NORM | examples/w1-denial-ceiling | the unrefined message keeps `: #{:log/append}`. kotoba.compiler.diagnostic is not on the Kotoba route |
+| msg-require-module | NORM | conformance/stdlib/{basic,extended,i64set,keyed,ordered}, fx proj/app/main | the frontend snapshot says "only a bounded :export vector ..." where the host gives its multi-file module text |
+| msg-set-literal-wording | NORM | conformance/collections/set_heterogeneous | the snapshot's wording of the same set-item refusal |
+| msg-doseq-first-rule | NORM | conformance/control/doseq | the snapshot hits an `:i64` if-test refusal before the host's reserved `__kotoba_` rule |
+| msg-nth-unlowered | NORM | conformance/functions/lazy_sequences | "named by the grammar, no lowering" vs "unknown operation" |
+| exports-doc-helpers | NORM | nbb/fixtures/{callable-values,typed-closure-parameters} | the snapshot appends 7 synthetic `__kotoba_doc_*` helpers to `:exports` |
+| check-missing-source | NORM | fx `check` | "missing source input" vs the host's extension refusal, both exit 64 |
+| source-path-relative | GAP | fx `--source-path proj` | no cwd wire 40: the image refuses a relative root with `:project-link` (exit 65); bin/amu accepts |
+| policy-not-a-map | GAP | fx p12 x 4 | bin/amu answers an internal error (exit 70); the image answers malformed capability policy (exit 65) |
+| profile-phase | GAP | fx p33 x 4 | same refusal text; the current frontend tags it `:hir-validation` (exit 70), the snapshot `:subset` (exit 65) |
+
+The image-agent's harness reported "9 message-wording + 2 `:exports`". These are the msg-* and exports-doc-helpers
+rows. All of them except msg-effect-ceiling-set come from the frontend snapshot the image links (the seed17 farm), not
+from amu's check entry.
+
+**Product fix (this branch, 192bc71b0)**: check-driver's Kotoba `read-policy!` read `--policy` with bounded-edn
+`read-file` (`fs/app-data-bytes`), which traps on a missing path or a directory. It now uses cli-support's
+`read-policy` (nbb-io `read-text-file`, which refuses by name with `:decode` "input could not be read", exit 65), the
+reading the host and nbb.cli already use.
+
+To measure the fix without a new generation, a test image was made from g3's objects with only check-driver recompiled
+by g3's `compile --emit-module` (the unchanged file reproduces g3's object byte for byte), then linked and packaged the
+launcher's way (command `6218eaa6`; not a qualified image). On it args.sh gives **22 DIFF + 151 NAMED** (g3: 24 + 149):
+`--policy nosuch.edn` and `--policy sub` now answer as bin/amu does. The qualified image carries the fix only after the
+next fixed-point rebuild.
+
+**prove-100** (`scripts/seed/prove-100.sh build/fp/g3/amu build/fp`, at 192bc71b0, g3 `27ffb605`, load1 191-248):
+4 PASS, 10 FAIL.
+
+The run used a detached checkout of this branch under `/private/tmp`, because the image's baked fs scope is
+`amu-image-entries:amu-embench:/private/tmp:/tmp`: run from another worktree, every file read traps. In that checkout
+`build/seed/noproc` had not been built, so INTERPOSER failed. After building it, `launcher/test.sh` gave L3 PASS (6
+runs, 0 exec/spawn).
+
+| row | verdict | cause |
+|---|---|---|
+| INPUTS | PASS | manifest `9b8dee8d` |
+| G4 | PASS | 3 generations equal, builder receipts present |
+| PRODUCT | FAIL | `bin/amu` is still node + nbb |
+| ENTRIES | PASS | check-cli and aarch64-cli objects present |
+| STATIC | PASS | libSystem only; wires 3,34,35,37,38,39 |
+| G1 | FAIL | L2: amu-embench absent (0/19); L1 PASS (39: 11 SAME, 17 SAME-DATA, 11 DECLARED), L4 PASS |
+| INTERPOSER | FAIL | run checkout lacked noproc.dylib; rerun with it: L3 PASS |
+| G2 | FAIL | vs bin/amu: no policy **372 NAMED**, corpus-policy **372 NAMED**, corpus-policy-all **347 DIFF** (all SIGTRAP exit 120: the 42-grant policy, the known more-than-32-grants trap) + 25 NAMED. Each mode has 372 rows, not 391 (Embench absent) |
+| COMPILE_FULL | FAIL | unchanged: 293 BOTH-ACCEPT SAME + 62 BOTH-REFUSE; 1 CLASS-DIFF (w1-effect-named) + 16 HOST-ONLY (verifier strictness) |
+| G3 | FAIL | vs bin/amu: 149 NAMED, **24 DIFF**: 4 SIGILL on a missing or directory policy and on paths outside the baked scope (the 2 missing/directory ones are fixed by 192bc71b0); 4 SIGTRAP on p32 (`{:a }`, an odd map); 4 SIGILL on p34 (invalid UTF-8: nbb-io's read still traps); p05 (`:allow` as a vector) and p27 (`nil`): bin/amu refuses with malformed policy, the image admits 3 of p05 and 2 of p27, and refuses the rest with a different message (1 and 2); p20 (`#_` discard): bin/amu reads it, the image's bounded-edn refuses dispatch forms (3 exit splits + 1 :error) |
+| CHECK_FULL | FAIL | 0 STUB, 9 GAP cases (source-path-relative 1, policy-not-a-map 4, profile-phase 4) |
+| G5 | FAIL | `sudo -n dtruss` needs a password |
+| REFACTOR_VERIFY | FAIL | declared stub (needs wire 20) |
+| QUIET_BENCH | FAIL | load1 247.95 |
+
+**Open**:
+1. The policy reading of the Kotoba route differs from the host on malformed input. p05 and p27 are admitted:
+   kir.admission's typed reading (osaho) does not refuse a vector `:allow` or a `nil` policy. p20 is refused, because
+   bounded-edn has no `#_`. p32 and p34 trap. These stay DIFF in G3.
+2. The more-than-32-grants trap (G2 corpus-policy-all) and crc32 / matmult-int are being fixed elsewhere.
+3. The frontend snapshot's rows go away with a newer farm.
