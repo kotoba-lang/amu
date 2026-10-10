@@ -425,3 +425,28 @@ earlier run ("input must be a regular file"). Those records were removed and the
 3. An existing file outside the baked scope is refused "input could not be read", where bin/amu reads it. That is
    the scope contract, and it is not measured as a case, because it depends on the machine.
 4. The f64-literal question stays open (not touched).
+
+## 11. Addendum 2026-10-11: compile-cli/run.sh builds its guest from source again (agent claude, branch claude/compile-cli-guest-build)
+
+**Cause** (measured, seed r6m `8d3338e1` and r6n `b3f46d32`): `--entry`, not the objects or the order. Compiling
+aarch64_cli.cljk against the image's own objects (`build/fp/g3/o`, which equal `front0/` file for file for these
+modules), in scan order with only modules 1..109 present, and from the farm path all give E2104 with `--entry`. The same
+command without `--entry`, as front.sh runs it, is OK (144,150 B with r6n, the image's object). An `--entry` module's
+explicit exports must pass the loader's export codec (seed 21-check `ck-sig-export` / `ck-r6m-xty?`: :i64 :bool :string
+:vector-i64, records, variants, fn values; no list). Section 8's `run [args [:list :string]]` fails that check. A
+library's interface is the link table, so the image (root amu.main) admits it. The source is correct, so it is unchanged.
+
+**Fix**: run.sh compiles nbb.aarch64-cli as a library, plus the new `seed/tests/compile-cli/guest.kotoba` (ns
+`compile-cli.guest`, one export `main []` = `(product/main)`) as the `--entry` link root. Linked 8,210,649 B with r6m
+(extract-native limit 8,388,608 B).
+
+**Measured** (guest built by r6m against a copy of `build/fp/g3/o`, manifest `9d7a6966`; the 10 run.sh sources equal
+the image's farm byte for byte):
+- 372 corpus programs vs bin/amu: BOTH-ACCEPT 293 (seal, provenance and answer SAME on all; publication 290 SAME-SHAPE
+  + 3 SIZE-DIFF), BOTH-REFUSE 62, CLASS-DIFF 1 (w1-effect-named), HOST-ONLY 16 (8 unsupported effect + 8 runtime KIR
+  shape/operation), GUEST-ONLY 0. These are section 10's classes.
+- 19 Embench ports: 19 BOTH-ACCEPT SAME (publication SAME-SHAPE).
+- refusals.sh (host entry and guest columns): 34 cases. Equal exit 24, i.e. the 16 of the spike doc plus all 8
+  section-10 cases (65 x 7, 0 for p20). The other 10 are the by-design rows (aarch64 / aarch64-linux / two packaged
+  targets, `--artifact object`, `worker`, `extract-native`, `--module-lock`, `--package-lock`, `--fuel 5000`). The
+  guest writes no artifact except p20, where both sides admit it.
