@@ -3,8 +3,11 @@
 # (agent SELF, 2026-10-04): how far does the SEED get toward building the big amu image from source, and what blocks it.
 # BOOTSTRAP-TOOL (zsh + python summaries). After the loader is built only seeds run, except the optional --stage0 column.
 #
-#   1 LIST   scripts/seed/reach-twins.py over the minimal reach set (/private/tmp/reach-minimal.txt, WALL_CP, kotoba-lang
-#            lang/compat): the loader-faithful module list of the image (138 files today).
+#   1 LIST   scripts/seed/reach-twins.py over the module list R6_REACH with the classpath WALL_CP, <amu>/src and the
+#            kotoba-lang root WALL_K/lang/compat: the loader-faithful module list of the image (every entry re-resolved by
+#            namespace, closed over the chosen files' requires). Defaults: build/selfbuild-inputs/{reach.txt,cp.txt,
+#            kotoba-lang}, written by scripts/seed/selfbuild-inputs.sh from durable sources (git revs + the seed17
+#            snapshot); the old /private/tmp defaults are gone.
 #   2 SCAN   scripts/seed/r6-scan.sh with the seed: every module compiled from source in separate mode (--emit-module),
 #            dependency-first; OK / REFUSED (first refusal) / BLOCKED (a require has no object).
 #   3 S0     (--stage0) stage-0 `check` of every farm file (BOOTSTRAP-REFERENCE, nice, at most 2 at a time): whether the
@@ -16,8 +19,9 @@
 #            (scripts/seed/package.sh) and run once (exit status 0 expected).
 #   5 REPORT scripts/seed/selfbuild.py report: counts, walls ranked by modules made attemptable, per amu command the
 #            walls in its closure and whether its entry has a Kotoba `main`, the link table.
-# Default seed: build/seed-boot/r6e/seed-1.bin (bootstrap.sh) else build/export/g/seed-1.bin; it must be rung r6e's
-# seed1_sha256 (seed/rungs/r6e.record) unless --seed names another one (then labelled "unrecorded seed").
+# Default seed: rung SELF_RUNG (default r6m): build/seed-boot/<rung>/seed-1.bin (bootstrap.sh) else build/export/g/seed-1.bin,
+# with seed/rungs/<rung>.record's seed1_sha256; --seed names another one (labelled with the rung whose record it matches, else
+# "unrecorded seed").
 # Output: <work>/report.txt (default work dir build/selfbuild), <work>/r6/ (scan), <work>/s0/, <work>/link/.
 emulate -L zsh
 setopt pipefail
@@ -36,18 +40,23 @@ die() { echo "selfbuild: FAIL: $*" >&2; exit 1; }
 # FRONTSRC 2026-10-04): the default for every seed run of this script (scan and link)
 export SEED_PAIRS=${SEED_PAIRS:-16777216}
 sha() { shasum -a 256 $1 | cut -c1-64; }
-want=$(sed -n 's/^seed1_sha256 //p' $R/seed/rungs/r6e.record)
+rung=${SELF_RUNG:-r6m}
+want=$(sed -n 's/^seed1_sha256 //p' $R/seed/rungs/$rung.record)
 if [ -z "$seed" ]; then
-  for c in $R/build/seed-boot/r6e/seed-1.bin $R/build/export/g/seed-1.bin; do [ -f $c ] && [ "$(sha $c)" = "$want" ] && { seed=$c; break; }; done
-  [ -n "$seed" ] || die "no r6e seed ($want): run scripts/seed/bootstrap.sh or pass --seed"
+  for c in $R/build/seed-boot/$rung/seed-1.bin $R/build/export/g/seed-1.bin; do [ -f $c ] && [ "$(sha $c)" = "$want" ] && { seed=$c; break; }; done
+  [ -n "$seed" ] || die "no $rung seed ($want): run scripts/seed/bootstrap.sh or pass --seed"
 fi
-label="rung r6e"; [ "$(sha $seed)" = "$want" ] || label="unrecorded seed"
+label="unrecorded seed"
+for rec in $R/seed/rungs/*.record; do [ "$(sed -n 's/^seed1_sha256 //p' $rec)" = "$(sha $seed)" ] && { label="rung ${${rec:t}%.record}"; rung=${${rec:t}%.record}; break; }; done
 cp $seed $W/seed-1.bin; echo ${SELF_OFFSET:-0} > $W/seed-1.offset
-CP=${WALL_CP:-/private/tmp/wall-cp-16.txt}; K=${WALL_K:-/private/tmp/wt-K-kotoba-lang}; LIST0=${R6_REACH:-/private/tmp/reach-minimal.txt}
+IN=${SELF_INPUTS:-$R/build/selfbuild-inputs}
+CP=${WALL_CP:-$IN/cp.txt}; K=${WALL_K:-$IN/kotoba-lang}; LIST0=${R6_REACH:-$IN/reach.txt}
+for p in $CP $K/lang/compat $LIST0; do [ -e $p ] || die "missing input $p: run scripts/seed/selfbuild-inputs.sh $IN (or set WALL_CP / WALL_K / R6_REACH)"; done
 load0=$(sysctl -n vm.loadavg | awk '{print $2}')
 { echo "selfbuild $(date '+%F %T') seed $(sha $W/seed-1.bin | cut -c1-16) ($label) load $load0"
-  echo "amu $(git -C $R rev-parse --short HEAD) kotoba-lang $(git -C $K rev-parse --short HEAD 2>/dev/null)"
-  echo "reach $LIST0 classpath $CP"; } > $W/provenance.txt
+  echo "amu $(git -C $R rev-parse --short HEAD) ($(git -C $R status --short -- src | grep -c .) dirty in src) kotoba-lang $(git -C $K rev-parse --short HEAD 2>/dev/null || echo "${K} (no git: see inputs)")"
+  echo "reach $LIST0 classpath $CP"
+  [ -f ${LIST0:h}/inputs.txt ] && sed 's/^/inputs: /' ${LIST0:h}/inputs.txt; } > $W/provenance.txt
 
 # 1 LIST
 python3 $R/scripts/seed/reach-twins.py $LIST0 $CP $R $K > $W/list.txt 2> $W/list.err || die "reach-twins"
@@ -77,8 +86,8 @@ fi
 if [ $link -eq 1 ]; then
   source $R/scripts/seed/lib.sh
   export SEED_BUILD=$W SEED_RESOURCES_35=$R:$W
-  LM=$W/large-m-r6e/b/seed-1.bin
-  if [ ! -f $LM ]; then zsh $R/scripts/seed/large-m.sh --rung r6e --prev $W/seed-1.bin $W/large-m-r6e > $W/large-m.out 2>&1 || die "large-m (see $W/large-m.out)"; fi
+  LM=$W/large-m-$rung/b/seed-1.bin
+  if [ ! -f $LM ]; then zsh $R/scripts/seed/large-m.sh --rung $rung --prev $W/seed-1.bin $W/large-m-$rung > $W/large-m.out 2>&1 || die "large-m (see $W/large-m.out)"; fi
   L=$W/link; rm -rf $L; mkdir -p $L
   tops=($(python3 $R/scripts/seed/selfbuild.py tops $W))
   # try <dir> ns.. : probe entry + link; 0 iff the image was written
