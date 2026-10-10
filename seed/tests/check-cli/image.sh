@@ -24,6 +24,8 @@ W=${2:-$R/build/check-cli-image}; mkdir -p $W; W=${W:A}
 echo $A > $W/image; if [ -n "$3" ]; then echo "--policy ${3:A}" > $W/policy-args; else : > $W/policy-args; fi
 cd $R
 E=/Users/junkawasaki/github/kotoba-lang/amu-embench/bench/embench/ports
+# 2026-10-10: the in-repo ports (bench/embench/ports, the same 19 workloads) when the amu-embench checkout is absent
+[ -d $E ] || E=$R/bench/embench/ports
 files=(); for d in $E seed/tests/r1/feat seed/tests/r1/conf seed/tests/corpus resources/kotoba/lang-conformance/{values,control,native} \
                   $R/seed/tests/conformance/*(/N) examples test/dual-backend test/nbb/fixtures test/nbb/fixtures/state bench/runtime-comparison; do
   files+=(${${d:A}/#$PWD/$R}/*.kotoba(N)); done

@@ -55,10 +55,16 @@
        (cap-names/wire-policy (support/read-policy args))
        (cd-empty))))
 
-;; the policy keys consumed by the compiler rather than admission (`support/capability-policy`)
+;; the policy keys consumed by the compiler rather than admission (`support/capability-policy`): the host's
+;; `(dissoc policy :language-profile :budgets)`, so a policy that is not a map is handed on as it is
+;; (2026-10-10). kotoba.form's `dissoc-form` answers a MAP of any Form's kids: a `nil` policy became `{}` and
+;; was admitted (pure/abort) or denied (io/two) where bin/amu's admission refuses `nil` "malformed capability
+;; policy" (fixture p27).
 #?(:kotoba
    (defn- cd-capability-policy [policy [:ref :form/r]] [:ref :form/r]
-     (form/dissoc-form (form/dissoc-form policy (cd-kw :language-profile)) (cd-kw :budgets))))
+     (if (form/is-map? policy)
+       (form/dissoc-form (form/dissoc-form policy (cd-kw :language-profile)) (cd-kw :budgets))
+       policy)))
 
 #?(:kotoba
    (defn- cd-analyze-opts [policy [:ref :form/r] linked :bool] [:ref :form/r]

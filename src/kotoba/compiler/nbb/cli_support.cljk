@@ -135,15 +135,19 @@
 
 (defn source! [path] (source-path/admit! path))
 
-;; Kotoba: the file is read through the app-data scope and read as EDN by the
-;; bounded reader (same bounds as below: 200000 nodes, 4096-char tokens, 128
-;; depth, 1 MiB strings), and the answer is the Form. The host definition
-;; stays where it was, in the host-only region.
+;; Kotoba: the host's reading below (`read-edn-form!` over nbb-io's
+;; `read-text-file`): the file through nbb-io's Kotoba read (refusals by name,
+;; no trap), read by the kotoba reader with the policy bounds (200000 nodes,
+;; 4096-char tokens, 128 depth, 1 MiB strings) and no dispatch preflight
+;; (`bounded-edn/read-reader-text-limits`), and the answer is the Form. Until
+;; 2026-10-10 this was `bounded-edn/read-file` (its own READ, which trapped on
+;; a path it cannot serve, and its preflight). The host definition stays where
+;; it was, in the host-only region.
 #?(:kotoba
    (defn read-edn-file! [path :string] [:ref :form/r]
-     ;; `bounded-edn/read-file` aborts, and across the module boundary its
-     ;; abort is this function's (ADR 0363)
-     (bounded-edn/read-file path)))
+     ;; the reads abort, and across the module boundary their abort is this
+     ;; function's (ADR 0363)
+     (bounded-edn/read-reader-text-limits (nbb-io/read-text-file path) (cs-max-policy-nodes) (cs-max-policy-depth))))
 
 ;; Everything from here to `command-line-args` decodes, narrows and reports on
 ;; host values: EDN maps, BigInts, `ex-info` data and `catch :default`. A
@@ -481,6 +485,13 @@
 #?(:kotoba
    (defn- cs-empty [] [:ref :form/r] (form/form-map (form/no-forms))))
 
+;; A policy file's and a module lock's bounds (the host's max-policy-nodes / -depth).
+#?(:kotoba
+   (defn- cs-max-policy-nodes [] :i64 200000))
+
+#?(:kotoba
+   (defn- cs-max-policy-depth [] :i64 128))
+
 ;; `read-artifact-file!`'s bounds (the host's max-artifact-nodes / -depth).
 #?(:kotoba
    (defn- cs-max-artifact-nodes [] :i64 4194304))
@@ -489,9 +500,11 @@
    (defn- cs-max-artifact-depth [] :i64 512))
 
 #?(:kotoba
+   ;; The host's `read-artifact-file!`: `read-edn-form!` (the kotoba reader, no
+   ;; dispatch preflight; 2026-10-10, was bounded-edn's preflighted reading).
    (defn read-artifact-file! [path :string] [:ref :form/r]
-     (bounded-edn/read-edn-text-limits (nbb-io/read-artifact-text-file path)
-                                       (cs-max-artifact-nodes) (cs-max-artifact-depth))))
+     (bounded-edn/read-reader-text-limits (nbb-io/read-artifact-text-file path)
+                                          (cs-max-artifact-nodes) (cs-max-artifact-depth))))
 
 #?(:kotoba
    (defn read-policy-material [args [:list :string]] [:ref :form/r]
@@ -502,9 +515,15 @@
          (cs-put (cs-put (cs-empty) :present? (form/bool-form false)) :text (form/string-form ""))))))
 
 #?(:kotoba
+   ;; The host's `parse-policy-material`: `read-edn-form!` with the policy
+   ;; bounds, i.e. the kotoba reader with no dispatch preflight, so a `#_`
+   ;; discard in a policy is read as on the host (2026-10-10; bounded-edn's
+   ;; `read-edn-text` refused it "EDN dispatch forms are forbidden", exit 65,
+   ;; where bin/amu admitted the policy: fixture p20).
    (defn parse-policy-material [material [:ref :form/r]] [:ref :form/r]
      (if (form/bool-value (cs-get material :present?))
-       (bounded-edn/read-edn-text (form/string-value (cs-get material :text)))
+       (bounded-edn/read-reader-text-limits (form/string-value (cs-get material :text))
+                                            (cs-max-policy-nodes) (cs-max-policy-depth))
        (cs-empty))))
 
 #?(:kotoba
@@ -557,8 +576,15 @@
          (cs-declared-fuel declared)))))
 
 #?(:kotoba
+   ;; The host's `(dissoc policy :language-profile :budgets)`: a policy that is
+   ;; not a map is handed on as it is (2026-10-10). kotoba.form's `dissoc-form`
+   ;; answers a MAP of any Form's kids, so a `nil` policy became `{}` and was
+   ;; admitted where the host's `(dissoc nil ..)` is nil, which admission
+   ;; refuses "malformed capability policy" (fixture p27).
    (defn capability-policy [policy [:ref :form/r]] [:ref :form/r]
-     (form/dissoc-form (form/dissoc-form policy (cs-kw :language-profile)) (cs-kw :budgets))))
+     (if (form/is-map? policy)
+       (form/dissoc-form (form/dissoc-form policy (cs-kw :language-profile)) (cs-kw :budgets))
+       policy)))
 
 #?(:kotoba
    (defn- arguments-from [count :i64 i :i64 acc [:list :string]] [:list :string]

@@ -55,5 +55,17 @@ t source-directory compile $D/a-directory.kotoba --target aarch64-macos --output
 t source-unreadable compile $D/unreadable.kotoba --target aarch64-macos --output $D/o.kexe
 t policy-absent compile $F --target aarch64-macos --policy $D/no-such-policy.edn --output $D/o.kexe
 t output-dir-absent compile $F --target aarch64-macos --output $D/no/such/dir/o.kexe
+# 2026-10-10 (final round): malformed input the guest used to trap on (SIGTRAP / SIGILL, exit 120) or answer
+# differently; the host's answer is the oracle (seed/tests/checkfull/fx policy fixtures)
+P=$R/seed/tests/checkfull/fx
+t policy-invalid-utf8 compile $F --target aarch64-macos --policy $P/p34.edn --output $D/o.kexe
+t policy-nil compile $F --target aarch64-macos --policy $P/p27.edn --output $D/o.kexe
+t policy-allow-vector compile $F --target aarch64-macos --policy $P/p05.edn --output $D/o.kexe
+t policy-symbol-value compile $F --target aarch64-macos --policy $P/p32.edn --output $D/o.kexe
+t source-invalid-utf8 compile $P/bad-utf8.kotoba --target aarch64-macos --output $D/o.kexe
+t source-outside-scope compile /var/empty/no-such-amu-source.kotoba --target aarch64-macos --output $D/o.kexe
+t policy-outside-scope compile $F --target aarch64-macos --policy /var/empty/no-such-amu-policy.edn --output $D/o.kexe
+# admitted by both (the host's policy reader reads `#_`): the row shows WROTE AN ARTIFACT on both sides' exit 0
+t policy-discard-admitted compile $F --target aarch64-macos --policy $P/p20.edn --output $D/o.kexe
 chmod 600 $D/unreadable.kotoba
 column -t -s$'\t' $W/refusals.tsv | cut -c1-200

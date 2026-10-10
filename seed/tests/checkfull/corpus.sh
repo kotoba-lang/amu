@@ -12,6 +12,8 @@ A=${1:?usage: corpus.sh <amu> <work-dir> [policy]}; A=${A:A}; W=${2:?}; mkdir -p
 P=${3:-}; [ -n "$P" ] && P=${P:A}
 S0=$R/build/native-image/amu-native; KC=$R/build/checkfull/s0cache; mkdir -p $KC
 E=/Users/junkawasaki/github/kotoba-lang/amu-embench/bench/embench/ports
+# 2026-10-10: the in-repo ports (bench/embench/ports, the same 19 workloads) when the amu-embench checkout is absent
+[ -d $E ] || E=$R/bench/embench/ports
 dirs=($E $R/seed/tests/r1/feat $R/seed/tests/r1/conf $R/seed/tests/corpus $R/resources/kotoba/lang-conformance/values
       $R/resources/kotoba/lang-conformance/control $R/resources/kotoba/lang-conformance/native $R/seed/tests/conformance/*(/)
       $R/examples $R/test/dual-backend $R/test/nbb/fixtures $R/test/nbb/fixtures/state $R/bench/runtime-comparison)
