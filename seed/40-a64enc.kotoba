@@ -116,6 +116,12 @@
     -1))
 (defn- enc-stp-pre [t1 :i64 t2 :i64 n :i64 off :i64] :i64 (enc-ldstp 2843738112 t1 t2 n off))  ; a9800000
 (defn- enc-ldp-post [t1 :i64 t2 :i64 n :i64 off :i64] :i64 (enc-ldstp 2831155200 t1 t2 n off)) ; a8c00000
+
+;; Signed post-index pair store; canonical base/data overlap rejected (SP exempt).
+(defn- enc-stp-post [t1 :i64 t2 :i64 n :i64 off :i64] :i64
+  (if (or (= (enc-r n) 31) (and (not= (enc-r n) (enc-r t1)) (not= (enc-r n) (enc-r t2))))
+    (enc-ldstp 2826960896 t1 t2 n off)
+    -1)) ; a8800000
 (defn- enc-stp [t1 :i64 t2 :i64 n :i64 off :i64] :i64 (enc-ldstp 2835349504 t1 t2 n off))      ; a9000000
 (defn- enc-ldp [t1 :i64 t2 :i64 n :i64 off :i64] :i64 (enc-ldstp 2839543808 t1 t2 n off))      ; a9400000
 
