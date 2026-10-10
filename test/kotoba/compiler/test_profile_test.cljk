@@ -66,3 +66,15 @@
     (is (= {:length 300000 :head "AAAA"}
            (profile/node-run :wasm "console.log(JSON.stringify({length:PAYLOAD.length,head:PAYLOAD.slice(0,4)}));"
                              payload)))))
+
+(deftest the-js-probe-loads-a-module-too-large-for-a-data-url
+  ;; Under `node -e` a `data:` import decodes on the synchronous loader,
+  ;; which overflows the stack between 300 and 400 KiB of module (Node
+  ;; 26.0.0, 2026-10-10) -- the 473,815-byte doseq conformance module died
+  ;; there before running. The probe loads PAYLOAD from a file instead.
+  (let [module (str "export const answer=42n;//" (apply str (repeat (* 512 1024) "x")))]
+    (is (= {:answer "42"}
+           (profile/node-run :javascript
+                             (str @#'profile/probe-import
+                                  "console.log(JSON.stringify({answer:String(m.answer)}));")
+                             (#'profile/encoded-text module))))))
