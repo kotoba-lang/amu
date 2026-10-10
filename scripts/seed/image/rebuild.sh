@@ -37,6 +37,11 @@ while read nm p deps; do
 done < $I/scan/order.txt > $W/inputs/scan/order.txt
 find $W/inputs -type f -exec shasum -a 256 {} + | LC_ALL=C sort > $W/inputs.sha256
 K=$W/inputs/kotoba-lang
+# The refactor library (2026-10-10): kotoba-lang's twins when the snapshot's lang/compat carries them, else amu's own
+# folded src/kotoba/compiler/refactor from the scan farm (LAUNCHER_REFACTOR_SRC).
+if [ -d $K/lang/compat/kotoba/compiler/refactor ]; then refactor_env="LAUNCHER_REFACTOR=$K"
+else refactor_env="LAUNCHER_REFACTOR_SRC=$W/inputs/scan/src"; fi
+echo "refactor library: $refactor_env"
 # Generation 0 (2026-10-10) is the bootstrap: the pinned seed compiles everything. Its image links the compiler of the
 # tree's seed/ sources, which may be newer than the seed binary (since r6m: seed/41-a64gen, 42-layout, 60-proj), so g0
 # can differ from g1. Generations 1-3 are each built by the previous generation's image and must be byte-identical.
@@ -45,7 +50,7 @@ for g in 0 1 2 3; do
   if [ $g -gt 0 ]; then builder=$W/g$previous/amu; args=(--builder $builder); fi
   FRONT_BUILDER=$builder zsh $R/scripts/seed/image/front.sh $S $W/inputs/scan/o \
     $K/lang/compat/kotoba/compiler $W/front$g > $W/front$g.out 2>&1 || exit 1
-  LAUNCHER_SEED=$S LAUNCHER_REFACTOR=$K zsh $R/scripts/seed/launcher/build.sh $args --front $W/front$g \
+  env LAUNCHER_SEED=$S $refactor_env zsh $R/scripts/seed/launcher/build.sh $args --front $W/front$g \
     $W/g$g > $W/g$g.out 2>&1 || exit 1
 done
 for f in amu amu.bin amu.kseed; do
