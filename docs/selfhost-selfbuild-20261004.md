@@ -160,7 +160,81 @@ already has `__linux__` paths, unbuilt here), aiueos only with a freestanding ru
 - The size estimate (8.6 MB) extrapolates from 28,873 lines of mostly small library modules; the frontend/backend
   modules may be denser.
 
-## 8. Addendum 2026-10-10: the refactor modules through their kotoba-lang twins (agent claude, selfbuild-twins)
+## 8. Addendum 2026-10-10: the refactor modules, in place (primary) and through their kotoba-lang twins
+
+### 8.0 In place: amu builds itself from its own sources (agent claude, refactor-inplace) -- the primary count
+
+Owner decision 2026-10-10: amu builds itself from ITS OWN sources. The kotoba-lang refactor twins (branch
+`claude/refactor-twins-parity` 1c7260f, 19 modules) are folded into amu's files as their `:kotoba` readings, so the
+in-place view (kotoba-lang 965c5f5, which has no `lang/compat/kotoba/compiler/refactor/`) is now the selfbuild count.
+
+**Structure.** Each of the 17 host files `src/kotoba/compiler/refactor/{core,cst,diff,edit,extract,graph,partition,
+prelude,rules,verify}.cljk` and `rules/{destructure,dynvars,fnlit,kwcallback,letdestructure,lowerloops,reject}.cljk`:
+- ns: `{:kotoba/export #?(:kotoba [the twin's exports] :default [the host's public names])}`, the host `(:require ...)`
+  items as the `:default` arm of `#?@(:kotoba [the twin's requires] :default [...])`, the twin's `(:schemas ...)` as
+  `#?(:kotoba (:schemas ...))`; the host's other clauses (cst's `:refer-clojure`) unchanged;
+- body: the twin's top-level forms verbatim, each in `#?(:kotoba ...)` (no new `#?(:kotoba nil ...)`); the LAST one carries
+  the whole host program, its text unchanged, as `:default (do ...)` (the nbb.cli shape). The seed reads an unselected
+  arm without admitting it, so the host's `declare`, `#(` and `#"` stay as they are (no rule g pass was needed);
+- the two twin-only helpers are Kotoba-only amu files: `src/kotoba/compiler/refactor/finding.kotoba`, `cljs_order.kotoba`.
+One hand deviation from the twin text: cst's Kotoba `map?` is `map-node?` (definition, export, its 3 callers in the
+`:kotoba` arms of destructure / dynvars, and 3 calls in `seed/amu-main/src/amu/refactor_{partition,split}.kotoba`).
+Seed r6m refuses a module that defines the name of a builtin type predicate (map?, string?, ...) when a type-predicate
+call such as `(nil? x)` occurs anywhere in its text, an unselected host arm included: `E2001 duplicate definition ''`
+(measured: a 3-line module defining `map?` with `#?(:cljs (some? 1))` is refused, `#?(:cljs (count 1))` is not; a
+qualified `(p/map? x)` is accepted). No `amu refactor` rule renames a definition, hence a hand edit.
+
+**Host readings unchanged.** Every top-level form of the 17 files read with edamame under `:cljs` and under `:clj`
+(top-level `do` spliced) equals the base a8bb187da: 34/34 file x feature, 208 forms per feature; the only difference is
+the new `:kotoba/export` attr map of the ns form (ns metadata). The deleted lines of the diff are the 47 old ns-clause
+lines only. The `:kotoba` readings equal the twins' forms (body forms 1:1; ns: the `(:export ...)` clause became the attr
+map; rules gets an empty `(:require)`, cst keeps `:refer-clojure`), except the `map-node?` rename.
+
+**Measured** (seed r6m `8d3338e1`; inputs `SB_KL_REV=965c5f5`, osaho d2cc281 interp/target, seed17 order `6e9adfc0`):
+
+| view | kotoba-lang | modules | OK | REFUSED | BLOCKED | of the 138 |
+|---|---|---:|---:|---:|---:|---:|
+| **in place, amu's own readings (primary)** | 965c5f5 (no refactor twins) | 143 | **143** | 0 | 0 | **138 / 138** |
+
+- 143 modules, 143,991 lines, 0 walls; entries check 82/82, compile 99/99, refactor 22/22, each with a Kotoba `main`.
+  reach-twins: 0 swapped, all 19 `kotoba.compiler.refactor.*` modules resolve to amu `src/` (17 `.cljk` + 2 `.kotoba`),
+  none to kotoba-lang.
+- REFAC (`amu refactor` on the Kotoba route) built from amu's sources: `rf_compile_sep seed/tests/refactor/entry.kotoba
+  <out> seed/amu-main/src src <kotoba-lang 965c5f5>/lang/compat` (28 modules, separate mode, seed link): 1,295,504 B code,
+  sha256 `8c418e0c3c39`, rebuilt byte-identical. `scripts/seed/refactor/all.sh`: args 31/31, graph 20/20, plan 18/18,
+  partition 19/19, dynvars 44/44, graph-src 109/109, plan-src 128/128, apply 40/40, split 10/10 (8 SKIP = the host
+  refuses the partition, as with the twins), verify 5/5 (verify-diff.sh now puts amu `src` on the probe's path): 0 differ,
+  the twins' counts. kotoba-lang `scripts/refactor-twin-diff/fnlit/run.sh` on this entry: plan 30/30, apply 27/27,
+  acf8e1d24's two sources reproduced 2/2; the declared `:context nil` case 1 differ (unchanged, declared).
+- **Wall left (REFAC build route):** the in-process `rf_compile` of the same entry refuses `E5001 output buffer full`:
+  that route holds the program's source text in OUT, and the host arms roughly double the refactor sources. The same files
+  with the host arms stripped compile in process to 649,815 B (the twins: 649,743 B). Hence `rf_compile_sep`
+  (scripts/seed/refactor/lib.sh + closure.py), whose separate-mode image is larger (no whole-program pruning). The selfbuild
+  is separate mode and is not affected. The large-M profile (OUT 3 Mi words) was not tried.
+- Host: `test/kotoba/compiler/refactor_test.cljk`, `refactor_cli_test.cljk`, `refactor_graph_test.cljk` 39 tests / 272
+  assertions, 5 failures, identical log before and after (the 5 are `frontend-counts`, which reads the live kotoba-sema
+  frontend.cljk; red on the base too); `scripts/test-refactor.sh` 15/15 ok.
+- `bootstrap-boundary.sh` before/after: only "src files scanned" 112 -> 114 and "src files with a :kotoba arm" 64 -> 81;
+  `#?(:kotoba nil ...)` / no-arm modules 50, nil forms 151, PRODUCT union 58: unchanged.
+- Not a pass: host `amu check <file> --source-path src --source-path <kotoba-lang>/lang/compat` (nbb frontend, the pinned
+  kotoba-sema) admits prelude and refuses cst at `typed-list-conj` (a seed-language builtin the pinned frontend does not
+  know); kotoba-lang's own `kotoba/string/split.kotoba` is refused the same way, so this is not new with the fold.
+- **The kotoba-lang refactor twins can be retired** (`lang/compat/kotoba/compiler/refactor/**` on
+  `claude/refactor-twins-parity`): nothing in amu needs them; they live in another repo and are not deleted here. While a
+  kotoba-lang rev with them is on a source path, its `.kotoba` files win over amu's `.cljk` (loader rule) -- use 965c5f5 or
+  a rev without them.
+
+Reproduce (in place):
+
+```
+SB_KL_REV=965c5f5 zsh scripts/seed/selfbuild-inputs.sh build/selfbuild-inputs
+zsh scripts/seed/selfbuild.sh --no-link build/selfbuild-inplace                     # cat build/selfbuild-inplace/report.txt
+source scripts/seed/refactor/lib.sh                                                  # RF_SEED=build/seed-boot/r6m/seed-1.bin
+rf_compile_sep seed/tests/refactor/entry.kotoba build/refac/rf seed/amu-main/src src build/selfbuild-inputs/kotoba-lang/lang/compat
+zsh scripts/seed/refactor/all.sh build/refac/rf build/refac/all build/selfbuild-inputs/kotoba-lang
+```
+
+### 8.1 History: the twins view (agent claude, selfbuild-twins; superseded by 8.0)
 
 Question: does the selfbuild count the 16 `kotoba.compiler.refactor.*` modules the way the project route resolves them
 (their kotoba-lang guest twins), and what is the count then? Seed r6m `8d3338e1`, `--no-link`, per-module separate mode.
@@ -194,7 +268,7 @@ reach-twins.py now reports extension swaps separately from same-extension conten
 |---|---|---:|---:|---:|---:|---:|
 | twins (project-route resolution) | `claude/refactor-twins-parity` **1c7260f** | 143 | **143** | 0 | 0 | **138 / 138** |
 | twins, first run (no rule g twin) | `claude/refactor-twins-parity` e936dd8 | 142 | 142 | 0 | 0 | 138 / 138 |
-| in place (amu's own refactor `.cljk`) | `agent/wall2-project-twin` 965c5f5 | 141 | 124 | 5 | 12 | 122 / 138 |
+| in place, before the fold (amu c78b96f3f's refactor `.cljk`, host readings only) | `agent/wall2-project-twin` 965c5f5 | 141 | 124 | 5 | 12 | 122 / 138 |
 
 - 143 = the 138 + `refactor.cljs-order` and `refactor.finding` (twin helpers required by verify / the rules) +
   `refactor.rules.fnlit` (rule g's twin, required by the twin `core`) + `native-artifact` and `native-admission`
@@ -210,13 +284,13 @@ reach-twins.py now reports extension swaps separately from same-extension conten
   the native rule set). At 1c7260f (`rules/fnlit.kotoba`; `rules.kotoba` and `core.kotoba` route "g") the closure adds
   the fnlit twin, and the seed compiles it (219 lines, 37,963 object bytes), ordered before `rules` and `core`: 143/143,
   0 walls. The in-place view does not depend on the kotoba-lang rev past 965c5f5 and was not rerun.
-- Policy, not decided here: the twins view counts kotoba-lang files (a branch not on kotoba-lang main) for 18 amu
+- (Decided 2026-10-10, see 8.0: amu's own readings.) Policy, not decided here: the twins view counts kotoba-lang files (a branch not on kotoba-lang main) for 18 amu
   namespaces. Whether that satisfies AGENTS.md's "a product file gets a `:kotoba` reading", or amu's
   `src/kotoba/compiler/refactor/*.cljk` must get their own readings (the in-place walls above), is an owner decision.
 
 Reproduce:
 
 ```
-SB_KL_REV=1c7260f zsh scripts/seed/selfbuild-inputs.sh build/selfbuild-inputs     # SB_KL_REV=965c5f5 for the in-place view
+SB_KL_REV=1c7260f zsh scripts/seed/selfbuild-inputs.sh build/selfbuild-inputs     # the twins view (history; 8.0 for in place)
 zsh scripts/seed/selfbuild.sh --no-link build/selfbuild-twins                       # cat build/selfbuild-twins/report.txt
 ```

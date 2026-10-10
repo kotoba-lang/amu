@@ -54,7 +54,7 @@
   (let [o (cst/parse (io/read-file path))
         ns (cst/out-nodes o)
         bad (record-new [:ref :rs/part] 1 (typed-list-new [:list :string]) (vector-alloc 0) (typed-list-new [:list :vector-i64]))]
-    (if (or (> (string-byte-length (cst/out-err o)) 0) (= (vector-count ns) 0) (not (cst/map? (typed-list-nth [:list [:ref :cst/node]] ns 0))))
+    (if (or (> (string-byte-length (cst/out-err o)) 0) (= (vector-count ns) 0) (not (cst/map-node? (typed-list-nth [:list [:ref :cst/node]] ns 0))))
       bad
       (let [ms (map-val (typed-list-nth [:list [:ref :cst/node]] ns 0) ":modules")]
         (if (not (cst/vec? ms))
@@ -65,7 +65,7 @@
               (let [m (kid ms i)
                     mn (map-val m ":module") mo (map-val m ":order") mc (map-val m ":chunks")]
                 (cond
-                  (not (and (cst/map? m) (truthy? mn) (cst/vec? mc))) bad
+                  (not (and (cst/map-node? m) (truthy? mn) (cst/vec? mc))) bad
                   (not (and (= :str (cst/node-type mn)) (= :num (cst/node-type mo)) (digits? (cst/node-text mo))
                             (loop [j 0] (cond (>= j (nkids mc)) true (and (= :num (cst/node-type (kid mc j))) (digits? (cst/node-text (kid mc j)))) (recur (+ j 1)) :else false))))
                   (record-new [:ref :rs/part] 2 names orders chunks)
