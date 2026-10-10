@@ -257,7 +257,10 @@
                            (-> driver
                                (str/replace "HOST" (pr-str (lib/join lib/root "runtime" "browser-host.mjs")))
                                (str/replace "CEILING" (str ceiling))
-                               (str/replace "SCHEDULE" (pr-str gas-schedule-v0))
+                               ;; quoted: a weight's key is a SYMBOL, and `*` or `+`
+                               ;; written bare into the driver's source would be
+                               ;; evaluated to the function of that name.
+                               (str/replace "SCHEDULE" (str "(quote " (pr-str gas-schedule-v0) ")"))
                                (str/replace "GAS" (str (boolean gas?)))))
         _ (lib/write-text! programs-file (pr-str (mapv (fn [p] {:name (:name p) :source (source-of p)}) programs)))
         cp (str (lib/join lib/root "src") ":" (lib/join lib/root "resources") ":" (lib/lock-classpath))
