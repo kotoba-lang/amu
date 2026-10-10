@@ -177,7 +177,7 @@ number of `.cljk`/`.cljc`). Two input facts kept the twins out:
    measurement replayed the frozen farm with `scan.zsh` instead.
 
 kotoba-lang `claude/refactor-twins-parity` e936dd8 is 965c5f5 plus the 18 refactor twins (refactor tree identical to
-289d718): one commit with both kinds of twin.
+289d718): one commit with both kinds of twin; 1c7260f adds rule g's twin on top.
 
 **Wiring (no module special-cased).** `scripts/seed/selfbuild-inputs.sh <dir>` writes the three inputs from durable
 sources: `reach.txt` (the paths of the seed17 order.txt; reach-twins re-resolves each by namespace), `cp/src` (the seed17
@@ -192,11 +192,13 @@ reach-twins.py now reports extension swaps separately from same-extension conten
 
 | view | kotoba-lang | modules | OK | REFUSED | BLOCKED | of the 138 |
 |---|---|---:|---:|---:|---:|---:|
-| twins (project-route resolution) | `claude/refactor-twins-parity` **e936dd8** | 142 | **142** | 0 | 0 | **138 / 138** |
+| twins (project-route resolution) | `claude/refactor-twins-parity` **1c7260f** | 143 | **143** | 0 | 0 | **138 / 138** |
+| twins, first run (no rule g twin) | `claude/refactor-twins-parity` e936dd8 | 142 | 142 | 0 | 0 | 138 / 138 |
 | in place (amu's own refactor `.cljk`) | `agent/wall2-project-twin` 965c5f5 | 141 | 124 | 5 | 12 | 122 / 138 |
 
-- 142 = the 138 + `refactor.cljs-order` and `refactor.finding` (twin helpers required by verify / the rules) +
-  `native-artifact` and `native-admission` (required by c78b96f3f's `nbb.cli`). 16 entries resolve to another extension
+- 143 = the 138 + `refactor.cljs-order` and `refactor.finding` (twin helpers required by verify / the rules) +
+  `refactor.rules.fnlit` (rule g's twin, required by the twin `core`) + `native-artifact` and `native-admission`
+  (required by c78b96f3f's `nbb.cli`). (142 at e936dd8: the same without fnlit.) 16 entries resolve to another extension
   (exactly the 16 refactor modules), 8 to same-extension files with other content (the 6 amu files changed since the
   snapshot, osaho's 2), 114 to identical copies. Entries: check 82/82, compile 99/99, refactor 22/22 OK, each with a
   Kotoba `main`. 0 walls.
@@ -204,10 +206,10 @@ reach-twins.py now reports extension swaps separately from same-extension conten
   `refactor.verify` E1005 reader syntax `#`; `refactor.prelude` E6009 exports nothing; BLOCKED behind them: core, graph,
   extract, partition, rules, rules.{destructure, reject, dynvars, kwcallback, letdestructure, lowerloops} and **rules.fnlit**
   (rule g, new in c78b96f3f's rules.cljk; 141 = the 138 + fnlit + the two native modules). The stage-0 column was not run.
-- **fnlit (rule g) gap.** In the twins view `rules.fnlit` is not reached at all: the twin `rules.kotoba` at e936dd8 does
-  not require it, so the native refactor's rule set has no rule g while amu's host `rules.cljk` has. The count is complete
-  but the rule set is not. When the twins agent commits `rules/fnlit.kotoba` and a `rules.kotoba` that requires it, the
-  closure adds the fnlit twin (143 modules); not measured here (uncommitted in its worktree at the time).
+- **fnlit (rule g).** At e936dd8 `rules.fnlit` was not reached (the twin `rules.kotoba` did not require it: no rule g in
+  the native rule set). At 1c7260f (`rules/fnlit.kotoba`; `rules.kotoba` and `core.kotoba` route "g") the closure adds
+  the fnlit twin, and the seed compiles it (219 lines, 37,963 object bytes), ordered before `rules` and `core`: 143/143,
+  0 walls. The in-place view does not depend on the kotoba-lang rev past 965c5f5 and was not rerun.
 - Policy, not decided here: the twins view counts kotoba-lang files (a branch not on kotoba-lang main) for 18 amu
   namespaces. Whether that satisfies AGENTS.md's "a product file gets a `:kotoba` reading", or amu's
   `src/kotoba/compiler/refactor/*.cljk` must get their own readings (the in-place walls above), is an owner decision.
@@ -215,6 +217,6 @@ reach-twins.py now reports extension swaps separately from same-extension conten
 Reproduce:
 
 ```
-zsh scripts/seed/selfbuild-inputs.sh build/selfbuild-inputs                       # SB_KL_REV=965c5f5 for the in-place view
+SB_KL_REV=1c7260f zsh scripts/seed/selfbuild-inputs.sh build/selfbuild-inputs     # SB_KL_REV=965c5f5 for the in-place view
 zsh scripts/seed/selfbuild.sh --no-link build/selfbuild-twins                       # cat build/selfbuild-twins/report.txt
 ```
