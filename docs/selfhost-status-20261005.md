@@ -300,3 +300,128 @@ runs, 0 exec/spawn).
    bounded-edn has no `#_`. p32 and p34 trap. These stay DIFF in G3.
 2. The more-than-32-grants trap (G2 corpus-policy-all) and crc32 / matmult-int are being fixed elsewhere.
 3. The frontend snapshot's rows go away with a newer farm.
+
+## 10. Addendum 2026-10-10: final round, malformed input refused by name, upstream fixes in the farm, rebuilt and measured (agent claude, branch claude/image-product-entries)
+
+**Inputs** (`scripts/seed/selfbuild-inputs.sh`, defaults now pinned by full commit; then `selfbuild.sh --no-link`
+with seed r6m: 143/143 OK; then `rebuild.sh` with seed r6n `b3f46d32`). Source tree amu 665594a11. Classpath = the
+seed17 farm (order sha256 `6e9adfc0`, 67 classpath files) with these overlays, each taken by `git show <commit>:<path>`
+(the repos' local branch refs lag their remotes, so the commit, not a branch or a /private/tmp path, is the input):
+
+| repo | commit (agent/dual-runtime-port-D) | file | sha256 |
+|---|---|---|---|
+| osaho | 3d29ca9e56320837567d65120fc53b09bd88c83f | src/kotoba/kir/admission.cljk | `e3ebd5c5` |
+| osaho | 3d29ca9e (as d2cc281) | src/kotoba/kir/interp.cljk, target.cljk | `977b1c44`, `2c702939` |
+| kotoba-mir | e2cf973cdda3c88d84f34b0a6e84d6ded93ed763 | src/kotoba/mir.cljk | `c7f56572` |
+| kotoba-native | ca8bb098e349226d623c48c7eb267f44de52d711 | src/kotoba/native/machine_ir.cljk | `e7c3fdb5` |
+| kotoba-lang | 965c5f5b2f574f6be8f0b9572ca6cd6bac28ce97 | lang/compat (project and reader twins) | |
+
+Rebuild input manifest (`build/fp/inputs.sha256`) sha256 `85308ab7`; scan order (143 modules) `3e74a33c`.
+
+**Part 1: malformed input** (commit 665594a11; Kotoba readings only). Each changed `.cljk` file was read with the
+`:clj` features and again with `:cljs`, at HEAD and in the tree. The forms are the same, compared as printed data, so
+the host readings are unchanged. Host `bin/amu` vs the image, through `check` (io/pure/two/abort) and `compile`:
+
+| case | before (image on the same new inputs, without part 1) | after (g3 `293ea98e`) | bin/amu |
+|---|---|---|---|
+| p34: invalid UTF-8 in the policy | SIGILL 120 | 65 `:decode` "input is not valid UTF-8" | same |
+| bad-utf8.kotoba: invalid UTF-8 source (new fixture) | SIGILL 120 | 65 `:decode`, same text | same |
+| `/Users/junkawasaki/nonexistent-checkfull.{kotoba,edn}` (outside the baked scope) | SIGILL 120 | 65 `:decode` "input could not be read" | same |
+| p20: `#_` discard in the policy | 65 "EDN dispatch forms are forbidden" | accept io/pure/abort, two 65 denied | same |
+| p27: `nil` policy | pure/abort admitted (0), io/two "denies required effects" | 65 `:admission` "malformed capability policy" | same |
+| p32: `{:a <U+0007>}` | 65 malformed (SIGTRAP on g3 `27ffb605`; osaho 3d29ca9 fixed it) | same | same |
+| p05: vector `:allow` | 65 malformed (osaho 3d29ca9 fixed it) | same | same |
+
+- p32 is not an odd map. Its value is the one-character symbol U+0007 (BEL is a token character for both readers).
+  The host's kotoba reader reads `{:a \u0007}` and admission refuses it. The trap was in admission's document-typed
+  reading, which osaho 3d29ca9 replaced.
+- nbb.io `read-text-file` (source, `--policy`, `.kexe`): first EXISTS, because STAT and READ trap outside the scope
+  and EXISTS answers "0" there. Then STAT (directory, size), then a bytes READ. Then `text-bytes/utf8-valid?` (new,
+  Kotoba only; the same walk as the loader's `string-from-utf8`) runs before the bytes become a string.
+- bounded-edn: its own READ gets the same guards. New `read-reader-text-limits` = the host's cli-support
+  `read-edn-form!` (the kotoba reader with no dispatch preflight). cli-support reads `--policy`, `.kexe` and module
+  locks through it, because the host reader admits `#_` and sets. So p20 is decided by reading it, not by a NORM/GAP
+  row. bounded-edn's own `read-edn-text` keeps its preflight contract.
+- `nil` policy: kotoba.form's `dissoc-form` made a map out of any Form's kids. cli-support `capability-policy`,
+  check-driver `cd-capability-policy` and native-artifact's two dissocs now hand on a non-map policy unchanged, as the
+  host's `dissoc` does.
+- Regression lists: `seed/tests/checkfull/cases-args.txt` (used by check-cli/args.sh) gains `check bad-utf8.kotoba`
+  and 7 malformed-input `compile` cases. `seed/tests/compile-cli/refusals.sh` gains 8 cases. p05/p20/p27/p32/p34 already
+  run in every args.sh pass (p*.edn x 4).
+- refusals.sh's build-from-source guest no longer builds: the seed refuses aarch64-cli's `run` (E2104, `expected :i64`,
+  with r6m and with r6n). The cause is the `run [args]` export of section 8, not this change. Its host column gives the
+  expected codes for the 8 new cases: 65 x 7 and 0 for p20. The image answers all of them through args.sh (below).
+
+**Generations** (`zsh scripts/seed/image/rebuild.sh build/rin build/fp`, 138 s): **fixed point, g0 = g1 = g2 = g3**.
+
+| gen | built by | objects (172) manifest | kseed | native code | command |
+|---|---|---|---|---|---|
+| g0 | seed r6n `b3f46d32` | `9d7a6966` (25,387,078 B) | `02f5630b` 10,993,179 B | `6076a455` 10,993,144 B | `293ea98e` 11,261,064 B |
+| g1 | g0's image | `9d7a6966` | `02f5630b` | `6076a455` | `293ea98e` |
+| g2 | g1's image | `9d7a6966` | `02f5630b` | `6076a455` | `293ea98e` |
+| g3 | g2's image | `9d7a6966` | `02f5630b` | `6076a455` | `293ea98e` |
+
+Full hashes: kseed 02f5630be78e59f8e1da7ef7084d6db09a053ab7b8f44b8d5834842451b774ca, code
+6076a45566456c68340d164ee91f10874beffb8d3f39cb057c68f40ee9fec49f, command
+293ea98e92cec0a319011fc4e4cec9217fc8908dba333aba5055c892595500f6. A test image built before the commit, which differed
+only in two host `nil` forms, gave the same command `293ea98e`. So the Kotoba objects do not see the host readings.
+
+**Size**: the kseed is 10,993,179 B (+14,832 B against section 8). That is 65.5% of r6n's 16 Mi extract input bound
+(16,777,216 B), with 5,784,037 B of headroom.
+
+**Corpus through the image** (g3, load1 50-190):
+- `compile` vs bin/amu (`seed/tests/compile-cli/run.sh --image`):
+  - 372 corpus programs: BOTH-ACCEPT **293** (seal, provenance and answer SAME on all; publication 290 SAME-SHAPE and
+    3 SIZE-DIFF). BOTH-REFUSE with the same exit **62**. BOTH-REFUSE-CLASS-DIFF **1** (examples/w1-effect-named:
+    host 65 `:admission`, image 70 `:target`, native-admission; named in section 8). HOST-ONLY **16** (the verifier
+    twin's kept strictness: 8 "unsupported effect" abort programs, 8 "runtime KIR shape/operation rejected").
+    GUEST-ONLY **0**. These are section 8's classes, unchanged.
+  - 19 in-repo Embench ports (`bench/embench/ports`): **19 BOTH-ACCEPT SAME** (seal, provenance, answer;
+    publication SAME-SHAPE). **crc32 and matmult-int are now SAME** (section 8: HOST-ONLY, exit 120 at the 64 Mi pair
+    ceiling). That is kotoba-mir e2cf973 + kotoba-native ca8bb09.
+- `check` vs bin/amu (`seed/tests/check-cli/image.sh`, 391 = 372 + 19 ports; image.sh, corpus.sh and launcher L2 now
+  take the in-repo ports when the amu-embench checkout is absent): **0 traps, 0 DIFF** in all three modes.
+  - none: 358 accept + 33 refuse.
+  - corpus-policy: 359 + 32.
+  - corpus-policy-all (42 grants): 366 + 25 (section 8: 347 SIGTRAP).
+  - Every row is NAMED with NORM rows only: definitions-marker on every accept, reduced-report on every refusal, and
+    the snapshot rows msg-require-module 5, exports-doc-helpers 2, msg-effect-ceiling-set, msg-set-literal-wording,
+    msg-doseq-first-rule and msg-nth-unlowered 1 each.
+
+**L1-L4** (`scripts/seed/launcher/test.sh build/fp/g3/amu`): all PASS.
+- L1: 39 cases, 11 SAME, 17 SAME-DATA, 11 DECLARED.
+- L2: Embench 19/19 BEHAVIOUR-SAME against stage-0, 114 export runs SAME, 19 seals ok, in-repo ports.
+- L3: 6 runs, 0 exec/spawn.
+- L4: libSystem only.
+
+The first L2 run failed 0/19, because of stale stage-0 failure records in `build/seed-kir/census/kexe/*.fail` from an
+earlier run ("input must be a regular file"). Those records were removed and the run repeated.
+
+**prove-100** (`scripts/seed/prove-100.sh build/fp/g3/amu build/fp`, at 665594a11, g3 `293ea98e`, load1 50-210):
+**8 PASS, 6 FAIL** (section 9: 4 PASS, 10 FAIL).
+
+| row | verdict | cause |
+|---|---|---|
+| INPUTS | PASS | manifest `85308ab7` |
+| G4 | PASS | 3 generations equal (objects, container, code, command), builder receipts present |
+| PRODUCT | FAIL | `bin/amu` is still node + nbb (the image is not installed as bin/amu) |
+| ENTRIES | PASS | check-cli and aarch64-cli objects in g3/o |
+| STATIC | PASS | libSystem only; wires 3,34,35,37,38,39 |
+| G1 | PASS | L1-L4 PASS; L2 Embench 19/19 BEHAVIOUR-SAME (in-repo ports), 114 export runs SAME |
+| INTERPOSER | PASS | L3: 6 runs, 0 exec/spawn/system/popen |
+| G2 | PASS | 391/391 in each of the three policy modes, NORM rows only, 0 traps |
+| COMPILE_FULL | FAIL | 293 BOTH-ACCEPT SAME + 62 BOTH-REFUSE; the gate counts the named 1 CLASS-DIFF (w1-effect-named) + 16 HOST-ONLY (verifier strictness, owner: keep) |
+| G3 | PASS | 181 cases (cases-args.txt incl. the 8 new + 35 policy files x 4), **0 DIFF** (section 9: 24 DIFF) |
+| CHECK_FULL | FAIL | 0 STUB, 9 GAP: source-path-relative 1 (no cwd wire 40), policy-not-a-map 4 (p12: bin/amu internal error 70, image malformed policy 65), profile-phase 4 (p33: the snapshot's `:subset` 65 vs the current frontend's `:hir-validation` 70) |
+| G5 | FAIL | `sudo -n dtruss` needs a password (fail closed) |
+| REFACTOR_VERIFY | FAIL | declared stub (needs wire 20) |
+| QUIET_BENCH | FAIL | load1 83.41 (> 4) |
+
+**Open** (none of them is decided here):
+1. The three CHECK_FULL GAP rows. p12 is a host internal error that the image answers better. Matching it would mean
+   copying a host crash, which is an owner call. p33 goes away with a newer frontend farm. source-path-relative needs
+   a cwd wire.
+2. COMPILE_FULL's 17 named rows: verifier strictness (owner: keep) and w1-effect-named (kotoba-sema lines).
+3. An existing file outside the baked scope is refused "input could not be read", where bin/amu reads it. That is
+   the scope contract, and it is not measured as a case, because it depends on the machine.
+4. The f64-literal question stays open (not touched).
