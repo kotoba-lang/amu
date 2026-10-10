@@ -11,6 +11,22 @@ cloth.
 > GraalVM- or Node-hosted build is a bootstrap reference and is labelled so.
 > See [docs/selfhost-priority.md](docs/selfhost-priority.md).
 
+## Lisp machine architecture
+
+AiueOS is the OS for a modern Kotoba Lisp machine in development. Kototama
+is its implementation-independent Lisp VM contract: closed S-expression
+computation, IPLD state, bounded authority and content-addressed receipts.
+Amu checks and compiles code; grant decides permission; runtime hosts and OS
+mechanisms enforce the admitted boundary. Kototama also has hosted engines
+and does not require AiueOS for every execution.
+
+The [stack architecture](https://github.com/kotoba-lang/kotoba-lang/blob/main/docs/stack-architecture.md) separates responsibility, source/library
+and artifact dependencies. Its [composition contract](https://github.com/kotoba-lang/kotoba-lang/blob/main/lang/stack-architecture.edn) routes
+to each owner's specification; it is not a new language or runtime semantics.
+"Modern Lisp machine" describes the architectural direction. It does not
+certify a complete integrated debugger, live system modification, full heap
+image restore, selfhost compiler or physical-machine qualification.
+
 ## Definition CIDs (compile once per hash)
 
 Every top-level function gets a content identity — the payload-v2 definition
@@ -208,9 +224,10 @@ profiles, conformance and runtime digests, CI run, test time, and expiry.
 
 ## Execution policy
 
-The compiler has one source-admission and KIR pipeline. Its primary application
-artifact is a Wasm Component/profile: a component is portable, linked through
-typed WIT imports, and receives no authority except the capabilities admitted
+The compiler has one source-admission and KIR pipeline. The CLI defaults to
+the host native target; browser/Worker builds select their Wasm target
+explicitly. A Wasm Component/profile is the portable execution boundary:
+it links through typed WIT imports and receives only capabilities admitted
 by its host. `wasm32-wasi` does **not** mean ambient WASI access: the current
 profile rejects ambient WASI imports and expects a closed capability adapter.
 
@@ -223,9 +240,10 @@ the typed output as a ValueCID. Without that provider the capability traps.
 `apply` remains bounded closed-module closure invocation, while source strings,
 reader evaluation, ambient namespaces, and host `eval` remain unavailable.
 
-Direct x86-64/AArch64 AOT remains a supported backend for aiueos boot/kernel,
-engine, driver, root-key adapter, and explicitly trusted low-level primitives.
-It is not the default route for an ordinary Kotoba application. The compiler
+Direct x86-64/AArch64 AOT serves admitted native applications and AiueOS
+boot/kernel, engine, driver, root-key adapter and trusted low-level profiles.
+A host-native default is not ambient OS authority and does not qualify the
+separate C-free AiueOS production path. The compiler
 must not duplicate runtime policy. Two linkers, two authorities:
 
 ```text
@@ -233,8 +251,9 @@ amu      編む   project link — many sources, one cloth
 kototama 言霊   runtime link — admitted imports, granted providers only
 ```
 
-`aiueos` owns grant decisions. A small native host (`kototama-native`)
-independently enforces the resulting grant. See
+`grant` owns permission decisions. AiueOS and runtime hosts enforce the
+admitted boundary. A small native host (`kototama-native`) independently
+enforces the resulting grant. See
 [`ADR-2607252500`](https://github.com/com-junkawasaki/root/blob/main/90-docs/adr/2607252500-kotoba-wasm-component-first-execution-boundary.edn).
 
 The portable reference runtime also defines the identity-to-capability
@@ -352,10 +371,10 @@ NaN, infinities, and signed-i64 overflow.
 
 ## Stack topology & boundaries
 
-This repository is the **foundation layer** of the kotoba stack: it depends
-on nothing else in the stack (`security` and the pinned `kotoba-script` JS
-backend only), and `kotoba` / `kototama` / `aiueos` / `kotobase` consume it —
-as a library or as emitted artifacts — never the reverse. The canonical
+This repository owns **T2 compilation and project linking**. It consumes
+shared contracts, semantic/IR libraries and native, Wasm, Component and Script
+backends. Consumers use it as a build library/tool or consume its verified
+artifacts; this is distinct from importing an OS or deciding runtime grants. The canonical
 topology, the dependency-direction invariants, and this repo's assigned
 design-cleanup items (admission-gate ↔ backend capability parity, unified
 `=` equality surface, kexe-loader validation in Kotoba objects, classpath-scan
