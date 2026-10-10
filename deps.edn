@@ -1247,7 +1247,14 @@
          ;; Advanced 2026-09-26, 0274ce3b -> 4aca449e (artifact main tip, forward only): POSIX
          ;; loader identity daa8df69 -- the :fs/app-data OWNER form (superproject
          ;; adr-2609242330, selfhost stage 2).
-         :git/sha "4aca449e1d973a7470a3a39baea827930d083b3d"}
+         ;; Advanced 2026-10-10, 4aca449e -> a31d4db9 (artifact main tip, ahead 6, forward only):
+         ;; POSIX loader identity 67d66c3d -- native gas at context ABI v12 (superproject
+         ;; adr-2610092340 D12), the tools/kexe_loader.c of 0b9a24dac (#1268), which left this
+         ;; pin at daa8df69. Passes through ac2ed473 (native TCP broker, wires 43..47,
+         ;; 81db1183b), which had also been missing. Also carries SourceCID
+         ;; (kotoba.artifact.source-identity) and its io-multiformats floor a6ee1417; nothing
+         ;; here requires that namespace, and the io-multiformats pin below still decides.
+         :git/sha "a31d4db976a92a65528a0b7834beefe6f8c7e9f2"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -2171,7 +2178,10 @@
                     ;; :native-run below pins to the same commit.
                     ;; Advanced 2026-09-24, 005c9b74 -> 749c74c5 (kototama-native main, ahead 4,
                     ;; behind 0, forward only), adr-2609242100 P4: supervise a run under the artifact's fuel profile (unmetered by default).
-                    :git/sha "749c74c52054b53098575ace575c0193da43a8de"}}
+                    ;; Advanced 2026-10-10, 749c74c5 -> 67b3543e (kototama-native main, ahead 4,
+                    ;; behind 0, forward only), kototama-native #14: a loader that is absent or not
+                    ;; executable is refused by name (:execute), not as a runtime identity mismatch.
+                    :git/sha "67b3543e7785d675f649e26c43f2f93a1268d1d6"}}
                   ;; No :main-opts: the JVM test runner left with the JVM route
                   ;; (2026-09-11). This alias remains as the DECLARATION of the
                   ;; extra git dependencies the nbb test runners need;
@@ -2202,4 +2212,5 @@
                           ;; (kototama-native main 2026-09-11, ahead of a4089a2f).
                           ;; Advanced 2026-09-24, 005c9b74 -> 749c74c5 (kototama-native main, ahead 4,
                           ;; behind 0, forward only), adr-2609242100 P4: supervise a run under the artifact's fuel profile (unmetered by default).
-                          :git/sha "749c74c52054b53098575ace575c0193da43a8de"}}}}}
+                          ;; Advanced 2026-10-10, 749c74c5 -> 67b3543e with :test above (kototama-native #14).
+                          :git/sha "67b3543e7785d675f649e26c43f2f93a1268d1d6"}}}}}
