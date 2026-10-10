@@ -1651,3 +1651,14 @@ restricted artifact instances have a cumulative fuel budget, and their export
 wrappers need independent qualification for function names, prototypes and
 constructibility before replacing the original package exports. Preserve the
 restricted profile and its budgets while implementing that library boundary.
+
+## Target-neutral and distributed stack architecture
+
+Checks target-independent semantics and emits a selected Native, Wasm core, Component, Script or bounded EVM artifact. Project linking belongs here; runtime linking belongs to the host. The default target is host-native. EVM output is a bounded compiler slice, not a settlement network or proof of full Kototama conformance.
+
+See the [owner integration guide and dependency direction](docs/stack-architecture.md),
+[composition metadata](spec/stack-integration.edn), and
+[whole-stack refactor procedure](https://github.com/kotoba-lang/kotoba-lang/blob/main/docs/stack-refactor-procedure.md).
+The direction is adopted; runtime contract migration and qualification remain
+explicit, separately verified work. Tier labels are responsibility axes, not
+a single dependency ranking.
