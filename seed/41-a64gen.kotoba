@@ -1,3 +1,90 @@
+;; ADR0357 one-off novel call-edge rule: reuse closed emitted byte lookup, no payload duplication.
+(defn- dt-fixes [M :vector-i64 a :i64 k :i64 found :i64] :i64
+ (if (>= k (vector-at M MM-FIX-N)) found
+  (let [at (vector-at M (+ MM-FIX-BASE (* k MM-FIX-W) XF-AT))]
+   (if (and (>= at a) (< at (+ a 11)))
+    (let [kind (vector-at M (+ MM-FIX-BASE (* k MM-FIX-W) XF-KIND))
+     target (vector-at M (+ MM-FIX-BASE (* k MM-FIX-W) XF-TARGET))
+     aux (vector-at M (+ MM-FIX-BASE (* k MM-FIX-W) XF-AUX))]
+     (if (and (= found 0) (= at (+ a 5)) (= kind FX-LIT32) (= aux 0)
+       (> target 0) (< target (vector-at M MM-LIT-N)))
+      (dt-fixes M a (inc k) target) 0))
+    (dt-fixes M a (inc k) found)))))
+(defn- dt-labels [M :vector-i64 a :i64 k :i64] :bool
+ (if (>= k (vector-at M MM-LABEL-N)) true
+  (let [at (vector-at M (+ MM-LABEL-BASE k))]
+   (and (not (and (> at a) (< at (+ a 11)))) (dt-labels M a (inc k))))))
+(defn- dt-bytes [M :vector-i64 p :i64 base :i64 n :i64 k :i64] :bool
+ (or (= k n)
+  (let [v (gn-sir M (+ p 6 (* 7 k)) IF-B)]
+   (and (>= v 0) (<= v 255) (= (vector-at M (+ MM-LITB-BASE base k)) v)
+    (dt-bytes M p base n (inc k))))))
+(defn- dt-prefix [M :vector-i64 a :i64 n :i64] :bool
+ (and (= (vector-at M (+ MM-CODE-BASE a)) (enc-mov-r 9 0))
+  (= (vector-at M (+ MM-CODE-BASE a 1)) (enc-cmp-i 9 n))
+  (= (vector-at M (+ MM-CODE-BASE a 2)) (enc-bcond (enc-cond-hs) 7))
+  (= (vector-at M (+ MM-CODE-BASE a 3)) (enc-ldr 17 7 CTX-CODE-BASE))
+  (= (vector-at M (+ MM-CODE-BASE a 4)) (gn-e-addsl 17 17 9 0))
+  (= (vector-at M (+ MM-CODE-BASE a 5)) (enc-movz 16 0 0))
+  (= (vector-at M (+ MM-CODE-BASE a 6)) (enc-movk 16 0 1))
+  (= (vector-at M (+ MM-CODE-BASE a 7)) 0x38706a20)
+  (= (vector-at M (+ MM-CODE-BASE a 8)) (enc-ret))
+  (= (vector-at M (+ MM-CODE-BASE a 9)) (enc-movz 0 0 0))
+  (= (vector-at M (+ MM-CODE-BASE a 10)) (enc-ret))))
+(defn- dt-admit [M :vector-i64 i :i64 f :i64 t :i64 argc :i64] :i64
+ (let [sn (vector-at M MM-SIR-N) fnn (vector-at M MM-FN-N) cn (vector-at M MM-CODE-N)
+   xn (vector-at M MM-FIX-N) ln (vector-at M MM-LIT-N) lb (vector-at M MM-LITB-N)
+   labels (vector-at M MM-LABEL-N) owner (gn-g M fr-owner)]
+  (if (or (< sn 21) (> sn MM-SIR-CAP) (<= fnn 0) (> fnn MM-FN-CAP)
+   (<= f 0) (>= f fnn) (>= f MM-FN-CAP) (<= owner 0) (>= owner fnn) (= owner f) (< i 1) (>= i (dec sn))
+   (not= argc 1) (< t 0) (> t 6) (not= (vector-at M MM-ERR) 0)
+   (< cn 11) (> cn (- MM-CODE-CAP 16)) (< xn 1) (>= xn MM-FIX-CAP)
+   (< ln 2) (> ln MM-LIT-CAP) (< lb 0) (> lb MM-LITB-CAP)
+   (< labels 1) (> labels MM-LABEL-CAP) (gn-clamp-open M f)
+   (not= (gn-g M gn-f-skip) 0) (not= (gn-g M gn-f-dead) 0)
+   (not= (gn-g M gn-f-leaf) 0) (not= (gn-g M gn-f-freg) 0)
+   (not= (gn-g M gn-f-vmode) 0) (not= (gn-g M gn-f-ctx) 1)
+   (not= (gn-g M gn-f-h) (+ t 1)) (< (gn-g M gn-f-dp) (+ t 1))
+   (> (gn-g M gn-f-dp) gn-cap) (< (gn-g M gn-f-ns) 0) (> (gn-g M gn-f-ns) gn-cap)
+   (<= (gn-g M gn-f-fb) 0) (> (gn-g M gn-f-fb) 32768)
+   (not= (bit-and (gn-g M gn-f-fb) 15) 0)
+   (< (gn-g M gn-f-nsv) 1) (> (gn-g M gn-f-nsv) 10) (not= (gn-g M gn-f-out) 0)
+   (not (uc-row M i OP-CALL f t 1)) (= (gn-op M (inc i)) OP-RET)
+   (= (gn-op M (inc i)) OP-RES2)) 0
+   (let [p (gn-fnf M f FF-SIR) a (gn-fnf M f FF-CODE)]
+    (if (or (<= p 0) (> p (- sn 21)) (< a 0) (> a (- cn 11))
+      (not= (gn-fnf M f FF-NPARAMS) 1) (not= (gn-fnf M f FF-NSLOTS) 1)
+      (not= (gn-fnf M f FF-DEPTH) 2) (not= (gn-fnf M f FF-FUEL) 0)
+      (not= (gn-fnf M f FF-PT0) TY-I64) (not= (gn-fnf M f FF-RTYPE) TY-I64)
+      (<= (gn-fnf M owner FF-SIR) 0) (>= (gn-fnf M owner FF-SIR) i)
+      (not= (gn-fnf M owner FF-NSLOTS) (gn-g M gn-f-ns))
+      (not= (gn-fnf M owner FF-DEPTH) (gn-g M gn-f-dp))
+      (< (gn-fnf M owner FF-NPARAMS) 0) (> (gn-fnf M owner FF-NPARAMS) (gn-g M gn-f-ns))
+      (not (gn-dot-at? M (gn-fnf M owner FF-SIR) OP-FN owner
+        (gn-fnf M owner FF-NPARAMS) (gn-g M gn-f-ns)))
+      (<= (gn-fnf M owner FF-CODE) a) (> (gn-fnf M owner FF-CODE) cn)) 0
+     (let [n (dl-shape M p f)]
+      (if (or (< n 2) (> n 4095) (>= (+ p 4 (* n 8)) i) (not= (gn-sir M (+ p 3) IF-B) 0)
+        (not= (gn-sir M (+ p 2 (* 7 n)) IF-B) 0) (not (dt-prefix M a n))
+        (not (dt-labels M a 1))) 0
+       (let [literal (dt-fixes M a 1 0)]
+        (if (= literal 0) 0
+         (let [r (+ MM-LIT-BASE (* literal MM-LIT-W))
+           base (vector-at M (+ r LF-B)) len (vector-at M (+ r LF-LEN))]
+          (if (and (= len n) (>= base 0) (<= base (- lb n))
+              (= (vector-at M (+ r LF-TOK)) 0) (dt-bytes M p base n 0)) literal 0)))))))))))
+(defn- dt-emit [M :vector-i64 f :i64 literal :i64] :vector-i64
+ (let [p (gn-fnf M f FF-SIR) n (dl-shape M p f)
+   m0 (gn-emit M (enc-cmp-i 0 n)) outside (vector-at m0 MM-CODE-N)
+   m1 (-> m0 (gn-emit (enc-bcond (enc-cond-hs) 0))
+    (gn-emit (enc-ldr 17 7 CTX-CODE-BASE)) (gn-emit (gn-e-addsl 17 17 0 0))
+    (gn-fix FX-LIT32 literal) (gn-emit (enc-movz 16 0 0)) (gn-emit (enc-movk 16 0 1))
+    (gn-emit 0x38706a20)) jump (vector-at m1 MM-CODE-N)
+   m2 (gn-emit m1 (enc-b 0)) out (vector-at m2 MM-CODE-N)
+   m3 (gn-emit m2 (enc-movz 0 0 0)) end (vector-at m3 MM-CODE-N)]
+  (-> m3 (gn-put (+ MM-CODE-BASE outside) (enc-bcond (enc-cond-hs) (- out outside)))
+    (gn-put (+ MM-CODE-BASE jump) (enc-b (- end jump))))))
+
 ;; Closed charged short-circuit checked affine reader; shared publication before any guest read.
 (defn- scv-paid [M :vector-i64 f :i64] :bool
  (let [a (gn-fnf M f FF-CODE) e (vector-at M MM-CODE-N)]
@@ -13116,6 +13203,8 @@
             (< (gn-sir M (inc a) IF-A) MM-LABEL-CAP)
             (uc-shape M g 2 (+ a 10))))))))))
 (defn- cw-transfer [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
+ (let [literal (dt-admit M i f t n)]
+ (if (> literal 0) (dt-emit M f literal)
  (if (scv-safe M i f t n) (scv-emit M f)
  (if (spu-safe M i f t n) (spu-emit M)
  (if (bv-transfer-safe M i f t n) (bv-transfer-emit M f)
@@ -13129,7 +13218,7 @@
      (if (fw-admit M f n) (fw-transfer M f)
       (if (sa-admit M f n) (sa-transfer M f)
        (if (gc-admit M f n) (gc-transfer M f)
-        (-> M (gn-fix FX-BL26 f) (gn-emit (enc-bl 0))))))))))))))))
+        (-> M (gn-fix FX-BL26 f) (gn-emit (enc-bl 0))))))))))))))))))
 
 (defn- gn-call-generic [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
  (cond
