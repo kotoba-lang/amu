@@ -10574,19 +10574,88 @@
               d (gn-dreg M t s)]
           (-> M (gn-protect t s) (gn-bin-emit bop t d) (gn-fin t s d))))))))
 
+;; Generic pure full64 BITNOT consumed once by AND/OR on straight-line rows.
+;; Capacity/descriptor preflight precedes every mutation; no partial fallback.
+(defn- bn-slot [M :vector-i64 slot :i64] :bool
+ (let [off (gn-soff M slot)]
+  (and (>= off 0) (<= off 32760) (= (bit-and off 7) 0))))
+(defn- bn-reg [r :i64] :bool
+ (or (and (>= r 0) (<= r 6)) (and (>= r 19) (<= r 28))))
+(defn- bn-local [M :vector-i64 slot :i64] :bool
+ (and (> slot 0) (<= slot (gn-g M gn-f-ns))
+  (let [r (gn-sreg M slot)] (or (bn-reg r) (and (= r -1) (bn-slot M slot))))))
+(defn- bn-source [M :vector-i64 t :i64] :bool
+ (let [k (gn-dk M t)]
+  (or (= k gn-k-reg)
+   (and (= k gn-k-home) (bn-slot M (gn-home M t)))
+   (and (= k gn-k-local) (bn-local M (gn-dv M t))))))
+(defn- bn-owned [M :vector-i64 j :i64 i :i64 work :i64] :bool
+ (cond (> j i) true
+       (or (<= work 0) (>= j (vector-at M MM-SIR-N))
+           (= (gn-op M j) OP-END) (= (gn-op M j) OP-FN)) false
+       :else (bn-owned M (inc j) i (dec work))))
+;; mode1: NOT right then BIN; mode2: NOT left, appended LGET, then BIN.
+(defn- bn-mode [M :vector-i64 i :i64 uop :i64 n :i64] :i64
+ (if (or (not= uop UOP-BITNOT) (< n 0) (> n 6)
+  (< i 1) (>= (+ i 20) (vector-at M MM-SIR-N))
+  (> (vector-at M MM-SIR-N) MM-SIR-CAP) (< (vector-at M MM-SIR-N) 1)
+  (< (gn-g M gn-f-dp) (inc n)) (> (gn-g M gn-f-dp) 7)
+  (not= (gn-g M gn-f-h) (inc n))
+  (not= (gn-g M gn-f-dead) 0) (not= (gn-g M gn-f-skip) 0)
+  (not= (vector-at M MM-ERR) 0) (< (vector-at M MM-CODE-N) 0)
+  (> (vector-at M MM-CODE-N) (- MM-CODE-CAP 16))
+  (< (vector-at M MM-FIX-N) 0) (> (vector-at M MM-FIX-N) MM-FIX-CAP)
+  (not (uc-row M i OP-UN UOP-BITNOT n 0)) (not (bn-source M n))) 0
+  (let [f (gn-g M fr-owner)]
+   (if (or (<= f 0) (>= f (vector-at M MM-FN-N)) (>= f MM-FN-CAP)
+    (> (vector-at M MM-FN-N) MM-FN-CAP)
+    (not= (gn-fnf M f FF-DEPTH) (gn-g M gn-f-dp))
+    (not= (gn-fnf M f FF-NSLOTS) (gn-g M gn-f-ns))
+    (>= (gn-fnf M f FF-SIR) i) (<= (gn-fnf M f FF-SIR) 0)
+    (not (bn-owned M (inc (gn-fnf M f FF-SIR)) i 512))) 0
+    (let [right (and (> n 0) (bn-source M (dec n))
+                (or (uc-row M (inc i) OP-BIN BOP-AND (dec n) 0)
+                    (uc-row M (inc i) OP-BIN BOP-OR (dec n) 0)))
+          left (and (< n 6) (< (inc n) (gn-g M gn-f-dp))
+                (= (gn-op M (inc i)) OP-LGET)
+                (= (gn-sir M (inc i) IF-A) (inc n))
+                (= (gn-sir M (inc i) IF-C) 0)
+                (bn-local M (gn-sir M (inc i) IF-B))
+                (or (uc-row M (+ i 2) OP-BIN BOP-AND n 0)
+                    (uc-row M (+ i 2) OP-BIN BOP-OR n 0)))
+          mode (if right 1 (if left 2 0))
+          j (+ i mode) t (if (= mode 1) (dec n) n)
+          s (if (> mode 0) (gn-co M j t) 0)]
+     (if (and (> mode 0) (or (= s 0) (and (bn-local M s) (bn-reg (gn-sreg M s))))) mode 0))))))
+(defn- bn-emit [M :vector-i64 i :i64 n :i64 mode :i64] :vector-i64
+ (let [j (+ i mode) t (if (= mode 1) (dec n) n)
+       s (gn-co M j t)
+       M0 (if (= mode 2) (gn-def M (inc n) gn-k-local (gn-sir M (inc i) IF-B)) M)
+       M1 (gn-protect M0 t s)
+       d (gn-dreg M1 t s)
+       x (gn-src M1 t 16 0) y (gn-src M1 (inc t) 17 0)
+       rn (if (= mode 2) y x) rm (if (= mode 2) x y)
+       word (if (= (gn-sir M j IF-A) BOP-AND)
+              (bit-or (enc-and-r d rn rm) 0x200000) (enc-orn-r d rn rm))
+       M2 (-> M1 (gn-ldt t 16 0) (gn-ldt (inc t) 17 0)
+           (gn-emit word) (gn-fin t s d))]
+  (gn-gs M2 gn-f-skip (+ mode (if (> s 0) 1 0)))))
+
 (defn- gn-op-un [M :vector-i64 i :i64 uop :i64 t :i64] :vector-i64
   (let [v (gn-dv M t)]
     (cond (>= uop UOP-F64-NEG) (gn-fl-op-un M i uop t)   ; FLOAT
           (not (or (= uop UOP-NOT) (= uop UOP-BITNOT))) (gn-err M E-GEN-OP OP-UN)
           (gn-isk M t gn-k-const) (gn-def M t gn-k-const (if (= uop UOP-NOT) (bit-xor v 1) (bit-not v)))
-          :else (let [s (gn-co M i t)
+          :else (let [mode (bn-mode M i uop t)]
+           (if (> mode 0) (bn-emit M i t mode)
+            (let [s (gn-co M i t)
                       d (gn-dreg M t s)
                       x (gn-src M t 16 1)]
                   (-> M
                       (gn-protect t s)
                       (gn-ldt t 16 1)
                       (gn-emit (if (= uop UOP-NOT) (enc-eor-1 d x) (enc-mvn d x)))
-                      (gn-fin t s d))))))
+                      (gn-fin t s d))))))))
 
 ;; ---- compares and branches ------------------------------------------------------------------------------------------
 (defn- gn-cmp-fold [cc :i64 x :i64 y :i64] :i64
