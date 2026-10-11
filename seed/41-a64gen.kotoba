@@ -1,3 +1,618 @@
+(defn- btg-walk [M :vector-i64 f :i64] :bool
+ (let [sn (vector-at M MM-SIR-N) fnn (vector-at M MM-FN-N)]
+  (if (or (<= f 0) (>= f fnn) (> fnn MM-FN-CAP)
+    (> sn MM-SIR-CAP) (< sn 77)) false
+   (let [p (gn-fnf M f FF-SIR)]
+    (if (or (<= p 0) (> p (- sn 77))) false
+     (let [flag (gn-sir M (+ p 4) IF-B) stride (gn-sir M (+ p 39) IF-B)]
+      (and (not (gn-clamp-open M f)) (= (gn-fnf M f FF-NPARAMS) 5)
+       (= (gn-fnf M f FF-NSLOTS) 9) (= (gn-fnf M f FF-DEPTH) 5)
+       (= (gn-fnf M f FF-FUEL) 1) (= (gn-fnf M f FF-RTYPE) TY-I64)
+       (= (gn-fnf M f FF-PT0) TY-VEC) (qb-int-params M f 1 5)
+       (> flag 1) (<= flag 256) (> (gn-pow2 flag) 0)
+       (> stride 1) (<= stride 256) (> (gn-pow2 stride) 0)
+       (gt-constants M p 0) (gt-shape M p f 0) (qb-labels M p 77 0))))))))
+
+;; UNHOOKED generic exact88-row charged class/tree aggregation owner.
+;; Symbolic function/label links and class/tree/vote constants are current-M derived.
+(defn- btg-row [M :vector-i64 p :i64 f :i64 walk :i64 writer :i64 classes :i64 per :i64 votes :i64 k :i64] :bool
+ (let [l2 (gn-sir M (+ p 2) IF-A) l9 (gn-sir M (+ p 9) IF-A) l33 (gn-sir M (+ p 33) IF-A) l84 (gn-sir M (+ p 84) IF-A) l85 (gn-sir M (+ p 85) IF-A)]
+  (case k
+   0 (gn-dot-at? M (+ p 0) 1 f 7 10)
+   1 (gn-dot-at? M (+ p 1) 18 0 0 0)
+   2 (gn-dot-at? M (+ p 2) 9 l2 0 0)
+   3 (gn-dot-at? M (+ p 3) 4 0 3 0)
+   4 (gn-dot-at? M (+ p 4) 3 1 classes 0)
+   5 (gn-dot-at? M (+ p 5) 7 1 0 0)
+   6 (gn-dot-at? M (+ p 6) 11 0 l9 0)
+   7 (gn-dot-at? M (+ p 7) 4 0 1 0)
+   8 (gn-dot-at? M (+ p 8) 10 l85 0 0)
+   9 (gn-dot-at? M (+ p 9) 9 l9 0 0)
+   10 (gn-dot-at? M (+ p 10) 4 0 4 0)
+   11 (gn-dot-at? M (+ p 11) 3 1 per 0)
+   12 (gn-dot-at? M (+ p 12) 7 1 0 0)
+   13 (gn-dot-at? M (+ p 13) 11 0 l33 0)
+   14 (gn-dot-at? M (+ p 14) 4 0 1 0)
+   15 (gn-dot-at? M (+ p 15) 4 1 2 0)
+   16 (gn-dot-at? M (+ p 16) 4 2 3 0)
+   17 (gn-dot-at? M (+ p 17) 3 3 1 0)
+   18 (gn-dot-at? M (+ p 18) 6 1 2 0)
+   19 (gn-dot-at? M (+ p 19) 3 3 0 0)
+   20 (gn-dot-at? M (+ p 20) 4 4 5 0)
+   21 (gn-dot-at? M (+ p 21) 4 5 6 0)
+   22 (gn-dot-at? M (+ p 22) 4 6 7 0)
+   23 (gn-dot-at? M (+ p 23) 5 1 0 0)
+   24 (gn-dot-at? M (+ p 24) 5 2 1 0)
+   25 (gn-dot-at? M (+ p 25) 5 3 2 0)
+   26 (gn-dot-at? M (+ p 26) 5 4 3 0)
+   27 (gn-dot-at? M (+ p 27) 5 5 4 0)
+   28 (gn-dot-at? M (+ p 28) 5 6 5 0)
+   29 (gn-dot-at? M (+ p 29) 5 7 6 0)
+   30 (gn-dot-at? M (+ p 30) 18 0 0 0)
+   31 (gn-dot-at? M (+ p 31) 10 l2 0 0)
+   32 (gn-dot-at? M (+ p 32) 10 l84 0 0)
+   33 (gn-dot-at? M (+ p 33) 9 l33 0 0)
+   34 (gn-dot-at? M (+ p 34) 4 0 1 0)
+   35 (gn-dot-at? M (+ p 35) 4 1 5 0)
+   36 (gn-dot-at? M (+ p 36) 14 176 0 2)
+   37 (gn-dot-at? M (+ p 37) 5 8 0 0)
+   38 (gn-dot-at? M (+ p 38) 4 0 1 0)
+   39 (gn-dot-at? M (+ p 39) 4 1 2 0)
+   40 (gn-dot-at? M (+ p 40) 4 2 6 0)
+   41 (gn-dot-at? M (+ p 41) 4 3 7 0)
+   42 (gn-dot-at? M (+ p 42) 3 4 0 0)
+   43 (gn-dot-at? M (+ p 43) 13 walk 0 5)
+   44 (gn-dot-at? M (+ p 44) 5 9 0 0)
+   45 (gn-dot-at? M (+ p 45) 4 0 1 0)
+   46 (gn-dot-at? M (+ p 46) 3 1 votes 0)
+   47 (gn-dot-at? M (+ p 47) 4 2 3 0)
+   48 (gn-dot-at? M (+ p 48) 6 1 1 0)
+   49 (gn-dot-at? M (+ p 49) 4 2 1 0)
+   50 (gn-dot-at? M (+ p 50) 3 3 votes 0)
+   51 (gn-dot-at? M (+ p 51) 4 4 3 0)
+   52 (gn-dot-at? M (+ p 52) 6 1 3 0)
+   53 (gn-dot-at? M (+ p 53) 14 176 2 2)
+   54 (gn-dot-at? M (+ p 54) 4 3 9 0)
+   55 (gn-dot-at? M (+ p 55) 6 1 2 0)
+   56 (gn-dot-at? M (+ p 56) 13 writer 0 3)
+   57 (gn-dot-at? M (+ p 57) 5 10 0 0)
+   58 (gn-dot-at? M (+ p 58) 4 0 10 0)
+   59 (gn-dot-at? M (+ p 59) 4 1 2 0)
+   60 (gn-dot-at? M (+ p 60) 4 2 3 0)
+   61 (gn-dot-at? M (+ p 61) 4 3 4 0)
+   62 (gn-dot-at? M (+ p 62) 3 4 1 0)
+   63 (gn-dot-at? M (+ p 63) 6 1 3 0)
+   64 (gn-dot-at? M (+ p 64) 4 4 5 0)
+   65 (gn-dot-at? M (+ p 65) 3 5 1 0)
+   66 (gn-dot-at? M (+ p 66) 6 1 4 0)
+   67 (gn-dot-at? M (+ p 67) 4 5 6 0)
+   68 (gn-dot-at? M (+ p 68) 4 6 8 0)
+   69 (gn-dot-at? M (+ p 69) 6 1 5 0)
+   70 (gn-dot-at? M (+ p 70) 4 6 7 0)
+   71 (gn-dot-at? M (+ p 71) 4 7 8 0)
+   72 (gn-dot-at? M (+ p 72) 6 1 6 0)
+   73 (gn-dot-at? M (+ p 73) 3 7 1 0)
+   74 (gn-dot-at? M (+ p 74) 6 1 6 0)
+   75 (gn-dot-at? M (+ p 75) 5 1 0 0)
+   76 (gn-dot-at? M (+ p 76) 5 2 1 0)
+   77 (gn-dot-at? M (+ p 77) 5 3 2 0)
+   78 (gn-dot-at? M (+ p 78) 5 4 3 0)
+   79 (gn-dot-at? M (+ p 79) 5 5 4 0)
+   80 (gn-dot-at? M (+ p 80) 5 6 5 0)
+   81 (gn-dot-at? M (+ p 81) 5 7 6 0)
+   82 (gn-dot-at? M (+ p 82) 18 0 0 0)
+   83 (gn-dot-at? M (+ p 83) 10 l2 0 0)
+   84 (gn-dot-at? M (+ p 84) 9 l84 0 0)
+   85 (gn-dot-at? M (+ p 85) 9 l85 0 0)
+   86 (gn-dot-at? M (+ p 86) 19 0 0 0)
+   87 (gn-dot-at? M (+ p 87) 2 f 0 0)
+   false)))
+(defn- btg-rows [M :vector-i64 p :i64 f :i64 walk :i64 writer :i64 classes :i64 per :i64 votes :i64 k :i64] :bool
+ (if (= k 88) true
+  (and (btg-row M p f walk writer classes per votes k)
+   (btg-rows M p f walk writer classes per votes (inc k)))))
+(defn- btg-owner [M :vector-i64 f :i64] :bool
+ (if (not (ir-bound M f 88 7 10 8)) false
+  (let [p (gn-fnf M f FF-SIR) walk (gn-sir M (+ p 43) IF-A)
+   writer (gn-sir M (+ p 56) IF-A) classes (gn-sir M (+ p 4) IF-B)
+   per (gn-sir M (+ p 11) IF-B) votes (gn-sir M (+ p 46) IF-B)]
+   (and (= (gn-fnf M f FF-RTYPE) TY-VEC) (= (gn-fnf M f FF-PT0) TY-VEC)
+    (qb-int-params M f 1 5) (> classes 0) (<= classes 10)
+    (> per 0) (<= per 256) (>= votes 0) (<= votes 1048575)
+    (btg-walk M walk) (ir-bound M writer 9 3 3 3)
+    (pc3-helper-type M writer 3 TY-VEC)
+    (pc3-writer-shape M (gn-fnf M writer FF-SIR) writer)
+    (qb-labels M (gn-fnf M writer FF-SIR) 9 0)
+    (btg-rows M p f walk writer classes per votes 0) (qb-labels M p 88 0)))))
+
+;; start x8,last x16, payload x0,length x1. Scratch17 only. No guest effects.
+(defn- btg-span [M :vector-i64 G :vector-i64 votes :i64 classes :i64] :vector-i64
+ (let [m0 (-> M (gn-emit (enc-cmp-r 16 1)) (gt-cold G (enc-cond-hs))
+   (gn-mov-imm 17 votes) (gn-emit (enc-cmp-r 16 17)))
+  ok (vector-at m0 MM-CODE-N) m1 (-> m0 (gn-emit (enc-bcond (enc-cond-lo) 0))
+   (gn-mov-imm 17 (+ votes classes)) (gn-emit (enc-cmp-r 8 17))
+   (gt-cold G (enc-cond-lo))) end (vector-at m1 MM-CODE-N)]
+  (gn-dot-patch m1 ok end (enc-cond-lo))))
+;; UNHOOKED, after original owner entry fuel + normal label, operand height0.
+;; Exact btg-owner, seven distinct saved homes19..28, leaf0/sharedFREG0/context1,
+;; positive original frame and live normal head required before installation.
+;; Temporary SP80 remains aligned; all misses restore SP before unchanged head.
+;; No parent frame/home writes, no calls while SP shifted. Success has a single
+;; fuel publication and final vote commits under mandatory read/vote disjointness.
+(defn- btg-proto-emit [M :vector-i64 f :i64 h1 :i64 h2 :i64 h3 :i64 h4 :i64 h5 :i64 h6 :i64 h7 :i64] :vector-i64
+ (let [cn (vector-at M MM-CODE-N) fx (vector-at M MM-FIX-N)
+  dead (gn-g M gn-f-dead) p (gn-fnf M f FF-SIR)
+  wp (gn-fnf M (gn-sir M (+ p 43) IF-A) FF-SIR)
+  classes (gn-sir M (+ p 4) IF-B) per (gn-sir M (+ p 11) IF-B)
+  votes (gn-sir M (+ p 46) IF-B) flag (gn-sir M (+ wp 4) IF-B)
+  mask (dec flag) stride (gn-sir M (+ wp 39) IF-B)
+  leaf (gn-sir M (+ wp 10) IF-B) feature (gn-sir M (+ wp 21) IF-B)
+  threshold (gn-sir M (+ wp 29) IF-B) input (gn-sir M (+ wp 37) IF-B)
+  left (gn-sir M (+ wp 51) IF-B) right (gn-sir M (+ wp 54) IF-B)
+  G (vector-alloc 97)
+  m1 (-> M
+   (gn-emit (enc-sub-i 31 31 80)))
+  m2 (-> m1
+   (gn-mov 0 h1))
+  m3 (-> m2
+   (gn-mov 2 h2))
+  m4 (-> m3
+   (gn-mov 3 h3))
+  m5 (-> m4
+   (gn-mov 4 h4))
+  m6 (-> m5
+   (gn-mov 5 h5))
+  m7 (-> m6
+   (gn-mov 6 h6))
+  m8 (-> m7
+   (gn-mov 9 h7))
+  m9 (-> m8
+   (gn-mov-imm 17 2147483648))
+  m10 (-> m9
+   (gn-emit (enc-cmp-r 2 17)))
+  m11 (-> m10
+   (gt-cold G (enc-cond-hs)))
+  m12 (-> m11
+   (gn-emit (enc-cmp-r 5 17)))
+  m13 (-> m12
+   (gt-cold G (enc-cond-hs)))
+  m14 (-> m13
+   (gn-emit (enc-cmp-r 6 17)))
+  m15 (-> m14
+   (gt-cold G (enc-cond-hs)))
+  m16 (-> m15
+   (gn-emit (enc-cmp-r 9 17)))
+  m17 (-> m16
+   (gt-cold G (enc-cond-hs)))
+  m18 (-> m17
+   (gn-emit (enc-cmp-i 3 classes)))
+  m19 (-> m18
+   (gt-cold G (enc-cond-hs)))
+  m20 (-> m19
+   (gn-emit (enc-cmp-i 4 per)))
+  m21 (-> m20
+   (gt-cold G (enc-cond-hs)))
+  m22 (-> m21
+   (gn-emit (enc-ldr 17 7 312))
+   (gn-emit (enc-ldr 17 17 0))
+   (gn-emit (enc-sub-i 16 0 1))
+   (gn-emit (enc-cmp-r 16 17))
+   (gt-cold G (enc-cond-hs))
+   (gn-emit (enc-ldr 17 7 320))
+   (gn-emit (gn-e-addsl 17 17 16 4))
+   (gn-emit (enc-ldp 16 1 17 0))
+   (gn-emit (enc-ldr 17 7 328))
+   (gn-emit (gn-e-addsl 0 17 16 3)))
+  m23 (-> m22
+   (gn-mov-imm 14 classes))
+  m24 (-> m23
+   (gn-emit (enc-sub-r 14 14 3)))
+  m25 (-> m24
+   (gn-mov-imm 17 per))
+  m26 (-> m25
+   (gn-emit (enc-mul 14 14 17)))
+  m27 (-> m26
+   (gn-emit (enc-sub-r 14 14 4)))
+  m28 (-> m27
+   (gn-emit (enc-add-r 16 5 14)))
+  m29 (-> m28
+   (gn-emit (enc-sub-i 16 16 1)))
+  m30 (-> m29
+   (gn-emit (enc-cmp-r 16 1)))
+  m31 (-> m30
+   (gt-cold G (enc-cond-hs)))
+  m32 (-> m31
+   (gn-mov 11 5))
+  m33 (-> m32
+   (gn-mov 12 14))
+  sizehead (vector-at m33 MM-CODE-N)
+  m34 (-> m33
+   (gn-emit (gn-e-ldrr 16 0 11 1)))
+  m35 (-> m34
+   (gn-emit (enc-cmp-i 16 flag)))
+  m36 (-> m35
+   (gt-cold G (enc-cond-hs)))
+  m37 (-> m36
+   (gn-emit (enc-add-r 6 6 16)))
+  m38 (-> m37
+   (gn-emit (enc-add-r 9 9 16)))
+  m39 (-> m38
+   (gn-emit (enc-add-i 9 9 1)))
+  m40 (-> m39
+   (gn-emit (enc-add-i 11 11 1)))
+  m41 (-> m40
+   (gn-emit (enc-subs-i 12 12 1)))
+  sizeback (vector-at m41 MM-CODE-N)
+  m42 (-> m41
+   (gn-emit (enc-bcond (enc-cond-ne) 0)))
+  m43 (-> m42
+   (gn-mov 8 h6)
+   (gn-emit (enc-add-r 16 6 31)))
+  m44 (-> m43
+   (gn-mov-imm 17 feature))
+  m45 (-> m44
+   (gn-emit (enc-add-r 8 8 17)))
+  m46 (-> m45
+   (gn-emit (enc-add-r 16 16 17)))
+  m47 (-> m46
+   (gn-emit (enc-add-i 16 16 mask)))
+  m48 (-> m47
+   (btg-span G votes classes))
+  m49 (-> m48
+   (gn-mov 8 h6)
+   (gn-emit (enc-add-r 16 6 31)))
+  m50 (-> m49
+   (gn-mov-imm 17 threshold))
+  m51 (-> m50
+   (gn-emit (enc-add-r 8 8 17)))
+  m52 (-> m51
+   (gn-emit (enc-add-r 16 16 17)))
+  m53 (-> m52
+   (gn-emit (enc-add-i 16 16 mask)))
+  m54 (-> m53
+   (btg-span G votes classes))
+  m55 (-> m54
+   (gn-mov 8 h6)
+   (gn-emit (enc-add-r 16 6 31)))
+  m56 (-> m55
+   (gn-mov-imm 17 left))
+  m57 (-> m56
+   (gn-emit (enc-add-r 8 8 17)))
+  m58 (-> m57
+   (gn-emit (enc-add-r 16 16 17)))
+  m59 (-> m58
+   (gn-emit (enc-add-i 16 16 mask)))
+  m60 (-> m59
+   (btg-span G votes classes))
+  m61 (-> m60
+   (gn-mov 8 h6)
+   (gn-emit (enc-add-r 16 6 31)))
+  m62 (-> m61
+   (gn-mov-imm 17 right))
+  m63 (-> m62
+   (gn-emit (enc-add-r 8 8 17)))
+  m64 (-> m63
+   (gn-emit (enc-add-r 16 16 17)))
+  m65 (-> m64
+   (gn-emit (enc-add-i 16 16 mask)))
+  m66 (-> m65
+   (btg-span G votes classes))
+  m67 (-> m66
+   (gn-mov 8 h7))
+  m68 (-> m67
+   (gn-mov 16 9))
+  m69 (-> m68
+   (gn-mov-imm 17 leaf))
+  m70 (-> m69
+   (gn-emit (enc-add-r 8 8 17)))
+  m71 (-> m70
+   (gn-emit (enc-add-r 16 16 17)))
+  m72 (-> m71
+   (gn-emit (enc-add-i 16 16 mask)))
+  m73 (-> m72
+   (btg-span G votes classes))
+  m74 (-> m73
+   (gn-emit (gn-e-lsl 8 2 (gn-pow2 stride))))
+  m75 (-> m74
+   (gn-mov-imm 17 input))
+  m76 (-> m75
+   (gn-emit (enc-add-r 8 8 17)))
+  m77 (-> m76
+   (gn-emit (enc-add-i 16 8 (dec stride))))
+  m78 (-> m77
+   (btg-span G votes classes))
+  m79 (-> m78
+   (gn-mov 8 5))
+  m80 (-> m79
+   (gn-emit (enc-add-r 16 5 14)))
+  m81 (-> m80
+   (gn-emit (enc-sub-i 16 16 1)))
+  m82 (-> m81
+   (btg-span G votes classes))
+  m83 (-> m82
+   (gn-mov-imm 16 (+ votes (dec classes))))
+  m84 (-> m83
+   (gn-emit (enc-cmp-r 16 1)))
+  m85 (-> m84
+   (gt-cold G (enc-cond-hs)))
+  m86 (-> m85
+   (gn-emit (enc-add-i 10 31 0)))
+  m87 (-> m86
+   (gn-mov 2 h2))
+  m88 (-> m87
+   (gn-mov 3 h3))
+  m89 (-> m88
+   (gn-mov 4 h4))
+  m90 (-> m89
+   (gn-mov 5 h5))
+  m91 (-> m90
+   (gn-mov 6 h6))
+  m92 (-> m91
+   (gn-mov 9 h7))
+  m93 (-> m92
+   (gn-mov 11 3))
+  inithead (vector-at m93 MM-CODE-N)
+  m94 (-> m93
+   (gn-mov-imm 16 votes))
+  m95 (-> m94
+   (gn-emit (enc-add-r 16 16 11)))
+  m96 (-> m95
+   (gn-emit (gn-e-ldrr 17 0 16 1)))
+  m97 (-> m96
+   (gn-emit (gn-e-strr3 17 10 11)))
+  m98 (-> m97
+   (gn-emit (enc-add-i 11 11 1)))
+  m99 (-> m98
+   (gn-emit (enc-cmp-i 11 classes)))
+  initback (vector-at m99 MM-CODE-N)
+  m100 (-> m99
+   (gn-emit (enc-bcond (enc-cond-ne) 0)))
+  m101 (-> m100
+   (gn-mov-imm 14 0))
+  m102 (-> m101
+   (gn-emit (gn-e-ldrr 13 10 3 1)))
+  classhead (vector-at m102 MM-CODE-N)
+  m103 (-> m102
+   (gn-emit (enc-cmp-i 4 per)))
+  classdone (vector-at m103 MM-CODE-N)
+  m104 (-> m103
+   (gn-emit (enc-bcond (enc-cond-eq) 0)))
+  m105 (-> m104
+   (gn-emit (gn-e-ldrr 11 0 5 1)))
+  m106 (-> m105
+   (gn-mov-imm 15 0))
+  m107 (-> m106
+   (gn-mov-imm 12 0))
+  m108 (-> m107
+   (gn-emit (enc-add-i 14 14 1)))
+  walkhead (vector-at m108 MM-CODE-N)
+  m109 (-> m108
+   (gn-emit (enc-cmp-i 15 (* 2 flag))))
+  m110 (-> m109
+   (gt-cold G (enc-cond-hs)))
+  m111 (-> m110
+   (gn-bin-imm BOP-AND 8 15 flag))
+  m112 (-> m111
+   (gn-emit (enc-cmp-i 8 flag)))
+  leafbranch (vector-at m112 MM-CODE-N)
+  m113 (-> m112
+   (gn-emit (enc-bcond (enc-cond-eq) 0)))
+  m114 (-> m113
+   (gn-emit (enc-cmp-i 12 flag)))
+  m115 (-> m114
+   (gt-cold G (enc-cond-hs)))
+  m116 (-> m115
+   (gn-emit (enc-add-r 16 6 15)))
+  m117 (-> m116
+   (gn-mov-imm 17 feature))
+  m118 (-> m117
+   (gn-emit (enc-add-r 16 16 17)))
+  m119 (-> m118
+   (gn-emit (gn-e-ldrr 8 0 16 1)))
+  m120 (-> m119
+   (gn-emit (enc-add-r 16 6 15)))
+  m121 (-> m120
+   (gn-mov-imm 17 threshold))
+  m122 (-> m121
+   (gn-emit (enc-add-r 16 16 17)))
+  m123 (-> m122
+   (gn-emit (gn-e-ldrr 17 0 16 1)))
+  m124 (-> m123
+   (gn-emit (enc-cmp-i 8 stride)))
+  m125 (-> m124
+   (gt-cold G (enc-cond-hs)))
+  m126 (-> m125
+   (gn-emit (gn-e-lsl 16 2 (gn-pow2 stride))))
+  m127 (-> m126
+   (gn-emit (enc-add-r 16 16 8)))
+  m128 (-> m127
+   (gn-mov-imm 8 input))
+  m129 (-> m128
+   (gn-emit (enc-add-r 16 16 8)))
+  m130 (-> m129
+   (gn-emit (gn-e-ldrr 8 0 16 1)))
+  m131 (-> m130
+   (gn-emit (enc-cmp-r 8 17)))
+  rightbranch (vector-at m131 MM-CODE-N)
+  m132 (-> m131
+   (gn-emit (enc-bcond (enc-cond-ge) 0)))
+  m133 (-> m132
+   (gn-emit (enc-add-r 16 6 15)))
+  m134 (-> m133
+   (gn-mov-imm 17 left))
+  m135 (-> m134
+   (gn-emit (enc-add-r 16 16 17)))
+  m136 (-> m135
+   (gn-emit (gn-e-ldrr 15 0 16 1)))
+  selectdone (vector-at m136 MM-CODE-N)
+  m137 (-> m136
+   (gn-emit (enc-b 0)))
+  righthead (vector-at m137 MM-CODE-N)
+  m138 (-> m137
+   (gn-emit (enc-add-r 16 6 15)))
+  m139 (-> m138
+   (gn-mov-imm 17 right))
+  m140 (-> m139
+   (gn-emit (enc-add-r 16 16 17)))
+  m141 (-> m140
+   (gn-emit (gn-e-ldrr 15 0 16 1)))
+  advance (vector-at m141 MM-CODE-N)
+  m142 (-> m141
+   (gn-emit (enc-add-i 12 12 1)))
+  m143 (-> m142
+   (gn-emit (enc-add-i 14 14 1)))
+  walkback (vector-at m143 MM-CODE-N)
+  m144 (-> m143
+   (gn-emit (enc-b 0)))
+  leafhead (vector-at m144 MM-CODE-N)
+  m145 (-> m144
+   (gn-bin-imm BOP-AND 16 15 mask))
+  m146 (-> m145
+   (gn-emit (enc-add-r 16 16 9)))
+  m147 (-> m146
+   (gn-mov-imm 17 leaf))
+  m148 (-> m147
+   (gn-emit (enc-add-r 16 16 17)))
+  m149 (-> m148
+   (gn-emit (gn-e-ldrr 17 0 16 1)))
+  m150 (-> m149
+   (gn-emit (enc-add-r 13 13 17)))
+  m151 (-> m150
+   (gn-emit (enc-add-i 14 14 2)))
+  m152 (-> m151
+   (gn-emit (enc-add-i 4 4 1)))
+  m153 (-> m152
+   (gn-emit (enc-add-i 5 5 1)))
+  m154 (-> m153
+   (gn-emit (enc-add-r 6 6 11)))
+  m155 (-> m154
+   (gn-emit (enc-add-r 9 9 11)))
+  m156 (-> m155
+   (gn-emit (enc-add-i 9 9 1)))
+  treeback (vector-at m156 MM-CODE-N)
+  m157 (-> m156
+   (gn-emit (enc-b 0)))
+  classboundary (vector-at m157 MM-CODE-N)
+  m158 (-> m157
+   (gn-emit (gn-e-strr3 13 10 3)))
+  m159 (-> m158
+   (gn-emit (enc-add-i 14 14 1)))
+  m160 (-> m159
+   (gn-emit (enc-add-i 3 3 1)))
+  m161 (-> m160
+   (gn-mov-imm 4 0))
+  m162 (-> m161
+   (gn-emit (enc-cmp-i 3 classes)))
+  finishbranch (vector-at m162 MM-CODE-N)
+  m163 (-> m162
+   (gn-emit (enc-bcond (enc-cond-eq) 0)))
+  m164 (-> m163
+   (gn-emit (gn-e-ldrr 13 10 3 1)))
+  classback (vector-at m164 MM-CODE-N)
+  m165 (-> m164
+   (gn-emit (enc-b 0)))
+  finished (vector-at m165 MM-CODE-N)
+  m166 (-> m165
+   (gn-emit (enc-ldr 16 7 CTX-FUEL)))
+  m167 (-> m166
+   (gn-emit (enc-cmp-r 16 14)))
+  m168 (-> m167
+   (gt-cold G (enc-cond-lo)))
+  m169 (-> m168
+   (gn-emit (enc-sub-r 16 16 14)))
+  m170 (-> m169
+   (gn-emit (enc-str 16 7 CTX-FUEL)))
+  m171 (-> m170
+   (gn-mov 11 h3))
+  commithead (vector-at m171 MM-CODE-N)
+  m172 (-> m171
+   (gn-emit (gn-e-ldrr 17 10 11 1)))
+  m173 (-> m172
+   (gn-mov-imm 16 votes))
+  m174 (-> m173
+   (gn-emit (enc-add-r 16 16 11)))
+  m175 (-> m174
+   (gn-emit (gn-e-strr3 17 0 16)))
+  m176 (-> m175
+   (gn-emit (enc-add-i 11 11 1)))
+  m177 (-> m176
+   (gn-emit (enc-cmp-i 11 classes)))
+  commitback (vector-at m177 MM-CODE-N)
+  m178 (-> m177
+   (gn-emit (enc-bcond (enc-cond-ne) 0)))
+  m179 (-> m178
+   (gn-mov 0 h1))
+  m180 (-> m179
+   (gn-emit (enc-add-i 31 31 80)))
+  m181 (-> m180
+   (gn-epilogue))
+  cold (vector-at m181 MM-CODE-N)
+  m182 (-> m181
+   (gn-emit (enc-add-i 31 31 80)))
+  m183 (-> m182
+   (gn-dot-patch sizeback sizehead (enc-cond-ne)))
+  m184 (-> m183
+   (gn-dot-patch initback inithead (enc-cond-ne)))
+  m185 (-> m184
+   (gn-dot-patch classdone classboundary (enc-cond-eq)))
+  m186 (-> m185
+   (gn-dot-patch leafbranch leafhead (enc-cond-eq)))
+  m187 (-> m186
+   (gn-dot-patch rightbranch righthead (enc-cond-ge)))
+  m188 (-> m187
+   (gn-put (+ MM-CODE-BASE selectdone) (enc-b (- advance selectdone))))
+  m189 (-> m188
+   (gn-put (+ MM-CODE-BASE walkback) (enc-b (- walkhead walkback))))
+  m190 (-> m189
+   (gn-put (+ MM-CODE-BASE treeback) (enc-b (- classhead treeback))))
+  m191 (-> m190
+   (gn-dot-patch finishbranch finished (enc-cond-eq)))
+  m192 (-> m191
+   (gn-put (+ MM-CODE-BASE classback) (enc-b (- classhead classback))))
+  m193 (-> m192
+   (gn-dot-patch commitback commithead (enc-cond-ne)))
+  m194 (-> m193
+   (gt-patch G 0 cold)
+   (gn-gs gn-f-dead dead)) ]
+  (if (= (vector-at m194 MM-ERR) 0) m194
+   (-> m194 (gn-put MM-CODE-N cn) (gn-put MM-FIX-N fx)
+    (gn-gs gn-f-dead dead)))))
+
+;; Installation only on first paid owner FUEL, before the unchanged normal label.
+;; Backedges still target that original label, bypassing this one-time prefix.
+(defn- btg-distinct [M :vector-i64 k :i64 j :i64] :bool
+ (if (= j k) true
+  (and (not= (gn-sreg M k) (gn-sreg M j)) (btg-distinct M k (inc j)))))
+(defn- btg-homes [M :vector-i64 k :i64] :bool
+ (if (= k 8) true
+  (and (>= (gn-sreg M k) 19) (<= (gn-sreg M k) 28)
+   (btg-distinct M k 1) (btg-homes M (inc k)))))
+(defn- btg-admit [M :vector-i64 i :i64] :bool
+ (let [sn (vector-at M MM-SIR-N) fnn (vector-at M MM-FN-N) p (dec i)
+  f (gn-g M fr-owner)]
+  (if (or (< p 1) (< sn 88) (> sn MM-SIR-CAP) (> p (- sn 88))
+   (<= f 0) (>= f fnn) (> fnn MM-FN-CAP)) false
+   (and (= (vector-at M MM-ERR) 0) (= (gn-fnf M f FF-SIR) p)
+    (uc-row M p OP-FN f 7 10) (uc-row M i OP-FUEL 0 0 0)
+    (= (gn-op M (inc i)) OP-LABEL)
+    (= (gn-g M gn-f-ns) 10) (= (gn-g M gn-f-dp) 8)
+    (= (gn-g M gn-f-nsv) 10) (= (gn-g M gn-f-out) 0)
+    (= (gn-g M gn-f-fb) (+ (gn-r16 (* 8 (+ (gn-g M gn-f-ns) (gn-g M gn-f-dp) 2)))
+      (gn-r16 (* 8 (gn-g M gn-f-nsv))) (gn-g M gn-f-out)))
+    (= (gn-g M gn-f-leaf) 0) (= (gn-g M gn-f-freg) 0)
+    (= (gn-g M gn-f-vmode) 0) (= (gn-g M gn-f-h) 0)
+    (= (gn-g M gn-f-skip) 0) (= (gn-g M gn-f-dead) 0)
+    (= (gn-g M gn-f-ctx) 1)
+    (>= (vector-at M MM-CODE-N) 0)
+    (<= (vector-at M MM-CODE-N) (- MM-CODE-CAP 512))
+    (>= (vector-at M MM-FIX-N) 0) (<= (vector-at M MM-FIX-N) MM-FIX-CAP)
+    (btg-homes M 1) (btg-owner M f)))))
+(defn- btg-entry [M :vector-i64 i :i64] :vector-i64
+ (if (btg-admit M i)
+  (btg-proto-emit M (gn-g M fr-owner)
+   (gn-sreg M 1) (gn-sreg M 2) (gn-sreg M 3) (gn-sreg M 4)
+   (gn-sreg M 5) (gn-sreg M 6) (gn-sreg M 7)) M))
+
 ;; UNHOOKED: exact typed73-row vector transition; no historical IDs dispatch.
 (defn- nf-row [M :vector-i64 p :i64 f :i64 child :i64 count1 :i64 count2 :i64 add :i64 limit :i64 base :i64 k :i64] :bool
  (let [l2 (gn-sir M (+ p 2) IF-A) l40 (gn-sir M (+ p 40) IF-A)
@@ -9398,7 +10013,7 @@
         OP-VEC (gn-op-vec M i a b)
         OP-TAB (gn-op-tab M i a b c)
         OP-VECP (gn-op-vecp M i a b c)
-        OP-FUEL (ur-entry (uu-entry (ct-prototype-entry (gi-entry (bf-entry (ao-entry (up-entry (gm-entry (gt-entry (rl-entry (ir-entry (tf-entry (rb-entry (qb-entry (cb-entry (mf-entry (fc-entry (sz-entry (drc-entry (pc3-entry (gn-copy-entry (gn-dot-entry (ds-entry (vc-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i)
+        OP-FUEL (btg-entry (ur-entry (uu-entry (ct-prototype-entry (gi-entry (bf-entry (ao-entry (up-entry (gm-entry (gt-entry (rl-entry (ir-entry (tf-entry (rb-entry (qb-entry (cb-entry (mf-entry (fc-entry (sz-entry (drc-entry (pc3-entry (gn-copy-entry (gn-dot-entry (ds-entry (vc-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i)
         OP-RET (gn-op-ret M a)
         OP-RET2 (gn-op-ret2 M a)       ; R5B
         OP-RES2 (gn-op-res2 M i a)     ; R5B
