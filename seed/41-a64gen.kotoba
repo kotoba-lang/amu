@@ -1,3 +1,85 @@
+;; Complete pure dense signed-i64 equality ladder; no guest data or fuel effects.
+(defn- dl-end [M :vector-i64 f :i64 j :i64 work :i64] :i64
+ (if (or (<= work 0) (>= j (vector-at M MM-SIR-N))) 0
+  (case (gn-op M j)
+   OP-END (if (gn-dot-at? M j OP-END f 0 0) j 0)
+   OP-FN 0
+   (dl-end M f (inc j) (dec work)))))
+(defn- dl-stage [M :vector-i64 p :i64 n :i64 first :i64 k :i64] :bool
+ (let [at (+ (+ p 2) (* 7 k)) els (gn-sir M (+ at 3) IF-B) join (gn-sir M (+ at 5) IF-A)
+  val (gn-sir M (+ at 4) IF-B)]
+  (and (gn-dot-at? M at OP-LGET 0 1 0)
+   (gn-dot-at? M (inc at) OP-CONST 1 (+ first k) 0)
+   (gn-dot-at? M (+ at 2) OP-CMP CC-EQ 0 0)
+   (gn-dot-at? M (+ at 3) OP-BRZ 0 els 0)
+   (gn-dot-at? M (+ at 4) OP-CONST 0 val 0)
+   (gn-dot-at? M (+ at 5) OP-BR join 0 0)
+   (gn-dot-at? M (+ at 6) OP-LABEL els 0 0)
+   (> els 0) (< els MM-LABEL-CAP) (> join 0) (< join MM-LABEL-CAP)
+   (gn-dot-at? M (- (+ p (+ (* 8 n) 2)) k) OP-LABEL join 0 0))))
+(defn- dl-stages [M :vector-i64 p :i64 n :i64 first :i64 k :i64] :bool
+ (or (= k n) (and (dl-stage M p n first k) (dl-stages M p n first (inc k)))))
+(defn- dl-shape [M :vector-i64 p :i64 f :i64] :i64
+ (let [end (dl-end M f (inc p) 32773) span (- end (+ p 4))]
+  (if (or (<= end p) (< span 16) (not= (bit-and span 7) 0)) 0
+   (let [n (quot span 8) first (gn-sir M (+ p 3) IF-B) head (gn-sir M (inc p) IF-A)
+    default (gn-sir M (+ (+ p 2) (* 7 n)) IF-B)]
+    (if (and (>= n 2) (<= n 4095) (<= first (- 9223372036854775807 (dec n)))
+     (gn-dot-at? M p OP-FN f 1 1) (gn-dot-at? M (inc p) OP-LABEL head 0 0)
+     (dl-stages M p n first 0) (gn-dot-at? M (+ (+ p 2) (* 7 n)) OP-CONST 0 default 0)
+     (gn-dot-at? M (+ p (+ (* 8 n) 3)) OP-RET 0 0 0)
+     (qb-labels M p (+ (* 8 n) 5) 0)) n 0)))))
+(defn- dl-width [M :vector-i64 p :i64 n :i64 k :i64 w :i64] :i64
+ (if (= k n) w
+  (let [v (gn-sir M (+ (+ p 6) (* 7 k)) IF-B)]
+   (dl-width M p n (inc k) (if (or (< v 0) (> v 4294967295)) 8 (if (> v 255) (gn-max w 4) w))))))
+(defn- dl-admit [M :vector-i64 i :i64 f :i64 np :i64] :i64
+ (if (or (not= np 1) (<= f 0) (>= f MM-FN-CAP) (>= f (vector-at M MM-FN-N))
+  (> (vector-at M MM-FN-N) MM-FN-CAP) (<= i 0) (< (vector-at M MM-SIR-N) 21)
+  (> (vector-at M MM-SIR-N) MM-SIR-CAP) (> i (- (vector-at M MM-SIR-N) 21))) 0
+  (if (and (= (gn-fnf M f FF-SIR) i) (= (gn-fnf M f FF-NPARAMS) 1)
+   (= (gn-fnf M f FF-NSLOTS) 1) (= (gn-fnf M f FF-DEPTH) 2) (= (gn-fnf M f FF-FUEL) 0)
+   (= (gn-fnf M f FF-PT0) TY-I64) (= (gn-fnf M f FF-RTYPE) TY-I64) (not (gn-clamp-open M f))
+   (= (gn-g M fr-owner) f) (= (gn-g M gn-f-ns) 1) (= (gn-g M gn-f-dp) 2)
+   (> (gn-g M gn-f-leaf) 0) (= (gn-g M gn-f-freg) 0) (= (gn-g M gn-f-vmode) 0)
+   (= (gn-g M gn-f-fb) 0) (= (gn-g M gn-f-nsv) 0) (= (gn-sreg M 1) 0)
+   (= (gn-g M gn-f-ctx) 1) (= (gn-g M gn-f-h) 0) (= (gn-g M gn-f-skip) 0) (= (gn-g M gn-f-dead) 0)
+   (= (vector-at M MM-ERR) 0) (>= (vector-at M MM-CODE-N) 0) (<= (vector-at M MM-CODE-N) (- MM-CODE-CAP 32))
+   (>= (vector-at M MM-FIX-N) 0) (<= (vector-at M MM-FIX-N) (dec MM-FIX-CAP))
+   (> (vector-at M MM-LIT-N) 0) (< (vector-at M MM-LIT-N) MM-LIT-CAP)
+   (>= (vector-at M MM-LITB-N) 0) (<= (vector-at M MM-LITB-N) MM-LITB-CAP)
+   (>= (gn-g M di-sites) 0) (< (gn-g M di-sites) 256) (>= (gn-g M di-used) 0) (<= (gn-g M di-used) 4064))
+   (dl-shape M i f) 0)))
+(defn- dl-data [M :vector-i64 p :i64 n :i64 width :i64 base :i64 k :i64] :vector-i64
+ (if (= k n) M
+  (let [v (gn-sir M (+ (+ p 6) (* 7 k)) IF-B)]
+   (do (dotimes [j width]
+    (gn-put M (+ MM-LITB-BASE (+ base (+ (* k width) j))) (bit-and (u64-shift-right v (* j 8)) 255)))
+    (dl-data M p n width base (inc k))))))
+(defn- dl-emit [M :vector-i64 p :i64 n :i64 width :i64] :vector-i64
+ (let [cn (vector-at M MM-CODE-N) fx (vector-at M MM-FIX-N) ln (vector-at M MM-LIT-N) lb (vector-at M MM-LITB-N)
+  dead (gn-g M gn-f-dead) first (gn-sir M (+ p 3) IF-B) default (gn-sir M (+ (+ p 2) (* 7 n)) IF-B)
+  r (+ MM-LIT-BASE (* ln MM-LIT-W))
+  m0 (-> M (dl-data p n width lb 0) (gn-put (+ r LF-B) lb) (gn-put (+ r LF-LEN) (* n width))
+   (gn-put (+ r LF-TOK) 0) (gn-put (+ r LF-POOL) 0) (gn-put MM-LIT-N (inc ln)) (gn-put MM-LITB-N (+ lb (* n width))))
+  m1 (if (= first 0) (gn-mov m0 9 0) (-> m0 (gn-mov-imm 16 first) (gn-emit (enc-sub-r 9 0 16))))
+  m2 (gn-emit m1 (enc-cmp-i 9 n)) outside (vector-at m2 MM-CODE-N)
+  m3 (-> m2 (gn-emit (enc-bcond (enc-cond-hs) 0)) (gn-emit (enc-ldr 17 7 CTX-CODE-BASE))
+   (gn-emit (gn-e-addsl 17 17 9 (if (= width 1) 0 (if (= width 4) 2 3))))
+   (gn-fix FX-LIT32 ln) (gn-emit (enc-movz 16 0 0)) (gn-emit (enc-movk 16 0 1)))
+  m4 (gn-emit m3 (if (= width 8) (gn-e-ldrr 0 17 16 0)
+   (+ (if (= width 1) 0x38606800 0xb8606800) (+ (i64-shift-left 16 16) (i64-shift-left 17 5)))))
+  m5 (gn-emit m4 (enc-ret)) out (vector-at m5 MM-CODE-N)
+  m6 (-> m5 (gn-mov-imm 0 default) (gn-emit (enc-ret)) (gn-dot-patch outside out (enc-cond-hs)) (gn-gs gn-f-dead dead))]
+  (if (= (vector-at m6 MM-ERR) 0)
+   (-> m6 (gn-gs di-sites (inc (gn-g m6 di-sites))) (gn-gs di-used (+ (gn-g m6 di-used) (- (vector-at m6 MM-CODE-N) cn))))
+   (-> m6 (gn-put MM-CODE-N cn) (gn-put MM-FIX-N fx) (gn-put MM-LIT-N ln) (gn-put MM-LITB-N lb) (gn-gs gn-f-dead dead)))))
+(defn- dl-entry [M :vector-i64 i :i64 f :i64 np :i64] :vector-i64
+ (let [n (dl-admit M i f np)]
+  (if (= n 0) M
+   (let [width (dl-width M i n 0 1)]
+    (if (> (vector-at M MM-LITB-N) (- MM-LITB-CAP (* n width))) M (dl-emit M i n width))))))
+
 ;; Closed masked-word readonly round loop; original terminal continuation retained.
 (defn- cr-big-row [M :vector-i64 p :i64 f :i64 rot :i64 a :i64 b :i64 c :i64 k :i64] :bool
  (let [l2 (gn-sir M (+ p 2) IF-A)]
@@ -9227,7 +9309,7 @@
                   (gn-params 1 np)
                   (cond-> (and (= leaf 1) (= (gn-g M2 gn-f-fuel) 1)) (-> (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-gs gn-f-freg 1)))
                   (gn-gs gn-f-ctx 1)
-                  (gn-gs gn-f-h 0) (sl-clear) (vi-clear) (gn-gs gn-f-vslot (if (= (gn-g M2 gn-f-vmode) 2) -1 0)) (gn-tree-entry f)))))))
+                  (gn-gs gn-f-h 0) (sl-clear) (vi-clear) (gn-gs gn-f-vslot (if (= (gn-g M2 gn-f-vmode) 2) -1 0)) (gn-tree-entry f) (dl-entry i f np)))))))
 
 (defn- gn-op-ret [M :vector-i64 t :i64] :vector-i64 (gn-epilogue (gn-into M 0 t)))
 ;; R5B: RET2 t -- x0 := temp t, x1 := temp t+1 (through x16: either source may be x0 or x1 in a leaf), then the epilogue
