@@ -1,3 +1,85 @@
+;; Successful closed fresh-vector returns certify fixed field bounds only.
+;; Keep producer calls, allocation, all fuel, and all unproved reads unchanged.
+(defn- fv-body [M :vector-i64 j :i64 end :i64 work :i64] :bool
+ (cond (= j end) true
+       (or (<= work 0) (> j end)) false
+       :else (and (case (gn-op M j)
+                 (OP-CONST OP-LGET OP-LSET OP-BIN OP-CMP OP-UN) true
+                 false)
+                  (fv-body M (inc j) end (dec work)))))
+(defn- fv-size [M :vector-i64 f :i64 n :i64] :i64
+ (let [sn (vector-at M MM-SIR-N) fnn (vector-at M MM-FN-N)]
+  (if (or (<= sn 0) (> sn MM-SIR-CAP) (<= fnn 0) (> fnn MM-FN-CAP)
+          (<= f 0) (>= f fnn) (< n 0) (> n 7) (gn-clamp-open M f)) 0
+   (let [p (gn-fnf M f FF-SIR) ns (gn-fnf M f FF-NSLOTS)
+         fuel (gn-fnf M f FF-FUEL)]
+    (if (or (<= p 0) (> p (- sn 4)) (> p (- MM-SIR-CAP 4))
+            (< ns n) (>= ns gn-cap) (< fuel 0) (> fuel 1)
+            (not= (gn-fnf M f FF-NPARAMS) n)
+            (not= (gn-fnf M f FF-RTYPE) TY-VEC)
+            (not (uc-row M p OP-FN f n ns))) 0
+     (let [end (gn-small-end M (inc p) f 256)]
+      (if (or (<= end (+ p 3 fuel))
+              (not (uc-row M end OP-END f 0 0))) 0
+       (let [q (+ p 1 fuel) v (- end 2) t (gn-sir M v IF-A)
+             count (gn-sir M v IF-B)]
+        (if (and (or (= fuel 0) (uc-row M (inc p) OP-FUEL 0 0 0))
+                 (= (gn-op M q) OP-LABEL) (> (gn-sir M q IF-A) 0)
+                 (< (gn-sir M q IF-A) MM-LABEL-CAP)
+                 (= (gn-sir M q IF-B) 0) (= (gn-sir M q IF-C) 0)
+                 (= (gn-op M v) OP-VEC) (= (gn-sir M v IF-C) 0)
+                 (>= t 0) (> count 0) (<= count 32) (<= t (- gn-cap count))
+                 (uc-row M (dec end) OP-RET t 0 0)
+                 (fv-body M (inc q) v 256)) count 0))))))))
+)
+(defn- fv-binding [M :vector-i64 j :i64 slot :i64 work :i64] :i64
+ (cond (or (<= j 1) (<= work 0)) 0
+       (and (= (gn-op M j) OP-LSET) (= (gn-sir M j IF-A) slot))
+        (let [c (dec j) t (gn-sir M j IF-B)]
+         (if (and (= (gn-sir M j IF-C) 0) (= (gn-op M c) OP-CALL)
+                  (= (gn-sir M c IF-B) t))
+          (fv-size M (gn-sir M c IF-A) (gn-sir M c IF-C)) 0))
+       :else (if (case (gn-op M j)
+                  (OP-CONST OP-LGET OP-LSET OP-BIN OP-CMP OP-UN) true
+                  OP-FUEL (uc-row M j OP-FUEL 0 0 0)
+                  OP-RT (and (= (gn-sir M j IF-A) RT-VECTOR-AT)
+                             (= (gn-sir M j IF-C) 2))
+                  false)
+                   (fv-binding M (dec j) slot (dec work)) 0)))
+(defn- fv-admit [M :vector-i64 i :i64 t :i64] :bool
+ (let [sn (vector-at M MM-SIR-N) cn (vector-at M MM-CODE-N)]
+  (if (or (not= (vector-at M MM-ERR) 0) (not= (gn-g M gn-f-leaf) 0)
+          (not= (gn-g M gn-f-vmode) 0)
+          (<= (gn-g M gn-f-fb) 0) (> (gn-g M gn-f-fb) 32768)
+          (<= sn 0) (> sn MM-SIR-CAP) (< i 4) (>= i sn)
+          (< cn 0) (> cn (- MM-CODE-CAP 16))
+          (< t 0) (> t 5) (< (gn-g M gn-f-h) (+ t 2))
+          (> (gn-g M gn-f-h) gn-cap)
+          (not (gn-isk M t gn-k-local))
+          (not (gn-isk M (inc t) gn-k-const))
+          (not (uc-row M i OP-RT RT-VECTOR-AT t 2))) false
+   (let [slot (gn-dv M t) k (gn-dv M (inc t))]
+    (if (or (<= slot 0) (> slot (gn-g M gn-f-ns)) (>= slot gn-cap)
+            (< k 0) (>= k 32) (not (sb-owner M i))
+            (not (uc-row M (- i 2) OP-LGET t slot 0))
+            (not (uc-row M (dec i) OP-CONST (inc t) k 0))) false
+     (let [r (gn-sreg M slot)]
+      (and (or (= r -1) (and (>= r 19) (<= r 28)))
+           (< k (fv-binding M (- i 3) slot 32))))))))
+)
+(defn- fv-read [M :vector-i64 i :i64 t :i64] :vector-i64
+ (let [k (gn-dv M (inc t)) rv (gn-src M t 17 0)
+       s (gn-co M i t) d (gn-dreg M t s)]
+  (-> M (gn-protect t s) (gn-ctx) (gn-ldt t 17 0)
+        (gn-emit (enc-sub-i 17 rv 1))
+        (gn-emit (enc-ldr 16 7 320))
+        (gn-emit (gn-e-addsl 16 16 17 4))
+        (gn-emit (enc-ldr 17 16 0))
+        (gn-emit (enc-ldr 16 7 328))
+        (gn-emit (gn-e-addsl 16 16 17 3))
+        (gn-emit (enc-ldr d 16 (* k 8)))
+        (gn-fin t s d))))
+
 ;; Exact pure signed floor helper. Overflow-sensitive inputs retain original CALL.
 (defn- pf-shape [M :vector-i64 f :i64] :bool
  (let [p (gn-fnf M f FF-SIR) sn (vector-at M MM-SIR-N)]
@@ -12529,6 +12611,7 @@
       (gn-emit (enc-add-r 17 17 ri))))
 ;; (vector-at v i), v = temp t, i = temp t+1 (t <= 5)
 (defn- gn-rt-at [M :vector-i64 i :i64 t :i64] :vector-i64
+  (if (fv-admit M i t) (fv-read M i t)
   (let [slot (if (= (gn-g M gn-f-vmode) 3) (gn-g M 15) (if (gn-isk M t gn-k-local) (gn-dv M t) 0))
         k (if (gn-isk M (inc t) gn-k-const) (gn-dv M (inc t)) -1)
         M1 (gn-pin M (inc t))
@@ -12536,7 +12619,7 @@
         rv (gn-src M1 t 17 0)
         s (gn-co M1 i t)
         d (gn-dreg M1 t s)]
-    (-> M1 (gn-protect t s) (gn-ctx) (gn-ldt t 17 0) (gn-chain-read rv ri d slot k) (gn-fin t s d))))
+    (-> M1 (gn-protect t s) (gn-ctx) (gn-ldt t 17 0) (gn-chain-read rv ri d slot k) (gn-fin t s d)))))
 ;; (vector-assoc! v i x), temps t, t+1, t+2 (t <= 4); the result is v (its descriptor is kept)
 ;; Novel exact same-block read/constant-local/writer certificate; no cache relaxation.
 ;; Requires original valid typed SIR: branches target LABELs, private mode2 ABI unchanged.
