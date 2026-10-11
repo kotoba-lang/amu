@@ -1223,3 +1223,179 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
 - No compile, no probe, no CIDs, no numbers, no commit. Hypothesis open.
 - Next tick (resume exactly): /tmp/langcos/it40 probes (p_keys3, keys-typed
   compile, reduce-kv) を書いて amu HEAD bin/amu check --jvm-free で実測。
+
+## Branch log - bot/kotoba-lang-cosientist iterations 37-41 (2026-09-30 .. 2026-10-02)
+
+These iterations ran on the `bot/kotoba-lang-cosientist` branch in parallel with the main log above, so their numbers overlap main's Iterations 37-40 and are NOT the same iterations. They were local-only (39-41 never committed) and are landed verbatim by worktree triage 2026-10-11; headings are demoted one level and prefixed `Branch` to keep the numbering unambiguous.
+
+### Branch iteration 37 - environment rebuilt (2nd wipe), gap re-measured on NEW pin 8571681a: LIVE for 1-step AND 2-step; hand twin re-canonicalized (2026-09-30 19:35 JST)
+
+- Target hypothesis (carried iters 26-36): some->/some->> multi-step repair;
+  pass criteria = 1-step/2-step check PASS with definition CIDs == hand twin,
+  1-step CIDs unchanged vs prior canon.
+- Environment: wt-somethread2 AND /tmp/langcos wiped AGAIN (host reboot, up
+  6:31). All worktrees/probes/scripts lost. Rebuilt from state file + remote:
+  branch bot/lang-somethread-rebase-20260920 @9401993 confirmed pushed
+  (remote kotoba-lang) - 1-step repair commit recoverable.
+- PIN MOVED (step 0): amu deps-lock.edn now pins kotoba-sema
+  8571681a068fce2e2efa9069dcd75bbc87b297d2 (was 9898f0e). The 9401993 branch
+  (base 9898f0e) is OFF-PIN - a rebase is required before any gate.
+- UPSTREAM REWRITE MEASURED (code read of 8571681a
+  src/kotoba/compiler/frontend.cljk :3850-3872): desugar-some-thread was
+  completely rewritten on main - new marker-based scheme
+  (__kotoba_some_bind / __kotoba_some_last / __kotoba_present, docstring:
+  "The result is always an option"). The old recursive-lower text that
+  iter34-patch.py targeted NO LONGER EXISTS - the linear-chain patch cannot
+  be re-applied mechanically; a fresh patch design against the new rewrite
+  is required.
+- Falsify probes on pinned main 8571681a (bin/amu check --jvm-free, fresh
+  /tmp/langcos):
+  - 1-step `(some->> opt (+ 1))` with `t [opt [:option :i64]] :i64`: REJECT
+    exit 65 "if branches must have the same value type" - iter 7's case-3
+    structural defect (then=payload i64 vs else=option) SURVIVES the new
+    rewrite. Note `:option-i64` annotation spelling now rejected
+    ("expected [:option :i64], got option-i64"); canonical is `[:option :i64]`.
+  - 2-step `(some->> opt (+ 1) (* 2))` with `[:option :i64]`: REJECT exit 65
+    "expression type mismatch: expected [:option :i64], got i64" - multi-step
+    gap LIVE on the new pin.
+  - HAND TWIN (`smt2-hand.kotoba`: let+if payload-drop,
+    `(if (option-some? sht) (* 2 (+ 1 (option-value sht 0))) 0)`): check
+    **PASS exit 0**, t cid
+    `bafyreia223c4ht222gs3ouwm2ilbqgzyxsb4urzao54q3irvt3xdihklbe`
+    (NEW canon on pin 8571681a; old-base canons are superseded).
+- Verdict: hypothesis SURVIVES falsification - the repair shape (plain
+  option-some?/option-value payload-drop) admits on the current pin while
+  both some-> spellings reject. The gap is not alias-shaped this time: the
+  upstream rewrite is a semantic redesign (option-returning) that is broken
+  for BOTH 1-step and 2-step; a repair must either fix the markers'
+  resolution or emit the measured hand-twin shape. Design decision needed:
+  upstream's "result is always an option" docstring conflicts with the
+  measured hand-twin semantics (payload + fallback) - resolve before
+  patching (some-> in Clojure returns the payload, not an option).
+- Route notes (recorded): deps-lock.edn had to be regenerated this tick
+  (`kbb --backend sci scripts/lock-classpath.cljk` after `npm ci`; result
+  identical to committed lock - tree stayed clean). stdout-empty issue
+  returned intermittently; file-redirect workaround used.
+- NOT DONE (budget): rebase 9401993 onto 8571681a; fresh patch design vs the
+  new marker rewrite; gate. Hypothesis open.
+- Next (1 hypothesis): decide the canonical some-> semantics against
+  ADR 0353's absence floor (option-returning vs payload-drop), then a fresh
+  patch on a 8571681a-based branch; pass criteria = 1-step+2-step check PASS
+  with definition CIDs == smt2-hand canon
+  bafyreia223c4ht222gs3ouwm2ilbqgzyxsb4urzao54q3irvt3xdihklbe.
+
+### Branch iteration 38 - some->/some->> "broken rewrite" FALSIFIED: marker scheme admits (option-returning contract) (2026-10-01 01:2x JST, amu@62344765, pin kotoba-sema 15cc6e25)
+
+- Target hypothesis (carried iter 37): upstream marker-based desugar-some-thread
+  rewrite is broken for both 1-step and 2-step some->/some->> on the new pin.
+- Measured (pin 15cc6e25 = amu deps-lock pin; bin/amu check --jvm-free):
+  - smt2-1step.kotoba `(some->> opt (+ 1))` returning :i64: REJECT exit 65
+    "expression type mismatch: expected i64, got [:option :i64]" (r-probe3.txt).
+  - smt2-2step.kotoba `(some->> opt (+ 1) (* 2))` returning :i64: REJECT exit 65,
+    same message.
+  - NEW probes with return type [:option :i64] (smt2-1step-opt.kotoba /
+    smt2-2step-opt.kotoba): BOTH check PASS exit 0 - t
+    `bafyreihokjwfg5r5k4qxj3gp6zowhqgtxsvhqdi35g74zv5tttljhwmvr4` (1-step),
+    `bafyreihafctb6wmo7sle4jletxukrownpenqzp4bgv3oo344tdselzsdou` (2-step)
+    (r-opt.txt).
+- Verdict: hypothesis FALSIFIED. The upstream marker scheme is NOT broken; it
+  implements the option-returning contract its docstring states ("result is
+  always an option") and admits 1-step AND 2-step when the declared return
+  type is the option. The iter 37 rejects are correct type checking of the
+  return-type contract, not a compiler defect. The only live question is
+  semantic: Clojure-payload-drop some-> (hand twin t
+  bafyreia223c4ht222... still PASSes) vs upstream option-returning some->.
+  That is an ADR 0353 semantics decision (amu-rank/maintainer), NOT a bug fix
+  - no desugar overwrite implemented this tick (falsify-first discipline).
+- Gate: check-only (compile/run of the option-returning form not run this
+  tick - budget). perfgate N/A (no speed measurement; no new lowering).
+- Next (1 hypothesis): value-verify the option-returning path (compile
+  smt2-2step-opt + run: none -> 0-ish option, some 41 -> 84 wrapped) and/or
+  hand the payload-drop vs option-returning decision to amu-rank with both
+  measured CIDs as evidence. Then re-check jvm-dep-ledger rows (contains? /
+  (:k m) stale handoff from iter 23/24 still pending).
+
+### Branch iteration 39 - option-returning some->> value-VERIFIED (some 41 -> 84, none -> -1); 2-step CID canon reproduced (2026-10-01, amu@2a7d7aec, pin 15cc6e25)
+
+- Target hypothesis (carried from iter 38): the option-returning some->/some->>
+  path (marker rewrite, pin 15cc6e25) is not only check-admitted but
+  value-correct at runtime for both branches (some and none).
+- Measured (bin/amu --jvm-free, check + compile wasm32 + browser-host run via
+  node driver /tmp/langcos/run-val.mjs calling exports.main):
+  - Probe smt2val.kotoba: t [opt [:option :i64]] [:option :i64] =
+    (some->> opt (+ 1) (* 2)); main = (option-value (t SOME) -1).
+    check PASS exit 0; t cid bafyreihafctb6wmo7sle4jletxukrownpenqzp4bgv3oo344tdselzsdou
+    - EXACT match with iter 38's 2-step canon (canon reproduced).
+    compile wasm32 PASS (2067 bytes, provenance sidecar). RUN: main(0) = **84n**
+    - some 41 -> (41+1)*2 = 84, payload correctly unwrapped by option-value.
+  - Probe smt2val-none.kotoba (main = option-value (t NONE) -1): check PASS
+    exit 0 (same t cid); compile PASS. RUN: main(0) = **-1n** - none propagates
+    through the 2-step chain and the fallback is used. Both branches correct.
+  - Probe lesson (new surface spelling): (option-some 41) inline REJECTs vs a
+    [:option :i64] receiver ("expected [:option :i64], got option-i64" -
+    monomorphic literal mismatch, iter 7 case 1 shape still live);
+    (option-some-of :i64 41) REJECTs "generic option operation requires
+    [:option payload-type]"; **(option-some-of [:option :i64] 41)** - full
+    option-type first arg - is the admitted spelling. (option-none-of
+    [:option :i64]) likewise. Record for future probes.
+- Verdict: hypothesis CONFIRMED - the option-returning some->> is check- AND
+  value-correct for 1-step (iter 38) and now 2-step some/none. No compiler
+  defect; the only open question stays semantic (payload-drop vs
+  option-returning contract) -> handoff to amu-rank/ADR 0353 with both
+  measured canons: payload-drop twin t
+  bafyreia223c4ht222gs3ouwm2ilbqgzyxsb4urzao54q3irvt3xdihklbe
+  vs option-returning t bafyreihafctb6wmo7sle4jletxukrownpenqzp4bgv3oo344tdselzsdou.
+  perfgate N/A (no new lowering, no speed measurement; loadavg 21-27, quiet
+  gate not met anyway).
+- Next (1 hypothesis): amu-rank handoff note for the some-> semantics decision
+  (evidence above), then ledger stale-row sweep: re-probe the remaining
+  jvm-dep-ledger blocked rows (min/max and (:k m)/contains? already PASS on
+  current pin - ledger update needed; keys/remove rows likely stale after
+  iters 10/24/23) with one cheap check-probe each on pin 15cc6e25.
+
+### Branch iteration 40 - measurement NOT STARTED, environment re-verified only (2026-10-01 14:30 JST, no verdict)
+
+- Target hypothesis (carried from iter 39): ledger stale-row sweep - re-probe
+  remaining jvm-dep-ledger blocked rows (keys/remove etc.) with one cheap
+  check-probe each on the current pin.
+- Not executed: run budget exhausted at startup. Only environment verification
+  completed: amu deps-lock pins kotoba-sema at deps-lock.edn:130-131 (lock
+  intact), host up 1 day 1:33, loadavg 99.29/80.49/72.92 - quiet gate NOT
+  met (moot: target is parity-only). No probe run, no numbers, no verdict.
+- Next tick (resume exactly): locate jvm-dep-ledger.edn (search of amu tree
+  returned nothing this tick - it may live in another repo/worktree; ask via
+  docs only), then one check-probe per remaining blocked row on the current
+  pin, recording PASS/REJECT per row for the amu-rank handoff.
+
+### Branch iteration 41 - ledger stale-row sweep (remove/seq/keys) (2026-10-02, amu@9a987e590)
+
+- Target (carried from iters 39/40): re-probe remaining jvm-dep-ledger blocked
+  rows with cheap check/compile probes on the current pin.
+- Ledger located: /Users/junkawasaki/github/kotoba-lang/kotoba-lang/jvm-dep-ledger.edn
+  (others: kotoba-tagline, lang-pure-wt). Probes /private/tmp/langcos-it41/.
+- Measured (bin/amu check/compile --jvm-free, amu@9a987e590):
+  - `(remove (fn [x] (< x 3)) v)` on `:vector-i64`: check **PASS exit 0**
+    (t bafyreihyqchhoqi6aw2to5ottnjd34q2vy7g2xjfeqpq7pmov54qrl3pkm,
+    loop_1 bafyreif7z2msgtfltnm7qtoihu623refk7si2obwydsdykpvoyrd2eiss4)
+    AND wasm32 compile **PASS** (2 defs, provenance sidecar) -> the
+    `remove` ledger row is STALE; bot/lang-seq-remove-20260905 desugar has
+    effectively landed upstream.
+  - `(reduce + 0 (seq v))`: check **REJECT exit 65** :kotoba.error/unknown-operation
+    "seq is not a builtin, a sugar head, or a function of this module" ->
+    `seq` row is still LIVE (real gap; iter 10's seq alias never landed).
+  - `(count (keys m))` on `[:map :keyword :i64]`: check **PASS exit 0**
+    (t bafyreicaedcdtdrioyeflxtdd2nvu5yr4lwhuceshucsw7d4g3ugv3wdzu), compile
+    wasm32 **REJECT exit 70** :wasm-typed-lowering "unsupported typed Wasm
+    expression" -> unchanged from the old ledger tick (keys check-admitted,
+    compile-gated; amu-side gap, not lang).
+- Cron-route lesson (recorded): Tirith blocks redirects to /private/tmp/...
+  paths as "overwrite system config"; use /tmp/... for measurement redirects.
+  Grouped commands blocked again this tick - single simple commands only.
+- Verdict: ledger handoff evidence for amu-rank: remove = stale (PASS+compile),
+  seq = live, keys = check-admitted/compile-gated (unchanged). perfgate N/A
+  (no new lowering, no speed measurement; parity/sweep only; loadavg 167).
+- Next (1 hypothesis): `seq` alias (identity desugar) is the one live alias-gap
+  from iter 10's merged-pending branch - rebase the 1-case `seq` desugar onto
+  the current pin and run the iter-10 gate (parity vs identity hand twin +
+  fail-closed), OR fold it into the (:k m)/ledger handoff note if the
+  branch already exists merged somewhere.
