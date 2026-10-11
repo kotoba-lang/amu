@@ -1,3 +1,86 @@
+;; Generic closed two-cell exchange. Initial private charge is already paid.
+;; Guard misses retain parameters0..2/context7/private8 and enter original body.
+(defn- ex-row [M :vector-i64 p :i64 f :i64 w :i64 k :i64] :bool
+ (let [head (gn-sir M (+ p 2) IF-A)]
+  (case k
+   0 (uc-row M p OP-FN f 3 5)
+   1 (uc-row M (+ p 1) OP-FUEL 0 0 0)
+   2 (uc-row M (+ p 2) OP-LABEL head 0 0)
+   3 (uc-row M (+ p 3) OP-LGET 0 1 0)
+   4 (uc-row M (+ p 4) OP-LGET 1 2 0)
+   5 (uc-row M (+ p 5) OP-RT RT-VECTOR-AT 0 2)
+   6 (uc-row M (+ p 6) OP-LSET 4 0 0)
+   7 (uc-row M (+ p 7) OP-LGET 0 1 0)
+   8 (uc-row M (+ p 8) OP-LGET 1 3 0)
+   9 (uc-row M (+ p 9) OP-RT RT-VECTOR-AT 0 2)
+   10 (uc-row M (+ p 10) OP-LSET 5 0 0)
+   11 (uc-row M (+ p 11) OP-LGET 0 1 0)
+   12 (uc-row M (+ p 12) OP-LGET 1 2 0)
+   13 (uc-row M (+ p 13) OP-LGET 2 5 0)
+   14 (uc-row M (+ p 14) OP-CALL w 0 3)
+   15 (uc-row M (+ p 15) OP-LGET 1 3 0)
+   16 (uc-row M (+ p 16) OP-LGET 2 4 0)
+   17 (uc-row M (+ p 17) OP-CALL w 0 3)
+   18 (uc-row M (+ p 18) OP-RET 0 0 0)
+   19 (uc-row M (+ p 19) OP-END f 0 0)
+   false)))
+(defn- ex-rows [M :vector-i64 p :i64 f :i64 w :i64 k :i64] :bool
+ (if (= k 20) true (and (ex-row M p f w k) (ex-rows M p f w (inc k)))))
+(defn- ex-admit [M :vector-i64 i :i64] :bool
+ (and (> i 1) (< i (vector-at M MM-SIR-N)) (< i MM-SIR-CAP)
+  (<= (vector-at M MM-SIR-N) MM-SIR-CAP) (> (vector-at M MM-FN-N) 0)
+  (<= (vector-at M MM-FN-N) MM-FN-CAP) (= (gn-op M (dec i)) OP-FN)
+  (= (gn-g M gn-f-leaf) 1) (= (gn-g M gn-f-freg) 1)
+  (= (gn-g M gn-f-fb) 0) (= (gn-g M gn-f-nsv) 0) (= (gn-g M gn-f-out) 0)
+  (= (gn-g M gn-f-vmode) 0) (= (gn-g M gn-f-ctx) 1) (= (gn-g M gn-f-h) 0)
+  (= (gn-g M gn-f-ns) 5) (= (gn-g M gn-f-dp) 3)
+  (= (gn-g M gn-f-dead) 0) (= (gn-g M gn-f-skip) 0)
+  (= (gn-sreg M 1) 0) (= (gn-sreg M 2) 1) (= (gn-sreg M 3) 2)
+  (= (gn-sreg M 4) 3) (= (gn-sreg M 5) 4)
+  (= (vector-at M MM-ERR) 0) (>= (vector-at M MM-CODE-N) 0)
+  (<= (vector-at M MM-CODE-N) (- MM-CODE-CAP 80))
+  (>= (vector-at M MM-FIX-N) 0) (<= (vector-at M MM-FIX-N) MM-FIX-CAP)
+  (let [f (gn-g M fr-owner) p (dec i)]
+   (and (> f 0) (< f (vector-at M MM-FN-N)) (< f MM-FN-CAP)
+    (not (gn-clamp-open M f)) (ir-bound M f 20 3 5 3)
+    (= (gn-fnf M f FF-SIR) p) (= (gn-fnf M f FF-RTYPE) TY-VEC)
+    (= (gn-fnf M f FF-PT0) TY-VEC) (qb-int-params M f 1 3)
+    (let [w (gn-sir M (+ p 14) IF-A)]
+     (and (> w 0) (< w (vector-at M MM-FN-N)) (< w MM-FN-CAP)
+      (gn-copy-writer? M w) (= (gn-fnf M w FF-FUEL) 1)
+      (qb-labels M (gn-fnf M w FF-SIR) 9 0)
+      (ex-rows M p f w 0) (qb-labels M p 20 0)))))))
+(defn- ex-emit [M :vector-i64] :vector-i64
+ (let [m0 (-> M (gn-emit (enc-ldr 9 7 312)) (gn-emit (enc-ldr 9 9 0))
+   (gn-emit (enc-sub-i 17 0 1)) (gn-emit (enc-cmp-r 17 9))) handle (vector-at m0 MM-CODE-N)
+  m1 (-> m0 (gn-emit (enc-bcond (enc-cond-hs) 0)) (gn-emit (enc-ldr 9 7 320))
+   (gn-emit (gn-e-addsl 9 9 17 4)) (gn-emit (enc-ldp 17 10 9 0))
+   (gn-mov 11 1) (gn-emit (enc-cmp-r 1 2)) (gn-emit (enc-bcond (enc-cond-hs) 2)) (gn-mov 11 2)
+   (gn-emit (enc-cmp-r 11 10))) bounds (vector-at m1 MM-CODE-N)
+  m2 (-> m1 (gn-emit (enc-bcond (enc-cond-hs) 0)) (gn-emit (enc-add-r 11 17 11))
+   (gn-emit (enc-cmp-r 11 17))) offsetwrap (vector-at m2 MM-CODE-N)
+  m3 (-> m2 (gn-emit (enc-bcond (enc-cond-lo) 0)) (gn-emit (gn-e-lsr 10 11 61))) scale (vector-at m3 MM-CODE-N)
+  m4 (-> m3 (gn-emit (enc-cbnz 10 0)) (gn-emit (enc-ldr 9 7 328))
+   (gn-emit (gn-e-addsl 11 9 11 3)) (gn-emit (enc-cmp-r 11 9))) pointerwrap (vector-at m4 MM-CODE-N)
+  m5 (-> m4 (gn-emit (enc-bcond (enc-cond-lo) 0)) (gn-emit (enc-add-i 12 11 7))
+   (gn-emit (enc-cmp-r 12 11))) wordwrap (vector-at m5 MM-CODE-N)
+  m6 (-> m5 (gn-emit (enc-bcond (enc-cond-lo) 0)) (gn-emit (gn-e-addsl 9 9 17 3))
+   (gn-emit (gn-e-ldrr 13 9 1 1)) (gn-emit (gn-e-ldrr 14 9 2 1))
+   (gn-emit (enc-subs-i 8 8 1)) (gn-emit (enc-bcond (enc-cond-hs) 3))
+   (gn-emit (enc-str 31 7 CTX-FUEL)) (gn-emit (enc-brk 0))
+   (gn-emit (gn-e-strr3 14 9 1))
+   (gn-emit (enc-subs-i 8 8 1)) (gn-emit (enc-bcond (enc-cond-hs) 3))
+   (gn-emit (enc-str 31 7 CTX-FUEL)) (gn-emit (enc-brk 0))
+   (gn-emit (gn-e-strr3 13 9 2))) m7 (gn-epilogue m6) cold (vector-at m7 MM-CODE-N)]
+  (-> m7 (gn-dot-patch handle cold (enc-cond-hs)) (gn-dot-patch bounds cold (enc-cond-hs))
+   (gn-dot-patch offsetwrap cold (enc-cond-lo)) (gn-put (+ MM-CODE-BASE scale) (enc-cbnz 10 (- cold scale)))
+   (gn-dot-patch pointerwrap cold (enc-cond-lo)) (gn-dot-patch wordwrap cold (enc-cond-lo)))))
+(defn- ex-entry [M :vector-i64 i :i64] :vector-i64
+ (if (ex-admit M i)
+  (let [cn (vector-at M MM-CODE-N) fx (vector-at M MM-FIX-N) dead (gn-g M gn-f-dead) final (ex-emit M)]
+   (if (= (vector-at final MM-ERR) 0) (gn-gs final gn-f-dead dead)
+    (-> final (gn-put MM-CODE-N cn) (gn-put MM-FIX-N fx) (gn-gs gn-f-dead dead)))) M))
+
 ;; Generic closed readonly two-index scan, postpaid private entry.
 (defn- rs-row [M :vector-i64 p :i64 f :i64 k :i64 left :bool] :bool
  (let [head (gn-sir M (+ p 2) IF-A) test (gn-sir M (+ p 6) IF-B)
@@ -13388,7 +13471,7 @@
         OP-VEC (gn-op-vec M i a b)
         OP-TAB (gn-op-tab M i a b c)
         OP-VECP (gn-op-vecp M i a b c)
-        OP-FUEL (maft-entry (rs-entry (isf-entry (zf-entry (wa-entry (pm-entry (lm-entry (cr-entry (sc-entry (ci-entry (sf-entry (zc-entry (lc-entry (sd-entry (be-entry (tpin-entry (btg-entry (ur-entry (uu-entry (ct-prototype-entry (gi-entry (bf-entry (ao-entry (up-entry (gm-entry (gt-entry (rl-entry (ir-entry (tf-entry (rb-entry (qb-entry (cb-entry (mf-entry (fc-entry (sz-entry (drc-entry (pc3-entry (gn-copy-entry (gn-dot-entry (ds-entry (vc-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i)
+        OP-FUEL (ex-entry (maft-entry (rs-entry (isf-entry (zf-entry (wa-entry (pm-entry (lm-entry (cr-entry (sc-entry (ci-entry (sf-entry (zc-entry (lc-entry (sd-entry (be-entry (tpin-entry (btg-entry (ur-entry (uu-entry (ct-prototype-entry (gi-entry (bf-entry (ao-entry (up-entry (gm-entry (gt-entry (rl-entry (ir-entry (tf-entry (rb-entry (qb-entry (cb-entry (mf-entry (fc-entry (sz-entry (drc-entry (pc3-entry (gn-copy-entry (gn-dot-entry (ds-entry (vc-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i)
         OP-RET (gn-op-ret M a)
         OP-RET2 (gn-op-ret2 M a)       ; R5B
         OP-RES2 (gn-op-res2 M i a)     ; R5B
