@@ -1,3 +1,78 @@
+;; Closed charged short-circuit checked affine reader; shared publication before any guest read.
+(defn- scv-paid [M :vector-i64 f :i64] :bool
+ (let [a (gn-fnf M f FF-CODE) e (vector-at M MM-CODE-N)]
+  (and (> a 0) (<= a (- e 12))
+   (= (vector-at M (+ MM-CODE-BASE a)) (enc-stp-pre 29 30 31 -16))
+   (= (vector-at M (+ MM-CODE-BASE a 1)) (enc-mov-sp 29 31))
+   (= (vector-at M (+ MM-CODE-BASE a 2)) (enc-sub-i 31 31 80))
+   (= (vector-at M (+ MM-CODE-BASE a 3)) (enc-stp 19 20 31 0))
+   (= (vector-at M (+ MM-CODE-BASE a 4)) (enc-str 7 31 72))
+   (= (vector-at M (+ MM-CODE-BASE a 5)) (enc-mov-r 20 0))
+   (= (vector-at M (+ MM-CODE-BASE a 6)) (enc-mov-r 19 1))
+   (= (vector-at M (+ MM-CODE-BASE a 7)) (enc-ldr 16 7 CTX-FUEL))
+   (= (vector-at M (+ MM-CODE-BASE a 8)) (enc-subs-i 16 16 1))
+   (= (vector-at M (+ MM-CODE-BASE a 9)) (enc-bcond (enc-cond-hs) 2))
+   (= (vector-at M (+ MM-CODE-BASE a 10)) (enc-brk 0))
+   (= (vector-at M (+ MM-CODE-BASE a 11)) (enc-str 16 7 CTX-FUEL)))))
+(defn- scv-root [M :vector-i64 f :i64] :bool
+ (let [p (gn-fnf M f FF-SIR) sn (vector-at M MM-SIR-N)]
+  (if (or (<= p 0) (> p (- sn 18))) false
+   (let [head (gn-sir M (+ p 2) IF-A) join (gn-sir M (+ p 7) IF-B)
+         child (gn-sir M (+ p 11) IF-A) field (gn-sir M (+ p 10) IF-B)
+         value (gn-sir M (+ p 13) IF-B)]
+    (and (= (gn-fnf M f FF-NPARAMS) 2) (= (gn-fnf M f FF-NSLOTS) 2)
+     (= (gn-fnf M f FF-DEPTH) 3) (= (gn-fnf M f FF-FUEL) 1)
+     (= (gn-fnf M f FF-PT0) TY-VEC) (= (gn-fnf M f (+ FF-PT0 1)) TY-I64)
+     (= (gn-fnf M f FF-RTYPE) TY-BOOL) (>= field 0) (<= field 4095)
+     (>= value 0) (<= value 4095)
+     (gn-dot-at? M p OP-FN f 2 2) (gn-dot-at? M (+ p 1) OP-FUEL 0 0 0)
+     (gn-dot-at? M (+ p 2) OP-LABEL head 0 0)
+     (gn-dot-at? M (+ p 3) OP-LGET 0 2 0) (gn-dot-at? M (+ p 4) OP-CONST 1 0 0)
+     (gn-dot-at? M (+ p 5) OP-CMP CC-EQ 0 0) (gn-dot-at? M (+ p 6) OP-UN UOP-NOT 0 0)
+     (gn-dot-at? M (+ p 7) OP-BRZ 0 join 0) (gn-dot-at? M (+ p 8) OP-LGET 0 1 0)
+     (gn-dot-at? M (+ p 9) OP-LGET 1 2 0) (gn-dot-at? M (+ p 10) OP-CONST 2 field 0)
+     (gn-dot-at? M (+ p 11) OP-CALL child 1 2)
+     (gn-dot-at? M (+ p 12) OP-RT RT-VECTOR-AT 0 2)
+     (gn-dot-at? M (+ p 13) OP-CONST 1 value 0) (gn-dot-at? M (+ p 14) OP-CMP CC-EQ 0 0)
+     (gn-dot-at? M (+ p 15) OP-LABEL join 0 0)
+     (gn-dot-at? M (+ p 16) OP-RET 0 0 0) (gn-dot-at? M (+ p 17) OP-END f 0 0)
+     (nr-label M head (+ p 2) 65536) (nr-label M join (+ p 15) 65537)
+     (lm-affine M child) (scv-paid M f))))))
+(defn- scv-safe [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :bool
+ (let [sn (vector-at M MM-SIR-N) fnn (vector-at M MM-FN-N) cn (vector-at M MM-CODE-N)]
+  (if (or (< sn 18) (> sn MM-SIR-CAP) (<= fnn 0) (> fnn MM-FN-CAP)
+   (<= f 0) (>= f fnn) (>= f MM-FN-CAP) (gn-clamp-open M f)
+   (< i 1) (>= i (dec sn)) (not= n 2) (< t 0) (> t 5)
+   (not= (vector-at M MM-ERR) 0) (< (vector-at M MM-FIX-N) 0)
+   (> (vector-at M MM-FIX-N) MM-FIX-CAP) (not= (gn-g M gn-f-skip) 0)
+   (not= (gn-g M gn-f-dead) 0) (not= (gn-g M gn-f-leaf) 0)
+   (not= (gn-g M gn-f-vmode) 0) (not= (gn-g M gn-f-freg) 0)
+   (not= (gn-g M gn-f-ctx) 1) (not= (gn-g M gn-f-h) (+ t 2))
+   (> (gn-g M gn-f-h) gn-cap) (< (gn-g M gn-f-dp) (+ t 2))
+   (> (gn-g M gn-f-dp) gn-cap) (< (gn-g M gn-f-ns) 0)
+   (> (gn-g M gn-f-ns) gn-cap) (<= (gn-g M gn-f-fb) 0)
+   (> (gn-g M gn-f-fb) 32768) (not= (bit-and (gn-g M gn-f-fb) 15) 0)
+   (< (gn-g M gn-f-nsv) 1) (> (gn-g M gn-f-nsv) 10)
+   (not= (gn-g M gn-f-out) 0) (< cn 0) (> cn (- MM-CODE-CAP 64))
+   (not (uc-row M i OP-CALL f t 2)) (= (gn-op M (inc i)) OP-RET)
+   (= (gn-op M (inc i)) OP-RES2)) false
+   (scv-root M f))))
+(defn- scv-emit [M :vector-i64 f :i64] :vector-i64
+ (let [p (gn-fnf M f FF-SIR) child (gn-sir M (+ p 11) IF-A)
+        a (gn-fnf M child FF-SIR) base (gn-sir M (+ a 2) IF-B)
+        stride (gn-sir M (+ a 6) IF-B) field (gn-sir M (+ p 10) IF-B)
+        value (gn-sir M (+ p 13) IF-B)
+        m0 (gn-op-fuel M) zero (vector-at m0 MM-CODE-N)
+        m1 (-> m0 (gn-emit (enc-cbz 1 0)) (gn-emit (enc-sub-i 1 1 1))
+         (gn-mov-imm 17 stride) (gn-emit (enc-mul 1 1 17))
+         (gn-emit (enc-add-i 1 1 base)) (gn-emit (enc-add-i 1 1 field))
+         (gn-vread 0 1 0) (gn-emit (enc-cmp-i 0 value))
+         (gn-emit (enc-cset 0 (enc-cond-eq)))) jump (vector-at m1 MM-CODE-N)
+        m2 (gn-emit m1 (enc-b 0)) z (vector-at m2 MM-CODE-N)
+        m3 (gn-mov-imm m2 0 0) end (vector-at m3 MM-CODE-N)]
+  (-> m3 (gn-put (+ MM-CODE-BASE zero) (enc-cbz 1 (- z zero)))
+   (gn-put (+ MM-CODE-BASE jump) (enc-b (- end jump))))))
+
 ;; Generic exact fixed-field bit reservoir, non-refill branch only.
 ;; Post original entry charge; fallback untouched before all extra debits/stores.
 (defn- nr-shape [M :vector-i64 p :i64 f :i64 k :i64] :bool
@@ -13041,6 +13116,7 @@
             (< (gn-sir M (inc a) IF-A) MM-LABEL-CAP)
             (uc-shape M g 2 (+ a 10))))))))))
 (defn- cw-transfer [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
+ (if (scv-safe M i f t n) (scv-emit M f)
  (if (spu-safe M i f t n) (spu-emit M)
  (if (bv-transfer-safe M i f t n) (bv-transfer-emit M f)
  (if (lr-safe M i f t n) (lr-transfer M f)
@@ -13053,7 +13129,7 @@
      (if (fw-admit M f n) (fw-transfer M f)
       (if (sa-admit M f n) (sa-transfer M f)
        (if (gc-admit M f n) (gc-transfer M f)
-        (-> M (gn-fix FX-BL26 f) (gn-emit (enc-bl 0)))))))))))))))
+        (-> M (gn-fix FX-BL26 f) (gn-emit (enc-bl 0))))))))))))))))
 
 (defn- gn-call-generic [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
  (cond
