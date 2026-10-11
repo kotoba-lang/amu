@@ -1,3 +1,244 @@
+;; Generic immutable endzero-reader variable-step scan. Constants and labels derived from M.
+(defn- ivs-step-key [k :i64] :i64
+ (case k
+  0 534529
+  1 18
+  2 2185
+  3 4100
+  4 8260
+  5 526413
+  6 159811
+  7 71
+  8 143371
+  9 4100
+  10 8260
+  11 4227
+  12 4166
+  13 526413
+  14 163907
+  15 71
+  16 147467
+  17 167939
+  18 2442
+  19 2313
+  20 172035
+  21 2441
+  22 2378
+  23 2249
+  24 176131
+  25 2377
+  26 19
+  27 2050
+  -1))
+(defn- ivs-step-token [f :i64 reader :i64 h :i64 a :i64 b :i64 c :i64 d :i64 escape :i64 marker :i64 wide :i64 narrow :i64 plain :i64 v :i64] :i64
+ (case v
+  32 f
+  33 reader
+  34 h
+  35 a
+  36 b
+  37 c
+  38 d
+  39 escape
+  40 marker
+  41 wide
+  42 narrow
+  43 plain
+  v))
+(defn- ivs-step-row [M :vector-i64 p :i64 f :i64 reader :i64 h :i64 a :i64 b :i64 c :i64 d :i64 escape :i64 marker :i64 wide :i64 narrow :i64 plain :i64 k :i64] :bool
+ (and (>= k 0) (< k 28)
+  (let [key (ivs-step-key k)]
+   (uc-row M (+ p k) (bit-and key 63)
+    (ivs-step-token f reader h a b c d escape marker wide narrow plain (bit-and (i64-shift-right key 6) 63))
+    (ivs-step-token f reader h a b c d escape marker wide narrow plain (bit-and (i64-shift-right key 12) 63))
+    (ivs-step-token f reader h a b c d escape marker wide narrow plain (bit-and (i64-shift-right key 18) 63))))))
+(defn- ivs-root-key [k :i64] :i64
+ (case k
+  0 1067009
+  1 18
+  2 2249
+  3 16388
+  4 12356
+  5 135
+  6 147467
+  7 4100
+  8 8260
+  9 16516
+  10 4166
+  11 526413
+  12 168003
+  13 71
+  14 72
+  15 2313
+  16 151563
+  17 4100
+  18 8260
+  19 12420
+  20 16580
+  21 4356
+  22 8516
+  23 16772
+  24 20550
+  25 542861
+  26 12358
+  27 69
+  28 4229
+  29 8389
+  30 12549
+  31 18
+  32 2250
+  33 2570
+  34 2377
+  35 16388
+  36 12356
+  37 263
+  38 155659
+  39 16388
+  40 172099
+  41 70
+  42 2506
+  43 2441
+  44 176131
+  45 2505
+  46 2569
+  47 19
+  48 2050
+  -1))
+(defn- ivs-root-token [f :i64 reader :i64 step :i64 h :i64 a :i64 b :i64 c :i64 d :i64 z :i64 delimiter :i64 finish :i64 failure :i64 v :i64] :i64
+ (case v
+  32 f
+  33 reader
+  34 step
+  35 h
+  36 a
+  37 b
+  38 c
+  39 d
+  40 z
+  41 delimiter
+  42 finish
+  43 failure
+  v))
+(defn- ivs-root-row [M :vector-i64 p :i64 f :i64 reader :i64 step :i64 h :i64 a :i64 b :i64 c :i64 d :i64 z :i64 delimiter :i64 finish :i64 failure :i64 k :i64] :bool
+ (and (>= k 0) (< k 49)
+  (let [key (ivs-root-key k)]
+   (uc-row M (+ p k) (bit-and key 63)
+    (ivs-root-token f reader step h a b c d z delimiter finish failure (bit-and (i64-shift-right key 6) 63))
+    (ivs-root-token f reader step h a b c d z delimiter finish failure (bit-and (i64-shift-right key 12) 63))
+    (ivs-root-token f reader step h a b c d z delimiter finish failure (bit-and (i64-shift-right key 18) 63))))))
+(defn- ivs-step-rows [M :vector-i64 p :i64 f :i64 reader :i64 h :i64 a :i64 b :i64 c :i64 d :i64 escape :i64 marker :i64 wide :i64 narrow :i64 plain :i64 k :i64] :bool
+ (if (= k 28) true (and (ivs-step-row M p f reader h a b c d escape marker wide narrow plain k) (ivs-step-rows M p f reader h a b c d escape marker wide narrow plain (inc k)))))
+(defn- ivs-root-rows [M :vector-i64 p :i64 f :i64 reader :i64 step :i64 h :i64 a :i64 b :i64 c :i64 d :i64 z :i64 delimiter :i64 finish :i64 failure :i64 k :i64] :bool
+ (if (= k 49) true (and (ivs-root-row M p f reader step h a b c d z delimiter finish failure k) (ivs-root-rows M p f reader step h a b c d z delimiter finish failure (inc k)))))
+(defn- ivs-step [M :vector-i64 f :i64 reader :i64] :bool
+ (if (not (qb-bound M f 28 2 2 3 1)) false
+  (let [p (gn-fnf M f FF-SIR)]
+   (and (= (gn-fnf M f FF-PT0) TY-STR) (qb-int-params M f 1 2)
+    (>= (gn-sir M (+ p 6) IF-B) 0) (< (gn-sir M (+ p 6) IF-B) 128)
+    (>= (gn-sir M (+ p 14) IF-B) 0) (< (gn-sir M (+ p 14) IF-B) 128)
+    (> (gn-sir M (+ p 17) IF-B) 0) (<= (gn-sir M (+ p 17) IF-B) 4095)
+    (> (gn-sir M (+ p 20) IF-B) 0) (<= (gn-sir M (+ p 20) IF-B) 4095)
+    (> (gn-sir M (+ p 24) IF-B) 0) (<= (gn-sir M (+ p 24) IF-B) 4095)
+    (ivs-step-rows M p f reader (gn-sir M (+ p 2) IF-A) (gn-sir M (+ p 23) IF-A)
+     (gn-sir M (+ p 19) IF-A) (gn-sir M (+ p 25) IF-A) (gn-sir M (+ p 21) IF-A)
+     (gn-sir M (+ p 6) IF-B) (gn-sir M (+ p 14) IF-B) (gn-sir M (+ p 17) IF-B)
+     (gn-sir M (+ p 20) IF-B) (gn-sir M (+ p 24) IF-B) 0) (qb-labels M p 28 0)))))
+(defn- ivs-root [M :vector-i64 f :i64] :bool
+ (if (not (qb-bound M f 49 4 4 7 1)) false
+  (let [p (gn-fnf M f FF-SIR) reader (gn-sir M (+ p 11) IF-A) step (gn-sir M (+ p 25) IF-A)]
+   (and (= (gn-fnf M f FF-PT0) TY-STR) (qb-int-params M f 1 4)
+    (>= (gn-sir M (+ p 12) IF-B) 0) (< (gn-sir M (+ p 12) IF-B) 128)
+    (> (gn-sir M (+ p 40) IF-B) 0) (<= (gn-sir M (+ p 40) IF-B) 4095)
+    (ivs-root-rows M p f reader step (gn-sir M (+ p 2) IF-A) (gn-sir M (+ p 15) IF-A)
+     (gn-sir M (+ p 34) IF-A) (gn-sir M (+ p 43) IF-A) (gn-sir M (+ p 45) IF-A)
+     (gn-sir M (+ p 46) IF-A) (gn-sir M (+ p 12) IF-B) (gn-sir M (+ p 40) IF-B)
+     (gn-sir M (+ p 44) IF-B) 0) (qb-labels M p 49 0)
+    (qb-bound M reader 17 2 2 2 1) (= (gn-fnf M reader FF-PT0) TY-STR)
+    (qb-int-params M reader 1 2)
+    (let [q (gn-fnf M reader FF-SIR)]
+     (and (sa-rows M q reader (gn-sir M (+ q 2) IF-A) (gn-sir M (+ q 10) IF-A) (gn-sir M (+ q 14) IF-A) 0)
+      (qb-labels M q 17 0))) (ivs-step M step reader)))))
+(defn- ivs-homes [M :vector-i64] :bool
+ (let [h1 (gn-sreg M 1) h2 (gn-sreg M 2) h3 (gn-sreg M 3) h4 (gn-sreg M 4)]
+  (and (>= h1 19) (<= h1 28) (>= h2 19) (<= h2 28)
+   (>= h3 19) (<= h3 28) (>= h4 19) (<= h4 28)
+   (not= h1 h2) (not= h1 h3) (not= h1 h4)
+   (not= h2 h3) (not= h2 h4) (not= h3 h4))))
+(defn- ivs-admit [M :vector-i64 i :i64] :bool
+ (and (> i 1) (< i (vector-at M MM-SIR-N)) (< i MM-SIR-CAP)
+  (= (gn-g M gn-f-leaf) 0) (= (gn-g M gn-f-freg) 0) (= (gn-g M gn-f-vmode) 0)
+  (= (gn-g M gn-f-ctx) 1) (= (gn-g M gn-f-h) 0) (= (gn-g M gn-f-skip) 0)
+  (= (gn-g M gn-f-dead) 0) (= (gn-g M gn-f-ns) 4) (= (gn-g M gn-f-dp) 7)
+  (= (gn-g M gn-f-out) 0) (ivs-homes M)
+  (= (vector-at M MM-ERR) 0)
+  (>= (vector-at M MM-FIX-N) 0) (<= (vector-at M MM-FIX-N) MM-FIX-CAP)
+  (>= (gn-g M gn-f-nsv) 0) (<= (gn-g M gn-f-nsv) 10) (>= (gn-g M gn-f-fb) 0)
+  (>= (vector-at M MM-CODE-N) 0) (<= (vector-at M MM-CODE-N) (- MM-CODE-CAP 512))
+  (> (gn-g M fr-owner) 0) (< (gn-g M fr-owner) MM-FN-CAP)
+  (< (gn-g M fr-owner) (vector-at M MM-FN-N))
+  (<= (vector-at M MM-FN-N) MM-FN-CAP)
+  (= (gn-fnf M (gn-g M fr-owner) FF-SIR) (dec i)) (ivs-root M (gn-g M fr-owner))))
+;; One shared charge, preserving original publication. Normal path clobbers x16 only.
+(defn- ivs-pay [M :vector-i64 n :i64] :vector-i64
+ (if (= n 0) M (ivs-pay (gn-op-fuel M) (dec n))))
+(defn- ivs-emit [M :vector-i64 i :i64] :vector-i64
+ (let [h1 (gn-sreg M 1) h2 (gn-sreg M 2) h3 (gn-sreg M 3) h4 (gn-sreg M 4)
+  cn (vector-at M MM-CODE-N) fn (vector-at M MM-FIX-N) dead (gn-g M gn-f-dead) G (vector-alloc 48)
+  p (dec i) q (gn-fnf M (gn-sir M (+ p 25) IF-A) FF-SIR)
+  m0 (-> M
+   (gn-emit (enc-cmp-i h2 0)) (gt-cold G (enc-cond-lt))
+   (gn-emit (enc-cmp-i h3 0)) (gt-cold G (enc-cond-lt))
+   (gn-mov-imm 16 1152921504606846975) (gn-emit (enc-cmp-r h3 16)) (gt-cold G 8)
+   (gn-emit (enc-cmp-i h4 0)) (gt-cold G (enc-cond-lt))
+   (gn-emit (enc-ldr 16 7 288)) (gn-emit (enc-ldr 16 16 0))
+   (gn-emit (enc-sub-i 17 h1 1)) (gn-emit (enc-cmp-r 17 16)) (gt-cold G (enc-cond-hs))
+   (gn-emit (enc-ldr 16 7 296)) (gn-emit (gn-e-addsl 16 16 17 4))
+   (gn-emit (enc-ldp 3 4 16 0)) (gn-emit (enc-cmp-i 3 0)) (gt-cold G (enc-cond-lt))
+   (gn-emit (enc-add-r 5 3 4)) (gn-emit (enc-cmp-r 5 3)) (gt-cold G (enc-cond-lo))
+   (gn-emit (enc-ldr 16 7 392)) (gn-emit (enc-cmp-r 5 16)) (gt-cold G 8)
+   (gn-emit (enc-add-r 5 h2 h3)) (gn-emit (enc-cmp-r 5 h2)) (gt-cold G (enc-cond-lo))
+   (gn-emit (enc-cmp-r 5 4)) (gt-cold G 8)
+   (gn-emit (enc-ldr 16 7 CTX-CODE-BASE)) (gn-emit (enc-add-r 3 3 16))
+   (gn-emit (enc-cmp-r 3 16)) (gt-cold G (enc-cond-lo))
+   (gn-emit (enc-add-r 5 3 4)) (gn-emit (enc-cmp-r 5 3)) (gt-cold G (enc-cond-lo)))
+  head (vector-at m0 MM-CODE-N)
+  m1 (-> m0 (gn-emit (enc-cmp-r h4 h3)) (gt-cold G (enc-cond-ge))
+   (gn-emit (enc-ldr 16 7 CTX-FUEL)) (gn-emit (enc-cmp-i 16 5)) (gt-cold G (enc-cond-lo))
+   (gn-emit (enc-add-r 5 h2 h4)) (gn-emit (gn-e-ldrb 0 3 5))
+   (gn-emit (enc-cmp-i 0 128)) (gt-cold G (enc-cond-hs))
+   (gn-emit (enc-cmp-i 0 (gn-sir M (+ p 12) IF-B))))
+  done (vector-at m1 MM-CODE-N) m2 (gn-emit m1 (enc-bcond (enc-cond-eq) 0))
+  m3 (gn-emit m2 (enc-cmp-i 0 (gn-sir M (+ q 6) IF-B)))
+  simple (vector-at m3 MM-CODE-N) m4 (gn-emit m3 (enc-bcond (enc-cond-ne) 0))
+  m5 (-> m4 (gn-emit (enc-add-i 5 5 1)) (gn-emit (enc-cmp-r 5 4)))
+  zero (vector-at m5 MM-CODE-N) m6 (gn-emit m5 (enc-bcond (enc-cond-eq) 0))
+  m7 (-> m6 (gn-emit (gn-e-ldrb 1 3 5)) (gn-emit (enc-cmp-i 1 128)) (gt-cold G (enc-cond-hs)))
+  join (vector-at m7 MM-CODE-N) m8 (gn-emit m7 (enc-b 0))
+  zeroTarget (vector-at m8 MM-CODE-N) m9 (gn-mov-imm m8 1 0)
+  escaped (vector-at m9 MM-CODE-N)
+  m10 (-> m9 (ivs-pay 4) (gn-mov-imm 6 (gn-sir M (+ q 20) IF-B))
+   (gn-emit (enc-cmp-i 1 (gn-sir M (+ q 14) IF-B))))
+  narrow (vector-at m10 MM-CODE-N) m11 (gn-emit m10 (enc-bcond (enc-cond-ne) 0))
+  m12 (gn-mov-imm m11 6 (gn-sir M (+ q 17) IF-B))
+  advance (vector-at m12 MM-CODE-N) m13 (gn-emit m12 (enc-b 0))
+  plain (vector-at m13 MM-CODE-N)
+  m14 (-> m13 (ivs-pay 3) (gn-mov-imm 6 (gn-sir M (+ q 24) IF-B)))
+  update (vector-at m14 MM-CODE-N)
+  m15 (-> m14 (gn-emit (enc-add-r h4 h4 6)) (gn-op-fuel))
+  repeat (vector-at m15 MM-CODE-N) m16 (gn-emit m15 (enc-b (- head repeat)))
+  finished (vector-at m16 MM-CODE-N)
+  m17 (-> m16 (ivs-pay 1) (gn-emit (enc-add-i 0 h4 (gn-sir M (+ p 40) IF-B)))
+   (gn-epilogue) (gn-gs gn-f-dead 0))
+  cold (vector-at m17 MM-CODE-N)
+  m18 (-> m17 (gt-patch G 0 cold)
+   (gn-dot-patch done finished (enc-cond-eq)) (gn-dot-patch simple plain (enc-cond-ne))
+   (gn-dot-patch zero zeroTarget (enc-cond-eq)) (gn-dot-patch narrow update (enc-cond-ne))
+   (gn-put (+ MM-CODE-BASE join) (enc-b (- escaped join)))
+   (gn-put (+ MM-CODE-BASE advance) (enc-b (- update advance))))]
+  (if (= (vector-at m18 MM-ERR) 0) m18 (-> m18 (gn-put MM-CODE-N cn) (gn-put MM-FIX-N fn) (gn-gs gn-f-dead dead)))))
+(defn- ivs-entry [M :vector-i64 i :i64] :vector-i64
+ (if (ivs-admit M i) (ivs-emit M i) M))
+
 ;; Successful closed fresh-vector returns certify fixed field bounds only.
 ;; Keep producer calls, allocation, all fuel, and all unproved reads unchanged.
 (defn- fv-body [M :vector-i64 j :i64 end :i64 work :i64] :bool
@@ -13996,8 +14237,8 @@
         OP-VEC (gn-op-vec M i a b)
         OP-TAB (gn-op-tab M i a b c)
         OP-VECP (gn-op-vecp M i a b c)
-        OP-FUEL (mdr-entry (ex-entry (maft-entry (rs-entry (isf-entry (zf-entry (wa-entry (pm-entry (lm-entry (cr-entry (sc-entry (ci-entry (sf-entry (zc-entry (lc-entry (sd-entry (be-entry (tpin-entry (btg-entry (ur-entry (uu-entry (ct-prototype-entry (gi-entry (bf-entry (ao-entry (up-entry (gm-entry (gt-entry (rl-entry (ir-entry (tf-entry (rb-entry (qb-entry (cb-entry (mf-entry (fc-entry (sz-entry (drc-entry (pc3-entry (gn-copy-entry (gn-dot-entry (ds-entry (vc-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i)
-        i) OP-RET (gn-op-ret M a)
+        OP-FUEL (ivs-entry (mdr-entry (ex-entry (maft-entry (rs-entry (isf-entry (zf-entry (wa-entry (pm-entry (lm-entry (cr-entry (sc-entry (ci-entry (sf-entry (zc-entry (lc-entry (sd-entry (be-entry (tpin-entry (btg-entry (ur-entry (uu-entry (ct-prototype-entry (gi-entry (bf-entry (ao-entry (up-entry (gm-entry (gt-entry (rl-entry (ir-entry (tf-entry (rb-entry (qb-entry (cb-entry (mf-entry (fc-entry (sz-entry (drc-entry (pc3-entry (gn-copy-entry (gn-dot-entry (ds-entry (vc-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i)
+        i) i) OP-RET (gn-op-ret M a)
         OP-RET2 (gn-op-ret2 M a)       ; R5B
         OP-RES2 (gn-op-res2 M i a)     ; R5B
         OP-TRAP (-> M (gn-emit (enc-brk a)) (gn-gs gn-f-dead 1))
