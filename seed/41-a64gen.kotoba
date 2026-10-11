@@ -1,3 +1,43 @@
+;; Generic charged double-mask dynamic left rotate; ordinary shared calls only.
+(defn- lr-shape [M :vector-i64 f :i64] :bool
+ (and (qb-bound M f 17 2 2 4 1) (qb-int-params M f 0 2)
+  (let [p (gn-fnf M f FF-SIR) mask (gn-sir M (+ (gn-fnf M f FF-SIR) 4) IF-A)]
+   (and (uc-row M p OP-FN f 2 2) (uc-row M (+ p 1) OP-FUEL 0 0 0)
+    (uc-row M (+ p 2) OP-LABEL (gn-sir M (+ p 2) IF-A) 0 0)
+    (uc-row M (+ p 3) OP-LGET 0 1 0) (uc-row M (+ p 4) OP-CALL mask 0 1)
+    (uc-row M (+ p 5) OP-LGET 1 2 0) (uc-row M (+ p 6) OP-BIN BOP-SHL 0 0)
+    (uc-row M (+ p 7) OP-LGET 1 1 0) (uc-row M (+ p 8) OP-CALL mask 1 1)
+    (uc-row M (+ p 9) OP-CONST 2 32 0) (uc-row M (+ p 10) OP-LGET 3 2 0)
+    (uc-row M (+ p 11) OP-BIN BOP-SUB 2 0) (uc-row M (+ p 12) OP-BIN BOP-USHR 1 0)
+    (uc-row M (+ p 13) OP-BIN BOP-OR 0 0) (uc-row M (+ p 14) OP-CALL mask 0 1)
+    (uc-row M (+ p 15) OP-RET 0 0 0) (uc-row M (+ p 16) OP-END f 0 0)
+    (qb-labels M p 17 0) (rr-mask M mask) (qb-labels M (gn-fnf M mask FF-SIR) 7 0)))))
+(defn- lr-safe [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :bool
+ (and (= n 2) (>= t 0) (<= t 5) (= (gn-g M gn-f-h) (+ t 2))
+  (>= (gn-g M gn-f-dp) (+ t 2)) (<= (gn-g M gn-f-dp) gn-cap)
+  (= (gn-g M gn-f-leaf) 0) (= (gn-g M gn-f-freg) 0) (= (gn-g M gn-f-vmode) 0)
+  (= (gn-g M gn-f-ctx) 1) (= (gn-g M gn-f-skip) 0) (= (gn-g M gn-f-dead) 0)
+  (> (gn-g M gn-f-fb) 0) (<= (gn-g M gn-f-fb) 32768)
+  (= (vector-at M MM-ERR) 0) (> i 0) (< i (dec (vector-at M MM-SIR-N)))
+  (> (vector-at M MM-SIR-N) 0) (<= (vector-at M MM-SIR-N) MM-SIR-CAP)
+  (> (vector-at M MM-FN-N) 0) (<= (vector-at M MM-FN-N) MM-FN-CAP)
+  (uc-row M i OP-CALL f t 2) (not= (gn-op M (inc i)) OP-RET) (not= (gn-op M (inc i)) OP-RES2)
+  (>= (vector-at M MM-CODE-N) 0) (<= (vector-at M MM-CODE-N) (- MM-CODE-CAP 16))
+  (>= (vector-at M MM-FIX-N) 0) (< (vector-at M MM-FIX-N) MM-FIX-CAP)
+  (lr-shape M f)))
+(defn- lr-transfer [M :vector-i64 f :i64] :vector-i64
+ (let [cn (vector-at M MM-CODE-N) fx (vector-at M MM-FIX-N) dead (gn-g M gn-f-dead)
+  m0 (gn-emit M (enc-cmp-i 1 33))
+  guard (vector-at m0 MM-CODE-N)
+  m1 (-> m0 (gn-emit (enc-bcond (enc-cond-hs) 0)) (gn-op-fuel)
+   (gn-emit (enc-sub-r 17 31 1)) (gn-emit (+ 0x1ac02c00 (i64-shift-left 17 16))))
+  jump (vector-at m1 MM-CODE-N) m2 (gn-emit m1 (enc-b 0))
+  cold (vector-at m2 MM-CODE-N) m3 (-> m2 (gn-fix FX-BL26 f) (gn-emit (enc-bl 0)))
+  end (vector-at m3 MM-CODE-N)
+  final (-> m3 (gn-dot-patch guard cold (enc-cond-hs)) (gn-put (+ MM-CODE-BASE jump) (enc-b (- end jump))))]
+  (if (= (vector-at final MM-ERR) 0) final
+   (-> final (gn-put MM-CODE-N cn) (gn-put MM-FIX-N fx) (gn-gs gn-f-dead dead)))))
+
 ;; Closed packed mask-row proof: exact source shape, constants derived from current M.
 (defn- pm-row [M :vector-i64 p :i64 f :i64 pred :i64 reserved :i64 rem :i64 weight :i64 writer :i64 k :i64] :bool
  (case k
@@ -11051,6 +11091,7 @@
             (< (gn-sir M (inc a) IF-A) MM-LABEL-CAP)
             (uc-shape M g 2 (+ a 10))))))))))
 (defn- cw-transfer [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
+ (if (lr-safe M i f t n) (lr-transfer M f)
  (if (nf-transfer-safe M i f t n) (nf-transfer M f)
   (if (cw-shape M i f t n)
   (-> M (gn-op-fuel) (gn-emit (enc-cmp-r 0 1)) (gn-emit (enc-cset 0 (enc-cond-hs))))
@@ -11060,7 +11101,7 @@
      (if (fw-admit M f n) (fw-transfer M f)
       (if (sa-admit M f n) (sa-transfer M f)
        (if (gc-admit M f n) (gc-transfer M f)
-        (-> M (gn-fix FX-BL26 f) (gn-emit (enc-bl 0))))))))))))
+        (-> M (gn-fix FX-BL26 f) (gn-emit (enc-bl 0)))))))))))))
 
 (defn- gn-call-generic [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
  (cond
