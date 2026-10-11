@@ -1,3 +1,158 @@
+;; Exact current-M47-row lower row-update family, no workload/function names.
+(defn- ur-row [M :vector-i64 p :i64 f :i64 reader :i64 inner :i64 writer :i64 n :i64 stride :i64 k :i64] :bool
+ (let [l2 (gn-sir M (+ p 2) IF-A) l9 (gn-sir M (+ p 9) IF-A) l44 (gn-sir M (+ p 44) IF-A)]
+  (case k
+   0 (gn-dot-at? M (+ p 0) 1 f 3 5)
+   1 (gn-dot-at? M (+ p 1) 18 0 0 0)
+   2 (gn-dot-at? M (+ p 2) 9 l2 0 0)
+   3 (gn-dot-at? M (+ p 3) 4 0 3 0)
+   4 (gn-dot-at? M (+ p 4) 3 1 n 0)
+   5 (gn-dot-at? M (+ p 5) 7 1 0 0)
+   6 (gn-dot-at? M (+ p 6) 11 0 l9 0)
+   7 (gn-dot-at? M (+ p 7) 4 0 1 0)
+   8 (gn-dot-at? M (+ p 8) 10 l44 0 0)
+   9 (gn-dot-at? M (+ p 9) 9 l9 0 0)
+   10 (gn-dot-at? M (+ p 10) 4 0 1 0)
+   11 (gn-dot-at? M (+ p 11) 4 1 3 0)
+   12 (gn-dot-at? M (+ p 12) 4 2 2 0)
+   13 (gn-dot-at? M (+ p 13) 3 3 0 0)
+   14 (gn-dot-at? M (+ p 14) 4 4 1 0)
+   15 (gn-dot-at? M (+ p 15) 4 5 3 0)
+   16 (gn-dot-at? M (+ p 16) 4 6 2 0)
+   17 (gn-dot-at? M (+ p 17) 13 reader 4 3)
+   18 (gn-dot-at? M (+ p 18) 13 inner 0 5)
+   19 (gn-dot-at? M (+ p 19) 5 4 0 0)
+   20 (gn-dot-at? M (+ p 20) 4 0 4 0)
+   21 (gn-dot-at? M (+ p 21) 4 1 1 0)
+   22 (gn-dot-at? M (+ p 22) 4 2 2 0)
+   23 (gn-dot-at? M (+ p 23) 4 3 2 0)
+   24 (gn-dot-at? M (+ p 24) 13 reader 1 3)
+   25 (gn-dot-at? M (+ p 25) 6 4 0 0)
+   26 (gn-dot-at? M (+ p 26) 5 5 0 0)
+   27 (gn-dot-at? M (+ p 27) 4 0 1 0)
+   28 (gn-dot-at? M (+ p 28) 4 1 3 0)
+   29 (gn-dot-at? M (+ p 29) 3 2 stride 0)
+   30 (gn-dot-at? M (+ p 30) 6 3 1 0)
+   31 (gn-dot-at? M (+ p 31) 4 2 2 0)
+   32 (gn-dot-at? M (+ p 32) 6 1 1 0)
+   33 (gn-dot-at? M (+ p 33) 4 2 5 0)
+   34 (gn-dot-at? M (+ p 34) 13 writer 0 3)
+   35 (gn-dot-at? M (+ p 35) 4 1 2 0)
+   36 (gn-dot-at? M (+ p 36) 4 2 3 0)
+   37 (gn-dot-at? M (+ p 37) 3 3 1 0)
+   38 (gn-dot-at? M (+ p 38) 6 1 2 0)
+   39 (gn-dot-at? M (+ p 39) 5 1 0 0)
+   40 (gn-dot-at? M (+ p 40) 5 2 1 0)
+   41 (gn-dot-at? M (+ p 41) 5 3 2 0)
+   42 (gn-dot-at? M (+ p 42) 18 0 0 0)
+   43 (gn-dot-at? M (+ p 43) 10 l2 0 0)
+   44 (gn-dot-at? M (+ p 44) 9 l44 0 0)
+   45 (gn-dot-at? M (+ p 45) 19 0 0 0)
+   46 (gn-dot-at? M (+ p 46) 2 f 0 0)
+   false)))
+(defn- ur-rows [M :vector-i64 p :i64 f :i64 reader :i64 inner :i64 writer :i64 n :i64 stride :i64 k :i64] :bool
+ (if (= k 47) true (and (ur-row M p f reader inner writer n stride k)
+  (ur-rows M p f reader inner writer n stride (inc k)))))
+(defn- ur-shape [M :vector-i64 p :i64 f :i64] :i64
+ (if (not (ir-bound M f 47 3 5 7)) 0
+  (let [reader (gn-sir M (+ p 17) IF-A) inner (gn-sir M (+ p 18) IF-A)
+   writer (gn-sir M (+ p 34) IF-A) n (gn-sir M (+ p 4) IF-B)
+   stride (up-reader M reader)]
+   (if (and (= (gn-fnf M f FF-SIR) p) (= (gn-fnf M f FF-RTYPE) TY-VEC)
+    (= (gn-fnf M f FF-PT0) TY-VEC) (qb-int-params M f 1 3)
+    (> n 0) (<= n 64) (> stride 0) (<= stride 4095)
+    (> inner 0) (< inner MM-FN-CAP) (< inner (vector-at M MM-FN-N))
+    (= (up-shape M (gn-fnf M inner FF-SIR) inner false) stride)
+    (= (gn-sir M (+ (gn-fnf M inner FF-SIR) 20) IF-A) reader)
+    (ir-bound M writer 9 3 3 3) (pc3-helper-type M writer 3 TY-VEC)
+    (pc3-writer-shape M (gn-fnf M writer FF-SIR) writer)
+    (qb-labels M (gn-fnf M writer FF-SIR) 9 0)
+    (ur-rows M p f reader inner writer n stride 0) (qb-labels M p 47 0)) n 0))))
+(defn- ur-admit [M :vector-i64 i :i64] :i64
+ (if (or (<= i 1) (> i (- MM-SIR-CAP 46))
+  (> i (- (vector-at M MM-SIR-N) 46)) (not= (gn-op M (dec i)) OP-FN)) 0
+  (let [p (dec i) f (gn-sir M p IF-A)]
+   (if (and (= (gn-g M gn-f-ns) 5) (= (gn-g M gn-f-dp) 7)
+    (= (gn-g M gn-f-leaf) 0) (= (gn-g M gn-f-freg) 0)
+    (= (gn-g M gn-f-vmode) 0) (= (gn-g M gn-f-ctx) 1)
+    (= (gn-g M gn-f-h) 0) (= (gn-g M gn-f-skip) 0)
+    (= (gn-g M gn-f-dead) 0) (= (gn-g M gn-f-nsv) 5)
+    (= (gn-g M gn-f-out) 0) (= (gn-g M gn-f-fb) 160)
+    (<= (vector-at M MM-FN-N) MM-FN-CAP) (up-homes M 1)
+    (>= (vector-at M MM-CODE-N) 0)
+    (<= (vector-at M MM-CODE-N) (- MM-CODE-CAP 512)))
+    (ur-shape M p f) 0))))
+
+;; UNHOOKED PROTOTYPE. No admission/freeze/native eligibility.
+;; Call only after current-M exact47-row outer + closed37-row inner/reader/writer,
+;; saved params1..3 distinct19..28, FREG0/leaf0/h0 and full union range guards.
+;; x15=items base; x12=j; x13=i; i<=j<N<2^31, positive stride <=4095.
+;; Preserved outer entry already paid. Enough shared fuel=(5+3*i)*(N-j)
+;; is a nontrapping admission bound. Batch each closed prequot region, publish
+;; immediately before unchanged quotient traps, then batch writer+recurrence2.
+;; Miss before kernel preserves saved homes/CTX. Quotient is NOT total: retain
+;; gn-quot BRK guards exactly, after fresh pivot and all original prefix debits.
+(defn- ur-read [M :vector-i64 stride :i64 dst :i64 row :i64 col :i64] :vector-i64
+ (-> M (gn-mov-imm 16 stride)
+  (gn-emit (enc-mul 17 row 16)) (gn-emit (enc-add-r 17 17 col))
+  (gn-emit (gn-e-addsl 17 15 17 3)) (gn-emit (enc-ldr dst 17 0))))
+(defn- ur-lower-kernel [M :vector-i64 stride :i64 n :i64] :vector-i64
+ (let [init (-> M (gn-emit (enc-ldr 8 7 CTX-FUEL))
+   (gn-emit (enc-add-r 14 13 13)) (gn-emit (enc-add-r 14 14 13))
+   (gn-emit (enc-add-i 14 14 3)))
+  outer (vector-at init MM-CODE-N)
+  m0 (-> init (gn-emit (enc-sub-r 8 8 14))
+   (ur-read stride 10 12 13) (gn-mov-imm 11 0))
+  head (vector-at m0 MM-CODE-N)
+  m1 (gn-emit m0 (enc-cmp-r 11 13)) done (vector-at m1 MM-CODE-N)
+  m2 (-> m1 (gn-emit (enc-bcond (enc-cond-eq) 0))
+   (ur-read stride 9 12 11) (ur-read stride 6 11 13)
+   (gn-emit (enc-mul 9 9 6)) (gn-emit (enc-sub-r 10 10 9))
+   (gn-emit (enc-add-i 11 11 1)))
+  back (vector-at m2 MM-CODE-N) m3 (gn-emit m2 (enc-b (- head back)))
+  innerend (vector-at m3 MM-CODE-N)
+  m4 (-> m3 (ur-read stride 5 13 13)
+   (gn-emit (enc-str 8 7 CTX-FUEL)) (gn-quot 10 10 5)
+   (gn-emit (enc-sub-i 8 8 2)) (gn-emit (enc-str 8 7 CTX-FUEL))
+   (gn-mov-imm 16 stride)
+   (gn-emit (enc-mul 17 12 16)) (gn-emit (enc-add-r 17 17 13))
+   (gn-emit (gn-e-addsl 17 15 17 3)) (gn-emit (enc-str 10 17 0))
+   (gn-emit (enc-add-i 12 12 1))
+   (gn-mov-imm 16 n) (gn-emit (enc-cmp-r 12 16)))
+  oback (vector-at m4 MM-CODE-N)
+  m5 (-> m4 (gn-emit (enc-bcond (enc-cond-ne) (- outer oback)))
+   (gn-mov (gn-sreg M 3) 12))]
+  ;; Falls into original outer terminal head, not original live-local body.
+  (gn-dot-patch m5 done innerend (enc-cond-eq))))
+
+;; Full union preflight, no pivot speculation; guards precede any new debit/read/write.
+(defn- ur-emit [M :vector-i64 n :i64] :vector-i64
+ (let [cn (vector-at M MM-CODE-N) fx (vector-at M MM-FIX-N)
+  p (gn-fnf M (gn-g M fr-owner) FF-SIR)
+  stride (gn-sir M (+ p 29) IF-B) rv (gn-sreg M 1)
+  ih (gn-sreg M 2) jh (gn-sreg M 3) G (vector-alloc 49)
+  m0 (-> M (gn-mov-imm 16 n) (gm-limit G ih) (gm-limit G jh)
+   (gn-emit (enc-cmp-r ih jh)) (gm-cold G 8)
+   (gn-emit (enc-ldr 16 7 312)) (gn-emit (enc-ldr 16 16 0))
+   (gn-emit (enc-sub-i 17 rv 1)) (gn-emit (enc-cmp-r 17 16))
+   (gm-cold G (enc-cond-hs))
+   (gn-emit (enc-ldr 16 7 320)) (gn-emit (gn-e-addsl 16 16 17 4))
+   (gn-emit (enc-ldp 4 5 16 0))
+   (gn-mov-imm 16 (+ (* (dec n) stride) (dec n)))
+   (gn-emit (enc-cmp-r 16 5)) (gm-cold G (enc-cond-hs))
+   (gn-emit (enc-add-r 16 ih ih)) (gn-emit (enc-add-r 16 16 ih))
+   (gn-emit (enc-add-i 16 16 5)) (gn-mov-imm 17 n)
+   (gn-emit (enc-sub-r 17 17 jh)) (gn-emit (enc-mul 16 16 17))
+   (gn-emit (enc-ldr 6 7 CTX-FUEL)) (gn-emit (enc-cmp-r 6 16))
+   (gm-cold G (enc-cond-lo))
+   (gn-emit (enc-ldr 15 7 328)) (gn-emit (gn-e-addsl 15 15 4 3))
+   (gn-mov 12 jh) (gn-mov 13 ih) (ur-lower-kernel stride n))
+  end (vector-at m0 MM-CODE-N) m1 (gm-patch m0 G 0 end)]
+  (if (= (vector-at m1 MM-ERR) 0) m1
+   (-> m1 (gn-put MM-CODE-N cn) (gn-put MM-FIX-N fx)))))
+(defn- ur-entry [M :vector-i64 i :i64] :vector-i64
+ (let [n (ur-admit M i)] (if (> n 0) (ur-emit M n) M)))
+
 ;; Exact upper44 current-M family; historical IDs are not dispatch predicates.
 (defn- uu-row [M :vector-i64 p :i64 f :i64 reader :i64 inner :i64 writer :i64 n :i64 stride :i64 k :i64] :bool
  (let [l2 (gn-sir M (+ p 2) IF-A) l9 (gn-sir M (+ p 9) IF-A) l41 (gn-sir M (+ p 41) IF-A)]
@@ -9080,7 +9235,7 @@
         OP-VEC (gn-op-vec M i a b)
         OP-TAB (gn-op-tab M i a b c)
         OP-VECP (gn-op-vecp M i a b c)
-        OP-FUEL (uu-entry (ct-prototype-entry (gi-entry (bf-entry (ao-entry (up-entry (gm-entry (gt-entry (rl-entry (ir-entry (tf-entry (rb-entry (qb-entry (cb-entry (mf-entry (fc-entry (sz-entry (drc-entry (pc3-entry (gn-copy-entry (gn-dot-entry (ds-entry (vc-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i)
+        OP-FUEL (ur-entry (uu-entry (ct-prototype-entry (gi-entry (bf-entry (ao-entry (up-entry (gm-entry (gt-entry (rl-entry (ir-entry (tf-entry (rb-entry (qb-entry (cb-entry (mf-entry (fc-entry (sz-entry (drc-entry (pc3-entry (gn-copy-entry (gn-dot-entry (ds-entry (vc-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i)
         OP-RET (gn-op-ret M a)
         OP-RET2 (gn-op-ret2 M a)       ; R5B
         OP-RES2 (gn-op-res2 M i a)     ; R5B
