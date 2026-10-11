@@ -1,3 +1,112 @@
+;; Bounded forward CFG, conservative alias-extended local ranges. No runtime emission.
+(defn- la-bit [s :i64] :i64 (i64-shift-left 1 s))
+(defn- la-at [X :vector-i64 k :i64] :i64 (gn-g X (+ gn-a-dv k)))
+(defn- la-put [X :vector-i64 k :i64 v :i64] :vector-i64 (gn-gs X (+ gn-a-dv k) v))
+(defn- la-touch [X :vector-i64 s :i64 j :i64] :vector-i64
+ (let [old (la-at X s)]
+  (la-put (la-put X s (if (or (= old 0) (< j old)) j old)) (+ 64 s) (gn-max j (la-at X (+ 64 s))))))
+(defn- la-bits-touch [X :vector-i64 bits :i64 s :i64 ns :i64 j :i64] :vector-i64
+ (if (> s ns) X (la-bits-touch (if (not= (bit-and bits (la-bit s)) 0) (la-touch X s j) X) bits (inc s) ns j)))
+(defn- la-next [M :vector-i64 j :i64 end :i64] :i64
+ (let [op (gn-op M j)]
+  (cond (= op OP-BR) (gn-small-label M 1 (gn-sir M j IF-A) 0)
+   (or (= op OP-RET) (= j end)) 0 :else (inc j))))
+(defn- la-other [M :vector-i64 j :i64] :i64
+ (if (or (= (gn-op M j) OP-BRZ) (= (gn-op M j) OP-BRNZ)) (gn-small-label M 1 (gn-sir M j IF-B) 0) 0))
+(defn- la-row [M :vector-i64 j :i64 p :i64 end :i64 ns :i64 dp :i64] :bool
+ (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) c (gn-sir M j IF-C)
+  d (gn-defd M j) lo (gn-rlo M j) hi (gn-rhi M j)]
+  (and (or (> lo hi) (and (>= lo 0) (< hi dp))) (or (< d 0) (< d dp))
+   (case op
+    OP-CONST (and (>= a 0) (= c 0))
+    OP-LGET (and (>= a 0) (> b 0) (<= b ns) (= c 0))
+    OP-LSET (and (> a 0) (<= a ns) (>= b 0) (= c 0))
+    OP-BIN (and (>= a 0) (< a BOP-F64-ADD) (>= b 0) (= c 0))
+    OP-CMP (and (>= a 0) (<= a CC-GE) (>= b 0) (= c 0))
+    OP-UN (and (>= a 0) (< a UOP-F64-NEG) (>= b 0) (= c 0))
+    (OP-CALL OP-RT) (and (>= b 0) (>= c 0))
+    OP-FUEL (and (= a 0) (= b 0) (= c 0))
+    OP-LABEL (and (= b 0) (= c 0) (= (gn-small-label M 1 a 0) j))
+    OP-BR (let [q (la-next M j end)] (and (= b 0) (= c 0) (> q j) (< q end) (> q p)))
+    (OP-BRZ OP-BRNZ) (let [q (la-other M j)] (and (>= a 0) (= c 0) (> q j) (< q end) (> q p)))
+    OP-RET (and (>= a 0) (= b 0) (= c 0))
+    false))))
+(defn- la-rows [M :vector-i64 j :i64 p :i64 end :i64 ns :i64 dp :i64] :bool
+ (if (= j end) true (and (la-row M j p end ns dp) (la-rows M (inc j) p end ns dp))))
+(defn- la-state [X :vector-i64 p :i64 j :i64 t :i64] :i64 (la-at X (+ 256 (+ (* (- j p) 7) t))))
+(defn- la-read [M :vector-i64 X :vector-i64 p :i64 j :i64 t :i64 hi :i64 bits :i64] :i64
+ (if (> t hi) bits (la-read M X p j (inc t) hi (bit-or bits (la-state X p j t)))))
+(defn- la-all [X :vector-i64 p :i64 j :i64 t :i64 dp :i64 bits :i64] :i64
+ (if (= t dp) bits (la-all X p j (inc t) dp (bit-or bits (la-state X p j t)))))
+;; Treat every adjacent result/LSET as a potential early register write, even if gn-co would refuse it.
+(defn- la-co [M :vector-i64 j :i64 end :i64] :i64
+ (let [op (gn-op M j) d (gn-defd M j)]
+  (if (and (< (inc j) end) (or (= op OP-BIN) (= op OP-CMP) (= op OP-UN) (= op OP-CALL) (= op OP-RT))
+    (= (gn-op M (inc j)) OP-LSET) (= (gn-sir M (inc j) IF-B) d)) (gn-sir M (inc j) IF-A) 0)))
+(defn- la-flow [X :vector-i64 p :i64 j :i64 q :i64 t :i64 dp :i64 d :i64 value :i64] :vector-i64
+ (if (or (= q 0) (= t dp)) X
+  (let [v (cond (= t d) value (and (>= d 0) (> t d)) (la-bit 49) :else (la-state X p j t))
+   at (+ 256 (+ (* (- q p) 7) t))]
+   (la-flow (la-put X at (bit-or (la-at X at) v)) p j q (inc t) dp d value))))
+(defn- la-inputs [X :vector-i64 t :i64 dp :i64] :vector-i64
+ (if (= t dp) X (la-inputs (la-put X (+ 263 t) (la-bit 49)) (inc t) dp)))
+(defn- la-initialized [X :vector-i64 p :i64 j :i64 t :i64 hi :i64] :bool
+ (if (> t hi) true (and (not= (la-state X p j t) 0) (= (bit-and (la-state X p j t) (la-bit 49)) 0) (la-initialized X p j (inc t) hi))))
+(defn- la-analyze [M :vector-i64 X :vector-i64 p :i64 j :i64 end :i64 ns :i64 dp :i64] :vector-i64
+ (if (= j end) X
+  (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) d (gn-defd M j)
+   bits (la-read M X p j (gn-rlo M j) (gn-rhi M j) 0)
+   co (la-co M j end)
+   write (if (= op OP-LSET) a co)
+   Xcheck (if (la-initialized X p j (gn-rlo M j) (gn-rhi M j)) X (la-put X 0 1))
+   X0 (la-bits-touch Xcheck (if (> write 0) (bit-or bits (la-all X p j 0 dp 0)) bits) 1 ns j)
+   X1 (cond (= op OP-LGET) (la-touch X0 b j) (> write 0) (la-touch X0 write j) :else X0)
+   X2 (if (= op OP-LSET) (la-put (la-put X1 (+ 128 a) (inc (la-at X1 (+ 128 a)))) (+ 192 a) j) X1)
+   value (bit-or (cond (= op OP-LGET) (bit-or 1 (la-bit b)) (= op OP-CONST) 1 :else bits) (if (> co 0) (la-bit co) 0))
+   X3 (la-flow X2 p j (la-next M j end) 0 dp d value)
+   X4 (la-flow X3 p j (la-other M j) 0 dp d value)]
+   (la-analyze M X4 p (inc j) end ns dp))))
+;; Refuse edges bypassing the earliest possible write into its live interval.
+;; An edge skipping the entire interval cannot reach any use of that local.
+(defn- la-dom [M :vector-i64 j :i64 end :i64 first :i64 last :i64] :bool
+ (if (>= j first) true
+  (and (or (<= (la-next M j end) first) (> (la-next M j end) last))
+       (or (<= (la-other M j) first) (> (la-other M j) last))
+       (la-dom M (inc j) end first last))))
+(defn- la-disjoint [X :vector-i64 s :i64 q :i64] :bool
+ (or (= (la-at X q) 0) (< (la-at X (+ 64 s)) (la-at X q)) (< (la-at X (+ 64 q)) (la-at X s))))
+(defn- la-share-ok [M :vector-i64 X :vector-i64 s :i64 r :i64 q :i64 ns :i64 np :i64] :bool
+ (if (> q ns) true
+  (and (or (not= (gn-sreg M q) r) (and (> q np) (la-disjoint X s q))) (la-share-ok M X s r (inc q) ns np))))
+(defn- la-home [M :vector-i64 X :vector-i64 s :i64 r :i64 ns :i64 np :i64] :i64
+ (cond (> r 28) -1 (la-share-ok M X s r 1 ns np) r :else (la-home M X s (inc r) ns np)))
+(defn- la-promote [M :vector-i64 X :vector-i64 p :i64 end :i64 s :i64 ns :i64 np :i64] :vector-i64
+ (if (> s ns) M
+  (let [def (la-at X (+ 192 s))
+   eligible (and (< (gn-sreg M s) 0) (= (la-at X (+ 128 s)) 1) (> def p)
+    (or (>= (la-at X s) def)
+     (and (= (la-at X s) (dec def)) (= (la-co M (dec def) end) s)
+      (= (bit-and (la-all X p (dec def) 0 (gn-g M gn-f-dp) 0) (la-bit s)) 0))) (la-dom M (inc p) end (la-at X s) (la-at X (+ 64 s))))
+   r (if eligible (la-home M X s 19 ns np) -1)]
+   (la-promote (if (>= r 19) (gn-gs M (+ gn-a-sreg s) (inc r)) M) X p end (inc s) ns np))))
+(defn- la-layout [M :vector-i64 k :i64 ns :i64] :bool
+ (if (> k ns) true (and (or (< (gn-sreg M k) 0) (and (>= (gn-sreg M k) 19) (<= (gn-sreg M k) 28))) (la-layout M (inc k) ns))))
+(defn- la-idle [M :vector-i64 k :i64 dp :i64] :bool
+ (if (= k dp) true (and (= (gn-dk M k) 0) (la-idle M (inc k) dp))))
+(defn- la-entry [M :vector-i64 p :i64 f :i64 np :i64] :vector-i64
+ (let [ns (gn-g M gn-f-ns) dp (gn-g M gn-f-dp)]
+  (if (and (= (gn-g M gn-f-leaf) 0) (= (gn-g M gn-f-vmode) 0) (= (gn-g M gn-f-nsv) 10)
+   (>= ns 16) (<= ns 48) (> dp 0) (<= dp 7) (> np 0) (<= np 7) (<= np ns)
+   (la-layout M 1 ns) (la-idle M 0 dp)
+   (> p 0) (< p (vector-at M MM-SIR-N)) (<= (vector-at M MM-SIR-N) MM-SIR-CAP)
+   (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) f) (= (gn-sir M p IF-B) np)
+   (> f 0) (< f (vector-at M MM-FN-N)) (<= (vector-at M MM-FN-N) MM-FN-CAP)
+   (= (gn-fnf M f FF-SIR) p) (not (gn-clamp-open M f)))
+   (let [end (gn-small-end M (inc p) f 512)]
+    (if (and (> end p) (<= (- end p) 512) (la-rows M (inc p) p end ns dp))
+     (let [X (la-analyze M (la-inputs (gn-zero M gn-a-dv (+ gn-a-dv (+ 256 (* (inc (- end p)) 7)))) 0 dp) p (inc p) end ns dp)]
+      (if (= (la-at X 0) 0) (la-promote X X p end (inc np) ns np) M)) M)) M)))
+
 ;; Closed zero-base constant fill, post-paid private entry and exact original cold body.
 (defn- zf-row [M :vector-i64 p :i64 f :i64 k :i64] :bool
  (let [head (gn-sir M (+ p 2) IF-A) body (gn-sir M (+ p 6) IF-B)
@@ -10001,7 +10110,7 @@
     (cond (> np 16) (gn-err M1 E-GEN-OP OP-FN)
           :else
           (let [MM (if (gn-small-tail M1 i f np) (gn-gs M1 gn-f-leaf 2) M1)
-                M2 (sl-assign (gn-vmode (gn-assign MM) i) i f np)
+                M2 (la-entry (sl-assign (gn-vmode (gn-assign MM) i) i f np) i f np)
                 F (gn-g M2 gn-f-fb)
                 leaf (gn-g M2 gn-f-leaf)]
             (if (> F 32768)
