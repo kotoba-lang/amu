@@ -10490,6 +10490,7 @@
         (or (= bop BOP-SHL) (= bop BOP-USHR) (= bop BOP-SSHR)) 2
         (and (>= (gn-logic-base bop) 0) (> (gn-run-len k) 0)) 3
         (and (= bop BOP-MUL) (> (gn-pow2 k) 0)) 4
+        (and (= bop BOP-MUL) (> k 2) (> (gn-pow2 (dec k)) 0)) 6
         (and (= bop BOP-QUOT) (not= k 0) (not= k -1)) 5
         :else 0))
 ;; d := x (bop) k in the immediate form ik; x = the operand register (never xzr)
@@ -10507,6 +10508,10 @@
             n (gn-run-len k)]
         (gn-emit M (gn-e-bf (gn-logic-base bop) d x (bit-and (- 64 tz) 63) (dec n))))
     4 (gn-emit M (gn-e-lsl d x (gn-pow2 k)))
+    ;; Wrapping full64 x*(2^s+1) = x + (x LSL s), 1<=s<=62.
+    ;; Register fields retain the inherited enc-add-r masking convention.
+    6 (gn-emit M (bit-or (enc-add-r d x x)
+                         (i64-shift-left (gn-pow2 (dec k)) 10)))
     ;; Identity division is total even at MIN: preserve the operand instead
     ;; of serializing it through SDIV. Zero and -1 still use guarded gn-quot.
     (cond (and (= bop BOP-QUOT) (= k 1)) (gn-mov M d x)
