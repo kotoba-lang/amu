@@ -18,7 +18,8 @@
             [kotoba.component.artifact :as component-artifact]
             [kotoba.component.core :as component-core]
             [kotoba.component.admission :as component-admission]
-            [kotoba.abi.contract :as abi]
+            [kotoba.abi.component :as abi]
+            [kotoba.core.execution :as execution]
             [kotoba.compiler.backend.cljs :as cljs]
             [kotoba.compiler.backend.evm :as evm]
             [kotoba.script :as script]
@@ -465,7 +466,7 @@
                               :required capability-ids
                               :supplied (set (keys component-abilities))})))
          _ (when (and component-abilities
-                      (not-every? abi/valid-ability? (vals component-abilities)))
+                      (not-every? execution/valid-ability? (vals component-abilities)))
              (throw (ex-info "Component ability descriptor is invalid"
                              {:phase :component-abilities})))
          _ (when (and (= capability-mode :linear-resource)
@@ -715,7 +716,11 @@
                :floating-point-policy floating-point-policy))
 
       :else
-      (let [program (ir/native-program kir)
+      (let [;; Consensus gas (superproject adr-2610092340 D12): a schedule the
+            ;; caller named rides IN the program -- the verifier re-emits from
+            ;; the program alone, and kotoba-native's charge-gas reads it there.
+            program (cond-> (ir/native-program kir)
+                      (:gas-schedule emit-metadata) (assoc :gas-schedule (:gas-schedule emit-metadata)))
             ;; The verifier only receives this closed program from the sealed
             ;; artifact. Native bytes therefore must be a pure function of the
             ;; same value, never of compiler-private KIR metadata.
@@ -730,7 +735,7 @@
                        :fuel-abi (case backend
                                    :x86_64-kotoba-v1 {:mode :hidden-context-r9 :initial declared-fuel}
                                    :aarch64-kotoba-v1 {:mode :hidden-context-x7 :initial declared-fuel})
-                       :context-abi {:version 11 :fuel-offset 8 :allow-bitmap-offset 16
+                       :context-abi (cond-> {:version 11 :fuel-offset 8 :allow-bitmap-offset 16
                                      :allow-bitmap-bytes 32 :cap-call-offset 48
                                      :pair-new-offset 56 :pair-first-offset 64
                                      :pair-second-offset 72 :pair-capacity 4096
@@ -775,6 +780,9 @@
                                      :bytes-concat-offset 376
                                      :vector-capacity 4096
                                      :vector-item-capacity 65536}
+                                       ;; v12: the gas word at 384, only for a gas-metered program (its
+                                       ;; code checks the version before it decrements 384).
+                                       (:gas-schedule program) (assoc :version 12 :gas-offset 384))
                       :effects (:effects hir)
                        :compatibility compatibility
                        :limits {:memory-bytes 65536

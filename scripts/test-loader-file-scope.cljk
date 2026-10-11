@@ -1,0 +1,49 @@
+(ns scripts.test-loader-file-scope
+  "Execute native wire 35 under exact-file and directory grants; a file grant
+  never admits its sibling or a symlink spelling outside that grant."
+  (:require [clojure.edn :as edn]
+            ["node:fs" :as fs] ["node:os" :as os]
+            ["node:path" :as path] ["node:child_process" :as cp]))
+(let [tmp (.mkdtempSync fs (.join path (.tmpdir os) "amu-file-scope-"))
+      root (.realpathSync fs tmp)
+      isa (if (= "arm64" (.arch os)) "aarch64" "x86_64")
+      file (.join path root "granted") sibling (.join path root "sibling")
+      link (.join path root "link") loader (.join path root "loader")
+      policy (.join path root "policy.edn")
+      run (fn [command args env]
+            (.spawnSync cp command (clj->js args)
+                        #js {:encoding "utf8" :env (js/Object.assign #js {} js/process.env (clj->js env))}))]
+  (try
+    (.writeFileSync fs file "granted")
+    (.writeFileSync fs sibling "sibling")
+    (.symlinkSync fs sibling link)
+    (.writeFileSync fs policy (pr-str {:allow #{[:cap/call 35]}}))
+    (let [built (run "cc" ["tools/kexe_loader.c" "-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-o" loader] {})]
+      (when-not (= 0 (.-status built))
+        (throw (ex-info "native file-scope loader build failed" {:stderr (.-stderr built)}))))
+    (doseq [[name requested scope allowed?] [["exact" file file true]
+                                           ["directory" file root true]
+                                           ["sibling" sibling file false]
+                                           ["symlink" link file false]]]
+      (let [source (.join path root (str name ".kotoba"))
+            artifact (.join path root (str name ".kexe"))
+            raw (.join path root (str name ".bin"))]
+        (.writeFileSync fs source
+                        (str "(ns scope." name " (:export [main]))\n"
+                             "(defn main [] :i64 (string-byte-length (typed-cap-call :fs/app-data :string :string "
+                             (pr-str requested) ")))\n"))
+        (let [compiled (run js/process.execPath ["bin/amu" "compile" source "--target" isa "--jvm-free" "--policy" policy "--output" artifact] {})]
+          (when-not (= 0 (.-status compiled))
+            (throw (ex-info "file-scope guest compilation failed" {:case name :stderr (.-stderr compiled)}))))
+        (let [extracted (run js/process.execPath ["bin/amu" "extract-native" artifact "--symbol" "main" "--output" raw] {})
+              report (when (= 0 (.-status extracted)) (edn/read-string (.-stdout extracted)))
+              _ (when-not (:ok report) (throw (ex-info "file-scope extraction failed" {:case name})))
+              result (run loader [raw (str (:offset report)) (str (:arity report)) isa "35"]
+                          {"KEXE_CAP_RESOURCES_35" scope "KEXE_FUEL" "512"})]
+          (if allowed?
+            (when-not (and (= 0 (.-status result)) (= 7 (edn/read-string (.-stdout result))))
+              (throw (ex-info "granted native read failed" {:case name :status (.-status result) :stderr (.-stderr result)})))
+            (when-not (and (not= 0 (.-status result)) (.includes (.-stderr result) "SIGILL"))
+              (throw (ex-info "native file scope admitted an ungranted path" {:case name :status (.-status result)}))))
+          (println "PASS native file scope" name))))
+    (finally (.rmSync fs tmp #js {:recursive true :force true}))))

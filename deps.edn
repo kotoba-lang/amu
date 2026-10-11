@@ -107,7 +107,7 @@
                                    ;; Advanced 2026-09-11, 3abf80a1 -> b0dad3f8 (abi main, ahead 8, behind
                                    ;; 0, forward only): same wave as the text pin above -- `{:kotoba/export
                                    ;; [...]}` on every module.
-                                   :git/sha "b0dad3f8e5cf15d31f7702d3c8a8c5851cbd871d"}
+                                   :git/sha "4e67b6fabc9e8584cb127fdb71b3fc47e2eadc59"}
         ;; Advanced 2026-09-03 (ADR 0330) with kotoba-lang/provider f040fc0,
         ;; which retires org.clojure/data.json for this namespace and needs
         ;; d5137c7's kwargs surface to be a drop-in.
@@ -196,12 +196,11 @@
          ;; with unchanged ordinary-module bytes and bounded schema validation.
          ;; Advanced 2026-10-09, 12060e38 -> e414c0d4 (kotoba-script main, #113,
          ;; forward only): the :bytes and :link documents in emitted ESM -- root ADR-2610092310 S3.
-         ;; DRAFT 2026-10-09, e414c0d4 -> 1bd58ef0 (kotoba-script branch
-         ;; claude/i64-shifts-and-typed-set-nth = #114 + #115, NOT main; re-pin to
-         ;; the main merge commit before this merges): i64-shift-left/right,
-         ;; u64-shift-right, bit-or, bit-not and typed-set-nth in emitted ESM --
-         ;; io-ipld dag_cbor_write's js leg.
-         :git/sha "1bd58ef0569f7200957119a2c40c197599fcf3c7"}
+         ;; Advanced 2026-10-11, e414c0d4 -> c0120c83 (kotoba-script main, #114 +
+         ;; #115, forward only): i64-shift-left/right, u64-shift-right, bit-or,
+         ;; bit-not and typed-set-nth in emitted ESM -- io-ipld dag_cbor_write's
+         ;; js leg.
+         :git/sha "c0120c834dfbdfbf763a123d6ba8f4f46788d1e9"}
         ;; ADR-0222: source reading and semantic analysis live behind the
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         ;;
@@ -242,8 +241,8 @@
         ;; read 3e3f9748 while the file on disk hashed to 67561e57, and nothing
         ;; said so.
         ;;
-        ;;   grammar-sha256    4f7f138f9df447ddf106aa8c1a93f0a2b7fc7500cce782de9b5716a2f6d5a44e
-        ;;   kotoba-sema-pin   24309c926e2d198fd4fe5cb1e7685998d3d1e147
+        ;;   grammar-sha256    da68c3fa4065087974abb60e4f0ebca427d0a1ff5f169b1431cf0bef6bd4504d
+        ;;   kotoba-sema-pin   a3303527008c7e52b33c08cd580c7dc71eeead60
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -872,7 +871,7 @@
          ;; specialization round infers absent parameter types before
          ;; results, so a rebound row is its record when passed on; gate
          ;; text-edit-rebound-state-is-a-row-test.
-         "24309c926e2d198fd4fe5cb1e7685998d3d1e147"} ;; Advanced 2026-10-09 d34fb53f -> 24309c92 (main tip, forward only): the :bytes and :link document operations are typed (kotoba-sema#101, root ADR-2610092310 S2) and the guest grammar is 4f7f138f (:operations-registry, root ADR-2610092330). Before that: Advanced 2026-10-08 60a1b0e6 -> b379f353 (main tip, forward only): a parameter conj'd onto a field a vector literal of records types is specialized at the record its call passes and checked against that [:list R], a second type there refused by name (ADR 0353 floor :record-list-field-literal). Before that: Advanced 2026-10-07 ee495710 -> 88fb9531 (main tip, forward only): str's integer printer is typed where a specialization's result is inferred, so a row function's [(str "w" n) s] pair is [:vector [:string R]] and its destructured record is typed in the caller (ADR 0353 floor :row-tuple-element-argument). Before that: Advanced 2026-10-07 ee61c81d -> 6cba8d76 (main tip, forward only): a field read off an update of a row parameter is a field the row reads, so a missing one is refused by name (ADR 0353 floor :native-rebound-row-update). Before that: Advanced 2026-10-07 0c08bf04 -> 6e04c99d (main tip, forward only): str formats an :i64 part as its decimal digits (string-from-i64's printer, now flat and right at the most negative long) and refuses a record / vector / option part by name, floor :integer-str (ADR 0353). Advanced 2026-10-07 dee5a5d2 -> 0c08bf04 (main tip, forward only): a merged literal that reads the row it merges is the record merge gives -- each specialization round types its literals before inferring results, and a literal's own record field a row read defaulted to :i64 takes the read's type, floor :merge-literal-reads-its-row (ADR 0353). Advanced 2026-10-07 4befca1e -> dee5a5d2 (main tip, forward only): a [] field the module conj's only expressions onto is the [:list R] inference gives -- a conj notes its item's type and the module is analysed again -- and a row function's parameter only conj'd there is specialized at the record its call passes, floor :list-item-from-expression (ADR 0353). Advanced 2026-10-06 b1c48883 -> 4befca1e (main tip, forward only): [] at a keyword field is the [:list R] the module's source conj's there, and conj onto a [:list R] is typed-list-conj, floor :empty-vector-field (ADR 0353). Advanced 2026-10-06 942d8764 -> b1c48883 (main tip, forward only): (update m k f x ..) is (assoc m k (f (k m) x ..)), floor :record-field-update (ADR 0353). Advanced 2026-10-04 3d051f43 -> 942d8764 (main tip, forward only): first of a filter / remove / reverse chain is a search that builds nothing, answering [:option R] over a [:list R]; first of a [:list R] is [:option R]; loop helpers settle again after row specialization, and a capture read as a vector refines its parameter (ADR 0353 floor :record-list-sequence). Before that: Advanced 2026-10-04 77d2dd84 -> 3d051f43 (main tip, forward only): an unannotated parameter read as a vector (nth, count, a vector pattern) is the :vector-i64 its callers pass (ADR 0353 floor :vector-parameter). Before that: Advanced 2026-10-04 275b40a0 -> 77d2dd84 (main tip, forward only): a {:keys [..]} parameter is a row that does not require its keys, {} at a row is the record with no fields, a destructured key the record lacks is its :or default or nothing (ADR 0353 floor :options-map-argument). Before that: Advanced 2026-09-25 05d8bd8a -> 5d3054b0 (main tip, forward only): a quoted ns attr-map value ({:kotoba/export (quote [..])}) means the unquoted one -- the spelling JVM Clojure can load. Before that: Advanced 2026-09-25 a7f5ae17 -> 5d4161c5 (main tip, forward only): the state ability, slice 1 (kotoba-lang lang/state-ability.edn, superproject adr-2609242200) -- defhandler / perform :state/* / handle (with ..), specialization and state passing; guest-grammar d87fe28a. Before that: Advanced 2026-09-24 451afded -> a7f5ae17 (main tip, ahead 5, forward only): adr-2609242100 P1 -- max-type-depth / max-schema-depth 8 -> 12, guest-grammar bdbc8474. Before that: 8571681a -> 451afded (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         "a3303527008c7e52b33c08cd580c7dc71eeead60"} ;; Advanced 2026-10-10 8c7024cd -> a3303527 (main tip, forward only): doseq analyzes again (bool signals; a pair-sequence alias is not a reserved name the program wrote; the pair walk is a bounded loop), count and nth walk a pair chain, an unpaired reader conditional is refused (kotoba-sema#103) -- four kotoba-lang conformance cases amu test --manifest recorded as unexecuted on 2026-10-09. Grammar unchanged (da68c3fa). Before that: Advanced 2026-10-09 24309c92 -> 8c7024cd (main tip, forward only): the guest grammar is da68c3fa -- three notes say the portable string bound is 65536 UTF-8 bytes, not 127 (kotoba-sema#102, kotoba-lang#730); notes only, no head admitted or withdrawn. Before that: Advanced 2026-10-09 d34fb53f -> 24309c92 (main tip, forward only): the :bytes and :link document operations are typed (kotoba-sema#101, root ADR-2610092310 S2) and the guest grammar is 4f7f138f (:operations-registry, root ADR-2610092330). Before that: Advanced 2026-10-08 60a1b0e6 -> b379f353 (main tip, forward only): a parameter conj'd onto a field a vector literal of records types is specialized at the record its call passes and checked against that [:list R], a second type there refused by name (ADR 0353 floor :record-list-field-literal). Before that: Advanced 2026-10-07 ee495710 -> 88fb9531 (main tip, forward only): str's integer printer is typed where a specialization's result is inferred, so a row function's [(str "w" n) s] pair is [:vector [:string R]] and its destructured record is typed in the caller (ADR 0353 floor :row-tuple-element-argument). Before that: Advanced 2026-10-07 ee61c81d -> 6cba8d76 (main tip, forward only): a field read off an update of a row parameter is a field the row reads, so a missing one is refused by name (ADR 0353 floor :native-rebound-row-update). Before that: Advanced 2026-10-07 0c08bf04 -> 6e04c99d (main tip, forward only): str formats an :i64 part as its decimal digits (string-from-i64's printer, now flat and right at the most negative long) and refuses a record / vector / option part by name, floor :integer-str (ADR 0353). Advanced 2026-10-07 dee5a5d2 -> 0c08bf04 (main tip, forward only): a merged literal that reads the row it merges is the record merge gives -- each specialization round types its literals before inferring results, and a literal's own record field a row read defaulted to :i64 takes the read's type, floor :merge-literal-reads-its-row (ADR 0353). Advanced 2026-10-07 4befca1e -> dee5a5d2 (main tip, forward only): a [] field the module conj's only expressions onto is the [:list R] inference gives -- a conj notes its item's type and the module is analysed again -- and a row function's parameter only conj'd there is specialized at the record its call passes, floor :list-item-from-expression (ADR 0353). Advanced 2026-10-06 b1c48883 -> 4befca1e (main tip, forward only): [] at a keyword field is the [:list R] the module's source conj's there, and conj onto a [:list R] is typed-list-conj, floor :empty-vector-field (ADR 0353). Advanced 2026-10-06 942d8764 -> b1c48883 (main tip, forward only): (update m k f x ..) is (assoc m k (f (k m) x ..)), floor :record-field-update (ADR 0353). Advanced 2026-10-04 3d051f43 -> 942d8764 (main tip, forward only): first of a filter / remove / reverse chain is a search that builds nothing, answering [:option R] over a [:list R]; first of a [:list R] is [:option R]; loop helpers settle again after row specialization, and a capture read as a vector refines its parameter (ADR 0353 floor :record-list-sequence). Before that: Advanced 2026-10-04 77d2dd84 -> 3d051f43 (main tip, forward only): an unannotated parameter read as a vector (nth, count, a vector pattern) is the :vector-i64 its callers pass (ADR 0353 floor :vector-parameter). Before that: Advanced 2026-10-04 275b40a0 -> 77d2dd84 (main tip, forward only): a {:keys [..]} parameter is a row that does not require its keys, {} at a row is the record with no fields, a destructured key the record lacks is its :or default or nothing (ADR 0353 floor :options-map-argument). Before that: Advanced 2026-09-25 05d8bd8a -> 5d3054b0 (main tip, forward only): a quoted ns attr-map value ({:kotoba/export (quote [..])}) means the unquoted one -- the spelling JVM Clojure can load. Before that: Advanced 2026-09-25 a7f5ae17 -> 5d4161c5 (main tip, forward only): the state ability, slice 1 (kotoba-lang lang/state-ability.edn, superproject adr-2609242200) -- defhandler / perform :state/* / handle (with ..), specialization and state passing; guest-grammar d87fe28a. Before that: Advanced 2026-09-24 451afded -> a7f5ae17 (main tip, ahead 5, forward only): adr-2609242100 P1 -- max-type-depth / max-schema-depth 8 -> 12, guest-grammar bdbc8474. Before that: 8571681a -> 451afded (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -1252,7 +1251,7 @@
          ;; Advanced 2026-09-26, 0274ce3b -> 4aca449e (artifact main tip, forward only): POSIX
          ;; loader identity daa8df69 -- the :fs/app-data OWNER form (superproject
          ;; adr-2609242330, selfhost stage 2).
-         :git/sha "4aca449e1d973a7470a3a39baea827930d083b3d"}
+         :git/sha "70afa5725c244fb65f530b482c4ce7bb765c264d"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -1375,7 +1374,11 @@
          ;; forward only): document-bytes / -bytes-value / -link / -link-value as
          ;; conditionally imported kotoba:typed intrinsics, which runtime/browser-host.mjs
          ;; answers in the same PR -- root ADR-2610092310 S3.
-         :git/sha "53683ecb6be904aa88307708a22a5b70d29ee69f"}
+         ;; Advanced 2026-10-09, 53683ecb -> 276dd7a6 (main, ahead 2, behind 0):
+         ;; emit :gas / :gas-schedule, the per-form gas debit (kotoba-wasm#80) -- consensus gas, superproject adr-2610092340 D12.
+         ;; Advanced 2026-10-10, 276dd7a6 -> 17429236 (main, ahead 2, behind 0): consensus gas on
+         ;; typed (KIR v4) modules too (kotoba-wasm#81, superproject adr-2610092340 D12).
+         :git/sha "17429236307ddf6796b892fa25100b7aae55f791"}
         ;; Production KIR routes exclusively through whole-module
         ;; GMIR/MIR/allocated-MC, including word/f64/memory/runtime/capability,
         ;; literal-data, scalar variant, word-field record, and x86 privileged
@@ -1699,7 +1702,8 @@
          ;; typed-list-new / typed-list-nth lower to the typed set's word arena (ADR 0353 floor :native-handles).
          ;; Advanced 2026-10-01, d625d554 -> ace48fd6 (kotoba-native main tip, forward only):
          ;; record-assoc lowers on both record routes -- ADR 0353 floor :native-record-operations.
-         :git/sha "1bdc1a5c1fc12be3debfa7b5df0c7c0cf86386f9"} ;; Advanced 2026-10-09 0ecca92a -> 1bdc1a5c (main tip, forward only): :bytes and :link documents as EDN tagged literals on native (kotoba-native#196, root ADR-2610092310 S4). Before that: Advanced 2026-10-06 82d3dea1 -> 0ecca92a (main tip, forward only): typed-list-conj lowers to vector-conj on the list's arena (ADR 0353 floor :empty-vector-field). Before that: Advanced 2026-10-04 04a8e0e3 -> 82d3dea1 (main tip, forward only): the record with no fields is the empty pair chain, 0 (ADR 0353 floor :options-map-argument). Before that: Advanced 2026-10-03 e2da186d -> 04a8e0e3 (main tip, forward only): a record an [:option R] holds selects the pair-chain lowering (ADR 0353 floor :native-option-record). Before that: Advanced 2026-10-03 83eecc0e -> e2da186d (main tip, forward only): aggregate-abi spells the record field :vector-i64, not :vector (ADR 0353 floor :native-vector-field). Before that: Native Image host: portable exception class and byte hex rendering.
+         ;; Advanced 2026-10-10, 1bdc1a5c -> 34c42ec9 (main, behind 0): one gas debit per form whatever its weight (kotoba-native#197).
+         :git/sha "34c42ec9eac5b46b6a5a62f644832e3b797a50b0"} ;; Advanced 2026-10-09 0ecca92a -> 1bdc1a5c (main tip, forward only): :bytes and :link documents as EDN tagged literals on native (kotoba-native#196, root ADR-2610092310 S4). Before that: Advanced 2026-10-06 82d3dea1 -> 0ecca92a (main tip, forward only): typed-list-conj lowers to vector-conj on the list's arena (ADR 0353 floor :empty-vector-field). Before that: Advanced 2026-10-04 04a8e0e3 -> 82d3dea1 (main tip, forward only): the record with no fields is the empty pair chain, 0 (ADR 0353 floor :options-map-argument). Before that: Advanced 2026-10-03 e2da186d -> 04a8e0e3 (main tip, forward only): a record an [:option R] holds selects the pair-chain lowering (ADR 0353 floor :native-option-record). Before that: Advanced 2026-10-03 83eecc0e -> e2da186d (main tip, forward only): aggregate-abi spells the record field :vector-i64, not :vector (ADR 0353 floor :native-vector-field). Before that: Native Image host: portable exception class and byte hex rendering.
          ;; Advanced 2026-09-26 bc42c311 -> a0e10057 (main tip, forward only): string-search drops a bare (:require [kotoba.lang.text]) that named nothing (selfhost wall A, superproject adr-2609242330).
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
@@ -1719,7 +1723,7 @@
          ;; the last JVM-only family in docs/jvm-route-topology.edn outside
          ;; this repository (ADR 0348 iteration 6). The encoder's whole JVM
          ;; surface was 40 `.getBytes`, two `format`, and the wasm-tools seam.
-         :git/sha "b4c181a90aac8ba0e0fa3939d028689890eff3bd"} ;; Advanced 2026-09-24 db8690ac -> 94a9382c (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         :git/sha "b31d9fb59e26a1b64b0d674e293fd44365d19e09"} ;; Advanced 2026-09-24 db8690ac -> 94a9382c (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
          ;; Advanced 2026-09-25 94a9382c -> b4c181a9 (main tip, forward only):
          ;; the component contract and vendored WASI WIT are compile-time text
          ;; (kotoba.component.embedded-resources, superproject adr-2609242330
@@ -1760,7 +1764,7 @@
          ;; definition block with cbor.core's typed encoder; definition CIDs
          ;; identical (adr-2609242330 S1c). The range also carries ef276ecb
          ;; (kotoba-migrate-all).
-         :git/sha "500497c4ac74efa6c9ed289c0159b42fea817669"} ;; Advanced 2026-09-24 6563b357 -> b1bbfe0d (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         :git/sha "00cfa8e29aaa3408e6594c6a55fd46867acc8bfd"} ;; Advanced 2026-09-24 6563b357 -> b1bbfe0d (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         ;; CIDv1 for `module-lock`: pinned module resolution has to prove the
         ;; bytes it read are the ones the lock names, and that is a hash, not a
         ;; path check. Same pin the codebase/semantic layers use, so a source
@@ -1959,7 +1963,12 @@
          ;; Advanced 2026-10-01, 718befe6 -> 1e1b69a6 (kotoba-verifier main tip, forward only):
          ;; a record projection sees through let, if and an update, and a let naming a
          ;; record parameter binds its handle -- ADR 0353 floor :native-record-operations.
-         :git/sha "406f6522c7da87f73238f08ba0930e31b6b2c773"} ;; Advanced 2026-10-09 192005f9 -> 406f6522 (main tip, forward only): the verifier admits the four :bytes / :link document operations (kotoba-verifier#65, root ADR-2610092310 S4). Before that: Advanced 2026-10-07 44fd1b56 -> 192005f9 (main tip, forward only): a let naming an update of a known record binds that record (ADR 0353 floor :native-rebound-row-update). Before that: Advanced 2026-10-06 90ff3911 -> 44fd1b56 (main tip, forward only): typed-list-conj is verified (ADR 0353 floor :empty-vector-field). Before that: Advanced 2026-10-04 fde6f218 -> 90ff3911 (main tip, forward only): a record may hold a [:list R] of one-word items, and a let naming a list item is that record (ADR 0353 floor :record-list-sequence). Before that: Advanced 2026-10-04 3e8134cd -> fde6f218 (main tip, forward only): the record with no fields passes the native record check (ADR 0353 floor :options-map-argument). Before that: Advanced 2026-10-03 4a87b807 -> 3e8134cd (main tip, forward only): the record an [:option R] holds, defaulted to R, is R to the record check (ADR 0353 floor :native-option-record). Before that: Advanced 2026-10-03 4410753e -> 4a87b807 (main tip, forward only): a record holding a :vector-i64 is admitted internally and refused at an export (ADR 0353 floor :native-vector-field). Before that: Native Image host: avoid reflective alength class lookup (a560612e).
+         ;; Advanced 2026-10-09, 192005f9 -> 834c8436 (main, ahead 4, behind 0):
+         ;; context ABI v12 admitted for a program carrying a :gas-schedule (kotoba-verifier#66) -- consensus gas, superproject adr-2610092340 D12.
+         ;; (contains 406f6522, the :bytes / :link pin main took the same day)
+         ;; Advanced 2026-10-09, 834c8436 -> 52a8e4f0 (main, ahead 2, behind 0): a gas schedule read back
+         ;; as bigints is checked, and narrowed for re-emission (kotoba-verifier#67).
+         :git/sha "52a8e4f0e2b24de619425199cfbd9eed25443097"} ;; Advanced 2026-10-07 44fd1b56 -> 192005f9 (main tip, forward only): a let naming an update of a known record binds that record (ADR 0353 floor :native-rebound-row-update). Before that: Advanced 2026-10-06 90ff3911 -> 44fd1b56 (main tip, forward only): typed-list-conj is verified (ADR 0353 floor :empty-vector-field). Before that: Advanced 2026-10-04 fde6f218 -> 90ff3911 (main tip, forward only): a record may hold a [:list R] of one-word items, and a let naming a list item is that record (ADR 0353 floor :record-list-sequence). Before that: Advanced 2026-10-04 3e8134cd -> fde6f218 (main tip, forward only): the record with no fields passes the native record check (ADR 0353 floor :options-map-argument). Before that: Advanced 2026-10-03 4a87b807 -> 3e8134cd (main tip, forward only): the record an [:option R] holds, defaulted to R, is R to the record check (ADR 0353 floor :native-option-record). Before that: Advanced 2026-10-03 4410753e -> 4a87b807 (main tip, forward only): a record holding a :vector-i64 is admitted internally and refused at an export (ADR 0353 floor :native-vector-field). Before that: Native Image host: avoid reflective alength class lookup (a560612e).
 
         ;; EXPLICIT FLOORS FOR TRANSITIVE DEPENDENCIES (2026-09-12, adr-2609111900
         ;; source-side wave). None of the eight coordinates below was named in
@@ -2067,7 +2076,10 @@
          ;; kernel-dequant-dot-ptq1-0, PTQ1_0 fused dequant-dot (aiueos ADR-0222, kotoba-native ADR 0088).
          ;; Advanced 2026-09-30, abb72f61 -> 205f2a93 (kotoba-mir main, forward only):
          ;; :fuel-charge at the context's fuel word (ADR 0353 floor :allocation-budget-native).
-         :git/sha "205f2a931a6c785c23e54bc7e0006c1982f5906a"} ;; Advanced 2026-09-24 6d92aea9 -> cfb086be (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-10-09, 205f2a93 -> 63d6e441 (main, ahead 4, behind 0):
+         ;; :gas-charge at the gas word 384, context ABI v12 (kotoba-mir#73) -- consensus gas, superproject adr-2610092340 D12.
+         ;; Advanced 2026-10-10, 63d6e441 -> 02dc802a (main, behind 0): the gas-word test passes :gas-charge its weight (kotoba-mir#74).
+         :git/sha "02dc802a152ae3572f489482b6edfd2e476291f4"} ;; Advanced 2026-09-24 6d92aea9 -> cfb086be (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         io.github.kotoba-lang/kotoba-gmir
         {:git/url "https://github.com/kotoba-lang/kotoba-gmir.git"
          ;; a3f0597c -> a4b682c4 (kotoba-gmir main, ahead 6, behind 0)
@@ -2083,7 +2095,10 @@
          ;; kernel-dequant-dot-ptq1-0, PTQ1_0 fused dequant-dot (aiueos ADR-0222, kotoba-native ADR 0088).
          ;; Advanced 2026-09-30, 763609e3 -> 6c3651f9 (kotoba-gmir main, forward only):
          ;; the :fuel-charge arity (ADR 0353 floor :allocation-budget-native).
-         :git/sha "6c3651f953eb255d9ca1f45622cd904f69499c83"}
+         ;; Advanced 2026-10-09, 6c3651f9 -> 54ac95b7 (main, ahead 2, behind 0):
+         ;; the :gas-charge runtime arity (kotoba-gmir#39) -- consensus gas, superproject adr-2610092340 D12.
+         ;; Advanced 2026-10-10, 54ac95b7 -> a891d432 (main, behind 0): :gas-charge takes the form's weight, arity 1 (kotoba-gmir#40).
+         :git/sha "a891d4328132058d31756935a8a1d51630526fcc"}
         ;; org-nist-sha2: named by osaho f404babb as cb67e53e. Its main adds
         ;; `text` as a dependency (already here) and moves amu / osaho into
         ;; the :test alias, so the closure does not grow.
@@ -2116,7 +2131,11 @@
          ;; c1ba8322 -> 312dec87 (org-ietf-ed25519 main, ahead 24, behind 0)
          :git/sha "312dec875eb027021b7ad36c600151cd7bb22dc0"}
 }
- :aliases {:test {:extra-paths ["test"]
+ :aliases {
+ :execution-v2 {:extra-deps {io.github.kotoba-lang/kototama
+                           {:git/url "https://github.com/kotoba-lang/kototama.git"
+                            :git/sha "e36002c440bf118725b587caced7451cbc8b57dd"}}}
+:test {:extra-paths ["test"]
                   :extra-deps
                   {;; Only `test/kotoba/compiler/backend_cljs_test.cljk` and
                    ;; `test/kotoba/compiler/cli_test.cljk` require this, and both

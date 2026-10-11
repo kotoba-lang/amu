@@ -34,6 +34,7 @@
             [kotoba.compiler.coverage :as coverage]
             [kotoba.compiler.coverage-evidence :as coverage-evidence]
             [kotoba.compiler.interface :as interface]
+            [kotoba.compiler.kexe-indexes :as kexe-indexes]
             [kotoba.compiler.ios-aot :as ios-aot]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.compiler.receipt :as receipt]
@@ -42,6 +43,18 @@
             [kotoba.compiler.target-names :as target-names]
             [kotoba.verifier :as verifier]
             [kotoba.verifier.signing :as signing]))
+
+;; Every artifact this namespace hands the verifier is read through one of
+;; these two. `bounded-edn` answers every integer token as a BigInt on Node,
+;; and the verifier's oracle re-execution refuses a BigInt closure-parameter
+;; index, so without the narrowing `sign` / `verify` / `verify-signed`
+;; refused every closure program `amu compile` had just verified
+;; (`kotoba.compiler.kexe-indexes` has the measurement).
+(defn- read-kexe [path]
+  (kexe-indexes/narrow-artifact (bounded-edn/read-file path)))
+
+(defn- read-signed-kexe [path]
+  (kexe-indexes/narrow-envelope (bounded-edn/read-file path)))
 
 (def commands
   "Every command this namespace answers. `bin/amu` routes exactly these to
@@ -146,7 +159,7 @@
         {:ok true :output output :runtime-sha256 runtime-sha})
 
       "sign"
-      (let [artifact (bounded-edn/read-file (second args))
+      (let [artifact (read-kexe (second args))
             key (bounded-edn/read-file (required args "--key"))
             output (or (option args "--output") "program.signed.kexe")
             not-before (long-option args "--not-before" 0)
@@ -156,19 +169,19 @@
         {:ok true :output output :signer (get-in envelope [:statement :signer])})
 
       "verify-signed"
-      (let [envelope (bounded-edn/read-file (second args))
+      (let [envelope (read-signed-kexe (second args))
             trust (bounded-edn/read-file (required args "--trust"))
             now (long-option args "--now" (now-seconds))
             result (signing/verify envelope trust now)]
         (dissoc result :artifact))
 
       "verify"
-      (let [artifact (bounded-edn/read-file (second args))]
+      (let [artifact (read-kexe (second args))]
         (verifier/verify-artifact! artifact)
         {:ok true :verified true :target (:target artifact)})
 
       "receipt"
-      (let [envelope (bounded-edn/read-file (required args "--signed"))
+      (let [envelope (read-signed-kexe (required args "--signed"))
             trust (bounded-edn/read-file (required args "--trust"))
             policy (bounded-edn/read-file (required args "--policy"))
             input (bounded-edn/read-file (required args "--input"))
@@ -193,7 +206,7 @@
 
       "verify-receipt"
       (let [value (bounded-edn/read-file (second args))
-            envelope (bounded-edn/read-file (required args "--signed"))
+            envelope (read-signed-kexe (required args "--signed"))
             trust (bounded-edn/read-file (required args "--trust"))
             policy (bounded-edn/read-file (required args "--policy"))
             input (bounded-edn/read-file (required args "--input"))
@@ -244,7 +257,7 @@
       ;; as a vector of unsigned bytes on Node (its own comment says why);
       ;; `atomic-output/write-bytes!` takes a byte source on both hosts.
       "package-ios"
-      (let [input (bounded-edn/read-file (second args))
+      (let [input (read-kexe (second args))
             entry (symbol (or (option args "--entry") "main"))
             platform (keyword (or (option args "--platform") "ios"))
             output (or (option args "--output") "kotoba-ios-program.o")

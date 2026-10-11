@@ -1,0 +1,110 @@
+(ns kotoba.compiler.execution-targets
+  "Explicit Node composition for pure, bounded Wasm/Script/EVM v2 profiles.
+  Not part of language semantics or the ordinary compiler closure."
+  {:kotoba/export [compile-envelope measure-runtime mechanisms]}
+  (:require [kotoba.sema :as sema] [kotoba.kir :as kir]
+            [kotoba.wasm.core :as wasm] [kotoba.script :as script]
+            [kotoba.compiler.backend.evm :as evm]
+            [kotoba.artifact.execution :as blocks] [kotoba.artifact.content-identity :as content] [kotoba.artifact.core :as artifact]
+            [kotoba.abi.target :as abi] [kotoba.value.codec :as value]
+            [kototama.evm-tender :as tender]
+            #?@(:cljs [["node:fs" :as fs] ["node:crypto" :as crypto]
+                       ["node:child_process" :as process]])))
+
+(def ^:private targets #{:wasm32-kotoba-v1 :js-kotoba-v1 :evm256-kotoba-v1})
+(def ^:private limit-keys #{:fuel :max-frames :memory-pages :deadline-ms :max-output-bytes :gas :step-limit})
+(defn- reject! [reason] (throw (ex-info "target v2 refused" {:phase :execution-target :reason reason})))
+(defn- limits! [limits]
+  (when-not (and (= limit-keys (set (keys limits))) (every? pos-int? (vals limits))
+                 (<= (:fuel limits) 1000000) (<= (:max-frames limits) 10000) (<= (:memory-pages limits) 256)
+                 (<= (:deadline-ms limits) 10000) (<= (:max-output-bytes limits) 65536)
+                 (<= (:gas limits) 10000000) (<= (:step-limit limits) 1000000))
+    (reject! :invalid-bounds))
+  limits)
+(defn- checked [source]
+  (when-not (and (string? source) (<= (count source) 65536)) (reject! :source-limit))
+  (let [program (kir/lower (sema/analyze source))]
+    (when-not (and (= :kotoba.kir/v3 (:format program)) (= #{} (:effects program))
+                   (= [(symbol "main")] (:exports program))
+                   (= [] (get-in program [:signature :params])) (= :i64 (get-in program [:signature :result])))
+      (reject! :pure-zeroarg-i64-required))
+    program))
+(defn- output [program target limits]
+  (case target
+    :wasm32-kotoba-v1 (let [raw (wasm/emit program target {:fuel (:fuel limits) :memory-pages (:memory-pages limits)})]
+                         #?(:clj (mapv #(bit-and 255 %) raw) :cljs (vec (js/Array.from raw))))
+    :js-kotoba-v1 (script/verify-output! (script/emit program {:fuel (:fuel limits) :frames (:max-frames limits)}))
+    :evm256-kotoba-v1 (let [a (evm/emit program)] (evm/verify-artifact! a) (:runtime-bytes a))
+    (reject! :unsupported-target)))
+(defn compile-envelope [source target limits]
+  (when-not (contains? targets target) (reject! :unsupported-target))
+  (limits! limits)
+  {:format :kotoba.target-execution-artifact/v2 :source source :target target :limits limits
+   :output (output (checked source) target limits)})
+(defn- verify! [envelope]
+  (when-not (and (= #{:format :source :target :limits :output} (set (keys envelope)))
+                 (= envelope (compile-envelope (:source envelope) (:target envelope) (:limits envelope))))
+    (reject! :artifact-reemission-mismatch))
+  envelope)
+
+(defn measure-runtime
+  "Review-selected ADAPTER-SOURCE is this module's source file. Its CID is
+  admitted by the authority. Measurement includes the actual Node executable.
+  This is hosted execution evidence, not browser/mainnet/native qualification."
+  [adapter-source]
+  #?(:clj (reject! :node-host-required)
+     :cljs
+     (let [digest (fn [file] (-> (crypto/createHash "sha256") (.update (fs/readFileSync file)) (.digest "hex")))]
+       {:format :kotoba.node-target-runtime/v2 :node-version (.-version js/process)
+        :v8-version (.-v8 (.-versions js/process))
+        :node-executable-sha256 (digest (.-execPath js/process))
+        :adapter-source-sha256 (digest adapter-source)})))
+
+(defn mechanisms [runtime adapter-source]
+  #?(:clj (reject! :node-host-required)
+     :cljs
+     {:inspect!
+      (fn [envelope observed-runtime]
+        (verify! envelope)
+        (when-not (= runtime observed-runtime (measure-runtime adapter-source))
+          (reject! :runtime-measurement-mismatch))
+        (let [program (checked (:source envelope)) target (:target envelope)
+              interface {:format :kotoba.pure-interface/v2 :exports (:exports program)
+                         :signature (:signature program)}]
+          {:target target :profile :sync
+           :artifact-cid (:cid (content/source-block (artifact/canonical-bytes envelope)))
+           :interface-cid (:cid (blocks/block :interface interface))
+           :runtime-identity (:cid (blocks/block :runtime runtime))
+           :layout (:layout (get abi/profiles target))}))
+      :execute!
+      (fn [{:keys [artifact runtime input]}]
+        ;; Revalidate immediately before executing; a caller cannot replace an
+        ;; artifact between inspection and this boundary.
+        (verify! artifact)
+        (when-not (= runtime (measure-runtime adapter-source)) (reject! :runtime-changed))
+        (when-not (= {:entry (symbol "main") :arguments []} input) (reject! :input-mismatch))
+        (let [limits (:limits artifact) emitted (:output artifact)]
+          (case (:target artifact)
+            :wasm32-kotoba-v1
+            (let [module (js/WebAssembly.Module. (js/Uint8Array.from (clj->js emitted)))]
+              (when (pos? (.-length (js/WebAssembly.Module.imports module))) (reject! :unexpected-import))
+              (let [instance (js/WebAssembly.Instance. module #js {})]
+                (value/int64 ((aget (.-exports instance) "main")))))
+            :js-kotoba-v1
+            (let [driver "let s='';for await(const c of process.stdin)s+=c;const m=await import('data:text/javascript;base64,'+Buffer.from(s).toString('base64'));const r=m.instantiateKotoba().main();if(typeof r!=='bigint')throw Error('i64 required');process.stdout.write(r.toString());"
+                  result (process/spawnSync (.-execPath js/process) #js ["--input-type=module" "-e" driver]
+                           #js {:input emitted :encoding "utf8" :timeout (:deadline-ms limits)
+                                :maxBuffer (:max-output-bytes limits)})]
+              (when-not (and (= 0 (.-status result))
+                             (re-matches #"-?[0-9]{1,20}" (.-stdout result)))
+                (reject! :script-trap-or-budget))
+              (value/int64 (js/BigInt (.-stdout result))))
+            :evm256-kotoba-v1
+            (let [result (tender/run emitted {:gas (:gas limits) :step-limit (:step-limit limits)
+                                              :calldata [223 254 173 208]})]
+              (when-not (and (:ok? result) (= 32 (count (:output result))))
+                (throw (ex-info "EVM trap or budget" {:phase :execution-target :reason :evm-trap-or-budget :observation result})))
+              (value/int64 (js/BigInt.asIntN 64
+                            (reduce (fn [acc b] (+ (* acc (js/BigInt 256)) (js/BigInt b)))
+                                    (js/BigInt 0) (:output result)))))
+            (reject! :unsupported-target))))}))
