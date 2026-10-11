@@ -1,0 +1,11 @@
+# Native selfhost closed integer interval predicate — 2026-10-12
+
+The compiler recognizes a complete pure Boolean helper implementing a signed i64 lower/upper interval with a live return value. For certified bounds 0 <= lower <= upper <= 4095, it emits SUB, CMP, CSET LS, RET. Modular subtraction and an unsigned span comparison preserve the result for all signed 64-bit inputs, including both extremes. The typed owner, physical leaf ABI, no-fuel contract, complete 12-row SIR, and unique labels are checked. All existing tree/DL/PA lowering remains. The original body is retained as cold code.
+
+Actual SLRE activation adds one four-word entry prefix and 16 bytes. Every old instruction, control target, literal relocation, pool byte and export was mapped against the baseline. The local single comparison measured OFF 9,074.21875 ns/body, ON 9,031.25, and C 1,729.00390625: a 0.4735256% positive point. ON/C is still 5.22338. This is unconfirmed and not an official Embench score. There were no precision repeats; the small positive point is retained under the requested fast-cycle policy.
+
+Validation passed 94 parsed refusal cases and 27,878 full64 traces over 106 bound pairs; four native compiler calls; actual whole-machine audit and independent peer; G2/G3/G4 byte-identical native images and containers; original19 compile/extract38; and all95 profile observables. SLRE alone changed. Five SLRE profiles are fresh; 90 rows are exact-source/native/container/export identity reuse for the other18. Result, fuel and all17 arena counters match. Independent saved-evidence checks passed.
+
+This is a local adoption on parent f50d9fa8434e58eca209835bab3b2bf9c44c85c0. Bootstrap reports and seed binaries remain exact and normal Git hooks are used. Root bundle: /Users/junkawasaki/github/workspaces/codex/current-closed-integer-interval-predicate-adoption-root-v1-20261012/report.json
+
+ADR0357 one-off hand-edit exception: this is a new typed closed-interval optimization algorithm and emission certificate; no applicable AST refactor rule covers it. The original Boolean value remains live at return, so the existing dead-result comparison fusion cannot perform this transformation. Full16 inverse, unchanged other15, full64 source controls, emitted-machine audit and native selfhost qualification validate the change.

@@ -1,3 +1,41 @@
+;; Closed full64 signed interval predicate. No effects/charges or input-domain assumption.
+(defn- cip-shape [M :vector-i64 p :i64 f :i64] :bool
+ (let [head (gn-sir M (+ p 1) IF-A) join (gn-sir M (+ p 5) IF-B)
+       lo (gn-sir M (+ p 3) IF-B) hi (gn-sir M (+ p 7) IF-B)]
+  (and (>= lo 0) (<= lo 4095) (>= hi lo) (<= hi 4095) (not= head join)
+   (nr-label M head (+ p 1) 65536) (nr-label M join (+ p 9) 65537)
+   (uc-row M p OP-FN f 1 1)
+   (uc-row M (+ p 1) OP-LABEL head 0 0)
+   (uc-row M (+ p 2) OP-LGET 0 1 0)
+   (uc-row M (+ p 3) OP-CONST 1 lo 0)
+   (uc-row M (+ p 4) OP-CMP CC-GE 0 0)
+   (uc-row M (+ p 5) OP-BRZ 0 join 0)
+   (uc-row M (+ p 6) OP-LGET 0 1 0)
+   (uc-row M (+ p 7) OP-CONST 1 hi 0)
+   (uc-row M (+ p 8) OP-CMP CC-LE 0 0)
+   (uc-row M (+ p 9) OP-LABEL join 0 0)
+   (uc-row M (+ p 10) OP-RET 0 0 0)
+   (uc-row M (+ p 11) OP-END f 0 0))))
+(defn- cip-safe [M :vector-i64 p :i64 f :i64 np :i64] :bool
+ (if (or (not= np 1) (<= f 0) (>= f MM-FN-CAP) (>= f (vector-at M MM-FN-N))
+  (> (vector-at M MM-FN-N) MM-FN-CAP) (<= p 0) (< (vector-at M MM-SIR-N) 12)
+  (> (vector-at M MM-SIR-N) MM-SIR-CAP) (> p (- (vector-at M MM-SIR-N) 12))) false
+  (and (= (gn-fnf M f FF-SIR) p) (= (gn-fnf M f FF-NPARAMS) 1)
+   (= (gn-fnf M f FF-NSLOTS) 1) (= (gn-fnf M f FF-DEPTH) 2) (= (gn-fnf M f FF-FUEL) 0)
+   (= (gn-fnf M f FF-PT0) TY-I64) (= (gn-fnf M f FF-RTYPE) TY-BOOL) (not (gn-clamp-open M f))
+   (= (gn-g M fr-owner) f) (= (gn-g M gn-f-ns) 1) (= (gn-g M gn-f-dp) 2)
+   (= (gn-g M gn-f-leaf) 1) (= (gn-g M gn-f-freg) 0) (= (gn-g M gn-f-vmode) 0)
+   (= (gn-g M gn-f-fb) 0) (= (gn-g M gn-f-nsv) 0) (= (gn-g M gn-f-out) 0) (= (gn-sreg M 1) 0)
+   (= (gn-g M gn-f-ctx) 1) (= (gn-g M gn-f-h) 0) (= (gn-g M gn-f-skip) 0) (= (gn-g M gn-f-dead) 0)
+   (= (vector-at M MM-ERR) 0) (>= (vector-at M MM-CODE-N) 0) (<= (vector-at M MM-CODE-N) (- MM-CODE-CAP 4))
+   (>= (vector-at M MM-FIX-N) 0) (<= (vector-at M MM-FIX-N) MM-FIX-CAP)
+   (cip-shape M p f))))
+(defn- cip-entry [M :vector-i64 p :i64 f :i64 np :i64] :vector-i64
+ (if (cip-safe M p f np)
+  (let [lo (gn-sir M (+ p 3) IF-B) hi (gn-sir M (+ p 7) IF-B)]
+   (-> M (gn-emit (enc-sub-i 9 0 lo)) (gn-emit (enc-cmp-i 9 (- hi lo)))
+    (gn-emit (enc-cset 0 9)) (gn-emit (enc-ret)))) M))
+
 ;; ADR0357 one-off novel call-edge rule: reuse closed emitted byte lookup, no payload duplication.
 (defn- dt-fixes [M :vector-i64 a :i64 k :i64 found :i64] :i64
  (if (>= k (vector-at M MM-FIX-N)) found
@@ -11846,7 +11884,7 @@
                   (gn-params 1 np)
                   (cond-> (and (= leaf 1) (= (gn-g M2 gn-f-fuel) 1)) (-> (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-gs gn-f-freg 1)))
                   (gn-gs gn-f-ctx 1)
-                  (gn-gs gn-f-h 0) (sl-clear) (vi-clear) (gn-gs gn-f-vslot (if (= (gn-g M2 gn-f-vmode) 2) -1 0)) (gn-tree-entry f) (dl-entry i f np) (pa-entry i f np)))))))
+                  (gn-gs gn-f-h 0) (sl-clear) (vi-clear) (gn-gs gn-f-vslot (if (= (gn-g M2 gn-f-vmode) 2) -1 0)) (gn-tree-entry f) (dl-entry i f np) (pa-entry i f np) (cip-entry i f np)))))))
 
 (defn- gn-op-ret [M :vector-i64 t :i64] :vector-i64 (gn-epilogue (gn-into M 0 t)))
 ;; R5B: RET2 t -- x0 := temp t, x1 := temp t+1 (through x16: either source may be x0 or x1 in a leaf), then the epilogue
