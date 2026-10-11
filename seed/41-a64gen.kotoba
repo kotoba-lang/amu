@@ -1,3 +1,73 @@
+;; Exact pure signed floor helper. Overflow-sensitive inputs retain original CALL.
+(defn- pf-shape [M :vector-i64 f :i64] :bool
+ (let [p (gn-fnf M f FF-SIR) sn (vector-at M MM-SIR-N)]
+  (if (or (<= p 0) (> p (- sn 25)) (> p (- MM-SIR-CAP 25))
+          (not= (gn-fnf M f FF-NPARAMS) 2) (not= (gn-fnf M f FF-NSLOTS) 2)
+          (not= (gn-fnf M f FF-PT0) TY-I64) (not= (gn-fnf M f (inc FF-PT0)) TY-I64)
+          (not= (gn-fnf M f FF-RTYPE) TY-I64) (not= (gn-fnf M f FF-FUEL) 0)
+          (not= (gn-fnf M f FF-DEPTH) 4)) false
+   (let [entry (gn-sir M (inc p) IF-A) le (gn-sir M (+ p 5) IF-B)
+         lj (gn-sir M (+ p 17) IF-A)]
+    (and (> entry 0) (< entry MM-LABEL-CAP) (> le 0) (< le MM-LABEL-CAP)
+         (> lj 0) (< lj MM-LABEL-CAP) (not= entry le) (not= entry lj) (not= le lj)
+         (= (bd-count M 1 entry 0 0) 65536)
+         (= (bd-count M 1 le 0 0) 65537) (= (bd-count M 1 lj 0 0) 65537)
+         (uc-row M p OP-FN f 2 2) (uc-row M (inc p) OP-LABEL entry 0 0)
+         (uc-row M (+ p 2) OP-LGET 0 1 0)
+         (uc-row M (+ p 3) OP-CONST 1 0 0)
+         (uc-row M (+ p 4) OP-CMP CC-LT 0 0)
+         (uc-row M (+ p 5) OP-BRZ 0 le 0)
+         (uc-row M (+ p 6) OP-CONST 0 0 0)
+         (uc-row M (+ p 7) OP-CONST 1 0 0)
+         (uc-row M (+ p 8) OP-LGET 2 1 0)
+         (uc-row M (+ p 9) OP-BIN BOP-SUB 1 0)
+         (uc-row M (+ p 10) OP-LGET 2 2 0)
+         (uc-row M (+ p 11) OP-CONST 3 1 0)
+         (uc-row M (+ p 12) OP-BIN BOP-SUB 2 0)
+         (uc-row M (+ p 13) OP-BIN BOP-ADD 1 0)
+         (uc-row M (+ p 14) OP-LGET 2 2 0)
+         (uc-row M (+ p 15) OP-BIN BOP-QUOT 1 0)
+         (uc-row M (+ p 16) OP-BIN BOP-SUB 0 0)
+         (uc-row M (+ p 17) OP-BR lj 0 0)
+         (uc-row M (+ p 18) OP-LABEL le 0 0)
+         (uc-row M (+ p 19) OP-LGET 0 1 0)
+         (uc-row M (+ p 20) OP-LGET 1 2 0)
+         (uc-row M (+ p 21) OP-BIN BOP-QUOT 0 0)
+         (uc-row M (+ p 22) OP-LABEL lj 0 0)
+         (uc-row M (+ p 23) OP-RET 0 0 0)
+         (uc-row M (+ p 24) OP-END f 0 0))))))
+(defn- pf-admit [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :i64
+ (let [sn (vector-at M MM-SIR-N) fnn (vector-at M MM-FN-N)
+       cn (vector-at M MM-CODE-N) fx (vector-at M MM-FIX-N)]
+  (if (or (not= (vector-at M MM-ERR) 0) (<= sn 0) (> sn MM-SIR-CAP)
+          (<= fnn 0) (> fnn MM-FN-CAP) (<= f 0) (>= f fnn) (>= f MM-FN-CAP)
+          (gn-clamp-open M f) (not= n 2) (< t 0) (> t 5)
+          (not= (gn-g M gn-f-leaf) 0) (not= (gn-g M gn-f-vmode) 0)
+          (not= (gn-g M gn-f-freg) 0) (<= (gn-g M gn-f-fb) 0)
+          (> (gn-g M gn-f-fb) 32768)
+          (< (gn-g M gn-f-h) (+ t 2)) (> (gn-g M gn-f-h) gn-cap)
+          (< (gn-g M gn-f-dp) (+ t 2)) (> (gn-g M gn-f-dp) gn-cap)
+          (< i 1) (>= i (dec sn)) (not (uc-row M i OP-CALL f t 2))
+          (= (gn-op M (inc i)) OP-RET) (= (gn-op M (inc i)) OP-RES2)
+          (< cn 0) (> cn (- MM-CODE-CAP 64)) (< fx 0) (>= fx MM-FIX-CAP)
+          (not (gn-isk M (inc t) gn-k-const))) 0
+   (let [k (gn-pow2 (gn-dv M (inc t)))]
+    (if (and (>= k 1) (<= k 62) (pf-shape M f)) k 0)))))
+(defn- pf-transfer [M :vector-i64 f :i64 k :i64] :vector-i64
+ (let [threshold (+ -9223372036854775808 (i64-shift-left 1 k))
+       m1 (-> M (gn-mov-imm 16 threshold) (gn-emit (enc-cmp-r 0 16)))
+       test (vector-at m1 MM-CODE-N)
+       m2 (-> m1 (gn-emit (enc-bcond (enc-cond-lt) 0))
+                  (gn-emit (gn-e-bf 0x93400000 0 0 k 63)))
+       jump (vector-at m2 MM-CODE-N)
+       m3 (gn-emit m2 (enc-b 0)) fallback (vector-at m3 MM-CODE-N)
+       m4 (-> m3 (gn-fix FX-BL26 f) (gn-emit (enc-bl 0)))
+       end (vector-at m4 MM-CODE-N)]
+  (-> m4 (gn-put (+ MM-CODE-BASE test) (enc-bcond (enc-cond-lt) (- fallback test)))
+         (gn-put (+ MM-CODE-BASE jump) (enc-b (- end jump))))))
+(defn- pf-or-cw-transfer [M :vector-i64 i :i64 f :i64 t :i64 n :i64 k :i64] :vector-i64
+ (if (> k 0) (pf-transfer M f k) (cw-transfer M i f t n)))
+
 ;; Closed pure sign-partition diamond => exact full64 unsigned comparison.
 ;; Ordinary call preparation and common postfix retained; no fuel or effects.
 (defn- spu-child [M :vector-i64 f :i64] :bool
@@ -12364,15 +12434,16 @@
          (and (<= n 7) (= (gn-op M (inc i)) OP-RET) (= (gn-sir M (inc i) IF-A) t))
          (gn-op-tail-call M f t n)
          :else
+    (let [floor (pf-admit M i f t n)]
     (-> M
       (gn-save 0 t)
       (gn-stack-args t 7 n)
       (gn-args t 0 (gn-min n 7))
       (gn-ctx)
-      (cw-transfer i f t n)
+      (pf-or-cw-transfer i f t n floor)
       (gn-vclear)
       (gn-gs gn-f-ctx (if (>= (gn-ctx-safe M f n 8 512) 0) 1 0))
-      (gn-take i t 0))))
+      (gn-take i t 0)))))
 ;; A direct call whose only successor returns its scalar result can restore
 ;; this frame and branch to the callee. Stack arguments and RET2 are excluded.
 ;; Argument registers and x7 (context) survive the callee-saved restore.
@@ -12392,10 +12463,24 @@
       (gn-gs gn-f-ctx 0)
       (gn-take i t 0)))
 ;; R4: FADDR t f -- adr d, <entry of FN f> (FX-ADR19)
+(defn- lf-dest [d :i64] :bool
+ (or (and (>= d 9) (<= d 16)) (and (>= d 19) (<= d 28))))
+;; Relative-PC macro: local ADR0, signed32 delta in scratch17, non-S extended ADD.
+(defn- lf-emit [M :vector-i64 d :i64 f :i64] :vector-i64
+ (let [cn (vector-at M MM-CODE-N) xn (vector-at M MM-FIX-N)]
+  (cond (not= (vector-at M MM-ERR) 0) M
+        (not (lf-dest d)) (gn-err M E-GEN-OP OP-FADDR)
+        (or (<= cn 0) (> cn (- MM-CODE-CAP 4)) (<= xn 0) (>= xn MM-FIX-CAP))
+        (gn-err M E-GEN-FULL cn)
+        :else
+        (-> M (gn-fix FX-ADR19 f)
+         (gn-put (+ MM-FIX-BASE (* xn MM-FIX-W) XF-AUX) 2)
+         (gn-emit (gn-e-adr d)) (gn-emit (enc-movz 17 0 0))
+         (gn-emit (enc-movk 17 0 1))
+         (gn-emit (+ 0x8b31c000 (* d 32) d))))))
 (defn- gn-op-faddr [M :vector-i64 i :i64 t :i64 f :i64] :vector-i64
-  (let [s (gn-co M i t)
-        d (gn-dreg M t s)]
-    (-> M (gn-protect t s) (gn-fix FX-ADR19 f) (gn-emit (gn-e-adr d)) (gn-fin t s d))))
+ (let [s (gn-co M i t) d (gn-dreg M t s)]
+  (-> M (gn-protect t s) (lf-emit d f) (gn-fin t s d))))
 (defn- gn-op-cap [M :vector-i64 i :i64 wire :i64 kind :i64 t :i64] :vector-i64
   (-> M
       (gn-save 0 t)

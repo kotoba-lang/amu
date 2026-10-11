@@ -195,6 +195,29 @@
 (defn- ly-width [kind :i64] :i64
   (if (= kind FX-B26) 26 (if (= kind FX-BL26) 26 19)))
 
+;; AUX2 means this fixed four-word local-relative FADDR macro, not target+2.
+(defn- ly-long-dest [d :i64] :bool
+ (or (and (>= d 9) (<= d 16)) (and (>= d 19) (<= d 28))))
+(defn- ly-long-faddr [M :vector-i64 at :i64 tgt :i64] :vector-i64
+ (let [cn (vector-at M MM-CODE-N) fnn (vector-at M MM-FN-N)]
+  (if (or (< cn 5) (> cn MM-CODE-CAP) (< at 1) (> at (- cn 4))
+          (< tgt 1) (>= tgt fnn) (>= tgt MM-FN-CAP))
+   (ly-err M (ly-e-fixup) at)
+   (let [target (vector-at M (+ MM-FN-BASE (* tgt MM-FN-W) FF-CODE))
+         w0 (vector-at M (+ MM-CODE-BASE at)) d (bit-and w0 31)
+         w1 (vector-at M (+ MM-CODE-BASE at 1))
+         w2 (vector-at M (+ MM-CODE-BASE at 2))
+         w3 (vector-at M (+ MM-CODE-BASE at 3))]
+    (if (or (< target 1) (>= target cn))
+     (ly-err M (ly-e-target) target)
+     (if (and (ly-long-dest d) (= w0 (+ 0x10000000 d))
+              (= w1 0xd2800011) (= w2 0xf2a00011)
+              (= w3 (+ 0x8b31c000 (* d 32) d)))
+      (let [delta (* (- target at) 4)
+            M1 (vector-assoc! M (+ MM-CODE-BASE at 1) (ly-patch16 w1 delta))]
+       (vector-assoc! M1 (+ MM-CODE-BASE at 2) (ly-patch16 w2 (u64-shift-right delta 16))))
+      (ly-err M (ly-e-fixup) at)))))))
+
 (defn- ly-fix-one [M :vector-i64 i :i64] :vector-i64
   (let [fb (+ MM-FIX-BASE (* i MM-FIX-W))
         at (vector-at M (+ fb XF-AT))
@@ -212,11 +235,13 @@
                      (= (bit-and (vector-at M (+ MM-CODE-BASE at)) 0xfc000000) 0x14000000)
                      (= (vector-at M (+ MM-CODE-BASE t0)) 0xd2800005))
                 (inc t0) -1))]
-    (if (= kind FX-LIT32)
+    (if (and (= kind FX-ADR19) (= aux 2))
+      (ly-long-faddr M at tgt)
+      (if (= kind FX-LIT32)
       (ly-lit32 M at tgt)
       (if (< t 0)
         (ly-err M (ly-e-fixup) kind)
-        (ly-branch M at t (ly-width kind))))))
+        (ly-branch M at t (ly-width kind)))))))
 
 (defn- ly-fix-loop [M :vector-i64 i :i64] :vector-i64
   (if (>= i (vector-at M MM-FIX-N))
