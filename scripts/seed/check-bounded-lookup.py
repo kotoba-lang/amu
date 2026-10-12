@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import struct
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -55,6 +56,24 @@ def main():
     if lines[0] != f'KSEED1 {len(payload)} {len(lines)-1}' or payload != native.read_bytes():
         raise SystemExit('control payload/container mismatch')
     exports = {name: (int(offset), int(arity)) for name, offset, arity in map(str.split, lines[1:])}
+    # Pin the independently audited native image, including unchanged refusal bodies.
+    # The private tree enters the appended lookup; the exported copy retains CMP.
+    structure = json.loads((ROOT / 'seed/tests/bounded-byte-lookup/native-structure.json').read_text())
+    if (len(payload) != structure['bytes']
+            or hashlib.sha256(payload).hexdigest() != structure['sha256']
+            or {name: list(value) for name, value in exports.items()} != structure['exports']):
+        raise SystemExit('native lookup acceptance/refusal structure changed')
+    for row in structure['regions']:
+        region = payload[row['start']:row['end']]
+        if hashlib.sha256(region).hexdigest() != row['sha256']:
+            raise SystemExit('native lookup structural region mismatch: ' + row['purpose'])
+    private_word, = struct.unpack_from('<I', payload, 0)
+    target = ((private_word & 0x03ffffff) << 2)
+    if private_word >> 26 != 5 or target != structure['lookupCoreOffset']:
+        raise SystemExit('private mapped tree did not enter lookup core')
+    exposed_word, = struct.unpack_from('<I', payload, exports['exposed'][0])
+    if exposed_word != structure['exposedEntryWord']:
+        raise SystemExit('exported exposed tree was optimized instead of refused')
     offset, arity = exports['control']
     if arity != 2 or offset % 4 or not 0 <= offset < len(payload):
         raise SystemExit('invalid actual control export')
@@ -81,7 +100,7 @@ def main():
         rows.append({'case': index, 'result': case['expected'], 'fuelRemaining': case['expectedFuelRemaining']})
     report = {'status': 'PASS_NATIVE_SOURCE_LOOKUP_ACCEPTANCE_AND_REFUSAL_CONTROLS', 'cases': len(rows),
               'compilerImageSHA256': digest(producer), 'sourceSHA256': digest(source),
-              'performanceMeasurement': False, 'rows': rows}
+              'performanceMeasurement': False, 'nativeStructureSHA256': digest(native), 'rows': rows}
     (host / 'lookup-controls-report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(report['status'])
 
