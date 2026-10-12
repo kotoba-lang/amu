@@ -1784,7 +1784,15 @@
          ;; Advanced 2026-09-25, dbb877ed -> 721281d2 (io-multiformats main,
          ;; forward only): base32's Kotoba reading over code points (the first
          ;; wall of 10 cbor dependents once cbor.core passed; adr-2609242330 S1c).
-         :git/sha "721281d20525dc4d9af0064862d1c35226065ce2"}
+         ;; REVERTED 2026-10-12, 721281d2 -> dbb877ed (amu#1282): 721281d2's
+         ;; base32.cljk wraps the `:default` branch in a `(do (def alphabet ...)
+         ;; (defn- drain-5 ...) ...)` (upstream 9e02f75), so nbb/cljs analysis
+         ;; never registers `drain-5` as a top-level name and every
+         ;; `amu compile --target web/js` dies at analysis with
+         ;; "Unable to resolve symbol: drain-5" (upstream kotoba-lang/io-multiformats#16,
+         ;; still open at a6d70ee). Re-pin to dbb877ed until upstream lifts the
+         ;; default-branch top-leveling; advance again after that lands.
+         :git/sha "dbb877ed22e87ba68d74d995dd8cbe6cf8f24970"}
         ;; The verifier independently re-derives aggregate ABI v7, including
         ;; recursive record-payload variants, and re-emits the widened boundary
         ;; in addition to scalar/variant/call-frame checks.
