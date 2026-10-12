@@ -3,14 +3,14 @@
 This directory contains the complete 16-module source based on the adopted
 compiler at `fc49cb2ee6fea1a41a5abbc8ed5b52aaa9f19471`, with an integration
 safety fix: explicit `--policy` is refused with E2170 until structured policy
-checking is qualified. No optimization module is changed. It includes the cumulative qualified AArch64 optimizations; it
+checking is qualified. Single-file and project `check` now enforce the same explicit-policy refusal as `compile`. No optimization module is changed. It includes the cumulative qualified AArch64 optimizations; it
 excludes the pending descriptor witness, conditional-fallthrough vector view,
 and bounded byte lookup candidates. It does not change `bin/amu`, publish a
 release, or qualify the whole Amu component as Q9.
 
 `MANIFEST` fixes the unity order. Concatenating each module followed by one
 newline gives SHA-256
-`3871578dbc64cb6ce29f8f3e461a90ddaf2e613a60d359cf21b0657f8a4ba3f5`.
+`14317fa0e63365b29c372fade7893f99279871e12581dc68df574ac48fbb93b5`.
 `adoption-20261012.json` records all source pins, artifact provenance, the
 correctness scope and measurement boundaries. `HEADS`, `MEMORY-MAP`, and `SIR`
 are the corresponding compiler contracts, copied without changes.
@@ -61,3 +61,7 @@ is maintenance of already-adopted work, not a restart of optimization or timing.
 Pending candidates and their evidence remain in separate preserved worktrees.
 
 Public report: <https://kotoba-lang.org/ja/blog/embench-progress-20261012/>
+
+The historical preservation branch is separately re-integrated under `preserved-20261012/`; see its README for the safety-fixed source and receipt. Current main optimization modules and public CLI/loader are retained.
+
+Explicit `--policy` without a following value is also refused with E2170, never interpreted as policy-free.
