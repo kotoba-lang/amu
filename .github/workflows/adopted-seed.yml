@@ -1,0 +1,15 @@
+name: adopted-seed-source
+on:
+  push:
+    branches: [main]
+    paths: ['seed/**', 'scripts/seed/build-adopted.py', '.github/workflows/adopted-seed.yml']
+  pull_request:
+    paths: ['seed/**', 'scripts/seed/build-adopted.py', '.github/workflows/adopted-seed.yml']
+permissions:
+  contents: read
+jobs:
+  adopted-seed-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 scripts/seed/build-adopted.py --verify-only

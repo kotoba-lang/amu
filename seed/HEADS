@@ -1,0 +1,604 @@
+;; seed/HEADS -- the language contract of the seed compiler R0 ("Seed-0" = Seed-E + Seed-C, 41 heads). EDN.
+;; Owner: contracts. Design: docs/selfhost-seed-design-20261002.md sections 1.2, 1.3, 4.1.
+;; Every [:c NAME VALUE ...] line is a constant generated into seed/00-ns.kotoba (see seed/MEMORY-MAP header).
+;; Anything not described here is REFUSED by name (E-table below), never guessed.
+
+{:format :seed.heads/v1
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 1. Types. Every expression has exactly one type; there is no inference beyond these and no coercion.
+ ;; ---------------------------------------------------------------------------------------------------------
+ :types
+ [[:c TY-NONE 0 "not an expression (def forms, binding vectors, keywords)"]
+  [:c TY-I64 1 ":i64 -- 64-bit two's complement, arithmetic wraps modulo 2^64"]
+  [:c TY-BOOL 2 ":bool -- result of comparisons/and/or/not; only consumed by if/cond/and/or/not/="]
+  [:c TY-STR 3 ":string -- immutable bytes (ASCII in R0); literals, cap results, string-concat"]
+  [:c TY-VEC 4 ":vector-i64 -- vector handle; vector-assoc! mutates in place (linear), others copy"]
+  [:c TY-BYTES 5 ":bytes -- ONLY as the value of bytes-from-vector-i64 and the argument/result of a :bytes cap
+                  call; not a legal parameter or result type of a defn in R0. R4B: a legal parameter, result, local, loop,
+                  record field and list item type (never an export type, a map key or a set item); the value is a vector
+                  handle of items 0..255 (the loader's ABI v11 shared representation)"]
+  ;; -- R1 (rung 1, 2026-10-02) --
+  [:c TY-KW 6 ":keyword -- an interned keyword. R6A (2026-10-03): the run-time value is the 64-bit FNV-1a hash of the
+                keyword's spelling (SF-HASH of its symbol; 30-lower lw-kwval), so modules compiled apart agree (it was the SYM
+                index, private to one compile). Only = and case compare keywords; never a ROOT export parameter or result
+                (a library interface may carry it, 60-proj)"]
+  [:c TY-REC-BASE 1024 "record types: TY-REC-BASE + the record's identity symbol (seed/MEMORY-MAP SF-REC, RB-*). A
+                        record value is the pair chain pair(f0, pair(f1, ... 0)) in declaration order (stage-0's
+                        ABI, measured 2026-10-02 on build/native-image/amu-native: pair_new from the last field)"]
+  ;; -- R3 (rung 3, 2026-10-03): composite value types, interned in the composite type table CT (seed/MEMORY-MAP MM-CT) --
+  [:c TY-COMP-BASE 1048576 "composite types: TY-COMP-BASE + the CT index of [:option T] [:result T E] [:list T] [:map K V]
+                            [:set T] (TC-* constructors below). Runtime values (seed/SIR :r3-values): option = 0 (none) or
+                            pair(x, 0); result = pair(payload, tag) tag 0 ok / 1 err; list = vector handle of the items; set =
+                            vector handle of the items sorted by key (no duplicates, at most 32); map = vector handle of
+                            k0 v0 k1 v1 .. sorted by key (no duplicate keys, at most 31 entries), the reference's order
+                            (lang/guest-grammar.edn :map-literal :order). Keys/items: i64 bool keyword string (E2105 otherwise);
+                            keyword items/keys are kept in interning order, so typed-set-nth, (nth set i), keys and vals refuse
+                            them (E2105 / E2104)"]
+  ;; -- R6B (2026-10-03, agent R6B): the bounded EDN document of the reference. Its run-time value is the :string of its
+  ;;    canonical EDN text: the representation stage-0's native backend uses (kotoba-native document.cljk) and the KIR route
+  ;;    (12-kirread doclib, KIR4/KIR5), so both routes agree byte for byte. A distinct type: never = (E2124 eq; 7 is 21-check's private poison type), never a map
+  ;;    key / set item / export type; its operations are the source library of 21-check (ck-r6b-lib), appended to a module
+  ;;    that spells them.
+  [:c TY-DOC 8 ":document -- a canonical EDN text (:string at run time); only the document-* library and __r6-as see inside"]
+  [:c TY-SYM 9 ":symbol -- a symbol's text (:string at run time, the KIR route's representation); made by (symbol s) of the R6B
+                 library, read by document-symbol; = and the other operations refuse it (E2104)"]
+  ;; -- R6C (2026-10-03): :f64 as an opaque carrier. A value is its IEEE-754 binary64 bit pattern in an i64 (the KIR route's
+  ;;    representation, KIR5), made and read only by the source library's f64-from-bits / f64-to-bits (bit casts, no code).
+  ;;    No arithmetic, comparison, = or literal yet: those are refused by name (E2104/E2123/E1xxx), never computed on bits.
+  [:c TY-F64 10 ":f64 -- IEEE-754 binary64 bits in an i64 (opaque: f64-from-bits / f64-to-bits only)"]
+  ;; -- R6K (FOLD, 2026-10-04; TMPL's R6F request): :f32 = an IEEE-754 binary32 bit pattern sign-extended from 32 bits in an
+  ;;    i64 (the KIR route's representation). 21-check's local ck-ty-f32 has this value; drv-tyname spells it ":f32".
+  [:c TY-F32 11 ":f32 -- IEEE-754 binary32 bits, sign-extended from 32 bits in an i64"]
+  [:c TC-OPTION 1] [:c TC-RESULT 2] [:c TC-LIST 3] [:c TC-MAP 4] [:c TC-SET 5]
+  ;; -- R4 (rung 4, 2026-10-03): callable types. [:fn [[P1 .. Pn] R]] (one clause, n <= 4) = TC-FN with CT-A = R and CT-B =
+  ;;    the parameter list (0 for none): a chain of TC-PLIST records (CT-A = the parameter type, CT-B = the rest or 0).
+  ;;    Interning makes equal signatures equal codes. A value of a fn type is a CLOSURE: pair(code address, env)
+  ;;    (seed/SIR :r4-lowering). P and R: any type except :bytes and fn types (E2105: the reference's `callable
+  ;;    parameter types / results cannot be callable`)
+  [:c TC-FN 6 "[:fn [[P ..] R]]: CT-A = R, CT-B = the TC-PLIST chain of the parameter types (0 = no parameter)"]
+  [:c TC-PLIST 7 "one link of a parameter type list: CT-A = the type, CT-B = the next link or 0"]
+  ;; -- R4B (2026-10-03): values by reference. [:ref :kw] names the record type registered under keyword :kw: by the ns clause
+  ;;    (:schemas {:kw [:record :kw [[:f T] ..]] ..}) (registered in pass A0, after the defrecords), by a defrecord whose
+  ;;    :<ns>/Name keyword the file spells, or by an inline [:record :kw ..] schema anywhere in the file. A ref met before its
+  ;;    schema has the type TY-REC-BASE + the keyword symbol (the identity of an inline/:schemas schema), so recursive schemas
+  ;;    ([:kids [:list [:ref :kw]]]) and forward references type as the schema; a defrecord's block is in SF-REC before its
+  ;;    fields are typed. A ref whose keyword no schema registers is E2179. A record field may have any type but a fn type
+  ;;    (records, lists of records, :bytes ..): the field holds the value's handle (records stay pair chains).
+  ]
+ ;; Type keywords in signatures: :i64 :bool :string :vector-i64 (R1 :keyword, records; R3 the vector forms [:option T]
+ ;; [:result T E] [:list T] [:map K V] [:set T]). Anything else after a parameter -> E2105.
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 2. Lexical layer (10-lex). Bytes outside 0..127 anywhere in S -> E1002.
+ ;; ---------------------------------------------------------------------------------------------------------
+ :tokens
+ [[:c TK-LPAREN 1 "("] [:c TK-RPAREN 2 ")"] [:c TK-LBRACK 3 "["] [:c TK-RBRACK 4 "]"]
+  [:c TK-LBRACE 5 "{ (read refuses maps, E1105; lexed so the refusal names the position)"]
+  [:c TK-RBRACE 6 "}"]
+  [:c TK-INT 7 "integer: -?[0-9]+ ; the value must fit i64 (no wrapping of literals);
+                -9223372036854775808 is legal, 9223372036854775808 is not (E1004). No 0x, no N/M suffix, no ratio"]
+  [:c TK-STR 8 "string: \"...\" with escapes \\n \\t \\\\ \\\" only (E1003 otherwise); decoded bytes go to LIT/LITB"]
+  [:c TK-SYM 9 "symbol: a maximal run of [A-Za-z0-9*+!_?<>=/.-] that is not an
+                integer. Spans like `-` and `->` are symbols"]
+  [:c TK-KW 10 "keyword: ':' followed by symbol chars; the span includes the ':' (e.g. :i64 :fs/app-data)"]
+  [:c TK-HASH-BRACE 11 "R3: '#{' (a set literal opens; closed by '}')"]
+  [:c TK-AT 12 "R5B: '@' (11-read reads @x as (deref x): a list whose head symbol is the '@' token, spelled HD-DEREF)"]]
+ ;; R3 (10-lex, minimal delimited change): a string literal may hold any UTF-8 text (its bytes go to LITB as they are) and
+ ;; the escapes \r \b \f \uXXXX (UTF-8 encoded; a surrogate is E1003) besides \n \t \\ \"; a comment may hold any
+ ;; UTF-8 text. A byte >= 128 anywhere else is E1002 at that byte (no whole-input pre-check any more).
+ ;; R4 RULE (2026-10-03): every string literal is valid UTF-8 -- by construction: S itself is a :string (the loader admits only
+ ;; valid UTF-8 through wire 35), a literal's raw bytes are the code-point-aligned span between two '"', and the escapes encode
+ ;; scalar values only (surrogates E1003); 12-kirread's literals are ASCII. Code generators may rely on it (41-a64gen reads
+ ;; ASCII bytes of code-relative strings in line, seed/SIR :a64 :r4).
+ ;; Whitespace: space, tab, \n, \r and ','. Comments: ';' to end of line. Reader syntax # ^ ` ~ @ \ ' (as a
+ ;; prefix) -> E1005 with the one-character span. A token never spans lines except a string.
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 3. Read tree (11-read)
+ ;; ---------------------------------------------------------------------------------------------------------
+ :nodes
+ [[:c ND-ROOT 1 "the file: children = top-level forms"] [:c ND-LIST 2 "( ... )"] [:c ND-VEC 3 "[ ... ]"]
+  [:c ND-MAP 4 "{ k v ... } R1: read with key/value children; 21-check admits it only as the argument of map->Name"] [:c ND-INT 5] [:c ND-STR 6] [:c ND-SYM 7]
+  [:c ND-KW 8]
+  [:c ND-SET 9 "R3: #{ x ... } (children = the items); an expression (a typed set literal)"]]
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 4. Keywords with a meaning (SF-HEAD of a keyword symbol, set by 20-names at intern time)
+ ;; ---------------------------------------------------------------------------------------------------------
+ :keywords
+ [[:c KW-I64 1 ":i64"] [:c KW-BOOL 2 ":bool"] [:c KW-STRING 3 ":string"] [:c KW-VECTOR-I64 4 ":vector-i64"]
+  [:c KW-EXPORT 5 ":export"] [:c KW-ELSE 6 ":else"] [:c KW-BYTES 7 ":bytes"]
+  [:c KW-FS-APP-DATA 8 ":fs/app-data"] [:c KW-CLI-ARGS 9 ":cli/args"] [:c KW-IO-WRITE-ERROR 10 ":io/write-error"]
+  [:c KW-IO-WRITE 11 ":io/write"]
+  [:c KW-FS-APP-DATA-BYTES 12 ":fs/app-data-bytes"]
+  ;; -- R1 --
+  [:c KW-KEYWORD 13 ":keyword (type)"] [:c KW-RECORD 14 ":record (schema head)"] [:c KW-LET 15 ":let (doseq)"]
+  [:c KW-WHEN 16 ":when (doseq)"] [:c KW-WHILE 17 ":while (doseq)"]
+  [:c KW-INFER 18 "(no spelling) the synthetic result type of an unannotated defn: inferred from the body"]
+  ;; -- R3 --
+  [:c KW-OPTION 19 ":option"] [:c KW-RESULT 20 ":result"] [:c KW-LIST 21 ":list"] [:c KW-MAP 22 ":map"] [:c KW-SET 23 ":set"]
+  ;; -- R4 --
+  [:c KW-FN 24 ":fn (callable type)"]
+  ;; -- R4B --
+  [:c KW-REF 25 ":ref (record type by reference)"] [:c KW-SCHEMAS 26 ":schemas (ns clause)"]
+  [:c KW-HASH-SHA256 27 ":hash/sha256"] [:c KW-ENV-READ 28 ":env/read"] [:c KW-FS-BROWSE 29 ":fs/browse"]
+  [:c KW-IO-READ 30 ":io/read"]
+  ;; -- R5B (effects) --
+  [:c KW-STATE 31 ":state (the handler's ability, [:state S])"] [:c KW-STATE-GET 32 ":state/get"] [:c KW-STATE-PUT 33 ":state/put"]
+  [:c KW-EFFECTS 34 ":effects (a declared effect ceiling {:effects #{..}})"] [:c KW-CLOCK-NOW 35 ":clock/now (capability wire 7)"]
+  ;; -- R6B --
+  [:c KW-DOCUMENT 36 ":document (type)"]
+  ;; R6B: two more catalogue wires admitted as typed-cap-call :string :string (resources/kotoba/lang/capability-catalog.edn);
+  ;; the friendly qualified calls (hash/sha256 x) .. of every catalogue entry are rewritten by 21-check (ck-r6b-cap)
+  [:c KW-PROCESS-SPAWN 37 ":process/spawn (capability wire 20)"] [:c KW-ENTROPY-DRAW 38 ":entropy/draw (capability wire 23)"]
+  [:c KW-SYMBOL 39 ":symbol (type)"]
+  ;; -- R6C --
+  [:c KW-PINFER 40 "(no spelling) the synthetic type of an unannotated defn parameter: :i64 unless the checker's own refusal
+   asks for another type (the reference's infer-absent-parameter-types; 21-check records the refinement, the driver re-runs)"]
+  [:c KW-F64 41 ":f64 (type)"]]
+ ;; KW-FS-APP-DATA-BYTES (R0 2026-10-02): wire 35 with the :bytes kinds, the spelling stage-0 accepts.
+ ;; Keywords appear ONLY in: ns (:export), signatures (types), cond (:else), typed-cap-call (wire, kinds).
+ ;; A keyword anywhere else (as a value) -> E2114.
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 5. Resolution (NF-RES of an ND-SYM node, written by 21-check): RES-CLASS * RES-SCALE + index
+ ;; ---------------------------------------------------------------------------------------------------------
+ :resolution
+ [[:c RES-SCALE 16777216 "2^24"]
+  [:c RES-LOCAL 1 "index = frame slot of a param / let / loop variable"]
+  [:c RES-FN 2 "index = FN index of a defn/defn- (in call head position only)"]
+  [:c RES-DEF 3 "index = FN index of a top-level def constant (a value reference)"]
+  [:c RES-HEAD 4 "index = head code (the symbol in head position of a builtin form)"]
+  [:c RES-CONST 5 "R1: index = the value of a constant symbol (true = 1, false = 0)"]]
+ ;; NF-RES of an ND-LIST node = its head code (1..42; HD-CALL for a user call). Of an ND-VEC used as an
+ ;; expression = HD-VECLIT. Binding vectors (let/loop/params) get NF-RES 0.
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 6. Heads 1..42. :args = argument count and types; :res = result type; :sir = the lowering in seed/SIR.
+ ;;    "i" = :i64, "b" = :bool, "s" = :string, "v" = :vector-i64, "x" = :bytes. "n>=k" = variadic.
+ ;; ---------------------------------------------------------------------------------------------------------
+ :heads
+ [;; -- definition and binding forms (Seed-E) --
+  [:c HD-NS 1 "(ns NAME (:export [f ...])) -- exactly once, first form. NAME a symbol. The export list
+               names defn functions (E2005 if undefined). The map form {:kotoba/export ..} -> E1105"]
+  [:c HD-EXPORT 2 "(:export [sym ...]) -- only inside ns"]
+  [:c HD-DEFN 3 "(defn NAME [p :T ...] :R body) -- public; params 0..5 (E2108), each followed by its type (R4B: a defn-
+                 clause and a non-exported defn take 0..16, E2178; an export or a variadic clause 0..5, E2108)
+                 keyword; exactly one body expression (E2118). Exported entries: params all :i64,
+                 result :i64 or :bool"]
+  [:c HD-DEFN-PRIV 4 "(defn- NAME [p :T ...] :R body) -- private, same shape"]
+  [:c HD-DEF 5 "(def NAME literal) -- literal is an integer, a string or a vector literal of integer
+                literals; the type is the literal's. A reference evaluates the literal again (no storage)"]
+  [:c HD-LET 6 "(let [n1 e1 n2 e2 ...] body) -- sequential; names unique within the let (E2112); type = body"]
+  [:c HD-LOOP 7 "(loop [n1 e1 ...] body) -- 1..10 bindings (R4B: 1..20) of type i64/bool/string; a value (may be non-tail);
+                 type = body"]
+  [:c HD-RECUR 8 "(recur e1 ...) -- only in tail position of the innermost loop, or of a defn body that has
+                  no enclosing loop (then it re-enters the defn). Count = binding/param count (E2107, E2106)"]
+  [:c HD-IF 9 "(if c a b) -- c:b, a and b the same type (E2104), exactly 3 args (E2110); result that type"]
+  [:c HD-AND 10 "(and b ...) n>=1 b -> b, short-circuit left to right"]
+  [:c HD-OR 11 "(or b ...) n>=1 b -> b, short-circuit"]
+  [:c HD-NOT 12 "(not b) b -> b"]
+  ;; -- comparisons and arithmetic (Seed-E) --
+  [:c HD-EQ 13 "(= x y) both i or both b -> b. Strings/vectors -> E2123"]
+  [:c HD-LT 14 "(< i i) -> b signed"] [:c HD-GT 15 "(> i i) -> b"] [:c HD-LE 16 "(<= i i) -> b"]
+  [:c HD-GE 17 "(>= i i) -> b"]
+  [:c HD-ADD 18 "(+ i i ...) n>=2 -> i, left fold, wraps"]
+  [:c HD-SUB 19 "(- i i ...) n>=2 -> i, left fold, wraps. Unary minus is NOT in R0 (E2103): write (- 0 x)"]
+  [:c HD-MUL 20 "(* i i ...) n>=2 -> i, low 64 bits"]
+  [:c HD-QUOT 21 "(quot i i) -> i, truncates toward 0; TRAPS (brk) on divisor 0 and on MIN / -1
+                  (stage-0 measured: (quot 7 -2) = -3, (quot -7 2) = -3, both traps SIGTRAP)"]
+  [:c HD-BIT-AND 22 "(bit-and i i) -> i"] [:c HD-BIT-OR 23 "(bit-or i i) -> i"]
+  [:c HD-BIT-XOR 24 "(bit-xor i i) -> i"] [:c HD-BIT-NOT 25 "(bit-not i) -> i"]
+  [:c HD-USHR 26 "(u64-shift-right x n) -> i, logical; count taken MODULO 64 (measured: (u64-shift-right -1 64)
+                  = -1, (.. -1 65) = 2^63-1, (.. -1 -1) = 1) = aarch64 lsrv"]
+  [:c HD-SHL 27 "(i64-shift-left x n) -> i, count mod 64 (measured (i64-shift-left 1 64) = 1, (.. 1 -1) = MIN)
+                 = lslv"]
+  [:c HD-SSHR 28 "(i64-shift-right x n) -> i, arithmetic, count mod 64 (measured (.. -8 65) = -4) = asrv"]
+  ;; -- vectors and strings (Seed-E) --
+  [:c HD-VECTOR-AT 29 "(vector-at v i) -> i; out of range TRAPS"]
+  [:c HD-VECTOR-CONJ 30 "(vector-conj v i) -> v (persistent: a new vector)"]
+  [:c HD-VECTOR-ASSOC 31 "(vector-assoc v i x) -> v (persistent copy)"]
+  [:c HD-VECTOR-ASSOC-BANG 32 "(vector-assoc! v i x) -> v, in place; v must be linear (MEMORY-MAP rule L1)"]
+  [:c HD-VECTOR-ALLOC 33 "(vector-alloc n) -> v of n zeros"]
+  [:c HD-STRING-CODE-POINT-AT 34 "(string-code-point-at s i) -> i; i is a BYTE offset; out of range traps"]
+  [:c HD-STRING-LENGTH 35 "(string-length s) -> i, bytes"]
+  [:c HD-VECLIT 36 "[e1 e2 ...] as an expression: 0..64 items, all i (E2116) -> v (fresh vector). R4B: 65..128 items (the reference limit) when all are
+                     integer literals (a pooled constant table, SIR OP-VECP; also a def of such a literal)"]
+  [:c HD-CALL 37 "(f e1 ...) f a defn/defn- of the file; count and types must match the signature
+                  (E2103/E2104). Forward references and mutual recursion are allowed"]
+  ;; -- Seed-C additions --
+  [:c HD-TYPED-CAP-CALL 38 "(typed-cap-call WIRE REQ RES arg) -- the four allowed shapes are :caps below
+                            (E2115 otherwise). A cap call is an effect: it is never removed or reordered"]
+  [:c HD-BYTES-FROM-VECTOR-I64 39 "(bytes-from-vector-i64 v) -> x, one byte per item (low 8 bits)"]
+  [:c HD-STRING-CONCAT 40 "(string-concat s s) -> s, exactly 2 args"]
+  [:c HD-COND 41 "(cond c1 e1 c2 e2 ... :else en) -- ci:b, all ei the same type, :else pair mandatory and
+                  last (E2109). Means (if c1 e1 (if c2 e2 ... en))"]
+  ;; -- R0 addition 2026-10-02 (binary container I/O of the driver: extract-native reads a kseed file) --
+  [:c HD-VECTOR-I64-FROM-BYTES 42 "(vector-i64-from-bytes x) -> v, a copy, one item (0..255) per byte; lowers to
+                                   RT RT-BYTES-FROM-VECTOR t 1 (the loader shares the representation, ABI v11)"]
+  ;; -- R1 (rung 1, 2026-10-02): sugar, enums and flat records. 21-check DESUGARS heads 43-65 into core forms
+  ;;    (in place, synthetic nodes; seed/CONTRACT-REQUESTS.md R1 line) before typing; 30-lower sees only core heads,
+  ;;    HD-DO, HD-TRAP and the record heads. Semantics measured on stage-0 2026-10-02 (docs/selfhost-seed-r1-*.md).
+  [:c HD-DO 43 "(do e1 .. en) n>=1 -> type of en; e1..e(n-1) evaluated for effect. Core form"]
+  [:c HD-WHEN 44 "(when c e ..) c:b, body i64 -> (if c (do e ..) 0) (stage-0: a false when is 0)"]
+  [:c HD-WHEN-NOT 45 "(when-not c e ..) -> (if c 0 (do e ..))"]
+  [:c HD-IF-NOT 46 "(if-not c a b) -> (if c b a)"]
+  [:c HD-CASE 47 "(case e k1 r1 (k2 k3) r2 .. [default]) e:i/keyword; k an integer, keyword or i64 def; unique (E2125);
+                  -> (let [g e] (cond (= g k1) r1 (or (= g k2) (= g k3)) r2 .. :else default|TRAP)). No match and no
+                  default traps (stage-0: refused as a compile-time trap)"]
+  [:c HD-CONDP 48 "(condp pred e c1 r1 .. [default]) pred a symbol -> (let [g e] (cond (pred c1 g) r1 .. :else d|TRAP))"]
+  [:c HD-THREAD-FIRST 49 "(-> x f (g a)) -> (g (f x) a)"] [:c HD-THREAD-LAST 50 "(->> x f (g a)) -> (g a (f x))"]
+  [:c HD-AS-THREAD 51 "(as-> x n f1 f2) -> (let [n x] (let [n f1] (let [n f2] n)))"]
+  [:c HD-COND-THREAD 52 "(cond-> x t1 f1 ..) -> (let [g x] (let [g (if t1 (-> g f1) g)] .. g))"]
+  [:c HD-COND-THREAD-LAST 53 "(cond->> x t1 f1 ..) as cond-> with ->>"]
+  [:c HD-DOTIMES 54 "(dotimes [i n] e ..) -> (let [g n] (loop [i 0] (if (< i g) (do e .. (recur (+ i 1))) 0))); value 0"]
+  [:c HD-DOSEQ 55 "(doseq [x coll mods.. y coll2 ..] e ..) coll a :vector-i64 or (range n) / (range a b); mods :let [..]
+                   :when c :while c; value 0. Per item: :let -> let, :when -> skip the rest, :while -> stop that loop"]
+  [:c HD-RANGE 56 "(range n) / (range a b) -- only as a doseq collection"]
+  [:c HD-INC 57 "(inc x) -> (+ x 1)"] [:c HD-DEC 58 "(dec x) -> (- x 1)"] [:c HD-ZERO 59 "(zero? x) -> (= x 0)"]
+  [:c HD-POS 60 "(pos? x) -> (> x 0)"] [:c HD-NEG 61 "(neg? x) -> (< x 0)"] [:c HD-NOT-EQ 62 "(not= a b) -> (not (= a b))"]
+  [:c HD-ASSERT 63 "(assert c) -> (if c 0 TRAP) (stage-0: a false assert traps)"]
+  [:c HD-TRUE 64 "true: a constant symbol, :bool 1 (RES-CONST)"] [:c HD-FALSE 65 "false: :bool 0 (RES-CONST)"]
+  [:c HD-VECTOR-COUNT 66 "(vector-count v) -> i ; RT RT-VECTOR-COUNT t 1"]
+  [:c HD-RECORD-NEW 67 "(record-new [:record :ns/name [[:f :T] ..]] e ..) -> the record; one arg per field, in order.
+                        SIR: [e_i -> t+i] CONST t+n 0, then RT RT-PAIR-NEW t+i 2 for i = n-1 .. 0"]
+  [:c HD-RECORD 68 "(record SCHEMA e ..) = record-new"]
+  [:c HD-RECORD-GET 69 "(record-get SCHEMA r :f) -> field f. SIR: [r -> t], RT RT-PAIR-SECOND t 1 (index times),
+                        RT RT-PAIR-FIRST t 1. The field keyword's NF-RES = the field index (21-check)"]
+  [:c HD-DEFRECORD 70 "(defrecord Name [f :T g ..]) top level; unannotated fields are :i64; 1..32 unique fields.
+                       Identity: the keyword :<ns>/Name when the file spells it (then inline schemas of that name must
+                       have the same fields, E2128), else the symbol Name. (->Name e ..) constructs (HD-RECORD-CTOR)"]
+  [:c HD-GET 71 "(get r :f) on a record -> field f"]
+  [:c HD-TRAP 72 "(no spelling) synthetic: brk, type bottom (OP-TRAP 0)"]
+  [:c HD-KWGET 73 "(no spelling) (:f r) on a record -> field f (NF-RES of the list)"]
+  [:c HD-RECORD-CTOR 74 "(no spelling) (->Name e ..) (NF-RES of the list); args start at the 2nd child"]
+  [:c HD-ASSOC 75 "(assoc r :f v) on a record -> a new record with field f = v (the other fields copied). 21-check gives it a
+                   hidden frame slot (NF-TYPE of the head symbol node) that holds r while the fields are copied"]
+  ;; -- R3 (rung 3, 2026-10-03): values. Every R3 head is typed by 21-check; the type argument T/R/L/S/Mt is a type form
+  ;;    ([:option T] ...) that must name the matching constructor (E2105 / E2104 otherwise). Heads that need frame slots
+  ;;    for their lowering get k HIDDEN slots: NF-TYPE of the head symbol node = the first one (21-check), the
+  ;;    arguments are checked after them (so a nested let never reuses them). Lowerings: seed/SIR :r3-lowering.
+  [:c HD-OPTION-SOME 76 "(option-some-of [:option T] x) x:T -> [:option T]"]
+  [:c HD-OPTION-NONE 77 "(option-none-of [:option T]) -> [:option T]"]
+  [:c HD-OPTION-IS-SOME 78 "(option-some?-of [:option T] o) -> b"]
+  [:c HD-OPTION-VALUE 79 "(option-value-of [:option T] o d) d:T -> T (o and d evaluated first; 2 hidden slots)"]
+  [:c HD-OPTION-MATCH 80 "(option-match [:option T] o none-body x some-body) x bound to the value (a local slot) -> the arms' type"]
+  [:c HD-OPTION-OR 81 "(option-or o d) o:[:option T] d:T -> T (2 hidden slots)"]
+  [:c HD-RESULT-OK 82 "(result-ok-of [:result T E] v) v:T -> R"]
+  [:c HD-RESULT-ERR 83 "(result-err-of [:result T E] e) e:E -> R"]
+  [:c HD-RESULT-IS-OK 84 "(result-ok?-of R r) -> b"]
+  [:c HD-RESULT-VALUE 85 "(result-value-of R r d) d:T -> T (2 hidden slots)"]
+  [:c HD-RESULT-ERROR 86 "(result-error-of R r d) d:E -> E (2 hidden slots)"]
+  [:c HD-RESULT-MATCH 87 "(result-match-of R r v ok-body e err-body) v:T e:E bound (local slots) -> the arms' type"]
+  [:c HD-THROW 88 "(throw e) -> bottom. The enclosing function ABORTS (lang/abort-ability.edn): its interface is [:result T E],
+                   E = the type of e; outside a try body it returns err(e), inside one it jumps to the innermost handler"]
+  [:c HD-TRY 89 "(try body (catch e handler)) / (try body (catch :E e handler)) -> join of body and handler. The body is
+                 not a tail position (recur there: E2106); E = the explicit type or the single error type of the body's
+                 throws and aborting calls (E2129 when two, E2131 when none, E2133 when not yet known)"]
+  [:c HD-CATCH 90 "(catch ..) only as the last child of try (E2132 elsewhere)"]
+  [:c HD-LIST-NEW 91 "(typed-list-new [:list T] x ..) 0..64 items -> L (VEC)"]
+  [:c HD-LIST-NTH 92 "(typed-list-nth L l i) -> T; out of range traps"]
+  [:c HD-LIST-CONJ 93 "(typed-list-conj L l x) -> L"]
+  [:c HD-SET-NEW 94 "(typed-set-new [:set T] x ..) -> S; duplicates are dropped, a 33rd item traps (7 hidden slots)"]
+  [:c HD-SET-COUNT 95 "(typed-set-count S s) -> i"]
+  [:c HD-SET-CONTAINS 96 "(typed-set-contains S s x) -> b (4 hidden slots)"]
+  [:c HD-SET-CONJ 97 "(typed-set-conj S s x) -> S; unchanged when present, inserted in order else (33rd item traps) (7 slots)"]
+  [:c HD-SET-DISJ 98 "(typed-set-disj S s x) -> S (7 hidden slots)"]
+  [:c HD-SET-EQUAL 99 "(typed-set-equal S a b) -> b; the same items (7 hidden slots)"]
+  [:c HD-SET-NTH 100 "(typed-set-nth S s i) -> T; out of range traps"]
+  [:c HD-MAP-NEW 101 "(typed-map-new [:map K V] k v ..) -> Mt; a duplicate key or a 32nd entry traps (7 slots)"]
+  [:c HD-MAP-COUNT 102 "(typed-map-count Mt m) -> i"]
+  [:c HD-MAP-CONTAINS 103 "(typed-map-contains Mt m k) -> b (4 hidden slots)"]
+  [:c HD-MAP-GET 104 "(typed-map-get Mt m k) -> [:option V] (4 hidden slots)"]
+  [:c HD-MAP-ASSOC 105 "(typed-map-assoc Mt m k v) -> Mt: the value of a present k is replaced, else (k v) inserted in
+                                key order (a 32nd entry traps) (7 slots)"]
+  [:c HD-MAP-DISSOC 106 "(typed-map-dissoc Mt m k) -> Mt (7 hidden slots)"]
+  [:c HD-MAP-EQUAL 107 "(typed-map-equal Mt a b) -> b; the same entries; V must be i64 bool keyword string (E2105) (7 slots)"]
+  [:c HD-MAP-KEYS 108 "(typed-map-keys Mt m) -> [:list K] in key order (4 hidden slots)"]
+  [:c HD-MAP-VALS 109 "(typed-map-vals Mt m) -> [:list V] (4 hidden slots)"]
+  [:c HD-STRING-EQ 110 "(string=? s s) -> b ; RT RT-STRING-EQUAL"]
+  [:c HD-STRING-SUBSTRING 111 "(string-substring s a b) -> s, byte offsets; traps unless 0 <= a <= b <= length on code point
+                               boundaries ; RT RT-STRING-SUBSTRING"]
+  [:c HD-STRING-FROM-I64 112 "(string-from-i64 i) -> s, decimal (5 hidden slots)"]
+  [:c HD-STRING-COMPARE 113 "(string-compare s s) -> i -1/0/1 ; RT RT-STRING-COMPARE"]
+  [:c HD-STRING-INDEX-OF 114 "(string-index-of s needle) -> i byte offset or -1; an empty needle traps ; RT"]
+  [:c HD-STRING-BYTE-LENGTH 115 "(string-byte-length s) -> i = string-length"]
+  [:c HD-PAIR 116 "(pair a b) i i -> i (a pair handle; KIR's closures and stdlib chains) ; RT RT-PAIR-NEW"]
+  [:c HD-PAIR-FIRST 117 "(pair-first p) i -> i"] [:c HD-PAIR-SECOND 118 "(pair-second p) i -> i"]
+  [:c HD-GCOUNT 119 "(count c) on a vector, list, set or map -> i"]
+  [:c HD-NTH 120 "(nth c i) on a vector, list or set -> the item (traps out of range); (nth c i d) vector/list -> the item
+                  or d (3 hidden slots)"]
+  [:c HD-CONTAINS 121 "(contains? m k) map key -> b (4 hidden slots). A set receiver is refused (E2104), as by the reference
+                      (lang/surface-status.edn :set-literal :operations contains?); typed-set-contains is the set head"]
+  [:c HD-CONJ 122 "(conj c x ..) set / vector / list -> the same type (7 hidden slots)"]
+  [:c HD-DISJ 123 "(disj s x ..) on a set (7 hidden slots)"]
+  [:c HD-DISSOC 124 "(dissoc m k) on a map (7 hidden slots)"]
+  [:c HD-KEYS 125 "(keys m) -> [:list K]"] [:c HD-VALS 126 "(vals m) -> [:list V]"]
+  [:c HD-PEEK 127 "(peek v) the last item of a vector or list (empty traps; 1 hidden slot)"]
+  [:c HD-POP 128 "(pop v) all items but the last (empty traps; 4 hidden slots)"]
+  [:c HD-SETLIT 129 "(no spelling) NF-RES of an ND-SET expression: #{x ..} -> [:set :keyword] (the reference's set literal
+                     is keyword-only; typed-set-new builds the others), 1..32 items, all :keyword (E2104), not empty (E2133).
+                     7 hidden slots: the first is in NF-SYM of the ND-SET node"]
+  [:c HD-MAPLIT 130 "(no spelling) NF-RES of an ND-MAP expression {k v ..} -> [:map K V] from the first entry, K :i64 or :string
+                     (E2105: the reference reads a keyword-keyed literal as a pair list or a record), 1..31 entries (7 hidden
+                     slots, the first in NF-SYM of the ND-MAP node). (map->Name {..}) keeps its R1 meaning"]
+  ;; R1's get and assoc also take maps: (get m k d) -> the value of k or d (5 hidden slots), (assoc m k v) = typed-map-assoc
+  ;; -- R4 (rung 4, 2026-10-03): functions. Lowerings: seed/SIR :r4-lowering. A fn literal is lambda-lifted by 21-check into
+  ;;    its own FN record (FK-LAMBDA, seed/MEMORY-MAP): parameters first, then the captured locals of the enclosing function
+  ;;    (at most 5 in all, E2137); throw / aborting calls outside a try body inside it are refused (E2135, lang/guest-grammar.edn
+  ;;    abort :note). R4 RULES aligned with the reference (lang/guest-grammar.edn :callable-type, measured on stage-0):
+  ;;    fn parameters are bare symbols (an annotation is E2139); their types come from the context -- the [:fn ..] type of
+  ;;    the module function's parameter slot the literal is an argument of, the declared [:fn ..] result when the literal
+  ;;    is in tail position, the item (:i64) / accumulator types of map, filter and reduce -- else :i64; the result is
+  ;;    inferred. Captures are :i64 or callable locals (E2104 expected :i64 otherwise: captures are i64 words).
+  [:c HD-FN 131 "(fn [p :T ..] e ..) -> [:fn [[T ..] R]] 0..4 params (E2137 with the captures); a closure value. As the init of a
+                 let binding it is a KNOWN function of that slot: (f a ..) calls the lifted function directly (HD-CALLK), and no
+                 closure is built when f is never used as a value (a syntactic scan of the rest of the let)"]
+  [:c HD-FN-REF 132 "(fn-ref f) f a single-clause, non-variadic, non-aborting defn of the file -> its fn type (E2134 otherwise);
+                     the closure is pair(address of f, 0): f ignores the env argument"]
+  [:c HD-INVOKE 133 "(invoke c a ..) / (invoke R c a ..) c a fn value, R its result type (E2104 when it differs) -> R"]
+  [:c HD-APPLY 134 "(apply c a .. l) c a fn value of arity n, l a [:list T]: the n - m trailing arguments are l's items (a count
+                    other than n - m traps) -> R"]
+  [:c HD-HOF-MAP 135 "(map f coll) coll :vector-i64 (the reference's only source type, E2104), f an inline fn, a defn name or a fn
+                      value of arity 1 returning :i64 -> :vector-i64. One source only (E2103)"]
+  [:c HD-FILTER 136 "(filter p coll) p -> :bool: the items of the :vector-i64 coll for which p holds, in order -> :vector-i64"]
+  [:c HD-REDUCE 137 "(reduce f init coll) f [A :i64] -> A, A = init's type; (reduce f coll): f a defn with clauses of arities 0
+                     and 2 (E2136 otherwise): the first item seeds the fold, an empty coll answers (f)"]
+  [:c HD-LIST 138 "(list e ..) -> [:list T] (T the first item's type; (list) is [:list :i64]); at most 64 items"]
+  [:c HD-AMP 139 "& -- only in a parameter vector of a defn clause: [p .. & rest] (rest a bare name: [:list :i64], E2111 otherwise);
+                  the call packs the surplus arguments into a list. A variadic defn cannot be a value or an export"]
+  [:c HD-CALLK 140 "(no spelling) NF-RES of (f a ..) where f is a known function slot: CALL of the lifted function with the
+                    arguments, then the captured slots"]
+  [:c HD-CALLV 141 "(no spelling) NF-RES of (g a ..) where g is a fn-typed local or ((..) a ..) where the head is a fn-typed
+                    expression: invoke"]
+  ;; -- R4B (2026-10-03): bytes values (ABI v11: a bytes value is a vector handle of items 0..255; seed/SIR :a64 :r4b)
+  [:c HD-BYTES-EMPTY 142 "(bytes-empty) -> x ; RT RT-VECTOR-NEW-EMPTY"]
+  [:c HD-BYTES-COUNT 143 "(bytes-count x) -> i ; RT RT-VECTOR-COUNT (inline)"]
+  [:c HD-BYTES-AT 144 "(bytes-at x i) -> i 0..255, traps out of range ; RT RT-VECTOR-AT (inline)"]
+  [:c HD-BYTES-CONCAT 145 "(bytes-concat x y) -> x ; RT RT-BYTES-CONCAT"]
+  [:c HD-BYTES-SLICE 146 "(bytes-slice x start end) -> x, traps when not 0 <= start <= end <= count ; RT RT-BYTES-SLICE"]
+  [:c HD-STRING-FROM-UTF8 147 "(string-from-utf8 x) -> s, traps on non-canonical UTF-8 ; RT RT-STRING-FROM-UTF8"]
+  ;; -- R5B (2026-10-03, agent R5B): effects (docs/selfhost-seed-r5-design-20261002.md section 5). Local state is elaborated in
+  ;;    21-check into frame slots (no SIR change); the state ability uses the SIR ops RES2/RET2 (seed/SIR :r5b-lowering).
+  [:c HD-ATOM 148 "(atom e) -- only as the init of a let binding (E2141): the binder is a CELL of e's type in a frame slot; the
+                   cell may be spelled only as the first argument of swap!/reset!/deref in the binding function (E2140)"]
+  [:c HD-SWAP 149 "(swap! a f x ..) = (reset! a (f (deref a) x ..)) (21-check desugars it); value = the new content"]
+  [:c HD-RESET 150 "(reset! a v) v of the cell's type (E2144) -> the new content ; [v -> t] LSET slot(a) t"]
+  [:c HD-DEREF 151 "(deref a) / @a -> the cell's content ; LGET t slot(a)"]
+  [:c HD-PERFORM 152 "(perform :state/get) -> S ; (perform :state/put v) v:S -> S ; (perform :clock/now x) x:i64 -> i64 (a capability
+                      call: RT RT-CAP-CALL with the wire, stage-0's lowering)"]
+  [:c HD-HANDLE 153 "(handle body (with h init)) -> body's type: installs handler h (a defhandler of the module) with state init in a
+                     hidden slot; (handle body (catch e x)) = try (desugared)"]
+  [:c HD-WITH 154 "with -- only as (with h init), the last child of handle"]
+  [:c HD-RESUME 155 "(resume v n) -- only in tail position of a defhandler clause; v and n of the handler's state type S; bottom"]
+  [:c HD-DEFHANDLER 156 "(defhandler NAME DOC? [:state S] (get [s] body) (put [s v] body)) top level: two clause functions"]
+  [:c HD-SCALL 157 "(no spelling) NF-RES of (g a ..) where g is a STATEFUL defn called under a handler: CALL of the specialization of g
+                    for that handler (head symbol NF-RES = RES-FN spec, NF-TYPE = the state slot)"]
+  ;; -- R6B (2026-10-03, agent R6B): the source library (21-check ck-r6b-lib) needs one internal head
+  [:c HD-R6-AS 158 "(__r6-as T x) -> x retyped as T (no code: the value is unchanged). Internal to the R6B source library
+                     (documents are strings, keywords are their FNV-1a hash); a program that spells it gets the same check"]
+  [:c HD-R6-TODOC 159 "(__r6-todoc x) -> :document: x of type :i64 :string :keyword :bool by document-i64/-string/-keyword/-bool, a
+                        :document as itself (E2104 otherwise). Written by the desugaring of an ex-info map literal's values (the
+                        reference's library head ex-info, lang/guest-grammar.edn :library-heads :ex-info :map-literal-data)"]
+  [:c HD-R6-DOCKEY 160 "(__r6-dockey x) -> :document: a :keyword by document-keyword, a :document as itself (E2104 otherwise): the
+                         key operand of document-get/-contains/-assoc/-dissoc and the keys of document-map (the reference's
+                         keyword map keys)"]
+  [:c HD-R6-TOSTR 161 "(__r6-tostr x) -> :string: a :string as itself, :i64 by string-from-i64 (E2104 otherwise:
+                        stage-0 refuses a :keyword or :bool item of str): the items of (str ..), which 21-check desugars to string-concat"]
+  [:c HD-R6-IS 162 "(__r6-is T x) -> x, which must have type T exactly (E2104 otherwise); no code. Written by the desugaring of
+                     (record-assoc SCHEMA r :f v) -> (assoc (__r6-is SCHEMA r) :f v) (the reference's record-assoc)"]
+  [:c HD-COUNT 162 "number of heads"]]
+
+ ;; Head spellings, index = head code (20-names compares a symbol's bytes against these at intern time).
+ ;; R1 spellings 43.. : "do" "when" "when-not" "if-not" "case" "condp" "->" "->>" "as->" "cond->" "cond->>" "dotimes"
+ ;; "doseq" "range" "inc" "dec" "zero?" "pos?" "neg?" "not=" "assert" "true" "false" "vector-count" "record-new" "record"
+ ;; "record-get" "defrecord" "get"; 72 73 74 have none; 75 "assoc". (map->Name {..}) and (->Name ..) are recognised by
+ ;; spelling at desugaring time (the record name after the prefix); a map literal is read (ND-MAP, key/value children)
+ ;; and admitted ONLY as the argument of map->Name (exactly the record's keyword fields), E1105 anywhere else (scripts/seed/gen-names-tables.py generates 20-names' tables).
+ :spellings ["" "ns" ":export" "defn" "defn-" "def" "let" "loop" "recur" "if" "and" "or" "not" "=" "<" ">" "<="
+             ">=" "+" "-" "*" "quot" "bit-and" "bit-or" "bit-xor" "bit-not" "u64-shift-right" "i64-shift-left"
+             "i64-shift-right" "vector-at" "vector-conj" "vector-assoc" "vector-assoc!" "vector-alloc"
+             "string-code-point-at" "string-length" "[" "(call)" "typed-cap-call" "bytes-from-vector-i64"
+             "string-concat" "cond" "vector-i64-from-bytes"]
+ ;; R3 spellings 76..128: "option-some-of" "option-none-of" "option-some?-of" "option-value-of" "option-match" "option-or"
+ ;; "result-ok-of" "result-err-of" "result-ok?-of" "result-value-of" "result-error-of" "result-match-of" "throw" "try" "catch"
+ ;; "typed-list-new" "typed-list-nth" "typed-list-conj" "typed-set-new" "typed-set-count" "typed-set-contains" "typed-set-conj"
+ ;; "typed-set-disj" "typed-set-equal" "typed-set-nth" "typed-map-new" "typed-map-count" "typed-map-contains" "typed-map-get"
+ ;; "typed-map-assoc" "typed-map-dissoc" "typed-map-equal" "typed-map-keys" "typed-map-vals" "string=?" "string-substring"
+ ;; "string-from-i64" "string-compare" "string-index-of" "string-byte-length" "pair" "pair-first" "pair-second" "count" "nth"
+ ;; "contains?" "conj" "disj" "dissoc" "keys" "vals" "peek" "pop"; 129 130 have none. R4 spellings 131..139: "fn" "fn-ref" "invoke"
+ ;; "apply" "map" "filter" "reduce" "list" "&"; 140 141 have none. R4B spellings 142..147: "bytes-empty" "bytes-count" "bytes-at"
+ ;; "bytes-concat" "bytes-slice" "string-from-utf8". R5B spellings 148..156: "atom" "swap!" "reset!" "deref" (and "@", the token of the
+ ;; reader's @x) "perform" "handle" "with" "resume" "defhandler"; 157 has none. Like R1's, an R3 head is shadowed by a
+ ;; definition of the same name.
+ ;; Codes 2 (keyword), 36 and 37 have no symbol spelling: SF-HEAD is never 2, 36 or 37.
+ ;; `main`, `true`, `false`, `nil` are NOT heads. `main` is an ordinary defn name.
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 7. Capability shapes (typed-cap-call). Kind = the loader's KEXE_TYPED_* code of the request/result pair.
+ ;; ---------------------------------------------------------------------------------------------------------
+ :caps
+ [[:c CK-STRING 1 "KEXE_TYPED_STRING: :string -> :string"] [:c CK-BYTES 8 "KEXE_TYPED_BYTES_V1: :bytes -> :bytes"]
+  [:c CK-STRING-BYTES 9 "R4B: KEXE_TYPED_STRING_BYTES_V1: :string -> :bytes (wire 35)"]
+  [:c WIRE-FS-APP-DATA 35] [:c WIRE-IO-WRITE 37] [:c WIRE-CLI-ARGS 38] [:c WIRE-IO-WRITE-ERROR 39]
+  [:c WIRE-HASH-SHA256 3] [:c WIRE-ENV-READ 33] [:c WIRE-FS-BROWSE 34] [:c WIRE-IO-READ 41]
+  [:c WIRE-PROCESS-SPAWN 20] [:c WIRE-ENTROPY-DRAW 23]]
+ :cap-shapes
+ [{:form "(typed-cap-call :fs/app-data :string :string path)" :wire 35 :kind 1
+   :means "read the whole file at absolute path (inside KEXE_CAP_RESOURCES_35); also the \"<path>WRITE_SEP<text>\" write"}
+  {:form "(typed-cap-call :fs/app-data-bytes :bytes :bytes x)" :wire 35 :kind 8
+   :means "x = bytes of \"<path>WRITE_SEP<content>\": write raw bytes; x = bytes of \"<path>\": read the whole file as bytes.
+           The keyword is :fs/app-data-bytes (the spelling stage-0 accepts; :fs/app-data with :bytes kinds is refused,
+           E2115). The rebuilt stage-0 (sha d2cb84f6) admits a computed :bytes argument (T3 closed 2026-10-02)"}
+  {:form "(typed-cap-call :cli/args :string :string \"\")" :wire 38 :kind 1 :means "argc as decimal text"}
+  {:form "(typed-cap-call :cli/args :string :string \"i\")" :wire 38 :kind 1 :means "argument i (0-based), \"\" past the end"}
+  {:form "(typed-cap-call :io/write-error :string :string s)" :wire 39 :kind 1 :means "write s to fd 2; answers the byte count as text"}
+  {:form "(typed-cap-call :io/write :string :string s)" :wire 37 :kind 1
+   :means "write s to fd 1. ADDED to the design's 3 wires: extract-native must print its {:ok true ..} line on stdout
+           for the qualification runner, and unit tests print on stdout"}
+  ;; -- R4B (2026-10-03, wires measured on stage-0 and the C loader's providers) --
+  {:form "(typed-cap-call :hash/sha256 :string :string s)" :wire 3 :kind 1 :means "the SHA-256 of s's bytes as 64 hex characters"}
+  {:form "(typed-cap-call :env/read :string :string name)" :wire 33 :kind 1 :means "the environment variable's value, \"\" when unset"}
+  {:form "(typed-cap-call :fs/browse :string :string dir)" :wire 34 :kind 1
+   :means "the sorted NAME<TAB>D lines of the directory (inside KEXE_CAP_RESOURCES_34)"}
+  {:form "(typed-cap-call :io/read :string :string n)" :wire 41 :kind 1 :means "\"\" -> stdin to EOF; a decimal n -> at most n unread bytes"}
+  {:form "(typed-cap-call :fs/app-data :string :bytes path) or :fs/app-data-bytes" :wire 35 :kind 9
+   :means "read the whole file at path as bytes (KEXE_TYPED_STRING_BYTES_V1)"}]
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 8. Errors. Code E<mm><nn> = the integer mm*100+nn, mm = the MANIFEST module number. The driver prints
+ ;;      seed: E<code> <path>:<pos>: <text>
+ ;;    (":<pos>" omitted when MM-ERR-POS < 0) on fd 2 and exits 1. In <text>, {name} = S[MM-ERR-A..MM-ERR-B),
+ ;;    {n} = MM-ERR-N in decimal, {t} = the type name of type code MM-ERR-N (i64 bool string vector-i64 bytes).
+ ;;    The texts are GOLDEN: G3 compares them byte for byte. Add codes, never renumber or reword.
+ ;; ---------------------------------------------------------------------------------------------------------
+ :errors
+ [[:c E-USAGE 1 "usage: seed check <file> | seed compile <file> --target aarch64-macos --output <out> | seed extract-native <kseed> --symbol <name> --output <raw>"]
+  [:c E-TARGET 2 "unsupported target (only aarch64-macos)"]
+  [:c E-READ 3 "cannot read input file"]
+  [:c E-WRITE 4 "cannot write output file"]
+  [:c E-NOSYM 5 "symbol is not exported by the container"]
+  [:c E-HEAP-REGION 101 "compiler table full: region {n}"]
+  [:c E-HEAP-FULL 102 "compiler heap exhausted"]
+  [:c E-IO-READ 201 "read failed"]
+  [:c E-IO-WRITE 202 "write failed"]
+  [:c E-LEX-STRING 1001 "unterminated string literal"]
+  [:c E-LEX-ASCII 1002 "non-ASCII byte {n} (R0 accepts ASCII source only)"]
+  [:c E-LEX-ESCAPE 1003 "unsupported string escape '{name}'"]
+  [:c E-LEX-INT 1004 "integer literal out of range '{name}'"]
+  [:c E-LEX-SYNTAX 1005 "unsupported reader syntax '{name}'"]
+  [:c E-LEX-RC 1006 "malformed reader conditional '{name}'"]
+  [:c E-READ-CLOSE 1101 "unexpected '{name}'"]
+  [:c E-READ-EOF 1102 "unclosed '{name}' at end of file"]
+  [:c E-READ-MISMATCH 1103 "mismatched bracket '{name}'"]
+  [:c E-READ-MAP 1105 "maps are not supported"]
+  [:c E-KIR-DOC 1201 "not a KIR program (one {:format :kotoba.kir/v3|v4 ..} map or a kexe/v1): '{name}'"]
+  [:c E-KIR-FIELD 1202 "unsupported KIR field '{name}'"]
+  [:c E-KIR-VALUE 1203 "unsupported KIR value of '{name}'"]
+  [:c E-KIR-HELPER 1204 "KIR loop helper is not called exactly once with its arity: '{name}'"]
+  [:c E-NAMES-DUP 2001 "duplicate definition '{name}'"]
+  [:c E-NAMES-TOP 2003 "unsupported top-level form '{name}'"]
+  [:c E-NAMES-NS 2004 "the file must start with (ns NAME (:export [...]))"]
+  [:c E-NAMES-EXPORT 2005 "export of undefined function '{name}'"]
+  [:c E-CHECK-HEAD 2101 "unknown or unsupported form '{name}'"]
+  [:c E-CHECK-SYM 2102 "unknown symbol '{name}'"]
+  [:c E-CHECK-ARITY 2103 "wrong number of arguments to '{name}': expected {n}"]
+  [:c E-CHECK-TYPE 2104 "type mismatch in '{name}': expected {t}"]
+  [:c E-CHECK-TYPENAME 2105 "unsupported type '{name}'"]
+  [:c E-CHECK-RECUR-TAIL 2106 "recur is not in tail position"]
+  [:c E-CHECK-RECUR-ARITY 2107 "recur expects {n} arguments"]
+  [:c E-CHECK-PARAMS 2108 "more than 5 parameters in '{name}'"]
+  [:c E-CHECK-ELSE 2109 "cond needs a final :else clause"]
+  [:c E-CHECK-IF 2110 "if needs exactly a test, a then and an else"]
+  [:c E-CHECK-BINDINGS 2111 "malformed binding vector in '{name}'"]
+  [:c E-CHECK-DUPLOCAL 2112 "duplicate local '{name}'"]
+  [:c E-CHECK-KEYWORD 2114 "keyword '{name}' is not a value"]
+  [:c E-CHECK-CAP 2115 "unsupported capability call '{name}'"]
+  [:c E-CHECK-VECLIT 2116 "vector literal items must be i64 (at most 64)"]
+  [:c E-CHECK-BODY 2118 "'{name}' takes exactly one body expression"]
+  [:c E-CHECK-SIGNATURE 2119 "malformed signature of '{name}'"]
+  [:c E-CHECK-SLOTS 2120 "too many locals in one function ({n})"]
+  [:c E-CHECK-RESULT 2121 "result of '{name}' does not match its declared type {t}"]
+  [:c E-CHECK-EQ 2123 "= compares only i64 or bool values"]
+  [:c E-CHECK-DEF 2124 "def value must be an integer, string, keyword or vector literal: '{name}'"]
+  [:c E-CHECK-CASE-DUP 2125 "case constants must be unique: '{name}'"]
+  [:c E-CHECK-INFER 2126 "cannot infer the result type of '{name}' here: declare it"]
+  [:c E-CHECK-FIELD 2127 "unknown record field '{name}'"]
+  [:c E-CHECK-SCHEMA 2128 "malformed or conflicting record schema '{name}'"]
+  ;; -- R3 --
+  [:c E-CHECK-ABORT-TYPES 2129 "two different error types meet at '{name}'"]
+  [:c E-CHECK-ABORT-EXPORT 2130 "unhandled abort at export boundary; catch it with try: {name}"]
+  [:c E-CHECK-ABORT-NONE 2131 "try body cannot abort; there is nothing to catch"]
+  [:c E-CHECK-TRY 2132 "malformed try or catch '{name}'"]
+  [:c E-CHECK-ABORT-INFER 2133 "cannot infer the error type here: '{name}'"]
+  ;; -- R4 --
+  [:c E-CHECK-FNVALUE 2134 "function value not admitted: '{name}'"]
+  [:c E-CHECK-FN-ABORT 2135 "abort inside a fn literal is not admitted: '{name}'"]
+  [:c E-CHECK-CLAUSE 2136 "no clause of '{name}' takes {n} arguments"]
+  [:c E-CHECK-CAPTURES 2137 "too many parameters and captures in a fn literal ({n}, at most 5)"]
+  [:c E-CHECK-MULTI-EXPORT 2138 "a multi-arity or variadic function cannot be exported: '{name}'"]
+  [:c E-CHECK-FN-PARAM 2139 "a fn literal parameter takes its type from the context, not from an annotation: '{name}'"]
+  ;; -- R4B (E2140-E2177 are reserved for R5) --
+  [:c E-CHECK-PARAMS16 2178 "more than 16 parameters in '{name}'"]
+  [:c E-CHECK-REF 2179 "type references an undeclared record schema '{name}'"]
+  ;; -- R5B (agent R5B, 2026-10-03): effects. Texts = the reference's (lang/local-state.edn :refusals, lang/state-ability.edn
+  ;;    :refusals, the capability texts of stage-0) where it has one, so the pinned negatives compare with =. Placeholders beyond
+  ;;    {name} {n} {t} (90-drv drv-r5b-text, a template filled at print time): {op} = get/put (MM-ERR-N bits 48..49), {ty1} / {ty2} =
+  ;;    the type name without ':' of N bits 0..23 / 24..47, {kw2} = the same with ':', {fx} = the effect set of N bits 0..47
+  ;;    (bit w = capability wire w, bit 47 = :state), {node} = the token text of node N bits 0..23, {want} = [state] / [state value]
+  ;;    by {op}, {req} {allow} {miss} = grant sets #{[:cap/call :x] ..} of N, MM-ERR-A and N without A.
+  [:c E-ATOM-ESCAPE 2140 "atom `{name}` escapes its let scope (atom slice 1 admits swap!/reset!/deref in straight-line code of the binding function only)"]
+  [:c E-ATOM-POSITION 2141 "atom must be the init expression of a let binding (atom slice 1 admits swap!/reset!/deref in straight-line code of the binding function only)"]
+  [:c E-ATOM-DEREF 2142 "deref expects a let-bound atom cell as its first argument; got `{name}` (atom slice 1)"]
+  [:c E-ATOM-INSIDE 2143 "swap!/reset! is not admitted inside `{name}` (atom slice 1 admits them in let, do, if, when, cond and case only)"]
+  [:c E-ATOM-TYPE 2144 "atom `{name}` is {ty1}; this rebinding is {ty2} (atom slice 1 requires one type per cell)"]
+  [:c E-ATOM-SHADOW 2147 "atom `{name}` shadows an atom of the same name (atom slice 1 admits swap!/reset!/deref in straight-line code of the binding function only)"]
+  [:c E-ATOM-SWAP 2148 "swap! expects a let-bound atom cell as its first argument; got `{name}` (atom slice 1)"]
+  [:c E-ATOM-RESET 2149 "reset! expects a let-bound atom cell as its first argument; got `{name}` (atom slice 1)"]
+  [:c E-STATE-EXPORT 2150 "unhandled ability :state at export boundary; handle it with (handle body (with handler init)): {name}"]
+  [:c E-STATE-RESUME-TYPE 2151 "handler {name} resumes state/{op} with {ty1}, but state/{op} returns {ty2} in a [:state {kw2}] handler"]
+  [:c E-STATE-NEXT-TYPE 2152 "handler {name} resumes state/{op} with next state {ty1}, but the handler's state is {ty2} in a [:state {kw2}] handler"]
+  [:c E-STATE-IMPURE 2153 "handler {name} is not pure: its {op} clause performs {fx}; a handler for the pure ability :state must be pure"]
+  [:c E-STATE-CEILING 2154 "inferred effects exceed declared effect ceiling for {name}: {fx}"]
+  [:c E-STATE-RESUME 2155 "handler {name} clause {op} must end every branch in exactly one (resume value state) in tail position"]
+  [:c E-STATE-FN 2156 "state slice 1 does not admit perform :state/{op} inside a fn literal"]
+  [:c E-STATE-THROW 2157 "state slice 1 does not admit throw or try inside a stateful function or a handle body: {name}"]
+  [:c E-STATE-NOHANDLER 2158 "handle names no handler: {name}"]
+  [:c E-STATE-OPS 2159 "handler {name} does not match the :state ability: it must define exactly get and put, once each"]
+  [:c E-STATE-PARAMS 2160 "handler {node} does not match the :state ability: its {op} clause takes {want}, got {name}"]
+  [:c E-STATE-VALUE 2161 "stateful function {name} cannot be used as a value in state slice 1; call it under a handler"]
+  [:c E-STATE-ABORTS 2162 "state slice 1 does not admit a stateful function that aborts: {name}"]
+  [:c E-STATE-ABORT-CALL 2163 "state slice 1 does not admit a call to an aborting function inside a handle body: {name}"]
+  [:c E-STATE-HANDLE 2164 "handle installs one handler with one initial state: (handle body (with handler init))"]
+  [:c E-STATE-GET-ARITY 2165 "perform :state/get takes no value; got {n}"]
+  [:c E-STATE-PUT-ARITY 2166 "perform :state/put takes exactly one value; got {n}"]
+  [:c E-STATE-UNKNOWN-OP 2167 "named operation {name} is not a registered capability"]
+  [:c E-STATE-RESUME-WHERE 2168 "resume is admitted only in tail position of a defhandler clause"]
+  [:c E-STATE-FN-CALL 2169 "state slice 1 does not admit a call of the stateful function {name} inside a fn literal"]
+  [:c E-POLICY-FILE 2170 "malformed capability policy file (expected an :allow set of [:cap/call wire] items)"]
+  [:c E-STATE-PARAMS4 2171 "stateful function {name} takes more than 4 parameters (the state is passed first, at most 5 in all)"]
+  [:c E-CAP-UNDECLARED 2176 "cap-call uses a capability not declared in namespace :capabilities: {fx}"]
+  [:c E-CAP-POLICY 2177 "capability policy denies required effects; missing grants {miss} (required {req}, allowed {allow})"]
+  [:c E-LOWER-FULL 3001 "SIR table full"]
+  [:c E-LOWER-NODE 3003 "internal: cannot lower node kind {n}"]
+  [:c E-ENC-IMM 4001 "immediate out of range: {n}"]
+  [:c E-GEN-FULL 4101 "code buffer full"]
+  [:c E-GEN-OP 4102 "internal: unsupported SIR op {n}"]
+  [:c E-GEN-FRAME 4103 "frame too large ({n} slots)"]
+  [:c E-LAYOUT-RANGE 4201 "branch out of range ({n} words)"]
+  [:c E-LAYOUT-FIXUP 4202 "internal: bad fixup {n}"]
+  [:c E-LAYOUT-TARGET 4203 "branch target undefined ({n})"]
+  [:c E-LAYOUT-EXPORTS 4204 "export table full"]
+  [:c E-LAYOUT-SIZE 4205 "code and pool exceed 32-bit offsets"]
+  [:c E-OUT-FULL 5001 "output buffer full"]
+  [:c E-OUT-NOSYM 5002 "symbol '{name}' not exported by the container"]
+  [:c E-OUT-FORMAT 5003 "malformed kseed container"]
+  ;; -- R5A (agent R5A, 60-proj: modules and linking, docs/selfhost-seed-r5-design-20261002.md 2.1-2.3; texts = the reference's
+  ;;    project.cljk / project_files.cljk texts where it has one; {name} = a span of the module source named by the error) --
+  [:c E-PROJ-CYCLE 6001 "cyclic module dependency rejected"]
+  [:c E-PROJ-MISSING 6002 "required module {name} is missing from the explicit source paths"]
+  [:c E-PROJ-DUP-ALIAS 6003 "duplicate import alias"]
+  [:c E-PROJ-NOT-EXPORT 6004 "qualified call is not an admitted exported import: {name}"]
+  [:c E-PROJ-NS 6005 "project module requires exactly one namespace"]
+  [:c E-PROJ-USE 6006 "namespace clause {name} is not admitted: an unqualified ambient namespace is outside the language; the admitted clauses are :export, :capabilities, :schemas, :params and :require"]
+  [:c E-PROJ-CLAUSE 6007 "namespace clause {name} is not admitted: the admitted clauses are :export, :capabilities, :schemas, :params and :require"]
+  [:c E-PROJ-MISMATCH 6008 "resolved path namespace does not match requirement"]
+  [:c E-PROJ-NOTHING 6009 "project module {name} exports nothing: every top-level defn is private; declare one with defn, or add an explicit :export vector"]
+  [:c E-PROJ-UNKNOWN-OP 6010 "named operation {name} is not a registered capability"]
+  [:c E-PROJ-DEPTH 6011 "project dependency depth exceeds limit"]
+  [:c E-PROJ-MODULES 6012 "project module count exceeds limit"]
+  [:c E-PROJ-EDGES 6013 "project dependency edge count exceeds limit"]
+  [:c E-PROJ-BYTES 6014 "project source bytes exceed limit"]
+  [:c E-PROJ-UNPINNED 6015 "a multi-module compile needs pinned inputs"]
+  [:c E-PROJ-EXPORT-FN 6016 "export does not name a declared function: {name}"]
+  [:c E-PROJ-IFACE 6017 "the interface of {name} uses a type the seed does not carry across modules (records, keywords, functions, variadic clauses)"]
+  [:c E-PROJ-SPEC 6018 "malformed require spec '{name}'"]
+  [:c E-PROJ-REFER 6019 "referred name is defined locally or referred twice: {name}"]
+  [:c E-PROJ-IMAGE 6020 "linked image exceeds the link buffer"]
+  [:c E-PROJ-NSFORM 6021 "malformed namespace form '{name}'"]
+  [:c E-PROJ-DUP-NS 6022 "duplicate required namespace {name}"]
+  [:c E-PROJ-TEMPLATE 6023 "namespace templates are not admitted in R5: {name}"]
+  [:c E-PROJ-AMBIGUOUS 6024 "namespace resolves from multiple explicit source paths: {name}"]
+  [:c E-PROJ-NOOBJ 6025 "required module {name} has no object in the object directory"]
+  [:c E-PROJ-OBJ 6026 "malformed or mismatched module object {name}"]]}
