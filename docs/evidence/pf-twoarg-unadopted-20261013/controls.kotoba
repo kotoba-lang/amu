@@ -1,0 +1,10 @@
+(ns pf-two-controls (:export [run]))
+(defn- bump [x :i64] :i64 (+ x 1))
+(defn- sum-loop [v :vector-i64 n :i64] :i64
+ (loop [i 0 total 0]
+  (if (< i n)
+   (let [x (bump (vector-at v (bit-and i 1)))]
+    (recur (inc i) (+ total (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ x i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i)))) total)))
+(defn run [n :i64] :i64
+ (let [v (-> (vector-alloc 2) (vector-assoc! 0 3) (vector-assoc! 1 5))]
+  (sum-loop v n)))
