@@ -41,11 +41,21 @@ def main():
   for name,m in source_members.items():
    (art/(name+'.kotoba')).write_bytes(t.extractfile(m).read());expected[name]=hashlib.sha256(t.extractfile(original19+name+'.bin').read()).hexdigest()
  if a.main:
-  baseline=json.loads((ROOT/'seed/main-pre-policy-native19.json').read_text())
-  assert baseline['producerNativeSHA256']==json.loads((ROOT/'seed/adoption-20261012.json').read_text())['previousMainSafetySnapshot']['nativeImageSHA256']
+  receipt=json.loads((ROOT/'seed/adoption-20261012.json').read_text())
+  if 'policyNativeGoldenPath' in receipt:
+   golden=(ROOT/receipt['policyNativeGoldenPath']).resolve();golden_archive=(ROOT/receipt['policyNativeGoldenArchivePath']).resolve()
+   assert golden.is_relative_to(ROOT.resolve()) and golden_archive.is_relative_to(ROOT.resolve())
+   assert sha(golden)==receipt['policyNativeGoldenSHA256'] and sha(golden_archive)==receipt['policyNativeGoldenArchiveSHA256']
+   baseline=json.loads(golden.read_text())
+   assert baseline['producerNativeSHA256']==receipt['nativeImageSHA256']
+   assert baseline['sourceUnitySHA256']==receipt['sourceUnitySHA256']==hashlib.sha256(unity).hexdigest()
+  else:
+   baseline=json.loads((ROOT/'seed/main-pre-policy-native19.json').read_text())
+   assert baseline['producerNativeSHA256']==receipt['previousMainSafetySnapshot']['nativeImageSHA256']
+   golden_archive=ROOT/'docs/evidence/native-selfhost-paused-20261012/main-pre-policy-native19.tgz'
   assert {row['workload'] for row in baseline['images']}==set(expected)
   expected={row['workload']:row['nativeSHA256'] for row in baseline['images']}
-  with tarfile.open(ROOT/'docs/evidence/native-selfhost-paused-20261012/main-pre-policy-native19.tgz') as old:
+  with tarfile.open(golden_archive) as old:
    for name,digest in expected.items():assert hashlib.sha256(old.extractfile(name+'.bin').read()).hexdigest()==digest
   for row in baseline['images']:assert sha(art/(row['workload']+'.kotoba'))==row['sourceSHA256']
  producer=bootstrap;gens=[]
@@ -85,6 +95,6 @@ def main():
   run(prefix+['compile',art/(name+'.kotoba'),'--target','aarch64-macos','--output',container],name+'-compile')
   run(prefix+['extract-native',container,'--symbol',symbols[name],'--output',image],name+'-extract');assert sha(image)==oldsha,name+' payload changed'
   images.append({'workload':name,'sha256':sha(image),'baselineImageExact':True})
- report={'status':'PASS_MAIN_AND_PRESERVED_POLICY_SAFETY' if a.main else 'PASS_PRESERVED_SOURCE_SAFETY_REINTEGRATION','sourceUnitySHA256':hashlib.sha256(unity).hexdigest(),'generations':gens,'explicitPolicyRefusals':len(policies)*4+6,'policyFreeResult':42,'original19Images':images,'trustedLoaderSHA256':loader_pin,'performanceMeasurement':False,'goalStatus':'paused','mainDefaultCompilerChanged':a.main,'publicLoaderChanged':False}
+ report={'status':'PASS_MAIN_AND_PRESERVED_POLICY_SAFETY' if a.main else 'PASS_PRESERVED_SOURCE_SAFETY_REINTEGRATION','sourceUnitySHA256':hashlib.sha256(unity).hexdigest(),'generations':gens,'explicitPolicyRefusals':len(policies)*4+6,'policyFreeResult':42,'original19Images':images,'trustedLoaderSHA256':loader_pin,'performanceMeasurement':False,'goalStatus':receipt.get('performanceGoalStatus','unspecified') if a.main else 'paused','mainDefaultCompilerChanged':a.main,'publicLoaderChanged':False}
  (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))
 if __name__=='__main__':main()
