@@ -54,33 +54,44 @@ def main():
         raise SystemExit('--output is required; use a new dedicated workspace')
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
-    source = out / 'seed-unity.kotoba'
+    host = out / 'host'
+    artifacts = out / 'artifacts'
+    host.mkdir()
+    artifacts.mkdir()
+    source = artifacts / 'seed-unity.kotoba'
     source.write_bytes(unity)
     calls = []
     def run(argv, name, env):
         row = {'name': name, 'argv': [str(x) for x in argv]}
-        with (out / (name + '.stdout')).open('wb') as stdout, \
-             (out / (name + '.stderr')).open('wb') as stderr:
-            result = subprocess.run(row['argv'], cwd=out, env=env,
+        loader_before = digest(loader) if loader.exists() else None
+        producer_before = digest(producer)
+        source_before = digest(source)
+        with (host / (name + '.stdout')).open('wb') as stdout, \
+             (host / (name + '.stderr')).open('wb') as stderr:
+            result = subprocess.run(row['argv'], cwd=artifacts, env=env,
                                     stdout=stdout, stderr=stderr, timeout=1800)
+        if digest(producer) != producer_before or digest(source) != source_before:
+            raise SystemExit('compiler input changed during native invocation')
+        if loader_before is not None and digest(loader) != loader_before:
+            raise SystemExit('host loader changed during native invocation')
         row['exit'] = result.returncode
         calls.append(row)
-        (out / 'calls.json').write_text(json.dumps(calls, indent=2) + '\n')
+        (host / 'calls.json').write_text(json.dumps(calls, indent=2) + '\n')
         if result.returncode != 0:
             raise SystemExit('failed ' + name + '; raw logs preserved')
     env = dict(os.environ)
-    env.update(KEXE_COMMAND='1', KEXE_CAP_RESOURCES_35=str(ROOT)+':'+str(out),
+    env.update(KEXE_COMMAND='1', KEXE_CAP_RESOURCES_35=str(artifacts),
                KEXE_FUEL='off', KEXE_VECTORS='4194304',
                KEXE_VECTOR_ITEMS='134217728', KEXE_STRING_POOL='268435456',
                KEXE_PAIRS='16777216', KEXE_CPU_SECONDS='1800',
-               KEXE_WALL_SECONDS='1800', TMPDIR=str(out))
-    loader = out / 'kexe-loader'
+               KEXE_WALL_SECONDS='1800', TMPDIR=str(artifacts))
+    loader = host / 'kexe-loader'
     run(['clang', '-std=c11', '-O2', loader_source, '-o', loader], 'loader-build', env)
     images = []
     for generation in range(1, args.generations + 1):
         prefix = [loader, producer, '0', '0', 'aarch64', '35,37,38,39', '--']
-        container = out / ('G'+str(generation)+'.kseed')
-        native = out / ('G'+str(generation)+'.bin')
+        container = artifacts / ('G'+str(generation)+'.kseed')
+        native = artifacts / ('G'+str(generation)+'.bin')
         run(prefix + ['compile', source, '--target', 'aarch64-macos', '--output', container],
             'G'+str(generation)+'-compile', env)
         run(prefix + ['extract-native', container, '--symbol', 'main', '--output', native],

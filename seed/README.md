@@ -1,14 +1,16 @@
 # Adopted native seed compiler — 12 October 2026
 
-This directory contains the complete 16-module source of the locally adopted
-compiler at `fc49cb2ee6fea1a41a5abbc8ed5b52aaa9f19471`. It includes the cumulative qualified AArch64 optimizations; it
+This directory contains the complete 16-module source based on the adopted
+compiler at `fc49cb2ee6fea1a41a5abbc8ed5b52aaa9f19471`, with an integration
+safety fix: explicit `--policy` is refused with E2170 until structured policy
+checking is qualified. No optimization module is changed. It includes the cumulative qualified AArch64 optimizations; it
 excludes the pending descriptor witness, conditional-fallthrough vector view,
 and bounded byte lookup candidates. It does not change `bin/amu`, publish a
 release, or qualify the whole Amu component as Q9.
 
 `MANIFEST` fixes the unity order. Concatenating each module followed by one
 newline gives SHA-256
-`4461c66ca686dcb57f7cbb1b8e605b50ff7d7574b72f0e71d61d751540da07ba`.
+`3871578dbc64cb6ce29f8f3e461a90ddaf2e613a60d359cf21b0657f8a4ba3f5`.
 `adoption-20261012.json` records all source pins, artifact provenance, the
 correctness scope and measurement boundaries. `HEADS`, `MEMORY-MAP`, and `SIR`
 are the corresponding compiler contracts, copied without changes.
@@ -35,14 +37,15 @@ python3 scripts/seed/build-adopted.py \
   --output /Users/junkawasaki/github/workspaces/codex/seed-adopted-selfbuild-new
 ```
 
-The script refuses existing outputs, preserves each call's original logs,
+The script refuses existing outputs, places its host loader/logs outside the guest-writable artifacts directory,
+refuses input or loader changes during an invocation, preserves original logs,
 checks every generated native image against the adopted fixed-point digest,
 and leaves compiler fuel disabled only for these self-build invocations.
 This is correctness verification, not performance timing.
 
 ## Evidence and pause
 
-The adopted source passed 39 native-image reviews, 483 paired original
+The original adopted source passed 39 native-image reviews, 483 paired original
 comparisons (95 profile, 76 low-fuel, 312 interaction), 68 fresh generic pairs,
 and 32 bootstrap success pairs. Historical validation is tied to the exact
 source and artifact hashes; it is not silently relabeled a new main run.

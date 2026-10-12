@@ -945,10 +945,8 @@
   (let [k (drv-pj-flag 1 (io-argc) "--policy")]
     (if (< k 0)
       -1
-      (let [allow (if (= (io-exists (io-arg k)) 1) (drv-r5b-allow (drv-read (io-arg k))) -1)]
-        (cond (< allow 0) (drv-say E-POLICY-FILE (drv-r5b-text E-POLICY-FILE) -1)
-              (= (bit-and req (bit-not allow)) 0) -1
-              :else (drv-fail (-> M (vector-assoc! MM-ERR E-CAP-POLICY) (vector-assoc! MM-ERR-POS -1) (vector-assoc! MM-ERR-A allow)
-                                  (vector-assoc! MM-ERR-B 0) (vector-assoc! MM-ERR-N req))
-                              path))))))
+      ;; Integration safety: the legacy text scanner cannot prove an :allow
+      ;; set's structure. Refuse every explicit policy until a structured,
+      ;; qualified parser exists; deny fields and comments never grant access.
+      (drv-say E-POLICY-FILE "structured capability policy checking is not qualified in this seed snapshot" -1))))
 ;; ==== END R5B ==========================================================================================================
