@@ -113,7 +113,8 @@ def main():
     report = {'status': 'PASS_ADOPTED_NATIVE_SELF_BUILD', 'generations': images,
               'sourceUnitySHA256': receipt['sourceUnitySHA256'],
               'CTrustedLoaderBuilt': True, 'JVMNodeOrGraalFallback': False,
-              'performanceMeasurement': False, 'performanceGoalStatus': 'paused'}
+              'performanceMeasurement': False,
+              'performanceGoalStatus': receipt.get('performanceGoalStatus', 'unspecified')}
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report))
 
