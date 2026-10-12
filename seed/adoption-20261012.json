@@ -1,10 +1,10 @@
 {
   "schema": "amu.seed.adoption.v1",
-  "sourceCommit": "fc49cb2ee6fea1a41a5abbc8ed5b52aaa9f19471",
-  "sourceUnitySHA256": "14317fa0e63365b29c372fade7893f99279871e12581dc68df574ac48fbb93b5",
-  "sourceUnityBytes": 1832248,
-  "nativeImageSHA256": "5a0b3c87ad57594ca065d3f56dfc3deb002ac110ac169d1b9b0758d9cf8cdc59",
-  "nativeImageBytes": 1718144,
+  "sourceCommit": "c6eb32b4c9f66a8977ada72edec5ae7fb2eb55dd",
+  "sourceUnitySHA256": "088858d45fa3fa83083f1db8c393f32a19c9a0409fda243de102e8f7026fa964",
+  "sourceUnityBytes": 1843683,
+  "nativeImageSHA256": "09ee805e5f0feef246922026023e75d7d92e4531245466c9827883ff5baf9f62",
+  "nativeImageBytes": 1729376,
   "loaderSourceSHA256": "f44b50995a0e45db4be35244da34dd61538a484c7d5ea2f15f7f5a73d9daa8c3",
   "target": "aarch64-macos",
   "nativeEntryOffset": 0,
@@ -13,7 +13,7 @@
   "loaderIsCTrustedBootstrap": true,
   "mainIntegration": "this snapshot is the reviewed adopted compiler, not unadopted experiment branches",
   "releaseOrDefaultLauncherChange": false,
-  "performanceGoalStatus": "paused",
+  "performanceGoalStatus": "active",
   "performanceGoalAchieved": false,
   "minimumImprovementPercentCutoff": null,
   "qualification": {
@@ -23,7 +23,9 @@
     "lowFuelCases": 76,
     "interactionCases": 312,
     "freshGenericPairs": 68,
-    "bootstrapSuccessPairs": 32
+    "bootstrapSuccessPairs": 32,
+    "boundedLookupGenericPairs": 52,
+    "boundedLookupNativeDomainPairs": 577
   },
   "sourceFiles": [
     {
@@ -78,8 +80,8 @@
     },
     {
       "path": "seed/41-a64gen.kotoba",
-      "bytes": 896087,
-      "sha256": "2591ecf832c117ffcce994119b1108e6aa1bc6e2660b5af622785fdfc2e27e55"
+      "bytes": 907522,
+      "sha256": "959286949c92e056517d0982f1292fc4a452ed58e26883562f4f706fa085db5a"
     },
     {
       "path": "seed/42-layout.kotoba",
@@ -127,18 +129,9 @@
       "sha256": "24c45b8585b10e8b0972b7981afbb0bd90d0e5df5d58fe7089898cf2730945d2"
     }
   ],
-  "measurement": {
-    "round": 83,
-    "workloads": 19,
-    "kotobaTimeDividedByCGeometricMean": 2.936403450579294,
-    "exploratory": true,
-    "certifiedOfficialKotobaScore": false,
-    "publishedReport": "https://kotoba-lang.org/ja/blog/embench-progress-20261012/"
-  },
   "pendingCandidatesExcluded": [
     "descriptor witness reuse",
-    "conditional-fallthrough vector view",
-    "bounded byte lookup"
+    "conditional-fallthrough vector view"
   ],
   "evidenceDigests": [
     {
@@ -171,7 +164,27 @@
     "nativeImageSHA256": "c3b7b6ffb9c39a716791d69e5d2049bb893dbd18eed3432e19c69debc78711cc",
     "mainCommit": "03c72db2a23699ed365ce18bda0f9230764cd60e"
   },
-  "policyCheckQualification": {
+  "loaderFuzzTargetPath": "seed/bootstrap/adopted-parser-fuzz-20261012.c",
+  "loaderFuzzTargetSHA256": "4ef5ea5f2ae5a4db41e8f4528c5317b5a86fe40ba98366aaabea0000f9583387",
+  "trustedLoaderContextVersion": 11,
+  "measurementBeforeLookup": {
+    "round": 83,
+    "workloads": 19,
+    "kotobaTimeDividedByCGeometricMean": 2.936403450579294,
+    "exploratory": true,
+    "certifiedOfficialKotobaScore": false,
+    "publishedReport": "https://kotoba-lang.org/ja/blog/embench-progress-20261012/"
+  },
+  "measurement": {
+    "whole19CComparison": "pending fresh round84; no projected or reused C elapsed values",
+    "microFixedTwoPairsExploratory": {
+      "picojpeg": 0.9791489779557238,
+      "qrduino": 0.9923011307968419
+    },
+    "certifiedOfficialKotobaScore": false,
+    "minimumPercentCutoff": null
+  },
+  "policyCheckQualificationBeforeLookup": {
     "status": "PASS_MAIN_AND_PRESERVED_POLICY_SAFETY",
     "sourceUnitySHA256": "14317fa0e63365b29c372fade7893f99279871e12581dc68df574ac48fbb93b5",
     "generations": [
@@ -299,7 +312,37 @@
     "mainDefaultCompilerChanged": true,
     "publicLoaderChanged": false
   },
-  "loaderFuzzTargetPath": "seed/bootstrap/adopted-parser-fuzz-20261012.c",
-  "loaderFuzzTargetSHA256": "4ef5ea5f2ae5a4db41e8f4528c5317b5a86fe40ba98366aaabea0000f9583387",
-  "trustedLoaderContextVersion": 11
+  "policyCheckQualification": {
+    "status": "PASS_CURRENT_MAIN_LOOKUP_CHECK_COMPILE_GUARDS",
+    "explicitOrBarePolicyRefusals": 8,
+    "policyFreeResult": 42,
+    "sourceUnitySHA256": "088858d45fa3fa83083f1db8c393f32a19c9a0409fda243de102e8f7026fa964",
+    "driverWholeExactToMain": "9acb3f7d1fc9659f4a5e5690b5c611d1b4915855"
+  },
+  "boundedLookupQualification": {
+    "nativeImages": 39,
+    "changedFromPriorImages": [
+      "official-picojpeg",
+      "functional-picojpeg",
+      "official-qrduino",
+      "functional-qrduino"
+    ],
+    "originalCases": 483,
+    "profile": 95,
+    "lowFuel": 76,
+    "interaction": 312,
+    "actualGuestProducerSHA": "c03510f0b55c7d350494f7a265f5efa39dd0450027ad9aa4a57e24e2f66b595e",
+    "currentProducerAll39NativeAndContainersWholeExact": true,
+    "currentProducer": "09ee805e5f0feef246922026023e75d7d92e4531245466c9827883ff5baf9f62",
+    "currentProducerFreshGuestCases": 0,
+    "nativePicoDomainPairs": 577,
+    "distinctGenericPairs": 52,
+    "selfbuildGenerations": 3,
+    "privateTableReadContract": "bounded immutable readable native image data",
+    "mainGuardPreserved": true
+  },
+  "policyNativeGoldenPath": "seed/main-adopted-lookup-native19.json",
+  "policyNativeGoldenSHA256": "02ea225ca39f10c292403a6dbb1a64bbdf43504b879ffd2761c007be000f478b",
+  "policyNativeGoldenArchivePath": "docs/evidence/native-selfhost-paused-20261012/main-adopted-lookup-native19.tgz",
+  "policyNativeGoldenArchiveSHA256": "7c9633f0c768e2d3d828a1df24c04782d793714478cdf3c405051e7b6c354337"
 }

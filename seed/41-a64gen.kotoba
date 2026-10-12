@@ -10535,7 +10535,7 @@
        (recur (gn-put current (+ MM-CODE-BASE target) (enc-mov-r (bit-and (sf-word current target) 31) source))
         (inc i) (inc used))
        (recur current (inc i) used))))) M)))
-(defn- gn-run [M :vector-i64] :vector-i64 (hld-run (ls-run (mp-run (cf-run (of-run (sf-collapse (cpp-run (gn-run-open M 0 0)))))))))
+(defn- blt-old-run [M :vector-i64] :vector-i64 (hld-run (ls-run (mp-run (cf-run (of-run (sf-collapse (cpp-run (gn-run-open M 0 0)))))))))
 
 ;; ADR0357 one-off novel semantic graph/coloring/direct-memory lowering.
 (defn- jdag-fsafe [M :vector-i64 f :i64 n :i64] :bool
@@ -14714,3 +14714,194 @@
    (let [out (loop [cur M j 0] (if (= j (vector-at cur p)) cur
      (recur (cpp-final cur p j) (inc j))))]
     (gn-put out MM-R0 (dec (vector-at out MM-CODE-N)))))))
+
+;; ADR0357: bounded pure scalar byte-result table; native endpoint certificate.
+;; No input names, FN identifiers or native offsets participate in admission.
+(defn- blt-counts [M :vector-i64] :bool
+ (and (>= (vector-count M) MM-WORDS) (= (vector-at M MM-ERR) 0)
+  (> (vector-at M MM-NODE-N) 0) (<= (vector-at M MM-NODE-N) MM-NODE-CAP)
+  (> (vector-at M MM-SIR-N) 1) (<= (vector-at M MM-SIR-N) 20000)
+  (> (vector-at M MM-FN-N) 1) (<= (vector-at M MM-FN-N) 512)
+  (> (vector-at M MM-CODE-N) 1) (<= (vector-at M MM-CODE-N) MM-CODE-CAP)
+  (> (vector-at M MM-FIX-N) 0) (<= (vector-at M MM-FIX-N) MM-FIX-CAP)
+  (> (vector-at M MM-LABEL-N) 0) (<= (vector-at M MM-LABEL-N) MM-LABEL-CAP)))
+(defn- blt-end [M :vector-i64 f :i64 p :i64 left :i64] :i64
+ (if (or (<= p 0) (>= p (vector-at M MM-SIR-N)) (<= left 0)) 0
+  (cond (aw-ins M p OP-END f 0 0) p
+   (= (gn-op M p) OP-FN) 0
+   :else (blt-end M f (inc p) (dec left)))))
+;; Source LABEL ownership is independent of the last function's gn-lpos cache.
+(defn- blt-label [M :vector-i64 l :i64 p :i64 end :i64 at :i64] :bool
+ (if (or (<= l 0) (>= l (vector-at M MM-LABEL-N))) false
+  (loop [j 1 seen 0]
+   (if (= j (vector-at M MM-SIR-N)) (= seen 1)
+    (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B)]
+     (if (or (and (= op OP-LABEL) (= a l) (not= j at))
+          (and (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ))
+           (= (if (= op OP-BR) a b) l) (or (< j p) (>= j end)))) false
+      (recur (inc j) (+ seen (if (and (= op OP-LABEL) (= a l)) 1 0)))))))))
+(defn- blt-tree [M :vector-i64 p :i64 end :i64 first :i64 depth :i64] :i64
+ (if (or (<= p 0) (>= p end) (> depth 12)) 0
+  (if (and (aw-ins M p OP-CONST 0 (gn-sir M p IF-B) 0)
+       (>= (gn-sir M p IF-B) 0) (<= (gn-sir M p IF-B) 255)) (inc p)
+   (if (>= (+ p 4) end) 0
+    (let [k (gn-sir M (inc p) IF-B) le (gn-sir M (+ p 3) IF-B)]
+     (if (and (aw-ins M p OP-LGET 0 1 0) (aw-ins M (inc p) OP-CONST 1 k 0)
+          (>= k 0) (<= k 1023)
+          (or (aw-ins M (+ p 2) OP-CMP CC-LT 0 0) (aw-ins M (+ p 2) OP-CMP CC-EQ 0 0))
+          (aw-ins M (+ p 3) OP-BRZ 0 le 0))
+      (let [a (blt-tree M (+ p 4) end first (inc depth))]
+       (if (or (<= a 0) (>= (inc a) end)) 0
+        (let [lx (gn-sir M a IF-A)]
+         (if (and (aw-ins M a OP-BR lx 0 0) (aw-ins M (inc a) OP-LABEL le 0 0)
+              (blt-label M le first end (inc a)))
+          (let [b (blt-tree M (+ a 2) end first (inc depth))]
+           (if (and (> b 0) (< b end) (aw-ins M b OP-LABEL lx 0 0)
+                (blt-label M lx first end b)) (inc b) 0)) 0)))) 0))))))
+(defn- blt-source [M :vector-i64 f :i64] :i64
+ (let [p (gn-fnf M f FF-SIR) node (gn-fnf M f FF-NODE)]
+  (if (or (<= p 0) (>= (+ p 3) (vector-at M MM-SIR-N))) 0
+   (if (and (> node 0) (< node (vector-at M MM-NODE-N)) (= (nm-kind M node) ND-LIST)
+        (or (= (gn-fnf M f FF-KIND) FK-PRIV) (= (gn-fnf M f FF-KIND) FK-DEFN))
+        (= (gn-fnf M f FF-EXPORT) 0) (= (gn-fnf M f FF-NPARAMS) 1)
+        (= (gn-fnf M f FF-NSLOTS) 1) (= (gn-fnf M f FF-DEPTH) 2)
+        (= (gn-fnf M f FF-PT0) TY-I64) (= (gn-fnf M f FF-RTYPE) TY-I64)
+        (= (gn-fnf M f FF-FUEL) 0) (aw-ins M p OP-FN f 1 1))
+    (let [end (blt-end M f (inc p) 8192) l (gn-sir M (inc p) IF-A)]
+     (if (and (> end (+ p 3)) (aw-ins M (inc p) OP-LABEL l 0 0)
+          (blt-label M l p end (inc p))
+          (= (blt-tree M (+ p 2) end p 0) (dec end))
+          (aw-ins M (dec end) OP-RET 0 0 0)) end 0)) 0))))
+(defn- blt-high [M :vector-i64 p :i64 end :i64] :i64
+ (loop [j p high 0]
+  (if (= j end) high
+   (recur (inc j) (if (and (= (gn-op M j) OP-CONST) (= (gn-sir M j IF-A) 1))
+    (gn-max high (gn-sir M j IF-B)) high)))))
+(defn- blt-hi [M :vector-i64 f :i64 lo :i64 limit :i64] :i64
+ (loop [j 1 hi limit]
+  (if (= j (vector-at M MM-FN-N)) hi
+   (let [a (gn-fnf M j FF-CODE)]
+    (recur (inc j) (if (and (> a lo) (< a hi)) a hi))))))
+(defn- blt-word [M :vector-i64 at :i64] :i64 (vector-at M (+ MM-CODE-BASE at)))
+(defn- blt-cmp [w :i64] :bool (= (bit-and w 0xffc003ff) 0xf100001f))
+(defn- blt-bc [w :i64] :bool (= (bit-and w 0xff000010) 0x54000000))
+(defn- blt-b [w :i64] :bool (= (bit-and w 0xfc000000) 0x14000000))
+(defn- blt-cond [c :i64 x :i64 k :i64] :bool
+ (cond (= c 0) (= x k) (= c 1) (not= x k) (= c 10) (>= x k) (= c 11) (< x k) :else false))
+(defn- blt-cc [c :i64] :bool (or (= c 0) (= c 1) (= c 10) (= c 11)))
+;; A typed fixup map; every in-body fix must be an owned forward branch.
+(defn- blt-fixes [M :vector-i64 J :vector-i64 lo :i64 hi :i64] :bool
+ (loop [j 1]
+  (if (= j (vector-at M MM-FIX-N)) true
+   (let [b (+ MM-FIX-BASE (* j MM-FIX-W)) at (vector-at M (+ b XF-AT))
+     kind (vector-at M (+ b XF-KIND)) t (vector-at M (+ b XF-TARGET)) aux (vector-at M (+ b XF-AUX))]
+    (if (or (<= at 0) (>= at (vector-at M MM-CODE-N))) false
+     (if (or (= kind FX-B26) (= kind FX-BC19) (= kind FX-CB19) (= kind FX-ADRL19))
+      (if (or (<= t 0) (>= t (vector-at M MM-LABEL-N))) false
+       (let [dest (vector-at M (+ MM-LABEL-BASE t)) inside (and (>= at lo) (< at hi))]
+        (if (or (and (not inside) (> dest lo) (< dest hi))
+             (and inside (or (= at lo) (not= aux 0) (not (or (= kind FX-B26) (= kind FX-BC19)))
+              (<= dest at) (>= dest (dec hi)) (not= (vector-at J (- at lo)) 0)
+              (not (if (= kind FX-B26) (blt-b (blt-word M at)) (blt-bc (blt-word M at))))))) false
+         (do (if inside (vector-assoc! J (- at lo) dest) J) (recur (inc j))))))
+      (if (and (>= at lo) (< at hi)) false
+       (if (or (= kind FX-BL26) (= kind FX-ADR19) (= kind FX-FADDR))
+        (if (or (<= t 0) (>= t (vector-at M MM-FN-N))) false
+         (let [dest (gn-fnf M t FF-CODE)]
+          (if (and (> dest lo) (< dest hi)) false (recur (inc j)))))
+        (recur (inc j))))))))))
+(defn- blt-target [M :vector-i64 J :vector-i64 lo :i64 at :i64] :i64
+ (let [t (vector-at J (- at lo)) w (blt-word M at)]
+  (if (> t 0) t
+   (if (blt-b w) (+ at (i64-shift-right (i64-shift-left (bit-and w 0x3ffffff) 38) 38))
+    (+ at (i64-shift-right (i64-shift-left (bit-and (i64-shift-right w 5) 0x7ffff) 45) 45))))))
+;; Exact closed register effects: x0 stays input until the MOV/RET pair; x9
+;; is the only temporary. No memory, calls, frame, charges or other registers.
+(defn- blt-code [M :vector-i64 J :vector-i64 lo :i64 hi :i64 high :i64] :bool
+ (and (blt-cmp (blt-word M lo)) (= (blt-word M (dec hi)) 0xd4200020)
+  (loop [j lo]
+   (if (= j (dec hi)) true
+    (let [w (blt-word M j)]
+     (if (cond (blt-cmp w) (<= (bit-and (i64-shift-right w 10) 4095) high)
+          (or (blt-b w) (blt-bc w))
+           (and (or (blt-b w) (blt-cc (bit-and w 15)))
+            (> (blt-target M J lo j) j) (< (blt-target M J lo j) (dec hi))
+            (not= (blt-word M (blt-target M J lo j)) 0xd65f03c0))
+          (= w 0xaa1f03e9) true
+          (= (bit-and w 0xffe0001f) 0xd2800009) (<= (bit-and (i64-shift-right w 5) 65535) 255)
+          (= (bit-and w 0xffff0fff) 0x9a9f07e9) (blt-cc (bit-and (i64-shift-right w 12) 15))
+          (= w 0xaa0903e0) (and (< (inc j) (dec hi)) (= (blt-word M (inc j)) 0xd65f03c0))
+          (= w 0xd65f03c0) (and (> j lo) (= (blt-word M (dec j)) 0xaa0903e0))
+          :else false) (recur (inc j)) false))))))
+;; Reject raw postpass incoming branches into the old body's interior.
+;; Unresolved typed branches have zero displacement and are checked above.
+(defn- blt-incoming [M :vector-i64 lo :i64 hi :i64 limit :i64] :bool
+ (loop [j 1]
+  (if (= j limit) true
+   (let [w (blt-word M j) t (of-dest w j)]
+    (if (and (or (< j lo) (>= j hi))
+         (or (and (> t lo) (< t hi)) (not (of-external-address w j (inc lo) hi)))) false (recur (inc j)))))))
+;; Packed result: byte|tag<<8|last-threshold<<10|dynamic-word-count<<20.
+(defn- blt-eval [M :vector-i64 J :vector-i64 lo :i64 hi :i64 x :i64] :i64
+ (loop [pc lo k -1 v -1 steps 0]
+  (if (or (< pc lo) (>= pc (dec hi)) (>= steps 4096)) -1
+   (let [w (blt-word M pc) n (inc steps)]
+    (cond (blt-cmp w) (recur (inc pc) (bit-and (i64-shift-right w 10) 4095) v n)
+     (or (blt-b w) (blt-bc w))
+      (if (< k 0) -1
+       (recur (if (or (blt-b w) (blt-cond (bit-and w 15) x k)) (blt-target M J lo pc) (inc pc)) k v n))
+     (= w 0xaa1f03e9) (recur (inc pc) k 0 n)
+     (= (bit-and w 0xffe0001f) 0xd2800009) (recur (inc pc) k (bit-and (i64-shift-right w 5) 65535) n)
+     (= (bit-and w 0xffff0fff) 0x9a9f07e9)
+      (if (< k 0) -1 (recur (inc pc) k (if (blt-cond (bit-and (i64-shift-right w 12) 15) x k) 0 1) n))
+     (= w 0xaa0903e0) (recur (inc pc) k v n)
+     (= w 0xd65f03c0)
+      (if (and (>= k 0) (>= v 0) (<= v 255))
+       (+ v (i64-shift-left (if (< x k) 0 (if (= x k) 1 2)) 8) (i64-shift-left k 10) (i64-shift-left n 20)) -1)
+     :else -1)))))
+(defn- blt-table [M :vector-i64 J :vector-i64 T :vector-i64 lo :i64 hi :i64 high :i64] :bool
+ (loop [x 0]
+  (if (> x high) true
+   (let [v (blt-eval M J lo hi x)]
+    (if (or (< v 0) (<= (i64-shift-right v 20) 12)) false
+     (do (vector-assoc! T x (bit-and v 1023)) (recur (inc x))))))))
+(defn- blt-data [M :vector-i64 T :vector-i64 x :i64] :vector-i64
+ (if (= x (vector-count T)) M (blt-data (-> M (gn-emit (vector-at T x)) (gn-emit 0)) T (inc x))))
+(defn- blt-apply [M :vector-i64 T :vector-i64 lo :i64 high :i64 low :i64 upper :i64] :vector-i64
+ (let [start (vector-at M MM-CODE-N)
+   M1 (-> M (gn-emit (enc-cmp-i 0 0)) (gn-emit (enc-bcond 11 10))
+    (gn-emit (enc-cmp-i 0 high)) (gn-emit (enc-bcond 12 12))
+    (gn-emit (gn-e-adr 9)) (gn-emit (gn-e-ldrr 9 9 0 1))
+    (gn-emit (gn-e-lsr 0 9 8)) (gn-emit (enc-cmp-i 0 1))
+    (gn-emit (gn-e-bf 0xd3400000 9 9 0 7)) (gn-mov 0 9) (gn-emit (enc-ret))
+    (gn-emit (enc-cmp-i 0 (bit-and (i64-shift-right low 10) 1023)))
+    (gn-mov-imm 9 (bit-and low 255)) (gn-mov 0 9) (gn-emit (enc-ret))
+    (gn-emit (enc-cmp-i 0 (bit-and (i64-shift-right upper 10) 1023)))
+    (gn-mov-imm 9 (bit-and upper 255)) (gn-mov 0 9) (gn-emit (enc-ret)))
+   M2 (if (= (bit-and (dec (vector-at M1 MM-CODE-N)) 1) 0) M1 (gn-emit M1 0xd503201f))
+   table (vector-at M2 MM-CODE-N) delta (* (- table (+ start 4)) 4)
+   M3 (blt-data M2 T 0)]
+  (-> M3 (gn-put (+ MM-CODE-BASE (+ start 4))
+    (+ (gn-e-adr 9) (i64-shift-left (bit-and delta 3) 29) (i64-shift-left (i64-shift-right delta 2) 5)))
+   (gn-put (+ MM-CODE-BASE lo) (enc-b (- start lo))))))
+(defn- blt-one [M :vector-i64 f :i64 limit :i64] :vector-i64
+ (let [end (blt-source M f)]
+  (if (= end 0) M
+   (let [p (gn-fnf M f FF-SIR) high (blt-high M p end) lo (gn-fnf M f FF-CODE)
+     hi (blt-hi M f lo limit)]
+    (if (or (< high 64) (> high 1023) (<= lo 0) (>= lo hi) (> hi limit)
+         (> (- hi lo) 4096) (<= (- hi lo) (+ (* 2 (inc high)) 20))
+         (> (vector-at M MM-CODE-N) (- MM-CODE-CAP (+ (* 2 (inc high)) 20)))) M
+     (let [J (vector-alloc (- hi lo)) T (vector-alloc (inc high))]
+      (if (and (blt-fixes M J lo hi) (blt-code M J lo hi high) (blt-incoming M lo hi limit))
+       (let [low (blt-eval M J lo hi -9223372036854775808) upper (blt-eval M J lo hi 9223372036854775807)]
+        (if (and (>= low 0) (>= upper 0) (> (i64-shift-right low 20) 7)
+             (> (i64-shift-right upper 20) 9) (blt-table M J T lo hi high))
+         (blt-apply M T lo high low upper) M)) M)))))))
+(defn- blt-run [M :vector-i64] :vector-i64
+ (if (not (blt-counts M)) M
+  (let [limit (vector-at M MM-CODE-N)]
+   (loop [f 1 out M]
+    (if (= f (vector-at M MM-FN-N)) out (recur (inc f) (blt-one out f limit)))))))
+
+(defn- gn-run [M :vector-i64] :vector-i64 (blt-run (blt-old-run M)))
