@@ -385,7 +385,7 @@
   (let [w (io-out "ok\n")] 0))
 (defn- drv-c4 [M :vector-i64 S :string path :string mode :i64 out :string] :i64
   (cond (> (vector-at M MM-ERR) 0) (drv-fail M path)
-        (= mode 0) (drv-ok M)
+        (= mode 0) (let [g (drv-r5b-gate M path (vector-at M MM-CAPS))] (if (< g 0) (drv-ok M) g))
         :else (drv-c5 (lw-run M) S path out)))
 (defn- drv-c3 [M :vector-i64 S :string path :string mode :i64 out :string] :i64 (drv-c3h M S path mode out (ck-hint-new)))
 ;; R6C: a check that asks for a parameter refinement (21-check ck-hint-*) re-runs from the read with it
@@ -439,7 +439,7 @@
   (let [S (string-concat (drv-read (pj-p L P (pj-mf L 0 pj-mf-path))) (pj-trailer L P 0))
         M1 (if (= mode 0) M (out-image M S L pj-img-base (vector-at L pj-k-img)))]
     (cond (> (vector-at M1 MM-ERR) 0) (drv-fail0 (vector-at M1 MM-ERR))
-          (= mode 0) (drv-ok M1)
+          (= mode 0) (let [g (drv-r5b-gate M1 (pj-p L P (pj-mf L 0 pj-mf-path)) (vector-at L pj-k-caps))] (if (< g 0) (drv-ok M1) g))
           ;; R5B: --policy against the capabilities of every module of the project
           :else (let [g (drv-r5b-gate M1 (pj-p L P (pj-mf L 0 pj-mf-path)) (vector-at L pj-k-caps))] (if (< g 0) (drv-emit2 M1 out) g)))))
 

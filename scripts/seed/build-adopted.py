@@ -15,21 +15,29 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def inputs():
-    receipt = json.loads((ROOT / 'seed/adoption-20261012.json').read_text())
+def owned_path(name):
+    path = (ROOT / name).resolve()
+    if not path.is_relative_to(ROOT.resolve()) or not path.is_file():
+        raise SystemExit('input must be a repository-owned file: ' + str(name))
+    return path
+
+
+def inputs(receipt_path):
+    receipt_path = owned_path(receipt_path)
+    receipt = json.loads(receipt_path.read_text())
     for row in receipt['sourceFiles']:
-        path = ROOT / row['path']
+        path = owned_path(row['path'])
         if path.stat().st_size != row['bytes'] or digest(path) != row['sha256']:
             raise SystemExit('source pin mismatch: ' + row['path'])
-    paths = [line.strip() for line in (ROOT / 'seed/MANIFEST').read_text().splitlines()
+    paths = [line.strip() for line in owned_path(receipt.get('manifestPath', 'seed/MANIFEST')).read_text().splitlines()
              if line.strip() and not line.startswith('#')]
     if len(paths) != 16:
         raise SystemExit('expected the reviewed 16-module source closure')
-    unity = b''.join((ROOT / path).read_bytes() + b'\n' for path in paths)
+    unity = b''.join(owned_path(path).read_bytes() + b'\n' for path in paths)
     if hashlib.sha256(unity).hexdigest() != receipt['sourceUnitySHA256']:
         raise SystemExit('unity pin mismatch')
-    producer = ROOT / 'seed/bootstrap/adopted-20261012.bin'
-    loader_source = ROOT / 'seed/bootstrap/adopted-loader-20261012.c'
+    producer = owned_path(receipt.get('bootstrapPath', 'seed/bootstrap/adopted-20261012.bin'))
+    loader_source = owned_path(receipt.get('loaderPath', 'seed/bootstrap/adopted-loader-20261012.c'))
     if digest(producer) != receipt['nativeImageSHA256']:
         raise SystemExit('native producer pin mismatch')
     if digest(loader_source) != receipt['loaderSourceSHA256']:
@@ -40,10 +48,11 @@ def inputs():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--verify-only', action='store_true')
+    parser.add_argument('--receipt', type=Path, default=ROOT / 'seed/adoption-20261012.json')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--generations', type=int, choices=[1, 2, 3], default=3)
     args = parser.parse_args()
-    receipt, unity, producer, loader_source = inputs()
+    receipt, unity, producer, loader_source = inputs(args.receipt.resolve())
     if args.verify_only:
         print(json.dumps({'status': 'PASS_ADOPTED_SOURCE_AND_BOOTSTRAP_PINS',
                           'sourceUnitySHA256': receipt['sourceUnitySHA256']}))
