@@ -8,6 +8,13 @@ assert checkpoint['goal_status']=='paused' and not checkpoint['goal_achieved']
 archive=root/checkpoint['evidence_archive']['path']
 assert archive.stat().st_size==checkpoint['evidence_archive']['bytes']
 assert hashlib.sha256(archive.read_bytes()).hexdigest()==checkpoint['evidence_archive']['sha256']
+reintegration=json.loads((root/'reintegration.json').read_text())
+raw=root/'reintegration-raw.tgz'
+assert raw.stat().st_size==reintegration['rawArchiveBytes']
+assert hashlib.sha256(raw.read_bytes()).hexdigest()==reintegration['rawArchiveSHA256']
+old_images=root/'main-pre-policy-native19.tgz'
+assert old_images.stat().st_size==reintegration['mainBaselineArchiveBytes']
+assert hashlib.sha256(old_images.read_bytes()).hexdigest()==reintegration['mainBaselineArchiveSHA256']
 inventory=json.loads((root/'inventory.json').read_text())
 with tarfile.open(archive,'r:gz') as t:
  members=t.getmembers(); assert len(members)==len(inventory)

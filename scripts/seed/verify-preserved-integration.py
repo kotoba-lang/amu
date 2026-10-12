@@ -2,6 +2,8 @@
 """Correctness-only integration of frozen source; no timing/search or host-language compiler."""
 import argparse,hashlib,json,os,pathlib,platform,re,subprocess,tarfile
 ROOT=pathlib.Path(__file__).resolve().parents[2]
+def require_smoke_42(stdout,stderr):
+ assert stdout==b'42\n' and stderr==b'', 'smoke result must be exactly 42, no diagnostics'
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 def main():
  ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--output',type=pathlib.Path,required=True);ap.add_argument('--main',action='store_true');a=ap.parse_args()
@@ -39,10 +41,13 @@ def main():
   for name,m in source_members.items():
    (art/(name+'.kotoba')).write_bytes(t.extractfile(m).read());expected[name]=hashlib.sha256(t.extractfile(original19+name+'.bin').read()).hexdigest()
  if a.main:
-  base_prefix=[loader,bootstrap,'0','0','aarch64','35,37,38,39','--']
-  for name in expected:
-   run(base_prefix+['compile',art/(name+'.kotoba'),'--target','aarch64-macos','--output',art/(name+'-base.kseed')],name+'-baseline-compile')
-   run(base_prefix+['extract-native',art/(name+'-base.kseed'),'--symbol',symbols[name],'--output',art/(name+'-base.bin')],name+'-baseline-extract');expected[name]=sha(art/(name+'-base.bin'))
+  baseline=json.loads((ROOT/'seed/main-pre-policy-native19.json').read_text())
+  assert baseline['producerNativeSHA256']==json.loads((ROOT/'seed/adoption-20261012.json').read_text())['previousMainSafetySnapshot']['nativeImageSHA256']
+  assert {row['workload'] for row in baseline['images']}==set(expected)
+  expected={row['workload']:row['nativeSHA256'] for row in baseline['images']}
+  with tarfile.open(ROOT/'docs/evidence/native-selfhost-paused-20261012/main-pre-policy-native19.tgz') as old:
+   for name,digest in expected.items():assert hashlib.sha256(old.extractfile(name+'.bin').read()).hexdigest()==digest
+  for row in baseline['images']:assert sha(art/(row['workload']+'.kotoba'))==row['sourceSHA256']
  producer=bootstrap;gens=[]
  for n in range(1,4):
   container=art/f'G{n}.kseed';image=art/f'G{n}.bin';prefix=[loader,producer,'0','0','aarch64','35,37,38,39','--']
@@ -73,7 +78,7 @@ def main():
    logs=run(argv+['--policy'],tag,expect=1);assert b'E2170' in logs and not target.exists()
  run(prefix+['compile',smoke,'--target','aarch64-macos','--output',art/'smoke.kseed'],'policy-free-compile')
  run(prefix+['extract-native',art/'smoke.kseed','--symbol','main','--output',art/'smoke.bin'],'policy-free-extract')
- logs=run([loader,art/'smoke.bin','0','0','aarch64','0'],'policy-free-run');assert b'42' in logs
+ run([loader,art/'smoke.bin','0','0','aarch64','0'],'policy-free-run');require_smoke_42((host/'policy-free-run.stdout').read_bytes(),(host/'policy-free-run.stderr').read_bytes())
  images=[]
  for name,oldsha in expected.items():
   container=art/(name+'-new.kseed');image=art/(name+'-new.bin')

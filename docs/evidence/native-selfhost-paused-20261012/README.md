@@ -73,3 +73,5 @@ source-bound coverageは追加CIで検証する。
 公開loaderと凍結trusted bootstrap loaderを別々のSHAに結び付け、同じ既存coverage floorを下げずにLinux x64/arm64で検査する。値なし`--policy`の4経路も拒否ケースに含む。
 
 Trusted bootstrap loaderはABI v11に対応する凍結fuzz targetを使い、公開loaderは現行ABI v12 targetを使う。両方のsource pin、全reach counter、既存Linux coverage floorを検査する。初回のv12 targetによる未到達はharnessの不整合で、失敗ログを残して適合targetで再検証した。
+
+mainの19本の比較基準は、修正前main `03c72db2a` のbootstrap `c3b7b6ff...`で最初に生成した独立成果物を`main-pre-policy-native19.tgz`と`seed/main-pre-policy-native19.json`へ凍結した。候補compilerから基準を生成し直さない。結果42はstdout全体と空stderrを厳密照合し、証跡の新旧archiveサイズ・SHAも保管検証する。
