@@ -56,9 +56,8 @@ and formula. Kotoba execution time / C execution time has geometric mean
 exploratory, not a certified official Kotoba score. It is not a released-CLI
 performance result, and there is no minimum-percent adoption cutoff.
 
-The C-or-faster optimization goal is **active and unmet**, with a user-specified
-remaining-credit floor of 40,000. Pending candidates and their evidence remain
-in separate preserved worktrees.
+The C-or-faster optimization goal is **active and unmet**. Pending candidates
+and their evidence remain in separate preserved worktrees.
 
 `bounded-lookup-integration-20261012.json` records the adopted generic pass.
 It admits only proven private, uncharged, pure byte-result threshold trees;
