@@ -83,3 +83,11 @@ Public report: <https://kotoba-lang.org/ja/blog/embench-progress-20261012/>
 The historical preservation branch is separately re-integrated under `preserved-20261012/`; see its README for the safety-fixed source and receipt. Current main optimization modules and public CLI/loader are retained.
 
 Explicit `--policy` without a following value is also refused with E2170, never interpreted as policy-free.
+
+## Certified scalar-call descriptor reuse (2026-10-13)
+
+The current source snapshot at `7a17458fc` preserves a checked vector descriptor across complete typed scalar-call certificates. Two successful certificates arm reuse, each vector read restarts the count, and writes to the tracked slot invalidate it. All original index checks and traps remain. Admission uses source types and emitted instruction effects; workload names do not select the optimization.
+
+The candidate has a native three-generation fixed point, 39 freshly generated images, the original 483 exact result/fuel/state observations, and 54 generic paired controls. The two picojpeg images match the prior measured candidate byte for byte; the other 37 images match the previous main snapshot. Fixed four-slot exploratory picojpeg timing was about 1.89% shorter. This is not a fresh total C comparison or a certified official Embench score. The overall C-level-or-better goal remains active and unmet. Small validated improvements have no minimum percentage cutoff.
+
+`docs/evidence/certified-scalar-calls-20261013/` preserves the previous lookup receipt and bootstrap alongside the current qualification records. The previous lookup golden corpus and paused historical evidence remain available. Current integration must pass native self-build, policy safety, existing bounded-lookup controls, and CI before merge.

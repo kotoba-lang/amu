@@ -930,7 +930,18 @@
 ;; the dynamic validated-key path; later same-local straight-line read omits it.
 ;; Labels/branches/calls/unknown effects reset; coalesced local writes reset too.
 (defn- gn-vdrop [M :vector-i64 s :i64] :vector-i64
- (if (and (> s 0) (or (= s (gn-g M gn-f-vslot)) (and (= s 1) (= (gn-g M gn-f-vslot) -1)))) (gn-gs M gn-f-vslot 0) M))
+ (let [raw (gn-g M gn-f-vslot)
+       real (if (= (gn-g M gn-f-vmode) -1)
+        (cond (and (< raw -1) (> raw (- -1 gn-cap))) (- -1 raw)
+              (and (< raw (- -1 gn-cap)) (> raw (- -1 (* 2 gn-cap)))) (- (- -1 gn-cap) raw)
+              :else 0) 0)
+       valid (and (> real 0) (< real gn-cap) (<= real (gn-g M gn-f-ns))
+        (> (gn-g M gn-f-ns) 0) (< (gn-g M gn-f-ns) gn-cap))]
+  (if (and (> s 0)
+       (or (and (< raw -1) (or (not valid) (= s real)))
+           (= s raw) (and (= s 1) (= raw -1))))
+   (gn-gs M gn-f-vslot 0) M)))
+
 (defn- gn-vstep [M :vector-i64 op :i64 a :i64] :vector-i64
  (cond (or (= op OP-CONST) (= op OP-LGET)) M
        (and (= op OP-BIN) (< a BOP-F64-ADD)) M
@@ -1007,6 +1018,12 @@
 
 (defn- ve-read [M :vector-i64 rv :i64 ri :i64 d :i64 slot :i64 k :i64] :vector-i64
  (let [active (and (or (= (gn-g M gn-f-vmode) 1) (= (gn-g M gn-f-vmode) -1)) (= (gn-g M gn-f-leaf) 0) (> slot 0))
+       bypass (and active (= (gn-g M gn-f-vmode) -1)
+        (< slot gn-cap) (<= slot (gn-g M gn-f-ns))
+        (= (gn-g M gn-f-vslot) (- (- -1 gn-cap) slot))
+        (> (gn-g M gn-f-ns) 0) (< (gn-g M gn-f-ns) gn-cap)
+        (>= rv 19) (<= rv 28) (= (gn-sreg M slot) rv))
+       start (vector-at M MM-CODE-N)
        hit (and active (= slot (gn-g M gn-f-vslot)))
        m1 (if hit
         (-> M (ocb-check ri slot k) (gn-emit (gn-e-ldrr d 4 ri 1)))
@@ -1019,7 +1036,28 @@
           (gn-emit (enc-cmp-r ri 3)) (gn-emit (enc-bcond (enc-cond-lo) 2))
           (gn-emit (gn-e-udf)) (gn-emit (gn-e-ldrr d 4 ri 1)))
          (gn-vread M rv ri d)))]
-  (ocb-record (gn-gs m1 gn-f-vslot (if active slot 0)) slot k ri d)))
+  (let [m2 (if (and bypass (= (vector-at m1 MM-ERR) 0)
+   (>= start 0) (<= (+ start 15) MM-CODE-CAP)
+   (= (vector-at m1 MM-CODE-N) (+ start 15))
+   (loop [j 0] (or (= j 15)
+    (and (= (vector-at m1 (+ MM-CODE-BASE start j)) (cond (= j 0) (enc-ldr 16 7 312)
+(= j 1) (enc-ldr 16 16 0)
+(= j 2) (enc-sub-i 17 rv 1)
+(= j 3) (enc-cmp-r 17 16)
+(= j 4) (enc-bcond (enc-cond-lo) 2)
+(= j 5) (gn-e-udf)
+(= j 6) (enc-ldr 16 7 320)
+(= j 7) (gn-e-addsl 16 16 17 4)
+(= j 8) (enc-ldp 17 3 16 0)
+(= j 9) (enc-ldr 4 7 328)
+(= j 10) (gn-e-addsl 4 4 17 3)
+(= j 11) (enc-cmp-r ri 3)
+(= j 12) (enc-bcond (enc-cond-lo) 2)
+(= j 13) (gn-e-udf)
+:else (gn-e-ldrr d 4 ri 1)))
+     (recur (inc j))))))
+  (vector-assoc! m1 (+ MM-CODE-BASE start) (enc-b 11)) m1)]
+ (ocb-record (gn-gs m2 gn-f-vslot (if active slot 0)) slot k ri d))))
 
 (defn- gn-vpair [M :vector-i64 slot :i64 d :i64] :vector-i64
  (if (= (gn-g M gn-f-vmode) -1) (ve-read M 0 1 d slot -1)
@@ -5258,8 +5296,113 @@
                   (jt-return M i (gn-sir M i IF-B))) M (gn-gs M gn-f-vslot 0)))
         (= op OP-RT) (if (or (= a RT-VECTOR-AT) (= a RT-VECTOR-ASSOC-IN-PLACE)) M (gn-gs M gn-f-vslot 0))
         :else (gn-gs M gn-f-vslot 0))))
-(defn- gn-ins [M :vector-i64 i :i64 op :i64] :vector-i64
+;; Compile-time descriptor availability across a source-owned scalar call.
+;; No runtime check or state. Every emitted effect must certify preservation.
+(defn- dve-type [M :vector-i64 f :i64 n :i64] :bool
+ (and (> f 0) (< f MM-FN-CAP) (<= (vector-at M MM-FN-N) MM-FN-CAP) (< f (vector-at M MM-FN-N)) (>= n 0) (<= n 3)
+      (= (gn-fnf M f FF-NPARAMS) n) (= (gn-fnf M f FF-RTYPE) TY-I64)
+      (loop [k 0] (or (= k n) (and (= (gn-fnf M f (+ FF-PT0 k)) TY-I64) (recur (inc k)))))))
+(defn- dve-quiet [w :i64 r :i64] :bool
+ (let [d (bit-and w 31)]
+  (and (>= w 0) (<= w 4294967295) (not= d 3) (not= d 4) (not= d 7) (not= d r)
+   (or (and (not= d 31)
+        (or (= (bit-and w 0xffe0ffe0) 0xaa0003e0)
+            (= (bit-and w 0xffc00000) 0xd2800000) (= (bit-and w 0xffc00000) 0xf2800000)
+            (= (bit-and w 0xff000000) 0x91000000) (= (bit-and w 0xff000000) 0xd1000000) (= (bit-and w 0xffc00000) 0xf1000000)
+            (= (bit-and w 0xff200000) 0x8b000000) (= (bit-and w 0xff200000) 0xcb000000)
+            (= (bit-and w 0xff200000) 0x8a000000) (= (bit-and w 0xff200000) 0xaa000000)
+            (= (bit-and w 0xff200000) 0xca000000)
+            (= (bit-and w 0xffc00000) 0xd3400000) (= (bit-and w 0xffc00000) 0x93400000)
+            (= (bit-and w 0xffe0fc00) 0x9b007c00)
+            (= (bit-and w 0xffe00c00) 0x9a800000)
+            (= (bit-and w 0xffc00000) 0xf9400000)
+            (= (bit-and w 0xffe00c00) 0xf8600800)
+            (= (bit-and w 0xffe0fc00) 0x9ac00c00)
+            (= (bit-and w 0xffe0fc00) 0x9ac02000)
+            (= (bit-and w 0xffe0fc00) 0x9ac02400)
+            (= (bit-and w 0xffe0fc00) 0x9ac02800)
+            (= (bit-and w 0xffe08000) 0x9b008000)
+            (= (bit-and w 0xffe00000) 0x93c00000)
+            (= (bit-and w 0x9f000000) 0x10000000)))
+       (= (bit-and w 0xffe0fc1f) 0xeb00001f)
+       (= (bit-and w 0xffc0001f) 0xf100001f)))))
+(defn- dve-target [w :i64 at :i64] :i64
+ (cond (= (bit-and w 0xfc000000) 0x14000000)
+        (let [u (bit-and w 0x03ffffff)] (+ at (if (>= u 0x02000000) (- u 0x04000000) u)))
+       (or (= (bit-and w 0xff000010) 0x54000000)
+           (= (bit-and w 0x7e000000) 0x34000000))
+        (let [u (bit-and (i64-shift-right w 5) 0x7ffff)] (+ at (if (>= u 0x40000) (- u 0x80000) u)))
+       (= (bit-and w 0x7e000000) 0x36000000)
+        (let [u (bit-and (i64-shift-right w 5) 0x3fff)] (+ at (if (>= u 0x2000) (- u 0x4000) u)))
+       :else -1))
+(defn- dve-effects [M :vector-i64 at :i64 begin :i64 end :i64 r :i64 left :i64] :bool
+ (cond (= at end) true (or (<= left 0) (> at end)) false
+  :else (let [w (vector-at M (+ MM-CODE-BASE at)) target (dve-target w at)
+              okay (or (dve-quiet w r)
+               (= w (enc-ldr 7 31 0))
+               (= w (enc-str 8 7 CTX-FUEL)) (= w (enc-str 16 7 CTX-FUEL)) (= w (enc-str 31 7 CTX-FUEL))
+               (= w (enc-brk 0)) (= w (enc-brk 1))
+               (and (>= target begin) (<= target end)))]
+   (and okay (dve-effects M (inc at) begin end r (dec left))))))
+(defn- dve-fixes [M :vector-i64 j :i64 n :i64 begin :i64 end :i64 left :i64] :bool
+ (cond (= j n) true (or (<= left 0) (> j n)) false
+  :else (let [b (+ MM-FIX-BASE (* j MM-FIX-W)) at (vector-at M (+ b XF-AT))
+              lit (vector-at M (+ b XF-TARGET))]
+   (and (= (vector-at M (+ b XF-KIND)) FX-LIT32) (= (vector-at M (+ b XF-AUX)) 0)
+        (> lit 0) (< lit (vector-at M MM-LIT-N))
+        (>= at begin) (< (inc at) end)
+        (= (bit-and (vector-at M (+ MM-CODE-BASE at)) 0xffe00000) 0xd2800000)
+        (= (bit-and (vector-at M (+ MM-CODE-BASE at 1)) 0xffe00000) 0xf2a00000)
+        (= (bit-and (vector-at M (+ MM-CODE-BASE at)) 31)
+           (bit-and (vector-at M (+ MM-CODE-BASE at 1)) 31))
+        (dve-fixes M (inc j) n begin end (dec left))))))
+(defn- dve-original-ins [M :vector-i64 i :i64 op :i64] :vector-i64
  (ocb-post (gn-ins-quiet (vi-step (gn-chain-step M i op (gn-sir M i IF-A)) op (gn-sir M i IF-A)) i op) i op))
+(defn- dve-domain [M :vector-i64 i :i64] :bool
+ (if (< (vector-count M) MM-WORDS) false
+  (let [g (vector-at M gn-cell) sn (vector-at M MM-SIR-N)]
+   (and (>= g MM-HEAP-BASE) (<= (vector-at M MM-HEAP-TOP) MM-HEAP-END)
+        (<= g (- (vector-at M MM-HEAP-TOP) (+ gn-a-sreg gn-cap)))
+        (> (vector-at M MM-FN-N) 0) (<= (vector-at M MM-FN-N) MM-FN-CAP)
+        (> sn 0) (<= sn MM-SIR-CAP) (> i 0) (< i sn)))))
+(defn- dve-owner [M :vector-i64 j :i64 left :i64] :i64
+ (cond (or (<= j 0) (<= left 0)) 0
+       (= (gn-op M j) OP-END) 0
+       (= (gn-op M j) OP-FN)
+        (let [f (gn-sir M j IF-A)]
+         (if (and (> f 0) (< f MM-FN-CAP) (< f (vector-at M MM-FN-N))
+                  (= (gn-fnf M f FF-SIR) j)
+                  (= (gn-fnf M f FF-NPARAMS) (gn-sir M j IF-B))
+                  (= (gn-fnf M f FF-NSLOTS) (gn-g M gn-f-ns))
+                  (= (gn-fnf M f FF-DEPTH) (gn-g M gn-f-dp))) f 0))
+       :else (dve-owner M (dec j) (dec left))))
+(defn- dve-ins [M :vector-i64 i :i64 op :i64] :vector-i64
+ (if (not (dve-domain M i)) (dve-original-ins M i op)
+ (let [raw (gn-g M gn-f-vslot)
+       slot (if (= (gn-g M gn-f-vmode) -1)
+        (cond (and (< raw -1) (> raw (- -1 gn-cap))) (- -1 raw)
+              (and (< raw (- -1 gn-cap)) (> raw (- -1 (* 2 gn-cap)))) (- (- -1 gn-cap) raw)
+              :else raw) raw)
+       ns (gn-g M gn-f-ns)
+       r (if (and (> ns 0) (< ns gn-cap) (> slot 0) (<= slot ns) (< slot gn-cap)) (gn-sreg M slot) -1)
+       begin (vector-at M MM-CODE-N) fix (vector-at M MM-FIX-N) labels (vector-at M MM-LABEL-N)
+       eligible (and (= op OP-CALL) (= (gn-g M gn-f-vmode) -1)
+        (= (gn-g M gn-f-leaf) 0) (= (gn-g M gn-f-dead) 0) (= (gn-g M gn-f-skip) 0)
+        (>= r 19) (<= r 28) (> (gn-g M gn-f-fb) 0) (> (dve-owner M i 4096) 0) (dve-type M (gn-sir M i IF-A) (gn-sir M i IF-C)))
+       out (dve-original-ins M i op)
+       end (vector-at out MM-CODE-N)]
+  (if (and eligible (= (vector-at out MM-ERR) 0)
+       (= (gn-g out gn-f-vmode) -1) (= (gn-g out gn-f-leaf) 0) (= (gn-g out gn-f-dead) 0)
+       (= (vector-at out MM-LABEL-N) labels) (>= fix 0) (>= (vector-at out MM-FIX-N) fix) (<= (vector-at out MM-FIX-N) MM-FIX-CAP)
+       (> (vector-at out MM-LIT-N) 0) (<= (vector-at out MM-LIT-N) MM-LIT-CAP) (= (gn-g out gn-f-ns) ns) (= (gn-sreg out slot) r) (>= begin 0) (> end begin)
+       (<= end MM-CODE-CAP) (<= (- end begin) 64)
+       (dve-fixes out fix (vector-at out MM-FIX-N) begin end 16)
+       (dve-effects out begin begin end r 64))
+   (gn-gs out gn-f-vslot
+    (if (and (< raw -1) (> slot 0) (<= slot ns) (< slot gn-cap))
+     (- (- -1 gn-cap) slot) (- -1 slot))) out))))
+(defn- gn-ins [M :vector-i64 i :i64 op :i64] :vector-i64
+ (dve-ins M i op))
 ;; Generic exact typed two-i64 record copy. Success-only nonleaf fast path;
 ;; original entry charge/frame/body/invalid and insufficient-fuel fallback retained.
 (defn- pc3-helper-type [M :vector-i64 f :i64 np :i64 rt :i64] :bool
