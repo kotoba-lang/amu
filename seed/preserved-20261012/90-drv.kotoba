@@ -942,8 +942,8 @@
 ;; -1 when the compile may write its output: no --policy, or every required capability (mask req) is allowed; else the
 ;; refusal is printed (E2177 / E2170) and the exit status is returned
 (defn- drv-r5b-gate [M :vector-i64 path :string req :i64] :i64
-  (let [k (drv-pj-flag 1 (io-argc) "--policy")]
-    (if (< k 0)
+  (let [present (drv-pj-has 1 (io-argc) "--policy")]
+    (if (= present 0)
       -1
       ;; Integration safety: the legacy text scanner cannot prove an :allow
       ;; set's structure. Refuse every explicit policy until a structured,

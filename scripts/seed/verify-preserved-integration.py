@@ -65,6 +65,12 @@ def main():
   missing=art/'nonexistent-policy.edn';target=art/f'policy-missing-{cmd}.kseed';argv=prefix+[cmd,smoke,'--policy',missing,'--target','aarch64-macos']
   if cmd=='compile':argv+=['--output',target]
   logs=run(argv,'policy-missing-'+cmd,expect=1);assert b'E2170' in logs and not target.exists()
+ for command in ['compile','check']:
+  for project in [False,True]:
+   tag='policy-missing-value-'+command+'-'+str(project);target=art/(tag+'.kseed');argv=prefix+[command,smoke,'--target','aarch64-macos']
+   if project:argv+=['--source-path',art,'--unpinned']
+   if command=='compile':argv+=['--output',target]
+   logs=run(argv+['--policy'],tag,expect=1);assert b'E2170' in logs and not target.exists()
  run(prefix+['compile',smoke,'--target','aarch64-macos','--output',art/'smoke.kseed'],'policy-free-compile')
  run(prefix+['extract-native',art/'smoke.kseed','--symbol','main','--output',art/'smoke.bin'],'policy-free-extract')
  logs=run([loader,art/'smoke.bin','0','0','aarch64','0'],'policy-free-run');assert b'42' in logs
@@ -74,6 +80,6 @@ def main():
   run(prefix+['compile',art/(name+'.kotoba'),'--target','aarch64-macos','--output',container],name+'-compile')
   run(prefix+['extract-native',container,'--symbol',symbols[name],'--output',image],name+'-extract');assert sha(image)==oldsha,name+' payload changed'
   images.append({'workload':name,'sha256':sha(image),'baselineImageExact':True})
- report={'status':'PASS_MAIN_AND_PRESERVED_POLICY_SAFETY' if a.main else 'PASS_PRESERVED_SOURCE_SAFETY_REINTEGRATION','sourceUnitySHA256':hashlib.sha256(unity).hexdigest(),'generations':gens,'explicitPolicyRefusals':len(policies)*4+2,'policyFreeResult':42,'original19Images':images,'trustedLoaderSHA256':loader_pin,'performanceMeasurement':False,'goalStatus':'paused','mainDefaultCompilerChanged':a.main,'publicLoaderChanged':False}
+ report={'status':'PASS_MAIN_AND_PRESERVED_POLICY_SAFETY' if a.main else 'PASS_PRESERVED_SOURCE_SAFETY_REINTEGRATION','sourceUnitySHA256':hashlib.sha256(unity).hexdigest(),'generations':gens,'explicitPolicyRefusals':len(policies)*4+6,'policyFreeResult':42,'original19Images':images,'trustedLoaderSHA256':loader_pin,'performanceMeasurement':False,'goalStatus':'paused','mainDefaultCompilerChanged':a.main,'publicLoaderChanged':False}
  (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))
 if __name__=='__main__':main()

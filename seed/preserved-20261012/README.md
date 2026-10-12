@@ -23,7 +23,7 @@ python3 scripts/seed/build-adopted.py --receipt seed/preserved-20261012/adoption
 ```
 
 Qualification in `integration.json`: three generations of byte-identical native
-images and containers; 30 policy refusals across compile/check and source-path
+images and containers; 34 policy refusals across compile/check and source-path
 routes (nonzero exit 1, E2170, no artifact); policy-free execution result 42;
 19 complete native images equal the historical qualified artifacts. This is
 correctness maintenance, not fresh Embench execution timing. Historical timings
@@ -33,3 +33,7 @@ The goal remains **paused and unmet**. No performance search, tuning or timing w
 performed. New native images are safety-fixed images; old timings must not be
 relabelled as measurements of these images. Restart instructions and raw evidence
 are in `docs/evidence/native-selfhost-paused-20261012/`.
+
+Explicit `--policy` without a following value is also refused with E2170, never interpreted as policy-free.
+
+Trusted bootstrap loaderはABI v11に対応する凍結fuzz targetを使い、公開loaderは現行ABI v12 targetを使う。両方のsource pin、全reach counter、既存Linux coverage floorを検査する。初回のv12 targetによる未到達はharnessの不整合で、失敗ログを残して適合targetで再検証した。

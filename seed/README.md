@@ -10,7 +10,7 @@ release, or qualify the whole Amu component as Q9.
 
 `MANIFEST` fixes the unity order. Concatenating each module followed by one
 newline gives SHA-256
-`0636e32cbef3c0526e50f31243665fba1c4870113d253481d663d4faeb5ade9d`.
+`14317fa0e63365b29c372fade7893f99279871e12581dc68df574ac48fbb93b5`.
 `adoption-20261012.json` records all source pins, artifact provenance, the
 correctness scope and measurement boundaries. `HEADS`, `MEMORY-MAP`, and `SIR`
 are the corresponding compiler contracts, copied without changes.
@@ -63,3 +63,5 @@ Pending candidates and their evidence remain in separate preserved worktrees.
 Public report: <https://kotoba-lang.org/ja/blog/embench-progress-20261012/>
 
 The historical preservation branch is separately re-integrated under `preserved-20261012/`; see its README for the safety-fixed source and receipt. Current main optimization modules and public CLI/loader are retained.
+
+Explicit `--policy` without a following value is also refused with E2170, never interpreted as policy-free.

@@ -56,7 +56,7 @@ SHA-256は内容の同一性の検査で、最適化の意味保存を新たに�
 単一ファイル／projectの`check --policy`にも同じ拒否を適用した。
 
 新しいsource/producer pinは`seed/preserved-20261012/adoption.json`、現行版は
-`seed/adoption-20261012.json`。どちらも3世代固定点、30拒否ケース、policyなしの結果42、
+`seed/adoption-20261012.json`。どちらも3世代固定点、34拒否ケース、policyなしの結果42、
 元19本の完全nativeイメージ同一性を確認した。seedの拒否は終了コード1とE2170で、
 出力ファイルを作らない。公開loaderとfuzz基準はmainの一致する組を保持し、
 coverage floorを下げない。ローカルmacOS ASan/UBSan 20,000ケースは通過、Linuxの
@@ -69,3 +69,7 @@ source-bound coverageは追加CIで検証する。
 
 最適化ゴールはpausedのまま。これらの自己再ビルド・fuzz・policy検証は保守の正当性検証で、
 性能探索・新しい性能測定・製品CLI切替・100% selfhostの主張ではない。
+
+公開loaderと凍結trusted bootstrap loaderを別々のSHAに結び付け、同じ既存coverage floorを下げずにLinux x64/arm64で検査する。値なし`--policy`の4経路も拒否ケースに含む。
+
+Trusted bootstrap loaderはABI v11に対応する凍結fuzz targetを使い、公開loaderは現行ABI v12 targetを使う。両方のsource pin、全reach counter、既存Linux coverage floorを検査する。初回のv12 targetによる未到達はharnessの不整合で、失敗ログを残して適合targetで再検証した。
