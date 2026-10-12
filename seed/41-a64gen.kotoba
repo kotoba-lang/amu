@@ -1,3 +1,69 @@
+;; ADR0357 independent pure bounded byte threshold tree; existing gn-tree/MF unchanged.
+;; Return exclusive tree end. Every later index bound is checked before its read.
+(defn- bbt-end [M :vector-i64 p :i64 depth :i64] :i64
+ (let [sn (vector-at M MM-SIR-N)]
+  (if (or (< p 1) (>= p sn) (> depth 12)) 0
+   (if (uc-row M p OP-CONST 0 (gn-sir M p IF-B) 0)
+    (if (= (bit-and (gn-sir M p IF-B) -256) 0) (inc p) 0)
+    (if (> p (- sn 4)) 0
+     (let [h (gn-sir M (+ p 1) IF-B) le (gn-sir M (+ p 3) IF-B)]
+      (if (not (and (> h 0) (<= h 4095)
+       (uc-row M p OP-LGET 0 1 0) (uc-row M (+ p 1) OP-CONST 1 h 0)
+       (uc-row M (+ p 2) OP-CMP CC-LT 0 0) (uc-row M (+ p 3) OP-BRZ 0 le 0))) 0
+       (let [a (bbt-end M (+ p 4) (inc depth))]
+        (if (or (<= a 0) (> a (- sn 2))) 0
+         (let [lx (gn-sir M a IF-A)]
+          (if (not (and (not= le lx) (uc-row M a OP-BR lx 0 0)
+           (uc-row M (inc a) OP-LABEL le 0 0))) 0
+           (let [b (bbt-end M (+ a 2) (inc depth))]
+            (if (and (> b 0) (< b sn) (uc-row M b OP-LABEL lx 0 0)) (inc b) 0))))))))))))
+)
+;; These traversals run only after bbt-end proves the whole finite tree/labels.
+(defn- bbt-value [M :vector-i64 p :i64 x :i64] :i64
+ (if (= (gn-op M p) OP-CONST) (if (< x 0) 0 (gn-sir M p IF-B))
+  (let [h (gn-sir M (inc p) IF-B) r (inc (gn-small-label M 1 (gn-sir M (+ p 3) IF-B) 0))]
+   (if (< x 0) (gn-max h (gn-max (bbt-value M (+ p 4) x) (bbt-value M r x)))
+    (bbt-value M (if (< x h) (+ p 4) r) x)))))
+
+
+
+
+
+(defn- bbt-entry [M :vector-i64 i :i64 f :i64 np :i64] :vector-i64
+ (if (not (and (= np 1) (qb-bound M f 5 1 1 2 0)
+  (<= (vector-at M MM-FN-N) MM-FN-CAP) (= (gn-fnf M f FF-SIR) i)
+  (= (gn-fnf M f FF-PT0) TY-I64) (= (gn-g M fr-owner) f)
+  (= (gn-g M gn-f-ns) 1) (= (gn-g M gn-f-dp) 2) (= (gn-g M gn-f-leaf) 1)
+  (= (bit-or (gn-g M gn-f-freg) (bit-or (gn-g M gn-f-vmode)
+   (bit-or (gn-g M gn-f-fb) (bit-or (gn-g M gn-f-nsv) (bit-or (gn-g M gn-f-out)
+   (bit-or (gn-g M gn-f-h) (bit-or (gn-g M gn-f-skip) (bit-or (gn-g M gn-f-dead)
+   (bit-or (gn-g M 14) (vector-at M MM-ERR)))))))))) 0)
+  (= (gn-sreg M 1) 0) (= (gn-g M gn-f-ctx) 1)
+  (>= (vector-at M MM-CODE-N) 0) (<= (vector-at M MM-CODE-N) (- MM-CODE-CAP 16))
+  (>= (vector-at M MM-FIX-N) 1) (< (vector-at M MM-FIX-N) MM-FIX-CAP)
+  (> (vector-at M MM-LIT-N) 0) (< (vector-at M MM-LIT-N) MM-LIT-CAP)
+  (>= (vector-at M MM-LITB-N) 0)
+  (uc-row M i OP-FN f 1 1)
+  (uc-row M (inc i) OP-LABEL (gn-sir M (inc i) IF-A) 0 0))) M
+  (let [p (+ i 2) end (bbt-end M (+ i 2) 0)]
+   (if (or (<= end p) (> end (- (vector-at M MM-SIR-N) 2))) M
+    (if (not (and (uc-row M end OP-RET 0 0 0) (uc-row M (inc end) OP-END f 0 0)
+      (qb-labels M i (+ (- end i) 2) 0))) M
+     (let [n (inc (bbt-value M p -1))]
+      (if (and (>= n 65) (<= (vector-at M MM-LITB-N) (- MM-LITB-CAP n))) (let [ln (vector-at M MM-LIT-N) lb (vector-at M MM-LITB-N)
+  r (+ MM-LIT-BASE (* ln MM-LIT-W))
+  low (bbt-value M p 0) high (bbt-value M p (dec n))
+  m0 (do (dotimes [x n] (let [v (bbt-value M p x)] (gn-put M (+ MM-LITB-BASE (+ lb x)) v))) (-> M (gn-put (+ r LF-B) lb) (gn-put (+ r LF-LEN) n)
+   (gn-put (+ r LF-TOK) 0)
+   (gn-put MM-LIT-N (inc ln)) (gn-put MM-LITB-N (+ lb n)))) ]
+  (-> m0 (gn-emit 0xf100001f) (gn-emit 0x5400012b)
+   (gn-emit (enc-cmp-i 0 (dec n))) (gn-emit 0x5400012c)
+   (gn-emit 0xf940c0f1) (gn-emit 0x8b000231)
+   (gn-fix FX-LIT32 ln) (gn-emit 0xd2800010) (gn-emit 0xf2a00010)
+   (gn-emit 0x38706a20) (gn-epilogue)
+   (gn-emit (enc-movz 0 low 0)) (gn-epilogue)
+   (gn-emit (enc-movz 0 high 0)) (gn-epilogue) (gn-gs 14 1))) M)))))))
+
 ;; ADR0357 novel fixed-field charged wrapper transfer; ordinary call pipeline retained.
 (defn- cfw-bound [M :vector-i64 f :i64 n :i64 np :i64 ns :i64 dp :i64 fuel :i64] :bool
  (and (> f 0) (< f MM-FN-CAP) (< f (vector-at M MM-FN-N))
@@ -11950,7 +12016,7 @@
                   (gn-params 1 np)
                   (cond-> (and (= leaf 1) (= (gn-g M2 gn-f-fuel) 1)) (-> (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-gs gn-f-freg 1)))
                   (gn-gs gn-f-ctx 1)
-                  (gn-gs gn-f-h 0) (sl-clear) (vi-clear) (gn-gs gn-f-vslot (if (= (gn-g M2 gn-f-vmode) 2) -1 0)) (gn-tree-entry f) (dl-entry i f np) (pa-entry i f np) (cip-entry i f np)))))))
+                  (gn-gs gn-f-h 0) (sl-clear) (vi-clear) (gn-gs gn-f-vslot (if (= (gn-g M2 gn-f-vmode) 2) -1 0)) (gn-tree-entry f) (dl-entry i f np) (pa-entry i f np) (cip-entry i f np) (bbt-entry i f np)))))))
 
 (defn- gn-op-ret [M :vector-i64 t :i64] :vector-i64 (gn-epilogue (gn-into M 0 t)))
 ;; R5B: RET2 t -- x0 := temp t, x1 := temp t+1 (through x16: either source may be x0 or x1 in a leaf), then the epilogue
