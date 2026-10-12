@@ -1,3 +1,69 @@
+;; ADR0357 novel fixed-field charged wrapper transfer; ordinary call pipeline retained.
+(defn- cfw-bound [M :vector-i64 f :i64 n :i64 np :i64 ns :i64 dp :i64 fuel :i64] :bool
+ (and (> f 0) (< f MM-FN-CAP) (< f (vector-at M MM-FN-N))
+  (<= (vector-at M MM-FN-N) MM-FN-CAP) (not (gn-clamp-open M f))
+  (>= (vector-at M MM-SIR-N) n) (<= (vector-at M MM-SIR-N) MM-SIR-CAP)
+  (> (gn-fnf M f FF-SIR) 0) (<= (gn-fnf M f FF-SIR) (- (vector-at M MM-SIR-N) n))
+  (= (gn-fnf M f FF-NPARAMS) np) (= (gn-fnf M f FF-NSLOTS) ns)
+  (= (gn-fnf M f FF-DEPTH) dp) (= (gn-fnf M f FF-FUEL) fuel)
+  (= (gn-fnf M f FF-RTYPE) TY-VEC)))
+(defn- cfw-child [M :vector-i64 g :i64] :bool
+ (if (not (cfw-bound M g 11 3 3 4 1)) false
+  (let [p (gn-fnf M g FF-SIR) w (gn-sir M (+ p 8) IF-A)]
+   (and (= (gn-fnf M g FF-RTYPE) TY-VEC) (= (gn-fnf M g FF-PT0) TY-VEC)
+    (= (gn-fnf M g (+ FF-PT0 1)) TY-I64) (= (gn-fnf M g (+ FF-PT0 2)) TY-I64)
+    (uc-row M p OP-FN g 3 3) (uc-row M (+ p 1) OP-FUEL 0 0 0)
+    (uc-row M (+ p 2) OP-LABEL (gn-sir M (+ p 2) IF-A) 0 0)
+    (uc-row M (+ p 3) OP-LGET 0 1 0) (uc-row M (+ p 4) OP-LGET 1 2 0)
+    (uc-row M (+ p 5) OP-LGET 2 3 0) (uc-row M (+ p 6) OP-CONST 3 255 0)
+    (uc-row M (+ p 7) OP-BIN BOP-AND 2 0) (uc-row M (+ p 8) OP-CALL w 0 3)
+    (uc-row M (+ p 9) OP-RET 0 0 0) (uc-row M (+ p 10) OP-END g 0 0)
+    (qb-labels M p 11 0) (not= w g)
+    (cfw-bound M w 9 3 3 3 1)
+    (let [q (gn-fnf M w FF-SIR)]
+     (and (= (gn-fnf M w FF-RTYPE) TY-VEC) (= (gn-fnf M w FF-PT0) TY-VEC)
+      (= (gn-fnf M w (+ FF-PT0 1)) TY-I64) (= (gn-fnf M w (+ FF-PT0 2)) TY-I64)
+      (uc-row M q OP-FN w 3 3) (uc-row M (+ q 1) OP-FUEL 0 0 0)
+      (uc-row M (+ q 2) OP-LABEL (gn-sir M (+ q 2) IF-A) 0 0)
+      (uc-row M (+ q 3) OP-LGET 0 1 0) (uc-row M (+ q 4) OP-LGET 1 2 0)
+      (uc-row M (+ q 5) OP-LGET 2 3 0)
+      (uc-row M (+ q 6) OP-RT RT-VECTOR-ASSOC-IN-PLACE 0 3)
+      (uc-row M (+ q 7) OP-RET 0 0 0) (uc-row M (+ q 8) OP-END w 0 0)
+      (qb-labels M q 9 0)))))))
+(defn- cfw-shape [M :vector-i64 f :i64] :i64
+ (if (not (cfw-bound M f 9 2 2 3 1)) 0
+  (let [p (gn-fnf M f FF-SIR) field (gn-sir M (+ p 4) IF-B) g (gn-sir M (+ p 6) IF-A)]
+   (if (and (>= field 0) (<= field 4095) (not= f g)
+    (= (gn-fnf M f FF-RTYPE) TY-VEC) (= (gn-fnf M f FF-PT0) TY-VEC)
+    (= (gn-fnf M f (+ FF-PT0 1)) TY-I64)
+    (uc-row M p OP-FN f 2 2) (uc-row M (+ p 1) OP-FUEL 0 0 0)
+    (uc-row M (+ p 2) OP-LABEL (gn-sir M (+ p 2) IF-A) 0 0)
+    (uc-row M (+ p 3) OP-LGET 0 1 0) (uc-row M (+ p 4) OP-CONST 1 field 0)
+    (uc-row M (+ p 5) OP-LGET 2 2 0) (uc-row M (+ p 6) OP-CALL g 0 3)
+    (uc-row M (+ p 7) OP-RET 0 0 0) (uc-row M (+ p 8) OP-END f 0 0)
+    (qb-labels M p 9 0) (cfw-child M g)) (inc field) 0))))
+(defn- cfw-admit [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :i64
+ (if (or (not= n 2) (< t 0) (> t 5) (not= (gn-g M gn-f-h) (+ t 2))
+  (not= (gn-g M gn-f-leaf) 0) (not= (gn-g M gn-f-freg) 0) (not= (gn-g M gn-f-vmode) 0)
+  (not= (gn-g M gn-f-ctx) 1) (not= (gn-g M gn-f-skip) 0) (not= (gn-g M gn-f-dead) 0)
+  (< (gn-g M gn-f-ns) 2) (>= (gn-g M gn-f-ns) gn-cap)
+  (< (gn-g M gn-f-dp) (+ t 2)) (> (gn-g M gn-f-dp) gn-cap)
+  (< (gn-g M gn-f-nsv) 0) (> (gn-g M gn-f-nsv) 10)
+  (<= (gn-g M gn-f-fb) 0) (> (gn-g M gn-f-fb) 32768)
+  (not= (bit-and (gn-g M gn-f-fb) 15) 0)
+  (not= (vector-at M MM-ERR) 0) (<= i 0) (>= i (dec (vector-at M MM-SIR-N)))
+  (not (sb-owner M i)) (not (uc-row M i OP-CALL f t 2))
+  (= (gn-op M (inc i)) OP-RET) (= (gn-op M (inc i)) OP-RES2)
+  (< (vector-at M MM-CODE-N) 0) (> (vector-at M MM-CODE-N) (- MM-CODE-CAP 48))
+  (< (vector-at M MM-FIX-N) 1) (> (vector-at M MM-FIX-N) MM-FIX-CAP)) 0
+  (cfw-shape M f)))
+;; Shared entry precedes private fuel snapshot and both private cuts; fresh checks follow.
+(defn- cfw-emit [M :vector-i64 field1 :i64] :vector-i64
+ (-> M (gn-op-fuel) (gn-mov 6 0) (gn-emit (enc-ldr 8 7 CTX-FUEL))
+  (gn-mask-charge) (gn-mov 0 1) (gn-emit (gn-e-bf 0xd3400000 0 0 0 7))
+  (gn-mask-charge) (gn-mov-imm 1 (dec field1)) (gn-hchk 6 312 320) (gn-vidx 1)
+  (gn-emit (gn-e-strr3 0 16 17)) (gn-emit (enc-str 8 7 CTX-FUEL)) (gn-mov 0 6)))
+
 ;; Closed full64 signed interval predicate. No effects/charges or input-domain assumption.
 (defn- cip-shape [M :vector-i64 p :i64 f :i64] :bool
  (let [head (gn-sir M (+ p 1) IF-A) join (gn-sir M (+ p 5) IF-B)
@@ -13241,7 +13307,8 @@
             (< (gn-sir M (inc a) IF-A) MM-LABEL-CAP)
             (uc-shape M g 2 (+ a 10))))))))))
 (defn- cw-transfer [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
- (let [literal (dt-admit M i f t n)]
+ (let [fixed-field (cfw-admit M i f t n) literal (dt-admit M i f t n)]
+ (if (> fixed-field 0) (cfw-emit M fixed-field)
  (if (> literal 0) (dt-emit M f literal)
  (if (scv-safe M i f t n) (scv-emit M f)
  (if (spu-safe M i f t n) (spu-emit M)
@@ -13256,7 +13323,7 @@
      (if (fw-admit M f n) (fw-transfer M f)
       (if (sa-admit M f n) (sa-transfer M f)
        (if (gc-admit M f n) (gc-transfer M f)
-        (-> M (gn-fix FX-BL26 f) (gn-emit (enc-bl 0))))))))))))))))))
+        (-> M (gn-fix FX-BL26 f) (gn-emit (enc-bl 0)))))))))))))))))))
 
 (defn- gn-call-generic [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
  (cond
