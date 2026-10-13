@@ -190,10 +190,18 @@ The profile also shows where K1 cannot reach:
   admits require `gn-f-leaf = 0` today); a trial emission with rollback would have to undo
   the per-function entry hooks (`trg-*`, `gn-tree-entry`, `eq-chain-entry`, `vl-entry`,
   `pf-entry`, `ve-entry`). This belongs with the owner of `41-a64gen`'s admit set.
-* **K4 – non-leaf fuel register.** Keep the counter in a callee-saved register for a whole
-  non-leaf function and publish it only before calls, runtime helpers, traps and returns.
-  Requires trap stubs that publish before `brk`/`udf`; larger than K1 but removes the
-  remaining stores from hot loops (statemate, slre, md5sum).
+* **K4 – non-leaf fuel register: measured, not worth implementing.** Upper-bound prototype
+  (`k4-experiment/k4proto.py`, measurement only) on the K1 images of main `4d733753`: a
+  backward liveness analysis turns every fuel store into `nop` when the counter is stored
+  again before any reader (an unforwarded fuel load, another `x7`-based load, `bl`/`blr`/`ret`
+  or an unmodelled word). Trap paths are treated as non-readers, as a real K4 would publish in
+  a trap stub, so the rewrite is only valid for non-trapping runs. It removes 993 of 3,088
+  reached fuel stores (statemate 476, picojpeg 254). Against K1, six alternating rounds at
+  `nice 19` on a host at load ~383: geometric mean **0.999**; statemate 0.961 (5/6 rounds
+  faster), md5sum **1.178** (6/6 rounds slower), every other workload within the ±10%
+  round-to-round noise. The cost K1 removes — the store-to-load dependency — dominates;
+  dropping the remaining publication stores buys nothing measurable, and a real K4 would need
+  invasive `41-a64gen` changes. Not pursued.
 
 Each candidate keeps the qualification rules of this repository: exact result, fuel, trap
 and all arena counters on the original corpus, a native fixed point, and no percentage cutoff.
