@@ -60,6 +60,12 @@ jobs:
       - run: python3 scripts/seed/build-adopted.py --output "$RUNNER_TEMP/adopted-native-selfbuild" --generations 2
       - run: python3 scripts/seed/check-bounded-lookup.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
       - run: python3 scripts/seed/check-certified-scalar-calls.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-twoarg-comparisons.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: adopted-native-regression-evidence
+          path: ${{ runner.temp }}/adopted-native-selfbuild
   nbb-engine-configuration:
     runs-on: ubuntu-latest
     steps:
