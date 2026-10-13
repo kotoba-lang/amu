@@ -1,0 +1,13 @@
+# Adjacent published-fuel forwarding, 2026-10-14
+
+After all existing algorithm selection, replace an exact LDRx16,CTXfuel immediately following STRx16,CTXfuel with NOP. A frozen full root inventory excludes every alternate entry at the load. Every original subtraction, flags, publication, exhaustion target, frame, callback, source-pool byte and export remains. Unemitted CODE0 prototypes are omitted only by the new pass; actual typed references to absent callees still refuse. The existing interval pass retains its prior false setting. No source name selects the rule.
+
+G1=G2=G3=G4 native fixed point, original39 whole audits (37identities and2SLRE images,5loads each), original483 and generic365 paired observations all pass. Generic controls include recursion, escape/plain/range branches, signed endpoints, fuel1..64 and public max2^53-1, with exact exits, result, remaining fuel and all17 arena fields. The failed/no-hit earlier candidates and raw records remain in the qualification archive.
+
+Joseph fixedN950272 OFF/ON/OFF/ON found ON/OFF0.9334907084113488,6.650929% shorter, pairs0.9398549245299308/0.9271328462661143. Warm1/sample1, body>=.5s, raw pre/post and background idle>=70%, max3 CPU-only attempts, first-qualified selection. No5% cutoff and no statistical stability claim.
+
+This is an exploratory paired comparison, not a certified official Kotoba score or a fresh complete19 score. The latest complete adopted-main comparison remains round102 elapsed/C3.051981401361696. C parity remains active and unmet. Proposed snapshot requires native, policy/source19, all CI and normal main integration before adoption. Compiler or Kotoba source was not transferred to Joseph.
+
+CODE0 root clarification: a zero function record can represent a staged prototype or the immutable first image entry. No candidate can occur at PC0 (the site predicate requires at>1). Skipping zero therefore cannot create an alternate entry into a changed load; every affected path still traverses its immediately adjacent retained STR. All other roots and actual typed-target validation remain. The frozen source review used the shorter prototype description; this separate clarification preserves that historical review unchanged.
+
+Local standard qualification passes: native selfbuild2, all10 controls, policy34, smoke42, archivedsource19. The internal sequential-scan unity initially exceeded the node table before extraction; its failure is preserved. Internal sequential-scan and interval-proof fixtures now omit the independently qualified CLI driver, while every existing fixture assertion/invocation remains. Other controls and the full compiler/CLI/source19 are unchanged. standard-results.tgz retains all raw outputs and the initial refusal.

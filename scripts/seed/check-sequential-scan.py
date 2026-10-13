@@ -13,7 +13,9 @@ def main():
  assert sha(producer)==receipt['nativeImageSHA256']
  paths=[p.strip()for p in(ROOT/'seed/MANIFEST').read_text().splitlines()if p.strip()and not p.startswith('#')]
  fixture=ROOT/'seed/tests/unit/clw_sequential_scan_t.kotoba';source=D/'controls.kotoba'
- source.write_bytes(b''.join((ROOT/p).read_bytes()+b'\n'for p in paths if p!='seed/99-entry.kotoba')+fixture.read_bytes()+b'\n')
+ # Internal generator controls need the full generator and frontend, while
+ # the CLI driver is qualified separately by selfbuild and policy checks.
+ source.write_bytes(b''.join((ROOT/p).read_bytes()+b'\n'for p in paths if p not in {'seed/90-drv.kotoba','seed/99-entry.kotoba'})+fixture.read_bytes()+b'\n')
  pins={p:sha(p)for p in[loader,producer,source,fixture]};env={k:v for k,v in os.environ.items()if not k.startswith('KEXE_')}
  env.update(KEXE_COMMAND='1',KEXE_CAP_RESOURCES_35=str(D),KEXE_FUEL='off',KEXE_VECTORS='4194304',KEXE_VECTOR_ITEMS='134217728',KEXE_STRING_POOL='268435456',KEXE_PAIRS='16777216',KEXE_CPU_SECONDS='1800',KEXE_WALL_SECONDS='1800',TMPDIR=str(D))
  calls=[]
