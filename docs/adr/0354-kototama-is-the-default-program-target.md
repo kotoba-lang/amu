@@ -2,7 +2,7 @@
 
 - Date: 2026-10-13
 - Status: Accepted
-- Supersedes: ADR 0351 for `amu compile` only
+- Supersedes: ADR 0351 for `amu compile` and `amu worker` compile requests
 
 ## Context
 
@@ -20,8 +20,9 @@ execution.
    explicit `--target` continue to select another backend.
 2. Native, Wasm, Script and EVM targets remain explicit deployment formats.
    No compiler route silently changes a Kototama target into one of them.
-3. `amu worker` remains host-native by default because it starts a host-bound
-   compiler service. This exception does not affect compile output selection.
+3. `amu worker` compile requests use the same Kototama default. The worker
+   process runs on its host runtime; that host does not choose the guest
+   artifact format.
 4. The current Kototama emitter accepts the checked i64 KIR slice and rejects
    unsupported forms. The output format and target declaration do not prove
    execution support, cross-platform qualification, or distributed operation.

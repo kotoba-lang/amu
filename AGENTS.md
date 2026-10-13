@@ -26,9 +26,9 @@
 
 - Q9 callers use `bin/amu check ... --jvm-free` and
   `bin/amu compile ... --jvm-free`. An omitted compile `--target` selects the
-  Kototama VM program; choose native or Wasm explicitly for deployment. Worker
-  execution still uses a host runtime to run the compiler service; this does
-  not select the application artifact format.
+  Kototama VM program; direct and worker compile requests share this default.
+  Choose native or Wasm explicitly for deployment. The worker process itself
+  runs on its host runtime.
 - `--jvm-free` must never invoke `java`, `javac`, `clojure`, `clj`,
   `resolveWithJvm`, a Clojure main namespace or another JVM launcher.
 - Missing/stale dependency locks, unsupported commands/targets and project

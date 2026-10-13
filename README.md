@@ -223,12 +223,13 @@ profiles, conformance and runtime digests, CI run, test time, and expiry.
 
 ## Execution policy
 
-The compiler has one source-admission and KIR pipeline. The CLI defaults to
-the host native target; browser/Worker builds select their Wasm target
-explicitly. A Wasm Component/profile is the portable execution boundary:
-it links through typed WIT imports and receives only capabilities admitted
-by its host. `wasm32-wasi` does **not** mean ambient WASI access: the current
-profile rejects ambient WASI imports and expects a closed capability adapter.
+The compiler has one source-admission and KIR pipeline. Application compilation
+defaults to a canonical Kototama VM program, independent of host OS and ISA.
+Native, Wasm core and Component outputs are explicit deployment profiles. A
+Wasm Component links through typed WIT imports and receives only capabilities
+admitted by its host. `wasm32-wasi` does **not** mean ambient WASI access: the
+current profile rejects ambient WASI imports and expects a closed capability
+adapter.
 
 Kotoba's Lisp-facing `(eval request)` uses that same pipeline rather than a
 second evaluator. Semantic analysis lowers it to typed capability 30
@@ -525,9 +526,9 @@ digest-bound `answer.evm.manifest.edn`; an unknown selector reverts.
 its provenance sidecar. The default compiler output is engine-neutral and does
 not select an OS or ISA. Amu retains explicit native, Wasm, Script and EVM
 backends for deployment-specific artifacts; select them with `--target`.
-`AMU_TARGET` remains an explicit environment override. `amu worker` still
-chooses this host's native target by default because it launches a host-bound
-compiler service rather than producing the portable program format.
+`AMU_TARGET` remains an explicit environment override. Worker compile requests
+use the same Kototama default; the worker process runs on its host runtime but
+does not bind application output to that host's OS or ISA.
 
 The Kototama compiler route lowers checked Amu KIR directly to a versioned
 DAG-CBOR program block. Its current emitter covers the checked i64 KIR slice;

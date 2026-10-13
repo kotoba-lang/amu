@@ -36,5 +36,14 @@
     "compile" (compile! args)
     (support/usage-error! (str "error: nbb Kototama path does not cover command " (first args)))))
 
+(defn- worker! [args]
+  (let [target-name (or (support/option args "--target") "kototama")]
+    (when-not (contains? targets target-name)
+      (support/usage-error! (str "error: Kototama worker does not cover target " target-name)))
+    (support/serve! run! :kototama-core-v1)))
+
 (when (seq (support/command-line-args))
-  (support/execute! run!))
+  (let [args (support/command-line-args)]
+    (if (= "worker" (first args))
+      (worker! args)
+      (support/execute! run!))))

@@ -27,7 +27,7 @@ const usage = [
   "       amu package-lock --deps kotoba.deps.edn --packages <dir> --output kotoba.lock.edn",
   "       amu definition-cids <file> [--source-path <dir>]  # one CID per definition",
   "       amu compile <entry> --source-path <dir> --unpinned --target <target> --output <file>",
-  "       amu worker [--target <target>]   (no --target: this host's native target)",
+  "       amu worker [--target <target>]   (no --target: Kototama VM program)",
   "       amu inspect <file.kotoba|file.cljk|file.cljc> [--output interface.edn]",
   "       amu test <file.kotoba|file.cljk|file.cljc> [--json] [--fuel <n>] [--source-path <dir> ...]   (one instance per test)",
   "       amu test --manifest <manifest.edn> [--conformance-root <dir>] [--case <id> ...] [--json]",
@@ -95,16 +95,9 @@ const nbbJsTargets = new Set([
 ]);
 const nbbKototamaTargets = new Set(["kototama", "kototama-core-v1"]);
 
-// The host's native target, for a compile or worker that names none (ADR
-// 0351, following superproject ADR-2609241300: amu's native compiler is the
-// first execution path; wasm is a build target chosen for hosts where native
-// cannot run). The same rule as Go's GOOS/GOARCH, Rust's host triple and
-// Zig's native target: an omitted target means the machine you are on.
-//
-// Keys are Node's own `process.platform`/`process.arch` spellings; values are
-// the names `kotoba.compiler.nbb.cli/targets` accepts. A host missing from
-// this table is REFUSED by name -- falling back to wasm32 there would be the
-// old default returning silently on exactly the machines nobody measured.
+// Host-native targets are used only by explicit native measurement and
+// manifest operations. They never determine the default application artifact
+// or worker-request target.
 const hostNativeTargets = Object.freeze({
   "darwin/arm64": "aarch64-macos",
   "darwin/x64": "x86_64-macos",
@@ -122,37 +115,29 @@ function hostNativeTarget(host = { platform: process.platform, arch: process.arc
   const target = hostNativeTargets[key];
   if (target) return { target };
   return {
-    reason: `error: --target was omitted and this host (${key}) has no amu native `
-      + "target, so there is no host default. amu does not fall back to wasm: "
-      + "pass --target explicitly (wasm32-browser for a browser or Worker, "
-      + "wasm32-wasi for a WASI host, or one of "
-      + Object.values(hostNativeTargets).join(", ")
-      + " to cross-compile), or set AMU_TARGET.",
+    reason: `error: this host (${key}) has no qualified amu native target; `
+      + "select a supported target explicitly or use Kototama for a portable program.",
   };
 }
 
-// The commands a default applies to: the two that choose a code generator.
+// Both direct compile and worker compile requests default to the portable
+// Kototama program. The worker process itself runs on Node on its host OS.
 // Everything else either takes no target (check, module-lock, ...) or reads
 // it from an artifact it is handed.
 const defaultedCommands = new Set(["compile", "worker"]);
 
 // Answers `{args, origin}` or `{reason}`. `origin` is "explicit" when the
-// caller wrote --target, "env" when AMU_TARGET supplied it, "host" when the
-// host table did, and null for a command no default applies to. An explicit
-// flag always wins; an empty AMU_TARGET is treated as unset, the way
-// `AMU_TARGET= amu ...` is written to unset it.
-function defaultTarget(args, env = process.env, host = undefined) {
+// caller wrote --target, "env" when AMU_TARGET supplied it, "default" when
+// compile or worker selected Kototama, and null for commands with no target.
+// Explicit flags always win; empty AMU_TARGET is treated as unset.
+function defaultTarget(args, env = process.env) {
   if (!defaultedCommands.has(args[0])) return { args, origin: null };
   if (args.includes("--target")) return { args, origin: "explicit" };
   const fromEnv = env.AMU_TARGET;
   if (typeof fromEnv === "string" && fromEnv !== "") {
     return { args: [...args, "--target", fromEnv], origin: "env" };
   }
-  if (args[0] === "compile")
-    return { args: [...args, "--target", "kototama"], origin: "default" };
-  const resolved = hostNativeTarget(host);
-  if (!resolved.target) return { reason: resolved.reason };
-  return { args: [...args, "--target", resolved.target], origin: "host" };
+  return { args: [...args, "--target", "kototama"], origin: "default" };
 }
 
 function fail(message, code) {
@@ -244,6 +229,7 @@ function nbbNativeEligible(args) {
     || command === "package-fetch"
     || command === "verify-output-set" || command === "sign-output-set"
 
+    || (command === "worker" && nbbKototamaTargets.has(option(args, "--target")))
     || (command === "worker" && nbbNativeTargets.has(option(args, "--target")))
     || (command === "compile" && nbbKototamaTargets.has(option(args, "--target")))
     || (command === "compile" && nbbNativeTargets.has(option(args, "--target")))
@@ -282,7 +268,8 @@ function nbbEntrypoint(root, args) {
     : runCommands.has(command) ? "run_cli.cljk"
     : command === "extract-native" ? "x86_64_cli.cljk"
     : (command === "compile" && nbbJsTargets.has(target)) ? "js_cli.cljk"
-    : (command === "compile" && nbbKototamaTargets.has(target)) ? "kototama_cli.cljk"
+    : ((command === "compile" || command === "worker")
+       && nbbKototamaTargets.has(target)) ? "kototama_cli.cljk"
     : wasm ? "wasm_cli.cljk"
       : target && target.startsWith("evm") ? "evm_cli.cljk"
         : target.startsWith("aarch64") ? "aarch64_cli.cljk" : "x86_64_cli.cljk";
@@ -552,11 +539,10 @@ function runCompiler(root, rawArgs) {
   const defaulted = defaultTarget(resolveCallerPaths(rawArgs, process.cwd()));
   if (defaulted.reason) fail(defaulted.reason, 64);
   const args = defaulted.args;
-  // Tells the native driver where its target came from, so a refusal can say
-  // "amu chose this for you" when it did. Written (or removed) on every
-  // spawn, so a value in the caller's environment is never believed.
+  // Tells a native driver whether a target came from the environment. Written
+  // or removed on every spawn; a caller cannot spoof this diagnostic context.
   const childEnv = { ...process.env };
-  if (defaulted.origin === "host" || defaulted.origin === "env") {
+  if (defaulted.origin === "env") {
     childEnv.AMU_TARGET_ORIGIN = defaulted.origin;
   } else {
     delete childEnv.AMU_TARGET_ORIGIN;
