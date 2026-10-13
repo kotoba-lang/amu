@@ -47,11 +47,11 @@ A definition the identity cannot seal is listed with an explicit
 `:definition-cid :unbridged-effect` marker, and its callers with
 `:dependency-unavailable`; a CID is never invented for a hole. What cannot be
 sealed is a wire id no catalog names, or any effect-row keyword outside
-kotoba-kir's closed `control-effects` set. The tracked control effect `:abort`
+osaho's closed `control-effects` set. The tracked control effect `:abort`
 is **not** one of them: it is in that closed set, so an aborting definition
 **has** an identity, and it differs from the same body's pure identity because
 their interfaces differ (`[:result T E]` against `T`). This paragraph named
-`:abort` as the example of a hole until 2026-09-07; that was true of kotoba-kir
+`:abort` as the example of a hole until 2026-09-07; that was true of kotoba-kir (now osaho)
 before `984a507` (2026-09-02) and ADR-0300 section 4 was amended for it on
 2026-09-03 while this line was not.
 
