@@ -1,0 +1,12 @@
+(ns quotient-controls (:export [run]))
+(defn- masked8 [x :i64] :i64 (+ (quot (* (bit-and x 255) 198) 256) 70000))
+(defn- masked10 [x :i64] :i64 (+ (quot (bit-and x 1023) 8) 70000))
+(defn- copied [x :i64] :i64 (let [a (bit-and x 255) b a] (+ (quot (* b 88) 256) 70000)))
+(defn- overflow [x :i64] :i64 (+ (quot (* (* (* (bit-and x 65535) 65535) 65535) 65535) 256) 70000))
+(defn- unknown-sign [x :i64] :i64 (+ (quot (* x 198) 256) 70000))
+(defn- negative [x :i64] :i64 (+ (quot (* (bit-and x 255) -198) 256) 70000))
+(defn- no-scratch-kill [x :i64] :i64 (quot (* (bit-and x 255) 198) 256))
+(defn- merge [x :i64] :i64 (let [v (if (< x 0) x (bit-and x 255))] (+ (quot (* v 198) 256) 70000)))
+(defn run [mode :i64 x :i64] :i64
+ (case mode 0 (masked8 x) 1 (masked10 x) 2 (copied x) 3 (overflow x)
+            4 (unknown-sign x) 5 (negative x) 6 (no-scratch-kill x) 7 (merge x) 0))
