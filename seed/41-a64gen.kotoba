@@ -15141,11 +15141,11 @@
 (defn- uqd-mark [R :vector-i64 to :i64] :vector-i64
  (if (and (> to 0) (< to (vector-count R))) (vector-assoc! R to 1)
   (vector-assoc! R 0 1)))
-(defn- uqd-roots [M :vector-i64] :vector-i64
+(defn- uqd-roots [M :vector-i64 omit-unemitted :bool] :vector-i64
  (let [cn (vector-at M MM-CODE-N)
        R (vector-alloc (inc cn))
        funcs (loop [V R f 1] (if (= f (vector-at M MM-FN-N)) V
-         (recur (uqd-mark V (gn-fnf M f FF-CODE)) (inc f))))
+         (let [to (gn-fnf M f FF-CODE)] (recur (if (and omit-unemitted (= to 0)) V (uqd-mark V to)) (inc f)))))
        labels (loop [V funcs k 1] (if (= k (vector-at M MM-LABEL-N)) V
          (let [to (vector-at M (+ MM-LABEL-BASE k))]
           (recur (if (= to 0) V (uqd-mark V to)) (inc k)))))
@@ -15223,7 +15223,7 @@
      (uqd-dead17 M R (+ at 3) 64))))))
 (defn- uqd-run [M :vector-i64] :vector-i64
  (if (not (uqd-counts M)) M
-  (let [R (uqd-roots M) cn (vector-at M MM-CODE-N)]
+  (let [R (uqd-roots M false) cn (vector-at M MM-CODE-N)]
    (if (not= (vector-at R 0) 0) M
     (let [P (loop [V (vector-alloc cn) at 1 used 0]
        (if (or (> at (- cn 3)) (>= used 128)) V
@@ -15233,4 +15233,27 @@
      (loop [V M at 1] (if (= at cn) V
       (recur (if (= (vector-at P at) 1) (gn-put V (+ MM-CODE-BASE at) (enc-b 2)) V) (inc at)))))))))
 
-(defn- gn-run [M :vector-i64] :vector-i64 (blt-run (uqd-run (blt-old-run M))))
+;; Exact adjacent store-to-load forwarding in final code. All original
+;; charges, publications, NZCV, exhaustion targets and physical positions
+;; remain. A complete root inventory forbids entering the redundant load.
+(defn- afr-site [M :vector-i64 R :vector-i64 at :i64] :bool
+ (let [cn (vector-at M MM-CODE-N)]
+  (and (> at 1) (< (+ at 3) cn) (= (vector-at R at) 0)
+   (= (sf-word M (dec at)) (enc-str 16 7 CTX-FUEL))
+   (= (sf-word M at) (enc-ldr 16 7 CTX-FUEL))
+   (= (sf-word M (inc at)) (enc-subs-i 16 16 1))
+   (or (and (= (sf-word M (+ at 2)) (enc-bcond (enc-cond-hs) 2))
+            (= (sf-word M (+ at 3)) (enc-brk 0)))
+       (= (bit-and (sf-word M (+ at 2)) 0xff00001f) 0x54000003)))))
+(defn- afr-run [M :vector-i64] :vector-i64
+ (if (not (uqd-counts M)) M
+  (let [R (uqd-roots M true) cn (vector-at M MM-CODE-N)]
+   (if (not= (vector-at R 0) 0) M
+    (let [P (loop [V (vector-alloc cn) at 1]
+             (if (= at cn) V
+              (recur (if (afr-site M R at) (vector-assoc! V at 1) V) (inc at))))]
+     ;; Frozen plan: changing one load cannot establish another proof.
+     (loop [V M at 1] (if (= at cn) V
+      (recur (if (= (vector-at P at) 1)
+               (gn-put V (+ MM-CODE-BASE at) 0xd503201f) V) (inc at)))))))))
+(defn- gn-run [M :vector-i64] :vector-i64 (afr-run (blt-run (uqd-run (blt-old-run M)))))
