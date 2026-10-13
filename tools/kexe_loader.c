@@ -5016,6 +5016,45 @@ static int parse_i64(const char *text, int64_t *value) {
 static volatile sig_atomic_t supervisor_timed_out = 0;
 static volatile sig_atomic_t supervised_pid = -1;
 
+/* Opt-in unary i64 lease transport. Framing only: the host owns scope,
+ * authorization, durable reservation and provider execution. No local provider
+ * fallback exists in this mode. fd 3 is request-only, fd 4 response-only. */
+static int kexe_lease_transport = 0;
+static uint64_t kexe_lease_sequence = 0;
+
+static int64_t kexe_lease_call(uint64_t id, int64_t value) {
+  char request[96], response[96];
+  if (++kexe_lease_sequence > 4096u) { raise(SIGILL); return 0; }
+  int n = snprintf(request, sizeof(request), "Q %llu %llu %lld\n",
+                   (unsigned long long)kexe_lease_sequence,
+                   (unsigned long long)id, (long long)value);
+  if (n <= 0 || (size_t)n >= sizeof(request)) { raise(SIGILL); return 0; }
+  size_t sent = 0;
+  while (sent < (size_t)n) {
+    ssize_t count = write(3, request + sent, (size_t)n - sent);
+    if (count < 0 && errno == EINTR) continue;
+    if (count <= 0) { raise(SIGILL); return 0; }
+    sent += (size_t)count;
+  }
+  size_t used = 0;
+  while (used + 1u < sizeof(response)) {
+    ssize_t count = read(4, response + used, 1);
+    if (count < 0 && errno == EINTR) continue;
+    if (count != 1) { raise(SIGILL); return 0; }
+    if (response[used++] == '\n') break;
+  }
+  if (used == 0 || response[used - 1] != '\n') { raise(SIGILL); return 0; }
+  response[used - 1] = '\0';
+  char expected[40];
+  int prefix = snprintf(expected, sizeof(expected), "R %llu ",
+                        (unsigned long long)kexe_lease_sequence);
+  int64_t result = 0;
+  if (prefix <= 0 || (size_t)prefix >= sizeof(expected) ||
+      strncmp(response, expected, (size_t)prefix) != 0 ||
+      parse_i64(response + prefix, &result) != 0) { raise(SIGILL); return 0; }
+  return result;
+}
+
 static int64_t checked_cap_call(struct kexe_context_v11 *context,
                                 uint64_t cap_id, int64_t value) {
   if (context == NULL || context->version != 12 ||
@@ -5023,6 +5062,7 @@ static int64_t checked_cap_call(struct kexe_context_v11 *context,
     raise(SIGILL);
     return 0;
   }
+  if (kexe_lease_transport) return kexe_lease_call(cap_id, value);
   /* The qualification host's stub answer, value + 1, WRAPPING -- the i64 add
    * every Kotoba backend defines. `value + 1` was signed overflow, undefined
    * behaviour, at INT64_MAX, which the sanitized fuzz arm reported in CI
@@ -9547,6 +9587,7 @@ static int64_t checked_typed_cap_call(struct kexe_context_v11 *context,
     raise(SIGILL);
     return 0;
   }
+  if (kexe_lease_transport) { raise(SIGILL); return 0; }
   int64_t result;
   /* WHICH provider answers (wire id x typed kind) is decide op 0
    * (kexe_loader_decisions.kotoba cap-provider, whose ids are the capability
@@ -11772,7 +11813,7 @@ static void install_syscall_sandbox(void) {
   /* :gpu/compute (wire 42): the guest reads the supervisor's answer from a
    * pipe, so `read` is admitted when the broker is active -- and only read;
    * every other syscall the Vulkan driver needs stays in the supervisor. */
-  if (kgpu_broker_active) {
+  if (kgpu_broker_active || kexe_lease_transport) {
 #ifdef __NR_read
     ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_read, 0, 1));
     ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
@@ -11999,6 +12040,19 @@ static void probe_denied(unsigned line) {
 }
 
 int main(int argc, char **argv) {
+  /* Packaged commands retain their baked provider configuration. */
+#ifndef KEXE_EMBEDDED
+  const char *lease_mode = getenv("KEXE_LEASE_TRANSPORT");
+  if (lease_mode != NULL) {
+    if (strcmp(lease_mode, "i64-v2") != 0 ||
+        fcntl(3, F_GETFD) < 0 || fcntl(4, F_GETFD) < 0) {
+      fprintf(stderr, "kexe-loader: invalid lease transport\n");
+      return 2;
+    }
+    kexe_lease_transport = 1;
+  }
+#endif
+
   kexe_decisions_init();
   kexe_process_euid = (long long)geteuid();
   /* Everything after the first `--` is the GUEST's argv (wire 38), and is
@@ -12384,7 +12438,7 @@ int main(int argc, char **argv) {
   kexe_decisions_init();
   /* :process/spawn: only when the grant names wire 20, and only with a
    * well-formed :process/spawn grant (an absent one grants no program). */
-  if (kexe_cap_admitted(shared->context.allow, 20)) {
+  if (!kexe_lease_transport && kexe_cap_admitted(shared->context.allow, 20)) {
     if (kexe_spawn_grant_init() != 0) {
       fprintf(stderr, "kexe-loader: malformed :process/spawn grant (KEXE_CAP_RESOURCES_20 / KEXE_SPAWN_ENV / KEXE_SPAWN_PATH_LOOKUP)\n");
       return 2;
@@ -12392,12 +12446,12 @@ int main(int argc, char **argv) {
     if (pipe(kspawn_req_pipe) != 0 || pipe(kspawn_resp_pipe) != 0) fail("spawn broker pipe");
     kspawn_broker_active = 1;
   }
-  kexe_entropy_granted = kexe_cap_admitted(shared->context.allow, 23);
+  kexe_entropy_granted = !kexe_lease_transport && kexe_cap_admitted(shared->context.allow, 23);
   /* Native TCP: only when the grant names one of wires 43..47, and only with
    * well-formed address scopes (an absent one grants no address). */
-  if (kexe_cap_admitted(shared->context.allow, 43) || kexe_cap_admitted(shared->context.allow, 44) ||
+  if (!kexe_lease_transport && (kexe_cap_admitted(shared->context.allow, 43) || kexe_cap_admitted(shared->context.allow, 44) ||
       kexe_cap_admitted(shared->context.allow, 45) || kexe_cap_admitted(shared->context.allow, 46) ||
-      kexe_cap_admitted(shared->context.allow, 47)) {
+      kexe_cap_admitted(shared->context.allow, 47))) {
     if (knet_grant_init() != 0) {
       fprintf(stderr, "kexe-loader: malformed native TCP grant (KEXE_CAP_RESOURCES_43 / KEXE_CAP_RESOURCES_45: comma-separated <ipv4>:<port>)\n");
       return 2;
@@ -12408,7 +12462,7 @@ int main(int argc, char **argv) {
 #ifdef KEXE_GPU_VULKAN
   /* :gpu/compute: only when the grant names wire 42. The pipes exist before
    * the fork so both sides hold them; the supervisor serves, the guest asks. */
-  if (kexe_cap_admitted(shared->context.allow, 42)) {
+  if (!kexe_lease_transport && kexe_cap_admitted(shared->context.allow, 42)) {
     if (pipe(kgpu_req_pipe) != 0 || pipe(kgpu_resp_pipe) != 0) fail("gpu broker pipe");
     kgpu_broker_active = 1;
   }
