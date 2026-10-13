@@ -205,3 +205,28 @@ The profile also shows where K1 cannot reach:
 
 Each candidate keeps the qualification rules of this repository: exact result, fuel, trap
 and all arena counters on the original corpus, a native fixed point, and no percentage cutoff.
+
+## Handoff to the Codex total-C goal thread
+
+The Codex goal thread has priority. This kaizen work avoided its files, branches and the
+Joseph host; Claude only keeps this PR rebased onto main.
+
+* **K1 (this PR)** — ready for review. If a seed change lands on main first, this PR is
+  rebased onto it: take main's `seed/adoption-20261012.json` and bootstrap, self-build three
+  generations, then regenerate the bootstrap, receipt (`previousMainSnapshot`,
+  `fuelLoadForwardingQualification.offBootstrap`), `seed/main-flf-native19.json` and its
+  archive (`regen.py` in the Claude workspace does exactly this). Official timing on Joseph,
+  if wanted, follows the existing protocol.
+* **K3′ frame elision — open candidate for the owner of `41-a64gen`.** In aha-mont64 the
+  27-instruction `u-ge` spends 17.7% of all samples in frame instructions although it emits
+  no `bl`. Its `CALL u-lt` is inlined by `di-admit`, which requires a non-leaf framed caller
+  (`gn-f-leaf = 0`, `gn-f-fb > 0`) and argument sources in callee-saved registers x19–x28;
+  prescan (`gn-pre-op`, `OP-CALL`) only exempts `gn-call-wrapper` calls from clearing
+  `gn-f-leaf`. A leaf-mode variant of that DAG inline (caller-saved banks, x8 fuel), admitted
+  by prescan only when it is the exact emitter, would remove the frame. Other hot framed
+  functions with no remaining `bl`: matmult-int `0x224c` (13.3% frame samples), nettle-aes
+  `0x748`/`0x9a8`/`0x19dc` (8.7% together), ud, edn. Estimated ~3% geometric mean; the
+  source-level experiment shows aha-mont64 alone at 0.594 when the frame disappears.
+* **Measured and not pursued**: generic inlining (K3, slower in 10 of 13 workloads) and
+  dead fuel-store elimination (K4, 0.999 over K1). Their tools and raw data are kept in
+  `k3-experiment/` and `k4-experiment/` so the conclusions can be re-checked.
