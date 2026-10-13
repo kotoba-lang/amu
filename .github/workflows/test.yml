@@ -264,8 +264,11 @@ jobs:
         run: npx nbb scripts/test-review-fuzz-corpus.cljk
 
   execution-v2:
-    name: Explicit v2 target binding, admission and completion
-    runs-on: ubuntu-latest
+    name: Explicit v2 target binding, admission and completion (${{ matrix.runner }})
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -288,3 +291,9 @@ jobs:
           set -o pipefail
           cp=$(node bin/kbb --backend sci --classpath src scripts/print-classpath.cljk "$PWD" --alias execution-v2 --alias native-run | paste -sd: -)
           node bin/kbb --backend sci --config scripts/execution-v2-nbb.edn --classpath "src:$cp" scripts/test-execution-v2-native.cljk
+      - name: Native per-call lease reservation and transport faults
+        run: |
+          set -o pipefail
+          cp=$(node bin/kbb --backend sci --classpath src scripts/print-classpath.cljk "$PWD" --alias execution-v2 --alias native-run | paste -sd: -)
+          node bin/kbb --backend sci --config scripts/execution-v2-nbb.edn --classpath "src:$cp" scripts/test-native-lease-transport.cljk
+          node bin/kbb --backend sci --config scripts/execution-v2-nbb.edn --classpath "src:$cp" scripts/test-execution-v2-native-providers.cljk
