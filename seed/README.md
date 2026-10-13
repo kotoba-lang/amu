@@ -1,4 +1,4 @@
-# Adopted native seed compiler — 12 October 2026
+# Adopted native seed compiler
 
 This directory contains the complete 16-module source based on the adopted
 compiler at `fc49cb2ee6fea1a41a5abbc8ed5b52aaa9f19471`, with an integration
@@ -10,7 +10,7 @@ release, or qualify the whole Amu component as Q9.
 
 `MANIFEST` fixes the unity order. Concatenating each module followed by one
 newline gives SHA-256
-`088858d45fa3fa83083f1db8c393f32a19c9a0409fda243de102e8f7026fa964`.
+`206d2a3141894f4a0bd6eb3d278bac327241cc2e8d8523cca2a2278411d6d049`.
 `adoption-20261012.json` records all source pins, artifact provenance, the
 correctness scope and measurement boundaries. `HEADS`, `MEMORY-MAP`, and `SIR`
 are the corresponding compiler contracts, copied without changes.
@@ -75,8 +75,9 @@ candidate/prior execution-time ratios 0.9791489779557238 for Pico and
 0.9923011307968419 for QR. Both individual pairs improved in each workload.
 These exploratory measurements support adopting small improvements without
 a percentage cutoff; they are not confidence intervals or a new official
-Embench score. A fresh whole-19 C comparison is pending. Round 83 above remains
-the historical pre-lookup snapshot.
+Embench score. Round 83 above remains the historical pre-lookup snapshot. The current-source
+round 88 comparison is recorded below; separate cycles do not establish the
+size of an individual optimization gain.
 
 Public report: <https://kotoba-lang.org/ja/blog/embench-progress-20261012/>
 
@@ -86,8 +87,10 @@ Explicit `--policy` without a following value is also refused with E2170, never 
 
 ## Certified scalar-call descriptor reuse (2026-10-13)
 
-The current source snapshot at `7a17458fc` preserves a checked vector descriptor across complete typed scalar-call certificates. Two successful certificates arm reuse, each vector read restarts the count, and writes to the tracked slot invalidate it. All original index checks and traps remain. Admission uses source types and emitted instruction effects; workload names do not select the optimization.
+The reviewed source snapshot at `9b7816daf99bd65089e57edcc915e39595c120f7` preserves a checked vector descriptor after one complete typed scalar-call certificate. The second certificate band remains supported. Each vector read restarts the count, and writes to the tracked slot invalidate both bands. All original index checks and traps remain. Admission uses source types and emitted instruction effects; workload names do not select the optimization.
 
-The candidate has a native three-generation fixed point, 39 freshly generated images, the original 483 exact result/fuel/state observations, and 54 generic paired controls. The two picojpeg images match the prior measured candidate byte for byte; the other 37 images match the previous main snapshot. Fixed four-slot exploratory picojpeg timing was about 1.89% shorter. This is not a fresh total C comparison or a certified official Embench score. The overall C-level-or-better goal remains active and unmet. Small validated improvements have no minimum percentage cutoff.
+This snapshot has a native three-generation fixed point, 39 freshly generated images, the original 483 exact result/fuel/state observations, and 54 generic paired controls. Five original images contain 23 additional same-layout descriptor-check bypasses; the other 34 images are unchanged. Standard integration also passes 52 lookup controls, 480 comparison pairs, 34 policy refusals and all 19 archived native image hashes.
 
-`docs/evidence/certified-scalar-calls-20261013/` preserves the previous lookup receipt and bootstrap alongside the current qualification records. The previous lookup golden corpus and paused historical evidence remain available. Current integration must pass native self-build, policy safety, existing bounded-lookup controls, and CI before merge.
+Round 87 fixed four-slot exploratory timing measured slre about 0.720157% shorter (mixed individual pair signs) and sglib-combined about 0.680174% shorter (both pairs improved). Round 88 measured all 19 translated workloads and a fresh C timing cycle using the unchanged upstream driver/formula: normalized Kotoba execution time / C is 2.946404197283788. C remains faster overall. These are exploratory translated-port results, not a certified official Embench score, per-MHz result or stable statistical gain. The overall C-level-or-better goal remains active and unmet. Small validated improvements have no minimum percentage cutoff.
+
+`docs/evidence/onecall-descriptor-20261013/` preserves the previous two-argument receipt/bootstrap, qualification results and paired timing. The full round 88 raw logs and independent review are in `/Users/junkawasaki/github/workspaces/codex/embench-total-C-round88-onecall-20261013-v1/`. Earlier certified-call, lookup, golden-corpus and paused evidence remains historical. Integration is tracked by PR #1298 and remote-main readback; candidate qualification alone does not establish a merge.
