@@ -518,28 +518,20 @@ The raw `answer.evm` creation bytecode deploys a standard Ethereum ABI
 `main()` dispatcher. The compiler also writes `answer.evm.abi.json` and a
 digest-bound `answer.evm.manifest.edn`; an unknown selector reverts.
 
-## Runtime: nbb-native for Wasm and ordinary native compile/check
+## Runtime: Kototama VM program by default
 
-`bin/amu compile`/`check` for `wasm32*` and ordinary `x86_64*`/
-`aarch64*` targets runs entirely under `nbb` (ClojureScript on Node) --
-**no JVM process is spawned at all** for those paths. Target-specific
-entrypoints avoid loading either native emitter for Wasm and avoid loading the
-other ISA emitter for native compilation. This matches the monorepo's
-repo-wide runtime priority: amu's native compiler (`--target <isa>`, run
-through the kexe loader) is the first execution path, and wasm is one build
-target among several, chosen for hosts where native cannot run (browsers and
-Workers: `wasm32-browser`; WASI: `wasm32-wasi`); JVM/`bb` stay last-resort
-compat (superproject ADR-2609241300, 2026-09-24 — the earlier order put
-`kotoba wasm runtime` first). An omitted `--target` on `amu compile` /
-`amu worker` means **this host's native target** (ADR 0351, 2026-09-24; like
-Go's GOOS/GOARCH): `aarch64-macos` on Apple silicon, `x86_64-linux` /
-`aarch64-linux` on Linux, `x86_64-windows` / `aarch64-windows` on Windows,
-`aarch64-android` on Android; any other host is refused by name, never
-defaulted to wasm. `AMU_TARGET` overrides the default and an explicit
-`--target` overrides both. A program that uses a feature native does not
-qualify yet is refused naming the feature and the wasm32 targets that carry
-it -- choose `--target wasm32-browser` (browser / Worker) or
-`--target wasm32-wasi` explicitly; amu never switches to wasm by itself.
+`amu compile` without `--target` emits a canonical Kototama VM program plus
+its provenance sidecar. The default compiler output is engine-neutral and does
+not select an OS or ISA. Amu retains explicit native, Wasm, Script and EVM
+backends for deployment-specific artifacts; select them with `--target`.
+`AMU_TARGET` remains an explicit environment override. `amu worker` still
+chooses this host's native target by default because it launches a host-bound
+compiler service rather than producing the portable program format.
+
+The Kototama compiler route lowers checked Amu KIR directly to a versioned
+DAG-CBOR program block. Its current emitter covers the checked i64 KIR slice;
+unsupported KIR forms fail closed. This output format does not by itself prove
+that Kototama, Amu, or another engine can execute every program on every OS.
 `check`, `definition-cids`, `module-lock` and `package-*` take no target.
 The frontend reader/validator
 (`kotoba.compiler.frontend`), the KIR lowering/compile-time oracle
@@ -1654,7 +1646,7 @@ restricted profile and its budgets while implementing that library boundary.
 
 ## Target-neutral and distributed stack architecture
 
-Checks target-independent semantics and emits a selected Native, Wasm core, Component, Script or bounded EVM artifact. Project linking belongs here; runtime linking belongs to the host. The default target is host-native. EVM output is a bounded compiler slice, not a settlement network or proof of full Kototama conformance.
+Checks target-independent semantics and emits a selected Native, Wasm core, Component, Script or bounded EVM artifact. Project linking belongs here; runtime linking belongs to the host. The default compile target is Kototama; worker execution remains host-native. EVM output is a bounded compiler slice, not a settlement network or proof of full Kototama conformance.
 
 See the [owner integration guide and dependency direction](docs/stack-architecture.md),
 [composition metadata](spec/stack-integration.edn), and

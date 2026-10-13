@@ -48,8 +48,9 @@
             (apply str (map #(format "%02x" (bit-and (int %) 0xff)) digest)))
      :cljs (-> (.createHash crypto "sha256") (.update text "utf8") (.digest "hex"))))
 
-(def targets target-profile/compatibility-targets)
-(def supported-targets (set (keys target-profile/profiles)))
+(def kototama-target :kototama-core-v1)
+(def targets (conj target-profile/compatibility-targets kototama-target))
+(def supported-targets (conj (set (keys target-profile/profiles)) kototama-target))
 
 (def source-compilable-targets
   "Targets `compile-source` emits directly.
@@ -59,7 +60,8 @@
   output. Callers that fan out over every target (conformance sweeps, policy
   seal checks) want this set; `supported-targets` remains every declared
   target, so `--target component` still validates as a real target name."
-  (into #{} (remove #(= :component (:execution (target-profile/profile %))))
+  (into #{} (remove #(and (not= kototama-target %)
+                          (= :component (:execution (target-profile/profile %)))))
         supported-targets))
 
 ;; Native (x86_64/aarch64) targets admit the string slice of "typed values"
@@ -809,12 +811,16 @@
           (= target :x86_64-aiueos-user-v1)
           (assoc :binary (elf64/package-user artifact))))))))
 
+(declare compile-kototama)
+
 (defn compile-source
   ([source target] (compile-source source target {}))
   ([source target policy] (compile-source source target policy {}))
   ([source target policy emit-metadata]
-   (provenance/attach source policy emit-metadata
-                      (compile-source* source target policy emit-metadata))))
+   (if (= target kototama-target)
+     (compile-kototama source policy emit-metadata)
+     (provenance/attach source policy emit-metadata
+                        (compile-source* source target policy emit-metadata)))))
 
 (defn compile-kototama
   "Compile checked Kotoba source directly to a Kototama program block.
