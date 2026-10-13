@@ -1,7 +1,9 @@
-# Selfhost is the top priority for the Amu compiler
+# Amu compiler selfhost milestone
 
-Decision recorded 2026-09-29. It outranks new features, new targets and
-benchmark publication.
+Compiler selfhost was prioritized on 2026-09-29. On 2026-10-13, the project
+made Kototama the default program and runtime contract. Selfhost remains a
+compiler-build milestone; it does not outrank portable VM execution, host
+coverage, or integration of Kototama across the stack.
 
 ## The goal
 
@@ -16,10 +18,10 @@ own `.cljk` sources satisfies the second one.
 
 ## Rules
 
-1. **Selfhost first.** When work competes for time, the item that moves the
-   compiler toward building itself wins. Walls on the selfhost scoreboard are
-   fixed in the language / frontend / backend, not worked around in the
-   compiler's source.
+1. **Keep the milestone independent.** Selfhost work should address walls in
+   the language / frontend / backend, not work around them in the compiler's
+   source. It does not make native compiler output the application runtime
+   default or displace Kototama portability work.
 2. **Only a selfhost-built compiler is selfhost evidence.** A compiler
    executable counts only if Amu produced it. An executable built with
    GraalVM Native Image, run on the JVM, or run on Node/nbb is a *bootstrap or

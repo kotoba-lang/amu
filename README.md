@@ -5,11 +5,10 @@ language. The repository is `kotoba-lang/amu`; the name evokes Japanese
 「編む」— weaving checked source, typed KIR, and target artifacts into one
 cloth.
 
-> **Selfhost is the top priority.** The Amu compiler is to be a native
-> executable produced by Amu itself, built with no JVM, no GraalVM and no
-> Node.js. Only a selfhost-built compiler counts as selfhost evidence; a
-> GraalVM- or Node-hosted build is a bootstrap reference and is labelled so.
-> See [docs/selfhost-priority.md](docs/selfhost-priority.md).
+> **Kototama is the default program and runtime contract.** Amu emits a
+> versioned, engine-neutral VM program by default; native and Wasm are explicit
+> deployment backends. Building Amu itself with Amu remains a separate compiler
+> milestone. See [docs/selfhost-priority.md](docs/selfhost-priority.md).
 
 ## Lisp machine architecture
 
@@ -240,11 +239,13 @@ the typed output as a ValueCID. Without that provider the capability traps.
 `apply` remains bounded closed-module closure invocation, while source strings,
 reader evaluation, ambient namespaces, and host `eval` remain unavailable.
 
-Direct x86-64/AArch64 AOT serves admitted native applications and AiueOS
-boot/kernel, engine, driver, root-key adapter and trusted low-level profiles.
-A host-native default is not ambient OS authority and does not qualify the
-separate C-free AiueOS production path. The compiler
-must not duplicate runtime policy. Two linkers, two authorities:
+Direct x86-64/AArch64 AOT remains available for explicit native deployments
+and AiueOS boot/kernel, engine, driver, root-key adapter and trusted low-level
+profiles. It is not the default application execution contract: portable
+programs target Kototama, with host authority supplied by the selected VM
+provider. Native artifacts do not qualify the separate C-free AiueOS production
+path. The compiler must not duplicate runtime policy. Two linkers, two
+authorities:
 
 ```text
 amu      編む   project link — many sources, one cloth
@@ -1646,7 +1647,7 @@ restricted profile and its budgets while implementing that library boundary.
 
 ## Target-neutral and distributed stack architecture
 
-Checks target-independent semantics and emits a selected Native, Wasm core, Component, Script or bounded EVM artifact. Project linking belongs here; runtime linking belongs to the host. The default compile target is Kototama; worker execution remains host-native. EVM output is a bounded compiler slice, not a settlement network or proof of full Kototama conformance.
+Checks target-independent semantics and emits a canonical Kototama VM program by default. Project linking belongs here; runtime linking belongs to the host VM. Native, Wasm core, Component, Script and bounded EVM remain explicit deployment profiles. Worker execution uses a host runtime to run the compiler service; it does not select the application artifact format. EVM output is a bounded compiler slice, not a settlement network or proof of full Kototama conformance.
 
 See the [owner integration guide and dependency direction](docs/stack-architecture.md),
 [composition metadata](spec/stack-integration.edn), and

@@ -6,7 +6,7 @@ future boundaries; they do not change runtime schemas or certify migration.
 
 ## Responsibility
 
-Checks target-independent semantics and emits a selected Native, Wasm core, Component, Script or bounded EVM artifact. Project linking belongs here; runtime linking belongs to the host. The default target is host-native. EVM output is a bounded compiler slice, not a settlement network or proof of full Kototama conformance.
+Checks target-independent semantics and emits a canonical Kototama VM program by default. Project linking belongs here; runtime linking belongs to the host VM. Native, Wasm core, Component, Script and bounded EVM are explicit deployment profiles, not the default execution contract. EVM output is a bounded compiler slice, not a settlement network or proof of full Kototama conformance.
 
 ## Contract dependency direction
 
