@@ -1,0 +1,49 @@
+(ns kotoba.compiler.nbb.kototama-cli
+  "JDK-free Kototama program compiler entrypoint."
+  (:require [kotoba.artifact.core :as artifact]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.compiler.capability-names :as cap-names]
+            [kotoba.compiler.nbb.cli-support :as support]
+            [kotoba.compiler.nbb.io :as io]
+            [kotoba.compiler.nbb.project-source :as project-source]))
+
+(def ^:private targets
+  #{"kototama" "kototama-core-v1"})
+
+(defn- compile! [args]
+  (let [target-name (or (support/option args "--target") "kototama")
+        _ (when-not (contains? targets target-name)
+            (support/usage-error! (str "error: nbb Kototama path does not cover target " target-name)))
+        resolved (project-source/resolve-source! args)
+        input (:input resolved)
+        output (or (support/option args "--output") (str input ".kototama"))
+        policy (cap-names/wire-policy (support/read-policy args))
+        metadata (support/emit-metadata args)
+        result (support/timed "kototama-compile"
+                              #(compiler/compile-kototama (:source resolved) policy metadata))
+        provenance-text (pr-str (artifact/edn-safe (:provenance result)))
+        provenance-output (str output ".provenance.edn")]
+    (support/timed "output-set-write"
+                   #(io/write-set! [{:path output :bytes (:program-bytes result)}
+                                    {:path provenance-output :text provenance-text}]))
+    (merge {:ok true :target (:target result) :output output
+            :provenance-output provenance-output :format (:format result)
+            :cid (:program-cid result)}
+           (project-source/inputs-record resolved))))
+
+(defn- run! [args]
+  (case (first args)
+    "compile" (compile! args)
+    (support/usage-error! (str "error: nbb Kototama path does not cover command " (first args)))))
+
+(defn- worker! [args]
+  (let [target-name (or (support/option args "--target") "kototama")]
+    (when-not (contains? targets target-name)
+      (support/usage-error! (str "error: Kototama worker does not cover target " target-name)))
+    (support/serve! run! :kototama-core-v1)))
+
+(when (seq (support/command-line-args))
+  (let [args (support/command-line-args)]
+    (if (= "worker" (first args))
+      (worker! args)
+      (support/execute! run!))))
