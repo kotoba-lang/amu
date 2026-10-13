@@ -11902,6 +11902,31 @@
   (gn-emit (enc-mov-sp 31 29)) (gn-emit (enc-ldp-post 29 30 31 16))
   (gn-emit (enc-ret))))
 
+;; Sequential bounded scan: retain each original load, early exit, pointer
+;; advance and flag-setting countdown. Only the successful loop-back branches
+;; are removed. One shared nonzero bridge retains the original cold-path hook.
+(defn- clw-scan-unroll [M :vector-i64 P :vector-i64 k :i64 n :i64] :vector-i64
+ (if (= k n) M
+  (let [m1 (gn-emit M (enc-ldr 9 3 0)) at (vector-at m1 MM-CODE-N)
+        saved (vector-assoc! P k at)
+        m2 (-> m1 (gn-emit (enc-cbnz 9 0))
+          (gn-emit (enc-add-r 3 3 5)) (gn-emit (enc-subs-i 6 6 1)))]
+   (clw-scan-unroll m2 saved (inc k) n))))
+(defn- clw-scan [M :vector-i64 n :i64] :vector-i64
+ (if (or (< n 2) (> n 8))
+  (let [head (vector-at M MM-CODE-N) m1 (gn-emit M (enc-ldr 9 3 0))
+        false-at (vector-at m1 MM-CODE-N)
+        m2 (-> m1 (gn-emit (enc-cbnz 9 0)) (gn-emit (enc-add-r 3 3 5))
+          (gn-emit (enc-subs-i 6 6 1))) back (vector-at m2 MM-CODE-N)]
+   (gn-put (gn-emit m2 (enc-bcond (enc-cond-ne) (- head back))) MM-R0 false-at))
+  (let [P (vector-alloc (dec n)) m1 (clw-scan-unroll M P 0 (dec n))
+        skip (vector-at m1 MM-CODE-N) m2 (gn-emit m1 (enc-b 2))
+        false-at (vector-at m2 MM-CODE-N) m3 (gn-emit m2 (enc-cbnz 9 0))
+        out (loop [V m3 k 0] (if (= k (dec n)) V
+          (let [at (vector-at P k)]
+           (recur (gn-put V (+ MM-CODE-BASE at) (enc-cbnz 9 (- false-at at))) (inc k)))))]
+   (gn-put out MM-R0 false-at))))
+
 (defn- clw-private-entry [M :vector-i64 i :i64] :vector-i64
  (let [owner (if (and (clw-counts M) (> i 0) (< i (vector-at M MM-SIR-N))) (jdag-owner M i 512) 0) f (if (> owner 0) (gn-sir M owner IF-A) 0)
        n (if (> (clw-witness M f false) 0) (scfill-admit M i) 0) ln (vector-at M MM-LABEL-N) xn (vector-at M MM-FIX-N)] (if (or (= n 0) (<= ln 0) (>= ln (- MM-LABEL-CAP 2)) (<= xn 0) (> xn (- MM-FIX-CAP 8))) M
@@ -11918,11 +11943,8 @@
     (gn-emit (enc-ldr 4 7 328)) (gn-emit (enc-add-r 5 5 1)) (gn-emit (gn-e-addsl 4 4 5 3))
     (gn-emit (gn-e-addsl 5 31 2 3)) (gn-emit (enc-add-r 3 4 5))
     (gn-mov-imm 6 (dec n)) (gn-mov-imm 10 (dec n)) (jdag-sub))
-   head (vector-at m0 MM-CODE-N)
-   m1 (gn-emit m0 (enc-ldr 9 3 0)) false-at (vector-at m1 MM-CODE-N)
-   m2 (-> m1 (gn-emit (enc-cbnz 9 0)) (gn-emit (enc-add-r 3 3 5)) (gn-emit (enc-subs-i 6 6 1)))
-   back (vector-at m2 MM-CODE-N)
-   m3 (-> m2 (gn-emit (enc-bcond (enc-cond-ne) (- head back)))
+   scan (clw-scan m0 n) false-at (vector-at scan MM-R0)
+   m3 (-> scan
      (gn-emit (enc-sub-r 8 8 10)) (jdag-publish) (gn-emit (enc-ldr 0 4 0))
      (gn-mov 16 (gn-sreg M 4))) plain-at (vector-at m3 MM-CODE-N)
    m4 (-> m3 (gn-emit (enc-cbz 16 0)) (scfill-rp scalar)) plain (vector-at m4 MM-CODE-N)
@@ -12890,6 +12912,20 @@
   (if (> at (- end 21)) found
    (if (jdf-paid M at end)
     (if (> found 0) 0 (recur (inc at) at)) (recur (inc at) found)))))
+(defn- jdf-unroll [M :vector-i64 head :i64 end :i64 n :i64] :bool
+ (let [hook (+ head (* 4 (dec n)) 1)]
+  (and (>= n 2) (<= n 8) (< hook end)
+   (loop [k 0] (or (= k (dec n))
+    (let [at (+ head (* 4 k))]
+     (and (jdf-at M at end (enc-ldr 9 3 0))
+      (jdf-at M (inc at) end (enc-cbnz 9 (- hook (inc at))))
+      (jdf-at M (+ at 2) end (enc-add-r 3 3 5))
+      (jdf-at M (+ at 3) end (enc-subs-i 6 6 1)) (recur (inc k))))))
+   (jdf-at M (dec hook) end (enc-b 2))
+   (= (bit-and (sf-word M hook) 0xff00001f) 0xb5000009))))
+(defn- jdf-scan-hook [M :vector-i64 paid :i64 n :i64] :i64
+ (if (= (sf-word M (+ paid 25)) (enc-bcond (enc-cond-ne) -4))
+  (+ paid 22) (+ paid 22 (* 4 (dec n)))))
 (defn- jdf-scan [M :vector-i64 at :i64 end :i64 n :i64] :bool
  (and (> n 1) (<= n 10) (<= at (- end 26))
   (jdf-at M (+ at 9) end (enc-ldr 11 7 320))
@@ -12904,11 +12940,12 @@
   (jdf-at M (+ at 18) end (enc-movz 6 (dec n) 0))
   (jdf-at M (+ at 19) end (enc-movz 10 (dec n) 0))
   (jdf-at M (+ at 20) end (enc-subs-i 8 8 1))
-  (jdf-at M (+ at 21) end (enc-ldr 9 3 0))
-  (= (bit-and (sf-word M (+ at 22)) 0xff00001f) 0xb5000009)
-  (jdf-at M (+ at 23) end (enc-add-r 3 3 5))
-  (jdf-at M (+ at 24) end (enc-subs-i 6 6 1))
-  (jdf-at M (+ at 25) end (enc-bcond (enc-cond-ne) -4))))
+  (or (and (jdf-at M (+ at 21) end (enc-ldr 9 3 0))
+       (= (bit-and (sf-word M (+ at 22)) 0xff00001f) 0xb5000009)
+       (jdf-at M (+ at 23) end (enc-add-r 3 3 5))
+       (jdf-at M (+ at 24) end (enc-subs-i 6 6 1))
+       (jdf-at M (+ at 25) end (enc-bcond (enc-cond-ne) -4)))
+      (jdf-unroll M (+ at 21) end n))))
 (defn- jdf-false [M :vector-i64 at :i64 end :i64] :bool
  (and (> at 0) (<= at (- end 6))
   (jdf-at M at end (enc-sub-r 10 10 6))
@@ -12917,7 +12954,8 @@
   (jdf-at M (+ at 3) end (enc-movz 9 0 0))
   (jdf-at M (+ at 4) end (+ 0x10000000 30))
   (jdf-at M (+ at 5) end (enc-b 0))))
-;; D: start,end,paid,scan-head,false-head,exit-label,fail-label,source-owner.
+;; D: start,end,paid,scan-head,false-head,exit-label,fail-label,source-owner,
+;; exact scanner false hook, scanner end. These are compiler-local proof cells.
 ;; F[0..511] = unique actual fixup index; F[512] = refusal.
 (defn- jdf-fixes [M :vector-i64 D :vector-i64] :vector-i64
  (loop [F (vector-alloc 513) k 1]
@@ -12979,15 +13017,19 @@
 ;; V[0..511] visited; V[512..1023] queue; 1024 head,1025 tail,1026 bad,1027 goal.
 (defn- jdf-edge [D :vector-i64 V :vector-i64 p :i64 q :i64] :vector-i64
  (let [start (vector-at D 0) end (vector-at D 1) paid (vector-at D 2)
-       head (vector-at D 3) f (vector-at D 4)]
+       head (vector-at D 3) f (vector-at D 4)
+       hook (vector-at D 8) scan-end (vector-at D 9)]
   (cond (= q (inc end)) V
    (= q end) (if (= p (+ f 5)) (vector-assoc! V 1027 1) (vector-assoc! V 1026 1))
    (or (< q start) (>= q end)) (vector-assoc! V 1026 1)
    (and (< q head) (not= q (inc p))
         (not (and (= p (+ paid 2)) (= q (+ paid 4))))) (vector-assoc! V 1026 1)
-   (and (= q head) (not (or (= p (dec head)) (= p (+ head 4))))) (vector-assoc! V 1026 1)
-   (and (> q head) (< q (+ head 5)) (not= p (dec q))) (vector-assoc! V 1026 1)
-   (and (= q f) (not= p (inc head))) (vector-assoc! V 1026 1)
+   (and (= q head) (not (or (= p (dec head))
+        (and (= scan-end (+ head 5)) (= p (+ head 4)))))) (vector-assoc! V 1026 1)
+   (and (> q head) (< q scan-end) (not= p (dec q))
+        (not (and (= q hook) (> hook (+ head 1))
+          (>= p (inc head)) (< p (dec hook)) (= (bit-and (- p head) 3) 1)))) (vector-assoc! V 1026 1)
+   (and (= q f) (not= p hook)) (vector-assoc! V 1026 1)
    (and (> q f) (< q (+ f 6)) (not= p (dec q))) (vector-assoc! V 1026 1)
    :else (let [r (- q start) tail (vector-at V 1025)]
     (if (> (vector-at V r) 0) V
@@ -12996,7 +13038,7 @@
 ;; Source-owned DC terminal, never a general RET allowance.
 (defn- jdf-dcr-terminal [M :vector-i64 D :vector-i64 F :vector-i64 at :i64] :bool
  (let [start (vector-at D 0) end (vector-at D 1) owner (vector-at D 7)
-       false-at (+ (vector-at D 3) 1)]
+       false-at (vector-at D 8)]
   (if (or (< at (+ start 15)) (> at (- end 6)) (> (- at start) 512)) false
    (let [f (gn-sir M owner IF-A) adr-fix (vector-at F (- (dec at) start))]
     (and (> f 0) (< f (vector-at M MM-FN-N))
@@ -13080,11 +13122,14 @@
       (let [paid (jdf-find M start finish) scan (gn-sir M (+ owner 7) IF-A)
         n (scfill-scan M scan)]
        (if (or (<= paid 0) (not (jdf-scan M paid finish n))) false
-        (let [head (+ paid 21) false-head (of-dest (sf-word M (+ paid 22)) (+ paid 22))]
+        (let [head (+ paid 21) hook (jdf-scan-hook M paid n)
+              scan-end (if (= hook (inc head)) (+ head 5) (inc hook))
+              false-head (of-dest (sf-word M hook) hook)]
          (if (not (jdf-false M false-head finish)) false
-          (let [D (-> (vector-alloc 8) (vector-assoc! 0 start) (vector-assoc! 1 finish)
+          (let [D (-> (vector-alloc 10) (vector-assoc! 0 start) (vector-assoc! 1 finish)
             (vector-assoc! 2 paid) (vector-assoc! 3 head) (vector-assoc! 4 false-head)
-            (vector-assoc! 5 exit) (vector-assoc! 6 label) (vector-assoc! 7 owner))
+            (vector-assoc! 5 exit) (vector-assoc! 6 label) (vector-assoc! 7 owner)
+            (vector-assoc! 8 hook) (vector-assoc! 9 scan-end))
             F (jdf-fixes M D)]
            (and (= (vector-at F 512) 0) (jdf-body M C i end) (jdf-walk M D F))))))))))))
  )
