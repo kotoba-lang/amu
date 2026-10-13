@@ -1835,8 +1835,7 @@
     fast (vector-at m2 MM-CODE-N)
     m3 (-> (gp-restore m2 B) (gn-put (+ MM-CODE-BASE z) (enc-bcond (enc-cond-ne) (- fast z)))
       ;; x16 retains original nonzero fuel on this edge; every original check/store remains.
-      (gn-emit (enc-subs-i 16 16 1)) (gn-emit (enc-bcond (enc-cond-hs) 2))
-      (gn-emit (enc-brk 0)) (gn-emit (enc-str 16 7 CTX-FUEL))
+      (gn-emit (enc-subs-i 16 16 1)) (gn-emit (enc-str 16 7 CTX-FUEL))
       (gn-emit (enc-sub-i 17 0 1)) (gn-emit (enc-ldr 9 7 288)) (gn-emit (enc-ldr 9 9 0))
       (gn-emit (enc-cmp-r 17 9)) (nr-guard G 0 (enc-cond-hs))
       (gn-emit (enc-ldr 9 7 296)) (gn-emit (gn-e-addsl 9 9 17 4)) (gn-emit (enc-ldp 8 9 9 0))
