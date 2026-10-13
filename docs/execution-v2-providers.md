@@ -58,3 +58,7 @@ See [transport owner](https://github.com/kotoba-lang/kototama-native/blob/main/d
 `test-execution-v2-native-providers.cljk` tests actual signed compiled guests;
 `test-native-lease-transport.cljk` tests mechanism faults. General values, Windows,
 async hosting and whole-component Q9/selfhost remain separate qualifications.
+
+Packaged commands keep their baked providers: `KEXE_LEASE_TRANSPORT` and
+inherited fd 3/4 cannot opt them into the external host transport. Only the
+non-embedded measured loader invocation accepts that explicit mode.
