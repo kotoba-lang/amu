@@ -1,0 +1,3 @@
+This experimental branch is preserved without adoption. Generic two-argument fuel caching defers to existing structurally certified phase-loop and constant-table expansions. Original three-argument admission is retained. The default main adoption receipt intentionally remains unchanged.
+
+The initial candidate producer generated all39 images. All483 original observations match exit, full result, fuel and arena output. Every changed instruction and target in the four changed images is mapped; changed fuel charges have a closed CFG cache proof and a differential scratch-register read proof. This is not a performance result, full compiler qualification, or a goal-completion claim. See candidate-v3.json for remaining work.
