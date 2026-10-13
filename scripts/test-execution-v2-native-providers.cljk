@@ -17,6 +17,7 @@
 (def runtime (:runtime measured))
 (def target (case [(.-arch js/process) (.-platform js/process)]
               ["arm64" "darwin"] :aarch64-macos-kotoba-v1
+              ["x64" "darwin"] :x86_64-macos-kotoba-v1
               ["arm64" "linux"] :aarch64-linux-kotoba-v1
               ["x64" "linux"] :x86_64-linux-kotoba-v1))
 (def limits {:fuel 1024})
@@ -100,6 +101,9 @@
      :authority authority :window window :revoked revoked :now now}))
 (defn clean! [f] (fs/rmSync (:directory f) #js {:recursive true :force true}))
 (defn lines [f] (if (fs/existsSync (:log f)) (count (re-seq #"\n" (fs/readFileSync (:log f) "utf8"))) 0))
+(defn i64-result [o]
+  (let [r (get-in o [:value :evidence :result])]
+    (if (value/int64? r) (value/int64-value r) (js/BigInt r))))
 (defn outcome [result] (blocks/verify-block :outcome (:outcome result)))
 
 
@@ -108,7 +112,7 @@
     (try
       (let [r (v2/run! (:host f) (:packet f)) o (outcome r)]
         (is (= :ok (:status o)) (pr-str o))
-        (is (= 42 (get-in o [:value :evidence :result])))
+        (is (= (js/BigInt 42) (i64-result o)))
         (is (= 1 (lines f)))
         (is (some? (v2/verify-completion! (:host f) (get-in f [:packet :intent]) r)))
         (is (refused? #(v2/run! (:host f) (:packet f))))
@@ -152,7 +156,7 @@
   (let [f (fixture target twice 2 :ok)]
     (try
       (let [r (v2/run! (:host f) (:packet f)) o (outcome r)]
-        (is (= :ok (:status o))) (is (= 42 (get-in o [:value :evidence :result])))
+        (is (= :ok (:status o))) (is (= (js/BigInt 42) (i64-result o)))
         (is (= 2 (lines f)))
         (is (some? (v2/verify-completion! (:host f) (get-in f [:packet :intent]) r))))
       (finally (clean! f)))))

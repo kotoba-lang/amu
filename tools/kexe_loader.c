@@ -12040,6 +12040,8 @@ static void probe_denied(unsigned line) {
 }
 
 int main(int argc, char **argv) {
+  /* Packaged commands retain their baked provider configuration. */
+#ifndef KEXE_EMBEDDED
   const char *lease_mode = getenv("KEXE_LEASE_TRANSPORT");
   if (lease_mode != NULL) {
     if (strcmp(lease_mode, "i64-v2") != 0 ||
@@ -12049,6 +12051,7 @@ int main(int argc, char **argv) {
     }
     kexe_lease_transport = 1;
   }
+#endif
 
   kexe_decisions_init();
   kexe_process_euid = (long long)geteuid();
