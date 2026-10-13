@@ -2603,15 +2603,22 @@
 (defn- pf-load [M :vector-i64] :vector-i64
  (if (and (= (gn-g M gn-f-leaf) 0) (= (gn-g M gn-f-freg) 2)) M
   (gn-emit M (enc-ldr 8 7 CTX-FUEL))))
+;; Fuse a pure register copy and unsigned low-bit extraction. For values
+;; requiring materialization, retain the exact old load/mask sequence.
+(defn- gn-mask-into [M :vector-i64 r :i64 t :i64 width :i64] :vector-i64
+ (let [q (gn-sr M t 1)]
+  (if (and (>= q 0) (< q 31))
+   (gn-emit M (gn-e-bf 0xd3400000 r q 0 (dec width)))
+   (-> M (gn-into r t) (gn-emit (gn-e-bf 0xd3400000 r r 0 (dec width)))))))
 (defn- gn-call-mask-writer [M :vector-i64 t :i64] :vector-i64
  (if (and (= (gn-g M gn-f-vmode) 4) (= (gn-g M gn-f-freg) 3))
   (let [m1 (gn-pin M (inc t)) ri (gn-pinned m1 (inc t))]
-   (-> m1 (gn-into 0 (+ t 2)) (gn-emit (gn-e-bf 0xd3400000 0 0 0 7))
+   (-> m1 (gn-mask-into 0 (+ t 2) 8)
        (gn-emit (gn-e-strr3 0 4 ri)) (gn-gs gn-f-h (inc t))))
   (let [M1 (-> M (gn-pin t) (gn-pin (inc t)))
         rv (gn-pinned M1 t) ri (gn-pinned M1 (inc t))]
     (-> M1 (gn-ctx) (pf-load) (gn-mask-charge)
-        (gn-into 0 (+ t 2)) (gn-emit (gn-e-bf 0xd3400000 0 0 0 7))
+        (gn-mask-into 0 (+ t 2) 8)
         (gn-mask-charge) (gn-hchk rv 312 320) (gn-vidx ri)
         (gn-emit (gn-e-strr3 0 16 17)) (gn-emit (enc-str 8 7 CTX-FUEL))
         (gn-gs gn-f-h (inc t))))))
