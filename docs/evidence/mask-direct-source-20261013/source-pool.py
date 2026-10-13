@@ -4,7 +4,7 @@ def source_pool(source):
  S=source.decode();t=[m for m in re.finditer(r';[^\n]*|"(?:\\.|[^"\\])*"|[()\[\]]|[^\s()\[\]";]+',S)if not m.group().startswith(';')];at=0
  class N:
   def __init__(self,v,p,k='atom'):self.v=v;self.p=p;self.k=k
- 
+
  def parse():
   nonlocal at
   x=t[at];at+=1;v=x.group()
