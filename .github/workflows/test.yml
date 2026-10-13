@@ -277,6 +277,11 @@ jobs:
           set -o pipefail
           cp=$(node bin/kbb --backend sci --classpath src scripts/print-classpath.cljk "$PWD" --alias execution-v2 | paste -sd: -)
           node bin/kbb --backend sci --config scripts/execution-v2-nbb.edn --classpath "src:$cp" scripts/test-execution-v2-targets.cljk
+      - name: Execute scoped synchronous Wasm and Script providers
+        run: |
+          set -o pipefail
+          cp=$(node bin/kbb --backend sci --classpath src scripts/print-classpath.cljk "$PWD" --alias execution-v2 | paste -sd: -)
+          node bin/kbb --backend sci --config scripts/execution-v2-nbb.edn --classpath "src:$cp" scripts/test-execution-v2-providers.cljk
       - name: Execute JVM-free native artifact through the measured executor
         run: |
           set -o pipefail

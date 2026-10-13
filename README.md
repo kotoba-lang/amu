@@ -1679,3 +1679,8 @@ enable v2 runtime admission or claim Q9/native qualification.
 See [execution v2](docs/execution-v2.md) and [owner contract](spec/execution-v2.edn).
 New target bindings, authority-issued invocation/leases and authenticated admission
 are explicit APIs; existing v1 runtime defaults remain compatible.
+
+
+The optional v2 execution composition also supports explicit bounded scalar
+Wasm/Script provider artifacts with signed, durable lease-use enforcement.
+See [the provider contract and acceptance boundary](docs/execution-v2-providers.md).
