@@ -10,7 +10,7 @@ release, or qualify the whole Amu component as Q9.
 
 `MANIFEST` fixes the unity order. Concatenating each module followed by one
 newline gives SHA-256
-`7c63285e391a82a3d18e179d1ce477ba29ca41038ff542bd07b317627362a25e`.
+`a1a718388c55eaf8e9f749ea1829c17ae9d667dbc785194879b0abb8454602b3`.
 `adoption-20261012.json` records all source pins, artifact provenance, the
 correctness scope and measurement boundaries. `HEADS`, `MEMORY-MAP`, and `SIR`
 are the corresponding compiler contracts, copied without changes.
@@ -163,3 +163,5 @@ Previous bootstrap, raw evidence and portable proofs are retained under
 `--selfbuild-output <native-selfbuild-output>`.
 
 The direct mask source snapshot fuses a mask writer's register copy into its low8-bit extraction.65 sites change in each Pico image; all other37 images are identical. Native four-generation identity, original483 observations and192 generic pairs (368 guests plus16 loader configuration refusals) pass. Fixed4 Joseph Pico timing was about1.767310% shorter, with both pair signs positive; this remains exploratory without a stability claim. Small validated gains have no5% cutoff. Full19 C parity remains unproven; incomplete rounds93/94 produce no total ratio. Evidence: [direct mask fusion](../docs/evidence/mask-direct-source-20261013/README.md).
+
+Fully prepaid clamp/mask cores reuse initialized x8=CTX-FUEL. Both Pico images remove12 loads+12 stores under full paid-region/entry/index/nonalias/reference/export proofs;37 other images stay whole identical. Original483 observations,84 source-oracle pairs and512 fuel boundary pairs pass (1192 generic guests). Locked Pico fixed4 was2.815160% shorter with both pair signs positive, exploratory without a stability claim. No5% cutoff. Prior store-only round97 is preserved unadopted because both pairs were slower. At qualification preparation, last complete full19 is prior-main round96 ratio2.8739381568053983; this candidate's freshfull19 comparison is pending. Goal active/unmet. [Evidence](../docs/evidence/fuel-register-reuse-20261014/README.md).
