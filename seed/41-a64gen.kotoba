@@ -2623,6 +2623,9 @@
         (gn-emit (gn-e-strr3 0 16 17)) (gn-emit (enc-str 8 7 CTX-FUEL))
         (gn-gs gn-f-h (inc t))))))
 
+;; In fully prepaid freg3 regions, the header initializes x8=CTX-FUEL.
+;; All admitted body operations preserve this relation. Reuse that register
+;; only here; ordinary helper fuel transactions retain their load/store.
 ;; x8 reproduces the original leaf's fuel transaction; CSEL comparisons
 ;; use signed flags and do not subtract bounds in language arithmetic.
 (defn- gn-call-clamp [M :vector-i64 i :i64 f :i64 t :i64 q :i64] :vector-i64
@@ -2631,7 +2634,7 @@
         charged (or fuel (>= w 1536)) width (bit-and w 511)
         low (gn-sir M (+ q 4) IF-B) high (gn-sir M (+ q 11) IF-B)]
     (-> M (gn-into 0 t) (gn-ctx)
-        (cond-> charged (pf-load)
+        (cond-> (and charged (not= (gn-g M gn-f-freg) 3)) (pf-load)
                 fuel (gn-mask-charge)
                 (>= w 1536) (gn-mask-charge))
         (gn-emit (gn-e-bf 0x93400000 0 0 0 (dec width)))
@@ -2639,7 +2642,8 @@
         (gn-emit (enc-csel 0 16 0 (enc-cond-lt)))
         (gn-mov-imm 17 high) (gn-emit (enc-cmp-r 0 17))
         (gn-emit (enc-csel 0 17 0 (enc-cond-gt)))
-        (cond-> charged (gn-emit (enc-str 8 7 CTX-FUEL)))
+        (cond-> (and charged (not= (gn-g M gn-f-freg) 3))
+          (gn-emit (enc-str 8 7 CTX-FUEL)))
         (gn-take i t 0))))
 
 ;; Bounded structural proof that a direct callee returns with input x7.
@@ -2700,9 +2704,11 @@
 (defn- gn-call-scalar-mask [M :vector-i64 i :i64 t :i64 token :i64] :vector-i64
  (let [width (bit-and token 255) charged (>= token 256)]
   (-> M (gn-into 0 t) (gn-ctx)
-      (cond-> charged (gn-emit (enc-ldr 8 7 CTX-FUEL)) charged (gn-mask-charge))
+      (cond-> (and charged (not= (gn-g M gn-f-freg) 3))
+       (gn-emit (enc-ldr 8 7 CTX-FUEL)) charged (gn-mask-charge))
       (gn-emit (gn-e-bf 0xd3400000 0 0 0 (dec width)))
-      (cond-> charged (gn-emit (enc-str 8 7 CTX-FUEL)))
+      (cond-> (and charged (not= (gn-g M gn-f-freg) 3))
+          (gn-emit (enc-str 8 7 CTX-FUEL)))
       (gn-take i t 0))))
 ;; Exact closed frameless affine-index vector reader. Preserve caller frame.
 ;; The callee's entry fuel remains private in x8 until success or exhaustion;
