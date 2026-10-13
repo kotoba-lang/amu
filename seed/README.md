@@ -128,3 +128,16 @@ qualification and timing evidence. Native acceptance/refusal controls run with:
 ```sh
 python3 scripts/seed/check-sequential-scan.py --selfbuild-output <native-selfbuild-output>
 ```
+
+## Fuel-load forwarding candidate (2026-10-13)
+
+`42-layout` runs a post-fixup available-register pass (`flf-`): an exact context-fuel load
+`ldr xD,[x7,#8]` becomes `mov xD,xS` or `nop` when every path proves `xS` still holds the
+value last stored to or loaded from the counter. Every fuel store, charge, trap, call and
+return is unchanged and nothing moves, so the published counter is identical at every
+instant. On top of the sequential-scan main the native fixed point is `692b5653…`; 705
+loads in the 39 stable images change, and differential runs over all exports, inputs and
+fuel levels match main byte for byte (four runs that first hit the host time limit were
+re-run without it and match). It is a candidate: speed results are local
+exploratory CPU-time measurements on a busy host, recorded in
+`docs/evidence/fuel-load-forwarding-20261013/README.md`. The total-C goal remains unmet.
