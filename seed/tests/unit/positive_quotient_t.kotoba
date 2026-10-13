@@ -1,0 +1,45 @@
+;; deps: 01-mem 02-io 10-lex 11-read 20-names 21-check 30-lower 40-a64enc 41-a64gen
+(defn- t-positive [M :vector-i64] :vector-i64
+ (-> M (gn-put MM-CODE-N 80)
+  (gn-put (+ MM-CODE-BASE 1) (enc-movz 17 198 0))
+  (gn-put (+ MM-CODE-BASE 2) (gn-e-bf 0x92400000 21 0 0 7))
+  (gn-put (+ MM-CODE-BASE 3) (enc-mul 9 21 17))
+  (gn-put (+ MM-CODE-BASE 4) (gn-e-asr 17 9 63))
+  (gn-put (+ MM-CODE-BASE 5) (+ (gn-e-addsl 9 9 17 56) 0x400000))
+  (gn-put (+ MM-CODE-BASE 6) (gn-e-asr 9 9 8))
+  (gn-put (+ MM-CODE-BASE 7) (enc-movz 17 42 0))
+  (gn-put (+ MM-CODE-BASE 8) (enc-ret))))
+(defn- t-word-refusal [M :vector-i64 R :vector-i64 at :i64 word :i64] :bool
+ (let [cell (+ MM-CODE-BASE at) old (vector-at M cell)
+       changed (gn-put M cell word) no (not (uqd-site changed R 4))
+       restored (gn-put changed cell old)] no))
+(defn- t-root-refusals [M :vector-i64 R :vector-i64 at :i64] :bool
+ (if (> at 6) true
+  (let [changed (vector-assoc! R at 1) no (not (uqd-site M changed 4))
+        restored (vector-assoc! changed at 0)]
+   (and no (t-root-refusals M restored (inc at))))))
+(defn- t-overflow [M :vector-i64 R :vector-i64] :bool
+ (let [v (-> M
+   (gn-put (+ MM-CODE-BASE 1) (enc-movz 17 65535 0))
+   (gn-put (+ MM-CODE-BASE 2) (gn-e-bf 0x92400000 21 0 0 30))
+   (gn-put (+ MM-CODE-BASE 3) (enc-mul 9 21 17))
+   (gn-put (+ MM-CODE-BASE 4) (enc-mul 9 9 17))
+   (gn-put (+ MM-CODE-BASE 5) (enc-mul 9 9 17)))]
+  (= (uqd-bound v R 9 5 64) -1)))
+(defn- seed-main [] :i64
+ (let [M (t-positive (mem-new)) R (vector-alloc 81)
+       positive (and (= (uqd-bound M R 9 3 64) 50490) (uqd-site M R 4))
+       words (and
+        (t-word-refusal M R 2 (gn-e-bf 0x92400000 21 0 0 31))
+        (t-word-refusal M R 3 (enc-ldr 9 7 8))
+        (t-word-refusal M R 1 (enc-movk 17 65535 48))
+        (t-word-refusal M R 7 (enc-mov-r 9 17))
+        (t-word-refusal M R 7 (enc-ret))
+        (t-word-refusal M R 5 (+ (gn-e-addsl 10 9 17 56) 0x400000)))
+       roots (t-root-refusals M R 2)
+       budget (= (uqd-bound M R 9 3 1) -1)
+       overflow (t-overflow M R)
+       ok (and positive words roots budget overflow)
+       printed (io-out (if ok "PASS_NATIVE_POSITIVE_QUOTIENT_RANGE_ROOT_SCRATCH_REFUSALS\n"
+                             "FAIL_NATIVE_POSITIVE_QUOTIENT_CONTROLS\n"))]
+  (if ok 0 1)))

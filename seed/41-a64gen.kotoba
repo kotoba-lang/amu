@@ -15115,4 +15115,110 @@
    (loop [f 1 out M]
     (if (= f (vector-at M MM-FN-N)) out (recur (inc f) (blt-one out f limit)))))))
 
-(defn- gn-run [M :vector-i64] :vector-i64 (blt-run (blt-old-run M)))
+;; Bounded unsigned interval proof over final physical code. Only a complete
+;; low-mask/constant/move/MUL chain can prove the dividend nonnegative; an
+;; overflow, incoming edge or unknown operation keeps the signed bias.
+(defn- uqd-counts [M :vector-i64] :bool
+ (and (>= (vector-count M) MM-WORDS) (= (vector-at M MM-ERR) 0)
+  (> (vector-at M MM-CODE-N) 3) (<= (vector-at M MM-CODE-N) 65536)
+  (> (vector-at M MM-FN-N) 0) (<= (vector-at M MM-FN-N) 512)
+  (> (vector-at M MM-LABEL-N) 0) (<= (vector-at M MM-LABEL-N) MM-LABEL-CAP)
+  (> (vector-at M MM-FIX-N) 0) (<= (vector-at M MM-FIX-N) MM-FIX-CAP)
+  (> (vector-at M MM-SIR-N) 0) (<= (vector-at M MM-SIR-N) MM-SIR-CAP)
+  (mp-sirclosed M 1)))
+(defn- uqd-mark [R :vector-i64 to :i64] :vector-i64
+ (if (and (> to 0) (< to (vector-count R))) (vector-assoc! R to 1)
+  (vector-assoc! R 0 1)))
+(defn- uqd-roots [M :vector-i64] :vector-i64
+ (let [cn (vector-at M MM-CODE-N)
+       R (vector-alloc (inc cn))
+       funcs (loop [V R f 1] (if (= f (vector-at M MM-FN-N)) V
+         (recur (uqd-mark V (gn-fnf M f FF-CODE)) (inc f))))
+       labels (loop [V funcs k 1] (if (= k (vector-at M MM-LABEL-N)) V
+         (let [to (vector-at M (+ MM-LABEL-BASE k))]
+          (recur (if (= to 0) V (uqd-mark V to)) (inc k)))))
+       fixes (loop [V labels k 1] (if (= k (vector-at M MM-FIX-N)) V
+         (let [at (sf-x M k XF-AT) kind (sf-x M k XF-KIND)
+               t (sf-x M k XF-TARGET) aux (sf-x M k XF-AUX)
+               to (cond
+                 (or (= kind FX-B26) (= kind FX-BC19) (= kind FX-CB19) (= kind FX-ADRL19))
+                  (if (and (= aux 0) (> t 0) (< t (vector-at M MM-LABEL-N)))
+                    (vector-at M (+ MM-LABEL-BASE t)) -1)
+                 (or (= kind FX-BL26) (= kind FX-ADR19))
+                  (if (and (>= aux 0) (<= aux 2) (> t 0) (< t (vector-at M MM-FN-N)))
+                    (+ (gn-fnf M t FF-CODE) aux) -1)
+                 (= kind FX-LIT32) 0 :else -1)
+               marked (if (= to 0) V (uqd-mark V to))]
+          (recur (if (and (> at 0) (< at cn))
+            (cond (= kind FX-LIT32) (uqd-mark (uqd-mark marked at) (inc at))
+                  (= kind FX-BL26) (uqd-mark marked (inc at))
+                  :else marked) (vector-assoc! marked 0 1)) (inc k))))) ]
+  (loop [V fixes at 1] (if (= at cn) V
+   (let [w (sf-word M at) branch (of-branch w)
+         adr (= (bit-and w 0x9f000000) 0x10000000)
+         literal (= (bit-and w 0x3b000000) 0x18000000)
+         bytes (cond adr (+ (* at 4) (mp-sign (bit-or
+                    (i64-shift-left (bit-and (i64-shift-right w 5) 0x7ffff) 2)
+                    (bit-and (i64-shift-right w 29) 3)) 21))
+                literal (* 4 (+ at (mp-sign (bit-and (i64-shift-right w 5) 0x7ffff) 19))) :else -1)
+         next (cond (> branch 0) (uqd-mark V (of-dest w at))
+                (or adr literal) (if (= (bit-and bytes 3) 0) (uqd-mark V (quot bytes 4))
+                                  (vector-assoc! V 0 1))
+                :else V)
+         call (= (bit-and w 0xfc000000) 0x94000000)]
+    (recur (if (or call (= (bit-and w 0xffe0001f) 0xd4200000))
+             (uqd-mark next (inc at)) next) (inc at)))))))
+(defn- uqd-bound [M :vector-i64 R :vector-i64 reg :i64 at :i64 work :i64] :i64
+ (if (or (<= at 0) (<= work 0) (< reg 0) (>= reg 31)) -1
+  (let [w (sf-word M at) kind (hld-kind w) writes (hld-write w)
+        d (bit-and w 31) n (bit-and (i64-shift-right w 5) 31)
+        r (bit-and (i64-shift-right w 16) 31) imms (bit-and (i64-shift-right w 10) 63)]
+   (if (or (< kind 13) (> kind 16) (< writes 0)) -1
+    (if (= (bit-and writes (hld-bit reg)) 0)
+     (if (= (vector-at R at) 0) (uqd-bound M R reg (dec at) (dec work)) -1)
+     (cond
+      (= (bit-and w 0xffe00000) 0xd2800000) (bit-and (i64-shift-right w 5) 65535)
+      (and (= (bit-and w 0xffff0000) 0x92400000) (<= imms 30))
+       (dec (i64-shift-left 1 (inc imms)))
+      (> (vector-at R at) 0) -1
+      (= (bit-and w (bit-not (bit-or (i64-shift-left 31 16) 31))) 0xaa0003e0)
+       (uqd-bound M R r (dec at) (dec work))
+      (= (bit-and w 0xffe0fc00) 0x9b007c00)
+       (let [budget (quot (dec work) 2)
+             a (uqd-bound M R n (dec at) budget) b (uqd-bound M R r (dec at) budget)]
+        (if (or (< a 0) (< b 0)) -1
+         (if (or (= a 0) (= b 0)) 0
+          (if (<= a (quot 9223372036854775807 b)) (* a b) -1))))
+      :else -1))))))
+(defn- uqd-dead17 [M :vector-i64 R :vector-i64 at :i64 work :i64] :bool
+ (if (or (<= work 0) (>= at (vector-at M MM-CODE-N))) false
+  (let [w (sf-word M at) kind (hld-kind w) reads (hld-read w) writes (hld-write w)]
+   (and (>= kind 7) (<= kind 16) (>= reads 0) (>= writes 0)
+    (= (bit-and reads (hld-bit 17)) 0)
+    (or (> (bit-and writes (hld-bit 17)) 0)
+      (and (= (vector-at R at) 0) (uqd-dead17 M R (inc at) (dec work))))))))
+(defn- uqd-site [M :vector-i64 R :vector-i64 at :i64] :bool
+ (let [cn (vector-at M MM-CODE-N)]
+  (if (or (< at 1) (> at (- cn 3))) false
+   (let [a (sf-word M at) b (sf-word M (inc at)) c (sf-word M (+ at 2))
+         x (bit-and (i64-shift-right a 5) 31) p (bit-and (i64-shift-right c 16) 63)]
+    (and (>= x 9) (<= x 15) (>= p 2) (<= p 62)
+     (= a (gn-e-asr 17 x 63))
+     (= b (+ (gn-e-addsl x x 17 (- 64 p)) 0x400000))
+     (= c (gn-e-asr x x p))
+     (= (vector-at R at) 0) (= (vector-at R (inc at)) 0) (= (vector-at R (+ at 2)) 0)
+     (>= (uqd-bound M R x (dec at) 64) 0)
+     (uqd-dead17 M R (+ at 3) 64))))))
+(defn- uqd-run [M :vector-i64] :vector-i64
+ (if (not (uqd-counts M)) M
+  (let [R (uqd-roots M) cn (vector-at M MM-CODE-N)]
+   (if (not= (vector-at R 0) 0) M
+    (let [P (loop [V (vector-alloc cn) at 1 used 0]
+       (if (or (> at (- cn 3)) (>= used 128)) V
+        (let [yes (uqd-site M R at)]
+         (recur (if yes (vector-assoc! V at 1) V) (+ at (if yes 3 1)) (+ used (if yes 1 0))))))]
+     ;; All proofs use the complete unchanged code before any B2 is installed.
+     (loop [V M at 1] (if (= at cn) V
+      (recur (if (= (vector-at P at) 1) (gn-put V (+ MM-CODE-BASE at) (enc-b 2)) V) (inc at)))))))))
+
+(defn- gn-run [M :vector-i64] :vector-i64 (blt-run (uqd-run (blt-old-run M))))

@@ -10,7 +10,7 @@ release, or qualify the whole Amu component as Q9.
 
 `MANIFEST` fixes the unity order. Concatenating each module followed by one
 newline gives SHA-256
-`5d5f62e78cee595905b43df5d999ce71da3bdf97cb0bafdc7a6a99cb352cf844`.
+`496b42f2d9f0c9d66455847f9bb2d5507d8cfa760387365093bf73fd5d514e92`.
 `adoption-20261012.json` records all source pins, artifact provenance, the
 correctness scope and measurement boundaries. `HEADS`, `MEMORY-MAP`, and `SIR`
 are the corresponding compiler contracts, copied without changes.
@@ -128,3 +128,36 @@ qualification and timing evidence. Native acceptance/refusal controls run with:
 ```sh
 python3 scripts/seed/check-sequential-scan.py --selfbuild-output <native-selfbuild-output>
 ```
+
+## Proven nonnegative power-of-two quotients (2026-10-13)
+
+Source snapshot `2b0293e3` adds a bounded final-code interval proof. A complete
+low-bit mask, constant, move or multiplication chain may prove the dividend
+nonnegative, with signed64 overflow refused. A two-word forward branch skips
+the old signed bias only when all incoming roots are excluded and scratch x17
+is dead before its next overwrite. The same-input/output ASR, instruction
+layout, NZCV, fuel and arena behavior remain. Unknown definitions, incoming
+edges, scratch reads and proof-budget exhaustion retain the original code.
+The existing signed lowering and all earlier source-owned kernels are kept.
+
+The native G1/G2/G3/G4 fixed point generated all39 images. Only the two Pico
+images changed, with12 proved sites each; all other37 are whole-byte identical.
+Original483 observations and152 independent full64 pairs pass with exact
+result, fuel and17 arena fields. The admitted437,592 dividend values match,
+and native compiler-local controls verify range, root, scratch, overflow and
+budget refusals.
+
+Round92 fixed4 timing on Joseph observed candidate/prior median time
+0.979809938593011, about2.019006% shorter. Individual ratios were
+1.0002118318409012 and0.9603658112450705: one was nearly equal and one improved.
+This is exploratory evidence, with mixed pair signs and no stability claim.
+There is no5% minimum cutoff. Round91's C tarfind failed its70% raw-idle gate
+on all3 attempts, so no full19 C ratio was produced. Round88 remains the last
+complete comparison at Kotoba/C2.946404197283788; the overall goal is active
+and unmet. This snapshot does not claim a certified official Embench score.
+
+Previous bootstrap, raw evidence and portable proofs are retained under
+`docs/evidence/positive-quotient-20261013/`. Native controls run with
+`scripts/seed/check-positive-quotient.py` and
+`scripts/seed/check-positive-quotient-proof.py`, each taking
+`--selfbuild-output <native-selfbuild-output>`.
