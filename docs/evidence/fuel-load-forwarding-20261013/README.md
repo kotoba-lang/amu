@@ -154,14 +154,42 @@ The profile also shows where K1 cannot reach:
   `x16`) and `montmul` (state empty after a call). The meet at the entry kills forwarding.
   A second entry after the fuel load, chosen per call site in `41-a64gen` when the caller's
   state is known, removes the load without a meet. Needs emission-time support (layout moves).
-* **K3 – SIR inlining of tiny private non-recursive functions.** `nsichneu` spends ~68% in
-  `t2` called with constant arguments from `step-N`; `aha-mont64`'s `u-ge`/`u-lt` are the
-  same shape. Inlining keeps the callee's `FUEL` op (exact fuel) and its trap order, removes
-  the frame and lets constant arguments fold (`mov x9,#6; add x9,x1,x9` patterns disappear).
-  It must run before the `sc-`/`sr-` call-shape matchers or teach them the inlined shape.
-  Samples on call/frame instructions alone (`bl`/`ret`, frame `stp`/`ldp`, `sp` adjust,
-  `x7` spill/reload; callee fuel and descriptor reloads excluded): aha-mont64 21.4%,
-  nsichneu 15.4%, nettle-aes 14.4%, matmult-int 13.5%, slre 13.1%, statemate 9.5%.
+* **K3 – inlining: measured, rejected in its generic form.** An upper-bound experiment
+  (`k3-experiment/`) inlined helpers at the source level (`srcinline.py`; it drops the
+  callee's entry charge, so it overstates any gain) and compiled with the current main
+  compiler. Auto-selected private scalar leaf helpers (`select.py`: `:i64`/`:bool`
+  signature, no vectors/strings/loops, at most 40 tokens) in 13 workloads, four alternating
+  rounds, child CPU time, load ~235:
+
+  | workload | inlined/main | workload | inlined/main |
+  |---|---:|---|---:|
+  | aha-mont64 | **0.594** | sglib-combined | 1.060 |
+  | crc32 | 0.989 | slre | 1.139 |
+  | edn | 0.996 | md5sum | 1.520 |
+  | ud | 1.008 | nettle-sha256 | 1.599 |
+  | wikisort | 1.042 | nettle-aes | 2.396 |
+  | | | picojpeg | 2.495 |
+  | | | qrduino | 2.876 |
+  | | | statemate | 3.330 |
+
+  Inlining nsichneu's vector transition helpers (`t1`/`t2`/`demark2`/`put-output`) into the
+  126 step functions grew the image 8× and ran 2.6× slower. The code generator is a set of
+  exact call-shape recognisers (`gn-call-wrapper`, `gn-sign-wrapper`, scalar-mask, clamp,
+  `qi`/`pi`/`ti`/`rp`/`rc`/`mr`/`aw`/`tb`/`tc`/`di` admits): a helper *call* such as
+  statemate's `s8` becomes one `sxtb`, rotations become `extr`, threshold trees become a
+  table lookup. Inlining destroys those shapes and falls back to generic lowering. A SIR- or
+  source-level inliner is therefore not adopted.
+
+  The profitable subset is **frame elision**: aha-mont64's `u-ge` already has its `u-lt`
+  call machine-inlined, yet the SIR `CALL` makes prescan clear `gn-f-leaf`, so the function
+  keeps a full non-leaf frame (17.7% of aha-mont64 samples are frame instructions in that
+  27-instruction function). Hot framed functions that emit no `bl`/`blr` at all also cost
+  frame time in matmult-int (13.3%), nettle-aes (4.9% + 2.2% + 1.6%), ud (2.4%) and edn
+  (1.3%) — an estimated ~3% geometric-mean gain. It requires prescan to know which calls
+  each admit will emit inline *and* every such emitter to be valid in leaf mode (several
+  admits require `gn-f-leaf = 0` today); a trial emission with rollback would have to undo
+  the per-function entry hooks (`trg-*`, `gn-tree-entry`, `eq-chain-entry`, `vl-entry`,
+  `pf-entry`, `ve-entry`). This belongs with the owner of `41-a64gen`'s admit set.
 * **K4 – non-leaf fuel register.** Keep the counter in a callee-saved register for a whole
   non-leaf function and publish it only before calls, runtime helpers, traps and returns.
   Requires trap stubs that publish before `brk`/`udf`; larger than K1 but removes the
