@@ -15256,4 +15256,18 @@
      (loop [V M at 1] (if (= at cn) V
       (recur (if (= (vector-at P at) 1)
                (gn-put V (+ MM-CODE-BASE at) 0xd503201f) V) (inc at)))))))))
-(defn- gn-run [M :vector-i64] :vector-i64 (afr-run (blt-run (uqd-run (blt-old-run M)))))
+;; A direct B+2 skips one unreachable word. Complete unchanged roots must
+;; exclude entry into that word before both become NOP; layout and NZCV stay.
+(defn- owj-run [M :vector-i64] :vector-i64
+ (if (not (uqd-counts M)) M
+  (let [R (uqd-roots M true) cn (vector-at M MM-CODE-N)]
+   (if (not= (vector-at R 0) 0) M
+    (let [P (loop [V (vector-alloc cn) at 1]
+             (if (>= (+ at 2) cn) V
+              (recur (if (and (= (sf-word M at) (enc-b 2))
+                        (= (vector-at R (inc at)) 0)) (vector-assoc! V at 1) V) (inc at))))]
+     (loop [V M at 1] (if (= at cn) V
+      (recur (if (= (vector-at P at) 1)
+       (-> V (gn-put (+ MM-CODE-BASE at) 0xd503201f)
+        (gn-put (+ MM-CODE-BASE (inc at)) 0xd503201f)) V) (inc at)))))))))
+(defn- gn-run [M :vector-i64] :vector-i64 (owj-run (afr-run (blt-run (uqd-run (blt-old-run M))))))
