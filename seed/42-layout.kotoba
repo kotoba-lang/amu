@@ -293,14 +293,146 @@
         M3 (vector-assoc! M2 (+ MM-STAT-BASE 41) nl)]
     (vector-assoc! M3 (+ MM-STAT-BASE 42) ne)))
 
+;; ---- (2b) fuel-load forwarding (prefix flf-) ------------------------------------------------------------------------
+;; After every fixup and scn-run, an exact context-fuel load `ldr xD,[x7,#8]` becomes `mov xD,xS` (nop when D = S)
+;; when on every path from a code root the most recent fuel event is `str xS,[x7,#8]` or a fuel load into xS and
+;; neither xS nor x7 was written since. Every fuel store, trap, call and return is unchanged, so the published counter
+;; holds the same value at every instant; only a memory read becomes a register copy (the store-to-load round trip
+;; leaves the dependency chain). Same-size rewrite: no position, label, fixup, FF-CODE or export moves.
+;; Roots (empty state): the FF-CODE of every function that is exported or not FK-PRIV (the loader, other modules and
+;; link stubs may enter it), every FX-FADDR target and every ADR destination (including `adr x30` return labels). A
+;; private function is entered only by BL/B in this image: BL carries the caller's state minus x30 to its destination
+;; (an x8-carrying private entry included) and its return point starts empty. BLR, any x7 write, any other x7-based
+;; store and every encoding scn-defs does not model empty the state. Stores through other bases never address the
+;; context; leaf x8 fuel caching already relies on this. A BR, ADRP or literal load in reached code, or a reached
+;; branch leaving the code, refuses the whole image unchanged. Only words reached from those roots are examined or
+;; rewritten.
+;; Available-register analysis: greatest fixed point, states AND-ed in place, at most 64 forward sweeps.
+(defn- flf-is-ld [w :i64] :bool (= (bit-and w 0xffffffe0) 0xf94004e0))
+(defn- flf-is-st [w :i64] :bool (= (bit-and w 0xffffffe0) 0xf90004e0))
+(defn- flf-bl [w :i64] :bool (= (bit-and w 0xfc000000) 0x94000000))
+(defn- flf-blr [w :i64] :bool (= (bit-and w 0xfffffc1f) 0xd63f0000))
+(defn- flf-adr [w :i64] :bool (= (bit-and w 0x9f000000) 0x10000000))
+;; no fallthrough: b, ret, brk, udf
+(defn- flf-stop [w :i64] :bool
+  (or (= (bit-and w 0xfc000000) 0x14000000) (= (bit-and w 0xfffffc1f) 0xd65f0000)
+      (= (bit-and w 0xffe0001f) 0xd4200000) (= (bit-and w 0xffff0000) 0)))
+;; BR, ADRP, LDR literal: an untracked entry or address
+(defn- flf-refuse [w :i64] :bool
+  (or (= (bit-and w 0xfffffc1f) 0xd61f0000) (= (bit-and w 0x9f000000) 0x90000000)
+      (= (bit-and w 0x3b000000) 0x18000000)))
+;; any integer or SIMD store, single or pair, whose base register is x7
+(defn- flf-x7-store [w :i64] :bool
+  (and (= (bit-and (u64-shift-right w 5) 31) 7)
+       (or (and (= (bit-and w 0x3a000000) 0x28000000) (= (bit-and w 0x00400000) 0))
+           (and (or (= (bit-and w 0x3b000000) 0x39000000) (= (bit-and w 0x3b000000) 0x38000000))
+                (= (bit-and w 0x00c00000) 0)))))
+;; state after w: bit r set = xr holds the published fuel counter
+(defn- flf-step [w :i64 s :i64] :i64
+  (cond (or (flf-bl w) (flf-blr w)) 0
+        (flf-is-st w) (if (= (bit-and w 31) 31) 0 (i64-shift-left 1 (bit-and w 31)))
+        (flf-is-ld w) (if (= (bit-and w 31) 31) s (bit-or s (i64-shift-left 1 (bit-and w 31))))
+        (flf-x7-store w) 0
+        :else (let [d (scn-defs w)]
+                (if (or (< d 0) (not= (bit-and d 128) 0)) 0 (bit-and s (bit-not d))))))
+;; V: [0,cn) marks (0 unseen, 1 reached, 2 root), [cn,2cn) stack, 2cn stack size, 2cn+1 refusal
+(defn- flf-push [V :vector-i64 cn :i64 j :i64 root :bool] :vector-i64
+  (if (or (< j 1) (>= j cn))
+    (vector-assoc! V (+ (* 2 cn) 1) 1)
+    (let [v (vector-at V j) sp (vector-at V (* 2 cn))]
+      (if (= v 0)
+        (-> V (vector-assoc! j (if root 2 1)) (vector-assoc! (+ cn sp) j) (vector-assoc! (* 2 cn) (inc sp)))
+        (if root (vector-assoc! V j 2) V)))))
+;; ADR byte displacement
+(defn- flf-adr-bytes [w :i64] :i64
+  (mp-sign (bit-or (i64-shift-left (bit-and (u64-shift-right w 5) 0x7ffff) 2) (bit-and (u64-shift-right w 29) 3)) 21))
+(defn- flf-visit [M :vector-i64 V :vector-i64 cn :i64 i :i64] :vector-i64
+  (let [w (sf-word M i)]
+    (cond (flf-refuse w) (vector-assoc! V (+ (* 2 cn) 1) 1)
+          (flf-bl w) (flf-push (flf-push V cn (of-dest w i) false) cn (inc i) false)
+          (flf-adr w)
+          (let [b (flf-adr-bytes w) t (+ i (quot b 4))]
+            (flf-push (if (and (= (bit-and b 3) 0) (>= t 1) (< t cn)) (flf-push V cn t true) V) cn (inc i) false))
+          :else
+          (let [V1 (if (> (of-branch w) 0) (flf-push V cn (of-dest w i) false) V)]
+            (if (flf-stop w) V1 (flf-push V1 cn (inc i) false))))))
+(defn- flf-walk [M :vector-i64 V :vector-i64 cn :i64] :vector-i64
+  (loop [V V]
+    (let [sp (vector-at V (* 2 cn))]
+      (if (or (= sp 0) (not= (vector-at V (+ (* 2 cn) 1)) 0))
+        V
+        (let [i (vector-at V (+ cn (dec sp)))]
+          (recur (flf-visit M (vector-assoc! V (* 2 cn) (dec sp)) cn i)))))))
+(defn- flf-roots [M :vector-i64 V :vector-i64 cn :i64 fnn :i64] :vector-i64
+  (let [V1 (loop [V V f 1]
+             (if (>= f fnn)
+               V
+               (let [c (gn-fnf M f FF-CODE)
+                     open (or (not= (gn-fnf M f FF-KIND) FK-PRIV) (not= (gn-fnf M f FF-EXPORT) 0))]
+                 (recur (if (and open (> c 0) (< c cn)) (flf-push V cn c true) V) (inc f)))))]
+    (loop [V V1 k 1]
+      (if (>= k (vector-at M MM-FIX-N))
+        V
+        (let [b (+ MM-FIX-BASE (* k MM-FIX-W)) f (vector-at M (+ b XF-TARGET))]
+          (recur (if (and (= (vector-at M (+ b XF-KIND)) FX-FADDR) (> f 0) (< f fnn))
+                   (flf-push V cn (gn-fnf M f FF-CODE) true) V)
+                 (inc k)))))))
+;; S[i] = state before word i: roots 0, other reached words -1 (optimistic). S[0] is the sweep change flag.
+(defn- flf-init [V :vector-i64 S :vector-i64 cn :i64] :vector-i64
+  (loop [S S i 0]
+    (if (>= i cn) S (recur (vector-assoc! S i (if (= (vector-at V i) 1) -1 0)) (inc i)))))
+(defn- flf-prop [S :vector-i64 j :i64 o :i64] :vector-i64
+  (let [old (vector-at S j) nw (bit-and old o)]
+    (if (= nw old) S (vector-assoc! (vector-assoc! S j nw) 0 1))))
+(defn- flf-sweep [M :vector-i64 V :vector-i64 S :vector-i64 cn :i64] :vector-i64
+  (loop [S S i 1]
+    (if (>= i cn)
+      S
+      (if (= (vector-at V i) 0)
+        (recur S (inc i))
+        (let [w (sf-word M i) s (vector-at S i) o (flf-step w s)
+              S1 (cond (flf-bl w) (flf-prop S (of-dest w i) (bit-and s (bit-not 0x40000000)))
+                       (> (of-branch w) 0) (flf-prop S (of-dest w i) o)
+                       :else S)]
+          (recur (if (flf-stop w) S1 (flf-prop S1 (inc i) o)) (inc i)))))))
+;; converged S, or S[0] = -1 when 64 sweeps did not converge
+(defn- flf-fix [M :vector-i64 V :vector-i64 S :vector-i64 cn :i64] :vector-i64
+  (loop [S S k 0]
+    (if (>= k 64)
+      (vector-assoc! S 0 -1)
+      (let [S1 (flf-sweep M V (vector-assoc! S 0 0) cn)]
+        (if (= (vector-at S1 0) 0) S1 (recur S1 (inc k)))))))
+(defn- flf-low [s :i64 r :i64] :i64
+  (if (= (bit-and s (i64-shift-left 1 r)) 0) (flf-low s (inc r)) r))
+(defn- flf-rewrite [M :vector-i64 V :vector-i64 S :vector-i64 cn :i64] :vector-i64
+  (loop [M M i 1]
+    (if (>= i cn)
+      M
+      (let [w (sf-word M i) s (bit-and (vector-at S i) 0x7fffffff) d (bit-and w 31)]
+        (if (or (= (vector-at V i) 0) (not (flf-is-ld w)) (= d 31) (= s 0) (= (vector-at S i) -1))
+          (recur M (inc i))
+          (recur (vector-assoc! M (+ MM-CODE-BASE i)
+                   (if (= (bit-and s (i64-shift-left 1 d)) 0) (enc-mov-r d (flf-low s 0)) (enc-nop)))
+                 (inc i)))))))
+(defn- flf-run [M :vector-i64] :vector-i64
+  (let [cn (vector-at M MM-CODE-N) fnn (vector-at M MM-FN-N)]
+    (if (or (not= (vector-at M MM-ERR) 0) (<= cn 1) (> cn MM-CODE-CAP) (<= fnn 1) (> fnn MM-FN-CAP))
+      M
+      (let [V (flf-walk M (flf-roots M (scn-zero (+ (* 2 cn) 2)) cn fnn) cn)]
+        (if (not= (vector-at V (+ (* 2 cn) 1)) 0)
+          M
+          (let [S (flf-fix M V (flf-init V (vector-alloc cn) cn) cn)]
+            (if (< (vector-at S 0) 0) M (flf-rewrite M V S cn))))))))
+
 (defn- ly-run3 [M :vector-i64] :vector-i64
   (let [M1 (ly-exp-loop M 1)]
     (if (= (ly-failed M1) 0) (ly-finish M1) M1)))
 
 (defn- ly-run2 [M :vector-i64] :vector-i64
   (let [M1 (ly-fix-loop M 1)
-        M2 (if (= (ly-failed M1) 0) (scn-run M1) M1)]
-    (if (= (ly-failed M2) 0) (ly-run3 M2) M2)))
+        M2 (if (= (ly-failed M1) 0) (scn-run M1) M1)
+        M3 (if (= (ly-failed M2) 0) (flf-run M2) M2)]
+    (if (= (ly-failed M3) 0) (ly-run3 M3) M3)))
 
 (defn- ly-run [M :vector-i64] :vector-i64
   (let [M1 (ly-pool M)]
