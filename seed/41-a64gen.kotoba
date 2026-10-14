@@ -15956,12 +15956,28 @@
 (defn- t2-gvn-vals [M :vector-i64 b :i64 v :i64 v1 :i64] :vector-i64
   (if (>= v v1) M
     (let [op (t2-op-of M v)]
+      (if (and (t2-gvn-op? op) (= (t2-vf M v t2-f-repl) 0) (= (t2-vf M v t2-f-blk) b) (> (t2-identity M v) 0))
+        (t2-gvn-vals (t2-vs M v t2-f-repl (t2-identity M v)) b (inc v) v1)
       (if (and (t2-gvn-op? op) (= (t2-vf M v t2-f-repl) 0) (= (t2-vf M v t2-f-blk) b))
         (let [a (t2-vf M v t2-f-a) bb (t2-gvn-b M v) cc (t2-gvn-c M v)
               M1 (t2-gvn-probe M v op a bb cc (t2-hash op a bb cc) 0)
               w (t2-last M1)]
           (t2-gvn-vals (if (> w 0) (t2-vs M1 v t2-f-repl w) M1) b (inc v) v1))
-        (t2-gvn-vals M b (inc v) v1)))))
+        (t2-gvn-vals M b (inc v) v1))))))
+;; x + 0, x - 0, x | 0, x ^ 0, x << 0 (count mod 64), x * 1, x & -1, x / 1: the operand x (0 when no identity applies)
+(defn- t2-identity [M :vector-i64 v :i64] :i64
+  (if (not= (t2-op-of M v) t2-bin) 0
+    (let [bop (t2-vf M v t2-f-a) x (t2-res M (t2-vf M v t2-f-b)) y (t2-res M (t2-vf M v t2-f-c))
+          kx (if (t2-isconst? M x) (t2-kval M x) 7) ky (if (t2-isconst? M y) (t2-kval M y) 7)
+          yc (t2-isconst? M y) xc (t2-isconst? M x)]
+      (cond (and yc (= ky 0) (or (= bop BOP-ADD) (= bop BOP-SUB) (= bop BOP-OR) (= bop BOP-XOR))) x
+            (and xc (= kx 0) (or (= bop BOP-ADD) (= bop BOP-OR) (= bop BOP-XOR))) y
+            (and yc (= (bit-and ky 63) 0) (or (= bop BOP-SHL) (= bop BOP-USHR) (= bop BOP-SSHR))) x
+            (and yc (= ky 1) (or (= bop BOP-MUL) (= bop BOP-QUOT))) x
+            (and xc (= kx 1) (= bop BOP-MUL)) y
+            (and yc (= ky -1) (= bop BOP-AND)) x
+            (and xc (= kx -1) (= bop BOP-AND)) y
+            :else 0))))
 (defn- t2-gvn-blocks [M :vector-i64 b :i64] :vector-i64
   (if (>= b (t2-g M t2-s-nb)) M
     (t2-gvn-blocks (if (= (t2-bget M t2-a-breach b) 1) (t2-gvn-vals M b (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b)) M) (inc b))))
@@ -16781,20 +16797,25 @@
           (= d 0) (gn-mov M x r)
           (> d 0) (gn-emit M (enc-add-i x r d))
           :else (gn-emit M (enc-sub-i x r (- 0 d))))))
-;; x16 := index of access k at endpoint (src, d)
-(defn- t2-e-accval [M :vector-i64 k :i64 l :i64 src :i64 d :i64] :vector-i64
-  (let [a (t2-acc M k 1) C (t2-acc M k 2) n (t2-acc M k 3)
+;; x16 := index of access k (with constant C) at endpoint (src, d)
+(defn- t2-addk [M :vector-i64 d :i64 x :i64 k :i64] :vector-i64
+  (cond (and (= k 0) (= d x)) M
+        (= k 0) (gn-mov M d x)
+        (and (> k 0) (< k 4096)) (gn-emit M (enc-add-i d x k))
+        (and (< k 0) (> k -4096)) (gn-emit M (enc-sub-i d x (- 0 k)))
+        :else (-> M (gn-mov-imm 17 k) (gn-emit (enc-add-r d x 17)))))
+(defn- t2-e-accval [M :vector-i64 k :i64 l :i64 src :i64 d :i64 C :i64] :vector-i64
+  (let [a (t2-acc M k 1) n (t2-acc M k 3) L (t2-lp M l t2-lf-L)
         M1 (cond (= a 0) (gn-mov-imm M 16 C)
+                 (and (= src 1) (t2-isconst? M L)) (gn-mov-imm M 16 (+ (* a (+ (t2-kval M L) d)) C))
+                 (= a 1)
+                 (t2-addk M 16 (if (= src 0) (t2-vf M (t2-lp M l t2-lf-p) t2-f-reg) (t2-vf M L t2-f-reg)) (+ d C))
                  :else
                  (let [M0 (t2-e-endpt M 17 l src d)
-                       Ma (cond (= a 1) (gn-mov M0 16 17)
-                                (= a -1) (gn-emit M0 (enc-sub-r 16 31 17))
+                       Ma (cond (= a -1) (gn-emit M0 (enc-sub-r 16 31 17))
                                 (> (gn-pow2 a) 0) (gn-emit M0 (gn-e-lsl 16 17 (gn-pow2 a)))
                                 :else (-> M0 (gn-mov-imm 16 a) (gn-emit (enc-mul 16 17 16))))]
-                   (cond (= C 0) Ma
-                         (and (> C 0) (< C 4096)) (gn-emit Ma (enc-add-i 16 16 C))
-                         (and (< C 0) (> C -4096)) (gn-emit Ma (enc-sub-i 16 16 (- 0 C)))
-                         :else (-> Ma (gn-mov-imm 17 C) (gn-emit (enc-add-r 16 16 17))))))]
+                   (t2-addk Ma 16 16 C)))]
     (loop [j 0 m M1]
       (if (>= j n) m
         (let [c (t2-acc m k (+ 4 (* 2 j))) r (t2-vf m (t2-acc m k (+ 5 (* 2 j))) t2-f-reg)]
@@ -16808,13 +16829,30 @@
       (let [n (t2-vf M v t2-f-b)]
         (-> (if (< n 4096) (gn-emit M (enc-cmp-i 16 n)) (-> M (gn-mov-imm 17 n) (gn-emit (enc-cmp-r 16 17)))) (t2-bcond 2 slow)))
       (-> M (gn-emit (enc-cmp-r 16 (t2-dlen M v))) (t2-bcond 2 slow)))))
+;; accesses j and k check the same index shape against the same length
+(defn- t2-acc-len [M :vector-i64 k :i64] :i64
+  (let [v (t2-acc M k 0)] (if (= (t2-op-of M v) t2-tab) (- 0 (inc (t2-vf M v t2-f-b))) (t2-dlen M v))))
+(defn- t2-acc-same? [M :vector-i64 j :i64 k :i64] :bool
+  (and (= (t2-acc M j 1) (t2-acc M k 1)) (= (t2-acc M j 3) (t2-acc M k 3)) (= (t2-acc-len M j) (t2-acc-len M k))
+       (loop [i 4] (or (>= i (+ 4 (* 2 (t2-acc M k 3)))) (and (= (t2-acc M j i) (t2-acc M k i)) (recur (inc i)))))))
+;; one group per (shape, length): only its least and greatest index (corners of the range) are checked
 (defn- t2-e-accs [M :vector-i64 l :i64 k :i64 a1 :i64 slow :i64] :vector-i64
   (if (>= k a1) M
-    (let [kind (t2-lp M l t2-lf-kind) s (t2-lp M l t2-lf-s)
-          M1 (-> M (t2-e-accval k l (t2-lo-src kind s) (t2-lo-d kind s)) (t2-e-acclim k slow))
-          M2 (if (= (t2-acc M k 1) 0) M1
-               (-> M1 (t2-e-accval k l (t2-hi-src kind s) (t2-hi-d kind s)) (t2-e-acclim k slow)))]
-      (t2-e-accs M2 l (inc k) a1 slow))))
+    (if (= (t2-g M (+ t2-a-kd k)) 1) (t2-e-accs M l (inc k) a1 slow)
+      (let [kind (t2-lp M l t2-lf-kind) s (t2-lp M l t2-lf-s) a (t2-acc M k 1)
+            r (loop [j k m M cmin (t2-acc M k 2) cmax (t2-acc M k 2)]
+                (if (>= j a1) (-> m (t2-s t2-s-aa cmin) (t2-s t2-s-ac cmax))
+                  (if (and (not= (t2-g m (+ t2-a-kd j)) 1) (t2-acc-same? m j k))
+                    (recur (inc j) (t2-s m (+ t2-a-kd j) 1) (gn-min cmin (t2-acc m j 2)) (gn-max cmax (t2-acc m j 2)))
+                    (recur (inc j) m cmin cmax))))
+            cmin (t2-g r t2-s-aa) cmax (t2-g r t2-s-ac)
+            ;; the least index: lo end for a >= 0, hi end for a < 0
+            M1 (-> r (t2-e-accval k l (if (>= a 0) (t2-lo-src kind s) (t2-hi-src kind s)) (if (>= a 0) (t2-lo-d kind s) (t2-hi-d kind s)) cmin)
+                   (t2-e-acclim k slow))
+            M2 (if (and (= a 0) (= cmin cmax)) M1
+                 (-> M1 (t2-e-accval k l (if (>= a 0) (t2-hi-src kind s) (t2-lo-src kind s)) (if (>= a 0) (t2-hi-d kind s) (t2-lo-d kind s)) cmax)
+                     (t2-e-acclim k slow)))]
+        (t2-e-accs M2 l (inc k) a1 slow)))))
 (defn- t2-e-precheck [M :vector-i64 l :i64] :vector-i64
   (let [h (t2-lp M l t2-lf-h) kind (t2-lp M l t2-lf-kind) s (t2-lp M l t2-lf-s) K (t2-lp M l t2-lf-K)
         L (t2-lp M l t2-lf-L) slow (t2-lab M h)
@@ -16835,7 +16873,7 @@
                (cond-> (and (= kind 3) (not= s 1) (not= s -1))
                  (-> (t2-e-endpt 16 l 1 0) (t2-e-endpt 17 l 0 0) (gn-emit (enc-sub-r 16 16 17))
                      (gn-emit (t2-limm BOP-AND 16 16 (dec (if (> s 0) s (- 0 s))))) (t2-jmp FX-CB19 slow (enc-cbnz 16 0)))))]
-    (t2-e-accs M1 l (t2-lp M l t2-lf-a0) (t2-lp M l t2-lf-a1) slow)))
+    (t2-e-accs (t2-wzero M1 t2-a-kd 0 t2-maxacc) l (t2-lp M l t2-lf-a0) (t2-lp M l t2-lf-a1) slow)))
 ;; the loop's next block in order after b (-1 none)
 (defn- t2-lnext [M :vector-i64 b :i64 id :i64] :i64
   (loop [n (inc b)] (cond (>= n (t2-g M t2-s-nb)) -1
