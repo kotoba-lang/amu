@@ -5716,12 +5716,24 @@
         forward (and read (= (gn-sir M (inc q) IF-B) last-index))
         width (if (> sign 0) (bit-and sign 511) 0)
         narrow (and (> width 0) (not (and forward (> last-width 0) (<= last-width width))))
-        next-width (if (> width 0) width (if forward last-width 0))]
+        next-width (if (> width 0) width (if forward last-width 0))
+        off (* 8 (gn-sir M (inc q) IF-B))
+        ;; items are little-endian words: the sign-extending byte/half/word load of an item's low bytes equals
+        ;; ldr + sbfm #0, #(width-1)
+        fused (and read (not forward) narrow (>= off 0) (cw-ldrs-ok? width off))]
    (cw-emit-available (-> M
-     (cond-> (and read (not forward)) (gn-emit (enc-ldr 9 10 (* 8 (gn-sir M (inc q) IF-B)))))
+     (cond-> fused (gn-emit (cw-ldrs width 9 10 off)))
+     (cond-> (and read (not forward) (not fused)) (gn-emit (enc-ldr 9 10 off)))
      (cond-> (= (gn-op M q) OP-CONST) (gn-mov-imm 9 (gn-sir M q IF-B)))
-     (cond-> narrow (gn-emit (gn-e-bf 0x93400000 9 9 0 (dec width))))
+     (cond-> (and narrow (not fused)) (gn-emit (gn-e-bf 0x93400000 9 9 0 (dec width))))
      (gn-emit (enc-str 9 10 (* 8 index)))) (cw-next M q) (dec n) index next-width))))
+(defn- cw-ldrs-ok? [width :i64 off :i64] :bool
+ (or (and (= width 8) (<= off 4095)) (and (= width 16) (<= off 8190)) (and (= width 32) (<= off 16380))))
+;; ldrsb / ldrsh / ldrsw xt, [xn, #off] (unsigned offset, 64-bit destination)
+(defn- cw-ldrs [width :i64 t :i64 n :i64 off :i64] :i64
+ (+ (cond (= width 8) 0x39800000 (= width 16) 0x79800000 :else 0xb9800000)
+    (i64-shift-left (cond (= width 8) off (= width 16) (u64-shift-right off 1) :else (u64-shift-right off 2)) 10)
+    (i64-shift-left (bit-and n 31) 5) (bit-and t 31)))
 (defn- cw-emit [M :vector-i64 f :i64 n :i64] :vector-i64
  (cw-emit-available M f n -1 0))
 ;; ADR0357: same-register store-to-load availability in existing CW admission.
