@@ -830,7 +830,14 @@
   ([source] (compile-kototama source {} {}))
   ([source policy] (compile-kototama source policy {}))
   ([source policy build-metadata]
-   (let [{:keys [hir admission]} (check-source source policy build-metadata)
+   (let [_ (refuse-fuel-declared-twice! policy build-metadata)
+         {:keys [hir admission]} (check-source source policy build-metadata)
+         _ (uefi/reject-outside-uefi-target! :kototama-core-v1 hir)
+         _ (uefi/reject-rodata-literals-outside-native-targets! :kototama-core-v1 hir)
+         _ (when (or (ir/uses-f32? hir) (ir/uses-f64? hir))
+             (throw (ex-info "Kototama data-i64 profile does not support floating-point values"
+                             {:phase :target :target :kototama-core-v1
+                              :reason :unsupported-value-profile})))
          kir (ir/lower hir)
          emitted (kototama/emit kir)
          typed-values? (= :kotoba.kir/v4 (:format kir))

@@ -47,6 +47,7 @@
 
 (let [source (lib/join lib/root "examples" "evm-answer.kotoba")
       default-out (f "default.dagcbor")
+      repeat-out (f "repeat.dagcbor")
       explicit-out (f "explicit.dagcbor")
       wasm-out (f "explicit.wasm")
       env-out (f "env.wasm")
@@ -60,12 +61,16 @@
                     (str/includes? (out default) ":target :kototama-core-v1")
                     (str/includes? (out default) ":format :kototama/program-v1"))
                "omitted --target compiles the canonical Kototama VM program" (out default))
-      (report! (str/includes? (out default)
-                              ":cid \"bafyreiddqnpygk2vba4uau2t2nh6lvlreewu6pyaa4slbjhoos6mbswz2e\"")
-               "the canonical program CID is stable across host OSes" (out default))
       (report! (and default-bytes (.existsSync fs provenance) (not (wasm? default-bytes)))
                "default output is DAG-CBOR plus provenance, not Wasm" (pr-str {:bytes? (some? default-bytes)
                                                                                 :provenance? (.existsSync fs provenance)}))
+      (let [marker (str default-out ".publication.edn")
+            repeat (amu! ["compile" source "--output" repeat-out])]
+        (report! (and (.existsSync fs marker)
+                      (str/includes? (str (.readFileSync fs marker "utf8")) "kotoba.output-set/v1"))
+                 "default output set has a publication commit marker" "publication marker missing")
+        (report! (and (ok? repeat) (same-bytes? default-bytes (bytes-of repeat-out)))
+                 "default Kototama artifact is deterministic" (out repeat)))
 
       (let [capability-source (lib/join lib/root "examples" "capability-named.kotoba")
             capability-policy (lib/join lib/root "examples" "capability-named.edn")

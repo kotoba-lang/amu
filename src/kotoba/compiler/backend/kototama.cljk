@@ -97,6 +97,7 @@
   #{"self" "caller" "address" "method" "params" "value"
     "call" "static-call" "delegate-call" "create" "emit"})
 (def ^:private state-ops #{"root" "open" "read" "write" "link" "stat" "set-state"})
+(def ^:private data-i64-types #{:i64 :bool :string :keyword :bytes})
 
 (defn expression
   "Encode one checked KIR expression in Kototama's closed, tagged form."
@@ -209,23 +210,25 @@
   independent of Amu's Wasm, Script, native, or EVM backends."
   [kir]
   (when-not (and (map? kir)
-                 (= :kotoba.kir/v3 (:format kir))
+                 (contains? #{:kotoba.kir/v3 :kotoba.kir/v4} (:format kir))
                  (or (nil? (:entry kir)) (symbol? (:entry kir)))
                  (vector? (:functions kir)))
     (reject! :invalid-kir-shape {:format (:format kir)}))
   (let [functions (into {} (map (juxt :name identity) (:functions kir)))
+        typed? (= :kotoba.kir/v4 (:format kir))
+        exports (->> (or (:exports kir) (keys functions))
+                     (map text-name) sort vec)
         entry (:entry kir)]
     (when-not (or (nil? entry)
                   (and (contains? functions entry)
-                       (or (empty? (:exports kir))
-                           (some #{entry} (:exports kir)))))
+                       (some #{(text-name entry)} exports)))
       (reject! :entry-not-exported {:entry entry :exports (:exports kir)}))
     (let [methods
           (into {}
                 (map (fn [[function-name function]]
                        (let [params (:params function)
                              param-types (or (:param-types function)
-                                             (vec (repeat (count params) :i64)))
+                                             (vec (repeat (count params) (if typed? :value :i64)))
                              result-type (:result function)
                              locals (set params)
                              effects (->> (:effects function)
@@ -233,20 +236,24 @@
                                           canonical-sort
                                           vec)]
                          (when-not (and (= (count params) (count param-types))
-                                        (every? #{:i64} param-types)
-                                        (= :i64 result-type))
+                                        (if typed?
+                                          (and (every? data-i64-types param-types)
+                                               (contains? data-i64-types result-type))
+                                          (and (every? #{:i64} param-types)
+                                               (= :i64 result-type))))
                            (reject! :unsupported-value-profile
                                     {:function function-name
                                      :params param-types :result result-type}))
                          [(text-name function-name)
                           {"params" (mapv text-name params)
-                           "param-types" (mapv wire-type param-types)
-                           "result" (wire-type (:result function))
+                           "param-types" (mapv #(if typed? "value" (wire-type %)) param-types)
+                           "result" (if typed? "value" (wire-type (:result function)))
                            "effects" effects
                            "body" (expression (:body function) locals functions)}])))
                 (sort-by (comp text-name key) functions))
           node [artifact-tag artifact-version
                 {"entry" (when entry (text-name entry))
-                 "value-profile" "kotoba.i64-wrap/v1"
+                 "exports" exports
+                 "value-profile" (if typed? "kototama.data-i64/v1" "kotoba.i64-wrap/v1")
                  "methods" methods}]]
       (merge {:node node} (ipld/node->block node)))))
