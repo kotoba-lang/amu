@@ -5780,8 +5780,9 @@
  (if (or (<= i 1) (not= (gn-op M (dec i)) OP-FN)
          (not= (gn-g M gn-f-leaf) 2) (not= (gn-g M gn-f-freg) 2)
          (not= (gn-g M gn-f-vmode) 2) (not= (gn-g M gn-f-fb) 0)) M
-  (let [f (gn-sir M (dec i) IF-A) n (cw-count M f 16)]
-   (if (or (< n 4) (not (cw-head M 1 0 f))) M
+  (let [f (gn-sir M (dec i) IF-A) n (cw-count M f 48)]
+   ;; Budget and index envelopes cover every admitted stage before effects.
+   (if (or (< n 4) (> n 48) (not (cw-head M 1 0 f))) M
     (let [cost (dec (cw-budget M f n)) high (cw-max M f n)
           m0 (-> M (cond-> (not (cfr-paid M i f)) (gn-emit (enc-ldr 8 7 CTX-FUEL)))
                     (gn-emit (enc-cmp-i 8 cost))) b0 (vector-at m0 MM-CODE-N)
