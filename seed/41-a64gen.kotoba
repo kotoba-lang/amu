@@ -1869,6 +1869,7 @@
               (gn-err M2 E-GEN-FRAME (+ ns dp))
               (-> M2
                   (gn-put (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) (vector-at M2 MM-CODE-N))
+                  (dotpre-entry i f np)
                   (trg-se-dispatch i f np)
                   (trg-gp-dispatch i f np)
                   (cond-> (> F 0) (-> (gn-emit (enc-stp-pre 29 30 31 -16))
@@ -4253,6 +4254,33 @@
        (gn-dot-expand (-> M (gn-emit (enc-ldr 9 0 (* 8 j)))
                            (gn-emit (enc-ldr 10 1 (* 8 j sb)))
                            (gn-emit (enc-madd 2 9 10 2))) (inc j) n sb)))
+;; The dot kernel before the frame: the parameters are still in x0..x4 (v, row, col, k, sum) and every guard runs
+;; before anything observable, so a failing guard falls into the ordinary prologue (with its entry charge) right
+;; after this code. The fast path pays the entry charge and the n term charges at once (fuel >= n + 1 first), never
+;; touches x5, x19..x29 or sp, and returns like the epilogue (x0 = sum, fuel published).
+(defn- dotpre-entry [M :vector-i64 i :i64 f :i64 np :i64] :vector-i64
+ (if (or (not= np 5) (not (gn-dot? M (inc i)))) M
+  (let [n (gn-sir M (+ i 4) IF-B) sa (gn-sir M (+ i 20) IF-B) sb (gn-sir M (+ i 29) IF-B)
+        oa (gn-sir M (+ i 18) IF-B) ob (gn-sir M (+ i 27) IF-B) G (vector-alloc 19)
+        m0 (-> M (gn-emit (enc-cmp-i 3 0)) (ri-cold G (enc-cond-ne))
+             (gn-emit (enc-cmp-i 1 n)) (ri-cold G (enc-cond-hs))
+             (gn-emit (enc-cmp-i 2 n)) (ri-cold G (enc-cond-hs))
+             (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-emit (enc-cmp-i 8 (inc n))) (ri-cold G (enc-cond-lo))
+             (gn-emit (enc-ldr 16 7 312)) (gn-emit (enc-ldr 16 16 0))
+             (gn-emit (enc-sub-i 17 0 1)) (gn-emit (enc-cmp-r 17 16)) (ri-cold G (enc-cond-hs))
+             (gn-emit (enc-ldr 16 7 320)) (gn-emit (gn-e-addsl 16 16 17 4))
+             (gn-emit (enc-ldp 17 6 16 0)) (gn-emit (enc-ldr 9 7 328)) (gn-emit (gn-e-addsl 9 9 17 3))
+             (gn-mov-imm 16 sa) (gn-emit (enc-mul 10 1 16)) (gn-emit (enc-add-i 10 10 oa))
+             (gn-emit (enc-add-i 11 2 ob)) (gn-emit (enc-add-i 17 10 (dec n))) (gn-emit (enc-cmp-r 17 6))
+             (ri-cold G (enc-cond-hs))
+             (gn-emit (enc-add-i 17 11 (* (dec n) sb))) (gn-emit (enc-cmp-r 17 6)) (ri-cold G (enc-cond-hs))
+             ;; every guard passed
+             (gn-emit (gn-e-addsl 0 9 10 3)) (gn-emit (gn-e-addsl 1 9 11 3)) (gn-mov 2 4)
+             (gn-dot-expand 0 n sb)
+             (gn-emit (enc-sub-i 8 8 (inc n))) (gn-emit (enc-str 8 7 CTX-FUEL))
+             (gn-mov 0 2) (gn-emit (enc-ret)))
+        cold (vector-at m0 MM-CODE-N)]
+   (ri-patch m0 G 0 cold))))
 (defn- gn-dot-patch [M :vector-i64 at :i64 end :i64 cc :i64] :vector-i64
  (gn-put M (+ MM-CODE-BASE at) (enc-bcond cc (- end at))))
 (defn- gn-dot-entry [M :vector-i64 i :i64] :vector-i64
