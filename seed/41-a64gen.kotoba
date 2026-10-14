@@ -10363,7 +10363,7 @@
         M2 (-> (gn-put M1 gn-cell (vector-at M1 MM-R0))
                (gn-gs gn-g-open first) (gn-gs gn-g-open-n count)
                (gn-gs di-used 0) (gn-gs di-sites 0) (gn-gs alen-state 0) (gn-gs cpp-state 0))
-        M3 (if (= (vector-at M2 MM-ERR) 0) (gn-loop (cpp-prepare (alen-prepare (trg-prepare (clw-prepare M2)))) 1) M2)
+        M3 (if (= (vector-at M2 MM-ERR) 0) (t2-patch-handoffs (gn-loop (cpp-prepare (alen-prepare (trg-prepare (clw-prepare M2)))) 1)) M2)
         n (vector-at M3 MM-CODE-N)]
     (gn-put M3 MM-R0 (- n 1))))
 
@@ -15431,7 +15431,7 @@
 ;; t2-fail code k), read only by diagnostic builds
 (def t2-a-st (+ t2-a-re 64))
 (def t2-a-calls (+ t2-a-st MM-FN-CAP 4096 t2-maxb 4096))   ; positions of real calls (<= 256)
-(def t2-size (+ t2-a-calls 256 192 (* 3 t2-maxb) 64 4096 t2-maxb (* 8 12) (* 64 10) (* 2 t2-maxb) 6 t2-maxv 32))
+(def t2-size (+ t2-a-calls 256 192 (* 3 t2-maxb) 64 4096 t2-maxb (* 8 12) (* 64 10) (* 2 t2-maxb) 6 t2-maxv 32 MM-FN-CAP 4097))
 ;; value fields
 (def t2-f-op 0) (def t2-f-a 1) (def t2-f-b 2) (def t2-f-c 3) (def t2-f-blk 4) (def t2-f-link 5) (def t2-f-repl 6) (def t2-f-reg 7)
 ;; value ops
@@ -17348,20 +17348,45 @@
 ;; the existing chain protocol from the caller side: a callee with at most 3 parameters whose first argument is a T2
 ;; vector parameter receives x3 = length, x4 = items base, x5 = handle key (0 when the length is 0, so an invalid or
 ;; empty vector is validated by the callee itself exactly as before)
+;; descriptor slot of handle value x (a vector parameter or call result with an active slot), -1 when none
+(defn- t2-hslot [M :vector-i64 x :i64] :i64
+  (let [s (cond (<= x 0) -1 (= (t2-op-of M x) t2-param) (t2-vf M x t2-f-a) (= (t2-op-of M x) t2-call) (t2-slot-of M x 8) :else -1)]
+    (if (and (>= s 0) (< s 16) (= (t2-g M (+ t2-a-pd (* 4 s))) 1) (= (t2-g M (+ t2-a-pd (* 4 s) 3)) x)) s -1)))
+;; the chain protocol from the caller side: a callee with at most 3 parameters whose first argument is a vector with a
+;; descriptor slot receives x3 = length, x4 = items base, x5 = handle (0 when the length is 0, so an invalid or empty
+;; vector is validated by the callee itself). The ordinary entry clears x5; T2 upgrades the tail branch to the private
+;; entry (+1) after code generation only when the callee is a T2 function that reads the handoff (t2-patch-handoffs).
 (defn- t2-handoff [M :vector-i64 v :i64] :vector-i64
   (let [g (t2-vf M v t2-f-a) n (t2-vf M v t2-f-c)
-        x (if (> n 0) (t2-res M (t2-g M (+ t2-a-phiop (t2-vf M v t2-f-b)))) 0)]
-    (if (and (> n 0) (<= n 3) (> x 0) (= (t2-op-of M x) t2-param) (gn-chain-target M g)
-             (= (t2-g M (+ t2-a-pd (* 4 (t2-vf M x t2-f-a)))) 1))
-      (let [k (t2-vf M x t2-f-a) B (t2-g M (+ t2-a-pd (* 4 k) 1)) L (t2-g M (+ t2-a-pd (* 4 k) 2))]
-        (-> M (gn-mov 4 B) (gn-mov 3 L) (gn-emit (enc-cmp-i L 0)) (gn-emit (enc-csel 5 0 31 1))))
-      M)))
+        x (if (> n 0) (t2-res M (t2-g M (+ t2-a-phiop (t2-vf M v t2-f-b)))) 0)
+        s (if (and (> n 0) (<= n 3)) (t2-hslot M x) -1)]
+    (if (>= s 0)
+      (let [B (t2-g M (+ t2-a-pd (* 4 s) 1)) L (t2-g M (+ t2-a-pd (* 4 s) 2))]
+        (-> M (gn-mov 4 B) (gn-mov 3 L) (gn-emit (enc-cmp-i L 0)) (gn-emit (enc-csel 5 0 31 1))
+            (t2-s t2-s-hoffk 1)))
+      (t2-s M t2-s-hoffk 0))))
+(def t2-s-hoffk 61)
+(def t2-s-hent 62)
+(def t2-a-hent (+ t2-a-hoist 32))             ; per FN: its T2 code reads a handed-over descriptor (persistent)
+(def t2-a-hoff (+ t2-a-hent MM-FN-CAP))       ; [count, FIX indices of handoff tail branches...] (persistent, 4096)
+(defn- t2-hoff-add [M :vector-i64 k :i64] :vector-i64
+  (let [n (t2-g M t2-a-hoff)] (if (>= n 4096) M (-> M (t2-s (+ t2-a-hoff 1 n) k) (t2-s t2-a-hoff (inc n))))))
+;; after code generation: handoff tail branches to T2 callees that read the handoff enter at +1 (skipping mov x5,#0)
+(defn- t2-patch-handoffs [M :vector-i64] :vector-i64
+  (if (= (t2-base M) 0) M
+    (loop [i 0 m M]
+      (if (>= i (t2-g m t2-a-hoff)) m
+        (let [k (t2-g m (+ t2-a-hoff 1 i)) b (+ MM-FIX-BASE (* k MM-FIX-W)) g (vector-at m (+ b XF-TARGET))]
+          (recur (inc i) (if (and (> g 0) (< g MM-FN-CAP) (= (t2-g m (+ t2-a-hent g)) 1) (= (vector-at m (+ b XF-AUX)) 0)
+                                  (= (vector-at m (+ b XF-KIND)) FX-BL26))
+                           (gn-put m (+ b XF-AUX) 1) m)))))))
 (defn- t2-e-call [M :vector-i64 v :i64 tail :bool] :vector-i64
   (let [g (t2-vf M v t2-f-a)]
     (if tail
-      (-> M (t2-call-args v) (t2-handoff v) (t2-unframe) (gn-fix FX-BL26 g) (gn-emit (enc-b 0)))
+      (let [M1 (-> M (t2-call-args v) (t2-handoff v) (t2-unframe)) k (vector-at M1 MM-FIX-N)]
+        (-> M1 (gn-fix FX-BL26 g) (gn-emit (enc-b 0)) (cond-> (= (t2-g M1 t2-s-hoffk) 1) (t2-hoff-add k))))
       (let [M1 (-> M (cond-> (= (t2-g M t2-s-defer) 1) (gn-emit (enc-str 8 7 CTX-FUEL)))
-                   (t2-call-args v) (t2-handoff v) (gn-fix FX-BL26 g) (gn-emit (enc-bl 0))
+                   (t2-call-args v) (gn-fix FX-BL26 g) (gn-emit (enc-bl 0))
                    (gn-emit (enc-ldr 7 31 0)) (gn-emit (enc-ldr 8 7 CTX-FUEL)))
             r (t2-vf M v t2-f-reg)]
         (-> M1 (t2-e-redesc v 0) (cond-> (>= r 0) (gn-mov r 0)))))))
@@ -17467,8 +17492,8 @@
 ;; of the existing chain protocol may hand over a validated descriptor: key x5 = handle (nonzero), x3 = length, x4 = items
 ;; base. The ordinary entry clears x5 first (word 0), so only such callers reuse it.
 (defn- t2-e-desc-entry [M :vector-i64 k :i64] :vector-i64
-  ;; chain-protocol targets (the only private-entry callees) are never T2 functions: no handed-over descriptor here
-  (if true (t2-e-desc M k)
+  ;; parameter 0 of a function with at most 3 parameters (x3..x5 free) may arrive with a handed-over descriptor
+  (if (or (not= k 0) (> (t2-g M t2-s-np) 3)) (t2-e-desc M k)
     (let [B (t2-g M (+ t2-a-pd (* 4 k) 1)) L (t2-g M (+ t2-a-pd (* 4 k) 2))
           n (t2-g M t2-s-ndst)
           lc (t2-l-dstub M n)
@@ -17478,7 +17503,7 @@
                      (t2-jmp FX-CB19 lc (enc-cbz 5 0)) (gn-emit (enc-cmp-r 5 k)) (t2-bcond 1 lc)
                      (gn-mov B 4) (gn-mov L 3) (t2-jmp FX-B26 lj (enc-b 0))
                      (t2-deflab lc))]
-          (-> M1 (t2-e-desc k) (t2-deflab lj)))))))
+          (-> M1 (t2-e-desc k) (t2-deflab lj) (t2-s t2-s-hent 1)))))))
 (defn- t2-e-descs [M :vector-i64 k :i64] :vector-i64
   (if (>= k 8) M (t2-e-descs (if (= (t2-g M (+ t2-a-pd (* 4 k))) 1) (t2-e-desc-entry M k) M) (inc k))))
 (defn- t2-e-tabs [M :vector-i64 k :i64] :vector-i64
@@ -17497,12 +17522,14 @@
 ;; keep T2's body only when it is smaller than the old body (whose words end where T2 starts); else roll back
 (defn- t2-emit [M :vector-i64 f :i64] :vector-i64
   (let [old (gn-fnf M f FF-CODE) entry (vector-at M MM-CODE-N) fixn (vector-at M MM-FIX-N) labn (vector-at M MM-LABEL-N)
+        hoffn (t2-g M t2-a-hoff)
         M1 (t2-emit1 M f)
         ;; inlined callee code may grow the body (credit: a word per inlined op, two for a constant-argument specialization)
         body (- (t2-g M1 t2-s-bodyend) entry (t2-g M1 t2-s-vsize) (t2-g M1 t2-s-inlops))]
     (if (and (t2-ok? M1) (< body (- entry old)))
-      (t2-s M1 (+ t2-a-st f) 1)
-      (-> M1 (gn-put MM-CODE-N entry) (gn-put MM-FIX-N fixn) (gn-put MM-LABEL-N labn)
+      (-> M1 (t2-s (+ t2-a-st f) 1) (t2-s (+ t2-a-hent f) (t2-g M1 t2-s-hent)))
+      ;; rollback: the discarded FIX records' handoff entries go too
+      (-> M1 (gn-put MM-CODE-N entry) (gn-put MM-FIX-N fixn) (gn-put MM-LABEL-N labn) (t2-s t2-a-hoff hoffn)
           (gn-put (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) old) (t2-s (+ t2-a-st f) 2)))))
 (def t2-s-bodyend 29)
 (defn- t2-emit1 [M :vector-i64 f :i64] :vector-i64
