@@ -1,0 +1,61 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "headRefOid": "cdcca3523f1208abfb3bdfef0236e157f323e1b7",
+        "reviewThreads": {
+          "pageInfo": {
+            "hasNextPage": false
+          },
+          "nodes": [
+            {
+              "id": "PRRT_kwDOTVAhac6sI_Nf",
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/kotoba-lang/amu/pull/1313#discussion_r4266172469",
+                    "body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Detect the 49th stage before claiming an upper refusal**\n\nFor any chain containing 49 or more valid stages, `cw-count M f 48` can only return 48, so the new `> n 48` condition is unreachable. Such chains\u2014including the documented 49- and 96-stage qualification variants\u2014are therefore admitted as a 48-stage fused prefix rather than refused, contradicting `source-review.json`'s `EXPLICIT_UPPER_REFUSAL` result and `candidate-source-receipt.json`'s `explicitUpperRefusal: true`; count or probe one additional stage before enforcing the bound.\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
+                    "path": "seed/41-a64gen.kotoba",
+                    "line": null
+                  }
+                ]
+              }
+            },
+            {
+              "id": "PRRT_kwDOTVAhac6sI_Ni",
+              "isResolved": true,
+              "isOutdated": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/kotoba-lang/amu/pull/1313#discussion_r4266172478",
+                    "body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Reserve space before expanding to 48 stages**\n\nWhen a valid compilation is close to `MM-CODE-CAP`, increasing this expansion from 16 to 48 stages can make a source that previously fit fail with `E-GEN-FULL`: `cw-entry` has no code-capacity headroom check, and every added load/narrow/store is sent directly through `gn-emit`, which records that fatal error at the boundary instead of falling back to the original body or the 16-stage form. Gate the extended form on sufficient remaining code space so this performance optimization does not regress compilability for large programs.\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
+                    "path": "seed/41-a64gen.kotoba",
+                    "line": null
+                  }
+                ]
+              }
+            },
+            {
+              "id": "PRRT_kwDOTVAhac6sI_Nm",
+              "isResolved": true,
+              "isOutdated": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/kotoba-lang/amu/pull/1313#discussion_r4266172483",
+                    "body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Disable bytecode writes during portable replay**\n\nOn a normal writable checkout, executing this replay imports `native-gate.py`, `native_utils_local.py`, and later `source-pool.py` from the evidence directory, causing Python to create `docs/evidence/copy-chain48-20261014/__pycache__/*.pyc` outside the requested output directory. This violates the README's promise that replay writes only to the explicit scratch directory, while the added `.gitignore` merely hides the checkout mutation; disable bytecode generation or load the modules without writing caches.\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
+                    "path": "docs/evidence/copy-chain48-20261014/review-portable-evidence-v1.py",
+                    "line": 13
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
