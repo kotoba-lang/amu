@@ -57,6 +57,10 @@
 (defn- bytes-form [value]
   ["bytes" (mapv #(bit-and (int %) 0xff) value)])
 
+(defn- quoted-value? [value]
+  (or (nil? value) (boolean? value) (string? value) (integer-value? value)
+      (and (vector? value) (every? quoted-value? value))))
+
 (declare expression wire-data)
 
 (defn- wire-data [value]
@@ -97,7 +101,7 @@
   #{"self" "caller" "address" "method" "params" "value"
     "call" "static-call" "delegate-call" "create" "emit"})
 (def ^:private state-ops #{"root" "open" "read" "write" "link" "stat" "set-state"})
-(def ^:private data-i64-types #{:i64 :bool :string :keyword :bytes})
+(def ^:private data-i64-types #{:i64 :bool :string :vector-i64 :map})
 
 (defn expression
   "Encode one checked KIR expression in Kototama's closed, tagged form."
@@ -108,7 +112,7 @@
 
     (integer-value? form) ["const" (integer-form form)]
 
-    (keyword? form) ["const" ["keyword" (text-name form)]]
+    (keyword? form) (reject! :unsupported-value-kind {:kind :keyword})
 
     (symbol? form)
     (if (contains? locals form)
@@ -117,8 +121,7 @@
 
     (vector? form) ["vector" (mapv #(expression % locals functions) form)]
 
-    (set? form) ["set" (vec (canonical-sort
-                              (map #(expression % locals functions) form)))]
+    (set? form) (reject! :unsupported-value-kind {:kind :set})
 
     (map? form)
     ["map" (->> form
@@ -142,6 +145,25 @@
                (into ["if"] (mapv #(expression % locals functions) args)))
 
         "do" ["do" (mapv #(expression % locals functions) args)]
+
+        "get" (do
+                (when-not (= 2 (count args))
+                  (reject! :invalid-get-arity {:form form}))
+                ["get" (expression (first args) locals functions)
+                 (expression (second args) locals functions)])
+
+        "assoc" (do
+                  (when-not (= 3 (count args))
+                    (reject! :invalid-assoc-arity {:form form}))
+                  ["assoc" (expression (first args) locals functions)
+                   (expression (second args) locals functions)
+                   (expression (nth args 2) locals functions)])
+
+        "dissoc" (do
+                   (when-not (= 2 (count args))
+                     (reject! :invalid-dissoc-arity {:form form}))
+                   ["dissoc" (expression (first args) locals functions)
+                    (expression (second args) locals functions)])
 
         "let" (let [[bindings body & extra] args]
                 (when-not (and (empty? extra) (vector? bindings)
@@ -180,6 +202,8 @@
         "quote" (do
                   (when-not (= 1 (count args))
                     (reject! :invalid-quote-arity {:form form}))
+                  (when-not (quoted-value? (first args))
+                    (reject! :unsupported-quoted-value {:value (first args)}))
                   ["const" (wire-data (first args))])
 
         "cap-call" ["effect" "invoke-capability"
@@ -194,14 +218,15 @@
           (contains? comparison-ops head)
           ["compare" op (mapv #(expression % locals functions) args)]
           (contains? actor-ops op)
-          ["actor" op (mapv #(expression % locals functions) args)]
+          (reject! :unsupported-actor-operation {:operation op})
           (contains? state-ops op)
-          ["state" op (mapv #(expression % locals functions) args)]
+          (reject! :unsupported-state-operation {:operation op})
           (= op "authorize")
-          ["authorize" (mapv #(expression % locals functions) args)]
+          (reject! :unsupported-authorization-operation {:operation op})
           (contains? functions head)
           ["call" op (mapv #(expression % locals functions) args)]
-          :else ["builtin" op (mapv #(expression % locals functions) args)])))))
+          :else (reject! :unsupported-expression-operation
+                         {:operation op :form form}))))))
 
 (defn emit
   "Emit a canonical DAG-CBOR Kototama program block from checked KIR.
