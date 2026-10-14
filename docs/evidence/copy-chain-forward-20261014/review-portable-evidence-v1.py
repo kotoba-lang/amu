@@ -1,5 +1,6 @@
 from pathlib import Path
 import json,tarfile,hashlib,importlib.util,sys,copy,argparse
+sys.dont_write_bytecode=True
 E=Path(__file__).resolve().parent;R=E.parents[2]
 ap=argparse.ArgumentParser();ap.add_argument('--output',type=Path,required=True);args=ap.parse_args();D=args.output.resolve();D.mkdir(exist_ok=False)
 def extract(a,d):
