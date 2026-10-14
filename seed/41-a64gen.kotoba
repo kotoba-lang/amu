@@ -15982,7 +15982,7 @@
 (defn- t2-noreg? [M :vector-i64 v :i64] :bool
   (let [op (t2-op-of M v)]
     (or (= op t2-const) (= op t2-undef) (= op t2-fuel) (= op t2-pub) (= op t2-vset) (= op t2-trap) (= op t2-ret)
-        (= op t2-br) (= op t2-brz) (not= (bit-and (t2-xf M v t2-x-flags) 5) 0))))
+        (= op t2-br) (= op t2-brz) (not= (bit-and (t2-xf M v t2-x-flags) 37) 0))))
 (defn- t2-use1 [M :vector-i64 x :i64] :vector-i64
   (let [r (t2-res M x)] (if (> r 0) (t2-xs M r t2-x-uses (inc (t2-xf M r t2-x-uses))) M)))
 ;; count uses: operands (resolved), phi operands; vector handles of vat/vset are not uses (descriptor registers serve)
@@ -16046,6 +16046,36 @@
         :else (t2-slot-new M h (inc s))))
 (defn- t2-slot-of [M :vector-i64 h :i64 s :i64] :i64
   (cond (>= s 16) 0 (= (t2-g M (+ t2-a-pd (* 4 s) 3)) h) s :else (t2-slot-of M h (inc s))))
+;; ---- multiply-add / shift-add fusion: a single-use product (MUL of two registers, MUL by 2^p, SHL by a constant) in its
+;; user's block feeds ADD (either operand) or SUB (second operand) as madd/msub or a shifted-register add/sub. The product
+;; (flag 32) has no register and takes its user's (flag 64) position.
+(defn- t2-prod-kind [M :vector-i64 m :i64 v :i64] :i64
+  (if (or (<= m 0) (not= (t2-op-of M m) t2-bin) (not= (t2-xf M m t2-x-uses) 1) (not= (t2-vf M m t2-f-blk) (t2-vf M v t2-f-blk))
+          (not= (bit-and (t2-xf M m t2-x-flags) 127) 0) (t2-gone? M m))
+    0
+    (let [bop (t2-vf M m t2-f-a) a (t2-res M (t2-vf M m t2-f-b)) b (t2-res M (t2-vf M m t2-f-c))]
+      (cond (and (= bop BOP-MUL) (not (t2-isconst? M a)) (not (t2-isconst? M b))) 1
+            (and (= bop BOP-MUL) (not (t2-isconst? M a)) (t2-isconst? M b) (> (gn-pow2 (t2-kval M b)) 0)) 2
+            (and (= bop BOP-MUL) (t2-isconst? M a) (not (t2-isconst? M b)) (> (gn-pow2 (t2-kval M a)) 0)) 2
+            (and (= bop BOP-SHL) (not (t2-isconst? M a)) (t2-isconst? M b) (> (bit-and (t2-kval M b) 63) 0)) 2
+            :else 0))))
+(defn- t2-fusedop [M :vector-i64 v :i64] :i64
+  (let [x (t2-res M (t2-vf M v t2-f-b)) y (t2-res M (t2-vf M v t2-f-c))]
+    (if (and (> y 0) (= (bit-and (t2-xf M y t2-x-flags) 32) 32)) y x)))
+(defn- t2-mfuse [M :vector-i64 v :i64 nv :i64] :vector-i64
+  (if (> v nv) M
+    (t2-mfuse
+      (if (and (= (t2-op-of M v) t2-bin) (not (t2-gone? M v)) (> (t2-xf M v t2-x-uses) 0)
+               (or (= (t2-vf M v t2-f-a) BOP-ADD) (= (t2-vf M v t2-f-a) BOP-SUB)))
+        (let [x (t2-res M (t2-vf M v t2-f-b)) y (t2-res M (t2-vf M v t2-f-c))
+              m (cond (and (> (t2-prod-kind M y v) 0) (not (t2-isconst? M x))) y
+                      (and (= (t2-vf M v t2-f-a) BOP-ADD) (> (t2-prod-kind M x v) 0) (not (t2-isconst? M y))) x
+                      :else 0)]
+          (if (> m 0)
+            (-> M (t2-xs m t2-x-flags (bit-or (t2-xf M m t2-x-flags) 32)) (t2-xs v t2-x-flags (bit-or (t2-xf M v t2-x-flags) 64)))
+            M))
+        M)
+      (inc v) nv)))
 (defn- t2-pos-tfused [M :vector-i64 v :i64 v1 :i64 p :i64] :vector-i64
   (if (>= v v1) M
     (t2-pos-tfused (if (= (bit-and (t2-xf M v t2-x-flags) 4) 4) (t2-xs M v t2-x-pos p) M) (inc v) v1 p)))
@@ -16056,12 +16086,14 @@
   (if (= v 0) M (t2-pos-phis (if (= (t2-vf M v t2-f-repl) 0) (t2-xs M v t2-x-pos p) M) (t2-vf M v t2-f-link) p)))
 (defn- t2-pos-vals [M :vector-i64 v :i64 v1 :i64 p :i64] :vector-i64
   (cond (>= v v1) (t2-s M t2-s-npos p)
-        (or (= (t2-op-of M v) t2-phi) (t2-gone? M v) (= (bit-and (t2-xf M v t2-x-flags) 1) 1)) (t2-pos-vals M (inc v) v1 p)
+        (or (= (t2-op-of M v) t2-phi) (t2-gone? M v) (= (bit-and (t2-xf M v t2-x-flags) 33) 1)
+            (= (bit-and (t2-xf M v t2-x-flags) 32) 32)) (t2-pos-vals M (inc v) v1 p)
         :else (let [M1 (t2-xs M v t2-x-pos p)
-                    M2 (if (= (t2-op-of M v) t2-brz)
-                         (let [c (t2-res M (t2-vf M v t2-f-a))]
-                           (if (and (> c 0) (= (bit-and (t2-xf M c t2-x-flags) 1) 1)) (t2-xs M1 c t2-x-pos p) M1))
-                         M1)]
+                    M2 (cond (= (t2-op-of M v) t2-brz)
+                             (let [c (t2-res M (t2-vf M v t2-f-a))]
+                               (if (and (> c 0) (= (bit-and (t2-xf M c t2-x-flags) 1) 1)) (t2-xs M1 c t2-x-pos p) M1))
+                             (= (bit-and (t2-xf M v t2-x-flags) 64) 64) (t2-xs M1 (t2-fusedop M v) t2-x-pos p)
+                             :else M1)]
                 (t2-pos-vals M2 (inc v) v1 (inc p)))))
 (defn- t2-positions [M :vector-i64 b :i64 p :i64] :vector-i64
   (cond (>= b (t2-g M t2-s-nb)) (t2-s M t2-s-maxpos p)
@@ -16868,12 +16900,27 @@
   (let [len (gn-run-len k) base (gn-logic-base bop)]
     (if (or (= len 0) (< base 0)) -1
       (let [tz (gn-tz k 0)] (gn-e-bf base d n (bit-and (- 64 tz) 63) (dec len))))))
+;; ADD/SUB with a fused product operand: madd/msub, or add/sub with a shifted register
+(defn- t2-e-fused [M :vector-i64 v :i64 d :i64] :vector-i64
+  (let [m (t2-fusedop M v) x (t2-res M (if (= m (t2-res M (t2-vf M v t2-f-c))) (t2-vf M v t2-f-b) (t2-vf M v t2-f-c)))
+        sub (= (t2-vf M v t2-f-a) BOP-SUB)
+        bop (t2-vf M m t2-f-a) a (t2-res M (t2-vf M m t2-f-b)) b (t2-res M (t2-vf M m t2-f-c))
+        rx (t2-vf M x t2-f-reg)]
+    (if (and (= bop BOP-MUL) (not (t2-isconst? M a)) (not (t2-isconst? M b)))
+      (let [w (enc-madd d (t2-vf M a t2-f-reg) (t2-vf M b t2-f-reg) rx)] (gn-emit M (if sub (+ w 0x8000) w)))
+      (let [r (if (t2-isconst? M a) b a)
+            k (if (t2-isconst? M a) (t2-kval M a) (t2-kval M b))
+            sh (if (= bop BOP-SHL) (bit-and k 63) (gn-pow2 k))
+            w (gn-e-addsl d rx (t2-vf M r t2-f-reg) sh)]
+        (gn-emit M (if sub (+ w 0x40000000) w))))))
 (defn- t2-e-bin [M :vector-i64 v :i64] :vector-i64
   (let [bop (t2-vf M v t2-f-a) x0 (t2-res M (t2-vf M v t2-f-b)) y0 (t2-res M (t2-vf M v t2-f-c)) d (t2-dst M v)
         sw (and (t2-comm? bop) (t2-isconst? M x0) (not (t2-isconst? M y0)))
         x (if sw y0 x0) y (if sw x0 y0)
         ky (t2-kval M y) yc (t2-isconst? M y)]
-    (cond (and (t2-dead? M v) (or (not= bop BOP-QUOT) (and yc (not= ky 0) (not= ky -1)))) M
+    (cond (= (bit-and (t2-xf M v t2-x-flags) 32) 32) M   ; a product fused into its user
+          (and (t2-dead? M v) (or (not= bop BOP-QUOT) (and yc (not= ky 0) (not= ky -1)))) M
+          (= (bit-and (t2-xf M v t2-x-flags) 64) 64) (t2-e-fused M v d)
           (and yc (or (= bop BOP-ADD) (= bop BOP-SUB)) (>= ky 0) (< ky 4096) (not (t2-isconst? M x)))
           (gn-emit M (if (= bop BOP-ADD) (enc-add-i d (t2-vf M x t2-f-reg) ky) (enc-sub-i d (t2-vf M x t2-f-reg) ky)))
           (and yc (or (= bop BOP-ADD) (= bop BOP-SUB)) (< ky 0) (> ky -4096) (not (t2-isconst? M x)))
@@ -17323,7 +17370,7 @@
               (let [nv (t2-g M2 t2-s-nv)
                     M3 (-> M2 (t2-clear-x 1 nv) (t2-uses 1 nv) (t2-check 1 nv))]
                 (if (not (t2-ok? M3)) M
-                  (let [M4 (-> M3 (t2-tuse 0) (t2-chk) (t2-fuse 0) (t2-tfuse 0) (t2-positions 0 1))]
+                  (let [M4 (-> M3 (t2-tuse 0) (t2-chk) (t2-fuse 0) (t2-tfuse 0) (t2-mfuse 1 nv) (t2-positions 0 1))]
                     (if (not (t2-ok? M4)) M
                       (let [M5 (-> M4 (t2-ue-all 0) (t2-liveness 0))]
                         (if (not (t2-ok? M5)) M
