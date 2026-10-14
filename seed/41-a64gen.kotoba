@@ -4590,8 +4590,71 @@
  (let [m (bsu-path M (+ p 10) tail value other 256)
        next (bu-expand m tail (+ tail 10)) head (gn-sir M (+ p 2) IF-A)]
   (-> next (gn-jflush (gn-g next gn-f-h) head) (gn-allreg 0 (gn-g next gn-f-dp)))))
+;; Four-lane low16 affine color arithmetic. Complete IR/helper shape,
+;; inherited BU range/equal-cost/effect proof and scalar cold/remainder path.
+(defn- ncv-word [kind :i64 k :i64] :i64
+ (vector-at (case kind 0 (case (quot k 64) 0 [1688867040067585 18 4229300233 12884901892 281466386841603 65543 277141354709003 4294967300 4219666442 4228841481 4294967300 6597069832195 12885032964 4295032838 562949964955662 1095216726019 327686 262149 8589934596 65539 65543 277012505690123 4294967300 8796093087747 12885032964 4295032838 17180000260 844429085179917 9895604715523 12885032964 4295032838 17180000260 844429085179917 10995116343299 12885032964 4295032838 17180000260 844429085179917 4220452874 4226875401 8589934596 4295032835 65543 276793462358027 17179869188 377957187587 196614 1099511693315 262150 188978626563 131078 281479133462541 327685 17179869188 17179934724 850403655683 4295163910 1099511758851 4295229446 65542 974957641731 131078 281479133462541 393221] 1 [4294967300 9895604715523 12885032964 4295032838 4295098372 9895604846595 12885164036 12884967430 562958554890254 21475033092 8590065670 281487721758733 844429085179917 10995116343299 12885032964 4295032838 4295098372 10995116474371 12885164036 12884967430 562958554890254 25770000388 8590000134 281487721758733 844429085179917 4220518410 4223533065 17179869188 17179934724 442381762563 4295163910 1099511758851 4295229446 65542 768799211523 131078 281479133462541 327685 17179869188 785979080707 196614 1099511693315 262150 390842089475 131078 281479133462541 393221 4294967300 8796093087747 12885032964 4295032838 4295098372 8796093218819 12885164036 12884967430 562958554890254 21475033092 8590000134 281487721758733 844429085179917 9895604715523 12885032964 4295032838 4295098372] 2 [9895604846595 12885164036 12884967430 562958554890254 25770000388 8590065670 281487721758733 844429085179917 4220518409 4220452873 327685 21474836484 8590000132 12885032964 4295163907 8590000134 65541 4295098373 8590131205 18 4229300234 4219666441 19 4294901762] []) 1 [844442109935617 18 4229300233 4294967300 8590000132 12885032964 844424943763470 19 4294901762] 2 [844442109935617 18 4229300233 4294967300 8590000132 12885032964 1095216857091 8590262278 844429093502989 19 4294901762] 3 [562958543290369 4229365769 4294967300 281457796907011 327686 131077 8589934596 281453501939715 327687 277119879872523 8589934596 281462091874307 131078 4228382730 4228513801 8589934596 4228382729 19 4294901762] 4 [562958543290369 18 4229300233 4294967300 281479140343821 131077 8589934596 65539 131079 277128469807115 3 4227989514 4228644873 8589934596 1095216726019 196615 277098405036043 1095216660483 4228055050 4228186121 8589934596 4228055049 4227989513 19 4294901762] []) (bit-and k 63)))
+(defn- ncv-val [M :vector-i64 p :i64 f :i64 x :i64] :i64
+ (cond (<= x -2000) (gn-sir M (+ p (- (- 0 x) 2000)) IF-A)
+       (<= x -1000) (gn-sir M (+ p (- (- 0 x) 1000)) IF-A)
+       (= x -1) f (= x -2) (gn-sir M (+ p 4) IF-B) (= x -3) 65536 (= x -4) 65535 (= x -5) 32768 :else x))
+(defn- ncv-match [M :vector-i64 p :i64 f :i64 kind :i64 k :i64] :bool
+ (let [n (case kind 0 152 1 9 2 11 3 19 25)]
+  (if (= k n) true
+   (let [w (ncv-word kind k) a (mp-sign (bit-and (u64-shift-right w 16) 65535) 16)
+         b (mp-sign (bit-and (u64-shift-right w 32) 65535) 16)
+         c (bit-and (u64-shift-right w 48) 65535) op (bit-and w 65535)
+         label (gn-sir M (+ p k) IF-A)]
+    (and (gn-dot-at? M (+ p k) op (ncv-val M p f a) (ncv-val M p f b) c)
+     (or (not= op OP-LABEL) (and (> label 0) (< label (vector-at M MM-LABEL-N)) (= (gn-lpos M label) (+ p k))))
+     (ncv-match M p f kind (inc k)))))))
+(defn- ncv-helper [M :vector-i64 f :i64 kind :i64] :bool
+ (and (> f 0) (< f (vector-at M MM-FN-N)) (not (gn-clamp-open M f))
+  (= (gn-fnf M f FF-NPARAMS) (if (< kind 3) 3 1))
+  (= (gn-fnf M f FF-NSLOTS) (if (< kind 3) 3 2))
+  (= (gn-fnf M f FF-DEPTH) (case kind 1 3 2 4 2))
+  (= (gn-fnf M f FF-RTYPE) (if (< kind 3) TY-VEC TY-I64))
+  (= (ck-pt M f 0) (if (< kind 3) TY-VEC TY-I64))
+  (or (>= kind 3) (and (= (ck-pt M f 1) TY-I64) (= (ck-pt M f 2) TY-I64)))
+  (let [p (gn-fnf M f FF-SIR) n (case kind 1 9 2 11 3 19 25)]
+   (and (> p 0) (<= (+ p n) (vector-at M MM-SIR-N)) (ncv-match M p f kind 0)))))
+(defn- ncv-admit [M :vector-i64 p :i64 end :i64 n :i64] :bool
+ (and (>= n 4) (<= n 64) (= (- end p) 151)
+  (let [f (gn-sir M p IF-A) writer (gn-sir M (+ p 27) IF-A)
+        sign (gn-sir M (+ p 51) IF-A) clamp (gn-sir M (+ p 75) IF-A)]
+   (and (> f 0) (< f (vector-at M MM-FN-N)) (= (gn-fnf M f FF-SIR) p)
+    (= (gn-fnf M f FF-NSLOTS) 6) (= (gn-fnf M f FF-DEPTH) 5)
+    (= (gn-g M gn-f-freg) 3) (= (gn-g M gn-f-vmode) 4)
+    (= (gn-sir M (+ p 19) IF-B) 0) (= (gn-sir M (+ p 41) IF-B) 1)
+    (ncv-match M p f 0 0) (ncv-helper M writer 2)
+    (ncv-helper M (gn-sir M (+ (gn-fnf M writer FF-SIR) 8) IF-A) 1)
+    (ncv-helper M sign 3) (ncv-helper M clamp 4)
+    (= (gn-sir M (+ (gn-fnf M clamp FF-SIR) 4) IF-A) sign)))))
+(defn- ncv-body-words [kind :i64] :vector-i64
+ (case kind 0 [1036779808 1036780833 1317083136 241248256 789034976 789619712 790668289 1032847649 1864410112 1032848672 1032978721 1032979744 1033109793 1033110816] 1 [1036779808 1036780833 1317083136 241248256 789034976 251823873 241277953 790103073 252085442 241343490 1037173027 1037174052 1317279843 241248355 778142817 251757955 241402913 1862329347 241394721 788719268 241462305 789619745 790668325 1032978725 1864410145 1032979745 1037304097 1037305125 1317345313 241248289 790107200 789021762 241337377 241271808 241394688 241462272 789619712 790668289 1033109793 1864410112 1033110816] 2 [1036779808 1036780833 1317083136 241248256 789034976 251888865 241277953 252020450 241343490 790103106 1037041955 1037042980 1317279843 241248355 790107168 788891201 241271905 241271808 1862329345 241263616 788719267 241396736 789619712 790668292 1032847652 1864410112 1032848672 1037173024 1037174052 1317279744 241248256 778208256 251823970 241337344 241263616 241396736 789619712 790668289 1032978721 1864410112 1032979744] []))
+(defn- ncv-body [M :vector-i64 kind :i64 ri :i64] :vector-i64
+ (let [V (ncv-body-words kind) m (gn-emit M (gn-e-addsl 9 4 ri 3))
+       emitted (loop [cur m k 0] (if (= k (vector-count V)) cur
+        (recur (gn-emit cur (vector-at V k)) (inc k))))]
+  (gn-emit emitted (enc-add-i ri ri 4))))
+(defn- ncv-loop [M :vector-i64 p :i64 end :i64 n :i64 value :i64 other :bool] :vector-i64
+ (let [tail (- end 13) ri (gn-sreg M 3) head (gn-sir M (+ p 2) IF-A)
+       kind (if other 2 (if (= value 0) 0 1))
+       m0 (gn-op-label M head) loop-at (vector-at m0 MM-CODE-N)
+       m1 (gn-emit m0 (enc-cmp-i ri (- n 3))) b0 (vector-at m1 MM-CODE-N)
+       m2 (gn-emit m1 (enc-bcond (enc-cond-hs) 0))
+       m3 (ncv-body m2 kind ri) back (vector-at m3 MM-CODE-N)
+       m4 (gn-emit m3 (enc-b (- loop-at back))) remainder (vector-at m4 MM-CODE-N)
+       m5 (-> m4 (gn-allreg 0 (gn-g m4 gn-f-dp)) (gn-dot-patch b0 remainder (enc-cond-hs)) (gn-emit (enc-cmp-i ri n)))
+       b1 (vector-at m5 MM-CODE-N) m6 (gn-emit m5 (enc-bcond (enc-cond-hs) 0))
+       m7 (bsu-iteration m6 p tail value other) last (vector-at m7 MM-CODE-N)
+       m8 (gn-emit m7 (enc-b (- remainder last))) finish (vector-at m8 MM-CODE-N)
+       m9 (-> m8 (gn-dot-patch b1 finish (enc-cond-hs)) (gn-def 0 gn-k-local 1))]
+  (bu-expand m9 (+ tail 11) end)))
+
 ;; Repeat loop test only after TWO ordered iterations, with one final iteration remainder.
 (defn- bsu-loop [M :vector-i64 p :i64 end :i64 n :i64 value :i64 other :bool] :vector-i64
+ (if (ncv-admit M p end n) (ncv-loop M p end n value other)
  (let [tail (- end 13) ri (gn-sreg M 3) head (gn-sir M (+ p 2) IF-A)
        m0 (gn-op-label M head) loop-at (vector-at m0 MM-CODE-N)
        m1 (gn-emit m0 (enc-cmp-i ri (dec n))) b0 (vector-at m1 MM-CODE-N)
@@ -4603,7 +4666,7 @@
        b1 (vector-at m6 MM-CODE-N) m7 (gn-emit m6 (enc-bcond (enc-cond-hs) 0))
        m8 (bsu-iteration m7 p tail value other) finish (vector-at m8 MM-CODE-N)
        m9 (-> m8 (gn-dot-patch b1 finish (enc-cond-hs)) (gn-def 0 gn-k-local 1))]
-  (bu-expand m9 (+ tail 11) end)))
+  (bu-expand m9 (+ tail 11) end))))
 (defn- bsu-variants [M :vector-i64 p :i64 end :i64 n :i64] :vector-i64
  (let [tail (- end 13) selector (gn-sreg M 2)
        k0 (bsu-constant M (+ p 10) tail 0) k1 (bsu-constant M (+ p 10) tail 1)
