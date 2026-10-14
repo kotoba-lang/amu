@@ -6661,20 +6661,28 @@
    (gn-mov-imm 11 (+ out (dec n))) (gn-emit (enc-cmp-r 11 10)) (ri-cold G (enc-cond-hs))
    (gn-emit (enc-ldr 14 7 328)) (gn-emit (gn-e-addsl 14 14 17 3))
    (gn-emit (enc-sub-r 8 8 9))
-   (gn-mov-imm 10 stride) (gn-emit (enc-madd 10 1 10 2)) (gn-emit (gn-e-addsl 12 14 10 3))
+   ;; x12 = &v[row stride] (items stored at [x12, col, lsl #3]), x11 = row + bias
+   (gn-mov-imm 10 stride) (gn-emit (enc-mul 10 1 10)) (gn-emit (gn-e-addsl 12 14 10 3))
    (gn-mov-imm 10 out) (gn-emit (enc-add-r 10 1 10)) (gn-emit (gn-e-addsl 13 14 10 3))
-   (gn-mov-imm 15 factor))
-  head (vector-at m0 MM-CODE-N) m1 (gn-emit m0 (enc-cmp-i 2 n)) rowbranch (vector-at m1 MM-CODE-N)
-  m2 (-> m1 (gn-emit (enc-bcond (enc-cond-eq) 0)) (gn-emit (enc-add-r 9 1 2))
-   (gn-mov-imm 10 bias) (gn-emit (enc-add-r 9 9 10)) (gn-emit (enc-cmp-r 1 2))) diagonal (vector-at m2 MM-CODE-N)
-  m3 (-> m2 (gn-emit (enc-bcond (enc-cond-ne) 2)) (gn-emit (enc-mul 9 9 15))
-   (gn-emit (enc-str 9 12 0)) (gn-emit (enc-add-i 12 12 8)) (gn-emit (enc-add-r 3 3 9)) (gn-emit (enc-add-i 2 2 1))) back (vector-at m3 MM-CODE-N)
-  m4 (gn-emit m3 (enc-b (- head back))) rowhead (vector-at m4 MM-CODE-N)
-  m5 (-> m4 (gn-emit (enc-str 3 13 0)) (gn-emit (enc-add-i 13 13 8)) (gn-mov-imm 10 (* (- stride n) 8))
-   (gn-emit (enc-add-r 12 12 10)) (gn-emit (enc-add-i 1 1 1)) (gn-mov-imm 2 0) (gn-mov-imm 3 0)
+   (gn-mov-imm 15 factor) (ri-rowbias bias))
+  m1 (gn-emit m0 (enc-cmp-i 2 n)) rowbranch (vector-at m1 MM-CODE-N)
+  ;; body (bottom-tested; a row after the first starts at col 0 < n):
+  ;; add x9, x11, col ; cmp row, col ; b.ne +2 ; mul x9, x9, x15 ; str x9, [x12, col, lsl #3] ; add sum ;
+  ;; add col, #1 ; cmp col, #n ; b.ne body
+  m2 (gn-emit m1 (enc-bcond (enc-cond-eq) 0)) body (vector-at m2 MM-CODE-N)
+  m3 (-> m2 (gn-emit (enc-add-r 9 11 2)) (gn-emit (enc-cmp-r 1 2)) (gn-emit (enc-bcond (enc-cond-ne) 2))
+   (gn-emit (enc-mul 9 9 15)) (gn-emit (gn-e-strr3 9 12 2)) (gn-emit (enc-add-r 3 3 9)) (gn-emit (enc-add-i 2 2 1))
+   (gn-emit (enc-cmp-i 2 n))) back (vector-at m3 MM-CODE-N)
+  m4 (gn-emit m3 (enc-bcond (enc-cond-ne) (- body back))) rowhead (vector-at m4 MM-CODE-N)
+  m5 (-> m4 (gn-emit (enc-str 3 13 0)) (gn-emit (enc-add-i 13 13 8)) (gn-mov-imm 10 (* stride 8))
+   (gn-emit (enc-add-r 12 12 10)) (gn-emit (enc-add-i 1 1 1)) (ri-rowbias bias) (gn-mov-imm 2 0) (gn-mov-imm 3 0)
    (gn-emit (enc-cmp-i 1 n))) rowback (vector-at m5 MM-CODE-N)
-  m6 (-> m5 (gn-emit (enc-bcond (enc-cond-ne) (- head rowback))) (gn-epilogue) (gn-gs gn-f-dead 0)) cold (vector-at m6 MM-CODE-N)]
+  m6 (-> m5 (gn-emit (enc-bcond (enc-cond-ne) (- body rowback))) (gn-epilogue) (gn-gs gn-f-dead 0)) cold (vector-at m6 MM-CODE-N)]
   (-> m6 (gn-dot-patch rowbranch rowhead (enc-cond-eq)) (ri-patch G 0 cold)))))
+;; x11 := row (x1) + bias
+(defn- ri-rowbias [M :vector-i64 bias :i64] :vector-i64
+ (if (and (>= bias 0) (<= bias 4095)) (gn-emit M (enc-add-i 11 1 bias))
+  (-> M (gn-mov-imm 11 bias) (gn-emit (enc-add-r 11 1 11)))))
 
 (defn- ru-shape [M :vector-i64 p :i64 f :i64 k :i64] :bool
  (if (= k 44) true (let [n (gn-sir M (+ p 4) IF-B) stride (gn-sir M (+ p 26) IF-B)
