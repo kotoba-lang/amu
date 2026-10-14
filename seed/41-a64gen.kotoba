@@ -15395,7 +15395,7 @@
 (def t2-s-nstub 19)  ; edge stubs queued
 (def t2-s-busy 20)   ; register busy mask during linear scan
 ;; arrays
-(def t2-a-blk 64)
+(def t2-a-blk 128)   ; scalars 0..127 are zeroed per compile
 (def t2-a-bs (+ t2-a-blk t2-maxops))
 (def t2-a-be (+ t2-a-bs t2-maxb))
 (def t2-a-bp0 (+ t2-a-be t2-maxb))
@@ -17526,7 +17526,10 @@
         M1 (t2-emit1 M f)
         ;; inlined callee code may grow the body (credit: a word per inlined op, two for a constant-argument specialization)
         body (- (t2-g M1 t2-s-bodyend) entry (t2-g M1 t2-s-vsize) (t2-g M1 t2-s-inlops))]
-    (if (and (t2-ok? M1) (< body (- entry old)))
+    ;; a kernel with (search) tight loops is replaced only by call-free T2 code, and only when it also prepays fuel (a
+    ;; plain search-loop kernel may be the helper another kernel's fused code relies on)
+    (if (and (t2-ok? M1) (< body (- entry old))
+             (or (= (t2-g M1 t2-s-tight) 0) (and (= (t2-g M1 t2-s-hascall) 0) (= (t2-g M1 t2-s-weak) 1))))
       (-> M1 (t2-s (+ t2-a-st f) 1) (t2-s (+ t2-a-hent f) (t2-g M1 t2-s-hent)))
       ;; rollback: the discarded FIX records' handoff entries go too
       (-> M1 (gn-put MM-CODE-N entry) (gn-put MM-FIX-N fixn) (gn-put MM-LABEL-N labn) (t2-s t2-a-hoff hoffn)
@@ -17597,26 +17600,56 @@
 ;; loop body [t, a] has a memory access but no context load ([x7,#..]): descriptors already hoisted by old code
 (defn- t2-tight-loop? [M :vector-i64 t :i64 a :i64 mem :bool] :bool
   (if (> t a) mem
-    (let [w (vector-at M (+ MM-CODE-BASE t)) r (t2-ldst-base w)]
+    ;; any 64-bit load/store, single or pair (ldp/stp copy loops count)
+    (let [w (vector-at M (+ MM-CODE-BASE t))
+          r (cond (>= (t2-ldst-base w) 0) (t2-ldst-base w)
+                  (= (bit-and w 0x3A000000) 0x28000000) (bit-and (u64-shift-right w 5) 31)
+                  :else -1)]
       (cond (= r 7) false
             (and (>= r 0) (not= r 31)) (t2-tight-loop? M (inc t) a true)
             :else (t2-tight-loop? M (inc t) a mem)))))
+;; STRONG kernels are kept: SIMD/FP, byte loads, unrolled runs, or a COUNTED tight loop (no context loads; T2's
+;; versioned loops do not unroll or strength-reduce yet). A kernel whose tight loops are all SEARCH loops (an exit on a
+;; compare of a value loaded in the loop) is replaced only by call-free T2 code (such kernels may fuse helper loops).
 (defn- t2-kernel? [M :vector-i64 a :i64 b :i64] :bool (t2-kernel2? M a a b 0))
 (defn- t2-kernel2? [M :vector-i64 s :i64 a :i64 b :i64 run :i64] :bool
   (if (>= a b) false
     (let [w (vector-at M (+ MM-CODE-BASE a)) d (t2-bdisp w)]
       (cond (t2-kword? w) true
-            (and (< d 0) (>= (+ a d) s) (t2-tight-loop? M (+ a d) a false)) true
+            (and (< d 0) (>= (+ a d) s) (t2-tight-loop? M (+ a d) a false) (not (t2-search-loop? M (+ a d) a 0))) true
             (t2-brw? w) (t2-kernel2? M s (inc a) b 0)
             (t2-memw? w) (or (>= run 11) (t2-kernel2? M s (inc a) b (inc run)))
             :else (t2-kernel2? M s (inc a) b run)))))
+;; words [t, a] (a: the backward branch) hold a compare of a register loaded in the loop followed by a conditional
+;; branch other than the back branch. lm: mask of registers loaded so far
+(defn- t2-search-loop? [M :vector-i64 t :i64 a :i64 lm :i64] :bool
+  (and (< t a)
+       (let [w (vector-at M (+ MM-CODE-BASE t)) nx (vector-at M (+ MM-CODE-BASE (inc t)))
+             ld (and (>= (t2-ldst-base w) 0) (not= (bit-and w 0x00400000) 0))
+             ldp (and (= (bit-and w 0x3A000000) 0x28000000) (not= (bit-and w 0x00400000) 0))
+             lm2 (cond ld (bit-or lm (i64-shift-left 1 (bit-and w 31)))
+                       ldp (bit-or lm (bit-or (i64-shift-left 1 (bit-and w 31)) (i64-shift-left 1 (bit-and (u64-shift-right w 10) 31))))
+                       :else lm)
+             cmp (or (= (bit-and w 0xFF20001F) 0xEB00001F) (= (bit-and w 0xFF80001F) 0xF100001F))
+             rn (bit-and (u64-shift-right w 5) 31) rm (bit-and (u64-shift-right w 16) 31)
+             uses (or (not= (bit-and lm (i64-shift-left 1 rn)) 0)
+                      (and (= (bit-and w 0xFF20001F) 0xEB00001F) (not= (bit-and lm (i64-shift-left 1 rm)) 0)))]
+         (or (and cmp uses (< (inc t) a) (= (bit-and nx 0xFF000010) 0x54000000))
+             (t2-search-loop? M (inc t) a lm2)))))
+;; the old code has a (search) tight loop
+(defn- t2-tight? [M :vector-i64 s :i64 a :i64 b :i64] :bool
+  (and (< a b)
+       (let [d (t2-bdisp (vector-at M (+ MM-CODE-BASE a)))]
+         (or (and (< d 0) (>= (+ a d) s) (t2-tight-loop? M (+ a d) a false)) (t2-tight? M s (inc a) b)))))
+(def t2-s-tight 63)
 (defn- t2-clear-defs [M :vector-i64 var :i64 nvar :i64 nb :i64] :vector-i64
   (if (>= var nvar) M (t2-clear-defs (t2-wzero M (+ t2-a-def (* var t2-maxb)) 0 nb) (inc var) nvar nb)))
 (defn- t2-ok? [M :vector-i64] :bool (= (t2-g M t2-s-fail) 0))
 (defn- t2-compile [M :vector-i64 p0 :i64 end0 :i64 f :i64 pub :i64] :vector-i64
   (let [fix0 (t2-g M t2-s-fix0)
         weak (if (t2-prepaid? M (gn-fnf M f FF-CODE) (vector-at M MM-CODE-N)) 1 0)
-        MX (t2-expand (-> M (t2-wzero 0 0 64) (t2-s t2-s-f f) (t2-s t2-s-fix0 fix0) (t2-s t2-s-weak weak)) p0 end0 f pub)
+        tight (if (t2-tight? M (gn-fnf M f FF-CODE) (gn-fnf M f FF-CODE) (vector-at M MM-CODE-N)) 1 0)
+        MX (t2-expand (-> M (t2-wzero 0 0 128) (t2-s t2-s-f f) (t2-s t2-s-fix0 fix0) (t2-s t2-s-weak weak) (t2-s t2-s-tight tight)) p0 end0 f pub)
         p (t2-g MX t2-s-p) end (t2-g MX t2-s-end)
         np (gn-fnf M f FF-NPARAMS)
         ns (t2-g MX t2-s-xnsmax)
