@@ -5776,13 +5776,17 @@
         (cfr-labels M 1 ln cn) (cfr-functions M 1 nf cn)
         (cfr-fixes M 1 xn cn nf ln lit) (cfr-code M 1 cn)))))
 
+;; At most 307 words cover the extended hot prefix. Reserve 512 locally;
+;; below that headroom retain the original 16-stage admission and cold body.
+(defn- cw-entry-work [M :vector-i64] :i64
+ (if (>= (- MM-CODE-CAP (vector-at M MM-CODE-N)) 512) 48 16))
 (defn- cw-entry [M :vector-i64 i :i64] :vector-i64
  (if (or (<= i 1) (not= (gn-op M (dec i)) OP-FN)
          (not= (gn-g M gn-f-leaf) 2) (not= (gn-g M gn-f-freg) 2)
          (not= (gn-g M gn-f-vmode) 2) (not= (gn-g M gn-f-fb) 0)) M
-  (let [f (gn-sir M (dec i) IF-A) n (cw-count M f 48)]
-   ;; Budget and index envelopes cover every admitted stage before effects.
-   (if (or (< n 4) (> n 48) (not (cw-head M 1 0 f))) M
+  (let [f (gn-sir M (dec i) IF-A) n (cw-count M f (cw-entry-work M))]
+   ;; A bounded prefix is admitted; a longer chain keeps its original tail.
+   (if (or (< n 4) (not (cw-head M 1 0 f))) M
     (let [cost (dec (cw-budget M f n)) high (cw-max M f n)
           m0 (-> M (cond-> (not (cfr-paid M i f)) (gn-emit (enc-ldr 8 7 CTX-FUEL)))
                     (gn-emit (enc-cmp-i 8 cost))) b0 (vector-at m0 MM-CODE-N)
