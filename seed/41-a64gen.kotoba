@@ -16226,7 +16226,7 @@
 ;; a real (BL) call: published caller mode only, at most 7 arguments, no two-register result, a defn callee with code
 (defn- t2-realcall-ok? [M :vector-i64 j :i64 g :i64 n :i64 pub :i64] :bool
   (let [k (gn-fnf M g FF-KIND)]
-    (and (= pub 1) (<= n 15) (> g 0) (< g (vector-at M MM-FN-N)) (or (= k FK-DEFN) (= k FK-PRIV))
+    (and (= pub 1) (<= n 31) (> g 0) (< g (vector-at M MM-FN-N)) (or (= k FK-DEFN) (= k FK-PRIV))
          (not (lw-tmpl? M g)) (not (gn-clamp-open M g)) (> (gn-fnf M g FF-SIR) 0)
          (not= (gn-op M (inc j)) OP-RES2)
          ;; the existing backend called g plainly at least as often, or g loops (its call-site specializations only
@@ -16271,8 +16271,9 @@
   ;; (diagnostic builds decode 23 + 1000 g as the refused callee)
   (cond (not (t2-realcall-ok? M j g n pub)) (t2-fail M (+ 23 (* 1000 g)))
         ;; replacing a (prepaid) kernel: its fast path may have inlined a small loop-free helper the T2 code would call
+        ;; (a callee that makes calls itself is not such a helper: the old code calls it plainly too)
         (and (or (= (t2-g M t2-s-weak) 1) (= (t2-g M t2-s-weakr) 1)) (not (t2-loops? M (inc (gn-fnf M g FF-SIR))))
-             (not (t2-xcred? M g)))
+             (not (t2-xcred? M g)) (t2-callfree? M (inc (gn-fnf M g FF-SIR))))
         (t2-fail M (+ 29 (* 1000 g)))
         :else (-> M (t2-s t2-s-hascall 1) (t2-xput OP-CALL g t n))))
 ;; inline g when it is small (the size rule), or when its expansion is small after branch-free conversion: at most 2 (8
@@ -16913,7 +16914,10 @@
   (let [w (t2-g M (+ t2-a-hash h))]
     (cond (>= n t2-hsize) (t2-s M t2-s-last 0)
           (= w 0) (-> M (t2-s (+ t2-a-hash h) v) (t2-s t2-s-last 0))
-          (and (t2-gvn-same? M w op a b c) (t2-dom? M (t2-vf M w t2-f-blk) (t2-vf M v t2-f-blk))) (t2-s M t2-s-last w)
+          ;; (a compare only within its block: elsewhere it is recomputed, so each branch fuses its own)
+          (and (t2-gvn-same? M w op a b c) (t2-dom? M (t2-vf M w t2-f-blk) (t2-vf M v t2-f-blk))
+               (or (not= op t2-cmp) (= (t2-vf M w t2-f-blk) (t2-vf M v t2-f-blk))))
+          (t2-s M t2-s-last w)
           :else (t2-gvn-probe M v op a b c (bit-and (inc h) (dec t2-hsize)) (inc n)))))
 (defn- t2-gvn-vals [M :vector-i64 b :i64 v :i64 v1 :i64] :vector-i64
   (if (>= v v1) M
@@ -17086,8 +17090,76 @@
   (if (or (= t2-ra-on 0) (not (t2-ok? M))) M
     (let [nv (t2-g M t2-s-nv)
           M1 (-> M (t2-clear-x 1 nv) (t2-uses 1 nv) (t2-ra-pass 1 nv))]
-      (if (not (t2-ok? M1)) M1 (-> M1 (t2-wzero t2-a-hash 0 t2-hsize) (t2-gvn-blocks 0))))))
+      ;; GVN again (folded index expressions meet), then redundant loads, then GVN once more for their users
+      (if (not (t2-ok? M1)) M1
+        (-> M1 (t2-wzero t2-a-hash 0 t2-hsize) (t2-gvn-blocks 0) (t2-ldcse (t2-g M1 t2-s-nv))
+            (t2-wzero t2-a-hash 0 t2-hsize) (t2-gvn-blocks 0))))))
 (def t2-ra-on 1)
+;; ---- redundant loads: a vat with the same handle and index as a dominating vat w, with no store (vset) or real call on
+;; any path from w to it, reads the same item (w's check already passed): it is w. Blocks on such paths: reachable from
+;; w's block and reaching v's block (kd marks: forward 0..maxb, backward maxb..2maxb); a block on a cycle through them
+;; counts whole.
+(defn- t2-clob? [M :vector-i64 x :i64] :bool
+  (and (not (t2-gone? M x)) (let [op (t2-op-of M x)] (or (= op t2-vset) (= op t2-call)))))
+(defn- t2-clean? [M :vector-i64 v0 :i64 v1 :i64] :bool
+  (loop [x v0] (or (>= x v1) (and (not (t2-clob? M x)) (recur (inc x))))))
+(defn- t2-mark-pass [M :vector-i64 base :i64 fwd :bool changed :i64] :vector-i64
+  (loop [b 0 m M ch changed]
+    (if (>= b (t2-g m t2-s-nb)) (t2-s m t2-s-last ch)
+      (if (not= (t2-bget m base b) 1) (recur (inc b) m ch)
+        (if fwd
+          (let [t (t2-bget m t2-a-bt b) f (t2-bget m t2-a-bf b)
+                nt (and (>= t 0) (not= (t2-bget m base t) 1))
+                nf (and (>= f 0) (not= (t2-bget m base f) 1) (not= f t))
+                m2 (-> m (cond-> nt (t2-bset base t 1)) (cond-> nf (t2-bset base f 1)))]
+            (recur (inc b) m2 (if (or nt nf) 1 ch)))
+          (let [n (t2-bget m t2-a-bpn b)
+                r (loop [k 0 mm m c ch] (if (>= k n) (t2-s mm t2-s-last c)
+                                          (let [p (t2-pred mm b k)] (if (= (t2-bget mm base p) 1) (recur (inc k) mm c) (recur (inc k) (t2-bset mm base p 1) 1)))))]
+            (recur (inc b) r (t2-last r))))))))
+(defn- t2-mark-fix [M :vector-i64 base :i64 fwd :bool] :vector-i64
+  (loop [m M i 0] (if (>= i 64) m (let [m1 (t2-mark-pass m base fwd 0)] (if (= (t2-last m1) 1) (recur m1 (inc i)) m1)))))
+(defn- t2-ld-path-ok? [M :vector-i64 w :i64 v :i64] :bool
+  (let [bw (t2-vf M w t2-f-blk) bv (t2-vf M v t2-f-blk) nb (t2-g M t2-s-nb)]
+    (if (= bw bv) (and (< w v) (t2-clean? M (inc w) v))
+      (let [m0 (t2-wzero M t2-a-kd 0 (* 2 t2-maxb))
+            ;; forward from w's successors, backward from v's predecessors
+            m1 (let [t (t2-bget m0 t2-a-bt bw) f (t2-bget m0 t2-a-bf bw)]
+                 (-> m0 (cond-> (>= t 0) (t2-bset t2-a-kd t 1)) (cond-> (>= f 0) (t2-bset t2-a-kd f 1)) (t2-mark-fix t2-a-kd true)))
+            m2 (loop [k 0 m m1] (if (>= k (t2-bget m t2-a-bpn bv)) m (recur (inc k) (t2-bset m (+ t2-a-kd t2-maxb) (t2-pred m bv k) 1))))
+            m3 (t2-mark-fix m2 (+ t2-a-kd t2-maxb) false)]
+        (and (t2-clean? m3 (inc w) (t2-bget m3 t2-a-bv1 bw))
+             (t2-clean? m3 (t2-bget m3 t2-a-bv0 bv) v)
+             ;; w's block again on a path (a cycle): all of it; v's block likewise
+             (or (not (and (= (t2-bget m3 t2-a-kd bw) 1) (= (t2-bget m3 (+ t2-a-kd t2-maxb) bw) 1)))
+                 (t2-clean? m3 (t2-bget m3 t2-a-bv0 bw) (t2-bget m3 t2-a-bv1 bw)))
+             (or (not (and (= (t2-bget m3 t2-a-kd bv) 1) (= (t2-bget m3 (+ t2-a-kd t2-maxb) bv) 1)))
+                 (t2-clean? m3 (t2-bget m3 t2-a-bv0 bv) (t2-bget m3 t2-a-bv1 bv)))
+             (loop [b 0]
+               (or (>= b nb)
+                   (and (or (= b bw) (= b bv) (not= (t2-bget m3 t2-a-kd b) 1) (not= (t2-bget m3 (+ t2-a-kd t2-maxb) b) 1)
+                            (t2-clean? m3 (t2-bget m3 t2-a-bv0 b) (t2-bget m3 t2-a-bv1 b)))
+                        (recur (inc b))))))))))
+;; one index value, or two constants of one value (folded constants are separate values outside every block)
+(defn- t2-same-index? [M :vector-i64 a :i64 b :i64] :bool
+  (or (= a b) (and (= (t2-op-of M a) t2-const) (= (t2-op-of M b) t2-const) (= (t2-kval M a) (t2-kval M b)))))
+;; the handle's object (aliases through returned arguments and phis are one vector)
+(defn- t2-ld-obj [M :vector-i64 h :i64] :i64 (if (t2-objkind? M h) (t2-obj M h) h))
+(defn- t2-ldcse [M :vector-i64 nv :i64] :vector-i64
+  (if (= t2-ldcse-on 0) M
+    (loop [v 1 m (t2-objs M nv) n 0]
+      (if (or (> v nv) (> n 4096)) m
+        (if (or (not= (t2-op-of m v) t2-vat) (t2-gone? m v) (= (t2-bget m t2-a-breach (t2-vf m v t2-f-blk)) 0)) (recur (inc v) m n)
+          (let [h (t2-ld-obj m (t2-res m (t2-vf m v t2-f-a))) i (t2-res m (t2-vf m v t2-f-b))
+                w (loop [w (dec v) k 0]
+                    (cond (or (< w 1) (> k 64)) 0
+                          (and (= (t2-op-of m w) t2-vat) (not (t2-gone? m w)) (= (t2-ld-obj m (t2-res m (t2-vf m w t2-f-a))) h)
+                               (t2-same-index? m (t2-res m (t2-vf m w t2-f-b)) i) (t2-dom? m (t2-vf m w t2-f-blk) (t2-vf m v t2-f-blk))
+                               (t2-ld-path-ok? m w v)) w
+                          (= (t2-op-of m w) t2-vat) (recur (dec w) (inc k))
+                          :else (recur (dec w) k)))]
+            (recur (inc v) (if (> w 0) (t2-vs m v t2-f-repl w) m) (inc n))))))))
+(def t2-ldcse-on 1)
 ;; an ordinary value replaced by GVN is not emitted
 (defn- t2-gone? [M :vector-i64 v :i64] :bool (and (not= (t2-op-of M v) t2-phi) (not= (t2-vf M v t2-f-repl) 0)))
 ;; ---- positions, uses, validation ---------------------------------------------------------------------------------------
@@ -19333,10 +19405,14 @@
       (let [tk (if (t2-thread? M taken) (t2-known M b taken true) -1)
             S (if (>= tk 0) (t2-thread-dest M taken tk) taken)
             from (if (>= tk 0) taken b)
+            ;; the fallthrough edge, threaded through a thread block with a known value
+            fk (if (and (>= fall 0) (t2-thread? M fall)) (t2-known M b fall false) -1)
+            F (if (>= fk 0) (t2-thread-dest M fall fk) fall)
+            ffrom (if (>= fk 0) fall b)
             ;; the taken target is the next block: branch on the inverse condition to the fallthrough successor instead
             inv (and (= (t2-tlab M b S) (t2-g M t2-s-nextl)) (not (t2-needs-copies? M from S))
-                     (>= fall 0) (not= fall S) (not (t2-thread? M fall)))
-            M0 (cond inv (if (t2-needs-copies? M b fall) (t2-stub-label M b fall (t2-tlab M b fall)) (t2-s M t2-s-last (t2-tlab M b fall)))
+                     (>= fall 0) (>= F 0) (not= F S) (or (not (t2-thread? M fall)) (>= fk 0)))
+            M0 (cond inv (if (t2-needs-copies? M ffrom F) (t2-stub-label M ffrom F (t2-tlab M b F)) (t2-s M t2-s-last (t2-tlab M b F)))
                      (t2-needs-copies? M from S) (t2-stub-label M from S (t2-tlab M b S))
                      :else (t2-s M t2-s-last (t2-tlab M b S)))
             l (t2-last M0)
