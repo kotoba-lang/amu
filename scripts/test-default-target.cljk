@@ -65,10 +65,14 @@
                "default output is DAG-CBOR plus provenance, not Wasm" (pr-str {:bytes? (some? default-bytes)
                                                                                 :provenance? (.existsSync fs provenance)}))
       (let [marker (str default-out ".publication.edn")
-            repeat (amu! ["compile" source "--output" repeat-out])]
+            repeat (amu! ["compile" source "--output" repeat-out])
+            verified (amu! ["verify-output-set" default-out])]
         (report! (and (.existsSync fs marker)
                       (str/includes? (str (.readFileSync fs marker "utf8")) "kotoba.output-set/v1"))
                  "default output set has a publication commit marker" "publication marker missing")
+        (report! (and (ok? verified) (str/includes? (out verified) ":committed true"))
+                 "default Kototama output set verifies by CID and canonical DAG-CBOR"
+                 (out verified))
         (report! (and (ok? repeat) (same-bytes? default-bytes (bytes-of repeat-out)))
                  "default Kototama artifact is deterministic" (out repeat)))
 
