@@ -3479,7 +3479,20 @@
     (gn-dot-at? M (+ p 20) OP-LGET 1 2 0) (gn-dot-at? M (+ p 21) OP-BIN BOP-QUOT 0 0)
     (gn-dot-at? M (+ p 22) OP-LABEL b 0 0) (gn-dot-at? M (+ p 23) OP-RET 0 0 0)
     (gn-dot-at? M (+ p 24) OP-END f 0 0)))))))
+;; x0 := floor-quot(x0, k), k = 2^s: for x0 >= MIN + k it is exactly asr #s; cmp x0, #k sets V exactly when
+;; x0 - k wraps, i.e. x0 < MIN + k, where the original negative-branch sequence runs unchanged
 (defn- rq-core [M :vector-i64 k :i64] :vector-i64
+ (let [s (gn-pow2 k)]
+  (if (or (<= s 0) (> k 4096)) (rq-core0 M k)
+   (let [m0 (gn-emit M (enc-cmp-i 0 k)) bc (vector-at m0 MM-CODE-N)
+         m1 (-> (gn-emit m0 (enc-bcond (enc-cond-vc) 0))
+                (gn-emit (enc-sub-r 0 31 0)) (gn-emit (enc-add-i 0 0 (dec k)))
+                (gn-bin-imm BOP-QUOT 0 0 k) (gn-emit (enc-sub-r 0 31 0)))
+         br (vector-at m1 MM-CODE-N) m2 (gn-emit m1 (enc-b 0))
+         fast (vector-at m2 MM-CODE-N) m3 (gn-emit m2 (gn-e-asr 0 0 s)) end (vector-at m3 MM-CODE-N)]
+    (-> m3 (gn-put (+ MM-CODE-BASE bc) (enc-bcond (enc-cond-vc) (- fast bc)))
+        (gn-put (+ MM-CODE-BASE br) (enc-b (- end br))))))))
+(defn- rq-core0 [M :vector-i64 k :i64] :vector-i64
  (let [m0 (gn-emit M (enc-cmp-i 0 0))
        bc (vector-at m0 MM-CODE-N) m1 (gn-emit m0 (enc-bcond (enc-cond-ge) 0))
        m2 (-> m1 (gn-emit (enc-sub-r 0 31 0)) (gn-emit (enc-add-i 0 0 (dec k)))
@@ -12064,10 +12077,20 @@
         m2 (-> (ufill-pairs m1 n 0) (gn-emit (enc-add-i 4 4 (* n 8)))
          (gn-mov-imm 6 1) (gn-emit (enc-subs-i 6 6 1)))
         jump (vector-at m2 MM-CODE-N) m3 (gn-emit m2 (enc-b 0))
-        scalar (vector-at m3 MM-CODE-N) m4 (ufill-scalar m3 n)
+        ;; column lanes (x5 = 64): n stores at immediate offsets, x4 and x6/NZCV left as the scalar loop leaves them
+        col (vector-at m3 MM-CODE-N) m3a (gn-emit m3 (enc-cmp-i 5 64))
+        colrej (vector-at m3a MM-CODE-N)
+        m3b (-> (ufill-cols (gn-emit m3a (enc-bcond (enc-cond-ne) 0)) n 0) (gn-emit (enc-add-i 4 4 (* n 64)))
+             (gn-mov-imm 6 1) (gn-emit (enc-subs-i 6 6 1)))
+        jump2 (vector-at m3b MM-CODE-N) m3c (gn-emit m3b (enc-b 0))
+        scalar (vector-at m3c MM-CODE-N) m4 (ufill-scalar m3c n)
         done (vector-at m4 MM-CODE-N)]
-   (-> m4 (gn-put (+ MM-CODE-BASE reject) (enc-cbnz 6 (- scalar reject)))
-    (gn-put (+ MM-CODE-BASE jump) (enc-b (- done jump)))))))
+   (-> m4 (gn-put (+ MM-CODE-BASE reject) (enc-cbnz 6 (- col reject)))
+    (gn-put (+ MM-CODE-BASE colrej) (enc-bcond (enc-cond-ne) (- scalar colrej)))
+    (gn-put (+ MM-CODE-BASE jump) (enc-b (- done jump)))
+    (gn-put (+ MM-CODE-BASE jump2) (enc-b (- done jump2)))))))
+(defn- ufill-cols [M :vector-i64 n :i64 k :i64] :vector-i64
+ (if (= k n) M (ufill-cols (gn-emit M (enc-str 0 4 (* k 64))) n (inc k))))
 
 (defn- clw-paid16 [M :vector-i64] :bool
  (if (< (vector-count M) MM-WORDS) false
