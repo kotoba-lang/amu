@@ -6399,16 +6399,19 @@
       (gn-dot-at? M (+ p 25) OP-BR head 0 0) (gn-dot-at? M (+ p 26) OP-LABEL exit 0 0)
       (gn-dot-at? M (+ p 27) OP-RET 0 0 0) (gn-dot-at? M (+ p 28) OP-END f 0 0))
       (if (>= (sw-envelope M tree 0 (inc (gn-tree-high M tree))) 0) tree 0) 0))))))
-(defn- sw-entry [M :vector-i64 i :i64] :vector-i64
+;; pre: before the frame (kpre-entry), parameters in x0..x2 (only read before the last guard), the entry charge joins
+;; the prepaid cost, plain ret
+(defn- sw-entry [M :vector-i64 i :i64] :vector-i64 (sw-entry2 M i false))
+(defn- sw-entry2 [M :vector-i64 i :i64 pre :bool] :vector-i64
  (let [tree (sw-admit M i)]
   (if (= tree 0) M
    (let [p (dec i) n (inc (gn-tree-high M tree)) base (gn-sir M (+ p 11) IF-B)
          bound (+ base (sw-envelope M tree 0 n)) value (gn-sir M (+ p 15) IF-B)
-         rv (gn-sreg M 1) rk (gn-sreg M 2) re (gn-sreg M 3) B (gp-save-state M)
+         rv (kp M pre 1) rk (kp M pre 2) re (kp M pre 3) B (gp-save-state M)
          m0 (gn-emit M (enc-cmp-i re n)) b0 (vector-at m0 MM-CODE-N)
          m1 (-> m0 (gn-emit (enc-bcond 8 0)) (gn-emit (enc-cmp-r rk re))) b1 (vector-at m1 MM-CODE-N)
          m2 (-> m1 (gn-emit (enc-bcond (enc-cond-hs) 0)) (gn-emit (enc-sub-r 9 re rk))
-              (gn-emit (enc-add-r 9 9 9)) (gn-emit (enc-ldr 8 7 CTX-FUEL))
+              (gn-emit (enc-add-r 9 9 9)) (cond-> pre (gn-emit (enc-add-i 9 9 1))) (gn-emit (enc-ldr 8 7 CTX-FUEL))
               (gn-emit (enc-cmp-r 8 9))) b2 (vector-at m2 MM-CODE-N)
          m3 (-> m2 (gn-emit (enc-bcond (enc-cond-lo) 0))
               (gn-emit (enc-ldr 16 7 312)) (gn-emit (enc-ldr 16 16 0))
@@ -6430,7 +6433,7 @@
               (gn-emit (gn-e-strr3 vr 4 12)) (gn-emit (enc-add-i 11 11 1))
               (gn-emit (enc-cmp-r 11 re))) branch (vector-at m8 MM-CODE-N)
          m9 (-> m8 (gn-emit (enc-bcond (enc-cond-lo) (- loop-at branch)))
-              (gn-mov 0 rv) (gn-epilogue)) table (vector-at m9 MM-CODE-N)
+              (gn-mov 0 rv) (cond-> pre (gn-emit (enc-ret))) (cond-> (not pre) (gn-epilogue))) table (vector-at m9 MM-CODE-N)
          delta (* (- table adr) 4) m10 (gn-tree-data m9 tree 0 n) end (vector-at m10 MM-CODE-N)
          m11 (-> m10 (gn-dot-patch b0 end 8) (gn-dot-patch b1 end (enc-cond-hs))
                (gn-dot-patch b2 end (enc-cond-lo)) (gn-dot-patch b3 end (enc-cond-hs))
@@ -7603,6 +7606,7 @@
         (and (= np 4) (rv-admit M j)) (rv-entry2 M j true)
         (and (= np 3) (ru-admit M j)) (ru-entry2 M j true)
         (and (= np 3) (rl-admit M j)) (rl-entry2 M j true)
+        (and (= np 3) (> (sw-admit M j) 0)) (sw-entry2 M j true)
         :else M)))
 
 (defn- srloop-admit [M :vector-i64 i :i64] :i64
