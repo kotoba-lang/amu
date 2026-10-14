@@ -3,7 +3,7 @@
 - Date: 2026-10-14
 - Status: Accepted
 - Deciders: repository owner
-- Related: ADR 0351 (native target qualification), Kototama VM program contract
+- Related: ADR 0351 (superseded historical native-default decision), Kototama VM program contract
 
 ## Context
 
