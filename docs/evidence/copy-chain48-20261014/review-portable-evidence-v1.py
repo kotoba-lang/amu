@@ -1,9 +1,10 @@
 from pathlib import Path
 import json,tarfile,hashlib,importlib.util,sys,copy,argparse
+sys.dont_write_bytecode=True
 E=Path(__file__).resolve().parent;R=E.parents[2]
 p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);a=p.parse_args();D=a.output.resolve();D.mkdir(exist_ok=False)
-def extract(e,d):
- a=e/'qualification-results.tgz';c=json.loads((e/'raw-custody.json').read_text());assert hashlib.sha256(a.read_bytes()).hexdigest()==c['archiveSHA256']
+def extract(e,d,archiveName="qualification-results.tgz",custodyName="raw-custody.json"):
+ a=e/archiveName;c=json.loads((e/custodyName).read_text());assert hashlib.sha256(a.read_bytes()).hexdigest()==c['archiveSHA256']
  with tarfile.open(a)as t:
   ms=t.getmembers();assert all(x.isfile()and not x.issym()and not x.islnk()and not Path(x.name).is_absolute()and '..'not in Path(x.name).parts for x in ms);d.mkdir();t.extractall(d,filter='data')
  for x in c['files']:
@@ -27,5 +28,16 @@ for tag,r in arms.items():
  for k in ['source','native','container']:r[k]['path']=str(current/'generic-controls-v1'/Path(r[k]['path']).name)
  check(r)
 q=m.audit(arms['OFF'],arms['ON'],current);assert q['changed']and len(q['proofs'])==1254
-out=dict(status='PASS_CHECKOUT_RELATIVE_PARENT_CURRENT_ARCHIVE_FULL39_AND_GENERIC_BOTH_SIDES_WHOLE_CODE_PROOFS',rows=rows,genericBlocks=1254,compilerGuestTimingNetworkCalls=0,sourceSnapshotsFromRepositoryArchivesOnly=True)
+revision=D/'review-revision';extract(E,revision,'review-fixes-results.tgz','review-fixes-raw-custody.json')
+newG=json.loads((revision/'all39-g1-screen-v1/generated-artifacts.json').read_text());assert len(newG['images'])==39
+for x in newG['images']:
+ original=next(z for z in G['images']if z['tag']==x['tag'])
+ for k in ['source','native','container']:
+  folder='all39-g1-screen-v1/sources'if k=='source'else'all39-g1-screen-v1';newPath=revision/folder/Path(x['arm'][k]['path']).name;oldPath=current/folder/Path(original['arm'][k]['path']).name
+  blob=newPath.read_bytes();assert blob==oldPath.read_bytes()and hashlib.sha256(blob).hexdigest()==x['arm'][k]['sha256']==original['arm'][k]['sha256']
+for f in ['ON.bin','ON.kseed','renamed-copy-chain.kotoba']:assert(revision/'generic-identity-v1'/f).read_bytes()==(current/'generic-controls-v1'/f).read_bytes()
+unit=json.loads((revision/'headroom-unit-v1/report.json').read_text());assert len(unit['rows'])==12 and all(x['actual']==x['expected']==(48 if x['remainingWords']>=512 else 16)for x in unit['rows'])
+receipt=json.loads((R/'seed/adoption-20261012.json').read_text());newNative=hashlib.sha256((revision/'selfbuild-v1/artifacts/G4.bin').read_bytes()).hexdigest();assert newNative==receipt['nativeImageSHA256']==hashlib.sha256((R/'seed/bootstrap/adopted-20261012.bin').read_bytes()).hexdigest()
+assert hashlib.sha256((revision/'candidate.kotoba').read_bytes()).hexdigest()==receipt['sourceUnitySHA256']
+out=dict(status='PASS_CHECKOUT_RELATIVE_PARENT_CURRENT_ARCHIVE_FULL39_AND_GENERIC_BOTH_SIDES_WHOLE_CODE_PROOFS',rows=rows,genericBlocks=1254,reviewFixWhole39AndGenericIdentities=True,headroomBoundaryCases=12,currentCompilerSHA256=newNative,compilerGuestTimingNetworkCalls=0,sourceSnapshotsFromRepositoryArchivesOnly=True)
 (D/'report.json').write_text(json.dumps(out,indent=2)+'\n');print(out['status'])
