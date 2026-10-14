@@ -8425,13 +8425,35 @@
   (and (= (gn-op M (+ p j)) OP-LABEL) (= (gn-op M (+ p k)) OP-LABEL)
    (= (gn-sir M (+ p j) IF-A) (gn-sir M (+ p k) IF-A))) false
   :else (ar-labels M p j (inc k))))
+;; Two rounds per iteration without moves: round A reads the state registers (w0..w3 slots) into x10..x13, round B
+;; reads x10..x13 back into the state registers; an odd count leaves after round A and moves once. Each round's
+;; four key words come as two ldp pairs (the loop has no stores).
 (defn- ar-loop [M :vector-i64 tp :i64 branch :i64] :vector-i64
  (let [m0 (ar-tables M tp branch 0) head (vector-at m0 MM-CODE-N)
-  m1 (-> (ar-words m0 tp branch 0)
-    (gn-mov (gn-sreg M 4) 10) (gn-mov (gn-sreg M 5) 11)
-    (gn-mov (gn-sreg M 6) 12) (gn-mov (gn-sreg M 7) 13)
-    (gn-emit (enc-add-i 4 4 32)) (gn-emit (enc-subs-i 5 5 1))) back (vector-at m1 MM-CODE-N)]
-  (gn-emit m1 (enc-bcond (enc-cond-ne) (- head back)))))
+  m1 (-> (ar-words2 m0 tp branch 0 0) (gn-emit (enc-add-i 4 4 32)) (gn-emit (enc-subs-i 5 5 1)))
+  ea (vector-at m1 MM-CODE-N)
+  m2 (-> (ar-words2 (gn-emit m1 (enc-bcond (enc-cond-eq) 0)) tp branch 1 0)
+    (gn-emit (enc-add-i 4 4 32)) (gn-emit (enc-subs-i 5 5 1))) back (vector-at m2 MM-CODE-N)
+  m3 (gn-emit m2 (enc-bcond (enc-cond-ne) (- head back))) bj (vector-at m3 MM-CODE-N)
+  m4 (gn-emit m3 (enc-b 0)) exit-a (vector-at m4 MM-CODE-N)
+  m5 (-> m4 (gn-mov (gn-sreg M 4) 10) (gn-mov (gn-sreg M 5) 11)
+    (gn-mov (gn-sreg M 6) 12) (gn-mov (gn-sreg M 7) 13)) done (vector-at m5 MM-CODE-N)]
+  (-> m5 (gn-put (+ MM-CODE-BASE ea) (enc-bcond (enc-cond-eq) (- exit-a ea)))
+   (gn-put (+ MM-CODE-BASE bj) (enc-b (- done bj))))))
+;; kind 0: state registers -> x10..x13, kind 1: x10..x13 -> state registers
+(defn- ar-dst [M :vector-i64 kind :i64 row :i64] :i64 (if (= kind 0) (+ 10 row) (gn-sreg M (+ 4 row))))
+(defn- ar-word2 [M :vector-i64 tp :i64 branch :i64 kind :i64 row :i64 col :i64] :vector-i64
+ (if (= col 4) M
+  (let [slot (inc (rem (+ row (if (= branch 0) col (- 4 col))) 4))
+   q (+ tp 4 (* col 15)) sh (gn-sir M (+ q 5) IF-B) src (if (= kind 0) (gn-sreg M (+ slot 3)) (+ 9 slot))
+   d (ar-dst M kind row)]
+   (ar-word2 (-> M (gn-emit (gn-e-bf 0xd3400000 9 src sh (+ sh 7)))
+    (gn-emit (gn-e-ldrr 16 col 9 1)) (gn-emit (enc-eor-r d d 16))) tp branch kind row (inc col)))))
+(defn- ar-words2 [M :vector-i64 tp :i64 branch :i64 kind :i64 row :i64] :vector-i64
+ (if (= row 4) M
+  (ar-words2 (ar-word2 (cond-> M (= (bit-and row 1) 0)
+                         (gn-emit (enc-ldp (ar-dst M kind row) (ar-dst M kind (inc row)) 4 (* row 8))))
+              tp branch kind row 0) tp branch kind (inc row))))
 (defn- ar-part0 [M :vector-i64 p :i64 f :i64 tf :i64 limit :i64 base :i64] :bool
  (and
     (gn-dot-at? M (+ p 0) 1 f 7 16)
@@ -8631,15 +8653,6 @@
    (ar-tables (-> M (gn-emit (enc-ldr j 7 CTX-CODE-BASE)) (gn-fix FX-LIT32 lit)
     (gn-emit (enc-movz 16 0 0)) (gn-emit (enc-movk 16 0 1))
     (gn-emit (enc-add-r j j 16))) tp branch (inc j)))))
-(defn- ar-word [M :vector-i64 tp :i64 branch :i64 row :i64 col :i64] :vector-i64
- (if (= col 4) M
-  (let [slot (inc (rem (+ row (if (= branch 0) col (- 4 col))) 4))
-   q (+ tp 4 (* col 15)) sh (gn-sir M (+ q 5) IF-B)]
-   (ar-word (-> M (gn-emit (gn-e-bf 0xd3400000 9 (gn-sreg M (+ slot 3)) sh (+ sh 7)))
-    (gn-emit (gn-e-ldrr 16 col 9 1)) (gn-emit (enc-eor-r (+ 10 row) (+ 10 row) 16))) tp branch row (inc col)))))
-(defn- ar-words [M :vector-i64 tp :i64 branch :i64 row :i64] :vector-i64
- (if (= row 4) M
-  (ar-words (ar-word (gn-emit M (enc-ldr (+ 10 row) 4 (* row 8))) tp branch row 0) tp branch (inc row))))
 
 (defn- ss-admit [M :vector-i64 i :i64] :i64
  (if (or (<= i 1) (not= (gn-op M (dec i)) OP-FN)
