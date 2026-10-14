@@ -7322,10 +7322,15 @@
        ;; Exclude its whole backing: terminal finish may read beyond schedule.
        G (vector-alloc 6) ranges (-> m3 (sphase-away 3 true G 0)
                          (sphase-away 4 false G 3))
-       m4 (gn-ld ranges 5 11) chunk (vector-at m4 MM-CODE-N)
-       m5 (-> m4 (gn-mov-imm 16 n) (gn-emit (enc-sub-r 16 16 ri)) (gn-emit (enc-cmp-i 16 4)))
-       tail (vector-at m5 MM-CODE-N) m6 (gn-emit m5 (enc-bcond (enc-cond-lo) 0))
-       m7 (-> m6 (sphase-body p 0) (sphase-body p 1) (sphase-body p 2) (sphase-body p 3))
+       fast (sphase2-ok? M p n)
+       m4 (cond-> (gn-ld ranges 5 11) fast (sphase2-init p ri)) chunk (vector-at m4 MM-CODE-N)
+       ;; fast: 0 <= i < n here, so n - i >= 4 iff i <= n - 4 (signed)
+       m5 (if fast (gn-emit m4 (enc-cmp-i ri (- n 4)))
+           (-> m4 (gn-mov-imm 16 n) (gn-emit (enc-sub-r 16 16 ri)) (gn-emit (enc-cmp-i 16 4))))
+       tail (vector-at m5 MM-CODE-N) m6 (gn-emit m5 (enc-bcond (if fast (enc-cond-gt) (enc-cond-lo)) 0))
+       m7 (if fast (-> m6 (sphase2-body p 0) (sphase2-body p 1) (sphase2-body p 2) (sphase2-body p 3)
+                    (gn-emit (enc-add-i 14 14 32)) (gn-emit (enc-add-i 15 15 32)) (gn-emit (enc-add-i ri ri 4)))
+           (-> m6 (sphase-body p 0) (sphase-body p 1) (sphase-body p 2) (sphase-body p 3)))
        back (vector-at m7 MM-CODE-N) m8 (gn-emit m7 (enc-b (- chunk back)))
        tail-at (vector-at m8 MM-CODE-N)
        sync (gn-st m8 5 11) original-at (vector-at sync MM-CODE-N)
@@ -7339,7 +7344,40 @@
        m13 (-> m12 (gn-fix FX-B26 (gn-sir M (+ p 2) IF-A)) (gn-emit (enc-b 0)))
        end (vector-at m13 MM-CODE-N)]
   (-> m13 (sphase-away-patch G 0 original-at) (gn-dot-patch no32 end (enc-cond-ne))
-      (gn-dot-patch tail tail-at (enc-cond-lo)) (gn-dot-patch done done-at (enc-cond-eq)))))
+      (gn-dot-patch tail tail-at (if fast (enc-cond-gt) (enc-cond-lo))) (gn-dot-patch done done-at (enc-cond-eq)))))
+;; ---- four-round chunk without stack or index traffic -------------------------------------------------------------------
+;; Both big sigmas are certified rotate trees (they write x0 only). x14 = &k[i] and x15 = &v[i + off] advance by 32 per
+;; chunk and i by 4; ldp pairs feed rounds 2j and 2j+1 (x10/x11 hold the odd round's pair). maj = ((a^b)&(b^c))^b,
+;; where b^c is the previous round's a^b, carried in x9/x17 (x9 at every chunk start). Sums are masked by 32-bit adds:
+;; mask32(x + y) = (w(x) + w(y)) mod 2^32. Every value stays in the registers of the original rotation.
+(defn- sphase2-ok? [M :vector-i64 p :i64 n :i64] :bool
+ (and (>= n 4) (<= (- n 4) 4095) (<= (gn-sir M (+ p 49) IF-B) 4095)
+      (foldror-tree M (gn-sir M (+ p 42) IF-A)) (foldror-tree M (gn-sir M (+ p 59) IF-A))))
+(defn- sphase2-init [M :vector-i64 p :i64 ri :i64] :vector-i64
+ (let [off8 (* 8 (gn-sir M (+ p 49) IF-B))
+       m0 (-> M (gn-emit (gn-e-addsl 14 3 ri 3)) (gn-emit (gn-e-addsl 15 4 ri 3)))
+       m1 (if (<= off8 4095) (gn-emit m0 (enc-add-i 15 15 off8))
+           (-> m0 (gn-mov-imm 16 off8) (gn-emit (enc-add-r 15 15 16))))]
+  (gn-emit m1 (enc-eor-r 9 (sphase-reg M 5 0) (sphase-reg M 6 0)))))
+(defn- sphase2-body [M :vector-i64 p :i64 phase :i64] :vector-i64
+ (let [a (sphase-reg M 4 phase) b (sphase-reg M 5 phase)
+       c (sphase-reg M 6 phase) d (sphase-reg M 7 phase)
+       e (sphase-reg M 8 phase) f (sphase-reg M 9 phase)
+       g (sphase-reg M 10 phase) h (sphase-reg M 11 phase)
+       even (= (bit-and phase 1) 0) yo (if even 9 17) yn (if even 17 9)
+       m0 (-> M
+           (gn-emit (enc-and-r 6 e f)) (gn-emit (enc-rrr 0x8a200000 12 g e)) (gn-emit (enc-eor-r 6 6 12))
+           (gn-emit (enc-eor-r yn a b)) (gn-emit (enc-and-r 12 yn yo)) (gn-emit (enc-eor-r 12 12 b))
+           (sphase-scalar (gn-sir M (+ p 42) IF-A) e)
+           (gn-emit (enc-add-r 0 0 h)))
+       m1 (if even (-> m0 (gn-emit (enc-ldp 1 10 14 (* 8 phase))) (gn-emit (enc-ldp 2 11 15 (* 8 phase)))
+                    (gn-emit (enc-add-r 1 1 2)))
+           (gn-emit m0 (enc-add-r 1 10 11)))]
+  (-> m1 (gn-emit (enc-add-r 1 1 6)) (gn-emit (enc-rrr 0x0b000000 13 0 1))
+   ;; old h dies after t1; old d dies only after computing new e
+   (gn-emit (enc-rrr 0x0b000000 h d 13))
+   (sphase-scalar (gn-sir M (+ p 59) IF-A) a)
+   (gn-emit (enc-rrr 0x0b000000 0 0 12)) (gn-emit (enc-rrr 0x0b000000 d 0 13)))))
 (defn- shloop32-path [M :vector-i64 p :i64 n :i64 ri :i64] :vector-i64
  (if (sphase-admit M p n ri) (sphase-path M p n ri)
  (let [m0 (shloop-get M 9 4)
@@ -7486,6 +7524,48 @@
    (gn-emit (gn-e-bf 0xd3400000 0 0 0 31))
    (gn-emit (enc-add-i 16 ri base)) (gn-emit (gn-e-strr3 0 5 16))
    (gn-emit (enc-add-i ri ri 1)))))
+;; sigma x = (ror32 x a) ^ (ror32 x b) ^ (x >>u c) with certified rr calls: a + 64 b + 4096 c, else -1
+(defn- srx-sigma [M :vector-i64 f :i64] :i64
+ (if (or (<= f 0) (>= f (vector-at M MM-FN-N))) -1
+  (let [p (gn-fnf M f FF-SIR) end (sc-admit M p f 1) q (gn-skiplab M (+ p 2))]
+   (if (or (<= end 0) (not= end (+ q 12))) -1
+    (let [a (gn-sir M (+ q 1) IF-B) b (gn-sir M (+ q 4) IF-B) c (gn-sir M (+ q 8) IF-B)]
+     (if (and (gn-dot-at? M q OP-LGET 0 1 0) (gn-dot-at? M (+ q 1) OP-CONST 1 a 0)
+              (rr-call M (+ q 2)) (= (gn-sir M (+ q 2) IF-B) 0)
+              (gn-dot-at? M (+ q 3) OP-LGET 1 1 0) (gn-dot-at? M (+ q 4) OP-CONST 2 b 0)
+              (rr-call M (+ q 5)) (= (gn-sir M (+ q 5) IF-B) 1)
+              (gn-dot-at? M (+ q 6) OP-BIN BOP-XOR 0 0)
+              (gn-dot-at? M (+ q 7) OP-LGET 1 1 0) (gn-dot-at? M (+ q 8) OP-CONST 2 c 0)
+              (gn-dot-at? M (+ q 9) OP-BIN BOP-USHR 1 0) (gn-dot-at? M (+ q 10) OP-BIN BOP-XOR 0 0)
+              (gn-dot-at? M (+ q 11) OP-RET 0 0 0)
+              (>= a 0) (<= a 32) (>= b 0) (<= b 32) (>= c 0) (<= c 63))
+      (+ a (* 64 b) (* 4096 c)) -1))))))
+;; x0 := sigma(x0) in its low 32 bits (x9, x10 scratch): low32(ROR64(x|(x<<32),n)) = ror32(x,n) for 0<=n<=32, so
+;; the low word equals the helper's; the high word is left unspecified and the caller only consumes the low word
+(defn- srx-sigma-emit [M :vector-i64 k :i64] :vector-i64
+ (let [a (bit-and k 63) b (bit-and (u64-shift-right k 6) 63) c (u64-shift-right k 12)]
+  (-> M (gn-emit (+ (enc-orr-r 10 0 0) 32768))
+   (gn-emit (+ (enc-rrr 0x93c00000 9 10 10) (* a 1024)))
+   (gn-emit (+ (enc-rrr 0xcac00000 9 9 10) (* b 1024)))
+   (gn-emit (+ (enc-rrr 0xca400000 0 9 0) (* c 1024))))))
+;; both sigmas in the closed shape and every read at a nonnegative offset from &v[i]
+(defn- srx-ok? [M :vector-i64 p :i64] :bool
+ (let [base (gn-sir M (+ p 21) IF-B)]
+  (and (>= (srx-sigma M (gn-sir M (+ p 27) IF-A)) 0) (>= (srx-sigma M (gn-sir M (+ p 43) IF-A)) 0)
+       (loop [k 0] (or (= k 4) (and (<= (gn-sir M (+ p (case k 0 23 1 31 2 39 47)) IF-B) base) (recur (inc k))))))))
+;; one schedule word through x16 = &v[i]: the four reads in the original order (the last two as one ldp when
+;; adjacent), the sum masked by one 32-bit add, the store, x16 += 8
+(defn- srx-body [M :vector-i64 p :i64] :vector-i64
+ (let [base (gn-sir M (+ p 21) IF-B) d0 (gn-sir M (+ p 23) IF-B) d1 (gn-sir M (+ p 31) IF-B)
+       d2 (gn-sir M (+ p 39) IF-B) d3 (gn-sir M (+ p 47) IF-B)
+       pair (and (= d3 (inc d2)) (<= (* 8 (- base d3)) 504))
+       m0 (-> M (gn-emit (enc-ldr 0 16 (* 8 (- base d0)))) (srx-sigma-emit (srx-sigma M (gn-sir M (+ p 27) IF-A)))
+           (gn-emit (enc-ldr 1 16 (* 8 (- base d1)))) (gn-emit (enc-add-r 6 0 1)))
+       m1 (if pair (gn-emit m0 (enc-ldp 1 0 16 (* 8 (- base d3))))
+           (-> m0 (gn-emit (enc-ldr 0 16 (* 8 (- base d2)))) (gn-emit (enc-ldr 1 16 (* 8 (- base d3))))))]
+  (-> m1 (srx-sigma-emit (srx-sigma M (gn-sir M (+ p 43) IF-A)))
+   (gn-emit (enc-add-r 0 0 1)) (gn-emit (enc-rrr 0x0b000000 0 0 6))
+   (gn-emit (enc-str 0 16 (* 8 base))) (gn-emit (enc-add-i 16 16 8)))))
 (defn- srloop-edges [M :vector-i64 p :i64 head :i64 j :i64] :bool
  (if (= j (vector-at M MM-SIR-N)) true
   (let [op (gn-op M j)]
@@ -7513,11 +7593,16 @@
      (gn-emit (enc-cmp-r 0 16))) b4 (vector-at m4 MM-CODE-N)
     m5 (-> m4 (gn-emit (enc-bcond (enc-cond-hs) 0)) (gn-mov-imm 16 (+ n base))
      (gn-emit (enc-cmp-r 0 16))) b5 (vector-at m5 MM-CODE-N)
+    fast (srx-ok? M p)
     m6 (-> m5 (gn-emit (enc-bcond (enc-cond-lo) 0))
      (gn-emit (enc-ldr 5 7 328)) (gn-emit (gn-e-addsl 5 5 17 3))
-     (gn-emit (enc-sub-r 8 8 9)) (gn-emit (enc-str 8 7 CTX-FUEL))) start (vector-at m6 MM-CODE-N)
-    m7 (-> m6 (srloop-body p) (gn-mov-imm 16 n) (gn-emit (enc-cmp-r ri 16))) back (vector-at m7 MM-CODE-N)
-    m8 (-> m7 (gn-emit (enc-bcond (enc-cond-ne) (- start back)))
+     (gn-emit (enc-sub-r 8 8 9)) (gn-emit (enc-str 8 7 CTX-FUEL))
+     ;; fast body: x16 = &v[i] advances by 8 up to x17 = &v[n]; i := n after the loop
+     (cond-> fast (gn-emit (gn-e-addsl 16 5 ri 3))) (cond-> fast (gn-mov-imm 17 n))
+     (cond-> fast (gn-emit (gn-e-addsl 17 5 17 3)))) start (vector-at m6 MM-CODE-N)
+    m7 (if fast (-> m6 (srx-body p) (gn-emit (enc-cmp-r 16 17)))
+        (-> m6 (srloop-body p) (gn-mov-imm 16 n) (gn-emit (enc-cmp-r ri 16)))) back (vector-at m7 MM-CODE-N)
+    m8 (-> m7 (gn-emit (enc-bcond (enc-cond-ne) (- start back))) (cond-> fast (gn-mov-imm ri n))
      (gn-fix FX-B26 (gn-sir M (+ p 2) IF-A)) (gn-emit (enc-b 0))) end (vector-at m8 MM-CODE-N)]
    (-> m8 (gn-dot-patch b0 end (enc-cond-lo)) (gn-dot-patch b1 end (enc-cond-hs))
     (gn-dot-patch b2 end (enc-cond-lo)) (gn-dot-patch b3 end (enc-cond-hs))
