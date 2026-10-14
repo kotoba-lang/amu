@@ -15699,14 +15699,27 @@
           (and (= op OP-RT) (not (gn-inl (gn-sir M i IF-A) (gn-sir M i IF-B) (gn-sir M i IF-C)))) false
           (and (= op OP-CALL) (= (gn-call-wrapper M i (gn-sir M i IF-A) (gn-sir M i IF-B) (gn-sir M i IF-C)) 0)) false
           :else (t2-gleaf? M (inc i)))))
-(defn- t2-callee-ok? [M :vector-i64 g :i64 n :i64 depth :i64] :bool
+;; arguments of the call at the buffer end (temps t+1 .. t+n-1) set by a CONST among the n+1 preceding ops
+(defn- t2-constargs [M :vector-i64 t :i64 n :i64] :i64
+  (let [o (t2-g M t2-s-xo) lo (gn-max (t2-g M t2-s-xb) (- o (+ n 1)))]
+    (loop [i (dec o) c 0]
+      (if (< i lo) c
+        (recur (dec i) (if (and (= (gn-op M i) OP-CONST) (> (gn-sir M i IF-A) t) (< (gn-sir M i IF-A) (+ t n))) (inc c) c))))))
+(def t2-s-inlops 58)
+;; a callee whose call passes mostly constant arguments specializes by folding: larger branch/op limits
+(defn- t2-callee-big? [M :vector-i64 t :i64 n :i64] :bool
+  (and (> n 1) (>= (* 2 (t2-constargs M t n)) (dec n))))
+(defn- t2-callee-ok? [M :vector-i64 g :i64 n :i64 depth :i64] :bool (t2-callee-ok2? M g n depth false))
+(defn- t2-callee-ok2? [M :vector-i64 g :i64 n :i64 depth :i64 big :bool] :bool
   (let [k (gn-fnf M g FF-KIND) p (gn-fnf M g FF-SIR)]
     (and (> g 0) (< g (vector-at M MM-FN-N)) (<= depth 3) (not= g (t2-g M t2-s-f))
          (or (= k FK-DEFN) (= k FK-PRIV)) (not (lw-tmpl? M g)) (not (lw-spec? M g)) (not (gn-clamp-open M g))
          (> p 0) (< p (vector-at M MM-SIR-N)) (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) g)
          (= (gn-fnf M g FF-NPARAMS) n) (= (gn-sir M p IF-B) n)
          (t2-xops-ok? M (inc p)) (not (t2-loops? M (inc p)))
-         (let [c (t2-xcost M (inc p) 0 0)] (and (<= (quot c 65536) 2) (<= (- c (* (quot c 65536) 65536)) 64))))))
+         (let [c (t2-xcost M (inc p) 0 0)]
+           (if big (and (<= (quot c 65536) 8) (<= (- c (* (quot c 65536) 65536)) 192))
+             (and (<= (quot c 65536) 2) (<= (- c (* (quot c 65536) 65536)) 64)))))))
 ;; copy the body from i (until END) into the buffer. to/so: temp/slot offsets; lb/lo: local label base and the body's lowest
 ;; label; ex: local exit label (0 at the top: RET stays RET); pub: 1 = charges published; d: inline depth.
 (defn- t2-xcopy [M :vector-i64 i :i64 to :i64 so :i64 lb :i64 lo :i64 ex :i64 pub :i64 d :i64] :vector-i64
@@ -15764,14 +15777,15 @@
 (defn- t2-old-calls [M :vector-i64 g :i64 k :i64 n :i64] :i64
   (if (>= k (vector-at M MM-FIX-N)) n
     (let [b (+ MM-FIX-BASE (* k MM-FIX-W))]
+      ;; a private-entry (chain protocol) call to a chain target is a plain call with a descriptor handoff
       (t2-old-calls M g (inc k) (if (and (= (vector-at M (+ b XF-KIND)) FX-BL26) (= (vector-at M (+ b XF-TARGET)) g)
-                                         (= (vector-at M (+ b XF-AUX)) 0)) (inc n) n)))))
+                                         (or (= (vector-at M (+ b XF-AUX)) 0) (gn-chain-target M g))) (inc n) n)))))
 ;; real calls to g already in the T2 buffer
 (defn- t2-new-calls [M :vector-i64 g :i64 i :i64 n :i64] :i64
   (if (>= i (t2-g M t2-s-xo)) n
     (t2-new-calls M g (inc i) (if (and (= (gn-op M i) OP-CALL) (= (gn-sir M i IF-A) g)) (inc n) n))))
 (defn- t2-xcall [M :vector-i64 j :i64 g :i64 t :i64 n :i64 so :i64 d :i64 pub :i64] :vector-i64
-  (if (not (t2-callee-ok? M g n (inc d)))
+  (if (not (t2-callee-ok2? M g n (inc d) (t2-callee-big? M t n)))
     ;; (diagnostic builds decode 23 + 1000 g as the refused callee)
     (cond (not (t2-realcall-ok? M j g n pub)) (t2-fail M (+ 23 (* 1000 g)))
           ;; replacing a (prepaid) kernel: its fast path may have inlined a small loop-free helper the T2 code would call
@@ -15792,7 +15806,9 @@
           sb (t2-g M t2-s-xns)
           M0 (-> M (t2-s t2-s-xlab (inc ex)) (t2-s t2-s-xns (+ sb gs)))
           M1 (loop [k 0 m M0] (if (>= k n) m (recur (inc k) (t2-xput m OP-LSET (+ sb k 1) (+ t k) 0))))
-          M2 (t2-xcopy M1 (inc p) t sb lb lo ex gpub d)]
+          ;; inlined ops earn a size credit (a constant-argument specialization twice as much)
+          M2 (t2-xcopy (t2-s M1 t2-s-inlops (+ (t2-g M1 t2-s-inlops) (* (if (t2-callee-big? M t n) 2 1) (bit-and (t2-xcost M1 (inc p) 0 0) 65535))))
+                       (inc p) t sb lb lo ex gpub d)]
       (if (or (>= ex t2-maxlab) (>= (+ sb gs) t2-maxvar)) (t2-fail M2 24)
         (-> M2 (t2-s (+ t2-a-lpos ex) (t2-g M2 t2-s-xo)) (t2-xput OP-LABEL ex 0 0)
             (cond-> pubexit (t2-xput t2-op-pub 0 0 0)))))))
@@ -15956,14 +15972,33 @@
 (defn- t2-gvn-vals [M :vector-i64 b :i64 v :i64 v1 :i64] :vector-i64
   (if (>= v v1) M
     (let [op (t2-op-of M v)]
-      (if (and (t2-gvn-op? op) (= (t2-vf M v t2-f-repl) 0) (= (t2-vf M v t2-f-blk) b) (> (t2-identity M v) 0))
+      (cond
+        (and (t2-gvn-op? op) (= (t2-vf M v t2-f-repl) 0) (= (t2-vf M v t2-f-blk) b) (t2-foldable? M v))
+        (let [M1 (t2-new M t2-const (t2-foldk M v) 0 0 b) k (t2-last M1)]
+          (t2-gvn-vals (if (> k 0) (t2-vs M1 v t2-f-repl k) M1) b (inc v) v1))
+        (and (t2-gvn-op? op) (= (t2-vf M v t2-f-repl) 0) (= (t2-vf M v t2-f-blk) b) (> (t2-identity M v) 0))
         (t2-gvn-vals (t2-vs M v t2-f-repl (t2-identity M v)) b (inc v) v1)
+        :else
       (if (and (t2-gvn-op? op) (= (t2-vf M v t2-f-repl) 0) (= (t2-vf M v t2-f-blk) b))
         (let [a (t2-vf M v t2-f-a) bb (t2-gvn-b M v) cc (t2-gvn-c M v)
               M1 (t2-gvn-probe M v op a bb cc (t2-hash op a bb cc) 0)
               w (t2-last M1)]
           (t2-gvn-vals (if (> w 0) (t2-vs M1 v t2-f-repl w) M1) b (inc v) v1))
         (t2-gvn-vals M b (inc v) v1))))))
+;; integer BIN (the old backend's gn-foldable/gn-fold: no trapping quotient), CMP and UN of constants fold to a constant
+(defn- t2-foldable? [M :vector-i64 v :i64] :bool
+  (let [op (t2-op-of M v) x (t2-res M (t2-vf M v t2-f-b)) y (t2-res M (t2-vf M v t2-f-c))]
+    (cond (= op t2-bin) (and (t2-isconst? M x) (t2-isconst? M y) (< (t2-vf M v t2-f-a) BOP-F64-ADD)
+                             (gn-foldable (t2-vf M v t2-f-a) (t2-kval M x) (t2-kval M y)))
+          (= op t2-cmp) (and (t2-isconst? M x) (t2-isconst? M y) (< (t2-vf M v t2-f-a) CC-F64-EQ))
+          (= op t2-un) (and (t2-isconst? M x) (or (= (t2-vf M v t2-f-a) UOP-NOT) (= (t2-vf M v t2-f-a) UOP-BITNOT)))
+          :else false)))
+(defn- t2-foldk [M :vector-i64 v :i64] :i64
+  (let [op (t2-op-of M v) a (t2-vf M v t2-f-a) x (t2-kval M (t2-res M (t2-vf M v t2-f-b))) y (t2-kval M (t2-res M (t2-vf M v t2-f-c)))]
+    (cond (= op t2-bin) (gn-fold a x y)
+          (= op t2-cmp) (if (cond (= a CC-EQ) (= x y) (= a CC-LT) (< x y) (= a CC-GT) (> x y) (= a CC-LE) (<= x y) :else (>= x y)) 1 0)
+          (= a UOP-NOT) (bit-xor x 1)
+          :else (bit-not x))))
 ;; x + 0, x - 0, x | 0, x ^ 0, x << 0 (count mod 64), x * 1, x & -1, x / 1: the operand x (0 when no identity applies)
 (defn- t2-identity [M :vector-i64 v :i64] :i64
   (if (not= (t2-op-of M v) t2-bin) 0
@@ -16312,10 +16347,20 @@
   (if (>= v v1) M
     (let [op (t2-op-of M v)]
       (t2-chk-vals (if (and (or (= op t2-vat) (= op t2-vset)) (= (t2-vf M v t2-f-blk) b))
-                     (let [pk (t2-pk M v) ix (t2-res M (t2-vf M v t2-f-b))]
-                       (t2-chk-probe M v pk ix (t2-hash 7 pk ix 0) 0))
+                     (let [pk (t2-pk M v) ix (t2-res M (t2-vf M v t2-f-b))
+                           M1 (t2-chk-probe M v pk ix (t2-hash 7 pk ix 0) 0)]
+                       (if (and (not= (bit-and (t2-xf M1 v t2-x-flags) 8) 8) (t2-isconst? M1 ix) (>= (t2-kval M1 ix) 0)
+                                (t2-chk-bigger? M1 v pk (t2-kval M1 ix) 1))
+                         (t2-xs M1 v t2-x-flags (bit-or (t2-xf M1 v t2-x-flags) 8)) M1))
                      M)
                    b (inc v) v1))))
+;; an earlier access on the same slot with a constant index >= k dominates v: its check implies v's
+(defn- t2-chk-bigger? [M :vector-i64 v :i64 pk :i64 k :i64 w :i64] :bool
+  (and (< w v)
+       (or (let [op (t2-op-of M w) ix (if (or (= op t2-vat) (= op t2-vset)) (t2-res M (t2-vf M w t2-f-b)) 0)]
+             (and (> ix 0) (not (t2-gone? M w)) (t2-isconst? M ix) (>= (t2-kval M ix) k) (= (t2-pk M w) pk)
+                  (t2-dom? M (t2-vf M w t2-f-blk) (t2-vf M v t2-f-blk))))
+           (t2-chk-bigger? M v pk k (inc w)))))
 (defn- t2-chk-blocks [M :vector-i64 b :i64] :vector-i64
   (if (>= b (t2-g M t2-s-nb)) M
     (t2-chk-blocks (if (= (t2-bget M t2-a-breach b) 1) (t2-chk-vals M b (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b)) M) (inc b))))
@@ -16516,6 +16561,25 @@
     (let [k (if (and (= (t2-bget M t2-a-breach b) 1) (or (= (t2-g M t2-s-pub) 0) (= (t2-g M t2-s-defer) 1)))
               (t2-kcount M (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b) 0) 0)]
       (t2-fast-plan (t2-bset M t2-a-fast b (if (and (>= k 2) (< k 2048)) k 0)) (inc b)))))
+;; reachability with constant branch conditions folded: blocks only reached through a folded edge are not emitted
+(defn- t2-fsucc-mark [M :vector-i64 b :i64] :vector-i64
+  (let [t (t2-lastval M b) taken (t2-bget M t2-a-bt b) fall (t2-bget M t2-a-bf b)
+        c (if (and (> t 0) (= (t2-op-of M t) t2-brz)) (t2-res M (t2-vf M t t2-f-a)) 0)
+        known (and (> c 0) (t2-isconst? M c) (>= taken 0))
+        jump (and known (if (= (t2-vf M t t2-f-b) 1) (not= (t2-kval M c) 0) (= (t2-kval M c) 0)))]
+    (cond known (let [s (if jump taken fall)] (if (>= s 0) (t2-bset M t2-a-kd s 1) M))
+          :else (-> M (cond-> (>= taken 0) (t2-bset t2-a-kd taken 1)) (cond-> (>= fall 0) (t2-bset t2-a-kd fall 1))))))
+(defn- t2-freach-pass [M :vector-i64 b :i64 changed :i64] :vector-i64
+  (if (>= b (t2-g M t2-s-nb)) (t2-s M t2-s-last changed)
+    (if (and (= (t2-bget M t2-a-kd b) 1) (= (t2-bget M t2-a-breach b) 1) (= (t2-bget M (+ t2-a-kd t2-maxb) b) 0))
+      (t2-freach-pass (-> M (t2-bset (+ t2-a-kd t2-maxb) b 1) (t2-fsucc-mark b)) (inc b) 1)
+      (t2-freach-pass M (inc b) changed))))
+(defn- t2-freach [M :vector-i64] :vector-i64
+  (let [M1 (loop [m (-> M (t2-wzero t2-a-kd 0 (* 2 t2-maxb)) (t2-bset t2-a-kd 0 1)) i 0]
+             (if (>= i 300) m (let [m1 (t2-freach-pass m 0 0)] (if (= (t2-last m1) 1) (recur m1 (inc i)) m1))))]
+    (loop [b 0 m M1] (if (>= b (t2-g m t2-s-nb)) m
+                       (recur (inc b) (if (and (= (t2-bget m t2-a-breach b) 1) (= (t2-bget m (+ t2-a-kd t2-maxb) b) 0))
+                                        (t2-bset m t2-a-breach b 0) m))))))
 (defn- t2-fuelplan [M :vector-i64] :vector-i64
   (let [nb (t2-g M t2-s-nb)
         M0 (-> M (t2-s t2-s-defer 0) (t2-s t2-s-ntst 0) (t2-s t2-s-cold 0) (t2-s t2-s-pend 0) (t2-s t2-s-curu 0)
@@ -16693,7 +16757,7 @@
   (or (>= k n) (and (or (not (t2-in-body? M (t2-pred M h k))) (t2-dom? M b (t2-pred M h k))) (t2-every-iter? M h b (inc k) n))))
 (defn- t2-acc-blocks [M :vector-i64 h :i64 b :i64 p :i64] :vector-i64
   (if (>= b (t2-g M t2-s-nb)) M
-    (t2-acc-blocks (if (and (t2-in-body? M b) (not= b h) (t2-every-iter? M h b 0 (t2-bget M t2-a-bpn h)))
+    (t2-acc-blocks (if (and (t2-in-body? M b) (not= b h) (= (t2-bget M t2-a-breach b) 1) (t2-every-iter? M h b 0 (t2-bget M t2-a-bpn h)))
                      (t2-acc-vals M (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b) p) M) h (inc b) p)))
 ;; ---- header test and induction phi ----
 ;; step of phi p along latch preds of h: 1 / -1, 0 when not uniform
@@ -17273,8 +17337,10 @@
 (defn- t2-e-brz [M :vector-i64 b :i64 v :i64] :vector-i64
   (let [taken (t2-bget M t2-a-bt b) fall (t2-bget M t2-a-bf b) nz (t2-vf M v t2-f-b)
         c (t2-res M (t2-vf M v t2-f-a))]
-    (if (< taken 0)
-      (t2-goto M b fall)
+    (cond (< taken 0) (t2-goto M b fall)
+      ;; a folded condition: the known successor only
+      (t2-isconst? M c) (t2-goto M b (if (if (= nz 1) (not= (t2-kval M c) 0) (= (t2-kval M c) 0)) taken fall))
+      :else
       (let [tk (if (t2-thread? M taken) (t2-known M b taken true) -1)
             S (if (>= tk 0) (t2-thread-dest M taken tk) taken)
             from (if (>= tk 0) taken b)
@@ -17397,7 +17463,8 @@
 (defn- t2-emit [M :vector-i64 f :i64] :vector-i64
   (let [old (gn-fnf M f FF-CODE) entry (vector-at M MM-CODE-N) fixn (vector-at M MM-FIX-N) labn (vector-at M MM-LABEL-N)
         M1 (t2-emit1 M f)
-        body (- (t2-g M1 t2-s-bodyend) entry (t2-g M1 t2-s-vsize))]
+        ;; inlined callee code may grow the body (credit: a word per inlined op, two for a constant-argument specialization)
+        body (- (t2-g M1 t2-s-bodyend) entry (t2-g M1 t2-s-vsize) (t2-g M1 t2-s-inlops))]
     (if (and (t2-ok? M1) (< body (- entry old)))
       (t2-s M1 (+ t2-a-st f) 1)
       (-> M1 (gn-put MM-CODE-N entry) (gn-put MM-FIX-N fixn) (gn-put MM-LABEL-N labn)
@@ -17510,7 +17577,7 @@
                                 ncs (if (>= cs 19) (inc (quot (- cs 19) 2)) 0)
                                 labels-ok (< (+ (vector-at M6 MM-LABEL-N) (* 9 (t2-g M6 t2-s-nb)) 170) MM-LABEL-CAP)]
                             (if (or (not (t2-ok? M6)) (not labels-ok)) M
-                              (t2-emit (-> M6 (t2-s t2-s-ncs ncs) (t2-s t2-s-lab0 (vector-at M6 MM-LABEL-N)) (t2-fuelplan) (t2-loopplan)) f))))))))))))))))
+                              (t2-emit (-> M6 (t2-s t2-s-ncs ncs) (t2-s t2-s-lab0 (vector-at M6 MM-LABEL-N)) (t2-freach) (t2-fuelplan) (t2-loopplan)) f))))))))))))))))
 ;; F's old code branches to a label outside its own body (code shared with a twin/clone): T2 would lose that path
 (defn- t2-xfn-jump? [M :vector-i64 k :i64 lo :i64 hi :i64] :bool
   (if (>= k (vector-at M MM-FIX-N)) false
