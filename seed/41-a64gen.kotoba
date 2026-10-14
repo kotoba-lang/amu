@@ -16490,7 +16490,7 @@
 ;; string support at the END of the block (t2-size - t2-str-words): 8 counters (t2-a-sx: string labels used, string stubs,
 ;; size credit; zeroed per compile), string slots 8 x 8 words (t2-a-sd), string stubs 40 x 6 words (t2-a-ss), per block
 ;; the slots read from its start on (t2-a-sneed); then per block the jump-threading decision (t2-a-thr, part4t)
-(def t2-str-words (+ 8 64 256 t2-maxb t2-maxb (* 9 t2-maxv) 256 (* 15 MM-FN-CAP) (* 16 t2-maxb)))
+(def t2-str-words (+ 8 64 256 t2-maxb t2-maxb (* 9 t2-maxv) 256 (* 16 MM-FN-CAP) (* 16 t2-maxb)))
 (def t2-a-sx (- t2-size t2-str-words))
 (def t2-a-sd (+ t2-a-sx 8))
 (def t2-a-ss (+ t2-a-sd 64))
@@ -16515,6 +16515,10 @@
 (def t2-mlinf 4611686018427387904)        ; "no call seen" (an optimistic start, read as 0)
 ;; persistent per FN (part6), 8 words: the value range of parameter k (k < 8) over every call, packed (t2-rg)
 (def t2-a-prng (+ t2-a-hmin t2-maxv))
+;; persistent per FN (part5b): 1 when its T2 code returns with x8 = the exact fuel and x7 = the context (every T2 return
+;; publishes x8 and restores x7 after calls; its tail calls go only to such functions)
+(def t2-a-x8r (+ t2-a-prng (* 8 MM-FN-CAP)))
+(def t2-s-tailbad 84)   ; a tail call of the function being compiled goes to code without that guarantee
 ;; a value range [lo, hi] of 32-bit bounds in one word: lo * 2^32 + (hi + 2^31). t2-mlinf reads as the empty range
 ;; (lo 2^30 > hi -2^31), the start of a union; t2-rg-unk is every value.
 (defn- t2-rg [lo :i64 hi :i64] :i64 (+ (* lo 4294967296) (+ hi 2147483648)))
@@ -16596,11 +16600,15 @@
   (if (>= j end)
     (t2-s M t2-s-nb (inc b))
     (let [p (t2-g M t2-s-p)
-          lead (and (> j (inc p)) (or (and (= (gn-op M j) OP-LABEL) (> (t2-g M (+ t2-a-lref (gn-sir M j IF-A))) 0))
-                                      (t2-term? (gn-op M (dec j)))
-                                      ;; after a real call (unless only its return follows: a tail call stays one block),
-                                      ;; so the charges after it can be batched (a block with a call is not)
-                                      (and (= (gn-op M (dec j)) OP-CALL) (not (t2-ret-follows? M j end)))))
+          ;; a LABEL right after the LABEL that starts the current block is the same point: one block (nested and/or
+          ;; joins meet in one phi, which can then thread)
+          same (and (= (gn-op M j) OP-LABEL) (= (gn-op M (dec j)) OP-LABEL) (= (t2-bget M t2-a-bs b) (dec j)))
+          lead (and (> j (inc p)) (not same)
+                    (or (and (= (gn-op M j) OP-LABEL) (> (t2-g M (+ t2-a-lref (gn-sir M j IF-A))) 0))
+                        (t2-term? (gn-op M (dec j)))
+                        ;; after a real call (unless only its return follows: a tail call stays one block),
+                        ;; so the charges after it can be batched (a block with a call is not)
+                        (and (= (gn-op M (dec j)) OP-CALL) (not (t2-ret-follows? M j end)))))
           nb (if lead (inc b) b)]
       (if (>= nb t2-maxb)
         (t2-fail M 2)
@@ -17673,6 +17681,12 @@
           (t2-isconst? M v) (or (= (t2-kval M v) 0) (= (t2-kval M v) 1))
           (and (= op t2-un) (= (t2-vf M v t2-f-a) UOP-NOT)) (t2-bool? M (t2-vf M v t2-f-b) (inc depth))
           (= op t2-sel) (and (t2-bool? M (t2-vf M v t2-f-b) (inc depth)) (t2-bool? M (t2-vf M v t2-f-c) (inc depth)))
+          ;; a join of booleans (a cycle runs out of depth: not known)
+          (and (= op t2-phi) (= (t2-vf M v t2-f-repl) 0))
+          (loop [k 0 n (t2-bget M t2-a-bpn (t2-vf M v t2-f-blk))]
+            (cond (>= k n) (> n 0)
+                  (let [x (t2-phiarg M v k)] (and (> x 0) (not= x v) (t2-bool? M x (inc depth)))) (recur (inc k) n)
+                  :else false))
           :else false)))
 (defn- t2-bin-identity [M :vector-i64 v :i64] :i64
   (if false 0
@@ -19366,6 +19380,40 @@
              (let [cc (t2-cmp-cond M2 c)] (-> M2 (t2-e-cmpflags c) (t2-bcond (if jnz cc (bit-xor cc 1)) l)))
              (let [Ma (t2-src M2 c 16) rc (t2-last Ma)] (t2-jmp Ma FX-CB19 l (if jnz (enc-cbnz rc 0) (enc-cbz rc 0)))))]
     (-> M3 (t2-copies h OUT) (t2-jmp FX-B26 (t2-tlab M3 h OUT) (enc-b 0)) (t2-s t2-s-inrot 0))))
+;; ---- loop rotation outside fast copies: a latch b whose back edge goes to a header s (dominating b) that ends in its exit
+;; test runs a copy of the header there and branches straight into the body (saving the jump back); only plain headers:
+;; no batch, no hoisted checks, no version, no call, at most 12 values, and exactly one successor dominating the latch.
+(def t2-rotn-on 1)
+(defn- t2-rotn-in [M :vector-i64 b :i64 s :i64] :i64   ; the header's in-loop successor, -1 none
+  (let [taken (t2-bget M t2-a-bt s) fall (t2-bget M t2-a-bf s)
+        dt (and (>= taken 0) (not= taken s) (t2-dom? M taken b)) df (and (>= fall 0) (not= fall s) (t2-dom? M fall b))]
+    (cond (and dt (not df)) taken (and df (not dt)) fall :else -1)))
+(defn- t2-rotn? [M :vector-i64 b :i64 s :i64] :bool
+  (and (= t2-rotn-on 1) (= (t2-g M t2-s-fastl) 0) (= (t2-g M t2-s-cold) 0) (= (t2-g M t2-s-inrot) 0)
+       (>= s 0) (>= b 0) (not= b s) (= (t2-bget M t2-a-breach s) 1) (not (t2-thread? M s)) (not (t2-vhead? M s))
+       (= (t2-bget M t2-a-fast s) 0) (not (t2-bch-any? M s)) (t2-dom? M s b)
+       (let [t (t2-lastval M s) taken (t2-bget M t2-a-bt s) fall (t2-bget M t2-a-bf s)]
+         (and (> t 0) (= (t2-op-of M t) t2-brz) (>= taken 0) (>= fall 0)
+              (not (t2-thread? M taken)) (not (t2-thread? M fall))
+              (>= (t2-kcount M (t2-bget M t2-a-bv0 s) (t2-bget M t2-a-bv1 s) 0) 0)
+              (<= (t2-hcount M (t2-bget M t2-a-bv0 s) (t2-bget M t2-a-bv1 s) 0) 12)
+              (>= (t2-rotn-in M b s) 0)))))
+;; header s inline at the latch b (after b's copies): its values (charges checked one by one), then a branch to the
+;; in-loop successor on the continue condition and a jump to the exit
+(defn- t2-e-hinline-n [M :vector-i64 b :i64 s :i64] :vector-i64
+  (let [t (t2-lastval M s) IN (t2-rotn-in M b s)
+        M0 (-> M (t2-s t2-s-inrot 1) (t2-s t2-s-curu (t2-bget M t2-a-uin s)) (t2-s t2-s-pend 0) (t2-s t2-s-nextl -1))
+        M1 (t2-e-vals M0 s (t2-bget M0 t2-a-bv0 s) t)
+        taken (t2-bget M1 t2-a-bt s) fall (t2-bget M1 t2-a-bf s) nz (t2-vf M1 t t2-f-b) c (t2-res M1 (t2-vf M1 t t2-f-a))
+        tin (= IN taken) OUT (if tin fall taken)
+        jnz (if tin (= nz 1) (= nz 0))
+        M2 (if (t2-needs-copies? M1 s IN) (t2-stub-label M1 s IN (t2-tlab M1 s IN)) (t2-s M1 t2-s-last (t2-tlab M1 s IN)))
+        l (t2-last M2)
+        fused (and (= (t2-op-of M2 c) t2-cmp) (not= (bit-and (t2-xf M2 c t2-x-flags) 129) 0))
+        M3 (if fused
+             (let [cc (t2-cmp-cond M2 c)] (-> M2 (t2-e-cmpflags c) (t2-bcond (if jnz cc (bit-xor cc 1)) l)))
+             (let [Ma (t2-src M2 c 16) rc (t2-last Ma)] (t2-jmp Ma FX-CB19 l (if jnz (enc-cbnz rc 0) (enc-cbz rc 0)))))]
+    (-> M3 (t2-copies s OUT) (t2-jmp FX-B26 (t2-tlab M3 s OUT) (enc-b 0)) (t2-s t2-s-inrot 0))))
 ;; ---- constants of a fast loop that need materializing live in free caller-saved registers, set after the precheck ----
 (def t2-s-nhoist 56)
 (def t2-s-hbusy 57)
@@ -19985,8 +20033,9 @@
 ;; leave block b for s on a BR or fallthrough edge: phi copies and the jump, threaded through a thread block s
 (defn- t2-goto [M :vector-i64 b :i64 s :i64] :vector-i64
   (if (or (< s 0) (not (t2-thread? M s)))
-    (if (t2-rot? M s) (-> M (t2-copies b s) (t2-e-hinline s))   ; fast-copy back edge: run the header test here
-      (-> M (t2-copies b s) (t2-jump-from b s)))
+    (cond (t2-rot? M s) (-> M (t2-copies b s) (t2-e-hinline s))   ; fast-copy back edge: run the header test here
+          (t2-rotn? M b s) (-> M (t2-copies b s) (t2-e-hinline-n b s))   ; any other loop's back edge too
+          :else (-> M (t2-copies b s) (t2-jump-from b s)))
     (let [k (t2-known M b s false) x (t2-phiarg M (t2-thread-p M s) (t2-predidx M s b 0))]
       (cond (>= k 0)
             (let [S (t2-thread-dest M s k)] (-> M (t2-copies s S) (t2-jump-from b S)))
@@ -20125,10 +20174,14 @@
                                (-> m (gn-put (+ b XF-AUX) 2) (gn-put (+ MM-CODE-BASE sx) 0xd503201f))
                                ok (gn-put m (+ b XF-AUX) 1)
                                :else m)))))))
+;; g's code returns with x8 exact and x7 the context (compiled before this function)
+(defn- t2-x8r? [M :vector-i64 g :i64] :bool
+  (and (> g 0) (< g MM-FN-CAP) (not= g (t2-g M t2-s-f)) (= (t2-g M (+ t2-a-x8r g)) 1)))
 (defn- t2-e-call [M :vector-i64 v :i64 tail :bool] :vector-i64
   (let [g (t2-vf M v t2-f-a)]
     (if tail
-      (let [hd (t2-hoff-call? M v true)
+      (let [M (if (or (t2-x8r? M g) (= g (t2-g M t2-s-f))) M (t2-s M t2-s-tailbad 1))
+            hd (t2-hoff-call? M v true)
             h7 (and hd (> (t2-vf M v t2-f-c) 3))
             M0 (-> M (t2-call-args2 v h7) (cond-> (and hd (not h7)) (t2-handoff v))) sx (if (= (t2-g M0 t2-s-fuel) 1) (vector-at M0 MM-CODE-N) -1)
             M1 (t2-unframe M0) k (vector-at M1 MM-FIX-N)]
@@ -20150,7 +20203,8 @@
             k (vector-at Ma MM-FIX-N)
             M1 (-> Ma (gn-fix FX-BL26 g) (gn-emit (enc-bl 0)) (cond-> (and hd (= (t2-g Ma t2-s-hoffk) 1)) (t2-hoff-add k sx))
                    (cond-> (> ns 0) (gn-emit (enc-add-i 31 31 ns)))
-                   (gn-emit (enc-ldr 7 31 0)) (gn-emit (enc-ldr 8 7 CTX-FUEL)))
+                   ;; x7 and x8 come back exact from such a callee: no reload through memory
+                   (cond-> (not (t2-x8r? Ma g)) (-> (gn-emit (enc-ldr 7 31 0)) (gn-emit (enc-ldr 8 7 CTX-FUEL)))))
             r (t2-vf M v t2-f-reg)]
         (-> M1 (t2-e-redesc v 0 (t2-mcd? M1 g)) (cond-> (t2-mcd? M1 g) (t2-e-sredesc 0 (t2-sneed-after M1 v)))
             (cond-> (>= r 0) (gn-mov r 0)))))))
@@ -20296,7 +20350,8 @@
 ;; x3 = length, x4 = items base. The ordinary entry clears x5 first (word 0), so only such callers reuse it.
 (defn- t2-e-desc-entry [M :vector-i64 s :i64 k :i64] :vector-i64
   ;; parameter 0 of a function with at most 7 parameters may arrive with a handed-over descriptor (x5/x4/x3 up to 3
-  ;; parameters, x11/x9/x10 from 4 on)
+  ;; parameters, x11/x9/x10 from 4 on). Only T2 callers enter past the marker, and they set the key to x0 or 0 right
+  ;; after the argument moves (csel), so a nonzero key is x0's: no comparison.
   (if (or (not= k 0) (> (t2-g M t2-s-np) 7)) (t2-e-desc-from M s k)
     (if (> (t2-g M t2-s-np) 3) (t2-e-desc-entry7 M s)
     (let [B (t2-g M (+ t2-a-pd (* 4 s) 1)) L (t2-g M (+ t2-a-pd (* 4 s) 2))
@@ -20308,10 +20363,10 @@
           ;; the slot lives in the handoff registers: a matching handoff falls straight through; the computation is a
           ;; cold block (t2-e-cdesc) entered from the ordinary entry
           (-> M (t2-s t2-s-ndst (inc n)) (t2-s (+ t2-a-dstub (* 3 n)) -1) (t2-s t2-s-cdesc (inc n)) (t2-s t2-s-cdslot s)
-              (t2-jmp FX-CB19 lc (enc-cbz 5 0)) (gn-emit (enc-cmp-r 5 k)) (t2-bcond 1 lc)
+              (t2-jmp FX-CB19 lc (enc-cbz 5 0))
               (t2-deflab lj) (t2-s t2-s-hent 1))
           (let [M1 (-> M (t2-s t2-s-ndst (inc n)) (t2-s (+ t2-a-dstub (* 3 n)) -1)
-                       (t2-jmp FX-CB19 lc (enc-cbz 5 0)) (gn-emit (enc-cmp-r 5 k)) (t2-bcond 1 lc)
+                       (t2-jmp FX-CB19 lc (enc-cbz 5 0))
                        (gn-mov B 4) (gn-mov L 3) (t2-jmp FX-B26 lj (enc-b 0))
                        (t2-deflab lc))]
             (-> M1 (t2-e-desc-from s k) (t2-deflab lj) (t2-s t2-s-hent 1)))))))))
@@ -20319,7 +20374,7 @@
   (let [B (t2-g M (+ t2-a-pd (* 4 s) 1)) L (t2-g M (+ t2-a-pd (* 4 s) 2)) n (t2-g M t2-s-ndst) lc (t2-l-dstub M n) lj (inc lc)]
     (if (>= n 60) (t2-fail M 26)
       (-> M (t2-s t2-s-ndst (inc n)) (t2-s (+ t2-a-dstub (* 3 n)) -1)
-          (t2-jmp FX-CB19 lc (enc-cbz 11 0)) (gn-emit (enc-cmp-r 11 0)) (t2-bcond 1 lc)
+          (t2-jmp FX-CB19 lc (enc-cbz 11 0))
           (t2-mov2 B 9 L 10) (t2-jmp FX-B26 lj (enc-b 0))
           (t2-deflab lc) (t2-e-desc-from s 0) (t2-deflab lj) (t2-s t2-s-hent 1)))))
 ;; the cold descriptor computation of parameter 0 (handoff-register slot t2-s-cdslot), back to the entry path
@@ -20540,7 +20595,7 @@
     ;; plain search-loop kernel may be the helper another kernel's fused code relies on)
     (if (and (t2-ok? M1) (t2-size-ok? M1 body (- entry0 old) (t2-g M1 t2-s-credit))
              (or (= (t2-g M1 t2-s-tight) 0) (and (= (t2-g M1 t2-s-hascall) 0) (= (t2-g M1 t2-s-weak) 1))))
-      (-> M1 (t2-s (+ t2-a-st f) 1)
+      (-> M1 (t2-s (+ t2-a-st f) 1) (t2-s (+ t2-a-x8r f) (if (= (t2-g M1 t2-s-tailbad) 0) 1 0))
           ;; AUX 2 (the caller keeps the counter in x8 only) needs a callee that never grows the stack before its next
           ;; publication: no frame and no saved registers, so a host stack exhaustion never reads a stale counter
           (t2-s (+ t2-a-hent f) (if (and (= (t2-g M1 t2-s-hent) 1) (= (t2-g M1 t2-s-pub) 1) (= (t2-g M1 t2-s-defer) 1)
@@ -20967,7 +21022,7 @@
           (t2-r0-pass (t2-s M1 (+ t2-a-ret0 f) 0) (+ f step) step 1))))))
 (defn- t2-r0-init [M :vector-i64] :vector-i64
   (let [n (gn-min (vector-at M MM-FN-N) MM-FN-CAP)
-        M0 (-> M (t2-wzero t2-a-ret0 0 MM-FN-CAP) (t2-wfill t2-a-ret0 1 n 1))]
+        M0 (-> M (t2-wzero t2-a-ret0 0 MM-FN-CAP) (t2-wfill t2-a-ret0 1 n 1) (t2-wzero t2-a-x8r 0 MM-FN-CAP))]
     (loop [m M0 i 0]
       (if (>= i 64) (t2-wzero m t2-a-ret0 0 MM-FN-CAP)
         (let [m1 (if (= (bit-and i 1) 0) (t2-r0-pass m 0 1 0) (t2-r0-pass m (dec n) -1 0))]
