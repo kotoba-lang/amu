@@ -7741,27 +7741,30 @@
   (gn-emit (gn-e-addsl 16 16 17 4)) (gn-emit (enc-ldp 17 16 16 0))
   (gn-emit (enc-add-r 9 2 2)) (gn-emit (enc-add-i 9 9 1)) (gn-emit (enc-cmp-r 9 16)) (ri-cold G 2)
   (gn-emit (enc-ldr 15 7 328)) (gn-emit (gn-e-addsl 15 15 17 3))
-  (gn-mov 5 2) (gn-mov-imm 6 0) (gn-emit (enc-sub-i 9 9 3))
-  (gn-emit (gn-e-addsl 10 15 9 3))) probe (vector-at m0 MM-CODE-N)
- m1 (gn-emit m0 (enc-cmp-r 5 1)) p0 (vector-at m1 MM-CODE-N)
- m2 (-> m1 (gn-emit 0) (gn-emit (enc-ldr 16 10 0)) (gn-emit (enc-cmp-r 3 16))) p1 (vector-at m2 MM-CODE-N)
- m3 (-> m2 (gn-emit 0) (gn-emit (enc-sub-i 5 5 1)) (gn-emit (enc-add-i 6 6 1))
-  (gn-emit (enc-sub-i 10 10 16))) pb (vector-at m3 MM-CODE-N)
- m4 (gn-emit m3 (enc-b (- probe pb))) done (vector-at m4 MM-CODE-N)
- m5 (-> m4 (gn-dot-patch p0 done 0) (gn-dot-patch p1 done 10)
+  ;; c = j - start probes left (0 <= start <= j <= 4095 by the guards) as x6 = 2c; x10 = &v[2(start - 1)], so the
+  ;; probe of v[2(start + c - 1)] is [x10, x6, lsl #3]
+  (gn-emit (enc-sub-r 6 2 1)) (gn-emit (enc-add-r 6 6 6))
+  (gn-emit (gn-e-addsl 10 15 1 4)) (gn-emit (enc-sub-i 10 10 16))) p0 (vector-at m0 MM-CODE-N)
+ ;; cbz x6, done ; probe: ldr x16, [x10, x6, lsl #3] ; cmp x3, x16 ; b.ge done ; subs x6, x6, #2 ; b.ne probe
+ m1 (gn-emit m0 0) probe (vector-at m1 MM-CODE-N)
+ m2 (-> m1 (gn-emit (gn-e-ldrr 16 10 6 1)) (gn-emit (enc-cmp-r 3 16))) p1 (vector-at m2 MM-CODE-N)
+ m3 (-> m2 (gn-emit 0) (gn-emit (enc-subs-i 6 6 2))) pb (vector-at m3 MM-CODE-N)
+ m4 (gn-emit m3 (enc-bcond (enc-cond-ne) (- probe pb))) done (vector-at m4 MM-CODE-N)
+ ;; final j x5 = start + c (add x5, x1, x6, lsr #1), moved items x6 = j - x5
+ m5 (-> m4 (gn-put (+ MM-CODE-BASE p0) (enc-cbz 6 (- done p0))) (gn-dot-patch p1 done 10)
+  (gn-emit (+ (enc-add-r 5 1 6) 0x400400)) (gn-emit (enc-sub-r 6 2 5))
   (gn-mov-imm 9 6) (gn-emit (enc-mul 11 6 9)) (gn-emit (enc-add-i 11 11 2))
   (gn-emit (enc-cmp-r 5 1))) skip (vector-at m5 MM-CODE-N)
  m6 (-> m5 (gn-emit (enc-bcond 0 2)) (gn-emit (enc-add-i 11 11 1))
   (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-emit (enc-cmp-r 8 11)) (ri-cold G 3)
   (gn-emit (enc-sub-r 8 8 11)) (gn-emit (enc-str 8 7 CTX-FUEL))
-  (gn-emit (enc-add-r 9 2 2)) (gn-emit (gn-e-addsl 12 15 9 3))
-  (gn-emit (enc-sub-i 13 12 16)) (gn-emit (enc-cmp-i 6 0))) noCopy (vector-at m6 MM-CODE-N)
+  (gn-emit (enc-add-r 9 2 2)) (gn-emit (gn-e-addsl 12 15 9 3))) noCopy (vector-at m6 MM-CODE-N)
+ ;; cbz x6, final ; cp: ldp x9, x16, [x12, #-16] ; stp x9, x16, [x12], #-16 ; subs x6, x6, #1 ; b.ne cp
  m7 (gn-emit m6 0) cp (vector-at m7 MM-CODE-N)
- m8 (-> m7 (gn-emit (enc-ldp 9 16 13 0)) (gn-emit (enc-stp 9 16 12 0))
-  (gn-emit (enc-sub-i 12 12 16)) (gn-emit (enc-sub-i 13 13 16))
-  (gn-emit (enc-sub-i 6 6 1)) (gn-emit (enc-cmp-i 6 0))) cb (vector-at m8 MM-CODE-N)
+ m8 (-> m7 (gn-emit (enc-ldp 9 16 12 -16)) (gn-emit (enc-ldstp 0xa8800000 9 16 12 -16))
+  (gn-emit (enc-subs-i 6 6 1))) cb (vector-at m8 MM-CODE-N)
  m9 (gn-emit m8 (enc-bcond 1 (- cp cb))) final (vector-at m9 MM-CODE-N)
- m10 (-> m9 (gn-dot-patch noCopy final 0)
+ m10 (-> m9 (gn-put (+ MM-CODE-BASE noCopy) (enc-cbz 6 (- final noCopy)))
   (gn-emit (enc-str 3 12 0)) (gn-emit (enc-str 4 12 8))
   (gn-mov 0 (gn-sreg M 1)) (gn-vclear) (gn-epilogue) (gn-gs gn-f-dead 0)) end (vector-at m10 MM-CODE-N)]
  (ri-patch m10 G 0 end))))
@@ -7852,22 +7855,28 @@
   (gn-emit (enc-add-i 10 1 b)) (gn-emit (enc-cmp-r 10 16)) (ri-cold G 2)
   (gn-emit (enc-ldr 15 7 328)) (gn-emit (gn-e-addsl 15 15 17 3))
   (gn-emit (gn-e-addsl 12 15 9 3)) (gn-emit (gn-e-addsl 13 15 10 3))
-  (gn-mov 4 1) (gn-mov-imm 5 0) (gn-emit (enc-sub-i 10 12 8))) probe (vector-at m0 MM-CODE-N)
- m1 (gn-emit m0 (enc-cmp-i 4 0)) p0 (vector-at m1 MM-CODE-N)
- m2 (-> m1 (gn-emit 0) (gn-emit (enc-ldr 16 10 0)) (gn-emit (enc-cmp-r 16 2))) p1 (vector-at m2 MM-CODE-N)
- m3 (-> m2 (gn-emit 0) (gn-emit (enc-sub-i 4 4 1)) (gn-emit (enc-add-i 5 5 1))
-  (gn-emit (enc-sub-i 10 10 8))) pb (vector-at m3 MM-CODE-N)
- m4 (gn-emit m3 (enc-b (- probe pb))) done (vector-at m4 MM-CODE-N)
- m5 (-> m4 (gn-dot-patch p0 done 0) (gn-dot-patch p1 done 13)
+  ;; x5 = j probes left; x10 = &a[-1] (sub x10, x12, x1, lsl #3 ; sub x10, x10, #8): the probe of a[x5 - 1] is
+  ;; [x10, x5, lsl #3]
+  (gn-mov 5 1) (gn-emit (+ (enc-sub-r 10 12 1) 0xc00)) (gn-emit (enc-sub-i 10 10 8))) p0 (vector-at m0 MM-CODE-N)
+ ;; cbz x5, done ; probe: ldr x16, [x10, x5, lsl #3] ; cmp x16, x2 ; b.le done ; subs x5, x5, #1 ; b.ne probe
+ m1 (gn-emit m0 0) probe (vector-at m1 MM-CODE-N)
+ m2 (-> m1 (gn-emit (gn-e-ldrr 16 10 5 1)) (gn-emit (enc-cmp-r 16 2))) p1 (vector-at m2 MM-CODE-N)
+ m3 (-> m2 (gn-emit 0) (gn-emit (enc-subs-i 5 5 1))) pb (vector-at m3 MM-CODE-N)
+ m4 (gn-emit m3 (enc-bcond (enc-cond-ne) (- probe pb))) done (vector-at m4 MM-CODE-N)
+ ;; moved items x5 = j - left; then x12/x13 := the final slots a[j - x5], b[j - x5]
+ m5 (-> m4 (gn-put (+ MM-CODE-BASE p0) (enc-cbz 5 (- done p0))) (gn-dot-patch p1 done 13)
+  (gn-emit (enc-sub-r 5 1 5))
   (gn-emit (enc-cmp-r 8 5)) (ri-cold G 3) (gn-emit (enc-sub-r 8 8 5))
-  (gn-mov 6 5) (gn-emit (enc-cmp-i 6 0))) noCopy (vector-at m5 MM-CODE-N)
- m6 (gn-emit m5 0) cp (vector-at m6 MM-CODE-N)
- m7 (-> m6 (gn-emit (enc-sub-i 17 12 8)) (gn-emit (enc-ldr 9 17 0)) (gn-emit (enc-sub-i 17 13 8)) (gn-emit (enc-ldr 16 17 0))
-  (gn-emit (enc-str 9 12 0)) (gn-emit (enc-str 16 13 0))
-  (gn-emit (enc-sub-i 12 12 8)) (gn-emit (enc-sub-i 13 13 8))
-  (gn-emit (enc-sub-i 6 6 1)) (gn-emit (enc-cmp-i 6 0))) cb (vector-at m7 MM-CODE-N)
+  (gn-emit (+ (enc-sub-r 12 12 5) 0xc00)) (gn-emit (+ (enc-sub-r 13 13 5) 0xc00))) noCopy (vector-at m5 MM-CODE-N)
+ ;; cbz x5, final ; x10/x11 = x12/x13 - 8 ; cp (t = x5 down to 1, the original descending order):
+ ;; ldr x9, [x10, x5, lsl #3] ; ldr x16, [x11, x5, lsl #3] ; str x9, [x12, x5, lsl #3] ; str x16, [x13, x5, lsl #3] ;
+ ;; subs x5, x5, #1 ; b.ne cp
+ m6 (-> m5 (gn-emit 0) (gn-emit (enc-sub-i 10 12 8)) (gn-emit (enc-sub-i 11 13 8))) cp (vector-at m6 MM-CODE-N)
+ m7 (-> m6 (gn-emit (gn-e-ldrr 9 10 5 1)) (gn-emit (gn-e-ldrr 16 11 5 1))
+  (gn-emit (gn-e-strr3 9 12 5)) (gn-emit (gn-e-strr3 16 13 5))
+  (gn-emit (enc-subs-i 5 5 1))) cb (vector-at m7 MM-CODE-N)
  m8 (gn-emit m7 (enc-bcond 1 (- cp cb))) final (vector-at m8 MM-CODE-N)
- m9 (-> m8 (gn-dot-patch noCopy final 0) (gn-emit (enc-str 2 12 0)) (gn-emit (enc-str 3 13 0))
+ m9 (-> m8 (gn-put (+ MM-CODE-BASE noCopy) (enc-cbz 5 (- final noCopy))) (gn-emit (enc-str 2 12 0)) (gn-emit (enc-str 3 13 0))
   (gn-epilogue) (gn-gs gn-f-dead 0)) end (vector-at m9 MM-CODE-N)]
  (ri-patch m9 G 0 end))))
 (defn- ip-labels [M :vector-i64 p :i64 k :i64] :bool
