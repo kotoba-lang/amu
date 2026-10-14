@@ -13062,32 +13062,83 @@
  (jssa-reg P (vector-at P (jssa-row P r k))))
 (defn- jssa-dst [P :vector-i64 r :i64] :i64
  (jssa-reg P (vector-at P (jssa-row P r 6))))
+;; ---- value bounds in a scanned jdag body: n with |v| <= 2^n (64 = unknown) -----------------------------------------------
+;; One forward walk from the body start. Every branch is a jdag-scan diamond (arms define temps >= 4 only, never a
+;; slot), so at a label every temp becomes unknown while the slots keep their single incoming bound.
+(defn- jb-bits [k :i64] :i64
+ (if (or (> k 4611686018427387904) (< k -4611686018427387904)) 64
+  (let [a (if (< k 0) (- 0 k) k)] (loop [n 0] (if (<= a (i64-shift-left 1 n)) n (recur (inc n)))))))
+(defn- jb-call [M :vector-i64 j :i64] :i64
+ (let [f (gn-sir M j IF-A) kind (jdag-call M j)]
+  (case kind
+   1 (dec (bit-and (gn-sign-wrapper M f 1) 511))
+   2 (let [p (rc-shape M f)] (dec (bit-and (rc-sign M (gn-sir M (+ p 11) IF-A)) 511)))
+   ;; clamp result in [low, high]
+   3 (let [p (rp-shape M f) q (gn-clamp M (+ p 10) (gn-sir M (+ p 10) IF-A) 1)]
+      (gn-max (jb-bits (gn-sir M (+ q 4) IF-B)) (jb-bits (gn-sir M (+ q 11) IF-B))))
+   64)))
+(defn- jb-step [M :vector-i64 V :vector-i64 k :i64 ns :i64 dp :i64] :vector-i64
+ (let [op (gn-op M k) a (gn-sir M k IF-A) b (gn-sir M k IF-B) T (+ ns 1)]
+  (cond (= op OP-LABEL) (loop [X V t 0] (if (>= t dp) X (recur (vector-assoc! X (+ T t) 64) (inc t))))
+   (= op OP-LGET) (vector-assoc! V (+ T a) (vector-at V b))
+   (= op OP-LSET) (vector-assoc! V a (vector-at V (+ T b)))
+   (= op OP-CONST) (vector-assoc! V (+ T a) (jb-bits b))
+   (= op OP-BIN) (let [x (vector-at V (+ T b)) y (vector-at V (+ T (inc b)))]
+                   (vector-assoc! V (+ T b) (gn-min 64 (if (= a BOP-MUL) (+ x y) (inc (gn-max x y))))))
+   (= op OP-RT) (vector-assoc! V (+ T b) 64)
+   (= op OP-CALL) (vector-assoc! V (+ T b) (gn-min 64 (jb-call M k)))
+   :else V)))
+;; bound of temp t just before SIR j of the body starting at start
+(defn- jb-before [M :vector-i64 start :i64 j :i64 t :i64] :i64
+ (let [ns (gn-g M gn-f-ns) dp (gn-g M gn-f-dp)
+       V0 (loop [X (vector-alloc (+ ns 1 dp)) k 0] (if (> k (+ ns dp)) X (recur (vector-assoc! X k 64) (inc k))))]
+  (if (or (< t 0) (>= t dp)) 64
+   (loop [V V0 k start] (if (>= k j) (vector-at V (+ ns 1 t)) (recur (jb-step M V k ns dp) (inc k)))))))
+;; x0 clamped to [low, high] into d (x16/x17 scratch, never value registers)
+(defn- jssa-clamp [M :vector-i64 low :i64 high :i64 d :i64] :vector-i64
+ (let [m0 (if (= low 0) (-> M (gn-emit (enc-cmp-i 0 0)) (gn-emit (enc-csel 0 31 0 (enc-cond-lt))))
+           (-> M (gn-mov-imm 16 low) (gn-emit (enc-cmp-r 0 16)) (gn-emit (enc-csel 0 16 0 (enc-cond-lt)))))]
+  (if (and (>= high 0) (<= high 4095))
+   (-> m0 (gn-emit (enc-cmp-i 0 high)) (gn-mov-imm 17 high) (gn-emit (enc-csel d 17 0 (enc-cond-gt))))
+   (-> m0 (gn-mov-imm 17 high) (gn-emit (enc-cmp-r 0 17)) (gn-emit (enc-csel d 17 0 (enc-cond-gt)))))))
+;; The fast body cannot trap (its fuel and every index are proven before it), so the helpers keep their charges in x8
+;; and the body publishes x8 once at its end. A floor quotient by 2^s of a value that cannot reach the wrapping range
+;; (|x| < 2^61 by jb-before) is exactly asr #s.
 (defn- jssa-helper [M :vector-i64 j :i64 P :vector-i64 r :i64 kind :i64] :vector-i64
- (let [f (gn-sir M j IF-A) src (jssa-in P r 0)]
+ (let [f (gn-sir M j IF-A) src (jssa-in P r 0) t (gn-sir M j IF-B) start (- j r)]
   (case kind
    1 (let [w (bit-and (gn-sign-wrapper M f 1) 511)]
     (gn-emit M (gn-e-bf 0x93400000 (jssa-dst P r) src 0 (dec w))))
    2 (let [p (rc-shape M f) w (bit-and (rc-sign M (gn-sir M (+ p 4) IF-A)) 511)
      z (bit-and (rc-sign M (gn-sir M (+ p 11) IF-A)) 511)
-     bias (gn-sir M (+ p 7) IF-B) divisor (gn-sir M (+ p 9) IF-B)]
-    (-> M (gn-mov 0 src) (gn-mov 1 (jssa-in P r 1)) (jdag-sub) (jdag-publish)
-     (gn-emit (gn-e-bf 0x93400000 0 0 0 (dec w))) (gn-emit (enc-mul 0 0 1))
-     (gn-emit (enc-add-i 0 0 bias)) (rq-core divisor)
-     (gn-emit (gn-e-bf 0x93400000 0 0 0 (dec z))) (gn-mov (jssa-dst P r) 0)))
+     bias (gn-sir M (+ p 7) IF-B) divisor (gn-sir M (+ p 9) IF-B) s (gn-pow2 divisor)]
+    (if (and (> s 0) (>= w 1) (<= w 32) (<= (+ (dec w) (jb-before M start j (inc t))) 60))
+     (-> M (jdag-sub) (gn-emit (gn-e-bf 0x93400000 0 src 0 (dec w)))
+      (gn-emit (enc-mul 0 0 (jssa-in P r 1))) (gn-emit (enc-add-i 0 0 bias))
+      (gn-emit (gn-e-asr 0 0 s)) (gn-emit (gn-e-bf 0x93400000 (jssa-dst P r) 0 0 (dec z))))
+     (-> M (gn-mov 0 src) (gn-mov 1 (jssa-in P r 1)) (jdag-sub) (jdag-publish)
+      (gn-emit (gn-e-bf 0x93400000 0 0 0 (dec w))) (gn-emit (enc-mul 0 0 1))
+      (gn-emit (enc-add-i 0 0 bias)) (rq-core divisor)
+      (gn-emit (gn-e-bf 0x93400000 0 0 0 (dec z))) (gn-mov (jssa-dst P r) 0))))
    3 (let [p (rp-shape M f) before (gn-sir M (+ p 4) IF-B) divisor (gn-sir M (+ p 6) IF-B)
      after (gn-sir M (+ p 8) IF-B) cf (gn-sir M (+ p 10) IF-A)
      q (gn-clamp M (+ p 10) cf 1) width (bit-and (gn-sign-wrapper M (gn-sir M (inc q) IF-A) 1) 511)
-     low (gn-sir M (+ q 4) IF-B) high (gn-sir M (+ q 11) IF-B)]
-    (-> M (gn-mov 0 src) (jdag-sub) (jdag-publish) (gn-emit (enc-add-i 0 0 before))
-     (rq-core divisor) (gn-emit (enc-add-i 0 0 after)) (jdag-sub)
-     (gn-emit (gn-e-bf 0x93400000 0 0 0 (dec width)))
-     (gn-mov-imm 16 low) (gn-emit (enc-cmp-r 0 16)) (gn-emit (enc-csel 0 16 0 (enc-cond-lt)))
-     (gn-mov-imm 17 high) (gn-emit (enc-cmp-r 0 17)) (gn-emit (enc-csel 0 17 0 (enc-cond-gt)))
-     (jdag-publish) (gn-mov (jssa-dst P r) 0)))
-   4 (-> M (jdag-sub) (gn-emit (enc-mul 1 (jssa-in P r 2) (jssa-in P r 3)))
-     (gn-emit (enc-add-r 1 1 (jssa-in P r 1))) (gn-mov 0 (jssa-in P r 4))
-     (gn-emit (gn-e-bf 0x93400000 0 0 0 15)) (jdag-sub)
-     (gn-emit (gn-e-strr3 0 4 1)) (jdag-publish)) M)))
+     low (gn-sir M (+ q 4) IF-B) high (gn-sir M (+ q 11) IF-B) s (gn-pow2 divisor)]
+    (if (and (> s 0) (<= (jb-before M start j t) 48))
+     ;; both charges at once (nothing observes x8 in between)
+     (-> M (gn-emit (enc-add-i 0 src before)) (gn-emit (gn-e-asr 0 0 s)) (gn-emit (enc-add-i 0 0 after))
+      (gn-emit (enc-sub-i 8 8 2)) (gn-emit (gn-e-bf 0x93400000 0 0 0 (dec width)))
+      (jssa-clamp low high (jssa-dst P r)))
+     (-> M (gn-mov 0 src) (jdag-sub) (jdag-publish) (gn-emit (enc-add-i 0 0 before))
+      (rq-core divisor) (gn-emit (enc-add-i 0 0 after)) (jdag-sub)
+      (gn-emit (gn-e-bf 0x93400000 0 0 0 (dec width)))
+      (gn-mov-imm 16 low) (gn-emit (enc-cmp-r 0 16)) (gn-emit (enc-csel 0 16 0 (enc-cond-lt)))
+      (gn-mov-imm 17 high) (gn-emit (enc-cmp-r 0 17)) (gn-emit (enc-csel 0 17 0 (enc-cond-gt)))
+      (jdag-publish) (gn-mov (jssa-dst P r) 0))))
+   ;; set-lane: index base + stride k in one madd, both charges at once
+   4 (-> M (gn-emit (enc-madd 1 (jssa-in P r 2) (jssa-in P r 3) (jssa-in P r 1)))
+     (gn-emit (gn-e-bf 0x93400000 0 (jssa-in P r 4) 0 15)) (gn-emit (enc-sub-i 8 8 2))
+     (gn-emit (gn-e-strr3 0 4 1))) M)))
 (defn- jssa-body [M :vector-i64 start :i64 end :i64 ns :i64 P :vector-i64 pos :vector-i64] :vector-i64
  (loop [V M j start] (if (= j end) V
   (let [r (- j start) at (vector-assoc! pos r (vector-at V MM-CODE-N))
@@ -13098,7 +13149,7 @@
     OP-BIN (let [d (jssa-dst P r) x (jssa-in P r 0) y (jssa-in P r 1)]
      (recur (gn-emit V (cond (= a BOP-ADD) (enc-add-r d x y) (= a BOP-SUB) (enc-sub-r d x y)
       :else (enc-mul d x y))) (inc j)))
-    OP-RT (recur (-> V (gn-mov 1 (jssa-in P r 1)) (gn-emit (gn-e-ldrr (jssa-dst P r) 4 1 1))) (inc j))
+    OP-RT (recur (gn-emit V (gn-e-ldrr (jssa-dst P r) 4 (jssa-in P r 1) 1)) (inc j))
     OP-CALL (recur (jssa-helper V j P r (jdag-call M j)) (inc j))
     OP-BR (recur (gn-emit V (enc-b 0)) (inc j))
     OP-BRZ (recur (gn-emit V (enc-cbz (jssa-in P r 0) 0)) (inc j)) V)))))
@@ -13369,7 +13420,7 @@
          (gn-emit (gn-e-addsl 16 16 17 4)) (gn-emit (enc-ldr 17 16 0))
          (gn-emit (enc-ldr 4 7 328)) (gn-emit (gn-e-addsl 4 4 17 3))))
        fast (jdag-patch-body (jssa-body prefix i end ns C pos) i end pos)]
-  (-> fast (gn-mov 9 (jssa-reg C (vector-at C (jssa-env C (dec (- end i)) (inc ns)))))
+  (-> fast (gn-emit (enc-str 8 7 CTX-FUEL)) (gn-mov 9 (jssa-reg C (vector-at C (jssa-env C (dec (- end i)) (inc ns)))))
    (gn-fix FX-B26 (gn-sir M end IF-A)) (gn-emit (enc-b 0)))))
 
 (defn- jssa-entry [M :vector-i64 i :i64] :vector-i64
@@ -13397,7 +13448,7 @@
         (gn-emit (enc-mul 16 stride 16)) (gn-emit (enc-add-r 16 base 16)) (gn-emit (enc-cmp-r 16 3))) g6 (vector-at m6 MM-CODE-N)
        m7 (-> m6 (gn-emit (enc-bcond (enc-cond-hs) 0)) (gn-emit (enc-ldr 4 7 328)) (gn-emit (gn-e-addsl 4 4 17 3)))
        fast (jdag-patch-body (jssa-body m7 i end ns C pos) i end pos)
-       m8 (-> fast (gn-mov 9 (jssa-reg C (vector-at C (jssa-env C (dec (- end i)) (inc ns))))) (gn-fix FX-B26 (gn-sir M end IF-A)) (gn-emit (enc-b 0)))
+       m8 (-> fast (gn-emit (enc-str 8 7 CTX-FUEL)) (gn-mov 9 (jssa-reg C (vector-at C (jssa-env C (dec (- end i)) (inc ns))))) (gn-fix FX-B26 (gn-sir M end IF-A)) (gn-emit (enc-b 0)))
        cold (vector-at m8 MM-CODE-N)]
       (-> m8 (gn-dot-patch g0 cold (enc-cond-lo)) (gn-dot-patch g1 cold (enc-cond-hs))
        (gn-dot-patch g2 cold (enc-cond-hs)) (gn-dot-patch g3 cold (enc-cond-hs))
