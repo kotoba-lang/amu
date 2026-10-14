@@ -15706,10 +15706,36 @@
       (if (< i lo) c
         (recur (dec i) (if (and (= (gn-op M i) OP-CONST) (> (gn-sir M i IF-A) t) (< (gn-sir M i IF-A) (+ t n))) (inc c) c))))))
 (def t2-s-inlops 58)
+(def t2-s-inlraw 59)
+(def t2-s-xnsmax 60)
 ;; a callee whose call passes mostly constant arguments specializes by folding: larger branch/op limits
 (defn- t2-callee-big? [M :vector-i64 t :i64 n :i64] :bool
   (and (> n 1) (>= (* 2 (t2-constargs M t n)) (dec n))))
 (defn- t2-callee-ok? [M :vector-i64 g :i64 n :i64 depth :i64] :bool (t2-callee-ok2? M g n depth false))
+;; the SIR body from i contains a call with mostly constant arguments to a callee that itself calls
+(defn- t2-spec-link? [M :vector-i64 i :i64] :bool
+  (let [op (gn-op M i)]
+    (cond (or (= op OP-END) (= op 0)) false
+          (= op OP-CALL)
+          (let [h (gn-sir M i IF-A) t (gn-sir M i IF-B) n (gn-sir M i IF-C)
+                q (if (and (> h 0) (< h (vector-at M MM-FN-N))) (gn-fnf M h FF-SIR) 0)
+                kc (loop [j (dec i) c 0 k 0] (if (or (> k n) (<= j 0)) c
+                                                (recur (dec j) (if (and (= (gn-op M j) OP-CONST) (> (gn-sir M j IF-A) t) (< (gn-sir M j IF-A) (+ t n))) (inc c) c) (inc k))))]
+            (or (and (> n 1) (>= (* 2 kc) (dec n)) (> q 0) (< q (vector-at M MM-SIR-N)) (not (t2-callfree? M (inc q))))
+                (t2-spec-link? M (inc i))))
+          :else (t2-spec-link? M (inc i)))))
+(defn- t2-callfree? [M :vector-i64 i :i64] :bool
+  (let [op (gn-op M i)]
+    (cond (or (= op OP-END) (= op 0)) true
+          (or (= op OP-CALL) (= op OP-CALLI)) false
+          :else (t2-callfree? M (inc i)))))
+(defn- t2-leafy-calls? [M :vector-i64 i :i64] :bool
+  (let [op (gn-op M i)]
+    (cond (or (= op OP-END) (= op 0)) true
+          (= op OP-CALLI) false
+          (= op OP-CALL) (let [h (gn-sir M i IF-A) q (if (and (> h 0) (< h (vector-at M MM-FN-N))) (gn-fnf M h FF-SIR) 0)]
+                           (and (> q 0) (< q (vector-at M MM-SIR-N)) (t2-callfree? M (inc q)) (t2-leafy-calls? M (inc i))))
+          :else (t2-leafy-calls? M (inc i)))))
 (defn- t2-callee-ok2? [M :vector-i64 g :i64 n :i64 depth :i64 big :bool] :bool
   (let [k (gn-fnf M g FF-KIND) p (gn-fnf M g FF-SIR)]
     (and (> g 0) (< g (vector-at M MM-FN-N)) (<= depth 3) (not= g (t2-g M t2-s-f))
@@ -15717,6 +15743,9 @@
          (> p 0) (< p (vector-at M MM-SIR-N)) (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) g)
          (= (gn-fnf M g FF-NPARAMS) n) (= (gn-sir M p IF-B) n)
          (t2-xops-ok? M (inc p)) (not (t2-loops? M (inc p)))
+         ;; ordinary inlining skips a link that itself specializes a non-leaf callee with constant arguments (each
+         ;; inlined link would expand another copy): it stays a real call that specializes once
+         (or big (not (t2-spec-link? M (inc p))))
          (let [c (t2-xcost M (inc p) 0 0)]
            (if big (and (<= (quot c 65536) 8) (<= (- c (* (quot c 65536) 65536)) 192))
              (and (<= (quot c 65536) 2) (<= (- c (* (quot c 65536) 65536)) 64)))))))
@@ -15804,14 +15833,17 @@
           ex (+ lb (inc (- hi lo)))
           gs (gn-max (gn-max (gn-fnf M g FF-NSLOTS) (gn-sir M p IF-C)) (gn-max n (gn-scan M (inc p) 2 0)))
           sb (t2-g M t2-s-xns)
-          M0 (-> M (t2-s t2-s-xlab (inc ex)) (t2-s t2-s-xns (+ sb gs)))
+          M0 (-> M (t2-s t2-s-xlab (inc ex)) (t2-s t2-s-xns (+ sb gs)) (t2-s t2-s-xnsmax (gn-max (t2-g M t2-s-xnsmax) (+ sb gs))))
           M1 (loop [k 0 m M0] (if (>= k n) m (recur (inc k) (t2-xput m OP-LSET (+ sb k 1) (+ t k) 0))))
           ;; inlined ops earn a size credit (a constant-argument specialization twice as much)
-          M2 (t2-xcopy (t2-s M1 t2-s-inlops (+ (t2-g M1 t2-s-inlops) (* (if (t2-callee-big? M t n) 2 1) (bit-and (t2-xcost M1 (inc p) 0 0) 65535))))
+          ops (bit-and (t2-xcost M1 (inc p) 0 0) 65535)
+          M2 (t2-xcopy (-> M1 (t2-s t2-s-inlraw (+ (t2-g M1 t2-s-inlraw) ops))
+                           (t2-s t2-s-inlops (+ (t2-g M1 t2-s-inlops) (* (if (t2-callee-big? M t n) 2 1) ops))))
                        (inc p) t sb lb lo ex gpub d)]
+      ;; the callee's slots are dead after its exit: a later inline reuses them (the high-water mark sizes the frame)
       (if (or (>= ex t2-maxlab) (>= (+ sb gs) t2-maxvar)) (t2-fail M2 24)
         (-> M2 (t2-s (+ t2-a-lpos ex) (t2-g M2 t2-s-xo)) (t2-xput OP-LABEL ex 0 0)
-            (cond-> pubexit (t2-xput t2-op-pub 0 0 0)))))))
+            (cond-> pubexit (t2-xput t2-op-pub 0 0 0)) (t2-s t2-s-xns sb))))))
 ;; expand FN f (global p..end) into the buffer; returns M with t2-s-p/t2-s-end set to the buffer copy
 (defn- t2-expand [M :vector-i64 p :i64 end :i64 f :i64 pub :i64] :vector-i64
   (let [B (+ (vector-at M MM-SIR-N) 8)
@@ -15820,14 +15852,14 @@
         rng (t2-xlrange M (inc p) -1 -1)
         lo (if (< rng 0) 0 (quot rng 1048576))
         hi (if (< rng 0) -1 (- rng (* (quot rng 1048576) 1048576)))
-        M0 (-> M (t2-s t2-s-xb B) (t2-s t2-s-xo B) (t2-s t2-s-xlab (+ 1 (inc (- hi lo)))) (t2-s t2-s-xns ns) (t2-s t2-s-xdp 0)
+        M0 (-> M (t2-s t2-s-xb B) (t2-s t2-s-xo B) (t2-s t2-s-xlab (+ 1 (inc (- hi lo)))) (t2-s t2-s-xns ns) (t2-s t2-s-xnsmax ns) (t2-s t2-s-xdp 0)
                (t2-xput OP-FN f np ns))
         M1 (t2-xcopy M0 (inc p) 0 0 1 lo 0 pub 0)
         M2 (t2-xput M1 OP-END f 0 0)]
     (-> M2 (t2-s t2-s-p B) (t2-s t2-s-end (dec (t2-g M2 t2-s-xo)))
         (t2-wzero t2-a-lref 0 t2-maxlab) (t2-lrefs B (t2-g M2 t2-s-xo))
         ;; the FN copy carries the grown slot count
-        (gn-put (+ MM-SIR-BASE (* B MM-SIR-W) IF-C) (t2-g M2 t2-s-xns)))))
+        (gn-put (+ MM-SIR-BASE (* B MM-SIR-W) IF-C) (t2-g M2 t2-s-xnsmax)))))
 ;; branch references of every local label in the buffer [i, e): a LABEL nobody branches to does not start a block
 (defn- t2-lrefs [M :vector-i64 i :i64 e :i64] :vector-i64
   (if (>= i e) M
@@ -17557,7 +17589,7 @@
         MX (t2-expand (-> M (t2-wzero 0 0 64) (t2-s t2-s-f f) (t2-s t2-s-fix0 fix0) (t2-s t2-s-weak weak)) p0 end0 f pub)
         p (t2-g MX t2-s-p) end (t2-g MX t2-s-end)
         np (gn-fnf M f FF-NPARAMS)
-        ns (t2-g MX t2-s-xns)
+        ns (t2-g MX t2-s-xnsmax)
         dp (t2-g MX t2-s-xdp)
         nvar (+ ns 1 dp)]
     (if (or (not= (t2-g MX t2-s-fail) 0) (>= nvar t2-maxvar) (> np 7)) M
