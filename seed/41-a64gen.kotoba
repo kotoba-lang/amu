@@ -11018,16 +11018,25 @@
 (defn- jdag-sub [M :vector-i64] :vector-i64 (gn-emit M (enc-subs-i 8 8 1)))
 (defn- jdag-publish [M :vector-i64] :vector-i64 (gn-emit M (enc-str 8 7 CTX-FUEL)))
 (defn- jdag-r [C :vector-i64 ns :i64 t :i64] :i64 (vector-at C (+ ns 1 t)))
+;; The certified DAG owns all CFG entries. An immediately preceding CONST
+;; defines this call's multiplier on every incoming path. Reuse the ordinary
+;; RC bounded-product rule without inferring any range for arbitrary inputs.
+(defn- dag-round-bounded [M :vector-i64 j :i64 t :i64 w :i64] :bool
+ (and (> j 1) (< j (vector-at M MM-SIR-N)) (> w 0) (<= w 32)
+  (gn-dot-at? M (dec j) OP-CONST (inc t) (gn-sir M (dec j) IF-B) 0)
+  (>= (gn-sir M (dec j) IF-B) -1073741824)
+  (<= (gn-sir M (dec j) IF-B) 1073741824)))
 (defn- jdag-helper [M :vector-i64 j :i64 C :vector-i64 ns :i64 kind :i64] :vector-i64
  (let [f (gn-sir M j IF-A) t (gn-sir M j IF-B) dst (jdag-r C ns t)]
   (case kind
    1 (let [w (bit-and (gn-sign-wrapper M f 1) 511)] (gn-emit M (gn-e-bf 0x93400000 dst dst 0 (dec w))))
    2 (let [p (rc-shape M f) w (bit-and (rc-sign M (gn-sir M (+ p 4) IF-A)) 511)
        z (bit-and (rc-sign M (gn-sir M (+ p 11) IF-A)) 511)
-       bias (gn-sir M (+ p 7) IF-B) divisor (gn-sir M (+ p 9) IF-B)]
+       bias (gn-sir M (+ p 7) IF-B) divisor (gn-sir M (+ p 9) IF-B)
+       bounded (dag-round-bounded M j t w)]
      (-> M (gn-mov 0 dst) (gn-mov 1 (jdag-r C ns (inc t))) (jdag-sub) (jdag-publish)
        (gn-emit (gn-e-bf 0x93400000 0 0 0 (dec w))) (gn-emit (enc-mul 0 0 1))
-       (gn-emit (enc-add-i 0 0 bias)) (rq-core divisor)
+       (gn-emit (enc-add-i 0 0 bias)) (rc-round-emit bounded divisor)
        (gn-emit (gn-e-bf 0x93400000 0 0 0 (dec z))) (gn-mov dst 0)))
    3 (let [p (rp-shape M f) before (gn-sir M (+ p 4) IF-B) divisor (gn-sir M (+ p 6) IF-B)
        after (gn-sir M (+ p 8) IF-B) cf (gn-sir M (+ p 10) IF-A)
@@ -12919,10 +12928,11 @@
     (gn-emit M (gn-e-bf 0x93400000 (jssa-dst P r) src 0 (dec w))))
    2 (let [p (rc-shape M f) w (bit-and (rc-sign M (gn-sir M (+ p 4) IF-A)) 511)
      z (bit-and (rc-sign M (gn-sir M (+ p 11) IF-A)) 511)
-     bias (gn-sir M (+ p 7) IF-B) divisor (gn-sir M (+ p 9) IF-B)]
+     bias (gn-sir M (+ p 7) IF-B) divisor (gn-sir M (+ p 9) IF-B)
+     bounded (dag-round-bounded M j (gn-sir M j IF-B) w)]
     (-> M (gn-mov 0 src) (gn-mov 1 (jssa-in P r 1)) (jdag-sub) (jdag-publish)
      (gn-emit (gn-e-bf 0x93400000 0 0 0 (dec w))) (gn-emit (enc-mul 0 0 1))
-     (gn-emit (enc-add-i 0 0 bias)) (rq-core divisor)
+     (gn-emit (enc-add-i 0 0 bias)) (rc-round-emit bounded divisor)
      (gn-emit (gn-e-bf 0x93400000 0 0 0 (dec z))) (gn-mov (jssa-dst P r) 0)))
    3 (let [p (rp-shape M f) before (gn-sir M (+ p 4) IF-B) divisor (gn-sir M (+ p 6) IF-B)
      after (gn-sir M (+ p 8) IF-B) cf (gn-sir M (+ p 10) IF-A)
