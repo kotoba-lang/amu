@@ -15416,8 +15416,8 @@
 (def t2-a-v (+ t2-a-def (* t2-maxvar t2-maxb)))
 (def t2-a-phiop (+ t2-a-v (* t2-maxv t2-vw)))
 (def t2-a-live (+ t2-a-phiop t2-maxphi))  ; per block: 32 words live-in, 32 words live-out
-(def t2-a-stub (+ t2-a-live (* t2-maxb 64)))  ; edge stubs: 4 words each (label, from block, to block, 0), 512 max
-(def t2-a-ue (+ t2-a-stub 2048))           ; per block 32 words: upward-exposed uses
+(def t2-a-stub (+ t2-a-live (* t2-maxb 64)))  ; edge stubs: 3 words each (label, from block, to block), 4 per block max
+(def t2-a-ue (+ t2-a-stub (* 3 4 t2-maxb)))  ; per block 32 words: upward-exposed uses
 (def t2-a-vx (+ t2-a-ue (* t2-maxb 32)))   ; per value 6 words: pos start end flags next uses
 (def t2-xw 6)
 (def t2-a-mv (+ t2-a-vx (* t2-maxv t2-xw))) ; pending moves: 64 x (dst, src, kind, k)
@@ -15430,7 +15430,7 @@
 ;; t2-fail code k), read only by diagnostic builds
 (def t2-a-st (+ t2-a-re 64))
 (def t2-a-calls (+ t2-a-st MM-FN-CAP 4096 t2-maxb 4096))   ; positions of real calls (<= 256)
-(def t2-size (+ t2-a-calls 256 192))
+(def t2-size (+ t2-a-calls 256 192 (* 3 t2-maxb) 64 4096))
 ;; value fields
 (def t2-f-op 0) (def t2-f-a 1) (def t2-f-b 2) (def t2-f-c 3) (def t2-f-blk 4) (def t2-f-link 5) (def t2-f-repl 6) (def t2-f-reg 7)
 ;; value ops
@@ -15484,7 +15484,8 @@
   (if (>= j end)
     (t2-s M t2-s-nb (inc b))
     (let [p (t2-g M t2-s-p)
-          lead (and (> j (inc p)) (or (= (gn-op M j) OP-LABEL) (t2-term? (gn-op M (dec j)))))
+          lead (and (> j (inc p)) (or (and (= (gn-op M j) OP-LABEL) (> (t2-g M (+ t2-a-lref (gn-sir M j IF-A))) 0))
+                                      (t2-term? (gn-op M (dec j)))))
           nb (if lead (inc b) b)]
       (if (>= nb t2-maxb)
         (t2-fail M 2)
@@ -15703,7 +15704,7 @@
          (or (= k FK-DEFN) (= k FK-PRIV)) (not (lw-tmpl? M g)) (not (lw-spec? M g)) (not (gn-clamp-open M g))
          (> p 0) (< p (vector-at M MM-SIR-N)) (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) g)
          (= (gn-fnf M g FF-NPARAMS) n) (= (gn-sir M p IF-B) n)
-         (t2-xops-ok? M (inc p))
+         (t2-xops-ok? M (inc p)) (not (t2-loops? M (inc p)))
          (let [c (t2-xcost M (inc p) 0 0)] (and (<= (quot c 65536) 2) (<= (- c (* (quot c 65536) 65536)) 64))))))
 ;; copy the body from i (until END) into the buffer. to/so: temp/slot offsets; lb/lo: local label base and the body's lowest
 ;; label; ex: local exit label (0 at the top: RET stays RET); pub: 1 = charges published; d: inline depth.
@@ -15720,7 +15721,10 @@
                               (-> M (t2-s (+ t2-a-lpos l) (t2-g M t2-s-xo)) (t2-xput OP-LABEL l 0 0))))
                  OP-BR (t2-xput M OP-BR (+ lb (- a lo)) 0 0)
                  (OP-BRZ OP-BRNZ) (t2-xput M op (+ a to) (+ lb (- b lo)) 0)
-                 OP-RET (if (= ex 0) (t2-xput M OP-RET (+ a to) 0 0) (t2-xput M OP-BR ex 0 0))
+                 ;; an inlined callee's final RET falls into the exit label (which then need not start a block)
+                 OP-RET (cond (= ex 0) (t2-xput M OP-RET (+ a to) 0 0)
+                              (= (gn-op M (inc i)) OP-END) M
+                              :else (t2-xput M OP-BR ex 0 0))
                  OP-FUEL (t2-xput M OP-FUEL pub 0 0)
                  (OP-CONST OP-TAB) (t2-xput M op (+ a to) b c)
                  OP-LGET (t2-xput M op (+ a to) (+ b so) c)
@@ -15799,8 +15803,21 @@
         M1 (t2-xcopy M0 (inc p) 0 0 1 lo 0 pub 0)
         M2 (t2-xput M1 OP-END f 0 0)]
     (-> M2 (t2-s t2-s-p B) (t2-s t2-s-end (dec (t2-g M2 t2-s-xo)))
+        (t2-wzero t2-a-lref 0 t2-maxlab) (t2-lrefs B (t2-g M2 t2-s-xo))
         ;; the FN copy carries the grown slot count
         (gn-put (+ MM-SIR-BASE (* B MM-SIR-W) IF-C) (t2-g M2 t2-s-xns)))))
+;; branch references of every local label in the buffer [i, e): a LABEL nobody branches to does not start a block
+(defn- t2-lrefs [M :vector-i64 i :i64 e :i64] :vector-i64
+  (if (>= i e) M
+    (let [op (gn-op M i)
+          l (cond (= op OP-BR) (gn-sir M i IF-A) (or (= op OP-BRZ) (= op OP-BRNZ)) (gn-sir M i IF-B) :else -1)]
+      (t2-lrefs (if (and (>= l 0) (< l t2-maxlab)) (t2-s M (+ t2-a-lref l) (inc (t2-g M (+ t2-a-lref l)))) M) (inc i) e))))
+;; a looping callee (a BR back to an earlier label): the existing backend may run it as a certified kernel
+(defn- t2-loops? [M :vector-i64 i :i64] :bool
+  (let [op (gn-op M i)]
+    (cond (or (= op OP-END) (= op 0)) false
+          (and (= op OP-BR) (not (t2-fwd? M i (gn-sir M i IF-A)))) true
+          :else (t2-loops? M (inc i)))))
 ;; ---- SIR -> SSA values -----------------------------------------------------------------------------------------------
 (defn- t2-tv [M :vector-i64 t :i64] :i64 (+ (t2-g M t2-s-ns) 1 t))
 ;; read variable var in block b into the last-cell, then write it to variable dst
@@ -16326,6 +16343,111 @@
   (let [a (loop [k 0 x m] (if (>= k 8) x (recur (inc k) (if (= (t2-g M (+ t2-a-pd (* 4 k))) 1)
                                                          (gn-max x (gn-max (t2-g M (+ t2-a-pd (* 4 k) 1)) (t2-g M (+ t2-a-pd (* 4 k) 2)))) x))))]
     (loop [k 0 x a] (if (>= k (t2-g M t2-s-ntab)) x (recur (inc k) (gn-max x (t2-g M (+ t2-a-tb (* 2 k) 1))))))))
+;; ---- fuel plan: deferred publication and batched block charges ----------------------------------------------------------
+;; Published (nonleaf) mode: memory must hold the original program's published fuel P only where it is observed -- a trap,
+;; a real call, the return. P = x8 + u, u = charges since the original's last publication (a FUEL a=1 or a PUB), u > 0 only
+;; inside an inlined gen-leaf callee. When u is a constant at every point (forward dataflow), defer = 1: charges only
+;; `subs`, a real call stores x8 first, and every trap goes through a stub `add x8,x8,#c ; str x8,[x7,#8] ; udf|brk #0`.
+;; Batched block (k >= 2 charges, no real call; leaf mode or defer): `subs x8,x8,#k ; b.lo cold` at its start replaces its k
+;; checks (none can exhaust then); a trap with j of the block's charges still pending uses c = u + j. Its cold copy (fuel
+;; below k) restores x8 and runs the block with per-charge checks, so exhaustion, stores before it and traps stay exact.
+(def t2-s-defer 39)
+(def t2-s-ntst 40)
+(def t2-s-curu 41)
+(def t2-s-pend 42)
+(def t2-s-cold 43)
+(def t2-s-pub 44)
+(def t2-a-uin (+ t2-a-dstub 192))
+(def t2-a-uout (+ t2-a-uin t2-maxb))
+(def t2-a-fast (+ t2-a-uout t2-maxb))
+(def t2-a-tstub (+ t2-a-fast t2-maxb))   ; 32 x (kind * 65536 + c, label)
+(def t2-a-lref (+ t2-a-tstub 64))        ; per local label: branch references (4096)
+;; labels after the block labels: 3 fixed stubs, edge stubs (4 per block), cold copies, trap stubs, descriptor stubs
+(defn- t2-l-estub [M :vector-i64 n :i64] :i64 (+ (t2-lab M (t2-g M t2-s-nb)) 3 n))
+(defn- t2-l-cold [M :vector-i64 b :i64] :i64 (+ (t2-lab M (* 5 (t2-g M t2-s-nb))) 3 b))
+(defn- t2-l-trap [M :vector-i64 n :i64] :i64 (+ (t2-lab M (* 6 (t2-g M t2-s-nb))) 3 n))
+(defn- t2-l-dstub [M :vector-i64 n :i64] :i64 (+ (t2-lab M (* 6 (t2-g M t2-s-nb))) 35 (* 2 n)))
+(defn- t2-wfill [M :vector-i64 base :i64 k :i64 n :i64 x :i64] :vector-i64
+  (if (>= k n) M (t2-wfill (t2-s M (+ base k) x) base (inc k) n x)))
+;; u after value v
+(defn- t2-u1 [M :vector-i64 v :i64 u :i64] :i64
+  (let [op (t2-op-of M v)]
+    (cond (= op t2-fuel) (if (= (t2-vf M v t2-f-a) 1) 0 (if (< u 0) u (inc u)))
+          (or (= op t2-pub) (= op t2-call)) 0
+          :else u)))
+(defn- t2-u-scan [M :vector-i64 v :i64 v1 :i64 u :i64] :i64
+  (if (>= v v1) u (t2-u-scan M (inc v) v1 (t2-u1 M v u))))
+;; join over reachable preds' u_out: -2 none yet, -1 conflicting
+(defn- t2-u-meet [M :vector-i64 b :i64 k :i64 n :i64 acc :i64] :i64
+  (if (>= k n) acc
+    (let [x (t2-bget M t2-a-uout (t2-pred M b k))]
+      (t2-u-meet M b (inc k) n (cond (= x -2) acc (= acc -2) x (= acc x) acc :else -1)))))
+(defn- t2-u-pass [M :vector-i64 b :i64 changed :i64] :vector-i64
+  (if (>= b (t2-g M t2-s-nb)) (t2-s M t2-s-last changed)
+    (if (= (t2-bget M t2-a-breach b) 0) (t2-u-pass M (inc b) changed)
+      (let [uin (if (= b 0) 0 (t2-u-meet M b 0 (t2-bget M t2-a-bpn b) -2))
+            uout (if (< uin 0) uin (t2-u-scan M (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b) uin))
+            ch (or (not= uin (t2-bget M t2-a-uin b)) (not= uout (t2-bget M t2-a-uout b)))]
+        (t2-u-pass (-> M (t2-bset t2-a-uin b uin) (t2-bset t2-a-uout b uout)) (inc b) (if ch 1 changed))))))
+;; every real call and the return see u = 0
+(defn- t2-u-calls-ok? [M :vector-i64 v :i64 v1 :i64 u :i64] :bool
+  (cond (>= v v1) true
+        (and (or (= (t2-op-of M v) t2-call) (= (t2-op-of M v) t2-ret)) (not (t2-gone? M v)) (not= u 0)) false
+        :else (t2-u-calls-ok? M (inc v) v1 (t2-u1 M v u))))
+(defn- t2-u-ok? [M :vector-i64 b :i64] :bool
+  (or (>= b (t2-g M t2-s-nb))
+      (and (or (= (t2-bget M t2-a-breach b) 0)
+               (and (>= (t2-bget M t2-a-uin b) 0)
+                    (t2-u-calls-ok? M (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b) (t2-bget M t2-a-uin b))))
+           (t2-u-ok? M (inc b)))))
+(defn- t2-u-iter [M :vector-i64 iter :i64] :vector-i64
+  (if (>= iter 64) M
+    (let [M1 (t2-u-pass M 0 0)]
+      (cond (= (t2-last M1) 1) (t2-u-iter M1 (inc iter))
+            (t2-u-ok? M1 0) (t2-s M1 t2-s-defer 1)
+            :else M1))))
+;; charges of block b's values [v, v1), -1 when it makes a real call
+(defn- t2-kcount [M :vector-i64 v :i64 v1 :i64 k :i64] :i64
+  (cond (>= v v1) k
+        (= (t2-op-of M v) t2-call) -1
+        (= (t2-op-of M v) t2-fuel) (t2-kcount M (inc v) v1 (inc k))
+        :else (t2-kcount M (inc v) v1 k)))
+(defn- t2-fast-plan [M :vector-i64 b :i64] :vector-i64
+  (if (>= b (t2-g M t2-s-nb)) M
+    (let [k (if (and (= (t2-bget M t2-a-breach b) 1) (or (= (t2-g M t2-s-pub) 0) (= (t2-g M t2-s-defer) 1)))
+              (t2-kcount M (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b) 0) 0)]
+      (t2-fast-plan (t2-bset M t2-a-fast b (if (and (>= k 2) (< k 2048)) k 0)) (inc b)))))
+(defn- t2-fuelplan [M :vector-i64] :vector-i64
+  (let [nb (t2-g M t2-s-nb)
+        M0 (-> M (t2-s t2-s-defer 0) (t2-s t2-s-ntst 0) (t2-s t2-s-cold 0) (t2-s t2-s-pend 0) (t2-s t2-s-curu 0)
+               (t2-wfill t2-a-uin 0 nb -2) (t2-wfill t2-a-uout 0 nb -2))
+        M1 (if (and (= (t2-g M t2-s-pub) 1) (= (t2-g M t2-s-fuel) 1)) (t2-u-iter M0 0) M0)]
+    (t2-fast-plan M1 0)))
+;; label of a trap of kind (0 udf, 1 brk #0) at the current point (M[last]): the shared plain stub, or with deferral the
+;; stub publishing x8 + u + pending
+(defn- t2-trapl [M :vector-i64 kind :i64] :vector-i64
+  (if (= (t2-g M t2-s-defer) 0) (t2-s M t2-s-last (+ (t2-lab M (t2-g M t2-s-nb)) kind))
+    (let [c (+ (t2-g M t2-s-curu) (t2-g M t2-s-pend)) key (+ (* kind 65536) c) n (t2-g M t2-s-ntst)]
+      (loop [i 0]
+        (cond (>= i n) (if (or (>= n 32) (< c 0) (>= c 4096)) (-> M (t2-fail 27) (t2-s t2-s-last (+ (t2-lab M (t2-g M t2-s-nb)) kind)))
+                         (let [l (t2-l-trap M n)]
+                           (-> M (t2-s (+ t2-a-tstub (* 2 n)) key) (t2-s (+ t2-a-tstub (* 2 n) 1) l) (t2-s t2-s-ntst (inc n))
+                               (t2-s t2-s-last l))))
+              (= (t2-g M (+ t2-a-tstub (* 2 i))) key) (t2-s M t2-s-last (t2-g M (+ t2-a-tstub (* 2 i) 1)))
+              :else (recur (inc i)))))))
+(defn- t2-e-tstubs [M :vector-i64 k :i64] :vector-i64
+  (if (>= k (t2-g M t2-s-ntst)) M
+    (let [key (t2-g M (+ t2-a-tstub (* 2 k))) kind (quot key 65536) c (- key (* kind 65536))]
+      (t2-e-tstubs (-> M (t2-deflab (t2-g M (+ t2-a-tstub (* 2 k) 1)))
+                       (cond-> (> c 0) (gn-emit (enc-add-i 8 8 c)))
+                       (gn-emit (enc-str 8 7 CTX-FUEL))
+                       (gn-emit (if (= kind 0) (gn-e-udf) (enc-brk 0))))
+                   (inc k)))))
+;; a quotient with a register divisor: zero divisor and MIN / -1 trap (brk #0) through the trap stub
+(defn- t2-quot [M :vector-i64 d :i64 x :i64 y :i64] :vector-i64
+  (let [M0 (t2-trapl M 1) l (t2-last M0)]
+    (-> M0 (t2-jmp FX-CB19 l (enc-cbz y 0)) (gn-emit (enc-cmn-i y 1)) (gn-emit (enc-bcond (enc-cond-ne) 3))
+        (gn-emit (enc-cmp-i x 1)) (t2-bcond 6 l) (gn-emit (enc-sdiv d x y)))))
 ;; ---- emission -----------------------------------------------------------------------------------------------------------
 (defn- t2-lab [M :vector-i64 b :i64] :i64 (+ (t2-g M t2-s-lab0) b))
 (defn- t2-deflab [M :vector-i64 l :i64] :vector-i64 (gn-put M (+ MM-LABEL-BASE l) (vector-at M MM-CODE-N)))
@@ -16375,7 +16497,7 @@
         sw (and (t2-comm? bop) (t2-isconst? M x0) (not (t2-isconst? M y0)))
         x (if sw y0 x0) y (if sw x0 y0)
         ky (t2-kval M y) yc (t2-isconst? M y)]
-    (cond (and (t2-dead? M v) (not= bop BOP-QUOT)) M
+    (cond (and (t2-dead? M v) (or (not= bop BOP-QUOT) (and yc (not= ky 0) (not= ky -1)))) M
           (and yc (or (= bop BOP-ADD) (= bop BOP-SUB)) (>= ky 0) (< ky 4096) (not (t2-isconst? M x)))
           (gn-emit M (if (= bop BOP-ADD) (enc-add-i d (t2-vf M x t2-f-reg) ky) (enc-sub-i d (t2-vf M x t2-f-reg) ky)))
           (and yc (or (= bop BOP-ADD) (= bop BOP-SUB)) (< ky 0) (> ky -4096) (not (t2-isconst? M x)))
@@ -16386,9 +16508,14 @@
           (and yc (or (= bop BOP-SHL) (= bop BOP-USHR) (= bop BOP-SSHR)) (not (t2-isconst? M x)))
           (let [rx (t2-vf M x t2-f-reg) k (bit-and ky 63)]
             (gn-emit M (cond (= bop BOP-SHL) (gn-e-lsl d rx k) (= bop BOP-USHR) (gn-e-lsr d rx k) :else (gn-e-asr d rx k))))
+          ;; multiplication by 2^p / 2^p+1 and division by a constant (never 0 or -1): the existing immediate forms
+          (and yc (not (t2-isconst? M x))
+               (or (and (= bop BOP-MUL) (or (> (gn-pow2 ky) 0) (and (> ky 2) (> (gn-pow2 (dec ky)) 0))))
+                   (and (= bop BOP-QUOT) (not= ky 0) (not= ky -1))))
+          (gn-bin-imm M bop d (t2-vf M x t2-f-reg) ky)
           :else
           (let [M1 (t2-src M x 16) rx (t2-last M1) M2 (t2-src M1 y 17) ry (t2-last M2)]
-            (if (= bop BOP-QUOT) (gn-quot M2 d rx ry) (gn-emit M2 (gn-bin-word bop d rx ry)))))))
+            (if (= bop BOP-QUOT) (t2-quot M2 d rx ry) (gn-emit M2 (gn-bin-word bop d rx ry)))))))
 ;; compare x with y (setting flags)
 ;; condition of a compare whose operands were swapped (x cc y == y cc' x)
 (defn- t2-swapcc [c :i64] :i64 (cond (= c 11) 12 (= c 12) 11 (= c 10) 13 (= c 13) 10 :else c))
@@ -16417,11 +16544,13 @@
                        (gn-emit M1 (if (= (t2-vf M v t2-f-a) UOP-NOT) (enc-eor-1 d rx) (enc-mvn d rx)))))
       (= op t2-vat)
       (let [B (t2-dbase M v) i (t2-res M (t2-vf M v t2-f-b))
-            M1 (if (= (bit-and (t2-xf M v t2-x-flags) 8) 8) (t2-nocheck M i) (t2-icheck M i (t2-dlen M v) (+ (t2-lab M (t2-g M t2-s-nb)) 0))) ri (t2-last M1)]
+            M1 (if (= (bit-and (t2-xf M v t2-x-flags) 8) 8) (t2-nocheck M i)
+                 (let [M0 (t2-trapl M 0)] (t2-icheck M0 i (t2-dlen M v) (t2-last M0)))) ri (t2-last M1)]
         (gn-emit M1 (if (< ri 0) (enc-ldr d B (* 8 (t2-kval M i))) (gn-e-ldrr d B ri 1))))
       (= op t2-vset)
       (let [B (t2-dbase M v) i (t2-res M (t2-vf M v t2-f-b))
-            M1 (if (= (bit-and (t2-xf M v t2-x-flags) 8) 8) (t2-nocheck M i) (t2-icheck M i (t2-dlen M v) (t2-lab M (t2-g M t2-s-nb)))) ri (t2-last M1)
+            M1 (if (= (bit-and (t2-xf M v t2-x-flags) 8) 8) (t2-nocheck M i)
+                 (let [M0 (t2-trapl M 0)] (t2-icheck M0 i (t2-dlen M v) (t2-last M0)))) ri (t2-last M1)
             M2 (t2-src M1 (t2-vf M v t2-f-c) 17) rx (t2-last M2)]
         (gn-emit M2 (if (< ri 0) (enc-str rx B (* 8 (t2-kval M i))) (gn-e-strr3 rx B ri))))
       (= op t2-tab)
@@ -16429,12 +16558,21 @@
         (if (and (t2-isconst? M i) (t2-small-index? (t2-kval M i) n))
           (gn-emit M (enc-ldr d T (* 8 (t2-kval M i))))
           (let [M1 (t2-src M i 16) ri (t2-last M1)
-                M2 (if (< n 4096) (gn-emit M1 (enc-cmp-i ri n)) (-> M1 (gn-mov-imm 17 n) (gn-emit (enc-cmp-r ri 17))))]
-            (-> M2 (t2-bcond 2 (+ (t2-lab M (t2-g M t2-s-nb)) 1)) (gn-emit (gn-e-ldrr d T ri 1))))))
-      (= op t2-fuel) (-> M (gn-emit (enc-subs-i 8 8 1)) (t2-bcond 3 (+ (t2-lab M (t2-g M t2-s-nb)) 2))
-                         (cond-> (= (t2-vf M v t2-f-a) 1) (gn-emit (enc-str 8 7 CTX-FUEL))))
-      (= op t2-pub) (gn-emit M (enc-str 8 7 CTX-FUEL))
-      (= op t2-trap) (gn-emit M (enc-brk (t2-vf M v t2-f-a)))
+                M2 (if (< n 4096) (gn-emit M1 (enc-cmp-i ri n)) (-> M1 (gn-mov-imm 17 n) (gn-emit (enc-cmp-r ri 17))))
+                M3 (t2-trapl M2 1)]
+            (-> M3 (t2-bcond 2 (t2-last M3)) (gn-emit (gn-e-ldrr d T ri 1))))))
+      ;; a charge: batched (pending in a fast block) or checked; published per charge only without deferral
+      (= op t2-fuel)
+      (let [a (t2-vf M v t2-f-a) pend (t2-g M t2-s-pend) M0 (t2-s M t2-s-curu (t2-u1 M v (t2-g M t2-s-curu)))]
+        (if (> pend 0) (t2-s M0 t2-s-pend (dec pend))
+          (-> M0 (gn-emit (enc-subs-i 8 8 1)) (t2-bcond 3 (+ (t2-lab M (t2-g M t2-s-nb)) 2))
+              (cond-> (and (= a 1) (= (t2-g M t2-s-defer) 0)) (gn-emit (enc-str 8 7 CTX-FUEL))))))
+      (= op t2-pub) (-> M (t2-s t2-s-curu 0) (cond-> (= (t2-g M t2-s-defer) 0) (gn-emit (enc-str 8 7 CTX-FUEL))))
+      (= op t2-trap)
+      (let [c (+ (t2-g M t2-s-curu) (t2-g M t2-s-pend))]
+        (-> M (cond-> (= (t2-g M t2-s-defer) 1)
+                (-> (cond-> (> c 0) (gn-emit (enc-add-i 8 8 c))) (gn-emit (enc-str 8 7 CTX-FUEL))))
+            (gn-emit (enc-brk (t2-vf M v t2-f-a)))))
       :else M)))
 ;; ---- phi copies on edge b -> s ------------------------------------------------------------------------------------------
 (def t2-s-nmv 26)
@@ -16492,7 +16630,7 @@
         (= (t2-bget M t2-a-breach (inc b)) 1) (inc b)
         :else (t2-nextb M (inc b))))
 (defn- t2-jump-from [M :vector-i64 b :i64 S :i64] :vector-i64
-  (if (= S (t2-nextb M b)) M (t2-jmp M FX-B26 (t2-lab M S) (enc-b 0))))
+  (if (and (= (t2-g M t2-s-cold) 0) (= S (t2-nextb M b))) M (t2-jmp M FX-B26 (t2-lab M S) (enc-b 0))))
 ;; leave block b for s on a BR or fallthrough edge: phi copies and the jump, threaded through a thread block s
 (defn- t2-goto [M :vector-i64 b :i64 s :i64] :vector-i64
   (if (or (< s 0) (not (t2-thread? M s)))
@@ -16558,13 +16696,14 @@
   (let [g (t2-vf M v t2-f-a)]
     (if tail
       (-> M (t2-call-args v) (t2-handoff v) (t2-unframe) (gn-fix FX-BL26 g) (gn-emit (enc-b 0)))
-      (let [M1 (-> M (t2-call-args v) (t2-handoff v) (gn-fix FX-BL26 g) (gn-emit (enc-bl 0))
+      (let [M1 (-> M (cond-> (= (t2-g M t2-s-defer) 1) (gn-emit (enc-str 8 7 CTX-FUEL)))
+                   (t2-call-args v) (t2-handoff v) (gn-fix FX-BL26 g) (gn-emit (enc-bl 0))
                    (gn-emit (enc-ldr 7 31 0)) (gn-emit (enc-ldr 8 7 CTX-FUEL)))
             r (t2-vf M v t2-f-reg)]
         (-> M1 (cond-> (>= r 0) (gn-mov r 0)) (t2-e-redesc 0))))))
 (defn- t2-stub-label [M :vector-i64 b :i64 s :i64] :vector-i64
-  (let [n (t2-g M t2-s-nstub) l (+ (t2-lab M (t2-g M t2-s-nb)) 3 n) a (+ t2-a-stub (* 3 n))]
-    (if (>= n (* 2 (t2-g M t2-s-nb))) (t2-fail M 16)
+  (let [n (t2-g M t2-s-nstub) l (t2-l-estub M n) a (+ t2-a-stub (* 3 n))]
+    (if (>= n (* 4 (t2-g M t2-s-nb))) (-> M (t2-fail 16) (t2-s t2-s-last (t2-lab M s)))
       (-> M (t2-s a l) (t2-s (+ a 1) b) (t2-s (+ a 2) s) (t2-s t2-s-nstub (inc n)) (t2-s t2-s-last l)))))
 (defn- t2-e-brz [M :vector-i64 b :i64 v :i64] :vector-i64
   (let [taken (t2-bget M t2-a-bt b) fall (t2-bget M t2-a-bf b) nz (t2-vf M v t2-f-b)
@@ -16574,15 +16713,21 @@
       (let [tk (if (t2-thread? M taken) (t2-known M b taken true) -1)
             S (if (>= tk 0) (t2-thread-dest M taken tk) taken)
             from (if (>= tk 0) taken b)
-            M0 (if (t2-needs-copies? M from S) (t2-stub-label M from S) (t2-s M t2-s-last (t2-lab M S)))
+            ;; the taken target is the next block: branch on the inverse condition to the fallthrough successor instead
+            inv (and (= (t2-g M t2-s-cold) 0) (= S (t2-nextb M b)) (not (t2-needs-copies? M from S))
+                     (>= fall 0) (not= fall S) (not (t2-thread? M fall)))
+            M0 (cond inv (if (t2-needs-copies? M b fall) (t2-stub-label M b fall) (t2-s M t2-s-last (t2-lab M fall)))
+                     (t2-needs-copies? M from S) (t2-stub-label M from S)
+                     :else (t2-s M t2-s-last (t2-lab M S)))
             l (t2-last M0)
+            jnz (if inv (= nz 0) (= nz 1))
             fused (and (= (t2-op-of M0 c) t2-cmp) (= (bit-and (t2-xf M0 c t2-x-flags) 1) 1))
             M1 (if fused
                  (let [cc (t2-cmp-cond M0 c)]
-                   (-> M0 (t2-e-cmpflags c) (t2-bcond (if (= nz 1) cc (bit-xor cc 1)) l)))
+                   (-> M0 (t2-e-cmpflags c) (t2-bcond (if jnz cc (bit-xor cc 1)) l)))
                  (let [Ma (t2-src M0 c 16) rc (t2-last Ma)]
-                   (t2-jmp Ma FX-CB19 l (if (= nz 1) (enc-cbnz rc 0) (enc-cbz rc 0)))))]
-        (t2-goto M1 b fall)))))
+                   (t2-jmp Ma FX-CB19 l (if jnz (enc-cbnz rc 0) (enc-cbz rc 0)))))]
+        (if inv M1 (t2-goto M1 b fall))))))
 (defn- t2-e-vals [M :vector-i64 b :i64 v :i64 v1 :i64] :vector-i64
   (if (>= v v1) M
     (let [op (t2-op-of M v)]
@@ -16592,13 +16737,28 @@
             (= op t2-br) (t2-goto M b (t2-bget M t2-a-bt b))
             (= op t2-brz) (t2-e-brz M b v)
             :else (t2-e-vals (t2-e-val M v) b (inc v) v1)))))
-(defn- t2-e-block [M :vector-i64 b :i64] :vector-i64
-  (let [M1 (t2-e-vals (t2-deflab M (t2-lab M b)) b (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b))
+(defn- t2-e-body [M :vector-i64 b :i64] :vector-i64
+  (let [M1 (t2-e-vals M b (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b))
         last (t2-lastval M b) op (if (> last 0) (t2-op-of M last) 0)]
     ;; a block without a terminator falls into its successor
     (if (or (= op t2-ret) (= op t2-br) (= op t2-brz) (= op t2-trap))
       M1
       (t2-goto M1 b (t2-bget M t2-a-bf b)))))
+;; a batched block charges its k units at once, its cold copy (fuel below k) charges them one by one
+(defn- t2-e-block [M :vector-i64 b :i64] :vector-i64
+  (let [k (t2-bget M t2-a-fast b)
+        M0 (-> M (t2-deflab (t2-lab M b)) (t2-s t2-s-curu (t2-bget M t2-a-uin b)) (t2-s t2-s-pend k))
+        M1 (if (> k 0) (-> M0 (gn-emit (enc-subs-i 8 8 k)) (t2-bcond 3 (t2-l-cold M0 b))) M0)]
+    (t2-e-body M1 b)))
+(defn- t2-e-colds [M :vector-i64 b :i64] :vector-i64
+  (if (>= b (t2-g M t2-s-nb)) M
+    (let [k (t2-bget M t2-a-fast b)]
+      (t2-e-colds (if (and (> k 0) (= (t2-bget M t2-a-breach b) 1))
+                    (-> M (t2-deflab (t2-l-cold M b)) (gn-emit (enc-add-i 8 8 k))
+                        (t2-s t2-s-curu (t2-bget M t2-a-uin b)) (t2-s t2-s-pend 0) (t2-s t2-s-cold 1)
+                        (t2-e-body b) (t2-s t2-s-cold 0))
+                    M)
+                  (inc b)))))
 (defn- t2-e-blocks [M :vector-i64 b :i64] :vector-i64
   (if (>= b (t2-g M t2-s-nb)) M
     (t2-e-blocks (if (= (t2-bget M t2-a-breach b) 1) (t2-e-block M b) M) (inc b))))
@@ -16615,7 +16775,7 @@
 (defn- t2-e-desc-from [M :vector-i64 k :i64 rh :i64] :vector-i64
   (let [B (t2-g M (+ t2-a-pd (* 4 k) 1)) L (t2-g M (+ t2-a-pd (* 4 k) 2))
         n (t2-g M t2-s-ndst)
-        li (+ (t2-lab M (* 3 (t2-g M t2-s-nb))) 3 (* 2 n))
+        li (t2-l-dstub M n)
         ld (inc li)
         a (+ t2-a-dstub (* 3 n))]
     (if (>= n 60) (t2-fail M 26)
@@ -16640,7 +16800,7 @@
   (if true (t2-e-desc M k)
     (let [B (t2-g M (+ t2-a-pd (* 4 k) 1)) L (t2-g M (+ t2-a-pd (* 4 k) 2))
           n (t2-g M t2-s-ndst)
-          lc (+ (t2-lab M (* 3 (t2-g M t2-s-nb))) 3 (* 2 n))
+          lc (t2-l-dstub M n)
           lj (inc lc)]
       (if (>= n 60) (t2-fail M 26)
         (let [M1 (-> M (t2-s t2-s-ndst (inc n)) (t2-s (+ t2-a-dstub (* 3 n)) -1)
@@ -16668,7 +16828,7 @@
   (let [old (gn-fnf M f FF-CODE) entry (vector-at M MM-CODE-N) fixn (vector-at M MM-FIX-N) labn (vector-at M MM-LABEL-N)
         M1 (t2-emit1 M f)
         body (- (t2-g M1 t2-s-bodyend) entry)]
-    (if (< body (- entry old))
+    (if (and (t2-ok? M1) (< body (- entry old)))
       (t2-s M1 (+ t2-a-st f) 1)
       (-> M1 (gn-put MM-CODE-N entry) (gn-put MM-FIX-N fixn) (gn-put MM-LABEL-N labn)
           (gn-put (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) old) (t2-s (+ t2-a-st f) 2)))))
@@ -16684,13 +16844,13 @@
                (cond-> (> (t2-g M t2-s-ncalls) 0) (-> (gn-emit (enc-sub-i 31 31 16)) (gn-emit (enc-str 7 31 0))))
                (t2-e-descs 0) (t2-e-tabs 0) (t2-param-moves 1)
                (t2-e-blocks 0))
-        M2 (t2-e-dstubs (t2-e-stubs (t2-s M1 t2-s-bodyend (vector-at M1 MM-CODE-N)) 0) 0)
+        M2 (-> (t2-s M1 t2-s-bodyend (vector-at M1 MM-CODE-N)) (t2-e-colds 0) (t2-e-stubs 0) (t2-e-dstubs 0) (t2-e-tstubs 0))
         lu (t2-lab M2 nb)]
     (-> M2 (t2-deflab lu) (gn-emit (gn-e-udf))
         (t2-deflab (+ lu 1)) (gn-emit (enc-brk 0))
         (t2-deflab (+ lu 2)) (gn-emit (enc-str 31 7 CTX-FUEL)) (gn-emit (enc-brk 0))
         (gn-emit (enc-brk 1))
-        (gn-put MM-LABEL-N (+ (t2-lab M2 (* 3 nb)) 3 (* 2 (t2-g M2 t2-s-ndst))))
+        (gn-put MM-LABEL-N (t2-l-dstub M2 (t2-g M2 t2-s-ndst)))
         (gn-put (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) entry))))
 ;; ---- driver -------------------------------------------------------------------------------------------------------------
 ;; T2 is a size-budgeted tier (like the post-emission passes' uqd-counts gate): programs above t2-max-sir SIR records
@@ -16747,7 +16907,7 @@
         dp (t2-g MX t2-s-xdp)
         nvar (+ ns 1 dp)]
     (if (or (not= (t2-g MX t2-s-fail) 0) (>= nvar t2-maxvar) (> np 7)) M
-      (let [M1 (-> MX (t2-s t2-s-np np) (t2-s t2-s-ns ns) (t2-s t2-s-nvar nvar) (t2-wzero t2-a-pd 0 32) (t2-cfg))]
+      (let [M1 (-> MX (t2-s t2-s-np np) (t2-s t2-s-ns ns) (t2-s t2-s-pub pub) (t2-s t2-s-nvar nvar) (t2-wzero t2-a-pd 0 32) (t2-cfg))]
         (if (or (not (t2-ok? M1)) (> (t2-bget M1 t2-a-bpn 0) 0)) M
           (let [M2 (-> M1 (t2-clear-defs 0 nvar (t2-g M1 t2-s-nb)) (t2-build 0) (t2-gvn))]
             (if (not (t2-ok? M2)) M
@@ -16761,9 +16921,9 @@
                           (let [M6 (-> M5 (t2-iv-vals 1 nv) (t2-iv-blocks 0) (t2-regalloc))
                                 cs (gn-max (t2-maxcs M6 1 nv 18) (t2-maxcs-fixed M6 18))
                                 ncs (if (>= cs 19) (inc (quot (- cs 19) 2)) 0)
-                                labels-ok (< (+ (vector-at M6 MM-LABEL-N) (* 3 (t2-g M6 t2-s-nb)) 140) MM-LABEL-CAP)]
+                                labels-ok (< (+ (vector-at M6 MM-LABEL-N) (* 6 (t2-g M6 t2-s-nb)) 160) MM-LABEL-CAP)]
                             (if (or (not (t2-ok? M6)) (not labels-ok)) M
-                              (t2-emit (-> M6 (t2-s t2-s-ncs ncs) (t2-s t2-s-lab0 (vector-at M6 MM-LABEL-N))) f))))))))))))))))
+                              (t2-emit (-> M6 (t2-s t2-s-ncs ncs) (t2-s t2-s-lab0 (vector-at M6 MM-LABEL-N)) (t2-fuelplan)) f))))))))))))))))
 ;; F's old code branches to a label outside its own body (code shared with a twin/clone): T2 would lose that path
 (defn- t2-xfn-jump? [M :vector-i64 k :i64 lo :i64 hi :i64] :bool
   (if (>= k (vector-at M MM-FIX-N)) false

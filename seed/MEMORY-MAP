@@ -20,7 +20,7 @@
  ;; Index 0 of every table is the NULL record: it is never written, fills start at 1, and a field value 0
  ;; means "none" (no child, no symbol, no function, no label ...). `mem-new` sets every *-N fill to 1.
  :constants
- [[:c MM-WORDS 12845056 "words in M (98 MiB); below the loader's 16M-item per-vector limit"]
+ [[:c MM-WORDS 13107200 "words in M (100 MiB); below the loader's 16M-item per-vector limit"]
   [:c MM-NULL 0 "the null index of every table"]
   [:c MM-LAYOUT-VERSION 1 "value of M[MM-VERSION] after mem-new"]
 
@@ -92,15 +92,17 @@
   ;; All later bases shift equally; heap capacity and every other CAP/W stay fixed.
   ;; T2 tier (Claude cosci 2026-10-14): SIR +98304 records / +393216 words; all later bases shift equally, MM-WORDS stays
   ;; below the loader's 16M-item vector limit; other capacities and the heap size are unchanged.
+  ;; T2 code growth (2026-10-14): CODE +131072 words, FIX +32768 records; later bases, MM-HEAP-END and MM-WORDS +262144
+  ;; (heap size unchanged, MM-WORDS still below the 16M-item vector limit).
   [:c MM-SIR-BASE 6160640] [:c MM-SIR-W 4] [:c MM-SIR-CAP 393216]
   [:c MM-LABEL-BASE 7733504] [:c MM-LABEL-W 1] [:c MM-LABEL-CAP 131072]
-  [:c MM-CODE-BASE 7864576] [:c MM-CODE-W 1] [:c MM-CODE-CAP 524288]
-  [:c MM-FIX-BASE 8388864] [:c MM-FIX-W 4] [:c MM-FIX-CAP 65536]
-  [:c MM-LIT-BASE 8651008] [:c MM-LIT-W 4] [:c MM-LIT-CAP 16384]
-  [:c MM-LITB-BASE 8716544] [:c MM-LITB-W 1] [:c MM-LITB-CAP 262144]
-  [:c MM-EXP-BASE 8978688] [:c MM-EXP-W 4] [:c MM-EXP-CAP 1024]
-  [:c MM-OUT-BASE 8982784] [:c MM-OUT-W 1] [:c MM-OUT-CAP 2097152]
-  [:c MM-HEAP-BASE 11079936] [:c MM-HEAP-END 12845056]
+  [:c MM-CODE-BASE 7864576] [:c MM-CODE-W 1] [:c MM-CODE-CAP 655360]
+  [:c MM-FIX-BASE 8519936] [:c MM-FIX-W 4] [:c MM-FIX-CAP 98304]
+  [:c MM-LIT-BASE 8913152] [:c MM-LIT-W 4] [:c MM-LIT-CAP 16384]
+  [:c MM-LITB-BASE 8978688] [:c MM-LITB-W 1] [:c MM-LITB-CAP 262144]
+  [:c MM-EXP-BASE 9240832] [:c MM-EXP-W 4] [:c MM-EXP-CAP 1024]
+  [:c MM-OUT-BASE 9244928] [:c MM-OUT-W 1] [:c MM-OUT-CAP 2097152]
+  [:c MM-HEAP-BASE 11342080] [:c MM-HEAP-END 13107200]
 
   ;; --- 1.3 record fields (offset inside a record) -------------------------------------------------------
   ;; TOK: one per token, source order. Written by 10-lex only.
