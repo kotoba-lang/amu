@@ -11824,29 +11824,29 @@
    (recur (-> m (cond-> (= k 2) (gn-emit (gn-e-lsl 16 (gn-sreg M 2) (gn-pow2 (gn-sir M (+ wp 39) IF-B)))))
     (gn-mov-imm 17 b) (gn-emit (enc-add-r 17 (if (= k 2) 16 index) 17))
     (gn-emit (gn-e-addsl r 3 17 3))) (inc k))))))
-;; tbnz xt, #bit, off (words)
-(defn- tbat-tbnz [t :i64 bit :i64 off :i64] :i64
- (+ 0x37000000 (i64-shift-left (u64-shift-right bit 5) 31) (i64-shift-left (bit-and bit 31) 19)
-    (i64-shift-left (bit-and off 16383) 5) (bit-and t 31)))
 ;; flag a power of two below 4096 and stride below 4096: the leaf test is one tbnz, the bounds compares take immediates and
 ;; the child is chosen without a branch (csel of the two child tables, then one load)
 (defn- tbat-walk-emit [M :vector-i64 G :vector-i64 flag :i64 stride :i64 vote :i64] :vector-i64
  (if (and (> (gn-pow2 flag) 0) (< flag 4096) (> stride 0) (< stride 4096))
+  ;; Bottom-tested: node 0 is never a leaf, each step ends with its charge and branches back while bit `flag` is clear.
+  ;; x8 is private until the leaf publishes it, and every cold exit replays the iteration from the published fuel,
+  ;; so a charge is subs x8 / b.lo (x8 may wrap on that exit). The leaf index is node & (flag - 1) by one and #imm.
   (let [m0 (-> M (gn-mov-imm 4 0) (gn-emit (enc-ldr 8 7 CTX-FUEL))
-         (gn-emit (enc-cmp-i 8 1)) (xd-cold G (enc-cond-lo)) (gn-emit (enc-sub-i 8 8 1)))
+         (gn-emit (enc-subs-i 8 8 1)) (xd-cold G (enc-cond-lo)))
         loop-at (vector-at m0 MM-CODE-N)
-        m1 (-> m0 (gn-emit 0) (gn-emit (enc-cmp-i 4 flag)) (xd-cold G (enc-cond-hs))
+        m1 (-> m0 (gn-emit (enc-cmp-i 4 flag)) (xd-cold G (enc-cond-hs))
           (gn-emit (gn-e-ldrr 9 10 4 1)) (gn-emit (gn-e-ldrr 5 11 4 1))
           (gn-emit (enc-cmp-i 9 stride)) (xd-cold G (enc-cond-hs))
           (gn-emit (gn-e-ldrr 6 12 9 1)) (gn-emit (enc-cmp-r 6 5))
           (gn-emit (enc-csel 16 14 13 (enc-cond-ge))) (gn-emit (gn-e-ldrr 4 16 4 1))
-          (gn-emit (enc-cmp-i 8 1)) (xd-cold G (enc-cond-lo))
-          (gn-emit (enc-sub-i 8 8 1)) (gn-emit (enc-b 0)))
-        leaf (vector-at m1 MM-CODE-N)
-        m2 (-> m1 (gn-mov-imm 16 (dec flag)) (gn-emit (enc-and-r 9 4 16))
+          (gn-emit (enc-subs-i 8 8 1)) (xd-cold G (enc-cond-lo)))
+        back (vector-at m1 MM-CODE-N)
+        ;; tst x4, #flag ; b.eq loop (a b.cond back edge keeps the T2 tight-loop signature; tbz would not)
+        m2 (-> m1 (gn-emit (gn-e-bf 0xf2400000 31 4 (bit-and (- 64 (gn-pow2 flag)) 63) 0))
+          (gn-emit (enc-bcond (enc-cond-eq) (- loop-at (inc back))))
+          (gn-emit (gn-e-bf 0x92400000 9 4 0 (dec (gn-pow2 flag))))
           (gn-emit (gn-e-ldrr vote 15 9 1)) (gn-emit (enc-str 8 7 CTX-FUEL)))]
-   (-> m2 (gn-put (+ MM-CODE-BASE loop-at) (tbat-tbnz 4 (gn-pow2 flag) (- leaf loop-at)))
-     (gn-put (+ MM-CODE-BASE (dec leaf)) (enc-b (- loop-at (dec leaf))))))
+   m2)
   (tbat-walk-emit0 M G flag stride vote)))
 (defn- tbat-walk-emit0 [M :vector-i64 G :vector-i64 flag :i64 stride :i64 vote :i64] :vector-i64
  (let [m0 (-> M (gn-mov-imm 4 0) (gn-emit (enc-ldr 8 7 CTX-FUEL))
