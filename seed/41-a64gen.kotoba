@@ -5675,15 +5675,25 @@
    (if (and (= op OP-CALL) (= a f)
        (let [q (cw-stage M owner)] (or (= q 0) (not= (cw-next M q) f)))) true
     (cw-head M (inc j) (if (= op OP-FN) a owner) f)))))
-(defn- cw-emit [M :vector-i64 f :i64 n :i64] :vector-i64
+;; The admitted chain is linear, with one unchanged store per source stage.
+;; x9 still holds the last stored value when the next stage reads that exact
+;; item. Its sign width survives forwarding; widening sign extension is then
+;; idempotent. Any other read or a constant establishes a fresh value fact.
+(defn- cw-emit-available [M :vector-i64 f :i64 n :i64 last-index :i64 last-width :i64] :vector-i64
  (if (= n 0) (-> M (gn-vclear) (gn-fix FX-BL26 f) (gn-emit (enc-b 0)))
   (let [q (cw-stage M f) v (cw-value-end M q) sign (cw-sign M q)
-        index (gn-sir M (inc v) IF-B)]
-   (cw-emit (-> M
-     (cond-> (= (gn-op M q) OP-LGET) (gn-emit (enc-ldr 9 10 (* 8 (gn-sir M (inc q) IF-B)))))
+        index (gn-sir M (inc v) IF-B) read (= (gn-op M q) OP-LGET)
+        forward (and read (= (gn-sir M (inc q) IF-B) last-index))
+        width (if (> sign 0) (bit-and sign 511) 0)
+        narrow (and (> width 0) (not (and forward (> last-width 0) (<= last-width width))))
+        next-width (if (> width 0) width (if forward last-width 0))]
+   (cw-emit-available (-> M
+     (cond-> (and read (not forward)) (gn-emit (enc-ldr 9 10 (* 8 (gn-sir M (inc q) IF-B)))))
      (cond-> (= (gn-op M q) OP-CONST) (gn-mov-imm 9 (gn-sir M q IF-B)))
-     (cond-> (> sign 0) (gn-emit (gn-e-bf 0x93400000 9 9 0 (dec (bit-and sign 511)))))
-     (gn-emit (enc-str 9 10 (* 8 index)))) (cw-next M q) (dec n)))))
+     (cond-> narrow (gn-emit (gn-e-bf 0x93400000 9 9 0 (dec width))))
+     (gn-emit (enc-str 9 10 (* 8 index)))) (cw-next M q) (dec n) index next-width))))
+(defn- cw-emit [M :vector-i64 f :i64 n :i64] :vector-i64
+ (cw-emit-available M f n -1 0))
 ;; ADR0357: same-register store-to-load availability in existing CW admission.
 ;; No publication is removed. All preflight helpers are read-only; false keeps
 ;; the original explicit reload. Counts precede every variable-address lookup.
