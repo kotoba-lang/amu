@@ -7607,7 +7607,14 @@
         (and (= np 3) (ru-admit M j)) (ru-entry2 M j true)
         (and (= np 3) (rl-admit M j)) (rl-entry2 M j true)
         (and (= np 3) (> (sw-admit M j) 0)) (sw-entry2 M j true)
-        :else M)))
+        :else (kpre-ip M j np))))
+;; the leaf prologue will set private fuel (freg 1) when leaf = 1 and fuel = 1: ip-admit is asked under that state,
+;; which is then restored to 0 for the prologue (the pre-mode kernel itself changes no generator state)
+(defn- kpre-ip [M :vector-i64 j :i64 np :i64] :vector-i64
+ (if (and (= np 4) (= (gn-g M gn-f-leaf) 1) (= (gn-g M gn-f-fuel) 1) (= (gn-g M gn-f-freg) 0))
+  (let [M1 (gn-gs M gn-f-freg 1) ok (ip-admit M1 j) M2 (if ok (ip-entry2 M1 j true) M1)]
+   (gn-gs M2 gn-f-freg 0))
+  M))
 
 (defn- srloop-admit [M :vector-i64 i :i64] :i64
  (if (or (<= i 2) (>= (+ i 69) (vector-at M MM-SIR-N))
@@ -7964,11 +7971,16 @@
  (>= a 0) (<= a 4095) (>= b 0) (<= b 4095) (not= a b)
  (ip-shape M p f a b 0) (ip-labels M p 0)
  (= (gn-sreg M 1) 0) (= (gn-sreg M 2) 1) (= (gn-sreg M 3) 2) (= (gn-sreg M 4) 3))))))
-(defn- ip-entry [M :vector-i64 i :i64] :vector-i64
+;; pre: before the frame (kpre-entry). The parameters already live in x0..x3 and x8 is the leaf's private fuel:
+;; the head loads it and pays the entry charge (an empty counter goes to the prologue, which traps), every guard
+;; failure enters the prologue (which reloads x8), and the exit publishes x8 and returns.
+(defn- ip-entry [M :vector-i64 i :i64] :vector-i64 (ip-entry2 M i false))
+(defn- ip-entry2 [M :vector-i64 i :i64 pre :bool] :vector-i64
  (if (not (ip-admit M i)) M
  (let [p (dec i) a (gn-sir M (+ p 8) IF-B) b (gn-sir M (+ p 13) IF-B)
-  distance (if (> a b) (- a b) (- b a)) G (vector-alloc 19)
- m0 (-> M (gn-emit (enc-cmp-i 1 4095)) (ri-cold G 8)
+  distance (if (> a b) (- a b) (- b a)) G (vector-alloc 21)
+ m0 (-> M (cond-> pre (-> (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-emit (enc-subs-i 8 8 1)) (ri-cold G (enc-cond-lo))))
+  (gn-emit (enc-cmp-i 1 4095)) (ri-cold G 8)
   (gn-mov-imm 9 distance) (gn-emit (enc-cmp-r 1 9)) (ri-cold G 2)
   (gn-emit (enc-ldr 16 7 312)) (gn-emit (enc-ldr 16 16 0)) (gn-emit (enc-sub-i 17 0 1))
   (gn-emit (enc-cmp-r 17 16)) (ri-cold G 2) (gn-emit (enc-ldr 16 7 320))
@@ -7999,7 +8011,8 @@
   (gn-emit (enc-subs-i 5 5 1))) cb (vector-at m7 MM-CODE-N)
  m8 (gn-emit m7 (enc-bcond 1 (- cp cb))) final (vector-at m8 MM-CODE-N)
  m9 (-> m8 (gn-put (+ MM-CODE-BASE noCopy) (enc-cbz 5 (- final noCopy))) (gn-emit (enc-str 2 12 0)) (gn-emit (enc-str 3 13 0))
-  (gn-epilogue) (gn-gs gn-f-dead 0)) end (vector-at m9 MM-CODE-N)]
+  (cond-> pre (-> (gn-emit (enc-str 8 7 CTX-FUEL)) (gn-emit (enc-ret))))
+  (cond-> (not pre) (-> (gn-epilogue) (gn-gs gn-f-dead 0)))) end (vector-at m9 MM-CODE-N)]
  (ri-patch m9 G 0 end))))
 (defn- ip-labels [M :vector-i64 p :i64 k :i64] :bool
  (if (= k 5) true (let [o (case k 0 2 1 17 2 65 3 79 4 80 0) l (gn-sir M (+ p o) IF-A)]
