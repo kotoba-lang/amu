@@ -6364,14 +6364,16 @@
               (gn-mov-imm 16 1152921504606846976) (gn-emit (enc-cmp-r 3 16))) b4 (vector-at m4 MM-CODE-N)
          m5 (-> m4 (gn-emit (enc-bcond (enc-cond-hs) 0)) (gn-mov-imm 16 bound)
               (gn-emit (enc-cmp-r 16 3))) b5 (vector-at m5 MM-CODE-N)
+         ;; x4 = &items[base] (the table entries index from base); a zero value stores xzr
+         vr (if (= value 0) 31 13)
          m6 (-> m5 (gn-emit (enc-bcond (enc-cond-hs) 0)) (gn-emit (enc-ldr 4 7 328))
-              (gn-emit (gn-e-addsl 4 4 17 3)) (gn-mov 11 rk) (gn-mov-imm 13 value)
+              (gn-emit (gn-e-addsl 4 4 17 3)) (sw-base base) (gn-mov 11 rk) (cond-> (not= value 0) (gn-mov-imm 13 value))
               ;; Complete preflight succeeded: exactly two original charges
               ;; per visited store, including the final backedge charge.
               (gn-emit (enc-sub-r 8 8 9)) (gn-emit (enc-str 8 7 CTX-FUEL)))
          adr (vector-at m6 MM-CODE-N) m7 (gn-emit m6 (gn-e-adr 10)) loop-at (vector-at m7 MM-CODE-N)
-         m8 (-> m7 (gn-emit (gn-e-ldrr 12 10 11 1)) (gn-emit (enc-add-i 12 12 base))
-              (gn-emit (gn-e-strr3 13 4 12)) (gn-emit (enc-add-i 11 11 1))
+         m8 (-> m7 (gn-emit (gn-e-ldrr 12 10 11 1))
+              (gn-emit (gn-e-strr3 vr 4 12)) (gn-emit (enc-add-i 11 11 1))
               (gn-emit (enc-cmp-r 11 re))) branch (vector-at m8 MM-CODE-N)
          m9 (-> m8 (gn-emit (enc-bcond (enc-cond-lo) (- loop-at branch)))
               (gn-mov 0 rv) (gn-epilogue)) table (vector-at m9 MM-CODE-N)
@@ -6382,6 +6384,10 @@
                (gn-put (+ MM-CODE-BASE adr) (+ (gn-e-adr 10)
                 (i64-shift-left (bit-and delta 3) 29) (i64-shift-left (i64-shift-right delta 2) 5))))]
     (gp-restore m11 B)))))
+;; x4 += 8 base
+(defn- sw-base [M :vector-i64 base :i64] :vector-i64
+ (if (>= (enc-add-i 4 4 (* 8 base)) 0) (gn-emit M (enc-add-i 4 4 (* 8 base)))
+  (-> M (gn-mov-imm 16 (* 8 base)) (gn-emit (enc-add-r 4 4 16)))))
 (defn- xd-shape [M :vector-i64 p :i64 f :i64 k :i64] :bool
  (let [h (gn-sir M (+ p 2) IF-A) b (gn-sir M (+ p 8) IF-B)
        e (gn-sir M (+ p 18) IF-A) a (gn-sir M (+ p 50) IF-B) z (gn-sir M (+ p 52) IF-A)
