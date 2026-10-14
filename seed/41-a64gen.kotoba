@@ -15421,8 +15421,8 @@
 (def t2-a-vx (+ t2-a-ue (* t2-maxb 32)))   ; per value 6 words: pos start end flags next uses
 (def t2-xw 6)
 (def t2-a-mv (+ t2-a-vx (* t2-maxv t2-xw))) ; pending moves: 64 x (dst, src, kind, k)
-(def t2-a-pd (+ t2-a-mv 256))              ; descriptor slot k: 4 words (active?, base reg, len reg, handle value);
-                                           ; slots 0..7 = vector parameters, 8..15 = vector call results
+(def t2-a-pd (+ t2-a-mv 256))              ; descriptor slot k (one per handle class, part4): 4 words (active?, base reg,
+                                           ; len reg, 1 + index of the class's parameter or 0)
 (def t2-a-tb (+ t2-a-pd 64))               ; tables: 16 x (lit, reg)
 (def t2-a-sl (+ t2-a-tb 32))               ; start-list heads per position
 (def t2-maxpos 2560)
@@ -15431,17 +15431,20 @@
 ;; t2-fail code k), read only by diagnostic builds
 (def t2-a-st (+ t2-a-re 64))
 (def t2-a-calls (+ t2-a-st MM-FN-CAP 4096 t2-maxb 4096))   ; positions of real calls (<= 256)
-;; after the persistent handoff records: table base adjustments 16 (t2-a-tbadj) and tree leaves 64 x 6 (t2-a-trl), part2x
+;; after the persistent handoff records: table base adjustments 16 (t2-a-tbadj) and tree leaves 64 x 6 (t2-a-trl), part2x;
+;; then the handle classes (t2-hnd-words, from t2-a-uf, part4)
+(def t2-hnd-words (+ (* 3 t2-maxv) 256 16 (* 8 t2-maxb)))
 (def t2-size (+ t2-a-calls 256 192 (* 3 t2-maxb) 64 4096 t2-maxb (* 8 12) (* 64 10) (* 2 t2-maxb) 6 t2-maxv 32 MM-FN-CAP 4097
-                16 (* 64 6) t2-str-words))
+                16 (* 64 6) t2-hnd-words t2-str-words))
 ;; string support at the END of the block (t2-size - t2-str-words): 8 counters (t2-a-sx: string labels used, string stubs,
 ;; size credit; zeroed per compile), string slots 8 x 8 words (t2-a-sd), string stubs 40 x 6 words (t2-a-ss), per block
-;; the slots read from its start on (t2-a-sneed)
-(def t2-str-words (+ 8 64 256 t2-maxb))
+;; the slots read from its start on (t2-a-sneed); then per block the jump-threading decision (t2-a-thr, part4t)
+(def t2-str-words (+ 8 64 256 t2-maxb t2-maxb))
 (def t2-a-sx (- t2-size t2-str-words))
 (def t2-a-sd (+ t2-a-sx 8))
 (def t2-a-ss (+ t2-a-sd 64))
 (def t2-a-sneed (+ t2-a-ss 256))
+(def t2-a-thr (+ t2-a-sneed t2-maxb))
 ;; value fields
 (def t2-f-op 0) (def t2-f-a 1) (def t2-f-b 2) (def t2-f-c 3) (def t2-f-blk 4) (def t2-f-link 5) (def t2-f-repl 6) (def t2-f-reg 7)
 ;; value ops
@@ -16567,9 +16570,10 @@
         (= op t2-br) (= op t2-brz) (= op t2-slen) (not= (bit-and (t2-xf M v t2-x-flags) 165) 0))))
 (defn- t2-use1 [M :vector-i64 x :i64] :vector-i64
   (let [r (t2-res M x)] (if (> r 0) (t2-xs M r t2-x-uses (inc (t2-xf M r t2-x-uses))) M)))
-;; count uses: operands (resolved), phi operands; vector handles of vat/vset are not uses (descriptor registers serve),
-;; nor is the handle of string-length (its slot's registers serve); string-code-point-at reads its handle and index
-;; (the host call of its slow path takes both)
+;; count uses: operands (resolved), phi operands; vector handles of vat/vset count only in a function with a non-tail
+;; real call (descriptor refresh after a call reads the register of the class member desc-live across it); without one
+;; the descriptor registers alone serve; nor is the handle of string-length a use (its slot's registers serve);
+;; string-code-point-at reads its handle and index (the host call of its slow path takes both)
 (defn- t2-uses-phi [M :vector-i64 start :i64 k :i64 n :i64] :vector-i64
   (if (>= k n) M (t2-uses-phi (t2-use1 M (t2-g M (+ t2-a-phiop start k))) start (inc k) n)))
 (defn- t2-uses [M :vector-i64 v :i64 nv :i64] :vector-i64
@@ -16579,8 +16583,8 @@
                    (and (= op t2-phi) (= (t2-vf M v t2-f-repl) 0)) (t2-uses-phi M a 0 b)
                    (or (= op t2-bin) (= op t2-cmp)) (-> M (t2-use1 b) (t2-use1 c))
                    (= op t2-un) (t2-use1 M b)
-                   (= op t2-vat) (t2-use1 M b)
-                   (= op t2-vset) (-> M (t2-use1 b) (t2-use1 c))
+                   (= op t2-vat) (-> M (t2-use1 b) (cond-> (= (t2-g M t2-s-hc) 1) (t2-use1 a)))
+                   (= op t2-vset) (-> M (t2-use1 b) (t2-use1 c) (cond-> (= (t2-g M t2-s-hc) 1) (t2-use1 a)))
                    (= op t2-tab) (t2-use1 M c)
                    (t2-cpx? op) (-> M (t2-use1 b) (t2-use1 c))
                    (= op t2-sel) (-> M (t2-use1 a) (t2-use1 b) (t2-use1 c))
@@ -16629,7 +16633,7 @@
 (defn- t2-sfuse [M :vector-i64 b :i64] :vector-i64
   (if (>= b (t2-g M t2-s-nb)) M
     (t2-sfuse (if (= (t2-bget M t2-a-breach b) 1) (t2-sfuse-b M b (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b)) M) (inc b))))
-;; validate vector/table ops; record vector parameters and tables
+;; validate vector/table ops; record handle class members, string slots and tables
 (defn- t2-tab-reg [M :vector-i64 lit :i64 adj :i64 k :i64 n :i64] :vector-i64
   (cond (>= k n) (if (>= n 16) (t2-fail M 9)
                    (-> M (t2-s (+ t2-a-tb (* 2 n)) lit) (t2-s (+ t2-a-tb (* 2 n) 1) -1) (t2-s (+ t2-a-tbadj n) adj)
@@ -16646,14 +16650,9 @@
 (defn- t2-check [M :vector-i64 v :i64 nv :i64] :vector-i64
   (if (or (> v nv) (not= (t2-g M t2-s-fail) 0)) M
     (let [op (t2-op-of M v)
-          h (if (or (= op t2-vat) (= op t2-vset)) (t2-res M (t2-vf M v t2-f-a)) 0)
           M1 (cond (= op t2-vcnt) (t2-fail M 9)
                    (or (= op t2-slen) (t2-cpx? op)) (t2-sd-reg-slot M v op)
-                   (> h 0) (cond (and (= (t2-op-of M h) t2-param) (>= (t2-vf M h t2-f-a) 7)) (t2-fail M 34)   ; a stack vector
-                                 (= (t2-op-of M h) t2-param)
-                                 (-> M (t2-s (+ t2-a-pd (* 4 (t2-vf M h t2-f-a))) 1) (t2-s (+ t2-a-pd (* 4 (t2-vf M h t2-f-a)) 3) h))
-                                 (= (t2-op-of M h) t2-call) (t2-slot-new M h 8)
-                                 :else (t2-fail M 8))
+                   (or (= op t2-vat) (= op t2-vset)) (t2-hadd M (t2-res M (t2-vf M v t2-f-a)))
                    (= op t2-tab) (t2-tab-reg M (t2-vf M v t2-f-a) 0 0 (t2-g M t2-s-ntab))
                    (= op t2-dtab) (t2-tab-reg M (t2-vf M v t2-f-a) (+ (t2-dt-adj (t2-vf M v t2-f-b)) (t2-dt-inl (t2-vf M v t2-f-b)))
                                               0 (t2-g M t2-s-ntab))
@@ -16686,14 +16685,206 @@
           :else (-> M (t2-sds k 0 (bit-or (t2-sd M k 0) (cond (= op t2-slen) 3 (= op t2-cpa) 4 :else 7)))
                     (t2-sds k 5 (t2-res M (t2-vf M v t2-f-b)))))))
 (defn- t2-has-sd? [M :vector-i64] :bool (loop [k 0] (and (< k 8) (or (not= (t2-sd M k 0) 0) (recur (inc k))))))
-;; a descriptor slot (8..15) for the vector returned by call h
-(defn- t2-slot-new [M :vector-i64 h :i64 s :i64] :vector-i64
-  (cond (>= s 16) (t2-fail M 8)
-        (= (t2-g M (+ t2-a-pd (* 4 s) 3)) h) M
-        (= (t2-g M (+ t2-a-pd (* 4 s))) 0) (-> M (t2-s (+ t2-a-pd (* 4 s)) 1) (t2-s (+ t2-a-pd (* 4 s) 3) h))
-        :else (t2-slot-new M h (inc s))))
-(defn- t2-slot-of [M :vector-i64 h :i64 s :i64] :i64
-  (cond (>= s 16) 0 (= (t2-g M (+ t2-a-pd (* 4 s) 3)) h) s :else (t2-slot-of M h (inc s))))
+;; ---- descriptor slots: handle classes -----------------------------------------------------------------------------------
+;; Every value used as a vector handle (vat/vset operand a) and, transitively, every operand of such a phi is a class
+;; member: a register parameter, a real call's result or a phi (anything else refuses with 8, a stack parameter with 34). Phi-connected members form one class
+;; (union-find), and a class owns one descriptor slot: base and length registers fixed for the whole function.
+;; Invariant: wherever a member h is desc-live (its descriptor is read before the next call, see below), its slot holds
+;; desc(h) (non-faulting: length 0 for an invalid handle). Writes: a parameter at entry; after a call, the call's result
+;; from x0 or a refresh from the register of the member desc-live across it (handle uses count as register uses with
+;; calls, so that register is callee-saved and holds it); a phi needs no write, as its incoming operand is a member
+;; desc-live at the edge and owns the slot there. So the members of a class must not interfere (t2-cls-interf, on
+;; register liveness). Without non-tail calls a class has no call results, and with its single parameter as the only root
+;; every member equals that parameter. A class has at most one parameter.
+(def t2-s-hc 80)      ; 1 = the function makes a non-tail real call
+(def t2-s-nslot 81)   ; descriptor slots (classes)
+(def t2-a-uf (+ t2-a-trl (* 64 6)))      ; per value: union-find parent (0 = not a member); t2-hnd-words in all
+(def t2-a-cls (+ t2-a-uf t2-maxv))      ; per value: slot + 1 (0 = none)
+(def t2-a-cm (+ t2-a-cls t2-maxv))      ; per slot: up to 16 members
+(def t2-a-cmn (+ t2-a-cm 256))          ; per slot: member count
+(def t2-maxcm 16)
+;; a non-tail real call (descriptors are refreshed only after those; nothing lives across a tail call)
+(defn- t2-hcflag [M :vector-i64 v :i64 nv :i64] :vector-i64
+  (cond (> v nv) M
+        (and (= (t2-op-of M v) t2-call) (not (t2-tailcall? M v (t2-bget M t2-a-bv1 (t2-vf M v t2-f-blk))))) (t2-s M t2-s-hc 1)
+        :else (t2-hcflag M (inc v) nv)))
+(defn- t2-hmember? [M :vector-i64 h :i64] :bool (and (> h 0) (> (t2-g M (+ t2-a-uf h)) 0)))
+(defn- t2-hadd [M :vector-i64 h :i64] :vector-i64
+  (let [op (if (> h 0) (t2-op-of M h) 0)]
+    (cond (<= h 0) (t2-fail M 8)
+          (t2-hmember? M h) M
+          (and (= op t2-param) (>= (t2-vf M h t2-f-a) 7)) (t2-fail M 34)   ; a stack vector parameter
+          (or (= op t2-param) (= op t2-call) (= op t2-phi)) (t2-s M (+ t2-a-uf h) h)
+          :else (t2-fail M 8))))
+(defn- t2-uf-find [M :vector-i64 v :i64] :i64
+  (let [p (t2-g M (+ t2-a-uf v))] (if (or (= p v) (<= p 0)) v (t2-uf-find M p))))
+(defn- t2-uf-union [M :vector-i64 a :i64 b :i64] :vector-i64
+  (let [ra (t2-uf-find M a) rb (t2-uf-find M b)] (if (= ra rb) M (t2-s M (+ t2-a-uf (gn-max ra rb)) (gn-min ra rb)))))
+;; one pass: every operand of a member phi joins its class; M[last] = 1 when a member was added
+(defn- t2-cls-pass [M :vector-i64 v :i64 nv :i64 changed :i64] :vector-i64
+  (if (or (> v nv) (not (t2-ok? M))) (t2-s M t2-s-last changed)
+    (if (and (t2-hmember? M v) (= (t2-op-of M v) t2-phi))
+      (let [a (t2-vf M v t2-f-a) n (t2-vf M v t2-f-b)
+            r (loop [k 0 m M ch changed]
+                (if (or (>= k n) (not (t2-ok? m))) (t2-s m t2-s-last ch)
+                  (let [x (t2-res m (t2-g m (+ t2-a-phiop a k))) new (not (t2-hmember? m x)) m1 (t2-hadd m x)]
+                    (recur (inc k) (if (t2-ok? m1) (t2-uf-union m1 v x) m1) (if new 1 ch)))))]
+        (t2-cls-pass r (inc v) nv (t2-last r)))
+      (t2-cls-pass M (inc v) nv changed))))
+(defn- t2-cls-close [M :vector-i64 nv :i64 iter :i64] :vector-i64
+  (if (>= iter 64) (t2-fail M 8)
+    (let [M1 (t2-cls-pass M 1 nv 0)] (if (and (t2-ok? M1) (= (t2-last M1) 1)) (t2-cls-close M1 nv (inc iter)) M1))))
+;; a slot per class (roots are least ids, met first), its member list and parameter
+(defn- t2-cls-slots [M :vector-i64 v :i64 nv :i64] :vector-i64
+  (if (or (> v nv) (not (t2-ok? M))) M
+    (t2-cls-slots
+      (if (t2-hmember? M v)
+        (let [r (t2-uf-find M v) n (t2-g M t2-s-nslot)
+              M1 (cond (> (t2-g M (+ t2-a-cls r)) 0) M
+                       (>= n 16) (t2-fail M 8)
+                       :else (-> M (t2-s t2-s-nslot (inc n)) (t2-s (+ t2-a-cls r) (inc n)) (t2-s (+ t2-a-pd (* 4 n)) 1)
+                                 (t2-s (+ t2-a-pd (* 4 n) 3) 0) (t2-s (+ t2-a-cmn n) 0)))
+              s (dec (t2-g M1 (+ t2-a-cls r)))
+              c (if (>= s 0) (t2-g M1 (+ t2-a-cmn s)) 0)]
+          (cond (or (not (t2-ok? M1)) (< s 0)) M1
+                (>= c t2-maxcm) (t2-fail M1 37)
+                (and (= (t2-op-of M1 v) t2-param) (not= (t2-g M1 (+ t2-a-pd (* 4 s) 3)) 0)) (t2-fail M1 35)
+                :else (-> M1 (t2-s (+ t2-a-cls v) (inc s)) (t2-s (+ t2-a-cm (* t2-maxcm s) c) v) (t2-s (+ t2-a-cmn s) (inc c))
+                          (t2-s (+ t2-a-cmx v) (+ (* t2-maxcm s) c 1))
+                          (cond-> (= (t2-op-of M1 v) t2-param) (t2-s (+ t2-a-pd (* 4 s) 3) (inc (t2-vf M1 v t2-f-a)))))))
+        M)
+      (inc v) nv)))
+;; every class has a root: its parameter, or (with calls) a call result
+(defn- t2-cls-roots [M :vector-i64 s :i64] :vector-i64
+  (if (or (>= s (t2-g M t2-s-nslot)) (not (t2-ok? M))) M
+    (let [n (t2-g M (+ t2-a-cmn s))
+          ok (or (> (t2-g M (+ t2-a-pd (* 4 s) 3)) 0)
+                 (loop [i 0] (and (< i n) (or (= (t2-op-of M (t2-g M (+ t2-a-cm (* t2-maxcm s) i))) t2-call) (recur (inc i))))))]
+      (t2-cls-roots (if ok M (t2-fail M 35)) (inc s)))))
+(defn- t2-handles [M :vector-i64 nv :i64] :vector-i64
+  (-> M (t2-wzero t2-a-uf 0 (inc nv)) (t2-wzero t2-a-cls 0 (inc nv)) (t2-wzero t2-a-cmx 0 (inc nv)) (t2-wzero t2-a-cmn 0 16)
+      (t2-s t2-s-nslot 0)
+      (t2-check 1 nv) (t2-cls-close nv 0) (t2-cls-slots 1 nv) (t2-cls-roots 0)))
+;; descriptor slot of the handle operand of access v
+(defn- t2-pk [M :vector-i64 v :i64] :i64 (dec (t2-g M (+ t2-a-cls (t2-res M (t2-vf M v t2-f-a))))))
+;; ---- class interference (with calls; after liveness) ----
+;; does ordinary value w read h (handle operands included)?
+(defn- t2-reads? [M :vector-i64 w :i64 h :i64] :bool
+  (let [op (t2-op-of M w) a (t2-vf M w t2-f-a) b (t2-vf M w t2-f-b) c (t2-vf M w t2-f-c)]
+    (cond (or (= op t2-bin) (= op t2-cmp)) (or (= (t2-res M b) h) (= (t2-res M c) h))
+          (= op t2-un) (= (t2-res M b) h)
+          (= op t2-vat) (or (= (t2-res M a) h) (= (t2-res M b) h))
+          (= op t2-vset) (or (= (t2-res M a) h) (= (t2-res M b) h) (= (t2-res M c) h))
+          (= op t2-tab) (= (t2-res M c) h)
+          (= op t2-dtab) (= (t2-res M c) h)
+          (t2-cpx? op) (or (= (t2-res M b) h) (= (t2-res M c) h))
+          (= op t2-sel) (or (= (t2-res M a) h) (= (t2-res M b) h) (= (t2-res M c) h))
+          (or (= op t2-ret) (= op t2-brz)) (= (t2-res M a) h)
+          (= op t2-call) (loop [k 0] (and (< k c) (or (= (t2-res M (t2-g M (+ t2-a-phiop b k))) h) (recur (inc k)))))
+          :else false)))
+;; is h live right after call C: defined before C and read after it (later in C's block, or live out of it)?
+(defn- t2-live-after? [M :vector-i64 C :i64 h :i64] :bool
+  (let [b (t2-vf M C t2-f-blk) v1 (t2-bget M t2-a-bv1 b)]
+    (and (not= h C)
+         (not (and (= (t2-vf M h t2-f-blk) b) (not= (t2-op-of M h) t2-phi) (> h C)))
+         (or (t2-bit? M (t2-out b) h)
+             (loop [w (inc C)]
+               (and (< w v1) (or (and (not= (t2-op-of M w) t2-phi) (not (t2-gone? M w)) (t2-reads? M w h)) (recur (inc w)))))))))
+;; is member h live where member x is defined?
+(defn- t2-live-at-def? [M :vector-i64 h :i64 x :i64] :bool
+  (let [op (t2-op-of M x) H (t2-vf M x t2-f-blk)]
+    (cond (= op t2-param) (= (t2-op-of M h) t2-param)
+          (= op t2-call) (t2-live-after? M x h)
+          (and (= (t2-op-of M h) t2-phi) (= (t2-vf M h t2-f-blk) H)) true
+          :else (t2-bit? M (t2-in H) h))))
+(defn- t2-cm [M :vector-i64 s :i64 i :i64] :i64 (t2-g M (+ t2-a-cm (* t2-maxcm s) i)))
+(defn- t2-cls-interf [M :vector-i64 s :i64] :vector-i64
+  (if (or (>= s (t2-g M t2-s-nslot)) (not (t2-ok? M))) M
+    (let [n (t2-g M (+ t2-a-cmn s))
+          bad (loop [i 0]
+                (and (< i n)
+                     (or (let [h1 (t2-cm M s i)]
+                           (loop [j (inc i)]
+                             (and (< j n)
+                                  (or (let [h2 (t2-cm M s j)] (or (t2-live-at-def? M h1 h2) (t2-live-at-def? M h2 h1)))
+                                      (recur (inc j))))))
+                         (recur (inc i)))))]
+      (t2-cls-interf (if bad (t2-fail M 36) M) (inc s)))))
+;; ---- descriptor liveness (with calls) ----
+;; A member is desc-live where its descriptor is read before the member is redefined and before the next real call: by an
+;; access (vat/vset), by the handoff of a tail call (t2-handoff-x), or through a desc-live member phi it feeds on an edge
+;; (the phi's slot is its operand's slot there). A call ends desc-liveness: after it, the slot of the member desc-live
+;; there is (re)computed -- the call's own result from x0, any other member from its register (t2-e-redesc) -- and no
+;; other slot is. Invariant: wherever h is desc-live, its slot holds desc(h). (Between the last call or definition before
+;; such a point and the point, h is desc-live throughout, so that call wrote desc(h), or h's definition did: entry
+;; descriptor, call result, or a phi whose incoming operand was desc-live at the edge; nothing else writes the slot
+;; there, as another member's definition or refresh would make the two live together.) Register liveness (handle uses
+;; included) contains desc liveness, so the member's register holds it at a refresh; interference is checked on register
+;; liveness, the stronger relation.
+(def t2-a-cmx (+ t2-a-cmn 16))          ; per value: member id (16 slot + index) + 1 (0 = none)
+(def t2-a-dl (+ t2-a-cmx t2-maxv))      ; per block 8 words: desc-live in (after the phis) and out, over member ids
+(defn- t2-dlin [b :i64] :i64 (+ t2-a-dl (* 8 b)))
+(defn- t2-dlout [b :i64] :i64 (+ t2-a-dl (* 8 b) 4))
+(defn- t2-mid [M :vector-i64 h :i64] :i64 (if (> h 0) (dec (t2-g M (+ t2-a-cmx h))) -1))
+;; the member whose descriptor ordinary value w reads (0 none): an access's handle, a tail call's handed-off argument
+(defn- t2-dreads [M :vector-i64 w :i64] :i64
+  (let [op (t2-op-of M w)]
+    (cond (or (= op t2-vat) (= op t2-vset)) (t2-res M (t2-vf M w t2-f-a))
+          (and (= op t2-call) (t2-tailcall? M w (t2-bget M t2-a-bv1 (t2-vf M w t2-f-blk)))) (t2-handoff-x M w)
+          :else 0)))
+;; member h is an ordinary value (a call result) of block b
+(defn- t2-odef? [M :vector-i64 h :i64 b :i64] :bool (and (= (t2-vf M h t2-f-blk) b) (not= (t2-op-of M h) t2-phi)))
+;; out(b) |= what entering s from b needs: in(s) minus s's phis, plus the operand from b of each desc-live phi of s
+(defn- t2-dl-succ [M :vector-i64 b :i64 s :i64] :vector-i64
+  (if (< s 0) M
+    (let [k (t2-predidx M s b 0)]
+      (loop [j 0 m M]
+        (if (>= j (* t2-maxcm (t2-g m t2-s-nslot))) m
+          (let [h (t2-g m (+ t2-a-cm j)) id j]
+            (recur (inc j)
+                   (cond (or (>= (- j (* t2-maxcm (quot j t2-maxcm))) (t2-g m (+ t2-a-cmn (quot j t2-maxcm))))
+                             (not (t2-bit? m (t2-dlin s) id))) m
+                         (and (= (t2-op-of m h) t2-phi) (= (t2-vf m h t2-f-blk) s))
+                         (let [x (t2-phiarg m h k) mx (t2-mid m x)] (if (>= mx 0) (t2-bitset m (t2-dlout b) mx) m))
+                         :else (t2-bitset m (t2-dlout b) id)))))))))
+;; in(b): backward from out(b); a call clears the set (then its handoff argument is read), an access adds its handle;
+;; M[last] = 1 when in(b) changed
+(defn- t2-dl-block [M :vector-i64 b :i64] :vector-i64
+  (let [i (t2-dlin b) o (t2-dlout b) v0 (t2-bget M t2-a-bv0 b) v1 (t2-bget M t2-a-bv1 b)
+        M0 (-> M (t2-cpw t2-a-tmp i 0) (t2-wzero o 0 4) (t2-dl-succ b (t2-bget M t2-a-bt b)) (t2-dl-succ b (t2-bget M t2-a-bf b)))
+        M1 (loop [k 0 m M0] (if (>= k 4) m (recur (inc k) (t2-s m (+ i k) (t2-g m (+ o k))))))
+        M3 (loop [w (dec v1) m M1]
+             (if (< w v0) m
+               (recur (dec w)
+                      (if (or (= (t2-op-of m w) t2-phi) (t2-gone? m w)) m
+                        (let [m1 (if (= (t2-op-of m w) t2-call) (t2-wzero m i 0 4) m) h (t2-dreads m1 w)]
+                          (if (and (> h 0) (>= (t2-mid m1 h) 0)) (t2-bitset m1 i (t2-mid m1 h)) m1))))))]
+    (t2-s M3 t2-s-last (if (loop [k 0] (or (>= k 4) (and (= (t2-g M3 (+ t2-a-tmp k)) (t2-g M3 (+ i k))) (recur (inc k))))) 0 1))))
+(defn- t2-dl-pass [M :vector-i64 b :i64 changed :i64] :vector-i64
+  (cond (< b 0) (t2-s M t2-s-last changed)
+        (= (t2-bget M t2-a-breach b) 0) (t2-dl-pass M (dec b) changed)
+        :else (let [M1 (t2-dl-block M b)] (t2-dl-pass M1 (dec b) (if (= (t2-last M1) 1) 1 changed)))))
+(defn- t2-dl-iter [M :vector-i64 iter :i64] :vector-i64
+  (if (>= iter 64) (t2-fail M 12)
+    (let [M1 (t2-dl-pass M (dec (t2-g M t2-s-nb)) 0)] (if (= (t2-last M1) 1) (t2-dl-iter M1 (inc iter)) M1))))
+(defn- t2-descliveness [M :vector-i64] :vector-i64
+  (if (not (t2-ok? M)) M (t2-dl-iter (t2-wzero M t2-a-dl 0 (* 8 (t2-g M t2-s-nb))) 0)))
+;; is member h (possibly C's own result) desc-live right after call C: read later in C's block before another call, or
+;; desc-live out of it with no call in between?
+(defn- t2-dlive-after? [M :vector-i64 C :i64 h :i64] :bool
+  (let [b (t2-vf M C t2-f-blk) v1 (t2-bget M t2-a-bv1 b) m (t2-mid M h)]
+    (and (>= m 0)
+         (not (and (t2-odef? M h b) (> h C)))
+         (loop [w (inc C)]
+           (cond (>= w v1) (t2-bit? M (t2-dlout b) m)
+                 (or (= (t2-op-of M w) t2-phi) (t2-gone? M w)) (recur (inc w))
+                 (= (t2-dreads M w) h) true
+                 (= (t2-op-of M w) t2-call) false
+                 :else (recur (inc w)))))))
+;; the member of slot s desc-live across call C (0 when none)
+(defn- t2-live-member [M :vector-i64 s :i64 C :i64] :i64
+  (let [n (t2-g M (+ t2-a-cmn s))]
+    (loop [i 0] (if (>= i n) 0 (let [h (t2-cm M s i)] (if (and (not= h C) (t2-dlive-after? M C h)) h (recur (inc i))))))))
 ;; ---- multiply-add / shift-add fusion: a single-use product (MUL of two registers, MUL by 2^p, SHL by a constant) in its
 ;; user's block feeds ADD (either operand) or SUB (second operand) as madd/msub or a shifted-register add/sub. The product
 ;; (flag 32) has no register and takes its user's (flag 64) position.
@@ -16773,7 +16964,7 @@
 (defn- t2-ue-add [M :vector-i64 b :i64 x :i64] :vector-i64
   (let [r (t2-res M x)]
     (if (and (t2-regval? M r) (not= (t2-vf M r t2-f-blk) b)) (t2-bitset M (t2-ue b) r) M)))
-;; operands of value v that are register uses (handle operands excluded): calls (f M x) on each
+;; operands of value v that are register uses (handle operands only in a function with a real call, see t2-uses)
 (defn- t2-ue-args [M :vector-i64 b :i64 start :i64 k :i64 n :i64] :vector-i64
   (if (>= k n) M (t2-ue-args (t2-ue-add M b (t2-g M (+ t2-a-phiop start k))) b start (inc k) n)))
 (defn- t2-ue-val [M :vector-i64 b :i64 v :i64] :vector-i64
@@ -16782,8 +16973,8 @@
           (or (= op t2-bin) (= op t2-cmp)) (-> M (t2-ue-add b x) (t2-ue-add b c))
           (= op t2-un) (t2-ue-add M b x)
           (or (= op t2-ret) (= op t2-brz)) (t2-ue-add M b a)
-          (= op t2-vat) (t2-ue-add M b x)
-          (= op t2-vset) (-> M (t2-ue-add b x) (t2-ue-add b c))
+          (= op t2-vat) (-> M (t2-ue-add b x) (cond-> (= (t2-g M t2-s-hc) 1) (t2-ue-add b a)))
+          (= op t2-vset) (-> M (t2-ue-add b x) (t2-ue-add b c) (cond-> (= (t2-g M t2-s-hc) 1) (t2-ue-add b a)))
           (= op t2-tab) (t2-ue-add M b c)
           (t2-cpx? op) (-> M (t2-ue-add b x) (t2-ue-add b c))
           (= op t2-sel) (-> M (t2-ue-add b a) (t2-ue-add b x) (t2-ue-add b c))
@@ -16865,8 +17056,8 @@
           (or (= op t2-bin) (= op t2-cmp)) (-> M0 (t2-use-at x u) (t2-use-at c u))
           (= op t2-un) (t2-use-at M0 x u)
           (or (= op t2-ret) (= op t2-brz)) (t2-use-at M0 a u)
-          (= op t2-vat) (t2-use-at M0 x u)
-          (= op t2-vset) (-> M0 (t2-use-at x u) (t2-use-at c u))
+          (= op t2-vat) (-> M0 (t2-use-at x u) (cond-> (= (t2-g M t2-s-hc) 1) (t2-use-at a u)))
+          (= op t2-vset) (-> M0 (t2-use-at x u) (t2-use-at c u) (cond-> (= (t2-g M t2-s-hc) 1) (t2-use-at a u)))
           (= op t2-tab) (t2-use-at M0 c u)
           ;; the handle and the index stay live one position longer: the result register never takes theirs (the slow
           ;; path, after the byte load, still passes both to the host)
@@ -16893,7 +17084,14 @@
 ;; b -> J whose incoming value of p is known (a constant, or b's own branch condition on b's taken/fallthrough edge) goes
 ;; straight to J's corresponding successor S (with J's copies for S); an incoming CMP computed last in b (used only there)
 ;; branches on its flags (flag bit 2: fused-thread, no register, positioned at b's terminator).
+;; The decision is taken once for every block (t2-thread-snap, before t2-tuse) and then fixed: t2-tuse drops uses of
+;; values copied only on threaded edges, which could turn a join whose phi feeds a later thread block's phi into a thread
+;; block too -- and threading into it would copy that never-materialized phi.
 (defn- t2-thread? [M :vector-i64 J :i64] :bool
+  (and (>= J 0) (= (t2-bget M t2-a-breach J) 1) (= (t2-bget M t2-a-thr J) 1)))
+(defn- t2-thread-snap [M :vector-i64 b :i64] :vector-i64
+  (if (>= b (t2-g M t2-s-nb)) M (t2-thread-snap (t2-bset M t2-a-thr b (if (t2-thread-raw? M b) 1 0)) (inc b))))
+(defn- t2-thread-raw? [M :vector-i64 J :i64] :bool
   (and (>= J 0) (= (t2-bget M t2-a-breach J) 1)
        (let [t (t2-lastval M J)]
          (and (> t 0) (= (t2-op-of M t) t2-brz)
@@ -16946,33 +17144,34 @@
 (defn- t2-tuse [M :vector-i64 J :i64] :vector-i64
   (if (>= J (t2-g M t2-s-nb)) M
     (t2-tuse (if (t2-thread? M J) (t2-tuse-b M J 0 (t2-bget M t2-a-bpn J)) M) (inc J))))
-;; ---- redundant bounds checks: an access whose (vector parameter, index value) check is dominated by an identical one ----
-;; descriptors are constant in T2 code (no allocation), so the dominated check cannot fail: flag bit 8 = unchecked
-(defn- t2-chk-probe [M :vector-i64 v :i64 pk :i64 ix :i64 h :i64 n :i64] :vector-i64
+;; ---- redundant bounds checks: an access whose (handle value, index value) check is dominated by an identical one ----
+;; a handle's length never changes, so the dominated check cannot fail: flag bit 8 = unchecked. (Handle values, not slots:
+;; members of one class share a slot.)
+(defn- t2-chk-probe [M :vector-i64 v :i64 hv :i64 ix :i64 h :i64 n :i64] :vector-i64
   (let [w (t2-g M (+ t2-a-hash h))]
     (cond (>= n t2-hsize) M
           (= w 0) (t2-s M (+ t2-a-hash h) v)
-          (and (= (t2-pk M w) pk) (= (t2-res M (t2-vf M w t2-f-b)) ix) (t2-dom? M (t2-vf M w t2-f-blk) (t2-vf M v t2-f-blk)))
+          (and (= (t2-res M (t2-vf M w t2-f-a)) hv) (= (t2-res M (t2-vf M w t2-f-b)) ix) (t2-dom? M (t2-vf M w t2-f-blk) (t2-vf M v t2-f-blk)))
           (t2-xs M v t2-x-flags (bit-or (t2-xf M v t2-x-flags) 8))
-          :else (t2-chk-probe M v pk ix (bit-and (inc h) (dec t2-hsize)) (inc n)))))
+          :else (t2-chk-probe M v hv ix (bit-and (inc h) (dec t2-hsize)) (inc n)))))
 (defn- t2-chk-vals [M :vector-i64 b :i64 v :i64 v1 :i64] :vector-i64
   (if (>= v v1) M
     (let [op (t2-op-of M v)]
       (t2-chk-vals (if (and (or (= op t2-vat) (= op t2-vset)) (= (t2-vf M v t2-f-blk) b))
-                     (let [pk (t2-pk M v) ix (t2-res M (t2-vf M v t2-f-b))
-                           M1 (t2-chk-probe M v pk ix (t2-hash 7 pk ix 0) 0)]
+                     (let [hv (t2-res M (t2-vf M v t2-f-a)) ix (t2-res M (t2-vf M v t2-f-b))
+                           M1 (t2-chk-probe M v hv ix (t2-hash 7 hv ix 0) 0)]
                        (if (and (not= (bit-and (t2-xf M1 v t2-x-flags) 8) 8) (t2-isconst? M1 ix) (>= (t2-kval M1 ix) 0)
-                                (t2-chk-bigger? M1 v pk (t2-kval M1 ix) 1))
+                                (t2-chk-bigger? M1 v hv (t2-kval M1 ix) 1))
                          (t2-xs M1 v t2-x-flags (bit-or (t2-xf M1 v t2-x-flags) 8)) M1))
                      M)
                    b (inc v) v1))))
-;; an earlier access on the same slot with a constant index >= k dominates v: its check implies v's
-(defn- t2-chk-bigger? [M :vector-i64 v :i64 pk :i64 k :i64 w :i64] :bool
+;; an earlier access on the same handle value with a constant index >= k dominates v: its check implies v's
+(defn- t2-chk-bigger? [M :vector-i64 v :i64 hv :i64 k :i64 w :i64] :bool
   (and (< w v)
        (or (let [op (t2-op-of M w) ix (if (or (= op t2-vat) (= op t2-vset)) (t2-res M (t2-vf M w t2-f-b)) 0)]
-             (and (> ix 0) (not (t2-gone? M w)) (t2-isconst? M ix) (>= (t2-kval M ix) k) (= (t2-pk M w) pk)
+             (and (> ix 0) (not (t2-gone? M w)) (t2-isconst? M ix) (>= (t2-kval M ix) k) (= (t2-res M (t2-vf M w t2-f-a)) hv)
                   (t2-dom? M (t2-vf M w t2-f-blk) (t2-vf M v t2-f-blk))))
-           (t2-chk-bigger? M v pk k (inc w)))))
+           (t2-chk-bigger? M v hv k (inc w)))))
 (defn- t2-chk-blocks [M :vector-i64 b :i64] :vector-i64
   (if (>= b (t2-g M t2-s-nb)) M
     (t2-chk-blocks (if (= (t2-bget M t2-a-breach b) 1) (t2-chk-vals M b (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b)) M) (inc b))))
@@ -17056,16 +17255,14 @@
                (inc v) nv)))
 (defn- t2-maxcall [M :vector-i64 k :i64 m :i64] :i64
   (if (>= k (t2-g M t2-s-ncalls)) m (t2-maxcall M (inc k) (gn-max m (t2-g M (+ t2-a-calls k))))))
-;; with calls, every descriptor slot's handle is re-read after every call (descriptor refresh): keep it live for the
-;; whole function (a call inside a loop re-reads it on every iteration)
+;; with non-tail calls, a string slot's handle is re-read after every call (string slot refresh): keep it live for the
+;; whole function (a call inside a loop re-reads it on every iteration). Vector descriptor slots need no such extension:
+;; their handle uses count as register uses (t2-uses), and only members desc-live across a call are refreshed.
 (defn- t2-vparams-live [M :vector-i64 v :i64 nv :i64] :vector-i64
   (if (or (> v nv) (= (t2-g M t2-s-ncalls) 0)) M
-    (t2-vparams-live (cond (and (= (t2-op-of M v) t2-param)
-                                (or (= (t2-g M (+ t2-a-pd (* 4 (t2-vf M v t2-f-a)))) 1) (not= (t2-sd M (t2-vf M v t2-f-a) 0) 0)))
+    (t2-vparams-live (cond (and (= (t2-op-of M v) t2-param) (not= (t2-sd M (t2-vf M v t2-f-a) 0) 0))
                            (-> M (t2-xs v t2-x-uses (inc (t2-xf M v t2-x-uses))) (t2-xs v t2-x-start 0)
                                (t2-xs v t2-x-end (+ (t2-g M t2-s-maxpos) 5)))
-                           (and (= (t2-op-of M v) t2-call) (> (t2-slot-of M v 8) 0) (>= (t2-xf M v t2-x-pos) 0))
-                           (-> M (t2-xs v t2-x-uses (inc (t2-xf M v t2-x-uses))) (t2-xs v t2-x-end (+ (t2-g M t2-s-maxpos) 5)))
                            :else M)
                      (inc v) nv)))
 ;; parameters first (x0..), then descriptor and table-base registers (never x0..x6, live everywhere)
@@ -17084,13 +17281,13 @@
 ;; a function that may receive a handed-over descriptor for parameter 0 (at most 3 parameters, no non-tail call) keeps
 ;; that slot in x4 (base) / x3 (length), the registers of the handoff: neither side moves it
 (defn- t2-hoff-slot? [M :vector-i64 k :i64] :bool
-  (and (= k 0) (<= (t2-g M t2-s-np) 3) (= (t2-g M t2-s-ncalls) 0) (= (t2-g M t2-s-hascall) 1)   ; a chain link (tail calls)
+  (and (= (t2-g M (+ t2-a-pd (* 4 k) 3)) 1) (<= (t2-g M t2-s-np) 3) (= (t2-g M t2-s-ncalls) 0) (= (t2-g M t2-s-hascall) 1)   ; a chain link (tail calls)
        (not (t2-busy? M 3)) (not (t2-busy? M 4))))
 (defn- t2-alloc-descs [M :vector-i64 k :i64 forever :i64] :vector-i64
   (if (>= k 16) M
     (t2-alloc-descs (cond (not= (t2-g M (+ t2-a-pd (* 4 k))) 1) M
                           (t2-hoff-slot? M k)
-                          (-> M (t2-take 4 forever) (t2-s (+ t2-a-pd 1) 4) (t2-take 3 forever) (t2-s (+ t2-a-pd 2) 3))
+                          (-> M (t2-take 4 forever) (t2-s (+ t2-a-pd (* 4 k) 1) 4) (t2-take 3 forever) (t2-s (+ t2-a-pd (* 4 k) 2) 3))
                           :else (-> M (t2-alloc-fixed (+ t2-a-pd (* 4 k) 1) forever) (t2-alloc-fixed (+ t2-a-pd (* 4 k) 2) forever)))
                     (inc k) forever)))
 ;; string slot registers (unused fields -1), then every string-length value IS its slot's SLEN register
@@ -17709,9 +17906,7 @@
       (t2-s M t2-s-last (t2-vf M x t2-f-reg)))))
 (defn- t2-dst [M :vector-i64 v :i64] :i64 (let [r (t2-vf M v t2-f-reg)] (if (>= r 0) r 16)))
 (defn- t2-dead? [M :vector-i64 v :i64] :bool (= (t2-xf M v t2-x-uses) 0))
-;; descriptor registers of the handle operand of v
-(defn- t2-pk [M :vector-i64 v :i64] :i64
-  (let [h (t2-res M (t2-vf M v t2-f-a))] (if (= (t2-op-of M h) t2-param) (t2-vf M h t2-f-a) (t2-slot-of M h 8))))
+;; descriptor registers of the handle operand of v (its class's slot, t2-pk)
 (defn- t2-dbase [M :vector-i64 v :i64] :i64 (t2-g M (+ t2-a-pd (* 4 (t2-pk M v)) 1)))
 (defn- t2-dlen [M :vector-i64 v :i64] :i64 (t2-g M (+ t2-a-pd (* 4 (t2-pk M v)) 2)))
 (defn- t2-tabreg [M :vector-i64 lit :i64 k :i64] :i64
@@ -18053,35 +18248,33 @@
                                       :else (t2-mv-add m k (t2-vf m x t2-f-reg) 0 0))))))
         nm (t2-g M1 t2-s-nmv)]
     (-> M1 (t2-mv-regs nm 200) (t2-mv-consts 0 nm))))
-;; descriptor refresh after call v: every slot from its handle's (callee-saved) register; v's own result from x0. A slot
-;; whose handle is not defined on this path computes a harmless (non-faulting) descriptor that no access reads.
+;; descriptor refresh after call v: v's own slot from x0 when v is a desc-live class member; every other slot whose member
+;; is desc-live across v from that member's (callee-saved) register; other slots are not read before their next write
 (defn- t2-e-redesc [M :vector-i64 v :i64 k :i64] :vector-i64
-  (if (>= k 16) M
-    (t2-e-redesc (if (= (t2-g M (+ t2-a-pd (* 4 k))) 1)
-                   (let [h (t2-g M (+ t2-a-pd (* 4 k) 3))]
-                     (if (= h v) (t2-e-desc-from M k 0)
-                       (let [r (t2-vf M h t2-f-reg)] (if (>= r 0) (t2-e-desc-from M k r) M))))
-                   M)
+  (if (>= k (t2-g M t2-s-nslot)) M
+    (t2-e-redesc (if (= (t2-g M (+ t2-a-cls v)) (inc k)) (if (t2-dlive-after? M v v) (t2-e-desc-from M k 0) M)
+                   (let [h (t2-live-member M k v)]
+                     (cond (= h 0) M
+                           (>= (t2-vf M h t2-f-reg) 0) (t2-e-desc-from M k (t2-vf M h t2-f-reg))
+                           :else (t2-fail M 36))))
                  v (inc k))))
 ;; is call v a tail call: its only use is the RET right after it in block b?
 (defn- t2-tailcall? [M :vector-i64 v :i64 v1 :i64] :bool
   (let [n (loop [w (inc v)] (cond (>= w v1) 0 (or (= (t2-op-of M w) t2-phi) (t2-gone? M w)) (recur (inc w)) :else w))]
     (and (> n 0) (= (t2-op-of M n) t2-ret) (= (t2-res M (t2-vf M n t2-f-a)) v) (<= (t2-xf M v t2-x-uses) 1))))
-;; the existing chain protocol from the caller side: a callee with at most 3 parameters whose first argument is a T2
-;; vector parameter receives x3 = length, x4 = items base, x5 = handle key (0 when the length is 0, so an invalid or
-;; empty vector is validated by the callee itself exactly as before)
-;; descriptor slot of handle value x (a vector parameter or call result with an active slot), -1 when none
-(defn- t2-hslot [M :vector-i64 x :i64] :i64
-  (let [s (cond (<= x 0) -1 (= (t2-op-of M x) t2-param) (t2-vf M x t2-f-a) (= (t2-op-of M x) t2-call) (t2-slot-of M x 8) :else -1)]
-    (if (and (>= s 0) (< s 16) (= (t2-g M (+ t2-a-pd (* 4 s))) 1) (= (t2-g M (+ t2-a-pd (* 4 s) 3)) x)) s -1)))
+;; descriptor slot of handle value x (a member of a handle class), -1 when none
+(defn- t2-hslot [M :vector-i64 x :i64] :i64 (if (and (> x 0) (> (t2-g M (+ t2-a-cls x)) 0)) (dec (t2-g M (+ t2-a-cls x))) -1))
+;; the member whose descriptor a tail call v hands off (its first argument, at most 3 arguments), 0 when none. The
+;; argument is desc-live at the call (t2-dreads), so its slot holds its descriptor.
+(defn- t2-handoff-x [M :vector-i64 v :i64] :i64
+  (let [n (t2-vf M v t2-f-c) x (if (> n 0) (t2-res M (t2-g M (+ t2-a-phiop (t2-vf M v t2-f-b)))) 0)]
+    (if (and (> n 0) (<= n 3) (>= (t2-hslot M x) 0)) x 0)))
 ;; the chain protocol from the caller side: a callee with at most 3 parameters whose first argument is a vector with a
 ;; descriptor slot receives x3 = length, x4 = items base, x5 = handle (0 when the length is 0, so an invalid or empty
 ;; vector is validated by the callee itself). The ordinary entry clears x5; T2 upgrades the tail branch to the private
 ;; entry (+1) after code generation only when the callee is a T2 function that reads the handoff (t2-patch-handoffs).
 (defn- t2-handoff [M :vector-i64 v :i64] :vector-i64
-  (let [g (t2-vf M v t2-f-a) n (t2-vf M v t2-f-c)
-        x (if (> n 0) (t2-res M (t2-g M (+ t2-a-phiop (t2-vf M v t2-f-b)))) 0)
-        s (if (and (> n 0) (<= n 3)) (t2-hslot M x) -1)]
+  (let [x (t2-handoff-x M v) s (if (> x 0) (t2-hslot M x) -1)]
     (if (>= s 0)
       (let [B (t2-g M (+ t2-a-pd (* 4 s) 1)) L (t2-g M (+ t2-a-pd (* 4 s) 2))]
         (-> M (gn-mov 4 B) (gn-mov 3 L) (gn-emit (enc-cmp-i L 0)) (gn-emit (enc-csel 5 0 31 1))
@@ -18191,10 +18384,8 @@
   (if (>= k (t2-g M t2-s-nstub)) M
     (let [a (+ t2-a-stub (* 4 k)) s (t2-g M (+ a 2))]
       (t2-e-stubs (-> M (t2-deflab (t2-g M a)) (t2-copies (t2-g M (+ a 1)) s) (t2-jmp FX-B26 (t2-g M (+ a 3)) (enc-b 0))) (inc k)))))
-;; descriptor of vector parameter k: base := items + 8*offset, len (0 for an invalid handle); flags from one compare
-(defn- t2-e-desc [M :vector-i64 k :i64] :vector-i64 (t2-e-desc-from M k k))
-;; descriptor of vector parameter k from handle register rh: a predicted branch (no data dependency on the validity test)
-;; to a cold stub that sets length 0 for an invalid handle and returns
+;; descriptor of slot k from handle register rh: base := items + 8*offset, len; a predicted branch (no data dependency on
+;; the validity test) to a cold stub that sets length 0 for an invalid handle and returns
 (def t2-s-ndst 38)
 (def t2-a-dstub (+ t2-a-calls 256))   ; 64 x (invalid label, done label, length register)
 (defn- t2-e-desc-from [M :vector-i64 k :i64 rh :i64] :vector-i64
@@ -18217,13 +18408,13 @@
                      (-> M (t2-deflab (t2-g M a)) (gn-emit (enc-movz (t2-g M (+ a 2)) 0 0))
                          (t2-jmp FX-B26 (t2-g M (+ a 1)) (enc-b 0))))
                    (inc k)))))
-;; entry descriptor of vector parameter k. With at most 3 parameters (x3..x5 are not parameters) a private-entry caller
-;; of the existing chain protocol may hand over a validated descriptor: key x5 = handle (nonzero), x3 = length, x4 = items
-;; base. The ordinary entry clears x5 first (word 0), so only such callers reuse it.
-(defn- t2-e-desc-entry [M :vector-i64 k :i64] :vector-i64
+;; entry descriptor of slot s from vector parameter k. With at most 3 parameters (x3..x5 are not parameters) a
+;; private-entry caller of the existing chain protocol may hand over a validated descriptor: key x5 = handle (nonzero),
+;; x3 = length, x4 = items base. The ordinary entry clears x5 first (word 0), so only such callers reuse it.
+(defn- t2-e-desc-entry [M :vector-i64 s :i64 k :i64] :vector-i64
   ;; parameter 0 of a function with at most 3 parameters (x3..x5 free) may arrive with a handed-over descriptor
-  (if (or (not= k 0) (> (t2-g M t2-s-np) 3)) (t2-e-desc M k)
-    (let [B (t2-g M (+ t2-a-pd (* 4 k) 1)) L (t2-g M (+ t2-a-pd (* 4 k) 2))
+  (if (or (not= k 0) (> (t2-g M t2-s-np) 3)) (t2-e-desc-from M s k)
+    (let [B (t2-g M (+ t2-a-pd (* 4 s) 1)) L (t2-g M (+ t2-a-pd (* 4 s) 2))
           n (t2-g M t2-s-ndst)
           lc (t2-l-dstub M n)
           lj (inc lc)]
@@ -18231,22 +18422,23 @@
         (if (and (= B 4) (= L 3))
           ;; the slot lives in the handoff registers: a matching handoff falls straight through; the computation is a
           ;; cold block (t2-e-cdesc) entered from the ordinary entry
-          (-> M (t2-s t2-s-ndst (inc n)) (t2-s (+ t2-a-dstub (* 3 n)) -1) (t2-s t2-s-cdesc (inc n))
+          (-> M (t2-s t2-s-ndst (inc n)) (t2-s (+ t2-a-dstub (* 3 n)) -1) (t2-s t2-s-cdesc (inc n)) (t2-s t2-s-cdslot s)
               (t2-jmp FX-CB19 lc (enc-cbz 5 0)) (gn-emit (enc-cmp-r 5 k)) (t2-bcond 1 lc)
               (t2-deflab lj) (t2-s t2-s-hent 1))
-        (let [M1 (if false M
-                   (-> M (t2-s t2-s-ndst (inc n)) (t2-s (+ t2-a-dstub (* 3 n)) -1)
+          (let [M1 (-> M (t2-s t2-s-ndst (inc n)) (t2-s (+ t2-a-dstub (* 3 n)) -1)
                        (t2-jmp FX-CB19 lc (enc-cbz 5 0)) (gn-emit (enc-cmp-r 5 k)) (t2-bcond 1 lc)
                        (gn-mov B 4) (gn-mov L 3) (t2-jmp FX-B26 lj (enc-b 0))
-                       (t2-deflab lc)))]
-          (-> M1 (t2-e-desc k) (t2-deflab lj) (t2-s t2-s-hent 1))))))))
-;; the cold descriptor computation of parameter 0 (handoff-register slot), back to the entry path
+                       (t2-deflab lc))]
+            (-> M1 (t2-e-desc-from s k) (t2-deflab lj) (t2-s t2-s-hent 1))))))))
+;; the cold descriptor computation of parameter 0 (handoff-register slot t2-s-cdslot), back to the entry path
 (def t2-s-cdesc 74)
+(def t2-s-cdslot 75)
 (defn- t2-e-cdesc [M :vector-i64] :vector-i64
   (let [n (dec (t2-g M t2-s-cdesc))]
     (if (< n 0) M
       (let [lc (t2-l-dstub M n) lj (inc lc)]
-        (-> M (t2-s t2-s-cdesc 0) (t2-deflab lc) (t2-e-desc 0) (t2-jmp FX-B26 lj (enc-b 0)))))))
+        (-> M (t2-s t2-s-cdesc 0) (t2-deflab lc) (t2-e-desc-from (t2-g M t2-s-cdslot) 0) (t2-jmp FX-B26 lj (enc-b 0)))))))
+;; entry descriptors: each slot whose class has a (register) parameter, from that parameter's incoming register
 ;; ---- string slots: entry / after-call computation (non-faulting), invalid-handle stubs, host-call stubs ------------------
 ;; pairs: [x7,#288] -> pair_used, [x7,#296] = pairs base; [x7,#384] = code_base, [x7,#392] = code_length
 (defn- t2-e-sdesc-from [M :vector-i64 k :i64 rh :i64] :vector-i64
@@ -18360,7 +18552,8 @@
                 (t2-jmp FX-B26 l2 (enc-b 0)))))
         (inc n) mask))))
 (defn- t2-e-descs [M :vector-i64 k :i64] :vector-i64
-  (if (>= k 8) M (t2-e-descs (if (= (t2-g M (+ t2-a-pd (* 4 k))) 1) (t2-e-desc-entry M k) M) (inc k))))
+  (if (>= k (t2-g M t2-s-nslot)) M
+    (t2-e-descs (let [q (t2-g M (+ t2-a-pd (* 4 k) 3))] (if (> q 0) (t2-e-desc-entry M k (dec q)) M)) (inc k))))
 (defn- t2-e-tabs [M :vector-i64 k :i64] :vector-i64
   (if (>= k (t2-g M t2-s-ntab)) M
     (let [r (t2-g M (+ t2-a-tb (* 2 k) 1)) dt (bit-and (t2-g M (+ t2-a-tbadj k)) 1) adj (- (t2-g M (+ t2-a-tbadj k)) dt)
@@ -18385,23 +18578,75 @@
                               :else M))
                       M)
                     (inc v))))
-;; keep T2's body only when it is smaller than the old body (whose words end where T2 starts); else roll back
+;; T2's label range [lab0, lab0 + 9 nb + 170) (t2-l-dstub and below): cleared before emission, so labels it reserves but
+;; does not define read 0 like never-defined labels, and cleared again on rollback, so no position of the discarded code
+;; survives in the label table (post-emission passes treat every label position as a branch target)
+(defn- t2-labclear [M :vector-i64 l :i64 hi :i64] :vector-i64
+  (if (>= l hi) M (t2-labclear (gn-put M (+ MM-LABEL-BASE l) 0) (inc l) hi)))
+;; ---- admission of functions with descriptor refreshes ----
+;; Static size is a poor proxy where T2 trades the old code's per-access handle revalidation (about 13 words: its
+;; descriptor cache does not survive calls) for descriptor refreshes after calls (about 10 words each) and its own call
+;; overhead (the fuel register stored before and reloaded after a call, x7 reloaded: 3 words). Over the code that runs
+;; repeatedly (the blocks reaching a back edge; every block when the function does not loop): gain = 13 accesses -
+;; 10 refreshes - 3 non-tail calls. A function with refreshes there needs gain >= 0; a looping one may then also keep a
+;; body up to twice the old one (its extra words are inlined callees, calls removed).
+;; blocks that reach a back edge (scratch: kd + maxb, free after emission)
+(defn- t2-inloop [M :vector-i64 changed :i64 iter :i64] :vector-i64
+  (if (or (= changed 0) (> iter 300)) M
+    (let [r (loop [b 0 m M ch 0]
+              (if (>= b (t2-g m t2-s-nb)) (t2-s m t2-s-last ch)
+                (let [t (t2-bget m t2-a-bt b) fl (t2-bget m t2-a-bf b)
+                      reach (and (= (t2-bget m t2-a-breach b) 1)
+                                 (or (and (>= t 0) (or (<= t b) (= (t2-bget m (+ t2-a-kd t2-maxb) t) 1)))
+                                     (and (>= fl 0) (or (<= fl b) (= (t2-bget m (+ t2-a-kd t2-maxb) fl) 1)))))]
+                  (if (and reach (not= (t2-bget m (+ t2-a-kd t2-maxb) b) 1)) (recur (inc b) (t2-bset m (+ t2-a-kd t2-maxb) b 1) 1)
+                    (recur (inc b) m ch)))))]
+      (t2-inloop r (t2-last r) (inc iter)))))
+;; refreshes after non-tail call v (as t2-e-redesc emits them)
+(defn- t2-nrefresh [M :vector-i64 v :i64] :i64
+  (loop [k 0 n 0]
+    (if (>= k (t2-g M t2-s-nslot)) n
+      (recur (inc k) (if (if (= (t2-g M (+ t2-a-cls v)) (inc k)) (t2-dlive-after? M v v) (> (t2-live-member M k v) 0)) (inc n) n)))))
+;; region counts: accesses + 4096 refreshes + 16777216 non-tail calls
+(defn- t2-hstats [M :vector-i64 lp :bool] :i64
+  (let [M0 (if lp (t2-inloop (t2-wzero M (+ t2-a-kd t2-maxb) 0 t2-maxb) 1 0) (t2-wfill M (+ t2-a-kd t2-maxb) 0 t2-maxb 1))]
+    (loop [v 1 a 0 r 0 c 0]
+      (if (> v (t2-g M0 t2-s-nv)) (+ a (* 4096 r) (* 16777216 c))
+        (let [op (t2-op-of M0 v)]
+          (cond (or (t2-gone? M0 v) (not= (t2-bget M0 (+ t2-a-kd t2-maxb) (t2-vf M0 v t2-f-blk)) 1)) (recur (inc v) a r c)
+                (or (= op t2-vat) (= op t2-vset)) (recur (inc v) (inc a) r c)
+                (and (= op t2-call) (not (t2-tailcall? M0 v (t2-bget M0 t2-a-bv1 (t2-vf M0 v t2-f-blk)))))
+                (recur (inc v) a (+ r (t2-nrefresh M0 v)) (inc c))
+                :else (recur (inc v) a r c)))))))
+;; 1: no refresh in the region, 2: gain >= 0, 0: gain < 0
+(defn- t2-hgain [M :vector-i64 lp :bool] :i64
+  (if (or (= (t2-g M t2-s-hc) 0) (= (t2-g M t2-s-nslot) 0)) 1
+    (let [st (t2-hstats M lp) a (bit-and st 4095) r (bit-and (i64-shift-right st 12) 4095) c (i64-shift-right st 24)]
+      (cond (= r 0) 1 (>= (- (* 13 a) (+ (* 10 r) (* 3 c))) 0) 2 :else 0))))
+;; keep T2's body only when it is smaller than the old body (whose words end where T2 starts) and its refreshes pay, or
+;; when it is a looping function whose refreshes pay and its body is less than twice the old one; else roll back
+(defn- t2-size-ok? [M :vector-i64 body :i64 old :i64 credit :i64] :bool
+  (let [lp (t2-loops? M (inc (t2-g M t2-s-p))) g (t2-hgain M lp)]
+    (or (and (< body (+ old credit)) (> g 0))
+        (and (= g 2) lp (< body (* 2 old))))))
 (defn- t2-emit [M :vector-i64 f :i64] :vector-i64
   (let [old (gn-fnf M f FF-CODE) entry (vector-at M MM-CODE-N) fixn (vector-at M MM-FIX-N) labn (vector-at M MM-LABEL-N)
         hoffn (t2-g M t2-a-hoff)
-        M1 (t2-emit1 M f)
+        lhi (+ (t2-g M t2-s-lab0) (* 9 (t2-g M t2-s-nb)) (if (t2-has-sd? M) 300 170))
+        M1 (t2-emit1 (t2-labclear M (t2-g M t2-s-lab0) lhi) f)
         ;; inlined callee code may grow the body (credit: a word per inlined op, two for a constant-argument specialization)
         body (- (t2-g M1 t2-s-bodyend) entry (t2-g M1 t2-s-vsize) (t2-g M1 t2-s-inlops))]
     ;; a kernel with (search) tight loops is replaced only by call-free T2 code, and only when it also prepays fuel (a
     ;; plain search-loop kernel may be the helper another kernel's fused code relies on)
-    (if (and (t2-ok? M1) (< body (+ (- entry old) (t2-g M1 t2-s-credit)))
+    (if (and (t2-ok? M1) (t2-size-ok? M1 body (- entry old) (t2-g M1 t2-s-credit))
              (or (= (t2-g M1 t2-s-tight) 0) (and (= (t2-g M1 t2-s-hascall) 0) (= (t2-g M1 t2-s-weak) 1))))
       (-> M1 (t2-s (+ t2-a-st f) 1)
           (t2-s (+ t2-a-hent f) (if (and (= (t2-g M1 t2-s-hent) 1) (= (t2-g M1 t2-s-pub) 1) (= (t2-g M1 t2-s-defer) 1)
                                          (= (t2-g M1 t2-s-fuel) 1))
                                   2 (t2-g M1 t2-s-hent))))
       ;; rollback: the discarded FIX records' handoff entries go too
-      (-> M1 (gn-put MM-CODE-N entry) (gn-put MM-FIX-N fixn) (gn-put MM-LABEL-N labn) (t2-s t2-a-hoff hoffn)
+      (-> M1 (t2-labclear (t2-g M1 t2-s-lab0) lhi) (gn-put MM-CODE-N entry) (gn-put MM-FIX-N fixn) (gn-put MM-LABEL-N labn)
+          (t2-s t2-a-hoff hoffn)
           (gn-put (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) old) (t2-s (+ t2-a-st f) 2)))))
 (def t2-s-bodyend 29)
 (defn- t2-emit1 [M :vector-i64 f :i64] :vector-i64
@@ -18560,11 +18805,11 @@
           (let [M2 (-> M1 (t2-clear-defs 0 nvar (t2-g M1 t2-s-nb)) (t2-build 0) (t2-gvn))]
             (if (not (t2-ok? M2)) M
               (let [nv (t2-g M2 t2-s-nv)
-                    M3 (-> M2 (t2-clear-x 1 nv) (t2-uses 1 nv) (t2-check 1 nv))]
+                    M3 (-> M2 (t2-clear-x 1 nv) (t2-hcflag 1 nv) (t2-uses 1 nv) (t2-handles nv))]
                 (if (not (t2-ok? M3)) M
-                  (let [M4 (-> M3 (t2-tuse 0) (t2-chk) (t2-fuse 0) (t2-tfuse 0) (t2-sfuse 0) (t2-mfuse 1 nv) (t2-positions 0 1))]
+                  (let [M4 (-> M3 (t2-thread-snap 0) (t2-tuse 0) (t2-chk) (t2-fuse 0) (t2-tfuse 0) (t2-sfuse 0) (t2-mfuse 1 nv) (t2-positions 0 1))]
                     (if (not (t2-ok? M4)) M
-                      (let [M5 (-> M4 (t2-ue-all 0) (t2-liveness 0))]
+                      (let [M5 (-> M4 (t2-ue-all 0) (t2-liveness 0) (cond-> (= (t2-g M4 t2-s-hc) 1) (-> (t2-cls-interf 0) (t2-descliveness))))]
                         (if (not (t2-ok? M5)) M
                           (let [M6 (-> M5 (t2-iv-vals 1 nv) (t2-iv-blocks 0) (t2-regalloc))
                                 cs (gn-max (t2-maxcs M6 1 nv 18) (t2-maxcs-fixed M6 18))
