@@ -15768,9 +15768,10 @@
     (t2-new-calls M g (inc i) (if (and (= (gn-op M i) OP-CALL) (= (gn-sir M i IF-A) g)) (inc n) n))))
 (defn- t2-xcall [M :vector-i64 j :i64 g :i64 t :i64 n :i64 so :i64 d :i64 pub :i64] :vector-i64
   (if (not (t2-callee-ok? M g n (inc d)))
-    (if (t2-realcall-ok? M j g n pub)
-      (-> M (t2-s t2-s-hascall 1) (t2-xput OP-CALL g t n))
-      (t2-fail M 23))
+    (cond (not (t2-realcall-ok? M j g n pub)) (t2-fail M 23)
+          ;; replacing a (prepaid) kernel: its fast path may have inlined a small loop-free helper the T2 code would call
+          (and (= (t2-g M t2-s-weak) 1) (not (t2-loops? M (inc (gn-fnf M g FF-SIR))))) (t2-fail M 29)
+          :else (-> M (t2-s t2-s-hascall 1) (t2-xput OP-CALL g t n)))
     (let [p (gn-fnf M g FF-SIR)
           wrapper (> (gn-call-wrapper M j g (gn-sir M j IF-B) n) 0)
           leaf (t2-gleaf? M (inc p))
@@ -16621,9 +16622,14 @@
                    (= op t2-tab) (t2-acc-add M v (t2-vf M v t2-f-c) p)
                    :else M)]
       (t2-acc-vals M1 (inc v) v1 p))))
+;; only blocks run on every iteration (dominating every latch): a conditional access may be unreachable for part of the
+;; range (its index there out of bounds), so it keeps its check instead of failing the precheck
+(defn- t2-every-iter? [M :vector-i64 h :i64 b :i64 k :i64 n :i64] :bool
+  (or (>= k n) (and (or (not (t2-in-body? M (t2-pred M h k))) (t2-dom? M b (t2-pred M h k))) (t2-every-iter? M h b (inc k) n))))
 (defn- t2-acc-blocks [M :vector-i64 h :i64 b :i64 p :i64] :vector-i64
   (if (>= b (t2-g M t2-s-nb)) M
-    (t2-acc-blocks (if (and (t2-in-body? M b) (not= b h)) (t2-acc-vals M (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b) p) M) h (inc b) p)))
+    (t2-acc-blocks (if (and (t2-in-body? M b) (not= b h) (t2-every-iter? M h b 0 (t2-bget M t2-a-bpn h)))
+                     (t2-acc-vals M (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b) p) M) h (inc b) p)))
 ;; ---- header test and induction phi ----
 ;; step of phi p along latch preds of h: 1 / -1, 0 when not uniform
 (defn- t2-step-of [M :vector-i64 x :i64 p :i64] :i64
@@ -16644,14 +16650,25 @@
 (defn- t2-cckind [cc :i64] :i64 (cond (= cc CC-LT) 1 (= cc CC-LE) 2 (= cc CC-GT) 4 (= cc CC-GE) 5 (= cc CC-EQ) 6 :else 0))
 (defn- t2-kswap [k :i64] :i64 (cond (= k 1) 4 (= k 2) 5 (= k 4) 1 (= k 5) 2 :else k))
 (defn- t2-kneg [k :i64] :i64 (cond (= k 1) 5 (= k 2) 4 (= k 3) 6 (= k 4) 2 (= k 5) 1 (= k 6) 3 :else 0))
-;; body range endpoints lo = (src) + d, hi = (src) + d; src 0 = p (its entry value), 1 = L:
-;; step 1: [p, L-1] for <, !=; [p, L] for <=. step -1: [L+1, p] for >, !=; [L, p] for >=
-(defn- t2-lo-src [kind :i64 s :i64] :i64 (if (= s 1) 0 1))
-(defn- t2-hi-src [kind :i64 s :i64] :i64 (if (= s 1) 1 0))
-(defn- t2-lo-d [kind :i64 s :i64] :i64 (if (= s 1) 0 (if (= kind 5) 0 1)))
-(defn- t2-hi-d [kind :i64 s :i64] :i64 (if (= s 1) (if (= kind 2) 0 -1) 0))
+;; body range endpoints lo = (src) + d, hi = (src) + d; src 0 = p (its entry value), 1 = L; step s in +-1/2/4/8:
+;; s > 0: [p, L-1] for <, [p, L] for <=, [p, L-s] for != ; s < 0: [L+1, p] for >, [L, p] for >=, [L-s, p] for !=
+(defn- t2-lo-src [kind :i64 s :i64] :i64 (if (> s 0) 0 1))
+(defn- t2-hi-src [kind :i64 s :i64] :i64 (if (> s 0) 1 0))
+(defn- t2-lo-d [kind :i64 s :i64] :i64 (if (> s 0) 0 (cond (= kind 5) 0 (= kind 4) 1 :else (- 0 s))))
+(defn- t2-hi-d [kind :i64 s :i64] :i64 (if (> s 0) (cond (= kind 2) 0 (= kind 1) -1 :else (- 0 s)) 0))
+(defn- t2-step-ok? [s :i64] :bool (or (= s 1) (= s -1) (= s 2) (= s -2) (= s 4) (= s -4) (= s 8) (= s -8)))
 (defn- t2-kind-ok? [kind :i64 s :i64] :bool
-  (or (and (= s 1) (or (= kind 1) (= kind 2) (= kind 3))) (and (= s -1) (or (= kind 3) (= kind 4) (= kind 5)))))
+  (and (t2-step-ok? s) (or (and (> s 0) (or (= kind 1) (= kind 2) (= kind 3))) (and (< s 0) (or (= kind 3) (= kind 4) (= kind 5))))))
+;; L + k does not wrap (k small, nonzero)
+(defn- t2-nowrap? [L :i64 k :i64] :bool
+  (if (> k 0) (<= L (- 9223372036854775807 k)) (>= L (- -9223372036854775808 k))))
+;; the stepping past the last body value cannot wrap: k added to L (0: no check)
+(defn- t2-wrapk [kind :i64 s :i64] :i64
+  (cond (and (= kind 1) (> s 1)) (dec s)
+        (= kind 2) s
+        (and (= kind 4) (< s -1)) (inc s)
+        (= kind 5) s
+        :else 0))
 ;; analyse block h as a loop header; on success records loop l = nlp
 (defn- t2-try-loop [M :vector-i64 h :i64] :vector-i64
   (let [nb (t2-g M t2-s-nb)
@@ -16680,8 +16697,7 @@
                 Lok (or (t2-isconst? M2 L)
                         (and (not (t2-in-body? M2 (t2-vf M2 L t2-f-blk))) (>= (t2-vf M2 L t2-f-reg) 0)))
                 Lk (t2-kval M2 L)
-                Lconst-ok (or (not (t2-isconst? M2 L))
-                              (and (not (and (= kind 2) (= Lk 9223372036854775807))) (not (and (= kind 5) (= Lk -9223372036854775808)))))]
+                Lconst-ok (or (not (t2-isconst? M2 L)) (= (t2-wrapk kind s) 0) (t2-nowrap? Lk (t2-wrapk kind s)))]
             (if (or (= tin fin) (not (t2-kind-ok? kind s)) (not Lok) (not Lconst-ok) (= (t2-g M2 t2-s-nlp) t2-maxlp)
                     (and (= (t2-g M2 t2-s-pub) 1) (= (t2-g M2 t2-s-defer) 0) (= (t2-g M2 t2-s-fuel) 1)))
               M
@@ -16761,10 +16777,15 @@
                (cond-> (and (> K 0) (= (t2-g M t2-s-fuel) 1))
                  (-> (gn-emit (enc-add-i 17 17 2)) (gn-mov-imm 16 K) (gn-emit (enc-mul 17 17 16))
                      (gn-emit (enc-cmp-r 8 17)) (t2-bcond 3 slow)))                       ; fuel < (hi - lo + 2) K
-               (cond-> (and (= kind 2) (not (t2-isconst? M L)))
-                 (-> (gn-emit (enc-adds-i 16 (t2-vf M L t2-f-reg) 1)) (t2-bcond 6 slow)))   ; p <= MAX would wrap
-               (cond-> (and (= kind 5) (not (t2-isconst? M L)))
-                 (-> (gn-emit (enc-subs-i 16 (t2-vf M L t2-f-reg) 1)) (t2-bcond 6 slow))))]
+               ;; stepping past the last body value must not wrap (L + k)
+               (cond-> (and (not= (t2-wrapk kind s) 0) (not (t2-isconst? M L)))
+                 (-> (gn-emit (if (> (t2-wrapk kind s) 0) (enc-adds-i 16 (t2-vf M L t2-f-reg) (t2-wrapk kind s))
+                                (enc-subs-i 16 (t2-vf M L t2-f-reg) (- 0 (t2-wrapk kind s)))))
+                     (t2-bcond 6 slow)))
+               ;; != with |s| > 1: the distance must be a multiple of s
+               (cond-> (and (= kind 3) (not= s 1) (not= s -1))
+                 (-> (t2-e-endpt 16 l 1 0) (t2-e-endpt 17 l 0 0) (gn-emit (enc-sub-r 16 16 17))
+                     (gn-emit (t2-limm BOP-AND 16 16 (dec (if (> s 0) s (- 0 s))))) (t2-jmp FX-CB19 slow (enc-cbnz 16 0)))))]
     (t2-e-accs M1 l (t2-lp M l t2-lf-a0) (t2-lp M l t2-lf-a1) slow)))
 ;; the loop's next block in order after b (-1 none)
 (defn- t2-lnext [M :vector-i64 b :i64 id :i64] :i64
@@ -17212,12 +17233,26 @@
       (let [M1 (t2-ready M0)] (if (> (t2-base M1) 0) (t2-s M1 t2-s-fix0 (vector-at M1 MM-FIX-N)) M1)))))
 (def t2-max-sir 131072)
 (def t2-mark-cell 99)   ; FN index whose ordinary gn-op-fn2 path ran last (0 = none)
-;; old code words [a, b) carry a certified-kernel signature: prepaid fuel (sub/subs/cmp x8|x16, #k>=2), SIMD/FP, ldrb
+;; old code words [a, b) are a STRONG certified kernel, which T2 does not replace: SIMD/FP, byte loads, a tight loop (memory
+;; access without context loads: descriptors and fuel hoisted), or an unrolled run (12 memory accesses without a branch).
+;; A kernel that only prepays fuel and still reloads context/fuel in its loops is weaker than T2's versioned loops.
 (defn- t2-kword? [w :i64] :bool
+  (or (= (bit-and (u64-shift-right w 25) 7) 7) (= (bit-and (u64-shift-right w 25) 7) 6)
+      (= (bit-and w 0xFFC00000) 0x39400000) (= (bit-and w 0xFFE00C00) 0x38600800)))
+;; a prepaid-fuel word (sub/subs/cmp x8|x16, #k >= 2): the old code is a (weak) certified kernel
+(defn- t2-prepw? [w :i64] :bool
   (let [k (bit-and (u64-shift-right w 10) 4095) m (bit-and w 0xFF8003FF)]
-    (or (and (>= k 2) (or (= m 0xD1000108) (= m 0xF1000108) (= m 0xD1000210) (= m 0xF1000210) (= m 0xF100011F) (= m 0xF100021F)))
-        (= (bit-and (u64-shift-right w 25) 7) 7) (= (bit-and (u64-shift-right w 25) 7) 6)
-        (= (bit-and w 0xFFC00000) 0x39400000) (= (bit-and w 0xFFE00C00) 0x38600800))))
+    (and (>= k 2) (or (= m 0xD1000108) (= m 0xF1000108) (= m 0xD1000210) (= m 0xF1000210) (= m 0xF100011F) (= m 0xF100021F)))))
+(defn- t2-prepaid? [M :vector-i64 a :i64 b :i64] :bool
+  (and (< a b) (or (t2-prepw? (vector-at M (+ MM-CODE-BASE a))) (t2-prepaid? M (inc a) b))))
+(def t2-s-weak 54)
+(defn- t2-memw? [w :i64] :bool
+  (let [base (bit-and (u64-shift-right w 5) 31)]
+    (and (not= base 7) (not= base 31)
+         (or (= (bit-and w 0x3B000000) 0x39000000) (= (bit-and w 0x3B200C00) 0x38200800) (= (bit-and w 0x3A000000) 0x28000000)))))
+(defn- t2-brw? [w :i64] :bool
+  (or (= (bit-and w 0xFC000000) 0x14000000) (= (bit-and w 0xFC000000) 0x94000000) (= (bit-and w 0xFF000010) 0x54000000)
+      (= (bit-and w 0x7E000000) 0x34000000) (= (bit-and w 0x7E000000) 0x36000000) (= (bit-and w 0xFFFFFC1F) 0xD65F0000)))
 ;; signed branch displacement (words) of a b / b.cond / cbz / cbnz word, 0 when w is not one
 (defn- t2-bdisp [w :i64] :i64
   (cond (= (bit-and w 0xFC000000) 0x14000000)
@@ -17237,19 +17272,22 @@
       (cond (= r 7) false
             (and (>= r 0) (not= r 31)) (t2-tight-loop? M (inc t) a true)
             :else (t2-tight-loop? M (inc t) a mem)))))
-(defn- t2-kernel? [M :vector-i64 a :i64 b :i64] :bool (t2-kernel2? M a a b))
-(defn- t2-kernel2? [M :vector-i64 s :i64 a :i64 b :i64] :bool
+(defn- t2-kernel? [M :vector-i64 a :i64 b :i64] :bool (t2-kernel2? M a a b 0))
+(defn- t2-kernel2? [M :vector-i64 s :i64 a :i64 b :i64 run :i64] :bool
   (if (>= a b) false
     (let [w (vector-at M (+ MM-CODE-BASE a)) d (t2-bdisp w)]
       (cond (t2-kword? w) true
             (and (< d 0) (>= (+ a d) s) (t2-tight-loop? M (+ a d) a false)) true
-            :else (t2-kernel2? M s (inc a) b)))))
+            (t2-brw? w) (t2-kernel2? M s (inc a) b 0)
+            (t2-memw? w) (or (>= run 11) (t2-kernel2? M s (inc a) b (inc run)))
+            :else (t2-kernel2? M s (inc a) b run)))))
 (defn- t2-clear-defs [M :vector-i64 var :i64 nvar :i64 nb :i64] :vector-i64
   (if (>= var nvar) M (t2-clear-defs (t2-wzero M (+ t2-a-def (* var t2-maxb)) 0 nb) (inc var) nvar nb)))
 (defn- t2-ok? [M :vector-i64] :bool (= (t2-g M t2-s-fail) 0))
 (defn- t2-compile [M :vector-i64 p0 :i64 end0 :i64 f :i64 pub :i64] :vector-i64
   (let [fix0 (t2-g M t2-s-fix0)
-        MX (t2-expand (-> M (t2-wzero 0 0 64) (t2-s t2-s-f f) (t2-s t2-s-fix0 fix0)) p0 end0 f pub)
+        weak (if (t2-prepaid? M (gn-fnf M f FF-CODE) (vector-at M MM-CODE-N)) 1 0)
+        MX (t2-expand (-> M (t2-wzero 0 0 64) (t2-s t2-s-f f) (t2-s t2-s-fix0 fix0) (t2-s t2-s-weak weak)) p0 end0 f pub)
         p (t2-g MX t2-s-p) end (t2-g MX t2-s-end)
         np (gn-fnf M f FF-NPARAMS)
         ns (t2-g MX t2-s-xns)
