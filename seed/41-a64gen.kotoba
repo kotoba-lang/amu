@@ -1869,7 +1869,7 @@
               (gn-err M2 E-GEN-FRAME (+ ns dp))
               (-> M2
                   (gn-put (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) (vector-at M2 MM-CODE-N))
-                  (dotpre-entry i f np)
+                  (dotpre-entry i f np) (kpre-entry i f np)
                   (trg-se-dispatch i f np)
                   (trg-gp-dispatch i f np)
                   (cond-> (> F 0) (-> (gn-emit (enc-stp-pre 29 30 31 -16))
@@ -6817,33 +6817,36 @@
   (let [a (gn-sreg M 1) b (gn-sreg M 2) c (gn-sreg M 3)]
    (and (>= a 19) (<= a 28) (>= b 19) (<= b 28) (>= c 19) (<= c 28)
     (not= a b) (not= a c) (not= b c))))))))
-(defn- ru-entry [M :vector-i64 i :i64] :vector-i64
+;; pre: see rv-entry2; i + 1 lives in x4 (x1 is the parameter the prologue still needs)
+(defn- ru-entry [M :vector-i64 i :i64] :vector-i64 (ru-entry2 M i false))
+(defn- ru-entry2 [M :vector-i64 i :i64 pre :bool] :vector-i64
  (if (not (ru-admit M i)) M
- (let [p (dec i) n (gn-sir M (+ p 4) IF-B) stride (gn-sir M (+ p 26) IF-B) G (vector-alloc 17)
-  m0 (-> M (gn-mov 0 (gn-sreg M 1)) (gn-mov 1 (gn-sreg M 2)) (gn-mov 2 (gn-sreg M 3))
+ (let [p (dec i) n (gn-sir M (+ p 4) IF-B) stride (gn-sir M (+ p 26) IF-B) G (vector-alloc 17) r1 (if pre 4 1)
+  m0 (-> M (gn-mov 0 (kp M pre 1)) (gn-mov 1 (kp M pre 2)) (gn-mov 2 (kp M pre 3))
    (gn-emit (enc-cmp-i 1 63)) (ri-cold G 8) (gn-emit (enc-cmp-i 2 n)) (ri-cold G 2)
-   (gn-emit (enc-add-i 1 1 1)) (gn-mov-imm 3 n) (gn-emit (enc-sub-r 3 3 2))
-   (gn-mov-imm 16 3) (gn-emit (enc-mul 11 1 16)) (gn-emit (enc-add-i 11 11 4))
-   (gn-emit (enc-mul 11 11 3)) (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-emit (enc-cmp-r 8 11)) (ri-cold G 3)
+   (gn-emit (enc-add-i r1 1 1)) (gn-mov-imm 3 n) (gn-emit (enc-sub-r 3 3 2))
+   (gn-mov-imm 16 3) (gn-emit (enc-mul 11 r1 16)) (gn-emit (enc-add-i 11 11 4))
+   (gn-emit (enc-mul 11 11 3)) (cond-> pre (gn-emit (enc-add-i 11 11 1)))
+   (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-emit (enc-cmp-r 8 11)) (ri-cold G 3)
    (gn-emit (enc-ldr 16 7 312)) (gn-emit (enc-ldr 16 16 0)) (gn-emit (enc-sub-i 17 0 1))
    (gn-emit (enc-cmp-r 17 16)) (ri-cold G 2) (gn-emit (enc-ldr 16 7 320))
    (gn-emit (gn-e-addsl 16 16 17 4)) (gn-emit (enc-ldp 17 16 16 0))
-   (gn-emit (enc-sub-i 12 1 1)) (gn-emit (enc-cmp-i 12 (dec n)))) bm (vector-at m0 MM-CODE-N)
+   (gn-emit (enc-sub-i 12 r1 1)) (gn-emit (enc-cmp-i 12 (dec n)))) bm (vector-at m0 MM-CODE-N)
   m1 (gn-emit m0 (enc-bcond 2 2))
-  m2 (-> m1 (gn-mov-imm 12 (dec n)) (gn-mov-imm 5 stride) (gn-emit (enc-mul 13 1 5))
+  m2 (-> m1 (gn-mov-imm 12 (dec n)) (gn-mov-imm 5 stride) (gn-emit (enc-mul 13 r1 5))
    (gn-emit (enc-add-r 13 13 12)) (gn-emit (enc-cmp-r 13 16)) (ri-cold G 2)
    (gn-emit (enc-ldr 15 7 328)) (gn-emit (gn-e-addsl 15 15 17 3))
    (gn-emit (enc-sub-r 8 8 11)) (gn-emit (enc-str 8 7 CTX-FUEL))
-   (gn-emit (enc-mul 6 1 5)) (gn-emit (gn-e-addsl 6 15 6 3)) (gn-mov-imm 5 (* stride 8))) outer (vector-at m2 MM-CODE-N)
+   (gn-emit (enc-mul 6 r1 5)) (gn-emit (gn-e-addsl 6 15 6 3)) (gn-mov-imm 5 (* stride 8))) outer (vector-at m2 MM-CODE-N)
   m3 (-> m2 (gn-emit (gn-e-addsl 16 6 2 3)) (gn-emit (enc-ldr 9 16 0)) (gn-mov 10 6)
-   (gn-emit (gn-e-addsl 11 15 2 3)) (gn-mov 12 1)) inner (vector-at m3 MM-CODE-N)
+   (gn-emit (gn-e-addsl 11 15 2 3)) (gn-mov 12 r1)) inner (vector-at m3 MM-CODE-N)
   m4 (-> m3 (gn-emit (enc-ldr 13 10 0)) (gn-emit (enc-ldr 14 11 0))
    (gn-emit (+ (enc-madd 9 13 14 9) 0x8000))
    (gn-emit (enc-add-i 10 10 8)) (gn-emit (enc-add-r 11 11 5))
    (gn-emit (enc-subs-i 12 12 1))) ib (vector-at m4 MM-CODE-N)
   m5 (-> m4 (gn-emit (enc-bcond 1 (- inner ib))) (gn-emit (gn-e-addsl 16 6 2 3)) (gn-emit (enc-str 9 16 0))
    (gn-emit (enc-add-i 2 2 1)) (gn-emit (enc-subs-i 3 3 1))) ob (vector-at m5 MM-CODE-N)
-  m6 (-> m5 (gn-emit (enc-bcond 1 (- outer ob))) (gn-vclear) (gn-epilogue) (gn-gs gn-f-dead 0)) end (vector-at m6 MM-CODE-N)]
+  m6 (-> m5 (gn-emit (enc-bcond 1 (- outer ob))) (kp-exit pre)) end (vector-at m6 MM-CODE-N)]
  (ri-patch m6 G 0 end))))
 
 (defn- rl-shape [M :vector-i64 p :i64 f :i64 k :i64] :bool
@@ -6927,15 +6930,18 @@
   (let [a (gn-sreg M 1) b (gn-sreg M 2) c (gn-sreg M 3)]
    (and (>= a 19) (<= a 28) (>= b 19) (<= b 28) (>= c 19) (<= c 28)
     (not= a b) (not= a c) (not= b c))))))))
-(defn- rl-entry [M :vector-i64 i :i64] :vector-i64
+;; pre: see rv-entry2 (no parameter register is written before the last guard)
+(defn- rl-entry [M :vector-i64 i :i64] :vector-i64 (rl-entry2 M i false))
+(defn- rl-entry2 [M :vector-i64 i :i64 pre :bool] :vector-i64
  (if (not (rl-admit M i)) M
  (let [p (dec i) n (gn-sir M (+ p 4) IF-B) stride (gn-sir M (+ p 29) IF-B) G (vector-alloc 21)
-  m0 (-> M (gn-mov 0 (gn-sreg M 1)) (gn-mov 1 (gn-sreg M 2)) (gn-mov 2 (gn-sreg M 3))
+  m0 (-> M (gn-mov 0 (kp M pre 1)) (gn-mov 1 (kp M pre 2)) (gn-mov 2 (kp M pre 3))
    (gn-emit (enc-cmp-i 1 63)) (ri-cold G 8) (gn-emit (enc-cmp-i 2 n)) (ri-cold G 2)
    (gn-emit (enc-cmp-r 2 1)) (ri-cold G 9)
    (gn-mov-imm 3 n) (gn-emit (enc-sub-r 3 3 2))
    (gn-mov-imm 16 3) (gn-emit (enc-mul 11 1 16)) (gn-emit (enc-add-i 11 11 5))
-   (gn-emit (enc-mul 11 11 3)) (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-emit (enc-cmp-r 8 11)) (ri-cold G 3)
+   (gn-emit (enc-mul 11 11 3)) (cond-> pre (gn-emit (enc-add-i 11 11 1)))
+   (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-emit (enc-cmp-r 8 11)) (ri-cold G 3)
    (gn-emit (enc-ldr 16 7 312)) (gn-emit (enc-ldr 16 16 0)) (gn-emit (enc-sub-i 17 0 1))
    (gn-emit (enc-cmp-r 17 16)) (ri-cold G 2) (gn-emit (enc-ldr 16 7 320))
    (gn-emit (gn-e-addsl 16 16 17 4)) (gn-emit (enc-ldp 17 16 16 0))
@@ -6959,7 +6965,7 @@
   m5 (-> m4 (gn-emit (enc-sdiv 9 9 6)) (gn-emit (enc-mul 16 2 5)) (gn-emit (enc-add-r 16 16 15))
    (gn-emit (gn-e-addsl 16 16 1 3)) (gn-emit (enc-str 9 16 0))
    (gn-emit (enc-add-i 2 2 1)) (gn-emit (enc-subs-i 3 3 1))) ob (vector-at m5 MM-CODE-N)
-  m6 (-> m5 (gn-emit (enc-bcond 1 (- outer ob))) (gn-vclear) (gn-epilogue) (gn-gs gn-f-dead 0)) end (vector-at m6 MM-CODE-N)]
+  m6 (-> m5 (gn-emit (enc-bcond 1 (- outer ob))) (kp-exit pre)) end (vector-at m6 MM-CODE-N)]
  (ri-patch (gn-dot-patch m6 zero write 0) G 0 end))))
 
 (defn- shloop-shape [M :vector-i64 p :i64 f :i64 k :i64] :bool
@@ -7537,16 +7543,19 @@
   (let [a (gn-sreg M 1) b (gn-sreg M 2) c (gn-sreg M 3) d (gn-sreg M 4)]
    (and (>= a 19) (<= a 28) (>= b 19) (<= b 28) (>= c 19) (<= c 28) (>= d 19) (<= d 28)
     (not= a b) (not= a c) (not= a d) (not= b c) (not= b d) (not= c d))))))))
-(defn- rv-entry [M :vector-i64 i :i64] :vector-i64
+;; pre: emitted at FF-CODE before the frame (kpre-entry): the parameters are still in x0..x3, the count lives in x6
+;; (x3 is the sum parameter the prologue still needs), the entry charge is paid with the loop's, plain ret
+(defn- rv-entry [M :vector-i64 i :i64] :vector-i64 (rv-entry2 M i false))
+(defn- rv-entry2 [M :vector-i64 i :i64 pre :bool] :vector-i64
  (if (not (rv-admit M i)) M
  (let [p (dec i) fixed (= (gn-op M (+ p 4)) OP-CONST) limit (gn-sir M (+ p 4) IF-B)
   base (gn-sir M (+ p 21) IF-B) reader (gn-sir M (+ p 19) IF-A)
-  q (mr-reader M (+ p 19) reader 3) stride (gn-sir M (+ q 2) IF-B) G (vector-alloc 19)
-  m0 (-> M (gn-mov 0 (gn-sreg M 1)) (gn-mov 1 (gn-sreg M 2)) (gn-mov 2 (gn-sreg M 3))
-   (gn-mov 9 (gn-sreg M 4)) (gn-emit (enc-cmp-i 1 64)) (ri-cold G 8))
+  q (mr-reader M (+ p 19) reader 3) stride (gn-sir M (+ q 2) IF-B) G (vector-alloc 19) c (if pre 6 3)
+  m0 (-> M (gn-mov 0 (kp M pre 1)) (gn-mov 1 (kp M pre 2)) (gn-mov 2 (kp M pre 3))
+   (gn-mov 9 (kp M pre 4)) (gn-emit (enc-cmp-i 1 64)) (ri-cold G 8))
   m1 (if fixed (gn-mov-imm m0 4 limit) (gn-mov m0 4 1))
-  m2 (-> m1 (gn-emit (enc-cmp-r 2 4)) (ri-cold G 8) (gn-emit (enc-sub-r 3 4 2))
-   (gn-emit (enc-cmp-i 3 0)) (ri-cold G 0) (gn-emit (enc-add-r 11 3 3))
+  m2 (-> m1 (gn-emit (enc-cmp-r 2 4)) (ri-cold G 8) (gn-emit (enc-sub-r c 4 2))
+   (gn-emit (enc-cmp-i c 0)) (ri-cold G 0) (gn-emit (enc-add-r 11 c c)) (cond-> pre (gn-emit (enc-add-i 11 11 1)))
    (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-emit (enc-cmp-r 8 11)) (ri-cold G 3)
    (gn-emit (enc-ldr 16 7 312)) (gn-emit (enc-ldr 16 16 0)) (gn-emit (enc-sub-i 17 0 1))
    (gn-emit (enc-cmp-r 17 16)) (ri-cold G 2) (gn-emit (enc-ldr 16 7 320))
@@ -7561,9 +7570,23 @@
   m3 (-> m2 (gn-emit (enc-ldr 13 10 0)) (gn-emit (enc-ldr 14 11 0))
    (gn-emit (+ (enc-madd 9 13 14 9) 0x8000))
    (gn-emit (enc-add-i 10 10 8)) (gn-emit (enc-add-i 11 11 8))
-   (gn-emit (enc-subs-i 3 3 1))) b (vector-at m3 MM-CODE-N)
-  m4 (-> m3 (gn-emit (enc-bcond 1 (- loop b))) (gn-mov 0 9) (gn-vclear) (gn-epilogue) (gn-gs gn-f-dead 0)) end (vector-at m4 MM-CODE-N)]
+   (gn-emit (enc-subs-i c c 1))) b (vector-at m3 MM-CODE-N)
+  m4 (-> m3 (gn-emit (enc-bcond 1 (- loop b))) (gn-mov 0 9) (kp-exit pre)) end (vector-at m4 MM-CODE-N)]
   (ri-patch m4 G 0 end))))
+;; parameter k's register: x(k-1) before the frame, its slot register after the prologue
+(defn- kp [M :vector-i64 pre :bool k :i64] :i64 (if pre (dec k) (gn-sreg M k)))
+;; kernel exit: plain ret before the frame (no generator state touched), else the ordinary epilogue
+(defn- kp-exit [M :vector-i64 pre :bool] :vector-i64
+ (if pre (gn-emit M (enc-ret)) (-> M (gn-vclear) (gn-epilogue) (gn-gs gn-f-dead 0))))
+;; frameless kernels at FF-CODE (gn-op-fn2): each guard fails before anything observable into the prologue
+;; that follows; i is the FN record
+(defn- kpre-entry [M :vector-i64 i :i64 f :i64 np :i64] :vector-i64
+ (let [j (inc i)]
+  (cond (and (= np 5) (is-admit M j)) (is-entry2 M j true)
+        (and (= np 4) (rv-admit M j)) (rv-entry2 M j true)
+        (and (= np 3) (ru-admit M j)) (ru-entry2 M j true)
+        (and (= np 3) (rl-admit M j)) (rl-entry2 M j true)
+        :else M)))
 
 (defn- srloop-admit [M :vector-i64 i :i64] :i64
  (if (or (<= i 2) (>= (+ i 69) (vector-at M MM-SIR-N))
@@ -7806,11 +7829,13 @@
  (> (pi-shape M pc) 0)
  (= (gn-sir M (+ (pi-shape M pc) 5) IF-A) r)
  (= (gn-sir M (+ (pi-shape M pc) 20) IF-A) w))))))
-(defn- is-entry [M :vector-i64 i :i64] :vector-i64
+;; pre: see rv-entry2 (x0..x4 are only read before the last guard)
+(defn- is-entry [M :vector-i64 i :i64] :vector-i64 (is-entry2 M i false))
+(defn- is-entry2 [M :vector-i64 i :i64 pre :bool] :vector-i64
  (if (not (is-admit M i)) M
  (let [G (vector-alloc 19)
- m0 (-> M (gn-mov 0 (gn-sreg M 1)) (gn-mov 1 (gn-sreg M 2)) (gn-mov 2 (gn-sreg M 3))
-  (gn-mov 3 (gn-sreg M 4)) (gn-mov 4 (gn-sreg M 5))
+ m0 (-> M (gn-mov 0 (kp M pre 1)) (gn-mov 1 (kp M pre 2)) (gn-mov 2 (kp M pre 3))
+  (gn-mov 3 (kp M pre 4)) (gn-mov 4 (kp M pre 5))
   (gn-emit (enc-cmp-i 2 4095)) (ri-cold G 8) (gn-emit (enc-cmp-r 1 2)) (ri-cold G 8)
   (gn-emit (enc-ldr 16 7 312)) (gn-emit (enc-ldr 16 16 0)) (gn-emit (enc-sub-i 17 0 1))
   (gn-emit (enc-cmp-r 17 16)) (ri-cold G 2) (gn-emit (enc-ldr 16 7 320))
@@ -7831,7 +7856,7 @@
   (gn-emit (+ (enc-add-r 5 1 6) 0x400400)) (gn-emit (enc-sub-r 6 2 5))
   (gn-mov-imm 9 6) (gn-emit (enc-mul 11 6 9)) (gn-emit (enc-add-i 11 11 2))
   (gn-emit (enc-cmp-r 5 1))) skip (vector-at m5 MM-CODE-N)
- m6 (-> m5 (gn-emit (enc-bcond 0 2)) (gn-emit (enc-add-i 11 11 1))
+ m6 (-> m5 (gn-emit (enc-bcond 0 2)) (gn-emit (enc-add-i 11 11 1)) (cond-> pre (gn-emit (enc-add-i 11 11 1)))
   (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-emit (enc-cmp-r 8 11)) (ri-cold G 3)
   (gn-emit (enc-sub-r 8 8 11)) (gn-emit (enc-str 8 7 CTX-FUEL))
   (gn-emit (enc-add-r 9 2 2)) (gn-emit (gn-e-addsl 12 15 9 3))) noCopy (vector-at m6 MM-CODE-N)
@@ -7842,7 +7867,7 @@
  m9 (gn-emit m8 (enc-bcond 1 (- cp cb))) final (vector-at m9 MM-CODE-N)
  m10 (-> m9 (gn-put (+ MM-CODE-BASE noCopy) (enc-cbz 6 (- final noCopy)))
   (gn-emit (enc-str 3 12 0)) (gn-emit (enc-str 4 12 8))
-  (gn-mov 0 (gn-sreg M 1)) (gn-vclear) (gn-epilogue) (gn-gs gn-f-dead 0)) end (vector-at m10 MM-CODE-N)]
+  (gn-mov 0 (kp M pre 1)) (kp-exit pre)) end (vector-at m10 MM-CODE-N)]
  (ri-patch m10 G 0 end))))
 (defn- is-labels [M :vector-i64 p :i64 k :i64] :bool
  (if (= k 4) true (let [o (case k 0 2 1 14 2 36 3 50 0) l (gn-sir M (+ p o) IF-A)]
