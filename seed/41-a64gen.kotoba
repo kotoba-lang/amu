@@ -17081,11 +17081,17 @@
                      (inc v) nv)))
 (defn- t2-alloc-fixed [M :vector-i64 base :i64 forever :i64] :vector-i64
   (let [r (t2-free M (if (> (t2-g M t2-s-ncalls) 0) 14 0) true)] (if (< r 0) (t2-fail M 14) (-> M (t2-take r forever) (t2-s base r)))))
+;; a function that may receive a handed-over descriptor for parameter 0 (at most 3 parameters, no non-tail call) keeps
+;; that slot in x4 (base) / x3 (length), the registers of the handoff: neither side moves it
+(defn- t2-hoff-slot? [M :vector-i64 k :i64] :bool
+  (and (= k 0) (<= (t2-g M t2-s-np) 3) (= (t2-g M t2-s-ncalls) 0) (= (t2-g M t2-s-hascall) 1)   ; a chain link (tail calls)
+       (not (t2-busy? M 3)) (not (t2-busy? M 4))))
 (defn- t2-alloc-descs [M :vector-i64 k :i64 forever :i64] :vector-i64
   (if (>= k 16) M
-    (t2-alloc-descs (if (= (t2-g M (+ t2-a-pd (* 4 k))) 1)
-                      (-> M (t2-alloc-fixed (+ t2-a-pd (* 4 k) 1) forever) (t2-alloc-fixed (+ t2-a-pd (* 4 k) 2) forever))
-                      M)
+    (t2-alloc-descs (cond (not= (t2-g M (+ t2-a-pd (* 4 k))) 1) M
+                          (t2-hoff-slot? M k)
+                          (-> M (t2-take 4 forever) (t2-s (+ t2-a-pd 1) 4) (t2-take 3 forever) (t2-s (+ t2-a-pd 2) 3))
+                          :else (-> M (t2-alloc-fixed (+ t2-a-pd (* 4 k) 1) forever) (t2-alloc-fixed (+ t2-a-pd (* 4 k) 2) forever)))
                     (inc k) forever)))
 ;; string slot registers (unused fields -1), then every string-length value IS its slot's SLEN register
 (defn- t2-alloc-sfld [M :vector-i64 k :i64 fld :i64 need :bool forever :i64] :vector-i64
@@ -18085,22 +18091,29 @@
 (def t2-s-hent 62)
 (def t2-a-hent (+ t2-a-hoist 32))             ; per FN: its T2 code reads a handed-over descriptor (persistent)
 (def t2-a-hoff (+ t2-a-hent MM-FN-CAP))       ; [count, FIX indices of handoff tail branches...] (persistent, 4096)
-(defn- t2-hoff-add [M :vector-i64 k :i64] :vector-i64
-  (let [n (t2-g M t2-a-hoff)] (if (>= n 4096) M (-> M (t2-s (+ t2-a-hoff 1 n) k) (t2-s t2-a-hoff (inc n))))))
+;; records (FIX index, index of the caller's fuel store before the branch or -1)
+(defn- t2-hoff-add [M :vector-i64 k :i64 sx :i64] :vector-i64
+  (let [n (t2-g M t2-a-hoff)] (if (>= n 4094) M (-> M (t2-s (+ t2-a-hoff 1 n) k) (t2-s (+ t2-a-hoff 2 n) sx) (t2-s t2-a-hoff (+ n 2))))))
 ;; after code generation: handoff tail branches to T2 callees that read the handoff enter at +1 (skipping mov x5,#0)
 (defn- t2-patch-handoffs [M :vector-i64] :vector-i64
   (if (= (t2-base M) 0) M
     (loop [i 0 m M]
       (if (>= i (t2-g m t2-a-hoff)) m
-        (let [k (t2-g m (+ t2-a-hoff 1 i)) b (+ MM-FIX-BASE (* k MM-FIX-W)) g (vector-at m (+ b XF-TARGET))]
-          (recur (inc i) (if (and (> g 0) (< g MM-FN-CAP) (= (t2-g m (+ t2-a-hent g)) 1) (= (vector-at m (+ b XF-AUX)) 0)
-                                  (= (vector-at m (+ b XF-KIND)) FX-BL26))
-                           (gn-put m (+ b XF-AUX) 1) m)))))))
+        (let [k (t2-g m (+ t2-a-hoff 1 i)) sx (t2-g m (+ t2-a-hoff 2 i)) b (+ MM-FIX-BASE (* k MM-FIX-W))
+              g (vector-at m (+ b XF-TARGET)) he (if (and (> g 0) (< g MM-FN-CAP)) (t2-g m (+ t2-a-hent g)) 0)
+              ok (and (>= he 1) (= (vector-at m (+ b XF-AUX)) 0) (= (vector-at m (+ b XF-KIND)) FX-BL26))]
+          ;; AUX 2 (skip the callee's fuel load too) when the callee publishes fuel itself wherever it is observed and
+          ;; the caller's x8 is the exact count: the caller's own store before the branch becomes a nop
+          (recur (+ i 2) (cond (and ok (= he 2) (>= sx 0) (= (vector-at m (+ MM-CODE-BASE sx)) (enc-str 8 7 CTX-FUEL)))
+                               (-> m (gn-put (+ b XF-AUX) 2) (gn-put (+ MM-CODE-BASE sx) 0xd503201f))
+                               ok (gn-put m (+ b XF-AUX) 1)
+                               :else m)))))))
 (defn- t2-e-call [M :vector-i64 v :i64 tail :bool] :vector-i64
   (let [g (t2-vf M v t2-f-a)]
     (if tail
-      (let [M1 (-> M (t2-call-args v) (t2-handoff v) (t2-unframe)) k (vector-at M1 MM-FIX-N)]
-        (-> M1 (gn-fix FX-BL26 g) (gn-emit (enc-b 0)) (cond-> (= (t2-g M1 t2-s-hoffk) 1) (t2-hoff-add k))))
+      (let [M0 (-> M (t2-call-args v) (t2-handoff v)) sx (if (= (t2-g M0 t2-s-fuel) 1) (vector-at M0 MM-CODE-N) -1)
+            M1 (t2-unframe M0) k (vector-at M1 MM-FIX-N)]
+        (-> M1 (gn-fix FX-BL26 g) (gn-emit (enc-b 0)) (cond-> (= (t2-g M1 t2-s-hoffk) 1) (t2-hoff-add k sx))))
       (let [M1 (-> M (cond-> (= (t2-g M t2-s-defer) 1) (gn-emit (enc-str 8 7 CTX-FUEL)))
                    (t2-call-args v) (gn-fix FX-BL26 g) (gn-emit (enc-bl 0))
                    (gn-emit (enc-ldr 7 31 0)) (gn-emit (enc-ldr 8 7 CTX-FUEL)))
@@ -18215,11 +18228,25 @@
           lc (t2-l-dstub M n)
           lj (inc lc)]
       (if (>= n 60) (t2-fail M 26)
-        (let [M1 (-> M (t2-s t2-s-ndst (inc n)) (t2-s (+ t2-a-dstub (* 3 n)) -1)
-                     (t2-jmp FX-CB19 lc (enc-cbz 5 0)) (gn-emit (enc-cmp-r 5 k)) (t2-bcond 1 lc)
-                     (gn-mov B 4) (gn-mov L 3) (t2-jmp FX-B26 lj (enc-b 0))
-                     (t2-deflab lc))]
-          (-> M1 (t2-e-desc k) (t2-deflab lj) (t2-s t2-s-hent 1)))))))
+        (if (and (= B 4) (= L 3))
+          ;; the slot lives in the handoff registers: a matching handoff falls straight through; the computation is a
+          ;; cold block (t2-e-cdesc) entered from the ordinary entry
+          (-> M (t2-s t2-s-ndst (inc n)) (t2-s (+ t2-a-dstub (* 3 n)) -1) (t2-s t2-s-cdesc (inc n))
+              (t2-jmp FX-CB19 lc (enc-cbz 5 0)) (gn-emit (enc-cmp-r 5 k)) (t2-bcond 1 lc)
+              (t2-deflab lj) (t2-s t2-s-hent 1))
+        (let [M1 (if false M
+                   (-> M (t2-s t2-s-ndst (inc n)) (t2-s (+ t2-a-dstub (* 3 n)) -1)
+                       (t2-jmp FX-CB19 lc (enc-cbz 5 0)) (gn-emit (enc-cmp-r 5 k)) (t2-bcond 1 lc)
+                       (gn-mov B 4) (gn-mov L 3) (t2-jmp FX-B26 lj (enc-b 0))
+                       (t2-deflab lc)))]
+          (-> M1 (t2-e-desc k) (t2-deflab lj) (t2-s t2-s-hent 1))))))))
+;; the cold descriptor computation of parameter 0 (handoff-register slot), back to the entry path
+(def t2-s-cdesc 74)
+(defn- t2-e-cdesc [M :vector-i64] :vector-i64
+  (let [n (dec (t2-g M t2-s-cdesc))]
+    (if (< n 0) M
+      (let [lc (t2-l-dstub M n) lj (inc lc)]
+        (-> M (t2-s t2-s-cdesc 0) (t2-deflab lc) (t2-e-desc 0) (t2-jmp FX-B26 lj (enc-b 0)))))))
 ;; ---- string slots: entry / after-call computation (non-faulting), invalid-handle stubs, host-call stubs ------------------
 ;; pairs: [x7,#288] -> pair_used, [x7,#296] = pairs base; [x7,#384] = code_base, [x7,#392] = code_length
 (defn- t2-e-sdesc-from [M :vector-i64 k :i64 rh :i64] :vector-i64
@@ -18369,7 +18396,10 @@
     ;; plain search-loop kernel may be the helper another kernel's fused code relies on)
     (if (and (t2-ok? M1) (< body (+ (- entry old) (t2-g M1 t2-s-credit)))
              (or (= (t2-g M1 t2-s-tight) 0) (and (= (t2-g M1 t2-s-hascall) 0) (= (t2-g M1 t2-s-weak) 1))))
-      (-> M1 (t2-s (+ t2-a-st f) 1) (t2-s (+ t2-a-hent f) (t2-g M1 t2-s-hent)))
+      (-> M1 (t2-s (+ t2-a-st f) 1)
+          (t2-s (+ t2-a-hent f) (if (and (= (t2-g M1 t2-s-hent) 1) (= (t2-g M1 t2-s-pub) 1) (= (t2-g M1 t2-s-defer) 1)
+                                         (= (t2-g M1 t2-s-fuel) 1))
+                                  2 (t2-g M1 t2-s-hent))))
       ;; rollback: the discarded FIX records' handoff entries go too
       (-> M1 (gn-put MM-CODE-N entry) (gn-put MM-FIX-N fixn) (gn-put MM-LABEL-N labn) (t2-s t2-a-hoff hoffn)
           (gn-put (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) old) (t2-s (+ t2-a-st f) 2)))))
@@ -18386,7 +18416,7 @@
                (cond-> (> (t2-g M t2-s-ncalls) 0) (-> (gn-emit (enc-sub-i 31 31 16)) (gn-emit (enc-str 7 31 0))))
                (t2-e-descs 0) (t2-e-sdescs 0) (t2-e-tabs 0) (t2-param-moves 1)
                (t2-e-blocks 0))
-        M2a (-> (t2-s M1 t2-s-bodyend (vector-at M1 MM-CODE-N)) (t2-e-colds 0) (t2-e-stubs 0) (t2-e-dstubs 0))
+        M2a (-> (t2-s M1 t2-s-bodyend (vector-at M1 MM-CODE-N)) (t2-e-colds 0) (t2-e-stubs 0) (t2-e-cdesc) (t2-e-dstubs 0))
         M2 (-> M2a (t2-e-sstubs 0 (t2-smask M2a)) (t2-e-tstubs 0))
         lu (t2-lab M2 nb)]
     (-> M2 (t2-deflab lu) (gn-emit (gn-e-udf))
