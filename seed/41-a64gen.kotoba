@@ -16189,7 +16189,8 @@
           h (if (or (= op t2-vat) (= op t2-vset)) (t2-res M (t2-vf M v t2-f-a)) 0)
           M1 (cond (= op t2-vcnt) (t2-fail M 9)
                    (or (= op t2-slen) (t2-cpx? op)) (t2-sd-reg-slot M v op)
-                   (> h 0) (cond (= (t2-op-of M h) t2-param)
+                   (> h 0) (cond (and (= (t2-op-of M h) t2-param) (>= (t2-vf M h t2-f-a) 7)) (t2-fail M 34)   ; a stack vector
+                                 (= (t2-op-of M h) t2-param)
                                  (-> M (t2-s (+ t2-a-pd (* 4 (t2-vf M h t2-f-a))) 1) (t2-s (+ t2-a-pd (* 4 (t2-vf M h t2-f-a)) 3) h))
                                  (= (t2-op-of M h) t2-call) (t2-slot-new M h 8)
                                  :else (t2-fail M 8))
@@ -16217,7 +16218,7 @@
   (let [h (t2-res M (t2-vf M v t2-f-b))] (if (and (> h 0) (= (t2-op-of M h) t2-param)) (t2-vf M h t2-f-a) -1)))
 (defn- t2-sd-reg-slot [M :vector-i64 v :i64 op :i64] :vector-i64
   (let [k (t2-hparam M v)]
-    (cond (or (< k 0) (>= k 8)) (t2-fail M 30)
+    (cond (or (< k 0) (>= k 7)) (t2-fail M 30)   ; a register parameter (k >= 7 arrives on the stack)
           ;; the host call needs the published counter: only in published (nonleaf) mode, as in the old code
           (and (t2-cpx? op) (= (t2-g M t2-s-pub) 0)) (t2-fail M 31)
           :else (-> M (t2-sds k 0 (bit-or (t2-sd M k 0) (cond (= op t2-slen) 3 (= op t2-cpa) 4 :else 7)))
@@ -16284,9 +16285,12 @@
   (cond (>= b (t2-g M t2-s-nb)) (t2-s M t2-s-maxpos p)
         (= (t2-bget M t2-a-breach b) 0) (t2-positions M (inc b) p)
         :else (let [M1 (-> M (t2-bset t2-a-bpos0 b p) (t2-pos-phis (t2-bget M t2-a-bphi b) p))
-                    M2a (t2-pos-vals M1 (t2-bget M1 t2-a-bv0 b) (t2-bget M1 t2-a-bv1 b) (inc p))
-                    q (t2-g M2a t2-s-npos)
-                    M2 M2a]
+                    M2 (t2-pos-vals M1 (t2-bget M1 t2-a-bv0 b) (t2-bget M1 t2-a-bv1 b) (inc p))
+                    ;; a block without a terminator (it falls through) ends one position after its last value: a value
+                    ;; live out of it (a phi operand on the edge) must not end where that value (a call) is defined, or
+                    ;; it would not count as crossing the call (fix found by the handles agent, repro t2test/t24)
+                    t (t2-lastval M2 b) top (if (> t 0) (t2-op-of M2 t) 0)
+                    q (+ (t2-g M2 t2-s-npos) (if (or (= top t2-br) (= top t2-brz) (= top t2-ret) (= top t2-trap)) 0 1))]
                 (if (>= q (- t2-maxpos 2)) (t2-fail M2 11)
                   (t2-positions (t2-bset M2 t2-a-bpos1 b (dec q)) (inc b) q)))))
 ;; ---- liveness (bitsets of 32 words over value ids) -----------------------------------------------------------------------
@@ -16599,8 +16603,9 @@
   (if (> v nv) M
     (t2-alloc-params (if (and (= (t2-op-of M v) t2-param) (t2-regval? M v))
                        (let [k (t2-vf M v t2-f-a)]
-                         (if (t2-crosses? M v)
-                           (let [r (t2-free M 14 false)] (if (< r 0) (t2-fail M 13) (-> M (t2-take r (t2-xf M v t2-x-end)) (t2-vs v t2-f-reg r))))
+                         ;; a stack parameter (k >= 7) or one live across a call takes a free register
+                         (if (or (>= k 7) (t2-crosses? M v))
+                           (let [r (t2-free M (if (t2-crosses? M v) 14 0) false)] (if (< r 0) (t2-fail M 13) (-> M (t2-take r (t2-xf M v t2-x-end)) (t2-vs v t2-f-reg r))))
                            (-> M (t2-take k (t2-xf M v t2-x-end)) (t2-vs v t2-f-reg k))))
                        M)
                      (inc v) nv)))
@@ -17790,10 +17795,16 @@
                    (gn-emit (enc-add-r (t2-g M (+ t2-a-tb (* 2 k) 1)) 17 16)))
                (inc k))))
 ;; parameters allocated away from their incoming x(k) (live across calls) move after the descriptors are read
+;; parameters k >= 7 arrive in the caller's outgoing area at the entry sp + 8(k-7) (R4B); they load after every register
+;; parameter has moved (value order), past the callee-saved pairs and the frame pushed since entry
 (defn- t2-param-moves [M :vector-i64 v :i64] :vector-i64
   (if (> v (t2-g M t2-s-nv)) M
     (t2-param-moves (if (= (t2-op-of M v) t2-param)
-                      (let [r (t2-vf M v t2-f-reg) k (t2-vf M v t2-f-a)] (if (and (>= r 0) (not= r k)) (gn-mov M r k) M))
+                      (let [r (t2-vf M v t2-f-reg) k (t2-vf M v t2-f-a)]
+                        (cond (and (>= k 7) (>= r 0))
+                              (gn-emit M (enc-ldr r 31 (+ (* 8 (- k 7)) (* 16 (t2-g M t2-s-ncs)) (if (> (t2-g M t2-s-ncalls) 0) 32 0))))
+                              (and (>= r 0) (not= r k)) (gn-mov M r k)
+                              :else M))
                       M)
                     (inc v))))
 ;; keep T2's body only when it is smaller than the old body (whose words end where T2 starts); else roll back
@@ -17954,7 +17965,7 @@
         ns (t2-g MX t2-s-xnsmax)
         dp (t2-g MX t2-s-xdp)
         nvar (+ ns 1 dp)]
-    (if (or (not= (t2-g MX t2-s-fail) 0) (>= nvar t2-maxvar) (> np 7)) M
+    (if (or (not= (t2-g MX t2-s-fail) 0) (>= nvar t2-maxvar) (> np 15)) M
       (let [M1 (-> MX (t2-s t2-s-np np) (t2-s t2-s-ns ns) (t2-s t2-s-pub pub) (t2-s t2-s-nvar nvar) (t2-wzero t2-a-pd 0 64)
                    (t2-wzero t2-a-sd 0 64) (t2-cfg))]
         (if (or (not (t2-ok? M1)) (> (t2-bget M1 t2-a-bpn 0) 0)) M
@@ -17999,7 +18010,7 @@
                (or (= (t2-base M) 0) (not (t2-xfn-jump? M (t2-g M t2-s-fix0) (gn-fnf M f FF-CODE) (vector-at M MM-CODE-N))))
                (or (and (= (gn-g M gn-f-leaf) 1) (or (= (gn-g M gn-f-freg) 1) (= (gn-g M gn-f-fuel) 0)))
                    (= (gn-g M gn-f-leaf) 0))
-               (< (- i p) t2-maxops) (<= np 7) (= (gn-sir M p IF-B) np)
+               (< (- i p) t2-maxops) (<= np 15) (= (gn-sir M p IF-B) np)
                (t2-xops-ok? M (inc p))
                (not (t2-kernel? M (gn-fnf M f FF-CODE) (vector-at M MM-CODE-N) (t2-reads-cp? M (inc p)))))
         (let [M0 (t2-ready M)]
