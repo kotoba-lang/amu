@@ -1440,6 +1440,7 @@
                      (gn-gs gn-f-leaf 1)
                      (gn-gs gn-f-ns ns0)
                      (gn-gs gn-f-dp dp0)
+                     (gn-put t2-mark-cell f)
                      (gn-pre (inc i)))
                  i f np))))))))
 ;; Terminal-only mode2: low local registers with original published fuel.
@@ -10344,7 +10345,7 @@
           (gn-put (+ MM-FIX-BASE (* k MM-FIX-W) XF-AT) q)
           (gn-put (+ MM-CODE-BASE q) (enc-bcond (enc-cond-hs) delta))))) A))))))
 
-(defn- gn-ins-quiet [M :vector-i64 i :i64 op :i64] :vector-i64 (let [a (gn-sir M i IF-A) b (gn-sir M i IF-B) c (gn-sir M i IF-C)] (if (or (and (= (gn-g M 14) 1) (not (or (= op OP-FN) (= op OP-END)))) (and (= (gn-g M gn-f-dead) 1) (not (or (= op OP-LABEL) (= op OP-FN) (= op OP-END))))) M (case op OP-CONST (gn-def M a gn-k-const b) OP-LGET (let [m (tbat-entry M i)] (if (gn-affine-read? m i a) (gn-affine-read m i a) (gn-def m a gn-k-local b))) OP-LSET (gn-op-lset M a b) OP-BIN (gn-op-bin M i a b) OP-CMP (gn-op-cmp M i a b) OP-UN (gn-op-un M i a b) OP-LABEL (brc-entry (sls-entry (jssa-entry (ts-entry (btg-entry (srloop-entry (gn-op-label M a) i) i) i) i) i) i) OP-BR (fsb-jump M i (gn-thread M a 0 2 8)) OP-BRZ (gn-op-brz M i a b 0) OP-BRNZ (gn-op-brz M i a b 1) OP-CALL (cpp-call M i a b c) OP-CALLI (gn-op-calli M i b c) OP-FADDR (gn-op-faddr M i a b) OP-RT (gn-op-rt M i a b c) OP-CAP (gn-op-cap M i a b c) OP-STR (gn-op-str M i a b) OP-VEC (gn-op-vec M i a b) OP-TAB (gn-op-tab M i a b c) OP-VECP (gn-op-vecp M i a b c) OP-FUEL (trg-entry (frfix-entry (clw-loop-entry (qrow-entry (wm-entry (pwphase-entry (mdc-entry (ac-entry (ga-entry (ir-entry (ss-entry (ar-entry (fourprobe-entry (rls-entry (ip-entry (is-entry (rv-entry (rl-entry (ru-entry (ri-entry (xd-entry (sw-entry (d2-entry (pz-entry (qb-entry (td-entry (dr-entry (cw-entry (gz-entry (pc3-entry (gn-copy-entry (bu-entry (bs-entry (gn-dot-entry (shloop-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) OP-RET (trg-ret M i a) OP-RET2 (gn-op-ret2 M a) OP-RES2 (gn-op-res2 M i a) OP-TRAP (-> M (gn-emit (enc-brk a)) (gn-gs gn-f-dead 1)) OP-FN (snf-entry (gn-op-fn M i a b) i a b) OP-END (-> M (gn-emit (enc-brk 1)) (gn-gs gn-f-dead 0)) (gn-err M E-GEN-OP op)))))
+(defn- gn-ins-quiet [M :vector-i64 i :i64 op :i64] :vector-i64 (let [a (gn-sir M i IF-A) b (gn-sir M i IF-B) c (gn-sir M i IF-C)] (if (or (and (= (gn-g M 14) 1) (not (or (= op OP-FN) (= op OP-END)))) (and (= (gn-g M gn-f-dead) 1) (not (or (= op OP-LABEL) (= op OP-FN) (= op OP-END))))) M (case op OP-CONST (gn-def M a gn-k-const b) OP-LGET (let [m (tbat-entry M i)] (if (gn-affine-read? m i a) (gn-affine-read m i a) (gn-def m a gn-k-local b))) OP-LSET (gn-op-lset M a b) OP-BIN (gn-op-bin M i a b) OP-CMP (gn-op-cmp M i a b) OP-UN (gn-op-un M i a b) OP-LABEL (brc-entry (sls-entry (jssa-entry (ts-entry (btg-entry (srloop-entry (gn-op-label M a) i) i) i) i) i) i) OP-BR (fsb-jump M i (gn-thread M a 0 2 8)) OP-BRZ (gn-op-brz M i a b 0) OP-BRNZ (gn-op-brz M i a b 1) OP-CALL (cpp-call M i a b c) OP-CALLI (gn-op-calli M i b c) OP-FADDR (gn-op-faddr M i a b) OP-RT (gn-op-rt M i a b c) OP-CAP (gn-op-cap M i a b c) OP-STR (gn-op-str M i a b) OP-VEC (gn-op-vec M i a b) OP-TAB (gn-op-tab M i a b c) OP-VECP (gn-op-vecp M i a b c) OP-FUEL (trg-entry (frfix-entry (clw-loop-entry (qrow-entry (wm-entry (pwphase-entry (mdc-entry (ac-entry (ga-entry (ir-entry (ss-entry (ar-entry (fourprobe-entry (rls-entry (ip-entry (is-entry (rv-entry (rl-entry (ru-entry (ri-entry (xd-entry (sw-entry (d2-entry (pz-entry (qb-entry (td-entry (dr-entry (cw-entry (gz-entry (pc3-entry (gn-copy-entry (bu-entry (bs-entry (gn-dot-entry (shloop-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) OP-RET (trg-ret M i a) OP-RET2 (gn-op-ret2 M a) OP-RES2 (gn-op-res2 M i a) OP-TRAP (-> M (gn-emit (enc-brk a)) (gn-gs gn-f-dead 1)) OP-FN (snf-entry (gn-op-fn M i a b) i a b) OP-END (t2-end (-> M (gn-emit (enc-brk 1)) (gn-gs gn-f-dead 0)) i a) (gn-err M E-GEN-OP op)))))
 
 ;; every instruction from i (an instruction may consume the next ones: gn-f-skip)
 (defn- gn-loop [M :vector-i64 i :i64] :vector-i64
@@ -15349,3 +15350,925 @@
        (-> V (gn-put (+ MM-CODE-BASE at) 0xd503201f)
         (gn-put (+ MM-CODE-BASE (inc at)) 0xd503201f)) V) (inc at)))))))))
 (defn- gn-run [M :vector-i64] :vector-i64 (owj-run (afr-run (blt-run (uqd-run (blt-old-run M))))))
+;; ==== BEGIN T2 (Claude cosci, 2026-10-14) ===========================================================================
+;; T2: an SSA tier for call-free leaf functions (milestone M1). After the existing backend has emitted FN f (its code is
+;; kept as dead code), t2-end re-compiles f when it is admitted and its old code carries no certified-kernel signature,
+;; and points FF-CODE at the new entry. Semantics replicated exactly:
+;; - fuel: gen's leaf mode 1 -- counter in x8 from entry, every FUEL `subs x8,x8,#1 ; b.lo` to `str xzr,[x7,#8] ; brk #0`,
+;;   published only at RET; traps inside see the entry value (as the old leaf);
+;; - every FUEL, trap (udf: handle/index; brk #0: table range, quot) and vector store keeps its program order;
+;; - a vector parameter's descriptor (items base, length) is read once at entry WITHOUT trapping (length 0 for an invalid
+;;   handle): call-free leaf code cannot allocate, so the count and descriptors are constant for the whole body. Each access
+;;   then checks `index <u length` at its original position and branches to `udf #0` (handle and index failures are both
+;;   SIGILL; the counter state is the same);
+;; - first word `mov x5,#0`, second word `ldr x8,[x7,#8]` when charged: existing private-entry callers (42-layout checks)
+;;   stay valid; x3/x4/x5 are never read on entry; x7 is never written; only x0-x17 (and saved x19-x28) are clobbered.
+;; All branches go through FIX records to fresh global labels so post-emission passes see every target as a root.
+(def t2-cell 98)
+(def t2-maxops 2048)
+(def t2-maxb 256)
+(def t2-maxv 2048)
+(def t2-maxvar 96)
+(def t2-maxphi 4096)
+(def t2-maxpred 1024)
+(def t2-vw 8)
+;; scalars
+(def t2-s-p 0)       ; SIR index of the FN
+(def t2-s-end 1)     ; SIR index of the END
+(def t2-s-nb 2)      ; blocks
+(def t2-s-nv 3)      ; values (1-based; 0 = none)
+(def t2-s-nphi 4)    ; phi operand fill
+(def t2-s-ns 5)      ; slots: variable s (1..ns); temp t is variable ns+1+t
+(def t2-s-nvar 6)
+(def t2-s-fail 7)    ; nonzero = refuse (reason code)
+(def t2-s-npred 8)
+(def t2-s-f 9)
+(def t2-s-np 10)
+(def t2-s-fuel 11)   ; 1 = has FUEL
+(def t2-s-lab0 12)   ; first T2 label
+(def t2-s-cur 13)    ; current block while building
+(def t2-s-npos 14)   ; linear positions
+(def t2-s-regs 15)   ; callee-saved pairs used
+(def t2-s-udf 16)    ; label of the udf stub
+(def t2-s-brk 17)    ; label of the brk #0 stub
+(def t2-s-fstub 18)  ; label of the fuel stub
+(def t2-s-nstub 19)  ; edge stubs queued
+(def t2-s-busy 20)   ; register busy mask during linear scan
+;; arrays
+(def t2-a-blk 64)
+(def t2-a-bs (+ t2-a-blk t2-maxops))
+(def t2-a-be (+ t2-a-bs t2-maxb))
+(def t2-a-bp0 (+ t2-a-be t2-maxb))
+(def t2-a-bpn (+ t2-a-bp0 t2-maxb))
+(def t2-a-bseal (+ t2-a-bpn t2-maxb))
+(def t2-a-bmaxp (+ t2-a-bseal t2-maxb))
+(def t2-a-bphi (+ t2-a-bmaxp t2-maxb))
+(def t2-a-bv0 (+ t2-a-bphi t2-maxb))
+(def t2-a-bv1 (+ t2-a-bv0 t2-maxb))
+(def t2-a-blab (+ t2-a-bv1 t2-maxb))
+(def t2-a-bt (+ t2-a-blab t2-maxb))      ; taken successor block (-1 none)
+(def t2-a-bf (+ t2-a-bt t2-maxb))        ; fallthrough successor block (-1 none)
+(def t2-a-bpos0 (+ t2-a-bf t2-maxb))     ; first linear position
+(def t2-a-bpos1 (+ t2-a-bpos0 t2-maxb))  ; last linear position
+(def t2-a-breach (+ t2-a-bpos1 t2-maxb)) ; 1 = reachable
+(def t2-a-pred (+ t2-a-breach t2-maxb))
+(def t2-a-def (+ t2-a-pred t2-maxpred))
+(def t2-a-v (+ t2-a-def (* t2-maxvar t2-maxb)))
+(def t2-a-phiop (+ t2-a-v (* t2-maxv t2-vw)))
+(def t2-a-live (+ t2-a-phiop t2-maxphi))  ; per block: 32 words live-in, 32 words live-out
+(def t2-a-stub (+ t2-a-live (* t2-maxb 64)))  ; edge stubs: 4 words each (label, from block, to block, 0), 512 max
+(def t2-a-ue (+ t2-a-stub 2048))           ; per block 32 words: upward-exposed uses
+(def t2-a-vx (+ t2-a-ue (* t2-maxb 32)))   ; per value 6 words: pos start end flags next uses
+(def t2-xw 6)
+(def t2-a-mv (+ t2-a-vx (* t2-maxv t2-xw))) ; pending moves: 64 x (dst, src, kind, k)
+(def t2-a-pd (+ t2-a-mv 256))              ; per parameter k (0..7): 4 words: vector? base-reg len-reg 0
+(def t2-a-tb (+ t2-a-pd 32))               ; tables: 16 x (lit, reg)
+(def t2-a-sl (+ t2-a-tb 32))               ; start-list heads per position
+(def t2-maxpos 2560)
+(def t2-a-re (+ t2-a-sl t2-maxpos))        ; per register (0..31): end position of its current value
+(def t2-size (+ t2-a-re 64))
+;; value fields
+(def t2-f-op 0) (def t2-f-a 1) (def t2-f-b 2) (def t2-f-c 3) (def t2-f-blk 4) (def t2-f-link 5) (def t2-f-repl 6) (def t2-f-reg 7)
+;; value ops
+(def t2-const 1) (def t2-param 2) (def t2-bin 3) (def t2-cmp 4) (def t2-un 5) (def t2-vat 6) (def t2-vset 7)
+(def t2-vcnt 8) (def t2-tab 9) (def t2-fuel 10) (def t2-phi 11) (def t2-brz 12) (def t2-br 13) (def t2-ret 14)
+(def t2-trap 15) (def t2-undef 16)
+;; accessors
+(defn- t2-base [M :vector-i64] :i64 (vector-at M t2-cell))
+(defn- t2-g [M :vector-i64 k :i64] :i64 (vector-at M (+ (vector-at M t2-cell) k)))
+(defn- t2-s [M :vector-i64 k :i64 v :i64] :vector-i64 (gn-put M (+ (vector-at M t2-cell) k) v))
+(defn- t2-vf [M :vector-i64 v :i64 fld :i64] :i64 (t2-g M (+ t2-a-v (* v t2-vw) fld)))
+(defn- t2-vs [M :vector-i64 v :i64 fld :i64 x :i64] :vector-i64 (t2-s M (+ t2-a-v (* v t2-vw) fld) x))
+(defn- t2-fail [M :vector-i64 code :i64] :vector-i64 (if (= (t2-g M t2-s-fail) 0) (t2-s M t2-s-fail code) M))
+(defn- t2-zero [M :vector-i64 i :i64 k :i64] :vector-i64 (if (>= i k) M (t2-zero (t2-s M i 0) (inc i) k)))
+;; the scratch block, allocated once when the HEAP has room (else T2 stays off)
+(defn- t2-ready [M :vector-i64] :vector-i64
+  (cond (> (vector-at M t2-cell) 0) M
+        (< (- MM-HEAP-END (vector-at M MM-HEAP-TOP)) (+ t2-size 65536)) M
+        :else (let [M1 (mem-alloc M t2-size)] (if (= (vector-at M1 MM-R1) 1) (gn-put M1 t2-cell (vector-at M1 MM-R0)) M1))))
+
+;; ---- admission (SIR only) -------------------------------------------------------------------------------------------
+;; op j of the body is supported by M1
+(defn- t2-op-ok? [M :vector-i64 j :i64] :bool
+  (let [op (gn-op M j) a (gn-sir M j IF-A) c (gn-sir M j IF-C)]
+    (case op
+      (OP-CONST OP-LGET OP-LSET OP-LABEL OP-BR OP-BRZ OP-BRNZ OP-FUEL OP-RET OP-TRAP OP-TAB) true
+      OP-BIN (< a BOP-F64-ADD)
+      OP-CMP (< a CC-F64-EQ)
+      OP-UN (or (= a UOP-NOT) (= a UOP-BITNOT))
+      OP-RT (or (and (= a RT-VECTOR-AT) (= c 2)) (and (= a RT-VECTOR-ASSOC-IN-PLACE) (= c 3)) (and (= a RT-VECTOR-COUNT) (= c 1)))
+      false)))
+(defn- t2-scan-ok? [M :vector-i64 j :i64 end :i64] :bool
+  (cond (>= j end) true
+        (t2-op-ok? M j) (t2-scan-ok? M (inc j) end)
+        :else false))
+;; END index of the function whose FN is at p, 0 when not found within t2-maxops
+(defn- t2-endof [M :vector-i64 p :i64 j :i64] :i64
+  (cond (>= j (vector-at M MM-SIR-N)) 0
+        (>= (- j p) t2-maxops) 0
+        (= (gn-op M j) OP-END) j
+        (= (gn-op M j) OP-FN) 0
+        :else (t2-endof M p (inc j))))
+;; ---- CFG -------------------------------------------------------------------------------------------------------------
+(def t2-s-last 21)
+(defn- t2-last [M :vector-i64] :i64 (t2-g M t2-s-last))
+(defn- t2-bget [M :vector-i64 arr :i64 b :i64] :i64 (t2-g M (+ arr b)))
+(defn- t2-bset [M :vector-i64 arr :i64 b :i64 v :i64] :vector-i64 (t2-s M (+ arr b) v))
+(defn- t2-term? [op :i64] :bool (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ) (= op OP-RET) (= op OP-TRAP)))
+;; assign blocks to body ops j = p+1 .. end-1
+(defn- t2-blocks [M :vector-i64 j :i64 end :i64 b :i64] :vector-i64
+  (if (>= j end)
+    (t2-s M t2-s-nb (inc b))
+    (let [p (t2-g M t2-s-p)
+          lead (and (> j (inc p)) (or (= (gn-op M j) OP-LABEL) (t2-term? (gn-op M (dec j)))))
+          nb (if lead (inc b) b)]
+      (if (>= nb t2-maxb)
+        (t2-fail M 2)
+        (t2-blocks (-> M (t2-s (+ t2-a-blk (- j p)) nb)
+                       (cond-> lead (t2-bset t2-a-bs nb j))
+                       (t2-bset t2-a-be nb j))
+                   (inc j) end nb)))))
+;; block of the LABEL l of this function, -1 when unknown
+(defn- t2-lblk [M :vector-i64 l :i64] :i64
+  (let [pos (if (and (> l 0) (< l MM-LABEL-CAP)) (gn-lpos M l) 0) p (t2-g M t2-s-p)]
+    (if (and (> pos p) (< pos (t2-g M t2-s-end)) (= (gn-op M pos) OP-LABEL) (= (gn-sir M pos IF-A) l))
+      (t2-g M (+ t2-a-blk (- pos p))) -1)))
+;; successors of every block
+(defn- t2-succs [M :vector-i64 b :i64] :vector-i64
+  (if (>= b (t2-g M t2-s-nb)) M
+    (let [e (t2-bget M t2-a-be b) op (gn-op M e) nb (t2-g M t2-s-nb)
+          next (if (< (inc b) nb) (inc b) -1)
+          taken (cond (= op OP-BR) (t2-lblk M (gn-sir M e IF-A))
+                      (or (= op OP-BRZ) (= op OP-BRNZ)) (t2-lblk M (gn-sir M e IF-B))
+                      :else -1)
+          fall (cond (or (= op OP-BR) (= op OP-RET) (= op OP-TRAP)) -1 :else next)
+          bad (or (and (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ)) (< taken 0))
+                  (and (not (t2-term? op)) (< next 0)))]
+      (if bad (t2-fail M 5)
+        (t2-succs (-> M (t2-bset t2-a-bt b (if (= taken fall) -1 taken)) (t2-bset t2-a-bf b fall)) (inc b))))))
+;; reachability from block 0 (worklist over block order until stable)
+(defn- t2-reach1 [M :vector-i64 b :i64 changed :bool] :vector-i64
+  (if (>= b (t2-g M t2-s-nb))
+    (if changed (t2-reach1 M 0 false) M)
+    (if (= (t2-bget M t2-a-breach b) 1)
+      (let [t (t2-bget M t2-a-bt b) f (t2-bget M t2-a-bf b)
+            c1 (and (>= t 0) (= (t2-bget M t2-a-breach t) 0))
+            c2 (and (>= f 0) (= (t2-bget M t2-a-breach f) 0))]
+        (t2-reach1 (-> M (cond-> c1 (t2-bset t2-a-breach t 1)) (cond-> c2 (t2-bset t2-a-breach f 1)))
+                   (inc b) (or changed c1 c2)))
+      (t2-reach1 M (inc b) changed))))
+;; preds: count, offsets, fill (reachable sources only); max pred index
+(defn- t2-addpred-count [M :vector-i64 s :i64 b :i64] :vector-i64
+  (if (< s 0) M (-> M (t2-bset t2-a-bpn s (inc (t2-bget M t2-a-bpn s)))
+                      (t2-bset t2-a-bmaxp s (gn-max (t2-bget M t2-a-bmaxp s) b)))))
+(defn- t2-pcount [M :vector-i64 b :i64] :vector-i64
+  (if (>= b (t2-g M t2-s-nb)) M
+    (t2-pcount (if (= (t2-bget M t2-a-breach b) 1)
+                 (-> M (t2-addpred-count (t2-bget M t2-a-bt b) b) (t2-addpred-count (t2-bget M t2-a-bf b) b)) M)
+               (inc b))))
+;; NB: M is mutated in place, so the count is read BEFORE the reset in the same call
+(defn- t2-poff [M :vector-i64 b :i64 acc :i64] :vector-i64
+  (if (>= b (t2-g M t2-s-nb))
+    (if (> acc t2-maxpred) (t2-fail M 6) M)
+    (let [n (t2-bget M t2-a-bpn b)]
+      (t2-poff (-> M (t2-bset t2-a-bp0 b acc) (t2-bset t2-a-bpn b 0)) (inc b) (+ acc n)))))
+(defn- t2-addpred [M :vector-i64 s :i64 b :i64] :vector-i64
+  (if (< s 0) M
+    (let [k (t2-bget M t2-a-bpn s)]
+      (-> M (t2-s (+ t2-a-pred (t2-bget M t2-a-bp0 s) k) b) (t2-bset t2-a-bpn s (inc k))))))
+(defn- t2-pfill [M :vector-i64 b :i64] :vector-i64
+  (if (>= b (t2-g M t2-s-nb)) M
+    (t2-pfill (if (= (t2-bget M t2-a-breach b) 1)
+                (-> M (t2-addpred (t2-bget M t2-a-bt b) b) (t2-addpred (t2-bget M t2-a-bf b) b)) M)
+              (inc b))))
+(defn- t2-pred [M :vector-i64 b :i64 k :i64] :i64 (t2-g M (+ t2-a-pred (t2-bget M t2-a-bp0 b) k)))
+(defn- t2-clear-blocks [M :vector-i64 b :i64] :vector-i64
+  (if (>= b t2-maxb) M
+    (t2-clear-blocks (-> M (t2-bset t2-a-bpn b 0) (t2-bset t2-a-bmaxp b -1) (t2-bset t2-a-bseal b 0)
+                           (t2-bset t2-a-bphi b 0) (t2-bset t2-a-breach b 0) (t2-bset t2-a-bt b -1) (t2-bset t2-a-bf b -1))
+                     (inc b))))
+(defn- t2-cfg [M :vector-i64] :vector-i64
+  (let [p (t2-g M t2-s-p) end (t2-g M t2-s-end)
+        M1 (-> M (t2-clear-blocks 0) (t2-bset t2-a-bs 0 (inc p)) (t2-blocks (inc p) end 0))]
+    (if (not= (t2-g M1 t2-s-fail) 0) M1
+      (let [M2 (t2-succs M1 0)]
+        (if (not= (t2-g M2 t2-s-fail) 0) M2
+          (-> M2 (t2-bset t2-a-breach 0 1) (t2-reach1 0 false) (t2-pcount 0) (t2-poff 0 0) (t2-pfill 0)
+              ;; bphi was used as scratch by t2-poff: reset
+              (t2-clear-phis 0)))))))
+(defn- t2-clear-phis [M :vector-i64 b :i64] :vector-i64
+  (if (>= b (t2-g M t2-s-nb)) M (t2-clear-phis (t2-bset M t2-a-bphi b 0) (inc b))))
+
+;; ---- SSA (Braun et al.) -------------------------------------------------------------------------------------------------
+(defn- t2-new [M :vector-i64 op :i64 a :i64 b :i64 c :i64 blk :i64] :vector-i64
+  (let [v (inc (t2-g M t2-s-nv))]
+    (if (>= v t2-maxv)
+      (-> M (t2-fail 3) (t2-s t2-s-last 0))
+      (-> M (t2-s t2-s-nv v) (t2-vs v t2-f-op op) (t2-vs v t2-f-a a) (t2-vs v t2-f-b b) (t2-vs v t2-f-c c)
+          (t2-vs v t2-f-blk blk) (t2-vs v t2-f-link 0) (t2-vs v t2-f-repl 0) (t2-vs v t2-f-reg -1) (t2-s t2-s-last v)))))
+(defn- t2-res [M :vector-i64 v :i64] :i64
+  (if (or (<= v 0) (= (t2-vf M v t2-f-repl) 0)) v (t2-res M (t2-vf M v t2-f-repl))))
+(defn- t2-defget [M :vector-i64 var :i64 b :i64] :i64 (t2-g M (+ t2-a-def (* var t2-maxb) b)))
+(defn- t2-defset [M :vector-i64 var :i64 b :i64 v :i64] :vector-i64 (t2-s M (+ t2-a-def (* var t2-maxb) b) v))
+(defn- t2-phi-link [M :vector-i64 b :i64 v :i64] :vector-i64
+  (-> M (t2-vs v t2-f-link (t2-bget M t2-a-bphi b)) (t2-bset t2-a-bphi b v)))
+(def t2-s-depth 28)
+;; walk single-pred sealed blocks without a def back to the first block that has a def, is unsealed, or merges
+(defn- t2-chain-end [M :vector-i64 var :i64 c :i64] :i64
+  (if (and (= (t2-defget M var c) 0) (= (t2-bget M t2-a-bseal c) 1) (= (t2-bget M t2-a-bpn c) 1))
+    (t2-chain-end M var (t2-pred M c 0))
+    c))
+(defn- t2-chain-fill [M :vector-i64 var :i64 c :i64 stop :i64 v :i64] :vector-i64
+  (if (= c stop) M (t2-chain-fill (t2-defset M var c v) var (t2-pred M c 0) stop v)))
+(defn- t2-read [M :vector-i64 var :i64 b :i64] :vector-i64
+  (let [d (t2-defget M var b)]
+    (if (> d 0) (t2-s M t2-s-last (t2-res M d))
+      (let [c (t2-chain-end M var b)
+            dc (t2-defget M var c)
+            M1 (if (> dc 0) (t2-s M t2-s-last (t2-res M dc)) (t2-read-rec M var c))
+            v (t2-last M1)]
+        (t2-s (t2-chain-fill M1 var b c v) t2-s-last v)))))
+(defn- t2-read-rec [M :vector-i64 var :i64 b :i64] :vector-i64
+  (cond (not= (t2-g M t2-s-fail) 0) (t2-s M t2-s-last 0)
+        (> (t2-g M t2-s-depth) 40) (-> M (t2-fail 17) (t2-s t2-s-last 0))
+        (= (t2-bget M t2-a-bseal b) 0)
+        (let [M1 (t2-new M t2-phi 0 0 var b) v (t2-last M1)]
+          (-> M1 (t2-phi-link b v) (t2-defset var b v) (t2-s t2-s-last v)))
+        (= (t2-bget M t2-a-bpn b) 0)
+        (let [M1 (t2-new M t2-undef 0 0 0 b) v (t2-last M1)]
+          (-> M1 (t2-defset var b v) (t2-s t2-s-last v)))
+        (= (t2-bget M t2-a-bpn b) 1)
+        (let [M1 (t2-read M var (t2-pred M b 0)) v (t2-last M1)]
+          (-> M1 (t2-defset var b v) (t2-s t2-s-last v)))
+        :else
+        (let [M1 (t2-new M t2-phi 0 0 var b) v (t2-last M1)
+              M2 (-> M1 (t2-phi-link b v) (t2-defset var b v)
+                     (t2-s t2-s-depth (inc (t2-g M1 t2-s-depth)))
+                     (t2-phi-ops v var b))
+              M3 (t2-s M2 t2-s-depth (dec (t2-g M2 t2-s-depth)))]
+          (t2-s M3 t2-s-last (t2-res M3 v)))))
+(defn- t2-phi-ops [M :vector-i64 v :i64 var :i64 b :i64] :vector-i64
+  (let [n (t2-bget M t2-a-bpn b) start (t2-g M t2-s-nphi)]
+    (if (> (+ start n) t2-maxphi)
+      (t2-fail M 4)
+      (t2-phi-trivial (t2-phi-fill (-> M (t2-s t2-s-nphi (+ start n)) (t2-vs v t2-f-a start) (t2-vs v t2-f-b n))
+                                   var b 0 n start)
+                      v))))
+(defn- t2-phi-fill [M :vector-i64 var :i64 b :i64 k :i64 n :i64 start :i64] :vector-i64
+  (if (>= k n) M
+    (let [M1 (t2-read M var (t2-pred M b k))]
+      (t2-phi-fill (t2-s M1 (+ t2-a-phiop start k) (t2-last M1)) var b (inc k) n start))))
+(defn- t2-phi-same [M :vector-i64 v :i64 start :i64 k :i64 n :i64 s :i64] :i64
+  (if (>= k n) s
+    (let [x (t2-res M (t2-g M (+ t2-a-phiop start k)))]
+      (cond (or (= x v) (= x s)) (t2-phi-same M v start (inc k) n s)
+            (not= s 0) -1
+            :else (t2-phi-same M v start (inc k) n x)))))
+(defn- t2-phi-trivial [M :vector-i64 v :i64] :vector-i64
+  (let [same (t2-phi-same M v (t2-vf M v t2-f-a) 0 (t2-vf M v t2-f-b) 0)]
+    (if (> same 0) (t2-vs M v t2-f-repl same) M)))
+(defn- t2-seal-phis [M :vector-i64 b :i64 v :i64] :vector-i64
+  (if (= v 0) M
+    (let [nxt (t2-vf M v t2-f-link)]
+      (t2-seal-phis (if (and (= (t2-vf M v t2-f-b) 0) (= (t2-vf M v t2-f-repl) 0))
+                      (t2-phi-ops M v (t2-vf M v t2-f-c) b) M)
+                    b nxt))))
+(defn- t2-seal [M :vector-i64 b :i64] :vector-i64
+  (t2-seal-phis (t2-bset M t2-a-bseal b 1) b (t2-bget M t2-a-bphi b)))
+;; after finishing block b: seal every unsealed reachable block h <= b whose preds are all <= b
+(defn- t2-seal-after [M :vector-i64 h :i64 b :i64] :vector-i64
+  (if (> h b) M
+    (t2-seal-after (if (and (= (t2-bget M t2-a-breach h) 1) (= (t2-bget M t2-a-bseal h) 0)
+                            (<= (t2-bget M t2-a-bmaxp h) b))
+                     (t2-seal M h) M)
+                   (inc h) b)))
+;; ---- SIR -> SSA values -----------------------------------------------------------------------------------------------
+(defn- t2-tv [M :vector-i64 t :i64] :i64 (+ (t2-g M t2-s-ns) 1 t))
+;; read variable var in block b into the last-cell, then write it to variable dst
+(defn- t2-copy [M :vector-i64 dst :i64 src :i64 b :i64] :vector-i64
+  (let [M1 (t2-read M src b)] (t2-defset M1 dst b (t2-last M1))))
+;; read two variables; returns M with x in last-cell of the first read stored at scalar 22, y in last
+(def t2-s-x 22)
+(def t2-s-y 23)
+(defn- t2-read2 [M :vector-i64 va :i64 vb :i64 b :i64] :vector-i64
+  (let [M1 (t2-read M va b) x (t2-last M1) M2 (t2-read M1 vb b)]
+    (-> M2 (t2-s t2-s-x x) (t2-s t2-s-y (t2-last M2)))))
+(defn- t2-emit-val [M :vector-i64 op :i64 a :i64 b :i64 c :i64 blk :i64 dst :i64] :vector-i64
+  (let [M1 (t2-new M op a b c blk)] (if (>= dst 0) (t2-defset M1 dst blk (t2-last M1)) M1)))
+(defn- t2-op [M :vector-i64 j :i64 b :i64] :vector-i64
+  (let [op (gn-op M j) a (gn-sir M j IF-A) x (gn-sir M j IF-B) c (gn-sir M j IF-C)]
+    (case op
+      OP-LABEL M
+      OP-CONST (t2-emit-val M t2-const x 0 0 b (t2-tv M a))
+      OP-LGET (t2-copy M (t2-tv M a) x b)
+      OP-LSET (t2-copy M a (t2-tv M x) b)
+      (OP-BIN OP-CMP)
+      (let [M1 (t2-read2 M (t2-tv M x) (t2-tv M (inc x)) b)]
+        (t2-emit-val M1 (if (= op OP-BIN) t2-bin t2-cmp) a (t2-g M1 t2-s-x) (t2-g M1 t2-s-y) b (t2-tv M x)))
+      OP-UN (let [M1 (t2-read M (t2-tv M x) b)] (t2-emit-val M1 t2-un a (t2-last M1) 0 b (t2-tv M x)))
+      OP-RT
+      (cond (= a RT-VECTOR-AT)
+            (let [M1 (t2-read2 M (t2-tv M x) (t2-tv M (inc x)) b)]
+              (t2-emit-val M1 t2-vat (t2-g M1 t2-s-x) (t2-g M1 t2-s-y) 0 b (t2-tv M x)))
+            (= a RT-VECTOR-ASSOC-IN-PLACE)
+            (let [M1 (t2-read2 M (t2-tv M x) (t2-tv M (inc x)) b)
+                  h (t2-g M1 t2-s-x) i (t2-g M1 t2-s-y)
+                  M2 (t2-read M1 (t2-tv M (+ x 2)) b)
+                  M3 (t2-new M2 t2-vset h i (t2-last M2) b)]
+              (t2-defset M3 (t2-tv M x) b h))
+            :else
+            (let [M1 (t2-read M (t2-tv M x) b)] (t2-emit-val M1 t2-vcnt (t2-last M1) 0 0 b (t2-tv M x))))
+      OP-TAB (let [M1 (t2-read M (t2-tv M a) b)] (t2-emit-val M1 t2-tab x c (t2-last M1) b (t2-tv M a)))
+      OP-FUEL (t2-emit-val (t2-s M t2-s-fuel 1) t2-fuel 0 0 0 b -1)
+      OP-TRAP (t2-emit-val M t2-trap a 0 0 b -1)
+      OP-RET (let [M1 (t2-read M (t2-tv M a) b)] (t2-emit-val M1 t2-ret (t2-last M1) 0 0 b -1))
+      OP-BR (t2-emit-val M t2-br 0 0 0 b -1)
+      (OP-BRZ OP-BRNZ)
+      (let [M1 (t2-read M (t2-tv M a) b)] (t2-emit-val M1 t2-brz (t2-last M1) (if (= op OP-BRNZ) 1 0) 0 b -1))
+      (t2-fail M 7))))
+(defn- t2-ops [M :vector-i64 j :i64 e :i64 b :i64] :vector-i64
+  (if (or (> j e) (not= (t2-g M t2-s-fail) 0)) M (t2-ops (t2-op M j b) (inc j) e b)))
+(defn- t2-params [M :vector-i64 k :i64 np :i64] :vector-i64
+  (if (>= k np) M (t2-params (t2-emit-val M t2-param k 0 0 0 (inc k)) (inc k) np)))
+;; build every reachable block in order
+(defn- t2-build [M :vector-i64 b :i64] :vector-i64
+  (if (or (>= b (t2-g M t2-s-nb)) (not= (t2-g M t2-s-fail) 0)) M
+    (if (= (t2-bget M t2-a-breach b) 0)
+      (t2-build M (inc b))
+      (let [M0 (if (and (= (t2-bget M t2-a-bseal b) 0) (< (t2-bget M t2-a-bmaxp b) b)) (t2-seal M b) M)
+            M1 (-> M0 (t2-bset t2-a-bv0 b (inc (t2-g M0 t2-s-nv)))
+                   (cond-> (= b 0) (t2-params 0 (t2-g M0 t2-s-np))))
+            M2 (t2-ops M1 (t2-bget M1 t2-a-bs b) (t2-bget M1 t2-a-be b) b)
+            M3 (-> M2 (t2-bset t2-a-bv1 b (inc (t2-g M2 t2-s-nv))) (t2-seal-after 0 b))]
+        (t2-build M3 (inc b))))))
+;; ---- positions, uses, validation ---------------------------------------------------------------------------------------
+(def t2-x-pos 0) (def t2-x-start 1) (def t2-x-end 2) (def t2-x-flags 3) (def t2-x-next 4) (def t2-x-uses 5)
+(def t2-s-ntab 24)
+(def t2-s-maxpos 25)
+(defn- t2-xf [M :vector-i64 v :i64 fld :i64] :i64 (t2-g M (+ t2-a-vx (* v t2-xw) fld)))
+(defn- t2-xs [M :vector-i64 v :i64 fld :i64 x :i64] :vector-i64 (t2-s M (+ t2-a-vx (* v t2-xw) fld) x))
+(defn- t2-op-of [M :vector-i64 v :i64] :i64 (t2-vf M v t2-f-op))
+;; a value that never needs a register (materialized or no result)
+(defn- t2-noreg? [M :vector-i64 v :i64] :bool
+  (let [op (t2-op-of M v)]
+    (or (= op t2-const) (= op t2-undef) (= op t2-fuel) (= op t2-vset) (= op t2-trap) (= op t2-ret)
+        (= op t2-br) (= op t2-brz) (= (bit-and (t2-xf M v t2-x-flags) 1) 1))))
+(defn- t2-use1 [M :vector-i64 x :i64] :vector-i64
+  (let [r (t2-res M x)] (if (> r 0) (t2-xs M r t2-x-uses (inc (t2-xf M r t2-x-uses))) M)))
+;; count uses: operands (resolved), phi operands; vector handles of vat/vset are not uses (descriptor registers serve)
+(defn- t2-uses-phi [M :vector-i64 start :i64 k :i64 n :i64] :vector-i64
+  (if (>= k n) M (t2-uses-phi (t2-use1 M (t2-g M (+ t2-a-phiop start k))) start (inc k) n)))
+(defn- t2-uses [M :vector-i64 v :i64 nv :i64] :vector-i64
+  (if (> v nv) M
+    (let [op (t2-op-of M v) a (t2-vf M v t2-f-a) b (t2-vf M v t2-f-b) c (t2-vf M v t2-f-c)
+          M1 (cond (and (= op t2-phi) (= (t2-vf M v t2-f-repl) 0)) (t2-uses-phi M a 0 b)
+                   (or (= op t2-bin) (= op t2-cmp)) (-> M (t2-use1 b) (t2-use1 c))
+                   (= op t2-un) (t2-use1 M a)
+                   (= op t2-vat) (t2-use1 M b)
+                   (= op t2-vset) (-> M (t2-use1 b) (t2-use1 c))
+                   (= op t2-tab) (t2-use1 M c)
+                   (or (= op t2-ret) (= op t2-brz)) (t2-use1 M a)
+                   :else M)]
+      (t2-uses M1 (inc v) nv))))
+(defn- t2-clear-x [M :vector-i64 v :i64 nv :i64] :vector-i64
+  (if (> v nv) M
+    (t2-clear-x (-> M (t2-xs v t2-x-pos -1) (t2-xs v t2-x-start 999999) (t2-xs v t2-x-end -1)
+                      (t2-xs v t2-x-flags 0) (t2-xs v t2-x-next 0) (t2-xs v t2-x-uses 0))
+                (inc v) nv)))
+;; the last ordinary value of block b (its terminator when it has one), 0 when none
+(defn- t2-lastval [M :vector-i64 b :i64] :i64
+  (loop [v (dec (t2-bget M t2-a-bv1 b))]
+    (cond (< v (t2-bget M t2-a-bv0 b)) 0
+          (= (t2-op-of M v) t2-phi) (recur (dec v))
+          :else v)))
+;; mark a CMP fused into its block's BRZ when that is its only use
+(defn- t2-fuse [M :vector-i64 b :i64] :vector-i64
+  (if (>= b (t2-g M t2-s-nb)) M
+    (let [t (if (= (t2-bget M t2-a-breach b) 1) (t2-lastval M b) 0)
+          c (if (and (> t 0) (= (t2-op-of M t) t2-brz)) (t2-res M (t2-vf M t t2-f-a)) 0)
+          ok (and (> c 0) (= (t2-op-of M c) t2-cmp) (= (t2-vf M c t2-f-blk) b) (= (t2-xf M c t2-x-uses) 1))]
+      (t2-fuse (if ok (t2-xs M c t2-x-flags 1) M) (inc b)))))
+;; validate vector/table ops; record vector parameters and tables
+(defn- t2-tab-reg [M :vector-i64 lit :i64 k :i64 n :i64] :vector-i64
+  (cond (>= k n) (if (>= n 16) (t2-fail M 9)
+                   (-> M (t2-s (+ t2-a-tb (* 2 n)) lit) (t2-s (+ t2-a-tb (* 2 n) 1) -1) (t2-s t2-s-ntab (inc n))))
+        (= (t2-g M (+ t2-a-tb (* 2 k))) lit) M
+        :else (t2-tab-reg M lit (inc k) n)))
+(defn- t2-check [M :vector-i64 v :i64 nv :i64] :vector-i64
+  (if (or (> v nv) (not= (t2-g M t2-s-fail) 0)) M
+    (let [op (t2-op-of M v)
+          h (if (or (= op t2-vat) (= op t2-vset)) (t2-res M (t2-vf M v t2-f-a)) 0)
+          M1 (cond (= op t2-vcnt) (t2-fail M 9)
+                   (> h 0) (if (= (t2-op-of M h) t2-param)
+                             (t2-s M (+ t2-a-pd (* 4 (t2-vf M h t2-f-a))) 1)
+                             (t2-fail M 8))
+                   (= op t2-tab) (t2-tab-reg M (t2-vf M v t2-f-a) 0 (t2-g M t2-s-ntab))
+                   :else M)]
+      (t2-check M1 (inc v) nv))))
+;; linear positions: params/descriptors/tables at 0; per block: phis at P, ordinary values P+1..; a fused CMP takes its
+;; terminator's position
+(defn- t2-pos-phis [M :vector-i64 v :i64 p :i64] :vector-i64
+  (if (= v 0) M (t2-pos-phis (if (= (t2-vf M v t2-f-repl) 0) (t2-xs M v t2-x-pos p) M) (t2-vf M v t2-f-link) p)))
+(defn- t2-pos-vals [M :vector-i64 v :i64 v1 :i64 p :i64] :vector-i64
+  (cond (>= v v1) (t2-s M t2-s-npos p)
+        (or (= (t2-op-of M v) t2-phi) (= (bit-and (t2-xf M v t2-x-flags) 1) 1)) (t2-pos-vals M (inc v) v1 p)
+        :else (let [M1 (t2-xs M v t2-x-pos p)
+                    M2 (if (= (t2-op-of M v) t2-brz)
+                         (let [c (t2-res M (t2-vf M v t2-f-a))]
+                           (if (and (> c 0) (= (bit-and (t2-xf M c t2-x-flags) 1) 1)) (t2-xs M1 c t2-x-pos p) M1))
+                         M1)]
+                (t2-pos-vals M2 (inc v) v1 (inc p)))))
+(defn- t2-positions [M :vector-i64 b :i64 p :i64] :vector-i64
+  (cond (>= b (t2-g M t2-s-nb)) (t2-s M t2-s-maxpos p)
+        (= (t2-bget M t2-a-breach b) 0) (t2-positions M (inc b) p)
+        :else (let [M1 (-> M (t2-bset t2-a-bpos0 b p) (t2-pos-phis (t2-bget M t2-a-bphi b) p))
+                    M2 (t2-pos-vals M1 (t2-bget M1 t2-a-bv0 b) (t2-bget M1 t2-a-bv1 b) (inc p))
+                    q (t2-g M2 t2-s-npos)]
+                (if (>= q (- t2-maxpos 2)) (t2-fail M2 11)
+                  (t2-positions (t2-bset M2 t2-a-bpos1 b (dec q)) (inc b) q)))))
+;; ---- liveness (bitsets of 32 words over value ids) -----------------------------------------------------------------------
+(defn- t2-bit? [M :vector-i64 base :i64 v :i64] :bool
+  (not= (bit-and (t2-g M (+ base (u64-shift-right v 6))) (i64-shift-left 1 (bit-and v 63))) 0))
+(defn- t2-bitset [M :vector-i64 base :i64 v :i64] :vector-i64
+  (let [a (+ base (u64-shift-right v 6))] (t2-s M a (bit-or (t2-g M a) (i64-shift-left 1 (bit-and v 63))))))
+(defn- t2-bitclr [M :vector-i64 base :i64 v :i64] :vector-i64
+  (let [a (+ base (u64-shift-right v 6))] (t2-s M a (bit-and (t2-g M a) (bit-not (i64-shift-left 1 (bit-and v 63)))))))
+(defn- t2-in [b :i64] :i64 (+ t2-a-live (* b 64)))
+(defn- t2-out [b :i64] :i64 (+ t2-a-live (* b 64) 32))
+(defn- t2-ue [b :i64] :i64 (+ t2-a-ue (* b 32)))
+(defn- t2-regval? [M :vector-i64 x :i64] :bool (and (> x 0) (not (t2-noreg? M x))))
+(defn- t2-ue-add [M :vector-i64 b :i64 x :i64] :vector-i64
+  (let [r (t2-res M x)]
+    (if (and (t2-regval? M r) (not= (t2-vf M r t2-f-blk) b)) (t2-bitset M (t2-ue b) r) M)))
+;; operands of value v that are register uses (handle operands excluded): calls (f M x) on each
+(defn- t2-ue-val [M :vector-i64 b :i64 v :i64] :vector-i64
+  (let [op (t2-op-of M v) a (t2-vf M v t2-f-a) x (t2-vf M v t2-f-b) c (t2-vf M v t2-f-c)]
+    (cond (or (= op t2-bin) (= op t2-cmp)) (-> M (t2-ue-add b x) (t2-ue-add b c))
+          (or (= op t2-un) (= op t2-ret) (= op t2-brz)) (t2-ue-add M b a)
+          (= op t2-vat) (t2-ue-add M b x)
+          (= op t2-vset) (-> M (t2-ue-add b x) (t2-ue-add b c))
+          (= op t2-tab) (t2-ue-add M b c)
+          :else M)))
+(defn- t2-ue-vals [M :vector-i64 b :i64 v :i64 v1 :i64] :vector-i64
+  (cond (>= v v1) M
+        (= (t2-op-of M v) t2-phi) (t2-ue-vals M b (inc v) v1)
+        :else (t2-ue-vals (t2-ue-val M b v) b (inc v) v1)))
+(defn- t2-wzero [M :vector-i64 base :i64 k :i64 n :i64] :vector-i64
+  (if (>= k n) M (t2-wzero (t2-s M (+ base k) 0) base (inc k) n)))
+(defn- t2-ue-all [M :vector-i64 b :i64] :vector-i64
+  (if (>= b (t2-g M t2-s-nb)) M
+    (t2-ue-all (-> M (t2-wzero (t2-ue b) 0 32) (t2-wzero (t2-in b) 0 64)
+                   (cond-> (= (t2-bget M t2-a-breach b) 1) (t2-ue-vals b (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b))))
+               (inc b))))
+;; index of pred b among the preds of s (-1 when absent)
+(defn- t2-predidx [M :vector-i64 s :i64 b :i64 k :i64] :i64
+  (cond (>= k (t2-bget M t2-a-bpn s)) -1
+        (= (t2-pred M s k) b) k
+        :else (t2-predidx M s b (inc k))))
+;; operand of phi p for its pred index k (resolved)
+(defn- t2-phiarg [M :vector-i64 p :i64 k :i64] :i64 (t2-res M (t2-g M (+ t2-a-phiop (t2-vf M p t2-f-a) k))))
+(defn- t2-live-phis [M :vector-i64 b :i64 p :i64 k :i64] :vector-i64
+  (if (= p 0) M
+    (t2-live-phis (if (and (= (t2-vf M p t2-f-repl) 0) (> (t2-xf M p t2-x-uses) 0))
+                    (let [x (t2-phiarg M p k)] (if (t2-regval? M x) (t2-bitset M (t2-out b) x) M)) M)
+                  b (t2-vf M p t2-f-link) k)))
+(defn- t2-orw [M :vector-i64 dst :i64 src :i64 k :i64] :vector-i64
+  (if (>= k 32) M (t2-orw (t2-s M (+ dst k) (bit-or (t2-g M (+ dst k)) (t2-g M (+ src k)))) dst src (inc k))))
+(defn- t2-out-succ [M :vector-i64 b :i64 s :i64] :vector-i64
+  (if (< s 0) M
+    (t2-live-phis (t2-orw M (t2-out b) (t2-in s) 0) b (t2-bget M t2-a-bphi s) (t2-predidx M s b 0))))
+;; live-in of b: UE(b) | (out(b) minus the ordinary values of b), plus phis of OTHER blocks numbered inside b's range,
+;; minus b's own phis. M[last] = 1 when it changed.
+(defn- t2-newin-w [M :vector-i64 b :i64 k :i64] :vector-i64
+  (if (>= k 32) M
+    (let [lo (* k 64) v0 (t2-bget M t2-a-bv0 b) v1 (t2-bget M t2-a-bv1 b)
+          a (gn-max lo v0) z (gn-min (+ lo 64) v1)
+          m (if (>= a z) 0 (if (= (- z a) 64) -1 (i64-shift-left (dec (i64-shift-left 1 (- z a))) (- a lo))))
+          w (bit-or (t2-g M (+ (t2-ue b) k)) (bit-and (t2-g M (+ (t2-out b) k)) (bit-not m)))]
+      (t2-newin-w (t2-s M (+ (t2-in b) k) w) b (inc k)))))
+(defn- t2-in-foreign [M :vector-i64 b :i64 v :i64 v1 :i64] :vector-i64
+  (if (>= v v1) M
+    (t2-in-foreign (if (and (= (t2-op-of M v) t2-phi) (not= (t2-vf M v t2-f-blk) b) (t2-bit? M (t2-out b) v))
+                     (t2-bitset M (t2-in b) v) M)
+                   b (inc v) v1)))
+(defn- t2-in-nophi [M :vector-i64 b :i64 p :i64] :vector-i64
+  (if (= p 0) M (t2-in-nophi (t2-bitclr M (t2-in b) p) b (t2-vf M p t2-f-link))))
+(def t2-a-tmp (+ t2-a-re 32))
+(defn- t2-cpw [M :vector-i64 dst :i64 src :i64 k :i64] :vector-i64
+  (if (>= k 32) M (t2-cpw (t2-s M (+ dst k) (t2-g M (+ src k))) dst src (inc k))))
+(defn- t2-eqw? [M :vector-i64 x :i64 y :i64 k :i64] :bool
+  (or (>= k 32) (and (= (t2-g M (+ x k)) (t2-g M (+ y k))) (t2-eqw? M x y (inc k)))))
+(defn- t2-live-pass [M :vector-i64 b :i64 changed :i64] :vector-i64
+  (if (< b 0) (t2-s M t2-s-last changed)
+    (if (= (t2-bget M t2-a-breach b) 0) (t2-live-pass M (dec b) changed)
+      (let [M1 (-> M (t2-cpw t2-a-tmp (t2-in b) 0)
+                   (t2-wzero (t2-out b) 0 32) (t2-out-succ b (t2-bget M t2-a-bt b)) (t2-out-succ b (t2-bget M t2-a-bf b))
+                   (t2-newin-w b 0)
+                   (t2-in-foreign b (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b)))
+            M2 (t2-in-nophi M1 b (t2-bget M1 t2-a-bphi b))]
+        (t2-live-pass M2 (dec b) (if (t2-eqw? M2 t2-a-tmp (t2-in b) 0) changed 1))))))
+(defn- t2-liveness [M :vector-i64 iter :i64] :vector-i64
+  (if (>= iter 64) (t2-fail M 12)
+    (let [M1 (t2-live-pass M (dec (t2-g M t2-s-nb)) 0)]
+      (if (= (t2-last M1) 1) (t2-liveness M1 (inc iter)) M1))))
+;; ---- intervals ---------------------------------------------------------------------------------------------------------
+(defn- t2-ext [M :vector-i64 x :i64 lo :i64 hi :i64] :vector-i64
+  (if (t2-regval? M x)
+    (-> M (t2-xs x t2-x-start (gn-min (t2-xf M x t2-x-start) lo)) (t2-xs x t2-x-end (gn-max (t2-xf M x t2-x-end) hi)))
+    M))
+(defn- t2-use-at [M :vector-i64 x :i64 u :i64] :vector-i64 (t2-ext M (t2-res M x) 999999 u))
+(defn- t2-iv-val [M :vector-i64 v :i64] :vector-i64
+  (let [op (t2-op-of M v) a (t2-vf M v t2-f-a) x (t2-vf M v t2-f-b) c (t2-vf M v t2-f-c) u (t2-xf M v t2-x-pos)
+        M0 (if (and (>= u 0) (t2-regval? M v)) (t2-ext M v u u) M)]
+    (cond (< u 0) M0
+          (or (= op t2-bin) (= op t2-cmp)) (-> M0 (t2-use-at x u) (t2-use-at c u))
+          (or (= op t2-un) (= op t2-ret) (= op t2-brz)) (t2-use-at M0 a u)
+          (= op t2-vat) (t2-use-at M0 x u)
+          (= op t2-vset) (-> M0 (t2-use-at x u) (t2-use-at c u))
+          (= op t2-tab) (t2-use-at M0 c u)
+          :else M0)))
+(defn- t2-iv-vals [M :vector-i64 v :i64 nv :i64] :vector-i64
+  (if (> v nv) M (t2-iv-vals (t2-iv-val M v) (inc v) nv)))
+(defn- t2-iv-bits [M :vector-i64 base :i64 k :i64 lo :i64 hi :i64] :vector-i64
+  (if (>= k 2048) M
+    (let [w (t2-g M (+ base (u64-shift-right k 6)))]
+      (if (= w 0) (t2-iv-bits M base (+ k 64) lo hi)
+        (t2-iv-bits (if (t2-bit? M base k) (t2-ext M k lo hi) M) base (inc k) lo hi)))))
+(defn- t2-iv-blocks [M :vector-i64 b :i64] :vector-i64
+  (if (>= b (t2-g M t2-s-nb)) M
+    (t2-iv-blocks (if (= (t2-bget M t2-a-breach b) 1)
+                    (let [p0 (t2-bget M t2-a-bpos0 b) p1 (t2-bget M t2-a-bpos1 b)]
+                      (-> M (t2-iv-bits (t2-in b) 0 p0 p0) (t2-iv-bits (t2-out b) 0 p1 p1)))
+                    M)
+                  (inc b))))
+;; ---- linear scan --------------------------------------------------------------------------------------------------------
+;; preference order: x9..x15, x0..x6, x19..x28
+(defn- t2-rk [k :i64] :i64 (cond (< k 7) (+ 9 k) (< k 14) (- k 7) :else (+ 5 k)))
+(defn- t2-busy? [M :vector-i64 r :i64] :bool (not= (bit-and (t2-g M t2-s-busy) (i64-shift-left 1 r)) 0))
+(defn- t2-take [M :vector-i64 r :i64 end :i64] :vector-i64
+  (-> M (t2-s t2-s-busy (bit-or (t2-g M t2-s-busy) (i64-shift-left 1 r))) (t2-s (+ t2-a-re r) end)))
+;; first free register in preference order from index k; skip x0..x6 when lowonly is false? (nolow: never x0..x6)
+(defn- t2-free [M :vector-i64 k :i64 nolow :bool] :i64
+  (cond (>= k 24) -1
+        (and nolow (>= k 7) (< k 14)) (t2-free M (inc k) nolow)
+        (t2-busy? M (t2-rk k)) (t2-free M (inc k) nolow)
+        :else (t2-rk k)))
+(defn- t2-expire [M :vector-i64 r :i64 pos :i64] :vector-i64
+  (if (>= r 29) M
+    (t2-expire (if (and (t2-busy? M r) (< (t2-g M (+ t2-a-re r)) pos))
+                 (t2-s M t2-s-busy (bit-and (t2-g M t2-s-busy) (bit-not (i64-shift-left 1 r)))) M)
+               (inc r) pos)))
+(defn- t2-alloc1 [M :vector-i64 v :i64] :vector-i64
+  (let [r (t2-free M 0 false)]
+    (if (< r 0) (t2-fail M 13) (-> M (t2-take r (t2-xf M v t2-x-end)) (t2-vs v t2-f-reg r)))))
+(defn- t2-alloc-list [M :vector-i64 v :i64] :vector-i64
+  (if (= v 0) M (t2-alloc-list (if (< (t2-vf M v t2-f-reg) 0) (t2-alloc1 M v) M) (t2-xf M v t2-x-next))))
+(defn- t2-scan [M :vector-i64 pos :i64 maxpos :i64] :vector-i64
+  (if (or (> pos maxpos) (not= (t2-g M t2-s-fail) 0)) M
+    (t2-scan (t2-alloc-list (t2-expire M 0 pos) (t2-g M (+ t2-a-sl pos))) (inc pos) maxpos)))
+;; start lists over regval values with a position
+(defn- t2-slists [M :vector-i64 v :i64 nv :i64] :vector-i64
+  (if (> v nv) M
+    (t2-slists (if (and (t2-regval? M v) (>= (t2-xf M v t2-x-pos) 0) (<= (t2-xf M v t2-x-start) (t2-xf M v t2-x-end)))
+                 (let [s (gn-max 0 (t2-xf M v t2-x-start))]
+                   (-> M (t2-xs v t2-x-next (t2-g M (+ t2-a-sl s))) (t2-s (+ t2-a-sl s) v)))
+                 M)
+               (inc v) nv)))
+;; parameters first (x0..), then descriptor and table-base registers (never x0..x6, live everywhere)
+(defn- t2-alloc-params [M :vector-i64 v :i64 nv :i64] :vector-i64
+  (if (> v nv) M
+    (t2-alloc-params (if (and (= (t2-op-of M v) t2-param) (t2-regval? M v))
+                       (let [k (t2-vf M v t2-f-a)] (-> M (t2-take k (t2-xf M v t2-x-end)) (t2-vs v t2-f-reg k)))
+                       M)
+                     (inc v) nv)))
+(defn- t2-alloc-fixed [M :vector-i64 base :i64 forever :i64] :vector-i64
+  (let [r (t2-free M 0 true)] (if (< r 0) (t2-fail M 14) (-> M (t2-take r forever) (t2-s base r)))))
+(defn- t2-alloc-descs [M :vector-i64 k :i64 forever :i64] :vector-i64
+  (if (>= k 8) M
+    (t2-alloc-descs (if (= (t2-g M (+ t2-a-pd (* 4 k))) 1)
+                      (-> M (t2-alloc-fixed (+ t2-a-pd (* 4 k) 1) forever) (t2-alloc-fixed (+ t2-a-pd (* 4 k) 2) forever))
+                      M)
+                    (inc k) forever)))
+(defn- t2-alloc-tabs [M :vector-i64 k :i64 forever :i64] :vector-i64
+  (if (>= k (t2-g M t2-s-ntab)) M (t2-alloc-tabs (t2-alloc-fixed M (+ t2-a-tb (* 2 k) 1) forever) (inc k) forever)))
+(defn- t2-regalloc [M :vector-i64] :vector-i64
+  (let [maxpos (t2-g M t2-s-maxpos) forever (+ maxpos 10) nv (t2-g M t2-s-nv)]
+    (-> M (t2-s t2-s-busy 0) (t2-wzero t2-a-re 0 32) (t2-wzero t2-a-sl 0 (+ maxpos 1))
+        (t2-alloc-params 1 nv) (t2-alloc-descs 0 forever) (t2-alloc-tabs 0 forever)
+        (t2-slists 1 nv) (t2-scan 1 maxpos))))
+;; highest callee-saved register in use (18 = none)
+(defn- t2-maxcs [M :vector-i64 v :i64 nv :i64 m :i64] :i64
+  (if (> v nv) m (t2-maxcs M (inc v) nv (let [r (t2-vf M v t2-f-reg)] (if (and (>= r 19) (> r m)) r m)))))
+(defn- t2-maxcs-fixed [M :vector-i64 m :i64] :i64
+  (let [a (loop [k 0 x m] (if (>= k 8) x (recur (inc k) (if (= (t2-g M (+ t2-a-pd (* 4 k))) 1)
+                                                         (gn-max x (gn-max (t2-g M (+ t2-a-pd (* 4 k) 1)) (t2-g M (+ t2-a-pd (* 4 k) 2)))) x))))]
+    (loop [k 0 x a] (if (>= k (t2-g M t2-s-ntab)) x (recur (inc k) (gn-max x (t2-g M (+ t2-a-tb (* 2 k) 1))))))))
+;; ---- emission -----------------------------------------------------------------------------------------------------------
+(defn- t2-lab [M :vector-i64 b :i64] :i64 (+ (t2-g M t2-s-lab0) b))
+(defn- t2-deflab [M :vector-i64 l :i64] :vector-i64 (gn-put M (+ MM-LABEL-BASE l) (vector-at M MM-CODE-N)))
+(defn- t2-jmp [M :vector-i64 kind :i64 l :i64 w :i64] :vector-i64 (-> M (gn-fix kind l) (gn-emit w)))
+(defn- t2-bcond [M :vector-i64 c :i64 l :i64] :vector-i64 (t2-jmp M FX-BC19 l (enc-bcond c 0)))
+(defn- t2-isconst? [M :vector-i64 x :i64] :bool
+  (let [op (t2-op-of M x)] (or (= op t2-const) (= op t2-undef))))
+(defn- t2-kval [M :vector-i64 x :i64] :i64 (if (= (t2-op-of M x) t2-const) (t2-vf M x t2-f-a) 0))
+;; register holding operand x (resolved); constants are materialized into scratch s. Register in M[last].
+(defn- t2-src [M :vector-i64 x0 :i64 s :i64] :vector-i64
+  (let [x (t2-res M x0)]
+    (if (t2-isconst? M x)
+      (t2-s (gn-mov-imm M s (t2-kval M x)) t2-s-last s)
+      (t2-s M t2-s-last (t2-vf M x t2-f-reg)))))
+(defn- t2-dst [M :vector-i64 v :i64] :i64 (let [r (t2-vf M v t2-f-reg)] (if (>= r 0) r 16)))
+(defn- t2-dead? [M :vector-i64 v :i64] :bool (= (t2-xf M v t2-x-uses) 0))
+;; descriptor registers of the handle operand of v
+(defn- t2-pk [M :vector-i64 v :i64] :i64 (t2-vf M (t2-res M (t2-vf M v t2-f-a)) t2-f-a))
+(defn- t2-dbase [M :vector-i64 v :i64] :i64 (t2-g M (+ t2-a-pd (* 4 (t2-pk M v)) 1)))
+(defn- t2-dlen [M :vector-i64 v :i64] :i64 (t2-g M (+ t2-a-pd (* 4 (t2-pk M v)) 2)))
+(defn- t2-tabreg [M :vector-i64 lit :i64 k :i64] :i64
+  (cond (>= k (t2-g M t2-s-ntab)) 16
+        (= (t2-g M (+ t2-a-tb (* 2 k))) lit) (t2-g M (+ t2-a-tb (* 2 k) 1))
+        :else (t2-tabreg M lit (inc k))))
+(defn- t2-small-index? [k :i64 limit :i64] :bool (and (>= k 0) (< k 4096) (< k limit) (<= (* 8 k) 32760)))
+;; index check against register L (unsigned), branching to label l on failure; M[last] = index register (or -1 for const)
+(defn- t2-icheck [M :vector-i64 i0 :i64 L :i64 l :i64] :vector-i64
+  (let [i (t2-res M i0)]
+    (if (and (t2-isconst? M i) (t2-small-index? (t2-kval M i) 4096))
+      (-> M (gn-emit (enc-cmp-i L (t2-kval M i))) (t2-bcond 9 l) (t2-s t2-s-last -1))   ; b.ls: len <= k
+      (let [M1 (t2-src M i 16) ri (t2-last M1)]
+        (-> M1 (gn-emit (enc-cmp-r ri L)) (t2-bcond 2 l) (t2-s t2-s-last ri))))))       ; b.hs
+(defn- t2-e-bin [M :vector-i64 v :i64] :vector-i64
+  (let [bop (t2-vf M v t2-f-a) x (t2-res M (t2-vf M v t2-f-b)) y (t2-res M (t2-vf M v t2-f-c)) d (t2-dst M v)
+        ky (t2-kval M y) yc (t2-isconst? M y)]
+    (cond (and (t2-dead? M v) (not= bop BOP-QUOT)) M
+          (and yc (or (= bop BOP-ADD) (= bop BOP-SUB)) (>= ky 0) (< ky 4096) (not (t2-isconst? M x)))
+          (gn-emit M (if (= bop BOP-ADD) (enc-add-i d (t2-vf M x t2-f-reg) ky) (enc-sub-i d (t2-vf M x t2-f-reg) ky)))
+          (and yc (or (= bop BOP-SHL) (= bop BOP-USHR) (= bop BOP-SSHR)) (not (t2-isconst? M x)))
+          (let [rx (t2-vf M x t2-f-reg) k (bit-and ky 63)]
+            (gn-emit M (cond (= bop BOP-SHL) (gn-e-lsl d rx k) (= bop BOP-USHR) (gn-e-lsr d rx k) :else (gn-e-asr d rx k))))
+          :else
+          (let [M1 (t2-src M x 16) rx (t2-last M1) M2 (t2-src M1 y 17) ry (t2-last M2)]
+            (if (= bop BOP-QUOT) (gn-quot M2 d rx ry) (gn-emit M2 (gn-bin-word bop d rx ry)))))))
+;; compare x with y (setting flags)
+(defn- t2-e-cmpflags [M :vector-i64 v :i64] :vector-i64
+  (let [x (t2-res M (t2-vf M v t2-f-b)) y (t2-res M (t2-vf M v t2-f-c)) ky (t2-kval M y)]
+    (if (and (t2-isconst? M y) (>= ky 0) (< ky 4096) (not (t2-isconst? M x)))
+      (gn-emit M (enc-cmp-i (t2-vf M x t2-f-reg) ky))
+      (let [M1 (t2-src M x 16) rx (t2-last M1) M2 (t2-src M1 y 17) ry (t2-last M2)]
+        (gn-emit M2 (enc-cmp-r rx ry))))))
+(defn- t2-e-val [M :vector-i64 v :i64] :vector-i64
+  (let [op (t2-op-of M v) d (t2-dst M v)]
+    (cond
+      (= op t2-bin) (t2-e-bin M v)
+      (= op t2-cmp) (if (or (t2-dead? M v) (= (bit-and (t2-xf M v t2-x-flags) 1) 1)) M
+                      (-> M (t2-e-cmpflags v) (gn-emit (enc-cset d (enc-cond-of-cc (t2-vf M v t2-f-a))))))
+      (= op t2-un) (if (t2-dead? M v) M
+                     (let [M1 (t2-src M (t2-vf M v t2-f-b) 16) rx (t2-last M1)]
+                       (gn-emit M1 (if (= (t2-vf M v t2-f-a) UOP-NOT) (enc-eor-1 d rx) (enc-mvn d rx)))))
+      (= op t2-vat)
+      (let [B (t2-dbase M v) i (t2-res M (t2-vf M v t2-f-b))
+            M1 (t2-icheck M i (t2-dlen M v) (+ (t2-lab M (t2-g M t2-s-nb)) 0)) ri (t2-last M1)]
+        (gn-emit M1 (if (< ri 0) (enc-ldr d B (* 8 (t2-kval M i))) (gn-e-ldrr d B ri 1))))
+      (= op t2-vset)
+      (let [B (t2-dbase M v) i (t2-res M (t2-vf M v t2-f-b))
+            M1 (t2-icheck M i (t2-dlen M v) (t2-lab M (t2-g M t2-s-nb))) ri (t2-last M1)
+            M2 (t2-src M1 (t2-vf M v t2-f-c) 17) rx (t2-last M2)]
+        (gn-emit M2 (if (< ri 0) (enc-str rx B (* 8 (t2-kval M i))) (gn-e-strr3 rx B ri))))
+      (= op t2-tab)
+      (let [T (t2-tabreg M (t2-vf M v t2-f-a) 0) n (t2-vf M v t2-f-b) i (t2-res M (t2-vf M v t2-f-c))]
+        (if (and (t2-isconst? M i) (t2-small-index? (t2-kval M i) n))
+          (gn-emit M (enc-ldr d T (* 8 (t2-kval M i))))
+          (let [M1 (t2-src M i 16) ri (t2-last M1)
+                M2 (if (< n 4096) (gn-emit M1 (enc-cmp-i ri n)) (-> M1 (gn-mov-imm 17 n) (gn-emit (enc-cmp-r ri 17))))]
+            (-> M2 (t2-bcond 2 (+ (t2-lab M (t2-g M t2-s-nb)) 1)) (gn-emit (gn-e-ldrr d T ri 1))))))
+      (= op t2-fuel) (-> M (gn-emit (enc-subs-i 8 8 1)) (t2-bcond 3 (+ (t2-lab M (t2-g M t2-s-nb)) 2)))
+      (= op t2-trap) (gn-emit M (enc-brk (t2-vf M v t2-f-a)))
+      :else M)))
+;; ---- phi copies on edge b -> s ------------------------------------------------------------------------------------------
+(def t2-s-nmv 26)
+(defn- t2-mv-add [M :vector-i64 dst :i64 src :i64 isk :i64 k :i64] :vector-i64
+  (let [n (t2-g M t2-s-nmv) a (+ t2-a-mv (* 4 n))]
+    (if (>= n 63) (t2-fail M 15)
+      (-> M (t2-s a dst) (t2-s (+ a 1) src) (t2-s (+ a 2) isk) (t2-s (+ a 3) k) (t2-s t2-s-nmv (inc n))))))
+(defn- t2-mv-collect [M :vector-i64 p :i64 k :i64] :vector-i64
+  (if (= p 0) M
+    (t2-mv-collect
+      (if (and (= (t2-vf M p t2-f-repl) 0) (> (t2-xf M p t2-x-uses) 0))
+        (let [x (t2-phiarg M p k) d (t2-vf M p t2-f-reg)]
+          (cond (t2-isconst? M x) (t2-mv-add M d 0 1 (t2-kval M x))
+                (= (t2-vf M x t2-f-reg) d) M
+                :else (t2-mv-add M d (t2-vf M x t2-f-reg) 0 0)))
+        M)
+      (t2-vf M p t2-f-link) k)))
+(defn- t2-mv-f [M :vector-i64 i :i64 f :i64] :i64 (t2-g M (+ t2-a-mv (* 4 i) f)))
+;; pending register move i (isk 0, not done: isk 2 = done)
+(defn- t2-mv-src-of? [M :vector-i64 r :i64 i :i64 n :i64 except :i64] :bool
+  (cond (>= i n) false
+        (and (not= i except) (= (t2-mv-f M i 2) 0) (= (t2-mv-f M i 1) r)) true
+        :else (t2-mv-src-of? M r (inc i) n except)))
+(defn- t2-mv-ready [M :vector-i64 i :i64 n :i64] :i64
+  (cond (>= i n) -1
+        (and (= (t2-mv-f M i 2) 0) (not (t2-mv-src-of? M (t2-mv-f M i 0) 0 n i))) i
+        :else (t2-mv-ready M (inc i) n)))
+(defn- t2-mv-first [M :vector-i64 i :i64 n :i64] :i64
+  (cond (>= i n) -1 (= (t2-mv-f M i 2) 0) i :else (t2-mv-first M (inc i) n)))
+(defn- t2-mv-resrc [M :vector-i64 i :i64 n :i64 from :i64 to :i64] :vector-i64
+  (if (>= i n) M
+    (t2-mv-resrc (if (and (= (t2-mv-f M i 2) 0) (= (t2-mv-f M i 1) from)) (t2-s M (+ t2-a-mv (* 4 i) 1) to) M) (inc i) n from to)))
+(defn- t2-mv-regs [M :vector-i64 n :i64 guard :i64] :vector-i64
+  (let [i (t2-mv-ready M 0 n)]
+    (cond (<= guard 0) M
+          (>= i 0) (t2-mv-regs (-> M (gn-mov (t2-mv-f M i 0) (t2-mv-f M i 1)) (t2-s (+ t2-a-mv (* 4 i) 2) 2)) n (dec guard))
+          :else (let [j (t2-mv-first M 0 n)]
+                  (if (< j 0) M
+                    ;; cycle: save the blocked destination's current value in x16 and redirect its readers
+                    (let [d (t2-mv-f M j 0)]
+                      (t2-mv-regs (-> M (gn-mov 16 d) (t2-mv-resrc 0 n d 16)) n (dec guard))))))))
+(defn- t2-mv-consts [M :vector-i64 i :i64 n :i64] :vector-i64
+  (if (>= i n) M
+    (t2-mv-consts (if (= (t2-mv-f M i 2) 1) (gn-mov-imm M (t2-mv-f M i 0) (t2-mv-f M i 3)) M) (inc i) n)))
+(defn- t2-copies [M :vector-i64 b :i64 s :i64] :vector-i64
+  (if (< s 0) M
+    (let [M1 (t2-mv-collect (t2-s M t2-s-nmv 0) (t2-bget M t2-a-bphi s) (t2-predidx M s b 0)) n (t2-g M1 t2-s-nmv)]
+      (-> M1 (t2-mv-regs n 200) (t2-mv-consts 0 n)))))
+(defn- t2-needs-copies? [M :vector-i64 b :i64 s :i64] :bool
+  (let [M1 (t2-mv-collect (t2-s M t2-s-nmv 0) (t2-bget M t2-a-bphi s) (t2-predidx M s b 0))]
+    (> (t2-g M1 t2-s-nmv) 0)))
+;; next reachable block after b (-1 when none)
+(defn- t2-nextb [M :vector-i64 b :i64] :i64
+  (cond (>= (inc b) (t2-g M t2-s-nb)) -1
+        (= (t2-bget M t2-a-breach (inc b)) 1) (inc b)
+        :else (t2-nextb M (inc b))))
+(defn- t2-goto [M :vector-i64 b :i64 s :i64] :vector-i64
+  (if (= s (t2-nextb M b)) M (t2-jmp M FX-B26 (t2-lab M s) (enc-b 0))))
+;; ---- blocks, prologue, epilogue -----------------------------------------------------------------------------------------
+(def t2-s-ncs 27)    ; callee-saved pairs saved
+(defn- t2-save [M :vector-i64 k :i64 n :i64] :vector-i64
+  (if (>= k n) M (t2-save (gn-emit M (enc-stp-pre (+ 19 (* 2 k)) (+ 20 (* 2 k)) 31 -16)) (inc k) n)))
+(defn- t2-restore [M :vector-i64 k :i64] :vector-i64
+  (if (< k 0) M (t2-restore (gn-emit M (enc-ldp-post (+ 19 (* 2 k)) (+ 20 (* 2 k)) 31 16)) (dec k))))
+(defn- t2-e-ret [M :vector-i64 v :i64] :vector-i64
+  (let [M1 (t2-src M (t2-vf M v t2-f-a) 0) r (t2-last M1)]
+    (-> M1 (gn-mov 0 r)
+        (cond-> (= (t2-g M t2-s-fuel) 1) (gn-emit (enc-str 8 7 CTX-FUEL)))
+        (t2-restore (dec (t2-g M t2-s-ncs)))
+        (gn-emit (enc-ret)))))
+(def t2-a-stubq (+ t2-a-tmp 32))   ; edge stub queue: 3 words each (label, from, to)
+(defn- t2-stub-label [M :vector-i64 b :i64 s :i64] :vector-i64
+  (let [n (t2-g M t2-s-nstub) l (+ (t2-lab M (t2-g M t2-s-nb)) 3 n) a (+ t2-a-stub (* 3 n))]
+    (if (>= n 600) (t2-fail M 16)
+      (-> M (t2-s a l) (t2-s (+ a 1) b) (t2-s (+ a 2) s) (t2-s t2-s-nstub (inc n)) (t2-s t2-s-last l)))))
+(defn- t2-e-brz [M :vector-i64 b :i64 v :i64] :vector-i64
+  (let [taken (t2-bget M t2-a-bt b) fall (t2-bget M t2-a-bf b) nz (t2-vf M v t2-f-b)
+        c (t2-res M (t2-vf M v t2-f-a))]
+    (if (< taken 0)
+      (-> M (t2-copies b fall) (t2-goto b fall))
+      (let [M0 (if (t2-needs-copies? M b taken) (t2-stub-label M b taken) (t2-s M t2-s-last (t2-lab M taken)))
+            l (t2-last M0)
+            fused (and (= (t2-op-of M0 c) t2-cmp) (= (bit-and (t2-xf M0 c t2-x-flags) 1) 1))
+            M1 (if fused
+                 (let [cc (enc-cond-of-cc (t2-vf M0 c t2-f-a))]
+                   (-> M0 (t2-e-cmpflags c) (t2-bcond (if (= nz 1) cc (bit-xor cc 1)) l)))
+                 (let [Ma (t2-src M0 c 16) rc (t2-last Ma)]
+                   (t2-jmp Ma FX-CB19 l (if (= nz 1) (enc-cbnz rc 0) (enc-cbz rc 0)))))]
+        (-> M1 (t2-copies b fall) (t2-goto b fall))))))
+(defn- t2-e-vals [M :vector-i64 b :i64 v :i64 v1 :i64] :vector-i64
+  (if (>= v v1) M
+    (let [op (t2-op-of M v)]
+      (cond (= op t2-phi) (t2-e-vals M b (inc v) v1)
+            (= op t2-ret) (t2-e-ret M v)
+            (= op t2-br) (-> M (t2-copies b (t2-bget M t2-a-bt b)) (t2-goto b (t2-bget M t2-a-bt b)))
+            (= op t2-brz) (t2-e-brz M b v)
+            :else (t2-e-vals (t2-e-val M v) b (inc v) v1)))))
+(defn- t2-e-block [M :vector-i64 b :i64] :vector-i64
+  (let [M1 (t2-e-vals (t2-deflab M (t2-lab M b)) b (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b))
+        last (t2-lastval M b) op (if (> last 0) (t2-op-of M last) 0)]
+    ;; a block without a terminator falls into its successor
+    (if (or (= op t2-ret) (= op t2-br) (= op t2-brz) (= op t2-trap))
+      M1
+      (-> M1 (t2-copies b (t2-bget M t2-a-bf b)) (t2-goto b (t2-bget M t2-a-bf b))))))
+(defn- t2-e-blocks [M :vector-i64 b :i64] :vector-i64
+  (if (>= b (t2-g M t2-s-nb)) M
+    (t2-e-blocks (if (= (t2-bget M t2-a-breach b) 1) (t2-e-block M b) M) (inc b))))
+(defn- t2-e-stubs [M :vector-i64 k :i64] :vector-i64
+  (if (>= k (t2-g M t2-s-nstub)) M
+    (let [a (+ t2-a-stub (* 3 k)) s (t2-g M (+ a 2))]
+      (t2-e-stubs (-> M (t2-deflab (t2-g M a)) (t2-copies (t2-g M (+ a 1)) s) (t2-jmp FX-B26 (t2-lab M s) (enc-b 0))) (inc k)))))
+;; descriptor of vector parameter k: base := items + 8*offset, len (0 for an invalid handle); flags from one compare
+(defn- t2-e-desc [M :vector-i64 k :i64] :vector-i64
+  (let [B (t2-g M (+ t2-a-pd (* 4 k) 1)) L (t2-g M (+ t2-a-pd (* 4 k) 2))]
+    (-> M (gn-emit (enc-ldr 16 7 312)) (gn-emit (enc-ldr 16 16 0)) (gn-emit (enc-sub-i 17 k 1))
+        (gn-emit (enc-cmp-r 17 16)) (gn-emit (enc-csel 17 17 31 3))
+        (gn-emit (enc-ldr 16 7 320)) (gn-emit (gn-e-addsl 16 16 17 4)) (gn-emit (enc-ldp B L 16 0))
+        (gn-emit (enc-csel L L 31 3)) (gn-emit (enc-ldr 17 7 328)) (gn-emit (gn-e-addsl B 17 B 3)))))
+(defn- t2-e-descs [M :vector-i64 k :i64] :vector-i64
+  (if (>= k 8) M (t2-e-descs (if (= (t2-g M (+ t2-a-pd (* 4 k))) 1) (t2-e-desc M k) M) (inc k))))
+(defn- t2-e-tabs [M :vector-i64 k :i64] :vector-i64
+  (if (>= k (t2-g M t2-s-ntab)) M
+    (t2-e-tabs (-> M (gn-emit (enc-ldr 17 7 CTX-CODE-BASE)) (gn-fix FX-LIT32 (t2-g M (+ t2-a-tb (* 2 k))))
+                   (gn-emit (enc-movz 16 0 0)) (gn-emit (enc-movk 16 0 1))
+                   (gn-emit (enc-add-r (t2-g M (+ t2-a-tb (* 2 k) 1)) 17 16)))
+               (inc k))))
+;; keep T2's body only when it is smaller than the old body (whose words end where T2 starts); else roll back
+(defn- t2-emit [M :vector-i64 f :i64] :vector-i64
+  (let [old (gn-fnf M f FF-CODE) entry (vector-at M MM-CODE-N) fixn (vector-at M MM-FIX-N) labn (vector-at M MM-LABEL-N)
+        M1 (t2-emit1 M f)
+        body (- (t2-g M1 t2-s-bodyend) entry)]
+    (if (< body (- entry old))
+      M1
+      (-> M1 (gn-put MM-CODE-N entry) (gn-put MM-FIX-N fixn) (gn-put MM-LABEL-N labn)
+          (gn-put (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) old)))))
+(def t2-s-bodyend 29)
+(defn- t2-emit1 [M :vector-i64 f :i64] :vector-i64
+  (let [nb (t2-g M t2-s-nb) entry (vector-at M MM-CODE-N)
+        M1 (-> M (t2-s t2-s-nstub 0)
+               ;; x5 is a parameter register from the sixth parameter on: the private-entry marker only below that
+               (cond-> (<= (t2-g M t2-s-np) 5) (gn-emit (enc-movz 5 0 0)))
+               (cond-> (= (t2-g M t2-s-fuel) 1) (gn-emit (enc-ldr 8 7 CTX-FUEL)))
+               (t2-save 0 (t2-g M t2-s-ncs))
+               (t2-e-descs 0) (t2-e-tabs 0)
+               (t2-e-blocks 0))
+        M2 (t2-e-stubs (t2-s M1 t2-s-bodyend (vector-at M1 MM-CODE-N)) 0)
+        lu (t2-lab M2 nb)]
+    (-> M2 (t2-deflab lu) (gn-emit (gn-e-udf))
+        (t2-deflab (+ lu 1)) (gn-emit (enc-brk 0))
+        (t2-deflab (+ lu 2)) (gn-emit (enc-str 31 7 CTX-FUEL)) (gn-emit (enc-brk 0))
+        (gn-emit (enc-brk 1))
+        (gn-put MM-LABEL-N (+ lu 3 (t2-g M2 t2-s-nstub)))
+        (gn-put (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) entry))))
+;; ---- driver -------------------------------------------------------------------------------------------------------------
+;; T2 is a size-budgeted tier (like the post-emission passes' uqd-counts gate): programs above t2-max-sir SIR records
+;; (the compiler itself) keep the existing backend only, bounding code size and compile time.
+(def t2-on 1)
+(def t2-max-sir 131072)
+(def t2-mark-cell 99)   ; FN index whose ordinary gn-op-fn2 path ran last (0 = none)
+;; old code words [a, b) carry a certified-kernel signature: prepaid fuel (sub/subs/cmp x8|x16, #k>=2), SIMD/FP, ldrb
+(defn- t2-kword? [w :i64] :bool
+  (let [k (bit-and (u64-shift-right w 10) 4095) m (bit-and w 0xFF8003FF)]
+    (or (and (>= k 2) (or (= m 0xD1000108) (= m 0xF1000108) (= m 0xD1000210) (= m 0xF1000210) (= m 0xF100011F) (= m 0xF100021F)))
+        (= (bit-and (u64-shift-right w 25) 7) 7) (= (bit-and (u64-shift-right w 25) 7) 6)
+        (= (bit-and w 0xFFC00000) 0x39400000) (= (bit-and w 0xFFE00C00) 0x38600800))))
+;; signed branch displacement (words) of a b / b.cond / cbz / cbnz word, 0 when w is not one
+(defn- t2-bdisp [w :i64] :i64
+  (cond (= (bit-and w 0xFC000000) 0x14000000)
+        (let [x (bit-and w 0x3FFFFFF)] (if (>= x 0x2000000) (- x 0x4000000) x))
+        (or (= (bit-and w 0xFF000010) 0x54000000) (= (bit-and w 0x7E000000) 0x34000000))
+        (let [x (bit-and (u64-shift-right w 5) 0x7FFFF)] (if (>= x 0x40000) (- x 0x80000) x))
+        :else 0))
+;; 64-bit ldr/str (unsigned offset or register offset) and its base register, -1 otherwise
+(defn- t2-ldst-base [w :i64] :i64
+  (if (or (= (bit-and w 0xFFC00000) 0xF9400000) (= (bit-and w 0xFFC00000) 0xF9000000)
+          (= (bit-and w 0xFFE00C00) 0xF8600800) (= (bit-and w 0xFFE00C00) 0xF8200800))
+    (bit-and (u64-shift-right w 5) 31) -1))
+;; loop body [t, a] has a memory access but no context load ([x7,#..]): descriptors already hoisted by old code
+(defn- t2-tight-loop? [M :vector-i64 t :i64 a :i64 mem :bool] :bool
+  (if (> t a) mem
+    (let [w (vector-at M (+ MM-CODE-BASE t)) r (t2-ldst-base w)]
+      (cond (= r 7) false
+            (and (>= r 0) (not= r 31)) (t2-tight-loop? M (inc t) a true)
+            :else (t2-tight-loop? M (inc t) a mem)))))
+(defn- t2-kernel? [M :vector-i64 a :i64 b :i64] :bool (t2-kernel2? M a a b))
+(defn- t2-kernel2? [M :vector-i64 s :i64 a :i64 b :i64] :bool
+  (if (>= a b) false
+    (let [w (vector-at M (+ MM-CODE-BASE a)) d (t2-bdisp w)]
+      (cond (t2-kword? w) true
+            (and (< d 0) (>= (+ a d) s) (t2-tight-loop? M (+ a d) a false)) true
+            :else (t2-kernel2? M s (inc a) b)))))
+(defn- t2-clear-defs [M :vector-i64 var :i64 nvar :i64 nb :i64] :vector-i64
+  (if (>= var nvar) M (t2-clear-defs (t2-wzero M (+ t2-a-def (* var t2-maxb)) 0 nb) (inc var) nvar nb)))
+(defn- t2-ok? [M :vector-i64] :bool (= (t2-g M t2-s-fail) 0))
+(defn- t2-compile [M :vector-i64 p :i64 end :i64 f :i64] :vector-i64
+  (let [np (gn-fnf M f FF-NPARAMS)
+        ns (gn-max (gn-max (gn-sir M p IF-C) (gn-fnf M f FF-NSLOTS)) (gn-max np (gn-scan M (inc p) 2 0)))
+        dp (gn-max (gn-fnf M f FF-DEPTH) (gn-scan M (inc p) 1 0))
+        nvar (+ ns 1 dp)]
+    (if (or (>= nvar t2-maxvar) (> np 7)) M
+      (let [M1 (-> M (t2-wzero 0 0 64) (t2-s t2-s-p p) (t2-s t2-s-end end) (t2-s t2-s-f f) (t2-s t2-s-np np)
+                   (t2-s t2-s-ns ns) (t2-s t2-s-nvar nvar) (t2-wzero t2-a-pd 0 32) (t2-cfg))]
+        (if (or (not (t2-ok? M1)) (> (t2-bget M1 t2-a-bpn 0) 0)) M
+          (let [M2 (-> M1 (t2-clear-defs 0 nvar (t2-g M1 t2-s-nb)) (t2-build 0))]
+            (if (not (t2-ok? M2)) M
+              (let [nv (t2-g M2 t2-s-nv)
+                    M3 (-> M2 (t2-clear-x 1 nv) (t2-uses 1 nv) (t2-check 1 nv))]
+                (if (not (t2-ok? M3)) M
+                  (let [M4 (-> M3 (t2-fuse 0) (t2-positions 0 1))]
+                    (if (not (t2-ok? M4)) M
+                      (let [M5 (-> M4 (t2-ue-all 0) (t2-liveness 0))]
+                        (if (not (t2-ok? M5)) M
+                          (let [M6 (-> M5 (t2-iv-vals 1 nv) (t2-iv-blocks 0) (t2-regalloc))
+                                cs (gn-max (t2-maxcs M6 1 nv 18) (t2-maxcs-fixed M6 18))
+                                ncs (if (>= cs 19) (inc (quot (- cs 19) 2)) 0)
+                                labels-ok (< (+ (vector-at M6 MM-LABEL-N) (* 3 (t2-g M6 t2-s-nb)) 8) MM-LABEL-CAP)]
+                            (if (or (not (t2-ok? M6)) (not labels-ok)) M
+                              (t2-emit (-> M6 (t2-s t2-s-ncs ncs) (t2-s t2-s-lab0 (vector-at M6 MM-LABEL-N))) f))))))))))))))))
+;; at the END of FN f (SIR index i): re-compile with T2 when admitted
+(defn- t2-end [M :vector-i64 i :i64 f :i64] :vector-i64
+  (if (or (= t2-on 0) (> (vector-at M MM-SIR-N) t2-max-sir) (<= f 0) (>= f (vector-at M MM-FN-N)) (not= (vector-at M t2-mark-cell) f)) M
+    (let [p (gn-fnf M f FF-SIR) k (gn-fnf M f FF-KIND) np (gn-fnf M f FF-NPARAMS)]
+      (if (and (> p 0) (< p i) (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) f)
+               (or (= k FK-DEFN) (= k FK-PRIV)) (not (lw-tmpl? M f)) (not (lw-spec? M f)) (not (gn-clamp-open M f))
+               (= (gn-g M gn-f-leaf) 1) (or (= (gn-g M gn-f-freg) 1) (= (gn-g M gn-f-fuel) 0))
+               (< (- i p) t2-maxops) (<= np 7) (= (gn-sir M p IF-B) np)
+               (t2-scan-ok? M (inc p) i)
+               (not (t2-kernel? M (gn-fnf M f FF-CODE) (vector-at M MM-CODE-N))))
+        (let [M0 (t2-ready M)] (if (= (t2-base M0) 0) M0 (t2-compile M0 p i f)))
+        M))))
+;; ==== END T2 =========================================================================================================
