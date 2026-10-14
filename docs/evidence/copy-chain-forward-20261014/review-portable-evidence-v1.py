@@ -1,6 +1,7 @@
 from pathlib import Path
-import json,tarfile,hashlib,importlib.util,sys,copy
-W=Path(__file__).parent;R=Path('/Users/junkawasaki/github/wt/codex/seed-copy-chain-forward-20261014');E=R/'docs/evidence/copy-chain-forward-20261014';D=W/'portable-review-v1';D.mkdir(exist_ok=False)
+import json,tarfile,hashlib,importlib.util,sys,copy,argparse
+E=Path(__file__).resolve().parent;R=E.parents[2]
+ap=argparse.ArgumentParser();ap.add_argument('--output',type=Path,required=True);args=ap.parse_args();D=args.output.resolve();D.mkdir(exist_ok=False)
 def extract(a,d):
  with tarfile.open(a)as t:
   members=t.getmembers();assert all(x.isfile()and not x.issym()and not x.islnk()and not Path(x.name).is_absolute()and '..'not in Path(x.name).parts for x in members)
@@ -20,4 +21,4 @@ for e in G['images']:
  proof=m.audit(baseline,arm);rows.append(dict(tag=e['tag'],changed=proof['changed'],loads=proof.get('forwardedLoads',0),narrows=proof.get('omittedNarrow',0)))
 assert len(rows)==39 and sum(x['changed']for x in rows)==2
 r=dict(status='PASS_REPOSITORY_ONLY_PORTABLE_PARENT_AND_CURRENT_ARCHIVES_ALL39_NATIVE_PROOFS',programImages=39,sourceOnlyPythonProof=True,compilerOrGuestOrNetworkCalls=0,sourceSnapshotsFromRepositoryArchivesOnly=True,rows=rows)
-(W/'portable-source-review.json').write_text(json.dumps(r,indent=2)+'\n');print(r['status'])
+(D/'report.json').write_text(json.dumps(r,indent=2)+'\n');print(r['status'])
