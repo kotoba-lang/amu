@@ -116,6 +116,36 @@ def prepare(build, output):
         assert all(pin(p) == v for p, v in inputs.items()), "input mutation"
         return elf, result
 
+    def reference_a64(case):
+        name = case["name"]
+        src = artifacts / (name + ".kotoba")
+        container, native = artifacts / (name + ".a64.kseed"), artifacts / (name + ".a64.bin")
+        for tag, args in [
+            ("compile", ["compile", src, "--target", "aarch64-macos", "--output", container]),
+            ("extract", ["extract-native", container, "--symbol", "main", "--output", native]),
+        ]:
+            result = subprocess.run(list(map(str, prefix + args)), env=env, cwd=artifacts,
+                                    capture_output=True, timeout=180)
+            (raw / (name + ".a64-" + tag + ".stdout")).write_bytes(result.stdout)
+            (raw / (name + ".a64-" + tag + ".stderr")).write_bytes(result.stderr)
+            assert result.returncode == 0 and not result.stderr, (name, tag, result)
+        offset = int(re.search(rb":offset (\d+)", result.stdout)[1])
+        guest_env = {k: v for k, v in env.items() if not k.startswith("KEXE_")}
+        guest_env.update(KEXE_FUEL=str(case["fuel"]), KEXE_STRUCTURED_REPORT="1",
+                         KEXE_CPU_SECONDS="10", KEXE_WALL_SECONDS="10")
+        result = subprocess.run(list(map(str, [loader, native, offset, 0, "aarch64", "-"])),
+                                env=guest_env, capture_output=True, timeout=15)
+        (raw / (name + ".a64-execute.stdout")).write_bytes(result.stdout)
+        (raw / (name + ".a64-execute.stderr")).write_bytes(result.stderr)
+        fuel = re.search(rb":fuel \{:initial (\d+) :remaining (\d+)\}", result.stdout)
+        assert fuel and int(fuel[1]) == case["fuel"]
+        if case["trap"]:
+            assert result.returncode == 120 and b":status :trap" in result.stdout, (name, result)
+        else:
+            value = re.search(rb":result (-?\d+)", result.stdout)
+            assert result.returncode == 0 and value and int(value[1]) == case["result"], (name, result)
+        return {"remainingFuel": int(fuel[2]), "nativePin": pin(native), "exit": result.returncode}
+
     rows = []
     for case in cases():
         elf, result = compile(case["name"], case["source"], ["--fuel", str(case["fuel"])])
@@ -129,7 +159,8 @@ def prepare(build, output):
         code.write_bytes(data[4096:4096 + fields["code-bytes"]])
         assert 0 < fields["function-offset"] < fields["code-bytes"]
         rows.append({**case, "elf": str(elf.relative_to(output)), "native": str(code.relative_to(output)),
-                     "offset": fields["function-offset"], "elfPin": pin(elf), "nativePin": pin(code)})
+                     "offset": fields["function-offset"], "elfPin": pin(elf), "nativePin": pin(code),
+                     "aarch64Reference": reference_a64(case)})
     # The optional entry must preserve the adopted AArch64 route byte-for-byte.
     a64_identity = []
     for case in cases()[:3]:
@@ -218,7 +249,8 @@ def execute(output, rosetta):
         if rosetta:
             fuel = re.search(rb":fuel \{:initial (\d+) :remaining (\d+)\}", result.stdout)
             assert fuel and int(fuel[1]) == case["fuel"] and 0 <= int(fuel[2]) <= case["fuel"]
-            exact_charges = {"answer": 0, "loop": 100, "parallel-recur": 5, "tail-call": 100}
+            assert int(fuel[2]) == case["aarch64Reference"]["remainingFuel"], (case["name"], fuel[2])
+            exact_charges = {"answer": 0, "loop": 100, "parallel-recur": 5}
             if case["name"] in exact_charges:
                 assert int(fuel[2]) == case["fuel"] - exact_charges[case["name"]]
             if case["name"] == "fuel-exhausted":
