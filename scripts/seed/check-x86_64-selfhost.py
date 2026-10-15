@@ -7,6 +7,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -32,7 +33,10 @@ def environment(out, command=True):
         # The unchanged trusted loader permits brk, not guest mmap. Its file
         # provider's large malloc/realloc must use the ordinary heap after
         # seccomp installation. Keep the syscall filter closed.
-        env.update(GLIBC_TUNABLES="glibc.malloc.mmap_max=0", MALLOC_MMAP_MAX_="0")
+        # The loader lowers RLIMIT_AS after its large fixed arenas are mapped;
+        # reserve ordinary allocator headroom before that limit is installed.
+        env.update(GLIBC_TUNABLES="glibc.malloc.mmap_max=0:glibc.malloc.top_pad=16777216:glibc.malloc.trim_threshold=16777216",
+                   MALLOC_MMAP_MAX_="0", MALLOC_TOP_PAD_="16777216", MALLOC_TRIM_THRESHOLD_="16777216")
     env.update(KEXE_FUEL="off", KEXE_VECTORS="4194304", KEXE_VECTOR_ITEMS="134217728",
                KEXE_STRING_POOL="268435456", KEXE_PAIRS="16777216",
                KEXE_CPU_SECONDS="1800", KEXE_WALL_SECONDS="1800", TMPDIR=str(out))
@@ -58,7 +62,7 @@ class Runs:
         after = {str(p): pin(p) if p.is_file() else None for p in watched}
         active_env = env or environment(self.out)
         self.calls.append(dict(name=name, argv=list(map(str, args)), exit=result.returncode,
-                               allocator={k: active_env[k] for k in ("GLIBC_TUNABLES", "MALLOC_MMAP_MAX_") if k in active_env},
+                               allocator={k: active_env[k] for k in ("GLIBC_TUNABLES", "MALLOC_MMAP_MAX_", "MALLOC_TOP_PAD_", "MALLOC_TRIM_THRESHOLD_") if k in active_env},
                                before=before, after=after))
         dump(self.out / "calls.json", self.calls)
         assert before == after, "active source/producer/loader mutation"
@@ -237,10 +241,29 @@ def execute(out, rosetta):
         refused.append(name)
     report = dict(status="PASS_ROSETTA_X86_SELF_REBUILD" if rosetta else "PASS_LINUX_X86_NATIVE_SELFHOST",
                   host=list(host), linuxSelfhost=not rosetta, generations=generations, sourceUnity=prepared["sourceUnity"],
-                  linuxAllocator=None if rosetta else "glibc.malloc.mmap_max=0; trusted seccomp filter unchanged",
+                  linuxAllocator=None if rosetta else environment(out)["GLIBC_TUNABLES"],
                   cases=results, refusals=refused, trustedCLoader=True, JVMNodeOrGraalFallback=False, performanceMeasured=False)
     dump(out / ("rosetta-selfhost.json" if rosetta else "linux-selfhost.json"), report)
     print(report["status"], len(results), "cases; G1=G2=G3", flush=True)
+
+
+def diagnose_linux(out):
+    """Failure-only trace; never produces a qualification receipt."""
+    assert platform.system() == "Linux"
+    tracer = shutil.which("strace")
+    if not tracer:
+        print("strace unavailable; original failure evidence retained")
+        return
+    call = json.loads((out / "calls.json").read_text())[-1]
+    assert call["exit"] != 0
+    watched = {Path(p): v for p, v in call["after"].items()}
+    assert all(pin(p) == v for p, v in watched.items())
+    result = subprocess.run([tracer, "-f", "-qq", "-o", str(out / "raw/failure-syscalls.trace"), *call["argv"]],
+                            cwd=out, env=environment(out), capture_output=True, timeout=1800)
+    (out / "raw/failure-trace.stdout").write_bytes(result.stdout)
+    (out / "raw/failure-trace.stderr").write_bytes(result.stderr)
+    assert all(pin(p) == v for p, v in watched.items()), "diagnostic input mutation"
+    dump(out / "failure-trace.json", dict(diagnosticOnly=True, qualification=False, exit=result.returncode, original=call))
 
 
 if __name__ == "__main__":
@@ -250,8 +273,11 @@ if __name__ == "__main__":
     group.add_argument("--prepare", action="store_true")
     group.add_argument("--execute-linux", action="store_true")
     group.add_argument("--execute-rosetta", action="store_true")
+    group.add_argument("--diagnose-linux", action="store_true")
     args = parser.parse_args()
     if args.prepare:
         prepare(args.output.resolve())
+    elif args.diagnose_linux:
+        diagnose_linux(args.output.resolve())
     else:
         execute(args.output.resolve(), args.execute_rosetta)
