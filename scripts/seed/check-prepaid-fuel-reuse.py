@@ -3,12 +3,16 @@
 from pathlib import Path
 import argparse,hashlib,importlib.util,json,os,shutil,subprocess,re
 ROOT=Path(__file__).resolve().parents[2]
+# Static single-feature audits (native-gate) compare against AUDITED, the adopted compiler at which they were established
+# and last held; the same-algorithm m104 adoption replaced it. Every behavioural pair runs on the current adopted compiler (ON).
+AUDITED=ROOT/'docs/evidence/same-algo-m104-20261015/previous-bootstrap.bin';AUDITED_SHA256='87efe842dc0389f0ba7d476fcf034f6820483632df61fad53b474a2297e3e345'
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 def pin(p):return dict(path=str(p),bytes=p.stat().st_size,sha256=sha(p))
 def main():
  ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--selfbuild-output',type=Path,required=True);a=ap.parse_args();O=a.selfbuild_output.resolve();D=O/'artifacts/prepaid-fuel-reuse-controls';D.mkdir(exist_ok=False);raw=D/'raw';raw.mkdir()
- E=ROOT/'docs/evidence/fuel-register-reuse-20261014';F=ROOT/'seed/tests/prepaid-fuel-reuse';L=O/'host/kexe-loader';S=D/'controls.kotoba';shutil.copy2(F/'controls.kotoba',S);P={'OFF':E/'previous-bootstrap.bin','ON':O/'artifacts/G2.bin'}
+ E=ROOT/'docs/evidence/fuel-register-reuse-20261014';F=ROOT/'seed/tests/prepaid-fuel-reuse';L=O/'host/kexe-loader';S=D/'controls.kotoba';shutil.copy2(F/'controls.kotoba',S);P={'OFF':E/'previous-bootstrap.bin','ON':O/'artifacts/G2.bin','AUDITED':AUDITED}
  assert sha(P['OFF'])=='e918a3d56f79671494991a65ed4762336ef3704afad130b10d8fcee710d936ec'
+ assert sha(P['AUDITED'])==AUDITED_SHA256
  assert sha(P['ON'])==json.loads((ROOT/'seed/adoption-20261012.json').read_text())['nativeImageSHA256']
  pins={p:sha(p)for p in[L,S,F/'cases.json',*P.values(),E/'native-gate.py',E/'source-pool.py',E/'index-proof-v3.py',E/'scratch-effects.py',E/'trusted-loader-abi.c']};env={k:v for k,v in os.environ.items()if not k.startswith('KEXE_')};env.update(KEXE_COMMAND='1',KEXE_CAP_RESOURCES_35=str(D),KEXE_FUEL='off',KEXE_VECTORS='4194304',KEXE_VECTOR_ITEMS='134217728',KEXE_STRING_POOL='268435456',KEXE_PAIRS='16777216',KEXE_CPU_SECONDS='1800',KEXE_WALL_SECONDS='1800',TMPDIR=str(D));calls=[]
  def run(tag,args,e):
@@ -19,7 +23,7 @@ def main():
   for name,args in [('compile',['compile',S,'--target','aarch64-macos','--output',k]),('extract',['extract-native',k,'--symbol','run','--output',b])]:
    code,_,err=run(tag+'-'+name,base+args,env);assert code==0 and not err
   h,payload=k.read_bytes().split(b'\n\n',1);assert payload==b.read_bytes();ex={n:[int(o),int(a)]for n,o,a in map(str.split,h.decode().splitlines()[1:])};arms[tag]=dict(native=pin(b),container=pin(k),source=pin(S),exports=ex,offset=ex['run'][0],arity=ex['run'][1]);assert ex['run'][1]==2
- spec=importlib.util.spec_from_file_location('mask_physical',E/'native-gate.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);proof=m.audit(arms['OFF'],arms['ON']);assert proof['changed']and len(proof['sites'])==18;(D/'physical-proof.json').write_text(json.dumps(proof,indent=2)+'\n')
+ spec=importlib.util.spec_from_file_location('mask_physical',E/'native-gate.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);audited=arms.pop('AUDITED');proof=m.audit(arms['OFF'],audited);assert proof['changed']and len(proof['sites'])==18;(D/'physical-proof.json').write_text(json.dumps(proof,indent=2)+'\n')
  cases=json.loads((F/'cases.json').read_text())['cases'];assert len(cases)==596
  guest={k:v for k,v in env.items()if not k.startswith('KEXE_')};guest.update(KEXE_STRUCTURED_REPORT='1',KEXE_ARENA_USE='1',KEXE_CPU_SECONDS='60',KEXE_WALL_SECONDS='60');actual=refusals=0
  for i,c in enumerate(cases):
@@ -41,5 +45,5 @@ def main():
    pairs.append((code,o,e))
   assert pairs[0]==pairs[1],('EXACT_RAW_EXIT_FUEL_ARENA_MISMATCH',i)
  assert actual==1192 and refusals==0
- report=dict(status='PASS_PREPAID_FUEL_REUSE_GENERIC84_AND_FUEL512_FULL64_COLD_PAID_BOUNDARIES_ALL17',pairs=596,loaderInvocations=1192,actualGuestCalls=actual,configurationRefusals=refusals,compilerCalls=4,actualFuelAccessElisions=18,removedLoads=9,removedStores=9,performanceMeasured=False);(O/'host/prepaid-fuel-reuse-controls-report.json').write_text(json.dumps(report,indent=2)+'\n');print(report['status'])
+ report=dict(status='PASS_PREPAID_FUEL_REUSE_GENERIC84_AND_FUEL512_FULL64_COLD_PAID_BOUNDARIES_ALL17',pairs=596,loaderInvocations=1192,actualGuestCalls=actual,configurationRefusals=refusals,compilerCalls=6,actualFuelAccessElisions=18,removedLoads=9,removedStores=9,staticAuditCompiler=AUDITED_SHA256,performanceMeasured=False);(O/'host/prepaid-fuel-reuse-controls-report.json').write_text(json.dumps(report,indent=2)+'\n');print(report['status'])
 if __name__=='__main__':main()
