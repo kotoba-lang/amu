@@ -19627,6 +19627,15 @@
 (defn- t2-acc-same? [M :vector-i64 j :i64 k :i64] :bool
   (and (= (t2-acc M j 1) (t2-acc M k 1)) (= (t2-acc M j 3) (t2-acc M k 3)) (= (t2-acc-len M j) (t2-acc-len M k))
        (loop [i 4] (or (>= i (+ 4 (* 2 (t2-acc M k 3)))) (and (= (t2-acc M j i) (t2-acc M k i)) (recur (inc i)))))))
+;; an endpoint check of access k whose index is a compile-time constant inside a table's constant length: nothing
+(defn- t2-acc-static-ok? [M :vector-i64 k :i64 l :i64 src :i64 d :i64 C :i64] :bool
+  (let [v (t2-acc M k 0) a (t2-acc M k 1)]
+    (and (= (t2-op-of M v) t2-tab) (= (t2-acc M k 3) 0)
+         (let [known (or (= a 0) (and (= src 1) (t2-lconst? M l)))
+               x (cond (= a 0) C (and (= src 1) (t2-lconst? M l)) (+ (* a (+ (t2-kval M (t2-lp M l t2-lf-L)) d)) C) :else -1)]
+           (and known (>= x 0) (< x (t2-vf M v t2-f-b)))))))
+(defn- t2-e-accend [M :vector-i64 k :i64 l :i64 src :i64 d :i64 C :i64 slow :i64] :vector-i64
+  (if (t2-acc-static-ok? M k l src d C) M (-> M (t2-e-accval k l src d C) (t2-e-acclim k slow))))
 ;; one group per (shape, length): only its least and greatest index (corners of the range) are checked
 (defn- t2-e-accs [M :vector-i64 l :i64 k :i64 a1 :i64 slow :i64] :vector-i64
   (if (>= k a1) M
@@ -19639,11 +19648,9 @@
                     (recur (inc j) m cmin cmax))))
             cmin (t2-g r t2-s-aa) cmax (t2-g r t2-s-ac)
             ;; the least index: lo end for a >= 0, hi end for a < 0
-            M1 (-> r (t2-e-accval k l (if (>= a 0) (t2-lo-src kind s) (t2-hi-src kind s)) (if (>= a 0) (t2-lo-d kind s) (t2-hi-d kind s)) cmin)
-                   (t2-e-acclim k slow))
+            M1 (t2-e-accend r k l (if (>= a 0) (t2-lo-src kind s) (t2-hi-src kind s)) (if (>= a 0) (t2-lo-d kind s) (t2-hi-d kind s)) cmin slow)
             M2 (if (and (= a 0) (= cmin cmax)) M1
-                 (-> M1 (t2-e-accval k l (if (>= a 0) (t2-hi-src kind s) (t2-lo-src kind s)) (if (>= a 0) (t2-hi-d kind s) (t2-lo-d kind s)) cmax)
-                     (t2-e-acclim k slow)))]
+                 (t2-e-accend M1 k l (if (>= a 0) (t2-hi-src kind s) (t2-lo-src kind s)) (if (>= a 0) (t2-hi-d kind s) (t2-lo-d kind s)) cmax slow))]
         (t2-e-accs M2 l (inc k) a1 slow)))))
 (defn- t2-e-precheck [M :vector-i64 l :i64] :vector-i64
   (let [h (t2-lp M l t2-lf-h) kind (t2-lp M l t2-lf-kind) s (t2-lp M l t2-lf-s) K (t2-lp M l t2-lf-K)
@@ -20396,7 +20403,8 @@
   (if (or (< s 0) (not (t2-thread? M s)))
     (cond (t2-rot? M s) (-> M (t2-copies b s) (t2-e-hinline s))   ; fast-copy back edge: run the header test here
           (t2-rotn? M b s) (-> M (t2-copies b s) (t2-e-hinline-n b s))   ; any other loop's back edge too
-          :else (-> M (t2-copies b s) (t2-jump-from b (t2-hop M b s))))
+          ;; (falling into the next block costs nothing: hop only when s is not next)
+          :else (-> M (t2-copies b s) (t2-jump-from b (if (or (= (t2-tlab M b s) (t2-g M t2-s-nextl)) (t2-next-is? M b s)) s (t2-hop M b s)))))
     (let [k (t2-known M b s false) x (t2-phiarg M (t2-thread-p M s) (t2-predidx M s b 0))]
       (cond (>= k 0)
             (let [S (t2-thread-dest M s k)] (-> M (t2-copies s S) (t2-jump-from b S)))
@@ -20621,7 +20629,9 @@
       (t2-isconst? M c) (t2-goto M b (if (if (= nz 1) (not= (t2-kval M c) 0) (= (t2-kval M c) 0)) taken fall))
       :else
       (let [tk (if (t2-thread? M taken) (t2-known M b taken true) -1)
-            S (if (>= tk 0) (t2-thread-dest M taken tk) (t2-hop M b taken))
+            S (cond (>= tk 0) (t2-thread-dest M taken tk)
+                    (or (= (t2-tlab M b taken) (t2-g M t2-s-nextl)) (t2-next-is? M b taken)) taken
+                    :else (t2-hop M b taken))
             from (if (or (>= tk 0) (not= S taken)) taken b)   ; past a thread block or a hop block: its edge
             ;; the fallthrough edge, threaded through a thread block with a known value
             fk (if (and (>= fall 0) (t2-thread? M fall)) (t2-known M b fall false) -1)
@@ -20925,7 +20935,9 @@
   (if (>= k (t2-g M t2-s-ntab)) M
     (let [r (t2-g M (+ t2-a-tb (* 2 k) 1)) dt (bit-and (t2-g M (+ t2-a-tbadj k)) 1) adj (- (t2-g M (+ t2-a-tbadj k)) dt)
           at (vector-at M MM-CODE-N)
-          M1 (-> M (gn-emit (enc-ldr 17 7 CTX-CODE-BASE)) (gn-fix FX-LIT32 (t2-g M (+ t2-a-tb (* 2 k))))
+          ;; x17 still holds the code base after the previous table unless its base needed an adjustment
+          reload (or (= k 0) (not= (- (t2-g M (+ t2-a-tbadj (dec k))) (bit-and (t2-g M (+ t2-a-tbadj (dec k))) 1)) 0))
+          M1 (-> M (cond-> reload (gn-emit (enc-ldr 17 7 CTX-CODE-BASE))) (gn-fix FX-LIT32 (t2-g M (+ t2-a-tb (* 2 k))))
                  (gn-emit (enc-movz 16 0 0)) (gn-emit (enc-movk 16 0 1))
                  (gn-emit (enc-add-r r 17 16))
                  ;; a bounded table's base points at its item -base (t2-dt-adj)
