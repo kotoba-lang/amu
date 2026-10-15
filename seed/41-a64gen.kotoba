@@ -19032,7 +19032,10 @@
 ;; a function that may receive a handed-over descriptor for parameter 0 (at most 3 parameters, no non-tail call) keeps
 ;; that slot in x4 (base) / x3 (length), the registers of the handoff: neither side moves it
 (defn- t2-hoff-slot? [M :vector-i64 k :i64] :bool
-  (and (= (t2-g M (+ t2-a-pd (* 4 k) 3)) 1) (<= (t2-g M t2-s-np) 3) (= (t2-g M t2-s-ncalls) 0) (= (t2-g M t2-s-hascall) 1)   ; a chain link (tail calls)
+  ;; no real call clobbers x3/x4: a chain link (tail calls only), or a leaf holding few table bases (depthconv's
+  ;; nine-table loop lost 5% when two registers went to the handoff)
+  (and (= (t2-g M (+ t2-a-pd (* 4 k) 3)) 1) (<= (t2-g M t2-s-np) 3) (= (t2-g M t2-s-ncalls) 0)
+       (or (= (t2-g M t2-s-hascall) 1) (<= (t2-g M t2-s-ntab) 1))
        (not (t2-busy? M 3)) (not (t2-busy? M 4))))
 (defn- t2-alloc-descs [M :vector-i64 k :i64 forever :i64] :vector-i64
   (if (>= k 16) M
