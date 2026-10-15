@@ -1,8 +1,18 @@
 # Native x86_64 Linux scalar profile — evidence
 
+Latest qualification: review-fix-qualification.json, source/test head
+8578ec0b36f821180ae315923c72084ec385fc1b, successful native build and actual
+Linux ELF execution in https://github.com/kotoba-lang/amu/actions/runs/38702004955.
+All55 local/CI ELF and raw images and the native compiler match exactly.
+All5 native build calls have unchanged active source/producer/loader pins.
+Three mock orchestration controls reject input mutation; they are not native
+selfhost evidence. review-fix-results.tgz preserves this corrected run.
+
 The native source implementation is commit `b4a91c9a7c982dc501e36b0283ddcea229f0e650`
-on base main `2fec671c`. The later qualification commit adds tests and evidence;
-it does not change the compiler source closure. PR:
+on base main `2fec671c`. The original qualification records below are historical.
+The review fix reserves absolute header cells192-195 and strengthens build and
+qualification input custody. Its freshly rebuilt compiler and all55 guests
+remain whole-byte identical to those in the original records. PR:
 https://github.com/kotoba-lang/amu/pull/1316
 
 `native-build.json` records the adopted bootstrap pins, optional closure and
