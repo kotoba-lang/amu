@@ -1,0 +1,57 @@
+name: native-seed-x86_64-linux
+on:
+  pull_request:
+    paths:
+      - 'seed/**'
+      - 'scripts/seed/build-x86_64-linux.py'
+      - 'scripts/seed/check-x86_64-linux.py'
+      - '.github/workflows/seed-x86_64-linux.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'seed/**'
+      - 'scripts/seed/build-x86_64-linux.py'
+      - 'scripts/seed/check-x86_64-linux.py'
+      - '.github/workflows/seed-x86_64-linux.yml'
+permissions:
+  contents: read
+concurrency:
+  group: seed-x86-linux-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-cross-compile:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 scripts/seed/build-x86_64-linux.py --output "$RUNNER_TEMP/native-cross-build"
+      - run: python3 scripts/seed/check-x86_64-linux.py --selfbuild-output "$RUNNER_TEMP/native-cross-build" --output "$RUNNER_TEMP/linux-suite"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: native-seed-x86-linux-suite
+          path: ${{ runner.temp }}/linux-suite
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-seed-x86-linux-build-evidence
+          path: |
+            ${{ runner.temp }}/native-cross-build/host
+            ${{ runner.temp }}/native-cross-build/report.json
+  linux-execution:
+    needs: native-cross-compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: native-seed-x86-linux-suite
+          path: ${{ runner.temp }}/linux-suite
+      - run: python3 scripts/seed/check-x86_64-linux.py --execute-linux --output "$RUNNER_TEMP/linux-suite"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-seed-x86-linux-execution-evidence
+          path: |
+            ${{ runner.temp }}/linux-suite/linux-report.json
+            ${{ runner.temp }}/linux-suite/raw
