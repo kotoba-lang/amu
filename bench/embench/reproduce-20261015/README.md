@@ -15,8 +15,14 @@ This directory lets a third party check, rebuild and re-time the result publishe
   result is **Kotoba / C = 0.8213**. This is an **Embench-derived translated-port comparison**, not an official or certified
   Embench score: the Kotoba programs use a project-specific translation and harness.
 * A fresh M1 Max result is pending. The M104 protocol requires a quiet-host gate (at least 70% raw CPU idle before each
-  campaign), full 19/19 acceptance for both arms, exact Kotoba outputs, and retained raw records. No M1 timing result is
-  claimed until that full run passes and its records verify offline.
+  benchmark attempt, with raw and estimated background idle also at least 70% during every timed run), full 19/19 acceptance
+  for both arms, exact Kotoba outputs, and retained raw records. No M1 timing result is
+  claimed until that full run passes and its raw records are independently checked against the protocol.
+
+The method reference is the [Embench User Guide](https://github.com/embench/embench-iot/blob/master/doc/README.md) and the
+pinned [Embench upstream source](https://github.com/embench/embench-iot/tree/09c2ed8c3b7008c95d08b038de4a3f6dc103ed70). The
+reproduction uses that commit's unmodified speed driver and baseline table, with custom Kotoba/C target modules. The target
+programs and harness therefore remain a translated-port comparison, not an unmodified Embench submission.
 
 For the historical M93 reproduction below, the measured compiler source was commit `be7f0ce358ebe8d1a715b2784f272ce0eda8e934` of this repository
 (branch `claude/embench-c-parity-m93-20261015`). This package was added in a later commit on that branch and does not change

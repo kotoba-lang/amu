@@ -14,8 +14,14 @@
   ドライバ、文書化した反復あたりの比率式で全19 workloadを計測しています。記録済みの Apple M4 の結果は
   **Kotoba / C = 0.8213** です。Kotoba のポートとプロジェクト固有ハーネスを使うため、これは **Embench に基づく翻訳ポートの比較**であり、
   公式・認定 Embench スコアではありません。
-* 新しい M1 Max の結果は未計測です。M104 のプロトコルは計測前 raw CPU idle 70%以上、両アームで全19/19採用、Kotoba 出力の完全一致、
-  raw 記録の保存を求めます。全件計測を完了し、記録のオフライン検証に通るまで M1 の結果は主張しません。
+* 新しい M1 Max の結果は未計測です。M104 のプロトコルは各試行前の raw CPU idle 70%以上、全計測区間で raw idle と推定 background
+  idle がともに70%以上、両アームで全19/19採用、Kotoba 出力の完全一致、raw 記録の保存を求めます。全件計測を完了し、raw 記録をプロトコルと
+  独立照合するまで M1 の結果は主張しません。
+
+測定方法の参照元は [Embench User Guide](https://github.com/embench/embench-iot/blob/master/doc/README.md) と、固定した
+[Embench upstream source](https://github.com/embench/embench-iot/tree/09c2ed8c3b7008c95d08b038de4a3f6dc103ed70) です。
+このコミットの未変更 speed driver と baseline table を使い、Kotoba/C 用の独自 target module を与えています。
+したがって、対象プログラムとハーネスは翻訳ポートの比較であり、未変更の Embench 提出物ではありません。
 
 以下に記す過去の M93 再現では、計測したコンパイラのソースは本リポジトリのコミット `be7f0ce358ebe8d1a715b2784f272ce0eda8e934`
 (ブランチ `claude/embench-c-parity-m93-20261015`)です。本パッケージは同じブランチ上の後続コミットで追加したもので、
