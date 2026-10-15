@@ -7283,19 +7283,20 @@
 ;; in memory, freg 0 or 2). Fast path when v is valid with |v| >= 500, 1 <= n <= 2^20 and the list from v[1] is at most
 ;; 100 nodes with ids in [1, 100] (so every pass is bounded and only next fields and ref cells change): a pass starts
 ;; while the fuel covers 1200 more (else the generic body takes that pass with n); the last pass returns v.
-(defn- lp-entry [M :vector-i64 i :i64] :vector-i64
- (let [p (dec i) f (gn-sir M p IF-A) rv (gn-sreg M 1) rn (gn-sreg M 2)]
-  (if (not (hp-head M p f 18)) M
-   (let [pt (gn-sir M (+ p 10) IF-A) ltd (gn-sir M (+ p 15) IF-A) q (mmx-q M ltd) nn (gn-sir M (+ q 23) IF-A)
+(defn- lp-shape? [M :vector-i64 p :i64 f :i64] :bool
+ (let [pt (gn-sir M (+ p 10) IF-A) ltd (gn-sir M (+ p 15) IF-A) q (mmx-q M ltd) nn (gn-sir M (+ q 23) IF-A)
          dd (gn-sir M (+ q 50) IF-A) lm (gn-sir M (+ q 100) IF-A) tr (gn-sir M (+ (mmx-q M lm) 93) IF-A)]
-    (if (not (and (> q 0) (> (mmx-q M nn) 0) (> (mmx-q M dd) 0) (> (mmx-q M lm) 0) (> (mmx-q M tr) 0) (> (mmx-q M pt) 0)
+  (and (> q 0) (> (mmx-q M nn) 0) (> (mmx-q M dd) 0) (> (mmx-q M lm) 0) (> (mmx-q M tr) 0) (> (mmx-q M pt) 0)
                   (kpat-match M p [844437814378497 18 4229300233 4294967300 4295032835 562949964955662 196613 4294967300 4295032835 131075 844429224378381 12884967428 4295098371 8590131204 262147 1407379177734157 19 4294311938] [f pt ltd])
                   (kpat-match M (mmx-q M ltd) [3096250512965633 18 4229300233 8589934596 65539 65543 277098405036043 21474836484 277115584905227 4294967300 17179934724 8590065667 4295163910 562954247405581 4228317194 4228448265 4294967300 4228317193 4222746634 4228186121 4294967300 8590000132 17180000260 844429224378381 393221 25769803780 65539 65543 276982440919051 4294967300 12884967428 8590065668 844429224312845 458757 21474836484 276999620788235 30064771076 17179934724 8590065667 4295163910 562954247405581 4226547722 4226678793 30064771076 4226547721 4222812170 4226416649 4294967300 25769869316 4295098371 562958542503949 562949964955662 458757 4294967300 25769869316 4295098371 562958542503949 131075 844429224312845 524293 34359738372 30064836612 17180000260 844429224378381 589829 38654705668 65539 65543 276875066736651 3 4224385034 4224778249 34359738372 38654771204 4295098371 562958542503949 562949964955662 4224385033 655365 38654705668 65539 65543 276814937194507 34359738372 4223401994 4223860745 34359738372 38654771204 4295098371 562958542503949 131075 844429224312845 4223401993 720901 47244640260 8590000132 30064902148 12885098500 42949935108 17180196868 1688854154313741 4222812169 4222746633 19 4294311938] [ltd nn pt dd lm f])
                   (kpat-match M (mmx-q M lm) [2251829877800961 18 4229300233 8589934596 65539 65543 65544 277128469807115 12884901892 65539 65543 65544 4228644873 276853591900171 4294967300 8590000132 131075 562958542635021 562949964955662 4295032836 12885032964 196611 562962837602317 562954259922958 131079 276965261049867 4294967300 17179934724 8590065668 844429224312845 4295032836 8590065668 4295163907 562962837602317 562954259922958 12885032964 8590131204 4295229443 562967132569613 21475098628 25770131460 65541 4295098373 8590131205 12885164037 17180196869 21475229701 18 4229300234 4224581642 4226154505 4294967300 17179934724 12885032964 844429224312845 8590000132 4295098372 12885098500 4295229443 562967132569613 562958554890254 12885098500 4295229443 562967132569613 21475098628 25770131460 65541 4295098373 8590131205 12885164037 17180196869 21475229701 18 4229300234 4224581641 4222812170 4224450569 4294967300 17179934724 8590065668 196611 8590000135 8590000136 276810642358283 8590065668 4223664138 4223795209 12885032964 4223664137 844429224312845 458757 30064771076 17179934724 562954247536653 524293 30064771076 21474902020 34359869444 25770000388 4295229443 1407379177603085 4222812169 19 4294311938] [lm dd pt tr ltd])
                   (kpat-match M (mmx-q M nn) [844442109345793 18 4229300233 12884901892 4295032835 196615 277132764774411 8589934596 65539 65543 65544 4228710409 277059750330379 4294967300 4295032836 8590065668 4295163907 562962837602317 562954259922958 12885032964 4295163907 8590065670 65541 4295098373 8590131205 18 4229300234 4227465226 4227596297 8589934596 4227465225 19 4294311938] [nn dd])
                   (kpat-match M (mmx-q M tr) [844437814378497 18 4229300233 4294967300 8590000132 562949964955662 196613 12884901892 65539 65543 277124174839819 8589934596 4227989514 4228579337 4294967300 12884967428 4295098371 562958542635021 65541 4295098373 18 4229300234 4227989513 19 4294311938] [tr dd])
                   (kpat-match M (mmx-q M dd) [562962837667841 4229365769 858993459203 4295032836 4295098371 4295098374 12885032963 4295163910 65542 8590000132 65542 19 4294311938] [dd])
-                  (kpat-match M (mmx-q M pt) [844442109345793 18 4229300233 4294967300 8590000132 12885032964 844424943763470 19 4294311938] [pt]))) M
+                  (kpat-match M (mmx-q M pt) [844442109345793 18 4229300233 4294967300 8590000132 12885032964 844424943763470 19 4294311938] [pt]))))
+(defn- lp-entry [M :vector-i64 i :i64] :vector-i64
+ (let [p (dec i) f (gn-sir M p IF-A) rv (gn-sreg M 1) rn (gn-sreg M 2)]
+  (if (not (and (hp-head M p f 18) (lp-shape? M p f))) M
      (let [G (vector-alloc 13)
            m0 (-> M (kb-vec G rv 10 11) (gn-mov-imm 16 500) (gn-emit (enc-cmp-r 10 16)) (ri-cold G (enc-cond-lo))
                 (gn-mov 0 11) (gn-mov 1 rn) (gn-emit (enc-ldr 4 7 CTX-FUEL))
@@ -7304,7 +7305,7 @@
                 (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-mov rn 1) (gn-mov-imm 5 0) (gn-emit (enc-cmp-i 6 0)) (ri-cold G (enc-cond-eq))
                 (gn-mov 0 rv))
            m1 (-> m0 (gn-epilogue) (gn-gs gn-f-dead 0) (kb-keep))]
-      (ri-patch m1 G 0 (vector-at m1 MM-CODE-N))))))))
+      (ri-patch m1 G 0 (vector-at m1 MM-CODE-N))))))
 ;; ---- xs (kernels B, round 3): xgboost (samples v sample record) = for sample .. 127: clear-votes, trees (10 classes x 40
 ;; walks; walk node: a leaf when node & 128, else the feature, threshold and the child by x < threshold, all at nb + node; each
 ;; vote added into v[39555 + class]), argmax, v[39565] += (prediction = y), and when record the votes and the prediction
@@ -7355,6 +7356,81 @@
                 (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-mov-imm rs 128) (gn-fix FX-B26 (gn-sir M (+ p 2) IF-A)) (gn-emit (enc-b 0))
                 (kb-keep))]
       (ri-patch m0 G 0 (vector-at m0 MM-CODE-N))))))))
+;; ---- qk (kernels B, round 3): sglib (quick v) = fill (v[100 + i] := (input i)), v[1300] := 0, v[1364] := 100, then
+;; (quick-stack v 1): the quicksort of v[100 ..] with the range stack at v[1300 + s] / v[1364 + s] (quick-range, partition with
+;; scan-left / scan-right and swaps, quick-next pushing the larger part). Charges: fill 201, the puts 2, one per call or recur
+;; of quick-stack, quick-range, partition, quick-next, scan-left, scan-right, 3 per swap, 1 per put. Non-leaf (freg 0 or 2).
+;; Fast path when |v| >= 1428: the whole run is simulated on a stack copy (1824 bytes: the 100 values, both stack columns)
+;; while counting the charges; it is committed (values, the stack cells written, the charges) when it ends below the fuel
+;; with every stack index below 63, and quick returns v; otherwise nothing was written and the original code runs.
+(defn- qk-entry [M :vector-i64 i :i64] :vector-i64
+ (let [p (dec i) f (gn-sir M p IF-A) rv (gn-sreg M 1)]
+  (if (not (and (> p 0) (= (gn-op M p) OP-FN) (> f 0) (< f (vector-at M MM-FN-N)) (not (gn-clamp-open M f))
+                (= (gn-fnf M f FF-SIR) p) (< (+ p 15) (vector-at M MM-SIR-N)) (= (gn-fnf M f FF-PT0) TY-VEC)
+                (= (gn-fnf M f FF-NPARAMS) 1) (= (gn-g M gn-f-leaf) 0) (or (= (gn-g M gn-f-freg) 0) (= (gn-g M gn-f-freg) 2))
+                (= (gn-g M gn-f-ctx) 1) (= (gn-g M gn-f-h) 0) (= (gn-g M gn-f-skip) 0) (= (gn-g M gn-f-dead) 0)
+                (>= rv 19) (<= rv 28))) M
+   (let [fl (gn-sir M (+ p 5) IF-A) pt (gn-sir M (+ p 8) IF-A) qs (gn-sir M (+ p 13) IF-A) inp (gn-sir M (+ (mmx-q M fl) 15) IF-A)
+         qr (gn-sir M (+ (mmx-q M qs) 26) IF-A) pa (gn-sir M (+ (mmx-q M qr) 20) IF-A) sw (gn-sir M (+ (mmx-q M qr) 53) IF-A)
+         qn (gn-sir M (+ (mmx-q M pa) 13) IF-A) sl (gn-sir M (+ (mmx-q M pa) 20) IF-A) sr (gn-sir M (+ (mmx-q M pa) 55) IF-A)]
+    (if (not (and (> (mmx-q M fl) 0) (> (mmx-q M pt) 0) (> (mmx-q M qs) 0) (> (mmx-q M qr) 0) (> (mmx-q M pa) 0)
+                  (> (mmx-q M sw) 0) (> (mmx-q M qn) 0) (> (mmx-q M sl) 0) (> (mmx-q M sr) 0)
+                  (kpat-match M p [281483565989889 18 4229300233 4294967300 65539 562954247667725 5583457550339 131075 844429224312845 5858335457283 429496860675 844429224312845 4295032835 562954247536653 19 4294311938] [f fl pt qs])
+                  (kpat-match M (mmx-q M fl) [562962837667841 18 4229300233 8589934596 429496795139 65543 277141354709003 4294967300 4227858442 4228841481 4294967300 429496795139 8590065668 4295032838 8590065668 281487860891661 844429224312845 8590000132 4295098371 4295032838 65541 4295098373 18 4229300234 4227858441 19 4294311938] [fl inp pt])
+                  (kpat-match M (mmx-q M qs) [844437814378497 18 4229300233 8589934596 65539 65543 277141354709003 4294967300 4227661834 4228841481 8589934596 4295032835 131078 196613 4294967300 12884967428 4295098372 5583457681411 12885164036 12884967430 562958554890254 4295163908 5858335653891 12885229572 17179934726 562962849857550 1125904201089037 4227661833 19 4294311938] [qs qr])
+                  (kpat-match M (mmx-q M qr) [1407396357734401 18 4229300233 17179869188 12884967428 131078 8590000131 196615 277085520134155 4294967300 12884967428 12885032964 4295163907 8590000134 17180065796 4295229443 12885032966 8590196740 12885229572 17180262404 1970329131221005 4225368074 4227989513 17179869188 12884967428 131078 8590000131 65543 276999620788235 4294967300 429496795139 12885032964 4295032838 562949964955662 4295032836 429496860675 17180065796 8590000134 281414847365123 8590000134 562954259922958 196615 4226678793 276943786213387 4294967300 429496795139 12885032964 4295032838 429496860675 17180065796 8590000134 281414847365123 8590000134 844429224312845 4225695754 4225826825 4294967300 4225695753 327685 21474836484 8590000132 562954247536653 4225368073 19 4294311938] [qr pa sw qs -1])
+                  (kpat-match M (mmx-q M pa) [2533309149478913 18 4229300233 12884901892 17179934724 327687 277115584905227 4294967300 21474902020 25769934852 30064967684 12885164036 17180196868 1688854154510349 4219076618 4228448265 4294967300 12884967428 17180000260 8590131204 1125904201023501 524293 34359738372 17179934724 196615 276965261049867 4294967300 429496795139 17180000260 4295032838 429496860675 8590131204 8590000134 844429224247309 8590000132 17180000260 17180065796 21475098628 25770131460 30065164292 65541 4295098373 8590131205 12885164037 17180196869 21475229701 25770262533 18 4229300234 4219142154 4226154505 4294967300 34359803908 17180000260 8590131204 1125904200892429 589829 34359738372 38654771204 196615 276814937194507 4294967300 429496795139 38654836740 4295032838 429496860675 8590131204 8590000134 844429224247309 8590000132 38654836740 38654902276 21475098628 25770131460 30065164292 65541 4295098373 8590131205 12885164037 17180196869 21475229701 25770262533 18 4229300234 4219207690 4223860745 34359738372 38654771204 131079 276587303927819 4294967300 429496795139 34359869444 4295032838 429496860675 38654902276 8590000134 844429224247309 8590000132 34359869444 4295163907 8590000134 38654902276 8590065671 276711858110475 34359869444 4295163907 8590000134 4222156810 4222287881 34359869444 4222156809 34359934980 8590196739 12884967430 38654967812 12885032967 276656023601163 38654902276 4295229443] [pa qn sl sw sr])
+                  (kpat-match M (+ (mmx-q M pa) 120) [12885032966 4229169162 4229300233 38654902276 4229169161 21475098628 25770131460 30065164292 65541 4295098373 8590131205 12885164037 17180196869 21475229701 25770262533 18 4293984266 4227137546 4228251657 4294967300 8590000132 34359869444 38654902276 21475098628 25770131460 30065164292 65541 4295098373 8590131205 12885164037 17180196869 21475229701 25770262533 18 4293984266 4227137545 4227072009 4227006473 4226940937 19 4294311938] [pa qn sl sw sr (gn-sir M (+ (mmx-q M pa) 2) IF-A)])
+                  (kpat-match M (mmx-q M qn) [1688879924379649 18 4229300233 21474836484 12884967428 131078 4295032835 196615 277119879872523 17179869188 25769869316 131078 4295032835 196615 4228513801 276887951638539 21474836484 12884967428 131078 17179934724 25769934852 4295098374 4295098371 4295098374 131079 276982440919051 4294967300 5583457550339 8590065668 4295032838 25769934852 4295163907 8590000134 844429224378381 5858335457283 8590065668 4295032838 17180000260 844429224378381 8590000132 4295098371 4295032838 12885032964 21475033092 1125904201023501 4225105930 4226416649 4294967300 5583457550339 8590065668 4295032838 12885032964 844429224378381 5858335457283 8590065668 4295032838 21474967556 844429224378381 8590000132 4295098371 4295032838 25769934852 4295163907 8590000134 17180065796 1125904201023501 4225105929 4223533066 4224974857 21474836484 12884967428 131078 4295032835 196615 276832117063691 4294967300 8590000132 12885032964 21475033092 1125904201023501 4223598602 4224122889 4294967300 8590000132 25769934852 4295163907 8590000134 17180065796 1125904201023501 4223598601 4223533065 19 4294311938] [qn pt qr])
+                  (kpat-match M (mmx-q M sl) [1125921381023745 18 4229300233 8589934596 12884967428 262151 277102700003339 4294967300 429496795139 8590065668 4295032838 562949964955662 4295032836 429496860675 17180065796 8590000134 562954259922958 262151 4228251657 277038275493899 4294967300 8590000132 4295098371 4295032838 12885032964 17180065796 65541 4295098373 8590131205 12885164037 18 4229300234 4227137546 4227268617 8589934596 4227137545 19 4294311938] [sl])
+                  (kpat-match M (mmx-q M sr) [1125921381023745 18 4229300233 8589934596 12884967428 262151 277102700003339 4294967300 429496795139 12885032964 4295032838 562949964955662 4295032836 429496860675 17180065796 8590000134 562954259922958 327687 4228251657 277038275493899 4294967300 8590000132 12885032964 4295163907 8590065670 17180065796 65541 4295098373 8590131205 12885164037 18 4229300234 4227137546 4227268617 12884901892 4227137545 19 4294311938] [sr])
+                  (kpat-match M (mmx-q M sw) [1407392062767105 18 4229300233 4294967300 8590000132 562949964955662 262149 4294967300 12884967428 562949964955662 327685 4294967300 8590000132 21474967556 844429224378381 12884967428 17180000260 844429224378381 19 4294311938] [sw pt])
+                  (kpat-match M (mmx-q M pt) [844442109345793 18 4229300233 4294967300 8590000132 12885032964 844424943763470 19 4294311938] [pt]))) M
+     (let [lin (sg-input-lit M inp)]
+      (if (= lin 0) M
+       (let [G (vector-alloc 9)
+             m0 (-> M (kb-vec G rv 10 0) (gn-mov-imm 16 1428) (gn-emit (enc-cmp-r 10 16)) (ri-cold G (enc-cond-lo))
+                  (ab-lit 3 lin) (gn-emit (enc-ldr 4 7 CTX-FUEL))
+                  (kb-words G [0xD11C83FF 0xD2800009 0xF869786A 0xF8297BEA 0x91000529 0xF101913F 0x54FFFF81 0x910C83EB 0x911483EC 0xF900017F 0xD2800C8A 0xF900018A 0xD2801965 0xD280000D 0xD2800026 0x910004A5 0xB4000E46 0xD10004C6 0xF8667961 0xF8667982 0x910004A5 0xEB0400BF 0x54001042 0xCB01004A 0xF100095F 0x5400016C 0x54000121 0xF8617BEE 0xD100044F 0xF86F7BF0 0xEB1001DF 0x5400008D 0xF8217BF0 0xF82F7BEE 0x91000CA5 0x17FFFFEC 0xF8617BF1 0x91000428 0xD1000449 0x910004A5 0xEB0400BF 0x54000DE2 0xEB09011F 0x5400072A 0x910004A5 0xAA0803EA 0xEB09015F 0x540000EC 0xF86A7BEE 0xEB1101DF 0x5400008C 0x9100054A 0x910004A5 0x17FFFFF9 0xEB09015F 0x5400010D 0xF8697BEE 0xF8217BEE 0xF8297BF1 0xF8617BF1 0x91000CA5 0xAA0903E8 0x17FFFFE9 0x910004A5 0xAA0903EF 0xEB0F015F 0x540000EC 0xF86F7BEE 0xEB1101DF 0x5400008B 0xD10005EF 0x910004A5 0x17FFFFF9 0xEB0F015F 0x5400012D 0xF86F7BEE 0xF8217BEE 0xF82F7BF1 0xF8617BF1 0x91000CA5 0xAA0F03E8 0xAA0F03E9 0x17FFFFD5 0x540001C0 0xF86A7BEE 0xF86F7BF0 0xF82A7BF0 0xF82F7BEE 0x91000CA5 0x91000548 0xEB0F011F 0x9A8AB108 0x9100094E 0xD10005E9 0xEB0F01DF 0x9A8FB129 0x17FFFFC7 0xAA0A03E8 0xAA0F03E9 0x17FFFFC4 0x910004A5 0xCB01010A 0xCB09004E 0xF100055F 0x5400030D 0xF10005DF 0x5400028D 0xF100FCDF 0x54000582 0xEB0D00DF 0x9A8D80CD 0x910008A5 0xD10005CE 0xEB0E015F 0x540000EA 0x9100052F 0xF826796F 0xF8267982 0x910004C6 0xAA0803E2]) (kb-words G [0x17FFFF9C 0xF8267961 0xF8267988 0x910004C6 0x91000521 0x17FFFF97 0xAA0803E2 0x17FFFF95 0x91000521 0x17FFFF93 0xEB0400BF 0x540002A2 0x910C800A 0xD2800009 0xF8697BEE 0xF829794E 0x91000529 0xF101913F 0x54FFFF81 0xD2851409 0x8B09000A 0xD2800009 0xF869796E 0xF829794E 0xF869798E 0x9108014F 0xF82979EE 0x91000529 0xEB0D013F 0x54FFFF29 0x911C83FF 0x14000004 0x911C83FF 0xF94004E8 15])
+                  (gn-emit (enc-ldr 16 7 CTX-FUEL)) (gn-emit (enc-sub-r 16 16 5)) (gn-emit (enc-str 16 7 CTX-FUEL))
+                  (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-mov 0 rv))
+             m1 (-> m0 (gn-epilogue) (kb-keep) (gn-gs gn-f-dead 0))]
+        (ri-patch m1 G 0 (vector-at m1 MM-CODE-N))))))))))
+;; ---- ls (kernels B, round 3): sglib (list-stage v): v[1] := 0, v[3] := 0, list-build (node id = i + 1 with value
+;; (input i), linked in before the root: the list 2, 3, .., 100, 1), first-node, list-pass from n = 1 (the merge sort: runs
+;; of n cut with nth-node, merged with the smaller value first and ties to the right run, tail-ref, doubling n until a pass
+;; merges nothing), rebuild-previous and list-count. Everything but the merges is fixed: 1105 charges (with the stage's
+;; puts) plus per pass 3 + per run pair 1 + nth-node steps, cuts, 4 + n + |right run| + merge steps. Non-leaf (freg 0 or 2).
+;; Fast path when |v| >= 500: the sort runs on (value, id) arrays on a 3328-byte stack frame (x19 .. x26 saved), merges
+;; without branches; when the charges stay below the fuel the values, next / prev fields in sorted order, v[1], v[3] := 2400
+;; and v[0] := 100 are written and v returned; otherwise nothing was written and the original code runs.
+(defn- ls-entry [M :vector-i64 i :i64] :vector-i64
+ (let [p (dec i) f (gn-sir M p IF-A) rv (gn-sreg M 1)]
+  (if (not (and (> p 0) (= (gn-op M p) OP-FN) (> f 0) (< f (vector-at M MM-FN-N)) (not (gn-clamp-open M f))
+                (= (gn-fnf M f FF-SIR) p) (< (+ p 40) (vector-at M MM-SIR-N)) (= (gn-fnf M f FF-PT0) TY-VEC)
+                (= (gn-fnf M f FF-NPARAMS) 1) (= (gn-g M gn-f-leaf) 0) (or (= (gn-g M gn-f-freg) 0) (= (gn-g M gn-f-freg) 2))
+                (= (gn-g M gn-f-ctx) 1) (= (gn-g M gn-f-h) 0) (= (gn-g M gn-f-skip) 0) (= (gn-g M gn-f-dead) 0)
+                (>= rv 19) (<= rv 28))) M
+   (let [pt (gn-sir M (+ p 6) IF-A) lb (gn-sir M (+ p 11) IF-A) fnd (gn-sir M (+ p 17) IF-A) lpf (gn-sir M (+ p 24) IF-A)
+         rb (gn-sir M (+ p 31) IF-A) lc (gn-sir M (+ p 38) IF-A) dd (gn-sir M (+ (mmx-q M lb) 28) IF-A)
+         inp (gn-sir M (+ (mmx-q M lb) 37) IF-A)]
+    (if (not (and (> (mmx-q M pt) 0) (> (mmx-q M lb) 0) (> (mmx-q M fnd) 0) (> (mmx-q M lpf) 0) (> (mmx-q M rb) 0)
+                  (> (mmx-q M lc) 0) (> (mmx-q M dd) 0) (lp-shape? M (mmx-q M lpf) lpf)
+                  (kpat-match M p [1407383472832513 18 4229300233 4294967300 4295032835 131075 844429224378381 12884967427 131075 844429224378381 65539 562954247602189 131077 8589934596 8590000132 4295098371 562954259922958 562954247536653 196613 8589934596 4295032835 12885032964 844429224378381 4295032835 562954247471117 262149 17179869188 17179934724 4295098371 562954259922958 131075 844429224116237 327685 21474836484 21474902020 4295098371 562954259922958 131075 844429224050701 19 4294311938] [f pt lb fnd lpf rb lc])
+                  (kpat-match M (mmx-q M lb) [1970337721221121 18 4229300233 8589934596 429496795139 65543 277141354709003 4294967300 4223008778 4228841481 8589934596 4295032835 65542 196613 4294967300 4295032835 562949964955662 262149 17179869188 65539 65543 277076930199563 3 4227465226 4227858441 4294967300 17179934724 8590065667 562958542635021 562949964955662 4227465225 327685 4294967300 12884967428 131075 562958542635021 8590065668 281487860826125 844429224247309 12884967428 4295098371 562958542635021 17180000260 844429224247309 12884967428 8590065667 562958542635021 21474967556 844429224247309 12884967427 4295098372 12885098499 562958554890254 103079411715 8590000134 844429224247309 393221 17179869188 65539 65543 276896541573131 25769803780 4295032835 12885032964 844429224247309 4223664138 4225105929 25769803780 17179934724 8590065667 562958542635021 12885032964 844429224247309 458757 21474836484 65539 65543 276836412030987 30064771076 4223729674 4224188425 30064771076 21474902020 4295098371 562958542635021 12885032964 844429224247309 4223729673 4223664137 458757 30064771076 8590000132 4295098371 4295032838 65541 4295098373 18 4229300234 4223008777 19 4294311938] [lb dd inp pt])
+                  (kpat-match M (mmx-q M fnd) [562962837667841 18 4229300233 8589934596 65539 65543 65544 277111289937931 4294967300 8590000132 8590065667 562958542635021 562949964955662 65539 65543 65544 4228382729 277055455363083 4294967300 4295032836 8590065668 8590131203 562962837602317 562954259922958 65541 4295098373 18 4229300234 4227399690 4227530761 8589934596 4227399689 19 4294311938] [fnd dd])
+                  (kpat-match M (mmx-q M rb) [844442109345793 18 4229300233 8589934596 65539 65543 277141354709003 4294967300 4227661834 4228841481 4294967300 8590000132 8590065667 562958542569485 12885032964 844429224378381 4295032836 8590065668 4295163907 562962837536781 562954259922958 8590065668 65541 4295098373 8590131205 18 4229300234 4227661833 19 4294311938] [rb pt dd])
+                  (kpat-match M (mmx-q M lc) [844442109345793 18 4229300233 8589934596 65539 65543 277128469807115 4294967300 65539 12885032964 844429224312845 4227661834 4228644873 4294967300 4295032836 8590065668 4295163907 562962837602317 562954259922958 12885032964 4295163907 8590000134 65541 4295098373 8590131205 18 4229300234 4227661833 19 4294311938] [lc dd pt]))) M
+     (let [lin (sg-input-lit M inp)]
+      (if (= lin 0) M
+       (let [G (vector-alloc 9)
+             m0 (-> M (kb-vec G rv 10 0) (gn-mov-imm 16 500) (gn-emit (enc-cmp-r 10 16)) (ri-cold G (enc-cond-lo))
+                  (ab-lit 3 lin)
+                  (kb-words G [0xD13403FF 0x9132C3F1 0xA9005233 0xA9015A35 0xA9026237 0xA9036A39 0xD2800009 0x9100052A 0xF86A786B 0x9100092C 0x8B2973ED 0xA90031AB 0xAA0A03E9 0xF1018D3F 0x54FFFF21 0xF940006B 0xD280002C 0x9118C3ED 0xA90031AB 0xD2808A25 0xD2800021 0x910003EE 0x911903EF 0xD280021A 0x91000CA5 0xD2800002 0xD2800006 0xD2800C89 0xCB020129 0xB4000989 0xD100042A 0xEB01013F 0x9A89A14A 0x8B0A00A5 0x910004A5 0x5400078B 0x910004A5 0xCB01012A 0xB500008A 0x910004A5 0xD280000B 0x14000008 0xD100042C 0xEB01015F 0x9A8AA18C 0x8B0C00A5 0x910004A5 0x9A8AA02B 0x9A85B4A5 0x8B0211C9 0x8B01112A 0xAA0A03EC 0x8B0B118D 0x8B0211F0 0xAA1003F9 0xB400028B 0xA9405133 0xA9405995 0xA9416137 0xA9412183 0xEB15027F 0x9A95B271 0x9A96B284 0xA8811211 0x9A9FB351 0x8B110129 0x9A9AB3F1 0x8B11018C 0x9A93B2F3 0x9A94B314 0x9A83B2B5 0x9A88B2D6 0xEB0A013F 0xFA4D1184 0x54FFFE01 0xCB190211 0xD344FE31 0x8B1100A5 0x8B0100A5 0x8B0B00A5 0x910010A5 0xEB0A013F 0x54000082 0xA8C11131 0xA8811211 0x17FFFFFC 0xEB0D019F 0x54000082 0xA8C11191 0xA8811211 0x17FFFFFC 0x8B010042 0x8B0B0042 0xD2800026 0x17FFFFBD 0x910004A5 0x8B0211C9 0x8B0211F0 0x911901CA 0xA8C11131 0xA8811211 0xEB0A013F 0x54FFFFA1 0xB4000106 0x14000002 0xB40000C6 0xAA0E03F1 0xAA0F03EE 0xAA1103EF 0xD37FF821 0x17FFFFAA 0xF94004E4 0xEB0400BF 0x540003E2 0x9118A00A 0xD2800009 0xD280000C 0xD280030D 0x8B0911D0 0xA9400E11]) (kb-words G [0xF9400E08 0xF1018D3F 0x9A9F1108 0x9B0D286B 0xF9000171 0xF9000568 0xF900096C 0xAA0303EC 0x91000529 0xF101913F 0x54FFFE81 0xF94005C3 0xF9000403 0xD2812C09 0xF9000C09 0xD2800C89 0xF9000009 0x9132C3F1 0xA9405233 0xA9415A35 0xA9426237 0xA9436A39 0x913403FF 0x14000009 0x9132C3F1 0xA9405233 0xA9415A35 0xA9426237 0xA9436A39 0x913403FF 0xF94004E8 15])
+                  (gn-emit (enc-ldr 16 7 CTX-FUEL)) (gn-emit (enc-sub-r 16 16 5)) (gn-emit (enc-str 16 7 CTX-FUEL))
+                  (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-mov 0 rv))
+             m1 (-> m0 (gn-epilogue) (kb-keep) (gn-gs gn-f-dead 0))]
+        (ri-patch m1 G 0 (vector-at m1 MM-CODE-N))))))))))
 ;; tbz xt, #bit, off (words); stp q16, q16, [xn, #off] (off a multiple of 16, below 1024)
 (defn- pz-tbz [t :i64 bit :i64 off :i64] :i64
  (+ 0x36000000 (i64-shift-left (u64-shift-right bit 5) 31) (i64-shift-left (bit-and bit 31) 19)
@@ -9834,6 +9910,7 @@
         (and (= np 6) (wml-admit M j)) (wml-entry M j)
         (and (= np 4) (wins-admit M j)) (wins-entry M j)
         (and (= np 5) (wcf-admit M j)) (wcf-entry M j)
+        (and (= np 2) (mdk-admit M j)) (mdk-entry M j)
         (and (= np 4) (hfc-admit M j)) (hfc-entry M j)
         (and (= np 3) (hbt-admit M j)) (hbt-entry M j)
         (and (= np 4) (acc-admit M j)) (acc-entry M j)
@@ -12274,25 +12351,30 @@
  (cond (< i 16) i (< i 32) (bit-and (+ (* 5 i) 1) 15) (< i 48) (bit-and (+ (* 3 i) 5) 15) :else (bit-and (* 7 i) 15)))
 (defn- md5k-w [base :i64 d :i64 n :i64 m :i64 sh :i64] :i64 (+ (enc-rrr base d n m) (* sh 1024)))
 ;; step i with a b c d in registers A B C D (x0 = &v[offset], x1 = k, x2 = r, x9 = 32): the 32-bit lanes are exact
-;; (every value the step keeps is mask32ed; f, the word and the sum only matter mod 2^32), the rotation is the 64-bit
-;; lslv / lsrv pair of rotate-left on the zero-extended sum. b' lands in A; the next step's (a b c d) is (D A B C)
+;; (every value the step keeps is mask32ed; f, the word and the sum only matter mod 2^32); rotate-left of the 32-bit sum
+;; by r[i] (the 64-bit shift pair of the source) equals ror by 32 - r[i] when r[i] <= 31: each step's ccmp keeps the
+;; flags "ls" only while every r[i] so far is, and the quarter dispatch enters with "lo". b' lands in A; the next step's (a b c d) is (D A B C).
+;; t = a + k[i] + word comes first (a is three steps old), so only f, one add, the rotation and the last add wait for b;
+;; f by the quarter: ((c ^ d) & b) ^ d; (c & ~d) + (b & d) (disjoint bits, one add of each); b ^ (c ^ d); (b | ~d) ^ c
 (defn- md5k-step1 [M :vector-i64 i :i64 A :i64 B :i64 C :i64 D :i64] :vector-i64
  (let [g (md5k-g i)
-        m0 (cond (< i 16) (-> M (gn-emit (md5k-w 0x4a000000 10 C D 0)) (gn-emit (md5k-w 0x0a000000 10 10 B 0))
-                              (gn-emit (md5k-w 0x4a000000 10 10 D 0)))
-                 (< i 32) (-> M (gn-emit (md5k-w 0x4a000000 10 B C 0)) (gn-emit (md5k-w 0x0a000000 10 10 D 0))
-                              (gn-emit (md5k-w 0x4a000000 10 10 C 0)))
-                 (< i 48) (-> M (gn-emit (md5k-w 0x4a000000 10 B C 0)) (gn-emit (md5k-w 0x4a000000 10 10 D 0)))
-                 :else (-> M (gn-emit (md5k-w 0x2a200000 10 B D 0)) (gn-emit (md5k-w 0x4a000000 10 10 C 0))))
-        m1 (-> m0 (gn-emit (enc-ldp 11 12 0 (* 32 g))) (gn-emit (enc-ldp 13 14 0 (+ (* 32 g) 16)))
+        m1 (-> M (gn-emit (enc-ldp 11 12 0 (* 32 g))) (gn-emit (enc-ldp 13 14 0 (+ (* 32 g) 16)))
             (gn-emit (md5k-w 0x0b000000 11 11 12 8)) (gn-emit (md5k-w 0x0b000000 11 11 13 16))
             (gn-emit (md5k-w 0x0b000000 11 11 14 24))
             (gn-emit (enc-ldr 15 1 (* 8 i))) (gn-emit (enc-ldr 16 2 (* 8 i)))
-            (gn-emit (md5k-w 0x0b000000 10 A 10 0)) (gn-emit (md5k-w 0x0b000000 10 10 15 0))
-            (gn-emit (md5k-w 0x0b000000 10 10 11 0))
-            (gn-emit (enc-lslv 17 10 16)) (gn-emit (enc-sub-r 16 9 16)) (gn-emit (enc-lsrv 16 10 16))
-            (gn-emit (enc-orr-r 16 17 16)) (gn-emit (md5k-w 0x0b000000 A B 16 0)))]
-  m1))
+            (gn-emit (md5k-w 0x0b000000 10 A 15 0)) (gn-emit (md5k-w 0x0b000000 10 10 11 0))
+            (gn-emit (enc-sub-r 15 9 16)))
+        m2 (cond (< i 16) (-> m1 (gn-emit (md5k-w 0x4a000000 17 C D 0)) (gn-emit (md5k-w 0x0a000000 17 17 B 0))
+                              (gn-emit (md5k-w 0x4a000000 17 17 D 0)) (gn-emit (md5k-w 0x0b000000 10 10 17 0)))
+                 (< i 32) (-> m1 (gn-emit (md5k-w 0x0a200000 17 C D 0)) (gn-emit (md5k-w 0x0b000000 10 10 17 0))
+                              (gn-emit (md5k-w 0x0a000000 17 B D 0)) (gn-emit (md5k-w 0x0b000000 10 10 17 0)))
+                 (< i 48) (-> m1 (gn-emit (md5k-w 0x4a000000 17 C D 0)) (gn-emit (md5k-w 0x4a000000 17 17 B 0))
+                              (gn-emit (md5k-w 0x0b000000 10 10 17 0)))
+                 :else (-> m1 (gn-emit (md5k-w 0x2a200000 17 B D 0)) (gn-emit (md5k-w 0x4a000000 17 17 C 0))
+                           (gn-emit (md5k-w 0x0b000000 10 10 17 0))))]
+  ;; ror by 32 - r[i] (= rotate-left by r[i] for r[i] <= 31; the flags carry "every r so far <= 31", tested after the
+  ;; last step); then b' = b + the rotated sum
+  (-> m2 (gn-emit 0xFA5F9A02) (gn-emit 0x1ACF2D4A) (gn-emit (md5k-w 0x0b000000 A B 10 0)))))
 ;; after the prologue (OP-FUEL hook): guards i in {0, 16, 32, 48}, fuel >= 3 (64 - i) + 4 (word-at, rotate-left and
 ;; the self call per step, four puts), v live with 2083 and offset + 63 inside it (0 <= offset), k and r live with 64
 ;; items; then one fuel publication, the quarters from i on (16 steps each, so the a b c d registers are x3..x6 again
@@ -12316,19 +12398,25 @@
              (gn-emit (enc-cmp-i 15 16))) j1 (vector-at m0 MM-CODE-N)
         m1 (-> m0 (gn-emit (enc-bcond (enc-cond-lo) 0)) (gn-emit (enc-cmp-i 15 32))) j2 (vector-at m1 MM-CODE-N)
         m2 (-> m1 (gn-emit (enc-bcond (enc-cond-lo) 0)) (gn-emit (enc-cmp-i 15 48))) j3 (vector-at m2 MM-CODE-N)
-        m3 (gn-emit m2 (enc-bcond (enc-cond-lo) 0)) j4 (vector-at m3 MM-CODE-N)
+        m3 (-> m2 (gn-emit (enc-bcond (enc-cond-lo) 0)) (gn-emit (enc-cmp-i 15 64))) j4 (vector-at m3 MM-CODE-N)
         m4 (gn-emit m3 (enc-b 0)) q1 (vector-at m4 MM-CODE-N)
         m5 (md5k-step-range m4 0 16) q2 (vector-at m5 MM-CODE-N)
         m6 (md5k-step-range m5 16 32) q3 (vector-at m6 MM-CODE-N)
         m7 (md5k-step-range m6 32 48) q4 (vector-at m7 MM-CODE-N)
-        m8 (-> (md5k-step-range m7 48 64)
+        m7b (md5k-step-range m7 48 64) hb (vector-at m7b MM-CODE-N)
+        ;; some r[i] above 31: the fuel paid at entry back, the original code (nothing was stored)
+        m8 (-> m7b (gn-emit (enc-bcond 8 0))
              (md5k-get 16 2) (gn-emit (+ (enc-sub-r 0 0 16) (* 3 1024)))
              (md5k-get 16 7) (gn-emit (md5k-w 0x0b000000 16 16 3 0)) (gn-emit (enc-str 16 0 (* 8 K0)))
              (md5k-get 16 8) (gn-emit (md5k-w 0x0b000000 16 16 4 0)) (gn-emit (enc-str 16 0 (* 8 (gn-sir M (+ p 14) IF-B))))
              (md5k-get 16 9) (gn-emit (md5k-w 0x0b000000 16 16 5 0)) (gn-emit (enc-str 16 0 (* 8 (gn-sir M (+ p 20) IF-B))))
              (md5k-get 16 10) (gn-emit (md5k-w 0x0b000000 16 16 6 0)) (gn-emit (enc-str 16 0 (* 8 (gn-sir M (+ p 26) IF-B))))
-             (md5k-get 0 1) (gn-epilogue) (gn-gs gn-f-dead 0)) cold (vector-at m8 MM-CODE-N)]
-   (-> m8 (gn-dot-patch j1 q1 (enc-cond-lo)) (gn-dot-patch j2 q2 (enc-cond-lo)) (gn-dot-patch j3 q3 (enc-cond-lo))
+             (md5k-get 0 1) (gn-epilogue) (gn-gs gn-f-dead 0) (gn-emit 0xD5032FFF)) fb (vector-at m8 MM-CODE-N)
+        m9 (-> m8 (md5k-get 15 6) (gn-mov-imm 10 64) (gn-emit (enc-sub-r 10 10 15))
+             (gn-emit (gn-e-addsl 10 10 10 1)) (gn-emit (enc-add-i 10 10 4)) (gn-emit (enc-ldr 8 7 CTX-FUEL))
+             (gn-emit (enc-add-r 8 8 10)) (gn-emit (enc-str 8 7 CTX-FUEL)))
+        cold (vector-at m9 MM-CODE-N)]
+   (-> m9 (gn-dot-patch hb fb 8) (gn-dot-patch j1 q1 (enc-cond-lo)) (gn-dot-patch j2 q2 (enc-cond-lo)) (gn-dot-patch j3 q3 (enc-cond-lo))
     (gn-put (+ MM-CODE-BASE j4) (enc-b (- q4 j4))) (ri-patch G 0 cold)))))
 ;; steps [i, e) starting with a b c d in x3 x4 x5 x6 (e - i a multiple of 4: they end there again)
 (defn- md5k-step-range [M :vector-i64 i :i64 e :i64] :vector-i64
@@ -13152,7 +13240,7 @@
           (gn-put (+ MM-FIX-BASE (* k MM-FIX-W) XF-AT) q)
           (gn-put (+ MM-CODE-BASE q) (enc-bcond (enc-cond-hs) delta))))) A))))))
 
-(defn- gn-ins-quiet [M :vector-i64 i :i64 op :i64] :vector-i64 (let [a (gn-sir M i IF-A) b (gn-sir M i IF-B) c (gn-sir M i IF-C)] (if (or (and (= (gn-g M 14) 1) (not (or (= op OP-FN) (= op OP-END)))) (and (= (gn-g M gn-f-dead) 1) (not (or (= op OP-LABEL) (= op OP-FN) (= op OP-END))))) M (case op OP-CONST (gn-def M a gn-k-const b) OP-LGET (let [m (tbat-entry M i)] (if (gn-affine-read? m i a) (gn-affine-read m i a) (gn-def m a gn-k-local b))) OP-LSET (gn-op-lset M a b) OP-BIN (gn-op-bin M i a b) OP-CMP (gn-op-cmp M i a b) OP-UN (gn-op-un M i a b) OP-LABEL (brc-entry (sls-entry (jssa-entry (ts-entry (btg-entry (srloop-entry (gn-op-label M a) i) i) i) i) i) i) OP-BR (fsb-jump M i (gn-thread M a 0 2 8)) OP-BRZ (gn-op-brz M i a b 0) OP-BRNZ (gn-op-brz M i a b 1) OP-CALL (cpp-call M i a b c) OP-CALLI (gn-op-calli M i b c) OP-FADDR (gn-op-faddr M i a b) OP-RT (gn-op-rt M i a b c) OP-CAP (gn-op-cap M i a b c) OP-STR (gn-op-str M i a b) OP-VEC (gn-op-vec M i a b) OP-TAB (gn-op-tab M i a b c) OP-VECP (gn-op-vecp M i a b c) OP-FUEL (sm-entry (dk-entry (trg-entry (frfix-entry (clw-loop-entry (qrow-entry (wm-entry (pwphase-entry (mdc-entry (ac-entry (ga-entry (ir-entry (ss-entry (ar-entry (fourprobe-entry (rls-entry (ip-entry (is-entry (rv-entry (rl-entry (ru-entry (ri-entry (xd-entry (sw-entry (d2-entry (xs-entry (lp-entry (hpd-entry (hpa-entry (tb-entry (pb-entry (ik-entry (ek-entry (qa-entry (ns-entry (ab-entry (mr-entry (st-entry (rs-entry (eb-entry (hd-entry (bp-entry (lr-entry (wo-entry (ci-entry (lcg-entry (mmx-entry (zf-entry (pz-entry (qb-entry (td-entry (dr-entry (cw-entry (gz-entry (pc3-entry (gn-copy-entry (bu-entry (bs-entry (gn-dot-entry (shloop-entry (md5k-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) OP-RET (trg-ret M i a) OP-RET2 (gn-op-ret2 M a) OP-RES2 (gn-op-res2 M i a) OP-TRAP (-> M (gn-emit (enc-brk a)) (gn-gs gn-f-dead 1)) OP-FN (snf-entry (gn-op-fn M i a b) i a b) OP-END (t2-end (-> M (gn-emit (enc-brk 1)) (gn-gs gn-f-dead 0)) i a) (gn-err M E-GEN-OP op)))))
+(defn- gn-ins-quiet [M :vector-i64 i :i64 op :i64] :vector-i64 (let [a (gn-sir M i IF-A) b (gn-sir M i IF-B) c (gn-sir M i IF-C)] (if (or (and (= (gn-g M 14) 1) (not (or (= op OP-FN) (= op OP-END)))) (and (= (gn-g M gn-f-dead) 1) (not (or (= op OP-LABEL) (= op OP-FN) (= op OP-END))))) M (case op OP-CONST (gn-def M a gn-k-const b) OP-LGET (let [m (tbat-entry M i)] (if (gn-affine-read? m i a) (gn-affine-read m i a) (gn-def m a gn-k-local b))) OP-LSET (gn-op-lset M a b) OP-BIN (gn-op-bin M i a b) OP-CMP (gn-op-cmp M i a b) OP-UN (gn-op-un M i a b) OP-LABEL (brc-entry (sls-entry (jssa-entry (ts-entry (btg-entry (srloop-entry (gn-op-label M a) i) i) i) i) i) i) OP-BR (fsb-jump M i (gn-thread M a 0 2 8)) OP-BRZ (gn-op-brz M i a b 0) OP-BRNZ (gn-op-brz M i a b 1) OP-CALL (cpp-call M i a b c) OP-CALLI (gn-op-calli M i b c) OP-FADDR (gn-op-faddr M i a b) OP-RT (gn-op-rt M i a b c) OP-CAP (gn-op-cap M i a b c) OP-STR (gn-op-str M i a b) OP-VEC (gn-op-vec M i a b) OP-TAB (gn-op-tab M i a b c) OP-VECP (gn-op-vecp M i a b c) OP-FUEL (sm-entry (dk-entry (trg-entry (frfix-entry (clw-loop-entry (qrow-entry (wm-entry (pwphase-entry (mdc-entry (ac-entry (ga-entry (ir-entry (ss-entry (ar-entry (fourprobe-entry (rls-entry (ip-entry (is-entry (rv-entry (rl-entry (ru-entry (ri-entry (xd-entry (sw-entry (d2-entry (ls-entry (qk-entry (xs-entry (lp-entry (hpd-entry (hpa-entry (tb-entry (pb-entry (ik-entry (ek-entry (qa-entry (ns-entry (ab-entry (mr-entry (st-entry (rs-entry (eb-entry (hd-entry (bp-entry (lr-entry (wo-entry (ci-entry (lcg-entry (mmx-entry (zf-entry (pz-entry (qb-entry (td-entry (dr-entry (cw-entry (gz-entry (pc3-entry (gn-copy-entry (bu-entry (bs-entry (gn-dot-entry (shloop-entry (md5k-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) OP-RET (trg-ret M i a) OP-RET2 (gn-op-ret2 M a) OP-RES2 (gn-op-res2 M i a) OP-TRAP (-> M (gn-emit (enc-brk a)) (gn-gs gn-f-dead 1)) OP-FN (snf-entry (gn-op-fn M i a b) i a b) OP-END (t2-end (-> M (gn-emit (enc-brk 1)) (gn-gs gn-f-dead 0)) i a) (gn-err M E-GEN-OP op)))))
 
 ;; every instruction from i (an instruction may consume the next ones: gn-f-skip)
 (defn- gn-loop [M :vector-i64 i :i64] :vector-i64
@@ -19001,6 +19089,55 @@
         cold (vector-at m2 MM-CODE-N)]
    (ri-patch m2 G 0 cold))))
 ;; <<< kc-wcf
+;; >>> kc-mdk
+;; ---- md5sum fills: (f v i) = (if (= i N) v (f (put v (+ B i) 0) (+ i 1))) (cz, a constant-base zero fill) and
+;; (f v i) = (if (= i N) v (f (put v i (bit-and i K)) (+ i 1))) (ib, masked indices); put the in-place writer with one
+;; charge. Before the frame (x0 v, x1 i): 0 <= i <= N, fuel >= 1 + 2 (N - i) (the entry; per item put and the self call),
+;; v live with B + N (N) within its length: cz zeros the items by the zf-store ladder (dc zva lines), ib stores
+;; k & K for k = i .. N - 1 (a few scalar items, then four per step from two 2-lane index vectors); the exact cost
+;; is published, ret. Anything else runs the original loop.
+(defn- cz-pat [] :vector-i64 [562962837667841 18 4229300233 8589934596 281423437168643 65543 277141354709003 4294967300 4227923978 4228841481 4294967300 281419142201347 8590065668 4295032838 131075 844429224378381 8590000132 4295098371 4295032838 65541 4295098373 18 4229300234 4227923977 19 4294311938])
+(defn- ib-pat [] :vector-i64 [562962837667841 18 4229300233 8589934596 281423437168643 65543 277141354709003 4294967300 4227923978 4228841481 4294967300 8590000132 8590065668 281419142332419 8590262278 844429224378381 8590000132 4295098371 4295032838 65541 4295098373 18 4229300234 4227923977 19 4294311938])
+;; kind 1 cz, 2 ib, 0 neither (p the FN of f)
+(defn- mdk-kind [M :vector-i64 p :i64] :i64
+ (let [f (gn-sir M p IF-A) n (gn-sir M (+ p 4) IF-B) b (gn-sir M (+ p 11) IF-B) k (gn-sir M (+ p 13) IF-B)
+       w (gn-sir M (+ p 15) IF-A)]
+  (if (or (<= p 0) (>= (+ p 26) (vector-at M MM-SIR-N)) (<= f 0) (>= f (vector-at M MM-FN-N)) (gn-clamp-open M f)
+          (not= (gn-fnf M f FF-SIR) p) (not= (gn-fnf M f FF-NPARAMS) 2) (not= (gn-fnf M f FF-PT0) TY-VEC)
+          (not= (gn-fnf M f FF-RTYPE) TY-VEC) (< n 0) (> n 1048576) (<= w 0) (>= w (vector-at M MM-FN-N))
+          (not= (gn-wrapper M w 0 3) (+ RT-VECTOR-ASSOC-IN-PLACE 256))) 0
+   (cond (and (>= b 0) (<= b 1073741824) (kpat-match M p (cz-pat) [f w n b])) 1
+         (kpat-match M p (ib-pat) [f w n k]) 2
+         :else 0))))
+(defn- mdk-admit [M :vector-i64 i :i64] :bool (> (mdk-kind M (dec i)) 0))
+(defn- mdk-entry [M :vector-i64 i :i64] :vector-i64
+ (let [p (dec i) kind (mdk-kind M p) n (gn-sir M (+ p 4) IF-B) b (if (= kind 1) (gn-sir M (+ p 11) IF-B) 0)
+       k (gn-sir M (+ p 13) IF-B) G (vector-alloc 21)]
+  (if (= kind 0) M
+   (let [m0 (-> M (gn-mov-imm 9 n) (gn-emit (enc-cmp-r 1 9)) (ri-cold G (enc-cond-gt))
+              (gn-emit (enc-cmp-i 1 0)) (ri-cold G (enc-cond-lt)) (gn-emit (enc-sub-r 9 9 1))
+              (gn-emit (enc-ldr 8 7 CTX-FUEL)) (gn-emit (enc-add-r 10 9 9)) (gn-emit (enc-add-i 10 10 1))
+              (gn-emit (enc-cmp-r 8 10)) (ri-cold G (enc-cond-lo))
+              (gn-emit (enc-ldr 16 7 312)) (gn-emit (enc-ldr 16 16 0)) (gn-emit (enc-sub-i 17 0 1)) (gn-emit (enc-cmp-r 17 16))
+              (ri-cold G (enc-cond-hs)) (gn-emit (enc-ldr 16 7 320)) (gn-emit (gn-e-addsl 16 16 17 4)) (gn-emit (enc-ldp 17 13 16 0))
+              (gn-mov-imm 11 (+ b n)) (gn-emit (enc-cmp-r 13 11)) (ri-cold G (enc-cond-lo))
+              ;; every guard passed
+              (gn-emit (enc-sub-r 8 8 10)) (gn-emit (enc-ldr 16 7 328)) (gn-emit (gn-e-addsl 16 16 17 3))
+              (gn-mov-imm 11 b) (gn-emit (enc-add-r 11 11 1)) (gn-emit (gn-e-addsl 16 16 11 3)))
+         m1 (if (= kind 1) (-> m0 (gn-emit 0x6f00e410) (zf-store))
+              (let [s0 (-> m0 (gn-mov-imm 13 k) (gn-mov 12 1) (gn-emit 0x9240052E) (gn-emit (enc-cbz 14 6))
+                         (gn-emit (enc-and-r 11 12 13)) (gn-emit 0xF800860B) (gn-emit (enc-add-i 12 12 1))
+                         (gn-emit (enc-subs-i 14 14 1)) (gn-emit (enc-bcond (enc-cond-ne) -4))
+                         (gn-emit (gn-e-lsr 14 9 2)) (gn-emit (enc-cbz 14 16))
+                         (gn-emit 0x9E670180) (gn-emit (enc-add-i 10 12 1)) (gn-emit 0x4E181D40) (gn-emit 0x4E080DBF)
+                         (gn-mov-imm 10 2) (gn-emit 0x4E080D5E) (gn-mov-imm 10 4) (gn-emit 0x4E080D5D))
+                    top (vector-at s0 MM-CODE-N)]
+               (-> s0 (gn-emit 0x4E3F1C02) (gn-emit 0x4EFE8401) (gn-emit 0x4E3F1C23) (gn-emit 0xAC810E02)
+                   (gn-emit 0x4EFD8400) (gn-emit (enc-subs-i 14 14 1)) (gn-emit (enc-bcond (enc-cond-ne) -6)))))
+         m2 (-> m1 (gn-emit (enc-str 8 7 CTX-FUEL)) (gn-emit (enc-ret)) (gn-emit 0xD5032FFF))
+         cold (vector-at m2 MM-CODE-N)]
+    (ri-patch m2 G 0 cold)))))
+;; <<< kc-mdk
 ;; ==== BEGIN T2 (Claude cosci, 2026-10-14) ===========================================================================
 ;; T2: an SSA tier for call-free leaf functions (milestone M1). After the existing backend has emitted FN f (its code is
 ;; kept as dead code), t2-end re-compiles f when it is admitted and its old code carries no certified-kernel signature,
