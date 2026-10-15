@@ -16,6 +16,7 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = "seed/X86_64-LINUX-SELFHOST-MANIFEST"
 LOADER = "seed/bootstrap/adopted-loader-20261012.c"
+LINUX_LOADER = "tools/seed-x86_64-linux-loader.c"
 
 
 def pin(p):
@@ -128,6 +129,9 @@ def cases():
         '(defhandler tally [:state :i64] (get [s] (resume s s)) (put [s v] (resume v v)))')
     add("bytes-roundtrip", '(string-code-point-at (string-from-utf8 (bytes-from-vector-i64 [65 66])) 1)', 66)
     add("capability-denied", '(let [x (typed-cap-call :io/write :string :string "denied")] 42)', trap=True)
+    add("mutual-tail", '(if (even 20000) 42 -1)', 42,
+        '(defn- even [n :i64] :bool (if (= n 0) true (odd (dec n))))\n'
+        '(defn- odd [n :i64] :bool (if (= n 0) false (even (dec n))))')
     return rows
 
 
@@ -135,7 +139,7 @@ def prepare(out):
     assert (platform.system(), platform.machine()) == ("Darwin", "arm64")
     out.mkdir(parents=True, exist_ok=False)
     paths = [p for p in (ROOT / MANIFEST).read_text().splitlines() if p and not p.startswith("#")]
-    source_pins = {p: pin(ROOT / p) for p in [MANIFEST, LOADER, *paths]}
+    source_pins = {p: pin(ROOT / p) for p in [MANIFEST, LOADER, LINUX_LOADER, *paths]}
     spec = importlib.util.spec_from_file_location("adopted", ROOT / "scripts/seed/build-adopted.py")
     adopted = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(adopted)
@@ -195,7 +199,7 @@ def execute(out, rosetta):
     assert pin(out / "G1.bin") == prepared["compiler"] and pin(out / "G1.kx64") == prepared["container"]
     run = Runs(out, prepared["sourcePins"])
     loader = out / ("rosetta-loader" if rosetta else "linux-loader")
-    run.run("x86-loader-build", ["clang", "-std=c11", "-O2", *(["-arch", "x86_64"] if rosetta else []), ROOT / LOADER, "-o", loader])
+    run.run("x86-loader-build", ["clang", "-std=c11", "-O2", *(["-arch", "x86_64"] if rosetta else []), ROOT / (LOADER if rosetta else LINUX_LOADER), "-o", loader])
     arch = ["/usr/bin/arch", "-x86_64"] if rosetta else []
     producer, source = out / "G1.bin", out / "seed-unity.kotoba"
     generations = [dict(native=prepared["compiler"], container=prepared["container"])]
@@ -242,6 +246,7 @@ def execute(out, rosetta):
     report = dict(status="PASS_ROSETTA_X86_SELF_REBUILD" if rosetta else "PASS_LINUX_X86_NATIVE_SELFHOST",
                   host=list(host), linuxSelfhost=not rosetta, generations=generations, sourceUnity=prepared["sourceUnity"],
                   linuxAllocator=None if rosetta else environment(out)["GLIBC_TUNABLES"],
+                  linuxStackReserveBytes=0 if rosetta else 524288,
                   cases=results, refusals=refused, trustedCLoader=True, JVMNodeOrGraalFallback=False, performanceMeasured=False)
     dump(out / ("rosetta-selfhost.json" if rosetta else "linux-selfhost.json"), report)
     print(report["status"], len(results), "cases; G1=G2=G3", flush=True)

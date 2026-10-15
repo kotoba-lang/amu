@@ -97,7 +97,12 @@
       9 (xg-label M a) 10 (xg-rel M 0xe9 1 2 a)
       11 (-> M (xg-load a 0x858b48) (xg-bytes 0xc08548 3) (xg-rel 0x840f 2 2 b))
       12 (-> M (xg-load a 0x858b48) (xg-bytes 0xc08548 3) (xg-rel 0x850f 2 2 b))
-      13 (-> M (xg-call-args b 0 c) (xg-bytes 0xf84d8b4c 4) (xg-rel 0xe8 1 1 a) (xg-save b))
+      13 (if (and (<= c 5) (< (inc i) (vector-at M MM-SIR-N))
+                  (= (xg-si M (inc i) IF-OP) OP-RET) (= (xg-si M (inc i) IF-A) b))
+           ;; No outgoing stack arguments survive frame removal. The caller's
+           ;; return address and SysV entry alignment are kept by leave/jmp.
+           (-> M (xg-call-args b 0 c) (xg-bytes 0xf84d8b4c 4) (xg-byte 0xc9) (xg-rel 0xe9 1 1 a))
+           (-> M (xg-call-args b 0 c) (xg-bytes 0xf84d8b4c 4) (xg-rel 0xe8 1 1 a) (xg-save b)))
       14 (xr-rt M a b c) 15 (xr-cap M a b c) 16 (xr-str M a b) 17 (xr-vec M a b)
       18 (xg-fuel M)
       19 (-> M (xg-load a 0x858b48) (xg-bytes 0xf84d8b4c 4) (xg-bytes 0xc3c9 2))

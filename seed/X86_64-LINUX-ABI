@@ -36,6 +36,9 @@ The runtime frame adds112 bytes: two scratch words after the declared temps
 and a96-byte outgoing argument area. No callee-saved register except rbp is
 modified. Single result rax; state results rax/rdx. RES2 preserves rdx across
 the preceding call's result move and context reload.
+Direct CALL immediately followed by RET of the same temp uses leave/jmp
+when there are at most5 arguments. Stack arguments retain the regular call
+path. Source fuel charge sites and callee entry charges are unchanged.
 
 C helpers use the ordinary SysV ABI: rdi=context; rsi,rdx,rcx,r8,r9=operands;
 call [rdi+RT-slot]. Context is reloaded from rbp-8 after every helper call and
@@ -51,6 +54,12 @@ The payload begins with a rel32 jump to main()->i64, then function code and
 vectors are v11 handles. The raw payload runs under the trusted x86_64 loader
 with offset0/arity0; the Python harness only verifies and copies bytes.
 The runtime fuel budget comes from that loader's context, not the container.
+The optional Linux bootstrap launcher includes the pinned C loader unchanged
+and pre-touches512 KiB of its existing stack before sandbox installation.
+The unchanged loader lowers RLIMIT_AS after mapping its fixed arenas, so
+post-sandbox heap/stack growth would otherwise fail. glibc reserves16 MiB
+of ordinary allocator headroom at startup; the stack reserve stays below
+the existing1 MiB stack budget. No syscall grant or process limit is widened.
 
 X86_64-LINUX-MANIFEST retains all adopted AArch64/project routes in the
 optional AArch64 cross compiler. X86_64-LINUX-SELFHOST-MANIFEST builds a

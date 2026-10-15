@@ -135,6 +135,13 @@ address-space limit is lowered avoids a later allocator fallback to mmap.
 The existing seccomp filter still denies guest `mmap`. These settings follow the
 [glibc allocation contract](https://sourceware.org/glibc/manual/latest/html_node/Memory-Allocation-Tunables.html)
 and is recorded in every Linux invocation receipt.
+`tools/seed-x86_64-linux-loader.c` includes the pinned loader unchanged and
+pre-touches512 KiB of the process stack before entering it. This reserves
+stack pages before the same address-space ceiling takes effect, within the
+existing1 MiB stack budget. It adds no guest syscall or capability grant.
+The x86 emitter also lowers direct tail calls with at most5 arguments to
+frame restoration plus a jump; a20,000-step mutual recursion case exercises
+this path. Stack-argument calls retain the ordinary calling sequence.
 `--execute-rosetta` provides a separate local diagnostic; its report never
 claims Linux execution. Raw inputs, compiler generations, subprocess
 arguments, before/after pins and stdout/stderr are retained. Failed attempts
