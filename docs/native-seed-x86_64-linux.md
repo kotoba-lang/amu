@@ -52,7 +52,9 @@ Example source:
 
 On x86_64 Linux, `chmod +x program.elf` then execute it. It writes exactly
 eight little-endian bytes representing the signed i64 result to stdout and
-exits zero on a complete write; output failure exits 74. The process requires
+exits zero on a complete write; a short/error write reported by the syscall
+exits74. Normal process signals, including SIGPIPE, remain process signals.
+The process requires
 no dynamic loader, libc, companion runtime, or installed Amu compiler.
 
 ## Profile and ABI

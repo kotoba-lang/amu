@@ -4,6 +4,8 @@ on:
     paths:
       - 'seed/**'
       - 'scripts/seed/build-x86_64-linux.py'
+      - 'scripts/seed/build-adopted.py'
+      - 'scripts/seed/test-x86_64-build-pins.py'
       - 'scripts/seed/check-x86_64-linux.py'
       - '.github/workflows/seed-x86_64-linux.yml'
   push:
@@ -11,6 +13,8 @@ on:
     paths:
       - 'seed/**'
       - 'scripts/seed/build-x86_64-linux.py'
+      - 'scripts/seed/build-adopted.py'
+      - 'scripts/seed/test-x86_64-build-pins.py'
       - 'scripts/seed/check-x86_64-linux.py'
       - '.github/workflows/seed-x86_64-linux.yml'
 permissions:
@@ -24,6 +28,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 scripts/seed/test-x86_64-build-pins.py --output "$RUNNER_TEMP/cross-build-pin-tests"
       - run: python3 scripts/seed/build-x86_64-linux.py --output "$RUNNER_TEMP/native-cross-build"
       - run: python3 scripts/seed/check-x86_64-linux.py --selfbuild-output "$RUNNER_TEMP/native-cross-build" --output "$RUNNER_TEMP/linux-suite"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

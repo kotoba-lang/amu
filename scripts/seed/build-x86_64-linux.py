@@ -45,11 +45,17 @@ def build(output):
     calls = []
 
     def run(name, args):
+        watched = [source, producer] + ([loader] if loader.exists() else [])
+        before = {str(p): pin(p) for p in watched}
         with (host / (name + ".stdout")).open("wb") as stdout, (host / (name + ".stderr")).open("wb") as stderr:
             result = subprocess.run(list(map(str, args)), cwd=artifacts, env=env,
                                     stdout=stdout, stderr=stderr, timeout=1800)
-        calls.append({"name": name, "argv": list(map(str, args)), "exit": result.returncode})
+        after = {str(p): pin(p) if p.is_file() else None for p in watched}
+        calls.append({"name": name, "argv": list(map(str, args)), "exit": result.returncode,
+                      "invocationInputPins": before, "inputPinsAfter": after})
         (host / "calls.json").write_text(json.dumps(calls, indent=2) + "\n")
+        if before != after:
+            raise SystemExit("active source/producer/loader changed during native invocation; raw logs preserved")
         if result.returncode:
             raise SystemExit("failed " + name + "; raw logs preserved in " + str(host))
         for row in inputs:

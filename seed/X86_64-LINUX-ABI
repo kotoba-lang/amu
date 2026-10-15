@@ -1,0 +1,27 @@
+Optional seed x86_64 Linux scalar route, v1.
+
+This route creates its own fresh M and runs lex/read/names/check/lower before
+x86 generation. It never invokes gn-run, ly-run, out-build or the project
+linker on that M. These are phase-local reservations; the adopted manifest,
+MEMORY-MAP and bootstrap closure are unchanged.
+
+Absolute header cells, reserved from xg-build through output:
+192 = current FN index
+193 = sole exported main FN index
+194 = positive artifact fuel budget
+195 = ELF RW segment file offset
+
+These cells are not MM-STAT-BASE-relative statistics. No shared frontend,
+AArch64 generator, linker or future extension may run concurrently with this
+phase or allocate these cells while the optional x86 route owns them.
+
+CODE is one byte per M word; CODE-N is next index, starting at1.
+FIX records are [disp32-byte-offset, kind, target, 0]:
+kind1 FN-relative call, kind2 LABEL-relative branch, kind3 ELF context LEA.
+FN FF-CODE and LABEL values are code-byte-offset+1 (zero = unresolved).
+All locations are private to this phase, not AArch64 word indices/fixups.
+
+SysV scalar parameters: rdi,rsi,rdx,rcx,r8. Private context: r9.
+rbp-8 saves context; local slot s is rbp-8(s+1); temp t is
+rbp-8(NSLOTS+2+t). Frames are16-aligned and at most4096 bytes.
+No externally callable scalar ABI, signed artifact admission or Q9 claim.

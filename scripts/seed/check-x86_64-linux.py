@@ -96,7 +96,10 @@ def prepare(build, output):
     loader = build / "host/kexe-loader"
     producer = build / "artifacts/G2.bin"
     assert pin(producer)["sha256"] == report["generations"][-1]["native"]["sha256"]
-    inputs = {p: pin(p) for p in [loader, producer, *[Path(x["path"]) for x in report["inputs"]]]}
+    for row in report["inputs"]:
+        assert pin(Path(row["path"])) == {k: row[k] for k in ("bytes", "sha256")}, "build source pin mismatch"
+    inputs = {p: pin(p) for p in [loader, producer, build / "report.json",
+                                *[Path(x["path"]) for x in report["inputs"]]]}
     env = {k: v for k, v in os.environ.items() if not k.startswith("KEXE_")}
     env.update(KEXE_COMMAND="1", KEXE_CAP_RESOURCES_35=str(artifacts), KEXE_FUEL="off",
                KEXE_VECTORS="4194304", KEXE_VECTOR_ITEMS="134217728",
@@ -109,10 +112,12 @@ def prepare(build, output):
         src.write_text(source)
         if sentinel is not None:
             elf.write_bytes(sentinel)
+        source_before = pin(src)
         args = prefix + ["compile", src, "--target", "x86_64-linux", "--output", elf, *extra]
         result = subprocess.run(list(map(str, args)), cwd=artifacts, env=env, capture_output=True, timeout=180)
         (raw / (name + ".stdout")).write_bytes(result.stdout)
         (raw / (name + ".stderr")).write_bytes(result.stderr)
+        assert pin(src) == source_before, "guest source changed during compilation"
         assert all(pin(p) == v for p, v in inputs.items()), "input mutation"
         return elf, result
 
@@ -124,11 +129,13 @@ def prepare(build, output):
             ("compile", ["compile", src, "--target", "aarch64-macos", "--output", container]),
             ("extract", ["extract-native", container, "--symbol", "main", "--output", native]),
         ]:
+            source_before = pin(src)
             result = subprocess.run(list(map(str, prefix + args)), env=env, cwd=artifacts,
                                     capture_output=True, timeout=180)
             (raw / (name + ".a64-" + tag + ".stdout")).write_bytes(result.stdout)
             (raw / (name + ".a64-" + tag + ".stderr")).write_bytes(result.stderr)
             assert result.returncode == 0 and not result.stderr, (name, tag, result)
+            assert pin(src) == source_before and all(pin(p) == v for p, v in inputs.items()), "reference input mutation"
         offset = int(re.search(rb":offset (\d+)", result.stdout)[1])
         guest_env = {k: v for k, v in env.items() if not k.startswith("KEXE_")}
         guest_env.update(KEXE_FUEL=str(case["fuel"]), KEXE_STRUCTURED_REPORT="1",
