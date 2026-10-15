@@ -239,6 +239,7 @@ hashes are in `records/fresh-C/source-custody.json`. A different clang builds di
 | `expected/` | pins for level (b): build inputs, compiler chain, measured images |
 | `rounds/` | round configs (commit, multiplier table, pins); `m93-20261015.json` is the published round and the default |
 | `audit/` | the kernel scope policy and the kernel audit tables (see section 2a) |
+| `round-sa-m104-20261015/` | the corrected same-algorithm round (section 8): records, images, workload table, pins |
 
 `records/` files are verbatim evidence. They keep the absolute paths and the host label of the measurement machines, because
 their hashes are part of the custody chain. The scripts never use those paths.
@@ -287,3 +288,58 @@ python3 bench/embench/reproduce-20261015/d_timing.py --round rounds/<name>.json 
 Then add the recorded files to the config's `pins` and `expectedAccounting`, so that later runs compare instead of record.
 The official round's records can be checked with `a_offline.py --round` once they are laid out like `records/`.
 
+## 8. The corrected same-algorithm round (m104, 15 October 2026)
+
+This branch, `claude/embench-same-algo-m104-reproduce-20261015`, is based on commit `a9edc1f0d5021efabf6864e70c5b92d59257f348`,
+the same-algorithm-only compiler source. The m93 round above stays reproducible from it, because `be7f0ce3` and `ffa4cfc1` are
+ancestors. Its round config is `rounds/sa-m104-20261015.json`, and its data is in `round-sa-m104-20261015/`.
+
+* **Compiler.** `e5fc0ca2b6996deb1bf4722d285790eab2a35ea9724904f5cf2be296943d702d`. The chain is the public bootstrap →
+  stage A `5583a2fd…` → G1 = G2 = G3 = `e5fc0ca2…`, so the measured compiler is the fixed point, and all 19 images are
+  identical to the measured ones.
+* **Kernel scope.** Same algorithm only (`audit/KERNEL-POLICY.md`). The SHA-256 crypto instructions are off, and sha256 runs
+  scalar.
+* **Protocol.** As for m93, plus the following. The full text is in `round-sa-m104-20261015/records/round/protocol-revision.txt`.
+  * **Amendment 3:** an image identical to one already timed may be timed again only where its multiplier is forced. This
+    applies to aha-mont64, which is held at m = 1 by the loader ceiling.
+  * The screen is 0.85 s, and R_w is calibrated on m43, m87 and m93.
+  * **Amendment 4:** a workload at its maximum feasible m is accepted at ≥ 0.6 s. This applies to matmult-int: projection
+    0.78 s, and its m93 interval at m = 8 was 0.777 s.
+* **Result.** **Kotoba / C = 0.8213**, against m93's 0.7999 and round114's 2.688. 19/19 Kotoba and
+  19/19 C were accepted, all on the first attempt and all exact. Verifier: `PASS_INDEPENDENT_SA_M104_RAW_CUSTODY_MULTIPLIER_FORMULA_V1`.
+* **Noise check (Amendment 3).** aha-mont64 had the same image and n as in m93: 2.039 s against
+  1.953 s (×1.044). This cycle's C elapsed GM was ×1.044 of
+  m93's, so the host ran about 4 % slower in both arms.
+* **crc32** has the same image as m93, but was timed at m = 2, a new n.
+
+Verify this round with the same commands, adding `--round rounds/sa-m104-20261015.json`:
+
+```
+python3 bench/embench/reproduce-20261015/a_offline.py --round rounds/sa-m104-20261015.json
+python3 bench/embench/reproduce-20261015/b_build.py   --round rounds/sa-m104-20261015.json --out /tmp/sa-b
+python3 bench/embench/reproduce-20261015/c_exactness.py --round rounds/sa-m104-20261015.json --out /tmp/sa-c
+python3 bench/embench/reproduce-20261015/c_reference.py --round rounds/sa-m104-20261015.json --out /tmp/sa-cref
+python3 bench/embench/reproduce-20261015/d_timing.py  --round rounds/sa-m104-20261015.json --upstream /tmp/embench-iot --out /tmp/sa-d
+```
+
+| workload | m_w | ratio (4/m_w)·K/C | m93 ratio | change |
+|---|---|---|---|---|
+| aha-mont64 | 1 | 0.8688 | 0.9036 (m1) | 0.961 |
+| crc32 | 2 | 0.6766 | 0.7084 (m1) | 0.955 |
+| depthconv | 16 | 0.2660 | 0.2645 (m16) | 1.006 |
+| edn | 4 | 0.9328 | 0.9503 (m2) | 0.982 |
+| huffbench | 2 | 1.1586 | 0.6661 (m4) | 1.739 |
+| matmult-int | 8 | 0.3093 | 0.3219 (m8) | 0.961 |
+| md5sum | 2 | 0.5756 | 1.0322 (m2) | 0.558 |
+| nettle-aes | 2 | 0.9080 | 0.7804 (m2) | 1.164 |
+| nettle-sha256 | 2 | 1.0088 | 0.4158 (m2) | 2.426 |
+| nsichneu | 4 | 0.3995 | 0.4096 (m4) | 0.975 |
+| picojpeg | 2 | 1.4065 | 1.6002 (m2) | 0.879 |
+| qrduino | 1 | 1.2088 | 0.5073 (m2) | 2.383 |
+| sglib-combined | 1 | 1.1563 | 1.6124 (m1) | 0.717 |
+| slre | 1 | 1.1689 | 1.8806 (m1) | 0.622 |
+| statemate | 1 | 1.4356 | 1.3549 (m1) | 1.060 |
+| tarfind | 2 | 0.7177 | 0.6575 (m2) | 1.092 |
+| ud | 4 | 0.7559 | 0.7333 (m4) | 1.031 |
+| wikisort | 8 | 0.7935 | 0.9646 (m8) | 0.823 |
+| xgboost | 1 | 1.5184 | 1.9575 (m1) | 0.776 |

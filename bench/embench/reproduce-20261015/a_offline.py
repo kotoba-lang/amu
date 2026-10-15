@@ -68,17 +68,41 @@ def custody(arm, upstream):
     return dict(files=len(rec['files']), vendoredVerified=vend, upstreamVerified=present)
 
 
-def preregistration():
+CEILING = {'heap': 64 * 1024 * 1024, 'string-pool': 1024 * 1024 * 1024, 'vectors': 64 * 1024 * 1024, 'vector-items': 128 * 1024 * 1024}
+ENV = {'heap': 'KEXE_PAIRS', 'string-pool': 'KEXE_STRING_POOL', 'vectors': 'KEXE_VECTORS', 'vector-items': 'KEXE_VECTOR_ITEMS'}
+
+
+def caps_plan(caps1, m):
+    """The pre-registration cap rule with the trusted loader's ceilings (None if m is infeasible)."""
+    plan = {}
+    for res, env in ENV.items():
+        need = caps1[res]['used'] * m
+        if need > CEILING[res]: return None
+        if need > caps1[res]['capacity']: plan[env] = str(min(caps1[res]['capacity'] * m, CEILING[res]))
+    return plan
+
+
+def preregistration(screen_at_max=None):
+    """Re-derive every m_w from the recorded I_w, R_w, fuel, m=1 capacities and prior attempts: feasibility = fuel bound and
+    loader ceilings; m_w = smallest feasible m with P_w(m) >= target (else the largest feasible); retime rule = next feasible m
+    whose (image, n) was not executed on Joseph, or (Amendment 3) keep m when none exists; screen P_w(m_w) >= rule.screen."""
     pre = REC / 'round/preregistration.json'; h = sha_f(pre)
     check((REC / 'round/preregistration.sha256').read_text().split()[0] == h, 'preregistration.sha256')
-    reg = jload(pre); FUEL_LIMIT = int(0.9 * 2 ** 35); out = {}
+    reg = jload(pre); FUEL_LIMIT = int(0.9 * 2 ** 35); out = {}; rule = reg['rule']; target = rule.get('target', 1.0); screen = rule['screen']
+    timed = {(a['imageSHA256'], a['n']) for a in reg.get('priorJosephAttempts', []) if 'n' in a}
     for x in reg['workloads']:
         P = lambda m: x['I'] * m / x['R']
-        feas = [m for m in (1, 2, 4, 8, 16) if m * x['fuelM1'] <= FUEL_LIMIT]
-        mT = next((m for m in (1, 2, 4, 8, 16) if P(m) >= 1.0), None); m0 = min(mT, max(feas)) if mT else max(feas)
-        m = [f for f in feas if f > m0][0] if x['retimeRuleApplied'] else m0
+        feas = [m for m in (1, 2, 4, 8, 16) if m * x['fuelM1'] <= FUEL_LIMIT and caps_plan(x['capacitiesM1'], m) is not None]
+        if 'feasibleMultipliers' in x: check(feas == x['feasibleMultipliers'], 'feasible multipliers ' + x['workload'])
+        mT = next((m for m in feas if P(m) >= target), None); m0 = mT if mT is not None else max(feas)
+        if x.get('retimeRuleApplied'):
+            nxt = [f for f in feas if f > m0 and (x['candidateNativeSHA256'], x['n1'] * f) not in timed]; m = nxt[0] if nxt else None
+        else: m = m0
+        if x.get('retimeForcedAmendment3'): check(m == m0 and not [f for f in feas if f > m0 and (x['candidateNativeSHA256'], x['n1'] * f) not in timed], 'Amendment 3 only where m is forced ' + x['workload'])
         check(m0 == x['multiplierBeforeRetimeRule'] and m == x['multiplier'] and x['n'] == x['n1'] * m, 'pre-registered m_w ' + x['workload'])
-        check(P(m) >= 0.6 and abs(P(m) - x['projectedJosephSeconds']) < 1e-9, 'screen P_w(m_w) >= 0.6 s ' + x['workload'])
+        check(caps_plan(x['capacitiesM1'], m) == x['extraCapsPlanned'], 'pre-registered caps ' + x['workload'])
+        thr = screen_at_max if (screen_at_max is not None and m == max(feas)) else screen   # Amendment 4: at the maximum feasible m
+        check(P(m) >= thr and abs(P(m) - x['projectedJosephSeconds']) < 1e-9, 'screen P_w(m_w) >= %.2f s %s' % (thr, x['workload']))
         out[x['workload']] = x
     return h, reg, out
 
@@ -94,7 +118,7 @@ def main():
     IMAGES, PORTS, IMAGE_TABLE = PKG / rnd['images'], PKG / rnd['ports'], PKG / rnd['pins']['imageTable']
     nsums = package_sums()
     cust = {arm: custody(arm, a.upstream) for arm in ['official', 'fresh-C']}
-    pre_sha, reg, REG = preregistration()
+    pre_sha, reg, REG = preregistration(rnd.get('screenAtMaximumFeasible'))
     # the harness used by levels (c)/(d) is exactly what the round ran
     same_table = [(rnd['workloads'], 'official/workloads.json')] if not rnd.get('multipliers') else []  # override rounds: checked via the pre-registration
     for h, r in same_table + [('harness/kotoba/run_trigger.py', 'official/run_trigger.py'),
@@ -111,7 +135,7 @@ def main():
     N = jload(REC / 'official/report.json'); C = jload(REC / 'fresh-C/report.json')
     check(N['status'] == 'COMPLETE_EXPLORATORY_TRANSLATED_PORT_DRIVER_FORMULA' and N.get('full19') is True, 'Kotoba report complete')
     check(C['status'] == 'COMPLETE_EXPLORATORY_ORIGINAL_C19_SPEED_DRIVER' and C.get('full19') is True, 'C report complete')
-    check(N['protocolRevision'] == proto and N['preregistrationSHA256'] == pre_sha and reg['protocolRevision'] == proto, 'protocol revision + pre-registration hash in the campaign report')
+    check(N['protocolRevision'] == proto and N['preregistrationSHA256'] == pre_sha and proto.startswith(reg['protocolRevision']), 'protocol revision (pre-registered text + later amendments) + pre-registration hash in the campaign report')
     check(N['multipliers'] == {w: x['multiplier'] for w, x in REG.items()}, 'report multipliers == pre-registration')
     check(N['GSF'] == 8192 and C['globalScaleFactor'] == 32768 and N['fuel'] == 2 ** 35, 'GSF / fuel')
     for r in (N, C):
