@@ -28,6 +28,11 @@ def dump(p, obj):
 
 def environment(out, command=True):
     env = {k: v for k, v in os.environ.items() if not k.startswith("KEXE_")}
+    if platform.system() == "Linux":
+        # The unchanged trusted loader permits brk, not guest mmap. Its file
+        # provider's large malloc/realloc must use the ordinary heap after
+        # seccomp installation. Keep the syscall filter closed.
+        env.update(GLIBC_TUNABLES="glibc.malloc.mmap_max=0", MALLOC_MMAP_MAX_="0")
     env.update(KEXE_FUEL="off", KEXE_VECTORS="4194304", KEXE_VECTOR_ITEMS="134217728",
                KEXE_STRING_POOL="268435456", KEXE_PAIRS="16777216",
                KEXE_CPU_SECONDS="1800", KEXE_WALL_SECONDS="1800", TMPDIR=str(out))
@@ -51,7 +56,9 @@ class Runs:
         (self.out / "raw" / (name + ".stdout")).write_bytes(result.stdout)
         (self.out / "raw" / (name + ".stderr")).write_bytes(result.stderr)
         after = {str(p): pin(p) if p.is_file() else None for p in watched}
+        active_env = env or environment(self.out)
         self.calls.append(dict(name=name, argv=list(map(str, args)), exit=result.returncode,
+                               allocator={k: active_env[k] for k in ("GLIBC_TUNABLES", "MALLOC_MMAP_MAX_") if k in active_env},
                                before=before, after=after))
         dump(self.out / "calls.json", self.calls)
         assert before == after, "active source/producer/loader mutation"
@@ -109,8 +116,8 @@ def cases():
     add("vector-oob", '(let [v [10 20]] (vector-at v 2))', trap=True)
     add("string-oob", '(string-length (string-substring "hello" 0 10))', trap=True)
     add("string-boundary", '(string-length (string-substring "日é" 1 3))', trap=True)
-    add("wide-args", '(wide 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)', 136,
-        '(defn- wide [' + ' '.join(f'p{i} :i64' for i in range(16)) + '] :i64 (+ ' + ' '.join(f'p{i}' for i in range(16)) + '))')
+    add("wide-args", '(wide 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)', 1496,
+        '(defn- wide [' + ' '.join(f'p{i} :i64' for i in range(16)) + '] :i64 (+ ' + ' '.join(f'(* p{i} {i+1})' for i in range(16)) + '))')
     add("closure", '(let [k 9 f (fn [x] (+ x k))] (invoke f 33))', 42)
     add("closure-env", '(let [a 10 b 20 f (fn [x] (+ x a b))] (invoke f 12))', 42)
     add("state-results", '(handle (do (perform :state/put 42) (perform :state/get)) (with tally 0))', 42,
@@ -230,6 +237,7 @@ def execute(out, rosetta):
         refused.append(name)
     report = dict(status="PASS_ROSETTA_X86_SELF_REBUILD" if rosetta else "PASS_LINUX_X86_NATIVE_SELFHOST",
                   host=list(host), linuxSelfhost=not rosetta, generations=generations, sourceUnity=prepared["sourceUnity"],
+                  linuxAllocator=None if rosetta else "glibc.malloc.mmap_max=0; trusted seccomp filter unchanged",
                   cases=results, refusals=refused, trustedCLoader=True, JVMNodeOrGraalFallback=False, performanceMeasured=False)
     dump(out / ("rosetta-selfhost.json" if rosetta else "linux-selfhost.json"), report)
     print(report["status"], len(results), "cases; G1=G2=G3", flush=True)

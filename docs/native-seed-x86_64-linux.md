@@ -126,6 +126,13 @@ python3 scripts/seed/check-x86_64-selfhost.py --execute-linux --output /absolute
 ```
 
 The CI workflow performs both stages on macOS arm64 and Ubuntu x86_64.
+The Linux harness sets `GLIBC_TUNABLES=glibc.malloc.mmap_max=0` and
+`MALLOC_MMAP_MAX_=0`. The trusted loader's filesystem provider uses malloc
+for source bytes after sandbox installation; these settings keep large
+allocations on the permitted `brk` heap. The existing seccomp filter still
+denies guest `mmap`. The setting follows the
+[glibc allocation contract](https://sourceware.org/glibc/manual/latest/html_node/Memory-Allocation-Tunables.html)
+and is recorded in every Linux invocation receipt.
 `--execute-rosetta` provides a separate local diagnostic; its report never
 claims Linux execution. Raw inputs, compiler generations, subprocess
 arguments, before/after pins and stdout/stderr are retained. Failed attempts
