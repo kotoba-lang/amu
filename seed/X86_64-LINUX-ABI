@@ -24,7 +24,10 @@ FIX records are [disp32-byte-offset, kind, target, 0]:
 kind1 FN-relative call, kind2 LABEL-relative branch, kind3 ELF context LEA.
 kind4 literal absolute code-relative offset, kind5 RIP-relative literal LEA.
 Every displacement and pool offset is checked before patching.
-FN FF-CODE and LABEL values are code-byte-offset+1 (zero = unresolved).
+FN FF-CODE is code-byte-offset+1 (zero = unresolved). LABEL packs the SIR
+definition index in high32 and code-byte-offset+1 in low32. The prepass rejects
+duplicates; relocation reads only low32. Tail admission follows at most64
+LABEL/BR continuations through high32 and stops on any effect/value change.
 All locations are private to this phase, not AArch64 word indices/fixups.
 
 Guest parameters: rdi,rsi,rdx,rcx,r8. Private context: r9.
@@ -36,8 +39,8 @@ The runtime frame adds112 bytes: two scratch words after the declared temps
 and a96-byte outgoing argument area. No callee-saved register except rbp is
 modified. Single result rax; state results rax/rdx. RES2 preserves rdx across
 the preceding call's result move and context reload.
-Direct CALL immediately followed by RET of the same temp uses leave/jmp
-when there are at most5 arguments. Stack arguments retain the regular call
+Direct/indirect CALL whose continuation is only LABEL/BR then RET of the same
+temp uses leave/jmp when there are at most5 arguments. Stack arguments retain the regular call
 path. Source fuel charge sites and callee entry charges are unchanged.
 
 C helpers use the ordinary SysV ABI: rdi=context; rsi,rdx,rcx,r8,r9=operands;

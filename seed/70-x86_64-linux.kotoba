@@ -84,8 +84,26 @@
   (-> M (xg-load t 0x858b48)
       (xg-bytes (if (= op UOP-NOT) 0x01f08348 0xd0f748) (if (= op UOP-NOT) 4 3)) (xg-save t)))
 (defn- xg-label [M :vector-i64 label :i64] :vector-i64
-  (if (not= (vector-at M (+ MM-LABEL-BASE label)) 0) (xg-err M 7103 label)
-    (mem-set M (+ MM-LABEL-BASE label) (vector-at M MM-CODE-N))))
+  (let [old (vector-at M (+ MM-LABEL-BASE label))]
+    (if (not= (bit-and old 4294967295) 0) (xg-err M 7103 label)
+      (mem-set M (+ MM-LABEL-BASE label) (bit-or old (vector-at M MM-CODE-N))))))
+;; LABEL packs SIR position in high32, emitted code position+1 in low32.
+;; This prepass lets tail admission follow pure label/jump continuations.
+(defn- xg-index-labels [M :vector-i64 i :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
+    (let [label (xg-si M i IF-A)]
+      (if (= (xg-si M i IF-OP) OP-LABEL)
+        (if (or (<= label 0) (>= label MM-LABEL-CAP) (not= (vector-at M (+ MM-LABEL-BASE label)) 0))
+          (xg-err M 7103 label)
+          (xg-index-labels (mem-set M (+ MM-LABEL-BASE label) (i64-shift-left i 32)) (inc i)))
+        (xg-index-labels M (inc i))))))
+(defn- xg-tail? [M :vector-i64 i :i64 t :i64 left :i64] :bool
+  (if (or (<= left 0) (<= i 0) (>= i (vector-at M MM-SIR-N))) false
+    (let [op (xg-si M i IF-OP) a (xg-si M i IF-A)]
+      (cond (= op OP-RET) (= a t)
+            (= op OP-LABEL) (xg-tail? M (inc i) t (dec left))
+            (= op OP-BR) (xg-tail? M (u64-shift-right (vector-at M (+ MM-LABEL-BASE a)) 32) t (dec left))
+            :else false))))
 (defn- xg-one [M :vector-i64 i :i64] :vector-i64
   (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B) c (xg-si M i IF-C)]
     (case op
@@ -97,8 +115,7 @@
       9 (xg-label M a) 10 (xg-rel M 0xe9 1 2 a)
       11 (-> M (xg-load a 0x858b48) (xg-bytes 0xc08548 3) (xg-rel 0x840f 2 2 b))
       12 (-> M (xg-load a 0x858b48) (xg-bytes 0xc08548 3) (xg-rel 0x850f 2 2 b))
-      13 (if (and (<= c 5) (< (inc i) (vector-at M MM-SIR-N))
-                  (= (xg-si M (inc i) IF-OP) OP-RET) (= (xg-si M (inc i) IF-A) b))
+      13 (if (and (<= c 5) (xg-tail? M (inc i) b 64))
            ;; No outgoing stack arguments survive frame removal. The caller's
            ;; return address and SysV entry alignment are kept by leave/jmp.
            (-> M (xg-call-args b 0 c) (xg-bytes 0xf84d8b4c 4) (xg-byte 0xc9) (xg-rel 0xe9 1 1 a))
@@ -109,8 +126,10 @@
       20 (xg-bytes M 0x0b0f 2)
       21 (xr-tab M a b c)
       22 (-> M (xg-rel 0x058d48 3 1 b) (xg-save a))
-      23 (-> M (xg-call-args b 0 c) (xg-load (+ b c) 0x858b48)
-             (xg-bytes 0xf84d8b4c 4) (xg-bytes 0xd0ff 2) (xg-save b))
+      23 (let [v (-> M (xg-call-args b 0 c) (xg-load (+ b c) 0x858b48) (xg-bytes 0xf84d8b4c 4))]
+           (if (and (<= c 5) (xg-tail? M (inc i) b 64))
+             (-> v (xg-byte 0xc9) (xg-bytes 0xe0ff 2))
+             (-> v (xg-bytes 0xd0ff 2) (xg-save b))))
       24 (xr-vecp M a b c)
       25 (-> M (xg-bytes 0x958948 3) (xg-bytes (xg-temp M a) 4))
       26 (-> M (xg-load (inc a) 0x958b48) (xg-load a 0x858b48)
@@ -176,7 +195,7 @@
       (xg-bytes 0x0000004abf 5) (xg-bytes 0x0000003cb8 5) (xg-bytes 0x050f 2) (xg-bytes 0x0b0f 2)))
 (defn- xg-fix-target [M :vector-i64 kind :i64 target :i64] :i64
   (case kind 1 (dec (xg-f M target FF-CODE))
-             2 (dec (vector-at M (+ MM-LABEL-BASE target)))
+             2 (dec (bit-and (vector-at M (+ MM-LABEL-BASE target)) 4294967295))
              3 (- (xg-get M 3) 4096)
              4 (vector-at M (+ MM-LIT-BASE (* target MM-LIT-W) LF-POOL))
              5 (vector-at M (+ MM-LIT-BASE (* target MM-LIT-W) LF-POOL)) -1))
@@ -222,7 +241,7 @@
     (cond (not= (vector-at admitted MM-ERR) 0) admitted
           (= (xg-get admitted 1) 0) (xg-err admitted 7102 0)
           (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
-          :else (let [generated (-> admitted (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xg-start) (xg-code 1))
+          :else (let [generated (-> admitted (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xg-index-labels 1) (xg-start) (xg-code 1))
                       data (bit-and (+ 8191 (xg-pos generated)) -4096)]
                   (if (>= (+ data 17) MM-OUT-CAP) (xg-err generated 7104 data)
                     (xg-elf (xg-fix (xg-set generated 3 data) 1)))))))

@@ -62,7 +62,7 @@
     (cond (not= (vector-at a MM-ERR) 0) a
           (= (xg-get a 1) 0) (xg-err a 7102 0)
           :else (-> a (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
-                    (xg-rel 0xe9 1 1 (xg-get a 1)) (xg-code 1) (xr-pool 1) (xg-fix 1)))))
+                    (xg-index-labels 1) (xg-rel 0xe9 1 1 (xg-get a 1)) (xg-code 1) (xr-pool 1) (xg-fix 1)))))
 (defn- xr-copy [V :vector-i64 M :vector-i64 i :i64 n :i64 h :i64] :vector-i64
   (if (= i n) V (xr-copy (vector-assoc! V (+ h i) (xg-code-byte M i)) M (inc i) n h)))
 (defn- xr-write [M :vector-i64 out :string] :i64
