@@ -6,12 +6,12 @@ We are building this architecture for artificial intelligence, including the pos
 
 ## What the benchmarks show
 
-The available results do not establish that Kotoba or Amu is the world's fastest language. They answer narrower questions, on particular workloads and machines.
+The available results do not establish that Kotoba or Amu is the world's fastest language. They answer narrower questions, on particular workloads and machines. Both measurements below used bootstrap compiler routes; neither is a selfhost-built compiler result.
 
-| Study | Published result | What it does and does not show |
-| --- | --- | --- |
-| Embench IoT translated-port comparison, 15 October 2026 | 19 Kotoba ports; one accepted sample per workload; reported geometric-mean time ratio 0.7999 against upstream C built with Apple Clang 17 at -O2 | Exploratory only. Five ports were marked as workload substitutions, and the Kotoba SHA-256 path used ARMv8 SHA instructions that the C baseline did not. The result is not a certified Embench score, a like-for-like language ranking, or a universal fastest claim. |
-| Amu native cross-language runtime comparison, 7 September 2026 | Six kernel domains compared with Rust, Clang/C11, Zig, Go c-shared, and Swift; 19 of 30 comparator/domain pairs cleared the perfgate threshold in every recorded run | All 30 known answers were verified, but the bounded fastest claim did not qualify. The report is historical and outside the suite's 24-hour freshness window. |
+| Study | Result | Compiler provenance | Interpretation |
+| --- | --- | --- | --- |
+| Embench IoT translated-port comparison, 15 October 2026 | 19 Kotoba ports; one accepted sample per workload; reported geometric-mean time ratio 0.7999 against upstream C built with Apple Clang 17 at -O2 | m93 seed compiler, bootstrap reference; compiler source commit be7f0ce358ebe8d1a715b2784f272ce0eda8e934 | Exploratory only. Five ports were marked as workload substitutions, and the Kotoba SHA-256 path used ARMv8 SHA instructions that the C baseline did not. This is not a certified Embench score, a like-for-like language ranking, or a universal fastest claim. |
+| Amu native cross-language runtime comparison, 7 September 2026 | Six kernel domains against Rust, Clang/C11, Zig, Go c-shared, and Swift; 19 of 30 comparator/domain pairs qualified in every recorded run | Amu native artifacts produced with the canonical bin/amu Node/nbb bootstrap route; compiler commit 42f092ea5b6192f02f3c361535a37521b2ab6ab1 | All 30 known answers were verified, but the bounded fastest claim did not qualify. This report is historical and outside the suite's 24-hour freshness window. |
 
 The cross-language qualified-pair counts were: Clang/C11 2 of 6, Rust 1 of 6, Zig 5 of 6, Go c-shared 6 of 6, and Swift 5 of 6. A pair counted only when Amu was at least 5% faster and the result was separated from the measured spread. These counts describe the named M4 workload suite, not all programs or processors.
 
@@ -19,7 +19,7 @@ The Embench ratio is included so the raw result is visible, not as a speed claim
 
 ## Raising the bar for the next comparison
 
-The Amu benchmark policy now requires at least 10 alternating ABBA/BAAB rounds per domain for competitive comparisons, a quiet-host gate, verified answers for every comparator, and a report no older than 24 hours before it can support a current fastest claim. The full samples, tool versions, machine details, source and artifact hashes, and claim gates remain part of the report.
+The Amu benchmark policy requires at least 10 alternating ABBA/BAAB rounds per domain for competitive comparisons, a quiet-host gate, verified answers for every comparator, and a report no older than 24 hours before it can support a current fastest claim. The full samples, tool versions, machine details, source and artifact hashes, and claim gates remain part of the report.
 
 A credible Embench ranking also needs the same algorithm on both sides and comparable instruction-set paths. The next release will use that narrower comparison before making a language-level speed claim.
 
@@ -32,9 +32,9 @@ The benchmark results measure execution speed only. They do not qualify the safe
 ## Evidence
 
 - [Kotoba and Amu source, architecture, and compiler](https://github.com/kotoba-lang/amu)
-- [Embench result and kernel audit](https://github.com/kotoba-lang/kotoba-lang/blob/main/site/benchmarks/embench-c-parity-20261015.json)
-- [Embench offline reproduction package](https://github.com/kotoba-lang/amu/tree/72e59fa97288f8fd881bd014b65a66ae35a3d03d/bench/embench/reproduce-20261015/)
-- [Amu cross-language comparison report](https://github.com/kotoba-lang/kotoba-lang/blob/main/bench/public-runtime-comparison/latest.json)
+- [Pinned Embench result and kernel audit](https://github.com/kotoba-lang/kotoba-lang/blob/27b90068eda38d19b521a383167fb2c631a09eb5/site/benchmarks/embench-c-parity-20261015.json)
+- [Embench offline reproduction package at its exact commit](https://github.com/kotoba-lang/amu/tree/72e59fa97288f8fd881bd014b65a66ae35a3d03d/bench/embench/reproduce-20261015/)
+- [Pinned Amu cross-language report snapshot](https://github.com/kotoba-lang/kotoba-lang/blob/27b90068eda38d19b521a383167fb2c631a09eb5/bench/public-runtime-comparison/latest.json)
 - [Current competitive comparison policy and raw artifacts](https://github.com/kotoba-lang/amu/tree/main/bench/runtime-comparison)
 
-*Status as of 15 October 2026. We will update the comparisons when a fresh run clears the published qualification gates.*
+The cross-language source report has SHA-256 66b81c7403100a96c9d81a3cc7876dcf2bc69d64c42c67af937b8bf223fa493a. Status as of 15 October 2026. We will update the comparisons when a fresh run clears the published qualification gates.

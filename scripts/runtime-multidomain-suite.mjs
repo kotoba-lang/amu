@@ -66,8 +66,10 @@ function sleep(milliseconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
+const quietSampleCount = manifest.reliabilityPolicy.hostQuietSamples;
+const quietSampleCountLabel = quietSampleCount === 3 ? "three" : String(quietSampleCount);
 const quietPolicy
-  = `busy-cpu-fraction <= ${manifest.reliabilityPolicy.hostBusyCpuFractionMaximum.toFixed(2)} over ${manifest.reliabilityPolicy.hostQuietSampleSeconds}s, ${manifest.reliabilityPolicy.hostQuietSamples} consecutive samples; load1 recorded as diagnostic`;
+  = `busy-cpu-fraction <= ${manifest.reliabilityPolicy.hostBusyCpuFractionMaximum.toFixed(2)} over ${manifest.reliabilityPolicy.hostQuietSampleSeconds}s, ${quietSampleCountLabel} consecutive samples; load1 recorded as diagnostic`;
 
 function cpuTicks() {
   let idle = 0;
