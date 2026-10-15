@@ -138,6 +138,10 @@ python3 bench/embench/reproduce-20261015/b_build.py --out /tmp/embench-b
 | 3 | G1 = A(S)、G2 = G1(S)、G3 = G2(S)。S = `be7f0ce3` の unity(`1b9d9e30…`、2,625,422 バイト)。**G2 = G3** | **G1 = G2 = G3 = G\* = `bcd70b2474f0421a53c40c07b61bef100e52220f562def767958f51f07ddad16`** |
 | 4 | G* で `ports/official-*.kotoba` をコンパイルし、19 個すべての kseed・ネイティブイメージ・エクスポート表が計測時のものと一致 | `expected/measured-images.json` |
 
+ブートストラップのファイル(採用イメージ、そのレシート、信頼できる C ローダ)は git から **`be7f0ce3` 時点のもの**を読みます。
+そのため、作業ツリーの `seed/bootstrap/` が後で再採用されても(`main` ではブートストラップが m104 の不動点 `e5fc0ca2` に
+なっています)、本パッケージの検証内容は変わりません。
+
 ステージ A が要る理由:`be7f0ce3` はコンパイラ自身のメモリマップを拡大しています。その `seed/00-ns.kotoba` は `ffa4cfc1`
 のものと、生成された 22 個の定数(TOK・NODE・SIR・CODE・FIX・OUT の各テーブル拡大と MM-WORDS)だけが異なります。
 公開ブートストラップのテーブルは計測対象のソースには小さすぎ、直接はコンパイルできません

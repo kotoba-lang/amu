@@ -6,7 +6,7 @@
 Default round: rounds/m93-20261015.json (the published round, commit be7f0ce3, all pins present).
 
 Chain (all inputs are files of public commits of this repository, checked by SHA-256):
-  0. loader  = clang -std=c11 -O2 seed/bootstrap/adopted-loader-20261012.c
+  0. loader  = clang -std=c11 -O2 seed/bootstrap/adopted-loader-20261012.c (bootstrap files read from git at be7f0ce3)
   1. check   : adopted-20261012.bin compiles its own source (seed/MANIFEST unity of ffa4cfc1) to itself (public fixed point)
   2. stage A : adopted compiles U_A = the ffa4cfc1 unity with seed/00-ns.kotoba taken from be7f0ce3
                (that file differs from ffa4cfc1's only in the 22 generated memory-map constants: the larger TOK/NODE/
@@ -40,14 +40,15 @@ def main():
     pins = json.loads(pins_p.read_text()) if pins_p else None
     chain_pins = json.loads(chain_p.read_text()) if chain_p else None
     exp_img = json.loads(img_p.read_text()) if img_p else None
-    boot = R.bootstrap_pins()
-    if pins: assert all(pins[k] == v for k, v in boot.items()), 'round pins disagree with the repository adoption receipt'
+    boot = R.bootstrap_pins(rnd.get('bootstrapCommit', R.BOOTSTRAP_COMMIT))
+    if pins: assert all(pins[k] == v for k, v in boot.items() if k in pins), 'round pins disagree with the bootstrap adoption receipt'
     out = R.fresh_dir(a.out); host = out / 'host'; host.mkdir()
     report = dict(level='b-build', round=rnd['round'], sourceCommit=commit, started=time.time(), steps=[], ok=False)
     def save(): (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     def step(name, **kw): report['steps'].append(dict(name=name, **kw)); save(); print(name, json.dumps(kw)[:300], flush=True)
     # ---- 0. pinned public inputs
-    loader_src = R.REPO / 'seed/bootstrap/adopted-loader-20261012.c'; adopted = R.REPO / 'seed/bootstrap/adopted-20261012.bin'
+    loader_src = R.bootstrap_file('adopted-loader-20261012.c', host / 'adopted-loader-20261012.c', boot['bootstrapCommit'])
+    adopted = R.bootstrap_file('adopted-20261012.bin', host / 'adopted-20261012.bin', boot['bootstrapCommit'])
     assert R.sha_file(loader_src) == boot['adoptedLoaderSourceSHA256'], 'loader source pin'
     assert R.sha_file(adopted) == boot['adoptedImageSHA256'], 'adopted bootstrap image pin'
     loader = R.build_loader(loader_src, host / 'kexe-loader'); step('loader-built', loaderSourceSHA256=boot['adoptedLoaderSourceSHA256'])

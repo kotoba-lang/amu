@@ -26,7 +26,7 @@ DIAG_PATCHES = [  # identical to the instruction-counting instrumentation of too
 
 def check_timer_loader():
     with tempfile.TemporaryDirectory() as t:
-        x = Path(t) / 'loader.c'; shutil.copyfile(R.REPO / 'seed/bootstrap/adopted-loader-20261012.c', x)
+        x = R.bootstrap_file('adopted-loader-20261012.c', Path(t) / 'loader.c')   # the trusted loader as of be7f0ce3
         q = subprocess.run(['patch', '-s', str(x)], stdin=open(R.PKG / 'harness/separated-loader.diff'), capture_output=True, text=True)
         ok = q.returncode == 0 and x.read_bytes() == (R.PKG / 'harness/separated-loader.c').read_bytes()
     if not ok: raise SystemExit('harness/separated-loader.c is not adopted-loader-20261012.c + harness/separated-loader.diff')

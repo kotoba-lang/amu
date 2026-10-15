@@ -140,6 +140,10 @@ About 10 minutes on an idle M-series Mac; much longer under load. Steps and expe
 | 3 | G1 = A(S), G2 = G1(S), G3 = G2(S), with S = unity of `be7f0ce3` (`1b9d9e30…`, 2,625,422 bytes); **G2 = G3** | **G1 = G2 = G3 = G\* = `bcd70b2474f0421a53c40c07b61bef100e52220f562def767958f51f07ddad16`** |
 | 4 | G* compiles `ports/official-*.kotoba`; all 19 kseeds, native images and export tables equal the measured ones | `expected/measured-images.json` |
 
+The bootstrap files (the adopted image, its receipt and the trusted C loader) are read from git **as of `be7f0ce3`**, so a
+later re-adoption of `seed/bootstrap/` in the working tree (as on `main`, where the bootstrap is now the m104 fixed point
+`e5fc0ca2`) does not change what this package verifies.
+
 Why stage A: `be7f0ce3` enlarged the compiler's own memory map. Its `seed/00-ns.kotoba` differs from `ffa4cfc1`'s only in 22
 generated constants: the larger TOK, NODE, SIR, CODE, FIX and OUT tables, and MM-WORDS. The public bootstrap's tables are too
 small for the measured source, so it cannot compile it directly: it stops with

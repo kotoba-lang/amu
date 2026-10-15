@@ -206,11 +206,22 @@ def round_path(rnd, key):
     return p if p.exists() else None
 
 
-def bootstrap_pins():
-    """The public bootstrap, pinned by the repository's own adoption receipt (seed/adoption-20261012.json)."""
-    rec = json.loads((REPO / 'seed/adoption-20261012.json').read_text())
-    return dict(adoptedSourceCommit=rec['sourceCommit'], adoptedUnitySHA256=rec['sourceUnitySHA256'],
+# The public bootstrap this package starts from: the 20261012 adopted image, its receipt and the trusted C loader AS OF
+# commit be7f0ce3 (the published m93 source). They are read from git, so a later re-adoption of seed/bootstrap/ in the
+# working tree (e.g. on main) does not change what the package verifies. A round config may name another bootstrapCommit.
+BOOTSTRAP_COMMIT = 'be7f0ce358ebe8d1a715b2784f272ce0eda8e934'
+
+
+def bootstrap_pins(commit=BOOTSTRAP_COMMIT):
+    """The public bootstrap, pinned by the adoption receipt seed/adoption-20261012.json at `commit`."""
+    rec = json.loads(git_show(commit, 'seed/adoption-20261012.json'))
+    return dict(bootstrapCommit=commit, adoptedSourceCommit=rec['sourceCommit'], adoptedUnitySHA256=rec['sourceUnitySHA256'],
                 adoptedImageSHA256=rec['nativeImageSHA256'], adoptedLoaderSourceSHA256=rec['loaderSourceSHA256'])
+
+
+def bootstrap_file(rel, dest, commit=BOOTSTRAP_COMMIT):
+    """Write seed/bootstrap/<rel> as of `commit` to dest (e.g. the adopted image or the trusted loader source)."""
+    Path(dest).write_bytes(git_show(commit, 'seed/bootstrap/' + rel)); return Path(dest)
 
 
 # Hard ceilings of the trusted loader (seed/bootstrap/adopted-loader-20261012.c: KEXE_PAIR_MAX, KEXE_STRING_POOL_MAX,
