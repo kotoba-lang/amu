@@ -183,9 +183,9 @@ def exact(run, expected):
 
 # ---------------------------------------------------------------------------------------------- rounds
 # A round is described by rounds/<name>.json: the measured source commit, the files stage A takes from it, the multiplier
-# table, and where the round's pins / expected values / records live. rounds/m93-20261015.json (the published round) is the
-# default; a later round runs through the same scripts with its own config (see README, "Running another round").
-DEFAULT_ROUND = PKG / 'rounds' / 'm93-20261015.json'
+# table, and where the round's pins / expected values / records live. Default to the corrected same-algorithm round;
+# historical rounds remain available through an explicit --round (see README).
+DEFAULT_ROUND = PKG / 'rounds' / 'sa-m104-20261015.json'
 MULTIPLIERS = (1, 2, 4, 8, 16)
 DEFAULT_CAPACITY = dict(KEXE_PAIRS=4096, KEXE_STRING_POOL=65536, KEXE_VECTORS=4096, KEXE_VECTOR_ITEMS=65536)
 ARENA_OF_CAP = dict(KEXE_PAIRS='pairs', KEXE_STRING_POOL='string-pool-bytes', KEXE_VECTORS='vectors', KEXE_VECTOR_ITEMS='vector-items')

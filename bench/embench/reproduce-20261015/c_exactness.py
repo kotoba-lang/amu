@@ -42,7 +42,7 @@ def find_image(d, w):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--out', required=True, type=Path); ap.add_argument('--images', type=Path)
-    ap.add_argument('--round', help='round config (default rounds/m93-20261015.json)')
+    ap.add_argument('--round', help='round config (default rounds/sa-m104-20261015.json)')
     ap.add_argument('--only'); ap.add_argument('--count-instructions', action='store_true')
     a = ap.parse_args(); R.require_macos_arm64()
     loader_sha = check_timer_loader()

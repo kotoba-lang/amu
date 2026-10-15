@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Level (a) OFFLINE: recompute every acceptance decision, every per-workload ratio and the full-19 geometric mean of the
-2026-10-15 m93 round from the published raw records, and check every hash. Pure Python 3, no network, no Apple hardware.
+selected round from its raw records, and check every hash. Pure Python 3, no Apple hardware.
 
   python3 bench/embench/reproduce-20261015/a_offline.py [--round rounds/<name>.json] [--upstream <embench-iot checkout at 09c2ed8c>]
-Default round: rounds/m93-20261015.json. Another round's records must use the same layout (records/round, official, fresh-C).
+Default round: rounds/sa-m104-20261015.json (the corrected same-algorithm round). The historical m93 round can be checked
+explicitly with --round rounds/m93-20261015.json. Round records must use the same layout (records/round, official, fresh-C).
 
 Checks (any failure exits 1):
   1. SHA256SUMS of this package; the collection custody of both arms (every collected file is either vendored here with the
@@ -15,12 +16,12 @@ Checks (any failure exits 1):
      from tick counters), exactness (Kotoba: result/fuel/17-counter arena line vs the expected values; C: EMBENCH_NS, empty
      stderr, exit 0), the 0.5 s floor, retry eligibility, first-qualified selection.
   4. Scores (Kotoba baseline/(ms)*8192*m_w, C baseline/(ms)*32768), both reports' geometric means, per-workload
-     ratio_w = (4/m_w)*K_ns/C_ns and the full-19 GM, against the published 0.7998826447941967."""
-import argparse, hashlib, json, math, re, statistics, sys
+     ratio_w = (4/m_w)*K_ns/C_ns and the full-19 GM, against the selected round's recorded result."""
+import argparse, hashlib, json, math, re, statistics, subprocess, sys
 from pathlib import Path
 PKG = Path(__file__).resolve().parent
 REC = PKG / 'records'                      # set from the round config in main()
-PUBLISHED_GM = 0.7998826447941967
+PUBLISHED_GM = 0.821298642657085
 IMAGES, PORTS, IMAGE_TABLE = PKG / 'images', PKG / 'ports', PKG / 'expected/measured-images.json'
 CPU_ONLY = {'quiet-admission-timeout', 'raw-post-cpu', 'background-cpu'}
 fails = []
@@ -64,7 +65,16 @@ def custody(arm, upstream):
         if rel.endswith('/image.bin'): check(images.get(rel.split('/')[1]) == row['sha256'], 'timer image == images/ ' + rel)
         if rel.endswith('/separated-loader.c'): check(sha_f(PKG / 'harness/separated-loader.c') == row['sha256'], 'timer loader == harness ' + rel)
         if upstream and rel.startswith('upstream/'):
-            present += check(sha_f(Path(upstream) / rel[len('upstream/'):]) == row['sha256'], 'upstream file ' + rel)
+            upstream_rel = rel[len('upstream/'):]
+            tracked = subprocess.run(['git', '-C', str(upstream), 'ls-files', '--error-unmatch', '--', upstream_rel],
+                                     capture_output=True, text=True)
+            if tracked.returncode == 0:
+                present += check(sha_f(Path(upstream) / upstream_rel) == row['sha256'], 'upstream file ' + rel)
+            else:
+                generated_cache = '__pycache__' in Path(upstream_rel).parts and upstream_rel.endswith('.pyc')
+                check(tracked.returncode == 1 and generated_cache and o is not None and
+                      o.get('reason') == 'Generated Python bytecode in the captured upstream checkout; not tracked Embench source',
+                      'untracked upstream artifact classification ' + rel)
     return dict(files=len(rec['files']), vendoredVerified=vend, upstreamVerified=present)
 
 
@@ -110,10 +120,10 @@ def preregistration(screen_at_max=None):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--upstream', type=Path, help='optional Embench checkout at 09c2ed8c to verify the omitted upstream files')
-    ap.add_argument('--round', help='round config (default rounds/m93-20261015.json)')
+    ap.add_argument('--round', help='round config (default rounds/sa-m104-20261015.json)')
     a = ap.parse_args()
     global REC, PUBLISHED_GM, IMAGES, PORTS, IMAGE_TABLE
-    rnd = json.loads(((PKG / a.round) if a.round and not Path(a.round).is_absolute() and not Path(a.round).exists() else Path(a.round or PKG / 'rounds/m93-20261015.json')).read_text())
+    rnd = json.loads(((PKG / a.round) if a.round and not Path(a.round).is_absolute() and not Path(a.round).exists() else Path(a.round or PKG / 'rounds/sa-m104-20261015.json')).read_text())
     REC, PUBLISHED_GM = PKG / rnd['records'], rnd['publishedGM']
     IMAGES, PORTS, IMAGE_TABLE = PKG / rnd['images'], PKG / rnd['ports'], PKG / rnd['pins']['imageTable']
     nsums = package_sums()

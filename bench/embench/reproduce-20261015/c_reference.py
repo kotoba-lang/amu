@@ -29,7 +29,7 @@ def points(m): return sorted({1} if m == 1 else ({1, 2, m // 2, m} | ({3} if m =
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--out', required=True, type=Path); ap.add_argument('--jobs', type=int, default=3); ap.add_argument('--only')
-    ap.add_argument('--round', help='round config (default rounds/m93-20261015.json)'); ap.add_argument('--write', type=Path)
+    ap.add_argument('--round', help='round config (default rounds/sa-m104-20261015.json)'); ap.add_argument('--write', type=Path)
     a = ap.parse_args(); R.require_macos_arm64(); out = R.fresh_dir(a.out)
     rnd = R.load_round(a.round); W = R.round_workloads(rnd); exp_p = R.round_path(rnd, 'expectedAccounting')
     E = {e['workload']: e for e in json.loads(exp_p.read_text())} if exp_p else None

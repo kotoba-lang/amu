@@ -1,14 +1,28 @@
-# Reproducing the 15 October 2026 Embench result (Kotoba / C = 0.7999)
+# Embench-derived results and reproduction (M104 corrected; M93 historical)
 
 [日本語版 README.ja.md](README.ja.md)
 
 This directory lets a third party check, rebuild and re-time the result published at
 <https://kotoba-lang.org/blog/embench-c-parity-20261015/> (evidence bundle `/benchmarks/embench-official-20261015/`).
-The measured compiler source is commit `be7f0ce358ebe8d1a715b2784f272ce0eda8e934` of this repository
+
+## Current measurement status
+
+* **Do not cite the original M93 value, 0.7999, as a same-algorithm result.** A later kernel audit found substitution kernels
+  in the measured M93 compiler; it also used ARMv8 SHA-256 instructions only on the Kotoba side. M93 remains below as a
+  historical reproduction record.
+* The corrected **M104** round measures all 19 workloads with the same-algorithm-only selfhost fixed-point compiler, scalar
+  SHA-256, the pinned upstream Embench speed driver and the documented per-iteration ratio formula. Its recorded Apple M4
+  result is **Kotoba / C = 0.8213**. This is an **Embench-derived translated-port comparison**, not an official or certified
+  Embench score: the Kotoba programs use a project-specific translation and harness.
+* A fresh M1 Max result is pending. The M104 protocol requires a quiet-host gate (at least 70% raw CPU idle before each
+  campaign), full 19/19 acceptance for both arms, exact Kotoba outputs, and retained raw records. No M1 timing result is
+  claimed until that full run passes and its records verify offline.
+
+For the historical M93 reproduction below, the measured compiler source was commit `be7f0ce358ebe8d1a715b2784f272ce0eda8e934` of this repository
 (branch `claude/embench-c-parity-m93-20261015`). This package was added in a later commit on that branch and does not change
 the measured source: `seed/` is identical at both commits.
 
-## 1. What is claimed
+## 1. Historical M93 claim (superseded)
 
 On one Apple M4 Mac mini (macOS, arm64), in one measurement cycle on 15 October 2026:
 
@@ -99,7 +113,7 @@ All commands run from the repository root. Each `--out` must be a new directory.
 ### (a) Offline: recompute everything from the raw records
 
 ```
-python3 bench/embench/reproduce-20261015/a_offline.py
+python3 bench/embench/reproduce-20261015/a_offline.py --round rounds/m93-20261015.json
 ```
 
 What it checks:
@@ -127,7 +141,7 @@ LEVEL_A PASS GM 0.7998826447941968
 ### (b) Build: public bootstrap → fixed point → the measured images
 
 ```
-python3 bench/embench/reproduce-20261015/b_build.py --out /tmp/embench-b
+python3 bench/embench/reproduce-20261015/b_build.py --round rounds/m93-20261015.json --out /tmp/embench-b
 ```
 
 About 10 minutes on an idle M-series Mac; much longer under load. Steps and expected SHA-256:
@@ -157,8 +171,8 @@ binary. The 19 ports are small, so they do get T2 and the certified kernels; ste
 ### (c) Exactness: run every image at its n_w
 
 ```
-python3 bench/embench/reproduce-20261015/c_exactness.py --out /tmp/embench-c [--count-instructions] [--images /tmp/embench-b/step4-images]
-python3 bench/embench/reproduce-20261015/c_reference.py --out /tmp/embench-cref
+python3 bench/embench/reproduce-20261015/c_exactness.py --round rounds/m93-20261015.json --out /tmp/embench-c [--count-instructions] [--images /tmp/embench-b/step4-images]
+python3 bench/embench/reproduce-20261015/c_reference.py --round rounds/m93-20261015.json --out /tmp/embench-cref
 ```
 
 **`c_exactness.py`** builds each timer and runs it once at n_w with the official caps:
@@ -191,7 +205,7 @@ Expected: `LEVEL_C_REFERENCE PASS`, after about 10–30 minutes.
 
 ```
 python3 bench/embench/reproduce-20261015/tools/fetch_upstream.py --dest /tmp/embench-iot
-python3 bench/embench/reproduce-20261015/d_timing.py --upstream /tmp/embench-iot --out /tmp/embench-d
+python3 bench/embench/reproduce-20261015/d_timing.py --round rounds/m93-20261015.json --upstream /tmp/embench-iot --out /tmp/embench-d
 ```
 
 What it does:
@@ -209,8 +223,8 @@ What it does:
 caps), the driver command, the `run_trigger.py` files and the score formulas. What it drops: the measurement host's
 custody receipts and process patterns. It also builds C instead of reusing the frozen binaries.
 
-**Expected spread.** The published 0.7999 is one cycle on one Apple M4 under its background load, with C built by Apple clang
-17.0.0. Your result depends on:
+**Expected spread.** The corrected M104 record is 0.8213 from one Apple M4 cycle. Do not use the historical M93 0.7999 as a
+same-algorithm result. Your result depends on:
 
 * your CPU (the C and Kotoba code use the core differently);
 * your clang version (the C binaries change);
@@ -237,7 +251,7 @@ hashes are in `records/fresh-C/source-custody.json`. A different clang builds di
 | `records/official/`, `records/fresh-C/` | the collected campaign records of both arms (reports, raw attempts, quiet-admission probes, invocation scripts, custody), verbatim |
 | `records/omitted-files.json` | collected files not vendored here, with hashes and reasons |
 | `expected/` | pins for level (b): build inputs, compiler chain, measured images |
-| `rounds/` | round configs (commit, multiplier table, pins); `m93-20261015.json` is the published round and the default |
+| `rounds/` | round configs (commit, multiplier table, pins); `sa-m104-20261015.json` is the default corrected round; M93 is historical |
 | `audit/` | the kernel scope policy and the kernel audit tables (see section 2a) |
 | `round-sa-m104-20261015/` | the corrected same-algorithm round (section 8): records, images, workload table, pins |
 
@@ -256,8 +270,8 @@ their hashes are part of the custody chain. The scripts never use those paths.
 
 ## 7. Running another round
 
-The scripts are parameterized by a round config, `rounds/<name>.json`. The default is `rounds/m93-20261015.json`, the published
-round. A config names:
+The scripts are parameterized by a round config, `rounds/<name>.json`. The default is the corrected
+`rounds/sa-m104-20261015.json`. To reproduce the historical M93 round, pass `--round rounds/m93-20261015.json`. A config names:
 * the measured source commit;
 * the files stage A takes from that commit (`seed/00-ns.kotoba`);
 * the port and image directories;
@@ -305,8 +319,9 @@ ancestors. Its round config is `rounds/sa-m104-20261015.json`, and its data is i
   * The screen is 0.85 s, and R_w is calibrated on m43, m87 and m93.
   * **Amendment 4:** a workload at its maximum feasible m is accepted at ≥ 0.6 s. This applies to matmult-int: projection
     0.78 s, and its m93 interval at m = 8 was 0.777 s.
-* **Result.** **Kotoba / C = 0.8213**, against m93's 0.7999 and round114's 2.688. 19/19 Kotoba and
-  19/19 C were accepted, all on the first attempt and all exact. Verifier: `PASS_INDEPENDENT_SA_M104_RAW_CUSTODY_MULTIPLIER_FORMULA_V1`.
+* **Result.** **Kotoba / C = 0.8213**, against the historical m93 0.7999 and round114's 2.688. 19/19 Kotoba and
+  19/19 C were accepted, all on the first attempt and all exact. The report labels this an exploratory translated-port
+  result and sets `officialUnmodifiedCScore` to `false`. Verifier: `PASS_INDEPENDENT_SA_M104_RAW_CUSTODY_MULTIPLIER_FORMULA_V1`.
 * **Noise check (Amendment 3).** aha-mont64 had the same image and n as in m93: 2.039 s against
   1.953 s (×1.044). This cycle's C elapsed GM was ×1.044 of
   m93's, so the host ran about 4 % slower in both arms.

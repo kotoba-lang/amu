@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Build the 19 original Embench C benchmarks exactly as the C arm's binaries were built (round65, frozen and reused).
+"""Build fresh original Embench C binaries from the pinned upstream source for the selected host's timing campaign.
 
   python3 bench/embench/reproduce-20261015/c/build_c.py --upstream <embench-iot at 09c2ed8c> --out <new-dir> [--cc /usr/bin/clang]
 
-Per workload w (sources = sorted upstream/src/w/*.c):
+Per workload w (sources = sorted upstream/src/w/*.c), use:
   clang -O2 -std=gnu11 -DWARMUP_HEAT=1 -DGLOBAL_SCALE_FACTOR=32768 -I upstream/support -I upstream/src/w <sources>
         upstream/support/main.c upstream/support/beebsc.c c/boardsupport.c -lm -o <out>/w
 c/boardsupport.c (sha256 0e58ae7a...) times start_trigger..stop_trigger with CLOCK_MONOTONIC_RAW and prints EMBENCH_NS=<ns>.
-The official binaries were built with Apple clang 17.0.0 (clang-1700.6.4.2) on macOS 26.2 arm64; their hashes are listed in
-records/fresh-C/source-custody.json. A different clang produces different (equally valid) binaries; this is reported, not an error."""
+The compiler version, command lines and output hashes are recorded in build-c.json. The historical M93 binary hashes are
+also included as a diagnostic comparison; a different clang produces different (equally valid) fresh binaries."""
 import argparse, json, re, subprocess, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))

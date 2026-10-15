@@ -6,7 +6,7 @@ ratio_w = (4/m_w) * K_ns / C_ns on YOUR machine.
   python3 bench/embench/reproduce-20261015/d_timing.py --upstream <upstream-dir> --out <new-dir> [--round rounds/<name>.json]
                                                        [--images <dir>] [--workloads w1,w2]
 
-Protocol (the official harness files, unchanged): the upstream Embench driver benchmark_speed.py with the target module
+Protocol (the upstream benchmark_speed.py driver, unchanged): the Embench speed driver with the selected round's target module
 harness/kotoba/run_trigger.py (Kotoba, GSF 8192, n_w = LSF*8192*m_w) and harness/c/run_trigger.py (C, GSF 32768); warm-up 1,
 sample 1; CPU admission: raw host idle >= 70 % before, raw idle and estimated background idle >= 70 % over the run; at most
 3 attempts, retries only for CPU reasons; the first qualified attempt is selected (never the fastest); 0.5 s floor;
@@ -15,19 +15,14 @@ printed only when all 38 runs are accepted.
 
 C binaries are built here from upstream with c/build_c.py (your clang), or pass --c-binaries <dir>. Kotoba images default to
 images/ (or pass --images <b_build out>/step4-images).
-EXPECTED SPREAD: the published 0.79988 is one cycle on one Apple M4 host under its load. Other hosts, clang versions,
-background load and thermal state change both arms; expect a different GM, and per-workload ratios can move by 10 % or more."""
-import argparse, json, math, os, shutil, statistics, subprocess, sys, time
+EXPECTED SPREAD: the corrected recorded M104 result is 0.82130 on one Apple M4 host. Do not use the historical M93
+0.79988 result as a same-algorithm comparison. Other hosts, clang versions, background load and thermal state change both
+arms; expect a different GM, and per-workload ratios can move by 10 % or more. This remains an Embench-derived translated-
+port comparison, not an official Embench score."""
+import argparse, json, math, os, platform, shutil, statistics, subprocess, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'tools'))
 import repro_lib as R
-
-
-def other_benchmark_processes(root):
-    q = subprocess.run(['/bin/ps', '-axo', 'pid=,command='], capture_output=True, text=True, check=True)
-    me = os.getpid()
-    return [l.strip() for l in q.stdout.splitlines() if str(root) + '/' in l and ('/timer' in l or 'benchmark_speed.py' in l or '/results/measured/src/' in l)
-            and not l.strip().startswith(str(me) + ' ')]
 
 
 def setup_root(root, upstream, trigger):
@@ -62,7 +57,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--upstream', required=True, type=Path); ap.add_argument('--out', required=True, type=Path)
     ap.add_argument('--images', type=Path); ap.add_argument('--c-binaries', type=Path); ap.add_argument('--workloads')
-    ap.add_argument('--round', help='round config (default rounds/m93-20261015.json)')
+    ap.add_argument('--host-model', help='optional user-reported host model to include in report.json')
+    ap.add_argument('--round', help='round config (default rounds/sa-m104-20261015.json)')
     a = ap.parse_args(); R.require_macos_arm64()
     subprocess.run([sys.executable, str(R.PKG / 'tools/fetch_upstream.py'), '--dest', str(a.upstream), '--verify-only'], check=True)
     out = R.fresh_dir(a.out); up = a.upstream.resolve()
@@ -70,7 +66,10 @@ def main():
     images = a.images or R.PKG / rnd['images']; exp_p = R.round_path(rnd, 'expectedAccounting')
     if not exp_p: raise SystemExit('this round has no expected values yet: derive them with c_reference.py --round ... --write <file>')
     baseline = json.loads((up / 'baseline-data/speed.json').read_text()); mult = {w: W[w]['multiplier'] for w in W}
-    report = dict(level='d-timing', round=rnd['round'], started=time.time(), workloads=names, full19=len(names) == 19, protocol='round 2026-10-15 m93 (see README)')
+    report = dict(level='d-timing', round=rnd['round'], started=time.time(), workloads=names, full19=len(names) == 19,
+                  host=dict(platform=platform.platform(), architecture=platform.machine(), logicalCPUCount=os.cpu_count(),
+                            userReportedModel=a.host_model),
+                  protocol='round-specific protocol revision (see records/round/protocol-revision.txt)')
     def save(): (out / 'report.json').write_text(json.dumps(report, indent=1) + '\n')
     # C binaries
     cdir = a.c_binaries
@@ -85,7 +84,7 @@ def main():
         caps = R.caps_for(w, e['extraCaps']); d = K / 'results/measured/src' / w; d.mkdir()
         import shlex
         (d / w).write_text('#!/bin/sh\nexec env ' + ' '.join(shlex.quote(k + '=' + v) for k, v in caps.items()) + ' ' + shlex.quote(str(timer)) + ' ' + str(e['n']) + '\n'); (d / w).chmod(0o755)
-    assert not other_benchmark_processes(out), 'other benchmark processes are running under this output root'
+    # R.fresh_dir() created this unique output root; a competing campaign cannot reuse it.
     report['kotoba'] = drive(K, 8192); report['kotoba']['rows'] = collect(K, names, 8192, mult, baseline); save()
     # ---- C arm (same session, after Kotoba)
     Cr = out / 'c'; setup_root(Cr, up, R.PKG / 'harness/c/run_trigger.py')
