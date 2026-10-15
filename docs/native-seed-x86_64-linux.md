@@ -1,15 +1,19 @@
 # Native seed cross-compilation to x86_64 Linux
 
-The optional seed closure adds a native cross-compilation path for scalar
-programs. An Amu-produced AArch64 compiler reads Kotoba, shares the adopted
+The optional seed closure adds native x86-64 code generation for standalone
+scalar programs and context-v11 runtime programs. An Amu-produced compiler
+reads Kotoba, shares the adopted
 reader/checker/SIR lowering, and directly emits x86-64 instructions and a Linux
 ELF64 executable. Python orchestrates calls; Clang builds the existing trusted
 C loader. Neither compiles Kotoba or generates guest instructions. There is no
 JVM, Node or Graal fallback.
 
-This is the first scalar profile. It does not establish that the compiler
-itself runs or self-builds on x86_64, whole-component Q9 qualification, or
-x86_64 Embench performance. The existing public launcher and its Kototama
+The runtime profile adds strings, vectors, bytes, closures, state results and
+up to16 internal arguments. The Linux selfhost closure is a source compiler:
+it includes the shared frontend and x86 backend, with an explicit source-only
+driver. Project linking, KIR compilation, floating-point operations,
+whole-component Q9 qualification and x86_64 Embench remain separate gates.
+The existing public launcher and its Kototama
 default remain unchanged. The adopted seed source manifest and bootstrap
 receipts also remain unchanged.
 
@@ -59,6 +63,9 @@ no dynamic loader, libc, companion runtime, or installed Amu compiler.
 
 ## Profile and ABI
 
+The following describes the standalone ELF profile. The runtime profile is
+described below; both share the same checked source frontend and emitter.
+
 - Exactly one exported `main()->i64`; private/direct functions accept up to
   five i64/bool parameters and return i64/bool.
 - Wrapping i64 add/sub/multiply, signed quotient, bitwise operations, shifts
@@ -101,8 +108,59 @@ suite from the native AArch64 build job to the Linux execution job.
 with Rosetta and the trusted x86-64 C loader. It is not Linux ELF execution.
 Raw failed attempts and logs remain in the caller's workspace.
 
-Next implementation units are the checked runtime helper ABI and literal
-pool, vector/string/bytes and closure/state/float operations, x86-64 compiler
-self-build, project linker/sealed artifact integration, and then a fresh
-19-program comparison on x86_64 Linux. Each remains a separate qualification
-gate; AArch64 benchmark results are not x86_64 results.
+## Runtime profile and Linux self-build
+
+`seed/X86_64-LINUX-SELFHOST-MANIFEST` selects the source-only compiler closure.
+The build uses the adopted native AArch64 compiler to generate an AArch64
+bridge from this exact closure. That bridge emits the first x86 compiler.
+On Linux, the x86 compiler emits G2 from the identical source; G2 emits G3.
+The harness requires whole-container and whole-payload G1=G2=G3 identity.
+Python only checks pins, launches native processes and copies payload bytes.
+Clang only builds the existing trusted context-v11 C loader.
+
+```sh
+# macOS arm64: generate the bridge, x86 G1 and independent AArch64 references.
+python3 scripts/seed/check-x86_64-selfhost.py --prepare --output /absolute/new-selfhost
+# Transfer that directory unchanged to the same repository revision on Linux.
+python3 scripts/seed/check-x86_64-selfhost.py --execute-linux --output /absolute/new-selfhost
+```
+
+The CI workflow performs both stages on macOS arm64 and Ubuntu x86_64.
+`--execute-rosetta` provides a separate local diagnostic; its report never
+claims Linux execution. Raw inputs, compiler generations, subprocess
+arguments, before/after pins and stdout/stderr are retained. Failed attempts
+retain their logs and never get a successful selfhost receipt.
+
+The runtime compiler command has an explicit format:
+
+```sh
+compile /absolute/source.kotoba --target x86_64-linux \
+  --output /absolute/new-output.kx64 --format kx64-v1
+```
+
+The tagged header is `KX64V1 x86_64-linux sysv-ctx-v11 LENGTH 0`, followed by
+two newlines and exactly LENGTH payload bytes. It cannot be mistaken for the
+legacy AArch64 KSEED1 format. The verified payload runs with the trusted
+loader's `RAW 0 0 x86_64 ALLOW_CSV` entry. For compiler invocations add
+`KEXE_COMMAND=1`, compiler resource budgets above, explicit filesystem root,
+and allow wires35,37,38,39. The loader supplies runtime fuel and validates
+handles, indices, UTF-8 boundaries, allocations and capability grants.
+
+Strings use the existing pair(offset,length) representation; literal offsets
+address the read-only code pool. Runtime helpers implement dynamic strings,
+persistent and in-place vector operations, and bytes. Guest calls keep r9 as
+context, place arguments6..16 on the stack and return state in rax/rdx.
+C helper calls use ordinary SysV argument registers and reload context after
+every call. Closure entries use RIP-relative addresses; pooled table reads
+check unsigned indices before accessing memory. CODE packs eight bytes per
+word, independently of the adopted AArch64 layout.
+
+The helper register assignment is checked against LLVM's
+[X86 calling conventions](https://github.com/llvm/llvm-project/blob/main/llvm/lib/Target/X86/X86CallingConv.td).
+The exact internal convention, scratch space, relocation kinds and format
+are recorded in `seed/X86_64-LINUX-ABI`. The implementation keeps all shared
+frontend files and the adopted bootstrap unchanged.
+
+Remaining target work includes project linking, sealed artifact integration,
+float semantics and a fresh19-program comparison on x86_64 Linux.
+AArch64 benchmark results are not x86_64 results.

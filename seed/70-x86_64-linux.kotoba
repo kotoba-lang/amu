@@ -1,7 +1,7 @@
 ;; Native seed extension: bounded scalar SIR -> x86-64 Linux ELF64.
 ;; Assemble after 90-drv, replacing 99-entry. The adopted 16-module closure,
 ;; bootstrap and launcher are unchanged. No host compiler translates Kotoba.
-;; CODE holds BYTES in this route; do not call A64 layout/output on this M.
+;; CODE packs eight bytes per word; CODE-N still counts bytes plus one.
 ;; Absolute M[192..195] are reserved by X86_64-LINUX-ABI for this route,
 ;; after lowering: current function, main, fuel, data offset. They are NOT STAT.
 
@@ -13,11 +13,16 @@
 (defn- xg-f [M :vector-i64 f :i64 k :i64] :i64 (vector-at M (+ MM-FN-BASE (* f MM-FN-W) k)))
 (defn- xg-si [M :vector-i64 i :i64 k :i64] :i64 (vector-at M (+ MM-SIR-BASE (* i MM-SIR-W) k)))
 (defn- xg-pos [M :vector-i64] :i64 (dec (vector-at M MM-CODE-N)))
+(defn- xg-code-byte [M :vector-i64 at :i64] :i64
+  (bit-and (u64-shift-right (vector-at M (+ MM-CODE-BASE (quot at 8))) (* 8 (bit-and at 7))) 255))
+(defn- xg-put-byte [M :vector-i64 at :i64 b :i64] :vector-i64
+  (let [p (+ MM-CODE-BASE (quot at 8)) shift (* 8 (bit-and at 7)) mask (i64-shift-left 255 shift)]
+    (mem-set M p (bit-or (bit-and (vector-at M p) (bit-not mask)) (i64-shift-left (bit-and b 255) shift)))))
 (defn- xg-byte [M :vector-i64 b :i64] :vector-i64
   (let [n (vector-at M MM-CODE-N)]
     (cond (not= (vector-at M MM-ERR) 0) M
-          (>= n MM-CODE-CAP) (xg-err M 7104 n)
-          :else (-> M (mem-set (+ MM-CODE-BASE n) (bit-and b 255)) (mem-set MM-CODE-N (inc n))))))
+          (>= n (* 8 MM-CODE-CAP)) (xg-err M 7104 n)
+          :else (-> M (xg-put-byte (dec n) b) (mem-set MM-CODE-N (inc n))))))
 (defn- xg-bytes [M :vector-i64 bits :i64 n :i64] :vector-i64
   (if (= n 0) M (xg-bytes (xg-byte M bits) (u64-shift-right bits 8) (dec n))))
 (defn- xg-rel [M :vector-i64 op :i64 size :i64 kind :i64 target :i64] :vector-i64
@@ -39,11 +44,16 @@
     (case i 0 0xbd8948 1 0xb58948 2 0x958948 3 0x8d8948 4 0x85894c 0)))
 (defn- xg-params [M :vector-i64 i :i64 n :i64] :vector-i64
   (if (= i n) M
-    (xg-params (xg-bytes (xg-bytes M (xg-arg-op i false) 3) (xg-local (inc i)) 4) (inc i) n)))
+    (xg-params
+      (if (< i 5) (-> M (xg-bytes (xg-arg-op i false) 3) (xg-bytes (xg-local (inc i)) 4))
+        (-> M (xg-bytes 0x858b48 3) (xg-bytes (+ 16 (* 8 (- i 5))) 4)
+            (xg-bytes 0x858948 3) (xg-bytes (xg-local (inc i)) 4))) (inc i) n)))
 (defn- xg-call-args [M :vector-i64 t :i64 i :i64 n :i64] :vector-i64
-  (if (= i n) M (xg-call-args (xg-load M (+ t i) (xg-arg-op i true)) t (inc i) n)))
+  (if (= i n) M
+    (xg-call-args (if (< i 5) (xg-load M (+ t i) (xg-arg-op i true))
+      (-> M (xg-load (+ t i) 0x858b48) (xg-bytes 0x24848948 4) (xg-bytes (* 8 (- i 5)) 4))) t (inc i) n)))
 (defn- xg-frame [M :vector-i64 f :i64] :i64
-  (bit-and (+ 15 (* 8 (+ 1 (xg-f M f FF-NSLOTS) (xg-f M f FF-DEPTH)))) -16))
+  (bit-and (+ 15 (if (= (xg-get M 4) 1) 112 0) (* 8 (+ 1 (xg-f M f FF-NSLOTS) (xg-f M f FF-DEPTH)))) -16))
 (defn- xg-fn [M :vector-i64 f :i64 n :i64] :vector-i64
   (let [at (vector-at M MM-CODE-N) frame (xg-frame M f)]
     (-> M (xg-set 0 f) (mem-set (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) at)
@@ -87,25 +97,50 @@
       9 (xg-label M a) 10 (xg-rel M 0xe9 1 2 a)
       11 (-> M (xg-load a 0x858b48) (xg-bytes 0xc08548 3) (xg-rel 0x840f 2 2 b))
       12 (-> M (xg-load a 0x858b48) (xg-bytes 0xc08548 3) (xg-rel 0x850f 2 2 b))
-      13 (-> M (xg-call-args b 0 c) (xg-rel 0xe8 1 1 a) (xg-save b))
+      13 (-> M (xg-call-args b 0 c) (xg-bytes 0xf84d8b4c 4) (xg-rel 0xe8 1 1 a) (xg-save b))
+      14 (xr-rt M a b c) 15 (xr-cap M a b c) 16 (xr-str M a b) 17 (xr-vec M a b)
       18 (xg-fuel M)
       19 (-> M (xg-load a 0x858b48) (xg-bytes 0xf84d8b4c 4) (xg-bytes 0xc3c9 2))
       20 (xg-bytes M 0x0b0f 2)
+      21 (xr-tab M a b c)
+      22 (-> M (xg-rel 0x058d48 3 1 b) (xg-save a))
+      23 (-> M (xg-call-args b 0 c) (xg-load (+ b c) 0x858b48)
+             (xg-bytes 0xf84d8b4c 4) (xg-bytes 0xd0ff 2) (xg-save b))
+      24 (xr-vecp M a b c)
+      25 (-> M (xg-bytes 0x958948 3) (xg-bytes (xg-temp M a) 4))
+      26 (-> M (xg-load (inc a) 0x958b48) (xg-load a 0x858b48)
+             (xg-bytes 0xf84d8b4c 4) (xg-bytes 0xc3c9 2))
       (xg-err M 7101 op))))
 
 ;; Admission inspects all SIR, including unreachable/unused functions.
 ;; Handles, capabilities, floats, indirect/state calls and >5 arguments refuse.
 (defn- xg-scalar [t :i64] :bool (or (= t TY-I64) (= t TY-BOOL)))
+(defn- xg-type [M :vector-i64 t :i64] :bool
+  (if (= (xg-get M 4) 0) (xg-scalar t)
+    (and (> t 0) (not= t TY-F64) (not= t TY-F32))))
 (defn- xg-types [M :vector-i64 f :i64 i :i64 n :i64] :bool
-  (if (= i n) true (and (xg-scalar (xg-f M f (+ FF-PT0 i))) (xg-types M f (inc i) n))))
+  (if (= i n) true (and (xg-type M (ck-pt M f i)) (xg-types M f (inc i) n))))
+(defn- xg-refuse-fn [M :vector-i64 S :string f :i64 a :i64 b :i64] :vector-i64
+  (let [z (io-err (string-concat "x86 refused function " (string-concat (string-substring S a b)
+            (string-concat " frame=" (string-concat (mem-u2dec (xg-frame M f))
+              (string-concat " kind=" (string-concat (mem-u2dec (xg-f M f FF-KIND))
+                (string-concat " n=" (string-concat (mem-u2dec (xg-f M f FF-NPARAMS))
+                  (string-concat " rt=" (string-concat (mem-u2dec (xg-f M f FF-RTYPE))
+                    (string-concat " sir=" (string-concat (mem-u2dec (xg-f M f FF-SIR)) "\n")))))))))))))]
+    (xg-err M 7102 f)))
 (defn- xg-check-fns [M :vector-i64 S :string f :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= f (vector-at M MM-FN-N))) M
     (let [kind (xg-f M f FF-KIND) n (xg-f M f FF-NPARAMS) sym (xg-f M f FF-SYM)
           sb (+ MM-SYM-BASE (* sym MM-SYM-W)) a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
       (cond (= kind FK-DEF) (xg-check-fns M S (inc f))
-            (or (not (or (= kind FK-DEFN) (= kind FK-PRIV))) (< n 0) (> n 5)
-                (not (xg-types M f 0 n)) (not (xg-scalar (xg-f M f FF-RTYPE)))
-                (<= (xg-f M f FF-SIR) 0) (> (xg-frame M f) 4096)) (xg-err M 7102 f)
+            (and (= (xg-get M 4) 1) (lw-tmpl? M f) (= (xg-f M f FF-SIR) 0))
+              (xg-check-fns M S (inc f))
+            (or (not (or (= kind FK-DEFN) (= kind FK-PRIV) (and (= (xg-get M 4) 1) (or (= kind FK-LAMBDA) (= kind FK-ADAPTER)))))
+                (< n 0) (> n (if (= (xg-get M 4) 1) 16 5))
+                (not (or (and (= (xg-get M 4) 1) (= kind FK-ADAPTER) (> f 1)
+                              (= (xg-f M (dec f) FF-KIND) FK-LAMBDA) (<= n 5))
+                         (xg-types M f 0 n))) (not (xg-type M (xg-f M f FF-RTYPE)))
+                (<= (xg-f M f FF-SIR) 0) (> (xg-frame M f) 4096)) (xg-refuse-fn M S f a b)
             (= (xg-f M f FF-EXPORT) 1)
               (if (and (= n 0) (= (xg-f M f FF-RTYPE) TY-I64) (= (xg-get M 1) 0)
                        (string=? (string-substring S a b) "main"))
@@ -114,12 +149,13 @@
 (defn- xg-check-sir [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B) c (xg-si M i IF-C)
-          allowed (or (and (>= op OP-FN) (<= op OP-CALL)) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP))]
+          allowed (if (= (xg-get M 4) 1) (and (>= op OP-FN) (<= op OP-COUNT))
+                    (or (and (>= op OP-FN) (<= op OP-CALL)) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)))]
       (cond (not allowed) (xg-err M 7101 op)
             (and (= op OP-BIN) (or (< a 1) (> a 10))) (xg-err M 7101 a)
             (and (= op OP-CMP) (or (< a 1) (> a 5))) (xg-err M 7101 a)
             (and (= op OP-UN) (not (or (= a UOP-NOT) (= a UOP-BITNOT)))) (xg-err M 7101 a)
-            (and (= op OP-CALL) (or (<= a 0) (>= a (vector-at M MM-FN-N)) (< c 0) (> c 5)
+            (and (= op OP-CALL) (or (<= a 0) (>= a (vector-at M MM-FN-N)) (< c 0) (> c (if (= (xg-get M 4) 1) 16 5))
                  (not= c (xg-f M a FF-NPARAMS)) (<= (xg-f M a FF-SIR) 0))) (xg-err M 7101 op)
             :else (xg-check-sir M (inc i))))))
 (defn- xg-code [M :vector-i64 i :i64] :vector-i64
@@ -136,13 +172,15 @@
 (defn- xg-fix-target [M :vector-i64 kind :i64 target :i64] :i64
   (case kind 1 (dec (xg-f M target FF-CODE))
              2 (dec (vector-at M (+ MM-LABEL-BASE target)))
-             3 (- (xg-get M 3) 4096) -1))
+             3 (- (xg-get M 3) 4096)
+             4 (vector-at M (+ MM-LIT-BASE (* target MM-LIT-W) LF-POOL))
+             5 (vector-at M (+ MM-LIT-BASE (* target MM-LIT-W) LF-POOL)) -1))
 (defn- xg-patch [M :vector-i64 at :i64 bits :i64 n :i64] :vector-i64
-  (if (= n 0) M (xg-patch (mem-set M (+ MM-CODE-BASE 1 at) (bit-and bits 255)) (inc at) (u64-shift-right bits 8) (dec n))))
+  (if (= n 0) M (xg-patch (xg-put-byte M at bits) (inc at) (u64-shift-right bits 8) (dec n))))
 (defn- xg-fix [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-FIX-N))) M
     (let [b (+ MM-FIX-BASE (* i MM-FIX-W)) at (vector-at M b) kind (vector-at M (+ b 1))
-          target (xg-fix-target M kind (vector-at M (+ b 2))) d (- target (+ at 4))]
+          target (xg-fix-target M kind (vector-at M (+ b 2))) d (if (= kind 4) target (- target (+ at 4)))]
       (if (or (< target 0) (< at 0) (> (+ at 4) (xg-pos M)) (< d -2147483648) (> d 2147483647))
         (xg-err M 7103 i) (xg-fix (xg-patch M at d 4) (inc i))))))
 
@@ -170,12 +208,12 @@
     (xg-pad (out-put M 0) n)))
 (defn- xg-out-code [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-CODE-N))) M
-    (let [b (vector-at M (+ MM-CODE-BASE i))] (xg-out-code (out-put M b) (inc i)))))
+    (let [b (xg-code-byte M (dec i))] (xg-out-code (out-put M b) (inc i)))))
 (defn- xg-elf [M :vector-i64] :vector-i64
   (-> M (mem-set MM-OUT-N 1) (xg-elf-header) (xg-elf-rx) (xg-elf-rw) (xg-elf-stack)
       (xg-pad 4096) (xg-out-code 1) (xg-pad (xg-get M 3)) (xg-out 0 8) (xg-out (xg-get M 2) 8)))
 (defn- xg-build [M :vector-i64 S :string fuel :i64] :vector-i64
-  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-check-fns S 1) (xg-check-sir 1))]
+  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0) (xg-check-fns S 1) (xg-check-sir 1))]
     (cond (not= (vector-at admitted MM-ERR) 0) admitted
           (= (xg-get admitted 1) 0) (xg-err admitted 7102 0)
           (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
@@ -195,15 +233,17 @@
                              (string-concat ", :code-bytes " (string-concat (mem-u2dec (xg-pos M))
                                (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))))]
                   (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))
-(defn- xg-front [S :string] :vector-i64
+(defn- xg-front-h [S :string H :vector-i64] :vector-i64
   (let [m0 (mem-set (mem-new) MM-SRC-LEN (string-length S)) m1 (lx-run m0 S)
         m2 (if (= (vector-at m1 MM-ERR) 0) (rd-run m1 S) m1)
         m3 (if (= (vector-at m2 MM-ERR) 0) (nm-run m2 S) m2)
-        m4 (if (= (vector-at m3 MM-ERR) 0) (ck-run m3 S) m3)]
-    (if (= (vector-at m4 MM-ERR) 0) (lw-run m4) m4)))
+        m4 (if (= (vector-at m3 MM-ERR) 0) (ck-run-h m3 S H) m3)]
+    (if (ck-hint-again? H m4) (xg-front-h S H)
+      (if (= (vector-at m4 MM-ERR) 0) (lw-run m4) m4))))
+(defn- xg-front [S :string] :vector-i64 (xg-front-h S (ck-hint-new)))
 (defn- xg-source [S :string path :string out :string fuel :i64] :i64
-  (let [front (xg-front S)]
-    (if (= (vector-at front MM-ERR) 0) (xg-report (xg-build front S fuel) path out) (drv-fail front path))))
+  (let [text (string-concat S (ck-r6b-lib S)) front (xg-front text)]
+    (if (= (vector-at front MM-ERR) 0) (xg-report (xg-build front text fuel) path out) (drv-fail front path))))
 (defn- xg-budget [s :string] :i64
   (if (or (= (string-length s) 0) (> (string-length s) 16)) -1
     (let [n (mem-parse-dec s 0 (string-length s))] (if (and (> n 0) (<= n 9007199254740991)) n -1))))
@@ -216,6 +256,8 @@
             (let [w (io-err "seed-x86_64-linux: E7100 expected compile SOURCE --target x86_64-linux --output NEW_ELF [--fuel POSITIVE_BUDGET]\n")] 2)
           (= (io-exists src) 0) (drv-fail0 E-READ)
           :else (xg-source (drv-read src) src out fuel))))
-(defn- seed-main [] :i64
+(defn- xg-main [] :i64
   (if (and (>= (io-argc) 4) (string=? (io-arg 0) "compile") (string=? (io-arg 2) "--target")
-           (string=? (io-arg 3) "x86_64-linux")) (xg-command) (drv-main)))
+           (string=? (io-arg 3) "x86_64-linux"))
+    (if (and (= (io-argc) 8) (string=? (io-arg 6) "--format") (string=? (io-arg 7) "kx64-v1"))
+      (xr-command) (xg-command)) (xg-default)))

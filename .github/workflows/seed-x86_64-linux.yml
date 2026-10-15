@@ -7,6 +7,7 @@ on:
       - 'scripts/seed/build-adopted.py'
       - 'scripts/seed/test-x86_64-build-pins.py'
       - 'scripts/seed/check-x86_64-linux.py'
+      - 'scripts/seed/check-x86_64-selfhost.py'
       - '.github/workflows/seed-x86_64-linux.yml'
   push:
     branches: [main]
@@ -16,6 +17,7 @@ on:
       - 'scripts/seed/build-adopted.py'
       - 'scripts/seed/test-x86_64-build-pins.py'
       - 'scripts/seed/check-x86_64-linux.py'
+      - 'scripts/seed/check-x86_64-selfhost.py'
       - '.github/workflows/seed-x86_64-linux.yml'
 permissions:
   contents: read
@@ -23,6 +25,33 @@ concurrency:
   group: seed-x86-linux-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  native-runtime-prepare:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 scripts/seed/check-x86_64-selfhost.py --prepare --output "$RUNNER_TEMP/x86-selfhost"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-x86-selfhost-inputs
+          path: ${{ runner.temp }}/x86-selfhost
+  linux-native-selfhost:
+    needs: native-runtime-prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: native-x86-selfhost-inputs
+          path: ${{ runner.temp }}/x86-selfhost
+      - run: python3 scripts/seed/check-x86_64-selfhost.py --execute-linux --output "$RUNNER_TEMP/x86-selfhost"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-linux-x86-selfhost-evidence
+          path: ${{ runner.temp }}/x86-selfhost
   native-cross-compile:
     runs-on: macos-26
     timeout-minutes: 30
