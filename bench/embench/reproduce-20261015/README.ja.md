@@ -27,7 +27,8 @@
   * 計時区間の下限は 0.5 秒。
   * 燃料上限は 2^35。
   * 同じサイクル内で Kotoba キャンペーン、続けて C キャンペーンを実行。
-* 計測した 19 イメージはソース `be7f0ce3` だけで決まります。レベル (b) は公開ブートストラップから不動点コンパイラ
+* 計測した 19 イメージはソース `be7f0ce3` だけで決まり、計測したコンパイラは selfhost の不動点です。レベル (b) は、
+  JVM・GraalVM・Node.js を使わずに公開ネイティブブートストラップからそれを作ります。レベル (b) は公開ブートストラップから不動点コンパイラ
   G* = S(S) を作り、G* が 19 ポートをバイト単位で同一のイメージにコンパイルすることを示します。
 
 ## 2. 主張していないこと
@@ -48,6 +49,22 @@
   (最小は matmult-int の 0.777 秒)。
 * **C 側。** C 側は改変のない upstream C を Apple clang 17.0.0 `-O2` でビルドしたものだけです。`-O3`、LTO、`-mcpu`、
   プロファイルガイドは使っていません。
+
+## 2a. カーネルの範囲
+
+m93 コンパイラ(`be7f0ce3`)は認定カーネルを含みます。認識した関数の形に対する手書きの AArch64 で、2026年10月15日時点の
+規則のもとで採用されたものです(2 節を参照)。公開後、本プロジェクトは以後のラウンドに向けて、より厳しい規則
+「**同一アルゴリズムのみ**」を採用しました。この規則のもとでは、カーネルが変えてよいのはソース関数の処理を *どう*
+実行するかだけで、*何を* 実行するかは変えられません。次は認められません。
+* 反復の代わりに閉じた式で結果を出すこと。
+* 別のデータ構造上でアルゴリズムを模擬すること。
+* ソースが作らない実行時データ構造を新たに作ること。
+* 繰り返しの間で結果を再利用すること。
+* 別のアルゴリズムを使うこと。
+
+このコンパイラの全カーネルを分類する監査を実施中です。結果の表は [`audit/`](audit/) で公開します。本パッケージは、監査の結果に
+かかわらず、公開した m93 ラウンドを計測どおりに再現します。以後の公式ラウンドは同一アルゴリズムのみのビルドを使い、
+同じスクリプトで実行します(7 節)。
 
 ## 3. 必要なもの
 
@@ -206,6 +223,8 @@ C は Apple clang 17.0.0 でビルドしたものです。結果は次によっ�
 | `records/official/`、`records/fresh-C/` | 両アームの収集記録(レポート、全試行の生データ、受け入れ判定のプローブ、起動スクリプト、カストディ)をそのまま収録 |
 | `records/omitted-files.json` | 同梱しなかった収集ファイル(ハッシュと理由付き) |
 | `expected/` | レベル (b) の固定値:ビルド入力、コンパイラチェーン、計測イメージ |
+| `rounds/` | ラウンド設定(コミット、倍率表、固定値)。`m93-20261015.json` が公開ラウンドで既定値 |
+| `audit/` | m93 コンパイラのカーネル監査表(監査完了時に追加) |
 
 `records/` のファイルは改変のない証拠です。ハッシュがカストディの連鎖の一部なので、計測マシンの絶対パスとホスト名を
 そのまま含みます。スクリプトはそれらのパスを使いません。
@@ -219,3 +238,37 @@ C は Apple clang 17.0.0 でビルドしたものです。結果は次によっ�
   md5sum と tarfind は MIT、depthconv は Apache-2.0)。`ports/PROVENANCE.md` と `bench/embench/licenses/` を参照してください。
 * `c/boardsupport.c` とハーネスは本プロジェクトの計測コードです。タイマーローダは
   `seed/bootstrap/adopted-loader-20261012.c` から派生したもので、その差分が `harness/separated-loader.diff` です。
+
+## 7. 別のラウンドの実行
+
+スクリプトはラウンド設定 `rounds/<name>.json` でパラメータ化されています。既定は公開した m93 ラウンドの
+`rounds/m93-20261015.json` です。設定には次を記載します。
+* 計測するソースのコミット。
+* ステージ A がそのコミットから取るファイル(`seed/00-ns.kotoba`)。
+* ポートとイメージのディレクトリ。
+* ワークロード表。
+* 任意の `multipliers` 表 `{workload: m_w}`。
+* そのラウンドの期待値・事前登録・記録・固定値の場所。
+
+`multipliers` を与えると、n_w = LSF · 8192 · m_w とアリーナの caps を事前登録の規則で計算し直します。規則は、m=1 での使用量
+× m_w が m=1 の容量を超える KEXE 資源の容量を、容量 × m_w にするというものです。制約は 2 つあります。
+* **燃料:** 予測される(ベンチマーク+検証)燃料は 0.9 · 2^35 以下でなければなりません。
+* **ローダの上限:** ペア 64 Mi、文字列プール 1 GiB、ベクタ 64 Mi、ベクタ要素 128 Mi。どれかを超える倍率は実行できません。
+  特に **aha-mont64 は m_w = 1 でしか実行できません**(m = 1 で約 50.3 M ベクタを使います)。statemate は燃料により m_w = 1 です。
+
+許される値は `tools/repro_lib.py:feasible_multipliers` で確認できます。新しいコミットと倍率表の場合:
+
+```
+# 1. コンパイラの連鎖とイメージ(固定値がまだないので記録する)
+python3 bench/embench/reproduce-20261015/b_build.py --round rounds/<name>.json --out /tmp/r-b --record bench/embench/reproduce-20261015/expected/<name>
+# 2. 新しい n_w での期待値を信頼できる参照から導出(候補からは決して導出しない)
+python3 bench/embench/reproduce-20261015/c_reference.py --round rounds/<name>.json --out /tmp/r-cref --write bench/embench/reproduce-20261015/expected/<name>/expected-accounting.json
+# 3. 新しいイメージの完全一致
+python3 bench/embench/reproduce-20261015/c_exactness.py --round rounds/<name>.json --images /tmp/r-b/step4-images --out /tmp/r-c
+# 4. 計時
+python3 bench/embench/reproduce-20261015/d_timing.py --round rounds/<name>.json --images /tmp/r-b/step4-images --upstream /tmp/embench-iot --out /tmp/r-d
+```
+
+その後、記録したファイルを設定の `pins` と `expectedAccounting` に追加すると、以後の実行は記録せずに比較します。公式ラウンドの
+記録は、`records/` と同じ構成に並べれば `a_offline.py --round` で検証できます。
+

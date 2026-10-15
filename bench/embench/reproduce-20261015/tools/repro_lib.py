@@ -179,3 +179,88 @@ def exact(run, expected):
     s = run['sample']
     return bool(run['returncode'] == 0 and s and {k: v for k, v in s.items() if k != 'elapsedNs'} == expected['expectedSample']
                 and run['stderr'] == expected['expectedStderr'] and run['fuelConsistent'])
+
+
+# ---------------------------------------------------------------------------------------------- rounds
+# A round is described by rounds/<name>.json: the measured source commit, the files stage A takes from it, the multiplier
+# table, and where the round's pins / expected values / records live. rounds/m93-20261015.json (the published round) is the
+# default; a later round runs through the same scripts with its own config (see README, "Running another round").
+DEFAULT_ROUND = PKG / 'rounds' / 'm93-20261015.json'
+MULTIPLIERS = (1, 2, 4, 8, 16)
+DEFAULT_CAPACITY = dict(KEXE_PAIRS=4096, KEXE_STRING_POOL=65536, KEXE_VECTORS=4096, KEXE_VECTOR_ITEMS=65536)
+ARENA_OF_CAP = dict(KEXE_PAIRS='pairs', KEXE_STRING_POOL='string-pool-bytes', KEXE_VECTORS='vectors', KEXE_VECTOR_ITEMS='vector-items')
+
+
+def load_round(path=None):
+    p = Path(path) if path else DEFAULT_ROUND
+    if not p.is_absolute() and not p.exists(): p = PKG / p
+    rnd = json.loads(p.read_text()); rnd['_path'] = str(p)
+    return rnd
+
+
+def round_path(rnd, key):
+    """A package-relative path from the round config, or None when the round does not (yet) have it."""
+    v = (rnd.get('pins') or {}).get(key) or rnd.get(key)
+    if not v: return None
+    p = Path(v); p = p if p.is_absolute() else PKG / p
+    return p if p.exists() else None
+
+
+def bootstrap_pins():
+    """The public bootstrap, pinned by the repository's own adoption receipt (seed/adoption-20261012.json)."""
+    rec = json.loads((REPO / 'seed/adoption-20261012.json').read_text())
+    return dict(adoptedSourceCommit=rec['sourceCommit'], adoptedUnitySHA256=rec['sourceUnitySHA256'],
+                adoptedImageSHA256=rec['nativeImageSHA256'], adoptedLoaderSourceSHA256=rec['loaderSourceSHA256'])
+
+
+# Hard ceilings of the trusted loader (seed/bootstrap/adopted-loader-20261012.c: KEXE_PAIR_MAX, KEXE_STRING_POOL_MAX,
+# KEXE_VECTOR_MAX, KEXE_VECTOR_ITEM_MAX); the timing loader keeps them. A multiplier whose projected usage exceeds one is
+# infeasible (e.g. aha-mont64 needs about 50.3 M vectors at m=1, so m=2 would need 100.5 M > 67,108,864).
+LOADER_CEILING = dict(KEXE_PAIRS=64 * 1024 * 1024, KEXE_STRING_POOL=1024 * 1024 * 1024, KEXE_VECTORS=64 * 1024 * 1024, KEXE_VECTOR_ITEMS=128 * 1024 * 1024)
+
+
+class InfeasibleMultiplier(ValueError):
+    pass
+
+
+def m1_accounting(workload):
+    return {e['workload']: e for e in json.loads((PKG / 'reference/expected-original-accounting-m1.json').read_text())}[workload]
+
+
+def caps_rule(workload, m):
+    """Pre-registration cap rule: a KEXE resource whose m=1 usage * m exceeds its m=1 capacity gets capacity * m (never
+    above the loader ceiling); usage above a loader ceiling makes m infeasible."""
+    used = {k: int(v) for k, v in re.findall(r':([a-z-]+) (\d+)', m1_accounting(workload)['expectedStderr'])}
+    cap1 = dict(DEFAULT_CAPACITY); cap1.update({k: int(v) for k, v in caps_for(workload).items() if k in DEFAULT_CAPACITY})
+    out = {}
+    for env in DEFAULT_CAPACITY:
+        need = used[ARENA_OF_CAP[env]] * m
+        if need > LOADER_CEILING[env]:
+            raise InfeasibleMultiplier('%s at m=%d needs %d %s, above the loader ceiling %d' % (workload, m, need, env, LOADER_CEILING[env]))
+        if need > cap1[env]: out[env] = str(min(cap1[env] * m, LOADER_CEILING[env]))
+    return out
+
+
+def feasible_multipliers(workload):
+    """Multipliers allowed by the fuel bound (benchmark+verify fuel <= 0.9 * 2^35, projected linearly from m=1; the exact
+    value at n_w is checked by c_reference.py) and by the loader ceilings."""
+    s = m1_accounting(workload)['expectedSample']; f1 = s['benchmarkFuel'] + s['verifyFuel']; ok = []
+    for m in MULTIPLIERS:
+        try: caps_rule(workload, m)
+        except InfeasibleMultiplier: continue
+        if m * f1 <= int(0.9 * FUEL): ok.append(m)
+    return ok
+
+
+def round_workloads(rnd):
+    """Workload table of a round: LSF, symbols, multiplier m_w, n_w = LSF*8192*m_w and extraCaps. With a `multipliers`
+    override (a dict or a package-relative JSON file {workload: m}) n_w and extraCaps are recomputed by the rules above."""
+    W = {e['workload']: dict(e) for e in json.loads((PKG / rnd['workloads']).read_text())}
+    mult = rnd.get('multipliers')
+    if isinstance(mult, str): mult = json.loads((PKG / mult).read_text())
+    if mult:
+        assert set(mult) == set(W), 'the multiplier table must cover the 19 workloads'
+        for w, m in mult.items():
+            assert m in MULTIPLIERS, (w, m)
+            W[w].update(multiplier=m, n=W[w]['LSF'] * 8192 * m, extraCaps=caps_rule(w, m))
+    return W

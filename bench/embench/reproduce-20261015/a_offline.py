@@ -2,7 +2,8 @@
 """Level (a) OFFLINE: recompute every acceptance decision, every per-workload ratio and the full-19 geometric mean of the
 2026-10-15 m93 round from the published raw records, and check every hash. Pure Python 3, no network, no Apple hardware.
 
-  python3 bench/embench/reproduce-20261015/a_offline.py [--upstream <embench-iot checkout at 09c2ed8c>]
+  python3 bench/embench/reproduce-20261015/a_offline.py [--round rounds/<name>.json] [--upstream <embench-iot checkout at 09c2ed8c>]
+Default round: rounds/m93-20261015.json. Another round's records must use the same layout (records/round, official, fresh-C).
 
 Checks (any failure exits 1):
   1. SHA256SUMS of this package; the collection custody of both arms (every collected file is either vendored here with the
@@ -18,8 +19,9 @@ Checks (any failure exits 1):
 import argparse, hashlib, json, math, re, statistics, sys
 from pathlib import Path
 PKG = Path(__file__).resolve().parent
-REC = PKG / 'records'
+REC = PKG / 'records'                      # set from the round config in main()
 PUBLISHED_GM = 0.7998826447941967
+IMAGES, PORTS, IMAGE_TABLE = PKG / 'images', PKG / 'ports', PKG / 'expected/measured-images.json'
 CPU_ONLY = {'quiet-admission-timeout', 'raw-post-cpu', 'background-cpu'}
 fails = []
 
@@ -53,7 +55,7 @@ def package_sums():
 
 def custody(arm, upstream):
     D = REC / arm; rec = jload(D / 'collection-custody.json'); om = {r['path']: r for r in jload(REC / 'omitted-files.json')[arm]}
-    images = {p.stem: sha_f(p) for p in (PKG / 'images').glob('*.bin')}; vend = present = 0
+    images = {p.stem: sha_f(p) for p in IMAGES.glob('*.bin')}; vend = present = 0
     for row in rec['files']:
         rel = row['path'][len('results/'):] if row['path'].startswith('results/') else row['path']; p = D / rel
         if p.is_file():
@@ -84,21 +86,27 @@ def preregistration():
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--upstream', type=Path, help='optional Embench checkout at 09c2ed8c to verify the omitted upstream files')
+    ap.add_argument('--round', help='round config (default rounds/m93-20261015.json)')
     a = ap.parse_args()
+    global REC, PUBLISHED_GM, IMAGES, PORTS, IMAGE_TABLE
+    rnd = json.loads(((PKG / a.round) if a.round and not Path(a.round).is_absolute() and not Path(a.round).exists() else Path(a.round or PKG / 'rounds/m93-20261015.json')).read_text())
+    REC, PUBLISHED_GM = PKG / rnd['records'], rnd['publishedGM']
+    IMAGES, PORTS, IMAGE_TABLE = PKG / rnd['images'], PKG / rnd['ports'], PKG / rnd['pins']['imageTable']
     nsums = package_sums()
     cust = {arm: custody(arm, a.upstream) for arm in ['official', 'fresh-C']}
     pre_sha, reg, REG = preregistration()
     # the harness used by levels (c)/(d) is exactly what the round ran
-    for h, r in [('harness/workloads.json', 'official/workloads.json'), ('harness/kotoba/run_trigger.py', 'official/run_trigger.py'),
+    same_table = [(rnd['workloads'], 'official/workloads.json')] if not rnd.get('multipliers') else []  # override rounds: checked via the pre-registration
+    for h, r in same_table + [('harness/kotoba/run_trigger.py', 'official/run_trigger.py'),
                  ('harness/c/run_trigger.py', 'fresh-C/run_trigger.py'), ('harness/darwin_cpu_idle.py', 'official/darwin_cpu_idle.py'),
                  ('harness/darwin_cpu_idle.py', 'fresh-C/darwin_cpu_idle.py')]:
         check((PKG / h).read_bytes() == (REC / r).read_bytes(), 'harness file == round file: ' + h)
     for t in sorted((REC / 'official/timers').iterdir()):
         for f in ['timing-extension.h', 'timing-frontend.h']: check((PKG / 'harness' / f).read_bytes() == (t / f).read_bytes(), 'timing header == round file: %s/%s' % (t.name, f))
-    check(jload(PKG / 'expected/measured-images.json').keys() == {e['workload'] for e in jload(REC / 'official/workloads.json')}, 'image table covers the 19 workloads')
-    for w, e in jload(PKG / 'expected/measured-images.json').items():
-        check(sha_f(PKG / 'images' / (w + '.bin')) == e['native']['sha256'] and sha_f(PKG / 'images' / (w + '.kseed')) == e['kseed']['sha256'], 'images/ == measured image ' + w)
-        check(sha_f(PKG / 'ports' / ('official-' + w + '.kotoba')) == e['sourceSHA256'], 'ports/ == measured source ' + w)
+    check(jload(IMAGE_TABLE).keys() == {e['workload'] for e in jload(REC / 'official/workloads.json')}, 'image table covers the 19 workloads')
+    for w, e in jload(IMAGE_TABLE).items():
+        check(sha_f(IMAGES / (w + '.bin')) == e['native']['sha256'] and sha_f(IMAGES / (w + '.kseed')) == e['kseed']['sha256'], 'images/ == measured image ' + w)
+        check(sha_f(PORTS / ('official-' + w + '.kotoba')) == e['sourceSHA256'], 'ports/ == measured source ' + w)
     proto = (REC / 'round/protocol-revision.txt').read_text()
     N = jload(REC / 'official/report.json'); C = jload(REC / 'fresh-C/report.json')
     check(N['status'] == 'COMPLETE_EXPLORATORY_TRANSLATED_PORT_DRIVER_FORMULA' and N.get('full19') is True, 'Kotoba report complete')
@@ -167,7 +175,7 @@ def main():
     ratios = {w: (4 / W[w]['multiplier']) * rows['official'][w]['selected']['elapsedNs'] / rows['fresh-C'][w]['selected']['elapsedNs'] for w in W}
     gm = math.exp(statistics.mean(math.log(v) for v in ratios.values()))
     check(abs(gm - rows['fresh-C']['_gm'] / rows['official']['_gm']) < 1e-12, 'GM of ratios == C GM / Kotoba GM')
-    check(abs(gm - PUBLISHED_GM) < 1e-12, 'published GM 0.7998826447941967')
+    check(abs(gm - PUBLISHED_GM) < 1e-12, 'published GM %r' % PUBLISHED_GM)
     fs = jload(REC / 'round/final-summary.json'); check(abs(fs['KotobaElapsedDividedByC'] - gm) < 1e-12, 'final-summary GM')
     for p in fs['perWorkload']: check(abs(p['KotobaElapsedDividedByC'] - ratios[p['workload']]) < 1e-12, 'final-summary ratio ' + p['workload'])
     print('%-15s %3s %10s %10s %8s %5s' % ('workload', 'm_w', 'K_ns', 'C_ns', 'ratio', 'tries'))
