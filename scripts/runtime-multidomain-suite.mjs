@@ -302,14 +302,21 @@ try {
   // POSIX-shell bridge was deleted; the nbb entrypoint is the supported route).
   report.qualification.perfgate = JSON.parse(execute("nbb",
     [join(root, "scripts", "perfgate-qualify.cljk"), perfgateInput]));
+  const competitiveRunFloorMet = suite !== "competitive"
+    || runs >= minimumCompetitiveRuns;
+  report.qualification.competitiveRunFloorMet = suite === "competitive"
+    ? competitiveRunFloorMet : null;
   report.qualification.comparatorSetQualified
-    = report.qualification.perfgate["comparator-set-qualified?"];
+    = report.qualification.perfgate["comparator-set-qualified?"]
+      && competitiveRunFloorMet;
   report.qualification.broadFastestClaimQualified = false;
-  report.qualification.reason = report.qualification.comparatorSetQualified
-    ? manifest.claimContract.allowedSentence
-    : Object.values(comparatorCoverage).every(value => value.complete)
-      ? "all enumerated comparators cover every domain, but host/perfgate qualification is incomplete"
-      : "the required comparator set does not have complete coverage";
+  report.qualification.reason = !competitiveRunFloorMet
+    ? `competitive run floor not met: got ${runs}, need ${minimumCompetitiveRuns}`
+    : report.qualification.comparatorSetQualified
+      ? manifest.claimContract.allowedSentence
+      : Object.values(comparatorCoverage).every(value => value.complete)
+        ? "all enumerated comparators cover every domain, but host/perfgate qualification is incomplete"
+        : "the required comparator set does not have complete coverage";
   const encoded = `${JSON.stringify(report, null, 2)}\n`;
   if (outputPath) writeFileSync(resolve(outputPath), encoded);
   process.stdout.write(encoded);
