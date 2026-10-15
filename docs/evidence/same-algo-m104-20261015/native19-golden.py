@@ -49,7 +49,7 @@ def main():
             print('%-15s %s' % (name, rows[-1]['nativeSHA256'][:16]), flush=True)
     golden = dict(schema='amu.seed.main-native19.v1', producerCommit=receipt['sourceCommit'], producerNativeSHA256=receipt['nativeImageSHA256'],
                   sourceUnitySHA256=receipt['sourceUnitySHA256'],
-                  source='Archived original19 sources compiled by the adopted same-algorithm compiler (m104 fixed point) with the verify-preserved-integration --main path; regenerated per the #1313 adoption convention',
+                  source='Archived original19 sources compiled by the adopted same-algorithm compiler (m104 plus the SIR capacity raise; fixed point) with the verify-preserved-integration --main path; regenerated per the #1313 adoption convention',
                   images=rows)
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode='w', format=tarfile.USTAR_FORMAT) as t:
