@@ -267,7 +267,7 @@ npm run benchmark-runtime-multidomain -- \
 npm run benchmark-runtime-multidomain -- \
   --suite competitive --n 200 --measure prepared-runtime-polyglot \
   --bundle-sha256 <sha256-from-prepared-polyglot.json> \
-  --runs 5 --calls 100000 --output multidomain-polyglot.json
+  --runs 10 --calls 100000 --output multidomain-polyglot.json
 npm run test-runtime-multidomain
 ```
 
@@ -275,7 +275,12 @@ Every domain must return its independently calculated known answer from both
 core engines. Reports seal source, Wasm, KEXE, extracted native code, native
 provenance, and measurement runners with SHA-256; use paired ABBA/BAAB order;
 and pass their samples to
-`perfgate.core/qualify`. Measure accepts only the caller-bound prepared-index
+`perfgate.core/qualify`. Competitive mode defaults to and requires at least
+10 ABBA/BAAB runs per domain. The smaller five-run default remains available
+for the core diagnostic suite. Ten alternating rounds give every comparator
+pair five measurements in each order. A competitive report with fewer than
+ten runs is refused before timing, so a lower-sample run cannot qualify the
+language comparison. Measure accepts only the caller-bound prepared-index
 digest, which in turn binds every per-domain manifest and artifact hash. It
 never enters the compiler build path. Before timing, the measured busy-CPU
 fraction — aggregate non-idle ticks over each one-second window — must stay at
