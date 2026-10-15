@@ -63,9 +63,25 @@ work is executed. These are not allowed:
 * reusing results across repetitions;
 * a different algorithm.
 
-An audit that classifies every kernel of this compiler is in progress. Its tables will be published in [`audit/`](audit/).
-This package reproduces the published m93 round exactly as measured, whatever the audit finds. A later official round will use
-a same-algorithm-only build and run through the same scripts (section 7).
+**Audit findings for the m93 compiler.** The audit is complete. The policy and the tables are in [`audit/`](audit/):
+`KERNEL-POLICY.md`, `kernels-a.md`, `kernels-b.md`, `kernels-c.md` and `kernels-other.md`. Under the policy, with unsure
+cases counted as substitution, the **measured m93 compiler contains these substitution kernels**:
+* huffbench: `st` (sort-table as a run merge on a copy), `hd` (decode-bits through a per-call scan table) and `eb`
+  (encode-bits per symbol instead of per bit);
+* qrduino: `qa` (all-runs on bit words with a bit transpose), and `bp` and `mr` (blocks-row and mask-row evaluated
+  bit-parallel; unsure);
+* tarfind: `lcg` (the seeded LCG advanced two steps at a time; unsure);
+* ud: the column-0 path of `init` (the row sum in closed form);
+* picojpeg: the whole-block NEON IDCT, which takes DC-only lanes through the AC butterfly instead of the source's fill
+  branch (unsure).
+
+In addition, **nettle-sha256 uses the ARMv8 SHA-256 crypto instructions**. The published 0.7999 includes all of these. The
+**next official round will use a same-algorithm-only build, with the scalar sha256 path**, and will run through the same
+scripts (section 7). This package keeps reproducing the published m93 round exactly as measured.
+
+The tables also cover later development snapshots (m97 to m101), so they list substitution kernels that are not in m93:
+picojpeg's end-of-block bitmask, sglib `qk`, `ls` and `tb`, xgboost `xs`, and slre's set entries were added after m93 or
+never merged. Each statement about m93 above was checked against `seed/41-a64gen.kotoba` at `be7f0ce3`.
 
 ## 3. Requirements
 
@@ -222,7 +238,7 @@ hashes are in `records/fresh-C/source-custody.json`. A different clang builds di
 | `records/omitted-files.json` | collected files not vendored here, with hashes and reasons |
 | `expected/` | pins for level (b): build inputs, compiler chain, measured images |
 | `rounds/` | round configs (commit, multiplier table, pins); `m93-20261015.json` is the published round and the default |
-| `audit/` | kernel audit tables for the m93 compiler (added when the audit is complete) |
+| `audit/` | the kernel scope policy and the kernel audit tables (see section 2a) |
 
 `records/` files are verbatim evidence. They keep the absolute paths and the host label of the measurement machines, because
 their hashes are part of the custody chain. The scripts never use those paths.
