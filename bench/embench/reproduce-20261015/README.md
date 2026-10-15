@@ -27,7 +27,8 @@ On one Apple M4 Mac mini (macOS, arm64), in one measurement cycle on 15 October 
   * a 0.5 s floor on every timed interval;
   * fuel budget 2^35;
   * the Kotoba campaign first, then fresh C, in the same cycle.
-* The 19 measured images depend only on the source `be7f0ce3`. Level (b) builds the fixed-point compiler G* = S(S) from the
+* The 19 measured images depend only on the source `be7f0ce3`, and the measured compiler is a selfhost fixed point. Level (b)
+  builds it from the public native bootstrap with no JVM, GraalVM or Node.js. Level (b) builds the fixed-point compiler G* = S(S) from the
   public bootstrap and shows that G* compiles the 19 ports to byte-identical images.
 
 ## 2. What is not claimed
@@ -49,6 +50,22 @@ On one Apple M4 Mac mini (macOS, arm64), in one measurement cycle on 15 October 
   cleared the 0.5 s floor; the minimum was 0.777 s (matmult-int).
 * **C side.** The C side is the unmodified upstream C with Apple clang 17.0.0 `-O2` only: no `-O3`, LTO, `-mcpu` or profile
   guidance.
+
+## 2a. Kernel scope
+
+The m93 compiler (`be7f0ce3`) contains certified kernels: hand-written AArch64 for recognized function shapes, admitted
+under the rules in force on 15 October 2026 (see section 2). After publication, the project adopted a stricter rule for later
+rounds: **same algorithm only**. Under it, a kernel may change *how* a source function's work is executed, but never *what*
+work is executed. These are not allowed:
+* closed-form results instead of the iterations;
+* simulating the algorithm on another data structure;
+* new run-time data structures the source does not build;
+* reusing results across repetitions;
+* a different algorithm.
+
+An audit that classifies every kernel of this compiler is in progress. Its tables will be published in [`audit/`](audit/).
+This package reproduces the published m93 round exactly as measured, whatever the audit finds. A later official round will use
+a same-algorithm-only build and run through the same scripts (section 7).
 
 ## 3. Requirements
 
@@ -204,6 +221,8 @@ hashes are in `records/fresh-C/source-custody.json`. A different clang builds di
 | `records/official/`, `records/fresh-C/` | the collected campaign records of both arms (reports, raw attempts, quiet-admission probes, invocation scripts, custody), verbatim |
 | `records/omitted-files.json` | collected files not vendored here, with hashes and reasons |
 | `expected/` | pins for level (b): build inputs, compiler chain, measured images |
+| `rounds/` | round configs (commit, multiplier table, pins); `m93-20261015.json` is the published round and the default |
+| `audit/` | kernel audit tables for the m93 compiler (added when the audit is complete) |
 
 `records/` files are verbatim evidence. They keep the absolute paths and the host label of the measurement machines, because
 their hashes are part of the custody chain. The scripts never use those paths.
@@ -217,3 +236,38 @@ their hashes are part of the custody chain. The scripts never use those paths.
   md5sum and tarfind; Apache-2.0 for depthconv); see `ports/PROVENANCE.md` and `bench/embench/licenses/`.
 * `c/boardsupport.c` and the harness are this project's measurement code. The timer loader is derived from
   `seed/bootstrap/adopted-loader-20261012.c`; the derivation is `harness/separated-loader.diff`.
+
+## 7. Running another round
+
+The scripts are parameterized by a round config, `rounds/<name>.json`. The default is `rounds/m93-20261015.json`, the published
+round. A config names:
+* the measured source commit;
+* the files stage A takes from that commit (`seed/00-ns.kotoba`);
+* the port and image directories;
+* the workload table;
+* an optional `multipliers` table `{workload: m_w}`;
+* where the round's expected values, pre-registration, records and pins live.
+
+With a `multipliers` table, n_w = LSF · 8192 · m_w and the arena caps are recomputed by the pre-registration rule. The rule is:
+a KEXE resource whose m=1 usage × m_w exceeds its m=1 capacity gets capacity × m_w. Two limits apply:
+* **Fuel:** projected (benchmark + verify) fuel must stay ≤ 0.9 · 2^35.
+* **Loader ceilings:** pairs 64 Mi, string pool 1 GiB, vectors 64 Mi, vector items 128 Mi. Exceeding one makes a multiplier
+  infeasible. In particular, **aha-mont64 can only run at m_w = 1** (it needs about 50.3 M vectors at m = 1), and statemate
+  is limited to m_w = 1 by fuel.
+
+`tools/repro_lib.py:feasible_multipliers` lists the allowed values. For a new commit and multiplier table:
+
+```
+# 1. compiler chain and images (no pins yet: records them)
+python3 bench/embench/reproduce-20261015/b_build.py --round rounds/<name>.json --out /tmp/r-b --record bench/embench/reproduce-20261015/expected/<name>
+# 2. expected values at the new n_w from the trusted references (never from the candidate)
+python3 bench/embench/reproduce-20261015/c_reference.py --round rounds/<name>.json --out /tmp/r-cref --write bench/embench/reproduce-20261015/expected/<name>/expected-accounting.json
+# 3. exactness of the new images
+python3 bench/embench/reproduce-20261015/c_exactness.py --round rounds/<name>.json --images /tmp/r-b/step4-images --out /tmp/r-c
+# 4. timing
+python3 bench/embench/reproduce-20261015/d_timing.py --round rounds/<name>.json --images /tmp/r-b/step4-images --upstream /tmp/embench-iot --out /tmp/r-d
+```
+
+Then add the recorded files to the config's `pins` and `expectedAccounting`, so that later runs compare instead of record.
+The official round's records can be checked with `a_offline.py --round` once they are laid out like `records/`.
+

@@ -3,7 +3,8 @@
 check result, fuel and the 17-counter arena line against the expected values (records/round/expected-accounting-mw.json,
 re-derivable from the trusted reference images with c_reference.py). Elapsed times are printed but are NOT results.
 
-  python3 bench/embench/reproduce-20261015/c_exactness.py --out <new-dir> [--images <dir>] [--only w1,w2] [--count-instructions]
+  python3 bench/embench/reproduce-20261015/c_exactness.py --out <new-dir> [--round rounds/<name>.json] [--images <dir>]
+                                                         [--only w1,w2] [--count-instructions]
 
 --images: default images/ of this package (the measured images); pass <b_build out>/step4-images to test the images you
           rebuilt yourself with G* (files official-<w>.kseed).
@@ -40,18 +41,24 @@ def find_image(d, w):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--out', required=True, type=Path); ap.add_argument('--images', type=Path, default=R.PKG / 'images')
+    ap.add_argument('--out', required=True, type=Path); ap.add_argument('--images', type=Path)
+    ap.add_argument('--round', help='round config (default rounds/m93-20261015.json)')
     ap.add_argument('--only'); ap.add_argument('--count-instructions', action='store_true')
     a = ap.parse_args(); R.require_macos_arm64()
     loader_sha = check_timer_loader()
-    out = R.fresh_dir(a.out); W = {e['workload']: e for e in R.load('harness/workloads.json')}
-    E = {e['workload']: e for e in R.load('records/round/expected-accounting-mw.json')}
-    measured = R.load('expected/measured-images.json'); pre = {x['workload']: x for x in R.load('records/round/preregistration.json')['workloads']}
+    rnd = R.load_round(a.round); W = R.round_workloads(rnd); images = a.images or R.PKG / rnd['images']
+    exp_p = R.round_path(rnd, 'expectedAccounting')
+    if not exp_p: raise SystemExit('this round has no expected values yet: derive them with c_reference.py --round ... --write <file>')
+    out = R.fresh_dir(a.out); E = {e['workload']: e for e in json.loads(exp_p.read_text())}
+    img_p, pre_p = R.round_path(rnd, 'imageTable'), R.round_path(rnd, 'preregistration')
+    measured = json.loads(img_p.read_text()) if img_p else None
+    pre = {x['workload']: x for x in json.loads(pre_p.read_text())['workloads']} if pre_p else {}
     E1 = {e['workload']: e for e in R.load('reference/expected-original-accounting-m1.json')}
     rows = []; names = a.only.split(',') if a.only else sorted(W)
     for w in names:
-        e = W[w]; exports, image = R.kseed_parts(find_image(a.images, w).read_bytes())
-        same = R.sha(image) == measured[w]['native']['sha256'] and exports == measured[w]['exports']
+        e = W[w]; assert E[w]['n'] == e['n'], ('expected values are for another n', w)
+        exports, image = R.kseed_parts(find_image(images, w).read_bytes())
+        same = (R.sha(image) == measured[w]['native']['sha256'] and exports == measured[w]['exports']) if measured else None
         timer = R.build_timer(out / w, R.PKG / 'harness', image, exports, e)
         run = R.run_timer(timer, e['n'], R.caps_for(w, e['extraCaps'])); ok = R.exact(run, E[w])
         row = dict(workload=w, multiplier=e['multiplier'], n=e['n'], imageSHA256=R.sha(image), imageIdenticalToMeasured=same, exact=ok,
@@ -63,13 +70,13 @@ def main():
                 line = [l for l in r['stderr'].splitlines() if l.startswith('DIAG_IC ')][0]; counts.append(int(line.split()[1].split('=')[1]))
                 r['stderr'] = '\n'.join(l for l in r['stderr'].splitlines() if not l.startswith('DIAG_IC ')) + '\n'
                 if not R.exact(r, E1[w]): raise SystemExit('instruction-count run not exact at m=1: ' + w)
-            row.update(instructions=counts, preregisteredI=pre[w]['I'], relativeToPreregistered=min(counts) / pre[w]['I'])
+            row.update(instructions=counts, preregisteredI=pre.get(w, {}).get('I'), relativeToPreregistered=(min(counts) / pre[w]['I']) if w in pre else None)
         rows.append(row)
         print('%-15s m_w %2d n %9d exact=%s imageAsMeasured=%s%s' % (w, e['multiplier'], e['n'], ok, same,
-              ('  I %.4g vs pre-registered %.4g (x%.4f)' % (min(row['instructions']), pre[w]['I'], row['relativeToPreregistered'])) if a.count_instructions else ''), flush=True)
+              (('  I %.4g vs pre-registered %.4g (x%.4f)' % (min(row['instructions']), pre[w]['I'], row['relativeToPreregistered'])) if w in pre else '  I %.4g' % min(row['instructions'])) if a.count_instructions else ''), flush=True)
     status = 'PASS' if all(r['exact'] for r in rows) and len(rows) == (len(names)) else 'FAIL'
-    if a.count_instructions and any(abs(r['relativeToPreregistered'] - 1) > 0.02 for r in rows): status = 'FAIL'
-    (out / 'report.json').write_text(json.dumps(dict(level='c-exactness', timerLoaderSHA256=loader_sha, workloads=len(rows), rows=rows, status=status), indent=1) + '\n')
+    if a.count_instructions and any(r['relativeToPreregistered'] is not None and abs(r['relativeToPreregistered'] - 1) > 0.02 for r in rows): status = 'FAIL'
+    (out / 'report.json').write_text(json.dumps(dict(level='c-exactness', round=rnd['round'], timerLoaderSHA256=loader_sha, workloads=len(rows), rows=rows, status=status), indent=1) + '\n')
     print('LEVEL_C', status, '%d/%d exact' % (sum(r['exact'] for r in rows), len(rows)))
     sys.exit(0 if status == 'PASS' else 1)
 

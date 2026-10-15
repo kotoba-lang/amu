@@ -3,7 +3,8 @@
 ratio_w = (4/m_w) * K_ns / C_ns on YOUR machine.
 
   python3 bench/embench/reproduce-20261015/tools/fetch_upstream.py --dest <upstream-dir>
-  python3 bench/embench/reproduce-20261015/d_timing.py --upstream <upstream-dir> --out <new-dir> [--workloads w1,w2]
+  python3 bench/embench/reproduce-20261015/d_timing.py --upstream <upstream-dir> --out <new-dir> [--round rounds/<name>.json]
+                                                       [--images <dir>] [--workloads w1,w2]
 
 Protocol (the official harness files, unchanged): the upstream Embench driver benchmark_speed.py with the target module
 harness/kotoba/run_trigger.py (Kotoba, GSF 8192, n_w = LSF*8192*m_w) and harness/c/run_trigger.py (C, GSF 32768); warm-up 1,
@@ -60,13 +61,16 @@ def collect(root, names, gsf, mult, baseline):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--upstream', required=True, type=Path); ap.add_argument('--out', required=True, type=Path)
-    ap.add_argument('--images', type=Path, default=R.PKG / 'images'); ap.add_argument('--c-binaries', type=Path); ap.add_argument('--workloads')
+    ap.add_argument('--images', type=Path); ap.add_argument('--c-binaries', type=Path); ap.add_argument('--workloads')
+    ap.add_argument('--round', help='round config (default rounds/m93-20261015.json)')
     a = ap.parse_args(); R.require_macos_arm64()
     subprocess.run([sys.executable, str(R.PKG / 'tools/fetch_upstream.py'), '--dest', str(a.upstream), '--verify-only'], check=True)
     out = R.fresh_dir(a.out); up = a.upstream.resolve()
-    W = {e['workload']: e for e in R.load('harness/workloads.json')}; names = a.workloads.split(',') if a.workloads else sorted(W)
+    rnd = R.load_round(a.round); W = R.round_workloads(rnd); names = a.workloads.split(',') if a.workloads else sorted(W)
+    images = a.images or R.PKG / rnd['images']; exp_p = R.round_path(rnd, 'expectedAccounting')
+    if not exp_p: raise SystemExit('this round has no expected values yet: derive them with c_reference.py --round ... --write <file>')
     baseline = json.loads((up / 'baseline-data/speed.json').read_text()); mult = {w: W[w]['multiplier'] for w in W}
-    report = dict(level='d-timing', started=time.time(), workloads=names, full19=len(names) == 19, protocol='round 2026-10-15 m93 (see README)')
+    report = dict(level='d-timing', round=rnd['round'], started=time.time(), workloads=names, full19=len(names) == 19, protocol='round 2026-10-15 m93 (see README)')
     def save(): (out / 'report.json').write_text(json.dumps(report, indent=1) + '\n')
     # C binaries
     cdir = a.c_binaries
@@ -74,9 +78,9 @@ def main():
         subprocess.run([sys.executable, str(R.PKG / 'c/build_c.py'), '--upstream', str(up), '--out', str(out / 'c-build')], check=True); cdir = out / 'c-build'
     # ---- Kotoba arm
     K = out / 'kotoba'; setup_root(K, up, R.PKG / 'harness/kotoba/run_trigger.py')
-    shutil.copyfile(R.PKG / 'records/round/expected-accounting-mw.json', K / 'expected-original-accounting.json')
+    shutil.copyfile(exp_p, K / 'expected-original-accounting.json')
     for w in names:
-        e = W[w]; kseed = next(p for p in [Path(a.images) / (w + '.kseed'), Path(a.images) / ('official-' + w + '.kseed')] if p.is_file())
+        e = W[w]; kseed = next(p for p in [Path(images) / (w + '.kseed'), Path(images) / ('official-' + w + '.kseed')] if p.is_file())
         exports, image = R.kseed_parts(kseed.read_bytes()); timer = R.build_timer(K / 'timers' / w, R.PKG / 'harness', image, exports, e)
         caps = R.caps_for(w, e['extraCaps']); d = K / 'results/measured/src' / w; d.mkdir()
         import shlex

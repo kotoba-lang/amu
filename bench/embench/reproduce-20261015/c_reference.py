@@ -2,7 +2,10 @@
 """Level (c), part 2: RE-DERIVE the expected exactness values at every n_w from the TRUSTED reference images, never from the
 candidate, and compare them with records/round/expected-accounting-mw.json.
 
-  python3 bench/embench/reproduce-20261015/c_reference.py --out <new-dir> [--jobs 3] [--only w1,w2]
+  python3 bench/embench/reproduce-20261015/c_reference.py --out <new-dir> [--round rounds/<name>.json] [--write <file>]
+                                                         [--jobs 3] [--only w1,w2]
+For a new round (its own multiplier table) --write produces the round's expected-values file (same schema as
+records/round/expected-accounting-mw.json); for a round that has one, the derived values are compared with it.
 
 References (reference/, with their export tables in reference/reference-images.json):
   round51  : the original translated ports compiled by the qualified WM G4 fixed point. Their round51 raw records are where
@@ -26,8 +29,10 @@ def points(m): return sorted({1} if m == 1 else ({1, 2, m // 2, m} | ({3} if m =
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--out', required=True, type=Path); ap.add_argument('--jobs', type=int, default=3); ap.add_argument('--only')
+    ap.add_argument('--round', help='round config (default rounds/m93-20261015.json)'); ap.add_argument('--write', type=Path)
     a = ap.parse_args(); R.require_macos_arm64(); out = R.fresh_dir(a.out)
-    W = {e['workload']: e for e in R.load('harness/workloads.json')}; E = {e['workload']: e for e in R.load('records/round/expected-accounting-mw.json')}
+    rnd = R.load_round(a.round); W = R.round_workloads(rnd); exp_p = R.round_path(rnd, 'expectedAccounting')
+    E = {e['workload']: e for e in json.loads(exp_p.read_text())} if exp_p else None
     E1 = {e['workload']: e for e in R.load('reference/expected-original-accounting-m1.json')}; ref = R.load('reference/reference-images.json')
     names = a.only.split(',') if a.only else sorted(W); jobs = []
     for w in names:
@@ -42,17 +47,21 @@ def main():
         return (w, which, m), r
     with ThreadPoolExecutor(a.jobs) as ex: res = dict(ex.map(go, jobs))
     strip = lambda s: {k: v for k, v in s.items() if k != 'elapsedNs'}
-    table = []; fails = []
+    table = []; fails = []; derived = []
     for w in names:
         m = W[w]['multiplier']
         for (ww, which, mm), r in res.items():
             if ww == w and mm == 1 and not R.exact(r, E1[w]): fails.append('%s %s does not reproduce the m=1 values' % (which, w))
-            if ww == w and not (r['returncode'] == 0 and r['fuelConsistent']): fails.append('%s %s m=%d failed' % (which, w, mm))
+            if ww == w and not (r['returncode'] == 0 and r['fuelConsistent']): fails.append('%s %s m=%d failed: %s' % (which, w, mm, r['stderr'].strip()[-200:]))
         a51, a114 = res[(w, 'round51', m)], res[(w, 'round114', m)]
+        if not all(res[(w, wh, mm)]['sample'] for (ww, wh, mm) in res if ww == w):
+            table.append(dict(workload=w, multiplier=m, failed=True)); print('%-15s m_w %2d reference run failed (see report)' % (w, m), flush=True); continue
         agree = strip(a51['sample']) == strip(a114['sample']) and a51['stderr'] == a114['stderr']
-        matches = strip(a51['sample']) == E[w]['expectedSample'] and a51['stderr'] == E[w]['expectedStderr']
+        matches = (strip(a51['sample']) == E[w]['expectedSample'] and a51['stderr'] == E[w]['expectedStderr'] and E[w]['n'] == W[w]['n']) if E else None
         if not agree: fails.append('references disagree at n_w: ' + w)
-        if not matches: fails.append('derived values differ from the published expected values: ' + w)
+        if matches is False: fails.append('derived values differ from the published expected values: ' + w)
+        derived.append(dict(workload=w, n=W[w]['n'], LSF=W[w]['LSF'], multiplier=m, expectedSample=strip(a51['sample']), expectedStderr=a51['stderr'],
+                            derivation='round51 WM-G4 original image at n=LSF*8192*m_w (c_reference.py); round114 image agrees; both reproduce the m=1 values'))
         series = {mm: dict({k: res[(w, 'round51', mm)]['sample'][k] for k in ['benchmarkFuel', 'verifyFuel', 'result']},
                            **{k: int(v) for k, v in __import__('re').findall(r':([a-z-]+) (\d+)', res[(w, 'round51', mm)]['stderr'])}) for mm in points(m)}
         lin = {}
@@ -65,7 +74,9 @@ def main():
                           nonAffineFields=[k for k, v in lin.items() if not v], fuelAtNw=a51['sample']['benchmarkFuel'] + a51['sample']['verifyFuel']))
         print('%-15s m_w %2d points %-14s agree=%s published=%s nonAffine=%s' % (w, m, pts, agree, matches, table[-1]['nonAffineFields']), flush=True)
     status = 'PASS' if not fails else 'FAIL'
-    (out / 'report.json').write_text(json.dumps(dict(level='c-reference', table=table, failures=fails, status=status), indent=1) + '\n')
+    if a.write and not fails:
+        a.write.parent.mkdir(parents=True, exist_ok=True); a.write.write_text(json.dumps(derived, indent=1) + '\n'); print('wrote', a.write)
+    (out / 'report.json').write_text(json.dumps(dict(level='c-reference', round=rnd['round'], table=table, failures=fails, status=status), indent=1) + '\n')
     print('LEVEL_C_REFERENCE', status, fails[:5])
     sys.exit(0 if status == 'PASS' else 1)
 
