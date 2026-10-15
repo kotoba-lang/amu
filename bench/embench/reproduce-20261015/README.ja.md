@@ -14,9 +14,8 @@
   ドライバ、文書化した反復あたりの比率式で全19 workloadを計測しています。記録済みの Apple M4 の結果は
   **Kotoba / C = 0.8213** です。Kotoba のポートとプロジェクト固有ハーネスを使うため、これは **Embench に基づく翻訳ポートの比較**であり、
   公式・認定 Embench スコアではありません。
-* 新しい M1 Max の結果は未計測です。M104 のプロトコルは各試行前の raw CPU idle 70%以上、全計測区間で raw idle と推定 background
-  idle がともに70%以上、両アームで全19/19採用、Kotoba 出力の完全一致、raw 記録の保存を求めます。全件計測を完了し、raw 記録をプロトコルと
-  独立照合するまで M1 の結果は主張しません。
+* 2026-10-16 の Apple M1 Max 試行は、測定記録を残しましたが **不採択で、スコアではありません**。外部の10秒 raw-idleゲートは1回70.39%に達して計測を開始しましたが、Kotoba/C両アームで実行できた `aha-mont64` は各2試行とも計測区間の raw idle 70%未満で不採択でした。残る18 workloadは静穏ゲートのタイムアウトで実行されず、両アームとも0/19採用、GMなしです。全 raw 記録は `round-sa-m104-20261015/records/m1-attempt-20261016-r1/` にあります。
+* M104 のプロトコルは各試行前の raw CPU idle 70%以上、全計測区間で raw idle と推定 background idle がともに70%以上、両アームで全19/19採用、Kotoba 出力の完全一致、raw 記録の保存を求めます。全件計測を完了し、raw 記録をプロトコルと独立照合するまで M1 のスコアは主張しません。
 
 測定方法の参照元は [Embench User Guide](https://github.com/embench/embench-iot/blob/master/doc/README.md) と、固定した
 [Embench upstream source](https://github.com/embench/embench-iot/tree/09c2ed8c3b7008c95d08b038de4a3f6dc103ed70) です。
@@ -255,6 +254,7 @@ python3 bench/embench/reproduce-20261015/d_timing.py --round rounds/m93-20261015
 | `reference/` | 信頼できる参照イメージ(round51 WM G4、round114)とそのエクスポート表、m=1 の元の期待値 |
 | `records/round/` | プロトコル改訂の本文、ハッシュ付きの事前登録、参照会計レシート、n_w での期待値、コンパイル・準備・事前検査のレシート、検証レビュー、最終サマリ |
 | `records/official/`、`records/fresh-C/` | 両アームの収集記録(レポート、全試行の生データ、受け入れ判定のプローブ、起動スクリプト、カストディ)をそのまま収録 |
+| `round-sa-m104-20261015/records/m1-attempt-20261016-r1/` | M1 Max の未採択試行、CPUゲート証跡、全 raw 試行記録。ベンチマークスコアではない |
 | `records/omitted-files.json` | 同梱しなかった収集ファイル(ハッシュと理由付き) |
 | `expected/` | レベル (b) の固定値:ビルド入力、コンパイラチェーン、計測イメージ |
 | `rounds/` | ラウンド設定(コミット、倍率表、固定値)。`sa-m104-20261015.json` が訂正版の既定値。M93 は履歴 |

@@ -14,10 +14,14 @@ This directory lets a third party check, rebuild and re-time the result publishe
   SHA-256, the pinned upstream Embench speed driver and the documented per-iteration ratio formula. Its recorded Apple M4
   result is **Kotoba / C = 0.8213**. This is an **Embench-derived translated-port comparison**, not an official or certified
   Embench score: the Kotoba programs use a project-specific translation and harness.
-* A fresh M1 Max result is pending. The M104 protocol requires a quiet-host gate (at least 70% raw CPU idle before each
-  benchmark attempt, with raw and estimated background idle also at least 70% during every timed run), full 19/19 acceptance
-  for both arms, exact Kotoba outputs, and retained raw records. No M1 timing result is
-  claimed until that full run passes and its raw records are independently checked against the protocol.
+* The 16 October 2026 Apple M1 Max attempt retained its records but was **rejected and is not a score**. The external
+  10-second raw-idle gate reached 70.39% once and started the campaign, but the two executed `aha-mont64` attempts in each
+  arm were rejected because raw idle during timing was below 70%. The other 18 workloads timed out at quiet admission and
+  did not execute. Both arms accepted 0/19 workloads, so there is no geometric mean. The full raw record is in
+  `round-sa-m104-20261015/records/m1-attempt-20261016-r1/`.
+* The M104 protocol requires at least 70% raw CPU idle before each attempt, raw and estimated background idle at least 70%
+  during every timed run, full 19/19 acceptance for both arms, exact Kotoba outputs, and retained raw records. No M1 score
+  is claimed until a full run passes and its raw records are independently checked against the protocol.
 
 The method reference is the [Embench User Guide](https://github.com/embench/embench-iot/blob/master/doc/README.md) and the
 pinned [Embench upstream source](https://github.com/embench/embench-iot/tree/09c2ed8c3b7008c95d08b038de4a3f6dc103ed70). The
@@ -255,6 +259,7 @@ hashes are in `records/fresh-C/source-custody.json`. A different clang builds di
 | `reference/` | trusted reference images (round51 WM G4, round114) with export tables, and the original m=1 expected values |
 | `records/round/` | protocol revision text, hashed pre-registration, reference-accounting receipt, expected values at n_w, compile/preparation/precheck receipts, verifier review, final summary |
 | `records/official/`, `records/fresh-C/` | the collected campaign records of both arms (reports, raw attempts, quiet-admission probes, invocation scripts, custody), verbatim |
+| `round-sa-m104-20261015/records/m1-attempt-20261016-r1/` | rejected M1 Max attempt, CPU gate evidence, and all raw attempt records; not a benchmark score |
 | `records/omitted-files.json` | collected files not vendored here, with hashes and reasons |
 | `expected/` | pins for level (b): build inputs, compiler chain, measured images |
 | `rounds/` | round configs (commit, multiplier table, pins); `sa-m104-20261015.json` is the default corrected round; M93 is historical |
