@@ -110,6 +110,18 @@ Raw failed attempts and logs remain in the caller's workspace.
 
 ## Runtime profile and Linux self-build
 
+Verified at source/test commit `112b8a7b23f4f8eb6094fb804f5cf9c8fd7dd49f`:
+[all four native target CI jobs passed](https://github.com/kotoba-lang/amu/actions/runs/38717513906).
+Actual x86_64 Linux G1/G2/G3 compiler payloads and containers match byte for
+byte. The24 runtime cases match AArch64 results/traps/fuel, six refusal cases
+pass, and55 standalone ELF regressions pass on Linux. The local Rosetta run
+has the same whole compiler/guest bytes; a512 KiB launch-stack diagnostic also
+rebuilds the compiler. Evidence and raw archives are indexed in
+[`runtime-selfhost-qualification.json`](evidence/native-x86_64-linux-20261015/runtime-selfhost-qualification.json).
+This qualifies the source-only compiler profile described here; public
+launcher/release adoption, whole-project linking, Q9 and performance remain
+separate gates.
+
 `seed/X86_64-LINUX-SELFHOST-MANIFEST` selects the source-only compiler closure.
 The build uses the adopted native AArch64 compiler to generate an AArch64
 bridge from this exact closure. That bridge emits the first x86 compiler.

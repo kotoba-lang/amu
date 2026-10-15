@@ -1,6 +1,33 @@
-# Native x86_64 Linux scalar profile — evidence
+# Native x86_64 Linux — evidence
 
-Latest qualification: review-fix-qualification.json, source/test head
+Latest runtime/selfhost qualification: `runtime-selfhost-qualification.json`,
+source/test head `112b8a7b23f4f8eb6094fb804f5cf9c8fd7dd49f`, successful CI
+https://github.com/kotoba-lang/amu/actions/runs/38717513906 (all four jobs).
+
+The source-only x86 compiler rebuilds itself twice on actual x86_64 Linux.
+Native payloads and tagged containers are identical across G1/G2/G3 and the
+independent local Rosetta run. Native SHA256:
+`698b280b0cc80678b85a7af029a06624ee6b510a454d8995a04b26a532a36cb6`.
+Twenty-four runtime programs agree with AArch64 on result/trap and remaining
+fuel; six refusal/preservation cases pass. The current full optional cross
+closure also passes G1/G2 identity,55 actual Linux ELF executions,14 refusals,
+and three unchanged legacy AArch64 containers. Three input mutation controls
+are mock-only orchestration checks. A separate local512 KiB launch-stack
+diagnostic regenerates the exact same compiler container.
+
+`runtime-selfhost-results.tgz` contains compiler generations/source, raw
+compile/execution logs and input pins, the current scalar suite, plus separate
+historical Linux failures and the older AArch64 leaf-trap fuel observation.
+The exact digest and report bindings are in the qualification JSON. The Linux
+bootstrap wrapper includes the pinned trusted loader unchanged, reserves512
+KiB of stack below its1 MiB budget, and uses glibc startup heap headroom. Its
+syscall filter, grants and process limits stay unchanged. No JVM/Node/Graal
+fallback, C-free, performance, Q9, release or main-adoption claim is made.
+The optional source compiler currently refuses project/KIR/float routes.
+
+The records below describe the earlier scalar-only qualification.
+
+Earlier scalar qualification: review-fix-qualification.json, source/test head
 8578ec0b36f821180ae315923c72084ec385fc1b, successful native build and actual
 Linux ELF execution in https://github.com/kotoba-lang/amu/actions/runs/38702004955.
 All55 local/CI ELF and raw images and the native compiler match exactly.
@@ -48,4 +75,4 @@ than guessing its source charge count. No compiler or guest code was changed
 to resolve that test expectation.
 
 No benchmark speed, x86 selfhost, whole-component, release, default launcher or
-main adoption claim follows from this evidence.
+main adoption claim follows from those historical scalar-only records.
