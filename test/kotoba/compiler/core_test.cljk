@@ -24,6 +24,17 @@
    (defn helper [value] (+ (audit value) 1))
    (defn main [] 42)")
 
+(deftest kototama-data-i64-profile-carries-public-methods
+  (let [source "(ns demo (:export [echo])
+                 (defn echo [text :string] :string text))"
+        result (compiler/compile-kototama source)
+        program (nth (:program-node result) 2)]
+    (is (= "kototama.data-i64/v1" (get program "value-profile")))
+    (is (= ["echo"] (get program "exports")))
+    (is (= ["value"] (get-in program ["methods" "echo" "param-types"])))
+    (is (= "value" (get-in program ["methods" "echo" "result"])))
+    (is (some? (:program-cid result)))))
+
 (deftest native-artifact-bytes-are-derived-from-the-sealed-program
   (doseq [[target emit-program]
           [[:x86_64-kotoba-v1 x86-64/emit-program]
