@@ -540,7 +540,9 @@ The Kototama, Wasm and ordinary native compile paths run through `nbb`
 (ClojureScript on Node); **no JVM process is spawned**. The isolated Wasm and
 ordinary native entrypoints load their selected backend. The default Kototama
 entrypoint currently requires `kotoba.compiler.core`, whose dependency closure
-includes the Wasm, Component, CLJS, EVM, Script, x86-64 and AArch64 backends. `check`, `definition-cids`,
+includes the Wasm, Component, CLJS, EVM, Script, x86-64 and AArch64 backends.
+
+`check`, `definition-cids`,
 `module-lock` and `package-*` take no target.
 The frontend reader/validator
 (`kotoba.compiler.frontend`), the KIR lowering/compile-time oracle
