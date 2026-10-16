@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #if defined(__APPLE__) && defined(__aarch64__)
+#include <pthread.h>
 #include <sched.h>
 #endif
 
@@ -290,14 +291,18 @@ static void containment_forward(int signal_number, siginfo_t *info,
        resumes a default SIGTRAP, put containment back before returning.
        The signal is blocked while its handler runs, so unblock it before
        raising it; otherwise it remains pending until this handler returns. */
-    sigaction(signal_number, previous, NULL);
+    if (sigaction(signal_number, previous, NULL) != 0)
+      _Exit(128 + signal_number);
     sigset_t signal_set;
     sigemptyset(&signal_set);
     sigaddset(&signal_set, signal_number);
-    if (sigprocmask(SIG_UNBLOCK, &signal_set, NULL) != 0) return;
-    if (raise(signal_number) != 0) return;
-    if (sigprocmask(SIG_BLOCK, &signal_set, NULL) != 0) return;
-    sigaction(signal_number, &containment_action, NULL);
+    if (pthread_sigmask(SIG_UNBLOCK, &signal_set, NULL) != 0)
+      _Exit(128 + signal_number);
+    if (raise(signal_number) != 0) _Exit(128 + signal_number);
+    if (pthread_sigmask(SIG_BLOCK, &signal_set, NULL) != 0)
+      _Exit(128 + signal_number);
+    if (sigaction(signal_number, &containment_action, NULL) != 0)
+      _Exit(128 + signal_number);
     return;
   }
   if ((previous->sa_flags & SA_SIGINFO) != 0)
