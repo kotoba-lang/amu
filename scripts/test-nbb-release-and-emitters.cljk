@@ -244,6 +244,35 @@
                   (.equals original after)
                   (not (.existsSync fs (file "macos-collision.edn"))))
              (:stderr r)))
+  ;; macOS volumes are often case-insensitive even though the names differ.
+  ;; Exercise the alias on those volumes; every runner also covers lexical
+  ;; aliases through the shared path check.
+  (let [case-alias (.join path tmp "MACOS.KEXE")]
+    (when (.existsSync fs case-alias)
+      (let [original (.readFileSync fs (file "macos.kexe"))
+            r (amu! "package-macos" "macos.kexe" "--output" "MACOS.KEXE"
+                    "--manifest-output" "case-collision.edn")
+            after (.readFileSync fs (file "macos.kexe"))]
+        (record! "package-macos refuses a case-insensitive input alias before writing"
+                 (and (refused-with? r "must be distinct")
+                      (.equals original after)
+                      (not (.existsSync fs (file "case-collision.edn"))))
+                 (:stderr r)))))
+  (let [hardlink (file "macos-hardlink.kexe")]
+    (try
+      (.linkSync fs (file "macos.kexe") hardlink)
+      (let [original (.readFileSync fs (file "macos.kexe"))
+            r (amu! "package-macos" "macos.kexe" "--output" "macos-hardlink.kexe"
+                    "--manifest-output" "hardlink-collision.edn")
+            after (.readFileSync fs (file "macos.kexe"))]
+        (record! "package-macos refuses a hard-linked input alias before writing"
+                 (and (refused-with? r "must be distinct")
+                      (.equals original after)
+                      (not (.existsSync fs (file "hardlink-collision.edn"))))
+                 (:stderr r)))
+      (catch :default _ nil)
+      (finally
+        (.rmSync fs hardlink #js {:force true}))))
 
   ;; ── cljs emission, EXECUTED ───────────────────────────────────────────
   (let [r (amu! "compile" (.join path root "examples" "fuel.kotoba")
