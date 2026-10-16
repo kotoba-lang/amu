@@ -6,7 +6,7 @@ new Embench score.
 ## Source and fixed point
 
 The adopted source is the 16-module `seed/MANIFEST` unity at source commit
-`2ee6d9b5b94e64b6fc1e353ab14130f3f660fd78`, SHA-256
+`2f17a378527d07aebb948857b980d6ff0bf53095`, SHA-256
 `5cdd9f8725201c10d19936ced5d1f8c9a199d645f280b6144c49779381303419`
 (2,772,145 bytes). It adds A r7 and B decision-tree lowering with the four
 validated step-4 patches. The C LICM experiment is excluded because it failed
@@ -28,7 +28,7 @@ and [difftest-shard1.log](difftest-shard1.log) through
 
 The policy-native golden was regenerated from the archived original 19 sources
 with the adopted image. Its JSON SHA-256 is
-`97440b6e3fecf0e3f6c9695698663cadeeb182c3598dfad49790da0471daa1e2`; the
+`1434b30d58b2bdba83913b5ec166ae76aa39005b9f1079ace41e3cbecb94272e`; the
 deterministic archive SHA-256 is
 `26b2d89aaafa62368ea1772fd2e086d62cab87ba6851af9808556e202c7cab16`.
 The regeneration command is:
