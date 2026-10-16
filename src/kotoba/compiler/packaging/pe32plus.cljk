@@ -677,17 +677,21 @@
                                  :context-address context-address
                                  :sealed-fuel sealed-fuel})))
             ;; Two loader-private segment destinations precede boot-info.
-            ;; Boot-info v6 retains the firmware-map, W^X and scratch fields,
-            ;; then optional payload pointer/length words. A bounded GOP mode
-            ;; record follows the memory-map window.
-            variables-size 112
+            ;; Keep the v4 payload handoff byte-for-byte compatible for the
+            ;; finite boot profiles. The resident desktop uses v6 and stores
+            ;; GOP mode scalars in a loader-owned record after the map.
+            variables-size (if (and payload? (not resident?)) 128 112)
             memory-map-offset (align variables-size 16)
             memory-map-capacity 16384
-            gop-info-offset (align (+ memory-map-offset memory-map-capacity) 16)
-            gop-info-bytes 64
-            gop-guid-offset (align (+ gop-info-offset gop-info-bytes) 16)
-            gop-interface-offset (+ gop-guid-offset 16)
-            embedded-offset (align (+ gop-interface-offset 8) 16)
+            gop-info-offset (when resident?
+                              (align (+ memory-map-offset memory-map-capacity) 16))
+            gop-info-bytes (if resident? 64 0)
+            gop-guid-offset (when resident?
+                              (align (+ gop-info-offset gop-info-bytes) 16))
+            gop-interface-offset (when resident? (+ gop-guid-offset 16))
+            embedded-offset (if resident?
+                              (align (+ gop-interface-offset 8) 16)
+                              (align (+ memory-map-offset memory-map-capacity) 16))
             payload-offset embedded-offset
             kernel-offset (align (+ payload-offset (count payload)) 16)
             status-prefix "AIUEOS K16 PREFLIGHT STATUS "
@@ -762,7 +766,12 @@
                     [0x4c 0x8d 0x0d] [(rip :scratch-address)]
                     [0x41 0xff 0x56 0x28 0x48 0x85 0xc0 0x0f 0x85]
                     [(rip :fail)]
-                    (locate-gop-tokens (count payload))
+                    (when resident? (locate-gop-tokens (count payload)))
+                    (when (and payload? (not resident?))
+                      (concat [0x48 0x8d 0x05] [(rip :payload)]
+                              [0x48 0x89 0x05] [(rip :payload-pointer)]
+                              [0xb8] (le (count payload) 4)
+                              [0x48 0x89 0x05] [(rip :payload-length)]))
                     ;; The bounded memory map is part of the loader image's RW
                     ;; section, immediately after boot-info. This makes the
                     ;; handoff one compiler-owned region: the kernel derives
@@ -799,7 +808,7 @@
             data-address (align (+ text-rva text-size) section-alignment)
             data (vec (concat (mapcat #(le (:paddr %) 8) segments)
                               (le 0x544f4f4245554941 8)
-                              (le 6 8)
+                              (le (if resident? 6 4) 8)
                               ;; map pointer/size/key/descriptor fields are
                               ;; populated by the loader before handoff.
                               (repeat 40 0)
@@ -808,18 +817,22 @@
                               (le rw-end 8)
                               (repeat 8 0)
                               (le kernel-scratch-pages 8)
+                              (when (and payload? (not resident?)) (repeat 16 0))
                               (repeat (- memory-map-offset variables-size) 0)
                               (repeat memory-map-capacity 0)
-                              (repeat (- gop-info-offset
-                                         (+ memory-map-offset memory-map-capacity)) 0)
-                              (repeat gop-info-bytes 0)
-                              (repeat (- gop-guid-offset
-                                         (+ gop-info-offset gop-info-bytes)) 0)
-                              ;; EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID.
-                              [0xde 0xa9 0x42 0x90 0xdc 0x23 0x38 0x4a
-                               0x96 0xfb 0x7a 0xde 0xd0 0x80 0x51 0x6a]
-                              (repeat 8 0)
-                              (repeat (- embedded-offset (+ gop-interface-offset 8)) 0)
+                              (when resident?
+                                (concat
+                                 (repeat (- gop-info-offset
+                                            (+ memory-map-offset memory-map-capacity)) 0)
+                                 (repeat gop-info-bytes 0)
+                                 (repeat (- gop-guid-offset
+                                            (+ gop-info-offset gop-info-bytes)) 0)
+                                 ;; EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID.
+                                 [0xde 0xa9 0x42 0x90 0xdc 0x23 0x38 0x4a
+                                  0x96 0xfb 0x7a 0xde 0xd0 0x80 0x51 0x6a]
+                                 (repeat 8 0)
+                                 (repeat (- embedded-offset
+                                            (+ gop-interface-offset 8)) 0)))
                               payload
                               (repeat (- kernel-offset
                                          (+ payload-offset (count payload))) 0)
@@ -860,10 +873,14 @@
                            :rw-end (+ data-address 88)
                            :scratch-address (+ data-address 96)
                            :memory-map (+ data-address memory-map-offset)
-                           :gop-info (+ data-address gop-info-offset)
-                           :gop-guid (+ data-address gop-guid-offset)
-                           :gop-interface (+ data-address gop-interface-offset)
                            :payload (+ data-address payload-offset)}
+                          (when resident?
+                            {:gop-info (+ data-address gop-info-offset)
+                             :gop-guid (+ data-address gop-guid-offset)
+                             :gop-interface (+ data-address gop-interface-offset)})
+                          (when (and payload? (not resident?))
+                            {:payload-pointer (+ data-address 112)
+                             :payload-length (+ data-address 120)})
                           (when tender?
                             {:tender-fuel (+ data-address tender-slot-offset)
                              :enter-message (+ data-address enter-message-offset)
@@ -907,22 +924,30 @@
         {:format :pe32+-embedded-kernel/v3 :target firmware-target
          :entry :efi_main :entry-rva text-rva :sections [:text :data :reloc]
          :boot-info-layout (cond->
-                            {:bytes (- (+ embedded-offset (count payload)) 16)
+                            {:version (if resident? 6 4)
+                             :bytes (if resident?
+                                      (- (+ embedded-offset (count payload)) 16)
+                                      (+ (- memory-map-offset 16)
+                                         memory-map-capacity (count payload)))
                              :memory-map-offset (- memory-map-offset 16)
                              :memory-map-capacity memory-map-capacity
-                             :gop-info-offset (- gop-info-offset 16)
-                             :gop-info-bytes gop-info-bytes
-                             :gop-fields [:framebuffer-base :framebuffer-bytes
-                                          :width :height :pixel-format
-                                          :pixels-per-scan-line
-                                          :payload-pointer :payload-bytes]
                              :rx-limit-offset 56
                              :rw-start-offset 64
                              :rw-end-offset 72
                              :kernel-scratch-address-offset 80
                              :kernel-scratch-pages-offset 88
                              :kernel-scratch-pages kernel-scratch-pages}
-                             payload?
+                             resident?
+                             (assoc :gop-info-offset (- gop-info-offset 16)
+                                    :gop-info-bytes gop-info-bytes
+                                    :gop-fields [:framebuffer-base :framebuffer-bytes
+                                                 :width :height :pixel-format
+                                                 :pixels-per-scan-line
+                                                 :payload-pointer :payload-bytes])
+                             (and payload? resident?)
+                             (assoc :embedded-payload-offset (- payload-offset 16)
+                                    :payload-bytes (count payload))
+                             (and payload? (not resident?))
                              (assoc :payload-offset (- payload-offset 16)
                                     :payload-bytes (count payload)))
          :imports [] :embedded-kernel-sha256 (artifact/sha256 kernel)
