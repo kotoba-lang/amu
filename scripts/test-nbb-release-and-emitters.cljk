@@ -146,6 +146,12 @@
              (and bytes manifest (= 1 (macho-build-platform bytes))
                   (str/includes? manifest ":platform :macos")
                   (str/includes? manifest ":minimum-os [13 0 0]"))
+             (str (:stderr r) manifest))
+    (record! "package-macos stamps the bounded static-host profile"
+             (and bytes manifest
+                  (.includes bytes "aarch64-macos-static-kotoba-v1")
+                  (str/includes? manifest ":host-profile :kotoba.macos.static-host/v1")
+                  (str/includes? manifest ":host-target-profile :aarch64-macos-static-kotoba-v1"))
              (str (:stderr r) manifest)))
   (let [r (kotoba! "package-macos" "macos.kexe" "--entry" "main"
                    "--output" "macos-kotoba.o" "--manifest-output" "macos-kotoba.o.edn")
@@ -157,6 +163,17 @@
   (record! "package-macos refuses an iOS artifact"
            (refused-with? (amu! "package-macos" "ios.kexe" "--output" "wrong-macos.o")
                           "matching arm64 target") "")
+  (write! "vector-macos.kotoba"
+          "(ns macos.vector (:export [main]))\n(defn main [] :i64 (vector-at (vector-alloc 1) 0))")
+  (let [compiled (amu! "compile" "vector-macos.kotoba" "--target" "aarch64-macos"
+                       "--output" "vector-macos.kexe")
+        packaged (amu! "package-macos" "vector-macos.kexe" "--entry" "main"
+                       "--output" "vector-macos.o")]
+    (record! "package-macos refuses vector operations before writing an object"
+             (and (ok? compiled)
+                  (refused-with? packaged "macOS static host cannot serve")
+                  (not (.existsSync fs (file "vector-macos.o"))))
+             (str (:stderr compiled) (:stderr packaged))))
 
   ;; ── cljs emission, EXECUTED ───────────────────────────────────────────
   (let [r (amu! "compile" (.join path root "examples" "fuel.kotoba")
@@ -183,7 +200,7 @@
     (.rmSync fs tmp #js {:recursive true :force true})))
 
 (println (str "SCANNED\t" @ran "\tcases, failed=" (count @failed)))
-(when (or (seq @failed) (< @ran 25))
+(when (or (seq @failed) (< @ran 27))
   (println (str "FAIL " (pr-str @failed)))
   (.exit js/process 1))
 (println "nbb-release-and-emitters: release attestation, Apple AOT packaging and cljs emission on the nbb route, through both launchers")

@@ -1,6 +1,7 @@
 (ns kotoba.compiler.ios-aot
   {:kotoba/export [package]}
   (:require [kotoba.artifact.core :as artifact]
+            [kotoba.lang.coll :as coll]
             [kotoba.object.macho64 :as macho]
             [kotoba.verifier :as verifier])
   #?(:clj (:import [java.nio.charset StandardCharsets])))
@@ -17,8 +18,78 @@
    :ios-simulator :aarch64-ios-kotoba-v1
    :macos :aarch64-macos-kotoba-v1})
 
+(def ^:private host-profiles
+  {:ios :kotoba.ios.static-host/v1
+   :ios-simulator :kotoba.ios.static-host/v1
+   :macos :kotoba.macos.static-host/v1})
+
+(def ^:private host-target-profiles
+  {:ios "aarch64-ios-kotoba-v1"
+   :ios-simulator "aarch64-ios-kotoba-v1"
+   ;; This is the target identity checked by the bounded in-process macOS
+   ;; host. It is distinct from the full supervisor target used to compile the
+   ;; KEXE and is granted only after the operation subset below is verified.
+   :macos "aarch64-macos-static-kotoba-v1"})
+
+;; `runtime/ios/kotoba_ios_host.c` implements scalar instructions, pair and
+;; string equality/concat calls, typed capability calls, and the inline pair
+;; ABI. Every other heap-call slot in kotoba-native's context ABI is NULL (and
+;; vector bases are deliberately empty), so a call through one would fault in
+;; the embedding app instead of returning a supervised guest failure. Keep
+;; this set aligned with `kotoba.native.x86-64/heap-call-offsets` and the
+;; v11/v12 context layout; inspect the verified KIR program before emitting.
+(def ^:private unsupported-macos-static-host-ops
+  '#{kgraph-assert! kgraph-get kgraph-count kgraph-entity-at
+     string-substring string-code-point-at
+     vector-new vector-new-empty vector-conj vector-count vector-at
+     vector-assoc vector-drop vector-take vector-alloc vector-assoc!
+     vector-get vector-f64-new vector-f64-conj vector-f64-count
+     vector-f64-at vector-f64-assoc vector-f64-drop vector-f64-get
+     vector-f64-take
+     bytes-empty bytes-count bytes-at bytes-from-vector bytes-from-vector-i64
+     vector-i64-from-bytes bytes-slice bytes-concat
+     string-contains? string-replace-all
+     string-index-of arena-enter arena-leave arena-scope
+     string-compare string-fold-ascii string-find-blank string-skip-blank
+     string-index-of-from string-compare-lines
+     string-find-byte string-append-range string-from-utf8})
+
 (defn- reject! [message data]
   (throw (ex-info message (merge {:phase :verify} data))))
+
+(defn- macos-static-host-unsupported-ops [kexe]
+  (let [used (volatile! #{})]
+    (coll/postwalk
+     (fn [form]
+       (when (and (seq? form)
+                  (contains? unsupported-macos-static-host-ops (first form)))
+         (vswap! used conj (first form)))
+       form)
+     (get-in kexe [:program :functions]))
+    @used))
+
+(defn- supported-macos-static-host-effect? [effect]
+  (or (= :state effect)
+      (and (vector? effect) (= :cap/call (first effect)))))
+
+(defn- context-abi-v11? [version]
+  (= #?(:clj 11 :cljs (js/BigInt 11)) version))
+
+(defn- reject-unsupported-macos-static-host! [kexe]
+  (let [operations (macos-static-host-unsupported-ops kexe)
+        effects (set (remove supported-macos-static-host-effect? (:effects kexe)))
+        context-version (get-in kexe [:context-abi :version])
+        gas-scheduled? (contains? (:program kexe) :gas-schedule)]
+    (when (or (seq operations) (seq effects)
+              (not (context-abi-v11? context-version)) gas-scheduled?)
+      (let [details {:host-profile :kotoba.macos.static-host/v1
+                     :operations (vec (sort operations))
+                     :effects (vec (sort-by pr-str effects))
+                     :context-abi-version context-version
+                     :gas-scheduled? gas-scheduled?}]
+        (reject! (str "macOS static host cannot serve this KEXE operation or ABI profile: "
+                      (pr-str details))
+                 details)))))
 
 (def ^:private minimum-os
   {:ios [15 0 0]
@@ -38,6 +109,8 @@
      (reject! "Apple AOT packaging requires the matching arm64 target"
               {:platform platform :target (:target kexe)
                :expected-target (get targets platform)}))
+   (when (= platform :macos)
+     (reject-unsupported-macos-static-host! kexe))
    (let [export (get (:exports kexe) entry)]
      (when-not export
        (reject! "Apple AOT entry is not exported" {:entry entry}))
@@ -52,7 +125,7 @@
                        :cljs (fn [x] (if (identical? js/BigInt (type x)) (js/Number x) x)))
            code (mapv host-int (:code kexe))
            offset (host-int (:offset export))
-           target-profile (ascii-bytes (name (get targets platform)))
+           target-profile (ascii-bytes (get host-target-profiles platform))
            object-vector (macho/encode-object
                           {:machine :aarch64
                            :platform platform
@@ -86,6 +159,8 @@
                                :kotoba.ios-aot/v2)
                      :target (get targets platform)
                      :platform platform
+                     :host-profile (get host-profiles platform)
+                     :host-target-profile (keyword (get host-target-profiles platform))
                      :minimum-os (get minimum-os platform)
                      :target-profile (:target-profile kexe)
                      :artifact-sha256 (:sha256 kexe)
