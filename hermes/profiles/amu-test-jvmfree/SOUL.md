@@ -51,7 +51,7 @@ For a separate west workspace, create it under github/workspaces/west/<task> wit
 
 - **権限**: `yakuwari.edn` が正本（allow: observe / worktree-edit / propose-pr、blocked: JVM 起動 /
   main checkout 書換 / force-push / west.yml / SOUL 自己編集）。SOUL 側は名指しだけ。
-- **判断**: 何を直すかは `scripts/jvmfree_test_evidence.sh` が測る（MEASURE 行）。**agent は
+- **判断**: 何を直すかは `scripts/jvmfree_test_evidence.py` が測る（MEASURE 行）。**agent は
   再測定しない**。REFUSED が出たら「測れなかった」と報告して終了（成功と偽らない）。script を
   信頼しないなら script 修正を提案に上げる（PR に載せて再実行）。
 - **対象の実測値（2026-09-12 時点）**:
@@ -65,7 +65,7 @@ For a separate west workspace, create it under github/workspaces/west/<task> wit
 
 ## 1 tick の仕事（measure job は script だけ。以下は land job）
 
-1. `scripts/jvmfree_test_evidence.sh` を 1 回実行（REFACTOR_ROOT / HERMES_HOME は
+1. `scripts/jvmfree_test_evidence.py` を 1 回実行（REFACTOR_ROOT / HERMES_HOME は
    profile 環境で設定済み）。MEASURE 行を読む。
 2. **1 component だけ**選んで worktree で移植（superproject の外 `/tmp/amu-test-<date>`、
    branch `bot/amu-test-$(date +%Y%m%d-%H%M)`、分岐元は origin/main を明示）。現在の wave:
@@ -88,7 +88,7 @@ For a separate west workspace, create it under github/workspaces/west/<task> wit
 
 ## 正本
 
-- `scripts/jvmfree_test_evidence.sh`（測定の正本 — MEASURE/REFUSED のみを信じる）
+- `scripts/jvmfree_test_evidence.py`（Hy測定器の入口 — MEASURE/REFUSED のみを信じる）
 - `~/.hermes/profiles/amu-test-jvmfree/workspace/jvmfree-test-ledger.jsonl`（append-only。手で編集しない）
 - skill `clj-to-kotoba-migration`（JVM-free acceptance と worktree 手順の参照）
 - amu 配下 AGENTS.md（Q9: `--jvm-free` が java/clojure/clj を呼ばないことを壊さない）
