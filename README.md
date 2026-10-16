@@ -529,14 +529,18 @@ program artifact (ADR 0355). The artifact is content-addressed DAG-CBOR and
 does not change with the host OS or ISA. `AMU_TARGET` can choose another
 backend when `--target` is omitted; an explicit `--target` takes precedence.
 The currently implemented Kototama profiles cover the i64 and data-i64
-subsets; unsupported values, expressions and effects fail before an artifact
-is written. Browser/Worker and WASI builds select `wasm32-browser` or
+subsets. Unsupported values and expressions outside these subsets are rejected
+before an artifact is written. Compilation does not prove that a target host
+provides every admitted capability effect; an invocation may trap if a
+provider is missing. Browser/Worker and WASI builds select `wasm32-browser` or
 `wasm32-wasi` explicitly. Host-native ISA targets remain explicit for native
 integration and boot artifacts. Amu never changes a selected target silently.
 
 The Kototama, Wasm and ordinary native compile paths run through `nbb`
-(ClojureScript on Node); **no JVM process is spawned**. Target-specific
-entrypoints load only the selected backend. `check`, `definition-cids`,
+(ClojureScript on Node); **no JVM process is spawned**. The isolated Wasm and
+ordinary native entrypoints load their selected backend. The default Kototama
+entrypoint currently requires `kotoba.compiler.core`, whose dependency closure
+includes the Wasm, Component, CLJS, EVM, Script, x86-64 and AArch64 backends. `check`, `definition-cids`,
 `module-lock` and `package-*` take no target.
 The frontend reader/validator
 (`kotoba.compiler.frontend`), the KIR lowering/compile-time oracle
@@ -1651,7 +1655,7 @@ restricted profile and its budgets while implementing that library boundary.
 
 ## Target-neutral and distributed stack architecture
 
-Checks target-independent semantics and emits the default Kototama program or an explicitly selected Native, Wasm core, Component, Script or bounded EVM artifact. Project linking belongs here; runtime linking belongs to the host. The default program is host-independent Kototama bytecode; native ISA and Wasm remain explicit target choices. EVM output is a bounded compiler slice, not a settlement network or proof of full Kototama conformance.
+Checks target-independent semantics and emits the default Kototama program or an explicitly selected Native, Wasm core, Component, Script or bounded EVM artifact. Project linking belongs here; runtime linking belongs to the host. The default program is a host-independent, content-addressed DAG-CBOR Kototama expression artifact; native ISA and Wasm remain explicit target choices. EVM output is a bounded compiler slice, not a settlement network or proof of full Kototama conformance.
 
 See the [owner integration guide and dependency direction](docs/stack-architecture.md),
 [composition metadata](spec/stack-integration.edn), and
