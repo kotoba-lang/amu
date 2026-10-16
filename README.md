@@ -893,6 +893,22 @@ shape. This needs no physical hardware or paid signing (Simulator binaries
 run unsigned), but does not by itself count toward this repo's coverage
 percentage -- see ADR-0001's Phase 3 for why.
 
+macOS arm64 has a matching static AOT packaging command for native host
+integration:
+
+```bash
+kotoba -M compile packet-plane.kotoba --target aarch64-macos \
+  --fuel 512 --output packet-plane.kexe
+kotoba -M package-macos packet-plane.kexe --entry main \
+  --output packet-plane.o --manifest-output packet-plane.edn
+```
+
+It re-verifies the macOS-target KEXE and emits a Mach-O `MH_OBJECT` with
+`LC_BUILD_VERSION` set to macOS 13.0. The manifest records the target, entry,
+artifact digest, and object digest. This packages code for linking; app
+signing, Network Extension authorization, installation, and physical-network
+execution remain separate gates.
+
 `wasm32-wasi` is the first sealed server core-Wasm profile. It is not yet a
 WebAssembly Component Model component. Its Wasm custom section
 seals `wasm32-wasi-kotoba-v1`; the dependency-free host rejects missing or
