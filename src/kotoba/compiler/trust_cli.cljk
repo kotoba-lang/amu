@@ -42,7 +42,9 @@
             [kotoba.compiler.source-path :as source-path]
             [kotoba.compiler.target-names :as target-names]
             [kotoba.verifier :as verifier]
-            [kotoba.verifier.signing :as signing]))
+            [kotoba.verifier.signing :as signing]
+            #?(:cljs ["node:path" :as node-path]))
+  #?(:clj (:import [java.nio.file Paths])))
 
 ;; Every artifact this namespace hands the verifier is read through one of
 ;; these two. `bounded-edn` answers every integer token as a BigInt on Node,
@@ -80,6 +82,10 @@
 
 (defn- required [args flag]
   (or (option args flag) (usage! (str "missing " flag))))
+
+(defn- normalized-path [path]
+  #?(:clj (str (.normalize (.toAbsolutePath (Paths/get path (make-array String 0)))))
+     :cljs (.resolve node-path path)))
 
 (defn- long-option
   "A decimal integer option, or the fallback when absent. Text that is not
@@ -272,10 +278,14 @@
          :manifest-output manifest-output})
 
       "package-macos"
-      (let [input (read-kexe (second args))
+      (let [input-path (second args)
+            input (read-kexe input-path)
             entry (symbol (or (option args "--entry") "main"))
             output (or (option args "--output") "kotoba-macos-program.o")
             manifest-output (or (option args "--manifest-output") (str output ".edn"))
+            destinations (mapv normalized-path [input-path output manifest-output])
+            _ (when-not (= 3 (count (distinct destinations)))
+                (usage! "package-macos input, object, and manifest paths must be distinct"))
             packaged (ios-aot/package input entry {:platform :macos})
             object #?(:clj (:object packaged)
                       :cljs (js/Uint8Array.from (clj->js (:object packaged))))]
