@@ -23,13 +23,15 @@ The extracted strings export shrank from 1,360 to 1,352 bytes; the collections e
 
 ## Exploratory timing
 
-The benchmark driver calls the same fixture kernel 20,000 times per process. It was compiled by the adopted M105 compiler and the candidate G3 compiler, warmed once per arm, then timed for four samples per arm in ABBA order. Each timed interval includes native loader startup. Every run matched on result and fuel.
+The benchmark driver calls the same fixture kernel repeatedly. It was compiled by the adopted M105 compiler and candidate G3 compiler, warmed once per arm, then timed for four samples per arm in ABBA order. Each timed interval includes native loader startup. Every run matched on result and fuel.
 
-| Fixture | Prior median | Candidate median | Exploratory difference |
-|---|---:|---:|---:|
-| Strings | 111.92 ms | 97.94 ms | 14.3% shorter |
-| Collections | 95.67 ms | 105.13 ms | 9.0% longer |
+| Calls per process | Fixture | Prior median | Candidate median | Exploratory difference |
+|---:|---|---:|---:|---:|
+| 20,000 | Strings | 111.92 ms | 97.94 ms | 14.3% shorter |
+| 20,000 | Collections | 95.67 ms | 105.13 ms | 9.0% longer |
+| 50,000 | Strings | 95.15 ms | 93.78 ms | 1.5% shorter |
+| 50,000 | Collections | 135.81 ms | 122.17 ms | 11.2% shorter |
 
-These measurements are **not qualified**. The machine reported macOS 26.4 arm64; the task host was identified as an M1 Max. Load averages were 31.12/31.90/38.49 before and 33.36/32.35/38.61 after. Sample ranges overlap substantially. A 100,000-iteration collections follow-up exhausted its configured 4,194,304-entry vector arena before producing a timing result; it is excluded. See `performance-exploratory.json` and `benchmark-build.json`.
+These measurements are **not qualified**. The machine reported macOS 26.4 arm64; the task host was identified as an M1 Max. The 20,000-call run started at load averages 31.12/31.90/38.49 and ended at 33.36/32.35/38.61. The 50,000-call runs started around 15–17/23/32.6–32.8. The 20,000-call collection result regressed, while both 50,000-call medians improved; relative results changed with workload duration, and sample ranges overlap. A 100,000-iteration collections follow-up exhausted its configured 4,194,304-entry vector arena before producing a timing result; it is excluded. Raw samples are in `performance-20k.json`, `performance-50k-strings.json`, `performance-50k-collections.json`, and `performance-exploratory.json`.
 
 No speedup claim, C comparison, Embench score, or SPEC result follows from this evidence. A quiet-host paired timing run with an adequately sized arena remains necessary.

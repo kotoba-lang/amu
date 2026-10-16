@@ -204,16 +204,19 @@ the four unrolled remainder sites and the scalar tail replaces `mul` plus
 Pinned raw code and full disassemblies are in
 `docs/evidence/crossdomain-m105-msub-20261016/`.
 
-An exploratory runtime check called each native kernel 20,000 times per
-process and collected four timed samples per compiler in ABBA order. The
-strings median was 97.94 ms for the candidate versus 111.92 ms for prior
-(14.3% shorter); the collections median was 105.13 ms versus 95.67 ms
-(9.0% longer). This is not a performance claim: the host load average was
-31.1/31.9/38.5 before and 33.4/32.3/38.6 after, and the sample ranges overlap
-substantially. A 100,000-iteration follow-up exhausted the configured vector
-arena and is excluded. Results, fuel, exact benchmark inputs, binaries, and
-raw timing samples are pinned in the evidence directory. There is still no
-qualified timing or C comparison for this change.
+Exploratory runtime checks called each native kernel 20,000 and 50,000 times
+per process and collected four timed samples per compiler in ABBA order. At
+20,000 calls, the strings median was 97.94 ms for the candidate versus 111.92
+ms for prior (14.3% shorter), while collections was 105.13 ms versus 95.67 ms
+(9.0% longer). At 50,000 calls, strings was 93.78 ms versus 95.15 ms (1.5%
+shorter) and collections was 122.17 ms versus 135.81 ms (11.2% shorter).
+These results are not a performance claim: the first run began with load
+averages 31.1/31.9/38.5, the longer runs began around 15–17/23/32.6–32.8, and
+relative results changed between run lengths. Sample ranges overlap. A
+100,000-iteration collections follow-up exhausted the configured vector arena
+and is excluded. Results, fuel, exact benchmark inputs, binaries, and raw
+timing samples are pinned in the evidence directory. Qualified quiet-host
+timing and C comparisons remain outstanding.
 
 ## Next checks
 
