@@ -146,6 +146,11 @@
        :else (or (parse-long text)
                  (usage! (str flag " must be a decimal integer")))))))
 
+(defn- json-text [value]
+  #?(:cljs (str (.stringify js/JSON (clj->js value) nil 2) "\n")
+     :clj (throw (ex-info "JSON receipts require the Amu/Nbb host"
+                          {:phase :host-implementation}))))
+
 ;; A kernel object or its payload, as `package-aiueos-boot` reads them. The
 ;; JVM branch had no ceiling (`Files/readAllBytes`); 64 MiB is far above any
 ;; kernel this repository has packaged and keeps the bounded reader bounded.
@@ -399,10 +404,10 @@
             efi (bounded-edn/read-bytes-file input max-kernel-bytes)
             packaged (aiueos-disk/package efi)]
         (atomic-output/write-bytes! output (:bytes packaged))
-        (atomic-output/write-edn! receipt-path (:receipt packaged))
+        (atomic-output/write-text! receipt-path (json-text (:receipt packaged)))
         {:ok true :profile :kotoba-amu-selfhost-desktop
          :input input :output output :receipt receipt-path
-         :bytes (get-in packaged [:receipt :disk :bytes])
-         :sha256 (get-in packaged [:receipt :disk :sha256])})
+         :bytes (get-in packaged [:receipt "disk" "bytes"])
+         :sha256 (get-in packaged [:receipt "disk" "sha256"])})
 
       (usage! (str "not a trust-plane command: " (pr-str command))))))

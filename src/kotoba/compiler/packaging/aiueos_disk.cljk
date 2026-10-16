@@ -296,12 +296,12 @@
   (let [disk (image efi)]
     (verify! disk efi)
     {:bytes disk
-     :receipt {:schema :aiueos.kotoba-desktop-build-receipt/v1
-               :created "1970-01-01T00:00:00Z"
-               :profile :kotoba-amu-selfhost-desktop
-               :disk {:bytes (.-length disk) :sha256 (sha256 disk)}
-               :artifacts {"EFI/BOOT/BOOTX64.EFI"
-                           {:bytes (.-length efi) :sha256 (sha256 efi)}}}}))))
+     :receipt {"schema" "aiueos.kotoba-desktop-build-receipt/v1"
+               "created" "1970-01-01T00:00:00Z"
+               "profile" "kotoba-amu-selfhost-desktop"
+               "disk" {"bytes" (.-length disk) "sha256" (sha256 disk)}
+               "artifacts" {"EFI/BOOT/BOOTX64.EFI"
+                            {"bytes" (.-length efi) "sha256" (sha256 efi)}}}}))))
 
 #?(:clj
 (defn package [_]
