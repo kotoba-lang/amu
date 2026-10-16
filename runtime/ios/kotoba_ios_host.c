@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <setjmp.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -266,7 +267,7 @@ typedef int64_t (*kotoba_fn8)(int64_t, int64_t, int64_t, int64_t,
  *    unwinding: its heap is the arena in `shared`, which the caller frees.
  *  - Only the trap signals the guest can raise are handled. Faults with
  *    other causes are deliberately left to crash rather than be swallowed. */
-static volatile sig_atomic_t containment_busy;
+static atomic_flag containment_busy = ATOMIC_FLAG_INIT;
 static sigjmp_buf containment_return;
 
 static void containment_handler(int signal_number) {
@@ -354,25 +355,26 @@ int kotoba_ios_execute_static_v1(const struct kotoba_ios_request_v1 *request,
   kotoba_fn8 entry = (kotoba_fn8)(uintptr_t)kotoba_ios_entry;
   /* Process-wide signal dispositions cannot be shared: refuse rather than
      run a second guest with the first one's handlers half-installed. */
-  if (containment_busy) {
+  if (atomic_flag_test_and_set_explicit(&containment_busy,
+                                        memory_order_acquire)) {
     free(shared);
     result->status = KOTOBA_IOS_CONTAINMENT_UNAVAILABLE;
     return KOTOBA_IOS_CONTAINMENT_UNAVAILABLE;
   }
   struct containment_state containment;
   if (!containment_install(&containment)) {
+    atomic_flag_clear_explicit(&containment_busy, memory_order_release);
     free(shared);
     result->status = KOTOBA_IOS_CONTAINMENT_UNAVAILABLE;
     return KOTOBA_IOS_CONTAINMENT_UNAVAILABLE;
   }
-  containment_busy = 1;
 
   if (sigsetjmp(containment_return, 1) != 0) {
     /* Reached from containment_handler: the guest trapped. Report the fuel
        and heap state as of the trap -- it is the caller's evidence for WHY
        the guest was rejected -- but never the (undefined) return value. */
-    containment_busy = 0;
     containment_restore(&containment);
+    atomic_flag_clear_explicit(&containment_busy, memory_order_release);
     result->value = 0;
     result->fuel_remaining = shared->context.fuel;
     result->pairs_used = shared->pair_used;
@@ -385,8 +387,8 @@ int kotoba_ios_execute_static_v1(const struct kotoba_ios_request_v1 *request,
                         request->args[3], request->args[4], 0, 0,
                         (int64_t)(intptr_t)&shared->context);
 
-  containment_busy = 0;
   containment_restore(&containment);
+  atomic_flag_clear_explicit(&containment_busy, memory_order_release);
   result->fuel_remaining = shared->context.fuel;
   result->pairs_used = shared->pair_used;
   result->status = KOTOBA_IOS_OK;

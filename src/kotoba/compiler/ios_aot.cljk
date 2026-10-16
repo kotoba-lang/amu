@@ -54,6 +54,13 @@
      string-index-of-from string-compare-lines
      string-find-byte string-append-range string-from-utf8})
 
+;; The in-process host validates only these v1 typed values, and requires the
+;; request and result to have the same kind. Keep this intentionally narrower
+;; than the native compiler's full descriptor table (which also includes
+;; clock and dataspace records that this host traps on).
+(def ^:private macos-static-host-typed-kinds
+  {:string 1 :option-i64 2 :result-i64 3})
+
 (defn- reject! [message data]
   (throw (ex-info message (merge {:phase :verify} data))))
 
@@ -68,22 +75,38 @@
      (get-in kexe [:program :functions]))
     @used))
 
+(defn- macos-static-host-unsupported-capability-calls [kexe]
+  (let [unsupported (volatile! [])]
+    (coll/postwalk
+     (fn [form]
+       (when (and (seq? form) (= 'typed-cap-call (first form)))
+         (let [[_ id request-kind result-kind] form]
+           (when-not (and (= request-kind result-kind)
+                          (contains? macos-static-host-typed-kinds request-kind))
+             (vswap! unsupported conj [id request-kind result-kind]))))
+       form)
+     (get-in kexe [:program :functions]))
+    (vec (sort-by pr-str (distinct @unsupported)))))
+
 (defn- supported-macos-static-host-effect? [effect]
   (or (= :state effect)
-      (and (vector? effect) (= :cap/call (first effect)))))
+      (and (vector? effect) (= 2 (count effect))
+           (= :cap/call (first effect)))))
 
 (defn- context-abi-v11? [version]
   (= #?(:clj 11 :cljs (js/BigInt 11)) version))
 
 (defn- reject-unsupported-macos-static-host! [kexe]
   (let [operations (macos-static-host-unsupported-ops kexe)
+        capability-calls (macos-static-host-unsupported-capability-calls kexe)
         effects (set (remove supported-macos-static-host-effect? (:effects kexe)))
         context-version (get-in kexe [:context-abi :version])
         gas-scheduled? (contains? (:program kexe) :gas-schedule)]
-    (when (or (seq operations) (seq effects)
+    (when (or (seq operations) (seq capability-calls) (seq effects)
               (not (context-abi-v11? context-version)) gas-scheduled?)
       (let [details {:host-profile :kotoba.macos.static-host/v1
                      :operations (vec (sort operations))
+                     :unsupported-capability-calls capability-calls
                      :effects (vec (sort-by pr-str effects))
                      :context-abi-version context-version
                      :gas-scheduled? gas-scheduled?}]
@@ -114,6 +137,13 @@
    (let [export (get (:exports kexe) entry)]
      (when-not export
        (reject! "Apple AOT entry is not exported" {:entry entry}))
+     (when (and (= platform :macos)
+                #?(:clj (> (:arity export) 5)
+                   :cljs (if (identical? js/BigInt (type (:arity export)))
+                           (> (:arity export) (js/BigInt 5))
+                           (> (:arity export) 5))))
+       (reject! "macOS static host cannot serve entry arity above five"
+                {:entry entry :arity (:arity export) :max-arity 5}))
      (let [;; On the Node host an artifact read back through the kotoba reader
            ;; carries its bytes and offsets as bigint (every integer token is
            ;; one), and `kotoba.object.macho64` asks `integer?` of each byte,
