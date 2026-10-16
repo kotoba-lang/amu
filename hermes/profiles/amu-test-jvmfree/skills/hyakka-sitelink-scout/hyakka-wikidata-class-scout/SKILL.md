@@ -238,8 +238,10 @@ sources-configured 2814→2824 at landing; base 9408e3c2 #971).**
   lander fixed it; ground truth became ids 1396 + tail
   `[:official-funder-registry]\n   :interval-seconds 86400}\n]\n\n}` — re-splice
   anchor must be derived from the LIVE tail each run, never hardcode.
-- **`git checkout -B <branch> origin/main`** (force-reset) replaces the
-  checkout -b dance when a prior abort left the branch behind.
+If a prior abort left the branch behind, inspect its worktree, uncommitted
+changes, and commits first. Reuse or recover wanted work explicitly, or choose a
+new unique branch from the verified base. Never reset an existing branch with
+`git checkout -B` or discard its commits.
 - NEW_IDS needles need the full `wikidata-q…` prefix (a `wikidata-240960`
   needle misses — false 'missing' abort). Same lowercase rule as parse2.
 - `gh pr list` from the agent cwd (not the worktree) fails rc=1 silently —
