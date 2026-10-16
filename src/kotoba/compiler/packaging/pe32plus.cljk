@@ -807,7 +807,14 @@
             text-size (code-size tokens)
             data-address (align (+ text-rva text-size) section-alignment)
             data (vec (concat (mapcat #(le (:paddr %) 8) segments)
-                              (le 0x544f4f4245554941 8)
+                              ;; Keep the firmware handoff magic as exact
+                              ;; bytes. This value does not fit in JavaScript's
+                              ;; exactly-representable integer range, so the
+                              ;; Nbb route rounded the numeric literal and
+                              ;; emitted a different first byte than the JVM
+                              ;; route. The guest's fail-closed magic check
+                              ;; correctly rejected that image.
+                              [65 73 85 69 66 79 79 84]
                               (le (if resident? 6 4) 8)
                               ;; map pointer/size/key/descriptor fields are
                               ;; populated by the loader before handoff.

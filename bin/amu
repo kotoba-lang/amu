@@ -178,29 +178,6 @@ function option(args, flag) {
 // than left returning false, because a predicate that always answers the same
 // way is a claim nobody rechecks.
 
-// The two `kotoba.native.elf64` twins genuinely disagree about ONE container:
-// the x86-64 kernel image, 65,904 bytes from the portable file against 110,872
-// from the JVM one, because kotoba-native ADR-0036 keeps the live-boot GDT/TSS
-// shim in the JVM twin deliberately.
-//
-// So routing decides, not the packager. Without --jvm-free this still reaches
-// the JVM and still produces the live-boot image, exactly as before; with
-// --jvm-free it is refused below, naming why. Making the packager refuse
-// unconditionally would have broken a working command for callers who never
-// asked for a JDK-free build.
-function divergentAiueosKernelImage(args) {
-  return !args.includes("--selfhost-desktop")
-    && option(args, "--target") === "x86_64-aiueos-kernel-v1"
-    && option(args, "--artifact") === "image";
-}
-
-const divergentImageReason =
-  "the portable elf64 twin does not carry the live-boot GDT/TSS shim, so this "
-  + "route's x86-64 kernel image is not the JVM's (65,904 vs 110,872 bytes "
-  + "measured 2026-08-31). kotoba-native ADR-0036 keeps the two files apart "
-  + "deliberately. The kernel OBJECT, the CPL3 user image, the UEFI application "
-  + "and the AArch64 kernel image are byte-identical on this route.";
-
 // The trust-plane commands: keys, trust sets, signatures, receipts, inspect.
 // One portable implementation (`kotoba.compiler.trust-cli`) since 2026-09-11;
 // this set is `kotoba.compiler.trust-cli/commands`, spelled again here because
@@ -221,7 +198,6 @@ const trustCommands = new Set(["keygen", "public-key", "inspect", "trust-key",
 
 function nbbNativeEligible(args) {
   const command = args[0];
-  if (command === "compile" && divergentAiueosKernelImage(args)) return false;
   if (trustCommands.has(command)) return true;
   if (command === "test") return true;
   if (runCommands.has(command)) return true;
@@ -414,8 +390,14 @@ function publishPrivateCache(cacheFile, value) {
 // so a compile never reads an executing command's classpath or vice versa.
 function securityClasspath(root, nbbCli, alias) {
   const depsEdn = path.join(root, "deps.edn");
-  const gitlibsRoot = path.resolve(process.env.GITLIBS || path.join(os.homedir(), ".gitlibs"));
-  const allowedRoots = [gitlibsRoot, root, path.join(os.homedir(), ".m2", "repository")];
+  const homeGitlibsRoot = path.join(os.homedir(), ".gitlibs");
+  const gitlibsRoot = path.resolve(process.env.GITLIBS || homeGitlibsRoot);
+  // A caller may use a private GITLIBS overlay whose unchanged entries are
+  // symlinks into the ordinary, user-owned cache. Admit the resolved cache
+  // paths as well as the overlay itself; neither root widens trust to a
+  // repository or checkout outside these user-managed dependency stores.
+  const allowedRoots = [gitlibsRoot, homeGitlibsRoot, root,
+    path.join(os.homedir(), ".m2", "repository")];
   const digest = createHash("sha256")
     .update(fs.readFileSync(depsEdn)).update("\0").update(gitlibsRoot)
     .update("\0").update(alias || "").digest("hex");
@@ -578,16 +560,9 @@ function runCompiler(root, rawArgs) {
     process.exit(result.status ?? 70);
   }
 
-  // The JVM route is gone (2026-09-11). Until 2026-09-11 anything not on the
-  // nbb route above was handed to `kbb -M:run`; that spawn hid every
-  // command the nbb route did not implement behind a working JVM, and after
-  // the .cljk rename the JVM could not load the CLI anyway. Now the answer is
-  // a refusal that names the command and the target, so the gap is visible
-  // at the call site and in docs/adr (JVM-route-removed ledger) rather than
-  // in a stack trace from clojure.main.
-  if (args[0] === "compile" && divergentAiueosKernelImage(args)) {
-    fail("error: no nbb-route implementation: " + divergentImageReason, 64);
-  }
+  // The JVM route is gone (2026-09-11). Anything not on the nbb route above
+  // remains a refusal naming the command and target; AIUEOS x86-64 kernel
+  // images are now handled by the portable ELF64 packager too.
   const target = option(args, "--target");
   fail("error: `amu " + args[0] + (target ? " --target " + target : "") + "` has no "
     + "implementation on the nbb/native route, and the JVM route was removed on "
