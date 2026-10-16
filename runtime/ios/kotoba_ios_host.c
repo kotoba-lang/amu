@@ -136,20 +136,28 @@ static int64_t pair_second(struct kotoba_context_v2 *context, int64_t handle) {
   return pair_get(context, handle, 1);
 }
 
+static int valid_utf8(const uint8_t *bytes, uint64_t length);
+
 static const uint8_t *resolve_string_bytes(struct kotoba_context_v2 *context,
                                            int64_t offset, int64_t length) {
   struct kotoba_shared_v2 *shared = (struct kotoba_shared_v2 *)context;
+  const uint8_t *bytes;
   if (context == NULL || context->version != 2 || length < 0) guest_trap();
   if (offset >= 0) {
     if ((uint64_t)offset + (uint64_t)length > context->code_length ||
         (uint64_t)offset + (uint64_t)length < (uint64_t)offset) guest_trap();
-    return context->code_base + offset;
+    bytes = context->code_base + offset;
+  } else {
+    if (offset == INT64_MIN) guest_trap();
+    uint64_t pool_offset = (uint64_t)(-offset - 1);
+    if (pool_offset + (uint64_t)length > shared->string_pool_used ||
+        pool_offset + (uint64_t)length < pool_offset) guest_trap();
+    bytes = shared->string_pool + pool_offset;
   }
-  if (offset == INT64_MIN) guest_trap();
-  uint64_t pool_offset = (uint64_t)(-offset - 1);
-  if (pool_offset + (uint64_t)length > shared->string_pool_used ||
-      pool_offset + (uint64_t)length < pool_offset) guest_trap();
-  return shared->string_pool + pool_offset;
+  /* String handles are untrusted KIR data. Bounds alone are not enough:
+     arbitrary in-range code bytes must not pass as a valid Kotoba string. */
+  if (!valid_utf8(bytes, (uint64_t)length)) guest_trap();
+  return bytes;
 }
 
 static int valid_utf8(const uint8_t *bytes, uint64_t length) {
@@ -187,11 +195,11 @@ static int64_t string_equal(struct kotoba_context_v2 *context,
                             int64_t left, int64_t right) {
   int64_t left_length = pair_get(context, left, 1);
   int64_t right_length = pair_get(context, right, 1);
-  if (left_length != right_length) return 0;
   const uint8_t *left_bytes =
       resolve_string_bytes(context, pair_get(context, left, 0), left_length);
   const uint8_t *right_bytes =
       resolve_string_bytes(context, pair_get(context, right, 0), right_length);
+  if (left_length != right_length) return 0;
   return memcmp(left_bytes, right_bytes, (size_t)left_length) == 0 ? 1 : 0;
 }
 
