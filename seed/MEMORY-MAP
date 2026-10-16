@@ -20,7 +20,7 @@
  ;; Index 0 of every table is the NULL record: it is never written, fills start at 1, and a field value 0
  ;; means "none" (no child, no symbol, no function, no label ...). `mem-new` sets every *-N fill to 1.
  :constants
- [[:c MM-WORDS 16252928 "words in M (124 MiB); below the loader's 16M-item per-vector limit"]
+ [[:c MM-WORDS 16646144 "words in M (127 MiB); below the loader's 16M-item per-vector limit"]
   [:c MM-NULL 0 "the null index of every table"]
   [:c MM-LAYOUT-VERSION 1 "value of M[MM-VERSION] after mem-new"]
 
@@ -99,17 +99,21 @@
   ;; (heap size unchanged, MM-WORDS still below the 16M-item vector limit).
   ;; T2 node growth (2026-10-14): NODE +131072 records (+1048576 words; the compiler's own source outgrew the node table);
   ;; every later base, MM-HEAP-END and MM-WORDS +1048576 (heap size unchanged; MM-WORDS 14155776 < 16M).
-  [:c MM-SIR-BASE 8257792] [:c MM-SIR-W 4] [:c MM-SIR-CAP 393216]
-  [:c MM-LABEL-BASE 9830656] [:c MM-LABEL-W 1] [:c MM-LABEL-CAP 131072]
-  [:c MM-CODE-BASE 9961728] [:c MM-CODE-W 1] [:c MM-CODE-CAP 655360]
-  [:c MM-FIX-BASE 10617088] [:c MM-FIX-W 4] [:c MM-FIX-CAP 98304]
-  [:c MM-LIT-BASE 11010304] [:c MM-LIT-W 4] [:c MM-LIT-CAP 16384]
-  [:c MM-LITB-BASE 11075840] [:c MM-LITB-W 1] [:c MM-LITB-CAP 262144]
-  [:c MM-EXP-BASE 11337984] [:c MM-EXP-W 4] [:c MM-EXP-CAP 1024]
+  ;; x86_64 cross closure (2026-10-15): seed/X86_64-LINUX-MANIFEST (this compiler plus the x86 backend) outgrew SIR
+  ;; (E3001); SIR +98304 records / +393216 words; every later base, MM-HEAP-END and MM-WORDS +393216 (heap size
+  ;; unchanged; MM-WORDS 16646144 < 16M items). Capacity only: guest images are byte-identical (see
+  ;; docs/evidence/same-algo-m104-20261015).
+  [:c MM-SIR-BASE 8257792] [:c MM-SIR-W 4] [:c MM-SIR-CAP 491520]
+  [:c MM-LABEL-BASE 10223872] [:c MM-LABEL-W 1] [:c MM-LABEL-CAP 131072]
+  [:c MM-CODE-BASE 10354944] [:c MM-CODE-W 1] [:c MM-CODE-CAP 655360]
+  [:c MM-FIX-BASE 11010304] [:c MM-FIX-W 4] [:c MM-FIX-CAP 98304]
+  [:c MM-LIT-BASE 11403520] [:c MM-LIT-W 4] [:c MM-LIT-CAP 16384]
+  [:c MM-LITB-BASE 11469056] [:c MM-LITB-W 1] [:c MM-LITB-CAP 262144]
+  [:c MM-EXP-BASE 11731200] [:c MM-EXP-W 4] [:c MM-EXP-CAP 1024]
   ;; OUT growth (2026-10-15): the compiler's own image neared 2 MiB (T2 + certified kernels); MM-OUT-CAP +2097152 bytes,
   ;; MM-HEAP-BASE, MM-HEAP-END and MM-WORDS +2097152 (heap size unchanged; MM-WORDS 16252928 < 16M items).
-  [:c MM-OUT-BASE 11342080] [:c MM-OUT-W 1] [:c MM-OUT-CAP 3145728]
-  [:c MM-HEAP-BASE 14487808] [:c MM-HEAP-END 16252928]
+  [:c MM-OUT-BASE 11735296] [:c MM-OUT-W 1] [:c MM-OUT-CAP 3145728]
+  [:c MM-HEAP-BASE 14881024] [:c MM-HEAP-END 16646144]
 
   ;; --- 1.3 record fields (offset inside a record) -------------------------------------------------------
   ;; TOK: one per token, source order. Written by 10-lex only.
