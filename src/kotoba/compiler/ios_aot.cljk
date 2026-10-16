@@ -84,12 +84,22 @@
 (defn- reject! [message data]
   (throw (ex-info message (merge {:phase :verify} data))))
 
+(defn- unsupported-macos-static-host-op? [op]
+  (or (contains? unsupported-macos-static-host-ops op)
+      ;; Native document operations can lower onto string ABI slots, most of
+      ;; which the bounded host leaves NULL. Refuse the whole family so a new
+      ;; document head cannot bypass the explicit primitive denylist.
+      (and (symbol? op)
+           (let [op-name (name op)]
+             (and (<= 9 (count op-name))
+                  (= "document-" (subs op-name 0 9)))))))
+
 (defn- macos-static-host-unsupported-ops [kexe]
   (let [used (volatile! #{})]
     (coll/postwalk
      (fn [form]
        (when (and (seq? form)
-                  (contains? unsupported-macos-static-host-ops (first form)))
+                  (unsupported-macos-static-host-op? (first form)))
          (vswap! used conj (first form)))
        form)
      (get-in kexe [:program :functions]))
