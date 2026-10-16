@@ -234,10 +234,15 @@ timing and C comparisons remain outstanding.
    target ISAs have measured evidence. Until then, “world fastest” remains an
    objective, not a result.
 6. For xgboost `tw`, compare early-stop group widths before changing codegen.
-   On the pinned 128-sample / 400-tree model, width two reduces ideal
-   fixed-five steps by 21.24% with 85,392 stop decisions; current width four
-   saves 15.35% with 45,095 decisions. These omit comparison, branch, spill,
-   and code-size costs. Hand-patch and measure width two against the existing
-   width-four kernel, then require exact result/fuel behavior and qualified
-   timing before keeping it. See
+   On the pinned 128-sample / 400-tree model, ideal width two reduces
+   fixed-five steps by 21.24% with 85,392 stop decisions; width four saves
+   15.35% with 45,095 decisions. Width two is not a four-instruction change:
+   the native kernel interleaves four lanes by depth, so pairs need separate
+   control flow or a new layout. Only width four currently has a matching
+   instruction-count proxy: 14 instructions per skipped walk level and a
+   four-instruction stop test estimate 369,652 net instructions saved. This
+   omits branch prediction, register pressure, code size, and cycle costs.
+   Prototype and measure the four-wide early exit first; then investigate a
+   pair layout if its static work advantage justifies the added code. Require
+   exact result/fuel behavior and qualified timing before keeping a change. See
    `docs/evidence/embench-xgboost-depth-20261016/profile.json`.

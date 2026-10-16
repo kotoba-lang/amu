@@ -93,28 +93,38 @@ def main() -> None:
     group_stop_extra_steps = group_stop_steps - dynamic_steps
     group_stop_checks = sum(min(depth, fixed_steps - 1) * count for depth, count in group_max_histogram.items())
     group_width_sensitivity = []
-    for width in (1, 2, 4, 8, 10, 20, 40, 400):
-        if 400 % width:
-            raise ValueError(f"group width must divide the 400-tree class: {width}")
+    for width in (1, 2, 4, 8, 10, 20, 40):
+        if 40 % width:
+            raise ValueError(f"group width must divide the 40-tree class: {width}")
         groups = 0
         grouped_steps = 0
         stop_checks = 0
+        early_stop_groups = 0
         for sample_depths in depths_by_sample:
             for first_tree in range(0, 400, width):
                 group_max = max(sample_depths[first_tree : first_tree + width])
                 groups += 1
                 grouped_steps += width * group_max
                 stop_checks += min(group_max, fixed_steps - 1)
+                early_stop_groups += int(group_max < fixed_steps)
+        saved_steps = walk_count * fixed_steps - grouped_steps
         group_width_sensitivity.append({
             "groupWidth": width,
             "groups": groups,
             "steps": grouped_steps,
-            "savedStepsVsFixedFive": walk_count * fixed_steps - grouped_steps,
-            "savedPercentVsFixedFive": 100 * (walk_count * fixed_steps - grouped_steps) / (walk_count * fixed_steps),
+            "savedStepsVsFixedFive": saved_steps,
+            "savedPercentVsFixedFive": 100 * saved_steps / (walk_count * fixed_steps),
             "stopChecks": stop_checks,
+            "earlyStopGroups": early_stop_groups,
         })
+    step_body_instructions = 14
+    early_stop_check_instructions = 4
+    four_wide_estimated_saved_instructions = (
+        group_stop_saved_steps * step_body_instructions
+        - group_stop_checks * early_stop_check_instructions
+    )
     result = {
-        "schema": "amu.embench.xgboost-depth-profile/v3",
+        "schema": "amu.embench.xgboost-depth-profile/v4",
         "source": "bench/embench/reproduce-20261015/ports/official-xgboost.kotoba",
         "sourceSha256": hashlib.sha256(source_bytes).hexdigest(),
         "model": {"samples": 128, "trees": 400, "walks": walk_count},
@@ -140,6 +150,15 @@ def main() -> None:
         "twIdealGroupStopExtraLoadsVsDynamicWalk": group_stop_extra_steps * table_input_loads_per_step,
         "twIdealGroupStopSavedLoadsVsFixedFive": group_stop_saved_steps * table_input_loads_per_step,
         "groupWidthSensitivity": group_width_sensitivity,
+        "groupWidthSensitivityScope": "idealized tree grouping by width; the current native tw layout is four lanes interleaved by depth, so widths other than four need a matching code layout and their instruction costs are not estimated here",
+        "fourWideEarlyStopInstructionProxy": {
+            "stepBodyInstructionsPerWalkLevel": step_body_instructions,
+            "earlyStopCheckInstructions": early_stop_check_instructions,
+            "checks": group_stop_checks,
+            "estimatedNetInstructionsSaved": four_wide_estimated_saved_instructions,
+            "basis": "M104 xgboost AArch64 disassembly has 14 instructions per walk lane at each unrolled level after the root; a four-lane early-stop check is three ANDs plus TBNZ to the existing commit-validation block",
+            "scope": "four-wide static instruction-count estimate only; no branch-mispredict, pipeline, spill, code-size, or cycle cost",
+        },
         "extraStepsAgainstDynamicWalk": walk_count * fixed_steps - dynamic_steps,
         "twTableInputLoadsPerStep": table_input_loads_per_step,
         "extraLoadsIfAllGroupsTakeTw": (walk_count * fixed_steps - dynamic_steps) * table_input_loads_per_step,

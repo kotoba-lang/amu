@@ -40,14 +40,22 @@ work count: it omits the instructions and branch behavior needed to detect that
 all four walks are done, so it is a hypothesis to measure, not a speedup
 estimate.
 
-The refreshed profile compares stop checks for group widths that divide the
-400-tree class. Width two is the strongest balanced next code-generation
-candidate: it saves 21.24% of fixed-five steps, versus 15.35% for the current
-width four, while raising idealized stop checks from 45,095 to 85,392. Width
-one saves more, 28.41%, but requires 159,034 checks. Widths 8 and above save
-less than 9%. This ranks width two for a hand-patched trial; it does not price
-the extra comparisons, branches, spills, or code size. The full table is
-recorded in `profile.json` under `groupWidthSensitivity`.
+The refreshed profile compares idealized stop groups that divide each
+40-tree class. Width two saves 21.24% of fixed-five steps, versus 15.35% for
+the current width four, while raising stop decisions from 45,095 to 85,392.
+Width one saves 28.41% and requires 159,034 decisions. Widths 8 and above save
+less than 9%. These are work counts, not interchangeable implementations:
+the current native kernel interleaves four tree lanes by depth. Width two
+needs pair-specific control flow or a different code layout, neither of which
+is represented by a four-instruction check. Its code cost remains unestimated.
+
+For the directly matching four-wide layout, three `AND`s and one `TBNZ` can
+check whether all four walks reached leaves and branch to the existing commit
+validation. At the observed 14 instructions per walk-level, this gives a
+static estimate of 369,652 net instructions saved over fixed-five traversal
+on the pinned model. This excludes branch prediction, pipeline effects,
+register pressure, code size, and cycle costs. The estimate is a ranking aid,
+not a speedup claim; its inputs are recorded in `profile.json`.
 
 To inspect the measured image on Apple silicon, wrap its payload as an object
 and disassemble it. The reported addresses are offsets from the payload symbol:
