@@ -29,7 +29,7 @@ def points(m): return sorted({1} if m == 1 else ({1, 2, m // 2, m} | ({3} if m =
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--out', required=True, type=Path); ap.add_argument('--jobs', type=int, default=3); ap.add_argument('--only')
-    ap.add_argument('--round', help='round config (default rounds/m93-20261015.json)'); ap.add_argument('--write', type=Path)
+    ap.add_argument('--round', help='round config (default rounds/sa-m104-20261015.json)'); ap.add_argument('--write', type=Path)
     a = ap.parse_args(); R.require_macos_arm64(); out = R.fresh_dir(a.out)
     rnd = R.load_round(a.round); W = R.round_workloads(rnd); exp_p = R.round_path(rnd, 'expectedAccounting')
     E = {e['workload']: e for e in json.loads(exp_p.read_text())} if exp_p else None
@@ -72,9 +72,7 @@ def main():
                 lin[k] = slope is not None and all(series[x][k] == series[pts[0]][k] + (x - pts[0]) * slope for x in pts)
         table.append(dict(workload=w, multiplier=m, points=pts, referencesAgreeAtNw=agree, equalsPublishedExpected=matches,
                           nonAffineFields=[k for k, v in lin.items() if not v], fuelAtNw=a51['sample']['benchmarkFuel'] + a51['sample']['verifyFuel']))
-        non_affine = set(table[-1]['nonAffineFields'])
-        allowed_non_affine = {'benchmarkFuel'} if w == 'tarfind' else set()
-        unexpected_non_affine = sorted(non_affine - allowed_non_affine)
+        unexpected_non_affine = sorted(set(table[-1]['nonAffineFields']) - ({'benchmarkFuel'} if w == 'tarfind' else set()))
         if unexpected_non_affine:
             fails.append('%s has unexpected non-affine accounting fields: %s' % (w, ', '.join(unexpected_non_affine)))
         print('%-15s m_w %2d points %-14s agree=%s published=%s nonAffine=%s' % (w, m, pts, agree, matches, table[-1]['nonAffineFields']), flush=True)

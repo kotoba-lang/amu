@@ -1,26 +1,13 @@
 #!/usr/bin/env python3
-"""Level (b) BUILD: public bootstrap -> fixed-point compiler G* of the measured source -> the 19 measured images, byte for byte.
+"""Level (b) BUILD: public bootstrap -> fixed-point compiler G* of the selected round -> its measured images, byte for byte.
 
   python3 bench/embench/reproduce-20261015/b_build.py --out <new-empty-dir> [--round rounds/<name>.json] [--record <dir>]
                                                        [--skip-bootstrap-check]
-Default round: rounds/m93-20261015.json (the published round, commit be7f0ce3, all pins present).
+Default round: rounds/sa-m104-20261015.json (the corrected same-algorithm round).
 
-Chain (all inputs are files of public commits of this repository, checked by SHA-256):
-  0. loader  = clang -std=c11 -O2 seed/bootstrap/adopted-loader-20261012.c (bootstrap files read from git at be7f0ce3)
-  1. check   : adopted-20261012.bin compiles its own source (seed/MANIFEST unity of ffa4cfc1) to itself (public fixed point)
-  2. stage A : adopted compiles U_A = the ffa4cfc1 unity with seed/00-ns.kotoba taken from be7f0ce3
-               (that file differs from ffa4cfc1's only in the 22 generated memory-map constants: the larger TOK/NODE/
-               SIR/CODE/FIX/OUT tables the measured compiler source needs). Result: compiler A (old code generator,
-               new memory map). The adopted compiler cannot compile S directly: it stops with 'seed: E101 compiler table full: region 1'
-               (the token table).
-  3. G1 = A(S), G2 = G1(S), G3 = G2(S) where S = seed/MANIFEST unity of be7f0ce3 (the measured source).
-     G2 == G3 is required: G* = G2 is the fixed point S(S).
-  4. G* compiles the 19 official ports (ports/official-*.kotoba); every kseed, native image and export table must equal
-     the measured ones (expected/measured-images.json).
-Result (expected/compiler-chain.json): G1 = A(S) is already the fixed point -- G1 = G2 = G3 = G* = bcd70b24..., the very
-compiler the round measured (it had been built by the development compiler m92, which yields the same bytes). Reason: T2
-and the post-emission passes are size-budgeted off for programs as large as the compiler (t2-max-sir = 131072 SIR
-records), so the compiler's own code comes from the backend that ffa4cfc1 and be7f0ce3 share."""
+The selected round config pins its source commit, bootstrap inputs, compiler chain and measured images. The build uses the
+public native bootstrap, constructs the stage-A compiler when needed, iterates the selected source to a fixed point, then
+rebuilds all 19 ports and compares their kseed, native image and export-table hashes with the round's recorded pins."""
 import argparse, json, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'tools'))
@@ -30,7 +17,7 @@ import repro_lib as R
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--out', required=True, type=Path)
-    ap.add_argument('--round', help='round config (default rounds/m93-20261015.json, the published round)')
+    ap.add_argument('--round', help='round config (default rounds/sa-m104-20261015.json)')
     ap.add_argument('--record', type=Path, help='new round: write build-inputs.json, compiler-chain.json and images.json here')
     ap.add_argument('--skip-bootstrap-check', action='store_true', help='skip step 1 (saves one compile)')
     a = ap.parse_args()
@@ -40,15 +27,14 @@ def main():
     pins = json.loads(pins_p.read_text()) if pins_p else None
     chain_pins = json.loads(chain_p.read_text()) if chain_p else None
     exp_img = json.loads(img_p.read_text()) if img_p else None
-    boot = R.bootstrap_pins(rnd.get('bootstrapCommit', R.BOOTSTRAP_COMMIT))
-    if pins: assert all(pins[k] == v for k, v in boot.items() if k in pins), 'round pins disagree with the bootstrap adoption receipt'
+    boot = R.bootstrap_pins()
+    if pins: assert all(pins[k] == v for k, v in boot.items()), 'round pins disagree with the repository adoption receipt'
     out = R.fresh_dir(a.out); host = out / 'host'; host.mkdir()
     report = dict(level='b-build', round=rnd['round'], sourceCommit=commit, started=time.time(), steps=[], ok=False)
     def save(): (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     def step(name, **kw): report['steps'].append(dict(name=name, **kw)); save(); print(name, json.dumps(kw)[:300], flush=True)
     # ---- 0. pinned public inputs
-    loader_src = R.bootstrap_file('adopted-loader-20261012.c', host / 'adopted-loader-20261012.c', boot['bootstrapCommit'])
-    adopted = R.bootstrap_file('adopted-20261012.bin', host / 'adopted-20261012.bin', boot['bootstrapCommit'])
+    loader_src = R.REPO / 'seed/bootstrap/adopted-loader-20261012.c'; adopted = R.REPO / 'seed/bootstrap/adopted-20261012.bin'
     assert R.sha_file(loader_src) == boot['adoptedLoaderSourceSHA256'], 'loader source pin'
     assert R.sha_file(adopted) == boot['adoptedImageSHA256'], 'adopted bootstrap image pin'
     loader = R.build_loader(loader_src, host / 'kexe-loader'); step('loader-built', loaderSourceSHA256=boot['adoptedLoaderSourceSHA256'])

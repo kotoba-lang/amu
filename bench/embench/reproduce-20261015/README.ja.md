@@ -1,14 +1,34 @@
-# 2026年10月15日の Embench 結果(Kotoba / C = 0.7999)の再現手順
+# Embench を用いた比較結果と再現手順(M104 訂正版、M93 は履歴)
 
 [English README.md](README.md)
 
 このディレクトリは、<https://kotoba-lang.org/blog/embench-c-parity-20261015/> で公開した結果(証拠一式は
 `/benchmarks/embench-official-20261015/`)を、第三者が検証・再ビルド・再計測できるようにするためのものです。
-計測したコンパイラのソースは本リポジトリのコミット `be7f0ce358ebe8d1a715b2784f272ce0eda8e934`
+
+## 現在の計測状況
+
+* **当初の M93 値 0.7999 を、同一アルゴリズムの結果として引用しないでください。** 後のカーネル監査で、計測した M93
+  コンパイラに置換カーネルが含まれることが分かりました。また、Kotoba 側だけが ARMv8 SHA-256 命令を使っていました。
+  M93 は以下に履歴として残します。
+* 訂正版の **M104** は、同一アルゴリズムのみの selfhost 不動点コンパイラ、スカラー SHA-256、固定した upstream Embench speed
+  ドライバ、文書化した反復あたりの比率式で全19 workloadを計測しています。元の Apple M4 サイクルは **Kotoba / C = 0.8213** です。
+  2026-10-16には別の Apple M4 Mac mini (`Mac16,10`、16 GB、macOS 26.3.1)でも再計測し、両アーム19/19採用、Apple clang 21.0.0で
+  Cを新規ビルドした結果は **0.7877703356** でした。ホストごとの結果として分けて記録し、平均していません。いずれも Kotoba のポートと
+  プロジェクト固有ハーネスを使う **Embench に基づく翻訳ポートの比較**であり、公式・認定Embenchスコアではありません。再計測の全raw記録と
+  独立検証スクリプトは `round-sa-m104-20261015/records/m4-macmini-attempt-20261016-r1/` にあります。
+* 2026-10-16 の Apple M1 Max 試行は、測定記録を残しましたが **不採択で、スコアではありません**。外部の10秒 raw-idleゲートは1回70.39%に達して計測を開始しましたが、Kotoba/C両アームで実行できた `aha-mont64` は各2試行とも計測区間の raw idle 70%未満で不採択でした。残る18 workloadは静穏ゲートのタイムアウトで実行されず、両アームとも0/19採用、GMなしです。全 raw 記録は `round-sa-m104-20261015/records/m1-attempt-20261016-r1/` にあります。
+* M104 のプロトコルは各試行前の raw CPU idle 70%以上、全計測区間で raw idle と推定 background idle がともに70%以上、両アームで全19/19採用、Kotoba 出力の完全一致、raw 記録の保存を求めます。全件計測を完了し、raw 記録をプロトコルと独立照合するまで M1 のスコアは主張しません。
+
+測定方法の参照元は [Embench User Guide](https://github.com/embench/embench-iot/blob/master/doc/README.md) と、固定した
+[Embench upstream source](https://github.com/embench/embench-iot/tree/09c2ed8c3b7008c95d08b038de4a3f6dc103ed70) です。
+このコミットの未変更 speed driver と baseline table を使い、Kotoba/C 用の独自 target module を与えています。
+したがって、対象プログラムとハーネスは翻訳ポートの比較であり、未変更の Embench 提出物ではありません。
+
+以下に記す過去の M93 再現では、計測したコンパイラのソースは本リポジトリのコミット `be7f0ce358ebe8d1a715b2784f272ce0eda8e934`
 (ブランチ `claude/embench-c-parity-m93-20261015`)です。本パッケージは同じブランチ上の後続コミットで追加したもので、
 計測対象のソースは変更していません(`seed/` は両コミットで同一です)。
 
-## 1. 主張していること
+## 1. 過去の M93 の主張(訂正版により置き換え)
 
 2026年10月15日、1台の Apple M4 Mac mini(macOS、arm64)で行った 1 回の計測サイクルについて:
 
@@ -97,7 +117,7 @@ picojpeg の end-of-block ビットマスク、sglib の `qk`・`ls`・`tb`、xg
 ### (a) オフライン:生記録からすべてを再計算
 
 ```
-python3 bench/embench/reproduce-20261015/a_offline.py
+python3 bench/embench/reproduce-20261015/a_offline.py --round rounds/m93-20261015.json
 ```
 
 確認する内容:
@@ -125,7 +145,7 @@ LEVEL_A PASS GM 0.7998826447941968
 ### (b) ビルド:公開ブートストラップ → 不動点 → 計測したイメージ
 
 ```
-python3 bench/embench/reproduce-20261015/b_build.py --out /tmp/embench-b
+python3 bench/embench/reproduce-20261015/b_build.py --round rounds/m93-20261015.json --out /tmp/embench-b
 ```
 
 アイドル状態の M シリーズ Mac で約 10 分かかり、負荷が高いとさらに長くなります。手順と期待される SHA-256:
@@ -137,10 +157,6 @@ python3 bench/embench/reproduce-20261015/b_build.py --out /tmp/embench-b
 | 2 | ステージ A:`ffa4cfc1` の unity の `seed/00-ns.kotoba` を `be7f0ce3` のものに差し替えて(unity `f2dca71d…`)adopted でコンパイル | `5583a2fdf8267938f466782fc6c7873eecc03f321a4434f2a6d8840794a6691d` |
 | 3 | G1 = A(S)、G2 = G1(S)、G3 = G2(S)。S = `be7f0ce3` の unity(`1b9d9e30…`、2,625,422 バイト)。**G2 = G3** | **G1 = G2 = G3 = G\* = `bcd70b2474f0421a53c40c07b61bef100e52220f562def767958f51f07ddad16`** |
 | 4 | G* で `ports/official-*.kotoba` をコンパイルし、19 個すべての kseed・ネイティブイメージ・エクスポート表が計測時のものと一致 | `expected/measured-images.json` |
-
-ブートストラップのファイル(採用イメージ、そのレシート、信頼できる C ローダ)は git から **`be7f0ce3` 時点のもの**を読みます。
-そのため、作業ツリーの `seed/bootstrap/` が後で再採用されても(`main` ではブートストラップが m104 の不動点 `e5fc0ca2` に
-なっています)、本パッケージの検証内容は変わりません。
 
 ステージ A が要る理由:`be7f0ce3` はコンパイラ自身のメモリマップを拡大しています。その `seed/00-ns.kotoba` は `ffa4cfc1`
 のものと、生成された 22 個の定数(TOK・NODE・SIR・CODE・FIX・OUT の各テーブル拡大と MM-WORDS)だけが異なります。
@@ -160,8 +176,8 @@ python3 bench/embench/reproduce-20261015/b_build.py --out /tmp/embench-b
 ### (c) 完全一致:各イメージを n_w で実行
 
 ```
-python3 bench/embench/reproduce-20261015/c_exactness.py --out /tmp/embench-c [--count-instructions] [--images /tmp/embench-b/step4-images]
-python3 bench/embench/reproduce-20261015/c_reference.py --out /tmp/embench-cref
+python3 bench/embench/reproduce-20261015/c_exactness.py --round rounds/m93-20261015.json --out /tmp/embench-c [--count-instructions] [--images /tmp/embench-b/step4-images]
+python3 bench/embench/reproduce-20261015/c_reference.py --round rounds/m93-20261015.json --out /tmp/embench-cref
 ```
 
 **`c_exactness.py`** は各タイマーをビルドし、公式の caps で n_w を 1 回実行します。
@@ -195,7 +211,7 @@ python3 bench/embench/reproduce-20261015/c_reference.py --out /tmp/embench-cref
 
 ```
 python3 bench/embench/reproduce-20261015/tools/fetch_upstream.py --dest /tmp/embench-iot
-python3 bench/embench/reproduce-20261015/d_timing.py --upstream /tmp/embench-iot --out /tmp/embench-d
+python3 bench/embench/reproduce-20261015/d_timing.py --round rounds/m93-20261015.json --upstream /tmp/embench-iot --out /tmp/embench-d
 ```
 
 内容:
@@ -209,13 +225,19 @@ python3 bench/embench/reproduce-20261015/d_timing.py --upstream /tmp/embench-iot
 
 `--workloads crc32,edn` で短いスモーク実行ができますが、幾何平均は表示しません。
 
+`--images` を指定する場合、全 kseed が選択ラウンドの kseed、native payload、exports、source table の pin と一致する必要があります。
+`--c-binaries` を指定する場合は `c/build_c.py` が生成した schema 2 の `build-c.json` が必要です。検証器は固定 upstream revision、
+コンパイル元と include header、記録された `-O2` コマンド、各バイナリのハッシュを照合します。全19の GM は両 upstream driver の終了コードも
+0 の場合に限り表示します。
+
 `d_timing.py` は、本ラウンドの 2 つのキャンペーンスクリプトをパスをパラメータ化して再実装したものです。元のスクリプトは
 `records/official/campaign.py` と `records/fresh-C/campaign.py` にそのまま収録しています。同じに保っているのは、タイマーの
 起動(n_w、caps)、ドライバのコマンド、`run_trigger.py`、スコアの計算式です。除いたのは、計測ホストのカストディレシートと
 プロセスパターンです。また、凍結した C バイナリを再利用せず C をビルドします。
 
-**ばらつきの目安。** 公開値 0.7999 は、1 台の Apple M4 のその時点のバックグラウンド負荷のもとでの 1 サイクルで、
-C は Apple clang 17.0.0 でビルドしたものです。結果は次によって変わります。
+**ばらつきの目安。** 元の M104 Apple M4 サイクルは0.8213、別の Mac16,10 で Apple clang 21.0.0 を使った再計測は0.7877703356です。
+ホストごとの結果は分けて扱い、平均して全M4共通の値にしないでください。過去の M93 0.7999 を同一アルゴリズムの結果として使わないでください。
+結果は次によって変わります。
 
 * CPU(C と Kotoba のコードはコアの使い方が異なります)。
 * clang のバージョン(C バイナリが変わります)。
@@ -240,9 +262,11 @@ C は Apple clang 17.0.0 でビルドしたものです。結果は次によっ�
 | `reference/` | 信頼できる参照イメージ(round51 WM G4、round114)とそのエクスポート表、m=1 の元の期待値 |
 | `records/round/` | プロトコル改訂の本文、ハッシュ付きの事前登録、参照会計レシート、n_w での期待値、コンパイル・準備・事前検査のレシート、検証レビュー、最終サマリ |
 | `records/official/`、`records/fresh-C/` | 両アームの収集記録(レポート、全試行の生データ、受け入れ判定のプローブ、起動スクリプト、カストディ)をそのまま収録 |
+| `round-sa-m104-20261015/records/m4-macmini-attempt-20261016-r1/` | 2台目のM4による全19再計測、clangビルドレシート、raw試行、upstream検証、独立検証スクリプト |
+| `round-sa-m104-20261015/records/m1-attempt-20261016-r1/` | M1 Max の未採択試行、CPUゲート証跡、全 raw 試行記録。ベンチマークスコアではない |
 | `records/omitted-files.json` | 同梱しなかった収集ファイル(ハッシュと理由付き) |
 | `expected/` | レベル (b) の固定値:ビルド入力、コンパイラチェーン、計測イメージ |
-| `rounds/` | ラウンド設定(コミット、倍率表、固定値)。`m93-20261015.json` が公開ラウンドで既定値 |
+| `rounds/` | ラウンド設定(コミット、倍率表、固定値)。`sa-m104-20261015.json` が訂正版の既定値。M93 は履歴 |
 | `audit/` | カーネル範囲の方針とカーネル監査表(2a 節を参照) |
 | `round-sa-m104-20261015/` | 訂正版の同一アルゴリズムラウンド(8 節):記録、イメージ、ワークロード表、固定値 |
 
@@ -261,8 +285,8 @@ C は Apple clang 17.0.0 でビルドしたものです。結果は次によっ�
 
 ## 7. 別のラウンドの実行
 
-スクリプトはラウンド設定 `rounds/<name>.json` でパラメータ化されています。既定は公開した m93 ラウンドの
-`rounds/m93-20261015.json` です。設定には次を記載します。
+スクリプトはラウンド設定 `rounds/<name>.json` でパラメータ化されています。既定は訂正版の
+`rounds/sa-m104-20261015.json` です。履歴として M93 を再現するときは `--round rounds/m93-20261015.json` を明示します。設定には次を記載します。
 * 計測するソースのコミット。
 * ステージ A がそのコミットから取るファイル(`seed/00-ns.kotoba`)。
 * ポートとイメージのディレクトリ。
@@ -310,8 +334,9 @@ python3 bench/embench/reproduce-20261015/d_timing.py --round rounds/<name>.json 
   * スクリーンは 0.85 秒で、R_w は m43・m87・m93 から較正します。
   * **Amendment 4:** 最大の実行可能な m にあるワークロードは 0.6 秒以上で受け入れます。該当するのは matmult-int で、予測は 0.78 秒、
     m93 での m = 8 の区間は 0.777 秒でした。
-* **結果。** **Kotoba / C = 0.8213**(m93 は 0.7999、round114 は 2.688)。Kotoba 19/19、C 19/19 が
-  採用され、すべて 1 回目の試行で、すべて完全一致でした。検証:`PASS_INDEPENDENT_SA_M104_RAW_CUSTODY_MULTIPLIER_FORMULA_V1`。
+* **結果。** **Kotoba / C = 0.8213**(過去の m93 は 0.7999、round114 は 2.688)。Kotoba 19/19、C 19/19 が
+  採用され、すべて 1 回目の試行で、すべて完全一致でした。レポートは翻訳ポートの探索的結果と分類し、
+  `officialUnmodifiedCScore` は `false` です。検証:`PASS_INDEPENDENT_SA_M104_RAW_CUSTODY_MULTIPLIER_FORMULA_V1`。
 * **ノイズ確認(Amendment 3)。** aha-mont64 は m93 と同じイメージと n でした:2.039 秒に対して
   m93 は 1.953 秒(×1.044)。このサイクルの C の経過時間の幾何平均は m93 の
   ×1.044 で、ホストは両アームとも約 4 % 遅く動いていました。
@@ -340,3 +365,7 @@ python3 bench/embench/reproduce-20261015/d_timing.py --round rounds/<name>.json 
 | ud | 4 | 0.7559 | 0.7333 (m4) | 1.031 |
 | wikisort | 8 | 0.7935 | 0.9646 (m8) | 0.823 |
 | xgboost | 1 | 1.5184 | 1.9575 (m1) | 0.776 |
+
+## 9. 2台目の Apple M4 Mac mini による計測(2026年10月16日)
+
+`round-sa-m104-20261015/records/m4-macmini-attempt-20261016-r1/` は、別の M4 Mac mini (`Mac16,10`、16 GB、macOS 26.3.1)で、訂正版 M104 を全19 workload再計測した記録です。変更していない計時スクリプトと固定 upstream コミット `09c2ed8c3b7008c95d08b038de4a3f6dc103ed70`を使い、Cは Apple clang 21.0.0で新規ビルドしました。両アーム19/19が採用され、raw idleと推定background idleを含むプロトコル条件を満たしています。GMは **0.7877703355587422** です。`verify-record.py`は全raw行、Kotobaの完全一致、CPUゲート、各比率、全19のGMを独立に照合します。これは翻訳ポートの比較であり、公式Embench結果やSPECスコアではありません。元のM4サイクル0.8213とはホストごとに分け、平均していません。

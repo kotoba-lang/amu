@@ -1,14 +1,42 @@
-# Reproducing the 15 October 2026 Embench result (Kotoba / C = 0.7999)
+# Embench-derived results and reproduction (M104 corrected; M93 historical)
 
 [日本語版 README.ja.md](README.ja.md)
 
 This directory lets a third party check, rebuild and re-time the result published at
 <https://kotoba-lang.org/blog/embench-c-parity-20261015/> (evidence bundle `/benchmarks/embench-official-20261015/`).
-The measured compiler source is commit `be7f0ce358ebe8d1a715b2784f272ce0eda8e934` of this repository
+
+## Current measurement status
+
+* **Do not cite the original M93 value, 0.7999, as a same-algorithm result.** A later kernel audit found substitution kernels
+  in the measured M93 compiler; it also used ARMv8 SHA-256 instructions only on the Kotoba side. M93 remains below as a
+  historical reproduction record.
+* The corrected **M104** round measures all 19 workloads with the same-algorithm-only selfhost fixed-point compiler, scalar
+  SHA-256, the pinned upstream Embench speed driver and the documented per-iteration ratio formula. The original Apple M4
+  cycle reports **Kotoba / C = 0.8213**. A separate 16 October cycle on another Apple M4 Mac mini (`Mac16,10`, 16 GB,
+  macOS 26.3.1) passed 19/19 in both arms and reports **0.7877703356** using freshly built Apple clang 21.0.0 C binaries.
+  These host-specific cycles are retained separately and are not averaged. Both are **Embench-derived translated-port
+  comparisons**, not official or certified Embench scores: the Kotoba programs use a project-specific translation and harness.
+  The follow-up's raw evidence and independent verifier are in
+  `round-sa-m104-20261015/records/m4-macmini-attempt-20261016-r1/`.
+* The 16 October 2026 Apple M1 Max attempt retained its records but was **rejected and is not a score**. The external
+  10-second raw-idle gate reached 70.39% once and started the campaign, but the two executed `aha-mont64` attempts in each
+  arm were rejected because raw idle during timing was below 70%. The other 18 workloads timed out at quiet admission and
+  did not execute. Both arms accepted 0/19 workloads, so there is no geometric mean. The full raw record is in
+  `round-sa-m104-20261015/records/m1-attempt-20261016-r1/`.
+* The M104 protocol requires at least 70% raw CPU idle before each attempt, raw and estimated background idle at least 70%
+  during every timed run, full 19/19 acceptance for both arms, exact Kotoba outputs, and retained raw records. No M1 score
+  is claimed until a full run passes and its raw records are independently checked against the protocol.
+
+The method reference is the [Embench User Guide](https://github.com/embench/embench-iot/blob/master/doc/README.md) and the
+pinned [Embench upstream source](https://github.com/embench/embench-iot/tree/09c2ed8c3b7008c95d08b038de4a3f6dc103ed70). The
+reproduction uses that commit's unmodified speed driver and baseline table, with custom Kotoba/C target modules. The target
+programs and harness therefore remain a translated-port comparison, not an unmodified Embench submission.
+
+For the historical M93 reproduction below, the measured compiler source was commit `be7f0ce358ebe8d1a715b2784f272ce0eda8e934` of this repository
 (branch `claude/embench-c-parity-m93-20261015`). This package was added in a later commit on that branch and does not change
 the measured source: `seed/` is identical at both commits.
 
-## 1. What is claimed
+## 1. Historical M93 claim (superseded)
 
 On one Apple M4 Mac mini (macOS, arm64), in one measurement cycle on 15 October 2026:
 
@@ -99,7 +127,7 @@ All commands run from the repository root. Each `--out` must be a new directory.
 ### (a) Offline: recompute everything from the raw records
 
 ```
-python3 bench/embench/reproduce-20261015/a_offline.py
+python3 bench/embench/reproduce-20261015/a_offline.py --round rounds/m93-20261015.json
 ```
 
 What it checks:
@@ -127,7 +155,7 @@ LEVEL_A PASS GM 0.7998826447941968
 ### (b) Build: public bootstrap → fixed point → the measured images
 
 ```
-python3 bench/embench/reproduce-20261015/b_build.py --out /tmp/embench-b
+python3 bench/embench/reproduce-20261015/b_build.py --round rounds/m93-20261015.json --out /tmp/embench-b
 ```
 
 About 10 minutes on an idle M-series Mac; much longer under load. Steps and expected SHA-256:
@@ -139,10 +167,6 @@ About 10 minutes on an idle M-series Mac; much longer under load. Steps and expe
 | 2 | stage A: adopted compiles the `ffa4cfc1` unity with `seed/00-ns.kotoba` taken from `be7f0ce3` (unity `f2dca71d…`) | `5583a2fdf8267938f466782fc6c7873eecc03f321a4434f2a6d8840794a6691d` |
 | 3 | G1 = A(S), G2 = G1(S), G3 = G2(S), with S = unity of `be7f0ce3` (`1b9d9e30…`, 2,625,422 bytes); **G2 = G3** | **G1 = G2 = G3 = G\* = `bcd70b2474f0421a53c40c07b61bef100e52220f562def767958f51f07ddad16`** |
 | 4 | G* compiles `ports/official-*.kotoba`; all 19 kseeds, native images and export tables equal the measured ones | `expected/measured-images.json` |
-
-The bootstrap files (the adopted image, its receipt and the trusted C loader) are read from git **as of `be7f0ce3`**, so a
-later re-adoption of `seed/bootstrap/` in the working tree (as on `main`, where the bootstrap is now the m104 fixed point
-`e5fc0ca2`) does not change what this package verifies.
 
 Why stage A: `be7f0ce3` enlarged the compiler's own memory map. Its `seed/00-ns.kotoba` differs from `ffa4cfc1`'s only in 22
 generated constants: the larger TOK, NODE, SIR, CODE, FIX and OUT tables, and MM-WORDS. The public bootstrap's tables are too
@@ -161,8 +185,8 @@ binary. The 19 ports are small, so they do get T2 and the certified kernels; ste
 ### (c) Exactness: run every image at its n_w
 
 ```
-python3 bench/embench/reproduce-20261015/c_exactness.py --out /tmp/embench-c [--count-instructions] [--images /tmp/embench-b/step4-images]
-python3 bench/embench/reproduce-20261015/c_reference.py --out /tmp/embench-cref
+python3 bench/embench/reproduce-20261015/c_exactness.py --round rounds/m93-20261015.json --out /tmp/embench-c [--count-instructions] [--images /tmp/embench-b/step4-images]
+python3 bench/embench/reproduce-20261015/c_reference.py --round rounds/m93-20261015.json --out /tmp/embench-cref
 ```
 
 **`c_exactness.py`** builds each timer and runs it once at n_w with the official caps:
@@ -195,7 +219,7 @@ Expected: `LEVEL_C_REFERENCE PASS`, after about 10–30 minutes.
 
 ```
 python3 bench/embench/reproduce-20261015/tools/fetch_upstream.py --dest /tmp/embench-iot
-python3 bench/embench/reproduce-20261015/d_timing.py --upstream /tmp/embench-iot --out /tmp/embench-d
+python3 bench/embench/reproduce-20261015/d_timing.py --round rounds/m93-20261015.json --upstream /tmp/embench-iot --out /tmp/embench-d
 ```
 
 What it does:
@@ -208,13 +232,19 @@ What it does:
 
 `--workloads crc32,edn` gives a short smoke run, which never prints a GM.
 
+If `--images` is supplied, every kseed must match the selected round's pinned kseed, native payload, exports, and source
+table. If `--c-binaries` is supplied, its `build-c.json` must be a schema-2 receipt from `c/build_c.py`; the verifier checks
+the pinned upstream revision, every compiled source and included header, the recorded `-O2` command, and each binary hash.
+Both upstream driver exit codes must also be zero before a full-19 GM is reported.
+
 `d_timing.py` re-implements the round's two campaign scripts with parameterized paths. Those scripts are kept verbatim in
 `records/official/campaign.py` and `records/fresh-C/campaign.py`. What it keeps the same: the timer invocations (n_w,
 caps), the driver command, the `run_trigger.py` files and the score formulas. What it drops: the measurement host's
 custody receipts and process patterns. It also builds C instead of reusing the frozen binaries.
 
-**Expected spread.** The published 0.7999 is one cycle on one Apple M4 under its background load, with C built by Apple clang
-17.0.0. Your result depends on:
+**Expected spread.** The original M104 Apple M4 cycle reports 0.8213; a separate Mac16,10 follow-up with Apple clang 21.0.0
+reports 0.7877703356. Keep these host-specific cycles separate; do not average them into a universal M4 value. Do not use
+the historical M93 0.7999 as a same-algorithm result. Your result depends on:
 
 * your CPU (the C and Kotoba code use the core differently);
 * your clang version (the C binaries change);
@@ -239,9 +269,11 @@ hashes are in `records/fresh-C/source-custody.json`. A different clang builds di
 | `reference/` | trusted reference images (round51 WM G4, round114) with export tables, and the original m=1 expected values |
 | `records/round/` | protocol revision text, hashed pre-registration, reference-accounting receipt, expected values at n_w, compile/preparation/precheck receipts, verifier review, final summary |
 | `records/official/`, `records/fresh-C/` | the collected campaign records of both arms (reports, raw attempts, quiet-admission probes, invocation scripts, custody), verbatim |
+| `round-sa-m104-20261015/records/m4-macmini-attempt-20261016-r1/` | second-host full-19 M4 cycle, fresh clang build receipt, raw attempts, upstream verification, and an independent record verifier |
+| `round-sa-m104-20261015/records/m1-attempt-20261016-r1/` | rejected M1 Max attempt, CPU gate evidence, and all raw attempt records; not a benchmark score |
 | `records/omitted-files.json` | collected files not vendored here, with hashes and reasons |
 | `expected/` | pins for level (b): build inputs, compiler chain, measured images |
-| `rounds/` | round configs (commit, multiplier table, pins); `m93-20261015.json` is the published round and the default |
+| `rounds/` | round configs (commit, multiplier table, pins); `sa-m104-20261015.json` is the default corrected round; M93 is historical |
 | `audit/` | the kernel scope policy and the kernel audit tables (see section 2a) |
 | `round-sa-m104-20261015/` | the corrected same-algorithm round (section 8): records, images, workload table, pins |
 
@@ -260,8 +292,8 @@ their hashes are part of the custody chain. The scripts never use those paths.
 
 ## 7. Running another round
 
-The scripts are parameterized by a round config, `rounds/<name>.json`. The default is `rounds/m93-20261015.json`, the published
-round. A config names:
+The scripts are parameterized by a round config, `rounds/<name>.json`. The default is the corrected
+`rounds/sa-m104-20261015.json`. To reproduce the historical M93 round, pass `--round rounds/m93-20261015.json`. A config names:
 * the measured source commit;
 * the files stage A takes from that commit (`seed/00-ns.kotoba`);
 * the port and image directories;
@@ -309,8 +341,9 @@ ancestors. Its round config is `rounds/sa-m104-20261015.json`, and its data is i
   * The screen is 0.85 s, and R_w is calibrated on m43, m87 and m93.
   * **Amendment 4:** a workload at its maximum feasible m is accepted at ≥ 0.6 s. This applies to matmult-int: projection
     0.78 s, and its m93 interval at m = 8 was 0.777 s.
-* **Result.** **Kotoba / C = 0.8213**, against m93's 0.7999 and round114's 2.688. 19/19 Kotoba and
-  19/19 C were accepted, all on the first attempt and all exact. Verifier: `PASS_INDEPENDENT_SA_M104_RAW_CUSTODY_MULTIPLIER_FORMULA_V1`.
+* **Result.** **Kotoba / C = 0.8213**, against the historical m93 0.7999 and round114's 2.688. 19/19 Kotoba and
+  19/19 C were accepted, all on the first attempt and all exact. The report labels this an exploratory translated-port
+  result and sets `officialUnmodifiedCScore` to `false`. Verifier: `PASS_INDEPENDENT_SA_M104_RAW_CUSTODY_MULTIPLIER_FORMULA_V1`.
 * **Noise check (Amendment 3).** aha-mont64 had the same image and n as in m93: 2.039 s against
   1.953 s (×1.044). This cycle's C elapsed GM was ×1.044 of
   m93's, so the host ran about 4 % slower in both arms.
@@ -347,3 +380,7 @@ python3 bench/embench/reproduce-20261015/d_timing.py  --round rounds/sa-m104-202
 | ud | 4 | 0.7559 | 0.7333 (m4) | 1.031 |
 | wikisort | 8 | 0.7935 | 0.9646 (m8) | 0.823 |
 | xgboost | 1 | 1.5184 | 1.9575 (m1) | 0.776 |
+
+## 9. Second Apple M4 Mac mini cycle (16 October 2026)
+
+The follow-up record at `round-sa-m104-20261015/records/m4-macmini-attempt-20261016-r1/` is a fresh full-19 run of the same M104 round on a separate M4 Mac mini (`Mac16,10`, 16 GB, macOS 26.3.1). It used the unchanged timing script and pinned upstream commit `09c2ed8c3b7008c95d08b038de4a3f6dc103ed70`; the C arm was rebuilt with Apple clang 21.0.0. All 19 workloads in each arm passed the protocol, including raw and estimated-background CPU idle gates. The GM is **0.7877703355587422**. `verify-record.py` independently checks all raw rows, exact Kotoba outputs, gate receipts, ratios, and the full-19 GM. This remains a translated-port comparison, not an official Embench result or a SPEC score. It is recorded separately from the original 0.8213 M4 cycle because host/compiler-specific runs should not be pooled.
