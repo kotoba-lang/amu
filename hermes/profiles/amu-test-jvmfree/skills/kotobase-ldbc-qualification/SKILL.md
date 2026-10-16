@@ -53,9 +53,11 @@ Suites live in `bench/`: short = `ldbc_short_loader_test.cljk` +
    extra seeder for tags/orgs/likes/memberships).
 3. Compare oracle vs HTTP adapter for base params plus boundary variants.
 4. Updates over HTTP (official operation objects), mirror them in Neo4j, re-compare.
-5. Run with the JVM classpath recorded in HANDOFF (java -Xmx768m … clojure.main
-   bench/<suite>.cljk ../reference-cypher). Runs take minutes (snapshot hydration) —
-   one green run per landed pair; do not casually re-run full suites.
+5. This Q9 profile must not launch `java` or `clojure.main`. The JVM classpath
+   command in HANDOFF (`java -Xmx768m … clojure.main bench/<suite>.cljk
+   ../reference-cypher`) is a compatibility diagnostic for an explicitly authorized
+   non-Q9 owner only; never run it here or count it as Q9 qualification. Keep this
+   profile's LDBC qualification refused until a JVM-free route is available.
 6. Land the milestone: update `bench/LDBC-QUALIFICATION.md` + `bench/kotobase_peer/`
    + sut operation table in the same commit; report the commit SHA.
 
