@@ -119,8 +119,8 @@ truncation toward zero.
 
 | Rank | Lever | Reach | Main risk | Falsifier |
 |---|---|---|---|---|
-| 1 | Reciprocal lowering after T2 exposes a positive constant divisor in a fast loop | Arithmetic loops; includes strings and collections if `imod` is inlined | Signed edge cases, register aliasing, compiler code size | Exact machine results differ, or generated hot loops retain `sdiv` |
-| 2 | Hoist the reciprocal once before the loop | Repeated constant division | Hoisted register conflicts or fallback paths miss the value | Loop body still materializes the reciprocal or emits `sdiv` |
+| 1 | Hoist a positive constant reciprocal across a branchy loop with a slow path | Arithmetic loops with guards; strings `scan` is a concrete candidate | Register lifetime, fallback edges, and exact trap/fuel behavior | The loop still materializes its divisor, any edge observes a clobbered value, or paired timing shows no gain |
+| 2 | Reciprocal lowering after T2 exposes a positive constant divisor in a straight-line fast loop | Repeated arithmetic in eligible T2 fast loops; collections fixture reached this path | Signed edge cases, register aliasing, compiler code size | Exact machine results differ, or generated hot loops retain `sdiv` |
 | 3 | Reduce loop fuel traffic | Many counted loops | Changes trap timing or fuel semantics | Any exact result/fuel vector differs |
 | 4 | Broaden collection access lowering | Vector-heavy workloads | Narrower reach and more comparator work | No separated gain in the collection domain |
 
@@ -163,6 +163,18 @@ executed values; this is a correctness-accounting repair, not a speed result.
 No timing result is claimed for this patch. The host was busy, and static
 codegen plus exact execution do not establish a performance gain.
 
+The unchanged strings fixture narrows the follow-up. Its `scan` loop has
+bounds and ASCII branches plus a slow `string-code-point-at` fallback call;
+the pinned candidate disassembly still has `sdiv` at `0x228`, followed by the
+multiply/subtract sequence for `imod`. The collections loop is straight-line
+after its fast-loop precheck, so T2 can hoist the reciprocal; the branchy
+strings loop does not take that path. This is an inference from source shape
+and disassembly, not a runtime guard trace. A per-operation `smulh`
+substitution would rematerialize the 64-bit reciprocal inside the loop and add
+instructions, so the next compiler candidate should first investigate
+loop-invariant reciprocal placement across these branches. The disassembly is
+`docs/evidence/crossdomain-m105-reciprocal-20261016/fixtures/kernel_strings.disasm.txt`.
+
 ## Next checks
 
 1. Add a separate source-level KIR oracle run for the corrected collections
@@ -172,8 +184,8 @@ codegen plus exact execution do not establish a performance gain.
    oracle.
 3. Run paired, quiet-host comparisons against the identical C twins and
    preserve raw observations; qualify each domain independently.
-4. Extend the reciprocal lowering only where generated code shows the same
-   eligible path. The strings fixture currently remains unchanged.
+4. Prototype loop-invariant reciprocal placement for the branchy strings loop;
+   do not replace its `sdiv` unless the reciprocal is kept out of the hot body.
 5. Promote incubating domains only when every required comparator arm and both
    target ISAs have measured evidence. Until then, “world fastest” remains an
    objective, not a result.
