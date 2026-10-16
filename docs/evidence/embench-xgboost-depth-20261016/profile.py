@@ -51,6 +51,7 @@ def main() -> None:
 
     histogram: collections.Counter[int] = collections.Counter()
     group_max_histogram: collections.Counter[int] = collections.Counter()
+    depths_by_sample: list[list[int]] = []
     visited_features: list[int] = []
     groups_within_five = 0
     total_groups = 0
@@ -74,6 +75,7 @@ def main() -> None:
                     raise ValueError(f"tree walk did not reach a leaf: sample={sample}, tree={tree}")
             histogram[depth] += 1
             sample_depths.append(depth)
+        depths_by_sample.append(sample_depths)
         for first_tree in range(0, 400, 4):
             total_groups += 1
             group_max = max(sample_depths[first_tree : first_tree + 4])
@@ -90,6 +92,27 @@ def main() -> None:
     group_stop_saved_steps = walk_count * fixed_steps - group_stop_steps
     group_stop_extra_steps = group_stop_steps - dynamic_steps
     group_stop_checks = sum(min(depth, fixed_steps - 1) * count for depth, count in group_max_histogram.items())
+    group_width_sensitivity = []
+    for width in (1, 2, 4, 8, 10, 20, 40, 400):
+        if 400 % width:
+            raise ValueError(f"group width must divide the 400-tree class: {width}")
+        groups = 0
+        grouped_steps = 0
+        stop_checks = 0
+        for sample_depths in depths_by_sample:
+            for first_tree in range(0, 400, width):
+                group_max = max(sample_depths[first_tree : first_tree + width])
+                groups += 1
+                grouped_steps += width * group_max
+                stop_checks += min(group_max, fixed_steps - 1)
+        group_width_sensitivity.append({
+            "groupWidth": width,
+            "groups": groups,
+            "steps": grouped_steps,
+            "savedStepsVsFixedFive": walk_count * fixed_steps - grouped_steps,
+            "savedPercentVsFixedFive": 100 * (walk_count * fixed_steps - grouped_steps) / (walk_count * fixed_steps),
+            "stopChecks": stop_checks,
+        })
     result = {
         "schema": "amu.embench.xgboost-depth-profile/v3",
         "source": "bench/embench/reproduce-20261015/ports/official-xgboost.kotoba",
@@ -116,6 +139,7 @@ def main() -> None:
         "twIdealGroupStopExtraStepsVsDynamicWalk": group_stop_extra_steps,
         "twIdealGroupStopExtraLoadsVsDynamicWalk": group_stop_extra_steps * table_input_loads_per_step,
         "twIdealGroupStopSavedLoadsVsFixedFive": group_stop_saved_steps * table_input_loads_per_step,
+        "groupWidthSensitivity": group_width_sensitivity,
         "extraStepsAgainstDynamicWalk": walk_count * fixed_steps - dynamic_steps,
         "twTableInputLoadsPerStep": table_input_loads_per_step,
         "extraLoadsIfAllGroupsTakeTw": (walk_count * fixed_steps - dynamic_steps) * table_input_loads_per_step,

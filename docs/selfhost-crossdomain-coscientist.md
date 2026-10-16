@@ -233,6 +233,11 @@ timing and C comparisons remain outstanding.
 5. Promote incubating domains only when every required comparator arm and both
    target ISAs have measured evidence. Until then, “world fastest” remains an
    objective, not a result.
-6. Trace the xgboost `tw` guard outcomes and compare fixed-five traversal with
-   an early-leaf candidate; retain it only if exact output/fuel behavior and
-   quiet-host timing both support the change.
+6. For xgboost `tw`, compare early-stop group widths before changing codegen.
+   On the pinned 128-sample / 400-tree model, width two reduces ideal
+   fixed-five steps by 21.24% with 85,392 stop decisions; current width four
+   saves 15.35% with 45,095 decisions. These omit comparison, branch, spill,
+   and code-size costs. Hand-patch and measure width two against the existing
+   width-four kernel, then require exact result/fuel behavior and qualified
+   timing before keeping it. See
+   `docs/evidence/embench-xgboost-depth-20261016/profile.json`.

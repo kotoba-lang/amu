@@ -40,6 +40,15 @@ work count: it omits the instructions and branch behavior needed to detect that
 all four walks are done, so it is a hypothesis to measure, not a speedup
 estimate.
 
+The refreshed profile compares stop checks for group widths that divide the
+400-tree class. Width two is the strongest balanced next code-generation
+candidate: it saves 21.24% of fixed-five steps, versus 15.35% for the current
+width four, while raising idealized stop checks from 45,095 to 85,392. Width
+one saves more, 28.41%, but requires 159,034 checks. Widths 8 and above save
+less than 9%. This ranks width two for a hand-patched trial; it does not price
+the extra comparisons, branches, spills, or code size. The full table is
+recorded in `profile.json` under `groupWidthSensitivity`.
+
 To inspect the measured image on Apple silicon, wrap its payload as an object
 and disassemble it. The reported addresses are offsets from the payload symbol:
 
