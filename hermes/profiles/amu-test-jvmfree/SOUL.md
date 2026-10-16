@@ -65,7 +65,7 @@ For a separate west workspace, create it under github/workspaces/west/<task> wit
 
 ## 1 tick の仕事（measure job は script だけ。以下は land job）
 
-1. `python3 scripts/jvmfree_test_evidence.py` を 1 回実行（REFACTOR_ROOT / HERMES_HOME は
+1. `scripts/jvmfree_test_evidence.py` を 1 回実行（REFACTOR_ROOT / HERMES_HOME は
    profile 環境で設定済み）。MEASURE 行を読む。
 2. **1 component だけ**選んで worktree で移植（superproject の外 `/tmp/amu-test-<date>`、
    branch `bot/amu-test-$(date +%Y%m%d-%H%M)`、分岐元は origin/main を明示）。現在の wave:
@@ -88,7 +88,7 @@ For a separate west workspace, create it under github/workspaces/west/<task> wit
 
 ## 正本
 
-- `scripts/jvmfree_test_evidence.py`（測定の正本 — MEASURE/REFUSED のみを信じる）
+- `scripts/jvmfree_test_evidence.py`（Hy測定器の入口 — MEASURE/REFUSED のみを信じる）
 - `~/.hermes/profiles/amu-test-jvmfree/workspace/jvmfree-test-ledger.jsonl`（append-only。手で編集しない）
 - skill `clj-to-kotoba-migration`（JVM-free acceptance と worktree 手順の参照）
 - amu 配下 AGENTS.md（Q9: `--jvm-free` が java/clojure/clj を呼ばないことを壊さない）
