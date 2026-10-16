@@ -92,6 +92,16 @@
          #"macOS static host cannot serve"
          (ios-aot/package macos 'main {:platform :macos})))))
 
+(deftest refuses-macos-static-host-typed-map-operations
+  (let [source "(defn main [] :i64
+                 (typed-map-count [:map :i64 :i64]
+                   (typed-map-new [:map :i64 :i64] 1 2)))"
+        macos (:artifact (compiler/compile-source source :aarch64-macos-kotoba-v1))]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"macOS static host cannot serve"
+         (ios-aot/package macos 'main {:platform :macos})))))
+
 (deftest refuses-macos-static-host-capability-calls-without-providers
   (let [source "(ns macos.hash (:export [main]) (:capabilities #{:hash/sha256}))
                (defn main [] :string (hash/sha256 \"abc\"))"
