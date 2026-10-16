@@ -190,16 +190,20 @@ Ed25519 sign/verify. Probe classpath recipe for `ed25519.sign` under kbb:
   envelope tail, and a byte-tamper test that flips them still verifies green —
   tamper detection is off with no failing test pointing at the encoder.
 
-### Remote already has history (placeholder from an earlier push)
+### Existing remote history and placeholder files
 
-```bash
-git fetch origin
-git merge origin/main --allow-unrelated-histories -X ours -m 'Merge remote placeholder'
-# -X ours only wins CONFLICTS; files that exist only on remote still land — explicitly remove superseded placeholders:
-git rm <remote-only placeholder files> && git commit && git push origin main
-```
+A remote branch with earlier placeholder commits needs a deliberate, reviewable reconciliation.
+Fetch and inspect its history, tree, and file blobs against the verified default-branch base.
+Do not merge unrelated histories, use `-X ours`, or remove remote-only files based only on
+their presence. Keep each file until its intended replacement/removal is established.
 
-Re-check `git ls-tree -r --name-only HEAD` — placeholder `.clj` files reappear after this merge if you only relied on `-X ours`.
+Create a fresh task branch from the verified default-branch SHA, commit the migration there,
+push only that branch, and open a PR for server-side review and merge. If the task branch already
+exists, inspect its commits and working tree; choose a new unique branch or explicitly recover
+wanted commits. Never reset an existing branch or push directly to `main`.
+
+After landing, verify the merged files on the remote default branch with
+`git ls-tree -r --name-only <verified-default-branch>` and inspect each relevant blob.
 
 ### Host-adapter consolidation (repo-wide java.* sweep)
 When a repo has java.* spread across many files, do NOT patch each call site with a different workaround — create ONE adapter namespace (e.g. `<ns>.qualification-host`, `kotoba.net.jvm-host`) that owns every host primitive, and convert call sites to consume plain data from it:
