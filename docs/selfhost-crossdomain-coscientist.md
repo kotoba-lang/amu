@@ -124,7 +124,7 @@ truncation toward zero.
 | 3 | Reduce loop fuel traffic | Many counted loops | Changes trap timing or fuel semantics | Any exact result/fuel vector differs |
 | 4 | Broaden collection access lowering | Vector-heavy workloads | Narrower reach and more comparator work | No separated gain in the collection domain |
 
-## Evolve: current intervention
+## Evolve: earlier reciprocal-division intervention
 
 The local patch limits its first intervention to T2 fast loops: it adds an
 AArch64 `smulh` encoder, exact magic generation for positive non-power-of-two
@@ -175,6 +175,46 @@ instructions, so the next compiler candidate should first investigate
 loop-invariant reciprocal placement across these branches. The disassembly is
 `docs/evidence/crossdomain-m105-reciprocal-20261016/fixtures/kernel_strings.disasm.txt`.
 
+## Evolve: MSub fusion follow-up (2026-10-16)
+
+The next AArch64 backend candidate fuses a subtraction of a product by a
+positive non-power-of-two constant into `msub`. It handles both the ordinary
+`x - q*k` shape and the recognized remainder shape `x - (quot(x,k)*k)`. For
+the latter, the backend reuses the divisor still in `x17` only when the
+quotient is single-use, there are no intervening code-emitting values, and
+the operation is outside a fast loop. In fast loops, the fused product's
+constant is now eligible for hoisting, so the `msub` uses the loop-invariant
+divisor register rather than materializing it in each iteration. Spilled
+operand paths retain their explicit safe fallback.
+
+The M105 G1=G2=G3 fixed point passed again with this backend change. All three
+KSEEDs have SHA-256 `a7aa4ac9868afc6d8d850cd5b20452a2f6f234138d0ca1eb0fab39f45d8e8a4f`,
+and all three native images have SHA-256
+`854fad339b1317ff85309573767a305e846e23cfee13377570973ff502258a3b`. The
+bootstrap compiler built this candidate without a JVM, Node, or Graal
+fallback.
+
+Both fixtures passed exact native comparisons on all six inputs, matching the
+prior M105 result, fuel, and arena report for all 12 executions. In the
+strings hot loop, `sdiv` remains, but the following rematerialized-divisor,
+`mul`, and `sub` sequence becomes one `msub`. In the collections fast loop,
+the existing reciprocal `smulh` sequence and hoisted divisor remain; each of
+the four unrolled remainder sites and the scalar tail replaces `mul` plus
+`sub` with `msub`. The guarded fallback also fuses its multiply/subtract.
+Pinned raw code and full disassemblies are in
+`docs/evidence/crossdomain-m105-msub-20261016/`.
+
+An exploratory runtime check called each native kernel 20,000 times per
+process and collected four timed samples per compiler in ABBA order. The
+strings median was 97.94 ms for the candidate versus 111.92 ms for prior
+(14.3% shorter); the collections median was 105.13 ms versus 95.67 ms
+(9.0% longer). This is not a performance claim: the host load average was
+31.1/31.9/38.5 before and 33.4/32.3/38.6 after, and the sample ranges overlap
+substantially. A 100,000-iteration follow-up exhausted the configured vector
+arena and is excluded. Results, fuel, exact benchmark inputs, binaries, and
+raw timing samples are pinned in the evidence directory. There is still no
+qualified timing or C comparison for this change.
+
 ## Next checks
 
 1. Add a separate source-level KIR oracle run for the corrected collections
@@ -182,8 +222,9 @@ loop-invariant reciprocal placement across these branches. The disassembly is
 2. Exercise reciprocal arithmetic boundary dividends and register-alias cases
    through a compiler fixture, in addition to the exact formula's integer
    oracle.
-3. Run paired, quiet-host comparisons against the identical C twins and
-   preserve raw observations; qualify each domain independently.
+3. Rerun prior/candidate timing with an adequately sized arena on a quiet host,
+   then compare the relevant domains against identical C twins; qualify each
+   domain independently.
 4. Prototype loop-invariant reciprocal placement for the branchy strings loop;
    do not replace its `sdiv` unless the reciprocal is kept out of the hot body.
 5. Promote incubating domains only when every required comparator arm and both

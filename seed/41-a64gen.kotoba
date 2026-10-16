@@ -21373,8 +21373,28 @@
       (cond (and (= bop BOP-MUL) (not (t2-isconst? M a)) (not (t2-isconst? M b))) 1
             (and (= bop BOP-MUL) (not (t2-isconst? M a)) (t2-isconst? M b) (> (gn-pow2 (t2-kval M b)) 0)) 2
             (and (= bop BOP-MUL) (t2-isconst? M a) (not (t2-isconst? M b)) (> (gn-pow2 (t2-kval M a)) 0)) 2
+            ;; A SUB of a product by a non-power-of-two constant can use MSub.
+            (and (= bop BOP-MUL) (= (t2-vf M v t2-f-a) BOP-SUB) (not (t2-isconst? M a)) (t2-isconst? M b)
+                 (> (t2-kval M b) 1) (= (gn-pow2 (t2-kval M b)) 0)) 3
+            (and (= bop BOP-MUL) (= (t2-vf M v t2-f-a) BOP-SUB) (t2-isconst? M a) (not (t2-isconst? M b))
+                 (> (t2-kval M a) 1) (= (gn-pow2 (t2-kval M a)) 0)) 3
             (and (= bop BOP-SHL) (not (t2-isconst? M a)) (t2-isconst? M b) (> (bit-and (t2-kval M b) 63) 0)) 2
             :else 0))))
+(defn- t2-rem-reuse? [M :vector-i64 m :i64 v :i64] :bool
+  (let [a (t2-res M (t2-vf M m t2-f-b)) b (t2-res M (t2-vf M m t2-f-c))
+        kx (if (t2-isconst? M a) a b) q (if (t2-isconst? M a) b a) k (t2-kval M kx)
+        qx (t2-res M (t2-vf M q t2-f-b)) qk (t2-res M (t2-vf M q t2-f-c))
+        x (t2-res M (t2-vf M v t2-f-b))]
+    (and (= (t2-vf M v t2-f-a) BOP-SUB) (> k 1) (= (gn-pow2 k) 0)
+         (not (t2-isconst? M q)) (= (t2-op-of M q) t2-bin) (= (t2-vf M q t2-f-a) BOP-QUOT)
+         (= (t2-xf M q t2-x-uses) 1) (= qx x) (t2-isconst? M qk) (= (t2-kval M qk) k)
+         (= (t2-vf M q t2-f-blk) (t2-vf M v t2-f-blk)) (< q m) (< m v)
+         ;; The quotient leaves its divisor in x17. Only no-code values may
+         ;; intervene before MSub consumes it.
+         (loop [i (inc q)]
+           (or (>= i v)
+               (and (or (= i m) (t2-gone? M i) (= (t2-op-of M i) t2-const) (= (t2-op-of M i) t2-phi))
+                    (recur (inc i))))))))
 (defn- t2-fusedop [M :vector-i64 v :i64] :i64
   (let [x (t2-res M (t2-vf M v t2-f-b)) y (t2-res M (t2-vf M v t2-f-c))]
     (if (and (> y 0) (= (bit-and (t2-xf M y t2-x-flags) 32) 32)) y x)))
@@ -21388,7 +21408,8 @@
                       (and (= (t2-vf M v t2-f-a) BOP-ADD) (> (t2-prod-kind M x v) 0) (not (t2-isconst? M y))) x
                       :else 0)]
           (if (> m 0)
-            (-> M (t2-xs m t2-x-flags (bit-or (t2-xf M m t2-x-flags) 32)) (t2-xs v t2-x-flags (bit-or (t2-xf M v t2-x-flags) 64)))
+            (-> M (t2-xs m t2-x-flags (bit-or (t2-xf M m t2-x-flags) 32))
+                  (t2-xs v t2-x-flags (bit-or (t2-xf M v t2-x-flags) (bit-or 64 (if (t2-rem-reuse? M m v) 1024 0)))))
             M))
         M)
       (inc v) nv)))
@@ -22656,10 +22677,17 @@
   (loop [i 0] (cond (>= i (t2-g M t2-s-nhoist)) -1
                     (= (t2-g M (+ t2-a-hoist (* 2 i))) x) i
                     :else (recur (inc i)))))
+(defn- t2-hoist-fused-mul? [M :vector-i64 v :i64] :bool
+  (if (and (= (bit-and (t2-xf M v t2-x-flags) 32) 32) (= (t2-op-of M v) t2-bin) (= (t2-vf M v t2-f-a) BOP-MUL))
+    (let [a (t2-res M (t2-vf M v t2-f-b)) b (t2-res M (t2-vf M v t2-f-c))]
+      (or (and (not (t2-isconst? M a)) (t2-isconst? M b) (> (t2-kval M b) 1) (= (gn-pow2 (t2-kval M b)) 0))
+          (and (t2-isconst? M a) (not (t2-isconst? M b)) (> (t2-kval M a) 1) (= (gn-pow2 (t2-kval M a)) 0))))
+    false))
 (defn- t2-hoist-vals [M :vector-i64 v :i64 v1 :i64 busy :i64] :vector-i64
   (if (>= v v1) M
     (let [op (t2-op-of M v)
-          M1 (if (or (t2-gone? M v) (= op t2-phi) (not= (bit-and (t2-xf M v t2-x-flags) 32) 0)) M
+          M1 (if (or (t2-gone? M v) (= op t2-phi)
+                     (and (= (bit-and (t2-xf M v t2-x-flags) 32) 32) (not (t2-hoist-fused-mul? M v)))) M
                (cond (or (= op t2-bin) (= op t2-cmp))
                      (-> M (cond-> (t2-hoist-want? M v (t2-vf M v t2-f-b))
                                      (t2-hoist-add (t2-vf M v t2-f-b) busy (t2-hoist-magic? M v (t2-vf M v t2-f-b))))
@@ -23333,12 +23361,28 @@
       (let [tz (gn-tz k 0)] (gn-e-bf base d n (bit-and (- 64 tz) 63) (dec len))))))
 ;; ADD/SUB with a fused product operand: madd/msub, or add/sub with a shifted register (spilled operands load into x16
 ;; then x17; all three of a madd spilled: x16 := a * b first)
+(defn- t2-e-msub [M :vector-i64 v :i64 d :i64 r :i64 k :i64 x :i64] :vector-i64
+  (let [rk (t2-kval M k) sr (t2-spilled? M r) sx (t2-spilled? M x)
+        reuse (and (= (bit-and (t2-xf M v t2-x-flags) 1024) 1024) (= (t2-g M t2-s-fastl) 0) (not sr) (not sx))
+        hk (t2-hoisted M k) hoisted (and (> (t2-g M t2-s-fastl) 0) (>= hk 0) (not sr) (not sx))
+        rr (if sr 16 (t2-vf M r t2-f-reg)) rx (if sx 17 (t2-vf M x t2-f-reg))]
+    (cond reuse (gn-emit M (+ (enc-madd d rr 17 rx) 0x8000))
+          hoisted (gn-emit M (+ (enc-madd d rr hk rx) 0x8000))
+          (and sr sx) (-> M (t2-ldloc 16 (t2-loc M r)) (gn-mov-imm 17 rk) (gn-emit (enc-mul 16 16 17))
+                         (t2-ldloc 17 (t2-loc M x)) (gn-emit (enc-sub-r d 17 16)))
+          sr (-> M (t2-ldloc 16 (t2-loc M r)) (gn-mov-imm 17 rk) (gn-emit (+ (enc-madd d 16 17 rx) 0x8000)))
+          sx (-> M (gn-mov-imm 16 rk) (t2-ldloc 17 (t2-loc M x)) (gn-emit (+ (enc-madd d rr 16 17) 0x8000)))
+          :else (-> M (gn-mov-imm 16 rk) (gn-emit (+ (enc-madd d rr 16 rx) 0x8000))))))
 (defn- t2-e-fused [M :vector-i64 v :i64 d :i64] :vector-i64
   (let [m (t2-fusedop M v) x (t2-res M (if (= m (t2-res M (t2-vf M v t2-f-c))) (t2-vf M v t2-f-b) (t2-vf M v t2-f-c)))
         sub (= (t2-vf M v t2-f-a) BOP-SUB)
         bop (t2-vf M m t2-f-a) a (t2-res M (t2-vf M m t2-f-b)) b (t2-res M (t2-vf M m t2-f-c))
         sx (t2-spilled? M x)]
-    (if (and (= bop BOP-MUL) (not (t2-isconst? M a)) (not (t2-isconst? M b)))
+    (cond (and (= bop BOP-MUL) sub (or (t2-isconst? M a) (t2-isconst? M b))
+               (> (t2-kval M (if (t2-isconst? M a) a b)) 1)
+               (= (gn-pow2 (t2-kval M (if (t2-isconst? M a) a b))) 0))
+          (t2-e-msub M v d (if (t2-isconst? M a) b a) (if (t2-isconst? M a) a b) x)
+      (and (= bop BOP-MUL) (not (t2-isconst? M a)) (not (t2-isconst? M b)))
       (let [sa (t2-spilled? M a) sb (t2-spilled? M b)]
         (if (and sa sb sx)
           (-> M (t2-ldloc 16 (t2-loc M a)) (t2-ldloc 17 (t2-loc M b)) (gn-emit (enc-mul 16 16 17)) (t2-ldloc 17 (t2-loc M x))
@@ -23350,6 +23394,7 @@
                 Mc (if sx (t2-ldloc Mb xs (t2-loc M x)) Mb) rx (if sx xs (t2-vf M x t2-f-reg))
                 w (enc-madd d ra rb rx)]
             (gn-emit Mc (if sub (+ w 0x8000) w)))))
+      :else
       (let [r (if (t2-isconst? M a) b a)
             k (if (t2-isconst? M a) (t2-kval M a) (t2-kval M b))
             sh (if (= bop BOP-SHL) (bit-and k 63) (gn-pow2 k))
