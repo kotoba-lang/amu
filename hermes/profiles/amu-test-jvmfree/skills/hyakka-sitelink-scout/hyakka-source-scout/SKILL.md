@@ -308,9 +308,7 @@ a python splice script in worktree scripts/ with an exact multi-line anchor
   note NOT to pop — it may contain mixed sibling state) and moved the shared
   worktree HEAD to its own branch mid-landing. Never touch the sibling's
   checkout or stash; re-verify `git branch --show-current` before EVERY landing
-  step, and land from a private worktree re-created off current origin/main
-  (`git branch -f <branch> origin/main` + `git worktree add`). My in-flight
-  config edit was redone in the private worktree in one pass.
+  step, and land from a fresh private worktree created at the verified current `origin/main` SHA, with a new unique branch name. Preserve the existing shared worktree and branch. My in-flight config edit was redone in the private worktree in one pass.
 - New green lane: central banks. ECB Data Portal SDMX 2.1 REST
   (data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?lastNObservations=5
   &format=sdmx_json) = 200/3352B sdmx-xml, no open licence -> :access private;
@@ -877,10 +875,7 @@ read-back (state OPEN, body contains the full gate verdict).
 - Landed nsf-awards-black-hole + nsf-awards-galaxy (slices 68/69, 25 records, fields 25/25). Six candidates probed green in ONE pass; landed two under the cap. Gate 2/2 exit 0 TWICE (eb7a9b42, cbc9abb6 after mid-run move via #925); evidence 2658→2660; PR #928 @ 6cb2a9a2. Pool then: CRISPR, neuromorphic, glacier, pollinator (all since landed).
 - Evidence id-once asserts must SCOPE to the `## configured sources` section (split on `##` headers): never-run sources are ALSO listed under `## idle sources`, so a whole-output grep counts each new IDLE source twice and false-aborts a good splice.
 - sources-configured is a function of the BASE commit, not history: never assert a delta against a stale cross-base number — measure the pristine baseline from a SECOND worktree off the exact landing SHA and assert post − pristine == N.
-- Move-guard recovery with zero waste: pass A (ABORT-42 pre-write) re-anchored in the SAME pw via `git checkout -q --detach <new-sha>` + `git checkout -q -B bot/... <new-sha>` — valid while the config is still uncommitted; the checkout-HEAD-first dance is only needed once the config is committed.
-
-## 2026-09-11 second run: NSF CRISPR + neuromorphic-computing through #932's mid-run merge (PR #933)
-
+- Move-guard recovery: if main moves, preserve the current worktree and branch. Create a fresh private worktree from the newly verified base SHA, use a new unique branch name, re-measure, and re-run the gates before publishing. Never re-anchor by resetting an existing branch or checkout.
 - Landed nsf-awards-crispr + nsf-awards-neuromorphic-computing (slices 70/71, 25 records, fields 25/25). Gate 2/2 exit 0 TWICE (d7ffe9d0, 0803a82b after #932's mid-run merge; move-guard refused the first splice pre-write). Evidence 2691→2693; PR #933 @ 6ddd0e60.
 - NSF probe trap: appending an api_key to the sibling URL (which carries NONE) makes the API return a body with no response.award (KeyError) — probe with the EXACT sibling URL shape, no key.
 - Evidence post-check: `sources-configured` prints in the INGEST-CONFIG section (BEFORE `## configured sources`) — a split-scoped regex for it finds nothing and false-aborts a good splice. Count sources-configured from the FULL evidence output; scope only the id-presence greps to the `## configured sources` section.
@@ -891,7 +886,7 @@ read-back (state OPEN, body contains the full gate verdict).
 
 - Landed nsf-awards-glacier + nsf-awards-pollinator (slices 72/73; both re-probed green, 25 records, fields 25/25). Gate 2/2 REJECTED 0 exit 0 TWICE (pristine d5d1b8d3 AND 5aa00355 via temp root after #935/#936 merged mid-run). Evidence 2703→2705; PR #939 @ 7e1a2b65. Deferred NSF pool EMPTY — future slices need fresh keyword probes.
 - Suffix consumed-close trap recurred (tail `...:llm? true}\n]\n\n}\n`): the 7-byte suffix strip eats the entry's own `}` and the CLOSE_VARIANTS pre-write assert refused (ABORT-51, nothing written). Correct suffix for this shape is 5-byte `]\n\n}\n` — body keeps the entry close.
-- Push-refspec trap: after re-anchoring with `git checkout -q -B <OLD-branch> <sha>` the LOCAL branch keeps its OLD name; pushing refspec `<NEW-name>` fails 'src refspec does not match any'. Re-point with `git checkout -q -B <new-name>` (commit stays) or push the actual branch name; ls-remote==HEAD guard catches the mismatch pre-create.
+- Push-refspec trap: if the local branch name differs from the intended PR branch, preserve both refs and verify the commit first. Create a new uniquely named branch at that commit only if the name is unused, then push that new ref and read it back. Never reset or rename an existing branch to repair a refspec mismatch.
 - Re-anchor recovery with a COMMITTED config: `git checkout HEAD -- config/knowledge-ingest.edn` then detach then `checkout -q -B <branch> <sha>`.
 - `git merge-tree --write-tree origin/main <branch>` returned CONFLICT for the tail-region splice after a mid-run merge — expected for tail appends; the recovery is re-anchor + re-splice (union by full id-set if large), not manual conflict resolution.
 
