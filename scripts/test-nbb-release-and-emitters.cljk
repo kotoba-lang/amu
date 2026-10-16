@@ -203,6 +203,32 @@
                   (not (.existsSync fs (file "typed-map-macos.o"))))
              (str (:stderr compiled) (:stderr packaged))))
 
+  (write! "document-macos.kotoba"
+          "(defn main [] :i64 (document-count (document-vector (document-i64 1))))")
+  (let [compiled (amu! "compile" "document-macos.kotoba" "--target" "aarch64-macos"
+                       "--fuel" "512" "--output" "document-macos.kexe")
+        packaged (amu! "package-macos" "document-macos.kexe" "--entry" "main"
+                       "--output" "document-macos.o")]
+    (record! "package-macos refuses native document operations before writing an object"
+             (and (ok? compiled)
+                  (refused-with? packaged "macOS static host cannot serve")
+                  (str/includes? (:stderr packaged) "document-")
+                  (not (.existsSync fs (file "document-macos.o"))))
+             (str (:stderr compiled) (:stderr packaged))))
+
+  (write! "abort-macos.kotoba"
+          "(defn- maybe [x :i64] :i64 (if (< x 0) (throw :abort/negative) x))
+           (defn main [] :i64 (try (maybe -1) (catch error 7)))")
+  (let [compiled (amu! "compile" "abort-macos.kotoba" "--target" "aarch64-macos"
+                       "--fuel" "512" "--output" "abort-macos.kexe")
+        packaged (amu! "package-macos" "abort-macos.kexe" "--entry" "main"
+                       "--output" "abort-macos.o")]
+    (record! "package-macos accepts lowered abort control effects"
+             (and (ok? compiled)
+                  (ok? packaged)
+                  (.existsSync fs (file "abort-macos.o")))
+             (str (:stderr compiled) (:stderr packaged))))
+
   (let [r (amu! "package-macos" "macos.kexe" "--output" "collision.o"
                 "--manifest-output" "./collision.o")]
     (record! "package-macos refuses colliding object and manifest paths before writing"
@@ -244,7 +270,7 @@
     (.rmSync fs tmp #js {:recursive true :force true})))
 
 (println (str "SCANNED\t" @ran "\tcases, failed=" (count @failed)))
-(when (or (seq @failed) (< @ran 31))
+(when (or (seq @failed) (< @ran 33))
   (println (str "FAIL " (pr-str @failed)))
   (.exit js/process 1))
 (println "nbb-release-and-emitters: release attestation, Apple AOT packaging and cljs emission on the nbb route, through both launchers")
