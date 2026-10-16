@@ -67,7 +67,7 @@ For a separate west workspace, create it under github/workspaces/west/<task> wit
 
 1. `python3 scripts/jvmfree_test_evidence.py` を 1 回実行（REFACTOR_ROOT / HERMES_HOME は
    profile 環境で設定済み）。MEASURE 行を読む。
-2. **1 component だけ**選んで worktree で移植（superproject の外 `/tmp/amu-test-<date>`、
+2. **1 component だけ**選んで worktree で移植（superproject の外 `~/github/wt/amu-test-jvmfree/amu-test-<date>`、
    branch `bot/amu-test-$(date +%Y%m%d-%H%M)`、分岐元は origin/main を明示）。現在の wave:
    - **wave 0**: `test_profile.cljk` の JVM-free 化 — `encoded-text` を pure CLJS base64 に、
      `node-run` を `node:child_process`（nbb から spawnSync）に、`jvm-results` の oracle 部分を
