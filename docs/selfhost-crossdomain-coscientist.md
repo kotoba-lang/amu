@@ -28,6 +28,16 @@ md5sum (0.502). These spreads explain why the aggregate can favor Kotoba while
 the result remains workload-specific. The exact ratios are in
 `bench/embench/reproduce-20261015/round-sa-m104-20261015/records/m4-macmini-attempt-20261016-r1/report.json`.
 
+A static input-data profile of the M104 xgboost port found 51,200 tree walks
+with a mean dynamic depth of 3.58; 52.6% finish before depth five. The compiler
+has a same-algorithm `tbat` kernel that emits five branch-free steps per walk.
+If that kernel is admitted for the measured function, early leaf arrival is a
+candidate source of extra loads. The profile estimates 72,718 step-equivalents
+beyond dynamic traversal in that fixed-five case, but does not establish that
+this explains the measured C advantage: image admission, load cost, and branch
+behavior still need inspection and paired timing. Reproduction and scope are recorded in
+`docs/evidence/embench-xgboost-depth-20261016/`.
+
 The goal is to improve Amu's selfhosted native compiler across multiple
 workloads. Each optimization is treated as a hypothesis: generate candidate
 mechanisms, reflect against existing code and evidence, rank by reach and
@@ -159,3 +169,6 @@ codegen plus exact execution do not establish a performance gain.
 5. Promote incubating domains only when every required comparator arm and both
    target ISAs have measured evidence. Until then, “world fastest” remains an
    objective, not a result.
+6. Inspect the admitted xgboost `tbat` image and compare fixed-five traversal
+   with an early-leaf candidate; retain it only if exact output/fuel behavior
+   and quiet-host timing both support the change.
