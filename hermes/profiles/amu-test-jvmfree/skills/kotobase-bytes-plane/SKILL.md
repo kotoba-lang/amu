@@ -11,15 +11,14 @@ web/origin 面 `*.ipfs/.ipns.itonami.cloud`。正本 ADR は superproject
 `90-docs/adr/2609131630-yataverse-mirror-bytes-plane.kotoba` と ADR-2609092600（app 4 面）。
 repo は `orgs/net-kotobase/ipfs`（west 子リポ、plain git）。
 
-## build 経路 — amu では組めない（実測で確定済み）
+## Compatibility diagnostic only — not a Q9 build route
 
-この repo の source は `(:require ["@noble/curves/ed25519" …])` 形の **host module
-文字列 import を持つ**。amu の project linker はこれを拒否する（`import names a host
-module by string`）— package.json 書式・project-mode 書式の両方で同一拒否を実測済み。
-**正規 build 経路は shadow-cljs のみ**。scripts を amu に書き換えた cutover があると
-test/build/typecheck/deploy が全経路落ちる — 修復は package.json を
-`node_modules/.bin/shadow-cljs release <build>` に戻すこと（commit message に拒否
-diagnostic を引用して記録する）。
+This repo's source has **host module string imports** such as `(:require ["@noble/curves/ed25519" …])`.
+The amu project linker refuses them (`import names a host module by string`) in both package.json
+and project mode. This refusal is authoritative for Q9: keep the component blocked and do not
+use shadow-cljs to satisfy or report Q9. A separately authorized non-Q9 compatibility workflow
+may use `node_modules/.bin/shadow-cljs release <build>` to inspect the existing host build, but
+that result is only a compatibility diagnostic and does not clear the amu refusal.
 
 ## 手順
 
@@ -278,4 +277,3 @@ mirror zone からの発展形。owner 指示「bytes plane は yataverse.com �
   回し、test は gateway_test に fake-fetch で apex を直接叩く形（`worker/route` に
   `https://yataverse.com<path>` の Request）で pin する — host を apex にしないと
   「operator host 404 に落ちた」regression を検出できない。
-
