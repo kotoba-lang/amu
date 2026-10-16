@@ -258,6 +258,20 @@
                       (.equals original after)
                       (not (.existsSync fs (file "case-collision.edn"))))
                  (:stderr r)))))
+  (let [nfc (file (str "unicode-\u00e9.kexe"))
+        nfd (file (str "unicode-e\u0301.kexe"))]
+    (.copyFileSync fs (file "macos.kexe") nfc)
+    (when (.existsSync fs nfd)
+      (let [original (.readFileSync fs nfc)
+            r (amu! "package-macos" nfc "--output" nfd
+                    "--manifest-output" "unicode-collision.edn")
+            after (.readFileSync fs nfc)]
+        (record! "package-macos refuses a Unicode-normalization input alias before writing"
+                 (and (refused-with? r "must be distinct")
+                      (.equals original after)
+                      (not (.existsSync fs (file "unicode-collision.edn"))))
+                 (:stderr r))))
+    (.rmSync fs nfc #js {:force true}))
   (let [hardlink (file "macos-hardlink.kexe")]
     (try
       (.linkSync fs (file "macos.kexe") hardlink)

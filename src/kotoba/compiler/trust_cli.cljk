@@ -45,7 +45,8 @@
             [kotoba.verifier.signing :as signing]
             #?(:cljs ["node:fs" :as node-fs])
             #?(:cljs ["node:path" :as node-path]))
-  #?(:clj (:import [java.nio.file Files Paths])))
+  #?(:clj (:import [java.nio.file Files Paths]
+                   [java.text Normalizer Normalizer$Form])))
 
 ;; Every artifact this namespace hands the verifier is read through one of
 ;; these two. `bounded-edn` answers every integer token as a BigInt on Node,
@@ -90,9 +91,13 @@
   ;; case there before the package command compares its three destinations.
   #?(:clj (let [canonical (.getCanonicalPath (java.io.File. path))
                 os-name (.toLowerCase (System/getProperty "os.name" ""))]
-            (if (or (.startsWith os-name "mac") (.startsWith os-name "windows"))
+            (cond
+              (.startsWith os-name "mac")
+              (Normalizer/normalize (.toLowerCase canonical java.util.Locale/ROOT)
+                                    Normalizer$Form/NFD)
+              (.startsWith os-name "windows")
               (.toLowerCase canonical java.util.Locale/ROOT)
-              canonical))
+              :else canonical))
      :cljs (let [absolute (.resolve node-path path)
                  canonical (if (.existsSync node-fs absolute)
                              (.realpathSync node-fs absolute)
@@ -100,9 +105,12 @@
                                     (.realpathSync node-fs (.dirname node-path absolute))
                                     (.basename node-path absolute)))
                  platform (.-platform js/process)]
-             (if (contains? #{"darwin" "win32"} platform)
+             (cond
+               (= "darwin" platform)
+               (.normalize (.toLowerCase canonical) "NFD")
+               (= "win32" platform)
                (.toLowerCase canonical)
-               canonical))))
+               :else canonical))))
 
 (defn- same-existing-file? [left right]
   ;; Canonical names do not detect hard links. If both paths already exist,
