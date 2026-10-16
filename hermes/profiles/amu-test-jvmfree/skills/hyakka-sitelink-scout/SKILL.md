@@ -235,12 +235,7 @@ wants encyclopedic entities, not these.
   my commit was silently RE-PARENTED onto the fresh main (parent f4c0a8b,
   not the 23b00f2 I branched from). `git push` then published the branch ref
   WITHOUT the commit (remote sha = old main head) and `gh pr create` answered
-  GraphQL "No commits between main and <branch>". Recovery: ALWAYS verify
-  `git ls-remote origin refs/heads/<branch>` == local `git rev-parse HEAD`
-  BEFORE gh pr create; on mismatch `git branch -f <branch> <commit>` +
-  checkout + push again. A re-parented commit is only safe if
-  `git diff <old-main> <commit>` shows exactly your own files (check the
-  minus-lines too).
+  GraphQL "No commits between main and <branch>". Recovery: before `gh pr create`, verify `git ls-remote origin refs/heads/<branch>` equals the commit you intend to publish. On mismatch, preserve the current branch and commit; inspect the full diff against its verified base, then create and push a new uniquely named branch only if that name is unused. Never force-move an existing ref. The pre-create readback must confirm the pushed ref equals the intended commit.
 - `execute_code` is BLOCKED in this cron profile (approval gate: arbitrary
   python bypasses string approval). All scripting via file-based python in
   the worktree run with plain terminal calls.
