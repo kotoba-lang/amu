@@ -1,3 +1,4 @@
+/Users/junkawasaki/.zshenv:.:1: no such file or directory: /Users/junkawasaki/.cargo/env
 #include "kotoba_ios_host.h"
 
 #include <limits.h>
@@ -330,8 +331,10 @@ static int containment_is_synchronous_trap(int signal_number,
                                            const siginfo_t *info) {
   if (info == NULL || (signal_number != SIGTRAP && signal_number != SIGILL))
     return 0;
-  /* Darwin uses low positive si_code values for hardware faults and reserves
-     SI_USER and the larger SI_* values for asynchronously generated signals. */
+  /* Darwin arm64 reports BRK #0 as SIGTRAP with si_code 0 (SI_NOINFO), while
+     user-generated signals use SI_USER/SI_QUEUE and larger codes. Accept that
+     exact SIGTRAP form only while this thread is executing the guest. */
+  if (signal_number == SIGTRAP && info->si_code == 0) return 1;
   return info->si_code > 0 && info->si_code < SI_USER;
 }
 
