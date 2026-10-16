@@ -1,6 +1,7 @@
 #!/usr/bin/env kbb
 ;; The release family (`sbom`, `attest-release`, `verify-release`),
-;; `package-ios` and the ClojureScript-source targets on the nbb route --
+;; Apple AOT packaging (`package-ios` and `package-macos`) and the
+;; ClojureScript-source targets on the nbb route --
 ;; ported 2026-09-11 (ADR 0347 port ledger, after ADR 0348's trust plane,
 ;; which `test-nbb-trust.cljk` covers). Every command is driven through
 ;; `bin/amu` as a caller would use it, from a directory that is not the
@@ -59,6 +60,14 @@
 (defn ok? [r] (and (zero? (:status r)) (str/includes? (:stdout r) ":ok true")))
 (defn refused-with? [r message]
   (and (not (zero? (:status r))) (str/includes? (:stderr r) message)))
+(defn macho-build-platform [bytes]
+  (loop [index 0 offset 32 commands (.readUInt32LE bytes 16)]
+    (when (< index commands)
+      (let [command (.readUInt32LE bytes offset)
+            size (.readUInt32LE bytes (+ offset 4))]
+        (if (= 0x32 command) ; LC_BUILD_VERSION
+          (.readUInt32LE bytes (+ offset 8))
+          (recur (inc index) (+ offset size) commands))))))
 
 (try
   ;; ── artifacts ─────────────────────────────────────────────────────────
@@ -120,7 +129,34 @@
              (:stderr r)))
   (record! "package-ios refuses a non-iOS artifact"
            (refused-with? (amu! "package-ios" "program.kexe" "--output" "wrong.o")
-                          "explicit iOS target") "")
+                          "matching arm64 target") "")
+
+  ;; ── package-macos ────────────────────────────────────────────────────
+  (let [r (amu! "compile" (.join path root "examples" "structured.kotoba")
+                "--target" "aarch64-macos" "--output" "macos.kexe")]
+    (record! "compile aarch64-macos artifact" (ok? r) (:stderr r)))
+  (let [r (amu! "package-macos" "macos.kexe" "--entry" "main"
+                "--output" "macos.o" "--manifest-output" "macos.o.edn")
+        bytes (when (.existsSync fs (file "macos.o")) (.readFileSync fs (file "macos.o")))
+        manifest (when (.existsSync fs (file "macos.o.edn")) (read! "macos.o.edn"))]
+    (record! "package-macos writes a Mach-O 64-bit object"
+             (and (ok? r) bytes (= [0xcf 0xfa 0xed 0xfe] (vec (.subarray bytes 0 4))))
+             (:stderr r))
+    (record! "package-macos emits LC_BUILD_VERSION for macOS and a macOS manifest"
+             (and bytes manifest (= 1 (macho-build-platform bytes))
+                  (str/includes? manifest ":platform :macos")
+                  (str/includes? manifest ":minimum-os [13 0 0]"))
+             (str (:stderr r) manifest)))
+  (let [r (kotoba! "package-macos" "macos.kexe" "--entry" "main"
+                   "--output" "macos-kotoba.o" "--manifest-output" "macos-kotoba.o.edn")
+        bytes (when (.existsSync fs (file "macos-kotoba.o"))
+                (.readFileSync fs (file "macos-kotoba.o")))]
+    (record! "package-macos works through kotoba -M"
+             (and (ok? r) bytes (= 1 (macho-build-platform bytes)))
+             (:stderr r)))
+  (record! "package-macos refuses an iOS artifact"
+           (refused-with? (amu! "package-macos" "ios.kexe" "--output" "wrong-macos.o")
+                          "matching arm64 target") "")
 
   ;; ── cljs emission, EXECUTED ───────────────────────────────────────────
   (let [r (amu! "compile" (.join path root "examples" "fuel.kotoba")
@@ -150,4 +186,4 @@
 (when (or (seq @failed) (< @ran 20))
   (println (str "FAIL " (pr-str @failed)))
   (.exit js/process 1))
-(println "nbb-release-and-emitters: release attestation, iOS packaging and cljs emission on the nbb route, through both launchers")
+(println "nbb-release-and-emitters: release attestation, Apple AOT packaging and cljs emission on the nbb route, through both launchers")

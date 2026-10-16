@@ -7,6 +7,21 @@
 (def source
   "(defn helper [x] (+ x 1)) (defn main [] (helper 41))")
 
+(defn- u32le [bytes offset]
+  (reduce +
+          (map-indexed (fn [index byte]
+                         (bit-shift-left (bit-and (int byte) 0xff) (* index 8)))
+                       (subvec (vec bytes) offset (+ offset 4)))))
+
+(defn- macho-build-platform [object]
+  (loop [index 0 offset 32 commands (u32le object 16)]
+    (when (< index commands)
+      (let [command (u32le object offset)
+            size (u32le object (+ offset 4))]
+        (if (= 0x32 command) ; LC_BUILD_VERSION
+          (u32le object (+ offset 8))
+          (recur (inc index) (+ offset size) commands))))))
+
 (deftest packages-verified-ios-code-as-deterministic-macho-object
   (let [ios (:artifact (compiler/compile-source source :aarch64-ios-kotoba-v1))
         first (ios-aot/package ios 'main)
@@ -32,11 +47,26 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"platform is unsupported"
                           (ios-aot/package ios 'main {:platform :invented})))))
 
+(deftest packages-macos-with-a-macos-profile-and-platform-load-command
+  (let [macos (:artifact (compiler/compile-source source :aarch64-macos-kotoba-v1))
+        packaged (ios-aot/package macos 'main {:platform :macos})]
+    (is (= :kotoba.apple-aot/v1 (get-in packaged [:manifest :format])))
+    (is (= :aarch64-macos-kotoba-v1 (get-in packaged [:manifest :target])))
+    (is (= :macos (get-in packaged [:manifest :platform])))
+    (is (= [13 0 0] (get-in packaged [:manifest :minimum-os])))
+    ;; LC_BUILD_VERSION's platform value 1 is PLATFORM_MACOS.
+    (is (= 1 (macho-build-platform (:object packaged))))
+    (is (= [0xcf 0xfa 0xed 0xfe]
+           (mapv #(bit-and (int %) 0xff) (take 4 (:object packaged)))))))
+
 (deftest rejects-non-ios-and-substituted-artifacts
   (let [android (:artifact (compiler/compile-source source :aarch64-android-kotoba-v1))
+        macos (:artifact (compiler/compile-source source :aarch64-macos-kotoba-v1))
         ios (:artifact (compiler/compile-source source :aarch64-ios-kotoba-v1))]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"explicit iOS target"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"matching arm64 target"
                           (ios-aot/package android 'main)))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"matching arm64 target"
+                          (ios-aot/package macos 'main)))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"target profile"
                           (ios-aot/package
                            (artifact/seal

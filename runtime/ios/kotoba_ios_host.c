@@ -8,7 +8,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef KOTOBA_IOS_TARGET
 #define KOTOBA_IOS_TARGET "aarch64-ios-kotoba-v1"
+#endif
 
 extern const unsigned char kotoba_ios_entry[];
 extern const unsigned char kotoba_ios_code_start[];
