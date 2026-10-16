@@ -69,6 +69,24 @@ def main():
     rnd = R.load_round(a.round); W = R.round_workloads(rnd); names = a.workloads.split(',') if a.workloads else sorted(W)
     images = a.images or R.PKG / rnd['images']; exp_p = R.round_path(rnd, 'expectedAccounting')
     if not exp_p: raise SystemExit('this round has no expected values yet: derive them with c_reference.py --round ... --write <file>')
+    image_table_p = R.round_path(rnd, 'imageTable')
+    if not image_table_p: raise SystemExit('this round has no pinned image table')
+    image_table = json.loads(image_table_p.read_text())
+    if len(names) != len(set(names)) or set(names) - set(W): raise SystemExit('workloads must be unique names in the selected round')
+    image_inputs = {}
+    for w in names:
+        if w not in image_table: raise SystemExit('no pinned image for workload: ' + w)
+        candidates = [Path(images) / (w + '.kseed'), Path(images) / ('official-' + w + '.kseed')]
+        kseed = next((p for p in candidates if p.is_file()), None)
+        if kseed is None: raise SystemExit('missing Kotoba image for workload: ' + w)
+        kseed_bytes = kseed.read_bytes()
+        try: exports, image = R.kseed_parts(kseed_bytes)
+        except (UnicodeDecodeError, ValueError) as exc: raise SystemExit('invalid kseed for %s: %s' % (w, exc))
+        pin = image_table[w]
+        if (R.sha(kseed_bytes) != pin['kseed']['sha256'] or R.sha(image) != pin['native']['sha256']
+                or exports != pin['exports']):
+            raise SystemExit('Kotoba image does not match the selected round pins: ' + w)
+        image_inputs[w] = (kseed, image, exports)
     baseline = json.loads((up / 'baseline-data/speed.json').read_text()); mult = {w: W[w]['multiplier'] for w in W}
     report = dict(level='d-timing', round=rnd['round'], started=time.time(), workloads=names, full19=len(names) == 19, protocol='round 2026-10-15 m93 (see README)')
     def save(): (out / 'report.json').write_text(json.dumps(report, indent=1) + '\n')
@@ -80,8 +98,8 @@ def main():
     K = out / 'kotoba'; setup_root(K, up, R.PKG / 'harness/kotoba/run_trigger.py')
     shutil.copyfile(exp_p, K / 'expected-original-accounting.json')
     for w in names:
-        e = W[w]; kseed = next(p for p in [Path(images) / (w + '.kseed'), Path(images) / ('official-' + w + '.kseed')] if p.is_file())
-        exports, image = R.kseed_parts(kseed.read_bytes()); timer = R.build_timer(K / 'timers' / w, R.PKG / 'harness', image, exports, e)
+        e = W[w]; _, image, exports = image_inputs[w]
+        timer = R.build_timer(K / 'timers' / w, R.PKG / 'harness', image, exports, e)
         caps = R.caps_for(w, e['extraCaps']); d = K / 'results/measured/src' / w; d.mkdir()
         import shlex
         (d / w).write_text('#!/bin/sh\nexec env ' + ' '.join(shlex.quote(k + '=' + v) for k, v in caps.items()) + ' ' + shlex.quote(str(timer)) + ' ' + str(e['n']) + '\n'); (d / w).chmod(0o755)

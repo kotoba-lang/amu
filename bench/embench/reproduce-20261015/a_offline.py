@@ -23,6 +23,11 @@ REC = PKG / 'records'                      # set from the round config in main()
 PUBLISHED_GM = 0.7998826447941967
 IMAGES, PORTS, IMAGE_TABLE = PKG / 'images', PKG / 'ports', PKG / 'expected/measured-images.json'
 CPU_ONLY = {'quiet-admission-timeout', 'raw-post-cpu', 'background-cpu'}
+CANONICAL_WORKLOADS = frozenset({
+    'aha-mont64', 'crc32', 'depthconv', 'edn', 'huffbench', 'matmult-int', 'md5sum',
+    'nettle-aes', 'nettle-sha256', 'nsichneu', 'picojpeg', 'qrduino', 'sglib-combined',
+    'slre', 'statemate', 'tarfind', 'ud', 'wikisort', 'xgboost',
+})
 fails = []
 
 
@@ -35,8 +40,12 @@ def check(cond, msg):
 
 
 def cpu(c):
-    d = [b - a for a, b in zip(c['before']['ticks'], c['after']['ticks'])]
-    check(len(d) == 4 and d == c['deltaTicks'] and all(v >= 0 for v in d) and sum(d) > 0, 'cpu ticks')
+    before, after = c['before']['ticks'], c['after']['ticks']
+    valid = (len(before) == 4 and len(after) == 4 and
+             all(type(v) is int and 0 <= v <= 0xffffffff for v in before + after))
+    if not check(valid, 'cpu ticks are four uint32 counters'): return 0.0
+    d = [(b - a) & 0xffffffff for a, b in zip(before, after)]
+    if not check(d == c['deltaTicks'] and sum(d) > 0, 'cpu ticks'): return 0.0
     idle = 100 * d[2] / sum(d); check(abs(idle - c['idlePercent']) < 1e-9, 'idle percent recomputation')
     ns = c['after']['monotonicNs'] - c['before']['monotonicNs']; check(ns == c['envelopeNs'] and ns > 0, 'cpu envelope')
     return idle
@@ -127,7 +136,13 @@ def main():
         check((PKG / h).read_bytes() == (REC / r).read_bytes(), 'harness file == round file: ' + h)
     for t in sorted((REC / 'official/timers').iterdir()):
         for f in ['timing-extension.h', 'timing-frontend.h']: check((PKG / 'harness' / f).read_bytes() == (t / f).read_bytes(), 'timing header == round file: %s/%s' % (t.name, f))
-    check(jload(IMAGE_TABLE).keys() == {e['workload'] for e in jload(REC / 'official/workloads.json')}, 'image table covers the 19 workloads')
+    official_workloads = {e['workload'] for e in jload(REC / 'official/workloads.json')}
+    image_workloads = set(jload(IMAGE_TABLE))
+    configured_workloads = {e['workload'] for e in jload((PKG / rnd['workloads']))}
+    check(official_workloads == CANONICAL_WORKLOADS, 'official workload table is the canonical 19')
+    check(image_workloads == CANONICAL_WORKLOADS, 'image table is the canonical 19')
+    check(configured_workloads == CANONICAL_WORKLOADS, 'round workload table is the canonical 19')
+    check(image_workloads == official_workloads, 'image table covers all official workloads')
     for w, e in jload(IMAGE_TABLE).items():
         check(sha_f(IMAGES / (w + '.bin')) == e['native']['sha256'] and sha_f(IMAGES / (w + '.kseed')) == e['kseed']['sha256'], 'images/ == measured image ' + w)
         check(sha_f(PORTS / ('official-' + w + '.kotoba')) == e['sourceSHA256'], 'ports/ == measured source ' + w)
