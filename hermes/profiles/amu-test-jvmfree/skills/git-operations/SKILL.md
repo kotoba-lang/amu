@@ -551,10 +551,11 @@ push 直前まで行われなかった。**警告を読むことと同期する�
   所有者が付き branch 単位で棚卸しできるが、stash は無名の共有スタックで誰のものか
   追えなくなる。stash を使ってよいのは「共有 checkout で見つけた他人の未コミット WIP を
   消さないための緊急退避」だけで、積んだら cleanup で必ず棚卸しする。
-- **着地後の後片付けまでがタスクの完了条件。** push → サーバ側マージ
-  （`gh api .../merges`）→ `git worktree remove` → `git branch -D <branch>` →
-  マージ済み remote branch の削除。「マージしたのに branch/worktree が残っている」
-  状態を作らない。
+- **着地後に片付けるのは、そのタスク自身のworktreeとbranchだけ。** PRのmergeと
+  remote mainの着地を確認後、`git status --porcelain` が空のworktreeだけを
+  `git worktree remove <path>`（`--force`なし）で外し、着地済みbranchだけを
+  `git branch -d <branch>` で削除する。dirty・unmerged・active・状態不明なら保全して止める。
+  remote branchの削除や共有worktreeのpruneは、owner/policyの明示許可なしに行わない。
 - **worktree モデルはディスクを理由に捨てない。捨てる理由になるのは「同時書き手が 1 人」だけ**
   （オーナー判断 2026-09-06、ADR-2609061800）。「この端末だけで開発する」に変わっても、
   この端末では Claude セッション・codex・launchd の `cloud.itonami.bot.*` bot が同時に書いている
