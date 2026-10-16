@@ -92,6 +92,20 @@
          #"macOS static host cannot serve"
          (ios-aot/package macos 'main {:platform :macos})))))
 
+(deftest refuses-macos-static-host-capability-calls-without-providers
+  (let [source "(ns macos.hash (:export [main]) (:capabilities #{:hash/sha256}))
+               (defn main [] :string (hash/sha256 \"abc\"))"
+        macos (:artifact (compiler/compile-source
+                          source :aarch64-macos-kotoba-v1
+                          {:allow #{[:cap/call 3]}}))
+        error (try
+                (ios-aot/package macos 'main {:platform :macos})
+                nil
+                (catch clojure.lang.ExceptionInfo error error))]
+    (is error)
+    (is (= [["typed-cap-call" "3"]]
+           (:capability-calls (ex-data error)))))
+
 (deftest rejects-non-ios-and-substituted-artifacts
   (let [android (:artifact (compiler/compile-source source :aarch64-android-kotoba-v1))
         macos (:artifact (compiler/compile-source source :aarch64-macos-kotoba-v1))
