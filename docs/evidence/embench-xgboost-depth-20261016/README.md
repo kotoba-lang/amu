@@ -28,6 +28,18 @@ the fixed-depth path would issue 363,590 loads beyond the dynamic-step count if
 every group takes this path. This makes early leaf arrival a concrete
 optimization candidate.
 
+The v3 profile also records each group's maximum depth. An idealized group-stop
+variant (finish the four walks together as soon as all have reached leaves)
+would execute 216,712 steps instead of 256,000, saving 39,288 steps or 15.35%
+of the fixed-depth work. It would still do 33,430 more steps than four
+individually depth-limited walks. The group-depth histogram is 1: 1,493; 2:
+498; 3: 630; 4: 1,096; 5: 9,083 groups. A branch after each of the first four
+levels would require 45,095 group-stop decisions over the model and could save
+196,440 table/input loads versus fixed-five traversal. This is an idealized
+work count: it omits the instructions and branch behavior needed to detect that
+all four walks are done, so it is a hypothesis to measure, not a speedup
+estimate.
+
 To inspect the measured image on Apple silicon, wrap its payload as an object
 and disassemble it. The reported addresses are offsets from the payload symbol:
 

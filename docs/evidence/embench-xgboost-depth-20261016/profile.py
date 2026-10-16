@@ -50,9 +50,11 @@ def main() -> None:
         node_base += size
 
     histogram: collections.Counter[int] = collections.Counter()
+    group_max_histogram: collections.Counter[int] = collections.Counter()
     visited_features: list[int] = []
     groups_within_five = 0
     total_groups = 0
+    group_stop_steps = 0
     for sample in range(128):
         sample_base = sample * 64
         sample_depths: list[int] = []
@@ -74,7 +76,10 @@ def main() -> None:
             sample_depths.append(depth)
         for first_tree in range(0, 400, 4):
             total_groups += 1
-            if max(sample_depths[first_tree : first_tree + 4]) <= 5:
+            group_max = max(sample_depths[first_tree : first_tree + 4])
+            group_max_histogram[group_max] += 1
+            group_stop_steps += 4 * group_max
+            if group_max <= 5:
                 groups_within_five += 1
 
     walk_count = sum(histogram.values())
@@ -82,8 +87,11 @@ def main() -> None:
     table_input_loads_per_step = 5
     dynamic_steps = sum(depth * count for depth, count in histogram.items())
     shallow_walks = sum(count for depth, count in histogram.items() if depth < fixed_steps)
+    group_stop_saved_steps = walk_count * fixed_steps - group_stop_steps
+    group_stop_extra_steps = group_stop_steps - dynamic_steps
+    group_stop_checks = sum(min(depth, fixed_steps - 1) * count for depth, count in group_max_histogram.items())
     result = {
-        "schema": "amu.embench.xgboost-depth-profile/v2",
+        "schema": "amu.embench.xgboost-depth-profile/v3",
         "source": "bench/embench/reproduce-20261015/ports/official-xgboost.kotoba",
         "sourceSha256": hashlib.sha256(source_bytes).hexdigest(),
         "model": {"samples": 128, "trees": 400, "walks": walk_count},
@@ -100,6 +108,14 @@ def main() -> None:
         "walksEndingBeforeFiveSteps": shallow_walks,
         "groupsOfFourWithinFiveSteps": groups_within_five,
         "groupsOfFour": total_groups,
+        "groupMaxDepthHistogram": {str(k): group_max_histogram[k] for k in sorted(group_max_histogram)},
+        "twIdealGroupStopSteps": group_stop_steps,
+        "twIdealGroupStopChecks": group_stop_checks,
+        "twIdealGroupStopSavedStepsVsFixedFive": group_stop_saved_steps,
+        "twIdealGroupStopSavedPercentVsFixedFive": 100 * group_stop_saved_steps / (walk_count * fixed_steps),
+        "twIdealGroupStopExtraStepsVsDynamicWalk": group_stop_extra_steps,
+        "twIdealGroupStopExtraLoadsVsDynamicWalk": group_stop_extra_steps * table_input_loads_per_step,
+        "twIdealGroupStopSavedLoadsVsFixedFive": group_stop_saved_steps * table_input_loads_per_step,
         "extraStepsAgainstDynamicWalk": walk_count * fixed_steps - dynamic_steps,
         "twTableInputLoadsPerStep": table_input_loads_per_step,
         "extraLoadsIfAllGroupsTakeTw": (walk_count * fixed_steps - dynamic_steps) * table_input_loads_per_step,

@@ -39,6 +39,13 @@ recorded; the estimate is not speed evidence. Reproduction, disassembly
 instructions, and scope are in
 `docs/evidence/embench-xgboost-depth-20261016/`.
 
+The refreshed group-depth profile narrows that hypothesis: an ideal group stop
+would save 39,288 of 256,000 fixed steps (15.35%), but needs 45,095
+all-four-leaves decisions and 70.96% of groups still reach level five. Its
+estimated 196,440 saved table/input loads omit the added checks and branch
+cost, so this remains a lower-ranked experiment until generated code and paired
+timing show a net gain.
+
 The goal is to improve Amu's selfhosted native compiler across multiple
 workloads. Each optimization is treated as a hypothesis: generate candidate
 mechanisms, reflect against existing code and evidence, rank by reach and
