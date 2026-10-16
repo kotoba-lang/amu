@@ -11,9 +11,13 @@ This directory lets a third party check, rebuild and re-time the result publishe
   in the measured M93 compiler; it also used ARMv8 SHA-256 instructions only on the Kotoba side. M93 remains below as a
   historical reproduction record.
 * The corrected **M104** round measures all 19 workloads with the same-algorithm-only selfhost fixed-point compiler, scalar
-  SHA-256, the pinned upstream Embench speed driver and the documented per-iteration ratio formula. Its recorded Apple M4
-  result is **Kotoba / C = 0.8213**. This is an **Embench-derived translated-port comparison**, not an official or certified
-  Embench score: the Kotoba programs use a project-specific translation and harness.
+  SHA-256, the pinned upstream Embench speed driver and the documented per-iteration ratio formula. The original Apple M4
+  cycle reports **Kotoba / C = 0.8213**. A separate 16 October cycle on another Apple M4 Mac mini (`Mac16,10`, 16 GB,
+  macOS 26.3.1) passed 19/19 in both arms and reports **0.7877703356** using freshly built Apple clang 21.0.0 C binaries.
+  These host-specific cycles are retained separately and are not averaged. Both are **Embench-derived translated-port
+  comparisons**, not official or certified Embench scores: the Kotoba programs use a project-specific translation and harness.
+  The follow-up's raw evidence and independent verifier are in
+  `round-sa-m104-20261015/records/m4-macmini-attempt-20261016-r1/`.
 * The 16 October 2026 Apple M1 Max attempt retained its records but was **rejected and is not a score**. The external
   10-second raw-idle gate reached 70.39% once and started the campaign, but the two executed `aha-mont64` attempts in each
   arm were rejected because raw idle during timing was below 70%. The other 18 workloads timed out at quiet admission and
@@ -233,8 +237,9 @@ What it does:
 caps), the driver command, the `run_trigger.py` files and the score formulas. What it drops: the measurement host's
 custody receipts and process patterns. It also builds C instead of reusing the frozen binaries.
 
-**Expected spread.** The corrected M104 record is 0.8213 from one Apple M4 cycle. Do not use the historical M93 0.7999 as a
-same-algorithm result. Your result depends on:
+**Expected spread.** The original M104 Apple M4 cycle reports 0.8213; a separate Mac16,10 follow-up with Apple clang 21.0.0
+reports 0.7877703356. Keep these host-specific cycles separate; do not average them into a universal M4 value. Do not use
+the historical M93 0.7999 as a same-algorithm result. Your result depends on:
 
 * your CPU (the C and Kotoba code use the core differently);
 * your clang version (the C binaries change);
@@ -259,6 +264,7 @@ hashes are in `records/fresh-C/source-custody.json`. A different clang builds di
 | `reference/` | trusted reference images (round51 WM G4, round114) with export tables, and the original m=1 expected values |
 | `records/round/` | protocol revision text, hashed pre-registration, reference-accounting receipt, expected values at n_w, compile/preparation/precheck receipts, verifier review, final summary |
 | `records/official/`, `records/fresh-C/` | the collected campaign records of both arms (reports, raw attempts, quiet-admission probes, invocation scripts, custody), verbatim |
+| `round-sa-m104-20261015/records/m4-macmini-attempt-20261016-r1/` | second-host full-19 M4 cycle, fresh clang build receipt, raw attempts, upstream verification, and an independent record verifier |
 | `round-sa-m104-20261015/records/m1-attempt-20261016-r1/` | rejected M1 Max attempt, CPU gate evidence, and all raw attempt records; not a benchmark score |
 | `records/omitted-files.json` | collected files not vendored here, with hashes and reasons |
 | `expected/` | pins for level (b): build inputs, compiler chain, measured images |
@@ -369,3 +375,7 @@ python3 bench/embench/reproduce-20261015/d_timing.py  --round rounds/sa-m104-202
 | ud | 4 | 0.7559 | 0.7333 (m4) | 1.031 |
 | wikisort | 8 | 0.7935 | 0.9646 (m8) | 0.823 |
 | xgboost | 1 | 1.5184 | 1.9575 (m1) | 0.776 |
+
+## 9. Second Apple M4 Mac mini cycle (16 October 2026)
+
+The follow-up record at `round-sa-m104-20261015/records/m4-macmini-attempt-20261016-r1/` is a fresh full-19 run of the same M104 round on a separate M4 Mac mini (`Mac16,10`, 16 GB, macOS 26.3.1). It used the unchanged timing script and pinned upstream commit `09c2ed8c3b7008c95d08b038de4a3f6dc103ed70`; the C arm was rebuilt with Apple clang 21.0.0. All 19 workloads in each arm passed the protocol, including raw and estimated-background CPU idle gates. The GM is **0.7877703355587422**. `verify-record.py` independently checks all raw rows, exact Kotoba outputs, gate receipts, ratios, and the full-19 GM. This remains a translated-port comparison, not an official Embench result or a SPEC score. It is recorded separately from the original 0.8213 M4 cycle because host/compiler-specific runs should not be pooled.
