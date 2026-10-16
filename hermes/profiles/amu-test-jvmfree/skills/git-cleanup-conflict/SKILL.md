@@ -137,17 +137,17 @@ launchd tick が生成する append-only 台帳（observatory / funnel-pulse 等
 
 - dirty 判定は `git status --porcelain | wc -l`。untracked のみの dirty は
   「未着地候補」として残す（消さない）。
-- **着地 (merge → worktree remove) は 1 コマンド列で閉じる**: branch push →
-  `gh api repos/<o>/<r>/merges` でサーバ側マージ → **origin/main に着地物の実在を
-  `git cat-file -e origin/main:<path>` で確認** → `git worktree remove --force` →
-  local/remote branch 削除。merge API が 200 を返しても worktree に居続けると
-  並行 session の ff を阻む tracked WIP が生える — 着地確認までが 1 手順。
+- **着地後に片付けるのは、そのタスク自身のworktreeだけ**: PRのmerge状態と
+  remote main上の着地を確認してから `git status --porcelain` を再確認する。
+  tracked/untrackedの変更が残る、またはworktree登録状態が曖昧なら削除せず保全して止める。
+  cleanかつ着地済みと確認できたものだけ `git worktree remove <path>`（`--force`なし）
+  で外し、ローカルbranchは `git branch -d <branch>` を使う。未mergeなら削除せず、
+  dirtyならownerに内容を渡して判断を待つ。remote branchの削除や共有worktreeのpruneは
+  owner/policyが明示的に認めない限り行わない。
 - 一括撤去は `nbb scripts/worktree-retire.cljs --root . [--apply]`
-  （着地済み・clean・7日超・idle のみ削除。dirty は触らない）。**走査は全 worktree
-  を数えるので長い（実測: SCANNED 205 で 300s timeout）** — background で回すか、
-  自分の worktree は merge 確認後に手動で `git worktree remove --force <path>` +
-  `git worktree prune` + branch 削除で片付け、一括走査に巻き込まない。手で消すなら
-  clean かつ branch 着地済みのものだけ `git worktree remove`（`--force` 無し）。
+  のように明示スコープのcleanup gateを使う。全worktreeを数える処理は長いことがある
+  （実測: SCANNED 205で300s timeout）。backgroundで動かす場合も、対象と判定根拠を
+  確認し、dirty・unmerged・active・壊れたmetadataのworktreeは保全する。
 - superproject の `orgs/` 直下に切られた worktree は場所だけで誤り（削除候補）。
 
 ## 報告形式
