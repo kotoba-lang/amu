@@ -31,6 +31,41 @@
 ;; Stage-0 rules respected here (01-mem header H1-H5): if/cond only in tail position, no and/or/not, the handle only in
 ;; straight-line chains.
 
+;; CIDv1(raw, sha2-256) used by the selfhost module-lock reader. The compiler
+;; host supplies the SHA-256 primitive; the lock still verifies the exact
+;; source text bytes before the project reader sees them.
+(defn- io-b32-char [value :i64] :string
+  (string-substring "abcdefghijklmnopqrstuvwxyz234567" value (+ value 1)))
+
+(defn- io-hex-nibble [code-point :i64] :i64
+  (cond (and (>= code-point 48) (<= code-point 57)) (- code-point 48)
+        (and (>= code-point 97) (<= code-point 102)) (+ 10 (- code-point 97))
+        :else -1))
+
+(defn- io-b32-group [hex :string start-bit :i64] :string
+  (let [bit-limit (* (string-length hex) 4)
+        value (loop [j 0 value 0]
+                (if (>= j 5)
+                  value
+                  (let [position (+ start-bit j)
+                        bit (if (>= position bit-limit)
+                              0
+                              (let [nibble (io-hex-nibble (string-code-point-at hex (quot position 4)))]
+                                (bit-and (u64-shift-right nibble (- 3 (rem position 4))) 1)))]
+                    (recur (+ j 1) (bit-or (i64-shift-left value 1) bit)))))]
+    (io-b32-char value)))
+
+(defn- io-cid-from-digest [digest :string] :string
+  (let [hex (string-concat "01551220" digest)
+        bit-limit (* (string-length hex) 4)]
+    (loop [bit 0 cid "b"]
+      (if (>= bit bit-limit)
+        cid
+        (recur (+ bit 5) (string-concat cid (io-b32-group hex bit)))))))
+
+(defn- io-cidv1-raw [source :string] :string
+  (io-cid-from-digest (typed-cap-call :hash/sha256 :string :string source)))
+
 (defn- io-out [s :string] :i64
   (let [r (typed-cap-call :io/write :string :string s)] 0))
 

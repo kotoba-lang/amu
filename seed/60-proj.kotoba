@@ -93,6 +93,14 @@
 (def pj-img-cap 29589504)
 (def pj-k-ifover 38)
 (def pj-k-strover 39)
+(def pj-k-locked 44)   ; locked content-addressed module input mode
+(def pj-k-blocks 45)   ; P index of explicit raw-block directory
+(def pj-k-lock-count 46)
+(def pj-k-lock-root 47) ; P index of the module-lock root namespace
+(def pj-lock-base 6208) (def pj-lock-w 2) (def pj-lock-cap 256) ; namespace P index, CID P index
+(def pj-mf-cid 21)     ; expected raw CID P index, -1 when unpinned
+(def pj-e-lock 6027)
+(def pj-e-cid 6028)
 ;; image byte a, and image byte a := b
 (defn- pj-ib [L :vector-i64 a :i64] :i64
   (bit-and (u64-shift-right (vector-at L (+ pj-img-base (u64-shift-right a 3))) (* 8 (bit-and a 7))) 255))
@@ -131,6 +139,21 @@
   (let [k (pj-n L)
         w (if (>= k (- pj-s-cap 1)) L (-> L (vector-assoc! (+ pj-s-base k) (string-length P)) (vector-assoc! pj-k-nstr (+ k 1))))]
     (if (>= k (- pj-s-cap 1)) (let [x (vector-assoc! L pj-k-strover 1)] P) (string-concat P s))))   ; LINK: flagged, not silent
+
+(defn- pj-lock-entry [L :vector-i64 i :i64] :i64 (+ pj-lock-base (* i pj-lock-w)))
+(defn- pj-lock-name [L :vector-i64 i :i64] :i64 (vector-at L (pj-lock-entry L i)))
+(defn- pj-lock-cid [L :vector-i64 i :i64] :i64 (vector-at L (+ (pj-lock-entry L i) 1)))
+(defn- pj-lock-find [L :vector-i64 P :string name :string] :i64
+  (loop [i 0]
+    (cond (>= i (pj-l L pj-k-lock-count)) -1
+          (pj-peq L P (pj-lock-name L i) name) i
+          :else (recur (+ i 1)))))
+(defn- pj-lock-put [L :vector-i64 name :i64 cid :i64] :vector-i64
+  (let [n (pj-l L pj-k-lock-count)
+        b (pj-lock-entry L n)]
+    (-> L (vector-assoc! b name) (vector-assoc! (+ b 1) cid) (pj-ls pj-k-lock-count (+ n 1)))))
+(defn- pj-block-path [L :vector-i64 P :string cid :i64] :string
+  (string-concat (pj-p L P (pj-l L pj-k-blocks)) (string-concat "/" (pj-p L P cid))))
 ;; string i of P is s (no allocation)
 (defn- pj-peq [L :vector-i64 P :string i :i64 s :string] :bool (pj-span= P (pj-pa L i) (pj-pb L P i) s))
 ;; a fresh pool (90-drv: the roots are added to it)
@@ -252,7 +275,7 @@
   (let [m (pj-l L pj-k-nmod)]
     (-> L (pj-mset m pj-mf-name name) (pj-mset m pj-mf-path path) (pj-mset m pj-mf-state 0) (pj-mset m pj-mf-depth 0)
         (pj-mset m pj-mf-nreq 0) (pj-mset m pj-mf-nif 0) (pj-mset m pj-mf-expk 0) (pj-mset m pj-mf-nexp 0) (pj-mset m pj-mf-entry 0) (pj-mset m pj-mf-sch -1)
-        (pj-mset m 15 0) (pj-mset m 18 0) (pj-mset m 19 0) (pj-mset m 20 0)   ; R6D: pj-mf-kwt kwu kwf tpl
+        (pj-mset m 15 0) (pj-mset m 18 0) (pj-mset m 19 0) (pj-mset m 20 0) (pj-mset m pj-mf-cid -1) ; R6D: kwt kwu kwf tpl
         (pj-ls pj-k-nmod (+ m 1)))))
 
 ;; ---- the ns header ------------------------------------------------------------------------------------------------------
@@ -447,12 +470,24 @@
           (and (>= m 0) (= (pj-mf L m pj-mf-state) 1)) (let [w (pj-err M E-PROJ-CYCLE node)] P)
           (>= m 0) (let [w (pj-rset L r pj-rf-mod m)] P)
           (>= (pj-l L pj-k-nmod) pj-m-cap) (let [w (pj-err M E-PROJ-MODULES node)] P)
-          :else (let [path (pj-locate L P nm)]
-                  (cond (= (string-length path) 0) (let [w (pj-err M E-PROJ-MISSING node)] P)
-                        (string=? path "\n") (let [w (pj-err M E-PROJ-AMBIGUOUS node)] P)
-                        :else (let [k (pj-l L pj-k-nmod)
-                                    w (-> L (pj-add-mod (pj-rf L r pj-rf-name) (pj-n L)) (pj-rset r pj-rf-mod k) (pj-mset k pj-mf-depth (+ d 1)))]
-                                (pj-padd L P path)))))))
+          :else
+          (if (= (pj-l L pj-k-locked) 1)
+            (let [entry (pj-lock-find L P nm)]
+              (if (< entry 0)
+                (let [w (pj-err M pj-e-lock node)] P)
+                (let [cid (pj-lock-cid L entry)
+                      path (pj-n L)
+                      P1 (pj-padd L P (pj-block-path L P cid))
+                      k (pj-l L pj-k-nmod)
+                      w (-> L (pj-add-mod (pj-rf L r pj-rf-name) path) (pj-rset r pj-rf-mod k)
+                            (pj-mset k pj-mf-depth (+ d 1)) (pj-mset k pj-mf-cid cid))]
+                  P1)))
+            (let [path (pj-locate L P nm)]
+              (cond (= (string-length path) 0) (let [w (pj-err M E-PROJ-MISSING node)] P)
+                    (string=? path "\n") (let [w (pj-err M E-PROJ-AMBIGUOUS node)] P)
+                    :else (let [k (pj-l L pj-k-nmod)
+                                w (-> L (pj-add-mod (pj-rf L r pj-rf-name) (pj-n L)) (pj-rset r pj-rf-mod k) (pj-mset k pj-mf-depth (+ d 1)))]
+                            (pj-padd L P path))))))))
 
 (defn- pj-resolve-all [M :vector-i64 L :vector-i64 P :string cur :i64] :string
   (let [r0 (pj-mf L cur pj-mf-req0)
@@ -467,11 +502,17 @@
         S (io-read-file M path)
         bytes (+ (pj-l L pj-k-bytes) (string-length S))
         w (-> L (pj-ls pj-k-bytes bytes) (pj-ls pj-k-errmod m) (pj-mset m pj-mf-state 1))
-        M1 (pj-read M S)]
+        cid (pj-mf L m pj-mf-cid)
+        M0 (if (and (= (pj-l L pj-k-locked) 1)
+                    (not (string=? (io-cidv1-raw S) (pj-p L P cid))))
+             (pj-err M pj-e-cid 0) M)
+        M1 (pj-read M0 S)]
     (cond (not (pj-ok M1)) P
           (> bytes pj-max-bytes) (let [w2 (pj-err M1 E-PROJ-BYTES 0)] P)
           :else
-          (let [P2 (pj-header M1 L P S (if (= (pj-mf L m pj-mf-entry) 1) "" (pj-p L P (pj-mf L m pj-mf-name))))
+          (let [P2 (pj-header M1 L P S
+                              (if (and (= (pj-mf L m pj-mf-entry) 1) (= (pj-l L pj-k-locked) 0))
+                                "" (pj-p L P (pj-mf L m pj-mf-name))))
                 P3 (if (pj-ok M1) (pj-resolve-all M1 L P2 m) P2)
                 r0 (pj-mf L m pj-mf-req0)
                 n (pj-mf L m pj-mf-nreq)
@@ -1090,11 +1131,21 @@
 ;; ---- the whole project ---------------------------------------------------------------------------------------------------
 ;; pj-discover M L P root -> P : the module table and the compile order from the entry (module 0, path P[root])
 (defn- pj-discover [M :vector-i64 L :vector-i64 P :string root :i64] :string
-  (let [w (-> L (pj-add-mod (pj-n L) root) (pj-mset 0 pj-mf-depth 1) (pj-mset 0 pj-mf-entry 1))
-        P1 (pj-visit M L (pj-padd L P "") 0)]
-    (if (and (pj-ok M) (> (pj-l L pj-k-nmod) 1) (= (pj-l L pj-k-unpinned) 0))
-      (let [w2 (pj-err M E-PROJ-UNPINNED 0)] P1)
-      P1)))
+  (if (= (pj-l L pj-k-locked) 1)
+    (let [name (pj-p L P root)
+          entry (pj-lock-find L P name)]
+      (if (< entry 0)
+        (let [w (pj-err M pj-e-lock 0)] P)
+        (let [cid (pj-lock-cid L entry)
+              path (pj-n L)
+              P1 (pj-padd L P (pj-block-path L P cid))
+              w (-> L (pj-add-mod root path) (pj-mset 0 pj-mf-depth 1) (pj-mset 0 pj-mf-entry 1) (pj-mset 0 pj-mf-cid cid))]
+          (pj-visit M L P1 0))))
+    (let [w (-> L (pj-add-mod (pj-n L) root) (pj-mset 0 pj-mf-depth 1) (pj-mset 0 pj-mf-entry 1))
+          P1 (pj-visit M L (pj-padd L P "") 0)]
+      (if (and (pj-ok M) (> (pj-l L pj-k-nmod) 1) (= (pj-l L pj-k-unpinned) 0))
+        (let [w2 (pj-err M E-PROJ-UNPINNED 0)] P1)
+        P1))))
 
 ;; pj-project M L P root -> P : discover, then compile every module in order. On success M holds the entry module; the image
 ;; is the packed L[pj-img-base ..], L[pj-k-img] bytes (LINK). A multi-module project needs --unpinned.
