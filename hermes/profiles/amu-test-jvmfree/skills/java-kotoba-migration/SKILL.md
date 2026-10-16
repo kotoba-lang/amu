@@ -18,9 +18,9 @@ Use when migrating Clojure/ClojureScript code from java.*/clojure.java.* usage t
 
 ## Verify by running the artifact (build/test green before landing)
 
-`.kotoba`: `amu check` → `amu compile --target wasm32-browser` (multi-module
+`.kotoba` Q9 verification: `amu check --jvm-free` → `amu compile --jvm-free --target wasm32-browser` (multi-module
 graphs: `amu module-lock ... --source-path <dir> --blocks <dir>` then
-`amu compile --module-lock <lock> --blocks <dir>`; wasm32-browser target only —
+`amu compile --jvm-free --target wasm32-browser --module-lock <lock> --blocks <dir>`; target selection is explicit —
 the js-browser route refuses some graphs) → instantiate in Node with
 `amu/runtime/browser-host.mjs` and assert exported values. `.cljc`/`.cljk` test
 suites: `kbb -M:test` — the invocation is always kbb, never a Clojure CLI/bb/nbb
@@ -45,15 +45,17 @@ with `amu check --jvm-free` + `amu test --jvm-free` + a Node-side test script
 over the host artifacts, state the suite's JVM-boundness in the report, and
 leave the suite port as its own authorized wave (skill `kbb-test-suite-fix`).
 
-Landing flow for org repos (measured working path, all main-branch):
-clone to /tmp → write the guest → check + compile locally → commit to main →
-`git push origin main` → confirm remote HEAD with
+Landing flow for org repos: create a task worktree under `~/github/wt/amu-test-jvmfree/<task>` from the verified `origin/main` SHA → write the guest → check + compile locally → commit to `bot/amu-test-*` → push that branch → use the reviewed server-side merge endpoint → confirm remote HEAD with
 `gh api repos/<org>/<repo>/commits/main --jq .sha`. A repo checked out at a
-detached HEAD reports `src refspec main does not match any` on push —
-`git checkout -B main <verified-sha>` first. West checkouts name the remote
-per-org (`kotoba-lang`, `net-kotobase`), NOT `origin` — `git fetch origin`
-fails with "'origin' does not appear to be a git repository"; read
-`git remote -v` first and use the org-named remote for fetch/push.
+detached HEAD reports `src refspec <branch> does not match any` on push.
+Create a new task branch from the verified base with
+`git switch --create bot/amu-test-<task> <verified-sha>`; if that branch
+already exists, inspect it or choose another name rather than resetting it.
+Push only the task branch and use the reviewed server-side merge endpoint.
+West checkouts name the remote per-org (`kotoba-lang`, `net-kotobase`),
+NOT `origin` — `git fetch origin` fails with "'origin' does not appear to
+be a git repository"; read `git remote -v` first and use the org-named
+remote for fetch/push.
 
 ## Migration patterns
 
@@ -90,7 +92,7 @@ For logic that must run natively, write `*_core.kotoba` under the amu guest gram
 1. `mkdir -p <checkout>/src/kotoba`; `project.edn` at repo ROOT (not under `src/`) with `:name :version :description :license`.
 2. Write the pure core as `src/kotoba/<name>.kotoba` (amu grammar).
 3. Add an in-module self-check: `(defn self-check [] :i64 (+ (if (= <expected> (<fn> <args>)) 0 1) ...))` and `main` returning it. Probe in Node asserts both `main` and individual exports.
-4. Verify: `amu check` → `amu compile --jvm-free --target wasm32-browser` → Node probe → commit → push.
+4. Verify: `amu check --jvm-free` → `amu compile --jvm-free --target wasm32-browser` → Node probe → commit → push.
 
 ### amu `.kotoba` subset-reject pitfalls (rewrite these shapes)
 
@@ -502,9 +504,9 @@ An adapter repo (e.g. kotoba-net) needs a `deps.edn` at its ROOT (`{:paths ["src
 
 ### Distinguish source repos from auto-generated worktrees
 
-- **Source repos live in `~/github/com-junkasaki/orgs/`, `~/.gftd/kotoba-lang/`, `~/.codex-worktrees/`, `~/.gitlibs/libs/`**. Migrate `.clj`/`.cljc` files in these locations.
+- **Source repos live in `~/github/com-junkawasaki/orgs/`, `~/.gftd/kotoba-lang/`, `~/.codex-worktrees/`, `~/.gitlibs/libs/`**. Migrate `.clj`/`.cljc` files in these locations.
 - **Auto-generated worktrees live in `~/.gftd/worktrees/`**. These are temporary/build artifacts (e.g., `kotoba-cli-build-bot/`, `kotoba-cli-build-verifier/`). **DO NOT migrate** `.clj`/`.cljc` files here — they will be regenerated.
-- **Identify target directories first**: `find ~/github/com-junkasaki/orgs -type f -name '*.clj'` vs `find ~/.gftd/worktrees -type f -name '*.clj'`.
+- **Identify target directories first**: `find ~/github/com-junkawasaki/orgs -type f -name '*.clj'` vs `find ~/.gftd/worktrees -type f -name '*.clj'`.
 
 ### File selection rules
 
@@ -532,10 +534,10 @@ verified.
 ### Migration pattern
 
 1. Identify target orgs (exclude `~/.gftd/worktrees/`)
-2. Convert files: `find . -type f \( -name '*.clj' -o -name '*.cljc' \) -exec sh -c 'cp "$1" "${1%.clj}.kotoba"' _ {} \;`
+2. Convert files: `find . -type f \( -name '*.clj' -o -name '*.cljc' \) -exec sh -c 'src="$1"; case "$src" in *.cljc) dst="${src%.cljc}.kotoba" ;; *.clj) dst="${src%.clj}.kotoba" ;; esac; cp "$src" "$dst"' _ {} \;`
 3. Keep same `ns` declaration in converted files
 4. Verify with `find . -type f -name '*.kotoba' | wc -l`
 
 ## Prioritization
 
-Count remaining files first (`find src -name '*.cl[jcs]' | wc -l`), migrate by java.* usage (interop in src/ first), then by repo. Decision cores move to `.kotoba` first; host wrappers remain. Test-infra JVM usage (io/resource, Files/createTempDirectory, shell) migrates last.
+Count remaining files first (`find src -type f \( -name '*.clj' -o -name '*.cljc' -o -name '*.cljs' -o -name '*.cljk' \) | wc -l`), migrate by java.* usage (interop in src/ first), then by repo. Decision cores move to `.kotoba` first; host wrappers remain. Test-infra JVM usage (io/resource, Files/createTempDirectory, shell) migrates last.
