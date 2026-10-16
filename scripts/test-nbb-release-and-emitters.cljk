@@ -175,6 +175,22 @@
                   (not (.existsSync fs (file "vector-macos.o"))))
              (str (:stderr compiled) (:stderr packaged))))
 
+  (let [r (amu! "package-macos" "macos.kexe" "--output" "collision.o"
+                "--manifest-output" "./collision.o")]
+    (record! "package-macos refuses colliding object and manifest paths before writing"
+             (and (refused-with? r "must be distinct")
+                  (not (.existsSync fs (file "collision.o"))))
+             (:stderr r)))
+  (let [original (.readFileSync fs (file "macos.kexe"))
+        r (amu! "package-macos" "macos.kexe" "--output" "./macos.kexe"
+                "--manifest-output" "macos-collision.edn")
+        after (.readFileSync fs (file "macos.kexe"))]
+    (record! "package-macos refuses to overwrite its input before writing"
+             (and (refused-with? r "must be distinct")
+                  (.equals original after)
+                  (not (.existsSync fs (file "macos-collision.edn"))))
+             (:stderr r)))
+
   ;; ── cljs emission, EXECUTED ───────────────────────────────────────────
   (let [r (amu! "compile" (.join path root "examples" "fuel.kotoba")
                 "--target" "cljs-browser" "--output" "fuel.cljs")]
@@ -200,7 +216,7 @@
     (.rmSync fs tmp #js {:recursive true :force true})))
 
 (println (str "SCANNED\t" @ran "\tcases, failed=" (count @failed)))
-(when (or (seq @failed) (< @ran 27))
+(when (or (seq @failed) (< @ran 29))
   (println (str "FAIL " (pr-str @failed)))
   (.exit js/process 1))
 (println "nbb-release-and-emitters: release attestation, Apple AOT packaging and cljs emission on the nbb route, through both launchers")
