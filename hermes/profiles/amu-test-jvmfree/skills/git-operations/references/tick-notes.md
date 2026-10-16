@@ -34,8 +34,7 @@
   re-scan (0 dangling literals) + all 15 `:src` paths resolve to repo files +
   `bb -e` reader parse (17 forms) + `clojure -M:test` exit 0.
 - Ledger final line stays behind until the hourly measure job reruns; that is
-  expected, not a failed landing. Verify landing by `git show <remote>/main:<file>`
-  after `gh api .../merges`, then remove worktree + delete local and remote branch.
+  expected, not a failed landing. Verify landing by `git show <remote>/main:<file>` after the merge receipt. Keep the worktree and local/remote branches; cleanup needs a separate owner request and inspection.
 
 ## 2026-09-19 tick 4 (hayari)
 
@@ -44,9 +43,7 @@
   to .cljk files under different tree prefixes (superproject root vs own repo),
   so a repo-tree-only probe said NOEXIST. Resolve every literal against the
   clone prefix the path/join actually builds (root vs clone), not just the repo tree.
-- Worktree cleanup must run in the CHILD repo (git worktree prune/remove in
-  orgs/<org>/<repo>) — a prune in the superproject does not clear the child's
-  worktree registration, and the branch stays 'used by worktree'.
+- Worktree state is repository-specific: inspect the CHILD repo's registered worktrees and exact paths before proposing cleanup. Preserve worktree contents and branch refs; do not run `prune` or remove a worktree unless the owner has separately authorized that exact cleanup.
 - hayari green gate: `npm test` = kbb --backend sci --classpath src:test
   test/hayari/core_test.cljk (29 tests / 142 assertions / exit 0, unchanged by fix).
 
