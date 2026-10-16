@@ -61,6 +61,16 @@
 (def ^:private macos-static-host-typed-kinds
   {:string 1 :option-i64 2 :result-i64 3})
 
+(def ^:private macos-static-host-entry-types #{:i64 :bool})
+(def ^:private macos-static-host-fuel 512)
+
+(defn- host-integer-equals? [value expected]
+  #?(:clj (and (integer? value) (= value expected))
+     :cljs (if (identical? js/BigInt (type value))
+             (= value (js/BigInt expected))
+             (and (number? value) (js/Number.isSafeInteger value)
+                  (= value expected)))))
+
 (defn- reject! [message data]
   (throw (ex-info message (merge {:phase :verify} data))))
 
@@ -96,20 +106,58 @@
 (defn- context-abi-v11? [version]
   (= #?(:clj 11 :cljs (js/BigInt 11)) version))
 
+(defn- macos-static-host-bounded-fuel? [kexe]
+  ;; The host has no request field for a caller-selected budget and does not
+  ;; isolate guest stack use. Accept only the metered 512-word profile; this
+  ;; refuses the ordinary macOS target's unmetered default as well.
+  (and (not= :off (get-in kexe [:limits :fuel-metering]))
+       (host-integer-equals? (get-in kexe [:fuel-abi :initial])
+                             macos-static-host-fuel)
+       (host-integer-equals? (get-in kexe [:limits :fuel])
+                             macos-static-host-fuel)))
+
+(defn- macos-static-host-entry-signature [kexe entry arity]
+  (some (fn [function]
+          (let [params (:params function)
+                param-types (or (:param-types function)
+                                (vec (repeat (count params) :i64)))
+                result (or (:result function) :i64)]
+            (when (and (or (= entry (:name function))
+                           (= entry (:source-name function)))
+                       (host-integer-equals? arity (count params)))
+              {:param-types param-types
+               :result result
+               :callable-param-contracts? (boolean (seq (:callable-param-contracts function)))
+               :callable-result-contract? (some? (:callable-result-contract function))})))
+        (get-in kexe [:program :functions])))
+
+(defn- supported-macos-static-host-entry-signature? [signature]
+  (and signature
+       (vector? (:param-types signature))
+       (every? macos-static-host-entry-types (:param-types signature))
+       (contains? macos-static-host-entry-types (:result signature))
+       (not (:callable-param-contracts? signature))
+       (not (:callable-result-contract? signature))))
+
 (defn- reject-unsupported-macos-static-host! [kexe]
   (let [operations (macos-static-host-unsupported-ops kexe)
         capability-calls (macos-static-host-unsupported-capability-calls kexe)
         effects (set (remove supported-macos-static-host-effect? (:effects kexe)))
         context-version (get-in kexe [:context-abi :version])
-        gas-scheduled? (contains? (:program kexe) :gas-schedule)]
+        gas-scheduled? (contains? (:program kexe) :gas-schedule)
+        bounded-fuel? (macos-static-host-bounded-fuel? kexe)]
     (when (or (seq operations) (seq capability-calls) (seq effects)
-              (not (context-abi-v11? context-version)) gas-scheduled?)
+              (not (context-abi-v11? context-version)) gas-scheduled?
+              (not bounded-fuel?))
       (let [details {:host-profile :kotoba.macos.static-host/v1
                      :operations (vec (sort operations))
                      :unsupported-capability-calls capability-calls
                      :effects (vec (sort-by pr-str effects))
                      :context-abi-version context-version
-                     :gas-scheduled? gas-scheduled?}]
+                     :gas-scheduled? gas-scheduled?
+                     :fuel-abi-initial (get-in kexe [:fuel-abi :initial])
+                     :fuel-limit (get-in kexe [:limits :fuel])
+                     :fuel-metering (get-in kexe [:limits :fuel-metering])}]
         (reject! (str "macOS static host cannot serve this KEXE operation or ABI profile: "
                       (pr-str details))
                  details)))))
@@ -137,6 +185,13 @@
    (let [export (get (:exports kexe) entry)]
      (when-not export
        (reject! "Apple AOT entry is not exported" {:entry entry}))
+     (let [entry-signature (when (= platform :macos)
+                             (macos-static-host-entry-signature kexe entry (:arity export)))]
+       (when (and (= platform :macos)
+                  (not (supported-macos-static-host-entry-signature? entry-signature)))
+         (reject! "macOS static host requires an i64/bool entry boundary"
+                  {:entry entry :entry-signature entry-signature
+                   :supported-types (vec (sort macos-static-host-entry-types))})))
      (when (and (= platform :macos)
                 #?(:clj (> (:arity export) 5)
                    :cljs (if (identical? js/BigInt (type (:arity export)))
