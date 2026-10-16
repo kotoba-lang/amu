@@ -117,10 +117,10 @@
   routes; this one is not, and it is not a bug to fix here -- the divergence is
   the ADR's decision.
 
-  So it is refused rather than served. Producing a materially different kernel
-  image under a flag whose whole value is that it refuses instead of falling
-  back would be the exact failure this route was added to remove: a quiet wrong
-  answer where the caller asked for an equivalent one."
+  The production image remains refused by default. AIUEOS also has an explicit
+  `--selfhost-desktop` profile: its kernel does not use the omitted GDT/TSS,
+  image-owned stack, or interrupt entry region, and accepts the portable image
+  only for that bounded browser-shell route."
   {[:x86_64-aiueos-kernel-v1 :image]
    (str "the portable elf64 twin does not carry the live-boot GDT/TSS shim, so "
         "this route's x86-64 kernel image is not the JVM's (65,904 vs 110,872 "
@@ -170,7 +170,7 @@
   yields a `.o` (what `bisect-object-migration.sh` hashes) while the UEFI
   image requires `--artifact image` (what `build-kotoba-native-kernel.sh`
   passes)."
-  [target artifact artifact-kind policy]
+  [target artifact artifact-kind policy portable-desktop?]
   (let [kit (get kits target)
         packager (case artifact-kind
                    "image" (:image kit)
@@ -184,7 +184,14 @@
                          (:image kit))))
         selected-kind (cond (= packager (:image kit)) :image
                             (= packager (:object kit)) :object)]
-    (when-let [reason (get divergent-twins [target selected-kind])]
+    (when (and portable-desktop?
+               (not (and (= target :x86_64-aiueos-kernel-v1)
+                         (= selected-kind :image))))
+      (throw (ex-info "the self-host desktop profile applies only to the x86-64 kernel image"
+                      {:phase :artifact-target :target target
+                       :artifact selected-kind :reason :invalid-selfhost-desktop-profile})))
+    (when-let [reason (and (not portable-desktop?)
+                           (get divergent-twins [target selected-kind]))]
       (throw (ex-info (str "no JVM-free implementation: " reason)
                       {:phase :artifact-target :target target
                        :artifact selected-kind

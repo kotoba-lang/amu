@@ -27,6 +27,7 @@ const usage = [
   "       amu package-lock --deps kotoba.deps.edn --packages <dir> --output kotoba.lock.edn",
   "       amu definition-cids <file> [--source-path <dir>]  # one CID per definition",
   "       amu compile <entry> --source-path <dir> --unpinned --target <target> --output <file>",
+  "         [--selfhost-desktop]  (x86_64 AIUEOS browser shell; no GDT/TSS/ISR image)",
   "       amu worker [--target <target>]   (no --target: Kototama VM program)",
   "       amu inspect <file.kotoba|file.cljk|file.cljc> [--output interface.edn]",
   "       amu test <file.kotoba|file.cljk|file.cljc> [--json] [--fuel <n>] [--source-path <dir> ...]   (one instance per test)",
@@ -188,7 +189,8 @@ function option(args, flag) {
 // unconditionally would have broken a working command for callers who never
 // asked for a JDK-free build.
 function divergentAiueosKernelImage(args) {
-  return option(args, "--target") === "x86_64-aiueos-kernel-v1"
+  return !args.includes("--selfhost-desktop")
+    && option(args, "--target") === "x86_64-aiueos-kernel-v1"
     && option(args, "--artifact") === "image";
 }
 

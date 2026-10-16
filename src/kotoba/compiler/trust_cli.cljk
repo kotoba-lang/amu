@@ -366,6 +366,7 @@
             output (or (option args "--output") "BOOTX64.EFI")
             payload-path (option args "--payload")
             k16-preflight? (boolean (some #{"--k16-preflight"} args))
+            resident? (boolean (some #{"--resident"} args))
             ;; Free-text the caller puts on the panel beside the build digest --
             ;; a version, a branch, a date. Deliberately not derived here: this
             ;; packager is byte-compared against a second packaging of the same
@@ -377,6 +378,7 @@
             payload (if payload-path (octets payload-path) [])
             packaged (pe32plus/package-embedded-kernel
                       kernel payload {:k16-preflight? k16-preflight?
+                                      :resident? resident?
                                       :k16-note k16-note})]
         (atomic-output/write-bytes! output (host-bytes (:bytes packaged)))
         {:ok true :target :x86_64-aiueos-uefi-v1
@@ -384,6 +386,7 @@
          :kernel-sha256 (:embedded-kernel-sha256 packaged)
          :payload payload-path
          :k16-preflight? k16-preflight?
+         :resident? resident?
          :k16-note k16-note
          :payload-sha256 (:embedded-payload-sha256 packaged)})
 

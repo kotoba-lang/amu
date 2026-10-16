@@ -417,6 +417,28 @@
    ;; Keep the physical diagnostic visible. Returning EFI_LOAD_ERROR made the
    ;; K16 immediately retry PXE and erase STATUS before it could be recorded.
    [0xfa 0xf4 0xeb 0xfd]))
+
+(defn- k16-resident-tokens [returnable-entry context-address]
+  "Call the Kotoba entry as a resident step after ExitBootServices.
+
+  A returned 250 means the step completed and the loader replenishes the
+  sealed fuel budget before calling again. Any other return halts in place.
+  The boot-info register and context slot are rebuilt each time because they
+  are caller-saved across the guest entry."
+  (concat
+   (tender-snapshot-tokens context-address)
+   [(label :resident-step)
+    0x48 0x8d 0x3d] [(rip :boot-info)]
+   [0x49 0xb9] (le context-address 8)
+   [0x49 0x89 0x79 0x50]
+   (tender-replenish-tokens)
+   [0x48 0xb8] (le returnable-entry 8) [0xff 0xd0 0x49 0x89 0xc7]
+   ;; cmp r15, tender-continue ; je resident-step
+   [0x49 0x81 0xff] (le tender-continue 4)
+   [0x0f 0x84] [(rip :resident-step)]
+   ;; A completed kernel may return a failure code. Keep the firmware image
+   ;; resident without re-entering guest code or asking firmware to boot again.
+   [0xfa 0xf4 0xeb 0xfd]))
 (def ^:private kernel-scratch-pages 14)
 
 
@@ -468,6 +490,40 @@
    [0x41 0xb8] (le size 4)
    [0x41 0xff 0x96 0x60 0x01 0x00 0x00]))
 
+(defn- locate-gop-tokens [payload-bytes]
+  ;; Copy the GOP's stable scalar mode fields before ExitBootServices. The
+  ;; protocol pointers themselves belong to firmware memory and are not
+  ;; passed on to the kernel.
+  (concat
+   [0x48 0x8d 0x0d] [(rip :gop-guid)]
+   [0x31 0xd2]
+   [0x4c 0x8d 0x05] [(rip :gop-interface)]
+   ;; EFI_BOOT_SERVICES.LocateProtocol, table offset 0x140.
+   [0x41 0xff 0x96 0x40 0x01 0x00 0x00]
+   [0x48 0x85 0xc0 0x0f 0x85] [(rip :fail)]
+   [0x48 0x8b 0x05] [(rip :gop-interface)]
+   [0x48 0x85 0xc0 0x0f 0x84] [(rip :fail)]
+   ;; GOP->Mode, then FrameBufferBase and FrameBufferSize.
+   [0x48 0x8b 0x40 0x18]
+   [0x48 0x85 0xc0 0x0f 0x84] [(rip :fail)]
+   [0x49 0x89 0xc2]
+   [0x4c 0x8d 0x1d] [(rip :gop-info)]
+   [0x49 0x8b 0x42 0x18 0x49 0x89 0x03]
+   [0x49 0x8b 0x42 0x20 0x49 0x89 0x43 0x08]
+   ;; Mode->Info: width, height, pixel format and pixels-per-scan-line.
+   [0x49 0x8b 0x42 0x08]
+   [0x48 0x85 0xc0 0x0f 0x84] [(rip :fail)]
+   [0x49 0x89 0xc2]
+   [0x41 0x8b 0x42 0x04 0x49 0x89 0x43 0x10]
+   [0x41 0x8b 0x42 0x08 0x49 0x89 0x43 0x18]
+   [0x41 0x8b 0x42 0x0c 0x49 0x89 0x43 0x20]
+   [0x41 0x8b 0x42 0x20 0x49 0x89 0x43 0x28]
+   (when (pos? payload-bytes)
+     (concat [0x48 0x8d 0x05] [(rip :payload)]
+             [0x49 0x89 0x43 0x30]
+             [0x48 0xb8] (le payload-bytes 8)
+             [0x49 0x89 0x43 0x38]))))
+
 (defn package-embedded-kernel
   "Generate a position-independent PE32+ UEFI transition loader around a
   compiler-produced aiueos kernel ELF. No C object, CRT, import, or linker is
@@ -503,7 +559,12 @@
   (let [kernel (vec kernel)
         payload (vec payload)
         k16-preflight? (true? (:k16-preflight? options))
+        resident? (true? (:resident? options))
+        tender? (or k16-preflight? resident?)
         k16-note (or (:k16-note options) "")]
+    (when (and k16-preflight? resident?)
+      (throw (ex-info "K16 preflight and resident modes are mutually exclusive"
+                      {:phase :verify :reason :loader-mode-conflict})))
     ;; These two are refusals of the CALLER's input, so they carry a phase:
     ;; without one the CLI reports "internal compiler error" (exit 70) for a
     ;; kernel OBJECT handed to a packager that wants an ET_EXEC image --
@@ -550,23 +611,44 @@
         (throw (ex-info "embedded kernel PT_LOAD contract rejected" {:segments segments})))
       (let [entry-file-offset (+ (:offset entry-segment)
                                  (- entry (:paddr entry-segment)))
-            entry-shim? (and (<= (+ entry-file-offset 73) (count kernel))
-                             (= [0x48 0x89 0x3d]
-                                (subvec kernel (+ entry-file-offset 54)
-                                        (+ entry-file-offset 57)))
-                             (= [0x4c 0x8d 0x0d]
-                                (subvec kernel (+ entry-file-offset 61)
-                                        (+ entry-file-offset 64)))
-                             (= 0xe8 (nth kernel (+ entry-file-offset 68))))
-            context-address (when entry-shim?
+            live-entry-shim? (and (<= (+ entry-file-offset 73) (count kernel))
+                                  (= [0x48 0x89 0x3d]
+                                     (subvec kernel (+ entry-file-offset 54)
+                                             (+ entry-file-offset 57)))
+                                  (= [0x4c 0x8d 0x0d]
+                                     (subvec kernel (+ entry-file-offset 61)
+                                             (+ entry-file-offset 64)))
+                                  (= 0xe8 (nth kernel (+ entry-file-offset 68))))
+            portable-entry-shim? (and (<= (+ entry-file-offset 23) (count kernel))
+                                      (= [0x48 0x89 0x3d]
+                                         (subvec kernel entry-file-offset
+                                                 (+ entry-file-offset 3)))
+                                      (= [0x4c 0x8d 0x0d]
+                                         (subvec kernel (+ entry-file-offset 7)
+                                                 (+ entry-file-offset 10)))
+                                      (= 0xe8 (nth kernel (+ entry-file-offset 14)))
+                                      (= [0xfa 0xf4 0xeb 0xfd]
+                                         (subvec kernel (+ entry-file-offset 19)
+                                                 (+ entry-file-offset 23))))
+            entry-shim? (or live-entry-shim? portable-entry-shim?)
+            context-address (cond
+                              live-entry-shim?
                               (+ entry 68
-                                 (read-i32 kernel (+ entry-file-offset 64))))
-            returnable-entry (when entry-shim?
+                                 (read-i32 kernel (+ entry-file-offset 64)))
+                              portable-entry-shim?
+                              (+ entry 14
+                                 (read-i32 kernel (+ entry-file-offset 10))))
+            returnable-entry (cond
+                               live-entry-shim?
                                (+ entry 73
-                                  (read-i32 kernel (+ entry-file-offset 69))))
-            _ (when (and k16-preflight? (not entry-shim?))
-                (throw (ex-info "K16 preflight requires the returnable AIUEOS kernel entry shim"
-                                {:entry entry :entry-file-offset entry-file-offset})))
+                                  (read-i32 kernel (+ entry-file-offset 69)))
+                               portable-entry-shim?
+                               (+ entry 19
+                                  (read-i32 kernel (+ entry-file-offset 15))))
+            _ (when (and tender? (not entry-shim?))
+                (throw (ex-info "K16 tender modes require a recognized returnable AIUEOS kernel entry shim"
+                                {:phase :verify :entry entry
+                                 :entry-file-offset entry-file-offset})))
             data-addresses [0 8]
             rx-limit (align (+ (:paddr first-segment) (:memsz first-segment)) 4096)
             rw-start (:paddr second-segment)
@@ -578,7 +660,7 @@
             ;; can compare it against `:limits :fuel`. Reading the same word
             ;; the running loop reads is the point -- a second opinion derived
             ;; some other way could disagree with the image and be believed.
-            sealed-fuel (when (and k16-preflight?
+            sealed-fuel (when (and tender?
                                    (<= (:paddr second-segment) context-address)
                                    (<= (+ (- context-address
                                              (:paddr second-segment)) 16)
@@ -588,20 +670,24 @@
                                                 (:paddr second-segment))
                                              8)
                                    8))
-            _ (when (and k16-preflight? (not (and (integer? sealed-fuel)
+            _ (when (and tender? (not (and (integer? sealed-fuel)
                                                   (pos? sealed-fuel))))
                 (throw (ex-info "K16 tender found no sealed fuel word in the kernel context"
                                 {:reason :k16-tender-sealed-fuel-unreadable
                                  :context-address context-address
                                  :sealed-fuel sealed-fuel})))
             ;; Two loader-private segment destinations precede boot-info.
-            ;; Boot-info v4 is 96 bytes without a payload: the original
-            ;; firmware-map and W^X fields followed by a loader-owned scratch
-            ;; address/page count. An optional payload pointer/length follows.
-            variables-size (if payload? 128 112)
+            ;; Boot-info v6 retains the firmware-map, W^X and scratch fields,
+            ;; then optional payload pointer/length words. A bounded GOP mode
+            ;; record follows the memory-map window.
+            variables-size 112
             memory-map-offset (align variables-size 16)
             memory-map-capacity 16384
-            embedded-offset (align (+ memory-map-offset memory-map-capacity) 16)
+            gop-info-offset (align (+ memory-map-offset memory-map-capacity) 16)
+            gop-info-bytes 64
+            gop-guid-offset (align (+ gop-info-offset gop-info-bytes) 16)
+            gop-interface-offset (+ gop-guid-offset 16)
+            embedded-offset (align (+ gop-interface-offset 8) 16)
             payload-offset embedded-offset
             kernel-offset (align (+ payload-offset (count payload)) 16)
             status-prefix "AIUEOS K16 PREFLIGHT STATUS "
@@ -676,11 +762,7 @@
                     [0x4c 0x8d 0x0d] [(rip :scratch-address)]
                     [0x41 0xff 0x56 0x28 0x48 0x85 0xc0 0x0f 0x85]
                     [(rip :fail)]
-                    (when payload?
-                      (concat [0x48 0x8d 0x05] [(rip :payload)]
-                              [0x48 0x89 0x05] [(rip :payload-pointer)]
-                              [0xb8] (le (count payload) 4)
-                              [0x48 0x89 0x05] [(rip :payload-length)]))
+                    (locate-gop-tokens (count payload))
                     ;; The bounded memory map is part of the loader image's RW
                     ;; section, immediately after boot-info. This makes the
                     ;; handoff one compiler-owned region: the kernel derives
@@ -705,6 +787,8 @@
                     [0x4c 0x89 0xe1 0x48 0x8b 0x15] [(rip :map-key)]
                     [0x41 0xff 0x96 0xe8 0x00 0x00 0x00 0x48 0x85 0xc0
                      0x0f 0x85] [(rip :get-map)]
+                    (when resident?
+                      (k16-resident-tokens returnable-entry context-address))
                     [0x48 0x8d 0x3d] [(rip :boot-info)]
                     [0x48 0xb8] (le entry 8) [0xff 0xd0]
                     [(label :fail)]
@@ -715,7 +799,7 @@
             data-address (align (+ text-rva text-size) section-alignment)
             data (vec (concat (mapcat #(le (:paddr %) 8) segments)
                               (le 0x544f4f4245554941 8)
-                              (le 4 8)
+                              (le 6 8)
                               ;; map pointer/size/key/descriptor fields are
                               ;; populated by the loader before handoff.
                               (repeat 40 0)
@@ -724,16 +808,23 @@
                               (le rw-end 8)
                               (repeat 8 0)
                               (le kernel-scratch-pages 8)
-                              (when payload? (repeat 16 0))
                               (repeat (- memory-map-offset variables-size) 0)
                               (repeat memory-map-capacity 0)
-                              (repeat (- embedded-offset
+                              (repeat (- gop-info-offset
                                          (+ memory-map-offset memory-map-capacity)) 0)
+                              (repeat gop-info-bytes 0)
+                              (repeat (- gop-guid-offset
+                                         (+ gop-info-offset gop-info-bytes)) 0)
+                              ;; EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID.
+                              [0xde 0xa9 0x42 0x90 0xdc 0x23 0x38 0x4a
+                               0x96 0xfb 0x7a 0xde 0xd0 0x80 0x51 0x6a]
+                              (repeat 8 0)
+                              (repeat (- embedded-offset (+ gop-interface-offset 8)) 0)
                               payload
                               (repeat (- kernel-offset
                                          (+ payload-offset (count payload))) 0)
                               kernel
-                              (when k16-preflight?
+                              (when tender?
                                 (concat
                                  (repeat (- enter-message-offset
                                             (+ kernel-offset (count kernel))) 0)
@@ -769,10 +860,11 @@
                            :rw-end (+ data-address 88)
                            :scratch-address (+ data-address 96)
                            :memory-map (+ data-address memory-map-offset)
-                           :payload-pointer (+ data-address 112)
-                           :payload-length (+ data-address 120)
+                           :gop-info (+ data-address gop-info-offset)
+                           :gop-guid (+ data-address gop-guid-offset)
+                           :gop-interface (+ data-address gop-interface-offset)
                            :payload (+ data-address payload-offset)}
-                          (when k16-preflight?
+                          (when tender?
                             {:tender-fuel (+ data-address tender-slot-offset)
                              :enter-message (+ data-address enter-message-offset)
                              :build-message (+ data-address build-message-offset)
@@ -815,10 +907,15 @@
         {:format :pe32+-embedded-kernel/v3 :target firmware-target
          :entry :efi_main :entry-rva text-rva :sections [:text :data :reloc]
          :boot-info-layout (cond->
-                            {:bytes (+ (- memory-map-offset 16)
-                                       memory-map-capacity (count payload))
+                            {:bytes (- (+ embedded-offset (count payload)) 16)
                              :memory-map-offset (- memory-map-offset 16)
                              :memory-map-capacity memory-map-capacity
+                             :gop-info-offset (- gop-info-offset 16)
+                             :gop-info-bytes gop-info-bytes
+                             :gop-fields [:framebuffer-base :framebuffer-bytes
+                                          :width :height :pixel-format
+                                          :pixels-per-scan-line
+                                          :payload-pointer :payload-bytes]
                              :rx-limit-offset 56
                              :rw-start-offset 64
                              :rw-end-offset 72
@@ -831,8 +928,11 @@
          :imports [] :embedded-kernel-sha256 (artifact/sha256 kernel)
          :embedded-payload-sha256 (when payload? (artifact/sha256 payload))
          :k16-preflight? k16-preflight?
+         :resident? resident?
          :k16-preflight-returnable-entry (when k16-preflight? returnable-entry)
          :k16-preflight-context-address (when k16-preflight? context-address)
-         :k16-tender-continue (when k16-preflight? tender-continue)
+         :k16-resident-returnable-entry (when resident? returnable-entry)
+         :k16-resident-context-address (when resident? context-address)
+         :k16-tender-continue (when tender? tender-continue)
          :k16-tender-sealed-fuel sealed-fuel
          :bytes bytes}))))))
