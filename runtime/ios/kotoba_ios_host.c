@@ -1,4 +1,3 @@
-/Users/junkawasaki/.zshenv:.:1: no such file or directory: /Users/junkawasaki/.cargo/env
 #include "kotoba_ios_host.h"
 
 #include <limits.h>
