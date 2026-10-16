@@ -91,11 +91,10 @@ launchd tick が生成する append-only 台帳（observatory / funnel-pulse 等
    **pop しない**。bin 差分のみで「緊急退避物」として残す。生成キャッシュの世代差分
    （schema_hash の違い等）は「stash 版が新世代」であっても適用しない: それを書いた
    runtime が管理する。
-   **退避した runtime 実体は必ず pop で戻す** — それらは live server が開いている
-   working state であり、stash に入れたままにすると次の session の ff-sync 監査で
-   恒久的な modified 残りになる。push →（他の stash や ff を処理）→ 即 pop、を
-   1 つの sync 手順の中で閉じる。pop 後は兄弟 3 ファイルが全部 working tree に
-   戻ったことを status で確認する。
+   Runtime-owned database and schema files are never replayed or popped from the stash. Record
+   their paths and preserve the stash as the recovery copy; only an owner-aware, generation-
+   consistent recovery decision may restore runtime state. Do not drop the stash or overwrite
+   live state while that decision is pending.
 
 ### index.lock と並行 session（superproject 本体）
 
