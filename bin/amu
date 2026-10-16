@@ -35,6 +35,7 @@ const usage = [
   "         [--native-runtime <dir> | --native-prepare <dir> [--loader-source-dir <dir>]] [--native-jobs <n>]",
   "       amu module-lock <file.kotoba> --blocks <dir> --source-path <dir>",
   "       amu package-aiueos-boot <kernel> [--output BOOTX64.EFI]",
+  "       amu package-aiueos-disk-image <BOOTX64.EFI> --output AIUEOS.img [--receipt receipt.edn]",
   "       amu extract-native <file> [--symbol main] [--output program.bin]",
   "       amu package-ios program.kexe [--entry main] --output program.o",
   "       amu package-macos program.kexe [--entry main] --output program.o",
@@ -194,7 +195,8 @@ const trustCommands = new Set(["keygen", "public-key", "inspect", "trust-key",
   "trust-runtime", "sign", "verify-signed", "verify", "receipt",
   "verify-receipt", "verify-chain",
   "sbom", "attest-release", "verify-release", "package-ios", "package-macos",
-  "coverage", "sign-coverage-evidence", "package-aiueos-boot"]);
+  "coverage", "sign-coverage-evidence", "package-aiueos-boot",
+  "package-aiueos-disk-image"]);
 
 function nbbNativeEligible(args) {
   const command = args[0];

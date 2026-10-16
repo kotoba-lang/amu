@@ -36,6 +36,7 @@
             [kotoba.compiler.interface :as interface]
             [kotoba.compiler.kexe-indexes :as kexe-indexes]
             [kotoba.compiler.ios-aot :as ios-aot]
+            [kotoba.compiler.packaging.aiueos-disk :as aiueos-disk]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.compiler.receipt :as receipt]
             [kotoba.compiler.release :as release]
@@ -75,7 +76,8 @@
     ;; joined later the same day: `kotoba.compiler.coverage` became portable
     ;; (level-1 leaf), and `package-aiueos-boot` stood only on leaves already
     ;; portable plus `pe32plus`, which always was
-    "coverage" "sign-coverage-evidence" "package-aiueos-boot"})
+    "coverage" "sign-coverage-evidence" "package-aiueos-boot"
+    "package-aiueos-disk-image"})
 
 (defn- option [args flag] (second (drop-while #(not= flag %) args)))
 
@@ -389,5 +391,18 @@
          :resident? resident?
          :k16-note k16-note
          :payload-sha256 (:embedded-payload-sha256 packaged)})
+
+      "package-aiueos-disk-image"
+      (let [input (second args)
+            output (or (option args "--output") "aiueos-kotoba-desktop-gpt.img")
+            receipt-path (or (option args "--receipt") (str output ".receipt.edn"))
+            efi (bounded-edn/read-bytes-file input max-kernel-bytes)
+            packaged (aiueos-disk/package efi)]
+        (atomic-output/write-bytes! output (:bytes packaged))
+        (atomic-output/write-edn! receipt-path (:receipt packaged))
+        {:ok true :profile :kotoba-amu-selfhost-desktop
+         :input input :output output :receipt receipt-path
+         :bytes (get-in packaged [:receipt :disk :bytes])
+         :sha256 (get-in packaged [:receipt :disk :sha256])})
 
       (usage! (str "not a trust-plane command: " (pr-str command))))))
