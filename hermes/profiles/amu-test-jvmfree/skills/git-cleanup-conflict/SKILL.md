@@ -87,15 +87,12 @@ launchd tick が生成する append-only 台帳（observatory / funnel-pulse 等
    actor が在るときだけ行単位判定に落ちる。**時刻の辞書順比較は裸の文字列で行う** —
    quote 付き (`vals[-1] < '"2026-..."'`) のまま比較すると `"` の影響で常に
    False になり「stash は新鮮」という誤判定になる（実測 2026-09-13）。
-5. runtime 実体（state.db / -wal / -shm / schema_columns.json）は行判定の対象外 —
-   **pop しない**。bin 差分のみで「緊急退避物」として残す。生成キャッシュの世代差分
-   （schema_hash の違い等）は「stash 版が新世代」であっても適用しない: それを書いた
-   runtime が管理する。
-   **退避した runtime 実体は必ず pop で戻す** — それらは live server が開いている
-   working state であり、stash に入れたままにすると次の session の ff-sync 監査で
-   恒久的な modified 残りになる。push →（他の stash や ff を処理）→ 即 pop、を
-   1 つの sync 手順の中で閉じる。pop 後は兄弟 3 ファイルが全部 working tree に
-   戻ったことを status で確認する。
+5. runtime 実体（state.db / -wal / -shm / schema_columns.json）は行判定も復元も
+   **自動化しない**。stash にこれらが含まれていたら、その stash を未変更のまま保持し、
+   pop / apply / drop をせず、runtime owner に停止・世代・バックアップ状態を確認する。
+   stale な runtime snapshot を live working tree に戻すと現行世代を上書きする危険が
+   ある。自動処理は通常の追跡対象コードだけに限定し、runtime owner が明示的に承認した
+   世代整合バックアップの手順がある場合に限って別途復旧する。
 
 ### index.lock と並行 session（superproject 本体）
 
