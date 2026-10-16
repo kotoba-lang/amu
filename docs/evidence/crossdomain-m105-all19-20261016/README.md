@@ -89,9 +89,25 @@ python3 bench/embench/reproduce-20261015/c_exactness.py \
   --round rounds/sa-m104-20261015.json \
   --images <new-baseline-dir> \
   --out <another-new-empty-dir>
+
+python3 bench/embench/reproduce-20261015/tools/fetch_upstream.py \
+  --dest <pinned-upstream-dir>
+
+python3 bench/embench/reproduce-20261015/d_timing.py \
+  --upstream <pinned-upstream-dir> \
+  --round docs/evidence/crossdomain-m105-all19-20261016/baseline-timing-round.json \
+  --images <new-baseline-dir> \
+  --out <new-baseline-timing-dir>
+
+python3 bench/embench/reproduce-20261015/d_timing.py \
+  --upstream <pinned-upstream-dir> \
+  --round docs/evidence/crossdomain-m105-all19-20261016/candidate-timing-round.json \
+  --images <new-empty-dir>/step4-images \
+  --out <new-candidate-timing-dir>
 ```
 
 The current and baseline build and exactness reports are retained here.
 Exactness runtimes are diagnostic only and must not be treated as benchmark
-measurements. Timing samples are exploratory only and do not pass the quiet-host
-qualification gate.
+measurements. The two timing round files pin each image set and the expected
+accounting. `d_timing.py` applies the raw-idle and background-idle gates and
+emits a geometric mean only when all 19 workloads are accepted in both arms.
