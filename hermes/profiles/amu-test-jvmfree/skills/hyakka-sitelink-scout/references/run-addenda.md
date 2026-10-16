@@ -25,7 +25,7 @@
 
 ## 2026-09-10 run 1502 (PR #966) addenda
 
-- WORKTREE-REGISTRATION TRAP: `git worktree remove` for /tmp base worktrees must run with cwd=THE BASE WORKTREE ITSELF (its gitdir owner), not the growth worktree — from the growth tree it silently no-ops (rc 0) and every land cycle re-used a STALE base worktree pinned to the old sha, corrupting the evidence delta (1 not 10). Hard-delete fallback: literal-path `rm -rf /tmp/sl<run>/base_wt` + `git worktree prune` (never parameterized).
+- WORKTREE-REGISTRATION TRAP: `git worktree remove` may need to run from the worktree's owning repository. If it refuses or the directory is unregistered, preserve the directory and metadata, record its exact state, and stop for owner review. Do not use an `rm -rf` fallback or `git worktree prune` to reclaim space.
 - FOURTH TAIL SHAPE seen at base e6ebfb1e6: vector close is a BARE `]` line, then BLANK, then top-level `}` — a naive scan-back lands on the `}` line and rc7s. Insert-point finder must: scan back over blanks to the LAST non-blank; if it is the top-level `}` alone, scan back over blanks AGAIN to the vector-close line and insert there (preserves the trailing blank + `}`). Shapes enumerated: bare-] / bare-]-then-top / standalone-]} / close-]}-then-top / fused-}-then-top.
 - THE DELTA-10 ASSERT WORKS AS A MOVE DETECTOR: first evidence run showed delta 1 (not 10) and exposed a mid-run main move (#957 +1 OFAC non-EntityData map) that the stale base had masked. Never soften `c_sources == b_sources + 10` to an inequality.
 - Paintings Q12418/Q45585 carried a SIXTH time — the 217-216 walk band outranks 146/76 again; they enter the pool only when the walk band drops below 146.
