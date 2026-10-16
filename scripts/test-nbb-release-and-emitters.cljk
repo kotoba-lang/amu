@@ -190,6 +190,19 @@
                   (not (.existsSync fs (file "hash-macos.o"))))
              (str (:stderr compiled) (:stderr packaged))))
 
+  (write! "typed-map-macos.kotoba"
+          "(defn main [] :i64 (typed-map-count [:map :i64 :i64] (typed-map-new [:map :i64 :i64] 1 2)))")
+  (let [compiled (amu! "compile" "typed-map-macos.kotoba" "--target" "aarch64-macos"
+                       "--fuel" "512" "--output" "typed-map-macos.kexe")
+        packaged (amu! "package-macos" "typed-map-macos.kexe" "--entry" "main"
+                       "--output" "typed-map-macos.o")]
+    (record! "package-macos refuses typed-map operations before writing an object"
+             (and (ok? compiled)
+                  (refused-with? packaged "macOS static host cannot serve")
+                  (str/includes? (:stderr packaged) "typed-map-")
+                  (not (.existsSync fs (file "typed-map-macos.o"))))
+             (str (:stderr compiled) (:stderr packaged))))
+
   (let [r (amu! "package-macos" "macos.kexe" "--output" "collision.o"
                 "--manifest-output" "./collision.o")]
     (record! "package-macos refuses colliding object and manifest paths before writing"
@@ -231,7 +244,7 @@
     (.rmSync fs tmp #js {:recursive true :force true})))
 
 (println (str "SCANNED\t" @ran "\tcases, failed=" (count @failed)))
-(when (or (seq @failed) (< @ran 30))
+(when (or (seq @failed) (< @ran 31))
   (println (str "FAIL " (pr-str @failed)))
   (.exit js/process 1))
 (println "nbb-release-and-emitters: release attestation, Apple AOT packaging and cljs emission on the nbb route, through both launchers")
