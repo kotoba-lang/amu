@@ -14,6 +14,7 @@
 #if defined(__APPLE__) && defined(__aarch64__)
 #include <pthread.h>
 #include <sched.h>
+#include <sys/ucontext.h>
 #endif
 
 #ifndef KOTOBA_IOS_TARGET
@@ -326,21 +327,44 @@ static void containment_forward(int signal_number, siginfo_t *info,
   _Exit(128 + signal_number);
 }
 
+static int containment_is_guest_brk(void *context) {
+#if defined(__APPLE__) && defined(__aarch64__)
+  if (context == NULL) return 0;
+  const ucontext_t *signal_context = (const ucontext_t *)context;
+  uint32_t exception_class =
+      (uint32_t)((signal_context->uc_mcontext->__es.__esr >> 26) & 0x3f);
+  if (exception_class != 0x3c) return 0;
+  uintptr_t pc = (uintptr_t)signal_context->uc_mcontext->__ss.__pc;
+  uintptr_t start = (uintptr_t)kotoba_ios_code_start;
+  uintptr_t end = (uintptr_t)kotoba_ios_code_end;
+  if (pc < start || pc > end || end - pc < sizeof(uint32_t) || (pc & 3) != 0)
+    return 0;
+  uint32_t instruction = *(const volatile uint32_t *)pc;
+  return (instruction & UINT32_C(0xFFE0001F)) == UINT32_C(0xD4200000);
+#else
+  (void)context;
+  return 0;
+#endif
+}
+
 static int containment_is_synchronous_trap(int signal_number,
-                                           const siginfo_t *info) {
+                                           const siginfo_t *info,
+                                           void *context) {
   if (info == NULL || (signal_number != SIGTRAP && signal_number != SIGILL))
     return 0;
-  /* Darwin arm64 reports BRK #0 as SIGTRAP with si_code 0 (SI_NOINFO), while
-     user-generated signals use SI_USER/SI_QUEUE and larger codes. Accept that
-     exact SIGTRAP form only while this thread is executing the guest. */
-  if (signal_number == SIGTRAP && info->si_code == 0) return 1;
+  /* Darwin arm64 may report BRK #0 as SIGTRAP with si_code 0, the same value
+     used by raise(SIGTRAP). Accept that form only for a BRK exception whose
+     saved PC points at a BRK instruction inside the linked guest code. */
+  if (signal_number == SIGTRAP && info->si_code == 0)
+    return containment_is_guest_brk(context);
   return info->si_code > 0 && info->si_code < SI_USER;
 }
 
 static void containment_handler(int signal_number, siginfo_t *info,
                                 void *context) {
   atomic_fetch_add_explicit(&containment_handlers, 1, memory_order_acq_rel);
-  if (containment_active && containment_is_synchronous_trap(signal_number, info)) {
+  if (containment_active &&
+      containment_is_synchronous_trap(signal_number, info, context)) {
     atomic_fetch_sub_explicit(&containment_handlers, 1, memory_order_release);
     siglongjmp(containment_return, 1);
   }
