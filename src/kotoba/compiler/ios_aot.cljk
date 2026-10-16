@@ -119,12 +119,13 @@
     (vec (sort-by pr-str @unsupported))))
 
 (defn- supported-macos-static-host-effect? [effect]
-  ;; Local state is implemented by the bounded context; external capabilities
-  ;; are not, regardless of the serialized request/result types.
-  (= :state effect))
+  ;; Local state is implemented by the bounded context. Abort is lowered to
+  ;; result values and does not need a host callback; external capabilities are
+  ;; not supported regardless of their serialized request/result types.
+  (contains? #{:state :abort} effect))
 
 (defn- context-abi-v11? [version]
-  (= #?(:clj 11 :cljs (js/BigInt 11)) version))
+  (host-integer-equals? version 11))
 
 (defn- macos-static-host-bounded-fuel? [kexe]
   ;; The host has no request field for a caller-selected budget and does not
