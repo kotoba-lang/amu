@@ -4,9 +4,12 @@ Status: active research. M104 has a bounded translated-port result. M105 has
 the baseline/candidate ABBA repeat plus four CPU-gated, exact full-19 M4
 campaigns for isolated selfhost compiler variants. Same-image controls show
 that the apparent small gains are unresolved timing drift, not established
-compiler speedups. This does not support a general or world-fastest claim. See
-`docs/evidence/m105-abba-m4-20261016/` and
-`docs/evidence/crossdomain-m105-all19-20261016/variant-timing-m4/`.
+compiler speedups. This does not support a general or world-fastest claim. The 2026-10-17
+xgboost width-two hand-patch passes exactness, but its loaded-host ABBA run does
+not support a promotion. See
+`docs/evidence/m105-abba-m4-20261016/`,
+`docs/evidence/crossdomain-m105-all19-20261016/variant-timing-m4/`, and
+`docs/evidence/embench-xgboost-width2-20261017/`.
 
 ## Why the translated-port comparison can beat C
 
@@ -275,20 +278,34 @@ baseline, falsify the emitted-code hypotheses, then retime on a qualified host.
 5. Promote incubating domains only when every required comparator arm and both
    target ISAs have measured evidence. Until then, “world fastest” remains an
    objective, not a result.
-6. For xgboost `tw`, compare early-stop group widths before changing codegen.
-   On the pinned 128-sample / 400-tree model, ideal width two reduces
-   fixed-five steps by 21.24% with 85,392 stop decisions; width four saves
-   15.35% with 45,095 decisions. Width two is not a four-instruction change:
-   the native kernel interleaves four lanes by depth, so pairs need separate
-   control flow or a new layout. Only width four currently has a matching
-   instruction-count proxy: 14 instructions per skipped walk level and a
-   four-instruction stop test estimate 369,652 net instructions saved. This
-   omits branch prediction, register pressure, code size, and cycle costs.
-   A four-wide early-exit candidate is implemented and selfhost-built; G2=G3,
-   and the xgboost exactness run passes at n=8192. Five exploratory M1 Max
-   pairs under load gave a candidate/baseline median ratio of 0.923, but raw
-   idle was only 0.5–24.4%, and all three official quiet-gate attempts were
-   rejected for both Kotoba and C. Treat the candidate as unqualified until a
-   quiet-host paired run passes. Then investigate a pair layout if its static
-   work advantage justifies the added code. See
-   `docs/evidence/embench-xgboost-depth-20261016/profile.json`.
+6. For xgboost `tw`, the static profile and width-four candidate remain
+   exploratory. A 2026-10-17 width-two hand-patch reorders the 16 emitted walk
+   bodies into pairs while preserving the final four-lane validation and
+   commit. It passes exactness at n=8192, but five loaded-host ABBA pairs have
+   median width-two/width-four ratio 1.024 and do not support a speedup. Keep
+   compiler source unchanged; revisit with a quiet-host comparison or a
+   different layout. See
+   `docs/evidence/embench-xgboost-depth-20261016/profile.json` and
+   `docs/evidence/embench-xgboost-width2-20261017/`.
+## Evolve: M105 xgboost width-two hand-patch (2026-10-17)
+
+The current M105 fixed-point compiler was rebuilt from the adopted native
+bootstrap. G1, G2, and G3 all produced SHA-256
+`b10e381344a1f5a8b82cac981c0011bd20ecbcc4b48dd5f5dce97364c74e8a00`, with no
+JVM, Node, or Graal fallback. Recompiling the pinned xgboost port reproduced
+the width-four payload byte-for-byte (`1c4aab16…`).
+
+A hand-patch rearranged its 16 emitted walk bodies into two-lane pairs in the
+same 960-byte code region. It adds pair exit checks after the root and steps 2
+through 4, while retaining the existing four-lane final bounds/leaf
+validation, fallback, and commit. The patch is in
+`docs/evidence/embench-xgboost-width2-20261017/`; no compiler source was
+changed.
+
+The official xgboost exactness harness passed at `n=8192`, and all 20 ABBA
+invocations matched result, benchmark fuel, and arena. Timing under load1
+49.4–64.1 and raw idle 0.02–14.6% was inconclusive: paired width-two/width-four
+ratios were 1.024, 1.014, 1.057, 1.089, and 0.649, with a median of 1.024.
+The host did not pass the 70% idle gate. This neither qualifies a speedup nor a
+regression, so the compiler remains unchanged. A later quiet-host paired run
+or a different layout is needed before promotion.
