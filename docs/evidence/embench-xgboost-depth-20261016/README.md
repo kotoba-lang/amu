@@ -28,7 +28,7 @@ the fixed-depth path would issue 363,590 loads beyond the dynamic-step count if
 every group takes this path. This makes early leaf arrival a concrete
 optimization candidate.
 
-The v3 profile also records each group's maximum depth. An idealized group-stop
+The v4 profile also records each group's maximum depth. An idealized group-stop
 variant (finish the four walks together as soon as all have reached leaves)
 would execute 216,712 steps instead of 256,000, saving 39,288 steps or 15.35%
 of the fixed-depth work. It would still do 33,430 more steps than four
@@ -56,6 +56,41 @@ static estimate of 369,652 net instructions saved over fixed-five traversal
 on the pinned model. This excludes branch prediction, pipeline effects,
 register pressure, code size, and cycle costs. The estimate is a ranking aid,
 not a speedup claim; its inputs are recorded in `profile.json`.
+
+## Four-wide early-stop candidate
+
+`seed/41-a64gen.kotoba` now emits four checks after walk levels one through
+four. Each checks the high leaf bit across `x19`–`x22` and branches to the
+existing commit validation at payload offset `0x1780`; non-leaf groups
+continue into the next unrolled level. Direct branches in the raw word stream
+were relocated for the inserted instructions. See
+`candidate-early-stop-disasm.txt` for the generated code.
+
+The source-built compiler reached a fixed point at G2=G3
+(`b10e381344a1f5a8b82cac981c0011bd20ecbcc4b48dd5f5dce97364c74e8a00`). It
+rebuilt all 19 ports. The candidate xgboost image is
+`1c4aab16450da5b1deef581688d13b1995b87fa0238789cff8563ddc941a400d`; the
+exactness harness passed at `n=8192`, including result, fuel, and all 17 arena
+counters. The full build and exactness reports are
+`candidate-build.json` and `candidate-exactness.json`.
+
+The pinned timing driver did not produce a qualified sample on this M1 Max:
+all three quiet-admission attempts timed out for both Kotoba and C. With the
+user's approval to continue under load, five alternating exploratory pairs
+were also collected using the same Kotoba timing loader and the pinned `-O2`
+C binary. Every Kotoba run was exact, but raw CPU idle ranged from 0.5% to
+24.4% and load average from 18.8 to 32.1. Median times were 8.003 s for the
+baseline Kotoba image, 7.391 s for the candidate, and 45.627 s for C. The
+candidate/baseline median ratio was 0.923 (paired ratios 0.848–0.961). These
+loaded-host samples are exploratory diagnostics only; they are not a
+qualified speedup or Embench score. The complete samples and host readings
+are in `exploratory-timing.json`.
+
+The C receipt verifier originally described the output as
+`<out>/<workload>` while the build command wrote
+`<out>/<workload>/<workload>`. `c/build_c.py` and `d_timing.py` now record and
+verify the actual command path. This correction does not alter the C flags or
+timed executable.
 
 To inspect the measured image on Apple silicon, wrap its payload as an object
 and disassemble it. The reported addresses are offsets from the payload symbol:

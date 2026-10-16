@@ -242,7 +242,11 @@ timing and C comparisons remain outstanding.
    instruction-count proxy: 14 instructions per skipped walk level and a
    four-instruction stop test estimate 369,652 net instructions saved. This
    omits branch prediction, register pressure, code size, and cycle costs.
-   Prototype and measure the four-wide early exit first; then investigate a
-   pair layout if its static work advantage justifies the added code. Require
-   exact result/fuel behavior and qualified timing before keeping a change. See
+   A four-wide early-exit candidate is implemented and selfhost-built; G2=G3,
+   and the xgboost exactness run passes at n=8192. Five exploratory M1 Max
+   pairs under load gave a candidate/baseline median ratio of 0.923, but raw
+   idle was only 0.5–24.4%, and all three official quiet-gate attempts were
+   rejected for both Kotoba and C. Treat the candidate as unqualified until a
+   quiet-host paired run passes. Then investigate a pair layout if its static
+   work advantage justifies the added code. See
    `docs/evidence/embench-xgboost-depth-20261016/profile.json`.

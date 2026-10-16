@@ -1,0 +1,928 @@
+{
+  "schema": "amu.embench.xgboost-exploratory-timing/v1",
+  "round": "M104 xgboost, n=8192; candidate uses selfhost G2=G3 compiler",
+  "host": "Apple M1 Max, macOS arm64",
+  "qualification": "unqualified exploratory timing; official 70% idle gate timed out for Kotoba and C in all three attempts",
+  "protocolDeviation": "bypassed only the quiet-admission wrapper; each Kotoba run retained the pinned timer, exact output/fuel/arena checks, and each C run retained the pinned -O2 binary; no performance claim from these samples",
+  "multiplier": 1,
+  "n": 8192,
+  "caps": {
+    "KEXE_FUEL": "34359738368",
+    "KEXE_STRUCTURED_REPORT": "1",
+    "KEXE_ARENA_USE": "1",
+    "KEXE_CPU_SECONDS": "1800",
+    "KEXE_WALL_SECONDS": "1800"
+  },
+  "images": {
+    "baselineSHA256": "885ab7534513bd0eab7d7061cd315bca2f2285e60ff0e8916a427d9ba7a19d87",
+    "candidateSHA256": "1c4aab16450da5b1deef581688d13b1995b87fa0238789cff8563ddc941a400d",
+    "cBinarySHA256": "40f3ecd6f989872faa4d1bd0000946cc7fe4fa636af81ddded93da6325627fc4"
+  },
+  "warmups": [
+    {
+      "arm": "baseline",
+      "elapsedNs": 6727813542,
+      "exact": true,
+      "fuelConsistent": true,
+      "result": 1,
+      "benchmarkFuel": 2806009749,
+      "verifyFuel": 1,
+      "stderr": "KEXE_ARENA_USE {:pairs 8 :string-pool-bytes 0 :vectors 1 :vector-items 39566 :heap-bytes 316672 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n",
+      "wallElapsedNs": 7124493000,
+      "loadBefore": 19.84619140625,
+      "loadAfter": 18.8974609375,
+      "cpuActivity": {
+        "before": {
+          "ticks": [
+            100996972,
+            58333866,
+            30208035,
+            0
+          ],
+          "monotonicNs": 190010007560250,
+          "processors": 10,
+          "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+        },
+        "after": {
+          "ticks": [
+            101000817,
+            58336122,
+            30209007,
+            0
+          ],
+          "monotonicNs": 190017132203416,
+          "processors": 10,
+          "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+        },
+        "deltaTicks": [
+          3845,
+          2256,
+          972,
+          0
+        ],
+        "idlePercent": 13.74240067863707,
+        "envelopeNs": 7124643166,
+        "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+      }
+    },
+    {
+      "arm": "candidate",
+      "elapsedNs": 6357973917,
+      "exact": true,
+      "fuelConsistent": true,
+      "result": 1,
+      "benchmarkFuel": 2806009749,
+      "verifyFuel": 1,
+      "stderr": "KEXE_ARENA_USE {:pairs 8 :string-pool-bytes 0 :vectors 1 :vector-items 39566 :heap-bytes 316672 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n",
+      "wallElapsedNs": 6787695250,
+      "loadBefore": 18.8974609375,
+      "loadAfter": 18.5849609375,
+      "cpuActivity": {
+        "before": {
+          "ticks": [
+            101000817,
+            58336122,
+            30209007,
+            0
+          ],
+          "monotonicNs": 190017132630125,
+          "processors": 10,
+          "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+        },
+        "after": {
+          "ticks": [
+            101004175,
+            58338831,
+            30209673,
+            0
+          ],
+          "monotonicNs": 190023920456125,
+          "processors": 10,
+          "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+        },
+        "deltaTicks": [
+          3358,
+          2709,
+          666,
+          0
+        ],
+        "idlePercent": 9.891578791029259,
+        "envelopeNs": 6787826000,
+        "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+      }
+    },
+    {
+      "arm": "C",
+      "elapsedNs": 28850978583,
+      "exact": null,
+      "stdout": "EMBENCH_NS=28850978583\n",
+      "stderr": "",
+      "wallElapsedNs": 29266784916,
+      "loadBefore": 18.5849609375,
+      "loadAfter": 18.7568359375,
+      "cpuActivity": {
+        "before": {
+          "ticks": [
+            101004175,
+            58338831,
+            30209673,
+            0
+          ],
+          "monotonicNs": 190023920598208,
+          "processors": 10,
+          "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+        },
+        "after": {
+          "ticks": [
+            101022373,
+            58346518,
+            30212912,
+            0
+          ],
+          "monotonicNs": 190053187588875,
+          "processors": 10,
+          "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+        },
+        "deltaTicks": [
+          18198,
+          7687,
+          3239,
+          0
+        ],
+        "idlePercent": 11.121411893970608,
+        "envelopeNs": 29266990667,
+        "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+      }
+    }
+  ],
+  "pairs": [
+    {
+      "pair": 0,
+      "order": [
+        "baseline",
+        "candidate",
+        "C"
+      ],
+      "runs": [
+        {
+          "arm": "baseline",
+          "elapsedNs": 6715855459,
+          "exact": true,
+          "fuelConsistent": true,
+          "result": 1,
+          "benchmarkFuel": 2806009749,
+          "verifyFuel": 1,
+          "stderr": "KEXE_ARENA_USE {:pairs 8 :string-pool-bytes 0 :vectors 1 :vector-items 39566 :heap-bytes 316672 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n",
+          "wallElapsedNs": 6767590417,
+          "loadBefore": 18.7568359375,
+          "loadAfter": 19.4375,
+          "cpuActivity": {
+            "before": {
+              "ticks": [
+                101022373,
+                58346518,
+                30212912,
+                0
+              ],
+              "monotonicNs": 190053188051666,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "after": {
+              "ticks": [
+                101026737,
+                58348373,
+                30213432,
+                0
+              ],
+              "monotonicNs": 190059955774583,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "deltaTicks": [
+              4364,
+              1855,
+              520,
+              0
+            ],
+            "idlePercent": 7.71627837958154,
+            "envelopeNs": 6767722917,
+            "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+          }
+        },
+        {
+          "arm": "candidate",
+          "elapsedNs": 5692317125,
+          "exact": true,
+          "fuelConsistent": true,
+          "result": 1,
+          "benchmarkFuel": 2806009749,
+          "verifyFuel": 1,
+          "stderr": "KEXE_ARENA_USE {:pairs 8 :string-pool-bytes 0 :vectors 1 :vector-items 39566 :heap-bytes 316672 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n",
+          "wallElapsedNs": 5715073167,
+          "loadBefore": 19.4375,
+          "loadAfter": 19.72265625,
+          "cpuActivity": {
+            "before": {
+              "ticks": [
+                101026737,
+                58348373,
+                30213432,
+                0
+              ],
+              "monotonicNs": 190059955945291,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "after": {
+              "ticks": [
+                101029737,
+                58349666,
+                30214814,
+                0
+              ],
+              "monotonicNs": 190065671110666,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "deltaTicks": [
+              3000,
+              1293,
+              1382,
+              0
+            ],
+            "idlePercent": 24.352422907488986,
+            "envelopeNs": 5715165375,
+            "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+          }
+        },
+        {
+          "arm": "C",
+          "elapsedNs": 62961862041,
+          "exact": null,
+          "stdout": "EMBENCH_NS=62961862041\n",
+          "stderr": "",
+          "wallElapsedNs": 62968290000,
+          "loadBefore": 19.72265625,
+          "loadAfter": 32.08984375,
+          "cpuActivity": {
+            "before": {
+              "ticks": [
+                101029737,
+                58349666,
+                30214815,
+                0
+              ],
+              "monotonicNs": 190065671262166,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "after": {
+              "ticks": [
+                101055755,
+                58386286,
+                30215128,
+                0
+              ],
+              "monotonicNs": 190128639676291,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "deltaTicks": [
+              26018,
+              36620,
+              313,
+              0
+            ],
+            "idlePercent": 0.49721211736112214,
+            "envelopeNs": 62968414125,
+            "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+          }
+        }
+      ]
+    },
+    {
+      "pair": 1,
+      "order": [
+        "candidate",
+        "C",
+        "baseline"
+      ],
+      "runs": [
+        {
+          "arm": "candidate",
+          "elapsedNs": 6998526833,
+          "exact": true,
+          "fuelConsistent": true,
+          "result": 1,
+          "benchmarkFuel": 2806009749,
+          "verifyFuel": 1,
+          "stderr": "KEXE_ARENA_USE {:pairs 8 :string-pool-bytes 0 :vectors 1 :vector-items 39566 :heap-bytes 316672 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n",
+          "wallElapsedNs": 7035904750,
+          "loadBefore": 32.08984375,
+          "loadAfter": 30.9287109375,
+          "cpuActivity": {
+            "before": {
+              "ticks": [
+                101055755,
+                58386286,
+                30215128,
+                0
+              ],
+              "monotonicNs": 190128639929083,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "after": {
+              "ticks": [
+                101060549,
+                58388312,
+                30215334,
+                0
+              ],
+              "monotonicNs": 190135675950166,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "deltaTicks": [
+              4794,
+              2026,
+              206,
+              0
+            ],
+            "idlePercent": 2.9319669797893537,
+            "envelopeNs": 7036021083,
+            "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+          }
+        },
+        {
+          "arm": "C",
+          "elapsedNs": 30408084542,
+          "exact": null,
+          "stdout": "EMBENCH_NS=30408084542\n",
+          "stderr": "",
+          "wallElapsedNs": 30416919958,
+          "loadBefore": 30.9287109375,
+          "loadAfter": 25.6455078125,
+          "cpuActivity": {
+            "before": {
+              "ticks": [
+                101060549,
+                58388312,
+                30215334,
+                0
+              ],
+              "monotonicNs": 190135676137208,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "after": {
+              "ticks": [
+                101078851,
+                58398450,
+                30217204,
+                0
+              ],
+              "monotonicNs": 190166093177125,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "deltaTicks": [
+              18302,
+              10138,
+              1870,
+              0
+            ],
+            "idlePercent": 6.169580996370835,
+            "envelopeNs": 30417039917,
+            "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+          }
+        },
+        {
+          "arm": "baseline",
+          "elapsedNs": 7285910750,
+          "exact": true,
+          "fuelConsistent": true,
+          "result": 1,
+          "benchmarkFuel": 2806009749,
+          "verifyFuel": 1,
+          "stderr": "KEXE_ARENA_USE {:pairs 8 :string-pool-bytes 0 :vectors 1 :vector-items 39566 :heap-bytes 316672 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n",
+          "wallElapsedNs": 7325768125,
+          "loadBefore": 25.6455078125,
+          "loadAfter": 25.353515625,
+          "cpuActivity": {
+            "before": {
+              "ticks": [
+                101078852,
+                58398450,
+                30217204,
+                0
+              ],
+              "monotonicNs": 190166093411083,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "after": {
+              "ticks": [
+                101083580,
+                58400591,
+                30217636,
+                0
+              ],
+              "monotonicNs": 190173419296083,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "deltaTicks": [
+              4728,
+              2141,
+              432,
+              0
+            ],
+            "idlePercent": 5.916997671551842,
+            "envelopeNs": 7325885000,
+            "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+          }
+        }
+      ]
+    },
+    {
+      "pair": 2,
+      "order": [
+        "C",
+        "baseline",
+        "candidate"
+      ],
+      "runs": [
+        {
+          "arm": "C",
+          "elapsedNs": 49221688416,
+          "exact": null,
+          "stdout": "EMBENCH_NS=49221688416\n",
+          "stderr": "",
+          "wallElapsedNs": 49236520083,
+          "loadBefore": 25.353515625,
+          "loadAfter": 24.86865234375,
+          "cpuActivity": {
+            "before": {
+              "ticks": [
+                101083580,
+                58400591,
+                30217636,
+                0
+              ],
+              "monotonicNs": 190173419493750,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "after": {
+              "ticks": [
+                101111755,
+                58420885,
+                30218354,
+                0
+              ],
+              "monotonicNs": 190222656140166,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "deltaTicks": [
+              28175,
+              20294,
+              718,
+              0
+            ],
+            "idlePercent": 1.4597352959115213,
+            "envelopeNs": 49236646416,
+            "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+          }
+        },
+        {
+          "arm": "baseline",
+          "elapsedNs": 8003499458,
+          "exact": true,
+          "fuelConsistent": true,
+          "result": 1,
+          "benchmarkFuel": 2806009749,
+          "verifyFuel": 1,
+          "stderr": "KEXE_ARENA_USE {:pairs 8 :string-pool-bytes 0 :vectors 1 :vector-items 39566 :heap-bytes 316672 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n",
+          "wallElapsedNs": 8057974875,
+          "loadBefore": 24.86865234375,
+          "loadAfter": 25.83984375,
+          "cpuActivity": {
+            "before": {
+              "ticks": [
+                101111755,
+                58420885,
+                30218354,
+                0
+              ],
+              "monotonicNs": 190222656328375,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "after": {
+              "ticks": [
+                101117599,
+                58422934,
+                30218508,
+                0
+              ],
+              "monotonicNs": 190230714447083,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "deltaTicks": [
+              5844,
+              2049,
+              154,
+              0
+            ],
+            "idlePercent": 1.913756679507891,
+            "envelopeNs": 8058118708,
+            "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+          }
+        },
+        {
+          "arm": "candidate",
+          "elapsedNs": 7666624917,
+          "exact": true,
+          "fuelConsistent": true,
+          "result": 1,
+          "benchmarkFuel": 2806009749,
+          "verifyFuel": 1,
+          "stderr": "KEXE_ARENA_USE {:pairs 8 :string-pool-bytes 0 :vectors 1 :vector-items 39566 :heap-bytes 316672 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n",
+          "wallElapsedNs": 7711289750,
+          "loadBefore": 25.83984375,
+          "loadAfter": 25.2119140625,
+          "cpuActivity": {
+            "before": {
+              "ticks": [
+                101117599,
+                58422934,
+                30218508,
+                0
+              ],
+              "monotonicNs": 190230714652750,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "after": {
+              "ticks": [
+                101123048,
+                58425052,
+                30218643,
+                0
+              ],
+              "monotonicNs": 190238426082458,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "deltaTicks": [
+              5449,
+              2118,
+              135,
+              0
+            ],
+            "idlePercent": 1.7527914827317579,
+            "envelopeNs": 7711429708,
+            "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+          }
+        }
+      ]
+    },
+    {
+      "pair": 3,
+      "order": [
+        "baseline",
+        "C",
+        "candidate"
+      ],
+      "runs": [
+        {
+          "arm": "baseline",
+          "elapsedNs": 8006623333,
+          "exact": true,
+          "fuelConsistent": true,
+          "result": 1,
+          "benchmarkFuel": 2806009749,
+          "verifyFuel": 1,
+          "stderr": "KEXE_ARENA_USE {:pairs 8 :string-pool-bytes 0 :vectors 1 :vector-items 39566 :heap-bytes 316672 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n",
+          "wallElapsedNs": 8035402500,
+          "loadBefore": 25.2119140625,
+          "loadAfter": 25.4384765625,
+          "cpuActivity": {
+            "before": {
+              "ticks": [
+                101123049,
+                58425052,
+                30218643,
+                0
+              ],
+              "monotonicNs": 190238426305916,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "after": {
+              "ticks": [
+                101128738,
+                58427213,
+                30218819,
+                0
+              ],
+              "monotonicNs": 190246461834750,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "deltaTicks": [
+              5689,
+              2161,
+              176,
+              0
+            ],
+            "idlePercent": 2.192873162222776,
+            "envelopeNs": 8035528834,
+            "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+          }
+        },
+        {
+          "arm": "C",
+          "elapsedNs": 31539609541,
+          "exact": null,
+          "stdout": "EMBENCH_NS=31539609541\n",
+          "stderr": "",
+          "wallElapsedNs": 31551452875,
+          "loadBefore": 25.4384765625,
+          "loadAfter": 24.9580078125,
+          "cpuActivity": {
+            "before": {
+              "ticks": [
+                101128738,
+                58427213,
+                30218819,
+                0
+              ],
+              "monotonicNs": 190246462077250,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "after": {
+              "ticks": [
+                101146348,
+                58437052,
+                30222753,
+                0
+              ],
+              "monotonicNs": 190278013699250,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "deltaTicks": [
+              17610,
+              9839,
+              3934,
+              0
+            ],
+            "idlePercent": 12.535449128509065,
+            "envelopeNs": 31551622000,
+            "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+          }
+        },
+        {
+          "arm": "candidate",
+          "elapsedNs": 7391019917,
+          "exact": true,
+          "fuelConsistent": true,
+          "result": 1,
+          "benchmarkFuel": 2806009749,
+          "verifyFuel": 1,
+          "stderr": "KEXE_ARENA_USE {:pairs 8 :string-pool-bytes 0 :vectors 1 :vector-items 39566 :heap-bytes 316672 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n",
+          "wallElapsedNs": 7433846042,
+          "loadBefore": 24.9580078125,
+          "loadAfter": 27.82373046875,
+          "cpuActivity": {
+            "before": {
+              "ticks": [
+                101146348,
+                58437052,
+                30222753,
+                0
+              ],
+              "monotonicNs": 190278013992875,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "after": {
+              "ticks": [
+                101151179,
+                58438916,
+                30223466,
+                0
+              ],
+              "monotonicNs": 190285447964791,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "deltaTicks": [
+              4831,
+              1864,
+              713,
+              0
+            ],
+            "idlePercent": 9.624730021598273,
+            "envelopeNs": 7433971916,
+            "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+          }
+        }
+      ]
+    },
+    {
+      "pair": 4,
+      "order": [
+        "candidate",
+        "baseline",
+        "C"
+      ],
+      "runs": [
+        {
+          "arm": "candidate",
+          "elapsedNs": 7753043416,
+          "exact": true,
+          "fuelConsistent": true,
+          "result": 1,
+          "benchmarkFuel": 2806009749,
+          "verifyFuel": 1,
+          "stderr": "KEXE_ARENA_USE {:pairs 8 :string-pool-bytes 0 :vectors 1 :vector-items 39566 :heap-bytes 316672 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n",
+          "wallElapsedNs": 7783168625,
+          "loadBefore": 27.82373046875,
+          "loadAfter": 27.43701171875,
+          "cpuActivity": {
+            "before": {
+              "ticks": [
+                101151180,
+                58438916,
+                30223466,
+                0
+              ],
+              "monotonicNs": 190285448143666,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "after": {
+              "ticks": [
+                101155935,
+                58441586,
+                30223802,
+                0
+              ],
+              "monotonicNs": 190293231456291,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "deltaTicks": [
+              4755,
+              2670,
+              336,
+              0
+            ],
+            "idlePercent": 4.3293390027058365,
+            "envelopeNs": 7783312625,
+            "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+          }
+        },
+        {
+          "arm": "baseline",
+          "elapsedNs": 8729875708,
+          "exact": true,
+          "fuelConsistent": true,
+          "result": 1,
+          "benchmarkFuel": 2806009749,
+          "verifyFuel": 1,
+          "stderr": "KEXE_ARENA_USE {:pairs 8 :string-pool-bytes 0 :vectors 1 :vector-items 39566 :heap-bytes 316672 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n",
+          "wallElapsedNs": 8771523709,
+          "loadBefore": 27.43701171875,
+          "loadAfter": 27.6640625,
+          "cpuActivity": {
+            "before": {
+              "ticks": [
+                101155935,
+                58441587,
+                30223802,
+                0
+              ],
+              "monotonicNs": 190293231668875,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "after": {
+              "ticks": [
+                101161857,
+                58444335,
+                30223898,
+                0
+              ],
+              "monotonicNs": 190302003314416,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "deltaTicks": [
+              5922,
+              2748,
+              96,
+              0
+            ],
+            "idlePercent": 1.0951403148528405,
+            "envelopeNs": 8771645541,
+            "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+          }
+        },
+        {
+          "arm": "C",
+          "elapsedNs": 45626556292,
+          "exact": null,
+          "stdout": "EMBENCH_NS=45626556292\n",
+          "stderr": "",
+          "wallElapsedNs": 45648203792,
+          "loadBefore": 27.6640625,
+          "loadAfter": 29.8818359375,
+          "cpuActivity": {
+            "before": {
+              "ticks": [
+                101161857,
+                58444335,
+                30223898,
+                0
+              ],
+              "monotonicNs": 190302003488083,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "after": {
+              "ticks": [
+                101193043,
+                58457953,
+                30224697,
+                0
+              ],
+              "monotonicNs": 190347652127041,
+              "processors": 10,
+              "api": "host_processor_info/PROCESSOR_CPU_LOAD_INFO"
+            },
+            "deltaTicks": [
+              31186,
+              13618,
+              799,
+              0
+            ],
+            "idlePercent": 1.7520777141854702,
+            "envelopeNs": 45648638958,
+            "scope": "runner invocation including process setup and warmup, enclosing timed interval"
+          }
+        }
+      ]
+    }
+  ],
+  "arms": {
+    "baseline": {
+      "samplesNs": [
+        6715855459,
+        7285910750,
+        8003499458,
+        8006623333,
+        8729875708
+      ],
+      "medianNs": 8003499458,
+      "minNs": 6715855459,
+      "maxNs": 8729875708
+    },
+    "candidate": {
+      "samplesNs": [
+        5692317125,
+        6998526833,
+        7666624917,
+        7391019917,
+        7753043416
+      ],
+      "medianNs": 7391019917,
+      "minNs": 5692317125,
+      "maxNs": 7753043416
+    },
+    "C": {
+      "samplesNs": [
+        62961862041,
+        30408084542,
+        49221688416,
+        31539609541,
+        45626556292
+      ],
+      "medianNs": 45626556292,
+      "minNs": 30408084542,
+      "maxNs": 62961862041
+    }
+  },
+  "scaledRatios": {
+    "baselineVsC": 0.7016527310787473,
+    "candidateVsC": 0.6479577261714942,
+    "candidateVsBaseline": 0.9234735325198544
+  }
+}
