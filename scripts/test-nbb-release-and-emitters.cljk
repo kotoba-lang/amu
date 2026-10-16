@@ -1,6 +1,7 @@
 #!/usr/bin/env kbb
 ;; The release family (`sbom`, `attest-release`, `verify-release`),
-;; `package-ios` and the ClojureScript-source targets on the nbb route --
+;; Apple AOT packaging (`package-ios` and `package-macos`) and the
+;; ClojureScript-source targets on the nbb route --
 ;; ported 2026-09-11 (ADR 0347 port ledger, after ADR 0348's trust plane,
 ;; which `test-nbb-trust.cljk` covers). Every command is driven through
 ;; `bin/amu` as a caller would use it, from a directory that is not the
@@ -59,6 +60,14 @@
 (defn ok? [r] (and (zero? (:status r)) (str/includes? (:stdout r) ":ok true")))
 (defn refused-with? [r message]
   (and (not (zero? (:status r))) (str/includes? (:stderr r) message)))
+(defn macho-build-platform [bytes]
+  (loop [index 0 offset 32 commands (.readUInt32LE bytes 16)]
+    (when (< index commands)
+      (let [command (.readUInt32LE bytes offset)
+            size (.readUInt32LE bytes (+ offset 4))]
+        (if (= 0x32 command) ; LC_BUILD_VERSION
+          (.readUInt32LE bytes (+ offset 8))
+          (recur (inc index) (+ offset size) commands))))))
 
 (try
   ;; ── artifacts ─────────────────────────────────────────────────────────
@@ -120,7 +129,164 @@
              (:stderr r)))
   (record! "package-ios refuses a non-iOS artifact"
            (refused-with? (amu! "package-ios" "program.kexe" "--output" "wrong.o")
-                          "explicit iOS target") "")
+                          "matching arm64 target") "")
+
+  ;; ── package-macos ────────────────────────────────────────────────────
+  (let [r (amu! "compile" (.join path root "examples" "structured.kotoba")
+                "--target" "aarch64-macos" "--fuel" "512" "--output" "macos.kexe")]
+    (record! "compile aarch64-macos artifact" (ok? r) (:stderr r)))
+  (let [r (amu! "package-macos" "macos.kexe" "--entry" "main"
+                "--output" "macos.o" "--manifest-output" "macos.o.edn")
+        bytes (when (.existsSync fs (file "macos.o")) (.readFileSync fs (file "macos.o")))
+        manifest (when (.existsSync fs (file "macos.o.edn")) (read! "macos.o.edn"))]
+    (record! "package-macos writes a Mach-O 64-bit object"
+             (and (ok? r) bytes (= [0xcf 0xfa 0xed 0xfe] (vec (.subarray bytes 0 4))))
+             (:stderr r))
+    (record! "package-macos emits LC_BUILD_VERSION for macOS and a macOS manifest"
+             (and bytes manifest (= 1 (macho-build-platform bytes))
+                  (str/includes? manifest ":platform :macos")
+                  (str/includes? manifest ":minimum-os [13 0 0]"))
+             (str (:stderr r) manifest))
+    (record! "package-macos stamps the bounded static-host profile"
+             (and bytes manifest
+                  (.includes bytes "aarch64-macos-static-kotoba-v1")
+                  (str/includes? manifest ":host-profile :kotoba.macos.static-host/v1")
+                  (str/includes? manifest ":host-target-profile :aarch64-macos-static-kotoba-v1"))
+             (str (:stderr r) manifest)))
+  (let [r (kotoba! "package-macos" "macos.kexe" "--entry" "main"
+                   "--output" "macos-kotoba.o" "--manifest-output" "macos-kotoba.o.edn")
+        bytes (when (.existsSync fs (file "macos-kotoba.o"))
+                (.readFileSync fs (file "macos-kotoba.o")))]
+    (record! "package-macos works through kotoba -M"
+             (and (ok? r) bytes (= 1 (macho-build-platform bytes)))
+             (:stderr r)))
+  (record! "package-macos refuses an iOS artifact"
+           (refused-with? (amu! "package-macos" "ios.kexe" "--output" "wrong-macos.o")
+                          "matching arm64 target") "")
+  (write! "vector-macos.kotoba"
+          "(ns macos.vector (:export [main]))\n(defn main [] :i64 (vector-at (vector-alloc 1) 0))")
+  (let [compiled (amu! "compile" "vector-macos.kotoba" "--target" "aarch64-macos"
+                       "--fuel" "512" "--output" "vector-macos.kexe")
+        packaged (amu! "package-macos" "vector-macos.kexe" "--entry" "main"
+                       "--output" "vector-macos.o")]
+    (record! "package-macos refuses vector operations before writing an object"
+             (and (ok? compiled)
+                  (refused-with? packaged "macOS static host cannot serve")
+                  (not (.existsSync fs (file "vector-macos.o"))))
+             (str (:stderr compiled) (:stderr packaged))))
+
+  (write! "hash-macos.kotoba"
+          "(ns macos.hash (:export [main]) (:capabilities #{:hash/sha256}))\n(defn main [] :string (hash/sha256 \"abc\"))")
+  (write! "hash-macos.policy.edn" "{:allow #{[:cap/call 3]}}")
+  (let [compiled (amu! "compile" "hash-macos.kotoba" "--target" "aarch64-macos"
+                       "--fuel" "512" "--policy" "hash-macos.policy.edn"
+                       "--output" "hash-macos.kexe")
+        packaged (amu! "package-macos" "hash-macos.kexe" "--entry" "main"
+                       "--output" "hash-macos.o")]
+    (record! "package-macos refuses typed capabilities without a provider"
+             (and (ok? compiled)
+                  (refused-with? packaged "capability-calls")
+                  (str/includes? (:stderr packaged) "typed-cap-call")
+                  (not (.existsSync fs (file "hash-macos.o"))))
+             (str (:stderr compiled) (:stderr packaged))))
+
+  (write! "typed-map-macos.kotoba"
+          "(defn main [] :i64 (typed-map-count [:map :i64 :i64] (typed-map-new [:map :i64 :i64] 1 2)))")
+  (let [compiled (amu! "compile" "typed-map-macos.kotoba" "--target" "aarch64-macos"
+                       "--fuel" "512" "--output" "typed-map-macos.kexe")
+        packaged (amu! "package-macos" "typed-map-macos.kexe" "--entry" "main"
+                       "--output" "typed-map-macos.o")]
+    (record! "package-macos refuses typed-map operations before writing an object"
+             (and (ok? compiled)
+                  (refused-with? packaged "macOS static host cannot serve")
+                  (str/includes? (:stderr packaged) "typed-map-")
+                  (not (.existsSync fs (file "typed-map-macos.o"))))
+             (str (:stderr compiled) (:stderr packaged))))
+
+  (write! "document-macos.kotoba"
+          "(defn main [] :i64 (document-count (document-vector (document-i64 1))))")
+  (let [compiled (amu! "compile" "document-macos.kotoba" "--target" "aarch64-macos"
+                       "--fuel" "512" "--output" "document-macos.kexe")
+        packaged (amu! "package-macos" "document-macos.kexe" "--entry" "main"
+                       "--output" "document-macos.o")]
+    (record! "package-macos refuses native document operations before writing an object"
+             (and (ok? compiled)
+                  (refused-with? packaged "macOS static host cannot serve")
+                  (str/includes? (:stderr packaged) "document-")
+                  (not (.existsSync fs (file "document-macos.o"))))
+             (str (:stderr compiled) (:stderr packaged))))
+
+  (write! "abort-macos.kotoba"
+          "(defn- maybe [x :i64] :i64 (if (< x 0) (throw :abort/negative) x))
+           (defn main [] :i64 (try (maybe -1) (catch error 7)))")
+  (let [compiled (amu! "compile" "abort-macos.kotoba" "--target" "aarch64-macos"
+                       "--fuel" "512" "--output" "abort-macos.kexe")
+        packaged (amu! "package-macos" "abort-macos.kexe" "--entry" "main"
+                       "--output" "abort-macos.o")]
+    (record! "package-macos accepts lowered abort control effects"
+             (and (ok? compiled)
+                  (ok? packaged)
+                  (.existsSync fs (file "abort-macos.o")))
+             (str (:stderr compiled) (:stderr packaged))))
+
+  (let [r (amu! "package-macos" "macos.kexe" "--output" "collision.o"
+                "--manifest-output" "./collision.o")]
+    (record! "package-macos refuses colliding object and manifest paths before writing"
+             (and (refused-with? r "must be distinct")
+                  (not (.existsSync fs (file "collision.o"))))
+             (:stderr r)))
+  (let [original (.readFileSync fs (file "macos.kexe"))
+        r (amu! "package-macos" "macos.kexe" "--output" "./macos.kexe"
+                "--manifest-output" "macos-collision.edn")
+        after (.readFileSync fs (file "macos.kexe"))]
+    (record! "package-macos refuses to overwrite its input before writing"
+             (and (refused-with? r "must be distinct")
+                  (.equals original after)
+                  (not (.existsSync fs (file "macos-collision.edn"))))
+             (:stderr r)))
+  ;; macOS volumes are often case-insensitive even though the names differ.
+  ;; Exercise the alias on those volumes; every runner also covers lexical
+  ;; aliases through the shared path check.
+  (let [case-alias (.join path tmp "MACOS.KEXE")]
+    (when (.existsSync fs case-alias)
+      (let [original (.readFileSync fs (file "macos.kexe"))
+            r (amu! "package-macos" "macos.kexe" "--output" "MACOS.KEXE"
+                    "--manifest-output" "case-collision.edn")
+            after (.readFileSync fs (file "macos.kexe"))]
+        (record! "package-macos refuses a case-insensitive input alias before writing"
+                 (and (refused-with? r "must be distinct")
+                      (.equals original after)
+                      (not (.existsSync fs (file "case-collision.edn"))))
+                 (:stderr r)))))
+  (let [nfc (file (str "unicode-\u00e9.kexe"))
+        nfd (file (str "unicode-e\u0301.kexe"))]
+    (.copyFileSync fs (file "macos.kexe") nfc)
+    (when (.existsSync fs nfd)
+      (let [original (.readFileSync fs nfc)
+            r (amu! "package-macos" nfc "--output" nfd
+                    "--manifest-output" "unicode-collision.edn")
+            after (.readFileSync fs nfc)]
+        (record! "package-macos refuses a Unicode-normalization input alias before writing"
+                 (and (refused-with? r "must be distinct")
+                      (.equals original after)
+                      (not (.existsSync fs (file "unicode-collision.edn"))))
+                 (:stderr r))))
+    (.rmSync fs nfc #js {:force true}))
+  (let [hardlink (file "macos-hardlink.kexe")]
+    (try
+      (.linkSync fs (file "macos.kexe") hardlink)
+      (let [original (.readFileSync fs (file "macos.kexe"))
+            r (amu! "package-macos" "macos.kexe" "--output" "macos-hardlink.kexe"
+                    "--manifest-output" "hardlink-collision.edn")
+            after (.readFileSync fs (file "macos.kexe"))]
+        (record! "package-macos refuses a hard-linked input alias before writing"
+                 (and (refused-with? r "must be distinct")
+                      (.equals original after)
+                      (not (.existsSync fs (file "hardlink-collision.edn"))))
+                 (:stderr r)))
+      (catch :default _ nil)
+      (finally
+        (.rmSync fs hardlink #js {:force true}))))
 
   ;; ── cljs emission, EXECUTED ───────────────────────────────────────────
   (let [r (amu! "compile" (.join path root "examples" "fuel.kotoba")
@@ -147,7 +313,7 @@
     (.rmSync fs tmp #js {:recursive true :force true})))
 
 (println (str "SCANNED\t" @ran "\tcases, failed=" (count @failed)))
-(when (or (seq @failed) (< @ran 20))
+(when (or (seq @failed) (< @ran 33))
   (println (str "FAIL " (pr-str @failed)))
   (.exit js/process 1))
-(println "nbb-release-and-emitters: release attestation, iOS packaging and cljs emission on the nbb route, through both launchers")
+(println "nbb-release-and-emitters: release attestation, Apple AOT packaging and cljs emission on the nbb route, through both launchers")

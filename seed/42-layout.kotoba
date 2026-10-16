@@ -226,8 +226,11 @@
             (if (and (or (= aux 1) (= aux 2)) (= kind FX-BL26) (> t0 0)
                      (< (+ t0 aux) (vector-at M MM-CODE-N))
                      (> at 0) (< at (vector-at M MM-CODE-N))
-                     (= (bit-and (vector-at M (+ MM-CODE-BASE at)) 0xfc000000) 0x14000000)
-                     (= (vector-at M (+ MM-CODE-BASE t0)) 0xd2800005)
+                     ;; a tail branch (b) or a call (bl): both enter with the caller's x3/x4/x5 handoff set
+                     (or (= (bit-and (vector-at M (+ MM-CODE-BASE at)) 0xfc000000) 0x14000000)
+                         (= (bit-and (vector-at M (+ MM-CODE-BASE at)) 0xfc000000) 0x94000000))
+                     ;; the private-entry marker: mov x5,#0 (up to 3 parameters) or mov x11,#0 (T2, 4 to 7)
+                     (or (= (vector-at M (+ MM-CODE-BASE t0)) 0xd2800005) (= (vector-at M (+ MM-CODE-BASE t0)) 0xd280000b))
                      ;; AUX2 skips only this exact ordinary fuel load. Its
                      ;; caller already carries the published counter in x8.
                      (or (= aux 1) (= (vector-at M (+ MM-CODE-BASE (inc t0))) (enc-ldr 8 7 CTX-FUEL))))

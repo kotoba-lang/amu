@@ -1,7 +1,7 @@
 # ADR 0351 — An omitted `--target` means the host's native target
 
 - Date: 2026-09-24
-- Status: Accepted
+- Status: Superseded by ADR 0355 (2026-10-14)
 - Deciders: owner (2026-09-24)
 - Related: superproject ADR-2609241300 (amu's native compiler is the first
   execution path; wasm is one build target), ADR 0237 (it did not make native
