@@ -9,13 +9,45 @@ python3 docs/evidence/embench-xgboost-depth-20261016/profile.py
 ```
 
 The profile follows the port's `walk` operation over its decoded byte arrays.
-The current `tbat` compiler specialization emits five branch-free walk steps
-and keeps a reached leaf in place. For the recorded inputs, the average dynamic
-walk is 3.58 steps; 52.6% of walks end before step five. This suggests a
-candidate to reduce work after early leaf arrival.
+The measured M104 native image contains a four-walk `tw` sequence: it executes
+five branch-free levels for each walk, keeps reached leaves in place, and
+commits groups only when all four paths end at leaves. The corresponding
+disassembly is at payload offsets `0x1330`–`0x1768` in
+`bench/embench/reproduce-20261015/round-sa-m104-20261015/images/xgboost.bin`
+(SHA-256 `885ab7534513bd0eab7d7061cd315bca2f2285e60ff0e8916a427d9ba7a19d87`).
+The pattern matches `tw-entry` in the measured compiler source at commit
+`a9edc1f0d5021efabf6864e70c5b92d59257f348`. A separate single-walk,
+five-level sequence appears around `0x1aec`, consistent with the `tbat`
+fallback shape.
 
-This is only input-data analysis. It does not prove the generated M104 image
-takes the `tbat` path for every walk, quantify the cost of the extra loads,
-compare branch prediction, or establish a speedup. Any change needs exact
-result/fuel evidence and a quiet-host paired xgboost timing before it can be
-retained as a performance optimization.
+For the recorded model, all 12,800 groups of four have maximum path depth at
+most five; every visited feature index is below 64; and tree sizes range from
+1 to 31, below the kernel's 1,024 bound. The mean dynamic walk is 3.58 steps
+and 52.6% of walks end before step five. At five table/input loads per step,
+the fixed-depth path would issue 363,590 loads beyond the dynamic-step count if
+every group takes this path. This makes early leaf arrival a concrete
+optimization candidate.
+
+To inspect the measured image on Apple silicon, wrap its payload as an object
+and disassemble it. The reported addresses are offsets from the payload symbol:
+
+```sh
+tmpdir="$(mktemp -d)"
+cat > "$tmpdir/xgboost.s" <<EOF
+.section __TEXT,__text,regular,pure_instructions
+.globl _payload
+_payload:
+.incbin "$(pwd)/bench/embench/reproduce-20261015/round-sa-m104-20261015/images/xgboost.bin"
+EOF
+xcrun clang -target arm64-apple-macos13 -c "$tmpdir/xgboost.s" -o "$tmpdir/xgboost.o"
+xcrun otool -tvV "$tmpdir/xgboost.o" | sed -n '/0000000000001330/,/0000000000001768/p'
+```
+
+This is static code and input-data analysis. The data-dependent depth, feature,
+and tree-size predicates pass for every recorded group, and the image contains
+the matching `tw` code. The retained record does not trace runtime guard
+outcomes or quantify the timing cost of its loads versus C's branch behavior.
+The 363,590-load estimate is conditional on every group entering `tw`, not a
+measured dynamic count. Any change needs exact result/fuel evidence and a
+quiet-host paired xgboost timing before it can be retained as a performance
+optimization.

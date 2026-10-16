@@ -50,14 +50,19 @@ def main() -> None:
         node_base += size
 
     histogram: collections.Counter[int] = collections.Counter()
+    visited_features: list[int] = []
+    groups_within_five = 0
+    total_groups = 0
     for sample in range(128):
         sample_base = sample * 64
+        sample_depths: list[int] = []
         for tree in range(400):
             node = 0
             depth = 0
             while (node & 128) == 0:
                 at = node_bases[tree] + node
                 feature = arrays["comparison-idxs"][at]
+                visited_features.append(feature)
                 threshold = arrays["comparison-values"][at]
                 value = arrays["x-test"][sample_base + feature]
                 children = "left-children" if value < threshold else "right-children"
@@ -66,24 +71,40 @@ def main() -> None:
                 if depth > 128:
                     raise ValueError(f"tree walk did not reach a leaf: sample={sample}, tree={tree}")
             histogram[depth] += 1
+            sample_depths.append(depth)
+        for first_tree in range(0, 400, 4):
+            total_groups += 1
+            if max(sample_depths[first_tree : first_tree + 4]) <= 5:
+                groups_within_five += 1
 
     walk_count = sum(histogram.values())
     fixed_steps = 5
+    table_input_loads_per_step = 5
     dynamic_steps = sum(depth * count for depth, count in histogram.items())
     shallow_walks = sum(count for depth, count in histogram.items() if depth < fixed_steps)
     result = {
-        "schema": "amu.embench.xgboost-depth-profile/v1",
+        "schema": "amu.embench.xgboost-depth-profile/v2",
         "source": "bench/embench/reproduce-20261015/ports/official-xgboost.kotoba",
         "sourceSha256": hashlib.sha256(source_bytes).hexdigest(),
         "model": {"samples": 128, "trees": 400, "walks": walk_count},
+        "treeSizeMin": min(sizes),
+        "treeSizeMax": max(sizes),
+        "allTreeSizesBelow1024": all(size < 1024 for size in sizes),
+        "visitedInternalFeatureCount": len(visited_features),
+        "maxVisitedFeatureIndex": max(visited_features),
+        "allVisitedFeatureIndicesBelow64": all(feature < 64 for feature in visited_features),
         "walkDepthHistogram": {str(k): histogram[k] for k in sorted(histogram)},
         "dynamicWalkSteps": dynamic_steps,
-        "tbatFixedStepsPerWalk": fixed_steps,
-        "tbatFixedWalkSteps": walk_count * fixed_steps,
+        "twFixedStepsPerWalk": fixed_steps,
+        "twFixedWalkSteps": walk_count * fixed_steps,
         "walksEndingBeforeFiveSteps": shallow_walks,
+        "groupsOfFourWithinFiveSteps": groups_within_five,
+        "groupsOfFour": total_groups,
         "extraStepsAgainstDynamicWalk": walk_count * fixed_steps - dynamic_steps,
+        "twTableInputLoadsPerStep": table_input_loads_per_step,
+        "extraLoadsIfAllGroupsTakeTw": (walk_count * fixed_steps - dynamic_steps) * table_input_loads_per_step,
         "meanDynamicStepsPerWalk": dynamic_steps / walk_count,
-        "scope": "input-data path-length analysis only; not codegen, timing, or speedup evidence",
+        "scope": "input-data and group-predicate analysis only; not runtime-admission trace, timing, or speedup evidence",
     }
     print(json.dumps(result, indent=2, sort_keys=True))
 
