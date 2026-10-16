@@ -232,6 +232,11 @@ What it does:
 
 `--workloads crc32,edn` gives a short smoke run, which never prints a GM.
 
+If `--images` is supplied, every kseed must match the selected round's pinned kseed, native payload, exports, and source
+table. If `--c-binaries` is supplied, its `build-c.json` must be a schema-2 receipt from `c/build_c.py`; the verifier checks
+the pinned upstream revision, every compiled source and included header, the recorded `-O2` command, and each binary hash.
+Both upstream driver exit codes must also be zero before a full-19 GM is reported.
+
 `d_timing.py` re-implements the round's two campaign scripts with parameterized paths. Those scripts are kept verbatim in
 `records/official/campaign.py` and `records/fresh-C/campaign.py`. What it keeps the same: the timer invocations (n_w,
 caps), the driver command, the `run_trigger.py` files and the score formulas. What it drops: the measurement host's

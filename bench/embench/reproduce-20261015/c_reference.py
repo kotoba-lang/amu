@@ -72,6 +72,9 @@ def main():
                 lin[k] = slope is not None and all(series[x][k] == series[pts[0]][k] + (x - pts[0]) * slope for x in pts)
         table.append(dict(workload=w, multiplier=m, points=pts, referencesAgreeAtNw=agree, equalsPublishedExpected=matches,
                           nonAffineFields=[k for k, v in lin.items() if not v], fuelAtNw=a51['sample']['benchmarkFuel'] + a51['sample']['verifyFuel']))
+        unexpected_non_affine = sorted(set(table[-1]['nonAffineFields']) - ({'benchmarkFuel'} if w == 'tarfind' else set()))
+        if unexpected_non_affine:
+            fails.append('%s has unexpected non-affine accounting fields: %s' % (w, ', '.join(unexpected_non_affine)))
         print('%-15s m_w %2d points %-14s agree=%s published=%s nonAffine=%s' % (w, m, pts, agree, matches, table[-1]['nonAffineFields']), flush=True)
     status = 'PASS' if not fails else 'FAIL'
     if a.write and not fails:

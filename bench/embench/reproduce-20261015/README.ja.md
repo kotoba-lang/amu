@@ -225,6 +225,11 @@ python3 bench/embench/reproduce-20261015/d_timing.py --round rounds/m93-20261015
 
 `--workloads crc32,edn` で短いスモーク実行ができますが、幾何平均は表示しません。
 
+`--images` を指定する場合、全 kseed が選択ラウンドの kseed、native payload、exports、source table の pin と一致する必要があります。
+`--c-binaries` を指定する場合は `c/build_c.py` が生成した schema 2 の `build-c.json` が必要です。検証器は固定 upstream revision、
+コンパイル元と include header、記録された `-O2` コマンド、各バイナリのハッシュを照合します。全19の GM は両 upstream driver の終了コードも
+0 の場合に限り表示します。
+
 `d_timing.py` は、本ラウンドの 2 つのキャンペーンスクリプトをパスをパラメータ化して再実装したものです。元のスクリプトは
 `records/official/campaign.py` と `records/fresh-C/campaign.py` にそのまま収録しています。同じに保っているのは、タイマーの
 起動(n_w、caps)、ドライバのコマンド、`run_trigger.py`、スコアの計算式です。除いたのは、計測ホストのカストディレシートと

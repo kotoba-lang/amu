@@ -21,6 +21,61 @@ def check(condition, message):
     if not condition:
         errors.append(message)
 
+def raw_idle(cpu, label):
+    before = cpu.get("before", {})
+    after = cpu.get("after", {})
+    before_ticks = before.get("ticks", [])
+    after_ticks = after.get("ticks", [])
+    valid = (len(before_ticks) == 4 and len(after_ticks) == 4 and
+             all(type(x) is int and 0 <= x <= 0xffffffff for x in before_ticks + after_ticks))
+    check(valid, f"{label}: raw CPU ticks missing or invalid")
+    if not valid:
+        return None
+    delta = [(b - a) & 0xffffffff for a, b in zip(before_ticks, after_ticks)]
+    check(cpu.get("deltaTicks") == delta and sum(delta) > 0, f"{label}: tick deltas differ")
+    processors = before.get("processors")
+    check(type(processors) is int and processors > 0 and after.get("processors") == processors,
+          f"{label}: processor count is missing or changed")
+    idle = 100 * delta[2] / sum(delta) if sum(delta) else 0.0
+    check(math.isclose(idle, cpu.get("idlePercent", float("nan")), rel_tol=0, abs_tol=1e-9),
+          f"{label}: idle percent differs from raw tick counters")
+    envelope = after.get("monotonicNs", 0) - before.get("monotonicNs", 0)
+    check(envelope == cpu.get("envelopeNs") and envelope > 0, f"{label}: monotonic envelope differs")
+    return idle
+
+def verify_activity(cpu, label):
+    idle = raw_idle(cpu, label)
+    check(idle is not None and idle >= 70, f"{label}: raw idle gate below 70%")
+    envelope = cpu.get("envelopeNs", 0)
+    children = cpu.get("childCpuNs", -1)
+    logical = cpu.get("before", {}).get("processors", 0)
+    check(cpu.get("logicalCpuCount") == logical, f"{label}: logical CPU count differs from raw snapshots")
+    if isinstance(envelope, int) and envelope > 0 and isinstance(children, int) and children >= 0 and isinstance(logical, int) and logical > 0:
+        background = min(100, idle + 100 * children / (envelope * logical)) if idle is not None else float("nan")
+        check(math.isclose(background, cpu.get("estimatedBackgroundIdlePercent", float("nan")),
+                           rel_tol=0, abs_tol=1e-9), f"{label}: estimated background idle differs from raw counters")
+        check(background >= 70, f"{label}: estimated background-idle gate below 70%")
+    else:
+        check(False, f"{label}: background-idle inputs missing or invalid")
+
+def verify_quiet(quiet, label):
+    probes = quiet.get("probes", [])
+    required = quiet.get("requiredConsecutive", 0)
+    minimum = quiet.get("rawIdleMinimumPercent", float("nan"))
+    check(bool(probes) and type(required) is int and required == 1 and minimum == 70,
+          f"{label}: quiet probes or protocol thresholds differ")
+    streak = 0
+    ready = False
+    for i, probe in enumerate(probes):
+        idle = raw_idle(probe.get("cpuActivity", {}), f"{label}/probe-{i}")
+        is_quiet = idle is not None and idle >= minimum
+        streak = streak + 1 if is_quiet else 0
+        check(probe.get("quiet") is is_quiet, f"{label}/probe-{i}: quiet decision differs from raw counters")
+        check(probe.get("consecutive") == streak, f"{label}/probe-{i}: quiet streak differs")
+        ready = ready or streak >= required
+    check(quiet.get("ready") is ready, f"{label}: admission result differs from raw probe counters")
+    return ready
+
 names = report.get("workloads", [])
 check(len(names) == 19, "report is not full-19")
 check(set(names) == set(workloads), "round workload set differs")
@@ -48,16 +103,16 @@ for arm in ("kotoba", "c"):
         check(row.get("accepted") is True and row.get("reasons") == [], f"{arm}/{workload}: rejected")
         check(row.get("elapsedNs", 0) >= 500_000_000, f"{arm}/{workload}: timed interval too short")
         cpu = row.get("cpuActivity", {})
-        check(cpu.get("idlePercent", 0) >= 70, f"{arm}/{workload}: raw idle gate")
-        check(cpu.get("estimatedBackgroundIdlePercent", 0) >= 70, f"{arm}/{workload}: background-idle gate")
+        verify_activity(cpu, f"{arm}/{workload}/selected")
         quiet_path = rawdir / f"{workload}-quiet-{selected}.json"
         quiet = json.loads(quiet_path.read_text())
-        check(quiet.get("ready") is True and bool(quiet.get("probes")), f"{arm}/{workload}: quiet admission")
-        if quiet.get("probes"):
-            check(quiet["probes"][-1]["cpuActivity"].get("idlePercent", 0) >= 70,
-                  f"{arm}/{workload}: admission idle below threshold")
+        check(quiet.get("workload") == workload and quiet.get("attempt") == selected,
+              f"{arm}/{workload}: quiet record workload or attempt differs")
+        check(verify_quiet(quiet, f"{arm}/{workload}") is True, f"{arm}/{workload}: quiet admission")
         if arm == "kotoba":
             sample = row.get("sample") or {}
+            check(sample.get("elapsedNs") == row.get("elapsedNs"),
+                  f"kotoba/{workload}: structured elapsed time differs from row")
             check({k: v for k, v in sample.items() if k != "elapsedNs"} == expected[workload]["expectedSample"],
                   f"kotoba/{workload}: expected sample differs")
             check(row.get("stderr") == expected[workload]["expectedStderr"],
