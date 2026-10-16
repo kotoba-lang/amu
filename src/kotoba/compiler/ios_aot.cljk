@@ -63,6 +63,8 @@
 
 (def ^:private macos-static-host-entry-types #{:i64 :bool})
 (def ^:private macos-static-host-fuel 512)
+;; Keep aligned with KOTOBA_IOS_MAX_CODE_BYTES in kotoba_ios_host.h.
+(def ^:private macos-static-host-max-code-bytes (* 1024 1024))
 
 (defn- host-integer-equals? [value expected]
   #?(:clj (and (integer? value) (= value expected))
@@ -145,10 +147,12 @@
         effects (set (remove supported-macos-static-host-effect? (:effects kexe)))
         context-version (get-in kexe [:context-abi :version])
         gas-scheduled? (contains? (:program kexe) :gas-schedule)
-        bounded-fuel? (macos-static-host-bounded-fuel? kexe)]
+        bounded-fuel? (macos-static-host-bounded-fuel? kexe)
+        code-bytes (count (:code kexe))
+        code-size-supported? (<= code-bytes macos-static-host-max-code-bytes)]
     (when (or (seq operations) (seq capability-calls) (seq effects)
               (not (context-abi-v11? context-version)) gas-scheduled?
-              (not bounded-fuel?))
+              (not bounded-fuel?) (not code-size-supported?))
       (let [details {:host-profile :kotoba.macos.static-host/v1
                      :operations (vec (sort operations))
                      :unsupported-capability-calls capability-calls
@@ -157,7 +161,9 @@
                      :gas-scheduled? gas-scheduled?
                      :fuel-abi-initial (get-in kexe [:fuel-abi :initial])
                      :fuel-limit (get-in kexe [:limits :fuel])
-                     :fuel-metering (get-in kexe [:limits :fuel-metering])}]
+                     :fuel-metering (get-in kexe [:limits :fuel-metering])
+                     :code-bytes code-bytes
+                     :max-code-bytes macos-static-host-max-code-bytes}]
         (reject! (str "macOS static host cannot serve this KEXE operation or ABI profile: "
                       (pr-str details))
                  details)))))

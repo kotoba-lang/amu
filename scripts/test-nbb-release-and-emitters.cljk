@@ -133,7 +133,7 @@
 
   ;; ── package-macos ────────────────────────────────────────────────────
   (let [r (amu! "compile" (.join path root "examples" "structured.kotoba")
-                "--target" "aarch64-macos" "--output" "macos.kexe")]
+                "--target" "aarch64-macos" "--fuel" "512" "--output" "macos.kexe")]
     (record! "compile aarch64-macos artifact" (ok? r) (:stderr r)))
   (let [r (amu! "package-macos" "macos.kexe" "--entry" "main"
                 "--output" "macos.o" "--manifest-output" "macos.o.edn")

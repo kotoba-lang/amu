@@ -897,7 +897,8 @@ macOS arm64 has a matching static AOT packaging command for native host
 integration:
 
 ```bash
-kotoba -M compile packet-plane.kotoba --target aarch64-macos --output packet-plane.kexe
+kotoba -M compile packet-plane.kotoba --target aarch64-macos \
+  --fuel 512 --output packet-plane.kexe
 kotoba -M package-macos packet-plane.kexe --entry main \
   --output packet-plane.o --manifest-output packet-plane.edn
 ```
