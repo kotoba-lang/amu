@@ -165,3 +165,23 @@ Previous bootstrap, raw evidence and portable proofs are retained under
 The direct mask source snapshot fuses a mask writer's register copy into its low8-bit extraction.65 sites change in each Pico image; all other37 images are identical. Native four-generation identity, original483 observations and192 generic pairs (368 guests plus16 loader configuration refusals) pass. Fixed4 Joseph Pico timing was about1.767310% shorter, with both pair signs positive; this remains exploratory without a stability claim. Small validated gains have no5% cutoff. Full19 C parity remains unproven; incomplete rounds93/94 produce no total ratio. Evidence: [direct mask fusion](../docs/evidence/mask-direct-source-20261013/README.md).
 
 Fully prepaid clamp/mask cores reuse initialized x8=CTX-FUEL. Both Pico images remove12 loads+12 stores under full paid-region/entry/index/nonalias/reference/export proofs;37 other images stay whole identical. Original483 observations,84 source-oracle pairs and512 fuel boundary pairs pass (1192 generic guests). Locked Pico fixed4 was2.815160% shorter with both pair signs positive, exploratory without a stability claim. No5% cutoff. Prior store-only round97 is preserved unadopted because both pairs were slower. At qualification preparation, last complete full19 is prior-main round96 ratio2.8739381568053983; this candidate's freshfull19 comparison is pending. Goal active/unmet. [Evidence](../docs/evidence/fuel-register-reuse-20261014/README.md).
+
+## Same-algorithm m105 adoption (2026-10-16)
+
+The adoption receipt pins the reviewed m105 source unity and fixed-point
+bootstrap. The exported-tree review correction keeps the decision-tree source
+rewrite private, so exported definitions retain their reviewed native body.
+G1, G2 and G3 are byte-identical at SHA-256
+`6b158aa8654706743462b8a730f189072ba05f364b00af28a3f6d23045add2eb`.
+Rebuilding two generations from the adopted image reproduces the same digest.
+The regenerated 19 policy-native golden images are pinned in the receipt.
+Local validation covers 483/483 observations, 19/19 exact workload fuel/arena
+checks, all ten adopted-native regression controls, and 30,888 differential
+cases against the prior m105 image with zero mismatches. The main policy
+integration also reproduced all 19 pinned original images and passed all 34
+explicit policy refusals.
+
+No official m105 Embench round was run. The published 0.8213 ratio remains
+specific to the m104 compiler and its pinned images. See
+[`docs/evidence/same-algo-m105-20261016/`](../docs/evidence/same-algo-m105-20261016/)
+and the current receipt at `adoption-20261012.json`.
