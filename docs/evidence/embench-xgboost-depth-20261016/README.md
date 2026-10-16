@@ -86,6 +86,17 @@ loaded-host samples are exploratory diagnostics only; they are not a
 qualified speedup or Embench score. The complete samples and host readings
 are in `exploratory-timing.json`.
 
+A later same-source M105 comparison is recorded in
+`docs/evidence/crossdomain-m105-all19-20261016/same-source-exploratory-timing.json`.
+It compares the combined current M105 compiler against the verified M105
+baseline, each compiling the same current port source. For xgboost, the
+candidate/baseline median was 1.133 (four-pair range 0.804–1.342), the opposite
+direction from the earlier M104-image experiment. This later comparison also
+ran below the 70% idle gate and includes several compiler changes, so it does
+not falsify or confirm the isolated early-stop hypothesis. Keep both reports
+as separate exploratory records; do not average them or cite either as a
+speedup.
+
 The C receipt verifier originally described the output as
 `<out>/<workload>` while the build command wrote
 `<out>/<workload>/<workload>`. `c/build_c.py` and `d_timing.py` now record and

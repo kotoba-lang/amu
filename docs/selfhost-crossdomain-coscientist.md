@@ -1,8 +1,10 @@
 # Amu selfhost cross-domain performance research
 
-Status: active research. No performance claim has been made.
+Status: active research. M104 has a bounded translated-port result; current
+M105 changes have no qualified speed result and do not support a general or
+world-fastest claim.
 
-## Why the earlier Embench-derived comparison can beat C
+## Why the translated-port comparison can beat C
 
 The corrected M104 record reports Kotoba/C = 0.8213 on one Apple M4 cycle;
 a separate Apple M4 cycle with Apple clang 21 reports 0.7877703356. These are
@@ -217,6 +219,33 @@ relative results changed between run lengths. Sample ranges overlap. A
 and is excluded. Results, fuel, exact benchmark inputs, binaries, and raw
 timing samples are pinned in the evidence directory. Qualified quiet-host
 timing and C comparisons remain outstanding.
+
+## Meta-review: all-19 selfhost reach check (2026-10-16)
+
+After combining reciprocal division, MSub fusion, and the four-wide xgboost
+early-stop candidate, the current seed source at `6103f5cf` was rebuilt from
+the adopted native bootstrap. G1, G2, and G3 all produced image
+`b10e381344a1f5a8b82cac981c0011bd20ecbcc4b48dd5f5dce97364c74e8a00`, and the
+compiler regenerated all 19 workload images. The pinned M104 exactness harness
+passed all 19 at its recorded iteration counts, including result, fuel, and
+arena values. Seven images changed: matmult-int, nsichneu, picojpeg, qrduino,
+sglib-combined, slre, and xgboost. This proves cross-workload reach and
+correctness only; it provides no timing result. The build, image hashes, and
+exactness report are in `docs/evidence/crossdomain-m105-all19-20261016/`.
+
+The closest C-comparison gaps in the existing M104 M4 record remain xgboost
+(1.515 Kotoba/C), picojpeg (1.446), slre (1.194), qrduino (1.177), and
+sglib-combined (1.087). To compare compiler generations fairly, the verified
+M105 baseline and current M105 each compiled the same current port sources;
+the baseline passed exactness on all 19 workloads. Four loaded-host pairs on
+five domains show mixed current/baseline medians: xgboost 1.133, picojpeg
+1.060, slre 0.953, qrduino 1.123, sglib-combined 0.889. Pair ranges are wide,
+and raw idle stayed below the 70% qualification threshold throughout. These
+figures only prioritize follow-up work; they do not establish either a speedup
+or the effect of any one optimization. The earlier M104-versus-current-M105
+diagnostic is also cross-generation and cannot attribute changes. Next, profile
+the apparent xgboost, picojpeg, and qrduino regressions against the same-source
+baseline, falsify the emitted-code hypotheses, then retime on a qualified host.
 
 ## Next checks
 
