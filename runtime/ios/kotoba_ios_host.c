@@ -8,13 +8,20 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 #if defined(__APPLE__) && defined(__aarch64__)
 #include <pthread.h>
 #include <sched.h>
 #endif
 
 #ifndef KOTOBA_IOS_TARGET
+#if defined(__APPLE__) && defined(__aarch64__) && TARGET_OS_OSX
+#define KOTOBA_IOS_TARGET "aarch64-macos-static-kotoba-v1"
+#else
 #define KOTOBA_IOS_TARGET "aarch64-ios-kotoba-v1"
+#endif
 #endif
 
 extern const unsigned char kotoba_ios_entry[];
@@ -283,6 +290,8 @@ static struct sigaction containment_action;
 
 static void containment_forward(int signal_number, siginfo_t *info,
                                 void *context) {
+  (void)info;
+  (void)context;
   const struct sigaction *previous = signal_number == SIGTRAP
       ? &containment_previous_trap : &containment_previous_ill;
   if (previous->sa_handler == SIG_IGN) return;
@@ -305,16 +314,23 @@ static void containment_forward(int signal_number, siginfo_t *info,
       _Exit(128 + signal_number);
     return;
   }
-  if ((previous->sa_flags & SA_SIGINFO) != 0)
-    previous->sa_sigaction(signal_number, info, context);
-  else
-    previous->sa_handler(signal_number);
+  /* containment_install admits only default and ignored dispositions. */
+  _Exit(128 + signal_number);
+}
+
+static int containment_is_synchronous_trap(int signal_number,
+                                           const siginfo_t *info) {
+  if (info == NULL || (signal_number != SIGTRAP && signal_number != SIGILL))
+    return 0;
+  /* Darwin uses low positive si_code values for hardware faults and reserves
+     SI_USER and the larger SI_* values for asynchronously generated signals. */
+  return info->si_code > 0 && info->si_code < SI_USER;
 }
 
 static void containment_handler(int signal_number, siginfo_t *info,
                                 void *context) {
   atomic_fetch_add_explicit(&containment_handlers, 1, memory_order_acq_rel);
-  if (containment_active && info != NULL && info->si_code > 0) {
+  if (containment_active && containment_is_synchronous_trap(signal_number, info)) {
     atomic_fetch_sub_explicit(&containment_handlers, 1, memory_order_release);
     siglongjmp(containment_return, 1);
   }
@@ -341,6 +357,12 @@ static int containment_install(struct containment_state *state) {
   containment_active = 0;
   if (sigaction(SIGTRAP, NULL, &containment_previous_trap) != 0 ||
       sigaction(SIGILL, NULL, &containment_previous_ill) != 0) return 0;
+  /* Preserve application semantics: this host forwards only default/ignored
+     dispositions. It refuses to emulate a custom handler's mask and flags. */
+  if ((containment_previous_trap.sa_handler != SIG_DFL &&
+       containment_previous_trap.sa_handler != SIG_IGN) ||
+      (containment_previous_ill.sa_handler != SIG_DFL &&
+       containment_previous_ill.sa_handler != SIG_IGN)) return 0;
   if (sigaction(SIGTRAP, &containment_action, NULL) != 0) return 0;
   if (sigaction(SIGILL, &containment_action, NULL) != 0) {
     sigaction(SIGTRAP, &containment_previous_trap, NULL);
