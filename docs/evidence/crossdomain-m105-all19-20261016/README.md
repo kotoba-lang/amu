@@ -1,12 +1,14 @@
 # M105 selfhost compiler: 19-workload reach and exactness
 
-Status: **G1=G2=G3 FIXED POINT; 19/19 WORKLOADS EXACT; EXPLORATORY TIMING ONLY**.
+Status: **G1=G2=G3 FIXED POINT; 19/19 WORKLOADS EXACT; FOUR M4 FULL-SUITE CAMPAIGNS PASSED THE TIMING GATES**.
 
 This checks the combined M105 seed compiler after reciprocal division, MSub
 fusion, and the four-wide xgboost early-stop candidate. It establishes that
 the generated compiler remains a native selfhost fixed point and that its
 changes preserve all 19 pinned M104 workload results, fuel values, and arena
-counters. The timing below is a loaded-host diagnostic, not qualified evidence.
+counters. The earlier M1 timing below is a loaded-host diagnostic. A separate
+M4 ABBA follow-up is recorded in
+[`m105-abba-m4-20261016`](../m105-abba-m4-20261016/README.md).
 
 ## Compiler provenance
 
@@ -64,6 +66,78 @@ cross-generation diagnostic.
 The M104 M4 report previously showed C ahead on xgboost (1.515 Kotoba/C),
 picojpeg (1.446), slre (1.194), qrduino (1.177), and sglib-combined (1.087).
 Those ratios rank follow-up work; they are not results for these M105 images.
+
+## M4 full-suite repeatability follow-up
+
+Two more full 19-workload campaigns were run in ABBA order against the two
+M105 compiler image sets. Together with the previous baseline and candidate
+campaigns, this gives two accepted full-suite runs per compiler arm. The
+geometric mean of the two baseline round results is 0.75939; the candidate is
+0.78965. The normalized candidate/baseline ratio is 1.03984, but the raw
+results show timing drift: 14 native images are byte-identical across arms,
+yet their candidate-period Kotoba elapsed times are 3.1% slower on average.
+The shared C binaries are 2.0% faster during the candidate period. The 4.0%
+normalized difference therefore cannot be attributed to the compiler change.
+
+Only five images differ. Their Kotoba elapsed-time geometric mean is 0.99337
+for candidate/baseline; xgboost improves, while the other changed workloads
+are near parity or slightly slower. See the linked ABBA record for all per-run
+raw samples, accepted CPU gates, exact ratios, and the common C build receipt.
+These results remain translated-port measurements, not an official Embench
+score or a SPEC result.
+
+## Isolated selfhost compiler variants
+
+Three pinned selfhost compiler variants were built from G1=G2=G3 fixed points:
+reciprocal division (`08e88db9`), MSub fusion (`1d7c4712`), and the combined
+current candidate with four-wide xgboost early stop (`6103f5cf`). The reciprocal
+and MSub artifacts are separate compiler variants, not successive source
+commits. Each recompiled the same 19 port sources and passed the pinned M104
+result, fuel, arena, and image-table exactness checks.
+
+| Variant | Fixed-point native image | Images changed from M105 baseline |
+|---|---|---|
+| Baseline (`9892fc06`) | `6b158aa8…add2eb` | — |
+| Reciprocal division (`08e88db9`) | `40696a8a…541fa55` | `matmult-int`, `nsichneu` |
+| MSub fusion (`1d7c4712`) | `854fad33…502258a3b` | `matmult-int`, `nsichneu`, `qrduino`, `sglib-combined`, `xgboost` |
+| Combined current candidate (`6103f5cf`) | `b10e3813…74e8a00` | `matmult-int`, `nsichneu`, `qrduino`, `sglib-combined`, `xgboost` |
+
+These are byte-level image changes, not performance claims. `compile-fixedpoint-ports.py`
+verifies source-unity and fixed-point hashes before compiling; the compiler
+variant directories retain image tables and 19/19 exactness reports.
+
+## Qualified M4 timing of the isolated variants
+
+Each variant was measured twice on the same Apple M4 Mac mini with the same
+Apple clang 17 C build (`3e7ba67f…b17d53dd`). Every run accepted all 19 Kotoba
+and 19 C workloads under the CPU gate. The measurements were collected in
+reciprocal R1, MSub R1, MSub R2, reciprocal R2 order.
+
+| Run | Variant | Kotoba/C geometric mean | Kotoba-faster workloads |
+|---|---|---:|---:|
+| R1 | Reciprocal | 0.78357 | 12/19 |
+| R2 | Reciprocal | 0.78124 | 12/19 |
+| MSub R1 | MSub | 0.76588 | 14/19 |
+| MSub R2 | MSub | 0.73809 | 14/19 |
+
+The raw campaign scores make MSub look faster, but the byte-identical workload
+controls shifted by a similar amount. Relative to the M105 baseline campaigns,
+the changed-image group divided by the same-image control shift is 1.01072 for
+the reciprocal variant and 1.00038 for MSub. These control-adjusted results do
+not establish a speedup from either compiler change. Two campaigns per variant
+also do not resolve small effects. This analysis uses the verified M105
+baseline ABBA per-workload ratios and is descriptive, not a significance test.
+
+`variant-timing-m4/raw/` preserves all four reports, raw per-workload attempts,
+and CPU-gate samples. Reproduce the validation and summary from the repository
+root with:
+
+```sh
+python3 docs/evidence/crossdomain-m105-all19-20261016/variant-timing-m4/analyze-variant-timing.py
+```
+
+The generated analysis and all values remain translated-port measurements, not
+an official Embench score or a SPEC result.
 
 ## Reproduction
 

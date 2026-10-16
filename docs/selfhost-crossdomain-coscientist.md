@@ -1,8 +1,12 @@
 # Amu selfhost cross-domain performance research
 
-Status: active research. M104 has a bounded translated-port result; current
-M105 changes have no qualified speed result and do not support a general or
-world-fastest claim.
+Status: active research. M104 has a bounded translated-port result. M105 has
+the baseline/candidate ABBA repeat plus four CPU-gated, exact full-19 M4
+campaigns for isolated selfhost compiler variants. Same-image controls show
+that the apparent small gains are unresolved timing drift, not established
+compiler speedups. This does not support a general or world-fastest claim. See
+`docs/evidence/m105-abba-m4-20261016/` and
+`docs/evidence/crossdomain-m105-all19-20261016/variant-timing-m4/`.
 
 ## Why the translated-port comparison can beat C
 
@@ -29,6 +33,15 @@ The largest Kotoba wins include depthconv (0.257), matmult-int (0.310), and
 md5sum (0.502). These spreads explain why the aggregate can favor Kotoba while
 the result remains workload-specific. The exact ratios are in
 `bench/embench/reproduce-20261015/round-sa-m104-20261015/records/m4-macmini-attempt-20261016-r1/report.json`.
+
+The M105 stage measurements do not explain that M104 advantage. Across the
+four new M4 campaigns, both compiler variants still have a Kotoba/C geometric
+mean below 1, but same-image controls move with the apparent change. After
+normalizing the image-changed workloads against those controls, the reciprocal
+variant is 1.01072 and the MSub variant is 1.00038 versus the M105 baseline.
+That leaves the causal effect unresolved; it does not show that selfhosting
+itself makes a program faster. Full raw trials and the control calculation are
+in `docs/evidence/crossdomain-m105-all19-20261016/variant-timing-m4/`.
 
 A static profile found 51,200 xgboost tree walks with a mean dynamic depth of
 3.58; 52.6% finish before depth five. The measured M104 image contains the
