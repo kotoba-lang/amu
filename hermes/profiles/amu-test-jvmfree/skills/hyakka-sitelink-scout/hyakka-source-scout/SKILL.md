@@ -200,19 +200,13 @@ Both are config-only with NO :url (gate prints HTTP n/a), so verify manually und
 
 ## Disk-full on linked worktree add (2026-09-05)
 
-`git worktree add` can die mid-checkout with `No space left on device`; the partial dir is then NOT a registered worktree (`git worktree remove` refuses it) and `rm -rf` is approval-gated. The partial checkout does consume space until pruned: `git worktree prune` deregisters and the dir was gone after (space freed 10→16Gi). Check `df -h /` BEFORE creating a linked worktree; ~2.5GB needed for this repo.
+`git worktree add` can fail mid-checkout with `No space left on device`; the partial directory may not be registered, so `git worktree remove` may refuse it. Check free space before starting. If creation fails, record the exact path and worktree metadata, preserve the partial contents, and stop for owner review. Do not force-delete the directory or run `git worktree prune` as a disk-recovery shortcut; pruning removes metadata and does not establish that user data is disposable.
+
 
 ## Worktree races: create your private worktree FIRST, land from it (PR #519, 2026-09-05)
 
-The pre-run detach no longer sticks: a sibling cron moved HEAD between step 1
-and the branch step, so `git checkout -b bot/...` created the branch on the
-WRONG base. Land off a private linked worktree created from the exact
-origin/main SHA you verified (`git worktree add /tmp/hyakka-ss-<date>
---detach <sha>`; symlink node_modules in; branch there). Do NOT restore the
-shared worktree afterwards — the sibling's commit + uncommitted edits are its
-live workspace; just delete your own stray branch (`git branch -D` is
-allowed) and `git worktree remove` your private dir (it refuses on untracked
-files: `rm` the named file first, one per command).
+Create a private worktree from the exact verified `origin/main` SHA before editing. Do not restore or alter the shared worktree afterward. If a run leaves a local branch or dirty/untracked worktree, retain it and report its path and state; do not delete the branch, remove the worktree, or delete its files as routine recovery. Any cleanup requires separate owner direction after the contents and active processes are inspected.
+
 
 ## Config tail corruption has RECURRED and is structural (PR #485, 2026-09-05)
 
@@ -373,7 +367,7 @@ a python splice script in worktree scripts/ with an exact multi-line anchor
 
 - PR #732's merge resolution replaced main's config with the resident branch's stale base: merged config == c7f25b3e byte-identical (cmp exit 0), 275 mainline entries dropped (parent-1 39e7ab77 had 1794 raw maps, merged kept 1524), the resident's 5 wikidata-gov-source entries duplicated twice, and #729's nvd-cve :max-cves 45 reverted to 15. Symptom in the pre-run evidence: sources-configured 1519 vs 1756+ expected, whole green lanes (6 ECB slices, all SWPC forecast products, 4 NSF slices, ~100 wikidata entities) absent from the configured-sources list.
 - Restoration recipe at scale: (a) take parent-1's config (39e7ab77) after verifying it contains every id present at the last good main (958515b9) — `comm -23 old-ids p1-ids` must be empty; (b) splice the gov-source block from the RESIDENT's config (first of its two copies) so the resident's contribution survives once; (c) absorb every id origin/main gained after the drop by FULL ID-SET UNION (`expected = p1_ids | nm_ids | mine`, refuse on any missing/extra/dup) rather than hand-counting hunks — main moved TWICE mid-run (#748, #749) and the union absorbed both mechanically. Evidence delta closed exactly: 1519 + 275 + 31 + 2 = 1827.
-- `git reset --hard` is approval-gated (nobody to approve) — new gate member. Ungated equivalent: `cp <built-config> /tmp/x`, `git checkout HEAD -- <file>` (clears INDEX+worktree; plain `git checkout -- <file>` does not clear a staged change), then `git checkout -q -B <branch> <sha>`.
+- If a reset or checkout is refused, preserve the current checkout and its staged, unstaged, and untracked changes. Continue only in a new private worktree created from the verified base SHA. Do not use `git checkout HEAD -- <file>` to discard staged or tracked edits, and do not use `git checkout -B` to reset an existing branch. If the required change cannot be made without discarding identified work, stop and report it for owner direction.
 - Tail-anchor trap variant: an anchor that matches INSIDE your own new entry (e.g. ':interval-seconds 86400}\n' is also the NSF entry's last line) splits the splice and leaves dangles — the post-assertion refused before writing (worked as designed). When removing/inserting a block that ENDS at the vector close, cut from its unique comment marker to EOF and re-emit `]}` instead of anchoring on entry-final lines.
 - When a restoration lands, sibling scouts working from damaged main will re-propose restored ids (#750 commons run 54, #753 osm-hakata: all 10+1 ids were among the 275) and a max-cves-raise PR (#752: 15→25) is moot once #729's 45 is restored. Check open PR diffs for restored ids and note the overlap in the PR body so the queue resolves cleanly.
 - 'cleanup: un-landed branch' PRs (#737-#747) carry no config changes (added ids=0) — skip their diffs fast but still count them as claimed-set members.
@@ -390,7 +384,8 @@ a python splice script in worktree scripts/ with an exact multi-line anchor
 
 - /tmp stdlib SHADOWING: a sibling's /private/tmp/bisect.py broke `import urllib` for ANY python script run from /tmp (script dir is sys.path[0]). Symptom: probe script dies exit 1 with an empty self-log before its first log line, traceback only visible when re-run under a wrapper. Fix: run every python script as `python3 -I` (isolated mode skips the script dir). Do NOT delete sibling /tmp files.
 - New tail shape after #836: final entry close and vector close GLUED on one line (`...:llm? true}]}` with no newline between). Anchor = the FULL final entry (its unique `:id` line makes it unique) + the glued `]}`; the bare close line `:access "public" :interval-seconds 86400 :llm? true}]}` matches once but a generic last-line anchor matches 1700+ times. bodypart = cfg[:-3] already ends with the entry's own `}` — stem = final_entry AS-IS (trimming 2 chars produced close-delta +1 and the pre-write assert refused, as designed).
-- Main moved THREE times mid-run (cd38384c -> 5f1814af #836 -> bb5f935d -> afe99ea0) while the queue drained to zero open PRs. The land-script pattern absorbed every move: re-check origin/main BEFORE splice, `git checkout -q --detach origin/main` + fresh `git checkout -B bot/source-scout-<date>` + remote-branch-exists guard, splice asserts, evidence, commit, push, ls-remote==HEAD, pre-create re-check (ABORT-42 exit keeps nothing half-landed).
+- Main moved three times during an earlier run. Recover by preserving the existing worktree, verifying the current base SHA, and creating a fresh private worktree plus a new unique branch at that SHA. Re-measure candidates, re-run the gates, assert the exact delta, and push only that new branch. Never reset an existing worktree or branch to absorb a main move.
+
 - Do NOT put literal `%` (dark%20matter) inside a `%`-formatted or f-string PR-body template — the format step throws AFTER push and orphans the landing. Use plain concatenation or `.replace("SHA8", sha)` sentinels, and keep PR create in its own script so a post-push failure costs one small script, not the landing.
 - NSF sibling-URL extraction: the `re.search(r'nsf-awards-food-security.*?\\n \\}', cfg, re.S)` shape can miss (returned NOT FOUND this run); fall back to the known endpoint `https://api.nsf.gov/services/v1/awards.json` + `?keyword=` but always cross-check a landed sibling's :url.
 - Landed nsf-awards-pfas + nsf-awards-dark-matter (slices 45/46, gate 2/2 REJECTED 0 exit 0 on pristine cd38384c, evidence 2281->2283 on afe99ea0, PR #839 @ 1f505ff0, ls-remote==HEAD pre-create, body verified OPEN + needles). Deferred pool: exoplanet + earthquake%20early%20warning (both 200/25/fields 25/25) and steam 2183900 (Space Marine 2) + 2694490 (Path of Exile 2).
