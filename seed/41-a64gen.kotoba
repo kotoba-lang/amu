@@ -1985,7 +1985,8 @@
 (defn- gn-tree-entry [M :vector-i64 f :i64] :vector-i64
   (let [a (gn-fnf M f FF-SIR) charge (if (= (gn-op M (inc a)) OP-FUEL) 1 0)
         label (+ a 1 charge) p (inc label)]
-    (if (and (= (gn-sir M a IF-B) 1) (= (gn-g M gn-f-leaf) 1)
+    ;; Keep this source-tree rewrite private: exported definitions retain their reviewed native body.
+    (if (and (< (gn-fnf M f FF-EXPORT) 0) (= (gn-sir M a IF-B) 1) (= (gn-g M gn-f-leaf) 1)
              (= (gn-op M label) OP-LABEL) (= (gn-sir M label IF-B) 0) (= (gn-sir M label IF-C) 0)
              (or (= charge 0) (and (= (gn-sir M (inc a) IF-A) 0) (= (gn-sir M (inc a) IF-B) 0) (= (gn-sir M (inc a) IF-C) 0))))
       (let [end (gn-tree-end M p 0)]
