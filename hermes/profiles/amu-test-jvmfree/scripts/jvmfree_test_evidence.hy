@@ -1,7 +1,7 @@
 "amu-jvmfree-test evidence v2 — 測定経路修正版 (2026-09-18).\n\nv1 からの差分は §4 のみ: bare `nbb test/nbb/run.cljk` は classpath 未解決で\n環境赤になる既知アーチファクト (sema/kir/wasm は deps.edn の git 依存)。正本経路は\nsanctioned launcher `nbb --classpath scripts scripts/run-nbb-regression.cljk`\n(origin/main 903ac54f 以降に存在)。stale なローカル main checkout (551d7b8a) の\n影響を排除するため origin/main の detached worktree (/tmp) で実測し、node_modules は\nmain checkout から symlink する。測定後 worktree は削除。\n\nそれ以外は v1 と同一:\n  1. amu checkout の HEAD を報告\n  2. test_profile.cljk 内の JVM 依存を grep で数える\n  3. `bin/amu test <probe> --jvm-free` を実測\n  5. append-only ledger に追記\nstdout: MEASURE<TAB>key<TAB>value / REFUSED <reason> (exit 2)\n"
 (import json os re subprocess sys datetime)
-(setv ROOT ((. os.environ get) "REFACTOR_ROOT" "~/github/com-junkawasaki"))
-(setv AMU_DIR ((. os.environ get) "AMU_DIR" ((. os.path join) ROOT "orgs/kotoba-lang/amu")))
+(setv ROOT ((. os.path expanduser) ((. os.environ get) "REFACTOR_ROOT" "~/github/com-junkawasaki")))
+(setv AMU_DIR ((. os.path expanduser) ((. os.environ get) "AMU_DIR" ((. os.path join) ROOT "orgs/kotoba-lang/amu"))))
 (setv HERMES_HOME ((. os.environ get) "HERMES_HOME" ((. os.path join) (get os.environ "HOME") ".hermes/profiles/amu-test-jvmfree")))
 (setv LEDGER ((. os.path join) HERMES_HOME "workspace" "jvmfree-test-ledger.jsonl"))
 (setv JVM_PATTERNS {"clojure.java.shell" "clojure\\.java\\.shell"  "java.util.Base64" "java\\.util\\.Base64"  "java.lang.Runtime" "Runtime/"  "java.lang.System" "System/"  "java.io" "java\\.io\\."})
