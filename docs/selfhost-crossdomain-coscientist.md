@@ -833,3 +833,61 @@ faster. Runtime depends on the workload source and algorithm, compiler
 lowering, target, and measurement conditions. The separate M104 translated
 Embench aggregate remains workload-specific evidence, not a general
 selfhosting advantage or an official SPEC result.
+
+## Loaded M1 timing screen: single-use inline candidate (2026-10-17)
+
+The fixed-point compiler `1544a204…` changed only picojpeg, sglib-combined,
+and xgboost relative to the preceding `ef2ceb74…` compiler; the other 16 of 19
+images were byte-identical. The three changed images passed the registered
+exactness harness. Five ABBA blocks on the M1 measured those three workloads
+and used unchanged Statemate as a same-image control. All 80 timed calls passed
+result, fuel, and arena checks.
+
+The per-block ratio is the mean of the two candidate times divided by the mean
+of the two base times. The median candidate/base ratios were 1.0202 for
+picojpeg, 1.0155 for sglib-combined, and 0.9892 for xgboost. The same-image
+Statemate control had a median ratio of 1.0371. Dividing each per-block
+workload ratio by that block's Statemate control ratio gives medians of 0.9813,
+0.9866, and 0.9695. These
+control-adjusted readings are only a screening signal: load1 varied from
+25.28 to 37.80, the block ratios moved in both directions, and the control
+itself drifted. Keep the compiler change unpromoted pending a quiet-host
+repeat. The run is not a C comparison or an official Embench score. Raw runs
+and all 80 sanitized observations with calculations are in
+[`crossdomain-m105-singleuse-inline-m1-abba-20261017`](evidence/crossdomain-m105-singleuse-inline-m1-abba-20261017/README.md).
+
+## Statemate repeated vector-shape guard probe (2026-10-17)
+
+Static inspection found two repeated compare/branch pairs at the entry to the
+private Statemate body. An image-only diagnostic replaced the four instructions
+with NOPs while retaining descriptor loads, fuel reservation, and all state
+updates. The registered Statemate input passed exactness for both images and
+all 20 ABBA samples: result 1, benchmark fuel 20,159,447,042, verify fuel 66,
+and identical 169-item arena accounting. The five block candidate/base ratios
+had a median of 0.9716, with one large outlier at 0.9250. Load1 ranged from
+25.77 to 33.50.
+
+This estimates the upside for those checks on the registered vector input.
+The hand-patched image does not establish a general compiler transformation or
+safe behavior for other vector shapes. The next compiler experiment must prove
+the 169-element invariant through the repeated `vector-assoc!` path, hoist the
+guard while retaining the fallback, and pass exactness before timing. Raw
+records are in
+[`crossdomain-m105-statemate-guard-nop-m1-20261017`](evidence/crossdomain-m105-statemate-guard-nop-m1-20261017/README.md).
+
+## Falsify: T2 minimum-vector-length iteration cap (2026-10-17)
+
+A candidate raised `t2-ml-init`'s alternating interprocedural analysis cap
+from 64 to 512 passes, testing whether it could prove Statemate's 169-element
+vector shape and remove the repeated body-entry length guard. The candidate
+and a 64-pass control differed only in that cutoff literal. Each reached a
+selfhost fixed point, and both rebuilt all 19 pinned ports.
+
+The two compilers produced identical native images, kseeds, and export tables
+for all 19 ports. Statemate's image did not change. The larger cap therefore
+did not reach the registered workload code and does not explain its runtime
+checks or the M104 Kotoba/C advantage. No new exactness or timing run was
+needed. The compiler-source hypothesis is rejected for these inputs; preserve
+the cap change out of the adopted compiler. Hashes and per-workload comparison
+are in
+[`crossdomain-m105-t2-minlength-cap-20261017`](evidence/crossdomain-m105-t2-minlength-cap-20261017/README.md).
