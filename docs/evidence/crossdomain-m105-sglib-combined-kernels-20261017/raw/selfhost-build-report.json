@@ -1,0 +1,188 @@
+{
+  "status": "PASS_G1_TO_GN_BYTE_IDENTICAL_FIXED_POINT",
+  "sourceFiles": [
+    "seed/00-ns.kotoba",
+    "seed/01-mem.kotoba",
+    "seed/02-io.kotoba",
+    "seed/10-lex.kotoba",
+    "seed/11-read.kotoba",
+    "seed/12-kirread.kotoba",
+    "seed/20-names.kotoba",
+    "seed/21-check.kotoba",
+    "seed/30-lower.kotoba",
+    "seed/40-a64enc.kotoba",
+    "seed/41-a64gen.kotoba",
+    "seed/42-layout.kotoba",
+    "seed/50-out.kotoba",
+    "seed/60-proj.kotoba",
+    "seed/90-drv.kotoba",
+    "seed/99-entry.kotoba"
+  ],
+  "sourceUnityBytes": 2782185,
+  "sourceUnitySHA256": "df6543a95c657f2ce1f7407623e287b72b8f6a1bf96a8426d3f633d98267543d",
+  "candidateSourceSHA256": "6dabb0902b11473a3d1d58f10bb48566248c53cad415a70d3d7a2a91cf41931b",
+  "previousCompilerSHA256": "1544a204b003bd3b5ec9831be008fcbd5ffa5a91c44f922a4ca13a1dca539588",
+  "previousFixedPointReport": "workspaces/codex/amu-statemate-singleuse-inline-20261017/attempt-3/build/build-report.json",
+  "trustedLoaderSourceSHA256": "f44b50995a0e45db4be35244da34dd61538a484c7d5ea2f15f7f5a73d9daa8c3",
+  "host": {
+    "system": "Darwin",
+    "machine": "arm64",
+    "version": "26.4"
+  },
+  "JVMNodeOrGraalFallback": false,
+  "startedUnix": 1792217770.823245,
+  "generations": [
+    {
+      "generation": 1,
+      "bytes": 2554992,
+      "sha256": "98c7af4b3ed13a290a61e0d95e6b24135aad5ce8d9a5d818cfe4418df0872a70",
+      "containerSHA256": "3b3d949622c1a9e9adafe49a53081c7173cd41bc07a55305860ab87cef93cb40",
+      "compilerInputSHA256": "1544a204b003bd3b5ec9831be008fcbd5ffa5a91c44f922a4ca13a1dca539588"
+    },
+    {
+      "generation": 2,
+      "bytes": 2554992,
+      "sha256": "98c7af4b3ed13a290a61e0d95e6b24135aad5ce8d9a5d818cfe4418df0872a70",
+      "containerSHA256": "3b3d949622c1a9e9adafe49a53081c7173cd41bc07a55305860ab87cef93cb40",
+      "compilerInputSHA256": "98c7af4b3ed13a290a61e0d95e6b24135aad5ce8d9a5d818cfe4418df0872a70"
+    },
+    {
+      "generation": 3,
+      "bytes": 2554992,
+      "sha256": "98c7af4b3ed13a290a61e0d95e6b24135aad5ce8d9a5d818cfe4418df0872a70",
+      "containerSHA256": "3b3d949622c1a9e9adafe49a53081c7173cd41bc07a55305860ab87cef93cb40",
+      "compilerInputSHA256": "98c7af4b3ed13a290a61e0d95e6b24135aad5ce8d9a5d818cfe4418df0872a70"
+    }
+  ],
+  "calls": [
+    {
+      "name": "loader-build",
+      "argv": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "./seed/bootstrap/adopted-loader-20261012.c",
+        "-o",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/host/kexe-loader"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "G1-compile",
+      "argv": [
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/host/kexe-loader",
+        "./workspaces/codex/amu-statemate-singleuse-inline-20261017/attempt-3/build/artifacts/G3.bin",
+        "0",
+        "0",
+        "aarch64",
+        "35,37,38,39",
+        "--",
+        "compile",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/artifacts/seed-unity.kotoba",
+        "--target",
+        "aarch64-macos",
+        "--output",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/artifacts/G1.kseed"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "G1-extract",
+      "argv": [
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/host/kexe-loader",
+        "./workspaces/codex/amu-statemate-singleuse-inline-20261017/attempt-3/build/artifacts/G3.bin",
+        "0",
+        "0",
+        "aarch64",
+        "35,37,38,39",
+        "--",
+        "extract-native",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/artifacts/G1.kseed",
+        "--symbol",
+        "main",
+        "--output",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/artifacts/G1.bin"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "G2-compile",
+      "argv": [
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/host/kexe-loader",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/artifacts/G1.bin",
+        "0",
+        "0",
+        "aarch64",
+        "35,37,38,39",
+        "--",
+        "compile",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/artifacts/seed-unity.kotoba",
+        "--target",
+        "aarch64-macos",
+        "--output",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/artifacts/G2.kseed"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "G2-extract",
+      "argv": [
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/host/kexe-loader",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/artifacts/G1.bin",
+        "0",
+        "0",
+        "aarch64",
+        "35,37,38,39",
+        "--",
+        "extract-native",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/artifacts/G2.kseed",
+        "--symbol",
+        "main",
+        "--output",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/artifacts/G2.bin"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "G3-compile",
+      "argv": [
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/host/kexe-loader",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/artifacts/G2.bin",
+        "0",
+        "0",
+        "aarch64",
+        "35,37,38,39",
+        "--",
+        "compile",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/artifacts/seed-unity.kotoba",
+        "--target",
+        "aarch64-macos",
+        "--output",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/artifacts/G3.kseed"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "G3-extract",
+      "argv": [
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/host/kexe-loader",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/artifacts/G2.bin",
+        "0",
+        "0",
+        "aarch64",
+        "35,37,38,39",
+        "--",
+        "extract-native",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/artifacts/G3.kseed",
+        "--symbol",
+        "main",
+        "--output",
+        "scratch/workspaces/codex/amu-sglib-combined-kernels-20261017/attempt-2/build/artifacts/G3.bin"
+      ],
+      "exit": 0
+    }
+  ],
+  "loaderBinarySHA256": "05798f17613db2936cf8fe29c16590c8c2b7513fc80e5b2334e89d16b482f7aa",
+  "fixedPointSHA256": "98c7af4b3ed13a290a61e0d95e6b24135aad5ce8d9a5d818cfe4418df0872a70",
+  "endedUnix": 1792218063.700821
+}

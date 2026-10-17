@@ -25,7 +25,7 @@ Paired width-two/width-four ratios were `1.024, 1.014, 1.057, 1.089, 0.649`; the
 
 ## Reproduction
 
-From the repository root, run the scripts in this directory in order. Give every `--out` a fresh subdirectory under `/Users/junkawasaki/github/workspaces/codex/`:
+From the repository root, run the scripts in this directory in order. Give every `--out` a fresh subdirectory under `scratch/workspaces/codex/`:
 
 1. `rebuild-current-selfhost.py` verifies the pinned source closure and rebuilds G1/G2/G3 from the adopted bootstrap.
 2. `compile-current-xgboost.py` compiles the pinned xgboost port and verifies image SHA `1c4a…`.
