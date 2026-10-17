@@ -23,7 +23,10 @@ def main():
   for command,tail in [('compile',[source,'--target','aarch64-macos','--output',container]),('extract-native',[container,'--symbol','pure-chain','--output',native])]:
    _,stderr=run(prefix+[command,*tail],tag+'-'+command,env);assert not stderr
   head,payload=container.read_bytes().split(b'\n\n',1);lines=head.decode().splitlines();ex={n:[int(p),int(a)]for n,p,a in map(str.split,lines[1:])};assert lines[0]==f'KSEED1 {len(payload)} {len(ex)}' and payload==native.read_bytes()
-  assert dict(bytes=len(payload),sha256=sha(native),exports=ex)==structure[tag];arms[tag]=(native,ex)
+  actual=dict(bytes=len(payload),sha256=sha(native),exports=ex);expected=structure[tag]
+  if actual!=expected:
+   raise SystemExit(f'{tag} native structure mismatch: expected={json.dumps(expected,sort_keys=True)} actual={json.dumps(actual,sort_keys=True)}')
+  arms[tag]=(native,ex)
  guest={k:v for k,v in env.items()if not k.startswith('KEXE_')};guest.update(KEXE_ARENA_USE='1',KEXE_STRUCTURED_REPORT='1',KEXE_FUEL='100000',KEXE_CPU_SECONDS='60',KEXE_WALL_SECONDS='60')
  for i,c in enumerate(cases):
   pair=[]

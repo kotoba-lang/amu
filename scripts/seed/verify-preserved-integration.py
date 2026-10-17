@@ -146,7 +146,9 @@ def main():
    container=art/(name+'-historical.kseed');image=art/(name+'-historical.bin')
    run(prefix+['compile',art/(name+'.kotoba'),'--target','aarch64-macos','--output',container],name+'-historical-compile')
    run(prefix+['extract-native',container,'--symbol',symbols[name],'--output',image],name+'-historical-extract')
-   assert sha(image)==oldsha,name+' historical payload changed'
+   actual=sha(image)
+   if actual!=oldsha:
+    raise AssertionError(f'{name} historical payload changed: expected sha256={oldsha}, actual sha256={actual}, bytes={image.stat().st_size}')
    historical_images.append({'workload':name,'sha256':sha(image),'baselineImageExact':True})
  for name,oldsha in expected.items():
   container=art/(name+'-new.kseed');image=art/(name+'-new.bin')
