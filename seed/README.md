@@ -15,10 +15,10 @@ The current `MANIFEST` has 17 modules. It adds the experimental
 `43-wasm.kotoba` browser-Wasm backend and the project driver/lock changes
 described below. The historical 16-module adoption receipt remains tied to its
 original source. `adoption-20261017.json` pins the current 17-module source and
-the G23 selfhost-built compiler image; the 2026-10-12 receipt is historical.
-The current 17-module unity source used for the G23/G24 selfhost fixed-point
+the G27 selfhost-built compiler image; the 2026-10-12 receipt is historical.
+The current 17-module unity source used for the G27/G28 selfhost fixed-point
 probe has SHA-256
-`7b2786e18a6cf7677ef281ffd387bc084dea3e5ca0b591f4e1b545b74c881841`.
+`e77e1f38c120acd4a6b1e1227cf171957f5db7e365a68d3dab437f79819001d8`.
 
 These changes do not change `bin/amu`, publish a release, or qualify the whole
 Amu component as Q9.
@@ -65,12 +65,14 @@ project for `wasm32-browser`:
 ```
 
 The lock uses the closed `:kotoba.module-lock/v1` schema with one root
-namespace and a namespace-to-raw-CID map. The compiler reads each source block,
-verifies its raw CID with SHA-256 before parsing it, and refuses source-path or
-unpinned fallback on this route. Malformed or missing pins fail with E6027;
-a source/CID mismatch fails with E6028. The native selfhost loader must grant
-the required wires `3,35,37,38,39`; wire 3 supplies `:hash/sha256` for pin
-verification.
+namespace and a namespace-to-raw-CID map. Before each source read, the compiler
+uses no-follow stat to require a regular file within the 8 MiB project limit,
+then reads only that bounded range. It verifies the exact returned bytes with
+SHA-256 before discovery parsing and again before compiling the module, and
+refuses source-path or unpinned fallback on this route. Malformed or missing
+pins fail with E6027; a source/CID mismatch fails with E6028. The native
+selfhost loader must grant the required wires `3,35,37,38,39`; wire 3 supplies
+`:hash/sha256` for pin verification.
 
 A single-module root emits the direct Wasm module. A multi-module root emits a
 `KOTOBAP1` package in dependency-first order; its module interfaces become
@@ -79,15 +81,15 @@ unsupported source is refused with E6029 rather than widened or sent through a
 bootstrap compiler. Host behavior must be supplied and qualified by the app's
 typed adapter.
 
-The 17-module source rebuilt G23 and G24 from a selfhost-produced compiler.
-Both generations have byte-identical 2,593,280-byte native compiler images
+The 17-module source rebuilt G27 and G28 from a selfhost-produced compiler.
+Both generations have byte-identical 2,595,368-byte native compiler images
 (SHA-256
-`2f8409005633506046c4df7e3eac1f7ad11acd40f092691c72afc2f7edce5dcd`). This
+`540d7462e0b2abeb99f85a24745ea86d171e2607fd711677f87d8342878bf581`). This
 is a compile-only selfhost fixed-point result: it does not establish application
 runtime parity, test-suite completion, deployment, or live behavior.
-The current receipt records the G22 input, G23/G24 outputs, and source pins;
-`scripts/seed/build-adopted.py` uses G23 to reproduce the fixed point in the
-native CI path.
+The current receipt records the G26 input, G27/G28 outputs, and source pins;
+`scripts/seed/build-adopted.py` uses the current bootstrap image to reproduce
+the fixed point in the native CI path.
 
 ## Evidence and ongoing optimization
 

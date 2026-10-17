@@ -453,16 +453,17 @@
 ;; R6K (FOLD, MAINS's request): an error in a module other than the entry (L[pj-k-errmod] > 0) names that module's path
 (defn- drv-pj-fail [M :vector-i64 L :vector-i64 P :string] :i64
   (let [path (pj-err-path L P)
-        flen (string-length (drv-read path))
+        stat (typed-cap-call :fs/app-data :string :string (string-concat path (io-sep "NOFOLLOW")))
+        flen (pj-max 0 (pj-stat-size stat))
         b (vector-at M MM-ERR-B)
         w (if (> b flen) (-> M (vector-assoc! MM-ERR-A 0) (vector-assoc! MM-ERR-B 0)) M)
         w2 (if (> (vector-at M MM-ERR-POS) flen) (vector-assoc! M MM-ERR-POS -1) M)]
     (drv-fail-in M path (if (> (vector-at L pj-k-errmod) 0) (string-concat " in " path) ""))))
 
 (defn- drv-pj-emit [M :vector-i64 L :vector-i64 P :string mode :i64 out :string] :i64
-  (let [S (string-concat (drv-read (pj-p L P (pj-mf L 0 pj-mf-path))) (pj-trailer L P 0))
-        M1 (if (= mode 0) M (out-image M S L pj-img-base (vector-at L pj-k-img)))]
-    (cond (> (vector-at M1 MM-ERR) 0) (drv-fail0 (vector-at M1 MM-ERR))
+  (let [S (string-concat (pj-src M L P 0) (pj-trailer L P 0))
+        M1 (if (or (> (vector-at M MM-ERR) 0) (= mode 0)) M (out-image M S L pj-img-base (vector-at L pj-k-img)))]
+    (cond (> (vector-at M1 MM-ERR) 0) (drv-pj-fail M1 L P)
           (= mode 0) (let [g (drv-r5b-gate M1 (pj-p L P (pj-mf L 0 pj-mf-path)) (vector-at L pj-k-caps))] (if (< g 0) (drv-ok M1) g))
           ;; R5B: --policy against the capabilities of every module of the project
           :else (let [g (drv-r5b-gate M1 (pj-p L P (pj-mf L 0 pj-mf-path)) (vector-at L pj-k-caps))] (if (< g 0) (drv-emit2 M1 out) g)))))
@@ -656,7 +657,7 @@
         T (pj-trailer L P 0)
         S (string-concat S1 T)
         w (pj-ls L pj-k-trail (string-length S1))
-        M1 (pj-read M S)
+        M1 (if (= (vector-at M MM-ERR) 0) (pj-read M S) M)
         M2 (if (= (vector-at M1 MM-ERR) 0) (pj-norm M1 L S) M1)
         M3 (if (= (vector-at M2 MM-ERR) 0) (pj-splice M2 L) M2)
         M4 (if (= (vector-at M3 MM-ERR) 0) (pj-qscan M3 L P S 0) M3)
