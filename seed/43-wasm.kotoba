@@ -1,0 +1,587 @@
+;; seed/43-wasm.kotoba -- scalar and opaque-runtime KIR/SIR -> browser WebAssembly pilot.
+;; Runtime-valued modules cross one explicit Kotoba value ABI; project linking is still refused.
+
+;; Project compilation (60-proj) marks generated require stubs in otherwise-unused memory header words.
+;; They become real Wasm imports; all other functions remain local definitions.
+(def w32-project-mode-slot 38)
+(def w32-project-stub0-slot 39)
+(def w32-project-stubn-slot 40)
+(def w32-project-meta-start-slot 41)
+
+(defn- w32-join [a :vector-i64 b :vector-i64] :vector-i64
+  (loop [i 0 out a]
+    (if (>= i (vector-count b)) out
+      (recur (+ i 1) (vector-conj out (vector-at b i))))))
+
+(defn- w32-join3 [a :vector-i64 b :vector-i64 c :vector-i64] :vector-i64
+  (w32-join (w32-join a b) c))
+
+(defn- w32-uleb [n :i64] :vector-i64
+  (loop [v n out []]
+    (let [b (bit-and v 127) r (u64-shift-right v 7)]
+      (if (= r 0) (vector-conj out b)
+        (recur r (vector-conj out (+ b 128)))))))
+
+(defn- w32-sleb [n :i64] :vector-i64
+  (loop [v n out []]
+    (let [b (bit-and v 127) r (i64-shift-right v 7)
+          done (or (and (= r 0) (= (bit-and b 64) 0))
+                   (and (= r -1) (not= (bit-and b 64) 0)))
+          out2 (vector-conj out (if done b (+ b 128)))]
+      (if done out2 (recur r out2)))))
+
+(defn- w32-rep [b :i64 n :i64] :vector-i64
+  (loop [i 0 out []]
+    (if (>= i n) out (recur (+ i 1) (vector-conj out b)))))
+
+(defn- w32-section [id :i64 payload :vector-i64] :vector-i64
+  (w32-join3 [id] (w32-uleb (vector-count payload)) payload))
+
+(defn- w32-name [s :string] :vector-i64
+  (loop [i 0 out (w32-uleb (string-length s))]
+    (if (>= i (string-length s)) out
+      (recur (+ i 1) (vector-conj out (string-code-point-at s i))))))
+
+(defn- w32-custom-section [name :string payload :vector-i64] :vector-i64
+  (w32-section 0 (w32-join (w32-name name) payload)))
+
+(defn- w32-literal-bytes [M :vector-i64 lit :i64] :vector-i64
+  (let [p (+ MM-LIT-BASE (* lit MM-LIT-W))
+        start (vector-at M (+ p LF-B))
+        len (vector-at M (+ p LF-LEN))]
+    (loop [i 0 out []]
+      (if (>= i len) out
+        (recur (+ i 1) (vector-conj out (vector-at M (+ MM-LITB-BASE (+ start i)))))))))
+
+(defn- w32-literals-loop [M :vector-i64 lit :i64 out :vector-i64] :vector-i64
+  (if (>= lit (vector-at M MM-LIT-N)) out
+    (let [bytes (w32-literal-bytes M lit)]
+      (w32-literals-loop M (+ lit 1) (w32-join3 out (w32-uleb (vector-count bytes)) bytes)))))
+
+(defn- w32-literals-section [M :vector-i64] :vector-i64
+  (w32-custom-section "kotoba.literals"
+    (w32-literals-loop M 0 (w32-uleb (vector-at M MM-LIT-N)))))
+
+(defn- w32-fn [M :vector-i64 f :i64 field :i64] :i64
+  (vector-at M (+ (+ MM-FN-BASE (* f MM-FN-W)) field)))
+
+(defn- w32-sir [M :vector-i64 i :i64 field :i64] :i64
+  (vector-at M (+ (+ MM-SIR-BASE (* i MM-SIR-W)) field)))
+
+(defn- w32-op [M :vector-i64 i :i64] :i64 (w32-sir M i IF-OP))
+
+(defn- w32-needs-runtime? [M :vector-i64] :bool
+  (loop [i 1]
+    (if (>= i (vector-at M MM-SIR-N)) false
+      (let [op (w32-op M i)]
+        (if (or (= op OP-RT) (= op OP-STR)) true (recur (+ i 1)))))))
+
+(defn- w32-function? [M :vector-i64 f :i64] :bool
+  (and (> (w32-fn M f FF-SIR) 0)
+       (= (w32-op M (w32-fn M f FF-SIR)) OP-FN)))
+
+(defn- w32-project? [M :vector-i64] :bool
+  (= (vector-at M w32-project-mode-slot) 1))
+
+(defn- w32-project-stub0 [M :vector-i64] :i64
+  (vector-at M w32-project-stub0-slot))
+
+(defn- w32-project-stubn [M :vector-i64] :i64
+  (if (w32-project? M) (vector-at M w32-project-stubn-slot) 0))
+
+(defn- w32-project-stub? [M :vector-i64 f :i64] :bool
+  (and (w32-project? M) (>= f (w32-project-stub0 M))
+       (< f (+ (w32-project-stub0 M) (w32-project-stubn M)))))
+
+(defn- w32-defined-function? [M :vector-i64 f :i64] :bool
+  (and (w32-function? M f) (not (w32-project-stub? M f))))
+
+(defn- w32-function-count [M :vector-i64] :i64
+  (loop [f 1 n 0]
+    (if (>= f (vector-at M MM-FN-N)) n
+      (recur (+ f 1) (+ n (if (w32-defined-function? M f) 1 0))))))
+
+(defn- w32-type-count [M :vector-i64] :i64
+  (loop [f 1 n 0]
+    (if (>= f (vector-at M MM-FN-N)) n
+      (recur (+ f 1) (+ n (if (w32-function? M f) 1 0))))))
+
+(defn- w32-function-type-index [M :vector-i64 f :i64] :i64
+  (loop [j 1 n 0]
+    (if (>= j f) n
+      (recur (+ j 1) (+ n (if (w32-function? M j) 1 0))))))
+
+;; Zero-based WebAssembly function index for FN-table item f. Project import stubs occupy the import prefix;
+;; local module functions follow them. Constant definitions have no SIR and are skipped.
+(defn- w32-function-index [M :vector-i64 f :i64] :i64
+  (if (w32-project-stub? M f)
+    (- f (w32-project-stub0 M))
+    (loop [j 1 n (w32-project-stubn M)]
+      (if (>= j f) n
+        (recur (+ j 1) (+ n (if (w32-defined-function? M j) 1 0)))))))
+
+(defn- w32-runtime-index [M :vector-i64 f :i64] :i64
+  (+ (w32-function-index M f) (if (w32-needs-runtime? M) 1 0)))
+
+(defn- w32-bool-export? [M :vector-i64 f :i64] :bool
+  (and (w32-function? M f) (= (w32-fn M f FF-EXPORT) 1)
+       (= (w32-fn M f FF-RTYPE) TY-BOOL)))
+
+(defn- w32-bool-export-count [M :vector-i64] :i64
+  (loop [f 1 n 0]
+    (if (>= f (vector-at M MM-FN-N)) n
+      (recur (+ f 1) (+ n (if (w32-bool-export? M f) 1 0))))))
+
+(defn- w32-bool-export-index [M :vector-i64 f :i64] :i64
+  (loop [j 1 n 0]
+    (if (>= j f) n
+      (recur (+ j 1) (+ n (if (w32-bool-export? M j) 1 0))))))
+
+(defn- w32-export-count [M :vector-i64] :i64
+  (loop [f 1 n 0]
+    (if (>= f (vector-at M MM-FN-N)) n
+      (recur (+ f 1) (+ n (if (and (w32-function? M f) (= (w32-fn M f FF-EXPORT) 1)) 1 0))))))
+
+(defn- w32-fn-name [M :vector-i64 S :string f :i64] :string
+  (let [sym (w32-fn M f FF-SYM)
+        sb (+ MM-SYM-BASE (* sym MM-SYM-W))
+        a (vector-at M (+ sb SF-START))
+        b (vector-at M (+ sb SF-END))]
+    (string-substring S a b)))
+
+;; The initial LABEL belongs to the function entry block. Later labels begin dispatch blocks.
+(defn- w32-first-label [M :vector-i64 f :i64] :i64
+  (let [a (+ (w32-fn M f FF-SIR) 1)]
+    (loop [i a]
+      (cond (>= i (vector-at M MM-SIR-N)) -1
+            (= (w32-op M i) OP-END) -1
+            (= (w32-op M i) OP-LABEL) i
+            :else (recur (+ i 1))))))
+
+(defn- w32-end-index [M :vector-i64 f :i64] :i64
+  (let [a (+ (w32-fn M f FF-SIR) 1)]
+    (loop [i a]
+      (if (or (>= i (vector-at M MM-SIR-N)) (= (w32-op M i) OP-END)) i
+        (recur (+ i 1))))))
+
+(defn- w32-boundary? [M :vector-i64 f :i64 i :i64] :bool
+  (let [a (+ (w32-fn M f FF-SIR) 1)
+        op (w32-op M i)
+        prev (if (> i a) (w32-op M (- i 1)) 0)]
+    (or (= i a)
+        (and (= op OP-LABEL) (not= i (w32-first-label M f)))
+        (and (> i a) (not= op OP-LABEL)
+             (or (= prev OP-BRZ) (= prev OP-BRNZ))))))
+
+(defn- w32-block-count [M :vector-i64 f :i64] :i64
+  (let [a (+ (w32-fn M f FF-SIR) 1) e (w32-end-index M f)]
+    (loop [i a n 0]
+      (if (>= i e) n
+        (recur (+ i 1) (+ n (if (w32-boundary? M f i) 1 0)))))))
+
+(defn- w32-block-start [M :vector-i64 f :i64 wanted :i64] :i64
+  (let [a (+ (w32-fn M f FF-SIR) 1) e (w32-end-index M f)]
+    (loop [i a n 0]
+      (cond (>= i e) e
+            (w32-boundary? M f i) (if (= n wanted) i (recur (+ i 1) (+ n 1)))
+            :else (recur (+ i 1) n)))))
+
+(defn- w32-block-index-at [M :vector-i64 f :i64 point :i64] :i64
+  (let [a (+ (w32-fn M f FF-SIR) 1) e (w32-end-index M f)]
+    (loop [i a n 0]
+      (cond (> i point) n
+            (>= i e) n
+            (and (= i point) (w32-boundary? M f i)) (if (= i a) 0 (+ n 1))
+            (and (> i a) (w32-boundary? M f i)) (recur (+ i 1) (+ n 1))
+            :else (recur (+ i 1) n)))))
+
+(defn- w32-label-block [M :vector-i64 f :i64 label :i64] :i64
+  (let [a (+ (w32-fn M f FF-SIR) 1) e (w32-end-index M f)]
+    (loop [i a]
+      (cond (>= i e) -1
+            (and (= (w32-op M i) OP-LABEL) (= (w32-sir M i IF-A) label))
+            (w32-block-index-at M f i)
+            :else (recur (+ i 1))))))
+
+(defn- w32-type-i64 [M :vector-i64 f :i64 result :i64] :vector-i64
+  (w32-join3 (w32-join [96] (w32-uleb (w32-fn M f FF-NPARAMS)))
+             (w32-rep 126 (w32-fn M f FF-NPARAMS)) [1 result]))
+
+(defn- w32-type-i32-result [M :vector-i64 f :i64] :vector-i64
+  (w32-join3 (w32-join [96] (w32-uleb (w32-fn M f FF-NPARAMS)))
+             (w32-rep 126 (w32-fn M f FF-NPARAMS)) [1 127]))
+
+(defn- w32-type-loop [M :vector-i64 f :i64 out :vector-i64] :vector-i64
+  (if (>= f (vector-at M MM-FN-N)) out
+    (if (w32-function? M f)
+      (w32-type-loop M (+ f 1) (w32-join out (w32-type-i64 M f 126)))
+      (w32-type-loop M (+ f 1) out))))
+
+(defn- w32-wrapper-type-loop [M :vector-i64 f :i64 out :vector-i64] :vector-i64
+  (if (>= f (vector-at M MM-FN-N)) out
+    (if (w32-bool-export? M f)
+      (w32-wrapper-type-loop M (+ f 1) (w32-join out (w32-type-i32-result M f)))
+      (w32-wrapper-type-loop M (+ f 1) out))))
+
+(defn- w32-type-section [M :vector-i64] :vector-i64
+  (let [runtime? (w32-needs-runtime? M)
+        n (+ (w32-type-count M) (if runtime? 1 0))
+        types (w32-type-loop M 1 (w32-uleb n))]
+    (w32-section 1 (if runtime? (w32-join types [96 4 126 126 126 126 1 126]) types))))
+
+(defn- w32-import-line-end [S :string i :i64] :i64
+  (loop [j i]
+    (cond (>= j (string-length S)) j
+          (= (string-code-point-at S j) 10) j
+          :else (recur (+ j 1)))))
+
+(defn- w32-import-space [S :string i :i64 e :i64] :i64
+  (loop [j i]
+    (cond (>= j e) -1
+          (= (string-code-point-at S j) 32) j
+          :else (recur (+ j 1)))))
+
+(defn- w32-import-module [S :string from :i64] :string
+  (let [mark (string-index-of (string-substring S from (string-length S)) ";;@W32I ")]
+    (if (< mark 0) ""
+      (let [a (+ from mark 8) e (w32-import-line-end S a) sp (w32-import-space S a e)]
+        (if (< sp 0) "" (string-substring S a sp))))))
+
+(defn- w32-import-field [S :string from :i64] :string
+  (let [mark (string-index-of (string-substring S from (string-length S)) ";;@W32I ")]
+    (if (< mark 0) ""
+      (let [a (+ from mark 8) e (w32-import-line-end S a) sp (w32-import-space S a e)]
+        (if (< sp 0) "" (string-substring S (+ sp 1) e))))))
+
+(defn- w32-import-next [S :string from :i64] :i64
+  (let [mark (string-index-of (string-substring S from (string-length S)) ";;@W32I ")]
+    (if (< mark 0) (string-length S)
+      (w32-import-line-end S (+ from mark 8)))))
+
+(defn- w32-project-imports-ok [M :vector-i64 S :string k :i64 from :i64] :bool
+  (if (>= k (w32-project-stubn M)) true
+    (let [mod (w32-import-module S from)
+          field (w32-import-field S from)
+          next (w32-import-next S from)]
+      (and (> (string-length mod) 0) (> (string-length field) 0) (> next from)
+           (w32-project-imports-ok M S (+ k 1) next)))))
+
+(defn- w32-project-imports [M :vector-i64 S :string k :i64 from :i64 out :vector-i64] :vector-i64
+  (if (>= k (w32-project-stubn M)) out
+    (let [mod (w32-import-module S from)
+          field (w32-import-field S from)
+          next (w32-import-next S from)
+          f (+ (w32-project-stub0 M) k)
+          item (w32-join3 (w32-name mod) (w32-name field)
+                          (w32-join [0] (w32-uleb (w32-function-type-index M f))))]
+      (w32-project-imports M S (+ k 1) next (w32-join out item)))))
+
+(defn- w32-import-count [M :vector-i64] :i64
+  (+ (w32-project-stubn M) (if (w32-needs-runtime? M) 1 0)))
+
+(defn- w32-import-section [M :vector-i64 S :string] :vector-i64
+  (let [n (w32-import-count M)
+        runtime? (w32-needs-runtime? M)
+        runtime (if runtime?
+                  (w32-join3 (w32-name "kotoba") (w32-name "runtime")
+                    (w32-join [0] (w32-uleb (w32-type-count M)))) [])
+        stubs (if (w32-project? M) (w32-project-imports M S 0 (vector-at M w32-project-meta-start-slot) []) [])]
+    (if (= n 0) []
+      (w32-section 2 (w32-join3 (w32-uleb n) runtime stubs)))))
+
+(defn- w32-function-types [M :vector-i64 f :i64 out :vector-i64] :vector-i64
+  (if (>= f (vector-at M MM-FN-N)) out
+    (if (w32-defined-function? M f)
+      (w32-function-types M (+ f 1) (w32-join out (w32-uleb (w32-function-type-index M f))))
+      (w32-function-types M (+ f 1) out))))
+
+(defn- w32-wrapper-types [M :vector-i64 f :i64 out :vector-i64] :vector-i64
+  (if (>= f (vector-at M MM-FN-N)) out
+    (if (w32-bool-export? M f)
+      (w32-wrapper-types M (+ f 1)
+                         (w32-join out (w32-uleb (+ (w32-function-count M) (w32-bool-export-index M f)))))
+      (w32-wrapper-types M (+ f 1) out))))
+
+(defn- w32-function-section [M :vector-i64] :vector-i64
+  (w32-section 3 (w32-function-types M 1 (w32-uleb (w32-function-count M)))))
+
+(defn- w32-global-section [M :vector-i64] :vector-i64
+  ;; Keep scalar pilot bytes stable; runtime-valued app slices use the existing browser adapter budget.
+  (let [fuel (if (w32-needs-runtime? M) 100000 512)]
+    (w32-section 6 (w32-join3 [1 126 1] (w32-join [66] (w32-sleb fuel)) [11]))))
+
+(defn- w32-export-one [M :vector-i64 S :string f :i64 out :vector-i64] :vector-i64
+  (let [base (w32-fn-name M S f)
+        clause (loop [j 1 n 0]
+                 (if (>= j f) n
+                   (recur (+ j 1) (+ n (if (and (w32-function? M j)
+                                                (= (w32-fn M j FF-SYM) (w32-fn M f FF-SYM))) 1 0)))))
+        name (if (w32-project? M) (string-concat base (string-concat "#" (mem-u2dec clause))) base)
+        idx (w32-runtime-index M f)]
+    (w32-join3 out (w32-join (w32-name name) [0]) (w32-uleb idx))))
+
+(defn- w32-export-loop [M :vector-i64 S :string f :i64 out :vector-i64] :vector-i64
+  (if (>= f (vector-at M MM-FN-N)) out
+    (if (and (w32-function? M f) (= (w32-fn M f FF-EXPORT) 1))
+      (w32-export-loop M S (+ f 1) (w32-export-one M S f out))
+      (w32-export-loop M S (+ f 1) out))))
+
+(defn- w32-export-section [M :vector-i64 S :string] :vector-i64
+  (let [p0 (w32-uleb (w32-export-count M))
+        p1 (w32-export-loop M S 1 p0)]
+    (w32-section 7 p1)))
+
+(defn- w32-temp-local [M :vector-i64 f :i64 t :i64] :i64
+  (+ (w32-fn M f FF-NSLOTS) t))
+
+(defn- w32-pc-local [M :vector-i64 f :i64] :i64
+  (+ (w32-fn M f FF-NSLOTS) (w32-fn M f FF-DEPTH)))
+
+(defn- w32-local-get [i :i64] :vector-i64 (w32-join [32] (w32-uleb i)))
+(defn- w32-local-set [i :i64] :vector-i64 (w32-join [33] (w32-uleb i)))
+(defn- w32-global-get [i :i64] :vector-i64 (w32-join [35] (w32-uleb i)))
+(defn- w32-global-set [i :i64] :vector-i64 (w32-join [36] (w32-uleb i)))
+
+(defn- w32-set-pc [target :i64 pcidx :i64 depth :i64] :vector-i64
+  (w32-join3 (w32-join [65] (w32-sleb target))
+             (w32-local-set pcidx) (w32-join [12] (w32-uleb depth))))
+
+(defn- w32-set-pc-only [target :i64 pcidx :i64] :vector-i64
+  (w32-join (w32-join [65] (w32-sleb target)) (w32-local-set pcidx)))
+
+(defn- w32-label-target [M :vector-i64 f :i64 label :i64] :i64
+  (w32-label-block M f label))
+
+(defn- w32-bop-code [op :i64] :i64
+  (case op BOP-ADD 124 BOP-SUB 125 BOP-MUL 126 BOP-QUOT 127 BOP-AND 131 BOP-OR 132
+       BOP-XOR 133 BOP-SHL 134 BOP-SSHR 135 BOP-USHR 136 0))
+
+(defn- w32-cmp-code [op :i64] :i64
+  (case op CC-EQ 81 CC-LT 83 CC-GT 85 CC-LE 87 CC-GE 89 0))
+
+(defn- w32-call-args [M :vector-i64 f :i64 t :i64 n :i64] :vector-i64
+  (loop [j 0 out []]
+    (if (>= j n) out
+      (recur (+ j 1) (w32-join out (w32-local-get (w32-temp-local M f (+ t j))))))))
+
+(defn- w32-runtime-call [M :vector-i64 f :i64 code :i64 t :i64 n :i64 dest :i64] :vector-i64
+  (loop [j 0 out (w32-join [66] (w32-sleb code))]
+    (if (>= j 3)
+      (w32-join3 out [16 0] (w32-local-set (w32-temp-local M f dest)))
+      (let [arg (if (< j n)
+                  (w32-local-get (w32-temp-local M f (+ t j)))
+                  (w32-join [66] (w32-sleb 0)))]
+        (recur (+ j 1) (w32-join out arg))))))
+
+(defn- w32-runtime-literal [M :vector-i64 f :i64 lit :i64 dest :i64] :vector-i64
+  (w32-join3 (w32-join3 (w32-join [66] (w32-sleb -1))
+                         (w32-join [66] (w32-sleb lit))
+                         (w32-join [66] (w32-sleb 0)))
+             (w32-join [66] (w32-sleb 0))
+             (w32-join3 [16 0]
+                        (w32-local-set (w32-temp-local M f dest)) [])))
+
+(defn- w32-instruction [M :vector-i64 f :i64 i :i64 ord :i64 nblocks :i64] :vector-i64
+  (let [op (w32-op M i)
+        a (w32-sir M i IF-A) b (w32-sir M i IF-B) c (w32-sir M i IF-C)
+        pcidx (w32-pc-local M f)
+        depth (- (- nblocks 1) ord)]
+    (case op
+      OP-CONST (w32-join3 (w32-join [66] (w32-sleb b)) (w32-local-set (w32-temp-local M f a)) [])
+      OP-LGET (w32-join (w32-local-get (- b 1)) (w32-local-set (w32-temp-local M f a)))
+      OP-LSET (w32-join (w32-local-get (w32-temp-local M f b)) (w32-local-set (- a 1)))
+      OP-BIN (w32-join3 (w32-join (w32-local-get (w32-temp-local M f b))
+                                   (w32-local-get (w32-temp-local M f (+ b 1))))
+                         [(w32-bop-code a)] (w32-local-set (w32-temp-local M f b)))
+      OP-CMP (w32-join3 (w32-join3 (w32-local-get (w32-temp-local M f b))
+                                    (w32-local-get (w32-temp-local M f (+ b 1)))
+                                    [(w32-cmp-code a) 173])
+                         (w32-local-set (w32-temp-local M f b)) [])
+      OP-UN (if (= a UOP-NOT)
+              (w32-join3 (w32-local-get (w32-temp-local M f b)) [80 173]
+                         (w32-local-set (w32-temp-local M f b)))
+              (w32-join3 (w32-local-get (w32-temp-local M f b))
+                         (w32-join [66] (w32-sleb -1))
+                         (w32-join [133] (w32-local-set (w32-temp-local M f b)))))
+      OP-CALL (w32-join3 (w32-call-args M f b c)
+                         (w32-join [16] (w32-uleb (w32-runtime-index M a)))
+                         (w32-local-set (w32-temp-local M f b)))
+      OP-RT (w32-runtime-call M f a b c b)
+      OP-STR (w32-runtime-literal M f b a)
+      OP-FUEL (w32-join3 (w32-join (w32-global-get 0) [80 4 64 0 11])
+                         (w32-join3 (w32-global-get 0) (w32-join [66] (w32-sleb 1)) [125])
+                         (w32-global-set 0))
+      OP-LABEL []
+      OP-BR (w32-set-pc (w32-label-target M f a) pcidx depth)
+      OP-BRZ (w32-join3 (w32-join (w32-local-get (w32-temp-local M f a)) [80 4 64])
+                         (w32-set-pc-only (w32-label-target M f b) pcidx)
+                         (w32-join3 [5] (w32-set-pc-only (+ ord 1) pcidx)
+                                    (w32-join [11 12] (w32-uleb depth))))
+      OP-BRNZ (w32-join3 (w32-join (w32-local-get (w32-temp-local M f a)) [80 4 64])
+                          (w32-set-pc-only (+ ord 1) pcidx)
+                          (w32-join3 [5] (w32-set-pc-only (w32-label-target M f b) pcidx)
+                                     (w32-join [11 12] (w32-uleb depth))))
+      OP-RET (w32-join (w32-local-get (w32-temp-local M f a)) [15])
+      OP-TRAP [0]
+      [])))
+
+(defn- w32-block-code [M :vector-i64 f :i64 ord :i64 nblocks :i64] :vector-i64
+  (let [start (w32-block-start M f ord)
+        end (if (>= (+ ord 1) nblocks) (w32-end-index M f) (w32-block-start M f (+ ord 1)))
+        first (if (= (w32-op M start) OP-LABEL) (+ start 1) start)
+        depth (- (- nblocks 1) ord)
+        pcidx (w32-pc-local M f)]
+    (loop [i first out []]
+      (if (>= i end)
+        (if (< (+ ord 1) nblocks)
+          (w32-join out (w32-set-pc (+ ord 1) pcidx depth))
+          (w32-join out [0]))
+        (let [op (w32-op M i)
+              code (w32-instruction M f i ord nblocks)]
+          (if (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ)
+                  (= op OP-RET) (= op OP-TRAP))
+            (w32-join out code)
+            (recur (+ i 1) (w32-join out code))))))))
+
+(defn- w32-blocks-code [M :vector-i64 f :i64 nblocks :i64 ord :i64 out :vector-i64] :vector-i64
+  (if (>= ord nblocks) out
+    (let [close [11]
+          body (w32-block-code M f ord nblocks)
+          loop-depth (- (- nblocks 1) ord)
+          back (w32-join [12] (w32-uleb loop-depth))]
+      (w32-blocks-code M f nblocks (+ ord 1) (w32-join3 (w32-join out close) body back)))))
+
+(defn- w32-case-blocks [n :i64] :vector-i64
+  (loop [i 0 out []]
+    (if (>= i n) out
+      (recur (+ i 1) (w32-join out [2 64])))))
+
+(defn- w32-dispatch [M :vector-i64 f :i64 nblocks :i64] :vector-i64
+  (let [pcidx (w32-pc-local M f)
+        depths (loop [i 0 out []]
+                 (if (>= i nblocks) out
+                   (recur (+ i 1) (w32-join out (w32-uleb i)))))
+        table (w32-join3 (w32-local-get pcidx)
+                         (w32-join (w32-join [14] (w32-uleb nblocks)) depths)
+                         (w32-uleb (+ nblocks 1)))]
+    (w32-join3 [2 64 3 64] (w32-case-blocks nblocks) table)))
+
+(defn- w32-locals [M :vector-i64 f :i64] :vector-i64
+  (let [n (+ (- (w32-fn M f FF-NSLOTS) (w32-fn M f FF-NPARAMS))
+             (w32-fn M f FF-DEPTH))]
+    (if (> n 0) (w32-join3 [2] (w32-join (w32-uleb n) [126]) [1 127])
+      [1 1 127])))
+
+(defn- w32-function-body [M :vector-i64 f :i64] :vector-i64
+  (let [nblocks (w32-block-count M f)
+        locals (w32-locals M f)
+        dispatch (w32-dispatch M f nblocks)
+        blocks (w32-blocks-code M f nblocks 0 [])
+        tail [11 11 0 11]]
+    (w32-join3 (w32-join locals dispatch) blocks tail)))
+
+(defn- w32-body-entry [body :vector-i64] :vector-i64
+  (w32-join (w32-uleb (vector-count body)) body))
+
+(defn- w32-function-bodies [M :vector-i64 f :i64 out :vector-i64] :vector-i64
+  (if (>= f (vector-at M MM-FN-N)) out
+    (if (w32-defined-function? M f)
+      (w32-function-bodies M (+ f 1) (w32-join out (w32-body-entry (w32-function-body M f))))
+      (w32-function-bodies M (+ f 1) out))))
+
+(defn- w32-wrapper-body [M :vector-i64 f :i64] :vector-i64
+  (w32-join3 (w32-join [0] (loop [i 0 out []]
+                            (if (>= i (w32-fn M f FF-NPARAMS)) out
+                              (recur (+ i 1) (w32-join out (w32-local-get i))))))
+             (w32-join [16] (w32-uleb (w32-runtime-index M f))) [167 11]))
+
+(defn- w32-wrapper-bodies [M :vector-i64 f :i64 out :vector-i64] :vector-i64
+  (if (>= f (vector-at M MM-FN-N)) out
+    (if (w32-bool-export? M f)
+      (w32-wrapper-bodies M (+ f 1) (w32-join out (w32-body-entry (w32-wrapper-body M f))))
+      (w32-wrapper-bodies M (+ f 1) out))))
+
+(defn- w32-code-section [M :vector-i64] :vector-i64
+  (w32-section 10 (w32-function-bodies M 1 (w32-uleb (w32-function-count M)))))
+
+(defn- w32-module [M :vector-i64 S :string] :vector-i64
+  (let [header (w32-join3 [0 97 115 109 1 0 0 0]
+                          (w32-type-section M)
+                          (w32-import-section M S))
+        funcs (w32-function-section M)
+        globals (w32-global-section M)
+        exports (w32-export-section M S)
+        code (w32-code-section M)
+        module (w32-join3 (w32-join3 header funcs globals) exports code)]
+    (if (w32-needs-runtime? M)
+      (w32-join module (w32-literals-section M))
+      module)))
+
+(defn- w32-supported-op? [M :vector-i64 i :i64] :bool
+  (let [op (w32-op M i) a (w32-sir M i IF-A)]
+    (or (= op OP-FN) (= op OP-END) (= op OP-CONST) (= op OP-LGET) (= op OP-LSET)
+        (= op OP-LABEL) (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ) (= op OP-CALL)
+        (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP) (= op OP-STR)
+        (and (= op OP-RT)
+             (let [arity (w32-sir M i IF-C)]
+               (case a
+                 RT-VECTOR-NEW-EMPTY (= arity 0)
+                 RT-VECTOR-CONJ (= arity 2)
+                 RT-VECTOR-COUNT (= arity 1)
+                 RT-VECTOR-AT (= arity 2)
+                 RT-VECTOR-ASSOC (= arity 3)
+                 RT-VECTOR-ALLOC (= arity 1)
+                 RT-VECTOR-ASSOC-IN-PLACE (= arity 3)
+                 RT-PAIR-NEW (= arity 2)
+                 RT-PAIR-FIRST (= arity 1)
+                 RT-PAIR-SECOND (= arity 1)
+                 RT-BYTES-FROM-VECTOR (= arity 1)
+                 RT-STRING-CONCAT (= arity 2)
+                 RT-STRING-EQUAL (= arity 2)
+                 RT-STRING-SUBSTRING (= arity 3)
+                 RT-STRING-CODE-POINT-AT (= arity 2)
+                 RT-STRING-FROM-UTF8 (= arity 1)
+                 false)))
+        (and (= op OP-BIN)
+             (or (= a BOP-ADD) (= a BOP-SUB) (= a BOP-MUL) (= a BOP-QUOT) (= a BOP-AND) (= a BOP-OR)
+                 (= a BOP-XOR) (= a BOP-SHL) (= a BOP-USHR) (= a BOP-SSHR)))
+        (and (= op OP-CMP) (or (= a CC-EQ) (= a CC-LT) (= a CC-GT) (= a CC-LE) (= a CC-GE)))
+        (and (= op OP-UN) (or (= a UOP-NOT) (= a UOP-BITNOT))))))
+
+(defn- w32-value-type? [t :i64] :bool
+  (or (= t TY-I64) (= t TY-BOOL) (= t TY-STR) (= t TY-VEC) (= t TY-BYTES)
+      (= t TY-DOC) (= t TY-SYM)
+      (>= t TY-REC-BASE)))
+
+(defn- w32-supported-function? [M :vector-i64 f :i64] :bool
+  (let [np (w32-fn M f FF-NPARAMS) rt (w32-fn M f FF-RTYPE)
+        a (+ (w32-fn M f FF-SIR) 1) e (w32-end-index M f)]
+    ;; The function descriptor stores five inline parameter type cells, but SIR/Wasm calls support
+    ;; the language's full 16-parameter limit. Every value uses the i64 ABI; check the inline types.
+    (and (<= np 16) (w32-value-type? rt)
+         (loop [j 0 ok true]
+           (if (or (>= j np) (>= j 5) (not ok)) ok
+             (let [ty (w32-fn M f (+ FF-PT0 j))]
+               (recur (+ j 1) (w32-value-type? ty)))))
+         (loop [i a ok true]
+           (if (or (>= i e) (not ok)) ok
+             (recur (+ i 1) (w32-supported-op? M i)))))))
+
+(defn- w32-supported-program? [M :vector-i64] :bool
+  (loop [f 1 ok true]
+    (if (or (>= f (vector-at M MM-FN-N)) (not ok)) ok
+      (recur (+ f 1) (or (not (w32-function? M f)) (w32-supported-function? M f))))))
+
+(defn- w32-copy-output [M :vector-i64 B :vector-i64] :vector-i64
+  (let [n (vector-count B)]
+    (if (>= n MM-OUT-CAP) (vector-assoc! M MM-ERR E-OUT-FULL)
+      (loop [i 0 M M]
+        (if (>= i n) (vector-assoc! M MM-OUT-N (+ n 1))
+          (recur (+ i 1) (vector-assoc! M (+ MM-OUT-BASE 1 i) (bit-and (vector-at B i) 255))))))))
+
+(defn- w32-run [M :vector-i64 S :string] :vector-i64
+  (if (and (w32-supported-program? M)
+           (or (not (w32-project? M))
+               (w32-project-imports-ok M S 0 (vector-at M w32-project-meta-start-slot))))
+    (w32-copy-output M (w32-module M S))
+    (vector-assoc! M MM-ERR E-WASM-UNSUPPORTED)))

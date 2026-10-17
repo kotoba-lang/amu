@@ -1,19 +1,24 @@
 # Adopted native seed compiler
 
-This directory contains the complete 16-module source based on the adopted
-compiler at `fc49cb2ee6fea1a41a5abbc8ed5b52aaa9f19471`, with an integration
-safety fix: explicit `--policy` is refused with E2170 until structured policy
-checking is qualified. Single-file and project `check` enforce the same explicit-policy refusal as `compile`. The bounded pure byte-result lookup pass is now adopted in `41-a64gen`, preserving every other module from main. It includes the cumulative qualified AArch64 optimizations; it
-excludes the pending descriptor witness and conditional-fallthrough vector view
-candidates. It does not change `bin/amu`, publish a
-release, or qualify the whole Amu component as Q9.
+The 2026-10-12 adoption is the 16-module compiler baseline at
+`fc49cb2ee6fea1a41a5abbc8ed5b52aaa9f19471`, with an integration safety fix:
+explicit `--policy` is refused with E2170 until structured policy checking is
+qualified. Single-file and project `check` enforce the same refusal as
+`compile`. The bounded pure byte-result lookup pass is adopted in `41-a64gen`;
+it includes the cumulative qualified AArch64 optimizations and excludes the
+pending descriptor witness and conditional-fallthrough vector view candidates.
+`adoption-20261012.json` records that baseline's source pins, artifact
+provenance, correctness scope, and measurement boundaries.
 
-`MANIFEST` fixes the unity order. Concatenating each module followed by one
-newline gives SHA-256
-`a1a718388c55eaf8e9f749ea1829c17ae9d667dbc785194879b0abb8454602b3`.
-`adoption-20261012.json` records all source pins, artifact provenance, the
-correctness scope and measurement boundaries. `HEADS`, `MEMORY-MAP`, and `SIR`
-are the corresponding compiler contracts, copied without changes.
+The current `MANIFEST` has 17 modules. It adds the experimental
+`43-wasm.kotoba` browser-Wasm backend and the project driver/lock changes
+described below. The historical 16-module adoption receipt remains tied to its
+original source. The current 17-module unity source used for the G23/G24
+selfhost fixed-point probe has SHA-256
+`7b2786e18a6cf7677ef281ffd387bc084dea3e5ca0b591f4e1b545b74c881841`.
+
+These changes do not change `bin/amu`, publish a release, or qualify the whole
+Amu component as Q9.
 
 ## Native self-build
 
@@ -42,6 +47,41 @@ refuses input or loader changes during an invocation, preserves original logs,
 checks every generated native image against the adopted fixed-point digest,
 and leaves compiler fuel disabled only for these self-build invocations.
 This is correctness verification, not performance timing.
+
+## Locked browser-Wasm project pilot (2026-10-17)
+
+The selfhost seed compiler can compile a closed, content-addressed Kotoba
+project for `wasm32-browser`:
+
+```sh
+<selfhost-seed-compiler> compile <root-namespace> \
+  --target wasm32-browser \
+  --module-lock <module-lock.edn> \
+  --blocks <raw-cid-block-directory> \
+  --output <package>
+```
+
+The lock uses the closed `:kotoba.module-lock/v1` schema with one root
+namespace and a namespace-to-raw-CID map. The compiler reads each source block,
+verifies its raw CID with SHA-256 before parsing it, and refuses source-path or
+unpinned fallback on this route. Malformed or missing pins fail with E6027;
+a source/CID mismatch fails with E6028. The native selfhost loader must grant
+the required wires `3,35,37,38,39`; wire 3 supplies `:hash/sha256` for pin
+verification.
+
+A single-module root emits the direct Wasm module. A multi-module root emits a
+`KOTOBAP1` package in dependency-first order; its module interfaces become
+namespace-qualified Wasm imports. Target support is deliberately narrow:
+unsupported source is refused with E6029 rather than widened or sent through a
+bootstrap compiler. Host behavior must be supplied and qualified by the app's
+typed adapter.
+
+The 17-module source rebuilt G23 and G24 from a selfhost-produced compiler.
+Both generations have byte-identical 2,593,280-byte native compiler images
+(SHA-256
+`2f8409005633506046c4df7e3eac1f7ad11acd40f092691c72afc2f7edce5dcd`). This
+is a compile-only selfhost fixed-point result: it does not establish application
+runtime parity, test-suite completion, deployment, or live behavior.
 
 ## Evidence and ongoing optimization
 

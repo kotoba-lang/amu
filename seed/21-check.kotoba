@@ -2415,19 +2415,21 @@
 (defn- ck-access-ty [M :vector-i64 r :i64 kw :i64] :i64
   (ck-blk-ty M (ck-blk M (nm-nf M r NF-TYPE)) (nm-nf M kw NF-RES)))
 
-;; (record-get SCHEMA r :f)
+;; (record-get SCHEMA r :f), or (record-get r :f) with a record-typed receiver
 (defn- ck-recget [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
         sn (nm-next M h)
         r (nm-next M sn)
         kw (nm-next M r)]
-    (if (= (nm-count M n) 4)
-      (let [M1 (ck-tform M sn)
-            ty (ck-ty M1)]
-        (cond (nm-failed M1) (ck-touch M1)
-              (< ty TY-REC-BASE) (ck-err M1 E-CHECK-SCHEMA sn 0)
-              :else (ck-access-end (ck-access M1 n r kw ty fx) n r kw HD-RECORD-GET)))
-      (ck-err M E-CHECK-ARITY h 3))))
+    (cond (= (nm-count M n) 4)
+          (let [M1 (ck-tform M sn)
+                ty (ck-ty M1)]
+            (cond (nm-failed M1) (ck-touch M1)
+                  (< ty TY-REC-BASE) (ck-err M1 E-CHECK-SCHEMA sn 0)
+                  :else (ck-access-end (ck-access M1 n r kw ty fx) n r kw HD-RECORD-GET)))
+          (= (nm-count M n) 3)
+          (ck-access-end (ck-access M n sn r 0 fx) n sn r HD-RECORD-GET)
+          :else (ck-err M E-CHECK-ARITY h 2))))
 (defn- ck-access-end [M :vector-i64 n :i64 r :i64 kw :i64 res :i64] :vector-i64
   (if (nm-failed M) (ck-touch M) (ck-mark M n (ck-access-ty M r kw) res)))
 
