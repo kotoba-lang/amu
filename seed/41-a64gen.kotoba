@@ -1890,30 +1890,6 @@
                   (gn-gs gn-f-vslot (if (= (gn-g M2 gn-f-vmode) 2) -1 0)) (gn-tree-entry f) (eq-chain-entry f) (vl-entry i f np) (pf-entry i f np) (ve-entry i f np)))))))
 
 (defn- gn-op-ret [M :vector-i64 t :i64] :vector-i64 (gn-epilogue (gn-into M 0 t)))
-;; When an integer ADD writes a temp used only by the immediately following
-;; RET, its final A64 instruction can write x0 directly. Admit only the exact
-;; emitted ADD-immediate/register destination and SIR adjacency; all other
-;; return shapes retain the normal temp-to-x0 move.
-(defn- gn-ret-add? [M :vector-i64 i :i64 t :i64] :bool
-  (and (> i 1) (< (+ i 1) (vector-at M MM-SIR-N))
-       (>= t 0) (< t 7)
-       (= (gn-op M (dec i)) OP-BIN)
-       (= (gn-sir M (dec i) IF-A) BOP-ADD)
-       (= (gn-sir M (dec i) IF-B) t)
-       (= (gn-sir M i IF-A) t)
-       (= (gn-op M (inc i)) OP-END)
-       (> (vector-at M MM-CODE-N) 0)
-       (let [at (dec (vector-at M MM-CODE-N))
-             word (vector-at M (+ MM-CODE-BASE at))]
-         (and (or (= (bit-and word 0xffc00000) 0x91000000)
-                  (= (bit-and word 0xffe0fc00) 0x8b000000))
-              (= (bit-and word 31) (+ 9 t))))))
-(defn- gn-op-ret-at [M :vector-i64 i :i64 t :i64] :vector-i64
-  (if (gn-ret-add? M i t)
-    (let [at (+ MM-CODE-BASE (dec (vector-at M MM-CODE-N)))
-          word (vector-at M at)]
-      (gn-epilogue (gn-put M at (bit-and word (bit-not 31)))))
-    (gn-op-ret M t)))
 ;; R5B: RET2 t -- x0 := temp t, x1 := temp t+1 (through x16: either source may be x0 or x1 in a leaf), then the epilogue
 (defn- gn-op-ret2 [M :vector-i64 t :i64] :vector-i64 (-> M (gn-into 16 (inc t)) (gn-into 0 t) (gn-mov 1 16) (gn-epilogue)))
 ;; R5B: RES2 t (right after a CALL): temp t := x1, the CALL's second result register
@@ -16760,7 +16736,7 @@
 (defn- trg-ret [M :vector-i64 i :i64 t :i64] :vector-i64
  (let [f (if (and (trg-counts M) (> i 15)) (gn-sir M (- i 15) IF-A) 0)
        tagged (and (> (trg-clone M f) 0) (= (gn-fnf M f FF-SIR) (- i 15)) (= t 0))
-       m (gn-op-ret-at M i t) at (dec (vector-at m MM-CODE-N))]
+       m (gn-op-ret M t) at (dec (vector-at m MM-CODE-N))]
   (if (not tagged) m
    (if (or (<= at 0) (>= at MM-CODE-CAP)
        (not= (vector-at m (+ MM-CODE-BASE at)) (enc-ret))
