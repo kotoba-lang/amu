@@ -1890,35 +1890,6 @@
                   (gn-gs gn-f-vslot (if (= (gn-g M2 gn-f-vmode) 2) -1 0)) (gn-tree-entry f) (eq-chain-entry f) (vl-entry i f np) (pf-entry i f np) (ve-entry i f np)))))))
 
 (defn- gn-op-ret [M :vector-i64 t :i64] :vector-i64 (gn-epilogue (gn-into M 0 t)))
-;; When an integer ADD writes a temp used only by the immediately following
-;; RET, its final A64 instruction can write x0 directly. Admit only the exact
-;; emitted ADD-immediate/register destination and SIR adjacency; all other
-;; return shapes retain the normal temp-to-x0 move.
-(defn- gn-ret-add? [M :vector-i64 i :i64 t :i64] :bool
-  (and (> i 1) (< (+ i 1) (vector-at M MM-SIR-N))
-       (>= t 0) (< t 7)
-       (= (gn-op M (dec i)) OP-BIN)
-       (= (gn-sir M (dec i) IF-A) BOP-ADD)
-       (= (gn-sir M (dec i) IF-B) t)
-       (= (gn-sir M i IF-A) t)
-       (= (gn-op M (inc i)) OP-END)
-       (> (vector-at M MM-CODE-N) 0)
-       (let [at (dec (vector-at M MM-CODE-N))
-             word (vector-at M (+ MM-CODE-BASE at))]
-         (and (or (= (bit-and word 0xffc00000) 0x91000000)
-                  (= (bit-and word 0xffe0fc00) 0x8b000000))
-              (= (bit-and word 31) (+ 9 t))))))
-(defn- gn-op-ret-at [M :vector-i64 i :i64 t :i64] :vector-i64
-  (if (gn-ret-add? M i t)
-    (let [at (+ MM-CODE-BASE (dec (vector-at M MM-CODE-N)))
-          word (vector-at M at)]
-      (gn-epilogue (gn-put M at (bit-and word (bit-not 31)))))
-    (gn-op-ret M t)))
-;; 30-lower places OP-END after every explicit RET/RET2. It is a function-table
-;; boundary, not a machine instruction; reset dead-code state for the next
-;; function and let t2 rewrite the completed function without an unreachable BRK.
-(defn- gn-op-end [M :vector-i64 i :i64 f :i64] :vector-i64
-  (t2-end (gn-gs M gn-f-dead 0) i f))
 ;; R5B: RET2 t -- x0 := temp t, x1 := temp t+1 (through x16: either source may be x0 or x1 in a leaf), then the epilogue
 (defn- gn-op-ret2 [M :vector-i64 t :i64] :vector-i64 (-> M (gn-into 16 (inc t)) (gn-into 0 t) (gn-mov 1 16) (gn-epilogue)))
 ;; R5B: RES2 t (right after a CALL): temp t := x1, the CALL's second result register
@@ -13469,7 +13440,7 @@
           (gn-put (+ MM-FIX-BASE (* k MM-FIX-W) XF-AT) q)
           (gn-put (+ MM-CODE-BASE q) (enc-bcond (enc-cond-hs) delta))))) A))))))
 
-(defn- gn-ins-quiet [M :vector-i64 i :i64 op :i64] :vector-i64 (let [a (gn-sir M i IF-A) b (gn-sir M i IF-B) c (gn-sir M i IF-C)] (if (or (and (= (gn-g M 14) 1) (not (or (= op OP-FN) (= op OP-END)))) (and (= (gn-g M gn-f-dead) 1) (not (or (= op OP-LABEL) (= op OP-FN) (= op OP-END))))) M (case op OP-CONST (gn-def M a gn-k-const b) OP-LGET (let [m (tbat-entry M i)] (if (gn-affine-read? m i a) (gn-affine-read m i a) (gn-def m a gn-k-local b))) OP-LSET (gn-op-lset M a b) OP-BIN (gn-op-bin M i a b) OP-CMP (gn-op-cmp M i a b) OP-UN (gn-op-un M i a b) OP-LABEL (brc-entry (sls-entry (jssa-entry (ts-entry (btg-entry (srloop-entry (gn-op-label M a) i) i) i) i) i) i) OP-BR (fsb-jump M i (gn-thread M a 0 2 8)) OP-BRZ (gn-op-brz M i a b 0) OP-BRNZ (gn-op-brz M i a b 1) OP-CALL (cpp-call M i a b c) OP-CALLI (gn-op-calli M i b c) OP-FADDR (gn-op-faddr M i a b) OP-RT (gn-op-rt M i a b c) OP-CAP (gn-op-cap M i a b c) OP-STR (gn-op-str M i a b) OP-VEC (gn-op-vec M i a b) OP-TAB (gn-op-tab M i a b c) OP-VECP (gn-op-vecp M i a b c) OP-FUEL (sm-entry (dk-entry (trg-entry (frfix-entry (clw-loop-entry (qrow-entry (wm-entry (pwphase-entry (mdc-entry (ac-entry (ga-entry (ir-entry (ss-entry (ar-entry (fourprobe-entry (rls-entry (ip-entry (is-entry (rv-entry (rl-entry (ru-entry (ri-entry (xd-entry (sw-entry (d2-entry (prk-entry (eb-entry (hd-entry (sf-entry (hb-entry (qq-entry (tw-entry (qp-entry (lp-entry (hpd-entry (hpa-entry (tb-entry (pb-entry (ik-entry (ek-entry (ns-entry (ab-entry (rs-entry (lr-entry (wo-entry (ci-entry (lcg-entry (mmx-entry (zf-entry (pz-entry (qb-entry (td-entry (dr-entry (cw-entry (gz-entry (pc3-entry (gn-copy-entry (bu-entry (bs-entry (gn-dot-entry (shloop-entry (md5k-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) OP-RET (trg-ret M i a) OP-RET2 (gn-op-ret2 M a) OP-RES2 (gn-op-res2 M i a) OP-TRAP (-> M (gn-emit (enc-brk a)) (gn-gs gn-f-dead 1)) OP-FN (snf-entry (gn-op-fn M i a b) i a b) OP-END (gn-op-end M i a) (gn-err M E-GEN-OP op)))))
+(defn- gn-ins-quiet [M :vector-i64 i :i64 op :i64] :vector-i64 (let [a (gn-sir M i IF-A) b (gn-sir M i IF-B) c (gn-sir M i IF-C)] (if (or (and (= (gn-g M 14) 1) (not (or (= op OP-FN) (= op OP-END)))) (and (= (gn-g M gn-f-dead) 1) (not (or (= op OP-LABEL) (= op OP-FN) (= op OP-END))))) M (case op OP-CONST (gn-def M a gn-k-const b) OP-LGET (let [m (tbat-entry M i)] (if (gn-affine-read? m i a) (gn-affine-read m i a) (gn-def m a gn-k-local b))) OP-LSET (gn-op-lset M a b) OP-BIN (gn-op-bin M i a b) OP-CMP (gn-op-cmp M i a b) OP-UN (gn-op-un M i a b) OP-LABEL (brc-entry (sls-entry (jssa-entry (ts-entry (btg-entry (srloop-entry (gn-op-label M a) i) i) i) i) i) i) OP-BR (fsb-jump M i (gn-thread M a 0 2 8)) OP-BRZ (gn-op-brz M i a b 0) OP-BRNZ (gn-op-brz M i a b 1) OP-CALL (cpp-call M i a b c) OP-CALLI (gn-op-calli M i b c) OP-FADDR (gn-op-faddr M i a b) OP-RT (gn-op-rt M i a b c) OP-CAP (gn-op-cap M i a b c) OP-STR (gn-op-str M i a b) OP-VEC (gn-op-vec M i a b) OP-TAB (gn-op-tab M i a b c) OP-VECP (gn-op-vecp M i a b c) OP-FUEL (sm-entry (dk-entry (trg-entry (frfix-entry (clw-loop-entry (qrow-entry (wm-entry (pwphase-entry (mdc-entry (ac-entry (ga-entry (ir-entry (ss-entry (ar-entry (fourprobe-entry (rls-entry (ip-entry (is-entry (rv-entry (rl-entry (ru-entry (ri-entry (xd-entry (sw-entry (d2-entry (prk-entry (eb-entry (hd-entry (sf-entry (hb-entry (qq-entry (tw-entry (qp-entry (lp-entry (hpd-entry (hpa-entry (tb-entry (pb-entry (ik-entry (ek-entry (ns-entry (ab-entry (rs-entry (lr-entry (wo-entry (ci-entry (lcg-entry (mmx-entry (zf-entry (pz-entry (qb-entry (td-entry (dr-entry (cw-entry (gz-entry (pc3-entry (gn-copy-entry (bu-entry (bs-entry (gn-dot-entry (shloop-entry (md5k-entry (gn-op-fuel M) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) i) OP-RET (trg-ret M i a) OP-RET2 (gn-op-ret2 M a) OP-RES2 (gn-op-res2 M i a) OP-TRAP (-> M (gn-emit (enc-brk a)) (gn-gs gn-f-dead 1)) OP-FN (snf-entry (gn-op-fn M i a b) i a b) OP-END (t2-end (-> M (gn-emit (enc-brk 1)) (gn-gs gn-f-dead 0)) i a) (gn-err M E-GEN-OP op)))))
 
 ;; every instruction from i (an instruction may consume the next ones: gn-f-skip)
 (defn- gn-loop [M :vector-i64 i :i64] :vector-i64
@@ -16765,7 +16736,7 @@
 (defn- trg-ret [M :vector-i64 i :i64 t :i64] :vector-i64
  (let [f (if (and (trg-counts M) (> i 15)) (gn-sir M (- i 15) IF-A) 0)
        tagged (and (> (trg-clone M f) 0) (= (gn-fnf M f FF-SIR) (- i 15)) (= t 0))
-       m (gn-op-ret-at M i t) at (dec (vector-at m MM-CODE-N))]
+       m (gn-op-ret M t) at (dec (vector-at m MM-CODE-N))]
   (if (not tagged) m
    (if (or (<= at 0) (>= at MM-CODE-CAP)
        (not= (vector-at m (+ MM-CODE-BASE at)) (enc-ret))
