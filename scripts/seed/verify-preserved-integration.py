@@ -79,10 +79,10 @@ def main():
   current_sources={}
   ports=ROOT/'bench/embench/reproduce-20261015/ports'
   for name,row in images_by_name.items():
-   source=(ports/('official-'+name+'.kotoba')).resolve()
-   assert source.is_relative_to(ROOT.resolve())
-   assert sha(source)==row['sourceSHA256']
-   current_sources[name]=source
+   workload_source=(ports/('official-'+name+'.kotoba')).resolve()
+   assert workload_source.is_relative_to(ROOT.resolve())
+   assert sha(workload_source)==row['sourceSHA256']
+   current_sources[name]=workload_source
   expected=current
  producer=bootstrap;gens=[]
  for n in range(1,4):
