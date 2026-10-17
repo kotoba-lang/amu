@@ -73,7 +73,13 @@ def main():
   exact={row['workload']:row['imageSHA256'] for row in exactness['rows'] if row['exact']}
   assert len(exact)==len(exactness['rows'])==19 and current==exact
   assert set(current)==set(expected)
-  for name,row in images_by_name.items():assert sha(art/(name+'.kotoba'))==row['sourceSHA256']
+  current_sources={}
+  ports=ROOT/'bench/embench/reproduce-20261015/ports'
+  for name,row in images_by_name.items():
+   source=(ports/('official-'+name+'.kotoba')).resolve()
+   assert source.is_relative_to(ROOT.resolve())
+   assert sha(source)==row['sourceSHA256']
+   current_sources[name]=source
   expected=current
  producer=bootstrap;gens=[]
  for n in range(1,4):
@@ -109,9 +115,11 @@ def main():
  images=[]
  for name,oldsha in expected.items():
   container=art/(name+'-new.kseed');image=art/(name+'-new.bin')
-  run(prefix+['compile',art/(name+'.kotoba'),'--target','aarch64-macos','--output',container],name+'-compile')
+  source_input=current_sources[name] if a.main else art/(name+'.kotoba')
+  run(prefix+['compile',source_input,'--target','aarch64-macos','--output',container],name+'-compile')
   run(prefix+['extract-native',container,'--symbol',symbols[name],'--output',image],name+'-extract');assert sha(image)==oldsha,name+' payload changed'
   images.append({'workload':name,'sha256':sha(image),'baselineImageExact':True})
- report={'status':'PASS_MAIN_AND_PRESERVED_POLICY_SAFETY' if a.main else 'PASS_PRESERVED_SOURCE_SAFETY_REINTEGRATION','sourceUnitySHA256':hashlib.sha256(unity).hexdigest(),'generations':gens,'explicitPolicyRefusals':len(policies)*4+6,'policyFreeResult':42,'original19Images':images,'trustedLoaderSHA256':loader_pin,'performanceMeasurement':False,'goalStatus':receipt.get('performanceGoalStatus','unspecified') if a.main else 'paused','mainDefaultCompilerChanged':a.main,'publicLoaderChanged':False}
+ report={'status':'PASS_MAIN_AND_PRESERVED_POLICY_SAFETY' if a.main else 'PASS_PRESERVED_SOURCE_SAFETY_REINTEGRATION','sourceUnitySHA256':hashlib.sha256(unity).hexdigest(),'generations':gens,'explicitPolicyRefusals':len(policies)*4+6,'policyFreeResult':42,'inputCorpus':'current-official-all19' if a.main else 'preserved-original19','trustedLoaderSHA256':loader_pin,'performanceMeasurement':False,'goalStatus':receipt.get('performanceGoalStatus','unspecified') if a.main else 'paused','mainDefaultCompilerChanged':a.main,'publicLoaderChanged':False}
+ report['currentAll19Images' if a.main else 'original19Images']=images
  (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))
 if __name__=='__main__':main()
