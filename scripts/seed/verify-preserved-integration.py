@@ -79,12 +79,17 @@ def main():
  policies=['{:allow #{}}','{:allow #{} :deny #{[:cap/call 37]}}','{:allow #{}} ; [:cap/call 37]','{:allow #{[:cap/call 37]}}','not-edn','{:deny #{[:cap/call 37]}}','{:allow #{[:cap/call 999]}}']
  for i,text in enumerate(policies):
   policy=art/f'policy-{i}.edn';policy.write_text(text)
+  accepted_by_current=bool(a.main and i in (0,2,3))
   for command in ['compile','check']:
    for project in [False,True]:
     tag=f'policy-{i}-{command}-{project}';target=art/(tag+'.kseed');argv=prefix+[command,smoke,'--policy',policy,'--target','aarch64-macos']
     if project:argv+=['--source-path',art,'--unpinned']
     if command=='compile':argv+=['--output',target]
-    logs=run(argv,tag,expect=1);assert b'E2170' in logs and not target.exists(),tag+' did not fail closed'
+    if accepted_by_current:
+     run(argv,tag)
+     assert target.exists()==(command=='compile'),tag+' did not preserve the admitted policy result'
+    else:
+     logs=run(argv,tag,expect=1);assert b'E2170' in logs and not target.exists(),tag+' did not fail closed'
  for cmd in ['compile','check']:
   missing=art/'nonexistent-policy.edn';target=art/f'policy-missing-{cmd}.kseed';argv=prefix+[cmd,smoke,'--policy',missing,'--target','aarch64-macos']
   if cmd=='compile':argv+=['--output',target]
@@ -104,6 +109,7 @@ def main():
   run(prefix+['compile',art/(name+'.kotoba'),'--target','aarch64-macos','--output',container],name+'-compile')
   run(prefix+['extract-native',container,'--symbol',symbols[name],'--output',image],name+'-extract');assert sha(image)==oldsha,name+' payload changed'
   images.append({'workload':name,'sha256':sha(image),'baselineImageExact':True})
- report={'status':'PASS_MAIN_AND_PRESERVED_POLICY_SAFETY' if a.main else 'PASS_PRESERVED_SOURCE_SAFETY_REINTEGRATION','sourceUnitySHA256':hashlib.sha256(unity).hexdigest(),'selfhostCompilerSHA256':receipt['nativeImageSHA256'] if a.main else None,'historicalReferenceCompilerSHA256':receipt['historicalReferenceProducerSHA256'] if a.main else None,'generations':gens,'explicitPolicyRefusals':len(policies)*4+6,'policyFreeResult':42,'original19Images':images,'trustedLoaderSHA256':loader_pin,'performanceMeasurement':False,'goalStatus':receipt.get('performanceGoalStatus','unspecified') if a.main else 'paused','currentSourceMainPath':a.main,'releaseOrDefaultLauncherChanged':False,'publicLoaderChanged':False}
+ accepted_policies=12 if a.main else 0
+ report={'status':'PASS_MAIN_AND_PRESERVED_POLICY_SAFETY' if a.main else 'PASS_PRESERVED_SOURCE_SAFETY_REINTEGRATION','sourceUnitySHA256':hashlib.sha256(unity).hexdigest(),'selfhostCompilerSHA256':receipt['nativeImageSHA256'] if a.main else None,'historicalReferenceCompilerSHA256':receipt['historicalReferenceProducerSHA256'] if a.main else None,'generations':gens,'limitedPolicyAcceptances':accepted_policies,'explicitPolicyRefusals':len(policies)*4+6-accepted_policies,'policyFreeResult':42,'original19Images':images,'trustedLoaderSHA256':loader_pin,'performanceMeasurement':False,'goalStatus':receipt.get('performanceGoalStatus','unspecified') if a.main else 'paused','currentSourceMainPath':a.main,'releaseOrDefaultLauncherChanged':False,'publicLoaderChanged':False}
  (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))
 if __name__=='__main__':main()
