@@ -9,10 +9,10 @@ art=W/'artifacts';art.mkdir();raw=W/'raw';raw.mkdir()
 loader=out/'host/kexe-loader'
 producers={'OFF':ROOT/'docs/evidence/pf-twoarg-v7-20261013/previous-certified-calls-bootstrap.bin','ON':out/'artifacts/G2.bin'}
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
-receipt=json.loads((ROOT/'seed/adoption-20261012.json').read_text());assert sha(ROOT/'seed/bootstrap/adopted-loader-20261012.c')==receipt['loaderSourceSHA256']
+receipt=json.loads((ROOT/'seed/adoption-20261017.json').read_text());assert sha(ROOT/receipt['loaderPath'])==receipt['loaderSourceSHA256']
 assert loader.is_file() # Compiled C bytes depend on the host Clang; pinned below for immutability.
 assert sha(producers['OFF'])=='446af9f37538cc37e57cb6133ab8ee2a3400cb001dccfd9e34d5da8e1909f76a'
-assert sha(producers['ON'])==json.loads((ROOT/'seed/adoption-20261012.json').read_text())['nativeImageSHA256']
+assert sha(producers['ON'])==json.loads((ROOT/'seed/adoption-20261017.json').read_text())['nativeImageSHA256']
 fixture=ROOT/'seed/tests/twoarg-comparison-boundaries';meta=json.loads((fixture/'cases.json').read_text());specs=meta['specs'];source=art/'controls.kotoba';source.write_bytes((fixture/'controls.kotoba').read_bytes());assert sha(source)==meta['sourceSHA256'];pins={p:sha(p)for p in [loader,source,*producers.values()]}
 env={k:v for k,v in os.environ.items()if not k.startswith('KEXE_')};env.update(KEXE_COMMAND='1',KEXE_CAP_RESOURCES_35=str(art),KEXE_FUEL='off',KEXE_VECTORS='4194304',KEXE_VECTOR_ITEMS='134217728',KEXE_STRING_POOL='268435456',KEXE_PAIRS='16777216',KEXE_CPU_SECONDS='1800',KEXE_WALL_SECONDS='1800',TMPDIR=str(art))
 calls=[]

@@ -71,13 +71,13 @@ def source_custody_paths(upstream, workload):
 def expected_c_argv_template(upstream, workload, sources):
     rels = [path.relative_to(upstream).as_posix() for path in sources]
     return ['<compiler>', *C_FLAGS, '-I', '<upstream>/support', '-I', '<upstream>/src/' + workload,
-            *['<upstream>/' + rel for rel in rels], '<package>/c/boardsupport.c', '-lm', '-o', '<out>/' + workload]
+            *['<upstream>/' + rel for rel in rels], '<package>/c/boardsupport.c', '-lm', '-o', '<out>/' + workload + '/' + workload]
 
 
 def expected_c_argv(compiler, upstream, root, workload, sources):
     return [compiler, *C_FLAGS, '-I', '<upstream>/support', '-I', '<upstream>/src/' + workload,
             *['<upstream>/' + path.relative_to(upstream).as_posix() for path in sources],
-            '<package>/c/boardsupport.c', '-lm', '-o', '<out>/' + workload]
+            '<package>/c/boardsupport.c', '-lm', '-o', '<out>/' + workload + '/' + workload]
 
 
 def verify_c_binaries(binary_dir, upstream, workloads):

@@ -39,7 +39,7 @@ def main():
     artifacts = out / 'artifacts' / 'lookup-controls'
     artifacts.mkdir(exist_ok=False)
     loader = host / 'kexe-loader'
-    receipt = json.loads((ROOT / 'seed/adoption-20261012.json').read_text())
+    receipt = json.loads((ROOT / 'seed/adoption-20261017.json').read_text())
     producer = host / 'lookup-producer.bin'
     shutil.copyfile(out / 'artifacts/G2.bin', producer)
     if digest(producer) != receipt['nativeImageSHA256']:

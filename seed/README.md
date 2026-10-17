@@ -11,15 +11,19 @@ release, or qualify the whole Amu component as Q9.
 `MANIFEST` fixes the unity order. Concatenating each module followed by one
 newline gives SHA-256
 `a1a718388c55eaf8e9f749ea1829c17ae9d667dbc785194879b0abb8454602b3`.
-`adoption-20261012.json` records all source pins, artifact provenance, the
-correctness scope and measurement boundaries. `HEADS`, `MEMORY-MAP`, and `SIR`
+`adoption-20261017.json` records the current source pins, bootstrap and
+fixed-point image separately, artifact provenance, correctness scope, and
+measurement boundaries. `adoption-20261012.json` remains the historical
+receipt for the prior source closure. `HEADS`, `MEMORY-MAP`, and `SIR`
 are the corresponding compiler contracts, copied without changes.
 
 ## Native self-build
 
-The source-derived, selfhost-built bootstrap image is
-`bootstrap/adopted-20261012.bin` (macOS arm64, entry offset 0, arity 0). It is a
-native code payload used by the pinned C loader, not a standalone OS executable.
+The current source is bootstrapped from
+`bootstrap/adopted-20261012.bin` (macOS arm64, entry offset 0, arity 0). The
+current source's three-generation fixed-point image is recorded separately in
+`adoption-20261017.json`; the bootstrap file remains unchanged. It is a native
+code payload used by the pinned C loader, not a standalone OS executable.
 The loader is trusted C bootstrap infrastructure; this is not a C-free claim.
 The Python script orchestrates the native compiler and Clang loader build only;
 it never compiles Kotoba through Python, Node, nbb, JVM or GraalVM.
@@ -168,20 +172,24 @@ Fully prepaid clamp/mask cores reuse initialized x8=CTX-FUEL. Both Pico images r
 
 ## Same-algorithm m105 adoption (2026-10-16)
 
-The adoption receipt pins the reviewed m105 source unity and fixed-point
-bootstrap. The exported-tree review correction keeps the decision-tree source
-rewrite private, so exported definitions retain their reviewed native body.
-G1, G2 and G3 are byte-identical at SHA-256
-`6b158aa8654706743462b8a730f189072ba05f364b00af28a3f6d23045add2eb`.
-Rebuilding two generations from the adopted image reproduces the same digest.
-The regenerated 19 policy-native golden images are pinned in the receipt.
-Local validation covers 483/483 observations, 19/19 exact workload fuel/arena
-checks, all ten adopted-native regression controls, and 30,888 differential
-cases against the prior m105 image with zero mismatches. The main policy
-integration also reproduced all 19 pinned original images and passed all 34
-explicit policy refusals.
+The 2026-10-16 receipt pins the earlier m105 source and fixed-point bootstrap.
+The current source closure adds the `enc-smulh` lowering and is pinned by
+`adoption-20261017.json`. Starting from the historical bootstrap, its G1, G2,
+and G3 images are byte-identical at SHA-256
+`b10e381344a1f5a8b82cac981c0011bd20ecbcc4b48dd5f5dce97364c74e8a00`. The 19
+policy-native golden images remain pinned to their historical source and
+compiler; the current receipt records those reference hashes separately.
+The main-source correctness check also pins the current M105 build report,
+image manifest, and exactness record so rebuilt images are compared with the
+current source outputs while the historical archive keeps its original hashes.
+The earlier adoption's local validation covered 483/483 observations, 19/19
+exact workload fuel/arena checks, all ten adopted-native regression controls,
+and 30,888 differential cases against the prior m105 image with zero
+mismatches. The new source's self-host rebuild evidence records G1/G2/G3
+identity; CI validates its source pins and integrations.
 
 No official m105 Embench round was run. The published 0.8213 ratio remains
 specific to the m104 compiler and its pinned images. See
-[`docs/evidence/same-algo-m105-20261016/`](../docs/evidence/same-algo-m105-20261016/)
-and the current receipt at `adoption-20261012.json`.
+[`docs/evidence/same-algo-m105-20261016/`](../docs/evidence/same-algo-m105-20261016/),
+the historical receipt at `adoption-20261012.json`, and the current receipt at
+`adoption-20261017.json`.
