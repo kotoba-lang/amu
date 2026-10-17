@@ -49,7 +49,7 @@ def inputs(receipt_path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--verify-only', action='store_true')
-    parser.add_argument('--receipt', type=Path, default=ROOT / 'seed/adoption-20261017.json')
+    parser.add_argument('--receipt', type=Path, default=ROOT / 'seed/adoption-20261018.json')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--generations', type=int, choices=[1, 2, 3], default=3)
     args = parser.parse_args()

@@ -1,0 +1,69 @@
+{
+  "schema": "amu.embench.sglib-hot-profile-evidence/v1",
+  "control": {
+    "sourceSHA256": "2122b3005ad248c096153bc148ac9df58b6022b37ae025caea948dd0dc7c0210",
+    "imageSHA256": "5e0b9072eb8a404479d569c5986ba6f008bd6143b8815fb0ea2db3f2e91d0040",
+    "n": 253952,
+    "result": 1,
+    "benchmarkFuel": 3858038786,
+    "verifyFuel": 605
+  },
+  "profile": {
+    "hostQualification": "loaded exploratory host; not quiet-qualified",
+    "durationSeconds": 2,
+    "sampleIntervalMilliseconds": 1,
+    "callGraphSamples": 1656,
+    "regions": [
+      { "offsetStart": "0x3e00", "offsetEnd": "0x4300", "samples": 390, "mapping": "list-merge" },
+      { "offsetStart": "0x6600", "offsetEnd": "0x6c00", "samples": 187, "mapping": "heap-down" },
+      { "offsetStart": "0x9200", "offsetEnd": "0x9b00", "samples": 363, "mapping": "tree search/insert/rebalance" },
+      { "offsetStart": "0x9b00", "offsetEnd": "0xb000", "samples": 113, "mapping": "tree traversal/helper region; exact function boundary unknown" }
+    ],
+    "timingClaim": false
+  },
+  "candidate": {
+    "change": "branchless source-level list-merge compare and selection",
+    "sourceSHA256": "01ede54850244a7585e1e8e53f08cdad02dcef884c217e920c6061fe73ca86ec",
+    "kseedSHA256": "73585f24f8dfae9ee864f954a6cf5b5f166c104e7ad4bdc72382a41d7621cf1d",
+    "imageBytes": 51920,
+    "imageSHA256": "550065d1c25bd088745b2a3937308c49712cecfecbb24ac8081d7da915ef9f24",
+    "exactness": {
+      "n": 253952,
+      "pass": true,
+      "result": 1,
+      "benchmarkFuel": 3858038786,
+      "verifyFuel": 605,
+      "arenaMatches": true
+    },
+    "instructionCount": {
+      "runsPerArm": 3,
+      "control": [30970746764, 30977994573, 30969314242],
+      "candidate": [37418799985, 37415446143, 37422735443],
+      "controlMedian": 30970746764,
+      "candidateMedian": 37418799985,
+      "candidateOverControl": 1.2081981836,
+      "diagnosticGate": "FAIL; exceeds preregistered +/-2% range",
+      "timingRun": false
+    },
+    "promoted": false
+  },
+  "kernelAdmissionFingerprint": {
+    "kernel": "lp-entry exact-shape Sglib list-sort body",
+    "wordCount": 104,
+    "signatureBytes": 416,
+    "controlOffset": 16280,
+    "inputTableSourceCandidateOffset": 16232,
+    "branchlessListMergeSourceCandidateOffset": -1,
+    "interpretation": "the branchless port rewrite no longer contains the emitted lp-entry body; the existing shape-specialized path was lost",
+    "verifier": "verify-lp-kernel-fingerprint.py"
+  },
+  "provenance": {
+    "timerSHA256": "d3d0a129d24de28e8dc5ab785c9b5ad5061c790838bea4a0723c2be75fcea417",
+    "sampleSHA256": "bc91171b3629cd62f520525ae7326c7b69415e4489e769afd73e4481772e88cb",
+    "vmmapSHA256": "c79bcb947476ae9c1a7f8ec0ef97612c4667782151c778b7f328eff008647e60",
+    "controlDisassemblySHA256": "15e8fd50f780739814f7a7c7355d1b43549b4456717a4fdfdc6ecdfc159a0408",
+    "candidateDisassemblySHA256": "243c4a6b236d1eecad68a868fbafdb7d7318156c05c05cefc1754a29c1110fce",
+    "exactnessReportSHA256": "125b93b1fc1e58a692470ff9ef84b911de9e6094026d1b3f1521abeafe2faf59",
+    "instructionCountReportSHA256": "3bfcc6952ee93c056a4034852a014d0c70c9f7558c9f61e6c086e66804bb0724"
+  }
+}

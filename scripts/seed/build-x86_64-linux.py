@@ -25,7 +25,7 @@ def build(output):
     spec = importlib.util.spec_from_file_location("adopted_build", ROOT / "scripts/seed/build-adopted.py")
     adopted = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(adopted)
-    receipt, _, producer, loader_source = adopted.inputs(ROOT / "seed/adoption-20261017.json")
+    receipt, _, producer, loader_source = adopted.inputs(ROOT / "seed/adoption-20261018.json")
     manifest = ROOT / "seed/X86_64-LINUX-MANIFEST"
     paths = [ROOT / x for x in manifest.read_text().splitlines() if x and not x.startswith("#")]
     unity = b"".join(p.read_bytes() + b"\n" for p in paths)
@@ -81,7 +81,8 @@ def build(output):
               "hostTarget": "aarch64-macos", "outputTarget": "x86_64-linux",
               "outputProfile": "scalar ELF64, main()->i64, at most five scalar arguments",
               "x86CompilerSelfhostClaim": False, "JVMNodeOrGraalFallback": False,
-              "trustedCLoader": True, "adoptedBootstrap": receipt["nativeImageSHA256"],
+              "trustedCLoader": True,
+              "adoptedBootstrap": receipt.get("bootstrapSHA256", receipt["nativeImageSHA256"]),
               "sourceUnitySHA256": hashlib.sha256(unity).hexdigest(),
               "inputs": inputs, "generations": generations, "performanceMeasured": False}
     (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")

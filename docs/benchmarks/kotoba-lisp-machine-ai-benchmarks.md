@@ -6,16 +6,17 @@ We are building this architecture for artificial intelligence, including the pos
 
 ## What the benchmarks show
 
-The available results do not establish that Kotoba or Amu is the world's fastest language. They answer narrower questions, on particular workloads and machines. Both measurements below used bootstrap compiler routes; neither is a selfhost-built compiler result.
+The available results do not establish that Kotoba or Amu is the world's fastest language. They answer narrower questions, on particular workloads and machines. The corrected M104 Embench comparison used a selfhost fixed-point compiler (G1 = G2 = G3), built from the public bootstrap; the September cross-language comparison used the Node/nbb bootstrap route. Selfhosting describes how the compiler was produced, not why a benchmark workload runs faster.
 
 | Study | Result | Compiler provenance | Interpretation |
 | --- | --- | --- | --- |
 | Embench IoT translated-port comparison, 15 October 2026 | 19 Kotoba ports; one accepted sample per workload; reported geometric-mean time ratio 0.7999 against upstream C built with Apple Clang 17 at -O2 | m93 seed compiler, bootstrap reference; compiler source commit be7f0ce358ebe8d1a715b2784f272ce0eda8e934 | Exploratory only. Five ports were marked as workload substitutions, and the Kotoba SHA-256 path used ARMv8 SHA instructions that the C baseline did not. This is not a certified Embench score, a like-for-like language ranking, or a universal fastest claim. |
+| Corrected Embench-derived comparison, M104 | Geometric-mean Kotoba/C time ratio 0.8213 on one Apple M4 cycle; 0.7877703356 on a separate M4 Mac mini cycle. On the latter, Kotoba was faster on 12 of 19 workloads; C was faster on 7. | Selfhost fixed-point M104 compiler, source `a9edc1f0`; the separate cycle rebuilt C with Apple Clang 21.0.0. | Same-algorithm-only translated-port comparison with scalar SHA-256. It is workload-specific, uses one accepted sample per workload, and is not a certified Embench score or universal fastest claim. |
 | Amu native cross-language runtime comparison, 7 September 2026 | Six kernel domains against Rust, Clang/C11, Zig, Go c-shared, and Swift; 19 of 30 comparator/domain pairs qualified in every recorded run | Amu native artifacts produced with the canonical bin/amu Node/nbb bootstrap route; compiler commit 42f092ea5b6192f02f3c361535a37521b2ab6ab1 | All 30 known answers were verified, but the bounded fastest claim did not qualify. This report is historical and outside the suite's 24-hour freshness window. |
 
 The cross-language qualified-pair counts were: Clang/C11 2 of 6, Rust 1 of 6, Zig 5 of 6, Go c-shared 6 of 6, and Swift 5 of 6. A pair counted only when Amu was at least 5% faster and the result was separated from the measured spread. These counts describe the named M4 workload suite, not all programs or processors.
 
-The Embench ratio is included so the raw result is visible, not as a speed claim. Exact output checks passed, but exact answers alone do not make different amounts or kinds of algorithmic work comparable. The audit lists the affected workloads and the architecture-specific SHA path in the machine-readable report.
+The M93 Embench ratio is included so the historical result stays visible; its substitutions and Kotoba-only SHA instructions make it unsuitable as a like-for-like claim. The corrected M104 result shows that a selfhosted compiler can produce faster code on some measured workloads, but exact output checks alone do not make different implementations equivalent. The M104 audit records the same-algorithm kernel scope, and its geometric mean still includes seven workloads where C was faster.
 
 ## Raising the bar for the next comparison
 

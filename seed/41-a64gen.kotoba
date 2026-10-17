@@ -204,6 +204,36 @@
 (defn- gn-pow2 [k :i64] :i64
   (if (and (> k 1) (= (bit-and k (- k 1)) 0)) (gn-tz k 0) 0))
 
+;; exact floor(log2(k)) for k > 0
+(defn- gn-floor-log2 [k :i64 n :i64] :i64
+  (if (<= k 1) n (gn-floor-log2 (u64-shift-right k 1) (inc n))))
+;; ceil(2^(64+p) / d), where p = floor(log2(d)) and d is positive/non-power-of-two.
+;; The 64 quotient bits are built by binary long division from the initial remainder 2^p.
+;; `r >= d-r` computes whether 2*r >= d without overflowing signed i64.
+(defn- gn-sdiv-magic [d :i64 p :i64] :i64
+  (loop [i 0 q 0 r (i64-shift-left 1 p)]
+    (if (>= i 64)
+      (if (> r 0) (inc q) q)
+      (let [dr (- d r)
+            bit (>= r dr)
+            q2 (i64-shift-left q 1)
+            r2 (if bit (- r dr) (+ r r))]
+        (recur (inc i) (if bit (inc q2) q2) r2)))))
+;; d > 1, d is not a power of two. With p=floor(log2(d)), M=ceil(2^(64+p)/d)
+;; is in [2^63,2^64). The reciprocal error is <2^(-64-p), so for |x|<=2^63
+;; its quotient error is <2^(-p-1)<1/d; integer boundaries therefore cannot
+;; be crossed. SMULH plus x restores the unsigned M, ASR p floors, and adding
+;; the sign bit converts negative floor to truncation toward zero.
+;; mr is a stable magic register; x16/x17 remain scratch and dst is never x17.
+(defn- gn-sdiv-regmagic [M :vector-i64 dst :i64 x :i64 mr :i64 p :i64] :vector-i64
+  (let [alias (= dst x)
+        saved (cond (not alias) x (= x 16) 17 :else 16)
+        M0 (if alias (gn-mov M saved x) M)
+        M1 (gn-emit M0 (enc-smulh dst saved mr))]
+    (-> M1 (gn-emit (enc-add-r dst dst saved))
+           (gn-emit (gn-e-asr dst dst p))
+           (gn-emit (gn-e-lsr 17 dst 63))
+           (gn-emit (enc-add-r dst dst 17)))))
 ;; ---- temps: descriptors -> registers --------------------------------------------------------------------------------
 ;; the register that holds temp t now, or -1 when it must first be loaded into a scratch; z = 1: a CONST 0 may be
 ;; read as xzr (only for operand positions where register 31 means xzr)
@@ -1890,30 +1920,6 @@
                   (gn-gs gn-f-vslot (if (= (gn-g M2 gn-f-vmode) 2) -1 0)) (gn-tree-entry f) (eq-chain-entry f) (vl-entry i f np) (pf-entry i f np) (ve-entry i f np)))))))
 
 (defn- gn-op-ret [M :vector-i64 t :i64] :vector-i64 (gn-epilogue (gn-into M 0 t)))
-;; When an integer ADD writes a temp used only by the immediately following
-;; RET, its final A64 instruction can write x0 directly. Admit only the exact
-;; emitted ADD-immediate/register destination and SIR adjacency; all other
-;; return shapes retain the normal temp-to-x0 move.
-(defn- gn-ret-add? [M :vector-i64 i :i64 t :i64] :bool
-  (and (> i 1) (< (+ i 1) (vector-at M MM-SIR-N))
-       (>= t 0) (< t 7)
-       (= (gn-op M (dec i)) OP-BIN)
-       (= (gn-sir M (dec i) IF-A) BOP-ADD)
-       (= (gn-sir M (dec i) IF-B) t)
-       (= (gn-sir M i IF-A) t)
-       (= (gn-op M (inc i)) OP-END)
-       (> (vector-at M MM-CODE-N) 0)
-       (let [at (dec (vector-at M MM-CODE-N))
-             word (vector-at M (+ MM-CODE-BASE at))]
-         (and (or (= (bit-and word 0xffc00000) 0x91000000)
-                  (= (bit-and word 0xffe0fc00) 0x8b000000))
-              (= (bit-and word 31) (+ 9 t))))))
-(defn- gn-op-ret-at [M :vector-i64 i :i64 t :i64] :vector-i64
-  (if (gn-ret-add? M i t)
-    (let [at (+ MM-CODE-BASE (dec (vector-at M MM-CODE-N)))
-          word (vector-at M at)]
-      (gn-epilogue (gn-put M at (bit-and word (bit-not 31)))))
-    (gn-op-ret M t)))
 ;; R5B: RET2 t -- x0 := temp t, x1 := temp t+1 (through x16: either source may be x0 or x1 in a leaf), then the epilogue
 (defn- gn-op-ret2 [M :vector-i64 t :i64] :vector-i64 (-> M (gn-into 16 (inc t)) (gn-into 0 t) (gn-mov 1 16) (gn-epilogue)))
 ;; R5B: RES2 t (right after a CALL): temp t := x1, the CALL's second result register
@@ -7174,6 +7180,9 @@
                 (gn-mov ri 1) (gn-mov rj 2) (gn-mov rd 3) (gn-mov-imm 5 0)
                 (gn-fix FX-B26 (gn-sir M (+ p 2) IF-A)) (gn-emit (enc-b 0)) (kb-keep))]
       (ri-patch m0 G 0 (vector-at m0 MM-CODE-N))))))))
+;; Four-wide early stop: test whether x19..x22 are all leaves after each of
+;; the first four walk-level groups. TBNZ reaches common commit validation.
+;; Raw direct branches crossing these insertions are relocated with the added words.
 ;; ---- tw (kernels B, step 2; step 3 group commit): xgboost (trees v sample cls j tree nb lb), the class loop of tree
 ;; walks, four walks of one class at a time over the source planes: per walk (walk v sample nb lb 0) reads per level
 ;; feature, threshold, both children and x = v[31235 + 64 sample + feature], branch free for five levels (node 0 is never
@@ -7201,7 +7210,7 @@
      (let [G (vector-alloc 15)
            m0 (-> M (kb-vec G rv 3 0) (gn-mov 1 (gn-sreg M 2)) (gn-mov 2 (gn-sreg M 3)) (gn-mov 5 (gn-sreg M 4))
                 (gn-mov 6 (gn-sreg M 5)) (gn-mov 9 (gn-sreg M 6)) (gn-mov 10 (gn-sreg M 7)) (gn-emit (enc-ldr 4 7 CTX-FUEL))
-                (kb-words G [0xF13FFC3F 9 0xD37AE430 0xD28F4851 0x8B110210 0xEB03021F 3 0xD29351B0 0xEB10007F 4 0xF100285F 9 0xF100A0BF 9 0xD10203FF 0xA90053F3 0xA9015BF5 0xA90263F7 0xA9036BF9 0xA90473FB 0xF9002BE3 0x9132000B 0xD2995710 0x8B10000C 0xD2911E10 0xF2A00030 0x8B10000D 0xD288E510 0xF2A00050 0x8B10000E 0xD29A0310 0xF2A00070 0x8B10000F 0x8B0125EF 0xF100285F 0x54002CE2 0xF100A0BF 0x540000E1 0xF100089F 0x54002C6B 0xD1000484 0x91000442 0xD2800005 0x17FFFFF7 0xF100A09F 0x54002BAB 0xF24004BF 0x54002B61 0xF10090BF 0x54002B28 0xF9402BE3 0x91000CD0 0xEB03021F 0x54002AA2 0xB7F82A86 0x8B060C10 0xA9406217 0xA9416A19 0xAA1802F1 0xAA190231 0xAA1A0231 0xF110023F 0x54002982 0xD2A00211 0xEB11013F 0x54002922 0xEB11015F 0x540028E2 0x8B1802F1 0x8B190231 0x8B1A0231 0xF9002FF1 0x8B110130 0xD2892C88 0x8B080210 0xEB03021F 0x540027C2 0x8B110150 0xD28C25E8 0x8B080210 0xEB03021F 0x54002722 0x8B17013A 0x8B18035A 0x8B19035A 0x8B170139 0x8B180339 0x8B170138 0xAA0903F7 0xD280009B 0xF8777963 0xF8777988 0xF87779B0 0xF87779C1 0x92401471 0xAA0303FC 0xF87179F1 0xEB08023F 0x9A81B213 0xF8787963 0xF8787988 0xF87879B0 0xF87879C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B214 0xF8797963 0xF8797988 0xF87979B0 0xF87979C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B215 0xF87A7963 0xF87A7988 0xF87A79B0]) (kb-words G [0xF87A79C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B216 0x92401A61 0x8B170021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF102027F 0x9A9B277B 0x9A933213 0x92401A81 0x8B180021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF102029F 0x9A9B277B 0x9A943214 0x92401AA1 0x8B190021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF10202BF 0x9A9B277B 0x9A953215 0x92401AC1 0x8B1A0021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF10202DF 0x9A9B277B 0x9A963216 0x92401A61 0x8B170021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF102027F 0x9A9B277B 0x9A933213 0x92401A81 0x8B180021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF102029F 0x9A9B277B 0x9A943214 0x92401AA1 0x8B190021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF10202BF 0x9A9B277B 0x9A953215 0x92401AC1 0x8B1A0021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF10202DF 0x9A9B277B 0x9A963216 0x92401A61 0x8B170021]) (kb-words G [0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF102027F 0x9A9B277B 0x9A933213 0x92401A81 0x8B180021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF102029F 0x9A9B277B 0x9A943214 0x92401AA1 0x8B190021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF10202BF 0x9A9B277B 0x9A953215 0x92401AC1 0x8B1A0021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF10202DF 0x9A9B277B 0x9A963216 0x92401A61 0x8B170021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF102027F 0x9A9B277B 0x9A933213 0x92401A81 0x8B180021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF102029F 0x9A9B277B 0x9A943214 0x92401AA1 0x8B190021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF10202BF 0x9A9B277B 0x9A953215 0x92401AC1 0x8B1A0021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF10202DF 0x9A9B277B 0x9A963216 0xAA140270 0xAA150210 0xAA160210 0xF104021F 0x54000502 0x8A140271 0x8A150231 0x8A160231 0x36380491 0xF101039F]) (kb-words G [0x54000442 0x91003371 0xCB110084 0xCB090150 0xD28C0591 0x8B110210 0x8B100C10 0x8B1302E1 0x8B140303 0x8B150328 0x8B160351 0x91000463 0x91000908 0x91000E31 0xF8617A01 0xF8637A03 0xF8687A08 0xF8717A11 0xD2935070 0x8B020210 0x8B100C10 0xF9400217 0x8B0102F7 0x8B0302F7 0x8B0802F7 0x8B1102F7 0xF9000217 0xF9402FF0 0x910010A5 0x910010C6 0x8B100129 0x8B10014A 0x9100114A 0x17FFFE99 0xA94053F3 0xA9415BF5 0xA94263F7 0xA9436BF9 0xA94473FB 0x910203FF])
+                (kb-words G [0xF13FFC3F 0x00000009 0xD37AE430 0xD28F4851 0x8B110210 0xEB03021F 0x00000003 0xD29351B0 0xEB10007F 0x00000004 0xF100285F 0x00000009 0xF100A0BF 0x00000009 0xD10203FF 0xA90053F3 0xA9015BF5 0xA90263F7 0xA9036BF9 0xA90473FB 0xF9002BE3 0x9132000B 0xD2995710 0x8B10000C 0xD2911E10 0xF2A00030 0x8B10000D 0xD288E510 0xF2A00050 0x8B10000E 0xD29A0310 0xF2A00070 0x8B10000F 0x8B0125EF 0xF100285F 0x54002EE2 0xF100A0BF 0x540000E1 0xF100089F 0x54002E6B 0xD1000484 0x91000442 0xD2800005 0x17FFFFF7 0xF100A09F 0x54002DAB 0xF24004BF 0x54002D61 0xF10090BF 0x54002D28 0xF9402BE3 0x91000CD0 0xEB03021F 0x54002CA2 0xB7F82C86 0x8B060C10 0xA9406217 0xA9416A19 0xAA1802F1 0xAA190231 0xAA1A0231 0xF110023F 0x54002B82 0xD2A00211 0xEB11013F 0x54002B22 0xEB11015F 0x54002AE2 0x8B1802F1 0x8B190231 0x8B1A0231 0xF9002FF1 0x8B110130 0xD2892C88 0x8B080210 0xEB03021F 0x540029C2 0x8B110150 0xD28C25E8 0x8B080210 0xEB03021F 0x54002922 0x8B17013A 0x8B18035A 0x8B19035A 0x8B170139 0x8B180339 0x8B170138 0xAA0903F7 0xD280009B 0xF8777963 0xF8777988 0xF87779B0 0xF87779C1 0x92401471 0xAA0303FC 0xF87179F1 0xEB08023F 0x9A81B213 0xF8787963 0xF8787988 0xF87879B0 0xF87879C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B214 0xF8797963 0xF8797988 0xF87979B0 0xF87979C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B215 0xF87A7963 0xF87A7988 0xF87A79B0 0xF87A79C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B216 0x8A140271 0x8A150231]) (kb-words G [0x8A160231 0x37381DB1 0x92401A61 0x8B170021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF102027F 0x9A9B277B 0x9A933213 0x92401A81 0x8B180021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF102029F 0x9A9B277B 0x9A943214 0x92401AA1 0x8B190021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF10202BF 0x9A9B277B 0x9A953215 0x92401AC1 0x8B1A0021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF10202DF 0x9A9B277B 0x9A963216 0x8A140271 0x8A150231 0x8A160231 0x37381631 0x92401A61 0x8B170021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF102027F 0x9A9B277B 0x9A933213 0x92401A81 0x8B180021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF102029F 0x9A9B277B 0x9A943214 0x92401AA1 0x8B190021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF10202BF 0x9A9B277B 0x9A953215 0x92401AC1 0x8B1A0021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF10202DF 0x9A9B277B 0x9A963216 0x8A140271 0x8A150231 0x8A160231 0x37380EB1 0x92401A61 0x8B170021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1]) (kb-words G [0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF102027F 0x9A9B277B 0x9A933213 0x92401A81 0x8B180021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF102029F 0x9A9B277B 0x9A943214 0x92401AA1 0x8B190021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF10202BF 0x9A9B277B 0x9A953215 0x92401AC1 0x8B1A0021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF10202DF 0x9A9B277B 0x9A963216 0x8A140271 0x8A150231 0x8A160231 0x37380731 0x92401A61 0x8B170021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF102027F 0x9A9B277B 0x9A933213 0x92401A81 0x8B180021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF102029F 0x9A9B277B 0x9A943214 0x92401AA1 0x8B190021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF10202BF 0x9A9B277B 0x9A953215 0x92401AC1 0x8B1A0021 0xF8617963 0xF8617988 0xF86179B0 0xF86179C1 0x92401471 0xAA03039C 0xF87179F1 0xEB08023F 0x9A81B210 0xF10202DF 0x9A9B277B 0x9A963216 0xAA140270 0xAA150210 0xAA160210 0xF104021F 0x54000502 0x8A140271 0x8A150231 0x8A160231 0x36380491 0xF101039F 0x54000442 0x91003371 0xCB110084 0xCB090150 0xD28C0591 0x8B110210 0x8B100C10 0x8B1302E1]) (kb-words G [0x8B140303 0x8B150328 0x8B160351 0x91000463 0x91000908 0x91000E31 0xF8617A01 0xF8637A03 0xF8687A08 0xF8717A11 0xD2935070 0x8B020210 0x8B100C10 0xF9400217 0x8B0102F7 0x8B0302F7 0x8B0802F7 0x8B1102F7 0xF9000217 0xF9402FF0 0x910010A5 0x910010C6 0x8B100129 0x8B10014A 0x9100114A 0x17FFFE89 0xA94053F3 0xA9415BF5 0xA94263F7 0xA9436BF9 0xA94473FB 0x910203FF])
                 (gn-emit (enc-str 4 7 CTX-FUEL)) (gn-emit (enc-ldr 8 7 CTX-FUEL))
                 (gn-mov (gn-sreg M 3) 2) (gn-mov (gn-sreg M 4) 5) (gn-mov (gn-sreg M 5) 6) (gn-mov (gn-sreg M 6) 9)
                 (gn-mov (gn-sreg M 7) 10) (gn-fix FX-B26 (gn-sir M (+ p 2) IF-A)) (gn-emit (enc-b 0)) (kb-keep))]
@@ -16760,7 +16769,7 @@
 (defn- trg-ret [M :vector-i64 i :i64 t :i64] :vector-i64
  (let [f (if (and (trg-counts M) (> i 15)) (gn-sir M (- i 15) IF-A) 0)
        tagged (and (> (trg-clone M f) 0) (= (gn-fnf M f FF-SIR) (- i 15)) (= t 0))
-       m (gn-op-ret-at M i t) at (dec (vector-at m MM-CODE-N))]
+       m (gn-op-ret M t) at (dec (vector-at m MM-CODE-N))]
   (if (not tagged) m
    (if (or (<= at 0) (>= at MM-CODE-CAP)
        (not= (vector-at m (+ MM-CODE-BASE at)) (enc-ret))
@@ -21367,8 +21376,28 @@
       (cond (and (= bop BOP-MUL) (not (t2-isconst? M a)) (not (t2-isconst? M b))) 1
             (and (= bop BOP-MUL) (not (t2-isconst? M a)) (t2-isconst? M b) (> (gn-pow2 (t2-kval M b)) 0)) 2
             (and (= bop BOP-MUL) (t2-isconst? M a) (not (t2-isconst? M b)) (> (gn-pow2 (t2-kval M a)) 0)) 2
+            ;; A SUB of a product by a non-power-of-two constant can use MSub.
+            (and (= bop BOP-MUL) (= (t2-vf M v t2-f-a) BOP-SUB) (not (t2-isconst? M a)) (t2-isconst? M b)
+                 (> (t2-kval M b) 1) (= (gn-pow2 (t2-kval M b)) 0)) 3
+            (and (= bop BOP-MUL) (= (t2-vf M v t2-f-a) BOP-SUB) (t2-isconst? M a) (not (t2-isconst? M b))
+                 (> (t2-kval M a) 1) (= (gn-pow2 (t2-kval M a)) 0)) 3
             (and (= bop BOP-SHL) (not (t2-isconst? M a)) (t2-isconst? M b) (> (bit-and (t2-kval M b) 63) 0)) 2
             :else 0))))
+(defn- t2-rem-reuse? [M :vector-i64 m :i64 v :i64] :bool
+  (let [a (t2-res M (t2-vf M m t2-f-b)) b (t2-res M (t2-vf M m t2-f-c))
+        kx (if (t2-isconst? M a) a b) q (if (t2-isconst? M a) b a) k (t2-kval M kx)
+        qx (t2-res M (t2-vf M q t2-f-b)) qk (t2-res M (t2-vf M q t2-f-c))
+        x (t2-res M (t2-vf M v t2-f-b))]
+    (and (= (t2-vf M v t2-f-a) BOP-SUB) (> k 1) (= (gn-pow2 k) 0)
+         (not (t2-isconst? M q)) (= (t2-op-of M q) t2-bin) (= (t2-vf M q t2-f-a) BOP-QUOT)
+         (= (t2-xf M q t2-x-uses) 1) (= qx x) (t2-isconst? M qk) (= (t2-kval M qk) k)
+         (= (t2-vf M q t2-f-blk) (t2-vf M v t2-f-blk)) (< q m) (< m v)
+         ;; The quotient leaves its divisor in x17. Only no-code values may
+         ;; intervene before MSub consumes it.
+         (loop [i (inc q)]
+           (or (>= i v)
+               (and (or (= i m) (t2-gone? M i) (= (t2-op-of M i) t2-const) (= (t2-op-of M i) t2-phi))
+                    (recur (inc i))))))))
 (defn- t2-fusedop [M :vector-i64 v :i64] :i64
   (let [x (t2-res M (t2-vf M v t2-f-b)) y (t2-res M (t2-vf M v t2-f-c))]
     (if (and (> y 0) (= (bit-and (t2-xf M y t2-x-flags) 32) 32)) y x)))
@@ -21382,7 +21411,8 @@
                       (and (= (t2-vf M v t2-f-a) BOP-ADD) (> (t2-prod-kind M x v) 0) (not (t2-isconst? M y))) x
                       :else 0)]
           (if (> m 0)
-            (-> M (t2-xs m t2-x-flags (bit-or (t2-xf M m t2-x-flags) 32)) (t2-xs v t2-x-flags (bit-or (t2-xf M v t2-x-flags) 64)))
+            (-> M (t2-xs m t2-x-flags (bit-or (t2-xf M m t2-x-flags) 32))
+                  (t2-xs v t2-x-flags (bit-or (t2-xf M v t2-x-flags) (bit-or 64 (if (t2-rem-reuse? M m v) 1024 0)))))
             M))
         M)
       (inc v) nv)))
@@ -22600,6 +22630,7 @@
              (let [Ma (t2-src M2 c 16) rc (t2-last Ma)] (t2-jmp Ma FX-CB19 l (if jnz (enc-cbnz rc 0) (enc-cbz rc 0)))))]
     (-> M3 (t2-copies fOUT OUT) (t2-jmp FX-B26 (t2-tlab M3 s OUT) (enc-b 0)) (t2-s t2-s-inrot 0))))
 ;; ---- constants of a fast loop that need materializing live in free caller-saved registers, set after the precheck ----
+;; Hoist keys are positive value IDs for literal values and negative IDs for quotient magic reciprocals.
 (def t2-s-nhoist 56)
 (def t2-s-hbusy 57)
 (def t2-a-hoist (+ t2-a-hint t2-maxv))   ; 16 x (const value, register)
@@ -22608,6 +22639,10 @@
     (loop [i 0] (cond (>= i (t2-g M t2-s-nhoist)) -1
                       (= (t2-g M (+ t2-a-hoist (* 2 i))) x) (t2-g M (+ t2-a-hoist (* 2 i) 1))
                       :else (recur (inc i))))))
+(defn- t2-hoist-magic? [M :vector-i64 v :i64 x0 :i64] :bool
+  (let [x (t2-res M x0) k (t2-kval M x)]
+    (and (= (t2-op-of M v) t2-bin) (= (t2-vf M v t2-f-a) BOP-QUOT)
+         (= x (t2-res M (t2-vf M v t2-f-c))) (t2-isconst? M x) (> k 1) (= (gn-pow2 k) 0))))
 ;; registers busy anywhere in positions [p0, p1]: live values and the fixed descriptor/string-slot/table registers
 (defn- t2-busy-in [M :vector-i64 p0 :i64 p1 :i64] :i64
   (let [m (loop [v 1 m 0]
@@ -22631,31 +22666,43 @@
              ;; the divisor of a quotient by a constant that is not a power of two (sdiv by the register then)
              (and (= (t2-op-of M v) t2-bin) (= (t2-vf M v t2-f-a) BOP-QUOT) (= x (t2-res M (t2-vf M v t2-f-c)))
                   (= (gn-pow2 k) 0) (not= k 1) (not= k 0) (not= k -1))))))
-(defn- t2-hoist-add [M :vector-i64 x0 :i64 busy :i64] :vector-i64
-  (let [x (t2-res M x0) n (t2-g M t2-s-nhoist)]
-    (if (or (>= n 16) (>= (t2-hoisted-any M x) 0)) M
+(defn- t2-hoist-add [M :vector-i64 x0 :i64 busy :i64 divmagic :bool] :vector-i64
+  (let [x (t2-res M x0) key (if divmagic (- x) x) n (t2-g M t2-s-nhoist)]
+    (if (or (>= n 16) (>= (t2-hoisted-any M key) 0)) M
       (let [taken (bit-or busy (t2-g M t2-s-hbusy))
             r (loop [i 0] (if (>= i 14) -1
                             (let [c (if (< i 7) (+ 9 i) (- i 7))]
                               (if (= (bit-and taken (i64-shift-left 1 c)) 0) c (recur (inc i))))))]
         (if (< r 0) M
-          (-> M (t2-s (+ t2-a-hoist (* 2 n)) x) (t2-s (+ t2-a-hoist (* 2 n) 1) r) (t2-s t2-s-nhoist (inc n))
+          (-> M (t2-s (+ t2-a-hoist (* 2 n)) key) (t2-s (+ t2-a-hoist (* 2 n) 1) r) (t2-s t2-s-nhoist (inc n))
               (t2-s t2-s-hbusy (bit-or (t2-g M t2-s-hbusy) (i64-shift-left 1 r)))))))))
 (defn- t2-hoisted-any [M :vector-i64 x :i64] :i64
   (loop [i 0] (cond (>= i (t2-g M t2-s-nhoist)) -1
                     (= (t2-g M (+ t2-a-hoist (* 2 i))) x) i
                     :else (recur (inc i)))))
+(defn- t2-hoist-fused-mul? [M :vector-i64 v :i64] :bool
+  (if (and (= (bit-and (t2-xf M v t2-x-flags) 32) 32) (= (t2-op-of M v) t2-bin) (= (t2-vf M v t2-f-a) BOP-MUL))
+    (let [a (t2-res M (t2-vf M v t2-f-b)) b (t2-res M (t2-vf M v t2-f-c))]
+      (or (and (not (t2-isconst? M a)) (t2-isconst? M b) (> (t2-kval M b) 1) (= (gn-pow2 (t2-kval M b)) 0))
+          (and (t2-isconst? M a) (not (t2-isconst? M b)) (> (t2-kval M a) 1) (= (gn-pow2 (t2-kval M a)) 0))))
+    false))
 (defn- t2-hoist-vals [M :vector-i64 v :i64 v1 :i64 busy :i64] :vector-i64
   (if (>= v v1) M
     (let [op (t2-op-of M v)
-          M1 (if (or (t2-gone? M v) (= op t2-phi) (not= (bit-and (t2-xf M v t2-x-flags) 32) 0)) M
+          M1 (if (or (t2-gone? M v) (= op t2-phi)
+                     (and (= (bit-and (t2-xf M v t2-x-flags) 32) 32) (not (t2-hoist-fused-mul? M v)))) M
                (cond (or (= op t2-bin) (= op t2-cmp))
-                     (-> M (cond-> (t2-hoist-want? M v (t2-vf M v t2-f-b)) (t2-hoist-add (t2-vf M v t2-f-b) busy))
-                           (cond-> (t2-hoist-want? M v (t2-vf M v t2-f-c)) (t2-hoist-add (t2-vf M v t2-f-c) busy)))
-                     (= op t2-vset) (-> M (cond-> (t2-hoist-want? M v (t2-vf M v t2-f-c)) (t2-hoist-add (t2-vf M v t2-f-c) busy))
-                                        (cond-> (t2-hoist-want? M v (t2-vf M v t2-f-b)) (t2-hoist-add (t2-vf M v t2-f-b) busy)))
+                     (-> M (cond-> (t2-hoist-want? M v (t2-vf M v t2-f-b))
+                                     (t2-hoist-add (t2-vf M v t2-f-b) busy (t2-hoist-magic? M v (t2-vf M v t2-f-b))))
+                           (cond-> (t2-hoist-want? M v (t2-vf M v t2-f-c))
+                                     (t2-hoist-add (t2-vf M v t2-f-c) busy (t2-hoist-magic? M v (t2-vf M v t2-f-c)))))
+                     (= op t2-vset) (-> M (cond-> (t2-hoist-want? M v (t2-vf M v t2-f-c))
+                                                   (t2-hoist-add (t2-vf M v t2-f-c) busy (t2-hoist-magic? M v (t2-vf M v t2-f-c))))
+                                        (cond-> (t2-hoist-want? M v (t2-vf M v t2-f-b))
+                                                   (t2-hoist-add (t2-vf M v t2-f-b) busy (t2-hoist-magic? M v (t2-vf M v t2-f-b)))))
                      ;; a constant index beyond the load/store offset range
-                     (= op t2-vat) (cond-> M (t2-hoist-want? M v (t2-vf M v t2-f-b)) (t2-hoist-add (t2-vf M v t2-f-b) busy))
+                     (= op t2-vat) (cond-> M (t2-hoist-want? M v (t2-vf M v t2-f-b))
+                                                    (t2-hoist-add (t2-vf M v t2-f-b) busy false))
                      :else M))]
       (t2-hoist-vals M1 (inc v) v1 busy))))
 (defn- t2-lbusy [M :vector-i64 id :i64] :i64
@@ -22673,7 +22720,9 @@
                          (t2-hoist-vals m (t2-bget m t2-a-bv0 b) (t2-bget m t2-a-bv1 b) busy) m))))))
 (defn- t2-e-hoists [M :vector-i64 i :i64] :vector-i64
   (if (>= i (t2-g M t2-s-nhoist)) M
-    (t2-e-hoists (gn-mov-imm M (t2-g M (+ t2-a-hoist (* 2 i) 1)) (t2-kval M (t2-g M (+ t2-a-hoist (* 2 i))))) (inc i))))
+    (let [key (t2-g M (+ t2-a-hoist (* 2 i))) x (if (< key 0) (- key) key) k (t2-kval M x)
+          value (if (< key 0) (gn-sdiv-magic k (gn-floor-log2 k 0)) k)]
+      (t2-e-hoists (gn-mov-imm M (t2-g M (+ t2-a-hoist (* 2 i) 1)) value) (inc i)))))
 ;; the loop's next block in order after b (-1 none)
 (defn- t2-lnext [M :vector-i64 b :i64 id :i64] :i64
   (loop [n (inc b)] (cond (>= n (t2-g M t2-s-nb)) -1
@@ -23315,12 +23364,28 @@
       (let [tz (gn-tz k 0)] (gn-e-bf base d n (bit-and (- 64 tz) 63) (dec len))))))
 ;; ADD/SUB with a fused product operand: madd/msub, or add/sub with a shifted register (spilled operands load into x16
 ;; then x17; all three of a madd spilled: x16 := a * b first)
+(defn- t2-e-msub [M :vector-i64 v :i64 d :i64 r :i64 k :i64 x :i64] :vector-i64
+  (let [rk (t2-kval M k) sr (t2-spilled? M r) sx (t2-spilled? M x)
+        reuse (and (= (bit-and (t2-xf M v t2-x-flags) 1024) 1024) (= (t2-g M t2-s-fastl) 0) (not sr) (not sx))
+        hk (t2-hoisted M k) hoisted (and (> (t2-g M t2-s-fastl) 0) (>= hk 0) (not sr) (not sx))
+        rr (if sr 16 (t2-vf M r t2-f-reg)) rx (if sx 17 (t2-vf M x t2-f-reg))]
+    (cond reuse (gn-emit M (+ (enc-madd d rr 17 rx) 0x8000))
+          hoisted (gn-emit M (+ (enc-madd d rr hk rx) 0x8000))
+          (and sr sx) (-> M (t2-ldloc 16 (t2-loc M r)) (gn-mov-imm 17 rk) (gn-emit (enc-mul 16 16 17))
+                         (t2-ldloc 17 (t2-loc M x)) (gn-emit (enc-sub-r d 17 16)))
+          sr (-> M (t2-ldloc 16 (t2-loc M r)) (gn-mov-imm 17 rk) (gn-emit (+ (enc-madd d 16 17 rx) 0x8000)))
+          sx (-> M (gn-mov-imm 16 rk) (t2-ldloc 17 (t2-loc M x)) (gn-emit (+ (enc-madd d rr 16 17) 0x8000)))
+          :else (-> M (gn-mov-imm 16 rk) (gn-emit (+ (enc-madd d rr 16 rx) 0x8000))))))
 (defn- t2-e-fused [M :vector-i64 v :i64 d :i64] :vector-i64
   (let [m (t2-fusedop M v) x (t2-res M (if (= m (t2-res M (t2-vf M v t2-f-c))) (t2-vf M v t2-f-b) (t2-vf M v t2-f-c)))
         sub (= (t2-vf M v t2-f-a) BOP-SUB)
         bop (t2-vf M m t2-f-a) a (t2-res M (t2-vf M m t2-f-b)) b (t2-res M (t2-vf M m t2-f-c))
         sx (t2-spilled? M x)]
-    (if (and (= bop BOP-MUL) (not (t2-isconst? M a)) (not (t2-isconst? M b)))
+    (cond (and (= bop BOP-MUL) sub (or (t2-isconst? M a) (t2-isconst? M b))
+               (> (t2-kval M (if (t2-isconst? M a) a b)) 1)
+               (= (gn-pow2 (t2-kval M (if (t2-isconst? M a) a b))) 0))
+          (t2-e-msub M v d (if (t2-isconst? M a) b a) (if (t2-isconst? M a) a b) x)
+      (and (= bop BOP-MUL) (not (t2-isconst? M a)) (not (t2-isconst? M b)))
       (let [sa (t2-spilled? M a) sb (t2-spilled? M b)]
         (if (and sa sb sx)
           (-> M (t2-ldloc 16 (t2-loc M a)) (t2-ldloc 17 (t2-loc M b)) (gn-emit (enc-mul 16 16 17)) (t2-ldloc 17 (t2-loc M x))
@@ -23332,6 +23397,7 @@
                 Mc (if sx (t2-ldloc Mb xs (t2-loc M x)) Mb) rx (if sx xs (t2-vf M x t2-f-reg))
                 w (enc-madd d ra rb rx)]
             (gn-emit Mc (if sub (+ w 0x8000) w)))))
+      :else
       (let [r (if (t2-isconst? M a) b a)
             k (if (t2-isconst? M a) (t2-kval M a) (t2-kval M b))
             sh (if (= bop BOP-SHL) (bit-and k 63) (gn-pow2 k))
@@ -23359,9 +23425,14 @@
           (and yc (or (= bop BOP-SHL) (= bop BOP-USHR) (= bop BOP-SSHR)) (not (t2-isconst? M x)))
           (let [M1 (t2-src M x 16) rx (t2-last M1) k (bit-and ky 63)]
             (gn-emit M1 (cond (= bop BOP-SHL) (gn-e-lsl d rx k) (= bop BOP-USHR) (gn-e-lsr d rx k) :else (gn-e-asr d rx k))))
-          ;; division by a hoisted constant (never 0 or -1, not a power of two): sdiv by its register
-          (and yc (= bop BOP-QUOT) (not (t2-isconst? M x)) (= (gn-pow2 ky) 0) (not= ky 0) (not= ky -1) (not= ky 1)
-               (>= (t2-hoisted M y) 0))
+          ;; positive constant division consumes the reciprocal hoisted before the loop
+          (and yc (= bop BOP-QUOT) (not (t2-isconst? M x)) (> ky 1) (= (gn-pow2 ky) 0)
+               (>= (t2-hoisted M (- y)) 0))
+          (let [M1 (t2-src M x 16)]
+            (gn-sdiv-regmagic M1 d (t2-last M1) (t2-hoisted M (- y)) (gn-floor-log2 ky 0)))
+          ;; negative constant division keeps the signed hardware instruction
+          (and yc (= bop BOP-QUOT) (not (t2-isconst? M x)) (< ky 0) (= (gn-pow2 ky) 0)
+               (not= ky -1) (>= (t2-hoisted M y) 0))
           (let [M1 (t2-src M x 16)] (gn-emit M1 (enc-sdiv d (t2-last M1) (t2-hoisted M y))))
           ;; multiplication by 2^p / 2^p+1 and division by a constant (never 0 or -1): the existing immediate forms
           (and yc (not (t2-isconst? M x))

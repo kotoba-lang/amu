@@ -1,0 +1,287 @@
+{
+  "format": "kotoba.m105-reciprocal-collections-abba/v1",
+  "status": "EXPLORATORY_UNQUALIFIED",
+  "hypothesis": "Hoisted reciprocal division by positive constant 1000003 lowers the collections hot loop cost enough to beat hardware sdiv on this workload.",
+  "counterHypothesis": "AArch64 sdiv latency or loop/control/runner overhead dominates; smulh+correction adds dependency work and may be neutral or slower.",
+  "sourceTreeCommit": "3f6a865c3d832e1644a1f00f61712b75bb9d194a",
+  "sourcePath": "./docs/evidence/crossdomain-m105-msub-20261016/benchmark/kernel_collections-bench.kotoba",
+  "sourceSHA256": "88c3394903e3305565581bb1dd3a63874b7772e5406bec4bb9d5f0c8ce411cff",
+  "priorCompilerSHA256": "6b158aa8654706743462b8a730f189072ba05f364b00af28a3f6d23045add2eb",
+  "reciprocalCompilerSHA256": "40696a8ac6d05889821cf5b9a0feb496ac19890dd02e21f177f6a9ae5541fa55",
+  "reciprocalCandidateCompilerSHA256Pinned": "40696a8ac6d05889821cf5b9a0feb496ac19890dd02e21f177f6a9ae5541fa55",
+  "nativeImages": {
+    "prior": {
+      "compilerSHA256": "6b158aa8654706743462b8a730f189072ba05f364b00af28a3f6d23045add2eb",
+      "sourceSHA256": "88c3394903e3305565581bb1dd3a63874b7772e5406bec4bb9d5f0c8ce411cff",
+      "kseedSHA256": "96b9b5045d963c8921660043d1eb6896075a372eb225f4de207213b083a63195",
+      "nativeSHA256": "bf6d822acba24445775b6f9ffe8c1ac63478316453a1316c05729d04a8cf9550",
+      "nativeBytes": 3520,
+      "entryOffset": 2048
+    },
+    "reciprocal": {
+      "compilerSHA256": "40696a8ac6d05889821cf5b9a0feb496ac19890dd02e21f177f6a9ae5541fa55",
+      "sourceSHA256": "88c3394903e3305565581bb1dd3a63874b7772e5406bec4bb9d5f0c8ce411cff",
+      "kseedSHA256": "b30bdd2ec41ef6f07c8837858f211cce7382302107044c35668c0e104c417d60",
+      "nativeSHA256": "57be0d27a1c7e43951927534673c34c21dfd62bd18885ba302cd38977b042897",
+      "nativeBytes": 3616,
+      "entryOffset": 2144
+    }
+  },
+  "expectedResultsFromPriorEvidence": {
+    "20000": {
+      "result": 3393300000,
+      "fuel": 4260002
+    },
+    "50000": {
+      "result": 8483250000,
+      "fuel": 10650002
+    }
+  },
+  "correctness": [
+    {
+      "count": 20000,
+      "arm": "prior",
+      "expected": {
+        "result": 3393300000,
+        "fuel": 4260002
+      },
+      "actualResult": 3393300000,
+      "actualFuel": 4260002,
+      "pass": true
+    },
+    {
+      "count": 20000,
+      "arm": "reciprocal",
+      "expected": {
+        "result": 3393300000,
+        "fuel": 4260002
+      },
+      "actualResult": 3393300000,
+      "actualFuel": 4260002,
+      "pass": true
+    },
+    {
+      "count": 50000,
+      "arm": "prior",
+      "expected": {
+        "result": 8483250000,
+        "fuel": 10650002
+      },
+      "actualResult": 8483250000,
+      "actualFuel": 10650002,
+      "pass": true
+    },
+    {
+      "count": 50000,
+      "arm": "reciprocal",
+      "expected": {
+        "result": 8483250000,
+        "fuel": 10650002
+      },
+      "actualResult": 8483250000,
+      "actualFuel": 10650002,
+      "pass": true
+    }
+  ],
+  "correctnessStatus": "PASS_RESULT_AND_FUEL",
+  "vectorCapacities": {
+    "handles": 4194304,
+    "items": 134217728
+  },
+  "fuelLimit": 167772160,
+  "runnerSourceSHA256": "471891c2ac2c7d949209b9024baa25e5964606dcdf4a0a49e16e12439e359277",
+  "runnerBuildCompiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+  "loadBefore": "7:04  up 2 days, 14:40, 1 user, load averages: 72.10 69.24 65.96",
+  "loadAfter": "7:04  up 2 days, 14:40, 1 user, load averages: 71.57 69.24 66.00",
+  "workloads": {
+    "20000": {
+      "order": [
+        "prior",
+        "reciprocal",
+        "reciprocal",
+        "prior",
+        "prior",
+        "reciprocal",
+        "reciprocal",
+        "prior"
+      ],
+      "priorSamplesNs": [
+        260759667,
+        267083041,
+        265082792,
+        274317791
+      ],
+      "reciprocalSamplesNs": [
+        268410000,
+        256890084,
+        243010291,
+        252109750
+      ],
+      "priorMedianNs": 266082916.5,
+      "reciprocalMedianNs": 254499917.0,
+      "candidateOverPrior": 0.9564684585829094,
+      "speedupPercent": 4.353154141709059,
+      "rows": [
+        {
+          "index": 0,
+          "arm": "prior",
+          "wallNanoseconds": 260759667,
+          "runnerElapsedNanoseconds": 36448000,
+          "result": 3393300000,
+          "fuelConsumed": 4260002
+        },
+        {
+          "index": 1,
+          "arm": "reciprocal",
+          "wallNanoseconds": 268410000,
+          "runnerElapsedNanoseconds": 37477000,
+          "result": 3393300000,
+          "fuelConsumed": 4260002
+        },
+        {
+          "index": 2,
+          "arm": "reciprocal",
+          "wallNanoseconds": 256890084,
+          "runnerElapsedNanoseconds": 35695000,
+          "result": 3393300000,
+          "fuelConsumed": 4260002
+        },
+        {
+          "index": 3,
+          "arm": "prior",
+          "wallNanoseconds": 267083041,
+          "runnerElapsedNanoseconds": 38926000,
+          "result": 3393300000,
+          "fuelConsumed": 4260002
+        },
+        {
+          "index": 4,
+          "arm": "prior",
+          "wallNanoseconds": 265082792,
+          "runnerElapsedNanoseconds": 37483000,
+          "result": 3393300000,
+          "fuelConsumed": 4260002
+        },
+        {
+          "index": 5,
+          "arm": "reciprocal",
+          "wallNanoseconds": 243010291,
+          "runnerElapsedNanoseconds": 32923000,
+          "result": 3393300000,
+          "fuelConsumed": 4260002
+        },
+        {
+          "index": 6,
+          "arm": "reciprocal",
+          "wallNanoseconds": 252109750,
+          "runnerElapsedNanoseconds": 33764000,
+          "result": 3393300000,
+          "fuelConsumed": 4260002
+        },
+        {
+          "index": 7,
+          "arm": "prior",
+          "wallNanoseconds": 274317791,
+          "runnerElapsedNanoseconds": 35904000,
+          "result": 3393300000,
+          "fuelConsumed": 4260002
+        }
+      ]
+    },
+    "50000": {
+      "order": [
+        "prior",
+        "reciprocal",
+        "reciprocal",
+        "prior",
+        "prior",
+        "reciprocal",
+        "reciprocal",
+        "prior"
+      ],
+      "priorSamplesNs": [
+        357990834,
+        401528333,
+        603290916,
+        389914417
+      ],
+      "reciprocalSamplesNs": [
+        366037791,
+        402932875,
+        375583250,
+        375200875
+      ],
+      "priorMedianNs": 395721375.0,
+      "reciprocalMedianNs": 375392062.5,
+      "candidateOverPrior": 0.9486272064530252,
+      "speedupPercent": 5.137279354697477,
+      "rows": [
+        {
+          "index": 0,
+          "arm": "prior",
+          "wallNanoseconds": 357990834,
+          "runnerElapsedNanoseconds": 90332000,
+          "result": 8483250000,
+          "fuelConsumed": 10650002
+        },
+        {
+          "index": 1,
+          "arm": "reciprocal",
+          "wallNanoseconds": 366037791,
+          "runnerElapsedNanoseconds": 90217000,
+          "result": 8483250000,
+          "fuelConsumed": 10650002
+        },
+        {
+          "index": 2,
+          "arm": "reciprocal",
+          "wallNanoseconds": 402932875,
+          "runnerElapsedNanoseconds": 93018000,
+          "result": 8483250000,
+          "fuelConsumed": 10650002
+        },
+        {
+          "index": 3,
+          "arm": "prior",
+          "wallNanoseconds": 401528333,
+          "runnerElapsedNanoseconds": 96937000,
+          "result": 8483250000,
+          "fuelConsumed": 10650002
+        },
+        {
+          "index": 4,
+          "arm": "prior",
+          "wallNanoseconds": 603290916,
+          "runnerElapsedNanoseconds": 95479000,
+          "result": 8483250000,
+          "fuelConsumed": 10650002
+        },
+        {
+          "index": 5,
+          "arm": "reciprocal",
+          "wallNanoseconds": 375583250,
+          "runnerElapsedNanoseconds": 87321000,
+          "result": 8483250000,
+          "fuelConsumed": 10650002
+        },
+        {
+          "index": 6,
+          "arm": "reciprocal",
+          "wallNanoseconds": 375200875,
+          "runnerElapsedNanoseconds": 88964000,
+          "result": 8483250000,
+          "fuelConsumed": 10650002
+        },
+        {
+          "index": 7,
+          "arm": "prior",
+          "wallNanoseconds": 389914417,
+          "runnerElapsedNanoseconds": 96594000,
+          "result": 8483250000,
+          "fuelConsumed": 10650002
+        }
+      ]
+    }
+  },
+  "qualification": "M1 Max loaded-host exploratory timings include a fresh native benchmark-runner process per sample; not perfgate-qualified."
+}

@@ -8,7 +8,7 @@ import argparse,shutil
 ap=argparse.ArgumentParser();ap.add_argument('--selfbuild-output',type=Path,required=True);arg=ap.parse_args();O=arg.selfbuild_output.resolve();E=ROOT/'docs/evidence/adjacent-fuel-reload-20261014';F=ROOT/'seed/tests/adjacent-fuel-reload';D=O/'artifacts/adjacent-fuel-reload-controls';D.mkdir(exist_ok=False);A=D/'artifacts';A.mkdir();raw=D/'raw';raw.mkdir();S=A/'controls.kotoba';shutil.copy2(F/'controls.kotoba',S)
 L=O/'host/kexe-loader';P={'OFF':E/'previous-bootstrap.bin','ON':O/'artifacts/G2.bin','AUDITED':AUDITED}
 def pin(p):p=Path(p);b=p.read_bytes();return dict(path=str(p),bytes=len(b),sha256=hashlib.sha256(b).hexdigest())
-assert pin(P['OFF'])['sha256']=='87d29d354142b3391abd475211ddd6a677c4e1f18ea0c74c72ffa450cf16eb56';assert pin(P['AUDITED'])['sha256']==AUDITED_SHA256;assert pin(P['ON'])['sha256']==json.loads((ROOT/'seed/adoption-20261017.json').read_text())['nativeImageSHA256']
+assert pin(P['OFF'])['sha256']=='87d29d354142b3391abd475211ddd6a677c4e1f18ea0c74c72ffa450cf16eb56';assert pin(P['AUDITED'])['sha256']==AUDITED_SHA256;assert pin(P['ON'])['sha256']==json.loads((ROOT/'seed/adoption-20261018.json').read_text())['nativeImageSHA256']
 pins={p:pin(p)for p in [L,S,F/'cases.json',E/'native-gate.py',E/'native-utils.py',E/'source-pool.py',E/'trusted-loader-abi.c',*P.values()]};calls=[]
 env={k:v for k,v in os.environ.items()if not k.startswith('KEXE_')};env.update(KEXE_COMMAND='1',KEXE_CAP_RESOURCES_35=str(A),KEXE_FUEL='off',KEXE_VECTORS='4194304',KEXE_VECTOR_ITEMS='134217728',KEXE_STRING_POOL='268435456',KEXE_PAIRS='16777216',KEXE_CPU_SECONDS='1800',KEXE_WALL_SECONDS='1800',TMPDIR=str(A))
 def call(tag,args,e):

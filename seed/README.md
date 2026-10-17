@@ -1,33 +1,29 @@
 # Adopted native seed compiler
 
-The 2026-10-12 adoption is the 16-module compiler baseline at
-`fc49cb2ee6fea1a41a5abbc8ed5b52aaa9f19471`, with an integration safety fix:
-explicit `--policy` is refused with E2170 until structured policy checking is
-qualified. Single-file and project `check` enforce the same refusal as
-`compile`. The bounded pure byte-result lookup pass is adopted in `41-a64gen`;
-it includes the cumulative qualified AArch64 optimizations and excludes the
-pending descriptor witness and conditional-fallthrough vector view candidates.
-`preserved-20261012/adoption.json` pins the preserved 16-module baseline.
-`adoption-20261012.json` retains the later main m105 16-module source and its
-qualification metadata; it is no longer the current source receipt.
+The 16-module source at the Amu main snapshot remains pinned by
+`adoption-20261017.json`. The current `MANIFEST` has 17 modules and adds the
+locked browser-Wasm project route in `43-wasm.kotoba`, its project helpers, and
+the latest main policy and code-generation changes. `adoption-20261018.json`
+pins that merged source closure and its native selfhost image. The 2026-10-12
+receipt remains the earlier historical source record. This work does not
+change `bin/amu`, publish a release, or qualify the whole Amu component as Q9.
 
-The current `MANIFEST` has 17 modules. It adds the experimental
-`43-wasm.kotoba` browser-Wasm backend and the project driver/lock changes
-described below. The historical 16-module adoption receipt remains tied to its
-original source. `adoption-20261017.json` pins the current 17-module source and
-the G0 selfhost-built compiler image; the 2026-10-12 receipt is historical.
-The current 17-module unity source used for the G1/G2 selfhost fixed-point
-probe has SHA-256
-`7cb869eb2ecef8e7927edb288ee15ac6d77b6d4ab9114a35e4c3045dcba46800`.
-
-These changes do not change `bin/amu`, publish a release, or qualify the whole
-Amu component as Q9.
+`MANIFEST` fixes the unity order. Concatenating each module followed by one
+newline gives SHA-256
+`a1a718388c55eaf8e9f749ea1829c17ae9d667dbc785194879b0abb8454602b3`.
+`adoption-20261018.json` records the current source pins, bootstrap and
+fixed-point image separately, artifact provenance, correctness scope, and
+measurement boundaries. `adoption-20261012.json` remains the historical
+receipt for the prior source closure. `HEADS`, `MEMORY-MAP`, and `SIR`
+are the corresponding compiler contracts, copied without changes.
 
 ## Native self-build
 
-The source-derived, selfhost-built bootstrap image is
-`bootstrap/adopted-20261012.bin` (macOS arm64, entry offset 0, arity 0). It is a
-native code payload used by the pinned C loader, not a standalone OS executable.
+The current source is bootstrapped from
+`bootstrap/adopted-20261017.bin` (macOS arm64, entry offset 0, arity 0). The
+current source's three-generation fixed-point image and both bootstrap and
+source pins are recorded in `adoption-20261018.json`. It is a native code
+payload used by the pinned C loader, not a standalone OS executable.
 The loader is trusted C bootstrap infrastructure; this is not a C-free claim.
 The Python script orchestrates the native compiler and Clang loader build only;
 it never compiles Kotoba through Python, Node, nbb, JVM or GraalVM.
@@ -50,47 +46,6 @@ refuses input or loader changes during an invocation, preserves original logs,
 checks every generated native image against the adopted fixed-point digest,
 and leaves compiler fuel disabled only for these self-build invocations.
 This is correctness verification, not performance timing.
-
-## Locked browser-Wasm project pilot (2026-10-17)
-
-The selfhost seed compiler can compile a closed, content-addressed Kotoba
-project for `wasm32-browser`:
-
-```sh
-<selfhost-seed-compiler> compile <root-namespace> \
-  --target wasm32-browser \
-  --module-lock <module-lock.edn> \
-  --blocks <raw-cid-block-directory> \
-  --output <package>
-```
-
-The lock uses the closed `:kotoba.module-lock/v1` schema with one root
-namespace and a namespace-to-raw-CID map. Before each source read, the compiler
-uses no-follow stat to require a regular file within the 8 MiB project limit,
-then reads only that bounded range. It verifies the exact returned bytes with
-SHA-256 before discovery parsing and again before compiling the module, and
-refuses source-path or unpinned fallback on this route. Malformed or missing
-pins fail with E6027; a source/CID mismatch fails with E6028. The native
-selfhost loader must grant the required wires `3,35,37,38,39`; wire 3 supplies
-`:hash/sha256` for pin verification.
-
-A single-module root emits the direct Wasm module. A multi-module root emits a
-`KOTOBAP1` package in dependency-first order; its module interfaces become
-namespace-qualified Wasm imports. Target support is deliberately narrow:
-unsupported source is refused with E6029 rather than widened or sent through a
-bootstrap compiler. Host behavior must be supplied and qualified by the app's
-typed adapter.
-
-The current adopted 17-module compiler image is the G0 producer for the
-compile-only fixed-point check. The source rebuilt G1 and G2 as byte-identical
-2,613,616-byte native compiler images
-(SHA-256
-`f577e0a11a8e47f95d816a68bad4fe4cda313e3131880c2de8b30f30965a18bd`). This
-is a compile-only selfhost fixed-point result: it does not establish application
-runtime parity, test-suite completion, deployment, or live behavior.
-The current receipt records the G0 producer, G1/G2 outputs, and source pins;
-`scripts/seed/build-adopted.py` uses the current bootstrap image to reproduce
-the fixed point in the native CI path.
 
 ## Evidence and ongoing optimization
 
@@ -217,21 +172,23 @@ Fully prepaid clamp/mask cores reuse initialized x8=CTX-FUEL. Both Pico images r
 
 ## Same-algorithm m105 adoption (2026-10-16)
 
-The adoption receipt pins the reviewed m105 source unity and fixed-point
-bootstrap. The exported-tree review correction keeps the decision-tree source
-rewrite private, so exported definitions retain their reviewed native body.
-G1, G2 and G3 are byte-identical at SHA-256
-`6b158aa8654706743462b8a730f189072ba05f364b00af28a3f6d23045add2eb`.
-Rebuilding two generations from the adopted image reproduces the same digest.
-The regenerated 19 policy-native golden images are pinned in the receipt.
-Local validation covers 483/483 observations, 19/19 exact workload fuel/arena
-checks, all ten adopted-native regression controls, and 30,888 differential
-cases against the prior m105 image with zero mismatches. The main policy
-integration also reproduced all 19 pinned original images and passed all 34
-explicit policy refusals.
+The 2026-10-16 receipt pins the earlier m105 source and fixed-point bootstrap.
+The current 17-module source closure includes the `enc-smulh` lowering and
+locked browser-Wasm route. Its G1/G2/G3 image hashes are recorded in
+`adoption-20261018.json`. The 19 policy-native golden images remain pinned to
+their historical source and compiler; the current receipt records those
+reference hashes separately. The main-source correctness check pins the
+current M105 build report, image manifest, and exactness record, and also
+compares the archived original19 sources with their exact native-image golden.
+The earlier adoption's local validation covered 483/483 observations, 19/19
+exact workload fuel/arena checks, all ten adopted-native regression controls,
+and 30,888 differential cases against the prior m105 image with zero
+mismatches. The new source's self-host rebuild evidence records G1/G2/G3
+identity; CI validates its source pins and integrations.
 
 No official m105 Embench round was run. The published 0.8213 ratio remains
 specific to the m104 compiler and its pinned images. See
 [`docs/evidence/same-algo-m105-20261016/`](../docs/evidence/same-algo-m105-20261016/),
-the historical 2026-10-12 receipt at `adoption-20261012.json`, and the current
-17-module receipt at `adoption-20261017.json`.
+the historical receipt at `adoption-20261012.json`, the 16-module main receipt
+at `adoption-20261017.json`, and the merged 17-module receipt at
+`adoption-20261018.json`.

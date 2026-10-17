@@ -171,7 +171,7 @@ def prepare(build, output):
     # The optional entry must preserve the current adopted AArch64 route byte-for-byte.
     # Use the compiler pinned by the current adoption receipt; the 2026-10-12
     # compiler is a historical baseline and differs from this source revision.
-    adoption = json.loads((ROOT / "seed/adoption-20261017.json").read_text())
+    adoption = json.loads((ROOT / "seed/adoption-20261018.json").read_text())
     adopted_compiler = ROOT / adoption["bootstrapPath"]
     a64_identity = []
     for case in cases()[:3]:

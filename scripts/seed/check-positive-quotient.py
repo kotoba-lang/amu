@@ -15,7 +15,7 @@ def main():
  assert sha(P['OFF'])=='9ce5f89aec3c04a139e4bb713eb3613fd482ae70fd41d0271bc021b550a0668b'
  assert sha(P['PRE'])=='f49356b0e979293ee6f42b622089dc77e2dbb55d0a28b07d8a8f35125d8a6cdb'
  assert sha(P['AUDITED'])==AUDITED_SHA256
- assert sha(P['ON'])==json.loads((ROOT/'seed/adoption-20261017.json').read_text())['nativeImageSHA256']
+ assert sha(P['ON'])==json.loads((ROOT/'seed/adoption-20261018.json').read_text())['nativeImageSHA256']
  pins={p:sha(p)for p in[L,S,*P.values()]};env={k:v for k,v in os.environ.items()if not k.startswith('KEXE_')};env.update(KEXE_COMMAND='1',KEXE_CAP_RESOURCES_35=str(D),KEXE_FUEL='off',KEXE_VECTORS='4194304',KEXE_VECTOR_ITEMS='134217728',KEXE_STRING_POOL='268435456',KEXE_PAIRS='16777216',KEXE_CPU_SECONDS='1800',KEXE_WALL_SECONDS='1800',TMPDIR=str(D));calls=[]
  def run(tag,args,e):
   z=subprocess.run(list(map(str,args)),cwd=D,env=e,capture_output=True,timeout=1800);(raw/(tag+'.stdout')).write_bytes(z.stdout);(raw/(tag+'.stderr')).write_bytes(z.stderr);calls.append(dict(tag=tag,exit=z.returncode));(D/'calls.json').write_text(json.dumps(calls,indent=2)+'\n');assert z.returncode==0 and all(sha(p)==h for p,h in pins.items()),tag;return z.stdout,z.stderr

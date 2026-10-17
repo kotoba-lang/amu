@@ -55,7 +55,7 @@ def main():
                               key=lambda x: x.relative_to(up).as_posix())
         argv_template = ['<compiler>', *FLAGS, '-I', '<upstream>/support', '-I', '<upstream>/src/' + n,
                          *['<upstream>/' + x.relative_to(up).as_posix() for x in compile_sources],
-                         '<package>/c/boardsupport.c', '-lm', '-o', '<out>/' + n]
+                         '<package>/c/boardsupport.c', '-lm', '-o', '<out>/' + n + '/' + n]
         rows.append(dict(workload=n, sha256=h, bytes=(d / n).stat().st_size, frozenSHA256=frozen[n]['sha256'],
                          identicalToFrozen=h == frozen[n]['sha256'],
                          sourceHashes={x.relative_to(up).as_posix(): R.sha_file(x) for x in source_paths},

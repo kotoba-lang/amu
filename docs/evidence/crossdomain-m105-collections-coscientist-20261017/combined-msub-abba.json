@@ -1,0 +1,287 @@
+{
+  "format": "kotoba.m105-combined-msub-collections-abba/v1",
+  "status": "EXPLORATORY_UNQUALIFIED",
+  "hypothesis": "Combining reciprocal division with MSub remainder fusion lowers collection hot-loop cost beyond either transformation alone.",
+  "counterHypothesis": "The added reciprocal dependency or instruction scheduling cancels the saved mul/sub; loaded-host noise may explain the observed difference.",
+  "sourceTreeCommit": "3f6a865c3d832e1644a1f00f61712b75bb9d194a",
+  "sourcePath": "./docs/evidence/crossdomain-m105-msub-20261016/benchmark/kernel_collections-bench.kotoba",
+  "sourceSHA256": "88c3394903e3305565581bb1dd3a63874b7772e5406bec4bb9d5f0c8ce411cff",
+  "priorCompilerSHA256": "6b158aa8654706743462b8a730f189072ba05f364b00af28a3f6d23045add2eb",
+  "candidateCompilerSHA256": "854fad339b1317ff85309573767a305e846e23cfee13377570973ff502258a3b",
+  "candidateCompilerSHA256Pinned": "854fad339b1317ff85309573767a305e846e23cfee13377570973ff502258a3b",
+  "nativeImages": {
+    "prior": {
+      "compilerSHA256": "6b158aa8654706743462b8a730f189072ba05f364b00af28a3f6d23045add2eb",
+      "sourceSHA256": "88c3394903e3305565581bb1dd3a63874b7772e5406bec4bb9d5f0c8ce411cff",
+      "kseedSHA256": "96b9b5045d963c8921660043d1eb6896075a372eb225f4de207213b083a63195",
+      "nativeSHA256": "bf6d822acba24445775b6f9ffe8c1ac63478316453a1316c05729d04a8cf9550",
+      "nativeBytes": 3520,
+      "entryOffset": 2048
+    },
+    "candidate": {
+      "compilerSHA256": "854fad339b1317ff85309573767a305e846e23cfee13377570973ff502258a3b",
+      "sourceSHA256": "88c3394903e3305565581bb1dd3a63874b7772e5406bec4bb9d5f0c8ce411cff",
+      "kseedSHA256": "cfc2b9b7aecfbcc1b9d2b672ab112980424297df6815d7ce7367291fe0b8006e",
+      "nativeSHA256": "ee87952b27dca99013f412a7ef2c76345d8319b788a0dcb6e3e597e15ba24bab",
+      "nativeBytes": 3584,
+      "entryOffset": 2112
+    }
+  },
+  "expectedResultsFromPriorEvidence": {
+    "20000": {
+      "result": 3393300000,
+      "fuel": 4260002
+    },
+    "50000": {
+      "result": 8483250000,
+      "fuel": 10650002
+    }
+  },
+  "correctness": [
+    {
+      "count": 20000,
+      "arm": "prior",
+      "expected": {
+        "result": 3393300000,
+        "fuel": 4260002
+      },
+      "actualResult": 3393300000,
+      "actualFuel": 4260002,
+      "pass": true
+    },
+    {
+      "count": 20000,
+      "arm": "candidate",
+      "expected": {
+        "result": 3393300000,
+        "fuel": 4260002
+      },
+      "actualResult": 3393300000,
+      "actualFuel": 4260002,
+      "pass": true
+    },
+    {
+      "count": 50000,
+      "arm": "prior",
+      "expected": {
+        "result": 8483250000,
+        "fuel": 10650002
+      },
+      "actualResult": 8483250000,
+      "actualFuel": 10650002,
+      "pass": true
+    },
+    {
+      "count": 50000,
+      "arm": "candidate",
+      "expected": {
+        "result": 8483250000,
+        "fuel": 10650002
+      },
+      "actualResult": 8483250000,
+      "actualFuel": 10650002,
+      "pass": true
+    }
+  ],
+  "correctnessStatus": "PASS_RESULT_AND_FUEL",
+  "vectorCapacities": {
+    "handles": 4194304,
+    "items": 134217728
+  },
+  "fuelLimit": 167772160,
+  "runnerSourceSHA256": "471891c2ac2c7d949209b9024baa25e5964606dcdf4a0a49e16e12439e359277",
+  "runnerBuildCompiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+  "loadBefore": "7:07  up 2 days, 14:43, 1 user, load averages: 71.34 66.93 65.45",
+  "loadAfter": "7:07  up 2 days, 14:43, 1 user, load averages: 66.35 66.05 65.16",
+  "workloads": {
+    "20000": {
+      "order": [
+        "prior",
+        "candidate",
+        "candidate",
+        "prior",
+        "prior",
+        "candidate",
+        "candidate",
+        "prior"
+      ],
+      "priorSamplesNs": [
+        407133208,
+        394964083,
+        448323125,
+        478722791
+      ],
+      "candidateSamplesNs": [
+        721779083,
+        245895041,
+        312389042,
+        578656625
+      ],
+      "priorMedianNs": 427728166.5,
+      "candidateMedianNs": 445522833.5,
+      "candidateOverPrior": 1.0416027477114953,
+      "speedupPercent": -4.16027477114953,
+      "rows": [
+        {
+          "index": 0,
+          "arm": "prior",
+          "wallNanoseconds": 407133208,
+          "runnerElapsedNanoseconds": 40171000,
+          "result": 3393300000,
+          "fuelConsumed": 4260002
+        },
+        {
+          "index": 1,
+          "arm": "candidate",
+          "wallNanoseconds": 721779083,
+          "runnerElapsedNanoseconds": 152955000,
+          "result": 3393300000,
+          "fuelConsumed": 4260002
+        },
+        {
+          "index": 2,
+          "arm": "candidate",
+          "wallNanoseconds": 245895041,
+          "runnerElapsedNanoseconds": 31229000,
+          "result": 3393300000,
+          "fuelConsumed": 4260002
+        },
+        {
+          "index": 3,
+          "arm": "prior",
+          "wallNanoseconds": 394964083,
+          "runnerElapsedNanoseconds": 72314000,
+          "result": 3393300000,
+          "fuelConsumed": 4260002
+        },
+        {
+          "index": 4,
+          "arm": "prior",
+          "wallNanoseconds": 448323125,
+          "runnerElapsedNanoseconds": 140544000,
+          "result": 3393300000,
+          "fuelConsumed": 4260002
+        },
+        {
+          "index": 5,
+          "arm": "candidate",
+          "wallNanoseconds": 312389042,
+          "runnerElapsedNanoseconds": 36822000,
+          "result": 3393300000,
+          "fuelConsumed": 4260002
+        },
+        {
+          "index": 6,
+          "arm": "candidate",
+          "wallNanoseconds": 578656625,
+          "runnerElapsedNanoseconds": 210275000,
+          "result": 3393300000,
+          "fuelConsumed": 4260002
+        },
+        {
+          "index": 7,
+          "arm": "prior",
+          "wallNanoseconds": 478722791,
+          "runnerElapsedNanoseconds": 193173000,
+          "result": 3393300000,
+          "fuelConsumed": 4260002
+        }
+      ]
+    },
+    "50000": {
+      "order": [
+        "prior",
+        "candidate",
+        "candidate",
+        "prior",
+        "prior",
+        "candidate",
+        "candidate",
+        "prior"
+      ],
+      "priorSamplesNs": [
+        645782625,
+        1252808958,
+        387720083,
+        413205125
+      ],
+      "candidateSamplesNs": [
+        1013289209,
+        573997917,
+        742265209,
+        1407637458
+      ],
+      "priorMedianNs": 529493875.0,
+      "candidateMedianNs": 877777209.0,
+      "candidateOverPrior": 1.6577665020204435,
+      "speedupPercent": -65.77665020204435,
+      "rows": [
+        {
+          "index": 0,
+          "arm": "prior",
+          "wallNanoseconds": 645782625,
+          "runnerElapsedNanoseconds": 204908000,
+          "result": 8483250000,
+          "fuelConsumed": 10650002
+        },
+        {
+          "index": 1,
+          "arm": "candidate",
+          "wallNanoseconds": 1013289209,
+          "runnerElapsedNanoseconds": 268384000,
+          "result": 8483250000,
+          "fuelConsumed": 10650002
+        },
+        {
+          "index": 2,
+          "arm": "candidate",
+          "wallNanoseconds": 573997917,
+          "runnerElapsedNanoseconds": 84410000,
+          "result": 8483250000,
+          "fuelConsumed": 10650002
+        },
+        {
+          "index": 3,
+          "arm": "prior",
+          "wallNanoseconds": 1252808958,
+          "runnerElapsedNanoseconds": 523640000,
+          "result": 8483250000,
+          "fuelConsumed": 10650002
+        },
+        {
+          "index": 4,
+          "arm": "prior",
+          "wallNanoseconds": 387720083,
+          "runnerElapsedNanoseconds": 106915000,
+          "result": 8483250000,
+          "fuelConsumed": 10650002
+        },
+        {
+          "index": 5,
+          "arm": "candidate",
+          "wallNanoseconds": 742265209,
+          "runnerElapsedNanoseconds": 218873000,
+          "result": 8483250000,
+          "fuelConsumed": 10650002
+        },
+        {
+          "index": 6,
+          "arm": "candidate",
+          "wallNanoseconds": 1407637458,
+          "runnerElapsedNanoseconds": 359518000,
+          "result": 8483250000,
+          "fuelConsumed": 10650002
+        },
+        {
+          "index": 7,
+          "arm": "prior",
+          "wallNanoseconds": 413205125,
+          "runnerElapsedNanoseconds": 91050000,
+          "result": 8483250000,
+          "fuelConsumed": 10650002
+        }
+      ]
+    }
+  },
+  "qualification": "M1 Max loaded-host exploratory timings include a fresh native benchmark-runner process per sample; not perfgate-qualified."
+}
