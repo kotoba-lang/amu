@@ -39,7 +39,8 @@ def inputs(receipt_path):
         raise SystemExit('unity pin mismatch')
     producer = owned_path(receipt.get('bootstrapPath', 'seed/bootstrap/adopted-20261012.bin'))
     loader_source = owned_path(receipt.get('loaderPath', 'seed/bootstrap/adopted-loader-20261012.c'))
-    if digest(producer) != receipt['nativeImageSHA256']:
+    expected_producer_sha256 = receipt.get('bootstrapSHA256', receipt['nativeImageSHA256'])
+    if digest(producer) != expected_producer_sha256:
         raise SystemExit('native producer pin mismatch')
     if digest(loader_source) != receipt['loaderSourceSHA256']:
         raise SystemExit('trusted C loader source pin mismatch')
