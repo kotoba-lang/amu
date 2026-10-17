@@ -18,7 +18,9 @@ def main():
  calls=[]
  def run(argv,name,expect=0):
   inputs=[source,loader_source]+([loader] if loader.exists() else [])
-  if len(argv)>1 and pathlib.Path(str(argv[1])).is_file():inputs.append(pathlib.Path(str(argv[1])))
+  for arg in argv[1:]:
+   path=pathlib.Path(str(arg))
+   if path.is_file() and path not in inputs:inputs.append(path)
   pins={str(p):sha(p) for p in inputs}
   with (host/(name+'.stdout')).open('wb') as stdout,(host/(name+'.stderr')).open('wb') as stderr:
    call_env=dict(env)
@@ -82,7 +84,10 @@ def main():
    workload_source=(ports/('official-'+name+'.kotoba')).resolve()
    assert workload_source.is_relative_to(ROOT.resolve())
    assert sha(workload_source)==row['sourceSHA256']
-   current_sources[name]=workload_source
+   source_copy=art/(name+'-current.kotoba')
+   source_copy.write_bytes(workload_source.read_bytes())
+   assert sha(source_copy)==row['sourceSHA256']
+   current_sources[name]=source_copy
   expected=current
  producer=bootstrap;gens=[]
  for n in range(1,4):
