@@ -15,10 +15,10 @@ The current `MANIFEST` has 17 modules. It adds the experimental
 `43-wasm.kotoba` browser-Wasm backend and the project driver/lock changes
 described below. The historical 16-module adoption receipt remains tied to its
 original source. `adoption-20261017.json` pins the current 17-module source and
-the G27 selfhost-built compiler image; the 2026-10-12 receipt is historical.
-The current 17-module unity source used for the G27/G28 selfhost fixed-point
+the G0 selfhost-built compiler image; the 2026-10-12 receipt is historical.
+The current 17-module unity source used for the G1/G2 selfhost fixed-point
 probe has SHA-256
-`e77e1f38c120acd4a6b1e1227cf171957f5db7e365a68d3dab437f79819001d8`.
+`7cb869eb2ecef8e7927edb288ee15ac6d77b6d4ab9114a35e4c3045dcba46800`.
 
 These changes do not change `bin/amu`, publish a release, or qualify the whole
 Amu component as Q9.
@@ -81,13 +81,14 @@ unsupported source is refused with E6029 rather than widened or sent through a
 bootstrap compiler. Host behavior must be supplied and qualified by the app's
 typed adapter.
 
-The 17-module source rebuilt G27 and G28 from a selfhost-produced compiler.
-Both generations have byte-identical 2,595,368-byte native compiler images
+The current adopted 17-module compiler image is the G0 producer for the
+compile-only fixed-point check. The source rebuilt G1 and G2 as byte-identical
+2,613,616-byte native compiler images
 (SHA-256
-`540d7462e0b2abeb99f85a24745ea86d171e2607fd711677f87d8342878bf581`). This
+`f577e0a11a8e47f95d816a68bad4fe4cda313e3131880c2de8b30f30965a18bd`). This
 is a compile-only selfhost fixed-point result: it does not establish application
 runtime parity, test-suite completion, deployment, or live behavior.
-The current receipt records the G26 input, G27/G28 outputs, and source pins;
+The current receipt records the G0 producer, G1/G2 outputs, and source pins;
 `scripts/seed/build-adopted.py` uses the current bootstrap image to reproduce
 the fixed point in the native CI path.
 
