@@ -7,11 +7,11 @@ def main():
  ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--output',type=pathlib.Path,required=True);ap.add_argument('--trusted-bootstrap',action='store_true');a=ap.parse_args();out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
  baseline=(ROOT/'fuzz/baselines/native-parser.edn').read_text();expected=re.search(r':loader-source-sha256 "([0-9a-f]{64})"',baseline)[1]
  loader=ROOT/('seed/bootstrap/adopted-loader-20261012.c' if a.trusted_bootstrap else 'tools/kexe_loader.c')
- if a.trusted_bootstrap:expected=json.loads((ROOT/'seed/adoption-20261012.json').read_text())['loaderSourceSHA256']
+ if a.trusted_bootstrap:expected=json.loads((ROOT/'seed/adoption-20261018.json').read_text())['loaderSourceSHA256']
  assert digest(loader)==expected,'loader source differs from coverage pin'
  profiles={arch:tuple(map(int,v)) for arch,*v in re.findall(r':(x64|arm64)\s+\{:min-cov (\d+) :min-features (\d+) :min-corpus (\d+)\}',baseline)};assert set(profiles)=={'x64','arm64'}
  corpus=out/'corpus';shutil.copytree(ROOT/'fuzz/corpus/parser',corpus);binary=out/'parser-fuzz';linux=platform.system()=='Linux';target=ROOT/('seed/bootstrap/adopted-parser-fuzz-20261012.c' if a.trusted_bootstrap else 'tools/kexe_parser_fuzz.c');pins={str(p):digest(p) for p in [loader,target,ROOT/'fuzz/baselines/native-parser.edn']}
- if a.trusted_bootstrap:assert digest(target)==json.loads((ROOT/'seed/adoption-20261012.json').read_text())['loaderFuzzTargetSHA256']
+ if a.trusted_bootstrap:assert digest(target)==json.loads((ROOT/'seed/adoption-20261018.json').read_text())['loaderFuzzTargetSHA256']
  build_target=target
  if a.trusted_bootstrap:
   staging=out/'source';staging.mkdir();(staging/'kexe_loader.c').write_bytes(loader.read_bytes());build_target=staging/'kexe_parser_fuzz.c';build_target.write_bytes(target.read_bytes());pins[str(build_target)]=digest(target);pins[str(staging/'kexe_loader.c')]=expected

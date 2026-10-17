@@ -14,7 +14,9 @@ function child(command, args, env = {}) {
   const process = spawn(command, args, {
     cwd: root,
     env: { ...globalThis.process.env, ...env },
-    stdio: ["ignore", "pipe", "pipe"]
+    // Keep child output attached to the workflow log. Unread pipes can stall
+    // startup and otherwise hide why the fixture or driver never became ready.
+    stdio: ["ignore", "inherit", "inherit"]
   });
   children.push(process);
   return process;

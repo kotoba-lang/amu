@@ -1,7 +1,7 @@
 ;; seed/90-drv.kotoba -- the seed's command-line driver (prefix drv-). Owner: contracts/integration.
 ;;
 ;; Commands (guest argv through wire 38; paths are absolute and inside KEXE_CAP_RESOURCES_35):
-;;   compile <src> <out> [hex]       also: compile <src> [--target aarch64-macos] --output <out> [hex]
+;;   compile <src> <out> [hex]       also: compile <src> [--target aarch64-macos|wasm32-browser] --output <out> [hex]
 ;;       lex -> read -> names -> check -> lower -> a64gen -> layout -> out (kseed/v1 container).
 ;;       <out> = "-" or the word `hex`: the container is written as lowercase hex on stdout (64 bytes per line,
 ;;       `xxd -r -p` recovers it; scripts/seed/build.sh uses this). Any other <out>: the container is written to
@@ -27,6 +27,8 @@
         ;; R5A: --source-path D (repeatable) and --policy P also take a value
         (string=? s "--source-path") 1
         (string=? s "--policy") 1
+        (string=? s "--module-lock") 1
+        (string=? s "--blocks") 1
         (string=? s "--object-dir") 1
         (string=? s "--ns") 1   ; EMIT: compile-kir --emit-module --ns NAME
         :else (drv-flagv1 s)))
@@ -161,6 +163,9 @@
     (= c 6024) "namespace resolves from multiple explicit source paths: "
     (= c 6025) "required module "
     (= c 6026) "malformed or mismatched module object "
+    (= c 6027) "malformed module lock or missing pinned module"
+    (= c 6028) "source block CID mismatch"
+    (= c 6029) "selfhost browser-Wasm pilot refuses this program (scalar closed subset only)"
     :else ""))
 ;; error text piece 1
 (defn- drv-et1 [c :i64] :string
@@ -371,6 +376,23 @@
 (defn- drv-emit2 [M :vector-i64 out :string] :i64
   (if (= (string-length out) 0) (drv-emit M) (drv-emit-file M out)))
 
+(defn- drv-wasm-ack [out :string n :i64] :i64
+  (let [w (io-out (string-concat "{:ok true, :target :wasm32-browser, :output \""
+                                  (string-concat out (string-concat "\", :bytes "
+                                    (string-concat (mem-u2dec n) "}\n")))))]
+    0))
+
+(defn- drv-wasm-emit [M :vector-i64 S :string path :string out :string] :i64
+  (let [M1 (w32-run M S)
+        g (if (= (vector-at M1 MM-ERR) 0)
+            (drv-r5b-gate M1 path (vector-at M1 MM-CAPS)) -1)
+        n (- (vector-at M1 MM-OUT-N) 1)]
+    (cond (> (vector-at M1 MM-ERR) 0) (drv-fail M1 path)
+          (>= g 0) g
+          (= (string-length out) 0) (let [w (io-write-hex M1 (+ MM-OUT-BASE 1) n)] 0)
+          :else (let [w (io-write-bytes M1 out (+ MM-OUT-BASE 1) n)]
+                  (if (= (io-exists out) 0) (drv-fail0 E-WRITE) (drv-wasm-ack out n))))))
+
 (defn- drv-c8 [M :vector-i64 path :string out :string] :i64
   (if (= (vector-at M MM-ERR) 0)
     (let [g (drv-r5b-gate M path (vector-at M MM-CAPS))] (if (< g 0) (drv-emit2 M out) g))   ; R5B: --policy
@@ -379,14 +401,16 @@
   (if (= (vector-at M MM-ERR) 0) (drv-c8 (out-build M S) path out) (drv-fail M path)))
 (defn- drv-c6 [M :vector-i64 S :string path :string out :string] :i64
   (if (= (vector-at M MM-ERR) 0) (drv-c7 (ly-run M) S path out) (drv-fail M path)))
-(defn- drv-c5 [M :vector-i64 S :string path :string out :string] :i64
-  (if (= (vector-at M MM-ERR) 0) (drv-c6 (gn-run M) S path out) (drv-fail M path)))
+(defn- drv-c5 [M :vector-i64 S :string path :string mode :i64 out :string] :i64
+  (if (> (vector-at M MM-ERR) 0) (drv-fail M path)
+    (if (= mode 2) (drv-wasm-emit M S path out)
+      (drv-c6 (gn-run M) S path out))))
 (defn- drv-ok [M :vector-i64] :i64
   (let [w (io-out "ok\n")] 0))
 (defn- drv-c4 [M :vector-i64 S :string path :string mode :i64 out :string] :i64
   (cond (> (vector-at M MM-ERR) 0) (drv-fail M path)
         (= mode 0) (let [g (drv-r5b-gate M path (vector-at M MM-CAPS))] (if (< g 0) (drv-ok M) g))
-        :else (drv-c5 (lw-run M) S path out)))
+        :else (drv-c5 (lw-run M) S path mode out)))
 (defn- drv-c3 [M :vector-i64 S :string path :string mode :i64 out :string] :i64 (drv-c3h M S path mode out (ck-hint-new)))
 ;; R6C: a check that asks for a parameter refinement (21-check ck-hint-*) re-runs from the read with it
 (defn- drv-c3h [M :vector-i64 S :string path :string mode :i64 out :string H :vector-i64] :i64
@@ -429,29 +453,260 @@
 ;; R6K (FOLD, MAINS's request): an error in a module other than the entry (L[pj-k-errmod] > 0) names that module's path
 (defn- drv-pj-fail [M :vector-i64 L :vector-i64 P :string] :i64
   (let [path (pj-err-path L P)
-        flen (string-length (drv-read path))
+        stat (typed-cap-call :fs/app-data :string :string (string-concat path (io-sep "NOFOLLOW")))
+        flen (pj-max 0 (pj-stat-size stat))
         b (vector-at M MM-ERR-B)
         w (if (> b flen) (-> M (vector-assoc! MM-ERR-A 0) (vector-assoc! MM-ERR-B 0)) M)
         w2 (if (> (vector-at M MM-ERR-POS) flen) (vector-assoc! M MM-ERR-POS -1) M)]
     (drv-fail-in M path (if (> (vector-at L pj-k-errmod) 0) (string-concat " in " path) ""))))
 
 (defn- drv-pj-emit [M :vector-i64 L :vector-i64 P :string mode :i64 out :string] :i64
-  (let [S (string-concat (drv-read (pj-p L P (pj-mf L 0 pj-mf-path))) (pj-trailer L P 0))
-        M1 (if (= mode 0) M (out-image M S L pj-img-base (vector-at L pj-k-img)))]
-    (cond (> (vector-at M1 MM-ERR) 0) (drv-fail0 (vector-at M1 MM-ERR))
+  (let [S (string-concat (pj-src M L P 0) (pj-trailer L P 0))
+        M1 (if (or (> (vector-at M MM-ERR) 0) (= mode 0)) M (out-image M S L pj-img-base (vector-at L pj-k-img)))]
+    (cond (> (vector-at M1 MM-ERR) 0) (drv-pj-fail M1 L P)
           (= mode 0) (let [g (drv-r5b-gate M1 (pj-p L P (pj-mf L 0 pj-mf-path)) (vector-at L pj-k-caps))] (if (< g 0) (drv-ok M1) g))
           ;; R5B: --policy against the capabilities of every module of the project
           :else (let [g (drv-r5b-gate M1 (pj-p L P (pj-mf L 0 pj-mf-path)) (vector-at L pj-k-caps))] (if (< g 0) (drv-emit2 M1 out) g)))))
+
+;; The selfhost lock reader consumes the owner's closed EDN format and stores
+;; only namespace/CID string indexes. It never evaluates lock data as code.
+(defn- drv-lock-raw [M :vector-i64 S :string node :i64] :string
+  (let [tok (nm-nf M node NF-TOK)
+        start (nm-tf M tok TF-START)
+        end (nm-tf M tok TF-END)]
+    (string-substring S start end)))
+
+(defn- drv-lock-plain? [value :string] :bool
+  (loop [i 0]
+    (if (>= i (string-length value)) true
+      (let [c (string-code-point-at value i)]
+        (if (or (= c 34) (= c 92)) false (recur (+ i 1)))))))
+
+(defn- drv-lock-string [M :vector-i64 S :string node :i64] :string
+  (if (= (nm-kind M node) ND-STR)
+    (let [raw (drv-lock-raw M S node)
+          n (string-length raw)]
+      (if (and (>= n 2) (= (string-code-point-at raw 0) 34) (= (string-code-point-at raw (- n 1)) 34))
+        (let [value (string-substring raw 1 (- n 1))]
+          (if (drv-lock-plain? value) value ""))
+        ""))
+    ""))
+
+(defn- drv-lock-name [M :vector-i64 S :string node :i64] :string
+  (cond (= (nm-kind M node) ND-SYM) (drv-lock-raw M S node)
+        (= (nm-kind M node) ND-STR) (drv-lock-string M S node)
+        :else ""))
+
+(defn- drv-lock-name-ok? [name :string] :bool
+  (and (> (string-length name) 0) (<= (string-length name) 255)
+       (loop [i 0]
+         (if (>= i (string-length name)) true
+           (let [c (string-code-point-at name i)]
+             (if (or (< c 33) (> c 126) (= c 47) (= c 92)) false (recur (+ i 1))))))))
+
+(defn- drv-lock-cid? [cid :string] :bool
+  (and (= (string-length cid) 59) (string=? (string-substring cid 0 7) "bafkrei")
+       (loop [i 7]
+         (if (>= i (string-length cid)) true
+           (let [c (string-code-point-at cid i)]
+             (if (or (and (>= c 97) (<= c 122)) (and (>= c 50) (<= c 55)))
+               (recur (+ i 1)) false))))))
+
+(defn- drv-lock-key? [M :vector-i64 S :string node :i64 name :string] :bool
+  (and (= (nm-kind M node) ND-KW) (string=? (drv-lock-raw M S node) name)))
+
+(defn- drv-lock-get [M :vector-i64 S :string map :i64 name :string] :i64
+  (loop [key (nm-first M map) result 0]
+    (if (= key 0) result
+      (let [value (nm-next M key)
+            next-key (if (= value 0) 0 (nm-next M value))]
+        (if (= value 0) result
+          (recur next-key (if (drv-lock-key? M S key name) value result)))))))
+
+(defn- drv-lock-top-keys? [M :vector-i64 S :string map :i64] :bool
+  (loop [key (nm-first M map)]
+    (if (= key 0) true
+      (let [value (nm-next M key)]
+        (if (or (= value 0)
+                (not (or (drv-lock-key? M S key ":schema")
+                         (drv-lock-key? M S key ":root")
+                         (drv-lock-key? M S key ":modules"))))
+          false (recur (nm-next M value)))))))
+
+(defn- drv-lock-shape? [M :vector-i64 S :string map :i64 root :i64] :bool
+  (let [schema (drv-lock-get M S map ":schema")
+        modules (drv-lock-get M S map ":modules")
+        name (drv-lock-name M S root)]
+    (and (= (nm-kind M map) ND-MAP)
+         (= (bit-and (nm-count M map) 1) 0)
+         (drv-lock-top-keys? M S map)
+         (drv-lock-key? M S schema ":kotoba.module-lock/v1")
+         (drv-lock-name-ok? name)
+         (= (nm-kind M modules) ND-MAP)
+         (> (nm-count M modules) 0) (= (bit-and (nm-count M modules) 1) 0)
+         (<= (nm-count M modules) (* pj-lock-cap 2)))))
+
+;; Append namespace/CID strings to P and install/update the bounded lock table in L.
+(defn- drv-lock-fill [M :vector-i64 S :string L :vector-i64 P :string modules :i64] :string
+  (loop [key (nm-first M modules) P P]
+    (if (or (= key 0) (< (pj-l L pj-k-lock-count) 0)) P
+      (let [value (nm-next M key)
+            name (drv-lock-name M S key)
+            cid (drv-lock-string M S value)]
+        (if (or (= value 0) (not (drv-lock-name-ok? name)) (not (drv-lock-cid? cid)))
+          (let [w (pj-ls L pj-k-lock-count -1)] P)
+          (let [name-index (pj-n L)
+                P1 (pj-padd L P name)
+                cid-index (pj-n L)
+                P2 (pj-padd L P1 cid)]
+            (if (> (pj-l L pj-k-strover) 0)
+              (let [w (pj-ls L pj-k-lock-count -1)] P2)
+              (let [found (pj-lock-find L P2 name)]
+                (if (>= found 0)
+                  (let [w (vector-assoc! L (+ (pj-lock-entry L found) 1) cid-index)]
+                    (recur (nm-next M value) P2))
+                  (if (>= (pj-l L pj-k-lock-count) pj-lock-cap)
+                    (let [w (pj-ls L pj-k-lock-count -1)] P2)
+                    (let [w (pj-lock-put L name-index cid-index)]
+                      (recur (nm-next M value) P2))))))))))))
+
+(defn- drv-lock-flag [i :i64 n :i64 name :string] :i64
+  (cond (>= (+ i 1) n) -1
+        (string=? (io-arg i) name) (+ i 1)
+        (= (drv-flagv (io-arg i)) 1) (drv-lock-flag (+ i 2) n name)
+        :else (drv-lock-flag (+ i 1) n name)))
+
+(defn- drv-pj-compile-locked [root-name :string mode :i64 out :string] :i64
+  (let [n (io-argc)
+        lock-index (drv-lock-flag 1 n "--module-lock")
+        blocks-index (drv-lock-flag 1 n "--blocks")
+        lock-path (if (< lock-index 0) "" (io-arg lock-index))
+        blocks-path (if (< blocks-index 0) "" (io-arg blocks-index))
+        lock-before (if (= (string-length lock-path) 0) "" (drv-pol-stat lock-path))
+        lock-text (if (and (>= lock-index 0) (>= blocks-index 0)
+                           (= (drv-pj-has 1 n "--source-path") 0)
+                           (= (drv-pj-has 1 n "--unpinned") 0)
+                           (= (io-exists lock-path) 1))
+                    (drv-pol-read-sized lock-path lock-before) "")
+        R0 (mem-set (mem-new) MM-SRC-LEN (string-length lock-text))
+        R1 (lx-run R0 lock-text)
+        R2 (if (= (vector-at R1 MM-ERR) 0) (rd-run R1 lock-text) R1)
+        forms (nm-count R2 (vector-at R2 MM-ROOT))
+        map (if (= (vector-at R2 MM-ERR) 0) (nm-first R2 (vector-at R2 MM-ROOT)) 0)
+        root (if (= forms 1) (drv-lock-get R2 lock-text map ":root") 0)
+        modules (if (= forms 1) (drv-lock-get R2 lock-text map ":modules") 0)
+        parsed (and (= (vector-at R2 MM-ERR) 0) (= forms 1) (drv-lock-shape? R2 lock-text map root))
+        L (pj-new-l)
+        P0 (pj-new-p L)
+        P1 (if parsed (drv-lock-fill R2 lock-text L P0 modules) P0)
+        lock-root (drv-lock-name R2 lock-text root)
+        root-index (pj-n L)
+        P2 (pj-padd L P1 lock-root)
+        blocks-index-p (pj-n L)
+        P3 (pj-padd L P2 blocks-path)
+        root-entry (if parsed (pj-lock-find L P3 root-name) -1)
+        L1 (-> L (pj-ls pj-k-locked 1) (pj-ls pj-k-lock-root root-index)
+               (pj-ls pj-k-blocks blocks-index-p))
+        M0 (mem-set (mem-new) MM-QUIET (if (= mode 3) 1 0))]
+    (if (or (not parsed) (< (pj-l L pj-k-lock-count) 1)
+            (not (drv-lock-name-ok? lock-root))
+            (not (string=? lock-root root-name))
+            (< root-entry 0)
+            (> (pj-l L pj-k-strover) 0)
+            (= (string-length blocks-path) 0) (= (io-exists blocks-path) 0)
+            (= (drv-pj-has 1 n "--source-path") 1)
+            (= (drv-pj-has 1 n "--unpinned") 1))
+      (drv-fail0 6027)
+      (if (= mode 2)
+        (let [L2 (pj-ls L1 pj-k-mode 2)
+              P4 (pj-discover M0 L2 P3 root-index)]
+          (if (> (vector-at M0 MM-ERR) 0)
+            (drv-pj-fail M0 L2 P4)
+            (drv-pj-wasm M0 L2 P4 (pj-p L2 P4 (pj-mf L2 0 pj-mf-path)) out)))
+        (let [P4 (pj-project M0 L1 P3 root-index)]
+          (if (> (vector-at M0 MM-ERR) 0)
+            (drv-pj-fail M0 L1 P4)
+            (drv-pj-emit M0 L1 P4 mode out)))))))
 
 (defn- drv-pj-compile [M :vector-i64 path :string mode :i64 out :string] :i64
   (let [L (pj-new-l)
         n (io-argc)
         P0 (drv-pj-roots L (pj-new-p L) 1 n)
         w (vector-assoc! L pj-k-unpinned (drv-pj-has 1 n "--unpinned"))
-        P1 (pj-project M L (pj-padd L P0 path) (- (pj-n L) 1))]
-    (if (> (vector-at M MM-ERR) 0)
-      (drv-pj-fail M L P1)
-      (drv-pj-emit M L P1 mode out))))
+        Ppath (pj-padd L P0 path)
+        root (- (pj-n L) 1)]
+    (if (= mode 2)
+      (let [P1 (pj-discover M L Ppath root)]
+        (if (> (vector-at M MM-ERR) 0)
+          (drv-pj-fail M L P1)
+          (drv-pj-wasm M L P1 path out)))
+      (let [P1 (pj-project M L Ppath root)]
+        (if (> (vector-at M MM-ERR) 0)
+          (drv-pj-fail M L P1)
+          (drv-pj-emit M L P1 mode out))))))
+
+;; Single-module projects keep the direct Wasm artifact format. Multi-module projects compile one Wasm module
+;; per Kotoba module and write a KOTOBAP1 bundle; dependency stubs become namespace-qualified Wasm imports.
+(defn- drv-pj-wasm [M :vector-i64 L :vector-i64 P :string path :string out :string] :i64
+  (let [L (pj-ls L pj-k-mode 2)]
+  (if (> (pj-l L pj-k-nmod) 1)
+    (drv-pj-wasm-project M L P out)
+  (let [S0 (pj-src M L P 0)
+        lib (ck-r6b-lib-t S0 (pj-kw-table M L P 0 S0))
+        S1 (string-concat S0 lib)
+        T (pj-trailer L P 0)
+        S (string-concat S1 T)
+        w (pj-ls L pj-k-trail (string-length S1))
+        M1 (if (= (vector-at M MM-ERR) 0) (pj-read M S) M)
+        M2 (if (= (vector-at M1 MM-ERR) 0) (pj-norm M1 L S) M1)
+        M3 (if (= (vector-at M2 MM-ERR) 0) (pj-splice M2 L) M2)
+        M4 (if (= (vector-at M3 MM-ERR) 0) (pj-qscan M3 L P S 0) M3)
+        M5 (if (= (vector-at M4 MM-ERR) 0) (pj-refcheck M4 L P 0) M4)
+        M6 (if (= (vector-at M5 MM-ERR) 0) (nm-run M5 S) M5)]
+    (if (> (vector-at M6 MM-ERR) 0)
+      (drv-pj-fail M6 L P)
+      (drv-c3 M6 S path 2 out))))))
+
+(defn- drv-pj-wasm-package-module [M :vector-i64 L :vector-i64 P :string m :i64 i :i64] :vector-i64
+  (let [n (pj-mf L m pj-mf-wasm-len)
+        off (pj-mf L m pj-mf-wasm-off)]
+    (if (>= i n) M
+      (drv-pj-wasm-package-module (out-put M (pj-ib L (+ off i))) L P m (+ i 1)))))
+
+(defn- drv-pj-wasm-package-modules [M :vector-i64 L :vector-i64 P :string k :i64] :vector-i64
+  (if (>= k (pj-l L pj-k-nord)) M
+    (let [m (pj-l L (+ pj-o-base k))
+          ns (pj-p L P (pj-mf L m pj-mf-name))
+          M1 (out-put-word M (string-length ns))
+          M2 (loop [i 0 M M1]
+               (if (>= i (string-length ns)) M
+                 (recur (+ i 1) (out-put M (string-code-point-at ns i)))))
+          M3 (out-put-word M2 (pj-mf L m pj-mf-wasm-len))
+          M4 (drv-pj-wasm-package-module M3 L P m 0)]
+      (drv-pj-wasm-package-modules M4 L P (+ k 1)))))
+
+(defn- drv-pj-wasm-package [M :vector-i64 L :vector-i64 P :string] :vector-i64
+  (let [M0 (out-w M MM-OUT-N 1)
+        M1 (loop [i 0 M M0]
+             (if (>= i 8) M
+               (recur (+ i 1) (out-put M (string-code-point-at "KOTOBAP1" i)))))
+        M2 (out-put-word M1 (pj-l L pj-k-nord))]
+    (drv-pj-wasm-package-modules M2 L P 0)))
+
+(defn- drv-pj-wasm-project [M :vector-i64 L :vector-i64 P :string out :string] :i64
+  (let [w (pj-ls L pj-k-mode 2)
+        P1 (pj-project-wasm M L P)]
+    (cond (> (vector-at M MM-ERR) 0) (drv-pj-fail M L P1)
+          (= (string-length out) 0) (drv-usage)
+          :else (let [M1 (drv-pj-wasm-package M L P1)
+                      n (- (vector-at M1 MM-OUT-N) 1)
+                      w2 (if (= (vector-at M1 MM-ERR) 0) (io-write-bytes M1 out (+ MM-OUT-BASE 1) n) 0)]
+                  (cond (> (vector-at M1 MM-ERR) 0) (drv-fail0 (vector-at M1 MM-ERR))
+                        (= (io-exists out) 0) (drv-fail0 E-WRITE)
+                        :else (let [x (io-out (string-concat "{:ok true, :target :wasm32-browser, :format :kotoba.wasm-project/v1, :output \""
+                                      (string-concat out (string-concat "\", :modules "
+                                        (string-concat (mem-u2dec (pj-l L pj-k-nord)) (string-concat ", :bytes "
+                                          (string-concat (mem-u2dec n) "}\n")))))))] 0))))))
 
 ;; argv index of the value after the flag spelled s, -1 when absent
 (defn- drv-pj-flag [i :i64 n :i64 s :string] :i64
@@ -518,15 +773,19 @@
 (defn- drv-pj-run [S :string path :string mode :i64 out :string] :i64
   (let [M (lx-run (mem-set (mem-set (mem-new) MM-QUIET (if (= mode 3) 1 0)) MM-SRC-LEN (string-length S)) S)   ; R6L: mode 3 = 1, quiet
         M1 (if (= (vector-at M MM-ERR) 0) (rd-run M S) M)]
+    (if (and (= mode 2) (= (drv-pj-has 1 (io-argc) "--emit-module") 1))
+      (drv-fail0 E-WASM-UNSUPPORTED)
     (if (= (drv-pj-has 1 (io-argc) "--emit-module") 1)
       (drv-pj-emitmod M1 path out)
     (if (and (= (vector-at M1 MM-ERR) 0) (or (= (drv-pj-has 1 (io-argc) "--source-path") 1) (= (pj-needed M1 S) 1)))
       (drv-pj-compile M1 path mode out)
-      (drv-c2 M1 S path mode out)))))
+      (drv-c2 M1 S path mode out))))))
 ;; ==== END R5A project route ===========================================================================================
 
 (defn- drv-run [path :string mode :i64 out :string] :i64
-  (if (= (io-exists path) 1) (let [S0 (drv-read path)] (drv-pj-run (string-concat S0 (ck-r6b-lib S0)) path mode out)) (drv-fail0 E-READ)))   ; R6B: + the source library
+  (if (= (drv-pj-has 1 (io-argc) "--module-lock") 1)
+    (drv-pj-compile-locked path mode out)
+    (if (= (io-exists path) 1) (let [S0 (drv-read path)] (drv-pj-run (string-concat S0 (ck-r6b-lib S0)) path mode out)) (drv-fail0 E-READ))))   ; R6B: + the source library
 ;; R6L (FOLD, CMD request): compile src into the kseed file out with the flags of argv (--policy, --source-path ..), status 0 /
 ;; 1 (refusal printed) / 2, WITHOUT the ok line; seed.main of the split exports it (gen-split.py) for amu's compile command.
 (defn- drv-compile-file [src :string out :string] :i64 (drv-run src 3 out))
@@ -535,23 +794,27 @@
   (let [r (drv-fail0 E-USAGE)] 2))
 
 ;; compile: <out> "-" or the word hex -> hex on stdout; any other <out> -> that file (see the header)
-(defn- drv-compile2 [src :i64 out :i64 hex :i64] :i64
+(defn- drv-compile2 [src :i64 out :i64 hex :i64 mode :i64] :i64
   (cond (< src 0) (drv-usage)
-        (= hex 1) (drv-run (io-arg src) 1 "")
+        (= hex 1) (drv-run (io-arg src) mode "")
         (< out 0) (drv-usage)
-        (= (drv-dash (io-arg out)) 1) (drv-run (io-arg src) 1 "")
-        :else (drv-run (io-arg src) 1 (io-arg out))))
+        (= (drv-dash (io-arg out)) 1) (drv-run (io-arg src) mode "")
+        :else (drv-run (io-arg src) mode (io-arg out))))
 
-;; --target, when given, must be aarch64-macos
-(defn- drv-target-ok [t :i64] :i64
-  (if (< t 0) 1 (drv-is (io-arg t) 13 5514353923192055574)))
+;; 1 = aarch64-macos (default), 2 = the scalar wasm32-browser pilot, 0 = refused
+(defn- drv-target-mode [t :i64] :i64
+  (cond (< t 0) 1
+        (string=? (io-arg t) "aarch64-macos") 1
+        (string=? (io-arg t) "wasm32-browser") 2
+        :else 0))
 
 (defn- drv-compile [n :i64] :i64
   (let [o (drv-flag 1 n -5168643622338417694)
-        t (drv-flag 1 n 4838156518066596434)]
-    (cond (= (drv-target-ok t) 0) (drv-fail0 E-TARGET)
-          (>= o 0) (drv-compile2 (drv-pos 1 n 0) o (drv-hexflag 1 n))
-          :else (drv-compile2 (drv-pos 1 n 0) (drv-pos 1 n 1) (drv-hexflag 1 n)))))
+        t (drv-flag 1 n 4838156518066596434)
+        mode (drv-target-mode t)]
+    (cond (= mode 0) (drv-fail0 E-TARGET)
+          (>= o 0) (drv-compile2 (drv-pos 1 n 0) o (drv-hexflag 1 n) mode)
+          :else (drv-compile2 (drv-pos 1 n 0) (drv-pos 1 n 1) (drv-hexflag 1 n) mode))))
 
 (defn- drv-check [n :i64] :i64
   (let [s (drv-pos 1 n 0)]
@@ -839,11 +1102,6 @@
 (defn- drv-r5b-wname [w :i64] :string
   (case w 3 ":hash/sha256" 7 ":clock/now" 33 ":env/read" 34 ":fs/browse" 35 ":fs/app-data" 37 ":io/write" 38 ":cli/args"
         39 ":io/write-error" 41 ":io/read" (mem-u2dec w)))
-;; the wire of a capability name (with ':'), -1 when none
-(defn- drv-r5b-wire [s :string] :i64
-  (cond (string=? s ":hash/sha256") 3 (string=? s ":clock/now") 7 (string=? s ":env/read") 33 (string=? s ":fs/browse") 34
-        (string=? s ":fs/app-data") 35 (string=? s ":fs/app-data-bytes") 35 (string=? s ":io/write") 37 (string=? s ":cli/args") 38
-        (string=? s ":io/write-error") 39 (string=? s ":io/read") 41 :else -1))
 ;; the items of mask m (bit 47 = :state first, then the wires in ascending order), each wrapped by pre/post, as #{..}. R5B rung
 ;; proof (a handler written in the language): the text is the state of handler drv-acc, whose put APPENDS (it was a loop
 ;; accumulator); drv-r5b-items is stateful and self-recursive
@@ -919,34 +1177,457 @@
                         (string-concat acc (string-concat (string-substring tpl 0 i) (drv-r5b-ph M path (string-substring rest 0 j))))))))))
 
 ;; ---- the capability policy (--policy P, the stage-0 file shape {:allow #{[:cap/call N] [:cap/call :name] ..}}) ----
-;; decimal digits of s from i to its end, -1 when s has another byte or none
-(defn- drv-r5b-num [s :string] :i64
-  (let [n (string-length s)]
-    (loop [i 0 v 0]
-      (cond (>= i n) (if (> n 0) v -1)
-            (and (>= (string-code-point-at s i) 48) (<= (string-code-point-at s i) 57)) (recur (inc i) (+ (* v 10) (- (string-code-point-at s i) 48)))
-            :else -1))))
-;; the allowed mask of policy text T, -1 when malformed
-(defn- drv-r5b-allow [T :string] :i64
-  (if (< (string-index-of T ":allow") 0)
-    -1
-    (loop [t T acc 0]
-      (let [i (string-index-of t "[:cap/call ")]
-        (if (< i 0)
-          acc
-          (let [r (string-substring t (+ i 11) (string-length t))
-                j (string-index-of r "]")
-                x (if (< j 0) "" (string-substring r 0 j))
-                w (if (and (> (string-length x) 0) (= (string-code-point-at x 0) 58)) (drv-r5b-wire x) (drv-r5b-num x))]
-            (if (or (< w 0) (>= w 47)) -1 (recur (string-substring r (+ j 1) (string-length r)) (bit-or acc (i64-shift-left 1 w))))))))))
-;; -1 when the compile may write its output: no --policy, or every required capability (mask req) is allowed; else the
-;; refusal is printed (E2177 / E2170) and the exit status is returned
+(defn- drv-pol-utf8-width [code-point :i64] :i64
+  (cond (< code-point 128) 1
+        (< code-point 2048) 2
+        (< code-point 65536) 3
+        :else 4))
+
+(defn- drv-pol-utf16-width [code-point :i64] :i64
+  (if (> code-point 65535) 2 1))
+
+(defn- drv-pol-whitespace? [code-point :i64] :bool
+  (or (= code-point 32) (= code-point 9) (= code-point 10)
+      (= code-point 13) (= code-point 44)))
+
+(defn- drv-pol-result [status :i64 reason :i64 byte-offset :i64
+                  root-count :i64 node-count :i64] :vector-i64
+  (let [r0 (vector-assoc! (vector-alloc 5) 0 status)
+        r1 (vector-assoc! r0 1 reason)
+        r2 (vector-assoc! r1 2 byte-offset)
+        r3 (vector-assoc! r2 3 root-count)]
+    (vector-assoc! r3 4 node-count)))
+
+(defn- drv-pol-preflight [text :string] :vector-i64
+  "Return [status reason byte-offset roots nodes]. Status 1 means the bounded
+  scan is safe to hand to a policy decoder; status 0 is a refusal. Reasons:
+  1 dispatch, 2 depth, 3 token length, 4 node count, 5 multiple roots,
+  6 unterminated string, 7 unclosed collection, 8 empty input,
+  9 source-reader prefix, 10 non-ASCII token, 11 mismatched or unmatched closer."
+  (let [length (string-length text)]
+    (loop [offset 0 depth 0 token-length 0 in-string 0 escaped 0
+           in-comment 0 nodes 0 roots 0 stack (vector-alloc 128)]
+      (if (>= offset length)
+        (cond (= in-string 1) (drv-pol-result 0 6 length roots nodes)
+              (> depth 0) (drv-pol-result 0 7 length roots nodes)
+              (= roots 0) (drv-pol-result 0 8 length roots nodes)
+              :else (drv-pol-result 1 0 -1 roots nodes))
+        (let [code-point (string-code-point-at text offset)
+              width (drv-pol-utf8-width code-point)
+              next-offset (+ offset width)
+              next-code-point (if (< next-offset length)
+                                (string-code-point-at text next-offset)
+                                -1)]
+          (cond
+            (= in-comment 1)
+            (recur next-offset depth 0 0 0
+                   (if (= code-point 10) 0 1) nodes roots stack)
+
+            (= in-string 1)
+            (cond
+              (= escaped 1)
+              (recur next-offset depth 0 1 0 0 nodes roots stack)
+
+              (= code-point 92)
+              (recur next-offset depth 0 1 1 0 nodes roots stack)
+
+              (= code-point 34)
+              (recur next-offset depth 0 0 0 0 nodes roots stack)
+
+              :else
+              (recur next-offset depth 0 1 0 0 nodes roots stack))
+
+            (= code-point 59)
+            (recur next-offset depth 0 0 0 1 nodes roots stack)
+
+            (= code-point 34)
+            (let [next-nodes (+ nodes 1)
+                  next-roots (if (= depth 0) (+ roots 1) roots)]
+              (cond (> next-nodes 200000)
+                    (drv-pol-result 0 4 offset roots nodes)
+                    (> next-roots 1)
+                    (drv-pol-result 0 5 offset next-roots next-nodes)
+                    :else
+                    (recur next-offset depth 0 1 0 0 next-nodes next-roots stack)))
+
+            (= code-point 35)
+            (if (= next-code-point 123)
+              (recur next-offset depth 0 0 0 0 nodes roots stack)
+              (drv-pol-result 0 1 offset roots nodes))
+
+            (or (= code-point 40) (= code-point 91) (= code-point 123))
+            (let [next-depth (+ depth 1)
+                  next-nodes (+ nodes 1)
+                  next-roots (if (= depth 0) (+ roots 1) roots)]
+              (cond (> next-depth 128)
+                    (drv-pol-result 0 2 offset roots nodes)
+                    (> next-nodes 200000)
+                    (drv-pol-result 0 4 offset roots nodes)
+                    (> next-roots 1)
+                    (drv-pol-result 0 5 offset next-roots next-nodes)
+                    :else
+                    (recur next-offset next-depth 0 0 0 0 next-nodes next-roots
+                           (vector-assoc! stack depth code-point))))
+
+            (or (= code-point 41) (= code-point 93) (= code-point 125))
+            (if (= depth 0)
+              (drv-pol-result 0 11 offset roots nodes)
+              (let [open (vector-at stack (- depth 1))
+                    want (cond (= open 40) 41 (= open 91) 93 :else 125)]
+                (if (= code-point want)
+                  (recur next-offset (- depth 1) 0 0 0 0 nodes roots stack)
+                  (drv-pol-result 0 11 offset roots nodes))))
+
+            (or (= code-point 64) (= code-point 94))
+            (drv-pol-result 0 9 offset roots nodes)
+
+            (drv-pol-whitespace? code-point)
+            (recur next-offset depth 0 0 0 0 nodes roots stack)
+
+            (> code-point 127)
+            (drv-pol-result 0 10 offset roots nodes)
+
+            :else
+            (let [starts-token (= token-length 0)
+                  next-token-length (+ token-length (drv-pol-utf16-width code-point))
+                  next-nodes (+ nodes (if starts-token 1 0))
+                  next-roots (if (and starts-token (= depth 0)) (+ roots 1) roots)]
+              (cond (> next-token-length 4096)
+                    (drv-pol-result 0 3 offset roots next-nodes)
+                    (> next-nodes 200000)
+                    (drv-pol-result 0 4 offset roots next-nodes)
+                    (> next-roots 1)
+                    (drv-pol-result 0 5 offset next-roots next-nodes)
+                    :else
+                    (recur next-offset depth next-token-length 0 0 0
+                           next-nodes next-roots stack)))))))))
+(defn- drv-pol-separator [name :string] :string
+  (string-concat name "_SEP"))
+
+(defn- drv-pol-stat [path :string] :string
+  (typed-cap-call :fs/app-data :string :string
+    (string-concat path (drv-pol-separator "NOFOLLOW"))))
+
+(defn- drv-pol-decimal-bounded [text :string] :i64
+  (let [n (string-length text)]
+    (loop [i 0 value 0]
+      (if (>= i n)
+        (if (> n 0) value -1)
+        (let [digit (- (string-code-point-at text i) 48)]
+          (if (or (< digit 0) (> digit 9))
+            -1
+            (let [next-value (+ (* value 10) digit)]
+              (if (> next-value 8388608)
+                -1
+                (recur (+ i 1) next-value)))))))))
+
+(defn- drv-pol-stat-size [stat :string] :i64
+  (let [first-space (string-index-of stat " ")]
+    (if (< first-space 0)
+      -1
+      (let [tail1 (string-substring stat (+ first-space 1) (string-length stat))
+            second-space (string-index-of tail1 " ")]
+        (if (< second-space 0)
+          -1
+          (let [size-text (string-substring tail1 0 second-space)
+                tail2 (string-substring tail1 (+ second-space 1) (string-length tail1))
+                third-space (string-index-of tail2 " ")
+                kind (if (< third-space 0)
+                       ""
+                       (string-substring tail2 (+ third-space 1) (string-length tail2)))]
+            (if (string=? kind "0")
+              (drv-pol-decimal-bounded size-text)
+              -1)))))))
+
+(defn- drv-pol-range [path :string size :i64] :string
+  (typed-cap-call :fs/app-data :string :string
+    (string-concat
+      path
+      (string-concat
+        (drv-pol-separator "RANGE")
+        (string-concat "0:" (string-from-i64 size))))))
+
+(defn- drv-pol-valid-text [text :string size :i64] :bool
+  (let [scan (drv-pol-preflight text)]
+    (and (= (string-byte-length text) size)
+         (= (vector-at scan 0) 1))))
+
+(defn- drv-pol-read-sized [path :string before :string] :string
+  (let [size (drv-pol-stat-size before)]
+    (if (or (< size 0) (= size 0))
+      ""
+      (let [text (drv-pol-range path size)
+            after-size (drv-pol-stat-size (drv-pol-stat path))]
+        (if (and (= after-size size)
+                 (drv-pol-valid-text text size))
+          text
+          "")))))
+
+;; locate the value after --policy while skipping other flag values
+(defn- drv-pol-argv-path [i :i64 n :i64] :string
+  (cond
+    (>= i n) ""
+    (string=? (io-arg i) "--policy") (if (< (+ i 1) n) (io-arg (+ i 1)) "")
+    (= (drv-flagv (io-arg i)) 1) (drv-pol-argv-path (+ i 2) n)
+    :else (drv-pol-argv-path (+ i 1) n)))
+
+;; EDN value tags over the source AST. The AST keeps the original token span,
+;; so true/false/nil can be recovered as values even though 11-read stores
+;; them as ND-SYM. These tags are private to the bounded policy decoder; they
+;; do not authorize a policy or alter the source-language symbol table.
+(defn- drv-pol-sym-is? [M :vector-i64 S :string node :i64 spelling :string] :bool
+  (if (= (nm-kind M node) ND-SYM)
+    (let [tok (nm-nf M node NF-TOK)
+          start (nm-tf M tok TF-START)
+          end (nm-tf M tok TF-END)]
+      (string=? (string-substring S start end) spelling))
+    false))
+
+(defn- drv-pol-kw-is? [M :vector-i64 S :string node :i64 spelling :string] :bool
+  (if (= (nm-kind M node) ND-KW)
+    (let [tok (nm-nf M node NF-TOK)
+          start (nm-tf M tok TF-START)
+          end (nm-tf M tok TF-END)]
+      (string=? (string-substring S start end) spelling))
+    false))
+
+;; 1 int, 2 string, 3 keyword, 4 nil, 5 false, 6 true, 7 symbol,
+;; 8 list, 9 vector, 10 map, 11 set; 0 is not a policy value.
+(defn- drv-pol-value-kind [M :vector-i64 S :string node :i64] :i64
+  (let [kind (nm-kind M node)]
+    (cond (= kind ND-INT) 1
+          (= kind ND-STR) 2
+          (= kind ND-KW) 3
+          (= kind ND-SYM) (cond (drv-pol-sym-is? M S node "nil") 4
+                                (drv-pol-sym-is? M S node "false") 5
+                                (drv-pol-sym-is? M S node "true") 6
+                                :else 7)
+          (= kind ND-LIST) 8
+          (= kind ND-VEC) 9
+          (= kind ND-MAP) 10
+          (= kind ND-SET) 11
+          :else 0)))
+
+(defn- drv-pol-value-kids? [M :vector-i64 S :string node :i64] :bool
+  (loop [child (nm-first M node)]
+    (if (= child 0)
+      true
+      (if (drv-pol-value-tree? M S child)
+        (recur (nm-next M child))
+        false))))
+
+(defn- drv-pol-value-tree? [M :vector-i64 S :string node :i64] :bool
+  (let [kind (drv-pol-value-kind M S node)]
+    (cond
+      (= kind 0) false
+      (and (= kind 10) (= (bit-and (nm-count M node) 1) 1)) false
+      (or (= kind 8) (= kind 9) (= kind 10) (= kind 11))
+      (drv-pol-value-kids? M S node)
+      :else true)))
+
+;; The owner admission schema is closed over these nine keys plus the two
+;; compiler controls. Only :allow has a local structural contract here; other
+;; values remain untouched for their future owner-equivalent evaluators.
+(defn- drv-pol-root-key? [M :vector-i64 S :string node :i64] :bool
+  (or (drv-pol-kw-is? M S node ":allow")
+      (drv-pol-kw-is? M S node ":abac")
+      (drv-pol-kw-is? M S node ":attributes")
+      (drv-pol-kw-is? M S node ":information-flow")
+      (drv-pol-kw-is? M S node ":crypto-required?")
+      (drv-pol-kw-is? M S node ":crypto-policy")
+      (drv-pol-kw-is? M S node ":crypto-envelope")
+      (drv-pol-kw-is? M S node ":hardware-signing-required?")
+      (drv-pol-kw-is? M S node ":hardware-signing-evidence")
+      (drv-pol-kw-is? M S node ":language-profile")
+      (drv-pol-kw-is? M S node ":budgets")))
+
+(defn- drv-pol-root-keys? [M :vector-i64 S :string map :i64] :bool
+  (loop [key (nm-first M map)]
+    (if (= key 0)
+      true
+      (let [value (nm-next M key)]
+        (if (= value 0)
+          false
+          (if (drv-pol-root-key? M S key)
+            (recur (nm-next M value))
+            false))))))
+
+;; Map construction in the pinned NBB reader applies pairs in source order;
+;; assoc makes a repeated key's last value authoritative.
+(defn- drv-pol-map-last-value [M :vector-i64 S :string map :i64 key-text :string] :i64
+  (loop [key (nm-first M map) result 0]
+    (if (= key 0)
+      result
+      (let [value (nm-next M key)
+            next-key (if (= value 0) 0 (nm-next M value))]
+        (if (= value 0)
+          result
+          (recur next-key (if (drv-pol-kw-is? M S key key-text) value result)))))))
+
+(defn- drv-pol-name-wire [M :vector-i64 S :string node :i64] :i64
+  (cond
+      (drv-pol-kw-is? M S node ":identity/sign") 1
+      (drv-pol-kw-is? M S node ":identity/verify") 2
+      (drv-pol-kw-is? M S node ":hash/sha256") 3
+      (drv-pol-kw-is? M S node ":http/post") 4
+      (drv-pol-kw-is? M S node ":log/read") 5
+      (drv-pol-kw-is? M S node ":log/append") 6
+      (drv-pol-kw-is? M S node ":clock/now") 7
+      (drv-pol-kw-is? M S node ":state/transact") 8
+      (drv-pol-kw-is? M S node ":ui/commit") 9
+      (drv-pol-kw-is? M S node ":ui/next-event") 10
+      (drv-pol-kw-is? M S node ":llm/generate") 11
+      (drv-pol-kw-is? M S node ":storage/transact") 12
+      (drv-pol-kw-is? M S node ":http/get-stream") 13
+      (drv-pol-kw-is? M S node ":object/get-stream") 14
+      (drv-pol-kw-is? M S node ":object/put-block") 15
+      (drv-pol-kw-is? M S node ":object/compare-and-set-ref") 16
+      (drv-pol-kw-is? M S node ":http/accept") 17
+      (drv-pol-kw-is? M S node ":http/reply") 18
+      (drv-pol-kw-is? M S node ":fs/transact") 19
+      (drv-pol-kw-is? M S node ":process/spawn") 20
+      (drv-pol-kw-is? M S node ":secret/get") 21
+      (drv-pol-kw-is? M S node ":git/run") 22
+      (drv-pol-kw-is? M S node ":entropy/draw") 23
+      (drv-pol-kw-is? M S node ":dataspace/transact") 24
+      (drv-pol-kw-is? M S node ":stream/accept") 25
+      (drv-pol-kw-is? M S node ":stream/send") 26
+      (drv-pol-kw-is? M S node ":net/datagram") 27
+      (drv-pol-kw-is? M S node ":link/frame") 28
+      (drv-pol-kw-is? M S node ":can/frame") 29
+      (drv-pol-kw-is? M S node ":code/eval") 30
+      (drv-pol-kw-is? M S node ":screen/observe") 31
+      (drv-pol-kw-is? M S node ":screen/act") 32
+      (drv-pol-kw-is? M S node ":env/read") 33
+      (drv-pol-kw-is? M S node ":fs/browse") 34
+      (drv-pol-kw-is? M S node ":fs/app-data") 35
+      (drv-pol-kw-is? M S node ":fs/browse-dir") 36
+      (drv-pol-kw-is? M S node ":io/write") 37
+      (drv-pol-kw-is? M S node ":cli/args") 38
+      (drv-pol-kw-is? M S node ":io/write-error") 39
+      (drv-pol-kw-is? M S node ":sys/cwd") 40
+      (drv-pol-kw-is? M S node ":io/read") 41
+      (drv-pol-kw-is? M S node ":gpu/compute") 42
+      (drv-pol-kw-is? M S node ":net/listen") 43
+      (drv-pol-kw-is? M S node ":net/accept") 44
+      (drv-pol-kw-is? M S node ":net/dial") 45
+      (drv-pol-kw-is? M S node ":net/read") 46
+      (drv-pol-kw-is? M S node ":net/write") 47
+      :else -1))
+
+(defn- drv-pol-grant? [M :vector-i64 S :string entry :i64] :bool
+  (if (and (= (nm-kind M entry) ND-VEC) (= (nm-count M entry) 2))
+    (let [capability (nm-first M entry)
+          grant (nm-next M capability)]
+      (and (drv-pol-kw-is? M S capability ":cap/call")
+           (or (and (= (nm-kind M grant) ND-INT)
+                    (let [wire (nm-nf M grant NF-AUX)]
+                      (and (>= wire 0) (<= wire 255))))
+               (and (= (nm-kind M grant) ND-KW)
+                    (>= (drv-pol-name-wire M S grant) 0)))))
+    false))
+
+(defn- drv-pol-grant-wire [M :vector-i64 S :string entry :i64] :i64
+  (if (and (= (nm-kind M entry) ND-VEC) (= (nm-count M entry) 2))
+    (let [capability (nm-first M entry)
+          grant (nm-next M capability)]
+      (if (drv-pol-kw-is? M S capability ":cap/call")
+        (cond (= (nm-kind M grant) ND-INT) (nm-nf M grant NF-AUX)
+              (= (nm-kind M grant) ND-KW) (drv-pol-name-wire M S grant)
+              :else -1)
+        -1))
+    -1))
+
+;; Project grants to the seed's recognized wire-mask domain. Repeated numeric
+;; and named spellings collapse by bitwise OR, as they do after owner set
+;; canonicalization. IDs outside 0..46 cannot satisfy a current seed effect;
+;; numeric range refusal remains a later admission decision.
+(defn- drv-pol-allow-mask [M :vector-i64 S :string allow :i64] :i64
+  (loop [entry (nm-first M allow) mask 0]
+    (if (= entry 0)
+      mask
+      (if (not (drv-pol-grant? M S entry))
+        -1
+        (let [wire (drv-pol-grant-wire M S entry)
+              next-mask (if (and (>= wire 0) (< wire 47))
+                          (bit-or mask (i64-shift-left 1 wire))
+                          mask)]
+          (recur (nm-next M entry) next-mask))))))
+
+;; :allow is optional at the owner boundary, but when present its value is a
+;; set of exact [:cap/call id-or-known-name] entries. Resolve duplicate root entries
+;; with NBB's last-wins map behavior.
+(defn- drv-pol-policy-shape? [M :vector-i64 S :string map :i64] :bool
+  (let [allow (drv-pol-map-last-value M S map ":allow")]
+    (and (drv-pol-root-keys? M S map)
+         (or (= allow 0)
+             (and (= (nm-kind M allow) ND-SET)
+                  (>= (drv-pol-allow-mask M S allow) 0))))))
+
+;; The admitted policy subset has only the :allow root key (or no keys).
+;; Every other policy field stays closed until its owner evaluator is ported.
+(defn- drv-pol-allow-only? [M :vector-i64 S :string map :i64] :bool
+  (loop [key (nm-first M map)]
+    (if (= key 0)
+      true
+      (let [value (nm-next M key)]
+        (if (or (= value 0) (not (drv-pol-kw-is? M S key ":allow")))
+          false
+          (recur (nm-next M value)))))))
+
+;; parse the preflighted text in an isolated seed heap; require one root map
+;; with paired children, typed EDN nodes, known root keys, and an optional
+;; :allow set of integer or catalog-named capability-call entries. Status 1
+;; is well-shaped but has unsupported policy fields; status 0 is malformed or
+;; refused by bounded preflight. A :allow-only map encodes as 2 + 4 * its
+;; recognized grant mask so the gate can compare required effects.
+(defn- drv-pol-reader-shape? [text :string] :i64
+  (let [P0 (mem-set (mem-new) MM-SRC-LEN (string-length text))
+        P1 (lx-run P0 text)
+        P2 (if (= (vector-at P1 MM-ERR) 0) (rd-run P1 text) P1)
+        root (vector-at P2 MM-ROOT)
+        forms (nm-count P2 root)
+        form (nm-first P2 root)
+        items (nm-count P2 form)]
+    (if (= (vector-at P2 MM-ERR) 0)
+      (if (= forms 1)
+        (if (= (nm-kind P2 form) ND-MAP)
+          (if (and (= (bit-and items 1) 0)
+                   (drv-pol-value-tree? P2 text form)
+                   (drv-pol-policy-shape? P2 text form))
+            (if (drv-pol-allow-only? P2 text form)
+              (let [allow (drv-pol-map-last-value P2 text form ":allow")
+                    mask (if (= allow 0) 0 (drv-pol-allow-mask P2 text allow))]
+                (+ 2 (* mask 4)))
+              1)
+            0)
+          0)
+        0)
+      0)))
+
+;; bounded text and raw-reader shape only; status >=2 encodes an allow-only map
+(defn- drv-pol-file-safe? [path :string] :i64
+  (let [text (if (or (= (string-length path) 0) (= (io-exists path) 0))
+               ""
+               (drv-pol-read-sized path (drv-pol-stat path)))]
+    (if (> (string-length text) 0) (drv-pol-reader-shape? text) 0)))
+
+;; -1 when the compile may write its output: no --policy, or a :allow-only
+;; policy covers every recognized required capability; otherwise refuse.
 (defn- drv-r5b-gate [M :vector-i64 path :string req :i64] :i64
   (let [present (drv-pj-has 1 (io-argc) "--policy")]
     (if (= present 0)
       -1
-      ;; Integration safety: the legacy text scanner cannot prove an :allow
-      ;; set's structure. Refuse every explicit policy until a structured,
-      ;; qualified parser exists; deny fields and comments never grant access.
-      (drv-say E-POLICY-FILE "structured capability policy checking is not qualified in this seed snapshot" -1))))
+      (let [safe (drv-pol-file-safe? (drv-pol-argv-path 1 (io-argc)))]
+        (cond
+          (>= safe 2)
+          (let [allow-mask (quot (- safe 2) 4)
+                required-mask (bit-and req drv-r5b-m47)
+                unsupported-mask (bit-and req (bit-not (bit-or drv-r5b-m47 drv-r5b-state)))]
+            (if (and (= unsupported-mask 0)
+                     (= (bit-and required-mask (bit-not allow-mask)) 0))
+              -1
+              (drv-say E-CAP-POLICY "capability policy denies required effects" -1)))
+          (= safe 1) (drv-say E-POLICY-FILE "structured capability policy checking is not qualified in this seed snapshot" -1)
+          :else (drv-say E-POLICY-FILE "policy file failed bounded preflight or cannot be read; explicit policy remains closed" -1))))))
 ;; ==== END R5B ==========================================================================================================

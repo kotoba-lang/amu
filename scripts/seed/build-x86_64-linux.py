@@ -25,7 +25,7 @@ def build(output):
     spec = importlib.util.spec_from_file_location("adopted_build", ROOT / "scripts/seed/build-adopted.py")
     adopted = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(adopted)
-    receipt, _, producer, loader_source = adopted.inputs(ROOT / "seed/adoption-20261017.json")
+    receipt, _, producer, loader_source = adopted.inputs(ROOT / "seed/adoption-20261018.json")
     manifest = ROOT / "seed/X86_64-LINUX-MANIFEST"
     paths = [ROOT / x for x in manifest.read_text().splitlines() if x and not x.startswith("#")]
     unity = b"".join(p.read_bytes() + b"\n" for p in paths)
@@ -65,7 +65,7 @@ def build(output):
     loader = host / "kexe-loader"
     run("loader-build", ["clang", "-std=c11", "-O2", loader_source, "-o", loader])
     generations = []
-    for generation in (1, 2):
+    for generation in (1, 2, 3):
         prefix = [loader, producer, "0", "0", "aarch64", "35,37,38,39", "--"]
         container = artifacts / f"G{generation}.kseed"
         native = artifacts / f"G{generation}.bin"
@@ -73,10 +73,10 @@ def build(output):
         run(f"G{generation}-extract", prefix + ["extract-native", container, "--symbol", "main", "--output", native])
         generations.append({"native": pin(native), "container": pin(container)})
         producer = native
-    if generations[0]["native"]["sha256"] != generations[1]["native"]["sha256"]:
-        raise SystemExit("native G1/G2 fixed point failed")
-    if generations[0]["container"]["sha256"] != generations[1]["container"]["sha256"]:
-        raise SystemExit("container G1/G2 fixed point failed")
+    if generations[1]["native"]["sha256"] != generations[2]["native"]["sha256"]:
+        raise SystemExit("native G2/G3 fixed point failed: " + json.dumps(generations))
+    if generations[1]["container"]["sha256"] != generations[2]["container"]["sha256"]:
+        raise SystemExit("container G2/G3 fixed point failed: " + json.dumps(generations))
     report = {"status": "PASS_NATIVE_X86_64_LINUX_CROSS_COMPILER_BUILD",
               "hostTarget": "aarch64-macos", "outputTarget": "x86_64-linux",
               "outputProfile": "scalar ELF64, main()->i64, at most five scalar arguments",

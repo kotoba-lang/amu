@@ -168,12 +168,16 @@ def prepare(build, output):
         rows.append({**case, "elf": str(elf.relative_to(output)), "native": str(code.relative_to(output)),
                      "offset": fields["function-offset"], "elfPin": pin(elf), "nativePin": pin(code),
                      "aarch64Reference": reference_a64(case)})
-    # The optional entry must preserve the adopted AArch64 route byte-for-byte.
+    # The optional entry must preserve the current adopted AArch64 route byte-for-byte.
+    # Use the compiler pinned by the current adoption receipt; the 2026-10-12
+    # compiler is a historical baseline and differs from this source revision.
+    adoption = json.loads((ROOT / "seed/adoption-20261018.json").read_text())
+    adopted_compiler = ROOT / adoption["bootstrapPath"]
     a64_identity = []
     for case in cases()[:3]:
         src = artifacts / (case["name"] + ".kotoba")
         images = []
-        for label, compiler in [("adopted", ROOT / "seed/bootstrap/adopted-20261012.bin"), ("extended", producer)]:
+        for label, compiler in [("adopted", adopted_compiler), ("extended", producer)]:
             container = artifacts / (case["name"] + "." + label + ".kseed")
             args = [loader, compiler, "0", "0", "aarch64", "35,37,38,39", "--", "compile", src,
                     "--target", "aarch64-macos", "--output", container]

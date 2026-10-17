@@ -53,13 +53,14 @@
 (def pj-k-nexpn 12)   ; declared export names
 (def pj-k-trail 13)   ; byte offset of the trailer in the module's source
 (def pj-k-base 14)    ; image base of the module being compiled
-(def pj-k-mode 15)    ; 0 = link in process (patch stubs now); 1 = emit an object (60-proj separate mode: record the patches)
+(def pj-k-mode 15)    ; 0 = native link; 1 = native object; 2 = Wasm project bundle
 (def pj-k-root0 16)   ; .. 31: up to 16 roots
 (def pj-m-base 64) (def pj-m-w 24) (def pj-m-cap 256)   ; R6A: 20 words (was 16); R6D: 24 (pj-mf-tpl 20)
 (def pj-mf-name 0) (def pj-mf-path 1) (def pj-mf-state 2) (def pj-mf-depth 3) (def pj-mf-req0 4) (def pj-mf-nreq 5)
 (def pj-mf-if0 6) (def pj-mf-nif 7) (def pj-mf-base 8) (def pj-mf-expk 9) (def pj-mf-exp0 10) (def pj-mf-nexp 11)
 (def pj-mf-entry 12)  ; 1 = the entry module (its exports are the container's; a library exports nothing to it)
 (def pj-mf-obj 13)    ; separate mode: P index of the module's object text
+(def pj-mf-wasm-off 22) (def pj-mf-wasm-len 23) ; project Wasm bundle: module bytes in L's image region
 (def pj-r-base 200704) (def pj-r-w 8) (def pj-r-cap 4096)   ; LINK (r6h): was 8192 / 256 (the image's link has ~600 edges)
 (def pj-rf-mod 0) (def pj-rf-name 1) (def pj-rf-alias 2) (def pj-rf-ref0 3) (def pj-rf-nref 4) (def pj-rf-node 5)
 (def pj-f-base 12288) (def pj-f-w 3) (def pj-f-cap 1024)   ; referred name: P index, span start, span end
@@ -93,6 +94,14 @@
 (def pj-img-cap 29589504)
 (def pj-k-ifover 38)
 (def pj-k-strover 39)
+(def pj-k-locked 44)   ; locked content-addressed module input mode
+(def pj-k-blocks 45)   ; P index of explicit raw-block directory
+(def pj-k-lock-count 46)
+(def pj-k-lock-root 47) ; P index of the module-lock root namespace
+(def pj-lock-base 6208) (def pj-lock-w 2) (def pj-lock-cap 256) ; namespace P index, CID P index
+(def pj-mf-cid 21)     ; expected raw CID P index, -1 when unpinned
+(def pj-e-lock 6027)
+(def pj-e-cid 6028)
 ;; image byte a, and image byte a := b
 (defn- pj-ib [L :vector-i64 a :i64] :i64
   (bit-and (u64-shift-right (vector-at L (+ pj-img-base (u64-shift-right a 3))) (* 8 (bit-and a 7))) 255))
@@ -131,6 +140,21 @@
   (let [k (pj-n L)
         w (if (>= k (- pj-s-cap 1)) L (-> L (vector-assoc! (+ pj-s-base k) (string-length P)) (vector-assoc! pj-k-nstr (+ k 1))))]
     (if (>= k (- pj-s-cap 1)) (let [x (vector-assoc! L pj-k-strover 1)] P) (string-concat P s))))   ; LINK: flagged, not silent
+
+(defn- pj-lock-entry [L :vector-i64 i :i64] :i64 (+ pj-lock-base (* i pj-lock-w)))
+(defn- pj-lock-name [L :vector-i64 i :i64] :i64 (vector-at L (pj-lock-entry L i)))
+(defn- pj-lock-cid [L :vector-i64 i :i64] :i64 (vector-at L (+ (pj-lock-entry L i) 1)))
+(defn- pj-lock-find [L :vector-i64 P :string name :string] :i64
+  (loop [i 0]
+    (cond (>= i (pj-l L pj-k-lock-count)) -1
+          (pj-peq L P (pj-lock-name L i) name) i
+          :else (recur (+ i 1)))))
+(defn- pj-lock-put [L :vector-i64 name :i64 cid :i64] :vector-i64
+  (let [n (pj-l L pj-k-lock-count)
+        b (pj-lock-entry L n)]
+    (-> L (vector-assoc! b name) (vector-assoc! (+ b 1) cid) (pj-ls pj-k-lock-count (+ n 1)))))
+(defn- pj-block-path [L :vector-i64 P :string cid :i64] :string
+  (string-concat (pj-p L P (pj-l L pj-k-blocks)) (string-concat "/" (pj-p L P cid))))
 ;; string i of P is s (no allocation)
 (defn- pj-peq [L :vector-i64 P :string i :i64 s :string] :bool (pj-span= P (pj-pa L i) (pj-pb L P i) s))
 ;; a fresh pool (90-drv: the roots are added to it)
@@ -252,7 +276,9 @@
   (let [m (pj-l L pj-k-nmod)]
     (-> L (pj-mset m pj-mf-name name) (pj-mset m pj-mf-path path) (pj-mset m pj-mf-state 0) (pj-mset m pj-mf-depth 0)
         (pj-mset m pj-mf-nreq 0) (pj-mset m pj-mf-nif 0) (pj-mset m pj-mf-expk 0) (pj-mset m pj-mf-nexp 0) (pj-mset m pj-mf-entry 0) (pj-mset m pj-mf-sch -1)
-        (pj-mset m 15 0) (pj-mset m 18 0) (pj-mset m 19 0) (pj-mset m 20 0)   ; R6D: pj-mf-kwt kwu kwf tpl
+        (pj-mset m 15 0) (pj-mset m 18 0) (pj-mset m 19 0) (pj-mset m 20 0)
+        (pj-mset m pj-mf-wasm-off 0) (pj-mset m pj-mf-wasm-len 0)   ; R6D + Wasm bundle fields
+        (pj-mset m pj-mf-cid -1) ; expected CID starts unpinned; lock discovery installs it
         (pj-ls pj-k-nmod (+ m 1)))))
 
 ;; ---- the ns header ------------------------------------------------------------------------------------------------------
@@ -447,12 +473,24 @@
           (and (>= m 0) (= (pj-mf L m pj-mf-state) 1)) (let [w (pj-err M E-PROJ-CYCLE node)] P)
           (>= m 0) (let [w (pj-rset L r pj-rf-mod m)] P)
           (>= (pj-l L pj-k-nmod) pj-m-cap) (let [w (pj-err M E-PROJ-MODULES node)] P)
-          :else (let [path (pj-locate L P nm)]
-                  (cond (= (string-length path) 0) (let [w (pj-err M E-PROJ-MISSING node)] P)
-                        (string=? path "\n") (let [w (pj-err M E-PROJ-AMBIGUOUS node)] P)
-                        :else (let [k (pj-l L pj-k-nmod)
-                                    w (-> L (pj-add-mod (pj-rf L r pj-rf-name) (pj-n L)) (pj-rset r pj-rf-mod k) (pj-mset k pj-mf-depth (+ d 1)))]
-                                (pj-padd L P path)))))))
+          :else
+          (if (= (pj-l L pj-k-locked) 1)
+            (let [entry (pj-lock-find L P nm)]
+              (if (< entry 0)
+                (let [w (pj-err M pj-e-lock node)] P)
+                (let [cid (pj-lock-cid L entry)
+                      path (pj-n L)
+                      P1 (pj-padd L P (pj-block-path L P cid))
+                      k (pj-l L pj-k-nmod)
+                      w (-> L (pj-add-mod (pj-rf L r pj-rf-name) path) (pj-rset r pj-rf-mod k)
+                            (pj-mset k pj-mf-depth (+ d 1)) (pj-mset k pj-mf-cid cid))]
+                  P1)))
+            (let [path (pj-locate L P nm)]
+              (cond (= (string-length path) 0) (let [w (pj-err M E-PROJ-MISSING node)] P)
+                    (string=? path "\n") (let [w (pj-err M E-PROJ-AMBIGUOUS node)] P)
+                    :else (let [k (pj-l L pj-k-nmod)
+                                w (-> L (pj-add-mod (pj-rf L r pj-rf-name) (pj-n L)) (pj-rset r pj-rf-mod k) (pj-mset k pj-mf-depth (+ d 1)))]
+                            (pj-padd L P path))))))))
 
 (defn- pj-resolve-all [M :vector-i64 L :vector-i64 P :string cur :i64] :string
   (let [r0 (pj-mf L cur pj-mf-req0)
@@ -461,28 +499,75 @@
     (loop [k 0 P P]
       (if (or (>= k n) (not (pj-ok M))) P (recur (+ k 1) (pj-resolve M L P (+ r0 k) d))))))
 
-;; visit module m: read, header, resolve, children, then append m to the compile order
-(defn- pj-visit [M :vector-i64 L :vector-i64 P :string m :i64] :string
+;; Parse a decimal stat field without accepting a negative, malformed, or over-limit size.
+(defn- pj-stat-decimal [text :string] :i64
+  (loop [i 0 value 0]
+    (if (>= i (string-length text))
+      (if (> (string-length text) 0) value -1)
+      (let [digit (- (string-code-point-at text i) 48)]
+        (if (or (< digit 0) (> digit 9))
+          -1
+          (let [next-value (+ (* value 10) digit)]
+            (if (> next-value pj-max-bytes)
+              -1
+              (recur (+ i 1) next-value))))))))
+
+;; STAT-NOFOLLOW returns "mode size blocks kind"; kind 0 is a regular file.
+(defn- pj-stat-size [stat :string] :i64
+  (let [first-space (string-index-of stat " ")]
+    (if (< first-space 0)
+      -1
+      (let [tail1 (string-substring stat (+ first-space 1) (string-length stat))
+            second-space (string-index-of tail1 " ")]
+        (if (< second-space 0)
+          -1
+          (let [size-text (string-substring tail1 0 second-space)
+                tail2 (string-substring tail1 (+ second-space 1) (string-length tail1))
+                third-space (string-index-of tail2 " ")
+                kind (if (< third-space 0) "" (string-substring tail2 (+ third-space 1) (string-length tail2)))]
+            (if (string=? kind "0") (pj-stat-decimal size-text) -1)))))))
+
+;; Read a bounded regular source range and verify the lock against the exact bytes returned by this read.
+(defn- pj-source-read [M :vector-i64 L :vector-i64 P :string m :i64 prior-bytes :i64] :string
   (let [path (pj-p L P (pj-mf L m pj-mf-path))
-        S (io-read-file M path)
-        bytes (+ (pj-l L pj-k-bytes) (string-length S))
-        w (-> L (pj-ls pj-k-bytes bytes) (pj-ls pj-k-errmod m) (pj-mset m pj-mf-state 1))
-        M1 (pj-read M S)]
-    (cond (not (pj-ok M1)) P
-          (> bytes pj-max-bytes) (let [w2 (pj-err M1 E-PROJ-BYTES 0)] P)
+        stat (typed-cap-call :fs/app-data :string :string (string-concat path (io-sep "NOFOLLOW")))
+        size (pj-stat-size stat)]
+    (cond (= (string-length stat) 0) (let [w (pj-err M E-PROJ-MISSING 0)] "")
+          (< size 0) (let [w (pj-err M E-PROJ-BYTES 0)] "")
+          (> (+ prior-bytes size) pj-max-bytes) (let [w (pj-err M E-PROJ-BYTES 0)] "")
           :else
-          (let [P2 (pj-header M1 L P S (if (= (pj-mf L m pj-mf-entry) 1) "" (pj-p L P (pj-mf L m pj-mf-name))))
-                P3 (if (pj-ok M1) (pj-resolve-all M1 L P2 m) P2)
-                r0 (pj-mf L m pj-mf-req0)
-                n (pj-mf L m pj-mf-nreq)
-                P4 (loop [k 0 P P3]
-                     (cond (or (>= k n) (not (pj-ok M1))) P
-                           (= (pj-mf L (pj-rf L (+ r0 k) pj-rf-mod) pj-mf-state) 0) (recur (+ k 1) (pj-visit M1 L P (pj-rf L (+ r0 k) pj-rf-mod)))
-                           :else (recur (+ k 1) P)))
-                no (pj-l L pj-k-nord)]
-            (if (pj-ok M1)
-              (let [w3 (-> L (pj-mset m pj-mf-state 2) (pj-ls (+ pj-o-base no) m) (pj-ls pj-k-nord (+ no 1)))] P4)
-              P4)))))
+          (let [S (io-slice path 0 size)
+                exact (= (string-byte-length S) size)
+                locked (= (pj-l L pj-k-locked) 1)
+                cid (pj-mf L m pj-mf-cid)]
+            (cond (not exact) (let [w (pj-err M E-PROJ-BYTES 0)] "")
+                  (and locked (not (string=? (io-cidv1-raw S) (pj-p L P cid)))) (let [w (pj-err M pj-e-cid 0)] "")
+                  :else S)))))
+
+;; Visit module m: bounded read and lock verification precede parsing; then header, dependencies and compile order.
+(defn- pj-visit [M :vector-i64 L :vector-i64 P :string m :i64] :string
+  (let [S (pj-source-read M L P m (pj-l L pj-k-bytes))]
+    (if (not (pj-ok M))
+      P
+      (let [bytes (+ (pj-l L pj-k-bytes) (string-byte-length S))
+            w (-> L (pj-ls pj-k-bytes bytes) (pj-ls pj-k-errmod m) (pj-mset m pj-mf-state 1))
+            M1 (pj-read M S)]
+        (cond (not (pj-ok M1)) P
+              :else
+              (let [P2 (pj-header M1 L P S
+                                  (if (and (= (pj-mf L m pj-mf-entry) 1) (= (pj-l L pj-k-locked) 0))
+                                    "" (pj-p L P (pj-mf L m pj-mf-name))))
+                    P3 (if (pj-ok M1) (pj-resolve-all M1 L P2 m) P2)
+                    r0 (pj-mf L m pj-mf-req0)
+                    n (pj-mf L m pj-mf-nreq)
+                    P4 (loop [k 0 P P3]
+                         (cond (or (>= k n) (not (pj-ok M1))) P
+                               (= (pj-mf L (pj-rf L (+ r0 k) pj-rf-mod) pj-mf-state) 0) (recur (+ k 1) (pj-visit M1 L P (pj-rf L (+ r0 k) pj-rf-mod)))
+                               :else (recur (+ k 1) P)))
+                    no (pj-l L pj-k-nord)]
+                (if (pj-ok M1)
+                  (let [w3 (-> L (pj-mset m pj-mf-state 2) (pj-ls (+ pj-o-base no) m) (pj-ls pj-k-nord (+ no 1)))] P4)
+                  P4)))))))
 
 ;; ---- interface types and stub templates -------------------------------------------------------------------------------
 ;; R6A: the interface of an export is SOURCE TEXT (a stub template) whose types are spelled canonically, so that the importer
@@ -712,6 +797,18 @@
 
 ;; ---- the trailer ---------------------------------------------------------------------------------------------------------
 ;; the stub of interface entry e named q; its clause targets are appended to the T table
+(defn- pj-wasm-import-meta [L :vector-i64 P :string e :i64 r :i64] :string
+  (let [t (pj-rf L r pj-rf-mod)
+        ns (pj-p L P (pj-mf L t pj-mf-name))
+        name (pj-p L P (pj-if L e pj-if-name))
+        ncl (pj-if L e pj-if-ncl)]
+    (loop [k 0 acc ""]
+      (if (>= k ncl) acc
+        (recur (+ k 1)
+          (string-concat acc (string-concat ";;@W32I "
+            (string-concat ns (string-concat " "
+              (string-concat name (string-concat "#" (string-concat (mem-u2dec k) "\n"))))))))))))
+
 (defn- pj-stub [L :vector-i64 P :string e :i64 q :string r :i64] :string
   (let [ncl (pj-if L e pj-if-ncl)
         k0 (pj-min (pj-l L pj-k-nstub) (- pj-t-cap pj-if-maxcl))
@@ -721,8 +818,9 @@
               (let [x (pj-ls L (+ pj-t-base k0 k) (pj-if L e (+ pj-if-off0 k)))
                     y (pj-ls L (+ pj-u-base k0 k) (+ (* (+ (* (- r (pj-mf L (pj-l L pj-k-errmod) pj-mf-req0)) 4096) el) 8) k))]
                 (recur (+ k 1)))))
-        w2 (pj-ls L pj-k-nstub (+ k0 ncl))]
-    (string-concat "(defn- " (string-concat q (string-concat " " (string-concat (pj-subst (pj-p L P (pj-if L e pj-if-text)) q) ")\n"))))))
+        w2 (pj-ls L pj-k-nstub (+ k0 ncl))
+        meta (if (= (pj-l L pj-k-mode) 2) (pj-wasm-import-meta L P e r) "")]
+    (string-concat meta (string-concat "(defn- " (string-concat q (string-concat " " (string-concat (pj-subst (pj-p L P (pj-if L e pj-if-text)) q) ")\n")))))))
 
 ;; Long texts are built with two accumulators (big, small): a piece is appended to small, and small (at most about 4 KiB) to
 ;; big, so a byte is copied a few times, not once per later piece (strings are never freed: KEXE_STRING_POOL), and no list
@@ -788,7 +886,7 @@
              (string-concat " (:schemas {" (string-concat imp (string-concat " " (string-concat own "})")))))
         ;; the module's own name: a record's identity keyword is :<ns>/<Name> (21-check)
         hn (string-concat "\n(ns " (pj-p L P (pj-mf L m pj-mf-name)))
-        hd (cond (= (pj-mf L m pj-mf-entry) 0) (string-concat hn " (:export [])")
+        hd (cond (and (= (pj-mf L m pj-mf-entry) 0) (not= (pj-l L pj-k-mode) 2)) (string-concat hn " (:export [])")
                  (= (pj-mf L m pj-mf-expk) 0) hn
                  :else (loop [k 0 acc (string-concat hn " (:export [")]
                          (if (>= k (pj-mf L m pj-mf-nexp)) (string-concat acc "])")
@@ -1003,15 +1101,24 @@
                 :else (recur (+ i (lx-cpw c)) from acc)))))))
 ;; the source text of module m (read from its path; a template instantiated)
 (defn- pj-src [M :vector-i64 L :vector-i64 P :string m :i64] :string
-  (let [S (io-read-file M (pj-p L P (pj-mf L m pj-mf-path)))
+  (let [S (pj-source-read M L P m 0)
         t (pj-mf L m pj-mf-tpl)]
-    (if (> t 0) (pj-tpl-subst S (pj-p L P (- t 1))) S)))
+    (if (not (pj-ok M)) ""
+      (if (> t 0) (pj-tpl-subst S (pj-p L P (- t 1))) S))))
 
 ;; ---- compile one module and link it ---------------------------------------------------------------------------------------
 ;; LINK: at = an image byte offset (was a word index of L)
 (defn- pj-put32 [L :vector-i64 at :i64 w :i64] :vector-i64
   (-> L (pj-ibset at (bit-and w 255)) (pj-ibset (+ at 1) (bit-and (u64-shift-right w 8) 255))
       (pj-ibset (+ at 2) (bit-and (u64-shift-right w 16) 255)) (pj-ibset (+ at 3) (bit-and (u64-shift-right w 24) 255))))
+
+(defn- pj-wasm-record [M :vector-i64 L :vector-i64 m :i64] :vector-i64
+  (let [n (- (vector-at M MM-OUT-N) 1)
+        off (pj-l L pj-k-img)]
+    (loop [i 0 L (-> L (pj-mset m pj-mf-wasm-off off) (pj-mset m pj-mf-wasm-len n))]
+      (if (>= i n)
+        (pj-ls L pj-k-img (+ off n))
+        (recur (+ i 1) (pj-ibset L (+ off i) (vector-at M (+ MM-OUT-BASE 1 i))))))))
 
 ;; copy the blob OUT[1 .. n] to the image at base, then patch every stub clause into `b <target>`
 (defn- pj-link [M :vector-i64 L :vector-i64] :vector-i64
@@ -1040,7 +1147,15 @@
 (defn- pj-c4 [M :vector-i64 L :vector-i64 S :string H :vector-i64] :vector-i64
   (let [M1 (ck-run-h M S H)]   ; R6C: with the parameter refinements so far
     (if (pj-ok M1)
-      (let [M2 (lw-run M1)] (if (pj-ok M2) (let [M3 (gn-run-open M2 (pj-l L pj-k-stub0) (pj-l L pj-k-nstub))] (if (pj-ok M3) (pj-c5 M3 L) M3)) M2))
+      (let [M2 (lw-run M1)]
+        (if (not (pj-ok M2)) M2
+          (if (= (pj-l L pj-k-mode) 2)
+            (w32-run (-> M2 (vector-assoc! w32-project-mode-slot 1)
+                              (vector-assoc! w32-project-stub0-slot (pj-l L pj-k-stub0))
+                              (vector-assoc! w32-project-stubn-slot (pj-l L pj-k-nstub))
+                              (vector-assoc! w32-project-meta-start-slot (pj-l L pj-k-trail))) S)
+            (let [M3 (gn-run-open M2 (pj-l L pj-k-stub0) (pj-l L pj-k-nstub))]
+              (if (pj-ok M3) (pj-c5 M3 L) M3)))))
       M1)))
 (defn- pj-c3 [M :vector-i64 L :vector-i64 S :string H :vector-i64] :vector-i64
   (let [M1 (nm-run M S)]
@@ -1074,7 +1189,7 @@
         S (string-concat S1 T)
         base (bit-and (+ (pj-l L pj-k-img) 7) -8)
         w (-> L (pj-ls pj-k-errmod m) (pj-ls pj-k-trail (string-length S1)) (pj-ls pj-k-base base) (pj-mset m pj-mf-base base))
-        M1 (pj-read M S)
+        M1 (if (pj-ok M) (pj-read M S) M)
         M2 (if (pj-ok M1) (pj-refcheck (pj-qscan (pj-norm M1 L S) L P S m) L P m) M1)
         M3 (if (pj-ok M2) (pj-splice M2 L) M2)
         M4 (if (pj-ok M3) (pj-c3 M3 L S H) M3)
@@ -1083,18 +1198,30 @@
           (not (pj-ok M4)) (let [w2 (pj-err-back M4 L m (string-length S1))] P)   ; R6C: the trailer starts after the library
           (>= (pj-n L) (- pj-s-cap 1)) (let [w2 (pj-err M4 E-PROJ-IMAGE 0)] P)
           (not (pj-ok (pj-r5b-after M4 L P S m))) P   ; R5B: namespace :capabilities, stateful library exports
+          (and (= (pj-l L pj-k-mode) 2) (> (+ (pj-l L pj-k-img) (- (vector-at M4 MM-OUT-N) 1)) pj-img-cap)) (let [w2 (pj-err M4 E-PROJ-IMAGE 0)] P)
           (> (pj-l L pj-k-img) pj-img-cap) (let [w2 (pj-err M4 E-PROJ-IMAGE 0)] P)   ; LINK
+          (= (pj-l L pj-k-mode) 2) (let [w (pj-wasm-record M4 L m)] (if (= (pj-mf L m pj-mf-entry) 0) (pj-iface M4 L P S m) P))
           (= (pj-mf L m pj-mf-entry) 0) (pj-iface M4 L P S m)
           :else P)))
 
 ;; ---- the whole project ---------------------------------------------------------------------------------------------------
 ;; pj-discover M L P root -> P : the module table and the compile order from the entry (module 0, path P[root])
 (defn- pj-discover [M :vector-i64 L :vector-i64 P :string root :i64] :string
-  (let [w (-> L (pj-add-mod (pj-n L) root) (pj-mset 0 pj-mf-depth 1) (pj-mset 0 pj-mf-entry 1))
-        P1 (pj-visit M L (pj-padd L P "") 0)]
-    (if (and (pj-ok M) (> (pj-l L pj-k-nmod) 1) (= (pj-l L pj-k-unpinned) 0))
-      (let [w2 (pj-err M E-PROJ-UNPINNED 0)] P1)
-      P1)))
+  (if (= (pj-l L pj-k-locked) 1)
+    (let [name (pj-p L P root)
+          entry (pj-lock-find L P name)]
+      (if (< entry 0)
+        (let [w (pj-err M pj-e-lock 0)] P)
+        (let [cid (pj-lock-cid L entry)
+              path (pj-n L)
+              P1 (pj-padd L P (pj-block-path L P cid))
+              w (-> L (pj-add-mod root path) (pj-mset 0 pj-mf-depth 1) (pj-mset 0 pj-mf-entry 1) (pj-mset 0 pj-mf-cid cid))]
+          (pj-visit M L P1 0))))
+    (let [w (-> L (pj-add-mod (pj-n L) root) (pj-mset 0 pj-mf-depth 1) (pj-mset 0 pj-mf-entry 1))
+          P1 (pj-visit M L (pj-padd L P "") 0)]
+      (if (and (pj-ok M) (> (pj-l L pj-k-nmod) 1) (= (pj-l L pj-k-unpinned) 0))
+        (let [w2 (pj-err M E-PROJ-UNPINNED 0)] P1)
+        P1))))
 
 ;; pj-project M L P root -> P : discover, then compile every module in order. On success M holds the entry module; the image
 ;; is the packed L[pj-img-base ..], L[pj-k-img] bytes (LINK). A multi-module project needs --unpinned.
@@ -1104,6 +1231,12 @@
       (if (or (>= k (pj-l L pj-k-nord)) (not (pj-ok M)))
         (let [w (if (pj-ok M) (pj-kw-patch L) L)] P)   ; R6D
         (recur (+ k 1) (pj-module M L P (pj-l L (+ pj-o-base k))))))))
+
+;; Compile an already-discovered graph to dependencies-first Wasm modules; require stubs become Wasm imports.
+(defn- pj-project-wasm [M :vector-i64 L :vector-i64 P :string] :string
+  (loop [k 0 P P]
+    (if (or (>= k (pj-l L pj-k-nord)) (not (pj-ok M))) P
+      (recur (+ k 1) (pj-module M L P (pj-l L (+ pj-o-base k)))))))
 
 ;; the source path of the module the error of M refers to
 (defn- pj-err-path [L :vector-i64 P :string] :string (pj-p L P (pj-mf L (pj-l L pj-k-errmod) pj-mf-path)))

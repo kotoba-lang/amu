@@ -1,17 +1,17 @@
 # Adopted native seed compiler
 
-This directory contains the complete 16-module source based on the adopted
-compiler at `fc49cb2ee6fea1a41a5abbc8ed5b52aaa9f19471`, with an integration
-safety fix: explicit `--policy` is refused with E2170 until structured policy
-checking is qualified. Single-file and project `check` enforce the same explicit-policy refusal as `compile`. The bounded pure byte-result lookup pass is now adopted in `41-a64gen`, preserving every other module from main. It includes the cumulative qualified AArch64 optimizations; it
-excludes the pending descriptor witness and conditional-fallthrough vector view
-candidates. It does not change `bin/amu`, publish a
-release, or qualify the whole Amu component as Q9.
+The 16-module source at the Amu main snapshot remains pinned by
+`adoption-20261017.json`. The current `MANIFEST` has 17 modules and adds the
+locked browser-Wasm project route in `43-wasm.kotoba`, its project helpers, and
+the latest main policy and code-generation changes. `adoption-20261018.json`
+pins that merged source closure and its native selfhost image. The 2026-10-12
+receipt remains the earlier historical source record. This work does not
+change `bin/amu`, publish a release, or qualify the whole Amu component as Q9.
 
 `MANIFEST` fixes the unity order. Concatenating each module followed by one
 newline gives SHA-256
 `a1a718388c55eaf8e9f749ea1829c17ae9d667dbc785194879b0abb8454602b3`.
-`adoption-20261017.json` records the current source pins, bootstrap and
+`adoption-20261018.json` records the current source pins, bootstrap and
 fixed-point image separately, artifact provenance, correctness scope, and
 measurement boundaries. `adoption-20261012.json` remains the historical
 receipt for the prior source closure. `HEADS`, `MEMORY-MAP`, and `SIR`
@@ -20,10 +20,10 @@ are the corresponding compiler contracts, copied without changes.
 ## Native self-build
 
 The current source is bootstrapped from
-`bootstrap/adopted-20261012.bin` (macOS arm64, entry offset 0, arity 0). The
-current source's three-generation fixed-point image is recorded separately in
-`adoption-20261017.json`; the bootstrap file remains unchanged. It is a native
-code payload used by the pinned C loader, not a standalone OS executable.
+`bootstrap/adopted-20261017.bin` (macOS arm64, entry offset 0, arity 0). The
+current source's three-generation fixed-point image and both bootstrap and
+source pins are recorded in `adoption-20261018.json`. It is a native code
+payload used by the pinned C loader, not a standalone OS executable.
 The loader is trusted C bootstrap infrastructure; this is not a C-free claim.
 The Python script orchestrates the native compiler and Clang loader build only;
 it never compiles Kotoba through Python, Node, nbb, JVM or GraalVM.
@@ -173,15 +173,13 @@ Fully prepaid clamp/mask cores reuse initialized x8=CTX-FUEL. Both Pico images r
 ## Same-algorithm m105 adoption (2026-10-16)
 
 The 2026-10-16 receipt pins the earlier m105 source and fixed-point bootstrap.
-The current source closure adds the `enc-smulh` lowering and is pinned by
-`adoption-20261017.json`. Starting from the historical bootstrap, its G1, G2,
-and G3 images are byte-identical at SHA-256
-`b10e381344a1f5a8b82cac981c0011bd20ecbcc4b48dd5f5dce97364c74e8a00`. The 19
-policy-native golden images remain pinned to their historical source and
-compiler; the current receipt records those reference hashes separately.
-The main-source correctness check also pins the current M105 build report,
-image manifest, and exactness record so rebuilt images are compared with the
-current source outputs while the historical archive keeps its original hashes.
+The current 17-module source closure includes the `enc-smulh` lowering and
+locked browser-Wasm route. Its G1/G2/G3 image hashes are recorded in
+`adoption-20261018.json`. The 19 policy-native golden images remain pinned to
+their historical source and compiler; the current receipt records those
+reference hashes separately. The main-source correctness check pins the
+current M105 build report, image manifest, and exactness record, and also
+compares the archived original19 sources with their exact native-image golden.
 The earlier adoption's local validation covered 483/483 observations, 19/19
 exact workload fuel/arena checks, all ten adopted-native regression controls,
 and 30,888 differential cases against the prior m105 image with zero
@@ -191,5 +189,6 @@ identity; CI validates its source pins and integrations.
 No official m105 Embench round was run. The published 0.8213 ratio remains
 specific to the m104 compiler and its pinned images. See
 [`docs/evidence/same-algo-m105-20261016/`](../docs/evidence/same-algo-m105-20261016/),
-the historical receipt at `adoption-20261012.json`, and the current receipt at
-`adoption-20261017.json`.
+the historical receipt at `adoption-20261012.json`, the 16-module main receipt
+at `adoption-20261017.json`, and the merged 17-module receipt at
+`adoption-20261018.json`.

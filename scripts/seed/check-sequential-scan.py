@@ -8,7 +8,7 @@ def main():
  ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--selfbuild-output',type=Path,required=True);a=ap.parse_args()
  out=a.selfbuild_output.resolve();host=out/'host';D=out/'artifacts/sequential-scan-controls';D.mkdir(exist_ok=False)
  spec=importlib.util.spec_from_file_location('adopted_inputs',ROOT/'scripts/seed/build-adopted.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
- receipt,unity,_,_=m.inputs(ROOT/'seed/adoption-20261017.json')
+ receipt,unity,_,_=m.inputs(ROOT/'seed/adoption-20261018.json')
  loader=host/'kexe-loader';producer=host/'sequential-scan-producer.bin';shutil.copy2(out/'artifacts/G2.bin',producer)
  assert sha(producer)==receipt['nativeImageSHA256']
  paths=[p.strip()for p in(ROOT/'seed/MANIFEST').read_text().splitlines()if p.strip()and not p.startswith('#')]
