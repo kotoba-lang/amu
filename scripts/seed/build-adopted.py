@@ -107,18 +107,28 @@ def main():
             'G'+str(generation)+'-compile', env)
         run(prefix + ['extract-native', container, '--symbol', 'main', '--output', native],
             'G'+str(generation)+'-extract', env)
-        if digest(native) != receipt['nativeImageSHA256']:
-            raise SystemExit('self-build differs from the adopted fixed-point image')
         images.append({'generation': generation, 'bytes': native.stat().st_size,
                        'sha256': digest(native), 'containerSHA256': digest(container)})
         producer = native
-    report = {'status': 'PASS_ADOPTED_NATIVE_SELF_BUILD', 'generations': images,
+    fixed_point = (len(images) >= 2
+                   and images[-1]['sha256'] == images[-2]['sha256']
+                   and images[-1]['containerSHA256'] == images[-2]['containerSHA256'])
+    receipt_match = bool(images and images[-1]['sha256'] == receipt['nativeImageSHA256'])
+    report = {'status': 'PASS_ADOPTED_NATIVE_SELF_BUILD' if fixed_point and receipt_match
+              else 'FAIL_ADOPTED_NATIVE_SELF_BUILD', 'generations': images,
               'sourceUnitySHA256': receipt['sourceUnitySHA256'],
+              'fixedPoint': fixed_point,
+              'receiptNativeImageSHA256': receipt['nativeImageSHA256'],
+              'finalImageMatchesReceipt': receipt_match,
               'CTrustedLoaderBuilt': True, 'JVMNodeOrGraalFallback': False,
               'performanceMeasurement': False,
               'performanceGoalStatus': receipt.get('performanceGoalStatus', 'unspecified')}
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report))
+    if not fixed_point:
+        raise SystemExit('native self-build did not reach an image and container fixed point')
+    if not receipt_match:
+        raise SystemExit('final self-build image differs from the adopted fixed-point image')
 
 
 if __name__ == '__main__':

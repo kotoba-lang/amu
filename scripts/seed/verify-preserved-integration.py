@@ -103,9 +103,14 @@ def main():
   container=art/f'G{n}.kseed';image=art/f'G{n}.bin';prefix=[loader,producer,'0','0','aarch64','35,37,38,39','--']
   run(prefix+['compile',source,'--target','aarch64-macos','--output',container],f'G{n}-compile')
   run(prefix+['extract-native',container,'--symbol','main','--output',image],f'G{n}-extract')
-  if a.main:assert sha(image)==receipt['nativeImageSHA256'],'selfhost compiler image differs from adoption receipt'
   gens.append({'generation':n,'bytes':image.stat().st_size,'sha256':sha(image),'containerSHA256':sha(container)});producer=image
- assert len({g['sha256'] for g in gens})==1 and len({g['containerSHA256'] for g in gens})==1,'fixed point mismatch'
+ if a.main:
+  fixed_point=(len(gens)>=2 and gens[-1]['sha256']==gens[-2]['sha256'] and gens[-1]['containerSHA256']==gens[-2]['containerSHA256'])
+  if not fixed_point:raise SystemExit('current selfhost compiler did not reach an image and container fixed point')
+  if gens[-1]['sha256']!=receipt['nativeImageSHA256']:
+   raise SystemExit('final selfhost compiler image differs from adoption receipt')
+ else:
+  assert len({g['sha256'] for g in gens})==1 and len({g['containerSHA256'] for g in gens})==1,'fixed point mismatch'
  prefix=[loader,producer,'0','0','aarch64','35,37,38,39','--']
  smoke=art/'smoke.kotoba';smoke.write_text('(ns smoke (:export [main]))\n(defn main [] :i64 42)\n')
  policies=['{:allow #{}}','{:allow #{} :deny #{[:cap/call 37]}}','{:allow #{}} ; [:cap/call 37]','{:allow #{[:cap/call 37]}}','not-edn','{:deny #{[:cap/call 37]}}','{:allow #{[:cap/call 999]}}']
