@@ -7,14 +7,17 @@ qualified. Single-file and project `check` enforce the same refusal as
 `compile`. The bounded pure byte-result lookup pass is adopted in `41-a64gen`;
 it includes the cumulative qualified AArch64 optimizations and excludes the
 pending descriptor witness and conditional-fallthrough vector view candidates.
-`adoption-20261012.json` records that baseline's source pins, artifact
-provenance, correctness scope, and measurement boundaries.
+`preserved-20261012/adoption.json` pins the preserved 16-module baseline.
+`adoption-20261012.json` retains the later main m105 16-module source and its
+qualification metadata; it is no longer the current source receipt.
 
 The current `MANIFEST` has 17 modules. It adds the experimental
 `43-wasm.kotoba` browser-Wasm backend and the project driver/lock changes
 described below. The historical 16-module adoption receipt remains tied to its
-original source. The current 17-module unity source used for the G23/G24
-selfhost fixed-point probe has SHA-256
+original source. `adoption-20261017.json` pins the current 17-module source and
+the G23 selfhost-built compiler image; the 2026-10-12 receipt is historical.
+The current 17-module unity source used for the G23/G24 selfhost fixed-point
+probe has SHA-256
 `7b2786e18a6cf7677ef281ffd387bc084dea3e5ca0b591f4e1b545b74c881841`.
 
 These changes do not change `bin/amu`, publish a release, or qualify the whole
@@ -82,6 +85,9 @@ Both generations have byte-identical 2,593,280-byte native compiler images
 `2f8409005633506046c4df7e3eac1f7ad11acd40f092691c72afc2f7edce5dcd`). This
 is a compile-only selfhost fixed-point result: it does not establish application
 runtime parity, test-suite completion, deployment, or live behavior.
+The current receipt records the G22 input, G23/G24 outputs, and source pins;
+`scripts/seed/build-adopted.py` uses G23 to reproduce the fixed point in the
+native CI path.
 
 ## Evidence and ongoing optimization
 
@@ -223,5 +229,6 @@ explicit policy refusals.
 
 No official m105 Embench round was run. The published 0.8213 ratio remains
 specific to the m104 compiler and its pinned images. See
-[`docs/evidence/same-algo-m105-20261016/`](../docs/evidence/same-algo-m105-20261016/)
-and the current receipt at `adoption-20261012.json`.
+[`docs/evidence/same-algo-m105-20261016/`](../docs/evidence/same-algo-m105-20261016/),
+the historical 2026-10-12 receipt at `adoption-20261012.json`, and the current
+17-module receipt at `adoption-20261017.json`.

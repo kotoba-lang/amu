@@ -25,7 +25,7 @@ def build(output):
     spec = importlib.util.spec_from_file_location("adopted_build", ROOT / "scripts/seed/build-adopted.py")
     adopted = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(adopted)
-    receipt, _, producer, loader_source = adopted.inputs(ROOT / "seed/adoption-20261012.json")
+    receipt, _, producer, loader_source = adopted.inputs(ROOT / "seed/adoption-20261017.json")
     manifest = ROOT / "seed/X86_64-LINUX-MANIFEST"
     paths = [ROOT / x for x in manifest.read_text().splitlines() if x and not x.startswith("#")]
     unity = b"".join(p.read_bytes() + b"\n" for p in paths)

@@ -31,8 +31,9 @@ def inputs(receipt_path):
             raise SystemExit('source pin mismatch: ' + row['path'])
     paths = [line.strip() for line in owned_path(receipt.get('manifestPath', 'seed/MANIFEST')).read_text().splitlines()
              if line.strip() and not line.startswith('#')]
-    if len(paths) != 16:
-        raise SystemExit('expected the reviewed 16-module source closure')
+    module_count = receipt.get('moduleCount', len(paths))
+    if len(paths) != module_count:
+        raise SystemExit(f'expected {module_count} modules from the receipt, found {len(paths)}')
     unity = b''.join(owned_path(path).read_bytes() + b'\n' for path in paths)
     if hashlib.sha256(unity).hexdigest() != receipt['sourceUnitySHA256']:
         raise SystemExit('unity pin mismatch')
@@ -48,7 +49,7 @@ def inputs(receipt_path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--verify-only', action='store_true')
-    parser.add_argument('--receipt', type=Path, default=ROOT / 'seed/adoption-20261012.json')
+    parser.add_argument('--receipt', type=Path, default=ROOT / 'seed/adoption-20261017.json')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--generations', type=int, choices=[1, 2, 3], default=3)
     args = parser.parse_args()
