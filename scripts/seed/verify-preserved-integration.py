@@ -32,7 +32,8 @@ def main():
  frozen='workspace/held-compiler-cli30-bounded-balanced-byte-tree-token-capacity-picojpeg-fixedpoint6-source-v4-20261012-next/run-outputs/G4.bin'
  original19='workspace/held-compiler-cli30-bounded-balanced-byte-tree-token-capacity-picojpeg-g4-original19-compile38-source-v4-20261012-next/run-outputs/'
  with tarfile.open(archive) as t:
-  bootstrap=host/'historical-producer.bin';bootstrap.write_bytes((ROOT/'seed/bootstrap/adopted-20261012.bin').read_bytes() if a.main else t.extractfile(frozen).read())
+  receipt=json.loads((ROOT/'seed/adoption-20261017.json').read_text()) if a.main else None
+  bootstrap=host/'historical-producer.bin';bootstrap.write_bytes((ROOT/receipt['bootstrapPath']).read_bytes() if a.main else t.extractfile(frozen).read())
   if not a.main:assert sha(bootstrap)==cp['fixed_point']['native_sha256']
   original_report=json.loads(t.extractfile(original19+'report.json').read())
   symbols={c['label'].removesuffix('-extract'):c['case']['symbol'] for c in original_report['calls'] if c['case']['kind']=='extract'}
@@ -41,23 +42,39 @@ def main():
   for name,m in source_members.items():
    (art/(name+'.kotoba')).write_bytes(t.extractfile(m).read());expected[name]=hashlib.sha256(t.extractfile(original19+name+'.bin').read()).hexdigest()
  if a.main:
-  receipt=json.loads((ROOT/'seed/adoption-20261012.json').read_text())
+  receipt=json.loads((ROOT/'seed/adoption-20261017.json').read_text())
   if 'policyNativeGoldenPath' in receipt:
    golden=(ROOT/receipt['policyNativeGoldenPath']).resolve();golden_archive=(ROOT/receipt['policyNativeGoldenArchivePath']).resolve()
    assert golden.is_relative_to(ROOT.resolve()) and golden_archive.is_relative_to(ROOT.resolve())
    assert sha(golden)==receipt['policyNativeGoldenSHA256'] and sha(golden_archive)==receipt['policyNativeGoldenArchiveSHA256']
    baseline=json.loads(golden.read_text())
-   assert baseline['producerNativeSHA256']==receipt['nativeImageSHA256']
-   assert baseline['sourceUnitySHA256']==receipt['sourceUnitySHA256']==hashlib.sha256(unity).hexdigest()
+   assert baseline['producerNativeSHA256']==receipt['historicalReferenceProducerSHA256']
+   assert baseline['sourceUnitySHA256']==receipt['historicalReferenceSourceUnitySHA256']
   else:
    baseline=json.loads((ROOT/'seed/main-pre-policy-native19.json').read_text())
    assert baseline['producerNativeSHA256']==receipt['previousMainSafetySnapshot']['nativeImageSHA256']
    golden_archive=ROOT/'docs/evidence/native-selfhost-paused-20261012/main-pre-policy-native19.tgz'
-  assert {row['workload'] for row in baseline['images']}==set(expected)
-  expected={row['workload']:row['nativeSHA256'] for row in baseline['images']}
+  historical={row['workload']:row['nativeSHA256'] for row in baseline['images']}
+  assert set(historical)==set(expected)
   with tarfile.open(golden_archive) as old:
-   for name,digest in expected.items():assert hashlib.sha256(old.extractfile(name+'.bin').read()).hexdigest()==digest
+   for name,digest in historical.items():assert hashlib.sha256(old.extractfile(name+'.bin').read()).hexdigest()==digest
   for row in baseline['images']:assert sha(art/(row['workload']+'.kotoba'))==row['sourceSHA256']
+  evidence=receipt['currentAll19Evidence']
+  pinned={}
+  for name,row in evidence.items():
+   if name=='sourceCommit':continue
+   path=(ROOT/row['path']).resolve();assert path.is_relative_to(ROOT.resolve()) and sha(path)==row['sha256']
+   pinned[name]=json.loads(path.read_text())
+  build=pinned['buildReport'];images_by_name=pinned['images'];exactness=pinned['exactness']
+  assert build['sourceCommit']==evidence['sourceCommit']==receipt['sourceCommit']
+  assert build['chain']['G1']==receipt['nativeImageSHA256']==build['chain']['Gstar']
+  assert exactness['status']=='PASS' and exactness['workloads']==len(expected)==19
+  current={name:row['native']['sha256'] for name,row in images_by_name.items()}
+  exact={row['workload']:row['imageSHA256'] for row in exactness['rows'] if row['exact']}
+  assert len(exact)==len(exactness['rows'])==19 and current==exact
+  assert set(current)==set(expected)
+  for name,row in images_by_name.items():assert sha(art/(name+'.kotoba'))==row['sourceSHA256']
+  expected=current
  producer=bootstrap;gens=[]
  for n in range(1,4):
   container=art/f'G{n}.kseed';image=art/f'G{n}.bin';prefix=[loader,producer,'0','0','aarch64','35,37,38,39','--']
