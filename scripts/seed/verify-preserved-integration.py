@@ -135,23 +135,23 @@ def main():
  run(prefix+['extract-native',art/'smoke.kseed','--symbol','main','--output',art/'smoke.bin'],'policy-free-extract')
  run([loader,art/'smoke.bin','0','0','aarch64','0'],'policy-free-run');require_smoke_42((host/'policy-free-run.stdout').read_bytes(),(host/'policy-free-run.stderr').read_bytes())
  images=[]
-historical_images=[]
-if a.main:
- for name,oldsha in historical.items():
-  container=art/(name+'-historical.kseed');image=art/(name+'-historical.bin')
-  run(prefix+['compile',art/(name+'.kotoba'),'--target','aarch64-macos','--output',container],name+'-historical-compile')
-  run(prefix+['extract-native',container,'--symbol',symbols[name],'--output',image],name+'-historical-extract')
-  assert sha(image)==oldsha,name+' historical payload changed'
-  historical_images.append({'workload':name,'sha256':sha(image),'baselineImageExact':True})
+ historical_images=[]
+ if a.main:
+  for name,oldsha in historical.items():
+   container=art/(name+'-historical.kseed');image=art/(name+'-historical.bin')
+   run(prefix+['compile',art/(name+'.kotoba'),'--target','aarch64-macos','--output',container],name+'-historical-compile')
+   run(prefix+['extract-native',container,'--symbol',symbols[name],'--output',image],name+'-historical-extract')
+   assert sha(image)==oldsha,name+' historical payload changed'
+   historical_images.append({'workload':name,'sha256':sha(image),'baselineImageExact':True})
  for name,oldsha in expected.items():
   container=art/(name+'-new.kseed');image=art/(name+'-new.bin')
   source_input=current_sources[name] if a.main else art/(name+'.kotoba')
   run(prefix+['compile',source_input,'--target','aarch64-macos','--output',container],name+'-compile')
   run(prefix+['extract-native',container,'--symbol',symbols[name],'--output',image],name+'-extract');assert sha(image)==oldsha,name+' payload changed'
   images.append({'workload':name,'sha256':sha(image),'baselineImageExact':True})
-accepted_policies=12 if a.main else 0
-report={'status':'PASS_MAIN_AND_PRESERVED_POLICY_SAFETY' if a.main else 'PASS_PRESERVED_SOURCE_SAFETY_REINTEGRATION','sourceUnitySHA256':hashlib.sha256(unity).hexdigest(),'selfhostCompilerSHA256':receipt['nativeImageSHA256'] if a.main else None,'generations':gens,'limitedPolicyAcceptances':accepted_policies,'explicitPolicyRefusals':len(policies)*4+6-accepted_policies,'policyFreeResult':42,'inputCorpus':'current-official-all19' if a.main else 'preserved-original19','trustedLoaderSHA256':loader_pin,'performanceMeasurement':False,'goalStatus':receipt.get('performanceGoalStatus','unspecified') if a.main else 'paused','currentSourceMainPath':a.main,'publicLoaderChanged':False}
+ accepted_policies=12 if a.main else 0
+ report={'status':'PASS_MAIN_AND_PRESERVED_POLICY_SAFETY' if a.main else 'PASS_PRESERVED_SOURCE_SAFETY_REINTEGRATION','sourceUnitySHA256':hashlib.sha256(unity).hexdigest(),'selfhostCompilerSHA256':receipt['nativeImageSHA256'] if a.main else None,'generations':gens,'limitedPolicyAcceptances':accepted_policies,'explicitPolicyRefusals':len(policies)*4+6-accepted_policies,'policyFreeResult':42,'inputCorpus':'current-official-all19' if a.main else 'preserved-original19','trustedLoaderSHA256':loader_pin,'performanceMeasurement':False,'goalStatus':receipt.get('performanceGoalStatus','unspecified') if a.main else 'paused','currentSourceMainPath':a.main,'publicLoaderChanged':False}
  report['currentAll19Images' if a.main else 'original19Images']=images
-if a.main:report['original19Images']=historical_images
+ if a.main:report['original19Images']=historical_images
  (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))
 if __name__=='__main__':main()
