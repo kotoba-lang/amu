@@ -26,7 +26,10 @@ def main():
    r=subprocess.run([str(x) for x in argv],cwd=art,env=call_env,stdout=stdout,stderr=stderr,timeout=1800)
   assert all(sha(pathlib.Path(p))==v for p,v in pins.items()),'input mutation'
   calls.append({'label':name,'argv':[str(x) for x in argv],'exit':r.returncode});(host/'calls.json').write_text(json.dumps(calls,indent=2)+'\n')
-  assert r.returncode==expect,name
+  if r.returncode!=expect:
+   stdout=(host/(name+'.stdout')).read_bytes()[-4000:]
+   stderr=(host/(name+'.stderr')).read_bytes()[-4000:]
+   raise AssertionError(f'{name}: exit {r.returncode}, expected {expect}; stdout={stdout!r}; stderr={stderr!r}')
   return (host/(name+'.stdout')).read_bytes()+(host/(name+'.stderr')).read_bytes()
  run(['clang','-std=c11','-O2',loader_source,'-o',loader],'loader-build')
  frozen='workspace/held-compiler-cli30-bounded-balanced-byte-tree-token-capacity-picojpeg-fixedpoint6-source-v4-20261012-next/run-outputs/G4.bin'
