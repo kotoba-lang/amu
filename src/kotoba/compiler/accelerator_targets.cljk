@@ -51,11 +51,17 @@
 (defn classify-vendor
   "Classify a device descriptor map ({:vendor-id <int>} or {:vendor <name>})
   to a keyword in `vendors`. A :vendor-id match wins over name matching; no
-  match answers :unknown."
+  match answers :unknown.
+
+  The id may arrive as the kotoba reader's BigInt (every integer token is one
+  on the nbb route -- i64 exactness, cli_support), and a BigInt is not `=` to
+  the plain number key, so the id lookup also compares the decimal spelling."
   [device]
   (let [id (:vendor-id device)
         nm (:vendor device)]
     (or (get vendor-ids id)
+        (when (some? id)
+          (some (fn [[k vendor]] (when (= (str k) (str id)) vendor)) vendor-ids))
         (when (string? nm)
           (let [lower-name (str/lower nm)]
             (some (fn [[fragment vendor]]

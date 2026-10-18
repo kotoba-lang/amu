@@ -2,6 +2,7 @@
   {:kotoba/export [*exit* -main error-report exit-code]}
   (:require [kotoba.io :as kio] [kotoba.compiler.atomic-output :as atomic-output]
             [kotoba.artifact.core :as artifact]
+            [kotoba.compiler.accelerator-pipeline :as accelerator-pipeline]
             [kotoba.compiler.bounded-edn :as bounded-edn]
             [kotoba.compiler.capability-names :as cap-names]
             [kotoba.compiler.core :as compiler]
@@ -276,6 +277,31 @@
         (println (pr-str {:ok true :lock output :blocks blocks
                           :root (:root lock) :modules (count (:modules lock))
                           :lock-cid (:lock-cid lock)}))))
+
+    "gpu-compile"
+    ;; Connect the accelerator pipeline in the CLI (JUN-85 emit stage):
+    ;; SPEC.edn + --device DEVICE.edn -> one sealed GPU artifact through
+    ;; vendor dispatch. The workgroup row is the provisional dispatch default
+    ;; (ADR-0355) unless SPEC names one; the printed :measured? says which.
+    (let [spec (bounded-edn/read-file
+                 (or (second args)
+                     (throw (ex-info "gpu-compile needs SPEC.edn" {:phase :usage}))))
+          device (bounded-edn/read-file
+                   (or (option args "--device")
+                       (throw (ex-info "--device <DEVICE.edn> is required" {:phase :usage}))))
+          output (or (option args "--output") "gpu-artifact.edn")
+          _ (when (some #{"--policy" "--source-path" "--module-lock" "--blocks"} args)
+              (throw (ex-info "gpu-compile takes SPEC.edn --device <DEVICE.edn> [--output <ARTIFACT>]"
+                              {:phase :usage})))
+          {:keys [artifact dispatch]} (accelerator-pipeline/compile-spec spec device)]
+      (atomic-output/write-edn! output artifact)
+      (println (pr-str {:ok true :target (:target dispatch) :vendor (:vendor dispatch)
+                        :workgroup-size (:workgroup-size dispatch)
+                        :workgroup-source (:workgroup-source dispatch)
+                        :measured? (:measured? dispatch)
+                        :kir-sha256 (:kir-sha256 artifact)
+                        :code-sha256 (:code-sha256 artifact)
+                        :output output})))
 
     "compile"
     (let [input (when-not (option args "--module-lock") (kotoba-source! (second args)))

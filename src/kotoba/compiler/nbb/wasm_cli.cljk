@@ -17,6 +17,7 @@
             [kotoba.sema :as sema]
             [kotoba.compiler.nbb.io :as io]
             [kotoba.compiler.module-lock :as module-lock]
+            [kotoba.compiler.accelerator-pipeline :as accelerator-pipeline]
             [kotoba.compiler.project-files :as project-files]
             [kotoba.compiler.nbb.project-source :as project-source]
             [kotoba.compiler.nbb.output-set :as output-set]
@@ -502,6 +503,36 @@
                                                         "identity is checked when it "
                                                         "is compiled")})))))
 
+(defn- gpu-compile!
+  "Connect the accelerator pipeline on the bin/amu route (JUN-85 emit stage):
+  SPEC.edn + --device DEVICE.edn -> one sealed GPU artifact through
+  accelerator-targets' vendor dispatch and accelerator's deterministic
+  emitters. Target-independent: the DEVICE, not --target, chooses the emission
+  target. The workgroup row is the provisional dispatch default (ADR-0355)
+  unless the SPEC names one; :workgroup-source / :measured? say which, and
+  neither answer is optimization evidence."
+  [args]
+  (let [spec (support/read-edn-file!
+               (or (second args)
+                   (support/usage-error! "gpu-compile needs SPEC.edn")))
+        device (support/read-edn-file!
+                 (or (support/option args "--device")
+                     (support/usage-error! "--device <DEVICE.edn> is required")))
+        output (or (support/option args "--output") "gpu-artifact.edn")
+        _ (doseq [flag ["--policy" "--source-path" "--module-lock" "--blocks"]]
+            (when (support/option args flag)
+              (support/usage-error!
+                "gpu-compile takes SPEC.edn --device <DEVICE.edn> [--output <ARTIFACT>]")))
+        {:keys [artifact dispatch]} (accelerator-pipeline/compile-spec spec device)]
+    (io/write-text! output (pr-str artifact))
+    {:ok true :target (:target dispatch) :vendor (:vendor dispatch)
+     :workgroup-size (:workgroup-size dispatch)
+     :workgroup-source (:workgroup-source dispatch)
+     :measured? (:measured? dispatch)
+     :kir-sha256 (:kir-sha256 artifact)
+     :code-sha256 (:code-sha256 artifact)
+     :output output}))
+
 (defn- describe-definition-cids
   "The definition CIDs of one module file, for the lock producer. Reads the
   file alone rather than as part of a project: definition identity is
@@ -528,6 +559,9 @@
     ;; arrives. A lock is target-independent, so there is nothing for the
     ;; native entry points to answer differently.
     "module-lock" (module-lock! args)
+    ;; Also target-independent: the device descriptor picks the emission
+    ;; target through accelerator-targets, not --target.
+    "gpu-compile" (gpu-compile! args)
     ;; Authoring, not building. `package-manifest` needs no resolver at all;
     ;; `package-lock` reads each dependency's own signed manifest and asks
     ;; this compiler for the definition CIDs, so the values it writes are
