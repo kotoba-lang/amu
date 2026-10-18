@@ -47,3 +47,63 @@
       (let [resealed (artifact/seal (assoc compiled :code "evil"))]
         (is (thrown-with-msg? Exception #"regeneration mismatch"
                               (accelerator/verify-artifact! resealed)))))))
+
+(deftest warp-shuffle-reduce-variant-lowers-deterministically
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        base (accelerator/lower kir :cuda-v1)
+        base-explicit (accelerator/lower kir :cuda-v1 :baseline)
+        shuffle (accelerator/lower kir :cuda-v1 :warp-shuffle-reduce)]
+    (testing "the baseline emission is byte-identical with or without the variant arity"
+      (is (= base base-explicit)))
+    (testing "the variant is a different emission of the same reduction"
+      (is (not= base shuffle))
+      (is (re-find #"__device__ float combine\(float a,float b\)" shuffle))
+      (is (re-find #"__shfl_down_sync\(0xffffffffu,v,d,32\)" shuffle))
+      (is (re-find #"unsigned int warps=blockDim\.x/32" shuffle))
+      (is (re-find #"__shfl_down_sync\(0xffffffffu,a,d,warps\)" shuffle))
+      (is (not (re-find #"__shfl_down_sync" base))))
+    (testing "emission is deterministic across calls"
+      (is (= shuffle (accelerator/lower kir :cuda-v1 :warp-shuffle-reduce))))
+    (testing "every reduction operator gets a shuffle lowering"
+      (doseq [operator [:sum :max :min]]
+        (let [k (accelerator/kernel (str "reduce_" (name operator) "_f32") :reduce operator
+                                    {:workgroup-size 64})]
+          (is (re-find #"__shfl_down_sync"
+                       (accelerator/lower k :cuda-v1 :warp-shuffle-reduce))))))))
+
+(deftest kernel-variants-refuse-where-not-applicable
+  (let [reduce-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        ewise-kir (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+        subwarp-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 16})]
+    (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                          (accelerator/lower ewise-kir :cuda-v1 :warp-shuffle-reduce)))
+    (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                          (accelerator/lower subwarp-kir :cuda-v1 :warp-shuffle-reduce)))
+    (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                          (accelerator/lower reduce-kir :wgsl-v1 :warp-shuffle-reduce)))
+    (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                          (accelerator/lower reduce-kir :msl-v1 :warp-shuffle-reduce)))
+    (is (thrown-with-msg? Exception #"unsupported kernel variant"
+                          (accelerator/lower reduce-kir :cuda-v1 :turbo)))
+    (is (thrown-with-msg? Exception #"unsupported kernel variant"
+                          (accelerator/compile-kernel reduce-kir :cuda-v1 :turbo)))))
+
+(deftest variant-artifacts-seal-and-verify
+  (let [kir (accelerator/kernel "reduce_max_f32" :reduce :max {:workgroup-size 128})
+        compiled (accelerator/compile-kernel kir :cuda-v1 :warp-shuffle-reduce)]
+    (is (= :warp-shuffle-reduce (:variant compiled)))
+    (is (= compiled (accelerator/verify-artifact! compiled)))
+    (is (= compiled (accelerator/compile-kernel kir :cuda-v1 :warp-shuffle-reduce)))
+    (testing "a pre-variant sealed artifact (no :variant) verifies as :baseline"
+      (let [legacy (artifact/seal (dissoc (accelerator/compile-kernel kir :cuda-v1) :variant))]
+        (is (not (contains? legacy :variant)))
+        (is (= legacy (accelerator/verify-artifact! legacy)))))
+    (testing "swapping the variant label on baseline code fails closed"
+      (let [tampered (artifact/seal (assoc (accelerator/compile-kernel kir :cuda-v1)
+                                           :variant :warp-shuffle-reduce))]
+        (is (thrown-with-msg? Exception #"regeneration mismatch"
+                              (accelerator/verify-artifact! tampered)))))
+    (testing "an unknown variant label fails closed"
+      (let [tampered (artifact/seal (assoc compiled :variant :turbo))]
+        (is (thrown-with-msg? Exception #"unsupported kernel variant"
+                              (accelerator/verify-artifact! tampered)))))))
