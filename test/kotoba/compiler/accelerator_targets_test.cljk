@@ -63,9 +63,35 @@
     (is (= :msl-v1 (:target apple)))
     (is (= :unknown (:vendor unknown)))
     (is (= :wgsl-v1 (:target unknown)))
-    (testing "every answer is marked unmeasured until hardware says otherwise"
+    (testing "the answer-level :measured? stays false while any fact is provisional"
       (doseq [decision [nvidia apple unknown]]
         (is (false? (:measured? decision)))
-        (is (string? (:basis decision)))))
+        (is (string? (:size-basis decision)))
+        (is (string? (:execution-width-basis decision)))))
     (testing "same descriptor in, same map out"
       (is (= nvidia (targets/recommend {:vendor-id 4318 :api :cuda}))))))
+
+(deftest measurement-is-per-fact-and-cited
+  (testing "the apple execution width is the one measured fact in the table"
+    (is (true? (get-in targets/workgroup-defaults [:apple :execution-width-measured?])))
+    (is (= 32 (get-in targets/workgroup-defaults [:apple :execution-width])))
+    (is (re-find #"gpu-subgroup-measured-row-m1max-20261019"
+                 (get-in targets/workgroup-defaults [:apple :execution-width-basis]))))
+  (testing "no workgroup size is measured for any vendor -- no tuning result exists"
+    (doseq [vendor targets/vendors]
+      (is (false? (get-in targets/workgroup-defaults [vendor :size-measured?]))
+          (str vendor " workgroup size must stay provisional"))))
+  (testing "every other execution width stays unmeasured"
+    (doseq [vendor (disj targets/vendors :apple)]
+      (is (false? (get-in targets/workgroup-defaults [vendor :execution-width-measured?]))
+          (str vendor " execution width must stay unmeasured"))))
+  (testing "recommend propagates the per-fact flags"
+    (let [apple (targets/recommend {:vendor "Apple M1 Max"})
+          nvidia (targets/recommend {:vendor-id 4318})]
+      (is (true? (:execution-width-measured? apple)))
+      (is (false? (:size-measured? apple)))
+      (is (false? (:measured? apple))
+          "answer-level :measured? needs every fact measured")
+      (is (false? (:execution-width-measured? nvidia)))
+      (is (false? (:size-measured? nvidia)))
+      (is (false? (:measured? nvidia))))))

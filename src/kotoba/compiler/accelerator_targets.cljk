@@ -1,12 +1,21 @@
 (ns kotoba.compiler.accelerator-targets
   "Deterministic GPU vendor classification, accelerator target dispatch and
-  provisional per-vendor workgroup defaults (ADR-0355).
+  per-vendor workgroup defaults (ADR-0355).
 
-  One decision table, and no measurement in it yet: the workgroup sizes below
-  are PROVISIONAL design defaults chosen as powers of two that are multiples
-  of each vendor's published execution width. `recommend` marks every answer
-  :measured? false; nothing here may be reported as optimization evidence
-  until hardware measurement replaces a row.
+  One decision table, and exactly ONE measured fact in it: the apple row's
+  execution width (subgroup size) is MEASURED on hardware -- gl_SubgroupSize
+  = 32 on Apple M1 Max via MoltenVK, three verified processes
+  (docs/evidence/gpu-subgroup-measured-row-m1max-20261019). Every workgroup
+  SIZE is still a PROVISIONAL design default chosen as a power of two that is
+  a multiple of the row's execution width; no tuning result exists for any
+  vendor.
+
+  Measurement is per fact. Each row carries :size-measured? and
+  :execution-width-measured? with a :basis apiece, and `recommend` answers
+  both flags plus a top-level :measured? that is true only when every fact in
+  the answer is measured -- so it stays false everywhere today. Nothing here
+  may be reported as optimization evidence beyond the one measured fact and
+  its basis.
 
   The functions are TOTAL. An unknown vendor or api answers the documented
   fallback instead of throwing -- dispatch time is where a refusal costs the
@@ -90,22 +99,50 @@
     :else (default-target vendor)))
 
 (def workgroup-defaults
-  "PROVISIONAL and UNMEASURED (ADR-0355). One workgroup size per vendor: a
-  power of two within ADR-0002's [1, 1024] bound that is a multiple of the
-  vendor's published execution width. These are design defaults, not tuning
-  results -- no caller may cite them as optimization evidence."
-  {:nvidia {:size 256 :execution-width 32
-            :basis "warp width 32; 256 is 8 warps per workgroup"}
-   :apple {:size 256 :execution-width 32
-           :basis "SIMD-group width 32"}
-   :intel {:size 128 :execution-width 32
-           :basis "subgroup width 8/16/32; 128 is a multiple of all three"}
-   :arm {:size 128 :execution-width 16
-         :basis "Mali execution widths 4-32 all divide 128"}
-   :amd {:size 256 :execution-width 64
-         :basis "wavefront width 64"}
-   :unknown {:size 256 :execution-width 32
-             :basis "portable fallback"}})
+  "One row per vendor, every fact provenanced separately. A fact whose
+  :measured? is true has hardware evidence named in its :basis; a fact whose
+  :measured? is false is a PROVISIONAL DESIGN DEFAULT (ADR-0355) that no
+  caller may cite as optimization evidence.
+
+  Workgroup sizes stay unmeasured as TUNING for every vendor -- no row claims
+  256 or 128 is optimal anywhere. The apple execution width is the one
+  measured fact in this table (JUN-58, first row flip 2026-10-19)."
+  {:nvidia {:size 256
+            :size-basis "PROVISIONAL: warp width 32; 256 is 8 warps per workgroup"
+            :size-measured? false
+            :execution-width 32
+            :execution-width-basis "warp width 32 (published); UNMEASURED on hardware"
+            :execution-width-measured? false}
+   :apple {:size 256
+           :size-basis "PROVISIONAL: 8 SIMD-groups of the measured width 32; not a tuning result"
+           :size-measured? false
+           :execution-width 32
+           :execution-width-basis "MEASURED: gl_SubgroupSize = 32 on Apple M1 Max via MoltenVK (Vulkan 1.3.357), 3 verified processes; docs/evidence/gpu-subgroup-measured-row-m1max-20261019"
+           :execution-width-measured? true}
+   :intel {:size 128
+           :size-basis "PROVISIONAL: subgroup width 8/16/32; 128 is a multiple of all three"
+           :size-measured? false
+           :execution-width 32
+           :execution-width-basis "subgroup width 8/16/32 (published); UNMEASURED on hardware"
+           :execution-width-measured? false}
+   :arm {:size 128
+         :size-basis "PROVISIONAL: Mali execution widths 4-32 all divide 128"
+         :size-measured? false
+         :execution-width 16
+         :execution-width-basis "Mali execution widths 4-32 (published); UNMEASURED on hardware"
+         :execution-width-measured? false}
+   :amd {:size 256
+         :size-basis "PROVISIONAL: wavefront width 64"
+         :size-measured? false
+         :execution-width 64
+         :execution-width-basis "wavefront width 64 (published); UNMEASURED on hardware"
+         :execution-width-measured? false}
+   :unknown {:size 256
+             :size-basis "portable fallback"
+             :size-measured? false
+             :execution-width 32
+             :execution-width-basis "portable fallback"
+             :execution-width-measured? false}})
 
 (defn workgroup-default
   "The provisional workgroup size for a vendor (a power of two in [32, 1024]).
@@ -116,15 +153,25 @@
 (defn recommend
   "A deterministic dispatch decision for one device descriptor
   ({:vendor-id | :vendor, optional :api, optional :device-class}). Answers
-  {:vendor :target :workgroup-size :execution-width :basis :measured?}.
-  Same descriptor in, same map out, forever -- until a measured row replaces
-  the provisional one and flips :measured? for that vendor."
+  {:vendor :target
+   :workgroup-size :size-basis :size-measured?
+   :execution-width :execution-width-basis :execution-width-measured?
+   :measured?}. The top-level :measured? is true only when every fact in the
+  answer is measured; with every workgroup size still provisional it stays
+  false, while :execution-width-measured? names the one fact hardware has
+  actually answered (the apple row). Same descriptor in, same map out,
+  forever -- until hardware measurement replaces a provisional fact and
+  flips that fact's flag for that vendor only."
   [device]
   (let [vendor (classify-vendor device)
         row (get workgroup-defaults vendor (workgroup-defaults :unknown))]
     {:vendor vendor
      :target (target-for (:api device) vendor)
      :workgroup-size (:size row)
+     :size-basis (:size-basis row)
+     :size-measured? (:size-measured? row)
      :execution-width (:execution-width row)
-     :basis (:basis row)
-     :measured? false}))
+     :execution-width-basis (:execution-width-basis row)
+     :execution-width-measured? (:execution-width-measured? row)
+     :measured? (boolean (and (:size-measured? row)
+                              (:execution-width-measured? row)))}))
