@@ -68,6 +68,7 @@
 ;; line, never by grepping this file.
 (ns run-tests
   (:require [cljs.test :as t]
+            [kotoba.compiler.accelerator-targets-test]
             [kotoba.compiler.accelerator-test]
             [kotoba.compiler.allocation-budget-test]
             [kotoba.compiler.backend-cljs-portable-test]
@@ -206,7 +207,8 @@
   (when (pos? (+ (or (:fail m) 0) (or (:error m) 0)))
     (set! (.-exitCode js/process) 1)))
 
-(t/run-tests 'kotoba.compiler.accelerator-test
+(t/run-tests 'kotoba.compiler.accelerator-targets-test
+             'kotoba.compiler.accelerator-test
              'kotoba.compiler.allocation-budget-test
              'kotoba.compiler.backend-cljs-portable-test
              'kotoba.compiler.backend-evm-test
