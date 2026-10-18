@@ -56,7 +56,9 @@
 #define KGPU_MAX_PIPELINES 128   /* an adaptive batch guest (three batch steps, a batch prefill, int8 twins) holds ~70 (inference iteration 58) */
 #define KGPU_MAX_BINDINGS 16   /* a fused delta-net step binds 12 (inference, iteration 24) */
 #define KGPU_MAX_DISPATCHES 2048   /* a 40-layer Nex decode step is ~1,250 dispatches in one buffer */
-#define KGPU_MAX_KEPT 4            /* kept (replayable) command buffers, BEGINK <slot> */
+#define KGPU_MAX_KEPT 8            /* kept (replayable) command buffers, BEGINK <slot>. 8 (was 4): the
+                                      interleaved workgroup sweep keeps one buffer per swept size live
+                                      at once (6 sizes) so REPLAYs can be interleaved across sizes */
 #define KGPU_STAGING_BYTES (64u * 1024u * 1024u)
 
 struct kgpu_buffer {
