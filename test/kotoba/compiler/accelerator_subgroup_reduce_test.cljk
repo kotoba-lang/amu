@@ -1,0 +1,100 @@
+(ns kotoba.compiler.accelerator-subgroup-reduce-test
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-subgroup-reduce :as sg]))
+
+;; The :subgroup-reduce emission (ADR-0356's Intel row; ADR-0357's ARM row
+;; reuses it). What these tests pin: the fold queries gl_SubgroupSize at
+;; runtime and bakes no width, the operator row carries its combine and
+;; identity, the workgroup shape mirrors the KIR, the predicate is total,
+;; the emitter is fail-closed off its row and deterministic, the subgroup
+;; geometry the fold width rests on holds across the admitted range, and
+;; :measured? is false on the row.
+
+(deftest emission-queries-the-subgroup-size-at-runtime
+  ;; ADR-0356: "It queries the subgroup size at runtime (gl_SubgroupSize /
+  ;; the WGSL subgroup builtin) and never bakes 32 into the fold." The fold
+  ;; step must therefore be a function of gl_SubgroupSize, and no literal
+  ;; width may appear as a loop bound anywhere in the source.
+  (doseq [w [32 64 128 256 512 1024] operator [:sum :max :min]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (sg/emit-glsl kir)]
+      (is (str/includes? code "#extension GL_KHR_shader_subgroup : require"))
+      (is (str/includes? code "gl_SubgroupSize"))
+      (is (str/includes? code "uint fold = min(gl_SubgroupSize, gl_WorkGroupSize.x);"))
+      (is (str/includes? code "for (uint d = fold / 2u; d > 0u; d >>= 1u)"))
+      (is (nil? (re-find #"\bd\s*=\s*\d+u" code))
+          (str "a baked fold width leaked into W=" w " " (name operator))))))
+
+(deftest each-operator-carries-its-combine-and-identity
+  (doseq [[operator combine identity-text]
+          [[:sum "a+b" "0.0"]
+           [:max "max(a,b)" "-3.402823466e+38"]
+           [:min "min(a,b)" "3.402823466e+38"]]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size 128})
+          code (sg/emit-glsl kir)]
+      (is (str/includes? code (str "float combine(float a, float b) { return " combine "; }")))
+      (is (str/includes? code (str "float v = i < n ? x[i] : " identity-text ";"))))))
+
+(deftest workgroup-shape-mirrors-the-kir
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 128})
+        code (sg/emit-glsl kir)]
+    (is (str/includes? code "layout(local_size_x = 128) in;"))
+    ;; the shared array is W floats -- the same footprint the :baseline tree
+    ;; uses -- and a subgroup has at least one invocation, so
+    ;; gl_NumSubgroups <= W holds for every device.
+    (is (str/includes? code "shared float partials[128];"))
+    (is (str/includes? code "uint i = gl_GlobalInvocationID.x;"))
+    (is (str/includes? code "parts[gl_WorkGroupID.x] = partials[0]"))
+    ;; the KIR's runtime n rides binding 2 (the wire-42 path binds storage
+    ;; buffers only; see the ns docstring).
+    (is (str/includes? code "layout(set = 0, binding = 2, std430) readonly buffer N { uint n; };"))
+    ;; entry point is main (the wire-42 PIPELINE op enters "main") and the
+    ;; kernel's name is deliberately absent from the source.
+    (is (str/includes? code "void main() {"))
+    (is (nil? (re-find #"reduce_sum" code)))))
+
+(deftest the-row-predicate-is-total
+  (doseq [w [32 64 128 256 512 1024] operator [:sum :max :min]]
+    (is (sg/applicable? (accelerator/kernel "k" :reduce operator {:workgroup-size w}))))
+  (doseq [bad [(accelerator/kernel "k" :ewise :add {:workgroup-size 128})
+               (accelerator/kernel "k" :reduce :sum {:workgroup-size 16})
+               (accelerator/kernel "k" :reduce :sum {:workgroup-size 300})
+               (accelerator/kernel "k" :reduce :mul {:workgroup-size 128})
+               {}
+               nil
+               {:kernel/op :reduce :kernel/operator :sum}]]
+    (is (not (sg/applicable? bad)))))
+
+(deftest emission-refuses-off-its-row-and-is-deterministic
+  (let [ewise (accelerator/kernel "k" :ewise :add {:workgroup-size 128})
+        reduce-sum (accelerator/kernel "k" :reduce :sum {:workgroup-size 128})]
+    (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                          (sg/emit-glsl ewise)))
+    (is (thrown-with-msg? Exception #"invalid accelerator KIR"
+                          (sg/emit-glsl (assoc reduce-sum :kernel/dtype :f64))))
+    (is (= (sg/emit-glsl reduce-sum) (sg/emit-glsl reduce-sum)))))
+
+(deftest subgroups-are-full-or-a-single-first-partial
+  ;; The safety condition the fold width rests on: a Vulkan subgroup size is
+  ;; a power of two, so for every KIR-admitted W every subgroup is either
+  ;; full (S divides W) or the single first partial one (S > W). min(S, W) is
+  ;; then exactly the active width. Checked mechanically over the whole
+  ;; admitted range and the subgroup sizes the two rows name (Mali 4..32 per
+  ;; ADR-0357; Intel 8/16/32 per ADR-0356; 1/2/128 cover the degenerate
+  ;; edges).
+  (doseq [w [32 64 128 256 512 1024] s [1 2 4 8 16 32 64 128]]
+    (is (or (> s w) (zero? (mod w s)))
+        (str "W=" w " S=" s " leaves a partial non-first subgroup")))
+  ;; ADR-0356's own claim, restated mechanically: every admitted W >= 32 is
+  ;; a multiple of 8, 16 and 32 alike.
+  (doseq [w [32 64 128 256 512 1024] s [8 16 32]]
+    (is (zero? (mod w s)))))
+
+(deftest the-unmeasured-lock-is-on-the-row
+  (is (false? (:measured? sg/basis)))
+  (is (str/includes? (:text sg/basis) "UNMEASURED"))
+  (is (= 32 sg/min-workgroup-size)))
