@@ -16,7 +16,10 @@
  * one ASCII line, space separated, and the answer is decimal or hex text
  * (`:string -> :string`, the shape every wire here has):
  *
- *   INFO                                   -> "<device>|<api>|<maxWgX>|<unified>"
+ *   INFO                                   -> "<device>|<api>|<maxWgX>|<unified>|<class>"
+ *                                            (<class> is the VkPhysicalDeviceType as one word:
+ *                                             discrete|integrated|virtual|cpu|other -- the 5 tokens
+ *                                             kotoba.compiler.accelerator-targets/device-class knows)
  *   ALLOC <bytes>                          -> handle            (device-local storage buffer)
  *   MAP <path> <offset> <length>           -> handle            (file bytes uploaded through staging)
  *   WRITE <handle> <offset> <hex>          -> "1"
@@ -108,6 +111,7 @@ static struct {
   uint32_t api_version;
   uint32_t max_wg_x;
   int unified_memory;
+  const char *device_class;   /* VkPhysicalDeviceType as one word: discrete|integrated|virtual|cpu|other */
   int sync2;              /* synchronization2 available and enabled on the device */
 } kgpu;
 
@@ -181,6 +185,22 @@ static int kgpu_make_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemor
   KGPU_VK(vkAllocateMemory(kgpu.device, &ai, NULL, memory));
   KGPU_VK(vkBindBufferMemory(kgpu.device, *buffer, *memory, 0));
   return 0;
+}
+
+/* The class word for a VkPhysicalDeviceType. One word per class on purpose:
+ * the INFO answer is one line and a parser splits it on '|'. The five tokens
+ * are the ones kotoba.compiler.accelerator-targets/device-class admits; an
+ * unrecognized deviceType (a driver ahead of this table) answers "other",
+ * never a wrong specific class. */
+static const char *kgpu_device_class(VkPhysicalDeviceType t) {
+  switch (t) {
+    case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: return "discrete";
+    case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: return "integrated";
+    case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: return "virtual";
+    case VK_PHYSICAL_DEVICE_TYPE_CPU: return "cpu";
+    case VK_PHYSICAL_DEVICE_TYPE_OTHER: return "other";
+    default: return "other";
+  }
 }
 
 static int kgpu_init(void) {
@@ -260,6 +280,7 @@ static int kgpu_init(void) {
   kgpu.api_version = props.apiVersion;
   kgpu.max_wg_x = props.limits.maxComputeWorkGroupSize[0];
   kgpu.unified_memory = props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+  kgpu.device_class = kgpu_device_class(props.deviceType);
 
   float priority = 1.0f;
   VkDeviceQueueCreateInfo qi = { .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -541,9 +562,10 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
   const char *op = tok[0];
 
   if (strcmp(op, "INFO") == 0) {
-    int w = snprintf((char *)out, cap, "%s|%u.%u.%u|%u|%d", kgpu.device_name,
+    int w = snprintf((char *)out, cap, "%s|%u.%u.%u|%u|%d|%s", kgpu.device_name,
                      VK_VERSION_MAJOR(kgpu.api_version), VK_VERSION_MINOR(kgpu.api_version),
-                     VK_VERSION_PATCH(kgpu.api_version), kgpu.max_wg_x, kgpu.unified_memory);
+                     VK_VERSION_PATCH(kgpu.api_version), kgpu.max_wg_x, kgpu.unified_memory,
+                     kgpu.device_class);
     return w < 0 ? kgpu_fail(out, cap, "INFO format") : (size_t)w;
   }
   if (strcmp(op, "ALLOC") == 0) {

@@ -22,6 +22,28 @@
     (is (= :unknown (targets/classify-vendor {:vendor-id 1})))
     (is (= :unknown (targets/classify-vendor {})))))
 
+(deftest device-class-tokens-normalize-to-the-admitted-vocabulary
+  (testing "each wire-42 INFO class token maps to its keyword"
+    (is (= :discrete-gpu (targets/device-class "discrete")))
+    (is (= :integrated-gpu (targets/device-class "integrated")))
+    (is (= :virtual-gpu (targets/device-class "virtual")))
+    (is (= :cpu (targets/device-class "cpu")))
+    (is (= :other (targets/device-class "other"))))
+  (testing "the token map covers exactly the VkPhysicalDeviceType words the loader emits"
+    (is (= #{"discrete" "integrated" "virtual" "cpu" "other"}
+           (set (keys @#'targets/wire-device-class-tokens))))
+    (is (every? #(contains? targets/device-classes (targets/device-class %))
+                ["discrete" "integrated" "virtual" "cpu" "other"])))
+  (testing "an unrecognized token is :unknown, never a wrong specific class"
+    (is (= :unknown (targets/device-class "discrete-gpu")))
+    (is (= :unknown (targets/device-class "")))
+    (is (= :unknown (targets/device-class nil)))
+    (is (= :unknown (targets/device-class 42)))
+    (is (= :unknown (targets/device-class :discrete-gpu-2))))
+  (testing "keywords already in the vocabulary pass through, case is folded"
+    (is (= :cpu (targets/device-class :cpu)))
+    (is (= :integrated-gpu (targets/device-class "INTEGRATED")))))
+
 (deftest target-dispatch-matches-api-and-vendor
   (testing "an api that names its shading language decides outright"
     (is (= :cuda-v1 (targets/target-for :cuda :nvidia)))
