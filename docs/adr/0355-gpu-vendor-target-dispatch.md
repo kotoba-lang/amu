@@ -59,3 +59,16 @@ Rules:
   rows that carry hardware evidence.
 - An unmeasured row is labeled unmeasured in the code and here, so a reader
   can tell a design default from a tuning result without trusting prose.
+
+## Measurement log
+
+- 2026-10-18, Apple M1 Max (macOS 26.4, aarch64, MoltenVK), amu at bea7b9b2:
+  the wire-42 INFO probe (`scripts/test-gpu-compute.cljk`) ran end to end and
+  measured device facts -- name `Apple M1 Max`, device apiVersion 1.3.357,
+  `maxComputeWorkGroupSize[0]` 1024, integrated device class. Evidence:
+  `docs/evidence/gpu-vendor-dispatch-m1max-info-20261018/`. This is the first
+  hardware measurement on this table. It does NOT measure the optimal
+  workgroup size: the apple row stays `:measured? false` and provisional (256
+  is unchanged). `device-from-info` parses the probe answer into a descriptor
+  whose facts carry `:measured? true`, so measured facts and unmeasured rows
+  never blur into one flag.

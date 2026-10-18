@@ -11,7 +11,7 @@
   The functions are TOTAL. An unknown vendor or api answers the documented
   fallback instead of throwing -- dispatch time is where a refusal costs the
   most, and a portable default is honest about what it is."
-  {:kotoba/export [classify-vendor default-target device-classes name-vendor-fragments recommend target-for vendor-ids vendors workgroup-default workgroup-defaults]}
+  {:kotoba/export [classify-vendor default-target device-classes device-from-info name-vendor-fragments recommend target-for vendor-ids vendors workgroup-default workgroup-defaults]}
   (:require [kotoba.lang.text :as str]))
 
 (def vendors
@@ -112,6 +112,39 @@
   Total: a vendor outside `vendors` takes the :unknown row."
   [vendor]
   (get-in workgroup-defaults [vendor :size] 256))
+
+(defn device-from-info
+  "Parse one wire-42 INFO answer -- \"<device>|<api>|<maxWgX>|<unified>\" as
+  tools/kexe_gpu_vulkan.c answers it (deviceName, apiVersion major.minor.patch,
+  limits.maxComputeWorkGroupSize[0], deviceType==INTEGRATED_GPU) -- into a
+  device descriptor for `recommend`:
+  {:vendor <deviceName> :api :vulkan :api-version <string>
+   :max-workgroup-x <int> :unified-memory? <bool> :measured? true}.
+
+  :measured? true covers THESE FACTS: they are hardware answers read through
+  the Vulkan loader on the machine that ran the probe. It does NOT make any
+  workgroup row measured -- `recommend` on this descriptor still answers
+  :measured? false, because the INFO probe reports a limit, not a tuning
+  result. The wire is Vulkan-only, so :api is always :vulkan here.
+
+  Total: an answer that is not exactly four well-formed fields answers nil
+  (a wrong parse must not become a wrong dispatch decision)."
+  [answer]
+  (when (string? answer)
+    (let [fields (str/split answer #"\|")]
+      (when (= 4 (count fields))
+        (let [[device api-version max-wg-x unified] fields
+              wg (when (re-matches #"[0-9]+" max-wg-x) (parse-long max-wg-x))]
+          (when (and (not (str/blank? device))
+                     (re-matches #"[0-9]+\.[0-9]+\.[0-9]+" api-version)
+                     (pos? (or wg 0))
+                     (contains? #{"0" "1"} unified))
+            {:vendor device
+             :api :vulkan
+             :api-version api-version
+             :max-workgroup-x wg
+             :unified-memory? (= unified "1")
+             :measured? true}))))))
 
 (defn recommend
   "A deterministic dispatch decision for one device descriptor
