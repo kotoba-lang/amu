@@ -52,7 +52,14 @@ at 4,194,240 lanes = 65,535 workgroups.
 2. **The gap grows at an essentially constant marginal cost per workgroup
    between 2x and 4x -- the data no longer require "super-proportional to
    load".** Gap means (variant - baseline ns/dispatch): 2284 (2x) -> 4436
-   (3x) -> 6454 (4x). Marginal cost per +16k workgroups: +2152 ns
+   (3x) -> 6454 (4x). These are UNPAIRED differences of per-arm means, not
+   paired round gaps: the recorded logs persist per-arm aggregates only
+   (no per-round timings), so a paired gap or paired slope cannot be
+   computed from this evidence. The paired, drift-cancelled quantity is
+   the within-round ratio above (median of 32 within-round ratios); the
+   per-arm subtraction does not cancel drift and the 3x arm additionally
+   carries run 4's documented host spike. The slopes below are descriptive
+   unpaired differences accordingly. Marginal cost per +16k workgroups: +2152 ns
    (2x->3x, 0.131 ns/wg) and +2018 ns (3x->4x, 0.123 ns/wg) -- the two
    segment slopes agree to within 6%. An affine fit through the 2x and 4x
    means (slope 0.128 ns/wg, intercept -1.9 us) predicts +190 ns at
