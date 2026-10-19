@@ -66,9 +66,12 @@ Anchors: the W=256 c1 cell (1 tile) is the chain's unchunked W=256 point
 with a loop wrapper around it and reproduces it within ~3% (runs 1-2
 +16.0k vs #1353's +15,630); the W=64 anchor cell reproduces PR #1355's b1
 (+2,668) within 60-310 ns on its clean runs. Run 3 of every cell is a
-host-noise window (load averages 9-11 throughout the sweep; floor/baseline
-inflates to 0.79-0.88 there vs 0.38-0.45 at W=256 in clean runs). The
-sign of the gap is positive in every run, noise window included.
+host-noise window; the recorded load averages are the run's own
+load averages lines (run-3-anchor-w64-2097152-c1.log: 29.31 16.57 13.02;
+run-3-w256-2097152-c2.log: 22.80 16.10 12.95 — 1-min/5-min/15-min), not
+the 9-11 clean-run band previously claimed here; floor/baseline inflates
+to 0.79-0.88 there vs 0.38-0.45 at W=256 in clean runs. The sign of the
+gap is positive in every run, noise window included.
 
 ## Non-claims
 
