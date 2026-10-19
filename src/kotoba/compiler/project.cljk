@@ -462,11 +462,15 @@
   lines: `[m :as a]` beside `[m :refer [f]]` is `[m :as a :refer [f]]`, and
   the template design the duplicate check protects (two BINDINGS of one
   template are two modules) already separates those by instantiation-key.
-  Specs merge here: one :as (a real alias beside a synthetic refer alias
-  wins), :refer unioned in order. Two DIFFERENT real aliases for one
-  instantiation remain a refusal -- one module, one spelling."
+  Specs merge here ONLY when the merge is unambiguous: the :refer sets are
+  disjoint and at most one spec carries a real alias. Anything else is left
+  as two specs so the checks below refuse it exactly as before -- the same
+  name referred from two specs (a name reached two ways), two real aliases
+  for one module (one module, one spelling), and the plain duplicate all keep
+  their existing refusals."
   [module-name requires]
-  (let [real-alias? (fn [r] (not= (:alias r) (synthetic-refer-alias (:namespace r))))]
+  (let [real-alias? (fn [r] (not= (:alias r) (synthetic-refer-alias (:namespace r))))
+        overlap? (fn [a b] (seq (filter (set (:refer a [])) (:refer b []))))]
     (reduce
      (fn [acc req]
        (let [key (instantiation-key (:namespace req) (:with req))
@@ -474,10 +478,11 @@
                                         (when (= key (instantiation-key (:namespace r) (:with r)))
                                           i))
                                       acc))]
-         (if idx
+         (if (and idx
+                  (let [prior (nth acc idx)]
+                    (and (not (overlap? prior req))
+                         (not (and (real-alias? prior) (real-alias? req))))))
            (let [prior (nth acc idx)]
-             (when (and (real-alias? prior) (real-alias? req) (not= (:alias prior) (:alias req)))
-               (reject! "duplicate imported namespace" {:namespace module-name :requires [prior req]}))
              (assoc acc idx (cond-> prior
                               (and (not (real-alias? prior)) (real-alias? req))
                               (assoc :alias (:alias req))
