@@ -53,12 +53,12 @@ for cell in CELLS:
     lines.append(f"== {cell}  {runs[0]['shape']}")
     for r in runs:
         lines.append(
-            f"  run{r['cyc']}: gap(marginal)={r['gap']:.1f} ns/dispatch  paired_sign={'+' if r['med'] < 1 else '-'}  speedup "
+            f"  run{r['cyc']}: gap(marginal)={r['gap']:.1f} ns/dispatch  paired_sign={'+' if r['med'] < 1 else '0' if r['med'] == 1 else '-'}  speedup "
             f"median={r['med']:.4f} iqr={r['iqr']:.4f} min={r['mn']:.4f} "
             f"max={r['mx']:.4f}  floor/baseline={r['fs_b']:.4f}  "
             f"floor/variant={r['fs_v']:.4f}  load1={r['load']}  "
             f"verified={r['verified']}  vs-1.0={r['verdict']}")
-    iqr_clean = [r for r in runs if r['iqr'] <= 0.05]
+    iqr_clean = [r for r in runs if r['verified'] and r['iqr'] <= 0.05]
     clean_min = min((r['fs_b'] for r in iqr_clean), default=None)
     surv = [r for r in iqr_clean if clean_min is not None and r['fs_b'] <= 1.2 * clean_min]
     lines.append(f"  IQR-clean runs: {[r['cyc'] for r in iqr_clean]}  "
@@ -71,10 +71,10 @@ for cell in CELLS:
     # Signs derive from the PAIRED per-round statistic (paired speedup
     # median: GAP>0 <=> baseline/variant < 1), not from the marginal gap
     # values, whose sign can contradict the paired rounds (review P1).
-    paired_signs = '/'.join('+' if r['med'] < 1 else '-' for r in runs)
+    paired_signs = '/'.join('+' if r['med'] < 1 else '0' if r['med'] == 1 else '-' for r in runs)
     lines.append(f"  mean(3, marginal)={statistics.mean(gaps):.1f}  "
                  f"all-signs(paired)={paired_signs}  "
-                 f"all-signs(marginal, superseded)={'/'.join('+' if g > 0 else '-' for g in gaps)}  "
+                 f"all-signs(marginal, superseded)={'/'.join('+' if g > 0 else '0' if g == 0 else '-' for g in gaps)}  "
                  f"spread(marginal)={max(gaps) - min(gaps):.1f}")
     resolved = [r['cyc'] for r in runs if r['verdict'] != 'indistinguishable-at-this-noise']
     lines.append(f"  runs whose ratio stream does not straddle 1.0: {resolved}")
