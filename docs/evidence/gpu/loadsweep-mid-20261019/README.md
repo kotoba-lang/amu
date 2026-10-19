@@ -95,3 +95,52 @@ verdict -- its median agrees with runs 5-6 to within 0.3%. The Intel
 (JUN-59) and Mali (JUN-60) comparisons need hardware this bot does not
 have. W=32 stays floor-bound/unverdicted (its grids would need more than
 the 65535 1D limit at any load that lifts it off the floor).
+
+## Gate (completed and landed by follow-up tick 20261019)
+
+The canonical suite command (run at the worktree root:
+`kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" run-tests.cljk`,
+wrapper `run-gate-0849.sh`) ran to COMPLETION on this tree; `gate.log` is the
+full run output (488 lines, ends `GATE-EXIT=1`, finished 2026-10-19 09:12 JST
+-- the run was still executing when the PR opened, which is why the PR body
+originally called this log partial; the completed log is what this commit
+lands).
+
+Result: 304 tests / 4939 assertions / 4908 passed / 16 failures / 15 errors
+(exit 1).
+
+Base comparison, first-hand: `gate-base.log` is the same canonical command
+run on a CLEAN bea7b9b2 tree (worktree base-check-20261019-0204, `git status`
+clean; output kept out of that tree), 2026-10-19 09:31-09:50 JST:
+304 tests / 4939 assertions / 4906 passed / 16 failures / 17 errors (exit 1).
+
+- The 16 FAILs are identical in name and count in both runs
+  (policy-grant-count-test 13, ios-aot-test 1, namespace-reachability-test 1,
+  native-allocation-budget-test 1).
+- All 15 ERRORs of this tree's run are present in the base run's 17. The base
+  run has 2 extra ERRORs this tree does not:
+  `kotoba.compiler.native-rebound-row-update-test` /
+  `native-rebound-row-update-test` and `kotoba.compiler.options-map-argument-test`
+  / `options-map-destructures-as-a-row-test`. Both sit in the native-oracle
+  family whose failures carry `:trap :host/stack-exhausted` "oracle
+  inconclusive" errors; run-to-run flakiness is the working hypothesis,
+  UNVERIFIED (base was run once).
+- Nothing red in this tree's run is absent from the base run. The committed
+  diff adds no test namespace (scripts + 4 golden GLSL fixtures under
+  test/fixtures/gpu/ + docs/evidence only; the worktree's uncommitted
+  package-lock.json churn is tooling side-effect and is NOT part of the
+  diff).
+
+Red set detail (this tree's run): policy-grant-count-test
+(numbered-grants-at-any-count 9 FAIL, malformed-policy-still-refused-by-name
+3 FAIL, same-policy-read-twice-is-equal 1 FAIL + 1 ERROR,
+named-grants-at-any-count 1 ERROR); row-tuple-element-argument-test (9 ERROR);
+ios-aot-test (packages-macos-with-a-macos-profile-and-platform-load-command
+1 FAIL, refuses-macos-static-host-typed-list-operations +
+refuses-macos-static-host-capability-calls-without-providers 2 ERROR, both
+`todo:`); namespace-reachability-test
+(every-source-namespace-is-reachable-from-the-tests: kotoba.compiler.execution-targets
++ kotoba.compiler.nbb.kototama-cli unreachable);
+native-allocation-budget-test (native-constructors-charge-fuel-test 1 FAIL);
+rebound-row-argument-test (text-edit-rebound-state-is-a-row-test 1 ERROR);
+typed-wasm-min-max-test (min-max-qualified-on-typed-wasm-test 1 ERROR).

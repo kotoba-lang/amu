@@ -311,3 +311,178 @@ Testing kotoba.compiler.merge-literal-reads-its-row-test
 Testing kotoba.compiler.integer-str-test
 
 Testing kotoba.compiler.native-rebound-row-update-test
+
+Testing kotoba.compiler.row-tuple-element-argument-test
+
+ERROR in (row-tuple-element-argument-test) (:110:11)
+admitted on the reference and both native targets
+(ns browser.surface)
+(defn- empty-surface []
+  {:surface/id "kotoba-os" :surface/next-window-id 1 :surface/opened 0 :surface/focus ""})
+(defn- next-window-id [surface]
+  [(str "w" (:surface/next-window-id surface))
+   (update surface :surface/next-window-id inc)])
+(defn- open-window [surface]
+  (let [[id surface] (next-window-id surface)]
+    [id (-> surface (update :surface/opened inc) (assoc :surface/focus id))]))
+(defn main [] :i64
+  (let [[id s] (open-window (empty-surface))]
+    (+ (* 100 (:surface/opened s)) (if (string=? (:surface/focus s) id) 10 0)
+       (string-code-unit-count id))))
+expected: (= expected (run-main source))
+  actual: #error {:message "host/stack-exhausted", :data {:phase :ir, :trap :host/stack-exhausted, :frames-limit 32}}
+
+ERROR in (row-tuple-element-argument-test) (:112:13)
+admitted on the reference and both native targets
+:x86_64-aiueos-kernel-v1 (ns browser.surface)
+(defn- empty-surface []
+  {:surface/id "kotoba-os" :surface/next-window-id 1 :surface/opened 0 :surface/focus ""})
+(defn- next-window-id [surface]
+  [(str "w" (:surface/next-window-id surface))
+   (update surface :surface/next-window-id inc)])
+(defn- open-window [surface]
+  (let [[id surface] (next-window-id surface)]
+    [id (-> surface (update :surface/opened inc) (assoc :surface/focus id))]))
+(defn main [] :i64
+  (let [[id s] (open-window (empty-surface))]
+    (+ (* 100 (:surface/opened s)) (if (string=? (:surface/focus s) id) 10 0)
+       (string-code-unit-count id))))
+expected: (= expected (native-value source target))
+  actual: #error {:message "native artifact oracle inconclusive: the sealed value cannot be re-derived", :data {:trap :host/stack-exhausted, :fuel 512, :phase :verify}}
+
+ERROR in (row-tuple-element-argument-test) (:112:13)
+admitted on the reference and both native targets
+:aarch64-macos-kotoba-v1 (ns browser.surface)
+(defn- empty-surface []
+  {:surface/id "kotoba-os" :surface/next-window-id 1 :surface/opened 0 :surface/focus ""})
+(defn- next-window-id [surface]
+  [(str "w" (:surface/next-window-id surface))
+   (update surface :surface/next-window-id inc)])
+(defn- open-window [surface]
+  (let [[id surface] (next-window-id surface)]
+    [id (-> surface (update :surface/opened inc) (assoc :surface/focus id))]))
+(defn main [] :i64
+  (let [[id s] (open-window (empty-surface))]
+    (+ (* 100 (:surface/opened s)) (if (string=? (:surface/focus s) id) 10 0)
+       (string-code-unit-count id))))
+expected: (= expected (native-value source target))
+  actual: #error {:message "native artifact oracle inconclusive: the sealed value cannot be re-derived", :data {:trap :host/stack-exhausted, :fuel 512, :phase :verify}}
+
+ERROR in (row-tuple-element-argument-test) (:110:11)
+admitted on the reference and both native targets
+(ns browser.surface)
+(defn- empty-surface []
+  {:surface/id "kotoba-os" :surface/next-window-id 1 :surface/opened 0 :surface/focus ""})
+(defn- next-window-id [surface]
+  [(str "w" (:surface/next-window-id surface))
+   (update surface :surface/next-window-id inc)])
+(defn- open-window [surface]
+  (let [[id surface] (next-window-id surface)]
+    [id (-> surface (update :surface/opened inc) (assoc :surface/focus id))]))
+(defn main [] :i64
+  (let [[a s] (open-window (empty-surface))
+        [b t] (open-window s)]
+    (+ (* 10000 (:surface/next-window-id t)) (* 100 (:surface/opened t))
+       (if (string=? (:surface/focus t) "w2") 10 0) (if (string=? a "w1") 1 0))))
+expected: (= expected (run-main source))
+  actual: #error {:message "host/stack-exhausted", :data {:phase :ir, :trap :host/stack-exhausted, :frames-limit 32}}
+
+ERROR in (row-tuple-element-argument-test) (:112:13)
+admitted on the reference and both native targets
+:x86_64-aiueos-kernel-v1 (ns browser.surface)
+(defn- empty-surface []
+  {:surface/id "kotoba-os" :surface/next-window-id 1 :surface/opened 0 :surface/focus ""})
+(defn- next-window-id [surface]
+  [(str "w" (:surface/next-window-id surface))
+   (update surface :surface/next-window-id inc)])
+(defn- open-window [surface]
+  (let [[id surface] (next-window-id surface)]
+    [id (-> surface (update :surface/opened inc) (assoc :surface/focus id))]))
+(defn main [] :i64
+  (let [[a s] (open-window (empty-surface))
+        [b t] (open-window s)]
+    (+ (* 10000 (:surface/next-window-id t)) (* 100 (:surface/opened t))
+       (if (string=? (:surface/focus t) "w2") 10 0) (if (string=? a "w1") 1 0))))
+expected: (= expected (native-value source target))
+  actual: #error {:message "native artifact oracle inconclusive: the sealed value cannot be re-derived", :data {:trap :host/stack-exhausted, :fuel 512, :phase :verify}}
+
+ERROR in (row-tuple-element-argument-test) (:112:13)
+admitted on the reference and both native targets
+:aarch64-macos-kotoba-v1 (ns browser.surface)
+(defn- empty-surface []
+  {:surface/id "kotoba-os" :surface/next-window-id 1 :surface/opened 0 :surface/focus ""})
+(defn- next-window-id [surface]
+  [(str "w" (:surface/next-window-id surface))
+   (update surface :surface/next-window-id inc)])
+(defn- open-window [surface]
+  (let [[id surface] (next-window-id surface)]
+    [id (-> surface (update :surface/opened inc) (assoc :surface/focus id))]))
+(defn main [] :i64
+  (let [[a s] (open-window (empty-surface))
+        [b t] (open-window s)]
+    (+ (* 10000 (:surface/next-window-id t)) (* 100 (:surface/opened t))
+       (if (string=? (:surface/focus t) "w2") 10 0) (if (string=? a "w1") 1 0))))
+expected: (= expected (native-value source target))
+  actual: #error {:message "native artifact oracle inconclusive: the sealed value cannot be re-derived", :data {:trap :host/stack-exhausted, :fuel 512, :phase :verify}}
+
+ERROR in (row-tuple-element-argument-test) (:110:11)
+admitted on the reference and both native targets
+(ns browser.surface)
+(defn- empty-surface []
+  {:surface/id "kotoba-os" :surface/next-window-id 1 :surface/opened 0 :surface/focus ""})
+(defn- next-window-id [surface]
+  [(str "w" (:surface/next-window-id surface))
+   (update surface :surface/next-window-id inc)])
+(defn- open-window [surface]
+  (let [[id surface] (next-window-id surface)]
+    (-> surface (update :surface/opened inc) (assoc :surface/focus id))))
+(defn main [] :i64
+  (let [s (open-window (open-window (empty-surface)))]
+    (+ (* 10000 (:surface/next-window-id s)) (* 100 (:surface/opened s))
+       (if (string=? (:surface/focus s) "w2") 10 0))))
+expected: (= expected (run-main source))
+  actual: #error {:message "host/stack-exhausted", :data {:phase :ir, :trap :host/stack-exhausted, :frames-limit 32}}
+
+ERROR in (row-tuple-element-argument-test) (:112:13)
+admitted on the reference and both native targets
+:x86_64-aiueos-kernel-v1 (ns browser.surface)
+(defn- empty-surface []
+  {:surface/id "kotoba-os" :surface/next-window-id 1 :surface/opened 0 :surface/focus ""})
+(defn- next-window-id [surface]
+  [(str "w" (:surface/next-window-id surface))
+   (update surface :surface/next-window-id inc)])
+(defn- open-window [surface]
+  (let [[id surface] (next-window-id surface)]
+    (-> surface (update :surface/opened inc) (assoc :surface/focus id))))
+(defn main [] :i64
+  (let [s (open-window (open-window (empty-surface)))]
+    (+ (* 10000 (:surface/next-window-id s)) (* 100 (:surface/opened s))
+       (if (string=? (:surface/focus s) "w2") 10 0))))
+expected: (= expected (native-value source target))
+  actual: #error {:message "native artifact oracle inconclusive: the sealed value cannot be re-derived", :data {:trap :host/stack-exhausted, :fuel 512, :phase :verify}}
+
+ERROR in (row-tuple-element-argument-test) (:112:13)
+admitted on the reference and both native targets
+:aarch64-macos-kotoba-v1 (ns browser.surface)
+(defn- empty-surface []
+  {:surface/id "kotoba-os" :surface/next-window-id 1 :surface/opened 0 :surface/focus ""})
+(defn- next-window-id [surface]
+  [(str "w" (:surface/next-window-id surface))
+   (update surface :surface/next-window-id inc)])
+(defn- open-window [surface]
+  (let [[id surface] (next-window-id surface)]
+    (-> surface (update :surface/opened inc) (assoc :surface/focus id))))
+(defn main [] :i64
+  (let [s (open-window (open-window (empty-surface)))]
+    (+ (* 10000 (:surface/next-window-id s)) (* 100 (:surface/opened s))
+       (if (string=? (:surface/focus s) "w2") 10 0))))
+expected: (= expected (native-value source target))
+  actual: #error {:message "native artifact oracle inconclusive: the sealed value cannot be re-derived", :data {:trap :host/stack-exhausted, :fuel 512, :phase :verify}}
+
+Testing kotoba.compiler.record-list-field-literal-test
+
+Ran 304 tests containing 4939 assertions.
+16 failures, 15 errors.
+
+nbb: 304 tests, 4908 passed, 16 failed, 15 errors
+GATE-EXIT=1
