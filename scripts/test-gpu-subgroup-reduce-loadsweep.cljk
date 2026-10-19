@@ -461,11 +461,26 @@
   (println (str "GPU-SGRE-LOAD\tTOOLCHAIN\t" (str/trim (first (str/split out #"\n"))))))
 
 ;; ---- loader ---------------------------------------------------------------
+;; The Vulkan prefix is detected from the header location (Intel Homebrew
+;; installs under /usr/local, Apple Silicon under /opt/homebrew); compile
+;; defects FAIL while an unlinkable loader library is COULD-NOT-RUN
+;; (review P2; same contract as test-gpu-devclass.cljk).
+(def vulkan-prefix
+  (some (fn [h] (when (.existsSync fs h) (first (str/split h #"/include/vulkan/vulkan.h"))))
+        ["/usr/include/vulkan/vulkan.h" "/usr/local/include/vulkan/vulkan.h" "/opt/homebrew/include/vulkan/vulkan.h"]))
 (def loader (.join path tmp "kexe-loader-gpu"))
+(def loader-obj (.join path tmp "kexe-loader-gpu.o"))
 (let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-DKEXE_GPU_VULKAN"
-                                             (.join path root "tools" "kexe_loader.c") "-o" loader]
-                                            (if (= platform "darwin") ["-I/opt/homebrew/include" "-L/opt/homebrew/lib" "-lvulkan"] ["-lvulkan"])))]
-  (when-not (zero? status) (fail! (str "the GPU loader does not build: " (subs err 0 (min 600 (count err)))))))
+                                             "-c" (.join path root "tools" "kexe_loader.c") "-o" loader-obj]
+                                            (if (= platform "darwin") [(str "-I" vulkan-prefix "/include")] [])))]
+  (when-not (zero? status) (fail! (str "the GPU loader does not compile: " (subs err 0 (min 600 (count err)))))))
+(let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" loader-obj "-o" loader]
+                                            (if (= platform "darwin") [(str "-L" vulkan-prefix "/lib")] [])
+                                            ["-lvulkan"]))]
+  (when-not (zero? status)
+    (if (re-find #"(?i)(cannot find -lvulkan|library not found for -lvulkan|unable to find library -lvulkan|vulkan.*not found)" err)
+      (refuse! (str "the Vulkan loader library cannot link here (install MoltenVK/libvulkan): " (subs err 0 (min 300 (count err)))))
+      (fail! (str "the GPU loader does not link: " (subs err 0 (min 600 (count err))))))))
 
 ;; ---- the kernels, compiled to SPIR-V --------------------------------------
 (defn- compile-kernel! [name src]
