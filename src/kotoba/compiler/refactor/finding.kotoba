@@ -30,6 +30,19 @@
   ;; here byte-identically (shared schema = same name, same shape; measured minimal repro p75).
   (:schemas {:edit/e [:record :edit/e [[:s :i64] [:e :i64] [:text :string] [:rule :string] [:ord :i64]]]
              :edit/split [:record :edit/split [[:kept [:list [:ref :edit/e]]] [:dropped [:list [:ref :edit/e]]]]]
+             :cst/node [:record :cst/node
+                        [[:type :keyword] [:s :i64] [:e :i64]
+                         [:kids [:list [:ref :cst/node]]]
+                         [:text :string] [:prefix :string] [:splice :bool]]]
+             :cst/rd [:record :cst/rd
+                      [[:node [:ref :cst/node]] [:kids [:list [:ref :cst/node]]]
+                       [:pos :i64] [:kind :i64] [:err :string]]]
+             :cst/out [:record :cst/out
+                       [[:nodes [:list [:ref :cst/node]]] [:err :string] [:at :i64]]]
+             :cst/branch [:record :cst/branch [[:key :string] [:form [:ref :cst/node]]]]
+             :cst/visit [:record :cst/visit
+                         [[:node [:ref :cst/node]] [:region :keyword] [:index :i64]
+                          [:parent :i64] [:key [:ref :cst/node]]]]
              :finding/u16 [:record :finding/u16 [[:pos :vector-i64] [:delta :vector-i64]]]
              :finding/row [:record :finding/row [[:a :string] [:b :string] [:n :i64]]]
              :finding/f [:record :finding/f
