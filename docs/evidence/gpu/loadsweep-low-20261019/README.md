@@ -57,14 +57,19 @@ Chain points quoted (NOT re-measured here): 2x = 32,768 wg gap +2284 ns
 
 ## Finding
 
-1. **The gap is already positive at 20,480 workgroups -- a threshold onset
-   at >= 32,768 wg is refuted.** All three 1.25x runs (gap +736 / +509 /
-   +962 ns per dispatch) sit above all three 2^20 controls of the chain
-   (-468 / -788 / -441 ns); no overlap. The PR #1350 statement "the
-   resolution point sits between 16,384 and 32,768 workgroups" holds for
-   the STRICT within-round ratio verdict (below) and is now refined twice:
-   the absolute gap is nonzero by 20,480 wg, while the ratio verdict
-   resolves only between 24,576 and 32,768 wg (see 2).
+1. **The 20,480-workgroup onset is UNRESOLVED.** The 1.25x runs' gap
+   values (+736 / +509 / +962 ns per dispatch) sit above the 2^20
+   controls (-468 / -788 / -441), but at 20,480 wg every run's paired
+   ratio range spans 1.0 and the median effects (1.81% / 1.11% / 4.17%)
+   are each smaller than their reported IQRs (2.50% / 1.22% / 15.28%);
+   by this probe's own protocol such an effect is not a result. The gap
+   values are also differences of separately computed arm medians rather
+   than paired round differences (the harness's paired GAP statistic
+   landed later, PR #1373's thread). The threshold question therefore
+   stays open at 20,480 wg: neither "onset established" nor "onset at
+   >= 32,768 refuted" follows from these rows. The PR #1350 statement
+   "the resolution point sits between 16,384 and 32,768 workgroups"
+   holds only for the STRICT within-round ratio verdict (see 2).
 
 2. **Strict ratio verdict: the lowest load that resolves "below" is 28,672
    workgroups, and only 2 of 3 runs.** At 28,672 wg runs 2c/3c have all 32
