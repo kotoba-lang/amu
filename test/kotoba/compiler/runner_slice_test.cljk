@@ -1,0 +1,174 @@
+(ns kotoba.compiler.runner-slice-test
+  "Vectors for the C-free runner slice's admission and receipt contract
+  (JUN-29). The digests below are not invented: they are the measured
+  2026-10-19 x86-64 build chain (trusted C loader measurement run, to be
+  replaced by the C-free runner itself):
+
+  * `runner`     = the built measurement loader `kexe-loader` (198,760 B)
+  * `compiler`   = the G1 compiler payload code section (1,231,648 B)
+  * `container`  = the G1 kexe container (2,575,371 B)
+  * `output`     = the G2 rebuild artifact (byte-identical to G1: the
+                   measured G1=G2 fixed point)
+  * `source-graph` = SHA-256 over the canonical 21-entry manifest of the
+                   pinned seed source graph (sorted `sha256  path` lines)"
+  (:require [clojure.test :refer [deftest is]]
+            [kotoba.compiler.runner-slice :as runner-slice]))
+
+(def runner-sha
+  "05798f17613db2936cf8fe29c16590c8c2b7513fc80e5b2334e89d16b482f7aa")
+(def compiler-sha
+  "32fe88f0dc850728c44a4b4320b6c180292a38e98672c80759859a59469e3f34")
+(def container-sha
+  "5f9b446c4445c12038ed8aa1eb4ad3984a671fba52e5f78e2de736f08822ce67")
+(def output-sha
+  "101995a7fbf9e6a93400d7a178ed7c66e1c8dec6be515702d734c829c565d2e2")
+(def source-graph-sha
+  "8935d969ae4665c63baaf4f3dd42c0f192d388d397ced7b5c335561a2f1f5700")
+
+(defn measured-run []
+  {:runner-sha256 runner-sha
+   :compiler-sha256 compiler-sha
+   :source-graph-sha256 source-graph-sha
+   :container-sha256 container-sha
+   :output-sha256 output-sha
+   :call-site-contract runner-slice/call-site-contract
+   :status :ok
+   :started-at 1000
+   :finished-at 2000})
+
+(deftest measured-chain-seals-and-verifies
+  (let [run (measured-run)
+        receipt (runner-slice/create run)]
+    (is (= runner-slice/receipt-format (:format receipt)))
+    (is (re-matches #"[0-9a-f]{64}" (:receipt-sha256 receipt)))
+    (is (re-matches #"[0-9a-f]{64}" (:call-site-contract-sha256 receipt)))
+    (is (= (:call-site-contract-sha256 receipt)
+           (:call-site-contract-sha256 (runner-slice/create run)))
+        "same run seals the same receipt")
+    (is (:verified? (runner-slice/verify receipt run)))
+    (is (= (:receipt-sha256 receipt)
+           (:receipt-sha256 (runner-slice/verify receipt run))))))
+
+(deftest receipt-evidence-mismatches-fail-closed
+  (let [run (measured-run)
+        receipt (runner-slice/create run)]
+    (doseq [field [:runner-sha256 :compiler-sha256 :source-graph-sha256
+                   :container-sha256 :output-sha256]]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"evidence mismatch"
+                            (runner-slice/verify
+                             receipt
+                             ;; swap in a different valid digest
+                             (assoc run field (if (= runner-sha (field run))
+                                                compiler-sha
+                                                runner-sha))))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integrity mismatch"
+                          (runner-slice/verify (assoc receipt :status :trap) run)))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integrity mismatch"
+                          (runner-slice/verify (assoc receipt :output-sha256 compiler-sha)
+                                               run)))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"schema rejected"
+                          (runner-slice/verify (dissoc receipt :runner-sha256) run)))))
+
+(deftest receipt-binds-the-measured-call-site-contract
+  (let [run (measured-run)
+        receipt (runner-slice/create run)]
+    (is (= runner-slice/call-site-contract (:call-site-contract receipt)))
+    (is (= compiler-sha (get-in receipt [:call-site-contract :measured-payload-sha256]))
+        "the contract binds the payload the measurement ran on")
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"evidence mismatch"
+                          (runner-slice/verify
+                           receipt
+                           (assoc run :call-site-contract
+                                  ;; still an admitted contract, but not the
+                                  ;; one this receipt was sealed under
+                                  (assoc runner-slice/call-site-contract
+                                         :measured-payload-sha256 runner-sha)))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"call-site contract rejected"
+                          (runner-slice/create
+                           (assoc run :call-site-contract
+                                  (assoc runner-slice/call-site-contract
+                                         :frame-alignment 8)))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"call-site contract rejected"
+                          (runner-slice/create
+                           (assoc run :call-site-contract
+                                  (assoc runner-slice/call-site-contract
+                                         :admitted-dispatch-slots #{56 60})))))))
+
+(deftest malformed-digests-and-intervals-are-refused-at-sealing
+  (let [run (measured-run)]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not a raw-byte SHA-256"
+                          (runner-slice/create (assoc run :runner-sha256 "ABC"))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not a raw-byte SHA-256"
+                          (runner-slice/create (assoc run :compiler-sha256
+                                                      (apply str (repeat 64 "A"))))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"status invalid"
+                          (runner-slice/create (assoc run :status :ok-ish))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"time interval invalid"
+                          (runner-slice/create (assoc run :started-at 2000
+                                                         :finished-at 1000))))))
+
+(deftest source-graph-manifest-is-canonical-and-injection-safe
+  (let [a (apply str (repeat 64 "a"))
+        b (apply str (repeat 64 "b"))]
+    (is (= (str a "  00-ns.kotoba\n" b "  01-mem.kotoba\n")
+           (runner-slice/source-graph-manifest
+            [{:path "01-mem.kotoba" :sha256 b}
+             {:path "00-ns.kotoba" :sha256 a}])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"entry path duplicated"
+                          (runner-slice/source-graph-manifest
+                           [{:path "00-ns.kotoba" :sha256 a}
+                            {:path "00-ns.kotoba" :sha256 b}])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"entry rejected"
+                          (runner-slice/source-graph-manifest
+                           [{:path "00-ns.kotoba\n01-mem.kotoba" :sha256 a}])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"entry rejected"
+                          (runner-slice/source-graph-manifest
+                           [{:path "00-ns.kotoba" :sha256 "deadbeef"}])))))
+
+(deftest admission-refuses-anything-but-the-pins
+  (let [contract runner-slice/call-site-contract
+        admitted (runner-slice/admit!
+                  {:source-graph-sha256 source-graph-sha
+                   :pinned-source-graph-sha256 source-graph-sha
+                   :container-sha256 container-sha
+                   :expected-container-sha256 container-sha
+                   :call-site-contract contract})]
+    (is (:admitted? admitted))
+    (is (re-matches #"[0-9a-f]{64}" (:admission-sha256 admitted)))
+    (is (= (:admission-sha256 admitted)
+           (:admission-sha256
+            (runner-slice/admit!
+             {:source-graph-sha256 source-graph-sha
+              :pinned-source-graph-sha256 source-graph-sha
+              :container-sha256 container-sha
+              :expected-container-sha256 container-sha
+              :call-site-contract contract})))
+        "the same admission seals the same decision")
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not match the pin"
+                          (runner-slice/admit!
+                           {:source-graph-sha256 runner-sha
+                            :pinned-source-graph-sha256 source-graph-sha
+                            :container-sha256 container-sha
+                            :expected-container-sha256 container-sha
+                            :call-site-contract contract})))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not match the expected container"
+                          (runner-slice/admit!
+                           {:source-graph-sha256 source-graph-sha
+                            :pinned-source-graph-sha256 source-graph-sha
+                            :container-sha256 compiler-sha
+                            :expected-container-sha256 container-sha
+                            :call-site-contract contract})))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"call-site contract rejected"
+                          (runner-slice/admit!
+                           {:source-graph-sha256 source-graph-sha
+                            :pinned-source-graph-sha256 source-graph-sha
+                            :container-sha256 container-sha
+                            :expected-container-sha256 container-sha
+                            :call-site-contract (assoc contract :abi :something-else)})))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not a raw-byte SHA-256"
+                          (runner-slice/admit!
+                           {:source-graph-sha256 source-graph-sha
+                            :pinned-source-graph-sha256 source-graph-sha
+                            :container-sha256 container-sha
+                            :expected-container-sha256 "short"
+                            :call-site-contract contract})))))

@@ -15,6 +15,7 @@
             [kotoba.compiler.posix-path :as posix-path]
             [kotoba.compiler.project :as project]
             [kotoba.compiler.project-files :as project-files]
+            [kotoba.compiler.decimal-text :as decimal-text]
             [kotoba.kir :as ir]
             [kotoba.sema :as sema]
             [kotoba.compiler.text-bytes :as text-bytes]
@@ -131,6 +132,7 @@
         :utf8-text-refuses-overlong)
 (check! (= [1 2 255] (vec (js/Array.from (text-bytes/bytes-from-ints [1 2 255])))) :bytes-from-ints)
 (check! (= 3 (text-bytes/bytes-length (text-bytes/bytes-from-ints [1 2 255]))) :bytes-length)
+(check! (try (text-bytes/bytes-from-ints [1 -1]) false (catch :default _ true)) :bytes-from-ints-refuses-out-of-range)
 
 ;; ---- handler shapes ----
 
@@ -306,6 +308,8 @@
 (check! (= (.cwd js/process) (sys/cwd "")) :cwd)
 (check! (= 5 (host-integer/narrow (js/BigInt 5))) :narrow)
 (check! (= (js/BigInt "9007199254740993") (host-integer/exact "9007199254740993")) :exact)
+(check! (= (js/BigInt "9007199254740993") (decimal-text/parse "9007199254740993")) :decimal-text-exact-i64)
+(check! (= (js/BigInt "-9007199254740993") (decimal-text/parse "-9007199254740993")) :decimal-text-exact-negative-i64)
 (check! (= [true false] [(host-integer/safe-integer? 9007199254740991) (host-integer/safe-integer? 9007199254740992)]) :safe-integer)
 (check! (= [12 nil 1000] [(host-integer/decimal-count "12") (host-integer/decimal-count "x") (host-integer/decimal-count "1e3")]) :decimal-count)
 (check! (= [5 (js/BigInt "9007199254740991")]
@@ -323,7 +327,10 @@
   (check! (= 6 (text-bytes/bytes-length b)) :concat)
   (check! (= 3 (text-bytes/index-of-byte b 10)) :index-of-byte)
   (check! (= -1 (text-bytes/index-of-byte b 9)) :index-of-byte-absent)
+  (check! (= -1 (text-bytes/index-of-byte b -256)) :index-of-byte-refuses-wrapped-value)
   (check! (= 13 (text-bytes/byte-at b 2)) :byte-at)
+  (check! (try (text-bytes/byte-at b 999) false (catch :default _ true)) :byte-at-refuses-out-of-range)
+  (check! (try (text-bytes/slice-bytes b -1 2) false (catch :default _ true)) :slice-refuses-out-of-range)
   (check! (= "ab" (text-bytes/utf8-text-lossy (text-bytes/slice-bytes b 0 2))) :slice)
   (check! (= "�(" (text-bytes/utf8-text-lossy (text-bytes/slice-bytes b 4 6))) :lossy)
   (check! (= 0 (text-bytes/bytes-length (text-bytes/empty-bytes))) :empty))
