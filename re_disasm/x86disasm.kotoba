@@ -1,0 +1,300 @@
+(ns re_disasm.x86disasm
+  (:export [class-unknown class-nop class-ret class-jmp class-jcc class-call
+            class-mov class-lea class-alu class-test class-xchg
+            class-push class-pop
+            pow2 sext u16le u32le s32le parse-modrm
+            x86-decode x86-len x86-class x86-rd x86-rm x86-base x86-index
+            x86-scale x86-disp x86-imm x86-rel x86-op x86-cc x86-rexw
+            x86-target
+            test-x86-branch test-x86-modrm test-x86-alu
+            main]))
+
+;; re-disasm x86-64 decoder core (M4, KOT-45).
+;;
+;; CLEANROOM PROVENANCE: the byte-sequence layouts, opcode map rows and
+;; field semantics implemented below come from ONE source only:
+;; docs/x86-64-field-descriptions.md (the neutral field-description table
+;; extracted from the Intel SDM). Per the two-person discipline the SDM is
+;; NOT consulted again here, and no other disassembler's output, table or
+;; test vector enters this file. Every test expectation is hand-computed
+;; from that document's encodings.
+;;
+;; The decode record is a fixed vector-i64 (stride 13):
+;;   [0 length  1 class   2 rd      3 rm     4 base   5 index  6 scale
+;;    7 disp    8 imm     9 rel    10 op    11 cc    12 rexw]
+;; base = -2 marks RIP-relative (disp is the disp32); -1 = no base.
+;; rm holds the ModRM.rm register only when mod=11, else -1.
+
+(defn class-unknown [] :i64 0)
+(defn class-nop [] :i64 1)
+(defn class-ret [] :i64 2)
+(defn class-jmp [] :i64 3)
+(defn class-jcc [] :i64 4)
+(defn class-call [] :i64 5)
+(defn class-mov [] :i64 6)
+(defn class-lea [] :i64 7)
+(defn class-alu [] :i64 8)
+(defn class-test [] :i64 9)
+(defn class-xchg [] :i64 10)
+(defn class-push [] :i64 11)
+(defn class-pop [] :i64 12)
+
+;; Self-tail loop on purpose: the non-tail (pow2 n) = 2*(pow2 (n-1)) form
+;; is n frames deep and blows the jvm-kir 32-frame budget at sext(_,32).
+(defn pow2 [n :i64] :i64
+  (loop [i 0 acc 1]
+    (if (>= i n) acc (recur (+ i 1) (* 2 acc)))))
+
+(defn sext [v :i64 bits :i64] :i64
+  (if (< v (pow2 (- bits 1))) v (- v (pow2 bits))))
+
+(defn u16le [b :bytes off :i64] :i64
+  (+ (bytes-at b off) (* 256 (bytes-at b (+ off 1)))))
+
+(defn u32le [b :bytes off :i64] :i64
+  (+ (u16le b off) (* 65536 (u16le b (+ off 2)))))
+
+;; sign-extended 32-bit little-endian word
+(defn s32le [b :bytes off :i64] :i64
+  (sext (u32le b off) 32))
+
+;; ModRM (+SIB, +displacement) at p. Answers a fixed vector-i64:
+;;   [reg rm base index scale disp next-pos]
+;; reg/rm are the raw 3-bit fields (REX extension is the caller's job).
+;; rm = -1 when mod != 11 (memory form; the base field carries rm there).
+;; base = -2 marks RIP-relative (mod=00 rm=101), -1 = no base (SIB with
+;; base=101 mod=00). index = -1 when absent (SIB index=100 without REX.X).
+;; next-pos points just past the ModRM/SIB/displacement bytes.
+(defn parse-modrm [b :bytes p :i64] :vector-i64
+  (let [m (bytes-at b p)
+        mod (quot m 64)
+        reg (bit-and (quot m 8) 7)
+        rm (bit-and m 7)]
+    (if (= mod 3)
+      (vector-i64 reg rm -1 -1 0 0 (+ p 1))
+      (if (= rm 4)
+        (let [s (bytes-at b (+ p 1))
+              scale (pow2 (quot s 64))
+              index (bit-and (quot s 8) 7)
+              base (bit-and s 7)
+              nobase? (and (= base 5) (= mod 0))
+              b1 (if nobase? -1 base)
+              disp (if (= mod 1) (sext (bytes-at b (+ p 2)) 8)
+                     (if (or (= mod 2) nobase?) (s32le b (+ p 2)) 0))
+              dlen (if (= mod 1) 1 (if (or (= mod 2) nobase?) 4 0))]
+          (vector-i64 reg -1 b1 index scale disp (+ (+ p 2) dlen)))
+        (if (and (= rm 5) (= mod 0))
+          (vector-i64 reg -1 -2 -1 0 (s32le b (+ p 1)) (+ p 5))
+          (let [disp (if (= mod 1) (sext (bytes-at b (+ p 1)) 8)
+                       (if (= mod 2) (s32le b (+ p 1)) 0))
+                dlen (if (= mod 1) 1 (if (= mod 2) 4 0))]
+            (vector-i64 reg -1 rm -1 0 disp (+ (+ p 1) dlen))))))))
+
+;; record accessors (stride 13)
+(defn x86-len [r :vector-i64] :i64 (vector-at r 0))
+(defn x86-class [r :vector-i64] :i64 (vector-at r 1))
+(defn x86-rd [r :vector-i64] :i64 (vector-at r 2))
+(defn x86-rm [r :vector-i64] :i64 (vector-at r 3))
+(defn x86-base [r :vector-i64] :i64 (vector-at r 4))
+(defn x86-index [r :vector-i64] :i64 (vector-at r 5))
+(defn x86-scale [r :vector-i64] :i64 (vector-at r 6))
+(defn x86-disp [r :vector-i64] :i64 (vector-at r 7))
+(defn x86-imm [r :vector-i64] :i64 (vector-at r 8))
+(defn x86-rel [r :vector-i64] :i64 (vector-at r 9))
+(defn x86-op [r :vector-i64] :i64 (vector-at r 10))
+(defn x86-cc [r :vector-i64] :i64 (vector-at r 11))
+(defn x86-rexw [r :vector-i64] :i64 (vector-at r 12))
+
+;; Branch target of an instruction at off: end-of-instruction + rel.
+;; 0 where the class has no target.
+(defn x86-target [r :vector-i64 off :i64] :i64
+  (let [c (x86-class r)]
+    (if (or (= c (class-jmp)) (= c (class-jcc)) (= c (class-call)))
+      (+ (+ off (x86-len r)) (x86-rel r))
+      0)))
+
+;; sign-extended immediate of the current operand size:
+;;   os16 (0x66 prefix) -> imm16, rexw -> imm32 sign-extended,
+;;   default -> imm32 sign-extended; imm64 only for B8+r with REX.W.
+(defn imm-size [rexw :i64 os16 :i64 wide-op :i64] :i64
+  (if (and (= rexw 1) (= wide-op 1)) 8
+    (if (= os16 1) 2 4)))
+
+;; ModRM form decode: common tail for the opcodes that carry a ModRM byte.
+;; `after` is the position just past the opcode. imm-kind: 0 none,
+;; 1 imm8 sign-extended, 2 imm32 sign-extended. `op` = -1 means the
+;; ModRM.reg field itself is the operation selector (group 1).
+(defn x86-modrm-form [b :bytes off :i64 after :i64 class :i64 op :i64 rexw :i64
+                      imm-kind :i64 rex :i64] :vector-i64
+  (let [m (parse-modrm b after)
+        reg (bit-and (+ (vector-at m 0) (* 8 (bit-and (quot rex 4) 1))) 15)
+        base0 (vector-at m 2)
+        base (if (and (>= base0 0) (< base0 8))
+               (+ base0 (* 8 (bit-and rex 1))) base0)
+        index0 (vector-at m 3)
+        index (if (and (>= index0 0) (< index0 8))
+                (+ index0 (* 8 (bit-and (quot rex 2) 1))) index0)
+        rm0 (vector-at m 1)
+        rm (if (= rm0 -1) -1 (bit-and (+ rm0 (* 8 (bit-and rex 1))) 15))
+        pos (vector-at m 6)
+        isz (if (= imm-kind 0) 0 (if (= imm-kind 1) 1 4))
+        imm (if (= imm-kind 0) 0
+              (if (= imm-kind 1) (sext (bytes-at b pos) 8) (s32le b pos)))
+        opv (if (= op -1) (vector-at m 0) op)]
+    (vector-i64 (- (+ pos isz) off) class reg rm base index
+                (vector-at m 4) (vector-at m 5) imm 0 opv -1 rexw)))
+
+(defn x86-decode-body [b :bytes off :i64 i :i64 rex :i64 os16 :i64] :vector-i64
+  (let [op (bytes-at b i)
+        two? (= op 15)
+        op2 (if two? (bytes-at b (+ i 1)) 0)
+        rexw (if (= (bit-and rex 8) 8) 1 0)]
+    (if (= op 195)
+      (vector-i64 (- (+ i 1) off) (class-ret) -1 -1 -1 -1 0 0 0 0 -1 -1 rexw)
+    (if (= op 232)
+      (vector-i64 (- (+ i 5) off) (class-call) -1 -1 -1 -1 0 0 0
+                  (s32le b (+ i 1)) -1 -1 rexw)
+    (if (= op 233)
+      (vector-i64 (- (+ i 5) off) (class-jmp) -1 -1 -1 -1 0 0 0
+                  (s32le b (+ i 1)) -1 -1 rexw)
+    (if (= op 235)
+      (vector-i64 (- (+ i 2) off) (class-jmp) -1 -1 -1 -1 0 0 0
+                  (sext (bytes-at b (+ i 1)) 8) -1 -1 rexw)
+    (if (and (>= op 112) (<= op 127))
+      (vector-i64 (- (+ i 2) off) (class-jcc) -1 -1 -1 -1 0 0 0
+                  (sext (bytes-at b (+ i 1)) 8) -1 (bit-and op 15) rexw)
+    (if (and two? (>= op2 128) (<= op2 143))
+      (vector-i64 (- (+ i 6) off) (class-jcc) -1 -1 -1 -1 0 0 0
+                  (s32le b (+ i 2)) -1 (bit-and op2 15) rexw)
+    (if (and (= op 144) (not two?))
+      (vector-i64 (- (+ i 1) off) (class-nop) -1 -1 -1 -1 0 0 0 0 -1 -1 rexw)
+    (if (and (>= op 80) (<= op 87))
+      (vector-i64 (- (+ i 1) off) (class-push)
+                  (bit-and (+ (- op 80) (* 8 (bit-and rex 1))) 15)
+                  -1 -1 -1 0 0 0 0 -1 -1 rexw)
+    (if (and (>= op 88) (<= op 95))
+      (vector-i64 (- (+ i 1) off) (class-pop)
+                  (bit-and (+ (- op 88) (* 8 (bit-and rex 1))) 15)
+                  -1 -1 -1 0 0 0 0 -1 -1 rexw)
+    (if (and (>= op 184) (<= op 191))
+      (let [isz (imm-size rexw os16 1)
+            imm (if (= isz 8) (+ (u32le b (+ i 1)) (* 4294967296 (u32le b (+ i 5))))
+                  (if (= isz 2) (sext (u16le b (+ i 1)) 16) (s32le b (+ i 1))))]
+        (vector-i64 (- (+ (+ i 1) isz) off) (class-mov)
+                    (bit-and (+ (- op 184) (* 8 (bit-and rex 1))) 15)
+                    -1 -1 -1 0 0 imm 0 -1 -1 rexw))
+    (if (or (= op 198) (= op 199))
+      (x86-modrm-form b off (+ i 1) (class-mov) 0 rexw
+                      (if (= op 198) 1 2) rex)
+    (if (or (= op 136) (= op 137) (= op 138) (= op 139))
+      (x86-modrm-form b off (+ i 1) (class-mov) 0 rexw 0 rex)
+    (if (= op 141)
+      (x86-modrm-form b off (+ i 1) (class-lea) 0 rexw 0 rex)
+    (if (or (= op 132) (= op 133))
+      (x86-modrm-form b off (+ i 1) (class-test) 0 rexw 0 rex)
+    (if (or (= op 134) (= op 135))
+      (x86-modrm-form b off (+ i 1) (class-xchg) 0 rexw 0 rex)
+    (if (or (= op 128) (= op 129) (= op 131))
+      (x86-modrm-form b off (+ i 1) (class-alu) -1 rexw
+                      (if (= op 129) 2 1) rex)
+    (if (and (not two?) (<= op 61) (<= (bit-and op 7) 3))
+      (x86-modrm-form b off (+ i 1) (class-alu)
+                      (bit-and (quot op 8) 7) rexw 0 rex)
+    (if (and (not two?) (<= op 61) (or (= (bit-and op 7) 4)
+                                       (= (bit-and op 7) 5)))
+      (let [isz (if (= (bit-and op 7) 4) 1 4)]
+        (vector-i64 (- (+ (+ i 1) isz) off) (class-alu)
+                    (bit-and (quot op 8) 7) -1 -1 -1 0 0
+                    (if (= isz 1) (sext (bytes-at b (+ i 1)) 8) (s32le b (+ i 1)))
+                    0 -1 -1 rexw))
+      (vector-i64 1 (class-unknown) -1 -1 -1 -1 0 0 0 0 -1 -1 rexw)
+    ))))))))))))))))))))
+
+(defn x86-decode [b :bytes off :i64] :vector-i64
+  (loop [i off rex 0 os16 0]
+    (let [x (bytes-at b i)]
+      (if (or (= x 240) (= x 242) (= x 243) (= x 46) (= x 54) (= x 62)
+              (= x 38) (= x 100) (= x 101))
+        (recur (+ i 1) rex os16)
+      (if (= x 102)
+        (recur (+ i 1) rex (+ os16 1))
+      (if (and (>= x 64) (<= x 79))
+        (recur (+ i 1) x os16)
+        (x86-decode-body b off i rex os16)))))))
+
+;; ---------------------------------------------------------------- tests
+;; Every encoding below is hand-assembled from
+;; docs/x86-64-field-descriptions.md.
+
+(defn test-x86-branch [] :i64
+  ;; ret                    = C3
+  ;; jmp +5                 = EB 05        (rel8)
+  ;; jmp +0x10              = E9 10 00 00 00
+  ;; call -0x20             = E8 E0 FF FF FF
+  ;; jne +2                 = 75 02        (cc 5 = NE)
+  ;; jge +4                 = 0F 8D 04 00 00 00  (cc 13 = GE)
+  (let [ret (x86-decode (bytes-from-vector-i64 (vector-i64 195)) 0)
+        j8 (x86-decode (bytes-from-vector-i64 (vector-i64 235 5)) 0)
+        j32 (x86-decode (bytes-from-vector-i64 (vector-i64 233 16 0 0 0)) 0)
+        call (x86-decode (bytes-from-vector-i64
+                           (vector-i64 232 224 255 255 255)) 0)
+        jcc (x86-decode (bytes-from-vector-i64 (vector-i64 117 2)) 0)
+        jcc32 (x86-decode (bytes-from-vector-i64
+                            (vector-i64 15 141 4 0 0 0)) 0)]
+    (if (and (= (x86-len ret) 1) (= (x86-class ret) (class-ret))
+             (= (x86-len j8) 2) (= (x86-class j8) (class-jmp))
+             (= (x86-rel j8) 5) (= (x86-target j8 0) 7)
+             (= (x86-len j32) 5) (= (x86-rel j32) 16)
+             (= (x86-len call) 5) (= (x86-class call) (class-call))
+             (= (x86-rel call) -32) (= (x86-target call 0) -27)
+             (= (x86-len jcc) 2) (= (x86-class jcc) (class-jcc))
+             (= (x86-cc jcc) 5) (= (x86-rel jcc) 2)
+             (= (x86-len jcc32) 6) (= (x86-cc jcc32) 13) (= (x86-rel jcc32) 4))
+      1 0)))
+
+(defn test-x86-modrm [] :i64
+  ;; mov rax, rcx            = 48 89 C8          (mod11 reg1 rm0)
+  ;; mov rax, [rcx+8]        = 48 8B 41 08       (mod01 reg0 rm1, disp8)
+  ;; mov rax, [rbx+rcx*4+8]  = 48 8B 44 8B 08    (SIB scale4 idx1 base3)
+  ;; lea rax, [rip+0x20]     = 48 8D 05 20 00 00 00 (mod00 rm101 = RIP)
+  (let [r1 (x86-decode (bytes-from-vector-i64 (vector-i64 72 137 200)) 0)
+        r2 (x86-decode (bytes-from-vector-i64 (vector-i64 72 139 65 8)) 0)
+        r3 (x86-decode (bytes-from-vector-i64
+                         (vector-i64 72 139 68 139 8)) 0)
+        r4 (x86-decode (bytes-from-vector-i64
+                         (vector-i64 72 141 5 32 0 0 0)) 0)]
+    (if (and (= (x86-len r1) 3) (= (x86-class r1) (class-mov))
+             (= (x86-rd r1) 1) (= (x86-rm r1) 0) (= (x86-rexw r1) 1)
+             (= (x86-len r2) 4) (= (x86-rd r2) 0) (= (x86-rm r2) -1)
+             (= (x86-base r2) 1) (= (x86-disp r2) 8)
+             (= (x86-len r3) 5) (= (x86-base r3) 3) (= (x86-index r3) 1)
+             (= (x86-scale r3) 4) (= (x86-disp r3) 8)
+             (= (x86-len r4) 7) (= (x86-class r4) (class-lea))
+             (= (x86-base r4) -2) (= (x86-disp r4) 32))
+      1 0)))
+
+(defn test-x86-alu [] :i64
+  ;; add rax, rcx    = 48 01 C8     (ALU block base+1, op 0 ADD)
+  ;; sub rax, 0x10   = 48 83 E8 10  (group1 /5 SUB, imm8 sign-extended)
+  ;; push rbp        = 55           (50+r, r=5)
+  ;; pop rbp         = 5D           (58+r, r=5)
+  ;; nop             = 90
+  (let [a1 (x86-decode (bytes-from-vector-i64 (vector-i64 72 1 200)) 0)
+        a2 (x86-decode (bytes-from-vector-i64 (vector-i64 72 131 232 16)) 0)
+        pu (x86-decode (bytes-from-vector-i64 (vector-i64 85)) 0)
+        po (x86-decode (bytes-from-vector-i64 (vector-i64 93)) 0)
+        np (x86-decode (bytes-from-vector-i64 (vector-i64 144)) 0)]
+    (if (and (= (x86-len a1) 3) (= (x86-class a1) (class-alu))
+             (= (x86-op a1) 0) (= (x86-rd a1) 1) (= (x86-rm a1) 0)
+             (= (x86-len a2) 4) (= (x86-op a2) 5) (= (x86-imm a2) 16)
+             (= (x86-rm a2) 0) (= (x86-base a2) -1)
+             (= (x86-len pu) 1) (= (x86-class pu) (class-push))
+             (= (x86-rd pu) 5)
+             (= (x86-len po) 1) (= (x86-class po) (class-pop))
+             (= (x86-rd po) 5)
+             (= (x86-len np) 1) (= (x86-class np) (class-nop)))
+      1 0)))
+
+(defn main [] :i64
+  (let [s (+ (test-x86-branch) (test-x86-modrm) (test-x86-alu))]
+    (if (= s 3) 1 0)))
