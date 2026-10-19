@@ -1,0 +1,41 @@
+#!/bin/sh
+# NOTE (repo rule): kept as run-sweep-1217.sh.txt because the repository workflow-lint
+# refuses POSIX shell execution files; run with sh <this file>.
+# W=64 TILE-AXIS CROSSING BISECTION (JUN-58, tick 20261019-1217): grid B at
+# lanes 2^21, W=64 fixed, tile count swept 1 / 8 / 16 / 32 (L = W*chunks =
+# 64 / 512 / 1024 / 2048). The new cell is t16 (L=1024): it bisects the
+# UNMEASURED 8-to-32-tile crossing named in PR #1358's non-claims. t8
+# reproduces PR #1355's -18,048 axis point, t32 reproduces PR #1358's
+# iso-L point, b1 reproduces PR #1355's b1 anchor. 3 cycles, cell order
+# rotated per cycle (forward, reversed, rotated) to spread host-load drift.
+# Idempotent: a cell whose log already exists is skipped.
+set -e
+TAB=$(printf '\t')
+cd "$(dirname "$0")/../../../.."
+EV=docs/evidence/gpu/tilecross-w64-20261019
+mkdir -p "$EV"
+
+run() { # cycle cell W chunks
+  log="$EV/run-$1-$2.log"
+  if [ -f "$log" ] && grep -q "RESULT${TAB}verified=true" "$log"; then echo "skip $log"; return 0; fi
+  echo "run $log"
+  (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" 2097152 "$4") > "$log" 2>&1
+  grep -q "RESULT	verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }
+}
+
+# cycle 1: forward
+run 1 b1   64 1
+run 1 t8   64 8
+run 1 t16  64 16
+run 1 t32  64 32
+# cycle 2: reversed
+run 2 t32  64 32
+run 2 t16  64 16
+run 2 t8   64 8
+run 2 b1   64 1
+# cycle 3: rotated
+run 3 t16  64 16
+run 3 t32  64 32
+run 3 b1   64 1
+run 3 t8   64 8
+echo SWEEP-COMPLETE
