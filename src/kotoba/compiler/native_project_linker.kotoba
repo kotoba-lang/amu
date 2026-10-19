@@ -938,17 +938,48 @@
         true
         (recur (+ index 1))))))
 
+(defn- form-refs-qualified? [node [:ref :form/r] qualified :string] :bool
+  ;; True when NODE or any descendant is a SYMBOL whose name is exactly
+  ;; QUALIFIED (review T3): only actual symbol references select export stubs.
+  ;; Comments and string literals are not symbol nodes, and a longer name
+  ;; (alias/foobar) is not a reference to alias/foo.
+  (if (form/is-symbol? node)
+    (string=? (form/symbol-value node) qualified)
+    (loop [i 0]
+      (if (>= i (form/count-of node))
+        false
+        (if (form-refs-qualified? (form/nth-of node i) qualified)
+          true
+          (recur (+ i 1)))))))
+
+(defn- forms-refs-qualified? [forms [:list [:ref :form/r]] qualified :string] :bool
+  (loop [i 0]
+    (if (>= i (vector-count forms))
+      false
+      (if (form-refs-qualified? (typed-list-nth [:list [:ref :form/r]] forms i) qualified)
+        true
+        (recur (+ i 1))))))
+
 (defn- used-export-names [names [:list :string] source :string alias :string]
   [:list :string]
-  (loop [index 0 used (empty-strings)]
-    (if (>= index (vector-count names))
-      used
-      (let [name (typed-list-nth [:list :string] names index)
-            qualified (string-concat alias (string-concat "/" name))]
-        (recur (+ index 1)
-               (if (>= (string-index-of source qualified) 0)
-                 (typed-list-conj [:list :string] used name)
-                 used))))))
+  ;; Selection is over the consumer's PARSED forms (review T3); a raw substring
+  ;; search of the source mis-selects on name prefixes and on comments/strings.
+  ;; A parse failure selects nothing: the semantic pass reports the reader
+  ;; refusal later, and selecting no stubs fails closed at link time.
+  (let [parsed (reader/read-forms-count-bounded source 512 1048576 10000)
+        err (record-get [:ref :kotoba.reader/out] parsed :err)]
+    (if (not (string=? err ""))
+      (empty-strings)
+      (let [consumer-forms (record-get [:ref :kotoba.reader/out] parsed :forms)]
+        (loop [index 0 used (empty-strings)]
+          (if (>= index (vector-count names))
+            used
+            (let [name (typed-list-nth [:list :string] names index)
+                  qualified (string-concat alias (string-concat "/" name))]
+              (recur (+ index 1)
+                     (if (forms-refs-qualified? consumer-forms qualified)
+                       (typed-list-conj [:list :string] used name)
+                       used)))))))))
 
 (defn- import-label [alias :string export :string qualified :bool local :string] :string
   (if qualified
