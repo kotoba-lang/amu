@@ -144,12 +144,15 @@ of its own; every number above traces to a run log line.
   (0.0020-0.0029). All six sizes sit within 0.3% of each other (grand
   ranking spread 0.0027 from W=256 to W=32).
 - The one signal that IS stable across all five runs is at the same extreme
-  as every earlier protocol: W=32 is the slowest row in all five runs
+  as every earlier protocol: W=32 is the slowest row in four of five runs
   (ratio medians 1.0008-1.0025, above 1.0 in every run, across-run range
-  0.0017). At this resolution it is a 0.1-0.25% penalty -- real as a
-  within-round ratio difference, far below anything that would pick a
-  dispatch size, and with 5 runs of one kernel shape it stays descriptive,
-  not decisive.
+  0.0017). In run 2 the printed precision ties W=32 with W=512 at 1.0008
+  (the aggregator's strict `>` keeps the W=32 row for a rounded tie, and
+  the logs carry no further digits or raw samples to break it), so run 2
+  is recorded as tied, not as a W=32 win. At this resolution it is a
+  0.1-0.25% penalty -- real as a within-round ratio difference, far below
+  anything that would pick a dispatch size, and with 5 runs of one kernel
+  shape it stays descriptive, not decisive.
 - Residual biases carry over unchanged from the ratio protocol: slot and
   size are still aliased (slot k is always the same two sizes across the
   alternating rounds), so nothing here separates a workgroup-size effect

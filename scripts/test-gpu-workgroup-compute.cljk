@@ -426,7 +426,7 @@
       (when (str/includes? (:err run) "no Vulkan physical device")
         (refuse! "Vulkan is installed but no physical device answers here"))
       (when-not hex
-        (fail! (str "compute guest did not answer a string (exit " (.-status run) "): "
+        (fail! (str "compute guest did not answer a string (exit " (:status run) "): "
                     (subs (str (:out run) (:err run)) 0 (min 400 (count (str (:out run) (:err run))))))))
       (let [answer (.toString (js/Buffer.from hex "hex") "utf8")
             {:keys [info samples reads]}

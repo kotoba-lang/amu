@@ -28,7 +28,7 @@
  *   DISPATCHC <pipe> <x> <y> <z> <h>...    -> "1"               (as DISPATCH, but with NO barrier before it: the guest
  *                                                                 asserts it reads nothing the previous dispatch wrote)
  *   SUBMIT                                 -> nanoseconds       (submit -> fence, host clock)
- *   BEGINK <slot>                          -> "1"               (start recording a KEPT command buffer in slot 0..3: SUBMIT
+ *   BEGINK <slot>                          -> "1"               (start recording a KEPT command buffer in slot 0..KGPU_SLOT_MAX_S: SUBMIT
  *                                                                 submits it and keeps it; REPLAY submits it again unchanged)
  *   REPLAY <slot>                          -> nanoseconds       (submit the kept command buffer -> fence; one request for
  *                                                                 the whole step instead of one per dispatch -- iteration 44)
@@ -59,6 +59,9 @@
 #define KGPU_MAX_KEPT 8            /* kept (replayable) command buffers, BEGINK <slot>. 8 (was 4): the
                                       interleaved workgroup sweep keeps one buffer per swept size live
                                       at once (6 sizes) so REPLAYs can be interleaved across sizes */
+#define KGPU_SLOT_MAX_S "7"        /* the largest valid <slot> index, spelled for the command grammar and
+                                      the <slot 0..N> bounds errors; tied to KGPU_MAX_KEPT below */
+_Static_assert(KGPU_MAX_KEPT - 1 == 7, "KGPU_SLOT_MAX_S must spell KGPU_MAX_KEPT - 1");
 #define KGPU_STAGING_BYTES (64u * 1024u * 1024u)
 
 struct kgpu_buffer {
@@ -671,7 +674,7 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
   }
   if (strcmp(op, "BEGINK") == 0) {
     uint64_t slot;
-    if (n != 2 || kgpu_parse_u64(tok[1], &slot) != 0 || slot >= KGPU_MAX_KEPT) return kgpu_fail(out, cap, "BEGINK <slot 0..3>");
+    if (n != 2 || kgpu_parse_u64(tok[1], &slot) != 0 || slot >= KGPU_MAX_KEPT) return kgpu_fail(out, cap, "BEGINK <slot 0.." KGPU_SLOT_MAX_S ">");
     if (kgpu.recording) return kgpu_fail(out, cap, "BEGINK while recording");
     if (kgpu.kept[slot].live) return kgpu_fail(out, cap, "BEGINK: slot is kept (DROP it first)");
     VkCommandBufferAllocateInfo cai = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -693,7 +696,7 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
   }
   if (strcmp(op, "REPLAY") == 0) {
     uint64_t slot;
-    if (n != 2 || kgpu_parse_u64(tok[1], &slot) != 0 || slot >= KGPU_MAX_KEPT) return kgpu_fail(out, cap, "REPLAY <slot 0..3>");
+    if (n != 2 || kgpu_parse_u64(tok[1], &slot) != 0 || slot >= KGPU_MAX_KEPT) return kgpu_fail(out, cap, "REPLAY <slot 0.." KGPU_SLOT_MAX_S ">");
     if (kgpu.recording) return kgpu_fail(out, cap, "REPLAY while recording");
     if (!kgpu.kept[slot].live || kgpu.kept[slot].set_count == 0) return kgpu_fail(out, cap, "REPLAY: slot holds no submitted command buffer");
     uint64_t ns;
@@ -702,7 +705,7 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
   }
   if (strcmp(op, "DROP") == 0) {
     uint64_t slot;
-    if (n != 2 || kgpu_parse_u64(tok[1], &slot) != 0 || slot >= KGPU_MAX_KEPT) return kgpu_fail(out, cap, "DROP <slot 0..3>");
+    if (n != 2 || kgpu_parse_u64(tok[1], &slot) != 0 || slot >= KGPU_MAX_KEPT) return kgpu_fail(out, cap, "DROP <slot 0.." KGPU_SLOT_MAX_S ">");
     if (kgpu.recording) return kgpu_fail(out, cap, "DROP while recording");
     if (!kgpu.kept[slot].live) return kgpu_fail(out, cap, "DROP: slot is not kept");
     if (kgpu.kept[slot].set_count > 0) vkFreeDescriptorSets(kgpu.device, kgpu.descriptors, kgpu.kept[slot].set_count, kgpu.kept[slot].sets);
