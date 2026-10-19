@@ -40,10 +40,18 @@
                        (:dispatch (pipeline/compile-spec
                                     (assoc spec :kernel/workgroup-size 64)
                                     {:vendor-id 4318})))))
+    (is (= [:spec 64] ((juxt :workgroup-source :workgroup-size)
+                       (:dispatch (pipeline/compile-spec
+                                    (assoc spec :kernel/workgroup-size #?(:cljs (js/BigInt "64") :clj 64))
+                                    {:vendor-id 4318})))))
     (is (= 64 (get-in (:artifact (pipeline/compile-spec
                                    (assoc spec :kernel/workgroup-size 64)
                                    {:vendor-id 4318}))
-                      [:limits :workgroup-size])))))
+                      [:limits :workgroup-size])))
+    (testing "a non-integer explicit size is an input error, not a silent default"
+      (is (thrown? js/Error (pipeline/compile-spec
+                              (assoc spec :kernel/workgroup-size "64")
+                              {:vendor-id 4318}))))))
 
 (deftest same-input-same-artifact
   (testing "dispatch adds no nondeterminism to the artifact regime"

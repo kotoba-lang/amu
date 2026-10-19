@@ -290,7 +290,7 @@
                    (or (option args "--device")
                        (throw (ex-info "--device <DEVICE.edn> is required" {:phase :usage}))))
           output (or (option args "--output") "gpu-artifact.edn")
-          _ (when (some #{"--policy" "--source-path" "--module-lock" "--blocks"} args)
+          _ (when (some #{"--target" "--policy" "--source-path" "--module-lock" "--blocks"} args)
               (throw (ex-info "gpu-compile takes SPEC.edn --device <DEVICE.edn> [--output <ARTIFACT>]"
                               {:phase :usage})))
           {:keys [artifact dispatch]} (accelerator-pipeline/compile-spec spec device)]

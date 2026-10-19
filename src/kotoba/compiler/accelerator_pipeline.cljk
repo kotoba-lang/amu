@@ -11,7 +11,19 @@
   optimization evidence until a measured row replaces the provisional one."
   {:kotoba/export [compile-spec]}
   (:require [kotoba.compiler.accelerator :as accelerator]
-            [kotoba.compiler.accelerator-targets :as accelerator-targets]))
+            [kotoba.compiler.accelerator-targets :as accelerator-targets]
+            #?(:cljs [kotoba.kir.cljs-i64 :as i64])))
+
+(defn- host-int
+  "A spec integer as a compiler-host integer, or nil when `x` is not one
+  (capability_names/wire-int pattern: the kotoba reader hands back a BigInt
+  for every integer token, and `pos-int?` does not recognise those)."
+  [x]
+  #?(:clj (when (integer? x) (long x))
+     :cljs (cond
+             (i64/bigint-value? x) (js/Number x)
+             (and (number? x) (integer? x)) x
+             :else nil)))
 
 (defn compile-spec
   "SPEC is a kernel description map: :kernel/name, :kernel/op, :kernel/operator
@@ -23,15 +35,28 @@
   dispatch table are both deterministic."
   [spec device]
   (let [dispatch (accelerator-targets/recommend device)
-        size (or (:kernel/workgroup-size spec) (:workgroup-size dispatch))
-        source (if (:kernel/workgroup-size spec) :spec :dispatch)
+        declared (:kernel/workgroup-size spec)
+        size (if (some? declared)
+               ;; An explicit size must be an integer; a malformed one is an
+               ;; input error, never a silent fall back to the dispatch row.
+               (or (host-int declared)
+                   (throw (ex-info "invalid kernel spec: workgroup size is not an integer"
+                                   {:phase :usage :problem :invalid-workgroup-size})))
+               (:workgroup-size dispatch))
+        source (if (some? declared) :spec :dispatch)
         kir (accelerator/kernel (:kernel/name spec) (:kernel/op spec)
                                 (:kernel/operator spec) {:workgroup-size size})
-        artifact (accelerator/verify-artifact!
-                   (accelerator/compile-kernel kir (:target dispatch)))]
-    {:artifact artifact
-     :dispatch {:vendor (:vendor dispatch)
-                :target (:target dispatch)
-                :workgroup-size size
-                :workgroup-source source
-                :measured? (and (:measured? dispatch) (= source :dispatch))}}))
+        ;; Validate before emitting so a malformed SPEC is reported as an
+        ;; input error (:phase :usage) rather than escaping as an internal
+        ;; compiler error at the CLI boundary.
+        errors (accelerator/validation-errors kir)]
+    (when (seq errors)
+      (throw (ex-info "invalid kernel spec" {:phase :usage :errors errors})))
+    (let [artifact (accelerator/verify-artifact!
+                     (accelerator/compile-kernel kir (:target dispatch)))]
+      {:artifact artifact
+       :dispatch {:vendor (:vendor dispatch)
+                  :target (:target dispatch)
+                  :workgroup-size size
+                  :workgroup-source source
+                  :measured? (and (:measured? dispatch) (= source :dispatch))}})))

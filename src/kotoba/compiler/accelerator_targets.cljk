@@ -12,7 +12,8 @@
   fallback instead of throwing -- dispatch time is where a refusal costs the
   most, and a portable default is honest about what it is."
   {:kotoba/export [classify-vendor default-target device-classes name-vendor-fragments recommend target-for vendor-ids vendors workgroup-default workgroup-defaults]}
-  (:require [kotoba.lang.text :as str]))
+  (:require [kotoba.lang.text :as str]
+            #?(:cljs [kotoba.kir.cljs-i64 :as i64])))
 
 (def vendors
   "The vendors the dispatch table names. :unknown is the deterministic
@@ -55,13 +56,15 @@
 
   The id may arrive as the kotoba reader's BigInt (every integer token is one
   on the nbb route -- i64 exactness, cli_support), and a BigInt is not `=` to
-  the plain number key, so the id lookup also compares the decimal spelling."
+  the plain number key, so it is normalised to a compiler-host integer first
+  (capability_names/wire-int pattern). A non-integer id (a string like
+  \"4318\") is NOT coerced: it falls through to name matching or :unknown."
   [device]
-  (let [id (:vendor-id device)
+  (let [id (let [v (:vendor-id device)]
+             #?(:clj v
+                :cljs (if (i64/bigint-value? v) (js/Number v) v)))
         nm (:vendor device)]
     (or (get vendor-ids id)
-        (when (some? id)
-          (some (fn [[k vendor]] (when (= (str k) (str id)) vendor)) vendor-ids))
         (when (string? nm)
           (let [lower-name (str/lower nm)]
             (some (fn [[fragment vendor]]

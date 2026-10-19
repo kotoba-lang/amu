@@ -512,14 +512,18 @@
   unless the SPEC names one; :workgroup-source / :measured? say which, and
   neither answer is optimization evidence."
   [args]
-  (let [spec (support/read-edn-file!
-               (or (second args)
-                   (support/usage-error! "gpu-compile needs SPEC.edn")))
+  (let [spec-path (or (second args)
+                      (support/usage-error! "gpu-compile needs SPEC.edn"))
+        spec (support/read-edn-file! spec-path)
         device (support/read-edn-file!
                  (or (support/option args "--device")
                      (support/usage-error! "--device <DEVICE.edn> is required")))
-        output (or (support/option args "--output") "gpu-artifact.edn")
-        _ (doseq [flag ["--policy" "--source-path" "--module-lock" "--blocks"]]
+        output (or (support/option args "--output")
+                   ;; The launcher runs this driver with the Amu checkout as
+                   ;; CWD, so a bare default would land in the compiler tree;
+                   ;; anchor it to the (already absolute) spec path instead.
+                   (posix-path/join (posix-path/dirname spec-path) "gpu-artifact.edn"))
+        _ (doseq [flag ["--target" "--policy" "--source-path" "--module-lock" "--blocks"]]
             (when (support/option args flag)
               (support/usage-error!
                 "gpu-compile takes SPEC.edn --device <DEVICE.edn> [--output <ARTIFACT>]")))
