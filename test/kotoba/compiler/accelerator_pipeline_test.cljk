@@ -8,16 +8,17 @@
 
 (deftest every-vendor-dispatches-and-emits
   (testing "the five major vendors each reach a sealed artifact through dispatch"
-    (doseq [[device expected-target] [[{:vendor-id 4318} :cuda-v1]
-                                      [{:vendor-id 4203} :msl-v1]
-                                      [{:vendor-id 32902} :wgsl-v1]
-                                      [{:vendor-id 5045} :wgsl-v1]
-                                      [{:vendor-id 4098} :wgsl-v1]]]
+    (doseq [[device expected-target expected-measured]
+            [[{:vendor-id 4318} :cuda-v1 true]
+             [{:vendor-id 4203} :msl-v1 true]
+             [{:vendor-id 32902} :wgsl-v1 true]
+             [{:vendor-id 5045} :wgsl-v1 false]
+             [{:vendor-id 4098} :wgsl-v1 true]]]
       (let [{:keys [artifact dispatch]} (pipeline/compile-spec spec device)]
         (is (= expected-target (:target dispatch)))
         (is (= artifact (accelerator/verify-artifact! artifact)))
         (is (= expected-target (:target artifact)))
-        (is (false? (:measured? dispatch)))))))
+        (is (= expected-measured (:measured? dispatch)))))))
 
 (deftest api-overrides-vendor
   (testing "an api that names its shading language decides outright"

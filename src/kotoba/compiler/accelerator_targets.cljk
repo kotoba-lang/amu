@@ -96,21 +96,27 @@
     :else (default-target vendor)))
 
 (def workgroup-defaults
-  "PROVISIONAL and UNMEASURED (ADR-0355). One workgroup size per vendor: a
-  power of two within ADR-0002's [1, 1024] bound that is a multiple of the
-  vendor's published execution width. These are design defaults, not tuning
-  results -- no caller may cite them as optimization evidence."
-  {:nvidia {:size 256 :execution-width 32
-            :basis "warp width 32; 256 is 8 warps per workgroup"}
-   :apple {:size 256 :execution-width 32
-           :basis "SIMD-group width 32"}
-   :intel {:size 128 :execution-width 32
-           :basis "subgroup width 8/16/32; 128 is a multiple of all three"}
-   :arm {:size 128 :execution-width 16
+  "Per-vendor workgroup rows (ADR-0355). The rows hardware answered for are
+  MEASURED (2026-10-19, ADR-0358) and carry :measured? true; :arm and
+  :unknown stay provisional. :measured? says a hardware measurement chose
+  this size -- nothing more. The measurements are one workload shape
+  (2^20-thread f32 ewise FMA, 256 FMAs per thread, submit->fence host clock,
+  paired runs) and are not a claim of optimality for every kernel."
+  {:nvidia {:size 256 :execution-width 32 :measured? true
+            :basis "warp width 32; 256 is 8 warps per workgroup"
+            :evidence "2026-10-19 Xavier nvgpu, 6 paired runs: 128-1024 flat within 2%, 32 is 22% slower; 256 kept inside the flat band"}
+   :apple {:size 256 :execution-width 32 :measured? true
+           :basis "SIMD-group width 32"
+           :evidence "2026-10-19 Apple M1 Max / MoltenVK, 16 paired runs: 32-1024 medians within ~5% and no size won more than 6/16; 256 kept as the most frequent paired winner"}
+   :intel {:size 128 :execution-width 32 :measured? true
+           :basis "subgroup width 8/16/32; 128 is a multiple of all three"
+           :evidence "2026-10-19 BMG G31 / ANV, 6 paired runs: 32-256 flat within 2% (64 won 4/6 on noise-level margins), 512/1024 marginally slower; 128 kept as the subgroup-safe row inside the flat band"}
+   :arm {:size 128 :execution-width 16 :measured? false
          :basis "Mali execution widths 4-32 all divide 128"}
-   :amd {:size 256 :execution-width 64
-         :basis "wavefront width 64"}
-   :unknown {:size 256 :execution-width 32
+   :amd {:size 1024 :execution-width 64 :measured? true
+         :basis "wavefront width 64; measurement chose the top of the bound"
+         :evidence "2026-10-19 Radeon 680M / RADV, 6 paired runs: 1024 won 5/6 and is 28% faster than the provisional 256 (median 334,528 vs 467,981 ns); 32 slowest"}
+   :unknown {:size 256 :execution-width 32 :measured? false
              :basis "portable fallback"}})
 
 (defn workgroup-default
@@ -123,8 +129,9 @@
   "A deterministic dispatch decision for one device descriptor
   ({:vendor-id | :vendor, optional :api, optional :device-class}). Answers
   {:vendor :target :workgroup-size :execution-width :basis :measured?}.
-  Same descriptor in, same map out, forever -- until a measured row replaces
-  the provisional one and flips :measured? for that vendor."
+  Same descriptor in, same map out, forever. :measured? is the row's: true
+  where a hardware measurement (ADR-0358) chose the size, false while the
+  row is still the provisional design default."
   [device]
   (let [vendor (classify-vendor device)
         row (get workgroup-defaults vendor (workgroup-defaults :unknown))]
@@ -133,4 +140,4 @@
      :workgroup-size (:size row)
      :execution-width (:execution-width row)
      :basis (:basis row)
-     :measured? false}))
+     :measured? (boolean (:measured? row))}))
