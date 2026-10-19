@@ -43,7 +43,7 @@ for cyc in (1, 2, 3):
         smax = num(r"max=([\d.]+)", line_of(txt, "SPEEDUP"))
         verified = "verified=true" in txt
         cells.setdefault(cell, []).append(
-            dict(cyc=cyc, gap=gap, iqr=iqr, fs_b=fs_b, fs_v=fs_v, load=load,
+            dict(cyc=cyc, gap=gap, sp_med=sp_med, iqr=iqr, fs_b=fs_b, fs_v=fs_v, load=load,
                  verified=verified, shape=shape, verdict=verdict,
                  med=med, smin=smin, smax=smax))
 
