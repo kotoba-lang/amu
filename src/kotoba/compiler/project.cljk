@@ -454,6 +454,10 @@
                        {:namespace module-name :spec spec})))
           (cond-> {:namespace required
                    :alias (if has-alias? alias (synthetic-refer-alias required))}
+            ;; The ORIGIN of the alias, not its spelling: an authored alias
+            ;; may legally equal the synthetic one, and later merging must be
+            ;; able to tell the two apart (review P2, 2026-10-19).
+            has-alias? (assoc :as? true)
             has-refer? (assoc :refer (vec refer))
             has-with? (assoc :with with :spec spec)))))))
 
@@ -463,33 +467,34 @@
   the template design the duplicate check protects (two BINDINGS of one
   template are two modules) already separates those by instantiation-key.
   Specs merge here ONLY when the merge is unambiguous: the :refer sets are
-  disjoint and at most one spec carries a real alias. Anything else is left
-  as two specs so the checks below refuse it exactly as before -- the same
-  name referred from two specs (a name reached two ways), two real aliases
-  for one module (one module, one spelling), and the plain duplicate all keep
-  their existing refusals."
+  disjoint and at most one spec carries an authored alias. Anything else is
+  left as two specs so the checks below refuse it exactly as before -- the
+  same name referred from two specs (a name reached two ways), two authored
+  aliases for one module (one module, one spelling), and the plain duplicate
+  all keep their existing refusals. The reduction carries a key -> index map
+  so a large header stays linear (review P1, 2026-10-19)."
   [module-name requires]
-  (let [real-alias? (fn [r] (not= (:alias r) (synthetic-refer-alias (:namespace r))))
-        overlap? (fn [a b] (seq (filter (set (:refer a [])) (:refer b []))))]
-    (reduce
-     (fn [acc req]
-       (let [key (instantiation-key (:namespace req) (:with req))
-             idx (first (keep-indexed (fn [i r]
-                                        (when (= key (instantiation-key (:namespace r) (:with r)))
-                                          i))
-                                      acc))]
-         (if (and idx
-                  (let [prior (nth acc idx)]
-                    (and (not (overlap? prior req))
-                         (not (and (real-alias? prior) (real-alias? req))))))
-           (let [prior (nth acc idx)]
-             (assoc acc idx (cond-> prior
-                              (and (not (real-alias? prior)) (real-alias? req))
-                              (assoc :alias (:alias req))
-                              (or (:refer prior) (:refer req))
-                              (assoc :refer (vec (distinct (concat (:refer prior []) (:refer req []))))))))
-           (conj acc req))))
-     [] requires)))
+  (let [overlap? (fn [a b] (seq (filter (set (:refer a [])) (:refer b []))))
+        real-alias? (fn [r] (contains? r :as?))]
+    (first
+     (reduce
+      (fn [[acc index] req]
+        (let [key (instantiation-key (:namespace req) (:with req))
+              idx (get index key)]
+          (if (and idx
+                   (let [prior (nth acc idx)]
+                     (and (not (overlap? prior req))
+                          (not (and (real-alias? prior) (real-alias? req))))))
+            (let [prior (nth acc idx)]
+              [(assoc acc idx (cond-> prior
+                                (and (not (real-alias? prior)) (real-alias? req))
+                                (assoc :alias (:alias req) :as? true)
+                                (or (:refer prior) (:refer req))
+                                (assoc :refer (vec (distinct (concat (:refer prior []) (:refer req [])))))))
+               index])
+            [(conj acc req) (assoc index key (count acc))])))
+      [[] {}]
+      requires))))
 
 (defn- module-definition-names
   "Top-level names this module defines: `defn` / `defn-` / `def` and the
