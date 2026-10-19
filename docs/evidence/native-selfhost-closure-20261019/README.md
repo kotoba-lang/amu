@@ -24,10 +24,17 @@ command stdout on 2026-10-18/19. Nothing here is estimated.
 - **G1 ≠ G2** — known form (the fixed point holds from gen 2), unchanged since r16cli.
 - The G1 driver run completed `modules` → `compile` × 59 → `link` → `extract-native`
   in one pass (resumedSkips = 0); closure set/order/path equal the r19cli build report.
-- Reproduce: `python3 build_native_cli_selfrebuild_r19cli.py` then
-  `python3 build_native_cli_selfrebuild_r19cli_g2.py`, then
-  `python3 verify_native_cli_selfrebuild_r19cli_g2.py` (all under
-  `kotoba-core-selfhost-refactor-20261017/artifacts/`).
+- **Preserved in this directory**: `reports/r19cli-g1-report.json`,
+  `reports/selfrebuild-g2-report.json`, `reports/selfrebuild-g3-report.json`
+  (the `report.json` of each build) and `scripts/` (the exact build, self-rebuild,
+  pin and verify drivers used). The ~6.7 MB container/native images are **not**
+  in git (large-binary policy); their identity is the sha256 pair in the table.
+- **Evidence boundary (honest)**: re-executing the G1→G2→G3 chain needs the
+  59-module source graph and the host toolchain (G1 image + `kexe-loader`),
+  which are local WIP outside this repo — see §6. From a fresh checkout this
+  directory substantiates the *recorded measurements* (reports + scripts +
+  hashes), not an end-to-end rebuild. Full reproducibility lands with the WIP
+  sources.
 
 ## 2. Pinned source graph verification (self-product, G2 image)
 
@@ -43,7 +50,10 @@ Re-verified 2026-10-19 (exit 0, `identical: true`):
   byte-identical across G1/G2.
 
 JUN-11 completion condition 1 — *"Native-built AMU が pinned source graph から
-自身を compile できる"* — is therefore met and reproducible from this record.
+自身を compile できる"* — is met **as a measured result** (2026-10-18 build,
+2026-10-19 independent re-run of `scripts/verify_native_cli_selfrebuild_r19cli_g2.py`,
+exit 0). The verifier and its reports are preserved here; re-execution from a
+fresh checkout is pending the source-graph landing (§6).
 
 ## 3. Program codegen (measured, G2)
 
@@ -53,7 +63,11 @@ JUN-11 completion condition 1 — *"Native-built AMU が pinned source graph か
   `aarch64Reference.nativePin` (answer = 12 bytes `5a39545c…`), deterministic
   across two runs. Generation-independent codegen.
 - `--emit-module` (decimal-bits module object): rc 0 twice, byte-identical.
-- Probe: `probe_codegen_matrix_r19cli_g2.py` → `native-cli-codegen-matrix-r19cli-g2/report.json`.
+- Probe: `scripts/probe_codegen_matrix_r19cli_g2.py`; result preserved as
+  `reports/codegen-matrix-report.json`, and the extracted scalars themselves
+  (`.bin` / `.kseed` / `.run2.kseed`, 12–34 bytes each) as `codegen-scalars/`,
+  so the byte-identity claims can be checked against the suite's
+  `aarch64Reference.nativePin` without re-running the build.
 
 ## 4. Type/refinement regression gate (10 fixtures, run 2026-10-19 on r19cli)
 
@@ -75,9 +89,19 @@ the r12useattr baselines apart from the `BUILD=` header (diff 0 lines).
 
 1. **Targets**: the seed emission gate accepts `aarch64-macos` only.
    `x86_64-linux`, `x86_64-aiueos-kernel-v1`, `wasm32`, `wasm`, `js` are refused
-   (`seed: E2 unsupported target (only aarch64-macos)`, rc 1, no artifact) even
-   though the names are registered in `target_names` (JUN-30 registration done
-   in this tree; the emitter gate still refuses).
+   (`seed: E2 unsupported target (only aarch64-macos)`, rc 1, no artifact).
+   Name/routing status differs per spelling — the gap matters for JUN-30:
+   - committed `src/kotoba/compiler/target_names.cljk` maps `x86_64-linux`,
+     `wasm32`, `js`; it has **no mapping** for `x86_64-aiueos-kernel-v1` or
+     `wasm` (those fall through to `(keyword s)`), and
+     `x86_64-aiueos-kernel-v1` appears only in the restricted `nbb/cli.cljk`
+     routing table.
+   - the selfhost WIP tree registers the missing spellings
+     (`target_names.cljk:81-84`, `target_names_core.kotoba:63-66`), but that
+     change is not landed (§6).
+   So for `x86_64-aiueos-kernel-v1` and `wasm` the remaining boundary is the
+   name/routing gap in the committed tree **and** the emitter gate, not the
+   emitter gate alone.
 2. **ELF64 emitter** exists only in `seed/70-x86_64-linux.kotoba` (a separate
    entry flavor, outside the unity MANIFEST; project inputs are refused there).
    Not reachable from the combined CLI. JUN-19/JUN-29 path.
@@ -98,6 +122,11 @@ the r12useattr baselines apart from the `BUILD=` header (diff 0 lines).
    wide selfhost and Q9 admission are not claimed.
 
 ## 6. WIP status of these sources
+
+Until the sources land, this directory is a **preserved measurement** (reports,
+drivers, scalar artifacts, hashes — §1) and not a from-fresh-checkout
+reproducible package; that distinction is the evidence boundary recorded here,
+not an incidental gap.
 
 The selfhost sources behind this record are local work-in-progress across the
 selfhost worktrees (amu / kotoba-runtime / artifact-core / kotoba-hir /
