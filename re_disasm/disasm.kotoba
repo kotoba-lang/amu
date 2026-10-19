@@ -176,11 +176,14 @@
 
 ;; Logical (shifted register), N=0: sf opc 01010 shift 0 Rm imm6 Rn Rd.
 ;; opc: 00 AND / 01 ORR / 10 EOR / 11 ANDS. N=1 (BIC/ORN/EON/MVN) unknown.
+;; opc lives in bits 30:29, so ORR (01) matches 0x20000000 and EOR (10)
+;; matches 0x40000000 (review P1: these were mapped in the opposite order,
+;; printing 0xAA000000 as eor and 0xCA050083 as orr).
 (defn insn-class-logical [w :i64] :i64
   (if (match? w 0x1F200000 0x0A000000)
     (if (match? w 0x60000000 0x00000000) (class-and-reg)
-    (if (match? w 0x60000000 0x40000000) (class-orr-reg)
-    (if (match? w 0x60000000 0x20000000) (class-eor-reg)
+    (if (match? w 0x60000000 0x20000000) (class-orr-reg)
+    (if (match? w 0x60000000 0x40000000) (class-eor-reg)
     (class-ands-reg))))
   (class-unknown)))
 
@@ -1470,17 +1473,17 @@
       1 0)))
 
 (defn test-logical-reg [] :i64
-  ;; and x0, x1, x2 = 0x8A020020 ; orr x3, x4, x5 = 0xCA050083
-  ;; eor x0, x0, x0 = 0xAA000000 ; ands x0, x1, x2 = 0xEA020020
+  ;; and x0, x1, x2 = 0x8A020020 ; eor x3, x4, x5 = 0xCA050083
+  ;; orr x0, x0, x0 = 0xAA000000 ; ands x0, x1, x2 = 0xEA020020
   (if (and (= (insn-class 0x8A020020) (class-and-reg))
            (= (insn-rd 0x8A020020) 0)
            (= (insn-rn 0x8A020020) 1)
            (= (insn-rm 0x8A020020) 2)
-           (= (insn-class 0xCA050083) (class-orr-reg))
+           (= (insn-class 0xCA050083) (class-eor-reg))
            (= (insn-rd 0xCA050083) 3)
            (= (insn-rn 0xCA050083) 4)
            (= (insn-rm 0xCA050083) 5)
-           (= (insn-class 0xAA000000) (class-eor-reg))
+           (= (insn-class 0xAA000000) (class-orr-reg))
            (= (insn-class 0xEA020020) (class-ands-reg)))
     1 0))
 
