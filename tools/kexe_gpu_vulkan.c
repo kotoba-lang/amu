@@ -17,6 +17,10 @@
  * (`:string -> :string`, the shape every wire here has):
  *
  *   INFO                                   -> "<device>|<api>|<maxWgX>|<unified>"
+ *   DEVCLASS                               -> "discrete|integrated|virtual|cpu|other"
+ *                                                 (VkPhysicalDeviceType of the chosen device, as a
+ *                                                 stable token: a fact the loader reports, not a
+ *                                                 dispatch decision -- nothing here branches on it)
  *   ALLOC <bytes>                          -> handle            (device-local storage buffer)
  *   MAP <path> <offset> <length>           -> handle            (file bytes uploaded through staging)
  *   WRITE <handle> <offset> <hex>          -> "1"
@@ -108,6 +112,7 @@ static struct {
   uint32_t api_version;
   uint32_t max_wg_x;
   int unified_memory;
+  VkPhysicalDeviceType device_type;   /* reported verbatim by DEVCLASS */
   int sync2;              /* synchronization2 available and enabled on the device */
   int barrier_none;       /* KEXE_GPU_BARRIER_TRACKED=1: record NO barrier between
                              dispatches and rely on the driver's own hazard tracking.
@@ -268,6 +273,7 @@ static int kgpu_init(void) {
   kgpu.api_version = props.apiVersion;
   kgpu.max_wg_x = props.limits.maxComputeWorkGroupSize[0];
   kgpu.unified_memory = props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+  kgpu.device_type = props.deviceType;
 
   float priority = 1.0f;
   VkDeviceQueueCreateInfo qi = { .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -560,6 +566,18 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
                      VK_VERSION_MAJOR(kgpu.api_version), VK_VERSION_MINOR(kgpu.api_version),
                      VK_VERSION_PATCH(kgpu.api_version), kgpu.max_wg_x, kgpu.unified_memory);
     return w < 0 ? kgpu_fail(out, cap, "INFO format") : (size_t)w;
+  }
+  if (strcmp(op, "DEVCLASS") == 0) {
+    /* A reported fact, not a decision: the exact VkPhysicalDeviceType of the
+     * chosen device as a stable token. Vendor dispatch (ADR-0355) is the
+     * caller's job; this file still decides nothing. */
+    const char *cls =
+        kgpu.device_type == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ? "discrete"
+      : kgpu.device_type == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ? "integrated"
+      : kgpu.device_type == VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU ? "virtual"
+      : kgpu.device_type == VK_PHYSICAL_DEVICE_TYPE_CPU ? "cpu" : "other";
+    int w = snprintf((char *)out, cap, "%s", cls);
+    return w < 0 ? kgpu_fail(out, cap, "DEVCLASS format") : (size_t)w;
   }
   if (strcmp(op, "ALLOC") == 0) {
     uint64_t bytes;
