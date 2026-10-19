@@ -75,43 +75,29 @@
 ;; Ordered; the id is what the command line takes. The texts are the host's, byte for byte.
 #?(:kotoba
 (defn library [] [:list [:ref :rules/entry]]
-  (add (add (add (add (add (add (add (typed-list-new [:list [:ref :rules/entry]])
-    (mk "a" "destructure"
-        "destructuring lambda parameters (fn [[k v]] ..) / {:keys ..} -> plain parameter + (let [k (fe-nth p 0) ..] ..)"
-        "none: fe-nth is (nth c i nil), fe-get is get, fe-nthnext is nthnext -- what Clojure's destructuring expands to"
-        false))
-    (mk "b" "reject"
-        "reject! -> the :fe/err typed abort (statement -> require-k, tail / let value -> throw fe-error)"
-        "none: the original call stays as the :default arm"
-        false))
-    (mk "c" "dynvars"
-        "dynamic vars -> explicit env threading (--target dual: #?(:kotoba <threaded defn> :default <original>); --target host-env: in place, host-valid)"
-        "none for dual; host-env is the differential experiment"
-        true))
-    (mk "d" "kwcallback"
-        "keyword callbacks (map :k xs) -> (map (fn [e] (:k e)) xs); (juxt :a :b)"
-        "none"
-        false))
-    (mk "e" "let"
-        "destructuring in let binding vectors, flattened in place"
-        "none"
-        false))
-    (mk "f" "lowerloops"
-        "mapv/map/filter/filterv/reduce with a one-lambda callback -> a loop over kotoba.form as the :kotoba arm"
-        "none: the :default arm is the original call"
-        false))
-    (mk "g" "fnlit"
-        "anonymous-function literals #(f % y) -> (fn [x] (f x y)), the form the reader expands them to (seed/Kotoba reader E1005)"
-        "none: the Clojure reader reads #(BODY) as (fn* [p1 .. & rest] (BODY))"
-        false))))
+    ;; flattened 2026-10-19: sequential let bindings instead of one nested add chain --
+  ;; the KIR interpreter recursed past the host stack on the nest (:host/stack-exhausted,
+  ;; measured). Behaviour unchanged: add appends at the end, in the same order.
+  (let [l0 (typed-list-new [:list [:ref :rules/entry]])
+        l1 (add l0 (mk "a" "destructure" "destructuring lambda parameters (fn [[k v]] ..) / {:keys ..} -> plain parameter + (let [k (fe-nth p 0) ..] ..)" "none: fe-nth is (nth c i nil), fe-get is get, fe-nthnext is nthnext -- what Clojure's destructuring expands to" false))
+        l2 (add l1 (mk "b" "reject" "reject! -> the :fe/err typed abort (statement -> require-k, tail / let value -> throw fe-error)" "none: the original call stays as the :default arm" false))
+        l3 (add l2 (mk "c" "dynvars" "dynamic vars -> explicit env threading (--target dual: #?(:kotoba <threaded defn> :default <original>); --target host-env: in place, host-valid)" "none for dual; host-env is the differential experiment" true))
+        l4 (add l3 (mk "d" "kwcallback" "keyword callbacks (map :k xs) -> (map (fn [e] (:k e)) xs); (juxt :a :b)" "none" false))
+        l5 (add l4 (mk "e" "let" "destructuring in let binding vectors, flattened in place" "none" false))
+        l6 (add l5 (mk "f" "lowerloops" "mapv/map/filter/filterv/reduce with a one-lambda callback -> a loop over kotoba.form as the :kotoba arm" "none: the :default arm is the original call" false))
+        l7 (add l6 (mk "g" "fnlit" "anonymous-function literals #(f % y) -> (fn [x] (f x y)), the form the reader expands them to (seed/Kotoba reader E1005)" "none: the Clojure reader reads #(BODY) as (fn* [p1 .. & rest] (BODY))" false))
+        ]
+    l7)))
 
 #?(:kotoba
 (defn standard-order [] [:list :string]
-  (typed-list-conj [:list :string]
-    (typed-list-conj [:list :string]
-      (typed-list-conj [:list :string]
-        (typed-list-conj [:list :string]
-          (typed-list-conj [:list :string] (typed-list-new [:list :string]) "a") "b") "d") "e") "f")))
+  ;; flattened 2026-10-19 (same reason as library): sequential bindings, not a nested conj chain
+  (let [s0 (typed-list-new [:list :string])
+        s1 (typed-list-conj [:list :string] s0 "a")
+        s2 (typed-list-conj [:list :string] s1 "b")
+        s3 (typed-list-conj [:list :string] s2 "d")
+        s4 (typed-list-conj [:list :string] s3 "e")]
+    (typed-list-conj [:list :string] s4 "f"))))
 
 #?(:kotoba
 (defn- as-entry [r [:ref :rules/entry]] [:ref :rules/entry] r))

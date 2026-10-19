@@ -80,9 +80,8 @@
    (defn- g-kw [s :string] :string (string-concat ":" s)))
 
 #?(:kotoba
-   (defn- g-rule [i :i64] :string
-     (let [r (rules/entries-nth (rules/library) i)
-           s1 (string-concat "{:id " (g-kw (rules/entry-id r)))
+   (defn- g-rule [r [:ref :rules/entry]] :string
+     (let [s1 (string-concat "{:id " (g-kw (rules/entry-id r)))
            s2 (string-concat s1 (string-concat " :name " (g-kw (rules/entry-name r))))
            s3 (string-concat s2 (string-concat " :summary " (g-edn-str (rules/entry-summary r))))
            base (string-concat s3 (string-concat " :host-effect " (g-edn-str (rules/entry-host-effect r))))]
@@ -101,13 +100,17 @@
 
 #?(:kotoba
    (defn- g-list-rules [] :string
+     ;; one library build for the whole answer: rebuilding it per entry deepened the
+     ;; interpreter recursion past the host stack (measured :host/stack-exhausted)
      (let [lib (rules/library)
            n (rules/entries-count lib)]
        (loop [i 0 acc "["]
          (if (>= i n)
            (string-concat acc "]")
            (recur (+ i 1)
-                  (string-concat acc (if (= i 0) (g-rule i) (string-concat " " (g-rule i))))))))))
+                  (string-concat acc (if (= i 0)
+                                       (g-rule (rules/entries-nth lib i))
+                                       (string-concat " " (g-rule (rules/entries-nth lib i)))))))))))
 
 #?(:kotoba
    (defn- g-standard-order [] :string
@@ -125,17 +128,21 @@
 
 #?(:kotoba
    (defn- g-list-rules-answer [] :string
-     (string-concat "{:format :kotoba.refactor/v1 :command :list-rules :ok true :standard-order "
-              (string-concat (g-kw-list (rules/standard-order))
-              (string-concat " :rules "
-              (string-concat (g-list-rules)
-              " :commands [:list-rules :plan :apply :graph :partition :split :verify :to-kotoba]}"))))))
+     ;; sequential bindings, not nested concats: the KIR interpreter recurses per
+     ;; nested expression and the chain exhausted the host stack at its default size
+     ;; (measured :host/stack-exhausted; fine at --stack-size=2048)
+     (let [a1 (string-concat "{:format :kotoba.refactor/v1 :command :list-rules :ok true :standard-order "
+                             (g-kw-list (rules/standard-order)))
+           a2 (string-concat a1 " :rules ")
+           a3 (string-concat a2 (g-list-rules))]
+       (string-concat a3 " :commands [:list-rules :plan :apply :graph :partition :split :verify :to-kotoba]}"))))
 
 #?(:kotoba
    (defn- g-refusal [code :string message :string] :string
-     (string-concat "{:format :kotoba.cli-error/v1 :ok false :error :usage :diagnostic {:format :kotoba.diagnostic/v1 :code "
-              (string-concat (g-kw code)
-              (string-concat " :severity :error :message " (string-concat (g-edn-str message) "}}"))))))
+     (let [r1 (string-concat "{:format :kotoba.cli-error/v1 :ok false :error :usage :diagnostic {:format :kotoba.diagnostic/v1 :code "
+                             (g-kw code))
+           r2 (string-concat r1 " :severity :error :message ")]
+       (string-concat r2 (string-concat (g-edn-str message) "}}")))))
 
 #?(:kotoba
    (defn- g-on-route [sub :string] :bool

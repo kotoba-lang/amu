@@ -331,17 +331,17 @@
       (is (= "unknown refactor command bogus; one of list-rules plan apply graph partition split verify to-kotoba"
              (:message (:diagnostic guest-bogus))) "the guest wording is the host wording"))))
 
-(deftest kotoba-route-list-rules-parity-pending-alias-dispatch
-  ;; ASSERTING the gap, not skipping it (repo convention: a parity test asserts the
-  ;; failure, so it goes red the day the route works). The guest answer for
-  ;; `list-rules` must equal the host EDN answer, but under `ir/execute` the linked
-  ;; EXPORT-ALIAS dispatch traps :unknown-function today: measured 2026-10-19 --
-  ;; the alias body's call head does not resolve through execute's function table
-  ;; (a head object vs a name-keyed map), while run's own module-local calls
-  ;; dispatch fine (the refusal branches above execute and match the host).
-  ;; When this trips, flip it to: (is (= host (cljs.reader/read-string (guest-run ["list-rules"])).
-  (let [outcome (try (guest-run ["list-rules"]) :answered (catch :default e (ex-message e)))]
-    (is (= "unknown-function" outcome) "the named gap: the export alias does not dispatch under ir/execute")))
+(deftest kotoba-route-list-rules-matches-the-host
+  ;; Full parity (measured 2026-10-19): the guest answer EDN-equals the host answer. The two walls this
+  ;; crossed, both closed by pin advances recorded in deps.edn: the pinned sema lacked typed-list-conj
+  ;; (check refused), and the pinned osaho's KIR interpreter trapped :unknown-function on typed-list-conj
+  ;; (probe E) while check stayed green. One interpreter-depth note remains: the chain runs with
+  ;; --stack-size=4096 (as scripts/measure-selfhost-distance.cljk already does); g-rule now takes the
+  ;; entry so `library` builds once per answer instead of once per entry.
+  (let [host (:value (cli/run ["list-rules"] (memory-io (atom {}))))
+        guest (guest-run ["list-rules"])]
+    (is (string? guest) "the guest run answers a string")
+    (is (= host (cljs.reader/read-string guest)) "the guest answer reads to the host answer")))
 
 (deftest kotoba-route-refusals-name-the-wall
   (let [guest (guest-run ["to-kotoba" "x.edn"])]
