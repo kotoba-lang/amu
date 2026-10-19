@@ -40,7 +40,7 @@
   One implementation, no JVM and no Python: the command is a function from arguments and an I/O record to a value
   (`run`), the Node entrypoint is `kotoba.compiler.nbb.refactor-cli`. The host route's alone, as `amu test` is."
   {:kotoba/export [run]}
-  (:require #?@(:kotoba []
+  (:require #?@(:kotoba [[kotoba.compiler.refactor.rules :as rules]]
                 :default [[clojure.string :as str]
                           [clojure.walk :as walk]
                           [kotoba.compiler.host-integer :as host-integer]
@@ -53,10 +53,107 @@
                           [kotoba.compiler.refactor.rules :as rules]
                           [kotoba.compiler.refactor.verify :as verify]])))
 
+;; ---- the :kotoba reading of `run` (selfhost S6.1) -------------------------------------------------------------------
+;;
+;; The guest route answers; it never throws (an unhandled abort at the export boundary is refused
+;; "unhandled abort at export boundary; catch it with try: run", measured), so every refusal is a
+;; :kotoba.cli-error/v1 report string like the host entry prints. `list-rules` is real over the rules
+;; twin; the I/O subcommands name their own absence instead of pretending (S6.1: the I/O record is the
+;; remaining host surface).
+
+#?(:kotoba
+   (defn- g-edn-str [s :string] :string
+     ;; S as an EDN string literal: a byte walk (string-substring counts UTF-8 bytes; a mid-character
+     ;; continuation byte is never 34 or 92, so slicing here is byte-preserving), escaping " and \.
+     (let [n (string-byte-length s)]
+       (loop [i 0 acc "\""]
+         (if (>= i n)
+           (string-concat acc "\"")
+           (let [c (string-code-point-at s i)]
+             (recur (+ i 1)
+                    (cond
+                      (= c 34) (string-concat acc "\\\"")
+                      (= c 92) (string-concat acc "\\\\")
+                      :else (string-concat acc (string-substring s i (+ i 1)))))))))))
+
+#?(:kotoba
+   (defn- g-kw [s :string] :string (string-concat ":" s)))
+
+#?(:kotoba
+   (defn- g-rule [i :i64] :string
+     (let [r (rules/entries-nth (rules/library) i)
+           base (string-concat "{:id " (g-kw (rules/entry-id r))
+                    (string-concat " :name " (g-kw (rules/entry-name r))
+                    (string-concat " :summary " (g-edn-str (rules/entry-summary r))
+                    (string-concat " :host-effect " (g-edn-str (rules/entry-host-effect r))))))]
+       (string-concat base (if (rules/entry-needs-target? r) " :needs-target true}" "}")))))
+
+#?(:kotoba
+   (defn- g-joined [xs [:list :string] sep :string] :string
+     (let [n (vector-count xs)]
+       (loop [i 0 acc ""]
+         (if (>= i n)
+           acc
+           (recur (+ i 1)
+                  (if (= i 0)
+                    (typed-list-nth [:list :string] xs i)
+                    (string-concat acc (string-concat sep (typed-list-nth [:list :string] xs i))))))))))
+
+#?(:kotoba
+   (defn- g-list-rules [] :string
+     (let [lib (rules/library)
+           n (rules/entries-count lib)]
+       (loop [i 0 acc "["]
+         (if (>= i n)
+           (string-concat acc "]")
+           (recur (+ i 1)
+                  (string-concat acc (if (= i 0) (g-rule i) (string-concat " " (g-rule i))))))))))
+
+#?(:kotoba
+   (defn- g-standard-order [] :string
+     (string-concat "[" (string-concat (g-joined (rules/standard-order) ":") "]")))) ;; placeholder, fixed below
+#?(:kotoba
+   (defn- g-kw-list [xs [:list :string]] :string
+     (let [n (vector-count xs)]
+       (loop [i 0 acc "["]
+         (if (>= i n)
+           (string-concat acc "]")
+           (recur (+ i 1)
+                  (string-concat acc (if (= i 0)
+                                       (g-kw (typed-list-nth [:list :string] xs i))
+                                       (string-concat " " (g-kw (typed-list-nth [:list :string] xs i)))))))))))
+
+#?(:kotoba
+   (defn- g-list-rules-answer [] :string
+     (string-concat "{:format :kotoba.refactor/v1 :command :list-rules :ok true :standard-order "
+              (string-concat (g-kw-list (rules/standard-order))
+              (string-concat " :rules "
+              (string-concat (g-list-rules)
+              (string-concat " :commands [:list-rules :plan :apply :graph :partition :split :verify :to-kotoba]}")))))))
+
+#?(:kotoba
+   (defn- g-refusal [code :string message :string] :string
+     (string-concat "{:format :kotoba.cli-error/v1 :ok false :error :usage :diagnostic {:format :kotoba.diagnostic/v1 :code "
+              (string-concat (g-kw code)
+              (string-concat " :severity :error :message " (string-concat (g-edn-str message) "}}"))))))
+
+#?(:kotoba
+   (defn- g-on-route [sub :string] :bool
+     (or (string=? sub "plan") (string=? sub "apply") (string=? sub "graph") (string=? sub "partition")
+         (string=? sub "split") (string=? sub "verify") (string=? sub "to-kotoba"))))
+
 #?(:kotoba
    (defn run [args [:list :string]] :string
-     (throw (ex-info "amu refactor is not available on the Kotoba route"
-                     {:phase :usage})))
+     (let [sub (if (> (vector-count args) 0) (typed-list-nth [:list :string] args 0) "")]
+       (cond
+         (string=? sub "list-rules") (g-list-rules-answer)
+         (= (string-byte-length sub) 0)
+         (g-refusal "usage" "usage: amu refactor <list-rules|plan|apply|graph|partition|split|verify|to-kotoba> ...")
+         (g-on-route sub)
+         (g-refusal "not-on-kotoba-route"
+                    (string-concat "refactor " (string-concat sub " is not on the Kotoba route yet (selfhost S6.1); use the nbb bootstrap route")))
+         :else
+         (g-refusal "usage" (string-concat "unknown refactor command " (string-concat sub "; one of list-rules plan apply graph partition split verify to-kotoba"))))))
    :default
    nil)
 
