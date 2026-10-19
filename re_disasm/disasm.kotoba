@@ -16,6 +16,7 @@
             slot-of reachable-vector function-entries
             fill-vec insn-branch? block-leaders block-start block-rows
             cfg-edges
+            prologue? entry-slot? fn-end function-bounds tail-call-edges
             test-hints test-exceptions test-branch-uncond test-branch-cond
             test-branch-register test-adr test-mov test-addsub test-loadstore
             test-text test-bytes-xrefs
@@ -23,6 +24,7 @@
             test-record test-targets test-listing
             test-shift-text test-extend-text test-literal
             test-m3-edges test-m3-reach test-m3-entries test-m3-cfg
+            test-m3-bounds
             test-macho test-elf test-pe test-words-at
             u16le u32le u64le name8 name-str
             macho-recognize macho-ncmds macho-cmd-off macho-image-base
@@ -682,6 +684,59 @@
               (if (or dup? (< t 0)) out (vector-assoc out tail (+ base (* 4 t))))
               (if (or dup? (< t 0)) tail (+ tail 1))))))
       (recur (+ i 1) (vector-assoc out i -1)))))
+
+;; ------------------------------------------------------- functions
+;; Prologue signature: stp x29, x30, [sp, #-imm]! (frame setup). Used to
+;; confirm an entry produced by function-entries.
+(defn prologue? [w :i64] :bool
+  (and (= (insn-class w) (class-stp))
+       (= (insn-rd w) 29) (= (insn-rt2 w) 30) (= (insn-rn w) 31)
+       (< (insn-pair-off w) 0)))
+
+;; Membership test over the -1-padded entry list.
+(defn entry-slot? [entries :vector-i64 base :i64 n :i64 slot :i64] :bool
+  (loop [k 0]
+    (if (or (>= k n) (= (vector-at entries k) -1)) false
+      (if (= (slot-of base n (vector-at entries k)) slot) true
+        (recur (+ k 1))))))
+
+;; A function starting at `start` runs to the first path-ending insn
+;; (ret/br/b/hlt) or the slot before the next entry, whichever comes
+;; first. The walk stays inside one function: a bl does NOT end the
+;; body (its return site belongs to the caller).
+(defn fn-end [words :vector-i64 entries :vector-i64 base :i64 n :i64 start :i64] :i64
+  (loop [e start]
+    (let [c (insn-class (vector-at words e))
+          end-path? (or (= c (class-ret)) (= c (class-br))
+                        (= c (class-b)) (= c (class-hlt)))]
+      (if (or end-path? (>= (+ e 1) n)
+              (entry-slot? entries base n (+ e 1)))
+        e
+        (recur (+ e 1))))))
+
+;; Function bounds as (start, end) slot pairs in function-entries order,
+;; -1-padded after the last function. Length 2n.
+(defn function-bounds [words :vector-i64 base :i64 n :i64] :vector-i64
+  (let [entries (function-entries words base n)]
+    (loop [k 0 rows (fill-vec (* 2 n) -1)]
+      (if (or (>= k n) (= (vector-at entries k) -1)) rows
+        (let [start (slot-of base n (vector-at entries k))
+              e (fn-end words entries base n start)]
+          (recur (+ k 1)
+            (vector-assoc (vector-assoc rows (* 2 k) start) (+ (* 2 k) 1) e)))))))
+
+;; Tail-call edges: unconditional b whose target is a function entry.
+;; Pairs (from-slot, to-slot), -1-padded. Length 2n.
+(defn tail-call-edges [words :vector-i64 base :i64 n :i64] :vector-i64
+  (let [entries (function-entries words base n)]
+    (loop [i 0 tail 0 out (fill-vec (* 2 n) -1)]
+      (if (>= i n) out
+        (let [c (insn-class (vector-at words i))
+              t (if (= c (class-b)) (slot-of base n (insn-target (vector-at words i) (+ base (* 4 i)))) -1)
+              hit (and (>= t 0) (entry-slot? entries base n t))
+              out1 (if hit (vector-assoc (vector-assoc out tail i) (+ tail 1) t) out)
+              tail1 (if hit (+ tail 2) tail)]
+          (recur (+ i 1) tail1 out1))))))
 
 ;; ------------------------------------------------------------- cfg
 ;; Basic blocks over the window. Leaders: slot 0, every in-window branch
@@ -1607,6 +1662,29 @@
              (= (vector-at e 8) -1))
       1 0)))
 
+(defn test-m3-bounds [] :i64
+  ;; Function bounds + tail calls on a hand-built program at 0x2000
+  ;; (hand-encoded):
+  ;;   0x2000: stp x29, x30, [sp, #-16]! = 0xA9BF7BFD  (prologue)
+  ;;   0x2004: bl 0x200c                 = 0x94000002
+  ;;   0x2008: ret                       = 0xD65F03C0
+  ;;   0x200c: add x0, x0, #1            = 0x91000400  (function 2)
+  ;;   0x2010: b 0x2000                  = 0x17FFFFFC  (tail call, imm26 -4)
+  ;; entries {0x2000, 0x200c}: bounds [0,2] and [3,4]; tail-call (4, 0).
+  (let [words (vector-i64 0xA9BF7BFD 0x94000002 0xD65F03C0 0x91000400
+                          0x17FFFFFC)
+        b (function-bounds words 0x2000 5)
+        tc (tail-call-edges words 0x2000 5)]
+    (if (and (prologue? 0xA9BF7BFD)
+             (not (prologue? 0x91000400))
+             (= (insn-pair-off 0xA9BF7BFD) -16)
+             (= (vector-at b 0) 0) (= (vector-at b 1) 2)
+             (= (vector-at b 2) 3) (= (vector-at b 3) 4)
+             (= (vector-at b 4) -1)
+             (= (vector-at tc 0) 4) (= (vector-at tc 1) 0)
+             (= (vector-at tc 2) -1))
+      1 0)))
+
 (defn main [] :i64
   (let [s (+ (test-hints) (test-exceptions) (test-branch-uncond)
              (test-branch-cond) (test-branch-register) (test-adr)
@@ -1615,7 +1693,7 @@
              (test-ldst-reg) (test-pair) (test-record) (test-targets)
              (test-listing) (test-shift-text) (test-extend-text)
              (test-literal) (test-m3-edges) (test-m3-reach) (test-m3-entries)
-             (test-m3-cfg)
+             (test-m3-cfg) (test-m3-bounds)
              (test-macho) (test-elf) (test-pe)
              (test-words-at))]
-    (if (= s 29) 1 0)))
+    (if (= s 30) 1 0)))
