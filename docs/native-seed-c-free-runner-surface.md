@@ -115,3 +115,13 @@ Status, 2026-10-19 (same day's later ticks):
   binding runner/compiler/source-graph/output hashes with the measured
   call-site contract) plus one measured receipt over the 2026-10-19
   G1→G2 chain, `verify`d and `admit!`ed.
+
+Status, 2026-10-20:
+
+* The run sequence is now wired end to end —
+  `kotoba.compiler.runner-seed`
+  (`native-seed-c-free-runner-seed-sequence-20261020.md`): map-arenas →
+  install-sandbox → pre-entry → call-guest → post-run, with the guest
+  call gated on admission and the 2026-10-19 chain's admission
+  `73c7761f…e95c` / receipt `b16d1d53…3965` reproduced through the full
+  sequence. 2's kernel-profile dependency is unchanged and still open.

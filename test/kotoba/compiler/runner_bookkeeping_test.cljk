@@ -86,7 +86,10 @@
    ["adopted-20261012.bin" "6b158aa8654706743462b8a730f189072ba05f364b00af28a3f6d23045add2eb"]
    ["adopted-loader-20261012.c" "f44b50995a0e45db4be35244da34dd61538a484c7d5ea2f15f7f5a73d9daa8c3"]])
 
-(defn- entry-maps []
+(defn entry-maps
+  "PUBLIC: `kotoba.compiler.runner-seed-test` reproduces the same measured
+  chain through the full runner sequence and must not copy these digests."
+  []
   (mapv (fn [[path sha256]] {:path path :sha256 sha256}) measured-entries))
 
 (def source-graph-sha
