@@ -82,8 +82,26 @@ for batch in BATCHES:
         resolved = [r['pair'] for r in runs if r['verdict'] != 'indistinguishable-at-this-noise']
         lines.append(f"  runs whose ratio stream does not straddle 1.0: {resolved}")
 
+def estimate(runs, surv):
+    """Mean gap over the SURVIVING runs only. When no run survives the
+    noise filter there is NO estimate: falling back to the rejected runs
+    (the old `surv or runs`) would publish exactly the conclusion the
+    filter exists to suppress (review finding)."""
+    return statistics.mean(r['gap'] for r in surv) if surv else None
+
+
+def render_est(est):
+    return "no estimate (no surviving run)" if est is None else f"{est:.1f}"
+
+
+def render_sign(est):
+    return "?" if est is None else ("+" if est > 0 else "-")
+
+
 lines.append("")
-lines.append("===== batch-vs-batch (same tick, gap >= 30 min)")
+lines.append("===== batch-vs-batch (two batches >= 30 min apart; per the run")
+lines.append("timestamps and the README the batches fell in DIFFERENT cron")
+lines.append("sessions -- session containment is the variable under test)")
 for cell in CELLS:
     ests = {}
     for batch in BATCHES:
@@ -91,10 +109,13 @@ for cell in CELLS:
         iqr_clean = [r for r in runs if r['iqr'] <= 0.05]
         clean_min = min((r['fs_b'] for r in iqr_clean), default=None)
         surv = [r for r in iqr_clean if clean_min is not None and r['fs_b'] <= 1.2 * clean_min]
-        ests[batch] = statistics.mean(r['gap'] for r in (surv or runs))
-    same = (ests['A'] > 0) == (ests['B'] > 0)
-    lines.append(f"  {cell}: batch A est={ests['A']:.1f}  batch B est={ests['B']:.1f}  "
-                 f"same-sign={same}")
+        ests[batch] = estimate(runs, surv)
+    if any(v is None for v in ests.values()):
+        lines.append(f"  {cell}: no comparison -- batch A {render_est(ests['A'])}, batch B {render_est(ests['B'])}")
+    else:
+        same = (ests['A'] > 0) == (ests['B'] > 0)
+        lines.append(f"  {cell}: batch A est={ests['A']:.1f}  batch B est={ests['B']:.1f}  "
+                     f"same-sign={same}")
 
 lines.append("")
 lines.append("===== cross-session series (identical shape, ns/dispatch est, sign)")
@@ -107,8 +128,8 @@ for batch in BATCHES:
     iqr_clean = [r for r in runs if r['iqr'] <= 0.05]
     clean_min = min((r['fs_b'] for r in iqr_clean), default=None)
     surv = [r for r in iqr_clean if clean_min is not None and r['fs_b'] <= 1.2 * clean_min]
-    est = statistics.mean(r['gap'] for r in (surv or runs))
-    lines.append(f"    tick-2106 batch {batch}  {est:>+10.1f}  {'+' if est > 0 else '-'}")
+    est = estimate(runs, surv)
+    lines.append(f"    tick-2106 batch {batch}  {render_est(est):>10}  {render_sign(est)}")
 lines.append("  w64t31 anchor:")
 lines.append("    #1369  -10,533.9  -")
 lines.append("    #1377   -9,896.8  -")
@@ -118,8 +139,8 @@ for batch in BATCHES:
     iqr_clean = [r for r in runs if r['iqr'] <= 0.05]
     clean_min = min((r['fs_b'] for r in iqr_clean), default=None)
     surv = [r for r in iqr_clean if clean_min is not None and r['fs_b'] <= 1.2 * clean_min]
-    est = statistics.mean(r['gap'] for r in (surv or runs))
-    lines.append(f"    tick-2106 batch {batch}  {est:>+10.1f}  {'+' if est > 0 else '-'}")
+    est = estimate(runs, surv)
+    lines.append(f"    tick-2106 batch {batch}  {render_est(est):>10}  {render_sign(est)}")
 
 open(out_path, "w").write("\n".join(lines) + "\n")
 print("\n".join(lines))
