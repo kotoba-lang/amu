@@ -56,9 +56,12 @@ not absolute time.
 Anchors: iso256 (256 x 8) reproduces PR #1356's c8 (+7,762 mean of 3
 tight runs) at +8,152 tight mean (+8,221/+8,084) -- within ~5%. The
 W=64 1-tile anchor reproduces PR #1355's b1 (+2,668) at +2,306..+2,582
-(85-362 ns). Host load was 5-14 throughout (other tenants); the two
-noise windows coincide with the two highest-load periods and are the
-only runs whose ratio IQR exceeds 0.05.
+(85-362 ns). Host load was 5-14 throughout (other tenants). The two runs
+whose ratio IQR exceeds 0.05 are run-2-iso64-c32 (load 7.77) and
+run-3-iso256-c8 (13.87); several non-noisy runs report higher load
+snapshots than 7.77 (13.72, 13.54, 11.67), so only the iso256-c8 noise
+window coincides with the highest loads and host load does not explain
+the iso64-c32 window.
 
 ## Finding
 
@@ -74,9 +77,11 @@ workload), the shape of the verdict region on this device is now:
 
 - W=64: gap +2,668 (1 tile) -> -6,760 (2) -> -11,451 (4) -> -18,048 (8)
   -> **+5,412 (32 tiles, this PR)**. The tile axis is **non-monotone**:
-  the variant wins in a band at 2-8 tiles (L=128-512) and loses again by
-  32 tiles (L=2048). The 8-to-32 crossing is UNMEASURED (tiles 9..31 at
-  W=64 are admissible under the harness; they were not run).
+  the variant wins at the sampled counts 2, 4 and 8 tiles (L=128-512;
+  tiles 3 and 5..7 are UNMEASURED, so this is wins at three points, not
+  a continuous 2-8 band) and loses again by 32 tiles (L=2048). The
+  8-to-32 crossing is UNMEASURED (tiles 9..31 at W=64 are admissible
+  under the harness; they were not run).
 - W=256 (the :apple workgroup row): positive at every tile count
   measured, 1-8 tiles (L=256-2048), now including the iso-L cell.
 - W=128: first data point ever, at L=2048: positive, and the largest gap
@@ -87,10 +92,11 @@ workload), the shape of the verdict region on this device is now:
 Dispatch consequence (design input, not implemented here): neither W
 alone nor tiles alone nor L alone orders the verdict. A "tiles >= 2 ->
 emit :subgroup-reduce" rule is wrong at W=256 (any tiles) and wrong at
-W=64 with 32 tiles; the W=64 advantage is a **band** (2-8 tiles of
-1-32 measured), not a trend. Any emission-side predicate needs W and
-per-workgroup work (W x tiles) jointly. For the :apple row (W=256) the
-safe rule is unchanged and now iso-L-confirmed: keep the baseline tree.
+W=64 with 32 tiles; the W=64 advantage is measured at the sampled counts
+2, 4 and 8 tiles (3 and 5..7 unmeasured -- not a continuous band), not a
+trend. Any emission-side predicate needs W and per-workgroup work
+(W x tiles) jointly. For the :apple row (W=256) the safe rule is
+unchanged and now iso-L-confirmed: keep the baseline tree.
 
 ## Non-claims
 
