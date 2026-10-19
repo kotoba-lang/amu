@@ -31,6 +31,7 @@ for cyc in (1, 2, 3):
         txt = open(p).read()
         gap = num(r"ns/dispatch=(-?[\d.]+)", line_of(txt, "GAP"))
         iqr = num(r"iqr=([\d.]+)", line_of(txt, "SPEEDUP"))
+        sp_med = num(r"median=([\d.]+)", line_of(txt, "SPEEDUP"))
         fs_line = line_of(txt, "FLOORSHARE")
         fs_b = num(r"floor/baseline=([\d.]+)", fs_line)
         fs_v = num(r"floor/variant=([\d.]+)", fs_line)
@@ -66,9 +67,14 @@ for cell in CELLS:
         est = statistics.mean(r['gap'] for r in surv)
         lines.append(f"  clean-run est (mean of survivors): {est:+.1f} ns/dispatch")
     gaps = [r['gap'] for r in runs]
-    lines.append(f"  mean(3)={statistics.mean(gaps):+.1f}  "
-                 f"all-signs={'/'.join('+' if g > 0 else '-' for g in gaps)}  "
-                 f"spread={max(gaps) - min(gaps):.1f}")
+    # Signs derive from the PAIRED per-round statistic (paired speedup
+    # median: GAP>0 <=> baseline/variant < 1), not from the marginal gap
+    # values, whose sign can contradict the paired rounds (review P1).
+    paired_signs = '/'.join('+' if r['sp_med'] < 1 else '-' for r in runs)
+    lines.append(f"  mean(3, marginal)={statistics.mean(gaps):+.1f}  "
+                 f"all-signs(paired)={paired_signs}  "
+                 f"all-signs(marginal, superseded)={'/'.join('+' if g > 0 else '-' for g in gaps)}  "
+                 f"spread(marginal)={max(gaps) - min(gaps):.1f}")
     resolved = [r['cyc'] for r in runs if r['verdict'] not in ("indistinguishable-at-this-noise",)]
     lines.append(f"  runs whose ratio stream does not straddle 1.0: {resolved}")
 
