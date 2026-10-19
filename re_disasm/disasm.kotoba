@@ -12,11 +12,13 @@
             insn-cond insn-op insn-target insn-has-target? mnemonic
             hex-u hex-s hex8 insn-record insn-text count-class xrefs-count
             words-from-bytes targets-vector listing-text
+            adrp-add-target literal-targets
             test-hints test-exceptions test-branch-uncond test-branch-cond
             test-branch-register test-adr test-mov test-addsub test-loadstore
             test-text test-bytes-xrefs
             test-logical-reg test-addsub-reg test-ldst-reg test-pair
             test-record test-targets test-listing
+            test-shift-text test-extend-text test-literal
             test-macho test-elf test-pe test-words-at
             u16le u32le u64le name8 name-str
             macho-recognize macho-ncmds macho-cmd-off macho-image-base
@@ -301,6 +303,13 @@
 (defn insn-pair-off [w :i64] :i64
   (* 8 (sext (bit-and (quot (bit-and w 0xFFFFFFFF) 32768) 0x7F) 7)))
 
+;; Register-offset option (bits 15:13) and shift bit S (bit 12).
+(defn insn-extend-option [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 8192) 7))
+
+(defn insn-ldst-s [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 4096) 1))
+
 ;; ------------------------------------------------------------ targets
 
 (defn insn-has-target? [c :i64] :bool
@@ -440,17 +449,47 @@
         shown (if (= c (class-adr)) (insn-adr-imm w) (* (insn-adr-imm w) 4096))]
     (str5 (mnemonic c) " " (reg-name (insn-rd w) 1) ", #" (hex-s shown))))
 
-;; Three-register form (logical / addsub shifted register).
-;; Shift rendering is deferred; rd/rn/rm are the operands that matter for
-;; xrefs and boundaries.
+;; Shifted-register shift names (Arm ARM shift field: LSL/LSR/ASR/ROR).
+(defn shift-name [s :i64] :string
+  (if (= s 0) "lsl" (if (= s 1) "lsr" (if (= s 2) "asr" "ror"))))
+
+;; Shifted-register suffix: ", lsl #0x4" style; empty for the default
+;; (shift=LSL, imm6=0) so the plain three-register form stays clean.
+(defn shift-suffix [w :i64] :string
+  (if (and (= (insn-shift-type w) 0) (= (insn-imm6 w) 0)) ""
+    (str4 ", " (shift-name (insn-shift-type w)) " #" (hex-u (insn-imm6 w)))))
+
+;; Extend-type names (Arm ARM option field). 011 is LSL/UXTX -- rendered
+;; as lsl in the load/store register-offset form.
+(defn extend-name [opt :i64] :string
+  (if (= opt 0) "uxtb"
+  (if (= opt 1) "uxth"
+  (if (= opt 2) "uxtw"
+  (if (= opt 3) "lsl"
+  (if (= opt 4) "sxtb"
+  (if (= opt 5) "sxth"
+  (if (= opt 6) "sxtw" "sxtx"))))))))
+
+;; Three-register form (logical / addsub shifted register) with shift.
 (defn reg3-text [w :i64] :string
   (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rd w) 1) ", "
-        (reg-name (insn-rn w) 1) (str2 ", " (reg-name (insn-rm w) 1))))
+        (reg-name (insn-rn w) 1)
+        (str2 (str2 ", " (reg-name (insn-rm w) 1)) (shift-suffix w))))
 
-;; Load/store register offset: rt, [rn, rm] (extend/shift deferred).
+;; Load/store register offset: rt, [rn, rm{, <extend|lsl> {#amount}}].
+;; The amount is S * size (S = bit 12, size = log2 of the access bytes) and
+;; is shown only when S=1; the rm is w-width for uxtw/sxtw.
 (defn ldstreg-text [w :i64] :string
-  (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rt w) 1) ", ["
-        (reg-name (insn-rn w) 1) (str2 ", " (str2 (reg-name (insn-rm w) 1) "]"))))
+  (let [opt (insn-extend-option w)
+        s (insn-ldst-s w)
+        size (bit-and (quot (bit-and w 0xFFFFFFFF) 1073741824) 3)
+        rmw (if (or (= opt 2) (= opt 6)) 0 1)
+        amt (if (= s 1) (str2 " #" (dec-rec size)) "")
+        tail (if (and (= opt 3) (= s 0)) ""
+               (str3 ", " (extend-name opt) amt))]
+    (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rt w) 1) ", ["
+          (reg-name (insn-rn w) 1)
+          (str2 ", " (str2 (reg-name (insn-rm w) rmw) (str2 tail "]"))))))
 
 ;; Load/store pair: rt, rt2, [rn, #off] (sp as base).
 (defn pair-text [w :i64] :string
@@ -545,6 +584,29 @@
       (recur (+ i 1)
         (vector-assoc out i
           (insn-target (vector-at words i) (+ base (* 4 i))))))))
+
+;; ADRP+ADD literal-pool resolution: the canonical address materialization
+;; `adrp xd, <page>; add xd, xd, #imm`. w-adrp sits at pc, w-add is its
+;; next instruction; answers -1 unless the pair matches (both extend the
+;; same register).
+(defn adrp-add-target [w-adrp :i64 w-add :i64 pc :i64] :i64
+  (if (and (= (insn-class w-adrp) (class-adrp))
+           (= (insn-class w-add) (class-add-imm))
+           (= (insn-rd w-add) (insn-rd w-adrp))
+           (= (insn-rn w-add) (insn-rd w-adrp)))
+    (+ (insn-target w-adrp pc) (insn-addsub-imm w-add))
+    (- 0 1)))
+
+;; Per-slot literal-pool address at each word's index (the ADRP's slot),
+;; -1 where no adrp+add pair starts.
+(defn literal-targets [words :vector-i64 base :i64 n :i64] :vector-i64
+  (loop [i 0 out (vector-alloc n)]
+    (if (>= i n) out
+      (recur (+ i 1)
+        (vector-assoc out i
+          (if (>= (+ i 1) n) (- 0 1)
+            (adrp-add-target (vector-at words i) (vector-at words (+ i 1))
+                             (+ base (* 4 i)))))))))
 
 ;; One listing line per word: "<pc>: <word>  <text>".
 (defn listing-text [words :vector-i64 base :i64 n :i64] :string
@@ -1298,12 +1360,62 @@
 ;; binary is org-wide WIP). Single module on purpose: the :jvm-kir reference
 ;; charges cross-module calls against its 32-frame budget, and the compile
 ;; oracle must be able to verify this entry.
+(defn test-shift-text [] :i64
+  ;; Shifted-register rendering (Arm ARM shift field), hand-encoded:
+  ;;   and x0, x1, x2          = 0x8A020020 (LSL #0 -> suffix omitted)
+  ;;   and x0, x1, x2, lsr #2  = 0x8A420820 (shift 01, imm6 2)
+  ;;   and x0, x1, x2, ror #63 = 0x8AC2FC20 (shift 11, imm6 63)
+  ;;   add x0, x1, x2, lsl #4  = 0x8B021020 (shift 00, imm6 4 -> shown)
+  (if (and (string=? (insn-text 0x8A020020 0) "and x0, x1, x2")
+           (string=? (insn-text 0x8A420820 0) "and x0, x1, x2, lsr #0x2")
+           (string=? (insn-text 0x8AC2FC20 0) "and x0, x1, x2, ror #0x3f")
+           (string=? (insn-text 0x8B021020 0) "add x0, x1, x2, lsl #0x4")
+           (= (insn-shift-type 0x8A420820) 1)
+           (= (insn-imm6 0x8AC2FC20) 63))
+    1 0))
+
+(defn test-extend-text [] :i64
+  ;; Register-offset rendering (option bits 15:13, S bit 12), hand-encoded:
+  ;;   ldr x0, [x1, x2]           = 0xF8626820 (option 011, S 0)
+  ;;   ldr x0, [x1, x2, lsl #3]   = 0xF8627820 (option 011, S 1, amount=size)
+  ;;   ldr x0, [x1, w2, sxtw]     = 0xF862C820 (option 110, S 0)
+  ;;   ldr x0, [x1, w2, sxtw #3]  = 0xF862D820 (option 110, S 1)
+  (if (and (string=? (insn-text 0xF8626820 0) "ldr x0, [x1, x2]")
+           (string=? (insn-text 0xF8627820 0) "ldr x0, [x1, x2, lsl #3]")
+           (string=? (insn-text 0xF862C820 0) "ldr x0, [x1, w2, sxtw]")
+           (string=? (insn-text 0xF862D820 0) "ldr x0, [x1, w2, sxtw #3]")
+           (= (insn-extend-option 0xF862C820) 6)
+           (= (insn-ldst-s 0xF8627820) 1))
+    1 0))
+
+(defn test-literal [] :i64
+  ;; ADRP+ADD literal pools at base 0x1000, hand-encoded:
+  ;;   0x1000: adrp x0, #0x1000    = 0xB0000000 (page target 0x2000)
+  ;;   0x1004: add  x0, x0, #0x8   = 0x91002000   -> literal 0x2008
+  ;;   0x1008: adrp x0, #0x1000    = 0xB0000000
+  ;;   0x100c: sub  x0, x0, #0x8   = 0xD1002000   -> -1 (sub, not add)
+  ;;   0x1010: adrp x0, #0x1000    = 0xB0000000
+  ;;   0x1014: add  x0, x0, #0x1000 lsl #12 = 0x91400400 -> 0x2000+0x1000
+  (let [words (vector-i64 0xB0000000 0x91002000 0xB0000000 0xD1002000
+                          0xB0000000 0x91400400)
+        lit (literal-targets words 0x1000 6)]
+    (if (and (= (vector-at lit 0) 0x2008)
+             (= (vector-at lit 1) -1)
+             (= (vector-at lit 2) -1)
+             (= (vector-at lit 3) -1)
+             (= (vector-at lit 4) 0x3000)
+             (= (vector-at lit 5) -1)
+             (= (adrp-add-target 0x91002000 0x91002000 0x1000) -1))
+      1 0)))
+
 (defn main [] :i64
   (let [s (+ (test-hints) (test-exceptions) (test-branch-uncond)
              (test-branch-cond) (test-branch-register) (test-adr)
              (test-mov) (test-addsub) (test-loadstore) (test-text)
              (test-bytes-xrefs) (test-logical-reg) (test-addsub-reg)
              (test-ldst-reg) (test-pair) (test-record) (test-targets)
-             (test-listing) (test-macho) (test-elf) (test-pe)
+             (test-listing) (test-shift-text) (test-extend-text)
+             (test-literal)
+             (test-macho) (test-elf) (test-pe)
              (test-words-at))]
-    (if (= s 22) 1 0)))
+    (if (= s 25) 1 0)))

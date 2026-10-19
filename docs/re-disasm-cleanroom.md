@@ -1,6 +1,6 @@
 # re-disasm: cleanroom architecture for a Hopper / Ghidra / IDA alternative
 
-Status: design + M0/M1 implemented (`re_disasm/disasm.kotoba`), native
+Status: design + M0–M2 implemented (`re_disasm/disasm.kotoba`), native
 kexe verified under the reviewed C loader with no JVM/GraalVM/Node in the
 runtime tree (`re_disasm/build-native.mjs`).
 Owner context: mithril.fund mission — give hacking / fraud victims the
@@ -92,13 +92,16 @@ Design decisions taken:
 - **M0 (done)** — A64 decode core (22 classes), field extractors, targets,
   one-line text, LE word loader, sweep + xrefs count. Tests green on
   :jvm-kir / :js / :wasm.
-- **M1 (landed)** — logical/addsub shifted register, load/store register
+- **M1 (done)** — logical/addsub shifted register, load/store register
   offset, LDP/STP (64-bit), instruction record, targets edge vector,
-  listing text. Still open inside M1: ADRP+ADD literal pools, shift/extend
-  operand rendering.
-- **M2** — object loaders: Mach-O 64 (mh_execute/dylib, LC_SEGMENT_64,
-  LC_SYMTAB), ELF64 ET_DYN/ET_EXEC, PE32+. Symmetric with the kexe loader
-  work in `tools/kexe_loader*.kotoba`.
+  listing text, shift/extend operand rendering, ADRP+ADD literal-pool
+  resolution (`adrp-add-target` / `literal-targets`).
+- **M2 (landed)** — object loaders: Mach-O 64 (LC_SEGMENT_64, LC_SYMTAB),
+  ELF64 ET_DYN/ET_EXEC, PE32+ — recognize, image base, entry, section and
+  symbol rows with string tables; fixtures are hand-built from the format
+  layouts in the published format specs. Symmetric with the kexe loader
+  work in `tools/kexe_loader*.kotoba`. Still open inside M2: MH_DYLIB and
+  ET_EXEC fixtures, PE delay-import/section-reloc tables.
 - **M3** — analysis: recursive traversal from entry + symbol table,
   function boundaries (prologue patterns + tail-call edges), CFG blocks,
   strings/imports. Output as pure data (kotoba records) so the Fund UI can
