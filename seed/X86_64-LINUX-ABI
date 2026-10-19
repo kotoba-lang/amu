@@ -74,3 +74,18 @@ State templates have no standalone SIR and are skipped exactly as lw-fns
 requires; all concrete specializations are admitted. Generated closure
 adapters have no parameter type table; their checked lambda is admitted.
 No externally callable scalar ABI, signed artifact admission or Q9 claim.
+
+## Kernel object route (x86_64-aiueos-kernel-v1), seed module 74
+
+`compile SOURCE --target x86_64-aiueos-kernel-v1 --output NEW_OBJ [--fuel
+POSITIVE_BUDGET]` emits the aiueos kernel object ABI (ADR-0356): ET_REL, the
+seven sections `"" .text .data .rela.text .symtab .strtab .shstrtab`, the
+source's single export as one GLOBAL FUNC in `.text`, one 80-byte private
+context in `.data` (second quadword = the per-call fuel bound), and exactly
+one `R_X86_64_PC32` addend -4 relocation of the wrapper's `lea r9,[rip+.data]`
+against the `.data` symbol. The wrapper is lea, fuel replenish,
+`sub rsp,8`, call entry, `add rsp,8`, `ret`. Admission is the profile-0 scalar
+subset plus the one-export rule; `--fuel` over 2^31-1 takes the imm64
+replenish path and stays ABI-identical. This route emits the object ABI only:
+not the kernel image, not the entry allowlist, not the fuel-tier table, and no
+emitted object has run in a kernel.

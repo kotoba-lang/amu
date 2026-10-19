@@ -638,6 +638,14 @@
                  (catch :default e
                    (fail! (str (.-message e) ": " (subs answer 0 (min 200 (count answer)))))))]
         (when (str/blank? info) (fail! "the INFO stage answered empty"))
+        ;; Device limit before any claim (review P2): the wire-42 INFO's
+        ;; third field is maxWgX. Vulkan only guarantees workgroup limits
+        ;; sufficient for 128 invocations, so a W above the device's
+        ;; maxComputeWorkGroupSize[0] cannot build its pipeline here --
+        ;; that is COULD-NOT-RUN for THIS device, not a measured failure.
+        (let [maxwg (js/parseInt (nth (str/split info #"\|") 2 "0") 10)]
+          (when (and (js/Number.isFinite maxwg) (> wg maxwg))
+            (refuse! (str "W=" wg " exceeds this device's maxComputeWorkGroupSize[0] (" maxwg ")"))))
         ;; ---- verification BEFORE any timing claim ------------------------
         (doseq [l read-labels]
           (let [v (check-field l (get reads l) (expected-words l))]
