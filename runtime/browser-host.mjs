@@ -164,6 +164,12 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/document-bool-value/function",
   "kotoba:typed/document-i64-value/function",
   "kotoba:typed/document-f64-value/function",
+  // :bytes and :link documents (root ADR-2610092310 S3). kotoba-wasm imports
+  // these four only into a module that uses them.
+  "kotoba:typed/document-bytes/function",
+  "kotoba:typed/document-bytes-value/function",
+  "kotoba:typed/document-link/function",
+  "kotoba:typed/document-link-value/function",
   "kotoba:typed/keyword-from-string/function",
   "kotoba:typed/symbol-from-string/function",
   "kotoba:typed/cap-call/function",
@@ -583,6 +589,57 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   };
   const documentDescriptor = abi.descriptors.find(descriptor =>
     Array.isArray(descriptor) && descriptor[0] === "document");
+  // :bytes and :link document kinds (root ADR-2610092310 S3; osaho 502b5ba
+  // kotoba.kir.value). Inside the tree both payloads are a frozen Array of
+  // byte numbers, not a Uint8Array (which cannot be frozen); the host :bytes
+  // value appears only at the four operations that cross in or out.
+  // documentCidV1 is cidv1-binary-items?: varint version 1, varint codec,
+  // varint multihash code, varint digest length, exactly that many digest
+  // bytes, each varint minimal and at most 9 bytes, at most 128 bytes in all.
+  const DOCUMENT_LINK_BYTE_LIMIT = 128;
+  const documentUvarint = (items, start) => {
+    let mult = 1, acc = 0;
+    for (let index = start; index < items.length && index - start < 9; index += 1) {
+      const item = items[index];
+      acc += (item & 127) * mult;
+      if (item < 128) return item === 0 && index > start ? null : [acc, index + 1];
+      mult *= 128;
+    }
+    return null;
+  };
+  const documentCidV1 = items => {
+    if (items.length > DOCUMENT_LINK_BYTE_LIMIT) return false;
+    let read = documentUvarint(items, 0);
+    if (read === null || read[0] !== 1) return false;
+    for (let field = 0; field < 3; field += 1) {
+      read = documentUvarint(items, read[1]);
+      if (read === null) return false;
+    }
+    return read[1] + read[0] === items.length;
+  };
+  const BASE32_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
+  const base32Lower = items => {
+    let out = "", buffer = 0, bits = 0;
+    for (const item of items) {
+      buffer = (buffer << 8) | item; bits += 8;
+      while (bits >= 5) { bits -= 5; out += BASE32_ALPHABET[(buffer >> bits) & 31]; }
+      buffer &= (1 << bits) - 1;
+    }
+    if (bits > 0) out += BASE32_ALPHABET[(buffer << (5 - bits)) & 31];
+    return out;
+  };
+  const base32LowerDecode = text => {
+    const out = [];
+    let buffer = 0, bits = 0;
+    for (const character of text) {
+      const value = BASE32_ALPHABET.indexOf(character);
+      if (value < 0) return null;
+      buffer = (buffer << 5) | value; bits += 5;
+      if (bits >= 8) { bits -= 8; out.push((buffer >> bits) & 255); }
+      buffer &= (1 << bits) - 1;
+    }
+    return bits < 5 && buffer === 0 ? out : null;
+  };
   const copyDocument = (source, allowShared = false) => {
     const state = { nodes: 0, bytes: 0, seen: new WeakSet(), active: new WeakSet() };
     const text = (value, keyword = false) => {
@@ -629,6 +686,25 @@ function createTypedRuntime(abi, typedCapCall, allow) {
             /[\s,\[\]{}()"',;`~^\\]/u.test(payload) || utf8Length(payload) > 512)
           reject("invalid-typed-value", "document symbol is invalid");
         return finish(Object.freeze([tag, text(payload)]));
+      }
+      if (tag === "bytes" || tag === "link") {
+        let items;
+        if (payload instanceof Uint8Array) items = Array.from(payload);
+        else if (Array.isArray(payload)) {
+          items = payload.map(item => {
+            if (typeof item !== "number" || !Number.isInteger(item) || item < 0 || item > 255)
+              reject("invalid-typed-value", `document ${tag} byte is invalid`);
+            return item;
+          });
+        } else reject("invalid-typed-value", `document ${tag} is invalid`);
+        if (tag === "bytes" && items.length > 65536)
+          reject("invalid-typed-value", "document bytes exceed byte limit");
+        if (tag === "link" && !documentCidV1(items))
+          reject("invalid-typed-value", "document link is not a binary CIDv1");
+        // bytes share the aggregate payload budget with text
+        state.bytes += items.length;
+        if (state.bytes > DOCUMENT_UTF8_BYTE_LIMIT) reject("invalid-typed-value", "document UTF-8 budget exceeded");
+        return finish(Object.freeze([tag, Object.freeze(items)]));
       }
       if (tag === "vector" || tag === "list") {
         if (!Array.isArray(payload) || Object.getPrototypeOf(payload) !== Array.prototype || payload.length > 32)
@@ -703,6 +779,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   // Shared with kotoba-kir value/document-canonical-bytes + kotoba-script docCanonicalBytes.
   // Format: n | b t/f | i <decimal> ; | f <i64-bits-decimal> ; |
   // s <utf8-len> : <bytes> | k <utf8-len> : <keyword-str> | y <utf8-len> : <symbol> |
+  // x <len> : <bytes> | c <len> : <binary-cidv1> |
   // v <count> : <items...> | l <count> : <items...> | e <count> : <items...> |
   // m <count> : ((K <keyword-len> : <keyword-bytes> | D <document-key>) <item>)*
   const documentCanonicalBytes = (node, admitted = true) => {
@@ -735,6 +812,11 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (t === "string") { emit(115); emitLenStr(n[1]); return; }
       if (t === "keyword") { emit(107); emitLenStr(String(n[1])); return; }
       if (t === "symbol") { emit(121); emitLenStr(String(n[1])); return; }
+      if (t === "bytes" || t === "link") {
+        emit(t === "bytes" ? 120 : 99); emitStr(String(n[1].length)); emit(58);
+        for (const x of n[1]) emit(x);
+        return;
+      }
       if (t === "vector") {
         emit(118); emitStr(String(n[1].length)); emit(58);
         for (const it of n[1]) walk(it);
@@ -872,6 +954,14 @@ function createTypedRuntime(abi, typedCapCall, allow) {
         return Object.freeze(["keyword", k]);
       }
       if (tag === 121) return Object.freeze(["symbol", takeLenStr()]);
+      if (tag === 120 || tag === 99) {
+        const n = Number(takeUntil(58));
+        if (!Number.isInteger(n) || n < 0 || n > 65536 || i + n > len)
+          reject("invalid-typed-value", "document-read bytes length out of range");
+        const items = Array.from(bytes.subarray(i, i + n));
+        i += n;
+        return Object.freeze([tag === 120 ? "bytes" : "link", Object.freeze(items)]);
+      }
       if (tag === 118) {
         const n = Number(takeUntil(58));
         if (!Number.isInteger(n) || n < 0 || n > 32)
@@ -954,6 +1044,8 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (tag === "string") return JSON.stringify(payload);
       if (tag === "keyword") return payload;
       if (tag === "symbol") return symbolText(payload);
+      if (tag === "bytes") return `#kotoba/bytes "${bytesToHex(payload)}"`;
+      if (tag === "link") return `#kotoba/cid "b${base32Lower(payload)}"`;
       if (tag === "vector") return `[${payload.map(walk).join(" ")}]`;
       if (tag === "list") return `(${payload.map(walk).join(" ")})`;
       if (tag === "set") return `#{${payload.map(walk).join(" ")}}`;
@@ -1057,6 +1149,28 @@ function createTypedRuntime(abi, typedCapCall, allow) {
           if (text[cursor] === "}") fail("map value missing");
           entries.push([key, value(depth + 1)]);
         }
+      }
+      if (character === "#" && text[cursor + 1] !== "{") {
+        // the two admitted tagged literals (root ADR-2610092310), canonical
+        // spelling only, as osaho's document-edn-read: one space, a string
+        cursor += 1;
+        const tag = token();
+        if (tag !== "kotoba/bytes" && tag !== "kotoba/cid") fail("dispatch forms are forbidden");
+        if (text[cursor] !== " ") fail("tagged literal needs one space");
+        cursor += 1;
+        if (text[cursor] !== "\"") fail("tagged literal needs a string");
+        const literal = quoted();
+        if (tag === "kotoba/bytes") {
+          if (literal.length % 2 || !/^[0-9a-f]*$/u.test(literal)) fail("bytes literal must be lowercase hex");
+          const items = [];
+          for (let index = 0; index < literal.length; index += 2)
+            items.push(Number.parseInt(literal.slice(index, index + 2), 16));
+          return ["bytes", items];
+        }
+        const items = literal.startsWith("b") ? base32LowerDecode(literal.slice(1)) : null;
+        if (items === null || !documentCidV1(items) || literal !== `b${base32Lower(items)}`)
+          fail("cid literal must be a canonical base32 binary CIDv1");
+        return ["link", items];
       }
       if (character === "#") {
         cursor += 1;
@@ -2547,6 +2661,35 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (descriptorAt(descriptorId) !== documentDescriptor)
         reject("invalid-typed-operation", "document descriptor required");
       value = assertDocument(value); return documentOption("f64", value[0] === "f64", value[1]);
+    },
+    // :bytes and :link documents (root ADR-2610092310 S3). Each is given the
+    // document and the bytes descriptor and checks both.
+    "document-bytes"(descriptorId, bytesDescriptorId, value) {
+      if (descriptorAt(descriptorId) !== documentDescriptor || descriptorAt(bytesDescriptorId) !== "bytes")
+        reject("invalid-typed-operation", "document-bytes requires document and bytes descriptors");
+      return constructDocument(["bytes", assertValue("bytes", value)]);
+    },
+    "document-link"(descriptorId, bytesDescriptorId, value) {
+      if (descriptorAt(descriptorId) !== documentDescriptor || descriptorAt(bytesDescriptorId) !== "bytes")
+        reject("invalid-typed-operation", "document-link requires document and bytes descriptors");
+      const items = Array.from(assertValue("bytes", value));
+      // not one binary CIDv1: none, neither a trap nor a silently broken link
+      if (!documentCidV1(items)) return documentOption(documentDescriptor, false, undefined);
+      return documentOption(documentDescriptor, true, constructDocument(["link", items]));
+    },
+    "document-bytes-value"(descriptorId, bytesDescriptorId, value) {
+      if (descriptorAt(descriptorId) !== documentDescriptor || descriptorAt(bytesDescriptorId) !== "bytes")
+        reject("invalid-typed-operation", "document-bytes-value requires document and bytes descriptors");
+      value = assertDocument(value);
+      if (value[0] !== "bytes") return documentOption("bytes", false, undefined);
+      return documentOption("bytes", true, admitValue("bytes", Uint8Array.from(value[1])));
+    },
+    "document-link-value"(descriptorId, bytesDescriptorId, value) {
+      if (descriptorAt(descriptorId) !== documentDescriptor || descriptorAt(bytesDescriptorId) !== "bytes")
+        reject("invalid-typed-operation", "document-link-value requires document and bytes descriptors");
+      value = assertDocument(value);
+      if (value[0] !== "link") return documentOption("bytes", false, undefined);
+      return documentOption("bytes", true, admitValue("bytes", Uint8Array.from(value[1])));
     },
     "xml-path-count"(xml, path) {
       const wanted = xmlPath(path);

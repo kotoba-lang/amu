@@ -4,7 +4,9 @@
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema]
             [kotoba.kir :as ir]
-            [kotoba.compiler.project :as project]))
+            [kotoba.compiler.project :as project]
+            [kotoba.compiler.project-files :as project-files]
+            [clojure.java.io :as io]))
 
 (def text-source
   "(ns example.text (:export [greet]))
@@ -795,3 +797,19 @@
     (is (= 2 (get-in by-name ['prefix :source-line])))
     (is (= 3 (get-in by-name ['greet :source-line])))
     (is (= 4 (get-in by-name ['welcome :source-line])))))
+
+(deftest closed-project-loader-accepts-resolved-jvm-paths
+  (let [root (.toFile (java.nio.file.Files/createTempDirectory
+                       "amu-project-path" (make-array java.nio.file.attribute.FileAttribute 0)))
+        app (io/file root "example" "app.kotoba")
+        lib (io/file root "example" "text.kotoba")]
+    (try
+      (.mkdirs (.getParentFile app))
+      (spit app app-source)
+      (spit lib text-source)
+      (let [graph (project-files/load-closed-graph (.toPath app) [(.toPath root)])]
+        (is (= 'example.app (:root graph)))
+        (is (= #{'example.app 'example.text} (set (keys (:sources graph)))))
+        (is (= app-source (get-in graph [:sources 'example.app]))))
+      (finally
+        (doseq [f (reverse (file-seq root))] (.delete f))))))

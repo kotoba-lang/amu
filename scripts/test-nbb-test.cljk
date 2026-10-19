@@ -28,6 +28,16 @@
               #js {:cwd lib/root :encoding "utf8" :timeout 300000
                    :maxBuffer (* 16 1024 1024)}))
 
+(defn- kotoba [& args]
+  ;; bin/kotoba is the compatibility front and delegates every -M command to
+  ;; bin/amu (ADR 0250). Until 2026-10-09 it kept its own route table and sent
+  ;; every --source-path invocation to the removed JVM route.
+  (.spawnSync child js/process.execPath
+              (clj->js (into [(lib/join lib/root "node_modules" "nbb" "cli.js")
+                              (lib/join lib/root "bin" "kotoba") "-M"] args))
+              #js {:cwd lib/root :encoding "utf8" :timeout 300000
+                   :maxBuffer (* 16 1024 1024)}))
+
 (def ^:private checks (volatile! {:pass 0 :fail 0}))
 (defn- report! [ok? label detail]
   (vswap! checks update (if ok? :pass :fail) inc)
@@ -80,7 +90,15 @@
         (report! (.includes (str (.-stdout r)) "kotoba test: 3/3 passed")
                  "--source-path: one linked test on three targets: 3/3" (str (.-stdout r))))
       (let [r (amu "test" root)]
-        (report! (pos? (.-status r)) "without --source-path the same root is refused" (str (.-stdout r))))))
+        (report! (pos? (.-status r)) "without --source-path the same root is refused" (str (.-stdout r))))
+      (let [r (kotoba "check" root "--source-path" (lib/join directory "linked"))]
+        (report! (and (zero? (.-status r)) (.includes (str (.-stdout r)) ":ok true"))
+                 "bin/kotoba -M check --source-path links the graph (no JVM-route refusal)"
+                 (str (.-stdout r) (.-stderr r))))
+      (let [r (kotoba "test" root "--source-path" (lib/join directory "linked"))]
+        (report! (.includes (str (.-stdout r)) "kotoba test: 3/3 passed")
+                 "bin/kotoba -M test --source-path runs the linked test: 3/3"
+                 (str (.-stdout r) (.-stderr r))))))
   (finally (lib/remove-tree! directory)))
 
 (let [{:keys [pass fail]} @checks]

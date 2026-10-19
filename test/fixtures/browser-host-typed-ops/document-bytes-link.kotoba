@@ -1,0 +1,37 @@
+;; The :bytes and :link document kinds (root ADR-2610092310 S3): kotoba-wasm
+;; lowers document-bytes / document-bytes-value / document-link /
+;; document-link-value to their own `kotoba:typed` imports, which
+;; runtime/browser-host.mjs answers. `src` turns a hex string into bytes
+;; through the typed capability provider, so a case can hand any byte
+;; sequence (a CIDv1 boundary, 65536 bytes) to the operations.
+(ns fixture.document-bytes-link
+  (:export [main bytesDigest bytesPrint linkKind linkDigest linkPrint bytesValue linkValue
+            linkOfBytes bytesOfLink bytesOfString edn ednRead ednDigest pairCount
+            nullDigest mapDigest])
+  (:capabilities #{:object/put-block}))
+(defn src [s :string] :bytes (typed-cap-call :object/put-block :string :bytes s))
+(defn link [s :string] :document
+  (option-value-of [:option :document] (document-link (src s)) (document-null)))
+(defn payload [o [:option :bytes]] :bytes (option-value-of [:option :bytes] o (bytes-empty)))
+(defn bytesDigest [s :string] :string (document-sha256 (document-bytes (src s))))
+(defn bytesPrint [s :string] :string (document-print (document-bytes (src s))))
+(defn linkKind [s :string] :keyword (document-kind (link s)))
+(defn linkDigest [s :string] :string (document-sha256 (link s)))
+(defn linkPrint [s :string] :string (document-print (link s)))
+(defn bytesValue [s :string] :bytes (payload (document-bytes-value (document-bytes (src s)))))
+(defn linkValue [s :string] :bytes (payload (document-link-value (link s))))
+(defn linkOfBytes [s :string] :bytes (payload (document-link-value (document-bytes (src s)))))
+(defn bytesOfLink [s :string] :bytes (payload (document-bytes-value (link s))))
+(defn bytesOfString [s :string] :bytes (payload (document-bytes-value (document-string s))))
+(defn edn [c :string b :string] :string
+  (document-edn-print (document-map :cid (link c) :data (document-bytes (src b)))))
+(defn ednRead [t :string] :string (document-edn-print (document-edn-read t)))
+(defn ednDigest [t :string] :string (document-sha256 (document-edn-read t)))
+(defn half [s :string t :string] :document (document-bytes (bytes-concat (src s) (src t))))
+(defn pairCount [s :string t :string] :i64
+  (document-count (document-vector (half s t) (half s t))))
+(defn nullDigest [] :string (document-sha256 (document-null)))
+(defn mapDigest [] :string
+  (document-sha256 (document-map :zeta (document-i64 1) :a (document-vector (document-bool true))
+                                 :bb (document-null))))
+(defn main [] :i64 0)

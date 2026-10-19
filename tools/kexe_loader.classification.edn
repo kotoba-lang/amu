@@ -122,6 +122,8 @@
   "io_read_provider" {:class :mixed :left "request grammar \"\" / \"<n>\"; trap-vs-short-answer rules"}
   "io_write_error_provider" {:class :mechanism}
   "io_write_provider" {:class :mechanism}
+  "kexe_gas_report" {:class :mechanism :new true
+                     :left "none: formats the report's :gas map; the gas word, its sentinel and the KEXE_GAS ceiling are ABI v12 (superproject adr-2610092340 D12)"}
   "ked_A" {:class :mechanism}
   "ked_M" {:class :mechanism}
   "ked_S" {:class :mechanism}
@@ -202,6 +204,8 @@
                      :moved "v:<cases>:<ordinal>:<kind>:<payload> admission (b op 4)"
                      :left "the argument-form grammar itself (v: o: e: r: g: gl: s: and bare decimals)"}
   "parse_i64" {:class :mechanism}
+  "kexe_lease_call" {:class :mixed :new true
+                     :left "published synchronous transport framing (Q/R sequence/id/i64), 96-byte IO buffer and 4096-message ceiling; lease authority, resource selection and durable use reservation remain on the host"}
   "parse_u64" {:class :mechanism}
   "parse_ulong_decimal" {:class :mechanism}
   "parse_variant_profile" {:class :mechanism :before :decision
@@ -226,6 +230,7 @@
                :left "SIGPIPE is not a trap; exit codes 122 / 123"}
   "supervisor_alarm_handler" {:class :mechanism}
   "trap_handler" {:class :mechanism :before :decision :moved "every signal trap text (a)"}
+  "trap_handler_siginfo" {:class :mechanism}
   "ui_commit_inject" {:class :mixed :left "base revision must match; first node becomes the event"}
   "ui_event_inject" {:class :mixed :left "event visibility by revision"}
   "utf8_invalid_reason" {:class :decision :left "which UTF-8 refusal gets which value-trap index (mirrors osaho kotoba.kir.value/utf8-invalid-at)"}

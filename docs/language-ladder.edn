@@ -354,8 +354,24 @@
   ;; or an option"). Its [id surface] pair, destructured, is admitted.
   {:id :integer-str :gate "str-formats-an-integer-test"
    :goal "(str \"w\" n) with n an :i64 -- browser.surface's next-window-id -- is the string of n's decimal digits on the reference, wasm32 and both native targets, as Clojure's str prints a long; refused today \"expression type mismatch: expected string, got i64\"; str of a record, a vector and an option stays refused by name (no implicit printing of an aggregate)"}
+  ;; Landed 2026-10-07 in kotoba-sema (de903367): str survives desugar and
+  ;; the type-directed rewrite prints an :i64 part with string-from-i64's
+  ;; printer (flat now, and right at the most negative long); an
+  ;; unannotated parameter str formats is still refined to :string. ADR 0353
+  ;; has the measurements.
   {:id :native-rebound-row-update :gate "native-rebound-row-update-test"
    :goal "a row rebound by its own update -- browser.surface's next-window-id / open-window, (let [s (update s :n inc)] (update s :m inc)) -- compiles and verifies on x86_64-aiueos-kernel-v1 and aarch64-macos as it runs on the reference; refused today \"runtime KIR record update rejected\" at verify; an update of a field the record lacks stays refused by name"}
+  ;; Landed 2026-10-07 in kotoba-verifier (192005f9): a let naming an update
+  ;; of a record the scope holds binds that record; and kotoba-sema
+  ;; (6cba8d76): a field read off an update of a row parameter is a field the
+  ;; row reads. ADR 0353 has the measurements.
+  {:id :row-tuple-element-argument :gate "row-tuple-element-argument-test"
+   :goal "a record destructured out of a row function's vector result -- browser.surface's [id surface] from next-window-id, element!'s [id document] from dom/create-element -- keeps its record type where the caller reads it, passes it on to a row parameter, or returns it updated; measured 2026-10-07 (amu 8397d0a3 + floor :native-rebound-row-update): (let [[a s] (open-window (empty-surface))] (:k s)) with open-window returning [id (update surface ..)] is refused \"unbound symbol has no value type: s ..\", passing that s to a row parameter \"argument s to open-window has no type known here ..\", and (open-window (open-window (empty-surface))) with open-window returning the updated destructured surface, beside next-window-id's (str \"w\" n), \"argument (open-window__row_0_.. ) to open-window is i64 ..\" (without the str, and with one call, it is admitted); a destructured element that is not a record stays refused where a record is read"}
+  ;; Landed 2026-10-07 in kotoba-sema (88fb9531): str's integer printer,
+  ;; injected after rewrite-record-projection, is typed where a
+  ;; specialization's result is inferred from its rewritten body, so a row
+  ;; function's [(str "w" n) s] is [:vector [:string R]] and the caller's
+  ;; destructured element is R. ADR 0353 has the measurements.
   {:id :destructured-key-fallback
    :needs-a-human "what open-window's (or title app-id id) / (or rect [80 80 520 360]) is when the window record HAS :title / :rect: a destructured key the record has is its T (floor :options-map-argument), so or asks a string's / vector's truthiness, refused \"if test must be bool or an option\" (ADR 0353 keeps it refused). Candidates, each possible, none chosen: a {:keys} key is always [:option T] whether or not the record has it (or is then option-or), the source writes (get window :title (or app-id id)) -- (get m :k d) is already admitted -- or the same reading :open-event-row asks of (or (:k m) d)"
    :goal "browser.surface's open-window states its title / rect fallbacks with the source still read by Clojure"}
@@ -364,13 +380,34 @@
    :goal "browser.surface's input log is typed with the source still read by Clojure"}
   {:id :record-list-field-literal :gate "record-literal-holds-a-list-of-records-test"
    :goal "a keyword record literal holding a vector of record literals, {:surface/id \"k\" :surface/windows [{:window/id \"w1\" ..}]}, is a record with a [:list R] field on the reference, wasm32 and both native targets; refused today \"record-get without a type descriptor requires a record value; got :i64\" where the literal is read"}
+  ;; Landed 2026-10-08 in kotoba-sema (b379f353). Measured first (amu
+  ;; edd85617, kotoba-sema 621e89b7): the literal itself was already that
+  ;; record after :empty-vector-field and :list-item-from-expression -- read,
+  ;; searched with first / filter / reverse and conj'd a spelled literal, it
+  ;; answered on every target. What was refused is open-window's shape: a row
+  ;; function conj'ing its parameter onto that field stayed :i64 ("unbound
+  ;; symbol has no value type", "expected i64, got [:record ..]", "has no
+  ;; type known here"). A key a vector literal of records is written at is
+  ;; now a list-item key like an open []. ADR 0353 has the measurements.
   {:id :absent-field-from-expression
    :needs-a-human "what a T written by an expression at an absent [:option T] field is: browser.surface writes :surface/focus only from expressions (open-window's id, close-window's (:window/id (peek remaining)), focus-window's window-id); ADR 0353 admits a spelled literal as the option's some and refuses a call returning T as a coercion (pinned by nil-field-typed-by-the-module-assoc-test), so admitting this changes that line -- or the source writes the field another way"
    :goal "browser.surface's empty-surface / open-window / close-window / focus-window type :surface/focus with the source still read by Clojure"}
   {:id :browser-surface :gate "browser-surface-native-test"
-   :blocked-by [:empty-vector-field :list-item-from-expression :merge-literal-reads-its-row :integer-str :native-rebound-row-update :destructured-key-fallback :input-log-events :record-list-field-literal :absent-field-from-expression :browser-text-edit]
+   :blocked-by [:empty-vector-field :list-item-from-expression :merge-literal-reads-its-row :integer-str :native-rebound-row-update :row-tuple-element-argument :destructured-key-fallback :input-log-events :record-list-field-literal :absent-field-from-expression :browser-text-edit]
    :goal "browser.surface with cssom.layout and kotoba.wasm.dom the same"}
+  ;; Measured 2026-10-08 (amu a0604488, browser b50c21a; Node/nbb bootstrap
+  ;; reference, the repository launcher `bin/amu check ... --jvm-free`): the
+  ;; hosted engine's reducers are what this floor switches, and none
+  ;; compiles yet -- `bin/amu check src/browser/text_edit.cljk --jvm-free` exit 65 "function body is empty
+  ;; ... a `#?(:clj ...)` with no :kotoba or :default clause reads as
+  ;; nothing"; input.cljk / surface.cljk with --source-path src exit 65
+  ;; "required module cssom.layout is missing from the explicit source
+  ;; paths". The switch follows the three component floors (ADR 0353: "Then
+  ;; browser moves, whole component by component ... and the hosted engine
+  ;; switches"), which wait on owner decisions, so it is blocked by them
+  ;; rather than taken alone.
   {:id :hosted-engine-switch :gate "browser-hosted-runs-amu-output-test" :repo "kotoba-lang/browser"
+   :blocked-by [:browser-text-edit :browser-input :browser-surface]
    :goal "kotoba-lang/browser's hosted engine runs amu's compiled output of its own source; the Clojure source is that source, not a second copy"}
   ;; The selfhost foundation (appended 2026-09-26, superproject
   ;; adr-2609242330). amu's own source manipulates EDN data of arbitrary

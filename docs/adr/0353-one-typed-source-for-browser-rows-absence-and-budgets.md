@@ -1149,6 +1149,144 @@ app-id id)` / `(or rect [..])` fallbacks, which need a decision
 (`:destructured-key-fallback`). The `[id surface]` pair next-window-id
 returns, destructured, is admitted.
 
+`(str "w" n)` landed as floor `:integer-str` (gate
+`str-formats-an-integer-test`). `str` was desugared to a `string-concat` nest,
+which requires two strings. kotoba-sema (`de903367`) keeps `str` through
+desugar and resolves it in the type-directed rewrite: a `:string` part is
+itself, an `:i64` part is `string-from-i64`'s decimal printer, and the parts
+are the same `string-concat` nest, so a string-only `str` lowers as before. A
+record, vector or option part is refused by name ("str of a record is refused:
+str formats a string or an i64, and an aggregate is not printed implicitly")
+-- no implicit printing, no coercion. One reading is kept rather than changed:
+an unannotated parameter that `str` formats is still refined to `:string` (a
+text builder's text parameter, browser.text-edit's insert-text), so `(defn- id
+[n] (str "w" n))` called with 1 stays refused "expected string, got i64"; an
+`:i64` `str` formats is one the source types -- a field (next-window-id's
+counter), a literal, arithmetic, an annotated parameter. The printer was
+fixed on the way, each fault measured by the gate: the most negative long
+negated to itself and trapped in `string-substring` (now the magnitude of
+`(quot n 10)` and its last digit); the recursive printer exhausted the
+reference interpreter's 32 frames at 19 digits, and a 19-deep concat or `if`
+chain did too (now three chunks zero-padded to 19 digits, balanced trees);
+and native lowering refused a `10^18` literal (`unsupported-value`; no
+literal past `10^9` now). Measured on nbb: the gate was red on the old pin (9
+of 9 assertions), green on the new (10 of 10). A next-window-id slice -- id
+`"w12"`, `(str "(" -7 ")")`, the most negative long, `(str 0 9 10)`, each
+byte-compared with what Clojure's `str` prints -- answers 3420111 on the
+reference and on `x86_64-aiueos-kernel-v1` / `aarch64-macos-kotoba-v1` with
+the oracle verified, and compiles to wasm32 and the `:js-kotoba-v1` ESM
+artifact (magic and source checked; neither was run). `amu compile --target
+x86_64-aiueos-kernel-v1` and `--target aarch64-macos` of next-window-id exit
+0 with `:oracle {:status :verified}`. Programs that already called
+`string-from-i64` get the new printer, so their definition CIDs move.
+
+A row rebound by its own update landed as floor `:native-rebound-row-update`
+(gate `native-rebound-row-update-test`). `(let [s (update s :n inc)] (update
+s :m inc))` elaborates to `(let [t (record-assoc T s ..)] (record-assoc T t
+..))`; the reference ran it and both native targets refused it at verify,
+"runtime KIR record update rejected": kotoba-verifier's
+`binding-record-schema` resolves an update named by a let in no scope, so its
+operand -- the record parameter -- was unknown and the let named no record.
+kotoba-verifier (`192005f9`) resolves it in the binding's own scope
+(`update-forward`), the update's type held to its operand's, so nothing is
+coerced; an update naming another record than its operand is still "runtime
+KIR record update rejected". The rebinding also hid a read from the row:
+kotoba-sema renamed it out of the way, so `(let [s (update s :n inc)] (update
+s :zz inc))` called with a record lacking `:zz` was refused only inside the
+specialization, "expression type mismatch: expected i64, got nil".
+kotoba-sema (`6cba8d76`) follows a let bound once to a keyword-keyed assoc of
+the parameter: a field read off it that the assoc did not write is a field
+the row reads, so the call is refused by name ("... which has no field :zz
+that the row {:n T :zz T | r} of parameter s reads"). Two refusals are pinned
+with literals that do not name their cause, measured and not chosen: the same
+absent update on a let-bound literal ("expected i64, got nil") and an update
+that changes a field's type ("record-get without a type descriptor requires a
+record value; got :i64", the caller's projection of a result that did not
+type). Measured on nbb: the gate was red on the old pins (6 native refusals
+and the by-name assertion), green on the new (15 of 15). The floor's shape on
+a row parameter, an update of an update, a let-bound literal rebound three
+times, and next-window-id / open-window (the surface next-window-id rebound,
+updated and focused on the id) answer 1304, 1304, 4203 and 20119 on the
+reference and on `x86_64-aiueos-kernel-v1` / `aarch64-macos-kotoba-v1` with
+the oracle verified; `amu compile --target x86_64-aiueos-kernel-v1` and
+`--target aarch64-macos` of the first and the last exit 0 with `:oracle
+{:status :verified}`. Measuring open-window found the next floor,
+`:row-tuple-element-argument`: a record destructured out of a row function's
+vector is typed only inside the function that destructures it -- read by its
+caller it is "unbound symbol has no value type", passed on to a row parameter
+"has no type known here", and two chained open-windows beside `(str "w" n)`
+type the first one's result `i64`.
+
+A record destructured out of a row function's pair landed as floor
+`:row-tuple-element-argument` (gate `row-tuple-element-argument-test`). The
+three refusals had one cause, and it was not destructuring: each
+specialization round infers a result from its body after
+`rewrite-record-projection`, which writes `str`'s `:i64` part as
+`__kotoba_string_from_i64` -- the printer floor `:integer-str` injects only
+after that pass. Inference met an unknown operation, next-window-id's result
+stayed the provisional `:i64`, open-window's `[id surface]` literal was built
+from untyped elements, and every caller of either had no record. kotoba-sema
+(`88fb9531`) types the helper as `string-from-i64`'s printer (`:i64` ->
+`:string`), so next-window-id is `[:vector [:string R]]`, open-window the pair
+(or the record) built from its elements, and a caller's destructured element
+that `R`. Without the `str`, the same shapes were already admitted. What stays
+refused, by its literal: the destructured id (a string) read as a record
+("record-get without a type descriptor requires a record value; got
+:string"), and an element past the pair's end ("heterogeneous vector index
+must be in range"). Measured on nbb: the gate was red on the old pin (2
+failures, 9 errors: the three measured refusals, once on the reference and
+once per native target, and both refusal literals answered by the unbound
+symbol instead), green on the new (11 of 11). open-window returning its pair
+read by its caller, that surface passed on to a second open-window, and
+browser.surface's open-window called on its own result answer 112, 30211 and
+30210 on the reference and on `x86_64-aiueos-kernel-v1` /
+`aarch64-macos-kotoba-v1` with the oracle verified; `amu compile --target
+x86_64-aiueos-kernel-v1` and `--target aarch64-macos` of the second exit 0
+with `:oracle {:status :verified}`. One thing measured on the way, not
+changed: on kbb's default node stack, the reference interpreter answers
+`:host/stack-exhausted` for a call chain main -> open-window ->
+next-window-id -> the printer; on `--stack-size=4096` (what `bin/amu` gives
+the compiler) it completes.
+
+A record literal holding a list of records landed as floor
+`:record-list-field-literal` (gate `record-literal-holds-a-list-of-records-test`).
+Measured first (amu `edd85617`, kotoba-sema `621e89b7`): the floor's own
+refusal no longer reproduced. After `:empty-vector-field` and
+`:list-item-from-expression`, `{:surface/id "k" :surface/windows
+[{:window/id "w1" ..}]}` was already a record whose field is the `[:list R]`
+the vector types: read by a row function, searched with `first` / `filter` /
+`reverse`, and conj'd a spelled literal, it answered on the reference and both
+native targets. What was refused is the shape browser.surface's open-window
+has over such a surface: a row function conj'ing its window PARAMETER onto
+that field. `:list-item-from-expression` specializes such a parameter only at
+an open `[]` key, so here it stayed `:i64`, and the caller was refused
+"unbound symbol has no value type: s .." (the result bound by `let`),
+"expression type mismatch: expected i64, got [:record ..]" (the literal passed
+inline), or "argument s to window-at has no type known here .." (the result
+passed on to another row function). kotoba-sema (`b379f353`) notes the keys a
+vector literal of keyword-keyed map literals is written at (`:record-lists`)
+and treats them as it treats an open `[]` key: the parameter is specialized at
+the record its call passes, and `typed-list-conj` checks it against `R`. What
+stays refused, by its literal: a record of another shape conj'd onto the list
+-- "field :surface/windows holds a vector of [:record ..] in this module,
+which makes it a list of that record, and this module conj's [:record ..] at
+it; a list holds one type", named where it was "record-get without a type
+descriptor requires a record value; got :i64" -- and a number conj'd onto it
+("expression type mismatch: expected [:record ..], got i64"). A number reaching
+it through a parameter is still the unnamed "record-get .. got :i64", as at an
+open `[]` key. Measured on nbb: the gate was red on the old pin (1 failure, 4
+errors), green on the new (14 of 14). The surface bound by `let`, the literal
+passed inline, and browser.input's window-at plus a focus lookup over the
+opened surface answer 35, 2 and 3850 on the reference and on
+`x86_64-aiueos-kernel-v1` / `aarch64-macos-kotoba-v1` with the oracle
+verified, and `wasm32-kotoba-v1` emits a module; `amu compile --target
+x86_64-aiueos-kernel-v1` and `--target aarch64-macos` of the last exit 0 with
+`:oracle {:status :verified}`. Measured on the way, not changed: a vector
+literal holding two record shapes, `[{:w 1} {:x 2}]`, is admitted as the
+heterogeneous vector it reads as, and `mapv` / a bare `remove` over a
+`[:list R]` (move-window, close-window) is refused, as `:record-list-sequence`
+left it -- a list builder this profile does not have.
+
 ## Selfhost foundation floors (appended 2026-09-26)
 
 Superproject adr-2609242330 measured that compiling amu with amu needs the

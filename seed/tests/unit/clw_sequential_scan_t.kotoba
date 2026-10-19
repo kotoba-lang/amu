@@ -1,0 +1,51 @@
+;; deps: 01-mem 02-io 10-lex 11-read 20-names 21-check 30-lower 40-a64enc 41-a64gen
+;; Native compiler-local admission/refusal controls; no benchmark timing.
+(defn- t-scan [M :vector-i64 head :i64 n :i64] :vector-i64
+ (let [hook (+ head (* 4 (dec n)) 1)
+       body (loop [V M k 0] (if (= k (dec n)) V
+        (let [at (+ head (* 4 k))]
+         (recur (-> V
+          (gn-put (+ MM-CODE-BASE at) (enc-ldr 9 3 0))
+          (gn-put (+ MM-CODE-BASE (inc at)) (enc-cbnz 9 (- hook (inc at))))
+          (gn-put (+ MM-CODE-BASE (+ at 2)) (enc-add-r 3 3 5))
+          (gn-put (+ MM-CODE-BASE (+ at 3)) (enc-subs-i 6 6 1))) (inc k))))) ]
+  (-> body (gn-put (+ MM-CODE-BASE (dec hook)) (enc-b 2))
+   (gn-put (+ MM-CODE-BASE hook) (enc-cbnz 9 64)))))
+(defn- t-mutations [M :vector-i64 head :i64 n :i64] :bool
+ (loop [k 0] (or (= k (+ (* 4 (dec n)) 2))
+  (let [cell (+ MM-CODE-BASE head k) old (vector-at M cell)
+        changed (gn-put M cell (bit-xor old 1))
+        refused (not (jdf-unroll changed head 128 n))
+        restored (gn-put changed cell old)]
+   (and refused (recur (inc k)))))))
+(defn- t-scans [M :vector-i64 n :i64] :bool
+ (if (> n 8) true
+  (let [v (t-scan M 16 n) hook (+ 17 (* 4 (dec n)))]
+   (and (jdf-unroll v 16 128 n) (t-mutations v 16 n)
+    (not (jdf-unroll v 16 hook n))
+    (not (jdf-unroll v 16 128 1)) (not (jdf-unroll v 16 128 9))
+    (t-scans v (inc n))))))
+(defn- t-edge [D :vector-i64 p :i64 q :i64 bad :bool] :bool
+ (let [v (jdf-edge D (vector-alloc 1028) p q)]
+  (= (not= (vector-at v 1026) 0) bad)))
+(defn- t-edges [] :bool
+ (let [D (-> (vector-alloc 10) (vector-assoc! 0 100) (vector-assoc! 1 300)
+          (vector-assoc! 2 110) (vector-assoc! 3 131) (vector-assoc! 4 250)
+          (vector-assoc! 8 160) (vector-assoc! 9 161))
+       all (loop [k 0] (or (= k 7)
+         (and (t-edge D (+ 132 (* 4 k)) 160 false) (recur (inc k)))))
+       old (-> (vector-alloc 10) (vector-assoc! 0 100) (vector-assoc! 1 300)
+         (vector-assoc! 2 110) (vector-assoc! 3 131) (vector-assoc! 4 250)
+         (vector-assoc! 8 132) (vector-assoc! 9 136))]
+  (and all (t-edge D 130 131 false) (t-edge D 129 131 true)
+   (t-edge D 131 160 true) (t-edge D 133 160 true)
+   (t-edge D 120 145 true) (t-edge D 160 250 false)
+   (t-edge D 132 250 true) (t-edge D 249 250 true)
+   (t-edge old 135 131 false) (t-edge old 134 131 true)
+   (t-edge old 132 250 false) (t-edge old 133 250 true))))
+(defn- seed-main [] :i64
+ (let [M (gn-put (mem-new) MM-CODE-N 129)
+       ok (and (t-scans M 2) (t-edges))
+       printed (io-out (if ok "PASS_NATIVE_SEQUENTIAL_SCAN_ADMISSION_REFUSAL_CONTROLS\n"
+                             "FAIL_NATIVE_SEQUENTIAL_SCAN_CONTROLS\n"))]
+  (if ok 0 1)))

@@ -1,0 +1,134 @@
+;; Native reader + native typed-form transform composition. This is the first
+;; project module that keeps source, reader output, and a compiler tree pass in
+;; Kotoba values from entry to exit. `.cljk` is parsed as Kotoba surface syntax
+;; and its admitted sugar is lowered to Kotoba core; it is not a request to run
+;; Clojure or ClojureScript semantics. `.kotoba` skips the surface lowering.
+(ns kotoba.compiler.form-pipeline
+  (:export [read-cljk-surface read-cljk-surface-bounded lower-cljk-form
+            read-postwalk-replaced read-postwalk-replaced-bounded
+            read-prewalk-replaced read-prewalk-replaced-bounded])
+  (:require [kotoba.compiler.form-transform :as transform]
+            [kotoba.compiler.syntax-sugar :as syntax-sugar]
+            [kotoba.compiler.kotoba-reader :as reader])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                      [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :kotoba.reader/out [:record :kotoba.reader/out
+                                 [[:forms [:list [:ref :form/r]]]
+                                  [:err :string]
+                                  [:at :i64]]]}))
+
+(defn- prewalk-forms [forms [:list [:ref :form/r]]
+                      replacements [:ref :form/r]] [:list [:ref :form/r]]
+  (loop [index 0 output (typed-list-new [:list [:ref :form/r]])]
+    (if (>= index (vector-count forms))
+      output
+      (recur (+ index 1)
+             (typed-list-conj [:list [:ref :form/r]]
+                              output
+                              (transform/prewalk-replace
+                               replacements
+                               (typed-list-nth [:list [:ref :form/r]] forms index)))))))
+
+(defn- postwalk-forms [forms [:list [:ref :form/r]]
+                       replacements [:ref :form/r]] [:list [:ref :form/r]]
+  (loop [index 0 output (typed-list-new [:list [:ref :form/r]])]
+    (if (>= index (vector-count forms))
+      output
+      (recur (+ index 1)
+             (typed-list-conj [:list [:ref :form/r]]
+                              output
+                              (transform/postwalk-replace
+                               replacements
+                               (typed-list-nth [:list [:ref :form/r]] forms index)))))))
+
+(defn lower-cljk-form [form [:ref :form/r]] [:ref :form/r]
+  (syntax-sugar/lower-surface form))
+
+(defn- lower-cljk-forms [forms [:list [:ref :form/r]]] [:list [:ref :form/r]]
+  (loop [index 0 output (typed-list-new [:list [:ref :form/r]])]
+    (if (>= index (vector-count forms))
+      output
+      (recur (+ index 1)
+             (typed-list-conj [:list [:ref :form/r]]
+                              output
+                              (lower-cljk-form
+                               (typed-list-nth [:list [:ref :form/r]] forms index)))))))
+
+(defn read-cljk-surface
+  "Read `.cljk` as Kotoba surface syntax and lower admitted sugar to core.
+  Direct `.kotoba` input must use `reader/read-forms` without this pass."
+  [source :string] [:ref :kotoba.reader/out]
+  (let [result (reader/read-forms source)
+        error (record-get [:ref :kotoba.reader/out] result :err)
+        forms (record-get [:ref :kotoba.reader/out] result :forms)]
+    (record-new [:ref :kotoba.reader/out]
+                (if (= error "")
+                  (lower-cljk-forms forms)
+                  forms)
+                error
+                (record-get [:ref :kotoba.reader/out] result :at))))
+
+(defn read-cljk-surface-bounded
+  "Read `.cljk` as Kotoba surface syntax with explicit reader bounds, then
+  lower admitted sugar to core. A zero limit keeps that reader dimension
+  unbounded. Direct `.kotoba` input must use the reader without this pass."
+  [source :string max-depth :i64 max-token :i64] [:ref :kotoba.reader/out]
+  (let [result (reader/read-forms-bounded source max-depth max-token)
+        error (record-get [:ref :kotoba.reader/out] result :err)
+        forms (record-get [:ref :kotoba.reader/out] result :forms)]
+    (record-new [:ref :kotoba.reader/out]
+                (if (= error "")
+                  (lower-cljk-forms forms)
+                  forms)
+                error
+                (record-get [:ref :kotoba.reader/out] result :at))))
+
+(defn read-prewalk-replaced [source :string replacements [:ref :form/r]]
+  [:ref :kotoba.reader/out]
+  (let [result (reader/read-forms source)
+        error (record-get [:ref :kotoba.reader/out] result :err)
+        forms (record-get [:ref :kotoba.reader/out] result :forms)]
+    (record-new [:ref :kotoba.reader/out]
+                (if (= error "")
+                  (prewalk-forms forms replacements)
+                  forms)
+                error
+                (record-get [:ref :kotoba.reader/out] result :at))))
+
+(defn read-prewalk-replaced-bounded
+  [source :string max-depth :i64 max-token :i64 replacements [:ref :form/r]]
+  [:ref :kotoba.reader/out]
+  (let [result (reader/read-forms-bounded source max-depth max-token)
+        error (record-get [:ref :kotoba.reader/out] result :err)
+        forms (record-get [:ref :kotoba.reader/out] result :forms)]
+    (record-new [:ref :kotoba.reader/out]
+                (if (= error "")
+                  (prewalk-forms forms replacements)
+                  forms)
+                error
+                (record-get [:ref :kotoba.reader/out] result :at))))
+
+(defn read-postwalk-replaced [source :string replacements [:ref :form/r]]
+  [:ref :kotoba.reader/out]
+  (let [result (reader/read-forms source)
+        error (record-get [:ref :kotoba.reader/out] result :err)
+        forms (record-get [:ref :kotoba.reader/out] result :forms)]
+    (record-new [:ref :kotoba.reader/out]
+                (if (= error "")
+                  (postwalk-forms forms replacements)
+                  forms)
+                error
+                (record-get [:ref :kotoba.reader/out] result :at))))
+
+(defn read-postwalk-replaced-bounded
+  [source :string max-depth :i64 max-token :i64 replacements [:ref :form/r]]
+  [:ref :kotoba.reader/out]
+  (let [result (reader/read-forms-bounded source max-depth max-token)
+        error (record-get [:ref :kotoba.reader/out] result :err)
+        forms (record-get [:ref :kotoba.reader/out] result :forms)]
+    (record-new [:ref :kotoba.reader/out]
+                (if (= error "")
+                  (postwalk-forms forms replacements)
+                  forms)
+                error
+                (record-get [:ref :kotoba.reader/out] result :at))))

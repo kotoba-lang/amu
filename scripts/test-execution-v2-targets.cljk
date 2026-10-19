@@ -1,0 +1,42 @@
+(ns test-execution-v2-targets
+  (:require [kotoba.compiler.execution-targets :as targets]
+            [kototama.execution-v2 :as v2] [kototama.execution-ledger :as ledger]
+            [kotoba.artifact.execution :as blocks] [kotoba.core.execution :as core] [grant.execution-v2 :as issuer]
+            [kotoba.verifier.signing :as signing] [kotoba.value.codec :as value]
+            ["node:fs" :as fs] ["node:os" :as os] ["node:path" :as path]))
+(def source-path (path/join (.cwd js/process) "src/kotoba/compiler/execution_targets.cljk"))
+(def runtime (targets/measure-runtime source-path))
+(def authority (signing/generate-keypair))
+(def executor (signing/generate-keypair))
+(defn trust [key] {:format :kotoba.trust/v1 :trusted-signers #{(:signer key)} :revoked-signers #{} :revoked-artifacts #{}})
+(def limits {:fuel 1024 :max-frames 128 :memory-pages 64 :deadline-ms 10000 :max-output-bytes 1024 :gas 100000 :step-limit 10000})
+(doseq [target [:wasm32-kotoba-v1 :js-kotoba-v1 :evm256-kotoba-v1]]
+  (let [artifact (targets/compile-envelope "(defn main [] :i64 42)" target limits)
+        mechanisms (targets/mechanisms runtime source-path)
+        context ((:inspect! mechanisms) artifact runtime)
+        binding (blocks/binding-block target :sync (:artifact-cid context) (:interface-cid context)
+                                       (:runtime-identity context) (:layout context))
+        input (blocks/block :input {:entry (symbol "main") :arguments []})
+        ref (:cid input)
+        invocation (issuer/issue-invocation (:signer (signing/generate-keypair)))
+        intent (blocks/intent-block binding context
+                 (assoc (zipmap core/execution-intent-keys (repeat ref))
+                        :format :kotoba.execution-intent/v2 :profile-binding-cid (:cid binding)
+                        :artifact-cid (:artifact-cid context) :runtime-identity (:runtime-identity context)
+                        :input-cid ref :invocation-cid (:cid invocation) :grant-cids [] :approval-cids []))
+        now (js/Date.now)
+        window {:audience "node-target-test" :not-before now :expires (+ now 60000) :epoch 1}
+        directory (fs/mkdtempSync (path/join (os/tmpdir) "kotoba-target-v2-"))
+        _ (fs/chmodSync directory 448)
+        host (merge mechanisms {:providers {} :ledger! (ledger/open-ledger! directory)
+                                :clock! #(js/Date.now) :epoch! (constantly 1) :audience "node-target-test"
+                                :authority-trust (trust authority) :executor-trust (trust executor)
+                                :executor-key executor :revoked-cids! (constantly #{})})
+        packet {:artifact artifact :runtime runtime :binding binding :intent intent :invocation invocation :input input :leases []
+                :authorization (v2/attest :intent intent authority window)}]
+    (try
+      (let [result (v2/run! host packet) observed (blocks/verify-block :outcome (:outcome result))]
+        (when-not (and (= :ok (:status observed)) (= (js/BigInt 42) (value/int64-value (:value observed))))
+          (throw (ex-info "target outcome mismatch" {:target target :observed observed})))
+        (println {:target target :result 42 :binding (:cid binding) :identity (:cid (:identity result)) :verified true}))
+      (finally (fs/rmSync directory #js {:recursive true :force true})))))

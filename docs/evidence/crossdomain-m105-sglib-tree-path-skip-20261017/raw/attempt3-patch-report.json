@@ -1,0 +1,18 @@
+{
+  "status": "PATCHED_PRIVATE_TREE_PATH_CHECK_SKIP_CANDIDATE",
+  "controlSHA256": "79c91e352296237547c0e6b801b690bc7384f828699135833954b20a245d35c4",
+  "candidateSHA256": "71f836b68dc0603c403fb2b78115e42477e5e61c1307c9fce937d3270e50d7c3",
+  "kernel": "tb-entry at image offset 0x9250",
+  "change": "Replace the per-level tree-insert path validation loop entry at 0x9408 with a direct branch to the already-recorded leaf link at 0x94b0.",
+  "invariant": "tree-find returns zero only after every visited node compares nonzero with the searched value. tree-insert compares the same value at each unchanged visited node and uses the same <0 direction when nonzero. Therefore its descent path equals the recorded search path. Duplicate input exits earlier via the found path.",
+  "fuel": "unchanged; validation loop is generated native work and does not mutate benchmark fuel. Existing charged tree-insert per-level amount is retained via path depth x10.",
+  "controlSHA256Baseline": "79c91e352296237547c0e6b801b690bc7384f828699135833954b20a245d35c4",
+  "controlUnitySHA256": "274c55e078db64d7461a1438b018237ae1dafe3a3c8e27f41e55d0ed86543fa3",
+  "priorHeapAttemptReport": "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/patch-report.json",
+  "branchFix": {
+    "from": "0xB4000263",
+    "to": "0x1400002A",
+    "sourceOffset": "0x9408",
+    "targetOffset": "0x94b0"
+  }
+}

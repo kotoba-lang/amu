@@ -1,0 +1,17 @@
+(ns kotoba.compiler.source-path
+  "Public source admission module; implementation lives in Kotoba core."
+  {:kotoba/export [source-kind source-kind-present? admit! admit-native-artifact!]}
+  (:require [kotoba.compiler.source-path-core :as source-core]))
+
+(defn source-kind [path :string] [:option :keyword]
+  (source-core/source-kind path))
+
+(defn source-kind-present? [path :string] :bool
+  (source-core/source-kind-present? path))
+
+(defn admit! [path :string] [:result :string :document]
+  (source-core/admit! path))
+
+(defn admit-native-artifact! [value :document path :string]
+  [:result :document :document]
+  (source-core/admit-native-artifact! value path))

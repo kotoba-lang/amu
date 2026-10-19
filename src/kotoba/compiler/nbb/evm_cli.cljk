@@ -35,6 +35,7 @@
             [kotoba.kir :as ir]
             [kotoba.kir.compatibility :as compatibility]
             [kotoba.kir.target :as target-profile]
+            [kotoba.compiler.js-value-target :as js-value-target]
             [kotoba.sema :as sema]))
 
 (def targets
@@ -53,6 +54,7 @@
         hir (support/timed "frontend"
                            #(sema/analyze source
                                           (project-source/analyze-opts policy linked?)))
+        _ (js-value-target/reject-outside-js-target! target hir)
         admission-result (support/timed
                           "admission"
                           #(effect-row/check hir (support/capability-policy policy)))
