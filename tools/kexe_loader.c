@@ -10515,19 +10515,32 @@ static void trap_handler(int signal_number);
 static void trap_handler_siginfo(int signal_number, siginfo_t *info,
                                  void *context) {
   (void)context;
-  if (info != NULL && info->si_addr != NULL) {
-    uint32_t insn = *(const uint32_t *)info->si_addr;
-    /* BRK #imm16: 1101 0100 001i iiii iiii iiii iiii 0000 (imm at 20:5). */
-    if ((insn & 0xFFE0001Fu) == 0xD4200000u) {
-      uint64_t imm = ((uint64_t)insn >> 5) & 0xFFFFu;
-      if (imm > 0 && imm < KEXE_VALUE_TRAP_COUNT) note_value_trap(imm);
-    } else if ((insn & 0xFFFF0000u) == 0x00000000u) {
-      /* UDF #imm16: 0000 0000 0000 0000 iiii iiii iiii iiii (imm at 15:0).
-       * The inline handle operations (ABI v9) trap this way; issue #785. */
-      uint64_t imm = (uint64_t)(insn & 0xFFFFu);
-      if (imm > 0 && imm < KEXE_VALUE_TRAP_COUNT) note_value_trap(imm);
+#if defined(__aarch64__)
+  /* The decode is AArch64-only and confined to the guest's code window.
+   * The brk/udf immediate is this ABI's convention (issue #785) and x86_64's
+   * ud2 carries none -- decoding arbitrary x86 bytes would mint spurious
+   * value traps, and reading si_addr outside the mapped window risks faulting
+   * in the handler. Outside the window the trap is what it always was. */
+  if (info != NULL && info->si_addr != NULL && kexe_shared_for_budget != NULL) {
+    const struct kexe_shared_v11 *shared = kexe_shared_for_budget;
+    uint64_t base = (uint64_t)(uintptr_t)shared->context.code_base;
+    uint64_t len = shared->context.code_length;
+    uint64_t addr = (uint64_t)(uintptr_t)info->si_addr;
+    if (len >= 4 && addr >= base && addr + 4 <= base + len) {
+      uint32_t insn = *(const uint32_t *)(uintptr_t)addr;
+      /* BRK #imm16: 1101 0100 001i iiii iiii iiii iiii 0000 (imm at 20:5). */
+      if ((insn & 0xFFE0001Fu) == 0xD4200000u) {
+        uint64_t imm = ((uint64_t)insn >> 5) & 0xFFFFu;
+        if (imm > 0 && imm < KEXE_VALUE_TRAP_COUNT) note_value_trap(imm);
+      } else if ((insn & 0xFFFF0000u) == 0x00000000u) {
+        /* UDF #imm16: 0000 0000 0000 0000 iiii iiii iiii iiii (imm at 15:0).
+         * The inline handle operations (ABI v9) trap this way; issue #785. */
+        uint64_t imm = (uint64_t)(insn & 0xFFFFu);
+        if (imm > 0 && imm < KEXE_VALUE_TRAP_COUNT) note_value_trap(imm);
+      }
     }
   }
+#endif
   trap_handler(signal_number);
 }
 
