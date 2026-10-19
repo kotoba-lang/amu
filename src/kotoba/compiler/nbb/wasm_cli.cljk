@@ -24,6 +24,9 @@
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.provenance :as provenance]
             [kotoba.kir :as ir]
+            [kotoba.pprint :as pp]
+            [kotoba.lang.edn :as kedn]
+            [clojure.walk :as walk]
             [kotoba.compiler.effect-row :as effect-row]
             [kotoba.kir.compatibility :as compatibility]
             [kotoba.kir.target :as target-profile]
@@ -294,6 +297,52 @@
       (:packages resolved)
       (assoc :packages (package-verdict! resolved report)))))
 
+(defn- edn-value
+  "BigInt -> plain EDN integer at print time.
+
+  The typed KIR (v4) carries i64 bodies as JS BigInt on this route; cljs
+  printing of a BigInt is '#object[BigInt 50052]', which is not EDN and does
+  not round-trip. The shipped artifacts carry plain integers, so that is the
+  canonical spelling. Values outside the exact-integer range of the reader
+  are refused by name rather than printed lossy."
+  [x]
+  (if (identical? (type x) js/BigInt)
+    (let [n (js/Number x)]
+      (if (and (= (js/String n) (js/String x)) (<= (js/Math.abs n) js/Number.MAX_SAFE_INTEGER))
+        n
+        (throw (ex-info "kir: integer outside the EDN round-trip range" {:value (js/String x)}))))
+    x))
+
+(defn- kir!
+  "Emit the module's KIR (:kotoba.kir/v4) as EDN text — the precompiled
+  pure-planner artifact product shells ship (murakumo's
+  resources/murakumo/oracle/*.kir.edn is one consumer).
+
+  This is the source -> resolve-hir! -> kotoba.kir/lower -> pretty-print
+  route, exactly what the artifact generators did on the nbb/kbb test engine
+  (JUN-122: that engine could not reach the compiler at all on one host, and
+  the toolchain rule is that generation moves onto the compiler's own CLI
+  routes). The printing follows kotoba_oracle_gen: kotoba.pprint with
+  *print-namespace-maps* false, then kotoba.lang.edn/escape-controls — the
+  ONE definition of the control-character rule (reimplementing it here would
+  be two that can disagree)."
+  [args]
+  (let [resolved (project-source/resolve-source! args)
+        policy (support/timed "policy-read" #(read-policy! args))
+        hir (:value (resolve-hir! (:source resolved)
+                                  (project-source/analyze-opts policy (:linked? resolved))
+                                  nil))
+        kir (walk/postwalk edn-value (ir/lower hir))
+        text (kedn/escape-controls
+              (binding [*print-namespace-maps* false]
+                (with-out-str (pp/pprint kir))))
+        output (support/option args "--output")]
+    (if output
+      (do (io/write-text! output text)
+          {:ok true :format :kotoba.kir/v4 :output output})
+      (do (print text)
+          {:ok true :format :kotoba.kir/v4}))))
+
 (defn- compile-uncached! [args target output source linked? lock-cid]
   (let [policy (support/timed "policy-read" #(read-policy! args))
         emit-metadata (support/emit-metadata args)
@@ -558,6 +607,7 @@
   (case (first args)
     "check" (check! args context)
     "definition-cids" (definition-cids! args)
+    "kir" (kir! args)
     "compile" (compile! args context)
     ;; `bin/amu` routes every target-less command here, the same way `check`
     ;; arrives. A lock is target-independent, so there is nothing for the
