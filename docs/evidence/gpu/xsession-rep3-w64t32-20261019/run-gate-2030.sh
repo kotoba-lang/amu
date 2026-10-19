@@ -1,0 +1,10 @@
+#!/bin/sh
+# Gate run for tick 20261019-2030. The chain's convention: run the full
+# suite, record gate.log + exit code, then compare the normalized FAIL/ERROR
+# set against the known base-red set (13 distinct entries / 31 occurrences
+# since PR #1324's merge base). Not green and never claimed green.
+cd "$(dirname "$0")/../../../.."
+EV=docs/evidence/gpu/xsession-rep3-w64t32-20261019
+kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" run-tests.cljk > "$EV/gate.log" 2>&1
+echo "GATE-EXIT=$?" >> "$EV/gate.log"
+tail -5 "$EV/gate.log"
