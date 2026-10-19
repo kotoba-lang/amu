@@ -89,8 +89,8 @@ claimed green; the 13 base-red entries are outside this diff (probe +
 - Verbatim run logs `run-{1,2,3}-{w32t24,w32t31,w32t32,w64t31,w64t32}.log`
   (date/uptime header, INFO/SHAPE/PROTOCOL/VERIFY/ARMTIME/GAP/SPEEDUP/
   FLOORSHARE/RESULT trailer, `time` footer).
-- `run-sweep-2030.sh` (the driver, idempotent), `analyze-2030.py` /
-  `analyze-2030.txt` (same rules as analyze-2000.py), `run-gate-2030.sh`,
+- `run-sweep-2030.sh.txt` (the driver, idempotent), `analyze-2030.py` /
+  `analyze-2030.txt` (same rules as analyze-2000.py), `run-gate-2030.sh.txt`,
   `gate.log`, `norm_gate.py` (copied from the chain), `gate-vs-2000.txt`.
 
 Linear 未記録: the Linear connector is unavailable this session

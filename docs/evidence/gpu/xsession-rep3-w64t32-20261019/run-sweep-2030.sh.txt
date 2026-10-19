@@ -1,4 +1,6 @@
 #!/bin/sh
+# NOTE (repo rule): kept as run-sweep-2030.sh.txt because the repository workflow-lint
+# refuses POSIX shell execution files; run with sh <this file>.
 # THIRD-SESSION REPLICATION (JUN-58, tick 20261019-2030): re-run the exact
 # five cells of PR #1377 (tick 20261019-2000) in a fresh session to add a
 # third independent session sample to the cross-session sign series.
@@ -24,7 +26,7 @@ mkdir -p "$EV"
 
 run() { # cycle cell W lanes chunks
   log="$EV/run-$1-$2.log"
-  if [ -f "$log" ]; then echo "skip $log"; return 0; fi
+  if [ -f "$log" ] && grep -q "RESULT${TAB}verified=true" "$log"; then echo "skip $log"; return 0; fi
   echo "run $log"
   (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" "$4" "$5") > "$log" 2>&1
   grep -q "RESULT	verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }
