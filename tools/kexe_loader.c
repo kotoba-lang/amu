@@ -10540,6 +10540,8 @@ static void trap_handler_siginfo(int signal_number, siginfo_t *info,
       }
     }
   }
+#else
+  (void)info;
 #endif
   trap_handler(signal_number);
 }
