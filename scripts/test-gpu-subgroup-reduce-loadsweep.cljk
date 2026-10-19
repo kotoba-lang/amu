@@ -108,10 +108,13 @@
 
 (defn- valid-lanes?
   "A load is admissible when it is a positive integer multiple of W (whole
-  W-lane workgroups) and the workgroup count stays within Vulkan's
-  guaranteed 65535 grid-dim limit. Pure; self-tested below."
+  W-lane workgroups), the workgroup count is at least 4 (teardown reads 16
+  bytes = four workgroup results and verification expects all four), and it
+  stays within Vulkan's guaranteed 65535 grid-dim limit. Pure; self-tested
+  below."
   [w lanes]
   (and (integer? lanes) (pos? lanes) (zero? (mod lanes w))
+       (<= 4 (quot lanes w))
        (<= (quot lanes w) 65535)))
 
 (when-not (and (string? lanes-str) (re-matches #"\d+" lanes-str))
@@ -395,11 +398,12 @@
 (when-not (= (median [3 1 2]) 2) (fail! "median self-test: odd"))
 ;; load validation: the 2^20 sweep point, this tick's 4x point, and the
 ;; refusals that matter (one workgroup over the grid limit, not a W
-;; multiple, non-positive, a W-only group).
+;; multiple, non-positive, fewer than four workgroups (teardown reads four
+;; results), or above the 65535 grid-dim cap).
 (when-not (and (valid-lanes? 64 1048576) (valid-lanes? 64 4194240)
-               (valid-lanes? 256 1048576) (valid-lanes? 64 64))
+               (valid-lanes? 256 1048576) (valid-lanes? 64 256))
   (fail! "lanes self-test: an admissible load was refused"))
-(doseq [[w l] [[64 4194304] [64 4194241] [64 0] [64 -64] [32 2097152]]]
+(doseq [[w l] [[64 4194304] [64 4194241] [64 0] [64 -64] [32 2097152] [64 64] [64 128]]]
   (when (valid-lanes? w l)
     (fail! (str "lanes self-test: an inadmissible load passed: W=" w " lanes=" l))))
 ;; index round(f*(n-1)): n=8 -> q25 index 2 -> 3, q75 index 5 -> 6
@@ -532,9 +536,15 @@
   (chain (cons (first forms) (interleave (repeat "|") (rest forms)))))
 
 ;; One recursion step = two rounds. Emission order of the 6 REPLAYs:
-;; slots 0,1,2 (forward round, even r) then slots 2,1,0 (reverse, odd r).
+;; [0 1 2 0 2 1]. This balances adjacent arm positions: the five within-step
+;; transitions (0->1, 1->2, 2->0, 0->2, 2->1) plus the step-boundary
+;; transition (1->0) cover every ordered arm pair exactly once per step, and
+;; no arm is ever replayed back-to-back. The earlier forward/reverse scheme
+;; [0 1 2 2 1 0] produced back-to-back replays for two of the three arms and
+;; systematically varied the predecessor of each arm (a cache/power/frequency
+;; confound), which biased the baseline/variant ratio beyond drift.
 (def rounds-form
-  (let [order (concat (vec (range n-arms)) (vec (reverse (range n-arms))))
+  (let [order [0 1 2 0 2 1]
         syms (mapv (fn [i] (symbol (str "a" i))) (vec (range (* 2 n-arms))))
         bindings (mapv (fn [i slot] [(nth syms i) (list 'gpu (str "REPLAY " slot))])
                        (vec (range (* 2 n-arms))) order)]
@@ -661,7 +671,7 @@
                       "\tsha256=" (get variant-sha256 w-str) "\tpatch=categories+id"))
         (println (str "GPU-SGRE-LOAD\tPROTOCOL\trounds=" n-rounds "\tbatch=" batch " dispatches/replay"
                       "\tlanes/dispatch=" n-elems "\tgroups-x=" groups-x
-                      "\tarms=baseline,variant,floor\torder=alternating(012,210)\tsamples=" (count samples)))
+                      "\tarms=baseline,variant,floor\torder=balanced(012021)\tsamples=" (count samples)))
         (println (str "GPU-SGRE-LOAD\tVERIFY\tx=ok\tparts-baseline=ok\tparts-variant=ok\tparts-floor=ok"
                       "\t(sum W^2*g + W(W-1)/2 + W, g=0..3, bit-exact)"))
         ;; ---- the timing table -------------------------------------------
