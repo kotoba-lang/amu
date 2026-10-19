@@ -13,6 +13,11 @@
 ;;   :finding/row = [a :string] [b :string] [n :i64]
 
 (ns kotoba.compiler.refactor.finding
+  ;; 2026-10-19: the shared schema is spelled :edit/e here (the same RECORD SHAPE as
+  ;; edit.cljk's :edit/e -- schemas compare structurally, so it is one type across the boundary).
+  ;; Measured (minimal repro): a module that :require s a module AND declares that module's schema
+  ;; NAME locally is refused "value type references a schema outside the closed namespace table"
+  ;; even with byte-identical definitions, so the local name is what makes the table closed.
   (:require [kotoba.compiler.refactor.edit :as edit])
   (:export [mk with-ported with-pass with-force f-rule f-s f-e f-region f-status f-line f-context f-reason f-kind
             f-kind-kw? f-edits f-ported? f-force? f-pass f-inv fs-new fs-conj fs-count fs-nth fs-concat
@@ -20,15 +25,18 @@
   ;; :edit/e is declared here too (structural identity: edit.cljk owns the same shape and schemas
   ;; compare structurally, so this is one type). A module declares every schema it references --
   ;; the closed namespace table is the module's own :schemas (sema analyze, measured 2026-10-19).
-  #?(:kotoba
-     (:schemas {:edit/e [:record :edit/e [[:s :i64] [:e :i64] [:text :string] [:rule :string] [:ord :i64]]]
-                :finding/u16 [:record :finding/u16 [[:pos :vector-i64] [:delta :vector-i64]]]
-                :finding/row [:record :finding/row [[:a :string] [:b :string] [:n :i64]]]
-                :finding/f [:record :finding/f
-                            [[:rule :string] [:s :i64] [:e :i64] [:region :keyword] [:status :string] [:line :i64]
-                             [:context :string] [:reason :string] [:kind :string] [:kind-kw :bool]
-                             [:edits [:list [:ref :edit/e]]] [:ported :bool] [:force :bool] [:pass :i64]
-                             [:inv [:list [:ref :finding/row]]]]]})))
+  ;; the checked `parsed` on the project route is the LINKED forms, so the closed table must carry
+  ;; every schema the whole link spells -- including edit's own (:edit/e, :edit/split), declared
+  ;; here byte-identically (shared schema = same name, same shape; measured minimal repro p75).
+  (:schemas {:edit/e [:record :edit/e [[:s :i64] [:e :i64] [:text :string] [:rule :string] [:ord :i64]]]
+             :edit/split [:record :edit/split [[:kept [:list [:ref :edit/e]]] [:dropped [:list [:ref :edit/e]]]]]
+             :finding/u16 [:record :finding/u16 [[:pos :vector-i64] [:delta :vector-i64]]]
+             :finding/row [:record :finding/row [[:a :string] [:b :string] [:n :i64]]]
+             :finding/f [:record :finding/f
+                         [[:rule :string] [:s :i64] [:e :i64] [:region :keyword] [:status :string] [:line :i64]
+                          [:context :string] [:reason :string] [:kind :string] [:kind-kw :bool]
+                          [:edits [:list [:ref :edit/e]]] [:ported :bool] [:force :bool] [:pass :i64]
+                          [:inv [:list [:ref :finding/row]]]]]}))
 
 (defn rows-new [] [:list [:ref :finding/row]] (typed-list-new [:list [:ref :finding/row]]))
 (defn row [a :string b :string n :i64] [:ref :finding/row] (record-new [:ref :finding/row] a b n))
