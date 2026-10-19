@@ -25,7 +25,7 @@
             test-text test-bytes-xrefs
             test-logical-reg test-addsub-reg test-ldst-reg test-pair
             test-record test-targets test-listing
-            test-shift-text test-extend-text test-reg31-sf test-literal
+            test-shift-text test-extend-text test-reg31-sf test-tbz-pair-text test-literal
             test-m3-edges test-m3-reach test-m3-entries test-m3-cfg
             test-m3-bounds test-m3-strings test-m3-xrefs test-m3-imports
             test-macho test-elf test-pe test-words-at
@@ -529,12 +529,29 @@
           (reg-name (insn-rn w) 1)
           (str2 ", " (str2 (reg-name (insn-rm w) rmw) (str2 tail "]"))))))
 
-;; Load/store pair: rt, rt2, [rn, #off] (sp as base).
+;; Load/store pair: rt, rt2, [rn, #off]; bits 24:23 select the addressing
+;; mode -- 01 post-index ([rn], #off), 10 signed offset ([rn, #off]),
+;; 11 pre-index ([rn, #off]!). The renderer must keep the writeback form
+;; (review P1: 0xA9BF7BFD lost its !, turning stp x29, x30, [sp, #-16]!
+;; into a non-writeback instruction).
+(defn pair-mode [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 8388608) 3))
+;; TBZ/TBNZ bit index: b5 (bit 31) : b40 (bits 23:19); b5 also selects
+;; the register width (1 -> x, 0 -> w).
+(defn tbz-b5 [w :i64] :i64
+  (quot (bit-and w 0xFFFFFFFF) 2147483648))
+(defn tbz-bit [w :i64] :i64
+  (+ (* 32 (tbz-b5 w)) (bit-and (quot (bit-and w 0xFFFFFFFF) 524288) 31)))
 (defn pair-text [w :i64] :string
-  (let [base (if (= (insn-rn w) 31) "sp" (reg-name (insn-rn w) 1))]
+  (let [base (if (= (insn-rn w) 31) "sp" (reg-name (insn-rn w) 1))
+        off (str2 ", #" (hex-s (insn-pair-off w)))
+        mode (pair-mode w)]
     (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rd w) 1) ", "
           (reg-name (insn-rt2 w) 1)
-          (str2 ", [" (str2 base (str2 ", #" (str2 (hex-s (insn-pair-off w)) "]")))))))
+          (str2 ", ["
+            (if (= mode 3) (str3 base off "]!")
+            (if (= mode 1) (str3 base "]" off)
+            (str3 base off "]")))))))
 
 ;; One disassembly line for w at pc (A64 syntax subset).
 (defn insn-text [w :i64 pc :i64] :string
@@ -548,10 +565,16 @@
   (if (= c (class-bcond))
     (str4 "b." (cond-name (insn-cond w)) " #" (hex-s (insn-target w pc)))
   (if (or (= c (class-cbz)) (= c (class-tbz)))
-    (str5 (if (= c (class-cbz))
-            (if (= (insn-op w) 1) "cbnz" "cbz")
-            (if (= (insn-op w) 1) "tbnz" "tbz"))
-          " " (reg-name (insn-rt w) 1) ", #" (hex-s (insn-target w pc)))
+    (if (= c (class-cbz))
+      ;; CBZ/CBNZ: width from sf.
+      (str5 (if (= (insn-op w) 1) "cbnz" "cbz")
+            " " (reg-name (insn-rt w) (sf-wide w)) ", #" (hex-s (insn-target w pc)))
+      ;; TBZ/TBNZ: the bit index is b5:b40 and selects the width too
+      ;; (review P1: the shared path omitted the bit operand entirely and
+      ;; always printed an x register -- 0x36000040 tests bit 0 of w0).
+      (str5 (if (= (insn-op w) 1) "tbnz" "tbz")
+            " " (reg-name (insn-rt w) (tbz-b5 w))
+            (str2 ", #" (hex-u (tbz-bit w))) (str2 ", #" (hex-s (insn-target w pc)))))
   (if (or (= c (class-adr)) (= c (class-adrp)))
     (pcrel-text w)
   (if (or (= c (class-movn)) (= c (class-movz)) (= c (class-movk)))
@@ -1836,6 +1859,21 @@
            (string=? (insn-text 0x72B579A1 0) "movk w1, #0xabcd"))
     1 0))
 
+(defn test-tbz-pair-text [] :i64
+  ;; TBZ/TBNZ carry the b5:b40 bit index and the b5 width (review P1);
+  ;; pair load/store keeps its addressing mode (review P1):
+  ;;   0x36000040 @0x1000 -> "tbz w0, #0x0, #0x1008"   (bit 0 of w0)
+  ;;   0xB6000040 @0x1000 -> "tbz x0, #0x20, #0x1008"  (b5=1 -> bit 32)
+  ;;   0xA9BF7BFD -> "stp x29, x30, [sp, #-0x10]!"     (pre-index)
+  ;;   0xA8C10440 -> "ldp x0, x1, [x2], #0x10"         (post-index)
+  ;;   0xA9410440 -> "ldp x0, x1, [x2, #0x10]"         (signed offset)
+  (if (and (string=? (insn-text 0x36000040 0x1000) "tbz w0, #0x0, #0x1008")
+           (string=? (insn-text 0xB6000040 0x1000) "tbz x0, #0x20, #0x1008")
+           (string=? (insn-text 0xA9BF7BFD 0) "stp x29, x30, [sp, #-0x10]!")
+           (string=? (insn-text 0xA8C10440 0) "ldp x0, x1, [x2], #0x10")
+           (string=? (insn-text 0xA9410440 0) "ldp x0, x1, [x2, #0x10]"))
+    1 0))
+
 (defn main [] :i64
   (let [s (+ (test-hints) (test-exceptions) (test-branch-uncond)
              (test-branch-cond) (test-branch-register) (test-adr)
@@ -1843,10 +1881,10 @@
              (test-bytes-xrefs) (test-logical-reg) (test-addsub-reg)
              (test-ldst-reg) (test-pair) (test-record) (test-targets)
              (test-listing) (test-shift-text) (test-extend-text)
-             (test-reg31-sf)
+             (test-reg31-sf) (test-tbz-pair-text)
              (test-literal) (test-m3-edges) (test-m3-reach) (test-m3-entries)
              (test-m3-cfg) (test-m3-bounds) (test-m3-strings) (test-m3-xrefs)
              (test-m3-imports)
              (test-macho) (test-elf) (test-pe)
              (test-words-at))]
-    (if (= s 34) 1 0)))
+    (if (= s 35) 1 0)))
