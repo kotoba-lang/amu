@@ -122,6 +122,9 @@
 (defn- entry-path [root entry]
   (posix-path/join root entry))
 
+(defn- admitted-source-path! [path]
+  (source-path/admit-or-throw! path))
+
 (defn- case-source
   "{:source text :linked? bool} for a :run / :compile-expr case, or throws."
   [root kase]
@@ -136,7 +139,7 @@
     (let [entry (:entry kase)
           _ (when-not (string? entry)
               (throw (ex-info "the case names no :entry" {:phase :manifest})))
-          path (source-path/admit! (entry-path root entry))]
+          path (admitted-source-path! (entry-path root entry))]
       (if-let [roots (seq (:source-paths kase))]
         (let [graph (project-files/load-closed-graph path (mapv #(posix-path/join root %) roots))
               linked (project/link-source (:sources graph) (:root graph))]
@@ -163,7 +166,7 @@
       (let [entry (:entry kase)
             _ (when-not (string? entry)
                 (throw (ex-info "the case names no :entry" {:phase :manifest})))
-            path (source-path/admit! (entry-path root entry))]
+            path (admitted-source-path! (entry-path root entry))]
         {:id (:id kase) :entry path
          :source-paths (mapv #(posix-path/join root %) (:source-paths kase))
          :function (or (:function kase) "main") :args (vec (or (:args kase) []))}))
@@ -270,7 +273,7 @@
   (let [needle (:error-contains kase)
         refusal (try
                   (let [path (entry-path root (:entry kase))]
-                    (source-path/admit! path)
+                    (admitted-source-path! path)
                     ;; The frontend first (what kotoba-lang's own runners
                     ;; call), then amu's admission on top of it: a fixture the
                     ;; frontend admits can still be refused by policy, and
