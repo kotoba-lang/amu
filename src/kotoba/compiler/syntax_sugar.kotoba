@@ -1,0 +1,324 @@
+;; Bounded `.cljk` surface rewrites into canonical Kotoba forms.
+;; `.cljk` is Kotoba source with syntax sugar: this pass lowers only the
+;; constructs listed below into Kotoba core forms. It does not inherit
+;; Clojure/ClojureScript evaluation or macro semantics. New surface constructs
+;; need an explicit lowering and must still pass the Kotoba core analyzer.
+;; `.kotoba` input is already core and must use the reader without this pass.
+(ns kotoba.compiler.syntax-sugar
+  (:export [lower-surface source-reserved?])
+  (:require [kotoba.form :as form])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                      [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]}))
+
+(defn- head-is? [node [:ref :form/r] name :string] :bool
+  (and (form/is-seq? node)
+       (> (form/count-of node) 0)
+       (form/is-symbol? (form/nth-of node 0))
+       (= name (form/symbol-value (form/nth-of node 0)))))
+
+(defn- quote-form? [node [:ref :form/r]] :bool
+  (head-is? node "quote"))
+
+(defn- reserved-prefix-symbol? [node [:ref :form/r]] :bool
+  (if (not (form/is-symbol? node))
+    false
+    (let [name (form/symbol-value node)]
+      (and (>= (string-byte-length name) 9)
+           (= (string-substring name 0 9) "__kotoba_")))))
+
+(defn- source-reserved-in? [node [:ref :form/r]] :bool
+  (let [count (form/count-of node)]
+    (cond
+      (quote-form? node)
+      false
+
+      (reserved-prefix-symbol? node)
+      true
+
+      (and (form/is-seq? node) (> count 1) (head-is? node "case"))
+      (or (source-reserved-in? (form/nth-of node 1))
+          (loop [index 3]
+            (if (>= index count)
+              false
+              (if (source-reserved-in? (form/nth-of node index))
+                true
+                (recur (+ index 2)))))
+          (and (= (mod (- count 2) 2) 1)
+               (source-reserved-in? (form/nth-of node (- count 1)))))
+
+      (or (form/is-seq? node) (form/is-vec? node)
+          (form/is-set? node) (form/is-map? node))
+      (loop [index 0]
+        (if (>= index count)
+          false
+          (if (source-reserved-in? (form/nth-of node index))
+            true
+            (recur (+ index 1)))))
+
+      :else
+      false)))
+
+(defn source-reserved? [node [:ref :form/r]] :bool
+  "Report whether author-written, executable source names the reserved
+  `__kotoba_` prefix. Quoted data and case test literals remain data."
+  (source-reserved-in? node))
+
+(defn- thread-step? [step [:ref :form/r]] :bool
+  (or (form/is-symbol? step)
+      (and (form/is-seq? step)
+           (> (form/count-of step) 0)
+           (form/is-symbol? (form/nth-of step 0)))))
+
+(defn- valid-thread-steps? [node [:ref :form/r] start :i64] :bool
+  (loop [index start]
+    (if (>= index (form/count-of node))
+      true
+      (if (thread-step? (form/nth-of node index))
+        (recur (+ index 1))
+        false))))
+
+(defn- thread-step [outer [:ref :form/r]
+                    current [:ref :form/r]
+                    step [:ref :form/r]
+                    last? :bool] [:ref :form/r]
+  (if (form/is-symbol? step)
+    (form/with-children outer (form/two-forms step current))
+    (let [count (form/count-of step)
+          prefix (if last?
+                   (form/no-forms)
+                   (form/append-form (form/one-form (form/nth-of step 0)) current))
+          copied (loop [index (if last? 0 1) output prefix]
+                   (if (>= index count)
+                     output
+                     (recur (+ index 1)
+                            (form/append-form output (form/nth-of step index)))))
+          children (if last? (form/append-form copied current) copied)]
+      (form/with-children step children))))
+
+(defn- fold-thread [node [:ref :form/r] last? :bool] [:ref :form/r]
+  (loop [index 2 current (form/nth-of node 1)]
+    (if (>= index (form/count-of node))
+      current
+      (recur (+ index 1)
+             (thread-step node current (form/nth-of node index) last?)))))
+
+(defn- fold-as [node [:ref :form/r]] [:ref :form/r]
+  (let [name (form/nth-of node 2)]
+    (loop [index 3 current (form/nth-of node 1)]
+      (if (>= index (form/count-of node))
+        current
+        (let [binding-form (form/form-vec (form/two-forms name current))
+              call (form/with-children
+                    node
+                    (form/three-forms (form/symbol-form "let")
+                                      binding-form
+                                      (form/nth-of node index)))]
+          (recur (+ index 1) call))))))
+
+(defn- contains-symbol? [node [:ref :form/r] name :string] :bool
+  (or (and (form/is-symbol? node)
+           (= name (form/symbol-value node)))
+      (loop [index 0]
+        (if (>= index (form/count-of node))
+          false
+          (if (contains-symbol? (form/nth-of node index) name)
+            true
+            (recur (+ index 1)))))))
+
+(defn- fresh-conditional-name [node [:ref :form/r]
+                              used [:ref :form/r]] :string
+  (loop [index 0]
+    (let [name (string-concat "kotoba_cond_tmp_" (string-from-i64 index))]
+      (if (or (contains-symbol? node name)
+              (contains-symbol? used name))
+        (recur (+ index 1))
+        name))))
+
+(defn- fresh-some-name [node [:ref :form/r]
+                        used [:ref :form/r]] :string
+  (loop [index 0]
+    (let [name (string-concat "kotoba_some_tmp_" (string-from-i64 index))]
+      (if (or (contains-symbol? node name)
+              (contains-symbol? used name))
+        (recur (+ index 1))
+        name))))
+
+(defn- lower-some-thread [node [:ref :form/r]
+                          value [:ref :form/r]
+                          index :i64
+                          last? :bool
+                          used [:ref :form/r]] [:ref :form/r]
+  (if (>= index (form/count-of node))
+    (form/call1 "__kotoba_some_last" value)
+    (let [temporary (form/symbol-form (fresh-some-name node used))
+          next-used (form/form-seq (form/append-form (form/kids-of used) temporary))
+          present (form/call1 "__kotoba_present" temporary)
+          threaded (thread-step node present (form/nth-of node index) last?)
+          body (lower-some-thread node threaded (+ index 1) last? next-used)
+          bindings (form/form-vec (form/two-forms temporary value))
+          guarded (form/call2 "__kotoba_some_bind" temporary body)]
+      (form/call2 "let" bindings guarded))))
+
+(defn- fold-some-thread [node [:ref :form/r] last? :bool] [:ref :form/r]
+  (lower-some-thread node
+                     (form/nth-of node 1)
+                     2
+                     last?
+                     (form/form-seq (form/no-forms))))
+
+(defn- valid-conditional-steps? [node [:ref :form/r]] :bool
+  (loop [index 3]
+    (if (>= index (form/count-of node))
+      true
+      (if (thread-step? (form/nth-of node index))
+        (recur (+ index 2))
+        false))))
+
+(defn- conditional-branch [node [:ref :form/r]
+                           condition [:ref :form/r]
+                           current [:ref :form/r]
+                           step [:ref :form/r]
+                           last? :bool] [:ref :form/r]
+  (form/with-children
+   node
+   (form/append-form
+    (form/three-forms (form/symbol-form "if")
+                      condition
+                      (thread-step node current step last?))
+    current)))
+
+(defn- fold-conditional-thread [node [:ref :form/r]
+                                last? :bool] [:ref :form/r]
+  (let [temporary (form/symbol-form (fresh-conditional-name node node))
+        initial-bindings (form/two-forms temporary (form/nth-of node 1))]
+    (loop [index 2
+           bindings initial-bindings
+           current temporary]
+      (if (>= index (form/count-of node))
+        (form/with-children
+         node
+         (form/three-forms (form/symbol-form "let")
+                           (form/form-vec bindings)
+                           current))
+        (let [name (fresh-conditional-name node (form/form-vec bindings))
+              next-value (form/symbol-form name)
+              next-bindings (form/append-form
+                             (form/append-form
+                              bindings next-value)
+                             (conditional-branch
+                              node
+                              (form/nth-of node index)
+                              current
+                              (form/nth-of node (+ index 1))
+                              last?))]
+          (recur (+ index 2) next-bindings next-value))))))
+
+(defn- expand-conditional-thread [node [:ref :form/r]
+                                  last? :bool] [:ref :form/r]
+  (let [count (form/count-of node)]
+    (if (and (>= count 2)
+             (= (mod (- count 2) 2) 0)
+             (valid-conditional-steps? node))
+      (fold-conditional-thread node last?)
+      node)))
+
+(defn- expand-thread [node [:ref :form/r]] [:ref :form/r]
+  (let [count (form/count-of node)]
+    (cond
+      (head-is? node "cond->")
+      (expand-conditional-thread node false)
+
+      (head-is? node "cond->>")
+      (expand-conditional-thread node true)
+
+      (and (or (head-is? node "->") (head-is? node "->>"))
+           (>= count 2)
+           (valid-thread-steps? node 2))
+      (fold-thread node (head-is? node "->>"))
+
+      (and (or (head-is? node "some->") (head-is? node "some->>"))
+           (>= count 2)
+           (valid-thread-steps? node 2))
+      (fold-some-thread node (head-is? node "some->>"))
+
+      (and (head-is? node "as->")
+           (>= count 3)
+           (form/is-symbol? (form/nth-of node 2)))
+      (fold-as node)
+
+      :else node)))
+
+(defn- surface-thread-form? [node [:ref :form/r]] :bool
+  (let [count (form/count-of node)]
+    (cond
+      (head-is? node "cond->")
+      (and (>= count 2) (= (mod (- count 2) 2) 0) (valid-conditional-steps? node))
+
+      (head-is? node "cond->>")
+      (and (>= count 2) (= (mod (- count 2) 2) 0) (valid-conditional-steps? node))
+
+      (or (head-is? node "->") (head-is? node "->>"))
+      (and (>= count 2) (valid-thread-steps? node 2))
+
+      (or (head-is? node "some->") (head-is? node "some->>"))
+      (and (>= count 2) (valid-thread-steps? node 2))
+
+      (head-is? node "as->")
+      (and (>= count 3) (form/is-symbol? (form/nth-of node 2)))
+
+      :else false)))
+
+(defn- contains-thread-sugar? [node [:ref :form/r]] :bool
+  (if (quote-form? node)
+    false
+    (or (and (form/is-seq? node) (surface-thread-form? node))
+        (loop [index 0]
+          (if (>= index (form/count-of node))
+            false
+            (if (contains-thread-sugar? (form/nth-of node index))
+              true
+              (recur (+ index 1))))))))
+
+(defn- copy-child-prefix [node [:ref :form/r] count :i64]
+  [:list [:ref :form/r]]
+  (loop [index 0 output (form/no-forms)]
+    (if (>= index count)
+      output
+      (recur (+ index 1)
+             (form/append-form output (form/nth-of node index))))))
+
+(defn- lower-surface-containing-sugar [node [:ref :form/r]] [:ref :form/r]
+  (if (quote-form? node)
+    node
+    (let [count (form/count-of node)
+          walked
+          (loop [index 0 output (form/no-forms) rebuilding? false]
+            (if (>= index count)
+              (if rebuilding? (form/with-children node output) node)
+              (let [child (form/nth-of node index)
+                    child-has-sugar? (contains-thread-sugar? child)
+                    lowered-child (if child-has-sugar?
+                                    (lower-surface-containing-sugar child)
+                                    child)
+                    prefix (if (and (not rebuilding?) child-has-sugar?)
+                             (copy-child-prefix node index)
+                             output)
+                    next-output (if (or rebuilding? child-has-sugar?)
+                                  (form/append-form prefix lowered-child)
+                                  output)]
+                (recur (+ index 1)
+                       next-output
+                       (or rebuilding? child-has-sugar?)))))]
+      (if (and (form/is-seq? walked) (surface-thread-form? walked))
+        (expand-thread walked)
+        walked))))
+
+(defn lower-surface
+  "Recursively lower admitted thread forms (`->`, `->>`, `as->`, `some->`,
+  `some->>`, `cond->`, and `cond->>`) into Kotoba core. Quoted data is kept intact. A read-only pass
+  finds forms that contain admitted sugar; only those paths are rebuilt.
+  Unsupported forms remain for the core analyzer to refuse."
+  [node [:ref :form/r]] [:ref :form/r]
+  (if (contains-thread-sugar? node)
+    (lower-surface-containing-sugar node)
+    node))

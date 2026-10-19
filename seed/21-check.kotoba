@@ -6185,6 +6185,7 @@
 (def ck-r6m-hd-vnew 3001)
 (def ck-r6m-hd-vmatch 3002)
 (def ck-r6m-h-arena 1121630809250370429)   ; arena-scope
+(def ck-r6m-vx-hd-arena 3003)
 (defn- ck-r6m-var-form? [M :vector-i64 n :i64] :bool
   (and (= (nm-kind M n) ND-VEC) (= (nm-count M n) 3) (= (nm-kind M (nm-first M n)) ND-KW)
        (= (nm-sf M (nm-sym-of M (nm-first M n)) SF-HASH) 1672476868814577086)
@@ -6309,14 +6310,16 @@
       6 (if (= na 4) (ck-r6m-hat M n fx 1) (ck-err M E-CHECK-ARITY h 4))
       7 (if (= na 1) (ck-r6m-arena M n fx ctx) (ck-err M E-CHECK-ARITY h 1))
       (ck-err M E-CHECK-HEAD h 0))))
-;; (arena-scope e) -> (do e): the reference's scope reclaims the arenas a scalar body used (loader ABI v6); the seed keeps the
-;; value and does not reclaim (the result is the same; memory is not). The body must be :i64 :bool or :f64 as there.
+;; (arena-scope e): require a scalar result, forbid exits that skip LEAVE, and retain a marker for code generation.
 (defn- ck-r6m-arena [M :vector-i64 n :i64 fx :i64 ctx :i64] :vector-i64
   (let [h (nm-first M n)
-        M1 (ck-expr (ck-rehead M n HD-DO (nm-next M h)) n fx ctx)
+        a0 (ck-aborts M)
+        t0 (ck-sg M ck-s-tryn)
+        M1 (ck-expr M (nm-next M h) fx (- ctx (bit-and ctx 1)))
         ty (ck-ty M1)]
     (cond (nm-failed M1) (ck-touch M1)
-          (or (= ty TY-I64) (= ty TY-BOOL) (= ty TY-F64) (zero? ty)) M1
+          (or (> (ck-aborts M1) a0) (> (ck-sg M1 ck-s-tryn) t0)) (ck-err M1 E-CHECK-ARENA-ABORT h 0)
+          (or (= ty TY-I64) (= ty TY-BOOL) (= ty TY-F64) (zero? ty)) (ck-mark M1 n ty ck-r6m-vx-hd-arena)
           :else (ck-err M1 E-CHECK-TYPE h TY-I64))))
 (defn- ck-r6m-vnew [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
