@@ -22,7 +22,8 @@
 # chain. lanes 2,095,104 for both cells; 3 runs per cell per batch, cell
 # order rotated per run-pair (t31,t32 / t32,t31 / t31,t32); fresh kbb
 # process per run; `date; uptime` recorded per run. Idempotent: a run
-# whose log exists is skipped. Usage: run-sweep.sh A|B
+# whose log exists AND carries its RESULT line is skipped; a partial log
+# (interrupted kbb) is re-run. Usage: run-sweep.sh A|B
 #
 # BASE NOTE. This worktree is based on origin/main 3b4ea5ea, which merges
 # KEXE_GPU_BARRIER_TRACKED (dispatch barriers via driver hazard tracking,
@@ -38,7 +39,7 @@ case "$B" in A|B) ;; *) echo "usage: $0 A|B" >&2; exit 2;; esac
 
 run() { # pair-pos cell W chunks
   log="$EV/run-$B-$1-$2.log"
-  if [ -f "$log" ]; then echo "skip $log"; return 0; fi
+  if [ -f "$log" ] && grep -q "RESULT\tverified=true" "$log"; then echo "skip $log"; return 0; fi
   echo "run $log"
   (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" 2095104 "$4") > "$log" 2>&1
   grep -q "RESULT	verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }

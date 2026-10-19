@@ -1,8 +1,8 @@
-# insession-gap6m-w64t32-20261019 — first WITHIN-SESSION two-batch sign datum: no flip at a 6m52s gap (tick 20261019-2337, JUN-58)
+# insession-gap6m-w64t32-20261019 — first WITHIN-SESSION two-batch sign datum: no flip at a 6m7s gap (tick 20261019-2337, JUN-58)
 
 ## The finding this tick
 
-**The w64t32 flip-cell sign does NOT flip across a 6m52s probe-idle gap
+**The w64t32 flip-cell sign does NOT flip across a 6m7s probe-idle gap (corrected 2026-10-20: measured from the last batch-A run’s END = start + 44.030s; the earlier 6m52s used its start)
 inside one cron session.** This is the first completed two-batch sign probe
 of the chain: every earlier session (#1369/#1377/#1378/#1380/#1382) ran a
 single ~1.5 min batch, and the 2221/2254 ticks' two-batch attempts died
@@ -14,7 +14,7 @@ sign-unanimous across the gap (6/6 runs per cell):
 | w64t31 (anchor) | mean(3) **-8,472.3**, signs -/-/- (clean est -12,145.5, 1 survivor) | mean(3) **-14,090.8**, signs -/-/- (3/3 IQR-clean, est -14,090.8) | FLIP=**no** |
 | w64t32 (flip cell) | mean(3) **+8,366.5**, signs +/+/+ (clean est +4,344.7, 1 survivor) | mean(3) **+5,038.8**, signs +/+/+ (3/3 IQR-clean, est +5,038.8) | FLIP=**no** |
 
-Probe-idle gap batchA-end → batchB-start: **6m52s**, both batches inside
+Probe-idle gap batchA-end → batchB-start: **6m7s** (the last batch-A run’s end = 23:40:09.030, its start + 44.030s), both batches inside
 ONE cron session (this tick). ns/dispatch, variant-chunked minus
 baseline-chunked; negative = variant faster. All 12 runs
 `RESULT verified=true`, runner exit 0, runner skip-list idempotent.
@@ -44,7 +44,7 @@ baseline-chunked; negative = variant faster. All 12 runs
 
 IQR <= 0.05 and floor share <= 1.2x the cell's IQR-clean minimum floor
 share. Batch A ran under falling but high host load (load1 22.8→36.7):
-4 of its 6 runs are IQR-dirty (w64t31 runs 1,3; w64t32 runs 1,3), each
+2 of its 6 runs are IQR-dirty (w64t31 run 3; w64t32 run 3); the two run-1 samples (IQR 0.0420 / 0.0257, within the 0.05 limit) are IQR-CLEAN and excluded only by the floor-share test, each
 cell leaving 1 survivor. Batch B ran at load1 13.2–19.0: **all 6 runs
 IQR-clean, all 6 survive** — batch B's estimates are the clean ones and
 they are in line with the chain's batch values (#1382 batch A: anchor
