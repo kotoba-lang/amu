@@ -55,6 +55,10 @@ sub-command, and it covers `.edn` data files too.
   items are collections (`:set-of-collections`, measured: "value type is outside the safe profile"; a set of scalars
   is admitted) are named the same way. Character and tagged/quoted literals (`:char-literal`, `:tagged-or-quoted`)
   have no admitted data spelling at all.
+- Known gap, NOT predicted by findings: "value type exceeds node limit" (`:kotoba.error/value-type-node-limit`, the
+  type node bound `adt-node-limit` = 512, osaho `kotoba.kir.value`; measured on `deps-lock.edn` output). It bounds the
+  value TYPE, not the data count (a heterogeneous map charges per entry), so a data-walk estimate would lie; the
+  refusal surfaces at `amu check` until type-size accounting is ported.
 - An `.edn` file (exactly one top-level value) becomes a data module: `(ns NAME (:export [DATA]))` plus
   `(defn DATA [] <value>)` -- a function, because `amu check` refuses a `def` export ("namespace exports must name
   declared public functions", measured). A bare symbol in the data is spelled `(symbol "name")`, the only admitted
