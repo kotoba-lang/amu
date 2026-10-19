@@ -17,6 +17,20 @@
             test-text test-bytes-xrefs
             test-logical-reg test-addsub-reg test-ldst-reg test-pair
             test-record test-targets test-listing
+            test-macho test-elf test-pe test-words-at
+            u16le u32le u64le name8 name-str
+            macho-recognize macho-ncmds macho-cmd-off macho-image-base
+            macho-section-count macho-section-off macho-section-row
+            macho-section-name macho-symbol-count macho-symbol-row
+            macho-symbol-name macho-entry
+            elf-recognize elf-entry elf-image-base elf-section-count
+            elf-section-row elf-section-name elf-symbol-count
+            elf-symbol-row elf-symbol-name
+            pe-recognize pe-lfanew pe-image-base pe-entry pe-section-count
+            pe-section-off pe-section-row pe-section-name pe-symbol-count
+            pe-symbol-row pe-symbol-name
+            section-words put8 put16 put32 put64 put-name8
+            macho-fixture elf-fixture pe-fixture
             main]))
 
 ;; re-disasm -- cleanroom AArch64 disassembler core in Kotoba.
@@ -547,6 +561,451 @@
                   (string-concat "  "
                     (string-concat (insn-text w pc) nl)))))))))))
 
+;; ------------------------------------------------------------- object loaders
+;; M2 (KOT-42): read Mach-O 64, ELF64 and PE32+ containers straight from
+;; bytes. Cleanroom: the container layouts come from the published format
+;; specifications (Mach-O file format, System V gABI, PE/COFF) and the test
+;; fixtures below are hand-assembled byte by byte -- no other tool's output
+;; is an expectation here either.
+;;
+;; Rows are flat vector-i64 so everything stays a plain carrier:
+;;   section row (stride 5): [vaddr file-offset size flags name-packed]
+;;   symbol row (stride 2):  [value name-packed]
+;; name-packed is the first 8 name bytes packed little-endian (a cheap
+;; identity for callers); the `*-name` functions return the text (ASCII).
+
+(defn u16le [b :bytes off :i64] :i64
+  (+ (bytes-at b off) (* 256 (bytes-at b (+ off 1)))))
+
+(defn u32le [b :bytes off :i64] :i64
+  (+ (u16le b off) (* 65536 (u16le b (+ off 2)))))
+
+(defn u64le [b :bytes off :i64] :i64
+  (+ (u32le b off) (* 4294967296 (u32le b (+ off 4)))))
+
+;; first 8 bytes at off packed little-endian, stopping at a 0 byte
+(defn name8 [b :bytes off :i64] :i64
+  (loop [i 0 acc 0 mult 1]
+    (if (>= i 8) acc
+      (let [x (bytes-at b (+ off i))]
+        (if (= x 0) acc
+          (recur (+ i 1) (+ acc (* mult x)) (* mult 256)))))))
+
+;; ASCII name text, at most `max` bytes, stopped by a 0 byte
+(defn name-str [b :bytes off :i64 max :i64] :string
+  (loop [i 0 acc ""]
+    (if (>= i max) acc
+      (let [x (bytes-at b (+ off i))]
+        (if (= x 0) acc
+          (recur (+ i 1)
+            (string-concat acc
+              (string-from-utf8 (bytes-from-vector-i64 (vector-i64 x))))))))))
+
+;; ------------------------------------------------------------- mach-o 64
+;; header: magic 0xFEEDFACF (LE) ... ncmds @16. Load commands: cmd @0,
+;; cmdsize @4. LC_SEGMENT_64 (25): vmaddr @24, nsects @64, sections at +72
+;; (80 bytes: names @0/16, addr @32, size @40, offset @48, flags @64).
+;; LC_SYMTAB (2): symoff @8, nsyms @12, stroff @16. nlist_64: strx @0,
+;; value @8 (16 bytes). LC_MAIN (2147483688): entryoff @8.
+
+(defn macho-recognize [b :bytes] :i64
+  (if (= (u32le b 0) 0xFEEDFACF) 1 0))
+
+(defn macho-ncmds [b :bytes] :i64 (u32le b 16))
+
+(defn macho-cmd-off [b :bytes index :i64] :i64
+  (loop [i 0 off 32]
+    (if (>= i index) off
+      (recur (+ i 1) (+ off (u32le b (+ off 4)))))))
+
+(defn macho-image-base [b :bytes] :i64
+  (loop [i 0]
+    (if (>= i (macho-ncmds b)) 0
+      (let [off (macho-cmd-off b i)]
+        (if (= (u32le b off) 25) (u64le b (+ off 24))
+          (recur (+ i 1)))))))
+
+(defn macho-section-count [b :bytes] :i64
+  (loop [i 0 n 0]
+    (if (>= i (macho-ncmds b)) n
+      (let [off (macho-cmd-off b i)]
+        (recur (+ i 1)
+          (if (= (u32le b off) 25) (+ n (u32le b (+ off 64))) n))))))
+
+;; file offset of section header #index across all LC_SEGMENT_64 commands
+(defn macho-section-off [b :bytes index :i64] :i64
+  (loop [i 0 seen 0]
+    (if (>= i (macho-ncmds b)) 0
+      (let [off (macho-cmd-off b i)]
+        (if (= (u32le b off) 25)
+          (let [n (u32le b (+ off 64))]
+            (if (< index (+ seen n))
+              (+ off 72 (* 80 (- index seen)))
+              (recur (+ i 1) (+ seen n))))
+          (recur (+ i 1) seen))))))
+
+(defn macho-section-row [b :bytes index :i64] :vector-i64
+  (let [s (macho-section-off b index)]
+    (vector-i64 (u64le b (+ s 32)) (u32le b (+ s 48)) (u64le b (+ s 40))
+                (u32le b (+ s 64)) (name8 b s))))
+
+(defn macho-section-name [b :bytes index :i64] :string
+  (name-str b (macho-section-off b index) 16))
+
+;; which: 0 symoff / 1 nsyms / 2 stroff
+(defn macho-symtab-field [b :bytes which :i64] :i64
+  (loop [i 0]
+    (if (>= i (macho-ncmds b)) 0
+      (let [off (macho-cmd-off b i)]
+        (if (= (u32le b off) 2)
+          (if (= which 0) (u32le b (+ off 8))
+            (if (= which 1) (u32le b (+ off 12)) (u32le b (+ off 16))))
+          (recur (+ i 1)))))))
+
+(defn macho-symbol-count [b :bytes] :i64 (macho-symtab-field b 1))
+
+(defn macho-symbol-row [b :bytes index :i64] :vector-i64
+  (let [sym (+ (macho-symtab-field b 0) (* 16 index))
+        strx (u32le b sym)]
+    (vector-i64 (u64le b (+ sym 8))
+                (name8 b (+ (macho-symtab-field b 2) strx)))))
+
+(defn macho-symbol-name [b :bytes index :i64] :string
+  (let [sym (+ (macho-symtab-field b 0) (* 16 index))]
+    (name-str b (+ (macho-symtab-field b 2) (u32le b sym)) 64)))
+
+(defn macho-entry [b :bytes] :i64
+  (loop [i 0]
+    (if (>= i (macho-ncmds b)) (- 0 1)
+      (let [off (macho-cmd-off b i)]
+        (if (= (u32le b off) 2147483688)
+          (+ (macho-image-base b) (u64le b (+ off 8)))
+          (recur (+ i 1)))))))
+
+;; ------------------------------------------------------------- elf64
+;; e_entry @24, e_shoff @40, e_shentsize @58, e_shnum @60, e_shstrndx @62.
+;; section header (64): sh_name @0, sh_type @4, sh_flags @8, sh_addr @16,
+;; sh_offset @24, sh_size @32, sh_link @40. symbol (24): st_name @0,
+;; st_value @8, st_size @16.
+
+(defn elf-recognize [b :bytes] :i64
+  (if (and (= (u32le b 0) 0x464C457F) (= (bytes-at b 4) 2) (= (bytes-at b 5) 1))
+    1 0))
+
+(defn elf-entry [b :bytes] :i64 (u64le b 24))
+(defn elf-shoff [b :bytes] :i64 (u64le b 40))
+(defn elf-shentsize [b :bytes] :i64 (u16le b 58))
+(defn elf-shnum [b :bytes] :i64 (u16le b 60))
+(defn elf-shstrndx [b :bytes] :i64 (u16le b 62))
+
+(defn elf-sh-off [b :bytes i :i64] :i64 (+ (elf-shoff b) (* (elf-shentsize b) i)))
+
+(defn elf-strtab-off [b :bytes] :i64
+  (u64le b (+ (elf-sh-off b (elf-shstrndx b)) 24)))
+
+(defn elf-section-count [b :bytes] :i64 (elf-shnum b))
+
+(defn elf-section-row [b :bytes i :i64] :vector-i64
+  (let [sh (elf-sh-off b i)]
+    (vector-i64 (u64le b (+ sh 16)) (u64le b (+ sh 24)) (u64le b (+ sh 32))
+                (u64le b (+ sh 8))
+                (name8 b (+ (elf-strtab-off b) (u32le b sh))))))
+
+(defn elf-section-name [b :bytes i :i64] :string
+  (let [sh (elf-sh-off b i)]
+    (name-str b (+ (elf-strtab-off b) (u32le b sh)) 64)))
+
+;; index of the SHT_SYMTAB section (sh_type 2), or -1
+(defn elf-symtab-sh [b :bytes] :i64
+  (loop [i 0]
+    (if (>= i (elf-shnum b)) (- 0 1)
+      (if (= (u32le b (+ (elf-sh-off b i) 4)) 2) i
+        (recur (+ i 1))))))
+
+;; the symbol string table is the section sh_link names
+(defn elf-sym-strtab-off [b :bytes] :i64
+  (let [t (elf-symtab-sh b)]
+    (u64le b (+ (elf-sh-off b (u32le b (+ (elf-sh-off b t) 40))) 24))))
+
+(defn elf-symbol-count [b :bytes] :i64
+  (let [t (elf-symtab-sh b)]
+    (if (< t 0) 0
+      (quot (u64le b (+ (elf-sh-off b t) 32)) 24))))
+
+(defn elf-symbol-row [b :bytes i :i64] :vector-i64
+  (let [t (elf-symtab-sh b)
+        sym (+ (u64le b (+ (elf-sh-off b t) 24)) (* 24 i))]
+    (vector-i64 (u64le b (+ sym 8))
+                (name8 b (+ (elf-sym-strtab-off b) (u32le b sym))))))
+
+(defn elf-symbol-name [b :bytes i :i64] :string
+  (let [t (elf-symtab-sh b)
+        sym (+ (u64le b (+ (elf-sh-off b t) 24)) (* 24 i))]
+    (name-str b (+ (elf-sym-strtab-off b) (u32le b sym)) 64)))
+
+;; smallest non-zero sh_addr (0 when the image is all-relative)
+(defn elf-image-base [b :bytes] :i64
+  (loop [i 0 acc 0]
+    (if (>= i (elf-shnum b)) acc
+      (let [a (u64le b (+ (elf-sh-off b i) 16))]
+        (recur (+ i 1)
+          (if (= a 0) acc
+            (if (= acc 0) a (if (< a acc) a acc))))))))
+
+;; ------------------------------------------------------------- pe32+
+;; MZ @0, e_lfanew @60. At lfanew: PE\\0\\0, machine @+4, nsections @+6,
+;; symtab ptr @+12, nsyms @+16, sizeofopt @+20; optional header @+24
+;; (magic 0x20B, entry RVA @+16, ImageBase @+24); section table @+24+sizeofopt
+;; (40 bytes: name inline @0, vsize @8, vaddr @12, rawsize @16, rawptr @20,
+;; characteristics @36). COFF symbols: 18 bytes, inline name or strx @4,
+;; value @8; the string table follows the symbol table.
+
+(defn pe-lfanew [b :bytes] :i64 (u32le b 60))
+
+(defn pe-recognize [b :bytes] :i64
+  (if (and (= (u16le b 0) 0x5A4D) (= (u32le b (pe-lfanew b)) 0x00004550))
+    1 0))
+
+(defn pe-image-base [b :bytes] :i64 (u64le b (+ (pe-lfanew b) 48)))
+
+(defn pe-entry [b :bytes] :i64
+  (+ (pe-image-base b) (u32le b (+ (pe-lfanew b) 40))))
+
+(defn pe-section-count [b :bytes] :i64 (u16le b (+ (pe-lfanew b) 6)))
+
+(defn pe-section-off [b :bytes i :i64] :i64
+  (+ (pe-lfanew b) 24 (u16le b (+ (pe-lfanew b) 20)) (* 40 i)))
+
+(defn pe-section-row [b :bytes i :i64] :vector-i64
+  (let [s (pe-section-off b i)]
+    (vector-i64 (+ (pe-image-base b) (u32le b (+ s 12)))
+                (u32le b (+ s 20)) (u32le b (+ s 16)) (u32le b (+ s 36))
+                (name8 b s))))
+
+(defn pe-section-name [b :bytes i :i64] :string
+  (name-str b (pe-section-off b i) 8))
+
+(defn pe-symbol-count [b :bytes] :i64 (u32le b (+ (pe-lfanew b) 16)))
+
+(defn pe-symbol-off [b :bytes i :i64] :i64
+  (+ (u32le b (+ (pe-lfanew b) 12)) (* 18 i)))
+
+(defn pe-strtab-off [b :bytes] :i64
+  (+ (u32le b (+ (pe-lfanew b) 12)) (* 18 (pe-symbol-count b))))
+
+;; file offset of the name bytes (inline, or the string table when the
+;; first four bytes are zero)
+(defn pe-symbol-name-off [b :bytes i :i64] :i64
+  (let [s (pe-symbol-off b i)]
+    (if (= (u32le b s) 0) (+ (pe-strtab-off b) (u32le b (+ s 4))) s)))
+
+(defn pe-symbol-row [b :bytes i :i64] :vector-i64
+  (let [s (pe-symbol-off b i)]
+    (vector-i64 (u32le b (+ s 8)) (name8 b (pe-symbol-name-off b i)))))
+
+(defn pe-symbol-name [b :bytes i :i64] :string
+  (name-str b (pe-symbol-name-off b i) 64))
+
+;; words of a section row: [vaddr file-offset size ...]
+(defn section-words [b :bytes row :vector-i64 n :i64] :vector-i64
+  (let [off (vector-at row 1)]
+    (words-from-bytes (bytes-slice b off (+ off (* 4 n))))))
+
+;; ------------------------------------------------------------- fixtures
+;; Test containers assembled byte by byte from the published format
+;; layouts; every field below is visible in the source.
+;;
+;; `put8` uses `vector-assoc!` on purpose: functional `vector-assoc` copies
+;; the whole vector per call, and a fixture builder then churns
+;; O(bindings x size) vector-items -- past the native arena's default
+;; (64 Ki items), whose exhaustion is answered with SIGILL, not a named
+;; budget trap. The nested put16/32/64/name8 forms hand the same handle
+;; straight down, which is exactly the assoc! contract (the handle dies at
+;; the call). words-from-bytes / targets-vector stay functional: the
+;; linearity check refuses an `assoc!` whose handle travels through `recur`,
+;; and their copies are per-slot of small vectors.
+
+(defn put8 [v :vector-i64 off :i64 x :i64] :vector-i64 (vector-assoc! v off x))
+
+(defn put16 [v :vector-i64 off :i64 x :i64] :vector-i64
+  (put8 (put8 v off (bit-and x 255)) (+ off 1) (bit-and (quot x 256) 255)))
+
+(defn put32 [v :vector-i64 off :i64 x :i64] :vector-i64
+  (put16 (put16 v off (bit-and x 65535)) (+ off 2)
+         (bit-and (quot x 65536) 65535)))
+
+(defn put64 [v :vector-i64 off :i64 x :i64] :vector-i64
+  (put32 (put32 v off (bit-and x 4294967295)) (+ off 4) (quot x 4294967296)))
+
+;; 8 raw bytes at off from separate arguments, as a CHAIN of single put8
+;; calls -- two constraints, both measured:
+;;   * deep NESTING of assoc!-consuming calls is refused at read time
+;;     ("source reader rejected input", no span; depth 4 reads, depth 7
+;;     does not), so the puts are sequenced through `let`, one call deep.
+;;   * the ESM probe's vectorAssocInPlace requires a LINEAR handle (one
+;;     born of vector-alloc / assoc!); a functional `vector-assoc` in a
+;;     loop hands back a non-linear copy and every later assoc! traps
+;;     `vector-not-linear` there while jvm-kir and wasm disagree.
+(defn put-name8 [v :vector-i64 off :i64 a :i64 b :i64 c :i64 d :i64 e :i64
+                 f :i64 g :i64 h :i64] :vector-i64
+  (let [v (put8 v off a)
+        v (put8 v (+ off 1) b)
+        v (put8 v (+ off 2) c)
+        v (put8 v (+ off 3) d)
+        v (put8 v (+ off 4) e)
+        v (put8 v (+ off 5) f)
+        v (put8 v (+ off 6) g)
+        v (put8 v (+ off 7) h)]
+    v))
+
+;; Mach-O 64 arm64 executable: one __TEXT segment with a __text section,
+;; one symbol `_main`, LC_MAIN pointing at the section. 544 bytes.
+(defn macho-fixture [] :bytes
+  (let [v (vector-alloc 544)
+        v (put32 v 0 0xFEEDFACF)
+        v (put32 v 4 0x0100000C)
+        v (put32 v 8 0)
+        v (put32 v 12 2)
+        v (put32 v 16 3)
+        v (put32 v 20 200)
+        v (put32 v 24 0)
+        v (put32 v 28 0)
+        v (put32 v 32 25)
+        v (put32 v 36 152)
+        v (put-name8 v 40 95 95 84 69 88 84 0 0)
+        v (put64 v 56 0x100000000)
+        v (put64 v 64 0x4000)
+        v (put64 v 72 0)
+        v (put64 v 80 0x1000)
+        v (put32 v 88 7)
+        v (put32 v 92 5)
+        v (put32 v 96 1)
+        v (put32 v 100 0)
+        v (put-name8 v 104 95 95 116 101 120 116 0 0)
+        v (put-name8 v 120 95 95 84 69 88 84 0 0)
+        v (put64 v 136 0x1000001A0)
+        v (put64 v 144 0x20)
+        v (put32 v 152 0x1A0)
+        v (put32 v 156 2)
+        v (put32 v 160 0)
+        v (put32 v 164 0)
+        v (put32 v 168 0x80000400)
+        v (put32 v 172 0)
+        v (put32 v 176 0)
+        v (put32 v 180 0)
+        v (put32 v 184 2)
+        v (put32 v 188 24)
+        v (put32 v 192 0x200)
+        v (put32 v 196 1)
+        v (put32 v 200 0x210)
+        v (put32 v 204 16)
+        v (put32 v 208 2147483688)
+        v (put32 v 212 24)
+        v (put64 v 216 0x1A0)
+        v (put64 v 224 0)
+        v (put32 v 416 0x94000002)
+        v (put32 v 420 0x14000001)
+        v (put32 v 424 0x54000000)
+        v (put32 v 428 0xD65F03C0)
+        v (put32 v 512 1)
+        v (put8 v 516 15)
+        v (put8 v 517 1)
+        v (put16 v 518 0)
+        v (put64 v 520 0x1000001A0)
+        v (put-name8 v 528 0 95 109 97 105 110 0 0)]
+    (bytes-from-vector-i64 v)))
+
+;; ELF64 ET_DYN x86-64: 4 section headers (null/.text/.shstrtab/.symtab),
+;; two symbols (null and `_start`), text bytes. 432 bytes.
+(defn elf-fixture [] :bytes
+  (let [v (vector-alloc 432)
+        v (put-name8 v 0 127 69 76 70 2 1 1 0)
+        v (put16 v 16 3)
+        v (put16 v 18 62)
+        v (put32 v 20 1)
+        v (put64 v 24 0x1000)
+        v (put64 v 32 0)
+        v (put64 v 40 64)
+        v (put32 v 48 0)
+        v (put16 v 52 64)
+        v (put16 v 54 56)
+        v (put16 v 56 0)
+        v (put16 v 58 64)
+        v (put16 v 60 4)
+        v (put16 v 62 2)
+        v (put32 v 128 1)
+        v (put32 v 132 1)
+        v (put64 v 136 6)
+        v (put64 v 144 0x1000)
+        v (put64 v 152 0x1A0)
+        v (put64 v 160 0x10)
+        v (put32 v 168 0)
+        v (put32 v 172 0)
+        v (put64 v 176 16)
+        v (put64 v 184 0)
+        v (put32 v 192 7)
+        v (put32 v 196 3)
+        v (put64 v 200 0)
+        v (put64 v 208 0)
+        v (put64 v 216 0x180)
+        v (put64 v 224 32)
+        v (put32 v 256 17)
+        v (put32 v 260 2)
+        v (put64 v 264 0)
+        v (put64 v 272 0)
+        v (put64 v 280 0x140)
+        v (put64 v 288 48)
+        v (put32 v 296 2)
+        v (put32 v 300 1)
+        v (put64 v 304 8)
+        v (put64 v 312 24)
+        v (put32 v 344 25)
+        v (put8 v 348 18)
+        v (put8 v 349 0)
+        v (put16 v 350 1)
+        v (put64 v 352 0x1000)
+        v (put64 v 360 0x10)
+        v (put-name8 v 384 0 46 116 101 120 116 0 46)
+        v (put-name8 v 392 115 104 115 116 114 116 97 98)
+        v (put-name8 v 400 0 46 115 121 109 116 97 98)
+        v (put-name8 v 408 0 95 115 116 97 114 116 0)
+        v (put32 v 416 0xD503201F)
+        v (put32 v 420 0xD65F03C0)]
+    (bytes-from-vector-i64 v)))
+
+;; PE32+ x86-64: one .text section, one external symbol `_entry`. 488 bytes.
+(defn pe-fixture [] :bytes
+  (let [v (vector-alloc 488)
+        v (put16 v 0 0x5A4D)
+        v (put32 v 60 0x80)
+        v (put32 v 128 0x00004550)
+        v (put16 v 132 0x8664)
+        v (put16 v 134 1)
+        v (put32 v 136 0)
+        v (put32 v 140 0x1D0)
+        v (put32 v 144 1)
+        v (put16 v 148 0xF0)
+        v (put16 v 150 0x22)
+        v (put16 v 152 0x20B)
+        v (put32 v 168 0x1000)
+        v (put64 v 176 0x140000000)
+        v (put-name8 v 392 46 116 101 120 116 0 0 0)
+        v (put32 v 400 0x10)
+        v (put32 v 404 0x1000)
+        v (put32 v 408 0x10)
+        v (put32 v 412 0x1B0)
+        v (put32 v 428 0x60000020)
+        v (put32 v 432 0xD503201F)
+        v (put32 v 436 0xD65F03C0)
+        v (put-name8 v 464 95 101 110 116 114 121 0 0)
+        v (put32 v 472 0x1000)
+        v (put16 v 476 1)
+        v (put16 v 478 0x20)
+        v (put8 v 480 2)
+        v (put8 v 481 0)
+        v (put32 v 482 4)]
+    (bytes-from-vector-i64 v)))
+
 ;; ------------------------------------------------------------- tests
 ;; Every expectation below is hand-computed from the Arm ARM encodings;
 ;; nothing is captured from another disassembler's output.
@@ -761,8 +1220,77 @@
                       (string-concat "0000000c: d65f03c0  ret" nl))))]
     (if (string=? (listing-text words 0 4) expected) 1 0)))
 
+(defn test-macho [] :i64
+  (let [b (macho-fixture)
+        r (macho-section-row b 0)
+        s (macho-symbol-row b 0)]
+    (if (and (= (macho-recognize b) 1)
+             (= (macho-ncmds b) 3)
+             (= (macho-image-base b) 0x100000000)
+             (= (macho-entry b) 0x1000001A0)
+             (= (macho-section-count b) 1)
+             (= (vector-count r) 5)
+             (= (vector-at r 0) 0x1000001A0)
+             (= (vector-at r 1) 0x1A0)
+             (= (vector-at r 2) 0x20)
+             (= (vector-at r 3) 0x80000400)
+             (string=? (macho-section-name b 0) "__text")
+             (= (macho-symbol-count b) 1)
+             (= (vector-at s 0) 0x1000001A0)
+             (string=? (macho-symbol-name b 0) "_main"))
+      1 0)))
+
+(defn test-elf [] :i64
+  (let [b (elf-fixture)
+        r (elf-section-row b 1)
+        s (elf-symbol-row b 1)]
+    (if (and (= (elf-recognize b) 1)
+             (= (elf-entry b) 0x1000)
+             (= (elf-image-base b) 0x1000)
+             (= (elf-section-count b) 4)
+             (= (vector-at r 0) 0x1000)
+             (= (vector-at r 1) 0x1A0)
+             (= (vector-at r 2) 0x10)
+             (= (vector-at r 3) 6)
+             (string=? (elf-section-name b 1) ".text")
+             (string=? (elf-section-name b 2) ".shstrtab")
+             (= (elf-symbol-count b) 2)
+             (= (vector-at s 0) 0x1000)
+             (string=? (elf-symbol-name b 1) "_start"))
+      1 0)))
+
+(defn test-pe [] :i64
+  (let [b (pe-fixture)
+        r (pe-section-row b 0)
+        s (pe-symbol-row b 0)]
+    (if (and (= (pe-recognize b) 1)
+             (= (pe-image-base b) 0x140000000)
+             (= (pe-entry b) 0x140001000)
+             (= (pe-section-count b) 1)
+             (= (vector-at r 0) 0x140001000)
+             (= (vector-at r 1) 0x1B0)
+             (= (vector-at r 2) 0x10)
+             (= (vector-at r 3) 0x60000020)
+             (string=? (pe-section-name b 0) ".text")
+             (= (pe-symbol-count b) 1)
+             (= (vector-at s 0) 0x1000)
+             (string=? (pe-symbol-name b 0) "_entry"))
+      1 0)))
+
+(defn test-words-at [] :i64
+  ;; the macho fixture's __text holds the 4-word program of
+  ;; test-bytes-xrefs; the loader hands it to the decoder unchanged
+  (let [b (macho-fixture)
+        w (section-words b (macho-section-row b 0) 4)]
+    (if (and (= (vector-count w) 4)
+             (= (vector-at w 0) 0x94000002)
+             (= (vector-at w 1) 0x14000001)
+             (= (vector-at w 2) 0x54000000)
+             (= (vector-at w 3) 0xD65F03C0))
+      1 0)))
+
 ;; ------------------------------------------------------------- native entry
-;; `main` runs every check with no host I/O and answers 1 when all 18 pass.
+;; `main` runs every check with no host I/O and answers 1 when all 22 pass.
 ;; Compiled to the host-native kexe target, the artifact runs under the
 ;; reviewed C loader (`tools/kexe_loader.c`) with no JVM, GraalVM or Node.js
 ;; in the runtime tree -- only the compile door is still the node-hosted
@@ -776,5 +1304,6 @@
              (test-mov) (test-addsub) (test-loadstore) (test-text)
              (test-bytes-xrefs) (test-logical-reg) (test-addsub-reg)
              (test-ldst-reg) (test-pair) (test-record) (test-targets)
-             (test-listing))]
-    (if (= s 18) 1 0)))
+             (test-listing) (test-macho) (test-elf) (test-pe)
+             (test-words-at))]
+    (if (= s 22) 1 0)))
