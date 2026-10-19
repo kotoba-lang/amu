@@ -25,8 +25,10 @@ grid-dim limit the script enforces (exit 3).
 
 The W=64 cell (2^21 lanes, 32,768 wg) is exactly PR #1350's 2x point, so
 the sweep re-anchors the chain's +2284 ns gap on the day of measurement.
-Run order is 3 interleaved cycles of (w64, w128, w256) so host drift biases
-W symmetrically (PR #1352's protocol). Everything else (probe bytes,
+Run order is 3 cycles of (w64, w128, w256) in that FIXED order -- it is
+not rotated, so a monotonic host or thermal drift correlates with W
+rather than biasing the sizes symmetrically (review finding). The W
+comparison below is read with that caveat. Everything else (probe bytes,
 sha-pinned fixtures, 3 arms, 512-dispatch kept buffers, 32 rounds x 3
 REPLAYs, parity-alternating arm order, 96 samples, bit-exact verification
 before any timing line) is the chain's.
@@ -76,8 +78,12 @@ noisiest (IQR .055, kept, not dropped).
    with W, replicating off the launch floor the wsweep-20261019 fixed-2^20
    row's direction (ratio medians 0.96/1.01/0.84/0.77 across
    W=32/64/128/256, whose W=32/64 rows were floor-bound): here at 2^21
-   lanes the medians are 0.96 (W=64) / 0.84 (W=128) / 0.80-0.82 (W=256),
-   all off the floor (floor/baseline 0.87 -> 0.49). The W effect spans
+   lanes the medians are 0.96 (W=64) / 0.84 (W=128) / 0.80-0.82 (W=256).
+   W=128/256 are off the floor (floor/baseline 0.49-0.55); W=64 is NOT --
+   its floor/baseline is 0.874-0.877, more floor-bound than the 0.82 row
+   the chain already calls floor-bound, and two of its three ratio ranges
+   cross 1.0, so the W=64 point (incl. the +2248 re-anchor) is not a
+   stable algorithmic anchor (review finding). The W effect spans
    2.2k -> 15.6k ns at 2^21 lanes; the entire W=64 load effect of the
    chain spans -468 -> +6454 ns across 2^20 -> 4.2M lanes. For this pair
    of reduce algorithms on this device, the shape is a bigger lever than
@@ -109,8 +115,10 @@ wrapper run-gate-1019.sh) ran to COMPLETION twice on this tree; `gate.log`
 here is the authoritative run, taken AFTER the branch was ff-synced to
 origin/main (722e480b) and BEFORE the commit; `gate-presync-0631a2ad.log`
 is the earlier run at the branch's original base 0631a2ad. Post-sync
-result: **311 tests / 4942 assertions / 4908 passed / 16 failures / 15
+result: **311 tests / 4973 assertions / 4942 passed / 16 failures / 15
 errors (GATE-EXIT=1) -- not a green suite, and not claimed as one.**
+(Figures read from gate.log's own summary line: 4942 is the passed-assertion
+count, not the total; 4973 is the total.)
 (Pre-sync: 304 tests / 4939 assertions / 4908 passed / 16 failures / 15
 errors. PR #1336's 7 new tests pass.) The FAIL/ERROR test-name sets are
 byte-compared three ways -- post-sync vs pre-sync vs PR #1352's landed
