@@ -189,8 +189,11 @@
 ;; verbatim.
 (defn- parse-answer [answer]
   (let [fields (str/split answer #"\|")
+        p (when (> (count fields) 2) (nth fields (- (count fields) 2)))
         hex-shape (str "[0-9a-f]{" (* 2 read-bytes) "}")
         idxs (filterv #(boolean (re-matches (re-pattern hex-shape) (nth fields %))) (vec (range (count fields))))]
+    (when (and p (str/starts-with? p "!"))
+      (throw (js/Error. (str "GPU command refused before verification: " p))))
     (when-not (and (= 1 (count idxs))
                    (= (first idxs) (dec (count fields))))
       (throw (js/Error. (str "answer has " (count fields) " |-fields; hex-shaped fields at " idxs
@@ -312,7 +315,7 @@
                     ['rd (list 'gpu (list 'string-concat "READ "
                                           (list 'string-concat 'o (str " 0 " read-bytes))))]
                     ['fr (list 'gpu (list 'string-concat "FREE " 'o))]]
-                   (list 'string-concat 'i0 (list 'string-concat "|" 'rd)))))]))
+                   (list 'string-concat 'i0 (list 'string-concat "|" (list 'string-concat 'p (list 'string-concat "|" 'rd)))))))]))
 
 ;; ---- one (W, rung): compile -> run -> parse -> verify ---------------------
 ;; Answers {:verdict :ok|:not-admitted|:verify-fail :detail ...}. :not-admitted
@@ -409,6 +412,10 @@
     (empty? verified)
     (refuse! (str "no W in [" (str/join " " w-values) "] admitted a geometry rung: "
                   (str/join " | " (mapv (fn [x] (str "W=" (:w x) ": " (:detail (:geom x)))) not-admitted))))
+
+    (not= (count verified) (count w-values))
+    (do (println (str "GPU-SUBGROUP-WSWEEP\tFAIL\tpartial geometry sweep: verified " (count verified) " of " (count w-values) " W values"))
+        (js/process.exit 1))
 
     :else
     (js/process.exit 0)))

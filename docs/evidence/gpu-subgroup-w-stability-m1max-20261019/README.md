@@ -54,8 +54,10 @@ asked. This script's sha256 is
 
 Each of `run-1.log` .. `run-3.log` is one fresh `kbb` process running the
 whole sweep; all three exited 0 and are **byte-identical**
-(sha256 `8b05c4b8088c6eab1aafda59877000a6e8c7182e`, `shasum` verified
-2026-10-19). Repetition here is reproducibility of a deterministic
+(sha256 `dda8582f17087f77102e4bb0c95e8f35dac9beffda90cc3e1662dcff19755042`,
+verified with `shasum -a 256` 2026-10-19; the SHA-1 of the same bytes is
+`8b05c4b8088c6eab1aafda59877000a6e8c7182e`, which earlier versions of this
+line mislabeled as sha256). Repetition here is reproducibility of a deterministic
 geometry, not a statistical claim — there is no timing in this measurement
 at all.
 
