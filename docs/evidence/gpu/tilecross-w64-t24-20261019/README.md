@@ -145,21 +145,41 @@ safe rule is unchanged and now triply confirmed: keep the baseline tree.
   The Intel (JUN-59) and Mali (JUN-60) comparisons need hardware this bot
   does not have.
 
-## Gate (started, NOT completed in this tick -- no result claimed)
+## Gate (completed in the follow-up tick 20261019-1700; result below)
 
 Canonical suite at the worktree root
 (`kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" run-tests.cljk`,
-wrapper `run-gate-1246.sh`) was STARTED at 13:05 JST 2026-10-19 and was still
-running when this tick's run budget ended (background process; its log lands
-in `gate.log` in this directory). **No gate result is claimed in this
-commit.** This diff adds no tested namespace (probe script + 4 sha-pinned
-emitter fixtures + docs/evidence only); the chain's documented base red
-(PRs #1353/#1358/#1359: 16 FAIL / 15 ERROR occurrences over 13 distinct
-kind+name entries, byte-identical across those runs) is EXPECTED to
-reproduce -- an expectation, not evidence. The `gate.log` counts and the
-normalized FAIL/ERROR comparison against #1359's log must land before this
-PR is treated as done; until then the slice stands as "measurement
-completed and verified, gate evidence pending".
+wrapper `run-gate-1246.sh`). The tick-1246 attempt was STARTED at 13:05 JST
+2026-10-19 and died at session teardown mid-suite (288/490 log lines, no
+summary line; that partial log is what the tick-1246 commit captured as
+"started, NOT completed"). The follow-up tick re-ran the same wrapper from
+scratch (log overwritten) to completion on 2026-10-19 ~17:15 JST:
+
+    Ran 311 tests containing 4973 assertions.
+    16 failures, 15 errors.
+    nbb: 311 tests, 4942 passed, 16 failed, 15 errors
+    GATE-EXIT=1
+
+This diff adds no tested namespace (probe script + 4 sha-pinned emitter
+fixtures + docs/evidence only), so the gate claim is that the base red
+reproduces unchanged. Normalized FAIL/ERROR comparison (kind + test name,
+file:line stripped) against PR #1359's completed `gate.log`, via
+`norm_gate.py` in this directory (sha256
+`c3197a69bd6517b8a6fc9a8a95a97a3316a677ef8de10cce77ab05aeec1da563`;
+output saved verbatim as `gate-vs-1359.txt` in this
+directory): **31 occurrences, 13 distinct kind+name entries in both logs,
+SETS-AND-COUNTS-IDENTICAL** -- the same 16 FAIL / 15 ERROR the chain has
+documented as base red since PR #1353, byte-identical at the kind+name
+level. No new failure is attributable to this diff. The suite is NOT green
+and is not claimed green: the 13 base-red entries (row-tuple-element-
+argument-test, numbered-grants-at-any-count, same-policy-read-twice-is-equal,
+malformed-policy-still-refused-by-name, text-edit-rebound-state-is-a-row-test,
+min-max-qualified-on-typed-wasm-test, named-grants-at-any-count,
+refuses-macos-static-host-*, native-constructors-charge-fuel-test,
+packages-macos-with-a-macos-profile-and-platform-load-command,
+every-source-namespace-is-reachable-from-the-tests) remain red at base and
+are outside this diff. With this evidence the slice is complete:
+"measurement completed and verified, gate evidence landed".
 
 JUN-58 (parent JUN-55). Linear 未記録 (Linear connector
 CONNECTION_REQUIRED; reconnect needs the user, unattended cron cannot).
