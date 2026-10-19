@@ -457,6 +457,35 @@
             has-refer? (assoc :refer (vec refer))
             has-with? (assoc :with with :spec spec)))))))
 
+(defn- merge-same-instantiation-requires
+  "Two :require lines for ONE instantiation are one module spelled in two
+  lines: `[m :as a]` beside `[m :refer [f]]` is `[m :as a :refer [f]]`, and
+  the template design the duplicate check protects (two BINDINGS of one
+  template are two modules) already separates those by instantiation-key.
+  Specs merge here: one :as (a real alias beside a synthetic refer alias
+  wins), :refer unioned in order. Two DIFFERENT real aliases for one
+  instantiation remain a refusal -- one module, one spelling."
+  [module-name requires]
+  (let [real-alias? (fn [r] (not= (:alias r) (synthetic-refer-alias (:namespace r))))]
+    (reduce
+     (fn [acc req]
+       (let [key (instantiation-key (:namespace req) (:with req))
+             idx (first (keep-indexed (fn [i r]
+                                        (when (= key (instantiation-key (:namespace r) (:with r)))
+                                          i))
+                                      acc))]
+         (if idx
+           (let [prior (nth acc idx)]
+             (when (and (real-alias? prior) (real-alias? req) (not= (:alias prior) (:alias req)))
+               (reject! "duplicate imported namespace" {:namespace module-name :requires [prior req]}))
+             (assoc acc idx (cond-> prior
+                              (and (not (real-alias? prior)) (real-alias? req))
+                              (assoc :alias (:alias req))
+                              (or (:refer prior) (:refer req))
+                              (assoc :refer (vec (distinct (concat (:refer prior []) (:refer req []))))))))
+           (conj acc req))))
+     [] requires)))
+
 (defn- module-definition-names
   "Top-level names this module defines: `defn` / `defn-` / `def` and the
   declaration heads the frontend expands (`defrecord`, `defprotocol`,
@@ -633,7 +662,13 @@
                                        (assoc :with (validate-binding! name spec with (:names params)))
                                        (dissoc :spec))
                                    require))
-                               requires)]
+                               requires)
+                ;; One instantiation may be spelled across two :require
+                ;; lines (:as on one, :refer on the other); merge before the
+                ;; duplicate checks see them (issue #785 wall: 8 rows of
+                ;; "duplicate imported namespace" in the selfhost scoreboard
+                ;; came from kotoba.abi.component spelling exactly this).
+                requires (merge-same-instantiation-requires name requires)]
             ;; ADR 0353 floor 1 (amends ADR 0005): with no `:export` the
             ;; export vector IS the module's public `defn`s, in source order.
             ;; The set is still exact and closed -- only its spelling moved
