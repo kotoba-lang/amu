@@ -1,5 +1,5 @@
 # tilecross-w64-20261019 -- the W=64 win band extends to 16 tiles: the
-# 8-to-32-tile crossing is somewhere in 17..31, not 9..31
+# a sign change lies in 17..31 tiles; 9..15 remain unmeasured (not excluded)
 
 JUN-58 mechanism slice (parent JUN-55). PR #1358's iso-L diagonal named one
 UNMEASURED region in its non-claims: at W=64 the subgroup-reduce variant's
@@ -66,12 +66,14 @@ sign, ~15% lower mean. Host load was higher this session than #1358's
 
 **At 16 tiles (L=1024, W=64) the subgroup-reduce variant is still faster:
 -13,995 ns/dispatch mean of 3 runs, all 3 negative (-13,421 / -13,582 /
--14,982), all clean under the noise rule.** The W=64 win band therefore
-extends past 8 tiles: of the tile counts measured at W=64 (1, 8, 16, 32)
-the variant wins at 8 and 16 and loses at 1 and 32. The crossing that PR
-#1358 left at "9..31 tiles UNMEASURED" is narrowed to **17..31 tiles
-(L=1088..1984 at W=64), still UNMEASURED** -- this slice bounds the
-crossing from above at 16 and does not find it.
+-14,982), all clean under the noise rule.** Of the tile counts measured at
+W=64 (1, 8, 16, 32) the variant wins at 8 and 16 and loses at 1 and 32, so
+at least one sign change lies in 17..31 tiles (L=1088..1984 at W=64,
+still UNMEASURED). What this slice does NOT establish is that 17..31 is
+the whole crossing region: the axis is non-monotone and tiles 9..15 are
+unmeasured, so one or more further sign changes inside 9..15 cannot be
+excluded. Narrowing the crossing to 17..31 would require monotonicity
+after tile 8 (not established) or measurements at 9..15.
 
 The tile axis stays non-monotone and is now single-peaked on measured
 points: +2,440 (1) -> -18,226 (8) -> -13,995 (16) -> +4,628 (32). The
@@ -79,23 +81,29 @@ variant's margin is deepest at 8 tiles and already shrinking at 16, so
 the crossing is not at a tile count this harness can pin with one more
 midpoint -- tiles 24 (L=1536) is the next bisection of 17..31.
 
-Dispatch consequence (design input, not implemented here): the W=64
-emission band is now **2..16 tiles of 1..32 measured**, not 2..8; a rule
-of "2 <= tiles <= 8 -> emit :subgroup-reduce" would have missed a
--14,000 ns win at 16 tiles. The predicate still needs W and per-workgroup
-work (W x tiles) jointly (#1358's conclusion, unchanged): W=256 loses at
-every measured tile count, W=64 wins in a band. For the :apple row
-(W=256) the safe rule is unchanged and now doubly confirmed: keep the
-baseline tree.
+Dispatch consequence (design input, not implemented here): the measured
+W=64 wins are at the sampled tile counts 2, 4 (PR #1358's rows), 8 and 16
+(this slice) -- a contiguous 2..16 emission band is NOT established: 3,
+5..7 and 9..15 are unmeasured and the axis is non-monotone. A rule of
+"2 <= tiles <= 8 -> emit :subgroup-reduce" would have missed a
+-14,000 ns win at 16 tiles; a rule of "2..16" would select the variant at
+unmeasured counts without evidence. The predicate still needs W and
+per-workgroup work (W x tiles) jointly (#1358's conclusion, unchanged):
+W=256 loses at every measured tile count, W=64 wins at the measured win
+points. For the :apple row (W=256) the safe rule is unchanged and now
+doubly confirmed: keep the baseline tree.
 
 ## Non-claims
 
 - One device (Apple M1 Max through MoltenVK, not a native Metal path), one
   lane count (2^21), one workload (x[i]=i+1 f32 sum).
-- tiles 2..7, 9..15 and 17..31 at W=64 are UNMEASURED. The crossing is
-  bounded to 17..31, not located. Any L at W=32 is UNMEASURED. At W=256
-  the >8-tile region remains inadmissible under this harness (the f32-
-  exact readback needs 3L^2 + L(L+1)/2 < 2^24, so L <= ~2176).
+- tiles 2..7, 9..15 and 17..31 at W=64 are UNMEASURED. At least one
+  crossing lies in 17..31 (the measured 16-win -> 32-loss sign change);
+  the crossing is NOT located, and because the axis is non-monotone,
+  further crossings inside 9..15 are not excluded. Any L at W=32 is
+  UNMEASURED. At W=256 the >8-tile region remains inadmissible under
+  this harness (the f32-exact readback needs 3L^2 + L(L+1)/2 < 2^24, so
+  L <= ~2176).
 - Magnitudes: t16's run spread is 1,561 ns between extremes and the ratio
   min/max columns show occasional outlier rounds (e.g. b1 0.49-1.79)
   although IQRs stay <= 0.022. The claims are the gap signs, the means,
