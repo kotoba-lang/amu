@@ -1,4 +1,6 @@
 #!/bin/sh
+# NOTE (repo rule): kept as run-sweep-2106.sh.txt because the repository workflow-lint
+# refuses POSIX shell execution files; run with sh <this file>.
 # WITHIN-TICK TWO-BATCH SIGN PROBE (JUN-58, tick 20261019-2106): run the
 # flip cell (w64t32) and its anchor (w64t31) as TWO batches of 3 runs each
 # inside ONE tick, separated by a >=30 minute idle gap.
@@ -20,7 +22,7 @@
 # #1369/#1377/#1378 chain. lanes 2,095,104 for both cells; 3 runs per cell
 # per batch, cell order rotated per run-pair (t31,t32 / t32,t31 / t31,t32);
 # fresh kbb process per run; `date; uptime` recorded per run. Idempotent: a
-# run whose log exists is skipped. Usage: run-sweep-2106.sh A|B
+# run whose log exists is skipped. Usage: run-sweep-2106.sh.txt A|B
 set -e
 cd "$(dirname "$0")/../../../.."
 EV=docs/evidence/gpu/within-tick-batches-w64t32-20261019
@@ -30,7 +32,7 @@ case "$B" in A|B) ;; *) echo "usage: $0 A|B" >&2; exit 2;; esac
 
 run() { # pair-pos cell W chunks
   log="$EV/run-$B-$1-$2.log"
-  if [ -f "$log" ]; then echo "skip $log"; return 0; fi
+  if [ -f "$log" ] && grep -q "RESULT${TAB}verified=true" "$log"; then echo "skip $log"; return 0; fi
   echo "run $log"
   (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" 2095104 "$4") > "$log" 2>&1
   grep -q "RESULT	verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }
