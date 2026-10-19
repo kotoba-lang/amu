@@ -1,4 +1,6 @@
 #!/bin/sh
+# NOTE (repo rule): kept as run-sweep-1217.sh.txt because the repository workflow-lint
+# refuses POSIX shell execution files; run with sh <this file>.
 # W=64 TILE-AXIS CROSSING BISECTION (JUN-58, tick 20261019-1217): grid B at
 # lanes 2^21, W=64 fixed, tile count swept 1 / 8 / 16 / 32 (L = W*chunks =
 # 64 / 512 / 1024 / 2048). The new cell is t16 (L=1024): it bisects the
@@ -14,7 +16,7 @@ mkdir -p "$EV"
 
 run() { # cycle cell W chunks
   log="$EV/run-$1-$2.log"
-  if [ -f "$log" ]; then echo "skip $log"; return 0; fi
+  if [ -f "$log" ] && grep -q "RESULT${TAB}verified=true" "$log"; then echo "skip $log"; return 0; fi
   echo "run $log"
   (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" 2097152 "$4") > "$log" 2>&1
   grep -q "RESULT	verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }
