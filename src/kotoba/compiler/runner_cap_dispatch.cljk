@@ -78,11 +78,16 @@
   request is a vector of byte items (each 0..255, count at most
   KEXE_BYTES_VALUE_LIMIT = 8388608); a kind 9 request is a string
   handle. The request text goes to the SAME `:fs-dispatch` hook
-  provider 5 uses, and the answer string's UTF-8 bytes come back as a
-  vector of byte items (both kinds' result is bytes). ONE MODEL
-  BOUNDARY, refused not normalised: the C interns the request bytes
-  RAW (`intern_utf8` validates nothing) while this model's hook takes
-  a string, so a kind 8 request that is not valid UTF-8 traps
+  provider 5 uses, and the answer's bytes come back as a vector of
+  byte items (both kinds' result is bytes). The answer is the loader's
+  `resolve_string_bytes`: a bytes-handle answer is copied RAW with no
+  UTF-8 requirement, so binary content round-trips byte for byte
+  (2026-10-20, chatgpt-codex review P1 -- before this the answer was
+  forced through the string form and a `0xFF` byte could not come
+  back); a string answer is its UTF-8 bytes. ONE MODEL BOUNDARY on the
+  REQUEST side only, refused not normalised: the C interns the request
+  bytes RAW (`intern_utf8` validates nothing) while this model's hook
+  takes a string, so a kind 8 request that is not valid UTF-8 traps
   (`:bytes-request-not-utf8`) instead of being lossily decoded -- for
   every UTF-8 request the model and the loader coincide. Kinds 8/9 on
   any wire but 35 are UNMEASURED here and reach provider 0, which this
@@ -156,24 +161,63 @@
   other catalog ids stay refused, matching `runner-entry/admit-wires!`."
   #{35 37 38 39})
 
-(defn- pow2
-  "2^bit in integer arithmetic. `bit-shift-left` is 32-bit on the CLJS
-  host and `Math/pow` is a float -- both lie for mask bits past 31."
+(defn- bigint-word?
+  "A value in the host's guest-integer bigint representation -- the
+  form the kotoba reader hands back on this host (`kotoba.kir`'s i64)."
+  [x]
+  (identical? js/BigInt (type x)))
+
+(defn- word-big
+  "The u64 mask word as the host's EXACT integer type (bigint). A
+  Number cannot hold a u64 word exactly once two set bits straddle
+  2^53 -- measured 2026-10-20 on this host: `2^54 + 1` is `2^54`
+  again, so a Number mask silently drops the low wire (chatgpt-codex
+  review P2). Both host integer forms reach here (guest-integer?
+  admits both), so normalise before any arithmetic."
+  [w]
+  (if (bigint-word? w) w (js/BigInt w)))
+
+(defn- pow2-big
+  "2^bit in bigint arithmetic -- `bit-shift-left` is 32-bit on the CLJS
+  host, `Math/pow` is a float, and Number sums lie past 2^53; the
+  bigint route is exact through bit 63 (u64). `bit` may be either host
+  integer form (only comparisons touch it)."
   [bit]
-  (loop [i 0 acc 1]
-    (if (< i bit) (recur (inc i) (* 2 acc)) acc)))
+  (loop [i 0 acc (js/BigInt 1)]
+    (if (< i bit) (recur (inc i) (* acc (js/BigInt 2))) acc)))
+
+(defn- mask-word-index
+  "The mask word an id 0..255 lives in (id div 64), by comparison --
+  `quot` throws on a bigint id on this host (measured: TypeError), and
+  the id may be one."
+  [id]
+  (cond (< id 64) 0
+        (< id 128) 1
+        (< id 192) 2
+        :else 3))
+
+(defn- mask-bit
+  "The bit an id 0..255 sets inside its word (id mod 64), exact for
+  both host integer forms."
+  [id]
+  (mod (word-big id) (js/BigInt 64)))
 
 (defn words-for
   "The four u64 mask words granting exactly `wires` (bit id of the
-  mask, `cap-admitted` in tools/kexe_loader_decisions.kotoba)."
+  mask, `cap-admitted` in tools/kexe_loader_decisions.kotoba). The
+  words are bigints -- the host's exact i64/u64 form -- because the
+  sum of a word's bits is NOT exact in Number arithmetic past 2^53
+  (measured 2026-10-20: `words-for #{0 54}` answered `2^54`, silently
+  dropping wire 0 from the grant)."
   [wires]
   (doseq [w wires]
     (when-not (and (an-integer? w) (<= 0 w) (<= w 255))
       (trap! "wire id outside 0..255 refused" {:wire w})))
   (mapv (fn [word-index]
-          (reduce + 0 (map pow2
-                           (filter (fn [w] (= word-index (quot w 64)))
-                                   (sort wires)))))
+          (reduce + (js/BigInt 0)
+                  (map (fn [w] (pow2-big (mask-bit w)))
+                       (filter (fn [w] (= word-index (mask-word-index w)))
+                               wires))))
         (range 4)))
 
 (defn- wire-id-admissible?
@@ -184,17 +228,23 @@
 
 (defn cap-admitted?
   "Decide `cap-admitted [w0 w1 w2 w3 id]`: bit `id` of the four-word
-  grant mask. An id outside 0..255 is never granted. FAIL-CLOSED: a
-  mask that is not four guest integers traps rather than answering."
+  grant mask, as the loader's `kexe_cap_admitted` reads it. The bit
+  test is `w mod 2^(bit+1) >= 2^bit` in bigint arithmetic -- exact for
+  both host integer forms (a guest i64 is a bigint here), and it reads
+  a negative or over-wide word as its u64 bit pattern unchanged (the
+  word and its u64 wrap differ by a multiple of 2^(bit+1), so the
+  residue is the same). An id outside 0..255 is never granted.
+  FAIL-CLOSED: a mask that is not four guest integers traps rather
+  than answering."
   [words id]
   (when-not (and (vector? words) (= 4 (count words))
                  (every? an-integer? words))
     (trap! "allow mask is not four guest integers" {:words (pr-str words)}))
   (if (not (wire-id-admissible? id))
     false
-    (let [w (nth words (quot id 64))
-          bit (mod id 64)]
-      (= 1 (mod (quot w (pow2 bit)) 2)))))
+    (let [w (word-big (nth words (mask-word-index id)))
+          p (pow2-big (mask-bit id))]
+      (>= (mod w (* p (js/BigInt 2))) p))))
 
 (defn granted-wires
   "The wire set a mask grants (all 256 admissible ids tested)."
@@ -333,10 +383,10 @@
 ;; ── the bytes bridge (provider 17, fs_app_data_bytes_provider) ──────────────
 
 (defn- bytes-handle!
-  "A kind 8 request at model resolution: a vector of guest integers,
-  each a byte 0..255, at most `bytes-value-limit` items
-  (`valid_bytes_handle` + the provider's own loop checks). Anything
-  else traps."
+  "A bytes handle at model resolution: a vector of guest integers, each
+  a byte 0..255, at most `bytes-value-limit` items
+  (`valid_bytes_handle` + the provider's own loop checks -- used for
+  both requests and answers). Anything else traps."
   [request]
   (when-not (and (vector? request) (every? an-integer? request))
     (trap! "typed request is not a bytes handle" {:request (pr-str request)}))
@@ -403,9 +453,10 @@
             (trap! "bytes request is not UTF-8" {:reason :bytes-request-not-utf8})))))))
 
 (defn- text->utf8-bytes
-  "Text -> the bytes handle provider 17 answers: the answer string's
-  UTF-8 bytes as items. Inverse of the decoder above for valid text;
-  mirrors `utf8-byte-count`'s charCode walk (a surrogate pair is its 4
+  "Text -> bytes: the string answer's UTF-8 bytes as items (the bytes
+  bridge answers a BYTES HANDLE raw -- this is only what a string
+  answer MEANS). Inverse of the decoder above for valid text; mirrors
+  `utf8-byte-count`'s charCode walk (a surrogate pair is its 4
   bytes)."
   [s]
   (let [n (.-length s)]
@@ -437,20 +488,25 @@
   bytes bridge onto `fs_app_data_dispatch`. Kind 8's request bytes
   become the form text; kind 9's request IS the text; the text goes to
   the same `:fs-dispatch` hook provider 5 uses (trap without one); the
-  answer string's bytes are the result (both kinds answer bytes)."
+  answer's bytes are the result (both kinds answer bytes). The answer
+  has two forms and the loader accepts both: a BYTES HANDLE is copied
+  RAW -- `resolve_string_bytes` takes the answer's bytes and requires
+  no UTF-8, so a hook holding binary content answers its raw bytes and
+  every one round-trips (a `0xFF` byte is `0xFF` back) -- and a STRING
+  is its UTF-8 bytes (what a text answer means)."
   [ctx request-kind request]
   (let [text (if (= request-kind 8)
                (utf8-decode-bytes! (bytes-handle! request))
                (read-string-handle! request))]
     (if-let [fs-dispatch (:fs-dispatch ctx)]
-      (let [answer (fs-dispatch (:host ctx) text)]
-        (when-not (string? answer)
-          (trap! "fs hook answer is not a string" {:answer (pr-str answer)}))
-        (let [bytes (text->utf8-bytes answer)]
-          (when (> (count bytes) bytes-value-limit)
-            (trap! "bytes result is larger than KEXE_BYTES_VALUE_LIMIT"
-                   {:count (count bytes) :limit bytes-value-limit}))
-          bytes))
+      (let [answer (fs-dispatch (:host ctx) text)
+            bytes (if (string? answer)
+                    (text->utf8-bytes answer)
+                    (bytes-handle! answer))]
+        (when (> (count bytes) bytes-value-limit)
+          (trap! "bytes result is larger than KEXE_BYTES_VALUE_LIMIT"
+                 {:count (count bytes) :limit bytes-value-limit}))
+        bytes)
       (trap! "no :fs-dispatch hook: fs/app-data is the vehicle's surface"
              {:provider provider-fs-app-data-bytes}))))
 
@@ -565,7 +621,9 @@
   to the pinned grant (exactly `#{35 37 38 39}`); any other grant is
   refused BEFORE a ctx exists. `argv` is the guest's argument vector
   (provider 12). `:fs-dispatch` is the vehicle's fs/app-data hook,
-  called as `(fs-dispatch host request)` and answering a string.
+  called as `(fs-dispatch host request)` and answering a string (the
+  form text) or, on the bytes bridge, a bytes handle whose items are
+  copied RAW like `resolve_string_bytes`.
 
   Returns `{:ctx ... :host <atom>}`; the host atom is `{:argv :out
   :err :log}`."

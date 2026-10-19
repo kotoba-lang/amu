@@ -45,6 +45,27 @@
                              {:allow (dispatch/words-for wires)}))
           (str "grant " (sort wires) " is not the compiler command path")))))
 
+(deftest grant-mask-words-are-exact-u64
+  ;; chatgpt-codex review 2026-10-20 (P2): the mask word's bit sum is
+  ;; NOT exact in Number arithmetic once two bits straddle 2^53 --
+  ;; measured before the fix on this host: `words-for #{0 54}` was
+  ;; `2^54 + 1` rounded back to `2^54`, silently dropping wire 0 from
+  ;; the grant. The words are bigints (the host's guest i64) now.
+  (doseq [wires [#{0 54} #{63 0} #{0 54 63} #{64 127} #{128 255}
+                 (set (range 256))]]
+    (is (= wires (dispatch/granted-wires (dispatch/words-for wires)))
+        (str "round-trip " (vec (sort wires)))))
+  (testing "the wire id and the word may arrive as guest bigints"
+    (let [words (dispatch/words-for #{(js/BigInt 0) (js/BigInt 54)})]
+      (is (= #{0 54} (dispatch/granted-wires words))))
+    (is (true? (dispatch/cap-admitted? (dispatch/words-for #{0 54})
+                                       (js/BigInt 0)))))
+  (testing "a word is read as its u64 bit pattern, like the loader's field"
+    ;; -1 as i64 is the u64 word with every bit set: every id granted.
+    (is (= (set (range 256))
+           (dispatch/granted-wires [(js/BigInt -1) (js/BigInt -1)
+                                    (js/BigInt -1) (js/BigInt -1)])))))
+
 (deftest dispatch-chain-refuses-like-the-loader-sigill
   (let [{:keys [ctx]} (dispatch/install-dispatch {})]
     (testing "step 1: ctx shape and version"
@@ -225,6 +246,39 @@
                                 :request "READ x"})))))
     (is (= [17 17 17] (map :provider (:log @host)))
         "the log names provider 17 for every served bytes-bridge call")))
+
+(deftest bytes-bridge-answers-raw-bytes-like-resolve-string-bytes
+  ;; chatgpt-codex review 2026-10-20 (P1): the adopted loader's
+  ;; `resolve_string_bytes` copies the filesystem answer RAW and does
+  ;; not require UTF-8 -- forcing every answer through a string and
+  ;; re-encoding it UTF-8 meant a `0xFF` answer byte could not
+  ;; round-trip. A hook holding binary content answers a BYTES HANDLE
+  ;; and every item comes back byte for byte; a string answer is still
+  ;; its UTF-8 bytes.
+  (let [hook (fn [_host _request] [88 255 0 227 129 130])
+        {:keys [ctx host]} (dispatch/install-dispatch {:fs-dispatch hook})
+        cap (:typed-cap-call ctx)]
+    (is (= [88 255 0 227 129 130]
+           (cap {:id 35 :request-kind 9 :result-kind 9 :request "READ x"}))
+        "0xFF and 0x00 survive -- a string form would have re-encoded")
+    (is (= [88 255 0 227 129 130]
+           (cap {:id 35 :request-kind 8 :result-kind 8
+                 :request [82 69 65 68 32]}))
+        "kind 8 answers the same raw bytes")
+    (is (= [17 17] (map :provider (:log @host)))))
+  (testing "a bytes answer is still a bytes handle (valid_bytes_handle)"
+    (let [{:keys [ctx]} (dispatch/install-dispatch
+                         {:fs-dispatch (fn [_host _request] [256])})]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"outside 0\.\.255"
+                            ((:typed-cap-call ctx)
+                             {:id 35 :request-kind 9 :result-kind 9
+                              :request "READ x"}))))
+    (let [{:keys [ctx]} (dispatch/install-dispatch
+                         {:fs-dispatch (fn [_host _request] 7)})]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not a bytes handle"
+                            ((:typed-cap-call ctx)
+                             {:id 35 :request-kind 9 :result-kind 9
+                              :request "READ x"}))))))
 
 (deftest dispatch-entity-serves-the-entry-guest-call
   ;; the wiring: runner-entry calls the guest once under ctx-v11, and
