@@ -254,6 +254,14 @@
             out (get @files "/w/more.kotoba")]
         (is (str/includes? out "(ns my.data"))
         (is (str/includes? out "(defn rows [] [1 2 3])"))))
+    (testing "--out DIR writes the ns-conventional module path the project linker resolves"
+      (let [files (atom {"/w/src/cst.cljk" "(ns kotoba.compiler.refactor.cst)"
+                         "/w/out/.keep" ""})
+            r (cli/run ["to-kotoba" "/w/src/cst.cljk" "--ns" "kotoba.compiler.refactor.cst" "--out" "/w/out"] (memory-io files))
+            out (get @files "/w/out/kotoba/compiler/refactor/cst.kotoba")]
+        (is (= 0 (:status r)))
+        (is (some? out) "the output lands under the --out directory at the ns path")
+        (is (str/includes? out "(ns kotoba.compiler.refactor.cst"))))
     (testing "an .edn file holding two values is refused"
       (let [files (atom {"/w/two.edn" "1 2"})]
         (is (= :refactor/parse-error (refusal-code #(cli/run ["to-kotoba" "/w/two.edn"] (memory-io files)))))))))

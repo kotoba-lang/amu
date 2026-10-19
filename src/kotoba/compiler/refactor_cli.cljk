@@ -601,6 +601,13 @@
 (defn- to-kotoba-output-name [path]
   (str (str/replace path #"\.(cljk|cljc|clj|cljs|edn)$" "") ".kotoba"))
 
+(defn- ns-module-path
+  "The ns-conventional module path the project linker resolves --source-path
+  against: dots to directories, dashes to underscores (kotoba.compiler.refactor-cli
+  is kotoba/compiler/refactor_cli.kotoba)."
+  [ns-name]
+  (str (-> ns-name (str/replace "." "/") (str/replace "-" "_")) ".kotoba"))
+
 (defn- valid-module-name?
   "A module name the project parser accepts: a symbol, so not starting with a digit and holding no whitespace or
   delimiter. `2026.edn` would generate (ns 2026 ...) which parses as a NUMBER, not a namespace (measured wall)."
@@ -794,7 +801,11 @@
                              (str (:path r) ": the converted text is not readable (" (:error c) "); nothing was written")
                              {:path (:path r)}))))
         rows (mapv (fn [r c]
-                     (let [target (or out (to-kotoba-output-name (:path r)))
+                     (let [target (cond
+                                    (and out (= :dir ((:kind io) out)) (get flags "--ns"))
+                                    (str out "/" (ns-module-path (get flags "--ns")))
+                                    out out
+                                    :else (to-kotoba-output-name (:path r)))
                            existing (when (= :file ((:kind io) target)) ((:read io) target))]
                        {:path (:path r) :out target :kind (:kind r)
                         :chars-before (:chars-before r) :chars-after (count (:text r))
