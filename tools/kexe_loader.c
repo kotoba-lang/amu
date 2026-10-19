@@ -75,7 +75,7 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
 /* KEXE-DECISIONS-GENERATED BEGIN -- written by scripts/gen-loader-decisions.cljk; do not
  * edit by hand. Regenerate after changing either source:
  *   tools/kexe_loader_decisions.kotoba sha256 c2a7e6ee4adb55139155f0962a2acb0aea62a98b6c0d69dfe9f70b148330601c
- *   tools/kexe_loader_names.kotoba     sha256 9fce0cf35cd1f95766e2a4944af387b07b4644cb7f99e8c4788ce36a692c0371
+ *   tools/kexe_loader_names.kotoba     sha256 15f0d4f1f10472156cbe604411782de7b04947a3948faaeb171285e4010b0ff5
  *   tools/linux_static_handlers.kotoba sha256 c7619a1aebc42b039ce7d71f318b9d41e292c5f17b49f12733e7c3cb98b80bea
  *   tools/kexe_loader_boundary.kotoba  sha256 99ec1c85f7a5811266d0eae30f8f5a47adea71de496f08879cb9adc4df1ac6d7
  * The DECISIONS of this loader are Kotoba (superproject adr-2609251400 C1):
@@ -218,7 +218,7 @@ static const size_t kexe_trap_line_lengths[KEXE_TRAP_LINE_COUNT] = {
   42u, 43u, 42u, 42u, 43u, 43u, 43u, 42u, 43u, 54u, 52u, 62u, 62u, 64u, 69u, 68u, 63u, 47u, 57u, 56u, 54u, 54u, 51u, 57u, 57u, 54u, 51u, 51u, 33u, 84u, 92u, 91u, 86u, 80u, 84u, 94u, 85u, 85u, 54u, 49u, 57u, 36u, 42u, 46u
 };
 
-#define KEXE_VALUE_TRAP_COUNT 12u
+#define KEXE_VALUE_TRAP_COUNT 14u
 static const char *const kexe_value_trap_names[KEXE_VALUE_TRAP_COUNT] = {
   NULL,
   "utf8/unexpected-continuation",
@@ -232,6 +232,8 @@ static const char *const kexe_value_trap_names[KEXE_VALUE_TRAP_COUNT] = {
   "bytes/item-out-of-range",
   "bytes/too-large",
   "bytes/slice-bounds",
+  "vector/index-out-of-range",
+  "vector/invalid-handle",
 };
 
 #define KEXE_RESULT_TYPE_COUNT 7u
@@ -4668,6 +4670,13 @@ static void note_budget(uint64_t reason) {
 #define KEXE_VALUE_TRAP_BYTES_ITEM_OUT_OF_RANGE 9u
 #define KEXE_VALUE_TRAP_BYTES_TOO_LARGE 10u
 #define KEXE_VALUE_TRAP_BYTES_SLICE_BOUNDS 11u
+/* vector_at's refusals (kexe_loader_names.kotoba's value-trap-name 12/13).
+ * Before these existed, checked_vector_at raised a bare SIGILL and the run
+ * reported a signal-only trap -- a refusal whose reason is not named, which
+ * the fail-closed posture forbids. bytes-at IS vector_at (ABI v11 note
+ * above), so this is byte-at's named refusal too. */
+#define KEXE_VALUE_TRAP_VECTOR_INDEX_OUT_OF_RANGE 12u
+#define KEXE_VALUE_TRAP_VECTOR_INVALID_HANDLE 13u
 /* KEXE_STRING_VALUE_LIMIT, KEXE_BYTES_VALUE_LIMIT (kotoba.kir.value/string-value-byte-limit and bytes-value-byte-limit): decided in tools/kexe_loader_decisions.kotoba; the value is in the KEXE-DECISIONS-GENERATED region. */
 static void note_value_trap(uint64_t code) {
   if (kexe_shared_for_budget != NULL && kexe_shared_for_budget->value_trap == 0)
@@ -5206,10 +5215,17 @@ static int64_t checked_vector_count(struct kexe_context_v11 *context,
  * this call rather than to a host function of its own. */
 static int64_t checked_vector_at(struct kexe_context_v11 *context,
                                  int64_t handle, int64_t index) {
+  { FILE *f = fopen("/tmp/checked_vector_at.log", "a"); if (f) { fprintf(f, "hit handle=%lld index=%lld\n", (long long)handle, (long long)index); fclose(f);} }
   struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
   if (context == NULL || context->version != 12) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
-  if (vector == NULL || index < 0 || (uint64_t)index >= vector->length) {
+  if (vector == NULL) {
+    note_value_trap(KEXE_VALUE_TRAP_VECTOR_INVALID_HANDLE);
+    raise(SIGILL);
+    return 0;
+  }
+  if (index < 0 || (uint64_t)index >= vector->length) {
+    note_value_trap(KEXE_VALUE_TRAP_VECTOR_INDEX_OUT_OF_RANGE);
     raise(SIGILL);
     return 0;
   }
@@ -10487,6 +10503,34 @@ static void fail(const char *message) {
   exit(1);
 }
 
+static void trap_handler(int signal_number);
+
+/* The brk-immediate convention (kotoba-lang issue #785, option (c)): guest
+ * bounds checks trap with `brk #<value-trap-code>` instead of a bare `brk
+ * #0`, so the reason travels in the trapping instruction itself and every
+ * trap path can name its refusal. This handler decodes that immediate before
+ * the ordinary signal report runs. `brk #0` keeps its signal-only meaning.
+ * One aligned read of the faulting instruction: as async-signal-safe as the
+ * write(2) report below. */
+static void trap_handler_siginfo(int signal_number, siginfo_t *info,
+                                 void *context) {
+  (void)context;
+  if (info != NULL && info->si_addr != NULL) {
+    uint32_t insn = *(const uint32_t *)info->si_addr;
+    /* BRK #imm16: 1101 0100 001i iiii iiii iiii iiii 0000 (imm at 20:5). */
+    if ((insn & 0xFFE0001Fu) == 0xD4200000u) {
+      uint64_t imm = ((uint64_t)insn >> 5) & 0xFFFFu;
+      if (imm > 0 && imm < KEXE_VALUE_TRAP_COUNT) note_value_trap(imm);
+    } else if ((insn & 0xFFFF0000u) == 0x00000000u) {
+      /* UDF #imm16: 0000 0000 0000 0000 iiii iiii iiii iiii (imm at 15:0).
+       * The inline handle operations (ABI v9) trap this way; issue #785. */
+      uint64_t imm = (uint64_t)(insn & 0xFFFFu);
+      if (imm > 0 && imm < KEXE_VALUE_TRAP_COUNT) note_value_trap(imm);
+    }
+  }
+  trap_handler(signal_number);
+}
+
 static void trap_handler(int signal_number) {
   /* The OS's signal number -> the generated table's index; the NAME is
    * kexe_loader_names.kotoba's trap-line. */
@@ -11753,6 +11797,14 @@ static void install_limits(void) {
   for (size_t i = 0; i < sizeof(signals) / sizeof(signals[0]); i++) {
     if (sigaction(signals[i], &action, NULL) != 0) fail("sigaction");
   }
+  /* SIGILL/SIGTRAP get the siginfo variant so a `brk #<code>` trap can name
+   * its refusal (see trap_handler_siginfo). */
+  memset(&action, 0, sizeof(action));
+  action.sa_sigaction = trap_handler_siginfo;
+  sigemptyset(&action.sa_mask);
+  action.sa_flags = SA_SIGINFO | SA_RESETHAND;
+  if (sigaction(SIGILL, &action, NULL) != 0) fail("sigaction SIGILL");
+  if (sigaction(SIGTRAP, &action, NULL) != 0) fail("sigaction SIGTRAP");
   /* P4 of adr-2609242100: a guest recursion that runs off the stack faulted
    * on the stack itself, so the handler above -- which runs on that stack --
    * could not run, and the supervisor could only say
