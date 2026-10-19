@@ -141,6 +141,23 @@
                next-remainder
                (shift-right-one scaled-divisor))))))
 
+(defn- remainder-57 [numerator :vector-i64 divisor :vector-i64] :vector-i64
+  ;; Same 57-step scan as quotient-57; the division remainder comes out
+  ;; (numerator - quotient*divisor). Only the ties-to-even comparison needs it,
+  ;; so the quotient itself is not accumulated (review T4).
+  (loop [bit 56
+         current-remainder numerator
+         scaled-divisor (shift-left divisor 56)]
+    (if (< bit 0)
+      current-remainder
+      (let [fits? (>= (compare-limbs current-remainder scaled-divisor) 0)
+            next-remainder (if fits?
+                             (subtract-limbs current-remainder scaled-divisor)
+                             current-remainder)]
+        (recur (- bit 1)
+               next-remainder
+               (shift-right-one scaled-divisor))))))
+
 (defn- scale-numerator [numerator :vector-i64 exponent :i64] :vector-i64
   (if (< exponent 0)
     (shift-left numerator (- 0 exponent))
@@ -165,7 +182,13 @@
   (let [scaled-numerator (scale-numerator numerator exponent)
         scaled-denominator (scale-denominator denominator exponent)
         quotient (quotient-57 scaled-numerator scaled-denominator)
-        halfway (compare-limbs (shift-left scaled-numerator 1) scaled-denominator)]
+        ;; ties-to-even compares twice the DIVISION REMAINDER with the
+        ;; denominator (review T4). Comparing 2*numerator with one denominator
+        ;; is wrong once the quotient is large (around 2^52): it is positive
+        ;; even for exact values, so 1.0 would round up to 2^52+1 and encode
+        ;; 1.0000000000000002.
+        remainder (remainder-57 scaled-numerator scaled-denominator)
+        halfway (compare-limbs (shift-left remainder 1) scaled-denominator)]
     (cond
       (> halfway 0) (+ quotient 1)
       (= halfway 0) (+ quotient (bit-and quotient 1))
