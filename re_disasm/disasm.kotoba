@@ -25,7 +25,7 @@
             test-text test-bytes-xrefs
             test-logical-reg test-addsub-reg test-ldst-reg test-pair
             test-record test-targets test-listing
-            test-shift-text test-extend-text test-reg31-sf test-tbz-pair-text test-bounds-guards test-mov-ret-ror test-symtab-fixes test-adrp-add-sf test-literal
+            test-shift-text test-extend-text test-reg31-sf test-tbz-pair-text test-bounds-guards test-mov-ret-ror test-symtab-fixes test-adrp-add-sf test-image-base-mapping test-literal
             test-m3-edges test-m3-reach test-m3-entries test-m3-cfg
             test-m3-bounds test-m3-strings test-m3-xrefs test-m3-imports
             test-macho test-elf test-pe test-words-at
@@ -1035,13 +1035,34 @@
   (let [sym (+ (macho-symtab-field b 0) (* 16 index))]
     (name-str b (+ (macho-symtab-field b 2) (u32le b sym)) 64)))
 
-(defn macho-entry [b :bytes] :i64
+;; LC_SEGMENT_64 fields used by the entry mapping (cmd 25): vmaddr @+24,
+;; fileoff @+40, filesize @+48.
+(defn macho-seg-vmaddr [b :bytes off :i64] :i64 (u64le b (+ off 24)))
+(defn macho-seg-fileoff [b :bytes off :i64] :i64 (u64le b (+ off 40)))
+(defn macho-seg-filesize [b :bytes off :i64] :i64 (u64le b (+ off 48)))
+
+(defn macho-entry-off [b :bytes] :i64
   (loop [i 0]
     (if (>= i (macho-ncmds b)) (- 0 1)
       (let [off (macho-cmd-off b i)]
         (if (= (u32le b off) 2147483688)
-          (+ (macho-image-base b) (u64le b (+ off 8)))
+          (u64le b (+ off 8))
           (recur (+ i 1)))))))
+
+(defn macho-entry [b :bytes] :i64
+  ;; LC_MAIN.entryoff is a FILE offset: resolve it through the segment
+  ;; whose file range contains it (review P1: adding it to
+  ;; macho-image-base -- which answers 0 when __PAGEZERO leads -- produced
+  ;; 0x1a0-style addresses instead of 0x1000001a0).
+  (let [e (macho-entry-off b)]
+    (loop [i 0]
+      (if (>= i (macho-ncmds b)) (+ (macho-image-base b) e)
+        (let [off (macho-cmd-off b i)]
+          (if (and (= (u32le b off) 25)
+                   (>= e (macho-seg-fileoff b off))
+                   (< e (+ (macho-seg-fileoff b off) (macho-seg-filesize b off))))
+            (+ (macho-seg-vmaddr b off) (- e (macho-seg-fileoff b off)))
+            (recur (+ i 1))))))))
 
 ;; ------------------------------------------------------------- elf64
 ;; e_entry @24, e_shoff @40, e_shentsize @58, e_shnum @60, e_shstrndx @62.
@@ -1113,13 +1134,34 @@
     (name-str b (+ (elf-sym-strtab-off b) (u32le b sym)) 64)))
 
 ;; smallest non-zero sh_addr (0 when the image is all-relative)
+;; ELF64 program headers: e_phoff @32, e_phentsize @54, e_phnum @56;
+;; phdr: p_type @0 (PT_LOAD = 1), p_vaddr @+16.
+(defn elf-phoff [b :bytes] :i64 (u64le b 32))
+(defn elf-phentsize [b :bytes] :i64 (u16le b 54))
+(defn elf-phnum [b :bytes] :i64 (u16le b 56))
+(defn elf-ph-off [b :bytes i :i64] :i64 (+ (elf-phoff b) (* (elf-phentsize b) i)))
+
 (defn elf-image-base [b :bytes] :i64
-  (loop [i 0 acc 0]
-    (if (>= i (elf-shnum b)) acc
-      (let [a (u64le b (+ (elf-sh-off b i) 16))]
-        (recur (+ i 1)
-          (if (= a 0) acc
-            (if (= acc 0) a (if (< a acc) a acc))))))))
+  ;; The load image base comes from the PT_LOAD segments: the first load
+  ;; segment starts before the first section (a segment at 0x400000 may
+  ;; hold a first section at 0x400318), and stripped binaries may carry
+  ;; no section headers at all (review P1). Images with no program
+  ;; headers fall back to the section walk.
+  (let [n (elf-phnum b)]
+    (if (> n 0)
+      (loop [i 0 acc (- 0 1)]
+        (if (>= i n) (if (< acc 0) 0 acc)
+          (let [p (elf-ph-off b i)]
+            (if (= (u32le b p) 1)
+              (let [v (u64le b (+ p 16))]
+                (recur (+ i 1) (if (or (< acc 0) (< v acc)) v acc)))
+              (recur (+ i 1) acc)))))
+      (loop [i 0 acc 0]
+        (if (>= i (elf-shnum b)) acc
+          (let [a (u64le b (+ (elf-sh-off b i) 16))]
+            (recur (+ i 1)
+              (if (= a 0) acc
+                (if (= acc 0) a (if (< a acc) a acc))))))))))
 
 ;; ------------------------------------------------------------- pe32+
 ;; MZ @0, e_lfanew @60. At lfanew: PE\\0\\0, machine @+4, nsections @+6,
@@ -1999,6 +2041,49 @@
            (= (adrp-add-target 0x90000000 0x11000400 0x1000) (- 0 1)))
     1 0))
 
+(defn test-image-base-mapping [] :i64
+  ;; LC_MAIN.entryoff maps through its containing segment and the ELF
+  ;; load image base comes from PT_LOAD (review P1 x2):
+  ;;   PAGEZERO-first Mach-O: entryoff 0x1a0 in __TEXT (vmaddr 0x100000000,
+  ;;   fileoff 0) answers 0x1000001a0, not 0x1a0;
+  ;;   ELF with PT_LOAD p_vaddr 0x400000 and first section 0x400318
+  ;;   answers 0x400000, not 0x400318.
+  (let [mv (vector-alloc 224)
+        mv (put32 mv 0 0xFEEDFACF)
+        mv (put32 mv 4 0x0100000C)
+        mv (put32 mv 16 3)
+        mv (put32 mv 20 168)
+        mv (put32 mv 32 25)
+        mv (put32 mv 36 72)
+        mv (put64 mv 56 0)
+        mv (put64 mv 64 0x1000)
+        mv (put64 mv 72 0)
+        mv (put64 mv 80 0)
+        mv (put32 mv 104 25)
+        mv (put32 mv 108 72)
+        mv (put64 mv 128 0x100000000)
+        mv (put64 mv 136 0x4000)
+        mv (put64 mv 144 0)
+        mv (put64 mv 152 0x1000)
+        mv (put32 mv 176 2147483688)
+        mv (put32 mv 180 24)
+        mv (put64 mv 184 0x1A0)
+        m (bytes-from-vector-i64 mv)
+        ev (vector-alloc 256)
+        ev (put64 ev 32 64)
+        ev (put16 ev 54 56)
+        ev (put16 ev 56 1)
+        ev (put64 ev 40 128)
+        ev (put16 ev 58 64)
+        ev (put16 ev 60 1)
+        ev (put32 ev 64 1)
+        ev (put64 ev 80 0x400000)
+        ev (put64 ev 144 0x400318)
+        e (bytes-from-vector-i64 ev)]
+    (if (and (= (macho-entry m) 0x1000001A0)
+             (= (elf-image-base e) 0x400000))
+      1 0)))
+
 (defn main [] :i64
   (let [s (+ (test-hints) (test-exceptions) (test-branch-uncond)
              (test-branch-cond) (test-branch-register) (test-adr)
@@ -2006,10 +2091,10 @@
              (test-bytes-xrefs) (test-logical-reg) (test-addsub-reg)
              (test-ldst-reg) (test-pair) (test-record) (test-targets)
              (test-listing) (test-shift-text) (test-extend-text)
-             (test-reg31-sf) (test-tbz-pair-text) (test-bounds-guards) (test-mov-ret-ror) (test-symtab-fixes) (test-adrp-add-sf)
+             (test-reg31-sf) (test-tbz-pair-text) (test-bounds-guards) (test-mov-ret-ror) (test-symtab-fixes) (test-adrp-add-sf) (test-image-base-mapping)
              (test-literal) (test-m3-edges) (test-m3-reach) (test-m3-entries)
              (test-m3-cfg) (test-m3-bounds) (test-m3-strings) (test-m3-xrefs)
              (test-m3-imports)
              (test-macho) (test-elf) (test-pe)
              (test-words-at))]
-    (if (= s 39) 1 0)))
+    (if (= s 40) 1 0)))
