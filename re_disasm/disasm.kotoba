@@ -25,7 +25,7 @@
             test-text test-bytes-xrefs
             test-logical-reg test-addsub-reg test-ldst-reg test-pair
             test-record test-targets test-listing
-            test-shift-text test-extend-text test-reg31-sf test-tbz-pair-text test-bounds-guards test-mov-ret-ror test-symtab-fixes test-literal
+            test-shift-text test-extend-text test-reg31-sf test-tbz-pair-text test-bounds-guards test-mov-ret-ror test-symtab-fixes test-adrp-add-sf test-literal
             test-m3-edges test-m3-reach test-m3-entries test-m3-cfg
             test-m3-bounds test-m3-strings test-m3-xrefs test-m3-imports
             test-macho test-elf test-pe test-words-at
@@ -667,8 +667,12 @@
 ;; next instruction; answers -1 unless the pair matches (both extend the
 ;; same register).
 (defn adrp-add-target [w-adrp :i64 w-add :i64 pc :i64] :i64
+  ;; The canonical literal pair requires a 64-bit ADD: a 32-bit
+  ;; add wN, wN, #imm truncates the page value and must not resolve to a
+  ;; full 64-bit address (review P2).
   (if (and (= (insn-class w-adrp) (class-adrp))
            (= (insn-class w-add) (class-add-imm))
+           (= (sf-wide w-add) 1)
            (= (insn-rd w-add) (insn-rd w-adrp))
            (= (insn-rn w-add) (insn-rd w-adrp)))
     (+ (insn-target w-adrp pc) (insn-addsub-imm w-add))
@@ -1986,6 +1990,15 @@
              (= (pe-symbol-off pe3 1) 236))
       1 0)))
 
+(defn test-adrp-add-sf [] :i64
+  ;; The canonical ADRP+ADD literal pair requires a 64-bit ADD (review
+  ;; P2): add w0, w0, #1 (0x11000400) truncates the page value and must
+  ;; not resolve, while add x0, x0, #1 (0x91000400) does.
+  ;;   0x90000000 @0x1000 -> page 0x1000; +1 -> 0x1001
+  (if (and (= (adrp-add-target 0x90000000 0x91000400 0x1000) 0x1001)
+           (= (adrp-add-target 0x90000000 0x11000400 0x1000) (- 0 1)))
+    1 0))
+
 (defn main [] :i64
   (let [s (+ (test-hints) (test-exceptions) (test-branch-uncond)
              (test-branch-cond) (test-branch-register) (test-adr)
@@ -1993,10 +2006,10 @@
              (test-bytes-xrefs) (test-logical-reg) (test-addsub-reg)
              (test-ldst-reg) (test-pair) (test-record) (test-targets)
              (test-listing) (test-shift-text) (test-extend-text)
-             (test-reg31-sf) (test-tbz-pair-text) (test-bounds-guards) (test-mov-ret-ror) (test-symtab-fixes)
+             (test-reg31-sf) (test-tbz-pair-text) (test-bounds-guards) (test-mov-ret-ror) (test-symtab-fixes) (test-adrp-add-sf)
              (test-literal) (test-m3-edges) (test-m3-reach) (test-m3-entries)
              (test-m3-cfg) (test-m3-bounds) (test-m3-strings) (test-m3-xrefs)
              (test-m3-imports)
              (test-macho) (test-elf) (test-pe)
              (test-words-at))]
-    (if (= s 38) 1 0)))
+    (if (= s 39) 1 0)))
