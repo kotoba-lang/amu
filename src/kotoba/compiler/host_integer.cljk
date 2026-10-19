@@ -27,17 +27,21 @@
      :default x))
 
 (defn exact [text]
-  #?(:cljs (js/BigInt text)
-     :default (decimal-text/parse text)))
+  ;; One code path on every host: the reference parse (decimal_text_core via
+  ;; decimal-text/parse). The separate :cljs branch used js/BigInt, which
+  ;; parsed `+7` to 7 and threw on `abc` where the reference answers 0
+  ;; (issue #785, Class-2).
+  (decimal-text/parse text))
 
 (defn safe-integer? [x]
   #?(:cljs (js/Number.isSafeInteger x)
      :default (<= (- max-safe) x max-safe)))
 
 (defn decimal-count [text]
-  #?(:cljs (let [value (js/Number text)]
-             (when (js/Number.isSafeInteger value) value))
-     :default (when (decimal-text/decimal? text) (decimal-text/parse text))))
+  ;; One code path on every host, like `exact`. The separate :cljs branch
+  ;; used js/Number, which coerces "" to 0 and drops values above 2^53 where
+  ;; the reference answers nil and the exact i64 (issue #785, Class-1/2).
+  (when (decimal-text/decimal? text) (decimal-text/parse text)))
 
 (defn bigint? [x]
   #?(:cljs (i64/bigint-value? x)
