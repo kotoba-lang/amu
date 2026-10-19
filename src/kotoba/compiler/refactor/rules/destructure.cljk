@@ -45,8 +45,6 @@
                                      [:inv [:list [:ref :finding/row]]]]]
                         :ds/x [:record :ds/x [[:human :string] [:names [:list :string]] [:exprs [:list :string]] [:ctr :i64]
                                               [:base :i64]]]
-                        :ds/yy [:record :ds/yy [[:ynames [:list :string]] [:yexprs [:list :string]]]]
-                        :ds/yargs [:record :ds/yargs [[:ysrc :string] [:yp [:ref :cst/node]] [:yv :string] [:ynsq :string]]]
                         :ds/ar [:record :ds/ar [[:params [:ref :cst/node]] [:body [:list [:ref :cst/node]]]]]
                         :ds/ars [:record :ds/ars [[:ok :bool] [:xs [:list [:ref :ds/ar]]]]]
                         :ds/rw [:record :ds/rw [[:human :string] [:edits [:list [:ref :edit/e]]] [:ctr :i64]
@@ -271,35 +269,6 @@
                  (string-concat v (string-concat " " (string-concat key (string-concat (if has (string-concat " " dflt) "") ")")))))))
 
 #?(:kotoba
-(defn- bad-loop [items [:ref :cst/node]] :bool
-  (let [im (nkids items)]
-    (loop [j 0]
-      (cond (>= j im) false
-            (starts-with? (cst/node-text (kid items j)) "::") true
-            :else (recur (+ j 1)))))))
-
-#?(:kotoba
-(defn- keys-items-loop [args [:ref :ds/yargs] items [:ref :cst/node] names [:list :string] exprs [:list :string]] [:ref :ds/yy]
-  (let [im (nkids items)
-        src (record-get [:ref :ds/yargs] args :ysrc)
-        p (record-get [:ref :ds/yargs] args :yp)
-        v (record-get [:ref :ds/yargs] args :yv)
-        nsq (record-get [:ref :ds/yargs] args :ynsq)]
-    (loop [j 0 ns names es exprs]
-      (if (>= j im)
-        (record-new [:ref :ds/yy] ns es)
-        (let [it (kid items j)
-              t0 (cst/node-text it)
-              t (if (cst/kw? it) (string-substring t0 1 (string-byte-length t0)) t0)
-              bse (split-slash-last t)
-              has-sl (includes? t "/")
-              q (if (> (string-byte-length nsq) 0) nsq (if has-sl (split-slash-first t) ""))
-              kw-text (string-concat ":" (string-concat q (string-concat (if (or (> (string-byte-length nsq) 0) has-sl) "/" "") bse)))
-              has (has-or? src p bse)
-              d (or-default src p bse)]
-          (recur (+ j 1) (sconj ns bse) (sconj es (fe-get-text v kw-text d has)))))))))
-
-#?(:kotoba
 (defn- expand-map [src :string p [:ref :cst/node] v :string ctr :i64 base :i64] [:ref :ds/x]
   (let [m (nkids p)]
     (loop [k 0 names (strs) exprs (strs) c ctr]
@@ -317,13 +286,28 @@
             (let [kind (keys-kind kt)
                   nsq (keys-ns kt)
                   items (cst/strip-meta vv)
-                  bad (bad-loop items)]
+                  im (nkids items)
+                  bad (loop [j 0] (cond (>= j im) false
+                                        (starts-with? (cst/node-text (kid items j)) "::") true
+                                        :else (recur (+ j 1))))]
               (if (or bad (not (string=? kind "keys")))
                 (xh (if (string=? kind "keys") "auto-resolved keyword (::k) inside :keys"
                         (string-concat ":" (string-concat kind " destructuring (string/symbol keys)")))
                     c base)
-                (let [y (keys-items-loop (record-new [:ref :ds/yargs] src p v nsq) items names exprs)]
-                  (recur (+ k 2) (record-get [:ref :ds/yy] y :ynames) (record-get [:ref :ds/yy] y :yexprs) c))))
+                (let [y (loop [j 0 ns names es exprs]
+                          (if (>= j im)
+                            (xb ns es c base)
+                            (let [it (kid items j)
+                                  t0 (cst/node-text it)
+                                  t (if (cst/kw? it) (string-substring t0 1 (string-byte-length t0)) t0)
+                                  bse (split-slash-last t)
+                                  has-sl (includes? t "/")
+                                  q (if (> (string-byte-length nsq) 0) nsq (if has-sl (split-slash-first t) ""))
+                                  kw-text (string-concat ":" (string-concat q (string-concat (if (or (> (string-byte-length nsq) 0) has-sl) "/" "") bse)))
+                                  has (has-or? src p bse)
+                                  d (or-default src p bse)]
+                              (recur (+ j 1) (sconj ns bse) (sconj es (fe-get-text v kw-text d has))))))]
+                  (recur (+ k 2) (x-names y) (x-exprs y) c))))
             :else
             (let [kk-text (cst/text src vv)
                   nm (bind-name kk)]
