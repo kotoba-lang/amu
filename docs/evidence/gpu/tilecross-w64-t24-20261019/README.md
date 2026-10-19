@@ -110,14 +110,18 @@ variant's margin at 24 tiles is deeper than at 8 or 16, so no local
 extrapolation from 16 or 32 would have found this: the crossing is not a
 smooth function of per-workgroup work (W x tiles).
 
-Dispatch consequence (design input, not implemented here): the W=64
-emission band is now **2..24 tiles of 1..32 measured** (1-tile point UNMEASURED
-at this lane count; chain's 2^21 point loses), not 2..16. A rule of
-"2 <= tiles <= 16 -> emit :subgroup-reduce" would have missed a -20,000 ns
-win at 24 tiles. The predicate still needs W and per-workgroup work (W x
-tiles) jointly (#1358's conclusion, unchanged): W=256 loses at every
-measured tile count, W=64 wins in a band. For the :apple row (W=256) the
-safe rule is unchanged and now triply confirmed: keep the baseline tree.
+Dispatch consequence (design input, not implemented here): the measured
+W=64 wins are at the sampled tile counts 2 (chain row), 8, 16 and 24
+(1-tile point UNMEASURED at this lane count; chain's 2^21 point loses) --
+a contiguous 2..24 emission band is NOT established: 2..7, 9..15 and
+17..23 are unmeasured and the axis is non-monotone, so a 2..24 rule
+would select the variant at unmeasured counts without evidence. A rule
+of "2 <= tiles <= 16 -> emit :subgroup-reduce" would have missed a
+-20,000 ns win at 24 tiles. The predicate still needs W and
+per-workgroup work (W x tiles) jointly (#1358's conclusion, unchanged):
+W=256 loses at every measured tile count, W=64 wins at the measured win
+points. For the :apple row (W=256) the safe rule is unchanged and now
+triply confirmed: keep the baseline tree.
 
 ## Non-claims
 
