@@ -96,3 +96,22 @@ hosted kexe C is rejected; production `:native-aot` is
 3. Where admission verification (pinned source graph / container hash) must
    run in a runner that has no C: the receipt must bind runner, compiler,
    source graph and output hashes (JUN-29 acceptance).
+
+Status, 2026-10-19 (same day's later ticks):
+
+* **1 is measured** — `native-seed-c-free-runner-slot-hits-20261019.md`,
+  `native-seed-c-free-runner-data-slots-20261019.md`, and the call-site
+  discipline in `native-seed-c-free-runner-call-abi-20261019.md` (25
+  payloads, anomaly 0).
+* **2 is measured but open** —
+  `native-seed-c-free-runner-expressiveness-20261019.md` (seed routes vs
+  runner constructs) and `native-seed-c-free-runner-raw-elf-emitter-20261019.md`
+  (vehicle (b) verified as a probe). The kernel-profile slice remains the
+  recorded dependency; the raw-ELF probe also showed the rdi-clobber defect
+  class that compiler-produced code cannot exhibit (same call-abi record).
+* **3 is implemented** —
+  `native-seed-c-free-runner-admission-receipt-20261019.md`:
+  `kotoba.compiler.runner-slice` (admission + `:kotoba.runner-receipt/v1`
+  binding runner/compiler/source-graph/output hashes with the measured
+  call-site contract) plus one measured receipt over the 2026-10-19
+  G1→G2 chain, `verify`d and `admit!`ed.
