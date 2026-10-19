@@ -40,7 +40,20 @@ run); runs 1 and 3 show single-round spikes in the min/max range. The
 three 4x-load medians agree to within 0.5%; run 2 (quiet, arm IQRs ~1% of
 median) has every one of its 32 rounds below 1.0.
 
-## Finding
+## Finding (PROVISIONAL: bootstrap compiler, contended host)
+
+Repository policy permits publishing compiler codegen performance verdicts
+only from a selfhost-built compiler on a quiet host. These runs used the
+Node bootstrap compiler and ran with the host contended (load averages
+15-21), and the harness's replay order was the forward/reverse scheme
+(012,210), whose adjacent positions are unbalanced (two of the three arms
+get back-to-back replays; the variant's predecessor is always another arm)
+-- a predecessor cache/power/frequency confound that biases the
+baseline/variant ratio beyond drift. The recorded logs carry
+`order=alternating(012,210)` and are retained as LABELED BOOTSTRAP runs;
+the harness now emits the balanced order (012021), and a selfhost-built
+compiler run on a quiet host is required before any verdict is published.
+What follows is that labeled-bootstrap finding, not a published verdict.
 
 At W=64 with 4x the load the difference RESOLVES: the :subgroup-reduce
 variant is slower than the shared-memory cascade by ~6.5-7.0% per dispatch
