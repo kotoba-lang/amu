@@ -524,7 +524,8 @@
                         bytes-next (+ source-bytes (string-byte-length source))
                         surface? (if (string=? namespace entry-namespace)
                                    entry-surface?
-                                   (path-suffix? path ".cljk"))
+                                   (or (path-suffix? path ".cljk")
+                                       (path-suffix? path ".cljc")))
                         packet-next (string-concat packet
                                                    (source-frame namespace source surface?))]
                     (cond
@@ -583,4 +584,5 @@
                           (typed-list-conj [:list :string] decoded-roots
                                            (entry-source-root entry-path namespace))
                           decoded-roots)]
-              (collect-project namespace source (path-suffix? entry-path ".cljk") roots))))))))
+              (collect-project namespace source (or (path-suffix? entry-path ".cljk")
+                                                   (path-suffix? entry-path ".cljc")) roots))))))))
