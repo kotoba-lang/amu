@@ -25,7 +25,7 @@
             test-text test-bytes-xrefs
             test-logical-reg test-addsub-reg test-ldst-reg test-pair
             test-record test-targets test-listing
-            test-shift-text test-extend-text test-reg31-sf test-tbz-pair-text test-bounds-guards test-mov-ret-ror test-literal
+            test-shift-text test-extend-text test-reg31-sf test-tbz-pair-text test-bounds-guards test-mov-ret-ror test-symtab-fixes test-literal
             test-m3-edges test-m3-reach test-m3-entries test-m3-cfg
             test-m3-bounds test-m3-strings test-m3-xrefs test-m3-imports
             test-macho test-elf test-pe test-words-at
@@ -1072,12 +1072,20 @@
   (let [sh (elf-sh-off b i)]
     (name-str b (+ (elf-strtab-off b) (u32le b sh)) 64)))
 
-;; index of the SHT_SYMTAB section (sh_type 2), or -1
-(defn elf-symtab-sh [b :bytes] :i64
+;; index of a section header with the given sh_type, or -1
+(defn elf-sh-of-type [b :bytes typ :i64] :i64
   (loop [i 0]
     (if (>= i (elf-shnum b)) (- 0 1)
-      (if (= (u32le b (+ (elf-sh-off b i) 4)) 2) i
+      (if (= (u32le b (+ (elf-sh-off b i) 4)) typ) i
         (recur (+ i 1))))))
+
+;; Symbol table section: SHT_SYMTAB (sh_type 2), falling back to
+;; SHT_DYNSYM (sh_type 11) when the binary is stripped of its static
+;; symbol table (review P2: the static-only search answered -1 and hid
+;; every exported and undefined dynamic symbol).
+(defn elf-symtab-sh [b :bytes] :i64
+  (let [t (elf-sh-of-type b 2)]
+    (if (>= t 0) t (elf-sh-of-type b 11))))
 
 ;; the symbol string table is the section sh_link names
 (defn elf-sym-strtab-off [b :bytes] :i64
@@ -1150,10 +1158,28 @@
 (defn pe-section-name [b :bytes i :i64] :string
   (name-str b (pe-section-off b i) 8))
 
-(defn pe-symbol-count [b :bytes] :i64 (u32le b (+ (pe-lfanew b) 16)))
+;; PE/COFF NumberOfSymbols counts RAW 18-byte records, including the
+;; auxiliary records that follow a primary with NumberOfAuxSymbols > 0
+;; (record byte +17). The symbol surface is PRIMARY symbols only: the
+;; count excludes auxiliaries and the index walk skips them (review P2:
+;; exposing the raw count and indexing every record decoded auxiliaries
+;; as primary symbols).
+(defn pe-raw-count [b :bytes] :i64 (u32le b (+ (pe-lfanew b) 16)))
+(defn pe-aux-of [b :bytes rec :i64] :i64 (bytes-at b (+ rec 17)))
+
+(defn pe-symbol-count [b :bytes] :i64
+  ;; the walk stops at the string table, which follows the raw records
+  ;; (computed inline: pe-strtab-off is defined further down and this
+  ;; module resolves definitions in order).
+  (let [strtab (+ (u32le b (+ (pe-lfanew b) 12)) (* 18 (pe-raw-count b)))]
+    (loop [rec (u32le b (+ (pe-lfanew b) 12)) k 0]
+      (if (>= rec strtab) k
+        (recur (+ rec (* 18 (+ 1 (pe-aux-of b rec)))) (+ k 1))))))
 
 (defn pe-symbol-off [b :bytes i :i64] :i64
-  (+ (u32le b (+ (pe-lfanew b) 12)) (* 18 i)))
+  (loop [rec (u32le b (+ (pe-lfanew b) 12)) k 0]
+    (if (>= k i) rec
+      (recur (+ rec (* 18 (+ 1 (pe-aux-of b rec)))) (+ k 1)))))
 
 (defn pe-strtab-off [b :bytes] :i64
   (+ (u32le b (+ (pe-lfanew b) 12)) (* 18 (pe-symbol-count b))))
@@ -1191,9 +1217,16 @@
 (defn macho-symbol-undef? [b :bytes index :i64] :bool
   (nlist-undef? b (+ (macho-symtab-field b 0) (* 16 index))))
 
+;; An undefined entry is an import only with an EXTERNAL binding
+;; (st_info bits 7:6 = STB_GLOBAL 1 or STB_WEAK 2): the mandatory
+;; all-zero symbol at index 0 (st_info = STB_LOCAL) must not appear in
+;; the import surface (review P2).
+(defn elf-sym-ext? [b :bytes sym :i64] :bool
+  (let [bind (bit-and (quot (bytes-at b (+ sym 4)) 64) 3)]
+    (or (= bind 1) (= bind 2))))
 (defn elf-symbol-undef? [b :bytes i :i64] :bool
-  (elf-sym-undef? b
-    (+ (u64le b (+ (elf-sh-off b (elf-symtab-sh b)) 24)) (* 24 i))))
+  (let [sym (+ (u64le b (+ (elf-sh-off b (elf-symtab-sh b)) 24)) (* 24 i))]
+    (and (elf-sym-undef? b sym) (elf-sym-ext? b sym))))
 
 (defn pe-symbol-undef? [b :bytes i :i64] :bool
   (pe-sym-undef? b (pe-symbol-off b i)))
@@ -1924,6 +1957,35 @@
            (= (insn-class 0x8B020020) (class-add-reg)))
     1 0))
 
+(defn test-symtab-fixes [] :i64
+  ;; SHT_DYNSYM fallback, external-binding imports, COFF aux skip
+  ;; (review P2 x3):
+  ;;   a stripped ELF whose only symbol section is sh_type 11 still
+  ;;   reports its symbols;
+  ;;   the all-zero ELF symbol 0 (STB_LOCAL) is not an import;
+  ;;   a 3-record COFF table (primary + 1 aux + primary) counts 2
+  ;;   primaries and index 1 lands on the third raw record.
+  (let [elf-v (vector-alloc 224)
+        elf-v (put16 elf-v 58 64)
+        elf-v (put16 elf-v 60 1)
+        elf-v (put64 elf-v 40 128)
+        elf-v (put32 elf-v 132 11)
+        elf-v (put64 elf-v 152 200)
+        elf-v (put64 elf-v 160 24)
+        elf11 (bytes-from-vector-i64 elf-v)
+        pe-v (vector-alloc 280)
+        pe-v (put16 pe-v 0 0x5A4D)
+        pe-v (put32 pe-v 60 128)
+        pe-v (put32 pe-v 140 200)
+        pe-v (put32 pe-v 144 3)
+        pe-v (put8 pe-v 217 1)
+        pe3 (bytes-from-vector-i64 pe-v)]
+    (if (and (= (elf-symbol-count elf11) 1)
+             (not (elf-symbol-undef? (elf-fixture) 0))
+             (= (pe-symbol-count pe3) 2)
+             (= (pe-symbol-off pe3 1) 236))
+      1 0)))
+
 (defn main [] :i64
   (let [s (+ (test-hints) (test-exceptions) (test-branch-uncond)
              (test-branch-cond) (test-branch-register) (test-adr)
@@ -1931,10 +1993,10 @@
              (test-bytes-xrefs) (test-logical-reg) (test-addsub-reg)
              (test-ldst-reg) (test-pair) (test-record) (test-targets)
              (test-listing) (test-shift-text) (test-extend-text)
-             (test-reg31-sf) (test-tbz-pair-text) (test-bounds-guards) (test-mov-ret-ror)
+             (test-reg31-sf) (test-tbz-pair-text) (test-bounds-guards) (test-mov-ret-ror) (test-symtab-fixes)
              (test-literal) (test-m3-edges) (test-m3-reach) (test-m3-entries)
              (test-m3-cfg) (test-m3-bounds) (test-m3-strings) (test-m3-xrefs)
              (test-m3-imports)
              (test-macho) (test-elf) (test-pe)
              (test-words-at))]
-    (if (= s 37) 1 0)))
+    (if (= s 38) 1 0)))
