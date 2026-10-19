@@ -25,7 +25,7 @@
             test-text test-bytes-xrefs
             test-logical-reg test-addsub-reg test-ldst-reg test-pair
             test-record test-targets test-listing
-            test-shift-text test-extend-text test-reg31-sf test-tbz-pair-text test-literal
+            test-shift-text test-extend-text test-reg31-sf test-tbz-pair-text test-bounds-guards test-literal
             test-m3-edges test-m3-reach test-m3-entries test-m3-cfg
             test-m3-bounds test-m3-strings test-m3-xrefs test-m3-imports
             test-macho test-elf test-pe test-words-at
@@ -689,6 +689,10 @@
 ;; edges (fall-through + computed targets), answering 0/1 per slot. ret/br/
 ;; b/hlt end a path; bl/bcond/cbz/tbz branch AND fall through.
 (defn reachable-vector [words :vector-i64 base :i64 n :i64] :vector-i64
+  ;; n = 0 is a valid window (empty executable section / empty input):
+  ;; answer an empty vector instead of writing slot 0 of a zero-length
+  ;; allocation (review P2: that path trapped out-of-bounds).
+  (if (<= n 0) (vector-alloc 0)
   (let [seen (vector-alloc n)
         q (vector-alloc n)]
     (loop [head 0 tail 1
@@ -711,7 +715,7 @@
               s2 (if cf (vector-assoc s1 f 1) s1)
               q2 (if cf (vector-assoc q1 n1 f) q1)
               n2 (if cf (+ n1 1) n1)]
-          (recur (+ head 1) n2 s2 q2))))))
+          (recur (+ head 1) n2 s2 q2)))))))
 
 ;; Function entry slots: the entry pc (base) plus every in-window bl
 ;; target, first occurrence kept. Answer is n slots, -1-padded after the
@@ -1106,7 +1110,15 @@
 (defn pe-lfanew [b :bytes] :i64 (u32le b 60))
 
 (defn pe-recognize [b :bytes] :i64
-  (if (and (= (u16le b 0) 0x5A4D) (= (u32le b (pe-lfanew b)) 0x00004550))
+  ;; e_lfanew is attacker-controlled: validate the buffer length against
+  ;; the MZ header, the offset itself and the 4 signature bytes it names
+  ;; BEFORE any dereference (review P1: a truncated or malformed PE
+  ;; trapped in bytes-at instead of answering 0).
+  (if (and (>= (bytes-count b) 64)
+           (= (u16le b 0) 0x5A4D)
+           (let [lf (pe-lfanew b)]
+             (and (>= lf 0) (<= (+ lf 4) (bytes-count b))
+                  (= (u32le b lf) 0x00004550))))
     1 0))
 
 (defn pe-image-base [b :bytes] :i64 (u64le b (+ (pe-lfanew b) 48)))
@@ -1874,6 +1886,19 @@
            (string=? (insn-text 0xA9410440 0) "ldp x0, x1, [x2, #0x10]"))
     1 0))
 
+(defn test-bounds-guards [] :i64
+  ;; Truncated/malformed PE answers 0 instead of trapping (review P1:
+  ;; e_lfanew is attacker-controlled and was dereferenced unchecked), and
+  ;; an empty analysis window answers an empty vector (review P2).
+  (let [short (bytes-from-vector-i64 (vector-i64 77 90 0 0 0 0 0 0))
+        far (bytes-from-vector-i64 (put32 (put16 (vector-alloc 64) 0 0x5A4D) 60 1000))
+        r (reachable-vector (vector-i64 0) 0 0)]
+    (if (and (= (pe-recognize short) 0)
+             (= (pe-recognize far) 0)
+             (= (pe-recognize (pe-fixture)) 1)
+             (= (vector-count r) 0))
+      1 0)))
+
 (defn main [] :i64
   (let [s (+ (test-hints) (test-exceptions) (test-branch-uncond)
              (test-branch-cond) (test-branch-register) (test-adr)
@@ -1881,10 +1906,10 @@
              (test-bytes-xrefs) (test-logical-reg) (test-addsub-reg)
              (test-ldst-reg) (test-pair) (test-record) (test-targets)
              (test-listing) (test-shift-text) (test-extend-text)
-             (test-reg31-sf) (test-tbz-pair-text)
+             (test-reg31-sf) (test-tbz-pair-text) (test-bounds-guards)
              (test-literal) (test-m3-edges) (test-m3-reach) (test-m3-entries)
              (test-m3-cfg) (test-m3-bounds) (test-m3-strings) (test-m3-xrefs)
              (test-m3-imports)
              (test-macho) (test-elf) (test-pe)
              (test-words-at))]
-    (if (= s 35) 1 0)))
+    (if (= s 36) 1 0)))
