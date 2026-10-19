@@ -25,7 +25,7 @@
             test-text test-bytes-xrefs
             test-logical-reg test-addsub-reg test-ldst-reg test-pair
             test-record test-targets test-listing
-            test-shift-text test-extend-text test-reg31-sf test-tbz-pair-text test-bounds-guards test-mov-ret-ror test-symtab-fixes test-adrp-add-sf test-image-base-mapping test-literal
+            test-shift-text test-extend-text test-reg31-sf test-tbz-pair-text test-bounds-guards test-mov-ret-ror test-symtab-fixes test-adrp-add-sf test-image-base-mapping test-descent-bounds test-literal
             test-m3-edges test-m3-reach test-m3-entries test-m3-cfg
             test-m3-bounds test-m3-strings test-m3-xrefs test-m3-imports
             test-macho test-elf test-pe test-words-at
@@ -717,7 +717,10 @@
               w (vector-at words slot)
               pc (+ base (* 4 slot))
               c (insn-class w)
-              t (if (insn-has-target? c) (slot-of base n (insn-target w pc)) -1)
+              ;; control-flow edges only: an ADR/ADRP data reference that
+              ;; lands in the window must not enqueue its target as code
+              ;; (review P1; the pass comment promises exactly this).
+              t (if (insn-branch? c) (slot-of base n (insn-target w pc)) -1)
               end? (or (= c (class-ret)) (= c (class-br))
                        (= c (class-b)) (= c (class-hlt)))
               f (if (or end? (>= (+ slot 1) n)) -1 (+ slot 1))
@@ -773,9 +776,17 @@
 ;; body (its return site belongs to the caller).
 (defn fn-end [words :vector-i64 entries :vector-i64 base :i64 n :i64 start :i64] :i64
   (loop [e start]
-    (let [c (insn-class (vector-at words e))
+    (let [w (vector-at words e)
+          c (insn-class w)
+          pc (+ base (* 4 e))
+          ;; an unconditional b to an in-window slot is a LOCAL jump (a
+          ;; forward jump to an epilogue is common) and does not end the
+          ;; function; only a branch out of the window does (review P1:
+          ;; the walk truncated function bounds at every b).
+          b-out? (and (= c (class-b))
+                      (< (slot-of base n (insn-target w pc)) 0))
           end-path? (or (= c (class-ret)) (= c (class-br))
-                        (= c (class-b)) (= c (class-hlt)))]
+                        b-out? (= c (class-hlt)))]
       (if (or end-path? (>= (+ e 1) n)
               (entry-slot? entries base n (+ e 1)))
         e
@@ -2084,6 +2095,22 @@
              (= (elf-image-base e) 0x400000))
       1 0)))
 
+(defn test-descent-bounds [] :i64
+  ;; Recursive descent follows control-flow edges only (review P1): an
+  ;; ADR data reference into the window must not mark its target as code.
+  ;; fn-end follows local unconditional branches (review P1): a forward
+  ;; b to an in-window slot does not truncate the function.
+  ;;   slot0 adr x0, #8 (0x10000040) targets slot2 (data); slot1 ret
+  ;;   slot0 b +2 (0x14000002) targets slot2 (local); slot1 add; slot2 ret
+  (let [r (reachable-vector (vector-i64 0x10000040 0xD65F03C0 0x20000000) 0x1000 3)
+        words2 (vector-i64 0x14000002 0x91000420 0xD65F03C0)
+        entries (fill-vec 3 (- 0 1))]
+    (if (and (= (vector-at r 0) 1)
+             (= (vector-at r 1) 1)
+             (= (vector-at r 2) 0)
+             (= (fn-end words2 entries 0x1000 3 0) 2))
+      1 0)))
+
 (defn main [] :i64
   (let [s (+ (test-hints) (test-exceptions) (test-branch-uncond)
              (test-branch-cond) (test-branch-register) (test-adr)
@@ -2091,10 +2118,10 @@
              (test-bytes-xrefs) (test-logical-reg) (test-addsub-reg)
              (test-ldst-reg) (test-pair) (test-record) (test-targets)
              (test-listing) (test-shift-text) (test-extend-text)
-             (test-reg31-sf) (test-tbz-pair-text) (test-bounds-guards) (test-mov-ret-ror) (test-symtab-fixes) (test-adrp-add-sf) (test-image-base-mapping)
+             (test-reg31-sf) (test-tbz-pair-text) (test-bounds-guards) (test-mov-ret-ror) (test-symtab-fixes) (test-adrp-add-sf) (test-image-base-mapping) (test-descent-bounds)
              (test-literal) (test-m3-edges) (test-m3-reach) (test-m3-entries)
              (test-m3-cfg) (test-m3-bounds) (test-m3-strings) (test-m3-xrefs)
              (test-m3-imports)
              (test-macho) (test-elf) (test-pe)
              (test-words-at))]
-    (if (= s 40) 1 0)))
+    (if (= s 41) 1 0)))
