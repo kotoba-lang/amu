@@ -133,3 +133,25 @@ selfhost worktrees (amu / kotoba-runtime / artifact-core / kotoba-hir /
 kotoba-text + build overlays) and are not yet landed to their repos' default
 branches. This evidence file is the first landed artifact of the series; treat
 the closure provenance above as the reference for the landing PRs that follow.
+
+## 7. Tracked code-review findings (landed as-is baseline)
+
+The codex review of the sources' landing PR (kotoba-lang/amu#1357) found 8
+issues in the selfhost sources (2×P1, 6×P2). This PR lands the **byte-verified
+r19cli baseline** unchanged so the fixes can be measured against it in the
+active selfhost workstream (rebuild + fixture + host/native matrix per tick).
+They are findings, not refusals — tracked on JUN-11 with the PR threads:
+
+1. (P1) `wasm-component-kotoba-v2` target spelling missing from the native
+   target mapping (falls to `:unsupported-target`).
+2. (P1) decimal ties-to-even rounding compares the full scaled numerator
+   instead of the division remainder (`1.0` encodes as `1.0000000000000002`).
+3. (P2) native CLI rejects `.cljc` entry files the resolver accepts.
+4. (P2) imported-export detection uses raw substring search (prefix/comment
+   false positives).
+5. (P2) dependency resolver follows symlinks out of the source roots (closed
+   graph escape).
+6. (P2) hex i64 literal `-0x8000000000000000` rejected at the boundary.
+7. (P2) duplicate map keys silently accepted (first wins) in the native reader.
+8. (P2) 10,000 top-level form limit not enforced before materializing (arena /
+   fuel exhaustion before the structured refusal).
