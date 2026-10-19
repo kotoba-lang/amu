@@ -21,7 +21,8 @@
     (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
                                   {:workgroup-size w})
           code (sg/emit-glsl kir)]
-      (is (str/includes? code "#extension GL_KHR_shader_subgroup : require"))
+      (is (str/includes? code "#extension GL_KHR_shader_subgroup_basic : require"))
+      (is (str/includes? code "#extension GL_KHR_shader_subgroup_shuffle_relative : require"))
       (is (str/includes? code "gl_SubgroupSize"))
       (is (str/includes? code "uint fold = min(gl_SubgroupSize, gl_WorkGroupSize.x);"))
       (is (str/includes? code "for (uint d = fold / 2u; d > 0u; d >>= 1u)"))
@@ -31,13 +32,47 @@
 (deftest each-operator-carries-its-combine-and-identity
   (doseq [[operator combine identity-text]
           [[:sum "a+b" "0.0"]
-           [:max "max(a,b)" "-3.402823466e+38"]
-           [:min "min(a,b)" "3.402823466e+38"]]]
+           ;; Extrema identities are the INFINITE neutrals: a finite bound is
+           ;; corrupted by a legitimate +-Inf input in the padded lanes
+           ;; (review P2). GLSL has no infinity literal; uintBitsToFloat of
+           ;; the IEEE-754 sign/exponent bits is exact.
+           [:max "max(a,b)" "uintBitsToFloat(0xFF800000u)"]
+           [:min "min(a,b)" "uintBitsToFloat(0x7F800000u)"]]]
     (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
                                   {:workgroup-size 128})
           code (sg/emit-glsl kir)]
       (is (str/includes? code (str "float combine(float a, float b) { return " combine "; }")))
       (is (str/includes? code (str "float v = i < n ? x[i] : " identity-text ";"))))))
+
+(deftest the-emitted-source-compiles-as-glsl
+  ;; Review P1s on this file: subgroupShuffleDown needs the per-feature
+  ;; shuffle_relative extension (the umbrella GL_KHR_shader_subgroup does
+  ;; not declare it everywhere), and the GLSL builtin is
+  ;; gl_SubgroupInvocationID -- the SPIR-V spelling
+  ;; gl_SubgroupLocalInvocationId is an undeclared identifier in GLSL.
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 256})
+        code (sg/emit-glsl kir)]
+    (is (str/includes? code "#extension GL_KHR_shader_subgroup_basic : require"))
+    (is (str/includes? code "#extension GL_KHR_shader_subgroup_shuffle_relative : require"))
+    (is (nil? (re-find #"GL_KHR_shader_subgroup : require" code))
+        "the umbrella extension -- which glslang rejects outright -- is back")
+    (is (str/includes? code "gl_SubgroupInvocationID"))
+    (is (nil? (re-find #"gl_SubgroupLocalInvocationId" code))
+        "the SPIR-V builtin name leaked into GLSL output")))
+
+(deftest the-cross-subgroup-fold-covers-every-partial
+  ;; Review P1: the cross-subgroup stage ran only subgroup 0's first d
+  ;; lanes; when gl_NumSubgroups / 2 exceeds the subgroup width (W=256 with
+  ;; S=8 starts at d=16) partials beyond the first S were never folded. The
+  ;; stage must stride subgroup 0's lanes by gl_SubgroupSize so every pair
+  ;; is combined regardless of the (S, nsub) shape.
+  (doseq [w [32 64 128 256 512 1024]]
+    (let [code (sg/emit-glsl (accelerator/kernel "reduce_sum" :reduce :sum
+                                                 {:workgroup-size w}))]
+      (is (str/includes? code
+                         "for (uint lid = gl_SubgroupInvocationID; lid < d; lid += gl_SubgroupSize)"))
+      (is (nil? (re-find #"gl_SubgroupInvocationID < d" code))
+          "the unstrided lid < d guard is back"))))
 
 (deftest workgroup-shape-mirrors-the-kir
   (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 128})

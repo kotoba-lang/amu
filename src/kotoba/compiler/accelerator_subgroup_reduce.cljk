@@ -80,7 +80,14 @@
               (>= wg min-workgroup-size)))))
 
 (def ^:private identity-value
-  {:sum "0.0" :max "-3.402823466e+38" :min "3.402823466e+38"})
+  ;; The padded lanes (i >= n) fold the identity. For extrema the identity
+  ;; must be the INFINITE neutral: a finite bound is corrupted by an input
+  ;; that legitimately contains +Inf (:min) or -Inf (:max). GLSL has no
+  ;; infinity literal; uintBitsToFloat of the IEEE-754 sign/exponent bits
+  ;; is exact.
+  {:sum "0.0"
+   :max "uintBitsToFloat(0xFF800000u)"
+   :min "uintBitsToFloat(0x7F800000u)"})
 
 (def ^:private combine-expression
   {:sum "a+b" :max "max(a,b)" :min "min(a,b)"})
@@ -107,7 +114,13 @@
         identity (identity-value operator)
         combine (combine-expression operator)]
     (str "#version 450\n"
-         "#extension GL_KHR_shader_subgroup : require\n"
+         ;; GLSL wants the per-feature subgroup extensions; the umbrella
+         ;; GL_KHR_shader_subgroup is rejected outright by glslang
+         ;; ("extension not supported"), while basic + shuffle_relative
+         ;; compile -- the harness's measured-working rung patch replaces
+         ;; exactly this pair (PR #1346), so emit what measures.
+         "#extension GL_KHR_shader_subgroup_basic : require\n"
+         "#extension GL_KHR_shader_subgroup_shuffle_relative : require\n"
          "layout(local_size_x = " wg ") in;\n"
          "layout(set = 0, binding = 0, std430) readonly buffer X { float x[]; };\n"
          "layout(set = 0, binding = 1, std430) writeonly buffer Parts { float parts[]; };\n"
@@ -125,20 +138,24 @@
          "  uint fold = min(gl_SubgroupSize, gl_WorkGroupSize.x);\n"
          "  for (uint d = fold / 2u; d > 0u; d >>= 1u) {\n"
          "    float s = subgroupShuffleDown(v, d);\n"
-         "    if (gl_SubgroupLocalInvocationId + d < fold) { v = combine(v, s); }\n"
+         "    if (gl_SubgroupInvocationID + d < fold) { v = combine(v, s); }\n"
          "  }\n"
-         "  if (gl_SubgroupLocalInvocationId == 0u) { partials[gl_SubgroupID] = v; }\n"
+         "  if (gl_SubgroupInvocationID == 0u) { partials[gl_SubgroupID] = v; }\n"
          "  barrier();\n"
          ;; One cross-subgroup tree over the gl_NumSubgroups partials, run by
-         ;; subgroup 0's first lanes. nsub is 1 or a power of two (W and S
-         ;; are), so the halving tree is exact. The barrier per stage is
-         ;; uniform -- every invocation of the workgroup reaches it.
+         ;; subgroup 0's lanes STRIDED by the subgroup size: the number of
+         ;; pairs at stage d can exceed the subgroup width (e.g. nsub=32 with
+         ;; S=8 starts at d=16), so a plain lid < d guard would leave
+         ;; partials beyond the first S unfolded. nsub is 1 or a power of two
+         ;; (W and S are), so the halving tree is exact. The barrier per stage
+         ;; is uniform -- every invocation of the workgroup reaches it.
          "  for (uint d = gl_NumSubgroups / 2u; d > 0u; d >>= 1u) {\n"
-         "    if (gl_SubgroupID == 0u && gl_SubgroupLocalInvocationId < d) {\n"
-         "      uint lid = gl_SubgroupLocalInvocationId;\n"
-         "      partials[lid] = combine(partials[lid], partials[lid + d]);\n"
+         "    if (gl_SubgroupID == 0u) {\n"
+         "      for (uint lid = gl_SubgroupInvocationID; lid < d; lid += gl_SubgroupSize) {\n"
+         "        partials[lid] = combine(partials[lid], partials[lid + d]);\n"
+         "      }\n"
          "    }\n"
          "    barrier();\n"
          "  }\n"
-         "  if (gl_SubgroupID == 0u && gl_SubgroupLocalInvocationId == 0u) { parts[gl_WorkGroupID.x] = partials[0]; }\n"
+         "  if (gl_SubgroupID == 0u && gl_SubgroupInvocationID == 0u) { parts[gl_WorkGroupID.x] = partials[0]; }\n"
          "}\n")))
