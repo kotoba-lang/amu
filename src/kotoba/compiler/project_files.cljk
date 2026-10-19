@@ -7,6 +7,14 @@
   What the path resolver is FOR, rather than incidental behaviour, and so
   what the two hosts share verbatim:
 
+  - `.cljk` is Kotoba surface syntax sugar. Its admitted forms lower
+    deterministically to canonical Kotoba core, whose direct text spelling is
+    `.kotoba`. Clojure-shaped notation does not import Clojure or
+    ClojureScript semantics. `sema/read-forms` routes both host and Kotoba
+    callers through the Kotoba reader, which selects only `:kotoba` and
+    `:default` reader-conditional branches.
+    `.cljc` shares the closed form pipeline where its portable constructs are
+    admitted. Extensions do not select runtime semantics.
   - Extension priority (`.kotoba`, `.cljk`, `.cljc`) is local to ONE root. The
     same namespace present under two explicit roots is ambiguous and rejected;
     it must never be settled by argument order.

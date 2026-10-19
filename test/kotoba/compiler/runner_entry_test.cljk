@@ -1,0 +1,243 @@
+(ns kotoba.compiler.runner-entry-test
+  "Vectors for the Route B (supervisor + OP-CAP) entry slice of the
+  C-free x86-64 seed runner (JUN-29). Every constant under test is the
+  measured 2026-10-20 entry-route decode
+  (docs/native-seed-c-free-runner-entry-route-20261020.md, independent
+  llvm-objdump instrument, probe blob sha256 e419f130...428c2): the
+  29-byte 2-arg cap-call site through vtable slot 128, admission
+  profile 2 (ops 1..24, profile 1 minus OP-RES2/OP-RET2) with the
+  capability wires #{35 37 38 39}, and the ctx-v11 guest call."
+  (:require [clojure.test :refer [deftest is]]
+            [kotoba.compiler.runner-entry :as runner-entry]))
+
+(def ok-sir
+  "A SIR description using exactly the ops the kernel profile adds over
+  profile 0 -- OP-RT(14), OP-CAP(15), OP-STR(16), OP-VEC(17),
+  OP-TAB(21), OP-FADDR(22), OP-CALLI(23), OP-VECP(24) -- inside the
+  profile 2 bounds."
+  {:functions [{:kind :FK-DEFN :nparams 2 :params [:TY-I64 :TY-I64]
+                :ret :TY-I64 :ops (set (range 1 25))}
+               {:kind :FK-LAMBDA :nparams 16 :params [:TY-BOOL]
+                :ret :TY-I64 :ops #{15 22 23}}
+               {:kind :FK-ADAPTER :nparams 5 :params [:TY-I64]
+                :ret :TY-BOOL :ops #{13}}]})
+
+(deftest entry-route-pins-route-b
+  (let [route runner-entry/entry-route]
+    (is (= :supervisor-op-cap (:decision route)))
+    (is (= :entry-stub (:fallback route))
+        "Route A survives only as the documented fallback")
+    (is (= 0 (:guest-emission-delta route))
+        "Route B adds 0 new emission constructs")
+    (is (= 29 (:cap-call-site-bytes route)))
+    (is (= 128 (:cap-call-vtable-slot route)))
+    (is (= #{35 37 38 39} (:wires route)))
+    (is (= [437 302 157 317 60] (get-in route [:probe :decoded-syscall-numbers]))
+        "independent decode verified the setup-syscall numbers")))
+
+(deftest cap-call-site-is-the-measured-29-bytes
+  (doseq [wire [35 37 38 39]]
+    (let [site (runner-entry/cap-call-site! wire)]
+      (is (= 29 (:bytes site)) "2-arg cap call, discipline reloads included")
+      (is (= 29 (apply + (map :bytes (:shape site)))))
+      (is (= 128 (:vtable-slot site)))
+      (is (= :sysv-ctx-v11 (:abi site)))
+      (is (true? (get-in site [:discipline :ctx-reloaded-before-call])))
+      (is (true? (get-in site [:discipline :r9-restored-after-call])))))
+  (is (= 29 runner-entry/cap-call-site-bytes))
+  (is (= (apply + (map :bytes runner-entry/cap-call-shape))
+         (:cap-call-site-bytes runner-entry/entry-route))
+      "the shape and the pinned route agree on the measured byte cost"))
+
+(deftest cap-call-site-refuses-anything-but-the-measurement
+  (doseq [wire [20 34 36 42 43 47 0 40]]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"outside the pinned set"
+                          (runner-entry/cap-call-site! wire))
+        (str "wire " wire " is not on the compiler command path")))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not the measured 29 bytes"
+                        (runner-entry/cap-call-site!
+                         35
+                         (update runner-entry/cap-call-shape 0
+                                 #(assoc % :bytes 4))))
+      "a 28-byte site is refused, not rounded")
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"vtable slot 128"
+                        (runner-entry/cap-call-site!
+                         35
+                         (mapv #(if (= :vtable-dispatch (:role %))
+                                  (assoc % :slot 56)
+                                  %)
+                               runner-entry/cap-call-shape)))
+      "pair slots 56/64/72 are not the cap-call dispatch")
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"discipline reload"
+                        (runner-entry/cap-call-site!
+                         35
+                         (mapv #(if (= :r9-restore (:role %))
+                                  (assoc % :role :something-else)
+                                  %)
+                               runner-entry/cap-call-shape)))))
+
+(deftest profile-2-admits-the-kernel-delta
+  (is (= (set (range 1 25)) runner-entry/profile-2-ops))
+  (is (:admitted? (runner-entry/admit-sir! ok-sir)))
+  (doseq [op [14 15 16 17 21 22 23 24]]
+    (is (contains? runner-entry/profile-2-ops op)
+        (str "OP " op " is the kernel delta over profile 0")))
+  (is (= 2 (:profile runner-entry/admission-profile-2)))
+  (is (= #{25 26} (:refused-ops runner-entry/admission-profile-2))
+      "OP-RES2/OP-RET2: no measured runner construct needs them")
+  (is (true? (get-in runner-entry/admission-profile-2
+                     [:walks-unreachable-functions]))
+      "both admission layers walk ALL SIR, reachable or not"))
+
+(deftest profile-2-refuses-out-of-bound-functions
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"op refused by profile 2"
+                        (runner-entry/admit-sir!
+                         {:functions [(assoc (first (:functions ok-sir))
+                                             :ops #{25})]}))
+      "OP-RES2(25) refused even attached to a reachable-looking function")
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"op refused by profile 2"
+                        (runner-entry/admit-sir!
+                         {:functions [(assoc (first (:functions ok-sir))
+                                             :ops #{13 26})]})))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"op refused by profile 2"
+                        (runner-entry/admit-sir!
+                         {:functions [(assoc (first (:functions ok-sir))
+                                             :ops #{27})]})))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"nparams outside"
+                        (runner-entry/admit-sir!
+                         {:functions [(assoc (first (:functions ok-sir))
+                                             :nparams 17)]}))
+      "profile 1's bound is 16 params")
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not immediately follow"
+                        (runner-entry/admit-sir!
+                         {:functions [(first (:functions ok-sir))
+                                      {:kind :FK-ADAPTER :nparams 5
+                                       :params [:TY-I64] :ret :TY-I64
+                                       :ops #{13}}]}))
+      "an adapter without its lambda is refused")
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"adapter nparams"
+                        (runner-entry/admit-sir!
+                         {:functions [{:kind :FK-LAMBDA :nparams 1
+                                       :params [:TY-I64] :ret :TY-I64
+                                       :ops #{13}}
+                                      {:kind :FK-ADAPTER :nparams 6
+                                       :params [:TY-I64] :ret :TY-I64
+                                       :ops #{13}}]}))
+      "adapters carry at most 5 params")
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"function kind refused"
+                        (runner-entry/admit-sir!
+                         {:functions [(assoc (first (:functions ok-sir))
+                                             :kind :FK-WEIRD)]})))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"type refused"
+                        (runner-entry/admit-sir!
+                         {:functions [(assoc (first (:functions ok-sir))
+                                             :params [:TY-F64])]})))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"type refused"
+                        (runner-entry/admit-sir!
+                         {:functions [(assoc (first (:functions ok-sir))
+                                             :ret :TY-F32)]})))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"positive type id"
+                        (runner-entry/admit-sir!
+                         {:functions [(assoc (first (:functions ok-sir))
+                                             :ret 0)]})))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no functions"
+                        (runner-entry/admit-sir! {:functions []}))))
+
+(deftest wires-are-exactly-the-pinned-set
+  (is (:admitted? (runner-entry/admit-wires! #{35 37 38 39})))
+  (doseq [wires [#{35 37 38}          ; subset: not the measured command path
+                 #{35 37 38 39 42}    ; broker wire (gpu) never granted
+                 #{35 37 38 39 20}    ; spawn broker
+                 #{34 35 37 38 39}    ; fs scope 34 is not a granted wire here
+                 #{20} #{} nil]]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not the pinned set"
+                          (runner-entry/admit-wires! wires))
+        (str "wires " (pr-str wires) " refused"))))
+
+(deftest entry-admission-seals-the-decision
+  (let [admitted (runner-entry/admit! {:sir ok-sir :wires #{35 37 38 39}})]
+    (is (:admitted? admitted))
+    (is (= 2 (:profile admitted)))
+    (is (= [35 37 38 39] (:wires admitted)))
+    (is (re-matches #"[0-9a-f]{64}" (:admission-sha256 admitted)))
+    (is (= (:admission-sha256 admitted)
+           (:admission-sha256
+            (runner-entry/admit! {:sir ok-sir :wires #{35 37 38 39}})))
+        "the same admission seals the same decision")
+    (is (not= (:admission-sha256 admitted)
+              (:admission-sha256
+               (runner-entry/admit!
+                {:sir (update ok-sir :functions
+                              #(cons {:kind :FK-PRIV :nparams 0 :params []
+                                      :ret :TY-I64 :ops #{19}} %))
+                 :wires #{35 37 38 39}})))
+        "a different SIR is a different admission")
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not the pinned set"
+                          (runner-entry/admit! {:sir ok-sir :wires #{35 37 38}})))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"op refused"
+                          (runner-entry/admit!
+                           {:sir {:functions [(assoc (first (:functions ok-sir))
+                                                     :ops #{25})]}
+                            :wires #{35 37 38 39}})))))
+
+(deftest ctx-v11-plan-is-the-measured-layout
+  (let [plan (runner-entry/ctx-v11-plan)]
+    (is (= :kexe-context-v11 (:struct plan)))
+    (is (= 36 (:function-pointer-slots plan)))
+    (is (= 128 (get-in plan [:offsets :typed-cap-call]))
+        "typed_cap_call sits where the cap-call site dispatches")
+    (is (= 8 (get-in plan [:offsets :fuel])))
+    (is (= 56 (get-in plan [:offsets :pair-new])))
+    (is (= [:pair-used-pointer :pairs-base :pair-validated-base
+            :vector-used-pointer :vectors-base :vector-items-base]
+           (:data-slots plan)))
+    (is (true? (:data-slots-written-before-guest plan))))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"typed-cap-call slot"
+                        (runner-entry/ctx-v11-plan
+                         {:offsets {:typed-cap-call 56}})))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"multiples of 8"
+                        (runner-entry/ctx-v11-plan
+                         {:offsets {:fuel 7 :typed-cap-call 128}})))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not the measured 36"
+                        (runner-entry/ctx-v11-plan
+                         {:offsets {:fuel 8 :typed-cap-call 128}
+                          :function-pointer-slots 35}))))
+
+(deftest guest-is-called-once-under-ctx-v11
+  (let [calls (atom 0)
+        seen-ctx (atom nil)
+        seen-sites (atom nil)
+        out (runner-entry/call-guest-under-ctx!
+             {:guest-entry (fn [ctx]
+                             (swap! calls inc)
+                             (reset! seen-ctx ctx)
+                             {:status :ok :output {:sha256 (apply str (repeat 64 "0"))}})
+              :ctx {:struct :kexe-context-v11}
+              :cap-dispatch (fn [sites] (reset! seen-sites sites))})]
+    (is (= 1 @calls) "the guest is entered exactly once")
+    (is (= {:struct :kexe-context-v11} @seen-ctx))
+    (is (= :supervisor-op-cap (:entry-route out)))
+    (is (= :sysv-ctx-v11 (:abi out)))
+    (is (= 1 (:guest-called out)))
+    (is (= :ok (:status out)))
+    (is (= [35 37 38 39] (mapv :wire @seen-sites))
+        "one measured cap-call site per pinned wire")
+    (is (every? #(= 29 (:bytes %)) @seen-sites))
+    (is (= 128 (:vtable-slot (first @seen-sites)))))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must be callable"
+                        (runner-entry/call-guest-under-ctx!
+                         {:guest-entry :main :ctx {:struct :kexe-context-v11}})))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #":kexe-context-v11"
+                        (runner-entry/call-guest-under-ctx!
+                         {:guest-entry (fn [_] {:status :ok :output nil})
+                          :ctx {:struct :something-else}})))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must answer"
+                        (runner-entry/call-guest-under-ctx!
+                         {:guest-entry (fn [_] :not-a-map)
+                          :ctx {:struct :kexe-context-v11}})))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"hook"
+                        (runner-entry/call-guest-under-ctx!
+                         {:guest-entry (fn [_] (throw (ex-info "guest ran" {})))
+                          :ctx {:struct :kexe-context-v11}
+                          :cap-dispatch (fn [_] (throw (ex-info "hook refused" {:hook true})))}))
+      "a throwing hook aborts before the guest is entered"))

@@ -266,11 +266,24 @@
         (fail! (str "kernel self-test: " (name rung) " fold is not in uniform control flow"))))))
 
 ;; ---- loader ---------------------------------------------------------------
+;; Compile defects FAIL; an unlinkable Vulkan loader library is COULD-NOT-RUN
+;; (macOS without MoltenVK), same contract as scripts/test-gpu-devclass.cljk.
 (def loader (.join path tmp "kexe-loader-gpu"))
+(def loader-obj (.join path tmp "kexe-loader-gpu.o"))
+(def vulkan-prefix
+  (some (fn [h] (when (.existsSync fs h) (first (str/split h #"/include/vulkan/vulkan.h"))))
+        ["/usr/include/vulkan/vulkan.h" "/usr/local/include/vulkan/vulkan.h" "/opt/homebrew/include/vulkan/vulkan.h"]))
 (let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-DKEXE_GPU_VULKAN"
-                                             (.join path root "tools" "kexe_loader.c") "-o" loader]
-                                            (if (= platform "darwin") ["-I/opt/homebrew/include" "-L/opt/homebrew/lib" "-lvulkan"] ["-lvulkan"])))]
-  (when-not (zero? status) (fail! (str "the GPU loader does not build: " (subs err 0 (min 600 (count err)))))))
+                                             "-c" (.join path root "tools" "kexe_loader.c") "-o" loader-obj]
+                                            (if (= platform "darwin") [(str "-I" vulkan-prefix "/include")] [])))]
+  (when-not (zero? status) (fail! (str "the GPU loader does not compile: " (subs err 0 (min 600 (count err)))))))
+(let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" loader-obj "-o" loader]
+                                            (if (= platform "darwin") [(str "-L" vulkan-prefix "/lib")] [])
+                                            ["-lvulkan"]))]
+  (when-not (zero? status)
+    (if (re-find #"(?i)(cannot find -lvulkan|library not found for -lvulkan|unable to find library -lvulkan|vulkan.*not found)" err)
+      (refuse! (str "the Vulkan loader library cannot link here (install MoltenVK/libvulkan): " (subs err 0 (min 300 (count err)))))
+      (fail! (str "the GPU loader does not link: " (subs err 0 (min 600 (count err))))))))
 
 ;; ---- the generated .kotoba guest, as data ---------------------------------
 (defn- prs [form]
@@ -321,8 +334,12 @@
                                                "--target" target "--jvm-free"
                                                "--policy" (.join path root "test" "fixtures" "gpu" "gpu-compute-policy.edn")
                                                "--output" kexe])]
+            ;; Only the GLSL/pipeline rejection above measures operation
+            ;; support. A guest COMPILE failure is an infrastructure defect
+            ;; (compiler, dependency lock, linker) and must fail closed rather
+            ;; than record a device/toolchain negative (AGENTS.md: fail closed).
             (if-not (and (zero? status) (str/includes? out ":ok true"))
-              {:verdict :not-admitted :detail (str "amu compile refused the " name " guest: " (subs (str out err) 0 (min 300 (count (str out err)))))}
+              (fail! (str "amu compile failed on the " name " guest: " (subs (str out err) 0 (min 300 (count (str out err))))))
               (let [r (sh "node" [(.join path root "bin" "amu") "extract-native" kexe "--symbol" "main" "--output" code])
                     m (re-find #":offset (\d+)" (:out r))]
                 (if-not m

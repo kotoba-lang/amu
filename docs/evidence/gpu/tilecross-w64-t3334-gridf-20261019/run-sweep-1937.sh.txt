@@ -1,0 +1,65 @@
+#!/bin/sh
+# NOTE (repo rule): kept as run-sweep-1937.sh.txt because the repository workflow-lint
+# refuses POSIX shell execution files; run with sh <this file>.
+# W=64 TILE-CROSSING BISECTION, PHASE 6 (JUN-58, tick 20261019-1937):
+# grid F (lanes 2,297,856) to measure chunks 33 and 34 -- the ONLY two
+# admissible points beyond 32 for W=64 anywhere -- with same-session anchors.
+#
+# WHY NOT GRID E (tick 1906 asked for "the flip beyond 32 at grid E"): that
+# is unmeasurable, structurally. Two independent bounds:
+#   1. the harness's f32-exact checksum ceiling (valid-shape?: 3*L^2 +
+#      L(L+1)/2 < 2^24, L = W*chunks) caps W=64 at chunks <= 34
+#      (chunks=34 -> L=2176 -> max-sum 16,572,384 < 16,777,216 OK;
+#       chunks=35 -> L=2240 -> max-sum 17,562,720 >= 2^24 refused);
+#   2. grid E's lanes/64 = 33,696 = 2^5*3^4*13 is NOT divisible by 33 or 34
+#      (33 needs 11, 34 needs 17), so even chunks 33/34 refuse there.
+# So 32 is the largest measurable chunks at grid E, and the whole reachable
+# W=64 range is chunks in 4..34 (divisibility permitting).
+#
+# Grid F choice: lanes 2,297,856 = 64 * lcm(24,32,33,34) = 64*35,904
+# (9.57% above 2^21; the nearest multiple). lanes/64 = 35,904 =
+# 2^5*3*11*17, divisible by 24 (1496 wg), 32 (1122 wg), 33 (1088 wg) and
+# 34 (1056 wg). All four shapes pass valid-shape? (lanes multiple of 256,
+# groups in 4..65535, max-sum < 2^24).
+#
+# Cells (W=64 throughout):
+#   e24        -- WIN anchor (PR #1360: variant wins at 24 tiles)
+#   e32        -- reference point (win at grid E tick-1906; loss at grid D)
+#   e33 e34    -- NEW: the two smallest/largest admissible points beyond 32
+#                 (L=2112/2176; 34 is the harness ceiling for W=64)
+#
+# Within-grid framing only: the chain showed the flip location moves with the
+# grid (PR #1371), so 33/34 are read against THIS session's 24/32 pair.
+#
+# 3 cycles, order rotated (forward, reversed, rotated). Idempotent: a cell
+# whose log exists is skipped.
+set -e
+TAB=$(printf '\t')
+cd "$(dirname "$0")/../../../.."
+EV=docs/evidence/gpu/tilecross-w64-t3334-gridf-20261019
+mkdir -p "$EV"
+
+run() { # cycle cell W lanes chunks
+  log="$EV/run-$1-$2.log"
+  if [ -f "$log" ] && grep -q "RESULT${TAB}verified=true" "$log"; then echo "skip $log"; return 0; fi
+  echo "run $log"
+  (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" "$4" "$5") > "$log" 2>&1
+  grep -q "RESULT	verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }
+}
+
+# cycle 1: forward
+run 1 e24 64 2297856 24
+run 1 e32 64 2297856 32
+run 1 e33 64 2297856 33
+run 1 e34 64 2297856 34
+# cycle 2: reversed
+run 2 e34 64 2297856 34
+run 2 e33 64 2297856 33
+run 2 e32 64 2297856 32
+run 2 e24 64 2297856 24
+# cycle 3: rotated
+run 3 e33 64 2297856 33
+run 3 e34 64 2297856 34
+run 3 e24 64 2297856 24
+run 3 e32 64 2297856 32
+echo SWEEP-COMPLETE
