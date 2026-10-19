@@ -102,10 +102,12 @@ Design decisions taken:
   layouts in the published format specs. Symmetric with the kexe loader
   work in `tools/kexe_loader*.kotoba`. Still open inside M2: MH_DYLIB and
   ET_EXEC fixtures, PE delay-import/section-reloc tables.
-- **M3** — analysis: recursive traversal from entry + symbol table,
-  function boundaries (prologue patterns + tail-call edges), CFG blocks,
-  strings/imports. Output as pure data (kotoba records) so the Fund UI can
-  render without this module knowing about UI.
+- **M3 (landed)** — analysis: recursive-descent reachability
+  (`reachable-vector`), function entries and entry-delimited bounds with
+  prologue + tail-call edges, CFG basic blocks + edges, xrefs edge list
+  (`xrefs-edges`), strings and undefined-external (import) symbol
+  predicates. All pure vector data. Still open inside M3: reachability-
+  refined bounds, PE import-table walk, large-blob windowing for strings.
 - **M4** — x86-64 decoder (Intel SDM; the two-person table discipline above).
 - **M5** — surfaces: listing/CFG in the mithril web UI (graph-viewer), REPL
   CLI (`bin/re-disasm`), and a `provider=amu` lane in the rea MCP so victim
