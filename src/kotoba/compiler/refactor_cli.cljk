@@ -445,20 +445,49 @@
   (chunked tables, the aiueos topic.kotoba pattern) -- never something the mechanical conversion invents."
   128)
 
+(def ^:private map-literal-limits
+  "Per-key-kind map literal entry limits, measured on `amu check --jvm-free` with the compiler naming each wall:
+  keyword keys lower to a closed record (\"exceeds the record field limit: 40 entries, at most 32\"), string and i64
+  keys are typed maps (\"exceeds the typed map entry limit\", typed-map-entry-limit 31, osaho kotoba.kir.value), and
+  any kind also carries map-entry-limit 128 (the entry-count check)."
+  {:keyword 32 :string 31 :i64 31 :default 31})
+
+(defn- map-chunk-size
+  "The literal entry budget for a map whose KEYS are the given node types."
+  [key-nodes]
+  (let [ks (map :type key-nodes)]
+    (if (every? #(= :kw %) ks)
+      (:keyword map-literal-limits)
+      (:default map-literal-limits))))
+
 (defn- data-limit-findings
-  "Findings for data literals the admission limit refuses: map entries over 128 (measured), and collection items over
-  the same bound."
+  "Findings for data literals the admission limit refuses. A MAP over the limit is chunked mechanically (merge chain,
+  no finding); a sequence over it has no admitted mechanical spelling yet (into/vec are not builtins -- measured), so
+  it is named instead."
   [nodes]
   (let [out (atom [])]
     (letfn [(go [n]
               (let [k (:type n)
-                    cnt (case k :map (quot (count (:kids n)) 2) (:list :vec :set :fnlit) (count (:kids n)) 0)]
-                (when (> cnt data-literal-limit)
-                  (swap! out conj {:kind (if (= k :map) :map-over-limit :items-over-limit)
-                                   :offset (:s n) :count cnt :limit data-literal-limit
-                                   :reason (if (= k :map)
-                                             "map entry count exceeds the admission limit (128); chunked tables are a port decision, not a mechanical rewrite"
-                                             "item count exceeds the admission limit (128); chunking is a port decision, not a mechanical rewrite")}))
+                    lim (if (= :set k) 32 data-literal-limit)] ;; typed-set-item-limit 32 / vector-literal-item-limit 128 (osaho kotoba.kir.value)]
+                (when (= :map k)
+                  (let [pairs (partition 2 (:kids n))
+                        cnt (count pairs)
+                        lim (map-chunk-size (map first pairs))
+                        kw? (every? #(= :kw (:type (first %))) pairs)]
+                    (when (> cnt lim)
+                      (swap! out conj (if kw?
+                                        {:kind :record-type-node-wall
+                                         :offset (:s n) :count cnt :limit lim
+                                         :reason "chunked into a merge chain mechanically, but the merged record's value type exceeds the node limit already at 40 entries (measured: 40-entry keyword map -> \"value type exceeds node limit\", adt-node-limit 512) -- a type-accounting wall (ADR 0354), named not guessed"}
+                                        {:kind :typed-map-over-limit
+                                         :offset (:s n) :count cnt :limit lim
+                                         :reason "a typed map (string/i64 keys) over its literal limit has no admitted spelling -- merge is a row operation on a record (:row-operation-receiver, measured) and typed-map-new is capped at the same entry limit (measured): a language wall (ADR 0354), named not guessed"})))))
+                (when (and (contains? #{:list :vec :set :fnlit} k) (> (count (:kids n)) lim))
+                  (swap! out conj {:kind :items-over-limit
+                                   :offset (:s n) :count (count (:kids n)) :limit lim
+                                   :reason (if (= :set k)
+                                             "set item count exceeds typed-set-item-limit (32, measured); a set has no admitted mechanical chunking -- chunking is a port decision"
+                                             "item count exceeds the literal limit (128, measured); a sequence has no admitted mechanical chunking (into/vec are not builtins, measured) -- chunking is a port decision")}))
                 (doseq [ch (:kids n)] (go ch))))]
       (doseq [n nodes] (go n)))
     @out))
@@ -480,25 +509,63 @@
       (recur (:e k) (next ks) (conj acc (subs src cursor (:s k)) (emit-value src k)))
       (apply str (conj acc (subs src cursor e))))))
 
+(defn- merge-groups
+  "A merge call over chunk texts, nested when the call itself would exceed the item limit: (merge A B ...) up to
+  128 arguments, else (merge (merge ...) (merge ...)). `merge` is admitted and associative over disjoint keys
+  (measured: (defn data [] (merge {:a 1} {:b 2} {:c 3})) is admitted)."
+  [texts]
+  (loop [ts texts]
+    (let [groups (mapv (fn [g]
+                         (if (= 1 (count g))
+                           (first g)
+                           (str "(merge " (str/join " " g) ")")))
+                       (partition-all data-literal-limit ts))]
+      (if (= 1 (count groups))
+        (first groups)
+        (recur groups)))))
+
+(defn- map-chunk-text
+  "One literal map of PAIRS (key/value nodes). Entry bytes are the original; the layout between entries is re-spaced
+  because the chunk is rebuilt."
+  [src pairs]
+  (str "{" (str/join " " (mapcat (fn [[k v]] [(emit-value src k) (emit-value src v)]) pairs)) "}"))
+
 (defn- emit-value
   "One EDN value as kotoba data. A bare symbol is a constant alias in kotoba (\"constant alias must name a declared
   constant\", measured), so a data symbol is spelled (symbol \"name\") -- which `amu check` admits in a data value
-  (measured: (defn data [] {:a (symbol \"x\")}) is admitted). Everything else keeps its bytes."
+  (measured: (defn data [] {:a (symbol \"x\")}) is admitted). A map over the literal admission limit (128 entries,
+  measured) is mechanically chunked into a merge chain instead of refused. Everything else keeps its bytes."
   [src n]
   (cond
     (= :sym (:type n)) (str "(symbol \"" (:text n) "\")")
+    (= :map (:type n))
+    ;; Chunking is mechanical for KEYWORD keys only: those lower to closed records and `merge` is a row operation on
+    ;; a record (measured admitted). A typed map (string/i64 keys) over its limit has NO admitted spelling -- `merge`
+    ;; refuses it ("merge is a row operation on a record", :row-operation-receiver) and `typed-map-new` is capped at
+    ;; the same entry limit (measured) -- so it stays one literal plus a named finding, a language wall (ADR 0354).
+    (let [pairs (partition 2 (:kids n))
+          keys* (map first pairs)
+          size (map-chunk-size keys*)]
+      (if (and (> (count pairs) size) (every? #(= :kw (:type %)) keys*))
+        (merge-groups (mapv #(map-chunk-text src %) (partition-all size pairs)))
+        (map-chunk-text src pairs)))
     (empty? (:kids n)) (cst/text src n)
     :else (emit-kids src (:kids n) (:s n) (:e n))))
 
 (defn- data-shape
-  "The data of a value node, normalized so a source symbol and its (symbol \"name\") spelling compare equal. Known
-  fold: a source 2-list (symbol \"x\") and a source symbol x normalize alike; both emit to the same text."
+  "The data of a value node, normalized so a source symbol and its (symbol \"name\") spelling compare equal, and a
+  source map and its merge-chunked spelling compare equal (entries in order). Known folds: a source 2-list
+  (symbol \"x\") and a source symbol x normalize alike; likewise a source (merge {...} {...}) and the merged map --
+  all fold to text the emitter produces for both."
   [n]
   (cond
     (= :sym (:type n)) [:sym (:text n)]
     (and (cst/lst? n) (= "symbol" (cst/head-text n)) (= 2 (count (:kids n)))
          (= :str (:type (second (:kids n)))))
     [:sym (let [t (:text (second (:kids n)))] (subs t 1 (dec (count t))))]
+    (and (cst/lst? n) (= "merge" (cst/head-text n)) (seq (:kids n))
+         (every? #(= :map (:type %)) (rest (:kids n))))
+    (into [:map nil] (mapcat (fn [m] (map data-shape (:kids m))) (rest (:kids n))))
     :else (into [(:type n) (:text n)] (map data-shape (:kids n)))))
 
 (defn- data-key-node?
@@ -523,7 +590,7 @@
                 :map (doseq [[i k] (map-indexed vector (:kids n))]
                        (when (and (even? i) (data-key-node? k))
                          (swap! out conj {:kind :symbol-key :offset (:s k)
-                                          :reason "map literal keys must be keywords, integers or strings (amu check, measured); a symbol key has no admitted literal spelling -- keywordize or restructure (a port decision)"})))
+                                          :reason "map literal keys must be keywords, integers or strings (amu check, measured), and assoc refuses a symbol key by type (\"expression type mismatch: expected keyword, got symbol\", measured) -- keywordize or restructure (a port decision)"})))
                 :set (when (some #(contains? #{:list :vec :map :set :fnlit} (:type %)) (:kids n))
                        (swap! out conj {:kind :set-of-collections :offset (:s n)
                                         :reason "a set whose items are collections is \"value type is outside the safe profile\" (amu check, measured; a set of scalars is admitted) -- spell the items as a vector, a port decision"}))

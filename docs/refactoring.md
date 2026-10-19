@@ -48,9 +48,19 @@ sub-command, and it covers `.edn` data files too.
   conditional converts byte-identically and a rewrite is checkable: the emitted text re-parses, and resolving it again
   changes nothing (idempotence). A conditional with no kept arm is reported as a `:rc-no-arm` finding, never dropped
   silently.
-- Data over the admission limit (map entries > 128 -- measured in kotoba-sema's desugar, "map entry count exceeds
-  admission limit") is reported as a `:map-over-limit` finding: chunked tables are a port decision (the aiueos
-  `topic.kotoba` pattern), never invented by the mechanical conversion.
+- A KEYWORD-keyed map over its literal limit is mechanically chunked into a `merge` chain: keyword keys lower to a
+  closed record and `merge` is a row operation on a record (both measured). The limits are per key kind and every one
+  is compiler-named, measured on `amu check --jvm-free`: keyword keys **32** fields ("exceeds the record field limit:
+  40 entries, at most 32"); string and i64 keys **31** entries ("typed map entry limit", `typed-map-entry-limit`,
+  osaho `kotoba.kir.value`); any kind also carries the **128** entry-count admission limit. `merge` takes at most 128
+  chunks, nested `(merge (merge ...) ...)` beyond that; entry bytes are the original and the layout between entries is
+  re-spaced. The RESIDUAL wall is named `:record-type-node-wall`: the merged record's value type exceeds the node
+  limit already at 40 entries (measured, `adt-node-limit` 512) -- chunking moves the count wall, not the type wall.
+- A STRING/i64-keyed map over 31 entries is a NAMED LANGUAGE WALL (`:typed-map-over-limit`, ADR 0354), not a guessed
+  rewrite: `merge` refuses typed maps (":row-operation-receiver: merge is a row operation on a record") and
+  `typed-map-new` is capped at the same entry limit ("typed map constructor shape or entry limit is invalid"), both
+  measured. A SEQUENCE over its limit (`vector-literal-item-limit` 128, `typed-set-item-limit` 32) is an
+  `:items-over-limit` finding for the same class of reason (`into`/`vec` are not builtins, measured).
 - A symbol map key (`:symbol-key`, measured: "map literal keys must be keywords, integers or strings") and a set whose
   items are collections (`:set-of-collections`, measured: "value type is outside the safe profile"; a set of scalars
   is admitted) are named the same way. Character and tagged/quoted literals (`:char-literal`, `:tagged-or-quoted`)

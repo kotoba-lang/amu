@@ -276,12 +276,23 @@
         "the key wall is named, not guessed: amu check refuses a symbol map key")
     (is (= {:parse true :value-equivalent true} (:roundtrip f)))))
 
-(deftest to-kotoba-edn-names-data-over-the-admission-limit
+(deftest to-kotoba-edn-chunks-maps-over-the-admission-limit
   (let [big (str "{" (str/join " " (map #(str ":k" % " " %) (range 200))) "}")
         files (atom {"/w/big.edn" big})
         {:keys [value status]} (cli/run ["to-kotoba" "/w/big.edn"] (memory-io files))
-        f (first (:files value))]
-    (is (= 0 status)) ;; the conversion is mechanical and done; the limit is a named finding, not a refusal
-    (is (= [:map-over-limit] (map :kind (:findings f))))
-    (is (= 200 (:count (first (:findings f)))))
-    (is (= 128 (:limit (first (:findings f)))))))
+        f (first (:files value))
+        out (get @files "/w/big.kotoba")]
+    (is (= 0 status))
+    (is (str/includes? out "(merge {") "a map over the literal limit is mechanically chunked into a merge chain")
+    (is (str/includes? out ":k199 199")) ;; every entry survives the chunking
+    (is (= [:record-type-node-wall] (map :kind (:findings f)))
+        "the chunking is mechanical; the residual type wall (merged record value type over the node limit at 40 entries) is named")
+    (is (= {:parse true :value-equivalent true} (:roundtrip f)) "the merged chunks carry the same data"))
+  (testing "a string-keyed map over its limit is a named language wall, not a guessed rewrite"
+    (let [big (str "{" (str/join " " (map #(str "\"s" % "\" " %) (range 40))) "}")
+          files (atom {"/w/strs.edn" big})
+          {:keys [value]} (cli/run ["to-kotoba" "/w/strs.edn"] (memory-io files))
+          f (first (:files value))
+          out (get @files "/w/strs.kotoba")]
+      (is (not (str/includes? out "(merge")) "merge is a row operation on a record; typed maps stay one literal")
+      (is (= [:typed-map-over-limit] (map :kind (:findings f)))))))
