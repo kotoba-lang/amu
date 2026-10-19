@@ -17,6 +17,9 @@
             fill-vec insn-branch? block-leaders block-start block-rows
             cfg-edges
             prologue? entry-slot? fn-end function-bounds tail-call-edges
+            printable? strings-rows xrefs-edges
+            nlist-undef? elf-sym-undef? pe-sym-undef?
+            macho-symbol-undef? elf-symbol-undef? pe-symbol-undef?
             test-hints test-exceptions test-branch-uncond test-branch-cond
             test-branch-register test-adr test-mov test-addsub test-loadstore
             test-text test-bytes-xrefs
@@ -24,7 +27,7 @@
             test-record test-targets test-listing
             test-shift-text test-extend-text test-literal
             test-m3-edges test-m3-reach test-m3-entries test-m3-cfg
-            test-m3-bounds
+            test-m3-bounds test-m3-strings test-m3-xrefs test-m3-imports
             test-macho test-elf test-pe test-words-at
             u16le u32le u64le name8 name-str
             macho-recognize macho-ncmds macho-cmd-off macho-image-base
@@ -799,6 +802,48 @@
               tail2 (if (>= fall 0) (+ tail1 2) tail1)]
           (recur (+ k 1) tail2 out2))))))
 
+;; ------------------------------------------------------------- strings
+;; Printable-ASCII runs of at least min bytes, as (offset, length) pairs,
+;; -1-padded. Capacity 2*(bytes-count) is the worst case (min=1,
+;; alternating); callers on large blobs should window the bytes first.
+
+(defn printable? [x :i64] :bool (and (>= x 32) (<= x 126)))
+
+(defn strings-rows [b :bytes min :i64] :vector-i64
+  (let [n (bytes-count b)]
+    (loop [i 0 start -1 tail 0 out (fill-vec (* 2 n) -1)]
+      (if (>= i n)
+        (if (and (>= start 0) (>= (- i start) min))
+          (vector-assoc (vector-assoc out tail start) (+ tail 1) (- i start))
+          out)
+        (if (printable? (bytes-at b i))
+          (recur (+ i 1) (if (< start 0) i start) tail out)
+          (let [run (if (< start 0) 0 (- i start))
+                ok (and (>= start 0) (>= run min))
+                out1 (if ok (vector-assoc (vector-assoc out tail start) (+ tail 1) run) out)
+                tail1 (if ok (+ tail 2) tail)]
+            (recur (+ i 1) -1 tail1 out1)))))))
+
+;; ------------------------------------------------------------- xrefs
+;; Cross-reference edge list: (from-pc, to-pc) pairs for every
+;; control-flow branch and every resolved adrp+add literal reference.
+;; Length 2n, -1-padded. targets-vector stays the per-slot form; this is
+;; the list-shaped graph the UI layer consumes.
+(defn xrefs-edges [words :vector-i64 base :i64 n :i64] :vector-i64
+  (loop [i 0 tail 0 out (fill-vec (* 2 n) -1)]
+    (if (>= i n) out
+      (let [w (vector-at words i)
+            c (insn-class w)
+            pc (+ base (* 4 i))
+            bt (if (insn-branch? c) (insn-target w pc) -1)
+            lit (if (>= (+ i 1) n) -1
+                  (adrp-add-target w (vector-at words (+ i 1)) pc))
+            dst (if (>= bt 0) bt lit)
+            ok (>= dst 0)
+            out1 (if ok (vector-assoc (vector-assoc out tail pc) (+ tail 1) dst) out)
+            tail1 (if ok (+ tail 2) tail)]
+        (recur (+ i 1) tail1 out1)))))
+
 (defn listing-text [words :vector-i64 base :i64 n :i64] :string
   (loop [i 0 acc ""]
     (if (>= i n) acc
@@ -1057,6 +1102,33 @@
 
 (defn pe-symbol-name [b :bytes i :i64] :string
   (name-str b (pe-symbol-name-off b i) 64))
+
+;; ------------------------------------------------------------- imports
+;; Undefined-external symbols = the import surface visible in a symbol
+;; table (PE's IMAGE_IMPORT_DESCRIPTOR walk is a later slice). Each
+;; format predicate takes the raw entry offset so it can be tested on
+;; hand-built entries; the index forms wrap the table layout:
+;;   Mach-O nlist_64: n_type @+4, N_UNDF = (n_type & 0x0e) == 0
+;;   ELF64 Sym:       st_shndx @+6, SHN_UNDEF = 0
+;;   PE COFF symbol:  section number @+12, 0 = undefined external
+(defn nlist-undef? [b :bytes sym :i64] :bool
+  (= (bit-and (bytes-at b (+ sym 4)) 14) 0))
+
+(defn elf-sym-undef? [b :bytes sym :i64] :bool
+  (= (u16le b (+ sym 6)) 0))
+
+(defn pe-sym-undef? [b :bytes sym :i64] :bool
+  (= (u16le b (+ sym 12)) 0))
+
+(defn macho-symbol-undef? [b :bytes index :i64] :bool
+  (nlist-undef? b (+ (macho-symtab-field b 0) (* 16 index))))
+
+(defn elf-symbol-undef? [b :bytes i :i64] :bool
+  (elf-sym-undef? b
+    (+ (u64le b (+ (elf-sh-off b (elf-symtab-sh b)) 24)) (* 24 i))))
+
+(defn pe-symbol-undef? [b :bytes i :i64] :bool
+  (pe-sym-undef? b (pe-symbol-off b i)))
 
 ;; words of a section row: [vaddr file-offset size ...]
 (defn section-words [b :bytes row :vector-i64 n :i64] :vector-i64
@@ -1685,6 +1757,47 @@
              (= (vector-at tc 2) -1))
       1 0)))
 
+(defn test-m3-strings [] :i64
+  ;; bytes: "Hi" 0 "ABCD" 0 "Z" (hand-assembled).
+  ;; min=2 -> rows (0,2) (3,4); min=3 -> only (3,4).
+  (let [b (bytes-from-vector-i64 (vector-i64 72 105 0 65 66 67 68 0 90))
+        r2 (strings-rows b 2)
+        r3 (strings-rows b 3)]
+    (if (and (= (vector-at r2 0) 0) (= (vector-at r2 1) 2)
+             (= (vector-at r2 2) 3) (= (vector-at r2 3) 4)
+             (= (vector-at r2 4) -1)
+             (= (vector-at r3 0) 3) (= (vector-at r3 1) 4)
+             (= (vector-at r3 2) -1))
+      1 0)))
+
+(defn test-m3-xrefs [] :i64
+  ;; Xrefs edge list over the test-m3-reach program: bl 0x1000->0x100c,
+  ;; b 0x1010->0x1004; no adrp+add pairs.
+  (let [words (vector-i64 0x94000003 0xD65F03C0 0xD503201F 0x91000400
+                          0x17FFFFFD 0xD65F03C0)
+        e (xrefs-edges words 0x1000 6)]
+    (if (and (= (vector-at e 0) 0x1000) (= (vector-at e 1) 0x100c)
+             (= (vector-at e 2) 0x1010) (= (vector-at e 3) 0x1004)
+             (= (vector-at e 4) -1))
+      1 0)))
+
+(defn test-m3-imports [] :i64
+  ;; Defined symbols come from the fixtures (n_type 15 / st_shndx 1 /
+  ;; section number 1); undefined cases use hand-built table entries.
+  (let [nlist (bytes-from-vector-i64 (vector-i64 0 0 0 0 1 0 0 0
+                                                0 0 0 0 0 0 0 0))
+        elf (bytes-from-vector-i64 (vector-i64 0 0 0 0 0 0 0 0 0 0 0 0
+                                              0 0 0 0 0 0 0 0 0 0 0 0))
+        pe (bytes-from-vector-i64 (vector-i64 0 0 0 0 0 0 0 0 0
+                                              0 0 0 0 0 0 0 0 0))]
+    (if (and (nlist-undef? nlist 0)
+             (elf-sym-undef? elf 0)
+             (pe-sym-undef? pe 0)
+             (not (macho-symbol-undef? (macho-fixture) 0))
+             (not (elf-symbol-undef? (elf-fixture) 1))
+             (not (pe-symbol-undef? (pe-fixture) 0)))
+      1 0)))
+
 (defn main [] :i64
   (let [s (+ (test-hints) (test-exceptions) (test-branch-uncond)
              (test-branch-cond) (test-branch-register) (test-adr)
@@ -1693,7 +1806,8 @@
              (test-ldst-reg) (test-pair) (test-record) (test-targets)
              (test-listing) (test-shift-text) (test-extend-text)
              (test-literal) (test-m3-edges) (test-m3-reach) (test-m3-entries)
-             (test-m3-cfg) (test-m3-bounds)
+             (test-m3-cfg) (test-m3-bounds) (test-m3-strings) (test-m3-xrefs)
+             (test-m3-imports)
              (test-macho) (test-elf) (test-pe)
              (test-words-at))]
-    (if (= s 30) 1 0)))
+    (if (= s 33) 1 0)))
