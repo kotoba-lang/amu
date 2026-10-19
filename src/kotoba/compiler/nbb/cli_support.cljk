@@ -319,14 +319,6 @@
     ;; 0348 iteration 8). EX_UNAVAILABLE, as the JVM table has for :execute.
     (:execute :native-executor) 69
     :receipt 76
-    ;; `:artifact-target` joined when the launcher guard removal routed
-    ;; `compile --target x86_64-aiueos-kernel-v1 --artifact image` into the
-    ;; package path, which refuses it by phase name (native_package.cljk).
-    ;; The documented answer for a refused artifact target is EX_USAGE (65),
-    ;; as the JVM table has it -- without this row the refusal fell through to
-    ;; 70 and automation read a known-unsupported route as an internal
-    ;; compiler failure (review finding on the `amu kir` PR).
-    :artifact-target 65
     70))
 
 (defn- error-report [error source-name]
@@ -357,7 +349,7 @@
        :timing (timing-report)})
     (catch :default error
       (let [source (second args)
-            source-name (when (source-path/source-kind-present? source)
+            source-name (when (source-path/source-kind source)
                           (posix-path/basename source))
             report (error-report error source-name)]
         {:status (exit-code (:error report))
@@ -375,7 +367,7 @@
   (`amu test` prints text, not EDN): the same `:kotoba.cli-error/v1` report
   and the same exit code `invoke` would have produced for ERROR."
   [error source]
-  (let [source-name (when (source-path/source-kind-present? source)
+  (let [source-name (when (source-path/source-kind source)
                       (posix-path/basename source))
         report (error-report error source-name)]
     {:status (exit-code (:error report))
