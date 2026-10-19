@@ -45,7 +45,7 @@ integers) precedes every timing line; all 15 runs printed `RESULT
 verified=true` and exited 0.
 
 Runs: 5 cells x 3 cycles, cell order rotated per cycle (forward, reversed,
-rotated) via `run-sweep-1246.sh`. Apple M1 Max / MoltenVK 1.3.357, glslang
+rotated) via `run-sweep-1246.sh.txt`. Apple M1 Max / MoltenVK 1.3.357, glslang
 11:16.6.0. Raw logs `run-<cycle>-<cell>.log` here (uptime and wall time
 inside each). Worktree env: `npm ci` (8 packages, gitignored) for nbb; not
 part of this diff.
@@ -149,7 +149,7 @@ safe rule is unchanged and now triply confirmed: keep the baseline tree.
 
 Canonical suite at the worktree root
 (`kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" run-tests.cljk`,
-wrapper `run-gate-1246.sh`). The tick-1246 attempt was STARTED at 13:05 JST
+wrapper `run-gate-1246.sh.txt`). The tick-1246 attempt was STARTED at 13:05 JST
 2026-10-19 and died at session teardown mid-suite (288/490 log lines, no
 summary line; that partial log is what the tick-1246 commit captured as
 "started, NOT completed"). The follow-up tick re-ran the same wrapper from
