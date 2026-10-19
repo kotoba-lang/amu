@@ -1,0 +1,13 @@
+(ns kotoba.compiler.decimal-text
+  "Public decimal-text module; its implementation lives in Kotoba core."
+  {:kotoba/export [decimal? fields parse]}
+  (:require [kotoba.compiler.decimal-text-core :as decimal-core]))
+
+(defn decimal? [s :string] :bool
+  (decimal-core/decimal? s))
+
+(defn parse [s :string] :i64
+  (decimal-core/parse s))
+
+(defn fields [s :string] :vector-i64
+  (decimal-core/fields s))
