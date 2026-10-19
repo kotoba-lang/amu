@@ -148,12 +148,12 @@
        (cond
          (string=? sub "list-rules") (g-list-rules-answer)
          (= (string-byte-length sub) 0)
-         (g-refusal "usage" "usage: amu refactor <list-rules|plan|apply|graph|partition|split|verify|to-kotoba> ...")
+         (g-refusal "refactor/usage" "usage: amu refactor <list-rules|plan|apply|graph|partition|split|verify|to-kotoba> ...")
          (g-on-route sub)
-         (g-refusal "not-on-kotoba-route"
+         (g-refusal "refactor/not-on-kotoba-route"
                     (string-concat "refactor " (string-concat sub " is not on the Kotoba route yet (selfhost S6.1); use the nbb bootstrap route")))
          :else
-         (g-refusal "usage" (string-concat "unknown refactor command " (string-concat sub "; one of list-rules plan apply graph partition split verify to-kotoba"))))))
+         (g-refusal "refactor/usage" (string-concat "unknown refactor command " (string-concat sub "; one of list-rules plan apply graph partition split verify to-kotoba"))))))
    :default
    nil)
 

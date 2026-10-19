@@ -3,9 +3,13 @@
   stable codes, split into a directory, verify over two (faked) test runs. The I/O record is an in-memory file system, so
   nothing here touches the disk or starts a process; the end-to-end route through bin/amu is scripts/test-refactor.sh."
   (:require [cljs.test :refer [deftest is testing]]
+            ["node:fs" :as fs]
             [clojure.string :as str]
+            [kotoba.compiler.project :as project]
             [kotoba.compiler.refactor-cli :as cli]
-            [kotoba.compiler.refactor.verify :as verify]))
+            [kotoba.compiler.refactor.verify :as verify]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
 
 (def sample
   (str "(ns sample.x\n  \"doc\"\n  (:require [clojure.string :as str]))\n\n"
@@ -299,6 +303,52 @@
     (is (str/includes? out ";; keep this") "a splice keeps the arm's interior bytes")
     (is (= 1 (get-in f [:rc :spliced])))
     (is (= {:parse true :idempotent true} (:roundtrip f)))))
+;; ---- the :kotoba reading vs the host (selfhost S6.1 differential) ---------------------------------------------------
+
+(defn- slurp* [p] (str (.readFileSync fs p "utf8")))
+
+(defn- guest-run
+  "The real :kotoba reading of refactor_cli: its own module sources (refactor_cli + the rules twin), linked as a
+  project and read by the compiler's :kotoba feature, lowered and executed over the KIR reference interpreter -- the
+  same chain `amu check` admits (:ok true, :effects #{})."
+  [args]
+  (let [root (str (.cwd js/process) "/src/kotoba/compiler")
+        sources {'kotoba.compiler.refactor-cli (slurp* (str root "/refactor_cli.cljk"))
+                 'kotoba.compiler.refactor.rules (slurp* (str root "/refactor/rules.cljk"))}
+        {:keys [source]} (project/link-source sources 'kotoba.compiler.refactor-cli)
+        kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))]
+    ;; the interpreter's typed ABI: a [:list :string] travels as its type tag plus the items
+    (ir/execute kir 'run [[[:list :string] (vec args)]])))
+
+(deftest kotoba-route-run-branches-match-the-host
+  (testing "the refusal branches answer the host's refusal codes as EDN"
+    (let [host-usage (:kotoba.error/code (ex-data (try (cli/run [] (memory-io (atom {}))) (catch :default e e))))
+          guest-usage (cljs.reader/read-string (guest-run []))
+          host-bogus (:kotoba.error/code (ex-data (try (cli/run ["bogus"] (memory-io (atom {}))) (catch :default e e))))
+          guest-bogus (cljs.reader/read-string (guest-run ["bogus"]))]
+      (is (= host-usage (:code (:diagnostic guest-usage))))
+      (is (= host-bogus (:code (:diagnostic guest-bogus))))
+      (is (= "unknown refactor command bogus; one of list-rules plan apply graph partition split verify to-kotoba"
+             (:message (:diagnostic guest-bogus))) "the guest wording is the host wording"))))
+
+(deftest kotoba-route-list-rules-parity-pending-alias-dispatch
+  ;; ASSERTING the gap, not skipping it (repo convention: a parity test asserts the
+  ;; failure, so it goes red the day the route works). The guest answer for
+  ;; `list-rules` must equal the host EDN answer, but under `ir/execute` the linked
+  ;; EXPORT-ALIAS dispatch traps :unknown-function today: measured 2026-10-19 --
+  ;; the alias body's call head does not resolve through execute's function table
+  ;; (a head object vs a name-keyed map), while run's own module-local calls
+  ;; dispatch fine (the refusal branches above execute and match the host).
+  ;; When this trips, flip it to: (is (= host (cljs.reader/read-string (guest-run ["list-rules"])).
+  (let [outcome (try (guest-run ["list-rules"]) :answered (catch :default e (ex-message e)))]
+    (is (= "unknown-function" outcome) "the named gap: the export alias does not dispatch under ir/execute")))
+
+(deftest kotoba-route-refusals-name-the-wall
+  (let [guest (guest-run ["to-kotoba" "x.edn"])]
+    (is (string? guest))
+    (is (= :refactor/not-on-kotoba-route (:code (:diagnostic (cljs.reader/read-string guest))))
+        "an I/O subcommand names its own absence on the Kotoba route")))
+
 
 
 (deftest to-kotoba-edn-spells-symbols-as-calls
