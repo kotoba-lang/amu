@@ -10,7 +10,12 @@
 
 The accelerator pipeline gains one total, deterministic variant table,
 `kotoba.compiler.accelerator-variants`: `select-variant` answers
-`(vendor, kir) -> {:variant :measured? :basis}`. This is the design home of
+`(vendor, kir, target) -> {:variant :measured? :basis}`. The emission target
+is part of the key: a descriptor may name `:cuda` or `:metal` for a
+vendor-classified Intel device (`accelerator_targets.cljk:80-90`), and a
+variant the target's emitter does not admit is never selected (rule 3)
+-- selection consults the selected target's emitter admission, never vendor
+identity alone. This is the design home of
 that table; the NVIDIA row lands through it (PR #1331) and the Intel row is
 specified here ahead of its implementation.
 
@@ -103,9 +108,15 @@ choice; an emission that assumes 32 would be wrong on most Intel devices.
 **Execution-path honesty (rule 3).** The runtime `:gpu/compute` (wire 42)
 executes through Vulkan only (`tools/kexe_gpu_vulkan.c`). The in-flight
 emitters admit `:baseline` for WGSL/MSL and `:warp-shuffle-reduce` for CUDA
-only. Implementing this row therefore needs (a) a Vulkan-side emission
-admitted for `:subgroup-reduce` -- WGSL subgroups or the GLSL that the wire-42
-path compiles through glslangValidator -- before `select-variant` may ever
+only. Note the compile-step gap precisely: `kgpu_new_pipeline`
+(`tools/kexe_gpu_vulkan.c:397-418`) opens an ALREADY COMPILED SPIR-V file
+and passes it to `vkCreateShaderModule`; the repository contains no
+`glslangValidator` invocation. Implementing this row therefore needs (a) a
+Vulkan-side emission admitted for `:subgroup-reduce` -- and a specified
+GLSL/WGSL -> SPIR-V compilation step (a `glslangValidator` invocation in the
+pipeline, or a build step whose compiled artifact is the file the loader
+opens) that the current wire-42 path lacks -- before
+`select-variant` may ever
 answer it, and (b) an Intel device to run it. Until (a) lands the selection
 row must not exist; until (b) lands the row stays UNMEASURED.
 
@@ -113,7 +124,13 @@ row must not exist; until (b) lands the row stays UNMEASURED.
 interleaved baseline-vs-variant reduce comparison on an Intel device, with
 read-back verification (the protocol the workgroup sweeps established:
 fresh-process runs, interleaved samples, verified read-back words), recorded
-under `docs/evidence/`. Until then no report may cite this row as
+under `docs/evidence/`. The measurement is keyed to the TESTED DEVICE CLASS
+-- at minimum the device name and its subgroup size -- not to the vendor
+row: a result on one Intel generation or subgroup width does not flip
+`:measured?` for other Intel devices, which keep their own
+`:measured? false` answers until measured (rule 4's lock is per sufficient
+descriptor dimension, not per vendor).
+Until then no report may cite this row as
 optimization evidence, and `:measured? false` is part of every answer.
 
 ## Consequences
