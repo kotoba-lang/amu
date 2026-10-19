@@ -2,7 +2,7 @@
 
 Status: design + M0/M1 implemented (`re_disasm/disasm.kotoba`), native
 kexe verified under the reviewed C loader with no JVM/GraalVM/Node in the
-runtime tree (`re_disasm/build-native.sh`).
+runtime tree (`re_disasm/build-native.mjs`).
 Owner context: mithril.fund mission — give hacking / fraud victims the
 ability to identify their attacker. Attacker tooling analysis (droppers,
 packed payloads, Mach-O/ELF/PE malware, phishing-kit binaries) is the use

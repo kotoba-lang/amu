@@ -76,15 +76,17 @@ Measured 2026-10-19: `54/54 passed` on `[:jvm-kir :js :wasm]` (18 tests x
 ## Native build and run (runtime: no JVM / GraalVM / Node)
 
 ```sh
-sh re_disasm/build-native.sh                 # -> PASS (main returned 1)
+npm run test-re-disasm          # guest suite: 54/54 on [:jvm-kir :js :wasm]
+npm run test-re-disasm-native   # -> PASS (main returned 1)
 ```
 
-The script compiles `disasm.kotoba` to the host-native kexe target
-(`aarch64-macos-kotoba-v1`, `--jvm-free`), extracts `main`'s machine code,
-builds the reviewed C loader (`tools/kexe_loader.c`) with `cc`, and runs the
-extracted code under it. The loader is a standalone Mach-O arm64 binary
-that spawns no children and reads no configuration — measured 2026-10-19
-with an empty environment:
+`test-re-disasm-native` (also wired into `.github/workflows/test.yml`) runs
+`re_disasm/build-native.mjs`, which compiles `disasm.kotoba` to the
+host-native kexe target (`aarch64-macos-kotoba-v1` here, `--jvm-free`),
+extracts `main`'s machine code, builds the reviewed C loader
+(`tools/kexe_loader.c`) with `cc`, and runs the extracted code under it.
+The loader is a standalone Mach-O arm64 binary that spawns no children and
+reads no configuration — measured 2026-10-19 with an empty environment:
 
 ```sh
 env -i .../re-disasm.loader .../re-disasm.bin 30232 0 aarch64 -   # -> 1
@@ -98,7 +100,7 @@ The one remaining non-selfhost piece is the **compile door**: `bin/amu` is
 still the node-hosted bootstrap compiler (`docs/selfhost-priority.md`;
 `--jvm-free` proves no JVM is used, and the compile-time oracle
 `:status :verified` attests the emitted semantics). When the selfhost-built
-amu binary lands, phase 1 of `build-native.sh` swaps to it and the entire
+amu binary lands, phase 1 of `build-native.mjs` swaps to it and the entire
 path is Node-free. `main` lives in this single module on purpose: the
 :jvm-kir reference charges cross-module calls against its 32-frame budget,
 and the oracle must be able to verify the entry.
