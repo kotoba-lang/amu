@@ -39,8 +39,19 @@ function run(cmd, args) {
 }
 
 // Phase 1 -- compile + extract (bootstrap door; --jvm-free, no JVM).
+// --target is explicit: the compiler's default program target is now
+// Kototama (upstream), which refuses kexe emission. The machine-code
+// target is named after the host.
+const osTag = process.platform === "darwin" ? "macos"
+  : process.platform === "linux" ? "linux" : null;
+const archTag = process.arch === "arm64" ? "aarch64"
+  : process.arch === "x64" ? "x86_64" : null;
+if (!osTag || !archTag) {
+  console.error(`unsupported host: ${process.platform}/${process.arch}`);
+  process.exit(1);
+}
 run(process.execPath, ["bin/amu", "compile", "re_disasm/disasm.kotoba",
-  "--jvm-free", "--output", `${out}.kexe`]);
+  "--jvm-free", "--target", `${archTag}-${osTag}`, "--output", `${out}.kexe`]);
 const extract = run(process.execPath, ["bin/amu", "extract-native", `${out}.kexe`,
   "--symbol", "main", "--output", `${out}.bin`]);
 const offset = Number((extract.match(/:offset (\d+)/) || [])[1]);
@@ -53,12 +64,7 @@ if (!Number.isInteger(offset)) {
 run("cc", ["-O2", "-o", `${out}.loader`, "tools/kexe_loader.c"]);
 
 // Phase 3 -- run: the loader prints main's i64 result; 1 = all checks pass.
-const arch = process.arch === "arm64" ? "aarch64"
-  : process.arch === "x64" ? "x86_64" : null;
-if (!arch) {
-  console.error(`unsupported host architecture: ${process.arch}`);
-  process.exit(1);
-}
+const arch = archTag;
 const result = run(`${out}.loader`, [`${out}.bin`, String(offset), "0", arch, "-"]).trim();
 if (result === "1") {
   console.log("re-disasm native checks: PASS (main returned 1)");
