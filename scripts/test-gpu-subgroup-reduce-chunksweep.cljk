@@ -110,7 +110,10 @@
   "A (W, lanes, chunks) shape is admissible when: chunks is a positive
   integer; lanes is a positive multiple of L = W*chunks (whole per-workgroup
   tiles); the workgroup count lanes/L is at least 4 (the harness reads back
-  4 partials) and within Vulkan's guaranteed 65535 grid-dim limit; lanes is
+  4 partials) and within Vulkan's guaranteed 65535 grid-dim limit; the
+  fixed 256-lane init kernel's own grid (lanes/256) is within that limit
+  too (it dispatches lanes/256 workgroups, which is NOT the reduce grid
+  and can exceed 65535 on otherwise accepted shapes); lanes is
   a multiple of 256 (the fixed 256-lane init kernel covers the stream
   exactly); and the largest read-back sum stays below 2^24 so every partial
   is an f32-exact integer. Pure; self-tested below."
@@ -124,6 +127,7 @@
         (and groups
              (>= groups 4)
              (<= groups 65535)
+             (<= (quot lanes 256) 65535)
              (zero? (mod lanes 256))
              (< max-sum 16777216))))))
 
@@ -138,7 +142,8 @@
 (when-not (valid-shape? wg n-elems chunks)
   (refuse! (str "shape W=" wg " lanes=" n-elems " chunks=" chunks
                 " is not admissible (lanes a multiple of W*chunks with 4 <= lanes/(W*chunks) <= 65535,"
-                " lanes a multiple of 256, 3*L^2 + L(L+1)/2 < 2^24 for L=W*chunks)")))
+                " lanes/256 <= 65535 for the init kernel grid, lanes a multiple of 256,"
+                " 3*L^2 + L(L+1)/2 < 2^24 for L=W*chunks)")))
 (def per-wg-lanes (* wg chunks))       ;; L: lanes one workgroup reduces
 (def groups-x (quot n-elems per-wg-lanes)) ;; reduce workgroups (<= 65535)
 (def init-x (quot n-elems 256))        ;; init kernel grid (256-lane init)
@@ -412,21 +417,27 @@
 (defn- analyze
   "Per-arm time stats and the per-round ratio of baseline over variant for
   one run's flat sample vector. Answers {:arms [stats x3 in arm order],
-  :speedup <stats of t(baseline)/t(variant) per round>, :floor-base <stats
+  :speedup <stats of t(baseline)/t(variant) per round>, :gap <stats of the
+  PAIRED per-round t(variant)-t(baseline) differences -- the gap sign must
+  come from paired differences, never from subtracting marginal medians,
+  which can disagree with the paired rounds>, :floor-base <stats
   of t(floor)/t(baseline)>, :floor-var <stats of t(floor)/t(variant)>}."
   [samples]
   (when-not (= (count samples) n-samples)
     (fail! (str "analyze: " (count samples) " samples, want " n-samples)))
-  (let [per-arm (mapv (fn [a] (stats (mapv #(arm-time samples % a) (vec (range n-rounds)))))
+  (let [per-arm (mapv (fn [a] (stats (mapv #(arm-time samples % a) (vec (range n-rounds))))) 
                       (vec (range n-arms)))
         speedup (mapv (fn [r] (/ (* 1.0 (arm-time samples r 0)) (arm-time samples r 1)))
                       (vec (range n-rounds)))
+        gap (mapv (fn [r] (- (arm-time samples r 1) (arm-time samples r 0)))
+                  (vec (range n-rounds)))
         fb (mapv (fn [r] (/ (* 1.0 (arm-time samples r 2)) (arm-time samples r 0)))
                  (vec (range n-rounds)))
         fv (mapv (fn [r] (/ (* 1.0 (arm-time samples r 2)) (arm-time samples r 1)))
                  (vec (range n-rounds)))]
     {:arms per-arm
      :speedup (stats speedup)
+     :gap (stats gap)
      :floor-base (stats fb)
      :floor-var (stats fv)}))
 
@@ -476,7 +487,10 @@
                (valid-shape? 256 1048576 1) (valid-shape? 32 2097152 2))
   (fail! "shape self-test: an admissible shape was refused"))
 (doseq [[w l c] [[64 2097152 3] [32 2097152 1] [64 2097151 1] [64 0 1] [64 -2097152 4]
-                 [256 2097152 32] [64 128 1] [64 2097152 0] [64 2097152 256]]]
+                 [256 2097152 32] [64 128 1] [64 2097152 0] [64 2097152 256]
+                 ;; the init grid (lanes/256) can exceed 65535 while the
+                 ;; reduce grid stays legal: both must be refused (review).
+                 [256 20480000 8] [64 142571520 34]]]
   (when (valid-shape? w l c)
     (fail! (str "shape self-test: an inadmissible shape passed: W=" w " lanes=" l " chunks=" c))))
 ;; index round(f*(n-1)): n=8 -> q25 index 2 -> 3, q75 index 5 -> 6
@@ -502,6 +516,26 @@
                    (< (get-in flat [:speedup :iqr]) 1e-9))
       (fail! (str "analysis self-test: equal arms gave speedup "
                   (get-in flat [:speedup :med]) " iqr " (get-in flat [:speedup :iqr]))))))
+;; GAP sign comes from the PAIRED per-round differences (review P1): with
+;; 16 rounds of b=1,v=2, 15 rounds of b=100,v=110 and 1 round of b=101,v=1,
+;; the paired median difference is +1 (variant slower in the median paired
+;; round) while the difference of marginal medians is 2-50.5 = -48.5
+;; (variant faster). The gap statistic must answer the PAIRED sign.
+(let [rounds (vec (concat (repeat 16 [1.0 2.0 0.5])
+                          (repeat 15 [100.0 110.0 50.0])
+                          [[101.0 1.0 0.5]]))
+      synth (mapv (fn [j] (let [r (quot j n-arms) a (arm-idx j)]
+                            (nth (nth rounds r) a)))
+                  (vec (range n-samples)))
+      a (analyze synth)
+      paired (get-in a [:gap :med])
+      marginal (- (get-in a [:arms 1 :med]) (get-in a [:arms 0 :med]))]
+  (when-not (pos? paired)
+    (fail! (str "analysis self-test: paired gap " paired ", want positive")))
+  (when-not (neg? marginal)
+    (fail! (str "analysis self-test: marginal gap " marginal ", want negative (fixture must diverge)")))
+  (when-not (< (js/Math.abs (- paired 1.0)) 1e-9)
+    (fail! (str "analysis self-test: paired gap " paired ", want 1.0"))))
 ;; expected sums: the closed form must equal a direct integer sum for the
 ;; four workgroups the harness reads back, at THIS (W, chunks).
 (doseq [g [0 1 2 3]]
@@ -538,11 +572,27 @@
   (println (str "GPU-SGRE-CHUNK\tTOOLCHAIN\t" (str/trim (first (str/split out #"\n"))))))
 
 ;; ---- loader ---------------------------------------------------------------
+;; Compile defects FAIL (exit 1); an unavailable toolchain is the run that
+;; could not measure: a missing cc or an unlinkable Vulkan loader library
+;; (macOS without MoltenVK) exits refuse! 3, same contract as
+;; scripts/test-gpu-devclass.cljk and test-gpu-workgroup-sweep.cljk.
 (def loader (.join path tmp "kexe-loader-gpu"))
+(def loader-obj (.join path tmp "kexe-loader-gpu.o"))
+(def vulkan-prefix
+  (some (fn [h] (when (.existsSync fs h) (first (str/split h #"/include/vulkan/vulkan.h"))))
+        ["/usr/include/vulkan/vulkan.h" "/usr/local/include/vulkan/vulkan.h" "/opt/homebrew/include/vulkan/vulkan.h"]))
 (let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-DKEXE_GPU_VULKAN"
-                                             (.join path root "tools" "kexe_loader.c") "-o" loader]
-                                            (if (= platform "darwin") ["-I/opt/homebrew/include" "-L/opt/homebrew/lib" "-lvulkan"] ["-lvulkan"])))]
-  (when-not (zero? status) (fail! (str "the GPU loader does not build: " (subs err 0 (min 600 (count err)))))))
+                                             "-c" (.join path root "tools" "kexe_loader.c") "-o" loader-obj]
+                                            (if (= platform "darwin") [(str "-I" vulkan-prefix "/include")] [])))]
+  (when (nil? status) (refuse! (str "no usable cc on this host: " (subs err 0 (min 200 (count err))))))
+  (when-not (zero? status) (fail! (str "the GPU loader does not compile: " (subs err 0 (min 600 (count err)))))))
+(let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" loader-obj "-o" loader]
+                                            (if (= platform "darwin") [(str "-L" vulkan-prefix "/lib")] [])
+                                            ["-lvulkan"]))]
+  (when-not (zero? status)
+    (if (re-find #"(?i)(cannot find -lvulkan|library not found for -lvulkan|unable to find library -lvulkan|vulkan.*not found)" err)
+      (refuse! (str "the Vulkan loader library cannot link here (install MoltenVK/libvulkan): " (subs err 0 (min 300 (count err)))))
+      (fail! (str "the GPU loader does not link: " (subs err 0 (min 600 (count err))))))))
 
 ;; ---- the kernels, compiled to SPIR-V --------------------------------------
 (defn- compile-kernel! [name src]
@@ -719,8 +769,14 @@
                       "\torder=alternating(012,210)\tsamples=" (count samples)))
         (println (str "GPU-SGRE-CHUNK\tVERIFY\tx=ok\tparts-baseline=ok\tparts-variant=ok\tparts-floor=ok"
                       "\t(sum L^2*g + L(L+1)/2, L=W*chunks, g=0..3, bit-exact)"))
+        ;; ---- the raw observations, persisted (review: the aggregates
+        ;; alone cannot be re-analyzed -- paired ratios, quartiles, outliers
+        ;; and alternative noise rules all need the 96 raw samples) --------
+        (println (str "GPU-SGRE-CHUNK\tSAMPLES\tn=" (count samples)
+                      "\torder=sample-index(arm-idx parity-alternating 012,210; round-major)\tns"
+                      "\t" (str/join " " (map #(.toFixed (js/Number. %) 0) samples))))
         ;; ---- the timing table -------------------------------------------
-        (let [{:keys [arms speedup floor-base floor-var]} (analyze samples)]
+        (let [{:keys [arms speedup gap floor-base floor-var]} (analyze samples)]
           (doseq [[a nm] (map-indexed vector arm-names)]
             (let [s (nth arms a)]
               (println (str "GPU-SGRE-CHUNK\tARMTIME\t" nm
@@ -728,8 +784,13 @@
                             "\tmin=" (:rmin s) "\tmax=" (:rmax s) "\tn=" (:n s)
                             "\tns/dispatch=" (.toFixed (/ (:med s) batch) 1)
                             "\tns/element=" (.toFixed (/ (:med s) batch n-elems) 4)))))
+          ;; GAP is the PAIRED per-round median (variant-baseline), not the
+          ;; difference of marginal medians: the two can disagree in sign
+          ;; under noise (review P1), and the paired rounds are what the
+          ;; protocol collects.
           (println (str "GPU-SGRE-CHUNK\tGAP\tvariant-chunked-minus-baseline-chunked"
-                        "\tns/dispatch=" (.toFixed (/ (- (:med (nth arms 1)) (:med (nth arms 0))) batch) 1)))
+                        "\tns/dispatch=" (.toFixed (/ (:med gap) batch) 1)
+                        "\test=paired-median-of-round-differences"))
           (println (str "GPU-SGRE-CHUNK\tSPEEDUP\tbaseline/variant"
                         "\tmedian=" (.toFixed (:med speedup) 4) "\tiqr=" (.toFixed (:iqr speedup) 4)
                         "\tmin=" (.toFixed (:rmin speedup) 4) "\tmax=" (.toFixed (:rmax speedup) 4)
