@@ -24673,9 +24673,8 @@
 (defn- t2-mcd? [M :vector-i64 g :i64] :bool
   (or (<= g 0) (>= g MM-FN-CAP) (>= g (vector-at M MM-FN-N)) (not= (t2-g M (+ t2-a-mcd g)) 0)))
 ;; ---- least vector lengths (whole program, semantic) ----
-;; No operation shortens a vector in place (drop, assoc and conj make new handles or grow), so a vector at least n long
-;; stays so outside a reclaimed scope. Functions containing arena ENTER/LEAVE are excluded from this analysis below.
-;; PMIN[f][k] (k < 4): the least length
+;; Seed-compiled code never frees a vector (arena-scope is a plain do) and no operation shortens one in place (drop,
+;; assoc and conj make new handles or grow), so a vector at least n long stays so. PMIN[f][k] (k < 4): the least length
 ;; of parameter k over every call of the private function f (0 unknown); RMIN[f]: of its result. Greatest fixpoint from
 ;; "no call seen" over the SIR: a call argument's length comes from its temp's definition in the straight run before
 ;; the call (no LABEL between): LGET of a slot (the least over the slot's parameter value and every LSET into it),
@@ -24781,16 +24780,9 @@
   (let [x (+ t2-a-pmin (* 4 g))
         M1 (-> M (t2-ml-lower x 0) (t2-ml-lower (+ x 1) 0) (t2-ml-lower (+ x 2) 0) (t2-ml-lower (+ x 3) 0) (t2-ml-lower (+ t2-a-rmin g) 0))]
     (loop [k 0 m M1] (if (>= k 8) m (recur (inc k) (t2-ml-widen m (+ t2-a-prng (* 8 g) k) t2-rg-unk))))))
-(defn- t2-ml-arena? [M :vector-i64 p :i64] :bool
-  (loop [j (inc p)]
-    (cond (or (>= j (vector-at M MM-SIR-N)) (= (gn-op M j) OP-END)) false
-          (and (= (gn-op M j) OP-RT)
-               (or (= (gn-sir M j IF-A) RT-ARENA-ENTER) (= (gn-sir M j IF-A) RT-ARENA-LEAVE))) true
-          :else (recur (inc j)))))
 (defn- t2-ml-fn [M :vector-i64 f :i64] :vector-i64
   (let [p (gn-fnf M f FF-SIR)]
-    (if (or (<= p 0) (>= p (vector-at M MM-SIR-N)) (not= (gn-op M p) OP-FN) (not= (gn-sir M p IF-A) f)
-            (t2-ml-arena? M p))
+    (if (or (<= p 0) (>= p (vector-at M MM-SIR-N)) (not= (gn-op M p) OP-FN) (not= (gn-sir M p IF-A) f))
       (t2-ml-unknown M f)
       (let [M0 (t2-ml-slots M p f)]
         (loop [j (inc p) m M0]
@@ -24850,7 +24842,7 @@
 (defn- t2-r0-fn [M :vector-i64 f :i64] :vector-i64
   (let [p (gn-fnf M f FF-SIR)]
     (if (or (<= p 0) (>= p (vector-at M MM-SIR-N)) (not= (gn-op M p) OP-FN) (not= (gn-sir M p IF-A) f) (< (gn-sir M p IF-B) 1)
-            (lw-spec? M f) (lw-tmpl? M f) (t2-ml-arena? M p))
+            (lw-spec? M f) (lw-tmpl? M f))
       (t2-s M t2-s-last 0)
       (let [ns (gn-sir M p IF-C)
             M0 (loop [s 1 m M] (if (or (> s ns) (>= s 256)) m (recur (inc s) (t2-s m (+ t2-a-hmin 512 s) (if (= s 1) 1 (if (<= s (gn-sir M p IF-B)) 0 2))))))
