@@ -6,8 +6,8 @@ namespace touched.
 ## Finding (one tick, one verification)
 
 The full-suite re-run PR #1386 recorded as "started, not finished" (started
-03:49:36 JST in `gate-1385-20261020-0347`) **completed at 04:08:08 JST during
-this tick**, exit 1:
+03:49:36 JST in `gate-1385-20261020-0347`) **completed at 04:08:08 JST, before this tick began** (this tick
+04:22-04:55 observed the already-completed run's log), exit 1:
 
 ```
 === gate start 2026-10-20 03:49:36 JST ===   (HEAD ebc57f45 = PR #1385 head)
@@ -20,7 +20,10 @@ nbb: 318 tests, 5008 passed, 16 failed, 15 errors
 === gate exit 1 2026-10-20 04:08:08 JST ===
 ```
 
-Verified properties of this run (tool output, `cache/scratch/gate-1385-full.log`):
+Verified properties of this run (tool output, committed alongside this
+README as `gate-1385-full.log`, sha256
+`0dd6fa0b640543aa3a8e507faef76b71872103fadba9f6d3dae00e06509047ca`,
+365 lines, with its runner `gate-1385-full.sh`):
 
 - Correct worktree: every FAIL/ERROR path points at
   `.../wt/amu-gpu/gate-1385-20261020-0347/run-tests.cljk`; **0** occurrences of
