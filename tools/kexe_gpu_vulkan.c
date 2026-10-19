@@ -109,6 +109,14 @@ static struct {
   uint32_t max_wg_x;
   int unified_memory;
   int sync2;              /* synchronization2 available and enabled on the device */
+  int barrier_none;       /* KEXE_GPU_BARRIER_TRACKED=1: record NO barrier between
+                             dispatches and rely on the driver's own hazard tracking.
+                             EXPLORATORY, default off: Metal tracks resource hazards
+                             automatically (tracked heaps), so on MoltenVK the explicit
+                             barrier is pure cost (measured 37 us vs 5.45 for DISPATCHC).
+                             The guest's DISPATCHC already opts a single dispatch out;
+                             this opts out globally. Never set on drivers without
+                             guaranteed hazard tracking (ANV/RADV/panvk). */
 } kgpu;
 
 /* ---- answer helpers ------------------------------------------------------ */
@@ -280,6 +288,7 @@ static int kgpu_init(void) {
   if (props.apiVersion >= VK_API_VERSION_1_3) {
     vkGetPhysicalDeviceFeatures2(kgpu.physical, &feats2);
     if (sync2.synchronization2 && getenv("KEXE_GPU_BARRIER_LEGACY") == NULL) { kgpu.sync2 = 1; device_next = &want_sync2; }
+  if (getenv("KEXE_GPU_BARRIER_TRACKED") != NULL) { kgpu.barrier_none = 1; kgpu.sync2 = 0; }
   }
 #endif
   VkDeviceCreateInfo di = { .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .pNext = device_next,
@@ -463,7 +472,7 @@ static int kgpu_record_dispatch(struct kgpu_pipeline *p, uint32_t x, uint32_t y,
                                         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &infos[b] };
   }
   vkUpdateDescriptorSets(kgpu.device, p->bindings, writes, 0, NULL);
-  if (kgpu.recorded > 0 && barrier_before) {
+  if (kgpu.recorded > 0 && barrier_before && !kgpu.barrier_none) {
     /* every dispatch after the first sees the previous one's writes -- unless the
        guest said DISPATCHC, which is its assertion that this dispatch is independent
        of the one before (the .kotoba knows the data flow; the loader does not) */
