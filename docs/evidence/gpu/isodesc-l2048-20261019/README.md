@@ -30,7 +30,7 @@ L=W*chunks, f32-exact integers) precedes every timing line; all 12 runs
 printed `RESULT verified=true` and exited 0.
 
 Runs: 4 cells x 3 cycles, cell order rotated per cycle (forward,
-reversed, rotated) via `run-sweep-1152.sh`. Apple M1 Max / MoltenVK
+reversed, rotated) via `run-sweep-1152.sh.txt`. Apple M1 Max / MoltenVK
 1.3.357, glslang 11:16.6.0. Raw logs `run-<cycle>-<cell>.log` here
 (uptime and wall time inside each).
 
@@ -115,7 +115,7 @@ safe rule is unchanged and now iso-L-confirmed: keep the baseline tree.
 
 Canonical suite at the worktree root
 (`kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" run-tests.cljk`,
-wrapper `run-gate-1152.sh`) ran to COMPLETION on this tree: **311 tests /
+wrapper `run-gate-1152.sh.txt`) ran to COMPLETION on this tree: **311 tests /
 4973 assertions / 4942 passed / 16 failures / 15 errors (GATE-EXIT=1) --
 not a green suite, and not claimed as one.** The FAIL/ERROR lines,
 normalized for the worktree path embedded in run-tests.cljk, are
