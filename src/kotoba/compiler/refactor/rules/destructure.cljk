@@ -17,7 +17,33 @@
                 :default [[clojure.string :as str]
                           [kotoba.compiler.refactor.cst :as cst]
                           [kotoba.compiler.refactor.edit :as edit]]))
-  #?(:kotoba (:schemas {:ds/x [:record :ds/x [[:human :string] [:names [:list :string]] [:exprs [:list :string]] [:ctr :i64]
+  ;; The link's schema closure, declared locally (the closed namespace table is the module's own
+  ;; :schemas -- measured: an unresolvable [:ref X] silently types as i64 and surfaces as
+  ;; "expression type mismatch: expected [:ref :cst/node], got i64" at the first use). Shapes are
+  ;; byte-identical to the owning modules (shared schema = same name, same shape).
+  #?(:kotoba (:schemas {:cst/node [:record :cst/node
+                                   [[:type :keyword] [:s :i64] [:e :i64]
+                                    [:kids [:list [:ref :cst/node]]]
+                                    [:text :string] [:prefix :string] [:splice :bool]]]
+                        :cst/rd [:record :cst/rd
+                                 [[:node [:ref :cst/node]] [:kids [:list [:ref :cst/node]]]
+                                  [:pos :i64] [:kind :i64] [:err :string]]]
+                        :cst/out [:record :cst/out
+                                  [[:nodes [:list [:ref :cst/node]]] [:err :string] [:at :i64]]]
+                        :cst/branch [:record :cst/branch [[:key :string] [:form [:ref :cst/node]]]]
+                        :cst/visit [:record :cst/visit
+                                    [[:node [:ref :cst/node]] [:region :keyword] [:index :i64]
+                                     [:parent :i64] [:key [:ref :cst/node]]]]
+                        :edit/e [:record :edit/e [[:s :i64] [:e :i64] [:text :string] [:rule :string] [:ord :i64]]]
+                        :edit/split [:record :edit/split [[:kept [:list [:ref :edit/e]]] [:dropped [:list [:ref :edit/e]]]]]
+                        :finding/u16 [:record :finding/u16 [[:pos :vector-i64] [:delta :vector-i64]]]
+                        :finding/row [:record :finding/row [[:a :string] [:b :string] [:n :i64]]]
+                        :finding/f [:record :finding/f
+                                    [[:rule :string] [:s :i64] [:e :i64] [:region :keyword] [:status :string] [:line :i64]
+                                     [:context :string] [:reason :string] [:kind :string] [:kind-kw :bool]
+                                     [:edits [:list [:ref :edit/e]]] [:ported :bool] [:force :bool] [:pass :i64]
+                                     [:inv [:list [:ref :finding/row]]]]]
+                        :ds/x [:record :ds/x [[:human :string] [:names [:list :string]] [:exprs [:list :string]] [:ctr :i64]
                                               [:base :i64]]]
                         :ds/ar [:record :ds/ar [[:params [:ref :cst/node]] [:body [:list [:ref :cst/node]]]]]
                         :ds/ars [:record :ds/ars [[:ok :bool] [:xs [:list [:ref :ds/ar]]]]]
