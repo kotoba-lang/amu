@@ -17,13 +17,18 @@
   (:export [mk with-ported with-pass with-force f-rule f-s f-e f-region f-status f-line f-context f-reason f-kind
             f-kind-kw? f-edits f-ported? f-force? f-pass f-inv fs-new fs-conj fs-count fs-nth fs-concat
             row row-a row-b row-n rows-new rows-conj rows-count rows-nth auto human u16-index u16-off])
-  (:schemas {:finding/u16 [:record :finding/u16 [[:pos :vector-i64] [:delta :vector-i64]]]
-             :finding/row [:record :finding/row [[:a :string] [:b :string] [:n :i64]]]
-             :finding/f [:record :finding/f
-                         [[:rule :string] [:s :i64] [:e :i64] [:region :keyword] [:status :string] [:line :i64]
-                          [:context :string] [:reason :string] [:kind :string] [:kind-kw :bool]
-                          [:edits [:list [:ref :edit/e]]] [:ported :bool] [:force :bool] [:pass :i64]
-                          [:inv [:list [:ref :finding/row]]]]]}))
+  ;; :edit/e is declared here too (structural identity: edit.cljk owns the same shape and schemas
+  ;; compare structurally, so this is one type). A module declares every schema it references --
+  ;; the closed namespace table is the module's own :schemas (sema analyze, measured 2026-10-19).
+  #?(:kotoba
+     (:schemas {:edit/e [:record :edit/e [[:s :i64] [:e :i64] [:text :string] [:rule :string] [:ord :i64]]]
+                :finding/u16 [:record :finding/u16 [[:pos :vector-i64] [:delta :vector-i64]]]
+                :finding/row [:record :finding/row [[:a :string] [:b :string] [:n :i64]]]
+                :finding/f [:record :finding/f
+                            [[:rule :string] [:s :i64] [:e :i64] [:region :keyword] [:status :string] [:line :i64]
+                             [:context :string] [:reason :string] [:kind :string] [:kind-kw :bool]
+                             [:edits [:list [:ref :edit/e]]] [:ported :bool] [:force :bool] [:pass :i64]
+                             [:inv [:list [:ref :finding/row]]]]]})))
 
 (defn rows-new [] [:list [:ref :finding/row]] (typed-list-new [:list [:ref :finding/row]]))
 (defn row [a :string b :string n :i64] [:ref :finding/row] (record-new [:ref :finding/row] a b n))
