@@ -44,8 +44,13 @@ With a `:fs/app-data` (35) scope only (6): `mkdirat`, `unlinkat`,
 `fsync`, `getrandom`.
 
 Brokers (gpu 42 / spawn 20 / net 43-47) add `read` only, and the compiler
-command path grants none of them. Everything else returns
-`SECCOMP_RET_TRAP`; a wrong `arch` field returns `SECCOMP_RET_KILL_PROCESS`.
+command path grants none of them. Capability-dependent admissions outside
+the listed sets (review finding): `install_syscall_sandbox` admits
+`getdents64` when the `:fs/browse` (wire 34) scope is present (loader
+lines 12235-12240) and admits `getrandom` when the entropy grant is
+present even without scope 35 (lines 12353-12358). Everything else
+returns `SECCOMP_RET_TRAP`; a wrong `arch` field returns
+`SECCOMP_RET_KILL_PROCESS`.
 **`mmap` and `mprotect` are never admitted** (line 4807): every arena is
 mapped by the runner before the sandbox is installed.
 

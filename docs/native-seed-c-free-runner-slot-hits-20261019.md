@@ -25,9 +25,17 @@ same compile, and identical guest stdout on runtime case runs.
 
 Workloads and provenance (all run on macOS arm64, 2026-10-19):
 
-* unity source: `seed/X86_64-LINUX-SELFHOST-MANIFEST` concat, 12 modules,
-  628,698 bytes, sha256
-  `11a3ea25e9e8fbe03a9cc9cc9261a684278a5bea80b1547ca98be4710448038f`.
+* unity source AS MEASURED: `seed/X86_64-LINUX-SELFHOST-MANIFEST` concat,
+  12 modules, 628,698 bytes, sha256
+  `11a3ea25e9e8fbe03a9cc9cc9261a684278a5bea80b1547ca98be4710448038f` —
+  the manifest state at measurement time. It is NOT the checked-in source
+  graph of this tree: re-running `scripts/seed/check-x86_64-selfhost.py`'s
+  manifest parse and newline concatenation (the script's own convention,
+  join of module bytes + newline) at this commit yields 13 modules,
+  637,272 bytes, sha256
+  `a11c2f18220501b195c0eb99244775c999bd11643c46588b3cf44bc89854c847`
+  (review-finding follow-up: the manifest gained a module after the
+  measurement). The slot-hit numbers below bind to the AS-MEASURED pin.
 * producer: `seed/bootstrap/adopted-20261012.bin`, sha256
   `6b158aa8654706743462b8a730f189072ba05f364b00af28a3f6d23045add2eb`
   (adoption receipt `seed/adoption-20261012.json` matches). It refuses
@@ -121,6 +129,14 @@ Recorded as a dependency on JUN-29, not worked around.
 
 ## 4. What this bounds for the runner
 
+* SCOPE (review finding): the compile-path profile above was taken with
+  the AArch64 `bridge.bin` doing the compile. When the C-free runner
+  hosts the x86 image (G1/G2/G3 compiler), the same operations route
+  through `xr-rt` and the function vtable (`seed/71-x86_64-runtime.kotoba`)
+  instead of the AArch64 emitter's inline data-slot accesses, so the
+  slot-hit counts are the AArch64 path's and do NOT transfer to the x86
+  runtime. Measuring the compiler under the x86 runtime is the open
+  follow-up; until then, x86-runtime slot demand may be a superset.
 * Runner bootstrap vtable for the seed compile path = the 10 compile-path
   function slots; to also serve general guests on current seed output, 18
   slots (the measured union) + the v9/v10 data slots.
