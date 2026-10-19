@@ -53,7 +53,13 @@
 (def target (str isa (case platform "linux" "-linux" "darwin" "-macos" (refuse! (str "unsupported platform " platform)))))
 
 ;; ---- preconditions --------------------------------------------------------
-(when-not (some #(.existsSync fs %) ["/usr/include/vulkan/vulkan.h" "/usr/local/include/vulkan/vulkan.h" "/opt/homebrew/include/vulkan/vulkan.h"])
+;; The prefix is DETECTED from the header location, then reused for the link:
+;; forcing /opt/homebrew on an Intel Mac whose Vulkan lives under /usr/local
+;; fails the link even though the precondition above passed.
+(def vulkan-prefix
+  (some (fn [h] (when (.existsSync fs h) (nth (str/split h #"/include/vulkan/vulkan.h") 0)))
+        ["/usr/include/vulkan/vulkan.h" "/usr/local/include/vulkan/vulkan.h" "/opt/homebrew/include/vulkan/vulkan.h"]))
+(when-not vulkan-prefix
   (refuse! "no vulkan/vulkan.h on this host (apt: libvulkan-dev; macOS: brew install molten-vk vulkan-headers)"))
 (def glslang
   (let [{:keys [status out]} (sh "sh" ["-c" "command -v glslangValidator"])]
@@ -62,11 +68,22 @@
     (str/trimr out)))
 
 ;; ---- loader ---------------------------------------------------------------
+;; Compile and link are separate outcomes (same contract as
+;; scripts/test-gpu-devclass.cljk): a compile defect FAILs, while an unlinkable
+;; Vulkan loader library is COULD-NOT-RUN.
 (def loader (.join path tmp "kexe-loader-gpu"))
+(def loader-obj (.join path tmp "kexe-loader-gpu.o"))
 (let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-DKEXE_GPU_VULKAN"
-                                             (.join path root "tools" "kexe_loader.c") "-o" loader]
-                                            (if (= platform "darwin") ["-I/opt/homebrew/include" "-L/opt/homebrew/lib" "-lvulkan"] ["-lvulkan"])))]
-  (when-not (zero? status) (fail! (str "the GPU loader does not build: " (subs err 0 (min 600 (count err)))))))
+                                             "-c" (.join path root "tools" "kexe_loader.c") "-o" loader-obj]
+                                            (if (= platform "darwin") [(str "-I" vulkan-prefix "/include")])))]
+  (when-not (zero? status) (fail! (str "the GPU loader does not compile: " (subs err 0 (min 600 (count err)))))))
+(let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" loader-obj "-o" loader]
+                                            (if (= platform "darwin") [(str "-L" vulkan-prefix "/lib")] [])
+                                            ["-lvulkan"]))]
+  (when-not (zero? status)
+    (if (re-find #"(?i)(cannot find -lvulkan|library not found for -lvulkan|unable to find library -lvulkan|vulkan.*not found)" err)
+      (refuse! (str "the Vulkan loader library cannot link here (install MoltenVK/libvulkan): " (subs err 0 (min 300 (count err)))))
+      (fail! (str "the GPU loader does not link: " (subs err 0 (min 600 (count err))))))))
 
 ;; ---- kernels: one GLSL source per W, compiled to SPIR-V --------------------
 (defn- kernel-source [w]
@@ -221,6 +238,15 @@
     (let [offset (second m)
           run (sh loader [code offset "0" isa "42"] {"KEXE_RESULT_TYPE" "string" "KEXE_STRUCTURED_REPORT" "1" "KEXE_WALL_SECONDS" "300"})
           hex (second (re-find #":result-utf8-hex \"([0-9a-f]+)\"" (:out run)))]
+      ;; Device-init unavailability is the run that could not measure, not the
+      ;; run that measured and failed: a missing/incompatible ICD (e.g.
+      ;; VK_ERROR_INCOMPATIBLE_DRIVER on macOS without a usable MoltenVK ICD),
+      ;; no physical device, or no compute queue family are all exit 3.
+      (when (and (nil? hex)
+                 (re-find #"(no Vulkan physical device|no compute queue|vkCreateInstance|vkEnumeratePhysicalDevices|vkCreateDevice|VK_ERROR_INCOMPATIBLE_DRIVER|VK_ERROR_INITIALIZATION_FAILED)"
+                          (str (:out run) (:err run))))
+        (refuse! (str "Vulkan is installed but no usable device answers here: "
+                      (subs (str (:out run) (:err run)) 0 (min 300 (count (str (:out run) (:err run))))))))
       (when (str/includes? (:err run) "no Vulkan physical device")
         (refuse! "Vulkan is installed but no physical device answers here"))
       (when-not hex
