@@ -76,7 +76,7 @@
 ;; as an explicit migration gap or refusal.
 
 (ns kotoba.compiler.kotoba-reader
-  (:export [read-forms read-forms-bounded read-first-form-bounded read-interface-forms-bounded])
+  (:export [read-forms read-forms-bounded read-forms-count-bounded read-first-form-bounded read-interface-forms-bounded])
   (:require [kotoba.compiler.decimal-bits :as decimal])
   (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
                                        [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
@@ -1239,18 +1239,23 @@
 (defn- out [forms [:list [:ref :form/r]] err :string at :i64] [:ref :kotoba.reader/out]
   (record-new [:ref :kotoba.reader/out] forms err at))
 
-(defn- read-all [c [:ref :kotoba.reader/c]] [:ref :kotoba.reader/out]
+(defn- read-all [c [:ref :kotoba.reader/c] max-forms :i64] [:ref :kotoba.reader/out]
   (let [s (cs c)
         n (cn c)]
     (loop [i 0 acc (no-forms)]
       (let [j (skip-ws s n i)]
         (if (>= j n)
           (out (relocate-all s n acc) "" j)
-          (let [r (read-form c j 0)]
-            (cond
-              (failed? r) (out (relocate-all s n acc) (rd-err r) (rd-pos r))
-              (= 0 (rd-kind r)) (recur (rd-pos r) (conj-form acc (rd-form r)))
-              :else (recur (rd-pos r) acc))))))))
+          ;; Stop parsing at the top-level form limit instead of materializing
+          ;; every form first (review T8): the failure is the host route's
+          ;; structured "too many top-level forms" admission refusal.
+          (if (and (> max-forms 0) (>= (vector-count acc) max-forms))
+            (out (relocate-all s n acc) "too many top-level forms" j)
+            (let [r (read-form c j 0)]
+              (cond
+                (failed? r) (out (relocate-all s n acc) (rd-err r) (rd-pos r))
+                (= 0 (rd-kind r)) (recur (rd-pos r) (conj-form acc (rd-form r)))
+                :else (recur (rd-pos r) acc)))))))))
 
 ;; Module discovery needs only the leading namespace form. Do not build and
 ;; retain syntax trees for every function body just to find direct imports;
@@ -1555,7 +1560,14 @@
 
 (defn read-forms-bounded [source :string max-depth :i64 max-token :i64]
   [:ref :kotoba.reader/out]
-  (read-all (record-new [:ref :kotoba.reader/c] source (string-byte-length source) max-depth max-token)))
+  (read-all (record-new [:ref :kotoba.reader/c] source (string-byte-length source) max-depth max-token) 0))
+
+(defn read-forms-count-bounded [source :string max-depth :i64 max-token :i64 max-forms :i64]
+  [:ref :kotoba.reader/out]
+  ;; Like read-forms-bounded but stops parsing at max-forms top-level forms
+  ;; with the structured admission refusal (review T8). max-forms 0 = no count
+  ;; bound (lock documents carry their own size limit).
+  (read-all (record-new [:ref :kotoba.reader/c] source (string-byte-length source) max-depth max-token) max-forms))
 
 (defn read-first-form-bounded [source :string max-depth :i64 max-token :i64]
   [:ref :kotoba.reader/out]
@@ -1566,4 +1578,7 @@
   (read-interface-all (record-new [:ref :kotoba.reader/c] source (string-byte-length source) max-depth max-token)))
 
 (defn read-forms [source :string] [:ref :kotoba.reader/out]
-  (read-forms-bounded source 0 0))
+  ;; The 10,000 top-level form limit is the frontend's admission contract
+  ;; (frontend/base.cljk); it is enforced here as a parse bound so parsing
+  ;; stops at the limit instead of materializing past it (review T8).
+  (read-forms-count-bounded source 0 0 10000))

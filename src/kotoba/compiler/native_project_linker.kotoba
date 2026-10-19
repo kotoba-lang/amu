@@ -1527,7 +1527,7 @@
   [:ref :native.project.link/result]
   "Parse and link one project module. Call link-project-forms when the caller
   already has the bounded reader result."
-  (let [parsed (reader/read-forms-bounded source 512 1048576)
+  (let [parsed (reader/read-forms-count-bounded source 512 1048576 10000)
         parse-error (record-get [:ref :kotoba.reader/out] parsed :err)
         forms (record-get [:ref :kotoba.reader/out] parsed :forms)]
     (if (not (string=? parse-error ""))
