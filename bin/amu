@@ -283,6 +283,27 @@ function nbbCliPath(root) {
   return engine;
 }
 
+// A source-tree override for the native package implementation is used while
+// advancing kotoba-native and an Amu consumer together. The pinned gitlibs
+// closure remains intact and is still the fallback for every namespace the
+// worktree does not provide. Keep this opt-in explicit; a normal invocation
+// is resolved exclusively from deps-lock.edn.
+function kotobaNativeSourceOverlay() {
+  const supplied = process.env.AMU_KOTOBA_NATIVE_SRC;
+  if (!supplied) return [];
+  let resolved;
+  try {
+    resolved = fs.realpathSync(supplied);
+  } catch (_) {
+    fail(`error: AMU_KOTOBA_NATIVE_SRC is not readable: ${supplied}`, 64);
+  }
+  if (!fs.statSync(resolved).isDirectory()
+      || !fs.existsSync(path.join(resolved, "kotoba", "native", "elf64.cljc.cljk"))) {
+    fail("error: AMU_KOTOBA_NATIVE_SRC must be kotoba-native's src directory", 64);
+  }
+  return [resolved];
+}
+
 function resolverFailure(result) {
   if (result.error) return result.error.message;
   const stderr = (result.stderr || "").trim().split(/\r?\n/).map((l) => l.trim())
@@ -553,7 +574,8 @@ function runCompiler(root, rawArgs) {
     catch (error) { fail(`error: ${error.message}`, 64); }
     const alias = runCommands.has(args[0]) ? "native-run" : null;
     const classpath = [path.join(root, "src"), path.join(root, "resources"),
-      securityClasspath(root, nbbCli, alias)].join(path.delimiter);
+      ...kotobaNativeSourceOverlay(), securityClasspath(root, nbbCli, alias)]
+      .join(path.delimiter);
     const result = spawn(process.execPath,
       ["--stack-size=4096", nbbCli, "--classpath", classpath, nbbEntrypoint(root, args), ...args], {
         cwd: root, stdio: "inherit", env: childEnv,
@@ -562,9 +584,13 @@ function runCompiler(root, rawArgs) {
     process.exit(result.status ?? 70);
   }
 
-  // The JVM route is gone (2026-09-11). Anything not on the nbb route above
-  // remains a refusal naming the command and target; AIUEOS x86-64 kernel
-  // images are now handled by the portable ELF64 packager too.
+  // The JVM route is gone (2026-09-11). Until 2026-09-11 anything not on the
+  // nbb route above was handed to `kbb -M:run`; that spawn hid every
+  // command the nbb route did not implement behind a working JVM, and after
+  // the .cljk rename the JVM could not load the CLI anyway. Now the answer is
+  // a refusal that names the command and the target, so the gap is visible
+  // at the call site and in docs/adr (JVM-route-removed ledger) rather than
+  // in a stack trace from clojure.main.
   const target = option(args, "--target");
   fail("error: `amu " + args[0] + (target ? " --target " + target : "") + "` has no "
     + "implementation on the nbb/native route, and the JVM route was removed on "

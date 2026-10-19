@@ -160,11 +160,12 @@
                                (:image kit))))
         selected-kind (cond (= base-packager (:image kit)) :image
                             (= base-packager (:object kit)) :object)
-        packager (if (and portable-desktop?
-                          (= target :x86_64-aiueos-kernel-v1)
-                          (= selected-kind :image))
-                   elf64/package-kernel-desktop
-                   base-packager)]
+        ;; `--selfhost-desktop` changes the compiler profile, not the ELF
+        ;; container. The portable elf64 packager already emits the minimal
+        ;; entry/context shim when the artifact has no ValueRuntime syscalls or
+        ;; interrupt exports; selecting a separate, unpublished
+        ;; `package-kernel-desktop` symbol made this route fail during analysis.
+        packager base-packager]
     (when (and portable-desktop?
                (not (and (= target :x86_64-aiueos-kernel-v1)
                          (= selected-kind :image))))
