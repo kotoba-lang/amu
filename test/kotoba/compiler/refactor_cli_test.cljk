@@ -263,6 +263,43 @@
     (is (= 0 status))
     (is (= [:set-of-collections] (map :kind (:findings f)))
         "amu check: a set of vectors is outside the safe profile; a set of scalars is not")))
+(deftest to-kotoba-edn-keeps-literals-and-encodes-lists
+  (let [files (atom {"/w/lit.edn" "{:a true :b false :c (1 \"x\" sym) :d (symbol \"y\")}"})
+        {:keys [value status]} (cli/run ["to-kotoba" "/w/lit.edn"] (memory-io files))
+        f (first (:files value))
+        out (get @files "/w/lit.kotoba")]
+    (is (= 0 status))
+    (is (str/includes? out ":a true") "true/false/nil are data literals, not symbols")
+    (is (not (str/includes? out "(symbol \"true\")")))
+    (is (str/includes? out "(list 1 \"x\" (symbol \"sym\"))") "an EDN list is a (list ...) call; its items are data-spelled")
+    (is (str/includes? out "(list (symbol \"symbol\") \"y\")") "a literal (symbol \"y\") is a 2-item list, not a symbol")
+    (is (= {:parse true :value-equivalent true} (:roundtrip f)))))
+
+(deftest to-kotoba-refuses-collisions-and-bad-ns-names
+  (testing "two inputs mapping to one output are refused before any write"
+    (let [files (atom {"/w/foo.cljk" "(ns foo)\n" "/w/foo.edn" "{}"})]
+      (is (= :refactor/usage (refusal-code #(cli/run ["to-kotoba" "/w/foo.cljk" "/w/foo.edn"] (memory-io files)))))
+      (is (nil? (get @files "/w/foo.kotoba")) "nothing was written")))
+  (testing "a generated namespace name that is not a symbol is refused"
+    (let [files (atom {"/w/2026.edn" "{}"})]
+      (is (= :refactor/usage (refusal-code #(cli/run ["to-kotoba" "/w/2026.edn"] (memory-io files)))))))
+  (testing "--ns names the module"
+    (let [files (atom {"/w/2026.edn" "{}"})
+          _ (cli/run ["to-kotoba" "/w/2026.edn" "--ns" "year2026"] (memory-io files))
+          out (get @files "/w/2026.kotoba")]
+      (is (str/includes? out "(ns year2026")))))
+
+(deftest to-kotoba-splice-keeps-trivia
+  (let [src "(def f #?@(:kotoba [first ;; keep this\n second] :default [other]))\n"
+        files (atom {"/w/sp.cljk" src})
+        {:keys [value status]} (cli/run ["to-kotoba" "/w/sp.cljk"] (memory-io files))
+        f (first (:files value))
+        out (get @files "/w/sp.kotoba")]
+    (is (= 0 status))
+    (is (str/includes? out ";; keep this") "a splice keeps the arm's interior bytes")
+    (is (= 1 (get-in f [:rc :spliced])))
+    (is (= {:parse true :idempotent true} (:roundtrip f)))))
+
 
 (deftest to-kotoba-edn-spells-symbols-as-calls
   (let [files (atom {"/w/dep.edn" "{org.example/lib {:x 1}}"})

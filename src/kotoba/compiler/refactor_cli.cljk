@@ -160,7 +160,7 @@
     entries))
 
 (defn- observable-names [io dirs]
-  (set (for [d dirs f (files-under io d)
+  (set (for [d dirs f (files-under io d source-extensions)
              m (re-seq #"(?:#')?(?:kotoba\.compiler\.frontend|frontend|fe)/([^\s()\[\]{}\"]+)" (read-source io f))]
          (second m))))
 
@@ -407,7 +407,9 @@
       (cond
         (nil? arm) ""
         (:splice? n) (if (splice-arm? arm)
-                       (str/join " " (map #(resolve-node src %) (:kids arm)))
+                       ;; the arm's INTERIOR spans: brackets dropped, every byte between them (comments, whitespace,
+                       ;; `#_` discards) kept and the child nodes resolved in place
+                       (resolve-kids src (:kids arm) (inc (:s arm)) (dec (:e arm)))
                        (resolve-node src arm))
         :else (resolve-node src arm)))
     (resolve-kids src (:kids n) (:s n) (:e n))))
@@ -495,6 +497,12 @@
 (defn- to-kotoba-output-name [path]
   (str (str/replace path #"\.(cljk|cljc|clj|cljs|edn)$" "") ".kotoba"))
 
+(defn- valid-module-name?
+  "A module name the project parser accepts: a symbol, so not starting with a digit and holding no whitespace or
+  delimiter. `2026.edn` would generate (ns 2026 ...) which parses as a NUMBER, not a namespace (measured wall)."
+  [n]
+  (boolean (re-matches #"[A-Za-z_*+!?<>='][A-Za-z0-9._*+!?<>=-]*" n)))
+
 (defn- edn-module-name [path]
   (-> (second (re-find #"([^/]+)$" path))
       (str/replace #"\.edn$" "")
@@ -530,14 +538,26 @@
   [src pairs]
   (str "{" (str/join " " (mapcat (fn [[k v]] [(emit-value src k) (emit-value src v)]) pairs)) "}"))
 
+(defn- literal-atom?
+  "EDN `true` / `false` / `nil` -- the CST classes every non-keyword non-number atom as :sym (measured in
+  kotoba.compiler.refactor.cst/atom-type), but these three are data literals, not symbols."
+  [n]
+  (and (= :sym (:type n)) (contains? #{"true" "false" "nil"} (:text n))))
+
 (defn- emit-value
   "One EDN value as kotoba data. A bare symbol is a constant alias in kotoba (\"constant alias must name a declared
   constant\", measured), so a data symbol is spelled (symbol \"name\") -- which `amu check` admits in a data value
-  (measured: (defn data [] {:a (symbol \"x\")}) is admitted). A map over the literal admission limit (128 entries,
-  measured) is mechanically chunked into a merge chain instead of refused. Everything else keeps its bytes."
+  (measured: (defn data [] {:a (symbol \"x\")}) is admitted); true/false/nil stay literal. An EDN LIST is a call form
+  in kotoba expression position (measured: (defn data [] (1 2)) is a call of 1), so it is spelled (list ...) --
+  which `amu check` admits (measured). A map over its literal limit is mechanically chunked into a merge chain
+  instead of refused. Everything else keeps its bytes."
   [src n]
   (cond
+    (literal-atom? n) (cst/text src n)
     (= :sym (:type n)) (str "(symbol \"" (:text n) "\")")
+    (= :list (:type n)) (if (empty? (:kids n))
+                          "(list)"
+                          (str "(list " (str/join " " (map #(emit-value src %) (:kids n))) ")"))
     (= :map (:type n))
     ;; Chunking is mechanical for KEYWORD keys only: those lower to closed records and `merge` is a row operation on
     ;; a record (measured admitted). A typed map (string/i64 keys) over its limit has NO admitted spelling -- `merge`
@@ -553,20 +573,23 @@
     :else (emit-kids src (:kids n) (:s n) (:e n))))
 
 (defn- data-shape
-  "The data of a value node, normalized so a source symbol and its (symbol \"name\") spelling compare equal, and a
-  source map and its merge-chunked spelling compare equal (entries in order). Known folds: a source 2-list
-  (symbol \"x\") and a source symbol x normalize alike; likewise a source (merge {...} {...}) and the merged map --
-  all fold to text the emitter produces for both."
-  [n]
+  "The data of a value node, normalized for comparison. SOURCE nodes fold structurally; EMITTED nodes also fold the
+  three call spellings the emitter produces back to the data they carry: (symbol \"name\") to a symbol, (list ...) to
+  a list of its items (the head is dropped), and a merge chain to one map (entries in order). The fold is
+  asymmetric on purpose: on the source side a literal (symbol \"x\") is a 2-item LIST, and it emits as
+  (list (symbol \"symbol\") \"x\"), so both sides fold to the same list shape with no collision."
+  [n emitted?]
   (cond
     (= :sym (:type n)) [:sym (:text n)]
-    (and (cst/lst? n) (= "symbol" (cst/head-text n)) (= 2 (count (:kids n)))
+    (and emitted? (cst/lst? n) (= "symbol" (cst/head-text n)) (= 2 (count (:kids n)))
          (= :str (:type (second (:kids n)))))
     [:sym (let [t (:text (second (:kids n)))] (subs t 1 (dec (count t))))]
-    (and (cst/lst? n) (= "merge" (cst/head-text n)) (seq (:kids n))
+    (and emitted? (cst/lst? n) (= "list" (cst/head-text n)) (seq (:kids n)))
+    (into [:list nil] (map #(data-shape % true) (rest (:kids n))))
+    (and emitted? (cst/lst? n) (= "merge" (cst/head-text n)) (seq (:kids n))
          (every? #(= :map (:type %)) (rest (:kids n))))
-    (into [:map nil] (mapcat (fn [m] (map data-shape (:kids m))) (rest (:kids n))))
-    :else (into [(:type n) (:text n)] (map data-shape (:kids n)))))
+    (into [:map nil] (mapcat (fn [m] (map #(data-shape % true) (:kids m))) (rest (:kids n))))
+    :else (into [(:type n) (:text n)] (map #(data-shape % emitted?) (:kids n)))))
 
 (defn- data-key-node?
   "A map key that is a symbol, bare or already spelled (symbol \"name\")."
@@ -587,10 +610,15 @@
                                        :reason "a character literal has no admitted data spelling in the conversion; spell the data differently"})
                 :prefix (swap! out conj {:kind :tagged-or-quoted :offset (:s n) :prefix (:prefix n)
                                          :reason "a tagged/quoted form is not plain data; spell the data differently"})
-                :map (doseq [[i k] (map-indexed vector (:kids n))]
+                :map (do
+                       (doseq [[i v] (map-indexed vector (:kids n))]
+                         (when (and (odd? i) (literal-atom? v) (= "nil" (:text v)))
+                           (swap! out conj {:kind :nil-map-value :offset (:s v)
+                                            :reason "a nil map value makes the field an absent [:option T] with no T (\"map literal value at key :b is nil ... nothing here says T\", measured) -- give the field a value or a declared type (a port decision)"})))
+                       (doseq [[i k] (map-indexed vector (:kids n))]
                        (when (and (even? i) (data-key-node? k))
                          (swap! out conj {:kind :symbol-key :offset (:s k)
-                                          :reason "map literal keys must be keywords, integers or strings (amu check, measured), and assoc refuses a symbol key by type (\"expression type mismatch: expected keyword, got symbol\", measured) -- keywordize or restructure (a port decision)"})))
+                                          :reason "map literal keys must be keywords, integers or strings (amu check, measured), and assoc refuses a symbol key by type (\"expression type mismatch: expected keyword, got symbol\", measured) -- keywordize or restructure (a port decision)"}))))
                 :set (when (some #(contains? #{:list :vec :map :set :fnlit} (:type %)) (:kids n))
                        (swap! out conj {:kind :set-of-collections :offset (:s n)
                                         :reason "a set whose items are collections is \"value type is outside the safe profile\" (amu check, measured; a set of scalars is admitted) -- spell the items as a vector, a port decision"}))
@@ -614,6 +642,14 @@
               value (emit-value src value-node)
               data-name (or (get flags "--data-name") "data")
               n (or (get flags "--ns") (edn-module-name path))
+              _ (when-not (valid-module-name? n)
+                  (throw (refuse :usage :refactor/usage
+                                 (str path ": the generated namespace name \"" n "\" is not a symbol the project parser accepts; pass --ns NAME")
+                                 {:path path :ns n})))
+              _ (when-not (valid-module-name? data-name)
+                  (throw (refuse :usage :refactor/usage
+                                 (str path ": --data-name \"" data-name "\" is not a valid function name")
+                                 {:path path :data-name data-name})))
               text (str "(ns " n "\n  (:export [" data-name "]))\n\n"
                         ";; mechanical .edn -> .kotoba (`amu refactor to-kotoba`); source: " path "\n"
                         "(defn " data-name " [] " value ")\n")]
@@ -633,9 +669,9 @@
     (if-not (vector? nodes)
       {:parse false :error (ex-message nodes)}
       (if (= kind :edn)
-        (let [d (first (filter #(and (cst/lst? %) (= "defn" (cst/head-text %))) nodes))
-              body (when (and d (= 4 (count (:kids d)))) (nth (:kids d) 3))]
-          {:parse true :value-equivalent (boolean (and body (= (data-shape value-node) (data-shape body))))})
+      (let [d (first (filter #(and (cst/lst? %) (= "defn" (cst/head-text %))) nodes))
+            body (when (and d (= 4 (count (:kids d)))) (nth (:kids d) 3))]
+        {:parse true :value-equivalent (boolean (and body (= (data-shape value-node false) (data-shape body true))))})
         {:parse true
          :idempotent (= text (resolve-kids text nodes 0 (count text)))}))))
 
@@ -664,6 +700,22 @@
                         :findings-total (count (:findings r))
                         :roundtrip c}))
                    results checks)
+        _ (doseq [[r row] (map vector results rows)]
+            (let [c (:roundtrip row)
+                  bad (or (not (:parse c))
+                          (and (= :edn (:kind row)) (not (:value-equivalent c)))
+                          (and (= :source (:kind row)) (not (:idempotent c))))]
+              (when bad
+                (throw (refuse :decode :refactor/roundtrip-failed
+                               (str (:path r) ": the conversion does not round-trip (" (pr-str c) "); nothing was written")
+                               {:path (:path r) :roundtrip c})))))
+        _ (let [dupes (->> rows (group-by :out) (filter #(> (count (val %)) 1)))]
+            (when (seq dupes)
+              (throw (refuse :usage :refactor/usage
+                             (str "inputs map to the same output: "
+                                  (str/join ", " (map (fn [[o rs]] (str o " <- " (str/join " " (map :path rs)))) dupes))
+                                  "; pass --out for one file or rename")
+                             {:collisions (mapv (fn [[o rs]] {:out o :paths (mapv :path rs)}) dupes)}))))
         pending (filter :pending rows)]
     (when-not check?
       (doseq [[r row] (map vector results rows) :when (:pending row)]

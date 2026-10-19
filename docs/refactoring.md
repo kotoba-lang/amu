@@ -71,10 +71,15 @@ sub-command, and it covers `.edn` data files too.
   refusal surfaces at `amu check` until type-size accounting is ported.
 - An `.edn` file (exactly one top-level value) becomes a data module: `(ns NAME (:export [DATA]))` plus
   `(defn DATA [] <value>)` -- a function, because `amu check` refuses a `def` export ("namespace exports must name
-  declared public functions", measured). A bare symbol in the data is spelled `(symbol "name")`, the only admitted
-  data spelling (a bare symbol reads as a constant alias, measured); every other byte of the value is the original.
-  `--data-name` names the function (default `data`), `--ns` names the namespace (default: the file's stem). The round
-  trip is checked by data-shape equality, where a symbol and its `(symbol "name")` spelling compare equal.
+  declared public functions", measured). Data spellings: a bare symbol is `(symbol "name")` (a bare symbol reads as a
+  constant alias, measured), an EDN list is `(list ...)` (a bare list is a call form, measured), `true`/`false`/`nil`
+  stay literal (the CST classes them as symbols, so they are special-cased), and every other byte of the value is the
+  original. `--data-name` names the function (default `data`), `--ns` names the namespace (default: the file's stem,
+  refused when it is not a symbol -- `2026.edn` would generate `(ns 2026 ...)`, measured). The round trip is checked
+  by data-shape equality (a symbol and its `(symbol "name")` spelling compare equal; so do a list and its `(list ...)`
+  spelling, and a map and its merge-chunked spelling) and **a conversion that does not round-trip is refused before
+  anything is written**. Two inputs mapping to the same output (e.g. `foo.cljk` and `foo.edn` -> `foo.kotoba`) are
+  refused the same way.
 - `--check` converts in memory and exits 1 while outputs are pending; without it, every output is re-parsed before it
   is written (temp file + rename).
 
