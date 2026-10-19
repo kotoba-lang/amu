@@ -2,44 +2,52 @@
   ;; Exports in the ns ATTR-MAP (grammar `:ns :attr-map`): the spelling both
   ;; hosts accept -- SCI's `ns` refuses an `(:export ...)` clause, and `amu
   ;; check` in project mode refuses a module without one.
-  {:kotoba/export [source-kind admit! admit-native-artifact!]}
-  (:require [kotoba.lang.text :as str]))
+  {:kotoba/export [source-kind source-kind-present? admit! admit-native-artifact!]}
+  (:require [kotoba.lang.text :as str]
+            #?@(:kotoba [[kotoba.compiler.source-path-core :as source-core]])))
 
-;; clojure.core/some, spelled as the loop it is. In Kotoba `some` is the
-;; option constructor and a two-argument `(some pred coll)` is refused as a
-;; name collision (kotoba-sema frontend); this is the same definition as
-;; clojure.core/some -- the first logical-true (pred x), in order, stopping
-;; there -- so the host answer is unchanged on nbb and the JVM.
-(defn- first-truthy [pred coll]
-  (loop [s (seq coll)]
-    (when s
-      (or (pred (first s)) (recur (next s))))))
+(defn source-kind
+  "Classify Kotoba source notation for discovery and diagnostics, not runtime."
+  [#?@(:kotoba [path :string] :default [path])]
+  #?@(:kotoba [[:option :keyword]])
+  #?(:kotoba
+     (source-core/source-kind path)
+     :default
+     (when (string? path)
+       (cond
+         (str/ends-with? path ".kotoba") :kotoba
+         (str/ends-with? path ".cljk") :kotoba-syntax-sugar
+         (str/ends-with? path ".cljc") :kotoba-compat-syntax
+         :else nil))))
 
-(def extensions
-  "Closed source-discovery contract. Extensions select discovery intent only;
-  they never select a runtime, weaken the Kotoba grammar, or imply JVM use."
-  {".kotoba" :kotoba
-   ".cljk" :clj-kotoba
-   ".cljc" :portable-common})
+(defn source-kind-present?
+  [#?@(:kotoba [path :string] :default [path])]
+  #?@(:kotoba [:bool])
+  #?(:kotoba (source-core/source-kind-present? path)
+     :default (some? (source-kind path))))
 
-(defn source-kind [path]
-  (when (string? path)
-    ;; The entry is bound inside the body, not destructured in the parameter
-    ;; vector: a fn VALUE takes plain-symbol parameters only (kotoba-sema
-    ;; `lift-lambda`; a defn's parameters may destructure). Same entries, same
-    ;; order, same answer.
-    (first-truthy (fn [entry]
-                    (let [[extension kind] entry]
-                      (when (str/ends-with? path extension) kind)))
-                  extensions)))
+(defn admit!
+  [#?@(:kotoba [path :string] :default [path])]
+  #?@(:kotoba [[:result :string :document]])
+  #?(:kotoba
+     (source-core/admit! path)
+     :default
+     (do
+       (or (source-kind path)
+           (throw (ex-info "source input must use .kotoba, .cljk, or .cljc"
+                           {:phase :usage
+                            :path path
+                            :extensions [".cljc" ".cljk" ".kotoba"]})))
+       path)))
 
-(defn admit! [path]
-  (or (source-kind path)
-      (throw (ex-info "source input must use .kotoba, .cljk, or .cljc"
-                      {:phase :usage
-                       :path path
-                       :extensions (vec (sort (keys extensions)))})))
-  path)
+#?(:kotoba
+   (defn- admit-or-throw! [path :string] [:result :string :document]
+     (source-core/admit! path))
+   :default
+   (defn admit-or-throw!
+     "Host compatibility adapter over the typed Kotoba admission result."
+     [path]
+     (admit! path)))
 
 (defn admit-native-artifact!
   "Answer VALUE if it is a native artifact read from PATH, or refuse.
@@ -70,23 +78,38 @@
   file is a fact about the argument, not a guess about intent; and the shape
   test names the keys `extract-native` is about to read, so the refusal cannot
   outlive the code it protects."
-  [value path]
-  (when-let [kind (source-kind path)]
-    (throw (ex-info "extract-native reads a compiled artifact, not a source file"
-                    {:phase :decode
-                     :path path
-                     :source-kind kind
-                     :expected "the EDN artifact written by `compile --output`"})))
-  (when-not (map? value)
-    (throw (ex-info "extract-native input did not read as a native artifact"
-                    {:phase :decode
-                     :path path
-                     :expected "the EDN artifact written by `compile --output`"})))
-  (let [missing (vec (remove #(contains? value %) [:exports :code]))]
-    (when (seq missing)
-      (throw (ex-info "extract-native input is missing native artifact keys"
-                      {:phase :decode
-                       :path path
-                       :missing missing
-                       :present (vec (sort (keys value)))}))))
-  value)
+  [#?@(:kotoba [value :document path :string] :default [value path])]
+  #?@(:kotoba [[:result :document :document]])
+  #?(:kotoba
+     (source-core/admit-native-artifact! value path)
+     :default
+     (do
+       (when-let [kind (source-kind path)]
+         (throw (ex-info "extract-native reads a compiled artifact, not a source file"
+                         {:phase :decode
+                          :path path
+                          :source-kind kind
+                          :expected "the EDN artifact written by `compile --output`"})))
+       (when-not (map? value)
+         (throw (ex-info "extract-native input did not read as a native artifact"
+                         {:phase :decode
+                          :path path
+                          :expected "the EDN artifact written by `compile --output`"})))
+       (let [missing (vec (remove #(contains? value %) [:exports :code]))]
+         (when (seq missing)
+           (throw (ex-info "extract-native input is missing native artifact keys"
+                           {:phase :decode
+                            :path path
+                            :missing missing
+                            :present (vec (sort (keys value)))}))))
+       value)))
+
+#?(:kotoba
+   (defn- admit-native-artifact-or-throw! [value :document path :string]
+     [:result :document :document]
+     (source-core/admit-native-artifact! value path))
+   :default
+   (defn admit-native-artifact-or-throw!
+     "Host compatibility adapter over the typed native-artifact result."
+     [value path]
+     (admit-native-artifact! value path)))

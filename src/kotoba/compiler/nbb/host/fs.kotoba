@@ -1,0 +1,12 @@
+;; Native Kotoba spelling of the filesystem capability boundary.
+;; The sibling .cljk module is the nbb mechanism adapter; this source names
+;; only Kotoba capabilities and has no Node, Clojure, or JVM imports.
+(ns kotoba.compiler.nbb.host.fs
+  {:kotoba/export [app-data browse]}
+  (:capabilities #{:fs/app-data :fs/browse}))
+
+(defn app-data [request :string] :string
+  (typed-cap-call :fs/app-data :string :string request))
+
+(defn browse [directory :string] :string
+  (typed-cap-call :fs/browse :string :string directory))

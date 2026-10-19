@@ -1,6 +1,9 @@
 (ns kotoba.compiler.cli
   {:kotoba/export [*exit* -main error-report exit-code]}
-  (:require [kotoba.io :as kio] [kotoba.compiler.atomic-output :as atomic-output]
+  (:require #?(:clj [kotoba.io :as kio]
+               :cljs [kotoba.io :as kio]
+               :kotoba [kotoba.compiler.posix-path-core :as native-path])
+            [kotoba.compiler.atomic-output :as atomic-output]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.accelerator-pipeline :as accelerator-pipeline]
             [kotoba.compiler.bounded-edn :as bounded-edn]
@@ -24,7 +27,7 @@
             [kotoba.verifier :as verifier]
             [json.data-json :as json]
             [kotoba.lang.text :as str])
-  (:gen-class))
+  #?(:clj (:gen-class)))
 
 (defn- parse-target [s] (target-names/parse s))
 
@@ -36,7 +39,7 @@
 
 (def ^:dynamic *exit* (fn [status] (System/exit status)))
 
-(defn- kotoba-source! [path] (source-path/admit! path))
+(defn- kotoba-source! [path] (source-path/admit-or-throw! path))
 
 (defn- check-definitions
   "Per-definition CIDs for a checked module (ADR 0300).
@@ -532,7 +535,7 @@
                                  :inputs-output inputs-output}
                                 (select-keys inputs [:kotoba.compile/inputs]))))))
     "extract-native"
-    (let [artifact (source-path/admit-native-artifact!
+    (let [artifact (source-path/admit-native-artifact-or-throw!
                     (bounded-edn/read-file (second args)) (second args))
           symbol (symbol (or (option args "--symbol") "main"))
           output (or (option args "--output") "program.bin")
@@ -550,8 +553,9 @@
     (apply dispatch! args)
     (catch clojure.lang.ExceptionInfo error
       (let [source (second args)
-            source-name (when (source-path/source-kind source)
-                          (kio/file-name (kio/file source)))
+            source-name (when (source-path/source-kind-present? source)
+                          #?(:kotoba (native-path/basename source)
+                             :default (kio/file-name (kio/file source))))
             report (error-report error source-name)]
         (binding [*out* *err*] (println (pr-str report)))
         (*exit* (exit-code (:error report)))))
