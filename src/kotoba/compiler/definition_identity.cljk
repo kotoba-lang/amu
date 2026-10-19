@@ -1912,9 +1912,15 @@
         out)))))
 
 #?(:kotoba nil :default (defn- permutations [xs]
+  ;; EAGER per level (into []), same elements in the same order: the lazy mapcat
+  ;; spine built one host frame per element when the whole sequence was realized
+  ;; (sort-by over an 8-member group = 40320 candidates) and overflowed the stack
+  ;; after ~90s -- measured: an 8-way knot of twelve lines crashes
+  ;; `definition-identity/describe`. The chosen permutation is unchanged (same
+  ;; order into sort-by :hex), so no definition CID moves.
   (if (empty? xs)
     [[]]
-    (mapcat (fn [x] (map #(cons x %) (permutations (remove #{x} xs)))) xs))))
+    (into [] (mapcat (fn [x] (map #(cons x %) (permutations (remove #{x} xs)))) xs)))))
 
 #?(:kotoba nil :default (defn- group-candidate
   [ordered prepared resolved]
