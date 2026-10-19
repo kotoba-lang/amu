@@ -318,12 +318,17 @@
                            (or (not (string=? lock ""))
                                (and (not (string=? path ""))
                                     (or (suffix? path ".kotoba")
-                                        (suffix? path ".cljk")))))]
+                                        (suffix? path ".cljk")
+                                        ;; the resolver discovers and accepts
+                                        ;; .cljc entries; the entry guard must
+                                        ;; not make that route unreachable
+                                        ;; (review T2).
+                                        (suffix? path ".cljc")))))]
     (cond
       (not (or compare-valid? single-valid?))
       (do
         (typed-cap-call :io/write-error :string :string
-                        "usage: amu-native check|check-entry|modules <source.cljk|source.kotoba> [--module-lock LOCK --blocks DIR | --unpinned [--source-path DIR ...]] | compare-hir <surface.cljk> <core.kotoba> --unpinned [--source-path DIR ...]\n")
+                        "usage: amu-native check|check-entry|modules <source.cljk|source.cljc|source.kotoba> [--module-lock LOCK --blocks DIR | --unpinned [--source-path DIR ...]] | compare-hir <surface.cljk> <core.kotoba> --unpinned [--source-path DIR ...]\n")
         64)
 
       (not (string=? options-error ""))

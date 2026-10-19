@@ -50,7 +50,7 @@
   "Read exactly one value-type form, validate it, and return a boundary-safe
   summary. Reader errors carry their byte offset; semantic diagnostics carry
   the same code, message, and node count as value-type/validate-type."
-  (let [parsed (reader/read-forms-bounded source 64 65536)
+  (let [parsed (reader/read-forms-count-bounded source 64 65536 10000)
         parse-error (record-get [:ref :kotoba.reader/out] parsed :err)
         forms (record-get [:ref :kotoba.reader/out] parsed :forms)
         offset (record-get [:ref :kotoba.reader/out] parsed :at)
@@ -81,7 +81,7 @@
 
 (defn- validate-expression-source* [source :string lower-surface? :bool]
   [:ref :kotoba.compiler/type-summary]
-  (let [parsed (reader/read-forms-bounded source 256 65536)
+  (let [parsed (reader/read-forms-count-bounded source 256 65536 10000)
         parse-error (record-get [:ref :kotoba.reader/out] parsed :err)
         forms (record-get [:ref :kotoba.reader/out] parsed :forms)
         offset (record-get [:ref :kotoba.reader/out] parsed :at)
@@ -126,7 +126,7 @@
   "Lower the admitted `.cljk` Kotoba surface syntax and run the same semantic
   analyzer used for canonical `.kotoba` source. The extension does not select
   Clojure or ClojureScript parsing or execution."
-  (let [parsed (reader/read-forms-bounded source 512 1048576)
+  (let [parsed (reader/read-forms-count-bounded source 512 1048576 10000)
         error (record-get [:ref :kotoba.reader/out] parsed :err)
         forms (record-get [:ref :kotoba.reader/out] parsed :forms)
         options (analysis-options true false)]
@@ -154,7 +154,7 @@
   local interface stubs; the current native linker admits single-arity public
   functions with explicit :i64 parameters and results. Unsupported interfaces
   fail closed."
-  (let [parsed (reader/read-forms-bounded source 512 1048576)
+  (let [parsed (reader/read-forms-count-bounded source 512 1048576 10000)
         parse-error (record-get [:ref :kotoba.reader/out] parsed :err)
         forms (record-get [:ref :kotoba.reader/out] parsed :forms)]
     (if (not (string=? parse-error ""))
@@ -169,7 +169,7 @@
 
 (defn lint-cljk-source [source :string] [:ref :ana/ir]
   "Run semantic analysis and lint findings on `.cljk` Kotoba surface source."
-  (let [parsed (reader/read-forms-bounded source 512 1048576)
+  (let [parsed (reader/read-forms-count-bounded source 512 1048576 10000)
         error (record-get [:ref :kotoba.reader/out] parsed :err)
         forms (record-get [:ref :kotoba.reader/out] parsed :forms)
         options (analysis-options true false)]

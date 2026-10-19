@@ -76,7 +76,7 @@
 ;; as an explicit migration gap or refusal.
 
 (ns kotoba.compiler.kotoba-reader
-  (:export [read-forms read-forms-bounded read-first-form-bounded read-interface-forms-bounded])
+  (:export [read-forms read-forms-bounded read-forms-count-bounded read-first-form-bounded read-interface-forms-bounded])
   (:require [kotoba.compiler.decimal-bits :as decimal])
   (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
                                        [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
@@ -379,6 +379,16 @@
          (or (not exp?) (> ke ks))
          (= ke n))))
 
+(defn- hex-zeros? [s :string i :i64 end :i64] :bool
+  ;; True when every hex digit in [i, end) is 0 (review T6: the negative i64
+  ;; boundary is the exactly-one bit pattern, not a magnitude class).
+  (loop [j i]
+    (if (>= j end)
+      true
+      (if (= 0 (hex-digit-value (string-code-point-at s j)))
+        (recur (+ j 1))
+        false))))
+
 (defn- number-or-symbol [tok :string e :i64] [:ref :kotoba.reader/rd]
   (let [n (string-byte-length tok)
         i0 (if (sign? (point-at tok 0 n)) 1 0)
@@ -402,8 +412,14 @@
            (= (hex-end tok (+ i0 2) n) n))
       (let [ds (+ i0 2)
             nd (- n ds)
-            top (hex-digit-value (string-code-point-at tok ds))]
-        (if (or (> nd 16) (and (= nd 16) (> top 7)))
+            top (hex-digit-value (string-code-point-at tok ds))
+            ;; The negative boundary -0x8000000000000000 is a valid i64: its
+            ;; magnitude is exactly 0x8000000000000000 (top 8 then 15 zeros)
+            ;; and only when negative (review T6). Larger magnitudes are not
+            ;; representable and stay refused.
+            min-i64? (and neg? (= nd 16) (= top 8)
+                          (hex-zeros? tok (+ ds 1) n))]
+        (if (or (> nd 16) (and (= nd 16) (> top 7) (not min-i64?)))
           (fail (str "hex literal outside i64: " tok) e)
           (ok (int-form (hex-value tok ds n neg?)) e)))
 
@@ -719,6 +735,53 @@
                   (= 2 (rd-kind r)) (recur (rd-pos r) (append-all acc (rd-forms r)))
                   :else (recur (rd-pos r) (conj-form acc (rd-form r))))))))))))
 
+(defn- key-eq [a [:ref :form/r] b [:ref :form/r]] :bool
+  ;; Structural equality for map-literal keys (review T7). Mirrors
+  ;; kotoba.form/eq's tag dispatch but stays local: the cross-module import
+  ;; gate carries closed primitive parameters only, so :form/r records cannot
+  ;; cross to kotoba.form. Composite kids compare pairwise in order.
+  (let [t (tag-of a)]
+    (if (not (= t (tag-of b)))
+      false
+      (cond
+        (= t 0) true
+        (or (= t 1) (= t 2) (= t 10))
+        (= (record-get [:ref :form/r] a :n) (record-get [:ref :form/r] b :n))
+        (or (= t 3) (= t 5))
+        (string=? (record-get [:ref :form/r] a :s) (record-get [:ref :form/r] b :s))
+        (= t 4) (= (record-get [:ref :form/r] a :k) (record-get [:ref :form/r] b :k))
+        :else
+        (let [xs (kids-of a)
+              ys (kids-of b)
+              n (vector-count xs)]
+          (if (= n (vector-count ys))
+            (loop [i 0]
+              (if (>= i n)
+                true
+                (if (key-eq (kid xs i) (kid ys i))
+                  (recur (+ i 1))
+                  false)))
+            false))))))
+
+(defn- dup-of-key? [xs [:list [:ref :form/r]] k [:ref :form/r] j :i64 n :i64] :bool
+  (if (>= j n)
+    false
+    (if (key-eq k (kid xs j))
+      true
+      (dup-of-key? xs k (+ j 2) n))))
+
+(defn- map-keys-unique? [xs [:list [:ref :form/r]]] :bool
+  ;; Structural key uniqueness for a flattened map entry list (review T7).
+  ;; Downstream form-get returns the first match, so a duplicate must be a
+  ;; reader refusal, not silent first-wins.
+  (let [n (vector-count xs)]
+    (loop [i 0]
+      (if (>= i n)
+        true
+        (if (dup-of-key? xs (kid xs i) (+ i 2) n)
+          false
+          (recur (+ i 2)))))))
+
 ;; `open` is the constructor tag of the collection: 6 list, 7 vector, 8 set,
 ;; 9 map.
 (defn- read-collection [c [:ref :kotoba.reader/c] i :i64 skip :i64 close :i64 tag :i64 depth :i64]
@@ -728,6 +791,8 @@
       (failed? r) r
       (and (= tag 9) (= 1 (bit-and (vector-count (rd-forms r)) 1)))
       (fail "map literal must contain an even number of forms" i)
+      (and (= tag 9) (not (map-keys-unique? (rd-forms r))))
+      (fail "map literal has duplicate keys" i)
       :else (ok (mk tag "" 0 :none (rd-forms r)) (rd-pos r)))))
 
 ;; Read one form after a prefix (`@`, `'`): the wrapped list, or an error.
@@ -836,7 +901,13 @@
           (= 1 (bit-and (vector-count (rd-forms r)) 1))
           (fail "map literal must contain an even number of forms" i)
           (not (keyword-token-ok? ns-token)) (fail "expected `{` after `#:ns`" i)
-          :else (ok (map-form (qualify-entries (rd-forms r) 0 ns-token (no-forms))) (rd-pos r)))))))
+          :else
+          (let [q (qualify-entries (rd-forms r) 0 ns-token (no-forms))]
+            ;; Qualification can itself collide (`#:ns{:a 1, :x/a 2}`), so the
+            ;; uniqueness check runs on the qualified entries (review T7).
+            (if (map-keys-unique? q)
+              (ok (map-form q) (rd-pos r))
+              (fail "map literal has duplicate keys" i))))))))
 
 ;; Skip unselected collection branches without retaining their child trees.
 ;; Atomic readers still validate tokens, strings, characters and dispatch forms.
@@ -1168,18 +1239,23 @@
 (defn- out [forms [:list [:ref :form/r]] err :string at :i64] [:ref :kotoba.reader/out]
   (record-new [:ref :kotoba.reader/out] forms err at))
 
-(defn- read-all [c [:ref :kotoba.reader/c]] [:ref :kotoba.reader/out]
+(defn- read-all [c [:ref :kotoba.reader/c] max-forms :i64] [:ref :kotoba.reader/out]
   (let [s (cs c)
         n (cn c)]
     (loop [i 0 acc (no-forms)]
       (let [j (skip-ws s n i)]
         (if (>= j n)
           (out (relocate-all s n acc) "" j)
-          (let [r (read-form c j 0)]
-            (cond
-              (failed? r) (out (relocate-all s n acc) (rd-err r) (rd-pos r))
-              (= 0 (rd-kind r)) (recur (rd-pos r) (conj-form acc (rd-form r)))
-              :else (recur (rd-pos r) acc))))))))
+          ;; Stop parsing at the top-level form limit instead of materializing
+          ;; every form first (review T8): the failure is the host route's
+          ;; structured "too many top-level forms" admission refusal.
+          (if (and (> max-forms 0) (>= (vector-count acc) max-forms))
+            (out (relocate-all s n acc) "too many top-level forms" j)
+            (let [r (read-form c j 0)]
+              (cond
+                (failed? r) (out (relocate-all s n acc) (rd-err r) (rd-pos r))
+                (= 0 (rd-kind r)) (recur (rd-pos r) (conj-form acc (rd-form r)))
+                :else (recur (rd-pos r) acc)))))))))
 
 ;; Module discovery needs only the leading namespace form. Do not build and
 ;; retain syntax trees for every function body just to find direct imports;
@@ -1484,7 +1560,14 @@
 
 (defn read-forms-bounded [source :string max-depth :i64 max-token :i64]
   [:ref :kotoba.reader/out]
-  (read-all (record-new [:ref :kotoba.reader/c] source (string-byte-length source) max-depth max-token)))
+  (read-all (record-new [:ref :kotoba.reader/c] source (string-byte-length source) max-depth max-token) 0))
+
+(defn read-forms-count-bounded [source :string max-depth :i64 max-token :i64 max-forms :i64]
+  [:ref :kotoba.reader/out]
+  ;; Like read-forms-bounded but stops parsing at max-forms top-level forms
+  ;; with the structured admission refusal (review T8). max-forms 0 = no count
+  ;; bound (lock documents carry their own size limit).
+  (read-all (record-new [:ref :kotoba.reader/c] source (string-byte-length source) max-depth max-token) max-forms))
 
 (defn read-first-form-bounded [source :string max-depth :i64 max-token :i64]
   [:ref :kotoba.reader/out]
@@ -1495,4 +1578,7 @@
   (read-interface-all (record-new [:ref :kotoba.reader/c] source (string-byte-length source) max-depth max-token)))
 
 (defn read-forms [source :string] [:ref :kotoba.reader/out]
-  (read-forms-bounded source 0 0))
+  ;; The 10,000 top-level form limit is the frontend's admission contract
+  ;; (frontend/base.cljk); it is enforced here as a parse bound so parsing
+  ;; stops at the limit instead of materializing past it (review T8).
+  (read-forms-count-bounded source 0 0 10000))
