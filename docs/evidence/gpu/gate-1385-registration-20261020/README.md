@@ -27,12 +27,15 @@ SCANNED	241
 EXECUTED	97
 LEDGER-ONLY	144
 
-Ran 8 tests containing 75 assertions.
+Ran 10 tests containing 244 assertions.
 0 failures, 0 errors.
 ```
 
-(7 tests / 66 assertions = the subgroup-reduce namespace, matching PR #1385's
-smoke run; 1 test / 9 assertions = the completeness check. Registration in both
+(CORRECTED 2026-10-20: the first revision of this line recorded 8 tests / 75
+assertions (7/66 + 1/9) from a STALE selection at 53248c1. Re-run at the
+current tree: `kotoba.compiler.accelerator-subgroup-reduce-test` = 9 tests /
+235 assertions (its 4b7a1cc expansion), `test-runner-completeness-test` =
+1 test / 9 assertions, together 10 tests / 244 assertions. Registration in both
 lists of `run-tests.cljk` (require line 74, `t/run-tests` line 215 at
 `ebc57f45`) is now **verified** — closed as of this tick.)
 
