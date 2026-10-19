@@ -5,10 +5,19 @@ runs at 2x the sweep's 2^20 load (2,097,152 lanes = 32,768 workgroups), 3 at
 3x (3,145,728 lanes = 49,152 workgroups), plus 1 control run at 2^20
 (1,048,576 lanes = 16,384 workgroups), on Apple M1 Max / MoltenVK (Vulkan
 1.3.357), glslang 11:16.6.0, aarch64-macos, 2026-10-19 08:52-08:56 JST.
-Every run verified x[i]=i+1 and the first four workgroup partials of BOTH
+These are NODE BOOTSTRAP results: the measured guest is built and extracted
+through `node bin/amu`, so the numbers characterize the bootstrap compiler's
+generated code and are NOT selfhost evidence.
+Every run verified the SAMPLED words x[0..3] (the harness READs 16 bytes at
+offset zero of x) and the first four workgroup partials of BOTH
 reduce arms bit-exact (f32, sum W^2*g + W(W-1)/2 + W, g = 0..3) before
-printing any timing line; all 7 runs printed `RESULT verified=true`.
-Host load averages 6.5-13.2 throughout (`uptime` printed before each run).
+printing any timing line; all 7 runs printed `RESULT verified=true`. The
+x=ok claim is scoped to those four sampled words: x[i]=i+1 across the
+million-plus lanes is the INPUT GENERATOR's claim, not a verified read-back.
+Host load averages 6.5-13.2 were observed on `uptime` before each run; the
+committed logs do NOT contain that output (each starts at the toolchain
+line), so the load figures rest on contemporaneous observation and are not
+re-checkable from this evidence.
 
 ## Why this probe exists
 
@@ -17,7 +26,11 @@ arms' absolute gap grows super-proportionally to the load ("~0.4-2.7 us at
 2^20 ... 6.3-6.7 us at 4x"), with the mechanism UNRESOLVED, and left "a load
 sweep at W=64 between the two points" as the test. This run is that sweep.
 The probe script, fixtures and protocol are byte-identical to PR #1349's
-(script sha256 d6273519db58a1b5fc022c24b81e8c6493d6fe02; W=64 fixture
+(script sha256 871bfde4a14e4168fba9808581acd7b2a704f47054cac49eee54e1f35f1da462,
+verified against the committed script; an earlier revision of this line
+recorded d6273519db58a1b5fc022c24b81e8c6493d6fe02, which does not hash to
+any committed script -- the run logs do not identify the executing script's
+hash, so provenance rests on this recorded value; W=64 fixture
 sha256 a25a69317b5c5a956279ccc37a5089adb489104a28ed89460b8928889b096254);
 the only difference is the lanes argv. The control run at 2^20 answers
 1.0196 here vs 1.0129 (PR #1349), 1.0149 / 1.0401 (PR #1348), tying the
@@ -82,7 +95,8 @@ at 4,194,240 lanes = 65,535 workgroups.
 
 4. **Mechanism still UNRESOLVED.** That the variant pays ~0.12-0.13 ns per
    workgroup over the cascade (and why that marginal cost is constant
-   across 32k-65k workgroups while both arms sit 88-91% on the floor) is
+   across 32k-65k workgroups while floor/baseline sits 0.88-0.91 and
+   floor/variant 0.84-0.85) is
    not measured by this probe. The PR #1349 hypothesis (shared-memory /
    shuffle traffic against a larger x[] stream) is not tested here: x[]
    bytes per dispatch grow with lanes, and workgroups grow too, so this
