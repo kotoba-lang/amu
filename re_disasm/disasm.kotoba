@@ -13,12 +13,14 @@
             hex-u hex-s hex8 insn-record insn-text count-class xrefs-count
             words-from-bytes targets-vector listing-text
             adrp-add-target literal-targets
+            slot-of reachable-vector function-entries
             test-hints test-exceptions test-branch-uncond test-branch-cond
             test-branch-register test-adr test-mov test-addsub test-loadstore
             test-text test-bytes-xrefs
             test-logical-reg test-addsub-reg test-ldst-reg test-pair
             test-record test-targets test-listing
             test-shift-text test-extend-text test-literal
+            test-m3-edges test-m3-reach test-m3-entries
             test-macho test-elf test-pe test-words-at
             u16le u32le u64le name8 name-str
             macho-recognize macho-ncmds macho-cmd-off macho-image-base
@@ -609,6 +611,64 @@
                              (+ base (* 4 i)))))))))
 
 ;; One listing line per word: "<pc>: <word>  <text>".
+
+;; Slot index for a pc inside the [base, base+4n) window, -1 outside or
+;; unaligned. The recursive-descent passes map branch targets to slots
+;; through this.
+(defn slot-of [base :i64 n :i64 pc :i64] :i64
+  (if (and (>= pc base) (< pc (+ base (* 4 n))) (= (- pc base) (* 4 (quot (- pc base) 4))))
+    (quot (- pc base) 4)
+    -1))
+
+;; Recursive-descent reachability from slot 0: BFS over the control-flow
+;; edges (fall-through + computed targets), answering 0/1 per slot. ret/br/
+;; b/hlt end a path; bl/bcond/cbz/tbz branch AND fall through.
+(defn reachable-vector [words :vector-i64 base :i64 n :i64] :vector-i64
+  (let [seen (vector-alloc n)
+        q (vector-alloc n)]
+    (loop [head 0 tail 1
+           seen (vector-assoc seen 0 1)
+           q (vector-assoc q 0 0)]
+      (if (>= head tail) seen
+        (let [slot (vector-at q head)
+              w (vector-at words slot)
+              pc (+ base (* 4 slot))
+              c (insn-class w)
+              t (if (insn-has-target? c) (slot-of base n (insn-target w pc)) -1)
+              end? (or (= c (class-ret)) (= c (class-br))
+                       (= c (class-b)) (= c (class-hlt)))
+              f (if (or end? (>= (+ slot 1) n)) -1 (+ slot 1))
+              ct (and (>= t 0) (= (vector-at seen t) 0))
+              s1 (if ct (vector-assoc seen t 1) seen)
+              q1 (if ct (vector-assoc q tail t) q)
+              n1 (if ct (+ tail 1) tail)
+              cf (and (>= f 0) (= (vector-at s1 f) 0))
+              s2 (if cf (vector-assoc s1 f 1) s1)
+              q2 (if cf (vector-assoc q1 n1 f) q1)
+              n2 (if cf (+ n1 1) n1)]
+          (recur (+ head 1) n2 s2 q2))))))
+
+;; Function entry slots: the entry pc (base) plus every in-window bl
+;; target, first occurrence kept. Answer is n slots, -1-padded after the
+;; last entry (vector-alloc zero-fills, so the padding is written first).
+(defn function-entries [words :vector-i64 base :i64 n :i64] :vector-i64
+  (loop [i 0 out (vector-alloc n)]
+    (if (>= i n)
+      (loop [i 0 out (vector-assoc out 0 base) tail 1]
+        (if (>= i n) out
+          (let [w (vector-at words i)
+                c (insn-class w)
+                t (if (= c (class-bl)) (slot-of base n (insn-target w (+ base (* 4 i)))) -1)
+                dup? (if (< t 0) true
+                       (loop [j 0 seen false]
+                         (if (>= j tail) seen
+                           (recur (+ j 1)
+                             (or seen (= (vector-at out j) (+ base (* 4 t))))))))]
+            (recur (+ i 1)
+              (if (or dup? (< t 0)) out (vector-assoc out tail (+ base (* 4 t))))
+              (if (or dup? (< t 0)) tail (+ tail 1))))))
+      (recur (+ i 1) (vector-assoc out i -1)))))
+
 (defn listing-text [words :vector-i64 base :i64 n :i64] :string
   (loop [i 0 acc ""]
     (if (>= i n) acc
@@ -1408,6 +1468,46 @@
              (= (adrp-add-target 0x91002000 0x91002000 0x1000) -1))
       1 0)))
 
+(defn test-m3-edges [] :i64
+  ;; Hand-encoded edges of the program below: bl -> 0x100c, b -> 0x1004.
+  (if (and (= (insn-class 0x94000003) (class-bl))
+           (= (insn-class 0x17FFFFFD) (class-b))
+           (= (insn-target 0x94000003 0x1000) 0x100c)
+           (= (insn-target 0x17FFFFFD 0x1010) 0x1004)
+           (= (slot-of 0x1000 6 0x100c) 3)
+           (= (slot-of 0x1000 6 0x2000) -1)
+           (= (slot-of 0x1000 6 0x1002) -1))
+    1 0))
+
+(defn test-m3-reach [] :i64
+  ;; Program at 0x1000 (hand-encoded):
+  ;;   0x1000: bl 0x100c        = 0x94000003
+  ;;   0x1004: ret              = 0xD65F03C0
+  ;;   0x1008: nop              = 0xD503201F   (unreachable, no caller)
+  ;;   0x100c: add x0, x0, #1   = 0x91000400   (function 2 body)
+  ;;   0x1010: b 0x1004         = 0x17FFFFFD   (imm26 = -3)
+  ;;   0x1014: ret              = 0xD65F03C0   (unreachable, tail-b skips)
+  ;; reachable = {0,1,3,4}.
+  (let [words (vector-i64 0x94000003 0xD65F03C0 0xD503201F 0x91000400
+                          0x17FFFFFD 0xD65F03C0)
+        r (reachable-vector words 0x1000 6)]
+    (if (and (= (vector-at r 0) 1)
+             (= (vector-at r 1) 1)
+             (= (vector-at r 2) 0)
+             (= (vector-at r 3) 1)
+             (= (vector-at r 4) 1)
+             (= (vector-at r 5) 0))
+      1 0)))
+
+(defn test-m3-entries [] :i64
+  (let [words (vector-i64 0x94000003 0xD65F03C0 0xD503201F 0x91000400
+                          0x17FFFFFD 0xD65F03C0)
+        f (function-entries words 0x1000 6)]
+    (if (and (= (vector-at f 0) 0x1000)
+             (= (vector-at f 1) 0x100c)
+             (= (vector-at f 2) -1))
+      1 0)))
+
 (defn main [] :i64
   (let [s (+ (test-hints) (test-exceptions) (test-branch-uncond)
              (test-branch-cond) (test-branch-register) (test-adr)
@@ -1415,7 +1515,7 @@
              (test-bytes-xrefs) (test-logical-reg) (test-addsub-reg)
              (test-ldst-reg) (test-pair) (test-record) (test-targets)
              (test-listing) (test-shift-text) (test-extend-text)
-             (test-literal)
+             (test-literal) (test-m3-edges) (test-m3-reach) (test-m3-entries)
              (test-macho) (test-elf) (test-pe)
              (test-words-at))]
-    (if (= s 25) 1 0)))
+    (if (= s 28) 1 0)))
