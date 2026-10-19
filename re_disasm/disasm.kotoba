@@ -16,7 +16,8 @@
             test-branch-register test-adr test-mov test-addsub test-loadstore
             test-text test-bytes-xrefs
             test-logical-reg test-addsub-reg test-ldst-reg test-pair
-            test-record test-targets test-listing]))
+            test-record test-targets test-listing
+            main]))
 
 ;; re-disasm -- cleanroom AArch64 disassembler core in Kotoba.
 ;;
@@ -759,3 +760,21 @@
                     (string-concat (string-concat "00000008: 54000000  b.eq #0x8" nl)
                       (string-concat "0000000c: d65f03c0  ret" nl))))]
     (if (string=? (listing-text words 0 4) expected) 1 0)))
+
+;; ------------------------------------------------------------- native entry
+;; `main` runs every check with no host I/O and answers 1 when all 18 pass.
+;; Compiled to the host-native kexe target, the artifact runs under the
+;; reviewed C loader (`tools/kexe_loader.c`) with no JVM, GraalVM or Node.js
+;; in the runtime tree -- only the compile door is still the node-hosted
+;; bootstrap compiler (docs/selfhost-priority.md; the selfhost compiler
+;; binary is org-wide WIP). Single module on purpose: the :jvm-kir reference
+;; charges cross-module calls against its 32-frame budget, and the compile
+;; oracle must be able to verify this entry.
+(defn main [] :i64
+  (let [s (+ (test-hints) (test-exceptions) (test-branch-uncond)
+             (test-branch-cond) (test-branch-register) (test-adr)
+             (test-mov) (test-addsub) (test-loadstore) (test-text)
+             (test-bytes-xrefs) (test-logical-reg) (test-addsub-reg)
+             (test-ldst-reg) (test-pair) (test-record) (test-targets)
+             (test-listing))]
+    (if (= s 18) 1 0)))
