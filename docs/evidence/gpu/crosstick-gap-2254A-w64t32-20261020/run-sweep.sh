@@ -34,9 +34,11 @@ mkdir -p "$EV"
 B="$1"
 case "$B" in B) ;; *) echo "usage: $0 B" >&2; exit 2;; esac
 
+unset KEXE_GPU_BARRIER_TRACKED  # batch B must not inherit the caller's override
+
 run() { # pair-pos cell W chunks
   log="$EV/run-$B-$1-$2.log"
-  if [ -f "$log" ]; then echo "skip $log"; return 0; fi
+  if [ -f "$log" ] && grep -q "RESULT\tverified=true" "$log"; then echo "skip $log"; return 0; fi
   echo "run $log"
   (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" 2095104 "$4") > "$log" 2>&1
   grep -q "RESULT	verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }

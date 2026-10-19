@@ -1,8 +1,8 @@
-# crosstick-gap-2254A-w64t32-20261020 — first >=30-MIN GAP sign datum (cross-tick): no flip at 70m26s (tick 20261020-0006, JUN-58)
+# crosstick-gap-2254A-w64t32-20261020 — first >=30-MIN GAP sign datum (cross-tick): no flip at 70m13s (tick 20261020-0006, JUN-58)
 
 ## The finding this tick
 
-**The w64t32 flip-cell sign does NOT flip across a 70m26s cross-tick gap.**
+**The w64t32 flip-cell sign does NOT flip across a 70m13s cross-tick gap (corrected 2026-10-20: measured from the last batch-A run’s END = start + 12.974s; the earlier 70m26s used its start).**
 This is the chain's first datum at a >=30 min gap: the 2221/2254 ticks'
 in-tick holds died at this platform's 1800 s run budget (proven at 2254,
 three evidences) and the 2337 tick bounded within-session stability at
@@ -16,7 +16,7 @@ cells are sign-unanimous in both batches (6/6 runs per cell):
 | w64t31 (anchor) | mean(3) **-13,640.3**, signs -/-/- (clean est -13,690.0, 2 survivors) | mean(3) **-14,873.7**, signs -/-/- (3/3 IQR-clean) | FLIP=**no** |
 | w64t32 (flip cell) | mean(3) **+5,372.1**, signs +/+/+ (3/3 IQR-clean) | mean(3) **+4,604.8**, signs +/+/+ (3/3 IQR-clean) | FLIP=**no** |
 
-Cross-tick gap batchA-end → batchB-start: **70m26s**. ns/dispatch,
+Cross-tick gap batchA-end → batchB-start: **70m13s** (last batch-A run end = its start + 12.974s). ns/dispatch,
 variant-chunked minus baseline-chunked; negative = variant faster. All 12
 runs `RESULT verified=true`, runner exit 0.
 
@@ -29,8 +29,9 @@ runs `RESULT verified=true`, runner exit 0.
   that design remains INFEASIBLE at the 1800 s run budget.
 - A **no-flip bounds nothing against a stochastic flip rate**. The chain's
   identical-shape cross-session series is + (#1369) / - (#1377) / +
-  (#1378) / +/+ (#1380) / + (#1382): flips DO occur between sessions, one
-  in five transitions. This datum adds one same-sign transition at a known
+  (#1378) / +/+ (#1380) / + (#1382): flips DO occur between sessions, two
+  in five transitions (the + / - / + / + / + / + series has two sign
+  changes across its five adjacent transitions). This datum adds one same-sign transition at a known
   >=30-min gap (#+1382 → this tick) to that series; the rate question needs
   more transitions and stays UNANSWERED.
 - The gap is **NOT probe-idle**: the 2337 tick ran its 12 probe runs at
