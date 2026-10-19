@@ -21,6 +21,7 @@ All output is EDN with `:format :kotoba.refactor/v1`. Refusals carry a stable
 | `refactor partition <path> [--modules N] [--driver FORM] [--names FILE] [--out FILE]` | pass-ownership partition (an acyclic module graph), the input of `split` |
 | `refactor split <path> --partition p.edn --out dir [--ns NAME]` | extract modules plus a facade; byte-identical round trip is checked before anything is written |
 | `refactor verify --runner run-tests.cljk --classpath CP [--base-first DIR] [--candidate-first DIR] [--stack-size N]` | differential: run the project's test set twice (baseline root first, candidate root first) and compare per-test outcomes |
+| `refactor to-kotoba <path>... [--out FILE] [--check] [--data-name NAME] [--ns NAME]` | the mechanical `.cljk`/`.edn` -> `.kotoba` conversion (below) |
 
 `<rules>` is `a,b,d,e,f`, one rule id or name, or `all` (= `a,b,d,e,f`). Rule `c`
 (dynamic vars) needs `--target dual|host-env`. Other rule options:
@@ -35,6 +36,36 @@ are `:refactor/usage`, `unknown-rule`, `target-required`, `unreadable`,
 `parse-error`, `no-paths`, `output-unparsable`, `no-driver`,
 `partition-incomplete`, `roundtrip-failed`, `verify-no-result`, `write-failed`
 (`kotoba.compiler.refactor-cli` header has the table).
+
+## Converting to `.kotoba` (`to-kotoba`)
+
+`to-kotoba` is the mechanical part of the `.cljk` -> `.kotoba` move, over the same lossless CST as every other
+sub-command, and it covers `.edn` data files too.
+
+- A `#?( )` reader conditional becomes its `:kotoba` arm, else its `:default` arm, else nothing (the Kotoba reader
+  reads NOTHING when no arm names its feature). A `#?@( )` splice emits the arm collection's children in place.
+- Every other byte is copied verbatim -- comments, whitespace and `#_` discards included -- so a file without a
+  conditional converts byte-identically and a rewrite is checkable: the emitted text re-parses, and resolving it again
+  changes nothing (idempotence). A conditional with no kept arm is reported as a `:rc-no-arm` finding, never dropped
+  silently.
+- Data over the admission limit (map entries > 128 -- measured in kotoba-sema's desugar, "map entry count exceeds
+  admission limit") is reported as a `:map-over-limit` finding: chunked tables are a port decision (the aiueos
+  `topic.kotoba` pattern), never invented by the mechanical conversion.
+- A symbol map key (`:symbol-key`, measured: "map literal keys must be keywords, integers or strings") and a set whose
+  items are collections (`:set-of-collections`, measured: "value type is outside the safe profile"; a set of scalars
+  is admitted) are named the same way. Character and tagged/quoted literals (`:char-literal`, `:tagged-or-quoted`)
+  have no admitted data spelling at all.
+- An `.edn` file (exactly one top-level value) becomes a data module: `(ns NAME (:export [DATA]))` plus
+  `(defn DATA [] <value>)` -- a function, because `amu check` refuses a `def` export ("namespace exports must name
+  declared public functions", measured). A bare symbol in the data is spelled `(symbol "name")`, the only admitted
+  data spelling (a bare symbol reads as a constant alias, measured); every other byte of the value is the original.
+  `--data-name` names the function (default `data`), `--ns` names the namespace (default: the file's stem). The round
+  trip is checked by data-shape equality, where a symbol and its `(symbol "name")` spelling compare equal.
+- `--check` converts in memory and exits 1 while outputs are pending; without it, every output is re-parsed before it
+  is written (temp file + rename).
+
+What `to-kotoba` deliberately does NOT do: type annotations, `throw`/`ex-info` removal, host-boundary lifts. Those
+are `plan` findings (`:human`) and port work, and they stay visible instead of being guessed.
 
 ## The loop
 

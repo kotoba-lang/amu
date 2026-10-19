@@ -9,9 +9,11 @@
     amu refactor split <path> --partition FILE --out DIR [--ns NAME]
     amu refactor verify --runner FILE --classpath CP [--classpath-file FILE]
                         [--base-first DIR] [--candidate-first DIR] [--nbb PATH] [--stack-size N]
+    amu refactor to-kotoba <path>... [--out FILE] [--check] [--data-name NAME] [--ns NAME]
 
   <rules> is `a,b,d,e,f`, a rule name, or `all` (= a,b,d,e,f). A <path> is a source file or a directory searched for
-  .cljk / .cljc / .clj / .cljs files. Rule options: --target dual|host-env (rule c), --include-ported, --lower-accessor,
+  .cljk / .cljc / .clj / .cljs files; `to-kotoba` also takes `.edn` data files (exactly one top-level value). Rule
+  options: --target dual|host-env (rule c), --include-ported, --lower-accessor,
   --regions shared,default,kotoba, --observable-from DIR[,DIR], --max-passes N.
 
   Every answer is one EDN map with `:format :kotoba.refactor/v1`, printed to stdout. `plan` and `--check` never write.
@@ -30,8 +32,10 @@
     :refactor/roundtrip-failed       a split lost or duplicated a form    (65)  nothing was written
     :refactor/write-failed           a file could not be written          (74)
 
-  Exit 1 (not a refusal) means the answer is `:ok false`: `apply --check` found pending changes, or `verify` found
-  differing per-test outcomes.
+  Exit 1 (not a refusal) means the answer is `:ok false`: `apply --check` or `to-kotoba --check` found pending
+  changes, or `verify` found differing per-test outcomes. `to-kotoba` is the mechanical .cljk/.edn -> .kotoba
+  conversion: reader conditionals resolve to their :kotoba arm (else :default, else nothing) and every other byte is
+  copied verbatim; an .edn file becomes a data module (`--data-name`, default `data`).
 
   One implementation, no JVM and no Python: the command is a function from arguments and an I/O record to a value
   (`run`), the Node entrypoint is `kotoba.compiler.nbb.refactor-cli`. The host route's alone, as `amu test` is."
@@ -72,7 +76,7 @@
 ;; ---- arguments ------------------------------------------------------------------------------------------------------
 
 (def ^:private value-flags
-  #{"--out" "--partition" "--ns" "--modules" "--driver" "--names" "--target" "--regions" "--observable-from"
+  #{"--out" "--partition" "--ns" "--data-name" "--modules" "--driver" "--names" "--target" "--regions" "--observable-from"
     "--max-passes" "--runner" "--classpath" "--classpath-file" "--base-first" "--candidate-first" "--nbb"
     "--stack-size" "--patch-out"})
 
@@ -103,26 +107,28 @@
 
 (def ^:private source-extensions [".cljk" ".cljc" ".clj" ".cljs"])
 
-(defn- source-file? [name] (some #(str/ends-with? name %) source-extensions))
+(def ^:private edn-extensions [".edn"])
 
-(defn- files-under [io dir]
+(defn- name-with? [name exts] (some #(str/ends-with? name %) exts))
+
+(defn- files-under [io dir exts]
   (mapcat (fn [{:keys [name dir?]}]
             (let [p (str dir "/" name)]
               (cond (str/starts-with? name ".") nil
                     (= name "node_modules") nil
-                    dir? (files-under io p)
-                    (source-file? name) [p])))
+                    dir? (files-under io p exts)
+                    (name-with? name exts) [p])))
           ((:list io) dir)))
 
-(defn- expand-paths [io paths]
+(defn- expand-paths [io paths exts]
   (let [files (vec (distinct (mapcat (fn [p]
                                        (case ((:kind io) p)
-                                         :dir (files-under io (str/replace p #"/+$" ""))
+                                         :dir (files-under io (str/replace p #"/+$" "") exts)
                                          :file [p]
                                          (throw (refuse :decode :refactor/unreadable (str "no such file or directory: " p) {:path p}))))
                                      paths)))]
     (when (empty? files)
-      (throw (refuse :decode :refactor/no-paths "the paths hold no .cljk/.cljc/.clj/.cljs file" {:paths (vec paths)})))
+      (throw (refuse :decode :refactor/no-paths "the paths hold no .cljk/.cljc/.clj/.cljs/.edn file" {:paths (vec paths)})))
     files))
 
 (defn- read-source [io path]
@@ -220,7 +226,7 @@
 (defn- plan [io {:keys [positional flags]}]
   (when (< (count positional) 2) (usage! "usage: amu refactor plan <rules> <path>..."))
   (let [entries (resolve-rule-spec (first positional) flags)
-        files (expand-paths io (rest positional))
+        files (expand-paths io (rest positional) source-extensions)
         opts (core-opts io flags)
         results (mapv #(rewrite-file io % entries opts) files)
         reports (mapv #(file-report % (not (get flags "--no-diff"))) results)]
@@ -235,7 +241,7 @@
 (defn- apply-rules [io {:keys [positional flags]}]
   (when (< (count positional) 2) (usage! "usage: amu refactor apply <rules> <path>... [--check]"))
   (let [entries (resolve-rule-spec (first positional) flags)
-        files (expand-paths io (rest positional))
+        files (expand-paths io (rest positional) source-extensions)
         out (get flags "--out")
         _ (when (and out (> (count files) 1)) (usage! "--out names one file; give one path"))
         check? (get flags "--check")
@@ -355,6 +361,257 @@
                    :candidate (assoc (:candidate cmp) :status (:status cand)))
      :status (if (:ok cmp) 0 1)}))
 
+;; ---- to-kotoba (mechanical .cljk / .edn -> .kotoba over the CST) ----------------------------------------------------
+;;
+;; The conversion is mechanical and byte-accounted: a #?( ) reader conditional becomes its :kotoba arm (else its
+;; :default arm, else nothing -- the Kotoba reader reads NOTHING when no arm names its feature), a #?@( ) splices the
+;; arm collection's children in place, and every other byte -- comments, whitespace, `#_` discards -- is copied
+;; verbatim, so a file with no conditional comes back byte-identical. What this does NOT do is stated, not hidden:
+;; type annotations, throw removal and host-boundary work are rules and ports (:human findings of `plan`), never part
+;; of the mechanical conversion. An .edn file (exactly one top-level value) becomes a data module whose `def` value is
+;; the original bytes, so the round trip is checkable by span equality.
+
+(defn- rc-arm
+  "The arm node a .kotoba reading keeps from a #?( ) node: the arm whose feature KEY TEXT is \":kotoba\", else the one
+  named \":default\", else nil. Feature text, not region-of-feature: that function classifies regions and maps every
+  non-:kotoba feature (including :clj) to :default, which would keep an arm the Kotoba reader drops."
+  [n]
+  (let [branches (cst/rc-branches n)]
+    (or (some (fn [[k f]] (when (= ":kotoba" k) f)) branches)
+        (some (fn [[k f]] (when (= ":default" k) f)) branches))))
+
+(defn- rc-kept?
+  "Whether a #?( ) node keeps the :kotoba arm. Used to classify the arm actually emitted."
+  [n]
+  (some (fn [[k _]] (= ":kotoba" k)) (cst/rc-branches n)))
+
+(declare resolve-node)
+
+(defn- resolve-kids
+  "SRC's bytes between S and E with every node of KIDS replaced by its .kotoba reading; interstitial bytes are copied
+  verbatim."
+  [src kids s e]
+  (loop [cursor s ks kids acc []]
+    (if-let [k (first ks)]
+      (recur (:e k) (next ks) (conj acc (subs src cursor (:s k)) (resolve-node src k)))
+      (apply str (conj acc (subs src cursor e))))))
+
+(defn- splice-arm?
+  [arm] (contains? #{:list :vec :map :set :fnlit} (:type arm)))
+
+(defn- resolve-node
+  "The .kotoba reading of NODE's span of SRC."
+  [src n]
+  (if (= :rc (:type n))
+    (let [arm (rc-arm n)]
+      (cond
+        (nil? arm) ""
+        (:splice? n) (if (splice-arm? arm)
+                       (str/join " " (map #(resolve-node src %) (:kids arm)))
+                       (resolve-node src arm))
+        :else (resolve-node src arm)))
+    (resolve-kids src (:kids n) (:s n) (:e n))))
+
+(defn- rc-inventory
+  "Outcomes of the reader conditionals that the .kotoba reading actually keeps, and findings for the two shapes that
+  need a person's eye (a dropped form, a splice). Counts only KEPT arms: a conditional nested in a dropped arm never
+  reaches the output and is not counted."
+  [nodes]
+  (let [outcomes (atom {:kotoba-arm 0 :default-arm 0 :dropped 0 :spliced 0})
+        findings (atom [])]
+    (letfn [(go [n]
+              (if (= :rc (:type n))
+                (let [arm (rc-arm n)]
+                  (cond
+                    (nil? arm)
+                    (do (swap! outcomes update :dropped inc)
+                        (swap! findings conj {:kind :rc-no-arm :offset (:s n)
+                                              :reason "no #?( ) arm names :kotoba or :default; the Kotoba reader reads nothing here"}))
+                    (:splice? n)
+                    (do (swap! outcomes update :spliced inc)
+                        (swap! findings conj {:kind :rc-splice :offset (:s n)
+                                              :reason "a #?@( ) splice emits the arm collection's children in place"})
+                        (go arm))
+                    :else
+                    (do (swap! outcomes update (if (rc-kept? n) :kotoba-arm :default-arm) inc)
+                        (go arm))))
+                (doseq [k (:kids n)] (go k))))]
+      (doseq [n nodes] (go n)))
+    {:outcomes @outcomes :findings @findings}))
+
+(def ^:private data-literal-limit
+  "The admission limit on one data literal, measured on maps in kotoba-sema's desugar
+  (\"map entry count exceeds admission limit\", (<= n 128)). A literal over it is a port decision
+  (chunked tables, the aiueos topic.kotoba pattern) -- never something the mechanical conversion invents."
+  128)
+
+(defn- data-limit-findings
+  "Findings for data literals the admission limit refuses: map entries over 128 (measured), and collection items over
+  the same bound."
+  [nodes]
+  (let [out (atom [])]
+    (letfn [(go [n]
+              (let [k (:type n)
+                    cnt (case k :map (quot (count (:kids n)) 2) (:list :vec :set :fnlit) (count (:kids n)) 0)]
+                (when (> cnt data-literal-limit)
+                  (swap! out conj {:kind (if (= k :map) :map-over-limit :items-over-limit)
+                                   :offset (:s n) :count cnt :limit data-literal-limit
+                                   :reason (if (= k :map)
+                                             "map entry count exceeds the admission limit (128); chunked tables are a port decision, not a mechanical rewrite"
+                                             "item count exceeds the admission limit (128); chunking is a port decision, not a mechanical rewrite")}))
+                (doseq [ch (:kids n)] (go ch))))]
+      (doseq [n nodes] (go n)))
+    @out))
+
+(defn- to-kotoba-output-name [path]
+  (str (str/replace path #"\.(cljk|cljc|clj|cljs|edn)$" "") ".kotoba"))
+
+(defn- edn-module-name [path]
+  (-> (second (re-find #"([^/]+)$" path))
+      (str/replace #"\.edn$" "")
+      (str/replace #"[^A-Za-z0-9._-]" "_")))
+
+(declare emit-value)
+
+(defn- emit-kids
+  [src kids s e]
+  (loop [cursor s ks kids acc []]
+    (if-let [k (first ks)]
+      (recur (:e k) (next ks) (conj acc (subs src cursor (:s k)) (emit-value src k)))
+      (apply str (conj acc (subs src cursor e))))))
+
+(defn- emit-value
+  "One EDN value as kotoba data. A bare symbol is a constant alias in kotoba (\"constant alias must name a declared
+  constant\", measured), so a data symbol is spelled (symbol \"name\") -- which `amu check` admits in a data value
+  (measured: (defn data [] {:a (symbol \"x\")}) is admitted). Everything else keeps its bytes."
+  [src n]
+  (cond
+    (= :sym (:type n)) (str "(symbol \"" (:text n) "\")")
+    (empty? (:kids n)) (cst/text src n)
+    :else (emit-kids src (:kids n) (:s n) (:e n))))
+
+(defn- data-shape
+  "The data of a value node, normalized so a source symbol and its (symbol \"name\") spelling compare equal. Known
+  fold: a source 2-list (symbol \"x\") and a source symbol x normalize alike; both emit to the same text."
+  [n]
+  (cond
+    (= :sym (:type n)) [:sym (:text n)]
+    (and (cst/lst? n) (= "symbol" (cst/head-text n)) (= 2 (count (:kids n)))
+         (= :str (:type (second (:kids n)))))
+    [:sym (let [t (:text (second (:kids n)))] (subs t 1 (dec (count t))))]
+    :else (into [(:type n) (:text n)] (map data-shape (:kids n)))))
+
+(defn- data-key-node?
+  "A map key that is a symbol, bare or already spelled (symbol \"name\")."
+  [n]
+  (or (= :sym (:type n))
+      (and (cst/lst? n) (= "symbol" (cst/head-text n)) (= 2 (count (:kids n))))))
+
+(defn- data-spelling-findings
+  "Data spellings the mechanical conversion does not invent, named instead of guessed. Measured on `amu check`:
+  a symbol map key is refused \"map literal keys must be keywords, integers or strings; this literal has a key of
+  kind: expression\" -- keywordizing or restructuring is a port decision. Character literals and tagged/quoted forms
+  have no admitted data spelling at all."
+  [nodes]
+  (let [out (atom [])]
+    (letfn [(go [n]
+              (case (:type n)
+                :char (swap! out conj {:kind :char-literal :offset (:s n)
+                                       :reason "a character literal has no admitted data spelling in the conversion; spell the data differently"})
+                :prefix (swap! out conj {:kind :tagged-or-quoted :offset (:s n) :prefix (:prefix n)
+                                         :reason "a tagged/quoted form is not plain data; spell the data differently"})
+                :map (doseq [[i k] (map-indexed vector (:kids n))]
+                       (when (and (even? i) (data-key-node? k))
+                         (swap! out conj {:kind :symbol-key :offset (:s k)
+                                          :reason "map literal keys must be keywords, integers or strings (amu check, measured); a symbol key has no admitted literal spelling -- keywordize or restructure (a port decision)"})))
+                :set (when (some #(contains? #{:list :vec :map :set :fnlit} (:type %)) (:kids n))
+                       (swap! out conj {:kind :set-of-collections :offset (:s n)
+                                        :reason "a set whose items are collections is \"value type is outside the safe profile\" (amu check, measured; a set of scalars is admitted) -- spell the items as a vector, a port decision"}))
+                nil)
+              (doseq [ch (:kids n)] (go ch)))]
+      (doseq [n nodes] (go n)))
+    @out))
+
+(defn- convert-file
+  "One file's .kotoba text. -> {:path :kind :text :chars-before :rc :findings} (:kind :source|:edn; :edn carries
+  :value)."
+  [path src flags]
+  (let [nodes (parse-checked path src)]
+    (if (str/ends-with? path ".edn")
+      (do
+        (when-not (= 1 (count nodes))
+          (throw (refuse :decode :refactor/parse-error
+                         (str path ": an .edn file must hold exactly one top-level value; found " (count nodes))
+                         {:path path})))
+        (let [value-node (first nodes)
+              value (emit-value src value-node)
+              data-name (or (get flags "--data-name") "data")
+              n (or (get flags "--ns") (edn-module-name path))
+              text (str "(ns " n "\n  (:export [" data-name "]))\n\n"
+                        ";; mechanical .edn -> .kotoba (`amu refactor to-kotoba`); source: " path "\n"
+                        "(defn " data-name " [] " value ")\n")]
+          {:path path :kind :edn :text text :value-node value-node :chars-before (count src)
+           :rc nil :findings (into (data-limit-findings nodes) (data-spelling-findings nodes))}))
+      (let [text (resolve-kids src nodes 0 (count src))
+            {:keys [outcomes findings]} (rc-inventory nodes)]
+        {:path path :kind :source :text text :value nil :chars-before (count src)
+         :rc outcomes :findings findings}))))
+
+(defn- roundtrip-check
+  "Consistency of one conversion: the emitted text re-parses; an .edn data module's `defn` body carries the same data
+  (a source symbol and its (symbol \"name\") spelling compare equal); a source reading is idempotent (resolving it
+  again changes nothing)."
+  [{:keys [kind text value-node]}]
+  (let [nodes (try (cst/parse text) (catch :default e e))]
+    (if-not (vector? nodes)
+      {:parse false :error (ex-message nodes)}
+      (if (= kind :edn)
+        (let [d (first (filter #(and (cst/lst? %) (= "defn" (cst/head-text %))) nodes))
+              body (when (and d (= 4 (count (:kids d)))) (nth (:kids d) 3))]
+          {:parse true :value-equivalent (boolean (and body (= (data-shape value-node) (data-shape body))))})
+        {:parse true
+         :idempotent (= text (resolve-kids text nodes 0 (count text)))}))))
+
+(defn- to-kotoba-cmd [io {:keys [positional flags]}]
+  (when (empty? positional)
+    (usage! "usage: amu refactor to-kotoba <path>... [--out FILE] [--check] [--data-name NAME] [--ns NAME]"))
+  (let [files (expand-paths io positional (into source-extensions edn-extensions))
+        out (get flags "--out")
+        _ (when (and out (> (count files) 1)) (usage! "--out names one file; give one path"))
+        check? (get flags "--check")
+        results (mapv (fn [p] (convert-file p (read-source io p) flags)) files)
+        checks (mapv roundtrip-check results)
+        _ (doseq [[r c] (map vector results checks)]
+            (when-not (:parse c)
+              (throw (refuse :decode :refactor/output-unparsable
+                             (str (:path r) ": the converted text is not readable (" (:error c) "); nothing was written")
+                             {:path (:path r)}))))
+        rows (mapv (fn [r c]
+                     (let [target (or out (to-kotoba-output-name (:path r)))
+                           existing (when (= :file ((:kind io) target)) ((:read io) target))]
+                       {:path (:path r) :out target :kind (:kind r)
+                        :chars-before (:chars-before r) :chars-after (count (:text r))
+                        :pending (not= (:text r) existing)
+                        :rc (:rc r)
+                        :findings (vec (take max-sites (:findings r)))
+                        :findings-total (count (:findings r))
+                        :roundtrip c}))
+                   results checks)
+        pending (filter :pending rows)]
+    (when-not check?
+      (doseq [[r row] (map vector results rows) :when (:pending row)]
+        (write-file! io (str (:out row) ".amu-refactor.tmp") (:text r))
+        (try ((:rename io) (str (:out row) ".amu-refactor.tmp") (:out row))
+             (catch :default e
+               (throw (refuse :output :refactor/write-failed (str "cannot write " (:out row) ": " (ex-message e))
+                              {:path (:out row)}))))))
+    {:value {:format format-tag :command :to-kotoba :ok (if check? (empty? pending) true) :check (boolean check?)
+             :files rows
+             :totals {:files (count rows) :pending (count pending)
+                      :source (count (filter #(= :source (:kind %)) rows))
+                      :edn (count (filter #(= :edn (:kind %)) rows))}}
+     :status (if (and check? (seq pending)) 1 0)}))
+
 ;; ---- list-rules -----------------------------------------------------------------------------------------------------
 
 (defn- list-rules []
@@ -364,7 +621,7 @@
                                          :host-effect (:host-effect r)}
                                   (:needs-target r) (assoc :needs-target true)))
                         rules/library)
-           :commands [:list-rules :plan :apply :graph :partition :split :verify]}
+           :commands [:list-rules :plan :apply :graph :partition :split :verify :to-kotoba]}
    :status 0})
 
 (defn run
@@ -381,7 +638,8 @@
       "partition" (partition-cmd io parsed)
       "split" (split-cmd io parsed)
       "verify" (verify-cmd io parsed)
-      nil (usage! "usage: amu refactor <list-rules|plan|apply|graph|partition|split|verify> ...")
-      (usage! (str "unknown refactor command " sub "; one of list-rules plan apply graph partition split verify")))))
+      "to-kotoba" (to-kotoba-cmd io parsed)
+      nil (usage! "usage: amu refactor <list-rules|plan|apply|graph|partition|split|verify|to-kotoba> ...")
+      (usage! (str "unknown refactor command " sub "; one of list-rules plan apply graph partition split verify to-kotoba")))))
 
 ))

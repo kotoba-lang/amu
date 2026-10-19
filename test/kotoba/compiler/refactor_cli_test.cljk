@@ -41,7 +41,7 @@
     (is (= :kotoba.refactor/v1 (:format value)))
     (is (= [:a :b :c :d :e :f :g] (map :id (:rules value))))
     (is (= [:a :b :d :e :f] (:standard-order value)))
-    (is (= [:list-rules :plan :apply :graph :partition :split :verify] (:commands value)))
+    (is (= [:list-rules :plan :apply :graph :partition :split :verify :to-kotoba] (:commands value)))
     (is (= [:c] (map :id (filter :needs-target (:rules value)))))))
 
 (deftest plan-counts-and-diff-without-writing
@@ -196,3 +196,92 @@
     (testing "verify needs a runner and a classpath"
       (is (= :refactor/usage (refusal-code #(cli/run ["verify" "--classpath" "/a"] io))))
       (is (= :refactor/usage (refusal-code #(cli/run ["verify" "--runner" "/r.cljk"] io)))))))
+
+;; ---- to-kotoba ------------------------------------------------------------------------------------------------------
+
+(def rc-sample
+  (str "(ns sample.dual\n"
+       "  (:require #?(:kotoba [kotoba.lang.text :as str] :default [clojure.string :as str])))\n"
+       "\n"
+       ";; keep this comment\n"
+       "(defn f [x] #?(:kotoba (kotoba-call x) :default (host-call x)))\n"
+       "(defn g [x] #?(:clj (jvm-only x) :cljs (js-only x)))\n"))
+
+(deftest to-kotoba-source-resolves-reader-conditionals
+  (let [files (atom {"/w/dual.cljk" rc-sample})
+        {:keys [value status]} (cli/run ["to-kotoba" "/w/dual.cljk"] (memory-io files))
+        f (first (:files value))
+        out (get @files "/w/dual.kotoba")]
+    (is (= 0 status))
+    (is (= :to-kotoba (:command value)))
+    (is (= {:files 1 :pending 1 :source 1 :edn 0} (:totals value)))
+    (is (str/includes? out "(kotoba-call x)"))
+    (is (not (str/includes? out "host-call")) "the :default arm is not the .kotoba reading")
+    (is (not (str/includes? out "jvm-only")) "no arm names :kotoba or :default; the Kotoba reader reads nothing there")
+    (is (str/includes? out ";; keep this comment") "every untouched byte is copied verbatim")
+    (is (= {:kotoba-arm 2 :default-arm 0 :dropped 1 :spliced 0} (:rc f)))
+    (is (= [:rc-no-arm] (map :kind (:findings f))))
+    (is (= {:parse true :idempotent true} (:roundtrip f)))
+    (is (:pending f) "the output file does not exist yet"))
+  (testing "a file with no conditional converts byte-identically; --check writes nothing"
+    (let [files (atom {"/w/sample.cljk" sample})
+          io (memory-io files)
+          r (cli/run ["to-kotoba" "/w/sample.cljk" "--check"] io)]
+      (is (= 1 (:status r)))
+      (is (nil? (get @files "/w/sample.kotoba")) "--check never writes")
+      (let [r2 (cli/run ["to-kotoba" "/w/sample.cljk"] io)]
+        (is (= 0 (:status r2)))
+        (is (= sample (get @files "/w/sample.kotoba")) "no reader conditional, byte-identical output")))))
+
+(deftest to-kotoba-edn-becomes-a-data-module
+  (let [data "{:a 1 :b \"two\" :c [1 2 3]}"
+        files (atom {"/w/conf.edn" data})
+        {:keys [value status]} (cli/run ["to-kotoba" "/w/conf.edn"] (memory-io files))
+        f (first (:files value))
+        out (get @files "/w/conf.kotoba")]
+    (is (= 0 status))
+    (is (= :edn (:kind f)))
+    (is (str/includes? out "(ns conf"))
+    (is (str/includes? out (str "(defn data [] " data ")")) "a data module exports a function (amu check: exports must name public functions); the value keeps its original bytes")
+    (is (= {:parse true :value-equivalent true} (:roundtrip f)))
+    (testing "--data-name and --ns"
+      (let [files (atom {"/w/more.edn" "[1 2 3]"})
+            _ (cli/run ["to-kotoba" "/w/more.edn" "--data-name" "rows" "--ns" "my.data"] (memory-io files))
+            out (get @files "/w/more.kotoba")]
+        (is (str/includes? out "(ns my.data"))
+        (is (str/includes? out "(defn rows [] [1 2 3])"))))
+    (testing "an .edn file holding two values is refused"
+      (let [files (atom {"/w/two.edn" "1 2"})]
+        (is (= :refactor/parse-error (refusal-code #(cli/run ["to-kotoba" "/w/two.edn"] (memory-io files)))))))))
+
+
+
+(deftest to-kotoba-edn-names-a-set-of-collections
+  (let [files (atom {"/w/policy.edn" "{:allow #{[:cap/call :x]}}"})
+        {:keys [value status]} (cli/run ["to-kotoba" "/w/policy.edn"] (memory-io files))
+        f (first (:files value))]
+    (is (= 0 status))
+    (is (= [:set-of-collections] (map :kind (:findings f)))
+        "amu check: a set of vectors is outside the safe profile; a set of scalars is not")))
+
+(deftest to-kotoba-edn-spells-symbols-as-calls
+  (let [files (atom {"/w/dep.edn" "{org.example/lib {:x 1}}"})
+        {:keys [value status]} (cli/run ["to-kotoba" "/w/dep.edn"] (memory-io files))
+        f (first (:files value))
+        out (get @files "/w/dep.kotoba")]
+    (is (= 0 status))
+    (is (str/includes? out "(defn data [] {(symbol \"org.example/lib\") {:x 1}})")
+        "a bare symbol is a constant alias in kotoba; data symbols are spelled (symbol \"name\")")
+    (is (= [:symbol-key] (map :kind (:findings f)))
+        "the key wall is named, not guessed: amu check refuses a symbol map key")
+    (is (= {:parse true :value-equivalent true} (:roundtrip f)))))
+
+(deftest to-kotoba-edn-names-data-over-the-admission-limit
+  (let [big (str "{" (str/join " " (map #(str ":k" % " " %) (range 200))) "}")
+        files (atom {"/w/big.edn" big})
+        {:keys [value status]} (cli/run ["to-kotoba" "/w/big.edn"] (memory-io files))
+        f (first (:files value))]
+    (is (= 0 status)) ;; the conversion is mechanical and done; the limit is a named finding, not a refusal
+    (is (= [:map-over-limit] (map :kind (:findings f))))
+    (is (= 200 (:count (first (:findings f)))))
+    (is (= 128 (:limit (first (:findings f)))))))
