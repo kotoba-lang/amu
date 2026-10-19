@@ -1,0 +1,267 @@
+(ns kotoba.compiler.runner-seed
+  "The C-free x86-64 seed runner's run sequence, wired end to end
+  (Linear JUN-29). `runner-slice` decides and seals; `runner-bookkeeping`
+  computes the digests and drives `pre-entry!` / `post-run!`. THIS
+  namespace is the runner body between them: the measured arena plan, the
+  measured seccomp surface, and the one order the phases may run in --
+  `map-arenas` -> `install-sandbox` -> `pre-entry` -> `call-guest` ->
+  `post-run` -- with the guest call wired AFTER admission and the receipt
+  sealed AFTER the guest returns.
+
+  WHAT THIS IS AND IS NOT. This is the host-portable executable
+  specification of the runner's control flow: the same sequence the
+  compiler-emitted runner (vehicle (a),
+  docs/native-seed-c-free-runner-surface.md) must perform. It claims no
+  x86-64 emission. The guest entry is a callable handed in (the stub in
+  tests, the emitted `call` in the runner); the mapping and sandbox
+  installs are hooks (nothing to map or seccomp on the host), and
+  everything between them is the same pure code the runner will carry.
+
+  WHY THE ORDER IS LOAD-BEARING (all measured,
+  docs/native-seed-c-free-runner-surface.md, 2026-10-19):
+
+  * `map-arenas` is FIRST because the measured loader never admits
+    `mmap`/`mprotect` (loader line 4807): every arena is mapped before
+    the sandbox is installed, or it can never be mapped.
+  * `install-sandbox` precedes admission so `pre-entry` stays the LAST
+    fail-closed point before guest code executes (runner-slice doc).
+    The admission digests are computed from bytes already in hand by pure
+    `sha2.core` -- it needs no further mapping or file access inside the
+    sandbox.
+  * `call-guest` runs only when `pre-entry!` answered `:admitted? true`.
+    A refusal throws and the guest is never entered -- 'nothing runs if
+    it refuses' is structural here, not a convention.
+  * `post-run` seals `:kotoba.runner-receipt/v1` and re-verifies it
+    before anyone can quote it.
+
+  SCOPE. This slice serves the compiler command path exactly: the
+  capability wires `#{35 37 38 39}` (`:fs/app-data`, `:io/write`,
+  `:cli/args`, `:io/write-error`) that every `scripts/seed/*.py`
+  invocation grants (loader lines 6939/6993/7818). The broker wires
+  (gpu 42 / spawn 20 / net 43-47) are deliberately OUT of this slice and
+  refused, because the compiler command path grants none of them."
+  {:kotoba/export [arena-plan call-guest-phase compiler-command-capabilities
+                   capability-names phase-order resource-envelopes run!
+                   sandbox-plan served-capabilities syscall-surface]}
+  (:require [kotoba.compiler.runner-bookkeeping :as bookkeeping]
+            [kotoba.compiler.runner-slice :as runner-slice]
+            [kotoba.verifier :as verifier]))
+
+;; `verifier/guest-integer?`, not `integer?`: on the Node host the reader
+;; hands back bigints and cljs `integer?` is false for them (same trap as
+;; `runner-slice` / `runner-bookkeeping`, measured 2026-09-11).
+(defn- an-integer? [x] (verifier/guest-integer? x))
+
+(defn- reject!
+  [message data]
+  (throw (ex-info message (assoc data :phase :runner-seed))))
+
+;; ── measured resource envelopes (docs/native-seed-x86_64-linux.md) ─────────
+
+(def resource-envelopes
+  "The fixed arena envelopes of the measured x86_64-linux seed run
+  (`KEXE_VECTORS=4194304`, `KEXE_VECTOR_ITEMS=134217728`,
+  `KEXE_STRING_POOL=268435456`, `KEXE_PAIRS=16777216`; launch stack
+  >= 1 MiB, with `tools/seed-x86_64-linux-loader.c` pre-reserving 512 KiB
+  of stack before the loader lowers `RLIMIT_AS` below its fixed arenas)."
+  {:kexe-vectors 4194304
+   :kexe-vector-items 134217728
+   :kexe-string-pool 268435456
+   :kexe-pairs 16777216
+   :launch-stack-bytes 1048576
+   :loader-stack-reserve-bytes 524288})
+
+(defn arena-plan
+  "The runner's arena mapping plan: the measured fixed envelopes, mapped
+  BEFORE the sandbox is installed (the sandbox never admits
+  `mmap`/`mprotect`). Refuses if any envelope has stopped being a
+  positive guest integer or the launch stack has dropped below the
+  measured 1 MiB floor -- a plan that violates its own measurement is not
+  this plan."
+  []
+  (doseq [[k v] resource-envelopes]
+    (when-not (and (an-integer? v) (pos? v))
+      (reject! "resource envelope is not a positive integer" {:envelope k})))
+  (when (< (:launch-stack-bytes resource-envelopes) 1048576)
+    (reject! "launch stack below the measured 1 MiB floor"
+             {:launch-stack-bytes (:launch-stack-bytes resource-envelopes)}))
+  {:format :kotoba.runner-arena-plan/v1
+   :before-sandbox true
+   :regions [{:region :vectors :count (:kexe-vectors resource-envelopes) :unit :slots}
+             {:region :vector-items :count (:kexe-vector-items resource-envelopes) :unit :items}
+             {:region :string-pool :count (:kexe-string-pool resource-envelopes) :unit :bytes}
+             {:region :pairs :count (:kexe-pairs resource-envelopes) :unit :slots}]
+   :stack {:launch-bytes (:launch-stack-bytes resource-envelopes)
+           :loader-reserved-bytes (:loader-stack-reserve-bytes resource-envelopes)}})
+
+;; ── measured seccomp surface (surface doc §2, loader line 12202) ──────────
+
+(def syscall-surface
+  "The measured `install_syscall_sandbox` allow tables, as data. `:base`
+  is unconditional (11); `:fs-scope` is added when any fs scope (34 or
+  35) is granted (11); `:app-data` is added only for `:fs/app-data`
+  (35) (6). `:numbers` records the syscall numbers the surface document
+  pinned (openat2 437, faccessat2 439, renameat 264 on x86_64);
+  everything else is admitted by NAME, and the runner's BPF emission
+  must pin the remaining numbers from the kernel UAPI, not guess them.
+  `renameat2` is deliberately denied (renameat is the admitted one);
+  `mmap`/`mprotect` are never admitted at all."
+  {:format :kotoba.runner-syscall-surface/v1
+   :arch :x86_64
+   :base [:write :exit :exit_group :rt_sigreturn :rt_sigprocmask
+          :getpid :gettid :tgkill :munmap :brk :clock_gettime]
+   :fs-scope [:read :open :openat :openat2 :close :lseek :pread64
+              :fstat :newfstatat :access :faccessat2]
+   :app-data [:mkdirat :unlinkat :renameat :fchmod :fsync :getrandom]
+   :numbers {:openat2 437 :faccessat2 439 :renameat 264}
+   :never-admitted [:mmap :mprotect]
+   :deliberately-denied [:renameat2]})
+
+(def capability-names
+  "The compiler command path's capability wires, number -> name (loader
+  lines 6939, 6993, 7818): `:fs/app-data` (35), `:io/write` (37),
+  `:cli/args` (38), `:io/write-error` (39)."
+  {35 :fs/app-data 37 :io/write 38 :cli/args 39 :io/write-error})
+
+(def compiler-command-capabilities
+  "Exactly the wires every `scripts/seed/*.py` compiler command path
+  grants."
+  #{35 37 38 39})
+
+(def served-capabilities
+  "The wires this slice's `sandbox-plan` will plan for: the measured fs
+  scopes (34, 35) plus the compiler command path's io/cli wires. The
+  broker wires (gpu 42 / spawn 20 / net 43-47) are OUT of this slice and
+  refused -- they 'add read only' (surface doc §2) and the compiler
+  command path grants none of them, so planning them here would be
+  guessing at a broker run no measurement covers."
+  #{34 35 37 38 39})
+
+(defn sandbox-plan
+  "The seccomp allow set for the granted `capabilities`, from the measured
+  tables: `:base` always; `:fs-scope` when any fs scope (34 or 35) is
+  granted; `:app-data` only under `:fs/app-data` (35).
+
+  FAIL-CLOSED. Only `served-capabilities` are planned; anything else --
+  a broker wire, an unknown number -- is refused here, at plan time,
+  before any arena is mapped. The returned plan is also checked against
+  its own measurement -- if the tables ever grow
+  `mmap`/`mprotect`/`renameat2`, the plan refuses to exist."
+  [capabilities]
+  (when-not (and (set? capabilities) (every? an-integer? capabilities))
+    (reject! "capabilities must be a set of guest integers"
+             {:capabilities (pr-str capabilities)}))
+  (let [caps (set capabilities)]
+    (when-let [unknown (seq (remove served-capabilities caps))]
+      (reject! "capability outside the served surface refused"
+               {:unknown (vec (sort unknown))
+                :served (vec (sort served-capabilities))}))
+    (let [fs? (boolean (some #{34 35} caps))
+          app-data? (contains? caps 35)
+          allow (cond-> (vec (:base syscall-surface))
+                  fs? (into (:fs-scope syscall-surface))
+                  app-data? (into (:app-data syscall-surface)))
+          forbidden (into (vec (:never-admitted syscall-surface))
+                          (:deliberately-denied syscall-surface))]
+      (when-let [leaked (seq (filter (set allow) forbidden))]
+        (reject! "measured syscall surface admitted a never-admitted call"
+                 {:leaked (vec leaked)}))
+      {:format :kotoba.runner-sandbox/v1
+       :arch :x86_64
+       :capabilities (vec (sort caps))
+       :allow (vec (sort allow))
+       :counts {:base (count (:base syscall-surface))
+                :fs-scope (if fs? (count (:fs-scope syscall-surface)) 0)
+                :app-data (if app-data? (count (:app-data syscall-surface)) 0)
+                :total (count allow)}
+       :never-admitted (vec (:never-admitted syscall-surface))
+       :deliberately-denied (vec (:deliberately-denied syscall-surface))})))
+
+;; ── the run sequence ───────────────────────────────────────────────────────
+
+(def phase-order
+  "The only order the runner's phases may execute in. See the namespace
+  doc for why each edge is load-bearing."
+  [:map-arenas :install-sandbox :pre-entry :call-guest :post-run])
+
+(def call-guest-phase
+  "Named so the wiring point is greppable: the guest entry is called
+  exactly here, after `pre-entry!` admitted and before `post-run!`
+  seals. In the emitted runner this is the `call` under the measured
+  call-site contract (entry-by-call, r9 reload discipline)."
+  :call-guest)
+
+(defn run!
+  "Execute the runner's sequence once: plan capabilities -> map arenas ->
+  install sandbox -> `pre-entry!` -> call the guest entry -> `post-run!`.
+
+  Arguments:
+
+  * `:capabilities` -- the wires this run grants (compiler command path:
+    `#{35 37 38 39}`).
+  * `:runner` / `:compiler` / `:source-graph` / `:container` /
+    `:pinned-source-graph-sha256` / `:expected-container-sha256` --
+    handed to `bookkeeping/pre-entry!` unchanged.
+  * `:guest-entry` -- a no-arg callable returning
+    `{:status <ok|trap|denied> :output <bytes|{:sha256 ...}>}`. This is
+    the guest; it is called at most once, only after admission.
+  * `:started-at` / `:finished-at` -- the run's integer time interval
+    (a clock is a host capability; the runner records, this spec does
+    not read one).
+  * `:map-arenas!` / `:install-sandbox!` -- optional host hooks, called
+    with the arena / sandbox plan. On the host they observe; in the
+    emitted runner these phases are native. A hook that throws aborts
+    the run before the guest.
+  * `:call-site-contract` -- defaults to the measured
+    `runner-slice/call-site-contract`.
+
+  FAIL-CLOSED. A capability outside the served surface is
+  refused before any hook runs. A `pre-entry!` refusal throws with
+  `:phase :runner-admission` / `:runner-bookkeeping` and the guest is
+  never called. Returns `{:phases ... :arenas ... :sandbox ...
+  :admission ... :receipt ... :verified? true}`."
+  [{:keys [capabilities runner compiler source-graph container
+           pinned-source-graph-sha256 expected-container-sha256
+           call-site-contract guest-entry started-at finished-at
+           map-arenas! install-sandbox!]
+    :or {call-site-contract runner-slice/call-site-contract}}]
+  ;; `fn?`, not `ifn?`: a keyword or map is `ifn?` and would be 'called'
+  ;; as the guest. The guest is a function.
+  (when-not (fn? guest-entry)
+    (reject! "guest-entry must be callable" {:guest-entry (pr-str guest-entry)}))
+  (let [sandbox (sandbox-plan capabilities)      ; refuses before any side effect
+        arenas (arena-plan)
+        log (atom [])
+        record! (fn [phase] (swap! log conj phase))]
+    (record! :map-arenas)
+    (when map-arenas! (map-arenas! arenas))
+    (record! :install-sandbox)
+    (when install-sandbox! (install-sandbox! sandbox))
+    (record! :pre-entry)
+    (let [admitted (bookkeeping/pre-entry!
+                    {:runner runner
+                     :compiler compiler
+                     :source-graph source-graph
+                     :container container
+                     :pinned-source-graph-sha256 pinned-source-graph-sha256
+                     :expected-container-sha256 expected-container-sha256
+                     :call-site-contract call-site-contract})
+          _ (record! call-guest-phase)
+          guest-out (guest-entry)
+          _ (when-not (map? guest-out)
+              (reject! "guest-entry must answer {:status ... :output ...}"
+                       {:guest-entry (pr-str guest-out)}))
+          _ (record! :post-run)
+          sealed (bookkeeping/post-run!
+                  {:digests (:digests admitted)
+                   :output (:output guest-out)
+                   :status (:status guest-out)
+                   :call-site-contract call-site-contract
+                   :started-at started-at
+                   :finished-at finished-at})]
+      {:phases @log
+       :arenas arenas
+       :sandbox sandbox
+       :admission admitted
+       :receipt (:receipt sealed)
+       :verified? (:verified? sealed)})))

@@ -17,6 +17,10 @@
  * (`:string -> :string`, the shape every wire here has):
  *
  *   INFO                                   -> "<device>|<api>|<maxWgX>|<unified>"
+ *   DEVCLASS                               -> "discrete|integrated|virtual|cpu|other"
+ *                                                 (VkPhysicalDeviceType of the chosen device, as a
+ *                                                 stable token: a fact the loader reports, not a
+ *                                                 dispatch decision -- nothing here branches on it)
  *   ALLOC <bytes>                          -> handle            (device-local storage buffer)
  *   MAP <path> <offset> <length>           -> handle            (file bytes uploaded through staging)
  *   WRITE <handle> <offset> <hex>          -> "1"
@@ -28,7 +32,7 @@
  *   DISPATCHC <pipe> <x> <y> <z> <h>...    -> "1"               (as DISPATCH, but with NO barrier before it: the guest
  *                                                                 asserts it reads nothing the previous dispatch wrote)
  *   SUBMIT                                 -> nanoseconds       (submit -> fence, host clock)
- *   BEGINK <slot>                          -> "1"               (start recording a KEPT command buffer in slot 0..3: SUBMIT
+ *   BEGINK <slot>                          -> "1"               (start recording a KEPT command buffer in slot 0..KGPU_SLOT_MAX_S: SUBMIT
  *                                                                 submits it and keeps it; REPLAY submits it again unchanged)
  *   REPLAY <slot>                          -> nanoseconds       (submit the kept command buffer -> fence; one request for
  *                                                                 the whole step instead of one per dispatch -- iteration 44)
@@ -56,7 +60,12 @@
 #define KGPU_MAX_PIPELINES 128   /* an adaptive batch guest (three batch steps, a batch prefill, int8 twins) holds ~70 (inference iteration 58) */
 #define KGPU_MAX_BINDINGS 16   /* a fused delta-net step binds 12 (inference, iteration 24) */
 #define KGPU_MAX_DISPATCHES 2048   /* a 40-layer Nex decode step is ~1,250 dispatches in one buffer */
-#define KGPU_MAX_KEPT 4            /* kept (replayable) command buffers, BEGINK <slot> */
+#define KGPU_MAX_KEPT 8            /* kept (replayable) command buffers, BEGINK <slot>. 8 (was 4): the
+                                      interleaved workgroup sweep keeps one buffer per swept size live
+                                      at once (6 sizes) so REPLAYs can be interleaved across sizes */
+#define KGPU_SLOT_MAX_S "7"        /* the largest valid <slot> index, spelled for the command grammar and
+                                      the <slot 0..N> bounds errors; tied to KGPU_MAX_KEPT below */
+_Static_assert(KGPU_MAX_KEPT - 1 == 7, "KGPU_SLOT_MAX_S must spell KGPU_MAX_KEPT - 1");
 #define KGPU_STAGING_BYTES (64u * 1024u * 1024u)
 
 struct kgpu_buffer {
@@ -108,7 +117,16 @@ static struct {
   uint32_t api_version;
   uint32_t max_wg_x;
   int unified_memory;
+  VkPhysicalDeviceType device_type;   /* reported verbatim by DEVCLASS */
   int sync2;              /* synchronization2 available and enabled on the device */
+  int barrier_none;       /* KEXE_GPU_BARRIER_TRACKED=1: record NO barrier between
+                             dispatches and rely on the driver's own hazard tracking.
+                             EXPLORATORY, default off: Metal tracks resource hazards
+                             automatically (tracked heaps), so on MoltenVK the explicit
+                             barrier is pure cost (measured 37 us vs 5.45 for DISPATCHC).
+                             The guest's DISPATCHC already opts a single dispatch out;
+                             this opts out globally. Never set on drivers without
+                             guaranteed hazard tracking (ANV/RADV/panvk). */
 } kgpu;
 
 /* ---- answer helpers ------------------------------------------------------ */
@@ -260,6 +278,7 @@ static int kgpu_init(void) {
   kgpu.api_version = props.apiVersion;
   kgpu.max_wg_x = props.limits.maxComputeWorkGroupSize[0];
   kgpu.unified_memory = props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+  kgpu.device_type = props.deviceType;
 
   float priority = 1.0f;
   VkDeviceQueueCreateInfo qi = { .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -273,6 +292,13 @@ static int kgpu_init(void) {
      Vulkan 1.2 headers (JetPack 5.1.2) this whole block is compiled out. */
   kgpu.sync2 = 0;
   void *device_next = NULL;
+  /* KEXE_GPU_BARRIER_TRACKED: opt every dispatch out of the explicit barrier and
+     let the driver's own hazard tracking order them. Barrier elision does not
+     depend on synchronization2, so this check must stay OUTSIDE the 1.3 block —
+     review finding on this PR: it was nested there and silently ignored under
+     Vulkan 1.2 headers / sub-1.3 devices. Only sound where the driver guarantees
+     resource hazard tracking (Metal does; ANV/RADV/panvk must leave it unset). */
+  if (getenv("KEXE_GPU_BARRIER_TRACKED") != NULL) kgpu.barrier_none = 1;
 #if defined(VK_VERSION_1_3)
   VkPhysicalDeviceSynchronization2Features sync2 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES };
   VkPhysicalDeviceFeatures2 feats2 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &sync2 };
@@ -463,7 +489,7 @@ static int kgpu_record_dispatch(struct kgpu_pipeline *p, uint32_t x, uint32_t y,
                                         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &infos[b] };
   }
   vkUpdateDescriptorSets(kgpu.device, p->bindings, writes, 0, NULL);
-  if (kgpu.recorded > 0 && barrier_before) {
+  if (kgpu.recorded > 0 && barrier_before && !kgpu.barrier_none) {
     /* every dispatch after the first sees the previous one's writes -- unless the
        guest said DISPATCHC, which is its assertion that this dispatch is independent
        of the one before (the .kotoba knows the data flow; the loader does not) */
@@ -545,6 +571,18 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
                      VK_VERSION_MAJOR(kgpu.api_version), VK_VERSION_MINOR(kgpu.api_version),
                      VK_VERSION_PATCH(kgpu.api_version), kgpu.max_wg_x, kgpu.unified_memory);
     return w < 0 ? kgpu_fail(out, cap, "INFO format") : (size_t)w;
+  }
+  if (strcmp(op, "DEVCLASS") == 0) {
+    /* A reported fact, not a decision: the exact VkPhysicalDeviceType of the
+     * chosen device as a stable token. Vendor dispatch (ADR-0355) is the
+     * caller's job; this file still decides nothing. */
+    const char *cls =
+        kgpu.device_type == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ? "discrete"
+      : kgpu.device_type == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ? "integrated"
+      : kgpu.device_type == VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU ? "virtual"
+      : kgpu.device_type == VK_PHYSICAL_DEVICE_TYPE_CPU ? "cpu" : "other";
+    int w = snprintf((char *)out, cap, "%s", cls);
+    return w < 0 ? kgpu_fail(out, cap, "DEVCLASS format") : (size_t)w;
   }
   if (strcmp(op, "ALLOC") == 0) {
     uint64_t bytes;
@@ -669,7 +707,7 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
   }
   if (strcmp(op, "BEGINK") == 0) {
     uint64_t slot;
-    if (n != 2 || kgpu_parse_u64(tok[1], &slot) != 0 || slot >= KGPU_MAX_KEPT) return kgpu_fail(out, cap, "BEGINK <slot 0..3>");
+    if (n != 2 || kgpu_parse_u64(tok[1], &slot) != 0 || slot >= KGPU_MAX_KEPT) return kgpu_fail(out, cap, "BEGINK <slot 0.." KGPU_SLOT_MAX_S ">");
     if (kgpu.recording) return kgpu_fail(out, cap, "BEGINK while recording");
     if (kgpu.kept[slot].live) return kgpu_fail(out, cap, "BEGINK: slot is kept (DROP it first)");
     VkCommandBufferAllocateInfo cai = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -691,7 +729,7 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
   }
   if (strcmp(op, "REPLAY") == 0) {
     uint64_t slot;
-    if (n != 2 || kgpu_parse_u64(tok[1], &slot) != 0 || slot >= KGPU_MAX_KEPT) return kgpu_fail(out, cap, "REPLAY <slot 0..3>");
+    if (n != 2 || kgpu_parse_u64(tok[1], &slot) != 0 || slot >= KGPU_MAX_KEPT) return kgpu_fail(out, cap, "REPLAY <slot 0.." KGPU_SLOT_MAX_S ">");
     if (kgpu.recording) return kgpu_fail(out, cap, "REPLAY while recording");
     if (!kgpu.kept[slot].live || kgpu.kept[slot].set_count == 0) return kgpu_fail(out, cap, "REPLAY: slot holds no submitted command buffer");
     uint64_t ns;
@@ -700,7 +738,7 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
   }
   if (strcmp(op, "DROP") == 0) {
     uint64_t slot;
-    if (n != 2 || kgpu_parse_u64(tok[1], &slot) != 0 || slot >= KGPU_MAX_KEPT) return kgpu_fail(out, cap, "DROP <slot 0..3>");
+    if (n != 2 || kgpu_parse_u64(tok[1], &slot) != 0 || slot >= KGPU_MAX_KEPT) return kgpu_fail(out, cap, "DROP <slot 0.." KGPU_SLOT_MAX_S ">");
     if (kgpu.recording) return kgpu_fail(out, cap, "DROP while recording");
     if (!kgpu.kept[slot].live) return kgpu_fail(out, cap, "DROP: slot is not kept");
     if (kgpu.kept[slot].set_count > 0) vkFreeDescriptorSets(kgpu.device, kgpu.descriptors, kgpu.kept[slot].set_count, kgpu.kept[slot].sets);

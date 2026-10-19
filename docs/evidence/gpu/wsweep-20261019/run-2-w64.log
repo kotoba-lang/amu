@@ -1,0 +1,11 @@
+GPU-SGRE-WSWEEP	TOOLCHAIN	Glslang Version: 11:16.6.0
+GPU-SGRE-WSWEEP	INFO	Apple M1 Max|1.3.357|1024|1	aarch64-macos
+GPU-SGRE-WSWEEP	W	64	fixture=subgroup-reduce-w64-sum.emitted.glsl	sha256=a25a69317b5c5a956279ccc37a5089adb489104a28ed89460b8928889b096254	patch=categories+id
+GPU-SGRE-WSWEEP	PROTOCOL	rounds=32	batch=512 dispatches/replay	lanes/dispatch=1048576	groups-x=16384	arms=baseline,variant,floor	order=alternating(012,210)	samples=96
+GPU-SGRE-WSWEEP	VERIFY	x=ok	parts-baseline=ok	parts-variant=ok	parts-floor=ok	(sum W^2*g + W(W-1)/2 + W, g=0..3, bit-exact)
+GPU-SGRE-WSWEEP	ARMTIME	baseline	median=23167500.0	iqr=4165000.0	min=19623000	max=34917000	n=32	ns/dispatch=45249.0	ns/element=0.0432
+GPU-SGRE-WSWEEP	ARMTIME	variant	median=21802000.0	iqr=2874000.0	min=19086000	max=34542000	n=32	ns/dispatch=42582.0	ns/element=0.0406
+GPU-SGRE-WSWEEP	ARMTIME	floor	median=19393000.0	iqr=4327000.0	min=15631000	max=60335000	n=32	ns/dispatch=37877.0	ns/element=0.0361
+GPU-SGRE-WSWEEP	SPEEDUP	baseline/variant	median=1.0401	iqr=0.1727	min=0.8587	max=1.6959	vs-1.0=indistinguishable-at-this-noise
+GPU-SGRE-WSWEEP	FLOORSHARE	floor/baseline=0.8237	floor/variant=0.8627
+GPU-SGRE-WSWEEP	RESULT	verified=true	samples=96
