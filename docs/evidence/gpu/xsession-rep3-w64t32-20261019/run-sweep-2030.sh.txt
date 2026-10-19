@@ -1,0 +1,54 @@
+#!/bin/sh
+# NOTE (repo rule): kept as run-sweep-2030.sh.txt because the repository workflow-lint
+# refuses POSIX shell execution files; run with sh <this file>.
+# THIRD-SESSION REPLICATION (JUN-58, tick 20261019-2030): re-run the exact
+# five cells of PR #1377 (tick 20261019-2000) in a fresh session to add a
+# third independent session sample to the cross-session sign series.
+#
+# CONTEXT. PR #1377 measured that the chain's only sign flip -- w64t32 loss
+# at lanes 2,095,104 in the #1369 session -- does NOT reproduce across
+# sessions at the identical shape (#1377 session: 3/3 negative where #1369
+# measured 3/3 positive), while the w64t31 anchor reproduced within 5-6%.
+# Mechanism (GPU state / driver / host load) is UNMEASURED. This slice adds
+# one more independent session to answer: does w64t32 come back negative
+# (=> #1369 is the outlier session) or flip back positive (=> the sign is
+# unstable at even coarser resolution)?
+#
+# SHAPE/PROTOCOL. Byte-identical probe (sha256 3696ca0d...) and fixtures
+# (w64 fixture sha256 a25a6931..., as printed by every SHAPE line) to the
+# #1369/#1377 chain. lanes 2,095,104; 3 cycles, order rotated (forward,
+# reversed, rotated); fresh kbb process per cell; uptime recorded per run.
+# Idempotent: a cell whose log exists is skipped.
+set -e
+TAB=$(printf '\t')
+cd "$(dirname "$0")/../../../.."
+EV=docs/evidence/gpu/xsession-rep3-w64t32-20261019
+mkdir -p "$EV"
+
+run() { # cycle cell W lanes chunks
+  log="$EV/run-$1-$2.log"
+  if [ -f "$log" ] && grep -q "RESULT${TAB}verified=true" "$log"; then echo "skip $log"; return 0; fi
+  echo "run $log"
+  (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" "$4" "$5") > "$log" 2>&1
+  grep -q "RESULT	verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }
+}
+
+# cycle 1: forward
+run 1 w32t24 32 2095104 24
+run 1 w32t31 32 2095104 31
+run 1 w32t32 32 2095104 32
+run 1 w64t31 64 2095104 31
+run 1 w64t32 64 2095104 32
+# cycle 2: reversed
+run 2 w64t32 64 2095104 32
+run 2 w64t31 64 2095104 31
+run 2 w32t32 32 2095104 32
+run 2 w32t31 32 2095104 31
+run 2 w32t24 32 2095104 24
+# cycle 3: rotated
+run 3 w32t31 32 2095104 31
+run 3 w32t32 32 2095104 32
+run 3 w64t31 64 2095104 31
+run 3 w64t32 64 2095104 32
+run 3 w32t24 32 2095104 24
+echo SWEEP-COMPLETE
