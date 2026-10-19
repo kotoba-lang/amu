@@ -77,7 +77,8 @@
 
 (ns kotoba.compiler.kotoba-reader
   (:export [read-forms read-forms-bounded read-forms-count-bounded read-first-form-bounded read-interface-forms-bounded])
-  (:require [kotoba.compiler.decimal-bits :as decimal])
+  (:require [kotoba.compiler.decimal-bits :as decimal]
+            [kotoba.form :as form])
   (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
                                        [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
              :kotoba.reader/rd [:record :kotoba.reader/rd
@@ -736,32 +737,10 @@
                   :else (recur (rd-pos r) (conj-form acc (rd-form r))))))))))))
 
 (defn- key-eq [a [:ref :form/r] b [:ref :form/r]] :bool
-  ;; Structural equality for map-literal keys (review T7). Mirrors
-  ;; kotoba.form/eq's tag dispatch but stays local: the cross-module import
-  ;; gate carries closed primitive parameters only, so :form/r records cannot
-  ;; cross to kotoba.form. Composite kids compare pairwise in order.
-  (let [t (tag-of a)]
-    (if (not (= t (tag-of b)))
-      false
-      (cond
-        (= t 0) true
-        (or (= t 1) (= t 2) (= t 10))
-        (= (record-get [:ref :form/r] a :n) (record-get [:ref :form/r] b :n))
-        (or (= t 3) (= t 5))
-        (string=? (record-get [:ref :form/r] a :s) (record-get [:ref :form/r] b :s))
-        (= t 4) (= (record-get [:ref :form/r] a :k) (record-get [:ref :form/r] b :k))
-        :else
-        (let [xs (kids-of a)
-              ys (kids-of b)
-              n (vector-count xs)]
-          (if (= n (vector-count ys))
-            (loop [i 0]
-              (if (>= i n)
-                true
-                (if (key-eq (kid xs i) (kid ys i))
-                  (recur (+ i 1))
-                  false)))
-            false))))))
+  ;; Structural equality for map-literal keys (review T7). kotoba.form/eq is
+  ;; the semantics: unordered for set/map keys, numeric for f64 keys, exact
+  ;; for atoms (review follow-ups on the first cut).
+  (form/eq a b))
 
 (defn- dup-of-key? [xs [:list [:ref :form/r]] k [:ref :form/r] j :i64 n :i64] :bool
   (if (>= j n)
