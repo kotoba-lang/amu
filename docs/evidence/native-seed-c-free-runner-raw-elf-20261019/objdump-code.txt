@@ -1,0 +1,56 @@
+
+raw_elf_runner_probe:	file format elf64-x86-64
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/llvm-objdump: warning: 'raw_elf_runner_probe': no section overlaps the range [0x400078,0x400110) specified by --start-address/--stop-address
+
+Disassembly of section PT_LOAD#0:
+
+0000000000400000 <PT_LOAD#0>:
+  400078: 55                           	pushq	%rbp
+  400079: 48 89 e5                     	movq	%rsp, %rbp
+  40007c: 53                           	pushq	%rbx
+  40007d: 41 54                        	pushq	%r12
+  40007f: 48 89 fb                     	movq	%rdi, %rbx
+  400082: 4d 31 e4                     	xorq	%r12, %r12
+  400085: 48 8b 43 08                  	movq	0x8(%rbx), %rax
+  400089: 48 83 e8 01                  	subq	$0x1, %rax
+  40008d: 48 89 43 08                  	movq	%rax, 0x8(%rbx)
+  400091: 78 4b                        	js	0x4000de <PT_LOAD#0+0xde>
+  400093: 48 8d 35 55 00 00 00         	leaq	0x55(%rip), %rsi        # 0x4000ef <PT_LOAD#0+0xef>
+  40009a: 48 89 df                     	movq	%rbx, %rdi
+  40009d: ff 57 30                     	callq	*0x30(%rdi)
+  4000a0: 49 01 c4                     	addq	%rax, %r12
+  4000a3: 48 89 df                     	movq	%rbx, %rdi
+  4000a6: ff 57 38                     	callq	*0x38(%rdi)
+  4000a9: 49 01 c4                     	addq	%rax, %r12
+  4000ac: 48 89 df                     	movq	%rbx, %rdi
+  4000af: ff 57 40                     	callq	*0x40(%rdi)
+  4000b2: 49 01 c4                     	addq	%rax, %r12
+  4000b5: 48 89 df                     	movq	%rbx, %rdi
+  4000b8: ff 57 48                     	callq	*0x48(%rdi)
+  4000bb: 49 01 c4                     	addq	%rax, %r12
+  4000be: 48 89 df                     	movq	%rbx, %rdi
+  4000c1: 48 8b 47 70                  	movq	0x70(%rdi), %rax
+  4000c5: ff d0                        	callq	*%rax
+  4000c7: 49 01 c4                     	addq	%rax, %r12
+  4000ca: 48 89 df                     	movq	%rbx, %rdi
+  4000cd: 48 8b 47 78                  	movq	0x78(%rdi), %rax
+  4000d1: ff d0                        	callq	*%rax
+  4000d3: 49 01 c4                     	addq	%rax, %r12
+  4000d6: 4c 89 e0                     	movq	%r12, %rax
+  4000d9: 41 5c                        	popq	%r12
+  4000db: 5b                           	popq	%rbx
+  4000dc: 5d                           	popq	%rbp
+  4000dd: c3                           	retq
+  4000de: 0f 0b                        	ud2
+  4000e0: 48 8b 47 38                  	movq	0x38(%rdi), %rax
+  4000e4: ff e0                        	jmpq	*%rax
+  4000e6: 31 ff                        	xorl	%edi, %edi
+  4000e8: b8 3c 00 00 00               	movl	$0x3c, %eax
+  4000ed: 0f 05                        	syscall
+  4000ef: 72 75                        	jb	0x400166 <PT_LOAD#0+0x166>
+  4000f1: 6e                           	outsb	(%rsi), %dx
+  4000f2: 6e                           	outsb	(%rsi), %dx
+  4000f3: 65 72 2d                     	jb	0x400123 <PT_LOAD#0+0x123>
+  4000f6: 70 72                        	jo	0x40016a <PT_LOAD#0+0x16a>
+  4000f8: 6f                           	outsl	(%rsi), %dx
+  4000f9: 62 65 00                     	<unknown>
