@@ -239,8 +239,17 @@
   n -> PIPELINE <spv> 3 -> BEGIN -> DISPATCH (1,1,1, x parts n) -> SUBMIT ->
   READ parts[0..3] -> FREE x3, answering \"INFO|<read>\". x[i] = i+1 as f32
   bits, written only for i < n (the kernel never reads x[i] for i >= n)."
-  [spv w n]
-  (let [xwords (str/join "," (map #(str (f32bits (inc %))) (vec (range n))))]
+  ;; x[i] = i+1 for i < n (or the REVERSED multiset when rev? -- same
+  ;; expected sum/max/min, but the minimum lands in lane n-1 instead of lane
+  ;; 0, so a no-op combine cannot pass). Every unwritten lane i >= n is
+  ;; POISONED with a sentinel far outside 1..W (flipped sign per direction)
+  ;; so a missing `i < n` guard cannot hide in commonly zero-filled device
+  ;; memory: a leaked poison changes the sum, and its sign flips the min.
+  ([spv w n] (guest-text spv w n false))
+  ([spv w n rev?]
+  (let [poison (f32bits (if rev? -1000000.0 1000000.0))
+        written (map (fn [i] (str (f32bits (if rev? (- n i) (inc i))))) (vec (range n)))
+        xwords (str/join "," (concat written (repeat (max 0 (- w n)) poison)))]
     (str/join "\n"
       [(prs '(ns gpu.sgrexec (:export [main])))
        (prs '(defn gpu [r :string] :string (typed-cap-call :gpu/compute :string :string r)))
@@ -259,7 +268,7 @@
             "        f1 (gpu (string-concat \"FREE \" hx))\n"
             "        f2 (gpu (string-concat \"FREE \" hp))\n"
             "        f3 (gpu (string-concat \"FREE \" hn))]\n"
-            "    (string-concat i0 (string-concat \"|\" rd))))")])))
+            "    (string-concat i0 (string-concat \"|\" rd))))")]))))
 (when-not (str/includes? (guest-text "/x.spv" 64 64) "WRITEDEC ")
   (fail! "guest self-test: no WRITEDEC in the guest"))
 
