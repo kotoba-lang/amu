@@ -1,0 +1,87 @@
+(ns kotoba.compiler.accelerator-subgroup-reduce-test
+  "Tests for the :subgroup-reduce emission. The load-bearing one is the
+  golden comparison: the (:reduce :sum) bytes at W=32/64/128/256 must stay
+  byte-identical to the fixtures the wire-42 harnesses pinned and executed
+  (PR #1346, 10/10 bit-exact on M1 Max). If this test moves, either the
+  emission regressed or the fixture was edited -- both are findings."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-subgroup-reduce :as sreduce]
+            [kotoba.lang.text :as str]
+            #?(:cljs ["node:fs" :as fs])))
+
+(defn- fixture-bytes [name]
+  #?(:clj (slurp (str "test/fixtures/gpu/" name))
+     :cljs (.readFileSync fs (str "test/fixtures/gpu/" name) "utf8")))
+
+(deftest sum-emission-is-byte-identical-to-the-pinned-fixtures
+  (doseq [w [32 64 128 256]]
+    (let [kir (accelerator/kernel (str "reduce_sum_w" w) :reduce :sum {:workgroup-size w})
+          emitted (sreduce/emit-subgroup-reduce kir)
+          fixture (fixture-bytes (str "subgroup-reduce-w" w "-sum.emitted.glsl"))]
+      (is (= fixture emitted) (str "W=" w " emission drifted from the pinned fixture"))
+      (is (= emitted (sreduce/emit-subgroup-reduce kir)) (str "W=" w " emission is not deterministic")))))
+
+(deftest operators-substitute-identity-and-combine-through-one-template
+  (doseq [[operator identity combine] [[:max "-3.402823466e+38" "max(a,b)"]
+                                       [:min "3.402823466e+38" "min(a,b)"]]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator) "_w128") :reduce operator
+                                  {:workgroup-size 128})
+          code (sreduce/emit-subgroup-reduce kir)]
+      (is (str/includes? code (str "x[i] : " identity ";")) (str operator " identity"))
+      (is (str/includes? code (str "return " combine ";")) (str operator " combine"))
+      (is (not (str/includes? code "x[i] : 0.0;")) (str operator " must not carry the :sum identity")))))
+
+(deftest emission-is-subgroup-size-parametric
+  ;; The width-dependent parts are W (local_size_x, partials); every subgroup
+  ;; quantity is read at runtime. A baked fold width would be a correctness
+  ;; bug on Mali (S spans 4..32 by generation).
+  (doseq [w [32 64 128 256]]
+    (let [code (sreduce/emit-subgroup-reduce
+                (accelerator/kernel "r" :reduce :sum {:workgroup-size w}))]
+      (is (re-find #"uint fold = min\(gl_SubgroupSize, gl_WorkGroupSize\.x\);" code))
+      (is (re-find #"gl_NumSubgroups / 2u" code))
+      (is (not (re-find #"fold = \d+u?;" code)) "fold must not be a constant")
+      (is (str/includes? code (str "local_size_x = " w ")"))))))
+
+(deftest safety-arithmetic-s-divides-w-for-every-admissible-shape
+  ;; ADR-0356/0357 claim, checked mechanically: every KIR-admissible W >= 32
+  ;; (powers of two in [32, 1024]) is a multiple of every subgroup width
+  ;; S in {4,8,16,32}. Arithmetic only -- not a speed claim.
+  (doseq [w [32 64 128 256 512 1024]
+          s [4 8 16 32]]
+    (is (zero? (mod w s)) (str "S=" s " does not divide W=" w))))
+
+(deftest variant-applicability-is-a-shape-predicate
+  (is (sreduce/variant-applicable? (accelerator/kernel "r" :reduce :sum {:workgroup-size 32})))
+  (is (sreduce/variant-applicable? (accelerator/kernel "r" :reduce :min {:workgroup-size 1024})))
+  (is (not (sreduce/variant-applicable? (accelerator/kernel "r" :reduce :sum {:workgroup-size 16}))))
+  (is (not (sreduce/variant-applicable? (accelerator/kernel "e" :ewise :add {:workgroup-size 256}))))
+  (is (not (sreduce/variant-applicable? (assoc (accelerator/kernel "r" :reduce :sum {:workgroup-size 32})
+                                               :kernel/op :fold)))))
+
+(deftest every-reduction-operator-has-an-identity-combine-pair
+  ;; The emit function's throw for a missing pair is defense-in-depth: today
+  ;; accelerator/reduction-operators is exactly {:sum :max :min} and
+  ;; validate! rejects anything else first, so the branch is unreachable.
+  ;; This test pins that equality -- if it ever fails, a reduction operator
+  ;; was added and the emission's maps (and this test) must grow with it.
+  (is (= #{:sum :max :min} accelerator/reduction-operators))
+  (doseq [operator accelerator/reduction-operators]
+    (is (string? (sreduce/emit-subgroup-reduce
+                  (accelerator/kernel (str "r_" (name operator)) :reduce operator
+                                      {:workgroup-size 32}))))))
+
+(deftest refusals-fail-closed-and-say-which-refusal
+  (testing "a KIR the variant does not apply to is a distinct, loud refusal"
+    (is (thrown-with-msg? Exception #"subgroup-reduce variant applies to :reduce kernels"
+                          (sreduce/emit-subgroup-reduce
+                           (accelerator/kernel "e" :ewise :add {:workgroup-size 256}))))
+    (is (thrown-with-msg? Exception #"workgroup size >= 32"
+                          (sreduce/emit-subgroup-reduce
+                           (accelerator/kernel "r" :reduce :sum {:workgroup-size 16})))))
+  (testing "an invalid KIR is refused by the shared validator, unchanged"
+    (is (thrown-with-msg? Exception #"invalid accelerator KIR"
+                          (sreduce/emit-subgroup-reduce
+                           (assoc (accelerator/kernel "r" :reduce :sum {:workgroup-size 32})
+                                  :kernel/workgroup-size 300))))))

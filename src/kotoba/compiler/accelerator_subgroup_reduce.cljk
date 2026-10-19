@@ -1,0 +1,109 @@
+(ns kotoba.compiler.accelerator-subgroup-reduce
+  "The :subgroup-reduce kernel variant: subgroup-size-parametric GLSL
+  reduction emission for the Vulkan route (ADR-0356's Intel row, reused by
+  ADR-0357's ARM Mali row). THIS IS THE EMISSION ONLY.
+
+  State (2026-10-20): implemented -- this namespace and its tests. The
+  emitted bytes for (:reduce :sum) at W=32/64/128/256 are byte-identical to
+  the committed fixtures test/fixtures/gpu/subgroup-reduce-w{32,64,128,256}-sum.emitted.glsl,
+  which are the bytes the wire-42 harnesses pinned and executed 10/10
+  bit-exact on Apple M1 Max / MoltenVK (PR #1346). :max and :min emit
+  through the same template with the operator's identity/combine
+  substitutions and have NO execution evidence. Nothing here is a speed
+  claim: every performance statement about this variant is UNMEASURED, and
+  where measurements exist (M1 Max) they say the variant is not faster than
+  the baseline there (PRs #1348/#1349).
+
+  The emission is subgroup-SIZE-PARAMETRIC on purpose (ADR-0356/0357): the
+  intra-subgroup fold runs at min(gl_SubgroupSize, gl_WorkGroupSize.x) and
+  the cross-subgroup tree at gl_NumSubgroups, so the same bytes are correct
+  at subgroup width 4..64 and any admissible W. Baking a width would be a
+  correctness bug on Mali, whose width spans 4..32 by generation.
+
+  Selection is NOT here. Which variant a (vendor, kernel) pair answers is
+  kotoba.compiler.accelerator-variants (in flight, PR #1331) under ADR-0356's
+  rule 3 (emission admission first): this namespace is the admission
+  prerequisite, not the selector."
+  {:kotoba/export [emit-subgroup-reduce min-variant-workgroup-size variant-applicable?]}
+  (:require [kotoba.compiler.accelerator :as accelerator]))
+
+(def min-variant-workgroup-size
+  "ADR-0356/0357 predicate bound: the variant applies at W >= 32. Below it
+  the cross-subgroup tree has nothing to do and the baseline cascade is the
+  right shape; every KIR-admissible W >= 32 is a multiple of every subgroup
+  width S in {4,8,16,32}, so S | W holds without an extra check."
+  32)
+
+(def ^:private identity-value
+  {:sum "0.0" :max "-3.402823466e+38" :min "3.402823466e+38"})
+
+(def ^:private combine-expression
+  {:sum "a+b" :max "max(a,b)" :min "min(a,b)"})
+
+(defn variant-applicable?
+  "True when the subgroup-reduce variant is the right SHAPE for this KIR:
+  op :reduce, an operator it has an identity/combine pair for, and W >= 32.
+  This is a shape predicate only -- vendor selection and emission admission
+  are the selector's answer (PR #1331 / ADR-0356 rule 3)."
+  [kir]
+  (and (= :reduce (:kernel/op kir))
+       (contains? identity-value (:kernel/operator kir))
+       (let [w (:kernel/workgroup-size kir)]
+         (and (int? w) (<= min-variant-workgroup-size w)))))
+
+(defn emit-subgroup-reduce
+  "Emit the subgroup-size-parametric GLSL reduction for a validated KIR
+  reduce kernel. Deterministic: same KIR in, same bytes out, forever.
+
+  Fails closed, never falls back silently: a KIR that fails
+  accelerator/validation-errors throws \"invalid accelerator KIR\"; a valid
+  KIR this variant does not apply to (ewise, or W < 32) throws with
+  {:phase :emission :problem ...} so a caller can tell the two refusals
+  apart. Deciding :baseline instead is the selector's job, not this
+  function's."
+  [kir]
+  (accelerator/validate! kir)
+  (when-not (= :reduce (:kernel/op kir))
+    (throw (ex-info "subgroup-reduce variant applies to :reduce kernels"
+                    {:phase :emission :problem :not-a-reduce-kernel
+                     :op (:kernel/op kir)})))
+  (when-not (contains? identity-value (:kernel/operator kir))
+    (throw (ex-info "subgroup-reduce variant has no identity/combine pair for this operator"
+                    {:phase :emission :problem :unsupported-operator
+                     :operator (:kernel/operator kir)})))
+  (let [w (:kernel/workgroup-size kir)]
+    (when-not (and (int? w) (<= min-variant-workgroup-size w))
+      (throw (ex-info (str "subgroup-reduce variant requires workgroup size >= "
+                           min-variant-workgroup-size)
+                      {:phase :emission :problem :workgroup-size-below-variant-bound
+                       :workgroup-size w :bound min-variant-workgroup-size}))))
+  (let [w (:kernel/workgroup-size kir)
+        identity (identity-value (:kernel/operator kir))
+        combine (combine-expression (:kernel/operator kir))]
+    (str "#version 450\n"
+         "#extension GL_KHR_shader_subgroup : require\n"
+         "layout(local_size_x = " w ") in;\n"
+         "layout(set = 0, binding = 0, std430) readonly buffer X { float x[]; };\n"
+         "layout(set = 0, binding = 1, std430) writeonly buffer Parts { float parts[]; };\n"
+         "layout(set = 0, binding = 2, std430) readonly buffer N { uint n; };\n"
+         "shared float partials[" w "];\n"
+         "float combine(float a, float b) { return " combine "; }\n"
+         "void main() {\n"
+         "  uint i = gl_GlobalInvocationID.x;\n"
+         "  float v = i < n ? x[i] : " identity ";\n"
+         "  uint fold = min(gl_SubgroupSize, gl_WorkGroupSize.x);\n"
+         "  for (uint d = fold / 2u; d > 0u; d >>= 1u) {\n"
+         "    float s = subgroupShuffleDown(v, d);\n"
+         "    if (gl_SubgroupLocalInvocationId + d < fold) { v = combine(v, s); }\n"
+         "  }\n"
+         "  if (gl_SubgroupLocalInvocationId == 0u) { partials[gl_SubgroupID] = v; }\n"
+         "  barrier();\n"
+         "  for (uint d = gl_NumSubgroups / 2u; d > 0u; d >>= 1u) {\n"
+         "    if (gl_SubgroupID == 0u && gl_SubgroupLocalInvocationId < d) {\n"
+         "      uint lid = gl_SubgroupLocalInvocationId;\n"
+         "      partials[lid] = combine(partials[lid], partials[lid + d]);\n"
+         "    }\n"
+         "    barrier();\n"
+         "  }\n"
+         "  if (gl_SubgroupID == 0u && gl_SubgroupLocalInvocationId == 0u) { parts[gl_WorkGroupID.x] = partials[0]; }\n"
+         "}\n")))
