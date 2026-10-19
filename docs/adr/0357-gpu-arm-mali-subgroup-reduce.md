@@ -29,6 +29,35 @@ sub-32 workgroups -- answers `:baseline`. The rules of ADR-0356 bind this
 row unchanged: totality, semantics preservation, emission admission first,
 the UNMEASURED lock, determinism.
 
+## Two portability conditions on the emission (P1, normative)
+
+1. **The fold preserves the baseline `:sum` association, or the claim is
+   scoped.** The baseline reduction is the fixed `W/2` tree of
+   `accelerator.cljk:73-74`; folding contiguous lanes inside a subgroup
+   re-associates the sum, and for cancellation-sensitive inputs the change
+   is not confined to the low bits: with `W=32`, `x[0..2] = [1e20, -1e20, 1]`
+   the baseline tree answers `0` while a four-lane contiguous fold may answer
+   `1`. Subgroup arithmetic additionally does not guarantee any association
+   matching the tree. Therefore either (a) the emitted fold applies the
+   baseline tree's operand order to each subgroup's lane block (same shape,
+   narrowed to `S` lanes), keeping per-stage results aligned with the
+   baseline, or (b) the `:sum` claim is scoped to well-conditioned inputs
+   ("low bits only, for inputs without catastrophic cancellation") and the
+   cancellation-sensitive regime is recorded as UNMEASURED divergence from
+   the baseline. ADR-0356 rule 2 is amended by this scope; `:max`/`:min`
+   keep their bit-for-bit rule within the ordinary-value domain.
+
+2. **Partial compaction uses subgroup IDs, not `lid` arithmetic.** Placing
+   one result per subgroup into the dense `W/S` partial array may not use
+   `local_invocation_index % S` to elect a leader or `local_invocation_index
+   / S` as the partial index: WGSL defines no relationship between the local
+   index and the subgroup IDs. The portable emission requires
+   `subgroup_invocation_id` plus `subgroup_id`/`num_subgroups` (Vulkan
+   equivalents included). A device or language surface without those
+   builtins answers `:baseline`; the `S`-strided cross-subgroup tree may
+   keep using `S` as a stride over the partial array, since that indexing is
+   by construction dense.
+
 ## Safety condition: `S` divides `W` (mechanically checked)
 
 The fold assumes one subgroup width `S` divides the workgroup `W`. The KIR
