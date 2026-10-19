@@ -2,52 +2,87 @@
   "The `--target` spellings `bin/amu` accepts, and the profile keyword each
   one names. Lifted out of `kotoba.compiler.cli` on 2026-09-11 so the trust
   commands (`kotoba.compiler.trust-cli`) can read a `--target` on either
-  host; the JVM CLI reads its table from here. `kotoba.compiler.nbb.cli`
+  host; the JVM bootstrap CLI reads its table from here. `kotoba.compiler.nbb.cli`
   keeps a deliberately RESTRICTED copy for the ordinary-native route and
   says why in place -- that one is a routing decision, this one is the
-  vocabulary."
-  {:kotoba/export [parse]})
+  vocabulary. `.cljk` is Kotoba's friendly surface syntax and must desugar to
+  the same Kotoba semantics as the canonical `.kotoba` implementation used by
+  Amu's selfhost route. The bootstrap host also loads this source; that host
+  route must not add syntax-dependent behavior or runtime semantics. Any
+  change to how an unrecognized spelling is refused is a CLI contract change,
+  not a syntax-only port."
+  {:kotoba/export [parse]}
+  (:require #?(:kotoba [kotoba.compiler.target-names-core :as target-core])))
 
-(defn parse [s]
-  (case s "wasm32" :wasm32-kotoba-v1 "x86_64" :x86_64-kotoba-v1
-        "aarch64" :aarch64-kotoba-v1
-        ;; ADR-2607252500: the primary application artifact.
-        "component" :wasm-component-kotoba-v1
-        "wasm-component" :wasm-component-kotoba-v1
-        "js" :js-kotoba-v1
-        "javascript" :js-kotoba-v1
-        ;; The `kotoba` CLI's own spelling for this target. Without it the
-        ;; alias table dropped `web` through (keyword s) to the bare `:web`,
-        ;; rejected as :unsupported-target -- while :js-kotoba-v1 behind it
-        ;; was fully implemented (measured 2026-09-05: compile-source green,
-        ;; the emitted .mjs answers (keys {10 1 20 2}) = 2n under Node).
-        "web" :js-kotoba-v1
-        "js-browser" :js-browser-kotoba-v1
-        ;; ADR-2607151500's cljs target was reachable only by its full profile
-        ;; name -- `--target cljs-kotoba-v1` -- while `js`/`javascript` mapped
-        ;; by alias. `--target cljs` fell through `(keyword s)` to the bare
-        ;; `:cljs`, which dispatch! then rejected as `:unsupported-target`
-        ;; even though the backend behind it (backend.cljs, the KIR -> cljs
-        ;; source-text emitter) is implemented and its compile-source path is
-        ;; green (measured 2026-09-04). Aliased here alongside its siblings.
-        "cljs" :cljs-kotoba-v1
-        "cljs-browser" :cljs-browser-kotoba-v1
-        "cljs-node" :cljs-node-kotoba-v1
-        "evm" :evm256-kotoba-v1
-        "evm256" :evm256-kotoba-v1
-        "kototama" :kototama-core-v1
-        "kototama-core-v1" :kototama-core-v1
-        "wasm32-browser" :wasm32-browser-kotoba-v1
-        "wasm32-wasi" :wasm32-wasi-kotoba-v1
-        "x86_64-linux" :x86_64-linux-kotoba-v1
-        "x86_64-macos" :x86_64-macos-kotoba-v1
-        "x86_64-windows" :x86_64-windows-kotoba-v1
-        "aarch64-linux" :aarch64-linux-kotoba-v1
-        ;; superproject adr-2609251400 C2: the loader-less static ELF.
-        "x86_64-linux-static" :x86_64-linux-static-kotoba-v1
-        "aarch64-linux-static" :aarch64-linux-static-kotoba-v1
-        "aarch64-macos" :aarch64-macos-kotoba-v1
-        "aarch64-windows" :aarch64-windows-kotoba-v1
-        "aarch64-android" :aarch64-android-kotoba-v1
-        "aarch64-ios" :aarch64-ios-kotoba-v1
-        (keyword s)))
+;; The Kotoba reader sees the static string type; the bootstrap reader keeps
+;; the ordinary CLJK argument list. This bridge changes type information,
+;; not target selection or runtime behavior.
+(defn parse [#?@(:kotoba [s :string] :default [s])]
+  #?(:kotoba
+     (target-core/parse s)
+     :default
+     (cond
+      (= s "wasm32") :wasm32-kotoba-v1
+      (= s "x86_64") :x86_64-kotoba-v1
+      (= s "aarch64") :aarch64-kotoba-v1
+      ;; ADR-2607252500: the primary application artifact.
+      (= s "component") :wasm-component-kotoba-v1
+      (= s "wasm-component") :wasm-component-kotoba-v1
+      (= s "js") :js-kotoba-v1
+      (= s "javascript") :js-kotoba-v1
+      ;; The Kotoba CLI's own spelling for this target.
+      ;; A missing alias previously fell through to a bare keyword and was refused.
+      (= s "web") :js-kotoba-v1
+      (= s "js-browser") :js-browser-kotoba-v1
+      ;; ADR-2607151500 aliases the short spelling to the implemented profile.
+      (= s "cljs") :cljs-kotoba-v1
+      (= s "cljs-browser") :cljs-browser-kotoba-v1
+      (= s "cljs-node") :cljs-node-kotoba-v1
+      (= s "evm") :evm256-kotoba-v1
+      (= s "evm256") :evm256-kotoba-v1
+      (= s "kototama") :kototama-core-v1
+      (= s "kototama-core-v1") :kototama-core-v1
+      (= s "wasm32-browser") :wasm32-browser-kotoba-v1
+      (= s "wasm32-wasi") :wasm32-wasi-kotoba-v1
+      (= s "x86_64-linux") :x86_64-linux-kotoba-v1
+      (= s "x86_64-macos") :x86_64-macos-kotoba-v1
+      (= s "x86_64-windows") :x86_64-windows-kotoba-v1
+      (= s "aarch64-linux") :aarch64-linux-kotoba-v1
+      ;; superproject adr-2609251400 C2: the loader-less static ELF.
+      (= s "x86_64-linux-static") :x86_64-linux-static-kotoba-v1
+      (= s "aarch64-linux-static") :aarch64-linux-static-kotoba-v1
+      (= s "aarch64-macos") :aarch64-macos-kotoba-v1
+      (= s "aarch64-windows") :aarch64-windows-kotoba-v1
+      (= s "aarch64-android") :aarch64-android-kotoba-v1
+      (= s "aarch64-ios") :aarch64-ios-kotoba-v1
+      ;; Direct full-profile spellings are accepted alongside aliases.
+      (= s "wasm32-kotoba-v1") :wasm32-kotoba-v1
+      (= s "x86_64-kotoba-v1") :x86_64-kotoba-v1
+      (= s "aarch64-kotoba-v1") :aarch64-kotoba-v1
+      (= s "wasm-component-kotoba-v1") :wasm-component-kotoba-v1
+      ;; v2 component profile: keep the bootstrap :default branch in lock-step
+      ;; with target-names-core so cross-host semantics match (review #1361).
+      (= s "wasm-component-kotoba-v2") :wasm-component-kotoba-v2
+      (= s "js-kotoba-v1") :js-kotoba-v1
+      (= s "js-browser-kotoba-v1") :js-browser-kotoba-v1
+      (= s "cljs-kotoba-v1") :cljs-kotoba-v1
+      (= s "cljs-browser-kotoba-v1") :cljs-browser-kotoba-v1
+      (= s "cljs-node-kotoba-v1") :cljs-node-kotoba-v1
+      (= s "evm256-kotoba-v1") :evm256-kotoba-v1
+      (= s "wasm32-browser-kotoba-v1") :wasm32-browser-kotoba-v1
+      (= s "wasm32-wasi-kotoba-v1") :wasm32-wasi-kotoba-v1
+      (= s "x86_64-linux-kotoba-v1") :x86_64-linux-kotoba-v1
+      (= s "x86_64-macos-kotoba-v1") :x86_64-macos-kotoba-v1
+      (= s "x86_64-windows-kotoba-v1") :x86_64-windows-kotoba-v1
+      (= s "aarch64-linux-kotoba-v1") :aarch64-linux-kotoba-v1
+      (= s "x86_64-linux-static-kotoba-v1") :x86_64-linux-static-kotoba-v1
+      (= s "aarch64-linux-static-kotoba-v1") :aarch64-linux-static-kotoba-v1
+      (= s "aarch64-macos-kotoba-v1") :aarch64-macos-kotoba-v1
+      (= s "aarch64-windows-kotoba-v1") :aarch64-windows-kotoba-v1
+      (= s "aarch64-android-kotoba-v1") :aarch64-android-kotoba-v1
+      (= s "aarch64-ios-kotoba-v1") :aarch64-ios-kotoba-v1
+      (= s "x86_64-aiueos-kernel-v1") :x86_64-aiueos-kernel-v1
+      (= s "x86_64-aiueos-user-v1") :x86_64-aiueos-user-v1
+      (= s "x86_64-aiueos-uefi-v1") :x86_64-aiueos-uefi-v1
+      (= s "aarch64-aiueos-kernel-v1") :aarch64-aiueos-kernel-v1
+      :else :unsupported-target)))
