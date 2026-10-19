@@ -1,0 +1,761 @@
+(ns re_disasm.disasm
+  (:export [class-unknown class-nop class-ret class-br class-blr class-b class-bl
+            class-bcond class-cbz class-tbz class-adr class-adrp class-movn
+            class-movz class-movk class-add-imm class-sub-imm class-ldr-imm
+            class-str-imm class-svc class-brk class-hlt
+            class-and-reg class-orr-reg class-eor-reg class-ands-reg
+            class-add-reg class-sub-reg class-ldr-reg class-str-reg
+            class-ldp class-stp
+            sext pow2 bor dec-rec match? insn-class insn-imm16 insn-off26 insn-off19 insn-off14
+            insn-adr-imm insn-addsub-imm insn-ldst-off insn-rd insn-rn insn-rt
+            insn-rm insn-rt2 insn-imm6 insn-shift-type insn-pair-off
+            insn-cond insn-op insn-target insn-has-target? mnemonic
+            hex-u hex-s hex8 insn-record insn-text count-class xrefs-count
+            words-from-bytes targets-vector listing-text
+            test-hints test-exceptions test-branch-uncond test-branch-cond
+            test-branch-register test-adr test-mov test-addsub test-loadstore
+            test-text test-bytes-xrefs
+            test-logical-reg test-addsub-reg test-ldst-reg test-pair
+            test-record test-targets test-listing]))
+
+;; re-disasm -- cleanroom AArch64 disassembler core in Kotoba.
+;;
+;; CLEANROOM PROVENANCE (see README.md):
+;;   Every encoding table below is derived from the public Arm A64 ISA
+;;   reference (Arm ARM), transcribed from the instruction-set specification
+;;   only. No disassembly output, source file, table or test vector from
+;;   Ghidra, IDA, Hopper, radare2, Rizin, Binary Ninja, binutils/objdump,
+;;   Capstone or LLVM was read, copied or paraphrased into this file. The
+;;   test expectations are hand-computed from the spec encodings, not
+;;   captured from another tool's output.
+;;
+;; A64 words are 32 bits; every field extractor below masks the word to
+;; 0xFFFFFFFF first, so a carrier with garbage in the high half still
+;; decodes as the ISA sees it.
+
+;; ---------------------------------------------------------------- classes
+
+(defn class-unknown [] :i64 0)
+(defn class-nop [] :i64 1)
+(defn class-ret [] :i64 2)
+(defn class-br [] :i64 3)
+(defn class-blr [] :i64 4)
+(defn class-b [] :i64 5)
+(defn class-bl [] :i64 6)
+(defn class-bcond [] :i64 7)
+(defn class-cbz [] :i64 8)
+(defn class-tbz [] :i64 9)
+(defn class-adr [] :i64 10)
+(defn class-adrp [] :i64 11)
+(defn class-movn [] :i64 12)
+(defn class-movz [] :i64 13)
+(defn class-movk [] :i64 14)
+(defn class-add-imm [] :i64 15)
+(defn class-sub-imm [] :i64 16)
+(defn class-ldr-imm [] :i64 17)
+(defn class-str-imm [] :i64 18)
+(defn class-svc [] :i64 19)
+(defn class-brk [] :i64 20)
+(defn class-hlt [] :i64 21)
+(defn class-and-reg [] :i64 22)
+(defn class-orr-reg [] :i64 23)
+(defn class-eor-reg [] :i64 24)
+(defn class-ands-reg [] :i64 25)
+(defn class-add-reg [] :i64 26)
+(defn class-sub-reg [] :i64 27)
+(defn class-ldr-reg [] :i64 28)
+(defn class-str-reg [] :i64 29)
+(defn class-ldp [] :i64 30)
+(defn class-stp [] :i64 31)
+
+;; ------------------------------------------------------------- utilities
+
+;; Sign-extend the low `bits` of v into i64. Arithmetic form (no shift ops):
+;; 2^bits via a bounded loop, then subtract the modulus when the sign bit
+;; (bit bits-1) is set. v is a masked, non-negative field here.
+(defn pow2 [n :i64] :i64
+  (loop [i 0 p 1]
+    (if (>= i n) p (recur (+ i 1) (* p 2)))))
+
+(defn sext [v :i64 bits :i64] :i64
+  (let [p (pow2 bits)]
+    (if (>= v (quot p 2)) (- v p) v)))
+
+;; bit-or for i64: a | b = a + b - (a & b).
+(defn bor [a :i64 b :i64] :i64
+  (- (+ a b) (bit-and a b)))
+
+;; Decimal text for a non-negative i64 (register numbers, counts).
+(defn dec-rec [n :i64] :string
+  (if (< n 10)
+    (string-substring "0123456789" n (+ n 1))
+    (let [q (quot n 10)
+          r (- n (* 10 q))]
+      (string-concat (dec-rec q) (string-substring "0123456789" r (+ r 1))))))
+
+;; Fixed-bit-group match: (w & mask) == value.
+(defn match? [w :i64 mask :i64 value :i64] :bool
+  (= (bit-and w mask) value))
+
+;; ------------------------------------------------------------ decoders
+;; Field masks follow the Arm ARM encoding groups:
+;;   exceptions  : 11010100 opc:24-21 imm16:20-5 LL:4-0
+;;   branch imm  : 000101 / 100101 imm26 ; 01010100 imm19 0 cond ;
+;;                 sf 011010 op imm19 (CBZ) ; b5 011011 op b40 imm14 (TBZ)
+;;   pc-rel      : op immlo:30-29 10000 immhi:23-5 Rd (ADR / ADRP)
+;;   addsub imm  : sf op S 100010 sh imm12:21-10 Rn Rd
+;;   movewide    : sf opc:30-29 100101 hw:22-21 imm16:20-5 Rd
+;;   ld/st imm   : size:31-30 111 V 00 1 opc:23-22 imm12:21-10 Rn Rt
+;;   hint/branch : 1101011 0 0 10 11111 0000 0 Rn 00000 (RET/BR/BLR)
+;; Each group matcher answers class-unknown (0) outside its group.
+
+(defn insn-class-hint [w :i64] :i64
+  (if (match? w 0xFFFFFFFF 0xD503201F) (class-nop)
+  (if (match? w 0xFFFFFC1F 0xD65F0000) (class-ret)
+  (if (match? w 0xFFFFFC1F 0xD61F0000) (class-br)
+  (if (match? w 0xFFFFFC1F 0xD63F0000) (class-blr)
+  (if (match? w 0xFFE0001F 0xD4000001) (class-svc)
+  (if (match? w 0xFFE0001F 0xD4200000) (class-brk)
+  (if (match? w 0xFFE0001F 0xD4400000) (class-hlt)
+  (class-unknown)))))))))
+
+(defn insn-class-branch [w :i64] :i64
+  (if (match? w 0xFC000000 0x14000000) (class-b)
+  (if (match? w 0xFC000000 0x94000000) (class-bl)
+  (if (match? w 0xFF000010 0x54000000) (class-bcond)
+  (if (match? w 0x7E000000 0x34000000) (class-cbz)
+  (if (match? w 0x7E000000 0x36000000) (class-tbz)
+  (class-unknown)))))))
+
+(defn insn-class-pcrel [w :i64] :i64
+  (if (match? w 0x9F000000 0x10000000) (class-adr)
+  (if (match? w 0x9F000000 0x90000000) (class-adrp)
+  (class-unknown))))
+
+(defn insn-class-mov [w :i64] :i64
+  (if (match? w 0x1F800000 0x12800000)
+    (if (match? w 0x60000000 0x00000000) (class-movn)
+    (if (match? w 0x60000000 0x40000000) (class-movz)
+    (if (match? w 0x60000000 0x60000000) (class-movk)
+    (class-unknown))))
+  (class-unknown)))
+
+;; Unflagged forms only: S=1 (ADDS/SUBS, i.e. CMN/CMP) stays unknown.
+(defn insn-class-addsub [w :i64] :i64
+  (if (match? w 0x1F800000 0x11000000)
+    (if (match? w 0x20000000 0x20000000) (class-unknown)
+    (if (match? w 0x40000000 0x00000000) (class-add-imm)
+    (class-sub-imm)))
+  (class-unknown)))
+
+;; Logical (shifted register), N=0: sf opc 01010 shift 0 Rm imm6 Rn Rd.
+;; opc: 00 AND / 01 ORR / 10 EOR / 11 ANDS. N=1 (BIC/ORN/EON/MVN) unknown.
+(defn insn-class-logical [w :i64] :i64
+  (if (match? w 0x1F200000 0x0A000000)
+    (if (match? w 0x60000000 0x00000000) (class-and-reg)
+    (if (match? w 0x60000000 0x40000000) (class-orr-reg)
+    (if (match? w 0x60000000 0x20000000) (class-eor-reg)
+    (class-ands-reg))))
+  (class-unknown)))
+
+;; Add/sub (shifted register), unflagged: sf op S 01011 shift 0 Rm imm6 Rn Rd.
+(defn insn-class-addsub-reg [w :i64] :i64
+  (if (match? w 0x1F200000 0x0B000000)
+    (if (match? w 0x20000000 0x20000000) (class-unknown)
+    (if (match? w 0x40000000 0x00000000) (class-add-reg)
+    (class-sub-reg)))
+  (class-unknown)))
+
+;; Load/store unsigned immediate (size 111 V 00 1 opc imm12 Rn Rt) and
+;; register offset (size 111 V 00 opc 1 Rm option S 10 Rn Rt), integer (V=0).
+;; opc 00 = STR, 01 = LDR.
+(defn insn-class-ldst [w :i64] :i64
+  (if (match? w 0x3F000000 0x39000000)
+    (if (match? w 0x00C00000 0x00000000) (class-str-imm)
+    (if (match? w 0x00C00000 0x00400000) (class-ldr-imm)
+    (class-unknown)))
+  (if (match? w 0x3F200000 0x38200000)
+    (if (match? w 0x00C00000 0x00000000) (class-str-reg)
+    (if (match? w 0x00C00000 0x00400000) (class-ldr-reg)
+    (class-unknown)))
+  (class-unknown))))
+
+;; Load/store pair, 64-bit (opc=10), integer (V=0):
+;; opc 101 V 0 mode:24-23 L:22 imm7 Rt2 Rn Rt. L=1 LDP, L=0 STP.
+(defn insn-class-pair [w :i64] :i64
+  (if (match? w 0x3E000000 0x28000000)
+    (if (match? w 0xC0000000 0x80000000)
+    (if (match? w 0x00400000 0x00400000) (class-ldp) (class-stp))
+    (class-unknown))
+  (class-unknown)))
+
+(defn insn-class [w :i64] :i64
+  (let [h (insn-class-hint w)]
+  (if (= h 0)
+  (let [b (insn-class-branch w)]
+  (if (= b 0)
+  (let [p (insn-class-pcrel w)]
+  (if (= p 0)
+  (let [m (insn-class-mov w)]
+  (if (= m 0)
+  (let [a (insn-class-addsub w)]
+  (if (= a 0)
+  (let [g (insn-class-logical w)]
+  (if (= g 0)
+  (let [r (insn-class-addsub-reg w)]
+  (if (= r 0)
+  (let [l (insn-class-ldst w)]
+  (if (= l 0) (insn-class-pair w) l))
+  r))
+  g))
+  a))
+  m))
+  p))
+  b))
+  h)))
+
+;; Field extractors. Each masks the 32-bit word first.
+
+(defn insn-imm16 [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 32) 0xFFFF))
+
+;; B / BL: signed imm26, scaled by 4.
+(defn insn-off26 [w :i64] :i64
+  (* 4 (sext (bit-and w 0x03FFFFFF) 26)))
+
+;; B.cond / CBZ / CBNZ: signed imm19, scaled by 4.
+(defn insn-off19 [w :i64] :i64
+  (* 4 (sext (bit-and (quot (bit-and w 0xFFFFFFFF) 32) 0x7FFFF) 19)))
+
+;; TBZ / TBNZ: signed imm14, scaled by 4.
+(defn insn-off14 [w :i64] :i64
+  (* 4 (sext (bit-and (quot (bit-and w 0xFFFFFFFF) 32) 0x3FFF) 14)))
+
+;; ADR / ADRP: signed imm21 assembled from immhi:23-5, immlo:30-29.
+;; For ADRP the value is a signed page count (scaled by 4096 at the target).
+(defn insn-adr-imm [w :i64] :i64
+  (let [lo (bit-and (quot (bit-and w 0xFFFFFFFF) 536870912) 3)
+        hi (bit-and (quot (bit-and w 0xFFFFFFFF) 32) 0x7FFFF)]
+    (sext (bor (* hi 4) lo) 21)))
+
+;; ADD/SUB immediate: imm12, scaled by 4096 when sh (bit 22) is set.
+(defn insn-addsub-imm [w :i64] :i64
+  (let [imm (bit-and (quot (bit-and w 0xFFFFFFFF) 1024) 0xFFF)]
+    (if (match? w 0x00400000 0x00400000) (* imm 4096) imm)))
+
+;; LDR/STR unsigned immediate: imm12 scaled by the access size (1 << size).
+(defn insn-ldst-off [w :i64] :i64
+  (let [size (bit-and (quot (bit-and w 0xFFFFFFFF) 1073741824) 3)
+        imm (bit-and (quot (bit-and w 0xFFFFFFFF) 1024) 0xFFF)
+        scale (if (= size 0) 1 (if (= size 1) 2 (if (= size 2) 4 8)))]
+    (* imm scale)))
+
+(defn insn-rd [w :i64] :i64
+  (bit-and w 31))
+
+(defn insn-rn [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 32) 31))
+
+(defn insn-rt [w :i64] :i64
+  (bit-and w 31))
+
+;; B.cond condition code, and the CBZ/TBZ "opposite" bit (CBNZ/TBNZ = 1).
+(defn insn-cond [w :i64] :i64
+  (bit-and w 15))
+
+(defn insn-op [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 16777216) 1))
+
+;; Register-form fields.
+(defn insn-rm [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 65536) 31))
+
+;; LDP/STP second register (bits 14:10).
+(defn insn-rt2 [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 1024) 31))
+
+;; Logical/addsub shifted-register imm6 (bits 15:10).
+(defn insn-imm6 [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 1024) 63))
+
+;; Shift type (bits 23:22): 0 LSL / 1 LSR / 2 ASR / 3 ROR.
+(defn insn-shift-type [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 4194304) 3))
+
+;; LDP/STP signed imm7 (bits 21:15), scaled by the pair size (8 for x).
+(defn insn-pair-off [w :i64] :i64
+  (* 8 (sext (bit-and (quot (bit-and w 0xFFFFFFFF) 32768) 0x7F) 7)))
+
+;; ------------------------------------------------------------ targets
+
+(defn insn-has-target? [c :i64] :bool
+  (or (= c (class-b)) (= c (class-bl)) (= c (class-bcond)) (= c (class-cbz))
+      (= c (class-tbz)) (= c (class-adr)) (= c (class-adrp))))
+
+;; Computed branch / pc-relative target of w placed at pc.
+;; Classes without a target answer (- 0 1).
+(defn insn-target [w :i64 pc :i64] :i64
+  (let [c (insn-class w)]
+  (if (or (= c (class-b)) (= c (class-bl))) (+ pc (insn-off26 w))
+  (if (or (= c (class-bcond)) (= c (class-cbz))) (+ pc (insn-off19 w))
+  (if (= c (class-tbz)) (+ pc (insn-off14 w))
+  (if (= c (class-adr)) (+ pc (insn-adr-imm w))
+  (if (= c (class-adrp)) (+ (bit-and pc (- 0 4096)) (* (insn-adr-imm w) 4096))
+  (- 0 1))))))))
+
+;; ------------------------------------------------------------- text
+
+(defn hex-nibble [n :i64] :string
+  (let [d (bit-and n 15)]
+    (string-substring "0123456789abcdef" d (+ d 1))))
+
+(defn hex-rec [n :i64] :string
+  (if (< n 16) (hex-nibble n)
+    (string-concat (hex-rec (quot n 16)) (hex-nibble n))))
+
+(defn hex-u [n :i64] :string
+  (string-concat "0x" (hex-rec n)))
+
+(defn hex-s [n :i64] :string
+  (if (< n 0)
+    (string-concat "-0x" (hex-rec (- 0 n)))
+    (string-concat "0x" (hex-rec n))))
+
+;; Zero-padded hex: `digits` low nibbles of v.
+(defn hex-pad [v :i64 digits :i64] :string
+  (if (<= digits 1) (hex-nibble v)
+    (string-concat (hex-pad (quot v 16) (- digits 1)) (hex-nibble v))))
+
+(defn hex8 [v :i64] :string
+  (hex-pad (bit-and v 0xFFFFFFFF) 8))
+
+(defn str2 [a :string b :string] :string
+  (string-concat a b))
+
+(defn str3 [a :string b :string c :string] :string
+  (string-concat a (string-concat b c)))
+
+(defn str4 [a :string b :string c :string d :string] :string
+  (string-concat a (str3 b c d)))
+
+(defn str5 [a :string b :string c :string d :string e :string] :string
+  (string-concat a (str4 b c d e)))
+
+(defn str6 [a :string b :string c :string d :string e :string f :string] :string
+  (string-concat a (str5 b c d e f)))
+
+;; condition code names (Arm ARM cond field).
+(defn cond-name [cc :i64] :string
+  (if (= cc 0) "eq"
+  (if (= cc 1) "ne"
+  (if (= cc 2) "cs"
+  (if (= cc 3) "cc"
+  (if (= cc 4) "mi"
+  (if (= cc 5) "pl"
+  (if (= cc 6) "vs"
+  (if (= cc 7) "vc"
+  (if (= cc 8) "hi"
+  (if (= cc 9) "ls"
+  (if (= cc 10) "ge"
+  (if (= cc 11) "lt"
+  (if (= cc 12) "gt"
+  (if (= cc 13) "le"
+  (if (= cc 14) "al"
+  "nv"))))))))))))))))
+
+;; register name: wide=1 -> x<n>, wide=0 -> w<n>.
+(defn reg-name [r :i64 wide :i64] :string
+  (if (= wide 1)
+    (str2 "x" (dec-rec r))
+    (str2 "w" (dec-rec r))))
+
+(defn mnemonic [c :i64] :string
+  (if (= c (class-nop)) "nop"
+  (if (= c (class-ret)) "ret"
+  (if (= c (class-br)) "br"
+  (if (= c (class-blr)) "blr"
+  (if (= c (class-b)) "b"
+  (if (= c (class-bl)) "bl"
+  (if (= c (class-bcond)) "b.cond"
+  (if (= c (class-cbz)) "cbz"
+  (if (= c (class-tbz)) "tbz"
+  (if (= c (class-adr)) "adr"
+  (if (= c (class-adrp)) "adrp"
+  (if (= c (class-movn)) "movn"
+  (if (= c (class-movz)) "movz"
+  (if (= c (class-movk)) "movk"
+  (if (= c (class-add-imm)) "add"
+  (if (= c (class-sub-imm)) "sub"
+  (if (= c (class-ldr-imm)) "ldr"
+  (if (= c (class-str-imm)) "str"
+  (if (= c (class-svc)) "svc"
+  (if (= c (class-brk)) "brk"
+  (if (= c (class-hlt)) "hlt"
+  (if (= c (class-and-reg)) "and"
+  (if (= c (class-orr-reg)) "orr"
+  (if (= c (class-eor-reg)) "eor"
+  (if (= c (class-ands-reg)) "ands"
+  (if (= c (class-add-reg)) "add"
+  (if (= c (class-sub-reg)) "sub"
+  (if (= c (class-ldr-reg)) "ldr"
+  (if (= c (class-str-reg)) "str"
+  (if (= c (class-ldp)) "ldp"
+  (if (= c (class-stp)) "stp"
+  "udf"))))))))))))))))))))))))))))))))
+
+;; per-class operand text
+
+(defn ldst-text [w :i64] :string
+  (let [size (bit-and (quot (bit-and w 0xFFFFFFFF) 1073741824) 3)
+        wide (if (= size 3) 1 0)
+        base (if (= (insn-rn w) 31) "sp" (reg-name (insn-rn w) 1))]
+    (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rt w) wide) ", ["
+          base (str3 ", #" (hex-u (insn-ldst-off w)) "]"))))
+
+(defn addsub-text [w :i64] :string
+  (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rd w) 1) ", "
+        (reg-name (insn-rn w) 1) (str2 ", #" (hex-u (insn-addsub-imm w)))))
+
+(defn mov-text [w :i64] :string
+  (str5 (mnemonic (insn-class w)) " " (reg-name (insn-rd w) 1) ", #"
+        (hex-u (insn-imm16 w))))
+
+(defn pcrel-text [w :i64] :string
+  (let [c (insn-class w)
+        shown (if (= c (class-adr)) (insn-adr-imm w) (* (insn-adr-imm w) 4096))]
+    (str5 (mnemonic c) " " (reg-name (insn-rd w) 1) ", #" (hex-s shown))))
+
+;; Three-register form (logical / addsub shifted register).
+;; Shift rendering is deferred; rd/rn/rm are the operands that matter for
+;; xrefs and boundaries.
+(defn reg3-text [w :i64] :string
+  (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rd w) 1) ", "
+        (reg-name (insn-rn w) 1) (str2 ", " (reg-name (insn-rm w) 1))))
+
+;; Load/store register offset: rt, [rn, rm] (extend/shift deferred).
+(defn ldstreg-text [w :i64] :string
+  (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rt w) 1) ", ["
+        (reg-name (insn-rn w) 1) (str2 ", " (str2 (reg-name (insn-rm w) 1) "]"))))
+
+;; Load/store pair: rt, rt2, [rn, #off] (sp as base).
+(defn pair-text [w :i64] :string
+  (let [base (if (= (insn-rn w) 31) "sp" (reg-name (insn-rn w) 1))]
+    (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rd w) 1) ", "
+          (reg-name (insn-rt2 w) 1)
+          (str2 ", [" (str2 base (str2 ", #" (str2 (hex-s (insn-pair-off w)) "]")))))))
+
+;; One disassembly line for w at pc (A64 syntax subset).
+(defn insn-text [w :i64 pc :i64] :string
+  (let [c (insn-class w)]
+  (if (= c (class-nop)) "nop"
+  (if (= c (class-ret)) "ret"
+  (if (or (= c (class-br)) (= c (class-blr)))
+    (str3 (mnemonic c) " " (reg-name (insn-rn w) 1))
+  (if (or (= c (class-b)) (= c (class-bl)))
+    (str3 (mnemonic c) " #" (hex-s (insn-target w pc)))
+  (if (= c (class-bcond))
+    (str4 "b." (cond-name (insn-cond w)) " #" (hex-s (insn-target w pc)))
+  (if (or (= c (class-cbz)) (= c (class-tbz)))
+    (str5 (if (= c (class-cbz))
+            (if (= (insn-op w) 1) "cbnz" "cbz")
+            (if (= (insn-op w) 1) "tbnz" "tbz"))
+          " " (reg-name (insn-rt w) 1) ", #" (hex-s (insn-target w pc)))
+  (if (or (= c (class-adr)) (= c (class-adrp)))
+    (pcrel-text w)
+  (if (or (= c (class-movn)) (= c (class-movz)) (= c (class-movk)))
+    (mov-text w)
+  (if (or (= c (class-add-imm)) (= c (class-sub-imm)))
+    (addsub-text w)
+  (if (or (= c (class-ldr-imm)) (= c (class-str-imm)))
+    (ldst-text w)
+  (if (or (= c (class-svc)) (= c (class-brk)) (= c (class-hlt)))
+    (str3 (mnemonic c) " #" (hex-u (insn-imm16 w)))
+  (if (or (= c (class-and-reg)) (= c (class-orr-reg)) (= c (class-eor-reg))
+          (= c (class-ands-reg)) (= c (class-add-reg)) (= c (class-sub-reg)))
+    (reg3-text w)
+  (if (or (= c (class-ldr-reg)) (= c (class-str-reg)))
+    (ldstreg-text w)
+  (if (or (= c (class-ldp)) (= c (class-stp)))
+    (pair-text w)
+  (str2 "udf #" (hex-u (bit-and w 0xFFFFFFFF)))))))))))))))))))
+
+;; ------------------------------------------------------------- sweep
+;; A straight linear sweep over n words at base: class histogram and
+;; bounded cross-references to one address. The recursive-descent pass
+;; and function boundaries build on the same core.
+
+(defn count-class [words :vector-i64 n :i64 class :i64] :i64
+  (loop [i 0 c 0]
+    (if (>= i n) c
+      (recur (+ i 1)
+        (if (= (insn-class (vector-at words i)) class) (+ c 1) c)))))
+
+(defn xrefs-count [words :vector-i64 base :i64 n :i64 target :i64] :i64
+  (loop [i 0 c 0]
+    (if (>= i n) c
+      (let [pc (+ base (* 4 i))
+            w (vector-at words i)
+            k (insn-class w)]
+        (recur (+ i 1)
+          (if (and (insn-has-target? k) (= (insn-target w pc) target))
+            (+ c 1)
+            c))))))
+
+;; Little-endian u32 words out of a byte buffer (loader seed).
+(defn words-from-bytes [b :bytes] :vector-i64
+  (let [n (quot (bytes-count b) 4)]
+    (loop [i 0 out (vector-alloc n)]
+      (if (>= i n) out
+        (recur (+ i 1)
+          (vector-assoc out i
+            (bor (bytes-at b (* 4 i))
+              (bor (* (bytes-at b (+ (* 4 i) 1)) 256)
+                (bor (* (bytes-at b (+ (* 4 i) 2)) 65536)
+                        (* (bytes-at b (+ (* 4 i) 3)) 16777216))))))))))
+
+;; ------------------------------------------------------------- analysis
+;; Decoded record: a fixed vector-i64 of
+;;   [class rd rn rm imm6 target variant]
+;; so downstream passes (CFG, xrefs graph) carry plain vectors.
+
+(defn insn-record [w :i64 pc :i64] :vector-i64
+  (vector-i64 (insn-class w) (insn-rd w) (insn-rn w) (insn-rm w)
+              (insn-imm6 w) (insn-target w pc) (insn-op w)))
+
+;; Per-slot target of every word (- 0 1) where there is none) -- the xrefs
+;; graph's edge list in two parallel vectors (sources implied by index).
+(defn targets-vector [words :vector-i64 base :i64 n :i64] :vector-i64
+  (loop [i 0 out (vector-alloc n)]
+    (if (>= i n) out
+      (recur (+ i 1)
+        (vector-assoc out i
+          (insn-target (vector-at words i) (+ base (* 4 i))))))))
+
+;; One listing line per word: "<pc>: <word>  <text>".
+(defn listing-text [words :vector-i64 base :i64 n :i64] :string
+  (loop [i 0 acc ""]
+    (if (>= i n) acc
+      (let [pc (+ base (* 4 i))
+            w (vector-at words i)
+            nl (string-from-utf8 (bytes-from-vector-i64 (vector-i64 10)))]
+        (recur (+ i 1)
+          (string-concat acc
+            (string-concat (hex8 pc)
+              (string-concat ": "
+                (string-concat (hex8 w)
+                  (string-concat "  "
+                    (string-concat (insn-text w pc) nl)))))))))))
+
+;; ------------------------------------------------------------- tests
+;; Every expectation below is hand-computed from the Arm ARM encodings;
+;; nothing is captured from another disassembler's output.
+
+(defn test-hints [] :i64
+  (if (and (= (insn-class 0xD503201F) (class-nop))
+           (= (insn-class 0xD65F03C0) (class-ret))
+           (= (insn-class 0xD65F0000) (class-ret))
+           (= (insn-class 0xD61F0000) (class-br))
+           (= (insn-class 0xD63F0000) (class-blr))
+           (= (insn-class 0xFFFFFFFF) (class-unknown))
+           (= (insn-class 0x00000000) (class-unknown)))
+    1 0))
+
+(defn test-exceptions [] :i64
+  (if (and (= (insn-class 0xD4000001) (class-svc))
+           (= (insn-imm16 0xD4000001) 0)
+           (= (insn-class 0xD4200000) (class-brk))
+           (= (insn-imm16 0xD4200000) 0)
+           (= (insn-class 0xD43FFFE0) (class-brk))
+           (= (insn-imm16 0xD43FFFE0) 0xFFFF)
+           (= (insn-class 0xD4400000) (class-hlt)))
+    1 0))
+
+(defn test-branch-uncond [] :i64
+  (if (and (= (insn-class 0x14000000) (class-b))
+           (= (insn-target 0x14000000 0x1000) 0x1000)
+           (= (insn-class 0x94000001) (class-bl))
+           (= (insn-target 0x94000001 0x1000) 0x1004)
+           (= (insn-target 0x14000002 0x1000) 0x1008))
+    1 0))
+
+(defn test-branch-cond [] :i64
+  ;; 0x54FFFFE0 is b.eq with imm19 = -1: target pc - 4.
+  (if (and (= (insn-class 0x54FFFFE0) (class-bcond))
+           (= (insn-cond 0x54FFFFE0) 0)
+           (= (insn-target 0x54FFFFE0 0x1000) 0x0FFC)
+           (= (insn-class 0xB4000040) (class-cbz))
+           (= (insn-op 0xB4000040) 0)
+           (= (insn-target 0xB4000040 0x1000) 0x1008)
+           (= (insn-class 0xB5000040) (class-cbz))
+           (= (insn-op 0xB5000040) 1)
+           (= (insn-class 0x36000040) (class-tbz))
+           (= (insn-op 0x36000040) 0)
+           (= (insn-target 0x36000040 0x1000) 0x1008)
+           (= (insn-class 0x37000040) (class-tbz))
+           (= (insn-op 0x37000040) 1))
+    1 0))
+
+(defn test-branch-register [] :i64
+  (if (and (= (insn-rn 0xD65F03C0) 30)
+           (= (insn-rn 0xD61F0000) 0)
+           (= (insn-target 0xD61F0000 0x1000) (- 0 1)))
+    1 0))
+
+(defn test-adr [] :i64
+  ;; adr x0, #0x1000 at 0x1000 -> 0x2000 (immhi=0x400, immlo=0)
+  ;; adrp x0, #0x3000 at 0x4321000 -> 0x4324000 (page + 3 pages)
+  (if (and (= (insn-class 0x10008000) (class-adr))
+           (= (insn-adr-imm 0x10008000) 0x1000)
+           (= (insn-target 0x10008000 0x1000) 0x2000)
+           (= (insn-class 0xF0000000) (class-adrp))
+           (= (insn-adr-imm 0xF0000000) 3)
+           (= (insn-target 0xF0000000 0x4321000) 0x4324000))
+    1 0))
+
+(defn test-mov [] :i64
+  ;; movz x0, #0x1234 = 0xD2824680 ; movk w1, #0xABCD (hw=1) = 0x72B579A1
+  ;; movn x0, #0 = 0x92800000
+  (if (and (= (insn-class 0xD2824680) (class-movz))
+           (= (insn-imm16 0xD2824680) 0x1234)
+           (= (insn-rd 0xD2824680) 0)
+           (= (insn-class 0x72B579A1) (class-movk))
+           (= (insn-imm16 0x72B579A1) 0xABCD)
+           (= (insn-rd 0x72B579A1) 1)
+           (= (insn-class 0x92800000) (class-movn))
+           (= (insn-imm16 0x92800000) 0))
+    1 0))
+
+(defn test-addsub [] :i64
+  ;; add x0, x1, #1 = 0x91000420
+  ;; sub x2, x3, #0x1000 (sh=1) = 0xD1400462
+  ;; adds x0, x0, #0 (flag form) stays unknown
+  (if (and (= (insn-class 0x91000420) (class-add-imm))
+           (= (insn-addsub-imm 0x91000420) 1)
+           (= (insn-rn 0x91000420) 1)
+           (= (insn-rd 0x91000420) 0)
+           (= (insn-class 0xD1400462) (class-sub-imm))
+           (= (insn-addsub-imm 0xD1400462) 0x1000)
+           (= (insn-rn 0xD1400462) 3)
+           (= (insn-rd 0xD1400462) 2)
+           (= (insn-class 0xB1000000) (class-unknown)))
+    1 0))
+
+(defn test-loadstore [] :i64
+  ;; ldr x0, [x1, #8] = 0xF9400420 ; str x0, [sp, #0] = 0xF90003E0
+  ;; ldr w0, [x0, #4] = 0xB9400400
+  (if (and (= (insn-class 0xF9400420) (class-ldr-imm))
+           (= (insn-ldst-off 0xF9400420) 8)
+           (= (insn-rn 0xF9400420) 1)
+           (= (insn-rt 0xF9400420) 0)
+           (= (insn-class 0xF90003E0) (class-str-imm))
+           (= (insn-ldst-off 0xF90003E0) 0)
+           (= (insn-rn 0xF90003E0) 31)
+           (= (insn-class 0xB9400400) (class-ldr-imm))
+           (= (insn-ldst-off 0xB9400400) 4))
+    1 0))
+
+(defn test-text [] :i64
+  (if (and (string=? (insn-text 0xD503201F 0) "nop")
+           (string=? (insn-text 0xD65F03C0 0) "ret")
+           (string=? (insn-text 0xD4000001 0) "svc #0x0")
+           (string=? (insn-text 0x14000000 0x1000) "b #0x1000")
+           (string=? (insn-text 0x54FFFFE0 0x1000) "b.eq #0xffc")
+           (string=? (insn-text 0xD2824680 0) "movz x0, #0x1234")
+           (string=? (insn-text 0xF9400420 0) "ldr x0, [x1, #0x8]")
+           (string=? (insn-text 0xF90003E0 0) "str x0, [sp, #0x0]"))
+    1 0))
+
+(defn test-bytes-xrefs [] :i64
+  ;; program at 0x0 (little-endian words):
+  ;;   0x0: bl #+8   (0x94000002)   x\
+  ;;   0x4: b  #+4   (0x14000001)   x }- three xrefs to 0x8
+  ;;   0x8: b.eq #+0 (0x54000000)   x/
+  ;;   0xc: ret      (0xD65F03C0)
+  (let [b (bytes-from-vector-i64 (vector-i64 2 0 0 148 1 0 0 20 0 0 0 84 192 3 95 214))
+        words (words-from-bytes b)]
+    (if (and (= (bytes-count b) 16)
+             (= (vector-count words) 4)
+             (= (vector-at words 0) 0x94000002)
+             (= (vector-at words 1) 0x14000001)
+             (= (vector-at words 2) 0x54000000)
+             (= (vector-at words 3) 0xD65F03C0)
+             (= (xrefs-count words 0 4 8) 3)
+             (= (xrefs-count words 0 4 0) 0)
+             (= (count-class words 4 (class-bl)) 1)
+             (= (count-class words 4 (class-unknown)) 0))
+      1 0)))
+
+(defn test-logical-reg [] :i64
+  ;; and x0, x1, x2 = 0x8A020020 ; orr x3, x4, x5 = 0xCA050083
+  ;; eor x0, x0, x0 = 0xAA000000 ; ands x0, x1, x2 = 0xEA020020
+  (if (and (= (insn-class 0x8A020020) (class-and-reg))
+           (= (insn-rd 0x8A020020) 0)
+           (= (insn-rn 0x8A020020) 1)
+           (= (insn-rm 0x8A020020) 2)
+           (= (insn-class 0xCA050083) (class-orr-reg))
+           (= (insn-rd 0xCA050083) 3)
+           (= (insn-rn 0xCA050083) 4)
+           (= (insn-rm 0xCA050083) 5)
+           (= (insn-class 0xAA000000) (class-eor-reg))
+           (= (insn-class 0xEA020020) (class-ands-reg)))
+    1 0))
+
+(defn test-addsub-reg [] :i64
+  ;; add x0, x1, x2 = 0x8B020020 ; sub x0, x1, x2 = 0xCB020020
+  ;; adds x0, x1, x2 = 0xAB020020 (flag form) stays unknown
+  (if (and (= (insn-class 0x8B020020) (class-add-reg))
+           (= (insn-class 0xCB020020) (class-sub-reg))
+           (= (insn-class 0xAB020020) (class-unknown)))
+    1 0))
+
+(defn test-ldst-reg [] :i64
+  ;; ldr x0, [x1, x2] = 0xF8626820 ; str x0, [x1, x2] = 0xF8226820
+  (if (and (= (insn-class 0xF8626820) (class-ldr-reg))
+           (= (insn-rm 0xF8626820) 2)
+           (= (insn-rn 0xF8626820) 1)
+           (= (insn-rt 0xF8626820) 0)
+           (= (insn-class 0xF8226820) (class-str-reg)))
+    1 0))
+
+(defn test-pair [] :i64
+  ;; ldp x0, x1, [x2, #16] = 0xA9410440
+  ;; stp x29, x30, [sp, #-16]! = 0xA9BF7BFD (imm7 = -2, scaled by 8)
+  (if (and (= (insn-class 0xA9410440) (class-ldp))
+           (= (insn-pair-off 0xA9410440) 16)
+           (= (insn-rd 0xA9410440) 0)
+           (= (insn-rt2 0xA9410440) 1)
+           (= (insn-rn 0xA9410440) 2)
+           (= (insn-class 0xA9BF7BFD) (class-stp))
+           (= (insn-pair-off 0xA9BF7BFD) (- 0 16)))
+    1 0))
+
+(defn test-record [] :i64
+  (let [r (insn-record 0x8A020020 0)]
+    (if (and (= (vector-count r) 7)
+             (= (vector-at r 0) (class-and-reg))
+             (= (vector-at r 1) 0)
+             (= (vector-at r 2) 1)
+             (= (vector-at r 3) 2)
+             (= (vector-at r 5) (- 0 1)))
+      1 0)))
+
+(defn test-targets [] :i64
+  (let [b (bytes-from-vector-i64 (vector-i64 2 0 0 148 1 0 0 20 0 0 0 84 192 3 95 214))
+        words (words-from-bytes b)
+        t (targets-vector words 0 4)]
+    (if (and (= (vector-at t 0) 8)
+             (= (vector-at t 1) 8)
+             (= (vector-at t 2) 8)
+             (= (vector-at t 3) (- 0 1)))
+      1 0)))
+
+(defn test-listing [] :i64
+  ;; the 4-word program of test-bytes-xrefs, one line per word
+  (let [b (bytes-from-vector-i64 (vector-i64 2 0 0 148 1 0 0 20 0 0 0 84 192 3 95 214))
+        words (words-from-bytes b)
+        nl (string-from-utf8 (bytes-from-vector-i64 (vector-i64 10)))
+        expected (string-concat (string-concat "00000000: 94000002  bl #0x8" nl)
+                  (string-concat (string-concat "00000004: 14000001  b #0x8" nl)
+                    (string-concat (string-concat "00000008: 54000000  b.eq #0x8" nl)
+                      (string-concat "0000000c: d65f03c0  ret" nl))))]
+    (if (string=? (listing-text words 0 4) expected) 1 0)))
