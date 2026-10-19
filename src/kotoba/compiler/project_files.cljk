@@ -112,8 +112,11 @@
       (let [guest-native (filterv #(str/ends-with? (str %) ".kotoba") existing)]
         (if (= 1 (count guest-native))
           (first guest-native)
-          (reject! "namespace resolves from multiple explicit source paths"
-                   {:module namespace}))))))
+          (reject! (str "namespace " namespace " resolves from multiple explicit source paths: "
+                        (str/join ", " (map str existing)))
+                   {:module namespace
+                    :candidates (mapv str existing)
+                    :guest-native (mapv str guest-native)}))))))
 
 ;; A refusal raised while parsing one module's header (a string host import,
 ;; a malformed :require, an unknown clause) is that module's refusal, not the
