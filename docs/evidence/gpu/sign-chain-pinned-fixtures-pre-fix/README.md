@@ -37,7 +37,7 @@ post-fix bytes mid-series would confound exactly the quantity under study
 Before dispatching the pinned probe, run from the worktree root:
 
 ```
-sh scripts/gpu-sign-chain-stage-fixtures.sh
+sh scripts/gpu-sign-chain-stage-fixtures.sh.txt
 ```
 
 It copies these archived bytes over `test/fixtures/gpu/` and verifies all
