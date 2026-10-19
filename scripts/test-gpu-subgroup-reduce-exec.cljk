@@ -286,7 +286,7 @@
         gsrc (.join path tmp (str stem ".kotoba"))
         kexe (.join path tmp (str stem ".kexe"))
         code (.join path tmp (str stem ".bin"))]
-    (.writeFileSync fs gsrc (guest-text spv w n) "utf8")
+    (.writeFileSync fs gsrc (guest-text spv w n (boolean (:rev c))) "utf8")
     (let [{:keys [status out err]} (sh "node" [(.join path root "bin" "amu") "compile" gsrc
                                                 "--target" target "--jvm-free"
                                                 "--policy" (.join path root "test" "fixtures" "gpu" "gpu-compute-policy.edn")
@@ -305,7 +305,7 @@
                 (refuse! "Vulkan is installed but no physical device answers here")
 
                 (nil? hex)
-                {:verdict :trapped :detail (str "the case trapped (exit " (.-status run) "): "
+                {:verdict :trapped :detail (str "the case trapped (exit " (:status run) "): "
                                                 (subs (str (:out run) (:err run)) 0 (min 400 (count (str (:out run) (:err run))))))}
 
                 :else
@@ -327,7 +327,7 @@
 (def cases
   (vec (concat (for [op [:sum :max :min] n [64 50]] {:w 64 :op op :n n})
                (for [op [:sum :max :min]] {:w 256 :op op :n 256})
-               [{:w 256 :op :sum :n 200}])))
+               [{:w 256 :op :sum :n 200} {:w 64 :op :min :n 50 :rev true} {:w 256 :op :min :n 256 :rev true}])))
 (def rungs [:as-emitted :categories :categories+id])
 
 (defn- clean
@@ -357,11 +357,12 @@
                   (case (:verdict res)
                     :ok (do (swap! ran inc)
                             (println (str "GPU-SGRE-EXEC\tCASE\t" label "\tn=" (:n c) "\tOK\tparts[0]=" (:value res)
-                                          "\tbits=" (:bits res))))
+                                          "\tbits=" (:bits res)
+                                          "\tINFO=" (:info res))))
                     :verify-fail (do (swap! ran inc) (swap! failed inc)
                                      (println (str "GPU-SGRE-EXEC\tCASE\t" label "\tn=" (:n c) "\tVERIFY-FAIL\t" (clean (:detail res)))))
-                    (do (swap! not-admitted inc)
-                        (println (str "GPU-SGRE-EXEC\tCASE\t" label "\tn=" (:n c) "\tNOT-ADMITTED\t" (clean (:detail res))))))))))))))
+                    (do (swap! failed inc)
+                        (println (str "GPU-SGRE-EXEC\tCASE\t" label "\tn=" (:n c) "\tCANNOT-EXECUTE\t" (clean (:detail res))))))))))))))
   (println (str "GPU-SGRE-EXEC\tRESULT\tran=" @ran "\tfailed=" @failed "\tnot-admitted=" @not-admitted))
   (cond
     (pos? @failed) (do (println "GPU-SGRE-EXEC\tFAIL\tan executed case did not verify") (js/process.exit 1))
