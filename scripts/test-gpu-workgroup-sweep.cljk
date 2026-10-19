@@ -1,0 +1,297 @@
+#!/usr/bin/env kbb
+;; Workgroup-size sweep on THIS host through the :gpu/compute (wire 42) path:
+;; one kernel, six local sizes (32/64/128/256/512/1024), same total work per
+;; size (2^25 elements), timed by the loader's own submit->fence host clock
+;; (REPLAY nanoseconds, tools/kexe_gpu_vulkan.c). This is a MEASUREMENT tool
+;; for ADR-0355's provisional workgroup rows; what it measures is this
+;; kernel's wall time per size on this device -- not a universal optimum.
+;;
+;; Kernel (declared workload): per element 2 rounds of xorshift mixing over
+;; i*3 + W, one u32 store. Output words 0..3 are read back and checked
+;; against the same mixing computed here, so a run that 'measured' a kernel
+;; that never wrote is a FAIL, not a number.
+;;
+;; Flow (same as scripts/test-gpu-compute.cljk): build the loader with
+;; -DKEXE_GPU_VULKAN, compile one generated .kotoba guest for the host ISA,
+;; extract it, run it with the cap grant; the guest records one dispatch per
+;; size into a kept command buffer and REPLAYs it 8 times (the warm-up SUBMIT
+;; answer is discarded; only the 8 REPLAY timings are counted).
+;;
+;; Three outcomes, three exit codes:
+;;   0  every size ran, every read-back verified; table + FASTEST line printed
+;;   1  it ran but a size failed, a read-back was wrong, or the answer is short
+;;   3  could not run here: no Vulkan headers/loader, no glslangValidator,
+;;      macOS without MoltenVK, or the amu compile itself refused
+;;
+;;   kbb --backend sci scripts/test-gpu-workgroup-sweep.cljk
+(ns test-gpu-workgroup-sweep
+  (:require [kotoba.lang.text :as str]
+            ["node:child_process" :as child]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
+
+(def root (.resolve path (.dirname path *file*) ".."))
+(def tmp (.mkdtempSync fs (.join path (.tmpdir os) "amu-gpu-wgsweep-")))
+(def sweep-ws [32 64 128 256 512 1024])
+;; 2^25 u32 = 128 MiB per buffer. 2D dispatch (32768, 1024/W) keeps every
+;; workgroup count inside the guaranteed Vulkan limit (65535 per dimension)
+;; for every W in the sweep.
+(def n-elems 33554432)
+(def groups-x 32768)
+(def replays-per-w 8)
+
+(defn- sh [cmd args & [env]]
+  (let [child-env (js/Object.assign #js {} (.-env js/process) (clj->js (or env {})))
+        r (child/spawnSync cmd (clj->js args) #js {:encoding "utf8" :env child-env})]
+    {:status (.-status r) :out (str (.-stdout r)) :err (str (.-stderr r))}))
+(defn- refuse! [reason] (println (str "GPU-WORKGROUP-SWEEP\tCOULD-NOT-RUN\t" reason)) (js/process.exit 3))
+(defn- fail! [reason] (println (str "GPU-WORKGROUP-SWEEP\tFAIL\t" reason)) (js/process.exit 1))
+
+(def isa (case (.-arch js/process) "x64" "x86_64" "arm64" "aarch64" (refuse! (str "unsupported host arch " (.-arch js/process)))))
+(def platform (.-platform js/process))
+(def target (str isa (case platform "linux" "-linux" "darwin" "-macos" (refuse! (str "unsupported platform " platform)))))
+
+;; ---- preconditions --------------------------------------------------------
+;; The prefix is DETECTED from the header location, then reused for the link:
+;; forcing /opt/homebrew on an Intel Mac whose Vulkan lives under /usr/local
+;; fails the link even though the precondition above passed.
+(def vulkan-prefix
+  (some (fn [h] (when (.existsSync fs h) (nth (str/split h #"/include/vulkan/vulkan.h") 0)))
+        ["/usr/include/vulkan/vulkan.h" "/usr/local/include/vulkan/vulkan.h" "/opt/homebrew/include/vulkan/vulkan.h"]))
+(when-not vulkan-prefix
+  (refuse! "no vulkan/vulkan.h on this host (apt: libvulkan-dev; macOS: brew install molten-vk vulkan-headers)"))
+(def glslang
+  (let [{:keys [status out]} (sh "sh" ["-c" "command -v glslangValidator"])]
+    (when-not (zero? status)
+      (refuse! "no glslangValidator on this host (apt: glslang-tools; macOS: brew install glslang)"))
+    (str/trimr out)))
+
+;; ---- loader ---------------------------------------------------------------
+;; Compile and link are separate outcomes (same contract as
+;; scripts/test-gpu-devclass.cljk): a compile defect FAILs, while an unlinkable
+;; Vulkan loader library is COULD-NOT-RUN.
+(def loader (.join path tmp "kexe-loader-gpu"))
+(def loader-obj (.join path tmp "kexe-loader-gpu.o"))
+(let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-DKEXE_GPU_VULKAN"
+                                             "-c" (.join path root "tools" "kexe_loader.c") "-o" loader-obj]
+                                            (if (= platform "darwin") [(str "-I" vulkan-prefix "/include")])))]
+  (when-not (zero? status) (fail! (str "the GPU loader does not compile: " (subs err 0 (min 600 (count err)))))))
+(let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" loader-obj "-o" loader]
+                                            (if (= platform "darwin") [(str "-L" vulkan-prefix "/lib")] [])
+                                            ["-lvulkan"]))]
+  (when-not (zero? status)
+    (if (re-find #"(?i)(cannot find -lvulkan|library not found for -lvulkan|unable to find library -lvulkan|vulkan.*not found)" err)
+      (refuse! (str "the Vulkan loader library cannot link here (install MoltenVK/libvulkan): " (subs err 0 (min 300 (count err)))))
+      (fail! (str "the GPU loader does not link: " (subs err 0 (min 600 (count err))))))))
+
+;; ---- kernels: one GLSL source per W, compiled to SPIR-V --------------------
+(defn- kernel-source [w]
+  (str "#version 450\n"
+       "layout(local_size_x = " w ") in;\n"
+       "layout(set = 0, binding = 0, std430) buffer Out { uint dst[]; };\n"
+       "void main() {\n"
+       "  uint i = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * (gl_NumWorkGroups.x * gl_WorkGroupSize.x);\n"
+       "  uint v = i * 3u + " w "u;\n"
+       "  v ^= v << 13; v ^= v >> 17; v ^= v << 5;\n"
+       "  v ^= v << 13; v ^= v >> 17; v ^= v << 5;\n"
+       "  dst[i] = v;\n"
+       "}\n"))
+
+(doseq [w sweep-ws]
+  (let [src (.join path tmp (str "kernel-" w ".comp"))
+        spv (.join path tmp (str "kernel-" w ".spv"))]
+    (.writeFileSync fs src (kernel-source w) "utf8")
+    (let [{:keys [status err]} (sh glslang ["-V" "-S" "comp" src "-o" spv])]
+      (when-not (zero? status)
+        (fail! (str "glslangValidator refused W=" w ": " (subs err 0 (min 400 (count err)))))))))
+
+;; ---- expected read-back: the same mixing, computed here --------------------
+;; node prints the expected 16-byte hex for words 0..3 of a given W. Bit
+;; semantics live in one place (this JS string mirrors the kernel source).
+(defn- expected-hex [w]
+  (let [js (str "function mix(v){for(var r=0;r<2;r++){v=(v^(v<<13))>>>0;v=(v^(v>>>17))>>>0;v=(v^(v<<5))>>>0;}return v>>>0;}"
+                "var s='';for(var i=0;i<4;i++){var v=mix((i*3+" w ")>>>0);for(var b=0;b<4;b++){var by=(v>>>(8*b))&255;s+=('0'+by.toString(16)).slice(-2);}}"
+                "process.stdout.write(s);")
+        {:keys [status out]} (sh "node" ["-e" js])]
+    (when-not (zero? status) (fail! "node -e expected-hex failed"))
+    (str/trimr out)))
+
+;; ---- answer parsing (pure; self-tested below) -----------------------------
+;; The guest answers "INFO|stage|stage|..." where each stage is "W ns ... hex",
+;; but the wire-42 INFO answer is ITSELF "<device>|<api>|<maxWgX>|<unified>"
+;; and contains three '|'. An earlier parser of this script split the whole
+;; answer on '|' and demanded 1 + (count sweep-ws) fields, which the INFO
+;; answer alone broke. Splitting on '|' is still fine as long as stage fields
+;; are CLASSIFIED, not position-guessed: a stage field is exactly
+;; "W ns .. ns hex" with W in the sweep, replays-per-w decimal timings and a
+;; 32-hex read-back; everything before the first stage field is INFO and is
+;; re-joined verbatim. A wrong parse cannot silently pass: the stage fields
+;; must be the trailing ones in sweep order AND every read-back is checked
+;; against expected-hex.
+(defn- stage-field? [f]
+  (let [toks (filterv #(not (str/blank? %)) (str/split f #"\s+"))]
+    (and (= (count toks) (+ replays-per-w 2))
+         (boolean (some #(= (first toks) %) (map str sweep-ws)))
+         (every? #(re-matches #"\d+" %) (subvec toks 1 (inc replays-per-w)))
+         (boolean (re-matches #"[0-9a-f]{32}" (nth toks (inc replays-per-w)))))))
+
+(defn- parse-answer [answer]
+  (let [fields (str/split answer #"\|")
+        n (count sweep-ws)
+        idxs (filterv #(stage-field? (nth fields %)) (vec (range (count fields))))]
+    (when-not (and (= n (count idxs))
+                   (= idxs (vec (range (- (count fields) n) (count fields)))))
+      (throw (js/Error. (str "answer has " (count fields) " |-fields; stage fields at " idxs
+                             ", want " n " trailing"))))
+    {:info (str/join "|" (subvec fields 0 (first idxs)))
+     :stage-fields (subvec fields (first idxs))}))
+
+;; parser self-test: the exact bug shape (INFO answer carrying its own '|')
+;; plus one synthetic stage per sweep entry, and one structurally broken
+;; answer that must be refused.
+(let [hex32 (apply str (repeat 32 "a"))
+      fake (str "Fake Device|1.3.296|1024|1"
+                (str/join "" (map (fn [w] (str "|" w " 12 3 4 5 6 7 8 9 " hex32)) sweep-ws)))
+      {:keys [info stage-fields]} (parse-answer fake)]
+  (when-not (= info "Fake Device|1.3.296|1024|1")
+    (fail! (str "parser self-test: INFO mangled: " info)))
+  (when-not (= (count stage-fields) (count sweep-ws))
+    (fail! (str "parser self-test: " (count stage-fields) " stages, want " (count sweep-ws))))
+  (when-not (try (parse-answer "Fake Device|1.3.296|1024|1|32 1") false (catch :default _ true))
+    (fail! "parser self-test: a short answer was not refused")))
+
+;; ---- the generated .kotoba guest, as data ---------------------------------
+;; The guest is built as s-expressions and printed by `prs` -- paren balance
+;; is by construction. One stage per W: ALLOC -> PIPELINE -> BEGINK ->
+;; DISPATCH (32768, 1024/W) -> SUBMIT (warm-up, discarded) -> 8 x REPLAY (the
+;; timed submits) -> DROP -> READ words 0..3 -> FREE. Nested single-binding
+;; lets on purpose: the floor fixture sequences side effects that way; a
+;; multi-binding let order is not something to measure a GPU on. The guest
+;; answers "INFO|W ns... hex|W ns... hex|...".
+(defn- prs [form]
+  (cond
+    (string? form) (str "\"" form "\"")
+    (or (symbol? form) (keyword? form) (number? form)) (str form)
+    (vector? form) (str "[" (str/join " " (map prs form)) "]")
+    (seq? form) (str "(" (str/join " " (map prs form)) ")")
+    :else (str form)))
+
+(defn- g-let [bindings body]
+  (reduce (fn [acc [sym expr]] (list 'let [sym expr] acc)) body (reverse bindings)))
+
+(defn- g-concat-all [names]
+  (cond
+    (empty? names) ""
+    (empty? (rest names)) (first names)
+    :else (list 'string-concat (first names) (list 'string-concat "|" (g-concat-all (rest names))))))
+
+(defn- g-stage-body [w]
+  (let [spv (.join path tmp (str "kernel-" w ".spv"))
+        groups-y (quot n-elems (* w groups-x))]
+    (g-let [['o (list 'gpu "ALLOC 134217728")]
+            ['p (list 'gpu (list 'string-concat "PIPELINE " (list 'string-concat spv " 1")))]
+            ['req (list 'string-concat "DISPATCH " (list 'string-concat 'p (list 'string-concat " " (list 'string-concat (str groups-x) (list 'string-concat " " (list 'string-concat (str groups-y) (list 'string-concat " 1 " 'o)))))))]]
+      (list 'do
+            (list 'gpu "BEGINK 0")
+            (list 'gpu 'req)
+            (list 'gpu "SUBMIT")
+            (g-let [['rs (list 'replays replays-per-w "")]]
+              (list 'do
+                    (list 'gpu "DROP 0")
+                    (g-let [['rd (list 'gpu (list 'string-concat "READ " (list 'string-concat 'o " 0 16")))]]
+                      (list 'do
+                            (list 'gpu (list 'string-concat "FREE " 'o))
+                            (list 'string-concat (str w) (list 'string-concat " " (list 'string-concat 'rs (list 'string-concat " " 'rd))))))))))))
+
+;; ---- the guest, printed ---------------------------------------------------
+(def guest-text
+  (str/join "\n"
+    [(prs '(ns gpu.wgsweep (:export [main])))
+     (prs '(defn gpu [r :string] :string (typed-cap-call :gpu/compute :string :string r)))
+     (prs '(defn replays [n :i64 acc :string] :string
+              (if (< n 1) acc (replays (- n 1) (string-concat acc (string-concat " " (gpu "REPLAY 0")))))))
+     (str/join "\n"
+       (map (fn [w]
+              (prs (list 'defn (symbol (str "stage-" w)) [] :string (g-stage-body w))))
+            sweep-ws))
+     (prs (list 'defn 'main [] :string
+            (g-let (cons ['i0 (list 'gpu "INFO")]
+                         (map (fn [w] [(symbol (str "s" w)) (list (symbol (str "stage-" w)))]) sweep-ws))
+                   (g-concat-all (cons 'i0 (map (fn [w] (symbol (str "s" w))) sweep-ws))))))]))
+
+;; ---- compile + run the guest (same flow as test-gpu-compute.cljk) ----------
+(let [src (.join path tmp "gpu-workgroup-sweep.kotoba")
+      _ (.writeFileSync fs src guest-text "utf8")
+      kexe (.join path tmp "sweep.kexe")
+      code (.join path tmp "sweep.bin")
+      {:keys [status out err]} (sh "node" [(.join path root "bin" "amu") "compile" src
+                                           "--target" target "--jvm-free"
+                                           "--policy" (.join path root "test" "fixtures" "gpu" "gpu-compute-policy.edn")
+                                           "--output" kexe])]
+  (when-not (and (zero? status) (str/includes? out ":ok true"))
+    (refuse! (str "amu compile refused the sweep guest (source kept at " src "): "
+                  (subs (str out err) 0 (min 400 (count (str out err)))))))
+  (let [r (sh "node" [(.join path root "bin" "amu") "extract-native" kexe "--symbol" "main" "--output" code])
+        m (re-find #":offset (\d+)" (:out r))]
+    (when-not m (fail! (str "extract-native gave no offset: " (:out r))))
+    (let [offset (second m)
+          run (sh loader [code offset "0" isa "42"] {"KEXE_RESULT_TYPE" "string" "KEXE_STRUCTURED_REPORT" "1" "KEXE_WALL_SECONDS" "300"})
+          hex (second (re-find #":result-utf8-hex \"([0-9a-f]+)\"" (:out run)))]
+      ;; Device-init unavailability is the run that could not measure, not the
+      ;; run that measured and failed: a missing/incompatible ICD (e.g.
+      ;; VK_ERROR_INCOMPATIBLE_DRIVER on macOS without a usable MoltenVK ICD),
+      ;; no physical device, or no compute queue family are all exit 3.
+      (when (and (nil? hex)
+                 (re-find #"(no Vulkan physical device|no compute queue|vkCreateInstance|vkEnumeratePhysicalDevices|vkCreateDevice|VK_ERROR_INCOMPATIBLE_DRIVER|VK_ERROR_INITIALIZATION_FAILED)"
+                          (str (:out run) (:err run))))
+        (refuse! (str "Vulkan is installed but no usable device answers here: "
+                      (subs (str (:out run) (:err run)) 0 (min 300 (count (str (:out run) (:err run))))))))
+      (when (str/includes? (:err run) "no Vulkan physical device")
+        (refuse! "Vulkan is installed but no physical device answers here"))
+      (when-not hex
+        (fail! (str "sweep guest did not answer a string (exit " (:status run) "): "
+                    (subs (str (:out run) (:err run)) 0 (min 400 (count (str (:out run) (:err run))))))))
+      (let [answer (.toString (js/Buffer.from hex "hex") "utf8")
+            {:keys [info stage-fields]}
+            (try (parse-answer answer)
+                 (catch :default e
+                   (fail! (str (.-message e) ": " answer))))]
+        (when (str/blank? info) (fail! "the INFO stage answered empty"))
+        (println (str "GPU-WORKGROUP-SWEEP\tINFO\t" info "\t" target))
+        ;; parse + verify each stage: "W ns ns ... hex"
+        (let [rows
+              (map-indexed
+                (fn [idx field]
+                  (let [toks (filterv #(not (str/blank? %)) (str/split field #"\s+"))
+                        w (nth sweep-ws idx)
+                        answer-w (first toks)
+                        hex-read (last toks)
+                        ns-strings (subvec toks 1 (dec (count toks)))
+                        ns-vals (mapv #(js/parseInt % 10) ns-strings)
+                        expected (expected-hex w)]
+                    (when-not (= answer-w (str w))
+                      (fail! (str "stage " idx " answers W=" answer-w ", expected " w)))
+                    (when-not (= (count ns-vals) replays-per-w)
+                      (fail! (str "W=" w " has " (count ns-vals) " timings, expected " replays-per-w ": " field)))
+                    (when (some #(js/Number.isNaN %) ns-vals)
+                      (fail! (str "W=" w " timing is not decimal: " field)))
+                    (when-not (= hex-read expected)
+                      (fail! (str "W=" w " read-back " hex-read " != expected " expected " (kernel did not write what it claims)")))
+                    (let [sorted (vec (sort ns-vals))
+                          n (count sorted)
+                          median (if (odd? n) (nth sorted (quot n 2))
+                                          (quot (+ (nth sorted (dec (quot n 2))) (nth sorted (quot n 2))) 2))]
+                      {:w w :min (first sorted) :max (last sorted) :median median :samples ns-vals})))
+                stage-fields)]
+          (doseq [r rows]
+            (println (str "GPU-WORKGROUP-SWEEP\tOK\t" (:w r)
+                          "\tmedian=" (:median r) "\tmin=" (:min r) "\tmax=" (:max r)
+                          "\tn=" (count (:samples r)) "\tverify=ok")))
+          (let [best (apply min-key :median rows)
+                tied (filterv #(= (:median %) (:median best)) rows)]
+            (println (str "GPU-WORKGROUP-SWEEP\tFASTEST\t" (:w best) "\t" (:median best) " ns"
+                          (if (> (count tied) 1)
+                            (str "\ttied-with=" (str/join "," (map :w (remove #(= (:w %) (:w best)) tied))))
+                            ""))))
+          (js/process.exit 0))))))
