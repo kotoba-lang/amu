@@ -27,7 +27,16 @@ and binding on every future row):
    most, and a portable kernel that runs is worth more than an error.
 2. **Semantics preservation.** A variant groups the same admitted elements in
    a different order: f32 `:sum` may differ in the low bits across variants;
-   `:max`/`:min` are order-independent and must agree bit-for-bit.
+   `:max`/`:min` are order-independent and must agree bit-for-bit **within the
+   ordinary-value domain: non-NaN payloads and no negative zeros**. Floating-point
+   `max`/`min` are not bitwise order-independent over NaN payloads or signed
+   zeros -- regrouping may select a different NaN payload or zero sign -- so this
+   rule is claimed only for admitted inputs that exclude both (normative for
+   `:max`/`:min` kernels: f32 buffer values must be non-NaN and not -0.0), unless
+   an implementation canonicalizes (NaN -> one canonical qNaN, -0.0 -> +0.0
+   before the reduce) and tests the canonicalized regime. Until either exclusion
+   or canonicalization is implemented and tested, bit-for-bit agreement is scoped
+   to the ordinary domain and the exceptional-value behavior is UNMEASURED.
 3. **Emission admission first.** A variant is selected only for a target the
    emitter admits it for. A variant that cannot be emitted is never selected;
    implementing a row means adding its emission before (or together with) its
@@ -37,7 +46,22 @@ and binding on every future row):
    hardware measurement replaces the basis text of that row. Nothing in this
    table is optimization evidence until then.
 5. **Determinism.** Same (vendor, kir) in, same map out, forever -- the table
-   adds no nondeterminism to ADR-0002's byte-identical artifact regime.
+   adds no nondeterminism to ADR-0002's byte-identical artifact regime. With
+   variant selection, the regeneration input of the sealed artifact is
+   `(kir, target, variant)`: the selected variant is recorded in the seal, and
+   the verifier at `accelerator.cljk:117-135` regenerates with it. Artifacts
+   sealed before this rule are verifiable only in the baseline regime (their
+   code was generated without a variant choice). A variant-dependent artifact
+   whose seal lacks the variant fails verification -- the variant is never
+   inferred from the code.
+6. **Device capability, not vendor identity.** A vendor row's predicate holds
+   only on a device that exposes the subgroup capability the variant needs:
+   the Vulkan path queries the subgroup properties (subgroup size and the
+   supported stages/operations for the reduce) and requires a subgroup size
+   that divides `W`; the WGSL path treats subgroups as the optional feature
+   they are. Vendor identity and `W >= 32` alone never establish this -- a
+   device without the feature, or with a subgroup larger than `W`, answers
+   `:baseline` (rule 1: total, no throw).
 
 ## Rows
 
