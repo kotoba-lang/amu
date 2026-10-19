@@ -70,17 +70,20 @@
         (xo-shdr 1 1 6 0 text-off tlen 0 0 16 0)
         (xo-shdr 7 1 3 0 data-off 80 0 0 8 0)
         (xo-shdr 13 4 0x40 0 rela-off 24 4 1 8 24)
-        (xo-shdr 24 2 0 0 sym-off 72 5 1 8 24)
+        (xo-shdr 24 2 0 0 sym-off 72 5 2 8 24)
         (xo-shdr 32 3 0 0 str-off str-len 0 0 1 0)
         (xo-shdr 40 3 0 0 shstr-off 50 0 0 1 0)
         (xg-out-code 1)
         (xg-out 0 8) (xg-out fuel 8) (xg-out 0 8) (xg-out 0 8)
         (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
         (xg-out 0 8) (xg-out 0 8)
-        (xg-out 3 8) (xg-out 8589934594 8) (xg-out -4 8)
+        ;; The context symbol is LOCAL (P1 review): two objects linked into
+        ;; one kernel must not collide on a global `context`, so locals come
+        ;; first (null, context, export) and sh_info names the first global.
+        (xg-out 3 8) (xg-out 4294967298 8) (xg-out -4 8)
         (xo-sym 0 0 0 0 0)
+        (xo-sym (+ n 2) 0x01 2 0 80)
         (xo-sym 1 0x12 1 0 shim)
-        (xo-sym (+ n 2) 0x11 2 0 80)
         (xg-out 0 1) (out-put-span S a b) (xg-out 0 1) (xg-out 0x747865746e6f63 8)
         (xg-out 0x2e00747865742e00 8) (xg-out 0x65722e0061746164 8) (xg-out 0x00747865742e616c 8)
         (xg-out 0x006261746d79732e 8) (xg-out 0x006261747274732e 8) (xg-out 0x617472747368732e 8)

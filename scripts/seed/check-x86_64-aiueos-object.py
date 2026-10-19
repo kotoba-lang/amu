@@ -128,7 +128,7 @@ def prepare(build, output):
     }
     rows = []
     for name, (source, symbol) in cases.items():
-        extra = ("--fuel", "250000000") if name == "big-fuel" else ("--fuel", "1024")
+        extra = ("--fuel", "3000000000") if name == "big-fuel" else ("--fuel", "1024")
         obj, result = compile_case(name, source, symbol, extra=extra)
         assert result.returncode == 0 and not result.stderr, (name, result.returncode, result.stderr)
         fields = {k.decode(): int(v) for k, v in re_findall(result.stdout)}
