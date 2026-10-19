@@ -2,10 +2,11 @@
 
 Raw logs from `scripts/test-gpu-subgroup-reduce-wsweep.cljk`, 8 verified runs
 (2 per workgroup size) on Apple M1 Max / MoltenVK (Vulkan 1.3.357),
-glslang 11:16.6.0, aarch64-macos, 2026-10-19. Every run verified x[i]=i+1
-and the first four workgroup partials of BOTH reduce arms bit-exact (f32,
-sum W^2*g + W(W-1)/2 + W, g = 0..3) before printing any timing line; all 8
-runs printed `RESULT verified=true`.
+glslang 11:16.6.0, aarch64-macos, 2026-10-19. Every run verified the first
+four input words x[0..3] = 1.0..4.0 (the only x values the harness reads
+back -- `READ hx 0 16`) and the first four workgroup partials of BOTH
+reduce arms bit-exact (f32, sum W^2*g + W(W-1)/2 + W, g = 0..3) before
+printing any timing line; all 8 runs printed `RESULT verified=true`.
 
 Method (the script header is the full text): three interleaved wire-42 arms
 per W -- baseline (the emit-wgsl :reduce :sum stride cascade, ported WGSL ->
@@ -35,6 +36,10 @@ a load-shape artifact.
 One device (Apple M1 Max). No :measured? flag is flipped anywhere in
 kotoba.compiler.accelerator-targets. The Intel (JUN-59) and Mali (JUN-60)
 baseline-vs-variant comparisons need hardware this bot does not have. The
-W=32 and W=64 rows are explicitly NOT algorithm verdicts: at those shapes a
-2^20-lane dispatch is launch-bound on this device and all three arms sit on
-the floor.
+W=32 and W=64 rows are explicitly NOT algorithm verdicts, for different
+reasons: at W=32 a 2^20-lane dispatch is launch-bound on this device and
+all three arms sit on the floor (floor share ~1.0), while at W=64 the
+reduction arms do NOT sit on the floor (floor/baseline 0.8227 / 0.8237,
+floor/variant 0.8307 / 0.8627 -- the reduction arms take ~16-22% longer
+than the near-empty arm) but baseline and variant remain indistinguishable
+from each other, so no algorithm effect is resolvable there either.
