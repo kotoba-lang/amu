@@ -17,7 +17,7 @@ Same-session anchors **n24** and **n32** run in every cycle so the sign call
 for n31 is made against neighbors measured in this session (both anchors
 were measured at this exact grid in PR #1360: clean -20,441 and +4,638).
 3 cycles, cell order rotated (forward, reversed, rotated) via
-`run-sweep-1716.sh`; 9 runs, no retries.
+`run-sweep-1716.sh.txt`; 9 runs, no retries.
 
 ## Provenance
 
@@ -114,7 +114,7 @@ safe rule is unchanged and now quadruply confirmed: keep the baseline tree.
 
 Canonical suite at the worktree root
 (`kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" run-tests.cljk`,
-wrapper `run-gate-1716.sh`), run to completion in this tick (log overwritten
+wrapper `run-gate-1716.sh.txt`), run to completion in this tick (log overwritten
 once after a first wrapper invocation lost its cwd before the suite started;
 the completed run is the only suite run in `gate.log`):
 
