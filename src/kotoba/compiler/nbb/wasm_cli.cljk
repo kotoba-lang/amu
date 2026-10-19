@@ -298,50 +298,59 @@
       (assoc :packages (package-verdict! resolved report)))))
 
 (defn- edn-value
-  "BigInt -> plain EDN integer at print time.
+  "BigInt -> a bare-digit EDN integer at print time.
 
-  The typed KIR (v4) carries i64 bodies as JS BigInt on this route; cljs
-  printing of a BigInt is '#object[BigInt 50052]', which is not EDN and does
-  not round-trip. The shipped artifacts carry plain integers, so that is the
-  canonical spelling. Values outside the exact-integer range of the reader
-  are refused by name rather than printed lossy."
+  The typed KIR carries i64 bodies as JS BigInt on this route; cljs printing
+  of a BigInt is '#object[BigInt 50052]', which is not EDN and does not
+  round-trip. A digits-only symbol prints as the bare digits, which every EDN
+  reader reads back as an integer of the same value — so the FULL signed
+  64-bit range survives (no Number narrowing, no refusal: i64 beyond double
+  is a supported value here, examples/i64-beyond-double.kotoba)."
   [x]
   (if (identical? (type x) js/BigInt)
-    (let [n (js/Number x)]
-      (if (and (= (js/String n) (js/String x)) (<= (js/Math.abs n) js/Number.MAX_SAFE_INTEGER))
-        n
-        (throw (ex-info "kir: integer outside the EDN round-trip range" {:value (js/String x)}))))
+    (symbol (js/String x))
     x))
 
 (defn- kir!
-  "Emit the module's KIR (:kotoba.kir/v4) as EDN text — the precompiled
-  pure-planner artifact product shells ship (murakumo's
-  resources/murakumo/oracle/*.kir.edn is one consumer).
+  "Emit the module's KIR as EDN — the precompiled pure-planner artifact
+  product shells ship (murakumo's resources/murakumo/oracle/*.kir.edn is one
+  consumer).
 
   This is the source -> resolve-hir! -> kotoba.kir/lower -> pretty-print
   route, exactly what the artifact generators did on the nbb/kbb test engine
   (JUN-122: that engine could not reach the compiler at all on one host, and
   the toolchain rule is that generation moves onto the compiler's own CLI
-  routes). The printing follows kotoba_oracle_gen: kotoba.pprint with
+  routes). The file printing follows kotoba_oracle_gen: kotoba.pprint with
   *print-namespace-maps* false, then kotoba.lang.edn/escape-controls — the
   ONE definition of the control-character rule (reimplementing it here would
-  be two that can disagree)."
+  be two that can disagree).
+
+  Without --output the KIR is the RETURN VALUE (the CLI prints exactly one
+  EDN value; printing the text here as well would append the status map and
+  leave two top-level forms). The lowering runs under the policy's oracle
+  fuel like every other compile route, and a consumed package lock is
+  verified against the lowered definitions before anything is emitted —
+  a locked namespace shadowed by a local one must not silently ship."
   [args]
   (let [resolved (project-source/resolve-source! args)
         policy (support/timed "policy-read" #(read-policy! args))
         hir (:value (resolve-hir! (:source resolved)
                                   (project-source/analyze-opts policy (:linked? resolved))
                                   nil))
-        kir (walk/postwalk edn-value (ir/lower hir))
+        em (support/emit-metadata args)
+        kir-raw (ir/lower hir {:oracle-fuel (support/oracle-fuel em policy)})
+        report (definition-identity/describe {:hir hir :kir kir-raw})
+        _ (package-verdict! resolved report)   ;; throws on a lock mismatch, before anything is written
+        kir (walk/postwalk edn-value kir-raw)
+        fmt (or (:format kir) :kotoba.kir/v4)
         text (kedn/escape-controls
               (binding [*print-namespace-maps* false]
                 (with-out-str (pp/pprint kir))))
         output (support/option args "--output")]
     (if output
       (do (io/write-text! output text)
-          {:ok true :format :kotoba.kir/v4 :output output})
-      (do (print text)
-          {:ok true :format :kotoba.kir/v4}))))
+          {:ok true :format fmt :output output})
+      kir)))
 
 (defn- compile-uncached! [args target output source linked? lock-cid]
   (let [policy (support/timed "policy-read" #(read-policy! args))
