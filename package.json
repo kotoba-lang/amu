@@ -2,7 +2,7 @@
   "name": "amu-tooling",
   "private": true,
   "devDependencies": {
-    "@playwright/test": "1.64.0",
+    "@playwright/test": "1.64.1",
     "nbb": "git+https://github.com/kotoba-lang/org-babashka-nbb.git#829f0ba11016e925001d80e51f12848c4ad58112"
   },
   "scripts": {
@@ -21,6 +21,8 @@
     "test-nbb-trust": "node bin/kbb --backend sci --classpath . scripts/test-nbb-trust.cljk",
     "test-nbb-test": "node bin/kbb --backend sci --classpath . scripts/test-nbb-test.cljk",
     "test-nbb-test-manifest": "node bin/kbb --backend sci --classpath . scripts/test-nbb-test-manifest.cljk",
+    "test-re-disasm": "node bin/amu test re_disasm/disasm.kotoba --fuel 5000000 && node bin/amu test re_disasm/x86disasm.kotoba --fuel 5000000",
+    "test-re-disasm-native": "node re_disasm/build-native.mjs",
     "test-nbb-run": "node bin/kbb --backend sci --classpath . scripts/test-nbb-run.cljk",
     "jvm-route-topology": "node bin/kbb --backend sci --classpath . scripts/jvm-route-topology.cljk --probe --output docs/jvm-route-topology.edn",
     "test-nbb-classpath": "node bin/kbb --backend sci --classpath src test/nbb/classpath.cljk",
@@ -97,7 +99,7 @@
     "test-loader-file-scope": "node bin/kbb --backend sci scripts/test-loader-file-scope.cljk"
   },
   "optionalDependencies": {
-    "workerd": "1.20261008.1"
+    "workerd": "1.20261016.1"
   },
   "dependencies": {
     "@noble/hashes": "2.4.0"

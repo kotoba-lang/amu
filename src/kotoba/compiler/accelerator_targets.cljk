@@ -11,8 +11,9 @@
   The functions are TOTAL. An unknown vendor or api answers the documented
   fallback instead of throwing -- dispatch time is where a refusal costs the
   most, and a portable default is honest about what it is."
-  {:kotoba/export [classify-vendor default-target device-class device-classes name-vendor-fragments recommend target-for vendor-ids vendors workgroup-default workgroup-defaults]}
-  (:require [kotoba.lang.text :as str]))
+  {:kotoba/export [classify-vendor default-target device-classes name-vendor-fragments recommend target-for vendor-ids vendors workgroup-default workgroup-defaults]}
+  (:require [kotoba.lang.text :as str]
+            #?(:cljs [kotoba.kir.cljs-i64 :as i64])))
 
 (def vendors
   "The vendors the dispatch table names. :unknown is the deterministic
@@ -20,38 +21,10 @@
   #{:nvidia :apple :intel :arm :amd :unknown})
 
 (def device-classes
-  "The device classes the dispatch table admits. Still reserved as a BRANCH:
-  the v1 table does not branch on device class yet; when a row needs it
-  (discrete vs integrated memory behavior), it lands with the measurement
-  that justifies the branch. What landed first is the REPORTING half: the
-  gpu/compute (wire 42) INFO answer's fifth field carries the device's
-  VkPhysicalDeviceType as one word (discrete|integrated|virtual|cpu|other,
-  tools/kexe_gpu_vulkan.c), and `device-class` turns that word into a keyword
-  here."
-  #{:discrete-gpu :integrated-gpu :virtual-gpu :cpu :other :unknown})
-
-(def ^:private wire-device-class-tokens
-  "INFO answer fifth field -> `device-classes` keyword. The five tokens are
-  the VkPhysicalDeviceType classes as one word; anything else is :unknown,
-  because a wrong specific class is worse than an honest unknown."
-  {"discrete" :discrete-gpu
-   "integrated" :integrated-gpu
-   "virtual" :virtual-gpu
-   "cpu" :cpu
-   "other" :other})
-
-(defn device-class
-  "Normalize one device-class token -- the wire-42 INFO answer's fifth field
-  (a string like \"integrated\"), or a keyword already in `device-classes` --
-  into a `device-classes` keyword. Total: anything unrecognized answers
-  :unknown, never a throw and never a wrong specific class. This is a
-  vocabulary map, not a dispatch decision: `recommend` does not branch on
-  the answer yet (ADR-0355)."
-  [token]
-  (cond
-    (string? token) (get wire-device-class-tokens (str/lower token) :unknown)
-    (and (keyword? token) (contains? device-classes token)) token
-    :else :unknown))
+  "Reserved. The v1 table does not branch on device class yet; when a row
+  needs it (discrete vs integrated memory behavior), it lands with the
+  measurement that justifies the branch."
+  #{:discrete-gpu :integrated-gpu :unknown})
 
 (def vendor-ids
   "PCI vendor ids, as VkPhysicalDeviceProperties.vendorID reports them and as
@@ -79,9 +52,17 @@
 (defn classify-vendor
   "Classify a device descriptor map ({:vendor-id <int>} or {:vendor <name>})
   to a keyword in `vendors`. A :vendor-id match wins over name matching; no
-  match answers :unknown."
+  match answers :unknown.
+
+  The id may arrive as the kotoba reader's BigInt (every integer token is one
+  on the nbb route -- i64 exactness, cli_support), and a BigInt is not `=` to
+  the plain number key, so it is normalised to a compiler-host integer first
+  (capability_names/wire-int pattern). A non-integer id (a string like
+  \"4318\") is NOT coerced: it falls through to name matching or :unknown."
   [device]
-  (let [id (:vendor-id device)
+  (let [id (let [v (:vendor-id device)]
+             #?(:clj v
+                :cljs (if (i64/bigint-value? v) (js/Number v) v)))
         nm (:vendor device)]
     (or (get vendor-ids id)
         (when (string? nm)
@@ -118,21 +99,27 @@
     :else (default-target vendor)))
 
 (def workgroup-defaults
-  "PROVISIONAL and UNMEASURED (ADR-0355). One workgroup size per vendor: a
-  power of two within ADR-0002's [1, 1024] bound that is a multiple of the
-  vendor's published execution width. These are design defaults, not tuning
-  results -- no caller may cite them as optimization evidence."
-  {:nvidia {:size 256 :execution-width 32
-            :basis "warp width 32; 256 is 8 warps per workgroup"}
-   :apple {:size 256 :execution-width 32
-           :basis "SIMD-group width 32"}
-   :intel {:size 128 :execution-width 32
-           :basis "subgroup width 8/16/32; 128 is a multiple of all three"}
-   :arm {:size 128 :execution-width 16
+  "Per-vendor workgroup rows (ADR-0355). The rows hardware answered for are
+  MEASURED (2026-10-19, ADR-0358) and carry :measured? true; :arm and
+  :unknown stay provisional. :measured? says a hardware measurement chose
+  this size -- nothing more. The measurements are one workload shape
+  (2^20-thread f32 ewise FMA, 256 FMAs per thread, submit->fence host clock,
+  paired runs) and are not a claim of optimality for every kernel."
+  {:nvidia {:size 256 :execution-width 32 :measured? true
+            :basis "warp width 32; 256 is 8 warps per workgroup"
+            :evidence "2026-10-19 Xavier nvgpu, 6 paired runs: 128-1024 flat within 2%, 32 is 22% slower; 256 kept inside the flat band"}
+   :apple {:size 256 :execution-width 32 :measured? true
+           :basis "SIMD-group width 32"
+           :evidence "2026-10-19 Apple M1 Max / MoltenVK, 16 paired runs: 32-1024 medians within ~5% and no size won more than 6/16; 256 kept as the most frequent paired winner"}
+   :intel {:size 128 :execution-width 32 :measured? true
+           :basis "subgroup width 8/16/32; 128 is a multiple of all three"
+           :evidence "2026-10-19 BMG G31 / ANV, 6 paired runs: 32-256 flat within 2% (64 won 4/6 on noise-level margins), 512/1024 marginally slower; 128 kept as the subgroup-safe row inside the flat band"}
+   :arm {:size 128 :execution-width 16 :measured? false
          :basis "Mali execution widths 4-32 all divide 128"}
-   :amd {:size 256 :execution-width 64
-         :basis "wavefront width 64"}
-   :unknown {:size 256 :execution-width 32
+   :amd {:size 1024 :execution-width 64 :measured? true
+         :basis "wavefront width 64; measurement chose the top of the bound"
+         :evidence "2026-10-19 Radeon 680M / RADV, 6 paired runs: 1024 won 5/6 and is 28% faster than the provisional 256 (median 334,528 vs 467,981 ns); 32 slowest"}
+   :unknown {:size 256 :execution-width 32 :measured? false
              :basis "portable fallback"}})
 
 (defn workgroup-default
@@ -145,8 +132,9 @@
   "A deterministic dispatch decision for one device descriptor
   ({:vendor-id | :vendor, optional :api, optional :device-class}). Answers
   {:vendor :target :workgroup-size :execution-width :basis :measured?}.
-  Same descriptor in, same map out, forever -- until a measured row replaces
-  the provisional one and flips :measured? for that vendor."
+  Same descriptor in, same map out, forever. :measured? is the row's: true
+  where a hardware measurement (ADR-0358) chose the size, false while the
+  row is still the provisional design default."
   [device]
   (let [vendor (classify-vendor device)
         row (get workgroup-defaults vendor (workgroup-defaults :unknown))]
@@ -155,4 +143,4 @@
      :workgroup-size (:size row)
      :execution-width (:execution-width row)
      :basis (:basis row)
-     :measured? false}))
+     :measured? (boolean (:measured? row))}))
