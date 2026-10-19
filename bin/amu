@@ -13,6 +13,8 @@ const usage = [
   "       amu check <file.kotoba|file.cljk|file.cljc> [--policy policy.edn] [--jvm-free]",
   "  multi-file (a module declaring (:require [ns :as alias])):",
   "       amu module-lock <entry> --source-path <dir> --blocks <dir>",
+  "       amu gpu-compile <spec.edn> --device <device.edn> [--output <artifact>]",
+  "         # sealed GPU artifact via vendor dispatch (the device picks the target)",
   "       amu compile --module-lock <lock> --blocks <dir> --target <target> --output <file>",
   "       (both halves run without a JDK; add --jvm-free to prove it)",
   "       amu check <entry> --source-path <dir>            # links, emits nothing",
@@ -226,6 +228,7 @@ function nbbNativeEligible(args) {
   return command === "check" || command === "extract-native"
     || command === "definition-cids"
     || command === "module-lock"
+    || command === "gpu-compile"
     || command === "package-manifest" || command === "package-lock"
     || command === "package-fetch"
     || command === "verify-output-set" || command === "sign-output-set"
@@ -246,7 +249,7 @@ function nbbNativeEligible(args) {
 // to the x86-64 / AArch64 driver, which implements only compile and
 // extract-native.
 const targetIndependentCommands = new Set(["check", "definition-cids",
-  "module-lock", "package-manifest", "package-lock", "package-fetch"]);
+  "module-lock", "gpu-compile", "package-manifest", "package-lock", "package-fetch"]);
 
 function nbbEntrypoint(root, args) {
   const command = args[0];
