@@ -110,7 +110,10 @@
   "A (W, lanes, chunks) shape is admissible when: chunks is a positive
   integer; lanes is a positive multiple of L = W*chunks (whole per-workgroup
   tiles); the workgroup count lanes/L is at least 4 (the harness reads back
-  4 partials) and within Vulkan's guaranteed 65535 grid-dim limit; lanes is
+  4 partials) and within Vulkan's guaranteed 65535 grid-dim limit; the
+  fixed 256-lane init kernel's own grid (lanes/256) is within that limit
+  too (it dispatches lanes/256 workgroups, which is NOT the reduce grid
+  and can exceed 65535 on otherwise accepted shapes); lanes is
   a multiple of 256 (the fixed 256-lane init kernel covers the stream
   exactly); and the largest read-back sum stays below 2^24 so every partial
   is an f32-exact integer. Pure; self-tested below."
@@ -124,6 +127,7 @@
         (and groups
              (>= groups 4)
              (<= groups 65535)
+             (<= (quot lanes 256) 65535)
              (zero? (mod lanes 256))
              (< max-sum 16777216))))))
 
@@ -138,7 +142,8 @@
 (when-not (valid-shape? wg n-elems chunks)
   (refuse! (str "shape W=" wg " lanes=" n-elems " chunks=" chunks
                 " is not admissible (lanes a multiple of W*chunks with 4 <= lanes/(W*chunks) <= 65535,"
-                " lanes a multiple of 256, 3*L^2 + L(L+1)/2 < 2^24 for L=W*chunks)")))
+                " lanes/256 <= 65535 for the init kernel grid, lanes a multiple of 256,"
+                " 3*L^2 + L(L+1)/2 < 2^24 for L=W*chunks)")))
 (def per-wg-lanes (* wg chunks))       ;; L: lanes one workgroup reduces
 (def groups-x (quot n-elems per-wg-lanes)) ;; reduce workgroups (<= 65535)
 (def init-x (quot n-elems 256))        ;; init kernel grid (256-lane init)
@@ -482,7 +487,10 @@
                (valid-shape? 256 1048576 1) (valid-shape? 32 2097152 2))
   (fail! "shape self-test: an admissible shape was refused"))
 (doseq [[w l c] [[64 2097152 3] [32 2097152 1] [64 2097151 1] [64 0 1] [64 -2097152 4]
-                 [256 2097152 32] [64 128 1] [64 2097152 0] [64 2097152 256]]]
+                 [256 2097152 32] [64 128 1] [64 2097152 0] [64 2097152 256]
+                 ;; the init grid (lanes/256) can exceed 65535 while the
+                 ;; reduce grid stays legal: both must be refused (review).
+                 [256 20480000 8] [64 142571520 34]]]
   (when (valid-shape? w l c)
     (fail! (str "shape self-test: an inadmissible shape passed: W=" w " lanes=" l " chunks=" c))))
 ;; index round(f*(n-1)): n=8 -> q25 index 2 -> 3, q75 index 5 -> 6
@@ -761,6 +769,12 @@
                       "\torder=alternating(012,210)\tsamples=" (count samples)))
         (println (str "GPU-SGRE-CHUNK\tVERIFY\tx=ok\tparts-baseline=ok\tparts-variant=ok\tparts-floor=ok"
                       "\t(sum L^2*g + L(L+1)/2, L=W*chunks, g=0..3, bit-exact)"))
+        ;; ---- the raw observations, persisted (review: the aggregates
+        ;; alone cannot be re-analyzed -- paired ratios, quartiles, outliers
+        ;; and alternative noise rules all need the 96 raw samples) --------
+        (println (str "GPU-SGRE-CHUNK\tSAMPLES\tn=" (count samples)
+                      "\torder=sample-index(arm-idx parity-alternating 012,210; round-major)\tns"
+                      "\t" (str/join " " (map #(.toFixed (js/Number. %) 0) samples))))
         ;; ---- the timing table -------------------------------------------
         (let [{:keys [arms speedup gap floor-base floor-var]} (analyze samples)]
           (doseq [[a nm] (map-indexed vector arm-names)]
