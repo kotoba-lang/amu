@@ -281,6 +281,13 @@ static int kgpu_init(void) {
      Vulkan 1.2 headers (JetPack 5.1.2) this whole block is compiled out. */
   kgpu.sync2 = 0;
   void *device_next = NULL;
+  /* KEXE_GPU_BARRIER_TRACKED: opt every dispatch out of the explicit barrier and
+     let the driver's own hazard tracking order them. Barrier elision does not
+     depend on synchronization2, so this check must stay OUTSIDE the 1.3 block —
+     review finding on this PR: it was nested there and silently ignored under
+     Vulkan 1.2 headers / sub-1.3 devices. Only sound where the driver guarantees
+     resource hazard tracking (Metal does; ANV/RADV/panvk must leave it unset). */
+  if (getenv("KEXE_GPU_BARRIER_TRACKED") != NULL) kgpu.barrier_none = 1;
 #if defined(VK_VERSION_1_3)
   VkPhysicalDeviceSynchronization2Features sync2 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES };
   VkPhysicalDeviceFeatures2 feats2 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &sync2 };
@@ -288,7 +295,6 @@ static int kgpu_init(void) {
   if (props.apiVersion >= VK_API_VERSION_1_3) {
     vkGetPhysicalDeviceFeatures2(kgpu.physical, &feats2);
     if (sync2.synchronization2 && getenv("KEXE_GPU_BARRIER_LEGACY") == NULL) { kgpu.sync2 = 1; device_next = &want_sync2; }
-  if (getenv("KEXE_GPU_BARRIER_TRACKED") != NULL) { kgpu.barrier_none = 1; kgpu.sync2 = 0; }
   }
 #endif
   VkDeviceCreateInfo di = { .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .pNext = device_next,
