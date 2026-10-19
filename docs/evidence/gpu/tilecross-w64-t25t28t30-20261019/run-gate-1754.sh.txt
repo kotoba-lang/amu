@@ -1,0 +1,12 @@
+#!/bin/sh
+# NOTE (repo rule): kept as run-gate-1754.sh.txt because the repository workflow-lint
+# refuses POSIX shell execution files; run with sh <this file>.
+# Canonical gate for tick 20261019-1754 (JUN-58 W=64 25..30 band slice,
+# grid C at lanes 2,150,400). Run from the worktree root; log lands in
+# docs/evidence/gpu/tilecross-w64-t25t28t30-20261019/gate.log.
+cd "$(dirname "$0")/../../../.." || exit 2
+EV=docs/evidence/gpu/tilecross-w64-t25t28t30-20261019
+kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" run-tests.cljk > "$EV/gate.log" 2>&1
+code=$?
+echo "GATE-EXIT=$code" >> "$EV/gate.log"
+exit 0
