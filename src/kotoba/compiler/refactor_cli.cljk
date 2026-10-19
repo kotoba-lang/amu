@@ -835,6 +835,117 @@
                       :edn (count (filter #(= :edn (:kind %)) rows))}}
      :status (if (and check? (seq pending)) 1 0)}))
 
+;; ---- to-kotoba on the Kotoba route (S6.1): the conversion over the cst twin -----------------------------
+;;
+;; The same mechanical conversion as the host reading, over the cst twin's node records and the
+;; capability I/O route (fs/app-data for reads, nbb-io/write-text! for writes). One input file per
+;; invocation on this route (the host's directory walk is `fs/browse`, not wired here yet);
+;; --check converts and answers without writing. A refusal is an answer string, never a throw.
+;;
+;; Shape rules this respects (measured): no forward refs (helpers first, self-recursion only),
+;; `string-concat` binary, `string-substring` in UTF-8 bytes, and a `loop`'s bound names plus
+;; captured outers capped at 5 by the guest ABI -- so every walk threads a `:g/ctx` record instead
+;; of capturing the source and children.
+
+#?(:kotoba
+   (defn- g-flag-value [args [:list :string] flag :string] :string
+     (option-value-of [:option :string] (support/option args flag) "")))
+
+#?(:kotoba
+   (defn- g-value-flag? [flag :string] :bool
+     (or (string=? flag "--out") (string=? flag "--data-name") (string=? flag "--ns"))))
+
+#?(:kotoba
+   (defn- g-dash-dash? [a :string] :bool
+     (and (> (string-byte-length a) 1) (string=? (string-substring a 0 2) "--"))))
+
+#?(:kotoba
+   (defn- g-positional [args [:list :string] i :i64] :string
+     (if (>= i (vector-count args))
+       ""
+       (let [a (typed-list-nth [:list :string] args i)]
+         (if (g-dash-dash? a)
+           (g-positional args (+ i (if (g-value-flag? a) 2 1)))
+           a)))))
+
+#?(:kotoba
+   (defn- g-ends-with? [s :string suffix :string] :bool
+     (let [ls (string-byte-length s) lx (string-byte-length suffix)]
+       (and (>= ls lx) (string=? (string-substring s (- ls lx) ls) suffix)))))
+
+#?(:kotoba
+   (defn- g-stem-of [path :string i :i64 slash :i64 dot :i64] :string
+     (let [n (string-byte-length path)]
+       (if (>= i n)
+         (string-substring path (+ slash 1) (if (> dot (+ slash 1)) dot n))
+         (let [c (string-code-point-at path i)]
+           (cond
+             (= c 47) (g-stem-of path (+ i 1) (+ i 1) (+ i 1))
+             (= c 46) (g-stem-of path (+ i 1) slash i)
+             :else (g-stem-of path (+ i 1) slash dot)))))))
+
+#?(:kotoba
+   (defn- g-name-ok? [s :string i :i64] :bool
+     (let [n (string-byte-length s)]
+       (cond
+         (= n 0) false
+         (>= i n) true
+         :else (let [c (string-code-point-at s i)]
+                 (if (or (and (>= c 48) (<= c 57)) (and (>= c 65) (<= c 90)) (and (>= c 97) (<= c 122))
+                         (= c 45) (= c 46) (= c 95))
+                   (if (and (= i 0) (>= c 48) (<= c 57)) false (g-name-ok? s (+ i 1)))
+                   false))))))
+
+#?(:kotoba
+   (defn- g-literal-atom? [n [:ref :cst/node]] :bool
+     (and (= (cst/node-type n) :sym)
+          (let [t (cst/node-text n)]
+            (or (string=? t "true") (string=? t "false") (string=? t "nil"))))))
+
+#?(:kotoba
+   (defn- g-find-branch [bs [:list [:ref :cst/branch]] k :string i :i64] [:ref :cst/node]
+     (if (>= i (vector-count bs))
+       (cst/nil-node)
+       (let [b (typed-list-nth [:list [:ref :cst/branch]] bs i)]
+         (if (string=? (cst/branch-key b) k)
+           (cst/branch-form b)
+           (g-find-branch bs k (+ i 1)))))))
+
+#?(:kotoba
+   (defn- g-rc-arm [n [:ref :cst/node]] [:ref :cst/node]
+     (let [bs (cst/rc-branches n)
+           k (g-find-branch bs ":kotoba" 0)]
+       (if (cst/nil-node? k) (g-find-branch bs ":default" 0) k))))
+
+#?(:kotoba
+   (defn- g-splice-arm? [arm [:ref :cst/node]] :bool
+     (let [t (cst/node-type arm)]
+       (or (= t :list) (= t :vec) (= t :map) (= t :set) (= t :fnlit)))))
+
+#?(:kotoba
+   (defn- g-resolve-node [src :string n [:ref :cst/node] s :i64 e :i64] :string
+     (if (= (cst/node-type n) :rc)
+       (let [arm (g-rc-arm n)]
+         (cond
+           (cst/nil-node? arm) ""
+           (cst/node-splice? n) (g-resolve-node src arm (+ (cst/node-s arm) 1) (- (cst/node-e arm) 1))
+           :else (g-resolve-node src arm (cst/node-s arm) (cst/node-e arm))))
+       (let [kids (cst/node-kids n) count (vector-count kids)]
+         (if (= count 0)
+           (string-substring src s e)
+           (let [ctx (record-new [:ref :g/ctx] src kids s e)]
+             (loop [i 0 cursor s acc ""]
+               (if (>= i (vector-count (record-get [:ref :g/ctx] ctx :kids)))
+                 (string-concat acc (string-substring (record-get [:ref :g/ctx] ctx :src)
+                                                      cursor (record-get [:ref :g/ctx] ctx :e)))
+                 (let [k (typed-list-nth [:list [:ref :cst/node]] (record-get [:ref :g/ctx] ctx :kids) i)]
+                   (recur (+ i 1) (cst/node-e k)
+                          (string-concat acc
+                                         (string-concat (string-substring (record-get [:ref :g/ctx] ctx :src)
+                                                                          cursor (cst/node-s k))
+                                                        (g-resolve-node (record-get [:ref :g/ctx] ctx :src) k
+                                                                        (cst/node-s k) (cst/node-e k))))))))))))))
+
 ;; ---- list-rules -----------------------------------------------------------------------------------------------------
 
 (defn- list-rules []
