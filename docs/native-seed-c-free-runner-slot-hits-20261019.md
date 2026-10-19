@@ -126,6 +126,10 @@ Recorded as a dependency on JUN-29, not worked around.
   slots (the measured union) + the v9/v10 data slots.
 * The remaining 18 function slots can be denied (`SIGILL`/`SIGTRAP` as the
   loader does) unless a later workload proves them reachable.
-* Next open measurement (unchanged): enumerate data-slot reads in the emitters
-  (static) and design the kernel-profile runner slice admission
-  (receipt binding runner/compiler/source-graph/output hashes).
+* Next open measurement: enumerate data-slot reads in the emitters
+  (static) — **done, see `native-seed-c-free-runner-data-slots-20261019.md`**
+  (aarch64 inline set: version@0=11, fuel@8, 288, 296, 312, 320, 328, 384,
+  392; `pair_validated_base`@304 has zero inline readers; the x86-64 `7x`
+  path reads only fuel@8 inline). The kernel-profile runner slice admission
+  receipt binding (runner/compiler/source-graph/output hashes) is specified
+  in the same document §4 (connects JUN-30 / JUN-102).
