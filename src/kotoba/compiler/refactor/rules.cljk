@@ -114,12 +114,18 @@
           (typed-list-conj [:list :string] (typed-list-new [:list :string]) "a") "b") "d") "e") "f")))
 
 #?(:kotoba
+(defn- as-entry [r [:ref :rules/entry]] [:ref :rules/entry] r))
+
+#?(:kotoba
 (defn lookup [s :string] [:ref :rules/entry]
+  ;; 2026-10-19 (sema a7ef280b): `as-entry` on both value branches -- a `typed-list-nth` element and a `record-new`
+  ;; result do not share a value type here ("if branches must have the same value type", measured; both route through
+  ;; one declared return). Behaviour unchanged; the twin's body differs from the kotoba-lang twin by this helper only.
   (let [lib (library)
         n (vector-count lib)]
     (loop [i 0]
-      (cond (>= i n) (record-new [:ref :rules/entry] "" "" "" "" false s)
-            (or (string=? s (entry-id (entries-nth lib i))) (string=? s (entry-name (entries-nth lib i)))) (entries-nth lib i)
+      (cond (>= i n) (as-entry (record-new [:ref :rules/entry] "" "" "" "" false s))
+            (or (string=? s (entry-id (entries-nth lib i))) (string=? s (entry-name (entries-nth lib i)))) (as-entry (entries-nth lib i))
             :else (recur (+ i 1)))))))
 
 ;; clojure.string/split on "," then remove empty: the non-empty pieces in order

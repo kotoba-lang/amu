@@ -82,10 +82,10 @@
 #?(:kotoba
    (defn- g-rule [i :i64] :string
      (let [r (rules/entries-nth (rules/library) i)
-           base (string-concat "{:id " (g-kw (rules/entry-id r))
-                    (string-concat " :name " (g-kw (rules/entry-name r))
-                    (string-concat " :summary " (g-edn-str (rules/entry-summary r))
-                    (string-concat " :host-effect " (g-edn-str (rules/entry-host-effect r))))))]
+           s1 (string-concat "{:id " (g-kw (rules/entry-id r)))
+           s2 (string-concat s1 (string-concat " :name " (g-kw (rules/entry-name r))))
+           s3 (string-concat s2 (string-concat " :summary " (g-edn-str (rules/entry-summary r))))
+           base (string-concat s3 (string-concat " :host-effect " (g-edn-str (rules/entry-host-effect r))))]
        (string-concat base (if (rules/entry-needs-target? r) " :needs-target true}" "}")))))
 
 #?(:kotoba
@@ -129,7 +129,7 @@
               (string-concat (g-kw-list (rules/standard-order))
               (string-concat " :rules "
               (string-concat (g-list-rules)
-              (string-concat " :commands [:list-rules :plan :apply :graph :partition :split :verify :to-kotoba]}")))))))
+              " :commands [:list-rules :plan :apply :graph :partition :split :verify :to-kotoba]}"))))))
 
 #?(:kotoba
    (defn- g-refusal [code :string message :string] :string
