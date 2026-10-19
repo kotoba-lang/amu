@@ -1,0 +1,39 @@
+#!/bin/sh
+# NOTE (repo rule): kept as run-sweep-1152.sh.txt because the repository workflow-lint
+# refuses POSIX shell execution files; run with sh <this file>.
+# ISO-L DIAGONAL SWEEP (JUN-58, tick 20261019-1152): grid B at lanes 2^21,
+# per-workgroup reduce work L = W*chunks = 2048 fixed -> 1024 workgroups.
+# Cells: (W=64,32 tiles) (W=128,16) (W=256,8) + the W=64 1-tile anchor
+# (32,768 wg, reproduces PR #1355's b1). 3 cycles, cell order rotated per
+# cycle (forward, reversed, rotated) to spread host-load drift.
+# Idempotent: a cell whose log already exists is skipped.
+set -e
+TAB=$(printf '\t')
+cd "$(dirname "$0")/../../../.."
+EV=docs/evidence/gpu/isodesc-l2048-20261019
+mkdir -p "$EV"
+
+run() { # cycle cell W chunks
+  log="$EV/run-$1-$2.log"
+  if [ -f "$log" ] && grep -q "RESULT${TAB}verified=true" "$log"; then echo "skip $log"; return 0; fi
+  echo "run $log"
+  (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" 2097152 "$4") > "$log" 2>&1
+  grep -q "RESULT	verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }
+}
+
+# cycle 1: forward
+run 1 iso64-c32    64  32
+run 1 iso128-c16   128 16
+run 1 iso256-c8    256 8
+run 1 anchor-w64-c1 64 1
+# cycle 2: reversed
+run 2 anchor-w64-c1 64 1
+run 2 iso256-c8    256 8
+run 2 iso128-c16   128 16
+run 2 iso64-c32    64  32
+# cycle 3: rotated
+run 3 iso128-c16   128 16
+run 3 iso64-c32    64  32
+run 3 anchor-w64-c1 64 1
+run 3 iso256-c8    256 8
+echo SWEEP-COMPLETE

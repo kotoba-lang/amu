@@ -1,0 +1,128 @@
+;; Native seed extension: x86_64-aiueos-kernel-v1 kernel OBJECT route.
+;; Assemble after 71-x86_64-runtime, before the entry module (72/73). The
+;; adopted 16-module closure, bootstrap and launcher are unchanged.
+;;
+;; Emits the linkable aiueos kernel object ABI that aiueos's fail-closed
+;; `os/aiueos/scripts/verify-kotoba-kernel-object.py` validates: ELF64
+;; ET_REL/EM_X86_64 with no program headers, exactly the seven sections
+;; "" .text .data .rela.text .symtab .strtab .shstrtab, exactly one public
+;; GLOBAL FUNC in .text, one private 80-byte freestanding context in .data,
+;; and exactly one R_X86_64_PC32 addend -4 relocation of the wrapper's
+;; `lea r9,[rip+.data]` against the .data symbol. The wrapper mirrors
+;; kotoba.native.elf64's package-kernel-object shape: load the private
+;; context, replenish the per-call fuel word at context+8, call the local
+;; Kotoba entry, return.
+;;
+;; Boundary (say this, do not round it up): this route emits the object ABI
+;; only. It is not the kernel IMAGE route (boot shim, ISR region, sealed
+;; fuel), it is not the kernel-object entry allowlist or the fuel-tier table
+;; (the public symbol is the source's own single export name and --fuel names
+;; the bound), and no emitted object has run in a kernel. The public symbol is
+;; not silently renamed: the source's export name is the symbol.
+
+;; The wrapper and its one relocation. The context LEA is the only
+;; link-time relocation in the object; the call to the local entry is
+;; patched in-compile like every other call.
+(defn- xo-replenish [M :vector-i64 fuel :i64] :vector-i64
+  (if (<= fuel 2147483647) (xg-bytes (xg-bytes M 0x0841c749 4) fuel 4)
+    (xg-bytes (xg-bytes (xg-bytes M 0xba49 2) fuel 8) 0x0851894d 4)))
+(defn- xo-shim-len [fuel :i64] :i64 (if (<= fuel 2147483647) 29 35))
+(defn- xo-shim [M :vector-i64 fuel :i64 entry :i64] :vector-i64
+  ;; lea r9,[rip+context]; mov qword [r9+8], fuel; sub rsp,8;
+  ;; call entry; add rsp,8; ret.
+  (-> M (xg-bytes 0x0d8d4c 3) (xg-bytes 0 4) (xo-replenish fuel)
+      (xg-bytes 0x08ec8348 4) (xg-rel 0xe8 1 1 entry)
+      (xg-bytes 0x08c48348 4) (xg-byte 0xc3)))
+
+;; Admission. The scalar profile is the x86_64-linux profile 0 subset with a
+;; different export rule: exactly one exported defn, any name, at most five
+;; scalar parameters, scalar result. `main` carries no special meaning.
+(defn- xo-check-fns [M :vector-i64 S :string f :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= f (vector-at M MM-FN-N))) M
+    (let [kind (xg-f M f FF-KIND) n (xg-f M f FF-NPARAMS) sym (xg-f M f FF-SYM)
+          sb (+ MM-SYM-BASE (* sym MM-SYM-W)) a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
+      (cond (= kind FK-DEF) (xo-check-fns M S (inc f))
+            (or (not (or (= kind FK-DEFN) (= kind FK-PRIV)))
+                (< n 0) (> n 5) (not (xg-types M f 0 n)) (not (xg-type M (xg-f M f FF-RTYPE)))
+                (<= (xg-f M f FF-SIR) 0) (> (xg-frame M f) 4096)) (xg-refuse-fn M S f a b)
+            (= (xg-f M f FF-EXPORT) 1)
+              (if (not= (xg-get M 1) 0) (xg-err M 7102 f) (xo-check-fns (xg-set M 1 f) S (inc f)))
+            :else (xo-check-fns M S (inc f))))))
+
+;; ELF64 ET_REL emission. Layout: header, seven section headers, .text,
+;; .data (the private 80-byte context), .rela.text (one entry), .symtab
+;; (null, public export, context), .strtab, .shstrtab.
+(defn- xo-shdr [M :vector-i64 name :i64 type :i64 flags :i64 addr :i64 off :i64 size :i64 link :i64 info :i64 align :i64 entsize :i64] :vector-i64
+  (-> M (xg-out name 4) (xg-out type 4) (xg-out flags 8) (xg-out addr 8) (xg-out off 8)
+      (xg-out size 8) (xg-out link 4) (xg-out info 4) (xg-out align 8) (xg-out entsize 8)))
+(defn- xo-sym [M :vector-i64 name :i64 info :i64 shndx :i64 value :i64 size :i64] :vector-i64
+  (-> M (xg-out name 4) (xg-out info 1) (xg-out 0 1) (xg-out shndx 2) (xg-out value 8) (xg-out size 8)))
+(defn- xo-elf [M :vector-i64 S :string a :i64 b :i64 shim :i64 fuel :i64] :vector-i64
+  (let [n (- b a) tlen (xg-pos M) text-off 512 data-off (+ text-off tlen)
+        rela-off (+ data-off 80) sym-off (+ rela-off 24) str-off (+ sym-off 72)
+        str-len (+ n 10) shstr-off (+ str-off str-len)]
+    (-> M (mem-set MM-OUT-N 1)
+        (xg-out 0x00010102464c457f 8) (xg-out 0 8)
+        (xg-out 1 2) (xg-out 62 2) (xg-out 1 4) (xg-out 0 8) (xg-out 0 8) (xg-out 64 8)
+        (xg-out 0 4) (xg-out 64 2) (xg-out 0 2) (xg-out 0 2) (xg-out 64 2) (xg-out 7 2) (xg-out 6 2)
+        (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
+        (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
+        (xo-shdr 1 1 6 0 text-off tlen 0 0 16 0)
+        (xo-shdr 7 1 3 0 data-off 80 0 0 8 0)
+        (xo-shdr 13 4 0x40 0 rela-off 24 4 1 8 24)
+        (xo-shdr 24 2 0 0 sym-off 72 5 2 8 24)
+        (xo-shdr 32 3 0 0 str-off str-len 0 0 1 0)
+        (xo-shdr 40 3 0 0 shstr-off 50 0 0 1 0)
+        (xg-out-code 1)
+        (xg-out 0 8) (xg-out fuel 8) (xg-out 0 8) (xg-out 0 8)
+        (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
+        (xg-out 0 8) (xg-out 0 8)
+        ;; The context symbol is LOCAL (P1 review): two objects linked into
+        ;; one kernel must not collide on a global `context`, so locals come
+        ;; first (null, context, export) and sh_info names the first global.
+        (xg-out 3 8) (xg-out 4294967298 8) (xg-out -4 8)
+        (xo-sym 0 0 0 0 0)
+        (xo-sym (+ n 2) 0x01 2 0 80)
+        (xo-sym 1 0x12 1 0 shim)
+        (xg-out 0 1) (out-put-span S a b) (xg-out 0 1) (xg-out 0x747865746e6f63 8)
+        (xg-out 0x2e00747865742e00 8) (xg-out 0x65722e0061746164 8) (xg-out 0x00747865742e616c 8)
+        (xg-out 0x006261746d79732e 8) (xg-out 0x006261747274732e 8) (xg-out 0x617472747368732e 8)
+        (xg-out 0x0062 2))))
+
+(defn- xo-report [M :vector-i64 path :string out :string] :i64
+  (let [e (vector-at M MM-ERR)]
+    (cond (and (> e 0) (< e 7100)) (drv-fail M path)
+          (> e 0) (let [w (io-err (string-concat "seed-x86_64-aiueos-object: E" (string-concat (mem-u2dec e)
+                            (string-concat " unsupported object profile or code limit; detail "
+                              (string-concat (mem-u2dec (vector-at M MM-ERR-N)) "\n")))))] 1)
+          :else (let [n (dec (vector-at M MM-OUT-N)) written (out-write-v M out (+ MM-OUT-BASE 1) n)
+                      w (io-out (string-concat "{:ok true, :target :x86_64-aiueos-kernel-v1, :format :elf64-rel, :text-bytes "
+                               (string-concat (mem-u2dec (xg-pos M))
+                                 (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))]
+                  (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))
+
+(defn- xo-build [M :vector-i64 S :string fuel :i64] :vector-i64
+  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0) (xo-check-fns S 1) (xg-check-sir 1))]
+    (cond (not= (vector-at admitted MM-ERR) 0) admitted
+          (= (xg-get admitted 1) 0) (xg-err admitted 7102 0)
+          (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
+          :else (let [f (xg-get admitted 1) sym (xg-f admitted f FF-SYM)
+                      sb (+ MM-SYM-BASE (* sym MM-SYM-W))
+                      a (vector-at admitted (+ sb SF-START)) b (vector-at admitted (+ sb SF-END))
+                      generated (-> admitted (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
+                                    (xg-index-labels 1) (xo-shim fuel f) (xg-code 1))]
+                  (xo-elf (xg-fix generated 1) S a b (xo-shim-len fuel) fuel)))))
+
+(defn- xo-source [S :string path :string out :string fuel :i64] :i64
+  (let [text (string-concat S (ck-r6b-lib S)) front (xg-front text)]
+    (if (= (vector-at front MM-ERR) 0) (xo-report (xo-build front text fuel) path out) (drv-fail front path))))
+
+(defn- xo-command [] :i64
+  (let [n (io-argc) src (io-arg 1) out (io-arg 5)
+        fuel (if (= n 8) (xg-budget (io-arg 7)) 1000000)]
+    (cond (or (not (or (= n 6) (= n 8))) (not (string=? (io-arg 4) "--output"))
+              (and (= n 8) (not (string=? (io-arg 6) "--fuel"))) (< fuel 1)
+              (= (string-length out) 0) (= (io-exists out) 1))
+            (let [w (io-err "seed-x86_64-aiueos-object: E7100 expected compile SOURCE --target x86_64-aiueos-kernel-v1 --output NEW_OBJ [--fuel POSITIVE_BUDGET]\n")] 2)
+          (= (io-exists src) 0) (drv-fail0 E-READ)
+          :else (xo-source (drv-read src) src out fuel))))

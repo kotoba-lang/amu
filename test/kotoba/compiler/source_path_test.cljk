@@ -5,8 +5,8 @@
 
 (deftest source-extensions-select-discovery-not-runtime
   (is (= :kotoba (source-path/source-kind "safe.kotoba")))
-  (is (= :clj-kotoba (source-path/source-kind "safe.cljk")))
-  (is (= :portable-common (source-path/source-kind "safe.cljc")))
+  (is (= :kotoba-syntax-sugar (source-path/source-kind "safe.cljk")))
+  (is (= :kotoba-compat-syntax (source-path/source-kind "safe.cljc")))
   (doseq [path ["safe.kotoba" "safe.cljk" "safe.cljc"]]
     (testing path (is (= path (source-path/admit! path)))))
   (is (nil? (source-path/source-kind "unsafe.clj")))

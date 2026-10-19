@@ -1,0 +1,194 @@
+(ns kotoba.compiler.runner-seed-test
+  "Measured vectors for the C-free seed runner's run sequence (JUN-29).
+
+  The fixture discipline: the 2026-10-19 x86-64 G1->G2 chain's recorded
+  digests live in ONE place, `kotoba.compiler.runner-bookkeeping-test`
+  (recorded-pin data, not live files). This namespace requires that
+  fixture so the same measured constants are reproduced through the FULL
+  runner sequence here without being copied -- a constant that exists in
+  two places is a constant that will drift.
+
+  The structural checks here are the surface document's measurements as
+  predicates: seccomp tables 11 / 11 / 6, capability wires
+  #{35 37 38 39}, envelopes KEXE_VECTORS=4194304 and siblings, and the
+  phase order map-arenas -> install-sandbox -> pre-entry -> call-guest ->
+  post-run with the guest call gated on admission."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.runner-bookkeeping-test :as measured]
+            [kotoba.compiler.runner-seed :as seed]))
+
+;; ── measured syscall surface (surface doc §2) ─────────────────────────────
+
+(deftest syscall-surface-reproduces-the-measured-tables
+  (is (= 11 (count (:base seed/syscall-surface))))
+  (is (= 11 (count (:fs-scope seed/syscall-surface))))
+  (is (= 6 (count (:app-data seed/syscall-surface))))
+  (is (= {:openat2 437 :faccessat2 439 :renameat 264}
+         (:numbers seed/syscall-surface))
+      "the three numbers the surface document pinned on x86_64")
+  (testing "mmap/mprotect are never admitted; munmap (arena teardown) is base"
+    (is (= [:mmap :mprotect] (:never-admitted seed/syscall-surface)))
+    (is (some #{:munmap} (:base seed/syscall-surface)))
+    (is (not-any? #{:mmap :mprotect}
+                  (concat (:base seed/syscall-surface)
+                          (:fs-scope seed/syscall-surface)
+                          (:app-data seed/syscall-surface)))))
+  (testing "renameat2 is deliberately denied while renameat is admitted"
+    (is (= [:renameat2] (:deliberately-denied seed/syscall-surface)))
+    (is (some #{:renameat} (:app-data seed/syscall-surface)))
+    (is (not-any? #{:renameat2}
+                  (concat (:base seed/syscall-surface)
+                          (:fs-scope seed/syscall-surface)
+                          (:app-data seed/syscall-surface)))))
+  (testing "the per-table names the loader's install_syscall_sandbox admits"
+    (is (= [:write :exit :exit_group :rt_sigreturn :rt_sigprocmask
+            :getpid :gettid :tgkill :munmap :brk :clock_gettime]
+           (:base seed/syscall-surface)))
+    (is (= [:read :open :openat :openat2 :close :lseek :pread64
+            :fstat :newfstatat :access :faccessat2]
+           (:fs-scope seed/syscall-surface)))
+    (is (= [:mkdirat :unlinkat :renameat :fchmod :fsync :getrandom]
+           (:app-data seed/syscall-surface)))))
+
+;; ── capability wires and the sandbox plan ─────────────────────────────────
+
+(deftest compiler-command-wires-are-exactly-35-37-38-39
+  (is (= #{35 37 38 39} seed/compiler-command-capabilities))
+  (is (= {35 :fs/app-data 37 :io/write 38 :cli/args 39 :io/write-error}
+         seed/capability-names)))
+
+(deftest sandbox-plan-decomposes-like-the-measured-grants
+  (is (= 11 (get-in (seed/sandbox-plan #{}) [:counts :total]))
+      "no fs scope: base only")
+  (is (= 22 (get-in (seed/sandbox-plan #{34}) [:counts :total]))
+      "a non-app-data fs scope adds the 11 fs-scope calls")
+  (is (= 28 (get-in (seed/sandbox-plan #{35}) [:counts :total]))
+      ":fs/app-data adds base 11 + fs-scope 11 + app-data 6")
+  (let [plan (seed/sandbox-plan seed/compiler-command-capabilities)]
+    (is (= 28 (get-in plan [:counts :total])))
+    (is (= [11 11 6] ((juxt #(get-in % [:counts :base])
+                            #(get-in % [:counts :fs-scope])
+                            #(get-in % [:counts :app-data]))
+                      plan)))
+    (is (= [35 37 38 39] (:capabilities plan)))
+    (doseq [call [:openat2 :faccessat2 :renameat :write :munmap]]
+      (is (some #{call} (:allow plan)) (str call " must be admitted")))
+    (doseq [call [:mmap :mprotect :renameat2]]
+      (is (not-any? #{call} (:allow plan)) (str call " must not be admitted")))
+    (is (= (:allow plan) (vec (sort (:allow plan))))
+        "allow is delivered sorted, one spelling")))
+
+(deftest sandbox-plan-refuses-everything-outside-the-served-surface
+  (doseq [caps [#{42} #{20} #{43} #{35 37 38 39 42} #{36}]]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"outside the served surface"
+                          (seed/sandbox-plan caps))
+        (str "refused: " (pr-str caps))))
+  (doseq [caps [[35 37] nil 42 "35"]]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"must be a set of guest integers"
+                          (seed/sandbox-plan caps))
+        (str "refused: " (pr-str caps)))))
+
+;; ── measured arena envelopes ──────────────────────────────────────────────
+
+(deftest arena-plan-reproduces-the-measured-envelopes
+  (is (= {:kexe-vectors 4194304
+          :kexe-vector-items 134217728
+          :kexe-string-pool 268435456
+          :kexe-pairs 16777216
+          :launch-stack-bytes 1048576
+          :loader-stack-reserve-bytes 524288}
+         seed/resource-envelopes))
+  (let [plan (seed/arena-plan)]
+    (is (:before-sandbox plan)
+        "every arena is mapped before the sandbox: mmap/mprotect are never admitted inside")
+    (is (= [{:region :vectors :count 4194304 :unit :slots}
+            {:region :vector-items :count 134217728 :unit :items}
+            {:region :string-pool :count 268435456 :unit :bytes}
+            {:region :pairs :count 16777216 :unit :slots}]
+           (:regions plan)))
+    (is (= {:launch-bytes 1048576 :loader-reserved-bytes 524288}
+           (:stack plan)))))
+
+;; ── the run sequence, through the measured chain ──────────────────────────
+
+(defn- measured-run-args
+  "The recorded 2026-10-19 chain as `run!` arguments. The guest stub
+  answers the run's own recorded output digest and :ok status."
+  []
+  {:capabilities seed/compiler-command-capabilities
+   :runner {:sha256 measured/runner-sha}
+   :compiler {:sha256 measured/compiler-sha}
+   :source-graph {:entries (measured/entry-maps)}
+   :container {:sha256 measured/container-sha}
+   :pinned-source-graph-sha256 measured/source-graph-sha
+   :expected-container-sha256 measured/container-sha
+   :started-at measured/run-started-at
+   :finished-at measured/run-finished-at
+   :guest-entry (fn [] {:status :ok :output {:sha256 measured/output-sha}})})
+
+(deftest run-reproduces-the-measured-chain-through-the-full-sequence
+  (let [run (seed/run! (measured-run-args))]
+    (is (= seed/phase-order (:phases run)))
+    (is (= measured/admission-sha (get-in run [:admission :admission-sha256])))
+    (is (= measured/receipt-sha (get-in run [:receipt :receipt-sha256])))
+    (is (= measured/contract-sha (get-in run [:receipt :call-site-contract-sha256])))
+    (is (true? (:verified? run)))
+    (is (= :ok (get-in run [:receipt :status])))
+    (is (= 28 (get-in run [:sandbox :counts :total])))))
+
+(deftest run-executes-the-hooks-in-phase-order
+  (let [seen (atom [])
+        run (seed/run! (assoc (measured-run-args)
+                              :map-arenas! (fn [plan]
+                                             (swap! seen conj [:map-arenas (:before-sandbox plan)]))
+                              :install-sandbox! (fn [plan]
+                                                  (swap! seen conj [:install-sandbox
+                                                                    (get-in plan [:counts :total])]))))]
+    (is (= [[:map-arenas true] [:install-sandbox 28]] @seen))
+    (is (= seed/phase-order (:phases run)))))
+
+;; ── fail-closed: the guest is called only after admission ─────────────────
+
+(deftest pre-entry-refusal-never-calls-the-guest
+  (let [called (atom 0)]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not match the pin"
+                          (seed/run!
+                           (assoc (measured-run-args)
+                                  :pinned-source-graph-sha256 measured/sha-sort-trap-sha
+                                  :guest-entry (fn [] (swap! called inc)
+                                                 {:status :ok
+                                                  :output {:sha256 measured/output-sha}}))))
+        "a wrong pin refuses at pre-entry")
+    (is (zero? @called)
+        "the guest entry was never entered -- nothing runs if admission refuses")))
+
+(deftest bad-capability-refuses-before-any-hook
+  (let [seen (atom [])]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"outside the served surface"
+                          (seed/run!
+                           (assoc (measured-run-args)
+                                  :capabilities #{35 37 38 39 42}
+                                  :map-arenas! (fn [_] (swap! seen conj :map))
+                                  :install-sandbox! (fn [_] (swap! seen conj :sandbox))
+                                  :guest-entry (fn [] (swap! seen conj :guest)
+                                                 {:status :ok
+                                                  :output {:sha256 measured/output-sha}})))))
+    (is (= [] @seen)
+        "capability refusal happens at plan time: no arena, no sandbox, no guest")))
+
+(deftest post-run-refuses-a-guest-output-that-is-not-bytes-or-a-digest
+  (let [called (atom 0)]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"strings are not bytes"
+                          (seed/run!
+                           (assoc (measured-run-args)
+                                  :guest-entry (fn [] (swap! called inc)
+                                                 {:status :ok
+                                                  :output {:bytes "not bytes"}})))))
+    (is (= 1 @called)
+        "the guest ran once (that is its contract) but no receipt was sealed")))
+
+(deftest run-refuses-a-non-callable-guest
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must be callable"
+                        (seed/run! (assoc (measured-run-args) :guest-entry :not-a-function)))))
