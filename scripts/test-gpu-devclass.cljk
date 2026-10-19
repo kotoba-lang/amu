@@ -40,10 +40,21 @@
 (when-not (some #(.existsSync fs %) ["/usr/include/vulkan/vulkan.h" "/usr/local/include/vulkan/vulkan.h" "/opt/homebrew/include/vulkan/vulkan.h"])
   (refuse! "no vulkan/vulkan.h on this host (apt: libvulkan-dev; macOS: brew install molten-vk vulkan-headers)"))
 (def loader (.join path tmp "kexe-loader-gpu"))
+(def loader-obj (.join path tmp "kexe-loader-gpu.o"))
+;; Compile and link are separate outcomes: a compile defect is the run that
+;; measured and failed (exit 1), while an unavailable loader LIBRARY is the run
+;; that could not measure (exit 3) -- headers were already checked above, so a
+;; -lvulkan link failure is exactly the "macOS without MoltenVK" case.
 (let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-DKEXE_GPU_VULKAN"
-                                             (.join path root "tools" "kexe_loader.c") "-o" loader]
-                                            (if (= platform "darwin") ["-I/opt/homebrew/include" "-L/opt/homebrew/lib" "-lvulkan"] ["-lvulkan"])))]
-  (when-not (zero? status) (fail! (str "the GPU loader does not build: " (subs err 0 (min 600 (count err)))))))
+                                             "-c" (.join path root "tools" "kexe_loader.c") "-o" loader-obj]
+                                            (if (= platform "darwin") ["-I/opt/homebrew/include"] [])))]
+  (when-not (zero? status) (fail! (str "the GPU loader does not compile: " (subs err 0 (min 600 (count err)))))))
+(let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" loader-obj "-o" loader]
+                                            (if (= platform "darwin") ["-L/opt/homebrew/lib" "-lvulkan"] ["-lvulkan"])))]
+  (when-not (zero? status)
+    (if (re-find #"(?i)(cannot find -lvulkan|library not found for -lvulkan|unable to find library -lvulkan|-lvulkan(: not found)?)|vulkan.*not found" err)
+      (refuse! (str "the Vulkan loader library cannot link here (install MoltenVK/libvulkan): " (subs err 0 (min 300 (count err)))))
+      (fail! (str "the GPU loader does not link: " (subs err 0 (min 600 (count err))))))))
 (def kexe (.join path tmp "probe.kexe"))
 (def code (.join path tmp "probe.bin"))
 (let [{:keys [status out err]} (sh "node" [(.join path root "bin" "amu") "compile" (.join path root "test" "fixtures" "gpu" "gpu-compute-devclass.kotoba")
