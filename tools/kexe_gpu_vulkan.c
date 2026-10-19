@@ -109,6 +109,14 @@ static struct {
   uint32_t max_wg_x;
   int unified_memory;
   int sync2;              /* synchronization2 available and enabled on the device */
+  int barrier_none;       /* KEXE_GPU_BARRIER_TRACKED=1: record NO barrier between
+                             dispatches and rely on the driver's own hazard tracking.
+                             EXPLORATORY, default off: Metal tracks resource hazards
+                             automatically (tracked heaps), so on MoltenVK the explicit
+                             barrier is pure cost (measured 37 us vs 5.45 for DISPATCHC).
+                             The guest's DISPATCHC already opts a single dispatch out;
+                             this opts out globally. Never set on drivers without
+                             guaranteed hazard tracking (ANV/RADV/panvk). */
 } kgpu;
 
 /* ---- answer helpers ------------------------------------------------------ */
@@ -273,6 +281,13 @@ static int kgpu_init(void) {
      Vulkan 1.2 headers (JetPack 5.1.2) this whole block is compiled out. */
   kgpu.sync2 = 0;
   void *device_next = NULL;
+  /* KEXE_GPU_BARRIER_TRACKED: opt every dispatch out of the explicit barrier and
+     let the driver's own hazard tracking order them. Barrier elision does not
+     depend on synchronization2, so this check must stay OUTSIDE the 1.3 block —
+     review finding on this PR: it was nested there and silently ignored under
+     Vulkan 1.2 headers / sub-1.3 devices. Only sound where the driver guarantees
+     resource hazard tracking (Metal does; ANV/RADV/panvk must leave it unset). */
+  if (getenv("KEXE_GPU_BARRIER_TRACKED") != NULL) kgpu.barrier_none = 1;
 #if defined(VK_VERSION_1_3)
   VkPhysicalDeviceSynchronization2Features sync2 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES };
   VkPhysicalDeviceFeatures2 feats2 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &sync2 };
@@ -463,7 +478,7 @@ static int kgpu_record_dispatch(struct kgpu_pipeline *p, uint32_t x, uint32_t y,
                                         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &infos[b] };
   }
   vkUpdateDescriptorSets(kgpu.device, p->bindings, writes, 0, NULL);
-  if (kgpu.recorded > 0 && barrier_before) {
+  if (kgpu.recorded > 0 && barrier_before && !kgpu.barrier_none) {
     /* every dispatch after the first sees the previous one's writes -- unless the
        guest said DISPATCHC, which is its assertion that this dispatch is independent
        of the one before (the .kotoba knows the data flow; the loader does not) */
