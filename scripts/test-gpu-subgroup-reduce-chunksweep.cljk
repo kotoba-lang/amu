@@ -412,21 +412,27 @@
 (defn- analyze
   "Per-arm time stats and the per-round ratio of baseline over variant for
   one run's flat sample vector. Answers {:arms [stats x3 in arm order],
-  :speedup <stats of t(baseline)/t(variant) per round>, :floor-base <stats
+  :speedup <stats of t(baseline)/t(variant) per round>, :gap <stats of the
+  PAIRED per-round t(variant)-t(baseline) differences -- the gap sign must
+  come from paired differences, never from subtracting marginal medians,
+  which can disagree with the paired rounds>, :floor-base <stats
   of t(floor)/t(baseline)>, :floor-var <stats of t(floor)/t(variant)>}."
   [samples]
   (when-not (= (count samples) n-samples)
     (fail! (str "analyze: " (count samples) " samples, want " n-samples)))
-  (let [per-arm (mapv (fn [a] (stats (mapv #(arm-time samples % a) (vec (range n-rounds)))))
+  (let [per-arm (mapv (fn [a] (stats (mapv #(arm-time samples % a) (vec (range n-rounds))))) 
                       (vec (range n-arms)))
         speedup (mapv (fn [r] (/ (* 1.0 (arm-time samples r 0)) (arm-time samples r 1)))
                       (vec (range n-rounds)))
+        gap (mapv (fn [r] (- (arm-time samples r 1) (arm-time samples r 0)))
+                  (vec (range n-rounds)))
         fb (mapv (fn [r] (/ (* 1.0 (arm-time samples r 2)) (arm-time samples r 0)))
                  (vec (range n-rounds)))
         fv (mapv (fn [r] (/ (* 1.0 (arm-time samples r 2)) (arm-time samples r 1)))
                  (vec (range n-rounds)))]
     {:arms per-arm
      :speedup (stats speedup)
+     :gap (stats gap)
      :floor-base (stats fb)
      :floor-var (stats fv)}))
 
@@ -502,6 +508,26 @@
                    (< (get-in flat [:speedup :iqr]) 1e-9))
       (fail! (str "analysis self-test: equal arms gave speedup "
                   (get-in flat [:speedup :med]) " iqr " (get-in flat [:speedup :iqr]))))))
+;; GAP sign comes from the PAIRED per-round differences (review P1): with
+;; 16 rounds of b=1,v=2, 15 rounds of b=100,v=110 and 1 round of b=101,v=1,
+;; the paired median difference is +1 (variant slower in the median paired
+;; round) while the difference of marginal medians is 2-50.5 = -48.5
+;; (variant faster). The gap statistic must answer the PAIRED sign.
+(let [rounds (vec (concat (repeat 16 [1.0 2.0 0.5])
+                          (repeat 15 [100.0 110.0 50.0])
+                          [[101.0 1.0 0.5]]))
+      synth (mapv (fn [j] (let [r (quot j n-arms) a (arm-idx j)]
+                            (nth (nth rounds r) a)))
+                  (vec (range n-samples)))
+      a (analyze synth)
+      paired (get-in a [:gap :med])
+      marginal (- (get-in a [:arms 1 :med]) (get-in a [:arms 0 :med]))]
+  (when-not (pos? paired)
+    (fail! (str "analysis self-test: paired gap " paired ", want positive")))
+  (when-not (neg? marginal)
+    (fail! (str "analysis self-test: marginal gap " marginal ", want negative (fixture must diverge)")))
+  (when-not (< (js/Math.abs (- paired 1.0)) 1e-9)
+    (fail! (str "analysis self-test: paired gap " paired ", want 1.0"))))
 ;; expected sums: the closed form must equal a direct integer sum for the
 ;; four workgroups the harness reads back, at THIS (W, chunks).
 (doseq [g [0 1 2 3]]
@@ -720,7 +746,7 @@
         (println (str "GPU-SGRE-CHUNK\tVERIFY\tx=ok\tparts-baseline=ok\tparts-variant=ok\tparts-floor=ok"
                       "\t(sum L^2*g + L(L+1)/2, L=W*chunks, g=0..3, bit-exact)"))
         ;; ---- the timing table -------------------------------------------
-        (let [{:keys [arms speedup floor-base floor-var]} (analyze samples)]
+        (let [{:keys [arms speedup gap floor-base floor-var]} (analyze samples)]
           (doseq [[a nm] (map-indexed vector arm-names)]
             (let [s (nth arms a)]
               (println (str "GPU-SGRE-CHUNK\tARMTIME\t" nm
@@ -728,8 +754,13 @@
                             "\tmin=" (:rmin s) "\tmax=" (:rmax s) "\tn=" (:n s)
                             "\tns/dispatch=" (.toFixed (/ (:med s) batch) 1)
                             "\tns/element=" (.toFixed (/ (:med s) batch n-elems) 4)))))
+          ;; GAP is the PAIRED per-round median (variant-baseline), not the
+          ;; difference of marginal medians: the two can disagree in sign
+          ;; under noise (review P1), and the paired rounds are what the
+          ;; protocol collects.
           (println (str "GPU-SGRE-CHUNK\tGAP\tvariant-chunked-minus-baseline-chunked"
-                        "\tns/dispatch=" (.toFixed (/ (- (:med (nth arms 1)) (:med (nth arms 0))) batch) 1)))
+                        "\tns/dispatch=" (.toFixed (/ (:med gap) batch) 1)
+                        "\test=paired-median-of-round-differences"))
           (println (str "GPU-SGRE-CHUNK\tSPEEDUP\tbaseline/variant"
                         "\tmedian=" (.toFixed (:med speedup) 4) "\tiqr=" (.toFixed (:iqr speedup) 4)
                         "\tmin=" (.toFixed (:rmin speedup) 4) "\tmax=" (.toFixed (:rmax speedup) 4)
