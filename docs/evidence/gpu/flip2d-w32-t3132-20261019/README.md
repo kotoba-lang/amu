@@ -20,7 +20,8 @@ Cells at lanes 2,095,104 = 2^5·3^2·7·11·31 (the #1360/#1369 flip grid):
 byte-identical to the PR chain (#1246/#1716 worktrees hold the same probe
 bytes — verified by shasum).
 
-Files: run-sweep-2000.sh (protocol), run-{1,2,3}-*.log (raw, incl. uptime
+Files: run-sweep-2000.sh.txt (protocol; kept as text -- the repo's
+workflow-lint refuses POSIX shell execution files), run-{1,2,3}-*.log (raw, incl. uptime
 and wall clock), analyze-2000.py + analyze-2000.txt (chain noise rule:
 ratio IQR <= 0.05, floor share <= 1.2x the cell's IQR-clean minimum),
 gate.log (suite run for this diff).

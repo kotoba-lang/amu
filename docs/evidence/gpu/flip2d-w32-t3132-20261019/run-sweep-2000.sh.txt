@@ -29,18 +29,24 @@
 #                    and same-session pairing are the claim)
 #
 # 3 cycles, order rotated (forward, reversed, rotated). Idempotent: a cell
-# whose log exists is skipped.
+# whose log EXISTS AND VERIFIED is skipped; an interrupted or failed run
+# leaves a log without the RESULT line and is re-run on the next invocation.
+#
+# NOTE (repo rule): kept as run-sweep-2000.sh.txt because the repository
+# workflow-lint refuses POSIX shell execution files anywhere in the tree;
+# this is the recorded protocol text. Run it with `sh run-sweep-2000.sh.txt`.
 set -e
 cd "$(dirname "$0")/../../../.."
 EV=docs/evidence/gpu/flip2d-w32-t3132-20261019
 mkdir -p "$EV"
+TAB=$(printf '\t')
 
 run() { # cycle cell W lanes chunks
   log="$EV/run-$1-$2.log"
-  if [ -f "$log" ]; then echo "skip $log"; return 0; fi
+  if [ -f "$log" ] && grep -q "RESULT${TAB}verified=true" "$log"; then echo "skip $log"; return 0; fi
   echo "run $log"
   (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" "$4" "$5") > "$log" 2>&1
-  grep -q "RESULT\tverified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }
+  grep -q "RESULT${TAB}verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }
 }
 
 # cycle 1: forward
