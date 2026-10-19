@@ -108,7 +108,12 @@ Design decisions taken:
   (`xrefs-edges`), strings and undefined-external (import) symbol
   predicates. All pure vector data. Still open inside M3: reachability-
   refined bounds, PE import-table walk, large-blob windowing for strings.
-- **M4** — x86-64 decoder (Intel SDM; the two-person table discipline above).
+- **M4 (core landed)** — x86-64 decoder (Intel SDM cleanroom, two-person
+  discipline: `docs/x86-64-field-descriptions.md` is the neutral table the
+  implementation reads). Prefix/REX/ModRM/SIB/disp, branches, MOV family,
+  LEA, ALU block + group 1, TEST/XCHG, PUSH/POP, NOP, text rendering.
+  Open inside M4: group 3/5 rows, 0F map beyond 0x1F/0x80+cc, byte-width
+  operand naming edge cases, xrefs/listing integration on x86.
 - **M5** — surfaces: listing/CFG in the mithril web UI (graph-viewer), REPL
   CLI (`bin/re-disasm`), and a `provider=amu` lane in the rea MCP so victim
   workflows can run fully self-hosted without Ghidra/Hopper/IDA.
