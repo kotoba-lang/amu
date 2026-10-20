@@ -198,6 +198,16 @@ gap>noise runs: 0/6
 W=32 grand=1.0019 vs field-grand(median of the other five)=0.9998
 ```
 
+## Effect-estimation method (review note)
+
+The per-size and per-slot figures are UNADJUSTED marginal medians. The six
+offsets make size, slot and process effects identifiable, but a median over
+runs does not separate additive effects (each size sees the same marginal
+sets of slot and process effects in different pairings). A Latin-square
+additive fit (size + slot + process) is the method that separates them;
+until such a fit is recorded, these figures are descriptive summaries, not
+effect estimates.
+
 ## What the six runs say (measured)
 
 - THE W=32 PENALTY FOLLOWS THE SIZE, NOT THE SLOT. W=32 is the slowest row

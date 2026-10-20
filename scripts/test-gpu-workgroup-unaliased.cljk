@@ -2,7 +2,8 @@
 ;; UNALIASED-SLOT workgroup protocol for the COMPUTE-BOUND kernel, on THIS
 ;; host through the :gpu/compute (wire 42) path. Kernel body, buffer/dispatch
 ;; shape, timing loop and ratio statistic are IDENTICAL to
-;; scripts/test-gpu-workgroup-compute.cljk (one kernel per local size W in
+;; scripts/test-gpu-compute.cljk (the committed control; earlier text named the
+;; nonexistent test-gpu-workgroup-compute.cljk) (one kernel per local size W in
 ;; {32, 64, 128, 256, 512, 1024}, 2^25 u32 elements per size, n-mix = 128
 ;; serial register-resident xorshift rounds per element before one u32 write,
 ;; 24 rounds of 6 REPLAYs, alternating within-round order, within-round RATIO
@@ -42,7 +43,7 @@
 ;; the same one-constant change the sweep/ratio/compute branches make for the
 ;; same reason, so those branches merge cleanly).
 ;;
-;; Flow (same as scripts/test-gpu-workgroup-compute.cljk): build the loader
+;; Flow (same as scripts/test-gpu-compute.cljk): build the loader
 ;; with -DKEXE_GPU_VULKAN, compile one generated .kotoba guest for the host
 ;; ISA, extract it, run it with the cap grant. The guest: per size ALLOC ->
 ;; PIPELINE -> BEGINK <slot-of size> -> DISPATCH -> SUBMIT (warm-up,
@@ -74,6 +75,11 @@
 (def root (.resolve path (.dirname path *file*) ".."))
 (def tmp (.mkdtempSync fs (.join path (.tmpdir os) "amu-gpu-wgunaliased-")))
 (def sweep-ws [32 64 128 256 512 1024])
+;; tsu9N: resource-creation order rotates per process (KGPU_SETUP_ROT=0..5),
+;; independently of size, so no size is always first/last in setup. The
+;; size<->slot mapping (slot-of) is unchanged; only creation order rotates.
+(def setup-rot (mod (js/parseInt (or (aget (.-env js/process) "KGPU_SETUP_ROT") "0") 10) (count sweep-ws)))
+(def setup-order (vec (concat (drop setup-rot sweep-ws) (take setup-rot sweep-ws))))
 ;; 2^25 u32 = 128 MiB per buffer, same buffer and dispatch shape as the
 ;; sweep protocols (the kernel body differs: n-mix mixing rounds per
 ;; element). 6 buffers are live at once here (768 MiB total). 2D dispatch
@@ -427,9 +433,10 @@
 
 (defn- setup-bindings* []
   (apply concat
-    (map-indexed
-      (fn [k w]
-        (let [spv (.join path tmp (str "kernel-" w ".spv"))
+    (map
+      (fn [w]
+        (let [k (.indexOf sweep-ws w)
+              spv (.join path tmp (str "kernel-" w ".spv"))
               groups-y (quot n-elems (* w groups-x))
               o (symbol (str "o" k)) p (symbol (str "p" k)) req (symbol (str "req" k))]
           [[o (list 'gpu "ALLOC 134217728")]
@@ -440,17 +447,18 @@
            [(symbol (str "b" k)) (list 'gpu (str "BEGINK " (slot-of k)))]
            [(symbol (str "d" k)) (list 'gpu req)]
            [(symbol (str "s" k)) (list 'gpu "SUBMIT")]]))
-      sweep-ws)))
+      setup-order)))
 
 (defn- teardown-bindings []
   (apply concat
-    (map-indexed
-      (fn [k w]
-        (let [o (symbol (str "o" k))]
+    (map
+      (fn [w]
+        (let [k (.indexOf sweep-ws w)
+              o (symbol (str "o" k))]
           [[(symbol (str "dr" k)) (list 'gpu (str "DROP " (slot-of k)))]
            [(symbol (str "rd" k)) (list 'gpu (list 'string-concat "READ " (list 'string-concat o " 0 16")))]
            [(symbol (str "fr" k)) (list 'gpu (list 'string-concat "FREE " o))]]))
-      sweep-ws)))
+      setup-order)))
 
 (def guest-text
   (str/join "\n"

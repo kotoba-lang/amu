@@ -201,6 +201,18 @@ static int kgpu_make_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemor
   return 0;
 }
 
+static int kgpu_ensure_descriptors(void) {
+  if (kgpu.descriptors == VK_NULL_HANDLE) {
+    VkDescriptorPoolSize psize = { .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                   .descriptorCount = KGPU_MAX_DISPATCHES * KGPU_MAX_BINDINGS * (1 + KGPU_MAX_KEPT) };
+    VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+                                       .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+                                       .maxSets = KGPU_MAX_DISPATCHES * (1 + KGPU_MAX_KEPT), .poolSizeCount = 1, .pPoolSizes = &psize };
+    KGPU_VK(vkCreateDescriptorPool(kgpu.device, &dpi, NULL, &kgpu.descriptors));
+  }
+  return 0;
+}
+
 static int kgpu_init(void) {
   if (kgpu.ready) return 0;
   VkApplicationInfo app = { .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -322,12 +334,10 @@ static int kgpu_init(void) {
   KGPU_VK(vkAllocateCommandBuffers(kgpu.device, &cai, &kgpu.cmd));
   VkFenceCreateInfo fi = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
   KGPU_VK(vkCreateFence(kgpu.device, &fi, NULL, &kgpu.fence));
-  VkDescriptorPoolSize psize = { .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                                 .descriptorCount = KGPU_MAX_DISPATCHES * KGPU_MAX_BINDINGS * (1 + KGPU_MAX_KEPT) };
-  VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-                                     .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-                                     .maxSets = KGPU_MAX_DISPATCHES * (1 + KGPU_MAX_KEPT), .poolSizeCount = 1, .pPoolSizes = &psize };
-  KGPU_VK(vkCreateDescriptorPool(kgpu.device, &dpi, NULL, &kgpu.descriptors));
+  kgpu.descriptors = VK_NULL_HANDLE; /* created lazily at the first descriptor
+    allocation (tsu9Q): INFO-only sessions reserve no pool. The reservation
+    keeps the worst-case bound (1 + KGPU_MAX_KEPT); per-slot lazy sizing is
+    the follow-up and would shrink sessions that use few kept slots. */
   if (kgpu_make_buffer(KGPU_STAGING_BYTES, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                        &kgpu.staging, &kgpu.staging_memory) != 0) return -1;
@@ -369,7 +379,7 @@ static int kgpu_submit_wait(uint64_t *nanoseconds) {
   if (nanoseconds != NULL)
     *nanoseconds = (uint64_t)(t1.tv_sec - t0.tv_sec) * UINT64_C(1000000000) + (uint64_t)(t1.tv_nsec - t0.tv_nsec);
   if (kgpu.sets_in_flight_count > 0) {
-    vkFreeDescriptorSets(kgpu.device, kgpu.descriptors, kgpu.sets_in_flight_count, kgpu.sets_in_flight);
+    if (kgpu.descriptors != VK_NULL_HANDLE) vkFreeDescriptorSets(kgpu.device, kgpu.descriptors, kgpu.sets_in_flight_count, kgpu.sets_in_flight);
     kgpu.sets_in_flight_count = 0;
   }
   return 0;
@@ -471,7 +481,7 @@ static int kgpu_record_dispatch(struct kgpu_pipeline *p, uint32_t x, uint32_t y,
   }
   VkCommandBuffer cmd = kgpu_rec_cmd();
   VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-                                      .descriptorPool = kgpu.descriptors, .descriptorSetCount = 1,
+                                      .descriptorPool = ({ if (kgpu_ensure_descriptors() != 0) return -1; kgpu.descriptors; }), .descriptorSetCount = 1,
                                       .pSetLayouts = &p->set_layout };
   VkDescriptorSet set;
   KGPU_VK(vkAllocateDescriptorSets(kgpu.device, &dai, &set));
@@ -741,7 +751,7 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     if (n != 2 || kgpu_parse_u64(tok[1], &slot) != 0 || slot >= KGPU_MAX_KEPT) return kgpu_fail(out, cap, "DROP <slot 0.." KGPU_SLOT_MAX_S ">");
     if (kgpu.recording) return kgpu_fail(out, cap, "DROP while recording");
     if (!kgpu.kept[slot].live) return kgpu_fail(out, cap, "DROP: slot is not kept");
-    if (kgpu.kept[slot].set_count > 0) vkFreeDescriptorSets(kgpu.device, kgpu.descriptors, kgpu.kept[slot].set_count, kgpu.kept[slot].sets);
+    if (kgpu.kept[slot].set_count > 0 && kgpu.descriptors != VK_NULL_HANDLE) vkFreeDescriptorSets(kgpu.device, kgpu.descriptors, kgpu.kept[slot].set_count, kgpu.kept[slot].sets);
     vkFreeCommandBuffers(kgpu.device, kgpu.pool, 1, &kgpu.kept[slot].cmd);
     kgpu.kept[slot].live = 0;
     kgpu.kept[slot].set_count = 0;
@@ -853,7 +863,7 @@ static void kgpu_shutdown(void) {
   vkUnmapMemory(kgpu.device, kgpu.staging_memory);
   vkDestroyBuffer(kgpu.device, kgpu.staging, NULL);
   vkFreeMemory(kgpu.device, kgpu.staging_memory, NULL);
-  vkDestroyDescriptorPool(kgpu.device, kgpu.descriptors, NULL);
+  if (kgpu.descriptors != VK_NULL_HANDLE) vkDestroyDescriptorPool(kgpu.device, kgpu.descriptors, NULL);
   vkDestroyFence(kgpu.device, kgpu.fence, NULL);
   vkDestroyCommandPool(kgpu.device, kgpu.pool, NULL);
   vkDestroyDevice(kgpu.device, NULL);
