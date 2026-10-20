@@ -1,0 +1,89 @@
+#include <metal_stdlib>
+using namespace metal;
+
+/* kdot_h2_r1.msl — the Q8_0 dot, the NATIVE Metal twin of kdot_h2_r1.comp's
+ * term32 tt==8 path (co-scientist iteration 1, JUN-138). The arithmetic is
+ * the GLSL verbatim: per-thread four-value blocks, two packed half multiplies
+ * summed in f32, the same accumulation order, the same tree reduction shape
+ * (simdgroup reduce + threadgroup partials). ONE threadgroup per output row.
+ * Bindings: 0 Meta, 1 W, 2 X, 3 O, 4 E (unused, kept for interface parity).
+ * Entry name "kmain" is the loader's convention for MSL twins. */
+
+struct Meta {
+  uint rows; uint cols; uint tensor_type; uint positions;
+  uint input_per_expert; uint pad0; uint pad1; uint pad2;
+};
+
+static inline uint w_u32_at(const device uint *weights, uint offset) {
+  uint w0 = weights[offset >> 2u];
+  uint shift = (offset & 3u) * 8u;
+  if (shift == 0u) return w0;
+  uint w1 = weights[(offset >> 2u) + 1u];   // only when the shift needs it (the review-P2 pattern)
+  return (w0 >> shift) | (w1 << (32u - shift));
+}
+static inline float w_half(const device uint *weights, uint offset) {
+  uint w = weights[offset >> 2u];
+  half2 pair = as_type<half2>(w);
+  return (float)(((offset & 2u) != 0u) ? pair.y : pair.x);
+}
+/* the Q8_0 32-value block product, verbatim from term32's tt==8 arm */
+static inline float term8(const device uint *weights, uint wb, uint index, half2 ylo, half2 yhi) {
+  uint bo = wb + (index / 32u) * 34u;
+  uint codes = w_u32_at(weights, bo + 2u + (index & 31u));
+  half2 qlo = half2((half)(int8_t)(codes & 0xFFu), (half)(int8_t)((codes >> 8u) & 0xFFu));
+  half2 qhi = half2((half)(int8_t)((codes >> 16u) & 0xFFu), (half)(int8_t)((codes >> 24u) & 0xFFu));
+  float d = w_half(weights, bo);
+  half2 p0 = qlo * ylo, p1 = qhi * yhi;
+  return d * ((float)p0.x + (float)p0.y + (float)p1.x + (float)p1.y);
+}
+
+kernel void kmain(constant Meta &params        [[buffer(0)]],
+                  const device uint *weights   [[buffer(1)]],
+                  const device float4 *x4      [[buffer(2)]],
+                  device float *outp           [[buffer(3)]],
+                  const device uint *expert_ids [[buffer(4)]],
+                  uint3 wgid  [[threadgroup_position_in_grid]],
+                  uint3 lid   [[thread_position_in_threadgroup]],
+                  uint sgid   [[simdgroup_index_in_threadgroup]],
+                  uint lane   [[thread_index_in_simdgroup]],
+                  uint sgsz   [[threads_per_simdgroup]]) {
+  threadgroup float partial[8];
+  uint t = lid.x;
+  uint row = wgid.x, position = wgid.y;   /* one threadgroup per output row, as gl_WorkGroupID */
+  uint n = params.cols;
+  uint expert = expert_ids[position];
+  uint in_row = ((params.input_per_expert == 1u) ? ((params.pad0 > 1u) ? position / params.pad0 : position) : 0u) + params.pad1;
+  uint index = t * 4u;
+  bool b32 = (params.tensor_type == 8u || params.tensor_type == 2u || params.tensor_type == 1u);
+  uint blocks = b32 ? (n + 255u) / 256u : n / 256u;
+  uint row_bytes = b32 ? ((n + 31u) / 32u) * 34u : blocks * 272u;
+  bool live = row < params.rows && position < params.positions;
+  uint rowbase = (expert * params.rows + row) * row_bytes;
+  float acc0 = 0.0f, acc1 = 0.0f;
+  if (live) {
+    uint xrow = in_row * n + index;
+    uint b = 0u;
+    for (; b + 1u < blocks; b += 2u) {
+      if (b * 256u + index >= n) break;
+      float4 y0 = x4[(xrow + b * 256u) >> 2u];
+      acc0 += term8(weights, rowbase + b * 272u, index, half2(y0.xy), half2(y0.zw));
+      if ((b + 1u) * 256u + index < n) {
+        float4 y1 = x4[(xrow + (b + 1u) * 256u) >> 2u];
+        acc1 += term8(weights, rowbase + (b + 1u) * 272u, index, half2(y1.xy), half2(y1.zw));
+      }
+    }
+    if (b < blocks && b * 256u + index < n) {
+      float4 y0 = x4[(xrow + b * 256u) >> 2u];
+      acc0 += term8(weights, rowbase + b * 272u, index, half2(y0.xy), half2(y0.zw));
+    }
+  }
+  float sg = simd_sum(acc0 + acc1);
+  if (lane == 0) partial[sgid] = sg;
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (live && t == 0u) {
+    float s = 0.0f;
+    uint ns = (63u / sgsz) + 1u;
+    for (uint i = 0u; i < ns; i++) s += partial[i];
+    outp[position * params.rows + row] = s;
+  }
+}

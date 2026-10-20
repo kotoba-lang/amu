@@ -1,0 +1,97 @@
+#include <metal_stdlib>
+using namespace metal;
+
+/* kdot_h2_r1.msl.r4 — the Q8_0 dot with FOUR output rows per threadgroup,
+ * the MSL twin of kdot_h2_r4_q8.comp (JUN-138 iteration 2: the validated
+ * multi-row workgroup class applied to the Metal path). The dot per row is
+ * kdot_h2_r1's term32 tt==8 path verbatim; four independent accumulator
+ * chains and a 4-slot simdgroup reduction. Dispatch grid = ceil(rows/4).
+ * Entry name "kmain". Bindings 0 Meta, 1 W, 2 X, 3 O, 4 E (unused). */
+
+struct Meta {
+  uint rows; uint cols; uint tensor_type; uint positions;
+  uint input_per_expert; uint pad0; uint pad1; uint pad2;
+};
+
+static inline uint w_u32_at(const device uint *weights, uint offset) {
+  uint w0 = weights[offset >> 2u];
+  uint shift = (offset & 3u) * 8u;
+  if (shift == 0u) return w0;
+  uint w1 = weights[(offset >> 2u) + 1u];
+  return (w0 >> shift) | (w1 << (32u - shift));
+}
+static inline float w_half(const device uint *weights, uint offset) {
+  uint w = weights[offset >> 2u];
+  half2 pair = as_type<half2>(w);
+  return (float)(((offset & 2u) != 0u) ? pair.y : pair.x);
+}
+static inline float term8(const device uint *weights, uint wb, uint index, half2 ylo, half2 yhi) {
+  uint bo = wb + (index / 32u) * 34u;
+  uint codes = w_u32_at(weights, bo + 2u + (index & 31u));
+  half2 qlo = half2((half)(int8_t)(codes & 0xFFu), (half)(int8_t)((codes >> 8u) & 0xFFu));
+  half2 qhi = half2((half)(int8_t)((codes >> 16u) & 0xFFu), (half)(int8_t)((codes >> 24u) & 0xFFu));
+  float d = w_half(weights, bo);
+  half2 p0 = qlo * ylo, p1 = qhi * yhi;
+  return d * ((float)p0.x + (float)p0.y + (float)p1.x + (float)p1.y);
+}
+static inline float dot_row(const device uint *weights, const device float4 *x4,
+                            uint rowbase, uint xrow, uint blocks, uint n, uint index) {
+  float acc0 = 0.0f, acc1 = 0.0f;
+  uint b = 0u;
+  for (; b + 1u < blocks; b += 2u) {
+    if (b * 256u + index >= n) break;
+    float4 y0 = x4[(xrow + b * 256u) >> 2u];
+    acc0 += term8(weights, rowbase + b * 272u, index, half2(y0.xy), half2(y0.zw));
+    if ((b + 1u) * 256u + index < n) {
+      float4 y1 = x4[(xrow + (b + 1u) * 256u) >> 2u];
+      acc1 += term8(weights, rowbase + (b + 1u) * 272u, index, half2(y1.xy), half2(y1.zw));
+    }
+  }
+  if (b < blocks && b * 256u + index < n) {
+    float4 y0 = x4[(xrow + b * 256u) >> 2u];
+    acc0 += term8(weights, rowbase + b * 272u, index, half2(y0.xy), half2(y0.zw));
+  }
+  return acc0 + acc1;
+}
+
+kernel void kmain(constant Meta &params        [[buffer(0)]],
+                  const device uint *weights   [[buffer(1)]],
+                  const device float4 *x4      [[buffer(2)]],
+                  device float *outp           [[buffer(3)]],
+                  const device uint *expert_ids [[buffer(4)]],
+                  uint3 wgid  [[threadgroup_position_in_grid]],
+                  uint3 lid   [[thread_position_in_threadgroup]],
+                  uint sgid   [[simdgroup_index_in_threadgroup]],
+                  uint lane   [[thread_index_in_simdgroup]],
+                  uint sgsz   [[threads_per_simdgroup]]) {
+  threadgroup float psum[4][8];
+  uint t = lid.x;
+  uint base_row = wgid.x * 4u;
+  uint position = wgid.y;
+  uint n = params.cols;
+  uint expert = expert_ids[position];
+  uint in_row = ((params.input_per_expert == 1u) ? ((params.pad0 > 1u) ? position / params.pad0 : position) : 0u) + params.pad1;
+  uint index = t * 4u;
+  uint blocks = (n + 255u) / 256u;
+  uint row_bytes = ((n + 31u) / 32u) * 34u;
+  uint xrow = in_row * n + index;
+  float s0 = 0.0f, s1 = 0.0f, s2 = 0.0f, s3 = 0.0f;
+  if (position < params.positions) {
+    if (base_row + 0u < params.rows) s0 = dot_row(weights, x4, (expert * params.rows + base_row + 0u) * row_bytes, xrow, blocks, n, index);
+    if (base_row + 1u < params.rows) s1 = dot_row(weights, x4, (expert * params.rows + base_row + 1u) * row_bytes, xrow, blocks, n, index);
+    if (base_row + 2u < params.rows) s2 = dot_row(weights, x4, (expert * params.rows + base_row + 2u) * row_bytes, xrow, blocks, n, index);
+    if (base_row + 3u < params.rows) s3 = dot_row(weights, x4, (expert * params.rows + base_row + 3u) * row_bytes, xrow, blocks, n, index);
+  }
+  float g0 = simd_sum(s0), g1 = simd_sum(s1), g2 = simd_sum(s2), g3 = simd_sum(s3);
+  if (lane == 0) { psum[0][sgid] = g0; psum[1][sgid] = g1; psum[2][sgid] = g2; psum[3][sgid] = g3; }
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (position < params.positions && t == 0u) {
+    uint ns = (63u / sgsz) + 1u;
+    float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f, a3 = 0.0f;
+    for (uint i = 0u; i < ns; i++) { a0 += psum[0][i]; a1 += psum[1][i]; a2 += psum[2][i]; a3 += psum[3][i]; }
+    if (base_row + 0u < params.rows) outp[position * params.rows + base_row + 0u] = a0;
+    if (base_row + 1u < params.rows) outp[position * params.rows + base_row + 1u] = a1;
+    if (base_row + 2u < params.rows) outp[position * params.rows + base_row + 2u] = a2;
+    if (base_row + 3u < params.rows) outp[position * params.rows + base_row + 3u] = a3;
+  }
+}

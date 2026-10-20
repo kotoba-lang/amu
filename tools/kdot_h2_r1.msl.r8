@@ -1,0 +1,103 @@
+#include <metal_stdlib>
+using namespace metal;
+
+/* kdot_h2_r1.msl.r8 — the Q8_0 dot with EIGHT output rows per threadgroup,
+ * the r4 form generalized (JUN-138 iteration 3: the rows-per-threadgroup
+ * dose-response on the Metal path).
+ * Register note: 8 independent chains; if a compiler spills the r4 form stays. The dot per row is
+ * kdot_h2_r1's term32 tt==8 path verbatim; four independent accumulator
+ * chains and a 4-slot simdgroup reduction. Dispatch grid = ceil(rows/8).
+ * Entry name "kmain". Bindings 0 Meta, 1 W, 2 X, 3 O, 4 E (unused). */
+
+struct Meta {
+  uint rows; uint cols; uint tensor_type; uint positions;
+  uint input_per_expert; uint pad0; uint pad1; uint pad2;
+};
+
+static inline uint w_u32_at(const device uint *weights, uint offset) {
+  uint w0 = weights[offset >> 2u];
+  uint shift = (offset & 3u) * 8u;
+  if (shift == 0u) return w0;
+  uint w1 = weights[(offset >> 2u) + 1u];
+  return (w0 >> shift) | (w1 << (32u - shift));
+}
+static inline float w_half(const device uint *weights, uint offset) {
+  uint w = weights[offset >> 2u];
+  half2 pair = as_type<half2>(w);
+  return (float)(((offset & 2u) != 0u) ? pair.y : pair.x);
+}
+static inline float term8(const device uint *weights, uint wb, uint index, half2 ylo, half2 yhi) {
+  uint bo = wb + (index / 32u) * 34u;
+  uint codes = w_u32_at(weights, bo + 2u + (index & 31u));
+  half2 qlo = half2((half)(int8_t)(codes & 0xFFu), (half)(int8_t)((codes >> 8u) & 0xFFu));
+  half2 qhi = half2((half)(int8_t)((codes >> 16u) & 0xFFu), (half)(int8_t)((codes >> 24u) & 0xFFu));
+  float d = w_half(weights, bo);
+  half2 p0 = qlo * ylo, p1 = qhi * yhi;
+  return d * ((float)p0.x + (float)p0.y + (float)p1.x + (float)p1.y);
+}
+static inline float dot_row(const device uint *weights, const device float4 *x4,
+                            uint rowbase, uint xrow, uint blocks, uint n, uint index) {
+  float acc0 = 0.0f, acc1 = 0.0f;
+  uint b = 0u;
+  for (; b + 1u < blocks; b += 2u) {
+    if (b * 256u + index >= n) break;
+    float4 y0 = x4[(xrow + b * 256u) >> 2u];
+    acc0 += term8(weights, rowbase + b * 272u, index, half2(y0.xy), half2(y0.zw));
+    if ((b + 1u) * 256u + index < n) {
+      float4 y1 = x4[(xrow + (b + 1u) * 256u) >> 2u];
+      acc1 += term8(weights, rowbase + (b + 1u) * 272u, index, half2(y1.xy), half2(y1.zw));
+    }
+  }
+  if (b < blocks && b * 256u + index < n) {
+    float4 y0 = x4[(xrow + b * 256u) >> 2u];
+    acc0 += term8(weights, rowbase + b * 272u, index, half2(y0.xy), half2(y0.zw));
+  }
+  return acc0 + acc1;
+}
+
+kernel void kmain(constant Meta &params        [[buffer(0)]],
+                  const device uint *weights   [[buffer(1)]],
+                  const device float4 *x4      [[buffer(2)]],
+                  device float *outp           [[buffer(3)]],
+                  const device uint *expert_ids [[buffer(4)]],
+                  uint3 wgid  [[threadgroup_position_in_grid]],
+                  uint3 lid   [[thread_position_in_threadgroup]],
+                  uint sgid   [[simdgroup_index_in_threadgroup]],
+                  uint lane   [[thread_index_in_simdgroup]],
+                  uint sgsz   [[threads_per_simdgroup]]) {
+  threadgroup float psum[8][8];
+  uint t = lid.x;
+  uint base_row = wgid.x * 8u;
+  uint position = wgid.y;
+  uint n = params.cols;
+  uint expert = expert_ids[position];
+  uint in_row = ((params.input_per_expert == 1u) ? ((params.pad0 > 1u) ? position / params.pad0 : position) : 0u) + params.pad1;
+  uint index = t * 4u;
+  uint blocks = (n + 255u) / 256u;
+  uint row_bytes = ((n + 31u) / 32u) * 34u;
+  uint xrow = in_row * n + index;
+  float s[8];
+  for (uint k = 0u; k < 8u; k++) s[k] = 0.0f;
+  if (position < params.positions) {
+    for (uint k = 0u; k < 8u; k++) {
+      uint r = base_row + k;
+      if (r < params.rows) s[k] = dot_row(weights, x4, (expert * params.rows + r) * row_bytes, xrow, blocks, n, index);
+    }
+  }
+  for (uint k = 0u; k < 8u; k++) {
+    float g = simd_sum(s[k]);
+    if (lane == 0) psum[k][sgid] = g;
+  }
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (position < params.positions && t == 0u) {
+    uint ns = (63u / sgsz) + 1u;
+    for (uint k = 0u; k < 8u; k++) {
+      uint r = base_row + k;
+      if (r < params.rows) {
+        float a = 0.0f;
+        for (uint i = 0u; i < ns; i++) a += psum[k][i];
+        outp[position * params.rows + r] = a;
+      }
+    }
+  }
+}
