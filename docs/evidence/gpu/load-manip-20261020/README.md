@@ -74,7 +74,7 @@ observed idle floor (which must be re-registered BEFORE dispatch, not after).
   (rules fixed before the first dispatched run).
 - `analyze-manip.txt` — its output, sha256
   `8570bb9937c7f5a2fe199232c66893c3e867a1eec6be1b6216c0c3d3b45a1a4f`.
-- `run-manip.sh` — the dispatch script (arms, burners, order, idempotence,
+- `run-manip.sh.txt` — the dispatch script (arms, burners, order, idempotence,
   attempt preservation), sha256
   `cdb92fa06ece7f5ce3510e4803d3c7a12c5169be3310564611c2477c7b3ccc39`.
 - `run-{1..4}-{w64t31,w64t32}.log` — the 8 verified runs.

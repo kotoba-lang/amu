@@ -71,7 +71,7 @@ parentheses): 6m52s within-session / 11m34s / 12m32s / 12m52s / 13m34s /
 **Probe identity: the chain's pinned bytes, sha256 `3696ca0d…`** (full:
 `3696ca0db0e28c5b41fa5c8551df2ae1302deb190e91722408117a06077ef652`), run as
 `scripts/gpu-subgroup-reduce-chunksweep-pinned-3696ca0d.cljk`,
-shasum-guarded by `run-sweep.sh` before every run. Every retained log
+shasum-guarded by `run-sweep.sh.txt` before every run. Every retained log
 self-printed `fixture=subgroup-reduce-w64-sum.emitted.glsl
 sha256=a25a6931…` (full: `a25a69317b5c5a956279ccc37a5089adb489104a28ed89460b8928889b096254`,
 12/12 machine-checked).
@@ -97,7 +97,7 @@ interruptions (14:21–14:46) coincide with sharply rising host load
 **Analyzer carry.** `analyze-1403.py` carried from `analyze-1346.py` —
 diff machine-checked to exactly five changed line-pairs (carry-source
 line, two-line batch attribution pair, output-filename pair in docstring
-and code); parsing, noise rule and gap label untouched. `run-sweep.sh`
+and code); parsing, noise rule and gap label untouched. `run-sweep.sh.txt`
 body below `set -e` byte-identical to tick 1346's except `EV=`
 (machine-verified). Batch-A copies sha256-machine-checked byte-identical
 to tick 1346's batch-B logs.
@@ -127,5 +127,5 @@ to tick 1346's batch-B logs.
   `8201a81a…` `d06b83a8…` `a94e82f9…` (w64t32 pairs 1–3).
 - `attempt1-*.log` / `attempt2-*.log` / `attempt3-*.log` — the four
   failed/interrupted attempts (bytes preserved, renamed only).
-- `run-sweep.sh`, `analyze-1403.py` / `analyze-1403.txt` — carried probe
+- `run-sweep.sh.txt`, `analyze-1403.py` / `analyze-1403.txt` — carried probe
   driver and analyzer output.
