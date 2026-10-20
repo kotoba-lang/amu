@@ -87,7 +87,7 @@ corrected from 'one flip'). The RATE question needs more
 **Probe identity: the chain's pinned bytes, sha256 `3696ca0d…`** (full:
 `3696ca0db0e28c5b41fa5c8551df2ae1302deb190e91722408117a06077ef652`), run
 as `scripts/gpu-subgroup-reduce-chunksweep-pinned-3696ca0d.cljk` and
-re-verified by `run-sweep.sh`'s shasum guard before any run. Every SHAPE
+re-verified by `run-sweep.sh.txt`'s shasum guard before any run. Every SHAPE
 line self-printed `fixture=subgroup-reduce-w64-sum.emitted.glsl
 sha256=a25a6931…` — the chain's pinned variant-arm bytes.
 
@@ -142,7 +142,7 @@ executed in the scripted rotated order.
 - `run-B-*.log` — this tick's six runs (exit 0, `RESULT verified=true`),
   sha256: `36005df1…` `1d7c107d…` `2d8479f5…` (w64t31 pairs 1–3),
   `8e32db5b…` `edfc86c2…` `e900aad4…` (w64t32 pairs 1–3).
-- `run-sweep.sh` — carried from the 0530 tick's with the header (tick
+- `run-sweep.sh.txt` — carried from the 0530 tick's with the header (tick
   identity, chain-inputs note, base note, gap provenance) updated; the six
   `run` protocol lines are untouched.
 - `analyze-0736.py` / `analyze-0736.txt` — the carried analyzer and its
