@@ -1,0 +1,11 @@
+GPU-SGRE-LOAD	TOOLCHAIN	Glslang Version: 11:16.6.0
+GPU-SGRE-LOAD	INFO	Apple M1 Max|1.3.357|1024|1	aarch64-macos
+GPU-SGRE-LOAD	W	64	fixture=subgroup-reduce-w64-sum.emitted.glsl	sha256=a25a69317b5c5a956279ccc37a5089adb489104a28ed89460b8928889b096254	patch=categories+id
+GPU-SGRE-LOAD	PROTOCOL	rounds=32	batch=512 dispatches/replay	lanes/dispatch=3145728	groups-x=49152	arms=baseline,variant,floor	order=alternating(012,210)	samples=96
+GPU-SGRE-LOAD	VERIFY	x=ok	parts-baseline=ok	parts-variant=ok	parts-floor=ok	(sum W^2*g + W(W-1)/2 + W, g=0..3, bit-exact)
+GPU-SGRE-LOAD	ARMTIME	baseline	median=41560000.0	iqr=674000.0	min=40676000	max=43637000	n=32	ns/dispatch=81171.9	ns/element=0.0258
+GPU-SGRE-LOAD	ARMTIME	variant	median=43672500.0	iqr=447000.0	min=43147000	max=44434000	n=32	ns/dispatch=85297.9	ns/element=0.0271
+GPU-SGRE-LOAD	ARMTIME	floor	median=36902500.0	iqr=539000.0	min=35792000	max=40597000	n=32	ns/dispatch=72075.2	ns/element=0.0229
+GPU-SGRE-LOAD	SPEEDUP	baseline/variant	median=0.9488	iqr=0.0178	min=0.9265	max=0.9821	vs-1.0=below
+GPU-SGRE-LOAD	FLOORSHARE	floor/baseline=0.8890	floor/variant=0.8428
+GPU-SGRE-LOAD	RESULT	verified=true	samples=96

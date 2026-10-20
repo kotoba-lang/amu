@@ -1,0 +1,526 @@
+{
+  "receipt": "jun29-raw-elf-runner-probe.v1",
+  "vehicle": "b",
+  "artifact": {
+    "path": "raw_elf_runner_probe",
+    "sha256": "22b7eb1a39d75836d43f5e83122418a8f60cb914c0897e12f46a39b3b0b4e8f4",
+    "bytes": 252,
+    "format": "elf64",
+    "target": "x86_64-linux",
+    "entry": "0x400078",
+    "code_sha256": "469c555625323976b33b8feedf00d814162720ddeb6b14a7e4f6d56c7b2f6a85"
+  },
+  "runner_slice_binding": {
+    "layout": ":sysv-ctx-v11",
+    "wires": [
+      35,
+      37,
+      38,
+      39
+    ],
+    "vtable_slots": {
+      "cap_call": 48,
+      "pair_new": 56,
+      "pair_first": 64,
+      "pair_second": 72,
+      "string_equal": 112,
+      "string_concat": 120
+    },
+    "fuel_offset": 8,
+    "trap": "ud2"
+  },
+  "source_graph": {
+    "producer": "raw_elf_runner_probe.py (hand-audited byte emitter)",
+    "emitter_sha256": "460d5ae284f6717d9bae26fa9c3a5b2472565b8012adcb47099dcd0099a44975"
+  },
+  "hand_audit_table": [
+    {
+      "off": "0x0",
+      "mnem": "push rbp",
+      "bytes": "55"
+    },
+    {
+      "off": "0x1",
+      "mnem": "mov rbp, rsp",
+      "bytes": "4889e5"
+    },
+    {
+      "off": "0x4",
+      "mnem": "push rbx",
+      "bytes": "53"
+    },
+    {
+      "off": "0x5",
+      "mnem": "push r12",
+      "bytes": "4154"
+    },
+    {
+      "off": "0x7",
+      "mnem": "mov rbx, rdi",
+      "bytes": "4889fb"
+    },
+    {
+      "off": "0xa",
+      "mnem": "xor r12, r12",
+      "bytes": "4d31e4"
+    },
+    {
+      "off": "0xd",
+      "mnem": "mov rax, [rbx+8]",
+      "bytes": "488b4308"
+    },
+    {
+      "off": "0x11",
+      "mnem": "sub rax, 1",
+      "bytes": "4883e801"
+    },
+    {
+      "off": "0x15",
+      "mnem": "mov [rbx+8], rax",
+      "bytes": "48894308"
+    },
+    {
+      "off": "0x19",
+      "mnem": "js trap ; fixed rel8=75 -> trap@102",
+      "bytes": "784b"
+    },
+    {
+      "off": "0x1b",
+      "mnem": "lea rsi, [rip+disp32] ; fixed disp32=85 -> rodata@119",
+      "bytes": "488d3555000000"
+    },
+    {
+      "off": "0x22",
+      "mnem": "mov rdi, rbx",
+      "bytes": "4889df"
+    },
+    {
+      "off": "0x25",
+      "mnem": "call [rdi+0x30]  ; cap_call",
+      "bytes": "ff5730"
+    },
+    {
+      "off": "0x28",
+      "mnem": "add r12, rax",
+      "bytes": "4901c4"
+    },
+    {
+      "off": "0x2b",
+      "mnem": "mov rdi, rbx",
+      "bytes": "4889df"
+    },
+    {
+      "off": "0x2e",
+      "mnem": "call [rdi+0x38]  ; pair_new",
+      "bytes": "ff5738"
+    },
+    {
+      "off": "0x31",
+      "mnem": "add r12, rax",
+      "bytes": "4901c4"
+    },
+    {
+      "off": "0x34",
+      "mnem": "mov rdi, rbx",
+      "bytes": "4889df"
+    },
+    {
+      "off": "0x37",
+      "mnem": "call [rdi+0x40]  ; pair_first",
+      "bytes": "ff5740"
+    },
+    {
+      "off": "0x3a",
+      "mnem": "add r12, rax",
+      "bytes": "4901c4"
+    },
+    {
+      "off": "0x3d",
+      "mnem": "mov rdi, rbx",
+      "bytes": "4889df"
+    },
+    {
+      "off": "0x40",
+      "mnem": "call [rdi+0x48]  ; pair_second",
+      "bytes": "ff5748"
+    },
+    {
+      "off": "0x43",
+      "mnem": "add r12, rax",
+      "bytes": "4901c4"
+    },
+    {
+      "off": "0x46",
+      "mnem": "mov rdi, rbx",
+      "bytes": "4889df"
+    },
+    {
+      "off": "0x49",
+      "mnem": "mov rax, [rdi+0x70]  ; string_equal",
+      "bytes": "488b4770"
+    },
+    {
+      "off": "0x4d",
+      "mnem": "call rax",
+      "bytes": "ffd0"
+    },
+    {
+      "off": "0x4f",
+      "mnem": "add r12, rax",
+      "bytes": "4901c4"
+    },
+    {
+      "off": "0x52",
+      "mnem": "mov rdi, rbx",
+      "bytes": "4889df"
+    },
+    {
+      "off": "0x55",
+      "mnem": "mov rax, [rdi+0x78]  ; string_concat",
+      "bytes": "488b4778"
+    },
+    {
+      "off": "0x59",
+      "mnem": "call rax",
+      "bytes": "ffd0"
+    },
+    {
+      "off": "0x5b",
+      "mnem": "add r12, rax",
+      "bytes": "4901c4"
+    },
+    {
+      "off": "0x5e",
+      "mnem": "mov rax, r12",
+      "bytes": "4c89e0"
+    },
+    {
+      "off": "0x61",
+      "mnem": "pop r12",
+      "bytes": "415c"
+    },
+    {
+      "off": "0x63",
+      "mnem": "pop rbx",
+      "bytes": "5b"
+    },
+    {
+      "off": "0x64",
+      "mnem": "pop rbp",
+      "bytes": "5d"
+    },
+    {
+      "off": "0x65",
+      "mnem": "ret",
+      "bytes": "c3"
+    },
+    {
+      "off": "0x66",
+      "mnem": "ud2",
+      "bytes": "0f0b"
+    },
+    {
+      "off": "0x68",
+      "mnem": "mov rax, [rdi+0x38]  ; tail pair_new",
+      "bytes": "488b4738"
+    },
+    {
+      "off": "0x6c",
+      "mnem": "jmp rax",
+      "bytes": "ffe0"
+    },
+    {
+      "off": "0x6e",
+      "mnem": "xor edi, edi",
+      "bytes": "31ff"
+    },
+    {
+      "off": "0x70",
+      "mnem": "mov eax, 60",
+      "bytes": "b83c000000"
+    },
+    {
+      "off": "0x75",
+      "mnem": "syscall",
+      "bytes": "0f05"
+    }
+  ],
+  "checks": [
+    {
+      "check": "elf.magic",
+      "ok": true,
+      "detail": "7f454c46"
+    },
+    {
+      "check": "elf.class64",
+      "ok": true,
+      "detail": "EI_CLASS=2"
+    },
+    {
+      "check": "elf.lsb",
+      "ok": true,
+      "detail": "EI_DATA=1"
+    },
+    {
+      "check": "elf.type_exec",
+      "ok": true,
+      "detail": "e_type=2"
+    },
+    {
+      "check": "elf.machine_x86_64",
+      "ok": true,
+      "detail": "e_machine=62"
+    },
+    {
+      "check": "elf.entry",
+      "ok": true,
+      "detail": "e_entry=0x400078"
+    },
+    {
+      "check": "elf.phoff",
+      "ok": true,
+      "detail": "e_phoff=64"
+    },
+    {
+      "check": "phdr.pt_load",
+      "ok": true,
+      "detail": "p_type=1"
+    },
+    {
+      "check": "phdr.rx",
+      "ok": true,
+      "detail": "p_flags=5"
+    },
+    {
+      "check": "phdr.covers_code",
+      "ok": true,
+      "detail": "p_offset=0 p_filesz=252 total=252"
+    },
+    {
+      "check": "phdr.entry_inside",
+      "ok": true,
+      "detail": "0x400078 in [0x400000,0x4000fc)"
+    },
+    {
+      "check": "code@0x000 push rbp",
+      "ok": true,
+      "detail": "55"
+    },
+    {
+      "check": "code@0x001 mov rbp, rsp",
+      "ok": true,
+      "detail": "4889e5"
+    },
+    {
+      "check": "code@0x004 push rbx",
+      "ok": true,
+      "detail": "53"
+    },
+    {
+      "check": "code@0x005 push r12",
+      "ok": true,
+      "detail": "4154"
+    },
+    {
+      "check": "code@0x007 mov rbx, rdi",
+      "ok": true,
+      "detail": "4889fb"
+    },
+    {
+      "check": "code@0x00a xor r12, r12",
+      "ok": true,
+      "detail": "4d31e4"
+    },
+    {
+      "check": "code@0x00d mov rax, [rbx+8]",
+      "ok": true,
+      "detail": "488b4308"
+    },
+    {
+      "check": "code@0x011 sub rax, 1",
+      "ok": true,
+      "detail": "4883e801"
+    },
+    {
+      "check": "code@0x015 mov [rbx+8], rax",
+      "ok": true,
+      "detail": "48894308"
+    },
+    {
+      "check": "code@0x022 mov rdi, rbx",
+      "ok": true,
+      "detail": "4889df"
+    },
+    {
+      "check": "code@0x025 call [rdi+0x30]  ; cap_call",
+      "ok": true,
+      "detail": "ff5730"
+    },
+    {
+      "check": "code@0x028 add r12, rax",
+      "ok": true,
+      "detail": "4901c4"
+    },
+    {
+      "check": "code@0x02b mov rdi, rbx",
+      "ok": true,
+      "detail": "4889df"
+    },
+    {
+      "check": "code@0x02e call [rdi+0x38]  ; pair_new",
+      "ok": true,
+      "detail": "ff5738"
+    },
+    {
+      "check": "code@0x031 add r12, rax",
+      "ok": true,
+      "detail": "4901c4"
+    },
+    {
+      "check": "code@0x034 mov rdi, rbx",
+      "ok": true,
+      "detail": "4889df"
+    },
+    {
+      "check": "code@0x037 call [rdi+0x40]  ; pair_first",
+      "ok": true,
+      "detail": "ff5740"
+    },
+    {
+      "check": "code@0x03a add r12, rax",
+      "ok": true,
+      "detail": "4901c4"
+    },
+    {
+      "check": "code@0x03d mov rdi, rbx",
+      "ok": true,
+      "detail": "4889df"
+    },
+    {
+      "check": "code@0x040 call [rdi+0x48]  ; pair_second",
+      "ok": true,
+      "detail": "ff5748"
+    },
+    {
+      "check": "code@0x043 add r12, rax",
+      "ok": true,
+      "detail": "4901c4"
+    },
+    {
+      "check": "code@0x046 mov rdi, rbx",
+      "ok": true,
+      "detail": "4889df"
+    },
+    {
+      "check": "code@0x049 mov rax, [rdi+0x70]  ; string_equal",
+      "ok": true,
+      "detail": "488b4770"
+    },
+    {
+      "check": "code@0x04d call rax",
+      "ok": true,
+      "detail": "ffd0"
+    },
+    {
+      "check": "code@0x04f add r12, rax",
+      "ok": true,
+      "detail": "4901c4"
+    },
+    {
+      "check": "code@0x052 mov rdi, rbx",
+      "ok": true,
+      "detail": "4889df"
+    },
+    {
+      "check": "code@0x055 mov rax, [rdi+0x78]  ; string_concat",
+      "ok": true,
+      "detail": "488b4778"
+    },
+    {
+      "check": "code@0x059 call rax",
+      "ok": true,
+      "detail": "ffd0"
+    },
+    {
+      "check": "code@0x05b add r12, rax",
+      "ok": true,
+      "detail": "4901c4"
+    },
+    {
+      "check": "code@0x05e mov rax, r12",
+      "ok": true,
+      "detail": "4c89e0"
+    },
+    {
+      "check": "code@0x061 pop r12",
+      "ok": true,
+      "detail": "415c"
+    },
+    {
+      "check": "code@0x063 pop rbx",
+      "ok": true,
+      "detail": "5b"
+    },
+    {
+      "check": "code@0x064 pop rbp",
+      "ok": true,
+      "detail": "5d"
+    },
+    {
+      "check": "code@0x065 ret",
+      "ok": true,
+      "detail": "c3"
+    },
+    {
+      "check": "code@0x066 ud2",
+      "ok": true,
+      "detail": "0f0b"
+    },
+    {
+      "check": "code@0x068 mov rax, [rdi+0x38]  ; tail pair_new",
+      "ok": true,
+      "detail": "488b4738"
+    },
+    {
+      "check": "code@0x06c jmp rax",
+      "ok": true,
+      "detail": "ffe0"
+    },
+    {
+      "check": "code@0x06e xor edi, edi",
+      "ok": true,
+      "detail": "31ff"
+    },
+    {
+      "check": "code@0x070 mov eax, 60",
+      "ok": true,
+      "detail": "b83c000000"
+    },
+    {
+      "check": "code@0x075 syscall",
+      "ok": true,
+      "detail": "0f05"
+    },
+    {
+      "check": "slots.call_disp",
+      "ok": true,
+      "detail": "{\"call [rdi+0x30]\": [\"0x25\"], \"call [rdi+0x38]\": [\"0x2e\"], \"call [rdi+0x40]\": [\"0x37\"], \"call [rdi+0x48]\": [\"0x40\"]}"
+    },
+    {
+      "check": "fuel.inline_contract",
+      "ok": true,
+      "detail": "read/sub/write @8 present"
+    },
+    {
+      "check": "trap.ud2",
+      "ok": true,
+      "detail": "ud2@0x66"
+    },
+    {
+      "check": "tail.jmp_rax",
+      "ok": true,
+      "detail": "jmp rax@0x6c"
+    }
+  ],
+  "checks_ok": true
+}

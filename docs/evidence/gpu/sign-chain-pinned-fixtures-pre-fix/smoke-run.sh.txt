@@ -1,0 +1,27 @@
+#!/bin/sh
+# One chain-continuity SMOKE run: the pinned probe (sha256 3696ca0d...) over
+# the STAGED pre-fix fixtures. Proves the sign chain stays executable after
+# the in-place fixture regeneration. NOT a chain datum: a single process,
+# one shape, no pair, no batch -- its timings are retained for provenance
+# only and are not part of any sign series.
+set -e
+cd "$(dirname "$0")/../../../.."
+EV=docs/evidence/gpu/sign-chain-pinned-fixtures-pre-fix
+PROBE=scripts/gpu-subgroup-reduce-chunksweep-pinned-3696ca0d.cljk
+
+# the probe bytes are the chain's or nothing
+echo "3696ca0db0e28c5b41fa5c8551df2ae1302deb190e91722408117a06077ef652  $PROBE" | shasum -a 256 -c - >/dev/null
+
+# stage the chain's pinned pre-fix fixtures (fail-closed on sha mismatch)
+sh scripts/gpu-sign-chain-stage-fixtures.sh.txt
+
+LOG=$EV/smoke-staged-20261020.log
+{
+  echo "SMOKE-RUN -- chain continuity check, NOT A CHAIN DATUM (single process, one shape, no pair)"
+  date
+  uptime
+  kbb --backend sci "$PROBE" 64 2095104 32
+} > "$LOG" 2>&1
+grep -q "RESULT	verified=true" "$LOG" || { echo "UNVERIFIED $LOG" >&2; exit 1; }
+grep -q "sha256=a25a69317b5c5a956279ccc37a5089adb489104a28ed89460b8928889b096254" "$LOG" || { echo "FIXTURE-PIN-MISSING $LOG" >&2; exit 1; }
+echo "SMOKE-OK $LOG"

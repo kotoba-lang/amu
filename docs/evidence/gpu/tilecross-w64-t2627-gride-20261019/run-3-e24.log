@@ -1,0 +1,18 @@
+Mon Oct 19 19:13:29 JST 2026
+19:13  up 5 days,  2:49, 10 users, load averages: 18.91 18.55 21.58
+GPU-SGRE-CHUNK	TOOLCHAIN	Glslang Version: 11:16.6.0
+GPU-SGRE-CHUNK	INFO	Apple M1 Max|1.3.357|1024|1	aarch64-macos
+GPU-SGRE-CHUNK	SHAPE	W=64	chunks=24	wg=1404	lanes=2156544	per-wg-lanes=1536	fixture=subgroup-reduce-w64-sum.emitted.glsl	sha256=a25a69317b5c5a956279ccc37a5089adb489104a28ed89460b8928889b096254	patch=categories+id+chunk-loop
+GPU-SGRE-CHUNK	PROTOCOL	rounds=32	batch=512 dispatches/replay	arms=baseline-chunked,variant-chunked,floor-chunked	order=alternating(012,210)	samples=96
+GPU-SGRE-CHUNK	VERIFY	x=ok	parts-baseline=ok	parts-variant=ok	parts-floor=ok	(sum L^2*g + L(L+1)/2, L=W*chunks, g=0..3, bit-exact)
+GPU-SGRE-CHUNK	ARMTIME	baseline-chunked	median=59036500.0	iqr=1615000.0	min=57342000	max=94998000	n=32	ns/dispatch=115305.7	ns/element=0.0535
+GPU-SGRE-CHUNK	ARMTIME	variant-chunked	median=50249000.0	iqr=27457000.0	min=46835000	max=88750000	n=32	ns/dispatch=98142.6	ns/element=0.0455
+GPU-SGRE-CHUNK	ARMTIME	floor-chunked	median=16374500.0	iqr=2776000.0	min=14235000	max=61648000	n=32	ns/dispatch=31981.4	ns/element=0.0148
+GPU-SGRE-CHUNK	GAP	variant-chunked-minus-baseline-chunked	ns/dispatch=-17163.1
+GPU-SGRE-CHUNK	SPEEDUP	baseline/variant	median=1.1769	iqr=0.3880	min=0.6592	max=2.0284	vs-1.0=indistinguishable-at-this-noise
+GPU-SGRE-CHUNK	FLOORSHARE	floor/baseline=0.2606	floor/variant=0.3040
+GPU-SGRE-CHUNK	RESULT	verified=true	samples=96
+
+real	0m19.483s
+user	0m17.902s
+sys	0m2.204s

@@ -1,0 +1,2127 @@
+(ns re_disasm.disasm
+  (:export [class-unknown class-nop class-ret class-br class-blr class-b class-bl
+            class-bcond class-cbz class-tbz class-adr class-adrp class-movn
+            class-movz class-movk class-add-imm class-sub-imm class-ldr-imm
+            class-str-imm class-svc class-brk class-hlt
+            class-and-reg class-orr-reg class-eor-reg class-ands-reg
+            class-add-reg class-sub-reg class-ldr-reg class-str-reg
+            class-ldp class-stp
+            sext pow2 bor dec-rec match? insn-class insn-imm16 insn-off26 insn-off19 insn-off14
+            insn-adr-imm insn-addsub-imm insn-ldst-off insn-rd insn-rn insn-rt
+            insn-rm insn-rt2 insn-imm6 insn-shift-type insn-pair-off
+            insn-cond insn-op insn-target insn-has-target? mnemonic
+            hex-u hex-s hex8 insn-record insn-text count-class xrefs-count
+            words-from-bytes targets-vector listing-text
+            adrp-add-target literal-targets
+            slot-of reachable-vector function-entries
+            fill-vec insn-branch? block-leaders block-start block-rows
+            cfg-edges
+            prologue? entry-slot? fn-end function-bounds tail-call-edges
+            printable? strings-rows xrefs-edges
+            nlist-undef? elf-sym-undef? pe-sym-undef?
+            macho-symbol-undef? elf-symbol-undef? pe-symbol-undef?
+            test-hints test-exceptions test-branch-uncond test-branch-cond
+            test-branch-register test-adr test-mov test-addsub test-loadstore
+            test-text test-bytes-xrefs
+            test-logical-reg test-addsub-reg test-ldst-reg test-pair
+            test-record test-targets test-listing
+            test-shift-text test-extend-text test-reg31-sf test-tbz-pair-text test-bounds-guards test-mov-ret-ror test-symtab-fixes test-adrp-add-sf test-image-base-mapping test-descent-bounds test-literal
+            test-m3-edges test-m3-reach test-m3-entries test-m3-cfg
+            test-m3-bounds test-m3-strings test-m3-xrefs test-m3-imports
+            test-macho test-elf test-pe test-words-at
+            u16le u32le u64le name8 name-str
+            macho-recognize macho-ncmds macho-cmd-off macho-image-base
+            macho-section-count macho-section-off macho-section-row
+            macho-section-name macho-symbol-count macho-symbol-row
+            macho-symbol-name macho-entry
+            elf-recognize elf-entry elf-image-base elf-section-count
+            elf-section-row elf-section-name elf-symbol-count
+            elf-symbol-row elf-symbol-name
+            pe-recognize pe-lfanew pe-image-base pe-entry pe-section-count
+            pe-section-off pe-section-row pe-section-name pe-symbol-count
+            pe-symbol-row pe-symbol-name
+            section-words put8 put16 put32 put64 put-name8
+            macho-fixture elf-fixture pe-fixture
+            main]))
+
+;; re-disasm -- cleanroom AArch64 disassembler core in Kotoba.
+;;
+;; CLEANROOM PROVENANCE (see README.md):
+;;   Every encoding table below is derived from the public Arm A64 ISA
+;;   reference (Arm ARM), transcribed from the instruction-set specification
+;;   only. No disassembly output, source file, table or test vector from
+;;   Ghidra, IDA, Hopper, radare2, Rizin, Binary Ninja, binutils/objdump,
+;;   Capstone or LLVM was read, copied or paraphrased into this file. The
+;;   test expectations are hand-computed from the spec encodings, not
+;;   captured from another tool's output.
+;;
+;; A64 words are 32 bits; every field extractor below masks the word to
+;; 0xFFFFFFFF first, so a carrier with garbage in the high half still
+;; decodes as the ISA sees it.
+
+;; ---------------------------------------------------------------- classes
+
+(defn class-unknown [] :i64 0)
+(defn class-nop [] :i64 1)
+(defn class-ret [] :i64 2)
+(defn class-br [] :i64 3)
+(defn class-blr [] :i64 4)
+(defn class-b [] :i64 5)
+(defn class-bl [] :i64 6)
+(defn class-bcond [] :i64 7)
+(defn class-cbz [] :i64 8)
+(defn class-tbz [] :i64 9)
+(defn class-adr [] :i64 10)
+(defn class-adrp [] :i64 11)
+(defn class-movn [] :i64 12)
+(defn class-movz [] :i64 13)
+(defn class-movk [] :i64 14)
+(defn class-add-imm [] :i64 15)
+(defn class-sub-imm [] :i64 16)
+(defn class-ldr-imm [] :i64 17)
+(defn class-str-imm [] :i64 18)
+(defn class-svc [] :i64 19)
+(defn class-brk [] :i64 20)
+(defn class-hlt [] :i64 21)
+(defn class-and-reg [] :i64 22)
+(defn class-orr-reg [] :i64 23)
+(defn class-eor-reg [] :i64 24)
+(defn class-ands-reg [] :i64 25)
+(defn class-add-reg [] :i64 26)
+(defn class-sub-reg [] :i64 27)
+(defn class-ldr-reg [] :i64 28)
+(defn class-str-reg [] :i64 29)
+(defn class-ldp [] :i64 30)
+(defn class-stp [] :i64 31)
+
+;; ------------------------------------------------------------- utilities
+
+;; Sign-extend the low `bits` of v into i64. Arithmetic form (no shift ops):
+;; 2^bits via a bounded loop, then subtract the modulus when the sign bit
+;; (bit bits-1) is set. v is a masked, non-negative field here.
+(defn pow2 [n :i64] :i64
+  (loop [i 0 p 1]
+    (if (>= i n) p (recur (+ i 1) (* p 2)))))
+
+(defn sext [v :i64 bits :i64] :i64
+  (let [p (pow2 bits)]
+    (if (>= v (quot p 2)) (- v p) v)))
+
+;; bit-or for i64: a | b = a + b - (a & b).
+(defn bor [a :i64 b :i64] :i64
+  (- (+ a b) (bit-and a b)))
+
+;; Decimal text for a non-negative i64 (register numbers, counts).
+(defn dec-rec [n :i64] :string
+  (if (< n 10)
+    (string-substring "0123456789" n (+ n 1))
+    (let [q (quot n 10)
+          r (- n (* 10 q))]
+      (string-concat (dec-rec q) (string-substring "0123456789" r (+ r 1))))))
+
+;; Fixed-bit-group match: (w & mask) == value.
+(defn match? [w :i64 mask :i64 value :i64] :bool
+  (= (bit-and w mask) value))
+
+;; ------------------------------------------------------------ decoders
+;; Field masks follow the Arm ARM encoding groups:
+;;   exceptions  : 11010100 opc:24-21 imm16:20-5 LL:4-0
+;;   branch imm  : 000101 / 100101 imm26 ; 01010100 imm19 0 cond ;
+;;                 sf 011010 op imm19 (CBZ) ; b5 011011 op b40 imm14 (TBZ)
+;;   pc-rel      : op immlo:30-29 10000 immhi:23-5 Rd (ADR / ADRP)
+;;   addsub imm  : sf op S 100010 sh imm12:21-10 Rn Rd
+;;   movewide    : sf opc:30-29 100101 hw:22-21 imm16:20-5 Rd
+;;   ld/st imm   : size:31-30 111 V 00 1 opc:23-22 imm12:21-10 Rn Rt
+;;   hint/branch : 1101011 0 0 10 11111 0000 0 Rn 00000 (RET/BR/BLR)
+;; Each group matcher answers class-unknown (0) outside its group.
+
+(defn insn-class-hint [w :i64] :i64
+  (if (match? w 0xFFFFFFFF 0xD503201F) (class-nop)
+  (if (match? w 0xFFFFFC1F 0xD65F0000) (class-ret)
+  (if (match? w 0xFFFFFC1F 0xD61F0000) (class-br)
+  (if (match? w 0xFFFFFC1F 0xD63F0000) (class-blr)
+  (if (match? w 0xFFE0001F 0xD4000001) (class-svc)
+  (if (match? w 0xFFE0001F 0xD4200000) (class-brk)
+  (if (match? w 0xFFE0001F 0xD4400000) (class-hlt)
+  (class-unknown)))))))))
+
+(defn insn-class-branch [w :i64] :i64
+  (if (match? w 0xFC000000 0x14000000) (class-b)
+  (if (match? w 0xFC000000 0x94000000) (class-bl)
+  (if (match? w 0xFF000010 0x54000000) (class-bcond)
+  (if (match? w 0x7E000000 0x34000000) (class-cbz)
+  (if (match? w 0x7E000000 0x36000000) (class-tbz)
+  (class-unknown)))))))
+
+(defn insn-class-pcrel [w :i64] :i64
+  (if (match? w 0x9F000000 0x10000000) (class-adr)
+  (if (match? w 0x9F000000 0x90000000) (class-adrp)
+  (class-unknown))))
+
+(defn insn-class-mov [w :i64] :i64
+  (if (match? w 0x1F800000 0x12800000)
+    (if (match? w 0x60000000 0x00000000) (class-movn)
+    (if (match? w 0x60000000 0x40000000) (class-movz)
+    (if (match? w 0x60000000 0x60000000) (class-movk)
+    (class-unknown))))
+  (class-unknown)))
+
+;; Unflagged forms only: S=1 (ADDS/SUBS, i.e. CMN/CMP) stays unknown.
+(defn insn-class-addsub [w :i64] :i64
+  (if (match? w 0x1F800000 0x11000000)
+    (if (match? w 0x20000000 0x20000000) (class-unknown)
+    (if (match? w 0x40000000 0x00000000) (class-add-imm)
+    (class-sub-imm)))
+  (class-unknown)))
+
+;; Logical (shifted register), N=0: sf opc 01010 shift 0 Rm imm6 Rn Rd.
+;; opc: 00 AND / 01 ORR / 10 EOR / 11 ANDS. N=1 (BIC/ORN/EON/MVN) unknown.
+;; opc lives in bits 30:29, so ORR (01) matches 0x20000000 and EOR (10)
+;; matches 0x40000000 (review P1: these were mapped in the opposite order,
+;; printing 0xAA000000 as eor and 0xCA050083 as orr).
+(defn insn-class-logical [w :i64] :i64
+  (if (match? w 0x1F200000 0x0A000000)
+    (if (match? w 0x60000000 0x00000000) (class-and-reg)
+    (if (match? w 0x60000000 0x20000000) (class-orr-reg)
+    (if (match? w 0x60000000 0x40000000) (class-eor-reg)
+    (class-ands-reg))))
+  (class-unknown)))
+
+;; Add/sub (shifted register), unflagged: sf op S 01011 shift 0 Rm imm6 Rn Rd.
+;; shift 11 (ROR) is reserved in this encoding class (review P2: the
+;; matcher ignored bits 23:22 and accepted words like 0x8BC20020 as
+;; 'add x0, x1, x2, ror #0').
+(defn insn-class-addsub-reg [w :i64] :i64
+  (if (match? w 0x1F200000 0x0B000000)
+    (if (match? w 0x00C00000 0x00C00000) (class-unknown)
+    (if (match? w 0x20000000 0x20000000) (class-unknown)
+    (if (match? w 0x40000000 0x00000000) (class-add-reg)
+    (class-sub-reg))))
+  (class-unknown)))
+
+;; Load/store unsigned immediate (size 111 V 00 1 opc imm12 Rn Rt) and
+;; register offset (size 111 V 00 opc 1 Rm option S 10 Rn Rt), integer (V=0).
+;; opc 00 = STR, 01 = LDR.
+(defn insn-class-ldst [w :i64] :i64
+  (if (match? w 0x3F000000 0x39000000)
+    (if (match? w 0x00C00000 0x00000000) (class-str-imm)
+    (if (match? w 0x00C00000 0x00400000) (class-ldr-imm)
+    (class-unknown)))
+  (if (match? w 0x3F200000 0x38200000)
+    (if (match? w 0x00C00000 0x00000000) (class-str-reg)
+    (if (match? w 0x00C00000 0x00400000) (class-ldr-reg)
+    (class-unknown)))
+  (class-unknown))))
+
+;; Load/store pair, 64-bit (opc=10), integer (V=0):
+;; opc 101 V 0 mode:24-23 L:22 imm7 Rt2 Rn Rt. L=1 LDP, L=0 STP.
+(defn insn-class-pair [w :i64] :i64
+  (if (match? w 0x3E000000 0x28000000)
+    (if (match? w 0xC0000000 0x80000000)
+    (if (match? w 0x00400000 0x00400000) (class-ldp) (class-stp))
+    (class-unknown))
+  (class-unknown)))
+
+(defn insn-class [w :i64] :i64
+  (let [h (insn-class-hint w)]
+  (if (= h 0)
+  (let [b (insn-class-branch w)]
+  (if (= b 0)
+  (let [p (insn-class-pcrel w)]
+  (if (= p 0)
+  (let [m (insn-class-mov w)]
+  (if (= m 0)
+  (let [a (insn-class-addsub w)]
+  (if (= a 0)
+  (let [g (insn-class-logical w)]
+  (if (= g 0)
+  (let [r (insn-class-addsub-reg w)]
+  (if (= r 0)
+  (let [l (insn-class-ldst w)]
+  (if (= l 0) (insn-class-pair w) l))
+  r))
+  g))
+  a))
+  m))
+  p))
+  b))
+  h)))
+
+;; Field extractors. Each masks the 32-bit word first.
+
+(defn insn-imm16 [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 32) 0xFFFF))
+
+;; B / BL: signed imm26, scaled by 4.
+(defn insn-off26 [w :i64] :i64
+  (* 4 (sext (bit-and w 0x03FFFFFF) 26)))
+
+;; B.cond / CBZ / CBNZ: signed imm19, scaled by 4.
+(defn insn-off19 [w :i64] :i64
+  (* 4 (sext (bit-and (quot (bit-and w 0xFFFFFFFF) 32) 0x7FFFF) 19)))
+
+;; TBZ / TBNZ: signed imm14, scaled by 4.
+(defn insn-off14 [w :i64] :i64
+  (* 4 (sext (bit-and (quot (bit-and w 0xFFFFFFFF) 32) 0x3FFF) 14)))
+
+;; ADR / ADRP: signed imm21 assembled from immhi:23-5, immlo:30-29.
+;; For ADRP the value is a signed page count (scaled by 4096 at the target).
+(defn insn-adr-imm [w :i64] :i64
+  (let [lo (bit-and (quot (bit-and w 0xFFFFFFFF) 536870912) 3)
+        hi (bit-and (quot (bit-and w 0xFFFFFFFF) 32) 0x7FFFF)]
+    (sext (bor (* hi 4) lo) 21)))
+
+;; ADD/SUB immediate: imm12, scaled by 4096 when sh (bit 22) is set.
+(defn insn-addsub-imm [w :i64] :i64
+  (let [imm (bit-and (quot (bit-and w 0xFFFFFFFF) 1024) 0xFFF)]
+    (if (match? w 0x00400000 0x00400000) (* imm 4096) imm)))
+
+;; LDR/STR unsigned immediate: imm12 scaled by the access size (1 << size).
+(defn insn-ldst-off [w :i64] :i64
+  (let [size (bit-and (quot (bit-and w 0xFFFFFFFF) 1073741824) 3)
+        imm (bit-and (quot (bit-and w 0xFFFFFFFF) 1024) 0xFFF)
+        scale (if (= size 0) 1 (if (= size 1) 2 (if (= size 2) 4 8)))]
+    (* imm scale)))
+
+(defn insn-rd [w :i64] :i64
+  (bit-and w 31))
+
+(defn insn-rn [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 32) 31))
+
+(defn insn-rt [w :i64] :i64
+  (bit-and w 31))
+
+;; B.cond condition code, and the CBZ/TBZ "opposite" bit (CBNZ/TBNZ = 1).
+(defn insn-cond [w :i64] :i64
+  (bit-and w 15))
+
+(defn insn-op [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 16777216) 1))
+
+;; Register-form fields.
+(defn insn-rm [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 65536) 31))
+
+;; LDP/STP second register (bits 14:10).
+(defn insn-rt2 [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 1024) 31))
+
+;; Logical/addsub shifted-register imm6 (bits 15:10).
+(defn insn-imm6 [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 1024) 63))
+
+;; Shift type (bits 23:22): 0 LSL / 1 LSR / 2 ASR / 3 ROR.
+(defn insn-shift-type [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 4194304) 3))
+
+;; LDP/STP signed imm7 (bits 21:15), scaled by the pair size (8 for x).
+(defn insn-pair-off [w :i64] :i64
+  (* 8 (sext (bit-and (quot (bit-and w 0xFFFFFFFF) 32768) 0x7F) 7)))
+
+;; Register-offset option (bits 15:13) and shift bit S (bit 12).
+(defn insn-extend-option [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 8192) 7))
+
+(defn insn-ldst-s [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 4096) 1))
+
+;; ------------------------------------------------------------ targets
+
+;; Control-flow branches only (b/bl/bcond/cbz/tbz). adr/adrp targets are
+;; data references and never start a block edge.
+(defn insn-branch? [c :i64] :bool
+  (or (= c (class-b)) (= c (class-bl)) (= c (class-bcond))
+      (= c (class-cbz)) (= c (class-tbz))))
+
+(defn insn-has-target? [c :i64] :bool
+  (or (= c (class-b)) (= c (class-bl)) (= c (class-bcond)) (= c (class-cbz))
+      (= c (class-tbz)) (= c (class-adr)) (= c (class-adrp))))
+
+;; Computed branch / pc-relative target of w placed at pc.
+;; Classes without a target answer (- 0 1).
+(defn insn-target [w :i64 pc :i64] :i64
+  (let [c (insn-class w)]
+  (if (or (= c (class-b)) (= c (class-bl))) (+ pc (insn-off26 w))
+  (if (or (= c (class-bcond)) (= c (class-cbz))) (+ pc (insn-off19 w))
+  (if (= c (class-tbz)) (+ pc (insn-off14 w))
+  (if (= c (class-adr)) (+ pc (insn-adr-imm w))
+  (if (= c (class-adrp)) (+ (bit-and pc (- 0 4096)) (* (insn-adr-imm w) 4096))
+  (- 0 1))))))))
+
+;; ------------------------------------------------------------- text
+
+(defn hex-nibble [n :i64] :string
+  (let [d (bit-and n 15)]
+    (string-substring "0123456789abcdef" d (+ d 1))))
+
+(defn hex-rec [n :i64] :string
+  (if (< n 16) (hex-nibble n)
+    (string-concat (hex-rec (quot n 16)) (hex-nibble n))))
+
+(defn hex-u [n :i64] :string
+  (string-concat "0x" (hex-rec n)))
+
+(defn hex-s [n :i64] :string
+  (if (< n 0)
+    (string-concat "-0x" (hex-rec (- 0 n)))
+    (string-concat "0x" (hex-rec n))))
+
+;; Zero-padded hex: `digits` low nibbles of v.
+(defn hex-pad [v :i64 digits :i64] :string
+  (if (<= digits 1) (hex-nibble v)
+    (string-concat (hex-pad (quot v 16) (- digits 1)) (hex-nibble v))))
+
+(defn hex8 [v :i64] :string
+  (hex-pad (bit-and v 0xFFFFFFFF) 8))
+
+(defn str2 [a :string b :string] :string
+  (string-concat a b))
+
+(defn str3 [a :string b :string c :string] :string
+  (string-concat a (string-concat b c)))
+
+(defn str4 [a :string b :string c :string d :string] :string
+  (string-concat a (str3 b c d)))
+
+(defn str5 [a :string b :string c :string d :string e :string] :string
+  (string-concat a (str4 b c d e)))
+
+(defn str6 [a :string b :string c :string d :string e :string f :string] :string
+  (string-concat a (str5 b c d e f)))
+
+;; condition code names (Arm ARM cond field).
+(defn cond-name [cc :i64] :string
+  (if (= cc 0) "eq"
+  (if (= cc 1) "ne"
+  (if (= cc 2) "cs"
+  (if (= cc 3) "cc"
+  (if (= cc 4) "mi"
+  (if (= cc 5) "pl"
+  (if (= cc 6) "vs"
+  (if (= cc 7) "vc"
+  (if (= cc 8) "hi"
+  (if (= cc 9) "ls"
+  (if (= cc 10) "ge"
+  (if (= cc 11) "lt"
+  (if (= cc 12) "gt"
+  (if (= cc 13) "le"
+  (if (= cc 14) "al"
+  "nv"))))))))))))))))
+
+;; register name: wide=1 -> x<n>, wide=0 -> w<n>. Register 31 is not a
+;; general register: in XZR-capable operand positions it names the zero
+;; register (xzr/wzr) -- x31/w31 do not exist (review P1).
+(defn reg-name [r :i64 wide :i64] :string
+  (if (= r 31)
+    (if (= wide 1) "xzr" "wzr")
+    (if (= wide 1)
+      (str2 "x" (dec-rec r))
+      (str2 "w" (dec-rec r)))))
+
+;; register name in an SP-capable operand position (add/sub immediate rd
+;; and rn, load/store base): 31 names the stack pointer.
+(defn reg-name-sp [r :i64 wide :i64] :string
+  (if (= r 31)
+    (if (= wide 1) "sp" "wsp")
+    (reg-name r wide)))
+
+;; sf (bit 31) selects the operand width: 1 -> x/w... 64-bit, 0 -> 32-bit
+;; (review P2: hard-coded wide=1 rendered 32-bit operations as 64-bit).
+(defn sf-wide [w :i64] :i64
+  (if (= (bit-and w 0x80000000) 0x80000000) 1 0))
+
+(defn mnemonic [c :i64] :string
+  (if (= c (class-nop)) "nop"
+  (if (= c (class-ret)) "ret"
+  (if (= c (class-br)) "br"
+  (if (= c (class-blr)) "blr"
+  (if (= c (class-b)) "b"
+  (if (= c (class-bl)) "bl"
+  (if (= c (class-bcond)) "b.cond"
+  (if (= c (class-cbz)) "cbz"
+  (if (= c (class-tbz)) "tbz"
+  (if (= c (class-adr)) "adr"
+  (if (= c (class-adrp)) "adrp"
+  (if (= c (class-movn)) "movn"
+  (if (= c (class-movz)) "movz"
+  (if (= c (class-movk)) "movk"
+  (if (= c (class-add-imm)) "add"
+  (if (= c (class-sub-imm)) "sub"
+  (if (= c (class-ldr-imm)) "ldr"
+  (if (= c (class-str-imm)) "str"
+  (if (= c (class-svc)) "svc"
+  (if (= c (class-brk)) "brk"
+  (if (= c (class-hlt)) "hlt"
+  (if (= c (class-and-reg)) "and"
+  (if (= c (class-orr-reg)) "orr"
+  (if (= c (class-eor-reg)) "eor"
+  (if (= c (class-ands-reg)) "ands"
+  (if (= c (class-add-reg)) "add"
+  (if (= c (class-sub-reg)) "sub"
+  (if (= c (class-ldr-reg)) "ldr"
+  (if (= c (class-str-reg)) "str"
+  (if (= c (class-ldp)) "ldp"
+  (if (= c (class-stp)) "stp"
+  "udf"))))))))))))))))))))))))))))))))
+
+;; per-class operand text
+
+(defn ldst-text [w :i64] :string
+  (let [size (bit-and (quot (bit-and w 0xFFFFFFFF) 1073741824) 3)
+        wide (if (= size 3) 1 0)
+        base (if (= (insn-rn w) 31) "sp" (reg-name (insn-rn w) 1))]
+    (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rt w) wide) ", ["
+          base (str3 ", #" (hex-u (insn-ldst-off w)) "]"))))
+
+(defn addsub-text [w :i64] :string
+  ;; add/sub immediate is SP-capable in both rd and rn, and honors sf.
+  (let [wide (sf-wide w)]
+    (str6 (mnemonic (insn-class w)) " " (reg-name-sp (insn-rd w) wide) ", "
+          (reg-name-sp (insn-rn w) wide) (str2 ", #" (hex-u (insn-addsub-imm w))))))
+
+(defn mov-text [w :i64] :string
+  ;; hw (bits 22:21) shifts the immediate to bits 16/32/48 -- the shift
+  ;; must appear or the operand is wrong (review P2: 0x72B579A1 is
+  ;; movk w1, #0xabcd, lsl #0x10, not an unshifted movk).
+  (let [hw (bit-and (quot (bit-and w 0xFFFFFFFF) 2097152) 3)]
+    (str5 (mnemonic (insn-class w)) " " (reg-name (insn-rd w) (sf-wide w)) ", #"
+          (str2 (hex-u (insn-imm16 w))
+                (if (= hw 0) "" (str2 ", lsl #" (hex-u (* 16 hw))))))))
+
+(defn pcrel-text [w :i64] :string
+  (let [c (insn-class w)
+        shown (if (= c (class-adr)) (insn-adr-imm w) (* (insn-adr-imm w) 4096))]
+    (str5 (mnemonic c) " " (reg-name (insn-rd w) 1) ", #" (hex-s shown))))
+
+;; Shifted-register shift names (Arm ARM shift field: LSL/LSR/ASR/ROR).
+(defn shift-name [s :i64] :string
+  (if (= s 0) "lsl" (if (= s 1) "lsr" (if (= s 2) "asr" "ror"))))
+
+;; Shifted-register suffix: ", lsl #0x4" style; empty for the default
+;; (shift=LSL, imm6=0) so the plain three-register form stays clean.
+(defn shift-suffix [w :i64] :string
+  (if (and (= (insn-shift-type w) 0) (= (insn-imm6 w) 0)) ""
+    (str4 ", " (shift-name (insn-shift-type w)) " #" (hex-u (insn-imm6 w)))))
+
+;; Extend-type names (Arm ARM option field). 011 is LSL/UXTX -- rendered
+;; as lsl in the load/store register-offset form.
+(defn extend-name [opt :i64] :string
+  (if (= opt 0) "uxtb"
+  (if (= opt 1) "uxth"
+  (if (= opt 2) "uxtw"
+  (if (= opt 3) "lsl"
+  (if (= opt 4) "sxtb"
+  (if (= opt 5) "sxth"
+  (if (= opt 6) "sxtw" "sxtx"))))))))
+
+;; Three-register form (logical / addsub shifted register) with shift.
+;; Register 31 is XZR here (not SP), and the width follows sf.
+(defn reg3-text [w :i64] :string
+  (let [wide (sf-wide w)]
+    (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rd w) wide) ", "
+          (reg-name (insn-rn w) wide)
+          (str2 (str2 ", " (reg-name (insn-rm w) wide)) (shift-suffix w)))))
+
+;; Load/store register offset: rt, [rn, rm{, <extend|lsl> {#amount}}].
+;; The amount is S * size (S = bit 12, size = log2 of the access bytes) and
+;; is shown only when S=1; the rm is w-width for uxtw/sxtw.
+(defn ldstreg-text [w :i64] :string
+  (let [opt (insn-extend-option w)
+        s (insn-ldst-s w)
+        size (bit-and (quot (bit-and w 0xFFFFFFFF) 1073741824) 3)
+        rmw (if (or (= opt 2) (= opt 6)) 0 1)
+        amt (if (= s 1) (str2 " #" (dec-rec size)) "")
+        tail (if (and (= opt 3) (= s 0)) ""
+               (str3 ", " (extend-name opt) amt))]
+    (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rt w) 1) ", ["
+          (reg-name (insn-rn w) 1)
+          (str2 ", " (str2 (reg-name (insn-rm w) rmw) (str2 tail "]"))))))
+
+;; Load/store pair: rt, rt2, [rn, #off]; bits 24:23 select the addressing
+;; mode -- 01 post-index ([rn], #off), 10 signed offset ([rn, #off]),
+;; 11 pre-index ([rn, #off]!). The renderer must keep the writeback form
+;; (review P1: 0xA9BF7BFD lost its !, turning stp x29, x30, [sp, #-16]!
+;; into a non-writeback instruction).
+(defn pair-mode [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 8388608) 3))
+;; TBZ/TBNZ bit index: b5 (bit 31) : b40 (bits 23:19); b5 also selects
+;; the register width (1 -> x, 0 -> w).
+(defn tbz-b5 [w :i64] :i64
+  (quot (bit-and w 0xFFFFFFFF) 2147483648))
+(defn tbz-bit [w :i64] :i64
+  (+ (* 32 (tbz-b5 w)) (bit-and (quot (bit-and w 0xFFFFFFFF) 524288) 31)))
+(defn pair-text [w :i64] :string
+  (let [base (if (= (insn-rn w) 31) "sp" (reg-name (insn-rn w) 1))
+        off (str2 ", #" (hex-s (insn-pair-off w)))
+        mode (pair-mode w)]
+    (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rd w) 1) ", "
+          (reg-name (insn-rt2 w) 1)
+          (str2 ", ["
+            (if (= mode 3) (str3 base off "]!")
+            (if (= mode 1) (str3 base "]" off)
+            (str3 base off "]")))))))
+
+;; One disassembly line for w at pc (A64 syntax subset).
+(defn insn-text [w :i64 pc :i64] :string
+  (let [c (insn-class w)]
+  (if (= c (class-nop)) "nop"
+  (if (= c (class-ret)) (if (= (insn-rn w) 30) "ret"
+                          (str2 "ret " (reg-name (insn-rn w) 1)))
+  (if (or (= c (class-br)) (= c (class-blr)))
+    (str3 (mnemonic c) " " (reg-name (insn-rn w) 1))
+  (if (or (= c (class-b)) (= c (class-bl)))
+    (str3 (mnemonic c) " #" (hex-s (insn-target w pc)))
+  (if (= c (class-bcond))
+    (str4 "b." (cond-name (insn-cond w)) " #" (hex-s (insn-target w pc)))
+  (if (or (= c (class-cbz)) (= c (class-tbz)))
+    (if (= c (class-cbz))
+      ;; CBZ/CBNZ: width from sf.
+      (str5 (if (= (insn-op w) 1) "cbnz" "cbz")
+            " " (reg-name (insn-rt w) (sf-wide w)) ", #" (hex-s (insn-target w pc)))
+      ;; TBZ/TBNZ: the bit index is b5:b40 and selects the width too
+      ;; (review P1: the shared path omitted the bit operand entirely and
+      ;; always printed an x register -- 0x36000040 tests bit 0 of w0).
+      (str5 (if (= (insn-op w) 1) "tbnz" "tbz")
+            " " (reg-name (insn-rt w) (tbz-b5 w))
+            (str2 ", #" (hex-u (tbz-bit w))) (str2 ", #" (hex-s (insn-target w pc)))))
+  (if (or (= c (class-adr)) (= c (class-adrp)))
+    (pcrel-text w)
+  (if (or (= c (class-movn)) (= c (class-movz)) (= c (class-movk)))
+    (mov-text w)
+  (if (or (= c (class-add-imm)) (= c (class-sub-imm)))
+    (addsub-text w)
+  (if (or (= c (class-ldr-imm)) (= c (class-str-imm)))
+    (ldst-text w)
+  (if (or (= c (class-svc)) (= c (class-brk)) (= c (class-hlt)))
+    (str3 (mnemonic c) " #" (hex-u (insn-imm16 w)))
+  (if (or (= c (class-and-reg)) (= c (class-orr-reg)) (= c (class-eor-reg))
+          (= c (class-ands-reg)) (= c (class-add-reg)) (= c (class-sub-reg)))
+    (reg3-text w)
+  (if (or (= c (class-ldr-reg)) (= c (class-str-reg)))
+    (ldstreg-text w)
+  (if (or (= c (class-ldp)) (= c (class-stp)))
+    (pair-text w)
+  (str2 "udf #" (hex-u (bit-and w 0xFFFFFFFF)))))))))))))))))))
+
+;; ------------------------------------------------------------- sweep
+;; A straight linear sweep over n words at base: class histogram and
+;; bounded cross-references to one address. The recursive-descent pass
+;; and function boundaries build on the same core.
+
+(defn count-class [words :vector-i64 n :i64 class :i64] :i64
+  (loop [i 0 c 0]
+    (if (>= i n) c
+      (recur (+ i 1)
+        (if (= (insn-class (vector-at words i)) class) (+ c 1) c)))))
+
+(defn xrefs-count [words :vector-i64 base :i64 n :i64 target :i64] :i64
+  (loop [i 0 c 0]
+    (if (>= i n) c
+      (let [pc (+ base (* 4 i))
+            w (vector-at words i)
+            k (insn-class w)]
+        (recur (+ i 1)
+          (if (and (insn-has-target? k) (= (insn-target w pc) target))
+            (+ c 1)
+            c))))))
+
+;; Little-endian u32 words out of a byte buffer (loader seed).
+(defn words-from-bytes [b :bytes] :vector-i64
+  (let [n (quot (bytes-count b) 4)]
+    (loop [i 0 out (vector-alloc n)]
+      (if (>= i n) out
+        (recur (+ i 1)
+          (vector-assoc out i
+            (bor (bytes-at b (* 4 i))
+              (bor (* (bytes-at b (+ (* 4 i) 1)) 256)
+                (bor (* (bytes-at b (+ (* 4 i) 2)) 65536)
+                        (* (bytes-at b (+ (* 4 i) 3)) 16777216))))))))))
+
+;; n slots, every one set to v (vector-alloc zero-fills; -1 padding
+;; contracts write their sentinel explicitly).
+(defn fill-vec [n :i64 v :i64] :vector-i64
+  (loop [i 0 out (vector-alloc n)]
+    (if (>= i n) out (recur (+ i 1) (vector-assoc out i v)))))
+
+;; ------------------------------------------------------------- analysis
+;; Decoded record: a fixed vector-i64 of
+;;   [class rd rn rm imm6 target variant]
+;; so downstream passes (CFG, xrefs graph) carry plain vectors.
+
+(defn insn-record [w :i64 pc :i64] :vector-i64
+  (vector-i64 (insn-class w) (insn-rd w) (insn-rn w) (insn-rm w)
+              (insn-imm6 w) (insn-target w pc) (insn-op w)))
+
+;; Per-slot target of every word (- 0 1) where there is none) -- the xrefs
+;; graph's edge list in two parallel vectors (sources implied by index).
+(defn targets-vector [words :vector-i64 base :i64 n :i64] :vector-i64
+  (loop [i 0 out (vector-alloc n)]
+    (if (>= i n) out
+      (recur (+ i 1)
+        (vector-assoc out i
+          (insn-target (vector-at words i) (+ base (* 4 i))))))))
+
+;; ADRP+ADD literal-pool resolution: the canonical address materialization
+;; `adrp xd, <page>; add xd, xd, #imm`. w-adrp sits at pc, w-add is its
+;; next instruction; answers -1 unless the pair matches (both extend the
+;; same register).
+(defn adrp-add-target [w-adrp :i64 w-add :i64 pc :i64] :i64
+  ;; The canonical literal pair requires a 64-bit ADD: a 32-bit
+  ;; add wN, wN, #imm truncates the page value and must not resolve to a
+  ;; full 64-bit address (review P2).
+  (if (and (= (insn-class w-adrp) (class-adrp))
+           (= (insn-class w-add) (class-add-imm))
+           (= (sf-wide w-add) 1)
+           (= (insn-rd w-add) (insn-rd w-adrp))
+           (= (insn-rn w-add) (insn-rd w-adrp)))
+    (+ (insn-target w-adrp pc) (insn-addsub-imm w-add))
+    (- 0 1)))
+
+;; Per-slot literal-pool address at each word's index (the ADRP's slot),
+;; -1 where no adrp+add pair starts.
+(defn literal-targets [words :vector-i64 base :i64 n :i64] :vector-i64
+  (loop [i 0 out (vector-alloc n)]
+    (if (>= i n) out
+      (recur (+ i 1)
+        (vector-assoc out i
+          (if (>= (+ i 1) n) (- 0 1)
+            (adrp-add-target (vector-at words i) (vector-at words (+ i 1))
+                             (+ base (* 4 i)))))))))
+
+;; One listing line per word: "<pc>: <word>  <text>".
+
+;; Slot index for a pc inside the [base, base+4n) window, -1 outside or
+;; unaligned. The recursive-descent passes map branch targets to slots
+;; through this.
+(defn slot-of [base :i64 n :i64 pc :i64] :i64
+  (if (and (>= pc base) (< pc (+ base (* 4 n))) (= (- pc base) (* 4 (quot (- pc base) 4))))
+    (quot (- pc base) 4)
+    -1))
+
+;; Recursive-descent reachability from slot 0: BFS over the control-flow
+;; edges (fall-through + computed targets), answering 0/1 per slot. ret/br/
+;; b/hlt end a path; bl/bcond/cbz/tbz branch AND fall through.
+(defn reachable-vector [words :vector-i64 base :i64 n :i64] :vector-i64
+  ;; n = 0 is a valid window (empty executable section / empty input):
+  ;; answer an empty vector instead of writing slot 0 of a zero-length
+  ;; allocation (review P2: that path trapped out-of-bounds).
+  (if (<= n 0) (vector-alloc 0)
+  (let [seen (vector-alloc n)
+        q (vector-alloc n)]
+    (loop [head 0 tail 1
+           seen (vector-assoc seen 0 1)
+           q (vector-assoc q 0 0)]
+      (if (>= head tail) seen
+        (let [slot (vector-at q head)
+              w (vector-at words slot)
+              pc (+ base (* 4 slot))
+              c (insn-class w)
+              ;; control-flow edges only: an ADR/ADRP data reference that
+              ;; lands in the window must not enqueue its target as code
+              ;; (review P1; the pass comment promises exactly this).
+              t (if (insn-branch? c) (slot-of base n (insn-target w pc)) -1)
+              end? (or (= c (class-ret)) (= c (class-br))
+                       (= c (class-b)) (= c (class-hlt)))
+              f (if (or end? (>= (+ slot 1) n)) -1 (+ slot 1))
+              ct (and (>= t 0) (= (vector-at seen t) 0))
+              s1 (if ct (vector-assoc seen t 1) seen)
+              q1 (if ct (vector-assoc q tail t) q)
+              n1 (if ct (+ tail 1) tail)
+              cf (and (>= f 0) (= (vector-at s1 f) 0))
+              s2 (if cf (vector-assoc s1 f 1) s1)
+              q2 (if cf (vector-assoc q1 n1 f) q1)
+              n2 (if cf (+ n1 1) n1)]
+          (recur (+ head 1) n2 s2 q2)))))))
+
+;; Function entry slots: the entry pc (base) plus every in-window bl
+;; target, first occurrence kept. Answer is n slots, -1-padded after the
+;; last entry (vector-alloc zero-fills, so the padding is written first).
+(defn function-entries [words :vector-i64 base :i64 n :i64] :vector-i64
+  (loop [i 0 out (vector-alloc n)]
+    (if (>= i n)
+      (loop [i 0 out (vector-assoc out 0 base) tail 1]
+        (if (>= i n) out
+          (let [w (vector-at words i)
+                c (insn-class w)
+                t (if (= c (class-bl)) (slot-of base n (insn-target w (+ base (* 4 i)))) -1)
+                dup? (if (< t 0) true
+                       (loop [j 0 seen false]
+                         (if (>= j tail) seen
+                           (recur (+ j 1)
+                             (or seen (= (vector-at out j) (+ base (* 4 t))))))))]
+            (recur (+ i 1)
+              (if (or dup? (< t 0)) out (vector-assoc out tail (+ base (* 4 t))))
+              (if (or dup? (< t 0)) tail (+ tail 1))))))
+      (recur (+ i 1) (vector-assoc out i -1)))))
+
+;; ------------------------------------------------------- functions
+;; Prologue signature: stp x29, x30, [sp, #-imm]! (frame setup). Used to
+;; confirm an entry produced by function-entries.
+(defn prologue? [w :i64] :bool
+  (and (= (insn-class w) (class-stp))
+       (= (insn-rd w) 29) (= (insn-rt2 w) 30) (= (insn-rn w) 31)
+       (< (insn-pair-off w) 0)))
+
+;; Membership test over the -1-padded entry list.
+(defn entry-slot? [entries :vector-i64 base :i64 n :i64 slot :i64] :bool
+  (loop [k 0]
+    (if (or (>= k n) (= (vector-at entries k) -1)) false
+      (if (= (slot-of base n (vector-at entries k)) slot) true
+        (recur (+ k 1))))))
+
+;; A function starting at `start` runs to the first path-ending insn
+;; (ret/br/b/hlt) or the slot before the next entry, whichever comes
+;; first. The walk stays inside one function: a bl does NOT end the
+;; body (its return site belongs to the caller).
+(defn fn-end [words :vector-i64 entries :vector-i64 base :i64 n :i64 start :i64] :i64
+  (loop [e start]
+    (let [w (vector-at words e)
+          c (insn-class w)
+          pc (+ base (* 4 e))
+          ;; an unconditional b to an in-window slot is a LOCAL jump (a
+          ;; forward jump to an epilogue is common) and does not end the
+          ;; function; only a branch out of the window does (review P1:
+          ;; the walk truncated function bounds at every b).
+          b-out? (and (= c (class-b))
+                      (< (slot-of base n (insn-target w pc)) 0))
+          end-path? (or (= c (class-ret)) (= c (class-br))
+                        b-out? (= c (class-hlt)))]
+      (if (or end-path? (>= (+ e 1) n)
+              (entry-slot? entries base n (+ e 1)))
+        e
+        (recur (+ e 1))))))
+
+;; Function bounds as (start, end) slot pairs in function-entries order,
+;; -1-padded after the last function. Length 2n.
+(defn function-bounds [words :vector-i64 base :i64 n :i64] :vector-i64
+  (let [entries (function-entries words base n)]
+    (loop [k 0 rows (fill-vec (* 2 n) -1)]
+      (if (or (>= k n) (= (vector-at entries k) -1)) rows
+        (let [start (slot-of base n (vector-at entries k))
+              e (fn-end words entries base n start)]
+          (recur (+ k 1)
+            (vector-assoc (vector-assoc rows (* 2 k) start) (+ (* 2 k) 1) e)))))))
+
+;; Tail-call edges: unconditional b whose target is a function entry.
+;; Pairs (from-slot, to-slot), -1-padded. Length 2n.
+(defn tail-call-edges [words :vector-i64 base :i64 n :i64] :vector-i64
+  (let [entries (function-entries words base n)]
+    (loop [i 0 tail 0 out (fill-vec (* 2 n) -1)]
+      (if (>= i n) out
+        (let [c (insn-class (vector-at words i))
+              t (if (= c (class-b)) (slot-of base n (insn-target (vector-at words i) (+ base (* 4 i)))) -1)
+              hit (and (>= t 0) (entry-slot? entries base n t))
+              out1 (if hit (vector-assoc (vector-assoc out tail i) (+ tail 1) t) out)
+              tail1 (if hit (+ tail 2) tail)]
+          (recur (+ i 1) tail1 out1))))))
+
+;; ------------------------------------------------------------- cfg
+;; Basic blocks over the window. Leaders: slot 0, every in-window branch
+;; target (control-flow only -- adrp/adr data refs excluded), and the slot
+;; after any block-ending instruction. All output is pure vector data.
+
+(defn block-leaders [words :vector-i64 base :i64 n :i64] :vector-i64
+  (loop [i 0 marks (vector-assoc (vector-alloc n) 0 1)]
+    (if (>= i n) marks
+      (let [w (vector-at words i)
+            c (insn-class w)
+            t (if (insn-branch? c) (slot-of base n (insn-target w (+ base (* 4 i)))) -1)
+            ends? (or (= c (class-ret)) (= c (class-br)) (= c (class-b))
+                      (= c (class-hlt)) (= c (class-bl)) (= c (class-bcond))
+                      (= c (class-cbz)) (= c (class-tbz)))
+            m1 (if (>= t 0) (vector-assoc marks t 1) marks)
+            m2 (if (and ends? (< (+ i 1) n)) (vector-assoc m1 (+ i 1) 1) m1)]
+        (recur (+ i 1) m2)))))
+
+;; Block-start slot containing a slot (scan back to the nearest leader).
+(defn block-start [leaders :vector-i64 slot :i64] :i64
+  (if (= (vector-at leaders slot) 1) slot
+    (block-start leaders (- slot 1))))
+
+;; Block ranges as (start, end) slot pairs, inclusive, -1-padded after
+;; the last block. Output length 2n; block k occupies slots 2k and 2k+1.
+(defn block-rows [words :vector-i64 base :i64 n :i64] :vector-i64
+  (let [leaders (block-leaders words base n)]
+    (loop [i 1 start 0 k 0 rows (fill-vec (* 2 n) -1)]
+      (if (>= i n)
+        (vector-assoc (vector-assoc rows (* 2 k) start) (+ (* 2 k) 1) (- n 1))
+        (if (= (vector-at leaders i) 1)
+          (recur (+ i 1) i (+ k 1)
+            (vector-assoc (vector-assoc rows (* 2 k) start) (+ (* 2 k) 1) (- i 1)))
+          (recur (+ i 1) start k rows))))))
+
+;; CFG edges as (from-block-start, to-block-start) slot pairs, -1-padded.
+;; Output length 4n. Per block the TARGET edge is appended before the
+;; FALL-THROUGH edge. Edges are computed from every block in the window,
+;; including blocks unreachable from slot 0 (see reachable-vector).
+(defn cfg-edges [words :vector-i64 base :i64 n :i64] :vector-i64
+  (let [leaders (block-leaders words base n)
+        rows (block-rows words base n)]
+    (loop [k 0 tail 0 out (fill-vec (* 4 n) -1)]
+      (if (or (>= k n) (= (vector-at rows (* 2 k)) -1)) out
+        (let [s (vector-at rows (* 2 k))
+              e (vector-at rows (+ (* 2 k) 1))
+              w (vector-at words e)
+              c (insn-class w)
+              end-path? (or (= c (class-ret)) (= c (class-br))
+                            (= c (class-b)) (= c (class-hlt)))
+              t (if (insn-branch? c) (slot-of base n (insn-target w (+ base (* 4 e)))) -1)
+              ts (if (>= t 0) (block-start leaders t) -1)
+              fall (if (or end-path? (>= (+ e 1) n)) -1 (block-start leaders (+ e 1)))
+              out1 (if (>= ts 0)
+                     (vector-assoc (vector-assoc out tail s) (+ tail 1) ts) out)
+              tail1 (if (>= ts 0) (+ tail 2) tail)
+              out2 (if (>= fall 0)
+                     (vector-assoc (vector-assoc out1 tail1 s) (+ tail1 1) fall) out1)
+              tail2 (if (>= fall 0) (+ tail1 2) tail1)]
+          (recur (+ k 1) tail2 out2))))))
+
+;; ------------------------------------------------------------- strings
+;; Printable-ASCII runs of at least min bytes, as (offset, length) pairs,
+;; -1-padded. Capacity 2*(bytes-count) is the worst case (min=1,
+;; alternating); callers on large blobs should window the bytes first.
+
+(defn printable? [x :i64] :bool (and (>= x 32) (<= x 126)))
+
+(defn strings-rows [b :bytes min :i64] :vector-i64
+  (let [n (bytes-count b)]
+    (loop [i 0 start -1 tail 0 out (fill-vec (* 2 n) -1)]
+      (if (>= i n)
+        (if (and (>= start 0) (>= (- i start) min))
+          (vector-assoc (vector-assoc out tail start) (+ tail 1) (- i start))
+          out)
+        (if (printable? (bytes-at b i))
+          (recur (+ i 1) (if (< start 0) i start) tail out)
+          (let [run (if (< start 0) 0 (- i start))
+                ok (and (>= start 0) (>= run min))
+                out1 (if ok (vector-assoc (vector-assoc out tail start) (+ tail 1) run) out)
+                tail1 (if ok (+ tail 2) tail)]
+            (recur (+ i 1) -1 tail1 out1)))))))
+
+;; ------------------------------------------------------------- xrefs
+;; Cross-reference edge list: (from-pc, to-pc) pairs for every
+;; control-flow branch and every resolved adrp+add literal reference.
+;; Length 2n, -1-padded. targets-vector stays the per-slot form; this is
+;; the list-shaped graph the UI layer consumes.
+(defn xrefs-edges [words :vector-i64 base :i64 n :i64] :vector-i64
+  (loop [i 0 tail 0 out (fill-vec (* 2 n) -1)]
+    (if (>= i n) out
+      (let [w (vector-at words i)
+            c (insn-class w)
+            pc (+ base (* 4 i))
+            bt (if (insn-branch? c) (insn-target w pc) -1)
+            lit (if (>= (+ i 1) n) -1
+                  (adrp-add-target w (vector-at words (+ i 1)) pc))
+            dst (if (>= bt 0) bt lit)
+            ok (>= dst 0)
+            out1 (if ok (vector-assoc (vector-assoc out tail pc) (+ tail 1) dst) out)
+            tail1 (if ok (+ tail 2) tail)]
+        (recur (+ i 1) tail1 out1)))))
+
+(defn listing-text [words :vector-i64 base :i64 n :i64] :string
+  (loop [i 0 acc ""]
+    (if (>= i n) acc
+      (let [pc (+ base (* 4 i))
+            w (vector-at words i)
+            nl (string-from-utf8 (bytes-from-vector-i64 (vector-i64 10)))]
+        (recur (+ i 1)
+          (string-concat acc
+            (string-concat (hex8 pc)
+              (string-concat ": "
+                (string-concat (hex8 w)
+                  (string-concat "  "
+                    (string-concat (insn-text w pc) nl)))))))))))
+
+;; ------------------------------------------------------------- object loaders
+;; M2 (KOT-42): read Mach-O 64, ELF64 and PE32+ containers straight from
+;; bytes. Cleanroom: the container layouts come from the published format
+;; specifications (Mach-O file format, System V gABI, PE/COFF) and the test
+;; fixtures below are hand-assembled byte by byte -- no other tool's output
+;; is an expectation here either.
+;;
+;; Rows are flat vector-i64 so everything stays a plain carrier:
+;;   section row (stride 5): [vaddr file-offset size flags name-packed]
+;;   symbol row (stride 2):  [value name-packed]
+;; name-packed is the first 8 name bytes packed little-endian (a cheap
+;; identity for callers); the `*-name` functions return the text (ASCII).
+
+(defn u16le [b :bytes off :i64] :i64
+  (+ (bytes-at b off) (* 256 (bytes-at b (+ off 1)))))
+
+(defn u32le [b :bytes off :i64] :i64
+  (+ (u16le b off) (* 65536 (u16le b (+ off 2)))))
+
+(defn u64le [b :bytes off :i64] :i64
+  (+ (u32le b off) (* 4294967296 (u32le b (+ off 4)))))
+
+;; first 8 bytes at off packed little-endian, stopping at a 0 byte
+(defn name8 [b :bytes off :i64] :i64
+  (loop [i 0 acc 0 mult 1]
+    (if (>= i 8) acc
+      (let [x (bytes-at b (+ off i))]
+        (if (= x 0) acc
+          (recur (+ i 1) (+ acc (* mult x)) (* mult 256)))))))
+
+;; ASCII name text, at most `max` bytes, stopped by a 0 byte
+(defn name-str [b :bytes off :i64 max :i64] :string
+  (loop [i 0 acc ""]
+    (if (>= i max) acc
+      (let [x (bytes-at b (+ off i))]
+        (if (= x 0) acc
+          (recur (+ i 1)
+            (string-concat acc
+              (string-from-utf8 (bytes-from-vector-i64 (vector-i64 x))))))))))
+
+;; ------------------------------------------------------------- mach-o 64
+;; header: magic 0xFEEDFACF (LE) ... ncmds @16. Load commands: cmd @0,
+;; cmdsize @4. LC_SEGMENT_64 (25): vmaddr @24, nsects @64, sections at +72
+;; (80 bytes: names @0/16, addr @32, size @40, offset @48, flags @64).
+;; LC_SYMTAB (2): symoff @8, nsyms @12, stroff @16. nlist_64: strx @0,
+;; value @8 (16 bytes). LC_MAIN (2147483688): entryoff @8.
+
+(defn macho-recognize [b :bytes] :i64
+  (if (= (u32le b 0) 0xFEEDFACF) 1 0))
+
+(defn macho-ncmds [b :bytes] :i64 (u32le b 16))
+
+(defn macho-cmd-off [b :bytes index :i64] :i64
+  (loop [i 0 off 32]
+    (if (>= i index) off
+      (recur (+ i 1) (+ off (u32le b (+ off 4)))))))
+
+(defn macho-image-base [b :bytes] :i64
+  (loop [i 0]
+    (if (>= i (macho-ncmds b)) 0
+      (let [off (macho-cmd-off b i)]
+        (if (= (u32le b off) 25) (u64le b (+ off 24))
+          (recur (+ i 1)))))))
+
+(defn macho-section-count [b :bytes] :i64
+  (loop [i 0 n 0]
+    (if (>= i (macho-ncmds b)) n
+      (let [off (macho-cmd-off b i)]
+        (recur (+ i 1)
+          (if (= (u32le b off) 25) (+ n (u32le b (+ off 64))) n))))))
+
+;; file offset of section header #index across all LC_SEGMENT_64 commands
+(defn macho-section-off [b :bytes index :i64] :i64
+  (loop [i 0 seen 0]
+    (if (>= i (macho-ncmds b)) 0
+      (let [off (macho-cmd-off b i)]
+        (if (= (u32le b off) 25)
+          (let [n (u32le b (+ off 64))]
+            (if (< index (+ seen n))
+              (+ off 72 (* 80 (- index seen)))
+              (recur (+ i 1) (+ seen n))))
+          (recur (+ i 1) seen))))))
+
+(defn macho-section-row [b :bytes index :i64] :vector-i64
+  (let [s (macho-section-off b index)]
+    (vector-i64 (u64le b (+ s 32)) (u32le b (+ s 48)) (u64le b (+ s 40))
+                (u32le b (+ s 64)) (name8 b s))))
+
+(defn macho-section-name [b :bytes index :i64] :string
+  (name-str b (macho-section-off b index) 16))
+
+;; which: 0 symoff / 1 nsyms / 2 stroff
+(defn macho-symtab-field [b :bytes which :i64] :i64
+  (loop [i 0]
+    (if (>= i (macho-ncmds b)) 0
+      (let [off (macho-cmd-off b i)]
+        (if (= (u32le b off) 2)
+          (if (= which 0) (u32le b (+ off 8))
+            (if (= which 1) (u32le b (+ off 12)) (u32le b (+ off 16))))
+          (recur (+ i 1)))))))
+
+(defn macho-symbol-count [b :bytes] :i64 (macho-symtab-field b 1))
+
+(defn macho-symbol-row [b :bytes index :i64] :vector-i64
+  (let [sym (+ (macho-symtab-field b 0) (* 16 index))
+        strx (u32le b sym)]
+    (vector-i64 (u64le b (+ sym 8))
+                (name8 b (+ (macho-symtab-field b 2) strx)))))
+
+(defn macho-symbol-name [b :bytes index :i64] :string
+  (let [sym (+ (macho-symtab-field b 0) (* 16 index))]
+    (name-str b (+ (macho-symtab-field b 2) (u32le b sym)) 64)))
+
+;; LC_SEGMENT_64 fields used by the entry mapping (cmd 25): vmaddr @+24,
+;; fileoff @+40, filesize @+48.
+(defn macho-seg-vmaddr [b :bytes off :i64] :i64 (u64le b (+ off 24)))
+(defn macho-seg-fileoff [b :bytes off :i64] :i64 (u64le b (+ off 40)))
+(defn macho-seg-filesize [b :bytes off :i64] :i64 (u64le b (+ off 48)))
+
+(defn macho-entry-off [b :bytes] :i64
+  (loop [i 0]
+    (if (>= i (macho-ncmds b)) (- 0 1)
+      (let [off (macho-cmd-off b i)]
+        (if (= (u32le b off) 2147483688)
+          (u64le b (+ off 8))
+          (recur (+ i 1)))))))
+
+(defn macho-entry [b :bytes] :i64
+  ;; LC_MAIN.entryoff is a FILE offset: resolve it through the segment
+  ;; whose file range contains it (review P1: adding it to
+  ;; macho-image-base -- which answers 0 when __PAGEZERO leads -- produced
+  ;; 0x1a0-style addresses instead of 0x1000001a0).
+  (let [e (macho-entry-off b)]
+    (loop [i 0]
+      (if (>= i (macho-ncmds b)) (+ (macho-image-base b) e)
+        (let [off (macho-cmd-off b i)]
+          (if (and (= (u32le b off) 25)
+                   (>= e (macho-seg-fileoff b off))
+                   (< e (+ (macho-seg-fileoff b off) (macho-seg-filesize b off))))
+            (+ (macho-seg-vmaddr b off) (- e (macho-seg-fileoff b off)))
+            (recur (+ i 1))))))))
+
+;; ------------------------------------------------------------- elf64
+;; e_entry @24, e_shoff @40, e_shentsize @58, e_shnum @60, e_shstrndx @62.
+;; section header (64): sh_name @0, sh_type @4, sh_flags @8, sh_addr @16,
+;; sh_offset @24, sh_size @32, sh_link @40. symbol (24): st_name @0,
+;; st_value @8, st_size @16.
+
+(defn elf-recognize [b :bytes] :i64
+  (if (and (= (u32le b 0) 0x464C457F) (= (bytes-at b 4) 2) (= (bytes-at b 5) 1))
+    1 0))
+
+(defn elf-entry [b :bytes] :i64 (u64le b 24))
+(defn elf-shoff [b :bytes] :i64 (u64le b 40))
+(defn elf-shentsize [b :bytes] :i64 (u16le b 58))
+(defn elf-shnum [b :bytes] :i64 (u16le b 60))
+(defn elf-shstrndx [b :bytes] :i64 (u16le b 62))
+
+(defn elf-sh-off [b :bytes i :i64] :i64 (+ (elf-shoff b) (* (elf-shentsize b) i)))
+
+(defn elf-strtab-off [b :bytes] :i64
+  (u64le b (+ (elf-sh-off b (elf-shstrndx b)) 24)))
+
+(defn elf-section-count [b :bytes] :i64 (elf-shnum b))
+
+(defn elf-section-row [b :bytes i :i64] :vector-i64
+  (let [sh (elf-sh-off b i)]
+    (vector-i64 (u64le b (+ sh 16)) (u64le b (+ sh 24)) (u64le b (+ sh 32))
+                (u64le b (+ sh 8))
+                (name8 b (+ (elf-strtab-off b) (u32le b sh))))))
+
+(defn elf-section-name [b :bytes i :i64] :string
+  (let [sh (elf-sh-off b i)]
+    (name-str b (+ (elf-strtab-off b) (u32le b sh)) 64)))
+
+;; index of a section header with the given sh_type, or -1
+(defn elf-sh-of-type [b :bytes typ :i64] :i64
+  (loop [i 0]
+    (if (>= i (elf-shnum b)) (- 0 1)
+      (if (= (u32le b (+ (elf-sh-off b i) 4)) typ) i
+        (recur (+ i 1))))))
+
+;; Symbol table section: SHT_SYMTAB (sh_type 2), falling back to
+;; SHT_DYNSYM (sh_type 11) when the binary is stripped of its static
+;; symbol table (review P2: the static-only search answered -1 and hid
+;; every exported and undefined dynamic symbol).
+(defn elf-symtab-sh [b :bytes] :i64
+  (let [t (elf-sh-of-type b 2)]
+    (if (>= t 0) t (elf-sh-of-type b 11))))
+
+;; the symbol string table is the section sh_link names
+(defn elf-sym-strtab-off [b :bytes] :i64
+  (let [t (elf-symtab-sh b)]
+    (u64le b (+ (elf-sh-off b (u32le b (+ (elf-sh-off b t) 40))) 24))))
+
+(defn elf-symbol-count [b :bytes] :i64
+  (let [t (elf-symtab-sh b)]
+    (if (< t 0) 0
+      (quot (u64le b (+ (elf-sh-off b t) 32)) 24))))
+
+(defn elf-symbol-row [b :bytes i :i64] :vector-i64
+  (let [t (elf-symtab-sh b)
+        sym (+ (u64le b (+ (elf-sh-off b t) 24)) (* 24 i))]
+    (vector-i64 (u64le b (+ sym 8))
+                (name8 b (+ (elf-sym-strtab-off b) (u32le b sym))))))
+
+(defn elf-symbol-name [b :bytes i :i64] :string
+  (let [t (elf-symtab-sh b)
+        sym (+ (u64le b (+ (elf-sh-off b t) 24)) (* 24 i))]
+    (name-str b (+ (elf-sym-strtab-off b) (u32le b sym)) 64)))
+
+;; smallest non-zero sh_addr (0 when the image is all-relative)
+;; ELF64 program headers: e_phoff @32, e_phentsize @54, e_phnum @56;
+;; phdr: p_type @0 (PT_LOAD = 1), p_vaddr @+16.
+(defn elf-phoff [b :bytes] :i64 (u64le b 32))
+(defn elf-phentsize [b :bytes] :i64 (u16le b 54))
+(defn elf-phnum [b :bytes] :i64 (u16le b 56))
+(defn elf-ph-off [b :bytes i :i64] :i64 (+ (elf-phoff b) (* (elf-phentsize b) i)))
+
+(defn elf-image-base [b :bytes] :i64
+  ;; The load image base comes from the PT_LOAD segments: the first load
+  ;; segment starts before the first section (a segment at 0x400000 may
+  ;; hold a first section at 0x400318), and stripped binaries may carry
+  ;; no section headers at all (review P1). Images with no program
+  ;; headers fall back to the section walk.
+  (let [n (elf-phnum b)]
+    (if (> n 0)
+      (loop [i 0 acc (- 0 1)]
+        (if (>= i n) (if (< acc 0) 0 acc)
+          (let [p (elf-ph-off b i)]
+            (if (= (u32le b p) 1)
+              (let [v (u64le b (+ p 16))]
+                (recur (+ i 1) (if (or (< acc 0) (< v acc)) v acc)))
+              (recur (+ i 1) acc)))))
+      (loop [i 0 acc 0]
+        (if (>= i (elf-shnum b)) acc
+          (let [a (u64le b (+ (elf-sh-off b i) 16))]
+            (recur (+ i 1)
+              (if (= a 0) acc
+                (if (= acc 0) a (if (< a acc) a acc))))))))))
+
+;; ------------------------------------------------------------- pe32+
+;; MZ @0, e_lfanew @60. At lfanew: PE\\0\\0, machine @+4, nsections @+6,
+;; symtab ptr @+12, nsyms @+16, sizeofopt @+20; optional header @+24
+;; (magic 0x20B, entry RVA @+16, ImageBase @+24); section table @+24+sizeofopt
+;; (40 bytes: name inline @0, vsize @8, vaddr @12, rawsize @16, rawptr @20,
+;; characteristics @36). COFF symbols: 18 bytes, inline name or strx @4,
+;; value @8; the string table follows the symbol table.
+
+(defn pe-lfanew [b :bytes] :i64 (u32le b 60))
+
+(defn pe-recognize [b :bytes] :i64
+  ;; e_lfanew is attacker-controlled: validate the buffer length against
+  ;; the MZ header, the offset itself and the 4 signature bytes it names
+  ;; BEFORE any dereference (review P1: a truncated or malformed PE
+  ;; trapped in bytes-at instead of answering 0).
+  (if (and (>= (bytes-count b) 64)
+           (= (u16le b 0) 0x5A4D)
+           (let [lf (pe-lfanew b)]
+             (and (>= lf 0) (<= (+ lf 4) (bytes-count b))
+                  (= (u32le b lf) 0x00004550))))
+    1 0))
+
+(defn pe-image-base [b :bytes] :i64 (u64le b (+ (pe-lfanew b) 48)))
+
+(defn pe-entry [b :bytes] :i64
+  (+ (pe-image-base b) (u32le b (+ (pe-lfanew b) 40))))
+
+(defn pe-section-count [b :bytes] :i64 (u16le b (+ (pe-lfanew b) 6)))
+
+(defn pe-section-off [b :bytes i :i64] :i64
+  (+ (pe-lfanew b) 24 (u16le b (+ (pe-lfanew b) 20)) (* 40 i)))
+
+(defn pe-section-row [b :bytes i :i64] :vector-i64
+  (let [s (pe-section-off b i)]
+    (vector-i64 (+ (pe-image-base b) (u32le b (+ s 12)))
+                (u32le b (+ s 20)) (u32le b (+ s 16)) (u32le b (+ s 36))
+                (name8 b s))))
+
+(defn pe-section-name [b :bytes i :i64] :string
+  (name-str b (pe-section-off b i) 8))
+
+;; PE/COFF NumberOfSymbols counts RAW 18-byte records, including the
+;; auxiliary records that follow a primary with NumberOfAuxSymbols > 0
+;; (record byte +17). The symbol surface is PRIMARY symbols only: the
+;; count excludes auxiliaries and the index walk skips them (review P2:
+;; exposing the raw count and indexing every record decoded auxiliaries
+;; as primary symbols).
+(defn pe-raw-count [b :bytes] :i64 (u32le b (+ (pe-lfanew b) 16)))
+(defn pe-aux-of [b :bytes rec :i64] :i64 (bytes-at b (+ rec 17)))
+
+(defn pe-symbol-count [b :bytes] :i64
+  ;; the walk stops at the string table, which follows the raw records
+  ;; (computed inline: pe-strtab-off is defined further down and this
+  ;; module resolves definitions in order).
+  (let [strtab (+ (u32le b (+ (pe-lfanew b) 12)) (* 18 (pe-raw-count b)))]
+    (loop [rec (u32le b (+ (pe-lfanew b) 12)) k 0]
+      (if (>= rec strtab) k
+        (recur (+ rec (* 18 (+ 1 (pe-aux-of b rec)))) (+ k 1))))))
+
+(defn pe-symbol-off [b :bytes i :i64] :i64
+  (loop [rec (u32le b (+ (pe-lfanew b) 12)) k 0]
+    (if (>= k i) rec
+      (recur (+ rec (* 18 (+ 1 (pe-aux-of b rec)))) (+ k 1)))))
+
+(defn pe-strtab-off [b :bytes] :i64
+  (+ (u32le b (+ (pe-lfanew b) 12)) (* 18 (pe-symbol-count b))))
+
+;; file offset of the name bytes (inline, or the string table when the
+;; first four bytes are zero)
+(defn pe-symbol-name-off [b :bytes i :i64] :i64
+  (let [s (pe-symbol-off b i)]
+    (if (= (u32le b s) 0) (+ (pe-strtab-off b) (u32le b (+ s 4))) s)))
+
+(defn pe-symbol-row [b :bytes i :i64] :vector-i64
+  (let [s (pe-symbol-off b i)]
+    (vector-i64 (u32le b (+ s 8)) (name8 b (pe-symbol-name-off b i)))))
+
+(defn pe-symbol-name [b :bytes i :i64] :string
+  (name-str b (pe-symbol-name-off b i) 64))
+
+;; ------------------------------------------------------------- imports
+;; Undefined-external symbols = the import surface visible in a symbol
+;; table (PE's IMAGE_IMPORT_DESCRIPTOR walk is a later slice). Each
+;; format predicate takes the raw entry offset so it can be tested on
+;; hand-built entries; the index forms wrap the table layout:
+;;   Mach-O nlist_64: n_type @+4, N_UNDF = (n_type & 0x0e) == 0
+;;   ELF64 Sym:       st_shndx @+6, SHN_UNDEF = 0
+;;   PE COFF symbol:  section number @+12, 0 = undefined external
+(defn nlist-undef? [b :bytes sym :i64] :bool
+  (= (bit-and (bytes-at b (+ sym 4)) 14) 0))
+
+(defn elf-sym-undef? [b :bytes sym :i64] :bool
+  (= (u16le b (+ sym 6)) 0))
+
+(defn pe-sym-undef? [b :bytes sym :i64] :bool
+  (= (u16le b (+ sym 12)) 0))
+
+(defn macho-symbol-undef? [b :bytes index :i64] :bool
+  (nlist-undef? b (+ (macho-symtab-field b 0) (* 16 index))))
+
+;; An undefined entry is an import only with an EXTERNAL binding
+;; (st_info bits 7:6 = STB_GLOBAL 1 or STB_WEAK 2): the mandatory
+;; all-zero symbol at index 0 (st_info = STB_LOCAL) must not appear in
+;; the import surface (review P2).
+(defn elf-sym-ext? [b :bytes sym :i64] :bool
+  (let [bind (bit-and (quot (bytes-at b (+ sym 4)) 64) 3)]
+    (or (= bind 1) (= bind 2))))
+(defn elf-symbol-undef? [b :bytes i :i64] :bool
+  (let [sym (+ (u64le b (+ (elf-sh-off b (elf-symtab-sh b)) 24)) (* 24 i))]
+    (and (elf-sym-undef? b sym) (elf-sym-ext? b sym))))
+
+(defn pe-symbol-undef? [b :bytes i :i64] :bool
+  (pe-sym-undef? b (pe-symbol-off b i)))
+
+;; words of a section row: [vaddr file-offset size ...]
+(defn section-words [b :bytes row :vector-i64 n :i64] :vector-i64
+  (let [off (vector-at row 1)]
+    (words-from-bytes (bytes-slice b off (+ off (* 4 n))))))
+
+;; ------------------------------------------------------------- fixtures
+;; Test containers assembled byte by byte from the published format
+;; layouts; every field below is visible in the source.
+;;
+;; `put8` uses `vector-assoc!` on purpose: functional `vector-assoc` copies
+;; the whole vector per call, and a fixture builder then churns
+;; O(bindings x size) vector-items -- past the native arena's default
+;; (64 Ki items), whose exhaustion is answered with SIGILL, not a named
+;; budget trap. The nested put16/32/64/name8 forms hand the same handle
+;; straight down, which is exactly the assoc! contract (the handle dies at
+;; the call). words-from-bytes / targets-vector stay functional: the
+;; linearity check refuses an `assoc!` whose handle travels through `recur`,
+;; and their copies are per-slot of small vectors.
+
+(defn put8 [v :vector-i64 off :i64 x :i64] :vector-i64 (vector-assoc! v off x))
+
+(defn put16 [v :vector-i64 off :i64 x :i64] :vector-i64
+  (put8 (put8 v off (bit-and x 255)) (+ off 1) (bit-and (quot x 256) 255)))
+
+(defn put32 [v :vector-i64 off :i64 x :i64] :vector-i64
+  (put16 (put16 v off (bit-and x 65535)) (+ off 2)
+         (bit-and (quot x 65536) 65535)))
+
+(defn put64 [v :vector-i64 off :i64 x :i64] :vector-i64
+  (put32 (put32 v off (bit-and x 4294967295)) (+ off 4) (quot x 4294967296)))
+
+;; 8 raw bytes at off from separate arguments, as a CHAIN of single put8
+;; calls -- two constraints, both measured:
+;;   * deep NESTING of assoc!-consuming calls is refused at read time
+;;     ("source reader rejected input", no span; depth 4 reads, depth 7
+;;     does not), so the puts are sequenced through `let`, one call deep.
+;;   * the ESM probe's vectorAssocInPlace requires a LINEAR handle (one
+;;     born of vector-alloc / assoc!); a functional `vector-assoc` in a
+;;     loop hands back a non-linear copy and every later assoc! traps
+;;     `vector-not-linear` there while jvm-kir and wasm disagree.
+(defn put-name8 [v :vector-i64 off :i64 a :i64 b :i64 c :i64 d :i64 e :i64
+                 f :i64 g :i64 h :i64] :vector-i64
+  (let [v (put8 v off a)
+        v (put8 v (+ off 1) b)
+        v (put8 v (+ off 2) c)
+        v (put8 v (+ off 3) d)
+        v (put8 v (+ off 4) e)
+        v (put8 v (+ off 5) f)
+        v (put8 v (+ off 6) g)
+        v (put8 v (+ off 7) h)]
+    v))
+
+;; Mach-O 64 arm64 executable: one __TEXT segment with a __text section,
+;; one symbol `_main`, LC_MAIN pointing at the section. 544 bytes.
+(defn macho-fixture [] :bytes
+  (let [v (vector-alloc 544)
+        v (put32 v 0 0xFEEDFACF)
+        v (put32 v 4 0x0100000C)
+        v (put32 v 8 0)
+        v (put32 v 12 2)
+        v (put32 v 16 3)
+        v (put32 v 20 200)
+        v (put32 v 24 0)
+        v (put32 v 28 0)
+        v (put32 v 32 25)
+        v (put32 v 36 152)
+        v (put-name8 v 40 95 95 84 69 88 84 0 0)
+        v (put64 v 56 0x100000000)
+        v (put64 v 64 0x4000)
+        v (put64 v 72 0)
+        v (put64 v 80 0x1000)
+        v (put32 v 88 7)
+        v (put32 v 92 5)
+        v (put32 v 96 1)
+        v (put32 v 100 0)
+        v (put-name8 v 104 95 95 116 101 120 116 0 0)
+        v (put-name8 v 120 95 95 84 69 88 84 0 0)
+        v (put64 v 136 0x1000001A0)
+        v (put64 v 144 0x20)
+        v (put32 v 152 0x1A0)
+        v (put32 v 156 2)
+        v (put32 v 160 0)
+        v (put32 v 164 0)
+        v (put32 v 168 0x80000400)
+        v (put32 v 172 0)
+        v (put32 v 176 0)
+        v (put32 v 180 0)
+        v (put32 v 184 2)
+        v (put32 v 188 24)
+        v (put32 v 192 0x200)
+        v (put32 v 196 1)
+        v (put32 v 200 0x210)
+        v (put32 v 204 16)
+        v (put32 v 208 2147483688)
+        v (put32 v 212 24)
+        v (put64 v 216 0x1A0)
+        v (put64 v 224 0)
+        v (put32 v 416 0x94000002)
+        v (put32 v 420 0x14000001)
+        v (put32 v 424 0x54000000)
+        v (put32 v 428 0xD65F03C0)
+        v (put32 v 512 1)
+        v (put8 v 516 15)
+        v (put8 v 517 1)
+        v (put16 v 518 0)
+        v (put64 v 520 0x1000001A0)
+        v (put-name8 v 528 0 95 109 97 105 110 0 0)]
+    (bytes-from-vector-i64 v)))
+
+;; ELF64 ET_DYN x86-64: 4 section headers (null/.text/.shstrtab/.symtab),
+;; two symbols (null and `_start`), text bytes. 432 bytes.
+(defn elf-fixture [] :bytes
+  (let [v (vector-alloc 432)
+        v (put-name8 v 0 127 69 76 70 2 1 1 0)
+        v (put16 v 16 3)
+        v (put16 v 18 62)
+        v (put32 v 20 1)
+        v (put64 v 24 0x1000)
+        v (put64 v 32 0)
+        v (put64 v 40 64)
+        v (put32 v 48 0)
+        v (put16 v 52 64)
+        v (put16 v 54 56)
+        v (put16 v 56 0)
+        v (put16 v 58 64)
+        v (put16 v 60 4)
+        v (put16 v 62 2)
+        v (put32 v 128 1)
+        v (put32 v 132 1)
+        v (put64 v 136 6)
+        v (put64 v 144 0x1000)
+        v (put64 v 152 0x1A0)
+        v (put64 v 160 0x10)
+        v (put32 v 168 0)
+        v (put32 v 172 0)
+        v (put64 v 176 16)
+        v (put64 v 184 0)
+        v (put32 v 192 7)
+        v (put32 v 196 3)
+        v (put64 v 200 0)
+        v (put64 v 208 0)
+        v (put64 v 216 0x180)
+        v (put64 v 224 32)
+        v (put32 v 256 17)
+        v (put32 v 260 2)
+        v (put64 v 264 0)
+        v (put64 v 272 0)
+        v (put64 v 280 0x140)
+        v (put64 v 288 48)
+        v (put32 v 296 2)
+        v (put32 v 300 1)
+        v (put64 v 304 8)
+        v (put64 v 312 24)
+        v (put32 v 344 25)
+        v (put8 v 348 18)
+        v (put8 v 349 0)
+        v (put16 v 350 1)
+        v (put64 v 352 0x1000)
+        v (put64 v 360 0x10)
+        v (put-name8 v 384 0 46 116 101 120 116 0 46)
+        v (put-name8 v 392 115 104 115 116 114 116 97 98)
+        v (put-name8 v 400 0 46 115 121 109 116 97 98)
+        v (put-name8 v 408 0 95 115 116 97 114 116 0)
+        v (put32 v 416 0xD503201F)
+        v (put32 v 420 0xD65F03C0)]
+    (bytes-from-vector-i64 v)))
+
+;; PE32+ x86-64: one .text section, one external symbol `_entry`. 488 bytes.
+(defn pe-fixture [] :bytes
+  (let [v (vector-alloc 488)
+        v (put16 v 0 0x5A4D)
+        v (put32 v 60 0x80)
+        v (put32 v 128 0x00004550)
+        v (put16 v 132 0x8664)
+        v (put16 v 134 1)
+        v (put32 v 136 0)
+        v (put32 v 140 0x1D0)
+        v (put32 v 144 1)
+        v (put16 v 148 0xF0)
+        v (put16 v 150 0x22)
+        v (put16 v 152 0x20B)
+        v (put32 v 168 0x1000)
+        v (put64 v 176 0x140000000)
+        v (put-name8 v 392 46 116 101 120 116 0 0 0)
+        v (put32 v 400 0x10)
+        v (put32 v 404 0x1000)
+        v (put32 v 408 0x10)
+        v (put32 v 412 0x1B0)
+        v (put32 v 428 0x60000020)
+        v (put32 v 432 0xD503201F)
+        v (put32 v 436 0xD65F03C0)
+        v (put-name8 v 464 95 101 110 116 114 121 0 0)
+        v (put32 v 472 0x1000)
+        v (put16 v 476 1)
+        v (put16 v 478 0x20)
+        v (put8 v 480 2)
+        v (put8 v 481 0)
+        v (put32 v 482 4)]
+    (bytes-from-vector-i64 v)))
+
+;; ------------------------------------------------------------- tests
+;; Every expectation below is hand-computed from the Arm ARM encodings;
+;; nothing is captured from another disassembler's output.
+
+(defn test-hints [] :i64
+  (if (and (= (insn-class 0xD503201F) (class-nop))
+           (= (insn-class 0xD65F03C0) (class-ret))
+           (= (insn-class 0xD65F0000) (class-ret))
+           (= (insn-class 0xD61F0000) (class-br))
+           (= (insn-class 0xD63F0000) (class-blr))
+           (= (insn-class 0xFFFFFFFF) (class-unknown))
+           (= (insn-class 0x00000000) (class-unknown)))
+    1 0))
+
+(defn test-exceptions [] :i64
+  (if (and (= (insn-class 0xD4000001) (class-svc))
+           (= (insn-imm16 0xD4000001) 0)
+           (= (insn-class 0xD4200000) (class-brk))
+           (= (insn-imm16 0xD4200000) 0)
+           (= (insn-class 0xD43FFFE0) (class-brk))
+           (= (insn-imm16 0xD43FFFE0) 0xFFFF)
+           (= (insn-class 0xD4400000) (class-hlt)))
+    1 0))
+
+(defn test-branch-uncond [] :i64
+  (if (and (= (insn-class 0x14000000) (class-b))
+           (= (insn-target 0x14000000 0x1000) 0x1000)
+           (= (insn-class 0x94000001) (class-bl))
+           (= (insn-target 0x94000001 0x1000) 0x1004)
+           (= (insn-target 0x14000002 0x1000) 0x1008))
+    1 0))
+
+(defn test-branch-cond [] :i64
+  ;; 0x54FFFFE0 is b.eq with imm19 = -1: target pc - 4.
+  (if (and (= (insn-class 0x54FFFFE0) (class-bcond))
+           (= (insn-cond 0x54FFFFE0) 0)
+           (= (insn-target 0x54FFFFE0 0x1000) 0x0FFC)
+           (= (insn-class 0xB4000040) (class-cbz))
+           (= (insn-op 0xB4000040) 0)
+           (= (insn-target 0xB4000040 0x1000) 0x1008)
+           (= (insn-class 0xB5000040) (class-cbz))
+           (= (insn-op 0xB5000040) 1)
+           (= (insn-class 0x36000040) (class-tbz))
+           (= (insn-op 0x36000040) 0)
+           (= (insn-target 0x36000040 0x1000) 0x1008)
+           (= (insn-class 0x37000040) (class-tbz))
+           (= (insn-op 0x37000040) 1))
+    1 0))
+
+(defn test-branch-register [] :i64
+  (if (and (= (insn-rn 0xD65F03C0) 30)
+           (= (insn-rn 0xD61F0000) 0)
+           (= (insn-target 0xD61F0000 0x1000) (- 0 1)))
+    1 0))
+
+(defn test-adr [] :i64
+  ;; adr x0, #0x1000 at 0x1000 -> 0x2000 (immhi=0x400, immlo=0)
+  ;; adrp x0, #0x3000 at 0x4321000 -> 0x4324000 (page + 3 pages)
+  (if (and (= (insn-class 0x10008000) (class-adr))
+           (= (insn-adr-imm 0x10008000) 0x1000)
+           (= (insn-target 0x10008000 0x1000) 0x2000)
+           (= (insn-class 0xF0000000) (class-adrp))
+           (= (insn-adr-imm 0xF0000000) 3)
+           (= (insn-target 0xF0000000 0x4321000) 0x4324000))
+    1 0))
+
+(defn test-mov [] :i64
+  ;; movz x0, #0x1234 = 0xD2824680 ; movk w1, #0xABCD (hw=1) = 0x72B579A1
+  ;; movn x0, #0 = 0x92800000
+  (if (and (= (insn-class 0xD2824680) (class-movz))
+           (= (insn-imm16 0xD2824680) 0x1234)
+           (= (insn-rd 0xD2824680) 0)
+           (= (insn-class 0x72B579A1) (class-movk))
+           (= (insn-imm16 0x72B579A1) 0xABCD)
+           (= (insn-rd 0x72B579A1) 1)
+           (= (insn-class 0x92800000) (class-movn))
+           (= (insn-imm16 0x92800000) 0))
+    1 0))
+
+(defn test-addsub [] :i64
+  ;; add x0, x1, #1 = 0x91000420
+  ;; sub x2, x3, #0x1000 (sh=1) = 0xD1400462
+  ;; adds x0, x0, #0 (flag form) stays unknown
+  (if (and (= (insn-class 0x91000420) (class-add-imm))
+           (= (insn-addsub-imm 0x91000420) 1)
+           (= (insn-rn 0x91000420) 1)
+           (= (insn-rd 0x91000420) 0)
+           (= (insn-class 0xD1400462) (class-sub-imm))
+           (= (insn-addsub-imm 0xD1400462) 0x1000)
+           (= (insn-rn 0xD1400462) 3)
+           (= (insn-rd 0xD1400462) 2)
+           (= (insn-class 0xB1000000) (class-unknown)))
+    1 0))
+
+(defn test-loadstore [] :i64
+  ;; ldr x0, [x1, #8] = 0xF9400420 ; str x0, [sp, #0] = 0xF90003E0
+  ;; ldr w0, [x0, #4] = 0xB9400400
+  (if (and (= (insn-class 0xF9400420) (class-ldr-imm))
+           (= (insn-ldst-off 0xF9400420) 8)
+           (= (insn-rn 0xF9400420) 1)
+           (= (insn-rt 0xF9400420) 0)
+           (= (insn-class 0xF90003E0) (class-str-imm))
+           (= (insn-ldst-off 0xF90003E0) 0)
+           (= (insn-rn 0xF90003E0) 31)
+           (= (insn-class 0xB9400400) (class-ldr-imm))
+           (= (insn-ldst-off 0xB9400400) 4))
+    1 0))
+
+(defn test-text [] :i64
+  (if (and (string=? (insn-text 0xD503201F 0) "nop")
+           (string=? (insn-text 0xD65F03C0 0) "ret")
+           (string=? (insn-text 0xD4000001 0) "svc #0x0")
+           (string=? (insn-text 0x14000000 0x1000) "b #0x1000")
+           (string=? (insn-text 0x54FFFFE0 0x1000) "b.eq #0xffc")
+           (string=? (insn-text 0xD2824680 0) "movz x0, #0x1234")
+           (string=? (insn-text 0xF9400420 0) "ldr x0, [x1, #0x8]")
+           (string=? (insn-text 0xF90003E0 0) "str x0, [sp, #0x0]"))
+    1 0))
+
+(defn test-bytes-xrefs [] :i64
+  ;; program at 0x0 (little-endian words):
+  ;;   0x0: bl #+8   (0x94000002)   x\
+  ;;   0x4: b  #+4   (0x14000001)   x }- three xrefs to 0x8
+  ;;   0x8: b.eq #+0 (0x54000000)   x/
+  ;;   0xc: ret      (0xD65F03C0)
+  (let [b (bytes-from-vector-i64 (vector-i64 2 0 0 148 1 0 0 20 0 0 0 84 192 3 95 214))
+        words (words-from-bytes b)]
+    (if (and (= (bytes-count b) 16)
+             (= (vector-count words) 4)
+             (= (vector-at words 0) 0x94000002)
+             (= (vector-at words 1) 0x14000001)
+             (= (vector-at words 2) 0x54000000)
+             (= (vector-at words 3) 0xD65F03C0)
+             (= (xrefs-count words 0 4 8) 3)
+             (= (xrefs-count words 0 4 0) 0)
+             (= (count-class words 4 (class-bl)) 1)
+             (= (count-class words 4 (class-unknown)) 0))
+      1 0)))
+
+(defn test-logical-reg [] :i64
+  ;; and x0, x1, x2 = 0x8A020020 ; eor x3, x4, x5 = 0xCA050083
+  ;; orr x0, x0, x0 = 0xAA000000 ; ands x0, x1, x2 = 0xEA020020
+  (if (and (= (insn-class 0x8A020020) (class-and-reg))
+           (= (insn-rd 0x8A020020) 0)
+           (= (insn-rn 0x8A020020) 1)
+           (= (insn-rm 0x8A020020) 2)
+           (= (insn-class 0xCA050083) (class-eor-reg))
+           (= (insn-rd 0xCA050083) 3)
+           (= (insn-rn 0xCA050083) 4)
+           (= (insn-rm 0xCA050083) 5)
+           (= (insn-class 0xAA000000) (class-orr-reg))
+           (= (insn-class 0xEA020020) (class-ands-reg)))
+    1 0))
+
+(defn test-addsub-reg [] :i64
+  ;; add x0, x1, x2 = 0x8B020020 ; sub x0, x1, x2 = 0xCB020020
+  ;; adds x0, x1, x2 = 0xAB020020 (flag form) stays unknown
+  (if (and (= (insn-class 0x8B020020) (class-add-reg))
+           (= (insn-class 0xCB020020) (class-sub-reg))
+           (= (insn-class 0xAB020020) (class-unknown)))
+    1 0))
+
+(defn test-ldst-reg [] :i64
+  ;; ldr x0, [x1, x2] = 0xF8626820 ; str x0, [x1, x2] = 0xF8226820
+  (if (and (= (insn-class 0xF8626820) (class-ldr-reg))
+           (= (insn-rm 0xF8626820) 2)
+           (= (insn-rn 0xF8626820) 1)
+           (= (insn-rt 0xF8626820) 0)
+           (= (insn-class 0xF8226820) (class-str-reg)))
+    1 0))
+
+(defn test-pair [] :i64
+  ;; ldp x0, x1, [x2, #16] = 0xA9410440
+  ;; stp x29, x30, [sp, #-16]! = 0xA9BF7BFD (imm7 = -2, scaled by 8)
+  (if (and (= (insn-class 0xA9410440) (class-ldp))
+           (= (insn-pair-off 0xA9410440) 16)
+           (= (insn-rd 0xA9410440) 0)
+           (= (insn-rt2 0xA9410440) 1)
+           (= (insn-rn 0xA9410440) 2)
+           (= (insn-class 0xA9BF7BFD) (class-stp))
+           (= (insn-pair-off 0xA9BF7BFD) (- 0 16)))
+    1 0))
+
+(defn test-record [] :i64
+  (let [r (insn-record 0x8A020020 0)]
+    (if (and (= (vector-count r) 7)
+             (= (vector-at r 0) (class-and-reg))
+             (= (vector-at r 1) 0)
+             (= (vector-at r 2) 1)
+             (= (vector-at r 3) 2)
+             (= (vector-at r 5) (- 0 1)))
+      1 0)))
+
+(defn test-targets [] :i64
+  (let [b (bytes-from-vector-i64 (vector-i64 2 0 0 148 1 0 0 20 0 0 0 84 192 3 95 214))
+        words (words-from-bytes b)
+        t (targets-vector words 0 4)]
+    (if (and (= (vector-at t 0) 8)
+             (= (vector-at t 1) 8)
+             (= (vector-at t 2) 8)
+             (= (vector-at t 3) (- 0 1)))
+      1 0)))
+
+(defn test-listing [] :i64
+  ;; the 4-word program of test-bytes-xrefs, one line per word
+  (let [b (bytes-from-vector-i64 (vector-i64 2 0 0 148 1 0 0 20 0 0 0 84 192 3 95 214))
+        words (words-from-bytes b)
+        nl (string-from-utf8 (bytes-from-vector-i64 (vector-i64 10)))
+        expected (string-concat (string-concat "00000000: 94000002  bl #0x8" nl)
+                  (string-concat (string-concat "00000004: 14000001  b #0x8" nl)
+                    (string-concat (string-concat "00000008: 54000000  b.eq #0x8" nl)
+                      (string-concat "0000000c: d65f03c0  ret" nl))))]
+    (if (string=? (listing-text words 0 4) expected) 1 0)))
+
+(defn test-macho [] :i64
+  (let [b (macho-fixture)
+        r (macho-section-row b 0)
+        s (macho-symbol-row b 0)]
+    (if (and (= (macho-recognize b) 1)
+             (= (macho-ncmds b) 3)
+             (= (macho-image-base b) 0x100000000)
+             (= (macho-entry b) 0x1000001A0)
+             (= (macho-section-count b) 1)
+             (= (vector-count r) 5)
+             (= (vector-at r 0) 0x1000001A0)
+             (= (vector-at r 1) 0x1A0)
+             (= (vector-at r 2) 0x20)
+             (= (vector-at r 3) 0x80000400)
+             (string=? (macho-section-name b 0) "__text")
+             (= (macho-symbol-count b) 1)
+             (= (vector-at s 0) 0x1000001A0)
+             (string=? (macho-symbol-name b 0) "_main"))
+      1 0)))
+
+(defn test-elf [] :i64
+  (let [b (elf-fixture)
+        r (elf-section-row b 1)
+        s (elf-symbol-row b 1)]
+    (if (and (= (elf-recognize b) 1)
+             (= (elf-entry b) 0x1000)
+             (= (elf-image-base b) 0x1000)
+             (= (elf-section-count b) 4)
+             (= (vector-at r 0) 0x1000)
+             (= (vector-at r 1) 0x1A0)
+             (= (vector-at r 2) 0x10)
+             (= (vector-at r 3) 6)
+             (string=? (elf-section-name b 1) ".text")
+             (string=? (elf-section-name b 2) ".shstrtab")
+             (= (elf-symbol-count b) 2)
+             (= (vector-at s 0) 0x1000)
+             (string=? (elf-symbol-name b 1) "_start"))
+      1 0)))
+
+(defn test-pe [] :i64
+  (let [b (pe-fixture)
+        r (pe-section-row b 0)
+        s (pe-symbol-row b 0)]
+    (if (and (= (pe-recognize b) 1)
+             (= (pe-image-base b) 0x140000000)
+             (= (pe-entry b) 0x140001000)
+             (= (pe-section-count b) 1)
+             (= (vector-at r 0) 0x140001000)
+             (= (vector-at r 1) 0x1B0)
+             (= (vector-at r 2) 0x10)
+             (= (vector-at r 3) 0x60000020)
+             (string=? (pe-section-name b 0) ".text")
+             (= (pe-symbol-count b) 1)
+             (= (vector-at s 0) 0x1000)
+             (string=? (pe-symbol-name b 0) "_entry"))
+      1 0)))
+
+(defn test-words-at [] :i64
+  ;; the macho fixture's __text holds the 4-word program of
+  ;; test-bytes-xrefs; the loader hands it to the decoder unchanged
+  (let [b (macho-fixture)
+        w (section-words b (macho-section-row b 0) 4)]
+    (if (and (= (vector-count w) 4)
+             (= (vector-at w 0) 0x94000002)
+             (= (vector-at w 1) 0x14000001)
+             (= (vector-at w 2) 0x54000000)
+             (= (vector-at w 3) 0xD65F03C0))
+      1 0)))
+
+;; ------------------------------------------------------------- native entry
+;; `main` runs every check with no host I/O and answers 1 when all 22 pass.
+;; Compiled to the host-native kexe target, the artifact runs under the
+;; reviewed C loader (`tools/kexe_loader.c`) with no JVM, GraalVM or Node.js
+;; in the runtime tree -- only the compile door is still the node-hosted
+;; bootstrap compiler (docs/selfhost-priority.md; the selfhost compiler
+;; binary is org-wide WIP). Single module on purpose: the :jvm-kir reference
+;; charges cross-module calls against its 32-frame budget, and the compile
+;; oracle must be able to verify this entry.
+(defn test-shift-text [] :i64
+  ;; Shifted-register rendering (Arm ARM shift field), hand-encoded:
+  ;;   and x0, x1, x2          = 0x8A020020 (LSL #0 -> suffix omitted)
+  ;;   and x0, x1, x2, lsr #2  = 0x8A420820 (shift 01, imm6 2)
+  ;;   and x0, x1, x2, ror #63 = 0x8AC2FC20 (shift 11, imm6 63)
+  ;;   add x0, x1, x2, lsl #4  = 0x8B021020 (shift 00, imm6 4 -> shown)
+  (if (and (string=? (insn-text 0x8A020020 0) "and x0, x1, x2")
+           (string=? (insn-text 0x8A420820 0) "and x0, x1, x2, lsr #0x2")
+           (string=? (insn-text 0x8AC2FC20 0) "and x0, x1, x2, ror #0x3f")
+           (string=? (insn-text 0x8B021020 0) "add x0, x1, x2, lsl #0x4")
+           (= (insn-shift-type 0x8A420820) 1)
+           (= (insn-imm6 0x8AC2FC20) 63))
+    1 0))
+
+(defn test-extend-text [] :i64
+  ;; Register-offset rendering (option bits 15:13, S bit 12), hand-encoded:
+  ;;   ldr x0, [x1, x2]           = 0xF8626820 (option 011, S 0)
+  ;;   ldr x0, [x1, x2, lsl #3]   = 0xF8627820 (option 011, S 1, amount=size)
+  ;;   ldr x0, [x1, w2, sxtw]     = 0xF862C820 (option 110, S 0)
+  ;;   ldr x0, [x1, w2, sxtw #3]  = 0xF862D820 (option 110, S 1)
+  (if (and (string=? (insn-text 0xF8626820 0) "ldr x0, [x1, x2]")
+           (string=? (insn-text 0xF8627820 0) "ldr x0, [x1, x2, lsl #3]")
+           (string=? (insn-text 0xF862C820 0) "ldr x0, [x1, w2, sxtw]")
+           (string=? (insn-text 0xF862D820 0) "ldr x0, [x1, w2, sxtw #3]")
+           (= (insn-extend-option 0xF862C820) 6)
+           (= (insn-ldst-s 0xF8627820) 1))
+    1 0))
+
+(defn test-literal [] :i64
+  ;; ADRP+ADD literal pools at base 0x1000, hand-encoded:
+  ;;   0x1000: adrp x0, #0x1000    = 0xB0000000 (page target 0x2000)
+  ;;   0x1004: add  x0, x0, #0x8   = 0x91002000   -> literal 0x2008
+  ;;   0x1008: adrp x0, #0x1000    = 0xB0000000
+  ;;   0x100c: sub  x0, x0, #0x8   = 0xD1002000   -> -1 (sub, not add)
+  ;;   0x1010: adrp x0, #0x1000    = 0xB0000000
+  ;;   0x1014: add  x0, x0, #0x1000 lsl #12 = 0x91400400 -> 0x2000+0x1000
+  (let [words (vector-i64 0xB0000000 0x91002000 0xB0000000 0xD1002000
+                          0xB0000000 0x91400400)
+        lit (literal-targets words 0x1000 6)]
+    (if (and (= (vector-at lit 0) 0x2008)
+             (= (vector-at lit 1) -1)
+             (= (vector-at lit 2) -1)
+             (= (vector-at lit 3) -1)
+             (= (vector-at lit 4) 0x3000)
+             (= (vector-at lit 5) -1)
+             (= (adrp-add-target 0x91002000 0x91002000 0x1000) -1))
+      1 0)))
+
+(defn test-m3-edges [] :i64
+  ;; Hand-encoded edges of the program below: bl -> 0x100c, b -> 0x1004.
+  (if (and (= (insn-class 0x94000003) (class-bl))
+           (= (insn-class 0x17FFFFFD) (class-b))
+           (= (insn-target 0x94000003 0x1000) 0x100c)
+           (= (insn-target 0x17FFFFFD 0x1010) 0x1004)
+           (= (slot-of 0x1000 6 0x100c) 3)
+           (= (slot-of 0x1000 6 0x2000) -1)
+           (= (slot-of 0x1000 6 0x1002) -1))
+    1 0))
+
+(defn test-m3-reach [] :i64
+  ;; Program at 0x1000 (hand-encoded):
+  ;;   0x1000: bl 0x100c        = 0x94000003
+  ;;   0x1004: ret              = 0xD65F03C0
+  ;;   0x1008: nop              = 0xD503201F   (unreachable, no caller)
+  ;;   0x100c: add x0, x0, #1   = 0x91000400   (function 2 body)
+  ;;   0x1010: b 0x1004         = 0x17FFFFFD   (imm26 = -3)
+  ;;   0x1014: ret              = 0xD65F03C0   (unreachable, tail-b skips)
+  ;; reachable = {0,1,3,4}.
+  (let [words (vector-i64 0x94000003 0xD65F03C0 0xD503201F 0x91000400
+                          0x17FFFFFD 0xD65F03C0)
+        r (reachable-vector words 0x1000 6)]
+    (if (and (= (vector-at r 0) 1)
+             (= (vector-at r 1) 1)
+             (= (vector-at r 2) 0)
+             (= (vector-at r 3) 1)
+             (= (vector-at r 4) 1)
+             (= (vector-at r 5) 0))
+      1 0)))
+
+(defn test-m3-entries [] :i64
+  (let [words (vector-i64 0x94000003 0xD65F03C0 0xD503201F 0x91000400
+                          0x17FFFFFD 0xD65F03C0)
+        f (function-entries words 0x1000 6)]
+    (if (and (= (vector-at f 0) 0x1000)
+             (= (vector-at f 1) 0x100c)
+             (= (vector-at f 2) -1))
+      1 0)))
+
+(defn test-m3-cfg [] :i64
+  ;; CFG over the test-m3-reach program (base 0x1000). Leaders = {0,1,2,3,5}
+  ;; (slot 0, bl target 3, next-after-ret 1 and 2, b target 1, next-after-b
+  ;; 5). Blocks: [0,0] [1,1] [2,2] [3,4] [5,5]. Edges (target before fall):
+  ;;   block 0 (bl):  (0,3) (0,1)
+  ;;   block 2 (nop): (2,3)
+  ;;   block 3 (b):   (3,1)
+  (let [words (vector-i64 0x94000003 0xD65F03C0 0xD503201F 0x91000400
+                          0x17FFFFFD 0xD65F03C0)
+        rows (block-rows words 0x1000 6)
+        e (cfg-edges words 0x1000 6)]
+    (if (and (= (vector-at rows 0) 0) (= (vector-at rows 1) 0)
+             (= (vector-at rows 2) 1) (= (vector-at rows 3) 1)
+             (= (vector-at rows 4) 2) (= (vector-at rows 5) 2)
+             (= (vector-at rows 6) 3) (= (vector-at rows 7) 4)
+             (= (vector-at rows 8) 5) (= (vector-at rows 9) 5)
+             (= (vector-at rows 10) -1)
+             (= (vector-at e 0) 0) (= (vector-at e 1) 3)
+             (= (vector-at e 2) 0) (= (vector-at e 3) 1)
+             (= (vector-at e 4) 2) (= (vector-at e 5) 3)
+             (= (vector-at e 6) 3) (= (vector-at e 7) 1)
+             (= (vector-at e 8) -1))
+      1 0)))
+
+(defn test-m3-bounds [] :i64
+  ;; Function bounds + tail calls on a hand-built program at 0x2000
+  ;; (hand-encoded):
+  ;;   0x2000: stp x29, x30, [sp, #-16]! = 0xA9BF7BFD  (prologue)
+  ;;   0x2004: bl 0x200c                 = 0x94000002
+  ;;   0x2008: ret                       = 0xD65F03C0
+  ;;   0x200c: add x0, x0, #1            = 0x91000400  (function 2)
+  ;;   0x2010: b 0x2000                  = 0x17FFFFFC  (tail call, imm26 -4)
+  ;; entries {0x2000, 0x200c}: bounds [0,2] and [3,4]; tail-call (4, 0).
+  (let [words (vector-i64 0xA9BF7BFD 0x94000002 0xD65F03C0 0x91000400
+                          0x17FFFFFC)
+        b (function-bounds words 0x2000 5)
+        tc (tail-call-edges words 0x2000 5)]
+    (if (and (prologue? 0xA9BF7BFD)
+             (not (prologue? 0x91000400))
+             (= (insn-pair-off 0xA9BF7BFD) -16)
+             (= (vector-at b 0) 0) (= (vector-at b 1) 2)
+             (= (vector-at b 2) 3) (= (vector-at b 3) 4)
+             (= (vector-at b 4) -1)
+             (= (vector-at tc 0) 4) (= (vector-at tc 1) 0)
+             (= (vector-at tc 2) -1))
+      1 0)))
+
+(defn test-m3-strings [] :i64
+  ;; bytes: "Hi" 0 "ABCD" 0 "Z" (hand-assembled).
+  ;; min=2 -> rows (0,2) (3,4); min=3 -> only (3,4).
+  (let [b (bytes-from-vector-i64 (vector-i64 72 105 0 65 66 67 68 0 90))
+        r2 (strings-rows b 2)
+        r3 (strings-rows b 3)]
+    (if (and (= (vector-at r2 0) 0) (= (vector-at r2 1) 2)
+             (= (vector-at r2 2) 3) (= (vector-at r2 3) 4)
+             (= (vector-at r2 4) -1)
+             (= (vector-at r3 0) 3) (= (vector-at r3 1) 4)
+             (= (vector-at r3 2) -1))
+      1 0)))
+
+(defn test-m3-xrefs [] :i64
+  ;; Xrefs edge list over the test-m3-reach program: bl 0x1000->0x100c,
+  ;; b 0x1010->0x1004; no adrp+add pairs.
+  (let [words (vector-i64 0x94000003 0xD65F03C0 0xD503201F 0x91000400
+                          0x17FFFFFD 0xD65F03C0)
+        e (xrefs-edges words 0x1000 6)]
+    (if (and (= (vector-at e 0) 0x1000) (= (vector-at e 1) 0x100c)
+             (= (vector-at e 2) 0x1010) (= (vector-at e 3) 0x1004)
+             (= (vector-at e 4) -1))
+      1 0)))
+
+(defn test-m3-imports [] :i64
+  ;; Defined symbols come from the fixtures (n_type 15 / st_shndx 1 /
+  ;; section number 1); undefined cases use hand-built table entries.
+  (let [nlist (bytes-from-vector-i64 (vector-i64 0 0 0 0 1 0 0 0
+                                                0 0 0 0 0 0 0 0))
+        elf (bytes-from-vector-i64 (vector-i64 0 0 0 0 0 0 0 0 0 0 0 0
+                                              0 0 0 0 0 0 0 0 0 0 0 0))
+        pe (bytes-from-vector-i64 (vector-i64 0 0 0 0 0 0 0 0 0
+                                              0 0 0 0 0 0 0 0 0))]
+    (if (and (nlist-undef? nlist 0)
+             (elf-sym-undef? elf 0)
+             (pe-sym-undef? pe 0)
+             (not (macho-symbol-undef? (macho-fixture) 0))
+             (not (elf-symbol-undef? (elf-fixture) 1))
+             (not (pe-symbol-undef? (pe-fixture) 0)))
+      1 0)))
+
+(defn test-reg31-sf [] :i64
+  ;; Register 31 renders per operand role (review P1) and sf selects the
+  ;; width (review P2):
+  ;;   add x0, x1, #1  = 0x91000420 -> "add x0, x1, #0x1"
+  ;;   add w0, w1, #1  = 0x11000420 -> "add w0, w1, #0x1"
+  ;;   add sp, sp, #16 = 0x910043FF -> "add sp, sp, #0x10"
+  ;;   orr x0, xzr, x1 = 0xAA0103E0 -> "orr x0, xzr, x1"
+  ;;   movk w1, #0xabcd = 0x72B579A1 -> "movk w1, #0xabcd, lsl #0x10"
+  (if (and (string=? (insn-text 0x91000420 0) "add x0, x1, #0x1")
+           (string=? (insn-text 0x11000420 0) "add w0, w1, #0x1")
+           (string=? (insn-text 0x910043FF 0) "add sp, sp, #0x10")
+           (string=? (insn-text 0xAA0103E0 0) "orr x0, xzr, x1")
+           (string=? (insn-text 0x72B579A1 0) "movk w1, #0xabcd, lsl #0x10"))
+    1 0))
+
+(defn test-tbz-pair-text [] :i64
+  ;; TBZ/TBNZ carry the b5:b40 bit index and the b5 width (review P1);
+  ;; pair load/store keeps its addressing mode (review P1):
+  ;;   0x36000040 @0x1000 -> "tbz w0, #0x0, #0x1008"   (bit 0 of w0)
+  ;;   0xB6000040 @0x1000 -> "tbz x0, #0x20, #0x1008"  (b5=1 -> bit 32)
+  ;;   0xA9BF7BFD -> "stp x29, x30, [sp, #-0x10]!"     (pre-index)
+  ;;   0xA8C10440 -> "ldp x0, x1, [x2], #0x10"         (post-index)
+  ;;   0xA9410440 -> "ldp x0, x1, [x2, #0x10]"         (signed offset)
+  (if (and (string=? (insn-text 0x36000040 0x1000) "tbz w0, #0x0, #0x1008")
+           (string=? (insn-text 0xB6000040 0x1000) "tbz x0, #0x20, #0x1008")
+           (string=? (insn-text 0xA9BF7BFD 0) "stp x29, x30, [sp, #-0x10]!")
+           (string=? (insn-text 0xA8C10440 0) "ldp x0, x1, [x2], #0x10")
+           (string=? (insn-text 0xA9410440 0) "ldp x0, x1, [x2, #0x10]"))
+    1 0))
+
+(defn test-bounds-guards [] :i64
+  ;; Truncated/malformed PE answers 0 instead of trapping (review P1:
+  ;; e_lfanew is attacker-controlled and was dereferenced unchecked), and
+  ;; an empty analysis window answers an empty vector (review P2).
+  (let [short (bytes-from-vector-i64 (vector-i64 77 90 0 0 0 0 0 0))
+        far (bytes-from-vector-i64 (put32 (put16 (vector-alloc 64) 0 0x5A4D) 60 1000))
+        r (reachable-vector (vector-i64 0) 0 0)]
+    (if (and (= (pe-recognize short) 0)
+             (= (pe-recognize far) 0)
+             (= (pe-recognize (pe-fixture)) 1)
+             (= (vector-count r) 0))
+      1 0)))
+
+(defn test-mov-ret-ror [] :i64
+  ;; Move-wide halfword shift (review P2), nondefault RET registers
+  ;; (review P2), reserved ROR in add/sub shifted-register (review P2):
+  ;;   0x72B579A1 -> "movk w1, #0xabcd, lsl #0x10"  (hw=1)
+  ;;   0xD2824680 -> "movz x0, #0x1234"             (hw=0, no suffix)
+  ;;   0xD65F0260 -> "ret x19" ; 0xD65F03C0 -> "ret"
+  ;;   0x8BC20020 -> class-unknown (shift 11 is reserved here)
+  (if (and (string=? (insn-text 0x72B579A1 0) "movk w1, #0xabcd, lsl #0x10")
+           (string=? (insn-text 0xD2824680 0) "movz x0, #0x1234")
+           (string=? (insn-text 0xD65F0260 0) "ret x19")
+           (string=? (insn-text 0xD65F03C0 0) "ret")
+           (= (insn-class 0x8BC20020) (class-unknown))
+           (= (insn-class 0x8B020020) (class-add-reg)))
+    1 0))
+
+(defn test-symtab-fixes [] :i64
+  ;; SHT_DYNSYM fallback, external-binding imports, COFF aux skip
+  ;; (review P2 x3):
+  ;;   a stripped ELF whose only symbol section is sh_type 11 still
+  ;;   reports its symbols;
+  ;;   the all-zero ELF symbol 0 (STB_LOCAL) is not an import;
+  ;;   a 3-record COFF table (primary + 1 aux + primary) counts 2
+  ;;   primaries and index 1 lands on the third raw record.
+  (let [elf-v (vector-alloc 224)
+        elf-v (put16 elf-v 58 64)
+        elf-v (put16 elf-v 60 1)
+        elf-v (put64 elf-v 40 128)
+        elf-v (put32 elf-v 132 11)
+        elf-v (put64 elf-v 152 200)
+        elf-v (put64 elf-v 160 24)
+        elf11 (bytes-from-vector-i64 elf-v)
+        pe-v (vector-alloc 280)
+        pe-v (put16 pe-v 0 0x5A4D)
+        pe-v (put32 pe-v 60 128)
+        pe-v (put32 pe-v 140 200)
+        pe-v (put32 pe-v 144 3)
+        pe-v (put8 pe-v 217 1)
+        pe3 (bytes-from-vector-i64 pe-v)]
+    (if (and (= (elf-symbol-count elf11) 1)
+             (not (elf-symbol-undef? (elf-fixture) 0))
+             (= (pe-symbol-count pe3) 2)
+             (= (pe-symbol-off pe3 1) 236))
+      1 0)))
+
+(defn test-adrp-add-sf [] :i64
+  ;; The canonical ADRP+ADD literal pair requires a 64-bit ADD (review
+  ;; P2): add w0, w0, #1 (0x11000400) truncates the page value and must
+  ;; not resolve, while add x0, x0, #1 (0x91000400) does.
+  ;;   0x90000000 @0x1000 -> page 0x1000; +1 -> 0x1001
+  (if (and (= (adrp-add-target 0x90000000 0x91000400 0x1000) 0x1001)
+           (= (adrp-add-target 0x90000000 0x11000400 0x1000) (- 0 1)))
+    1 0))
+
+(defn test-image-base-mapping [] :i64
+  ;; LC_MAIN.entryoff maps through its containing segment and the ELF
+  ;; load image base comes from PT_LOAD (review P1 x2):
+  ;;   PAGEZERO-first Mach-O: entryoff 0x1a0 in __TEXT (vmaddr 0x100000000,
+  ;;   fileoff 0) answers 0x1000001a0, not 0x1a0;
+  ;;   ELF with PT_LOAD p_vaddr 0x400000 and first section 0x400318
+  ;;   answers 0x400000, not 0x400318.
+  (let [mv (vector-alloc 224)
+        mv (put32 mv 0 0xFEEDFACF)
+        mv (put32 mv 4 0x0100000C)
+        mv (put32 mv 16 3)
+        mv (put32 mv 20 168)
+        mv (put32 mv 32 25)
+        mv (put32 mv 36 72)
+        mv (put64 mv 56 0)
+        mv (put64 mv 64 0x1000)
+        mv (put64 mv 72 0)
+        mv (put64 mv 80 0)
+        mv (put32 mv 104 25)
+        mv (put32 mv 108 72)
+        mv (put64 mv 128 0x100000000)
+        mv (put64 mv 136 0x4000)
+        mv (put64 mv 144 0)
+        mv (put64 mv 152 0x1000)
+        mv (put32 mv 176 2147483688)
+        mv (put32 mv 180 24)
+        mv (put64 mv 184 0x1A0)
+        m (bytes-from-vector-i64 mv)
+        ev (vector-alloc 256)
+        ev (put64 ev 32 64)
+        ev (put16 ev 54 56)
+        ev (put16 ev 56 1)
+        ev (put64 ev 40 128)
+        ev (put16 ev 58 64)
+        ev (put16 ev 60 1)
+        ev (put32 ev 64 1)
+        ev (put64 ev 80 0x400000)
+        ev (put64 ev 144 0x400318)
+        e (bytes-from-vector-i64 ev)]
+    (if (and (= (macho-entry m) 0x1000001A0)
+             (= (elf-image-base e) 0x400000))
+      1 0)))
+
+(defn test-descent-bounds [] :i64
+  ;; Recursive descent follows control-flow edges only (review P1): an
+  ;; ADR data reference into the window must not mark its target as code.
+  ;; fn-end follows local unconditional branches (review P1): a forward
+  ;; b to an in-window slot does not truncate the function.
+  ;;   slot0 adr x0, #8 (0x10000040) targets slot2 (data); slot1 ret
+  ;;   slot0 b +2 (0x14000002) targets slot2 (local); slot1 add; slot2 ret
+  (let [r (reachable-vector (vector-i64 0x10000040 0xD65F03C0 0x20000000) 0x1000 3)
+        words2 (vector-i64 0x14000002 0x91000420 0xD65F03C0)
+        entries (fill-vec 3 (- 0 1))]
+    (if (and (= (vector-at r 0) 1)
+             (= (vector-at r 1) 1)
+             (= (vector-at r 2) 0)
+             (= (fn-end words2 entries 0x1000 3 0) 2))
+      1 0)))
+
+(defn main [] :i64
+  (let [s (+ (test-hints) (test-exceptions) (test-branch-uncond)
+             (test-branch-cond) (test-branch-register) (test-adr)
+             (test-mov) (test-addsub) (test-loadstore) (test-text)
+             (test-bytes-xrefs) (test-logical-reg) (test-addsub-reg)
+             (test-ldst-reg) (test-pair) (test-record) (test-targets)
+             (test-listing) (test-shift-text) (test-extend-text)
+             (test-reg31-sf) (test-tbz-pair-text) (test-bounds-guards) (test-mov-ret-ror) (test-symtab-fixes) (test-adrp-add-sf) (test-image-base-mapping) (test-descent-bounds)
+             (test-literal) (test-m3-edges) (test-m3-reach) (test-m3-entries)
+             (test-m3-cfg) (test-m3-bounds) (test-m3-strings) (test-m3-xrefs)
+             (test-m3-imports)
+             (test-macho) (test-elf) (test-pe)
+             (test-words-at))]
+    (if (= s 41) 1 0)))
