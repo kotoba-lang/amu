@@ -1,0 +1,33 @@
+===== load-manipulation experiment (JUN-58): manipulated CPU load vs SPEEDUP-iqr
+retained runs: 8 of 8;  missing/unverified: none
+arms: I = natural load (pairs 1-2), L = 12 CPU burners (pairs 3-4); per-run iqr is within-run over 32 round-ratios
+pair1 w64t31 [I] [Tue Oct 20 15:37:17 JST 2026]: gap=-422641.6 ns/dispatch  speedup median=1.1016 iqr=0.1106 min=0.7295 max=2.3718  floor/baseline=0.1019  floor/variant=0.1088  load1=15.7  vs-1.0=indistinguishable-at-this-noise
+pair1 w64t32 [I] [Tue Oct 20 15:39:16 JST 2026]: gap=-25794.9 ns/dispatch  speedup median=1.0400 iqr=0.2093 min=0.6568 max=1.5319  floor/baseline=0.3467  floor/variant=0.3513  load1=17.91  vs-1.0=indistinguishable-at-this-noise
+pair2 w64t31 [I] [Tue Oct 20 15:42:20 JST 2026]: gap=-37536.1 ns/dispatch  speedup median=1.0573 iqr=0.4312 min=0.6389 max=1.9186  floor/baseline=0.2764  floor/variant=0.2973  load1=20.88  vs-1.0=indistinguishable-at-this-noise
+pair2 w64t32 [I] [Tue Oct 20 15:39:42 JST 2026]: gap=-32159.2 ns/dispatch  speedup median=1.0123 iqr=0.0568 min=0.8249 max=1.3404  floor/baseline=0.0811  floor/variant=0.0835  load1=17.66  vs-1.0=indistinguishable-at-this-noise
+pair3 w64t31 [L] [Tue Oct 20 15:44:46 JST 2026]: gap=-109836.9 ns/dispatch  speedup median=1.0729 iqr=0.1526 min=0.6796 max=17.9018  floor/baseline=0.0954  floor/variant=0.1046  load1=78.39  vs-1.0=indistinguishable-at-this-noise
+pair3 w64t32 [L] [Tue Oct 20 15:48:00 JST 2026]: gap=-52776.4 ns/dispatch  speedup median=1.0284 iqr=0.0913 min=0.6364 max=1.3969  floor/baseline=0.1415  floor/variant=0.1495  load1=49.5  vs-1.0=indistinguishable-at-this-noise
+pair4 w64t31 [L] [Tue Oct 20 15:52:15 JST 2026]: gap=-253478.5 ns/dispatch  speedup median=1.0700 iqr=0.0927 min=0.7640 max=1.2934  floor/baseline=0.1269  floor/variant=0.1300  load1=54.36  vs-1.0=indistinguishable-at-this-noise
+pair4 w64t32 [L] [Tue Oct 20 15:49:29 JST 2026]: gap=-71601.6 ns/dispatch  speedup median=1.1029 iqr=0.4543 min=0.6416 max=2.2702  floor/baseline=0.5683  floor/variant=0.6725  load1=45.87  vs-1.0=indistinguishable-at-this-noise
+
+===== per-cell per-arm (primary endpoint)
+w64t31 armI: n=2  iqr=[0.1106, 0.4312]  median_iqr=0.2709  clean(iqr<=0.05)=0/2  signs=-/-  load1=[15.7, 20.88]
+w64t31 armL: n=2  iqr=[0.1526, 0.0927]  median_iqr=0.1227  clean(iqr<=0.05)=0/2  signs=-/-  load1=[78.39, 54.36]
+w64t32 armI: n=2  iqr=[0.2093, 0.0568]  median_iqr=0.1331  clean(iqr<=0.05)=0/2  signs=-/-  load1=[17.91, 17.66]
+w64t32 armL: n=2  iqr=[0.0913, 0.4543]  median_iqr=0.2728  clean(iqr<=0.05)=0/2  signs=-/-  load1=[49.5, 45.87]
+
+===== manipulation check (pre-registered: I runs load1<=16, L runs load1>16)
+arm I load1: [15.7, 17.91, 20.88, 17.66]  arm L load1: [78.39, 49.5, 54.36, 45.87]
+DOSE-VALID=False
+
+===== pooled iqr contrast (exact two-sided Mann-Whitney U, exhaustive)
+arm I iqr: [0.1106, 0.2093, 0.4312, 0.0568] (median 0.1600)
+arm L iqr: [0.1526, 0.0913, 0.0927, 0.4543] (median 0.1227)
+U=8.0 (chance 8.0)  exact two-sided p=70/70 = 1.0000
+
+===== dose-response (descriptive): Spearman rho(load1, iqr), exact permutation p
+n=8  rho=0.0714  exact two-sided p=35562/40320 = 0.8820
+
+===== what this bounds, honestly (pre-registered)
+INCONCLUSIVE-DOSE: the manipulation check failed; no outcome pattern is read as evidence
+the transition series is untouched (this is not a cross-tick sign probe); :measured? rows untouched; sign counts above are observational only
