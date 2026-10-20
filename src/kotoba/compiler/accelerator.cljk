@@ -1,11 +1,19 @@
 (ns kotoba.compiler.accelerator
   "Typed, bounded accelerator KIR and deterministic WGSL/CUDA lowering."
-  {:kotoba/export [artifact-format compile-kernel dtypes ewise-operators kernel kir-format lower max-static-elements max-workgroup-size reduction-operators targets validate! validation-errors verify-artifact!]}
+  {:kotoba/export [artifact-format compile-kernel dtypes ewise-operators kernel kernel-variants kir-format lower max-static-elements max-workgroup-size reduction-operators targets validate! validation-errors verify-artifact!]}
   (:require [kotoba.artifact.core :as artifact]))
 
 (def kir-format :kotoba.accelerator-kir/v1)
 (def artifact-format :kotoba.gpu-artifact/v1)
 (def targets #{:wgsl-v1 :cuda-v1 :msl-v1})
+(def kernel-variants
+  "The emitted-code variants this compiler admits. :baseline is the ADR-0002
+  v1 emission, byte-identical before and after variants existed;
+  :warp-shuffle-reduce is the NVIDIA reduction variant (ADR-0356), UNMEASURED
+  and with no execution path -- the runtime :gpu/compute (wire 42) runs
+  Vulkan only. A variant is a different grouping of the same admitted
+  reduction, never a different meaning."
+  #{:baseline :warp-shuffle-reduce})
 (def dtypes #{:f32})
 (def ewise-operators #{:add :sub :mul :div})
 (def reduction-operators #{:sum :max :min})
@@ -74,20 +82,51 @@
              " var stride:u32=" (/ wg 2) "u; loop { if(stride==0u){break;} if(lid.x<stride){scratch[lid.x]=combine(scratch[lid.x],scratch[lid.x+stride]);} workgroupBarrier(); stride=stride/2u;}\n"
              " if(lid.x==0u){parts[wid.x]=scratch[0];}\n}\n")))))
 
-(defn- emit-cuda [kir]
+(defn- emit-cuda-shuffle-reduce [kir]
+  ;; ADR-0356: NVIDIA warp-shuffle reduction. UNMEASURED -- this emitter has
+  ;; no execution path (wire 42 runs Vulkan only) and nothing here has run on
+  ;; NVIDIA hardware. Assumes a full-warp launch (workgroup-size >= 32, the
+  ;; only shape `select-variant` answers this variant for); every warp is
+  ;; then full and the 0xffffffff masks are honest. sm_70+ for
+  ;; __shfl_down_sync. The reduction groups the same elements as the
+  ;; :baseline tree, in a different order -- f32 :sum may differ in the low
+  ;; bits across variants; :max/:min are order-independent.
+  (let [operator (:kernel/operator kir) name (:kernel/name kir)
+        identity ({:sum "0.0f" :max "-3.402823466e+38f" :min "3.402823466e+38f"} operator)
+        combine ({:sum "a+b" :max "fmaxf(a,b)" :min "fminf(a,b)"} operator)]
+    (str "__device__ float combine(float a,float b){return " combine ";}\n"
+         "extern \"C\" __global__ void " name "(const float* x,float* parts,unsigned int n){\n"
+         " extern __shared__ float s[]; unsigned int i=blockIdx.x*blockDim.x+threadIdx.x; unsigned int l=threadIdx.x; unsigned int lane=l%32, warp=l/32;\n"
+         " float v=i<n?x[i]:" identity ";\n"
+         " for(unsigned int d=16;d>0;d>>=1){v=combine(v,__shfl_down_sync(0xffffffffu,v,d,32));}\n"
+         " if(lane==0)s[warp]=v; __syncthreads();\n"
+         " unsigned int warps=blockDim.x/32;\n"
+         " if(warp==0){float a=lane<warps?s[lane]:" identity ";\n"
+         "  for(unsigned int d=warps/2;d>0;d>>=1){a=combine(a,__shfl_down_sync(0xffffffffu,a,d,warps));}\n"
+         "  if(lane==0)parts[blockIdx.x]=a;}\n}\n")))
+
+(defn- emit-cuda [kir variant]
   (let [op (:kernel/op kir) operator (:kernel/operator kir) name (:kernel/name kir)]
+    (when (and (= :warp-shuffle-reduce variant)
+               (not (and (= :reduce op)
+                         (let [wg (:kernel/workgroup-size kir)]
+                           (and (int? wg) (>= wg 32))))))
+      (throw (ex-info "kernel variant not applicable"
+                      {:variant variant :op op :workgroup-size (:kernel/workgroup-size kir)})))
     (case op
       :ewise
       (str "extern \"C\" __global__ void " name "(const float* x,const float* y,float* z,unsigned int n){\n"
            " unsigned int i=blockIdx.x*blockDim.x+threadIdx.x; if(i<n) z[i]=" (second (expression operator)) ";\n}\n")
       :reduce
-      (let [identity ({:sum "0.0f" :max "-3.402823466e+38f" :min "3.402823466e+38f"} operator)
-            combine ({:sum "a+b" :max "fmaxf(a,b)" :min "fminf(a,b)"} operator)]
-        (str "extern \"C\" __global__ void " name "(const float* x,float* parts,unsigned int n){\n"
-             " extern __shared__ float s[]; unsigned int i=blockIdx.x*blockDim.x+threadIdx.x; unsigned int l=threadIdx.x;\n"
-             " s[l]=i<n?x[i]:" identity "; __syncthreads();\n"
-             " for(unsigned int d=blockDim.x/2;d>0;d>>=1){if(l<d){float a=s[l],b=s[l+d];s[l]=" combine ";}__syncthreads();}\n"
-             " if(l==0)parts[blockIdx.x]=s[0];\n}\n")))))
+      (if (= :warp-shuffle-reduce variant)
+        (emit-cuda-shuffle-reduce kir)
+        (let [identity ({:sum "0.0f" :max "-3.402823466e+38f" :min "3.402823466e+38f"} operator)
+              combine ({:sum "a+b" :max "fmaxf(a,b)" :min "fminf(a,b)"} operator)]
+          (str "extern \"C\" __global__ void " name "(const float* x,float* parts,unsigned int n){\n"
+               " extern __shared__ float s[]; unsigned int i=blockIdx.x*blockDim.x+threadIdx.x; unsigned int l=threadIdx.x;\n"
+               " s[l]=i<n?x[i]:" identity "; __syncthreads();\n"
+               " for(unsigned int d=blockDim.x/2;d>0;d>>=1){if(l<d){float a=s[l],b=s[l+d];s[l]=" combine ";}__syncthreads();}\n"
+               " if(l==0)parts[blockIdx.x]=s[0];\n}\n"))))))
 
 (defn- emit-msl [kir]
   (let [op (:kernel/op kir) operator (:kernel/operator kir) name (:kernel/name kir)]
@@ -109,26 +148,50 @@
              " for(uint d=width/2;d>0;d>>=1){if(l<d){float a=s[l],b=s[l+d];s[l]=" combine ";}threadgroup_barrier(mem_flags::mem_threadgroup);}\n"
              " if(l==0)parts[g]=s[0];\n}\n")))))
 
-(defn lower [kir target]
-  (validate! kir)
-  (when-not (targets target) (throw (ex-info "unsupported accelerator target" {:target target :supported targets})))
-  ((case target :wgsl-v1 emit-wgsl :cuda-v1 emit-cuda :msl-v1 emit-msl) kir))
+(defn lower
+  "Lower one validated KIR to `target`'s source text. `variant` defaults to
+  :baseline, the byte-identical ADR-0002 emission. A non-baseline variant is
+  admitted only where it computes the same admitted reduction; elsewhere
+  this refuses rather than silently answering baseline."
+  ([kir target] (lower kir target :baseline))
+  ([kir target variant]
+   (validate! kir)
+   (when-not (targets target)
+     (throw (ex-info "unsupported accelerator target" {:target target :supported targets})))
+   (when-not (kernel-variants variant)
+     (throw (ex-info "unsupported kernel variant" {:variant variant :supported kernel-variants})))
+   (case target
+     :wgsl-v1 (do (when-not (= :baseline variant)
+                    (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))
+                  (emit-wgsl kir))
+     :msl-v1 (do (when-not (= :baseline variant)
+                   (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))
+                 (emit-msl kir))
+     :cuda-v1 (emit-cuda kir variant))))
 
-(defn compile-kernel [kir target]
-  (let [code (lower kir target)
-        payload {:format artifact-format :target target :kir kir
-                 :kir-sha256 (artifact/sha256 kir) :code code
-                 :code-sha256 (artifact/sha256 code)
-                 :limits {:max-elements max-static-elements
-                          :workgroup-size (:kernel/workgroup-size kir)}}]
-    (artifact/seal payload)))
+(defn compile-kernel
+  ([kir target] (compile-kernel kir target :baseline))
+  ([kir target variant]
+   (let [code (lower kir target variant)
+         payload {:format artifact-format :target target :kir kir
+                  :kir-sha256 (artifact/sha256 kir) :code code
+                  :code-sha256 (artifact/sha256 code) :variant variant
+                  :limits {:max-elements max-static-elements
+                           :workgroup-size (:kernel/workgroup-size kir)}}]
+     (artifact/seal payload))))
 
 (defn verify-artifact! [compiled]
   (when-not (and (= artifact-format (:format compiled)) (artifact/valid-seal? compiled)
                  (targets (:target compiled)))
     (throw (ex-info "invalid accelerator artifact envelope" {})))
   (validate! (:kir compiled))
-  (let [expected-code (lower (:kir compiled) (:target compiled))]
+  ;; A sealed artifact that predates variants carries no :variant; that is
+  ;; :baseline by definition, and re-lowering must still match exactly.
+  (let [variant (if (contains? compiled :variant) (:variant compiled) :baseline)
+        _ (when-not (contains? #{:baseline :warp-shuffle-reduce :subgroup-reduce} variant)
+            (throw (ex-info "accelerator artifact carries an unsupported variant label"
+                            {:variant variant})))
+        expected-code (lower (:kir compiled) (:target compiled) variant)]
     (when-not (and (= (:kir-sha256 compiled) (artifact/sha256 (:kir compiled)))
                    (= (:code-sha256 compiled) (artifact/sha256 expected-code))
                    (= (:code compiled) expected-code))
