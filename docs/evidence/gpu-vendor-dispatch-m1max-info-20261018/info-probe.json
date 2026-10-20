@@ -1,0 +1,35 @@
+{
+  "measurement": "gpu/compute (wire 42) INFO probe through Vulkan/MoltenVK",
+  "date": "2026-10-18T20:36:18+09:00",
+  "tracker": "JUN-58 (parent JUN-55)",
+  "host": {
+    "os": "macOS 26.4 (BuildVersion 25E246)",
+    "cpu": "Apple M1 Max",
+    "arch": "aarch64"
+  },
+  "base_commit": "bea7b9b24a44ebd3d5108e8e356a39c6bed5912d",
+  "command": "kbb --backend sci scripts/test-gpu-compute.cljk",
+  "exit_code": 0,
+  "raw_line": "GPU-COMPUTE\\tOK\\tApple M1 Max|1.3.357|1024|1\\taarch64-macos",
+  "answer_fields": {
+    "device": "Apple M1 Max",
+    "api_version": "1.3.357",
+    "max_wg_x": 1024,
+    "unified": 1
+  },
+  "field_semantics": "tools/kexe_gpu_vulkan.c lines 544-546: <device> = VkPhysicalDeviceProperties.deviceName; <api> = device apiVersion as major.minor.patch; <maxWgX> = limits.maxComputeWorkGroupSize[0]; <unified> = 1 iff deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU",
+  "measured": [
+    "device name (Apple M1 Max)",
+    "device Vulkan apiVersion (1.3.357, via MoltenVK)",
+    "maxComputeWorkGroupSize[0] = 1024",
+    "deviceType == INTEGRATED_GPU (unified field = 1)"
+  ],
+  "not_measured": [
+    "optimal workgroup size for any kernel (the workgroup rows in kotoba.compiler.accelerator-targets stay :measured? false)",
+    "any performance or timing number",
+    "MSL or CUDA execution (no execution path exists; the wire is Vulkan only)",
+    "any other vendor's hardware"
+  ],
+  "replay": "kotoba.compiler.accelerator-targets/device-from-info parses raw_line's answer (\"Apple M1 Max|1.3.357|1024|1\") into the measured-fact descriptor; the test accelerator-targets-test/info-answers-parse-into-measured-device-facts replays this exact string",
+  "reproducibility": "the probe answered the identical string on two consecutive runs (2026-10-18 20:33 and 20:36 JST)"
+}
