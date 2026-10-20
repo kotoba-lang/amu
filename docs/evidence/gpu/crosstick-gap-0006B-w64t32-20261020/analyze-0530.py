@@ -54,7 +54,7 @@ for batch in BATCHES:
             verdict = sp_line.split("vs-1.0=")[-1].strip()
             verified = "verified=true" in txt
             data.setdefault((batch, cell), []).append(
-                dict(pair=pair, gap=gap, med=med, iqr=iqr, mn=mn, mx=mx,
+                dict(pair=pair, txt=txt, gap=gap, med=med, iqr=iqr, mn=mn, mx=mx,
                      fs_b=fs_b, fs_v=fs_v, load=load, verified=verified,
                      shape=shape, verdict=verdict, when=when))
 
@@ -96,7 +96,7 @@ for cell in CELLS:
     est_b = statistics.mean(r['gap'] for r in b)
     lines.append(f"{cell}: batchA mean(3)={est_a:.1f} signs={'/'.join('+' if r['gap'] > 0 else '-' for r in a)}"
                  f"  batchB mean(3)={est_b:.1f} signs={'/'.join('+' if r['gap'] > 0 else '-' for r in b)}"
-                 f"  FLIP={'YES' if sa != sb else 'no'}")
+                 f"  FLIP={('INCONCLUSIVE (batch not unanimous)' if (len(sa) > 1 or len(sb) > 1) else ('YES' if sa != sb else 'no'))}")
 # wall-clock gap between batches: last run of A -> first run of B
 import datetime
 def stamp(when):
@@ -104,7 +104,11 @@ def stamp(when):
     # `date` line is "Mon Oct 19 22:56:23 JST 2026" / "Tue Oct 20 ...".
     m = re.match(r"\w+ (\w+ \d+ \d+:\d+:\d+) \w+ (\d{4})", when.strip())
     return datetime.datetime.strptime(f"{m.group(1)} {m.group(2)}", "%b %d %H:%M:%S %Y")
-lastA = max(stamp(r['when']) for cell in CELLS for r in data[("A", cell)])
+def dur(txt):
+    m = re.search(r"real\s+(\d+)m([\d.]+)s", txt)
+    return (int(m.group(1)) * 60 + float(m.group(2))) if m else 0.0
+lastA = max(stamp(r['when']) + datetime.timedelta(seconds=dur(r['txt']))
+            for cell in CELLS for r in data[("A", cell)])
 firstB = min(stamp(r['when']) for cell in CELLS for r in data[("B", cell)])
 delta = (firstB - lastA).total_seconds()
 lines.append(f"CROSS-TICK gap batchA-end -> batchB-start: {int(delta // 60)}m{int(delta % 60)}s")

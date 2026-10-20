@@ -1,8 +1,8 @@
-# crosstick-gap-0006B-w64t32-20261020 — chain's LONGEST gap (318m29s) sign datum (cross-tick): w64t32 holds +; w64t31 anchor non-unanimous under load — anchor flip INCONCLUSIVE (tick 20261020-0530, JUN-58)
+# crosstick-gap-0006B-w64t32-20261020 — chain's LONGEST gap (318m15s) sign datum (cross-tick): w64t32 holds +; w64t31 anchor non-unanimous under load — anchor flip INCONCLUSIVE (tick 20261020-0530, JUN-58)
 
 ## The finding this tick
 
-**At a 318m29s cross-tick gap (the chain's longest; previous max 70m26s), the
+**At a 318m15s cross-tick gap (the chain's longest; previous max 70m26s), the
 w64t32 flip cell held its sign (+/+/+ all-run, no flip), while the w64t31
 anchor went sign-non-unanimous for the first time in the chain — and that
 anchor "flip" is noise-confounded, NOT adjudicated.** Batch A is the 0006
@@ -19,9 +19,14 @@ ns/dispatch, variant-chunked minus baseline-chunked; negative = variant
 faster. All 12 runs `RESULT verified=true`, runner exit 0.
 
 **Why the anchor's FLIP=YES is not a finding.** The chain's flip protocol
-compares sign-unanimous batches. Batch B is the chain's noisiest: 5 of 6
-runs fail the noise rule (IQR 0.0503–0.5847; the anchor's single positive
-run is the batch's worst at IQR **0.2750**, `vs-1.0=indistinguishable-at-this-noise`),
+compares sign-unanimous batches. NOTE: the GAP signs are UNPAIRED
+  differences of per-arm marginal medians -- the pinned probe persists no
+  per-round pairs, so a paired (median-of-differences) sign cannot be
+  computed from these logs. The signs are descriptive accordingly. Batch B is the chain's noisiest: 2 of 6
+runs survive (4 fail the noise rule: IQR 0.0503-0.5847, worst = w64t32 run 1
+at 0.5847; the anchor's single positive
+run at IQR **0.2750** is NOT the batch's worst -- 0.5847 (w64t32 run 1) is,
+and 0.2750 is mid-pack here, `vs-1.0=indistinguishable-at-this-noise`),
 and only one run per cell survives (IQR ≤ 0.05 **and** floor-share ≤ 1.2x
 the cell's clean minimum). Both survivors match the historic signs
 (anchor −4,600.6, flip cell +2,543.0). The naive all-run mean of the anchor
@@ -44,8 +49,9 @@ sign fragility is exactly what the noise rule exists to catch.
   1800 s run budget (proven at tick 2254, three evidences).
 - **A no-flip bounds nothing against a stochastic flip rate.** The w64t32
   cross-session series is now + (#1369) / − (#1377) / + (#1378) / +/+
-  (#1380) / + (#1382) / +/+ (#1383) / + (#1384) / + (this tick): one flip
-  in nine transitions, and this tick adds one same-sign transition at the
+  (#1380) / + (#1382) / +/+ (#1383) / + (#1384) / + (this tick): TWO flips
+  in nine transitions (+ to - at #1377, - to + at #1378 -- corrected from
+  'one flip'), and this tick adds one same-sign transition at the
   chain's longest gap. The RATE question needs more transitions and stays
   UNANSWERED — and this transition is noise-dirty (1/3 clean runs), so it
   is a weak one.
@@ -105,7 +111,7 @@ quantity.
   `run-tests.cljk` change). The suite's base state is the one recorded on
   PRs #1386–#1388: 16F/15–17E at base, red set outside every amu-gpu diff,
   not green.
-- measured (this document + logs): the 318m29s cross-tick datum above
+- measured (this document + logs): the 318m15s cross-tick datum above
   (w64t32 holds +; w64t31 anchor INCONCLUSIVE under load).
 - UNMEASURED: the flip RATE (one more, weak, same-sign transition; needs
   more), a clean long-gap datum (this one is load-confounded), the
