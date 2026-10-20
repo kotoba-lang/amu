@@ -49,7 +49,7 @@ Byte-identical probe (sha256 `3696ca0d…`, verified on both bases) and
 fixtures (w64 `a25a6931…` as self-printed by every SHAPE line) to the
 #1369/#1377/#1378/#1380/#1382 chain; lanes 2,095,104; 3 runs per cell per
 batch; cell order rotated per run-pair (t31,t32 / t32,t31 / t31,t32); fresh
-kbb process per run; `date; uptime` recorded per run. `run-sweep.sh B` is
+kbb process per run; `date; uptime` recorded per run. `run-sweep.sh.txt B` is
 idempotent (a run whose log exists is skipped). The six batch-A logs are
 byte-identical copies of the 2254 tick's (`run-A-*.log` sha256:
 1c0c0197…, 2495b11f…, 67a63834…, 35de036f…, 9ef537be…, 9bb2105a…).
