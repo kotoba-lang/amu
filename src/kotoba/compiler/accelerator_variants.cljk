@@ -1,0 +1,82 @@
+(ns kotoba.compiler.accelerator-variants
+  "Total, deterministic per-vendor kernel variant selection for the ADR-0002
+  accelerator KIR (ADR-0356; JUN-57 NVIDIA slice, JUN-58/59/60 follow).
+
+  UNMEASURED, all of it. Nothing in this repository has executed a
+  warp-shuffle reduction: the runtime :gpu/compute (wire 42) executes through
+  Vulkan only (tools/kexe_gpu_vulkan.c) and the CUDA emitter has no execution
+  path. Every answer here is a design choice marked :measured? false, and no
+  caller may report one as optimization evidence until a hardware measurement
+  replaces its basis.
+
+  The functions are TOTAL, like the dispatch table in
+  kotoba.compiler.accelerator-targets: a vendor or kernel shape outside the
+  table answers :baseline, never a throw. Selection time is the wrong place
+  to refuse -- a portable kernel that runs is worth more than an error."
+  {:kotoba/export [select-variant variant-bases variants]}
+  (:require [kotoba.compiler.accelerator :as accelerator]))
+
+(def variants
+  "Every variant selection may answer. Backed by the emitter's admitted set --
+  a variant that cannot be emitted is never selected."
+  accelerator/kernel-variants)
+
+(def min-warp-shuffle-workgroup
+  "The smallest workgroup the shuffle variant admits: one full NVIDIA warp.
+  Below this the variant would need partial-warp masking and gets :baseline."
+  32)
+
+(def variant-bases
+  "Why each variant exists. Design rationale, not measurement evidence."
+  {:baseline
+   "ADR-0002 v1 tree reduction over workgroup shared memory; the portable
+    fallback and the only variant with an execution path today."
+   :warp-shuffle-reduce
+   "NVIDIA (sm_70+) warp-shuffle reduce: a per-warp __shfl_down_sync fold,
+    then one cross-warp stage through shared memory -- one barrier instead
+    of the baseline's log2(W) cascade. The design assumption (UNMEASURED) is
+    that removing the barrier cascade wins on NVIDIA hardware. It replaces no
+    workgroup row and changes no reduction semantics: the same elements are
+    grouped in a different order (f32 :sum may differ in the low bits;
+    :max/:min are order-independent)."})
+
+(defn select-variant
+  "The kernel variant for a (vendor, kir) pair. TOTAL and deterministic: the
+  same pair answers the same map, forever. :warp-shuffle-reduce is answered
+  exactly for NVIDIA reduction kernels whose workgroup reaches a full warp;
+  everything else -- other vendors, elementwise kernels, sub-warp
+  workgroups, unknown vendors, malformed kernels -- answers :baseline.
+
+  Every answer carries :measured? false. That flag is the honesty lock: it
+  flips only when hardware measurement (JUN-57 for NVIDIA) replaces the
+  basis text."
+  ([vendor kir] (select-variant vendor kir nil nil))
+  ([vendor kir target] (select-variant vendor kir target nil))
+  ([vendor kir target device]
+  ;; ADR-0356 rule 3 (emission admission first): the variant is admitted
+  ;; only for the emitter that can emit it -- CUDA only for
+  ;; :warp-shuffle-reduce. A Vulkan/WebGPU target answers :baseline.
+  ;; ADR-0356 rule 6 (device capability): the sm_70+ floor in variant-bases
+  ;; is a real requirement; a descriptor that does not confirm compute
+  ;; capability 7.0+ answers :baseline (fail closed, no guessing).
+  (let [cap-ok? (let [cc (:compute-capability (or device {}))]
+                  (cond
+                    (nil? cc) false
+                    (number? cc) (>= cc 7.0)
+                    :else false))
+        ;; rule: validate the COMPLETE KIR first (a malformed kernel never
+        ;; selects a variant -- shape checks alone admit W=300 and worse).
+        valid-kir? (try (accelerator/validate! kir) true (catch :default _ false))
+        variant (if (and (= :nvidia vendor)
+                         (= :cuda target)
+                         valid-kir?
+                         cap-ok?
+                         (= :reduce (:kernel/op kir))
+                         (contains? #{:sum :max :min} (:kernel/operator kir))
+                         (let [wg (:kernel/workgroup-size kir)]
+                           (and (int? wg) (>= wg min-warp-shuffle-workgroup))))
+                  :warp-shuffle-reduce
+                  :baseline)]
+    {:variant variant
+     :measured? false
+     :basis (get variant-bases variant)})))

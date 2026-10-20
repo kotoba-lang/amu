@@ -1,0 +1,51 @@
+(ns kotoba.compiler.accelerator-variants-test
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-variants :as variants]))
+
+(deftest selection-is-total-deterministic-and-unmeasured
+  (testing "NVIDIA reduction kernels at or above one full warp take the shuffle variant"
+    (doseq [wg [32 64 128 256 512 1024]
+            operator [:sum :max :min]]
+      (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                    :reduce operator {:workgroup-size wg})]
+        (is (= :warp-shuffle-reduce (:variant (variants/select-variant :nvidia kir :cuda {:compute-capability 7.0}))))
+        (is (false? (:measured? (variants/select-variant :nvidia kir :cuda {:compute-capability 7.0})))))))
+  (testing "everything else answers :baseline, never a refusal"
+    (let [reduce-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+          ewise-kir (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+          subwarp-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 16})]
+      (doseq [vendor [:apple :intel :arm :amd :unknown :qualcomm]]
+        (is (= :baseline (:variant (variants/select-variant vendor reduce-kir)))))
+      (is (= :baseline (:variant (variants/select-variant :nvidia ewise-kir))))
+      (is (= :baseline (:variant (variants/select-variant :nvidia subwarp-kir))))
+      (is (= :baseline (:variant (variants/select-variant :nvidia {}))))
+      (is (= :baseline (:variant (variants/select-variant :nvidia nil))))))
+  (testing "same pair in, same map out"
+    (let [kir (accelerator/kernel "reduce_max_f32" :reduce :max {:workgroup-size 256})]
+      (is (= (variants/select-variant :nvidia kir) (variants/select-variant :nvidia kir)))))
+  (testing "every answer names an emittable variant with a basis, and none claims measurement"
+    (doseq [vendor [:nvidia :apple :intel :arm :amd :unknown]
+            op [:ewise :reduce]
+            operator [:add :sum]]
+      (let [kir (accelerator/kernel "k_f32" op operator {:workgroup-size 256})
+            answer (variants/select-variant vendor kir)]
+        (is (contains? accelerator/kernel-variants (:variant answer)))
+        (is (string? (:basis answer)))
+        (is (false? (:measured? answer)))
+        (is (contains? variants/variant-bases (:variant answer)))))))
+
+(deftest selected-variants-lower-and-verify
+  (testing "the selected NVIDIA variant is exactly what the emitter admits"
+    (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+          selected (:variant (variants/select-variant :nvidia kir :cuda {:compute-capability 7.0}))
+          compiled (accelerator/compile-kernel kir :cuda-v1 selected)]
+      (is (= :warp-shuffle-reduce selected))
+      (is (= :warp-shuffle-reduce (:variant compiled)))
+      (is (re-find #"__shfl_down_sync" (:code compiled)))
+      (is (= compiled (accelerator/verify-artifact! compiled)))))
+  (testing "a baseline answer lowers to the baseline emission"
+    (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+          apple (:variant (variants/select-variant :apple kir))]
+      (is (= (accelerator/lower kir :cuda-v1)
+             (accelerator/lower kir :cuda-v1 apple))))))

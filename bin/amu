@@ -13,8 +13,6 @@ const usage = [
   "       amu check <file.kotoba|file.cljk|file.cljc> [--policy policy.edn] [--jvm-free]",
   "  multi-file (a module declaring (:require [ns :as alias])):",
   "       amu module-lock <entry> --source-path <dir> --blocks <dir>",
-  "       amu gpu-compile <spec.edn> --device <device.edn> [--output <artifact>]",
-  "         # sealed GPU artifact via vendor dispatch (the device picks the target)",
   "       amu compile --module-lock <lock> --blocks <dir> --target <target> --output <file>",
   "       (both halves run without a JDK; add --jvm-free to prove it)",
   "       amu check <entry> --source-path <dir>            # links, emits nothing",
@@ -28,8 +26,8 @@ const usage = [
   "       amu package-fetch --deps kotoba.deps.edn --packages <dir>",
   "       amu package-lock --deps kotoba.deps.edn --packages <dir> --output kotoba.lock.edn",
   "       amu definition-cids <file> [--source-path <dir>]  # one CID per definition",
-  "       amu kir <file.kotoba|file.cljk|file.cljc> [--output file.kir.edn]  # the module's KIR (:kotoba.kir/v4) as EDN",
   "       amu compile <entry> --source-path <dir> --unpinned --target <target> --output <file>",
+  "         [--selfhost-desktop]  (x86_64 AIUEOS browser shell; no GDT/TSS/ISR image)",
   "       amu worker [--target <target>]   (no --target: Kototama VM program)",
   "       amu inspect <file.kotoba|file.cljk|file.cljc> [--output interface.edn]",
   "       amu test <file.kotoba|file.cljk|file.cljc> [--json] [--fuel <n>] [--source-path <dir> ...]   (one instance per test)",
@@ -37,6 +35,7 @@ const usage = [
   "         [--native-runtime <dir> | --native-prepare <dir> [--loader-source-dir <dir>]] [--native-jobs <n>]",
   "       amu module-lock <file.kotoba> --blocks <dir> --source-path <dir>",
   "       amu package-aiueos-boot <kernel> [--output BOOTX64.EFI]",
+  "       amu package-aiueos-disk-image <BOOTX64.EFI> --output AIUEOS.img [--receipt receipt.json]",
   "       amu extract-native <file> [--symbol main] [--output program.bin]",
   "       amu package-ios program.kexe [--entry main] --output program.o",
   "       amu package-macos program.kexe [--entry main] --output program.o",
@@ -180,6 +179,16 @@ function option(args, flag) {
 // than left returning false, because a predicate that always answers the same
 // way is a claim nobody rechecks.
 
+// The x86-64 kernel-image divergence between the two kotoba.native.elf64 twins
+// (65,904 vs 110,872 bytes, measured 2026-08-31) is CLOSED by the kotoba-native
+// ede96447 pin (kotoba-native#203: the portable elf64 packager now carries the
+// full AIUEOS kernel-image shim -- GDT/TSS/owned-stack entry + ISR table, the
+// fixed-page RT kernel-image profile, and the isolated state page). A previous
+// guard refused `compile --target x86_64-aiueos-kernel-v1 --artifact image` on
+// this route entirely; with the pin advanced that refusal only blocks the
+// served image this repo exists to build, so it is gone and the conformance
+// asserts the served artifact instead (JUN-30).
+
 // The trust-plane commands: keys, trust sets, signatures, receipts, inspect.
 // One portable implementation (`kotoba.compiler.trust-cli`) since 2026-09-11;
 // this set is `kotoba.compiler.trust-cli/commands`, spelled again here because
@@ -196,7 +205,8 @@ const trustCommands = new Set(["keygen", "public-key", "inspect", "trust-key",
   "trust-runtime", "sign", "verify-signed", "verify", "receipt",
   "verify-receipt", "verify-chain",
   "sbom", "attest-release", "verify-release", "package-ios", "package-macos",
-  "coverage", "sign-coverage-evidence", "package-aiueos-boot"]);
+  "coverage", "sign-coverage-evidence", "package-aiueos-boot",
+  "package-aiueos-disk-image"]);
 
 function nbbNativeEligible(args) {
   const command = args[0];
@@ -205,9 +215,7 @@ function nbbNativeEligible(args) {
   if (runCommands.has(command)) return true;
   return command === "check" || command === "extract-native"
     || command === "definition-cids"
-    || command === "kir"
     || command === "module-lock"
-    || command === "gpu-compile"
     || command === "package-manifest" || command === "package-lock"
     || command === "package-fetch"
     || command === "verify-output-set" || command === "sign-output-set"
@@ -227,8 +235,8 @@ function nbbNativeEligible(args) {
 // mean "host native" without this line would have sent `amu module-lock`
 // to the x86-64 / AArch64 driver, which implements only compile and
 // extract-native.
-const targetIndependentCommands = new Set(["check", "definition-cids", "kir",
-  "module-lock", "gpu-compile", "package-manifest", "package-lock", "package-fetch"]);
+const targetIndependentCommands = new Set(["check", "definition-cids",
+  "module-lock", "package-manifest", "package-lock", "package-fetch"]);
 
 function nbbEntrypoint(root, args) {
   const command = args[0];
@@ -283,27 +291,6 @@ function nbbCliPath(root) {
     throw new Error(`nbb engine must name an existing cli.js file, not a directory: ${engine}`);
   }
   return engine;
-}
-
-// A source-tree override for the native package implementation is used while
-// advancing kotoba-native and an Amu consumer together. The pinned gitlibs
-// closure remains intact and is still the fallback for every namespace the
-// worktree does not provide. Keep this opt-in explicit; a normal invocation
-// is resolved exclusively from deps-lock.edn.
-function kotobaNativeSourceOverlay() {
-  const supplied = process.env.AMU_KOTOBA_NATIVE_SRC;
-  if (!supplied) return [];
-  let resolved;
-  try {
-    resolved = fs.realpathSync(supplied);
-  } catch (_) {
-    fail(`error: AMU_KOTOBA_NATIVE_SRC is not readable: ${supplied}`, 64);
-  }
-  if (!fs.statSync(resolved).isDirectory()
-      || !fs.existsSync(path.join(resolved, "kotoba", "native", "elf64.cljc.cljk"))) {
-    fail("error: AMU_KOTOBA_NATIVE_SRC must be kotoba-native's src directory", 64);
-  }
-  return [resolved];
 }
 
 function resolverFailure(result) {
@@ -415,8 +402,14 @@ function publishPrivateCache(cacheFile, value) {
 // so a compile never reads an executing command's classpath or vice versa.
 function securityClasspath(root, nbbCli, alias) {
   const depsEdn = path.join(root, "deps.edn");
-  const gitlibsRoot = path.resolve(process.env.GITLIBS || path.join(os.homedir(), ".gitlibs"));
-  const allowedRoots = [gitlibsRoot, root, path.join(os.homedir(), ".m2", "repository")];
+  const homeGitlibsRoot = path.join(os.homedir(), ".gitlibs");
+  const gitlibsRoot = path.resolve(process.env.GITLIBS || homeGitlibsRoot);
+  // A caller may use a private GITLIBS overlay whose unchanged entries are
+  // symlinks into the ordinary, user-owned cache. Admit the resolved cache
+  // paths as well as the overlay itself; neither root widens trust to a
+  // repository or checkout outside these user-managed dependency stores.
+  const allowedRoots = [gitlibsRoot, homeGitlibsRoot, root,
+    path.join(os.homedir(), ".m2", "repository")];
   const digest = createHash("sha256")
     .update(fs.readFileSync(depsEdn)).update("\0").update(gitlibsRoot)
     .update("\0").update(alias || "").digest("hex");
@@ -570,8 +563,7 @@ function runCompiler(root, rawArgs) {
     catch (error) { fail(`error: ${error.message}`, 64); }
     const alias = runCommands.has(args[0]) ? "native-run" : null;
     const classpath = [path.join(root, "src"), path.join(root, "resources"),
-      ...kotobaNativeSourceOverlay(), securityClasspath(root, nbbCli, alias)]
-      .join(path.delimiter);
+      securityClasspath(root, nbbCli, alias)].join(path.delimiter);
     const result = spawn(process.execPath,
       ["--stack-size=4096", nbbCli, "--classpath", classpath, nbbEntrypoint(root, args), ...args], {
         cwd: root, stdio: "inherit", env: childEnv,
