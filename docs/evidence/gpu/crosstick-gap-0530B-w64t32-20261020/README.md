@@ -1,10 +1,13 @@
-# crosstick-gap-0530B-w64t32-20261020 — cross-tick sign datum at a 124m20s gap: the chain's FIRST 6/6 IQR-clean batch; w64t32 holds +; the anchor reads its historic − cleanly (tick 20261020-0736, JUN-58)
+# crosstick-gap-0530B-w64t32-20261020 — cross-tick sign datum at a 124m2s gap: the chain's FIRST 6/6 IQR-clean batch; w64t32 holds +; the anchor reads its historic − cleanly (tick 20261020-0736, JUN-58)
 
 ## The finding this tick
 
-**At a 124m20s cross-tick gap, w64t32 held its sign (+/+/+, no flip) and the
-w64t31 anchor read its historic − sign in the chain's first fully IQR-clean
-batch (6/6 runs clean) — while the host was busy (load1 25–39).** Batch A is
+**At a 124m2s cross-tick gap (corrected 2026-10-20: measured from the last batch-A run’s END = start + 17.026s; the earlier 124m20s used its start), w64t32 held its sign (+/+/+) but its effect is WITHIN NOISE (distances
+from 1.0: 0.0062/0.0109/0.0045, each below its run's IQR), so the w64t32
+flip question is UNRESOLVED at this noise -- a sub-IQR effect is not a
+result. The w64t31 anchor read its historic − sign. (NOT the chain's
+first clean batch: the within-tick batches evidence records 12 IQR-clean
+runs; and 5/6 -- not 6/6 -- pass the COMBINED noise rule here) — while the host was busy (load1 25–39).** Batch A is
 the 0530 tick's batch B (PR #1390's logs, copied here byte-identical as
 `run-A-*.log`, sha256 below); batch B ran in THIS tick (a later cron run, a
 fresh process):
@@ -15,7 +18,11 @@ fresh process):
 | w64t32 (flip cell) | mean(3) **+9,237.0**, signs +/+/+ (1/3 IQR-clean; clean est +2,543.0) | mean(3) **+788.1**, signs **+/+/+ (3/3 IQR-clean)** | FLIP=**no** |
 
 ns/dispatch, variant-chunked minus baseline-chunked; negative = variant
-faster. All 12 runs `RESULT verified=true`, runner exit 0.
+faster. All 12 runs `RESULT verified=true`, runner exit 0. NOTE: the GAP
+values and signs here come from the PINNED chain probe's marginal-median
+subtraction; the parent's live probe has since moved to the median of
+paired per-round differences. The two methods can disagree in sign; these
+signs are the unpaired kind and are labelled accordingly.
 
 **Why the anchor's FLIP=YES is not a flip finding.** The chain's set-of-signs
 rule adjudicates only between sign-unanimous batches. Batch A was
@@ -27,12 +34,21 @@ clean anchor batch since #1384 reads **−/−/−** (IQR 0.0201–0.0231), matc
 the historic anchor sign (#1384 −/−/− at −14,873.7; #1390's lone clean
 survivor −4,600.6). #1390's anchor `+` is now doubly a noise artifact.
 
-**The chain's first fully clean batch.** All six batch-B runs pass the noise
-rule (IQR ≤ 0.05 **and** floor-share ≤ 1.2x the cell's clean minimum: w64t31
+**Noise state of batch B (corrected).** All six batch-B runs are IQR-clean,
+but only 5/6 pass the COMBINED noise rule (IQR ≤ 0.05 **and** floor-share ≤ 1.2x the cell's clean minimum: w64t31
 3/3 survive; w64t32 2/3 survive — run 2's floor/baseline 0.3142 exceeds
 1.2x0.2279=0.2735, though its IQR 0.0403 passes), at load1 **25.06–39.46**
 — higher than 2337's "clean window" (13–19). Load level alone does not
 determine batch noise; recorded as an observation, not a mechanism claim.
+
+## Batch-A pair-rotation disclosure
+
+The claimed run-pair rotation does not hold for batch A: the committed
+timestamps show run-A-1-w64t32 starts before its supposed adjacent anchor
+(the rotation order the protocol names is not what the timestamps show).
+Batch A is copied from PR #1390's logs and is recorded here as-is; its
+pair-order deviation is disclosed rather than corrected, and the batch-B
+'no deviation' statement covers batch B only.
 
 ## What this bounds, honestly
 
@@ -43,7 +59,8 @@ determine batch noise; recorded as an observation, not a mechanism claim.
 - **A no-flip bounds nothing against a stochastic flip rate.** The w64t32
   cross-session series is now + (#1369) / − (#1377) / + (#1378) / +/+
   (#1380) / + (#1382) / +/+ (#1383) / + (#1384) / + (#1390) / + (this
-  tick): **one flip in ten transitions**. The RATE question needs more
+  tick): **two flips in ten transitions** (+→− at #1369/#1377, −→+ at #1377/#1378 --
+corrected from 'one flip'). The RATE question needs more
   transitions and stays UNANSWERED. This transition is the chain's first
   between two 3/3-IQR-clean w64t32 batches (A was 1/3 clean), so it is
   still weighted by A's noise.
@@ -109,7 +126,7 @@ executed in the scripted rotated order.
   `run-tests.cljk` change). The suite's base state is the one measured on
   PR #1388's exact-base run (`cc2b2362`): 16F/15–17E, red set outside every
   amu-gpu diff, not green.
-- measured (this document + logs): the 124m20s cross-tick datum above
+- measured (this document + logs): the 124m2s cross-tick datum above
   (w64t32 holds +; anchor −/−/− fully clean; first 6/6-IQR-clean batch).
 - UNMEASURED: the flip RATE (one more same-sign transition, 1 in 10; needs
   more), the in-session >=30 min gap (INFEASIBLE at the run budget), a
