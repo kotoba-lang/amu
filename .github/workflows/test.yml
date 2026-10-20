@@ -50,10 +50,12 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: macos-26
     timeout-minutes: 30
-    # Queue relief: serialize macos-26 per ref, and let a new push cancel the
-    # superseded run instead of queueing behind it.
+    # Queue relief: per-JOB per-ref concurrency (two macos-26 jobs must not
+    # share one group with cancel-in-progress -- they would cancel each other,
+    # measured 2026-10-20 on #1417 where adopted-seed-native died in 1s), and
+    # a new push cancels the superseded run instead of queueing behind it.
     concurrency:
-      group: macos-26-${{ github.ref }}
+      group: macos-26-policy-${{ github.ref }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -97,7 +99,7 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: macos-26
     concurrency:
-      group: macos-26-${{ github.ref }}
+      group: macos-26-adopted-${{ github.ref }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
