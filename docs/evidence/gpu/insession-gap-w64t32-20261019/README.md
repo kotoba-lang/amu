@@ -21,7 +21,7 @@ flip between two batches >=30 min apart inside ONE tick" question
 therefore **cannot be answered as designed**; it must be re-posed (e.g.
 flip-rate bounds across ticks, or an explicitly cross-session protocol).
 This tick attempted the largest in-session variant that could fit
-(see `run-sweep.sh` header); the budget ran out during the gap.
+(see `run-sweep.sh.txt` header); the budget ran out during the gap.
 
 ## Batch A (COMPLETE, 6/6 `RESULT verified=true`, runner exit 0)
 
@@ -53,7 +53,7 @@ identical-shape cross-session series to + (#1369) / - (#1377) / +
 The gap hold reached >=13 min probe-idle (batch A ended 22:58; no
 chunksweep ran after) when the run-budget notice arrived. No batch B was
 started. The within-session flip question at ANY gap remains
-**UNANSWERED**. The runner (`run-sweep.sh B`) is idempotent and will not
+**UNANSWERED**. The runner (`run-sweep.sh.txt B`) is idempotent and will not
 overwrite the batch-A logs, but a batch B run in a LATER cron session is
 cross-session evidence, not the in-session answer -- it must be labeled so.
 
