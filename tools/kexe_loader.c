@@ -8220,6 +8220,14 @@ static int64_t fs_app_data_read_provider(struct kexe_context_v11 *context,
                            ? kexe_string_pool_budget
                            : (uint64_t)KEXE_STRING_POOL_MAX;
     if (used >= ceiling) {
+      /* The pool may be exactly full: a file whose size equals the remaining
+       * capacity fits (intern_utf8 accepted equality, its check is >), and an
+       * empty file is fine even then. Probe one byte; only data beyond the
+       * ceiling is a budget refusal. */
+      unsigned char probe = 0;
+      ssize_t peek = read(fd, &probe, 1);
+      if (peek == 0) break;
+      if (peek < 0 && errno == EINTR) continue;
       close(fd);
       note_budget(KEXE_BUDGET_BYTES_STRING_POOL);
       raise(SIGILL);
