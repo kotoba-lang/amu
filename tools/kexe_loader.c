@@ -8919,24 +8919,19 @@ static int kexe_browse_compare(const void *a, const void *b) {
                 ((const struct kexe_browse_entry *)b)->name);
 }
 
-/* Heap-free by design (measured 2026-10-21, boot88): the guest's syscall
- * sandbox admits no mmap, and the C allocator maps past its first arena --
- * the per-name mallocs and the growth realloc below died KEXE_TRAP SIGSYS
- * exactly where they would map. The entry array and the names live in
- * static storage with honest caps; over-cap is a refusal like any other
- * bound (the same shape as kexe_append_buffer). */
-#define KEXE_BROWSE_MAX_ENTRIES 4096u
-#define KEXE_BROWSE_NAME_POOL_BYTES (256u * 1024u)
-static struct kexe_browse_entry kexe_browse_entries_static[KEXE_BROWSE_MAX_ENTRIES];
-static char kexe_browse_names[KEXE_BROWSE_NAME_POOL_BYTES];
+/* Heap-free AND cap-free (measured 2026-10-21, boot88 + review P1): the
+ * guest's syscall sandbox admits no mmap, and the C allocator maps past its
+ * first arena -- the per-name mallocs and the growth realloc died KEXE_TRAP
+ * SIGSYS where they would map. There is no fixed entry or name cap either
+ * (the 4096-entry limit was REMOVED once a real 12727-entry directory broke
+ * recursive find -- a restored cap is a regression). Storage comes from the
+ * STRING POOL, whose budget is the only bound, enforced the way intern_utf8
+ * enforces it: refuse with the budget note, never a truncation. Two passes
+ * over the directory (the fd rewinds between them): the first measures, the
+ * second fills the pool-resident records and names. Sorting is musl qsort,
+ * which uses a 256-byte stack scratch and never allocates. */
+static char *kexe_browse_names_base;
 static size_t kexe_browse_names_used;
-
-static void kexe_free_browse_entries(struct kexe_browse_entry *entries,
-                                     size_t count) {
-  (void)entries;
-  (void)count;
-  kexe_browse_names_used = 0;
-}
 
 /* One entry into the listing under construction; 0 = refuse (over the name
  * or byte bound, or out of memory). "." and ".." are skipped here. Each
@@ -8947,18 +8942,20 @@ static void kexe_free_browse_entries(struct kexe_browse_entry *entries,
 static int kexe_browse_add(const char *name, uint8_t is_dir,
                            struct kexe_browse_entry **entries, size_t *count,
                            size_t *capacity, size_t *total) {
+  (void)capacity;
   if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return 1;
   size_t name_length = strlen(name);
   size_t entry_bytes = name_length + 2u + (*count > 0 ? 1u : 0u);
   if (*total + entry_bytes > kexe_string_pool_budget) return 0;
-  if (*count >= KEXE_BROWSE_MAX_ENTRIES) return 0;
-  if (kexe_browse_names_used + name_length + 1u > KEXE_BROWSE_NAME_POOL_BYTES)
-    return 0;
   if (*entries == NULL) {
-    *entries = kexe_browse_entries_static;
-    *capacity = KEXE_BROWSE_MAX_ENTRIES;
+    /* measure pass: count and byte totals only (the name bytes are counted
+     * so the pool layout can be computed before anything is written) */
+    kexe_browse_names_used += name_length + 1u;
+    (*count)++;
+    *total += entry_bytes;
+    return 1;
   }
-  char *copy = kexe_browse_names + kexe_browse_names_used;
+  char *copy = kexe_browse_names_base + kexe_browse_names_used;
   kexe_browse_names_used += name_length + 1u;
   memcpy(copy, name, name_length + 1u);
   (*entries)[*count].name = copy;
@@ -9054,42 +9051,63 @@ static int64_t fs_browse_provider(struct kexe_context_v11 *context,
     raise(SIGILL);
     return 0;
   }
+  /* pass 1: measure -- no allocation, no writes (the add accumulates only) */
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  uint64_t start = (shared->string_pool_used + 7u) & ~(uint64_t)7u;
+  uint64_t ceiling = kexe_string_pool_budget < KEXE_STRING_POOL_MAX
+                         ? kexe_string_pool_budget
+                         : (uint64_t)KEXE_STRING_POOL_MAX;
+  size_t count = 0, listing_bytes = 0;
+  struct kexe_browse_entry *none = NULL;
   kexe_browse_names_used = 0;
-  struct kexe_browse_entry *entries = NULL;
-  size_t count = 0, capacity = 0, total = 0;
-  if (!kexe_enumerate_directory(fd, &entries, &count, &capacity, &total)) {
-    kexe_free_browse_entries(entries, count);
+  if (!kexe_enumerate_directory(fd, &none, &count, NULL, &listing_bytes)) {
     raise(SIGILL);
     return 0;
   }
-  qsort(entries, count, sizeof(struct kexe_browse_entry), kexe_browse_compare);
-  /* Heap-free: the listing goes straight into the string pool -- the bytes
-   * intern_utf8 would copy into anyway -- with the same budget refusal. */
-  {
-    struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
-    uint64_t start = shared->string_pool_used;
-    uint64_t ceiling = kexe_string_pool_budget < KEXE_STRING_POOL_MAX
-                           ? kexe_string_pool_budget
-                           : (uint64_t)KEXE_STRING_POOL_MAX;
-    if (start + (uint64_t)total > ceiling) {
-      kexe_free_browse_entries(entries, count);
-      note_budget(KEXE_BUDGET_BYTES_STRING_POOL);
-      raise(SIGILL);
-      return 0;
-    }
-    size_t used = 0;
-    for (size_t i = 0; i < count; i++) {
-      if (i > 0) shared->string_pool[start + used++] = '\n';
-      size_t name_length = strlen(entries[i].name);
-      memcpy(shared->string_pool + start + used, entries[i].name, name_length);
-      used += name_length;
-      shared->string_pool[start + used++] = '\t';
-      shared->string_pool[start + used++] = entries[i].is_dir ? '1' : '0';
-    }
-    kexe_free_browse_entries(entries, count);
-    shared->string_pool_used = start + used;
-    return checked_pair_new(context, -((int64_t)start) - 1, (int64_t)used);
+  size_t names_bytes = kexe_browse_names_used;
+  uint64_t records_bytes =
+      ((uint64_t)count * sizeof(struct kexe_browse_entry) + 7u) & ~(uint64_t)7u;
+  if (start + records_bytes + (uint64_t)names_bytes + (uint64_t)listing_bytes
+      > ceiling) {
+    note_budget(KEXE_BUDGET_BYTES_STRING_POOL);
+    raise(SIGILL);
+    return 0;
   }
+  /* pass 2: fill -- the measure pass's enumerate CLOSED the fd (the
+   * enumeration owns it), so the directory is re-opened for the second
+   * pass; records and names live in the pool, the listing follows. */
+  close(fd);
+  fd = kexe_scope_open(&kexe_scope34, candidate,
+                       O_RDONLY | O_DIRECTORY | O_NOFOLLOW, 0, &escaped);
+  if (fd < 0) {
+    raise(SIGILL);
+    return 0;
+  }
+  struct kexe_browse_entry *fill =
+      (struct kexe_browse_entry *)(void *)(shared->string_pool + start);
+  struct kexe_browse_entry *entries = fill;
+  kexe_browse_names_base = (char *)(shared->string_pool + start + records_bytes);
+  kexe_browse_names_used = 0;
+  size_t filled = 0, ignored = 0;
+  if (!kexe_enumerate_directory(fd, &fill, &filled, NULL, &ignored)) {
+    raise(SIGILL);
+    return 0;
+  }
+  qsort(entries, filled, sizeof(struct kexe_browse_entry), kexe_browse_compare);
+  size_t listing_at = (size_t)(records_bytes + (uint64_t)names_bytes);
+  size_t used = 0;
+  for (size_t i = 0; i < filled; i++) {
+    if (i > 0) shared->string_pool[start + listing_at + used++] = '\n';
+    size_t name_length = strlen(entries[i].name);
+    memcpy(shared->string_pool + start + listing_at + used, entries[i].name,
+           name_length);
+    used += name_length;
+    shared->string_pool[start + listing_at + used++] = '\t';
+    shared->string_pool[start + listing_at + used++] = entries[i].is_dir ? '1' : '0';
+  }
+  shared->string_pool_used = start + records_bytes + names_bytes + used;
+  return checked_pair_new(context, -((int64_t)(start + listing_at)) - 1,
+                          (int64_t)used);
 }
 
 
