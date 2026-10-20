@@ -60,6 +60,37 @@
     (is (not (str/includes? source "#:sl{")))
     (is (= 9 (ir/execute (:kir compiled) 'main [])))))
 
+(def host-interop-lib
+  "(ns example.split-lib
+     (:export [add1 twice]))
+   (defn add1 [x :i64] :i64 (+ x 1))
+   (defn twice [x :i64] :i64 (add1 (add1 x)))")
+
+(defn- link-refusal [app]
+  (try (project/link-source {'example.split-lib host-interop-lib
+                             'example.split-app app}
+                            'example.split-app)
+       nil
+       (catch #?(:clj Exception :cljs :default) e e)))
+
+(deftest host-interop-calls-refuse-with-the-host-sentence
+  ;; 2026-10-20 (issue #785): a head whose namespace names a HOST CLASS
+  ;; (Math, js, goog, MessageDigest, java.lang.Math) is host interop, not an
+  ;; import that failed to resolve. The two refusals were measured misfiring:
+  ;; Math/abs in a linked module said "qualified call is not an admitted
+  ;; exported import" for a module whose imports all resolved.
+  (let [app (fn [call]
+              (str "(ns example.split-app (:require [example.split-lib :as sl]) (:export [main])) "
+                   "(defn main [] :i64 (sl/twice (" call " 40)))"))]
+    (doseq [op ["Math/abs" "js/parseInt" "goog/isDef" "java.lang.Math/abs"]]
+      (is (str/includes? (ex-message (link-refusal (app op)))
+                         (str "host interop call is not admitted: " op))
+          op))
+    (doseq [op ["other/thing" "other.lib/thing"]]
+      (is (str/includes? (ex-message (link-refusal (app op)))
+                         (str "qualified call is not an admitted exported import: " op))
+          op))))
+
 (deftest project-refuses-one-schema-name-defined-two-ways
   ;; Merging the tables is only safe because the union cannot be ambiguous.
   (let [thrown (try (project/link-source {'example.schema-app schema-conflict-source
