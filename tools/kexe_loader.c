@@ -8197,42 +8197,40 @@ static int64_t fs_app_data_read_provider(struct kexe_context_v11 *context,
     return 0;
   }
 
-  size_t capacity = 65536;
-  uint8_t *buffer = (uint8_t *)malloc(capacity);
-  size_t total = 0;
-  if (buffer == NULL) {
-    close(fd);
-    raise(SIGILL);
-    return 0;
-  }
+  /* Heap-free by design: the guest's syscall sandbox admits no mmap, and the
+   * C allocator maps for anything past its first arena (measured on the
+   * aarch64 loader: the READ form died KEXE_TRAP SIGSYS exactly where malloc
+   * would map, while the malloc-free EXISTS/WRITE/APPEND forms worked). The
+   * file is read straight into the string pool -- the bytes intern_utf8 would
+   * copy into anyway -- with the same budget refusal (note_budget + SIGILL). */
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  uint64_t start = shared->string_pool_used;
+  uint64_t total = 0;
   for (;;) {
-    if (total == capacity) {
-      size_t next = capacity * 2;
-      uint8_t *grown = (uint8_t *)realloc(buffer, next);
-      if (grown == NULL) {
-        free(buffer);
-        close(fd);
-        raise(SIGILL);
-        return 0;
-      }
-      buffer = grown;
-      capacity = next;
+    uint64_t used = start + total;
+    uint64_t ceiling = kexe_string_pool_budget < KEXE_STRING_POOL_MAX
+                           ? kexe_string_pool_budget
+                           : (uint64_t)KEXE_STRING_POOL_MAX;
+    if (used >= ceiling) {
+      close(fd);
+      note_budget(KEXE_BUDGET_BYTES_STRING_POOL);
+      raise(SIGILL);
+      return 0;
     }
-    ssize_t got = read(fd, buffer + total, capacity - total);
+    ssize_t got = read(fd, shared->string_pool + used,
+                       (size_t)(ceiling - used));
     if (got < 0) {
       if (errno == EINTR) continue;
-      free(buffer);
       close(fd);
       raise(SIGILL);
       return 0;
     }
     if (got == 0) break;
-    total += (size_t)got;
+    total += (uint64_t)got;
   }
   close(fd);
-  int64_t result = intern_utf8(context, buffer, total);
-  free(buffer);
-  return result;
+  shared->string_pool_used = start + total;
+  return checked_pair_new(context, -((int64_t)start) - 1, (int64_t)total);
 }
 
 /* wire id 35, WRITE form: "<path>WRITE_SEP<content>" -> the content written
