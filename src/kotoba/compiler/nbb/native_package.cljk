@@ -160,12 +160,14 @@
                                (:image kit))))
         selected-kind (cond (= base-packager (:image kit)) :image
                             (= base-packager (:object kit)) :object)
-        ;; `--selfhost-desktop` changes the compiler profile, not the ELF
-        ;; container. The portable elf64 packager already emits the minimal
-        ;; entry/context shim when the artifact has no ValueRuntime syscalls or
-        ;; interrupt exports; selecting a separate, unpublished
-        ;; `package-kernel-desktop` symbol made this route fail during analysis.
-        packager base-packager]
+        ;; `--selfhost-desktop` selects the resident desktop profile packager.
+        ;; `kotoba.native.elf64/package-kernel-desktop` is exported since the
+        ;; kotoba-native ede96447 pin (it was unpublished before, which is what
+        ;; "fail during analysis" measured), and it fail-closed refuses an
+        ;; artifact with interrupt entries (:desktop-profile-has-no-isr-runtime)
+        ;; -- so the flag configures packaging AND validates the promised
+        ;; desktop profile instead of leaving the bytes untouched.
+        packager (if portable-desktop? elf64/package-kernel-desktop base-packager)]
     (when (and portable-desktop?
                (not (and (= target :x86_64-aiueos-kernel-v1)
                          (= selected-kind :image))))

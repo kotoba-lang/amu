@@ -197,9 +197,25 @@
     entries))
 
 (defn- image [efi]
-  (when (or (< (.-length efi) 2)
-            (not= (.toString (.subarray efi 0 2) "ascii") "MZ"))
-    (throw (ex-info "bootloader is not PE/COFF" {:phase :artifact-target})))
+  ;; /EFI/BOOT/BOOTX6.EFI on a UEFI machine boots only an x86-64 PE32+ EFI
+  ;; application: check the PE signature at e_lfanew, the machine, the
+  ;; optional-header magic and the subsystem rather than trusting `MZ`.
+  (let [length (.-length efi)]
+    (when (or (< length 64)
+              (not= (.toString (.subarray efi 0 2) "ascii") "MZ"))
+      (throw (ex-info "bootloader is not PE/COFF" {:phase :artifact-target})))
+    (let [pe-offset (.readUInt32LE efi 0x3c)]
+      (when (or (< pe-offset 0x40)
+                (> (+ pe-offset 94) length)
+                (not= 0x00004550 (.readUInt32LE efi pe-offset)))
+        (throw (ex-info "bootloader is not PE32+" {:phase :artifact-target})))
+      (when (not= 0x8664 (.readUInt16LE efi (+ pe-offset 4)))
+        (throw (ex-info "bootloader is not x86-64" {:phase :artifact-target})))
+      (when (or (< (.readUInt16LE efi (+ pe-offset 20)) 70)
+                (not= 0x20b (.readUInt16LE efi (+ pe-offset 24))))
+        (throw (ex-info "bootloader is not PE32+" {:phase :artifact-target})))
+      (when (not= 10 (.readUInt16LE efi (+ pe-offset 92)))
+        (throw (ex-info "bootloader is not an EFI application" {:phase :artifact-target})))))
   (let [disk (buffer disk-bytes)
         entries (gpt-entries)
         entries-crc (crc32 entries 0 (.-length entries))

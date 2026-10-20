@@ -502,6 +502,12 @@
   ([kernel payload options]
   (let [kernel (vec kernel)
         payload (vec payload)
+        ;; Fail closed on the option this packager never implemented: a caller
+        ;; must not be able to request a resident loader and receive the
+        ;; ordinary transition loader under a success receipt.
+        _ (when (true? (:resident? options))
+            (throw (ex-info "the resident loader mode is not implemented"
+                            {:reason :resident-mode-not-implemented})))
         k16-preflight? (true? (:k16-preflight? options))
         k16-note (or (:k16-note options) "")]
     ;; These two are refusals of the CALLER's input, so they carry a phase:

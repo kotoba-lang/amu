@@ -373,7 +373,12 @@
             output (or (option args "--output") "BOOTX64.EFI")
             payload-path (option args "--payload")
             k16-preflight? (boolean (some #{"--k16-preflight"} args))
-            resident? (boolean (some #{"--resident"} args))
+            ;; `--resident` promised a resident loader that
+            ;; package-embedded-kernel never implemented (it emits one
+            ;; transition loader). Accepting the flag would let a caller
+            ;; believe they deployed something other than what was built.
+            _ (when (some #{"--resident"} args)
+                (usage! "--resident is not implemented: package-embedded-kernel emits one transition loader"))
             ;; Free-text the caller puts on the panel beside the build digest --
             ;; a version, a branch, a date. Deliberately not derived here: this
             ;; packager is byte-compared against a second packaging of the same
@@ -385,7 +390,6 @@
             payload (if payload-path (octets payload-path) [])
             packaged (pe32plus/package-embedded-kernel
                       kernel payload {:k16-preflight? k16-preflight?
-                                      :resident? resident?
                                       :k16-note k16-note})]
         (atomic-output/write-bytes! output (host-bytes (:bytes packaged)))
         {:ok true :target :x86_64-aiueos-uefi-v1
@@ -393,14 +397,19 @@
          :kernel-sha256 (:embedded-kernel-sha256 packaged)
          :payload payload-path
          :k16-preflight? k16-preflight?
-         :resident? resident?
          :k16-note k16-note
          :payload-sha256 (:embedded-payload-sha256 packaged)})
 
       "package-aiueos-disk-image"
       (let [input (second args)
             output (or (option args "--output") "aiueos-kotoba-desktop-gpt.img")
-            receipt-path (or (option args "--receipt") (str output ".receipt.edn"))
+            ;; The receipt is JSON (json-text below), so it must not default to
+            ;; an .edn name that downstream EDN readers would fail to parse.
+            receipt-path (or (option args "--receipt") (str output ".receipt.json"))
+            _ (when (or (same-target? input output)
+                        (same-target? input receipt-path)
+                        (same-target? output receipt-path))
+                (usage! "package-aiueos-disk-image input, disk, and receipt paths must be distinct"))
             efi (bounded-edn/read-bytes-file input max-kernel-bytes)
             packaged (aiueos-disk/package efi)]
         (atomic-output/write-bytes! output (:bytes packaged))
