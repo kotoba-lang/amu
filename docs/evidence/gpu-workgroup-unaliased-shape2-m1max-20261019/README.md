@@ -104,12 +104,12 @@ for (const w of sizes)
     return pairs.find(p => +p[0] === w)[1];
   }).join(" "));
 console.log("");
-console.log("grand per-size (median over the 6 runs; each size seen once in every slot):");
+console.log("grand per-size (UNADJUSTED marginal median over the 6 runs):");
 const grandSize = {};
 for (const w of sizes) { grandSize[w] = median(runs.map(r => r.size[w]));
   console.log(`W=${w}  grand=${f4(grandSize[w])}  per-run=${runs.map(r => f4(r.size[w])).join(" ")}`); }
 console.log("");
-console.log("grand per-slot (median over the 6 runs; each slot seen once with every size):");
+console.log("grand per-slot (UNADJUSTED marginal median over the 6 runs):");
 const grandSlot = {};
 for (const s of [0, 1, 2, 3, 4, 5]) { grandSlot[s] = median(runs.map(r => r.slot[s]));
   console.log(`slot ${s}  grand=${f4(grandSlot[s])}  per-run=${runs.map(r => f4(r.slot[s])).join(" ")}`); }
@@ -270,3 +270,10 @@ message) saw 16 failures + 18 errors -- the extra 3 errors were
 native-rebound-row-update-test (host/stack-exhausted), a known host-stack
 flake; that test is green in both the base run and the branch re-run recorded
 here. The name-identity claim above is for THIS base/branch run pair.
+
+NOTE (review): these grand figures are UNADJUSTED marginal medians. The six
+offsets make size, slot and run effects identifiable, but a median over runs
+does not separate additive effects (a fixed size's run effect is paired with
+a different slot effect in each run). A Latin-square additive fit (size +
+slot + run) is the method that separates them; until such a fit is recorded,
+the grand values are descriptive marginal summaries, not effect estimates.

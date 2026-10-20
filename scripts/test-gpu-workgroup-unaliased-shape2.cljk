@@ -102,11 +102,15 @@
     (str/trimr out)))
 
 ;; ---- loader ---------------------------------------------------------------
-(def loader (.join path tmp "kexe-loader-gpu"))
-(let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-DKEXE_GPU_VULKAN"
-                                             (.join path root "tools" "kexe_loader.c") "-o" loader]
-                                            (if (= platform "darwin") ["-I/opt/homebrew/include" "-L/opt/homebrew/lib" "-lvulkan"] ["-lvulkan"])))]
-  (when-not (zero? status) (fail! (str "the GPU loader does not build: " (subs err 0 (min 600 (count err)))))))
+(let [lobj (.join path tmp "kexe-loader-gpu.o")
+      {:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-DKEXE_GPU_VULKAN"
+                                             "-c" (.join path root "tools" "kexe_loader.c") "-o" lobj]
+                                            (when (= platform "darwin") ["-I/opt/homebrew/include"])))]
+  (when-not (zero? status) (fail! (str "the GPU loader does not compile: " (subs err 0 (min 600 (count err))))))
+  (def loader (.join path tmp "kexe-loader-gpu"))
+  (let [{:keys [status err]} (sh "cc" (concat [lobj "-o" loader]
+                                              (if (= platform "darwin") ["-I/opt/homebrew/include" "-L/opt/homebrew/lib" "-lvulkan"] ["-lvulkan"])))]
+    (when-not (zero? status) (refuse! (str "the Vulkan loader does not link on this host (COULD-NOT-RUN): " (subs err 0 (min 600 (count err))))))))
 
 ;; ---- kernels: one GLSL source per W, compiled to SPIR-V --------------------
 (defn- kernel-source [w]
@@ -257,11 +261,12 @@
      :noise (median (mapv :iqr rows))}))
 
 (defn- analyze-slots
-  "Per-slot ratio stats for one run's flat sample vector. Every slot hosts 24
-  samples spanning all six sizes (under this run's permutation), so a slot
-  median pools sizes while each size median stays pure -- WITHIN one run the
-  two effects are aliased by construction and only the cross-run Latin square
-  separates them."
+  "Per-slot ratio stats for one run's flat sample vector. CORRECTED: for a
+  fixed KGPU_SLOT_OFFSET, size-idx maps each slot to exactly ONE size, so
+  all 24 samples of a slot come from that size -- the slot medians are a
+  permutation of the ratio medians, not a pool. Only after aggregating all
+  six offsets does each size span slots; the cross-run Latin square is what
+  separates the effects."
   [samples]
   (when-not (= (count samples) n-samples)
     (fail! (str "analyze-slots: " (count samples) " samples, want " n-samples)))
