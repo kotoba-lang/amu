@@ -236,9 +236,14 @@
           image (lib/join directory "kernel.img")
           efi (lib/join directory "BOOTX64.EFI")
           efi-again (lib/join directory "BOOTX64-again.EFI")
+          ok-payload (lib/join directory "ok-payload.bin")
           big-payload (lib/join directory "payload.bin")]
       (.writeFileSync fs image (js/Buffer.from (clj->js kernel)))
-      (.writeFileSync fs big-payload (js/Buffer.alloc 16385 1))
+      ;; The embedded payload bound is 512 KiB since boot-info v5 (the x86-64
+      ;; kernel image rides the payload slot), so 16 KiB + 1 is admitted and
+      ;; 512 KiB + 1 is the refusal boundary.
+      (.writeFileSync fs ok-payload (js/Buffer.alloc 16385 1))
+      (.writeFileSync fs big-payload (js/Buffer.alloc 524289 1))
       (let [result (ok! "package-aiueos-boot" "package-aiueos-boot" image "--output" efi "--k16-note" "test")
             value (stdout-edn result)
             bytes (.readFileSync fs efi)]
@@ -251,7 +256,15 @@
                "packaging the same input twice is byte-identical" "")
       (refused! "a kernel OBJECT is not an ET_EXEC image" 65 "embedded kernel must be x86-64 ET_EXEC"
                 "package-aiueos-boot" artifact "--output" (lib/join directory "never.efi"))
-      (refused! "a payload over 16 KiB" 65 "embedded RT payload exceeds 16 KiB"
+      (let [payload-efi (lib/join directory "payload.efi")
+            result (ok! "a payload over 16 KiB is admitted within the 512 KiB bound"
+                        "package-aiueos-boot" image "--payload" ok-payload
+                        "--output" payload-efi)
+            value (stdout-edn result)]
+        (report! (and (:ok value) (string? (:payload-sha256 value))
+                      (= 64 (count (:payload-sha256 value))))
+                 "the packaged image reports the embedded payload digest" (pr-str value)))
+      (refused! "a payload over 512 KiB" 65 "embedded AIUEOS payload exceeds 512 KiB"
                 "package-aiueos-boot" image "--payload" big-payload
                 "--output" (lib/join directory "never.efi")))
 
