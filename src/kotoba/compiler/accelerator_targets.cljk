@@ -1,27 +1,19 @@
 (ns kotoba.compiler.accelerator-targets
   "Deterministic GPU vendor classification, accelerator target dispatch and
-  per-vendor workgroup defaults (ADR-0355).
+  provisional per-vendor workgroup defaults (ADR-0355).
 
-  One decision table, and exactly ONE measured fact in it: the apple row's
-  execution width (subgroup size) is MEASURED on hardware -- gl_SubgroupSize
-  = 32 on Apple M1 Max via MoltenVK, three verified processes
-  (docs/evidence/gpu-subgroup-measured-row-m1max-20261019). Every workgroup
-  SIZE is still a PROVISIONAL design default chosen as a power of two that is
-  a multiple of the row's execution width; no tuning result exists for any
-  vendor.
-
-  Measurement is per fact. Each row carries :size-measured? and
-  :execution-width-measured? with a :basis apiece, and `recommend` answers
-  both flags plus a top-level :measured? that is true only when every fact in
-  the answer is measured -- so it stays false everywhere today. Nothing here
-  may be reported as optimization evidence beyond the one measured fact and
-  its basis.
+  One decision table, and no measurement in it yet: the workgroup sizes below
+  are PROVISIONAL design defaults chosen as powers of two that are multiples
+  of each vendor's published execution width. `recommend` marks every answer
+  :measured? false; nothing here may be reported as optimization evidence
+  until hardware measurement replaces a row.
 
   The functions are TOTAL. An unknown vendor or api answers the documented
   fallback instead of throwing -- dispatch time is where a refusal costs the
   most, and a portable default is honest about what it is."
   {:kotoba/export [classify-vendor default-target device-classes name-vendor-fragments recommend target-for vendor-ids vendors workgroup-default workgroup-defaults]}
-  (:require [kotoba.lang.text :as str]))
+  (:require [kotoba.lang.text :as str]
+            #?(:cljs [kotoba.kir.cljs-i64 :as i64])))
 
 (def vendors
   "The vendors the dispatch table names. :unknown is the deterministic
@@ -60,9 +52,17 @@
 (defn classify-vendor
   "Classify a device descriptor map ({:vendor-id <int>} or {:vendor <name>})
   to a keyword in `vendors`. A :vendor-id match wins over name matching; no
-  match answers :unknown."
+  match answers :unknown.
+
+  The id may arrive as the kotoba reader's BigInt (every integer token is one
+  on the nbb route -- i64 exactness, cli_support), and a BigInt is not `=` to
+  the plain number key, so it is normalised to a compiler-host integer first
+  (capability_names/wire-int pattern). A non-integer id (a string like
+  \"4318\") is NOT coerced: it falls through to name matching or :unknown."
   [device]
-  (let [id (:vendor-id device)
+  (let [id (let [v (:vendor-id device)]
+             #?(:clj v
+                :cljs (if (i64/bigint-value? v) (js/Number v) v)))
         nm (:vendor device)]
     (or (get vendor-ids id)
         (when (string? nm)
@@ -99,50 +99,28 @@
     :else (default-target vendor)))
 
 (def workgroup-defaults
-  "One row per vendor, every fact provenanced separately. A fact whose
-  :measured? is true has hardware evidence named in its :basis; a fact whose
-  :measured? is false is a PROVISIONAL DESIGN DEFAULT (ADR-0355) that no
-  caller may cite as optimization evidence.
-
-  Workgroup sizes stay unmeasured as TUNING for every vendor -- no row claims
-  256 or 128 is optimal anywhere. The apple execution width is the one
-  measured fact in this table (JUN-58, first row flip 2026-10-19)."
-  {:nvidia {:size 256
-            :size-basis "PROVISIONAL: warp width 32; 256 is 8 warps per workgroup"
-            :size-measured? false
-            :execution-width 32
-            :execution-width-basis "warp width 32 (published); UNMEASURED on hardware"
-            :execution-width-measured? false}
-   :apple {:size 256
-           :size-basis "PROVISIONAL: 8 SIMD-groups of the measured width 32; not a tuning result"
-           :size-measured? false
-           :execution-width 32
-           :execution-width-basis "MEASURED: gl_SubgroupSize = 32 on Apple M1 Max via MoltenVK (Vulkan 1.3.357), 3 verified processes; docs/evidence/gpu-subgroup-measured-row-m1max-20261019"
-           :execution-width-measured? true}
-   :intel {:size 128
-           :size-basis "PROVISIONAL: subgroup width 8/16/32; 128 is a multiple of all three"
-           :size-measured? false
-           :execution-width 32
-           :execution-width-basis "subgroup width 8/16/32 (published); UNMEASURED on hardware"
-           :execution-width-measured? false}
-   :arm {:size 128
-         :size-basis "PROVISIONAL: Mali execution widths 4-32 all divide 128"
-         :size-measured? false
-         :execution-width 16
-         :execution-width-basis "Mali execution widths 4-32 (published); UNMEASURED on hardware"
-         :execution-width-measured? false}
-   :amd {:size 256
-         :size-basis "PROVISIONAL: wavefront width 64"
-         :size-measured? false
-         :execution-width 64
-         :execution-width-basis "wavefront width 64 (published); UNMEASURED on hardware"
-         :execution-width-measured? false}
-   :unknown {:size 256
-             :size-basis "portable fallback"
-             :size-measured? false
-             :execution-width 32
-             :execution-width-basis "portable fallback"
-             :execution-width-measured? false}})
+  "Per-vendor workgroup rows (ADR-0355). The rows hardware answered for are
+  MEASURED (2026-10-19, ADR-0358) and carry :measured? true; :arm and
+  :unknown stay provisional. :measured? says a hardware measurement chose
+  this size -- nothing more. The measurements are one workload shape
+  (2^20-thread f32 ewise FMA, 256 FMAs per thread, submit->fence host clock,
+  paired runs) and are not a claim of optimality for every kernel."
+  {:nvidia {:size 256 :execution-width 32 :measured? true
+            :basis "warp width 32; 256 is 8 warps per workgroup"
+            :evidence "2026-10-19 Xavier nvgpu, 6 paired runs: 128-1024 flat within 2%, 32 is 22% slower; 256 kept inside the flat band"}
+   :apple {:size 256 :execution-width 32 :measured? true
+           :basis "SIMD-group width 32"
+           :evidence "2026-10-19 Apple M1 Max / MoltenVK, 16 paired runs: 32-1024 medians within ~5% and no size won more than 6/16; 256 kept as the most frequent paired winner"}
+   :intel {:size 128 :execution-width 32 :measured? true
+           :basis "subgroup width 8/16/32; 128 is a multiple of all three"
+           :evidence "2026-10-19 BMG G31 / ANV, 6 paired runs: 32-256 flat within 2% (64 won 4/6 on noise-level margins), 512/1024 marginally slower; 128 kept as the subgroup-safe row inside the flat band"}
+   :arm {:size 128 :execution-width 16 :measured? false
+         :basis "Mali execution widths 4-32 all divide 128"}
+   :amd {:size 1024 :execution-width 64 :measured? true
+         :basis "wavefront width 64; measurement chose the top of the bound"
+         :evidence "2026-10-19 Radeon 680M / RADV, 6 paired runs: 1024 won 5/6 and is 28% faster than the provisional 256 (median 334,528 vs 467,981 ns); 32 slowest"}
+   :unknown {:size 256 :execution-width 32 :measured? false
+             :basis "portable fallback"}})
 
 (defn workgroup-default
   "The provisional workgroup size for a vendor (a power of two in [32, 1024]).
@@ -153,25 +131,16 @@
 (defn recommend
   "A deterministic dispatch decision for one device descriptor
   ({:vendor-id | :vendor, optional :api, optional :device-class}). Answers
-  {:vendor :target
-   :workgroup-size :size-basis :size-measured?
-   :execution-width :execution-width-basis :execution-width-measured?
-   :measured?}. The top-level :measured? is true only when every fact in the
-  answer is measured; with every workgroup size still provisional it stays
-  false, while :execution-width-measured? names the one fact hardware has
-  actually answered (the apple row). Same descriptor in, same map out,
-  forever -- until hardware measurement replaces a provisional fact and
-  flips that fact's flag for that vendor only."
+  {:vendor :target :workgroup-size :execution-width :basis :measured?}.
+  Same descriptor in, same map out, forever. :measured? is the row's: true
+  where a hardware measurement (ADR-0358) chose the size, false while the
+  row is still the provisional design default."
   [device]
   (let [vendor (classify-vendor device)
         row (get workgroup-defaults vendor (workgroup-defaults :unknown))]
     {:vendor vendor
      :target (target-for (:api device) vendor)
      :workgroup-size (:size row)
-     :size-basis (:size-basis row)
-     :size-measured? (:size-measured? row)
      :execution-width (:execution-width row)
-     :execution-width-basis (:execution-width-basis row)
-     :execution-width-measured? (:execution-width-measured? row)
-     :measured? (boolean (and (:size-measured? row)
-                              (:execution-width-measured? row)))}))
+     :basis (:basis row)
+     :measured? (boolean (:measured? row))}))
