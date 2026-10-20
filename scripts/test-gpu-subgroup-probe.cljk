@@ -322,7 +322,7 @@
                                                "--policy" (.join path root "test" "fixtures" "gpu" "gpu-compute-policy.edn")
                                                "--output" kexe])]
             (if-not (and (zero? status) (str/includes? out ":ok true"))
-              {:verdict :not-admitted :detail (str "amu compile refused the " name " guest: " (subs (str out err) 0 (min 300 (count (str out err)))))}
+              {:verdict :compile-fail :detail (str "amu compile FAILED for the " name " guest (fail-closed: a compiler failure is not an admission): " (subs (str out err) 0 (min 300 (count (str out err)))))}
               (let [r (sh "node" [(.join path root "bin" "amu") "extract-native" kexe "--symbol" "main" "--output" code])
                     m (re-find #":offset (\d+)" (:out r))]
                 (if-not m
@@ -361,6 +361,8 @@
                                             "\tOK\tS=" (:S res) "\tNGS=" (:ngs res) "\tW=" wg-size))
                           :not-admitted (println (str "GPU-SUBGROUP-PROBE\tRUNG\t" (name rung)
                                                       "\tNOT-ADMITTED\t" (:detail res)))
+                          :compile-fail (println (str "GPU-SUBGROUP-PROBE\tRUNG\t" (name rung)
+                                               "\tCOMPILE-FAIL\t" (:detail res)))
                           :verify-fail (println (str "GPU-SUBGROUP-PROBE\tRUNG\t" (name rung)
                                                      "\tVERIFY-FAIL\t" (:detail res))))
                         res))
@@ -373,6 +375,6 @@
       (fail! (str "geometry rung failed verification: " (:detail geom)))))
   (println (str "GPU-SUBGROUP-PROBE\tINFO\t" (:info geom) "\t" target))
   (println (str "GPU-SUBGROUP-PROBE\tRESULT\tS=" (:S geom) "\tNGS=" (:ngs geom) "\tW=" wg-size "\t" summary))
-  (if (some #(= (:verdict %) :verify-fail) results)
+  (if (some #(contains? #{:verify-fail :compile-fail} (:verdict %)) results)
     (do (println "GPU-SUBGROUP-PROBE\tFAIL\ta rung that the device admitted did not verify") (js/process.exit 1))
     (js/process.exit 0)))
