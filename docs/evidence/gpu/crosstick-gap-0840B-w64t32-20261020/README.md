@@ -81,13 +81,22 @@ window.
 by `run-sweep.sh`'s shasum guard before any run. Every SHAPE line
 self-printed `fixture=subgroup-reduce-w64-sum.emitted.glsl sha256=a25a6931…`.
 
-**Chain inputs at this base (the PR #1393 staging rule).** #1393 is still
-OPEN; its staging script is not on this base (origin/main `9b084efe`).
-`test/fixtures/gpu/` holds the chain's pinned pre-fix bytes — all four
-sha256 verified before dispatch (w32 `0cf6c406…`, w64 `a25a6931…`, w128
-`c7931718…`, w256 `087107f9…`) — so the staging step is a byte-identity
-no-op here. Once #1393 lands, future chain worktrees must run the staging
-script first.
+**Chain inputs at this base (the PR #1393 staging rule).** This worktree's
+base is origin/main `9b084efe`, which PREDATES #1393's merge: `test/fixtures/gpu/`
+here holds the chain's pinned pre-fix bytes — all four sha256 verified
+before dispatch (w32 `0cf6c406…`, w64 `a25a6931…`, w128 `c7931718…`, w256
+`087107f9…`) — so the staging step was a byte-identity no-op and the rule's
+invariant (the probe sees the bytes every prior datum ran) held by
+construction. **#1393 merged into origin/main (`2f04a37e`) at 09:22:27 JST
+— DURING batch B's run window (09:20:39–09:24:18), not before this tick's
+dispatch and not after it.** Batch B executed from this worktree at base
+`9b084efe` (fixtures verified pre-dispatch at 09:17; the runs read this
+worktree's files, not the shared checkout), so the probe ran the same
+fixture bytes as every prior chain datum regardless. Every future chain
+worktree based on `2f04a37e` or later now holds the regenerated post-fix
+fixtures and MUST run `sh
+scripts/gpu-sign-chain-stage-fixtures.sh` before dispatching the pinned
+probe (recorded here as the handoff to the next chain tick).
 
 **Base note: the chain's first same-base cross-tick pair.** Batch A ran on
 `9b084efe` and batch B runs on the same `9b084efe` (the shared checkout had

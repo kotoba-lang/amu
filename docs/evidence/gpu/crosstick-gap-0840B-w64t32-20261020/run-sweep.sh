@@ -30,16 +30,19 @@
 #
 # CHAIN INPUTS AT THIS BASE (the PR #1393 staging rule). The rule says to
 # run `sh scripts/gpu-sign-chain-stage-fixtures.sh` before dispatching the
-# pinned probe. That script and its archive live on PR #1393's branch and
-# are NOT on this base (origin/main 9b084efe; #1393 still OPEN); at this
-# base test/fixtures/gpu/ ALREADY holds the chain's pinned pre-fix bytes
-# (all four sha256 verified against the archive README's table before
-# dispatch: w32 0cf6c406..., w64 a25a6931..., w128 c7931718..., w256
-# 087107f9...), so the staging step is a byte-identity no-op here and the
-# rule's invariant (the probe sees the bytes every prior datum ran) holds
-# by construction. Once #1393 lands, future chain worktrees must run the
-# staging script first (their test/fixtures/gpu/ will hold the regenerated
-# post-fix bytes).
+# pinned probe. At this worktree's base (origin/main 9b084efe, which
+# PREDATES #1393's merge) test/fixtures/gpu/ ALREADY holds the chain's
+# pinned pre-fix bytes (all four sha256 verified against the archive
+# README's table before dispatch: w32 0cf6c406..., w64 a25a6931..., w128
+# c7931718..., w256 087107f9...), so the staging step is a byte-identity
+# no-op here and the rule's invariant (the probe sees the bytes every prior
+# datum ran) holds by construction. NOTE: #1393 merged into origin/main
+# (2f04a37e) at
+# 09:22:27 JST Oct 20 -- DURING batch B's run window (09:20:39--09:24:18).
+# Batch B executed from THIS worktree at base 9b084efe (fixtures verified
+# pre-dispatch at 09:17), so the probe ran the chain's fixture bytes
+# regardless. Every future chain worktree on 2f04a37e+ holds the
+# regenerated post-fix fixtures and MUST run the staging script first.
 #
 # BASE NOTE. Batch A ran on origin/main 9b084efe; batch B runs on the SAME
 # origin/main 9b084efe (the shared checkout had not advanced by dispatch
