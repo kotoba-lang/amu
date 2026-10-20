@@ -187,7 +187,10 @@
   (validate! (:kir compiled))
   ;; A sealed artifact that predates variants carries no :variant; that is
   ;; :baseline by definition, and re-lowering must still match exactly.
-  (let [variant (or (:variant compiled) :baseline)
+  (let [variant (if (contains? compiled :variant) (:variant compiled) :baseline)
+        _ (when-not (contains? #{:baseline :warp-shuffle-reduce :subgroup-reduce} variant)
+            (throw (ex-info "accelerator artifact carries an unsupported variant label"
+                            {:variant variant})))
         expected-code (lower (:kir compiled) (:target compiled) variant)]
     (when-not (and (= (:kir-sha256 compiled) (artifact/sha256 (:kir compiled)))
                    (= (:code-sha256 compiled) (artifact/sha256 expected-code))

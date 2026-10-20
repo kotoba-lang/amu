@@ -50,8 +50,27 @@
   Every answer carries :measured? false. That flag is the honesty lock: it
   flips only when hardware measurement (JUN-57 for NVIDIA) replaces the
   basis text."
-  [vendor kir]
-  (let [variant (if (and (= :nvidia vendor)
+  ([vendor kir] (select-variant vendor kir nil nil))
+  ([vendor kir target] (select-variant vendor kir target nil))
+  ([vendor kir target device]
+  ;; ADR-0356 rule 3 (emission admission first): the variant is admitted
+  ;; only for the emitter that can emit it -- CUDA only for
+  ;; :warp-shuffle-reduce. A Vulkan/WebGPU target answers :baseline.
+  ;; ADR-0356 rule 6 (device capability): the sm_70+ floor in variant-bases
+  ;; is a real requirement; a descriptor that does not confirm compute
+  ;; capability 7.0+ answers :baseline (fail closed, no guessing).
+  (let [cap-ok? (let [cc (:compute-capability (or device {}))]
+                  (cond
+                    (nil? cc) false
+                    (number? cc) (>= cc 7.0)
+                    :else false))
+        ;; rule: validate the COMPLETE KIR first (a malformed kernel never
+        ;; selects a variant -- shape checks alone admit W=300 and worse).
+        valid-kir? (try (accelerator/validate! kir) true (catch :default _ false))
+        variant (if (and (= :nvidia vendor)
+                         (= :cuda target)
+                         valid-kir?
+                         cap-ok?
                          (= :reduce (:kernel/op kir))
                          (contains? #{:sum :max :min} (:kernel/operator kir))
                          (let [wg (:kernel/workgroup-size kir)]
@@ -60,4 +79,4 @@
                   :baseline)]
     {:variant variant
      :measured? false
-     :basis (get variant-bases variant)}))
+     :basis (get variant-bases variant)})))

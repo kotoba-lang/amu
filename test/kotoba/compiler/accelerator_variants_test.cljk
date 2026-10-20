@@ -9,8 +9,8 @@
             operator [:sum :max :min]]
       (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
                                     :reduce operator {:workgroup-size wg})]
-        (is (= :warp-shuffle-reduce (:variant (variants/select-variant :nvidia kir))))
-        (is (false? (:measured? (variants/select-variant :nvidia kir)))))))
+        (is (= :warp-shuffle-reduce (:variant (variants/select-variant :nvidia kir :cuda {:compute-capability 7.0}))))
+        (is (false? (:measured? (variants/select-variant :nvidia kir :cuda {:compute-capability 7.0})))))))
   (testing "everything else answers :baseline, never a refusal"
     (let [reduce-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
           ewise-kir (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
@@ -38,7 +38,7 @@
 (deftest selected-variants-lower-and-verify
   (testing "the selected NVIDIA variant is exactly what the emitter admits"
     (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
-          selected (:variant (variants/select-variant :nvidia kir))
+          selected (:variant (variants/select-variant :nvidia kir :cuda {:compute-capability 7.0}))
           compiled (accelerator/compile-kernel kir :cuda-v1 selected)]
       (is (= :warp-shuffle-reduce selected))
       (is (= :warp-shuffle-reduce (:variant compiled)))
