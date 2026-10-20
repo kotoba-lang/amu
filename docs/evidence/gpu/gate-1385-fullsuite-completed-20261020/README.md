@@ -23,7 +23,7 @@ nbb: 318 tests, 5008 passed, 16 failed, 15 errors
 Verified properties of this run (tool output, committed alongside this
 README as `gate-1385-full.log`, sha256
 `0dd6fa0b640543aa3a8e507faef76b71872103fadba9f6d3dae00e06509047ca`,
-365 lines, with its runner `gate-1385-full.sh`):
+365 lines, with its runner `gate-1385-full.sh.txt`):
 
 - Correct worktree: every FAIL/ERROR path points at
   `.../wt/amu-gpu/gate-1385-20261020-0347/run-tests.cljk`; **0** occurrences of
