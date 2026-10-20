@@ -7970,7 +7970,15 @@ static int kexe_scope_open(const struct kexe_scope *scope, const char *candidate
 #endif
     }
 #if defined(__linux__)
-    int root = open(base, O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    /* The raw syscall, not libc open(): musl's open() adds a
+     * fcntl(F_SETFD, FD_CLOEXEC) whenever O_CLOEXEC is set (musl
+     * src/fcntl/open.c), and fcntl is deliberately outside the sandbox
+     * allowlist -- measured: this open died KEXE_TRAP SIGSYS there while
+     * the O_CLOEXEC-free opens around it worked. openat sets O_CLOEXEC
+     * atomically in the kernel, so the flag's meaning is unchanged. */
+    int root = (int)syscall(SYS_openat, AT_FDCWD, base,
+                           O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC,
+                           0);
     if (root < 0) return -1;
     struct kexe_open_how how;
     memset(&how, 0, sizeof(how));
@@ -10682,7 +10690,10 @@ static struct kexe_spawned kexe_spawn_start(const char *program, char *const arg
     s.stage = 0;
     return s;
   }
-  int dir = cwd ? open(cwd, O_PATH | O_DIRECTORY | O_CLOEXEC) : -1;
+  /* Raw syscall for the same musl O_CLOEXEC -> fcntl(F_SETFD) reason as
+   * kexe_scope_open's descendant branch. */
+  int dir = cwd ? (int)syscall(SYS_openat, AT_FDCWD, cwd,
+                              O_PATH | O_DIRECTORY | O_CLOEXEC, 0) : -1;
   pid_t pid = fork();
   if (pid == 0) {
     unsigned char stage = 0;
