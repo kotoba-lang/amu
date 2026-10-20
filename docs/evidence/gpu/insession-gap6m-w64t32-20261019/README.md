@@ -59,7 +59,7 @@ w32 `0cf6c406…`, w128 `c7931718…`, w256 `087107f9…`, as self-printed by
 every SHAPE line) to the #1369/#1377/#1378/#1380/#1382 chain; lanes
 2,095,104; 3 runs per cell per batch; cell order rotated per run-pair
 (t31,t32 / t32,t31 / t31,t32); fresh kbb process per run; `date; uptime`
-recorded per run. `run-sweep.sh A|B` is idempotent (a run whose log exists
+recorded per run. `run-sweep.sh.txt A|B` is idempotent (a run whose log exists
 is skipped; one batch-B run killed mid-flight by the tool-call time cap was
 deleted and re-run, see commit message). `analyze-2337.py` is carried from
 `analyze-2254.py` with only the output filename, docstring, and a
