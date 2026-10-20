@@ -34,6 +34,8 @@ for batch in BATCHES:
     for cell in CELLS:
         for pair in (1, 2, 3):
             p = os.path.join(ev, f"run-{batch}-{pair}-{cell}.log")
+            if not os.path.exists(p):
+                continue  # a batch may legitimately not have been run
             txt = open(p).read()
             gap = num(r"ns/dispatch=(-?[\d.]+)", line_of(txt, "GAP"))
             sp_line = line_of(txt, "SPEEDUP")
@@ -50,7 +52,7 @@ for batch in BATCHES:
             verdict = sp_line.split("vs-1.0=")[-1].strip()
             verified = "verified=true" in txt
             data.setdefault((batch, cell), []).append(
-                dict(pair=pair, gap=gap, med=med, iqr=iqr, mn=mn, mx=mx,
+                dict(pair=pair, txt=txt, gap=gap, med=med, iqr=iqr, mn=mn, mx=mx,
                      fs_b=fs_b, fs_v=fs_v, load=load, verified=verified,
                      shape=shape, verdict=verdict, when=when))
 
@@ -58,6 +60,9 @@ lines = []
 for batch in BATCHES:
     lines.append(f"===== batch {batch}")
     for cell in CELLS:
+        if (batch, cell) not in data:
+            lines.append(f"== {cell}: batch {batch} not run")
+            continue
         runs = data[(batch, cell)]
         lines.append(f"== {cell}  {runs[0]['shape']}")
         for r in runs:
@@ -83,7 +88,28 @@ for batch in BATCHES:
     lines.append("")
 
 lines.append("===== cross-batch sign comparison")
+import sys
+SAME_SESSION = "--same-session" in sys.argv  # explicit attestation by the caller
+def flip_verdict(aruns, bruns):
+    # Noise rule first: only surviving runs count (9a6Z).
+    def surv(rs):
+        clean = [r for r in rs if r['iqr'] <= 0.05]
+        cm = min((r['fs_b'] for r in clean), default=None)
+        return [r for r in clean if cm is not None and r['fs_b'] <= 1.2 * cm]
+    sa_, sb_ = surv(aruns), surv(bruns)
+    if not sa_ or not sb_:
+        return "INCONCLUSIVE (no noise-surviving run in a batch)"
+    ssa = set(r['gap'] > 0 for r in sa_)
+    ssb = set(r['gap'] > 0 for r in sb_)
+    if len(ssa) > 1 or len(ssb) > 1:
+        return "INCONCLUSIVE (batch not unanimous)"
+    if not SAME_SESSION:
+        return "INCONCLUSIVE (session identity unverified; pass --same-session to attest)"
+    return "YES" if ssa != ssb else "no"
 for cell in CELLS:
+    if ("A", cell) not in data or ("B", cell) not in data:
+        lines.append(f"{cell}: INCONCLUSIVE (a batch was not run)")
+        continue
     a = data[("A", cell)]
     b = data[("B", cell)]
     sa = set(r['gap'] > 0 for r in a)
@@ -92,17 +118,26 @@ for cell in CELLS:
     est_b = statistics.mean(r['gap'] for r in b)
     lines.append(f"{cell}: batchA mean(3)={est_a:.1f} signs={'/'.join('+' if r['gap'] > 0 else '-' for r in a)}"
                  f"  batchB mean(3)={est_b:.1f} signs={'/'.join('+' if r['gap'] > 0 else '-' for r in b)}"
-                 f"  FLIP={'YES' if sa != sb else 'no'}")
+                 f"  FLIP={flip_verdict(a, b)}")
 # wall-clock gap between batches: last run of A -> first run of B
 import datetime
 def stamp(when):
-    return datetime.datetime.strptime(when[:19].strip(), "%b %d %H:%M:%S %Y")
-lastA = max(stamp(r['when']) for cell in CELLS for r in data[("A", cell)])
-firstB = min(stamp(r['when']) for cell in CELLS for r in data[("B", cell)])
+    m = re.match(r"\w+ (\w+ \d+ \d+:\d+:\d+) \w+ (\d{4})", when.strip())
+    return datetime.datetime.strptime(f"{m.group(1)} {m.group(2)}", "%b %d %H:%M:%S %Y")
+def dur(txt):
+    m = re.search(r"real\s+(\d+)m([\d.]+)s", txt)
+    return (int(m.group(1)) * 60 + float(m.group(2))) if m else 0.0
+lastA = max(stamp(r['when']) + datetime.timedelta(seconds=dur(r['txt']))
+            for cell in CELLS for r in data[("A", cell)])
+b_runs = [r for cell in CELLS for r in data.get(("B", cell), [])]
+if not b_runs:
+    lines.append("probe-idle gap: batch B was not run")
+    raise SystemExit(0)
+firstB = min(stamp(r['when']) for r in b_runs)
 delta = (firstB - lastA).total_seconds()
 lines.append(f"probe-idle gap batchA-end -> batchB-start: {int(delta // 60)}m{int(delta % 60)}s")
 lines.append(f"batchA window: {min(stamp(r['when']) for cell in CELLS for r in data[('A', cell)])} .. {lastA}")
-lines.append(f"batchB window: {firstB} .. {max(stamp(r['when']) for cell in CELLS for r in data[('B', cell)])}")
+lines.append(f"batchB window: {firstB} .. {max(stamp(r['when']) for r in b_runs)}")
 
 text = "\n".join(lines) + "\n"
 open(out_path, "w").write(text)

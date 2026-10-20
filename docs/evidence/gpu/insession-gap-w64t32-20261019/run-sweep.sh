@@ -34,7 +34,7 @@ case "$B" in A|B) ;; *) echo "usage: $0 A|B" >&2; exit 2;; esac
 
 run() { # pair-pos cell W chunks
   log="$EV/run-$B-$1-$2.log"
-  if [ -f "$log" ]; then echo "skip $log"; return 0; fi
+  if [ -f "$log" ] && grep -q "RESULT\tverified=true" "$log"; then echo "skip $log"; return 0; fi
   echo "run $log"
   (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" 2095104 "$4") > "$log" 2>&1
   grep -q "RESULT	verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }

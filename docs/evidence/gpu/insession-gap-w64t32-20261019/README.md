@@ -3,7 +3,7 @@
 ## The finding this tick: the >=30-min in-tick design is INFEASIBLE on this platform
 
 The 2221 tick designed the strictly-inside-tick two-batch sign probe with a
->=30 min probe-idle gap (see `../intick-gap-w64t32-20261019/README.md`).
+>=30 min probe-idle gap (protocol designed at tick 2254 (the referenced design directory was never committed; the protocol is stated inline below)).
 **That design cannot fit this platform's agent run budget of 1800 s**, and
 this tick verified it from three independent tool outputs:
 
