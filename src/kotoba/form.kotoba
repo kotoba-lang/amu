@@ -1,0 +1,489 @@
+(ns kotoba.form
+  "Typed Form values for Kotoba compiler frontends. Each node is a :form/r record; collections store children in source order, and maps store alternating keys and values."
+  (:export [append-form append-many assoc-form bool-form bool-value call0 call1 call2 call3 call4 call5 call6 cons-onto count-of dissoc-form edn-form eq first-of form-get form-has? form-map form-seq form-set form-vec from-document int-form int-value is-bool? is-int? is-keyword? is-map? is-nil? is-seq? is-set? is-string? is-symbol? is-true? is-vec? keys-of keyword-form keyword-has-namespace? keyword-value kids-of last-of nil-form no-forms nth-of one-form rest-list string-form string-value symbol-form symbol-value three-forms two-forms vec2 vec3 vec4 vec5 vec6 bits-of f64-form is-f64? span-of with-children])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                      [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :form/rd [:record :form/rd [[:form [:ref :form/r]] [:pos :i64]]]}))
+
+(defn no-forms [] [:list [:ref :form/r]]
+     (typed-list-new [:list [:ref :form/r]]))
+
+(defn one-form [a [:ref :form/r]] [:list [:ref :form/r]]
+     (typed-list-conj [:list [:ref :form/r]]
+                      (typed-list-new [:list [:ref :form/r]])
+                      a))
+
+(defn two-forms [a [:ref :form/r] b [:ref :form/r]] [:list [:ref :form/r]]
+     (typed-list-conj [:list [:ref :form/r]]
+                      (typed-list-conj [:list [:ref :form/r]]
+                                       (typed-list-new [:list [:ref :form/r]])
+                                       a)
+                      b))
+
+(defn three-forms [a [:ref :form/r] b [:ref :form/r] c [:ref :form/r]] [:list [:ref :form/r]]
+     (typed-list-conj [:list [:ref :form/r]]
+                      (typed-list-conj [:list [:ref :form/r]]
+                                       (typed-list-conj [:list [:ref :form/r]]
+                                                        (typed-list-new [:list [:ref :form/r]])
+                                                        a)
+                                       b)
+                      c))
+
+(defn append-form [xs [:list [:ref :form/r]] x [:ref :form/r]] [:list [:ref :form/r]]
+     (typed-list-conj [:list [:ref :form/r]] xs x))
+
+(defn- form-mk [t :i64 s :string n :i64 k :keyword kids [:list [:ref :form/r]]] [:ref :form/r]
+     (record-new [:ref :form/r] t s n k kids 0 (bytes-empty)))
+
+(defn nil-form [] [:ref :form/r] (form-mk 0 "" 0 :none (no-forms)))
+
+(defn bool-form [b :bool] [:ref :form/r] (form-mk 1 "" (if b 1 0) :none (no-forms)))
+
+(defn int-form [n :i64] [:ref :form/r] (form-mk 2 "" n :none (no-forms)))
+
+(defn string-form [s :string] [:ref :form/r] (form-mk 3 s 0 :none (no-forms)))
+
+(defn keyword-form [k :keyword] [:ref :form/r] (form-mk 4 "" 0 k (no-forms)))
+
+(defn symbol-form [s :string] [:ref :form/r] (form-mk 5 s 0 :none (no-forms)))
+
+(defn form-seq [kids [:list [:ref :form/r]]] [:ref :form/r] (form-mk 6 "" 0 :none kids))
+
+(defn form-vec [kids [:list [:ref :form/r]]] [:ref :form/r] (form-mk 7 "" 0 :none kids))
+
+(defn form-set [kids [:list [:ref :form/r]]] [:ref :form/r] (form-mk 8 "" 0 :none kids))
+
+(defn form-map [kids [:list [:ref :form/r]]] [:ref :form/r] (form-mk 9 "" 0 :none kids))
+
+;; Rebuild an AST node after a tree transformation while keeping source span,
+;; scalar payload, and raw floating-point bits intact.
+(defn with-children [f [:ref :form/r] kids [:list [:ref :form/r]]] [:ref :form/r]
+     (record-new [:ref :form/r]
+                 (record-get [:ref :form/r] f :tag)
+                 (record-get [:ref :form/r] f :s)
+                 (record-get [:ref :form/r] f :n)
+                 (record-get [:ref :form/r] f :k)
+                 kids
+                 (record-get [:ref :form/r] f :span)
+                 (record-get [:ref :form/r] f :data)))
+
+(defn- form-tag-of [f [:ref :form/r]] :i64 (record-get [:ref :form/r] f :tag))
+
+(defn kids-of [f [:ref :form/r]] [:list [:ref :form/r]] (record-get [:ref :form/r] f :kids))
+
+(defn int-value [f [:ref :form/r]] :i64 (record-get [:ref :form/r] f :n))
+
+(defn string-value [f [:ref :form/r]] :string (record-get [:ref :form/r] f :s))
+
+(defn symbol-value [f [:ref :form/r]] :string (record-get [:ref :form/r] f :s))
+
+(defn keyword-value [f [:ref :form/r]] :keyword (record-get [:ref :form/r] f :k))
+
+(defn bool-value [f [:ref :form/r]] :bool (= 1 (record-get [:ref :form/r] f :n)))
+
+(defn is-nil? [f [:ref :form/r]] :bool (= 0 (form-tag-of f)))
+
+(defn is-bool? [f [:ref :form/r]] :bool (= 1 (form-tag-of f)))
+
+(defn is-int? [f [:ref :form/r]] :bool (= 2 (form-tag-of f)))
+
+(defn is-string? [f [:ref :form/r]] :bool (= 3 (form-tag-of f)))
+
+(defn is-keyword? [f [:ref :form/r]] :bool (= 4 (form-tag-of f)))
+
+(defn is-symbol? [f [:ref :form/r]] :bool (= 5 (form-tag-of f)))
+
+(defn is-seq? [f [:ref :form/r]] :bool (= 6 (form-tag-of f)))
+
+(defn is-vec? [f [:ref :form/r]] :bool (= 7 (form-tag-of f)))
+
+(defn is-set? [f [:ref :form/r]] :bool (= 8 (form-tag-of f)))
+
+(defn is-map? [f [:ref :form/r]] :bool (= 9 (form-tag-of f)))
+
+(defn- form-is-list-like? [f [:ref :form/r]] :bool (or (= 6 (form-tag-of f)) (= 7 (form-tag-of f))))
+
+(defn is-true? [f [:ref :form/r]] :bool (and (= 1 (form-tag-of f)) (= 1 (record-get [:ref :form/r] f :n))))
+
+(defn count-of [f [:ref :form/r]] :i64 (vector-count (kids-of f)))
+
+(defn nth-of [f [:ref :form/r] i :i64] [:ref :form/r]
+     (if (and (>= i 0) (< i (count-of f)))
+       (typed-list-nth [:list [:ref :form/r]] (kids-of f) i)
+       (nil-form)))
+
+(defn first-of [f [:ref :form/r]] [:ref :form/r] (nth-of f 0))
+
+(defn- form-lookup-from [kids [:list [:ref :form/r]] key [:ref :form/r] i :i64] [:ref :form/r]
+     (let [n (vector-count kids)]
+       (loop [j i]
+         (if (>= (+ j 1) n)
+           (nil-form)
+           (if (eq (typed-list-nth [:list [:ref :form/r]] kids j) key)
+             (typed-list-nth [:list [:ref :form/r]] kids (+ j 1))
+             (recur (+ j 2)))))))
+
+(defn form-get [m [:ref :form/r] key [:ref :form/r]] [:ref :form/r]
+     (form-lookup-from (kids-of m) key 0))
+
+(defn- form-lookup-has [kids [:list [:ref :form/r]] key [:ref :form/r]] :bool
+     (let [n (vector-count kids)]
+       (loop [j 0]
+         (if (>= (+ j 1) n)
+           false
+           (if (eq (typed-list-nth [:list [:ref :form/r]] kids j) key)
+             true
+             (recur (+ j 2)))))))
+
+(defn form-has? [m [:ref :form/r] key [:ref :form/r]] :bool
+     (form-lookup-has (kids-of m) key))
+
+(defn- form-member? [xs [:list [:ref :form/r]] x [:ref :form/r]] :bool
+     (let [n (vector-count xs)]
+       (loop [i 0]
+         (if (>= i n) false
+           (if (form-eq (typed-list-nth [:list [:ref :form/r]] xs i) x)
+             true
+             (recur (inc i)))))))
+
+(defn- form-ordered-eq [xs [:list [:ref :form/r]] ys [:list [:ref :form/r]]] :bool
+     (let [n (vector-count xs)]
+       (if (= n (vector-count ys))
+         (loop [i 0]
+           (if (>= i n)
+             true
+             (if (form-eq (typed-list-nth [:list [:ref :form/r]] xs i)
+                          (typed-list-nth [:list [:ref :form/r]] ys i))
+               (recur (inc i))
+               false)))
+         false)))
+
+(defn- form-set-eq [xs [:list [:ref :form/r]] ys [:list [:ref :form/r]]] :bool
+     (let [n (vector-count xs)]
+       (if (= n (vector-count ys))
+         (loop [i 0]
+           (if (>= i n)
+             true
+             (if (form-member? ys (typed-list-nth [:list [:ref :form/r]] xs i))
+               (recur (inc i))
+               false)))
+         false)))
+
+(defn- form-map-eq [xs [:list [:ref :form/r]] ys [:list [:ref :form/r]]] :bool
+     (let [n (vector-count xs)]
+       (if (= n (vector-count ys))
+         (loop [j 0]
+           (if (>= (+ j 1) n)
+             true
+             (let [k (typed-list-nth [:list [:ref :form/r]] xs j)]
+               (if (and (form-lookup-has ys k)
+                        (form-eq (typed-list-nth [:list [:ref :form/r]] xs (+ j 1))
+                                 (form-lookup-from ys k 0)))
+                 (recur (+ j 2))
+                 false))))
+         false)))
+
+(defn- form-eq [a [:ref :form/r] b [:ref :form/r]] :bool
+     (let [t (form-tag-of a)]
+       (and (= t (form-tag-of b))
+            (cond
+              (= t 0) true
+              (= t 1) (= (record-get [:ref :form/r] a :n) (record-get [:ref :form/r] b :n))
+              (= t 2) (= (record-get [:ref :form/r] a :n) (record-get [:ref :form/r] b :n))
+              (= t 3) (string=? (record-get [:ref :form/r] a :s) (record-get [:ref :form/r] b :s))
+              (= t 4) (= (record-get [:ref :form/r] a :k) (record-get [:ref :form/r] b :k))
+              (= t 5) (string=? (record-get [:ref :form/r] a :s) (record-get [:ref :form/r] b :s))
+              (= t 10) (f64-eq (f64-from-bits (record-get [:ref :form/r] a :n))
+                               (f64-from-bits (record-get [:ref :form/r] b :n)))
+              (= t 8) (form-set-eq (kids-of a) (kids-of b))
+              (= t 9) (form-map-eq (kids-of a) (kids-of b))
+              :else (form-ordered-eq (kids-of a) (kids-of b))))))
+
+(defn eq
+     "Structural equality, as `=` on the host's data: a list and a vector are
+     different kinds here (as are they to the reader), sets and maps compare
+     without order."
+     [a [:ref :form/r] b [:ref :form/r]] :bool
+     (form-eq a b))
+
+(defn rest-list
+     "The kids of F after the first, as a list."
+     [f [:ref :form/r]] [:list [:ref :form/r]]
+     (let [xs (kids-of f)
+           n (vector-count xs)]
+       (loop [i 1 acc (no-forms)]
+         (if (>= i n)
+           acc
+           (recur (inc i) (typed-list-conj [:list [:ref :form/r]] acc (typed-list-nth [:list [:ref :form/r]] xs i)))))))
+
+(defn last-of [f [:ref :form/r]] [:ref :form/r]
+     (nth-of f (dec (count-of f))))
+
+(defn cons-onto [x [:ref :form/r] xs [:list [:ref :form/r]]] [:list [:ref :form/r]]
+     (let [n (vector-count xs)]
+       (loop [i 0 acc (one-form x)]
+         (if (>= i n)
+           acc
+           (recur (inc i) (typed-list-conj [:list [:ref :form/r]] acc (typed-list-nth [:list [:ref :form/r]] xs i)))))))
+
+(defn assoc-form
+     "Map M with K bound to V: the first entry whose key is K keeps its place and
+     takes V, else K V are appended (as `assoc` on the host's map)."
+     [m [:ref :form/r] k [:ref :form/r] v [:ref :form/r]] [:ref :form/r]
+     (let [xs (kids-of m)
+           n (vector-count xs)]
+       (if (form-lookup-has xs k)
+         (form-map
+          (loop [j 0 acc (no-forms)]
+            (if (>= (+ j 1) n)
+              acc
+              (let [key (typed-list-nth [:list [:ref :form/r]] xs j)]
+                (recur (+ j 2)
+                       (typed-list-conj [:list [:ref :form/r]]
+                                        (typed-list-conj [:list [:ref :form/r]] acc key)
+                                        (if (eq key k) v (typed-list-nth [:list [:ref :form/r]] xs (+ j 1)))))))))
+         (form-map (typed-list-conj [:list [:ref :form/r]] (typed-list-conj [:list [:ref :form/r]] xs k) v)))))
+
+(defn call0 [name :string] [:ref :form/r] (form-seq (one-form (symbol-form name))))
+
+(defn call1 [name :string a [:ref :form/r]] [:ref :form/r]
+     (form-seq (two-forms (symbol-form name) a)))
+
+(defn call2 [name :string a [:ref :form/r] b [:ref :form/r]] [:ref :form/r]
+     (form-seq (three-forms (symbol-form name) a b)))
+
+(defn call3 [name :string a [:ref :form/r] b [:ref :form/r] c [:ref :form/r]] [:ref :form/r]
+     (form-seq (typed-list-conj [:list [:ref :form/r]] (three-forms (symbol-form name) a b) c)))
+
+(defn call4 [name :string a [:ref :form/r] b [:ref :form/r] c [:ref :form/r] d [:ref :form/r]] [:ref :form/r]
+     (form-seq (typed-list-conj [:list [:ref :form/r]] (typed-list-conj [:list [:ref :form/r]] (three-forms (symbol-form name) a b) c) d)))
+
+(defn call5 [name :string a [:ref :form/r] b [:ref :form/r] c [:ref :form/r] d [:ref :form/r] e [:ref :form/r]] [:ref :form/r]
+     (form-seq (typed-list-conj [:list [:ref :form/r]] (typed-list-conj [:list [:ref :form/r]] (typed-list-conj [:list [:ref :form/r]] (three-forms (symbol-form name) a b) c) d) e)))
+
+(defn call6 [name :string a [:ref :form/r] b [:ref :form/r] c [:ref :form/r] d [:ref :form/r] e [:ref :form/r] f [:ref :form/r]] [:ref :form/r]
+     (form-seq (typed-list-conj [:list [:ref :form/r]] (typed-list-conj [:list [:ref :form/r]] (typed-list-conj [:list [:ref :form/r]] (typed-list-conj [:list [:ref :form/r]] (three-forms (symbol-form name) a b) c) d) e) f)))
+
+(defn vec2 [a [:ref :form/r] b [:ref :form/r]] [:ref :form/r] (form-vec (two-forms a b)))
+
+(defn vec3 [a [:ref :form/r] b [:ref :form/r] c [:ref :form/r]] [:ref :form/r] (form-vec (three-forms a b c)))
+
+(defn vec4 [a [:ref :form/r] b [:ref :form/r] c [:ref :form/r] d [:ref :form/r]] [:ref :form/r]
+     (form-vec (typed-list-conj [:list [:ref :form/r]] (three-forms a b c) d)))
+
+(defn vec5 [a [:ref :form/r] b [:ref :form/r] c [:ref :form/r] d [:ref :form/r] e [:ref :form/r]] [:ref :form/r]
+     (form-vec (typed-list-conj [:list [:ref :form/r]] (typed-list-conj [:list [:ref :form/r]] (three-forms a b c) d) e)))
+
+(defn vec6 [a [:ref :form/r] b [:ref :form/r] c [:ref :form/r] d [:ref :form/r] e [:ref :form/r] f [:ref :form/r]] [:ref :form/r]
+     (form-vec (typed-list-conj [:list [:ref :form/r]] (typed-list-conj [:list [:ref :form/r]] (typed-list-conj [:list [:ref :form/r]] (three-forms a b c) d) e) f)))
+
+(defn- form-doc-at [d :document i :i64] :document
+     (option-value-of [:option :document] (document-vector-at d i) (document-null)))
+
+(defn- form-doc-list-at [d :document i :i64] :document
+     (option-value-of [:option :document] (document-list-at d i) (document-null)))
+
+(defn- form-doc-entry-at [d :document i :i64] :document
+     (option-value-of [:option :document] (document-map-entry-at d i) (document-null)))
+
+(defn- form-doc-items [d :document list? :bool] [:list [:ref :form/r]]
+     (let [n (document-count d)]
+       (loop [i 0 acc (no-forms)]
+         (if (>= i n)
+           acc
+           (recur (inc i)
+                  (typed-list-conj [:list [:ref :form/r]] acc
+                                   (from-document (if list? (form-doc-list-at d i) (form-doc-at d i)))))))))
+
+(defn- form-doc-map-items [d :document] [:list [:ref :form/r]]
+     (let [n (document-count d)]
+       (loop [i 0 acc (no-forms)]
+         (if (>= i n)
+           acc
+           (let [e (form-doc-entry-at d i)]
+             (recur (inc i)
+                    (typed-list-conj [:list [:ref :form/r]]
+                                     (typed-list-conj [:list [:ref :form/r]] acc (from-document (form-doc-at e 0)))
+                                     (from-document (form-doc-at e 1)))))))))
+
+(defn form-set-marker? [d :document] :bool
+     (and (> (document-count d) 0)
+          (= (document-kind (form-doc-at d 0)) :keyword)
+          (= (option-value-of [:option :keyword] (document-keyword-value (form-doc-at d 0)) :none) :kotoba.form/set)))
+
+(defn- form-doc-set-items [d :document] [:list [:ref :form/r]]
+     (let [n (document-count d)]
+       (loop [i 1 acc (no-forms)]
+         (if (>= i n)
+           acc
+           (recur (inc i) (typed-list-conj [:list [:ref :form/r]] acc (from-document (form-doc-at d i))))))))
+
+(defn from-document [d :document] [:ref :form/r]
+     (let [kind (document-kind d)]
+       (cond
+         (= kind :bool) (bool-form (option-value-of [:option :bool] (document-bool-value d) false))
+         (= kind :i64) (int-form (option-value-of [:option :i64] (document-i64-value d) 0))
+         (= kind :string) (string-form (option-value-of [:option :string] (document-string-value d) ""))
+         (= kind :keyword) (keyword-form (option-value-of [:option :keyword] (document-keyword-value d) :none))
+         (= kind :vector) (if (form-set-marker? d) (form-set (form-doc-set-items d)) (form-vec (form-doc-items d false)))
+         (= kind :list) (form-seq (form-doc-items d true))
+         (= kind :set) (form-set (form-doc-items d false))
+         (= kind :map) (form-map (form-doc-map-items d))
+         :else (nil-form))))
+
+(defn keyword-has-namespace? [f [:ref :form/r]] :bool
+     (and (= 4 (form-tag-of f))
+          (>= (string-index-of
+               (document-edn-print (document-keyword (record-get [:ref :form/r] f :k)))
+               "/")
+              0)))
+
+(defn keys-of [m [:ref :form/r]] [:ref :form/r]
+     (let [xs (kids-of m)
+           n (vector-count xs)]
+       (form-set
+        (loop [j 0 acc (no-forms)]
+          (if (>= j n)
+            acc
+            (recur (+ j 2) (typed-list-conj [:list [:ref :form/r]] acc (typed-list-nth [:list [:ref :form/r]] xs j))))))))
+
+(defn dissoc-form
+     "Map M without K (as `dissoc` on the host's map)."
+     [m [:ref :form/r] k [:ref :form/r]] [:ref :form/r]
+     (let [xs (kids-of m)
+           n (vector-count xs)]
+       (form-map
+        (loop [j 0 acc (no-forms)]
+          (if (>= (+ j 1) n)
+            acc
+            (let [key (typed-list-nth [:list [:ref :form/r]] xs j)]
+              (recur (+ j 2)
+                     (if (eq key k)
+                       acc
+                       (typed-list-conj [:list [:ref :form/r]]
+                                        (typed-list-conj [:list [:ref :form/r]] acc key)
+                                        (typed-list-nth [:list [:ref :form/r]] xs (+ j 1)))))))))))
+
+(defn append-many [xs [:list [:ref :form/r]] ys [:list [:ref :form/r]]] [:list [:ref :form/r]]
+     (let [n (vector-count ys)]
+       (loop [i 0 acc xs]
+         (if (>= i n) acc (recur (inc i) (typed-list-conj [:list [:ref :form/r]] acc (typed-list-nth [:list [:ref :form/r]] ys i)))))))
+
+(defn- form-rd [f [:ref :form/r] pos :i64] [:ref :form/rd]
+     (record-new [:ref :form/rd] f pos))
+
+(defn- form-rd-form [r [:ref :form/rd]] [:ref :form/r] (record-get [:ref :form/rd] r :form))
+
+(defn- form-rd-pos [r [:ref :form/rd]] :i64 (record-get [:ref :form/rd] r :pos))
+
+(defn- form-rd-fail [] :i64 (vector-at (vector-i64) 0))
+
+(defn- form-rd-width [c :i64] :i64
+     (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))
+
+(defn- form-rd-space? [c :i64] :bool
+     (or (= c 32) (= c 10) (= c 13) (= c 9) (= c 44)))
+
+(defn- form-rd-delimiter? [c :i64] :bool
+     (or (form-rd-space? c) (= c 40) (= c 41) (= c 91) (= c 93) (= c 123) (= c 125) (= c 34) (= c 59)))
+
+(defn- form-rd-line-end [s :string i :i64 n :i64] :i64
+     (loop [i i]
+       (if (or (>= i n) (= 10 (string-code-point-at s i))) i (recur (+ i (form-rd-width (string-code-point-at s i)))))))
+
+(defn- form-rd-skip [s :string i :i64] :i64
+     (let [n (string-byte-length s)]
+       (loop [i i]
+         (if (>= i n)
+           i
+           (let [c (string-code-point-at s i)]
+             (cond (form-rd-space? c) (recur (inc i))
+                   (= c 59) (recur (form-rd-line-end s i n))
+                   :else i))))))
+
+(defn- form-rd-token-end [s :string i :i64 n :i64] :i64
+     (loop [i i]
+       (if (>= i n)
+         i
+         (let [c (string-code-point-at s i)]
+           (if (form-rd-delimiter? c) i (recur (+ i (form-rd-width c))))))))
+
+(defn- form-rd-digit? [c :i64] :bool (and (>= c 48) (<= c 57)))
+
+(defn- form-rd-decimal [s :string i :i64 e :i64] :i64
+     (loop [j i v 0]
+       (if (>= j e)
+         v
+         (let [c (string-code-point-at s j)]
+           (if (form-rd-digit? c) (recur (inc j) (+ (* v 10) (- c 48))) (form-rd-fail))))))
+
+(defn- form-rd-number? [s :string i :i64 e :i64] :bool
+     (let [c (string-code-point-at s i)]
+       (or (form-rd-digit? c)
+           (and (= c 45) (> (- e i) 1) (form-rd-digit? (string-code-point-at s (inc i)))))))
+
+(defn- form-rd-atom [s :string i :i64] [:ref :form/rd]
+     (let [n (string-byte-length s)
+           e (form-rd-token-end s i n)
+           token (string-substring s i e)
+           c (string-code-point-at s i)]
+       (cond
+         (= e i) (form-rd (nil-form) (form-rd-fail))
+         (= c 58) (form-rd (keyword-form (keyword-from-string (string-substring s (inc i) e))) e)
+         (string=? token "nil") (form-rd (nil-form) e)
+         (string=? token "true") (form-rd (bool-form true) e)
+         (string=? token "false") (form-rd (bool-form false) e)
+         (form-rd-number? s i e)
+         (form-rd (int-form (if (= c 45) (- 0 (form-rd-decimal s (inc i) e)) (form-rd-decimal s i e))) e)
+         :else (form-rd (symbol-form token) e))))
+
+(defn- form-rd-string-end [s :string i :i64] :i64
+     (let [n (string-byte-length s)]
+       (loop [j (inc i)]
+         (if (>= j n)
+           (form-rd-fail)
+           (let [c (string-code-point-at s j)]
+             (cond (= c 34) (inc j)
+                   (= c 92) (recur (+ j 2))
+                   :else (recur (+ j (form-rd-width c)))))))))
+
+(defn- form-rd-string [s :string i :i64] [:ref :form/rd]
+     (let [e (form-rd-string-end s i)
+           d (document-edn-read (string-substring s i e))]
+       (form-rd (string-form (option-value-of [:option :string] (document-string-value d) "")) e)))
+
+(defn- form-rd-items [s :string i :i64 close :i64] [:ref :form/rd]
+     (let [n (string-byte-length s)]
+       (loop [j (form-rd-skip s i) acc (no-forms)]
+         (if (>= j n)
+           (form-rd (nil-form) (form-rd-fail))
+           (if (= close (string-code-point-at s j))
+             (form-rd (form-vec acc) (inc j))
+             (let [r (form-rd-value s j)]
+               (recur (form-rd-skip s (form-rd-pos r)) (typed-list-conj [:list [:ref :form/r]] acc (form-rd-form r)))))))))
+
+(defn- form-rd-value [s :string i :i64] [:ref :form/rd]
+     (let [n (string-byte-length s)
+           j (form-rd-skip s i)]
+       (if (>= j n)
+         (form-rd (nil-form) (form-rd-fail))
+         (let [c (string-code-point-at s j)]
+           (cond
+             (= c 40) (let [r (form-rd-items s (inc j) 41)] (form-rd (form-seq (kids-of (form-rd-form r))) (form-rd-pos r)))
+             (= c 91) (form-rd-items s (inc j) 93)
+             (= c 123) (let [r (form-rd-items s (inc j) 125)] (form-rd (form-map (kids-of (form-rd-form r))) (form-rd-pos r)))
+             (and (= c 35) (< (inc j) n) (= 123 (string-code-point-at s (inc j))))
+             (let [r (form-rd-items s (+ j 2) 125)] (form-rd (form-set (kids-of (form-rd-form r))) (form-rd-pos r)))
+             (= c 39) (let [r (form-rd-value s (inc j))] (form-rd (call1 "quote" (form-rd-form r)) (form-rd-pos r)))
+             (= c 34) (form-rd-string s j)
+             :else (form-rd-atom s j))))))
+
+(defn edn-form
+     "The one form in TEXT."
+     [text :string] [:ref :form/r]
+     (form-rd-form (form-rd-value text 0)))
+
+(defn span-of [f [:ref :form/r]] :i64 (record-get [:ref :form/r] f :span))
+(defn bits-of [f [:ref :form/r]] :i64 (record-get [:ref :form/r] f :n))
+(defn is-f64? [f [:ref :form/r]] :bool (= 10 (record-get [:ref :form/r] f :tag)))
+(defn f64-form [bits :i64] [:ref :form/r] (form-mk 10 "" bits :none (no-forms)))

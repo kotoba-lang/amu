@@ -1,0 +1,49 @@
+#!/bin/sh
+# NOTE (repo rule): kept as run-sweep-2106.sh.txt because the repository workflow-lint
+# refuses POSIX shell execution files; run with sh <this file>.
+# WITHIN-TICK TWO-BATCH SIGN PROBE (JUN-58, tick 20261019-2106): run the
+# flip cell (w64t32) and its anchor (w64t31) as TWO batches of 3 runs each
+# inside ONE tick, separated by a >=30 minute idle gap.
+#
+# CONTEXT. The cross-session series at the identical shape (w64t32, wg=1023,
+# lanes 2,095,104) is +/-/+ across three sessions (PR #1369
+# +, #1377 -, #1378 +), while within every session the 3 runs are
+# sign-unanimous (9/9).
+# The observed flip window is <=31 minutes: the #1377 batch ran 20:06-20:10
+# JST and the #1378 batch started 20:38 JST with the opposite sign. So
+# "session" may be no coarser than a wall-clock gap of tens of minutes.
+# QUESTION: can the w64t32 sign flip between two batches inside a SINGLE
+# tick with a >=30 minute gap? If yes, the flip timescale is <=30 min and
+# "session" is a batch-resolution artifact; if no, the flip timescale is
+# >30 min and session = a longer-timescale state.
+#
+# SHAPE/PROTOCOL. Byte-identical probe (sha256 3696ca0d...) and fixtures
+# (w64 a25a6931..., w32 0cf6c406..., as printed by every SHAPE line) to the
+# #1369/#1377/#1378 chain. lanes 2,095,104 for both cells; 3 runs per cell
+# per batch, cell order rotated per run-pair (t31,t32 / t32,t31 / t31,t32);
+# fresh kbb process per run; `date; uptime` recorded per run. Idempotent: a
+# run whose log exists is skipped. Usage: run-sweep-2106.sh.txt A|B
+set -e
+TAB=$(printf '\t')
+cd "$(dirname "$0")/../../../.."
+EV=docs/evidence/gpu/within-tick-batches-w64t32-20261019
+mkdir -p "$EV"
+B="$1"
+case "$B" in A|B) ;; *) echo "usage: $0 A|B" >&2; exit 2;; esac
+
+run() { # pair-pos cell W chunks
+  log="$EV/run-$B-$1-$2.log"
+  if [ -f "$log" ] && grep -q "RESULT${TAB}verified=true" "$log"; then echo "skip $log"; return 0; fi
+  echo "run $log"
+  (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" 2095104 "$4") > "$log" 2>&1
+  grep -q "RESULT	verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }
+}
+
+# pair 1: t31,t32   pair 2: t32,t31   pair 3: t31,t32
+run 1 w64t31 64 31
+run 1 w64t32 64 32
+run 2 w64t32 64 32
+run 2 w64t31 64 31
+run 3 w64t31 64 31
+run 3 w64t32 64 32
+echo "BATCH-$B-COMPLETE"
