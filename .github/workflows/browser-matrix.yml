@@ -9,7 +9,33 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  # Evidence-only gate: same contract as test.yml's `changes` job (docs/ and
+  # markdown-only PRs skip the heavy matrix; pushes to main run everything).
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.detect.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: detect
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")
+          echo "changed files:"
+          echo "$files"
+          if [ -z "$files" ] || echo "$files" | grep -qvE '^(docs/|.*\.md$)'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
   browser-matrix:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -45,6 +71,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   safari:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: macos-14
     timeout-minutes: 20
     steps:

@@ -9,6 +9,34 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  # Evidence-only gate (CI congestion relief): PRs that change only docs/ and
+  # markdown skip every heavy job. `source-custody` still runs unconditionally
+  # because it is the job that VERIFIES docs/evidence content. Pushes to main
+  # always run everything. A skipped required check reports `skipped`, which
+  # branch protection accepts; the docs-only probe PR measured this before the
+  # gate landed (2026-10-20).
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.detect.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - id: detect
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")
+          echo "changed files:"
+          echo "$files"
+          if [ -z "$files" ] || echo "$files" | grep -qvE '^(docs/|.*\.md$)'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
   source-custody:
     runs-on: ubuntu-latest
     steps:
@@ -18,8 +46,15 @@ jobs:
       - run: python3 scripts/seed/build-adopted.py --verify-only
       - run: python3 scripts/seed/build-adopted.py --receipt seed/preserved-20261012/adoption.json --verify-only
   policy-native-correctness:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: macos-26
     timeout-minutes: 30
+    # Queue relief: serialize macos-26 per ref, and let a new push cancel the
+    # superseded run instead of queueing behind it.
+    concurrency:
+      group: macos-26-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: python3 scripts/seed/verify-preserved-integration.py --output "$RUNNER_TEMP/preserved-correctness"
@@ -34,6 +69,8 @@ jobs:
             ${{ runner.temp }}/main-correctness/host
             ${{ runner.temp }}/main-correctness/report.json
   loader-source-bound-fuzz:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       matrix:
         runner: [ubuntu-latest, ubuntu-24.04-arm]
@@ -49,12 +86,19 @@ jobs:
           name: loader-fuzz-${{ matrix.runner }}-${{ matrix.scope }}
           path: ${{ runner.temp }}/loader-fuzz
   adopted-seed-source:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: python3 scripts/seed/build-adopted.py --verify-only
   adopted-seed-native:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: macos-26
+    concurrency:
+      group: macos-26-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: python3 scripts/seed/build-adopted.py --output "$RUNNER_TEMP/adopted-native-selfbuild" --generations 2
@@ -74,6 +118,8 @@ jobs:
           name: adopted-native-regression-evidence
           path: ${{ runner.temp }}/adopted-native-selfbuild
   nbb-engine-configuration:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -84,6 +130,8 @@ jobs:
       - run: npm ci
       - run: npm run test-nbb-engine
   windows-arm64:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -98,6 +146,8 @@ jobs:
       - run: npm run test-nbb-io
       - run: npm run test-windows-profile
   android-ndk:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -110,6 +160,8 @@ jobs:
       - run: npm ci
       - run: npm run test-android-ndk
   server-kind:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -144,6 +196,8 @@ jobs:
   # shipped KIR, so it fails exactly when this repo changes the KIR a consumer
   # has already frozen.
   test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -278,6 +332,8 @@ jobs:
         run: npx nbb scripts/test-review-fuzz-corpus.cljk
 
   execution-v2:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Explicit v2 target binding, admission and completion (${{ matrix.runner }})
     strategy:
       matrix:
