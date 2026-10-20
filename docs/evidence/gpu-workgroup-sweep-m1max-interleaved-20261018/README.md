@@ -15,7 +15,7 @@ bot host. `EXIT=0` lines are the script's own process exit.
 - Host: Apple M1 Max, macOS 26.4, aarch64-macos. MoltenVK, Vulkan device
   apiVersion 1.3.357, INFO `Apple M1 Max|1.3.357|1024|1`.
 - Workload: identical to the consecutive protocol
-  (docs/evidence/gpu-workgroup-sweep-m1max-20261018/): one kernel per local
+  (the consecutive-protocol baseline; its evidence directory was never committed, so this comparison cites these runs' own recorded drift only): one kernel per local
   size W in {32,64,128,256,512,1024}, 2^25 u32 elements per size, 2 rounds
   of xorshift mixing; timings are the loader's submit->fence host clock
   (REPLAY nanoseconds). Read-back words 0..3 verified against the host's
@@ -32,7 +32,9 @@ bot host. `EXIT=0` lines are the script's own process exit.
   min-max ranges overlap heavily (consecutive protocol: medians drifted
   ~2x between runs and the fastest row flipped 512/512/1024).
 - The run-to-run baseline shift remains (~1.0-1.23 ms for the same
-  kernel), and because per-size differences within a run (0.1-5%) are
+  kernel), and because per-size differences within a run span up to ~15% (run 2: 1,002,500 ns at
+  W=128 to 1,156,500 ns at W=64 = 15.4%; corrected from the understated
+  0.1-5%) are
   SMALLER than that shift's residue in the medians, the fastest row still
   flips across the three interleaved runs: 256 / 128 / 64.
 
@@ -47,7 +49,8 @@ workgroup row in `kotoba.compiler.accelerator-targets` stays provisional
 one kernel shape.
 
 Residual bias not removed by this protocol: within-round order is fixed
-(32,64,128,256,512,1024), so a monotonic drift within one round (~3.6 ms)
+(32,64,128,256,512,1024), so a monotonic drift within one round (>=5.36 ms: the six REPLAY global
+minima alone sum to 5.355 ms; corrected from the impossible ~3.6 ms)
 would still favor one end; second-order against what interleaving fixed.
 
 Next slices (pick one, next tick): within-run ratios with more rounds

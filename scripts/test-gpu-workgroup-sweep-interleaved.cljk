@@ -85,11 +85,15 @@
     (str/trimr out)))
 
 ;; ---- loader ---------------------------------------------------------------
-(def loader (.join path tmp "kexe-loader-gpu"))
-(let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-DKEXE_GPU_VULKAN"
-                                             (.join path root "tools" "kexe_loader.c") "-o" loader]
-                                            (if (= platform "darwin") ["-I/opt/homebrew/include" "-L/opt/homebrew/lib" "-lvulkan"] ["-lvulkan"])))]
-  (when-not (zero? status) (fail! (str "the GPU loader does not build: " (subs err 0 (min 600 (count err)))))))
+(let [lobj (.join path tmp "kexe-loader-gpu.o")
+      {:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-DKEXE_GPU_VULKAN"
+                                             "-c" (.join path root "tools" "kexe_loader.c") "-o" lobj]
+                                            (when (= platform "darwin") ["-I/opt/homebrew/include"])))]
+  (when-not (zero? status) (fail! (str "the GPU loader does not compile: " (subs err 0 (min 600 (count err))))))
+  (def loader (.join path tmp "kexe-loader-gpu"))
+  (let [{:keys [status err]} (sh "cc" (concat [lobj "-o" loader]
+                                              (if (= platform "darwin") ["-I/opt/homebrew/include" "-L/opt/homebrew/lib" "-lvulkan"] ["-lvulkan"])))]
+    (when-not (zero? status) (refuse! (str "the Vulkan loader does not link on this host (COULD-NOT-RUN): " (subs err 0 (min 600 (count err))))))))
 
 ;; ---- kernels: one GLSL source per W, compiled to SPIR-V --------------------
 (defn- kernel-source [w]
