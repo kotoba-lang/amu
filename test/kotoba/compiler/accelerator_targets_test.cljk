@@ -63,11 +63,10 @@
     (is (= :msl-v1 (:target apple)))
     (is (= :unknown (:vendor unknown)))
     (is (= :wgsl-v1 (:target unknown)))
-    (testing "the answer-level :measured? stays false while any fact is provisional"
+    (testing "every answer is marked unmeasured until hardware says otherwise"
       (doseq [decision [nvidia apple unknown]]
         (is (false? (:measured? decision)))
-        (is (string? (:size-basis decision)))
-        (is (string? (:execution-width-basis decision)))))
+        (is (string? (:basis decision)))))
     (testing "same descriptor in, same map out"
       (is (= nvidia (targets/recommend {:vendor-id 4318 :api :cuda}))))))
 
