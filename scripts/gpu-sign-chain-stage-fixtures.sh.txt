@@ -1,0 +1,50 @@
+#!/bin/sh
+# gpu-sign-chain-stage-fixtures -- restore the sign chain's pinned PRE-FIX
+# fixture bytes over test/fixtures/gpu/ before a chain run.
+#
+# WHY THIS EXISTS. The JUN-58 sign-probe chain's pinned probe
+# (scripts/gpu-subgroup-reduce-chunksweep-pinned-3696ca0d.cljk, sha256
+# 3696ca0d...) reads test/fixtures/gpu/subgroup-reduce-w<W>-sum.emitted.glsl
+# and REFUSES to run unless the file's sha256 matches the chain's pinned
+# pre-fix bytes (w64 = a25a6931...). 4b7a1ccb's named follow-up regenerated
+# those files in place from the fixed emitter, so the chain's inputs now
+# live in docs/evidence/gpu/sign-chain-pinned-fixtures-pre-fix/ and every
+# chain run stages them back with THIS script before dispatching the probe.
+# The probe bytes are not touched; the executed variant arm is byte-identical
+# to every earlier datum in the chain (the SHAPE line's sha256 is the check).
+#
+# Chain runs are expected to run this from the repo root of their worktree,
+# immediately before run-sweep.sh's probe invocations. It is fail-closed:
+# any sha mismatch is a refusal, never a silent re-pin.
+#
+# It writes into test/fixtures/gpu/ (tracked files). Chain worktrees are
+# per-tick and disposable; `git checkout -- test/fixtures/gpu/` restores the
+# committed (regenerated) bytes when a worktree serves double duty.
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+SRC=docs/evidence/gpu/sign-chain-pinned-fixtures-pre-fix
+DST=test/fixtures/gpu
+
+for w in 32 64 128 256; do
+  f=subgroup-reduce-w${w}-sum.emitted.glsl
+  if [ ! -f "$SRC/$f" ]; then
+    echo "REFUSED: missing pinned fixture $SRC/$f" >&2
+    exit 2
+  fi
+  cp "$SRC/$f" "$DST/$f"
+done
+
+# The chain's pinned sha256s (pre-fix emission, as carried by every datum
+# from the 2254 batches forward). Verify AFTER the copy so a corrupted or
+# hand-edited archive is caught, not propagated.
+shasum -a 256 -c <<'EOF'
+0cf6c4069c5ae06835c03ef65e5a6e12a605d7d2518bd81f965510b603814722  test/fixtures/gpu/subgroup-reduce-w32-sum.emitted.glsl
+a25a69317b5c5a956279ccc37a5089adb489104a28ed89460b8928889b096254  test/fixtures/gpu/subgroup-reduce-w64-sum.emitted.glsl
+c7931718a194656fd0b649636464d66717595499f50f6115da9a86bbf13b9374  test/fixtures/gpu/subgroup-reduce-w128-sum.emitted.glsl
+087107f90a9ddf02f64f82a40dffeb0fec6567c5dd5a1dc21116b4612b20cfd1  test/fixtures/gpu/subgroup-reduce-w256-sum.emitted.glsl
+EOF
+
+echo "STAGED: the chain's pre-fix pinned fixtures are in $DST (sha256 verified)"
