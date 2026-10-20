@@ -1,0 +1,43 @@
+load-noise attribution (JUN-58 / #1396 question) -- corpus analysis
+corpus root: docs/evidence/gpu/ (recursive), family GPU-SGRE-CHUNK only
+population: 196 unique verified runs (whole-file sha256 de-duplicated)
+log files scanned: 255; byte-identical duplicate copies skipped: 0
+skipped unique logs: {'no-chunk-speedup': 59}
+
+load1 at run start: min 5.27 median 15.45 max 67.98
+SPEEDUP iqr:        min 0.0051 median 0.0241 max 0.7722
+chain-clean (iqr<=0.05): 154/196 runs
+
+1. Spearman rho(load1, SPEEDUP-iqr) = +0.2685, permutation p = 0.0002 (n=196, 20000 permutations, seed 20261020)
+
+2. fixed load bands (chosen before inspecting outcomes):
+   load1<=8       n= 15  clean= 13 (86.67%)  median iqr=0.0241  median load1=7.08
+   8<load1<=16    n= 88  clean= 76 (86.36%)  median iqr=0.0176  median load1=12.41
+   load1>16       n= 93  clean= 65 (69.89%)  median iqr=0.0303  median load1=21.36
+   (load1 tertile cutpoints: 12.84 / 18.73)
+
+3. Fisher exact (clean rate, load1>16 vs load1<=8): table [[clean 65, dirty 28], [clean 13, dirty 2]], two-sided p = 0.2268
+
+4. secondary -- sign-series cells, per cell (SHAPE W=64, n=67):
+   chunks=31 (n=24):
+      load1<=8       n=  6  gap>0: 0/6  gap median -13808.6 ns/dispatch
+      8<load1<=16    n=  9  gap>0: 0/9  gap median -11898.4 ns/dispatch
+      load1>16       n=  9  gap>0: 0/9  gap median -13878.9 ns/dispatch
+   chunks=32 (n=43):
+      load1<=8       n=  7  gap>0: 6/7  gap median +5310.5 ns/dispatch
+      8<load1<=16    n= 10  gap>0: 8/10  gap median +4670.5 ns/dispatch
+      load1>16       n= 26  gap>0: 14/26  gap median +3785.1 ns/dispatch
+
+5. robustness:
+   excluding load1>30 (n=174): rho = +0.1838, p = 0.0131
+   within-shape strata (n>=15) -- shape pooling confound check:
+      W=64 chunks=32: n= 43  rho = +0.3426 (p=0.0237)  clean=35/43  load1 range 5.27-62.39
+      W=64 chunks=31: n= 24  rho = +0.0352 (p=0.8714)  clean=20/24  load1 range 5.83-49.13
+      W=64 chunks=1: n= 15  rho = +0.1144 (p=0.6839)  clean=11/15  load1 range 8.52-29.31
+      W=64 chunks=24: n= 15  rho = +0.1000 (p=0.7214)  clean=12/15  load1 range 11.50-32.26
+
+Caveats: observational -- load was never manipulated and its source is
+UNATTRIBUTED; one host (Apple M1 Max / MoltenVK), one probe family;
+runs are not independent; correlation is not cause. This adjudicates
+whether load PREDICTS the chain's IQR noise in the recorded corpus,
+not where the noise comes from.
