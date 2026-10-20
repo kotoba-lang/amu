@@ -134,7 +134,8 @@
         fns (functions (lib/read-text loader-path))
         names (set (map :name fns))
         missing (remove #(contains? classes %) (sort names))
-        stale (remove names (sort (keys classes)))
+        stale (remove (fn [k] (or (contains? names k) (:gone (get classes k))))
+                      (sort (keys classes)))
         bad (remove #(#{:mechanism :decision :mixed} (:class (get classes %))) (sort (keys classes)))]
     (println (str "SCANNED\t" (count fns) "\tfunctions in tools/kexe_loader.c"))
     (when (< (count fns) 150) (fail! (str "only " (count fns) " functions found: the scanner is broken")))
