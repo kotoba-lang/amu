@@ -1,0 +1,228 @@
+#!/usr/bin/env node
+// bin/re-disasm — the re-disasm CLI (M5 slice 1, KOT-49).
+//
+// Reads a binary and prints what the cleanroom Kotoba decoder core knows
+// about it: format / entry / sections / symbols / imports / function
+// bounds / xrefs / strings / a disassembly listing. The decoding itself
+// runs in Kotoba — re_disasm/disasm.kotoba compiled to the js target
+// (kotoba-js-artifact/v1) and instantiated here. This file only does
+// argument parsing, file IO and formatting; it contains no architecture
+// or container knowledge of its own.
+//
+//   node bin/re-disasm <file> [--raw] [--base 0x…] [--arch a64]
+//       [--sections] [--symbols] [--imports] [--functions] [--xrefs]
+//       [--strings] [--listing] [--max N] [--all]
+//
+// --raw treats the file as a code blob at --base (default 0x0).
+// --max bounds the listing window (default 256 words).
+//
+// Limits (typed ABI): :bytes values cap at 64 KiB per call, so listing,
+// strings and words are windowed. The compile door is still the
+// node-hosted bin/amu bootstrap (docs/selfhost-priority.md, KOT-46).
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+function fail(msg) {
+  process.stderr.write(`re-disasm: ${msg}\n`);
+  process.exit(1);
+}
+
+// ---- args ----
+const argv = process.argv.slice(2);
+const opts = {
+  raw: false, base: 0, arch: "a64", max: 256,
+  sections: false, symbols: false, imports: false,
+  functions: false, xrefs: false, strings: false, listing: false,
+};
+let file = null;
+for (let i = 0; i < argv.length; i++) {
+  const a = argv[i];
+  if (a === "--raw") opts.raw = true;
+  else if (a === "--all") {
+    for (const k of ["sections", "symbols", "imports", "functions", "xrefs", "strings", "listing"]) opts[k] = true;
+  } else if (a === "--base") opts.base = BigInt(argv[++i] ?? fail("--base needs a value"));
+  else if (a === "--arch") opts.arch = argv[++i] ?? fail("--arch needs a value");
+  else if (a === "--max") opts.max = Number(argv[++i] ?? fail("--max needs a value"));
+  else if (["--sections", "--symbols", "--imports", "--functions", "--xrefs", "--strings", "--listing"].includes(a)) opts[a.slice(2)] = true;
+  else if (a.startsWith("-")) fail(`unknown option ${a}`);
+  else if (file === null) file = a;
+  else fail("one input file only");
+}
+if (!file) fail("usage: re-disasm <file> [--raw] [--base 0x…] [--all | --sections --symbols --imports --functions --xrefs --strings --listing] [--max N]");
+if (!["a64", "x64"].includes(opts.arch)) fail("--arch must be a64 or x64");
+
+// ---- compile door: Kotoba -> js artifact (KOT-46 swaps in selfhost) ----
+const esm = path.join(os.tmpdir(), `re-disasm-${process.pid}.mjs`);
+const build = spawnSync(process.execPath, ["bin/amu", "compile", "re_disasm/disasm.kotoba",
+  "--jvm-free", "--target", "js", "--output", esm], { encoding: "utf8", cwd: root });
+if (build.status !== 0) fail(`compile failed\n${build.stdout || ""}${build.stderr || ""}`);
+
+const { instantiateKotoba } = await import(pathToFileURL(esm).href);
+try { fs.unlinkSync(esm); } catch {}
+const api = instantiateKotoba({}, { fuel: 2 ** 48, frames: 1000000, bytes: 2 ** 48 });
+
+// ---- input ----
+const data = fs.readFileSync(file);
+const bytes = new Uint8Array(data);
+const B = (n) => BigInt(n);
+const N = (v) => Number(v);
+const hex = (v) => `0x${(typeof v === "bigint" ? v : BigInt(v)).toString(16)}`;
+const pairVec = (v) => {  // flat (a,b) pairs, -1-padded
+  const out = [];
+  for (let i = 0; i + 1 < v.length; i += 2) {
+    if (v[i] === -1n) break;
+    out.push([v[i], v[i + 1]]);
+  }
+  return out;
+};
+const window = (start, len) => bytes.subarray(start, Math.min(start + len, bytes.length));
+// typed ABI caps :bytes at 64 KiB per call
+const BYTE_CAP = 65536;
+
+function out(line) { process.stdout.write(line + "\n"); }
+
+// ---- format detection ----
+let format = "raw", words, base = opts.base, n = 0;
+if (!opts.raw && api["macho-recognize"](bytes) === 1n) format = "macho64";
+else if (!opts.raw && api["elf-recognize"](bytes) === 1n) format = "elf64";
+else if (!opts.raw && api["pe-recognize"](bytes) === 1n) format = "pe32+";
+out(`format: ${format}`);
+
+// container views
+let entry = opts.base;
+if (format === "macho64") {
+  entry = api["macho-entry"](bytes);
+  out(`image-base: ${hex(api["macho-image-base"](bytes))}`);
+  out(`entry: ${hex(entry)}`);
+  const sc = N(api["macho-section-count"](bytes));
+  if (opts.sections) {
+    out("sections:");
+    for (let i = 0; i < sc; i++) {
+      const row = api["macho-section-row"](bytes, B(i));
+      out(`  [${i}] ${api["macho-section-name"](bytes, B(i))} vaddr=${hex(row[0])} off=${hex(row[1])} size=${hex(row[2])}`);
+    }
+  }
+  if (opts.symbols || opts.imports) {
+    const sy = N(api["macho-symbol-count"](bytes));
+    for (let i = 0; i < sy; i++) {
+      const undef = api["macho-symbol-undef?"](bytes, B(i)) === true;
+      const name = api["macho-symbol-name"](bytes, B(i));
+      if (name === "") continue;
+      const val = api["macho-symbol-row"](bytes, B(i))[0];
+      if (opts.imports && undef) out(`import: ${name}`);
+      if (opts.symbols && !undef) out(`symbol: ${hex(val)} ${name}`);
+    }
+  }
+  // disassemble the first section
+  if (sc > 0 && (opts.listing || opts.functions || opts.xrefs)) {
+    const row = api["macho-section-row"](bytes, B(0));
+    base = row[0];
+    const size = N(row[2]);
+    const chunk = window(N(row[1]), Math.min(size, BYTE_CAP));
+    words = api["words-from-bytes"](chunk);
+    n = Math.min(words.length, opts.max);
+  }
+} else if (format === "elf64") {
+  entry = api["elf-entry"](bytes);
+  out(`image-base: ${hex(api["elf-image-base"](bytes))}`);
+  out(`entry: ${hex(entry)}`);
+  const sc = N(api["elf-section-count"](bytes));
+  if (opts.sections) {
+    out("sections:");
+    for (let i = 0; i < sc; i++) {
+      const row = api["elf-section-row"](bytes, B(i));
+      out(`  [${i}] ${api["elf-section-name"](bytes, B(i))} vaddr=${hex(row[0])} off=${hex(row[1])} size=${hex(row[2])}`);
+    }
+  }
+  if (opts.symbols || opts.imports) {
+    const sy = N(api["elf-symbol-count"](bytes));
+    for (let i = 0; i < sy; i++) {
+      const undef = api["elf-symbol-undef?"](bytes, B(i)) === true;
+      const name = api["elf-symbol-name"](bytes, B(i));
+      if (name === "") continue;
+      const val = api["elf-symbol-row"](bytes, B(i))[0];
+      if (opts.imports && undef) out(`import: ${name}`);
+      if (opts.symbols && !undef) out(`symbol: ${hex(val)} ${name}`);
+    }
+  }
+  if (sc > 1 && (opts.listing || opts.functions || opts.xrefs)) {
+    const row = api["elf-section-row"](bytes, B(1));
+    base = row[0];
+    const size = N(row[2]);
+    const chunk = window(N(row[1]), Math.min(size, BYTE_CAP));
+    words = api["words-from-bytes"](chunk);
+    n = Math.min(words.length, opts.max);
+  }
+} else if (format === "pe32+") {
+  entry = api["pe-entry"](bytes);
+  out(`image-base: ${hex(api["pe-image-base"](bytes))}`);
+  out(`entry: ${hex(entry)}`);
+  const sc = N(api["pe-section-count"](bytes));
+  if (opts.sections) {
+    out("sections:");
+    for (let i = 0; i < sc; i++) {
+      const row = api["pe-section-row"](bytes, B(i));
+      out(`  [${i}] ${api["pe-section-name"](bytes, B(i))} vaddr=${hex(row[0])} off=${hex(row[1])} size=${hex(row[2])}`);
+    }
+  }
+  if (opts.symbols || opts.imports) {
+    const sy = N(api["pe-symbol-count"](bytes));
+    for (let i = 0; i < sy; i++) {
+      const undef = api["pe-symbol-undef?"](bytes, B(i)) === true;
+      const name = api["pe-symbol-name"](bytes, B(i));
+      if (name === "") continue;
+      const val = api["pe-symbol-row"](bytes, B(i))[0];
+      if (opts.imports && undef) out(`import: ${name}`);
+      if (opts.symbols && !undef) out(`symbol: ${hex(val)} ${name}`);
+    }
+  }
+  if (sc > 0 && (opts.listing || opts.functions || opts.xrefs)) {
+    const row = api["pe-section-row"](bytes, B(0));
+    base = row[0];
+    const size = N(row[2]);
+    const chunk = window(N(row[1]), Math.min(size, BYTE_CAP));
+    words = api["words-from-bytes"](chunk);
+    n = Math.min(words.length, opts.max);
+  }
+} else {
+  out(`base: ${hex(base)}`);
+  if (opts.listing || opts.functions || opts.xrefs) {
+    const chunk = window(0, Math.min(bytes.length, BYTE_CAP));
+    words = api["words-from-bytes"](chunk);
+    n = Math.min(words.length, opts.max);
+  }
+}
+
+// ---- code views (a64 words) ----
+if (words && n > 0) {
+  if (opts.functions) {
+    out("functions:");
+    for (const [s, e] of pairVec(api["function-bounds"](words, base, B(n)))) {
+      out(`  ${hex(base + 4n * s)}-${hex(base + 4n * e + 3n)}`);
+    }
+  }
+  if (opts.xrefs) {
+    out("xrefs:");
+    for (const [from, to] of pairVec(api["xrefs-edges"](words, base, B(n)))) {
+      out(`  ${hex(from)} -> ${hex(to)}`);
+    }
+  }
+  if (opts.listing) {
+    out("listing:");
+    out(api["listing-text"](words, base, B(n)).trimEnd());
+  }
+}
+
+if (opts.strings) {
+  out("strings:");
+  const chunk = window(0, BYTE_CAP);
+  for (const [off, len] of pairVec(api["strings-rows"](chunk, B(4)))) {
+    const s = Buffer.from(chunk.subarray(N(off), N(off) + N(len))).toString("latin1");
+    out(`  ${hex(off)} ${JSON.stringify(s)}`);
+  }
+}
