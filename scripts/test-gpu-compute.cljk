@@ -6,7 +6,7 @@
 ;;
 ;; Three outcomes, three exit codes -- the run that could not measure never
 ;; reads as the run that measured and passed:
-;;   0  the probe answered "<device>|<api>|<maxWgX>|<unified>"
+;;   0  the probe answered "<device>|<api>|<maxWgX>|<unified>|<class>"
 ;;   1  it ran and the answer was wrong, or the guest trapped
 ;;   3  could not run here: no Vulkan headers/loader, or macOS without
 ;;      MoltenVK, or the amu compile itself refused -- printed by name
@@ -59,7 +59,12 @@
   (when-not hex (fail! (str "probe did not answer a string (exit " status "): " (subs (str out err) 0 (min 400 (count (str out err)))))))
   (let [answer (.toString (js/Buffer.from hex "hex") "utf8")
         fields (str/split answer #"\|")]
-    (when-not (= 4 (count fields)) (fail! (str "INFO answer has " (count fields) " fields, not 4: " answer)))
+    (when-not (= 5 (count fields)) (fail! (str "INFO answer has " (count fields) " fields, not 5: " answer)))
     (when (str/blank? (first fields)) (fail! "INFO answered an empty device name"))
+    ;; The class field must be one of the five words tools/kexe_gpu_vulkan.c
+    ;; emits for VkPhysicalDeviceType (device-class in
+    ;; kotoba.compiler.accelerator-targets is the same vocabulary).
+    (when-not (contains? #{"discrete" "integrated" "virtual" "cpu" "other"} (nth fields 4))
+      (fail! (str "INFO answered an unknown device class: " (nth fields 4))))
     (println (str "GPU-COMPUTE\tOK\t" answer "\t" target))
     (js/process.exit 0)))
