@@ -56,6 +56,10 @@ const cases = [
     ".text vaddr=0x140001000 off=0x1b0 size=0x10",
     "nop", "ret",
   ]],
+  ["macho.bin", ["--all", "--json"], [
+    '"format": "macho64"', '"entry": "0x1000001a0"',
+    '"name": "_main"', '"from": "0x1000001a0",', '"to": "0x1000001a8"',
+  ]],
 ];
 
 let checked = 0;

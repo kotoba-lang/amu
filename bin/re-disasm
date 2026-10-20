@@ -11,7 +11,7 @@
 //
 //   node bin/re-disasm <file> [--raw] [--base 0x…] [--arch a64]
 //       [--sections] [--symbols] [--imports] [--functions] [--xrefs]
-//       [--strings] [--listing] [--max N] [--all]
+//       [--strings] [--listing] [--max N] [--all] [--json]
 //
 // --raw treats the file as a code blob at --base (default 0x0).
 // --max bounds the listing window (default 256 words).
@@ -37,12 +37,19 @@ const argv = process.argv.slice(2);
 const opts = {
   raw: false, base: 0, arch: "a64", max: 256,
   sections: false, symbols: false, imports: false,
-  functions: false, xrefs: false, strings: false, listing: false,
+  functions: false, xrefs: false, strings: false, listing: false, json: false,
+};
+// structured report collected alongside the human output (--json prints it)
+const rep = {
+  format: null, image_base: null, entry: null, base: null,
+  sections: [], symbols: [], imports: [], functions: [],
+  xrefs: [], strings: [], listing: [],
 };
 let file = null;
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === "--raw") opts.raw = true;
+  else if (a === "--json") opts.json = true;
   else if (a === "--all") {
     for (const k of ["sections", "symbols", "imports", "functions", "xrefs", "strings", "listing"]) opts[k] = true;
   } else if (a === "--base") opts.base = BigInt(argv[++i] ?? fail("--base needs a value"));
@@ -84,7 +91,11 @@ const window = (start, len) => bytes.subarray(start, Math.min(start + len, bytes
 // typed ABI caps :bytes at 64 KiB per call
 const BYTE_CAP = 65536;
 
-function out(line) { process.stdout.write(line + "\n"); }
+function out(line) { if (!opts.json) process.stdout.write(line + "\n"); }
+function emitJson() {
+  const replacer = (k, v) => typeof v === "bigint" ? `0x${v.toString(16)}` : v;
+  process.stdout.write(JSON.stringify(rep, replacer, 1) + "\n");
+}
 
 // ---- format detection ----
 let format = "raw", words, base = opts.base, n = 0;
@@ -92,6 +103,7 @@ if (!opts.raw && api["macho-recognize"](bytes) === 1n) format = "macho64";
 else if (!opts.raw && api["elf-recognize"](bytes) === 1n) format = "elf64";
 else if (!opts.raw && api["pe-recognize"](bytes) === 1n) format = "pe32+";
 out(`format: ${format}`);
+rep.format = format;
 
 // container views
 let entry = opts.base;
@@ -99,12 +111,14 @@ if (format === "macho64") {
   entry = api["macho-entry"](bytes);
   out(`image-base: ${hex(api["macho-image-base"](bytes))}`);
   out(`entry: ${hex(entry)}`);
+  rep.image_base = api["macho-image-base"](bytes); rep.entry = entry;
   const sc = N(api["macho-section-count"](bytes));
   if (opts.sections) {
     out("sections:");
     for (let i = 0; i < sc; i++) {
       const row = api["macho-section-row"](bytes, B(i));
       out(`  [${i}] ${api["macho-section-name"](bytes, B(i))} vaddr=${hex(row[0])} off=${hex(row[1])} size=${hex(row[2])}`);
+      rep.sections.push({ name: api["macho-section-name"](bytes, B(i)), vaddr: row[0], off: row[1], size: row[2] });
     }
   }
   if (opts.symbols || opts.imports) {
@@ -114,8 +128,8 @@ if (format === "macho64") {
       const name = api["macho-symbol-name"](bytes, B(i));
       if (name === "") continue;
       const val = api["macho-symbol-row"](bytes, B(i))[0];
-      if (opts.imports && undef) out(`import: ${name}`);
-      if (opts.symbols && !undef) out(`symbol: ${hex(val)} ${name}`);
+      if (opts.imports && undef) { out(`import: ${name}`); rep.imports.push({ name }); }
+      if (opts.symbols && !undef) { out(`symbol: ${hex(val)} ${name}`); rep.symbols.push({ value: val, name }); }
     }
   }
   // disassemble the first section
@@ -131,12 +145,14 @@ if (format === "macho64") {
   entry = api["elf-entry"](bytes);
   out(`image-base: ${hex(api["elf-image-base"](bytes))}`);
   out(`entry: ${hex(entry)}`);
+  rep.image_base = api["elf-image-base"](bytes); rep.entry = entry;
   const sc = N(api["elf-section-count"](bytes));
   if (opts.sections) {
     out("sections:");
     for (let i = 0; i < sc; i++) {
       const row = api["elf-section-row"](bytes, B(i));
       out(`  [${i}] ${api["elf-section-name"](bytes, B(i))} vaddr=${hex(row[0])} off=${hex(row[1])} size=${hex(row[2])}`);
+      rep.sections.push({ name: api["elf-section-name"](bytes, B(i)), vaddr: row[0], off: row[1], size: row[2] });
     }
   }
   if (opts.symbols || opts.imports) {
@@ -146,8 +162,8 @@ if (format === "macho64") {
       const name = api["elf-symbol-name"](bytes, B(i));
       if (name === "") continue;
       const val = api["elf-symbol-row"](bytes, B(i))[0];
-      if (opts.imports && undef) out(`import: ${name}`);
-      if (opts.symbols && !undef) out(`symbol: ${hex(val)} ${name}`);
+      if (opts.imports && undef) { out(`import: ${name}`); rep.imports.push({ name }); }
+      if (opts.symbols && !undef) { out(`symbol: ${hex(val)} ${name}`); rep.symbols.push({ value: val, name }); }
     }
   }
   if (sc > 1 && (opts.listing || opts.functions || opts.xrefs)) {
@@ -162,12 +178,14 @@ if (format === "macho64") {
   entry = api["pe-entry"](bytes);
   out(`image-base: ${hex(api["pe-image-base"](bytes))}`);
   out(`entry: ${hex(entry)}`);
+  rep.image_base = api["pe-image-base"](bytes); rep.entry = entry;
   const sc = N(api["pe-section-count"](bytes));
   if (opts.sections) {
     out("sections:");
     for (let i = 0; i < sc; i++) {
       const row = api["pe-section-row"](bytes, B(i));
       out(`  [${i}] ${api["pe-section-name"](bytes, B(i))} vaddr=${hex(row[0])} off=${hex(row[1])} size=${hex(row[2])}`);
+      rep.sections.push({ name: api["pe-section-name"](bytes, B(i)), vaddr: row[0], off: row[1], size: row[2] });
     }
   }
   if (opts.symbols || opts.imports) {
@@ -177,8 +195,8 @@ if (format === "macho64") {
       const name = api["pe-symbol-name"](bytes, B(i));
       if (name === "") continue;
       const val = api["pe-symbol-row"](bytes, B(i))[0];
-      if (opts.imports && undef) out(`import: ${name}`);
-      if (opts.symbols && !undef) out(`symbol: ${hex(val)} ${name}`);
+      if (opts.imports && undef) { out(`import: ${name}`); rep.imports.push({ name }); }
+      if (opts.symbols && !undef) { out(`symbol: ${hex(val)} ${name}`); rep.symbols.push({ value: val, name }); }
     }
   }
   if (sc > 0 && (opts.listing || opts.functions || opts.xrefs)) {
@@ -191,6 +209,7 @@ if (format === "macho64") {
   }
 } else {
   out(`base: ${hex(base)}`);
+  rep.base = base;
   if (opts.listing || opts.functions || opts.xrefs) {
     const chunk = window(0, Math.min(bytes.length, BYTE_CAP));
     words = api["words-from-bytes"](chunk);
@@ -204,17 +223,20 @@ if (words && n > 0) {
     out("functions:");
     for (const [s, e] of pairVec(api["function-bounds"](words, base, B(n)))) {
       out(`  ${hex(base + 4n * s)}-${hex(base + 4n * e + 3n)}`);
+      rep.functions.push({ start: base + 4n * s, end: base + 4n * e + 3n });
     }
   }
   if (opts.xrefs) {
     out("xrefs:");
     for (const [from, to] of pairVec(api["xrefs-edges"](words, base, B(n)))) {
       out(`  ${hex(from)} -> ${hex(to)}`);
+      rep.xrefs.push({ from, to });
     }
   }
   if (opts.listing) {
     out("listing:");
-    out(api["listing-text"](words, base, B(n)).trimEnd());
+    rep.listing = api["listing-text"](words, base, B(n)).trimEnd().split("\n");
+    for (const line of rep.listing) out(line);
   }
 }
 
@@ -224,5 +246,8 @@ if (opts.strings) {
   for (const [off, len] of pairVec(api["strings-rows"](chunk, B(4)))) {
     const s = Buffer.from(chunk.subarray(N(off), N(off) + N(len))).toString("latin1");
     out(`  ${hex(off)} ${JSON.stringify(s)}`);
+    rep.strings.push({ off, len, text: s });
   }
 }
+
+if (opts.json) emitJson();
