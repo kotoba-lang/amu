@@ -87,6 +87,9 @@ console.log(`grand gap (runner-up minus best): ${(grand[order[1]]-grand[order[0]
 console.log(`per-run winners: ${winners.join(" / ")}`);
 console.log(`per-run gap: ${seps.map(s=>s[0].toFixed(4)).join(" ")}   per-run noise: ${seps.map(s=>s[1].toFixed(4)).join(" ")}`);
 console.log(`per-run gap>noise: ${seps.map(s=>s[0]>s[1]).join(" ")}`);
+const sameWinner = winners.every(w => w === winners[0]);
+const allGap = seps.every(s => s[0] > s[1]);
+console.log(`PRE-REGISTERED RULE (encoded): same fastest in every run = ${sameWinner}; gap>noise in every run = ${allGap}; STABLE EFFECT = ${sameWinner && allGap}`);
 '
 ```
 

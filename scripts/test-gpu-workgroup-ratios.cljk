@@ -14,7 +14,9 @@
 ;;    RATIO t(r,w) / median_w'(t(r,w')) divides out everything common to the
 ;;    round -- baseline, clock drift, thermal state -- and is what can carry
 ;;    a size effect at this noise level.
-;; 2. MORE ROUNDS (24, vs 8) so each size's ratio median tightens ~3x.
+;; 2. MORE ROUNDS (24, vs 8) so each size's ratio median tightens ~sqrt(3)
+;;    (the sampling error of an estimator falls with the square root of the
+;;    sample count; tripling N does not make the median 3x tighter).
 ;; 3. ALTERNATING WITHIN-ROUND ORDER. The interleaved sweep's documented
 ;;    residual bias was its fixed within-round order (32..1024): a monotonic
 ;;    drift within one round (~3.6 ms) would still favor one end. Here round
@@ -100,11 +102,15 @@
     (str/trimr out)))
 
 ;; ---- loader ---------------------------------------------------------------
-(def loader (.join path tmp "kexe-loader-gpu"))
-(let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-DKEXE_GPU_VULKAN"
-                                             (.join path root "tools" "kexe_loader.c") "-o" loader]
-                                            (if (= platform "darwin") ["-I/opt/homebrew/include" "-L/opt/homebrew/lib" "-lvulkan"] ["-lvulkan"])))]
-  (when-not (zero? status) (fail! (str "the GPU loader does not build: " (subs err 0 (min 600 (count err)))))))
+(let [lobj (.join path tmp "kexe-loader-gpu.o")
+      {:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-DKEXE_GPU_VULKAN"
+                                             "-c" (.join path root "tools" "kexe_loader.c") "-o" lobj]
+                                            (when (= platform "darwin") ["-I/opt/homebrew/include"])))]
+  (when-not (zero? status) (fail! (str "the GPU loader does not compile: " (subs err 0 (min 600 (count err))))))
+  (def loader (.join path tmp "kexe-loader-gpu"))
+  (let [{:keys [status err]} (sh "cc" (concat [lobj "-o" loader]
+                                              (if (= platform "darwin") ["-I/opt/homebrew/include" "-L/opt/homebrew/lib" "-lvulkan"] ["-lvulkan"])))]
+    (when-not (zero? status) (refuse! (str "the Vulkan loader does not link on this host (COULD-NOT-RUN): " (subs err 0 (min 600 (count err))))))))
 
 ;; ---- kernels: one GLSL source per W, compiled to SPIR-V --------------------
 (defn- kernel-source [w]
