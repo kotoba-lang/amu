@@ -81,7 +81,7 @@ sign fragility is exactly what the noise rule exists to catch.
 **Probe identity: the chain's pinned bytes, sha256 `3696ca0d…`.** Batch B
 ran `scripts/gpu-subgroup-reduce-chunksweep-pinned-3696ca0d.cljk` — a
 byte-identical copy of the probe the 2254/2337/0006 batches ran, carried
-verbatim (sha256 re-checked by `run-sweep.sh` before any run) because
+verbatim (sha256 re-checked by `run-sweep.sh.txt` before any run) because
 origin/main's `scripts/test-gpu-subgroup-reduce-chunksweep.cljk` has since
 **advanced** (`3c965429` gap signs from paired round samples, `55da4342`
 COULD-NOT-RUN, `25089b82` bound the init dispatch grid; `66742df7…` at
@@ -126,7 +126,7 @@ quantity.
   `cf6e854f…` for A-1-w64t31 … A-3-w64t32 in the order the analyzer reads
   them; full hashes in the PR).
 - `run-B-*.log` — this tick's six runs (exit 0, `RESULT verified=true`).
-- `run-sweep.sh` — carried from the 0006 tick's with the probe path (the
+- `run-sweep.sh.txt` — carried from the 0006 tick's with the probe path (the
   pinned copy + its sha256 guard) and header text updated; the six `run`
   protocol lines are untouched.
 - `analyze-0530.py` / `analyze-0530.txt` — the carried analyzer and its
