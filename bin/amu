@@ -179,27 +179,15 @@ function option(args, flag) {
 // than left returning false, because a predicate that always answers the same
 // way is a claim nobody rechecks.
 
-// The two `kotoba.native.elf64` twins genuinely disagree about ONE container:
-// the x86-64 kernel image, 65,904 bytes from the portable file against 110,872
-// from the JVM one, because kotoba-native ADR-0036 keeps the live-boot GDT/TSS
-// shim in the JVM twin deliberately.
-//
-// So routing decides, not the packager. Without --jvm-free this still reaches
-// the JVM and still produces the live-boot image, exactly as before; with
-// --jvm-free it is refused below, naming why. Making the packager refuse
-// unconditionally would have broken a working command for callers who never
-// asked for a JDK-free build.
-function divergentAiueosKernelImage(args) {
-  return option(args, "--target") === "x86_64-aiueos-kernel-v1"
-    && option(args, "--artifact") === "image";
-}
-
-const divergentImageReason =
-  "the portable elf64 twin does not carry the live-boot GDT/TSS shim, so this "
-  + "route's x86-64 kernel image is not the JVM's (65,904 vs 110,872 bytes "
-  + "measured 2026-08-31). kotoba-native ADR-0036 keeps the two files apart "
-  + "deliberately. The kernel OBJECT, the CPL3 user image, the UEFI application "
-  + "and the AArch64 kernel image are byte-identical on this route.";
+// The x86-64 kernel-image divergence between the two kotoba.native.elf64 twins
+// (65,904 vs 110,872 bytes, measured 2026-08-31) is CLOSED by the kotoba-native
+// ede96447 pin (kotoba-native#203: the portable elf64 packager now carries the
+// full AIUEOS kernel-image shim -- GDT/TSS/owned-stack entry + ISR table, the
+// fixed-page RT kernel-image profile, and the isolated state page). A previous
+// guard refused `compile --target x86_64-aiueos-kernel-v1 --artifact image` on
+// this route entirely; with the pin advanced that refusal only blocks the
+// served image this repo exists to build, so it is gone and the conformance
+// asserts the served artifact instead (JUN-30).
 
 // The trust-plane commands: keys, trust sets, signatures, receipts, inspect.
 // One portable implementation (`kotoba.compiler.trust-cli`) since 2026-09-11;
@@ -222,7 +210,6 @@ const trustCommands = new Set(["keygen", "public-key", "inspect", "trust-key",
 
 function nbbNativeEligible(args) {
   const command = args[0];
-  if (command === "compile" && divergentAiueosKernelImage(args)) return false;
   if (trustCommands.has(command)) return true;
   if (command === "test") return true;
   if (runCommands.has(command)) return true;
@@ -592,9 +579,6 @@ function runCompiler(root, rawArgs) {
   // a refusal that names the command and the target, so the gap is visible
   // at the call site and in docs/adr (JVM-route-removed ledger) rather than
   // in a stack trace from clojure.main.
-  if (args[0] === "compile" && divergentAiueosKernelImage(args)) {
-    fail("error: no nbb-route implementation: " + divergentImageReason, 64);
-  }
   const target = option(args, "--target");
   fail("error: `amu " + args[0] + (target ? " --target " + target : "") + "` has no "
     + "implementation on the nbb/native route, and the JVM route was removed on "
