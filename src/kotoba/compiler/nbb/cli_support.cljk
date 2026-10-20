@@ -319,6 +319,15 @@
     ;; 0348 iteration 8). EX_UNAVAILABLE, as the JVM table has for :execute.
     (:execute :native-executor) 69
     :receipt 76
+    ;; `:artifact-target` is back because it has live callers again: the
+    ;; aiueos disk packager refuses a bootloader that is not an x86-64 PE32+
+    ;; EFI application by this phase name (aiueos_disk.cljk, JUN-30 review
+    ;; finding), and `compile` still throws it for an unknown --artifact kind.
+    ;; The documented answer for a refused artifact target is the caller-error
+    ;; code 65, as `kotoba.compiler.cli/exit-code` must agree -- without this
+    ;; row a refused input answered 70 and automation read a known refusal as
+    ;; an internal compiler failure.
+    :artifact-target 65
     70))
 
 (defn- error-report [error source-name]

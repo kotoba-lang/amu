@@ -36,6 +36,7 @@
             [kotoba.compiler.interface :as interface]
             [kotoba.compiler.kexe-indexes :as kexe-indexes]
             [kotoba.compiler.ios-aot :as ios-aot]
+            [kotoba.compiler.packaging.aiueos-disk :as aiueos-disk]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.compiler.receipt :as receipt]
             [kotoba.compiler.release :as release]
@@ -75,7 +76,8 @@
     ;; joined later the same day: `kotoba.compiler.coverage` became portable
     ;; (level-1 leaf), and `package-aiueos-boot` stood only on leaves already
     ;; portable plus `pe32plus`, which always was
-    "coverage" "sign-coverage-evidence" "package-aiueos-boot"})
+    "coverage" "sign-coverage-evidence" "package-aiueos-boot"
+    "package-aiueos-disk-image"})
 
 (defn- option [args flag] (second (drop-while #(not= flag %) args)))
 
@@ -143,6 +145,11 @@
        (nil? text) (if (some? fallback) fallback (usage! (str "missing " flag)))
        :else (or (parse-long text)
                  (usage! (str flag " must be a decimal integer")))))))
+
+(defn- json-text [value]
+  #?(:cljs (str (.stringify js/JSON (clj->js value) nil 2) "\n")
+     :clj (throw (ex-info "JSON receipts require the Amu/Nbb host"
+                          {:phase :host-implementation}))))
 
 ;; A kernel object or its payload, as `package-aiueos-boot` reads them. The
 ;; JVM branch had no ceiling (`Files/readAllBytes`); 64 MiB is far above any
@@ -366,6 +373,12 @@
             output (or (option args "--output") "BOOTX64.EFI")
             payload-path (option args "--payload")
             k16-preflight? (boolean (some #{"--k16-preflight"} args))
+            ;; `--resident` promised a resident loader that
+            ;; package-embedded-kernel never implemented (it emits one
+            ;; transition loader). Accepting the flag would let a caller
+            ;; believe they deployed something other than what was built.
+            _ (when (some #{"--resident"} args)
+                (usage! "--resident is not implemented: package-embedded-kernel emits one transition loader"))
             ;; Free-text the caller puts on the panel beside the build digest --
             ;; a version, a branch, a date. Deliberately not derived here: this
             ;; packager is byte-compared against a second packaging of the same
@@ -386,5 +399,24 @@
          :k16-preflight? k16-preflight?
          :k16-note k16-note
          :payload-sha256 (:embedded-payload-sha256 packaged)})
+
+      "package-aiueos-disk-image"
+      (let [input (second args)
+            output (or (option args "--output") "aiueos-kotoba-desktop-gpt.img")
+            ;; The receipt is JSON (json-text below), so it must not default to
+            ;; an .edn name that downstream EDN readers would fail to parse.
+            receipt-path (or (option args "--receipt") (str output ".receipt.json"))
+            _ (when (or (same-target? input output)
+                        (same-target? input receipt-path)
+                        (same-target? output receipt-path))
+                (usage! "package-aiueos-disk-image input, disk, and receipt paths must be distinct"))
+            efi (bounded-edn/read-bytes-file input max-kernel-bytes)
+            packaged (aiueos-disk/package efi)]
+        (atomic-output/write-bytes! output (:bytes packaged))
+        (atomic-output/write-text! receipt-path (json-text (:receipt packaged)))
+        {:ok true :profile :aiueos-native-desktop-disk :packager-route :amu-nbb
+         :input input :output output :receipt receipt-path
+         :bytes (get-in packaged [:receipt "disk" "bytes"])
+         :sha256 (get-in packaged [:receipt "disk" "sha256"])})
 
       (usage! (str "not a trust-plane command: " (pr-str command))))))
