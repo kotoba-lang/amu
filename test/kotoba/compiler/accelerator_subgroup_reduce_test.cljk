@@ -133,3 +133,24 @@
   (is (false? (:measured? sg/basis)))
   (is (str/includes? (:text sg/basis) "UNMEASURED"))
   (is (= 32 sg/min-workgroup-size)))
+
+(deftest fixtures-match-the-emitter
+  ;; test/fixtures/gpu/subgroup-reduce-w<W>-sum.emitted.glsl is a GENERATED
+  ;; ARTIFACT of this emitter (regenerate with
+  ;; scripts/regen-gpu-subgroup-reduce-fixtures.cljk). The files went stale
+  ;; once already -- they predated the 4b7a1ccb fixes (umbrella extension,
+  ;; SPIR-V builtin name, unstrided cross-fold, finite extrema identities)
+  ;; and silently misstated the emission while the JUN-58 sign chain pinned
+  ;; their bytes. This assertion is the staleness tripwire: an emitter
+  ;; change without a fixture regeneration fails here, and the message says
+  ;; what to run.
+  ;;
+  ;; The sign chain's pre-fix inputs are archived separately under
+  ;; docs/evidence/gpu/sign-chain-pinned-fixtures-pre-fix/ and staged over
+  ;; these files by scripts/gpu-sign-chain-stage-fixtures.sh before chain
+  ;; runs -- regenerating here never touches that archive.
+  (doseq [w [32 64 128 256]]
+    (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size w})
+          path (str "test/fixtures/gpu/subgroup-reduce-w" w "-sum.emitted.glsl")]
+      (is (= (sg/emit-glsl kir) (slurp path))
+          (str path " is stale -- run scripts/regen-gpu-subgroup-reduce-fixtures.cljk")))))
