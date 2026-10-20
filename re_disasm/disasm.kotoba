@@ -25,7 +25,7 @@
             test-text test-bytes-xrefs
             test-logical-reg test-addsub-reg test-ldst-reg test-pair
             test-record test-targets test-listing
-            test-shift-text test-extend-text test-literal
+            test-shift-text test-extend-text test-reg31-sf test-tbz-pair-text test-bounds-guards test-mov-ret-ror test-symtab-fixes test-adrp-add-sf test-image-base-mapping test-descent-bounds test-literal
             test-m3-edges test-m3-reach test-m3-entries test-m3-cfg
             test-m3-bounds test-m3-strings test-m3-xrefs test-m3-imports
             test-macho test-elf test-pe test-words-at
@@ -176,20 +176,27 @@
 
 ;; Logical (shifted register), N=0: sf opc 01010 shift 0 Rm imm6 Rn Rd.
 ;; opc: 00 AND / 01 ORR / 10 EOR / 11 ANDS. N=1 (BIC/ORN/EON/MVN) unknown.
+;; opc lives in bits 30:29, so ORR (01) matches 0x20000000 and EOR (10)
+;; matches 0x40000000 (review P1: these were mapped in the opposite order,
+;; printing 0xAA000000 as eor and 0xCA050083 as orr).
 (defn insn-class-logical [w :i64] :i64
   (if (match? w 0x1F200000 0x0A000000)
     (if (match? w 0x60000000 0x00000000) (class-and-reg)
-    (if (match? w 0x60000000 0x40000000) (class-orr-reg)
-    (if (match? w 0x60000000 0x20000000) (class-eor-reg)
+    (if (match? w 0x60000000 0x20000000) (class-orr-reg)
+    (if (match? w 0x60000000 0x40000000) (class-eor-reg)
     (class-ands-reg))))
   (class-unknown)))
 
 ;; Add/sub (shifted register), unflagged: sf op S 01011 shift 0 Rm imm6 Rn Rd.
+;; shift 11 (ROR) is reserved in this encoding class (review P2: the
+;; matcher ignored bits 23:22 and accepted words like 0x8BC20020 as
+;; 'add x0, x1, x2, ror #0').
 (defn insn-class-addsub-reg [w :i64] :i64
   (if (match? w 0x1F200000 0x0B000000)
+    (if (match? w 0x00C00000 0x00C00000) (class-unknown)
     (if (match? w 0x20000000 0x20000000) (class-unknown)
     (if (match? w 0x40000000 0x00000000) (class-add-reg)
-    (class-sub-reg)))
+    (class-sub-reg))))
   (class-unknown)))
 
 ;; Load/store unsigned immediate (size 111 V 00 1 opc imm12 Rn Rt) and
@@ -402,11 +409,27 @@
   (if (= cc 14) "al"
   "nv"))))))))))))))))
 
-;; register name: wide=1 -> x<n>, wide=0 -> w<n>.
+;; register name: wide=1 -> x<n>, wide=0 -> w<n>. Register 31 is not a
+;; general register: in XZR-capable operand positions it names the zero
+;; register (xzr/wzr) -- x31/w31 do not exist (review P1).
 (defn reg-name [r :i64 wide :i64] :string
-  (if (= wide 1)
-    (str2 "x" (dec-rec r))
-    (str2 "w" (dec-rec r))))
+  (if (= r 31)
+    (if (= wide 1) "xzr" "wzr")
+    (if (= wide 1)
+      (str2 "x" (dec-rec r))
+      (str2 "w" (dec-rec r)))))
+
+;; register name in an SP-capable operand position (add/sub immediate rd
+;; and rn, load/store base): 31 names the stack pointer.
+(defn reg-name-sp [r :i64 wide :i64] :string
+  (if (= r 31)
+    (if (= wide 1) "sp" "wsp")
+    (reg-name r wide)))
+
+;; sf (bit 31) selects the operand width: 1 -> x/w... 64-bit, 0 -> 32-bit
+;; (review P2: hard-coded wide=1 rendered 32-bit operations as 64-bit).
+(defn sf-wide [w :i64] :i64
+  (if (= (bit-and w 0x80000000) 0x80000000) 1 0))
 
 (defn mnemonic [c :i64] :string
   (if (= c (class-nop)) "nop"
@@ -452,12 +475,19 @@
           base (str3 ", #" (hex-u (insn-ldst-off w)) "]"))))
 
 (defn addsub-text [w :i64] :string
-  (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rd w) 1) ", "
-        (reg-name (insn-rn w) 1) (str2 ", #" (hex-u (insn-addsub-imm w)))))
+  ;; add/sub immediate is SP-capable in both rd and rn, and honors sf.
+  (let [wide (sf-wide w)]
+    (str6 (mnemonic (insn-class w)) " " (reg-name-sp (insn-rd w) wide) ", "
+          (reg-name-sp (insn-rn w) wide) (str2 ", #" (hex-u (insn-addsub-imm w))))))
 
 (defn mov-text [w :i64] :string
-  (str5 (mnemonic (insn-class w)) " " (reg-name (insn-rd w) 1) ", #"
-        (hex-u (insn-imm16 w))))
+  ;; hw (bits 22:21) shifts the immediate to bits 16/32/48 -- the shift
+  ;; must appear or the operand is wrong (review P2: 0x72B579A1 is
+  ;; movk w1, #0xabcd, lsl #0x10, not an unshifted movk).
+  (let [hw (bit-and (quot (bit-and w 0xFFFFFFFF) 2097152) 3)]
+    (str5 (mnemonic (insn-class w)) " " (reg-name (insn-rd w) (sf-wide w)) ", #"
+          (str2 (hex-u (insn-imm16 w))
+                (if (= hw 0) "" (str2 ", lsl #" (hex-u (* 16 hw))))))))
 
 (defn pcrel-text [w :i64] :string
   (let [c (insn-class w)
@@ -486,10 +516,12 @@
   (if (= opt 6) "sxtw" "sxtx"))))))))
 
 ;; Three-register form (logical / addsub shifted register) with shift.
+;; Register 31 is XZR here (not SP), and the width follows sf.
 (defn reg3-text [w :i64] :string
-  (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rd w) 1) ", "
-        (reg-name (insn-rn w) 1)
-        (str2 (str2 ", " (reg-name (insn-rm w) 1)) (shift-suffix w))))
+  (let [wide (sf-wide w)]
+    (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rd w) wide) ", "
+          (reg-name (insn-rn w) wide)
+          (str2 (str2 ", " (reg-name (insn-rm w) wide)) (shift-suffix w)))))
 
 ;; Load/store register offset: rt, [rn, rm{, <extend|lsl> {#amount}}].
 ;; The amount is S * size (S = bit 12, size = log2 of the access bytes) and
@@ -506,18 +538,36 @@
           (reg-name (insn-rn w) 1)
           (str2 ", " (str2 (reg-name (insn-rm w) rmw) (str2 tail "]"))))))
 
-;; Load/store pair: rt, rt2, [rn, #off] (sp as base).
+;; Load/store pair: rt, rt2, [rn, #off]; bits 24:23 select the addressing
+;; mode -- 01 post-index ([rn], #off), 10 signed offset ([rn, #off]),
+;; 11 pre-index ([rn, #off]!). The renderer must keep the writeback form
+;; (review P1: 0xA9BF7BFD lost its !, turning stp x29, x30, [sp, #-16]!
+;; into a non-writeback instruction).
+(defn pair-mode [w :i64] :i64
+  (bit-and (quot (bit-and w 0xFFFFFFFF) 8388608) 3))
+;; TBZ/TBNZ bit index: b5 (bit 31) : b40 (bits 23:19); b5 also selects
+;; the register width (1 -> x, 0 -> w).
+(defn tbz-b5 [w :i64] :i64
+  (quot (bit-and w 0xFFFFFFFF) 2147483648))
+(defn tbz-bit [w :i64] :i64
+  (+ (* 32 (tbz-b5 w)) (bit-and (quot (bit-and w 0xFFFFFFFF) 524288) 31)))
 (defn pair-text [w :i64] :string
-  (let [base (if (= (insn-rn w) 31) "sp" (reg-name (insn-rn w) 1))]
+  (let [base (if (= (insn-rn w) 31) "sp" (reg-name (insn-rn w) 1))
+        off (str2 ", #" (hex-s (insn-pair-off w)))
+        mode (pair-mode w)]
     (str6 (mnemonic (insn-class w)) " " (reg-name (insn-rd w) 1) ", "
           (reg-name (insn-rt2 w) 1)
-          (str2 ", [" (str2 base (str2 ", #" (str2 (hex-s (insn-pair-off w)) "]")))))))
+          (str2 ", ["
+            (if (= mode 3) (str3 base off "]!")
+            (if (= mode 1) (str3 base "]" off)
+            (str3 base off "]")))))))
 
 ;; One disassembly line for w at pc (A64 syntax subset).
 (defn insn-text [w :i64 pc :i64] :string
   (let [c (insn-class w)]
   (if (= c (class-nop)) "nop"
-  (if (= c (class-ret)) "ret"
+  (if (= c (class-ret)) (if (= (insn-rn w) 30) "ret"
+                          (str2 "ret " (reg-name (insn-rn w) 1)))
   (if (or (= c (class-br)) (= c (class-blr)))
     (str3 (mnemonic c) " " (reg-name (insn-rn w) 1))
   (if (or (= c (class-b)) (= c (class-bl)))
@@ -525,10 +575,16 @@
   (if (= c (class-bcond))
     (str4 "b." (cond-name (insn-cond w)) " #" (hex-s (insn-target w pc)))
   (if (or (= c (class-cbz)) (= c (class-tbz)))
-    (str5 (if (= c (class-cbz))
-            (if (= (insn-op w) 1) "cbnz" "cbz")
-            (if (= (insn-op w) 1) "tbnz" "tbz"))
-          " " (reg-name (insn-rt w) 1) ", #" (hex-s (insn-target w pc)))
+    (if (= c (class-cbz))
+      ;; CBZ/CBNZ: width from sf.
+      (str5 (if (= (insn-op w) 1) "cbnz" "cbz")
+            " " (reg-name (insn-rt w) (sf-wide w)) ", #" (hex-s (insn-target w pc)))
+      ;; TBZ/TBNZ: the bit index is b5:b40 and selects the width too
+      ;; (review P1: the shared path omitted the bit operand entirely and
+      ;; always printed an x register -- 0x36000040 tests bit 0 of w0).
+      (str5 (if (= (insn-op w) 1) "tbnz" "tbz")
+            " " (reg-name (insn-rt w) (tbz-b5 w))
+            (str2 ", #" (hex-u (tbz-bit w))) (str2 ", #" (hex-s (insn-target w pc)))))
   (if (or (= c (class-adr)) (= c (class-adrp)))
     (pcrel-text w)
   (if (or (= c (class-movn)) (= c (class-movz)) (= c (class-movk)))
@@ -611,8 +667,12 @@
 ;; next instruction; answers -1 unless the pair matches (both extend the
 ;; same register).
 (defn adrp-add-target [w-adrp :i64 w-add :i64 pc :i64] :i64
+  ;; The canonical literal pair requires a 64-bit ADD: a 32-bit
+  ;; add wN, wN, #imm truncates the page value and must not resolve to a
+  ;; full 64-bit address (review P2).
   (if (and (= (insn-class w-adrp) (class-adrp))
            (= (insn-class w-add) (class-add-imm))
+           (= (sf-wide w-add) 1)
            (= (insn-rd w-add) (insn-rd w-adrp))
            (= (insn-rn w-add) (insn-rd w-adrp)))
     (+ (insn-target w-adrp pc) (insn-addsub-imm w-add))
@@ -643,6 +703,10 @@
 ;; edges (fall-through + computed targets), answering 0/1 per slot. ret/br/
 ;; b/hlt end a path; bl/bcond/cbz/tbz branch AND fall through.
 (defn reachable-vector [words :vector-i64 base :i64 n :i64] :vector-i64
+  ;; n = 0 is a valid window (empty executable section / empty input):
+  ;; answer an empty vector instead of writing slot 0 of a zero-length
+  ;; allocation (review P2: that path trapped out-of-bounds).
+  (if (<= n 0) (vector-alloc 0)
   (let [seen (vector-alloc n)
         q (vector-alloc n)]
     (loop [head 0 tail 1
@@ -653,7 +717,10 @@
               w (vector-at words slot)
               pc (+ base (* 4 slot))
               c (insn-class w)
-              t (if (insn-has-target? c) (slot-of base n (insn-target w pc)) -1)
+              ;; control-flow edges only: an ADR/ADRP data reference that
+              ;; lands in the window must not enqueue its target as code
+              ;; (review P1; the pass comment promises exactly this).
+              t (if (insn-branch? c) (slot-of base n (insn-target w pc)) -1)
               end? (or (= c (class-ret)) (= c (class-br))
                        (= c (class-b)) (= c (class-hlt)))
               f (if (or end? (>= (+ slot 1) n)) -1 (+ slot 1))
@@ -665,7 +732,7 @@
               s2 (if cf (vector-assoc s1 f 1) s1)
               q2 (if cf (vector-assoc q1 n1 f) q1)
               n2 (if cf (+ n1 1) n1)]
-          (recur (+ head 1) n2 s2 q2))))))
+          (recur (+ head 1) n2 s2 q2)))))))
 
 ;; Function entry slots: the entry pc (base) plus every in-window bl
 ;; target, first occurrence kept. Answer is n slots, -1-padded after the
@@ -709,9 +776,17 @@
 ;; body (its return site belongs to the caller).
 (defn fn-end [words :vector-i64 entries :vector-i64 base :i64 n :i64 start :i64] :i64
   (loop [e start]
-    (let [c (insn-class (vector-at words e))
+    (let [w (vector-at words e)
+          c (insn-class w)
+          pc (+ base (* 4 e))
+          ;; an unconditional b to an in-window slot is a LOCAL jump (a
+          ;; forward jump to an epilogue is common) and does not end the
+          ;; function; only a branch out of the window does (review P1:
+          ;; the walk truncated function bounds at every b).
+          b-out? (and (= c (class-b))
+                      (< (slot-of base n (insn-target w pc)) 0))
           end-path? (or (= c (class-ret)) (= c (class-br))
-                        (= c (class-b)) (= c (class-hlt)))]
+                        b-out? (= c (class-hlt)))]
       (if (or end-path? (>= (+ e 1) n)
               (entry-slot? entries base n (+ e 1)))
         e
@@ -971,13 +1046,34 @@
   (let [sym (+ (macho-symtab-field b 0) (* 16 index))]
     (name-str b (+ (macho-symtab-field b 2) (u32le b sym)) 64)))
 
-(defn macho-entry [b :bytes] :i64
+;; LC_SEGMENT_64 fields used by the entry mapping (cmd 25): vmaddr @+24,
+;; fileoff @+40, filesize @+48.
+(defn macho-seg-vmaddr [b :bytes off :i64] :i64 (u64le b (+ off 24)))
+(defn macho-seg-fileoff [b :bytes off :i64] :i64 (u64le b (+ off 40)))
+(defn macho-seg-filesize [b :bytes off :i64] :i64 (u64le b (+ off 48)))
+
+(defn macho-entry-off [b :bytes] :i64
   (loop [i 0]
     (if (>= i (macho-ncmds b)) (- 0 1)
       (let [off (macho-cmd-off b i)]
         (if (= (u32le b off) 2147483688)
-          (+ (macho-image-base b) (u64le b (+ off 8)))
+          (u64le b (+ off 8))
           (recur (+ i 1)))))))
+
+(defn macho-entry [b :bytes] :i64
+  ;; LC_MAIN.entryoff is a FILE offset: resolve it through the segment
+  ;; whose file range contains it (review P1: adding it to
+  ;; macho-image-base -- which answers 0 when __PAGEZERO leads -- produced
+  ;; 0x1a0-style addresses instead of 0x1000001a0).
+  (let [e (macho-entry-off b)]
+    (loop [i 0]
+      (if (>= i (macho-ncmds b)) (+ (macho-image-base b) e)
+        (let [off (macho-cmd-off b i)]
+          (if (and (= (u32le b off) 25)
+                   (>= e (macho-seg-fileoff b off))
+                   (< e (+ (macho-seg-fileoff b off) (macho-seg-filesize b off))))
+            (+ (macho-seg-vmaddr b off) (- e (macho-seg-fileoff b off)))
+            (recur (+ i 1))))))))
 
 ;; ------------------------------------------------------------- elf64
 ;; e_entry @24, e_shoff @40, e_shentsize @58, e_shnum @60, e_shstrndx @62.
@@ -1012,12 +1108,20 @@
   (let [sh (elf-sh-off b i)]
     (name-str b (+ (elf-strtab-off b) (u32le b sh)) 64)))
 
-;; index of the SHT_SYMTAB section (sh_type 2), or -1
-(defn elf-symtab-sh [b :bytes] :i64
+;; index of a section header with the given sh_type, or -1
+(defn elf-sh-of-type [b :bytes typ :i64] :i64
   (loop [i 0]
     (if (>= i (elf-shnum b)) (- 0 1)
-      (if (= (u32le b (+ (elf-sh-off b i) 4)) 2) i
+      (if (= (u32le b (+ (elf-sh-off b i) 4)) typ) i
         (recur (+ i 1))))))
+
+;; Symbol table section: SHT_SYMTAB (sh_type 2), falling back to
+;; SHT_DYNSYM (sh_type 11) when the binary is stripped of its static
+;; symbol table (review P2: the static-only search answered -1 and hid
+;; every exported and undefined dynamic symbol).
+(defn elf-symtab-sh [b :bytes] :i64
+  (let [t (elf-sh-of-type b 2)]
+    (if (>= t 0) t (elf-sh-of-type b 11))))
 
 ;; the symbol string table is the section sh_link names
 (defn elf-sym-strtab-off [b :bytes] :i64
@@ -1041,13 +1145,34 @@
     (name-str b (+ (elf-sym-strtab-off b) (u32le b sym)) 64)))
 
 ;; smallest non-zero sh_addr (0 when the image is all-relative)
+;; ELF64 program headers: e_phoff @32, e_phentsize @54, e_phnum @56;
+;; phdr: p_type @0 (PT_LOAD = 1), p_vaddr @+16.
+(defn elf-phoff [b :bytes] :i64 (u64le b 32))
+(defn elf-phentsize [b :bytes] :i64 (u16le b 54))
+(defn elf-phnum [b :bytes] :i64 (u16le b 56))
+(defn elf-ph-off [b :bytes i :i64] :i64 (+ (elf-phoff b) (* (elf-phentsize b) i)))
+
 (defn elf-image-base [b :bytes] :i64
-  (loop [i 0 acc 0]
-    (if (>= i (elf-shnum b)) acc
-      (let [a (u64le b (+ (elf-sh-off b i) 16))]
-        (recur (+ i 1)
-          (if (= a 0) acc
-            (if (= acc 0) a (if (< a acc) a acc))))))))
+  ;; The load image base comes from the PT_LOAD segments: the first load
+  ;; segment starts before the first section (a segment at 0x400000 may
+  ;; hold a first section at 0x400318), and stripped binaries may carry
+  ;; no section headers at all (review P1). Images with no program
+  ;; headers fall back to the section walk.
+  (let [n (elf-phnum b)]
+    (if (> n 0)
+      (loop [i 0 acc (- 0 1)]
+        (if (>= i n) (if (< acc 0) 0 acc)
+          (let [p (elf-ph-off b i)]
+            (if (= (u32le b p) 1)
+              (let [v (u64le b (+ p 16))]
+                (recur (+ i 1) (if (or (< acc 0) (< v acc)) v acc)))
+              (recur (+ i 1) acc)))))
+      (loop [i 0 acc 0]
+        (if (>= i (elf-shnum b)) acc
+          (let [a (u64le b (+ (elf-sh-off b i) 16))]
+            (recur (+ i 1)
+              (if (= a 0) acc
+                (if (= acc 0) a (if (< a acc) a acc))))))))))
 
 ;; ------------------------------------------------------------- pe32+
 ;; MZ @0, e_lfanew @60. At lfanew: PE\\0\\0, machine @+4, nsections @+6,
@@ -1060,7 +1185,15 @@
 (defn pe-lfanew [b :bytes] :i64 (u32le b 60))
 
 (defn pe-recognize [b :bytes] :i64
-  (if (and (= (u16le b 0) 0x5A4D) (= (u32le b (pe-lfanew b)) 0x00004550))
+  ;; e_lfanew is attacker-controlled: validate the buffer length against
+  ;; the MZ header, the offset itself and the 4 signature bytes it names
+  ;; BEFORE any dereference (review P1: a truncated or malformed PE
+  ;; trapped in bytes-at instead of answering 0).
+  (if (and (>= (bytes-count b) 64)
+           (= (u16le b 0) 0x5A4D)
+           (let [lf (pe-lfanew b)]
+             (and (>= lf 0) (<= (+ lf 4) (bytes-count b))
+                  (= (u32le b lf) 0x00004550))))
     1 0))
 
 (defn pe-image-base [b :bytes] :i64 (u64le b (+ (pe-lfanew b) 48)))
@@ -1082,10 +1215,28 @@
 (defn pe-section-name [b :bytes i :i64] :string
   (name-str b (pe-section-off b i) 8))
 
-(defn pe-symbol-count [b :bytes] :i64 (u32le b (+ (pe-lfanew b) 16)))
+;; PE/COFF NumberOfSymbols counts RAW 18-byte records, including the
+;; auxiliary records that follow a primary with NumberOfAuxSymbols > 0
+;; (record byte +17). The symbol surface is PRIMARY symbols only: the
+;; count excludes auxiliaries and the index walk skips them (review P2:
+;; exposing the raw count and indexing every record decoded auxiliaries
+;; as primary symbols).
+(defn pe-raw-count [b :bytes] :i64 (u32le b (+ (pe-lfanew b) 16)))
+(defn pe-aux-of [b :bytes rec :i64] :i64 (bytes-at b (+ rec 17)))
+
+(defn pe-symbol-count [b :bytes] :i64
+  ;; the walk stops at the string table, which follows the raw records
+  ;; (computed inline: pe-strtab-off is defined further down and this
+  ;; module resolves definitions in order).
+  (let [strtab (+ (u32le b (+ (pe-lfanew b) 12)) (* 18 (pe-raw-count b)))]
+    (loop [rec (u32le b (+ (pe-lfanew b) 12)) k 0]
+      (if (>= rec strtab) k
+        (recur (+ rec (* 18 (+ 1 (pe-aux-of b rec)))) (+ k 1))))))
 
 (defn pe-symbol-off [b :bytes i :i64] :i64
-  (+ (u32le b (+ (pe-lfanew b) 12)) (* 18 i)))
+  (loop [rec (u32le b (+ (pe-lfanew b) 12)) k 0]
+    (if (>= k i) rec
+      (recur (+ rec (* 18 (+ 1 (pe-aux-of b rec)))) (+ k 1)))))
 
 (defn pe-strtab-off [b :bytes] :i64
   (+ (u32le b (+ (pe-lfanew b) 12)) (* 18 (pe-symbol-count b))))
@@ -1123,9 +1274,16 @@
 (defn macho-symbol-undef? [b :bytes index :i64] :bool
   (nlist-undef? b (+ (macho-symtab-field b 0) (* 16 index))))
 
+;; An undefined entry is an import only with an EXTERNAL binding
+;; (st_info bits 7:6 = STB_GLOBAL 1 or STB_WEAK 2): the mandatory
+;; all-zero symbol at index 0 (st_info = STB_LOCAL) must not appear in
+;; the import surface (review P2).
+(defn elf-sym-ext? [b :bytes sym :i64] :bool
+  (let [bind (bit-and (quot (bytes-at b (+ sym 4)) 64) 3)]
+    (or (= bind 1) (= bind 2))))
 (defn elf-symbol-undef? [b :bytes i :i64] :bool
-  (elf-sym-undef? b
-    (+ (u64le b (+ (elf-sh-off b (elf-symtab-sh b)) 24)) (* 24 i))))
+  (let [sym (+ (u64le b (+ (elf-sh-off b (elf-symtab-sh b)) 24)) (* 24 i))]
+    (and (elf-sym-undef? b sym) (elf-sym-ext? b sym))))
 
 (defn pe-symbol-undef? [b :bytes i :i64] :bool
   (pe-sym-undef? b (pe-symbol-off b i)))
@@ -1470,17 +1628,17 @@
       1 0)))
 
 (defn test-logical-reg [] :i64
-  ;; and x0, x1, x2 = 0x8A020020 ; orr x3, x4, x5 = 0xCA050083
-  ;; eor x0, x0, x0 = 0xAA000000 ; ands x0, x1, x2 = 0xEA020020
+  ;; and x0, x1, x2 = 0x8A020020 ; eor x3, x4, x5 = 0xCA050083
+  ;; orr x0, x0, x0 = 0xAA000000 ; ands x0, x1, x2 = 0xEA020020
   (if (and (= (insn-class 0x8A020020) (class-and-reg))
            (= (insn-rd 0x8A020020) 0)
            (= (insn-rn 0x8A020020) 1)
            (= (insn-rm 0x8A020020) 2)
-           (= (insn-class 0xCA050083) (class-orr-reg))
+           (= (insn-class 0xCA050083) (class-eor-reg))
            (= (insn-rd 0xCA050083) 3)
            (= (insn-rn 0xCA050083) 4)
            (= (insn-rm 0xCA050083) 5)
-           (= (insn-class 0xAA000000) (class-eor-reg))
+           (= (insn-class 0xAA000000) (class-orr-reg))
            (= (insn-class 0xEA020020) (class-ands-reg)))
     1 0))
 
@@ -1798,6 +1956,161 @@
              (not (pe-symbol-undef? (pe-fixture) 0)))
       1 0)))
 
+(defn test-reg31-sf [] :i64
+  ;; Register 31 renders per operand role (review P1) and sf selects the
+  ;; width (review P2):
+  ;;   add x0, x1, #1  = 0x91000420 -> "add x0, x1, #0x1"
+  ;;   add w0, w1, #1  = 0x11000420 -> "add w0, w1, #0x1"
+  ;;   add sp, sp, #16 = 0x910043FF -> "add sp, sp, #0x10"
+  ;;   orr x0, xzr, x1 = 0xAA0103E0 -> "orr x0, xzr, x1"
+  ;;   movk w1, #0xabcd = 0x72B579A1 -> "movk w1, #0xabcd, lsl #0x10"
+  (if (and (string=? (insn-text 0x91000420 0) "add x0, x1, #0x1")
+           (string=? (insn-text 0x11000420 0) "add w0, w1, #0x1")
+           (string=? (insn-text 0x910043FF 0) "add sp, sp, #0x10")
+           (string=? (insn-text 0xAA0103E0 0) "orr x0, xzr, x1")
+           (string=? (insn-text 0x72B579A1 0) "movk w1, #0xabcd, lsl #0x10"))
+    1 0))
+
+(defn test-tbz-pair-text [] :i64
+  ;; TBZ/TBNZ carry the b5:b40 bit index and the b5 width (review P1);
+  ;; pair load/store keeps its addressing mode (review P1):
+  ;;   0x36000040 @0x1000 -> "tbz w0, #0x0, #0x1008"   (bit 0 of w0)
+  ;;   0xB6000040 @0x1000 -> "tbz x0, #0x20, #0x1008"  (b5=1 -> bit 32)
+  ;;   0xA9BF7BFD -> "stp x29, x30, [sp, #-0x10]!"     (pre-index)
+  ;;   0xA8C10440 -> "ldp x0, x1, [x2], #0x10"         (post-index)
+  ;;   0xA9410440 -> "ldp x0, x1, [x2, #0x10]"         (signed offset)
+  (if (and (string=? (insn-text 0x36000040 0x1000) "tbz w0, #0x0, #0x1008")
+           (string=? (insn-text 0xB6000040 0x1000) "tbz x0, #0x20, #0x1008")
+           (string=? (insn-text 0xA9BF7BFD 0) "stp x29, x30, [sp, #-0x10]!")
+           (string=? (insn-text 0xA8C10440 0) "ldp x0, x1, [x2], #0x10")
+           (string=? (insn-text 0xA9410440 0) "ldp x0, x1, [x2, #0x10]"))
+    1 0))
+
+(defn test-bounds-guards [] :i64
+  ;; Truncated/malformed PE answers 0 instead of trapping (review P1:
+  ;; e_lfanew is attacker-controlled and was dereferenced unchecked), and
+  ;; an empty analysis window answers an empty vector (review P2).
+  (let [short (bytes-from-vector-i64 (vector-i64 77 90 0 0 0 0 0 0))
+        far (bytes-from-vector-i64 (put32 (put16 (vector-alloc 64) 0 0x5A4D) 60 1000))
+        r (reachable-vector (vector-i64 0) 0 0)]
+    (if (and (= (pe-recognize short) 0)
+             (= (pe-recognize far) 0)
+             (= (pe-recognize (pe-fixture)) 1)
+             (= (vector-count r) 0))
+      1 0)))
+
+(defn test-mov-ret-ror [] :i64
+  ;; Move-wide halfword shift (review P2), nondefault RET registers
+  ;; (review P2), reserved ROR in add/sub shifted-register (review P2):
+  ;;   0x72B579A1 -> "movk w1, #0xabcd, lsl #0x10"  (hw=1)
+  ;;   0xD2824680 -> "movz x0, #0x1234"             (hw=0, no suffix)
+  ;;   0xD65F0260 -> "ret x19" ; 0xD65F03C0 -> "ret"
+  ;;   0x8BC20020 -> class-unknown (shift 11 is reserved here)
+  (if (and (string=? (insn-text 0x72B579A1 0) "movk w1, #0xabcd, lsl #0x10")
+           (string=? (insn-text 0xD2824680 0) "movz x0, #0x1234")
+           (string=? (insn-text 0xD65F0260 0) "ret x19")
+           (string=? (insn-text 0xD65F03C0 0) "ret")
+           (= (insn-class 0x8BC20020) (class-unknown))
+           (= (insn-class 0x8B020020) (class-add-reg)))
+    1 0))
+
+(defn test-symtab-fixes [] :i64
+  ;; SHT_DYNSYM fallback, external-binding imports, COFF aux skip
+  ;; (review P2 x3):
+  ;;   a stripped ELF whose only symbol section is sh_type 11 still
+  ;;   reports its symbols;
+  ;;   the all-zero ELF symbol 0 (STB_LOCAL) is not an import;
+  ;;   a 3-record COFF table (primary + 1 aux + primary) counts 2
+  ;;   primaries and index 1 lands on the third raw record.
+  (let [elf-v (vector-alloc 224)
+        elf-v (put16 elf-v 58 64)
+        elf-v (put16 elf-v 60 1)
+        elf-v (put64 elf-v 40 128)
+        elf-v (put32 elf-v 132 11)
+        elf-v (put64 elf-v 152 200)
+        elf-v (put64 elf-v 160 24)
+        elf11 (bytes-from-vector-i64 elf-v)
+        pe-v (vector-alloc 280)
+        pe-v (put16 pe-v 0 0x5A4D)
+        pe-v (put32 pe-v 60 128)
+        pe-v (put32 pe-v 140 200)
+        pe-v (put32 pe-v 144 3)
+        pe-v (put8 pe-v 217 1)
+        pe3 (bytes-from-vector-i64 pe-v)]
+    (if (and (= (elf-symbol-count elf11) 1)
+             (not (elf-symbol-undef? (elf-fixture) 0))
+             (= (pe-symbol-count pe3) 2)
+             (= (pe-symbol-off pe3 1) 236))
+      1 0)))
+
+(defn test-adrp-add-sf [] :i64
+  ;; The canonical ADRP+ADD literal pair requires a 64-bit ADD (review
+  ;; P2): add w0, w0, #1 (0x11000400) truncates the page value and must
+  ;; not resolve, while add x0, x0, #1 (0x91000400) does.
+  ;;   0x90000000 @0x1000 -> page 0x1000; +1 -> 0x1001
+  (if (and (= (adrp-add-target 0x90000000 0x91000400 0x1000) 0x1001)
+           (= (adrp-add-target 0x90000000 0x11000400 0x1000) (- 0 1)))
+    1 0))
+
+(defn test-image-base-mapping [] :i64
+  ;; LC_MAIN.entryoff maps through its containing segment and the ELF
+  ;; load image base comes from PT_LOAD (review P1 x2):
+  ;;   PAGEZERO-first Mach-O: entryoff 0x1a0 in __TEXT (vmaddr 0x100000000,
+  ;;   fileoff 0) answers 0x1000001a0, not 0x1a0;
+  ;;   ELF with PT_LOAD p_vaddr 0x400000 and first section 0x400318
+  ;;   answers 0x400000, not 0x400318.
+  (let [mv (vector-alloc 224)
+        mv (put32 mv 0 0xFEEDFACF)
+        mv (put32 mv 4 0x0100000C)
+        mv (put32 mv 16 3)
+        mv (put32 mv 20 168)
+        mv (put32 mv 32 25)
+        mv (put32 mv 36 72)
+        mv (put64 mv 56 0)
+        mv (put64 mv 64 0x1000)
+        mv (put64 mv 72 0)
+        mv (put64 mv 80 0)
+        mv (put32 mv 104 25)
+        mv (put32 mv 108 72)
+        mv (put64 mv 128 0x100000000)
+        mv (put64 mv 136 0x4000)
+        mv (put64 mv 144 0)
+        mv (put64 mv 152 0x1000)
+        mv (put32 mv 176 2147483688)
+        mv (put32 mv 180 24)
+        mv (put64 mv 184 0x1A0)
+        m (bytes-from-vector-i64 mv)
+        ev (vector-alloc 256)
+        ev (put64 ev 32 64)
+        ev (put16 ev 54 56)
+        ev (put16 ev 56 1)
+        ev (put64 ev 40 128)
+        ev (put16 ev 58 64)
+        ev (put16 ev 60 1)
+        ev (put32 ev 64 1)
+        ev (put64 ev 80 0x400000)
+        ev (put64 ev 144 0x400318)
+        e (bytes-from-vector-i64 ev)]
+    (if (and (= (macho-entry m) 0x1000001A0)
+             (= (elf-image-base e) 0x400000))
+      1 0)))
+
+(defn test-descent-bounds [] :i64
+  ;; Recursive descent follows control-flow edges only (review P1): an
+  ;; ADR data reference into the window must not mark its target as code.
+  ;; fn-end follows local unconditional branches (review P1): a forward
+  ;; b to an in-window slot does not truncate the function.
+  ;;   slot0 adr x0, #8 (0x10000040) targets slot2 (data); slot1 ret
+  ;;   slot0 b +2 (0x14000002) targets slot2 (local); slot1 add; slot2 ret
+  (let [r (reachable-vector (vector-i64 0x10000040 0xD65F03C0 0x20000000) 0x1000 3)
+        words2 (vector-i64 0x14000002 0x91000420 0xD65F03C0)
+        entries (fill-vec 3 (- 0 1))]
+    (if (and (= (vector-at r 0) 1)
+             (= (vector-at r 1) 1)
+             (= (vector-at r 2) 0)
+             (= (fn-end words2 entries 0x1000 3 0) 2))
+      1 0)))
+
 (defn main [] :i64
   (let [s (+ (test-hints) (test-exceptions) (test-branch-uncond)
              (test-branch-cond) (test-branch-register) (test-adr)
@@ -1805,9 +2118,10 @@
              (test-bytes-xrefs) (test-logical-reg) (test-addsub-reg)
              (test-ldst-reg) (test-pair) (test-record) (test-targets)
              (test-listing) (test-shift-text) (test-extend-text)
+             (test-reg31-sf) (test-tbz-pair-text) (test-bounds-guards) (test-mov-ret-ror) (test-symtab-fixes) (test-adrp-add-sf) (test-image-base-mapping) (test-descent-bounds)
              (test-literal) (test-m3-edges) (test-m3-reach) (test-m3-entries)
              (test-m3-cfg) (test-m3-bounds) (test-m3-strings) (test-m3-xrefs)
              (test-m3-imports)
              (test-macho) (test-elf) (test-pe)
              (test-words-at))]
-    (if (= s 33) 1 0)))
+    (if (= s 41) 1 0)))
