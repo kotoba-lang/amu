@@ -748,8 +748,19 @@
                                       (:gate-files gp) (:pins tools) consumer])
                      cfile (when cache (join (.resolve path cache) (str ckey ".edn")))]
                  (if (and cfile (file? cfile))
-                   (do (log role ": reusing the cached measurement " cfile)
-                       (js/Promise.resolve (assoc (edn/read-string (read-text cfile)) :role role :cached cfile)))
+                   ;; G0 depends on the change's file list, not on the side alone: always measured again
+                   (let [m (edn/read-string (read-text cfile))
+                         _ (log role ": reusing the cached measurement " cfile " (G0 measured again)")
+                         m (if-not (some #{:g0} gates)
+                             m
+                             (let [subject (wt! repo sha (join dir "subject"))
+                                   oracle (if consumer oracle-dir subject)
+                                   pins (if consumer shared-oracle-pins (prepare-oracle! oracle))]
+                               (assoc-in m [:gates :g0]
+                                         (if (:unmeasured pins)
+                                           {:status "UNMEASURED" :reason (:unmeasured pins)}
+                                           (measure-g0 oracle subject changed)))))]
+                     (js/Promise.resolve (assoc m :role role :cached cfile)))
                    (let [subject (wt! repo sha (join dir "subject"))
                          oracle (if consumer oracle-dir subject)
                          pins (if consumer shared-oracle-pins (prepare-oracle! oracle))]
