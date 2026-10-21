@@ -39,7 +39,7 @@
                  (mapv (fn [function]
                          (reduce (fn [function key]
                                    (if (and (map? function) (sequential? (get function key)))
-                                     (update function key #(mapv host-integer/narrow %))
+                                     (update function key (fn [x] (mapv host-integer/narrow x)))
                                      function))
                                  function structural-index-keys))
                        functions)))
