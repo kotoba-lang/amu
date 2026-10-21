@@ -292,7 +292,7 @@ static struct kexe_shared_v11 *fuzz_open(struct fuzz_cursor *cursor,
     uint8_t byte = take_u8(cursor);
     code[i] = ascii ? (uint8_t)(0x20u + (byte % 0x5fu)) : byte;
   }
-  shared->context.version = 11;
+  shared->context.version = 12;
   shared->context.fuel = 512;
   shared->context.code_base = code;
   shared->context.code_length = code_length;
@@ -778,7 +778,7 @@ static void fuzz_parsers(const uint8_t *data, size_t size) {
 
   struct kexe_shared_v11 *shared = fuzz_map_shared();
   if (shared != NULL) {
-    shared->context.version = 11;
+    shared->context.version = 12;
     int64_t value = 0;
     (void)parse_guest_arg(shared, text, &value);
     fuzz_unmap_shared(shared);
@@ -788,7 +788,7 @@ static void fuzz_parsers(const uint8_t *data, size_t size) {
    * past the table), charged against a traversal budget the input narrows. */
   shared = fuzz_map_shared();
   if (shared != NULL) {
-    shared->context.version = 11;
+    shared->context.version = 12;
     int64_t value = 0;
     struct kexe_boundary_state state = {0, 0, 1u + (uint64_t)(size % 7u),
                                         1u + (uint64_t)(size * 131u % 70000u)};

@@ -19,7 +19,9 @@ one hypothesis taken to a measured verdict.
 | stage | what it means here |
 |---|---|
 | **Generate** | hypotheses come from measured artifacts — instruction-stream diffs against comparators, fuel accounting, gate behavior — never from intuition alone |
+| **Debate** | write the strongest counter-hypothesis and its observable prediction before editing; do not let an attractive static estimate stand in for that challenge |
 | **Reflect** | before compiler work, falsify cheaply: hand-patch the emitted code and measure the predicted gain on the real runner. A hypothesis that cannot survive its own hand-patched experiment does not get a compiler change |
+| **Proximity** | compare each new idea with prior mechanisms, domains, ISAs and runs; reuse evidence, but do not count related measurements as independent confirmation |
 | **Rank** | expected qualified gain × probability, grounded in the falsification number; a blocker that gates every other claim outranks any single codegen win |
 | **Evolve** | a confirmed-direction hypothesis below threshold is not discarded — it is combined with the next mechanism until the summed effect clears 5% + separation, or the ceiling is proven |
 | **Meta-review** | the verdict is always `perfgate.core/qualify` on a host-qualified run, recorded here and in an ADR; "not separated" is the absence of a result and is recorded as such |

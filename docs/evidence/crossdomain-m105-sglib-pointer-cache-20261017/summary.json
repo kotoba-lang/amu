@@ -1,0 +1,77 @@
+{
+  "schema": "amu.embench.sglib-pointer-cache-evidence/v1",
+  "status": "EXACT_EXPLORATORY_TIMING_UNQUALIFIED_NOT_PROMOTED",
+  "workload": {
+    "name": "sglib-combined",
+    "round": "sa-m104-20261015",
+    "n": 253952,
+    "sourceSHA256": "2122b3005ad248c096153bc148ac9df58b6022b37ae025caea948dd0dc7c0210",
+    "host": "M1 Max; loaded exploratory host"
+  },
+  "control": {
+    "seed41SHA256": "79c91e352296237547c0e6b801b690bc7384f828699135833954b20a245d35c4",
+    "selfhostG1G2G3SHA256": "1544a204b003bd3b5ec9831be008fcbd5ffa5a91c44f922a4ca13a1dca539588",
+    "imageBytes": 51968,
+    "imageSHA256": "5e0b9072eb8a404479d569c5986ba6f008bd6143b8815fb0ea2db3f2e91d0040",
+    "instructionCounts": [30970746764, 30977994573, 30969314242],
+    "instructionMedian": 30970746764
+  },
+  "candidate": {
+    "change": "carry left and right node addresses through list merge; update only the selected side",
+    "seed41SHA256": "587913869c49c0e8387dda5104738613a62d7a3ad0a3eaa269d418b4e2a1c3ae",
+    "selfhostG1G2G3SHA256": "320de9b959a619a3cd319bfc423bc0cd16ef4a71dd2e9e9c20836b5f0d6d6b33",
+    "imageBytes": 51976,
+    "imageSHA256": "ec1cd7e180684934179ea06b494cd6f3c77a84ad428fc0f37724565bff187274",
+    "exactness": {
+      "pass": true,
+      "result": 1,
+      "benchmarkFuel": 3858038786,
+      "verifyFuel": 605,
+      "arenaMatches": true
+    },
+    "instructionCounts": [30826044918, 30822792331, 30820515892],
+    "instructionMedian": 30822792331,
+    "instructionMedianOverControl": 0.9952227683,
+    "minimumOverPreregistered": 0.9929540938,
+    "diagnosticGate": "PASS_WITHIN_2_PERCENT"
+  },
+  "smallN": {
+    "n": 1024,
+    "exactMatch": true,
+    "controlElapsedNs": 10044084,
+    "candidateElapsedNs": 10265333,
+    "singleRunRatio": 1.0220277927,
+    "timingQualified": false
+  },
+  "exploratoryTiming": {
+    "method": "10 ABBA/BAAB blocks; 2 warmups; 40 exact measurement runs",
+    "medianCandidateOverControl": 0.9867775578,
+    "candidateFasterBlocks": 9,
+    "blocks": 10,
+    "ratioRange": [0.9321496131, 1.1089615387],
+    "load1Range": [16.33056640625, 29.45849609375],
+    "hostQuietQualified": false,
+    "officialScore": false,
+    "promoted": false
+  },
+  "branchFixes": [
+    {"site": "0x3fe8 b.gt", "target": "0x4140"},
+    {"site": "0x3ff8 b.lt", "target": "0x4140"},
+    {"site": "0x4014 cbz x12", "target": "0x412c"},
+    {"site": "0x4044 cbz x9", "target": "0x4124"},
+    {"site": "0x4120 b", "target": "0x4010"},
+    {"site": "0x4138 b", "target": "0x3ff0"}
+  ],
+  "next": "Inspect heap sift-down, then tree search/insertion/rebalance, using same-predecessor selfhost control and exactness before timing.",
+  "rawArtifacts": {
+    "candidate-compile-report.json": "adedd7836d56f9eaa2c6936042f4faaea3374895b025a97b3c64a158c495022f",
+    "candidate-kernel-disassembly.txt": "7ca26520cd0d6899b781897a062ca069744d67499e20bc59ab48249d8dbb16b9",
+    "candidate-selfhost-build-report.json": "3dd61902899cc1b729bb37e182b3794b6739a5defb481dad8e45e68cf6eaf432",
+    "control-compile-report.json": "b348d5e7de843efa5271a894301126dea1d0c5f2e7d9c77e8d12672259b2eeb9",
+    "control-selfhost-build-report.json": "5f06ae6d2e46cb6c78c6112eba7f120992618cc5ffdfe21101cbe045ad90f4aa",
+    "exactness-instruction-count-report.json": "7d3ba8303e33b0a4bb32d9ae8c81c00cf0bdf9538d1be221eb507993f05bdb1a",
+    "exploratory-abba-report.json": "3358ebe6bdddc6fbb24f23cb3a93c65ea02715c565b25941712e1cb3fac2cce5",
+    "pointer-cache-patch-report.json": "22dff8ea60b2c6df61702935d52b86696504b8b6ddedf4e724eb01d9265a2b8d",
+    "small-n-match-report.json": "6cccfcf84e76f0860be6dda10c031c6cd5ad51c23fa088094613dc5c60dac141"
+  }
+}

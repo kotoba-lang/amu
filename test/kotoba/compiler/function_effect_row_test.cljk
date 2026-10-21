@@ -1,0 +1,118 @@
+(ns kotoba.compiler.function-effect-row-test
+  "ADR 0353 floor :function-effect-rows.
+
+  Measured 2026-09-29 (kotoba-sema 9a32183e, before this floor): `[:fn ...]`
+  had no effect-row component. `[:fn [[:i64] :i64] {:effects #{}}]` was
+  refused `callable type requires one to five unique [parameter-types
+  result-type] clauses`, and a call through any `[:fn ...]` went to the one
+  dispatcher of its arity, which calls every closure of that arity the
+  module lifts -- so `main` calling a pure record field had `:clock/now` in
+  its row because an unrelated function lifted a closure that reads the
+  clock.
+
+  Now, in kotoba-sema: a `[:fn ...]` type may end with `{:effects #{...}}`,
+  its declared row (registered capability keywords, or `:state`). A `fn`
+  lifted under such a contract -- a record field, a function's `[:fn ...]`
+  result, a `[:fn ...]` parameter -- is refused by name when its inferred
+  effects exceed the row. It joins a dispatcher family keyed by the row as
+  well as its clause signature, and a call through the contract goes to that
+  family, which reaches only closures lifted under exactly that row: the
+  caller's row is bounded by the row of the function type it calls. A
+  `[:fn ...]` parameter that declares a row takes a fn literal or a value of
+  that same type; a closure of unknown row is refused rather than trapping
+  closed at the row's dispatcher. A type with no row keeps the row it always
+  had, and its HIR and CIDs.
+
+  KIR still receives the closure as the one-word `:i64` handle: the row is a
+  frontend fact, like the rest of the function type."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(defn- analyze [source] (sema/analyze (str "(ns app)\n" source)))
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (analyze source)) 'main [])))
+
+(defn- refusal [source]
+  (try (ir/lower (analyze source)) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(defn- main-effects [source]
+  (:effects (first (filter #(= 'main (:name %)) (:functions (analyze source))))))
+
+(def ^:private pure-h "[:record :t/h [[:f [:fn [[:i64] :i64] {:effects #{}}]] [:n :i64]]]")
+(def ^:private open-h "[:record :t/h [[:f [:fn [[:i64] :i64]]] [:n :i64]]]")
+(def ^:private clock-h "[:record :t/h [[:f [:fn [[:i64] :i64] {:effects #{:clock/now}}]] [:n :i64]]]")
+
+(def ^:private clock-elsewhere
+  "(defn tick [] :i64 (let [g (fn [x] (+ x (cap-call :clock/now 0)))] (g 1)))\n")
+
+(defn- field-call [h body]
+  (str clock-elsewhere
+       "(defn main [] :i64 (let [k 10 r (record-new " h " " body " 7)] ((record-get " h " r :f) 5)))"))
+
+(def ^:private pure-param
+  "(defn- ap [f [:fn [[:i64] :i64] {:effects #{}}] x :i64] :i64 (f x))\n")
+
+(def ^:private exceeds-empty
+  "a closure performs effects outside the effect row its [:fn ...] type declares: #{:clock/now} is not in #{} (ADR 0353)")
+
+(deftest function-type-declares-its-effect-row-test
+  (testing "admitted: a closure within the row its [:fn ...] type declares"
+    (is (= 15 (run-main (field-call pure-h "(fn [x] (+ x k))"))))
+    (is (= 5 (run-main "(defn- make [] [:fn [[:i64] :i64] {:effects #{}}] (fn [x] (+ x 1)))\n(defn main [] :i64 ((make) 4))")))
+    (is (= 8 (run-main (str pure-param "(defn main [] :i64 (ap (fn [x] (* x 2)) 4))"))))
+    (testing "a value of the same type is passed on"
+      (is (= 12 (run-main (str pure-param
+                               "(defn- twice [f [:fn [[:i64] :i64] {:effects #{}}] x :i64] :i64 (ap f (ap f x)))\n"
+                               "(defn main [] :i64 (twice (fn [x] (* x 2)) 3))")))))
+    (testing "a row that names the capability admits a closure that uses it"
+      (is (nil? (refusal (field-call clock-h "(fn [x] (+ x (cap-call :clock/now 0)))"))))))
+  (testing "a caller's row is bounded by the rows of the function types it calls"
+    (testing "before: a [:fn ...] with no row reaches every closure the module lifts"
+      (is (seq (main-effects (field-call open-h "(fn [x] (+ x k))")))))
+    (testing "after: through {:effects #{}} it reaches only closures checked against #{}"
+      (is (= #{} (main-effects (field-call pure-h "(fn [x] (+ x k))"))))
+      (is (= #{} (main-effects (str clock-elsewhere pure-param
+                                    "(defn main [] :i64 (ap (fn [x] (* x 2)) 4))")))))
+    (testing "the module's row still has the capability tick uses"
+      (is (seq (:effects (analyze (field-call pure-h "(fn [x] (+ x k))")))))))
+  (testing "refused by name: a closure whose body exceeds the row it is lifted under"
+    (is (= exceeds-empty (refusal (field-call pure-h "(fn [x] (+ x (cap-call :clock/now 0)))"))))
+    (is (= exceeds-empty
+           (refusal (str "(defn- make [] [:fn [[:i64] :i64] {:effects #{}}]"
+                         " (fn [x] (+ x (cap-call :clock/now 0))))\n(defn main [] :i64 ((make) 4))"))))
+    (is (= exceeds-empty
+           (refusal (str pure-param "(defn main [] :i64 (ap (fn [x] (+ x (cap-call :clock/now 0))) 4))")))))
+  (testing "refused by name: a closure of unknown row given to a row-declaring parameter"
+    (is (= (str "a [:fn ...] parameter declaring the effect row #{} takes a fn literal or a value"
+                " of that same type; the row of this closure is not known (ADR 0353)")
+           (refusal (str pure-param "(defn main [] :i64 (let [g (fn [x] (* x 2))] (ap g 4)))")))))
+  (testing "refused by name: a row is a set of registered capabilities"
+    (is (= "a [:fn ...] effect row names an unregistered capability: :nope/x"
+           (refusal (str "(defn- ap [f [:fn [[:i64] :i64] {:effects #{:nope/x}}] x :i64] :i64 (f x))\n"
+                         "(defn main [] :i64 (ap (fn [x] x) 4))"))))
+    (is (= "a [:fn ...] effect row is {:effects #{...}}, a set of capability keywords (ADR 0353)"
+           (refusal (str "(defn- ap [f [:fn [[:i64] :i64] {:effects [:clock/now]}] x :i64] :i64 (f x))\n"
+                         "(defn main [] :i64 (ap (fn [x] x) 4))")))))
+  (testing "what stays refused: a closure with a row is still not a number"
+    (is (= "a function value is not a number: + over a closure is refused; call it instead (ADR 0353)"
+           (refusal (str "(defn- make [] [:fn [[:i64] :i64] {:effects #{}}] (fn [x] (+ x 1)))\n"
+                         "(defn main [] :i64 (+ (make) 4))")))))
+  (testing "a type with no row keeps its dispatcher, so its HIR is unchanged"
+    (let [hir (pr-str (analyze (field-call open-h "(fn [x] (+ x k))")))]
+      (is (not (re-find #"__kotoba_invoke_r_" hir))))
+    (is (re-find #"__kotoba_invoke_r_" (pr-str (analyze (field-call pure-h "(fn [x] (+ x k))"))))))
+  ;; `amu compile --target aarch64-macos` reaches the compiler as
+  ;; :aarch64-kotoba-v1.
+  (testing "native: both kernel-side targets compile a call through a row"
+    (doseq [target [:x86_64-aiueos-kernel-v1 :aarch64-kotoba-v1]
+            ;; no `tick`: native admission grants no capability here
+            source [(str "(defn main [] :i64 (let [k 10 r (record-new " pure-h " (fn [x] (+ x k)) 7)]"
+                         " ((record-get " pure-h " r :f) 5)))")
+                    (str pure-param "(defn main [] :i64 (ap (fn [x] (* x 2)) 4))")]]
+      (is (pos? (count (:code (:artifact (compiler/compile-source (str "(ns app)\n" source) target)))))
+          (str target)))))

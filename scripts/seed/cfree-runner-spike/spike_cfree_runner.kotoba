@@ -1,0 +1,14 @@
+;; C-free seed runner spike entry (JUN-29, 2026-10-20).
+;; Evaluates one fixture source with the Kotoba-native integer interpreter
+;; (kotoba.runtime.native-interpreter) and returns the evaluated integer as the
+;; process exit code. Built by the closure (G1 builder via kexe-loader) into a
+;; standalone extract-native image; at EXECUTION time no C loader is involved —
+;; the binary runs directly from the OS. Success criterion: exit code 42 for
+;; the fixture "(+ 21 21)".
+(ns seed.cfree-runner-spike
+  {:kotoba/export [main]}
+  (:require [kotoba.runtime.native-interpreter :as ni]))
+
+(defn main [] :i64
+  (let [summary (ni/eval-integer-source "(+ 21 21)")]
+    (record-get [:ref :runtime/eval-summary] summary :value)))

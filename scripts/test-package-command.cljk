@@ -170,7 +170,21 @@ b\" 1 2))
       r (run exe ["1" "-"])]
   (check! "stdout is buffered and complete" (= "one\ntwo\n" (:out r)) r)
   (check! "the diagnostic reaches stderr" (= "diag\n" (:err r)) r)
-  (check! "the exit status is the guest's answer" (= 0 (:status r)) r))
+  (check! "the exit status is the guest's answer" (= 0 (:status r)) r)
+  ;; Even valid inherited transport descriptors cannot override baked providers.
+  (doseq [mode ["i64-v2" "invalid"]]
+    (let [fd (.openSync fs (file "external-transport") "w+")
+          result (try (.spawnSync child exe #js ["0" "ok"]
+                       #js {:cwd root :encoding "utf8" :timeout 5000
+                            :stdio #js ["pipe" "pipe" "pipe" fd fd]
+                            :env (js/Object.assign #js {} (.-env js/process)
+                                                   #js {:KEXE_LEASE_TRANSPORT mode})})
+                      (finally (.closeSync fs fd)))]
+      (check! (str "packaged providers ignore lease mode " mode)
+              (and (= 0 (.-status result)) (= "one\ntwo\n" (.-stdout result))
+                   (= "diag\n" (.-stderr result))
+                   (= 0 (.-size (.statSync fs (file "external-transport")))))
+              {:status (.-status result) :out (.-stdout result) :err (.-stderr result)}))))
 
 ;; 2. The buffer survives a trap: `three` was answered with a count of 6
 ;;    before the guest trapped, so it must be on fd 1 beside the trap report.

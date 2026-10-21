@@ -1,0 +1,134 @@
+(ns kotoba.compiler.record-list-field-literal-test
+  "ADR 0353 floor :record-list-field-literal.
+
+  A keyword record literal holding a vector of record literals --
+  {:surface/id \"k\" :surface/windows [{:window/id \"w1\" ..}]}, browser's
+  surface fixtures and the shape browser.input's tests build -- is a record
+  whose field is the [:list R] the vector types. Measured 2026-10-08 (amu
+  edd85617, kotoba-sema 621e89b7, before this floor): the literal itself was
+  already that record after floors :empty-vector-field and
+  :list-item-from-expression -- read by a row function, searched with
+  first / filter / reverse, conj'd a spelled literal, it answered on the
+  reference and both native targets. What was refused is the shape
+  browser.surface's open-window has: a row function conj'ing its PARAMETER
+  onto that field. :list-item-from-expression specializes such a parameter
+  only at an open [] key, so at a key a literal of records is written at the
+  parameter stayed :i64 and the caller was refused \"unbound symbol has no
+  value type: s ..\" (bound by let), \"expression type mismatch: expected i64,
+  got [:record ..]\" (passed inline), or \"argument s to window-at has no type
+  known here ..\" (passed on to another row function).
+
+  kotoba-sema now treats a key a vector literal of keyword-keyed map literals
+  is written at like an open [] key: a parameter only conj'd there rides along
+  with the row, specialized at the record its call passes, and typed-list-conj
+  checks it against R.
+
+  What stays refused, by its literal: a record of another shape conj'd onto
+  the list, a window without its title and rect (a list holds one type -- named, where it was \"record-get ..
+  got :i64\" before), and a number conj'd onto it (no coercion)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private surface
+  "A surface literal with two windows, w2 focused."
+  (str "(ns browser.surface)\n"
+       "(defn- sample []\n"
+       "  {:surface/id \"kotoba-os\" :surface/focus \"w2\"\n"
+       "   :surface/windows [{:window/id \"w1\" :window/title \"one\" :window/rect [0 0 100 100]}\n"
+       "                     {:window/id \"w2\" :window/title \"two\" :window/rect [50 50 100 100]}]})\n"))
+
+(def ^:private open-window
+  "open-window's conj of its window parameter, and its focus."
+  (str "(defn- open-window [surface window]\n"
+       "  (-> surface\n"
+       "      (update :surface/windows conj window)\n"
+       "      (assoc :surface/focus (:window/id window))))\n"))
+
+(def ^:private bound-by-let
+  "The opened surface bound by let and read: 3 windows, w3's title 5."
+  (str surface open-window
+       "(defn main [] :i64\n"
+       "  (let [s (open-window (sample) {:window/id \"w3\" :window/title \"three\" :window/rect [1 1 2 2]})]\n"
+       "    (+ (* 10 (count (:surface/windows s)))\n"
+       "       (if-let [w (first (reverse (:surface/windows s)))] (string-code-unit-count (:window/title w)) 0))))"))
+
+(def ^:private passed-inline
+  "The literal passed inline to the row function, the window count read."
+  (str "(ns b)\n"
+       "(defn- open-window [surface window] (update surface :surface/windows conj window))\n"
+       "(defn main [] :i64\n"
+       "  (count (:surface/windows (open-window {:surface/id \"k\" :surface/windows [{:window/id \"w1\"}]}\n"
+       "                                        {:window/id \"w2\"}))))"))
+
+(def ^:private passed-on
+  "browser.input's window-at and a focus lookup over the opened surface: 3
+  windows, the point (60, 60) under w2 (title 3; w3 at (55, 55) is 1 x 1),
+  focused w3 at x 55, and (500, 500) under none."
+  (str surface open-window
+       "(defn- window-at [surface [px py]]\n"
+       "  (first (filter (fn [w] (let [[x y ww hh] (:window/rect w)]\n"
+       "                           (and (<= x px (+ x ww)) (<= y py (+ y hh)))))\n"
+       "                 (reverse (:surface/windows surface)))))\n"
+       "(defn- focused [surface]\n"
+       "  (first (filter #(string=? (:window/id %) (:surface/focus surface)) (:surface/windows surface))))\n"
+       "(defn main [] :i64\n"
+       "  (let [s (open-window (sample) {:window/id \"w3\" :window/title \"three\" :window/rect [55 55 1 1]})]\n"
+       "    (+ (* 1000 (count (:surface/windows s)))\n"
+       "       (* 100 (if-let [w (window-at s [60 60])] (string-code-unit-count (:window/title w)) 0))\n"
+       "       (* 10 (if-let [w (focused s)] (nth (:window/rect w) 0) 9))\n"
+       "       (if-let [w (window-at s [500 500])] 1 0))))"))
+
+(def ^:private admitted
+  "Each answers the same on the reference and both native targets."
+  {bound-by-let 35
+   passed-inline 2
+   passed-on 3850})
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- number [value] (#?(:clj long :cljs js/Number) value))
+
+(defn- run-main [source]
+  (number (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- native-value [source target]
+  (number (:value (:artifact (compiler/compile-source source target)))))
+
+(defn- refusal [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(def ^:private window-record
+  "[:record :kotoba.map-literal/window.id+window.rect+window.title [[:window/id :string] [:window/rect :vector-i64] [:window/title :string]]]")
+
+(deftest record-literal-holds-a-list-of-records-test
+  (testing "admitted on the reference and both native targets"
+    (doseq [[source expected] admitted]
+      (is (= expected (run-main source)) source)
+      ;; compile-source verifies the artifact, the oracle's re-execution included.
+      (doseq [target native-targets]
+        (is (= expected (native-value source target)) (str target " " source)))))
+  (testing "admitted on the hosted target"
+    (doseq [source (keys admitted)]
+      (is (= [0 97 115 109]
+             (mapv #(bit-and (int %) 0xff)
+                   (take 4 (:bytes (compiler/compile-source source :wasm32-kotoba-v1))))))))
+  (testing "refused: a record of another shape conj'd onto the list"
+    (is (= (str "field :surface/windows holds a vector of " window-record
+                " in this module, which makes it a list of that record, and this module conj's "
+                "[:record :kotoba.map-literal/window.id [[:window/id :string]]] at it; a list holds one type")
+           (refusal (str surface open-window
+                         "(defn main [] :i64\n"
+                         "  (count (:surface/windows (open-window (sample) {:window/id \"w3\"}))))")))))
+  (testing "refused: a number conj'd onto the list (no coercion)"
+    (is (= (str "expression type mismatch: expected " window-record ", got i64")
+           (refusal (str surface
+                         "(defn main [] :i64\n"
+                         "  (count (:surface/windows (update (sample) :surface/windows conj 5))))"))))))

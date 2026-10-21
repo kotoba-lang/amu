@@ -9,17 +9,92 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  source-custody:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 scripts/seed/test-preserved-verification.py
+      - run: python3 docs/evidence/native-selfhost-paused-20261012/verify.py
+      - run: python3 scripts/seed/build-adopted.py --verify-only
+      - run: python3 scripts/seed/build-adopted.py --receipt seed/preserved-20261012/adoption.json --verify-only
+  policy-native-correctness:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 scripts/seed/verify-preserved-integration.py --output "$RUNNER_TEMP/preserved-correctness"
+      - run: python3 scripts/seed/verify-preserved-integration.py --main --output "$RUNNER_TEMP/main-correctness"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: paused-native-policy-correctness
+          path: |
+            ${{ runner.temp }}/preserved-correctness/host
+            ${{ runner.temp }}/preserved-correctness/report.json
+            ${{ runner.temp }}/main-correctness/host
+            ${{ runner.temp }}/main-correctness/report.json
+  loader-source-bound-fuzz:
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        scope: [public, trusted]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 scripts/seed/verify-loader-fuzz.py ${{ matrix.scope == 'trusted' && '--trusted-bootstrap' || '' }} --output "$RUNNER_TEMP/loader-fuzz"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: loader-fuzz-${{ matrix.runner }}-${{ matrix.scope }}
+          path: ${{ runner.temp }}/loader-fuzz
+  adopted-seed-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 scripts/seed/build-adopted.py --verify-only
+  adopted-seed-native:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 scripts/seed/build-adopted.py --output "$RUNNER_TEMP/adopted-native-selfbuild" --generations 2
+      - run: python3 scripts/seed/check-bounded-lookup.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-certified-scalar-calls.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-twoarg-comparisons.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-sequential-scan.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-positive-quotient.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-positive-quotient-proof.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-mask-direct-source.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-prepaid-fuel-reuse.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-nonzero-guard-charge.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-adjacent-fuel-reload.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: adopted-native-regression-evidence
+          path: ${{ runner.temp }}/adopted-native-selfbuild
+  nbb-engine-configuration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.12.0"
+          cache: npm
+      - run: npm ci
+      - run: npm run test-nbb-engine
   windows-arm64:
     runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24.12.0"
           cache: npm
       - run: npm ci
+      - run: npm run test-default-target
       - run: npm run test-nbb-io
       - run: npm run test-windows-profile
   android-ndk:
@@ -28,7 +103,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24.12.0"
           cache: npm
@@ -40,7 +115,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24.12.0"
           cache: npm
@@ -78,7 +153,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24.12.0"
           cache: npm
@@ -104,6 +179,8 @@ jobs:
         run: npm run test-nbb-classpath-hermetic
       - if: ${{ !cancelled() }}
         run: npm run test-jdk-free-native
+      - if: ${{ !cancelled() }}
+        run: npm run test-loader-file-scope
       - if: ${{ !cancelled() }}
         name: Loader decisions (classification and generated region; the differential needs the full history)
         run: npm run test-loader-decisions-static
@@ -150,9 +227,8 @@ jobs:
         run: npm run test-nbb-host-abilities
       - if: ${{ !cancelled() }}
         run: npm run test-compiler-worker
-      # ADR 0351: an omitted --target is the host's native target. Run on all
-      # three hosts of this matrix, because the host table is the thing under
-      # test and each runner is a different row of it.
+      # Omitted direct and worker compile targets are engine-neutral Kototama
+      # programs. Run that contract on every OS in the matrix.
       - if: ${{ !cancelled() }}
         run: npm run test-default-target
       - if: ${{ !cancelled() }}
@@ -190,3 +266,38 @@ jobs:
           KOTOBA_NATIVE_FUZZ_RUNS: "20000"
       - if: ${{ !cancelled() }}
         run: npx nbb scripts/test-review-fuzz-corpus.cljk
+
+  execution-v2:
+    name: Explicit v2 target binding, admission and completion (${{ matrix.runner }})
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24.12.0"
+          cache: npm
+      - run: npm ci
+      - name: Execute generated pure Wasm, Script and bounded EVM artifacts
+        run: |
+          set -o pipefail
+          cp=$(node bin/kbb --backend sci --classpath src scripts/print-classpath.cljk "$PWD" --alias execution-v2 | paste -sd: -)
+          node bin/kbb --backend sci --config scripts/execution-v2-nbb.edn --classpath "src:$cp" scripts/test-execution-v2-targets.cljk
+      - name: Execute scoped synchronous Wasm and Script providers
+        run: |
+          set -o pipefail
+          cp=$(node bin/kbb --backend sci --classpath src scripts/print-classpath.cljk "$PWD" --alias execution-v2 | paste -sd: -)
+          node bin/kbb --backend sci --config scripts/execution-v2-nbb.edn --classpath "src:$cp" scripts/test-execution-v2-providers.cljk
+      - name: Execute JVM-free native artifact through the measured executor
+        run: |
+          set -o pipefail
+          cp=$(node bin/kbb --backend sci --classpath src scripts/print-classpath.cljk "$PWD" --alias execution-v2 --alias native-run | paste -sd: -)
+          node bin/kbb --backend sci --config scripts/execution-v2-nbb.edn --classpath "src:$cp" scripts/test-execution-v2-native.cljk
+      - name: Native per-call lease reservation and transport faults
+        run: |
+          set -o pipefail
+          cp=$(node bin/kbb --backend sci --classpath src scripts/print-classpath.cljk "$PWD" --alias execution-v2 --alias native-run | paste -sd: -)
+          node bin/kbb --backend sci --config scripts/execution-v2-nbb.edn --classpath "src:$cp" scripts/test-native-lease-transport.cljk
+          node bin/kbb --backend sci --config scripts/execution-v2-nbb.edn --classpath "src:$cp" scripts/test-execution-v2-native-providers.cljk

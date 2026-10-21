@@ -1,0 +1,113 @@
+(ns kotoba.compiler.native-row-operations-test
+  "ADR 0353 floor :native-record-operations (split 2026-10-01 from
+  :native-handles).
+
+  The row operations (floor :row-operations) and a row join's projection
+  (floor :row-unification) compiled on the hosted targets and were refused by
+  both native ones, each by one of two refusals. `assoc` of a field a record
+  has elaborates to `record-assoc`, which `kotoba.kir`'s native gate had no
+  case for: \"typed values currently require the kotoba-script web target,
+  ...\" (exit 70). `assoc` extending, `dissoc`, `select-keys` and `merge`
+  elaborate to `(record-get T (let [receiver m] (record-new T ..)) :f)`, and a
+  join projects `(record-get T (if c m n) :f)`; kotoba-verifier's record
+  projection resolved neither operand: \"runtime KIR record projection
+  rejected\" (exit 65) -- hand-written too.
+
+  Now osaho qualifies `record-assoc` with `record-get`'s checks, kotoba-native
+  lowers it on both record routes (a fresh pair chain; or the slot bundle with
+  one register replaced), and kotoba-verifier sees a record through a `let`
+  (its bindings in scope, a let naming a record parameter binding its handle),
+  an `if` whose arms are one record, and an update of the record its operand
+  is. Nothing about a record's representation moved.
+
+  What stays refused, each by its literal: a field is not coerced, a row join
+  over two records, a record as the native entry's result, a record left with
+  no field, a record as an `if` test, and a non-record merge operand."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private prelude
+  "floor :row-operations' prelude: two declared records."
+  (str "(ns b (:schemas {:b/s [:record :b/s [[:a :i64] [:b :i64]]]"
+       " :b/t [:record :b/t [[:a :i64] [:c :string]]]}))\n"
+       "(defn- mk [] [:ref :b/s] {:a 5 :b 2})\n"
+       "(defn- mt [] [:ref :b/t] {:a 7 :c \"xy\"})\n"))
+
+(def ^:private descriptor "[:record :b/s [[:a :i64] [:b :i64]]]")
+
+(def ^:private row-operations
+  "Each row operation, and the join's projection, over declared records."
+  [["(defn main [] :i64 (:a (assoc (mk) :a 9)))" 9]
+   ["(defn main [] :i64 (let [m (assoc (mk) :d 4)] (+ (:d m) (+ (:a m) (:b m)))))" 11]
+   ["(defn main [] :i64 (:a (dissoc (mk) :b)))" 5]
+   ["(defn main [] :i64 (string-byte-length (:c (select-keys (mt) [:c]))))" 2]
+   ["(defn main [] :i64 (let [m (merge (mk) (mt))] (+ (:a m) (+ (:b m) (string-byte-length (:c m))))))" 11]
+   ["(defn main [] :i64 (string-byte-length (:c (assoc (mt) :c \"abcd\"))))" 4]
+   ["(defn- f [m] (assoc m :d 9)) (defn main [] :i64 (+ (:d (f (mk))) (:a (f (mt)))))" 16]
+   ["(defn- bump [m] (assoc m :a (+ (:a m) 1))) (defn main [] :i64 (:a (bump (bump (mk)))))" 7]
+   ["(defn- g [c :i64 m n] (:a (if (= c 1) m n))) (defn main [] :i64 (+ (g 1 (mk) (mk)) (g 0 (mt) (mt))))" 12]])
+
+(def ^:private hand-written
+  "The same KIR written by hand, and an update of a record that never crosses
+  a boundary (the slot bundle, nothing allocated)."
+  [[(str prelude "(defn main [] :i64 (record-get " descriptor " (let [r (mk)] (record-new "
+         descriptor " (record-get " descriptor " r :b) 3)) :a))") 2]
+   [(str prelude "(defn main [] :i64 (record-get " descriptor " (if (= 1 2) (mk) (mk)) :b))") 2]
+   ["(ns c)\n(defn main [] :i64 (:b (assoc {:a 1 :b 2} :b 7)))" 7]])
+
+(def ^:private admitted
+  (into (mapv (fn [[source answer]] [(str prelude source) answer]) row-operations) hand-written))
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk); :aarch64-kotoba-v1 is the ISA's generic one."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1 :aarch64-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- refusal [source target]
+  (try (compiler/compile-source (str prelude source) target) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(deftest native-row-operations-test
+  (testing "admitted on the reference: each program answers"
+    (doseq [[source answer] admitted]
+      (is (= answer (run-main source)) source)))
+  ;; compile-source verifies the artifact, the oracle's re-execution
+  ;; included, before it returns it.
+  (testing "admitted on both native targets, the oracle's answer sealed"
+    (doseq [target native-targets
+            [source answer] admitted]
+      (let [{:keys [artifact]} (compiler/compile-source source target)]
+        (is (pos? (count (:code artifact))) (str target " " source))
+        (is (= answer (#?(:clj long :cljs js/Number) (:value artifact))) (str target " " source)))))
+  (testing "an update keeps its record's type: record-assoc reaches the native program"
+    (is (some #(and (seq? %) (= 'record-assoc (first %)))
+              (tree-seq coll? seq (:functions (ir/native-program
+                                               (ir/lower (sema/analyze (str prelude (ffirst row-operations))))))))))
+  (doseq [target [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1]]
+    (testing (str "refused on " target ": a field is not coerced")
+      (is (= "expression type mismatch: expected i64, got string"
+             (refusal "(defn main [] :i64 (:a (assoc (mk) :a \"x\")))" target))))
+    (testing (str "refused on " target ": a join is one record at each call")
+      (is (= (str "arguments (mk) and (mt) to g are [:ref :b/s] and [:ref :b/t], and parameters m and n"
+                  " of g are branches of one if, so one row: a row is one record type at each call")
+             (refusal "(defn- g [c :i64 m n] (:a (if (= c 1) m n))) (defn main [] :i64 (g 1 (mk) (mt)))"
+                      target))))
+    (testing (str "refused on " target ": a record as the entry's result leaves the artifact")
+      (is (= (str "typed values currently require the kotoba-script web target, typed Wasm/CLJS"
+                  " target, or the qualified native one-word string/record/variant/option/result slice")
+             (refusal "(defn main [] (assoc (mk) :a 1))" target))))
+    (testing (str "refused on " target ": a record keeps at least one field")
+      (is (= "dissoc leaves record :b/s with no field, and a record has at least one"
+             (refusal "(defn main [] :i64 (:a (dissoc (mk) :a :b)))" target))))
+    (testing (str "refused on " target ": an updated record is never truthy")
+      (is (= "if test must be bool or an option"
+             (refusal "(defn main [] :i64 (if (assoc (mk) :a 1) 1 0))" target))))
+    (testing (str "refused on " target ": only a record is a merge operand")
+      (is (= "merge onto record :b/s takes records and keyword-keyed map literals; 3 is i64"
+             (refusal "(defn main [] :i64 (:a (merge (mk) 3)))" target))))))

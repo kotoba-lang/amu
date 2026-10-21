@@ -101,18 +101,313 @@
   {:id :allocation-budget :gate "allocation-charged-to-fuel-test"
    :goal "every constructor debits the 64-bit fuel ledger; the ADT node/depth ceilings are the caller's budget, not the constants 64 / 12"
    :amends "osaho adt-node-limit / adt-depth-limit"}
+  ;; Split 2026-09-30 from :allocation-budget, which landed the debit on the
+  ;; reference (kotoba.kir, the oracle and verifier authority). Each target
+  ;; keeps its own counter: native charges entries and recur steps, ESM's
+  ;; cell() debits the cells budget only. Moving native codegen moves every
+  ;; aiueos kernel object, so it is its own change.
+  ;; Split 2026-09-30 again: the hosted targets and native are different
+  ;; changes. ESM's cell() and wasm32's fuel global are one emitter each;
+  ;; native fuel is the entry prefix plus the loop's bulk pre-charge, which
+  ;; kotoba-verifier re-derives, and it moves the aiueos kernel objects.
+  {:id :allocation-budget-targets :gate "target-constructors-charge-fuel-test"
+   :goal "restricted ESM (kotoba-script cell()) and wasm32 (the fuel global, vector literals kept in locals included) debit one fuel unit per constructor as kotoba.kir does: the price of allocating is the reference's on each, and a program that allocates past its budget traps (budget/fuel, unreachable) one unit short"}
+  {:id :allocation-budget-native :gate "native-constructors-charge-fuel-test"
+   :goal "x86_64-aiueos-kernel-v1 and aarch64-macos debit one fuel unit per constructor, the loop's bulk pre-charge and kotoba-verifier's fuel re-derivation included, so a program that allocates past its budget traps budget/fuel natively as on the reference; the aiueos objects that move are re-attested"}
   {:id :definition-admission :gate "admission-by-definition-graph-test"
    :goal "the 1 MiB bound moves from linked source bytes to per-definition size and closure count; cssom/layout.cljk (1,083,132 bytes) is admitted definition by definition"
    :amends "ADR 0005 linked-source bound"}
+;; :native-handles split in three (2026-10-01), because measuring on amu
+  ;; 7e05c456 showed three changes in three places. (1) A declared record
+  ;; crossing a function boundary compiled natively and was refused at the
+  ;; oracle, cause unknown-schema-reference: kotoba.kir/native-program kept
+  ;; :schemas only for a recursive table, and [:ref q] survives lowering in a
+  ;; signature -- osaho and kotoba-verifier, no codegen. (2) Row operations
+  ;; natively: assoc of a field a record has is refused by the typed-values
+  ;; gate (record-assoc not qualified, kotoba-native / kotoba.kir), assoc
+  ;; extending and dissoc by the verifier's record projection through a let
+  ;; operand (kotoba-verifier). (3) The rest: a [:list T] of records, closure
+  ;; and record loop-helper parameters (refused today by kotoba-sema before
+  ;; any target: "expected map" for a record loop slot, "g is not a builtin"
+  ;; for a closure loop slot), exit 65 for a target refusal. map-new: both
+  ;; ADR 0352 reproductions, (:window/x {:window/id 1 :window/x 10}) and the
+  ;; filterv, now compile for both native targets (measured the same day);
+  ;; that no form still lowers to it is (3)'s to show.
+  {:id :native-record-boundary :gate "native-record-function-boundary-test"
+   :goal "a declared record ([:ref q]) as a function parameter or result, and a row specialized at a declared schema, compile for x86_64-aiueos-kernel-v1 and aarch64-macos with the oracle verified: the schema table joins the native program when a signature names a reference, and kotoba-verifier re-derives that need; coercion, = over records, a record as an if test and a record entry result stay refused by name"}
+  {:id :native-record-operations :gate "native-row-operations-test"
+   :goal "the row operations compile natively: record-assoc is qualified by kotoba-native and kotoba.kir's native gate, and kotoba-verifier's record projection sees through a let operand (a row operation elaborates to (record-get T (let [..] (record-new T ..)) :f), refused today as runtime KIR record projection rejected, exit 65, hand-written too) and an if operand ((:a (if (= c 1) m n)), floor :row-unification's join, refused the same way)"}
+  ;; (3) split again (2026-10-01, amu 2846b4c7): the loop slot is
+  ;; kotoba-sema's alone and refused before any target, hosted included; a
+  ;; record slot then compiles natively with nothing else moved, while a
+  ;; [:list T] of records is refused natively by the typed-values gate
+  ;; (typed-list-new not qualified) wherever it is written, loop or not.
+  {:id :loop-slot-types :gate "loop-slot-record-list-closure-test"
+   :goal "kotoba-sema types a loop slot like a let binding: a map-literal slot is its record (not :map), a vector literal of records a [:list T] (not the :i64 placeholder), a closure slot is callable (not an unknown operation) and is a closure to the :function-values refusals; record and closure slots compile for x86_64-aiueos-kernel-v1 and aarch64-macos; a slot recurred to another record, a coerced field, a record or closure slot as an if test, = over them, a list item as an i64, a closure slot as a number and a number for a closure slot stay refused by name"}
   {:id :native-handles :gate "native-record-vector-closure-boundary-test"
-   :goal "kotoba-native qualifies record, vector and closure handles as loop-helper boundary types and retires map-new; record-assoc is qualified, and kotoba-verifier's record projection sees through a let operand (a row operation elaborates to (record-get T (let [..] (record-new T ..)) :f), refused today as runtime KIR record projection rejected, exit 65, hand-written too); the forms of every floor above compile for x86_64-aiueos-kernel-v1 and aarch64-macos (target refusals exit 65, not 70)"}
+   :goal "kotoba-native qualifies a [:list T] of records (typed-list-new / typed-list-nth / count over one-word handles) natively, a loop slot included, and no form of the ladder lowers to map-new; the forms of every floor above but :hiccup-node's compile for x86_64-aiueos-kernel-v1 and aarch64-macos (target refusals exit 65, not 70)"
+   ;; Amended 2026-10-01: first worded "retires map-new". Measured (amu
+   ;; d44506ec): no map literal with fields lowers to it and both ADR 0352
+   ;; reproductions are records, but the empty literal {} still does -- the
+   ;; legacy keyword->i64 map, which match map patterns are written against.
+   ;; That is a kotoba-sema change of its own: floor :empty-map-literal.
+   ;; "Every floor above" was measured by compiling every program the
+   ;; frontend-only gates admit (82) for both targets: the rest is refused
+   ;; natively by design (handle equality, a record entry result), exit 65.
+   ;; The hiccup node is the one floor whose forms stay refused natively: its
+   ;; closed schema reaches the elem record's [:map :keyword :string] attrs,
+   ;; and a typed map has no native representation -- floor
+   ;; :native-hiccup-node, a change of its own (kotoba-native and osaho).
+   }
+  ;; Landed 2026-10-01 in osaho, kotoba-native and kotoba-verifier: a key is
+  ;; a scalar native code compares by content (i64, bool, string, keyword);
+  ;; keys / vals / entry-at stay hosted (entry order is not a native
+  ;; operation). ADR 0353 has the measurements.
+  {:id :native-hiccup-node :gate "hiccup-node-compiles-natively-test"
+   :goal "a [:map K V] of one-word keys and values is a native handle type (typed-map-new / typed-map-get / typed-map-assoc / typed-map-dissoc over the word arena), so the hiccup Node -- whose elem carries [:map :keyword :string] attrs -- crosses a native function boundary and floor :hiccup-node's programs compile for x86_64-aiueos-kernel-v1 and aarch64-macos; equality over a map handle stays refused"}
+  ;; Both measured 2026-10-01 while closing :native-handles; each is
+  ;; kotoba-sema's and refused before any target, hosted included.
+  ;; Landed 2026-10-02 in kotoba-sema (0632bed0); ADR 0353 has the
+  ;; measurements.
+  {:id :empty-map-literal :gate "empty-map-literal-is-typed-test"
+   :goal "{} is not the legacy keyword->i64 map: (assoc {} :a 1) is the record {:a 1}, an empty literal with no row to extend is refused by name, and no form lowers to map-new on any target; match map patterns read records"}
+  ;; Measured 2026-10-02 while closing :empty-map-literal: a row is inferred
+  ;; from (:a m) but not from (get m :a), and a match map pattern projects
+  ;; its scrutinee with get, so (defn- f [m] (match m {:a x} x :else 0)) is
+  ;; refused "expression type mismatch: expected map, got i64" -- the
+  ;; retired map's name. kotoba-sema's alone, before any target.
+  ;; Landed 2026-10-02 in kotoba-sema (21e3a23f); ADR 0353 has the
+  ;; measurements.
+  {:id :row-get-and-match :gate "row-get-and-match-read-a-row-test"
+   :goal "(get m :a) and (get m :a d) on an unannotated parameter read a row as (:a m) does, so a match map pattern over a parameter specializes per record -- an arm naming a key the record lacks does not match in that specialization; a get with a computed key on a row stays refused by name"}
+  {:id :loop-slot-beside-row :gate "loop-slot-typed-beside-a-row-read-test"
+   :goal "a [:list T] loop slot is typed whatever precedes the loop: (let [ys {:a 1}] (+ (:a ys) (loop [zs [(mk) (mk)] i 0] (if (< i 1) (recur zs (+ i 1)) (count zs))))) answers 3 (the loop answers 2), refused before \"count requires a bounded vector, ...; got :i64.\" while the same loop without the row read is admitted"}
+  ;; :browser-text-edit split (2026-10-02), measured on kotoba-sema 965feb37 by
+  ;; compiling browser.text-edit (browser 8671500) with the mechanical changes
+  ;; only: a :kotoba branch for code-unit-at and for a code-unit-count helper
+  ;; (count of a string stays refused: two answers), the nil guards over
+  ;; values that are never absent dropped ((or n lo) on an i64, (or
+  ;; (:text/selection state) ..) on a vector -- a number or vector is never
+  ;; truthy). Each floor below is one refusal that remained, in the order met;
+  ;; the multi-arity move-caret / move-to with a {} options map and {:keys
+  ;; [extend?]} were not reached and are unmeasured.
+  ;; Landed 2026-10-02 in kotoba-sema (531e89d8); ADR 0353 has the
+  ;; measurements.
+  {:id :let-rebinding :gate "let-rebinding-is-nested-shadowing-test"
+   :goal "a let that rebinds a row parameter -- (let [state (normalize-selection state)] ..) -- leaves it a row (refused before: the parameter stayed :i64, \"only a record satisfies a row\"), and a name bound again in one let is the nested let that shadows it (refused before: \"duplicate let binding\"); a read after the rebinding is the new value's, a rebound name has its new type, a record is never truthy, parameters stay distinct"}
+  ;; Landed 2026-10-02 in kotoba-sema (8d3320fc): the crash was
+  ;; specialize-row-parameters' (contains? generics arg) once there are more
+  ;; than eight row generics (a hash map) and arg is an integer literal (a
+  ;; BigInt, which has no hash); either of move-caret / move-to is
+  ;; text-edit's ninth. ADR 0353 has the measurements.
+  {:id :cljs-literal-hash :gate "text-edit-analyzes-on-nbb-test"
+   :goal "kotoba-sema analyzes browser.text-edit (the mechanical changes above, every function defn- but empty-state, a main driving it) on nbb without the internal error \"Cannot create property 'closure_uid_..' on bigint '0'\" -- ClojureScript hashing the bigint an integer literal is, the class kotoba-sema's run-tests.cljk names for desugar-case; not measured on the JVM; located by bisection to the module, not yet to a pass"}
+;; Landed 2026-10-03 in kotoba-sema (7290e22e): a keyword key written
+  ;; nil anywhere in the module (literal entry or assoc pair) is [:option T],
+  ;; T the one type the module's non-nil values at that key spell; nil is its
+  ;; none, a spelled value or a map literal its some. ADR 0353 has the
+  ;; measurements. Native: construction, assoc and presence compile; the
+  ;; present record's projection is floor :native-option-record (closed).
+  {:id :absent-field-from-assoc :gate "nil-field-typed-by-the-module-assoc-test"
+   :goal "{.. :text/composition nil} is [:option T] with T the value the module assoc's into that field ({:composition/text \"\"}, composition-start), and (assoc s :text/composition nil) its none; refused today \"map literal value at key :text/composition is nil ... nothing here says T\"; a field two assoc's give two types stays refused by name"}
+;; Landed 2026-10-03 in kotoba-sema (275b40a0): row specialization ran
+  ;; before parameter inference, so code-unit-count's string parameter was
+  ;; still :i64 inside normalize-selection's specialization, whose result
+  ;; then stayed :i64; each round now infers parameters first. ADR 0353 has
+  ;; the measurements.
+  {:id :rebound-row-argument :gate "text-edit-rebound-state-is-a-row-test"
+   :goal "delete-backward's and delete-forward's (insert-text state \"\"), state rebound by (normalize-selection state), passes a record to insert-text's row parameter; refused today \"argument state to insert-text is i64, and parameter state of insert-text is the row {:text/caret T :text/selection T | r}: only a record satisfies a row\"; a number passed to a row parameter stays refused by that literal"}
+  {:id :native-vector-field :gate "vector-field-in-record-compiles-natively-test"
+   :goal "a record field holding an i64 vector (:text/selection [start end], typed :vector-i64) compiles for x86_64-aiueos-kernel-v1 and aarch64-macos; refused today at the typed-values gate (\"typed values currently require ... the qualified native one-word string/record/variant/option/result slice\") for (nth (:sel s) 1) and (assoc s :sel [..]) alike"}
+  {:id :typed-wasm-min-max :gate "min-max-qualified-on-typed-wasm-test"
+   :goal "max and min compile on wasm32-kotoba-v1 in a module with typed values (browser.text-edit's clamp); refused today \"typed Wasm operation is not qualified\" {:operation max}"}
+;; Landed 2026-10-03 in kotoba-verifier (3e8134cd) and kotoba-native
+  ;; (04a8e0e3): the record an option holds, defaulted to R, is R to the record
+  ;; check, and a record in an option is boxed to one word. ADR 0353 has the
+  ;; measurements. Measured 2026-10-03 while closing :absent-field-from-assoc: the
+  ;; record inside an [:option R] -- (if-let [c (:text/composition s)]
+  ;; (:composition/text c) ..) -- is refused on both native targets by the
+  ;; verifier, "runtime KIR record projection rejected" (record-get's operand
+  ;; is an option-value-of, which record-schema-of does not type), and a
+  ;; declared [:option R] parameter read the same way is "machine IR
+  ;; rejected: branch-value-shape-mismatch". Presence alone compiles.
+  {:id :native-option-record :gate "option-record-projects-natively-test"
+   :goal "the record an [:option R] holds is projected on x86_64-aiueos-kernel-v1 and aarch64-macos -- browser.text-edit's (if-let [c (:text/composition state)] (:composition/text c) ..) and a declared [:option R] parameter read the same way; refused today \"runtime KIR record projection rejected\" and \"branch-value-shape-mismatch\"; projecting a field R does not declare, and an option as a number, stay refused"}
+;; Measured 2026-10-03 while closing :rebound-row-argument, on kotoba-sema
+  ;; 275b40a0: text-edit with move-caret and move-to is refused at main's
+  ;; (move-caret (empty-state) 1), "record-get without a type descriptor
+  ;; requires a record value; got :i64" -- the specialization's result is not
+  ;; inferable. Minimized: a {:keys [x?]} parameter is "expression type
+  ;; mismatch: expected map, got i64", and the 2-arity's {} "an empty map
+  ;; literal {} has no row to extend".
+  {:id :options-map-argument :gate "options-map-destructures-as-a-row-test"
+   :goal "move-caret's and move-to's options -- ([state delta] (move-caret state delta {})) and ([state delta {:keys [extend?]}] ..) -- are admitted, a key the map does not have read as absence; refused today \"record-get without a type descriptor requires a record value; got :i64\" at (move-caret (empty-state) 1), minimized \"expression type mismatch: expected map, got i64\"; a number as the options map, and an option used as a number, stay refused"}
+;; Measured 2026-10-04 while closing :options-map-argument: text-edit with
+  ;; move-caret / move-to answers on the reference, on both native targets
+  ;; with empty-state private, and compiles on wasm32 -- the absent option a
+  ;; destructured key would be is folded away. A literal nil the program
+  ;; keeps, (let [x nil] ..), is still "unsupported typed Wasm expression"
+  ;; on wasm32 (option-none); natively it compiles.
+  {:id :export-signatures :gate "export-abi-from-clojure-source-test"
+   :needs-a-human "how a Clojure-readable source states an export's ABI: browser.text-edit's public functions take state (a row: refused as an exported generic, which has one ABI) and text (unannotated, so :i64; the test passes strings: \"expected i64, got string\"), and the typed signature spelling [m [:ref q]] is not Clojure. Candidates measured as possible, not chosen: Clojure type hints (^String text) and an ns schema the hint names, or the export taking the record the module's one public constructor (empty-state) returns"
+   :goal "browser.text-edit's public functions export one ABI each with the source still read by Clojure"}
+  ;; Measured 2026-10-03 while closing :native-vector-field: text-edit's
+  ;; insert/select/delete in ONE main exhaust the compiler host's stack inside
+  ;; the KIR oracle under kbb's default stack (:host/stack-exhausted, nothing
+  ;; sealed); one operation per program compiles on both native targets.
   {:id :browser-text-edit :gate "browser-text-edit-native-test"
+   :blocked-by [:absent-field-from-assoc :rebound-row-argument :native-vector-field :typed-wasm-min-max :native-option-record :options-map-argument :export-signatures]
    :goal "kotoba-lang/browser's browser.text-edit, migrated only mechanically (defn-, nil's meaning, a :kotoba interop branch), compiles for both native targets and its hosted tests pass on amu's output"}
+  ;; Measured 2026-10-04 on kotoba-sema 77d2dd84, browser 8671500: browser.input
+  ;; as written is refused at its first function, point-in-rect?'s
+  ;; [[px py] [x y w h]], "unknown operation: nth is not a builtin, a sugar
+  ;; head, or a function of this module" -- an unannotated parameter read as a
+  ;; vector stayed the provisional :i64 ((vector-at p 0) refined it, (nth p 0)
+  ;; and (count p) did not).
+  {:id :vector-parameter :gate "vector-parameter-takes-the-callers-vector-test"
+   :goal "an unannotated parameter destructured as a vector or read by nth / count is the :vector-i64 its callers pass -- browser.input's point-in-rect? / in-titlebar? / in-resize-handle?; a number, a string and a heterogeneous vector at the call, a parameter used both as a vector and a number, and an item as an if test stay refused by name"}
+  ;; Measured 2026-10-04 with :vector-parameter in place: window-at's
+  ;; (first (filter #(point-in-rect? point (:window/rect %)) (reverse
+  ;; (:surface/windows surface)))) is refused -- a vector literal of window
+  ;; records is a [:list R], and over it filter is "expected vector-i64, got
+  ;; [:list R]", first "first (pair-first) reads a pair chain or a bounded
+  ;; vector", reverse "unknown operation: reverse is not a builtin".
+  {:id :record-list-sequence :gate "record-list-filter-first-reverse-test"
+   :goal "filter / first / reverse over a [:list R] of records -- browser.input's window-at -- with first answering [:option R] (absent on an empty list) and the predicate a closure over the caller's locals, on the reference, wasm32 and both native targets; first of an empty list used as a record, and a number as the list, stay refused by name"}
+  ;; Measured 2026-10-04 while closing :record-list-sequence: first of a
+  ;; filter / remove / reverse chain is a fused search that builds nothing; a
+  ;; bare reverse, and a filter over a [:list R] first does not read, stay
+  ;; refused (a list builder, typed-list-conj on KIR / Wasm / native, is what
+  ;; they would need). A module with no defn- exports its loop helpers, so a
+  ;; loop over a [:list R] there is refused natively; browser's modules use
+  ;; defn-, so it is not on the browser path.
+  ;; Measured 2026-10-04: normalize-event reads an OPEN host event -- (or
+  ;; (:button event) 0), (select-keys event [:pointerId .. :height]) over keys
+  ;; an event may lack, one record per capability joined in one cond, and the
+  ;; event itself returned (assoc event :event/type :unknown). Refused "argument
+  ;; {:x 3} to ne is record :kotoba.map-literal/x, which has no field :button
+  ;; that the row {:button T | r} of parameter event reads", and the cond's
+  ;; branches "record-get without a type descriptor requires a record value;
+  ;; got :i64". (:k m) is a required read by ADR 0353 (pinned by
+  ;; options-map-destructures-as-a-row-test), so admitting this is a decision.
+  {:id :open-event-row
+   :needs-a-human "what a host event is in the typed source: one closed record with every key [:option T] (the host adapter fills absence), a variant with one case per capability (normalize-event becomes a match), or (or (:k m) d) read as an optional field the way (get m :k d) already is -- each measured possible, none chosen; the last changes what (:k m) means"
+   :goal "browser.input's normalize-event and event-point compile with the source still read by Clojure"}
   {:id :browser-input :gate "browser-input-native-test"
-   :goal "browser.input the same"}
+   :blocked-by [:vector-parameter :record-list-sequence :open-event-row :export-signatures]
+   :goal "browser.input the same (its reduce-event calls browser.surface's apply-actions, so the module compiles with browser.surface's action reducer; the rest of browser.surface is :browser-surface)"}
+;; Measured 2026-10-06 on kotoba-sema 942d8764, browser 8671500: browser.surface
+  ;; as written is refused at its first function, empty-surface's
+  ;; {.. :surface/focus nil ..}, "map literal value at key :surface/focus is
+  ;; nil .. nothing here says T": the module writes the field only from
+  ;; expressions (open-window's id, close-window's (:window/id (peek
+  ;; remaining)), focus-window's window-id), and a present T from an
+  ;; expression at an absent field is refused as a coercion
+  ;; (nil-field-typed-by-the-module-assoc-test pins it). Behind it, each
+  ;; measured on its own: update was no head; an empty vector field ([] for
+  ;; :surface/apps / :surface/windows / :surface/input-log) is :vector-i64,
+  ;; so (conj log {:event ..}) is "expected i64, got [:record ..]"; a record
+  ;; literal holding a vector of records is not typed as a record ("record-get
+  ;; without a type descriptor requires a record value; got :i64"); (str "w"
+  ;; n) of an i64 is "expected string, got i64"; and focus-window's (some
+  ;; pred coll) is refused by design (some is the option constructor).
+  {:id :record-field-update :gate "update-writes-a-record-field-through-f-test"
+   :goal "(update m k f x ..) -- browser.surface's (update surface :surface/next-window-id inc), (update surface :surface/input-log conj e), (update w :window/rect (fn [[_ _ ww hh]] [x y ww hh])) -- is (assoc m k (f (k m) x ..)) on the reference, wasm32 and both native targets, a fn literal applied as a let; refused \"unbound symbol has no value type: inc\" before; f answering another type, a key the record lacks, a number as the map, an absent field handed to a function of T, and update without a function stay refused by name"}
+  ;; Landed 2026-10-06 in kotoba-sema (b1c48883). ADR 0353 has the
+  ;; measurements; update is not yet in the grammar authority
+  ;; (guest-grammar.edn, digest-pinned in four repos), like mapv / remove.
+  {:id :empty-vector-field :gate "empty-vector-field-typed-by-the-module-conj-test"
+   :goal "an empty vector literal at a keyword field -- browser.surface's :surface/apps [] / :surface/windows [] / :surface/input-log [] -- is typed by what the module conj's or assoc's at that key (a [:list R] of window records, of app records, of input-event records), as :absent-field-from-assoc types a nil field; refused today \"expression type mismatch: expected i64, got [:record ..]\" at the conj; a key the module gives two element types, and a number conj'd onto a list of records, stay refused by name"}
+  ;; Landed 2026-10-06: typed-list-conj in osaho, kotoba-verifier,
+  ;; kotoba-native, kotoba-wasm (+ runtime/browser-host.mjs's list-conj-*),
+  ;; kotoba-script, and
+  ;; the module pre-pass in kotoba-sema. ADR 0353 has the measurements. Like an
+  ;; absent field's T, R is what the source SPELLS: a map literal whose values
+  ;; are expressions spells their fields :i64 (map-literal-value-type is
+  ;; syntactic), so browser.surface's own events -- {:event :keyboard/key
+  ;; :window-id window-id :key key} -- are typed with i64 fields, and its three
+  ;; event shapes (keyboard, scroll, text) are two types at one key, refused
+  ;; by name. Its apps and windows are conj'd only from expressions (a
+  ;; parameter; a merge); :list-item-from-expression types those.
+  {:id :list-item-from-expression :gate "list-field-typed-by-a-conj-expression-test"
+   :goal "a [] field the module conj's only expressions onto -- browser.surface's (update surface :surface/apps conj app) with app a parameter, and open-window's merged window -- is the [:list R] of the type those expressions have (inferred, not spelled), on the reference, wasm32 and both native targets; refused today \"expression type mismatch: expected i64, got [:record ..]\"; two inferred types at one key, and a number onto a list of records, stay refused by name"}
+  ;; Landed 2026-10-07 in kotoba-sema (dee5a5d2): a conj onto an open []
+  ;; field notes its item's inferred type and the module is analysed again
+  ;; with it; a row function's parameter only conj'd there is specialized at
+  ;; the record its call passes. ADR 0353 has the measurements. Measured
+  ;; behind it, before and after alike: open-window merges a literal that
+  ;; reads the row it merges -- {:keys [app-id title ..] :as window} then
+  ;; (merge {.. :window/title (or title app-id id) ..} (dissoc window ..)) --
+  ;; and that is refused where (merge {:window/id "w" ..} window) is not.
+  {:id :merge-literal-reads-its-row :gate "merge-literal-reading-its-row-test"
+   :goal "(merge {:k (:a m) ..} m') with m a row parameter -- browser.surface's open-window, whose merged literal reads title / app-id / rect / document off the window it then merges (dissoc'd) -- is the record merge gives, on the reference, wasm32 and both native targets; refused today \"record-get without a type descriptor requires a record value; got :i64\" ((merge {:t title} w) with title destructured off w); a merge onto a number and a read of a field the row lacks stay refused by name"}
+  ;; Landed 2026-10-07 in kotoba-sema (be68d75c): each specialization round
+  ;; types its literals before it infers results, and a map literal's own
+  ;; record field that a row read defaulted to :i64 at desugar takes the
+  ;; read's type. ADR 0353 has the measurements. Measured behind it, each on
+  ;; its own, before and after alike: next-window-id's (str "w" n) of an i64
+  ;; ("expression type mismatch: expected string, got i64"); on native, a row
+  ;; rebound by (let [s (update s ..)] (update s ..)) ("runtime KIR record
+  ;; update rejected" at verify, the reference admitting it); and
+  ;; open-window's (or title app-id id) / (or rect [..]) over a key the
+  ;; record has, a string's and a vector's truthiness ("if test must be bool
+  ;; or an option"). Its [id surface] pair, destructured, is admitted.
+  {:id :integer-str :gate "str-formats-an-integer-test"
+   :goal "(str \"w\" n) with n an :i64 -- browser.surface's next-window-id -- is the string of n's decimal digits on the reference, wasm32 and both native targets, as Clojure's str prints a long; refused today \"expression type mismatch: expected string, got i64\"; str of a record, a vector and an option stays refused by name (no implicit printing of an aggregate)"}
+  ;; Landed 2026-10-07 in kotoba-sema (de903367): str survives desugar and
+  ;; the type-directed rewrite prints an :i64 part with string-from-i64's
+  ;; printer (flat now, and right at the most negative long); an
+  ;; unannotated parameter str formats is still refined to :string. ADR 0353
+  ;; has the measurements.
+  {:id :native-rebound-row-update :gate "native-rebound-row-update-test"
+   :goal "a row rebound by its own update -- browser.surface's next-window-id / open-window, (let [s (update s :n inc)] (update s :m inc)) -- compiles and verifies on x86_64-aiueos-kernel-v1 and aarch64-macos as it runs on the reference; refused today \"runtime KIR record update rejected\" at verify; an update of a field the record lacks stays refused by name"}
+  ;; Landed 2026-10-07 in kotoba-verifier (192005f9): a let naming an update
+  ;; of a record the scope holds binds that record; and kotoba-sema
+  ;; (6cba8d76): a field read off an update of a row parameter is a field the
+  ;; row reads. ADR 0353 has the measurements.
+  {:id :row-tuple-element-argument :gate "row-tuple-element-argument-test"
+   :goal "a record destructured out of a row function's vector result -- browser.surface's [id surface] from next-window-id, element!'s [id document] from dom/create-element -- keeps its record type where the caller reads it, passes it on to a row parameter, or returns it updated; measured 2026-10-07 (amu 8397d0a3 + floor :native-rebound-row-update): (let [[a s] (open-window (empty-surface))] (:k s)) with open-window returning [id (update surface ..)] is refused \"unbound symbol has no value type: s ..\", passing that s to a row parameter \"argument s to open-window has no type known here ..\", and (open-window (open-window (empty-surface))) with open-window returning the updated destructured surface, beside next-window-id's (str \"w\" n), \"argument (open-window__row_0_.. ) to open-window is i64 ..\" (without the str, and with one call, it is admitted); a destructured element that is not a record stays refused where a record is read"}
+  ;; Landed 2026-10-07 in kotoba-sema (88fb9531): str's integer printer,
+  ;; injected after rewrite-record-projection, is typed where a
+  ;; specialization's result is inferred from its rewritten body, so a row
+  ;; function's [(str "w" n) s] is [:vector [:string R]] and the caller's
+  ;; destructured element is R. ADR 0353 has the measurements.
+  {:id :destructured-key-fallback
+   :needs-a-human "what open-window's (or title app-id id) / (or rect [80 80 520 360]) is when the window record HAS :title / :rect: a destructured key the record has is its T (floor :options-map-argument), so or asks a string's / vector's truthiness, refused \"if test must be bool or an option\" (ADR 0353 keeps it refused). Candidates, each possible, none chosen: a {:keys} key is always [:option T] whether or not the record has it (or is then option-or), the source writes (get window :title (or app-id id)) -- (get m :k d) is already admitted -- or the same reading :open-event-row asks of (or (:k m) d)"
+   :goal "browser.surface's open-window states its title / rect fallbacks with the source still read by Clojure"}
+  {:id :input-log-events
+   :needs-a-human "what browser.surface's input log holds: record-key, scroll-window and append-text conj three event shapes ({:event :keyboard/key :window-id :key}, {:event :window/scroll :window-id :delta-x :delta-y}, {:event :text/input :window-id :text}) onto one [] field, refused \"this module conj's two types at it ... a list holds one type\" (empty-vector-field-typed-by-the-module-conj-test pins it). Candidates, each possible, none chosen: a variant with one case per event (the reader then matches), one closed record with every key [:option T], or a log per event kind -- the same question :open-event-row asks of a host event"
+   :goal "browser.surface's input log is typed with the source still read by Clojure"}
+  {:id :record-list-field-literal :gate "record-literal-holds-a-list-of-records-test"
+   :goal "a keyword record literal holding a vector of record literals, {:surface/id \"k\" :surface/windows [{:window/id \"w1\" ..}]}, is a record with a [:list R] field on the reference, wasm32 and both native targets; refused today \"record-get without a type descriptor requires a record value; got :i64\" where the literal is read"}
+  ;; Landed 2026-10-08 in kotoba-sema (b379f353). Measured first (amu
+  ;; edd85617, kotoba-sema 621e89b7): the literal itself was already that
+  ;; record after :empty-vector-field and :list-item-from-expression -- read,
+  ;; searched with first / filter / reverse and conj'd a spelled literal, it
+  ;; answered on every target. What was refused is open-window's shape: a row
+  ;; function conj'ing its parameter onto that field stayed :i64 ("unbound
+  ;; symbol has no value type", "expected i64, got [:record ..]", "has no
+  ;; type known here"). A key a vector literal of records is written at is
+  ;; now a list-item key like an open []. ADR 0353 has the measurements.
+  {:id :absent-field-from-expression
+   :needs-a-human "what a T written by an expression at an absent [:option T] field is: browser.surface writes :surface/focus only from expressions (open-window's id, close-window's (:window/id (peek remaining)), focus-window's window-id); ADR 0353 admits a spelled literal as the option's some and refuses a call returning T as a coercion (pinned by nil-field-typed-by-the-module-assoc-test), so admitting this changes that line -- or the source writes the field another way"
+   :goal "browser.surface's empty-surface / open-window / close-window / focus-window type :surface/focus with the source still read by Clojure"}
   {:id :browser-surface :gate "browser-surface-native-test"
+   :blocked-by [:empty-vector-field :list-item-from-expression :merge-literal-reads-its-row :integer-str :native-rebound-row-update :row-tuple-element-argument :destructured-key-fallback :input-log-events :record-list-field-literal :absent-field-from-expression :browser-text-edit]
    :goal "browser.surface with cssom.layout and kotoba.wasm.dom the same"}
+  ;; Measured 2026-10-08 (amu a0604488, browser b50c21a; Node/nbb bootstrap
+  ;; reference, the repository launcher `bin/amu check ... --jvm-free`): the
+  ;; hosted engine's reducers are what this floor switches, and none
+  ;; compiles yet -- `bin/amu check src/browser/text_edit.cljk --jvm-free` exit 65 "function body is empty
+  ;; ... a `#?(:clj ...)` with no :kotoba or :default clause reads as
+  ;; nothing"; input.cljk / surface.cljk with --source-path src exit 65
+  ;; "required module cssom.layout is missing from the explicit source
+  ;; paths". The switch follows the three component floors (ADR 0353: "Then
+  ;; browser moves, whole component by component ... and the hosted engine
+  ;; switches"), which wait on owner decisions, so it is blocked by them
+  ;; rather than taken alone.
   {:id :hosted-engine-switch :gate "browser-hosted-runs-amu-output-test" :repo "kotoba-lang/browser"
+   :blocked-by [:browser-text-edit :browser-input :browser-surface]
    :goal "kotoba-lang/browser's hosted engine runs amu's compiled output of its own source; the Clojure source is that source, not a second copy"}
   ;; The selfhost foundation (appended 2026-09-26, superproject
   ;; adr-2609242330). amu's own source manipulates EDN data of arbitrary

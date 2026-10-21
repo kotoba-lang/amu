@@ -1,0 +1,102 @@
+(ns kotoba.compiler.native-option-record-test
+  "ADR 0353 floor :native-option-record.
+
+  browser.text-edit reads its composition as (if-let [c (:text/composition
+  state)] (:composition/text c) ..): the field is an [:option R] (floor
+  :absent-field-from-assoc), and the branch projects the record it holds.
+  Measured 2026-10-03 (amu 95fc8b60, before this floor): that compiled on the
+  KIR reference and wasm32, and was refused by both native targets --
+  \"runtime KIR record projection rejected\" -- and a declared [:option R]
+  parameter read the same way, R a flat i64 record, was \"machine IR
+  rejected: branch-value-shape-mismatch\".
+
+  if-let elaborates to (option-value-of [:option R] o (record-new R ..)), the
+  fallback a record of R. Two layers spelled that out. kotoba-verifier's
+  `record-schema-of` typed an option-value-of only over a typed-map-get, so the
+  local it bound had no record and the projection over it was refused; it now
+  types any option of a record whose fallback is that record, the option's
+  declared type equal to the operand's wherever the operand says one.
+  kotoba-native scalar-replaced a module whose records were flat and local, so
+  the payload word and the fallback's bundle met at one phi in two shapes; a
+  record an option holds now selects the pair-chain lowering, as a record in a
+  variant payload already did.
+
+  What stays refused, each by its literal: projecting a field R does not
+  declare, the option as a number, and the option projected as if it were
+  the record (no coercion from [:option R] to R)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.absent-field-from-assoc-test :as absent]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private flat "[:record :b/r [[:t :i64]]]")
+
+(def ^:private declared
+  "A declared [:option R] parameter, R a flat i64 record: 5 present, 7 absent."
+  (str "(ns b)\n"
+       "(defn- f [o [:option " flat "]] :i64 (if-let [c o] (:t c) 7))\n"
+       "(defn main [] :i64\n"
+       "  (+ (f (option-some-of [:option " flat "] (record " flat " 5)))\n"
+       "     (f (option-none-of [:option " flat "]))))"))
+
+(def ^:private declared-string
+  "The same with R holding a string: \"abc\" present 3, absent 100."
+  (let [r "[:record :b/s [[:t :string] [:n :i64]]]"]
+    (str "(ns b)\n"
+         "(defn- f [o [:option " r "]] :i64\n"
+         "  (if-let [c o] (+ (string-code-unit-count (:t c)) (:n c)) 100))\n"
+         "(defn main [] :i64\n"
+         "  (+ (f (option-some-of [:option " r "] (record " r " \"abc\" 10)))\n"
+         "     (f (option-none-of [:option " r "]))))")))
+
+(def ^:private admitted
+  "Each answers the same on the reference and both native targets."
+  {;; browser.text-edit's composition: none 100, start 0, update 3, end none 100
+   @#'absent/admitted 203
+   declared 12
+   declared-string 113})
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- number [value] (#?(:clj long :cljs js/Number) value))
+
+(defn- run-main [source]
+  (number (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- native-value [source target]
+  (number (:value (:artifact (compiler/compile-source source target)))))
+
+(defn- refusal [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(defn- with-f [body]
+  (str "(ns b)\n"
+       "(defn- f [o [:option " flat "]] :i64 " body ")\n"
+       "(defn main [] :i64 (f (option-none-of [:option " flat "])))"))
+
+(deftest option-record-projects-natively-test
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "admitted on the reference and both native targets"
+    (doseq [[source expected] admitted]
+      (is (= expected (run-main source)) source)
+      (doseq [target native-targets]
+        (is (= expected (native-value source target)) (str target " " source)))))
+  (testing "refused: a field R does not declare"
+    (is (= "record field must be a declared keyword literal"
+           (refusal (with-f "(if-let [c o] (:u c) 7)"))))
+    (is (= "record field must be a declared keyword literal"
+           (refusal (str @#'absent/composition
+                         "(defn main [] :i64 (if-let [c (:text/composition (composition-start (empty-state)))] (:composition/caret c) 0))")))))
+  (testing "refused: the option is not a number"
+    (is (= (str "expression type mismatch: expected i64, got [:option " flat "]")
+           (refusal (with-f "(+ 1 o)")))))
+  (testing "refused: the option is not the record it holds"
+    (is (= (str "record-get without a type descriptor requires a record value; got [:option " flat "]")
+           (refusal (with-f "(:t o)"))))))

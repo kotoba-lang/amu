@@ -195,7 +195,24 @@
 (defn- ly-width [kind :i64] :i64
   (if (= kind FX-B26) 26 (if (= kind FX-BL26) 26 19)))
 
-(defn- ly-fix-one [M :vector-i64 i :i64] :vector-i64
+(defn- ly-adrl-one [M :vector-i64 i :i64] :vector-i64
+ (let [xn (vector-at M MM-FIX-N) cn (vector-at M MM-CODE-N) ln (vector-at M MM-LABEL-N)]
+  (if (or (<= i 0) (>= i xn) (> xn MM-FIX-CAP) (<= cn 0) (> cn MM-CODE-CAP)
+          (<= ln 0) (>= ln MM-LABEL-CAP)) (ly-err M (ly-e-fixup) FX-ADRL19)
+   (let [fb (+ MM-FIX-BASE (* i MM-FIX-W)) at (vector-at M (+ fb XF-AT)) label (vector-at M (+ fb XF-TARGET))]
+    (if (or (<= at 0) (>= at cn) (<= label 0) (>= label ln)
+            (not= (vector-at M (+ fb XF-AUX)) 0)) (ly-err M (ly-e-fixup) FX-ADRL19)
+     (let [dest (vector-at M (+ MM-LABEL-BASE label)) word (vector-at M (+ MM-CODE-BASE at))]
+      (if (or (<= dest 0) (>= dest cn) (not= word 0x1000001e)
+              (< (- dest at) -262144) (> (- dest at) 262143)) (ly-err M (ly-e-fixup) FX-ADRL19)
+       (ly-branch M at dest 19))))))))
+(defn- ly-is-adrl [M :vector-i64 i :i64] :bool
+ (let [xn (vector-at M MM-FIX-N)]
+  (and (> i 0) (< i xn) (<= xn MM-FIX-CAP)
+       (= (vector-at M (+ MM-FIX-BASE (* i MM-FIX-W) XF-KIND)) FX-ADRL19))))
+(defn- ly-original-fix-one [M :vector-i64 i :i64] :vector-i64
+  (if (ly-is-adrl M i)
+    (ly-adrl-one M i)
   (let [fb (+ MM-FIX-BASE (* i MM-FIX-W))
         at (vector-at M (+ fb XF-AT))
         kind (vector-at M (+ fb XF-KIND))
@@ -206,17 +223,23 @@
         t0 (ly-target kind tgt lab fcode nfn)
         aux (vector-at M (+ fb XF-AUX))
         t (if (= aux 0) t0
-            (if (and (= aux 1) (= kind FX-BL26) (> t0 0)
-                     (< (inc t0) (vector-at M MM-CODE-N))
+            (if (and (or (= aux 1) (= aux 2)) (= kind FX-BL26) (> t0 0)
+                     (< (+ t0 aux) (vector-at M MM-CODE-N))
                      (> at 0) (< at (vector-at M MM-CODE-N))
-                     (= (bit-and (vector-at M (+ MM-CODE-BASE at)) 0xfc000000) 0x14000000)
-                     (= (vector-at M (+ MM-CODE-BASE t0)) 0xd2800005))
-                (inc t0) -1))]
+                     ;; a tail branch (b) or a call (bl): both enter with the caller's x3/x4/x5 handoff set
+                     (or (= (bit-and (vector-at M (+ MM-CODE-BASE at)) 0xfc000000) 0x14000000)
+                         (= (bit-and (vector-at M (+ MM-CODE-BASE at)) 0xfc000000) 0x94000000))
+                     ;; the private-entry marker: mov x5,#0 (up to 3 parameters) or mov x11,#0 (T2, 4 to 7)
+                     (or (= (vector-at M (+ MM-CODE-BASE t0)) 0xd2800005) (= (vector-at M (+ MM-CODE-BASE t0)) 0xd280000b))
+                     ;; AUX2 skips only this exact ordinary fuel load. Its
+                     ;; caller already carries the published counter in x8.
+                     (or (= aux 1) (= (vector-at M (+ MM-CODE-BASE (inc t0))) (enc-ldr 8 7 CTX-FUEL))))
+                (+ t0 aux) -1))]
     (if (= kind FX-LIT32)
       (ly-lit32 M at tgt)
       (if (< t 0)
         (ly-err M (ly-e-fixup) kind)
-        (ly-branch M at t (ly-width kind))))))
+        (ly-branch M at t (ly-width kind)))))))
 
 (defn- ly-fix-loop [M :vector-i64 i :i64] :vector-i64
   (if (>= i (vector-at M MM-FIX-N))
@@ -278,9 +301,66 @@
     (if (= (ly-failed M1) 0) (ly-finish M1) M1)))
 
 (defn- ly-run2 [M :vector-i64] :vector-i64
-  (let [M1 (ly-fix-loop M 1)]
-    (if (= (ly-failed M1) 0) (ly-run3 M1) M1)))
+  (let [M1 (ly-fix-loop M 1)
+        M2 (if (= (ly-failed M1) 0) (scn-run M1) M1)]
+    (if (= (ly-failed M2) 0) (ly-run3 M2) M2)))
 
 (defn- ly-run [M :vector-i64] :vector-i64
   (let [M1 (ly-pool M)]
     (if (= (ly-failed M1) 0) (ly-run2 M1) M1)))
+
+;; Far/near FADDR: fixed three-word address tuple, independent of mapping page alignment.
+;; New-kind dispatch stages physical M/FIX before its first indexed record read.
+(defn- ly-is-faddr [M :vector-i64 i :i64] :bool
+ (and (>= (vector-count M) MM-WORDS)
+      (> (vector-at M MM-FIX-N) 0) (<= (vector-at M MM-FIX-N) MM-FIX-CAP)
+      (> i 0) (< i (vector-at M MM-FIX-N))
+      (= (vector-at M (+ MM-FIX-BASE (* i MM-FIX-W) XF-KIND)) FX-FADDR)))
+(defn- ly-faddr-labels [M :vector-i64 at :i64] :bool
+ (loop [j 1]
+  (if (= j (vector-at M MM-LABEL-N)) true
+   (let [t (vector-at M (+ MM-LABEL-BASE j))]
+    (and (not (and (> t at) (<= t (+ at 2)))) (recur (inc j)))))))
+(defn- ly-faddr-functions [M :vector-i64 at :i64] :bool
+ (loop [j 1]
+  (if (= j (vector-at M MM-FN-N)) true
+   (let [t (vector-at M (+ MM-FN-BASE (* j MM-FN-W) FF-CODE))]
+    (and (not (and (> t at) (<= t (+ at 2)))) (recur (inc j)))))))
+(defn- ly-faddr-fixes [M :vector-i64 i :i64 at :i64] :bool
+ (loop [j 1]
+  (if (= j (vector-at M MM-FIX-N)) true
+   (if (= j i) (recur (inc j))
+    (let [b (+ MM-FIX-BASE (* j MM-FIX-W)) s (vector-at M (+ b XF-AT)) kind (vector-at M (+ b XF-KIND))
+          span (if (= kind FX-FADDR) 3 (if (= kind FX-LIT32) 2 1))]
+     (and (> s 0) (< s (vector-at M MM-CODE-N))
+          (>= kind FX-B26) (<= kind FX-FADDR) (<= (+ s span) (vector-at M MM-CODE-N))
+          (or (< (+ s span -1) at) (> s (+ at 2))) (recur (inc j))))))))
+(defn- ly-faddr-one [M :vector-i64 i :i64] :vector-i64
+ (if (< (vector-count M) MM-WORDS) M
+  (let [xn (vector-at M MM-FIX-N) cn (vector-at M MM-CODE-N) fnn (vector-at M MM-FN-N) ln (vector-at M MM-LABEL-N)]
+   (if (or (<= xn 0) (> xn MM-FIX-CAP) (<= i 0) (>= i xn)
+           (<= cn 0) (> cn MM-CODE-CAP) (<= fnn 0) (> fnn MM-FN-CAP)
+           (<= ln 0) (> ln MM-LABEL-CAP)) (ly-err M (ly-e-fixup) FX-FADDR)
+    (let [b (+ MM-FIX-BASE (* i MM-FIX-W)) at (vector-at M (+ b XF-AT)) f (vector-at M (+ b XF-TARGET))]
+     (if (or (not= (vector-at M (+ b XF-KIND)) FX-FADDR) (not= (vector-at M (+ b XF-AUX)) 0)
+             (<= at 0) (>= at cn) (>= (+ at 2) cn) (<= f 0) (>= f fnn)) (ly-err M (ly-e-fixup) FX-FADDR)
+      (let [target (vector-at M (+ MM-FN-BASE (* f MM-FN-W) FF-CODE))
+            word (vector-at M (+ MM-CODE-BASE at)) d (bit-and word 31)
+            blank (+ 0x91000000 (* d 32) d)]
+       (if (or (<= target 0) (>= target cn) (= d 31)
+               (not= word (+ 0x10000000 d))
+               (not= (vector-at M (+ MM-CODE-BASE (inc at))) blank)
+               (not= (vector-at M (+ MM-CODE-BASE (+ at 2))) blank)
+               (not (ly-faddr-labels M at)) (not (ly-faddr-functions M at)) (not (ly-faddr-fixes M i at)))
+        (ly-err M (ly-e-fixup) FX-FADDR)
+        (let [delta (* (- target at) 4) mag (if (< delta 0) (- 0 delta) delta)
+              op (if (< delta 0) 0xd1000000 0x91000000)
+              lo (bit-and mag 4095) hi (i64-shift-right mag 12)
+              w1 (+ op (* d 32) d (* lo 1024))
+              w2 (+ op 0x400000 (* d 32) d (* hi 1024))]
+         (if (> hi 4095) (ly-err M (ly-e-size) mag)
+          (let [M1 (vector-assoc! M (+ MM-CODE-BASE (inc at)) w1)]
+           (vector-assoc! M1 (+ MM-CODE-BASE (+ at 2)) w2))))))))))))
+(defn- ly-fix-one [M :vector-i64 i :i64] :vector-i64
+ (if (< (vector-count M) MM-WORDS) M
+  (if (ly-is-faddr M i) (ly-faddr-one M i) (ly-original-fix-one M i))))

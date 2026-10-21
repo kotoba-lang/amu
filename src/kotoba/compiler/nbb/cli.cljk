@@ -34,6 +34,7 @@
             [kotoba.compiler.source-path :as source-path]
             [kotoba.compiler.uefi-operations :as uefi]
             [kotoba.kir.target :as target-profile]
+            [kotoba.compiler.js-value-target :as js-value-target]
             [kotoba.verifier :as verifier]
             [kotoba.compiler.text-bytes :as text-bytes]
             [kotoba.compiler.base64-text :as base64-text]])
@@ -626,6 +627,7 @@
      :seed-path (:source seed) :fallback (:fallback attempt)}))
 
 (defn- compile-native! [hir target backend policy emit-metadata emit-program stage-cache seed]
+  (js-value-target/reject-outside-js-target! target hir)
   (when (and (= :kotoba.hir/v3 (:format hir))
              (not (and (contains? #{:x86_64-kotoba-v1 :aarch64-kotoba-v1} backend)
                        (ir/only-native-word-typed-features? hir))))
@@ -687,7 +689,11 @@
         compat (compatibility/descriptor
                 {:hir-format (:format hir) :kir-format (:format kir)
                  :target target :target-profile profile :value-abi value-abi})
-        program (ir/native-program kir)
+        ;; Consensus gas (superproject adr-2610092340 D12): a schedule the
+        ;; caller named rides IN the program, because the verifier re-emits
+        ;; from the program alone and kotoba-native's charge-gas reads it there.
+        program (cond-> (ir/native-program kir)
+                  (:gas-schedule emit-metadata) (assoc :gas-schedule (:gas-schedule emit-metadata)))
         ;; Verification re-emits from this closed program. Do not let
         ;; compiler-private KIR metadata influence the bytes being sealed.
         ;; ADR 0365: the seed backend first when asked for; any refusal or
@@ -717,7 +723,7 @@
                          {:mode :hidden-context-r9 :initial (if metered? declared-fuel max-native-fuel)}
                          :aarch64-kotoba-v1
                          {:mode :hidden-context-x7 :initial (if metered? declared-fuel max-native-fuel)})
-             :context-abi {:version 11 :fuel-offset 8 :allow-bitmap-offset 16
+             :context-abi (cond-> {:version 11 :fuel-offset 8 :allow-bitmap-offset 16
                            :allow-bitmap-bytes 32 :cap-call-offset 48
                            :pair-new-offset 56 :pair-first-offset 64
                            :pair-second-offset 72 :pair-capacity 4096
@@ -762,6 +768,9 @@
                            :bytes-concat-offset 376
                            :vector-capacity 4096
                            :vector-item-capacity 65536}
+                             ;; v12: the gas word at 384, only for a gas-metered program (its
+                             ;; code checks the version before it decrements 384).
+                             (:gas-schedule program) (assoc :version 12 :gas-offset 384))
              :effects (:effects hir)
              :compatibility compat
              ;; Unmetered: `:fuel` is the ORACLE's budget (what the verifier
@@ -815,7 +824,8 @@
       seed-emitted (assoc :emitter (:record seed))
       seed (assoc :backend (backend-report seed seed-attempt)))))
 
-(defn- serialized-native [source policy emit-metadata result package artifact-kind]
+(defn- serialized-native [source policy emit-metadata result package artifact-kind
+                         portable-desktop?]
   (let [provenance-result (support/timed "provenance"
                                          (fn [] (provenance/attach source policy emit-metadata result)))]
     (cond-> {:artifact-text (support/timed
@@ -831,7 +841,7 @@
       package (assoc :binary (support/timed
                               "native-package"
                               (fn [] (package (:target result) (:artifact result)
-                                              artifact-kind policy)))))))
+                                              artifact-kind policy portable-desktop?)))))))
 
 (defn- write-native! [output {:keys [artifact-text provenance-text binary]} target]
   (let [;; adr-2609251400 C2: a static ELF is the program itself, so it is
@@ -864,11 +874,12 @@ provenance-output (str output ".provenance.edn")
   (let [policy (support/timed "policy-read" (fn [] (read-policy! args)))
         emit-metadata (support/emit-metadata args)
         artifact-kind (support/option args "--artifact")
+        portable-desktop? (boolean (some #{"--selfhost-desktop"} args))
         hir (:value (resolve-hir! source
                                   (project-source/analyze-opts (admission-policy policy) linked?) nil))
         result (compile-native! hir target backend (admission-policy policy) emit-metadata emit-program nil seed)
         serialized (serialized-native source policy emit-metadata result
-                                      package artifact-kind)
+                                      package artifact-kind portable-desktop?)
         {:keys [provenance-output publication-output artifact-bytes]}
         (write-native! output serialized target)]
     (cond-> {:ok true :target target :output output
@@ -888,6 +899,7 @@ provenance-output (str output ".provenance.edn")
         material (:material policy-attempt)
         emit-metadata (support/emit-metadata args)
         artifact-kind (support/option args "--artifact")
+        portable-desktop? (boolean (some #{"--selfhost-desktop"} args))
         key (when material
               (support/timed "cache-key"
                              (fn [] (compile-cache/key-for target source material
@@ -903,6 +915,13 @@ provenance-output (str output ".provenance.edn")
         stage-cache (:stages context)
         cached (when key (support/timed "cache-lookup"
                                         (fn [] (compile-cache/lookup! artifact-cache key))))]
+    ;; Qualification applies even when no lowering/emission runs on a hit.
+    (when cached
+      (let [policy (decode-policy! material)
+            hir (:value (resolve-hir! source
+                                     (project-source/analyze-opts (admission-policy policy) linked?)
+                                     stage-cache))]
+        (js-value-target/reject-outside-js-target! target hir)))
     (if cached
       (let [artifact-valid? (support/timed
                              "cache-artifact-integrity"
@@ -948,7 +967,7 @@ provenance-output (str output ".provenance.edn")
             result (compile-native! hir target backend (admission-policy policy) emit-metadata
                                     emit-program stage-cache seed)
             serialized (serialized-native source policy emit-metadata result
-                                          package artifact-kind)
+                                          package artifact-kind portable-desktop?)
             {:keys [provenance-output publication-output artifact-bytes]}
             (write-native! output serialized target)
             binary-base64 (some-> (:binary serialized) base64-text/encode)
@@ -1000,6 +1019,11 @@ provenance-output (str output ".provenance.edn")
                 (throw (ex-info "unknown native artifact kind"
                                 {:phase :artifact-target
                                  :artifact (support/option args "--artifact")})))
+            _ (when (and (some #{"--selfhost-desktop"} args)
+                         (not (and (= target :x86_64-aiueos-kernel-v1)
+                                   (= "image" (support/option args "--artifact")))))
+                (support/usage-error!
+                 "--selfhost-desktop requires --target x86_64-aiueos-kernel-v1 --artifact image"))
             ;; A module declaring `(:require ...)` is resolved and linked the
             ;; same way the Wasm driver resolves one, through the same shared
             ;; `project-source/resolve-source!`. This used to read the entry
@@ -1007,7 +1031,7 @@ provenance-output (str output ".provenance.edn")
             ;; the command line and never looked at, so a kernel object could
             ;; not import anything and every helper had to be copied into every
             ;; source that needed it.
-            resolved (project-source/resolve-source! args)
+            resolved (project-source/resolve-source! args {:direct-exports? true})
             input (:input resolved)
             source (:source resolved)
             linked? (:linked? resolved)

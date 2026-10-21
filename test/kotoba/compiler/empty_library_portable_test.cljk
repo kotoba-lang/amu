@@ -1,0 +1,29 @@
+(ns kotoba.compiler.empty-library-portable-test
+  (:require #?(:clj [kotoba.test :refer [deftest is]]
+               :cljs [cljs.test :refer [deftest is]])
+            [kotoba.compiler.core :as compiler]
+            #?@(:cljs [["node:fs" :as fs] ["node:os" :as os]
+                       ["node:path" :as path] ["node:child_process" :as cp]])))
+(deftest explicit-empty-export-libraries-have-no-entry-or-public-functions
+  (doseq [source ["(ns empty.library (:export []))"
+                  "(ns private.library (:export [])) (defn- hidden [] :i64 7)"]]
+    (let [compiled (compiler/compile-source source :js-kotoba-v1)]
+      (is (nil? (get-in compiled [:kir :entry])))
+      (is (= [] (get-in compiled [:kir :exports])))
+      #?(:cljs
+         (let [dir (fs/mkdtempSync (path/join (os/tmpdir) "amu-empty-"))
+               file (path/join dir "module.mjs")]
+           (try
+             (fs/writeFileSync file (:source compiled))
+             (let [r (cp/spawnSync js/process.execPath
+                       #js ["--input-type=module" "-e"
+                            (str "import {instantiateKotoba,kotobaArtifact} from " (js/JSON.stringify file)
+                                 ";if(kotobaArtifact.entry!==null||Object.keys(instantiateKotoba()).length)process.exit(2);")]
+                       #js {:encoding "utf8" :timeout 10000})]
+               (is (= 0 (.-status r)) (.-stderr r)))
+             (finally (fs/rmSync dir #js {:recursive true :force true}))))))))
+(deftest invalid-empty-programs-and-exports-still-refuse
+  (doseq [source ["(ns empty.library)" "(ns empty.library (:export [missing]))"
+                  "(ns empty.library (:export [])) (defn main [] 0)"]]
+    (is (some? (try (compiler/check-source source) nil
+                   (catch #?(:clj Exception :cljs :default) e (ex-message e)))))))

@@ -1,0 +1,65 @@
+diff --git a/seed/41-a64gen.kotoba b/seed/41-a64gen.kotoba
+index fd9af208..18c49c13 100644
+--- a/seed/41-a64gen.kotoba
++++ b/seed/41-a64gen.kotoba
+@@ -22402,6 +22402,19 @@
+         (= kind 5) s
+         :else 0))
+ ;; analyse block h as a loop header; on success records loop l = nlp
++;; An access-free counted loop is worth versioning when it repeats an exact positive constant divide.
++(defn- t2-loop-divmagic-value? [M :vector-i64 v :i64] :bool
++  (if (or (t2-gone? M v) (not= (t2-op-of M v) t2-bin) (not= (t2-vf M v t2-f-a) BOP-QUOT)
++          (= (t2-xf M v t2-x-uses) 0)) false
++    (let [x (t2-res M (t2-vf M v t2-f-b)) y (t2-res M (t2-vf M v t2-f-c))]
++      (and (not (t2-isconst? M x)) (t2-isconst? M y) (> (t2-kval M y) 1) (= (gn-pow2 (t2-kval M y)) 0)))))
++(defn- t2-loop-divmagic-vals? [M :vector-i64 v :i64 v1 :i64] :bool
++  (and (< v v1) (or (t2-loop-divmagic-value? M v) (t2-loop-divmagic-vals? M (inc v) v1))))
++(defn- t2-loop-divmagic? [M :vector-i64 b :i64] :bool
++  (if (>= b (t2-g M t2-s-nb)) false
++    (or (and (t2-in-body? M b)
++             (t2-loop-divmagic-vals? M (t2-bget M t2-a-bv0 b) (t2-bget M t2-a-bv1 b)))
++        (t2-loop-divmagic? M (inc b)))))
+ (defn- t2-try-loop [M :vector-i64 h :i64] :vector-i64
+   (let [nb (t2-g M t2-s-nb)
+         M0 (-> M (t2-wzero t2-a-kd 0 t2-maxb) (t2-s t2-s-af 0) (t2-mark-latches h 0 (t2-bget M t2-a-bpn h)))
+@@ -22438,8 +22451,9 @@
+                     a0 (t2-g M3 t2-s-nacc)
+                     M4 (t2-acc-blocks M3 h 0 p)
+                     a1 (t2-g M4 t2-s-nacc)
+-                    l (t2-g M4 t2-s-nlp)]
+-                (if (or (not= (t2-g M3 t2-s-af) 0) (>= K 65536) (= a0 a1))
++                    l (t2-g M4 t2-s-nlp)
++                    divmagic (and (= a0 a1) (t2-loop-divmagic? M3 0))]
++                (if (or (not= (t2-g M3 t2-s-af) 0) (>= K 65536) (and (= a0 a1) (not divmagic)))
+                   (t2-acc-unflag M4 a0 a1)
+                   (-> M4 (t2-lps l t2-lf-h h) (t2-lps l t2-lf-p p) (t2-lps l t2-lf-s s) (t2-lps l t2-lf-kind kind)
+                       (t2-lps l t2-lf-L L) (t2-lps l t2-lf-K K) (t2-lps l t2-lf-a0 a0) (t2-lps l t2-lf-a1 a1)
+@@ -22633,6 +22647,7 @@
+ ;; Hoist keys are positive value IDs for literal values and negative IDs for quotient magic reciprocals.
+ (def t2-s-nhoist 56)
+ (def t2-s-hbusy 57)
++(def t2-s-hsave 115)   ; caller-saved registers used by fast-loop hoists, preserved by string slow-call stubs
+ (def t2-a-hoist (+ t2-a-hint t2-maxv))   ; 16 x (const value, register)
+ (defn- t2-hoisted [M :vector-i64 x :i64] :i64
+   (if (= (t2-g M t2-s-fastl) 0) -1
+@@ -23056,7 +23071,10 @@
+ (def t2-s-vsize 53)
+ (defn- t2-e-version [M :vector-i64 l :i64] :vector-i64
+   (let [h (t2-lp M l t2-lf-h) at (vector-at M MM-CODE-N)
+-        M1 (-> M (t2-cell-plan l) (t2-e-precheck l) (t2-hoist-plan (inc l)) (t2-e-hoists 0) (t2-e-cellinit l)
++        M0 (-> M (t2-cell-plan l) (t2-e-precheck l) (t2-hoist-plan (inc l)))
++        M1 (-> M0 (cond-> (> (t2-g M0 t2-s-nhoist) 0)
++                    (t2-s t2-s-hsave (bit-or (t2-g M0 t2-s-hsave) (t2-g M0 t2-s-hbusy))))
++               (t2-e-hoists 0) (t2-e-cellinit l)
+                (t2-sr-plan l) (t2-e-srinit l 0) (t2-s t2-s-creserve 0)
+                (t2-unroll-plan l)
+                (t2-s t2-s-fastl (inc l)) (t2-e-unroll l) (t2-e-fastb h (inc l)) (t2-s t2-s-fastl 0) (t2-s t2-s-nhoist 0))]
+@@ -24275,7 +24293,7 @@
+         m3 (loop [k 0 m m2] (if (>= k 8) m
+                               (recur (inc k) (if (= (t2-sd M k 0) 0) m
+                                                (t2-mbit (t2-mbit (t2-mbit (t2-mbit m (t2-sd M k 1)) (t2-sd M k 2)) (t2-sd M k 3)) (t2-sd M k 4))))))]
+-    (bit-or m3 (+ 384 1073741824))))
++    (bit-or (bit-or m3 (t2-g M t2-s-hsave)) (+ 384 1073741824))))
+ ;; r := value x (its register, or its spill location)
+ (defn- t2-mov-from [M :vector-i64 r :i64 x :i64] :vector-i64
+   (if (t2-spilled? M x) (t2-ldloc M r (t2-loc M x)) (gn-mov M r (t2-vf M x t2-f-reg))))

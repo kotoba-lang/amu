@@ -1,0 +1,97 @@
+(ns kotoba.compiler.accelerator-targets-test
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-targets :as targets]))
+
+(deftest vendor-classification-is-deterministic
+  (testing "pci vendor ids win over names"
+    (is (= :nvidia (targets/classify-vendor {:vendor-id 4318})))
+    (is (= :apple (targets/classify-vendor {:vendor-id 4203})))
+    (is (= :intel (targets/classify-vendor {:vendor-id 32902})))
+    (is (= :arm (targets/classify-vendor {:vendor-id 5045})))
+    (is (= :amd (targets/classify-vendor {:vendor-id 4098}))))
+  (testing "name matching is case-insensitive"
+    (is (= :nvidia (targets/classify-vendor {:vendor "NVIDIA GeForce RTX 4090"})))
+    (is (= :nvidia (targets/classify-vendor {:vendor "nvidia geforce rtx 4090"})))
+    (is (= :apple (targets/classify-vendor {:vendor "Apple M2 Pro"})))
+    (is (= :intel (targets/classify-vendor {:vendor "Intel(R) Iris(R) Xe Graphics"})))
+    (is (= :arm (targets/classify-vendor {:vendor "Mali-G78 MP24"})))
+    (is (= :amd (targets/classify-vendor {:vendor "AMD Radeon Pro 5500M"}))))
+  (testing "unknown devices classify as :unknown, not as a refusal"
+    (is (= :unknown (targets/classify-vendor {:vendor "Software Rasterizer"})))
+    (is (= :unknown (targets/classify-vendor {:vendor-id 1})))
+    (is (= :unknown (targets/classify-vendor {})))))
+
+(deftest target-dispatch-matches-api-and-vendor
+  (testing "an api that names its shading language decides outright"
+    (is (= :cuda-v1 (targets/target-for :cuda :nvidia)))
+    (is (= :msl-v1 (targets/target-for :metal :apple)))
+    (is (= :wgsl-v1 (targets/target-for :vulkan :intel)))
+    (is (= :wgsl-v1 (targets/target-for :webgpu :arm))))
+  (testing "a missing or unknown api falls back to the vendor default"
+    (is (= :cuda-v1 (targets/target-for nil :nvidia)))
+    (is (= :msl-v1 (targets/target-for nil :apple)))
+    (is (= :wgsl-v1 (targets/target-for nil :intel)))
+    (is (= :wgsl-v1 (targets/target-for nil :arm)))
+    (is (= :wgsl-v1 (targets/target-for :dxil :unknown))))
+  (testing "every answer is one of ADR-0002's admitted targets"
+    (doseq [api [:cuda :metal :vulkan :webgpu :dxil nil]
+            vendor targets/vendors]
+      (is (contains? accelerator/targets (targets/target-for api vendor))))))
+
+(deftest workgroup-defaults-are-bounded-powers-of-two
+  (doseq [vendor targets/vendors]
+    (let [size (targets/workgroup-default vendor)
+          width (:execution-width (get targets/workgroup-defaults vendor))]
+      (is (pos? size))
+      (is (zero? (bit-and size (dec size)))
+          (str vendor " workgroup " size " is not a power of two"))
+      (is (<= 32 size 1024))
+      (is (zero? (mod size width))
+          (str vendor " workgroup " size " is not a multiple of width " width))))
+  (testing "a vendor outside the table takes the :unknown row"
+    (is (= (:size (:unknown targets/workgroup-defaults))
+           (targets/workgroup-default :qualcomm)))))
+
+(deftest recommend-is-total-deterministic-and-provisional
+  (let [nvidia (targets/recommend {:vendor-id 4318 :api :cuda})
+        apple (targets/recommend {:vendor "Apple M3"})
+        unknown (targets/recommend {})]
+    (is (= :nvidia (:vendor nvidia)))
+    (is (= :cuda-v1 (:target nvidia)))
+    (is (= 256 (:workgroup-size nvidia)))
+    (is (= :msl-v1 (:target apple)))
+    (is (= :unknown (:vendor unknown)))
+    (is (= :wgsl-v1 (:target unknown)))
+    (testing "every answer is marked unmeasured until hardware says otherwise"
+      (doseq [decision [nvidia apple unknown]]
+        (is (false? (:measured? decision)))
+        (is (string? (:basis decision)))))
+    (testing "same descriptor in, same map out"
+      (is (= nvidia (targets/recommend {:vendor-id 4318 :api :cuda}))))))
+
+(deftest info-answers-parse-into-measured-device-facts
+  (testing "the recorded 2026-10-18 M1 Max INFO answer (wire 42) parses"
+    (let [d (targets/device-from-info "Apple M1 Max|1.3.357|1024|1")]
+      (is (= "Apple M1 Max" (:vendor d)))
+      (is (= :vulkan (:api d)))
+      (is (= "1.3.357" (:api-version d)))
+      (is (= 1024 (:max-workgroup-x d)))
+      (is (true? (:unified-memory? d)))
+      (is (true? (:measured? d)))))
+  (testing "measured facts do not make the workgroup row measured"
+    (let [decision (targets/recommend (targets/device-from-info "Apple M1 Max|1.3.357|1024|1"))]
+      (is (= :apple (:vendor decision)))
+      (is (= :msl-v1 (targets/target-for nil :apple)) "vendor default stays msl-v1")
+      (is (= :wgsl-v1 (:target decision)) "the wire is Vulkan, so :vulkan decides")
+      (is (false? (:measured? decision)))))
+  (testing "malformed answers parse to nil, never a throw or a wrong decision"
+    (is (nil? (targets/device-from-info nil)))
+    (is (nil? (targets/device-from-info "")))
+    (is (nil? (targets/device-from-info "dev|1.3.357")))
+    (is (nil? (targets/device-from-info "dev|1.3.357|1024|1|extra")))
+    (is (nil? (targets/device-from-info "|1.3.357|1024|1")))
+    (is (nil? (targets/device-from-info "dev|vulkan|1024|1")))
+    (is (nil? (targets/device-from-info "dev|1.3.357|0|1")))
+    (is (nil? (targets/device-from-info "dev|1.3.357|1024|2")))
+    (is (nil? (targets/device-from-info "dev|1.3.357|1024|x")))))

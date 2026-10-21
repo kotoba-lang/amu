@@ -46,20 +46,37 @@ functions, in source order: every `defn` whose name carries no `^:private`.
 (the frontend refuses a constant as an export). An explicit `:export` still
 wins and may narrow the set. The linker hands the frontend the derived vector
 as the `(:export [...])` clause the author could have written, so both
-spellings link to the same source and the same interface; a module whose every
-function is private is refused (`project module <ns> exports nothing`).
+spellings link to the same source and the same interface. With an omitted export
+clause, a module whose every function is private is still refused
+(`project module <ns> exports nothing`). An explicit empty export vector is
+different: `(:export [])` (or `{:kotoba/export []}`) declares an intentionally
+empty interface and admits a namespace-only or private-only entryless library
+on the `:js-kotoba-v1` target. Its exported object is empty; private definitions
+remain unavailable to callers. The orchestrator also admits entryless Wasm,
+qualified ClojureScript and ordinary native library profiles under their type
+gates; this empty-library result does not qualify those runtimes. Native
+firmware/kernel/process profiles still require their declared entry symbol. This does not admit an unmarked empty executable program.
 Closedness is unchanged: the set is still exact, only its spelling moved from
 the header to `defn` / `defn-`. The linker rejects missing
 source units, namespace/key mismatches, duplicate aliases or dependencies,
 unknown qualified calls, cycles, and projects above 256 modules or 1,024 linked
 functions.
 
-Project admission also caps the supplied source corpus at 8 MiB UTF-8, the
-linked source at 1 MiB UTF-8, reachable dependency edges at 256, dependency
-depth at 64, aggregate exported interfaces at 1,024, parsed expression nodes at
-200,000, literals at 65,536, and aggregate string-literal payload at 1 MiB
-UTF-8. These checks occur while resolving the closed graph, before backend
-emission.
+Project admission also caps the supplied source corpus at 8 MiB UTF-8, each
+top-level definition at 1 MiB UTF-8 (as read, and again as linked), each
+definition's transitive dependency closure at 1,024 definitions, reachable
+dependency edges at 256, dependency depth at 64, aggregate exported interfaces
+at 1,024, parsed expression nodes at 200,000, literals at 65,536, and aggregate
+string-literal payload at 1 MiB UTF-8. These checks occur while resolving the
+closed graph, before backend emission.
+
+The 1 MiB bound is on the definition, not on the linked concatenation (ADR
+0353 floor `:definition-admission`, 2026-09-30). A module is its definitions,
+the unit ADR 0300 identifies and caches, so the bound sits on that unit and on
+the graph each one reaches; a linked source over 1 MiB is admitted when every
+definition in it is within both. `cssom/layout.cljk` (1,083,132 bytes, largest
+form 24,303) is admitted this way. The root file named on the command line is
+still read under 1 MiB before parsing; a larger module enters as a dependency.
 
 Dependencies are visited before consumers and linked into one compiler-private
 call graph. Only the root module's exports receive host-visible wrappers. The

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import {
   chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync,
   rmSync, writeFileSync,
@@ -11,7 +12,14 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const directory = mkdtempSync(join(tmpdir(), "amu-launcher-test-"));
+const { resolveCallerPaths } = createRequire(import.meta.url)(join(root, "bin", "amu"));
 try {
+  const macosPackageArgs = resolveCallerPaths(["package-macos", "program.kexe"], directory);
+  if (macosPackageArgs[1] !== join(directory, "program.kexe")
+      || macosPackageArgs[macosPackageArgs.indexOf("--output") + 1]
+        !== join(directory, "kotoba-macos-program.o"))
+    throw new Error("package-macos defaults were not resolved against the caller directory");
+
   const report = join(directory, "report.json");
   const comparison = spawnSync(process.execPath,
     [join(root, "scripts", "launcher-comparison.mjs"), "--runs", "1", "--output", report],

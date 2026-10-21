@@ -1,0 +1,258 @@
+(ns test-execution-v2-native-providers
+  "Actual native programs cross one signed, durable scoped provider boundary."
+  (:require [cljs.test :as t :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kototama.execution-native :as adapter] [kototama.native.executor :as native]
+            [kotoba.artifact.runtime-identity :as runtime-id]
+            [kototama.execution-v2 :as v2] [kototama.execution-ledger :as ledger]
+            [kotoba.artifact.execution :as blocks] [kotoba.core.execution :as core]
+            [grant.execution-v2 :as issuer] [kotoba.verifier.signing :as signing]
+            [kotoba.value.codec :as value]
+            ["node:fs" :as fs] ["node:path" :as path] ["node:os" :as os]))
+(def measured (native/measure-runtime {:loader-source-dir (str (.cwd js/process) "/tools")}))
+(def loader-dir (fs/mkdtempSync (path/join (os/tmpdir) "kotoba-native-lease-loader-")))
+(def loader-path (path/join loader-dir "loader"))
+(fs/writeFileSync loader-path (:loader-bytes measured) #js {:mode 448})
+(fs/chmodSync loader-path 448)
+(def runtime (:runtime measured))
+(def target (case [(.-arch js/process) (.-platform js/process)]
+              ["arm64" "darwin"] :aarch64-macos-kotoba-v1
+              ["x64" "darwin"] :x86_64-macos-kotoba-v1
+              ["arm64" "linux"] :aarch64-linux-kotoba-v1
+              ["x64" "linux"] :x86_64-linux-kotoba-v1))
+(def limits {:fuel 1024})
+(def once "(defn main [] :i64 (typed-cap-call 1 :i64 :i64 41))")
+(def twice "(defn main [] :i64 (do (typed-cap-call 1 :i64 :i64 41) (typed-cap-call 1 :i64 :i64 41)))")
+(defn trust [k] {:format :kotoba.trust/v1 :trusted-signers #{(:signer k)}
+                 :revoked-signers #{} :revoked-artifacts #{}})
+(defn refused? [f] (try (f) false (catch :default _ true)))
+(defn fixture [target source uses mode & [bounds]]
+  (let [limits (or bounds limits)
+        directory (fs/mkdtempSync (path/join (os/tmpdir) "kotoba-provider-v3-"))
+        log (path/join directory "observed-effects")
+        _ (fs/mkdirSync (path/join directory "ledger") #js {:mode 448})
+        authority (signing/generate-keypair) executor (signing/generate-keypair)
+        now (atom (js/Date.now)) revoked (atom #{})
+        ref (:cid (blocks/block :policy {:fixture :scoped-provider}))
+        cap (:cid (blocks/block :interface {:purpose :audit/append :request :i64 :result :i64}))
+        resource (:cid (blocks/block :policy {:resource :private-audit-log :path log}))
+        scope [cap resource :audit/append]
+        bindings [{:id 1 :scope scope}]
+        raw (:artifact (if (map? source)
+                         (compiler/compile-project source 'native.program target
+                           {:allow #{[:cap/call (js/BigInt 1)]}} {} limits)
+                         (compiler/compile-source source target
+                           {:allow #{[:cap/call (js/BigInt 1)]}} limits)))
+        artifact (signing/sign raw authority {:not-before 0 :expires 4102444800})
+        artifact-trust (assoc (trust authority) :trusted-runtime-sha256 #{(runtime-id/identity-sha256 runtime)}
+                              :revoked-runtime-sha256 #{})
+        mechanisms (adapter/mechanisms {:prepare native/prepare :execute native/execute :close! native/close!}
+                     artifact-trust {:allow #{[:cap/call (js/BigInt 1)]}} loader-path #(deref now) bindings)
+        context ((:inspect! mechanisms) artifact runtime)
+        binding (blocks/binding-block target :sync (:artifact-cid context) (:interface-cid context)
+                                      (:runtime-identity context) (:layout context))
+        input (blocks/block :input {:entry (symbol "main") :arguments []})
+        invocation (issuer/issue-invocation (:signer (signing/generate-keypair)))
+        intent (blocks/intent-block binding context
+                 (assoc (zipmap core/execution-intent-keys (repeat ref))
+                        :format :kotoba.execution-intent/v2 :artifact-cid (:artifact-cid context)
+                        :profile-binding-cid (:cid binding) :runtime-identity (:runtime-identity context)
+                        :input-cid (:cid input) :invocation-cid (:cid invocation)
+                        :grant-cids [ref] :approval-cids []))
+        expiry (+ @now 300000) expiry-iso (.toISOString (js/Date. expiry))
+        plan {:format :kotoba.plan/v1 :plan-cid ref :code-closure-cid ref
+              :artifact-cid (:artifact-cid context) :compiler-contract ref :input-cid (:cid input)
+              :requested-effects #{:audit/append} :requested-resources #{resource} :budget {:fuel 1024}}
+        decision {:format :kotoba.policy-decision/v1 :decision-cid ref :plan-cid ref
+                  :policy-cid ref :db-basis ref :result :permit :reasons []
+                  :issued-at (.toISOString (js/Date. @now)) :expires-at expiry-iso}
+        request {:capability-cid cap :resource-cid resource :purpose :audit/append
+                 :expires-at expiry-iso :uses uses :transfer :non-transferable :delegation-depth 0}
+        lease (first (issuer/issue-leases
+                       {:intent intent :invocation invocation :plan plan :decision decision
+                        :permissions {cap {:grant-cid ref :resource-cid resource :purpose :audit/append
+                                           :expires-at expiry-iso :max-uses uses
+                                           :transfer :non-transferable :max-delegation-depth 0}}
+                        :requested [request] :now-iso (.toISOString (js/Date. @now))}))
+        window {:audience "provider-local-test" :not-before @now :expires expiry :epoch 1}
+        provider (fn [x]
+                   ;; The provider owns this exact private file; the guest can
+                   ;; submit only its typed i64, never a pathname or descriptor.
+                   (let [state (js->clj (js/JSON.parse (fs/readFileSync (path/join directory "ledger/execution-v2.json") "utf8")) :keywordize-keys true)
+                         remaining (get-in (last (:entries state)) [:leases 0 :uses])
+                         prior (if (fs/existsSync log) (count (re-seq #"\n" (fs/readFileSync log "utf8"))) 0)]
+                     (when-not (= (- uses prior 1) remaining)
+                       (throw (ex-info "provider ran before durable reservation" {}))))
+                   (fs/appendFileSync log (str x "\n") #js {:mode 384})
+                   (case mode
+                     :trap (throw (ex-info "provider trapped" {}))
+                     :revoke (do (swap! revoked conj (:cid lease)) (+ x (js/BigInt 1)))
+                     :expire (do (reset! now expiry) (+ x (js/BigInt 1)))
+                     :bad-type 42
+                     :slow (do (js/Atomics.wait (js/Int32Array. (js/SharedArrayBuffer. 4)) 0 0 6000) (+ x (js/BigInt 1)))
+                     (+ x (js/BigInt 1))))
+        host (merge mechanisms {:providers {scope provider}
+                                :ledger! (ledger/open-ledger! (path/join directory "ledger"))
+                                :epoch! (constantly 1) :clock! #(deref now)
+                                :audience "provider-local-test" :authority-trust (trust authority)
+                                :executor-trust (trust executor) :executor-key executor
+                                :revoked-cids! #(deref revoked)})
+        packet {:artifact artifact :runtime runtime :binding binding :intent intent
+                :invocation invocation :input input :authorization (v2/attest :intent intent authority window)
+                :leases [{:block lease :attestation (v2/attest :lease lease authority window)}]}]
+    {:host host :packet packet :directory directory :log log :lease lease :scope scope
+     :mechanisms mechanisms :bindings bindings :artifact-trust artifact-trust
+     :authority authority :window window :revoked revoked :now now}))
+(defn clean! [f] (fs/rmSync (:directory f) #js {:recursive true :force true}))
+(defn lines [f] (if (fs/existsSync (:log f)) (count (re-seq #"\n" (fs/readFileSync (:log f) "utf8"))) 0))
+(defn i64-result [o]
+  (let [r (get-in o [:value :evidence :result])]
+    (if (value/int64? r) (value/int64-value r) (js/BigInt r))))
+(defn outcome [result] (blocks/verify-block :outcome (:outcome result)))
+
+
+(deftest actual-native-provider-and-completion
+  (let [f (fixture target once 1 :ok)]
+    (try
+      (let [r (v2/run! (:host f) (:packet f)) o (outcome r)]
+        (is (= :ok (:status o)) (pr-str o))
+        (is (= (js/BigInt 42) (i64-result o)))
+        (is (= 1 (lines f)))
+        (is (some? (v2/verify-completion! (:host f) (get-in f [:packet :intent]) r)))
+        (is (refused? #(v2/run! (:host f) (:packet f))))
+        (is (= 1 (lines f))))
+      (finally (clean! f)))))
+
+(def typed-project
+  {'native.values
+   "(ns native.values (:export [make answer items head])
+      (:schemas {:native/value [:record :native/value [[:n :i64]]]}))
+    (defn make [n :i64] [:ref :native/value] (record-new [:ref :native/value] n))
+    (defn answer [v [:ref :native/value]] :i64 (record-get [:ref :native/value] v :n))
+    (defn items [n :i64] [:list :i64] (typed-list-conj [:list :i64] (typed-list-new [:list :i64]) n))
+    (defn head [v [:list :i64]] :i64 (typed-list-nth [:list :i64] v 0))"
+   'native.program
+   "(ns native.program (:export [main]) (:require [native.values :as values])
+      (:schemas {:native/value [:record :native/value [[:n :i64]]]}))
+    (defn main [] :i64 (typed-cap-call 1 :i64 :i64 (+ (values/answer (values/make 41)) (values/head (values/items 0)))))"})
+
+(deftest native-internal-records-stay-in-one-context
+  (let [f (fixture target typed-project 1 :ok)]
+    (try
+      (let [program (get-in f [:packet :artifact :artifact :program])
+            main (first (filter #(= 'main (:name %)) (:functions program)))
+            result (outcome (v2/run! (:host f) (:packet f)))]
+        ;; No project forwarding function between the public entry and its body.
+        (is (= 'typed-cap-call (first (:body main))))
+        (is (= :ok (:status result)))
+        (is (= (js/BigInt 42) (i64-result result)))
+        (is (= "41\n" (fs/readFileSync (:log f) "utf8")))
+        (is (refused? #(v2/run! (:host f) (:packet f))))
+        (is (= 1 (lines f))))
+      (finally (clean! f)))))
+
+(deftest internal-handles-do-not-widen-the-provider-signature
+  (is (refused?
+       #(compiler/compile-source
+         "(ns wire-probe (:export [main]) (:schemas {:wire/value [:record :wire/value [[:n :i64]]]}))
+          (defn main [] :i64 (typed-cap-call 1 :i64 :i64 (record-new [:ref :wire/value] 41)))"
+         target {:allow #{[:cap/call (js/BigInt 1)]}} limits))))
+
+(deftest native-internal-work-keeps-fuel-and-arena-limits
+  (doseq [[source bounds exhausted]
+          [["(ns fuel-probe (:export [main])) (defn main [] :i64 (loop [i 0] (if (< i 10000) (recur (+ i 1)) (typed-cap-call 1 :i64 :i64 41))))"
+            {:fuel 64} :fuel]
+           ["(ns arena-probe (:export [main])) (defn main [] :i64 (loop [i 0 cells 0] (if (< i 25000) (recur (+ i 1) (pair i cells)) (typed-cap-call 1 :i64 :i64 (pair-first cells)))))"
+            {:fuel 1000000} :arena]]]
+    (let [f (fixture target source 1 :ok bounds)]
+      (try
+        (let [result (outcome (v2/run! (:host f) (:packet f)))
+              report (get-in result [:value :report])]
+          (is (= :trap (:status result)))
+          (if (= :fuel exhausted)
+            (is (= 0 (get-in report [:fuel :remaining])))
+            (do (is (= (get-in report [:heap :capacity]) (get-in report [:heap :used])))
+                (is (pos? (get-in report [:fuel :remaining]))))))
+        (is (= 0 (lines f)))
+        (finally (clean! f))))))
+
+(deftest exhaustion-revocation-and-partial-trap
+  (doseq [[source uses mode expected] [[twice 1 :ok 1] [twice 2 :revoke 1]
+                                       [once 1 :trap 1] [once 1 :bad-type 1]]]
+    (let [f (fixture target source uses mode)]
+      (try
+        (is (= :trap (:status (outcome (v2/run! (:host f) (:packet f))))))
+        (is (= expected (lines f)))
+        (is (refused? #(v2/run! (:host f) (:packet f))))
+        (is (= expected (lines f)))
+        (finally (clean! f))))))
+
+(deftest reopened-ledger-replay
+  (let [f (fixture target once 1 :ok)]
+    (try
+      (is (= :ok (:status (outcome (v2/run! (:host f) (:packet f))))))
+      (is (refused? #(v2/run! (assoc (:host f) :ledger! (ledger/open-ledger! (path/join (:directory f) "ledger"))) (:packet f))))
+      (is (= 1 (lines f)))
+      (finally (clean! f)))))
+
+(deftest immutable-scope-and-closed-imports
+  (let [f (fixture target once 1 :ok)]
+    (try
+      (let [m (adapter/mechanisms {:prepare native/prepare :execute native/execute :close! native/close!}
+                  (:artifact-trust f) {:allow #{[:cap/call (js/BigInt 1)]}} loader-path #(deref (:now f))
+                  [(assoc-in (first (:bindings f)) [:scope 2] :other/purpose)])]
+        (is (refused? #(v2/run! (merge (:host f) m) (:packet f))))
+        (is (= 0 (lines f))))
+      (is (refused? #((:execute! (:mechanisms f)) {:artifact (get-in f [:packet :artifact])
+                  :runtime runtime :input {:entry (symbol "main") :arguments []}
+                  :call! (fn [_ _] (throw (ex-info "must not call" {}))) :scopes #{}})))
+      (is (= 0 (lines f)))
+      (finally (clean! f)))))
+
+(deftest two-uses-are-individually-reserved
+  (let [f (fixture target twice 2 :ok)]
+    (try
+      (let [r (v2/run! (:host f) (:packet f)) o (outcome r)]
+        (is (= :ok (:status o))) (is (= (js/BigInt 42) (i64-result o)))
+        (is (= 2 (lines f)))
+        (is (some? (v2/verify-completion! (:host f) (get-in f [:packet :intent]) r))))
+      (finally (clean! f)))))
+
+(deftest expiry-and-initial-revocation
+  (let [f (fixture target twice 2 :expire)]
+    (try
+      (is (refused? #(v2/run! (:host f) (:packet f))))
+      (is (= 1 (lines f)))
+      (finally (clean! f))))
+  (let [f (fixture target once 1 :ok)]
+    (try
+      (swap! (:revoked f) conj (get-in f [:lease :cid]))
+      (is (refused? #(v2/run! (:host f) (:packet f))))
+      (is (= 0 (lines f)))
+      (finally (clean! f)))))
+
+(deftest deadline-cannot-accept-a-late-provider-reply
+  (let [f (fixture target twice 2 :slow)]
+    (try
+      (let [r (v2/run! (:host f) (:packet f))]
+        (is (= :trap (:status (outcome r))))
+        (is (= 1 (lines f)))
+        (is (refused? #(v2/run! (:host f) (:packet f))))
+        (is (= 1 (lines f))))
+      (finally (clean! f)))))
+
+(deftest generic-source-call-is-refused-before-spawn
+  (let [f (fixture target once 1 :ok)]
+    (try
+      (let [raw (:artifact (compiler/compile-source "(defn main [] :i64 (cap-call 1 41))" target
+                           {:allow #{[:cap/call (js/BigInt 1)]}} limits))
+            envelope (signing/sign raw (:authority f) {:not-before 0 :expires 4102444800})]
+        (is (refused? #((:inspect! (:mechanisms f)) envelope runtime)))
+        (is (= 0 (lines f))))
+      (finally (clean! f)))))
+
+(defmethod t/report [:cljs.test/default :end-run-tests] [r]
+  (println (select-keys r [:test :pass :fail :error]))
+  (when (or (zero? (:test r)) (pos? (+ (:fail r) (:error r)))) (set! (.-exitCode js/process) 1)))
+(try (t/run-tests 'test-execution-v2-native-providers)
+     (finally (fs/rmSync loader-dir #js {:recursive true :force true})))

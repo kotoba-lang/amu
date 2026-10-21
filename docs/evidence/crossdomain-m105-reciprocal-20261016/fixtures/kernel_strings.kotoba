@@ -1,0 +1,27 @@
+(ns kernel-strings
+  (:export [kernel]))
+
+(defn imod [x :i64 m :i64] :i64
+  (- x (* (quot x m) m)))
+
+(defn scan [s :string i :i64 len :i64 h :i64] :i64
+  (if (< i len)
+    (scan s (+ i 1) len (imod (+ (* h 31) (string-code-point-at s i)) 1000003))
+    h))
+
+(defn build [s :string chunk :string k :i64] :string
+  (if (> k 0)
+    (build (string-concat s chunk) chunk (- k 1))
+    s))
+
+(defn kernel [n :i64] :i64
+  (let [base "the quick brown fox jumps over the lazy dog 0123456789"
+        r16 (imod n 16)
+        r8 (imod n 8)
+        chunk (string-substring base r16 (+ r16 8))
+        s (build "" chunk (+ 8 r8))
+        len (string-byte-length s)
+        h (scan s 0 len 7)]
+    (if (string=? chunk (string-substring s 0 8))
+      h
+      (- 0 h))))

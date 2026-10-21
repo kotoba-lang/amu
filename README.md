@@ -19,6 +19,22 @@ cloth.
 > `plan -> apply --check -> verify` loop, not hand edits. See
 > [docs/refactoring.md](docs/refactoring.md).
 
+## Lisp machine architecture
+
+AiueOS is the OS for a modern Kotoba Lisp machine in development. Kototama
+is its implementation-independent Lisp VM contract: closed S-expression
+computation, IPLD state, bounded authority and content-addressed receipts.
+Amu checks and compiles code; grant decides permission; runtime hosts and OS
+mechanisms enforce the admitted boundary. Kototama also has hosted engines
+and does not require AiueOS for every execution.
+
+The [stack architecture](https://github.com/kotoba-lang/kotoba-lang/blob/main/docs/stack-architecture.md) separates responsibility, source/library
+and artifact dependencies. Its [composition contract](https://github.com/kotoba-lang/kotoba-lang/blob/main/lang/stack-architecture.edn) routes
+to each owner's specification; it is not a new language or runtime semantics.
+"Modern Lisp machine" describes the architectural direction. It does not
+certify a complete integrated debugger, live system modification, full heap
+image restore, selfhost compiler or physical-machine qualification.
+
 ## Definition CIDs (compile once per hash)
 
 Every top-level function gets a content identity — the payload-v2 definition
@@ -39,11 +55,11 @@ A definition the identity cannot seal is listed with an explicit
 `:definition-cid :unbridged-effect` marker, and its callers with
 `:dependency-unavailable`; a CID is never invented for a hole. What cannot be
 sealed is a wire id no catalog names, or any effect-row keyword outside
-kotoba-kir's closed `control-effects` set. The tracked control effect `:abort`
+osaho's closed `control-effects` set. The tracked control effect `:abort`
 is **not** one of them: it is in that closed set, so an aborting definition
 **has** an identity, and it differs from the same body's pure identity because
 their interfaces differ (`[:result T E]` against `T`). This paragraph named
-`:abort` as the example of a hole until 2026-09-07; that was true of kotoba-kir
+`:abort` as the example of a hole until 2026-09-07; that was true of kotoba-kir (now osaho)
 before `984a507` (2026-09-02) and ADR-0300 section 4 was amended for it on
 2026-09-03 while this line was not.
 
@@ -112,6 +128,9 @@ That primary Node front resolves its pinned source closure from
 hermetically and compiles/executes a representative native artifact with JVM
 executables removed from `PATH`; every dependency pin change must regenerate
 the lock with `kbb --backend sci scripts/lock-classpath.cljk`.
+A fresh cache fetches the exact locked commit if ordinary full-history clone
+omits it from advertised history. An unavailable commit remains a fetch error;
+resolution never substitutes a branch tip or changes the pin.
 
 Primary Wasm and ordinary-native compilation are policy-bound as well:
 `:budgets :fuel` controls the emitted Wasm module or sealed native fuel ABI
@@ -213,11 +232,16 @@ profiles, conformance and runtime digests, CI run, test time, and expiry.
 
 ## Execution policy
 
-The compiler has one source-admission and KIR pipeline. Its primary application
-artifact is a Wasm Component/profile: a component is portable, linked through
-typed WIT imports, and receives no authority except the capabilities admitted
-by its host. `wasm32-wasi` does **not** mean ambient WASI access: the current
-profile rejects ambient WASI imports and expects a closed capability adapter.
+The compiler has one source-admission and KIR pipeline. `amu compile` and
+`amu worker` default to the engine-neutral, content-addressed Kototama program
+target (ADR 0355), so the default artifact does not depend on the build host's
+OS or ISA. `--target` or `AMU_TARGET` selects another backend explicitly.
+Host-native targets remain available for platform-specific integration and
+boot artifacts; Wasm targets remain available for browser, Worker and WASI
+hosts. A Wasm Component/profile is also a portable execution boundary: it
+links through typed WIT imports and receives only capabilities admitted by its
+host. `wasm32-wasi` does **not** mean ambient WASI access: the current profile
+rejects ambient WASI imports and expects a closed capability adapter.
 
 Kotoba's Lisp-facing `(eval request)` uses that same pipeline rather than a
 second evaluator. Semantic analysis lowers it to typed capability 30
@@ -228,9 +252,10 @@ the typed output as a ValueCID. Without that provider the capability traps.
 `apply` remains bounded closed-module closure invocation, while source strings,
 reader evaluation, ambient namespaces, and host `eval` remain unavailable.
 
-Direct x86-64/AArch64 AOT remains a supported backend for aiueos boot/kernel,
-engine, driver, root-key adapter, and explicitly trusted low-level primitives.
-It is not the default route for an ordinary Kotoba application. The compiler
+Direct x86-64/AArch64 AOT serves admitted native applications and AiueOS
+boot/kernel, engine, driver, root-key adapter and trusted low-level profiles.
+An explicit host-native target is not ambient OS authority and does not
+qualify the separate C-free AiueOS production path. The compiler
 must not duplicate runtime policy. Two linkers, two authorities:
 
 ```text
@@ -238,8 +263,9 @@ amu      編む   project link — many sources, one cloth
 kototama 言霊   runtime link — admitted imports, granted providers only
 ```
 
-`aiueos` owns grant decisions. A small native host (`kototama-native`)
-independently enforces the resulting grant. See
+`grant` owns permission decisions. AiueOS and runtime hosts enforce the
+admitted boundary. A small native host (`kototama-native`) independently
+enforces the resulting grant. See
 [`ADR-2607252500`](https://github.com/com-junkawasaki/root/blob/main/90-docs/adr/2607252500-kotoba-wasm-component-first-execution-boundary.edn).
 
 The portable reference runtime also defines the identity-to-capability
@@ -357,10 +383,10 @@ NaN, infinities, and signed-i64 overflow.
 
 ## Stack topology & boundaries
 
-This repository is the **foundation layer** of the kotoba stack: it depends
-on nothing else in the stack (`security` and the pinned `kotoba-script` JS
-backend only), and `kotoba` / `kototama` / `aiueos` / `kotobase` consume it —
-as a library or as emitted artifacts — never the reverse. The canonical
+This repository owns **T2 compilation and project linking**. It consumes
+shared contracts, semantic/IR libraries and native, Wasm, Component and Script
+backends. Consumers use it as a build library/tool or consume its verified
+artifacts; this is distinct from importing an OS or deciding runtime grants. The canonical
 topology, the dependency-direction invariants, and this repo's assigned
 design-cleanup items (admission-gate ↔ backend capability parity, unified
 `=` equality surface, kexe-loader validation in Kotoba objects, classpath-scan
@@ -504,29 +530,28 @@ The raw `answer.evm` creation bytecode deploys a standard Ethereum ABI
 `main()` dispatcher. The compiler also writes `answer.evm.abi.json` and a
 digest-bound `answer.evm.manifest.edn`; an unknown selector reverts.
 
-## Runtime: nbb-native for Wasm and ordinary native compile/check
+## Runtime: portable Kototama programs and explicit platform targets
 
-`bin/amu compile`/`check` for `wasm32*` and ordinary `x86_64*`/
-`aarch64*` targets runs entirely under `nbb` (ClojureScript on Node) --
-**no JVM process is spawned at all** for those paths. Target-specific
-entrypoints avoid loading either native emitter for Wasm and avoid loading the
-other ISA emitter for native compilation. This matches the monorepo's
-repo-wide runtime priority: amu's native compiler (`--target <isa>`, run
-through the kexe loader) is the first execution path, and wasm is one build
-target among several, chosen for hosts where native cannot run (browsers and
-Workers: `wasm32-browser`; WASI: `wasm32-wasi`); JVM/`bb` stay last-resort
-compat (superproject ADR-2609241300, 2026-09-24 — the earlier order put
-`kotoba wasm runtime` first). An omitted `--target` on `amu compile` /
-`amu worker` means **this host's native target** (ADR 0351, 2026-09-24; like
-Go's GOOS/GOARCH): `aarch64-macos` on Apple silicon, `x86_64-linux` /
-`aarch64-linux` on Linux, `x86_64-windows` / `aarch64-windows` on Windows,
-`aarch64-android` on Android; any other host is refused by name, never
-defaulted to wasm. `AMU_TARGET` overrides the default and an explicit
-`--target` overrides both. A program that uses a feature native does not
-qualify yet is refused naming the feature and the wasm32 targets that carry
-it -- choose `--target wasm32-browser` (browser / Worker) or
-`--target wasm32-wasi` explicitly; amu never switches to wasm by itself.
-`check`, `definition-cids`, `module-lock` and `package-*` take no target.
+`amu compile` and `amu worker` without `--target` emit the canonical Kototama
+program artifact (ADR 0355). The artifact is content-addressed DAG-CBOR and
+does not change with the host OS or ISA. `AMU_TARGET` can choose another
+backend when `--target` is omitted; an explicit `--target` takes precedence.
+The currently implemented Kototama profiles cover the i64 and data-i64
+subsets. Unsupported values and expressions outside these subsets are rejected
+before an artifact is written. Compilation does not prove that a target host
+provides every admitted capability effect; an invocation may trap if a
+provider is missing. Browser/Worker and WASI builds select `wasm32-browser` or
+`wasm32-wasi` explicitly. Host-native ISA targets remain explicit for native
+integration and boot artifacts. Amu never changes a selected target silently.
+
+The Kototama, Wasm and ordinary native compile paths run through `nbb`
+(ClojureScript on Node); **no JVM process is spawned**. The isolated Wasm and
+ordinary native entrypoints load their selected backend. The default Kototama
+entrypoint currently requires `kotoba.compiler.core`, whose dependency closure
+includes the Wasm, Component, CLJS, EVM, Script, x86-64 and AArch64 backends.
+
+`check`, `definition-cids`,
+`module-lock` and `package-*` take no target.
 The frontend reader/validator
 (`kotoba.compiler.frontend`), the KIR lowering/compile-time oracle
 (`kotoba.compiler.ir`), the wasm32 backend (`kotoba.compiler.backend.wasm`),
@@ -615,15 +640,27 @@ The restricted JavaScript target is selected with `--target js`. Since
 kotoba-script`, is portable `.cljc`), and `test/nbb/js_parity.cljk` holds the
 route to the JVM's bytes: the committed `runtime/http/route-decide.mjs` is the
 JVM's artifact and the nbb route reproduces it byte for byte, with the manifest
-and provenance equal as values. `cljs-browser` is the one JavaScript-family
-target still on the JVM route (ADR 0340). A Web
-library may deliberately omit `main`, but only when its namespace declares a
-non-empty host boundary, for example `(ns example.math (:export [add1]))`.
-This produces an entryless ESM artifact whose frozen API contains only those
-exports. Entryless source is rejected for every native, Wasm, and
-ClojureScript target; executable programs still require an exported,
-zero-argument `main`. Missing, empty, private, duplicate, or unknown exports
+and provenance equal as values. The three CLJS source profiles also have a
+JVM-free nbb driver (ADR 0347). A Web library may deliberately omit `main`
+when its namespace declares its host boundary, for example
+`(ns example.math (:export [add1]))`. `(:export [])` also admits an intentional
+namespace-only or private-only library with an empty public object. The
+restricted ESM API contains exactly the declared exports. The orchestrator
+admits entryless Wasm, qualified CLJS and ordinary native library profiles
+under their respective type gates; the empty JS result does not qualify those
+runtimes. Firmware/kernel/process profiles still require their entry symbol.
+Unmarked empty source and missing, private, duplicate or unknown named exports
 fail closed before lowering.
+
+Restricted JS functions may use `:js-value` parameters and results, preserving
+raw host identity through exports and internal calls. The opaque leaf does not
+read properties, coerce objects or grant callback/ambient capability access.
+Non-JS compilation, including CLJS, Wasm and components, refuses this host ABI
+before lowering; cached native/Wasm artifacts still require source ABI
+qualification. Descriptor IDs, field labels and keyword literals named
+`:js-value` are ordinary names and do not trigger that refusal. Canonical set
+items/map keys containing the type are unordered and refused; map values may
+contain it. Retained host graphs have embedder-owned resource/lifetime costs.
 
 The Web target also carries the first non-i64 value profile without erasing
 types. A parameter is written `name` or `name :type`, per parameter, in any
@@ -863,6 +900,22 @@ executes the compiled code and checks the result, not just static Mach-O
 shape. This needs no physical hardware or paid signing (Simulator binaries
 run unsigned), but does not by itself count toward this repo's coverage
 percentage -- see ADR-0001's Phase 3 for why.
+
+macOS arm64 has a matching static AOT packaging command for native host
+integration:
+
+```bash
+kotoba -M compile packet-plane.kotoba --target aarch64-macos \
+  --fuel 512 --output packet-plane.kexe
+kotoba -M package-macos packet-plane.kexe --entry main \
+  --output packet-plane.o --manifest-output packet-plane.edn
+```
+
+It re-verifies the macOS-target KEXE and emits a Mach-O `MH_OBJECT` with
+`LC_BUILD_VERSION` set to macOS 13.0. The manifest records the target, entry,
+artifact digest, and object digest. This packages code for linking; app
+signing, Network Extension authorization, installation, and physical-network
+execution remain separate gates.
 
 `wasm32-wasi` is the first sealed server core-Wasm profile. It is not yet a
 WebAssembly Component Model component. Its Wasm custom section
@@ -1133,8 +1186,9 @@ projection from zero or any forged handle traps. `list` is capped at 128 items
 and is expanded before structural and lowering budgets are checked, so surface
 syntax cannot hide unbounded backend work.
 
-Compilation has explicit structural budgets in addition to the 1 MiB source
-limit. Function count, common five-argument ABI, bindings, expression nodes, and
+Compilation has explicit structural budgets in addition to the 1 MiB
+per-definition source limit (8 MiB per project; ADR 0005, ADR 0353
+`:definition-admission`). Function count, common five-argument ABI, bindings, expression nodes, and
 the estimated `let`-elided lowering size are checked before backend emission;
 compact substitution chains cannot amplify into unbounded native code.
 
@@ -1598,3 +1652,62 @@ use a controlled compiler phase rather than leaking host reader exceptions.
 
 See [docs/architecture.md](docs/architecture.md) and
 [docs/threat-model.md](docs/threat-model.md).
+
+## Opaque JavaScript observations and undefined
+
+The locked Sema, Script and Osaho closure supports `js-typeof(js-value) ->
+string`, `js-array?(js-value) -> bool`, `js-bool-value(bool) -> js-value`,
+and zero-arity `js-undefined() -> js-value` through explicit `--target js`
+or `--target js-browser` and `--jvm-free`. These are Node/nbb bootstrap routes,
+not selfhost-built compiler evidence. Wasm-browser, CLJS and native targets
+refuse the opaque JS leaf without an output artifact or JVM fallback.
+
+A compiled Mithril `isPlainObject` example matched actual transpiled CosmoKit
+for 35 values / 105 comparisons per generated target, including foreign arrays
+and raw falsy values, plus two revoked-Proxy TypeErrors; getters were untouched.
+Eight ambient `Array.isArray` replacements also matched after runtime and
+emitter normalization. Both generated targets were executed in a pinned offline
+Node image; this does not qualify execution in a browser host.
+
+The authored Mithril `noop` lowers to a zero-arity undefined operation. The
+consumer qualification checks ignored extra arguments, including a revoked
+Proxy, and native undefined identity through the ordinary locked compiler route.
+These finite checks qualify compiler operations, not whole-Harness API/plugin
+equivalence. Public-library compatibility remains a separate requirement:
+restricted artifact instances have a cumulative fuel budget, and their export
+wrappers need independent qualification for function names, prototypes and
+constructibility before replacing the original package exports. Preserve the
+restricted profile and its budgets while implementing that library boundary.
+
+## Target-neutral and distributed stack architecture
+
+Checks target-independent semantics and emits the default Kototama program or an explicitly selected Native, Wasm core, Component, Script or bounded EVM artifact. Project linking belongs here; runtime linking belongs to the host. The default program is a host-independent, content-addressed DAG-CBOR Kototama expression artifact; native ISA and Wasm remain explicit target choices. EVM output is a bounded compiler slice, not a settlement network or proof of full Kototama conformance.
+
+See the [owner integration guide and dependency direction](docs/stack-architecture.md),
+[composition metadata](spec/stack-integration.edn), and
+[whole-stack refactor procedure](https://github.com/kotoba-lang/kotoba-lang/blob/main/docs/stack-refactor-procedure.md).
+The direction is adopted; runtime contract migration and qualification remain
+explicit, separately verified work. Tier labels are responsibility axes, not
+a single dependency ranking.
+
+## Execution contract entrypoints
+
+Neutral descriptors are imported from `kotoba.core.execution` (core-contracts).
+Component/WIT profiles and unchanged mixed v1 identity/lease codecs are imported
+from `kotoba.abi.component` (abi). The old `kotoba.abi.contract` facade remains
+readable for existing callers; new production imports select their owner.
+The [integration contract](spec/execution-profile-integration.edn) records this
+cutover. Existing v1 blocks/WIT/CIDs remain unchanged; v2 neutral identities
+require a verified target binding and fresh CID/signature. This change does not
+enable v2 runtime admission or claim Q9/native qualification.
+
+## Explicit v2 execution
+
+See [execution v2](docs/execution-v2.md) and [owner contract](spec/execution-v2.edn).
+New target bindings, authority-issued invocation/leases and authenticated admission
+are explicit APIs; existing v1 runtime defaults remain compatible.
+
+
+The optional v2 execution composition also supports explicit bounded scalar
+Wasm/Script provider artifacts with signed, durable lease-use enforcement.
+See [the provider contract and acceptance boundary](docs/execution-v2-providers.md).

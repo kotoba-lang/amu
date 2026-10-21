@@ -1,0 +1,207 @@
+(ns kotoba.compiler.options-map-argument-test
+  "ADR 0353 floor :options-map-argument.
+
+  kotoba-lang/browser's browser.text-edit takes options the Clojure way:
+  (defn move-caret ([state delta] (move-caret state delta {})) ([state delta
+  {:keys [extend?]}] ..)), and move-to the same. That was refused at
+  (move-caret (empty-state) 1): \"record-get without a type descriptor
+  requires a record value; got :i64\", minimized \"expression type mismatch:
+  expected map, got i64\" for the {:keys [extend?]} parameter and \"an empty
+  map literal {} has no row to extend\" for the 2-arity's {}.
+
+  Measured 2026-10-03 on kotoba-sema 275b40a0: the destructuring lookup a
+  {:keys [..]} parameter becomes was not a read of a row, so the parameter
+  stayed the provisional :i64; a {} had no record type; and a key the record
+  lacked was \"record field is not declared\".
+
+  Now, in kotoba-sema: a {:keys [..]} parameter is a row that does not require
+  its keys; {} passed to a row is the record with no fields; a destructured key
+  the record lacks is its :or default, or nothing -- a presence test of that
+  nothing is the constant false, and the binding nothing reads any more is
+  dropped, so no option is built. osaho, kotoba-native and kotoba-verifier
+  admit the record with no fields; natively it is the empty pair chain, 0.
+
+  What stays refused, each by its literal: a number as the options map (no
+  coercion); an absent option used as a number; a field the row reads with
+  (:k m) -- a required read -- off a record without it; and a record, the
+  empty one included, as an if test (a record is never truthy)."
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private move
+  "move-caret's shape, minimized: a 2-arity passing {} and a 3-arity
+  destructuring {:keys [extend?]}."
+  (str "(ns b)\n"
+       "(defn- mv ([m d] (mv m d {})) ([m d {:keys [extend?]}] (if extend? (+ (:c m) d) (:c m))))\n"))
+
+(def ^:private admitted
+  "Absent: 1; {:extend? true}: 1 + 2."
+  (str move "(defn main [] :i64 (+ (mv {:c 1} 2) (* 10 (mv {:c 1} 2 {:extend? true}))))"))
+
+(def ^:private defaulted
+  "{} answers the :or default 7; {:n 4} its 4."
+  (str "(ns b)\n"
+       "(defn- f [m {:keys [n] :or {n 7}}] (+ (:c m) n))\n"
+       "(defn main [] :i64 (+ (f {:c 1} {}) (* 100 (f {:c 1} {:n 4}))))"))
+
+(def ^:private text-edit
+  "browser.text-edit (browser 8671500) with the mechanical changes of floor
+  :browser-text-edit, the functions move-caret and move-to reach, without
+  :text/composition."
+  (str "(ns browser.text-edit)\n"
+       "(defn empty-state [] {:text/value \"\" :text/caret 0 :text/selection [0 0]})\n"
+       "(defn- clamp [n lo hi] (max lo (min hi n)))\n"
+       "(defn- code-unit-at [s idx] (string-code-unit-at s idx))\n"
+       "(defn- code-unit-count [s] (string-code-unit-count s))\n"
+       "(defn- surrogate-pair-boundary? [value p]\n"
+       "  (and (pos? p) (< p (code-unit-count value))\n"
+       "       (<= 0xD800 (code-unit-at value (dec p)) 0xDBFF)\n"
+       "       (<= 0xDC00 (code-unit-at value p) 0xDFFF)))\n"
+       "(defn- normalize-selection [state]\n"
+       "  (let [value (:text/value state \"\")\n"
+       "        n (code-unit-count value)\n"
+       "        [a b] (:text/selection state)\n"
+       "        a (clamp a 0 n)\n"
+       "        b (clamp b 0 n)]\n"
+       "    (assoc state :text/caret (clamp (:text/caret state) 0 n) :text/selection [(min a b) (max a b)])))\n"
+       "(defn- snap-out-of-surrogate-pair [value p] (if (surrogate-pair-boundary? value p) (dec p) p))\n"
+       "(defn- collapse [state caret]\n"
+       "  (let [value (:text/value state \"\")\n"
+       "        caret (-> caret (clamp 0 (code-unit-count value)) (->> (snap-out-of-surrogate-pair value)))]\n"
+       "    (assoc state :text/caret caret :text/selection [caret caret])))\n"
+       "(defn- select [state start end]\n"
+       "  (let [value (:text/value state \"\")]\n"
+       "    (-> state\n"
+       "        (assoc :text/selection [(snap-out-of-surrogate-pair value start) (snap-out-of-surrogate-pair value end)]\n"
+       "               :text/caret (snap-out-of-surrogate-pair value end))\n"
+       "        (normalize-selection))))\n"
+       "(defn- insert-text [state text]\n"
+       "  (let [state (normalize-selection state)\n"
+       "        value (:text/value state \"\")\n"
+       "        [start end] (:text/selection state)\n"
+       "        text (str text)\n"
+       "        value (str (subs value 0 start) text (subs value end))\n"
+       "        caret (+ start (code-unit-count text))]\n"
+       "    (assoc state :text/value value :text/caret caret :text/selection [caret caret])))\n"
+       "(defn- selection-anchor [state]\n"
+       "  (let [state (normalize-selection state)\n"
+       "        caret (:text/caret state)\n"
+       "        [start end] (:text/selection state)]\n"
+       "    (if (<= caret start) end start)))\n"
+       "(defn- move-caret\n"
+       "  ([state delta]\n"
+       "   (move-caret state delta {}))\n"
+       "  ([state delta {:keys [extend?]}]\n"
+       "   (let [state (normalize-selection state)\n"
+       "         value (:text/value state \"\")\n"
+       "         [start end] (:text/selection state)\n"
+       "         caret (:text/caret state)\n"
+       "         next-caret (clamp (if (and (not extend?) (< start end))\n"
+       "                             (if (neg? delta) start end)\n"
+       "                             (+ caret delta))\n"
+       "                           0\n"
+       "                           (code-unit-count value))\n"
+       "         next-caret (cond\n"
+       "                      (and (neg? delta) (surrogate-pair-boundary? value next-caret)) (dec next-caret)\n"
+       "                      (and (pos? delta) (surrogate-pair-boundary? value next-caret)) (inc next-caret)\n"
+       "                      :else next-caret)]\n"
+       "     (if extend?\n"
+       "       (select state (selection-anchor state) next-caret)\n"
+       "       (collapse state next-caret)))))\n"
+       "(defn- move-to\n"
+       "  ([state caret]\n"
+       "   (move-to state caret {}))\n"
+       "  ([state caret {:keys [extend?]}]\n"
+       "   (let [state (normalize-selection state)\n"
+       "         caret (clamp caret 0 (code-unit-count (:text/value state \"\")))]\n"
+       "     (if extend?\n"
+       "       (select state (selection-anchor state) caret)\n"
+       "       (collapse state caret)))))\n"))
+
+(def ^:private text-edit-main
+  "\"abcd\", caret 4: left -> caret 3 (333); then shift-left 2 -> [1 3], caret
+  1 (113); move-to 1 then shift-move-to 3 -> [1 3], caret 3 (313)."
+  (str text-edit
+       "(defn- measure [s] (+ (* 100 (:text/caret s)) (* 10 (nth (:text/selection s) 0)) (nth (:text/selection s) 1)))\n"
+       "(defn main [] :i64\n"
+       "  (let [s (insert-text (empty-state) \"abcd\")]\n"
+       "    (+ (* 1000000 (measure (move-caret s -1)))\n"
+       "       (* 1000 (measure (move-caret (move-caret s -1) -2 {:extend? true})))\n"
+       "       (measure (move-to (move-to s 1) 3 {:extend? true})))))"))
+
+(def ^:private text-edit-private-main
+  "The same with empty-state private: its record as an export's result is
+  floor :export-signatures, not this one."
+  (str/replace text-edit-main "(defn empty-state" "(defn- empty-state"))
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- refusal [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(defn- compile-refusal [source target]
+  (try (compiler/compile-source source target)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(defn- native-value [source target]
+  (#?(:clj long :cljs js/Number) (:value (:artifact (compiler/compile-source source target)))))
+
+(deftest options-map-destructures-as-a-row-test
+  (testing "admitted on the reference: {} and {:extend? true}, a key absent read as absence"
+    (is (= 31 (run-main admitted)))
+    (is (= 508 (run-main defaulted))))
+  (testing "admitted on the hosted target"
+    (doseq [source [admitted defaulted]]
+      (is (= [0 97 115 109]
+             (mapv #(bit-and (int %) 0xff)
+                   (take 4 (:bytes (compiler/compile-source source :wasm32-kotoba-v1))))))))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "compiles on both native targets: the record with no fields"
+    (doseq [target native-targets]
+      (is (= 31 (native-value admitted target)) (str target))
+      (is (= 508 (native-value defaulted target)) (str target))))
+  (testing "browser.text-edit's move-caret and move-to on the reference"
+    (is (= 333113313 (run-main text-edit-main))))
+  (testing "browser.text-edit's move-caret and move-to, empty-state private, natively and on wasm32"
+    (doseq [target native-targets]
+      (is (= 333113313 (native-value text-edit-private-main target)) (str target)))
+    (is (nil? (compile-refusal text-edit-private-main :wasm32-kotoba-v1))))
+  (testing "not yet native: text-edit's public empty-state, an export's record (floor :export-signatures)"
+    (doseq [target native-targets]
+      (is (= (str "typed values currently require the kotoba-script web target, typed "
+                  "Wasm/CLJS target, or the qualified native one-word "
+                  "string/record/variant/option/result slice")
+             (compile-refusal text-edit-main target))
+          (str target))))
+  (testing "refused: a number is not coerced to an options map, bound by let or not"
+    (is (= "argument 5 to mv is i64, and parameter {:keys [extend?]} of mv is the row {| r}: only a record satisfies a row"
+           (refusal (str move "(defn main [] :i64 (mv {:c 1} 2 5))"))))
+    (is (= "argument o to mv is i64, and parameter {:keys [extend?]} of mv is the row {| r}: only a record satisfies a row"
+           (refusal (str move "(defn main [] :i64 (let [o 5] (mv {:c 1} 2 o)))")))))
+  (testing "refused: an absent option used as a number"
+    (is (= "expression type mismatch: expected i64, got option-i64"
+           (refusal (str "(ns b)\n(defn- f [m {:keys [n]}] (+ (:c m) n))\n"
+                         "(defn main [] :i64 (f {:c 1} {}))")))))
+  (testing "refused: (:k m) is a required read, so {} lacks the field it reads"
+    (is (= (str "argument {} to mv is record :kotoba.map-literal/empty, which has no field :extend?"
+                " that the row {:extend? T | r} of parameter o reads")
+           (refusal (str "(ns b)\n(defn- mv [m d o] (if (:extend? o) (+ (:c m) d) (:c m)))\n"
+                         "(defn main [] :i64 (mv {:c 1} 2 {}))")))))
+  (testing "refused: a record, the empty one included, is never truthy"
+    (is (= "if test must be bool or an option"
+           (refusal (str "(ns b)\n(defn- g [o] (let [{:keys [a]} o] (if o 1 0)))\n"
+                         "(defn main [] :i64 (g {}))"))))))

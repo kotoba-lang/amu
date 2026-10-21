@@ -17,11 +17,15 @@
 ;; `loop` (kotoba-sema, measured 2026-09-24: "unbound or dynamic symbol ...
 ;; c is not a parameter").
 ;;
-;; Budgets: 6,006 native function entries (measured on aarch64 and x86_64),
-;; above the old default 512. Since adr-2609242100 P4 the native profile does
-;; not meter fuel by default, so it compiles with no --fuel (the oracle runs
-;; under the unmetered artifact's 100,000) and runs with no KEXE_FUEL. Opting
-;; in with KEXE_FUEL=6005 traps :budget/fuel on both ISAs; 6006 answers. Its
+;; Budgets: 8,007 native fuel (measured 2026-10-09 on aarch64 and x86_64 by
+;; scripts/test-fuel-differential.cljk): 6,006 function entries plus one unit
+;; for each of the 2,001 constructors (1 :empty, 1000 variants, 1000 records),
+;; which native charges since ADR 0353 floor :allocation-budget-native
+;; (2026-09-30; the 6,006 measured 2026-09-24 predates it). Since
+;; adr-2609242100 P4 the native profile does not meter fuel by default, so it
+;; compiles with no --fuel (the oracle runs under the unmetered artifact's
+;; 100,000) and runs with no KEXE_FUEL. Opting in with KEXE_FUEL=8006 traps
+;; :budget/fuel on both ISAs; 8007 answers. Its
 ;; 1000 cells use 3,001 of the 4,096 pair-arena cells (KEXE_PAIRS=3000 traps
 ;; :budget/cells).
 (ns probe.list (:export [main])

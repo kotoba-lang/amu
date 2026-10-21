@@ -1,0 +1,188 @@
+{
+  "status": "PASS_G1_TO_GN_BYTE_IDENTICAL_FIXED_POINT",
+  "sourceFiles": [
+    "seed/00-ns.kotoba",
+    "seed/01-mem.kotoba",
+    "seed/02-io.kotoba",
+    "seed/10-lex.kotoba",
+    "seed/11-read.kotoba",
+    "seed/12-kirread.kotoba",
+    "seed/20-names.kotoba",
+    "seed/21-check.kotoba",
+    "seed/30-lower.kotoba",
+    "seed/40-a64enc.kotoba",
+    "seed/41-a64gen.kotoba",
+    "seed/42-layout.kotoba",
+    "seed/50-out.kotoba",
+    "seed/60-proj.kotoba",
+    "seed/90-drv.kotoba",
+    "seed/99-entry.kotoba"
+  ],
+  "sourceUnityBytes": 2782163,
+  "sourceUnitySHA256": "f390092b095fcdea7da15f4f58999b5208fbfc41fc018a285e6d5519f93c55ff",
+  "candidateSourceSHA256": "23fadc6ed9d0e3590a64067c9d6df5e600af648ea2b527ecca433638b1d63cc7",
+  "previousCompilerSHA256": "1544a204b003bd3b5ec9831be008fcbd5ffa5a91c44f922a4ca13a1dca539588",
+  "previousFixedPointReport": "workspaces/codex/amu-statemate-singleuse-inline-20261017/attempt-3/build/build-report.json",
+  "trustedLoaderSourceSHA256": "f44b50995a0e45db4be35244da34dd61538a484c7d5ea2f15f7f5a73d9daa8c3",
+  "host": {
+    "system": "Darwin",
+    "machine": "arm64",
+    "version": "26.4"
+  },
+  "JVMNodeOrGraalFallback": false,
+  "startedUnix": 1792215717.441671,
+  "generations": [
+    {
+      "generation": 1,
+      "bytes": 2554976,
+      "sha256": "dabd12652257a8b6c08774bec85fbab4fe2933721ee019b3ba7d9c8c416dfb3d",
+      "containerSHA256": "0cf6f3bf396c8767503173070b089cac165f83b4a56ac9552deb683e47d88d0a",
+      "compilerInputSHA256": "1544a204b003bd3b5ec9831be008fcbd5ffa5a91c44f922a4ca13a1dca539588"
+    },
+    {
+      "generation": 2,
+      "bytes": 2554976,
+      "sha256": "dabd12652257a8b6c08774bec85fbab4fe2933721ee019b3ba7d9c8c416dfb3d",
+      "containerSHA256": "0cf6f3bf396c8767503173070b089cac165f83b4a56ac9552deb683e47d88d0a",
+      "compilerInputSHA256": "dabd12652257a8b6c08774bec85fbab4fe2933721ee019b3ba7d9c8c416dfb3d"
+    },
+    {
+      "generation": 3,
+      "bytes": 2554976,
+      "sha256": "dabd12652257a8b6c08774bec85fbab4fe2933721ee019b3ba7d9c8c416dfb3d",
+      "containerSHA256": "0cf6f3bf396c8767503173070b089cac165f83b4a56ac9552deb683e47d88d0a",
+      "compilerInputSHA256": "dabd12652257a8b6c08774bec85fbab4fe2933721ee019b3ba7d9c8c416dfb3d"
+    }
+  ],
+  "calls": [
+    {
+      "name": "loader-build",
+      "argv": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "./seed/bootstrap/adopted-loader-20261012.c",
+        "-o",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/host/kexe-loader"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "G1-compile",
+      "argv": [
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/host/kexe-loader",
+        "./workspaces/codex/amu-statemate-singleuse-inline-20261017/attempt-3/build/artifacts/G3.bin",
+        "0",
+        "0",
+        "aarch64",
+        "35,37,38,39",
+        "--",
+        "compile",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/artifacts/seed-unity.kotoba",
+        "--target",
+        "aarch64-macos",
+        "--output",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/artifacts/G1.kseed"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "G1-extract",
+      "argv": [
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/host/kexe-loader",
+        "./workspaces/codex/amu-statemate-singleuse-inline-20261017/attempt-3/build/artifacts/G3.bin",
+        "0",
+        "0",
+        "aarch64",
+        "35,37,38,39",
+        "--",
+        "extract-native",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/artifacts/G1.kseed",
+        "--symbol",
+        "main",
+        "--output",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/artifacts/G1.bin"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "G2-compile",
+      "argv": [
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/host/kexe-loader",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/artifacts/G1.bin",
+        "0",
+        "0",
+        "aarch64",
+        "35,37,38,39",
+        "--",
+        "compile",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/artifacts/seed-unity.kotoba",
+        "--target",
+        "aarch64-macos",
+        "--output",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/artifacts/G2.kseed"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "G2-extract",
+      "argv": [
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/host/kexe-loader",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/artifacts/G1.bin",
+        "0",
+        "0",
+        "aarch64",
+        "35,37,38,39",
+        "--",
+        "extract-native",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/artifacts/G2.kseed",
+        "--symbol",
+        "main",
+        "--output",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/artifacts/G2.bin"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "G3-compile",
+      "argv": [
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/host/kexe-loader",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/artifacts/G2.bin",
+        "0",
+        "0",
+        "aarch64",
+        "35,37,38,39",
+        "--",
+        "compile",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/artifacts/seed-unity.kotoba",
+        "--target",
+        "aarch64-macos",
+        "--output",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/artifacts/G3.kseed"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "G3-extract",
+      "argv": [
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/host/kexe-loader",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/artifacts/G2.bin",
+        "0",
+        "0",
+        "aarch64",
+        "35,37,38,39",
+        "--",
+        "extract-native",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/artifacts/G3.kseed",
+        "--symbol",
+        "main",
+        "--output",
+        "scratch/workspaces/codex/amu-sglib-heap-hole-20261017/attempt-2/build/artifacts/G3.bin"
+      ],
+      "exit": 0
+    }
+  ],
+  "loaderBinarySHA256": "05798f17613db2936cf8fe29c16590c8c2b7513fc80e5b2334e89d16b482f7aa",
+  "fixedPointSHA256": "dabd12652257a8b6c08774bec85fbab4fe2933721ee019b3ba7d9c8c416dfb3d",
+  "endedUnix": 1792215971.4288251
+}

@@ -1,0 +1,122 @@
+(ns kotoba.compiler.row-tuple-element-argument-test
+  "ADR 0353 floor :row-tuple-element-argument.
+
+  kotoba-lang/browser's browser.surface returns a pair from a row function --
+  next-window-id's [id surface], the id (str \"w\" n) and the surface updated
+  -- and its callers destructure it: open-window reads and updates the
+  surface it gets back and returns it, and a caller of open-window passes
+  that on to the next open-window. element!'s [id document] from
+  dom/create-element is the same shape. Measured 2026-10-07 (amu 56235b73,
+  kotoba-sema ee49571, before this floor): the surface was typed only inside
+  the function that destructured it. A caller reading it was refused
+  \"unbound symbol has no value type: s ..\", passing it on to a row parameter
+  \"argument s to open-window has no type known here ..\", and
+  (open-window (open-window (empty-surface))) \"argument (open-window__row_0_..)
+  to open-window is i64 ..\".
+
+  One cause under all three: a specialization's result is inferred from its
+  body after `rewrite-record-projection`, which writes (str \"w\" n) as
+  string-concat of __kotoba_string_from_i64 -- a helper injected after that
+  pass, so inference met an unknown operation, the result stayed the
+  provisional :i64, and the pair built from it was no pair. kotoba-sema now
+  types the helper as string-from-i64's printer: next-window-id's result is
+  [:vector [:string R]], open-window's the pair (or the record) built from
+  its elements, and each caller's destructured element is that record.
+
+  What stays refused, by its literal: a destructured element that is not a
+  record read as one (the id, a string), and an element index past the
+  pair's end."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private prelude
+  "browser.surface (browser 097e44c)'s empty-surface and next-window-id, the
+  window list left out (floors :record-list-field-literal and
+  :absent-field-from-expression)."
+  (str "(ns browser.surface)\n"
+       "(defn- empty-surface []\n"
+       "  {:surface/id \"kotoba-os\" :surface/next-window-id 1 :surface/opened 0 :surface/focus \"\"})\n"
+       "(defn- next-window-id [surface]\n"
+       "  [(str \"w\" (:surface/next-window-id surface))\n"
+       "   (update surface :surface/next-window-id inc)])\n"))
+
+(def ^:private open-window-pair
+  "open-window returning its own [id surface] pair."
+  (str "(defn- open-window [surface]\n"
+       "  (let [[id surface] (next-window-id surface)]\n"
+       "    [id (-> surface (update :surface/opened inc) (assoc :surface/focus id))]))\n"))
+
+(def ^:private read-by-caller
+  "The caller reads the surface it destructured: w1 focused, opened 1."
+  (str prelude open-window-pair
+       "(defn main [] :i64\n"
+       "  (let [[id s] (open-window (empty-surface))]\n"
+       "    (+ (* 100 (:surface/opened s)) (if (string=? (:surface/focus s) id) 10 0)\n"
+       "       (string-code-unit-count id))))"))
+
+(def ^:private passed-on
+  "The destructured surface passed on to the next open-window: w2 focused,
+  the counter at 3, opened 2."
+  (str prelude open-window-pair
+       "(defn main [] :i64\n"
+       "  (let [[a s] (open-window (empty-surface))\n"
+       "        [b t] (open-window s)]\n"
+       "    (+ (* 10000 (:surface/next-window-id t)) (* 100 (:surface/opened t))\n"
+       "       (if (string=? (:surface/focus t) \"w2\") 10 0) (if (string=? a \"w1\") 1 0))))"))
+
+(def ^:private nested
+  "open-window as browser.surface writes it, returning the updated
+  destructured surface, called on its own result."
+  (str prelude
+       "(defn- open-window [surface]\n"
+       "  (let [[id surface] (next-window-id surface)]\n"
+       "    (-> surface (update :surface/opened inc) (assoc :surface/focus id))))\n"
+       "(defn main [] :i64\n"
+       "  (let [s (open-window (open-window (empty-surface)))]\n"
+       "    (+ (* 10000 (:surface/next-window-id s)) (* 100 (:surface/opened s))\n"
+       "       (if (string=? (:surface/focus s) \"w2\") 10 0))))"))
+
+(def ^:private admitted
+  "Each answers the same on the reference and both native targets."
+  {read-by-caller 112
+   passed-on 30211
+   nested 30210})
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- number [value] (#?(:clj long :cljs js/Number) value))
+
+(defn- run-main [source]
+  (number (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- native-value [source target]
+  (number (:value (:artifact (compiler/compile-source source target)))))
+
+(defn- refusal [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(deftest row-tuple-element-argument-test
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "admitted on the reference and both native targets"
+    (doseq [[source expected] admitted]
+      (is (= expected (run-main source)) source)
+      (doseq [target native-targets]
+        (is (= expected (native-value source target)) (str target " " source)))))
+  (testing "refused: the destructured id, a string, read as a record"
+    (is (= "record-get without a type descriptor requires a record value; got :string"
+           (refusal (str prelude open-window-pair
+                         "(defn main [] :i64\n"
+                         "  (let [[id s] (open-window (empty-surface))] (:surface/opened id)))")))))
+  (testing "refused: an element past the pair's end"
+    (is (= "heterogeneous vector index must be in range"
+           (refusal (str prelude open-window-pair
+                         "(defn main [] :i64\n"
+                         "  (let [[id s extra] (open-window (empty-surface))] (:surface/opened s)))"))))))

@@ -13,6 +13,8 @@
             #?(:cljs [kotoba.compiler.nbb.compile-cache :as digest]
                :kotoba [kotoba.compiler.nbb.compile-cache :as digest])
             #?(:cljs [kotoba.kir.cljs-i64 :as i64])
+            #?(:cljs [kotoba.compiler.host-integer :as host-integer])
+            #?(:cljs [ipld.core :as ipld])
             #?(:cljs [kotoba.verifier :as verifier])))
 
 ;; Kotoba reading (a project-route compile of this module). The provenance
@@ -273,6 +275,45 @@
         (verifier/verify-artifact! native))
       (verifier/verify-artifact! native))))
 
+(defn- admit-kototama! [artifact-bytes provenance]
+  (let [primary (get-in provenance [:outputs :primary])
+        size (wasm-size (:size primary))
+        node (try (ipld/decode artifact-bytes)
+                  (catch :default _ (reject! :kototama-dag-cbor-invalid)))
+        program (when (and (vector? node) (= 3 (count node))
+                           (= "kototama.vm/program" (first node))
+                           (= 1 (second node))
+                           (map? (nth node 2)))
+                  (nth node 2))
+        methods (get program "methods")
+        exports (or (get program "exports") (vec (keys methods)))
+        entry (get program "entry")]
+    (when-not (and (= :kototama-core-v1 (:target provenance))
+                   (map? primary)
+                   (= #{:format :cid :size} (set (keys primary)))
+                   (= :dag-cbor (:format primary))
+                   (string? (:cid primary))
+                   (= (:cid primary) (ipld/cid artifact-bytes))
+                   (host-integer/safe-integer? size)
+                   (= (.-length artifact-bytes) size)
+                   (map? methods)
+                   (or (nil? entry) (string? entry))
+                   (contains? #{"kotoba.i64-wrap/v1" "kototama.data-i64/v1"}
+                              (get program "value-profile"))
+                   (vector? exports)
+                   (every? string? exports)
+                   (= (count exports) (count (set exports)))
+                   (every? #(contains? methods %) exports)
+                   (or (nil? entry) (some #{entry} exports)))
+      (reject! :kototama-identity-mismatch))
+    {:format format
+     :target (:target provenance)
+     :committed true
+     :provenance-sealed true
+     :artifact-identity-verified true
+     :target-verification :canonical-dag-cbor-kototama-program
+     :publisher-authenticated false}))
+
 (defn admit!
   ([artifact-bytes provenance] (admit! artifact-bytes provenance nil))
   ([artifact-bytes provenance emitters-for]
@@ -281,6 +322,7 @@
     (case primary-format
       :wasm (admit-wasm! artifact-bytes provenance)
       :kotoba.kexe/v1 (admit-native! artifact-bytes provenance emitters-for)
+      :dag-cbor (admit-kototama! artifact-bytes provenance)
       (reject! :unsupported-primary-format))
     {:format format
      :target (:target provenance)
@@ -289,5 +331,6 @@
      :artifact-identity-verified true
      :target-verification (case primary-format
                             :wasm :webassembly-validate
-                            :kotoba.kexe/v1 :independent-native-verifier)
+                            :kotoba.kexe/v1 :independent-native-verifier
+                            :dag-cbor :canonical-dag-cbor-kototama-program)
      :publisher-authenticated false})))))

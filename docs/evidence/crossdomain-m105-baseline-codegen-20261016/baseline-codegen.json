@@ -1,0 +1,80 @@
+{
+  "format": "kotoba.amu-baseline-codegen-evidence/v1",
+  "status": "CODEGEN_ONLY_NOT_EXECUTED_NOT_TIMED",
+  "sourceTreeCommit": "518406de6b5b92ebeacf9f72b457e3728592cdf0",
+  "compiler": {
+    "name": "adopted native M105 selfhost fixed point",
+    "image": "seed/bootstrap/adopted-20261012.bin",
+    "sha256": "6b158aa8654706743462b8a730f189072ba05f364b00af28a3f6d23045add2eb",
+    "record": "docs/evidence/same-algo-m105-20261016/selfbuild.json",
+    "jvmNodeOrGraalFallback": false
+  },
+  "loader": {
+    "source": "seed/bootstrap/adopted-loader-20261012.c",
+    "sourceSha256": "f44b50995a0e45db4be35244da34dd61538a484c7d5ea2f15f7f5a73d9daa8c3",
+    "hostBuiltWith": "clang -std=c11 -O2"
+  },
+  "target": "aarch64-macos",
+  "fixtures": {
+    "kernel_strings": {
+      "source": {
+        "path": "kernel_strings.kotoba",
+        "bytes": 752,
+        "sha256": "c06504fb42f615002e80163f621e0c3f715324ec954c9fab7d9fc1d3b94a0ab0"
+      },
+      "kexe": {
+        "path": "kernel_strings.kexe",
+        "bytes": 1388,
+        "sha256": "71ac2839bea477c926887ac2792b0c80ac20a42ae2a034775797669006d15e4c"
+      },
+      "nativeCode": {
+        "path": "kernel_strings.bin",
+        "bytes": 1360,
+        "sha256": "02e0217d5534311eb50b1acfcd19a87f53c4ac5d6dad127ed8b503cba00ecf4c"
+      },
+      "disassembly": {
+        "path": "kernel_strings.disasm.txt",
+        "bytes": 11286,
+        "sha256": "94c808c0c93523fd108cbe6e1e8e321d5a240ab6390a1df972046c82bd123ad4"
+      }
+    },
+    "kernel_collections": {
+      "source": {
+        "path": "kernel_collections.kotoba",
+        "bytes": 774,
+        "sha256": "5e31505354f7d803b72e4db61a9eea5f0a38d5457b829f7fae19fcc86c180af0"
+      },
+      "kexe": {
+        "path": "kernel_collections.kexe",
+        "bytes": 3093,
+        "sha256": "715e709d6f2b0db3c4a363418bdad0b5a66eb9cbcb5757ac94463d734e07e8ec"
+      },
+      "nativeCode": {
+        "path": "kernel_collections.bin",
+        "bytes": 3064,
+        "sha256": "8853a4aeb2b256f8bc2155cb0dc685cd09af5694db6ae3a4c36e1c51944e799e"
+      },
+      "disassembly": {
+        "path": "kernel_collections.disasm.txt",
+        "bytes": 25206,
+        "sha256": "20c13c559d43d11b43e63cb3aee6498f3407a8a549ecfdb7180ae49f660abaa4"
+      }
+    }
+  },
+  "findings": {
+    "constantDivisor": "1000003 (0x00000000000f4243)",
+    "stringsLoopSdivOffsets": [
+      "0x154",
+      "0x228"
+    ],
+    "collectionsUnrolledSdivOffsets": [
+      "0x320",
+      "0x340",
+      "0x360",
+      "0x380"
+    ],
+    "collectionsRemainderSdivOffset": "0x400",
+    "smulhPresent": false,
+    "notes": "Offsets are from the extracted native byte ranges. The KEXE and native code are retained; disassembly was produced by wrapping those raw bytes in an arm64 Mach-O object and running otool -tvV. The code range includes helper and optimized copies, so use loop control flow and divisor operands rather than static sdiv counts."
+  }
+}

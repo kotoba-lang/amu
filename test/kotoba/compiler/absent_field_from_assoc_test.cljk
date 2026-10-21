@@ -1,0 +1,120 @@
+(ns kotoba.compiler.absent-field-from-assoc-test
+  "ADR 0353 floor :absent-field-from-assoc.
+
+  kotoba-lang/browser's browser.text-edit starts its state with
+  {.. :text/composition nil} and writes the field in three places:
+  composition-start (assoc state :text/composition {:composition/text \"\"}),
+  composition-update (the same with (str text)) and composition-end
+  (assoc state :text/composition nil). Until this floor the literal was
+  refused: \"map literal value at key :text/composition is nil ... nothing
+  here says T\" -- the literal alone has no T, and the module that says it
+  was not read.
+
+  Now, in kotoba-sema: a keyword key written nil somewhere in the module (a
+  literal entry or an assoc pair) is an absent field [:option T], T the one
+  type the module's own values at that key spell. nil there is
+  (option-none-of [:option T]); a value that spells T, or a map literal
+  (typed against T, so {:composition/text (str text)} is that record), is
+  (option-some-of [:option T] v). A call returning T is not wrapped: that
+  would be a coercion, and it is refused as the type mismatch it is.
+
+  composition-update's text is annotated :string here; unannotated it is
+  :i64 (floor :export-signatures).
+
+  Native: every function compiles for x86_64-aiueos-kernel-v1 and
+  aarch64-macos with the oracle verified, the field's presence read as an if
+  test. Projecting the present record (if-let, then :composition/text) was
+  refused natively by the verifier -- \"runtime KIR record projection
+  rejected\" -- until floor :native-option-record; it now answers 203 there
+  too.
+
+  What stays refused, each by its literal: a key nil in the module that two
+  values give two types; a nil key the module gives no type; a present T
+  from a call written at the absent field (no coercion)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private composition
+  "browser.text-edit's composition functions (browser 8671500), with
+  composition-end's insert-text left out and clen reading the field."
+  (str "(ns browser.text-edit)\n"
+       "(defn empty-state [] {:text/value \"\" :text/caret 0 :text/composition nil})\n"
+       "(defn- composition-start [state] (assoc state :text/composition {:composition/text \"\"}))\n"
+       "(defn- composition-update [state text :string] (assoc state :text/composition {:composition/text (str text)}))\n"
+       "(defn- composition-end [state] (assoc state :text/composition nil))\n"
+       "(defn- clen [state] (if-let [c (:text/composition state)] (string-code-unit-count (:composition/text c)) 100))\n"))
+
+(def ^:private admitted
+  (str composition
+       "(defn main [] :i64\n"
+       "  (+ (clen (empty-state))\n"
+       "     (clen (composition-start (empty-state)))\n"
+       "     (clen (composition-update (empty-state) \"abc\"))\n"
+       "     (clen (composition-end (composition-update (empty-state) \"ab\")))))"))
+
+(def ^:private presence
+  "The same functions with the field read for presence only: none 0, start
+  2, update 4, end none 0."
+  (str composition
+       "(defn- present [state] (if (:text/composition state) 1 0))\n"
+       "(defn main [] :i64\n"
+       "  (+ (present (empty-state))\n"
+       "     (* 2 (present (composition-start (empty-state))))\n"
+       "     (* 4 (present (composition-update (empty-state) \"abc\")))\n"
+       "     (* 8 (present (composition-end (composition-start (empty-state)))))))"))
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- refusal [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(deftest nil-field-typed-by-the-module-assoc-test
+  (testing "admitted on the reference: none 100, start 0, update 3, end none 100"
+    (is (= 203 (run-main admitted))))
+  (testing "admitted on the hosted target"
+    (is (= [0 97 115 109]
+           (mapv #(bit-and (int %) 0xff)
+                 (take 4 (:bytes (compiler/compile-source admitted :wasm32-kotoba-v1)))))))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "presence compiles on both native targets"
+    (is (= 6 (run-main presence)))
+    (doseq [target native-targets]
+      (is (= 6 (#?(:clj long :cljs js/Number)
+                (:value (:artifact (compiler/compile-source presence target)))))
+          (str target))))
+  (testing "projecting the present record compiles natively (floor :native-option-record)"
+    (doseq [target native-targets]
+      (is (= 203 (#?(:clj long :cljs js/Number)
+                  (:value (:artifact (compiler/compile-source admitted target)))))
+          (str target))))
+  (testing "refused: two values give the absent field two types"
+    (is (= (str "field :text/composition is nil in this module, which makes it an absent "
+                "[:option T], and this module writes two types at it: [:record "
+                ":kotoba.map-literal/composition.text [[:composition/text :string]]] and "
+                ":string; an absent field holds one type when it is present")
+           (refusal (str composition
+                         "(defn main [] :i64 (:text/caret (assoc (empty-state) :text/composition \"q\")))")))))
+  (testing "refused: a nil the module gives no type"
+    (is (= (str "map literal value at key :b is nil, which makes the field an absent "
+                "[:option T], and nothing here says T: give the literal a record type from "
+                "context (a declared record result, or a record field) or write "
+                "(option-none-of [:option T])")
+           (refusal "(ns b)\n(defn e [] {:a 1 :b nil})\n(defn main [] :i64 (:a (e)))"))))
+  (testing "refused: a present T from a call is not coerced to the option"
+    (is (= (str "expression type mismatch: expected [:option [:record "
+                ":kotoba.map-literal/composition.text [[:composition/text :string]]]], got "
+                "[:record :kotoba.map-literal/composition.text [[:composition/text :string]]]")
+           (refusal (str composition
+                         "(defn- mk [] {:composition/text \"q\"})\n"
+                         "(defn main [] :i64 (:text/caret (assoc (empty-state) :text/composition (mk))))"))))))

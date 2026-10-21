@@ -1,0 +1,129 @@
+(ns kotoba.compiler.native-record-boundary-test
+  "ADR 0353 floor :native-record-boundary (split 2026-10-01 from
+  :native-handles).
+
+  A declared record crossing a function boundary -- a `[:ref q]` parameter or
+  result, and every row specialization at a declared schema -- compiled on
+  the hosted targets and was refused by both native ones at the native
+  artifact oracle (exit 65): `native artifact oracle evaluation rejected`,
+  cause `unknown-schema-reference`. The native backends always carried the
+  record as the one-word pair-chain handle (ADR 0062); what was missing was
+  the table. `kotoba.kir/native-program`, the closed program a native
+  artifact seals and kotoba-verifier re-executes, kept `:schemas` only for a
+  recursive table, and `[:ref q]` survives lowering in exactly one place --
+  a function's `:param-types` and `:result` -- so the oracle could not
+  resolve it. Now the table joins the program when a signature names a
+  reference (osaho), and kotoba-verifier re-derives that need independently
+  (a table no signature and no recursion needs stays refused). A module
+  whose references are all expanded into its bodies seals the program it
+  sealed before.
+
+  What stays refused, each by its literal: an i64 where a record is declared
+  (no coercion), `=` over records (a handle compares cells, not values), a
+  record as an `if` test (a record is never truthy), and a record as the
+  entry's result on native (a handle does not leave the artifact)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private schema
+  "(ns t (:schemas {:b/s [:record :b/s [[:a :i64] [:n :string]]]}))\n")
+
+(def ^:private descriptor "[:record :b/s [[:a :i64] [:n :string]]]")
+
+(def ^:private record (str "(record-new " descriptor " 3 \"xy\")"))
+
+(def ^:private parameter
+  (str schema "(defn- a-of [m [:ref :b/s]] :i64 (:a m))\n"
+       "(defn main [] :i64 (a-of " record "))"))
+
+(def ^:private result
+  (str schema "(defn- mk [] [:ref :b/s] " record ")\n"
+       "(defn main [] :i64 (:a (mk)))"))
+
+(def ^:private chain
+  (str schema "(defn- mk [k :i64] [:ref :b/s] (record-new " descriptor " k \"xy\"))\n"
+       "(defn- a-of [m [:ref :b/s]] :i64 (:a m))\n"
+       "(defn main [] :i64 (+ (a-of (mk 4)) (a-of (mk 5))))"))
+
+(def ^:private string-field
+  (str schema "(defn- n-of [m [:ref :b/s]] :string (:n m))\n"
+       "(defn main [] :i64 (string-code-unit-count (n-of " record ")))"))
+
+(def ^:private row
+  "An unannotated row parameter, specialized at the declared record."
+  (str schema "(defn- f [m] (:a m))\n(defn main [] :i64 (f " record "))"))
+
+(def ^:private two-records
+  "floor :row-unification's prelude: two declared records."
+  (str "(ns b (:schemas {:b/s [:record :b/s [[:a :i64] [:b :i64]]]"
+       " :b/t [:record :b/t [[:a :i64] [:c :string]]]}))\n"
+       "(defn- mk [] [:ref :b/s] {:a 5 :b 2})\n"
+       "(defn- mt [] [:ref :b/t] {:a 7 :c \"xy\"})\n"))
+
+(def ^:private unified
+  "floor :row-unification's forms over declared records: a join returning its
+  record, a loop helper and a reduce closure generic with their function."
+  [[(str two-records "(defn- pick [m n] (if (> (:a m) 6) m n))"
+         " (defn main [] :i64 (+ (:b (pick (mk) (mk))) (:a (pick (mt) (mt)))))") 9]
+   [(str two-records "(defn- f [m n] (loop [i 0 acc 0] (if (< i n) (recur (+ i 1) (+ acc (:a m))) acc)))"
+         " (defn main [] :i64 (+ (f (mk) 3) (f (mt) 1)))") 22]
+   [(str two-records "(defn- f [m] (reduce (fn [acc x] (+ acc (* x (:a m)))) 0 [1 2 3]))"
+         " (defn main [] :i64 (f (mk)))") 30]])
+
+(def ^:private admitted
+  (into [[parameter 3] [result 3] [chain 9] [string-field 2] [row 3]] unified))
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk); :aarch64-kotoba-v1 is the ISA's generic one."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1 :aarch64-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- refusal [thunk]
+  (try (thunk) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(deftest native-record-function-boundary-test
+  (testing "admitted on the reference: each program answers"
+    (doseq [[source answer] admitted]
+      (is (= answer (run-main source)) source)))
+  ;; compile-source verifies the artifact, the oracle's re-execution
+  ;; included, before it returns it.
+  (testing "admitted on both native targets, the oracle's answer sealed"
+    (doseq [target native-targets
+            [source answer] admitted]
+      (let [{:keys [artifact]} (compiler/compile-source source target)]
+        (is (pos? (count (:code artifact))) (str target " " source))
+        (is (= answer (#?(:clj long :cljs js/Number) (:value artifact))) (str target " " source)))))
+  (testing "the table travels only where a signature names a reference"
+    (let [program (fn [source] (ir/native-program (ir/lower (sema/analyze source))))]
+      (is (= {:b/s [:record :b/s [[:a :i64] [:n :string]]]} (:schemas (program parameter))))
+      (is (= {:b/s [:record :b/s [[:a :i64] [:n :string]]]} (:schemas (program result))))
+      (is (not (contains? (program (str schema "(defn main [] :i64 (:a " record "))")) :schemas)))))
+  (testing "refused: an i64 where a record is declared (no coercion)"
+    (is (= "expression type mismatch: expected [:ref :b/s], got i64"
+           (refusal #(compiler/compile-source
+                      (str schema "(defn- a-of [m [:ref :b/s]] :i64 (:a m))\n(defn main [] :i64 (a-of 3))")
+                      :x86_64-aiueos-kernel-v1)))))
+  (testing "refused: = over records"
+    (is (= "equality type is outside the safe value profile"
+           (refusal #(compiler/compile-source
+                      (str schema "(defn- same [m [:ref :b/s]] :bool (= m m))\n"
+                           "(defn main [] :i64 (if (same " record ") 1 0))")
+                      :aarch64-kotoba-v1)))))
+  (testing "refused: a record is never truthy"
+    (is (= "if test must be bool or an option"
+           (refusal #(compiler/compile-source
+                      (str schema "(defn- mk [] [:ref :b/s] " record ")\n(defn main [] :i64 (if (mk) 1 0))")
+                      :x86_64-aiueos-kernel-v1)))))
+  (testing "refused on native: a record as the entry's result leaves the artifact"
+    (doseq [target native-targets]
+      (is (= (str "typed values currently require the kotoba-script web target, typed Wasm/CLJS"
+                  " target, or the qualified native one-word string/record/variant/option/result slice")
+             (refusal #(compiler/compile-source (str schema "(defn main [] [:ref :b/s] " record ")")
+                                                target)))))))

@@ -133,7 +133,8 @@
   adding unpinned roots to a pinned build would be the path search a lock
   exists to remove.
   "
-  [args]
+  ([args] (resolve-source! args {}))
+  ([args linkage-options]
   (let [lock-path (support/option args "--module-lock")
         resolved-packages (resolve-packages! args)
         source-roots (source-roots args resolved-packages)]
@@ -151,7 +152,7 @@
                    "module-lock-load"
                    #(module-lock/load-locked-graph lock-path blocks))
             linked (support/timed "project-link"
-                                  #(project/link-source (:sources graph) (:root graph)))]
+                                  #(project/link-source (:sources graph) (:root graph) linkage-options))]
         {;; A pinned build has no input PATH to name the artifact after --
          ;; that is the point -- so the root namespace does, exactly as the
          ;; JVM CLI does it.
@@ -180,7 +181,7 @@
                                  #(project-files/load-closed-graph input source-roots))
             linked (support/timed "project-link"
                                   #(try
-                                     (project/link-source (:sources graph) (:root graph))
+                                     (project/link-source (:sources graph) (:root graph) linkage-options)
                                      ;; A module the linker refused is named by
                                      ;; the file it was loaded from (amu-h10).
                                      (catch :default error
@@ -207,7 +208,7 @@
                 "was given; there is nothing for the entry module to require")))
         {:input input
          :source (support/timed "source-read" #(io/read-text-file input))
-         :linked? false}))))
+         :linked? false})))))
 
 (defn attribute-error
   "A refusal raised while compiling a linked graph, attributed to the module

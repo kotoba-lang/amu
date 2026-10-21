@@ -1,0 +1,106 @@
+(ns kotoba.compiler.definition-admission-test
+  "ADR 0353 floor `:definition-admission` (amends ADR 0005's linked-source
+  bound). The 1 MiB ceiling is a bound on ONE top-level definition -- the unit
+  the compiler identifies (definition CID, ADR 0300), caches and compiles --
+  and on the definition graph each one can reach, not on the concatenation of
+  a project's definitions.
+
+  Measured 2026-09-30 on cssom 9224d359: `cssom/layout.cljk` is 1,083,132
+  bytes in 373 top-level forms, the largest 24,303 bytes, the largest
+  definition closure 311 of its 311 `defn`s. Before this bound moved it was
+  refused whole (`source exceeds 1 MiB admission limit`, ADR 0352 wall 9).
+  The fixture below is the same shape at the same size: a project whose one
+  module and whose linked source are both over 1 MiB, every definition in it
+  small, linked, analysed and run to its answer.
+
+  What stays refused, each pinned by the literal of its refusal: one
+  definition over 1 MiB, a linked definition over 1 MiB, a definition whose
+  dependency closure is over the closure bound, and a corpus over the 8 MiB
+  aggregate. Nothing is admitted unbounded; the bound moved to the unit."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.project :as project]
+            [kotoba.kir :as ir]
+            [kotoba.kir.value :as value]
+            [kotoba.sema :as sema]))
+
+(def ^:private cssom-layout-bytes 1083132)
+
+(def ^:private chain 4)
+(def ^:private definitions 240)
+
+(defn- local-name
+  "A 128-character local (the frontend's max-symbol-chars), so a definition
+   carries bytes without carrying literals, string payload or nodes."
+  [letter]
+  (symbol (apply str (repeat 128 letter))))
+
+(defn- definition
+  "f<i> binds four locals to 1 and sums eight uses of each, plus f<i-1>
+   unless i starts a chain: 32 per definition, chains of `chain` so a call
+   stays inside the KIR interpreter's 32 frames (a chain of 16 exhausts them)."
+  [i]
+  (let [[a b c d] (map local-name ["a" "b" "c" "d"])
+        uses (apply concat (repeat 8 [a b c d]))
+        tail (if (zero? (mod i chain)) [] [(list (symbol (str "f" (dec i))))])]
+    (str "(defn- f" i " [] :i64 (let [" a " 1 " b " 1 " c " 1 " d " 1] "
+         (pr-str (apply list '+ (concat uses tail))) "))\n")))
+
+(def ^:private large-module
+  "main sums the last definition of every chain, so its closure is every
+   definition plus itself."
+  (str "(ns bounds.large)\n"
+       (apply str (map definition (range definitions)))
+       "(defn main [] :i64 "
+       (pr-str (apply list '+ (for [i (range (dec chain) definitions chain)]
+                                (list (symbol (str "f" i))))))
+       ")\n"))
+
+(defn- refusal [thunk]
+  (try (thunk) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(deftest admission-by-definition-graph-test
+  (testing "a module and a linked source over 1 MiB are admitted definition by definition"
+    (let [module-bytes (value/utf8-byte-count! large-module)
+          forms (sema/read-forms large-module)
+          form-bytes (map #(value/utf8-byte-count! (pr-str %)) forms)
+          {:keys [source]} (project/link-source {'bounds.large large-module}
+                                                'bounds.large)]
+      (is (> module-bytes cssom-layout-bytes))
+      (is (> (value/utf8-byte-count! source) (* 1024 1024)))
+      (is (= (+ definitions 2) (count forms)))
+      (is (every? #(< % (* 8 1024)) form-bytes))
+      (is (= (* 32 definitions)
+             (#?(:clj long :cljs js/Number)
+              (ir/execute (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))
+                          'main []))))))
+
+  (testing "one definition over 1 MiB stays refused"
+    (let [huge (str "(ns bounds.huge)\n"
+                    "(defn- big [] :string \""
+                    (apply str (repeat (inc (* 1024 1024)) "x"))
+                    "\")\n(defn main [] :i64 0)\n")]
+      (is (= "top-level definition exceeds admission limit"
+             (refusal #(sema/read-forms huge))))
+      (is (= "top-level definition exceeds admission limit"
+             (refusal #(project/link-source {'bounds.huge huge} 'bounds.huge))))))
+
+  (testing "a linked definition over the per-definition bound stays refused"
+    (with-redefs [project/max-linked-source-bytes 4096]
+      (is (= "linked definition source exceeds byte limit"
+             (refusal #(project/link-source {'bounds.large large-module}
+                                            'bounds.large))))))
+
+  (testing "a definition whose dependency closure is over the bound stays refused"
+    (with-redefs [project/max-definition-closure-count (dec definitions)]
+      (is (= "definition dependency closure exceeds limit"
+             (refusal #(project/link-source {'bounds.large large-module}
+                                            'bounds.large))))))
+
+  (testing "the corpus stays bounded as a whole at 8 MiB"
+    (let [padding (apply str (repeat (inc project/max-project-source-bytes) ";"))]
+      (is (= "project source bytes exceed limit"
+             (refusal #(project/link-source
+                        {'bounds.large (str large-module padding)}
+                        'bounds.large)))))))

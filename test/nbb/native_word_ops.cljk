@@ -48,7 +48,18 @@
    ["vector_take" "take-count" [0] "0"]
    ["vector_take" "take-count" [4] "4"]
    ["vector_take" "take-count" [-1] "TRAP vector-take-out-of-range"]
-   ["vector_take" "take-count" [5] "TRAP vector-take-out-of-range"]])
+   ["vector_take" "take-count" [5] "TRAP vector-take-out-of-range"]
+   ;; amu ADR 0353 floor :native-hiccup-node
+   ["typed_map" "main" [] "493307224"]
+   ["typed_map" "get-len" [1] "14"]
+   ["typed_map" "get-len" [0] "6"]
+   ["typed_map" "lookup" [5] "50"]
+   ["typed_map" "lookup" [6] "-1"]
+   ["typed_map" "has" [4] "1"]
+   ["typed_map" "has" [9] "0"]
+   ["typed_map" "grow" [31] "3160"]
+   ["typed_map" "grow" [32] "TRAP map-too-large"]
+   ["typed_map" "branches" [] "304038"]])
 
 (def native-trap "KEXE_TRAP {:kind :signal :signal :SIGILL}")
 
@@ -187,7 +198,7 @@
         isa ["aarch64" "x86_64"]]
   (let [c (amu! "compile" (fixture name) "--target" isa "--output" (.join path tmp (str name "." isa ".kexe")))]
     (check! (str "native refusal " name " on " isa)
-            (and (= 70 (:status c)) (str/includes? (str (:stdout c) (:stderr c)) literal))
+            (and (= 65 (:status c)) (str/includes? (str (:stdout c) (:stderr c)) literal))
             (str "status " (:status c) ": " (head (str (:stdout c) (:stderr c)))))))
 
 (println "== frontend refusals, exact text")

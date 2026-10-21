@@ -134,7 +134,8 @@
         fns (functions (lib/read-text loader-path))
         names (set (map :name fns))
         missing (remove #(contains? classes %) (sort names))
-        stale (remove names (sort (keys classes)))
+        stale (remove (fn [k] (or (contains? names k) (:gone (get classes k))))
+                      (sort (keys classes)))
         bad (remove #(#{:mechanism :decision :mixed} (:class (get classes %))) (sort (keys classes)))]
     (println (str "SCANNED\t" (count fns) "\tfunctions in tools/kexe_loader.c"))
     (when (< (count fns) 150) (fail! (str "only " (count fns) " functions found: the scanner is broken")))
@@ -206,7 +207,7 @@ static int64_t pair(int64_t first, int64_t second) {
 int main(void) {
   S = mmap(NULL, sizeof(*S), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
   if (S == MAP_FAILED) return 2;
-  S->context.version = 11;
+  S->context.version = DRIVER_CONTEXT_VERSION;
   S->context.code_base = (const uint8_t *)\"\";
   S->context.code_length = 0;
   S->context.pair_new = checked_pair_new;
@@ -310,9 +311,15 @@ int main(void) {
 
 (defn build-driver! [tmp label source]
   (let [c (lib/join tmp (str "driver-" label ".c"))
-        exe (lib/join tmp (str "driver-" label))]
+        exe (lib/join tmp (str "driver-" label))
+        ;; Compare semantics under each source's advertised context ABI.
+        ;; The current loader extended ABI 11 to 12 before this transport unit;
+        ;; forcing 11 in both drivers rejected valid calls on the new side.
+        versions (re-seq #"shared->context\.version = ([0-9]+);" (lib/read-text source))
+        _ (lib/ensure! (= 1 (count versions)) "driver requires one declared loader context version")
+        version (second (first versions))]
     (lib/write-text! c driver-source)
-    (let [r (lib/run "cc" (concat cc-arch ["-std=c11" "-O1" "-w" (str "-DLOADER_SOURCE=\"" source "\"") c "-o" exe])
+    (let [r (lib/run "cc" (concat cc-arch ["-std=c11" "-O1" "-w" (str "-DDRIVER_CONTEXT_VERSION=" version) (str "-DLOADER_SOURCE=\"" source "\"") c "-o" exe])
                      {:allow-failure? true})]
       (when-not (zero? (:status r)) (fail! (str "driver " label " does not build:\n" (:stderr r))))
       exe)))

@@ -1,0 +1,227 @@
+(ns kotoba.compiler.native-allocation-budget-test
+  "ADR 0353 floor :allocation-budget-native (point 7, on native).
+
+  Floor :allocation-budget made every constructor debit the run's fuel on the
+  reference (kotoba.kir, osaho 635bea6d), and :allocation-budget-targets did
+  the same for restricted ESM and wasm32. Measured 2026-09-30 before this
+  floor, on the programs below, under `tools/kexe_loader.c` with `KEXE_FUEL`:
+  native fuel was the entry prefix of a re-entering function and the counted
+  loop's bulk pre-charge, and no constructor paid anything -- the 1,000-record
+  loop answered under 1002 units, the same as the loop that builds nothing,
+  on aarch64 and x86_64 alike.
+
+  Now kotoba-native puts one unit in front of every constructor
+  (`machine-ir/charge-constructors`, the reference's `cell-constructor-ops`),
+  before its operands as the reference charges it, and `vector-region`
+  charges the literals it keeps in locals. The debit is the kotoba-gmir
+  runtime operation `:fuel-charge`, which kotoba-mir addresses at the
+  context's fuel word (8) and both encoders emit inline as the entry prefix's
+  own bytes. A loop with a constructor in it is not pure, so the bulk
+  pre-charge declines it and each iteration pays. kotoba-verifier re-derives
+  a native artifact by re-emitting it through kotoba-native, so it re-derives
+  these charges with no change of its own.
+
+  Pinned: the least budget on each ISA the host can run, and that the price
+  of allocating is the reference's -- the same program with and without its
+  constructors differs by the same number of units on kotoba.kir and on
+  native. The refusal that stays: a program cannot allocate past the budget
+  its caller granted -- one unit short, the loader reports budget/fuel."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.kir :as ir]
+            [kotoba.lang.text :as str]
+            [kotoba.native.aarch64 :as aarch64]
+            [kotoba.native.machine-ir :as machine-ir]
+            [kotoba.native.x86-64 :as x86-64]
+            [kotoba.sema :as sema]
+            #?@(:cljs [["node:child_process" :as cp]
+                       ["node:fs" :as fs]
+                       ["node:os" :as os]
+                       ["node:path" :as path]])))
+
+(def ^:private point
+  "(ns app (:schemas {:app/p [:record :app/p [[:x :i64] [:y :i64]]]}))\n")
+
+(def ^:private point-new "(record-new [:record :app/p [[:x :i64] [:y :i64]]] ")
+
+(defn- thousand
+  "A self-tail loop summing 1,000 values, each read out of a record it builds
+  (`build? true`) or taken directly (`build? false`)."
+  [build?]
+  (str point
+       "(defn main [] :i64 (loop [i 0 acc 0] (if (< i 1000)"
+       " (recur (+ i 1) (+ acc " (if build? (str "(:x " point-new "i i))") "i") ")) acc)))"))
+
+(defn- count-down
+  "A counted self-recursion the bulk pre-charge proves when it builds
+  nothing: 400 steps, each reading a record it builds, or not."
+  [build?]
+  (str point
+       "(defn count-down [n :i64 acc :i64] :i64 (if (= n 0) acc (count-down (- n 1) (+ acc "
+       (if build? (str "(:x " point-new "n n))") "n") "))))\n"
+       "(defn main [] :i64 (count-down 400 0))"))
+
+(def ^:private list-type "[:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]]")
+(def ^:private cell-type "[:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]]")
+
+(def ^:private hundred-cells
+  "A cons list of 100 cells, 201 constructed nodes, walked for its sum."
+  (str "(ns app (:schemas {:app/list " list-type " :app/cell " cell-type "}))\n"
+       "(defn- build [n :i64] [:ref :app/list] (loop [i 0 acc (variant-new " list-type " :empty 0)]"
+       " (if (< i n) (recur (+ i 1) (variant-new " list-type " :cons (record-new " cell-type " i acc))) acc)))\n"
+       "(defn- head-of [l [:ref :app/list]] :i64 (match-variant l [:ref :app/list] (:empty e -1) (:cons c (:head c))))\n"
+       "(defn- tail-of [l [:ref :app/list]] [:ref :app/list] (match-variant l [:ref :app/list] (:empty e l) (:cons c (:tail c))))\n"
+       "(defn- total [l [:ref :app/list]] :i64 (loop [l l acc 0]"
+       " (if (< (head-of l) 0) acc (recur (tail-of l) (+ acc (head-of l))))))\n"
+       "(defn main [] :i64 (total (build 100)))"))
+
+(defn- vectors
+  "100 iterations, each reading a vector literal three ways native's
+  vector-region keeps in locals rather than building: indexed directly,
+  counted directly, and bound by a let and indexed. Three constructed vectors
+  per iteration on the reference."
+  [build?]
+  (str "(defn main [] :i64 (loop [i 0 acc 0] (if (< i 100)"
+       " (recur (+ i 1) (+ acc "
+       (if build?
+         "(vector-at (vector-new i 1) 0) (vector-count (vector-new i 2 3)) (let [v (vector-new 5 i)] (vector-at v 1))"
+         "i 3 i")
+       ")) acc)))"))
+
+(defn- kir [source] (ir/lower (sema/analyze source) {:oracle-fuel 100000}))
+
+(defn- reference [source fuel]
+  (try (str (ir/execute (kir source) 'main [] {:fuel fuel}))
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (str "THREW:" (ex-message error)))))
+
+(def ^:private budget-trap "KEXE_TRAP {:kind :budget :reason :budget/fuel}")
+
+#?(:cljs
+   (def ^:private scratch
+     (delay (fs/mkdtempSync (path/join (os/tmpdir) "amu-native-alloc-")))))
+
+#?(:cljs
+   (defn- run! [command args env]
+     (let [r (cp/spawnSync command (clj->js args)
+                           #js {:encoding "utf8" :timeout 60000
+                                :env (js/Object.assign #js {} js/process.env (clj->js env))})]
+       {:status (.-status r) :error (.-error r)
+        :out (str/trim (str (.-stdout r) "\n" (.-stderr r)))})))
+
+#?(:cljs
+   (def ^:private loaders
+     "The reviewed loader built for each ISA, where this host can build and
+     run it: {isa path}. macOS builds both with `-arch`; elsewhere only the
+     host's own ISA runs."
+     (delay
+      (let [darwin? (= "darwin" (os/platform))
+            host (if (= "arm64" (os/arch)) "aarch64" "x86_64")]
+        (into {}
+              (keep (fn [isa]
+                      (when (or darwin? (= isa host))
+                        (let [out (path/join @scratch (str "kexe-loader-" isa))
+                              arch (when darwin? ["-arch" (if (= isa "aarch64") "arm64" "x86_64")])
+                              built (run! "cc" (-> ["-std=c11" "-O2"] (into arch)
+                                                   (into [(path/resolve "tools/kexe_loader.c") "-o" out]))
+                                          {})]
+                          (when (and (nil? (:error built)) (zero? (:status built)))
+                            (let [probe (run! out [] {})]
+                              (when (= 2 (:status probe)) [isa out])))))))
+              ["aarch64" "x86_64"])))))
+
+(def ^:private emitted (atom {}))
+
+(defn- native
+  "The program's `main` run on ISA under the loader with KEXE_FUEL: its
+  answer, or the loader's last report line."
+  [isa source fuel]
+  #?(:cljs
+     (let [file (or (get @emitted [isa source])
+                    (let [program (ir/native-program (kir source))
+                          {:keys [code exports]} ((if (= isa "aarch64") aarch64/emit-program x86-64/emit-program)
+                                                  program)
+                          file (path/join @scratch (str "code-" (count @emitted) "." isa))]
+                      (fs/writeFileSync file (js/Uint8Array.from (clj->js (map #(js/Number %) code))))
+                      (swap! emitted assoc [isa source] [file (get-in exports ['main :offset])])
+                      [file (get-in exports ['main :offset])]))
+           [code offset] file]
+       (last (str/split-lines (:out (run! (get @loaders isa) [code (str offset) "0" isa "-"]
+                                          {"KEXE_FUEL" (str fuel)})))))
+     :clj (throw (ex-info "native runs through the loader on the kbb route" {:isa isa :fuel fuel}))))
+
+(defn- least-fuel
+  "The smallest budget under which `run` answers `source`."
+  [run source]
+  (loop [lo 1 hi 20000]
+    (if (= lo hi)
+      lo
+      (let [mid (quot (+ lo hi) 2)
+            out (run source mid)]
+        (if (or (str/starts-with? out "THREW:") (str/starts-with? out "KEXE_TRAP"))
+          (recur (inc mid) hi)
+          (recur lo mid))))))
+
+(defn- native-var
+  "A kotoba-native var named at run time, so that on a kotoba-native that
+  predates this floor the test reports what it measures instead of failing
+  to load."
+  [sym]
+  (some-> (resolve sym) deref))
+
+(defn- charges [source]
+  (->> ((or (native-var 'kotoba.native.machine-ir/charge-constructors) identity)
+        (ir/native-program (kir source)))
+       :functions (map :body) (tree-seq coll? seq)
+       (filter #(= '(fuel-charge!) %)) count))
+
+(deftest native-constructors-charge-fuel-test
+  (testing "the constructors native charges are the reference's"
+    (is (= @#'ir/cell-constructor-ops (native-var 'kotoba.native.machine-ir/charged-constructors)))
+    (is (= 1 (charges (thousand true))) "one record-new site")
+    (is (= 0 (charges (thousand false))))
+    (is (= 3 (charges hundred-cells)) "build's two variant-new sites and its record-new")
+    (is (= 1 (charges (count-down true)))))
+  #?(:cljs
+     (let [isas (keys @loaders)]
+       (testing "this host runs at least one native ISA"
+         (is (seq isas) "no loader could be built and run here, so nothing native was measured"))
+       (doseq [isa isas
+               :let [run (fn [source fuel] (native isa source fuel))]]
+         (testing (str isa ": admitted under the budget that pays for its allocations")
+           (is (= "499500" (run (thousand true) 2002)))
+           (is (= "4950" (run hundred-cells 707)))
+           (is (= "10200" (run (vectors true) 402)))
+           (is (= "80200" (run (count-down true) 802))))
+         (testing (str isa ": the least budget")
+           ;; main, 1,001 loop entries, 1,000 records. Before: 1002.
+           (is (= 2002 (least-fuel run (thousand true))))
+           ;; 201 nodes on top of the entries. Before: 506.
+           (is (= 707 (least-fuel run hundred-cells)))
+           ;; Before: 102 -- the literals kept in locals paid nothing.
+           (is (= 402 (least-fuel run (vectors true))))
+           ;; The bulk pre-charge proves the loop that builds nothing (main
+           ;; and 401 prepaid steps); a loop that builds is not pure, falls
+           ;; back to the per-step charge, and pays its 400 records on top.
+           (is (= 402 (least-fuel run (count-down false))))
+           (is (= 802 (least-fuel run (count-down true)))))
+         (testing (str isa ": the price of allocating is the reference's")
+           (doseq [[label built unbuilt nodes] [["1,000 records" (thousand true) (thousand false) 1000]
+                                                ["300 vector literals" (vectors true) (vectors false) 300]]]
+             (let [price (fn [f] (- (least-fuel f built) (least-fuel f unbuilt)))]
+               (is (= nodes (price reference)) (str label " on the reference"))
+               (is (= nodes (price run)) (str label " on " isa))))
+           ;; The reference cannot run count-down at all: a function tail call
+           ;; is a frame there, and 400 of them pass its 32-frame limit
+           ;; (host/stack-exhausted). The price is the reference's rule, one
+           ;; unit per record-new.
+           (is (= 400 (- (least-fuel run (count-down true)) (least-fuel run (count-down false))))
+               (str "400 records in a counted loop on " isa)))
+         (testing (str isa ": a program that constructs nothing pays nothing new")
+           (is (= 1002 (least-fuel run (thousand false)))))
+         (testing (str isa ": refused -- allocating past the granted budget, one unit short")
+           (is (= budget-trap (run (thousand true) 2001)))
+           (is (= budget-trap (run hundred-cells 706)))
+           (is (= budget-trap (run (vectors true) 401)))
+           (is (= budget-trap (run (count-down true) 801)))
+           (is (= budget-trap (run (thousand true) 512))
+               "the loader's metered default does not stretch to 1,000 records"))))))

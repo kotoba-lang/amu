@@ -218,6 +218,12 @@
                      :sha256 (or (:creation-sha256 result)
                                  (vector-sha256 (:creation-bytes result)))
                      :size (count (:creation-bytes result))})
+    (= :kototama/program-v1 (:format result))
+    (assoc :primary {:format :dag-cbor
+                     :cid (:program-cid result)
+                     :size #?(:clj (alength (:program-bytes result))
+                              :cljs (.-length (:program-bytes result))
+                              :default (count (:program-bytes result)))})
     (:binary result) (assoc :binary (bytes-identity (:format (:binary result)) (:bytes (:binary result))))
     (:object result) (assoc :object (bytes-identity (:format (:object result)) (:bytes (:object result)))))))
 

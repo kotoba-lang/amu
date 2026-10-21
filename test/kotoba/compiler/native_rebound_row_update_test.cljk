@@ -1,0 +1,129 @@
+(ns kotoba.compiler.native-rebound-row-update-test
+  "ADR 0353 floor :native-rebound-row-update.
+
+  kotoba-lang/browser's browser.surface rebinds a row by its own update --
+  next-window-id's (update surface :surface/next-window-id inc), then
+  open-window's update of the surface it got back -- the shape
+  (let [s (update s :n inc)] (update s :m inc)). update elaborates to
+  (let [t (record-assoc T s ..)] (record-assoc T t ..)). Measured 2026-10-07
+  (amu 8397d0a3, before this floor): the reference ran it and both native
+  targets refused it at verify, \"runtime KIR record update rejected\" --
+  kotoba-verifier typed a let binding an update in no scope, so the update's
+  operand (the parameter) was unknown and the let named no record. Now
+  kotoba-verifier's update-forward resolves it in the binding's own scope, the
+  update's type held to its operand's, so nothing is coerced.
+
+  The rebinding also hid a field read from the row: kotoba-sema renamed it out
+  of the way, so (let [s (update s :n inc)] (update s :zz inc)) called with a
+  record lacking :zz was refused only inside the specialization, \"expression
+  type mismatch: expected i64, got nil\". A field read off an update of a row
+  parameter that the update did not write is now a field the row reads, so
+  the call is refused by name, as a single update already was.
+
+  What stays refused, each by its literal: an update of a field the record
+  lacks, through the rebinding (by name, at the call), and on a let-bound
+  record literal (the absent read is nil, not a number); an update that
+  changes a field's type (assoc keeps the field's type; the literal is the
+  caller's projection of a result that did not type, which names neither the
+  field nor the function -- measured, not chosen)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private rebound
+  "The floor's shape on a row parameter: 12 -> 13, 3 -> 4."
+  (str "(ns b)\n"
+       "(defn- empty-surface [] {:surface/id \"k\" :surface/n 12 :surface/m 3})\n"
+       "(defn- bump [s] (let [s (update s :surface/n inc)] (update s :surface/m inc)))\n"
+       "(defn main [] :i64\n"
+       "  (let [s (bump (empty-surface))] (+ (* 100 (:surface/n s)) (:surface/m s))))"))
+
+(def ^:private nested
+  "An update of an update, unnamed: the same elaboration, the binder synthetic."
+  (str "(ns b)\n"
+       "(defn- bump [s] (update (update s :n inc) :m inc))\n"
+       "(defn main [] :i64 (let [s (bump {:n 12 :m 3})] (+ (* 100 (:n s)) (:m s))))"))
+
+(def ^:private surface
+  "browser.surface (browser 097e44c)'s next-window-id and open-window, the
+  window list left out (floors :record-list-field-literal and
+  :absent-field-from-expression): the id the counter names, and the surface
+  next-window-id rebound by its own update, updated again and focused on
+  that id: w1 focused, the counter at 2. A surface destructured
+  out of a row function's vector is read and updated here only inside the
+  function that destructures it. Read by its caller, or the updated result
+  passed to a second open-window, it is floor :row-tuple-element-argument."
+  (str "(ns browser.surface)\n"
+       "(defn- empty-surface []\n"
+       "  {:surface/id \"kotoba-os\" :surface/next-window-id 1 :surface/opened 0 :surface/focus \"\"})\n"
+       "(defn- next-window-id [surface]\n"
+       "  [(str \"w\" (:surface/next-window-id surface))\n"
+       "   (update surface :surface/next-window-id inc)])\n"
+       "(defn- open-window [surface]\n"
+       "  (let [[id surface] (next-window-id surface)]\n"
+       "    (-> surface (update :surface/opened inc) (assoc :surface/focus id))))\n"
+       "(defn main [] :i64\n"
+       "  (let [s (open-window (empty-surface))]\n"
+       "    (+ (* 10000 (:surface/next-window-id s)) (* 100 (:surface/opened s))\n"
+       "       (if (string=? (:surface/focus s) \"w1\") 10 0) (string-code-unit-count (:surface/id s)))))"))
+
+(def ^:private literal
+  "A let-bound record literal rebound three times, the last an assoc."
+  (str "(ns b)\n"
+       "(defn main [] :i64\n"
+       "  (let [s {:n 1 :m 2}\n"
+       "        s (update s :n inc)\n"
+       "        s (update s :m inc)\n"
+       "        s (assoc s :n (+ (:n s) 40))]\n"
+       "    (+ (* 100 (:n s)) (:m s))))"))
+
+(def ^:private admitted
+  "Each answers the same on the reference and both native targets."
+  {rebound 1304
+   nested 1304
+   surface 20119
+   literal 4203})
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- number [value] (#?(:clj long :cljs js/Number) value))
+
+(defn- run-main [source]
+  (number (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- native-value [source target]
+  (number (:value (:artifact (compiler/compile-source source target)))))
+
+(defn- refusal [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(deftest native-rebound-row-update-test
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "admitted on the reference and both native targets"
+    (doseq [[source expected] admitted]
+      (is (= expected (run-main source)) source)
+      (doseq [target native-targets]
+        (is (= expected (native-value source target)) (str target " " source)))))
+  (testing "refused by name: an update, through the rebinding, of a field the record lacks"
+    (is (= (str "argument {:m 2 :n 1} to bump is record :kotoba.map-literal/m+n, which has no"
+                " field :zz that the row {:n T :zz T | r} of parameter s reads")
+           (refusal (str "(ns b)\n"
+                         "(defn- bump [s] (let [s (update s :n inc)] (update s :zz inc)))\n"
+                         "(defn main [] :i64 (:n (bump {:n 1 :m 2})))")))))
+  (testing "refused: the same on a let-bound literal -- the absent read is nil, not a number"
+    (is (= "expression type mismatch: expected i64, got nil"
+           (refusal (str "(ns b)\n"
+                         "(defn main [] :i64\n"
+                         "  (let [s {:n 1 :m 2} s (update s :n inc) s (update s :zz inc)] (:n s)))")))))
+  (testing "refused: an update that changes a field's type"
+    (is (= "record-get without a type descriptor requires a record value; got :i64"
+           (refusal (str "(ns b)\n"
+                         "(defn- bump [s] (let [s (update s :n (fn [x] \"a\"))] (update s :m inc)))\n"
+                         "(defn main [] :i64 (:m (bump {:n 1 :m 2})))"))))))

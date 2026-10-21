@@ -75,9 +75,10 @@ only. The end state is `amu` built by `amu`, running `check`, `refactor`,
 ## Q9 compiler routes must be JVM-free
 
 - Q9 callers use `bin/amu check ... --jvm-free` and
-  `bin/amu compile ... --target <target> --jvm-free`. Write the target: an
-  omitted `--target` means the host's native target (ADR 0351), so a
-  browser / Worker / WASI build names `wasm32-browser` / `wasm32-wasi`.
+  `bin/amu compile ... --jvm-free`. An omitted `--target` selects the
+  engine-neutral Kototama program target; `AMU_TARGET` or an explicit
+  `--target` selects another backend. Browser / Worker / WASI builds name
+  `wasm32-browser` / `wasm32-wasi` explicitly.
 - `--jvm-free` must never invoke `java`, `javac`, `clojure`, `clj`,
   `resolveWithJvm`, a Clojure main namespace or another JVM launcher.
 - Missing/stale dependency locks, unsupported commands/targets and project
@@ -134,3 +135,10 @@ only. The end state is `amu` built by `amu`, running `check`, `refactor`,
   input of `split`) and exits 1 when `apply --check` has pending changes or
   `verify` finds a differing outcome. The old prototypes
   (`scripts/selfhost-codemod/`, `scripts/selfhost-split/`) are superseded.
+
+## Claude 向け追記（旧 CLAUDE.md より統合）
+
+Selfhost (an Amu-built compiler, no JVM, GraalVM or
+Node.js) is the top priority; see `docs/selfhost-priority.md`. For Q9, Amu is used only with the fail-closed
+`--jvm-free` path. Never invoke or add a Clojure/JVM fallback to satisfy a
+whole-component build; an unsupported route remains blocked.

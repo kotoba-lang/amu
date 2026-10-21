@@ -68,10 +68,11 @@
 
 (defn- module-cids
   "The CIDs of the functions the linker emitted for the module at INDEX in
-  the module order -- `kotoba_module__<index>__<j>` -- as a set."
+  the module order -- `kotoba_module__<index>__<j>`, or a loop helper the
+  linker kept as `__kotoba_loop_N` -- as a set."
   [cids index]
   (into #{} (keep (fn [[name cid]]
-                    (when (str/starts-with? name (str "kotoba_module__" index "__")) cid)))
+                    (when (= index (project/linked-function-module name)) cid)))
         cids))
 
 (defn- execute
@@ -258,12 +259,18 @@
 ;;    `amu definition-cids root.kotoba --source-path .` on the hand-written
 ;;    project above. A project that declares no `:params` and no `:with` must
 ;;    link to the same definitions it linked to before.
+;;
+;;    2026-10-09: the two loop helpers (module 0's and module 1's `j = 1`) are
+;;    no longer called `kotoba_module__0__1` / `kotoba_module__1__1`: the linker
+;;    keeps a loop helper's `__kotoba_loop_N` shape so a linked `recur` stays a
+;;    loop on KIR. Their CIDs did not move -- a definition's identity is its
+;;    body, not its linked name.
 
 (def cids-before-templates
   {"kotoba_module__0__0" "bafyreigplqb6xyzpt4gkw7drhvuf74ta3xy35j74rsktk6sklmh4wdyexq"
-   "kotoba_module__0__1" "bafyreicw2bizu3ns43b5mjnpxw4zdyozi2nhpb3krd75j3gqhjoovovcmu"
+   "__kotoba_loop_1000001" "bafyreicw2bizu3ns43b5mjnpxw4zdyozi2nhpb3krd75j3gqhjoovovcmu"
    "kotoba_module__1__0" "bafyreihomhcef4yz2hcnxkarhtzj7qlevkgdixgex6xxadq42pq6mmuuvy"
-   "kotoba_module__1__1" "bafyreihwv5igzxn657aqhdzig2sj2kxvhhltwp236t62jinpbuacthjgua"
+   "__kotoba_loop_1001025" "bafyreihwv5igzxn657aqhdzig2sj2kxvhhltwp236t62jinpbuacthjgua"
    "kotoba_module__2__0" "bafyreicv3mwfirvwrnsebwl4imeuwomhnypejgeoyjjwdozcubg2bncd54"
    "main" "bafyreib4zr3xtmmivldtfype6eqqmuxfgh2hhjadbq46q75vci6gk36v2a"})
 

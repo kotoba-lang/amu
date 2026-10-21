@@ -1,0 +1,116 @@
+(ns kotoba.compiler.vector-parameter-test
+  "ADR 0353 floor :vector-parameter.
+
+  kotoba-lang/browser's browser.input hit-tests a point against a window's
+  rect the Clojure way: (defn- point-in-rect? [[px py] [x y w h]] ..), and
+  in-titlebar? / in-resize-handle? the same. That was refused, \"unknown
+  operation: nth is not a builtin, a sugar head, or a function of this
+  module\": an unannotated parameter is the provisional :i64, and `nth` (what
+  vector destructuring desugars to) and `count` on an :i64 fell through to an
+  unknown operation instead of a type mismatch on the parameter, so
+  `infer-absent-parameter-types` never refined it. (vector-at p 0) already
+  refined it to :vector-i64; (nth p 0) did not.
+
+  Measured 2026-10-04 on kotoba-sema 77d2dd84. Now, in kotoba-sema: `nth` and
+  `count` on an :i64 receiver require :vector-i64 of it, and a refused
+  synthetic temp a vector pattern is read through counts as its parameter, so
+  the parameter is the :vector-i64 its callers pass.
+
+  What stays refused, each by its literal: a number, a string and a
+  heterogeneous vector passed where the vector is read (no coercion); a
+  parameter used both as a vector and as a number (the uses disagree, both
+  named); and a vector item as an if test (a number is never truthy)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private minimized
+  "A destructured parameter and nth / count on a plain one: 3 + 10 * (5 + 3)."
+  (str "(ns b)\n"
+       "(defn- f [[a b]] (+ a b))\n"
+       "(defn- g [v] (+ (nth v 0) (count v)))\n"
+       "(defn main [] :i64 (+ (f [1 2]) (* 10 (g [5 6 7]))))"))
+
+(def ^:private input
+  "browser.input (browser 8671500)'s rect hit-tests, as written, against a
+  window record's rect: inside the window (1), in its titlebar (10), in its
+  resize handle (100), and a point outside all three (0)."
+  (str "(ns browser.input)\n"
+       "(def titlebar-height 28)\n"
+       "(def resize-handle-size 16)\n"
+       "(defn- point-in-rect?\n"
+       "  [[px py] [x y w h]]\n"
+       "  (and (<= x px (+ x w))\n"
+       "       (<= y py (+ y h))))\n"
+       "(defn- in-titlebar?\n"
+       "  [[px py] [_x y _w _h]]\n"
+       "  (<= y py (+ y titlebar-height)))\n"
+       "(defn- in-resize-handle?\n"
+       "  [[px py] [x y w h]]\n"
+       "  (and (<= (- (+ x w) resize-handle-size) px (+ x w))\n"
+       "       (<= (- (+ y h) resize-handle-size) py (+ y h))))\n"
+       "(defn- score [point window]\n"
+       "  (+ (if (point-in-rect? point (:window/rect window)) 1 0)\n"
+       "     (if (in-titlebar? point (:window/rect window)) 10 0)\n"
+       "     (if (in-resize-handle? point (:window/rect window)) 100 0)))\n"
+       "(defn main [] :i64\n"
+       "  (let [window {:window/id 1 :window/rect [100 100 200 150]}]\n"
+       "    (+ (* 1000 (score [110 110] window))\n"
+       "       (score [290 240] window)\n"
+       "       (* 1000000 (score [10 10] window)))))"))
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- refusal [source]
+  (try (sema/analyze source)
+       nil
+       (catch #?(:clj Throwable :cljs :default) error
+         (ex-message error))))
+
+(defn- native-value [source target]
+  (#?(:clj long :cljs js/Number) (:value (:artifact (compiler/compile-source source target)))))
+
+(deftest vector-parameter-takes-the-callers-vector-test
+  (testing "admitted on the reference: a destructured parameter, nth and count"
+    (is (= 83 (run-main minimized))))
+  (testing "browser.input's rect hit-tests on the reference: 11 inside the titlebar, 101 in the handle, 0 outside"
+    (is (= 11101 (run-main input))))
+  (testing "admitted on the hosted target"
+    (doseq [source [minimized input]]
+      (is (= [0 97 115 109]
+             (mapv #(bit-and (int %) 0xff)
+                   (take 4 (:bytes (compiler/compile-source source :wasm32-kotoba-v1))))))))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "compiles on both native targets"
+    (doseq [target native-targets]
+      (is (= 83 (native-value minimized target)) (str target))
+      (is (= 11101 (native-value input target)) (str target))))
+  (testing "refused: a number is not coerced to a vector"
+    (is (= "expression type mismatch: expected vector-i64, got i64"
+           (refusal (str "(ns b)\n(defn- f [[a b]] (+ a b))\n"
+                         "(defn main [] :i64 (f 5))")))))
+  (testing "refused: a string is not a vector, counted or not"
+    (is (= "expression type mismatch: expected vector-i64, got string"
+           (refusal (str "(ns b)\n(defn- f [v] (count v))\n"
+                         "(defn main [] :i64 (f \"abc\"))")))))
+  (testing "refused: a heterogeneous vector is not the i64 vector the parameter is"
+    (is (= "expression type mismatch: expected vector-i64, got [:vector [:i64 :string]]"
+           (refusal (str "(ns b)\n(defn- f [[a b]] (+ a b))\n"
+                         "(defn main [] :i64 (f [1 \"a\"]))")))))
+  (testing "refused: a parameter used as a vector and as a number, both uses named"
+    (is (= (str "expression type mismatch: expected vector-i64, got i64 -- parameter v of f is "
+                "unannotated and its uses disagree: another use requires vector-i64 [v at 2:22], "
+                "(+ v 1) requires i64 [v at 2:30]; annotate v")
+           (refusal (str "(ns b)\n(defn- f [v] (+ (nth v 0) (+ v 1)))\n"
+                         "(defn main [] :i64 (f [1 2]))")))))
+  (testing "refused: an item of the vector is a number, never truthy"
+    (is (= "if test is :i64, and a number is never truthy: compare it (for example (not= x 0)) or answer :bool"
+           (refusal (str "(ns b)\n(defn- f [[a b]] (if a 1 0))\n"
+                         "(defn main [] :i64 (f [1 2]))"))))))

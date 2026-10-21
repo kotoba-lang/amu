@@ -1,0 +1,110 @@
+(ns kotoba.compiler.let-rebinding-test
+  "ADR 0353 floor :let-rebinding.
+
+  kotoba-lang/browser's browser.text-edit rebinds names the way Clojure does,
+  in every function: its state parameter by a `let` --
+  `(let [state (normalize-selection state) ..] ..)` -- and a local again in
+  the same `let` -- `[a b] (:text/selection state) a (clamp a 0 n)`. Measured
+  2026-10-02 on kotoba-sema 965feb37, both were refused before any target:
+  row inference left a parameter the body rebinds anywhere the provisional
+  `:i64` (\"argument s to norm is i64, and parameter s of norm is the row {:a
+  T | r}: only a record satisfies a row\"), and a name bound twice in one `let`
+  was \"duplicate let binding\" while the nested `let` that shadows it was
+  admitted.
+
+  Now, in kotoba-sema: row inference reads a parameter only where it is in
+  scope -- a reference after a `let` rebinds it is the new binding's -- and a
+  name bound again in one `let` is the nested `let` that shadows it, the shape
+  every later pass already read.
+
+  Native: the admitted programs compile for x86_64-aiueos-kernel-v1 and
+  aarch64-macos with the oracle verified.
+
+  What stays refused, each by its literal: a field read after the rebinding
+  is the new value's, not the parameter's (a record without it, a number read
+  as a record); a rebound name has its new type (no coercion); a record is
+  never truthy; a function's parameters stay distinct."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private prelude
+  (str "(ns b)\n"
+       "(defn- norm [s] (assoc s :a (+ (:a s) 1)))\n"))
+
+(def ^:private admitted
+  [["(defn- f [s] (let [s (norm s)] (:a s)))\n(defn main [] :i64 (f {:a 1}))" 2]
+   ["(defn- f [s] (let [t (norm s) s (norm t) s (norm s)] (:a s)))\n(defn main [] :i64 (f {:a 1}))" 4]
+   ["(defn main [] :i64 (let [a 1 a (+ a 1) a (* a 5)] a))" 10]
+   ["(defn- f [s] (let [[a b] [1 3] a (+ a 1) b (* b a)] (+ (:a s) b)))\n(defn main [] :i64 (f {:a 7}))" 13]])
+
+(def ^:private normalize-selection
+  "browser.text-edit's normalize-selection, its nil guards dropped and its
+  `count` the code-unit count: both rebindings at once. Reference only: its
+  `[start end]` field and `max` / `min` are floors of their own natively and
+  on typed Wasm (docs/language-ladder.edn)."
+  (str "(defn- clamp [n lo hi] (max lo (min hi n)))\n"
+       "(defn- normalize-selection [state]\n"
+       "  (let [value (:text/value state)\n"
+       "        n (string-code-unit-count value)\n"
+       "        [a b] (:text/selection state)\n"
+       "        a (clamp a 0 n)\n"
+       "        b (clamp b 0 n)]\n"
+       "    (assoc state :text/caret (clamp (:text/caret state) 0 n)\n"
+       "                 :text/selection [(min a b) (max a b)])))\n"
+       "(defn main [] :i64\n"
+       "  (let [s (normalize-selection {:text/value \"abc\" :text/caret 5 :text/selection [2 0]})]\n"
+       "    (+ (* 10 (:text/caret s)) (nth (:text/selection s) 1))))"))
+
+(def ^:private native-targets
+  "`amu compile --target aarch64-macos` is the :aarch64-macos-kotoba-v1
+  profile (cli.cljk)."
+  [:x86_64-aiueos-kernel-v1 :aarch64-macos-kotoba-v1])
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number) (ir/execute (ir/lower (sema/analyze (str prelude source))) 'main [])))
+
+(defn- refusal [source]
+  (try (sema/analyze (str prelude source))
+       nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(deftest let-rebinding-is-nested-shadowing-test
+  (testing "admitted on the reference: a rebound parameter is still a row, a rebound local its new value"
+    (doseq [[source answer] admitted]
+      (is (= answer (run-main source)) source)))
+  (testing "admitted on the reference: browser.text-edit's normalize-selection"
+    (is (= 32 (run-main normalize-selection))))
+  (testing "admitted on the hosted target"
+    (doseq [[source _] admitted]
+      (is (= [0 97 115 109]
+             (mapv #(bit-and (int %) 0xff)
+                   (take 4 (:bytes (compiler/compile-source (str prelude source) :wasm32-kotoba-v1)))))
+          source)))
+  ;; compile-source verifies the artifact, the oracle's re-execution included.
+  (testing "compiles on both native targets"
+    (doseq [target native-targets
+            [source answer] admitted]
+      (is (= answer (#?(:clj long :cljs js/Number)
+                     (:value (:artifact (compiler/compile-source (str prelude source) target)))))
+          (str target " " source))))
+  (testing "refused: a read after the rebinding is the new value's -- a field it lacks"
+    (is (= "record field must be a declared keyword literal"
+           (refusal "(defn- f [s] (let [s (norm s)] (:z s)))\n(defn main [] :i64 (f {:a 1}))"))))
+  (testing "refused: ... and a number is not read as a record"
+    (is (= "record-get without a type descriptor requires a record value; got :i64"
+           (refusal "(defn- f [s] (let [s (:a s)] (:b s)))\n(defn main [] :i64 (f {:a 1 :b 2}))"))))
+  (testing "refused: a parameter read only after it is rebound is not a row"
+    (is (= "expression type mismatch: expected i64, got [:record :kotoba.map-literal/a [[:a :i64]]]"
+           (refusal "(defn- f [s] (let [s {:z 1}] (:z s)))\n(defn main [] :i64 (f {:a 1}))"))))
+  (testing "refused: a rebound name has its new type, not a coerced one"
+    (is (= "expression type mismatch: expected i64, got string"
+           (refusal "(defn main [] :i64 (let [a 1 a \"x\"] (+ a 1)))"))))
+  (testing "refused: a record is never truthy"
+    (is (= "if test must be bool or an option"
+           (refusal "(defn- f [s] (let [s (norm s)] (if s 1 0)))\n(defn main [] :i64 (f {:a 1}))"))))
+  (testing "refused: parameters stay distinct"
+    (is (= "function parameters must be unique bounded symbols with ABI-supported arity"
+           (refusal "(defn- f [a a] a)\n(defn main [] :i64 (f 1 2))")))))

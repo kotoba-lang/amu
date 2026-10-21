@@ -111,6 +111,14 @@
             (when-not (git-ok? clone)
               (throw (ex-info "git clone failed"
                               {:phase :fetch :coordinate coordinate :url git-url}))))
+          ;; Clone only transfers advertised history. A retained lock pin can
+          ;; still be fetchable by its exact object id outside that history.
+          ;; Preserve the pin and full history; never substitute a branch tip.
+          (when-not (git-ok? (git! ["-C" dir "cat-file" "-e" (str git-sha "^{commit}")]))
+            (let [fetch (git! ["-C" dir "fetch" "--quiet" "origin" git-sha])]
+              (when-not (git-ok? fetch)
+                (throw (ex-info "git fetch of the pinned commit failed"
+                                {:phase :fetch :coordinate coordinate :sha git-sha})))))
           (let [checkout (git! ["-C" dir "checkout" "--quiet" git-sha])]
             (when-not (git-ok? checkout)
               (throw (ex-info "git checkout of the pinned commit failed"

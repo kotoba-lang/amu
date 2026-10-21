@@ -1047,10 +1047,11 @@
         (is (thrown-with-msg? clojure.lang.ExceptionInfo
                               #"require the kotoba-script web target"
                               (compiler/compile-source source target))))))
-  (is (= "entryless library requires an explicit non-empty namespace export list"
+  (is (= "entryless library requires an explicit namespace export list"
          (rejection-message "(defn add1 [x] (+ x 1))")))
-  (is (= "entryless library requires at least one exported function"
-         (rejection-message "(ns empty.library (:export [])) (defn- hidden [] 0)"))))
+  (is (= [] (get-in (compiler/check-source
+                     "(ns empty.library (:export [])) (defn- hidden [] 0)")
+                    [:hir :exports]))))
 
 (deftest typed-bounded-strings-remain-strings-through-checked-kir-and-web
   (let [source (str "(ns pilot.text (:export [greet byte-length same?])) "

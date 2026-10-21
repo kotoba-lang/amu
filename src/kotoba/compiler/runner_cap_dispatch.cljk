@@ -1,0 +1,651 @@
+(ns kotoba.compiler.runner-cap-dispatch
+  "The supervisor-side entity behind vtable slot 128: the host service a
+  guest's 2-arg `OP-CAP` call reaches as `callq *0x80(%rdi)` over the
+  ctx-v11 struct (JUN-29, Route B). `runner-entry` builds and checks the
+  29-byte cap-call SITE and calls the guest once; THIS namespace is the
+  thing at the other end of that call -- the measured dispatch chain of
+  `checked_typed_cap_call` (seed/bootstrap/adopted-loader-20261012.c
+  line 9930) and the three host providers the compiler command path
+  actually exercises, wired as the ctx's `:typed-cap-call` slot.
+
+  THE MEASURED DISPATCH CHAIN (adopted loader, `checked_typed_cap_call`).
+  Every step below is the loader's own order, and every refusal here is
+  its `raise(SIGILL)` -- fail-closed, nothing normalised:
+
+    1. ctx present and `version == 11`           else trap
+    2. `kexe_cap_admitted(allow, id)`            else trap
+    3. decide op 1 (typed-kinds): request-kind
+       must equal result-kind                    else trap
+    4. `valid_typed_request` (kind 1: a string)  else trap
+    5. decide op 0 (cap-provider): WHICH provider
+       answers (wire id x typed kind)            -1 -> trap (refused)
+    6. the provider answers
+    7. `valid_typed_result` (kind 1: a string)   else trap
+
+  THE PROVIDER TABLE IS DATA, NOT THIS NAMESPACE'S OPINION. Step 5 is
+  `tools/kexe_loader_decisions.kotoba` `cap-provider` transcribed
+  exactly (its own comment: \"The C switches on the answer and calls the
+  provider; it knows no id\"). For the compiler command path the answer
+  is `:fs/app-data` 35 -> 5, `:io/write` 37 -> 13, `:cli/args` 38 -> 12,
+  `:io/write-error` 39 -> 7 (string kind 1).
+
+  WHAT IS WIRED AND WHAT IS NOT. Providers 13 / 7 / 12 are implemented
+  here because their measured behavior is small and total: provider 13
+  writes the request string to fd 1 and answers the DECIMAL byte count;
+  provider 7 is byte-for-byte the same provider with fd 2 (and the
+  loader flushes stdout first -- a diagnostic must not overtake the
+  output before it); provider 12 answers the decimal argv count for the
+  empty request, argv[i] for a decimal index (malformed -> trap, past
+  the end -> the empty string). Provider 5 (`:fs/app-data`) routes to
+  the vehicle's `:fs-dispatch` hook and traps without one -- the fs
+  surface (forms READ/WRITE/APPEND/EXISTS/RANGE/STAT/MTIME/CHMOD/
+  MKDIR/UNLINK/RMDIR/RENAME/FSYNC/MKTEMP/NOFOLLOW/OWNER, and the
+  `openat2 RESOLVE_BENEATH` containment behind it) stays the runner
+  artifact's, per the pinned Route B split. Provider 17 (the bytes
+  bridge, below) routes to the SAME hook with a bytes codec at both
+  ends.
+
+  THE BYTES BRIDGE, RESOLVED BY MEASUREMENT (2026-10-20, direct
+  execution -- not transcription). The adopted loader's switch has
+  case 17 (`fs_app_data_bytes_provider`, wire 35 with typed kinds
+  8 = :bytes -> :bytes and 9 = :string -> :bytes) while `cap-provider`
+  as shipped in `tools/kexe_loader_decisions.kotoba` answers 0 for
+  kinds 8/9 (its cond knows kinds 1 and 4..7 only). Which the loader
+  RUNS was an open question; it is now settled by executing the
+  adopted loader's own embedded aarch64 decision module
+  (`kexe_decisions_code`, `KEXE_DECISIONS_DECIDE_OFFSET` 5096) and
+  asking it:
+
+    cap-provider(35, 8) = 17      cap-provider(35, 9) = 17
+    cap-provider(35, 1) = 5       cap-provider(34, 1) = 6
+    cap-provider(39, 1) = 7       cap-provider(38, 1) = 12
+    cap-provider(37, 1) = 13      cap-provider(35, 4) = -1
+    cap-provider(7,  4) = 1       typed-kinds(8, 8) = 1
+    typed-kinds(8, 9) = 0
+
+  (probe: ~/.hermes/cache/scratch/jun29-bytes-bridge/probe_decide.c,
+  decisions_aarch64.bin extracted from seed/bootstrap/
+  adopted-loader-20261012.c). The controls match the shipped table
+  EXACTLY, so the one divergence is the real one: the adopted embedded
+  code routes kinds 8/9 to 17 and the shipped table does not know the
+  route. Current main's `tools/kexe_loader.c` embedded module (decide
+  offset 5000) answers 0 for (35, 8/9) and its switch has no case 17
+  at all -- the two loaders genuinely diverge here, and THIS model
+  follows the measured adopted behavior because that is the loader
+  whose `checked_typed_cap_call` chain the namespace doc pins.
+
+  Provider 17 is modeled from its source (adopted line 9899): a kind 8
+  request is a vector of byte items (each 0..255, count at most
+  KEXE_BYTES_VALUE_LIMIT = 8388608); a kind 9 request is a string
+  handle. The request text goes to the SAME `:fs-dispatch` hook
+  provider 5 uses, and the answer's bytes come back as a vector of
+  byte items (both kinds' result is bytes). The answer is the loader's
+  `resolve_string_bytes`: a bytes-handle answer is copied RAW with no
+  UTF-8 requirement, so binary content round-trips byte for byte
+  (2026-10-20, chatgpt-codex review P1 -- before this the answer was
+  forced through the string form and a `0xFF` byte could not come
+  back); a string answer is its UTF-8 bytes. ONE MODEL BOUNDARY on the
+  REQUEST side only, refused not normalised: the C interns the request
+  bytes RAW (`intern_utf8` validates nothing) while this model's hook
+  takes a string, so a kind 8 request that is not valid UTF-8 traps
+  (`:bytes-request-not-utf8`) instead of being lossily decoded -- for
+  every UTF-8 request the model and the loader coincide. Kinds 8/9 on
+  any wire but 35 are UNMEASURED here and reach provider 0, which this
+  slice refuses rather than echoing.
+
+  WHAT THIS IS NOT. No x86-64 emission, no syscall issuance, no fd
+  state: host services accumulate in an atom so a run's receipt can
+  observe them. It grants nothing -- `install-dispatch` accepts exactly
+  the pinned wire set `#{35 37 38 39}` and refuses any other grant
+  before a ctx exists."
+  {:kotoba/export [cap-admitted? cap-provider dispatch! fs-forms
+                   granted-wires install-dispatch provider-fs-app-data
+                   provider-fs-app-data-bytes bytes-value-limit
+                   provider-io-write provider-cli-args
+                   provider-io-write-error provider-refused
+                   served-wires trap-sigill? typed-kinds
+                   typed-kinds-admitted? vtable-slot words-for]}
+  (:require [kotoba.verifier :as verifier]
+            [kotoba.compiler.runner-entry :as entry]))
+
+;; `verifier/guest-integer?`, not `integer?`: the Node host's reader
+;; hands back bigints (same trap as the other runner-* namespaces).
+(defn- an-integer? [x] (verifier/guest-integer? x))
+
+(defn- trap!
+  "The loader's `raise(SIGILL)`: refuse, do not normalise. The model
+  throws; the emitted runner traps."
+  [message data]
+  (throw (ex-info message (assoc data :phase :runner-cap-dispatch
+                                      :trap :sigill))))
+
+(defn trap-sigill?
+  "True when `ex` is a dispatch refusal (the model's SIGILL)."
+  [ex]
+  (= :sigill (:trap (ex-data ex))))
+
+;; ── the slot identity (surface doc §1, static-asserted) ─────────────────────
+
+(def vtable-slot
+  "vtable slot 128 = `typed_cap_call`, `offsetof(struct
+  kexe_context_v11, typed_cap_call) == 128` (loader line 4683). The
+  dispatch entity in THIS namespace is what the measured `callq
+  *0x80(%rdi)` reaches."
+  128)
+
+(def ctx-version
+  "The only ctx version this entity serves (`context->version != 11`
+  traps)."
+  11)
+
+;; ── typed kinds (loader enum, lines 6187-6195) ─────────────────────────────
+
+(def typed-kinds
+  "The loader's `KEXE_TYPED_*` enum as data. This slice serves kind 1
+  (string) end to end; kinds 8/9 are refused as the unresolved bytes
+  bridge (namespace doc); the rest are outside the pinned command path."
+  {1 :string 2 :option-i64 3 :result-i64 4 :clock-v1 5 :dataspace-v1
+   6 :ui-commit-v1 7 :ui-event-v1 8 :bytes-v1 9 :string-bytes-v1})
+
+(defn typed-kinds-admitted?
+  "Decide op 1 (`typed-kinds-admitted`): a typed call's two kinds must
+  be the same kind. Answers like the table: truthy = 1, else 0."
+  [request-kind result-kind]
+  (= request-kind result-kind))
+
+;; ── the allow mask (decide `cap-admitted`: four u64 words, bit id) ──────────
+
+(def served-wires
+  "Exactly the compiler command path's wires. `install-dispatch` refuses
+  any grant outside this set -- the broker wires (20/42/43-47) and the
+  other catalog ids stay refused, matching `runner-entry/admit-wires!`."
+  #{35 37 38 39})
+
+(defn- bigint-word?
+  "A value in the host's guest-integer bigint representation -- the
+  form the kotoba reader hands back on this host (`kotoba.kir`'s i64)."
+  [x]
+  (identical? js/BigInt (type x)))
+
+(defn- word-big
+  "The u64 mask word as the host's EXACT integer type (bigint). A
+  Number cannot hold a u64 word exactly once two set bits straddle
+  2^53 -- measured 2026-10-20 on this host: `2^54 + 1` is `2^54`
+  again, so a Number mask silently drops the low wire (chatgpt-codex
+  review P2). Both host integer forms reach here (guest-integer?
+  admits both), so normalise before any arithmetic."
+  [w]
+  (if (bigint-word? w) w (js/BigInt w)))
+
+(defn- pow2-big
+  "2^bit in bigint arithmetic -- `bit-shift-left` is 32-bit on the CLJS
+  host, `Math/pow` is a float, and Number sums lie past 2^53; the
+  bigint route is exact through bit 63 (u64). `bit` may be either host
+  integer form (only comparisons touch it)."
+  [bit]
+  (loop [i 0 acc (js/BigInt 1)]
+    (if (< i bit) (recur (inc i) (* acc (js/BigInt 2))) acc)))
+
+(defn- mask-word-index
+  "The mask word an id 0..255 lives in (id div 64), by comparison --
+  `quot` throws on a bigint id on this host (measured: TypeError), and
+  the id may be one."
+  [id]
+  (cond (< id 64) 0
+        (< id 128) 1
+        (< id 192) 2
+        :else 3))
+
+(defn- mask-bit
+  "The bit an id 0..255 sets inside its word (id mod 64), exact for
+  both host integer forms."
+  [id]
+  (mod (word-big id) (js/BigInt 64)))
+
+(defn words-for
+  "The four u64 mask words granting exactly `wires` (bit id of the
+  mask, `cap-admitted` in tools/kexe_loader_decisions.kotoba). The
+  words are bigints -- the host's exact i64/u64 form -- because the
+  sum of a word's bits is NOT exact in Number arithmetic past 2^53
+  (measured 2026-10-20: `words-for #{0 54}` answered `2^54`, silently
+  dropping wire 0 from the grant)."
+  [wires]
+  (doseq [w wires]
+    (when-not (and (an-integer? w) (<= 0 w) (<= w 255))
+      (trap! "wire id outside 0..255 refused" {:wire w})))
+  (mapv (fn [word-index]
+          (reduce + (js/BigInt 0)
+                  (map (fn [w] (pow2-big (mask-bit w)))
+                       (filter (fn [w] (= word-index (mask-word-index w)))
+                               wires))))
+        (range 4)))
+
+(defn- wire-id-admissible?
+  "Decide `wire-id-admissible`: a capability id is 0..255 (the allow
+  mask is four 64-bit words)."
+  [id]
+  (and (an-integer? id) (<= 0 id) (<= id 255)))
+
+(defn cap-admitted?
+  "Decide `cap-admitted [w0 w1 w2 w3 id]`: bit `id` of the four-word
+  grant mask, as the loader's `kexe_cap_admitted` reads it. The bit
+  test is `w mod 2^(bit+1) >= 2^bit` in bigint arithmetic -- exact for
+  both host integer forms (a guest i64 is a bigint here), and it reads
+  a negative or over-wide word as its u64 bit pattern unchanged (the
+  word and its u64 wrap differ by a multiple of 2^(bit+1), so the
+  residue is the same). An id outside 0..255 is never granted.
+  FAIL-CLOSED: a mask that is not four guest integers traps rather
+  than answering."
+  [words id]
+  (when-not (and (vector? words) (= 4 (count words))
+                 (every? an-integer? words))
+    (trap! "allow mask is not four guest integers" {:words (pr-str words)}))
+  (if (not (wire-id-admissible? id))
+    false
+    (let [w (word-big (nth words (mask-word-index id)))
+          p (pow2-big (mask-bit id))]
+      (>= (mod w (* p (js/BigInt 2))) p))))
+
+(defn granted-wires
+  "The wire set a mask grants (all 256 admissible ids tested)."
+  [words]
+  (set (filter (fn [id] (cap-admitted? words id)) (range 256))))
+
+;; ── decide op 0: WHICH provider answers (tools/kexe_loader_decisions.kotoba) ─
+
+(def provider-refused -1)
+(def provider-none 0)
+(def provider-fs-app-data 5)
+(def provider-io-write-error 7)
+(def provider-cli-args 12)
+(def provider-io-write 13)
+(def provider-fs-app-data-bytes 17)
+
+(def bytes-value-limit
+  "KEXE_BYTES_VALUE_LIMIT = 8388608u (8 MiB): the bytes handle's item
+  bound (adopted line 108; `valid_bytes_handle` and provider 17's own
+  check both use it)."
+  8388608)
+
+(def ^:private string-kind-provider
+  "The `cap-provider` kind-1 branch verbatim (35 -> 5, 34 -> 6, 39 -> 7,
+  2 -> 8, 3 -> 9, 7 -> 10, 41 -> 11, 38 -> 12, 37 -> 13, 42 -> 14,
+  33 -> 15, 43..47 -> 16). Only the entries whose wire is servable here
+  are exercised; the table itself is transcribed in full so a drift in
+  the source file is visible as a diff against this map."
+  {35 5, 34 6, 39 7, 2 8, 3 9, 7 10, 41 11, 38 12, 37 13, 42 14,
+   33 15, 43 16, 44 16, 45 16, 46 16, 47 16})
+
+(defn cap-provider
+  "Decide op 0 (`cap-provider [id kind]`) as the ADOPTED loader's
+  EMBEDDED module answers it (measured by direct execution, namespace
+  doc): kinds 4/5/6/7 pin their one wire (4 -> (7 -> 1, else -1); 5 ->
+  (24 -> 2); 6 -> (9 -> 3); 7 -> (10 -> 4)); kind 1 is the map above;
+  wire 35 at kinds 8/9 answers 17 (the bytes bridge) -- THE EMBEDDED
+  CODE, not the shipped table: `tools/kexe_loader_decisions.kotoba`'s
+  cond knows kinds 1 and 4..7 only and answers 0 here, and current
+  main's embedded module agrees with the shipped table (no case 17) --
+  the two loaders diverge on exactly this route. Everything else,
+  including kinds 8/9 on any other wire (UNMEASURED), is 0. The C
+  switch KNOWS NO ID: it calls whatever this answers."
+  [id kind]
+  (cond
+    (= kind 4) (if (= id 7) 1 provider-refused)
+    (= kind 5) (if (= id 24) 2 provider-none)
+    (= kind 6) (if (= id 9) 3 provider-none)
+    (= kind 7) (if (= id 10) 4 provider-none)
+    (= kind 1) (get string-kind-provider id provider-none)
+    (and (= id 35) (or (= kind 8) (= kind 9))) provider-fs-app-data-bytes
+    :else provider-none))
+
+;; ── the measured fs/app-data form surface (loader switch, fs_app_data_dispatch)
+
+(def fs-forms
+  "The `KEXE_FORM_*` cases `fs_app_data_dispatch` answers. Anything
+  else is the loader's own `raise(SIGILL)`; the vehicle's `:fs-dispatch`
+  hook must reproduce that refusal."
+  #{:write :append :exists :range :stat :mtime :chmod :mkdir :unlink
+    :rmdir :rename :fsync :mktemp :nofollow :owner :read})
+
+;; ── host services (providers 13 / 7 / 12) ──────────────────────────────────
+
+(defn- utf8-byte-count
+  "The byte count the write providers report. A write counts BYTES, not
+  characters. `(mapv int s)` is the known CLJS trap (returns 0s); this
+  walks `.charCodeAt` UTF-16 units, counting a surrogate pair as its 4
+  UTF-8 bytes."
+  [s]
+  (let [n (.-length s)]
+    (loop [i 0 bytes 0]
+      (if (>= i n)
+        bytes
+        (let [c (.charCodeAt s i)
+              high (and (>= c 0xD800) (<= c 0xDBFF)
+                        (< (inc i) n)
+                        (let [d (.charCodeAt s (inc i))]
+                          (and (>= d 0xDC00) (<= d 0xDFFF))))]
+          (recur (+ i (if high 2 1))
+                 (+ bytes (cond high 4
+                                (< c 0x80) 1
+                                (< c 0x800) 2
+                                :else 3))))))))
+
+(defn- decimal-count
+  "Decimal, no sign, no padding: the loader's `kexe_decimal` result."
+  [n]
+  (str n))
+
+(defn- read-string-handle!
+  "The loader's `read_string_handle` at model resolution: a string or
+  trap."
+  [request]
+  (when-not (string? request)
+    (trap! "typed request is not a string handle" {:request (pr-str request)}))
+  request)
+
+(defn- io-write-provider
+  "Provider 13 (`io_write_provider`): the request string is written to
+  `stream` and the result is the decimal byte count. A write that makes
+  no progress fails closed rather than reporting a count that did not
+  happen -- the model's stream is an atom buffer, so the only failure
+  left is a non-string handle, which traps above."
+  [host stream request]
+  (let [text (read-string-handle! request)
+        n (utf8-byte-count text)]
+    (swap! host update stream (fn [buf] (str (or buf "") text)))
+    (decimal-count n)))
+
+(defn- cli-args-provider
+  "Provider 12 (`cli_args_provider`): the empty request answers the
+  decimal argv count; a decimal index answers that argument; past the
+  end answers the empty string. A malformed request traps rather than
+  being read as zero -- answering argv[0] for \"1x\" would be a silent
+  wrong answer, the one outcome worth trapping over. A request of 20+
+  bytes traps (the loader's bound)."
+  [host request]
+  (let [text (read-string-handle! request)
+        argv (:argv @host)]
+    (if (empty? text)
+      (decimal-count (count argv))
+      (do
+        (when (>= (.-length text) 20)
+          (trap! "cli/args index is 20 bytes or more" {:request text}))
+        (when-not (every? (fn [c] (and (>= c 48) (<= c 57)))
+                          (map #(.charCodeAt text %) (range (.-length text))))
+          (trap! "cli/args request is not a decimal index" {:request text}))
+        ;; decimal parse by hand: no js/Number in the acceptance path
+        (let [index (reduce (fn [acc c] (+ (* acc 10) (- c 48))) 0
+                            (map #(.charCodeAt text %) (range (.-length text))))]
+          (if (>= index (count argv))
+            ""
+            (str (nth argv index))))))))
+
+;; ── the bytes bridge (provider 17, fs_app_data_bytes_provider) ──────────────
+
+(defn- bytes-handle!
+  "A bytes handle at model resolution: a vector of guest integers, each
+  a byte 0..255, at most `bytes-value-limit` items
+  (`valid_bytes_handle` + the provider's own loop checks -- used for
+  both requests and answers). Anything else traps."
+  [request]
+  (when-not (and (vector? request) (every? an-integer? request))
+    (trap! "typed request is not a bytes handle" {:request (pr-str request)}))
+  (when (> (count request) bytes-value-limit)
+    (trap! "bytes handle is larger than KEXE_BYTES_VALUE_LIMIT"
+           {:count (count request) :limit bytes-value-limit}))
+  (doseq [item request]
+    (when-not (and (<= 0 item) (<= item 255))
+      (trap! "bytes item outside 0..255" {:item (str item)})))
+  request)
+
+(defn- utf8-decode-bytes!
+  "Bytes -> text by hand (no TextDecoder, no normalization): strict
+  UTF-8, rejecting overlong forms, surrogates, > U+10FFFF and truncated
+  sequences. The C copies the request bytes RAW and validates nothing;
+  this model's hook takes a string, so a non-UTF-8 request traps
+  (`:bytes-request-not-utf8`) instead of being lossily decoded -- the
+  one model boundary of the bytes bridge (namespace doc)."
+  [bytes]
+  (let [n (count bytes)]
+    (loop [i 0 acc []]
+      (if (>= i n)
+        (apply str (map #(if (<= % 0xFFFF)
+                           (.fromCharCode js/String %)
+                           (let [c (- % 0x10000)]
+                             (str (.fromCharCode js/String (+ 0xD800 (quot c 0x400)))
+                                  (.fromCharCode js/String (+ 0xDC00 (mod c 0x400))))))
+                        acc))
+        (let [b0 (nth bytes i)]
+          (cond
+            (<= b0 0x7F) (recur (inc i) (conj acc b0))
+            (and (>= b0 0xC2) (<= b0 0xDF))
+            (if (< (inc i) n)
+              (let [b1 (nth bytes (inc i))]
+                (if (and (<= 0x80 b1) (<= b1 0xBF))
+                  (recur (+ i 2) (conj acc (+ (mod b0 0x20) (* 0x40 (mod b1 0x40)))))
+                  (trap! "bytes request is not UTF-8" {:reason :bytes-request-not-utf8})))
+              (trap! "bytes request is not UTF-8" {:reason :bytes-request-not-utf8}))
+            (and (>= b0 0xE0) (<= b0 0xEF))
+            (if (< (+ i 2) n)
+              (let [b1 (nth bytes (inc i)) b2 (nth bytes (+ i 2))]
+                (if (and (<= 0x80 b1) (<= b1 0xBF) (<= 0x80 b2) (<= b2 0xBF)
+                         (not (and (= b0 0xE0) (< b1 0xA0)))
+                         (not (and (= b0 0xED) (>= b1 0xA0))))
+                  (recur (+ i 3)
+                         (conj acc (+ (* 0x1000 (mod b0 0x10))
+                                      (* 0x40 (mod b1 0x40))
+                                      (mod b2 0x40))))
+                  (trap! "bytes request is not UTF-8" {:reason :bytes-request-not-utf8})))
+              (trap! "bytes request is not UTF-8" {:reason :bytes-request-not-utf8}))
+            (and (>= b0 0xF0) (<= b0 0xF4))
+            (if (< (+ i 3) n)
+              (let [b1 (nth bytes (inc i)) b2 (nth bytes (+ i 2)) b3 (nth bytes (+ i 3))
+                    cp (+ (* 0x40000 (mod b0 8)) (* 0x1000 (mod b1 0x40))
+                          (* 0x40 (mod b2 0x40)) (mod b3 0x40))]
+                (if (and (<= 0x80 b1) (<= b1 0xBF) (<= 0x80 b2) (<= b2 0xBF)
+                         (<= 0x80 b3) (<= b3 0xBF)
+                         (not (and (= b0 0xF0) (< b1 0x90)))
+                         (not (and (= b0 0xF4) (>= b1 0x80))))
+                  (recur (+ i 4) (conj acc cp))
+                  (trap! "bytes request is not UTF-8" {:reason :bytes-request-not-utf8})))
+              (trap! "bytes request is not UTF-8" {:reason :bytes-request-not-utf8}))
+            :else
+            (trap! "bytes request is not UTF-8" {:reason :bytes-request-not-utf8})))))))
+
+(defn- text->utf8-bytes
+  "Text -> bytes: the string answer's UTF-8 bytes as items (the bytes
+  bridge answers a BYTES HANDLE raw -- this is only what a string
+  answer MEANS). Inverse of the decoder above for valid text; mirrors
+  `utf8-byte-count`'s charCode walk (a surrogate pair is its 4
+  bytes)."
+  [s]
+  (let [n (.-length s)]
+    (loop [i 0 acc []]
+      (if (>= i n)
+        acc
+        (let [c (.charCodeAt s i)
+              high (and (>= c 0xD800) (<= c 0xDBFF)
+                        (< (inc i) n)
+                        (let [d (.charCodeAt s (inc i))]
+                          (and (>= d 0xDC00) (<= d 0xDFFF))))
+              cp (if high
+                   (+ 0x10000 (* 0x400 (- c 0xD800)) (- (.charCodeAt s (inc i)) 0xDC00))
+                   c)]
+          (recur (+ i (if high 2 1))
+                 (cond (<= cp 0x7F) (conj acc cp)
+                       (<= cp 0x7FF) (conj acc (+ 0xC0 (quot cp 0x40))
+                                           (+ 0x80 (mod cp 0x40)))
+                       (<= cp 0xFFFF) (conj acc (+ 0xE0 (quot cp 0x1000))
+                                            (+ 0x80 (mod (quot cp 0x40) 0x40))
+                                            (+ 0x80 (mod cp 0x40)))
+                       :else (conj acc (+ 0xF0 (quot cp 0x40000))
+                                   (+ 0x80 (mod (quot cp 0x1000) 0x40))
+                                   (+ 0x80 (mod (quot cp 0x40) 0x40))
+                                   (+ 0x80 (mod cp 0x40))))))))))
+
+(defn- fs-app-data-bytes-provider
+  "Provider 17 (`fs_app_data_bytes_provider`, adopted line 9899): the
+  bytes bridge onto `fs_app_data_dispatch`. Kind 8's request bytes
+  become the form text; kind 9's request IS the text; the text goes to
+  the same `:fs-dispatch` hook provider 5 uses (trap without one); the
+  answer's bytes are the result (both kinds answer bytes). The answer
+  has two forms and the loader accepts both: a BYTES HANDLE is copied
+  RAW -- `resolve_string_bytes` takes the answer's bytes and requires
+  no UTF-8, so a hook holding binary content answers its raw bytes and
+  every one round-trips (a `0xFF` byte is `0xFF` back) -- and a STRING
+  is its UTF-8 bytes (what a text answer means)."
+  [ctx request-kind request]
+  (let [text (if (= request-kind 8)
+               (utf8-decode-bytes! (bytes-handle! request))
+               (read-string-handle! request))]
+    (if-let [fs-dispatch (:fs-dispatch ctx)]
+      (let [answer (fs-dispatch (:host ctx) text)
+            bytes (if (string? answer)
+                    (text->utf8-bytes answer)
+                    (bytes-handle! answer))]
+        (when (> (count bytes) bytes-value-limit)
+          (trap! "bytes result is larger than KEXE_BYTES_VALUE_LIMIT"
+                 {:count (count bytes) :limit bytes-value-limit}))
+        bytes)
+      (trap! "no :fs-dispatch hook: fs/app-data is the vehicle's surface"
+             {:provider provider-fs-app-data-bytes}))))
+
+(defn- valid-typed-request!
+  "`valid_typed_request` for the kinds this slice serves: kind 1 is a
+  string handle; kind 8 is a bytes handle (vector of byte items within
+  `bytes-value-limit`); kind 9 is a string handle; every other kind is
+  outside the pinned command path and traps rather than falling into
+  the loader's identity echo."
+  [kind request]
+  (cond
+    (= kind 1) (read-string-handle! request)
+    (= kind 8) (bytes-handle! request)
+    (= kind 9) (read-string-handle! request)
+    :else (trap! "typed kind outside the pinned command path refused"
+                 {:reason :typed-kind-out-of-slice :kind kind})))
+
+(defn- valid-typed-result!
+  "`valid_typed_result` for the kinds this slice serves: kind 1's
+  result is a string handle; kinds 8/9's result is a bytes handle
+  (`valid_bytes_handle`: a vector within `bytes-value-limit`)."
+  [kind result]
+  (cond
+    (= kind 1)
+    (do (when-not (string? result)
+          (trap! "typed result is not a string handle"
+                 {:kind kind :result (pr-str result)}))
+        result)
+    (or (= kind 8) (= kind 9)) (bytes-handle! result)
+    :else (trap! "typed kind outside the pinned command path refused"
+                 {:reason :typed-kind-out-of-slice :kind kind})))
+
+(defn- serve-provider!
+  "The provider switch. The pinned wires' providers are 5 (routes to
+  the vehicle's `:fs-dispatch` hook, else trap), 7, 12, 13 and 17 (the
+  measured bytes bridge onto the same hook). Anything else this slice
+  can reach is refused: provider -1 is the table's own refusal,
+  provider 0 is unreachable for the pinned wires at kind 1 and
+  unmeasured at kinds 8/9 (refused, not echoed), and the other
+  provider ids answer other wires that cannot be granted here."
+  [ctx provider request-kind request]
+  (let [host (:host ctx)]
+    (cond
+      (= provider provider-refused)
+      (trap! "cap-provider refused the call" {:provider provider})
+
+      (= provider provider-io-write)
+      (io-write-provider host :out request)
+
+      (= provider provider-io-write-error)
+      ;; the loader flushes stdout first: a diagnostic must not
+      ;; overtake the output the guest wrote before it. The model's
+      ;; buffers are already ordered, so the ordering is structural.
+      (io-write-provider host :err request)
+
+      (= provider provider-cli-args)
+      (cli-args-provider host request)
+
+      (= provider provider-fs-app-data)
+      (if-let [fs-dispatch (:fs-dispatch ctx)]
+        (fs-dispatch host request)
+        (trap! "no :fs-dispatch hook: fs/app-data is the vehicle's surface"
+               {:provider provider}))
+
+      (= provider provider-fs-app-data-bytes)
+      (fs-app-data-bytes-provider ctx request-kind request)
+
+      :else
+      (trap! "provider outside the pinned command path refused"
+             {:provider provider}))))
+
+(defn dispatch!
+  "The slot-128 entity: service one 2-arg `OP-CAP` call
+  `{:id :request-kind :result-kind :request}` under ctx-v11 `ctx`, in
+  the loader's measured gate order (namespace doc). Returns the
+  provider's string result and records `{:wire :kind :provider
+  :request :result}` in the host log. Every refusal traps (SIGILL).
+
+  `ctx` is what `install-dispatch` builds: `{:struct :kexe-context-v11
+  :version 11 :allow <four words> :host <atom> :fs-dispatch <fn>}`.
+  An optional `:decide-cap-provider` in `ctx` overrides step 5 -- kept
+  so the shipped table's own answers (kinds 8/9 -> 0) can still be
+  replayed against this chain after the 2026-10-20 measurement of the
+  embedded module (namespace doc)."
+  [ctx request]
+  (when-not (and (map? ctx) (= :kexe-context-v11 (:struct ctx)))
+    (trap! "ctx is not the planned :kexe-context-v11" {:ctx (pr-str ctx)}))
+  (when-not (= ctx-version (:version ctx))
+    (trap! "ctx version is not 11" {:version (:version ctx)}))
+  (when-not (map? request)
+    (trap! "cap call request malformed" {:request (pr-str request)}))
+  (let [{:keys [id request-kind result-kind request]} request]
+    (when-not (cap-admitted? (:allow ctx) id)
+      (trap! "cap call on a wire the grant does not admit"
+             {:wire id :allow (pr-str (:allow ctx))}))
+    (when-not (typed-kinds-admitted? request-kind result-kind)
+      (trap! "typed call's request and result kinds differ"
+             {:request-kind request-kind :result-kind result-kind}))
+    (valid-typed-request! request-kind request)
+    (let [decide (or (:decide-cap-provider ctx) cap-provider)
+          provider (decide id request-kind)
+          result (serve-provider! ctx provider request-kind request)
+          checked (valid-typed-result! request-kind result)]
+      (swap! (:host ctx) update :log (fnil conj [])
+             {:wire id :kind request-kind :provider provider
+              :request request :result checked})
+      checked)))
+
+(defn install-dispatch
+  "Build the supervisor's ctx-v11 with the dispatch entity in the
+  `:typed-cap-call` slot -- the field at offset 128. `allow` defaults
+  to the pinned grant (exactly `#{35 37 38 39}`); any other grant is
+  refused BEFORE a ctx exists. `argv` is the guest's argument vector
+  (provider 12). `:fs-dispatch` is the vehicle's fs/app-data hook,
+  called as `(fs-dispatch host request)` and answering a string (the
+  form text) or, on the bytes bridge, a bytes handle whose items are
+  copied RAW like `resolve_string_bytes`.
+
+  Returns `{:ctx ... :host <atom>}`; the host atom is `{:argv :out
+  :err :log}`."
+  [{:keys [allow argv fs-dispatch]
+    :or {allow (words-for served-wires) argv []}}]
+  (let [granted (granted-wires allow)]
+    (when-not (= served-wires granted)
+      (trap! "grant is not exactly the compiler command path's wires"
+             {:granted (vec (sort granted))
+              :expected (vec (sort served-wires))}))
+    (when-not (and (vector? argv) (every? string? argv))
+      (trap! "argv must be a vector of strings" {:argv (pr-str argv)}))
+    (when (and fs-dispatch (not (fn? fs-dispatch)))
+      (trap! ":fs-dispatch must be callable" {:fs-dispatch (pr-str fs-dispatch)}))
+    (when-not (= vtable-slot entry/cap-call-vtable-slot)
+      (trap! "slot identity drift: this entity and runner-entry disagree"
+             {:here vtable-slot :entry entry/cap-call-vtable-slot}))
+    (let [host (atom {:argv (vec argv) :out "" :err "" :log []})
+          base {:struct :kexe-context-v11
+                :version ctx-version
+                :allow allow
+                :host host
+                :fs-dispatch fs-dispatch}
+          ctx (assoc base :typed-cap-call (fn [request] (dispatch! base request)))]
+      {:ctx ctx :host host})))

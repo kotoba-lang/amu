@@ -1,0 +1,50 @@
+(ns scripts.test-nbb-engine
+  (:require [scripts.lib :as lib]
+            ["node:fs" :as fs]
+            ["node:path" :as path]
+            ["node:module" :as module]))
+
+(def require-node (.createRequire module (lib/join lib/root "scripts" "test-nbb-engine.cljk")))
+(def launcher (require-node "../bin/amu"))
+(def directory (.realpathSync fs (lib/temp-dir "amu-nbb-engine-")))
+(def original-cwd (.cwd js/process))
+(def original-engine (.-KBB_ENGINE js/process.env))
+(def fixture-root (lib/join directory "checkout"))
+(def engine (lib/join directory "engine" "cli.js"))
+(defn refused? [f]
+  (try (f) false (catch :default error (boolean (re-find #"existing cli.js file" (.-message error))))))
+
+(try
+  (.mkdirSync fs (.dirname path engine) #js {:recursive true})
+  (.mkdirSync fs fixture-root #js {:recursive true})
+  (.mkdirSync fs (lib/join fixture-root "bin") #js {:recursive true})
+  (.copyFileSync fs (lib/join lib/root "bin" "amu") (lib/join fixture-root "bin" "amu"))
+  (lib/write-text! engine "// fake engine; never execute this in path-selection tests\n")
+  (.chdir js/process directory)
+  (set! (.-KBB_ENGINE js/process.env) "engine/cli.js")
+  (lib/ensure! (= engine (.nbbCliPath launcher fixture-root)) "launcher resolves relative engine at caller cwd")
+  (with-redefs [lib/root fixture-root]
+    (lib/ensure! (= engine (lib/nbb-cli)) "shared helper resolves relative engine at caller cwd")
+    (set! (.-KBB_ENGINE js/process.env) "engine")
+    (lib/ensure! (refused? lib/nbb-cli) "shared helper refuses directory-valued engine")
+    (lib/ensure! (refused? #(.nbbCliPath launcher fixture-root)) "launcher refuses directory-valued engine")
+    ;; Exercise the real process entry point, including its error exit.
+    (let [result (lib/run js/process.execPath [(lib/join fixture-root "bin" "amu") "check" "missing.kotoba" "--jvm-free"]
+                          {:cwd directory :env {"KBB_ENGINE" "engine"} :allow-failure? true})]
+      (lib/ensure! (= 64 (:status result)) "directory-valued engine must refuse the actual compiler invocation")
+      (lib/ensure! (re-find #"existing cli.js file" (:stderr result)) "actual refusal identifies the engine configuration"))
+    (set! (.-KBB_ENGINE js/process.env) "missing/cli.js")
+    (lib/ensure! (refused? lib/nbb-cli) "shared helper refuses missing engine")
+    (lib/ensure! (refused? #(.nbbCliPath launcher fixture-root)) "launcher refuses missing engine")
+    (let [local (lib/join fixture-root "node_modules" "nbb" "cli.js")]
+      (.mkdirSync fs (.dirname path local) #js {:recursive true})
+      (lib/write-text! local "// local install takes precedence\n")
+      (lib/ensure! (= local (lib/nbb-cli)) "shared helper preserves local-install precedence")
+      (lib/ensure! (= local (.nbbCliPath launcher fixture-root)) "launcher preserves local-install precedence")))
+  (println "PASS nbb engine path: 10 assertions, caller-relative paths and fail-closed configuration")
+  (finally
+    (.chdir js/process original-cwd)
+    (if (nil? original-engine)
+      (js/Reflect.deleteProperty js/process.env "KBB_ENGINE")
+      (set! (.-KBB_ENGINE js/process.env) original-engine))
+    (lib/remove-tree! directory)))
