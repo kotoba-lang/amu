@@ -15,11 +15,20 @@ struct Meta {
 };
 
 static inline uint w_u32_at(const device uint *weights, uint offset) {
-  uint w0 = weights[offset >> 2u];
   uint shift = (offset & 3u) * 8u;
-  if (shift == 0u) return w0;
-  uint w1 = weights[(offset >> 2u) + 1u];   // only when the shift needs it (the review-P2 pattern)
-  return (w0 >> shift) | (w1 << (32u - shift));
+  if (shift == 0u) return weights[offset >> 2u];
+  /* review P2 (amu #1404): read EXACTLY bytes offset..offset+3. The old
+   * form loaded the whole next word, so the final code word of the last
+   * Q8_0 block (a 34-byte block that starts 4-byte aligned, codes at a
+   * 2-byte offset) read two bytes past the buffer's end. A Q8_0 code
+   * offset is always even: two 16-bit loads cover it. */
+  if ((offset & 1u) == 0u) {
+    const device ushort *h = (const device ushort *)weights;
+    return (uint)h[offset >> 1u] | ((uint)h[(offset >> 1u) + 1u] << 16u);
+  }
+  const device uchar *bytes = (const device uchar *)weights;
+  return (uint)bytes[offset] | ((uint)bytes[offset + 1u] << 8u) |
+         ((uint)bytes[offset + 2u] << 16u) | ((uint)bytes[offset + 3u] << 24u);
 }
 static inline float w_half(const device uint *weights, uint offset) {
   uint w = weights[offset >> 2u];

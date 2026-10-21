@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 /* kgpu_req_pipe / kgpu_resp_pipe / kgpu_broker_active live in kexe_loader.c. */
@@ -34,12 +35,29 @@
 #define KGPU_MAX_KEPT 8
 #define KGPU_MAX_DISPATCHES 8192
 #define KGPU_STAGING_BYTES (16u * 1024u * 1024u)
+/* review P1 (amu #1404): a PIPELINE binds at most this many buffers --
+ * struct kgpu_dispatch holds this many handles (the Vulkan backend's
+ * KGPU_MAX_BINDINGS, the same bound). */
+#define KGPU_MAX_BINDINGS 16
+/* review P2: the guest provider receives a gpu answer into a fixed 4 MiB
+ * buffer (kexe_loader.c gpu_compute_provider) and refuses a longer one, so
+ * no answer may exceed it: READ is bounded by this, not by `cap`. */
+#define KGPU_GUEST_ANSWER_BYTES (4u * 1024u * 1024u)
 
 static char kgpu_reason[512];
 
+/* review P1 (amu #1404): a refusal is "!" then the reason -- the guest
+ * provider fails closed only on a reply that begins with '!'
+ * (kexe_loader.c), so a bare reason would be interned as a successful
+ * answer. Reported on stderr the way kexe_gpu_vulkan.c reports it. */
 static size_t kgpu_fail(uint8_t *out, size_t cap, const char *reason) {
-  size_t n = strlen(reason); if (n > cap) n = cap;
-  memcpy(out, reason, n); return n;
+  if (cap == 0) return 0;
+  size_t n = strlen(reason);
+  if (n + 1 > cap) n = cap - 1;
+  out[0] = '!';
+  memcpy(out + 1, reason, n);
+  fprintf(stderr, "kexe-loader gpu: %s\n", reason);
+  return n + 1;
 }
 static size_t kgpu_decimal(uint8_t *out, uint64_t value) {
   char b[32]; int w = snprintf(b, sizeof b, "%llu", (unsigned long long)value);
@@ -55,7 +73,7 @@ static size_t kgpu_decimal(uint8_t *out, uint64_t value) {
 @end
 
 struct kgpu_buffer { int live; id<MTLBuffer> buf; uint64_t size; void *map; };
-struct kgpu_dispatch { int pipeline; uint32_t x, y, z; long handles[16]; int bindings; };
+struct kgpu_dispatch { int pipeline; uint32_t x, y, z; long handles[KGPU_MAX_BINDINGS]; int bindings; };
 struct kgpu_pipeline {
   int live; int bindings; id<MTLComputePipelineState> pso;
   /* kept-command-buffer support: the recorded dispatch list */
@@ -108,8 +126,12 @@ static int kgpu_new_buffer(uint64_t bytes, int *out) {
 }
 
 /* PIPELINE: the .spv name maps to a sibling .msl, compiled at load. */
-static int kgpu_new_pipeline(const char *spv_path, uint32_t bindings, int *out) {
+static int kgpu_new_pipeline(const char *spv_path, uint64_t bindings, int *out) {
   char msl[1024];
+  if (bindings == 0 || bindings > KGPU_MAX_BINDINGS) {
+    snprintf(kgpu_reason, sizeof kgpu_reason, "PIPELINE bindings must be 1..%d", KGPU_MAX_BINDINGS);
+    return -1;
+  }
   size_t n = strlen(spv_path);
   if (n + 2 >= sizeof msl) { snprintf(kgpu_reason, sizeof kgpu_reason, "PIPELINE path too long"); return -1; }
   memcpy(msl, spv_path, n + 1);
@@ -159,7 +181,7 @@ static int kgpu_run(struct kgpu_dispatch *ds, int count, uint64_t *ns) {
       struct kgpu_dispatch *d = &ds[i];
       struct kgpu_pipeline *p = &kgpu.pipelines[d->pipeline];
       [enc setComputePipelineState:p->pso];
-      for (int b = 0; b < d->bindings && b < 16; b++) {
+      for (int b = 0; b < d->bindings && b < KGPU_MAX_BINDINGS; b++) {
         struct kgpu_buffer *buf = kgpu_buffer_at(d->handles[b]);
         if (!buf) { snprintf(kgpu_reason, sizeof kgpu_reason, "DISPATCH binding %d: no such buffer", b); return -1; }
         [enc setBuffer:buf->buf offset:0 atIndex:b];
@@ -169,9 +191,26 @@ static int kgpu_run(struct kgpu_dispatch *ds, int count, uint64_t *ns) {
       [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
     }
     [enc endEncoding];
+    /* review P1 (amu #1404): the answer is the HOST monotonic time from
+     * submit through completion, the metric kexe_gpu_vulkan.c reports
+     * (vkQueueSubmit .. vkWaitForFences) -- not the GPU start/end
+     * timestamps, which leave out queue submission, scheduling and the
+     * wait, and would understate the per-command cost against Vulkan. */
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
     [cb commit];
     [cb waitUntilCompleted];
-    if (ns) *ns = (uint64_t)((cb.GPUEndTime - cb.GPUStartTime) * 1000000000.0);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    /* review P2: a command buffer that did not complete (an execution error,
+     * e.g. a kernel faulting on a short binding) is a refusal, never a
+     * success answering stale output. */
+    if (cb.status != MTLCommandBufferStatusCompleted) {
+      snprintf(kgpu_reason, sizeof kgpu_reason, "Metal command buffer failed (status %ld): %s",
+               (long)cb.status, cb.error ? cb.error.localizedDescription.UTF8String : "no error object");
+      return -1;
+    }
+    if (ns)
+      *ns = (uint64_t)(t1.tv_sec - t0.tv_sec) * UINT64_C(1000000000) + (uint64_t)(t1.tv_nsec - t0.tv_nsec);
     return 0;
   }
 }
@@ -250,7 +289,7 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     size_t digits = strlen(tok[3]);
     if ((digits & 1u) != 0) return kgpu_fail(out, cap, "WRITE hex length");
     size_t bytes = digits / 2;
-    if (offset + bytes > b->size) return kgpu_fail(out, cap, "WRITE past the buffer");
+    if (offset > b->size || bytes > b->size - offset) return kgpu_fail(out, cap, "WRITE past the buffer");
     uint8_t *dst = (uint8_t *)b->map + offset;
     for (size_t i = 0; i < bytes; i++) {
       int hi = kgpu_hex_nibble((uint8_t)tok[3][2 * i]), lo = kgpu_hex_nibble((uint8_t)tok[3][2 * i + 1]);
@@ -266,17 +305,31 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
       return kgpu_fail(out, cap, "WRITEDEC <handle> <offset> <u32,...>");
     struct kgpu_buffer *b = kgpu_buffer_at((long)handle);
     if (!b) return kgpu_fail(out, cap, "WRITEDEC: no such buffer");
-    uint8_t *dst = (uint8_t *)b->map + offset;
-    uint64_t bytes = 0; const char *p = tok[3];
-    while (*p && bytes + 4 <= b->size - offset) {
+    /* review P1 (amu #1404): the offset is checked BEFORE any pointer is
+     * formed from it -- `b->size - offset` underflowed for an offset past
+     * the buffer and `dst` pointed outside the allocation -- and a list that
+     * does not fit is refused whole (as kexe_gpu_vulkan.c does), validated
+     * before the first byte is written, never truncated. */
+    if (offset > b->size) return kgpu_fail(out, cap, "WRITEDEC past the buffer");
+    uint64_t room = b->size - offset;
+    uint64_t words = 0; const char *p = tok[3];
+    while (*p) {
       char *end; unsigned long long v = strtoull(p, &end, 10);
       if (end == p || v > 0xFFFFFFFFull) return kgpu_fail(out, cap, "WRITEDEC: not a u32");
-      dst[bytes] = (uint8_t)(v & 255); dst[bytes + 1] = (uint8_t)((v >> 8) & 255);
-      dst[bytes + 2] = (uint8_t)((v >> 16) & 255); dst[bytes + 3] = (uint8_t)((v >> 24) & 255);
-      bytes += 4;
+      if (words + 1 > room / 4) return kgpu_fail(out, cap, "WRITEDEC past the buffer");
+      words++;
       if (*end == ',') p = end + 1; else if (*end == 0) p = end; else return kgpu_fail(out, cap, "WRITEDEC separator");
     }
-    return kgpu_decimal(out, bytes / 4);
+    if (words == 0) return kgpu_fail(out, cap, "WRITEDEC: empty list");
+    uint8_t *dst = (uint8_t *)b->map + offset;
+    p = tok[3];
+    for (uint64_t w = 0; w < words; w++) {
+      char *end; unsigned long long v = strtoull(p, &end, 10);
+      dst[4 * w] = (uint8_t)(v & 255); dst[4 * w + 1] = (uint8_t)((v >> 8) & 255);
+      dst[4 * w + 2] = (uint8_t)((v >> 16) & 255); dst[4 * w + 3] = (uint8_t)((v >> 24) & 255);
+      p = (*end == ',') ? end + 1 : end;
+    }
+    return kgpu_decimal(out, words);
   }
   if (strcmp(op, "READ") == 0) {
     if (kgpu.recording) return kgpu_fail(out, cap, "READ while recording (BEGIN open): finish with SUBMIT first");
@@ -285,8 +338,9 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
         kgpu_parse_u64(tok[3], &length) != 0) return kgpu_fail(out, cap, "READ <handle> <offset> <length>");
     struct kgpu_buffer *b = kgpu_buffer_at((long)handle);
     if (!b) return kgpu_fail(out, cap, "READ: no such buffer");
-    if (offset + length > b->size) return kgpu_fail(out, cap, "READ past the buffer");
-    if (length * 2 > cap) return kgpu_fail(out, cap, "READ longer than the answer capacity");
+    if (offset > b->size || length > b->size - offset) return kgpu_fail(out, cap, "READ past the buffer");
+    if (length > KGPU_GUEST_ANSWER_BYTES / 2 || length * 2 > cap)
+      return kgpu_fail(out, cap, "READ longer than the guest answer buffer (4 MiB of hex)");
     static const char hex[] = "0123456789abcdef";
     const uint8_t *src = (const uint8_t *)b->map + offset;
     for (uint64_t i = 0; i < length; i++) {
@@ -299,6 +353,10 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     if (n != 2 || kgpu_parse_u64(tok[1], &handle) != 0) return kgpu_fail(out, cap, "ZERO <handle>");
     struct kgpu_buffer *b = kgpu_buffer_at((long)handle);
     if (!b) return kgpu_fail(out, cap, "ZERO: no such buffer");
+    /* review P2 (amu #1404): a host-side clear between BEGIN and SUBMIT
+     * would run ahead of every dispatch already recorded; refuse it, as
+     * kexe_gpu_vulkan.c does. */
+    if (kgpu.recording) return kgpu_fail(out, cap, "ZERO while recording");
     memset(b->map, 0, (size_t)b->size);
     out[0] = '1'; return 1;
   }
@@ -306,7 +364,7 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     uint64_t bindings; int h;
     if (n != 3 || kgpu_parse_u64(tok[2], &bindings) != 0)
       return kgpu_fail(out, cap, "PIPELINE <spv-path> <bindings>");
-    if (kgpu_new_pipeline(tok[1], (uint32_t)bindings, &h) != 0) return kgpu_fail(out, cap, kgpu_reason);
+    if (kgpu_new_pipeline(tok[1], bindings, &h) != 0) return kgpu_fail(out, cap, kgpu_reason);
     return kgpu_decimal(out, (uint64_t)h);
   }
   if (strcmp(op, "BEGIN") == 0 || strcmp(op, "BEGINK") == 0) {
