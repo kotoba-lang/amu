@@ -143,7 +143,7 @@ def prepare(out):
     spec = importlib.util.spec_from_file_location("adopted", ROOT / "scripts/seed/build-adopted.py")
     adopted = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(adopted)
-    receipt, _, producer, loader_source = adopted.inputs(ROOT / "seed/adoption-20261017.json")
+    receipt, _, producer, loader_source = adopted.inputs(ROOT / "seed/adoption-20261018.json")
     source_pins[str(producer.relative_to(ROOT))] = pin(producer)
     run = Runs(out, source_pins)
     source = out / "seed-unity.kotoba"

@@ -39,7 +39,7 @@ def main():
     artifacts = out / 'artifacts' / 'lookup-controls'
     artifacts.mkdir(exist_ok=False)
     loader = host / 'kexe-loader'
-    receipt = json.loads((ROOT / 'seed/adoption-20261017.json').read_text())
+    receipt = json.loads((ROOT / 'seed/adoption-20261018.json').read_text())
     producer = host / 'lookup-producer.bin'
     shutil.copyfile(out / 'artifacts/G2.bin', producer)
     if digest(producer) != receipt['nativeImageSHA256']:
@@ -100,9 +100,15 @@ def main():
     core_row = regions['lookup core and alignment']
     table = audited[table_row['start']:table_row['end']]
     table_offset = payload.find(table, target)
-    if (private_word >> 26 != 5 or not 0 < target < len(payload) or payload[4:2048] != audited[4:2048]
-            or table_offset < 0 or not 0 < table_offset - target <= core_row['end'] - core_row['start']):
-        raise SystemExit('current compiler: private mapped tree did not enter the audited lookup')
+    prefix_matches = payload[4:2048] == audited[4:2048]
+    table_distance = table_offset - target
+    core_bytes = core_row['end'] - core_row['start']
+    if (private_word >> 26 != 5 or not 0 < target < len(payload) or not prefix_matches
+            or table_offset < 0 or not 0 < table_distance <= core_bytes):
+        raise SystemExit('current compiler: private mapped tree did not enter the audited lookup '
+                         f'(branch=0x{private_word:08x}, target={target}, payload_bytes={len(payload)}, '
+                         f'prefix_matches={prefix_matches}, table_offset={table_offset}, '
+                         f'table_distance={table_distance}, audited_core_bytes={core_bytes})')
     exposed_row = regions['exported tree unchanged and refused']
     exposed_word, = struct.unpack_from('<I', payload, exports['exposed'][0])
     if (list(exports['exposed']) != structure['exports']['exposed'] or exposed_word != structure['exposedEntryWord']

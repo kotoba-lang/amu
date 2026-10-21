@@ -13,7 +13,7 @@ def main():
  for tag,src in [('OFF',ROOT/'docs/evidence/certified-scalar-calls-20261013/previous-lookup-bootstrap.bin'),('ON',out/'artifacts/G2.bin')]:
   dst=host/('certified-'+tag+'-producer.bin');shutil.copy2(src,dst);producers[tag]=dst
  assert sha(producers['OFF'])=='09ee805e5f0feef246922026023e75d7d92e4531245466c9827883ff5baf9f62'
- assert sha(producers['ON'])==json.loads((ROOT/'seed/adoption-20261017.json').read_text())['nativeImageSHA256']
+ assert sha(producers['ON'])==json.loads((ROOT/'seed/adoption-20261018.json').read_text())['nativeImageSHA256']
  pins={p:sha(p)for p in [loader,source,*producers.values()]};env={k:v for k,v in os.environ.items()if not k.startswith('KEXE_')};env.update(KEXE_COMMAND='1',KEXE_CAP_RESOURCES_35=str(w),KEXE_FUEL='off',KEXE_VECTORS='4194304',KEXE_VECTOR_ITEMS='134217728',KEXE_STRING_POOL='268435456',KEXE_PAIRS='16777216',KEXE_CPU_SECONDS='1800',KEXE_WALL_SECONDS='1800',TMPDIR=str(w));calls=[]
  def run(argv,name,e):
   z=subprocess.run(list(map(str,argv)),cwd=w,env=e,capture_output=True,timeout=1800);(w/(name+'.stdout')).write_bytes(z.stdout);(w/(name+'.stderr')).write_bytes(z.stderr);calls.append(dict(name=name,exit=z.returncode));(w/'calls.json').write_text(json.dumps(calls,indent=2)+'\n');assert z.returncode==0 and all(sha(p)==h for p,h in pins.items()),name;return z.stdout,z.stderr
@@ -23,7 +23,10 @@ def main():
   for command,tail in [('compile',[source,'--target','aarch64-macos','--output',container]),('extract-native',[container,'--symbol','pure-chain','--output',native])]:
    _,stderr=run(prefix+[command,*tail],tag+'-'+command,env);assert not stderr
   head,payload=container.read_bytes().split(b'\n\n',1);lines=head.decode().splitlines();ex={n:[int(p),int(a)]for n,p,a in map(str.split,lines[1:])};assert lines[0]==f'KSEED1 {len(payload)} {len(ex)}' and payload==native.read_bytes()
-  assert dict(bytes=len(payload),sha256=sha(native),exports=ex)==structure[tag];arms[tag]=(native,ex)
+  actual=dict(bytes=len(payload),sha256=sha(native),exports=ex);expected=structure[tag]
+  if actual!=expected:
+   raise SystemExit(f'{tag} native structure mismatch: expected={json.dumps(expected,sort_keys=True)} actual={json.dumps(actual,sort_keys=True)}')
+  arms[tag]=(native,ex)
  guest={k:v for k,v in env.items()if not k.startswith('KEXE_')};guest.update(KEXE_ARENA_USE='1',KEXE_STRUCTURED_REPORT='1',KEXE_FUEL='100000',KEXE_CPU_SECONDS='60',KEXE_WALL_SECONDS='60')
  for i,c in enumerate(cases):
   pair=[]

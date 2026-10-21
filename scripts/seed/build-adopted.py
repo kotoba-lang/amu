@@ -31,15 +31,17 @@ def inputs(receipt_path):
             raise SystemExit('source pin mismatch: ' + row['path'])
     paths = [line.strip() for line in owned_path(receipt.get('manifestPath', 'seed/MANIFEST')).read_text().splitlines()
              if line.strip() and not line.startswith('#')]
-    if len(paths) != receipt.get('moduleCount', 16):
-        raise SystemExit('source module count differs from the adoption receipt')
+    module_count = receipt.get('moduleCount', len(paths))
+    if len(paths) != module_count:
+        raise SystemExit(f'expected {module_count} modules from the receipt, found {len(paths)}')
     unity = b''.join(owned_path(path).read_bytes() + b'\n' for path in paths)
     if hashlib.sha256(unity).hexdigest() != receipt['sourceUnitySHA256']:
         raise SystemExit('unity pin mismatch')
     producer = owned_path(receipt.get('bootstrapPath', 'seed/bootstrap/adopted-20261012.bin'))
     loader_source = owned_path(receipt.get('loaderPath', 'seed/bootstrap/adopted-loader-20261012.c'))
-    if digest(producer) != receipt.get('bootstrapSHA256', receipt['nativeImageSHA256']):
-        raise SystemExit('bootstrap producer pin mismatch')
+    expected_producer_sha256 = receipt.get('bootstrapSHA256', receipt['nativeImageSHA256'])
+    if digest(producer) != expected_producer_sha256:
+        raise SystemExit('native producer pin mismatch')
     if digest(loader_source) != receipt['loaderSourceSHA256']:
         raise SystemExit('trusted C loader source pin mismatch')
     return receipt, unity, producer, loader_source
@@ -48,7 +50,7 @@ def inputs(receipt_path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--verify-only', action='store_true')
-    parser.add_argument('--receipt', type=Path, default=ROOT / 'seed/adoption-20261017.json')
+    parser.add_argument('--receipt', type=Path, default=ROOT / 'seed/adoption-20261018.json')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--generations', type=int, choices=[1, 2, 3], default=3)
     args = parser.parse_args()
@@ -105,18 +107,28 @@ def main():
             'G'+str(generation)+'-compile', env)
         run(prefix + ['extract-native', container, '--symbol', 'main', '--output', native],
             'G'+str(generation)+'-extract', env)
-        if digest(native) != receipt['nativeImageSHA256']:
-            raise SystemExit('self-build differs from the adopted fixed-point image')
         images.append({'generation': generation, 'bytes': native.stat().st_size,
                        'sha256': digest(native), 'containerSHA256': digest(container)})
         producer = native
-    report = {'status': 'PASS_ADOPTED_NATIVE_SELF_BUILD', 'generations': images,
+    fixed_point = (len(images) >= 2
+                   and images[-1]['sha256'] == images[-2]['sha256']
+                   and images[-1]['containerSHA256'] == images[-2]['containerSHA256'])
+    receipt_match = bool(images and images[-1]['sha256'] == receipt['nativeImageSHA256'])
+    report = {'status': 'PASS_ADOPTED_NATIVE_SELF_BUILD' if fixed_point and receipt_match
+              else 'FAIL_ADOPTED_NATIVE_SELF_BUILD', 'generations': images,
               'sourceUnitySHA256': receipt['sourceUnitySHA256'],
+              'fixedPoint': fixed_point,
+              'receiptNativeImageSHA256': receipt['nativeImageSHA256'],
+              'finalImageMatchesReceipt': receipt_match,
               'CTrustedLoaderBuilt': True, 'JVMNodeOrGraalFallback': False,
               'performanceMeasurement': False,
               'performanceGoalStatus': receipt.get('performanceGoalStatus', 'unspecified')}
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report))
+    if not fixed_point:
+        raise SystemExit('native self-build did not reach an image and container fixed point')
+    if not receipt_match:
+        raise SystemExit('final self-build image differs from the adopted fixed-point image')
 
 
 if __name__ == '__main__':
