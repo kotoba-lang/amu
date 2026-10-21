@@ -7145,8 +7145,9 @@ static void kexe_helper_reap(pid_t pid) {
  *
  * The grant: KEXE_CAP_RESOURCES_4 (a packaged command:
  * KEXE_EMBEDDED_HTTP_ORIGINS), comma-separated origins
- * `https://<host>[:<port>]`. Absent or empty grants no origin: every call is
- * refused and no helper is started. A malformed entry refuses the launch.
+ * `https://<host>[:<port>]`. Absent or empty grants no origin: no helper is
+ * started, so every call traps (SIGILL, the no-helper answer) and nothing
+ * leaves. A malformed entry refuses the launch.
  *
  * The URL grammar admitted (anything else is :http/malformed-url): at most
  * 4096 bytes (the kit's :url-bytes), printable ASCII without space or
@@ -7314,12 +7315,17 @@ static int64_t http_post_provider(struct kexe_context_v11 *context,
     raise(SIGILL);
     return 0;
   }
-  /* The origin grant first: a refused URL never reaches the helper. */
-  khttp_admit(bytes, length);
+  /* No helper (no KEXE_HTTP_CMD, or a grant naming no origin): the call
+   * traps as it always has -- nothing can be answered, and no request
+   * leaves. This is also the path the parser fuzz harness, which grants
+   * every wire but starts no helper, keeps exercising as a trap. */
   if (khttp_req_pipe[1] < 0 || khttp_resp_pipe[0] < 0) {
     raise(SIGILL);
     return 0;
   }
+  /* The origin grant BEFORE the first byte is written: a refused URL never
+   * reaches the helper. */
+  khttp_admit(bytes, length);
   {
     uint8_t header[8];
     uint64_t n = length;

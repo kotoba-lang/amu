@@ -3,10 +3,11 @@
   and hold the three review findings of amu #1427 to their behavior:
 
     origin grant  a URL whose origin KEXE_CAP_RESOURCES_4 does not name, a
-                  non-https scheme, a userinfo spelling, a port the grant
-                  does not name, and a launch with no grant at all are each
-                  refused BY NAME in the guest, and the helper never sees the
-                  request; a malformed grant refuses the launch
+                  non-https scheme, a userinfo spelling and a port the grant
+                  does not name are each refused BY NAME in the guest, and the
+                  helper never sees the request; a launch with no grant starts
+                  no helper and the call traps; a malformed grant refuses the
+                  launch
     descriptors   a non-CLOEXEC descriptor numbered 300 in the loader's
                   caller is closed in the helper (the old 3..255 loop left it)
     termination   a helper that ignores SIGTERM is SIGKILLed after the grace
@@ -68,7 +69,7 @@ if mode == 'ignore-term':
    ["userinfo" "https://api.example.test@evil.test/submit" "https://api.example.test" "echo"
     {:refused "malformed-url"}]
    ["no-grant" "https://api.example.test/submit" nil "echo"
-    {:refused "origin-not-granted" :no-helper true}]
+    {:trapped true}]
    ["malformed-grant" "https://api.example.test/submit" "https://api.example.test/path" "echo"
     {:launch-refused true}]
    ["ignore-term" "https://api.example.test/submit" "https://api.example.test" "ignore-term"
@@ -136,8 +137,14 @@ if mode == 'ignore-term':
                     (:refused want)
                     (and (= 126 status)
                          (= (trap (:refused want)) stderr)
+                         (nil? logged))
+                    ;; no grant: no helper starts, the call traps as a
+                    ;; call with no helper always has, and nothing leaves
+                    (:trapped want)
+                    (and (= 120 status)
+                         (.includes stderr ":SIGILL")
                          (nil? logged)
-                         (or (not (:no-helper want)) (nil? pid)))
+                         (nil? pid))
                     (:launch-refused want)
                     (and (= 2 status)
                          (= "kexe-loader: malformed :http/post grant (KEXE_CAP_RESOURCES_4: comma-separated https://<host>[:<port>] origins)\n"
