@@ -2,7 +2,6 @@
   "Deterministic commit marker for a primary artifact and its provenance."
   {:kotoba/export [descriptor format serialize verify!]}
   (:require [kotoba.compiler.nbb.compile-cache :as digest]
-            [kotoba.compiler.host-integer :as host-integer]
             [kotoba.compiler.posix-path :as posix-path]
             [kotoba.compiler.text-bytes :as text-bytes]
             #?@(:kotoba [[kotoba.form :as form]
@@ -34,8 +33,7 @@
   (pr-str (descriptor output artifact-value provenance-value))))
 
 #?(:kotoba nil :default (defn- bigint? [value]
-  #?(:kotoba (host-integer/bigint? value)
-     :default (= "[object BigInt]" (.call (.-toString (.-prototype js/Object)) value)))))
+  (= "[object BigInt]" (.call (.-toString (.-prototype js/Object)) value))))
 
 #?(:kotoba nil :default (defn- mismatch! []
   (throw (ex-info "output set is not committed"
@@ -56,9 +54,9 @@
     (assoc marker :files
            (mapv (fn [file]
                    (let [size (:size file)
-                         normalized (if (bigint? size) (host-integer/narrow size) size)]
+                         normalized (if (bigint? size) (js/Number size) size)]
                      (when-not (and (or (number? size) (bigint? size))
-                                    (host-integer/safe-integer? normalized)
+                                    (js/Number.isSafeInteger normalized)
                                     (<= 0 normalized))
                        (mismatch!))
                      (assoc file :size normalized)))
