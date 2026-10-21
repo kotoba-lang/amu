@@ -423,7 +423,10 @@
                                                 (:blocked-by m) (assoc :code "requires" :text (:blocked-by m)))]))}
                :pins {:lock lock-rel :lock-sha256 (sha256-file lock)
                       :inputs-sha256 (sha256-file (join work "inputs.txt"))
-                      :order-sha256 (sha256-file order-file)
+                      ;; order.txt names absolute farm paths: digest it with the farm prefix removed
+                      :order-sha256 (sha256-bytes (str/join "\n" (for [m order]
+                                                                    (str (:ns m) " " (.relative path (join work "r6" "src") (:file m))
+                                                                         " " (str/join " " (:deps m))))))
                       :modules (count order)
                       :tool-counts (:counts v)}})))))))
 
