@@ -105,10 +105,16 @@
        (.on p "error" (fn [e] (finish {:status nil :signal nil :error (.-message e)})))
        (.on p "close" (fn [code signal] (finish {:status code :signal signal :error nil})))))))
 
+(declare pool*)
+
 (defn- pool
   "Run (f item) -> Promise for every item, at most n at a time; a Promise of the results in order."
   [n items f]
+  (pool* n items f nil))
+
+(defn- pool* [n items f label]
   (let [items (vec items)
+        done (volatile! 0)
         results (make-array (count items))
         next-i (volatile! 0)
         worker (fn worker []
@@ -117,9 +123,16 @@
                      (js/Promise.resolve nil)
                      (do (vswap! next-i inc)
                          (.then (f (nth items i))
-                                (fn [r] (aset results i r) (worker)))))))]
+                                (fn [r]
+                                  (aset results i r)
+                                  (vswap! done inc)
+                                  (when (and label (zero? (mod @done 25)))
+                                    (log label " " @done "/" (count items)))
+                                  (worker)))))))]
     (.then (js/Promise.all (clj->js (repeatedly (max 1 n) worker)))
            (fn [_] (vec results)))))
+
+(defn- pool-logged [n items f] (pool* n items f "G1 checked"))
 
 (defn- git [repo & args] (sh "git" (into ["-C" repo] args)))
 (defn- git! [repo & args]
@@ -314,7 +327,10 @@
         profile (field #":profile-version (\d+)" text)]
     (cond
       (and (= 0 (:status r)) checked (= "6" profile)) {:verdict "PASS" :profile 6}
-      (and (= 0 (:status r)) checked) {:verdict "REFUSED" :code "profile-mismatch" :profile profile}
+      ;; an admitted check that reports no profile (e.g. `:entries :unavailable, :reason :no-typed-kir`)
+      ;; does not show profile 6: fail closed
+      (and (= 0 (:status r)) checked) {:verdict "REFUSED" :code (if profile "profile-mismatch" "profile-unreported")
+                                       :profile profile}
       :else
       (if-let [code (field #":code :([A-Za-z0-9_.\-/]+)" text)]
         {:verdict "REFUSED" :code code
@@ -328,7 +344,7 @@
     (not (file? (join oracle "bin" "amu"))) (js/Promise.resolve {:status "UNMEASURED" :reason "no bin/amu oracle"})
     (not (file? policy)) (js/Promise.resolve {:status "UNMEASURED" :reason (str "no policy " policy)})
     :else
-    (.then (pool jobs modules
+    (.then (pool-logged jobs modules
                  (fn [{:keys [ns file]}]
                    (.then (sh-async js/process.execPath
                                     [(join oracle "bin" "amu") "check" file "--source-path" farm-src
