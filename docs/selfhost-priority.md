@@ -1,92 +1,97 @@
 # Selfhost is the top priority for the Amu compiler
 
-Decision recorded 2026-09-29. It outranks new features, new targets and
-benchmark publication.
+Decision updated by the owner on 2026-10-22. It outranks new features, new
+targets and benchmark publication. This contract supersedes the earlier
+CLJK syntax-sugar retention, hosted bootstrap exceptions and C-loader pinning
+requirements. Historical checkpoints below record earlier work, not current
+instructions or proof of completed migration.
 
 ## The goal
 
-**The Amu compiler is a native executable produced by Amu, and building it
-needs no JVM/Clojure, GraalVM, ClojureScript/nbb or Node.js.** (The same
-sentence is the goal in
-`kotoba-lang/kotoba-lang` `docs/selfhost-native-binary.md`.)
+**Canonical source is `.kotoba`. Amu builds and rebuilds its own native
+compiler, CLI, project/build graph, packager and operational tooling without
+CLJK/CLJC/CLJS, NBB, KBB, Clojure, Java/JVM, GraalVM, Node.js, or a C
+compiler, loader or runtime.** CLJK is a migration input, not a final authoring
+surface or acceptance requirement. Port required behavior into Kotoba and
+retire the old source, launchers and dependency declarations.
 
-"Kotoba is a native compiler" (Amu emits machine code) and "the Amu compiler
-is a native binary" (a GraalVM Native Image folds a JVM-hosted Clojure program
-into one file) are different claims. Only a compiler that Amu built from
-Kotoba source satisfies the second one: canonical `.kotoba` directly, or
-`.cljk` after its bounded surface desugaring into Kotoba core. Equivalent
-surface and core definitions must retain the same semantics and Definition
-CID. `.cljk` is Kotoba syntax sugar. Its Clojure-shaped notation does not give
-it Clojure or ClojureScript semantics. The `cljs` backend and Node/nbb host
-are independent compiler/runtime routes. The compiler's JVM and Node/CLJS host seams are
-separate bootstrap adapters to remove as their native Kotoba replacements
-become buildable and qualified. Keeping `.cljk` as an authoring surface does
-not keep those host runtimes in the selfhost dependency graph.
+Emitting machine code or naming a file `.kotoba` does not prove this closure.
+Record the compiler generations, pinned sources/locks, artifact hashes,
+packaging and actual process execution. A selfhost-produced loaderless native
+artifact is the product route; CDCI uses only `x86_64-linux-static` ELF for
+Amu selfhost and Kotoba native. Browser/Worker Wasm and JavaScript are generated
+targets executed in the declared user host, not permission to keep a Node/NBB
+compiler host. Shared client-runtime and per-operation consent rules still
+apply to end-user apps.
 
 ## Rules
 
 1. **Selfhost first.** When work competes for time, the item that moves the
    compiler toward building itself wins. Walls on the selfhost scoreboard are
-   fixed in the language / frontend / backend, not worked around in the
-   compiler's source.
+   fixed in the language / frontend / backend or ported into canonical Kotoba
+   without narrowing supported behavior to make the scoreboard green.
 2. **Only a selfhost-built compiler is selfhost evidence.** A compiler
-   executable counts only if Amu produced it. An executable built with
-   GraalVM Native Image, run on the JVM, or run on Node/nbb is a *bootstrap or
-   reference* artifact and is labelled that way wherever its numbers appear
-   (README, reports, kotoba-lang.org).
-3. **No GraalVM in the selfhost path.** `bin/build-native-image` and
-   `scripts/build-native-image.py` are a bootstrap route kept for comparison.
-   They are not acceptance evidence for selfhost and must not be presented as
-   such.
+   executable counts only if Amu selfhost produced it through the qualified
+   native build closure. Hosted builds, GraalVM Native Image and C-loader
+   receipts describe historical provenance only. Do not publish them as
+   current selfhost, Q9 or CDCI qualification.
+3. **Remove legacy build and execution dependencies.** Replace hosted compiler
+   seams, C loaders, seed/image launchers and packagers with Kotoba / Amu
+   selfhost implementations. Do not pin a C loader as the solution, retain
+   CLJK as syntax sugar, or keep GraalVM builders for a required comparison
+   route. Missing native functionality is an explicit blocker.
 4. **Benchmarks follow selfhost.** Embench and other compiler measurements are
    published as selfhost results only when taken with a selfhost-built
    compiler, on a quiet host, with the compiler binary hash recorded. Results
    from a bootstrap compiler are published as bootstrap-reference numbers,
    never as selfhost numbers.
-5. **Fail closed.** No JVM, GraalVM or Node fallback is added to make a
-   selfhost stage pass. An unreachable file stays on the scoreboard as
-   refused, with its reason.
+5. **Fail closed.** No legacy host, C loader, wrapper or hosted packaging
+   fallback is added to make a selfhost stage pass. `--jvm-free` alone is
+   insufficient: it does not exclude Node/NBB/C. An unreachable component
+   stays on the scoreboard as refused or blocked, with its reason.
 
 ## Migration gates
 
-`.cljk` remains Kotoba's syntax-sugar surface. Its bounded admitted forms
-must lower through a deterministic Kotoba frontend step into Kotoba's
-canonical S-expression core
-before semantic identity, type/effect checking, or code generation. `.kotoba`
-is the direct core spelling. Equivalent paired definitions must preserve
-semantics and Definition CID. The `.cljk` extension is unrelated to the
-`cljs` backend: it does not ask for ClojureScript parsing, execution, or
-libraries.
-Host-specific reader branches in compiler implementation files are bootstrap
-adapters and remain migration work. Neither extension chooses a compiler
-runtime.
-
-The strict pure-core-only `.kotoba` admission profile is not yet enforced.
-Today, discovering `.kotoba` does not prove that its forms are already in the
-core. Treat that as an explicit frontend migration gate, not as a property
-conferred by the filename.
+The final graph contains canonical `.kotoba` implementations. Existing CLJK
+fixtures, readers and host-specific branches are migration inventory; they
+do not establish a requirement to retain the old surface. Preserve recorded
+behavior, semantic identity, authority and resource boundaries while porting
+the whole component. Source admission is distinct from execution and full
+self-reconstruction.
 
 The migration proceeds through these gates:
 
-1. **Pin the language boundary.** Keep paired `.cljk`/`.kotoba` fixtures for
-   each supported sugar and its core form, including equal normalized
-   semantics and Definition CIDs, plus refusals for forms outside the bounded
-   surface.
+1. **Port the language and component boundary.** Migrate required source and
+   fixtures to `.kotoba`, preserving recorded semantics, Definition CIDs and
+   named refusals. Remove the requirement for a permanent paired CLJK surface.
 2. **Grow the native Kotoba compiler closure.** The adopted seed is a 16-module
    compiler and has separate source-only x86_64 Linux support; neither covers
    the complete Amu frontend, project system, verifier, and command surface.
-   Extend it from Kotoba source, including the `.cljk` desugarer, and require
-   each generation to compile and verify the next without JVM, Clojure,
-   ClojureScript/nbb, GraalVM, or Node.
+   Extend it from Kotoba source and require each generation to compile and
+   verify the next without the forbidden hosts or C loader/runtime. A
+   historical subset fixed point does not qualify the full compiler.
 3. **Move the CLI and build graph.** Once the native compiler covers the
    complete public command surface, build and run it from pinned native
-   artifacts. Keep any temporary bootstrap host outside the guest compiler's
-   dependency graph and label it as bootstrap tooling.
-4. **Retire host runtimes after parity.** Remove JVM and Node/nbb/CLJS build,
-   launch, and CI dependencies only after the native path passes the same
+   artifacts. Include seed/image bootstrap, input resolution, orchestration,
+   packaging and launchers in the native dependency closure. Historical host
+   tooling must not remain a required step.
+4. **Qualify and retire the old routes.** The native path must pass the same
    positive, refusal, project-link, artifact-verification, and command-level
-   conformance corpus. An implementation source being available in `.kotoba`
-   is not enough to retire its host route.
+   conformance corpus, then replace the legacy source, runtime and dependency
+   declarations. Remove unused old routes directly. Record source changes,
+   runtime qualification and any live cutover separately; this document does
+   not authorize stopping existing services or a production cutover.
+
+Tracking: JUN-200 (loaderless bootstrap), JUN-202 (native selfbuild inputs and
+fixed point), JUN-199 (product entry), KOT-13 (Kotoba core), JUN-198 (Kotoba
+CLI/build) and JUN-162 (the two-gate native CDCI controller).
+
+## Historical checkpoints (superseded contract; evidence only)
+
+Statements below about retained CLJK syntax sugar, hosted routes and pinned
+C loaders describe the contract at the time. They grant no current exception
+to the 2026-10-22 goal or migration gates above. No dependency removal or
+runtime qualification is implied by this policy update.
 
 ## Migration checkpoint: 2026-10-16
 
