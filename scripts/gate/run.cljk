@@ -717,7 +717,7 @@
     :loader-sha256 :lineage-loader-sha256 :reason :detail :work})
 
 (defn- canonical [v]
-  (walk/postwalk (fn [f] (if (and (map? f) (not (record? f))) (apply dissoc f volatile-keys) f)) v))
+  (walk/postwalk (fn [f] (if (and (map? f) (not (sorted? f)) (not (record? f))) (apply dissoc f volatile-keys) f)) v))
 
 (defn- cache-key [m]
   (sha256-bytes (pr-str m)))
