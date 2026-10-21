@@ -49,6 +49,9 @@
 (check "G0 a new file with a #?(:kotoba nil fails"
        (= "FAIL" (:verdict (r/judge (side base-g1 :g0 {:status "MEASURED" :files {"f.cljk" {:present false}}})
                                     (side base-g1 :g0 {:status "MEASURED" :files {"f.cljk" {:present true :rc-no-arm 0 :kotoba-nil 1 :host-literals 0}}})))))
+(check "G0 a file that becomes unreadable fails"
+       (= "FAIL" (:verdict (r/judge (side base-g1 :g0 {:status "MEASURED" :files {"src/f.cljk" {:present true :rc-no-arm 0 :kotoba-nil 0 :host-literals 0 :unreadable 0}}})
+                                    (side base-g1 :g0 {:status "MEASURED" :files {"src/f.cljk" {:present true :rc-no-arm 0 :kotoba-nil 0 :host-literals 0 :unreadable 1}}})))))
 (check "G0 fewer findings passes"
        (= "PASS" (:verdict (r/judge (side base-g1 :g0 {:status "MEASURED" :files {"f.cljk" {:present true :rc-no-arm 3 :kotoba-nil 1 :host-literals 2}}})
                                     (side base-g1 :g0 {:status "MEASURED" :files {"f.cljk" {:present true :rc-no-arm 1 :kotoba-nil 0 :host-literals 2}}})))))

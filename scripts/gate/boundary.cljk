@@ -162,12 +162,14 @@
                :product-launchers launchers-product
                :product-src-union (count union)
                :product-nbb-entries (prod entries)
-               :product-hollow-audit (count hollow-doc)
                :product-hollow-computed (count hollow-calc)
                :product-host-token-files (prod host-only)
                :kotoba-nil-forms (reduce + 0 (map :kotoba-nil scanned))
                :unguarded-host-tokens (reduce + 0 (map :unguarded scanned))}
-     :info {:src-files (count scanned)
+     ;; the audit rows come from a static document (docs/selfhost-real-vs-hollow-20261001.md): reported, not
+     ;; ratcheted, so that adding or restoring the document is not a PRODUCT growth (they stay in the union, as in the .sh)
+     :info {:product-hollow-audit (count hollow-doc)
+            :src-files (count scanned)
             :src-files-with-kotoba-arm (count (filter #(pos? (:kotoba-arms %)) scanned))
             :guarded-host-tokens (reduce + 0 (map :guarded scanned))}
      :detail {:launchers launchers

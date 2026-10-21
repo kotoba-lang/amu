@@ -541,11 +541,17 @@
     (into {} (mapcat (fn [chunk] (or (run chunk) (mapcat #(run [%]) chunk)))
                      (partition-all 150 paths)))))
 
-(defn- measure-g0 [oracle subject changed]
+(defn- measure-g0
+  "G0 over the changed module sources: `.cljk` / `.kotoba` files under src/.
+  Fixtures elsewhere (seed/tests/lexread/neg/*.kotoba and the like are
+  deliberately unreadable) are not modules. A file the refactor reader cannot
+  read (no answer for it alone) counts :unreadable 1, which the ratchet
+  treats like the other counters (the standard's G0 starts with a lossless CST)."
+  [oracle subject changed]
   (let [amu (join oracle "bin" "amu")]
     (if-not (file? amu)
       {:status "UNMEASURED" :reason "no bin/amu for refactor to-kotoba"}
-      (let [rels (filter #(re-find #"\.(cljk|kotoba)$" %) changed)
+      (let [rels (filter #(and (str/starts-with? % "src/") (re-find #"\.(cljk|kotoba)$" %)) changed)
             present (filter #(file? (join subject %)) rels)
             rc (rc-no-arm-counts amu oracle (map #(join subject %) present))]
         {:status "MEASURED"
@@ -561,11 +567,11 @@
                          host (boundary/kotoba-arm-host-literals text)
                          n (get rc (real-path p))]
                      (if (nil? n)
-                       [rel {:present true :verdict "UNMEASURED" :reason "refactor to-kotoba gave no answer for this file"
+                       [rel {:present true :verdict "REFUSED" :code "unreadable" :unreadable 1 :rc-no-arm 0
                              :kotoba-nil nil-forms :host-literals (:count host)}]
                        [rel {:present true
                              :verdict (if (and (zero? n) (zero? nil-forms) (zero? (:count host))) "PASS" "REFUSED")
-                             :rc-no-arm n :kotoba-nil nil-forms :host-literals (:count host)
+                             :rc-no-arm n :kotoba-nil nil-forms :host-literals (:count host) :unreadable 0
                              :host-literal-samples (:samples host)}])))))}))))
 
 ;; ------------------------------------------------------------------ S5

@@ -49,12 +49,12 @@ its own product compiler (`bin/amu` of that commit).
 
 | gate | measurement | per-unit verdicts |
 | --- | --- | --- |
-| G0 form | for each `.cljk` / `.kotoba` file in `git diff base...head`: the `:rc-no-arm` findings of `amu refactor to-kotoba <file> --check`, the `#?(:kotoba nil` forms, and the host literals inside `:kotoba` arms (regex, `#js`, char, `js/`, `.method`, `java.` / `goog.`, `"node:`) | PASS when all three are 0, otherwise REFUSED. NOT-CLAIMED when the file is absent on that side. |
+| G0 form | for each `.cljk` / `.kotoba` file under `src/` in `git diff base...head` (fixtures elsewhere, such as the deliberately unreadable `seed/tests/lexread/neg/*.kotoba`, are not modules); a file the refactor reader cannot read counts `unreadable`; the `:rc-no-arm` findings of `amu refactor to-kotoba <file> --check`, the `#?(:kotoba nil` forms, and the host literals inside `:kotoba` arms (regex, `#js`, char, `js/`, `.method`, `java.` / `goog.`, `"node:`) | PASS when all three are 0, otherwise REFUSED. NOT-CLAIMED when the file is absent on that side. |
 | G1 language | `bin/amu check <module> --source-path <farm> --policy lang/selfhost-compiler-grant.edn --jvm-free` for every module of the compiler-closure farm | PASS when the output is `{:format :kotoba.check/v1 ...}` with `:profile-version 6`. REFUSED(code) with the diagnostic code and line. UNMEASURED when the oracle gave no answer. |
 | G2 identity | `bin/amu definition-cids <module> --jvm-free`, run twice, for each G1 PASS module | PASS when both runs succeed with identical output. REFUSED(nondeterministic) when they differ. BLOCKED(g1) when the module did not pass G1. |
 | S1 lineage | `seed/tools/bootstrap.kotoba --upto r6n` (seed/README.md, "Seed lineage bootstrap"), then a check that `build/seed-boot/r6n/seed-1.bin` has the sha256 recorded in `seed/rungs/r6n.record` | PASS, or REFUSED(lineage / no-loader / seed-hash / no-record) |
 | S2 selfbuild scan | `seed/tools/selfbuild.kotoba` (JUN-202; seed/README.md, "Selfbuild scan (gate S2)") in the side's tree, with the lock `seed/selfbuild/integration-lock.edn` (or `deps-lock.edn` when the head has no integration lock; `--lock` overrides, and both sides use the same path), kotoba-lang at the pinned commit and the S1 seed. Its `selfbuild.edn` gives one verdict per module. | PASS (`:ok`, an object was written), REFUSED(Exxxx), BLOCKED (`:blocked-by`), UNMEASURED (`:trap`) |
-| S5 ratchet | the PRODUCT inventory of the deleted `scripts/selfhost-wall/bootstrap-boundary.sh`, transcribed rule for rule in `scripts/gate/boundary.cljk` (on 7c8c8a4b it gives the same counts as the shell original: 4 launchers, 17 nbb entries, 16 audit rows, 56 computed, 11 host-token files, 65 union, 146 `#?(:kotoba nil` forms). It also counts the `native-gates` allowlist of `scripts/check-workflows.cljk` and the tracked `.sh` files. | one number per metric |
+| S5 ratchet | the PRODUCT inventory of the deleted `scripts/selfhost-wall/bootstrap-boundary.sh`, transcribed rule for rule in `scripts/gate/boundary.cljk` (on 7c8c8a4b it gives the same counts as the shell original: 4 launchers, 17 nbb entries, 16 audit rows, 56 computed, 11 host-token files, 65 union, 146 `#?(:kotoba nil` forms). It also counts the `native-gates` allowlist of `scripts/check-workflows.cljk` and the tracked `.sh` files. The audit-document rows (16) are reported in `:info` and are not ratcheted, so that adding or restoring that document does not count as PRODUCT growth. | one number per metric |
 
 The farm is the selfbuild tool's (`build/selfbuild/r6`), and G1 checks the
 same files. The farm is generated, not checked in. The tool extracts every
@@ -75,7 +75,7 @@ head is not required to reach 100%. The gate FAILs when any of these holds:
 
 - G1 or G2: the PASS count drops, or a module flips from PASS to anything else (including a module that disappears).
 - G2: any head module has nondeterministic CIDs.
-- G0: a changed file gains a `:rc-no-arm`, a `#?(:kotoba nil`, or a host literal in a `:kotoba` arm. A new file starts from zero.
+- G0: a changed `src/` file gains a `:rc-no-arm`, a `#?(:kotoba nil`, a host literal in a `:kotoba` arm, or becomes unreadable. A new file starts from zero.
 - S1: the lineage flips from PASS.
 - S2: the OK count drops. Individual flips are listed but do not fail the gate.
 - S5: any metric grows.
