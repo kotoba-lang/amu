@@ -57,7 +57,7 @@
     (if (= "" answer)
       #?(:kotoba (typed-list-new [:list :string]) :default [])
       #?(:kotoba (first-fields (text/split answer "\n") 0 (typed-list-new [:list :string]))
-         :default (mapv #(first (text/split % "\t")) (text/split answer "\n"))))))
+         :default (mapv #(first (text/split % #"\t")) (text/split answer #"\n"))))))
 
 (defn make-directories!
   "Create DIR and any missing parent; throws when DIR is still not there."
