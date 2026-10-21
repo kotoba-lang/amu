@@ -25,6 +25,31 @@ three-generation self-build (about a minute per compile) does not fit the
 spawn budget, so those generations stay plain loader commands that the tool
 checks (`--image`).
 
+## Verified (2026-10-21, the owner's Mac, macOS arm64, branch head 7d0d8b7a)
+
+The `seed/README.md` commands, with `--work build/seed-boot-k2` (and that loader
+path in the spawn grant) so the earlier `build/seed-boot` stays untouched:
+
+```
+bootstrap: loader da5d6e742862 (seed/bootstrap/seed-loader-v11.c), work dir .../build/seed-boot-k2
+bootstrap: R0 seed (committed)  187186 bytes  sha256 fe2c20aefa02f4f91f5b8394c8ad8a31e75325242050aaf7964b0eab73a39dd6
+  ... r0 r1 r2 r3 r4 r4b r5a r5b r6a r6b r6c r6c-kir r6d .. r6m: every FIXED POINT == record ...
+bootstrap: r6n bridge (unity of 1cf67ec9a)  856728 bytes  sha256 f11b6ce3afb5a9912f23cc4c5275cfce5f82d61c14504561201d374bc5721ce9
+bootstrap: r6n seed-1  860296 bytes  sha256 b3f46d32a01780fe26e63cda2bc3b402d2bdfbadb09474c48105181529fa467a
+bootstrap: r6n seed-2 (by seed-1)  860296 bytes  sha256 b3f46d32a01780fe26e63cda2bc3b402d2bdfbadb09474c48105181529fa467a
+bootstrap: r6n FIXED POINT == record b3f46d32a01780fe
+bootstrap: head unity (working tree): 41811 lines, sha256 a6906f3b48825aeca44607de5bd4c67305e2ef8bc9ac4cbef3074236f4b2ae0d
+bootstrap: head unity == seed/adoption-20261017.json sourceUnitySHA256
+bootstrap: OK                                    (exit 0, 34 s wall for the whole lineage)
+```
+
+Process tree under the tool's loader (sampled every 50 ms for the whole run):
+`loader` (its guest), `clang` + `ld` (from `/usr/bin/cc`, once), `git`,
+`kexe-loader-v11`; nothing else (no sh/zsh, node, nbb, java, python). The
+adopted head commands then gave G1 = G2 = G3 = `b10e381344a1f5a8b82cac981c0011bd20ecbcc4b48dd5f5dce97364c74e8a00`
+(`--image`: == nativeImageSHA256), about 80 s per generation. `package.kotoba`
+packaged the r6n seed (code sha256 `b3f46d32...`) into a command that runs.
+
 ## Follow-ups (Linear JUN-243)
 
 Deleted now, Kotoba port pending: the selfbuild scan (`scripts/seed/selfbuild.sh`,

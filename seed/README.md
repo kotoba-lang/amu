@@ -63,9 +63,11 @@ mkdir -p build/seed-tools
 cc -std=c11 -O2 seed/bootstrap/adopted-loader-20261012.c -o build/seed-tools/loader
 
 # 2. the committed seed compiles the tool (project mode: seed/tools/lib.kotoba is found by its namespace)
-KEXE_COMMAND=1 KEXE_CAP_RESOURCES_35=$PWD build/seed-tools/loader seed/bootstrap/adopted-20261012.bin 0 0 aarch64 35,37,38,39 -- \
+KEXE_COMMAND=1 KEXE_CAP_RESOURCES_35=$PWD KEXE_STRING_POOL=1073741824 KEXE_PAIRS=16777216 KEXE_VECTORS=4194304 KEXE_VECTOR_ITEMS=134217728 \
+  build/seed-tools/loader seed/bootstrap/adopted-20261012.bin 0 0 aarch64 35,37,38,39 -- \
   compile $PWD/seed/tools/bootstrap.kotoba --source-path $PWD/seed --unpinned --target aarch64-macos --output $PWD/build/seed-tools/bootstrap.kseed
-KEXE_COMMAND=1 KEXE_CAP_RESOURCES_35=$PWD build/seed-tools/loader seed/bootstrap/adopted-20261012.bin 0 0 aarch64 35,37,38,39 -- \
+KEXE_COMMAND=1 KEXE_CAP_RESOURCES_35=$PWD KEXE_STRING_POOL=1073741824 KEXE_PAIRS=16777216 KEXE_VECTORS=4194304 KEXE_VECTOR_ITEMS=134217728 \
+  build/seed-tools/loader seed/bootstrap/adopted-20261012.bin 0 0 aarch64 35,37,38,39 -- \
   extract-native $PWD/build/seed-tools/bootstrap.kseed --symbol main --output $PWD/build/seed-tools/bootstrap.bin
 #    -> {:ok true, ... :offset <OFFSET> ...}
 
