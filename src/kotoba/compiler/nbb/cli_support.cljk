@@ -454,7 +454,7 @@
        :timing (timing-report)})
     (catch :default error
       (let [source (second args)
-            source-name (when (source-path/source-kind source)
+            source-name (when (source-path/source-kind-present? source)
                           (posix-path/basename source))
             report (error-report error source-name)]
         {:status (exit-code (:error report))
@@ -472,7 +472,7 @@
   (`amu test` prints text, not EDN): the same `:kotoba.cli-error/v1` report
   and the same exit code `invoke` would have produced for ERROR."
   [error source]
-  (let [source-name (when (source-path/source-kind source)
+  (let [source-name (when (source-path/source-kind-present? source)
                       (posix-path/basename source))
         report (error-report error source-name)]
     {:status (exit-code (:error report))

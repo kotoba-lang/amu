@@ -3,8 +3,12 @@
 ;; the reachability measurement, scripts/selfhost-wall/boundary-gate.sh re-checks it).
 (ns kotoba.compiler.cli
   {:kotoba/export [*exit* -main error-report exit-code]}
-  (:require [kotoba.io :as kio] [kotoba.compiler.atomic-output :as atomic-output]
+  (:require #?(:clj [kotoba.io :as kio]
+               :cljs [kotoba.io :as kio]
+               :kotoba [kotoba.compiler.posix-path-core :as native-path])
+            [kotoba.compiler.atomic-output :as atomic-output]
             [kotoba.artifact.core :as artifact]
+            [kotoba.compiler.accelerator-pipeline :as accelerator-pipeline]
             [kotoba.compiler.bounded-edn :as bounded-edn]
             [kotoba.compiler.capability-names :as cap-names]
             [kotoba.compiler.core :as compiler]
@@ -26,7 +30,7 @@
             [kotoba.verifier :as verifier]
             [json.data-json :as json]
             [kotoba.lang.text :as str])
-  (:gen-class))
+  #?(:clj (:gen-class)))
 
 (defn- parse-target [s] (target-names/parse s))
 
@@ -38,7 +42,7 @@
 
 (def ^:dynamic *exit* (fn [status] (System/exit status)))
 
-(defn- kotoba-source! [path] (source-path/admit! path))
+(defn- kotoba-source! [path] (source-path/admit-or-throw! path))
 
 (defn- check-definitions
   "Per-definition CIDs for a checked module (ADR 0300).
@@ -293,6 +297,31 @@
                           :root (:root lock) :modules (count (:modules lock))
                           :lock-cid (:lock-cid lock)}))))
 
+    "gpu-compile"
+    ;; Connect the accelerator pipeline in the CLI (JUN-85 emit stage):
+    ;; SPEC.edn + --device DEVICE.edn -> one sealed GPU artifact through
+    ;; vendor dispatch. The workgroup row is the provisional dispatch default
+    ;; (ADR-0355) unless SPEC names one; the printed :measured? says which.
+    (let [spec (bounded-edn/read-file
+                 (or (second args)
+                     (throw (ex-info "gpu-compile needs SPEC.edn" {:phase :usage}))))
+          device (bounded-edn/read-file
+                   (or (option args "--device")
+                       (throw (ex-info "--device <DEVICE.edn> is required" {:phase :usage}))))
+          output (or (option args "--output") "gpu-artifact.edn")
+          _ (when (some #{"--target" "--policy" "--source-path" "--module-lock" "--blocks"} args)
+              (throw (ex-info "gpu-compile takes SPEC.edn --device <DEVICE.edn> [--output <ARTIFACT>]"
+                              {:phase :usage})))
+          {:keys [artifact dispatch]} (accelerator-pipeline/compile-spec spec device)]
+      (atomic-output/write-edn! output artifact)
+      (println (pr-str {:ok true :target (:target dispatch) :vendor (:vendor dispatch)
+                        :workgroup-size (:workgroup-size dispatch)
+                        :workgroup-source (:workgroup-source dispatch)
+                        :measured? (:measured? dispatch)
+                        :kir-sha256 (:kir-sha256 artifact)
+                        :code-sha256 (:code-sha256 artifact)
+                        :output output})))
+
     "compile"
     (let [input (when-not (option args "--module-lock") (kotoba-source! (second args)))
           source-roots (options args "--source-path")
@@ -522,7 +551,7 @@
                                  :inputs-output inputs-output}
                                 (select-keys inputs [:kotoba.compile/inputs]))))))
     "extract-native"
-    (let [artifact (source-path/admit-native-artifact!
+    (let [artifact (source-path/admit-native-artifact-or-throw!
                     (bounded-edn/read-file (second args)) (second args))
           symbol (symbol (or (option args "--symbol") "main"))
           output (or (option args "--output") "program.bin")
@@ -540,8 +569,9 @@
     (apply dispatch! args)
     (catch clojure.lang.ExceptionInfo error
       (let [source (second args)
-            source-name (when (source-path/source-kind source)
-                          (kio/file-name (kio/file source)))
+            source-name (when (source-path/source-kind-present? source)
+                          #?(:kotoba (native-path/basename source)
+                             :default (kio/file-name (kio/file source))))
             report (error-report error source-name)]
         (binding [*out* *err*] (println (pr-str report)))
         (*exit* (exit-code (:error report)))))

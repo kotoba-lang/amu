@@ -227,6 +227,14 @@ jobs:
         run: npm run test-nbb-wasm32
       - if: ${{ !cancelled() }}
         run: npm run test-nbb-io
+      # re-disasm: the cleanroom disassembler's guest suite (18 tests on the
+      # KIR interpreter, restricted ESM and Wasm probes) and its native run
+      # (compile -> extract -> reviewed C loader -> machine code; the runtime
+      # tree carries no JVM, GraalVM or Node.js).
+      - if: ${{ !cancelled() }}
+        run: npm run test-re-disasm
+      - if: ${{ !cancelled() }}
+        run: npm run test-re-disasm-native
       - if: ${{ !cancelled() }}
         run: npm run test-compile-cache
       - if: ${{ !cancelled() }}

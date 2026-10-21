@@ -13,6 +13,8 @@ const usage = [
   "       amu check <file.kotoba|file.cljk|file.cljc> [--policy policy.edn] [--jvm-free]",
   "  multi-file (a module declaring (:require [ns :as alias])):",
   "       amu module-lock <entry> --source-path <dir> --blocks <dir>",
+  "       amu gpu-compile <spec.edn> --device <device.edn> [--output <artifact>]",
+  "         # sealed GPU artifact via vendor dispatch (the device picks the target)",
   "       amu compile --module-lock <lock> --blocks <dir> --target <target> --output <file>",
   "       (both halves run without a JDK; add --jvm-free to prove it)",
   "       amu check <entry> --source-path <dir>            # links, emits nothing",
@@ -26,6 +28,7 @@ const usage = [
   "       amu package-fetch --deps kotoba.deps.edn --packages <dir>",
   "       amu package-lock --deps kotoba.deps.edn --packages <dir> --output kotoba.lock.edn",
   "       amu definition-cids <file> [--source-path <dir>]  # one CID per definition",
+  "       amu kir <file.kotoba|file.cljk|file.cljc> [--output file.kir.edn]  # the module's KIR (:kotoba.kir/v4) as EDN",
   "       amu compile <entry> --source-path <dir> --unpinned --target <target> --output <file>",
   "         [--selfhost-desktop]  (x86_64 AIUEOS browser shell; no GDT/TSS/ISR image)",
   "       amu worker [--target <target>]   (no --target: Kototama VM program)",
@@ -220,7 +223,9 @@ function nbbNativeEligible(args) {
   if (runCommands.has(command)) return true;
   return command === "check" || command === "extract-native"
     || command === "definition-cids"
+    || command === "kir"
     || command === "module-lock"
+    || command === "gpu-compile"
     || command === "package-manifest" || command === "package-lock"
     || command === "package-fetch"
     || command === "verify-output-set" || command === "sign-output-set"
@@ -240,8 +245,8 @@ function nbbNativeEligible(args) {
 // mean "host native" without this line would have sent `amu module-lock`
 // to the x86-64 / AArch64 driver, which implements only compile and
 // extract-native.
-const targetIndependentCommands = new Set(["check", "definition-cids",
-  "module-lock", "package-manifest", "package-lock", "package-fetch"]);
+const targetIndependentCommands = new Set(["check", "definition-cids", "kir",
+  "module-lock", "gpu-compile", "package-manifest", "package-lock", "package-fetch"]);
 
 // The two aarch64 targets whose artifact is packaged (ELF64 kernel image, static
 // ELF). They load the packagers, so they share the packaged native entry
@@ -307,6 +312,27 @@ function nbbCliPath(root) {
     throw new Error(`nbb engine must name an existing cli.js file, not a directory: ${engine}`);
   }
   return engine;
+}
+
+// A source-tree override for the native package implementation is used while
+// advancing kotoba-native and an Amu consumer together. The pinned gitlibs
+// closure remains intact and is still the fallback for every namespace the
+// worktree does not provide. Keep this opt-in explicit; a normal invocation
+// is resolved exclusively from deps-lock.edn.
+function kotobaNativeSourceOverlay() {
+  const supplied = process.env.AMU_KOTOBA_NATIVE_SRC;
+  if (!supplied) return [];
+  let resolved;
+  try {
+    resolved = fs.realpathSync(supplied);
+  } catch (_) {
+    fail(`error: AMU_KOTOBA_NATIVE_SRC is not readable: ${supplied}`, 64);
+  }
+  if (!fs.statSync(resolved).isDirectory()
+      || !fs.existsSync(path.join(resolved, "kotoba", "native", "elf64.cljc.cljk"))) {
+    fail("error: AMU_KOTOBA_NATIVE_SRC must be kotoba-native's src directory", 64);
+  }
+  return [resolved];
 }
 
 function resolverFailure(result) {
@@ -640,7 +666,8 @@ function runCompiler(root, rawArgs) {
     catch (error) { fail(`error: ${error.message}`, 64); }
     const alias = runCommands.has(args[0]) ? "native-run" : null;
     const classpath = [path.join(root, "src"), path.join(root, "resources"),
-      securityClasspath(root, nbbCli, alias)].join(path.delimiter);
+      ...kotobaNativeSourceOverlay(), securityClasspath(root, nbbCli, alias)]
+      .join(path.delimiter);
     const result = spawn(process.execPath,
       ["--stack-size=4096", nbbCli, "--classpath", classpath, nbbEntrypoint(root, args), ...args], {
         cwd: root, stdio: "inherit", env: childEnv,

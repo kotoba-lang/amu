@@ -212,7 +212,7 @@
         {:ok true :output output :signer (:signer public)})
 
       "inspect"
-      (let [input (source-path/admit! (second args))
+      (let [input (source-path/admit-or-throw! (second args))
             inspected (interface/inspect-source (bounded-edn/read-text-file input))]
         (if-let [output (option args "--output")]
           (do (atomic-output/write-edn! output inspected)
