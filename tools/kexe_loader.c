@@ -61,6 +61,7 @@ static int kgpu_broker_active = 0;
  * forked per call and trapped SIGILL at pipe()). The framing is an 8-byte
  * little-endian length then the bytes, both directions. */
 static int kllm_req_pipe[2] = { -1, -1 };   /* guest -> helper */
+static pid_t kllm_helper_pid = -1;
 static int kllm_resp_pipe[2] = { -1, -1 };  /* helper -> guest */
 static int kspawn_req_pipe[2] = { -1, -1 };   /* guest -> supervisor */
 static int kspawn_resp_pipe[2] = { -1, -1 };  /* supervisor -> guest */
@@ -7015,13 +7016,18 @@ static void kexe_llm_helper_start(void) {
   if (helper == 0) {
     (void)dup2(kllm_req_pipe[0], 0);
     (void)dup2(kllm_resp_pipe[1], 1);
-    (void)close(kllm_req_pipe[0]);
-    (void)close(kllm_req_pipe[1]);
-    (void)close(kllm_resp_pipe[0]);
-    (void)close(kllm_resp_pipe[1]);
+    /* review P1: no unrelated broker descriptor may survive into the
+     * helper (it would hold the write ends and defeat the supervisor's
+     * HUP observation) -- close everything but stdin and stdout. */
+    for (int fd = 3; fd < 256; fd++) (void)close(fd);
     execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
     _exit(127);
   }
+  kllm_helper_pid = helper;
+  /* review P2: a dead helper must fail the call as EPIPE, never kill the
+   * guest with SIGPIPE (supervise would pass that off as an ordinary
+   * closed pipeline). */
+  (void)signal(SIGPIPE, SIG_IGN);
   (void)close(kllm_req_pipe[0]);
   kllm_req_pipe[0] = -1;
   (void)close(kllm_resp_pipe[1]);
@@ -7088,6 +7094,9 @@ static int64_t llm_generate_provider(struct kexe_context_v11 *context,
       }
       got += (uint64_t)r;
     }
+    /* the contract above: at most one trailing newline trimmed. */
+    if (answer_length > 0 && answer[answer_length - 1] == (uint8_t)'\n')
+      answer_length--;
     return intern_utf8(context, answer, answer_length);
   }
 }
@@ -12119,6 +12128,14 @@ static void install_syscall_sandbox(void) {
                                      __NR_read, 0, 1));
     ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
   }
+  /* :llm/generate (wire 11): the same -- the provider writes the prompt
+   * and READS the framed answer from the pre-started helper. Without this
+   * the response read traps SIGSYS on production Linux (review P1). */
+  if (kllm_resp_pipe[0] >= 0) {
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_read, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+  }
   /* Native TCP (wires 43..47): the same, and nothing more -- the guest
    * writes its request to the broker pipe and READS the answer. socket,
    * bind, listen, accept, connect, poll, send stay the supervisor's; the
@@ -12613,6 +12630,10 @@ int main(int argc, char **argv) {
     if (pipe(kspawn_req_pipe) != 0 || pipe(kspawn_resp_pipe) != 0) fail("spawn broker pipe");
     kspawn_broker_active = 1;
   }
+  /* :llm/generate: only when the grant names wire 11 (review P1: an
+   * unrelated launch must not start a helper that holds credentials). */
+  if (!kexe_lease_transport && kexe_cap_admitted(shared->context.allow, 11))
+    kexe_llm_helper_start();
   kexe_entropy_granted = !kexe_lease_transport && kexe_cap_admitted(shared->context.allow, 23);
   /* Native TCP: only when the grant names one of wires 43..47, and only with
    * well-formed address scopes (an absent one grants no address). */
@@ -12635,7 +12656,6 @@ int main(int argc, char **argv) {
   }
 #endif
 
-  kexe_llm_helper_start();
   pid_t child = fork();
   if (child < 0) fail("fork");
   if (child > 0) {
@@ -12648,6 +12668,18 @@ int main(int argc, char **argv) {
                                              variant_bool_mask);
     if (munmap(shared, sizeof(*shared)) != 0) fail("supervisor shared munmap");
     if (munmap(memory, mapped) != 0) fail("supervisor munmap");
+    /* review P1: the helper outlives nothing -- shut down and reap it on
+     * every supervisor exit path, or a stalled generation leaves an
+     * unsandboxed process holding host credentials. */
+    if (kllm_helper_pid > 0) {
+      if (kllm_req_pipe[1] >= 0) (void)close(kllm_req_pipe[1]);
+      if (kllm_resp_pipe[0] >= 0) (void)close(kllm_resp_pipe[0]);
+      kllm_req_pipe[1] = -1;
+      kllm_resp_pipe[0] = -1;
+      (void)kill(kllm_helper_pid, SIGTERM);
+      (void)waitpid(kllm_helper_pid, NULL, 0);
+      kllm_helper_pid = -1;
+    }
     return child_status;
   }
 
