@@ -117,6 +117,130 @@ KEXE_VECTORS=4194304 KEXE_VECTOR_ITEMS=134217728 KEXE_CPU_SECONDS=1800 KEXE_WALL
 `package.kotoba`) and run with `KEXE_CAP_RESOURCES_20=/usr/bin/cc`:
 `-- $PWD <seed.bin> [--offset N] [--out PATH] [--scope LIST] [--allow CSV]`.
 
+## Selfbuild scan (gate S2)
+
+`seed/tools/selfbuild.kotoba` (with `seed/tools/scan.kotoba`) is the Kotoba
+port of `scripts/seed/selfbuild.sh --no-link`, `r6-scan.sh`,
+`selfbuild-inputs.sh`, `farm-from-lock.py`, `reach-list.py`, `reach-twins.py`
+and the summary of `selfbuild.py`. It answers: of the modules the amu commands
+reach, which ones does seed r6n compile from source? It starts only `git` and
+the lineage loader running the seed. Prerequisites: the lineage bootstrap above
+(it leaves `build/seed-boot/kexe-loader-v11` and
+`build/seed-boot/r6n/seed-1.bin`), and local clones of the lock's repositories
+under one directory (`--repos`; `--gitlibs` names a second place to look).
+Nothing is fetched: a missing clone or commit fails the run.
+
+```sh
+# build the tool: step 2 above with selfbuild.kotoba (-> build/seed-tools/selfbuild.bin, :offset <OFFSET>)
+# run it (the work dir must not exist yet; stderr MUST go to the file named by --stderr)
+KEXE_COMMAND=1 KEXE_CAP_RESOURCES_35=$PWD \
+KEXE_CAP_RESOURCES_20=/usr/bin/git:$PWD/build/seed-boot/kexe-loader-v11 KEXE_SPAWN_PATH_LOOKUP=1 \
+KEXE_SPAWN_ENV=KEXE_COMMAND:KEXE_CAP_RESOURCES_35:KEXE_STRING_POOL:KEXE_PAIRS:KEXE_VECTORS:KEXE_VECTOR_ITEMS:KEXE_CPU_SECONDS:KEXE_WALL_SECONDS \
+KEXE_STRING_POOL=1073741824 KEXE_PAIRS=16777216 KEXE_VECTORS=4194304 KEXE_VECTOR_ITEMS=134217728 \
+KEXE_CPU_SECONDS=3600 KEXE_WALL_SECONDS=3600 \
+  build/seed-tools/loader build/seed-tools/selfbuild.bin <OFFSET> 0 aarch64 3,20,35,37,38,39 -- $PWD \
+  --work $PWD/build/selfbuild --stderr $PWD/build/selfbuild.stderr \
+  --lock $PWD/seed/selfbuild/integration-lock.edn \
+  --repos $HOME/github/kotoba-lang --gitlibs $HOME/.gitlibs/_repos/https/github.com/kotoba-lang \
+  --kotoba-lang-repo $HOME/github/kotoba-lang/kotoba-lang --kotoba-lang-rev 965c5f5b2f574f6be8f0b9572ca6cd6bac28ce97 \
+  [--seed FILE] [--expect-ok N] \
+  2> $PWD/build/selfbuild.stderr
+```
+
+Every path is absolute and, except the clones (read by `git` only), inside
+`$PWD` (the wire-35 scope). The seed writes its refusals to stderr, which a
+spawned child shares with the tool, so the tool reads them back from the
+`--stderr` file (it checks the redirection with a marker first). Each module
+compile is one spawn (at most 10 s; r6n needs at most about 1.5 s). Options:
+`--lock` (default `deps-lock.edn`), `--seed` (default
+`build/seed-boot/r6n/seed-1.bin`; its rung is named from `seed/rungs/*.record`),
+`--kotoba-lang DIR` (an existing `lang/compat` parent instead of
+`--kotoba-lang-repo/-rev`), `--expect-ok N`.
+
+Exit status: 0 the scan ran (and seed OK >= `--expect-ok`), 1 an input or tool
+failure or OK below `--expect-ok`, 2 usage. Refusals of modules are results,
+not failures. The last stdout lines are
+`selfbuild: modules N (L lines): seed OK n (..), REFUSED r, TRAP t, BLOCKED b`,
+`selfbuild: verdict <work>/selfbuild.edn` and `selfbuild: OK`.
+
+`seed/selfbuild/integration-lock.edn` is `deps-lock.edn` with the upstream PR
+heads the integration needs: kotoba-mir#75 `8f34a78`, kotoba-sema#130
+`a8fe662`, kotoba-native#204 `a7a7740`, osaho#122 `66519e4`, artifact
+`619fc02`.
+
+Work dir (`--work`):
+
+| file | content |
+| --- | --- |
+| `selfbuild.edn` | the verdict (below) |
+| `inputs.txt` | provenance: `amu <commit> src dirty <n>`, `seed <path> sha256 <h> (<rung>) offset <o>`, `lock <path> sha256 <h>`, `root <coordinate> <commit> src tree <git tree> clone <clone> -> <root>` per lock entry, `kotoba-lang <repo> <commit> lang/compat tree <git tree>`, `module <ns> <sha256> <source>` per module |
+| `farm.txt`, `cp.txt`, `cp/<repo>/src` | the classpath farm (lock order) |
+| `reach.txt`, `list.txt`, `list.err` | reach-list files; reach-twins `<ns>\t<file>` and its swaps / additions |
+| `r6/order.txt`, `r6/src`, `r6/o` | `<ns> <file> <deps..or ->` dependency-first; the farm copies; the objects |
+| `r6/r6-scan.tsv` | `ns  status  lines  code  text  -` (status `OK`, `REFUSED`, `TRAP`, `BLOCKED`) |
+| `report.txt` | totals, first refusals grouped by code and text, the three command entries |
+
+`selfbuild.edn` (format 1; one map):
+
+```clojure
+{:selfbuild/format 1
+ :tool "seed/tools/selfbuild.kotoba"
+ :seed {:file "<path>" :sha256 "<hex>" :rung "r6n"}
+ :amu {:commit "<sha>" :src-dirty 0}
+ :counts {:modules 269 :ok 97 :refused 49 :trap 0 :blocked 123 :lines 191467 :ok-lines 40538}
+ :entries [{:command "check" :ns "kotoba.compiler.nbb.check-cli" :closure 104 :ok 34 :walls 12} ...]
+ :inputs-file "inputs.txt"
+ :modules [{:ns "<ns>" :status :ok|:refused|:trap|:blocked :lines n :file "<farm copy>" :origin "<source>"
+            :sha256 "<source sha256>" :code "E2104" :text "<first refusal>"   ; :refused / :trap only
+            :blocked-by "<ns>"}                                              ; :blocked only
+           ...]}
+```
+
+A gate reads `:counts` (and `:entries` for the closure of each amu command),
+compares `:ok` with its recorded floor, and lists the `:refused` modules.
+
+Parity (2026-10-21, Mac arm64, seed r6n `b3f46d32`): on the same lock, the same
+kotoba-lang `965c5f5` and the same amu tree, the old `.sh` route
+(`selfbuild.sh --no-link`, run once in a scratch worktree from `15626731^`) and
+this tool give the same farm (byte-identical `cp/`), reach list (260 files),
+module list and order (269), the same verdict, code and text for every module,
+and byte-identical objects: at this branch's head `7c8c8a4b` both give
+**seed OK 97 / 269** (REFUSED 49, TRAP 0, BLOCKED 123); at `5bb54254` (the source
+of the recorded scan) the tool gives **128 / 264** (REFUSED 51, BLOCKED 85),
+module for module the recorded `.sh` result. The drop at the head comes from
+amu's own `src/kotoba/form.kotoba` (and `frontend_tables`, `value_type`,
+`validate_expr` `.kotoba`), restored by the main merge `43f881b7`: across roots
+the single guest `.kotoba` stands in for kotoba-sema's `.cljk`, and amu's
+`kotoba.form` does not export `tag-of` (E6004 at `kotoba.walk`,
+`kotoba.verifier.seal`, `kotoba.wasm.core`, `kotoba.kir.kvalue`).
+
+Not ported: the LINK step of `selfbuild.sh` (with `large-m.sh`) and the
+stage-0 column (the JVM stage-0 is removed).
+
+### Image front (gate S3, partial)
+
+`seed/tools/image.kotoba front` is the port of `scripts/seed/image/front.sh`:
+it recompiles every module the scan compiled (from the scan's farm sources, in
+scan order, never reusing the scan objects), then the kotoba-lang project
+twins and `seed/amu-front/check.cljk`. Same environment as the scan, spawn
+grant `$PWD/build/seed-boot/kexe-loader-v11`:
+
+```sh
+  build/seed-tools/loader build/seed-tools/image.bin <OFFSET> 0 aarch64 3,20,35,37,38,39 -- $PWD front \
+  --scan $PWD/build/selfbuild --twins $PWD/build/selfbuild/kotoba-lang/lang/compat/kotoba/compiler \
+  --out $PWD/build/front0 --stderr $PWD/build/front0.stderr 2> $PWD/build/front0.stderr
+```
+
+On the integration sources it recompiles the 97 scan modules byte-identically
+and then stops at the project twin (`kotoba.compiler.project`: E6025, its
+`kotoba.sema` has no object): the image's `check` and `compile` closures are
+not seed-compilable yet (check-cli 34/104, aarch64-cli 47/126 at the head;
+62/100 and 78/122 at `5bb54254`, where `kotoba.compiler.frontend.analyze` is
+BLOCKED behind `frontend.desugar` E2104 and `frontend.constant-eval` E6025).
+The three-generation rebuild (`image/rebuild.sh`) and the launcher
+(`launcher/build.sh`, `test.sh`, with their Python split helpers) stay
+unported until the front completes.
+
 ## Evidence and ongoing optimization
 
 The original adopted source passed 39 native-image reviews, 483 paired original

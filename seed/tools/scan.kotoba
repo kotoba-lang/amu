@@ -1,0 +1,192 @@
+;; seed/tools/scan.kotoba -- the source reading of the selfbuild scan (JUN-202: the Kotoba port of the reader helpers of
+;; scripts/seed/r6_scan.py, scripts/seed/reach-twins.py and scripts/selfhost-wall/reach-list.py). Text only: it chooses
+;; input files and their dependency order; every verdict is the seed's own.
+;;
+;;   scan-in s j               the end (exclusive) of the bracketed form opening at j (strings, `;` comments and `\`
+;;                             escapes skipped); the length of s when it never closes
+;;   resolve-conditionals s    every `#?(...)` / `#?@(...)` replaced by its first `:kotoba` or `:default` clause (the
+;;                             selection of the seed's 10-lex), `#?@` splicing a vector or list clause
+;;   ns-form s                 the Kotoba reading of the first `(ns ...)` form at the start of a line ("" when none)
+;;   ns-name t                 the namespace named by an ns form
+;;   requires t                the names opened by `[` in every `(:require ...)` clause of t, one per line, in order
+;;                             (duplicates kept, as r6_scan.py `requires`)
+;;   reach-block s             the text reach-list.py reads its requires from: `(ns` + whitespace up to the next line
+;;                             starting `(def` or `(ns`, else the first 6000 characters
+;;   reach-names t             the dotted names reach-list.py takes from that block, one per line
+;; Strings are UTF-8 bytes: indexes are byte offsets and a loop steps over a whole code point (`adv`; the code point at a
+;; continuation byte traps). Characters follow Python's ASCII classes: whitespace = space, tab, LF, CR, FF, VT; a word character = letter, digit, `_`.
+(ns tools.scan
+  (:export [scan-in resolve-conditionals ns-form ns-name requires reach-block reach-names ws? word? adv]))
+
+(defn- cp [s :string i :i64] :i64 (string-code-point-at s i))
+
+;; the index after the code point at i
+(defn adv [s :string i :i64] :i64
+  (let [c (cp s i)]
+    (cond (< c 128) (+ i 1) (< c 2048) (+ i 2) (< c 65536) (+ i 3) :else (+ i 4))))
+
+(defn ws? [c :i64] :i64
+  (if (or (= c 32) (= c 9) (= c 10) (= c 13) (= c 12) (= c 11)) 1 0))
+
+(defn word? [c :i64] :i64
+  (if (or (and (>= c 97) (<= c 122)) (and (>= c 65) (<= c 90)) (and (>= c 48) (<= c 57)) (= c 95)) 1 0))
+
+(defn- opens? [c :i64] :i64 (if (or (= c 40) (= c 91) (= c 123)) 1 0))
+(defn- closes? [c :i64] :i64 (if (or (= c 41) (= c 93) (= c 125)) 1 0))
+
+;; the index of the next "\n" at or after i, else the length
+(defn- line-end [s :string i :i64] :i64
+  (let [j (string-index-of-from s "\n" i)] (if (< j 0) (string-length s) j)))
+
+(defn scan-in [s :string j :i64] :i64
+  (let [n (string-length s)]
+    (loop [k j depth 0 instr 0]
+      (if (>= k n)
+        n
+        (let [c (cp s k)]
+          (cond (= instr 1) (cond (= c 92) (recur (if (< (+ k 1) n) (adv s (+ k 1)) n) depth 1)
+                                  (= c 34) (recur (+ k 1) depth 0)
+                                  :else (recur (adv s k) depth 1))
+                (= c 34) (recur (+ k 1) depth 1)
+                (= c 59) (recur (+ (line-end s k) 1) depth 0)
+                (= c 92) (recur (if (< (+ k 1) n) (adv s (+ k 1)) n) depth 0)
+                (= (opens? c) 1) (recur (+ k 1) (+ depth 1) 0)
+                (= (closes? c) 1) (if (= depth 1) (+ k 1) (recur (+ k 1) (- depth 1) 0))
+                :else (recur (adv s k) depth 0)))))))
+
+;; the end of the bare token at k: up to whitespace, `,` or an opening bracket
+(defn- token-end [s :string k :i64] :i64
+  (loop [m k]
+    (if (and (< m (string-length s))
+             (= (ws? (cp s m)) 0) (not (= (cp s m) 44)) (= (opens? (cp s m)) 0))
+      (recur (adv s m))
+      m)))
+
+;; the clause after the first :kotoba or :default key among the forms of inner; "" when there is none (a form is never
+;; empty, so "" is unambiguous)
+(defn- pick-clause [inner :string] :string
+  (let [n (string-length inner)]
+    (loop [k 0 key "" have 0]
+      (if (>= k n)
+        ""
+        (let [c (cp inner k)]
+          (cond (or (= (ws? c) 1) (= c 44)) (recur (+ k 1) key have)
+                (= c 59) (recur (line-end inner k) key have)
+                :else
+                (let [m (if (= (opens? c) 1) (scan-in inner k) (token-end inner k))
+                      f (string-substring inner k m)]
+                  (cond (= have 0) (recur m f 1)
+                        (or (string=? key ":kotoba") (string=? key ":default")) f
+                        :else (recur m "" 0)))))))))
+
+(defn resolve-conditionals [s :string] :string
+  (let [n (string-length s)]
+    (loop [i 0 last 0 acc ""]
+      (let [h (string-index-of-from s "#?" i)]
+        (if (or (< h 0) (>= (+ h 2) n))
+          (string-concat acc (string-substring s last n))
+          (let [c2 (cp s (+ h 2))
+                at (if (and (= c2 64) (< (+ h 3) n) (= (cp s (+ h 3)) 40)) 1 0)]
+            (if (and (not (= c2 40)) (= at 0))
+              (recur (+ h 2) last acc)
+              (let [j (if (= at 1) (+ h 3) (+ h 2))
+                    end (scan-in s j)
+                    inner (if (> (- end 1) (+ j 1)) (string-substring s (+ j 1) (- end 1)) "")
+                    pick (pick-clause inner)
+                    body (if (and (= at 1) (> (string-length pick) 0)
+                                  (or (= (cp pick 0) 91) (= (cp pick 0) 40)))
+                           (string-substring pick 1 (- (string-length pick) 1))
+                           pick)
+                    acc1 (string-concat acc (string-substring s last h))
+                    acc2 (if (string=? pick "") acc1 (string-concat acc1 (resolve-conditionals body)))]
+                (recur end end acc2)))))))))
+
+;; the first "(ns" at the start of a line followed by whitespace; -1 when none (found forward: an index before a
+;; non-ASCII character is no code point boundary)
+(defn- ns-start [s :string] :i64
+  (if (and (= (string-index-of-from s "(ns" 0) 0) (> (string-length s) 3) (= (ws? (cp s 3)) 1))
+    0
+    (loop [p 0]
+      (let [j (string-index-of-from s "\n(ns" p)
+            h (+ j 1)]
+        (cond (< j 0) -1
+              (and (< (+ h 3) (string-length s)) (= (ws? (cp s (+ h 3))) 1)) h
+              :else (recur h))))))
+
+(defn ns-form [s :string] :string
+  (let [i (ns-start s)]
+    (if (< i 0) "" (resolve-conditionals (string-substring s i (scan-in s i))))))
+
+(defn ns-name [t :string] :string
+  (let [n (string-length t)]
+    (if (or (< n 4) (not (string=? (string-substring t 0 3) "(ns")) (= (ws? (cp t 3)) 0))
+      ""
+      (let [b (loop [i 3] (if (and (< i n) (= (ws? (cp t i)) 1)) (recur (+ i 1)) i))
+            e (loop [i b] (if (and (< i n) (= (ws? (cp t i)) 0) (= (opens? (cp t i)) 0) (= (closes? (cp t i)) 0))
+                            (recur (adv t i)) i))]
+        (string-substring t b e)))))
+
+(defn- name-char? [c :i64] :i64 (if (or (= (word? c) 1) (= c 46) (= c 45)) 1 0))
+
+(defn- letter? [c :i64] :i64 (if (or (and (>= c 97) (<= c 122)) (and (>= c 65) (<= c 90))) 1 0))
+
+;; the names `\[\s*([a-zA-Z][\w.\-]*)(?=[\s\]])` of body, appended to acc one per line
+(defn- bracket-names [body :string acc :string] :string
+  (let [n (string-length body)]
+    (loop [q 0 acc acc]
+      (let [b (string-index-of-from body "[" q)]
+        (if (< b 0)
+          acc
+          (let [s (loop [i (+ b 1)] (if (and (< i n) (= (ws? (cp body i)) 1)) (recur (+ i 1)) i))]
+            (if (or (>= s n) (= (letter? (cp body s)) 0))
+              (recur (+ b 1) acc)
+              (let [e (loop [i (+ s 1)] (if (and (< i n) (= (name-char? (cp body i)) 1)) (recur (+ i 1)) i))]
+                (if (and (< e n) (or (= (ws? (cp body e)) 1) (= (cp body e) 93)))
+                  (recur e (string-concat acc (string-concat (string-substring body s e) "\n")))
+                  (recur (+ b 1) acc))))))))))
+
+(defn requires [t :string] :string
+  (let [n (string-length t)]
+    (loop [p 0 acc ""]
+      (let [h (string-index-of-from t "(:require" p)]
+        (if (< h 0)
+          acc
+          (if (and (< (+ h 9) n) (= (word? (cp t (+ h 9))) 1))
+            (recur (+ h 1) acc)
+            (recur (+ h 9) (bracket-names (string-substring t h (scan-in t h)) acc))))))))
+
+;; ---- reach-list.py -----------------------------------------------------------------------------------------------
+(defn reach-block [s :string] :string
+  (let [n (string-length s)
+        h (loop [p 0]
+            (let [i (string-index-of-from s "(ns" p)]
+              (cond (< i 0) -1
+                    (and (< (+ i 3) n) (= (ws? (cp s (+ i 3))) 1)) i
+                    :else (recur (+ i 1)))))]
+    (if (< h 0)
+      (string-substring s 0 (loop [i 0 k 0] (if (or (>= i n) (>= k 6000)) i (recur (adv s i) (+ k 1)))))
+      (let [a (string-index-of-from s "\n(def" (+ h 4))
+            b (string-index-of-from s "\n(ns" (+ h 4))
+            e (cond (and (< a 0) (< b 0)) n
+                    (< a 0) b
+                    (< b 0) a
+                    (< a b) a
+                    :else b)]
+        (string-substring s h e)))))
+
+(defn- lower? [c :i64] :i64 (if (and (>= c 97) (<= c 122)) 1 0))
+
+;; `\[([a-z][\w.\-]*)(?:\s|\])` over the block, the names holding a "."
+(defn reach-names [t :string] :string
+  (let [n (string-length t)]
+    (loop [q 0 acc ""]
+      (let [b (string-index-of-from t "[" q)]
+        (if (or (< b 0) (>= (+ b 1) n))
+          acc
+          (if (= (lower? (cp t (+ b 1))) 0)
+            (recur (+ b 1) acc)
+            (let [e (loop [i (+ b 2)] (if (and (< i n) (= (name-char? (cp t i)) 1)) (recur (+ i 1)) i))]
+              (if (and (< e n) (or (= (ws? (cp t e)) 1) (= (cp t e) 93)))
+                (let [nm (string-substring t (+ b 1) e)]
+                  (recur (+ e 1) (if (< (string-index-of-from nm "." 0) 0) acc (string-concat acc (string-concat nm "\n")))))
+                (recur (+ b 1) acc)))))))))

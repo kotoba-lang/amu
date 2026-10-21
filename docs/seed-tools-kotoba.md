@@ -13,6 +13,9 @@ of `scripts/check-workflows.cljk`).
 | `seed/tools/lib.kotoba` | `scripts/seed/lib.sh` | argv, stdout/stderr, files (wire 35: read, write, append with the token-safe split, exists, mkdir), `:process/spawn` (wire 20, TAB-separated argv), SHA-256 of text (wire 3) and of binary files (FIPS 180-4 in Kotoba: wire 3 takes a text), record/manifest line helpers |
 | `seed/tools/bootstrap.kotoba` | `scripts/seed/bootstrap.sh`, the node-free steps of `scripts/seed/build.sh` | R0 -> every `seed/rungs/*.record` in lineage order (unity from git, bridge, seed-1, seed-2, every recorded hash, size and fixed point), then the head unity checked against the adoption receipt; `--head` (A/B/C), `--upto`, `--commit`, `--work`, `--image` |
 | `seed/tools/package.kotoba` | `scripts/seed/package.sh` | a seed as a KEXE_EMBEDDED command: header with the code array (byte-identical to `xxd -i`) + `cc` |
+| `seed/tools/scan.kotoba` | the reader helpers of `scripts/seed/r6_scan.py`, `reach-twins.py`, `scripts/selfhost-wall/reach-list.py` | ns form, `#?`/`#?@` resolution (first `:kotoba`/`:default`), requires, the reach-list block and names; UTF-8 byte offsets kept on code point boundaries |
+| `seed/tools/selfbuild.kotoba` | `scripts/seed/selfbuild.sh --no-link`, `r6-scan.sh`, `selfbuild-inputs.sh`, `farm-from-lock.py`, `reach-twins.py`, `selfbuild.py` (summary) | JUN-202, gate S2: farm from the lock with `git restore`, reach list, reach-twins, dependency order, per-module seed compile (OK / REFUSED / TRAP / BLOCKED), `report.txt`, `selfbuild.edn`, `inputs.txt` (seed/README.md "Selfbuild scan") |
+| `seed/tools/image.kotoba` | `scripts/seed/image/front.sh` | the front object dir of the unified image (`front`); stops at the first refusal |
 
 Entry commands (no script file): `seed/README.md`, section "Seed lineage
 bootstrap". The process tree is the loader (supervisor and guest), `cc` (once,
@@ -52,12 +55,19 @@ packaged the r6n seed (code sha256 `b3f46d32...`) into a command that runs.
 
 ## Follow-ups (Linear JUN-243)
 
-Deleted now, Kotoba port pending: the selfbuild scan (`scripts/seed/selfbuild.sh`,
-`r6-scan.sh`, `large-m.sh`, `selfbuild-inputs.sh`), the unified image
-(`scripts/seed/image/front.sh`, `rebuild.sh`) and the native launcher
-(`scripts/seed/launcher/build.sh`, `test.sh`). They also depend on Python
-helpers and on kotoba-lang / amu-embench checkouts outside this repository.
-Their last versions are in git history (PR #1276's branch, the seed-r* tags).
+Ported (JUN-202): the selfbuild scan (`selfbuild.sh --no-link`, `r6-scan.sh`,
+`selfbuild-inputs.sh`, with `farm-from-lock.py`, `reach-twins.py` and
+`selfbuild.py`, which are removed) as `seed/tools/selfbuild.kotoba`, checked
+module for module against the old route (seed/README.md "Selfbuild scan"), and
+`image/front.sh` as `seed/tools/image.kotoba front`.
+
+Still pending: the selfbuild LINK step with `large-m.sh` (`scripts/seed/large_m.py`
+stays until then), the three-generation image rebuild (`image/rebuild.sh`) and
+the native launcher (`launcher/build.sh`, `test.sh`, with `seed/split/gen-split.py`
+and `seed/amu-main/patch-split.py`). The front dir they start from cannot be
+built from the current integration sources (the check / compile closures are
+not seed-compilable yet), so they are not ported blind. Their last versions are
+in git history (`15626731^`).
 
 ## Classification of the 173 `.sh` files that were not on main
 
