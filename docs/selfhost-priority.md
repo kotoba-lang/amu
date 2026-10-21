@@ -84,7 +84,23 @@ The migration proceeds through these gates:
 
 Tracking: JUN-200 (loaderless bootstrap), JUN-202 (native selfbuild inputs and
 fixed point), JUN-199 (product entry), KOT-13 (Kotoba core), JUN-198 (Kotoba
-CLI/build) and JUN-162 (the two-gate native CDCI controller).
+CLI/build). Active native CDCI controller work is tracked in JUN-199;
+archived controller issues do not remain prerequisites.
+
+### Typed map interfaces (JUN-235 / ABI JUN-233)
+
+The native project analyzer preserves `[:map K V]` in imported function
+signatures. It builds an empty `typed-map-new` expression with that exact
+descriptor for the temporary analysis stub, rather than substituting the
+older scalar `:map` type. Key and value types must belong to the existing
+closed import profile; direct floating map keys/values stay refused and map
+nesting is bounded. Namespace visibility, duplicate-name, schema and
+expression type checks still apply.
+
+These stubs describe interfaces only. They are not executable definitions
+and do not qualify multi-module code generation, ABI map transfer, the ABI
+WIT accessors, selfhost rebuilding, Q9 or CDCI. The source change has not yet
+been compiled or executed through the qualified loaderless route.
 
 ## Historical checkpoints (superseded contract; evidence only)
 
