@@ -57,6 +57,38 @@
       (let [kir (ir/lower (sema/analyze source))]
         (assert (= 43 (js/Number (ir/execute kir 'compute [21]))))))))
 
+(check "native-root-exports-call-the-implementation-directly"
+  (fn []
+    (let [wrapped (project/link-source numeric-sources 'example.calc)
+          direct (project/link-source numeric-sources 'example.calc {:direct-exports? true})
+          analyze #(sema/analyze (:source %) {:admit-linked-synthetics? true})
+          before (analyze wrapped) after (analyze direct)]
+      (assert (= (dec (count (:functions before))) (count (:functions after))))
+      (assert (= (:exports before) (:exports after)))
+      (assert (= 43 (js/Number (ir/execute (ir/lower after) 'compute [21]))))
+      ;; The public definition now owns the author's body and source position.
+      (assert (= 'example.calc
+                 (:module (first (filter #(= 'compute (:source-name %))
+                                          (get-in direct [:source-map :entries])))))))))
+
+(check "native-direct-exports-preserve-recursion-and-name-capture"
+  (fn []
+    (doseq [[source answer]
+            [["(ns direct (:export [sum])) (defn sum [n :i64] :i64 (if (= n 0) 0 (+ n (sum (- n 1)))))" 6]
+             ["(ns direct (:export [sum])) (defn- helper [sum :i64] :i64 (+ sum 1)) (defn sum [n :i64] :i64 (helper n))" 4]]]
+      (let [linked (project/link-source {'direct source} 'direct {:direct-exports? true})
+            kir (ir/lower (sema/analyze (:source linked) {:admit-linked-synthetics? true}))]
+        (assert (= answer (js/Number (ir/execute kir 'sum [3]))))))))
+
+(check "native-multi-arity-exports-retain-their-dispatch"
+  (fn []
+    (let [linked (project/link-source
+                  {'direct "(ns direct (:export [answer])) (defn answer ([] 42) ([n :i64] (+ n 1)))"}
+                  'direct {:direct-exports? true})
+          kir (ir/lower (sema/analyze (:source linked) {:admit-linked-synthetics? true}))]
+      (assert (= 42 (js/Number (ir/execute kir 'answer$arity$0 []))))
+      (assert (= 8 (js/Number (ir/execute kir 'answer$arity$1 [7])))))))
+
 ;; `(:k m)` is Clojure's `(get m :k)`. Until kotoba-sema 110cb48e the keyword
 ;; accessor was the record projection only, so a keyword map whose values are
 ;; all i64 -- the bounded map -- answered `(get m :k)` and refused `(:k m)`
