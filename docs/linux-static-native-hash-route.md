@@ -12,7 +12,7 @@ Kotoba component, not a replacement for the hash implementation or verifier.
 
 The complete hash mechanism is in
 [kotoba-native #205](https://github.com/kotoba-lang/kotoba-native/pull/205),
-head `dcac4f11e051988b34f248a39c53d305052083f6`: both-ISA whole-input SHA-256,
+with both-ISA whole-input SHA-256,
 private checked workspace, exactly 64 lowercase hexadecimal result bytes,
 owning op-6 pool charge, result interning and checked pair/handle admission.
 Its top-level packager binds actual sealed C1/handler exports and constructs

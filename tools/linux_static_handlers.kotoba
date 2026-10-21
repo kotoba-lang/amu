@@ -37,9 +37,9 @@
 ;;   4 :cli/args 38        5 :env/read 33         6 :clock/now 7 (text)
 ;;   7 :fs/app-data 35     8 :fs/browse 34        9 :entropy/draw 23
 ;;  10 :process/spawn 20  11 :hash/sha256 3 (native SHA-256, provider 9)
-;; C1 answers provider 0 (no provider of its own) for wire 23 and wire 20, so
-;; those two are told apart by the wire id, here -- by the image and by the
-;; kexe loader alike -- and C1's code is left as it was.
+;;  12 :sys/cwd 40 (physical directory captured at native process startup)
+;; C1 answers provider 0 for wires 23, 20 and 40. The native image tells
+;; them apart by wire id here; C1's provider table remains unchanged.
 (defn- handler-for [provider id]
   (cond
     (= provider 13) 1
@@ -51,7 +51,7 @@
     (= provider 5) 7
     (= provider 6) 8
     (= provider 9) (if (= id 3) 11 0)
-    (= provider 0) (cond (= id 23) 9 (= id 20) 10 :else 0)
+    (= provider 0) (cond (= id 23) 9 (= id 20) 10 (= id 40) 12 :else 0)
     :else 0))
 
 ;; ---------------------------------------------------------------------

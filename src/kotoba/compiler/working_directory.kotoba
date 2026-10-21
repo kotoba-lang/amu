@@ -1,0 +1,8 @@
+;; Native working-directory boundary. The provider returns the physical
+;; directory captured at process startup, never the caller's PWD hint.
+(ns kotoba.compiler.working-directory
+  {:kotoba/export [current]}
+  (:capabilities #{:sys/cwd}))
+
+(defn current [] :string
+  (typed-cap-call :sys/cwd :string :string ""))
