@@ -36,6 +36,7 @@
                           (default ~/.cache/kotoba-selfhost-gate; --no-cache to measure both sides)
     --keep                keep the worktrees"
   (:require [clojure.edn :as edn]
+            [clojure.walk :as walk]
             [kotoba.lang.text :as str]
             [scripts.gate.boundary :as boundary]
             [scripts.gate.ratchet :as ratchet]
@@ -180,17 +181,27 @@
           (git! repo "rev-parse" "--verify" (str ref "^{commit}"))))))
 
 (defn- local-repo!
-  "A git directory for `spec`: an existing directory as given, otherwise
-  `owner/name` or a URL cloned (blobless, every branch) under dir."
-  [spec dir]
-  (let [abs (.resolve path spec)]
-    (if (and (exists? abs) (.isDirectory (.statSync fs abs)))
+  "A git directory for `spec`: an existing, non-shallow directory as given,
+  otherwise `owner/name` or a URL as a FULL clone (every branch, every blob)
+  kept under dir across runs. The seed lineage restores every rung's sources
+  from git history inside a sandboxed child, so a shallow or blobless clone
+  cannot serve it (measured: the runner's depth-1 gate checkout and a
+  blobless clone both gave S1 REFUSED(lineage))."
+  [spec dir & [shallow-origin]]
+  (let [abs (.resolve path spec)
+        dir? (and (exists? abs) (.isDirectory (.statSync fs abs)))
+        shallow? (and dir? (= "true" (str/trim (:stdout (git abs "rev-parse" "--is-shallow-repository")))))
+        spec (if shallow?
+               (let [u (str/trim (:stdout (git abs "config" "--get" "remote.origin.url")))]
+                 (if (str/blank? u) (or shallow-origin (throw (ex-info (str abs " is shallow and has no origin") {}))) u))
+               spec)]
+    (if (and dir? (not shallow?))
       abs
       (let [url (if (re-find #"^(https?|git|ssh)://|^git@" spec) spec (str "https://github.com/" spec ".git"))
             name (-> (.replace url (js/RegExp. "\\.git$") "") (str/split #"/") last)
             d (join dir name)]
         (when-not (exists? (join d ".git"))
-          (let [r (sh "git" ["clone" "-q" "--filter=blob:none" "--no-checkout" url d])]
+          (let [r (sh "git" ["clone" "-q" "--no-checkout" url d])]
             (when-not (ok? r) (throw (ex-info (str "git clone " url ": " (describe r)) {})))))
         (git d "fetch" "-q" "origin")
         d))))
@@ -461,7 +472,7 @@
          :source (field #":source \"([^\"]*)\"" text)
          :line (some-> (field #":line (\d+)" text) js/parseInt)
          :message (some-> (field #":message \"((?:[^\"\\\\]|\\\\.)*)\"" text) (subs 0 240))}
-        {:verdict "UNMEASURED" :code "no-answer" :message (describe r)}))))
+        {:verdict "UNMEASURED" :code "no-answer" :detail (describe r)}))))
 
 (defn- measure-g1 [oracle farm-src modules policy jobs]
   (cond
@@ -668,6 +679,11 @@
                            (when (seq (:gains g)) (str "gains: " (str/join " " (:gains g)))))]))
          (when (seq (:failures verdict))
            (str "\n### Failures\n\n" (apply str (for [f (:failures verdict)] (str "- " f "\n")))))
+         (let [why (for [[role m] [["base" base] ["head" head]]
+                         [g gm] (sort-by key (:gates m))
+                         :when (= "UNMEASURED" (:status gm))]
+                     (str "- " (name g) " " role ": " (:reason gm) "\n"))]
+           (when (seq why) (str "\n### Why UNMEASURED\n\n" (apply str why))))
          (when-let [g (by :s5)]
            (str "\n### S5\n\n" (md-table ["metric" "base" "head"] (for [r (:rows g)] [(name (:metric r)) (:base r) (:head r)]))))
          (when-let [g (by :g0)]
@@ -692,6 +708,17 @@
 
 ;; ------------------------------------------------------------------ main
 
+(def ^:private volatile-keys
+  "Fields that differ between two runs on the same inputs (times, paths, process
+  diagnostics, host and C-compiler dependent digests). They stay in
+  <out>.run.edn and are left out of <out>, so that two failure domains measuring
+  the same pins write byte-identical verdicts."
+  #{:ms :measured-at :judged-at :seconds :cached :host :node :inputs-sha256
+    :loader-sha256 :lineage-loader-sha256 :reason :detail :work})
+
+(defn- canonical [v]
+  (walk/postwalk (fn [f] (if (and (map? f) (not (record? f))) (apply dissoc f volatile-keys) f)) v))
+
 (defn- cache-key [m]
   (sha256-bytes (pr-str m)))
 
@@ -699,7 +726,8 @@
   (let [o (parse-args args)
         _ (doseq [k [:repo :base :head]] (when-not (o k) (throw (ex-info (str "--" (name k) " is required") {}))))
         work (mkdirs! (.resolve path (or (:work o) (.mkdtempSync fs (join (.tmpdir os) "selfhost-gate-")))))
-        repo (local-repo! (:repo o) (mkdirs! (join work "repos")))
+        repos-dir (mkdirs! (.resolve path (or (:repos o) (join (.homedir os) ".cache" "kotoba-selfhost-gate" "repos"))))
+        repo (local-repo! (:repo o) repos-dir)
         head-sha0 (resolve-commit repo (:head o))
         ;; a repository without bin/amu is a library: judged by the amu this gate was checked out from
         consumer (or (boolean (:amu o)) (not (ok? (git repo "cat-file" "-e" (str head-sha0 ":bin/amu")))))
@@ -714,7 +742,7 @@
         changed (vec (remove str/blank? (str/split-lines (git! repo "diff" "--name-only" (str merge-base) head-sha))))
         kl-default (join (.homedir os) "github" "kotoba-lang" "kotoba-lang")
         kl-repo (local-repo! (or (:kotoba-lang o) (if (exists? kl-default) kl-default "kotoba-lang/kotoba-lang"))
-                             (join work "repos"))
+                             repos-dir)
         kl-sha (resolve-commit kl-repo (or (:kotoba-lang-ref o) default-kotoba-lang-ref))
         kl (export-tree! kl-repo kl-sha ["lang"] (join work "kotoba-lang"))
         policy (join kl "lang" "selfhost-compiler-grant.edn")
@@ -724,8 +752,11 @@
         gp (gate-pins)
         worktrees (volatile! [])
         wt! (fn [r sha dir] (add-worktree! r sha dir) (vswap! worktrees conj [r dir]) dir)
-        amu-repo (when consumer (if (:amu o) (local-repo! (:amu o) (join work "repos")) gate-root))
-        amu-sha (when consumer (resolve-commit amu-repo (or (:amu-ref o) "HEAD")))
+        ;; the gate's own checkout is the default oracle; a shallow one is replaced by the full clone of its origin
+        amu-repo (when consumer (local-repo! (or (:amu o) gate-root) repos-dir "kotoba-lang/amu"))
+        amu-sha (when consumer
+                  (resolve-commit amu-repo (or (:amu-ref o)
+                                               (if (:amu o) "HEAD" (git! gate-root "rev-parse" "HEAD")))))
         oracle-dir (when consumer (wt! amu-repo amu-sha (join work "oracle")))
         tools (if (some #{:g1 :g2 :s1 :s2} gates)
                 (do (log "building the seed tools from the gate checkout") (build-tools!))
@@ -781,7 +812,7 @@
         (.then (fn [b] (.then (side "head" head-sha) (fn [h] [b h]))))
         (.then (fn [[b h]]
                  (let [v (merge (ratchet/judge b h)
-                                {:change {:repo repo :base base-sha :head head-sha :merge-base merge-base :changed changed}
+                                {:change {:repo (:repo o) :base base-sha :head head-sha :merge-base merge-base :changed changed}
                                  :mode (if consumer "consumer" "amu")
                                  :gate gp
                                  :judged-at (now)
@@ -790,8 +821,9 @@
                                         :seed {:base (get-in b [:gates :s2 :seed]) :head (get-in h [:gates :s2 :seed])}}
                                  :measurements {:base b :head h}})
                        md (summary-md v b h)]
-                   (write-text! out (pr-str v))
-                   (write-text! (str out ".json") (js/JSON.stringify (clj->js v) nil 2))
+                   (write-text! out (pr-str (canonical v)))
+                   (write-text! (str out ".json") (js/JSON.stringify (clj->js (canonical v)) nil 2))
+                   (write-text! (str out ".run.edn") (pr-str (assoc v :work work)))
                    (write-text! (str out ".md") md)
                    (println md)
                    (println (str "verdict " (:verdict v) ": " out))

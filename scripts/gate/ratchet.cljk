@@ -49,12 +49,14 @@
                    :when (not (pass? (get base-modules k)))]
                k))))
 
-(defn- unmeasured-failures [gate base head]
+(defn- unmeasured-failures
+  "The failure lines name the gate and side only: the reason (a path or a
+  process diagnostic) stays in the measurement, so the verdict is the same
+  for the same inputs on any node."
+  [gate base head]
   (vec (concat
-        (when (= "UNMEASURED" (:status base))
-          [(str (name gate) " base UNMEASURED: " (:reason base))])
-        (when (= "UNMEASURED" (:status head))
-          [(str (name gate) " head UNMEASURED: " (:reason head))]))))
+        (when (= "UNMEASURED" (:status base)) [(str (name gate) " base UNMEASURED")])
+        (when (= "UNMEASURED" (:status head)) [(str (name gate) " head UNMEASURED")]))))
 
 (defn- claimed? [m] (not (contains? #{"UNMEASURED" "NOT-CLAIMED"} (:status m))))
 
@@ -119,7 +121,7 @@
                        (for [r rows
                              :let [h (:head r)]
                              :when (and (:present h) (= "UNMEASURED" (:verdict h)))]
-                         (str "g0 " (:path r) " UNMEASURED: " (:reason h)))))]
+                         (str "g0 " (:path r) " UNMEASURED"))))]
     {:gate :g0
      :status (if (and (= "NOT-CLAIMED" (:status base)) (= "NOT-CLAIMED" (:status head)))
                "NOT-CLAIMED"
