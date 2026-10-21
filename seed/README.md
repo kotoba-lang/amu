@@ -47,6 +47,74 @@ checks every generated native image against the adopted fixed-point digest,
 and leaves compiler fuel disabled only for these self-build invocations.
 This is correctness verification, not performance timing.
 
+## Seed lineage bootstrap (Kotoba tools, no script files)
+
+The seed's own bootstrap tooling is Kotoba: `seed/tools/bootstrap.kotoba`
+(the lineage), `seed/tools/package.kotoba` (a packaged seed command) and their
+shared `seed/tools/lib.kotoba`. They are compiled by the committed seed and run
+under the pinned C loader; the only programs they start are `cc`, `git` and
+the lineage loader. No shell script, node, nbb, JVM or Python is on the route.
+The former `scripts/seed/*.sh` files and the per-file verdicts are listed in
+`docs/seed-tools-kotoba.md`. On macOS arm64, from the repository root:
+
+```sh
+# 1. the trusted C loader that runs the committed seed and the tools
+mkdir -p build/seed-tools
+cc -std=c11 -O2 seed/bootstrap/adopted-loader-20261012.c -o build/seed-tools/loader
+
+# 2. the committed seed compiles the tool (project mode: seed/tools/lib.kotoba is found by its namespace)
+KEXE_COMMAND=1 KEXE_CAP_RESOURCES_35=$PWD build/seed-tools/loader seed/bootstrap/adopted-20261012.bin 0 0 aarch64 35,37,38,39 -- \
+  compile $PWD/seed/tools/bootstrap.kotoba --source-path $PWD/seed --unpinned --target aarch64-macos --output $PWD/build/seed-tools/bootstrap.kseed
+KEXE_COMMAND=1 KEXE_CAP_RESOURCES_35=$PWD build/seed-tools/loader seed/bootstrap/adopted-20261012.bin 0 0 aarch64 35,37,38,39 -- \
+  extract-native $PWD/build/seed-tools/bootstrap.kseed --symbol main --output $PWD/build/seed-tools/bootstrap.bin
+#    -> {:ok true, ... :offset <OFFSET> ...}
+
+# 3. run it: R0 -> every recorded rung, then the head unity
+KEXE_COMMAND=1 KEXE_CAP_RESOURCES_35=$PWD \
+KEXE_CAP_RESOURCES_20=/usr/bin/cc:/usr/bin/git:$PWD/build/seed-boot/kexe-loader-v11 KEXE_SPAWN_PATH_LOOKUP=1 \
+KEXE_SPAWN_ENV=KEXE_COMMAND:KEXE_CAP_RESOURCES_35:KEXE_STRING_POOL:KEXE_PAIRS:KEXE_VECTORS:KEXE_VECTOR_ITEMS:KEXE_CPU_SECONDS:KEXE_WALL_SECONDS \
+KEXE_STRING_POOL=1073741824 KEXE_PAIRS=16777216 KEXE_VECTORS=4194304 KEXE_VECTOR_ITEMS=134217728 \
+KEXE_CPU_SECONDS=600 KEXE_WALL_SECONDS=600 \
+  build/seed-tools/loader build/seed-tools/bootstrap.bin <OFFSET> 0 aarch64 3,20,35,37,38,39 -- $PWD
+```
+
+Step 3 grants the tool wires 3 (sha256), 20 (spawn), 35 (files inside the
+repository), 37/38/39 (stdout, argv, stderr). The spawn grant names the three
+programs by absolute path and lets the tool start them by name; the variables
+in `KEXE_SPAWN_ENV` are the only environment the children see (the lineage
+loader reads its budgets from them). The tool builds
+`build/seed-boot/kexe-loader-v11` from `seed/bootstrap/seed-loader-v11.c`,
+checks `seed/bootstrap/SHA256SUMS`, and for every `seed/rungs/*.record` in
+lineage order rebuilds the unity from git, the optional bridge, seed-1 and
+seed-2, and checks every recorded sha256, the size and the fixed point. It
+ends with `bootstrap: r6n FIXED POINT == record b3f46d32a01780fe` and writes
+the working tree's unity to `build/seed-boot/head/seed-unity.kotoba`, checked
+against `sourceUnitySHA256` of `seed/adoption-20261017.json`. Options:
+`--work DIR` (then name `DIR/kexe-loader-v11` in the grant), `--upto RUNG`,
+`--head` (the lineage A/B/C head step for a source the last rung can compile,
+e.g. with `--commit C`), `--image FILE` (sha256 of an image against the
+receipt's `nativeImageSHA256`).
+
+The current tree is the adopted compiler. The lineage's last seed cannot
+compile it (E101, its tables are sized for the lineage) and one adopted
+compile runs about a minute, longer than the loader's 10 s budget for a
+spawned child, so its three generations are plain loader commands, each
+checked by the tool:
+
+```sh
+KEXE_COMMAND=1 KEXE_CAP_RESOURCES_35=$PWD KEXE_FUEL=off KEXE_STRING_POOL=268435456 KEXE_PAIRS=16777216 \
+KEXE_VECTORS=4194304 KEXE_VECTOR_ITEMS=134217728 KEXE_CPU_SECONDS=1800 KEXE_WALL_SECONDS=1800 \
+  build/seed-tools/loader seed/bootstrap/adopted-20261012.bin 0 0 aarch64 35,37,38,39 -- \
+  compile $PWD/build/seed-boot/head/seed-unity.kotoba --target aarch64-macos --output $PWD/build/seed-boot/head/G1.kseed
+#   (same environment) ... -- extract-native $PWD/build/seed-boot/head/G1.kseed --symbol main --output $PWD/build/seed-boot/head/G1.bin
+#   G2, G3: the same two commands with build/seed-boot/head/G1.bin (then G2.bin) in place of the committed seed
+#   check each: the step-3 command with `-- $PWD --image $PWD/build/seed-boot/head/G1.bin` (G2.bin, G3.bin)
+```
+
+`seed/tools/package.kotoba` is built the same way (step 2 with
+`package.kotoba`) and run with `KEXE_CAP_RESOURCES_20=/usr/bin/cc`:
+`-- $PWD <seed.bin> [--offset N] [--out PATH] [--scope LIST] [--allow CSV]`.
+
 ## Evidence and ongoing optimization
 
 The original adopted source passed 39 native-image reviews, 483 paired original
