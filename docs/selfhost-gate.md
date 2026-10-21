@@ -52,16 +52,21 @@ its own product compiler (`bin/amu` of that commit).
 | G0 form | for each `.cljk` / `.kotoba` file in `git diff base...head`: the `:rc-no-arm` findings of `amu refactor to-kotoba <file> --check`, the `#?(:kotoba nil` forms, and the host literals inside `:kotoba` arms (regex, `#js`, char, `js/`, `.method`, `java.` / `goog.`, `"node:`) | PASS when all three are 0, otherwise REFUSED. NOT-CLAIMED when the file is absent on that side. |
 | G1 language | `bin/amu check <module> --source-path <farm> --policy lang/selfhost-compiler-grant.edn --jvm-free` for every module of the compiler-closure farm | PASS when the output is `{:format :kotoba.check/v1 ...}` with `:profile-version 6`. REFUSED(code) with the diagnostic code and line. UNMEASURED when the oracle gave no answer. |
 | G2 identity | `bin/amu definition-cids <module> --jvm-free`, run twice, for each G1 PASS module | PASS when both runs succeed with identical output. REFUSED(nondeterministic) when they differ. BLOCKED(g1) when the module did not pass G1. |
-| S1 lineage | `seed/tools/bootstrap.kotoba --upto r6n` (seed/README.md, "Seed lineage bootstrap"), then a check that `build/seed-boot/r6n/seed-1.bin` has the sha256 recorded in `seed/rungs/r6n.record` | PASS, or REFUSED(lineage / no-loader / seed-hash) |
-| S2 selfbuild scan | the r6 scan of JUN-202, rebuilt here as an interim measure because `r6-scan.sh` was deleted: `scripts/seed/farm-from-lock.py`, `reach-list.py`, `reach-twins.py` and `r6_scan.py farm`, then for every module in dependency order `seed compile <file> --emit-module` under the lineage loader | PASS (OK, an object was written), REFUSED(Exxxx), BLOCKED (a require has no object), UNMEASURED(trap) |
+| S1 lineage | `seed/tools/bootstrap.kotoba --upto r6n` (seed/README.md, "Seed lineage bootstrap"), then a check that `build/seed-boot/r6n/seed-1.bin` has the sha256 recorded in `seed/rungs/r6n.record` | PASS, or REFUSED(lineage / no-loader / seed-hash / no-record) |
+| S2 selfbuild scan | `seed/tools/selfbuild.kotoba` (JUN-202; seed/README.md, "Selfbuild scan (gate S2)") in the side's tree, with the lock `seed/selfbuild/integration-lock.edn` (or `deps-lock.edn` when the head has no integration lock; `--lock` overrides, and both sides use the same path), kotoba-lang at the pinned commit and the S1 seed. Its `selfbuild.edn` gives one verdict per module. | PASS (`:ok`, an object was written), REFUSED(Exxxx), BLOCKED (`:blocked-by`), UNMEASURED (`:trap`) |
 | S5 ratchet | the PRODUCT inventory of the deleted `scripts/selfhost-wall/bootstrap-boundary.sh`, transcribed rule for rule in `scripts/gate/boundary.cljk` (on 7c8c8a4b it gives the same counts as the shell original: 4 launchers, 17 nbb entries, 16 audit rows, 56 computed, 11 host-token files, 65 union, 146 `#?(:kotoba nil` forms). It also counts the `native-gates` allowlist of `scripts/check-workflows.cljk` and the tracked `.sh` files. | one number per metric |
 
-The farm is generated, not checked in. `farm-from-lock.py` extracts every
-`src` root at its `deps-lock.edn` commit, from `~/github/kotoba-lang/<repo>`
-or from `~/.gitlibs` after the dependency prefetch. `reach-list.py` takes the
-closure of `src/kotoba/compiler/nbb/*_cli.cljk`. `reach-twins.py` applies the
-project loader's twin rule against kotoba-lang `lang/compat` at the pinned
-commit.
+The farm is the selfbuild tool's (`build/selfbuild/r6`), and G1 checks the
+same files. The farm is generated, not checked in. The tool extracts every
+`src` root at its lock commit with `git restore`, reading from
+`~/github/kotoba-lang/<repo>` or from `~/.gitlibs` after the dependency
+prefetch. It takes the closure of `src/kotoba/compiler/nbb/*_cli.cljk`,
+applies the project loader's twin rule against kotoba-lang `lang/compat`, and
+orders the modules dependency-first. The gate compiles the tools once per run
+from its own checkout: the adopted C loader, then `bootstrap.kotoba` and
+`selfbuild.kotoba` built by the committed adopted seed. It then runs them
+against each side's tree. Consumer mode builds the same farm once from the
+pinned amu, so it also needs a macOS arm64 node.
 
 ## The ratchet
 
@@ -76,8 +81,9 @@ head is not required to reach 100%. The gate FAILs when any of these holds:
 - S5: any metric grows.
 - Any requested gate is UNMEASURED on either side, or is missing from either side's measurement (fail closed). Examples are a missing `bin/amu`, policy, seed, C compiler or nbb engine, or a node that is not aarch64-macos for S1/S2.
 
-S1 and S2 run the aarch64-macos seed, so an amu-mode run needs a macOS arm64
-node. Any other node records them as UNMEASURED, and that is a FAIL.
+S1, S2 and the farm that G1 and G2 check run the aarch64-macos seed and
+loader, so every run needs a macOS arm64 node with `cc` and `git`. Any other
+node records these gates as UNMEASURED, and that is a FAIL.
 
 ## The verdict file
 
@@ -97,5 +103,5 @@ gates, rung and gate sources.
 
 ## Follow-ups
 
-- S2 uses the Python farm helpers and spawns the seed from this driver. When the JUN-202 Kotoba port of the selfbuild scan lands under `seed/tools/`, S2 should call it instead.
+- kotoba-lang is pinned to main `4d4d188b`, the commit the standard was written against. JUN-202's parity run used `965c5f5b` (branch `agent/wall2-project-twin`, with more compat twins), so its seed OK count (97/269) is not comparable with the gate's.
 - Making the gate a required check is an owner decision. It needs a branch protection rule or ruleset that requires the `selfhost-gate` commit status.

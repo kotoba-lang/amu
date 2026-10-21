@@ -64,7 +64,7 @@
 (defn- sh
   "spawnSync -> {:status :signal :stdout :stderr :error :ms}; never throws."
   ([cmd args] (sh cmd args {}))
-  ([cmd args {:keys [cwd env input timeout binary]}]
+  ([cmd args {:keys [cwd env input timeout binary stdio]}]
    (let [t0 (js/Date.now)
          r (.spawnSync child cmd (clj->js args)
                        (clj->js (cond-> {:cwd (or cwd gate-root)
@@ -72,10 +72,13 @@
                                          :env (js/Object.assign #js {} js/process.env (clj->js (or env {})))}
                                   (not binary) (assoc :encoding "utf8")
                                   input (assoc :input input)
+                                  stdio (assoc :stdio (clj->js stdio))
                                   timeout (assoc :timeout timeout))))]
      {:status (.-status r) :signal (.-signal r)
       :stdout (if binary (.-stdout r) (or (.-stdout r) "")) :stderr (str (or (.-stderr r) ""))
       :error (some-> (.-error r) .-message) :ms (- (js/Date.now) t0)})))
+
+(defn- field [re text] (second (re-find re text)))
 
 (defn- ok? [r] (and (= 0 (:status r)) (nil? (:error r))))
 
@@ -259,14 +262,95 @@
                :nbb-pin pin
                :node (.-version js/process)})))))))
 
-;; ------------------------------------------------------------------ the farm
+;; ------------------------------------------------------------------ the seed tools (S1, S2, the farm)
 
-(defn- python! [script args out-file err-file]
-  (let [r (sh "python3" (into [script] args))]
-    (when err-file (write-text! err-file (:stderr r)))
-    (when out-file (write-text! out-file (:stdout r)))
-    (when-not (ok? r) (throw (ex-info (str (.basename path script) ": " (describe r)) {})))
-    (:stdout r)))
+(def ^:private tool-env
+  {"KEXE_COMMAND" "1" "KEXE_STRING_POOL" "1073741824" "KEXE_PAIRS" "16777216"
+   "KEXE_VECTORS" "4194304" "KEXE_VECTOR_ITEMS" "134217728"})
+
+(def ^:private spawn-env
+  "KEXE_COMMAND:KEXE_CAP_RESOURCES_35:KEXE_STRING_POOL:KEXE_PAIRS:KEXE_VECTORS:KEXE_VECTOR_ITEMS:KEXE_CPU_SECONDS:KEXE_WALL_SECONDS")
+
+(defn- mac-arm? [] (and (= "darwin" (.-platform js/process)) (= "arm64" (.-arch js/process))))
+
+(defn- build-tools!
+  "Once per run, from the gate's own checkout (seed/README.md, \"Seed lineage
+  bootstrap\" steps 1-2): the trusted C loader, then the committed adopted seed
+  compiles seed/tools/bootstrap.kotoba and seed/tools/selfbuild.kotoba. The
+  tools then run against each side's tree. {:loader :tools :pins} or {:unmeasured}."
+  []
+  (let [dir (mkdirs! (join gate-root "build" "selfhost-gate"))
+        loader (join dir "loader")
+        adopted (join gate-root "seed" "bootstrap" "adopted-20261012.bin")
+        env (assoc tool-env "KEXE_CAP_RESOURCES_35" gate-root)
+        compile! (fn [tool]
+                   (let [src (join gate-root "seed" "tools" (str tool ".kotoba"))
+                         kseed (join dir (str tool ".kseed")) bin (join dir (str tool ".bin"))
+                         c (sh loader [adopted "0" "0" "aarch64" "35,37,38,39" "--" "compile" src
+                                       "--source-path" (join gate-root "seed") "--unpinned" "--target" "aarch64-macos"
+                                       "--output" kseed] {:cwd gate-root :env env})
+                         x (when (ok? c)
+                             (sh loader [adopted "0" "0" "aarch64" "35,37,38,39" "--" "extract-native" kseed
+                                         "--symbol" "main" "--output" bin] {:cwd gate-root :env env}))
+                         off (when (and x (ok? x)) (field #":offset (\d+)" (:stdout x)))]
+                     (if off
+                       {:bin bin :offset off :source-sha256 (sha256-file src) :bin-sha256 (sha256-file bin)}
+                       {:unmeasured (str "seed/tools/" tool ".kotoba did not build: " (describe (if (ok? c) x c)))})))]
+    (cond
+      (not (mac-arm?)) {:unmeasured (str "the seed and its tools are aarch64-macos; this node is "
+                                         (.-platform js/process) "/" (.-arch js/process))}
+      (not (file? (join gate-root "seed" "tools" "selfbuild.kotoba")))
+      {:unmeasured "the gate checkout has no seed/tools/selfbuild.kotoba (JUN-202)"}
+      :else
+      (let [cc (sh "cc" ["-std=c11" "-O2" (join gate-root "seed" "bootstrap" "adopted-loader-20261012.c") "-o" loader])]
+        (if-not (ok? cc)
+          {:unmeasured (str "cc of the adopted loader: " (describe cc))}
+          (let [tools {"bootstrap" (compile! "bootstrap") "selfbuild" (compile! "selfbuild")}
+                bad (first (keep :unmeasured (vals tools)))]
+            (if bad
+              {:unmeasured bad}
+              {:loader loader :tools tools
+               :pins {:adopted-seed-sha256 (sha256-file adopted)
+                      :loader-sha256 (sha256-file loader)
+                      :tools (into (sorted-map) (for [[k v] tools] [k (dissoc v :bin :offset)]))}})))))))
+
+(defn- run-tool [tools tool repo args env & [opts]]
+  (let [{:keys [bin offset]} (get-in tools [:tools tool])]
+    (sh (:loader tools) (into [bin offset "0" "aarch64" "3,20,35,37,38,39" "--" repo] args)
+        (merge {:cwd repo
+                :env (merge tool-env {"KEXE_CAP_RESOURCES_35" repo "KEXE_SPAWN_PATH_LOOKUP" "1"
+                                      "KEXE_SPAWN_ENV" spawn-env} env)}
+               opts))))
+
+(defn- record-field [text k] (field (js/RegExp. (str "(?:^|\\n)" k " (\\S+)")) text))
+
+(defn- seed-lineage!
+  "S1: seed/tools/bootstrap.kotoba rebuilds the lineage R0 -> rung in the side's
+  tree (build/seed-boot), every recorded hash checked by the tool, then the
+  rung's seed-1.bin against seed/rungs/<rung>.record. {:seed :loader :pins},
+  {:refused code :reason} (the lineage does not reproduce), or {:unmeasured}."
+  [tools subject rung]
+  (let [record-file (join subject "seed" "rungs" (str rung ".record"))
+        boot (join subject "build" "seed-boot")
+        lineage-loader (join boot "kexe-loader-v11")]
+    (cond
+      (:unmeasured tools) tools
+      (not (file? record-file)) {:refused "no-record" :reason (str "no seed/rungs/" rung ".record")}
+      :else
+      (let [b (run-tool tools "bootstrap" subject ["--upto" rung]
+                        {"KEXE_CAP_RESOURCES_20" (str "/usr/bin/cc:/usr/bin/git:" lineage-loader)
+                         "KEXE_CPU_SECONDS" "600" "KEXE_WALL_SECONDS" "600"})
+            _ (write-text! (join subject "build" "selfhost-gate-bootstrap.log") (str (:stdout b) (:stderr b)))
+            seed (join boot rung "seed-1.bin")
+            want (record-field (read-text record-file) "seed1_sha256")
+            got (sha256-file seed)]
+        (cond
+          (not (ok? b)) {:refused "lineage" :reason (str "bootstrap.kotoba --upto " rung ": " (describe b))}
+          (not (file? lineage-loader)) {:refused "no-loader" :reason "the bootstrap built no lineage loader"}
+          (not= want got) {:refused "seed-hash" :reason (str "seed " rung " sha256 " got " is not the record's " want)}
+          :else {:seed seed :loader lineage-loader
+                 :pins {:rung rung :seed1-sha256 got :record-sha256 (sha256-file record-file)
+                        :lineage-loader-sha256 (sha256-file lineage-loader)}})))))
 
 (defn- parse-order [text]
   (vec (for [line (str/split-lines text)
@@ -274,26 +358,63 @@
              :when (and ns-name fp)]
          {:ns ns-name :file fp :deps (vec (remove #(= "-" %) deps))})))
 
-(defn- build-farm!
-  "The compiler-closure farm of S2 (JUN-202): farm-from-lock.py over the
-  oracle's deps-lock, reach-list.py from the nbb/*_cli entries, reach-twins.py
-  (the project loader's twin rule), r6_scan.py farm (one source root,
-  dependency-first order). Answers {:src :order :pins}."
-  [oracle kl dir]
-  (let [farm (join dir "farm") r6 (join dir "r6")
-        seed-tools (join oracle "scripts" "seed")
-        wall (join oracle "scripts" "selfhost-wall")]
-    (python! (join seed-tools "farm-from-lock.py") [farm "--lock" (join oracle "deps-lock.edn")] nil (join dir "farm.err"))
-    (python! (join wall "reach-list.py") [oracle (join farm "cp.txt") kl] (join dir "reach.txt") nil)
-    (python! (join seed-tools "reach-twins.py") [(join dir "reach.txt") (join farm "cp.txt") oracle kl]
-             (join dir "list.txt") (join dir "list.err"))
-    (mkdirs! r6)
-    (python! (join seed-tools "r6_scan.py") ["farm" (join dir "list.txt") r6] (join r6 "order.txt") (join r6 "external.txt"))
-    (let [order (parse-order (read-text (join r6 "order.txt")))]
-      {:src (join r6 "src") :dir r6 :order order
-       :pins {:farm-sha256 (sha256-file (join farm "farm.txt"))
-              :order-sha256 (sha256-file (join r6 "order.txt"))
-              :modules (count order)}})))
+(def ^:private s2-status {:ok "PASS" :refused "REFUSED" :blocked "BLOCKED" :trap "UNMEASURED"})
+
+(defn- selfbuild!
+  "S2 and the farm: seed/tools/selfbuild.kotoba (JUN-202, seed/README.md
+  \"Selfbuild scan (gate S2)\") in the side's tree. It builds the classpath
+  farm from the lock with git alone, the reach list (nbb/*_cli closure), the
+  reach-twins module list against kotoba-lang lang/compat at the pinned
+  commit, the dependency-first order, and compiles every module with the seed
+  in separate mode. The farm (build/selfbuild/r6) is also G1's.
+  {:farm :s2 :pins} or {:unmeasured}."
+  [tools subject lineage lock-rel kl-repo kl-sha]
+  (let [work (join subject "build" "selfbuild")
+        stderr (join subject "build" "selfbuild.stderr")
+        lock (join subject lock-rel)
+        repos (join (.homedir os) "github" "kotoba-lang")
+        gitlibs (join (.homedir os) ".gitlibs" "_repos" "https" "github.com" "kotoba-lang")]
+    (cond
+      (:unmeasured lineage) lineage
+      (:refused lineage) {:unmeasured (str "no seed: S1 " (:refused lineage))}
+      (not (file? lock)) {:unmeasured (str "no lock " lock-rel)}
+      :else
+      (do
+        (when (exists? work) (.rmSync fs work #js {:recursive true :force true}))
+        (let [fd (.openSync fs stderr "w")
+              r (try
+                  (run-tool tools "selfbuild" subject
+                            (cond-> ["--work" work "--stderr" stderr "--lock" lock
+                                     "--kotoba-lang-repo" kl-repo "--kotoba-lang-rev" kl-sha
+                                     "--seed" (:seed lineage)]
+                              (exists? repos) (into ["--repos" repos])
+                              (exists? gitlibs) (into ["--gitlibs" gitlibs]))
+                            {"KEXE_CAP_RESOURCES_20" (str "/usr/bin/git:" (:loader lineage))
+                             "KEXE_CPU_SECONDS" "3600" "KEXE_WALL_SECONDS" "3600"}
+                            {:stdio ["ignore" "pipe" fd]})
+                  (finally (.closeSync fs fd)))
+              verdict (join work "selfbuild.edn")
+              order-file (join work "r6" "order.txt")]
+          (write-text! (join subject "build" "selfhost-gate-selfbuild.log") (:stdout r))
+          (if-not (and (ok? r) (file? verdict) (file? order-file))
+            {:unmeasured (str "selfbuild.kotoba: " (describe r) " "
+                              (let [t (if (file? stderr) (read-text stderr) "")] (subs t (max 0 (- (count t) 300)))))}
+            (let [v (edn/read-string (read-text verdict))
+                  order (parse-order (read-text order-file))]
+              {:farm {:src (join work "r6" "src") :dir (join work "r6") :order order}
+               :s2 {:status "MEASURED"
+                    :counts (:counts v)
+                    :modules (into (sorted-map)
+                                   (for [m (:modules v)]
+                                     [(:ns m) (cond-> {:verdict (get s2-status (:status m) "UNMEASURED")}
+                                                (:code m) (assoc :code (:code m))
+                                                (:text m) (assoc :text (:text m))
+                                                (:blocked-by m) (assoc :code "requires" :text (:blocked-by m)))]))}
+               :pins {:lock lock-rel :lock-sha256 (sha256-file lock)
+                      :inputs-sha256 (sha256-file (join work "inputs.txt"))
+                      :order-sha256 (sha256-file order-file)
+                      :modules (count order)
+                      :tool-counts (:counts v)}})))))))
 
 (def module-exts [".kotoba" ".cljk" ".cljc"])
 
@@ -317,9 +438,12 @@
              (.copyFileSync fs (join subject "src" rel) dest)
              {:ns ns-name :file dest :deps []})))))
 
-;; ------------------------------------------------------------------ G1 / G2
+(defn- default-lock [subject]
+  (if (file? (join subject "seed" "selfbuild" "integration-lock.edn"))
+    "seed/selfbuild/integration-lock.edn"
+    "deps-lock.edn"))
 
-(defn- field [re text] (second (re-find re text)))
+;; ------------------------------------------------------------------ G1 / G2
 
 (defn- check-verdict [r]
   (let [text (str (:stdout r) "\n" (:stderr r))
@@ -410,103 +534,6 @@
                                :rc-no-arm rc :kotoba-nil nil-forms :host-literals (:count host)
                                :host-literal-samples (:samples host)}])))))))})))
 
-;; ------------------------------------------------------------------ S2 (the seed scan)
-
-(def ^:private seed-env
-  {"KEXE_COMMAND" "1" "KEXE_STRING_POOL" "1073741824" "KEXE_PAIRS" "16777216"
-   "KEXE_VECTORS" "4194304" "KEXE_VECTOR_ITEMS" "134217728"})
-
-(defn- record-field [text k] (field (js/RegExp. (str "(?:^|\\n)" k " (\\S+)")) text))
-
-(defn- build-seed!
-  "seed/README.md, section \"Seed lineage bootstrap\": the trusted C loader, the
-  committed seed compiling seed/tools/bootstrap.kotoba, the tool rebuilding the
-  lineage up to the rung. Answers {:loader :seed :offset :pins} or {:unmeasured}."
-  [subject rung]
-  (let [tools (mkdirs! (join subject "build" "selfhost-gate"))
-        loader (join tools "loader")
-        adopted (join subject "seed" "bootstrap" "adopted-20261012.bin")
-        record-file (join subject "seed" "rungs" (str rung ".record"))
-        boot (join subject "build" "seed-boot")
-        env35 (assoc seed-env "KEXE_CAP_RESOURCES_35" subject)
-        run-loader (fn [bin off grants args env]
-                     (sh loader (into [bin (str off) "0" "aarch64" grants "--"] args) {:cwd subject :env env}))]
-    (cond
-      (not (and (= "darwin" (.-platform js/process)) (= "arm64" (.-arch js/process))))
-      {:unmeasured (str "the seed is aarch64-macos; this node is " (.-platform js/process) "/" (.-arch js/process))}
-      (not (file? record-file)) {:unmeasured (str "no seed/rungs/" rung ".record")}
-      :else
-      (let [cc (sh "cc" ["-std=c11" "-O2" (join subject "seed" "bootstrap" "adopted-loader-20261012.c") "-o" loader])]
-        (if-not (ok? cc)
-          {:unmeasured (str "cc of the adopted loader: " (describe cc))}
-          (let [c (run-loader adopted 0 "35,37,38,39"
-                              ["compile" (join subject "seed" "tools" "bootstrap.kotoba") "--source-path" (join subject "seed")
-                               "--unpinned" "--target" "aarch64-macos" "--output" (join tools "bootstrap.kseed")] env35)
-                x (when (ok? c)
-                    (run-loader adopted 0 "35,37,38,39"
-                                ["extract-native" (join tools "bootstrap.kseed") "--symbol" "main" "--output" (join tools "bootstrap.bin")] env35))
-                off (when x (field #":offset (\d+)" (:stdout x)))]
-            (if-not (and (ok? c) x (ok? x) off)
-              {:unmeasured (str "the bootstrap tool did not build: " (describe (if (ok? c) x c)))}
-              (let [b (run-loader (join tools "bootstrap.bin") off "3,20,35,37,38,39" [subject "--upto" rung]
-                                  (assoc env35
-                                         "KEXE_CAP_RESOURCES_20" (str "/usr/bin/cc:/usr/bin/git:" (join boot "kexe-loader-v11"))
-                                         "KEXE_SPAWN_PATH_LOOKUP" "1"
-                                         "KEXE_SPAWN_ENV" "KEXE_COMMAND:KEXE_CAP_RESOURCES_35:KEXE_STRING_POOL:KEXE_PAIRS:KEXE_VECTORS:KEXE_VECTOR_ITEMS:KEXE_CPU_SECONDS:KEXE_WALL_SECONDS"
-                                         "KEXE_CPU_SECONDS" "600" "KEXE_WALL_SECONDS" "600"))
-                    _ (write-text! (join tools "bootstrap.log") (str (:stdout b) (:stderr b)))
-                    seed (join boot rung "seed-1.bin")
-                    want (record-field (read-text record-file) "seed1_sha256")
-                    got (sha256-file seed)
-                    lineage-loader (join boot "kexe-loader-v11")]
-                (cond
-                  (not (ok? b)) {:unmeasured (str "the seed lineage bootstrap failed: " (describe b)) :refused "lineage"}
-                  (not (file? lineage-loader)) {:unmeasured "the bootstrap built no lineage loader" :refused "no-loader"}
-                  (not= want got) {:unmeasured (str "seed " rung " sha256 " got " is not the record's " want) :refused "seed-hash"}
-                  :else {:loader lineage-loader :seed seed
-                         :offset (or (some-> (join boot rung "seed-1.offset") (#(when (file? %) (str/trim (read-text %))))) "0")
-                         :pins {:rung rung :seed1-sha256 got :record-sha256 (sha256-file record-file)
-                                :lineage-loader-sha256 (sha256-file lineage-loader)
-                                :adopted-seed-sha256 (sha256-file adopted)}})))))))))
-
-(defn- measure-s2
-  "The r6-scan of JUN-202 (scripts/seed/r6-scan.sh, deleted by JUN-243): every
-  farm module, dependency-first, compiled by the seed in separate mode.
-  PASS = OK (an object was written), REFUSED = the seed's first refusal,
-  BLOCKED = a require has no object, UNMEASURED = the seed did not answer."
-  [subject farm rung s]
-  (let []
-    (if (:unmeasured s)
-      {:status "UNMEASURED" :reason (:unmeasured s)}
-      (let [o (mkdirs! (join (:dir farm) "o")) logs (mkdirs! (join (:dir farm) "log"))
-            env (assoc seed-env "KEXE_STRING_POOL" "268435456" "KEXE_VECTORS" "65536" "KEXE_VECTOR_ITEMS" "16777216"
-                       "KEXE_CPU_SECONDS" "120" "KEXE_WALL_SECONDS" "120"
-                       "KEXE_CAP_RESOURCES_35" (str subject ":" (:dir farm)))
-            rows (loop [[m & more :as ms] (:order farm) okset #{} acc []]
-                   (if (empty? ms)
-                     acc
-                     (let [{:keys [ns file deps]} m
-                           miss (first (remove okset deps))]
-                       (if miss
-                         (recur more okset (conj acc [ns {:verdict "BLOCKED" :code "requires" :text miss}]))
-                         (let [kso (join o (str ns ".kso"))
-                               r (sh (:loader s) [(:seed s) (:offset s) "0" "aarch64" "35,37,38,39" "--"
-                                                  "compile" file "--emit-module" "--object-dir" o "--output" kso]
-                                     {:cwd subject :env env :timeout 300000})
-                               _ (write-text! (join logs (str ns ".log")) (str (:stdout r) (:stderr r)))
-                               text (str (:stdout r) "\n" (:stderr r))
-                               refusal (re-find (js/RegExp. "^seed: (E\\d+)\\s*(.*)$" "m") text)]
-                           (cond
-                             (and (ok? r) (file? kso) (pos? (.-size (.statSync fs kso))))
-                             (recur more (conj okset ns) (conj acc [ns {:verdict "PASS" :ms (:ms r)}]))
-                             refusal
-                             (recur more okset (conj acc [ns {:verdict "REFUSED" :code (nth refusal 1)
-                                                              :text (subs (str/replace (nth refusal 2) #"^[^ ]*:\d+:\d+: *" "") 0
-                                                                          (min 200 (count (nth refusal 2))))}]))
-                             :else
-                             (recur more okset (conj acc [ns {:verdict "UNMEASURED" :code "trap" :text (describe r)}]))))))))]
-        {:status "MEASURED" :seed (:pins s) :modules (into (sorted-map) rows)}))))
-
 ;; ------------------------------------------------------------------ S5
 
 (defn- measure-s5 [subject]
@@ -538,68 +565,77 @@
 
 (defn- not-claimed [why] {:status "NOT-CLAIMED" :reason why})
 
+(defn- s1-gate [lineage rung]
+  (cond (:refused lineage) {:status "MEASURED"
+                            :modules {(str "lineage-" rung) {:verdict "REFUSED" :code (:refused lineage)
+                                                             :message (:reason lineage)}}}
+        (:unmeasured lineage) {:status "UNMEASURED" :reason (:unmeasured lineage)}
+        :else {:status "MEASURED" :seed (:pins lineage)
+               :modules {(str "lineage-" rung) {:verdict "PASS" :seed1-sha256 (get-in lineage [:pins :seed1-sha256])}}}))
+
 (defn- measure-side
-  "Promise of the measurement of one side."
-  [{:keys [role subject oracle oracle-pins kl policy policy-pins gates changed dir jobs rung consumer shared-farm]}]
+  "Promise of the measurement of one side. amu mode: the side's own tree is
+  the oracle (bin/amu), the seed lineage (S1) and the selfbuild scan (S2, and
+  the farm G1 checks). Consumer mode: `shared` carries the oracle's farm, and
+  the side's src is overlaid on a copy of it."
+  [{:keys [role subject oracle oracle-pins kl-repo kl-sha policy policy-pins gates changed dir jobs rung
+           consumer shared tools lock]}]
   (let [want (set gates)
         t0 (js/Date.now)
-        unmeasured-all (fn [why] (into {} (for [g gates] [g {:status "UNMEASURED" :reason why}])))
         base {:format :kotoba.selfhost-gate/measure-v1
               :role role :requested (vec gates) :measured-at (now)
               :subject {:commit (git! subject "rev-parse" "HEAD")
                         :repo (str/trim (or (:stdout (git subject "config" "--get" "remote.origin.url")) ""))}
-              :oracle oracle-pins :policy policy-pins
-              :host {:platform (.-platform js/process) :arch (.-arch js/process) :node (.-version js/process)}}]
-    (if (:unmeasured oracle-pins)
-      (js/Promise.resolve (assoc base :gates (unmeasured-all (:unmeasured oracle-pins))))
-      (let [farm (try
-                   (if consumer
-                     (let [d (join dir "r6")]
-                       (.cpSync fs (:dir shared-farm) d #js {:recursive true})
-                       (let [src (join d "src")
-                             mods (overlay-subject! src subject)]
-                         {:src src :dir d :order mods :pins (assoc (:pins shared-farm) :overlay (count mods))}))
-                     (build-farm! oracle kl dir))
-                   (catch :default e {:unmeasured (str "farm: " (.-message e))}))]
-        (if (:unmeasured farm)
-          (js/Promise.resolve (assoc base :gates (merge (unmeasured-all (:unmeasured farm))
-                                                        (when (want :g0) {:g0 (measure-g0 oracle subject changed)})
-                                                        (when (and (want :s5) (not consumer)) {:s5 (measure-s5 subject)}))))
-          (let [modules (:order farm)]
-            (log role ": " (count modules) " modules; G1 with " jobs " jobs")
-            (-> (if (want :g1)
-                  (measure-g1 oracle (:src farm) modules policy jobs)
-                  (js/Promise.resolve (not-claimed "not requested")))
-                (.then (fn [g1]
-                         (log role ": G1 " (pr-str (ratchet/tally (:modules g1))))
-                         (.then (if (want :g2)
-                                  (measure-g2 oracle (:src farm) modules g1 jobs)
-                                  (js/Promise.resolve (not-claimed "not requested")))
-                                (fn [g2] [g1 g2]))))
-                (.then (fn [[g1 g2]]
-                         (let [g0 (if (want :g0) (measure-g0 oracle subject changed) (not-claimed "not requested"))
-                               seed (when (and (not consumer) (or (want :s1) (want :s2)))
-                                      (log role ": S1 seed lineage through " rung)
-                                      (build-seed! subject rung))
-                               s1 (cond consumer (not-claimed "the seed lineage is the amu product's (S1)")
-                                        (not (want :s1)) (not-claimed "not requested")
-                                        (:refused seed) {:status "MEASURED"
-                                                         :modules {(str "lineage-" rung) {:verdict "REFUSED" :code (:refused seed)
-                                                                                          :message (:unmeasured seed)}}}
-                                        (:unmeasured seed) {:status "UNMEASURED" :reason (:unmeasured seed)}
-                                        :else {:status "MEASURED" :seed (:pins seed)
-                                               :modules {(str "lineage-" rung) {:verdict "PASS" :seed1-sha256 (get-in seed [:pins :seed1-sha256])}}})
-                               s2 (cond consumer (not-claimed "the seed scan is the amu product's (S2)")
-                                        (want :s2) (do (log role ": S2 seed scan") (measure-s2 subject farm rung seed))
-                                        :else (not-claimed "not requested"))
-                               s5 (cond consumer (not-claimed "the PRODUCT inventory is the amu product's (S5)")
-                                        (want :s5) (measure-s5 subject)
-                                        :else (not-claimed "not requested"))]
-                           (when (= "MEASURED" (:status s2)) (log role ": S2 " (pr-str (ratchet/tally (:modules s2)))))
-                           (assoc base
-                                  :farm (:pins farm)
-                                  :seconds (js/Math.round (/ (- (js/Date.now) t0) 1000))
-                                  :gates {:g0 g0 :g1 g1 :g2 g2 :s1 s1 :s2 s2 :s5 s5})))))))))))
+              :oracle oracle-pins :policy policy-pins :tools (:pins tools)
+              :host {:platform (.-platform js/process) :arch (.-arch js/process) :node (.-version js/process)}}
+        lineage (cond consumer nil
+                      (:unmeasured oracle-pins) oracle-pins
+                      :else (do (log role ": S1 seed lineage through " rung) (seed-lineage! tools subject rung)))
+        sb (cond consumer shared
+                 (:unmeasured oracle-pins) oracle-pins
+                 :else (do (log role ": S2 selfbuild scan, lock " lock)
+                           (selfbuild! tools subject lineage lock kl-repo kl-sha)))
+        farm (cond
+               (:unmeasured sb) {:unmeasured (:unmeasured sb)}
+               consumer (let [d (join dir "r6")]
+                          (.cpSync fs (get-in sb [:farm :dir]) d #js {:recursive true})
+                          (let [src (join d "src") mods (overlay-subject! src subject)]
+                            {:src src :dir d :order mods}))
+               :else (:farm sb))
+        unmeasured (fn [why] (js/Promise.resolve {:status "UNMEASURED" :reason why}))]
+    (when (and (not consumer) (:s2 sb))
+      (log role ": S2 " (pr-str (ratchet/tally (get-in sb [:s2 :modules])))))
+    (-> (cond (not (want :g1)) (js/Promise.resolve (not-claimed "not requested"))
+              (:unmeasured oracle-pins) (unmeasured (:unmeasured oracle-pins))
+              (:unmeasured farm) (unmeasured (str "no farm: " (:unmeasured farm)))
+              :else (do (log role ": G1 over " (count (:order farm)) " modules with " jobs " jobs")
+                        (measure-g1 oracle (:src farm) (:order farm) policy jobs)))
+        (.then (fn [g1]
+                 (when (:modules g1) (log role ": G1 " (pr-str (ratchet/tally (:modules g1)))))
+                 (.then (cond (not (want :g2)) (js/Promise.resolve (not-claimed "not requested"))
+                              (:unmeasured farm) (unmeasured (str "no farm: " (:unmeasured farm)))
+                              :else (measure-g2 oracle (:src farm) (:order farm) g1 jobs))
+                        (fn [g2] [g1 g2]))))
+        (.then (fn [[g1 g2]]
+                 (let [g0 (cond (not (want :g0)) (not-claimed "not requested")
+                                (:unmeasured oracle-pins) {:status "UNMEASURED" :reason (:unmeasured oracle-pins)}
+                                :else (measure-g0 oracle subject changed))
+                       s1 (cond consumer (not-claimed "the seed lineage is the amu product's (S1)")
+                                (not (want :s1)) (not-claimed "not requested")
+                                :else (s1-gate lineage rung))
+                       s2 (cond consumer (not-claimed "the selfbuild scan is the amu product's (S2)")
+                                (not (want :s2)) (not-claimed "not requested")
+                                (:unmeasured sb) {:status "UNMEASURED" :reason (:unmeasured sb)}
+                                :else (assoc (:s2 sb) :seed (:pins lineage) :scan (:pins sb)))
+                       s5 (cond consumer (not-claimed "the PRODUCT inventory is the amu product's (S5)")
+                                (want :s5) (measure-s5 subject)
+                                :else (not-claimed "not requested"))]
+                   (assoc base
+                          :farm (if consumer
+                                  (assoc (:pins shared) :overlay (count (:order farm)))
+                                  (:pins sb))
+                          :seconds (js/Math.round (/ (- (js/Date.now) t0) 1000))
+                          :gates {:g0 g0 :g1 g1 :g2 g2 :s1 s1 :s2 s2 :s5 s5})))))))
 
 ;; ------------------------------------------------------------------ report
 
@@ -691,26 +727,37 @@
         amu-repo (when consumer (if (:amu o) (local-repo! (:amu o) (join work "repos")) gate-root))
         amu-sha (when consumer (resolve-commit amu-repo (or (:amu-ref o) "HEAD")))
         oracle-dir (when consumer (wt! amu-repo amu-sha (join work "oracle")))
+        tools (if (some #{:g1 :g2 :s1 :s2} gates)
+                (do (log "building the seed tools from the gate checkout") (build-tools!))
+                {:unmeasured "no gate needs the seed tools"})
+        ;; the selfbuild lock: the same repository path on both sides (the integration lock when the head has it)
+        lock (or (:lock o)
+                 (if consumer
+                   (default-lock oracle-dir)
+                   (if (ok? (git repo "cat-file" "-e" (str head-sha ":seed/selfbuild/integration-lock.edn")))
+                     "seed/selfbuild/integration-lock.edn" "deps-lock.edn")))
         shared-oracle-pins (when consumer (prepare-oracle! oracle-dir))
-        shared-farm (when (and consumer (not (:unmeasured shared-oracle-pins)))
-                      (try (build-farm! oracle-dir kl (join work "oracle-farm"))
-                           (catch :default e {:unmeasured (str "farm: " (.-message e))})))
+        shared (when consumer
+                 (if (:unmeasured shared-oracle-pins)
+                   shared-oracle-pins
+                   (do (log "oracle: S1 lineage and the selfbuild farm of amu " amu-sha)
+                       (selfbuild! tools oracle-dir (seed-lineage! tools oracle-dir rung) lock kl-repo kl-sha))))
         side (fn [role sha]
                (let [dir (mkdirs! (join work role))
-                     ckey (cache-key [sha (when consumer amu-sha) kl-sha (:sha256 policy-pins) gates rung (:gate-files gp) consumer])
+                     ckey (cache-key [sha (when consumer amu-sha) kl-sha (:sha256 policy-pins) gates rung lock
+                                      (:gate-files gp) (:pins tools) consumer])
                      cfile (when cache (join (.resolve path cache) (str ckey ".edn")))]
                  (if (and cfile (file? cfile))
                    (do (log role ": reusing the cached measurement " cfile)
                        (js/Promise.resolve (assoc (edn/read-string (read-text cfile)) :role role :cached cfile)))
                    (let [subject (wt! repo sha (join dir "subject"))
                          oracle (if consumer oracle-dir subject)
-                         pins (if consumer
-                                (if (:unmeasured shared-farm) {:unmeasured (:unmeasured shared-farm)} shared-oracle-pins)
-                                (prepare-oracle! oracle))]
+                         pins (if consumer shared-oracle-pins (prepare-oracle! oracle))]
                      (log role ": " sha " (oracle " (if consumer amu-sha "the side itself") ")")
-                     (.then (measure-side {:role role :subject subject :oracle oracle :oracle-pins pins :kl kl
+                     (.then (measure-side {:role role :subject subject :oracle oracle :oracle-pins pins
+                                           :kl-repo kl-repo :kl-sha kl-sha :tools tools :lock lock
                                            :policy policy :policy-pins policy-pins :gates gates :changed changed
-                                           :dir dir :jobs jobs :rung rung :consumer consumer :shared-farm shared-farm})
+                                           :dir dir :jobs jobs :rung rung :consumer consumer :shared shared})
                             (fn [m]
                               (write-text! (join dir "measure.edn") (pr-str m))
                               ;; a measurement with an UNMEASURED gate is never cached: the next run measures again
