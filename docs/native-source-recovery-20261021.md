@@ -8,9 +8,10 @@ exact blobs and their 29 removed fixtures/documentation; do not replace them
 with the earlier, pre-review `3fdfe65e` baseline.
 
 This retains the reviewed fixes for decimal rounding, native `.cljc` entry
-handling, exact export detection, closed source paths, the signed hexadecimal
-i64 boundary, duplicate map keys, bounded reader form counts and the v2
-component target spelling. No default launcher or authority changes here.
+handling, exact export detection, the signed hexadecimal i64 boundary,
+duplicate map keys, bounded reader form counts and the v2 component target
+spelling. Filesystem confinement continues to depend on the selected host's
+capability enforcement. No default launcher or authority changes here.
 
 `scripts/seed/check-native-source-recovery.sh` takes an explicit native
 compiler image, loader and fresh output directory. It compiles and links a
