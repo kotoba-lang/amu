@@ -238,7 +238,7 @@
   a locked namespace shadowed by a local one must not silently ship."
   [args]
   (let [resolved (project-source/resolve-source! args)
-        policy (support/timed "policy-read" #(read-policy! args))
+        policy (support/timed "policy-read" #(driver/read-policy! args))
         hir (:value (resolve-hir! (:source resolved)
                                   (project-source/analyze-opts policy (:linked? resolved))
                                   nil))
