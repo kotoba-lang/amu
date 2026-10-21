@@ -239,13 +239,13 @@
   [args]
   (let [resolved (project-source/resolve-source! args)
         policy (support/timed "policy-read" #(driver/read-policy! args))
-        hir (:value (resolve-hir! (:source resolved)
+        hir (:value (driver/resolve-hir! (:source resolved)
                                   (project-source/analyze-opts policy (:linked? resolved))
                                   nil))
         em (support/emit-metadata args)
         kir-raw (ir/lower hir {:oracle-fuel (support/oracle-fuel em policy)})
         report (definition-identity/describe {:hir hir :kir kir-raw})
-        _ (package-verdict! resolved report)   ;; throws on a lock mismatch, before anything is written
+        _ (driver/package-verdict! resolved report)   ;; throws on a lock mismatch, before anything is written
         kir (walk/postwalk edn-value kir-raw)
         fmt (or (:format kir) :kotoba.kir/v4)
         text (kedn/escape-controls
