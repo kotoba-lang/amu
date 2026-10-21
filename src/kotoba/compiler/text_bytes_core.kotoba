@@ -1,0 +1,36 @@
+(ns kotoba.compiler.text-bytes-core
+  "Canonical Kotoba text and byte primitives for the compiler."
+  {:kotoba/export [byte-at bytes-from-ints bytes-length concat-bytes empty-bytes index-of-byte slice-bytes utf8-bytes utf8-length utf8-text]})
+
+(defn utf8-length [text :string] :i64
+  (string-byte-length text))
+
+(defn bytes-length [bytes :bytes] :i64
+  (bytes-count bytes))
+
+(defn utf8-text [bytes :bytes] :string
+  (string-from-utf8 bytes))
+
+(defn bytes-from-ints [ints :vector-i64] :bytes
+  (bytes-from-vector-i64 ints))
+
+(defn utf8-bytes [text :string] :bytes
+  (string-to-utf8 text))
+
+(defn empty-bytes [] :bytes
+  (bytes-empty))
+
+(defn concat-bytes [a :bytes b :bytes] :bytes
+  (bytes-concat a b))
+
+(defn byte-at [bytes :bytes i :i64] :i64
+  (bytes-at bytes i))
+
+(defn slice-bytes [bytes :bytes start :i64 end :i64] :bytes
+  (bytes-slice bytes start end))
+
+(defn index-of-byte [bytes :bytes b :i64] :i64
+  (loop [i 0]
+    (cond (>= i (bytes-count bytes)) -1
+          (= b (bytes-at bytes i)) i
+          :else (recur (inc i)))))
