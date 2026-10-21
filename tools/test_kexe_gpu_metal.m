@@ -1,6 +1,6 @@
 /* test_kexe_gpu_metal.m -- the wire-42 Metal broker's request verbs, driven
  * directly (no guest, no pipe): the review findings of amu #1404 held to
- * their behavior. Built and run by scripts/test-gpu-metal-broker.sh:
+ * their behavior. Built and run by scripts/test-gpu-metal-broker.cljk:
  *
  *   refusal-marker     every refusal begins with '!' (the guest provider
  *                      fails closed only on that byte)
