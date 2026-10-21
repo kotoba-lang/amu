@@ -1,0 +1,1566 @@
+;; Native semantic-linking slice for closed source-path projects.
+;; Imports admit aliases and named :refer calls to public functions with one
+;; or more typed arity clauses understood by the Native analyzer.
+;; The generated interfaces are analysis stubs, not executable module links.
+(ns kotoba.compiler.native-project-linker
+  {:kotoba/export [link-project-source link-project-forms]}
+  (:require [kotoba.compiler.native-project :as project]
+            [kotoba.compiler.kotoba-reader :as reader]
+            [kotoba.compiler.syntax-sugar :as syntax-sugar]
+            [kotoba.form :as form])
+  (:schemas {:native.project/source
+             [:record :native.project/source
+              [[:namespace :string] [:text :string] [:surface :bool]]]
+             :native.project/graph
+             [:record :native.project/graph
+              [[:modules [:list [:ref :native.project/source]]]
+               [:order [:list :string]] [:err :string]]]
+             :native.project/packet
+             [:record :native.project/packet
+              [[:sources [:list [:ref :native.project/source]]] [:err :string]]]
+             :native.project.link/import
+             [:record :native.project.link/import
+              [[:namespace :string] [:alias :string] [:export :string] [:stub :string]
+               [:qualified :bool] [:local :string] [:schemas [:ref :form/r]]]]
+             :native.project.link/imports
+             [:record :native.project.link/imports
+              [[:items [:list [:ref :native.project.link/import]]] [:err :string]]]
+             :native.project.link/exports
+             [:record :native.project.link/exports
+              [[:items [:list :string]] [:explicit :bool] [:err :string]]]
+             :native.project.link/definition
+             [:record :native.project.link/definition
+              [[:form [:ref :form/r]] [:found :bool] [:err :string]]]
+             :native.project.link/signature
+             [:record :native.project.link/signature
+              [[:clauses [:list [:ref :form/r]]] [:err :string]]]
+             :native.project.link/stubs
+             [:record :native.project.link/stubs
+              [[:imports [:list [:ref :native.project.link/import]]]
+               [:forms [:list [:ref :form/r]]] [:err :string]]]
+             :native.project.link/result
+             [:record :native.project.link/result
+              [[:forms [:ref :form/r]] [:err :string]]]
+             :native.project.link/schema-merge
+             [:record :native.project.link/schema-merge
+              [[:table [:ref :form/r]] [:err :string]]]
+             :native.project.link/specialization
+             [:record :native.project.link/specialization
+              [[:forms [:list [:ref :form/r]]] [:err :string]]]}))
+
+(def max-native-import-stubs 1024)
+
+(defn- empty-imports [] [:list [:ref :native.project.link/import]]
+  (typed-list-new [:list [:ref :native.project.link/import]]))
+
+(defn- empty-forms [] [:list [:ref :form/r]]
+  (typed-list-new [:list [:ref :form/r]]))
+
+(defn- empty-strings [] [:list :string]
+  (typed-list-new [:list :string]))
+
+(defn- empty-schema-map [] [:ref :form/r]
+  (form/form-map (empty-forms)))
+
+(defn- imports-result [items [:list [:ref :native.project.link/import]] error :string]
+  [:ref :native.project.link/imports]
+  (record-new [:ref :native.project.link/imports] items error))
+
+(defn- exports-result [items [:list :string] explicit :bool error :string]
+  [:ref :native.project.link/exports]
+  (record-new [:ref :native.project.link/exports] items explicit error))
+
+(defn- definition-result [value [:ref :form/r] found :bool error :string]
+  [:ref :native.project.link/definition]
+  (record-new [:ref :native.project.link/definition] value found error))
+
+(defn- signature-result [clauses [:list [:ref :form/r]] error :string]
+  [:ref :native.project.link/signature]
+  (record-new [:ref :native.project.link/signature] clauses error))
+
+(defn- stubs-result [imports [:list [:ref :native.project.link/import]]
+                    forms [:list [:ref :form/r]] error :string]
+  [:ref :native.project.link/stubs]
+  (record-new [:ref :native.project.link/stubs] imports forms error))
+
+(defn- link-result [forms [:ref :form/r] error :string]
+  [:ref :native.project.link/result]
+  (record-new [:ref :native.project.link/result] forms error))
+
+(defn- schema-merge-result [table [:ref :form/r] error :string]
+  [:ref :native.project.link/schema-merge]
+  (record-new [:ref :native.project.link/schema-merge] table error))
+
+(defn- specialization-result [forms [:list [:ref :form/r]] error :string]
+  [:ref :native.project.link/specialization]
+  (record-new [:ref :native.project.link/specialization] forms error))
+
+(defn- ns-form? [node [:ref :form/r]] :bool
+  (and (form/is-seq? node) (>= (form/count-of node) 2)
+       (form/is-symbol? (form/nth-of node 0))
+       (string=? (form/symbol-value (form/nth-of node 0)) "ns")))
+
+(defn- require-clause? [node [:ref :form/r]] :bool
+  (and (form/is-seq? node) (> (form/count-of node) 0)
+       (form/is-keyword? (form/nth-of node 0))
+       (= (form/keyword-value (form/nth-of node 0)) :require)))
+
+(defn- simple-name? [node [:ref :form/r]] :bool
+  (and (form/is-symbol? node)
+       (> (string-byte-length (form/symbol-value node)) 0)
+       (= (string-index-of (form/symbol-value node) "/") -1)
+       (= (string-index-of (form/symbol-value node) "\n") -1)))
+
+(defn- import-record [namespace :string alias :string export :string stub :string
+                      qualified :bool local :string schemas [:ref :form/r]]
+  [:ref :native.project.link/import]
+  (record-new [:ref :native.project.link/import]
+              namespace alias export stub qualified local schemas))
+
+(defn- has-alias? [items [:list [:ref :native.project.link/import]] alias :string]
+  :bool
+  (loop [index 0]
+    (if (>= index (vector-count items))
+      false
+      (if (string=? (record-get [:ref :native.project.link/import]
+                                (typed-list-nth [:list [:ref :native.project.link/import]] items index)
+                                :alias)
+                    alias)
+        true
+        (recur (+ index 1))))))
+
+(defn- has-referred-name? [items [:list [:ref :native.project.link/import]] name :string]
+  :bool
+  (loop [index 0]
+    (if (>= index (vector-count items))
+      false
+      (let [item (typed-list-nth [:list [:ref :native.project.link/import]] items index)]
+        (if (and (not (record-get [:ref :native.project.link/import] item :qualified))
+                 (string=? name (record-get [:ref :native.project.link/import] item :local)))
+          true
+          (recur (+ index 1)))))))
+
+(defn- parse-referred-names [namespace :string names [:ref :form/r] index :i64
+                             items [:list [:ref :native.project.link/import]]]
+  [:ref :native.project.link/imports]
+  (cond
+    (not (form/is-vec? names))
+    (imports-result items ":refer requires a vector of exported function names")
+    (= (form/count-of names) 0)
+    (imports-result items ":refer requires at least one exported function name")
+    (>= index (form/count-of names))
+    (imports-result items "")
+    :else
+    (let [name-form (form/nth-of names index)]
+      (if (not (simple-name? name-form))
+        (imports-result items ":refer names must be simple function symbols")
+        (let [name (form/symbol-value name-form)]
+          (if (has-referred-name? items name)
+            (imports-result items (string-concat ":refer repeats or shadows the local name " name))
+            (parse-referred-names
+             namespace names (+ index 1)
+             (typed-list-conj
+              [:list [:ref :native.project.link/import]] items
+              (import-record namespace "" name "" false name (empty-schema-map))))))))))
+
+(defn- continue-require-items [clause [:ref :form/r] index :i64
+                               parsed [:ref :native.project.link/imports]]
+  [:ref :native.project.link/imports]
+  (let [error (record-get [:ref :native.project.link/imports] parsed :err)]
+    (if (not (string=? error ""))
+      parsed
+      (parse-require-items
+       clause index
+       (record-get [:ref :native.project.link/imports] parsed :items)))))
+
+(defn- parse-require-items [clause [:ref :form/r] index :i64
+                            items [:list [:ref :native.project.link/import]]]
+  [:ref :native.project.link/imports]
+  (if (>= index (form/count-of clause))
+    (imports-result items "")
+    (let [spec (form/nth-of clause index)]
+      (if (or (not (form/is-vec? spec)) (< (form/count-of spec) 3)
+              (not (form/is-symbol? (form/nth-of spec 0))))
+        (imports-result items
+                        "native project imports admit [namespace :as alias] and [namespace :refer [name ...]]")
+        (let [namespace (form/symbol-value (form/nth-of spec 0))
+              count (form/count-of spec)
+              option (form/nth-of spec 1)]
+          (cond
+            (and (= count 3) (form/is-keyword? option)
+                 (= (form/keyword-value option) :as)
+                 (simple-name? (form/nth-of spec 2)))
+            (let [alias (form/symbol-value (form/nth-of spec 2))]
+              (if (has-alias? items alias)
+                (imports-result items "native project imports repeat an alias")
+                (parse-require-items
+                 clause (+ index 1)
+                 (typed-list-conj
+                  [:list [:ref :native.project.link/import]] items
+                  (import-record namespace alias "" "" true "" (empty-schema-map))))))
+
+            (and (= count 3) (form/is-keyword? option)
+                 (= (form/keyword-value option) :refer))
+            (continue-require-items
+             clause (+ index 1)
+             (parse-referred-names namespace (form/nth-of spec 2) 0 items))
+
+            (and (= count 5) (form/is-keyword? option)
+                 (= (form/keyword-value option) :as)
+                 (simple-name? (form/nth-of spec 2))
+                 (form/is-keyword? (form/nth-of spec 3))
+                 (= (form/keyword-value (form/nth-of spec 3)) :refer))
+            (let [alias (form/symbol-value (form/nth-of spec 2))]
+              (if (has-alias? items alias)
+                (imports-result items "native project imports repeat an alias")
+                (let [with-alias
+                      (typed-list-conj
+                       [:list [:ref :native.project.link/import]] items
+                       (import-record namespace alias "" "" true "" (empty-schema-map)))]
+                  (continue-require-items
+                   clause (+ index 1)
+                   (parse-referred-names namespace (form/nth-of spec 4) 0 with-alias)))))
+
+            :else
+            (imports-result items
+                            "native project imports admit [namespace :as alias], [namespace :refer [name ...]], or [namespace :as alias :refer [name ...]]")))))))
+
+(defn- parse-project-imports [forms [:list [:ref :form/r]]]
+  [:ref :native.project.link/imports]
+  (loop [form-index 0 found false items (empty-imports)]
+    (if (>= form-index (vector-count forms))
+      (imports-result items "")
+      (let [node (typed-list-nth [:list [:ref :form/r]] forms form-index)]
+        (if (not (ns-form? node))
+          (recur (+ form-index 1) found items)
+          (loop [index 2 saw-require false current items]
+            (if (>= index (form/count-of node))
+              (imports-result current "")
+              (let [clause (form/nth-of node index)]
+                (if (require-clause? clause)
+                  (if saw-require
+                    (imports-result current
+                                    "native project namespace admits only one :require clause")
+                    (let [parsed (parse-require-items clause 1 current)
+                          error (record-get [:ref :native.project.link/imports] parsed :err)]
+                      (if (string=? error "")
+                        (recur (+ index 1) true
+                               (record-get [:ref :native.project.link/imports] parsed :items))
+                        parsed)))
+                  (recur (+ index 1) saw-require current))))))))))
+
+(defn- defn-form? [node [:ref :form/r]] :bool
+  (and (form/is-seq? node) (>= (form/count-of node) 2)
+       (form/is-symbol? (form/nth-of node 0))
+       (or (string=? (form/symbol-value (form/nth-of node 0)) "defn")
+           (string=? (form/symbol-value (form/nth-of node 0)) "defn-"))))
+
+(defn- public-defn? [node [:ref :form/r]] :bool
+  (and (defn-form? node)
+       (string=? (form/symbol-value (form/nth-of node 0)) "defn")))
+
+(defn- parse-export-vector [declared [:ref :form/r] index :i64
+                           names [:list :string]]
+  [:ref :native.project.link/exports]
+  (if (>= index (form/count-of declared))
+    (exports-result names true "")
+    (let [item (form/nth-of declared index)]
+      (if (not (simple-name? item))
+        (exports-result names true "namespace exports must be simple function names")
+        (parse-export-vector declared (+ index 1)
+                             (typed-list-conj [:list :string] names
+                                              (form/symbol-value item)))))))
+
+(defn- export-declaration [clause [:ref :form/r]
+                           names [:list :string] explicit :bool]
+  [:ref :native.project.link/exports]
+  (let [attr-key (form/keyword-form :kotoba/export)
+        attr? (and (form/is-map? clause) (form/form-has? clause attr-key))
+        clause? (and (form/is-seq? clause) (> (form/count-of clause) 0)
+                      (form/is-keyword? (form/nth-of clause 0))
+                      (= (form/keyword-value (form/nth-of clause 0)) :export))]
+    (if (and (not attr?) (not clause?))
+      (exports-result names explicit "")
+      (if explicit
+        (exports-result names true "namespace exports are declared more than once")
+        (let [declared (if attr?
+                         (form/form-get clause attr-key)
+                         (if (= (form/count-of clause) 2)
+                           (form/nth-of clause 1)
+                           (form/nil-form)))]
+          (if (not (form/is-vec? declared))
+            (exports-result names true "namespace export declaration must be a vector")
+            (parse-export-vector declared 0 (empty-strings))))))))
+
+(defn- namespace-export-names [header [:ref :form/r] index :i64
+                               names [:list :string] explicit :bool]
+  [:ref :native.project.link/exports]
+  (if (>= index (form/count-of header))
+    (exports-result names explicit "")
+    (let [parsed (export-declaration (form/nth-of header index) names explicit)
+          error (record-get [:ref :native.project.link/exports] parsed :err)]
+      (if (not (string=? error ""))
+        parsed
+        (namespace-export-names
+         header (+ index 1)
+         (record-get [:ref :native.project.link/exports] parsed :items)
+         (record-get [:ref :native.project.link/exports] parsed :explicit))))))
+
+(defn- find-ns-form [forms [:list [:ref :form/r]] index :i64] [:ref :form/r]
+  (if (>= index (vector-count forms))
+    (form/nil-form)
+    (let [node (typed-list-nth [:list [:ref :form/r]] forms index)]
+      (if (ns-form? node)
+        node
+        (find-ns-form forms (+ index 1))))))
+
+(defn- params-clause? [node [:ref :form/r]] :bool
+  (and (form/is-seq? node) (> (form/count-of node) 0)
+       (form/is-keyword? (form/nth-of node 0))
+       (= (form/keyword-value (form/nth-of node 0)) :params)))
+
+(defn- namespace-param-pairs [params [:ref :form/r] index :i64
+                              table [:ref :form/r]]
+  [:ref :native.project.link/schema-merge]
+  (if (>= index (form/count-of params))
+    (schema-merge-result table "")
+    (if (>= (+ index 1) (form/count-of params))
+      (schema-merge-result table "native project templates require a default type for every parameter")
+      (let [name (form/nth-of params index)
+            type (form/nth-of params (+ index 1))]
+        (cond
+          (not (simple-name? name))
+          (schema-merge-result table "native project template parameters must be simple symbols")
+
+          (not (form/is-keyword? type))
+          (schema-merge-result table "native project template defaults currently require a scalar keyword type")
+
+          (form/form-has? table name)
+          (schema-merge-result table "native project template parameters must be unique")
+
+          :else
+          (namespace-param-pairs
+           params (+ index 2) (form/assoc-form table name type)))))))
+
+(defn- namespace-parameter-defaults [forms [:list [:ref :form/r]]]
+  [:ref :native.project.link/schema-merge]
+  (let [header (find-ns-form forms 0)]
+    (if (form/is-nil? header)
+      (schema-merge-result (empty-schema-map) "dependency source has no namespace form")
+      (loop [index 2 found false table (empty-schema-map)]
+        (if (>= index (form/count-of header))
+          (schema-merge-result table "")
+          (let [clause (form/nth-of header index)]
+            (if (not (params-clause? clause))
+              (recur (+ index 1) found table)
+              (if found
+                (schema-merge-result table "native project namespace admits only one :params clause")
+                (if (or (not= (form/count-of clause) 2)
+                        (not (form/is-vec? (form/nth-of clause 1))))
+                  (schema-merge-result table "native project :params must contain one vector")
+                  (if (= 0 (form/count-of (form/nth-of clause 1)))
+                    (schema-merge-result table "native project :params must declare at least one parameter")
+                  (let [parsed (namespace-param-pairs (form/nth-of clause 1) 0 table)
+                        error (record-get [:ref :native.project.link/schema-merge] parsed :err)]
+                    (if (string=? error "")
+                      (recur (+ index 1) true
+                             (record-get [:ref :native.project.link/schema-merge] parsed :table))
+                      parsed))))))))))))
+
+(defn- generic-type-head? [node [:ref :form/r]] :bool
+  (and (form/is-keyword? node)
+       (or (= (form/keyword-value node) :set)
+           (= (form/keyword-value node) :list)
+           (= (form/keyword-value node) :ref)
+           (= (form/keyword-value node) :option)
+           (= (form/keyword-value node) :map)
+           (= (form/keyword-value node) :result)
+           (= (form/keyword-value node) :vector)
+           (= (form/keyword-value node) :fn)
+           (= (form/keyword-value node) :tuple)
+           (= (form/keyword-value node) :record))))
+
+(defn- rewrite-generic-type [node [:ref :form/r] parameters [:ref :form/r]
+                             depth :i64] [:ref :form/r]
+  (if (>= depth 32)
+    node
+    (if (form/is-symbol? node)
+      (if (form/form-has? parameters node)
+        (form/form-get parameters node)
+        node)
+      (if (and (form/is-vec? node) (> (form/count-of node) 0)
+               (generic-type-head? (form/nth-of node 0)))
+        (loop [index 0 output (empty-forms)]
+          (if (>= index (form/count-of node))
+            (form/with-children node output)
+            (let [child (form/nth-of node index)
+                  rewritten (if (= index 0)
+                              child
+                              (rewrite-generic-type child parameters (+ depth 1)))]
+              (recur (+ index 1)
+                     (typed-list-conj [:list [:ref :form/r]] output rewritten)))))
+        node))))
+
+(defn- rewrite-generic-type-sites [node [:ref :form/r]
+                                   parameters [:ref :form/r] depth :i64]
+  [:ref :form/r]
+  (if (or (>= depth 64)
+          (and (form/is-seq? node) (> (form/count-of node) 0)
+               (form/is-symbol? (form/nth-of node 0))
+               (or (string=? (form/symbol-value (form/nth-of node 0)) "quote")
+                   (string=? (form/symbol-value (form/nth-of node 0)) "ns"))))
+    node
+    (if (and (form/is-vec? node) (> (form/count-of node) 0)
+             (generic-type-head? (form/nth-of node 0)))
+      (rewrite-generic-type node parameters 0)
+      (if (or (form/is-seq? node) (form/is-vec? node)
+              (form/is-map? node) (form/is-set? node))
+        (loop [index 0 output (empty-forms)]
+          (if (>= index (form/count-of node))
+            (form/with-children node output)
+            (recur (+ index 1)
+                   (typed-list-conj
+                    [:list [:ref :form/r]] output
+                    (rewrite-generic-type-sites (form/nth-of node index)
+                                                parameters (+ depth 1))))))
+        node))))
+
+(defn- strip-params-clause [node [:ref :form/r]] [:ref :form/r]
+  (if (not (ns-form? node))
+    node
+    (let [children (loop [index 0 output (empty-forms)]
+                     (if (>= index (form/count-of node))
+                       output
+                       (let [child (form/nth-of node index)]
+                         (recur (+ index 1)
+                                (if (and (>= index 2) (params-clause? child))
+                                  output
+                                  (typed-list-conj [:list [:ref :form/r]] output child))))))]
+      (form/with-children node children))))
+
+(defn- specialize-namespace-forms [forms [:list [:ref :form/r]]]
+  [:ref :native.project.link/specialization]
+  (let [defaults (namespace-parameter-defaults forms)
+        error (record-get [:ref :native.project.link/schema-merge] defaults :err)
+        parameters (record-get [:ref :native.project.link/schema-merge] defaults :table)]
+    (if (not (string=? error ""))
+      (specialization-result forms error)
+      (if (= (form/count-of parameters) 0)
+        (specialization-result forms "")
+        (specialization-result
+         (loop [index 0 output (empty-forms)]
+           (if (>= index (vector-count forms))
+             output
+             (let [node (typed-list-nth [:list [:ref :form/r]] forms index)
+                   rewritten (rewrite-generic-type-sites node parameters 0)
+                   stripped (strip-params-clause rewritten)]
+               (recur (+ index 1)
+                      (typed-list-conj [:list [:ref :form/r]] output stripped)))))
+         "")))))
+
+(defn- schema-clause? [node [:ref :form/r]] :bool
+  (and (form/is-seq? node) (> (form/count-of node) 0)
+       (form/is-keyword? (form/nth-of node 0))
+       (= (form/keyword-value (form/nth-of node 0)) :schemas)))
+
+(defn- merge-schema-map-pairs [target [:ref :form/r] incoming [:ref :form/r]
+                               index :i64]
+  [:ref :native.project.link/schema-merge]
+  (if (>= index (form/count-of incoming))
+    (schema-merge-result target "")
+    (let [key (form/nth-of incoming index)
+          value (form/nth-of incoming (+ index 1))]
+      (if (and (form/form-has? target key)
+               (not (form/eq (form/form-get target key) value)))
+        (schema-merge-result target "native project dependencies declare conflicting schema definitions")
+        (merge-schema-map-pairs
+         (form/assoc-form target key value)
+         incoming (+ index 2))))))
+
+(defn- merge-schema-maps [target [:ref :form/r] incoming [:ref :form/r]]
+  [:ref :native.project.link/schema-merge]
+  (if (or (not (form/is-map? target)) (not (form/is-map? incoming)))
+    (schema-merge-result target "namespace :schemas must be a map")
+    (merge-schema-map-pairs target incoming 0)))
+
+(defn- namespace-schema-table [forms [:list [:ref :form/r]]]
+  [:ref :native.project.link/schema-merge]
+  (let [header (find-ns-form forms 0)
+        attr-key (form/keyword-form :kotoba/schemas)
+        attr-map (if (and (not (form/is-nil? header))
+                          (> (form/count-of header) 2)
+                          (form/is-map? (form/nth-of header 2)))
+                   (form/nth-of header 2)
+                   (form/nil-form))
+        attr-table (if (and (form/is-map? attr-map)
+                            (form/form-has? attr-map attr-key))
+                     (form/form-get attr-map attr-key)
+                     (empty-schema-map))
+        initial (if (form/is-map? attr-table) attr-table (empty-schema-map))]
+    (if (form/is-nil? header)
+      (schema-merge-result initial "dependency source has no namespace form")
+      (loop [index 2 current initial]
+        (if (>= index (form/count-of header))
+          (schema-merge-result current "")
+          (let [clause (form/nth-of header index)]
+            (if (schema-clause? clause)
+              (if (or (not= (form/count-of clause) 2)
+                      (not (form/is-map? (form/nth-of clause 1))))
+                (schema-merge-result current "namespace :schemas must contain one map")
+                (let [merged (merge-schema-maps current (form/nth-of clause 1))
+                      error (record-get [:ref :native.project.link/schema-merge] merged :err)]
+                  (if (string=? error "")
+                    (recur (+ index 1)
+                           (record-get [:ref :native.project.link/schema-merge] merged :table))
+                    merged)))
+              (recur (+ index 1) current))))))))
+
+(defn- merge-import-schemas [imports [:list [:ref :native.project.link/import]]
+                             index :i64 current [:ref :form/r]]
+  [:ref :native.project.link/schema-merge]
+  (if (>= index (vector-count imports))
+    (schema-merge-result current "")
+    (let [item (typed-list-nth [:list [:ref :native.project.link/import]] imports index)
+          merged (merge-schema-maps
+                  current
+                  (record-get [:ref :native.project.link/import] item :schemas))
+          error (record-get [:ref :native.project.link/schema-merge] merged :err)]
+      (if (string=? error "")
+        (merge-import-schemas imports (+ index 1)
+                              (record-get [:ref :native.project.link/schema-merge] merged :table))
+        merged))))
+
+(defn- implicit-export-names [forms [:list [:ref :form/r]] index :i64
+                              names [:list :string]]
+  [:ref :native.project.link/exports]
+  (if (>= index (vector-count forms))
+    (exports-result names false "")
+    (let [node (typed-list-nth [:list [:ref :form/r]] forms index)]
+      (if (public-defn? node)
+        (let [name-form (form/nth-of node 1)]
+          (if (not (simple-name? name-form))
+            (exports-result names false "public function names must be simple symbols")
+            (implicit-export-names
+             forms (+ index 1)
+             (typed-list-conj [:list :string] names (form/symbol-value name-form)))))
+        (implicit-export-names forms (+ index 1) names)))))
+
+(defn- exported-definitions [forms [:list [:ref :form/r]]]
+  [:ref :native.project.link/exports]
+  (let [header (find-ns-form forms 0)]
+    (if (form/is-nil? header)
+      (exports-result (empty-strings) false "dependency source has no namespace form")
+      (let [declared (namespace-export-names header 2 (empty-strings) false)
+            declared-error (record-get [:ref :native.project.link/exports] declared :err)]
+        (if (not (string=? declared-error ""))
+          declared
+          (if (record-get [:ref :native.project.link/exports] declared :explicit)
+            declared
+            (implicit-export-names forms 0 (empty-strings))))))))
+
+(defn- find-export-definition [forms [:list [:ref :form/r]] name :string]
+  [:ref :native.project.link/definition]
+  (loop [index 0 found (form/nil-form) count 0]
+    (if (>= index (vector-count forms))
+      (cond
+        (= count 0) (definition-result found false "export does not name a public function")
+        (> count 1) (definition-result found false "exported function is defined more than once")
+        :else (definition-result found true ""))
+      (let [node (typed-list-nth [:list [:ref :form/r]] forms index)]
+        (if (and (defn-form? node)
+                 (simple-name? (form/nth-of node 1))
+                 (string=? (form/symbol-value (form/nth-of node 1)) name))
+          (if (public-defn? node)
+            (recur (+ index 1) node (+ count 1))
+            (definition-result found false "private function cannot be imported"))
+          (recur (+ index 1) found count))))))
+
+(defn- native-stub-fields-supported? [fields [:ref :form/r]
+                                     schemas [:ref :form/r] index :i64 depth :i64] :bool
+  (if (>= index (form/count-of fields))
+    true
+    (and (>= (form/count-of (form/nth-of fields index)) 2)
+         (native-stub-type? (form/nth-of (form/nth-of fields index) 1)
+                            schemas (+ depth 1))
+         (native-stub-fields-supported? fields schemas (+ index 1) depth))))
+
+(defn- native-stub-record-supported? [type [:ref :form/r]
+                                      schemas [:ref :form/r] depth :i64] :bool
+  (let [name (form/nth-of type 1)
+        descriptor (if (form/form-has? schemas name)
+                     (form/form-get schemas name)
+                     (form/nil-form))]
+    (and (< depth 8)
+         (form/is-vec? descriptor)
+         (= (form/count-of descriptor) 3)
+         (form/is-keyword? (form/nth-of descriptor 0))
+         (= (form/keyword-value (form/nth-of descriptor 0)) :record)
+         (form/eq (form/nth-of descriptor 1) name)
+         (form/is-vec? (form/nth-of descriptor 2))
+         (native-stub-fields-supported? (form/nth-of descriptor 2) schemas 0 depth))))
+
+(defn- native-stub-type? [type [:ref :form/r]
+                          schemas [:ref :form/r] depth :i64] :bool
+  (if (form/is-keyword? type)
+    (or (= (form/keyword-value type) :i64)
+        (= (form/keyword-value type) :f32)
+        (= (form/keyword-value type) :f64)
+        (= (form/keyword-value type) :string)
+        (= (form/keyword-value type) :keyword)
+        (= (form/keyword-value type) :symbol)
+        (= (form/keyword-value type) :map)
+        (= (form/keyword-value type) :bool)
+        (= (form/keyword-value type) :bytes)
+        (= (form/keyword-value type) :option-i64)
+        (= (form/keyword-value type) :result-i64)
+        (= (form/keyword-value type) :vector-i64)
+        (= (form/keyword-value type) :vector-f64)
+        (= (form/keyword-value type) :string-index)
+        (= (form/keyword-value type) :disjoint-set-i64)
+        (= (form/keyword-value type) :document))
+    (and (form/is-vec? type)
+         (= (form/count-of type) 2)
+         (form/is-keyword? (form/nth-of type 0))
+         (or (and (= (form/keyword-value (form/nth-of type 0)) :ref)
+                  (form/is-keyword? (form/nth-of type 1))
+                  (if (= (form/keyword-value (form/nth-of type 1)) :form/r)
+                    true
+                    (native-stub-record-supported? type schemas depth)))
+             (and (= (form/keyword-value (form/nth-of type 0)) :option)
+                  (form/is-keyword? (form/nth-of type 1))
+                  (= (form/keyword-value (form/nth-of type 1)) :i64))
+             (and (= (form/keyword-value (form/nth-of type 0)) :set)
+                  (native-stub-type? (form/nth-of type 1) schemas (+ depth 1)))
+             (and (= (form/keyword-value (form/nth-of type 0)) :list)
+                  (native-stub-type? (form/nth-of type 1) schemas (+ depth 1)))))))
+
+(defn- zero-argument-call [name :string] [:ref :form/r]
+  (form/form-seq
+   (typed-list-conj [:list [:ref :form/r]] (empty-forms)
+                    (form/symbol-form name))))
+
+(defn- one-argument-call [name :string argument [:ref :form/r]] [:ref :form/r]
+  (form/form-seq
+   (typed-list-conj
+    [:list [:ref :form/r]]
+    (typed-list-conj [:list [:ref :form/r]] (empty-forms)
+                     (form/symbol-form name))
+    argument)))
+
+(defn- form-node-stub [type [:ref :form/r]] [:ref :form/r]
+  (let [children-6
+        (typed-list-conj
+         [:list [:ref :form/r]]
+         (typed-list-conj
+          [:list [:ref :form/r]]
+          (typed-list-conj
+           [:list [:ref :form/r]]
+           (typed-list-conj
+            [:list [:ref :form/r]]
+            (typed-list-conj
+             [:list [:ref :form/r]]
+             (typed-list-conj
+              [:list [:ref :form/r]]
+              (typed-list-conj [:list [:ref :form/r]] (empty-forms)
+                               (form/symbol-form "record-new"))
+              type)
+             (form/int-form 0))
+            (form/string-form ""))
+           (form/int-form 0))
+          (form/keyword-form :none))
+         (one-argument-call "typed-list-new"
+                            (form/form-vec
+                             (form/two-forms
+                              (form/keyword-form :list)
+                              (form/form-vec
+                               (form/two-forms (form/keyword-form :ref)
+                                               (form/keyword-form :form/r)))))))
+        children-7
+        (typed-list-conj [:list [:ref :form/r]] children-6 (form/int-form 0))
+        children
+        (typed-list-conj [:list [:ref :form/r]] children-7 (zero-argument-call "bytes-empty"))]
+    (form/form-seq children)))
+
+(defn- schema-record-arguments [type [:ref :form/r] schemas [:ref :form/r]
+                               fields [:ref :form/r] index :i64
+                               output [:list [:ref :form/r]] depth :i64]
+  [:list [:ref :form/r]]
+  (if (>= index (form/count-of fields))
+    output
+    (let [field (form/nth-of fields index)
+          field-type (form/nth-of field 1)]
+      (schema-record-arguments
+       type schemas fields (+ index 1)
+       (typed-list-conj [:list [:ref :form/r]] output
+                        (stub-value-form field-type schemas (+ depth 1)))
+       depth))))
+
+(defn- schema-record-stub [type [:ref :form/r] schemas [:ref :form/r]
+                           depth :i64] [:ref :form/r]
+  (let [schema-name (form/nth-of type 1)
+        descriptor (form/form-get schemas schema-name)
+        fields (form/nth-of descriptor 2)
+        initial (typed-list-conj
+                 [:list [:ref :form/r]]
+                 (typed-list-conj [:list [:ref :form/r]] (empty-forms)
+                                  (form/symbol-form "record-new"))
+                 type)
+        arguments (schema-record-arguments type schemas fields 0 initial depth)]
+    (form/form-seq arguments)))
+
+(defn- stub-value-form [type [:ref :form/r] schemas [:ref :form/r]
+                        depth :i64] [:ref :form/r]
+  (if (form/is-vec? type)
+    (let [head (if (> (form/count-of type) 0) (form/nth-of type 0) (form/nil-form))]
+      (cond
+        (and (= (form/count-of type) 2)
+             (form/is-keyword? head)
+             (= (form/keyword-value head) :option)
+             (form/is-keyword? (form/nth-of type 1))
+             (= (form/keyword-value (form/nth-of type 1)) :i64))
+        (one-argument-call "option-none-of" type)
+
+        (and (= (form/count-of type) 2)
+             (form/is-keyword? head)
+             (= (form/keyword-value head) :list))
+        (one-argument-call "typed-list-new" type)
+
+        (and (= (form/count-of type) 2)
+             (form/is-keyword? head)
+             (= (form/keyword-value head) :set))
+        (one-argument-call "typed-set-new" type)
+
+        (and (= (form/count-of type) 2)
+             (form/is-keyword? head)
+             (= (form/keyword-value head) :ref)
+             (form/is-keyword? (form/nth-of type 1))
+             (= (form/keyword-value (form/nth-of type 1)) :form/r))
+        (form-node-stub type)
+
+        (and (= (form/count-of type) 2)
+             (form/is-keyword? head)
+             (= (form/keyword-value head) :ref)
+             (form/is-keyword? (form/nth-of type 1))
+             (native-stub-record-supported? type schemas depth))
+        (schema-record-stub type schemas depth)
+
+        :else (form/nil-form)))
+    (let [name (form/keyword-value type)]
+      (cond
+      (= name :i64) (form/int-form 0)
+      (= name :f32) (one-argument-call "f32-from-bits" (form/int-form 0))
+      (= name :f64) (one-argument-call "f64-from-bits" (form/int-form 0))
+      (= name :string) (form/string-form "")
+      (= name :keyword) (form/keyword-form :kotoba.stub/value)
+      (= name :symbol) (one-argument-call "symbol" (form/string-form "kotoba.stub/value"))
+      (= name :map) (form/form-map (empty-forms))
+      (= name :bool) (form/bool-form false)
+      (= name :bytes) (zero-argument-call "bytes-empty")
+      (= name :option-i64) (zero-argument-call "option-none")
+      (= name :result-i64) (one-argument-call "result-ok" (form/int-form 0))
+      (= name :vector-i64) (zero-argument-call "vector-i64")
+      (= name :vector-f64) (zero-argument-call "vector-f64")
+      (= name :string-index) (zero-argument-call "string-index-new")
+      (= name :disjoint-set-i64) (one-argument-call "disjoint-set-i64-new" (form/int-form 0))
+      (= name :document) (zero-argument-call "document-null")
+        :else (form/nil-form)))))
+
+(defn- parameter-type-item? [node [:ref :form/r]] :bool
+  (or (form/is-keyword? node)
+      (and (form/is-vec? node)
+           (> (form/count-of node) 0)
+           (form/is-keyword? (form/nth-of node 0)))))
+
+(defn- typed-parameters-error [params [:ref :form/r] schemas [:ref :form/r]] :string
+  (if (not (form/is-vec? params))
+    "native imports require a parameter vector"
+    (loop [index 0]
+      (if (>= index (form/count-of params))
+        ""
+        (let [name (form/nth-of params index)
+              next-index (+ index 1)
+              annotated (and (< next-index (form/count-of params))
+                             (parameter-type-item? (form/nth-of params next-index)))]
+          (cond
+            (not (simple-name? name))
+            "native imported parameters must be simple names"
+            (and annotated
+                 (not (native-stub-type? (form/nth-of params next-index) schemas 0)))
+            "native imports currently support only closed primitive value parameters"
+            :else (recur (if annotated (+ next-index 1) next-index))))))))
+
+(defn- arity-stub-form [params [:ref :form/r] result-type [:ref :form/r]
+                       schemas [:ref :form/r]] [:ref :form/r]
+  (form/form-seq
+   (typed-list-conj
+    [:list [:ref :form/r]]
+    (typed-list-conj
+     [:list [:ref :form/r]]
+     (typed-list-conj [:list [:ref :form/r]] (empty-forms) params)
+     result-type)
+    (stub-value-form result-type schemas 0))))
+
+(defn- signature-add-arity
+  [clauses [:list [:ref :form/r]] params [:ref :form/r]
+   result-type [:ref :form/r] has-body? :bool schemas [:ref :form/r]]
+  [:ref :native.project.link/signature]
+  (let [parameter-error (typed-parameters-error params schemas)]
+    (cond
+      (not has-body?)
+      (signature-result clauses "native imports require an explicit result type and a body")
+
+      (not (native-stub-type? result-type schemas 0))
+      (signature-result clauses
+                        "native imports currently support only closed primitive value results")
+
+      (not (string=? parameter-error ""))
+      (signature-result clauses parameter-error)
+
+      :else
+      (signature-result
+       (typed-list-conj [:list [:ref :form/r]] clauses
+                        (arity-stub-form params result-type schemas))
+       ""))))
+
+(defn- multi-arity-signatures
+  [definition [:ref :form/r] start :i64 clauses [:list [:ref :form/r]]
+   schemas [:ref :form/r]]
+  [:ref :native.project.link/signature]
+  (loop [index start current clauses]
+    (if (>= index (form/count-of definition))
+      (if (= (vector-count current) 0)
+        (signature-result current "native imports require at least one arity clause")
+        (signature-result current ""))
+      (let [arity (form/nth-of definition index)]
+        (if (not (form/is-seq? arity))
+          (signature-result current
+                            "native multi-arity imports require each arity to be a clause list")
+          (let [arity-count (form/count-of arity)
+                params (if (> arity-count 0) (form/nth-of arity 0) (form/nil-form))
+                result-type (if (> arity-count 1) (form/nth-of arity 1) (form/nil-form))
+                parsed (signature-add-arity current params result-type
+                                            (> arity-count 2) schemas)
+                error (record-get [:ref :native.project.link/signature] parsed :err)]
+            (if (not (string=? error ""))
+              parsed
+              (recur (+ index 1)
+                     (record-get [:ref :native.project.link/signature] parsed :clauses)))))))))
+
+(defn- signature-params [definition [:ref :form/r] schemas [:ref :form/r]]
+  [:ref :native.project.link/signature]
+  (let [argument-start (if (and (> (form/count-of definition) 2)
+                                (form/is-string? (form/nth-of definition 2)))
+                         3 2)]
+    (if (>= argument-start (form/count-of definition))
+      (signature-result (empty-forms)
+                        "native imports require single-arity or multi-arity function declarations")
+      (if (form/is-vec? (form/nth-of definition argument-start))
+        (let [params (form/nth-of definition argument-start)
+              result-index (+ argument-start 1)
+              result-type (if (< result-index (form/count-of definition))
+                            (form/nth-of definition result-index)
+                            (form/nil-form))]
+          (signature-add-arity
+           (empty-forms) params result-type
+           (> (form/count-of definition) (+ result-index 1)) schemas))
+        (multi-arity-signatures definition argument-start (empty-forms) schemas)))))
+
+(defn- stub-definition-form [stub :string clauses [:list [:ref :form/r]]] [:ref :form/r]
+  (let [children
+        (typed-list-conj
+         [:list [:ref :form/r]]
+         (typed-list-conj [:list [:ref :form/r]] (empty-forms)
+                          (form/symbol-form "defn-"))
+         (form/symbol-form stub))]
+    (if (= (vector-count clauses) 1)
+      (let [arity (typed-list-nth [:list [:ref :form/r]] clauses 0)]
+        (loop [index 0 result children]
+          (if (>= index (form/count-of arity))
+            (form/form-seq result)
+            (recur (+ index 1)
+                   (typed-list-conj [:list [:ref :form/r]] result
+                                    (form/nth-of arity index))))))
+      (loop [index 0 result children]
+        (if (>= index (vector-count clauses))
+          (form/form-seq result)
+          (recur (+ index 1)
+                 (typed-list-conj [:list [:ref :form/r]] result
+                                  (typed-list-nth [:list [:ref :form/r]] clauses index))))))))
+(defn- source-by-name [modules [:list [:ref :native.project/source]] name :string]
+  [:ref :native.project/source]
+  (loop [index 0]
+    (if (>= index (vector-count modules))
+      (record-new [:ref :native.project/source] "" "" false)
+      (let [module (typed-list-nth [:list [:ref :native.project/source]] modules index)]
+        (if (string=? (record-get [:ref :native.project/source] module :namespace) name)
+          module
+          (recur (+ index 1)))))))
+
+(defn- packet-schema-union [modules [:list [:ref :native.project/source]] index :i64
+                            current [:ref :form/r]]
+  [:ref :native.project.link/schema-merge]
+  "Collect the schema table of every packet module into one union map.
+  Modules that fail to parse, specialize, or yield a schema table are skipped
+  so a single over-limit module cannot break the existing build; conflicting
+  schema definitions between modules propagate as errors."
+  (if (>= index (vector-count modules))
+    (schema-merge-result current "")
+    (let [module (typed-list-nth [:list [:ref :native.project/source]] modules index)
+          text (record-get [:ref :native.project/source] module :text)
+          parsed (reader/read-interface-forms-bounded text 512 1048576)
+          parse-error (record-get [:ref :kotoba.reader/out] parsed :err)]
+      (if (not (string=? parse-error ""))
+        (packet-schema-union modules (+ index 1) current)
+        (let [specialized (specialize-namespace-forms
+                           (record-get [:ref :kotoba.reader/out] parsed :forms))
+              specialization-error (record-get [:ref :native.project.link/specialization] specialized :err)]
+          (if (not (string=? specialization-error ""))
+            (packet-schema-union modules (+ index 1) current)
+            (let [schema-result (namespace-schema-table
+                                 (record-get [:ref :native.project.link/specialization] specialized :forms))
+                  schema-error (record-get [:ref :native.project.link/schema-merge] schema-result :err)]
+              (if (not (string=? schema-error ""))
+                (packet-schema-union modules (+ index 1) current)
+                (let [merged (merge-schema-maps
+                              current
+                              (record-get [:ref :native.project.link/schema-merge] schema-result :table))
+                      merge-error (record-get [:ref :native.project.link/schema-merge] merged :err)]
+                  (if (not (string=? merge-error ""))
+                    merged
+                    (packet-schema-union modules (+ index 1)
+                                         (record-get [:ref :native.project.link/schema-merge] merged :table))))))))))))
+
+(defn- export-name-present? [names [:list :string] wanted :string] :bool
+  (loop [index 0]
+    (if (>= index (vector-count names))
+      false
+      (if (string=? wanted (typed-list-nth [:list :string] names index))
+        true
+        (recur (+ index 1))))))
+
+(defn- form-refs-qualified? [node [:ref :form/r] qualified :string] :bool
+  ;; True when NODE or any descendant is a SYMBOL whose name is exactly
+  ;; QUALIFIED (review T3): only actual symbol references select export stubs.
+  ;; Comments and string literals are not symbol nodes, and a longer name
+  ;; (alias/foobar) is not a reference to alias/foo.
+  (if (form/is-symbol? node)
+    (string=? (form/symbol-value node) qualified)
+    (loop [i 0]
+      (if (>= i (form/count-of node))
+        false
+        (if (form-refs-qualified? (form/nth-of node i) qualified)
+          true
+          (recur (+ i 1)))))))
+
+(defn- forms-refs-qualified? [forms [:list [:ref :form/r]] qualified :string] :bool
+  (loop [i 0]
+    (if (>= i (vector-count forms))
+      false
+      (if (form-refs-qualified? (typed-list-nth [:list [:ref :form/r]] forms i) qualified)
+        true
+        (recur (+ i 1))))))
+
+(defn- used-export-names [names [:list :string] source :string alias :string]
+  [:list :string]
+  ;; Selection is over the consumer's PARSED forms (review T3); a raw substring
+  ;; search of the source mis-selects on name prefixes and on comments/strings.
+  ;; A parse failure selects nothing: the semantic pass reports the reader
+  ;; refusal later, and selecting no stubs fails closed at link time.
+  (let [parsed (reader/read-forms-count-bounded source 512 1048576 10000)
+        err (record-get [:ref :kotoba.reader/out] parsed :err)]
+    (if (not (string=? err ""))
+      (empty-strings)
+      (let [consumer-forms (record-get [:ref :kotoba.reader/out] parsed :forms)]
+        (loop [index 0 used (empty-strings)]
+          (if (>= index (vector-count names))
+            used
+            (let [name (typed-list-nth [:list :string] names index)
+                  qualified (string-concat alias (string-concat "/" name))]
+              (recur (+ index 1)
+                     (if (forms-refs-qualified? consumer-forms qualified)
+                       (typed-list-conj [:list :string] used name)
+                       used)))))))))
+
+(defn- import-label [alias :string export :string qualified :bool local :string] :string
+  (if qualified
+    (string-concat alias (string-concat "/" export))
+    local))
+
+(defn- append-export-stubs
+  [namespace :string alias :string qualified :bool local :string
+   names [:list :string] dep-forms [:list [:ref :form/r]]
+   dep-schemas [:ref :form/r]
+   export-index :i64 imports [:list [:ref :native.project.link/import]]
+   stub-forms [:list [:ref :form/r]]]
+  [:ref :native.project.link/stubs]
+  (if (>= export-index (vector-count names))
+    (stubs-result imports stub-forms "")
+    (if (>= (vector-count stub-forms) max-native-import-stubs)
+      (stubs-result imports stub-forms "native project import stub count exceeds limit")
+      (let [export (typed-list-nth [:list :string] names export-index)
+            label (import-label alias export qualified local)
+            found (find-export-definition dep-forms export)
+            definition-error (record-get [:ref :native.project.link/definition] found :err)]
+        (if (not (string=? definition-error ""))
+          (stubs-result imports stub-forms
+                        (string-concat (string-concat "import " label)
+                                       (string-concat ": " definition-error)))
+          (let [definition (record-get [:ref :native.project.link/definition] found :form)
+                signature (signature-params definition dep-schemas)
+                signature-error (record-get [:ref :native.project.link/signature] signature :err)]
+            (if (not (string=? signature-error ""))
+              (stubs-result imports stub-forms
+                            (string-concat (string-concat "import " label)
+                                           (string-concat ": " signature-error)))
+              (let [stub (string-concat "native_import_stub_"
+                                        (string-from-i64 (vector-count stub-forms)))
+                    clauses (record-get [:ref :native.project.link/signature] signature :clauses)
+                    stub-form (stub-definition-form stub clauses)
+                    next-imports (typed-list-conj
+                                  [:list [:ref :native.project.link/import]] imports
+                                  (import-record namespace alias export stub qualified local dep-schemas))]
+                (append-export-stubs namespace alias qualified local names dep-forms
+                                     dep-schemas (+ export-index 1) next-imports
+                                     (typed-list-conj [:list [:ref :form/r]] stub-forms
+                                                      stub-form))))))))))
+(defn- append-import-stubs
+  [items [:list [:ref :native.project.link/import]] index :i64
+   modules [:list [:ref :native.project/source]] consumer-source :string
+   packet-schemas [:ref :form/r]
+   all-imports [:list [:ref :native.project.link/import]]
+   stub-forms [:list [:ref :form/r]]]
+  [:ref :native.project.link/stubs]
+  (if (>= index (vector-count items))
+    (stubs-result all-imports stub-forms "")
+    (let [item (typed-list-nth [:list [:ref :native.project.link/import]] items index)
+          namespace (record-get [:ref :native.project.link/import] item :namespace)
+          alias (record-get [:ref :native.project.link/import] item :alias)
+          export (record-get [:ref :native.project.link/import] item :export)
+          qualified (record-get [:ref :native.project.link/import] item :qualified)
+          local (record-get [:ref :native.project.link/import] item :local)
+          source (source-by-name modules namespace)
+          source-namespace (record-get [:ref :native.project/source] source :namespace)
+          source-text (record-get [:ref :native.project/source] source :text)]
+      (if (not (string=? source-namespace namespace))
+        (stubs-result all-imports stub-forms
+                      (string-concat (string-concat "import "
+                                                     (string-concat namespace ": "))
+                                     "module is missing from dependency packet"))
+        (let [parsed (reader/read-interface-forms-bounded source-text 512 1048576)
+              parse-error (record-get [:ref :kotoba.reader/out] parsed :err)
+              dep-forms (record-get [:ref :kotoba.reader/out] parsed :forms)]
+          (if (not (string=? parse-error ""))
+            (stubs-result all-imports stub-forms
+                          (string-concat (string-concat "import "
+                                                         (string-concat namespace ": "))
+                                         parse-error))
+            (let [specialized (specialize-namespace-forms dep-forms)
+                  specialization-error (record-get [:ref :native.project.link/specialization] specialized :err)
+                  dep-forms (record-get [:ref :native.project.link/specialization] specialized :forms)]
+              (if (not (string=? specialization-error ""))
+                (stubs-result all-imports stub-forms
+                              (string-concat (string-concat "import "
+                                                             (string-concat namespace ": "))
+                                             specialization-error))
+                (let [schema-result (namespace-schema-table dep-forms)
+                      schema-error (record-get [:ref :native.project.link/schema-merge] schema-result :err)
+                      exports (exported-definitions dep-forms)
+                      export-error (record-get [:ref :native.project.link/exports] exports :err)
+                      export-names (record-get [:ref :native.project.link/exports] exports :items)]
+                  (if (not (string=? schema-error ""))
+                    (stubs-result all-imports stub-forms
+                                  (string-concat (string-concat "import "
+                                                                 (string-concat namespace ": "))
+                                                 schema-error))
+                    (if (not (string=? export-error ""))
+                      (stubs-result all-imports stub-forms
+                                    (string-concat (string-concat "import "
+                                                                   (string-concat namespace ": "))
+                                                   export-error))
+                      (let [appended (if qualified
+                                       (append-export-stubs namespace alias true ""
+                                                            (used-export-names export-names consumer-source alias)
+                                                            dep-forms packet-schemas
+                                                            0 all-imports stub-forms)
+                                       (if (not (export-name-present? export-names export))
+                                         (stubs-result
+                                          all-imports stub-forms
+                                          (string-concat
+                                           (string-concat "import " local)
+                                           (string-concat ": name is not exported by " namespace)))
+                                         (append-export-stubs
+                                          namespace "" false local
+                                          (typed-list-conj [:list :string] (empty-strings) export)
+                                          dep-forms packet-schemas 0 all-imports stub-forms)))
+                            append-error (record-get [:ref :native.project.link/stubs] appended :err)]
+                        (if (not (string=? append-error ""))
+                          appended
+                          (append-import-stubs items (+ index 1) modules consumer-source
+                                               packet-schemas
+                                               (record-get [:ref :native.project.link/stubs] appended :imports)
+                                               (record-get [:ref :native.project.link/stubs] appended :forms)))))))))))))))
+
+(defn- imported-stub [imports [:list [:ref :native.project.link/import]]
+                      name :string] :string
+  (let [slash (string-index-of name "/")
+        qualified (and (> slash 0) (< slash (- (string-byte-length name) 1)))
+        alias (if qualified (string-substring name 0 slash) "")
+        export (if qualified
+                 (string-substring name (+ slash 1) (string-byte-length name))
+                 "")]
+  (loop [index 0]
+    (if (>= index (vector-count imports))
+      ""
+      (let [item (typed-list-nth [:list [:ref :native.project.link/import]] imports index)]
+        (if (if qualified
+              (and (record-get [:ref :native.project.link/import] item :qualified)
+                   (string=? alias (record-get [:ref :native.project.link/import] item :alias))
+                   (string=? export (record-get [:ref :native.project.link/import] item :export)))
+              (and (not (record-get [:ref :native.project.link/import] item :qualified))
+                   (string=? name (record-get [:ref :native.project.link/import] item :local))))
+          (record-get [:ref :native.project.link/import] item :stub)
+          (recur (+ index 1))))))))
+
+(defn- bound-name-present? [bound [:list :string] name :string] :bool
+  (loop [index 0]
+    (if (>= index (vector-count bound))
+      false
+      (if (string=? (typed-list-nth [:list :string] bound index) name)
+        true
+        (recur (+ index 1))))))
+
+(defn- add-pattern-names [pattern [:ref :form/r] bound [:list :string]]
+  [:list :string]
+  (if (form/is-symbol? pattern)
+    (let [name (form/symbol-value pattern)]
+      (if (bound-name-present? bound name)
+        bound
+        (typed-list-conj [:list :string] bound name)))
+    (if (or (form/is-seq? pattern) (form/is-vec? pattern)
+            (form/is-map? pattern) (form/is-set? pattern))
+      (loop [index 0 current bound]
+        (if (>= index (form/count-of pattern))
+          current
+          (recur (+ index 1)
+                 (add-pattern-names (form/nth-of pattern index) current))))
+      bound)))
+
+(defn- binding-scope-after [bindings [:ref :form/r]
+                             bound [:list :string]]
+  [:list :string]
+  (loop [index 0 current bound]
+    (if (>= index (form/count-of bindings))
+      current
+      (if (>= (+ index 1) (form/count-of bindings))
+        current
+        (let [pattern (form/nth-of bindings index)
+              value (form/nth-of bindings (+ index 1))]
+          (if (and (form/is-keyword? pattern)
+                   (= (form/keyword-value pattern) :let))
+            (recur (+ index 2) (binding-scope-after value current))
+            (recur (+ index 2)
+                   (if (form/is-keyword? pattern)
+                     current
+                     (add-pattern-names pattern current)))))))))
+
+(defn- rewrite-import-head [head [:ref :form/r]
+                            imports [:list [:ref :native.project.link/import]]
+                            bound [:list :string]]
+  [:ref :form/r]
+  (if (not (form/is-symbol? head))
+    head
+    (let [text (form/symbol-value head)
+          stub (imported-stub imports text)]
+      (cond
+        (string=? stub "") head
+        (bound-name-present? bound text)
+        ;; The current Native analyzer has no function-valued local types and
+        ;; resolves call heads through the module function table. Leaving a
+        ;; shadowed :refer name bare could therefore call the imported stub.
+        ;; Turn this unsupported local call into a computed head so analysis
+        ;; fails closed instead of accepting the wrong function.
+        (form/int-form 0)
+        :else (form/symbol-form stub)))))
+
+(defn- contains-import-call? [node [:ref :form/r]
+                              imports [:list [:ref :native.project.link/import]]]
+  :bool
+  ;; Avoid cloning a complete source form when it has no imported call head.
+  ;; Quoted data and the namespace declaration are outside the rewrite pass.
+  (if (and (form/is-seq? node) (> (form/count-of node) 0)
+           (form/is-symbol? (form/nth-of node 0))
+           (or (string=? (form/symbol-value (form/nth-of node 0)) "quote")
+               (string=? (form/symbol-value (form/nth-of node 0)) "ns")))
+    false
+    (if (and (form/is-seq? node) (> (form/count-of node) 0)
+             (form/is-symbol? (form/nth-of node 0))
+             (not (string=?
+                   (imported-stub imports (form/symbol-value (form/nth-of node 0)))
+                   "")))
+      true
+      (if (or (form/is-seq? node) (form/is-vec? node)
+              (form/is-map? node) (form/is-set? node))
+        (loop [index 0]
+          (if (>= index (form/count-of node))
+            false
+            (if (contains-import-call? (form/nth-of node index) imports)
+              true
+              (recur (+ index 1)))))
+        false))))
+
+(defn- rewrite-import-form-in-scope [node [:ref :form/r]
+                                     imports [:list [:ref :native.project.link/import]]
+                                     bound [:list :string]]
+  [:ref :form/r]
+  (if (and (form/is-seq? node) (> (form/count-of node) 0)
+           (form/is-symbol? (form/nth-of node 0))
+           (or (string=? (form/symbol-value (form/nth-of node 0)) "quote")
+               (string=? (form/symbol-value (form/nth-of node 0)) "ns")))
+    node
+    (if (form/is-seq? node)
+      (let [head (if (> (form/count-of node) 0) (form/nth-of node 0) (form/nil-form))
+            op (if (form/is-symbol? head) (form/symbol-value head) "")]
+        (cond
+          (or (string=? op "let") (string=? op "loop") (string=? op "for")
+              (string=? op "doseq") (string=? op "dotimes")
+              (string=? op "when-let") (string=? op "if-let")
+              (string=? op "when-some") (string=? op "if-some")
+              (string=? op "when-first") (string=? op "binding"))
+          (if (and (> (form/count-of node) 1) (form/is-vec? (form/nth-of node 1)))
+            (let [bindings (form/nth-of node 1)
+                  after (binding-scope-after bindings bound)
+                  rebuilt (loop [index 0 output (empty-forms)]
+                            (if (>= index (form/count-of node))
+                              output
+                              (let [child (form/nth-of node index)
+                                    next-child
+                                    (cond
+                                      (= index 1) (rewrite-binding-vector bindings imports bound)
+                                      (> index 1) (rewrite-import-form-in-scope child imports after)
+                                      :else child)]
+                                (recur (+ index 1)
+                                       (typed-list-conj [:list [:ref :form/r]] output next-child)))))]
+              (form/with-children node rebuilt))
+            node)
+
+          (or (string=? op "fn"))
+          (rewrite-function-form node imports bound false)
+
+          (or (string=? op "defn") (string=? op "defn-"))
+          (rewrite-function-form node imports bound true)
+
+          (string=? op "catch")
+          (let [count (form/count-of node)
+                binder-index (- count 2)
+                binder (if (>= binder-index 1) (form/nth-of node binder-index) (form/nil-form))
+                catch-bound (add-pattern-names binder bound)
+                rebuilt (loop [index 0 output (empty-forms)]
+                          (if (>= index count)
+                            output
+                            (let [child (form/nth-of node index)
+                                  next-child (cond
+                                               (or (= index 0) (= index binder-index)) child
+                                               (= index (- count 1))
+                                               (rewrite-import-form-in-scope child imports catch-bound)
+                                               :else (rewrite-import-form-in-scope child imports bound))]
+                              (recur (+ index 1)
+                                     (typed-list-conj [:list [:ref :form/r]] output next-child)))))]
+            (form/with-children node rebuilt))
+
+          :else
+          (loop [index 0 output (empty-forms)]
+            (if (>= index (form/count-of node))
+              (form/with-children node output)
+              (let [child (form/nth-of node index)
+                    next-child (if (= index 0)
+                                 (rewrite-import-head child imports bound)
+                                 (rewrite-import-form-in-scope child imports bound))]
+                (recur (+ index 1)
+                       (typed-list-conj [:list [:ref :form/r]] output next-child)))))))
+      (if (or (form/is-vec? node) (form/is-map? node) (form/is-set? node))
+      (loop [index 0 output (empty-forms)]
+        (if (>= index (form/count-of node))
+          (form/with-children node output)
+          (let [child (form/nth-of node index)
+                next-child (rewrite-import-form-in-scope child imports bound)]
+            (recur (+ index 1)
+                   (typed-list-conj [:list [:ref :form/r]] output next-child)))))
+      node))))
+
+(defn- rewrite-binding-vector [bindings [:ref :form/r]
+                               imports [:list [:ref :native.project.link/import]]
+                               bound [:list :string]]
+  [:ref :form/r]
+  (loop [index 0 current bound output (empty-forms)]
+    (if (>= index (form/count-of bindings))
+      (form/with-children bindings output)
+      (if (>= (+ index 1) (form/count-of bindings))
+        (form/with-children
+         bindings
+         (typed-list-conj [:list [:ref :form/r]] output (form/nth-of bindings index)))
+        (let [pattern (form/nth-of bindings index)
+              value (form/nth-of bindings (+ index 1))
+              nested? (and (form/is-keyword? pattern)
+                           (= (form/keyword-value pattern) :let))
+              rewritten-value (if nested?
+                                (rewrite-binding-vector value imports current)
+                                (rewrite-import-form-in-scope value imports current))
+              next-scope (if nested?
+                           (binding-scope-after value current)
+                           (if (form/is-keyword? pattern)
+                             current
+                             (add-pattern-names pattern current)))
+              next-output (typed-list-conj
+                           [:list [:ref :form/r]]
+                           (typed-list-conj [:list [:ref :form/r]] output pattern)
+                           rewritten-value)]
+          (recur (+ index 2) next-scope next-output))))))
+
+(defn- rewrite-function-clause [clause [:ref :form/r]
+                                imports [:list [:ref :native.project.link/import]]
+                                bound [:list :string]]
+  [:ref :form/r]
+  (if (or (not (form/is-seq? clause)) (= (form/count-of clause) 0)
+          (not (form/is-vec? (form/nth-of clause 0))))
+    (rewrite-import-form-in-scope clause imports bound)
+    (let [params (form/nth-of clause 0)
+          body-bound (add-pattern-names params bound)
+          output (loop [index 0 result (empty-forms)]
+                   (if (>= index (form/count-of clause))
+                     result
+                     (let [child (form/nth-of clause index)
+                           next-child (if (= index 0)
+                                        child
+                                        (rewrite-import-form-in-scope child imports body-bound))]
+                       (recur (+ index 1)
+                              (typed-list-conj [:list [:ref :form/r]] result next-child)))))]
+      (form/with-children clause output))))
+
+(defn- rewrite-function-form [node [:ref :form/r]
+                              imports [:list [:ref :native.project.link/import]]
+                              bound [:list :string] definition? :bool]
+  [:ref :form/r]
+  (let [count (form/count-of node)
+        second (if (> count 1) (form/nth-of node 1) (form/nil-form))
+        named-fn? (and (not definition?) (form/is-symbol? second))
+        base-bound (if named-fn? (add-pattern-names second bound) bound)
+        initial-declaration-index (if named-fn? 2 1)
+        declaration-index (if definition? 2 initial-declaration-index)
+        docstring? (and definition? (< declaration-index count)
+                        (form/is-string? (form/nth-of node declaration-index)))
+        params-index (if docstring? (+ declaration-index 1) declaration-index)
+        has-params? (and (< params-index count) (form/is-vec? (form/nth-of node params-index)))
+        body-bound (if has-params?
+                     (add-pattern-names (form/nth-of node params-index) base-bound)
+                     base-bound)
+        output (loop [index 0 result (empty-forms)]
+                 (if (>= index count)
+                   result
+                   (let [child (form/nth-of node index)
+                         next-child
+                         (cond
+                           (or (= index 0) (and definition? (= index 1))
+                               (and named-fn? (= index 1))
+                               (and has-params? (= index params-index))) child
+                           (and docstring? (= index declaration-index)) child
+                           has-params? (rewrite-import-form-in-scope child imports body-bound)
+                           (and (not has-params?) (>= index params-index)
+                                (form/is-seq? child))
+                           (rewrite-function-clause child imports base-bound)
+                           :else (rewrite-import-form-in-scope child imports base-bound))]
+                     (recur (+ index 1)
+                            (typed-list-conj [:list [:ref :form/r]] result next-child)))))]
+    (form/with-children node output)))
+
+(defn- rewrite-import-form [node [:ref :form/r]
+                            imports [:list [:ref :native.project.link/import]]]
+  [:ref :form/r]
+  (if (contains-import-call? node imports)
+    (rewrite-import-form-in-scope node imports (typed-list-new [:list :string]))
+    node))
+
+(defn- module-definition-name [node [:ref :form/r]] :string
+  (if (and (form/is-seq? node) (> (form/count-of node) 1)
+           (form/is-symbol? (form/nth-of node 0))
+           (form/is-symbol? (form/nth-of node 1)))
+    (let [head (form/symbol-value (form/nth-of node 0))]
+      (if (or (string=? head "defn") (string=? head "defn-")
+              (string=? head "def") (string=? head "defrecord")
+              (string=? head "defprotocol") (string=? head "defmulti")
+              (string=? head "defmethod"))
+        (form/symbol-value (form/nth-of node 1))
+        ""))
+    ""))
+
+(defn- referred-provider [imports [:list [:ref :native.project.link/import]]
+                          local :string]
+  :string
+  (loop [index 0]
+    (if (>= index (vector-count imports))
+      ""
+      (let [item (typed-list-nth [:list [:ref :native.project.link/import]] imports index)]
+        (if (and (not (record-get [:ref :native.project.link/import] item :qualified))
+                 (string=? local (record-get [:ref :native.project.link/import] item :local)))
+          (record-get [:ref :native.project.link/import] item :namespace)
+          (recur (+ index 1)))))))
+
+(defn- referred-definition-error [forms [:list [:ref :form/r]]
+                                  imports [:list [:ref :native.project.link/import]]
+                                  form-index :i64]
+  :string
+  (if (>= form-index (vector-count forms))
+    ""
+    (let [name (module-definition-name
+                (typed-list-nth [:list [:ref :form/r]] forms form-index))
+          provider (if (string=? name "") "" (referred-provider imports name))]
+      (if (string=? provider "")
+        (referred-definition-error forms imports (+ form-index 1))
+        (string-concat
+         (string-concat (string-concat "referred name " name)
+                        (string-concat " (from " provider))
+         ") collides with a definition of this module")))))
+
+(defn- referred-definition-collision [forms [:list [:ref :form/r]]
+                                      imports [:list [:ref :native.project.link/import]]]
+  :string
+  (referred-definition-error forms imports 0))
+
+(defn- strip-require-clause [node [:ref :form/r]] [:ref :form/r]
+  (if (not (ns-form? node))
+    node
+    (let [children (loop [index 0 output (empty-forms)]
+                     (if (>= index (form/count-of node))
+                       output
+                       (let [child (form/nth-of node index)]
+                         (recur (+ index 1)
+                                (if (and (>= index 2) (require-clause? child))
+                                  output
+                                  (typed-list-conj [:list [:ref :form/r]] output child))))))]
+      (form/with-children node children))))
+
+(defn- schema-clause-form [schemas [:ref :form/r]] [:ref :form/r]
+  (form/form-seq
+   (typed-list-conj
+    [:list [:ref :form/r]]
+    (typed-list-conj [:list [:ref :form/r]] (empty-forms)
+                     (form/keyword-form :schemas))
+    schemas)))
+
+(defn- with-schema-table [node [:ref :form/r] schemas [:ref :form/r]] [:ref :form/r]
+  (if (not (ns-form? node))
+    node
+    (let [attr-key (form/keyword-form :kotoba/schemas)
+          children (loop [index 0 output (empty-forms)]
+                     (if (>= index (form/count-of node))
+                       output
+                       (let [child (form/nth-of node index)
+                             attr? (and (= index 2) (form/is-map? child)
+                                        (form/form-has? child attr-key))
+                             attr-rest (if attr?
+                                         (form/dissoc-form child attr-key)
+                                         child)
+                             skip? (or (schema-clause? child)
+                                       (and attr? (= (form/count-of attr-rest) 0)))
+                             next-output (if skip?
+                                           output
+                                           (typed-list-conj [:list [:ref :form/r]] output attr-rest))]
+                         (recur (+ index 1) next-output))))
+          with-schemas (if (> (form/count-of schemas) 0)
+                         (typed-list-conj [:list [:ref :form/r]] children
+                                          (schema-clause-form schemas))
+                         children)]
+      (form/with-children node with-schemas))))
+
+(defn- prepare-forms [forms [:list [:ref :form/r]]
+                      imports [:list [:ref :native.project.link/import]]
+                      stub-forms [:list [:ref :form/r]]
+                      schemas [:ref :form/r]]
+  [:ref :form/r]
+  (let [prepared (loop [index 0 output (empty-forms)]
+                   (if (>= index (vector-count forms))
+                     output
+                     (let [source-form (typed-list-nth [:list [:ref :form/r]] forms index)
+                           stripped (strip-require-clause source-form)
+                           rewritten (rewrite-import-form stripped imports)
+                           with-schemas (with-schema-table rewritten schemas)]
+                       (recur (+ index 1)
+                              (typed-list-conj [:list [:ref :form/r]] output with-schemas)))))]
+    (form/form-seq (form/append-many prepared stub-forms))))
+
+(defn- link-project-forms-specialized [forms [:list [:ref :form/r]] source :string
+                                      dependency-packet :string]
+  [:ref :native.project.link/result]
+  "Prepare previously parsed project forms for native semantic analysis.
+  Alias calls are rewritten to local interface stubs, and dependency schemas
+  are merged into the importing namespace for closed type checking."
+  (let [imports (parse-project-imports forms)
+        import-error (record-get [:ref :native.project.link/imports] imports :err)
+        items (record-get [:ref :native.project.link/imports] imports :items)]
+    (if (not (string=? import-error ""))
+      (link-result (form/nil-form) import-error)
+      (let [decoded (project/decode-source-packet dependency-packet)
+            packet-error (record-get [:ref :native.project/packet] decoded :err)
+            modules (record-get [:ref :native.project/packet] decoded :sources)]
+        (if (not (string=? packet-error ""))
+          (link-result (form/nil-form) packet-error)
+          (let [collision (referred-definition-collision forms items)
+                packet-schema-result (packet-schema-union modules 0 (empty-schema-map))
+                packet-schema-error (record-get [:ref :native.project.link/schema-merge] packet-schema-result :err)
+                packet-schemas (record-get [:ref :native.project.link/schema-merge] packet-schema-result :table)]
+            (if (not (string=? collision ""))
+              (link-result (form/nil-form) collision)
+              (if (not (string=? packet-schema-error ""))
+                (link-result (form/nil-form) packet-schema-error)
+                (let [stubs (append-import-stubs items 0 modules source packet-schemas
+                                                 (empty-imports) (empty-forms))
+                      stub-error (record-get [:ref :native.project.link/stubs] stubs :err)
+                      linked-imports (record-get [:ref :native.project.link/stubs] stubs :imports)
+                      local-schema-result (namespace-schema-table forms)
+                      local-schema-error (record-get [:ref :native.project.link/schema-merge] local-schema-result :err)
+                      local-schemas (record-get [:ref :native.project.link/schema-merge] local-schema-result :table)
+                      merged-schema-result (merge-schema-maps local-schemas packet-schemas)
+                      merged-schema-error (record-get [:ref :native.project.link/schema-merge] merged-schema-result :err)
+                      merged-schemas (record-get [:ref :native.project.link/schema-merge] merged-schema-result :table)]
+                  (if (not (string=? stub-error ""))
+                    (link-result (form/nil-form) stub-error)
+                    (if (not (string=? local-schema-error ""))
+                      (link-result (form/nil-form) local-schema-error)
+                      (if (not (string=? merged-schema-error ""))
+                        (link-result (form/nil-form) merged-schema-error)
+                        (link-result
+                         (prepare-forms forms linked-imports
+                                        (record-get [:ref :native.project.link/stubs] stubs :forms)
+                                        merged-schemas)
+                         "")))))))))))))
+
+(defn link-project-forms [forms [:list [:ref :form/r]] source :string
+                           surface? :bool dependency-packet :string]
+  [:ref :native.project.link/result]
+  "Validate author names, lower admitted surface syntax, then prepare forms
+  and imported calls for native semantic analysis. Explicit `:with`
+  instantiation remains unsupported."
+  (let [source-form (form/form-seq forms)]
+    (if (syntax-sugar/source-reserved? source-form)
+      (link-result (form/nil-form) "symbol uses the reserved __kotoba_ prefix")
+      (let [lowered-form (if surface?
+                           (syntax-sugar/lower-surface source-form)
+                           source-form)
+            core-forms (form/kids-of lowered-form)
+            specialized (specialize-namespace-forms core-forms)
+            error (record-get [:ref :native.project.link/specialization] specialized :err)]
+        (if (not (string=? error ""))
+          (link-result (form/nil-form) error)
+          (link-project-forms-specialized
+           (record-get [:ref :native.project.link/specialization] specialized :forms)
+           source dependency-packet))))))
+
+(defn link-project-source [source :string surface? :bool dependency-packet :string]
+  [:ref :native.project.link/result]
+  "Parse and link one project module. Call link-project-forms when the caller
+  already has the bounded reader result."
+  (let [parsed (reader/read-forms-count-bounded source 512 1048576 10000)
+        parse-error (record-get [:ref :kotoba.reader/out] parsed :err)
+        forms (record-get [:ref :kotoba.reader/out] parsed :forms)]
+    (if (not (string=? parse-error ""))
+      (link-result (form/nil-form) parse-error)
+      (link-project-forms forms source surface? dependency-packet))))

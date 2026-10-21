@@ -1,0 +1,35 @@
+;; Selfhost combined CLI entry (JUN-11 r8; tick-42 lock-aware modules route).
+;; Builder commands delegate to the seed-unity builder main; project-check
+;; commands delegate to native_cli main. `modules` is routed per invocation:
+;; with --module-lock/--blocks the pinned project-graph listing lives in
+;; native_cli (list-project-modules -> resolve-locked-project), while the
+;; unpinned build-order listing stays on the seed builder main. Routing the
+;; locked form to seed/main trapped (SIGILL) in its lock-unaware option parser.
+(ns kotoba.compiler.selfhost-cli
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.native-cli :as ncli] [seed :as seed])
+  (:capabilities #{:cli/args}))
+
+(defn- cli-arg [index :i64] :string
+  (typed-cap-call :cli/args :string :string (string-from-i64 index)))
+
+(defn- lock-option? [index :i64 argc :i64] :bool
+  (if (>= index argc)
+    false
+    (let [argument (cli-arg index)]
+      (if (or (string=? argument "--module-lock") (string=? argument "--blocks"))
+        true
+        (lock-option? (+ index 1) argc)))))
+
+(defn main [] :i64
+  (let [command (typed-cap-call :cli/args :string :string "0")
+        argc-text (typed-cap-call :cli/args :string :string "")
+        argc-result (parse-long argc-text)
+        argc (option-value-of [:option :i64] argc-result 0)
+        modules-locked? (and (string=? command "modules") (lock-option? 1 argc))]
+    (if (or (string=? command "compile-kir") (string=? command "compile")
+            (string=? command "link")
+            (and (string=? command "modules") (not modules-locked?))
+            (string=? command "extract-native"))
+      (seed/main)
+      (ncli/main))))

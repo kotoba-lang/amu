@@ -58,6 +58,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: python3 scripts/seed/build-adopted.py --output "$RUNNER_TEMP/adopted-native-selfbuild" --generations 2
+      - name: Check restored native reader and target regressions
+        run: bash scripts/seed/check-native-source-recovery.sh "$RUNNER_TEMP/adopted-native-selfbuild/artifacts/G2.bin" "$RUNNER_TEMP/adopted-native-selfbuild/host/kexe-loader" "$RUNNER_TEMP/native-source-recovery"
       - run: python3 scripts/seed/check-bounded-lookup.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
       - run: python3 scripts/seed/check-certified-scalar-calls.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
       - run: python3 scripts/seed/check-twoarg-comparisons.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"

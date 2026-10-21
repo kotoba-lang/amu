@@ -1,0 +1,120 @@
+(ns kotoba.compiler.posix-path-core
+  "Canonical Kotoba POSIX path string operations."
+  {:kotoba/export [basename dirname join normalize]})
+
+(defn- len [s :string] :i64
+  (string-byte-length s))
+
+(defn- next-slash [s :string from :i64] :i64
+  (string-find-byte s 47 from))
+
+(defn- dot-at? [s :string i :i64] :bool
+  (= i (string-find-byte s 46 i)))
+
+(defn- cut [s :string start :i64 end :i64] :string
+  (string-substring s start end))
+
+(defn- cat2 [a :string b :string] :string
+  (string-concat a b))
+
+(defn- push [v :vector-i64 x :i64] :vector-i64
+  (vector-conj v x))
+
+(defn- segments [p :string] :vector-i64
+  (let [n (len p)]
+    (loop [i 0 j (next-slash p 0) acc (vector-i64)]
+      (if (>= i n)
+        acc
+        (if (< j 0)
+          (push (push acc i) n)
+          (if (> j i)
+            (recur (inc j) (next-slash p (inc j)) (push (push acc i) j))
+            (recur (inc j) (next-slash p (inc j)) acc)))))))
+
+(defn- slash-first? [p :string] :bool
+  (and (> (len p) 0) (= 0 (next-slash p 0))))
+
+(defn- slash-last? [p :string] :bool
+  (let [n (len p)]
+    (and (> n 0)
+         (let [segs (segments p)]
+           (or (= 0 (count segs))
+               (< (nth segs (- (count segs) 1)) n))))))
+
+(defn basename [p :string] :string
+  (let [segs (segments p)
+        k (count segs)]
+    (if (= 0 k)
+      ""
+      (cut p (nth segs (- k 2)) (nth segs (- k 1))))))
+
+(defn dirname [p :string] :string
+  (if (= 0 (len p))
+    "."
+    (let [root? (slash-first? p)
+          segs (segments p)
+          k (count segs)
+          end (if (= 0 k) -1 (- (nth segs (- k 2)) 1))]
+      (cond
+        (< end 1) (if root? "/" ".")
+        (and root? (= end 1)) "//"
+        :else (cut p 0 end)))))
+
+(defn- dot-segment? [p :string start :i64 end :i64] :bool
+  (and (= 1 (- end start)) (dot-at? p start)))
+
+(defn- dot-dot-segment? [p :string start :i64 end :i64] :bool
+  (and (= 2 (- end start)) (dot-at? p start) (dot-at? p (+ start 1))))
+
+(defn- poppable? [p :string stack :vector-i64] :bool
+  (and (> (count stack) 0)
+       (not (dot-dot-segment? p (nth stack (- (count stack) 2)) (nth stack (- (count stack) 1))))))
+
+(defn- resolved-segments [p :string above-root :bool] :vector-i64
+  (let [segs (segments p)
+        k (count segs)]
+    (loop [i 0 stack (vector-i64)]
+      (if (>= i k)
+        stack
+        (if (dot-segment? p (nth segs i) (nth segs (+ i 1)))
+          (recur (+ i 2) stack)
+          (if (dot-dot-segment? p (nth segs i) (nth segs (+ i 1)))
+            (if (poppable? p stack)
+              (recur (+ i 2) (pop (pop stack)))
+              (if above-root
+                (recur (+ i 2) (push (push stack (nth segs i)) (nth segs (+ i 1))))
+                (recur (+ i 2) stack)))
+            (recur (+ i 2) (push (push stack (nth segs i)) (nth segs (+ i 1))))))))))
+
+(defn- spell [p :string stack :vector-i64] :string
+  (let [k (count stack)]
+    (loop [i 0 out ""]
+      (if (>= i k)
+        out
+        (recur (+ i 2)
+               (if (= 0 i)
+                 (cut p (nth stack i) (nth stack (+ i 1)))
+                 (cat2 (cat2 out "/") (cut p (nth stack i) (nth stack (+ i 1))))))))))
+
+(defn normalize [p :string] :string
+  (if (= 0 (len p))
+    "."
+    (let [absolute? (slash-first? p)
+          trailing? (slash-last? p)
+          body (spell p (resolved-segments p (not absolute?)))
+          spelled (cond
+                    (and (= 0 (len body)) absolute?) ""
+                    (= 0 (len body)) (if trailing? "./" ".")
+                    trailing? (cat2 body "/")
+                    :else body)]
+      (cond
+        (and absolute? (= 0 (len spelled))) "/"
+        absolute? (cat2 "/" spelled)
+        :else spelled))))
+
+(defn join [a :string b :string] :string
+  (let [joined (cond (and (= 0 (len a)) (= 0 (len b))) ""
+                     (= 0 (len a)) b
+                     (= 0 (len b)) a
+                     :else (cat2 (cat2 a "/") b))]
+    (if (= 0 (len joined)) "." (normalize joined))))

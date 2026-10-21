@@ -1,0 +1,440 @@
+(ns kotoba.compiler.frontend-tables
+  (:export [capability-registry-cljs-fallback named-operation-default-results arithmetic i32-operations i64-operations comparisons heap-operations kgraph-operations kernel-memory-operations slice-value-operations slice-constructor-elements kernel-base-positions kernel-privileged-operations rodata-literal-operations image-symbol-operations rodata-literal-encodings list-operations predicate-operations logical-operations map-operations map-presence-operations set-operations collection-count-operations vector-end-operations map-projection-operations typed-map-operations typed-safe-value-operations parametric-result-operations variant-operations generic-option-operations canonical-list-operations bytes-operations heterogeneous-vector-operations typed-set-operations canonical-typed-map-operations record-operations typed-vector-operations contextual-string-argument-indexes contextual-document-argument-indexes contextual-f64-argument-indexes contextual-f32-argument-indexes contextual-vector-f64-argument-types typed-f64-vector-operations compact-graph-operations document-fixed-operations document-variadic-operations sequencing-operations region-operations lazy-sequence-operations string-operations xml-operations decimal-operations f64-operations f32-operations type-directed-numeric-heads float-division-heads float-arithmetic-resolution float-negation-resolution explicit-numeric-conversions definition-heads pure-product-disallowed-heads non-shadowable-special-heads str-integer-heads intrinsic-helper-heads intrinsic-helper-order map-literal-value-constructors document-returning-heads document-constructor-heads document-head-set i64-answer-predicates local-state-write-heads local-state-scope-heads local-state-conditional-heads local-state-effect-heads row-operation-heads library-predicate-heads library-predicate-document-kinds document-of-constructors row-binding-heads state-perform-heads state-handle-heads stateful-def-heads effectful-def-heads structural-heads protocol-declaration-heads grammar-declared-heads forbidden-heads capability-catalog-fallback source-operation-registry-fallback capability-id->name-fallback table-get table-has? arm-specs specs])
+  (:require [kotoba.form :as form])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                      [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :form/rd [:record :form/rd [[:form [:ref :form/r]] [:pos :i64]]]}))
+
+;; Pure Kotoba route copied from frontend_tables.cljk. Keep the exported
+;; operation and policy tables in sync with the shared host namespace.
+
+(defn- set-member-from [kids [:list [:ref :form/r]] k [:ref :form/r] i :i64] :bool
+     (if (>= i (vector-count kids))
+       false
+       (if (form/eq (typed-list-nth [:list [:ref :form/r]] kids i) k)
+         true
+         (set-member-from kids k (+ i 1)))))
+
+(defn table-has? [t [:ref :form/r] k [:ref :form/r]] :bool
+     (if (form/is-map? t)
+       (form/form-has? t k)
+       (set-member-from (form/kids-of t) k 0)))
+
+(defn table-get [t [:ref :form/r] k [:ref :form/r]] [:ref :form/r]
+     (form/form-get t k))
+
+(defn capability-registry-cljs-fallback [] [:ref :form/r]
+     (form/edn-form "{:identity/sign 1 :identity/verify 2 :hash/sha256 3 :http/post 4 :log/read 5 :log/append 6 :clock/now 7 :state/transact 8 :ui/commit 9 :ui/next-event 10 :llm/generate 11 :storage/transact 12 :http/get-stream 13 :object/get-stream 14 :object/put-block 15 :object/compare-and-set-ref 16 :http/accept 17 :http/reply 18 :fs/transact 19 :process/spawn 20 :secret/get 21 :git/run 22 :entropy/draw 23 :dataspace/transact 24 :stream/accept 25 :stream/send 26 :net/datagram 27 :link/frame 28 :can/frame 29 :code/eval 30 :screen/observe 31 :screen/act 32 :env/read 33 :fs/browse 34 :fs/browse-dir 36 :fs/app-data 35 :fs/app-data-bytes 35 :io/write 37 :cli/args 38 :io/write-error 39 :sys/cwd 40 :io/read 41 :gpu/compute 42 :net/listen 43 :net/accept 44 :net/dial 45 :net/read 46 :net/write 47}"))
+
+(defn named-operation-default-results [] [:ref :form/r]
+     (form/edn-form "{fs/app-data :string fs/app-data-bytes :bytes env/read :string clock/now :string cli/args :string io/write :string io/write-error :string sys/cwd :string io/read :string process/spawn :string entropy/draw :string}"))
+
+(defn arithmetic [] [:ref :form/r]
+     (form/edn-form "#{+ - * quot bit-xor bit-and bit-or}"))
+
+(defn i32-operations [] [:ref :form/r]
+     (form/edn-form "{i32-wrap 1 u32-wrap 1 i32-wrapping-add 2 i32-wrapping-mul 2 i32-xor 2 i32-shift-left 2 i32-shift-right 2 u32-shift-right 2 xorshift32 1}"))
+
+(defn i64-operations [] [:ref :form/r]
+     (form/edn-form "{bit-not 1 i64-shift-left 2 i64-shift-right 2 u64-shift-right 2 min 2 max 2}"))
+
+(defn comparisons [] [:ref :form/r]
+     (form/edn-form "#{= < > <= >=}"))
+
+(defn heap-operations [] [:ref :form/r]
+     (form/edn-form "{pair 2 pair-first 1 pair-second 1}"))
+
+(defn kgraph-operations [] [:ref :form/r]
+     (form/edn-form "{kgraph-assert! 3 kgraph-get 2 kgraph-count 1 kgraph-entity-at 2}"))
+
+(defn kernel-memory-operations [] [:ref :form/r]
+     (form/edn-form "{ kernel-load-u8 3 kernel-store-u8 4 kernel-load-u8-4k 3 kernel-store-u8-4k 4 kernel-load-u8-16k 3 kernel-store-u8-16k 4 kernel-load-u8-64k 3 kernel-store-u8-64k 4 kernel-load-u16 3 kernel-store-u16 4 kernel-load-u16-4k 3 kernel-store-u16-4k 4 kernel-load-u16-16k 3 kernel-store-u16-16k 4 kernel-load-u16-64k 3 kernel-store-u16-64k 4 kernel-load-u32 3 kernel-store-u32 4 kernel-load-u32-4k 3 kernel-store-u32-4k 4 kernel-load-u32-16k 3 kernel-store-u32-16k 4 kernel-load-u32-64k 3 kernel-store-u32-64k 4 kernel-load-u64 3 kernel-store-u64 4 kernel-load-u64-4k 3 kernel-store-u64-4k 4 kernel-load-u64-16k 3 kernel-store-u64-16k 4 kernel-load-u64-64k 3 kernel-store-u64-64k 4 slice-load-u8 3 slice-store-u8 4 slice-load-u16 3 slice-store-u16 4 slice-load-u32 3 slice-store-u32 4 slice-load-u64 3 slice-store-u64 4 kernel-try-lock-u32 3 kernel-unlock-u32 3 kernel-atomic-add-u32 4 kernel-atomic-add-u64 4 kernel-xchg-u32 4 kernel-xchg-u64 4 kernel-cmpxchg-u32 5 kernel-cmpxchg-u64 5 kernel-subregion 4 kernel-dot-f32 5 kernel-dequant-dot-q8-0 5 kernel-dequant-dot-q4-k 5 kernel-dequant-dot-q6-k 5 kernel-dequant-dot-ptq1-0 5}"))
+
+(defn slice-value-operations [] [:ref :form/r]
+     (form/edn-form "{slice-of-u8 2 slice-of-u16 2 slice-of-u32 2 slice-of-u64 2 slice-length 1 slice-get 2 slice-set! 3 slice-sub 3}"))
+
+(defn slice-constructor-elements [] [:ref :form/r]
+     (form/edn-form "{slice-of-u8 :u8 slice-of-u16 :u16 slice-of-u32 :u32 slice-of-u64 :u64}"))
+
+(defn kernel-base-positions [] [:ref :form/r]
+     (form/edn-form "{kernel-dot-f32 [0 2] kernel-dequant-dot-q8-0 [0 2] kernel-dequant-dot-q4-k [0 2] kernel-dequant-dot-q6-k [0 2] kernel-dequant-dot-ptq1-0 [0 2]}"))
+
+(defn kernel-privileged-operations [] [:ref :form/r]
+     (form/edn-form "{kernel-boot-info 0 kernel-read-cr0 0 kernel-write-cr0 1 kernel-read-cr2 0 kernel-read-cr3 0 kernel-write-cr3 1 kernel-invlpg 1 kernel-read-cs 0 kernel-page-fault-handler-address 0 kernel-rt-timer-handler-address 0 kernel-page-fault-recovery-handler-address 0 kernel-configure-page-fault-recovery 2 kernel-load-idt 2 kernel-double-fault-handler-address 0 kernel-undefined-opcode-handler-address 0 kernel-configure-double-fault-ist 2 kernel-load-gdt-tss 2 kernel-probe-guard-write 0 kernel-probe-text-write 0 kernel-probe-nx-execute 0 kernel-probe-recoverable-guard-write 0 kernel-probe-double-fault 0 kernel-cli 0 kernel-sti 0 kernel-hlt 0 kernel-pause 0 kernel-out-u8 2 kernel-out-u32 2 kernel-in-u8 1 kernel-in-u32 1 kernel-read-msr 1 kernel-write-msr 2 kernel-cpuid-eax 2 kernel-cpuid-ebx 2 kernel-cpuid-ecx 2 kernel-cpuid-edx 2 kernel-xgetbv 1 kernel-read-cr4 0 kernel-write-cr4 1 kernel-xsetbv 2 kernel-system-table 0 kernel-load-ptr 2 kernel-uefi-call2 4 kernel-jump-to 2 kernel-uefi-call4 6 kernel-uefi-call6 8 kernel-scratch-region 0 kernel-uefi-alloc-region 6 kernel-fence-load 0 kernel-fence-store 0 kernel-fence-full 0 kernel-rdtsc 0 kernel-rdtscp 0 kernel-swapgs 0 kernel-isr-entry-address 1}"))
+
+(defn rodata-literal-operations [] [:ref :form/r]
+     (form/edn-form "{ucs2 1 guid 1 bytes-literal 1 bytes-literal-length 1}"))
+
+(defn image-symbol-operations [] [:ref :form/r]
+     (form/edn-form "{kernel-function-address 1}"))
+
+(defn rodata-literal-encodings [] [:ref :form/r]
+     (form/edn-form "{ucs2 :utf-16le-nul guid :guid-mixed-endian bytes-literal :hex-bytes}"))
+
+(defn list-operations [] [:ref :form/r]
+     (form/edn-form "#{list cons first second rest empty?}"))
+
+(defn predicate-operations [] [:ref :form/r]
+     (form/edn-form "#{not zero? pos? neg?}"))
+
+(defn logical-operations [] [:ref :form/r]
+     (form/edn-form "#{and or when}"))
+
+(defn map-operations [] [:ref :form/r]
+     (form/edn-form "#{get assoc}"))
+
+(defn map-presence-operations [] [:ref :form/r]
+     (form/edn-form "#{contains? dissoc}"))
+
+(defn set-operations [] [:ref :form/r]
+     (form/edn-form "#{conj disj}"))
+
+(defn collection-count-operations [] [:ref :form/r]
+     (form/edn-form "#{count}"))
+
+(defn vector-end-operations [] [:ref :form/r]
+     (form/edn-form "#{peek pop}"))
+
+(defn map-projection-operations [] [:ref :form/r]
+     (form/edn-form "#{keys vals}"))
+
+(defn typed-map-operations [] [:ref :form/r]
+     (form/edn-form "#{map-new map-get map-assoc}"))
+
+(defn typed-safe-value-operations [] [:ref :form/r]
+     (form/edn-form "{bool-not 1 option-some 1 option-none 0 option-some? 1 option-value 2 result-ok 1 result-err 1 result-ok? 1 result-value 2 result-error 2}"))
+
+(defn parametric-result-operations [] [:ref :form/r]
+     (form/edn-form "{result-ok-of 2 result-err-of 2 result-ok?-of 2 result-value-of 3 result-error-of 3 result-match-of 6}"))
+
+(defn variant-operations [] [:ref :form/r]
+     (form/edn-form "#{variant-new variant-match}"))
+
+(defn generic-option-operations [] [:ref :form/r]
+     (form/edn-form "#{option-some-of option-none-of option-some?-of option-value-of option-match}"))
+
+(defn canonical-list-operations [] [:ref :form/r]
+     (form/edn-form "#{typed-list-new typed-list-nth typed-list-conj}"))
+
+(defn bytes-operations [] [:ref :form/r]
+     (form/edn-form "{bytes-empty 0 bytes-count 1 bytes-at 2 bytes-slice 3 bytes-concat 2 bytes-from-vector-i64 1 vector-i64-from-bytes 1 string-from-utf8 1}"))
+
+(defn heterogeneous-vector-operations [] [:ref :form/r]
+     (form/edn-form "#{hetero-vector-new hetero-vector-count hetero-vector-at hetero-vector-assoc hetero-vector-equal}"))
+
+(defn typed-set-operations [] [:ref :form/r]
+     (form/edn-form "#{typed-set-new typed-set-count typed-set-contains typed-set-conj typed-set-disj typed-set-equal typed-set-nth}"))
+
+(defn canonical-typed-map-operations [] [:ref :form/r]
+     (form/edn-form "#{typed-map-new typed-map-count typed-map-contains typed-map-get typed-map-entry-at typed-map-assoc typed-map-dissoc typed-map-equal typed-map-keys typed-map-vals}"))
+
+(defn record-operations [] [:ref :form/r]
+     (form/edn-form "#{record-new record-get record-assoc record-equal}"))
+
+(defn typed-vector-operations [] [:ref :form/r]
+     (form/edn-form "{vector-count 1 vector-get 3 vector-at 2 vector-drop 2 vector-take 2 vector-assoc 3 vector-assoc! 3 vector-conj 2 vector-alloc 1}"))
+
+(defn contextual-string-argument-indexes [] [:ref :form/r]
+     (form/edn-form "{string-byte-length #{0} string=? #{0 1} string-concat #{0 1} string-substring #{0} string-replace-all #{0 1 2} string-contains? #{0 1} string-split-count #{0 1} string-index-of #{0 1} string-compare #{0 1} string-fold-ascii #{0} string-find-blank #{0} string-skip-blank #{0} string-index-of-from #{0 1} string-compare-lines #{0 2} string-find-byte #{0} string-append-range #{0 1} string-fold-case #{0} string-upper #{0} string-code-point-at #{0} keyword-from-string #{0} symbol #{0} string-index-contains #{1} string-index-get #{1} string-index-assoc #{1} document-string #{0} document-read #{0} document-edn-read #{0} xml-path-count #{0 1} xml-name-count #{0 1} xml-name-text #{0 1} xml-path-text #{0 1} xml-path-attr #{0 1 3} decimal-f64-parse #{0} decimal-f64x3-parse #{0}}"))
+
+(defn contextual-document-argument-indexes [] [:ref :form/r]
+     (form/edn-form "{document-count #{0} document-kind #{0} document-sha256 #{0} document-print #{0} document-edn-print #{0} document-vector-at #{0} document-list-at #{0} document-set-at #{0} document-map-entry-at #{0} document-vector-assoc #{0 2} document-vector-conj #{0 1} document-vector-drop #{0} document-vector-remove #{0} document-vector-sort #{0} document-equal? #{0 1} document-set-contains? #{0 1} document-contains #{0} document-get #{0} document-assoc #{0 2} document-dissoc #{0} document-merge #{0 1} document-string-value #{0} document-keyword-value #{0} document-symbol-value #{0} document-bool-value #{0} document-i64-value #{0} document-f64-value #{0} document-bytes-value #{0}}"))
+
+(defn contextual-f64-argument-indexes [] [:ref :form/r]
+     (form/edn-form "{f64-to-bits #{0} f64-to-i64-checked #{0} f64-to-i64-truncating #{0} f64-add #{0 1} f64-sub #{0 1} f64-mul #{0 1} f64-div #{0 1} f64-min #{0 1} f64-max #{0 1} f64-neg #{0} f64-abs #{0} f64-sqrt #{0} f64-sin-quarter-turn #{0} f64-cos-quarter-turn #{0} f64-sin-bounded #{0} f64-cos-bounded #{0} f64-exp-near-zero #{0} f64-log-near-one #{0} f64-atan2-bounded #{0 1} f64-exp-bounded #{0} f64-log-bounded #{0} f64-eq #{0 1} f64-lt #{0 1} f64-le #{0 1} f64-gt #{0 1} f64-ge #{0 1} f64-unordered #{0 1} f64-to-f32-rounded #{0}}"))
+
+(defn contextual-f32-argument-indexes [] [:ref :form/r]
+     (form/edn-form "{f32-to-bits #{0} f32-to-f64-exact #{0} f32-to-i64-checked #{0} f32-to-i64-truncating #{0} f32-add #{0 1} f32-sub #{0 1} f32-mul #{0 1} f32-div #{0 1} f32-min #{0 1} f32-max #{0 1} f32-neg #{0} f32-abs #{0} f32-sqrt #{0} f32-eq #{0 1} f32-lt #{0 1} f32-le #{0 1} f32-gt #{0 1} f32-ge #{0 1} f32-unordered #{0 1}}"))
+
+(defn contextual-vector-f64-argument-types [] [:ref :form/r]
+     (form/edn-form "{vector-f64-count {0 :vector-f64} vector-f64-get {0 :vector-f64 2 :f64} vector-f64-at {0 :vector-f64} vector-f64-drop {0 :vector-f64} vector-f64-take {0 :vector-f64} vector-f64-assoc {0 :vector-f64 2 :f64} vector-f64-conj {0 :vector-f64 1 :f64}}"))
+
+(defn typed-f64-vector-operations [] [:ref :form/r]
+     (form/edn-form "{vector-f64-count 1 vector-f64-get 3 vector-f64-at 2 vector-f64-drop 2 vector-f64-take 2 vector-f64-assoc 3 vector-f64-conj 2}"))
+
+(defn compact-graph-operations [] [:ref :form/r]
+     (form/edn-form "{string-index-new 0 string-index-count 1 string-index-contains 2 string-index-get 2 string-index-assoc 3 disjoint-set-i64-new 1 disjoint-set-i64-count 1 disjoint-set-i64-union 3}"))
+
+(defn document-fixed-operations [] [:ref :form/r]
+     (form/edn-form "{document-null 0 document-bool 1 document-i64 1 document-f64 1 document-string 1 document-keyword 1 document-symbol 1 document-bytes 1 document-count 1 document-kind 1 document-sha256 1 document-print 1 document-read 1 document-edn-print 1 document-edn-read 1 document-vector-at 2 document-list-at 2 document-set-at 2 document-map-entry-at 2 document-vector-assoc 3 document-vector-conj 2 document-vector-drop 2 document-vector-remove 2 document-vector-sort 1 document-equal? 2 document-set-contains? 2 document-contains 2 document-get 2 document-assoc 3 document-dissoc 2 document-merge 2 document-string-value 1 document-keyword-value 1 document-symbol-value 1 document-bool-value 1 document-i64-value 1 document-f64-value 1 document-bytes-value 1}"))
+
+(defn document-variadic-operations [] [:ref :form/r]
+     (form/edn-form "#{document-vector document-list document-set document-map}"))
+
+(defn sequencing-operations [] [:ref :form/r]
+     (form/edn-form "#{do}"))
+
+(defn region-operations [] [:ref :form/r]
+     (form/edn-form "{arena-scope 1}"))
+
+(defn lazy-sequence-operations [] [:ref :form/r]
+     (form/edn-form "#{lazy-cons lazy-first lazy-rest lazy-empty? lazy-map lazy-filter take drop}"))
+
+(defn string-operations [] [:ref :form/r]
+     (form/edn-form "{string-byte-length 1 string-length 1 string-from-i64 1 bytes-task-byte-count 1 task-ready? 1 object-cas-won 1 bytes-response-byte-count 1 bool-result 1 http-response-status 1 log-read-byte-count 1 string=? 2 string-concat 2 string-substring 3 string-replace-all 3 string-contains? 2 string-split-count 2 string-index-of 2 string-compare 2 string-fold-ascii 1 string-find-blank 2 string-skip-blank 2 string-index-of-from 3 string-compare-lines 4 string-find-byte 3 string-append-range 4 string-fold-case 1 string-upper 1 string-code-point-at 2 keyword-from-string 1 keyword-name 1 symbol 1}"))
+
+(defn xml-operations [] [:ref :form/r]
+     (form/edn-form "{xml-path-count 2 xml-name-count 2 xml-name-text 3 xml-path-text 3 xml-path-attr 4}"))
+
+(defn decimal-operations [] [:ref :form/r]
+     (form/edn-form "{decimal-f64-parse 1 decimal-f64x3-parse 1}"))
+
+(defn f64-operations [] [:ref :form/r]
+     (form/edn-form "{f64-to-bits 1 f64-from-bits 1 f64-add 2 f64-sub 2 f64-mul 2 f64-div 2 f64-min 2 f64-max 2 f64-neg 1 f64-abs 1 f64-sqrt 1 f64-sin-quarter-turn 1 f64-cos-quarter-turn 1 f64-sin-bounded 1 f64-cos-bounded 1 f64-exp-near-zero 1 f64-log-near-one 1 f64-atan2-bounded 2 f64-exp-bounded 1 f64-log-bounded 1 f64-eq 2 f64-lt 2 f64-le 2 f64-gt 2 f64-ge 2 f64-unordered 2 i64-to-f64-checked 1 i64-to-f64-rounded 1 f64-to-i64-checked 1 f64-to-i64-truncating 1}"))
+
+(defn f32-operations [] [:ref :form/r]
+     (form/edn-form "{f32-to-bits 1 f32-from-bits 1 f64-to-f32-rounded 1 f32-to-f64-exact 1 i64-to-f32-checked 1 i64-to-f32-rounded 1 f32-to-i64-checked 1 f32-to-i64-truncating 1 f32-add 2 f32-sub 2 f32-mul 2 f32-div 2 f32-min 2 f32-max 2 f32-neg 1 f32-abs 1 f32-sqrt 1 f32-eq 2 f32-lt 2 f32-le 2 f32-gt 2 f32-ge 2 f32-unordered 2}"))
+
+(defn arm-specs [] [:ref :form/r]
+     (form/edn-form "{bytes-empty [[] :bytes] bytes-count [[:bytes] :i64] bytes-at [[:bytes :i64] :i64] bytes-slice [[:bytes :i64 :i64] :bytes] bytes-concat [[:bytes :bytes] :bytes] bytes-from-vector-i64 [[:vector-i64] :bytes] vector-i64-from-bytes [[:bytes] :vector-i64] string-from-utf8 [[:bytes] :string] kernel-function-address [[] :i64]}"))
+
+(defn specs [] [:ref :form/r]
+     (form/edn-form "[{bool-not [[[0 :bool]] :bool] option-some [[[0 :i64]] :option-i64]} {option-some? [[[0 :option-i64]] :bool] option-value [[[0 :option-i64] [1 :i64]] :i64] result-ok [[[0 :i64]] :result-i64] result-err [[[0 :i64]] :result-i64] result-ok? [[[0 :result-i64]] :bool] result-value [[[0 :result-i64] [1 :i64]] :i64] result-error [[[0 :result-i64] [1 :i64]] :i64] vector-alloc [[[0 :i64]] :vector-i64] vector-new [[[:all 0 :i64]] :vector-i64]} {vector-get [[[0 :vector-i64] [1 :i64] [2 :i64]] :i64] vector-at [[[0 :vector-i64] [1 :i64]] :i64] vector-drop [[[0 :vector-i64] [1 :i64]] :vector-i64] vector-take [[[0 :vector-i64] [1 :i64]] :vector-i64] vector-assoc [[[0 :vector-i64] [1 :i64] [2 :i64]] :vector-i64] vector-assoc! [[[0 :vector-i64] [1 :i64] [2 :i64]] :vector-i64] vector-conj [[[0 :vector-i64] [1 :i64]] :vector-i64] vector-f64-new [[[:all 0 :f64]] :vector-f64] vector-f64-count [[[0 :vector-f64]] :i64] vector-f64-get [[[0 :vector-f64] [1 :i64] [2 :f64]] :f64] vector-f64-at [[[0 :vector-f64] [1 :i64]] :f64] vector-f64-drop [[[0 :vector-f64] [1 :i64]] :vector-f64] vector-f64-take [[[0 :vector-f64] [1 :i64]] :vector-f64] vector-f64-assoc [[[0 :vector-f64] [1 :i64] [2 :f64]] :vector-f64] vector-f64-conj [[[0 :vector-f64] [1 :f64]] :vector-f64]} {string-index-count [[[0 :string-index]] :i64] string-index-contains [[[0 :string-index] [1 :string]] :bool] string-index-get [[[0 :string-index] [1 :string]] [:option :i64]] string-index-assoc [[[0 :string-index] [1 :string] [2 :i64]] :string-index] disjoint-set-i64-new [[[0 :i64]] :disjoint-set-i64] disjoint-set-i64-count [[[0 :disjoint-set-i64]] :i64] disjoint-set-i64-union [[[0 :disjoint-set-i64] [1 :i64] [2 :i64]] [:option :disjoint-set-i64]]} {document-bool [[[0 :bool]] :document] document-i64 [[[0 :i64]] :document] document-f64 [[[0 :f64]] :document] document-string [[[0 :string]] :document] document-keyword [[[0 :keyword]] :document] document-symbol [[[0 :symbol]] :document] document-vector [[[:all 0 :document]] :document] document-list [[[:all 0 :document]] :document] document-set [[[:all 0 :document]] :document]} {document-count [[[0 :document]] :i64] document-kind [[[0 :document]] :keyword] document-sha256 [[[0 :document]] :string] document-print [[[0 :document]] :string] document-read [[[0 :string]] :document] document-edn-print [[[0 :document]] :string] document-edn-read [[[0 :string]] :document] document-vector-at [[[0 :document] [1 :i64]] [:option :document]] document-list-at [[[0 :document] [1 :i64]] [:option :document]] document-map-entry-at [[[0 :document] [1 :i64]] [:option :document]] document-vector-assoc [[[0 :document] [1 :i64] [2 :document]] :document] document-vector-conj [[[0 :document] [1 :document]] :document] document-vector-drop [[[0 :document] [1 :i64]] :document] document-vector-remove [[[0 :document] [1 :i64]] :document] document-vector-sort [[[0 :document]] :document]} {document-equal? [[[0 :document] [1 :document]] :bool] document-set-contains? [[[0 :document] [1 :document]] :bool]} {document-merge [[[:all 0 :document]] :document] document-string-value [[[0 :document]] [:option :string]] document-keyword-value [[[0 :document]] [:option :keyword]] document-symbol-value [[[0 :document]] [:option :symbol]] document-bool-value [[[0 :document]] [:option :bool]] document-i64-value [[[0 :document]] [:option :i64]] document-f64-value [[[0 :document]] [:option :f64]]} {cap-call [[[1 :i64]] :i64] string-byte-length [[[0 :string]] :i64] string-length [[[0 :string]] :i64] string-from-i64 [[[0 :i64]] :string]} {bytes-task-byte-count [[[0 [:task [:stream :bytes]]]] :i64] task-ready? [[[0 [:task [:stream :bytes]]]] :i64]} {bool-result [[[0 :bool]] :i64]} {string=? [[[:all 0 :string]] :bool] string-concat [[[:all 0 :string]] :string] string-substring [[[0 :string] [:all 1 :i64]] :string] string-replace-all [[[:all 0 :string]] :string] string-contains? [[[:all 0 :string]] :bool] string-index-of [[[0 :string] [1 :string]] :i64] string-split-count [[[:all 0 :string]] :i64] string-compare [[[0 :string] [1 :string]] :i64] string-fold-ascii [[[0 :string]] :string] string-find-blank [[[0 :string] [1 :i64]] :i64] string-skip-blank [[[0 :string] [1 :i64]] :i64] string-index-of-from [[[0 :string] [1 :string] [2 :i64]] :i64] string-compare-lines [[[0 :string] [1 :i64] [2 :string] [3 :i64]] :i64] string-find-byte [[[0 :string] [1 :i64] [2 :i64]] :i64] string-append-range [[[0 :string] [1 :string] [2 :i64] [3 :i64]] :string]} {string-code-point-at [[[0 :string] [1 :i64]] :i64] string-fold-case [[[0 :string]] :string] string-upper [[[0 :string]] :string] keyword-from-string [[[0 :string]] :keyword] keyword-name [[[0 :keyword]] :string] symbol [[[0 :string]] :symbol] xml-path-count [[[:all 0 :string]] :i64] xml-name-count [[[:all 0 :string]] :i64] xml-name-text [[[0 :string] [1 :string] [2 :i64]] [:option :string]] xml-path-text [[[0 :string] [1 :string] [2 :i64]] [:option :string]] xml-path-attr [[[0 :string] [1 :string] [2 :i64] [3 :string]] [:option :string]] decimal-f64-parse [[[0 :string]] [:option :f64]] decimal-f64x3-parse [[[0 :string]] [:option [:vector [:f64 :f64 :f64]]]] f64-to-bits [[[0 :f64]] :i64] f64-from-bits [[[0 :i64]] :f64] i64-to-f64-checked [[[0 :i64]] :f64] i64-to-f64-rounded [[[0 :i64]] :f64] f64-to-i64-checked [[[0 :f64]] :i64] f64-to-i64-truncating [[[0 :f64]] :i64] f64-add [[[:all 0 :f64]] :f64] f64-sub [[[:all 0 :f64]] :f64] f64-mul [[[:all 0 :f64]] :f64] f64-div [[[:all 0 :f64]] :f64] f64-min [[[:all 0 :f64]] :f64] f64-max [[[:all 0 :f64]] :f64] f64-neg [[[0 :f64]] :f64] f64-abs [[[0 :f64]] :f64] f64-sqrt [[[0 :f64]] :f64] f64-sin-quarter-turn [[[0 :f64]] :f64] f64-cos-quarter-turn [[[0 :f64]] :f64] f64-sin-bounded [[[0 :f64]] :f64] f64-cos-bounded [[[0 :f64]] :f64] f64-exp-near-zero [[[0 :f64]] :f64] f64-log-near-one [[[0 :f64]] :f64] f64-atan2-bounded [[[:all 0 :f64]] :f64] f64-exp-bounded [[[0 :f64]] :f64] f64-log-bounded [[[0 :f64]] :f64] f64-eq [[[:all 0 :f64]] :bool] f64-lt [[[:all 0 :f64]] :bool] f64-le [[[:all 0 :f64]] :bool] f64-gt [[[:all 0 :f64]] :bool] f64-ge [[[:all 0 :f64]] :bool] f64-unordered [[[:all 0 :f64]] :bool] f32-to-bits [[[0 :f32]] :i64] f32-from-bits [[[0 :i64]] :f32] f64-to-f32-rounded [[[0 :f64]] :f32] f32-to-f64-exact [[[0 :f32]] :f64] i64-to-f32-checked [[[0 :i64]] :f32] i64-to-f32-rounded [[[0 :i64]] :f32] f32-to-i64-checked [[[0 :f32]] :i64] f32-to-i64-truncating [[[0 :f32]] :i64] f32-add [[[:all 0 :f32]] :f32] f32-sub [[[:all 0 :f32]] :f32] f32-mul [[[:all 0 :f32]] :f32] f32-div [[[:all 0 :f32]] :f32] f32-min [[[:all 0 :f32]] :f32] f32-max [[[:all 0 :f32]] :f32] f32-neg [[[0 :f32]] :f32] f32-abs [[[0 :f32]] :f32] f32-sqrt [[[0 :f32]] :f32] f32-eq [[[:all 0 :f32]] :bool] f32-lt [[[:all 0 :f32]] :bool] f32-le [[[:all 0 :f32]] :bool] f32-gt [[[:all 0 :f32]] :bool] f32-ge [[[:all 0 :f32]] :bool] f32-unordered [[[:all 0 :f32]] :bool]} {map-get [[[0 :map] [1 :keyword] [2 :i64]] :i64]}]"))
+
+(defn type-directed-numeric-heads [] [:ref :form/r]
+     (form/edn-form "#{+ - * / < <= > >= =}"))
+
+(defn float-division-heads [] [:ref :form/r]
+     (form/edn-form "#{/}"))
+
+(defn float-arithmetic-resolution [] [:ref :form/r]
+     (form/edn-form "{:f64 {+ f64-add - f64-sub * f64-mul / f64-div < f64-lt <= f64-le > f64-gt >= f64-ge = f64-eq} :f32 {+ f32-add - f32-sub * f32-mul / f32-div < f32-lt <= f32-le > f32-gt >= f32-ge = f32-eq}}"))
+
+(defn float-negation-resolution [] [:ref :form/r]
+     (form/edn-form "{:f64 f64-neg :f32 f32-neg}"))
+
+(defn explicit-numeric-conversions [] [:ref :form/r]
+     (form/edn-form "{[:i64 :f64] [i64-to-f64-checked i64-to-f64-rounded] [:f64 :i64] [f64-to-i64-checked f64-to-i64-truncating] [:i64 :f32] [i64-to-f32-checked i64-to-f32-rounded] [:f32 :i64] [f32-to-i64-checked f32-to-i64-truncating] [:f32 :f64] [f32-to-f64-exact] [:f64 :f32] [f64-to-f32-rounded]}"))
+
+(defn definition-heads [] [:ref :form/r]
+     (form/edn-form "#{ns def defn defn- defrecord defprotocol definterface extend-type extend-protocol defdesugar defmulti defmethod}"))
+
+(defn pure-product-disallowed-heads [] [:ref :form/r]
+     (form/edn-form "#{cap-call typed-cap-call assert! retract! observe! facet-enter! facet-leave! doseq dotimes defmulti defmethod throw try catch future pmap agent send send-off atom swap! reset! deref condp cond-> cond->> some-> some->> as-> -> ->>}"))
+
+(defn non-shadowable-special-heads [] [:ref :form/r]
+     (form/edn-form "#{let if do fn loop recur}"))
+
+(defn str-integer-heads [] [:ref :form/r]
+     (form/edn-form "#{+ - * quot mod rem inc dec count string-length string-byte-length bit-and bit-or bit-xor bit-shift-left bit-shift-right vector-count vector-at}"))
+
+(defn intrinsic-helper-heads [] [:ref :form/r]
+     (form/edn-form "{subvec [__kotoba_intrinsic_subvec [__kotoba_intrinsic_subvec]] string-to-utf8 [__kotoba_intrinsic_string_to_utf8 [__kotoba_intrinsic_string_to_utf8]] subvec-from [__kotoba_intrinsic_subvec_from [__kotoba_intrinsic_subvec_from]] ex-info [__kotoba_intrinsic_ex_info [__kotoba_intrinsic_ex_info]] ex-message [__kotoba_intrinsic_ex_message [__kotoba_intrinsic_ex_message]] ex-data [__kotoba_intrinsic_ex_data [__kotoba_intrinsic_ex_data]] string-parse-i64 [__kotoba_intrinsic_parse_i64 [__kotoba_intrinsic_parse_i64]] parse-long [__kotoba_intrinsic_parse_long [__kotoba_intrinsic_parse_i64 __kotoba_intrinsic_parse_long]]}"))
+
+(defn intrinsic-helper-order [] [:ref :form/r]
+     (form/edn-form "[__kotoba_intrinsic_subvec __kotoba_intrinsic_subvec_from __kotoba_intrinsic_string_to_utf8 __kotoba_intrinsic_ex_info __kotoba_intrinsic_ex_message __kotoba_intrinsic_ex_data __kotoba_intrinsic_parse_i64 __kotoba_intrinsic_parse_long]"))
+
+(defn map-literal-value-constructors [] [:ref :form/r]
+     (form/edn-form "{typed-map-new :map typed-set-new :set record-new :record hetero-vector-new :vector option-some-of :option option-none-of :option}"))
+
+(defn document-returning-heads [] [:ref :form/r]
+     (form/edn-form "#{keys vals rest next first second nth assoc dissoc merge select-keys update get-in assoc-in map mapv filter filterv remove concat keep into}"))
+
+(defn document-constructor-heads [] [:ref :form/r]
+     (form/edn-form "#{document-vector document-list document-map document-set document-null document-assoc document-dissoc document-merge document-vector-conj document-vector-drop document-string document-keyword document-symbol document-i64 document-bool document-f64 document-bytes document-read document-edn-read __kotoba_document_of}"))
+
+(defn document-head-set [] [:ref :form/r]
+     (form/edn-form "#{merge select-keys get-in assoc-in update empty? some every? concat keep into}"))
+
+(defn i64-answer-predicates [] [:ref :form/r]
+     (form/edn-form "#{record-equal hetero-vector-equal typed-set-equal typed-map-equal task-ready? object-cas-won}"))
+
+(defn local-state-write-heads [] [:ref :form/r]
+     (form/edn-form "#{atom swap! reset!}"))
+
+(defn local-state-scope-heads [] [:ref :form/r]
+     (form/edn-form "#{fn fn* loop recur doseq dotimes lazy-seq}"))
+
+(defn local-state-conditional-heads [] [:ref :form/r]
+     (form/edn-form "#{and or if-not when-not if-let when-let if-some when-some some-> some->> cond-> cond->> condp match try catch throw assert -> ->> as->}"))
+
+(defn local-state-effect-heads [] [:ref :form/r]
+     (form/edn-form "#{cap-call typed-cap-call assert! retract! observe! facet-enter! facet-leave!}"))
+
+(defn row-operation-heads [] [:ref :form/r]
+     (form/edn-form "#{map-assoc dissoc select-keys merge}"))
+
+(defn library-predicate-heads [] [:ref :form/r]
+     (form/edn-form "#{true? false? integer? boolean? string? keyword? symbol? map? vector? set? list? seq? coll?}"))
+
+(defn library-predicate-document-kinds [] [:ref :form/r]
+     (form/edn-form "{true? #{:bool} false? #{:bool} integer? #{:i64} boolean? #{:bool} string? #{:string} keyword? #{:keyword} symbol? #{:symbol} map? #{:map} vector? #{:vector} set? #{:set} list? #{:list} seq? #{:list} coll? #{:vector :list :set :map}}"))
+
+(defn document-of-constructors [] [:ref :form/r]
+     (form/edn-form "{:i64 document-i64 :string document-string :keyword document-keyword :bool document-bool :f64 document-f64 :bytes document-bytes}"))
+
+(defn row-binding-heads [] [:ref :form/r]
+     (form/edn-form "#{option-match result-match-of variant-match}"))
+
+(defn state-perform-heads [] [:ref :form/r]
+     (form/edn-form "#{__kotoba_state_perform __kotoba_state_op}"))
+
+(defn state-handle-heads [] [:ref :form/r]
+     (form/edn-form "#{__kotoba_state_handle __kotoba_state_with}"))
+
+(defn stateful-def-heads [] [:ref :form/r]
+     (form/edn-form "#{atom delay volatile! agent promise future}"))
+
+(defn effectful-def-heads [] [:ref :form/r]
+     (form/edn-form "#{cap-call typed-cap-call}"))
+
+(defn structural-heads [] [:ref :form/r]
+     (form/edn-form "#{ns def defn defn- defmulti defmethod defrecord defprotocol definterface extend-type extend-protocol defdesugar if let let* do fn loop recur quote var recur-to}"))
+
+(defn protocol-declaration-heads [] [:ref :form/r]
+     (form/edn-form "#{defprotocol definterface}"))
+
+(defn grammar-declared-heads [] [:ref :form/r]
+     (form/edn-form "#{* + - -> ->> / < <= = > >= alloc alloc-checked and apply arena-scope as-> assert assoc atom-local bit-and bit-or bit-shift-left bit-shift-right bit-xor byte-at byte-store! bytes bytes-at bytes-concat bytes-count bytes-empty bytes-from-vector-i64 bytes-len bytes-ptr bytes-slice call-indirect cap-acquire case closed-multimethod cond cond->> condp conj cons contains? count data-host-arg dataspace dec defdesugar disj dissoc do document doseq dotimes drop empty? eval expression-absence f32 f32* f32+ f32- f32-add f32-div f32-max f32-min f32-mul f32-sub f32< f32<= f32= f32> f32>= f32div f32neg f32sqrt f64-add f64-div f64-max f64-min f64-mul f64-sub filter first fn fn-ref get has-capability? host-i64-roundtrip i32-store! i64 i64* i64+ i64- i64and i64or i64shl i64shr i64ushr i64xor if-let if-not if-some inc inline-fn-callback integer? interface-contract invoke kernel-atomic-add-u32 kernel-atomic-add-u64 kernel-boot-info kernel-cli kernel-cmpxchg-u32 kernel-cmpxchg-u64 kernel-configure-double-fault-ist kernel-configure-page-fault-recovery kernel-cpuid-eax kernel-cpuid-ebx kernel-cpuid-ecx kernel-cpuid-edx kernel-dequant-dot-ptq1-0 kernel-dequant-dot-q4-k kernel-dequant-dot-q6-k kernel-dequant-dot-q8-0 kernel-dot-f32 kernel-double-fault-handler-address kernel-fence-full kernel-fence-load kernel-fence-store kernel-hlt kernel-in-u32 kernel-in-u8 kernel-invlpg kernel-isr-entry-address kernel-jump-to kernel-load-gdt-tss kernel-load-idt kernel-load-ptr kernel-load-u16 kernel-load-u16-16k kernel-load-u16-4k kernel-load-u16-64k kernel-load-u32 kernel-load-u32-16k kernel-load-u32-4k kernel-load-u32-64k kernel-load-u64 kernel-load-u64-16k kernel-load-u64-4k kernel-load-u64-64k kernel-load-u8 kernel-load-u8-16k kernel-load-u8-4k kernel-load-u8-64k kernel-out-u32 kernel-out-u8 kernel-page-fault-handler-address kernel-page-fault-recovery-handler-address kernel-pause kernel-probe-double-fault kernel-probe-guard-write kernel-probe-nx-execute kernel-probe-recoverable-guard-write kernel-probe-text-write kernel-rdtsc kernel-rdtscp kernel-read-cr0 kernel-read-cr2 kernel-read-cr3 kernel-read-cr4 kernel-read-cs kernel-read-msr kernel-rt-timer-handler-address kernel-scratch-region kernel-sti kernel-store-u16 kernel-store-u16-16k kernel-store-u16-4k kernel-store-u16-64k kernel-store-u32 kernel-store-u32-16k kernel-store-u32-4k kernel-store-u32-64k kernel-store-u64 kernel-store-u64-16k kernel-store-u64-4k kernel-store-u64-64k kernel-store-u8 kernel-store-u8-16k kernel-store-u8-4k kernel-store-u8-64k kernel-subregion kernel-swapgs kernel-system-table kernel-try-lock-u32 kernel-uefi-alloc-region kernel-uefi-call2 kernel-uefi-call4 kernel-uefi-call6 kernel-undefined-opcode-handler-address kernel-unlock-u32 kernel-write-cr0 kernel-write-cr3 kernel-write-cr4 kernel-write-msr kernel-xchg-u32 kernel-xchg-u64 kernel-xgetbv kernel-xsetbv keys keyword-literal keyword? lazy-cons lazy-empty? lazy-filter lazy-first lazy-map lazy-rest list loop-recur map map-indexed map-literal match max mem-byte-at mem-i32-at memory-grow memory-pages min mod neg? nested-destructuring not not= nth option-or or pair pair-first pair-second peek pop portable-string-symbol-values pos? protocol-dispatch protocol-extension pure-s-expression-core quot record-constructor reduce rem rest result-err? result-ok? result-status result-value result-write! second set-literal slice-get slice-length slice-load-u16 slice-load-u32 slice-load-u64 slice-load-u8 slice-of-u16 slice-of-u32 slice-of-u64 slice-of-u8 slice-set! slice-store-u16 slice-store-u32 slice-store-u64 slice-store-u8 slice-sub some-> some->> state-ability str-len str-ptr string-append-range string-compare string-compare-lines string-concat string-contains? string-equality string-find-blank string-find-byte string-fold-ascii string-from-utf8 string-host-arg string-index-of string-index-of-from string-length string-skip-blank string-split-count string-substring string= string? symbol symbol? take throw true? try type-directed-arithmetic type-predicates typed-capability-call unsigned-bit-shift-right vals variadic-comparison vector-i64-from-bytes vector-literal when when-let when-not when-some zero?}"))
+
+(defn forbidden-heads [] [:ref :form/r]
+     (form/edn-form "#{. .. agent alter-var-root binding compile defmacro dosync future import load load-file load-string locking new ns-resolve pmap read-string ref require resolve send send-off set! use var volatile!}"))
+
+(defn capability-catalog-fallback [] [:ref :form/r]
+     (form/edn-form "{:capabilities {:can/frame {:source-operation can/frame :effect :can/frame :compiler-wire-id 29}
+                    :cli/args {:source-operation cli/args :effect :cli/args :compiler-wire-id 38}
+                    :clock/now {:source-operation clock/now :effect :clock/now :compiler-wire-id 7}
+                    :code/eval {:source-operation code/eval :effect :code/eval :compiler-wire-id 30}
+                    :dataspace/transact {:source-operation dataspace/transact :effect :dataspace/transact :compiler-wire-id 24}
+                    :entropy/draw {:source-operation entropy/draw :effect :entropy/draw :compiler-wire-id 23}
+                    :env/read {:source-operation env/read :effect :env/read :compiler-wire-id 33}
+                    :fs/app-data {:source-operation fs/app-data :effect :fs/app-data :compiler-wire-id 35}
+                    :fs/app-data-bytes {:source-operation fs/app-data-bytes :effect :fs/app-data-bytes :compiler-wire-id 35}
+                    :fs/browse {:source-operation fs/browse :effect :fs/browse :compiler-wire-id 34}
+                    :fs/browse-dir {:source-operation fs/browse-dir :effect :fs/browse-dir :compiler-wire-id 36}
+                    :fs/transact {:source-operation fs/transact :effect :fs/transact :compiler-wire-id 19}
+                    :git/run {:source-operation git/run :effect :git/run :compiler-wire-id 22}
+                    :gpu/compute {:source-operation gpu/compute :effect :gpu/compute :compiler-wire-id 42}
+                    :hash/sha256 {:source-operation hash/sha256 :effect :hash/sha256 :compiler-wire-id 3}
+                    :http/accept {:source-operation http/accept :effect :http/accept :compiler-wire-id 17}
+                    :http/get-stream {:source-operation http/get-stream :effect :http/get-stream :compiler-wire-id 13}
+                    :http/post {:source-operation http/post :effect :http/post :compiler-wire-id 4}
+                    :http/reply {:source-operation http/reply :effect :http/reply :compiler-wire-id 18}
+                    :identity/sign {:source-operation identity/sign :effect :identity/sign :compiler-wire-id 1}
+                    :identity/verify {:source-operation identity/verify :effect :identity/verify :compiler-wire-id 2}
+                    :io/read {:source-operation io/read :effect :io/read :compiler-wire-id 41}
+                    :io/write {:source-operation io/write :effect :io/write :compiler-wire-id 37}
+                    :io/write-error {:source-operation io/write-error :effect :io/write-error :compiler-wire-id 39}
+                    :link/frame {:source-operation link/frame :effect :link/frame :compiler-wire-id 28}
+                    :llm/generate {:source-operation llm/generate :effect :llm/generate :compiler-wire-id 11}
+                    :log/append {:source-operation log/append :effect :log/append :compiler-wire-id 6}
+                    :log/read {:source-operation log/read :effect :log/read :compiler-wire-id 5}
+                    :net/accept {:source-operation net/accept :effect :net/accept :compiler-wire-id 44}
+                    :net/datagram {:source-operation net/datagram :effect :net/datagram :compiler-wire-id 27}
+                    :net/dial {:source-operation net/dial :effect :net/dial :compiler-wire-id 45}
+                    :net/listen {:source-operation net/listen :effect :net/listen :compiler-wire-id 43}
+                    :net/read {:source-operation net/read :effect :net/read :compiler-wire-id 46}
+                    :net/write {:source-operation net/write :effect :net/write :compiler-wire-id 47}
+                    :object/compare-and-set-ref {:source-operation object/compare-and-set-ref :effect :object/compare-and-set-ref :compiler-wire-id 16}
+                    :object/get-stream {:source-operation object/get-stream :effect :object/get-stream :compiler-wire-id 14}
+                    :object/put-block {:source-operation object/put-block :effect :object/put-block :compiler-wire-id 15}
+                    :process/spawn {:source-operation process/spawn :effect :process/spawn :compiler-wire-id 20}
+                    :screen/act {:source-operation screen/act :effect :screen/act :compiler-wire-id 32}
+                    :screen/observe {:source-operation screen/observe :effect :screen/observe :compiler-wire-id 31}
+                    :secret/get {:source-operation secret/get :effect :secret/get :compiler-wire-id 21}
+                    :state/transact {:source-operation state/transact :effect :state/transact :compiler-wire-id 8}
+                    :storage/transact {:source-operation storage/transact :effect :storage/transact :compiler-wire-id 12}
+                    :stream/accept {:source-operation stream/accept :effect :stream/accept :compiler-wire-id 25}
+                    :stream/send {:source-operation stream/send :effect :stream/send :compiler-wire-id 26}
+                    :sys/cwd {:source-operation sys/cwd :effect :sys/cwd :compiler-wire-id 40}
+                    :ui/commit {:source-operation ui/commit :effect :ui/commit :compiler-wire-id 9}
+                    :ui/next-event {:source-operation ui/next-event :effect :ui/next-event :compiler-wire-id 10}}}"))
+
+(defn source-operation-registry-fallback [] [:ref :form/r]
+     (form/edn-form "{can/frame :can/frame
+ cli/args :cli/args
+ clock/now :clock/now
+ code/eval :code/eval
+ dataspace/transact :dataspace/transact
+ entropy/draw :entropy/draw
+ env/read :env/read
+ fs/app-data :fs/app-data
+ fs/app-data-bytes :fs/app-data-bytes
+ fs/browse :fs/browse
+ fs/browse-dir :fs/browse-dir
+ fs/transact :fs/transact
+ git/run :git/run
+ gpu/compute :gpu/compute
+ hash/sha256 :hash/sha256
+ http/accept :http/accept
+ http/get-stream :http/get-stream
+ http/post :http/post
+ http/reply :http/reply
+ identity/sign :identity/sign
+ identity/verify :identity/verify
+ io/read :io/read
+ io/write :io/write
+ io/write-error :io/write-error
+ link/frame :link/frame
+ llm/generate :llm/generate
+ log/append :log/append
+ log/read :log/read
+ net/accept :net/accept
+ net/datagram :net/datagram
+ net/dial :net/dial
+ net/listen :net/listen
+ net/read :net/read
+ net/write :net/write
+ object/compare-and-set-ref :object/compare-and-set-ref
+ object/get-stream :object/get-stream
+ object/put-block :object/put-block
+ process/spawn :process/spawn
+ screen/act :screen/act
+ screen/observe :screen/observe
+ secret/get :secret/get
+ state/transact :state/transact
+ storage/transact :storage/transact
+ stream/accept :stream/accept
+ stream/send :stream/send
+ sys/cwd :sys/cwd
+ ui/commit :ui/commit
+ ui/next-event :ui/next-event}"))
+
+(defn capability-id->name-fallback [] [:ref :form/r]
+     (form/edn-form "{1 :identity/sign
+ 2 :identity/verify
+ 3 :hash/sha256
+ 4 :http/post
+ 5 :log/read
+ 6 :log/append
+ 7 :clock/now
+ 8 :state/transact
+ 9 :ui/commit
+ 10 :ui/next-event
+ 11 :llm/generate
+ 12 :storage/transact
+ 13 :http/get-stream
+ 14 :object/get-stream
+ 15 :object/put-block
+ 16 :object/compare-and-set-ref
+ 17 :http/accept
+ 18 :http/reply
+ 19 :fs/transact
+ 20 :process/spawn
+ 21 :secret/get
+ 22 :git/run
+ 23 :entropy/draw
+ 24 :dataspace/transact
+ 25 :stream/accept
+ 26 :stream/send
+ 27 :net/datagram
+ 28 :link/frame
+ 29 :can/frame
+ 30 :code/eval
+ 31 :screen/observe
+ 32 :screen/act
+ 33 :env/read
+ 34 :fs/browse
+ 35 :fs/app-data
+ 36 :fs/browse-dir
+ 37 :io/write
+ 38 :cli/args
+ 39 :io/write-error
+ 40 :sys/cwd
+ 41 :io/read
+ 42 :gpu/compute
+ 43 :net/listen
+ 44 :net/accept
+ 45 :net/dial
+ 46 :net/read
+ 47 :net/write}"))

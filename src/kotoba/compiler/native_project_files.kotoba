@@ -1,0 +1,588 @@
+;; Native, capability-bounded source-path discovery for the project graph.
+;; Semantic import rewriting and multi-module lowering remain in a later stage.
+(ns kotoba.compiler.native-project-files
+  {:kotoba/export [resolve-project resolve-locked-project direct-dependency-source-packet]}
+  (:require [kotoba.compiler.kotoba-reader :as reader]
+            [kotoba.compiler.native-project :as native-project]
+            [kotoba.form :as form])
+  (:capabilities #{:fs/app-data :hash/sha256})
+  (:schemas {:native.project.files/roots
+             [:record :native.project.files/roots
+              [[:paths [:list :string]] [:err :string]]]
+             :native.project.files/lock
+             [:record :native.project.files/lock
+              [[:root :string] [:modules [:ref :form/r]] [:err :string]]]
+             :native.project/source
+             [:record :native.project/source
+              [[:namespace :string] [:text :string] [:surface :bool]]]
+             :native.project/graph
+             [:record :native.project/graph
+              [[:modules [:list [:ref :native.project/source]]]
+               [:order [:list :string]]
+               [:err :string]]]}))
+
+(def max-source-roots 16)
+(def max-source-modules 256)
+(def max-source-edges 256)
+(def max-project-source-bytes 8388608)
+(def max-project-packet-bytes 8519680)
+(def max-module-lock-bytes 1048576)
+
+(defn- empty-strings [] [:list :string]
+  (typed-list-new [:list :string]))
+
+(defn- roots-result [paths [:list :string] error :string]
+  [:ref :native.project.files/roots]
+  (record-new [:ref :native.project.files/roots] paths error))
+
+(defn- graph-error [message :string]
+  [:ref :native.project/graph]
+  (record-new [:ref :native.project/graph]
+              (typed-list-new [:list [:ref :native.project/source]])
+              (empty-strings) message))
+
+(defn- string-list-contains? [items [:list :string] value :string] :bool
+  (loop [index 0]
+    (if (>= index (vector-count items))
+      false
+      (if (string=? (typed-list-nth [:list :string] items index) value)
+        true
+        (recur (+ index 1))))))
+
+(defn- absolute-path? [path :string] :bool
+  (and (> (string-length path) 0)
+       (<= (string-byte-length path) 4096)
+       (string=? (string-substring path 0 1) "/")
+       (= (string-index-of path "\n") -1)))
+
+(defn- file-exists? [path :string] :bool
+  (let [reply (typed-cap-call :fs/app-data :string :string
+                              (string-concat path (string-concat "EXISTS" "_SEP")))]
+    (and (> (string-length reply) 0)
+         (= (string-code-point-at reply 0) 49))))
+
+(defn- decode-roots [text :string] [:ref :native.project.files/roots]
+  (if (string=? text "")
+    (roots-result (empty-strings) "")
+    (loop [offset 0 paths (empty-strings)]
+      (if (>= offset (string-byte-length text))
+        (roots-result paths "")
+        (let [found (string-index-of-from text "\n" offset)
+              end (if (< found 0) (string-byte-length text) found)
+              path (string-substring text offset end)]
+          (cond
+            (= end offset)
+            (roots-result paths "source-path entries must be non-empty")
+
+            (not (absolute-path? path))
+            (roots-result paths "source-path roots must be absolute paths up to 4096 bytes")
+
+            (not (string-list-contains? paths path))
+            (if (>= (vector-count paths) max-source-roots)
+              (roots-result paths "source-path root count exceeds 16")
+              (recur (+ end 1) (typed-list-conj [:list :string] paths path)))
+
+            :else
+            (recur (+ end 1) paths)))))))
+
+(defn- namespace-relative-path [namespace :string] :string
+  (string-replace-all
+   (string-replace-all namespace "." "/")
+   "-" "_"))
+
+(defn- root-base [root :string] :string
+  (let [length (string-byte-length root)]
+    (if (and (> length 1)
+             (string=? (string-substring root (- length 1) length) "/"))
+      (string-substring root 0 (- length 1))
+      root)))
+
+(defn- project-extension [index :i64] :string
+  (case index 0 ".kotoba" 1 ".cljk" ".cljc"))
+
+(defn- candidate-in-root [root :string relative :string] :string
+  (let [base (root-base root)]
+    (loop [index 0]
+      (if (> index 2)
+        ""
+        (let [prefix (if (string=? base "/") "" base)
+              path (string-concat prefix
+                                  (string-concat "/"
+                                                 (string-concat relative
+                                                                (project-extension index))))]
+          (if (file-exists? path)
+            path
+            (recur (+ index 1))))))))
+
+(defn- kotoba-file? [path :string] :bool
+  (let [length (string-byte-length path)]
+    (and (>= length 7)
+         (string=? (string-substring path (- length 7) length) ".kotoba"))))
+
+(defn- locate-module [roots [:list :string] namespace :string] :string
+  (let [relative (namespace-relative-path namespace)]
+    (loop [index 0 found "" found-count 0 kotoba "" kotoba-count 0]
+      (if (>= index (vector-count roots))
+        (cond
+          (= found-count 0) ""
+          (= found-count 1) found
+          (= kotoba-count 1) kotoba
+          :else "\n")
+        (let [candidate (candidate-in-root
+                         (typed-list-nth [:list :string] roots index) relative)]
+          (if (string=? candidate "")
+            (recur (+ index 1) found found-count kotoba kotoba-count)
+            (if (kotoba-file? candidate)
+              (recur (+ index 1) candidate (+ found-count 1)
+                     candidate (+ kotoba-count 1))
+              (recur (+ index 1) candidate (+ found-count 1) kotoba kotoba-count))))))))
+
+(defn- read-module-file [path :string] :string
+  (typed-cap-call :fs/app-data :string :string path))
+
+(defn- parent-path [path :string] :string
+  (loop [slash (string-index-of-from path "/" 1) last-slash 0]
+    (if (< slash 0)
+      (if (= last-slash 0) "/" (string-substring path 0 last-slash))
+      (recur (string-index-of-from path "/" (+ slash 1)) slash))))
+
+(defn- entry-source-root [path :string namespace :string] :string
+  (let [relative (namespace-relative-path namespace)
+        ext (cond
+              (and (>= (string-byte-length path) 7)
+                   (string=? (string-substring path (- (string-byte-length path) 7)
+                                               (string-byte-length path)) ".kotoba")) ".kotoba"
+              (and (>= (string-byte-length path) 5)
+                   (string=? (string-substring path (- (string-byte-length path) 5)
+                                               (string-byte-length path)) ".cljk")) ".cljk"
+              :else ".cljc")
+        suffix (string-concat relative ext)
+        path-length (string-byte-length path)
+        suffix-length (string-byte-length suffix)]
+    (if (and (>= path-length suffix-length)
+             (string=? (string-substring path (- path-length suffix-length)
+                                         path-length)
+                       suffix))
+      (let [prefix (string-substring path 0 (- path-length suffix-length))]
+        (if (string=? prefix "")
+          "/"
+          (root-base prefix)))
+      (parent-path path))))
+
+(defn- path-suffix? [path :string suffix :string] :bool
+  (let [length (string-byte-length path)
+        suffix-length (string-byte-length suffix)]
+    (and (>= length suffix-length)
+         (string=? (string-substring path (- length suffix-length) length) suffix))))
+
+(defn- source-frame [namespace :string source :string surface? :bool] :string
+  (string-concat
+   (if surface? "1\n" "0\n")
+   (string-concat
+    (string-from-i64 (string-byte-length namespace))
+    (string-concat "\n"
+                   (string-concat
+                    (string-from-i64 (string-byte-length source))
+                    (string-concat "\n" (string-concat namespace source)))))))
+
+(defn- empty-forms [] [:list [:ref :form/r]]
+  (typed-list-new [:list [:ref :form/r]]))
+
+(defn- lock-result [root :string modules [:ref :form/r] error :string]
+  [:ref :native.project.files/lock]
+  (record-new [:ref :native.project.files/lock] root modules error))
+
+(defn- lock-field [lock [:ref :form/r] key :keyword] [:ref :form/r]
+  (form/form-get lock (form/keyword-form key)))
+
+(defn- lock-namespace [node [:ref :form/r]] :string
+  (cond
+    (form/is-symbol? node) (form/symbol-value node)
+    (form/is-string? node) (form/string-value node)
+    :else ""))
+
+(defn- valid-lock-namespace? [namespace :string] :bool
+  (and (> (string-byte-length namespace) 0)
+       (= (string-index-of namespace "/") -1)
+       (= (string-index-of namespace "\n") -1)
+       (= (string-index-of namespace "..") -1)
+       (not (string=? (string-substring namespace 0 1) "."))
+       (not (string=? (string-substring namespace
+                                        (- (string-byte-length namespace) 1)
+                                        (string-byte-length namespace))
+                      "."))))
+
+(defn- cid-character? [character :i64] :bool
+  (or (and (>= character 97) (<= character 122))
+      (and (>= character 50) (<= character 55))))
+
+(defn- safe-cid-path? [cid :string] :bool
+  (and (= (string-byte-length cid) 59)
+       (string=? (string-substring cid 0 1) "b")
+       (loop [index 0]
+         (if (>= index (string-byte-length cid))
+           true
+           (if (cid-character? (string-code-point-at cid index))
+             (recur (+ index 1))
+             false)))))
+
+(defn- hex-digit [character :i64] :i64
+  (cond
+    (and (>= character 48) (<= character 57)) (- character 48)
+    (and (>= character 97) (<= character 102)) (+ 10 (- character 97))
+    :else -1))
+
+(defn- digest-byte [digest :string index :i64] :i64
+  (let [high (hex-digit (string-code-point-at digest (* index 2)))
+        low (hex-digit (string-code-point-at digest (+ (* index 2) 1)))]
+    (if (or (< high 0) (< low 0)) -1 (+ (* high 16) low))))
+
+(defn- raw-cid-byte [digest :string index :i64] :i64
+  (case index
+    0 1
+    1 85
+    2 18
+    3 32
+    (digest-byte digest (- index 4))))
+
+(defn- base32-digit [digest :string group :i64] :i64
+  (loop [bit-index 0 value 0]
+    (if (>= bit-index 5)
+      value
+      (let [absolute (+ (* group 5) bit-index)
+            byte-index (quot absolute 8)
+            within-byte (- absolute (* byte-index 8))
+            byte (if (< byte-index 36) (raw-cid-byte digest byte-index) 0)
+            bit (if (< byte 0)
+                  -1
+                  (bit-and (u64-shift-right byte (- 7 within-byte)) 1))]
+        (if (< bit 0)
+          -1
+          (recur (+ bit-index 1) (+ (* value 2) bit)))))))
+
+(defn- cid-from-digest [digest :string] :string
+  (if (not (= (string-byte-length digest) 64))
+    ""
+    (loop [group 0 cid "b"]
+      (if (>= group 58)
+        cid
+        (let [digit (base32-digit digest group)]
+          (if (or (< digit 0) (> digit 31))
+            ""
+            (recur (+ group 1)
+                   (string-concat cid
+                                 (string-substring "abcdefghijklmnopqrstuvwxyz234567"
+                                                   digit (+ digit 1))))))))))
+
+(defn- source-cid [source :string] :string
+  (cid-from-digest
+   (typed-cap-call :hash/sha256 :string :string source)))
+
+(defn- module-cid [modules [:ref :form/r] namespace :string] :string
+  (let [symbol-key (form/symbol-form namespace)
+        string-key (form/string-form namespace)
+        value (cond
+                (form/form-has? modules symbol-key)
+                (form/form-get modules symbol-key)
+
+                (form/form-has? modules string-key)
+                (form/form-get modules string-key)
+
+                :else (form/nil-form))]
+    (if (form/is-string? value) (form/string-value value) "")))
+
+(defn- validate-lock-pins [modules [:ref :form/r] index :i64
+                           seen [:list :string]] :string
+  (if (>= index (form/count-of modules))
+    ""
+    (let [namespace-form (form/nth-of modules index)
+          cid-form (form/nth-of modules (+ index 1))
+          namespace (lock-namespace namespace-form)
+          cid (if (form/is-string? cid-form) (form/string-value cid-form) "")]
+      (cond
+        (not (valid-lock-namespace? namespace))
+        "module lock namespace must be a simple symbol or string"
+
+        (string-list-contains? seen namespace)
+        "module lock repeats a namespace after normalization"
+
+        (not (safe-cid-path? cid))
+        "module lock entries must be CIDv1 raw SHA-256 base32 strings"
+
+        :else
+        (validate-lock-pins modules (+ index 2)
+                            (typed-list-conj [:list :string] seen namespace))))))
+
+(defn- parse-module-lock [text :string] [:ref :native.project.files/lock]
+  (if (> (string-byte-length text) max-module-lock-bytes)
+    (lock-result "" (form/form-map (empty-forms))
+                 "module lock exceeds the 1 MiB limit")
+    (let [parsed (reader/read-forms-bounded text 64 max-module-lock-bytes)
+          read-error (record-get [:ref :kotoba.reader/out] parsed :err)
+          forms (record-get [:ref :kotoba.reader/out] parsed :forms)]
+      (cond
+        (not (string=? read-error ""))
+        (lock-result "" (form/form-map (empty-forms))
+                     (string-concat "module lock reader: " read-error))
+
+        (not (= (vector-count forms) 1))
+        (lock-result "" (form/form-map (empty-forms))
+                     "module lock must contain exactly one map")
+
+        :else
+        (let [lock (typed-list-nth [:list [:ref :form/r]] forms 0)
+            schema (lock-field lock :schema)
+            root-form (lock-field lock :root)
+            modules (lock-field lock :modules)
+            root (lock-namespace root-form)
+            module-items (form/count-of modules)
+            pins-error (if (and (form/is-map? modules)
+                                (= (mod module-items 2) 0)
+                                (> module-items 0)
+                                (<= (quot module-items 2) max-source-modules))
+                         (validate-lock-pins modules 0 (empty-strings))
+                         "module lock must pin a non-empty modules map")]
+        (cond
+          (not (form/is-map? lock))
+          (lock-result "" modules "module lock must be a map")
+
+          (not (and (form/is-keyword? schema)
+                    (= (form/keyword-value schema) :kotoba.module-lock/v1)))
+          (lock-result "" modules "unknown module lock schema")
+
+          (not (valid-lock-namespace? root))
+          (lock-result "" modules "module lock must name a root namespace")
+
+          (not (string=? pins-error ""))
+          (lock-result "" modules pins-error)
+
+          (string=? (module-cid modules root) "")
+          (lock-result "" modules "module lock does not pin its own root")
+
+            :else
+            (lock-result root modules "")))))))
+
+(defn direct-dependency-source-packet
+  [modules [:list [:ref :native.project/source]] current-index :i64] :string
+  "Encode only the current module's direct imports for native interface linking.
+
+  The linker resolves imported interfaces by namespace and does not inspect
+  transitive source bodies. Passing the whole topological prefix needlessly
+  decodes every transitive source during each entry analysis."
+  (let [current (typed-list-nth [:list [:ref :native.project/source]]
+                                modules current-index)
+        current-text (record-get [:ref :native.project/source] current :text)
+        info (native-project/module-info current-text)
+        requires (record-get [:ref :native.project/module-info] info :requires)]
+    (loop [index 0 packet ""]
+      (if (>= index current-index)
+        packet
+        (let [module (typed-list-nth [:list [:ref :native.project/source]]
+                                     modules index)
+              namespace (record-get [:ref :native.project/source] module :namespace)]
+          (recur (+ index 1)
+                 (if (string-list-contains? requires namespace)
+                   (string-concat
+                    packet
+                    (source-frame namespace
+                                  (record-get [:ref :native.project/source] module :text)
+                                  (record-get [:ref :native.project/source] module :surface)))
+                   packet)))))))
+
+(defn- append-names [target [:list :string] additions [:list :string]] [:list :string]
+  (loop [index 0 out target]
+    (if (>= index (vector-count additions))
+      out
+      (recur (+ index 1)
+             (typed-list-conj [:list :string] out
+                             (typed-list-nth [:list :string] additions index))))))
+
+(defn resolve-locked-project [lock-path :string blocks-path :string]
+  [:ref :native.project/graph]
+  "Resolve and verify the reachable module-lock/v1 graph from its CID blocks.
+  This route never consults source roots and never falls back to path lookup."
+  (if (not (absolute-path? lock-path))
+    (graph-error "module-lock path must be absolute and at most 4096 bytes")
+    (if (not (absolute-path? blocks-path))
+      (graph-error "block-store path must be absolute and at most 4096 bytes")
+      (if (not (file-exists? lock-path))
+        (graph-error "module lock file was not found")
+        (if (not (file-exists? blocks-path))
+          (graph-error "block store path was not found")
+          (let [lock-text (read-module-file lock-path)
+                lock-bytes (string-byte-length lock-text)
+                parsed (parse-module-lock lock-text)
+                parse-error (record-get [:ref :native.project.files/lock] parsed :err)
+                root (record-get [:ref :native.project.files/lock] parsed :root)
+                pins (record-get [:ref :native.project.files/lock] parsed :modules)
+                blocks-root (root-base blocks-path)]
+            (cond
+              (> lock-bytes max-module-lock-bytes)
+              (graph-error "module lock exceeds the 1 MiB limit")
+
+              (not (string=? parse-error ""))
+              (graph-error parse-error)
+
+              :else
+              (loop [pending (typed-list-conj [:list :string] (empty-strings) root)
+                     cursor 0 seen (empty-strings) packet "" edges 0 source-bytes 0]
+                (if (>= cursor (vector-count pending))
+                  (native-project/resolve-graph-packet packet root)
+                  (let [namespace (typed-list-nth [:list :string] pending cursor)]
+                    (if (string-list-contains? seen namespace)
+                      (recur pending (+ cursor 1) seen packet edges source-bytes)
+                      (if (>= (vector-count seen) max-source-modules)
+                        (graph-error "project module count exceeds limit")
+                        (let [cid (module-cid pins namespace)]
+                          (if (string=? cid "")
+                            (graph-error
+                             (string-concat "required module is not pinned by the lock: "
+                                            namespace))
+                            (let [path (string-concat
+                                        (if (string=? blocks-root "/") "" blocks-root)
+                                        (string-concat "/" cid))]
+                              (if (not (file-exists? path))
+                                (graph-error "locked module block is missing from the block store")
+                                (let [source (read-module-file path)
+                                      actual-cid (source-cid source)
+                                      info (native-project/module-info source)
+                                      declared (record-get [:ref :native.project/module-info]
+                                                           info :namespace)
+                                      parse-module-error
+                                      (record-get [:ref :native.project/module-info] info :err)
+                                      requires (record-get [:ref :native.project/module-info]
+                                                           info :requires)
+                                      edges-next (+ edges (vector-count requires))
+                                      bytes-next (+ source-bytes
+                                                    (string-byte-length source))
+                                      packet-next (string-concat
+                                                   packet
+                                                   (source-frame namespace source false))
+                                      pending-next (append-names pending requires)]
+                                  (cond
+                                    (> (string-byte-length source) max-project-source-bytes)
+                                    (graph-error "locked module exceeds the source size limit")
+
+                                    (not (string=? actual-cid cid))
+                                    (graph-error "locked module block does not hash to its CID")
+
+                                    (not (string=? parse-module-error ""))
+                                    (graph-error
+                                     (string-concat "locked module reader: "
+                                                    parse-module-error))
+
+                                    (not (string=? namespace declared))
+                                    (graph-error
+                                     (string-concat
+                                      "locked module declares a different namespace: "
+                                      namespace))
+
+                                    (> edges-next max-source-edges)
+                                    (graph-error "project dependency edges exceed limit")
+
+                                    (> bytes-next max-project-source-bytes)
+                                    (graph-error "project source bytes exceed limit")
+
+                                    (> (string-byte-length packet-next)
+                                       max-project-packet-bytes)
+                                    (graph-error "encoded project source bytes exceed limit")
+
+                                    :else
+                                    (recur pending-next
+                                           (+ cursor 1)
+                                           (typed-list-conj [:list :string] seen namespace)
+                                           packet-next edges-next bytes-next)))))))))))))))))))
+
+(defn- collect-project
+  [entry-namespace :string entry-source :string entry-surface? :bool roots [:list :string]]
+  [:ref :native.project/graph]
+  (loop [pending (typed-list-conj [:list :string] (empty-strings) entry-namespace)
+         cursor 0 seen (empty-strings) packet "" edges 0 source-bytes 0]
+    (if (>= cursor (vector-count pending))
+      (native-project/resolve-graph-packet packet entry-namespace)
+      (let [namespace (typed-list-nth [:list :string] pending cursor)]
+        (if (string-list-contains? seen namespace)
+          (recur pending (+ cursor 1) seen packet edges source-bytes)
+          (if (>= (vector-count seen) max-source-modules)
+            (graph-error "project module count exceeds limit")
+            (let [path (if (string=? namespace entry-namespace)
+                         ""
+                         (locate-module roots namespace))]
+              (if (and (not (string=? namespace entry-namespace))
+                       (string=? path ""))
+                (graph-error (string-concat "required module was not found: " namespace))
+                (if (string=? path "\n")
+                  (graph-error (string-concat "required module path is ambiguous: " namespace))
+                  (let [source (if (string=? namespace entry-namespace)
+                                 entry-source
+                                 (read-module-file path))
+                        info (native-project/module-info source)
+                        actual (record-get [:ref :native.project/module-info] info :namespace)
+                        parse-error (record-get [:ref :native.project/module-info] info :err)
+                        requires (record-get [:ref :native.project/module-info] info :requires)
+                        edges-next (+ edges (vector-count requires))
+                        bytes-next (+ source-bytes (string-byte-length source))
+                        surface? (if (string=? namespace entry-namespace)
+                                   entry-surface?
+                                   (or (path-suffix? path ".cljk")
+                                       (path-suffix? path ".cljc")))
+                        packet-next (string-concat packet
+                                                   (source-frame namespace source surface?))]
+                    (cond
+                      (not (string=? parse-error ""))
+                      (graph-error (string-concat
+                                    (string-concat "module " namespace)
+                                    (string-concat ": " parse-error)))
+
+                      (not (string=? actual namespace))
+                      (graph-error
+                       (string-concat "module namespace does not match its path: " namespace))
+
+                      (> edges-next max-source-edges)
+                      (graph-error "project dependency edges exceed limit")
+
+                      (> bytes-next max-project-source-bytes)
+                      (graph-error "project source bytes exceed limit")
+
+                      (> (string-byte-length packet-next) max-project-packet-bytes)
+                      (graph-error "encoded project source bytes exceed limit")
+
+                      :else
+                      (recur (append-names pending requires)
+                             (+ cursor 1)
+                             (typed-list-conj [:list :string] seen namespace)
+                             packet-next edges-next bytes-next))))))))))))
+
+(defn resolve-project [entry-path :string roots-text :string]
+  [:ref :native.project/graph]
+  "Read an entry module and its transitive source-path graph. The returned
+  dependency order is structural; semantic import linking is not performed."
+  (if (not (absolute-path? entry-path))
+    (graph-error "entry source must be an absolute path up to 4096 bytes")
+    (if (not (or (path-suffix? entry-path ".kotoba")
+                 (path-suffix? entry-path ".cljk")
+                 (path-suffix? entry-path ".cljc")))
+      (graph-error "entry source must end in .kotoba, .cljk, or .cljc")
+      (if (not (file-exists? entry-path))
+        (graph-error (string-concat "entry source was not found: " entry-path))
+        (let [source (read-module-file entry-path)
+              info (native-project/module-info source)
+              namespace (record-get [:ref :native.project/module-info] info :namespace)
+              parse-error (record-get [:ref :native.project/module-info] info :err)
+              decoded (decode-roots roots-text)
+              roots-error (record-get [:ref :native.project.files/roots] decoded :err)
+              decoded-roots (record-get [:ref :native.project.files/roots] decoded :paths)]
+          (cond
+            (not (string=? parse-error ""))
+            (graph-error (string-concat "entry module: " parse-error))
+
+            (not (string=? roots-error ""))
+            (graph-error roots-error)
+
+            :else
+            (let [roots (if (= (vector-count decoded-roots) 0)
+                          (typed-list-conj [:list :string] decoded-roots
+                                           (entry-source-root entry-path namespace))
+                          decoded-roots)]
+              (collect-project namespace source (or (path-suffix? entry-path ".cljk")
+                                                   (path-suffix? entry-path ".cljc")) roots))))))))
