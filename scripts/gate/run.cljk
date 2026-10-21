@@ -522,31 +522,51 @@
 
 ;; ------------------------------------------------------------------ G0
 
+(defn- real-path [p] (if (exists? p) (.realpathSync fs p) p))
+
+(defn- rc-no-arm-counts
+  "`amu refactor to-kotoba <files..> --check`, in chunks: {absolute path -> number
+  of :rc-no-arm findings}. A chunk whose answer is not a :kotoba.refactor/v1
+  map is retried file by file; a file with no answer is absent from the map."
+  [amu oracle paths]
+  (let [run (fn [ps]
+              (let [r (sh js/process.execPath (into [amu "refactor" "to-kotoba"] (conj (vec ps) "--check"))
+                          {:cwd oracle :timeout 1800000})
+                    out (str (:stdout r))
+                    i (.indexOf out "{:format :kotoba.refactor/v1")
+                    v (when (>= i 0) (try (edn/read-string (subs out i)) (catch :default _ nil)))]
+                (when (map? v)
+                  (into {} (for [f (:files v)]
+                             [(real-path (:path f)) (count (filter #(= :rc-no-arm (:kind %)) (:findings f)))])))))]
+    (into {} (mapcat (fn [chunk] (or (run chunk) (mapcat #(run [%]) chunk)))
+                     (partition-all 150 paths)))))
+
 (defn- measure-g0 [oracle subject changed]
   (let [amu (join oracle "bin" "amu")]
     (if-not (file? amu)
       {:status "UNMEASURED" :reason "no bin/amu for refactor to-kotoba"}
-      {:status "MEASURED"
-       :files
-       (into (sorted-map)
-             (for [rel changed :when (re-find #"\.(cljk|kotoba)$" rel)]
-               (let [p (join subject rel)]
+      (let [rels (filter #(re-find #"\.(cljk|kotoba)$" %) changed)
+            present (filter #(file? (join subject %)) rels)
+            rc (rc-no-arm-counts amu oracle (map #(join subject %) present))]
+        {:status "MEASURED"
+         :files
+         (into (sorted-map)
+               (for [rel rels
+                     :let [p (join subject rel)]]
                  (if-not (file? p)
                    [rel {:present false :verdict "NOT-CLAIMED"}]
                    (let [text (read-text p)
-                         r (sh js/process.execPath [amu "refactor" "to-kotoba" p "--check"] {:cwd oracle :timeout 600000})
-                         out (str (:stdout r) (:stderr r))
                          ;; token-aware (the S5 scanner): a `#?(:kotoba nil` inside a string or comment is not a form
                          nil-forms (:kotoba-nil (boundary/scan-text text))
-                         host (boundary/kotoba-arm-host-literals text)]
-                     (if-not (.includes out ":format :kotoba.refactor/v1")
-                       [rel {:present true :verdict "UNMEASURED" :reason (describe r)
+                         host (boundary/kotoba-arm-host-literals text)
+                         n (get rc (real-path p))]
+                     (if (nil? n)
+                       [rel {:present true :verdict "UNMEASURED" :reason "refactor to-kotoba gave no answer for this file"
                              :kotoba-nil nil-forms :host-literals (:count host)}]
-                       (let [rc (count (re-seq #":kind :rc-no-arm" out))]
-                         [rel {:present true
-                               :verdict (if (and (zero? rc) (zero? nil-forms) (zero? (:count host))) "PASS" "REFUSED")
-                               :rc-no-arm rc :kotoba-nil nil-forms :host-literals (:count host)
-                               :host-literal-samples (:samples host)}])))))))})))
+                       [rel {:present true
+                             :verdict (if (and (zero? n) (zero? nil-forms) (zero? (:count host))) "PASS" "REFUSED")
+                             :rc-no-arm n :kotoba-nil nil-forms :host-literals (:count host)
+                             :host-literal-samples (:samples host)}])))))}))))
 
 ;; ------------------------------------------------------------------ S5
 
