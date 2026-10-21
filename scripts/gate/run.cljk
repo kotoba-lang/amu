@@ -19,17 +19,21 @@
   Options
     --repo DIR            the repository whose change is judged (required)
     --base REF --head REF the change (required); G0 takes the files of `git diff base...head`
-    --amu DIR             consumer mode: this amu repository is the oracle ...
-    --amu-ref REF         ... at this commit (default: its HEAD, recorded as a sha)
+    --repo SPEC           a git directory, or owner/name or a URL (cloned blobless under <work>/repos)
+    --amu DIR|SPEC        consumer mode: this amu repository is the oracle ...
+    --amu-ref REF         ... at this commit (default: its HEAD, recorded as a sha).
+                          A repository without bin/amu at <head> is judged in consumer
+                          mode by the amu checkout this gate runs from (its HEAD).
     --kotoba-lang DIR     kotoba-lang repository (default ~/github/kotoba-lang/kotoba-lang)
     --kotoba-lang-ref REF commit of lang/selfhost-compiler-grant.edn and lang/compat
                           (default 4d4d188b..., kotoba-lang main of the standard)
     --gates LIST          default g0,g1,g2,s1,s2,s5 (amu mode) or g0,g1,g2 (consumer mode)
     --rung RUNG           the seed of the S2 scan (default r6n)
-    --jobs N              parallel oracle processes for G1/G2 (default min(4, cpus))
+    --jobs N              parallel oracle processes for G1/G2 (default min(2, cpus))
     --work DIR            scratch (default a new temp dir)
     --out FILE            verdict EDN (default <work>/verdict.edn; JSON at <out>.json, markdown at <out>.md)
     --cache DIR           reuse a side's measurement when every pin of it is the same
+                          (default ~/.cache/kotoba-selfhost-gate; --no-cache to measure both sides)
     --keep                keep the worktrees"
   (:require [clojure.edn :as edn]
             [kotoba.lang.text :as str]
@@ -144,13 +148,36 @@
   (loop [m {} [a & more :as xs] args]
     (cond (empty? xs) m
           (= a "--keep") (recur (assoc m :keep true) more)
+          (= a "--no-cache") (recur (assoc m :no-cache true) more)
           (str/starts-with? a "--") (recur (assoc m (keyword (subs a 2)) (first more)) (rest more))
           :else (throw (ex-info (str "unexpected argument " a) {})))))
 
 ;; ------------------------------------------------------------------ worktrees and pins
 
 (defn- resolve-commit [repo ref]
-  (git! repo "rev-parse" "--verify" (str ref "^{commit}")))
+  (let [r (git repo "rev-parse" "--verify" (str ref "^{commit}"))]
+    (if (ok? r)
+      (str/trim (:stdout r))
+      ;; a commit the clone does not have yet (a PR head, a pinned sha): fetch it by name
+      (do (git repo "fetch" "-q" "origin" ref)
+          (git repo "fetch" "-q" "origin" "+refs/pull/*/head:refs/remotes/origin/pr/*")
+          (git! repo "rev-parse" "--verify" (str ref "^{commit}"))))))
+
+(defn- local-repo!
+  "A git directory for `spec`: an existing directory as given, otherwise
+  `owner/name` or a URL cloned (blobless, every branch) under dir."
+  [spec dir]
+  (let [abs (.resolve path spec)]
+    (if (and (exists? abs) (.isDirectory (.statSync fs abs)))
+      abs
+      (let [url (if (re-find #"^(https?|git|ssh)://|^git@" spec) spec (str "https://github.com/" spec ".git"))
+            name (-> (.replace url (js/RegExp. "\\.git$") "") (str/split #"/") last)
+            d (join dir name)]
+        (when-not (exists? (join d ".git"))
+          (let [r (sh "git" ["clone" "-q" "--filter=blob:none" "--no-checkout" url d])]
+            (when-not (ok? r) (throw (ex-info (str "git clone " url ": " (describe r)) {})))))
+        (git d "fetch" "-q" "origin")
+        d))))
 
 (defn- add-worktree! [repo sha dir]
   (when (exists? dir) (git repo "worktree" "remove" "--force" dir))
@@ -620,18 +647,23 @@
 (defn run! [args]
   (let [o (parse-args args)
         _ (doseq [k [:repo :base :head]] (when-not (o k) (throw (ex-info (str "--" (name k) " is required") {}))))
-        repo (.resolve path (:repo o))
-        consumer (boolean (:amu o))
-        gates (mapv keyword (str/split (or (:gates o) (if consumer "g0,g1,g2" "g0,g1,g2,s1,s2,s5")) #","))
         work (mkdirs! (.resolve path (or (:work o) (.mkdtempSync fs (join (.tmpdir os) "selfhost-gate-")))))
+        repo (local-repo! (:repo o) (mkdirs! (join work "repos")))
+        head-sha0 (resolve-commit repo (:head o))
+        ;; a repository without bin/amu is a library: judged by the amu this gate was checked out from
+        consumer (or (boolean (:amu o)) (not (ok? (git repo "cat-file" "-e" (str head-sha0 ":bin/amu")))))
+        gates (mapv keyword (str/split (or (:gates o) (if consumer "g0,g1,g2" "g0,g1,g2,s1,s2,s5")) #","))
         out (.resolve path (or (:out o) (join work "verdict.edn")))
-        jobs (or (some-> (:jobs o) js/parseInt) (min 4 (count (.cpus os))))
+        jobs (or (some-> (:jobs o) js/parseInt) (min 2 (count (.cpus os))))
+        cache (when-not (:no-cache o) (or (:cache o) (join (.homedir os) ".cache" "kotoba-selfhost-gate")))
         rung (or (:rung o) "r6n")
         base-sha (resolve-commit repo (:base o))
         head-sha (resolve-commit repo (:head o))
         merge-base (git! repo "merge-base" base-sha head-sha)
         changed (vec (remove str/blank? (str/split-lines (git! repo "diff" "--name-only" (str merge-base) head-sha))))
-        kl-repo (.resolve path (or (:kotoba-lang o) (join (.homedir os) "github" "kotoba-lang" "kotoba-lang")))
+        kl-default (join (.homedir os) "github" "kotoba-lang" "kotoba-lang")
+        kl-repo (local-repo! (or (:kotoba-lang o) (if (exists? kl-default) kl-default "kotoba-lang/kotoba-lang"))
+                             (join work "repos"))
         kl-sha (resolve-commit kl-repo (or (:kotoba-lang-ref o) default-kotoba-lang-ref))
         kl (export-tree! kl-repo kl-sha ["lang"] (join work "kotoba-lang"))
         policy (join kl "lang" "selfhost-compiler-grant.edn")
@@ -641,7 +673,7 @@
         gp (gate-pins)
         worktrees (volatile! [])
         wt! (fn [r sha dir] (add-worktree! r sha dir) (vswap! worktrees conj [r dir]) dir)
-        amu-repo (when consumer (.resolve path (:amu o)))
+        amu-repo (when consumer (if (:amu o) (local-repo! (:amu o) (join work "repos")) gate-root))
         amu-sha (when consumer (resolve-commit amu-repo (or (:amu-ref o) "HEAD")))
         oracle-dir (when consumer (wt! amu-repo amu-sha (join work "oracle")))
         shared-oracle-pins (when consumer (prepare-oracle! oracle-dir))
@@ -651,7 +683,7 @@
         side (fn [role sha]
                (let [dir (mkdirs! (join work role))
                      ckey (cache-key [sha (when consumer amu-sha) kl-sha (:sha256 policy-pins) gates rung (:gate-files gp) consumer])
-                     cfile (when (:cache o) (join (.resolve path (:cache o)) (str ckey ".edn")))]
+                     cfile (when cache (join (.resolve path cache) (str ckey ".edn")))]
                  (if (and cfile (file? cfile))
                    (do (log role ": reusing the cached measurement " cfile)
                        (js/Promise.resolve (assoc (edn/read-string (read-text cfile)) :role role :cached cfile)))
@@ -666,7 +698,9 @@
                                            :dir dir :jobs jobs :rung rung :consumer consumer :shared-farm shared-farm})
                             (fn [m]
                               (write-text! (join dir "measure.edn") (pr-str m))
-                              (when cfile (write-text! cfile (pr-str m)))
+                              ;; a measurement with an UNMEASURED gate is never cached: the next run measures again
+                              (when (and cfile (not-any? #(= "UNMEASURED" (:status %)) (vals (:gates m))))
+                                (write-text! cfile (pr-str m)))
                               m))))))
         cleanup (fn [] (when-not (:keep o) (doseq [[r d] (reverse @worktrees)] (remove-worktree! r d))))]
     (log "work " work)
