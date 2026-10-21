@@ -1,0 +1,703 @@
+#!/usr/bin/env kbb
+;; bootstrap-tooling: the host driver of the selfhost acceptance gate (git, processes, files).
+;; The judging is scripts/gate/ratchet.cljk and the S5 scanner scripts/gate/boundary.cljk.
+(ns scripts.gate.run
+  "Runner-independent CLI of the selfhost acceptance gate (Linear JUN-242 part 3).
+
+    node node_modules/nbb/cli.js scripts/gate/run.cljk --repo <git dir> --base <ref> --head <ref> [options]
+
+  It checks out <base> and <head> of <repo> as detached worktrees, measures
+  both with each side's own product compiler (amu mode) or with one pinned amu
+  (consumer mode, --amu), and judges the head against the base with the ratchet
+  of scripts/gate/ratchet.cljk. It writes a verdict (EDN, and JSON beside it)
+  with every input pinned: amu commit, deps-lock digest, nbb pin, policy file
+  sha256 and kotoba-lang commit, seed sha256, farm digest, gate script digests.
+  Exit 0 = PASS, 1 = FAIL, 2 = the run itself could not complete (also a fail).
+  A missing tool, oracle, policy or seed makes its gate UNMEASURED, and an
+  UNMEASURED gate fails the verdict: nothing is skipped.
+
+  Options
+    --repo DIR            the repository whose change is judged (required)
+    --base REF --head REF the change (required); G0 takes the files of `git diff base...head`
+    --amu DIR             consumer mode: this amu repository is the oracle ...
+    --amu-ref REF         ... at this commit (default: its HEAD, recorded as a sha)
+    --kotoba-lang DIR     kotoba-lang repository (default ~/github/kotoba-lang/kotoba-lang)
+    --kotoba-lang-ref REF commit of lang/selfhost-compiler-grant.edn and lang/compat
+                          (default 4d4d188b..., kotoba-lang main of the standard)
+    --gates LIST          default g0,g1,g2,s1,s2,s5 (amu mode) or g0,g1,g2 (consumer mode)
+    --rung RUNG           the seed of the S2 scan (default r6n)
+    --jobs N              parallel oracle processes for G1/G2 (default min(4, cpus))
+    --work DIR            scratch (default a new temp dir)
+    --out FILE            verdict EDN (default <work>/verdict.edn; JSON at <out>.json, markdown at <out>.md)
+    --cache DIR           reuse a side's measurement when every pin of it is the same
+    --keep                keep the worktrees"
+  (:require [clojure.edn :as edn]
+            [kotoba.lang.text :as str]
+            [scripts.gate.boundary :as boundary]
+            [scripts.gate.ratchet :as ratchet]
+            ["node:child_process" :as child]
+            ["node:crypto" :as crypto]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
+
+(def gate-root (.resolve path (.dirname path *file*) "../.."))
+(def default-kotoba-lang-ref "4d4d188b9c2da2e90d296588a5cc6dbce7a6d80d")
+
+;; ------------------------------------------------------------------ host helpers
+
+(defn- join [& xs] (.apply (.-join path) path (clj->js xs)))
+(defn- exists? [p] (and p (.existsSync fs p)))
+(defn- file? [p] (and (exists? p) (.isFile (.statSync fs p))))
+(defn- read-text [p] (.readFileSync fs p "utf8"))
+(defn- write-text! [p s] (.mkdirSync fs (.dirname path p) #js {:recursive true}) (.writeFileSync fs p s))
+(defn- mkdirs! [p] (.mkdirSync fs p #js {:recursive true}) p)
+(defn- sha256-bytes [b] (-> (.createHash crypto "sha256") (.update b) (.digest "hex")))
+(defn- sha256-file [p] (when (file? p) (sha256-bytes (.readFileSync fs p))))
+(defn- now [] (.toISOString (js/Date.)))
+(defn- log [& xs] (.write (.-stderr js/process) (str "selfhost-gate: " (apply str xs) "\n")))
+
+(defn- sh
+  "spawnSync -> {:status :signal :stdout :stderr :error :ms}; never throws."
+  ([cmd args] (sh cmd args {}))
+  ([cmd args {:keys [cwd env input timeout binary]}]
+   (let [t0 (js/Date.now)
+         r (.spawnSync child cmd (clj->js args)
+                       (clj->js (cond-> {:cwd (or cwd gate-root)
+                                         :maxBuffer (* 256 1024 1024)
+                                         :env (js/Object.assign #js {} js/process.env (clj->js (or env {})))}
+                                  (not binary) (assoc :encoding "utf8")
+                                  input (assoc :input input)
+                                  timeout (assoc :timeout timeout))))]
+     {:status (.-status r) :signal (.-signal r)
+      :stdout (if binary (.-stdout r) (or (.-stdout r) "")) :stderr (str (or (.-stderr r) ""))
+      :error (some-> (.-error r) .-message) :ms (- (js/Date.now) t0)})))
+
+(defn- ok? [r] (and (= 0 (:status r)) (nil? (:error r))))
+
+(defn- describe [r]
+  (str "exit " (:status r) (when (:signal r) (str " signal " (:signal r)))
+       (when (:error r) (str " error " (:error r)))
+       " " (let [t (str/trim (str (:stderr r) "\n" (when (string? (:stdout r)) (:stdout r))))]
+             (subs t (max 0 (- (count t) 300))))))
+
+(defn- sh-async
+  "child.spawn as a Promise of the same map as `sh`."
+  [cmd args {:keys [cwd env timeout]}]
+  (js/Promise.
+   (fn [resolve _]
+     (let [t0 (js/Date.now)
+           out (array) err (array)
+           p (.spawn child cmd (clj->js args)
+                     (clj->js (cond-> {:cwd (or cwd gate-root)
+                                       :env (js/Object.assign #js {} js/process.env (clj->js (or env {})))}
+                                timeout (assoc :timeout timeout))))
+           done (volatile! false)
+           finish (fn [m] (when-not @done (vreset! done true)
+                            (resolve (merge {:stdout (.join out "") :stderr (.join err "")
+                                             :ms (- (js/Date.now) t0)} m))))]
+       (.on (.-stdout p) "data" (fn [d] (.push out (str d))))
+       (.on (.-stderr p) "data" (fn [d] (.push err (str d))))
+       (.on p "error" (fn [e] (finish {:status nil :signal nil :error (.-message e)})))
+       (.on p "close" (fn [code signal] (finish {:status code :signal signal :error nil})))))))
+
+(defn- pool
+  "Run (f item) -> Promise for every item, at most n at a time; a Promise of the results in order."
+  [n items f]
+  (let [items (vec items)
+        results (make-array (count items))
+        next-i (volatile! 0)
+        worker (fn worker []
+                 (let [i @next-i]
+                   (if (>= i (count items))
+                     (js/Promise.resolve nil)
+                     (do (vswap! next-i inc)
+                         (.then (f (nth items i))
+                                (fn [r] (aset results i r) (worker)))))))]
+    (.then (js/Promise.all (clj->js (repeatedly (max 1 n) worker)))
+           (fn [_] (vec results)))))
+
+(defn- git [repo & args] (sh "git" (into ["-C" repo] args)))
+(defn- git! [repo & args]
+  (let [r (apply git repo args)]
+    (when-not (ok? r) (throw (ex-info (str "git " (str/join " " args) ": " (describe r)) {})))
+    (str/trim (:stdout r))))
+
+(defn- walk-files
+  "Every regular file under dir (relative paths, sorted), skipping .git and node_modules."
+  [dir]
+  (letfn [(walk [rel]
+            (let [abs (if (= rel "") dir (join dir rel))]
+              (mapcat (fn [name]
+                        (let [r (if (= rel "") name (str rel "/" name))
+                              st (.lstatSync fs (join dir r))]
+                          (cond (.isSymbolicLink st) []
+                                (.isDirectory st) (if (contains? #{".git" "node_modules"} name) [] (walk r))
+                                (.isFile st) [r]
+                                :else [])))
+                      (sort (vec (.readdirSync fs abs))))))]
+    (if (exists? dir) (vec (sort (walk ""))) [])))
+
+;; ------------------------------------------------------------------ options
+
+(defn- parse-args [args]
+  (loop [m {} [a & more :as xs] args]
+    (cond (empty? xs) m
+          (= a "--keep") (recur (assoc m :keep true) more)
+          (str/starts-with? a "--") (recur (assoc m (keyword (subs a 2)) (first more)) (rest more))
+          :else (throw (ex-info (str "unexpected argument " a) {})))))
+
+;; ------------------------------------------------------------------ worktrees and pins
+
+(defn- resolve-commit [repo ref]
+  (git! repo "rev-parse" "--verify" (str ref "^{commit}")))
+
+(defn- add-worktree! [repo sha dir]
+  (when (exists? dir) (git repo "worktree" "remove" "--force" dir))
+  (git! repo "worktree" "add" "--detach" dir sha)
+  dir)
+
+(defn- remove-worktree! [repo dir]
+  (when (exists? dir) (git repo "worktree" "remove" "--force" dir)))
+
+(defn- export-tree!
+  "git archive <sha> <paths> of repo into dir (no .git)."
+  [repo sha paths dir]
+  (mkdirs! dir)
+  (let [a (sh "git" (into ["-C" repo "archive" "--format=tar" sha] paths) {:binary true})]
+    (when-not (ok? a) (throw (ex-info (str "git archive " sha ": " (describe a)) {})))
+    (let [t (sh "tar" ["-x" "-C" dir] {:input (:stdout a)})]
+      (when-not (ok? t) (throw (ex-info (str "tar: " (describe t)) {}))))
+    dir))
+
+(defn- nbb-pin [dir]
+  (let [p (join dir "package-lock.json")]
+    (when (file? p)
+      (get-in (js->clj (js/JSON.parse (read-text p))) ["packages" "node_modules/nbb" "resolved"]))))
+
+(defn- lock-digest [dir]
+  (let [p (join dir "deps-lock.edn")]
+    (when (file? p)
+      {:sha256 (sha256-file p)
+       :lock-digest (second (re-find #":lock/digest\s+\"([^\"]+)\"" (read-text p)))})))
+
+(defn- gate-pins []
+  {:gate-commit (let [r (git gate-root "rev-parse" "HEAD")] (when (ok? r) (str/trim (:stdout r))))
+   :gate-dirty (let [r (git gate-root "status" "--porcelain" "--" "scripts/gate")]
+                 (if (ok? r) (not (str/blank? (:stdout r))) :unknown))
+   :gate-files (into (sorted-map)
+                     (for [f ["run.cljk" "ratchet.cljk" "boundary.cljk"]]
+                       [f (sha256-file (join gate-root "scripts" "gate" f))]))})
+
+(defn- prepare-oracle!
+  "The amu checkout whose bin/amu is the oracle: an nbb engine at its own
+  package-lock pin (the gate's install is linked when the pin is the same,
+  otherwise `npm ci`), and the deps-lock closure fetched. Answers the pins,
+  or {:unmeasured reason}."
+  [dir]
+  (let [engine (join dir "node_modules" "nbb" "cli.js")
+        pin (nbb-pin dir)
+        gate-pin (nbb-pin gate-root)]
+    (cond
+      (not (file? (join dir "bin" "amu"))) {:unmeasured (str "no bin/amu in " dir)}
+      (nil? pin) {:unmeasured (str "no nbb pin in " dir "/package-lock.json")}
+      :else
+      (do
+        (when-not (file? engine)
+          (if (and (= pin gate-pin) (file? (join gate-root "node_modules" "nbb" "cli.js")))
+            (.symlinkSync fs (join gate-root "node_modules") (join dir "node_modules"))
+            (let [r (sh "npm" ["ci" "--include=dev" "--no-audit" "--no-fund"] {:cwd dir})]
+              (when-not (ok? r) (log "npm ci in " dir " failed: " (describe r))))))
+        (if-not (file? engine)
+          {:unmeasured (str "no nbb engine for " dir)}
+          (let [pre (join dir "scripts" "ci-dependency-prefetch.mjs")
+                r (when (file? pre) (sh js/process.execPath [pre "--alias" "test"] {:cwd dir}))]
+            (if (and r (not (ok? r)))
+              {:unmeasured (str "dependency prefetch failed: " (describe r))}
+              {:amu-commit (git! dir "rev-parse" "HEAD")
+               :deps-lock (lock-digest dir)
+               :nbb-pin pin
+               :node (.-version js/process)})))))))
+
+;; ------------------------------------------------------------------ the farm
+
+(defn- python! [script args out-file err-file]
+  (let [r (sh "python3" (into [script] args))]
+    (when err-file (write-text! err-file (:stderr r)))
+    (when out-file (write-text! out-file (:stdout r)))
+    (when-not (ok? r) (throw (ex-info (str (.basename path script) ": " (describe r)) {})))
+    (:stdout r)))
+
+(defn- parse-order [text]
+  (vec (for [line (str/split-lines text)
+             :let [[ns-name fp & deps] (vec (remove str/blank? (str/split line #"\s+")))]
+             :when (and ns-name fp)]
+         {:ns ns-name :file fp :deps (vec (remove #(= "-" %) deps))})))
+
+(defn- build-farm!
+  "The compiler-closure farm of S2 (JUN-202): farm-from-lock.py over the
+  oracle's deps-lock, reach-list.py from the nbb/*_cli entries, reach-twins.py
+  (the project loader's twin rule), r6_scan.py farm (one source root,
+  dependency-first order). Answers {:src :order :pins}."
+  [oracle kl dir]
+  (let [farm (join dir "farm") r6 (join dir "r6")
+        seed-tools (join oracle "scripts" "seed")
+        wall (join oracle "scripts" "selfhost-wall")]
+    (python! (join seed-tools "farm-from-lock.py") [farm "--lock" (join oracle "deps-lock.edn")] nil (join dir "farm.err"))
+    (python! (join wall "reach-list.py") [oracle (join farm "cp.txt") kl] (join dir "reach.txt") nil)
+    (python! (join seed-tools "reach-twins.py") [(join dir "reach.txt") (join farm "cp.txt") oracle kl]
+             (join dir "list.txt") (join dir "list.err"))
+    (mkdirs! r6)
+    (python! (join seed-tools "r6_scan.py") ["farm" (join dir "list.txt") r6] (join r6 "order.txt") (join r6 "external.txt"))
+    (let [order (parse-order (read-text (join r6 "order.txt")))]
+      {:src (join r6 "src") :dir r6 :order order
+       :pins {:farm-sha256 (sha256-file (join farm "farm.txt"))
+              :order-sha256 (sha256-file (join r6 "order.txt"))
+              :modules (count order)}})))
+
+(def module-exts [".kotoba" ".cljk" ".cljc"])
+
+(defn- file->ns [rel]
+  (let [m (re-find #"^(.*)\.(kotoba|cljk|cljc)$" rel)]
+    (when m (-> (second m) (str/replace "/" ".") (str/replace "_" "-")))))
+
+(defn- overlay-subject!
+  "Consumer mode: the subject's src modules replace their namespaces in a copy
+  of the oracle's farm (every twin extension removed first, so the loader
+  reads the subject's file). Answers [{:ns :file}] of the subject."
+  [farm-src subject]
+  (vec (for [rel (walk-files (join subject "src"))
+             :let [ns-name (file->ns rel)]
+             :when ns-name]
+         (let [stem (subs rel 0 (.lastIndexOf rel "."))]
+           (doseq [e module-exts :let [p (join farm-src (str stem e))]]
+             (when (exists? p) (.rmSync fs p)))
+           (let [dest (join farm-src rel)]
+             (mkdirs! (.dirname path dest))
+             (.copyFileSync fs (join subject "src" rel) dest)
+             {:ns ns-name :file dest :deps []})))))
+
+;; ------------------------------------------------------------------ G1 / G2
+
+(defn- field [re text] (second (re-find re text)))
+
+(defn- check-verdict [r]
+  (let [text (str (:stdout r) "\n" (:stderr r))
+        checked (.includes text "{:format :kotoba.check/v1")
+        profile (field #":profile-version (\d+)" text)]
+    (cond
+      (and (= 0 (:status r)) checked (= "6" profile)) {:verdict "PASS" :profile 6}
+      (and (= 0 (:status r)) checked) {:verdict "REFUSED" :code "profile-mismatch" :profile profile}
+      :else
+      (if-let [code (field #":code :([A-Za-z0-9_.\-/]+)" text)]
+        {:verdict "REFUSED" :code code
+         :source (field #":source \"([^\"]*)\"" text)
+         :line (some-> (field #":line (\d+)" text) js/parseInt)
+         :message (some-> (field #":message \"((?:[^\"\\\\]|\\\\.)*)\"" text) (subs 0 240))}
+        {:verdict "UNMEASURED" :code "no-answer" :message (describe r)}))))
+
+(defn- measure-g1 [oracle farm-src modules policy jobs]
+  (cond
+    (not (file? (join oracle "bin" "amu"))) (js/Promise.resolve {:status "UNMEASURED" :reason "no bin/amu oracle"})
+    (not (file? policy)) (js/Promise.resolve {:status "UNMEASURED" :reason (str "no policy " policy)})
+    :else
+    (.then (pool jobs modules
+                 (fn [{:keys [ns file]}]
+                   (.then (sh-async js/process.execPath
+                                    [(join oracle "bin" "amu") "check" file "--source-path" farm-src
+                                     "--policy" policy "--jvm-free"]
+                                    {:cwd oracle :timeout 900000})
+                          (fn [r] [ns (assoc (check-verdict r) :ms (:ms r)
+                                             :file (.relative path farm-src file))]))))
+           (fn [rows] {:status "MEASURED" :modules (into (sorted-map) rows)}))))
+
+(defn- cids-run [oracle farm-src file]
+  (sh-async js/process.execPath
+            [(join oracle "bin" "amu") "definition-cids" file "--source-path" farm-src "--jvm-free"]
+            {:cwd oracle :timeout 900000}))
+
+(defn- measure-g2 [oracle farm-src modules g1 jobs]
+  (if (not= "MEASURED" (:status g1))
+    (js/Promise.resolve {:status "UNMEASURED" :reason "G1 was not measured"})
+    (.then (pool jobs modules
+                 (fn [{:keys [ns file]}]
+                   (if (not= "PASS" (get-in g1 [:modules ns :verdict]))
+                     (js/Promise.resolve [ns {:verdict "BLOCKED" :code "g1"}])
+                     (.then (cids-run oracle farm-src file)
+                            (fn [a]
+                              (.then (cids-run oracle farm-src file)
+                                     (fn [b]
+                                       (let [good (fn [r] (and (ok? r) (.includes (:stdout r) ":format :kotoba.definition-cids/v1")))]
+                                         [ns (cond
+                                               (not (good a)) (check-verdict a)
+                                               (not (good b)) (assoc (check-verdict b) :verdict "REFUSED" :code "second-run-failed")
+                                               (not= (str/trim (:stdout a)) (str/trim (:stdout b)))
+                                               {:verdict "REFUSED" :code "nondeterministic"
+                                                :run1 (sha256-bytes (:stdout a)) :run2 (sha256-bytes (:stdout b))}
+                                               :else {:verdict "PASS"
+                                                      :cids (count (re-seq #":cid \"" (:stdout a)))
+                                                      :digest (sha256-bytes (str/trim (:stdout a)))})]))))))))
+           (fn [rows] {:status "MEASURED" :modules (into (sorted-map) rows)}))))
+
+;; ------------------------------------------------------------------ G0
+
+(def ^:private kotoba-nil-re #"#\?@?\(\s*:kotoba\s+nil[\s\)]")
+
+(defn- measure-g0 [oracle subject changed]
+  (let [amu (join oracle "bin" "amu")]
+    (if-not (file? amu)
+      {:status "UNMEASURED" :reason "no bin/amu for refactor to-kotoba"}
+      {:status "MEASURED"
+       :files
+       (into (sorted-map)
+             (for [rel changed :when (re-find #"\.(cljk|kotoba)$" rel)]
+               (let [p (join subject rel)]
+                 (if-not (file? p)
+                   [rel {:present false :verdict "NOT-CLAIMED"}]
+                   (let [text (read-text p)
+                         r (sh js/process.execPath [amu "refactor" "to-kotoba" p "--check"] {:cwd oracle :timeout 600000})
+                         out (str (:stdout r) (:stderr r))
+                         nil-forms (count (re-seq kotoba-nil-re text))
+                         host (boundary/kotoba-arm-host-literals text)]
+                     (if-not (.includes out ":format :kotoba.refactor/v1")
+                       [rel {:present true :verdict "UNMEASURED" :reason (describe r)
+                             :kotoba-nil nil-forms :host-literals (:count host)}]
+                       (let [rc (count (re-seq #":kind :rc-no-arm" out))]
+                         [rel {:present true
+                               :verdict (if (and (zero? rc) (zero? nil-forms) (zero? (:count host))) "PASS" "REFUSED")
+                               :rc-no-arm rc :kotoba-nil nil-forms :host-literals (:count host)
+                               :host-literal-samples (:samples host)}])))))))})))
+
+;; ------------------------------------------------------------------ S2 (the seed scan)
+
+(def ^:private seed-env
+  {"KEXE_COMMAND" "1" "KEXE_STRING_POOL" "1073741824" "KEXE_PAIRS" "16777216"
+   "KEXE_VECTORS" "4194304" "KEXE_VECTOR_ITEMS" "134217728"})
+
+(defn- record-field [text k] (field (js/RegExp. (str "(?:^|\\n)" k " (\\S+)")) text))
+
+(defn- build-seed!
+  "seed/README.md, section \"Seed lineage bootstrap\": the trusted C loader, the
+  committed seed compiling seed/tools/bootstrap.kotoba, the tool rebuilding the
+  lineage up to the rung. Answers {:loader :seed :offset :pins} or {:unmeasured}."
+  [subject rung]
+  (let [tools (mkdirs! (join subject "build" "selfhost-gate"))
+        loader (join tools "loader")
+        adopted (join subject "seed" "bootstrap" "adopted-20261012.bin")
+        record-file (join subject "seed" "rungs" (str rung ".record"))
+        boot (join subject "build" "seed-boot")
+        env35 (assoc seed-env "KEXE_CAP_RESOURCES_35" subject)
+        run-loader (fn [bin off grants args env]
+                     (sh loader (into [bin (str off) "0" "aarch64" grants "--"] args) {:cwd subject :env env}))]
+    (cond
+      (not (and (= "darwin" (.-platform js/process)) (= "arm64" (.-arch js/process))))
+      {:unmeasured (str "the seed is aarch64-macos; this node is " (.-platform js/process) "/" (.-arch js/process))}
+      (not (file? record-file)) {:unmeasured (str "no seed/rungs/" rung ".record")}
+      :else
+      (let [cc (sh "cc" ["-std=c11" "-O2" (join subject "seed" "bootstrap" "adopted-loader-20261012.c") "-o" loader])]
+        (if-not (ok? cc)
+          {:unmeasured (str "cc of the adopted loader: " (describe cc))}
+          (let [c (run-loader adopted 0 "35,37,38,39"
+                              ["compile" (join subject "seed" "tools" "bootstrap.kotoba") "--source-path" (join subject "seed")
+                               "--unpinned" "--target" "aarch64-macos" "--output" (join tools "bootstrap.kseed")] env35)
+                x (when (ok? c)
+                    (run-loader adopted 0 "35,37,38,39"
+                                ["extract-native" (join tools "bootstrap.kseed") "--symbol" "main" "--output" (join tools "bootstrap.bin")] env35))
+                off (when x (field #":offset (\d+)" (:stdout x)))]
+            (if-not (and (ok? c) x (ok? x) off)
+              {:unmeasured (str "the bootstrap tool did not build: " (describe (if (ok? c) x c)))}
+              (let [b (run-loader (join tools "bootstrap.bin") off "3,20,35,37,38,39" [subject "--upto" rung]
+                                  (assoc env35
+                                         "KEXE_CAP_RESOURCES_20" (str "/usr/bin/cc:/usr/bin/git:" (join boot "kexe-loader-v11"))
+                                         "KEXE_SPAWN_PATH_LOOKUP" "1"
+                                         "KEXE_SPAWN_ENV" "KEXE_COMMAND:KEXE_CAP_RESOURCES_35:KEXE_STRING_POOL:KEXE_PAIRS:KEXE_VECTORS:KEXE_VECTOR_ITEMS:KEXE_CPU_SECONDS:KEXE_WALL_SECONDS"
+                                         "KEXE_CPU_SECONDS" "600" "KEXE_WALL_SECONDS" "600"))
+                    _ (write-text! (join tools "bootstrap.log") (str (:stdout b) (:stderr b)))
+                    seed (join boot rung "seed-1.bin")
+                    want (record-field (read-text record-file) "seed1_sha256")
+                    got (sha256-file seed)
+                    lineage-loader (join boot "kexe-loader-v11")]
+                (cond
+                  (not (ok? b)) {:unmeasured (str "the seed lineage bootstrap failed: " (describe b)) :refused "lineage"}
+                  (not (file? lineage-loader)) {:unmeasured "the bootstrap built no lineage loader" :refused "no-loader"}
+                  (not= want got) {:unmeasured (str "seed " rung " sha256 " got " is not the record's " want) :refused "seed-hash"}
+                  :else {:loader lineage-loader :seed seed
+                         :offset (or (some-> (join boot rung "seed-1.offset") (#(when (file? %) (str/trim (read-text %))))) "0")
+                         :pins {:rung rung :seed1-sha256 got :record-sha256 (sha256-file record-file)
+                                :lineage-loader-sha256 (sha256-file lineage-loader)
+                                :adopted-seed-sha256 (sha256-file adopted)}})))))))))
+
+(defn- measure-s2
+  "The r6-scan of JUN-202 (scripts/seed/r6-scan.sh, deleted by JUN-243): every
+  farm module, dependency-first, compiled by the seed in separate mode.
+  PASS = OK (an object was written), REFUSED = the seed's first refusal,
+  BLOCKED = a require has no object, UNMEASURED = the seed did not answer."
+  [subject farm rung s]
+  (let []
+    (if (:unmeasured s)
+      {:status "UNMEASURED" :reason (:unmeasured s)}
+      (let [o (mkdirs! (join (:dir farm) "o")) logs (mkdirs! (join (:dir farm) "log"))
+            env (assoc seed-env "KEXE_STRING_POOL" "268435456" "KEXE_VECTORS" "65536" "KEXE_VECTOR_ITEMS" "16777216"
+                       "KEXE_CPU_SECONDS" "120" "KEXE_WALL_SECONDS" "120"
+                       "KEXE_CAP_RESOURCES_35" (str subject ":" (:dir farm)))
+            rows (loop [[m & more :as ms] (:order farm) okset #{} acc []]
+                   (if (empty? ms)
+                     acc
+                     (let [{:keys [ns file deps]} m
+                           miss (first (remove okset deps))]
+                       (if miss
+                         (recur more okset (conj acc [ns {:verdict "BLOCKED" :code "requires" :text miss}]))
+                         (let [kso (join o (str ns ".kso"))
+                               r (sh (:loader s) [(:seed s) (:offset s) "0" "aarch64" "35,37,38,39" "--"
+                                                  "compile" file "--emit-module" "--object-dir" o "--output" kso]
+                                     {:cwd subject :env env :timeout 300000})
+                               _ (write-text! (join logs (str ns ".log")) (str (:stdout r) (:stderr r)))
+                               text (str (:stdout r) "\n" (:stderr r))
+                               refusal (re-find (js/RegExp. "^seed: (E\\d+)\\s*(.*)$" "m") text)]
+                           (cond
+                             (and (ok? r) (file? kso) (pos? (.-size (.statSync fs kso))))
+                             (recur more (conj okset ns) (conj acc [ns {:verdict "PASS" :ms (:ms r)}]))
+                             refusal
+                             (recur more okset (conj acc [ns {:verdict "REFUSED" :code (nth refusal 1)
+                                                              :text (subs (str/replace (nth refusal 2) #"^[^ ]*:\d+:\d+: *" "") 0
+                                                                          (min 200 (count (nth refusal 2))))}]))
+                             :else
+                             (recur more okset (conj acc [ns {:verdict "UNMEASURED" :code "trap" :text (describe r)}]))))))))]
+        {:status "MEASURED" :seed (:pins s) :modules (into (sorted-map) rows)}))))
+
+;; ------------------------------------------------------------------ S5
+
+(defn- measure-s5 [subject]
+  (let [cw (join subject "scripts" "check-workflows.cljk")
+        allow (when (file? cw) (boundary/native-gates-allowlist (read-text cw)))
+        ls (git subject "ls-files" "*.sh")]
+    (if (or (nil? allow) (not (ok? ls)))
+      {:status "UNMEASURED" :reason "no native-gates allowlist in scripts/check-workflows.cljk, or git ls-files failed"}
+      (let [src (vec (for [rel (walk-files (join subject "src"))
+                           :when (re-find #"\.(cljk|kotoba|cljc|cljs)$" rel)]
+                       {:path (str "src/" rel) :text (read-text (join subject "src" rel))}))
+            bins (vec (for [name (sort (vec (.readdirSync fs (join subject "bin"))))
+                            :let [p (join subject "bin" name)]
+                            :when (and (not (str/starts-with? name ".")) (file? p))]
+                        {:name name :text (read-text p)}))
+            doc (join subject "docs" "selfhost-real-vs-hollow-20261001.md")
+            audit (vec (for [row (boundary/audit-rows (when (file? doc) (read-text doc)))
+                             :let [p (join subject (:path row))]
+                             :when (file? p)]
+                         {:path (:path row) :text (read-text p)}))
+            inv (boundary/inventory src bins audit)
+            sh-files (vec (remove str/blank? (str/split-lines (:stdout ls))))]
+        {:status "MEASURED"
+         :metrics (assoc (:metrics inv) :sh-allowlist (count allow) :sh-files (count sh-files))
+         :info (assoc (:info inv) :sh-allowlist allow :sh-files sh-files)
+         :detail (:detail inv)}))))
+
+;; ------------------------------------------------------------------ one side
+
+(defn- not-claimed [why] {:status "NOT-CLAIMED" :reason why})
+
+(defn- measure-side
+  "Promise of the measurement of one side."
+  [{:keys [role subject oracle oracle-pins kl policy policy-pins gates changed dir jobs rung consumer shared-farm]}]
+  (let [want (set gates)
+        t0 (js/Date.now)
+        unmeasured-all (fn [why] (into {} (for [g gates] [g {:status "UNMEASURED" :reason why}])))
+        base {:format :kotoba.selfhost-gate/measure-v1
+              :role role :requested (vec gates) :measured-at (now)
+              :subject {:commit (git! subject "rev-parse" "HEAD")
+                        :repo (str/trim (or (:stdout (git subject "config" "--get" "remote.origin.url")) ""))}
+              :oracle oracle-pins :policy policy-pins
+              :host {:platform (.-platform js/process) :arch (.-arch js/process) :node (.-version js/process)}}]
+    (if (:unmeasured oracle-pins)
+      (js/Promise.resolve (assoc base :gates (unmeasured-all (:unmeasured oracle-pins))))
+      (let [farm (try
+                   (if consumer
+                     (let [d (join dir "r6")]
+                       (.cpSync fs (:dir shared-farm) d #js {:recursive true})
+                       (let [src (join d "src")
+                             mods (overlay-subject! src subject)]
+                         {:src src :dir d :order mods :pins (assoc (:pins shared-farm) :overlay (count mods))}))
+                     (build-farm! oracle kl dir))
+                   (catch :default e {:unmeasured (str "farm: " (.-message e))}))]
+        (if (:unmeasured farm)
+          (js/Promise.resolve (assoc base :gates (merge (unmeasured-all (:unmeasured farm))
+                                                        (when (want :g0) {:g0 (measure-g0 oracle subject changed)})
+                                                        (when (and (want :s5) (not consumer)) {:s5 (measure-s5 subject)}))))
+          (let [modules (:order farm)]
+            (log role ": " (count modules) " modules; G1 with " jobs " jobs")
+            (-> (if (want :g1)
+                  (measure-g1 oracle (:src farm) modules policy jobs)
+                  (js/Promise.resolve (not-claimed "not requested")))
+                (.then (fn [g1]
+                         (log role ": G1 " (pr-str (ratchet/tally (:modules g1))))
+                         (.then (if (want :g2)
+                                  (measure-g2 oracle (:src farm) modules g1 jobs)
+                                  (js/Promise.resolve (not-claimed "not requested")))
+                                (fn [g2] [g1 g2]))))
+                (.then (fn [[g1 g2]]
+                         (let [g0 (if (want :g0) (measure-g0 oracle subject changed) (not-claimed "not requested"))
+                               seed (when (and (not consumer) (or (want :s1) (want :s2)))
+                                      (log role ": S1 seed lineage through " rung)
+                                      (build-seed! subject rung))
+                               s1 (cond consumer (not-claimed "the seed lineage is the amu product's (S1)")
+                                        (not (want :s1)) (not-claimed "not requested")
+                                        (:refused seed) {:status "MEASURED"
+                                                         :modules {(str "lineage-" rung) {:verdict "REFUSED" :code (:refused seed)
+                                                                                          :message (:unmeasured seed)}}}
+                                        (:unmeasured seed) {:status "UNMEASURED" :reason (:unmeasured seed)}
+                                        :else {:status "MEASURED" :seed (:pins seed)
+                                               :modules {(str "lineage-" rung) {:verdict "PASS" :seed1-sha256 (get-in seed [:pins :seed1-sha256])}}})
+                               s2 (cond consumer (not-claimed "the seed scan is the amu product's (S2)")
+                                        (want :s2) (do (log role ": S2 seed scan") (measure-s2 subject farm rung seed))
+                                        :else (not-claimed "not requested"))
+                               s5 (cond consumer (not-claimed "the PRODUCT inventory is the amu product's (S5)")
+                                        (want :s5) (measure-s5 subject)
+                                        :else (not-claimed "not requested"))]
+                           (when (= "MEASURED" (:status s2)) (log role ": S2 " (pr-str (ratchet/tally (:modules s2)))))
+                           (assoc base
+                                  :farm (:pins farm)
+                                  :seconds (js/Math.round (/ (- (js/Date.now) t0) 1000))
+                                  :gates {:g0 g0 :g1 g1 :g2 g2 :s1 s1 :s2 s2 :s5 s5})))))))))))
+
+;; ------------------------------------------------------------------ report
+
+(defn- md-table [header rows]
+  (str "| " (str/join " | " header) " |\n|" (str/join "|" (repeat (count header) "---")) "|\n"
+       (apply str (for [r rows] (str "| " (str/join " | " (map #(str/replace (str %) "|" "\\|") r)) " |\n")))))
+
+(defn- verdict-cell [v]
+  (cond (nil? v) "-"
+        (:code v) (str (:verdict v) "(" (:code v) ")")
+        :else (:verdict v)))
+
+(defn- summary-md [verdict base head]
+  (let [gates (:gates verdict)
+        by (into {} (map (juxt :gate identity) gates))
+        counts (fn [t] (str "PASS " (get t "PASS") " / REFUSED " (get t "REFUSED") " / BLOCKED " (get t "BLOCKED")
+                            " / UNMEASURED " (get t "UNMEASURED") " of " (:total t)))]
+    (str "## selfhost gate: " (:verdict verdict) "\n\n"
+         "base " (get-in base [:subject :commit]) " -> head " (get-in head [:subject :commit]) "\n\n"
+         "oracle amu " (get-in head [:oracle :amu-commit]) ", policy sha256 " (get-in head [:policy :sha256])
+         " (kotoba-lang " (get-in head [:policy :kotoba-lang-commit]) ")"
+         (when-let [s (get-in head [:gates :s2 :seed :seed1-sha256])] (str ", seed " (get-in head [:gates :s2 :seed :rung]) " " s))
+         "\n\n"
+         (md-table ["gate" "verdict" "base" "head" "notes"]
+                   (for [g gates]
+                     [(name (:gate g)) (:status g)
+                      (if (:base g) (counts (:base g)) "")
+                      (if (:head g) (counts (:head g)) "")
+                      (str (when (seq (:flips g)) (str "flips: " (str/join " " (:flips g)) " "))
+                           (when (seq (:gains g)) (str "gains: " (str/join " " (:gains g)))))]))
+         (when (seq (:failures verdict))
+           (str "\n### Failures\n\n" (apply str (for [f (:failures verdict)] (str "- " f "\n")))))
+         (when-let [g (by :s5)]
+           (str "\n### S5\n\n" (md-table ["metric" "base" "head"] (for [r (:rows g)] [(name (:metric r)) (:base r) (:head r)]))))
+         (when-let [g (by :g0)]
+           (when (seq (:rows g))
+             (str "\n### G0 (changed files)\n\n"
+                  (md-table ["file" "base rc-no-arm/kotoba-nil/host" "head rc-no-arm/kotoba-nil/host" "head verdict"]
+                            (for [r (:rows g)
+                                  :let [f (fn [x] (if (:present x) (str (:rc-no-arm x) "/" (:kotoba-nil x) "/" (:host-literals x)) "absent"))]]
+                              [(:path r) (f (:base r)) (f (:head r)) (verdict-cell (:head r))])))))
+         (apply str
+                (for [g [:g1 :g2 :s1 :s2]
+                      :let [bm (get-in base [:gates g :modules]) hm (get-in head [:gates g :modules])]
+                      :when (or (seq bm) (seq hm))]
+                  (str "\n### " (.toUpperCase (name g)) " per module\n\n"
+                       (md-table ["module" "base" "head" ""]
+                                 (for [k (sort (distinct (concat (keys bm) (keys hm))))
+                                       :let [b (get bm k) h (get hm k)]]
+                                   [k (verdict-cell b) (verdict-cell h)
+                                    (cond (and (= "PASS" (:verdict b)) (not= "PASS" (:verdict h))) "REGRESSION"
+                                          (and (= "PASS" (:verdict h)) (not= "PASS" (:verdict b))) "gain"
+                                          :else "")]))))))))
+
+;; ------------------------------------------------------------------ main
+
+(defn- cache-key [m]
+  (sha256-bytes (pr-str m)))
+
+(defn run! [args]
+  (let [o (parse-args args)
+        _ (doseq [k [:repo :base :head]] (when-not (o k) (throw (ex-info (str "--" (name k) " is required") {}))))
+        repo (.resolve path (:repo o))
+        consumer (boolean (:amu o))
+        gates (mapv keyword (str/split (or (:gates o) (if consumer "g0,g1,g2" "g0,g1,g2,s1,s2,s5")) #","))
+        work (mkdirs! (.resolve path (or (:work o) (.mkdtempSync fs (join (.tmpdir os) "selfhost-gate-")))))
+        out (.resolve path (or (:out o) (join work "verdict.edn")))
+        jobs (or (some-> (:jobs o) js/parseInt) (min 4 (count (.cpus os))))
+        rung (or (:rung o) "r6n")
+        base-sha (resolve-commit repo (:base o))
+        head-sha (resolve-commit repo (:head o))
+        merge-base (git! repo "merge-base" base-sha head-sha)
+        changed (vec (remove str/blank? (str/split-lines (git! repo "diff" "--name-only" (str merge-base) head-sha))))
+        kl-repo (.resolve path (or (:kotoba-lang o) (join (.homedir os) "github" "kotoba-lang" "kotoba-lang")))
+        kl-sha (resolve-commit kl-repo (or (:kotoba-lang-ref o) default-kotoba-lang-ref))
+        kl (export-tree! kl-repo kl-sha ["lang"] (join work "kotoba-lang"))
+        policy (join kl "lang" "selfhost-compiler-grant.edn")
+        policy-pins {:kotoba-lang-commit kl-sha :path "lang/selfhost-compiler-grant.edn" :sha256 (sha256-file policy)
+                     :compat-sha256 (sha256-bytes (str/join "\n" (for [f (walk-files (join kl "lang" "compat"))]
+                                                                     (str f " " (sha256-file (join kl "lang" "compat" f))))))}
+        gp (gate-pins)
+        worktrees (volatile! [])
+        wt! (fn [r sha dir] (add-worktree! r sha dir) (vswap! worktrees conj [r dir]) dir)
+        amu-repo (when consumer (.resolve path (:amu o)))
+        amu-sha (when consumer (resolve-commit amu-repo (or (:amu-ref o) "HEAD")))
+        oracle-dir (when consumer (wt! amu-repo amu-sha (join work "oracle")))
+        shared-oracle-pins (when consumer (prepare-oracle! oracle-dir))
+        shared-farm (when (and consumer (not (:unmeasured shared-oracle-pins)))
+                      (try (build-farm! oracle-dir kl (join work "oracle-farm"))
+                           (catch :default e {:unmeasured (str "farm: " (.-message e))})))
+        side (fn [role sha]
+               (let [dir (mkdirs! (join work role))
+                     ckey (cache-key [sha (when consumer amu-sha) kl-sha (:sha256 policy-pins) gates rung (:gate-files gp) consumer])
+                     cfile (when (:cache o) (join (.resolve path (:cache o)) (str ckey ".edn")))]
+                 (if (and cfile (file? cfile))
+                   (do (log role ": reusing the cached measurement " cfile)
+                       (js/Promise.resolve (assoc (edn/read-string (read-text cfile)) :role role :cached cfile)))
+                   (let [subject (wt! repo sha (join dir "subject"))
+                         oracle (if consumer oracle-dir subject)
+                         pins (if consumer
+                                (if (:unmeasured shared-farm) {:unmeasured (:unmeasured shared-farm)} shared-oracle-pins)
+                                (prepare-oracle! oracle))]
+                     (log role ": " sha " (oracle " (if consumer amu-sha "the side itself") ")")
+                     (.then (measure-side {:role role :subject subject :oracle oracle :oracle-pins pins :kl kl
+                                           :policy policy :policy-pins policy-pins :gates gates :changed changed
+                                           :dir dir :jobs jobs :rung rung :consumer consumer :shared-farm shared-farm})
+                            (fn [m]
+                              (write-text! (join dir "measure.edn") (pr-str m))
+                              (when cfile (write-text! cfile (pr-str m)))
+                              m))))))
+        cleanup (fn [] (when-not (:keep o) (doseq [[r d] (reverse @worktrees)] (remove-worktree! r d))))]
+    (log "work " work)
+    (-> (side "base" base-sha)
+        (.then (fn [b] (.then (side "head" head-sha) (fn [h] [b h]))))
+        (.then (fn [[b h]]
+                 (let [v (merge (ratchet/judge b h)
+                                {:change {:repo repo :base base-sha :head head-sha :merge-base merge-base :changed changed}
+                                 :mode (if consumer "consumer" "amu")
+                                 :gate gp
+                                 :judged-at (now)
+                                 :pins {:base (select-keys b [:subject :oracle :policy :farm :host])
+                                        :head (select-keys h [:subject :oracle :policy :farm :host])
+                                        :seed {:base (get-in b [:gates :s2 :seed]) :head (get-in h [:gates :s2 :seed])}}
+                                 :measurements {:base b :head h}})
+                       md (summary-md v b h)]
+                   (write-text! out (pr-str v))
+                   (write-text! (str out ".json") (js/JSON.stringify (clj->js v) nil 2))
+                   (write-text! (str out ".md") md)
+                   (println md)
+                   (println (str "verdict " (:verdict v) ": " out))
+                   (cleanup)
+                   (if (= "PASS" (:verdict v)) 0 1))))
+        (.catch (fn [e] (cleanup) (throw e))))))
+
+(defn -main [& args]
+  (-> (js/Promise.resolve nil)
+      (.then (fn [_] (run! args)))
+      (.then (fn [code] (set! (.-exitCode js/process) code)))
+      (.catch (fn [e]
+                (log "FAIL (the run did not complete): " (or (.-message e) e))
+                (set! (.-exitCode js/process) 2)))))
+
+(apply -main *command-line-args*)
