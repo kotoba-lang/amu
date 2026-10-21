@@ -112,6 +112,14 @@ and import/schema/typed-map refusal behavior remain. New record layouts and
 call arities require the same reviewed source revision throughout the image.
 See `docs/canonical-native-project-boundary.md`.
 
+Shared source admission now also accepts only `.kotoba`; the legacy positive
+source-kind labels are retired in both canonical core and historical adapter.
+Legacy source filenames still refuse as compiled-artifact input. The complete
+core no longer imports `kotoba.lang.text` for suffix checks, and typed error
+maps use explicit document keys. Its four public names/result shapes remain;
+current Definition CIDs/native behavior need fresh qualification. See
+`docs/canonical-source-admission.md`.
+
 This is source preparation only. Native admission, Definition CIDs,
 executable project links, full upstream/helper closure and self-rebuild remain
 open; no implementation/build/native execution or tests were performed.
@@ -192,11 +200,12 @@ native Seed. This does not migrate callers such as `cli.cljk`,
 host-oriented convenience APIs or depend on other unported modules. The
 project-wide CLI graph remains incomplete.
 
-The shared source-kind vocabulary now labels `.cljk` as
-`:kotoba-syntax-sugar` and `.cljc` as `:kotoba-compat-syntax` in both the
-Kotoba core module and its host adapter. The core check passes with the
-language compatibility root explicitly supplied. The suffix remains
-discovery metadata and does not select a runtime.
+That checkpoint's shared source-kind vocabulary labelled `.cljk` as
+`:kotoba-syntax-sugar` and `.cljc` as `:kotoba-compat-syntax`, and its core
+check supplied the language compatibility root. Those positive labels and
+that suffix-library dependency are retired by the current canonical-only
+source admission above. The earlier CID/Seed result remains historical;
+it is not qualification of the changed revision.
 
 `cli.cljk` now puts `:gen-class` behind the `:clj` reader feature, keeping this
 bootstrap launcher clause out of Kotoba input. With explicit roots for Amu
