@@ -6,12 +6,14 @@ language. The repository is `kotoba-lang/amu`; the name evokes Japanese
 cloth.
 
 > **Selfhost is the top priority.** The Amu compiler is to be a native
-> executable produced by Amu itself, built with no JVM/Clojure, GraalVM,
-> ClojureScript/nbb or Node.js. `.cljk` is Kotoba syntax sugar: its admitted
-> surface forms lower to canonical Kotoba core. Clojure-shaped notation does
-> not import Clojure or ClojureScript semantics or select a host runtime.
-> Only a selfhost-built compiler counts as selfhost evidence; a GraalVM- or
-> Node-hosted build is a bootstrap reference and is labelled so.
+> executable produced and rebuilt by Amu itself from canonical `.kotoba`,
+> without CLJK/CLJC/CLJS, NBB, KBB, Clojure, Java/JVM, GraalVM, Node.js, or a
+> C compiler/loader/runtime in the build and execution closure. Retaining
+> CLJK as final syntax sugar and pinning a C loader are superseded conditions.
+> Only the qualified selfhost route counts as current selfhost/Q9 evidence;
+> existing hosted builds and C-loader receipts are historical references.
+> This is the migration contract, not a claim that those dependencies have
+> already been removed. CDCI covers only Amu selfhost and Kotoba native.
 > See [docs/selfhost-priority.md](docs/selfhost-priority.md).
 
 ## Lisp machine architecture
@@ -496,18 +498,15 @@ WGSL, CUDA C or Metal Shading Language. Sealed GPU artifacts bind KIR/code hashe
 re-lowered during verification, including against attacker-resealed code. This
 is the shared GPU compiler contract consumed by `kotoba-lang/num`; see
 ADR-0002.
-`.kotoba`, `.cljk`, and `.cljc` (portable common source) are admitted
-source-discovery extensions. `.cljk` is Kotoba syntax sugar: the Kotoba
-frontend lowers its bounded surface forms into Kotoba's pure S-expression
-core. Clojure-shaped notation does not give it Clojure or ClojureScript
-semantics.
-`.kotoba` is the canonical text format and admits those core spellings
-directly. The stricter pure-core-only profile is not yet enforced, so the file
-extension alone does not prove that a source uses only core forms. Equivalent
-surface and core definitions share semantic identity after elaboration; an
-extension does not select a runtime. `.cljc` enters the same closed Kotoba
-pipeline where its portable forms are admitted. None enables the full
-Clojure/ClojureScript reader, ambient host APIs, or unrestricted macros.
+`.kotoba` is the canonical source format and final authoring surface. The
+current discovery implementation also admits bounded `.cljk` and `.cljc`
+inputs; these readers, sources and host adapters are migration inventory to
+port and retire. Their continued presence is not an acceptance requirement
+to retain CLJK syntax sugar. Preserve recorded semantic identity, Definition
+CIDs and named refusals during the migration. A suffix alone proves neither
+pure-core admission nor selfhost execution. None authorizes ambient host APIs
+or unrestricted macros. See the current
+[migration contract](docs/selfhost-priority.md).
 
 ```text
 source -> inert reader -> typed/effect HIR -> SSA-like KIR
