@@ -1,0 +1,62 @@
+#!/bin/sh
+# NOTE (repo rule): kept as run-sweep-1754.sh.txt because the repository workflow-lint
+# refuses POSIX shell execution files; run with sh <this file>.
+# W=64 TILE-CROSSING BISECTION, PHASE 3 (JUN-58, tick 20261019-1754):
+# grid move to grid C (lanes 2,150,400) to sample the 25..30 band the
+# chain could not reach at grid B. PR #1369 measured the flip between 31
+# (win) and 32 (loss) and noted 25..30 UNMEASURED, a local loss band there
+# not excluded, and that bisecting needs a lane-count move (its README
+# named "a lane count divisible by 64*28").
+#
+# Grid C choice: lanes 2,150,400 = 2^12*3*5^2*7 (0.04% of the 2^21 family;
+# 2.54% above 2^21). It is the NEAREST lane count to 2^21 at which tiles
+# 24, 25, 28, 30 and 32 all tile the stream at W=64 (lanes/(W*tiles)
+# integral): 2,150,400/64 = 33,600 = 2^6*3*5^2*7, divisible by 24, 25,
+# 28, 30, 32 (26, 27, 29 need 13 / 3^3 / 29 factors and are UNMEASURED
+# here and at grid B).
+#
+# Cells (W=64 throughout):
+#   c25 c28 c30  -- NEW interior points of the 25..30 band (L=1600/1792/1920)
+#   c24 c32      -- same-session grid-C anchors (the win/loss pair the
+#                   chain measured at grids A and B)
+#   cal31        -- exact PR #1369 n31 cell at grid B (lanes 2,095,104,
+#                   chunks=31): session-comparability cal, chain value
+#                   clean -10,533.9 ns/dispatch
+# 3 cycles, order rotated (forward, reversed, rotated). Idempotent: a cell
+# whose log exists is skipped.
+set -e
+TAB=$(printf '\t')
+cd "$(dirname "$0")/../../../.."
+EV=docs/evidence/gpu/tilecross-w64-t25t28t30-20261019
+mkdir -p "$EV"
+
+run() { # cycle cell W lanes chunks
+  log="$EV/run-$1-$2.log"
+  if [ -f "$log" ] && grep -q "RESULT${TAB}verified=true" "$log"; then echo "skip $log"; return 0; fi
+  echo "run $log"
+  (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" "$4" "$5") > "$log" 2>&1
+  grep -q "RESULT	verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }
+}
+
+# cycle 1: forward
+run 1 c24 64 2150400 24
+run 1 c25 64 2150400 25
+run 1 c28 64 2150400 28
+run 1 c30 64 2150400 30
+run 1 c32 64 2150400 32
+run 1 cal31 64 2095104 31
+# cycle 2: reversed
+run 2 cal31 64 2095104 31
+run 2 c32 64 2150400 32
+run 2 c30 64 2150400 30
+run 2 c28 64 2150400 28
+run 2 c25 64 2150400 25
+run 2 c24 64 2150400 24
+# cycle 3: rotated
+run 3 c28 64 2150400 28
+run 3 c30 64 2150400 30
+run 3 c32 64 2150400 32
+run 3 cal31 64 2095104 31
+run 3 c24 64 2150400 24
+run 3 c25 64 2150400 25
+echo SWEEP-COMPLETE

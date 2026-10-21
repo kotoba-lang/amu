@@ -1,0 +1,395 @@
+#!/usr/bin/env kbb
+;; SUBGROUP PROBE on THIS host through the :gpu/compute (wire 42) path --
+;; a hardware measurement, not a design assumption. It answers the question
+;; ADR-0356 (docs/adr/0356-gpu-kernel-variant-selection.md, in flight) leaves
+;; to the device: "Intel subgroup size is a device choice" -- so is every
+;; vendor's, and the :subgroup-reduce emission (gl_SubgroupSize /
+;; gl_NumSubgroups, PR #1341) is parametric on it. Nothing in the repo has
+;; ever READ that number off hardware. This probe does, on the only vendor
+;; this bot can measure (Apple M1 Max via MoltenVK, JUN-58).
+;;
+;; One kernel shape, W = 64 (in the :subgroup-reduce domain W >= 32), one
+;; workgroup, one dispatch. Every subgroup's invocation 0 writes one 8-word
+;; record at dst[gl_SubgroupID * 8]:
+;;
+;;   [0] gl_SubgroupSize                 -- THE measurement (S)
+;;   [1] gl_SubgroupID
+;;   [2] gl_NumSubgroups                 -- must satisfy S * NGS == W
+;;   [3] gl_SubgroupID * gl_SubgroupSize + gl_SubgroupInvocationID
+;;   [4] subgroupAdd(1u)                 -- rung "arith"; == S iff the fold works
+;;   [5] subgroupBallotBitCount(subgroupBallot(true))  -- rung "ballot"; == S
+;;   [6] (unused)
+;;   [7] 0xC0FFEE ^ gl_SubgroupID        -- sentinel: the record is ours
+;;
+;; THE LADDER. Three rungs, one SPIR-V each, in order of what the
+;; :subgroup-reduce row needs: "geometry" (basic builtins only) is MANDATORY;
+;; "arith" (GL_KHR_shader_subgroup_arithmetic -- the intra-subgroup fold) and
+;; "ballot" (GL_KHR_shader_subgroup_ballot) are each measured separately so a
+;; device that admits one and refuses the other says so by name. A rung the
+;; device or toolchain does not admit is NOT-ADMITTED with the verbatim
+;; reason -- never silently skipped and never a passing run. Subgroup ops are
+;; computed in UNIFORM control flow (outside the invocation-0 predicate) and
+;; stored under it: group ops in divergent control flow are undefined.
+;;
+;; Verification is internal and mechanical -- there is no second source for
+;; S. Each rung's read-back must satisfy, for every record r in 0..NGS-1:
+;;   words[0]==S, words[1]==r, words[2]==NGS, words[3]==r*S,
+;;   words[7]==(0xC0FFEE ^ r), S*NGS==W, and the rung's own word == S.
+;; The read window is 16 records (512 bytes): any NGS > 16 (S < 4) answers
+;; WIDEN-READ by name instead of verifying a truncated tail.
+;;
+;; Flow (the proven shape of scripts/test-gpu-workgroup-unaliased-shape2.cljk):
+;; build the loader with -DKEXE_GPU_VULKAN, compile each generated .kotoba
+;; guest for the host ISA, extract it, run it with the cap grant. The guest
+;; per rung: INFO -> ALLOC 2048 -> PIPELINE -> BEGIN -> DISPATCH (1,1,1) ->
+;; SUBMIT -> READ 512 -> FREE, answering "INFO|<hex>" (the wire-42 INFO
+;; answer carries '|' itself; fields are classified by shape).
+;;
+;; Three outcomes, three exit codes:
+;;   0  geometry measured and verified; every other rung OK or NOT-ADMITTED
+;;   1  it ran but a verification failed (mandatory or admitted rung)
+;;   3  could not measure here: no Vulkan headers/loader, no glslangValidator,
+;;      macOS without MoltenVK, the amu compile refused, or the device
+;;      admitted no subgroup pipeline at all -- printed by name
+;;
+;;   kbb --backend sci scripts/test-gpu-subgroup-probe.cljk
+(ns test-gpu-subgroup-probe
+  (:require [kotoba.lang.text :as str]
+            ["node:child_process" :as child]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
+
+(def root (.resolve path (.dirname path *file*) ".."))
+(def tmp (.mkdtempSync fs (.join path (.tmpdir os) "amu-gpu-subgroup-")))
+
+(def wg-size 64)                         ;; one workgroup: W in the :subgroup-reduce domain
+(def record-words 8)
+(def read-records 16)                    ;; read window: 16 records = 512 bytes = 1024 hex
+(def read-bytes (* read-records record-words 4))
+(def alloc-bytes (* wg-size record-words 4))   ;; S=1 worst case: 64 records
+(def sentinel 0xC0FFEE)
+
+(defn- sh [cmd args & [env]]
+  (let [child-env (js/Object.assign #js {} (.-env js/process) (clj->js (or env {})))
+        r (child/spawnSync cmd (clj->js args) #js {:encoding "utf8" :env child-env})]
+    {:status (.-status r) :out (str (.-stdout r)) :err (str (.-stderr r))}))
+(defn- refuse! [reason] (println (str "GPU-SUBGROUP-PROBE\tCOULD-NOT-RUN\t" reason)) (js/process.exit 3))
+(defn- fail! [reason] (println (str "GPU-SUBGROUP-PROBE\tFAIL\t" reason)) (js/process.exit 1))
+
+(def isa (case (.-arch js/process) "x64" "x86_64" "arm64" "aarch64" (refuse! (str "unsupported host arch " (.-arch js/process)))))
+(def platform (.-platform js/process))
+(def target (str isa (case platform "linux" "-linux" "darwin" "-macos" (refuse! (str "unsupported platform " platform)))))
+
+;; ---- preconditions --------------------------------------------------------
+(when-not (some #(.existsSync fs %) ["/usr/include/vulkan/vulkan.h" "/usr/local/include/vulkan/vulkan.h" "/opt/homebrew/include/vulkan/vulkan.h"])
+  (refuse! "no vulkan/vulkan.h on this host (apt: libvulkan-dev; macOS: brew install molten-vk vulkan-headers)"))
+(def glslang
+  (let [{:keys [status out]} (sh "sh" ["-c" "command -v glslangValidator"])]
+    (when-not (zero? status)
+      (refuse! "no glslangValidator on this host (apt: glslang-tools; macOS: brew install glslang)"))
+    (str/trimr out)))
+
+;; ---- kernels: one SPIR-V per rung -----------------------------------------
+;; GLSL subgroup support is per-category here (measured 2026-10-19 on this
+;; host: glslang 11:16.6.0 rejects the umbrella GL_KHR_shader_subgroup with
+;; "'#extension' : extension not supported" and answers
+;; "required extension not requested: GL_KHR_shader_subgroup_basic" for the
+;; builtins -- so each rung declares exactly the categories it uses).
+(defn- kernel-source [rung]
+  (str "#version 450\n"
+       "#extension GL_KHR_shader_subgroup_basic : require\n"
+       (case rung
+         :arith "#extension GL_KHR_shader_subgroup_arithmetic : require\n"
+         :ballot "#extension GL_KHR_shader_subgroup_ballot : require\n"
+         "")
+       "layout(local_size_x = " wg-size ") in;\n"
+       "layout(set = 0, binding = 0, std430) buffer Out { uint dst[]; };\n"
+       "void main() {\n"
+       ;; group ops in UNIFORM control flow; only the store is guarded
+       (case rung
+         :arith "  uint fold = subgroupAdd(1u);\n"
+         :ballot "  uint fold = subgroupBallotBitCount(subgroupBallot(true));\n"
+         "")
+       "  if (gl_SubgroupInvocationID == 0u) {\n"
+       "    uint o = gl_SubgroupID * 8u;\n"
+       "    dst[o + 0] = gl_SubgroupSize;\n"
+       "    dst[o + 1] = gl_SubgroupID;\n"
+       "    dst[o + 2] = gl_NumSubgroups;\n"
+       "    dst[o + 3] = gl_SubgroupID * gl_SubgroupSize + gl_SubgroupInvocationID;\n"
+       (case rung
+         :arith "    dst[o + 4] = fold;\n"
+         :ballot "    dst[o + 5] = fold;\n"
+         "")
+       "    dst[o + 7] = " sentinel "u ^ gl_SubgroupID;\n"
+       "  }\n"
+       "}\n"))
+
+;; ---- read-back verification (pure; self-tested below) ---------------------
+(defn- hex->words
+  "Little-endian u32 words from a hex string. Refuses odd or non-hex input."
+  [hex]
+  (when-not (re-matches #"[0-9a-f]*" hex) (throw (js/Error. "hex->words: not lowercase hex")))
+  (when-not (zero? (mod (count hex) 2)) (throw (js/Error. "hex->words: odd digit count")))
+  (mapv (fn [i]
+          (let [b (fn [k] (js/parseInt (subs hex (* 2 (+ (* 4 i) k)) (+ (* 2 (+ (* 4 i) k)) 2)) 16))]
+            ;; plain arithmetic: a u32 sum is exact in a JS number (< 2^53)
+            (+ (b 0) (* 256 (b 1)) (* 65536 (b 2)) (* 16777216 (b 3)))))
+        (vec (range (quot (count hex) 8)))))
+
+(defn- verify-words
+  "Verify one rung's read-back words. Answers {:ok true :S :ngs} or
+  {:ok false :reason}. Every subgroup's record must agree with record 0's S
+  and NGS; the rung's own word must equal S; the sentinel must hold. NGS
+  above the read window is refused by name (WIDEN-READ), never partially."
+  [words rung]
+  (let [bad (fn [r] {:ok false :reason (str "record " r " short: " (count words) " words")})]
+    (if (< (count words) record-words)
+      {:ok false :reason (str "read-back too short: " (count words) " words")}
+      (let [s (nth words 0) ngs (nth words 2)]
+        (cond
+          (not (and (integer? s) (<= 1 s wg-size))) {:ok false :reason (str "S out of range: " s)}
+          (not (and (integer? ngs) (<= 1 ngs wg-size))) {:ok false :reason (str "NGS out of range: " ngs)}
+          (not (= (* s ngs) wg-size)) {:ok false :reason (str "S*NGS=" (* s ngs) " != W=" wg-size)}
+          (> ngs read-records) {:ok false :reason (str "WIDEN-READ: NGS=" ngs " exceeds the " read-records "-record window (S=" s " < 4)")}
+          (< (count words) (* ngs record-words)) (bad (dec ngs))
+          :else
+          (let [rung-word (fn [r] (case rung :arith (nth words (+ (* r record-words) 4))
+                                             :ballot (nth words (+ (* r record-words) 5))
+                                             nil))
+                step (fn [acc r]
+                       (if (:ok acc)
+                         (let [o (* r record-words)
+                               w0 (nth words o) w1 (nth words (inc o)) w2 (nth words (+ o 2))
+                               w3 (nth words (+ o 3)) w7 (nth words (+ o 7))
+                               rw (rung-word r)]
+                           (cond
+                             (not= w0 s) {:ok false :reason (str "record " r " S=" w0 " != " s)}
+                             (not= w1 r) {:ok false :reason (str "record " r " id=" w1 " != " r)}
+                             (not= w2 ngs) {:ok false :reason (str "record " r " NGS=" w2 " != " ngs)}
+                             (not= w3 (* r s)) {:ok false :reason (str "record " r " base=" w3 " != r*S=" (* r s))}
+                             (not= w7 (bit-xor sentinel r)) {:ok false :reason (str "record " r " sentinel=" w7)}
+                             (and rw (not= rw s)) {:ok false :reason (str "record " r " " (name rung) "=" rw " != S=" s)}
+                             :else {:ok true}))
+                         acc))]
+            (let [res (reduce step {:ok true} (vec (range ngs)))]
+              (if (:ok res) {:ok true :S s :ngs ngs} res))))))))
+
+;; ---- answer parsing (pure; self-tested below) -----------------------------
+;; The guest answers "INFO|<hex>"; the wire-42 INFO answer is ITSELF
+;; "<device>|<api>|<maxWgX>|<unified>" and carries three '|'. Fields are
+;; classified by shape: the read field is exactly read-bytes*2 lowercase hex
+;; digits and must be the LAST field; everything before it is INFO, re-joined
+;; verbatim.
+(defn- parse-answer [answer]
+  (let [fields (str/split answer #"\|")
+        hex-shape (str "[0-9a-f]{" (* 2 read-bytes) "}")
+        idxs (filterv #(boolean (re-matches (re-pattern hex-shape) (nth fields %))) (vec (range (count fields))))]
+    (when-not (and (= 1 (count idxs))
+                   (= (first idxs) (dec (count fields))))
+      (throw (js/Error. (str "answer has " (count fields) " |-fields; hex-shaped fields at " idxs
+                             ", want exactly one, last"))))
+    {:info (str/join "|" (subvec fields 0 (dec (count fields))))
+     :hex (nth fields (dec (count fields)))}))
+
+;; ---- self-tests: the verifier is the only thing standing between a device
+;; reading and a claim, so it is tested against synthetic buffers before the
+;; first dispatch -----------------------------------------------------------
+(let [words (vec (repeat (* read-records record-words) 0))
+      s 8 ngs 8
+      filled (reduce (fn [ws r]
+                       (let [o (* r record-words)]
+                         (-> ws
+                             (assoc o s) (assoc (inc o) r) (assoc (+ o 2) ngs)
+                             (assoc (+ o 3) (* r s)) (assoc (+ o 4) s) (assoc (+ o 5) s)
+                             (assoc (+ o 7) (bit-xor sentinel r)))))
+                     words (vec (range ngs)))]
+  (doseq [rung [:geometry :arith :ballot]]
+    (let [v (verify-words filled rung)]
+      (when-not (and (:ok v) (= (:S v) 8) (= (:ngs v) 8))
+        (fail! (str "verify self-test: synthetic S=8 NGS=8 " (name rung) " refused: " (pr-str v))))))
+  ;; the rung word is checked per rung: arith must refuse a wrong fold
+  (let [broken (assoc filled (+ record-words 4) 7)  ;; record 1, word 4 = 7, not S
+        v (verify-words broken :arith)]
+    (when-not (and (not (:ok v)) (str/includes? (:reason v) "arith"))
+      (fail! (str "verify self-test: bad fold not caught: " (pr-str v)))))
+  ;; a corrupted S is caught (record 3 reports S=4 while record 0 says 8)
+  (let [broken (assoc filled (* 3 record-words) 4)
+        v (verify-words broken :geometry)]
+    (when-not (and (not (:ok v)) (str/includes? (:reason v) "record 3"))
+      (fail! (str "verify self-test: divergent S not caught: " (pr-str v)))))
+  ;; S*NGS != W refused
+  (let [v (verify-words (assoc filled 2 4) :geometry)]
+    (when-not (and (not (:ok v)) (str/includes? (:reason v) "S*NGS"))
+      (fail! (str "verify self-test: S*NGS!=W not caught: " (pr-str v)))))
+  ;; S < 4 (NGS > window) refused by name, not partially verified
+  (let [tiny (reduce (fn [ws r]
+                       (let [o (* r record-words)]
+                         (-> ws (assoc o 2) (assoc (inc o) r) (assoc (+ o 2) 32)
+                             (assoc (+ o 3) (* r 2)) (assoc (+ o 7) (bit-xor sentinel r)))))
+                     words (vec (range read-records)))
+        v (verify-words tiny :geometry)]
+    (when-not (and (not (:ok v)) (str/includes? (:reason v) "WIDEN-READ"))
+      (fail! (str "verify self-test: NGS past window not refused by name: " (pr-str v))))))
+(when-not (= (hex->words "0100000002000000") [1 2])
+  (fail! "hex->words self-test: little-endian"))
+(when-not (try (hex->words "abc") false (catch :default _ true))
+  (fail! "hex->words self-test: odd digit count not refused"))
+(let [hex (str (apply str (repeat (* 2 read-bytes) "a")))
+      {:keys [info hex]} (parse-answer (str "Fake Device|1.3.296|1024|1|" hex))]
+  (when-not (= info "Fake Device|1.3.296|1024|1")
+    (fail! (str "parse self-test: INFO mangled: " info))))
+(let [hex (str (apply str (repeat (* 2 read-bytes) "a")))]
+  (doseq [bad [(str "Fake Device|1.3.296|1024|1|" (subs hex 2))
+               (str "Fake Device|1.3.296|1024|1|" hex "|tail")
+               (str "Fake Device|1.3.296|1024|1|not-hex-not-hex")]]
+    (when-not (try (parse-answer bad) false (catch :default _ true))
+      (fail! "parse self-test: a broken answer was not refused"))))
+;; kernel self-tests: each rung declares exactly its categories, and the
+;; group op is computed in uniform control flow (before the guard), stored
+;; under it -- a fold inside the invocation-0 branch would be undefined.
+(let [geom (kernel-source :geometry) arith (kernel-source :arith) ballot (kernel-source :ballot)]
+  (when-not (and (str/includes? geom "GL_KHR_shader_subgroup_basic : require")
+                 (not (str/includes? geom "arithmetic")) (not (str/includes? geom "ballot")))
+    (fail! "kernel self-test: geometry rung declares more than basic"))
+  (when-not (str/includes? arith "GL_KHR_shader_subgroup_arithmetic : require")
+    (fail! "kernel self-test: arith rung missing its category"))
+  (when-not (str/includes? ballot "GL_KHR_shader_subgroup_ballot : require")
+    (fail! "kernel self-test: ballot rung missing its category"))
+  (doseq [[rung src fold] [[:arith arith "uint fold = subgroupAdd(1u);"]
+                           [:ballot ballot "uint fold = subgroupBallotBitCount(subgroupBallot(true));"]]]
+    (when-not (str/includes? src fold)
+      (fail! (str "kernel self-test: " (name rung) " fold missing")))
+    (let [at-fold (.indexOf src fold)
+          at-guard (.indexOf src "if (gl_SubgroupInvocationID == 0u)")]
+      (when-not (and at-fold at-guard (< at-fold at-guard))
+        (fail! (str "kernel self-test: " (name rung) " fold is not in uniform control flow"))))))
+
+;; ---- loader ---------------------------------------------------------------
+;; Compile defects FAIL; an unlinkable Vulkan loader library is COULD-NOT-RUN
+;; (macOS without MoltenVK), same contract as scripts/test-gpu-devclass.cljk.
+(def loader (.join path tmp "kexe-loader-gpu"))
+(def loader-obj (.join path tmp "kexe-loader-gpu.o"))
+(def vulkan-prefix
+  (some (fn [h] (when (.existsSync fs h) (first (str/split h #"/include/vulkan/vulkan.h"))))
+        ["/usr/include/vulkan/vulkan.h" "/usr/local/include/vulkan/vulkan.h" "/opt/homebrew/include/vulkan/vulkan.h"]))
+(let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-DKEXE_GPU_VULKAN"
+                                             "-c" (.join path root "tools" "kexe_loader.c") "-o" loader-obj]
+                                            (if (= platform "darwin") [(str "-I" vulkan-prefix "/include")] [])))]
+  (when-not (zero? status) (fail! (str "the GPU loader does not compile: " (subs err 0 (min 600 (count err)))))))
+(let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" loader-obj "-o" loader]
+                                            (if (= platform "darwin") [(str "-L" vulkan-prefix "/lib")] [])
+                                            ["-lvulkan"]))]
+  (when-not (zero? status)
+    (if (re-find #"(?i)(cannot find -lvulkan|library not found for -lvulkan|unable to find library -lvulkan|vulkan.*not found)" err)
+      (refuse! (str "the Vulkan loader library cannot link here (install MoltenVK/libvulkan): " (subs err 0 (min 300 (count err)))))
+      (fail! (str "the GPU loader does not link: " (subs err 0 (min 600 (count err))))))))
+
+;; ---- the generated .kotoba guest, as data ---------------------------------
+(defn- prs [form]
+  (cond
+    (string? form) (str "\"" form "\"")
+    (or (symbol? form) (keyword? form) (number? form)) (str form)
+    (vector? form) (str "[" (str/join " " (map prs form)) "]")
+    (seq? form) (str "(" (str/join " " (map prs form)) ")")
+    :else (str form)))
+
+(defn- g-let [bindings body]
+  (reduce (fn [acc [sym expr]] (list 'let [sym expr] acc)) body (reverse bindings)))
+
+(defn- guest-text [spv]
+  (str/join "\n"
+    [(prs '(ns gpu.subgroupprobe (:export [main])))
+     (prs '(defn gpu [r :string] :string (typed-cap-call :gpu/compute :string :string r)))
+     (prs (list 'defn 'main [] :string
+            (g-let [['i0 (list 'gpu "INFO")]
+                    ['o (list 'gpu (str "ALLOC " alloc-bytes))]
+                    ['p (list 'gpu (str "PIPELINE " spv " 1"))]
+                    ['b (list 'gpu "BEGIN")]
+                    ['d (list 'gpu (list 'string-concat "DISPATCH "
+                                         (list 'string-concat 'p (list 'string-concat " 1 1 1 " 'o))))]
+                    ['s (list 'gpu "SUBMIT")]
+                    ['rd (list 'gpu (list 'string-concat "READ "
+                                          (list 'string-concat 'o (str " 0 " read-bytes))))]
+                    ['fr (list 'gpu (list 'string-concat "FREE " 'o))]]
+                   (list 'string-concat 'i0 (list 'string-concat "|" 'rd)))))]))
+
+;; ---- one rung: compile -> run -> parse -> verify --------------------------
+;; Answers {:verdict :ok|:not-admitted|:verify-fail :detail ...}. :not-admitted
+;; carries the verbatim toolchain/device reason; it is a MEASURED negative
+;; (the device was asked and did not admit), never a skipped rung.
+(defn- run-rung [rung]
+  (let [name (name rung)
+        src (.join path tmp (str "kernel-" name ".comp"))
+        spv (.join path tmp (str "kernel-" name ".spv"))]
+    (.writeFileSync fs src (kernel-source rung) "utf8")
+    (let [{:keys [status err]} (sh glslang ["-V" "--target-env" "vulkan1.1" "-S" "comp" src "-o" spv])]
+      (if-not (zero? status)
+        {:verdict :not-admitted :detail (str "glslangValidator refused the " name " kernel: " (subs (str err) 0 (min 300 (count (str err)))))}
+        (let [gsrc (.join path tmp (str "guest-" name ".kotoba"))
+              kexe (.join path tmp (str "rung-" name ".kexe"))
+              code (.join path tmp (str "rung-" name ".bin"))]
+          (.writeFileSync fs gsrc (guest-text spv) "utf8")
+          (let [{:keys [status out err]} (sh "node" [(.join path root "bin" "amu") "compile" gsrc
+                                               "--target" target "--jvm-free"
+                                               "--policy" (.join path root "test" "fixtures" "gpu" "gpu-compute-policy.edn")
+                                               "--output" kexe])]
+            ;; Only the GLSL/pipeline rejection above measures operation
+            ;; support. A guest COMPILE failure is an infrastructure defect
+            ;; (compiler, dependency lock, linker) and must fail closed rather
+            ;; than record a device/toolchain negative (AGENTS.md: fail closed).
+            (if-not (and (zero? status) (str/includes? out ":ok true"))
+              (fail! (str "amu compile failed on the " name " guest: " (subs (str out err) 0 (min 300 (count (str out err))))))
+              (let [r (sh "node" [(.join path root "bin" "amu") "extract-native" kexe "--symbol" "main" "--output" code])
+                    m (re-find #":offset (\d+)" (:out r))]
+                (if-not m
+                  {:verdict :verify-fail :detail (str "extract-native gave no offset: " (:out r))}
+                  (let [offset (second m)
+                        run (sh loader [code offset "0" isa "42"] {"KEXE_RESULT_TYPE" "string" "KEXE_STRUCTURED_REPORT" "1" "KEXE_WALL_SECONDS" "300"})
+                        hex (second (re-find #":result-utf8-hex \"([0-9a-f]+)\"" (:out run)))]
+                    (cond
+                      (str/includes? (:err run) "no Vulkan physical device")
+                      (refuse! "Vulkan is installed but no physical device answers here")
+
+                      (nil? hex)
+                      {:verdict :not-admitted :detail (str "the " name " rung trapped (exit " (.-status run) "): "
+                                                           (subs (str (:out run) (:err run)) 0 (min 400 (count (str (:out run) (:err run))))))}
+
+                      :else
+                      (let [answer (.toString (js/Buffer.from hex "hex") "utf8")
+                            parsed (try (parse-answer answer)
+                                        (catch :default e {:error (.-message e)}))]
+                        (if (:error parsed)
+                          {:verdict :verify-fail :detail (str (:error parsed) ": " (subs answer 0 (min 200 (count answer))))}
+                          (let [words (hex->words (:hex parsed))
+                                v (verify-words words rung)]
+                            (if (:ok v)
+                              {:verdict :ok :S (:S v) :ngs (:ngs v) :info (:info parsed)}
+                              {:verdict :verify-fail :detail (:reason v)})))))))))))))))
+
+;; ---- the ladder -----------------------------------------------------------
+;; geometry first: it is the measurement. arith and ballot then add one op
+;; class each; whichever the device refuses is recorded by name.
+(let [rungs [{:rung :geometry :mandatory true} {:rung :arith} {:rung :ballot}]
+      results (mapv (fn [{:keys [rung]}]
+                      (let [res (run-rung rung)]
+                        (case (:verdict res)
+                          :ok (println (str "GPU-SUBGROUP-PROBE\tRUNG\t" (name rung)
+                                            "\tOK\tS=" (:S res) "\tNGS=" (:ngs res) "\tW=" wg-size))
+                          :not-admitted (println (str "GPU-SUBGROUP-PROBE\tRUNG\t" (name rung)
+                                                      "\tNOT-ADMITTED\t" (:detail res)))
+                          :verify-fail (println (str "GPU-SUBGROUP-PROBE\tRUNG\t" (name rung)
+                                                     "\tVERIFY-FAIL\t" (:detail res))))
+                        res))
+                    rungs)
+      geom (first results)
+      summary (str/join "\t" (map (fn [{:keys [rung]} res] (str (name rung) "=" (name (:verdict res)))) rungs results))]
+  (when-not (= (:verdict geom) :ok)
+    (if (= (:verdict geom) :not-admitted)
+      (refuse! (str "the device admitted no geometry rung: " (:detail geom)))
+      (fail! (str "geometry rung failed verification: " (:detail geom)))))
+  (println (str "GPU-SUBGROUP-PROBE\tINFO\t" (:info geom) "\t" target))
+  (println (str "GPU-SUBGROUP-PROBE\tRESULT\tS=" (:S geom) "\tNGS=" (:ngs geom) "\tW=" wg-size "\t" summary))
+  (if (some #(= (:verdict %) :verify-fail) results)
+    (do (println "GPU-SUBGROUP-PROBE\tFAIL\ta rung that the device admitted did not verify") (js/process.exit 1))
+    (js/process.exit 0)))

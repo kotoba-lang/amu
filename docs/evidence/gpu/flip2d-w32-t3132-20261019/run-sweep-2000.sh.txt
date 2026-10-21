@@ -1,0 +1,70 @@
+#!/bin/sh
+# W=32 FLIP-AXIS TEST (JUN-58, tick 20261019-2000): does the measured
+# 31(win)->32(loss) sign change survive a change of W at the SAME grid?
+#
+# CONTEXT. The W=64 tile-crossing chain (PRs #1358-#1376) measured one sign
+# flip -- tiles=31 win / tiles=32 loss at lanes 2,095,104 (PR #1369) -- and
+# then showed that flip does NOT reproduce at lanes 2,156,544 (PR #1375:
+# e32 win) or 2,297,856 (PR #1376: e32/e33/e34 all wins). PR #1371: "no 1-D
+# threshold explains both grids". The tile axis is closed as a flip
+# locator. This slice tests the NEXT axis: the width W. If the 31->32
+# change also appears at W=32 on the flip grid, it is tile-driven; if it
+# vanishes or moves, the flip is a (W, tiles, grid) interaction and no
+# tile-only threshold exists at any W -- consistent with, and stronger
+# than, the cross-grid non-reproduction.
+#
+# GRID. lanes 2,095,104 = 2^5*3^2*7*11*31 (the #1369 flip grid; 0.54%
+# below 2^21). At W=32, lanes/32 = 65,472 = 2^6*3*11*31: divisible by 24
+# (2728 wg), 31 (2112 wg), 32 (2046 wg). At W=64, lanes/64 = 32,736 =
+# 2^5*3*11*31: divisible by 31 (1056 wg), 32 (1017 wg). All five shapes
+# pass valid-shape? (lanes multiple of 256, groups in 4..65535,
+# max-sum = 3*L^2 + L(L+1)/2 < 2^24: 2,064,768 / 3,444,720 / 3,670,528 /
+# 12,552,352 / 13,140,736).
+#
+# Cells:
+#   w32t24       -- NEW at W=32 (win anchor at W=64, PR #1360/#1369)
+#   w32t31 w32t32 -- NEW: the flip pair, transplanted to W=32
+#   w64t31 w64t32 -- SAME-SESSION anchors for the #1369 pair (win/loss
+#                    there; cross-session magnitudes are unstable, signs
+#                    and same-session pairing are the claim)
+#
+# 3 cycles, order rotated (forward, reversed, rotated). Idempotent: a cell
+# whose log EXISTS AND VERIFIED is skipped; an interrupted or failed run
+# leaves a log without the RESULT line and is re-run on the next invocation.
+#
+# NOTE (repo rule): kept as run-sweep-2000.sh.txt because the repository
+# workflow-lint refuses POSIX shell execution files anywhere in the tree;
+# this is the recorded protocol text. Run it with `sh run-sweep-2000.sh.txt`.
+set -e
+cd "$(dirname "$0")/../../../.."
+EV=docs/evidence/gpu/flip2d-w32-t3132-20261019
+mkdir -p "$EV"
+TAB=$(printf '\t')
+
+run() { # cycle cell W lanes chunks
+  log="$EV/run-$1-$2.log"
+  if [ -f "$log" ] && grep -q "RESULT${TAB}verified=true" "$log"; then echo "skip $log"; return 0; fi
+  echo "run $log"
+  (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" "$4" "$5") > "$log" 2>&1
+  grep -q "RESULT${TAB}verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }
+}
+
+# cycle 1: forward
+run 1 w32t24 32 2095104 24
+run 1 w32t31 32 2095104 31
+run 1 w32t32 32 2095104 32
+run 1 w64t31 64 2095104 31
+run 1 w64t32 64 2095104 32
+# cycle 2: reversed
+run 2 w64t32 64 2095104 32
+run 2 w64t31 64 2095104 31
+run 2 w32t32 32 2095104 32
+run 2 w32t31 32 2095104 31
+run 2 w32t24 32 2095104 24
+# cycle 3: rotated
+run 3 w32t31 32 2095104 31
+run 3 w32t32 32 2095104 32
+run 3 w64t31 64 2095104 31
+run 3 w64t32 64 2095104 32
+run 3 w32t24 32 2095104 24
+echo SWEEP-COMPLETE

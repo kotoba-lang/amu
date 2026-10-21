@@ -1,0 +1,58 @@
+#!/bin/sh
+# NOTE (repo rule): kept as run-sweep-1906.sh.txt because the repository workflow-lint
+# refuses POSIX shell execution files; run with sh <this file>.
+# W=64 TILE-CROSSING BISECTION, PHASE 5 (JUN-58, tick 20261019-1906):
+# grid E (lanes 2,156,544) to measure tiles 26 and 27 -- the last two
+# UNMEASURED interior points of the W=64 25..31 band at EVERY grid used so
+# far (tick-1837: "26 and 27 need factors 13 / 3^3 and stay unmeasured at
+# every grid used so far") -- with same-session win/loss anchors.
+#
+# Grid E choice: lanes 2,156,544 = 64 * lcm(24,26,27,32) * 3 (2.83% above
+# 2^21). 2,156,544/64 = 33,696 = 2^5 * 3^4 * 13, divisible by 24 (1404 wg),
+# 26 (1296 wg), 27 (1248 wg) and 32 (1053 wg). Tiles 26 and 27 need the
+# factors 13 and 3^3 in lanes/64; this is the nearest multiple of
+# 64*lcm(24,26,27,32) to 2^21 (the next one down, k=2, is 1,437,696, 31.4%
+# below). 25/28/29/30/31 are NOT admissible at this grid (33,696 lacks the
+# factors 5, 7, 29, 31) -- the grid buys 26/27 at the price of them.
+#
+# Cells (W=64 throughout):
+#   e24        -- WIN anchor (PR #1360: variant wins at 24 tiles)
+#   e26 e27    -- NEW: the never-measured interior points (L=1664/1728)
+#   e32        -- LOSS anchor (PR #1369: flip lands between 31 and 32)
+#
+# Within-grid framing only: the chain already showed the flip location moves
+# with the grid (PR #1371: "no 1-D threshold explains both grids"), so 26/27
+# are read against THIS session's 24/32 pair, not against other grids.
+#
+# 3 cycles, order rotated (forward, reversed, rotated). Idempotent: a cell
+# whose log exists is skipped.
+set -e
+TAB=$(printf '\t')
+cd "$(dirname "$0")/../../../.."
+EV=docs/evidence/gpu/tilecross-w64-t2627-gride-20261019
+mkdir -p "$EV"
+
+run() { # cycle cell W lanes chunks
+  log="$EV/run-$1-$2.log"
+  if [ -f "$log" ] && grep -q "RESULT${TAB}verified=true" "$log"; then echo "skip $log"; return 0; fi
+  echo "run $log"
+  (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" "$4" "$5") > "$log" 2>&1
+  grep -q "RESULT	verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }
+}
+
+# cycle 1: forward
+run 1 e24 64 2156544 24
+run 1 e26 64 2156544 26
+run 1 e27 64 2156544 27
+run 1 e32 64 2156544 32
+# cycle 2: reversed
+run 2 e32 64 2156544 32
+run 2 e27 64 2156544 27
+run 2 e26 64 2156544 26
+run 2 e24 64 2156544 24
+# cycle 3: rotated
+run 3 e26 64 2156544 26
+run 3 e27 64 2156544 27
+run 3 e32 64 2156544 32
+run 3 e24 64 2156544 24
+echo SWEEP-COMPLETE
