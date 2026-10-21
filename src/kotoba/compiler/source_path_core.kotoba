@@ -1,0 +1,89 @@
+(ns kotoba.compiler.source-path-core
+  {:kotoba/export [source-kind source-kind-present? admit! admit-native-artifact!]}
+  (:require [kotoba.lang.text :as str]))
+
+(defn- error-document [message :string data :document] :document
+  (document-map (document-keyword :message) (document-string message)
+                (document-keyword :data) data))
+
+(defn source-kind
+  "Classify the filename's Kotoba notation for discovery and diagnostics. `.cljk`
+  is bounded Kotoba syntax sugar; this classification never selects a runtime."
+  [path :string] [:option :keyword]
+  (cond
+    (str/ends-with? path ".kotoba") (option-some-of [:option :keyword] :kotoba)
+    (str/ends-with? path ".cljk") (option-some-of [:option :keyword] :kotoba-syntax-sugar)
+    (str/ends-with? path ".cljc") (option-some-of [:option :keyword] :kotoba-compat-syntax)
+    :else (option-none-of [:option :keyword])))
+
+(defn source-kind-present? [path :string] :bool
+  (option-some?-of [:option :keyword] (source-kind path)))
+
+(defn admit! [path :string] [:result :string :document]
+  (if (source-kind-present? path)
+    (result-ok-of [:result :string :document] path)
+    (result-err-of
+     [:result :string :document]
+     (error-document
+      "source input must use .kotoba, .cljk, or .cljc"
+      (document-map :phase (document-keyword :usage)
+                    :path (document-string path)
+                    :extensions (document-vector (document-string ".cljc")
+                                                 (document-string ".cljk")
+                                                 (document-string ".kotoba")))))))
+
+(defn- missing-artifact-keys [value :document] :document
+  (let [out (document-vector)]
+    (let [with-exports (if (document-contains value (document-keyword :exports))
+                         out
+                         (document-vector-conj out (document-keyword :exports)))]
+      (if (document-contains value (document-keyword :code))
+        with-exports
+        (document-vector-conj with-exports (document-keyword :code))))))
+
+(defn- present-artifact-keys [value :document] :document
+  (let [n (document-count value)]
+    (loop [i 0 out (document-vector)]
+      (if (>= i n)
+        (document-vector-sort out)
+        (let [entry (option-value-of [:option :document]
+                                     (document-map-entry-at value i)
+                                     (document-vector))
+              key (option-value-of [:option :document]
+                                   (document-vector-at entry 0)
+                                   (document-null))]
+          (recur (inc i) (document-vector-conj out key)))))))
+
+(defn admit-native-artifact! [value :document path :string]
+  [:result :document :document]
+  (if (source-kind-present? path)
+    (result-err-of
+     [:result :document :document]
+     (error-document
+      "extract-native reads a compiled artifact, not a source file"
+      (document-map :phase (document-keyword :decode)
+                    :path (document-string path)
+                    :source-kind (document-keyword
+                                  (option-value-of [:option :keyword]
+                                                   (source-kind path)
+                                                   :unsupported-source))
+                    :expected (document-string "the EDN artifact written by `compile --output`"))))
+    (if (not= (document-kind value) :map)
+      (result-err-of
+       [:result :document :document]
+       (error-document
+        "extract-native input did not read as a native artifact"
+        (document-map :phase (document-keyword :decode)
+                      :path (document-string path)
+                      :expected (document-string "the EDN artifact written by `compile --output`"))))
+      (let [missing (missing-artifact-keys value)]
+        (if (> (document-count missing) 0)
+          (result-err-of
+           [:result :document :document]
+           (error-document
+            "extract-native input is missing native artifact keys"
+            (document-map :phase (document-keyword :decode)
+                          :path (document-string path)
+                          :missing missing
+                          :present (present-artifact-keys value))))
+          (result-ok-of [:result :document :document] value))))))

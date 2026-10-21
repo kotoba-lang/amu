@@ -33,9 +33,19 @@
                               :else [entry])))
                         (.readdirSync fs directory)))]
         (walk lib/root))
-      shell-files (filter #(.endsWith % ".sh") repository-files)]
-  (lib/ensure! (empty? shell-files)
-               (str "workflow-lint: POSIX shell execution files found: " shell-files)))
+      shell-files (filter #(.endsWith % ".sh") repository-files)
+      ;; Native verification is a mechanism over explicit compiler/loader
+      ;; inputs, without a Node/JVM compiler. Keep the ban on unrelated shell
+      ;; entrypoints, while permitting this reviewed selfhost regression gate.
+      native-gates #{(lib/join lib/root "scripts/seed/check-native-source-recovery.sh")}
+      unexpected (remove native-gates shell-files)]
+  (lib/ensure! (empty? unexpected)
+               (str "workflow-lint: unreviewed POSIX shell execution files found: " unexpected))
+  (lib/ensure! (= native-gates (set (filter native-gates shell-files)))
+               "workflow-lint: reviewed native regression gate is missing")
+  (lib/ensure! (.includes (lib/read-text (lib/join workflow-dir "test.yml"))
+                         "bash scripts/seed/check-native-source-recovery.sh")
+               "workflow-lint: reviewed native regression gate is not run"))
 
 (doseq [workflow workflows]
   (lib/ensure! (.includes (lib/read-text workflow) "node-version: \"24.12.0\"")
