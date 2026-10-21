@@ -102,6 +102,20 @@ and do not qualify multi-module code generation, ABI map transfer, the ABI
 WIT accessors, selfhost rebuilding, Q9 or CDCI. The source change has not yet
 been compiled or executed through the qualified loaderless route.
 
+## Canonical native project boundary candidate (2026-10-22)
+
+The same #1437 source draft now retires `.cljk`/`.cljc` project discovery,
+`compare-hir`, CLJK frontend APIs and the source-record lowering flag.
+Canonical packet marker 0 remains; legacy marker 1 refuses. Reserved-name
+validation is extracted unchanged from lowering, while lock/CID/order/budget
+and import/schema/typed-map refusal behavior remain. New record layouts and
+call arities require the same reviewed source revision throughout the image.
+See `docs/canonical-native-project-boundary.md`.
+
+This is source preparation only. Native admission, Definition CIDs,
+executable project links, full upstream/helper closure and self-rebuild remain
+open; no implementation/build/native execution or tests were performed.
+
 ## Historical checkpoints (superseded contract; evidence only)
 
 Statements below about retained CLJK syntax sugar, hosted routes and pinned
