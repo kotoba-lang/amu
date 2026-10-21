@@ -384,8 +384,6 @@
 
 ;; ------------------------------------------------------------------ G0
 
-(def ^:private kotoba-nil-re #"#\?@?\(\s*:kotoba\s+nil[\s\)]")
-
 (defn- measure-g0 [oracle subject changed]
   (let [amu (join oracle "bin" "amu")]
     (if-not (file? amu)
@@ -400,7 +398,8 @@
                    (let [text (read-text p)
                          r (sh js/process.execPath [amu "refactor" "to-kotoba" p "--check"] {:cwd oracle :timeout 600000})
                          out (str (:stdout r) (:stderr r))
-                         nil-forms (count (re-seq kotoba-nil-re text))
+                         ;; token-aware (the S5 scanner): a `#?(:kotoba nil` inside a string or comment is not a form
+                         nil-forms (:kotoba-nil (boundary/scan-text text))
                          host (boundary/kotoba-arm-host-literals text)]
                      (if-not (.includes out ":format :kotoba.refactor/v1")
                        [rel {:present true :verdict "UNMEASURED" :reason (describe r)

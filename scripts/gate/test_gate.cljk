@@ -69,6 +69,8 @@
 (let [s (b/scan-text "(ns a (:require #?(:cljs [\"node:fs\" :as fs]) [\"node:path\" :as p]))\n(def x #?(:kotoba nil :cljs 1))")]
   (check "unguarded / guarded host tokens" (and (= 1 (:unguarded s)) (= 1 (:guarded s))))
   (check "#?(:kotoba nil forms and arms" (and (= 1 (:kotoba-nil s)) (= 1 (:kotoba-arms s)) (= 2 (:host-arms s)))))
+(check "a #?(:kotoba nil inside a string or comment is not a form"
+       (= 0 (:kotoba-nil (b/scan-text "(def s \"#?(:kotoba nil :cljs 1)\") ; #?(:kotoba nil)\n"))))
 (check "native-gates allowlist"
        (= ["scripts/seed/x.sh"] (b/native-gates-allowlist "native-gates #{(lib/join lib/root \"scripts/seed/x.sh\")}")))
 (check "a missing allowlist is nil (the driver fails closed)" (nil? (b/native-gates-allowlist "nothing")))
