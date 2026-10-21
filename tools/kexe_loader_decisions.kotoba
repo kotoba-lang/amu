@@ -45,11 +45,7 @@
     (= k 0) 4096
     ;; :profile/native :cells :pair-arena-max -- 64 Mi handles, address space.
     (= k 1) 67108864
-    ;; :profile/native :cells :kgraph -- the kgraph datom budget per run
-    ;; (KEXE_KGRAPH / a packaged command's baked constant name another), and
-    ;; the artifact ABI's :kgraph-capacity. A DEFAULT since 2026-10-09; it was
-    ;; the fixed size of the datom array from 2026-07-19 (86df0919b, copied
-    ;; from the pair capacity for a 6-datom pilot, never measured).
+    ;; kgraph datoms per run.
     (= k 2) 4096
     ;; :profile/native :structural :arena-scope-depth.
     (= k 3) 256
@@ -70,22 +66,16 @@
     (= k 11) 3
     (= k 12) 86400
     ;; :profile/native :cells :vectors / :vector-items (per-run budgets) and
-    ;; their address-space maxima. The vector table maximum is 64 Mi handles
-    ;; since 2026-10-03 (amu ADR 0364; was 4 Mi): address space, not memory --
-    ;; a handle's 16-byte entry and 4-byte region tag are touched only when
-    ;; minted -- and the 4 Mi table was the measured wall of the frontend's
-    ;; analyze pass at about 30 KB of real source per process.
+    ;; their address-space maxima.
     (= k 13) 4096
     (= k 14) 65536
-    (= k 15) 67108864
+    (= k 15) 4194304
     (= k 16) 134217728
     ;; :language/value :vector-items -- one vector, 2^24.
     (= k 17) 16777216
-    ;; :language/value :string-value-bytes and :bytes-value-bytes: 8 MiB
-    ;; since 2026-10-02 (amu ADR 0362; was 64 KiB), the source admission
-    ;; bound, so a source read as one value fits.
-    (= k 18) 8388608
-    (= k 19) 8388608
+    ;; :language/value :string-value-bytes, and the bytes twin.
+    (= k 18) 65536
+    (= k 19) 65536
     ;; filesystem scope entries per grant.
     (= k 20) 64
     ;; the longest path a scope admits, NUL included (PATH_MAX-sized
@@ -102,17 +92,6 @@
     (= k 24) 30000
     (= k 25) 1000
     (= k 26) 16
-    ;; :profile/native :cells :kgraph-max -- the most datoms a run may ask
-    ;; for: 16 Mi, address space (24 B a datom, 384 MiB mapped, touched only
-    ;; as asserted). Seed rung r6l keeps run-time keyword texts in the kgraph
-    ;; and the frontend's need tracks the code it emits: measured 2026-10-09
-    ;; over the 311 corpus programs the compile-twin spike compiles, 417
-    ;; datoms for the smallest and about 1.6 per emitted aarch64 byte above
-    ;; that (Pearson 0.975), 28,285 for the largest (29.7 KB of code);
-    ;; amu docs/selfhost-kgraph-capacity-20261008.md. 16 Mi covers about
-    ;; 10 MB of emitted code in one process, more than the 6.9 MB frontend
-    ;; image itself.
-    (= k 27) 16777216
     :else -1))
 
 ;; ---------------------------------------------------------------------
@@ -181,20 +160,15 @@
 ;;   13 :io/write 37                14 :gpu/compute 42
 ;;   15 :env/read 33               16 native TCP 43..47 (the net broker;
 ;;                                    which wire is the request's first byte)
-;;   17 :fs/app-data 35 over a :bytes payload (kinds 8 and 9)
 ;;
 ;; Typed kinds: 1 string, 2 option-i64, 3 result-i64, 4 clock-v1,
-;; 5 dataspace-v1, 6 ui-commit-v1, 7 ui-event-v1, 8 bytes-v1 (:bytes request,
-;; :bytes result), 9 string-bytes-v1 (:string request, :bytes result); 8 and 9
-;; belong to wire 35 only.
+;; 5 dataspace-v1, 6 ui-commit-v1, 7 ui-event-v1.
 (defn- cap-provider [id kind]
   (cond
     (= kind 4) (if (= id 7) 1 -1)
     (= kind 5) (if (= id 24) 2 0)
     (= kind 6) (if (= id 9) 3 0)
     (= kind 7) (if (= id 10) 4 0)
-    (= kind 8) (if (= id 35) 17 -1)
-    (= kind 9) (if (= id 35) 17 -1)
     (= kind 1) (cond (= id 35) 5
                      (= id 34) 6
                      (= id 39) 7
@@ -267,8 +241,7 @@
 
 ;; A per-run budget the caller named (environment or packaged constant).
 ;; BUDGET: 0 fuel, 1 string pool, 2 pairs, 3 vectors, 4 vector items,
-;; 5 cpu seconds, 6 wall seconds, 7 kgraph datoms. VALUE is the u64 the C
-;; parsed.
+;; 5 cpu seconds, 6 wall seconds. VALUE is the u64 the C parsed.
 ;;   0 admitted, 1 refused as zero (must be positive), 2 above the ceiling.
 (defn- budget-ceiling [budget]
   (cond
@@ -279,7 +252,6 @@
     (= budget 4) (constant 16)
     (= budget 5) (constant 12)
     (= budget 6) (constant 12)
-    (= budget 7) (constant 27)
     :else 0))
 
 (defn- budget-verdict [budget value]

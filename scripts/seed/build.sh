@@ -76,7 +76,7 @@ stageN() {
   fi
   echo "$out" | sed -n 's/.*:offset \([0-9]*\).*/\1/p' > $B/seed-$n.offset
   [ -s $B/seed-$n.offset ] && [ -s $B/seed-$n.bin ] || { echo "build: no offset/bin from extract-native: $out"; return 1; }
-  { echo "label seed-$n built by seed-$p under tools/kexe_loader.c"
+  { echo "label seed-$n built by seed-$p under ${SEED_LOADER_SOURCE:-seed/bootstrap/seed-loader-v11.c}"
     echo "unity-sha256 $(cat $U.sha256)"; echo "compiler-sha256 $(sha $B/seed-$p.bin)"
     echo "bin-sha256 $(sha $B/seed-$n.bin)"; echo "offset $(cat $B/seed-$n.offset)"; } > $B/seed-$n.info
   echo "build: seed-$n.bin $(wc -c < $B/seed-$n.bin | tr -d ' ') bytes, main at $(cat $B/seed-$n.offset)"

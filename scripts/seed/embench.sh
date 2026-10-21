@@ -73,7 +73,7 @@ fp=false; [ -z "$SEED_COMPILER" ] && [ -s $B/seed-1.bin ] && [ -s $B/seed-2.bin 
   [ -s $B/seed-unity.kotoba ] && echo "  \"unity_source_sha256\": \"$(sha $B/seed-unity.kotoba)\","
   [ -s $B/seed-0.info ] && echo "  \"stage0_bootstrap_sha256\": \"$(sed -n 's/^stage0-sha256 //p' $B/seed-0.info)\","
   echo "  \"compiler_sha256\": \"$(sha $comp)\","
-  echo "  \"loader_source_sha256\": \"$(sha $R/tools/kexe_loader.c)\","
+  echo "  \"loader_source_sha256\": \"$(sha ${SEED_LOADER_SOURCE:-$R/seed/bootstrap/seed-loader-v11.c})\","
   echo "  \"runner_sha256\": \"$(sha $B/kexe-benchmark)\","
   echo "  \"load_average_1m_at_start\": $load,"
   echo "  \"load_average_1m_at_end\": $load_end,"

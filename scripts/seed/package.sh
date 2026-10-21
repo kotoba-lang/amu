@@ -66,7 +66,7 @@ ITEMS=${SEED_PKG_VECTOR_ITEMS:-134217728}; CPU=${SEED_PKG_CPU:-120}; WALL=${SEED
   echo "};"
 } > $D/kexe_embedded.h
 mkdir -p $(dirname $out)
-cc -O2 -std=c11 -I $D -include $D/kexe_embedded.h $SEED_REPO/tools/kexe_loader.c -o $out.tmp.$$ 2> $D/cc.log \
+cc -O2 -std=c11 -I $D -include $D/kexe_embedded.h ${SEED_LOADER_SOURCE:-$SEED_REPO/seed/bootstrap/seed-loader-v11.c} -o $out.tmp.$$ 2> $D/cc.log \
   || { echo "package: cc failed (see $D/cc.log)"; head -5 $D/cc.log; rm -f $out.tmp.$$; exit 1; }
 chmod 755 $out.tmp.$$; mv $out.tmp.$$ $out
 deps=$(otool -L $out | tail -n +2 | awk '{print $1}')
@@ -75,7 +75,7 @@ sha() { shasum -a 256 $1 | cut -c1-64; }
 { echo "label seed-$n packaged command (KEXE_EMBEDDED build of tools/kexe_loader.c)"
   echo "code seed-$n.bin sha256 $(sha $bin) bytes $len offset $off"
   echo "command $out sha256 $(sha $out) bytes $(wc -c < $out | tr -d ' ')"
-  echo "loader-source sha256 $(sha $SEED_REPO/tools/kexe_loader.c)"
+  echo "loader-source sha256 $(sha ${SEED_LOADER_SOURCE:-$SEED_REPO/seed/bootstrap/seed-loader-v11.c})"
   echo "allow $allow"; echo "scope35 $scope"
   echo "budgets string-pool $POOL pairs $PAIRS vectors $VECS vector-items $ITEMS cpu-seconds $CPU wall-seconds $WALL kgraph $KGRAPH"
   echo "libraries $(echo $deps | tr '\n' ' ')"; } > $B/seed-package.info

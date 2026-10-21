@@ -123,7 +123,7 @@ POOL=1073741824; PAIRS=67108864; VECS=67108864; ITEMS=134217728; CPU=1800; WALL=
   echo "static const unsigned char kexe_embedded_code[$len] = {"
   xxd -i < $W/amu.bin
   echo "};"; } > $D/kexe_embedded.h
-cc -O2 -std=c11 -I $D -include $D/kexe_embedded.h $R/tools/kexe_loader.c -o $W/amu-one.tmp 2> $D/cc.log || die "cc"
+cc -O2 -std=c11 -I $D -include $D/kexe_embedded.h ${SEED_LOADER_SOURCE:-$R/seed/bootstrap/seed-loader-v11.c} -o $W/amu-one.tmp 2> $D/cc.log || die "cc"
 mv $W/amu-one.tmp $W/amu-one
 deps=$(otool -L $W/amu-one | tail -n +2 | awk '{print $1}')
 echo "$deps" | grep -vq '^/usr/lib/' && die "unexpected library dependency"
@@ -137,7 +137,7 @@ echo "$deps" | grep -vq '^/usr/lib/' && die "unexpected library dependency"
   echo "kseed $(sha $W/amu.kseed) bytes $(wc -c < $W/amu.kseed | tr -d ' ')"
   echo "code $(sha $W/amu.bin) bytes $len offset $off"
   echo "command $W/amu-one sha256 $(sha $W/amu-one) bytes $(wc -c < $W/amu-one | tr -d ' ')"
-  echo "loader-source sha256 $(sha $R/tools/kexe_loader.c)"
+  echo "loader-source sha256 $(sha ${SEED_LOADER_SOURCE:-$R/seed/bootstrap/seed-loader-v11.c})"
   echo "allow $ALLOW scope35 $SCOPE"
   echo "budgets string-pool $POOL pairs $PAIRS vectors $VECS vector-items $ITEMS cpu $CPU wall $WALL hashcons $HC kgraph $KGRAPH"
   echo "libraries $(echo $deps | tr '\n' ' ')"; } > $W/amu-one.info

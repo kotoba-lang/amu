@@ -19,11 +19,11 @@ mkdir -p $SEED_BUILD
 # manifest paths in order (comments and blank lines dropped)
 seed_manifest() { grep -v '^[[:space:]]*#' ${SEED_MANIFEST:-$SEED_REPO/seed/MANIFEST} | grep -v '^[[:space:]]*$' | sed 's/[[:space:]].*//'; }
 
-# the C loader, rebuilt when tools/kexe_loader.c is newer
+# the C loader of the seed lineage (JUN-200: the context-v11 loader pinned in seed/bootstrap; tools/kexe_loader.c is v12), rebuilt when its source is newer
 seed_loader() {
   local l=$SEED_BUILD/kexe-loader
-  if [ ! -x $l ] || [ $SEED_REPO/tools/kexe_loader.c -nt $l ]; then
-    cc $SEED_REPO/tools/kexe_loader.c -std=c11 -O2 -o $l.tmp.$$ 2>$SEED_BUILD/kexe-loader.cc.log && mv $l.tmp.$$ $l || { echo "seed: cannot build the loader (see $SEED_BUILD/kexe-loader.cc.log)" >&2; return 2; }
+  if [ ! -x $l ] || [ ${SEED_LOADER_SOURCE:-$SEED_REPO/seed/bootstrap/seed-loader-v11.c} -nt $l ]; then
+    cc ${SEED_LOADER_SOURCE:-$SEED_REPO/seed/bootstrap/seed-loader-v11.c} -std=c11 -O2 -o $l.tmp.$$ 2>$SEED_BUILD/kexe-loader.cc.log && mv $l.tmp.$$ $l || { echo "seed: cannot build the loader (see $SEED_BUILD/kexe-loader.cc.log)" >&2; return 2; }
   fi
   echo $l
 }

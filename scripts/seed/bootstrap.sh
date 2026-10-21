@@ -77,7 +77,7 @@ step() {
 
 cd $R
 ( cd seed/bootstrap && shasum -a 256 -c SHA256SUMS > /dev/null ) || die "seed/bootstrap/SHA256SUMS does not match the committed R0 seed"
-echo "bootstrap: loader $(seed_loader | xargs shasum -a 256 | cut -c1-12) (tools/kexe_loader.c at $(git rev-parse --short HEAD)), work dir $W"
+echo "bootstrap: loader $(seed_loader | xargs shasum -a 256 | cut -c1-12) (${SEED_LOADER_SOURCE:-seed/bootstrap/seed-loader-v11.c} at $(git rev-parse --short HEAD)), work dir $W"
 cur=$W/seed-r0.bin
 cp seed/bootstrap/seed-r0.bin $cur; cp seed/bootstrap/seed-r0.offset ${cur%.bin}.offset
 echo "bootstrap: R0 seed (committed)                 $(wc -c < $cur | tr -d ' ') bytes  sha256 $(sha $cur)"
