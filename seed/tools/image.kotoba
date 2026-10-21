@@ -1,0 +1,126 @@
+;; seed/tools/image.kotoba -- the front object dir of the unified amu image (JUN-202: the Kotoba port of
+;; scripts/seed/image/front.sh). Compiled by the committed seed, run under the pinned loader; it starts only the lineage
+;; loader running seed r6n (or, with --builder, a packaged amu image): no shell, node, nbb, JVM or python.
+;;
+;;   image <repo> front --scan WORK --twins DIR --out OUT --stderr FILE [--seed FILE] [--builder NAME]
+;;
+;;   WORK   a selfbuild work dir (seed/tools/selfbuild.kotoba): WORK/r6/order.txt and the scan objects WORK/r6/o
+;;   DIR    kotoba-lang lang/compat/kotoba/compiler holding project.kotoba / project_files.kotoba (the project route's
+;;          guest twins), recompiled here so the twin is what the image links
+;;   OUT    the object dir written (must not exist): every module the scan compiled (an object in WORK/r6/o; amu.* and
+;;          seed.* skipped) is compiled AGAIN, from the scan's farm source, in scan order -- the scan objects select the
+;;          closure but are never used as a cache of its code; then the project twins and seed/amu-front/check.cljk
+;;          (kotoba.amu-front.check). The first refusal stops the build (exit 1) and is printed.
+;;   --builder NAME  every compile by that packaged amu image (`compile --target aarch64-macos --emit-module`, the
+;;          self-rebuild of image/rebuild.sh generations 1-3) instead of the seed; NAME must be in the spawn grant.
+;; As selfbuild, the seed's refusals reach this tool through its stderr: run it with 2> FILE and name FILE with --stderr.
+;; The three-generation rebuild (image/rebuild.sh) and the launcher (launcher/build.sh) are not ported yet: they need
+;; this front dir first, which the current integration sources cannot produce (seed/README.md "Selfbuild scan").
+(ns tools.image
+  (:require [tools.lib :as l]
+            [tools.scan :as sc])
+  (:export [main]))
+
+(defn- c3 [a :string b :string c :string] :string (string-concat a (string-concat b c)))
+(defn- c4 [a :string b :string c :string d :string] :string (string-concat a (c3 b c d)))
+(defn- c5 [a :string b :string c :string d :string e :string] :string (string-concat a (c4 b c d e)))
+(defn- c6 [a :string b :string c :string d :string e :string f :string] :string (string-concat a (c5 b c d e f)))
+
+(defn- say [s :string] :i64 (l/out (c3 "image: " s "\n")))
+(defn- fail [s :string] :i64 (let [z (l/err (c3 "image: FAIL: " s "\n"))] 1))
+
+(defn- opt [name :string] :string
+  (loop [i 1]
+    (cond (>= (+ i 1) (l/argc)) ""
+          (string=? (l/arg i) name) (l/arg (+ i 1))
+          :else (recur (+ i 1)))))
+
+(defn- starts-with [s :string x :string] :i64
+  (if (and (>= (string-length s) (string-length x)) (= (string-index-of-from s x 0) 0)) 1 0))
+
+;; word k (0-based) of a space-separated line
+(defn- word-at [line :string k :i64] :string
+  (loop [i 0 n 0]
+    (let [j (string-index-of-from line " " i)
+          e (if (< j 0) (string-length line) j)]
+      (cond (= n k) (string-substring line i e)
+            (< j 0) ""
+            :else (recur (+ j 1) (+ n 1))))))
+
+;; the first "seed: E" line (or any line holding "error") of t
+(defn- refusal-line [t :string] :string
+  (loop [i 0]
+    (if (>= i (string-length t))
+      ""
+      (let [j (string-index-of-from t "\n" i)
+            e (if (< j 0) (string-length t) j)
+            line (string-substring t i e)]
+        (if (or (= (starts-with line "seed: E") 1) (>= (string-index-of-from line "error" 0) 0)) line (recur (+ e 1)))))))
+
+;; compile src as module nm into O; "" or the refusal
+(defn- comp [seed :string builder :string O :string src :string nm :string errf :string] :string
+  (let [z (l/err (c3 "image: compile " nm "\n"))
+        pos (string-length (l/read-text errf))
+        kso (c4 O "/" nm ".kso")
+        a (if (string=? builder "")
+            (l/run (c6 "kexe-loader-v11\t" seed "\t0\t0\taarch64\t35,37,38,39\t--\tcompile\t" src
+                       "\t--emit-module\t--object-dir\t" (c3 O "\t--output\t" kso)))
+            (l/run (c6 builder "\tcompile\t" src "\t--target\taarch64-macos\t--emit-module\t--object-dir\t" O (string-concat "\t--output\t" kso))))
+        e0 (l/read-text errf)
+        log (string-substring e0 pos (string-length e0))]
+    (if (and (= (l/exit-of a) 0) (= (l/exists kso) 1) (> (l/file-size kso) 0))
+      ""
+      (let [r (refusal-line log)]
+        (c4 nm ": " (if (string=? r "") (c3 "exit " (l/dec (l/exit-of a)) " (no refusal line)") r) "")))))
+
+(defn- front [R :string seed :string builder :string W :string TW :string O :string errf :string] :i64
+  (let [order (l/read-text (string-concat W "/r6/order.txt"))
+        n (l/nlines order)
+        O0 (string-concat W "/r6/o")
+        z0 (l/mkdirs R O)
+        tp (string-concat TW "/project.kotoba")
+        tf (string-concat TW "/project_files.kotoba")
+        r1 (loop [k 0 c 0]
+             (if (>= k n)
+               (l/dec c)
+               (let [line (l/line-at order k)
+                     nm (word-at line 0)
+                     p (word-at line 1)
+                     skip (or (= (starts-with nm "amu.") 1) (= (starts-with nm "seed.") 1)
+                              (= (l/exists (c4 O0 "/" nm ".kso")) 0))
+                     src (cond (string=? nm "kotoba.compiler.project") tp
+                               (string=? nm "kotoba.compiler.project-files") tf
+                               :else p)]
+                 (if skip
+                   (recur (+ k 1) c)
+                   (let [r (comp seed builder O src nm errf)]
+                     (if (string=? r "") (recur (+ k 1) (+ c 1)) (string-concat "!" r)))))))]
+    (if (= (starts-with r1 "!") 1)
+      (fail (string-substring r1 1 (string-length r1)))
+      (let [r2 (if (= (l/exists (string-concat O "/kotoba.compiler.project.kso")) 1) ""
+                 (comp seed builder O tp "kotoba.compiler.project" errf))
+            r3 (if (or (not (string=? r2 "")) (= (l/exists (string-concat O "/kotoba.compiler.project-files.kso")) 1)) ""
+                 (comp seed builder O tf "kotoba.compiler.project-files" errf))
+            r4 (if (or (not (string=? r2 "")) (not (string=? r3 ""))) ""
+                 (comp seed builder O (string-concat R "/seed/amu-front/check.cljk") "kotoba.amu-front.check" errf))
+            bad (cond (not (string=? r2 "")) r2 (not (string=? r3 "")) r3 :else r4)]
+        (if (not (string=? bad ""))
+          (fail (c3 bad " (after " (c3 r1 " scan modules recompiled)" "")))
+          (let [z (say (c6 r1 " scan modules + project twins + kotoba.amu-front.check -> " O ", seed " (string-substring (l/sha256-file seed) 0 16)
+                           (c4 ", project twins " (l/sha256-text (l/read-text tp)) " " (l/sha256-text (l/read-text tf)))))]
+            0))))))
+
+(defn main [] :i64
+  (let [errf (opt "--stderr")
+        R (l/arg 0)]
+    (if (or (< (l/argc) 2) (not (string=? (l/arg 1) "front")) (string=? errf "") (string=? (opt "--scan") "")
+            (string=? (opt "--twins") "") (string=? (opt "--out") ""))
+      (let [z (l/err "usage: image <repo> front --scan WORK --twins DIR --out OUT --stderr FILE [--seed FILE] [--builder NAME]\n")] 2)
+      (let [mark (string-concat "image: stderr check " (opt "--out"))
+            zm (l/err (string-concat mark "\n"))
+            sd (opt "--seed")
+            seed (if (string=? sd "") (string-concat R "/build/seed-boot/r6n/seed-1.bin") sd)]
+        (cond (< (string-index-of-from (if (= (l/exists errf) 1) (l/read-text errf) "") mark 0) 0)
+              (fail (c3 "--stderr " errf " does not receive this tool's stderr (run it with 2> that file)"))
+              (= (l/exists (opt "--out")) 1) (fail (c3 "out dir " (opt "--out") " exists"))
+              :else (front R seed (opt "--builder") (opt "--scan") (opt "--twins") (opt "--out") errf))))))
