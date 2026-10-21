@@ -1,0 +1,86 @@
+name: test
+on:
+  push:
+    branches: [main]
+  pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  # Keep the established required check name while narrowing it to the
+  # repository's Amu selfhost evidence. No Node, nbb, CLJK, or CLJC runtime.
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 scripts/seed/test-preserved-verification.py
+      - run: python3 docs/evidence/native-selfhost-paused-20261012/verify.py
+      - run: python3 scripts/seed/build-adopted.py --verify-only
+      - run: python3 scripts/seed/build-adopted.py --receipt seed/preserved-20261012/adoption.json --verify-only
+  policy-native-correctness:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 scripts/seed/verify-preserved-integration.py --output "$RUNNER_TEMP/preserved-correctness"
+      - run: python3 scripts/seed/verify-preserved-integration.py --main --output "$RUNNER_TEMP/main-correctness"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: paused-native-policy-correctness
+          path: |
+            ${{ runner.temp }}/preserved-correctness/host
+            ${{ runner.temp }}/preserved-correctness/report.json
+            ${{ runner.temp }}/main-correctness/host
+            ${{ runner.temp }}/main-correctness/report.json
+  loader-source-bound-fuzz:
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        scope: [public, trusted]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 scripts/seed/verify-loader-fuzz.py ${{ matrix.scope == 'trusted' && '--trusted-bootstrap' || '' }} --output "$RUNNER_TEMP/loader-fuzz"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: loader-fuzz-${{ matrix.runner }}-${{ matrix.scope }}
+          path: ${{ runner.temp }}/loader-fuzz
+  adopted-seed-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 scripts/seed/build-adopted.py --verify-only
+  adopted-seed-native:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 scripts/seed/build-adopted.py --output "$RUNNER_TEMP/adopted-native-selfbuild" --generations 2
+      - name: Check restored native reader and target regressions
+        run: bash scripts/seed/check-native-source-recovery.sh "$RUNNER_TEMP/adopted-native-selfbuild/artifacts/G2.bin" "$RUNNER_TEMP/adopted-native-selfbuild/host/kexe-loader" "$RUNNER_TEMP/native-source-recovery"
+      - run: python3 scripts/seed/check-bounded-lookup.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-certified-scalar-calls.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-twoarg-comparisons.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-sequential-scan.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-positive-quotient.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-positive-quotient-proof.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-mask-direct-source.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-prepaid-fuel-reuse.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-nonzero-guard-charge.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - run: python3 scripts/seed/check-adjacent-fuel-reload.py --selfbuild-output "$RUNNER_TEMP/adopted-native-selfbuild"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: adopted-native-regression-evidence
+          path: |
+            ${{ runner.temp }}/adopted-native-selfbuild
+            ${{ runner.temp }}/native-source-recovery/report.json
+            ${{ runner.temp }}/native-source-recovery/sources.sha256
+            ${{ runner.temp }}/native-source-recovery/logs

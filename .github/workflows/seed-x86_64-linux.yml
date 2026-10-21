@@ -32,9 +32,6 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version: "24.12.0"
       - run: python3 scripts/seed/check-x86_64-selfhost.py --prepare --output "$RUNNER_TEMP/x86-selfhost"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
@@ -47,9 +44,6 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version: "24.12.0"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: native-x86-selfhost-inputs
@@ -67,9 +61,6 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version: "24.12.0"
       - run: python3 scripts/seed/test-x86_64-build-pins.py --output "$RUNNER_TEMP/cross-build-pin-tests"
       - run: python3 scripts/seed/build-x86_64-linux.py --output "$RUNNER_TEMP/native-cross-build"
       - run: python3 scripts/seed/check-x86_64-linux.py --selfbuild-output "$RUNNER_TEMP/native-cross-build" --output "$RUNNER_TEMP/linux-suite"
@@ -90,9 +81,6 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version: "24.12.0"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: native-seed-x86-linux-suite
