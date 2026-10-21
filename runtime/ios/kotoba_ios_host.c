@@ -3,12 +3,27 @@
 #include <limits.h>
 #include <setjmp.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+#if defined(__APPLE__) && defined(__aarch64__)
+#include <pthread.h>
+#include <sched.h>
+#include <sys/ucontext.h>
+#endif
 
+#ifndef KOTOBA_IOS_TARGET
+#if defined(__APPLE__) && defined(__aarch64__) && TARGET_OS_OSX
+#define KOTOBA_IOS_TARGET "aarch64-macos-static-kotoba-v1"
+#else
 #define KOTOBA_IOS_TARGET "aarch64-ios-kotoba-v1"
+#endif
+#endif
 
 extern const unsigned char kotoba_ios_entry[];
 extern const unsigned char kotoba_ios_code_start[];
@@ -92,7 +107,7 @@ static int64_t cap_call(struct kotoba_context_v2 *context,
       (context->allow[cap_id / 64] & (UINT64_C(1) << (cap_id % 64))) == 0) {
     guest_trap();
   }
-  return value + 1;
+  return (int64_t)((uint64_t)value + UINT64_C(1));
 }
 
 static int64_t pair_new(struct kotoba_context_v2 *context,
@@ -122,20 +137,28 @@ static int64_t pair_second(struct kotoba_context_v2 *context, int64_t handle) {
   return pair_get(context, handle, 1);
 }
 
+static int valid_utf8(const uint8_t *bytes, uint64_t length);
+
 static const uint8_t *resolve_string_bytes(struct kotoba_context_v2 *context,
                                            int64_t offset, int64_t length) {
   struct kotoba_shared_v2 *shared = (struct kotoba_shared_v2 *)context;
+  const uint8_t *bytes;
   if (context == NULL || context->version != 2 || length < 0) guest_trap();
   if (offset >= 0) {
     if ((uint64_t)offset + (uint64_t)length > context->code_length ||
         (uint64_t)offset + (uint64_t)length < (uint64_t)offset) guest_trap();
-    return context->code_base + offset;
+    bytes = context->code_base + offset;
+  } else {
+    if (offset == INT64_MIN) guest_trap();
+    uint64_t pool_offset = (uint64_t)(-offset - 1);
+    if (pool_offset + (uint64_t)length > shared->string_pool_used ||
+        pool_offset + (uint64_t)length < pool_offset) guest_trap();
+    bytes = shared->string_pool + pool_offset;
   }
-  if (offset == INT64_MIN) guest_trap();
-  uint64_t pool_offset = (uint64_t)(-offset - 1);
-  if (pool_offset + (uint64_t)length > KOTOBA_IOS_STRING_POOL_BYTES ||
-      pool_offset + (uint64_t)length < pool_offset) guest_trap();
-  return shared->string_pool + pool_offset;
+  /* String handles are untrusted KIR data. Bounds alone are not enough:
+     arbitrary in-range code bytes must not pass as a valid Kotoba string. */
+  if (!valid_utf8(bytes, (uint64_t)length)) guest_trap();
+  return bytes;
 }
 
 static int valid_utf8(const uint8_t *bytes, uint64_t length) {
@@ -173,11 +196,11 @@ static int64_t string_equal(struct kotoba_context_v2 *context,
                             int64_t left, int64_t right) {
   int64_t left_length = pair_get(context, left, 1);
   int64_t right_length = pair_get(context, right, 1);
-  if (left_length != right_length) return 0;
   const uint8_t *left_bytes =
       resolve_string_bytes(context, pair_get(context, left, 0), left_length);
   const uint8_t *right_bytes =
       resolve_string_bytes(context, pair_get(context, right, 0), right_length);
+  if (left_length != right_length) return 0;
   return memcmp(left_bytes, right_bytes, (size_t)left_length) == 0 ? 1 : 0;
 }
 
@@ -257,38 +280,127 @@ typedef int64_t (*kotoba_fn8)(int64_t, int64_t, int64_t, int64_t,
  *
  * Scope and limits, stated rather than implied:
  *  - Signal dispositions are process-wide, so execution is serialized by
- *    `containment_busy` and concurrent/reentrant calls are refused, not
- *    silently run unprotected.
+ *    `containment_busy` and concurrent/reentrant calls are refused. The jump
+ *    environment is thread-local; signals delivered to another thread are
+ *    forwarded to the disposition that was installed before this call.
  *  - siglongjmp out of a handler abandons the guest's stack frames. That is
  *    sound here only because the guest allocates nothing that needs
  *    unwinding: its heap is the arena in `shared`, which the caller frees.
- *  - Only the trap signals the guest can raise are handled. Faults with
- *    other causes are deliberately left to crash rather than be swallowed. */
-static volatile sig_atomic_t containment_busy;
-static sigjmp_buf containment_return;
+ *  - Only synchronous SIGTRAP/SIGILL from the executing guest are contained.
+ *    Other signals and other causes keep their prior disposition. */
+static atomic_flag containment_busy = ATOMIC_FLAG_INIT;
+static atomic_uint containment_handlers = ATOMIC_VAR_INIT(0);
+_Static_assert(ATOMIC_INT_LOCK_FREE == 2, "signal handler counter must be lock-free");
+static _Thread_local sigjmp_buf containment_return;
+static _Thread_local volatile sig_atomic_t containment_active;
+static struct sigaction containment_previous_trap;
+static struct sigaction containment_previous_ill;
+static struct sigaction containment_action;
 
-static void containment_handler(int signal_number) {
-  (void)signal_number;
-  siglongjmp(containment_return, 1);
+static void containment_forward(int signal_number, siginfo_t *info,
+                                void *context) {
+  (void)info;
+  (void)context;
+  const struct sigaction *previous = signal_number == SIGTRAP
+      ? &containment_previous_trap : &containment_previous_ill;
+  if (previous->sa_handler == SIG_IGN) return;
+  if (previous->sa_handler == SIG_DFL) {
+    /* Restore the default disposition for this delivery. If a debugger
+       resumes a default SIGTRAP, put containment back before returning.
+       The signal is blocked while its handler runs, so unblock it before
+       raising it; otherwise it remains pending until this handler returns. */
+    if (sigaction(signal_number, previous, NULL) != 0)
+      _Exit(128 + signal_number);
+    sigset_t signal_set;
+    sigemptyset(&signal_set);
+    sigaddset(&signal_set, signal_number);
+    if (pthread_sigmask(SIG_UNBLOCK, &signal_set, NULL) != 0)
+      _Exit(128 + signal_number);
+    if (raise(signal_number) != 0) _Exit(128 + signal_number);
+    if (pthread_sigmask(SIG_BLOCK, &signal_set, NULL) != 0)
+      _Exit(128 + signal_number);
+    if (sigaction(signal_number, &containment_action, NULL) != 0)
+      _Exit(128 + signal_number);
+    return;
+  }
+  /* containment_install admits only default and ignored dispositions. */
+  _Exit(128 + signal_number);
+}
+
+static int containment_is_guest_brk(void *context) {
+#if defined(__APPLE__) && defined(__aarch64__)
+  if (context == NULL) return 0;
+  const ucontext_t *signal_context = (const ucontext_t *)context;
+  uint32_t exception_class =
+      (uint32_t)((signal_context->uc_mcontext->__es.__esr >> 26) & 0x3f);
+  if (exception_class != 0x3c) return 0;
+  uintptr_t pc = (uintptr_t)signal_context->uc_mcontext->__ss.__pc;
+  uintptr_t start = (uintptr_t)kotoba_ios_code_start;
+  uintptr_t end = (uintptr_t)kotoba_ios_code_end;
+  if (pc < start || pc > end || end - pc < sizeof(uint32_t) || (pc & 3) != 0)
+    return 0;
+  uint32_t instruction = *(const volatile uint32_t *)pc;
+  return (instruction & UINT32_C(0xFFE0001F)) == UINT32_C(0xD4200000);
+#else
+  (void)context;
+  return 0;
+#endif
+}
+
+static int containment_is_synchronous_trap(int signal_number,
+                                           const siginfo_t *info,
+                                           void *context) {
+  if (info == NULL || (signal_number != SIGTRAP && signal_number != SIGILL))
+    return 0;
+  /* Darwin arm64 may report BRK #0 as SIGTRAP with si_code 0, the same value
+     used by raise(SIGTRAP). Accept that form only for a BRK exception whose
+     saved PC points at a BRK instruction inside the linked guest code. */
+  if (signal_number == SIGTRAP && info->si_code == 0)
+    return containment_is_guest_brk(context);
+  return info->si_code > 0 && info->si_code < SI_USER;
+}
+
+static void containment_handler(int signal_number, siginfo_t *info,
+                                void *context) {
+  atomic_fetch_add_explicit(&containment_handlers, 1, memory_order_acq_rel);
+  if (containment_active &&
+      containment_is_synchronous_trap(signal_number, info, context)) {
+    atomic_fetch_sub_explicit(&containment_handlers, 1, memory_order_release);
+    siglongjmp(containment_return, 1);
+  }
+  containment_forward(signal_number, info, context);
+  atomic_fetch_sub_explicit(&containment_handlers, 1, memory_order_release);
 }
 
 struct containment_state {
-  struct sigaction previous_trap;
-  struct sigaction previous_ill;
   int installed;
 };
 
+static void containment_wait_for_handlers(void) {
+  while (atomic_load_explicit(&containment_handlers, memory_order_acquire) != 0) {
+    sched_yield();
+  }
+}
+
 static int containment_install(struct containment_state *state) {
-  struct sigaction action;
-  memset(&action, 0, sizeof(action));
-  action.sa_handler = containment_handler;
-  sigemptyset(&action.sa_mask);
-  /* No SA_RESTART/SA_SIGINFO: the handler never returns to the trap site. */
-  action.sa_flags = 0;
+  memset(&containment_action, 0, sizeof(containment_action));
+  containment_action.sa_sigaction = containment_handler;
+  sigemptyset(&containment_action.sa_mask);
+  containment_action.sa_flags = SA_SIGINFO;
   state->installed = 0;
-  if (sigaction(SIGTRAP, &action, &state->previous_trap) != 0) return 0;
-  if (sigaction(SIGILL, &action, &state->previous_ill) != 0) {
-    sigaction(SIGTRAP, &state->previous_trap, NULL);
+  containment_active = 0;
+  if (sigaction(SIGTRAP, NULL, &containment_previous_trap) != 0 ||
+      sigaction(SIGILL, NULL, &containment_previous_ill) != 0) return 0;
+  /* Preserve application semantics: this host forwards only default/ignored
+     dispositions. It refuses to emulate a custom handler's mask and flags. */
+  if ((containment_previous_trap.sa_handler != SIG_DFL &&
+       containment_previous_trap.sa_handler != SIG_IGN) ||
+      (containment_previous_ill.sa_handler != SIG_DFL &&
+       containment_previous_ill.sa_handler != SIG_IGN)) return 0;
+  if (sigaction(SIGTRAP, &containment_action, NULL) != 0) return 0;
+  if (sigaction(SIGILL, &containment_action, NULL) != 0) {
+    sigaction(SIGTRAP, &containment_previous_trap, NULL);
+    containment_wait_for_handlers();
     return 0;
   }
   state->installed = 1;
@@ -297,9 +409,10 @@ static int containment_install(struct containment_state *state) {
 
 static void containment_restore(struct containment_state *state) {
   if (!state->installed) return;
-  sigaction(SIGTRAP, &state->previous_trap, NULL);
-  sigaction(SIGILL, &state->previous_ill, NULL);
+  sigaction(SIGTRAP, &containment_previous_trap, NULL);
+  sigaction(SIGILL, &containment_previous_ill, NULL);
   state->installed = 0;
+  containment_wait_for_handlers();
 }
 #endif
 
@@ -352,25 +465,27 @@ int kotoba_ios_execute_static_v1(const struct kotoba_ios_request_v1 *request,
   kotoba_fn8 entry = (kotoba_fn8)(uintptr_t)kotoba_ios_entry;
   /* Process-wide signal dispositions cannot be shared: refuse rather than
      run a second guest with the first one's handlers half-installed. */
-  if (containment_busy) {
+  if (atomic_flag_test_and_set_explicit(&containment_busy,
+                                        memory_order_acquire)) {
     free(shared);
     result->status = KOTOBA_IOS_CONTAINMENT_UNAVAILABLE;
     return KOTOBA_IOS_CONTAINMENT_UNAVAILABLE;
   }
   struct containment_state containment;
   if (!containment_install(&containment)) {
+    atomic_flag_clear_explicit(&containment_busy, memory_order_release);
     free(shared);
     result->status = KOTOBA_IOS_CONTAINMENT_UNAVAILABLE;
     return KOTOBA_IOS_CONTAINMENT_UNAVAILABLE;
   }
-  containment_busy = 1;
 
   if (sigsetjmp(containment_return, 1) != 0) {
+    containment_active = 0;
     /* Reached from containment_handler: the guest trapped. Report the fuel
        and heap state as of the trap -- it is the caller's evidence for WHY
        the guest was rejected -- but never the (undefined) return value. */
-    containment_busy = 0;
     containment_restore(&containment);
+    atomic_flag_clear_explicit(&containment_busy, memory_order_release);
     result->value = 0;
     result->fuel_remaining = shared->context.fuel;
     result->pairs_used = shared->pair_used;
@@ -379,12 +494,14 @@ int kotoba_ios_execute_static_v1(const struct kotoba_ios_request_v1 *request,
     return KOTOBA_IOS_GUEST_TRAP;
   }
 
+  containment_active = 1;
   result->value = entry(request->args[0], request->args[1], request->args[2],
                         request->args[3], request->args[4], 0, 0,
                         (int64_t)(intptr_t)&shared->context);
 
-  containment_busy = 0;
+  containment_active = 0;
   containment_restore(&containment);
+  atomic_flag_clear_explicit(&containment_busy, memory_order_release);
   result->fuel_remaining = shared->context.fuel;
   result->pairs_used = shared->pair_used;
   result->status = KOTOBA_IOS_OK;

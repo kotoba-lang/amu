@@ -7,6 +7,29 @@
 (def source
   "(defn helper [x] (+ x 1)) (defn main [] (helper 41))")
 
+(defn- u32le [bytes offset]
+  (reduce +
+          (map-indexed (fn [index byte]
+                         (bit-shift-left (bit-and (int byte) 0xff) (* index 8)))
+                       (subvec (vec bytes) offset (+ offset 4)))))
+
+(defn- macho-build-platform [object]
+  (loop [index 0 offset 32 commands (u32le object 16)]
+    (when (< index commands)
+      (let [command (u32le object offset)
+            size (u32le object (+ offset 4))]
+        (if (= 0x32 command) ; LC_BUILD_VERSION
+          (u32le object (+ offset 8))
+          (recur (inc index) (+ offset size) commands))))))
+
+(defn- contains-ascii? [bytes text]
+  (let [haystack (mapv #(bit-and (int %) 0xff) bytes)
+        needle (mapv int text)
+        width (count needle)]
+    (boolean
+     (some #(= needle (subvec haystack % (+ % width)))
+           (range 0 (inc (- (count haystack) width)))))))
+
 (deftest packages-verified-ios-code-as-deterministic-macho-object
   (let [ios (:artifact (compiler/compile-source source :aarch64-ios-kotoba-v1))
         first (ios-aot/package ios 'main)
@@ -32,11 +55,96 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"platform is unsupported"
                           (ios-aot/package ios 'main {:platform :invented})))))
 
+(deftest packages-macos-with-a-macos-profile-and-platform-load-command
+  ;; This calls package directly on the in-memory compiler result, without an
+  ;; EDN round trip. In CLJS the ABI version is a JavaScript number, not BigInt.
+  (let [macos (:artifact (compiler/compile-source source :aarch64-macos-kotoba-v1))
+        packaged (ios-aot/package macos 'main {:platform :macos})]
+    (is (= :kotoba.apple-aot/v1 (get-in packaged [:manifest :format])))
+    (is (= :aarch64-macos-kotoba-v1 (get-in packaged [:manifest :target])))
+    (is (= :macos (get-in packaged [:manifest :platform])))
+    (is (= [13 0 0] (get-in packaged [:manifest :minimum-os])))
+    (is (= :kotoba.macos.static-host/v1
+           (get-in packaged [:manifest :host-profile])))
+    (is (= :aarch64-macos-static-kotoba-v1
+           (get-in packaged [:manifest :host-target-profile])))
+    (is (contains-ascii? (:object packaged) "aarch64-macos-static-kotoba-v1"))
+    ;; LC_BUILD_VERSION's platform value 1 is PLATFORM_MACOS.
+    (is (= 1 (macho-build-platform (:object packaged))))
+    (is (= [0xcf 0xfa 0xed 0xfe]
+           (mapv #(bit-and (int %) 0xff) (take 4 (:object packaged)))))))
+
+(deftest packages-macos-with-lowered-abort-control-effects
+  (let [source "(defn- maybe [x :i64] :i64
+                  (if (< x 0) (throw :abort/negative) x))
+                 (defn main [] :i64 (try (maybe -1) (catch error 7)))"
+        macos (:artifact (compiler/compile-source source :aarch64-macos-kotoba-v1))
+        packaged (ios-aot/package macos 'main {:platform :macos})]
+    (is (= #{:abort} (set (:effects macos))))
+    (is (= :kotoba.macos.static-host/v1
+           (get-in packaged [:manifest :host-profile])))))
+
+(deftest refuses-macos-static-host-operations-with-null-runtime-slots
+  (let [vector-source "(defn main [] :i64 (vector-at (vector-alloc 1) 0))"
+        macos (:artifact (compiler/compile-source vector-source
+                                                  :aarch64-macos-kotoba-v1))]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"macOS static host cannot serve"
+         (ios-aot/package macos 'main {:platform :macos})))) )
+
+(deftest refuses-macos-static-host-native-document-operations
+  (let [source "(defn main [] :i64
+                  (document-count (document-vector (document-i64 1))))"
+        macos (:artifact (compiler/compile-source source :aarch64-macos-kotoba-v1))]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"macOS static host cannot serve"
+         (ios-aot/package macos 'main {:platform :macos})))))
+
+(deftest refuses-macos-static-host-typed-list-operations
+  (let [source (str "(defn- append [items] (conj items 5)) "
+                    "(defn main [index] :i64 "
+                    "(typed-list-nth [:list :i64] "
+                    "(append (typed-list-new [:list :i64] 4)) index))")
+        macos (:artifact (compiler/compile-source source :aarch64-macos-kotoba-v1))]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"macOS static host cannot serve"
+         (ios-aot/package macos 'main {:platform :macos})))))
+
+(deftest refuses-macos-static-host-typed-map-operations
+  (let [source "(defn main [] :i64
+                 (typed-map-count [:map :i64 :i64]
+                   (typed-map-new [:map :i64 :i64] 1 2)))"
+        macos (:artifact (compiler/compile-source source :aarch64-macos-kotoba-v1))]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"macOS static host cannot serve"
+         (ios-aot/package macos 'main {:platform :macos})))))
+
+(deftest refuses-macos-static-host-capability-calls-without-providers
+  (let [source "(ns macos.hash (:export [main]) (:capabilities #{:hash/sha256}))
+               (defn main [] :string (hash/sha256 \"abc\"))"
+        macos (:artifact (compiler/compile-source
+                          source :aarch64-macos-kotoba-v1
+                          {:allow #{[:cap/call 3]}}))
+        error (try
+                (ios-aot/package macos 'main {:platform :macos})
+                nil
+                (catch clojure.lang.ExceptionInfo error error))]
+    (is error)
+    (is (= [["typed-cap-call" "3"]]
+           (:capability-calls (ex-data error))))))
+
 (deftest rejects-non-ios-and-substituted-artifacts
   (let [android (:artifact (compiler/compile-source source :aarch64-android-kotoba-v1))
+        macos (:artifact (compiler/compile-source source :aarch64-macos-kotoba-v1))
         ios (:artifact (compiler/compile-source source :aarch64-ios-kotoba-v1))]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"explicit iOS target"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"matching arm64 target"
                           (ios-aot/package android 'main)))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"matching arm64 target"
+                          (ios-aot/package macos 'main)))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"target profile"
                           (ios-aot/package
                            (artifact/seal

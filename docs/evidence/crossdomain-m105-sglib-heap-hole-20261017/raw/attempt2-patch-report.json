@@ -1,0 +1,19 @@
+{
+  "status": "PATCHED_PRIVATE_HEAP_HOLE_CANDIDATE_WITH_LEAF_EXIT",
+  "controlSHA256": "79c91e352296237547c0e6b801b690bc7384f828699135833954b20a245d35c4",
+  "candidateSHA256": "23fadc6ed9d0e3590a64067c9d6df5e600af648ea2b527ecca433638b1d63cc7",
+  "change": "Move the displaced value x14 only once to the final sift-down slot; shift one child value per level.",
+  "controlTail": "0xEB0A01BF 0x540000C0 0xF82A7849 0xF82D784E 0x910010A5 0xAA0D03EA 0x17FFFFEB 0x17FFFFDA",
+  "candidateTail": "0xEB0A01BF 0x540000A0 0xF82A7849 0x910010A5 0xAA0D03EA 0x17FFFFEC 0xF82A784E 0x17FFFFDA",
+  "wordCountDelta": 0,
+  "fuelAccounting": "unchanged: x5 still increases by four for every sift-down step",
+  "sourcePortUnchanged": true,
+  "shapeMatcherUnchanged": true,
+  "note": "The branch on no further sift-down now targets the final-store instruction at 0x68d0; the loop backedge moved one word earlier.",
+  "leafExitBranchFix": {
+    "from": "0x5400026A",
+    "to": "0x5400024A",
+    "meaning": "heap-down leaf exit at 0x6888 now enters final store at 0x68d0 instead of skipping it"
+  },
+  "sourceAttempt": "attempt-1 retained as the failed exactness candidate"
+}

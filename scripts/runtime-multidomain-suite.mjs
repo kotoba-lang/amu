@@ -32,17 +32,21 @@ const outputPath = option("--output", null);
 const suite = option("--suite", "core");
 if (!new Set(["core", "competitive"]).has(suite))
   throw new Error("--suite must be core or competitive");
+const minimumCompetitiveRuns = manifest.reliabilityPolicy?.minimumCompetitiveRuns ?? 10;
 const disabledEngines = option("--disable-engines", "");
 const preparePath = option("--prepare", null);
 const measurePath = option("--measure", null);
 const expectedBundleDigest = option("--bundle-sha256", null);
 if (preparePath && measurePath) throw new Error("--prepare and --measure are mutually exclusive");
-const requestedRuns = Number(option("--runs", "5"));
+const requestedRuns = Number(option("--runs",
+  suite === "competitive" ? String(minimumCompetitiveRuns) : "5"));
 const requestedCalls = Number(option("--calls", "100000"));
 const n = Number(option("--n", "200"));
 const quietWaitMilliseconds = Number(option("--quiet-wait-ms", "60000"));
 if (!Number.isSafeInteger(requestedRuns) || requestedRuns < 1 || requestedRuns > 30)
   throw new Error("--runs must be an integer from 1 through 30");
+if (suite === "competitive" && requestedRuns < minimumCompetitiveRuns)
+  throw new Error(`competitive suite requires at least ${minimumCompetitiveRuns} ABBA/BAAB runs per domain; use core mode for shorter diagnostics`);
 if (!Number.isSafeInteger(requestedCalls) || requestedCalls < 1 || requestedCalls > 1_000_000)
   throw new Error("--calls must be an integer from 1 through 1000000");
 if (!Number.isSafeInteger(quietWaitMilliseconds) || quietWaitMilliseconds < 0
@@ -62,8 +66,10 @@ function sleep(milliseconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
+const quietSampleCount = manifest.reliabilityPolicy.hostQuietSamples;
+const quietSampleCountLabel = quietSampleCount === 3 ? "three" : String(quietSampleCount);
 const quietPolicy
-  = "busy-cpu-fraction <= 0.10 over 1s, three consecutive samples; load1 recorded as diagnostic";
+  = `busy-cpu-fraction <= ${manifest.reliabilityPolicy.hostBusyCpuFractionMaximum.toFixed(2)} over ${manifest.reliabilityPolicy.hostQuietSampleSeconds}s, ${quietSampleCountLabel} consecutive samples; load1 recorded as diagnostic`;
 
 function cpuTicks() {
   let idle = 0;
@@ -87,7 +93,9 @@ function waitForQuiet() {
   // diagnostic, and a genuinely busy host still fails (measured: the one
   // fleet host running a persistent workload was the only one this criterion
   // rejected).
-  const limit = 0.10;
+  const limit = manifest.reliabilityPolicy.hostBusyCpuFractionMaximum;
+  const requiredConsecutive = manifest.reliabilityPolicy.hostQuietSamples;
+  const sampleWindowMilliseconds = manifest.reliabilityPolicy.hostQuietSampleSeconds * 1_000;
   const injected = process.env.AMU_BENCH_TEST_LOAD_SAMPLES?.split(",").map(Number) ?? null;
   const samples = [];
   const started = Date.now();
@@ -98,7 +106,8 @@ function waitForQuiet() {
     if (injected) {
       value = injected[Math.min(samples.length, injected.length - 1)];
     } else {
-      sleep(Math.min(1_000, Math.max(1, quietWaitMilliseconds - (Date.now() - started))));
+      sleep(Math.min(sampleWindowMilliseconds,
+        Math.max(1, quietWaitMilliseconds - (Date.now() - started))));
       const current = cpuTicks();
       const idleDelta = current.idle - previous.idle;
       const totalDelta = current.total - previous.total;
@@ -109,13 +118,13 @@ function waitForQuiet() {
       busyCpuFraction: value, load1: loadavg()[0],
       qualified: value <= limit });
     consecutive = value <= limit ? consecutive + 1 : 0;
-    if (consecutive >= 3) return { qualified: true, limit,
+    if (consecutive >= requiredConsecutive) return { qualified: true, limit,
       policy: quietPolicy,
-      requiredConsecutive: 3, samples };
+      requiredConsecutive, samples };
     if (Date.now() - started >= quietWaitMilliseconds)
       return { qualified: false, limit,
         policy: quietPolicy,
-        requiredConsecutive: 3, samples,
+        requiredConsecutive, samples,
         reason: "quiet-host-timeout" };
     if (injected) sleep(1);
   }
@@ -263,6 +272,11 @@ try {
       requiredTargets: manifest.requiredTargets,
       requiredDomainCount: manifest.requiredDomains.length,
       measuredDomainCount: domains.length,
+      requestedMeasurementRunsPerDomain: requestedRuns,
+      measurementRunsPerDomain: runs,
+      minimumCompetitiveRuns: suite === "competitive" ? minimumCompetitiveRuns : null,
+      competitiveRunFloorMet: suite === "competitive"
+        ? runs >= minimumCompetitiveRuns : null,
       complete: domains.length === manifest.requiredDomains.length,
       workflow: "prepare-all -> bounded quiet gate -> measure sealed bundles",
       preparedIndexSha256: createHash("sha256").update(
@@ -290,14 +304,21 @@ try {
   // POSIX-shell bridge was deleted; the nbb entrypoint is the supported route).
   report.qualification.perfgate = JSON.parse(execute("nbb",
     [join(root, "scripts", "perfgate-qualify.cljk"), perfgateInput]));
+  const competitiveRunFloorMet = suite !== "competitive"
+    || runs >= minimumCompetitiveRuns;
+  report.qualification.competitiveRunFloorMet = suite === "competitive"
+    ? competitiveRunFloorMet : null;
   report.qualification.comparatorSetQualified
-    = report.qualification.perfgate["comparator-set-qualified?"];
+    = report.qualification.perfgate["comparator-set-qualified?"]
+      && competitiveRunFloorMet;
   report.qualification.broadFastestClaimQualified = false;
-  report.qualification.reason = report.qualification.comparatorSetQualified
-    ? manifest.claimContract.allowedSentence
-    : Object.values(comparatorCoverage).every(value => value.complete)
-      ? "all enumerated comparators cover every domain, but host/perfgate qualification is incomplete"
-      : "the required comparator set does not have complete coverage";
+  report.qualification.reason = !competitiveRunFloorMet
+    ? `competitive run floor not met: got ${runs}, need ${minimumCompetitiveRuns}`
+    : report.qualification.comparatorSetQualified
+      ? manifest.claimContract.allowedSentence
+      : Object.values(comparatorCoverage).every(value => value.complete)
+        ? "all enumerated comparators cover every domain, but host/perfgate qualification is incomplete"
+        : "the required comparator set does not have complete coverage";
   const encoded = `${JSON.stringify(report, null, 2)}\n`;
   if (outputPath) writeFileSync(resolve(outputPath), encoded);
   process.stdout.write(encoded);

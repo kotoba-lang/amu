@@ -1,0 +1,389 @@
+#!/usr/bin/env kbb
+;; EXECUTION PROBE for the POST-FIX :subgroup-reduce GLSL emission (JUN-59/60
+;; variant, parent JUN-55; host JUN-58). The emitter fix at 4b7a1ccb changed
+;; four things in kotoba.compiler.accelerator-subgroup-reduce/emit-glsl --
+;; per-feature subgroup extensions, gl_SubgroupInvocationID spelling, the
+;; strided cross-subgroup fold, and the INFINITE extrema identities -- and
+;; its own tests pin the TEXT. That fix's commit message records "regenerating
+;; [the pinned fixtures] from this emitter is the evidence-chain follow-up";
+;; this probe is the execution half of that follow-up: the FIXED bytes get
+;; their first device runs here, before any fixture regeneration is allowed
+;; to claim the fixed emission as what the evidence chain measured.
+;;
+;; PROVENANCE OF THE SHADER BYTES. No bytes ride as data in this file. The
+;; six (W, operator) shapes are generated IN THIS PROCESS by calling the real
+;; emit-glsl at run time (the ns is required below), and the log records the
+;; git HEAD, the emitter source's sha256, and each shape's sha256 (each shape
+;; is emitted twice and compared first -- a nondeterministic emission refuses
+;; before the first dispatch). PR #1346's probe carried 53248c11's bytes as
+;; data and patched two toolchain defects in memory; the fix moved exactly
+;; those two forms (plus the fold and the identities) into the emitter, so
+;; here the as-emitted bytes are dispatched with NO rung patches at all.
+;;
+;; THE CASE MATRIX. Reduce over x[i] = i+1 (f32, every partial an integer
+;; < 2^24, so ANY summation order is exact and the check is bit-exact):
+;;   W=64:  :sum/:max/:min x n in {64, 50}   (n=50 exercises i>=n padding in
+;;          a partial second subgroup)
+;;   W=256: :sum/:max/:min x n = 256  plus :sum x n = 200
+;; PLUS the four cases that DISCRIMINATE the extrema-identity fix -- all-real
+;; +-Inf streams at n < W, where the padded lanes fold the identity:
+;;   :max, x[i] = -Inf, n=50 (W=64) / n=200 (W=256) -- the answer must be
+;;        -Inf (bits 0xFF800000). The pre-fix finite -FLT_MAX identity
+;;        answers -FLT_MAX (0xFF7FFFFF): wrong by one bit pattern.
+;;   :min, x[i] = +Inf, same shapes -- the answer must be +Inf (0x7F800000),
+;;        not +FLT_MAX (0x7F7FFFFF).
+;; The verifier self-tests prove the discrimination: the pre-fix bit pattern
+;; MUST be refused by name before the first dispatch.
+;;
+;; One guest per case, compiled by bin/amu for the host ISA and run under the
+;; loader with the gpu-compute cap grant -- the proven flow of
+;; scripts/test-gpu-subgroup-probe.cljk (PR #1346). Verification is internal
+;; and mechanical; there is no second source for the answer.
+;;
+;; WHAT THIS DOES NOT MEASURE. Correctness only -- no timing line is printed
+;; and none may be claimed from this probe. The cross-subgroup fold fix is
+;; UNEXERCISABLE on this host: the buggy form only misfolds when the cross
+;; stage's first stride d = nsub/2 exceeds the subgroup size S, i.e. W > 2*S^2
+;; (S=32 on M1 Max, so W > 2048; KIR-admitted W stops at 1024). The fix
+;; targets the small-S devices (Intel 8/16, Mali 4-32) this bot cannot run.
+;; Nothing flips :measured? anywhere; the variant basis stays :measured? false.
+;;
+;; Three outcomes, three exit codes:
+;;   0  every case executed on the device and verified bit-exactly
+;;   1  an executed case failed verification or trapped
+;;   3  could not measure here: no Vulkan headers/loader, no
+;;      glslangValidator, macOS without MoltenVK, the amu compile refused, or
+;;      no case produced a device read-back
+;;
+;;   kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+;;       scripts/test-gpu-subgroup-reduce-exec-postfix.cljk
+(ns test-gpu-subgroup-reduce-exec-postfix
+  (:require [kotoba.lang.text :as str]
+            [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-subgroup-reduce :as sgr]
+            ["node:child_process" :as child]
+            ["node:crypto" :as crypto]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
+
+(def root (.resolve path (.dirname path *file*) ".."))
+(def tmp (.mkdtempSync fs (.join path (.tmpdir os) "amu-gpu-sgrepost-")))
+
+(defn- sh [cmd args & [env]]
+  (let [child-env (js/Object.assign #js {} (.-env js/process) (clj->js (or env {})))
+        r (child/spawnSync cmd (clj->js args) #js {:encoding "utf8" :env child-env})]
+    {:status (.-status r) :out (str (.-stdout r)) :err (str (.-stderr r))}))
+(defn- refuse! [reason] (println (str "GPU-SGRE-POSTFIX\tCOULD-NOT-RUN\t" reason)) (js/process.exit 3))
+(defn- fail! [reason] (println (str "GPU-SGRE-POSTFIX\tFAIL\t" reason)) (js/process.exit 1))
+
+(defn- sha256-hex [s]
+  (-> (crypto/createHash "sha256") (.update s "utf8") (.digest "hex")))
+
+(defn- f32bits
+  "The little-endian u32 bit pattern of a JS number as f32."
+  [v]
+  (let [b (js/Buffer.alloc 4)]
+    (.writeFloatLE b v 0)
+    (.readUInt32LE b 0)))
+
+;; ---- provenance: HEAD, the emitter source, and the generated shapes ------
+(def head-sha
+  (let [{:keys [status out]} (sh "git" ["-C" root "rev-parse" "HEAD"])]
+    (if (zero? status) (str/trimr out) "UNKNOWN")))
+(def emitter-src (.readFileSync fs (.join path root "src" "kotoba" "compiler"
+                                          "accelerator_subgroup_reduce.cljk") "utf8"))
+(println (str "GPU-SGRE-POSTFIX\tPROVENANCE\thead=" head-sha
+              "\temitter-sha256=" (sha256-hex emitter-src)
+              "\tgeneration=in-process-emit-glsl\trung-patches=none"))
+
+(defn- emit-shape
+  "The real emitter's bytes for one (W, operator) shape, emitted twice and
+  compared -- a nondeterministic emission refuses before any dispatch."
+  [w op]
+  (let [kir (accelerator/kernel (str "reduce_" (name op)) :reduce op {:workgroup-size w})
+        a (sgr/emit-glsl kir)
+        b (sgr/emit-glsl kir)]
+    (when-not (= a b)
+      (fail! (str "emit-glsl is not deterministic for W=" w " " (name op))))
+    (println (str "GPU-SGRE-POSTFIX\tSHAPE\tW" w "-" (name op) "\tsha256=" (sha256-hex a)))
+    a))
+
+(def emitted-sources
+  (into {} (for [w [64 256] op [:sum :max :min]] [[w op] (emit-shape w op)])))
+
+;; ---- expected answers (pure) ---------------------------------------------
+(def ^:private neg-inf-bits 4286578688)  ;; 0xFF800000
+(def ^:private pos-inf-bits 2139095040)  ;; 0x7F800000
+
+(defn- f32-of-bits
+  "The f32 value of a u32 bit pattern, for the log line only."
+  [bits]
+  (let [b (js/Buffer.alloc 4)]
+    (.writeUInt32LE b bits 0)
+    (.readFloatLE b 0)))
+
+(defn- expected-bits
+  "The f32 bit pattern the device must answer in parts[0] for one case.
+  A case without :fill is x[i] = i+1: every intermediate is an integer
+  < 2^24, so the reduce is exact in f32 in ANY summation order and the
+  comparison is bit-exact. A :fill case writes that bit pattern into every
+  real lane; :want-bits is the answer (the infinite extrema identity folded
+  in the padded lanes must not corrupt it)."
+  [c]
+  (let [{:keys [op n fill want-bits]} c]
+    (or want-bits
+        (case op
+          :sum (f32bits (quot (* n (inc n)) 2))
+          :max (f32bits n)
+          :min (f32bits 1)))))
+
+(defn- field->word0
+  "Little-endian u32 word 0 from one 32-hex-digit read-back field. Refuses a
+  field of the wrong shape instead of reading past it."
+  [hex-field]
+  (when-not (re-matches #"[0-9a-f]{32}" hex-field)
+    (throw (js/Error. (str "read-back field is not 32 lowercase hex digits: " hex-field))))
+  (let [b (fn [k] (js/parseInt (subs hex-field (* 2 k) (+ (* 2 k) 2)) 16))]
+    (+ (b 0) (* 256 (b 1)) (* 65536 (b 2)) (* 16777216 (b 3)))))
+
+(defn- check-readback
+  "Verify one case's read-back word against the expected bit pattern.
+  Answers {:ok true :bits :value} or {:ok false :reason}."
+  [hex-field c]
+  (try
+    (let [bits (field->word0 hex-field)
+          want (expected-bits c)]
+      (if (= bits want)
+        {:ok true :bits bits :value (f32-of-bits bits)}
+        {:ok false :reason (str (:op c) "(n=" (:n c) ",fill=" (:fill c)
+                                "): parts[0] bits=" bits " want=" want)}))
+    (catch :default e {:ok false :reason (.-message e)})))
+
+;; ---- self-tests: the verifier is the only thing between a device reading
+;; and a claim, so it is tested against synthetic fields before dispatch ----
+(when-not (= (expected-bits {:op :sum :n 64}) (f32bits 2080))
+  (fail! "expected-bits self-test: sum(1..64) is not 2080"))
+(when-not (= (expected-bits {:op :sum :n 50}) (f32bits 1275))
+  (fail! "expected-bits self-test: sum(1..50) is not 1275"))
+(when-not (= (expected-bits {:op :max :n 256}) (f32bits 256))
+  (fail! "expected-bits self-test: max is not n"))
+(when-not (= (expected-bits {:op :min :n 200}) (f32bits 1))
+  (fail! "expected-bits self-test: min is not 1"))
+;; NOTE: the literal js/-Infinity reads as NaN on this engine (nbb resolves
+;; it to 0x7FF80000, measured), so -Inf is spelled (- js/Infinity) here.
+(when-not (= (f32bits (- js/Infinity)) neg-inf-bits)
+  (fail! "f32bits self-test: -Inf is not 0xFF800000"))
+(when-not (= (f32bits js/Infinity) pos-inf-bits)
+  (fail! "f32bits self-test: +Inf is not 0x7F800000"))
+(let [good (let [b (js/Buffer.alloc 4)] (.writeFloatLE b 2080 0) (.toString b "hex"))]
+  (when-not (= good "00000245") (fail! (str "self-test: f32 2080 is not 00000245 LE, got " good)))
+  (let [field (str good "000000000000000000000000")
+        v (check-readback field {:op :sum :n 64})]
+    (when-not (:ok v) (fail! (str "verify self-test: correct bits refused: " (pr-str v)))))
+  (let [field (str "45020000" "000000000000000000000000")
+        v (check-readback field {:op :sum :n 64})]
+    (when-not (and (not (:ok v)) (str/includes? (:reason v) "want="))
+      (fail! (str "verify self-test: wrong bits not caught: " (pr-str v)))))
+  (let [v (check-readback "abcd" {:op :sum :n 64})]
+    (when-not (and (not (:ok v)) (str/includes? (:reason v) "32 lowercase hex"))
+      (fail! (str "verify self-test: short field not refused by name: " (pr-str v))))))
+;; the identity-fix discrimination: the PRE-FIX finite answers must fail
+(let [hex-of (fn [bits]
+               (let [b (js/Buffer.alloc 4)] (.writeUInt32LE b bits 0) (.toString b "hex")))
+      pad (fn [h] (str h "000000000000000000000000"))
+      c-max {:op :max :n 50 :fill neg-inf-bits :want-bits neg-inf-bits}
+      c-min {:op :min :n 50 :fill pos-inf-bits :want-bits pos-inf-bits}]
+  (when-not (:ok (check-readback (pad (hex-of neg-inf-bits)) c-max))
+    (fail! "identity self-test: -Inf answer refused for the :max identity case"))
+  (when-not (:ok (check-readback (pad (hex-of pos-inf-bits)) c-min))
+    (fail! "identity self-test: +Inf answer refused for the :min identity case"))
+  (let [v (check-readback (pad (hex-of 4286578687)) c-max)] ;; -FLT_MAX, the pre-fix identity
+    (when-not (and (not (:ok v)) (str/includes? (:reason v) "want="))
+      (fail! (str "identity self-test: pre-fix -FLT_MAX not caught for :max: " (pr-str v)))))
+  (let [v (check-readback (pad (hex-of 2139095039)) c-min)] ;; +FLT_MAX
+    (when-not (and (not (:ok v)) (str/includes? (:reason v) "want="))
+      (fail! (str "identity self-test: pre-fix +FLT_MAX not caught for :min: " (pr-str v))))))
+
+;; ---- answer parsing (pure; self-tested) ----------------------------------
+;; The guest answers "INFO|<hex>"; the wire-42 INFO answer is itself
+;; "|"-separated (device|api|maxWgX|unified|class...). The read field is
+;; exactly 32 lowercase hex digits and must be the LAST field; everything
+;; before it is INFO, re-joined verbatim.
+(defn- parse-answer [answer]
+  (let [fields (str/split answer #"\|")
+        idxs (filterv #(boolean (re-matches #"[0-9a-f]{32}" (nth fields %))) (vec (range (count fields))))]
+    (when-not (and (= 1 (count idxs)) (= (first idxs) (dec (count fields))))
+      (throw (js/Error. (str "answer has " (count fields) " |-fields; 32-hex fields at " idxs
+                             ", want exactly one, last"))))
+    {:info (str/join "|" (subvec fields 0 (dec (count fields))))
+     :hex (nth fields (dec (count fields)))}))
+(let [hex "00000000000000000000000000000000"
+      {:keys [info]} (parse-answer (str "Fake Device|1.3.296|1024|1|integrated-gpu|" hex))]
+  (when-not (= info "Fake Device|1.3.296|1024|1|integrated-gpu")
+    (fail! (str "parse self-test: INFO mangled: " info))))
+(let [hex "00000000000000000000000000000000"]
+  (doseq [bad [(str "Fake Device|1.3.296|1024|1|" (subs hex 2))
+               (str "Fake Device|1.3.296|1024|1|" hex "|tail")
+               (str "Fake Device|1.3.296|1024|1|nope")]]
+    (when-not (try (parse-answer bad) false (catch :default _ true))
+      (fail! "parse self-test: a broken answer was not refused"))))
+
+;; ---- host preconditions ---------------------------------------------------
+(def isa (case (.-arch js/process) "x64" "x86_64" "arm64" "aarch64" (refuse! (str "unsupported host arch " (.-arch js/process)))))
+(def platform (.-platform js/process))
+(def target (str isa (case platform "linux" "-linux" "darwin" "-macos" (refuse! (str "unsupported platform " platform)))))
+(when-not (some #(.existsSync fs %) ["/usr/include/vulkan/vulkan.h" "/usr/local/include/vulkan/vulkan.h" "/opt/homebrew/include/vulkan/vulkan.h"])
+  (refuse! "no vulkan/vulkan.h on this host (apt: libvulkan-dev; macOS: brew install molten-vk vulkan-headers)"))
+(def glslang
+  (let [{:keys [status out]} (sh "sh" ["-c" "command -v glslangValidator"])]
+    (when-not (zero? status)
+      (refuse! "no glslangValidator on this host (apt: glslang-tools; macOS: brew install glslang)"))
+    (str/trimr out)))
+(let [{:keys [out]} (sh glslang ["--version"])]
+  (println (str "GPU-SGRE-POSTFIX\tTOOLCHAIN\t" (str/trim (first (str/split out #"\n"))))))
+
+;; ---- loader ---------------------------------------------------------------
+(def loader (.join path tmp "kexe-loader-gpu"))
+(let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-DKEXE_GPU_VULKAN"
+                                             (.join path root "tools" "kexe_loader.c") "-o" loader]
+                                            (if (= platform "darwin") ["-I/opt/homebrew/include" "-L/opt/homebrew/lib" "-lvulkan"] ["-lvulkan"])))]
+  (when-not (zero? status) (fail! (str "the GPU loader does not build: " (subs err 0 (min 600 (count err)))))))
+
+;; ---- the generated .kotoba guest, as data ---------------------------------
+(defn- prs [form]
+  (cond
+    (string? form) (str "\"" form "\"")
+    (or (symbol? form) (keyword? form) (number? form)) (str form)
+    (vector? form) (str "[" (str/join " " (map prs form)) "]")
+    (seq? form) (str "(" (str/join " " (map prs form)) ")")
+    :else (str form)))
+
+(defn- guest-text
+  "One case as a guest program: INFO -> ALLOC x/parts/n -> WRITEDEC input and
+  n -> PIPELINE <spv> 3 -> BEGIN -> DISPATCH (1,1,1, x parts n) -> SUBMIT ->
+  READ parts[0..3] -> FREE x3, answering \"INFO|<read>\". x[i] = i+1 as f32
+  bits -- or the case's :fill bits -- written for i < n (the kernel never
+  reads x[i] for i >= n; those lanes fold the identity)."
+  [spv c]
+  (let [{:keys [w n fill]} c
+        xbits (if fill (repeat n fill) (map #(f32bits (inc %)) (vec (range n))))
+        xwords (str/join "," xbits)]
+    (str/join "\n"
+      [(prs '(ns gpu.sgrexec (:export [main])))
+       (prs '(defn gpu [r :string] :string (typed-cap-call :gpu/compute :string :string r)))
+       (str "(defn main [] :string\n"
+            "  (let [i0 (gpu \"INFO\")\n"
+            "        hx (gpu \"ALLOC " (* w 4) "\")\n"
+            "        hp (gpu \"ALLOC 16\")\n"
+            "        hn (gpu \"ALLOC 16\")\n"
+            "        wx (gpu (string-concat \"WRITEDEC \" (string-concat hx \" 0 " xwords "\")))\n"
+            "        wn (gpu (string-concat \"WRITEDEC \" (string-concat hn \" 0 " n "\")))\n"
+            "        p (gpu \"PIPELINE " spv " 3\")\n"
+            "        b (gpu \"BEGIN\")\n"
+            "        d (gpu (string-concat \"DISPATCH \" (string-concat p (string-concat \" 1 1 1 \" (string-concat hx (string-concat \" \" (string-concat hp (string-concat \" \" hn))))))))\n"
+            "        s (gpu \"SUBMIT\")\n"
+            "        rd (gpu (string-concat \"READ \" (string-concat hp \" 0 16\")))\n"
+            "        f1 (gpu (string-concat \"FREE \" hx))\n"
+            "        f2 (gpu (string-concat \"FREE \" hp))\n"
+            "        f3 (gpu (string-concat \"FREE \" hn))]\n"
+            "    (string-concat i0 (string-concat \"|\" rd))))\n")])))
+(when-not (str/includes? (guest-text "/x.spv" {:w 64 :n 64}) "WRITEDEC ")
+  (fail! "guest self-test: no WRITEDEC in the guest"))
+
+;; ---- one case: guest -> amu compile -> loader run -> parse -> verify ------
+;; Answers {:verdict :ok :bits :value :info}   -- executed and verified
+;;         {:verdict :verify-fail :detail}     -- executed, read-back wrong
+;;         {:verdict :trapped :detail}         -- no answer: device refused
+;;                                              the pipeline or the guest
+;;                                              trapped (verbatim detail)
+;;         {:verdict :refused :detail}         -- the amu compile refused the
+;;                                              guest (verbatim detail)
+(defn- run-case [spv c]
+  (let [{:keys [w op n fill]} c
+        stem (str "guest-" w "-" (name op) "-" n (when fill "-inf"))
+        gsrc (.join path tmp (str stem ".kotoba"))
+        kexe (.join path tmp (str stem ".kexe"))
+        code (.join path tmp (str stem ".bin"))]
+    (.writeFileSync fs gsrc (guest-text spv c) "utf8")
+    (let [{:keys [status out err]} (sh "node" [(.join path root "bin" "amu") "compile" gsrc
+                                                "--target" target "--jvm-free"
+                                                "--policy" (.join path root "test" "fixtures" "gpu" "gpu-compute-policy.edn")
+                                                "--output" kexe])]
+      (if-not (and (zero? status) (str/includes? (str out) ":ok true"))
+        {:verdict :refused :detail (str "amu compile refused the guest: " (subs (str out err) 0 (min 300 (count (str out err)))))}
+        (let [r (sh "node" [(.join path root "bin" "amu") "extract-native" kexe "--symbol" "main" "--output" code])
+              m (re-find #":offset (\d+)" (:out r))]
+          (if-not m
+            {:verdict :trapped :detail (str "extract-native gave no offset: " (subs (:out r) 0 (min 300 (count (:out r)))))}
+            (let [offset (second m)
+                  run (sh loader [code offset "0" isa "42"] {"KEXE_RESULT_TYPE" "string" "KEXE_STRUCTURED_REPORT" "1" "KEXE_WALL_SECONDS" "300"})
+                  hex (second (re-find #":result-utf8-hex \"([0-9a-f]+)\"" (:out run)))]
+              (cond
+                (str/includes? (:err run) "no Vulkan physical device")
+                (refuse! "Vulkan is installed but no physical device answers here")
+
+                (nil? hex)
+                {:verdict :trapped :detail (str "the case trapped (exit " (.-status run) "): "
+                                                (subs (str (:out run) (:err run)) 0 (min 400 (count (str (:out run) (:err run))))))}
+
+                :else
+                (let [answer (.toString (js/Buffer.from hex "hex") "utf8")
+                      parsed (try (parse-answer answer) (catch :default e {:error (.-message e)}))]
+                  (if (:error parsed)
+                    {:verdict :verify-fail :detail (str (:error parsed) ": " (subs answer 0 (min 200 (count answer))))}
+                    (let [v (check-readback (:hex parsed) c)]
+                      (if (:ok v)
+                        {:verdict :ok :bits (:bits v) :value (:value v) :info (:info parsed)}
+                        {:verdict :verify-fail :detail (:reason v)}))))))))))))
+
+;; ---- the matrix -----------------------------------------------------------
+(def cases
+  (vec (concat (for [op [:sum :max :min] n [64 50]] {:w 64 :op op :n n})
+               (for [op [:sum :max :min]] {:w 256 :op op :n 256})
+               [{:w 256 :op :sum :n 200}]
+               ;; the identity-fix discriminators: all-real +-Inf streams at
+               ;; n < W, padded lanes folding the identity
+               [{:w 64 :op :max :n 50 :fill neg-inf-bits :want-bits neg-inf-bits}
+                {:w 256 :op :max :n 200 :fill neg-inf-bits :want-bits neg-inf-bits}
+                {:w 64 :op :min :n 50 :fill pos-inf-bits :want-bits pos-inf-bits}
+                {:w 256 :op :min :n 200 :fill pos-inf-bits :want-bits pos-inf-bits}])))
+
+(defn- clean
+  "Strip the run's random tmp path from a printed detail so three fresh
+  processes answer byte-identical logs."
+  [s] (str/replace (str s) tmp "<tmp>"))
+
+(let [ran (atom 0)
+      failed (atom 0)
+      not-admitted (atom 0)]
+  (doseq [[w op] [[64 :sum] [64 :max] [64 :min] [256 :sum] [256 :max] [256 :min]]]
+    (let [label (str "W" w "-" (name op))
+          src (get emitted-sources [w op])
+          cfile (.join path tmp (str "kernel-" w "-" (name op) ".comp"))
+          spv (.join path tmp (str "kernel-" w "-" (name op) ".spv"))]
+      (.writeFileSync fs cfile src "utf8")
+      (let [{:keys [status err]} (sh glslang ["-V" "--target-env" "vulkan1.1" "-S" "comp" cfile "-o" spv])]
+        (if-not (zero? status)
+          (do (swap! not-admitted inc)
+              (println (str "GPU-SGRE-POSTFIX\tSHAPE\t" label "\tNOT-ADMITTED\t"
+                            (subs (clean (str/trim (str err))) 0 (min 400 (count (clean (str/trim (str err)))))))))
+          (do
+            (println (str "GPU-SGRE-POSTFIX\tSHAPE\t" label "\tCOMPILED"))
+            (doseq [c (filterv #(and (= (:w %) w) (= (:op %) op)) cases)]
+              (let [res (run-case spv c)
+                    suffix (str "\tn=" (:n c) (when (:fill c) (str "\tfill=" (:fill c))))]
+                (case (:verdict res)
+                  :ok (do (swap! ran inc)
+                          (println (str "GPU-SGRE-POSTFIX\tCASE\t" label suffix "\tOK\tparts[0]=" (:value res)
+                                        "\tbits=" (:bits res)
+                                        "\tINFO=" (:info res))))
+                  :verify-fail (do (swap! ran inc) (swap! failed inc)
+                                   (println (str "GPU-SGRE-POSTFIX\tCASE\t" label suffix "\tVERIFY-FAIL\t" (clean (:detail res)))))
+                  (do (swap! not-admitted inc)
+                      (println (str "GPU-SGRE-POSTFIX\tCASE\t" label suffix "\tNOT-ADMITTED\t" (clean (:detail res)))))))))))))
+  (println (str "GPU-SGRE-POSTFIX\tRESULT\tran=" @ran "\tfailed=" @failed "\tnot-admitted=" @not-admitted))
+  (cond
+    (pos? @failed) (do (println "GPU-SGRE-POSTFIX\tFAIL\tan executed case did not verify") (js/process.exit 1))
+    (zero? @ran) (refuse! "no case produced a device read-back on this host -- nothing executed")
+    :else (js/process.exit 0)))

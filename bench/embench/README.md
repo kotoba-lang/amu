@@ -1,5 +1,9 @@
 # Embench native qualification
 
+For the corrected same-algorithm speed comparison, see the [Embench reproduction package](reproduce-20261015/README.md).
+Its M104 record is an Embench-derived translated-port comparison, not an official score; the earlier M93 figure is retained
+only as historical evidence after the kernel audit.
+
 > **Selfhost status.** The measured artifact below was produced with a
 > GraalVM-built compiler, so under `docs/selfhost-priority.md` it is a
 > *bootstrap-reference* result, not a selfhost result. Selfhost is the top

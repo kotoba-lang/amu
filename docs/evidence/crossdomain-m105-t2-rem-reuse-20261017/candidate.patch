@@ -1,0 +1,23 @@
+diff --git a/seed/41-a64gen.kotoba b/seed/41-a64gen.kotoba
+index fd9af208..4eb828b6 100644
+--- a/seed/41-a64gen.kotoba
++++ b/seed/41-a64gen.kotoba
+@@ -23366,9 +23366,16 @@
+ ;; then x17; all three of a madd spilled: x16 := a * b first)
+ (defn- t2-e-msub [M :vector-i64 v :i64 d :i64 r :i64 k :i64 x :i64] :vector-i64
+   (let [rk (t2-kval M k) sr (t2-spilled? M r) sx (t2-spilled? M x)
+-        reuse (and (= (bit-and (t2-xf M v t2-x-flags) 1024) 1024) (= (t2-g M t2-s-fastl) 0) (not sr) (not sx))
+-        hk (t2-hoisted M k) hoisted (and (> (t2-g M t2-s-fastl) 0) (>= hk 0) (not sr) (not sx))
+-        rr (if sr 16 (t2-vf M r t2-f-reg)) rx (if sx 17 (t2-vf M x t2-f-reg))]
++        rr (if sr 16 (t2-vf M r t2-f-reg)) rx (if sx 17 (t2-vf M x t2-f-reg))
++        n (vector-at M MM-CODE-N)
++        last-word (if (> n 0) (vector-at M (+ MM-CODE-BASE (dec n))) -1)
++        ;; In any fast copy, reuse x17 only when the immediately preceding
++        ;; instruction proves that it still contains this quotient's divisor.
++        ;; A reciprocal quotient ends in a correction instruction, so it
++        ;; naturally falls through to the normal hoisted or rematerialized path.
++        reuse (and (= (bit-and (t2-xf M v t2-x-flags) 1024) 1024) (not sr) (not sx)
++                   (= last-word (enc-sdiv rr rx 17)))
++        hk (t2-hoisted M k) hoisted (and (> (t2-g M t2-s-fastl) 0) (>= hk 0) (not sr) (not sx))]
+     (cond reuse (gn-emit M (+ (enc-madd d rr 17 rx) 0x8000))
+           hoisted (gn-emit M (+ (enc-madd d rr hk rx) 0x8000))

@@ -8077,7 +8077,15 @@ static int kexe_scope_open(const struct kexe_scope *scope, const char *candidate
 #endif
     }
 #if defined(__linux__)
-    int root = open(base, O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    /* The raw syscall, not libc open(): musl's open() adds a
+     * fcntl(F_SETFD, FD_CLOEXEC) whenever O_CLOEXEC is set (musl
+     * src/fcntl/open.c), and fcntl is deliberately outside the sandbox
+     * allowlist -- measured: this open died KEXE_TRAP SIGSYS there while
+     * the O_CLOEXEC-free opens around it worked. openat sets O_CLOEXEC
+     * atomically in the kernel, so the flag's meaning is unchanged. */
+    int root = (int)syscall(SYS_openat, AT_FDCWD, base,
+                           O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC,
+                           0);
     if (root < 0) return -1;
     struct kexe_open_how how;
     memset(&how, 0, sizeof(how));
@@ -8304,42 +8312,48 @@ static int64_t fs_app_data_read_provider(struct kexe_context_v11 *context,
     return 0;
   }
 
-  size_t capacity = 65536;
-  uint8_t *buffer = (uint8_t *)malloc(capacity);
-  size_t total = 0;
-  if (buffer == NULL) {
-    close(fd);
-    raise(SIGILL);
-    return 0;
-  }
+  /* Heap-free by design: the guest's syscall sandbox admits no mmap, and the
+   * C allocator maps for anything past its first arena (measured on the
+   * aarch64 loader: the READ form died KEXE_TRAP SIGSYS exactly where malloc
+   * would map, while the malloc-free EXISTS/WRITE/APPEND forms worked). The
+   * file is read straight into the string pool -- the bytes intern_utf8 would
+   * copy into anyway -- with the same budget refusal (note_budget + SIGILL). */
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  uint64_t start = shared->string_pool_used;
+  uint64_t total = 0;
   for (;;) {
-    if (total == capacity) {
-      size_t next = capacity * 2;
-      uint8_t *grown = (uint8_t *)realloc(buffer, next);
-      if (grown == NULL) {
-        free(buffer);
-        close(fd);
-        raise(SIGILL);
-        return 0;
-      }
-      buffer = grown;
-      capacity = next;
+    uint64_t used = start + total;
+    uint64_t ceiling = kexe_string_pool_budget < KEXE_STRING_POOL_MAX
+                           ? kexe_string_pool_budget
+                           : (uint64_t)KEXE_STRING_POOL_MAX;
+    if (used >= ceiling) {
+      /* The pool may be exactly full: a file whose size equals the remaining
+       * capacity fits (intern_utf8 accepted equality, its check is >), and an
+       * empty file is fine even then. Probe one byte; only data beyond the
+       * ceiling is a budget refusal. */
+      unsigned char probe = 0;
+      ssize_t peek = read(fd, &probe, 1);
+      if (peek == 0) break;
+      if (peek < 0 && errno == EINTR) continue;
+      close(fd);
+      note_budget(KEXE_BUDGET_BYTES_STRING_POOL);
+      raise(SIGILL);
+      return 0;
     }
-    ssize_t got = read(fd, buffer + total, capacity - total);
+    ssize_t got = read(fd, shared->string_pool + used,
+                       (size_t)(ceiling - used));
     if (got < 0) {
       if (errno == EINTR) continue;
-      free(buffer);
       close(fd);
       raise(SIGILL);
       return 0;
     }
     if (got == 0) break;
-    total += (size_t)got;
+    total += (uint64_t)got;
   }
   close(fd);
-  int64_t result = intern_utf8(context, buffer, total);
-  free(buffer);
-  return result;
+  shared->string_pool_used = start + total;
+  return checked_pair_new(context, -((int64_t)start) - 1, (int64_t)total);
 }
 
 /* wire id 35, WRITE form: "<path>WRITE_SEP<content>" -> the content written
@@ -9012,11 +9026,19 @@ static int kexe_browse_compare(const void *a, const void *b) {
                 ((const struct kexe_browse_entry *)b)->name);
 }
 
-static void kexe_free_browse_entries(struct kexe_browse_entry *entries,
-                                     size_t count) {
-  for (size_t i = 0; i < count; i++) free(entries[i].name);
-  free(entries);
-}
+/* Heap-free AND cap-free (measured 2026-10-21, boot88 + review P1): the
+ * guest's syscall sandbox admits no mmap, and the C allocator maps past its
+ * first arena -- the per-name mallocs and the growth realloc died KEXE_TRAP
+ * SIGSYS where they would map. There is no fixed entry or name cap either
+ * (the 4096-entry limit was REMOVED once a real 12727-entry directory broke
+ * recursive find -- a restored cap is a regression). Storage comes from the
+ * STRING POOL, whose budget is the only bound, enforced the way intern_utf8
+ * enforces it: refuse with the budget note, never a truncation. Two passes
+ * over the directory (the fd rewinds between them): the first measures, the
+ * second fills the pool-resident records and names. Sorting is musl qsort,
+ * which uses a 256-byte stack scratch and never allocates. */
+static char *kexe_browse_names_base;
+static size_t kexe_browse_names_used;
 
 /* One entry into the listing under construction; 0 = refuse (over the name
  * or byte bound, or out of memory). "." and ".." are skipped here. Each
@@ -9027,21 +9049,21 @@ static void kexe_free_browse_entries(struct kexe_browse_entry *entries,
 static int kexe_browse_add(const char *name, uint8_t is_dir,
                            struct kexe_browse_entry **entries, size_t *count,
                            size_t *capacity, size_t *total) {
+  (void)capacity;
   if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return 1;
   size_t name_length = strlen(name);
   size_t entry_bytes = name_length + 2u + (*count > 0 ? 1u : 0u);
   if (*total + entry_bytes > kexe_string_pool_budget) return 0;
-  if (*count == *capacity) {
-    size_t next = *capacity == 0 ? 64u : *capacity * 2u;
-    struct kexe_browse_entry *grown =
-        (struct kexe_browse_entry *)realloc(*entries,
-                                            next * sizeof(struct kexe_browse_entry));
-    if (grown == NULL) return 0;
-    *entries = grown;
-    *capacity = next;
+  if (*entries == NULL) {
+    /* measure pass: count and byte totals only (the name bytes are counted
+     * so the pool layout can be computed before anything is written) */
+    kexe_browse_names_used += name_length + 1u;
+    (*count)++;
+    *total += entry_bytes;
+    return 1;
   }
-  char *copy = (char *)malloc(name_length + 1u);
-  if (copy == NULL) return 0;
+  char *copy = kexe_browse_names_base + kexe_browse_names_used;
+  kexe_browse_names_used += name_length + 1u;
   memcpy(copy, name, name_length + 1u);
   (*entries)[*count].name = copy;
   (*entries)[*count].is_dir = is_dir ? 1u : 0u;
@@ -9136,33 +9158,63 @@ static int64_t fs_browse_provider(struct kexe_context_v11 *context,
     raise(SIGILL);
     return 0;
   }
-  struct kexe_browse_entry *entries = NULL;
-  size_t count = 0, capacity = 0, total = 0;
-  if (!kexe_enumerate_directory(fd, &entries, &count, &capacity, &total)) {
-    kexe_free_browse_entries(entries, count);
+  /* pass 1: measure -- no allocation, no writes (the add accumulates only) */
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  uint64_t start = (shared->string_pool_used + 7u) & ~(uint64_t)7u;
+  uint64_t ceiling = kexe_string_pool_budget < KEXE_STRING_POOL_MAX
+                         ? kexe_string_pool_budget
+                         : (uint64_t)KEXE_STRING_POOL_MAX;
+  size_t count = 0, listing_bytes = 0;
+  struct kexe_browse_entry *none = NULL;
+  kexe_browse_names_used = 0;
+  if (!kexe_enumerate_directory(fd, &none, &count, NULL, &listing_bytes)) {
     raise(SIGILL);
     return 0;
   }
-  qsort(entries, count, sizeof(struct kexe_browse_entry), kexe_browse_compare);
-  uint8_t *listing = (uint8_t *)malloc(total == 0 ? 1u : total);
-  if (listing == NULL) {
-    kexe_free_browse_entries(entries, count);
+  size_t names_bytes = kexe_browse_names_used;
+  uint64_t records_bytes =
+      ((uint64_t)count * sizeof(struct kexe_browse_entry) + 7u) & ~(uint64_t)7u;
+  if (start + records_bytes + (uint64_t)names_bytes + (uint64_t)listing_bytes
+      > ceiling) {
+    note_budget(KEXE_BUDGET_BYTES_STRING_POOL);
     raise(SIGILL);
     return 0;
   }
+  /* pass 2: fill -- the measure pass's enumerate CLOSED the fd (the
+   * enumeration owns it), so the directory is re-opened for the second
+   * pass; records and names live in the pool, the listing follows. */
+  close(fd);
+  fd = kexe_scope_open(&kexe_scope34, candidate,
+                       O_RDONLY | O_DIRECTORY | O_NOFOLLOW, 0, &escaped);
+  if (fd < 0) {
+    raise(SIGILL);
+    return 0;
+  }
+  struct kexe_browse_entry *fill =
+      (struct kexe_browse_entry *)(void *)(shared->string_pool + start);
+  struct kexe_browse_entry *entries = fill;
+  kexe_browse_names_base = (char *)(shared->string_pool + start + records_bytes);
+  kexe_browse_names_used = 0;
+  size_t filled = 0, ignored = 0;
+  if (!kexe_enumerate_directory(fd, &fill, &filled, NULL, &ignored)) {
+    raise(SIGILL);
+    return 0;
+  }
+  qsort(entries, filled, sizeof(struct kexe_browse_entry), kexe_browse_compare);
+  size_t listing_at = (size_t)(records_bytes + (uint64_t)names_bytes);
   size_t used = 0;
-  for (size_t i = 0; i < count; i++) {
-    if (i > 0) listing[used++] = '\n';
+  for (size_t i = 0; i < filled; i++) {
+    if (i > 0) shared->string_pool[start + listing_at + used++] = '\n';
     size_t name_length = strlen(entries[i].name);
-    memcpy(listing + used, entries[i].name, name_length);
+    memcpy(shared->string_pool + start + listing_at + used, entries[i].name,
+           name_length);
     used += name_length;
-    listing[used++] = '\t';
-    listing[used++] = entries[i].is_dir ? '1' : '0';
+    shared->string_pool[start + listing_at + used++] = '\t';
+    shared->string_pool[start + listing_at + used++] = entries[i].is_dir ? '1' : '0';
   }
-  kexe_free_browse_entries(entries, count);
-  int64_t result = intern_utf8(context, listing, used);
-  free(listing);
-  return result;
+  shared->string_pool_used = start + records_bytes + names_bytes + used;
+  return checked_pair_new(context, -((int64_t)(start + listing_at)) - 1,
+                          (int64_t)used);
 }
 
 
@@ -10796,7 +10848,10 @@ static struct kexe_spawned kexe_spawn_start(const char *program, char *const arg
     s.stage = 0;
     return s;
   }
-  int dir = cwd ? open(cwd, O_PATH | O_DIRECTORY | O_CLOEXEC) : -1;
+  /* Raw syscall for the same musl O_CLOEXEC -> fcntl(F_SETFD) reason as
+   * kexe_scope_open's descendant branch. */
+  int dir = cwd ? (int)syscall(SYS_openat, AT_FDCWD, cwd,
+                              O_PATH | O_DIRECTORY | O_CLOEXEC, 0) : -1;
   pid_t pid = fork();
   if (pid == 0) {
     unsigned char stage = 0;

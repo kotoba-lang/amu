@@ -1,0 +1,13 @@
+# Direct mask source fusion, 2026-10-13
+
+A mask writer's register-backed argument now uses `UBFX x0, source, #0, #8` directly, replacing `MOV x0, source; UBFX x0, x0, #0, #8`. The source register, result, NZCV, fuel and vector checks are preserved. Constant-zero, unresolved, spilled and literal paths retain the exact old materialization. The rule uses no benchmark name.
+
+All39 images are replayed against the previous positive-quotient snapshot. Only both Pico images change:65 fusions each, with every other word, generated branch/literal pointer, export and source-owned data checked under the complete relocation map. G1=G2=G3=G4 whole native/container identity and all original483 result/fuel/arena observations pass. Generic192 paired controls include368 actual guests plus16 loader configuration refusals,64-bit extrema, constants, non-target16-bit masks, invalid index and low fuel. Early test-controller assumptions about trap exit, zero-fuel validation and SIGTRAP were corrected; all raw attempts remain in the archive.
+
+Joseph OFF/ON/OFF/ON at fixed40960 iterations measured ON/OFF0.982326898908551, about1.767310% shorter. Both individual ratios are0.9730642532835143 and0.9918008414662092. This is exploratory without a statistical stability claim. No5% cutoff applies. Raw pre/post/background CPU idle>=70, one warmup, minimum timed body0.5s, max3 CPU-only attempts, first-qualified selection. No unchanged-image retiming or historical elapsed substitution.
+
+`qualification-results.tgz` and `raw-custody.json` preserve source, all39 images, physical proofs, actual guests and all timing records. `native-gate.py` plus `source-pool.py` support portable replay. The original19 workload and full body are retained. Last complete all19 Kotoba/C comparison remains round88, ratio2.946404197283788. Rounds93 and94 are incomplete and yield no full19 C ratio. The total C-parity goal is active and unmet. Upstream driver/formula evidence is not a certified official Kotoba score or a per-MHz score.
+
+Design reference: [LLVM MachineCopyPropagation](https://llvm.org/doxygen/MachineCopyPropagation_8cpp_source.html) forwards a COPY source into a use when the source remains available, register constraints hold and the definition uniquely reaches the use. This change applies that principle to one adjacent writer-emitter copy/extraction sequence; the actual whole-image equivalence is independently replayed rather than inferred from LLVM. It does not add a general copy-propagation pass.
+
+Large record registries are stored as `*-full.json.gz`, with compressed and uncompressed SHA256 plus record counts in their adjacent JSON summary. No raw record is dropped.

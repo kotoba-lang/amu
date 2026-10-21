@@ -1,0 +1,742 @@
+#!/usr/bin/env kbb
+;; CHUNKED-LOOP REDUCE VARIANTS: WITHIN-W SEPARATION OF WORKGROUP COUNT
+;; FROM STREAM SIZE (JUN-58 implementation+measurement slice, parent JUN-55).
+;;
+;; This is the kernel PR #1353 named and did not take: "a within-W
+;; separation needs a kernel where one workgroup processes a variable number
+;; of W-sized chunks (loop inside the kernel); that variant does not exist
+;; yet (implementation slice, not taken here)." In the chain's kernels lanes
+;; = W x workgroups is a construction identity, so at fixed W the load
+;; chain's growth-with-load could not say whether workgroup count or stream
+;; size drives the baseline/variant gap. Here BOTH reduce arms loop over
+;; `chunks` W-sized tiles per workgroup:
+;;
+;;   lanes = W x wg x chunks
+;;
+;; so the two confounded terms separate:
+;;   grid B (lanes fixed)  -- wg x chunks constant: vary wg at fixed W and
+;;                            fixed stream; the reduce work (lanes/W tiles)
+;;                            is constant too. A gap that moves here tracks
+;;                            the workgroup count; a flat gap says the
+;;                            chain's growth is not a count effect.
+;;   grid A (wg fixed)     -- vary chunks (and with it lanes and reduce
+;;                            work, proportionally) at fixed W and fixed
+;;                            count: the load chain's knob, minus the count.
+;;
+;; THREE INTERLEAVED ARMS per shape, one kept command buffer each (slots
+;; 0..2), as in the chain (PRs #1347-#1353):
+;;   baseline -- the chain's baseline cascade (emit-wgsl :reduce :sum port,
+;;               shared-memory tree, stride W/2..1) wrapped in the same
+;;               chunk loop: per tile the W-lane tree reduce, accumulate
+;;               scratch[0] into a register, one trailing barrier before the
+;;               scratch reuse.
+;;   variant  -- the EXACT bytes emit-glsl (kotoba.compiler.accelerator-
+;;               subgroup-reduce) produced for the (W, :sum) shape, carried
+;;               as test/fixtures/gpu/subgroup-reduce-w<W>-sum.emitted.glsl
+;;               and sha256-pinned below, patched by the chain's two
+;;               mechanical rung patches (PR #1346) PLUS this slice's
+;;               minimal chunk patches (loop/offset/acc; every anchor is
+;;               asserted to occur exactly once before it is replaced).
+;;   floor    -- the same dispatch shape with a near-empty chunk loop: the
+;;               submission/launch floor both reduce arms sit on.
+;;
+;; PROTOCOL. Wire-42 BEGINK/REPLAY as in the chain: each arm's kept buffer
+;; records ONE batch of 512 identical DISPATCHes and SUBMIT runs it once as
+;; warm-up. Then 32 rounds of 3 REPLAYs, round r replayed slots 0,1,2 when r
+;; is even and 2,1,0 when r is odd. 96 samples. Per-round ratio is
+;; t(baseline)/t(variant); the report gives its median, IQR and range
+;; against 1.0 -- an effect below the per-run IQR is not a result.
+;;
+;; VERIFICATION BEFORE ANY TIMING CLAIM. x[i]=i+1 is written by an init
+;; kernel and read back (words 0..3 = 1.0..4.0); per arm the first 4
+;; workgroup partials must be bit-exact f32: sum over workgroup g's L = W x
+;; chunks lanes is L^2*g + L(L+1)/2 (g = 0..3). The script refuses shapes
+;; where that exceeds 2^24, so every intermediate is an f32-exact integer
+;; and ANY summation order is exact -- the check is bit-exact, not
+;; approximate. The floor arm must answer 0.0. Any mismatch: FAIL, no
+;; timing line printed.
+;;
+;; WHAT THIS MEASURES: the two reduce algorithms at one (W, wg, chunks)
+;; point on THIS device (Apple M1 Max / MoltenVK). It is NOT a vendor
+;; dispatch row and does NOT flip :measured? anywhere in
+;; kotoba.compiler.accelerator-targets; the Intel (JUN-59) / Mali (JUN-60)
+;; comparisons need hardware this bot does not have.
+;;
+;; Three outcomes, three exit codes:
+;;   0  everything verified; timing table printed
+;;   1  a read-back was wrong, or the answer is short/malformed
+;;   3  could not run here: no Vulkan headers/loader, no glslangValidator,
+;;      macOS without MoltenVK, the amu compile refused, a pinned fixture
+;;      does not match its sha256, W is not one of 32 64 128 256, or the
+;;      (lanes, chunks) shape fails the admissibility rules below
+;;
+;;   kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk 64 2097152 4
+(ns test-gpu-subgroup-reduce-chunksweep
+  (:require [kotoba.lang.text :as str]
+            ["node:child_process" :as child]
+            ["node:crypto" :as crypto]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
+
+(def root (.resolve path (.dirname path *file*) ".."))
+(def tmp (.mkdtempSync fs (.join path (.tmpdir os) "amu-gpu-sgchk-")))
+
+(defn- sh [cmd args & [env]]
+  (let [child-env (js/Object.assign #js {} (.-env js/process) (clj->js (or env {})))
+        r (child/spawnSync cmd (clj->js args) #js {:encoding "utf8" :env child-env})]
+    {:status (.-status r) :out (str (.-stdout r)) :err (str (.-stderr r))}))
+(defn- refuse! [reason] (println (str "GPU-SGRE-CHUNK\tCOULD-NOT-RUN\t" reason)) (js/process.exit 3))
+(defn- fail! [reason] (println (str "GPU-SGRE-CHUNK\tFAIL\t" reason)) (js/process.exit 1))
+
+(defn- sha256-hex [s]
+  (-> (crypto/createHash "sha256") (.update s "utf8") (.digest "hex")))
+
+(defn- f32bits
+  [x]
+  (let [b (js/Buffer.alloc 4)]
+    (.writeFloatLE b x 0)
+    (.readUInt32LE b 0)))
+
+;; ---- the workgroup size and the chunk shape under test (argv) ------------
+(def w-str (nth (.-argv js/process) 3 nil))
+(def lanes-str (nth (.-argv js/process) 4 nil))
+(def chunks-str (nth (.-argv js/process) 5 nil))
+(when-not (contains? #{"32" "64" "128" "256"} (or w-str ""))
+  (refuse! "usage: test-gpu-subgroup-reduce-chunksweep.cljk <W> <lanes> <chunks>, W one of 32 64 128 256"))
+(def wg (js/parseInt w-str 10))
+
+(defn- valid-shape?
+  "A (W, lanes, chunks) shape is admissible when: chunks is a positive
+  integer; lanes is a positive multiple of L = W*chunks (whole per-workgroup
+  tiles); the workgroup count lanes/L is at least 4 (the harness reads back
+  4 partials) and within Vulkan's guaranteed 65535 grid-dim limit; lanes is
+  a multiple of 256 (the fixed 256-lane init kernel covers the stream
+  exactly); and the largest read-back sum stays below 2^24 so every partial
+  is an f32-exact integer. Pure; self-tested below."
+  [w lanes chunks]
+  (when (and (integer? chunks) (pos? chunks))
+    (let [l (* w chunks)
+          groups (when (and (integer? lanes) (pos? lanes) (zero? (mod lanes l)))
+                   (quot lanes l))
+          max-sum (when groups (+ (* 3 l l) (quot (* l (inc l)) 2)))]
+      (boolean
+        (and groups
+             (>= groups 4)
+             (<= groups 65535)
+             (zero? (mod lanes 256))
+             (< max-sum 16777216))))))
+
+(when-not (and (string? lanes-str) (re-matches #"\d+" lanes-str))
+  (refuse! (str "usage: test-gpu-subgroup-reduce-chunksweep.cljk <W> <lanes> <chunks>, lanes a decimal positive multiple of W*chunks; got "
+                (pr-str lanes-str))))
+(when-not (and (string? chunks-str) (re-matches #"\d+" chunks-str))
+  (refuse! (str "usage: test-gpu-subgroup-reduce-chunksweep.cljk <W> <lanes> <chunks>, chunks a decimal positive integer; got "
+                (pr-str chunks-str))))
+(def n-elems (js/parseInt lanes-str 10)) ;; f32 lanes per dispatch (argv)
+(def chunks (js/parseInt chunks-str 10)) ;; W-sized tiles per workgroup (argv)
+(when-not (valid-shape? wg n-elems chunks)
+  (refuse! (str "shape W=" wg " lanes=" n-elems " chunks=" chunks
+                " is not admissible (lanes a multiple of W*chunks with 4 <= lanes/(W*chunks) <= 65535,"
+                " lanes a multiple of 256, 3*L^2 + L(L+1)/2 < 2^24 for L=W*chunks)")))
+(def per-wg-lanes (* wg chunks))       ;; L: lanes one workgroup reduces
+(def groups-x (quot n-elems per-wg-lanes)) ;; reduce workgroups (<= 65535)
+(def init-x (quot n-elems 256))        ;; init kernel grid (256-lane init)
+(def batch 512)                        ;; dispatches recorded per kept slot
+(def n-rounds 32)                      ;; even: emitted in (forward, reverse) pairs
+(def n-steps (quot n-rounds 2))
+(def arm-labels ["A" "V" "F"])         ;; timing arms: baseline, variant, floor
+(def read-labels ["X" "A" "V" "F"])    ;; read-back fields: x, then the arms' parts
+(def arm-names ["baseline-chunked" "variant-chunked" "floor-chunked"])
+(def n-arms 3)
+(def n-samples (* n-rounds n-arms))
+
+;; ---- the pinned variant fixture for THIS W -------------------------------
+;; The fixture is the EXACT bytes emit-glsl (kotoba.compiler.accelerator-
+;; subgroup-reduce, PR #1341) produced for the (W, :sum) shape; the four
+;; pins are byte-identical to the chain's pins (PRs #1347-#1353), so this
+;; slice's variant bytes are the same emitter bytes with documented
+;; mechanical patches and nothing else. A transcription error refuses before
+;; the first dispatch.
+(def variant-sha256
+  {"32" "0cf6c4069c5ae06835c03ef65e5a6e12a605d7d2518bd81f965510b603814722"
+   "64" "a25a69317b5c5a956279ccc37a5089adb489104a28ed89460b8928889b096254"
+   "128" "c7931718a194656fd0b649636464d66717595499f50f6115da9a86bbf13b9374"
+   "256" "087107f90a9ddf02f64f82a40dffeb0fec6567c5dd5a1dc21116b4612b20cfd1"})
+
+(def fixture-path
+  (.join path root "test" "fixtures" "gpu" (str "subgroup-reduce-w" w-str "-sum.emitted.glsl")))
+(when-not (.existsSync fs fixture-path)
+  (refuse! (str "variant fixture missing: " fixture-path)))
+(def fixture-src (.readFileSync fs fixture-path "utf8"))
+(when-not (= (sha256-hex fixture-src) (get variant-sha256 w-str))
+  (refuse! (str "variant fixture sha256 " (sha256-hex fixture-src)
+                " != pinned " (get variant-sha256 w-str))))
+
+(defn- patch1
+  "Replace anchor with replacement in s, asserting the anchor occurs exactly
+  once -- a silently multi-applied or missing patch refuses, not measures.
+  (Occurrence counting goes through js String.prototype.split because
+  kotoba.lang.text/split expects a regex and these anchors are literals.)"
+  [s what anchor replacement]
+  (let [n (count (.split s anchor))]
+    (when-not (= n 2)
+      (fail! (str "chunk patch '" what "' anchor occurs " (dec n) " times, want exactly 1")))
+    (str/replace s anchor replacement)))
+
+;; ---- the rung patches (mechanical, cumulative) ---------------------------
+;; Chain rung patches (measured necessary in PR #1346), then this slice's
+;; chunk patches: open the tiles loop around the emitter body (base offset +
+;; per-tile accumulate), and close it by turning the parts write into the
+;; accumulate plus one trailing barrier before the partials reuse.
+(def ^:private umbrella "#extension GL_KHR_shader_subgroup : require")
+(def ^:private categories
+  (str "#extension GL_KHR_shader_subgroup_basic : require\n"
+       "#extension GL_KHR_shader_subgroup_shuffle_relative : require"))
+(def ^:private open-anchor "void main() {\n  uint i = gl_GlobalInvocationID.x;\n")
+(def ^:private open-patch
+  (str "void main() {\n"
+       "  uint tlid = gl_LocalInvocationID.x;\n"
+       "  uint wid = gl_WorkGroupID.x;\n"
+       "  float acc = 0.0;\n"
+       "  for (uint cc = 0u; cc < " chunks "u; ++cc) {\n"
+       "  uint i = wid * " per-wg-lanes "u + cc * " wg "u + tlid;\n"))
+(def ^:private close-anchor
+  "  if (gl_SubgroupID == 0u && gl_SubgroupInvocationID == 0u) { parts[gl_WorkGroupID.x] = partials[0]; }\n}")
+(def ^:private close-patch
+  (str "  if (gl_SubgroupID == 0u && gl_SubgroupInvocationID == 0u) { acc = acc + partials[0]; }\n"
+       "  barrier();\n"
+       "  }\n"
+       "  if (gl_SubgroupID == 0u && gl_SubgroupInvocationID == 0u) { parts[wid] = acc; }\n"
+       "}"))
+(def variant-src
+  (-> fixture-src
+      (str/replace umbrella categories)
+      (str/replace "gl_SubgroupLocalInvocationId" "gl_SubgroupInvocationID")
+      (patch1 "chunk-open" open-anchor open-patch)
+      (patch1 "chunk-close" close-anchor close-patch)))
+(when-not (and (str/includes? variant-src "gl_SubgroupInvocationID")
+               (not (str/includes? variant-src "gl_SubgroupLocalInvocationId"))
+               (not (str/includes? variant-src umbrella))
+               (str/includes? variant-src (str "for (uint cc = 0u; cc < " chunks "u; ++cc)"))
+               (str/includes? variant-src (str "cc * " wg "u + tlid"))
+               (str/includes? variant-src "acc = acc + partials[0]")
+               (str/includes? variant-src "parts[wid] = acc")
+               (not (str/includes? variant-src "parts[gl_WorkGroupID.x]")))
+  (fail! "the rung+chunk patches did not produce the expected chunked variant"))
+;; the fixture must actually carry THIS W in its two size literals and no
+;; other workgroup size -- a fixture/W mismatch is refused, not measured.
+(when-not (and (str/includes? fixture-src (str "layout(local_size_x = " w-str ")"))
+               (str/includes? fixture-src (str "shared float partials[" w-str "];")))
+  (fail! (str "the W=" w-str " fixture does not carry W=" w-str " in its size literals")))
+
+;; ---- the chunked baseline port and the floor kernel (as data) ------------
+;; The baseline is emit-wgsl's :reduce :sum cascade at workgroup W, ported
+;; WGSL -> GLSL structurally unchanged (same scratch tree, same
+;; one-barrier-per-step shape, same identity 0.0), wrapped in the SAME tile
+;; loop as the variant: per tile a W-lane tree reduce, lid 0 accumulates
+;; scratch[0], one trailing barrier before the scratch reuse. The loop is
+;; uniform (no per-tile divergence), so every barrier stays in uniform
+;; control flow.
+(def baseline-src
+  (str "#version 450\n"
+       "layout(local_size_x = " wg ") in;\n"
+       "layout(set = 0, binding = 0, std430) readonly buffer X { float x[]; };\n"
+       "layout(set = 0, binding = 1, std430) writeonly buffer Parts { float parts[]; };\n"
+       "layout(set = 0, binding = 2, std430) readonly buffer N { uint n; };\n"
+       "shared float scratch[" wg "];\n"
+       "void main() {\n"
+       "  uint tlid = gl_LocalInvocationID.x;\n"
+       "  uint wid = gl_WorkGroupID.x;\n"
+       "  float acc = 0.0;\n"
+       "  for (uint cc = 0u; cc < " chunks "u; ++cc) {\n"
+       "    uint i = wid * " per-wg-lanes "u + cc * " wg "u + tlid;\n"
+       "    scratch[tlid] = i < n ? x[i] : 0.0;\n"
+       "    barrier();\n"
+       "    for (uint stride = " (quot wg 2) "u; stride > 0u; stride >>= 1u) {\n"
+       "      if (tlid < stride) { scratch[tlid] = scratch[tlid] + scratch[tlid + stride]; }\n"
+       "      barrier();\n"
+       "    }\n"
+       "    if (tlid == 0u) { acc = acc + scratch[0]; }\n"
+       "    barrier();\n"
+       "  }\n"
+       "  if (tlid == 0u) { parts[wid] = acc; }\n"
+       "}\n"))
+(def floor-src
+  (str "#version 450\n"
+       "layout(local_size_x = " wg ") in;\n"
+       "layout(set = 0, binding = 0, std430) readonly buffer X { float x[]; };\n"
+       "layout(set = 0, binding = 1, std430) writeonly buffer Parts { float parts[]; };\n"
+       "layout(set = 0, binding = 2, std430) readonly buffer N { uint n; };\n"
+       "void main() {\n"
+       "  if (gl_LocalInvocationIndex == 0u) {\n"
+       "    float s = 0.0;\n"
+       "    for (uint cc = 0u; cc < " chunks "u; ++cc) { s = s + 0.0; }\n"
+       "    parts[gl_WorkGroupID.x] = s;\n"
+       "  }\n"
+       "}\n"))
+;; The init kernel fills x[i]=i+1 over the whole stream at a FIXED 256-lane
+;; shape (not W): the stream is the measured quantity here, and tying the
+;; init grid to W would refuse admissible chunk shapes for no reason. Init
+;; runs once before any timing; its shape is outside every timing line.
+(def init-src
+  (str "#version 450\n"
+       "layout(local_size_x = 256) in;\n"
+       "layout(set = 0, binding = 0, std430) writeonly buffer X { float x[]; };\n"
+       "void main() {\n"
+       "  uint i = gl_GlobalInvocationID.x;\n"
+       "  x[i] = float(i + 1u);\n"
+       "}\n"))
+
+;; ---- expected read-backs (pure) ------------------------------------------
+;; Workgroup g of the reduce arms sums x[g*L .. g*L+L-1] = (i+1) for i in
+;; that window, L = W*chunks: L^2*g + L(L+1)/2, exact in f32 for g = 0..3
+;; (the words the harness reads back; the shape guard keeps every partial
+;; below 2^24). x words 0..3 are 1.0..4.0. Floor parts are 0.0.
+(defn- expected-parts-word [g] (f32bits (+ (* per-wg-lanes per-wg-lanes g) (quot (* per-wg-lanes (inc per-wg-lanes)) 2))))
+(def expected-words
+  {"X" (mapv f32bits [1 2 3 4])
+   "A" (mapv expected-parts-word [0 1 2 3])
+   "V" (mapv expected-parts-word [0 1 2 3])
+   "F" (mapv f32bits [0 0 0 0])})
+
+(defn- field->words
+  "The four little-endian u32 words of one 32-hex-digit read-back field.
+  Refuses a field of the wrong shape instead of reading past it."
+  [hex-field]
+  (when-not (re-matches #"[0-9a-f]{32}" hex-field)
+    (throw (js/Error. (str "read-back field is not 32 lowercase hex digits: " hex-field))))
+  (let [b (fn [k] (js/parseInt (subs hex-field (* 2 k) (+ (* 2 k) 2)) 16))]
+    (mapv (fn [w] (+ (b (* 4 w)) (* 256 (b (inc (* 4 w)))) (* 65536 (b (+ 2 (* 4 w)))) (* 16777216 (b (+ 3 (* 4 w))))))
+          [0 1 2 3])))
+
+(defn- words->field
+  "The 32-hex-digit read-back field of four little-endian u32 words
+  (self-test material; the device answers these, the harness never writes
+  them into a claim)."
+  [words]
+  (let [b (js/Buffer.alloc 16)]
+    (doseq [[i w] (map-indexed vector words)]
+      (.writeUInt32LE b w (* 4 i)))
+    (.toString b "hex")))
+
+(defn- check-field
+  "Verify one read-back field's four words against an expected word vector.
+  Answers {:ok true} or {:ok false :reason <the mismatch, named>}."
+  [label hex-field want]
+  (try
+    (let [got (field->words hex-field)]
+      (if (= got want)
+        {:ok true}
+        {:ok false :reason (str label " read-back words " got " != expected " want)}))
+    (catch :default e {:ok false :reason (.-message e)})))
+
+;; ---- answer parsing (pure; self-tested below) -----------------------------
+;; The guest answers "INFO|T s1 .. s96|X hex|A hex|V hex|F hex" where the
+;; wire-42 INFO answer is itself "<device>|<api>|<maxWgX>|<unified>" and
+;; carries '|'. Fields are CLASSIFIED by shape, not position-guessed: the T
+;; field is exactly "T" plus n-samples decimal timings; a read field is
+;; exactly "<label> <32-hex>" with the label in read-labels. The classified
+;; fields must be the 1 + (count read-labels) trailing fields, T first and
+;; the reads in X A V F order -- a wrong parse cannot silently pass.
+(defn- toks [f] (filterv #(not (str/blank? %)) (str/split f #"\s+")))
+(defn- ts-field? [f]
+  (let [t (toks f)]
+    (and (= (count t) (inc n-samples))
+         (= (first t) "T")
+         (every? #(re-matches #"\d+" %) (rest t)))))
+(defn- read-field? [f]
+  (let [t (toks f)]
+    (and (= (count t) 2)
+         (boolean (some #(= (first t) %) read-labels))
+         (boolean (re-matches #"[0-9a-f]{32}" (second t))))))
+
+(defn- parse-answer [answer]
+  (let [fields (str/split answer #"\|")
+        kind (fn [f] (cond (ts-field? f) :ts (read-field? f) :read :else nil))
+        idxs (filterv #(some? (kind (nth fields %))) (vec (range (count fields))))
+        n (inc (count read-labels))]
+    (when-not (and (= n (count idxs))
+                   (= idxs (vec (range (- (count fields) n) (count fields)))))
+      (throw (js/Error. (str "answer has " (count fields) " |-fields; classified fields at " idxs
+                             ", want " n " trailing"))))
+    (let [tsf (nth fields (first idxs))
+          rfs (subvec fields (inc (first idxs)))]
+      (when-not (= :ts (kind tsf))
+        (throw (js/Error. "the first classified field is not the T field")))
+      (when-not (every? #(= :read (kind %)) rfs)
+        (throw (js/Error. "a trailing field is not a read field")))
+      (let [samples (mapv #(js/parseInt % 10) (rest (toks tsf)))
+            reads (mapv (fn [f] [(first (toks f)) (second (toks f))]) rfs)]
+        (when-not (= (mapv first reads) read-labels)
+          (throw (js/Error. (str "read fields answer " (mapv first reads) ", want " read-labels))))
+        {:info (str/join "|" (subvec fields 0 (first idxs)))
+         :samples samples
+         :reads (into {} reads)}))))
+
+;; ---- the sample -> arm mapping and the timing analysis (pure) -------------
+;; Sample j belongs to round (quot j 3) at emission position (mod j 3).
+;; Even rounds replay slots 0,1,2 (position = arm), odd rounds slots 2,1,0
+;; (position = 2 - arm).
+(defn- arm-idx [j]
+  (let [r (quot j n-arms)
+        p (mod j n-arms)]
+    (if (even? r) p (- (dec n-arms) p))))
+
+(defn- arm-time
+  "Round r's sample for arm a (the parity mapping every ratio depends on)."
+  [samples r a]
+  (nth samples (+ (* r n-arms) (if (even? r) a (- (dec n-arms) a)))))
+
+(defn- median [xs]
+  (let [s (vec (sort xs)) n (count s)]
+    (when (zero? n) (fail! "median of empty sample set"))
+    (if (odd? n)
+      (nth s (quot n 2))
+      (/ (+ (nth s (dec (quot n 2))) (nth s (quot n 2))) 2.0))))
+
+(defn- quartile
+  "Quartile of a sorted vector at fraction f, index round(f*(n-1))."
+  [s f]
+  (nth s (js/Math.round (* f (dec (count s))))))
+
+(defn- stats
+  "Median/IQR/min/max of one arm's (or one ratio stream's) values."
+  [vals]
+  (let [sv (vec (sort vals))]
+    {:med (median vals)
+     :iqr (- (quartile sv 0.75) (quartile sv 0.25))
+     :rmin (first sv) :rmax (last sv)
+     :n (count vals)}))
+
+(defn- analyze
+  "Per-arm time stats and the per-round ratio of baseline over variant for
+  one run's flat sample vector. Answers {:arms [stats x3 in arm order],
+  :speedup <stats of t(baseline)/t(variant) per round>, :floor-base <stats
+  of t(floor)/t(baseline)>, :floor-var <stats of t(floor)/t(variant)>}."
+  [samples]
+  (when-not (= (count samples) n-samples)
+    (fail! (str "analyze: " (count samples) " samples, want " n-samples)))
+  (let [per-arm (mapv (fn [a] (stats (mapv #(arm-time samples % a) (vec (range n-rounds)))))
+                      (vec (range n-arms)))
+        speedup (mapv (fn [r] (/ (* 1.0 (arm-time samples r 0)) (arm-time samples r 1)))
+                      (vec (range n-rounds)))
+        fb (mapv (fn [r] (/ (* 1.0 (arm-time samples r 2)) (arm-time samples r 0)))
+                 (vec (range n-rounds)))
+        fv (mapv (fn [r] (/ (* 1.0 (arm-time samples r 2)) (arm-time samples r 1)))
+                 (vec (range n-rounds)))]
+    {:arms per-arm
+     :speedup (stats speedup)
+     :floor-base (stats fb)
+     :floor-var (stats fv)}))
+
+;; ---- self-tests: parser, mapping, arithmetic, analysis, verifier ----------
+;; Everything between a device answer and a printed claim is pure and tested
+;; against synthetic inputs before the first dispatch.
+(let [hex32 (apply str (repeat 32 "a"))
+      fake (str "Fake Device|1.3.296|1024|1|T"
+                (str/join "" (map (fn [j] (str " " (+ 1000 j))) (range n-samples)))
+                (str/join "" (map (fn [l] (str "|" l " " hex32)) read-labels)))
+      {:keys [info samples reads]} (parse-answer fake)]
+  (when-not (= info "Fake Device|1.3.296|1024|1")
+    (fail! (str "parser self-test: INFO mangled: " info)))
+  (when-not (= (count samples) n-samples)
+    (fail! (str "parser self-test: " (count samples) " samples, want " n-samples)))
+  (when-not (= (get reads "A") hex32)
+    (fail! "parser self-test: read map wrong"))
+  (doseq [bad [(str "Fake Device|1.3.296|1024|1|T 1 2 3"
+                    (str/join "" (map (fn [l] (str "|" l " " hex32)) read-labels)))
+               (str "Fake Device|1.3.296|1024|1|T"
+                    (str/join "" (map (fn [j] (str " " (+ 1000 j))) (range n-samples)))
+                    (str/join "" (map (fn [l] (str "|" l " " (subs hex32 0 30))) read-labels)))
+               (str "Fake Device|1.3.296|1024|1|T"
+                    (str/join "" (map (fn [j] (str " " (+ 1000 j))) (range n-samples)))
+                    (str/join "" (map (fn [l] (str "|" l " " hex32)) ["X" "A" "F" "V"])))
+               (str "Fake Device|1.3.296|1024|1|T"
+                    (str/join "" (map (fn [j] (str " " (+ 1000 j))) (range n-samples)))
+                    "|X " hex32 "|A " hex32 "|V " hex32)]]
+    (when-not (try (parse-answer bad) false (catch :default _ true))
+      (fail! "parser self-test: a broken answer was not refused"))))
+;; parity mapping: round 0 -> positions 0,1,2 = arms 0,1,2; round 1 ->
+;; positions 0,1,2 = arms 2,1,0; each arm gets n-rounds samples.
+(when-not (= (mapv arm-idx (vec (range 6))) [0 1 2 2 1 0])
+  (fail! (str "mapping self-test: parity map wrong: " (mapv arm-idx (vec (range 6))))))
+(doseq [a (vec (range n-arms))]
+  (let [want (filterv #(= (arm-idx %) a) (vec (range n-samples)))]
+    (when-not (= (count want) n-rounds)
+      (fail! (str "mapping self-test: arm " a " got " (count want) " samples, want " n-rounds)))))
+(when-not (= (median [1 2 3 4]) 2.5) (fail! "median self-test: even"))
+(when-not (= (median [3 1 2]) 2) (fail! "median self-test: odd"))
+;; shape validation: the two grids' cells (grid A: wg fixed; grid B: lanes
+;; fixed) and the refusals that matter (one workgroup over the grid limit,
+;; chunks that do not tile the stream, a sub-2^24-exact shape, a short
+;; workgroup count, a non-256-multiple stream).
+(when-not (and (valid-shape? 64 2097152 4) (valid-shape? 64 524288 1)
+               (valid-shape? 64 4194304 8) (valid-shape? 64 2097152 8)
+               (valid-shape? 256 1048576 1) (valid-shape? 32 2097152 2))
+  (fail! "shape self-test: an admissible shape was refused"))
+(doseq [[w l c] [[64 2097152 3] [32 2097152 1] [64 2097151 1] [64 0 1] [64 -2097152 4]
+                 [256 2097152 32] [64 128 1] [64 2097152 0] [64 2097152 256]]]
+  (when (valid-shape? w l c)
+    (fail! (str "shape self-test: an inadmissible shape passed: W=" w " lanes=" l " chunks=" c))))
+;; index round(f*(n-1)): n=8 -> q25 index 2 -> 3, q75 index 5 -> 6
+(when-not (= (quartile [1 2 3 4 5 6 7 8] 0.25) 3) (fail! "quartile self-test: q25"))
+(when-not (= (quartile [1 2 3 4 5 6 7 8] 0.75) 6) (fail! "quartile self-test: q75"))
+(let [;; baselines differ by up to 2x across rounds; baseline is 2x the
+      ;; variant in EVERY round (floor half of variant): the ratios must
+      ;; cancel the round baselines exactly and answer speedup 2.0.
+      synth (mapv (fn [j]
+                    (let [r (quot j n-arms) a (arm-idx j)
+                          base (* 1.0 (+ 1000 (* 97 (mod r 13))))]
+                      (* base (case a 0 2.0 1 1.0 2 0.5))))
+                  (vec (range n-samples)))
+      a (analyze synth)]
+  (when-not (< (js/Math.abs (- (get-in a [:speedup :med]) 2.0)) 1e-9)
+    (fail! (str "analysis self-test: speedup " (get-in a [:speedup :med]) ", want 2.0")))
+  (when-not (< (get-in a [:speedup :iqr]) 1e-9)
+    (fail! (str "analysis self-test: speedup iqr " (get-in a [:speedup :iqr]) ", want 0")))
+  (when-not (< (js/Math.abs (- (get-in a [:floor-var :med]) 0.5)) 1e-9)
+    (fail! (str "analysis self-test: floor/var " (get-in a [:floor-var :med]) ", want 0.5")))
+  (let [flat (analyze (vec (repeat n-samples 1000)))]
+    (when-not (and (< (js/Math.abs (- (get-in flat [:speedup :med]) 1.0)) 1e-9)
+                   (< (get-in flat [:speedup :iqr]) 1e-9))
+      (fail! (str "analysis self-test: equal arms gave speedup "
+                  (get-in flat [:speedup :med]) " iqr " (get-in flat [:speedup :iqr]))))))
+;; expected sums: the closed form must equal a direct integer sum for the
+;; four workgroups the harness reads back, at THIS (W, chunks).
+(doseq [g [0 1 2 3]]
+  (let [direct (reduce + (map (fn [i] (inc i)) (range (* per-wg-lanes g) (* per-wg-lanes (inc g)))))
+        form (+ (* per-wg-lanes per-wg-lanes g) (quot (* per-wg-lanes (inc per-wg-lanes)) 2))]
+    (when-not (= direct form)
+      (fail! (str "expected self-test: g=" g " direct sum " direct " != form " form)))))
+;; f32 bit-pattern sanity on a value pinned by PR #1346's harness: 2080.0 is
+;; 0x45020000, little-endian "00000245".
+(when-not (= (words->field [(f32bits 2080) 0 0 0]) (str "00000245" (subs (apply str (repeat 32 "0")) 8)))
+  (fail! (str "self-test: f32 2080 is not 00000245 LE, got " (words->field [(f32bits 2080) 0 0 0]))))
+(let [good (words->field (expected-words "A"))]
+  (let [v (check-field "A" good (expected-words "A"))]
+    (when-not (:ok v) (fail! (str "verify self-test: correct words refused: " (pr-str v)))))
+  (let [v (check-field "A" (words->field (update (vec (expected-words "A")) 0 inc)) (expected-words "A"))]
+    (when-not (and (not (:ok v)) (str/includes? (:reason v) "!="))
+      (fail! (str "verify self-test: wrong words not caught: " (pr-str v)))))
+  (let [v (check-field "A" "abcd" (expected-words "A"))]
+    (when-not (and (not (:ok v)) (str/includes? (:reason v) "32 lowercase hex"))
+      (fail! (str "verify self-test: short field not refused by name: " (pr-str v))))))
+
+;; ---- host preconditions ---------------------------------------------------
+(def isa (case (.-arch js/process) "x64" "x86_64" "arm64" "aarch64" (refuse! (str "unsupported host arch " (.-arch js/process)))))
+(def platform (.-platform js/process))
+(def target (str isa (case platform "linux" "-linux" "darwin" "-macos" (refuse! (str "unsupported platform " platform)))))
+(when-not (some #(.existsSync fs %) ["/usr/include/vulkan/vulkan.h" "/usr/local/include/vulkan/vulkan.h" "/opt/homebrew/include/vulkan/vulkan.h"])
+  (refuse! "no vulkan/vulkan.h on this host (apt: libvulkan-dev; macOS: brew install molten-vk vulkan-headers)"))
+(def glslang
+  (let [{:keys [status out]} (sh "sh" ["-c" "command -v glslangValidator"])]
+    (when-not (zero? status)
+      (refuse! "no glslangValidator on this host (apt: glslang-tools; macOS: brew install glslang)"))
+    (str/trimr out)))
+(let [{:keys [out]} (sh glslang ["--version"])]
+  (println (str "GPU-SGRE-CHUNK\tTOOLCHAIN\t" (str/trim (first (str/split out #"\n"))))))
+
+;; ---- loader ---------------------------------------------------------------
+(def loader (.join path tmp "kexe-loader-gpu"))
+(let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-DKEXE_GPU_VULKAN"
+                                             (.join path root "tools" "kexe_loader.c") "-o" loader]
+                                            (if (= platform "darwin") ["-I/opt/homebrew/include" "-L/opt/homebrew/lib" "-lvulkan"] ["-lvulkan"])))]
+  (when-not (zero? status) (fail! (str "the GPU loader does not build: " (subs err 0 (min 600 (count err)))))))
+
+;; ---- the kernels, compiled to SPIR-V --------------------------------------
+(defn- compile-kernel! [name src]
+  (let [cfile (.join path tmp (str name ".comp"))
+        spv (.join path tmp (str name ".spv"))]
+    (.writeFileSync fs cfile src "utf8")
+    (let [{:keys [status err]} (sh glslang ["-V" "--target-env" "vulkan1.1" "-S" "comp" cfile "-o" spv])]
+      (when-not (zero? status)
+        (fail! (str "glslangValidator refused " name ": " (subs (str/trim (str err)) 0 (min 400 (count (str/trim (str err))))))))
+      spv)))
+
+(def spv-init (compile-kernel! "init" init-src))
+(def spv-baseline (compile-kernel! "baseline-chunked" baseline-src))
+(def spv-variant (compile-kernel! "variant-chunked" variant-src))
+(def spv-floor (compile-kernel! "floor-chunked" floor-src))
+
+;; ---- the generated .kotoba guest, as data ---------------------------------
+;; Built as s-expressions and printed by `prs` -- paren balance is by
+;; construction. Setup (nested single-binding lets): INFO -> ALLOC x/n and
+;; one parts per arm -> WRITEDEC n -> init: BEGIN -> DISPATCH -> SUBMIT
+;; (fills x[i]=i+1 over init-x 256-lane groups; the DISPATCH records into
+;; the transient buffer because SUBMIT requires an open recording -- a bare
+;; DISPATCH submits alone and the following SUBMIT traps "SUBMIT without
+;; BEGIN") -> per arm: PIPELINE -> BEGINK <slot> -> `batch` x DISPATCH -> SUBMIT
+;; (the warm-up run of the batch). Timing: `rounds` recursion, 16 steps of
+;; two rounds each -- forward REPLAY 0,1,2 then reverse REPLAY 2,1,0 --
+;; appending every answer in emission order. Teardown per arm: DROP -> READ
+;; parts words 0..3 -> READ x words 0..3 -> FREE everything. The guest
+;; answers "INFO|T s1 .. s96|X hex|A hex|V hex|F hex".
+(defn- prs [form]
+  (cond
+    (string? form) (str "\"" form "\"")
+    (or (symbol? form) (keyword? form) (number? form)) (str form)
+    (vector? form) (str "[" (str/join " " (map prs form)) "]")
+    (seq? form) (str "(" (str/join " " (map prs form)) ")")
+    :else (str form)))
+
+(defn- g-let [bindings body]
+  (reduce (fn [acc [sym expr]] (list 'let [sym expr] acc)) body (reverse bindings)))
+
+(defn- chain [forms]
+  (if (empty? (rest forms)) (first forms)
+      (list 'string-concat (first forms) (chain (rest forms)))))
+
+(defn- g-concat-all [forms]
+  ;; join with "|", NO trailing separator: interleave would emit one after
+  ;; the last form and a trailing empty field would break the shape-classified
+  ;; parse below.
+  (chain (cons (first forms) (interleave (repeat "|") (rest forms)))))
+
+;; One recursion step = two rounds. Emission order of the 6 REPLAYs:
+;; slots 0,1,2 (forward round, even r) then slots 2,1,0 (reverse, odd r).
+(def rounds-form
+  (let [order (concat (vec (range n-arms)) (vec (reverse (range n-arms))))
+        syms (mapv (fn [i] (symbol (str "a" i))) (vec (range (* 2 n-arms))))
+        bindings (mapv (fn [i slot] [(nth syms i) (list 'gpu (str "REPLAY " slot))])
+                       (vec (range (* 2 n-arms))) order)]
+    (list 'defn 'rounds '[n :i64 acc :string] :string
+          (list 'if '(< n 1) 'acc
+                (g-let bindings
+                       (list 'rounds '(- n 1)
+                             (chain (interleave (cons 'acc syms) (repeat " ")))))))))
+
+(def dispatches-form
+  '(defn dispatches [n :i64 req :string] :i64
+     (if (< n 1) 0 (do (gpu req) (dispatches (- n 1) req)))))
+
+(defn- setup-bindings []
+  (let [req (fn [p parts]
+              (list 'string-concat "DISPATCH "
+                    (list 'string-concat p
+                          (list 'string-concat (str " " groups-x " 1 1 ")
+                                (list 'string-concat 'hx
+                                      (list 'string-concat " "
+                                            (list 'string-concat parts (list 'string-concat " " 'hn))))))))
+        arm (fn [k slot spv]
+              (let [p (symbol (str "p" k))
+                    rq (symbol (str "rq" k))]
+                [[p (list 'gpu (str "PIPELINE " spv " 3"))]
+                 [rq (req p (symbol (str "pa" k)))]
+                 [(symbol (str "b" k)) (list 'gpu (str "BEGINK " slot))]
+                 [(symbol (str "d" k)) (list 'dispatches batch rq)]
+                 [(symbol (str "s" k)) (list 'gpu "SUBMIT")]]))]
+    (concat
+      [['i0 (list 'gpu "INFO")]]
+      [['hx (list 'gpu (str "ALLOC " (* n-elems 4)))]
+       ['hn (list 'gpu "ALLOC 16")]
+       ['pa0 (list 'gpu (str "ALLOC " (* groups-x 4)))]
+       ['pa1 (list 'gpu (str "ALLOC " (* groups-x 4)))]
+       ['pa2 (list 'gpu (str "ALLOC " (* groups-x 4)))]
+       ['wn (list 'gpu (list 'string-concat "WRITEDEC " (list 'string-concat 'hn (str " 0 " n-elems))))]
+       ['pin (list 'gpu (str "PIPELINE " spv-init " 1"))]
+       ['bin (list 'gpu "BEGIN")]
+       ['din (list 'gpu (list 'string-concat "DISPATCH " (list 'string-concat 'pin (list 'string-concat (str " " init-x " 1 1 ") 'hx))))]
+       ['sin (list 'gpu "SUBMIT")]]
+      (arm 0 0 spv-baseline)
+      (arm 1 1 spv-variant)
+      (arm 2 2 spv-floor)
+      [['ts (list 'rounds n-steps "")]])))
+
+(defn- teardown-bindings []
+  (concat
+    (apply concat
+      (map-indexed
+        (fn [k _]
+          (let [pa (symbol (str "pa" k))]
+            [[(symbol (str "dr" k)) (list 'gpu (str "DROP " k))]
+             [(symbol (str "rd" k)) (list 'gpu (list 'string-concat "READ " (list 'string-concat pa " 0 16")))]
+             [(symbol (str "fp" k)) (list 'gpu (list 'string-concat "FREE " pa))]]))
+        arm-names))
+    [['rx (list 'gpu (list 'string-concat "READ " (list 'string-concat 'hx " 0 16")))]
+     ['fx (list 'gpu (list 'string-concat "FREE " 'hx))]
+     ['frn (list 'gpu (list 'string-concat "FREE " 'hn))]]))
+
+(def guest-text
+  (str/join "\n"
+    [(prs '(ns gpu.sgrechunk (:export [main])))
+     (prs '(defn gpu [r :string] :string (typed-cap-call :gpu/compute :string :string r)))
+     (prs dispatches-form)
+     (prs rounds-form)
+     (prs (list 'defn 'main [] :string
+            (g-let (concat (setup-bindings) (teardown-bindings))
+                   (g-concat-all
+                     (list* 'i0
+                            (list 'string-concat "T" 'ts)
+                            (list 'string-concat "X " 'rx)
+                            (mapv (fn [l k] (list 'string-concat (str l " ") (symbol (str "rd" k))))
+                                  arm-labels [0 1 2]))))))]))
+(when-not (and (str/includes? guest-text "BEGINK 0") (str/includes? guest-text "REPLAY 2")
+               (str/includes? guest-text "dispatches") (str/includes? guest-text "WRITEDEC ")
+               (str/includes? guest-text "(gpu \"BEGIN\")"))
+  (fail! "guest self-test: the guest text is missing its protocol spine"))
+
+;; ---- compile + run the guest (same flow as the chain's loadsweep probe) ----
+(let [src (.join path tmp "gpu-sgre-chunk.kotoba")
+      _ (.writeFileSync fs src guest-text "utf8")
+      kexe (.join path tmp "sgchk.kexe")
+      code (.join path tmp "sgchk.bin")
+      {:keys [status out err]} (sh "node" [(.join path root "bin" "amu") "compile" src
+                                           "--target" target "--jvm-free"
+                                           "--policy" (.join path root "test" "fixtures" "gpu" "gpu-compute-policy.edn")
+                                           "--output" kexe])]
+  (when-not (and (zero? status) (str/includes? out ":ok true"))
+    (refuse! (str "amu compile refused the chunksweep guest (source kept at " src "): "
+                  (subs (str out err) 0 (min 400 (count (str out err)))))))
+  (let [r (sh "node" [(.join path root "bin" "amu") "extract-native" kexe "--symbol" "main" "--output" code])
+        m (re-find #":offset (\d+)" (:out r))]
+    (when-not m (fail! (str "extract-native gave no offset: " (:out r))))
+    (let [offset (second m)
+          run (sh loader [code offset "0" isa "42"] {"KEXE_RESULT_TYPE" "string" "KEXE_STRUCTURED_REPORT" "1" "KEXE_WALL_SECONDS" "300"})
+          hex (second (re-find #":result-utf8-hex \"([0-9a-f]+)\"" (:out run)))]
+      (when (str/includes? (:err run) "no Vulkan physical device")
+        (refuse! "Vulkan is installed but no physical device answers here"))
+      (when-not hex
+        (fail! (str "chunksweep guest did not answer a string (exit " (:status run) "): "
+                    (subs (str (:out run) (:err run)) 0 (min 400 (count (str (:out run) (:err run))))))))
+      (let [answer (.toString (js/Buffer.from hex "hex") "utf8")
+            {:keys [info samples reads]}
+            (try (parse-answer answer)
+                 (catch :default e
+                   (fail! (str (.-message e) ": " (subs answer 0 (min 200 (count answer)))))))]
+        (when (str/blank? info) (fail! "the INFO stage answered empty"))
+        ;; ---- verification BEFORE any timing claim ------------------------
+        (doseq [l read-labels]
+          (let [v (check-field l (get reads l) (expected-words l))]
+            (when-not (:ok v) (fail! (:reason v)))))
+        (println (str "GPU-SGRE-CHUNK\tINFO\t" info "\t" target))
+        (println (str "GPU-SGRE-CHUNK\tSHAPE\tW=" wg "\tchunks=" chunks "\twg=" groups-x
+                      "\tlanes=" n-elems "\tper-wg-lanes=" per-wg-lanes
+                      "\tfixture=subgroup-reduce-w" w-str "-sum.emitted.glsl"
+                      "\tsha256=" (get variant-sha256 w-str) "\tpatch=categories+id+chunk-loop"))
+        (println (str "GPU-SGRE-CHUNK\tPROTOCOL\trounds=" n-rounds "\tbatch=" batch " dispatches/replay"
+                      "\tarms=baseline-chunked,variant-chunked,floor-chunked"
+                      "\torder=alternating(012,210)\tsamples=" (count samples)))
+        (println (str "GPU-SGRE-CHUNK\tVERIFY\tx=ok\tparts-baseline=ok\tparts-variant=ok\tparts-floor=ok"
+                      "\t(sum L^2*g + L(L+1)/2, L=W*chunks, g=0..3, bit-exact)"))
+        ;; ---- the timing table -------------------------------------------
+        (let [{:keys [arms speedup floor-base floor-var]} (analyze samples)]
+          (doseq [[a nm] (map-indexed vector arm-names)]
+            (let [s (nth arms a)]
+              (println (str "GPU-SGRE-CHUNK\tARMTIME\t" nm
+                            "\tmedian=" (.toFixed (:med s) 1) "\tiqr=" (.toFixed (:iqr s) 1)
+                            "\tmin=" (:rmin s) "\tmax=" (:rmax s) "\tn=" (:n s)
+                            "\tns/dispatch=" (.toFixed (/ (:med s) batch) 1)
+                            "\tns/element=" (.toFixed (/ (:med s) batch n-elems) 4)))))
+          (println (str "GPU-SGRE-CHUNK\tGAP\tvariant-chunked-minus-baseline-chunked"
+                        "\tns/dispatch=" (.toFixed (/ (- (:med (nth arms 1)) (:med (nth arms 0))) batch) 1)))
+          (println (str "GPU-SGRE-CHUNK\tSPEEDUP\tbaseline/variant"
+                        "\tmedian=" (.toFixed (:med speedup) 4) "\tiqr=" (.toFixed (:iqr speedup) 4)
+                        "\tmin=" (.toFixed (:rmin speedup) 4) "\tmax=" (.toFixed (:rmax speedup) 4)
+                        "\tvs-1.0=" (cond (> (:rmin speedup) 1.0) "above"
+                                          (< (:rmax speedup) 1.0) "below"
+                                          :else "indistinguishable-at-this-noise")))
+          (println (str "GPU-SGRE-CHUNK\tFLOORSHARE\tfloor/baseline="
+                        (.toFixed (:med floor-base) 4) "\tfloor/variant=" (.toFixed (:med floor-var) 4))))
+        (println (str "GPU-SGRE-CHUNK\tRESULT\tverified=true\tsamples=" (count samples)))
+        (js/process.exit 0)))))

@@ -13,7 +13,7 @@ def main():
  for tag,src in [('OFF',ROOT/'docs/evidence/certified-scalar-calls-20261013/previous-lookup-bootstrap.bin'),('ON',out/'artifacts/G2.bin')]:
   dst=host/('certified-'+tag+'-producer.bin');shutil.copy2(src,dst);producers[tag]=dst
  assert sha(producers['OFF'])=='09ee805e5f0feef246922026023e75d7d92e4531245466c9827883ff5baf9f62'
- assert sha(producers['ON'])==json.loads((ROOT/'seed/adoption-20261012.json').read_text())['nativeImageSHA256']
+ assert sha(producers['ON'])==json.loads((ROOT/'seed/adoption-20261017.json').read_text())['nativeImageSHA256']
  pins={p:sha(p)for p in [loader,source,*producers.values()]};env={k:v for k,v in os.environ.items()if not k.startswith('KEXE_')};env.update(KEXE_COMMAND='1',KEXE_CAP_RESOURCES_35=str(w),KEXE_FUEL='off',KEXE_VECTORS='4194304',KEXE_VECTOR_ITEMS='134217728',KEXE_STRING_POOL='268435456',KEXE_PAIRS='16777216',KEXE_CPU_SECONDS='1800',KEXE_WALL_SECONDS='1800',TMPDIR=str(w));calls=[]
  def run(argv,name,e):
   z=subprocess.run(list(map(str,argv)),cwd=w,env=e,capture_output=True,timeout=1800);(w/(name+'.stdout')).write_bytes(z.stdout);(w/(name+'.stderr')).write_bytes(z.stderr);calls.append(dict(name=name,exit=z.returncode));(w/'calls.json').write_text(json.dumps(calls,indent=2)+'\n');assert z.returncode==0 and all(sha(p)==h for p,h in pins.items()),name;return z.stdout,z.stderr

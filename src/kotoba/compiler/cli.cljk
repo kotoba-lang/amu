@@ -107,6 +107,11 @@
     :output 74
     (:execute :native-executor) 69
     :receipt 76
+    ;; `:artifact-target`: a refused artifact target (unknown --artifact kind;
+    ;; a bootloader that is not an x86-64 PE32+ EFI application in the aiueos
+    ;; disk packager) is the caller's input being wrong, answered with the
+    ;; same 65 as the Node table -- the two tables must agree.
+    :artifact-target 65
     70))
 
 (defn- dispatch! [& args]
@@ -303,32 +308,32 @@
                     (or (option args "--blocks")
                         (throw (ex-info "--module-lock requires --blocks <dir>"
                                         {:phase :usage})))))
-          ;; No default here since amu ADR 0351 (2026-09-24). This in-process
-          ;; twin is no longer spawned by any launcher (ADR 0347); `bin/amu`
-          ;; and `bin/kotoba` resolve an omitted --target to the HOST's
-          ;; native target before routing, and a JVM-side copy of that host
-          ;; table would be a second answer to keep in step for a route
-          ;; that is being removed. Defaulting to wasm32 here would silently
-          ;; contradict the launchers, so an omitted target is refused.
+          ;; No default here: launchers choose Kototama for direct and worker
+          ;; compile requests. This in-process compatibility entrypoint
+          ;; requires callers to state the target explicitly.
           target (parse-target
                   (or (option args "--target")
-                      (throw (ex-info "--target is required on the in-process CLI; bin/amu defaults an omitted --target to the host's native target (amu ADR 0351)"
+                      (throw (ex-info "--target is required on the in-process CLI; bin/amu defaults compile to Kototama (amu ADR 0354)"
                                       {:phase :usage :problem :compile/missing-target}))))
+          kototama-target? (= target :kototama-core-v1)
+          execution (if kototama-target? :kototama-vm
+                        (:execution (target-profile/profile target)))
           output (or (option args "--output")
                      ;; A locked compile has no input PATH to derive a name
                      ;; from -- that is the point -- so the root namespace
                      ;; names the artifact instead.
                      (str (or input (str (:root locked)))
-                          (case (:execution (target-profile/profile target))
+                          (case execution
                             :wasm ".wasm"
                             :component ".component.wasm"
                             :cljs ".cljs"
                             :javascript ".mjs"
                             :evm ".evm"
+                            :kototama-vm ".kototama"
                             :kernel ".o"
                             :process ".elf"
                             ".kexe")))
-          component-target? (= :component (:execution (target-profile/profile target)))
+          component-target? (= :component execution)
           policy-path (option args "--policy")
           ;; Canonicalised at decode so admission, the emitters and provenance
           ;; all see the wire form whichever spelling the file used: two
@@ -412,6 +417,10 @@
                                             target policy source-opts))]
       (case (:format result)
         :wasm/v1 (atomic-output/write-bytes! output (:bytes result))
+      :kototama/program-v1
+      (do (atomic-output/write-bytes! output (:program-bytes result))
+          (atomic-output/write-text! (str output ".provenance.edn")
+                                     (pr-str (:provenance result))))
         ;; The component artifact is three files: the binary, the WIT world it
         ;; was lifted against, and the admission request kototama needs. They
         ;; are written together so an artifact can never circulate without the

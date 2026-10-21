@@ -1,0 +1,83 @@
+;; x86_64 Linux runtime profile. Context v11, SysV C helper calls.
+;; Guest direct calls reserve r9 for context and put arguments 6..16 on stack.
+(defn- xr-call [M :vector-i64 slot :i64] :vector-i64
+  (-> M (xg-bytes 0xf87d8b48 4) (xg-bytes 0x97ff 2) (xg-bytes slot 4) (xg-bytes 0xf84d8b4c 4)))
+(defn- xr-args [M :vector-i64 t :i64 i :i64 n :i64] :vector-i64
+  (if (= i n) M
+    (xr-args (xg-load M (+ t i) (case i 0 0xb58b48 1 0x958b48 2 0x8d8b48 3 0x858b4c 4 0x8d8b4c 0)) t (inc i) n)))
+(defn- xr-rt [M :vector-i64 slot :i64 t :i64 n :i64] :vector-i64
+  (-> M (xr-args t 0 n) (xr-call slot) (xg-save t)))
+(defn- xr-cap [M :vector-i64 wire :i64 kind :i64 t :i64] :vector-i64
+  (-> M (xg-load t 0x858b4c) (xg-byte 0xbe) (xg-bytes wire 4)
+      (xg-byte 0xba) (xg-bytes kind 4) (xg-byte 0xb9) (xg-bytes kind 4)
+      (xr-call RT-TYPED-CAP-CALL) (xg-save t)))
+(defn- xr-str [M :vector-i64 t :i64 lit :i64] :vector-i64
+  (-> M (xg-rel 0xbe 1 4 lit) (xg-byte 0xba)
+      (xg-bytes (vector-at M (+ MM-LIT-BASE (* lit MM-LIT-W) LF-LEN)) 4)
+      (xr-call RT-PAIR-NEW) (xg-save t)))
+;; Two private words below the declared temps, above the outgoing stack area.
+(defn- xr-scratch [M :vector-i64] :i64
+  (- 0 (* 8 (+ 2 (xg-f M (xg-get M 0) FF-NSLOTS) (xg-f M (xg-get M 0) FF-DEPTH)))))
+(defn- xr-alloc [M :vector-i64 n :i64] :vector-i64
+  (-> M (xg-byte 0xbe) (xg-bytes n 4) (xr-call RT-VECTOR-ALLOC)
+      (xg-bytes 0x858948 3) (xg-bytes (xr-scratch M) 4)))
+(defn- xr-vec-items [M :vector-i64 t :i64 k :i64 n :i64 lit :i64] :vector-i64
+  (if (= k n) M
+    (xr-vec-items
+      (-> (if (= lit 0) (xg-load M (+ t k) 0x8d8b48)
+            (-> M (xg-rel 0x058d48 3 5 lit) (xg-bytes 0x888b48 3) (xg-bytes (* 8 k) 4)))
+          (xg-bytes 0xb58b48 3) (xg-bytes (xr-scratch M) 4)
+          (xg-byte 0xba) (xg-bytes k 4) (xr-call RT-VECTOR-ASSOC-IN-PLACE)) t (inc k) n lit)))
+(defn- xr-vec-finish [M :vector-i64 t :i64] :vector-i64
+  (-> M (xg-bytes 0x858b48 3) (xg-bytes (xr-scratch M) 4) (xg-save t)))
+(defn- xr-vec [M :vector-i64 t :i64 n :i64] :vector-i64
+  (-> M (xr-alloc n) (xr-vec-items t 0 n 0) (xr-vec-finish t)))
+(defn- xr-vecp [M :vector-i64 t :i64 lit :i64 n :i64] :vector-i64
+  (-> M (xr-alloc n) (xr-vec-items t 0 n lit) (xr-vec-finish t)))
+(defn- xr-tab [M :vector-i64 t :i64 lit :i64 n :i64] :vector-i64
+  (-> M (xg-load t 0x858b48) (xg-bytes 0xf88148 3) (xg-bytes n 4)
+      (xg-bytes 0x0272 2) (xg-bytes 0x0b0f 2)
+      (xg-rel 0x0d8d48 3 5 lit) (xg-bytes 0xc1048b48 4) (xg-save t)))
+(defn- xr-pool-bytes [M :vector-i64 b :i64 n :i64] :vector-i64
+  (if (= n 0) M (xr-pool-bytes (xg-byte M (vector-at M (+ MM-LITB-BASE b))) (inc b) (dec n))))
+(defn- xr-align [M :vector-i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= (bit-and (xg-pos M) 7) 0)) M (xr-align (xg-byte M 0))))
+(defn- xr-pool [M :vector-i64 lit :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= lit (vector-at M MM-LIT-N))) M
+    (let [v (xr-align M) p (+ MM-LIT-BASE (* lit MM-LIT-W))
+          w (mem-set v (+ p LF-POOL) (xg-pos v))]
+      (xr-pool (xr-pool-bytes w (vector-at w (+ p LF-B)) (vector-at w (+ p LF-LEN))) (inc lit)))))
+(defn- xr-check [M :vector-i64 i :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
+    (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) c (xg-si M i IF-C)]
+      (cond (and (= op OP-RT) (or (not (xr-slot a)) (< c 0) (> c 5))) (xg-err M 7101 a)
+            (and (= op OP-CALLI) (or (< c 0) (> c 5))) (xg-err M 7101 op)
+            :else (xr-check M (inc i))))))
+(defn- xr-slot [slot :i64] :bool
+  (case slot 48 true 56 true 64 true 72 true 112 true 120 true 128 true 136 true 144 true
+    152 true 160 true 168 true 176 true 184 true 192 true 200 true 208 true 216 true
+    240 true 352 true 360 true 368 true 376 true false))
+(defn- xr-build [M :vector-i64 S :string] :vector-i64
+  (let [a (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 4 1) (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1))]
+    (cond (not= (vector-at a MM-ERR) 0) a
+          (= (xg-get a 1) 0) (xg-err a 7102 0)
+          :else (-> a (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
+                    (xg-index-labels 1) (xg-rel 0xe9 1 1 (xg-get a 1)) (xg-code 1) (xr-pool 1) (xg-fix 1)))))
+(defn- xr-copy [V :vector-i64 M :vector-i64 i :i64 n :i64 h :i64] :vector-i64
+  (if (= i n) V (xr-copy (vector-assoc! V (+ h i) (xg-code-byte M i)) M (inc i) n h)))
+(defn- xr-write [M :vector-i64 out :string] :i64
+  (let [n (xg-pos M)
+        header (string-concat "KX64V1 x86_64-linux sysv-ctx-v11 " (string-concat (mem-u2dec n) " 0\n\n"))
+        h (string-length header)
+        v (xr-copy (io-bput-str (vector-alloc (+ h n)) header 0 h 0) M 0 n h)
+        z (out-write-v v out 0 (+ h n))
+        w (io-out (string-concat "{:ok true, :target :x86_64-linux, :format :kx64-v1, :offset 0, :bytes "
+                   (string-concat (mem-u2dec n) "}\n")))]
+    (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))
+(defn- xr-command [] :i64
+  (let [src (io-arg 1) out (io-arg 5)]
+    (cond (or (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
+            (drv-fail0 E-USAGE)
+          (= (io-exists src) 0) (drv-fail0 E-READ)
+          :else (let [original (drv-read src) s (string-concat original (ck-r6b-lib original)) m (xr-build (xg-front s) s)]
+                  (if (= (vector-at m MM-ERR) 0) (xr-write m out) (drv-fail m src))))))

@@ -1,0 +1,40 @@
+#!/usr/bin/env kbb
+;; REGENERATE test/fixtures/gpu/subgroup-reduce-w<W>-sum.emitted.glsl FROM
+;; THE CURRENT EMITTER (4b7a1ccb's named follow-up).
+;;
+;;   kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+;;     scripts/regen-gpu-subgroup-reduce-fixtures.cljk
+;;
+;; The four fixtures are GENERATED ARTIFACTS of
+;; kotoba.compiler.accelerator-subgroup-reduce/emit-glsl for the :sum row at
+;; W in {32, 64, 128, 256} -- the shapes the JUN-58 sign chain and the
+;; JUN-59/60 execution probes carry. They were stale from the moment
+;; 4b7a1ccb fixed the emitter (they still held the pre-fix bytes: umbrella
+;; extension, SPIR-V builtin name, unstrided cross-fold, finite extrema
+;; identities); this script and `fixtures-match-the-emitter` in
+;; accelerator-subgroup-reduce-test keep them honest from now on.
+;;
+;; The PRE-FIX bytes the sign chain pins are archived under
+;; docs/evidence/gpu/sign-chain-pinned-fixtures-pre-fix/ and staged over
+;; these files by scripts/gpu-sign-chain-stage-fixtures.sh before any chain
+;; run. Regenerating here does not touch that archive.
+;;
+;; Deterministic: same emitter, same bytes. If a run of this script changes
+;; a file, the emitter changed -- and that is exactly what the test asserts
+;; must be reflected here.
+
+(ns regen-gpu-subgroup-reduce-fixtures
+  (:require [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-subgroup-reduce :as sg]))
+
+(def fixture-widths [32 64 128 256])
+
+(defn -main [& _]
+  (doseq [w fixture-widths]
+    (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size w})
+          code (sg/emit-glsl kir)
+          path (str "test/fixtures/gpu/subgroup-reduce-w" w "-sum.emitted.glsl")]
+      (spit path code)
+      (println "WROTE" path (count code) "bytes"))))
+
+(-main)

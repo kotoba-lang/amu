@@ -224,12 +224,16 @@ profiles, conformance and runtime digests, CI run, test time, and expiry.
 
 ## Execution policy
 
-The compiler has one source-admission and KIR pipeline. The CLI defaults to
-the host native target; browser/Worker builds select their Wasm target
-explicitly. A Wasm Component/profile is the portable execution boundary:
-it links through typed WIT imports and receives only capabilities admitted
-by its host. `wasm32-wasi` does **not** mean ambient WASI access: the current
-profile rejects ambient WASI imports and expects a closed capability adapter.
+The compiler has one source-admission and KIR pipeline. `amu compile` and
+`amu worker` default to the engine-neutral, content-addressed Kototama program
+target (ADR 0355), so the default artifact does not depend on the build host's
+OS or ISA. `--target` or `AMU_TARGET` selects another backend explicitly.
+Host-native targets remain available for platform-specific integration and
+boot artifacts; Wasm targets remain available for browser, Worker and WASI
+hosts. A Wasm Component/profile is also a portable execution boundary: it
+links through typed WIT imports and receives only capabilities admitted by its
+host. `wasm32-wasi` does **not** mean ambient WASI access: the current profile
+rejects ambient WASI imports and expects a closed capability adapter.
 
 Kotoba's Lisp-facing `(eval request)` uses that same pipeline rather than a
 second evaluator. Semantic analysis lowers it to typed capability 30
@@ -242,8 +246,8 @@ reader evaluation, ambient namespaces, and host `eval` remain unavailable.
 
 Direct x86-64/AArch64 AOT serves admitted native applications and AiueOS
 boot/kernel, engine, driver, root-key adapter and trusted low-level profiles.
-A host-native default is not ambient OS authority and does not qualify the
-separate C-free AiueOS production path. The compiler
+An explicit host-native target is not ambient OS authority and does not
+qualify the separate C-free AiueOS production path. The compiler
 must not duplicate runtime policy. Two linkers, two authorities:
 
 ```text
@@ -518,29 +522,28 @@ The raw `answer.evm` creation bytecode deploys a standard Ethereum ABI
 `main()` dispatcher. The compiler also writes `answer.evm.abi.json` and a
 digest-bound `answer.evm.manifest.edn`; an unknown selector reverts.
 
-## Runtime: nbb-native for Wasm and ordinary native compile/check
+## Runtime: portable Kototama programs and explicit platform targets
 
-`bin/amu compile`/`check` for `wasm32*` and ordinary `x86_64*`/
-`aarch64*` targets runs entirely under `nbb` (ClojureScript on Node) --
-**no JVM process is spawned at all** for those paths. Target-specific
-entrypoints avoid loading either native emitter for Wasm and avoid loading the
-other ISA emitter for native compilation. This matches the monorepo's
-repo-wide runtime priority: amu's native compiler (`--target <isa>`, run
-through the kexe loader) is the first execution path, and wasm is one build
-target among several, chosen for hosts where native cannot run (browsers and
-Workers: `wasm32-browser`; WASI: `wasm32-wasi`); JVM/`bb` stay last-resort
-compat (superproject ADR-2609241300, 2026-09-24 — the earlier order put
-`kotoba wasm runtime` first). An omitted `--target` on `amu compile` /
-`amu worker` means **this host's native target** (ADR 0351, 2026-09-24; like
-Go's GOOS/GOARCH): `aarch64-macos` on Apple silicon, `x86_64-linux` /
-`aarch64-linux` on Linux, `x86_64-windows` / `aarch64-windows` on Windows,
-`aarch64-android` on Android; any other host is refused by name, never
-defaulted to wasm. `AMU_TARGET` overrides the default and an explicit
-`--target` overrides both. A program that uses a feature native does not
-qualify yet is refused naming the feature and the wasm32 targets that carry
-it -- choose `--target wasm32-browser` (browser / Worker) or
-`--target wasm32-wasi` explicitly; amu never switches to wasm by itself.
-`check`, `definition-cids`, `module-lock` and `package-*` take no target.
+`amu compile` and `amu worker` without `--target` emit the canonical Kototama
+program artifact (ADR 0355). The artifact is content-addressed DAG-CBOR and
+does not change with the host OS or ISA. `AMU_TARGET` can choose another
+backend when `--target` is omitted; an explicit `--target` takes precedence.
+The currently implemented Kototama profiles cover the i64 and data-i64
+subsets. Unsupported values and expressions outside these subsets are rejected
+before an artifact is written. Compilation does not prove that a target host
+provides every admitted capability effect; an invocation may trap if a
+provider is missing. Browser/Worker and WASI builds select `wasm32-browser` or
+`wasm32-wasi` explicitly. Host-native ISA targets remain explicit for native
+integration and boot artifacts. Amu never changes a selected target silently.
+
+The Kototama, Wasm and ordinary native compile paths run through `nbb`
+(ClojureScript on Node); **no JVM process is spawned**. The isolated Wasm and
+ordinary native entrypoints load their selected backend. The default Kototama
+entrypoint currently requires `kotoba.compiler.core`, whose dependency closure
+includes the Wasm, Component, CLJS, EVM, Script, x86-64 and AArch64 backends.
+
+`check`, `definition-cids`,
+`module-lock` and `package-*` take no target.
 The frontend reader/validator
 (`kotoba.compiler.frontend`), the KIR lowering/compile-time oracle
 (`kotoba.compiler.ir`), the wasm32 backend (`kotoba.compiler.backend.wasm`),
@@ -889,6 +892,22 @@ executes the compiled code and checks the result, not just static Mach-O
 shape. This needs no physical hardware or paid signing (Simulator binaries
 run unsigned), but does not by itself count toward this repo's coverage
 percentage -- see ADR-0001's Phase 3 for why.
+
+macOS arm64 has a matching static AOT packaging command for native host
+integration:
+
+```bash
+kotoba -M compile packet-plane.kotoba --target aarch64-macos \
+  --fuel 512 --output packet-plane.kexe
+kotoba -M package-macos packet-plane.kexe --entry main \
+  --output packet-plane.o --manifest-output packet-plane.edn
+```
+
+It re-verifies the macOS-target KEXE and emits a Mach-O `MH_OBJECT` with
+`LC_BUILD_VERSION` set to macOS 13.0. The manifest records the target, entry,
+artifact digest, and object digest. This packages code for linking; app
+signing, Network Extension authorization, installation, and physical-network
+execution remain separate gates.
 
 `wasm32-wasi` is the first sealed server core-Wasm profile. It is not yet a
 WebAssembly Component Model component. Its Wasm custom section
@@ -1654,7 +1673,7 @@ restricted profile and its budgets while implementing that library boundary.
 
 ## Target-neutral and distributed stack architecture
 
-Checks target-independent semantics and emits a selected Native, Wasm core, Component, Script or bounded EVM artifact. Project linking belongs here; runtime linking belongs to the host. The default target is host-native. EVM output is a bounded compiler slice, not a settlement network or proof of full Kototama conformance.
+Checks target-independent semantics and emits the default Kototama program or an explicitly selected Native, Wasm core, Component, Script or bounded EVM artifact. Project linking belongs here; runtime linking belongs to the host. The default program is a host-independent, content-addressed DAG-CBOR Kototama expression artifact; native ISA and Wasm remain explicit target choices. EVM output is a bounded compiler slice, not a settlement network or proof of full Kototama conformance.
 
 See the [owner integration guide and dependency direction](docs/stack-architecture.md),
 [composition metadata](spec/stack-integration.edn), and

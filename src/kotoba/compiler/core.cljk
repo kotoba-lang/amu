@@ -1,5 +1,5 @@
 (ns kotoba.compiler.core
-  {:kotoba/export [check-project check-source compile-component compile-component-wit compile-ipld-adl-source compile-project compile-source compile-source-cached compiler-version default-component-budgets floating-point-policy refuse-fuel-declared-twice! source-compilable-targets supported-targets targets]}
+  {:kotoba/export [check-project check-source compile-component compile-component-wit compile-ipld-adl-source compile-kototama compile-project compile-source compile-source-cached compiler-version default-component-budgets floating-point-policy refuse-fuel-declared-twice! source-compilable-targets supported-targets targets]}
   (:require [kotoba.bytes :as kbytes] [kotoba.lang.coll :as coll]
             [kotoba.compiler.capability-names :as cap-names]
             [kotoba.sema :as sema]
@@ -22,6 +22,7 @@
             [kotoba.core.execution :as execution]
             [kotoba.compiler.backend.cljs :as cljs]
             [kotoba.compiler.backend.evm :as evm]
+            [kotoba.compiler.backend.kototama :as kototama]
             [kotoba.script :as script]
             [kotoba.native.x86-64 :as x86-64]
             [kotoba.native.aarch64 :as aarch64]
@@ -47,8 +48,9 @@
             (apply str (map #(format "%02x" (bit-and (int %) 0xff)) digest)))
      :cljs (-> (.createHash crypto "sha256") (.update text "utf8") (.digest "hex"))))
 
-(def targets target-profile/compatibility-targets)
-(def supported-targets (set (keys target-profile/profiles)))
+(def kototama-target :kototama-core-v1)
+(def targets (conj target-profile/compatibility-targets kototama-target))
+(def supported-targets (conj (set (keys target-profile/profiles)) kototama-target))
 
 (def source-compilable-targets
   "Targets `compile-source` emits directly.
@@ -58,7 +60,8 @@
   output. Callers that fan out over every target (conformance sweeps, policy
   seal checks) want this set; `supported-targets` remains every declared
   target, so `--target component` still validates as a real target name."
-  (into #{} (remove #(= :component (:execution (target-profile/profile %))))
+  (into #{} (remove #(and (not= kototama-target %)
+                          (= :component (:execution (target-profile/profile %)))))
         supported-targets))
 
 ;; Native (x86_64/aarch64) targets admit the string slice of "typed values"
@@ -808,12 +811,58 @@
           (= target :x86_64-aiueos-user-v1)
           (assoc :binary (elf64/package-user artifact))))))))
 
+(declare compile-kototama)
+
 (defn compile-source
   ([source target] (compile-source source target {}))
   ([source target policy] (compile-source source target policy {}))
   ([source target policy emit-metadata]
-   (provenance/attach source policy emit-metadata
-                      (compile-source* source target policy emit-metadata))))
+   (if (= target kototama-target)
+     (compile-kototama source policy emit-metadata)
+     (provenance/attach source policy emit-metadata
+                        (compile-source* source target policy emit-metadata)))))
+
+(defn compile-kototama
+  "Compile checked Kotoba source directly to a Kototama program block.
+
+  This path lowers checked KIR to the engine-neutral expression artifact. It
+  does not invoke a Wasm, Component, Script, JVM, or native-code backend."
+  ([source] (compile-kototama source {} {}))
+  ([source policy] (compile-kototama source policy {}))
+  ([source policy build-metadata]
+   (let [_ (refuse-fuel-declared-twice! policy build-metadata)
+         {:keys [hir admission]} (check-source source policy build-metadata)
+         _ (uefi/reject-outside-uefi-target! :kototama-core-v1 hir)
+         _ (uefi/reject-rodata-literals-outside-native-targets! :kototama-core-v1 hir)
+         _ (when (or (ir/uses-f32? hir) (ir/uses-f64? hir))
+             (throw (ex-info "Kototama data-i64 profile does not support floating-point values"
+                             {:phase :target :target :kototama-core-v1
+                              :reason :unsupported-value-profile})))
+         kir (ir/lower hir)
+         emitted (kototama/emit kir)
+         typed-values? (= :kotoba.kir/v4 (:format kir))
+         value-abi (cond (ir/uses-f32? hir) :kotoba.typed/mixed-f32-f64-v3
+                         (ir/uses-f64? hir) :kotoba.typed/mixed-f64-v2
+                         typed-values? :kotoba.typed/externref-v1
+                         :else :kotoba.i64/direct-v1)
+         target-profile {:format :kotoba.target-profile/v1
+                         :execution :kototama-vm
+                         :isa :kototama-core/v1
+                         :os :unspecified
+                         :abi :kototama.vm/program-v1}
+         compatibility (compatibility/descriptor
+                        {:hir-format (:format hir) :kir-format (:format kir)
+                         :target :kototama-core-v1 :target-profile target-profile
+                         :value-abi value-abi})
+         result {:format :kototama/program-v1
+                 :target :kototama-core-v1
+                 :target-profile target-profile
+                 :hir hir :kir kir :admission admission
+                 :compatibility compatibility
+                 :program-node (:node emitted)
+                 :program-cid (:cid emitted)
+                 :program-bytes (:bytes emitted)}]
+     (provenance/attach source policy build-metadata result))))
 
 (defn compile-ipld-adl-source
   "Compile the fail-closed Kotoba ADL authoring profile to ipld-adl-wasm-v1."
@@ -898,7 +947,8 @@
        (throw (ex-info "invalid verified supply-chain identity"
                        {:phase :project-link
                         :reason :invalid-supply-chain-identity}))))
-   (let [linked (project/link-source sources root)
+   (let [linked (project/link-source sources root
+                                    {:direct-exports? (= :native (:execution (target-profile/profile target)))})
          module-digests (into (sorted-map)
                               (map (fn [[namespace source]]
                                      [namespace (text-sha256 source)]))
