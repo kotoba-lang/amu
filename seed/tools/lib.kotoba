@@ -1,0 +1,272 @@
+;; seed/tools/lib.kotoba -- the shared helpers of the seed tools (seed/tools/*.kotoba). JUN-243: the seed's own
+;; bootstrap tooling is Kotoba, compiled by the committed seed and run under the pinned C loader; no shell, node, nbb, JVM
+;; or python. Every effect is a capability call the loader brokers:
+;;   wire 35 :fs/app-data    read / write / append / exists / mkdir inside KEXE_CAP_RESOURCES_35 (the repo)
+;;   wire 3  :hash/sha256    the digest of a text (a binary file is hashed here, in Kotoba: sha256-file)
+;;   wire 20 :process/spawn  git, cc and the seed loader, each granted by KEXE_CAP_RESOURCES_20 (looked up by name with
+;;                           KEXE_SPAWN_PATH_LOOKUP=1); the answer is "<exit>\n<stdout>", at most 16 KiB of stdout and
+;;                           10 s of wall time per child (the loader's spawn budget)
+;;   wires 37/38/39          stdout, argv, stderr
+;; An argv is written as one string whose arguments are separated by TAB (no argument holds a TAB); `run` turns it into
+;; the loader's spawn request. The loader's request tokens (WRITE_SEP, APPEND_SEP ..) are built at run time (`tok`).
+(ns tools.lib
+  (:export [out err argc arg tok exists mkdir mkdirs read-text write-text append-text run exit-of stdout-of
+            append-raw sha256-text sha256-file file-size same-bytes nlines line-at field parse-int dec trim-nl
+            hex-word]))
+
+;; ---- streams and argv ------------------------------------------------------------------------------------------------
+(defn out [s :string] :i64
+  (let [r (typed-cap-call :io/write :string :string s)] 0))
+
+(defn err [s :string] :i64
+  (let [r (typed-cap-call :io/write-error :string :string s)] 0))
+
+(defn argc [] :i64
+  (parse-int (typed-cap-call :cli/args :string :string "")))
+
+(defn arg [i :i64] :string
+  (typed-cap-call :cli/args :string :string (string-from-i64 i)))
+
+;; ---- numbers and lines -----------------------------------------------------------------------------------------------
+(defn- digits [s :string i :i64 acc :i64] :i64
+  (if (>= i (string-length s))
+    acc
+    (let [c (string-code-point-at s i)]
+      (if (and (>= c 48) (<= c 57)) (digits s (+ i 1) (+ (* acc 10) (- c 48))) acc))))
+
+;; the decimal number at the start of s (leading spaces skipped); 0 when there is none
+(defn parse-int [s :string] :i64
+  (loop [i 0]
+    (if (and (< i (string-length s)) (= (string-code-point-at s i) 32)) (recur (+ i 1)) (digits s i 0))))
+
+(defn dec [n :i64] :string (string-from-i64 n))
+
+;; s without its trailing newlines
+(defn trim-nl [s :string] :string
+  (loop [e (string-length s)]
+    (if (and (> e 0) (= (string-code-point-at s (- e 1)) 10)) (recur (- e 1)) (string-substring s 0 e))))
+
+;; the number of lines of s (a last line without "\n" counts)
+(defn nlines [s :string] :i64
+  (loop [i 0 n 0]
+    (let [j (string-index-of-from s "\n" i)]
+      (cond (< j 0) (if (< i (string-length s)) (+ n 1) n)
+            :else (recur (+ j 1) (+ n 1))))))
+
+;; line k (0-based) of s without its "\n"; "" past the end
+(defn line-at [s :string k :i64] :string
+  (loop [i 0 n 0]
+    (if (>= i (string-length s))
+      ""
+      (let [j (string-index-of-from s "\n" i)
+            e (if (< j 0) (string-length s) j)]
+        (if (= n k) (string-substring s i e) (recur (+ e 1) (+ n 1)))))))
+
+;; the value of the first "<key> <value>" line of a record text; "" when there is none
+(defn field [text :string key :string] :string
+  (let [p (string-concat key " ")
+        n (nlines text)]
+    (loop [k 0]
+      (if (>= k n)
+        ""
+        (let [l (line-at text k)]
+          (if (and (>= (string-length l) (string-length p)) (string=? (string-substring l 0 (string-length p)) p))
+            (string-substring l (string-length p) (string-length l))
+            (recur (+ k 1))))))))
+
+;; ---- files (wire 35) -------------------------------------------------------------------------------------------------
+;; "<w>_SEP": never a literal of a tool, like seed/02-io.kotoba io-sep
+(defn tok [w :string] :string (string-concat w "_SEP"))
+
+(defn exists [path :string] :i64
+  (let [r (typed-cap-call :fs/app-data :string :string (string-concat path (tok "EXISTS")))]
+    (if (and (> (string-length r) 0) (= (string-code-point-at r 0) 49)) 1 0)))
+
+;; create the directory unless it exists (its parent must exist)
+(defn mkdir [path :string] :i64
+  (if (= (exists path) 1)
+    0
+    (let [r (typed-cap-call :fs/app-data :string :string (string-concat path (tok "MKDIR")))] 0)))
+
+;; create every missing directory of path below root (root itself must exist and lie inside the wire-35 scope: a path
+;; outside the scope traps)
+(defn mkdirs [root :string path :string] :i64
+  (if (or (< (string-length path) (string-length root)) (not (string=? (string-substring path 0 (string-length root)) root)))
+    -1
+    (loop [i (+ (string-length root) 1)]
+      (if (>= i (string-length path))
+        (mkdir path)
+        (let [j (string-index-of-from path "/" i)]
+          (if (< j 0)
+            (mkdir path)
+            (let [z (mkdir (string-substring path 0 j))] (recur (+ j 1)))))))))
+
+(defn read-text [path :string] :string
+  (typed-cap-call :fs/app-data :string :string path))
+
+;; append s from byte i on, cutting one byte into every APPEND_SEP of the content (the loader refuses a content that holds
+;; its own form's token; seed/02-io.kotoba io-pieces does the same for WRITE_SEP and APPEND_SEP)
+(defn- append-from [path :string s :string i :i64] :i64
+  (if (>= i (string-length s))
+    0
+    (let [t (tok "APPEND")
+          j (string-index-of-from s t i)
+          e (if (< j 0) (string-length s) (+ j 1))
+          r (typed-cap-call :fs/app-data :string :string (string-concat path (string-concat t (string-substring s i e))))]
+      (append-from path s e))))
+
+;; append without closing the loader's append sink (many small appends in a row); the next wire-35 request closes it
+(defn append-raw [path :string s :string] :i64
+  (let [z (append-from path s 0)] (string-length s)))
+
+;; the loader keeps consecutive appends to one file in a buffered sink that only the next wire-35 request closes; the
+;; EXISTS request at the end closes it, so a program spawned next (a compile) reads every byte
+(defn append-text [path :string s :string] :i64
+  (let [z (append-from path s 0)
+        f (exists path)]
+    (string-length s)))
+
+;; write s to path (created or truncated): an empty write, then appends
+(defn write-text [path :string s :string] :i64
+  (let [r (typed-cap-call :fs/app-data :string :string (string-concat path (tok "WRITE")))]
+    (append-text path s)))
+
+;; ---- processes (wire 20) ---------------------------------------------------------------------------------------------
+(defn- tabs-to-sep [s :string i :i64 acc :string] :string
+  (let [j (string-index-of-from s "\t" i)]
+    (if (< j 0)
+      (string-concat acc (string-substring s i (string-length s)))
+      (tabs-to-sep s (+ j 1) (string-concat acc (string-concat (string-substring s i j) (tok "ARG")))))))
+
+;; run the TAB-separated argv; the answer "<exit>\n<stdout>"
+(defn run [argv :string] :string
+  (typed-cap-call :process/spawn :string :string (tabs-to-sep argv 0 "")))
+
+(defn exit-of [answer :string] :i64
+  (if (and (> (string-length answer) 0) (= (string-code-point-at answer 0) 45)) -1 (parse-int answer)))
+
+(defn stdout-of [answer :string] :string
+  (let [j (string-index-of-from answer "\n" 0)]
+    (if (< j 0) "" (string-substring answer (+ j 1) (string-length answer)))))
+
+;; ---- SHA-256 (FIPS 180-4) --------------------------------------------------------------------------------------------
+(defn sha256-text [s :string] :string
+  (typed-cap-call :hash/sha256 :string :string s))
+
+(def M32 4294967295)
+
+(defn- rotr [x :i64 n :i64] :i64
+  (bit-and (bit-or (u64-shift-right x n) (i64-shift-left x (- 32 n))) M32))
+
+(defn- k-table [] :vector-i64
+  [1116352408 1899447441 3049323471 3921009573 961987163 1508970993 2453635748 2870763221
+   3624381080 310598401 607225278 1426881987 1925078388 2162078206 2614888103 3248222580
+   3835390401 4022224774 264347078 604807628 770255983 1249150122 1555081692 1996064986
+   2554220882 2821834349 2952996808 3210313671 3336571891 3584528711 113926993 338241895
+   666307205 773529912 1294757372 1396182291 1695183700 1986661051 2177026350 2456956037
+   2730485921 2820302411 3259730800 3345764771 3516065817 3600352804 4094571909 275423344
+   430227734 506948616 659060556 883997877 958139571 1322822218 1537002063 1747873779
+   1955562222 2024104815 2227730452 2361852424 2428436474 2756734187 3204031479 3329325298])
+
+;; the message schedule of the block at byte o of B (src 0: the :bytes B; src 1: the padded tail T)
+(defn- sched-in [W :vector-i64 B :bytes T :vector-i64 src :i64 o :i64 i :i64] :vector-i64
+  (if (>= i 16)
+    W
+    (let [p (+ o (* 4 i))
+          b0 (if (= src 0) (bytes-at B p) (vector-at T p))
+          b1 (if (= src 0) (bytes-at B (+ p 1)) (vector-at T (+ p 1)))
+          b2 (if (= src 0) (bytes-at B (+ p 2)) (vector-at T (+ p 2)))
+          b3 (if (= src 0) (bytes-at B (+ p 3)) (vector-at T (+ p 3)))]
+      (sched-in (vector-assoc! W i (bit-or (bit-or (i64-shift-left b0 24) (i64-shift-left b1 16))
+                                           (bit-or (i64-shift-left b2 8) b3)))
+                B T src o (+ i 1)))))
+
+(defn- sched-ext [W :vector-i64 i :i64] :vector-i64
+  (if (>= i 64)
+    W
+    (let [w15 (vector-at W (- i 15))
+          w2 (vector-at W (- i 2))
+          s0 (bit-xor (bit-xor (rotr w15 7) (rotr w15 18)) (u64-shift-right w15 3))
+          s1 (bit-xor (bit-xor (rotr w2 17) (rotr w2 19)) (u64-shift-right w2 10))]
+      (sched-ext (vector-assoc! W i (bit-and (+ (+ (vector-at W (- i 16)) s0) (+ (vector-at W (- i 7)) s1)) M32))
+                 (+ i 1)))))
+
+;; the 64 rounds over H (8 words), then H += the working variables
+(defn- rounds [H :vector-i64 W :vector-i64 K :vector-i64] :vector-i64
+  (loop [i 0 a (vector-at H 0) b (vector-at H 1) c (vector-at H 2) d (vector-at H 3)
+         e (vector-at H 4) f (vector-at H 5) g (vector-at H 6) h (vector-at H 7)]
+    (if (>= i 64)
+      (let [H1 (vector-assoc! H 0 (bit-and (+ (vector-at H 0) a) M32))
+            H2 (vector-assoc! H1 1 (bit-and (+ (vector-at H1 1) b) M32))
+            H3 (vector-assoc! H2 2 (bit-and (+ (vector-at H2 2) c) M32))
+            H4 (vector-assoc! H3 3 (bit-and (+ (vector-at H3 3) d) M32))
+            H5 (vector-assoc! H4 4 (bit-and (+ (vector-at H4 4) e) M32))
+            H6 (vector-assoc! H5 5 (bit-and (+ (vector-at H5 5) f) M32))
+            H7 (vector-assoc! H6 6 (bit-and (+ (vector-at H6 6) g) M32))]
+        (vector-assoc! H7 7 (bit-and (+ (vector-at H7 7) h) M32)))
+      (let [S1 (bit-xor (bit-xor (rotr e 6) (rotr e 11)) (rotr e 25))
+            ch (bit-xor (bit-and e f) (bit-and (bit-and (bit-not e) M32) g))
+            t1 (bit-and (+ (+ (+ h S1) (+ ch (vector-at K i))) (vector-at W i)) M32)
+            S0 (bit-xor (bit-xor (rotr a 2) (rotr a 13)) (rotr a 22))
+            mj (bit-xor (bit-xor (bit-and a b) (bit-and a c)) (bit-and b c))
+            t2 (bit-and (+ S0 mj) M32)]
+        (recur (+ i 1) (bit-and (+ t1 t2) M32) a b c (bit-and (+ d t1) M32) e f g)))))
+
+(defn- block [H :vector-i64 W :vector-i64 K :vector-i64 B :bytes T :vector-i64 src :i64 o :i64] :vector-i64
+  (rounds H (sched-ext (sched-in W B T src o 0) 16) K))
+
+(defn- hexd [d :i64] :string
+  (string-substring "0123456789abcdef" d (+ d 1)))
+
+;; x (32 bits) as 8 lowercase hex digits
+(defn hex-word [x :i64] :string
+  (loop [k 28 acc ""]
+    (if (< k 0) acc (recur (- k 4) (string-concat acc (hexd (bit-and (u64-shift-right x k) 15)))))))
+
+;; the padded tail: bytes [o, n) of B, 0x80, zeros, the bit length (big endian) -- 64 or 128 bytes
+(defn- tail [B :bytes o :i64 n :i64] :vector-i64
+  (let [rest (- n o)
+        len (if (<= (+ rest 9) 64) 64 128)
+        T0 (loop [i 0 T (vector-alloc len)]
+             (if (>= i len) T (recur (+ i 1) (vector-assoc! T i 0))))
+        T1 (loop [i 0 T T0]
+             (if (>= i rest) T (recur (+ i 1) (vector-assoc! T i (bytes-at B (+ o i))))))
+        T2 (vector-assoc! T1 rest 128)
+        bits (* n 8)]
+    (loop [k 0 T T2]
+      (if (>= k 8) T (recur (+ k 1) (vector-assoc! T (- (- len 1) k) (bit-and (u64-shift-right bits (* 8 k)) 255)))))))
+
+(defn- sha256-bytes [B :bytes] :string
+  (let [n (bytes-count B)
+        K (k-table)
+        W (vector-alloc 64)
+        H0 (vector-alloc 8)
+        H (loop [i 0 V H0]
+            (if (>= i 8) V
+              (recur (+ i 1) (vector-assoc! V i (vector-at [1779033703 3144134277 1013904242 2773480762
+                                                           1359893119 2600822924 528734635 1541459225] i)))))
+        full (* 64 (quot n 64))
+        E (vector-alloc 0)
+        H1 (loop [o 0 V H]
+             (if (>= o full) V (recur (+ o 64) (block V W K B E 0 o))))
+        T (tail B full n)
+        H2 (block H1 W K B T 1 0)
+        H3 (if (= (vector-count T) 128) (block H2 W K B T 1 64) H2)]
+    (loop [i 0 acc ""]
+      (if (>= i 8) acc (recur (+ i 1) (string-concat acc (hex-word (vector-at H3 i))))))))
+
+;; the SHA-256 of a (binary) file, as 64 lowercase hex digits
+(defn sha256-file [path :string] :string
+  (sha256-bytes (typed-cap-call :fs/app-data-bytes :string :bytes path)))
+
+(defn file-size [path :string] :i64
+  (bytes-count (typed-cap-call :fs/app-data-bytes :string :bytes path)))
+
+;; 1 when the two files hold the same bytes
+(defn same-bytes [a :string b :string] :i64
+  (let [A (typed-cap-call :fs/app-data-bytes :string :bytes a)
+        B (typed-cap-call :fs/app-data-bytes :string :bytes b)
+        n (bytes-count A)]
+    (if (= n (bytes-count B))
+      (loop [i 0] (cond (>= i n) 1 (= (bytes-at A i) (bytes-at B i)) (recur (+ i 1)) :else 0))
+      0)))

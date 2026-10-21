@@ -1,0 +1,365 @@
+;; seed/tools/bootstrap.kotoba -- reproduce the WHOLE seed lineage from the committed R0 seed binary (JUN-243: the Kotoba
+;; port of scripts/seed/bootstrap.sh). Compiled by the committed seed, run under the pinned loader; it runs only cc (once, to
+;; build the lineage loader seed/bootstrap/seed-loader-v11.c), git (to read the sources of recorded commits) and that
+;; loader with each seed: no shell, node, nbb, JVM or python. Entry commands: seed/README.md "Seed lineage bootstrap".
+;;
+;;   bootstrap <repo> [--work DIR] [--upto RUNG] [--head] [--commit C] [--receipt R]
+;;   bootstrap <repo> --image FILE
+;;
+;; The chain (docs/selfhost-seed-bootstrap-20261002.md):
+;;   seed/bootstrap/seed-r0.bin    the R0 fixed point, committed (sha256 in seed/bootstrap/SHA256SUMS and seed/rungs/r0.record)
+;;   for each seed/rungs/<rung>.record in LINEAGE order (by `git rev-list --count` of the record's unity commit):
+;;       unity(N) = the seed/MANIFEST files of the record's `unity_commit` (else `head`), each followed by "\n", read from
+;;                  git (`git restore --source`), never from the working tree; its sha256 must be `unity_sha256`
+;;       [bridge_commit B: the previous rung's seed (or, with `bridge_compiler_rung K`, rung K's seed) compiles unity(B)
+;;        -> the bridge seed, sha256 = `bridge_sha256`]
+;;       seed-1 := (bridge | previous seed) compiles unity(N);  seed-2 := seed-1 compiles unity(N)
+;;       gate: seed-1 == seed-2 (bytes and offset), sha256(seed-1) = `seed1_sha256`, sha256(seed-2) = `seed2_sha256`,
+;;             size = `seed1_bytes`
+;;   then the head: the working tree's unity (or commit C's) is written to <work>/head/seed-unity.kotoba and, for the
+;;   working tree, checked against the adoption receipt's sourceUnitySHA256 (--receipt, default seed/adoption-20261017.json).
+;;   The current tree is the ADOPTED compiler: the last lineage seed cannot compile it (E101, tables sized for the lineage)
+;;   and its own compile outlasts the loader's 10 s spawn budget, so its three generations are the literal loader commands
+;;   of seed/README.md, each image checked with `--image FILE` (sha256 == the receipt's nativeImageSHA256).
+;;   --head instead runs the lineage head step of scripts/seed/bootstrap.sh: seed-A := the last rung's seed compiles the
+;;   unity, seed-B := seed-A, seed-C := seed-B, a fixed point iff A == B == C (for a lineage commit, with --commit).
+;; Exit 0 iff every recorded hash is reproduced and the head check passes. Every stage prints its size and sha256.
+;; Work dir: <repo>/build/seed-boot (--work); the loader is built there as kexe-loader-v11, and the :process/spawn grant
+;; (KEXE_CAP_RESOURCES_20) must name exactly that path.
+(ns tools.bootstrap
+  (:require [tools.lib :as l])
+  (:export [main]))
+
+(defn- say [s :string] :i64 (l/out (string-concat "bootstrap: " (string-concat s "\n"))))
+
+(defn- fail [s :string] :i64
+  (let [z (l/err (string-concat "bootstrap: FAIL: " (string-concat s "\n")))] 1))
+
+(defn- short [s :string n :i64] :string
+  (if (> (string-length s) n) (string-substring s 0 n) s))
+
+;; the value after option `name` in argv, "" when absent; 1/0 for a flag
+(defn- opt [name :string] :string
+  (loop [i 1]
+    (cond (>= (+ i 1) (l/argc)) ""
+          (string=? (l/arg i) name) (l/arg (+ i 1))
+          :else (recur (+ i 1)))))
+
+(defn- flag [name :string] :i64
+  (loop [i 1]
+    (cond (>= i (l/argc)) 0
+          (string=? (l/arg i) name) 1
+          :else (recur (+ i 1)))))
+
+;; ---- git -------------------------------------------------------------------------------------------------------------
+;; the repo-relative paths of seed/MANIFEST text: comments and blank lines dropped, the first word of each line
+(defn- manifest-paths [text :string] :string
+  (let [n (l/nlines text)]
+    (loop [k 0 acc ""]
+      (if (>= k n)
+        acc
+        (let [line (l/line-at text k)
+              b (loop [i 0] (if (and (< i (string-length line))
+                                     (or (= (string-code-point-at line i) 32) (= (string-code-point-at line i) 9)))
+                              (recur (+ i 1)) i))
+              e (loop [i b] (if (and (< i (string-length line)) (not (= (string-code-point-at line i) 32))
+                                     (not (= (string-code-point-at line i) 9)))
+                              (recur (+ i 1)) i))]
+          (if (or (>= b (string-length line)) (= (string-code-point-at line b) 35))
+            (recur (+ k 1) acc)
+            (recur (+ k 1) (string-concat acc (string-concat (string-substring line b e) "\n")))))))))
+
+;; git restore the TAB-joined paths of commit c into the directory dir (the index is not touched); "" or an error
+(defn- restore [R :string c :string dir :string paths :string] :string
+  (let [a (l/run (string-concat "git\t-C\t" (string-concat R (string-concat "\t--work-tree=" (string-concat dir
+                   (string-concat "\trestore\t--ignore-skip-worktree-bits\t--worktree\t--source=" (string-concat c
+                   (string-concat "\t--\t" paths))))))))]
+    (if (= (l/exit-of a) 0) "" (string-concat "git restore from " (string-concat (short c 9) (string-concat " failed: " (l/stdout-of a)))))))
+
+;; restore the lines of `list` from line k on, 16 paths per git call
+(defn- restore-list [R :string c :string dir :string list :string k :i64] :string
+  (let [n (l/nlines list)]
+    (if (>= k n)
+      ""
+      (let [e (if (< (+ k 16) n) (+ k 16) n)
+            paths (loop [i k acc ""] (if (>= i e) acc (recur (+ i 1) (string-concat acc (string-concat (if (= i k) "" "\t") (l/line-at list i))))))
+            r (restore R c dir paths)]
+        (if (string=? r "") (restore-list R c dir list e) r)))))
+
+;; the number of commits reachable from c (the lineage order key); -1 when git does not know c
+(defn- depth [R :string c :string] :i64
+  (let [a (l/run (string-concat "git\t-C\t" (string-concat R (string-concat "\trev-list\t--count\t" c))))]
+    (if (= (l/exit-of a) 0) (l/parse-int (l/stdout-of a)) -1)))
+
+;; ---- the unity -------------------------------------------------------------------------------------------------------
+;; write unity(c) to out: the manifest files of commit c (c = "" -> the working tree), each + "\n". src: a scratch dir for
+;; the files of c. "" or an error
+(defn- unity-of [R :string c :string src :string out :string] :string
+  (let [worktree (string=? c "")
+        r0 (if worktree "" (let [z (l/mkdir src)] (restore R c src "seed/MANIFEST")))
+        base (if worktree R src)]
+    (if (not (string=? r0 ""))
+      r0
+      (let [list (manifest-paths (l/read-text (string-concat base "/seed/MANIFEST")))
+            r1 (if worktree "" (restore-list R c src list 0))]
+        (if (not (string=? r1 ""))
+          r1
+          (let [w (l/write-text out "")
+                n (l/nlines list)]
+            (loop [k 0]
+              (if (>= k n)
+                ""
+                (let [p (string-concat base (string-concat "/" (l/line-at list k)))]
+                  (if (= (l/exists p) 0)
+                    (string-concat "missing " (l/line-at list k))
+                    (let [a (l/append-text out (l/read-text p))
+                          b (l/append-text out "\n")]
+                      (recur (+ k 1)))))))))))))
+
+;; ---- one compile -----------------------------------------------------------------------------------------------------
+;; the number after ":offset " in s, -1 when there is none
+(defn- offset-in [s :string] :i64
+  (let [j (string-index-of-from s ":offset " 0)]
+    (if (< j 0) -1 (l/parse-int (string-substring s (+ j 8) (string-length s))))))
+
+(defn- loader-run [seed :string off :i64 args :string] :string
+  (l/run (string-concat "kexe-loader-v11\t" (string-concat seed (string-concat "\t" (string-concat (l/dec off)
+           (string-concat "\t0\taarch64\t35,37,38,39\t--\t" args)))))))
+
+;; seed (entry offset off) compiles unity -> o.kseed, extracts main -> o.bin (+ o.offset). The new offset, or -1
+(defn- compile-with [seed :string off :i64 unity :string o :string] :i64
+  (let [a (loader-run seed off (string-concat "compile\t" (string-concat unity (string-concat "\t--target\taarch64-macos\t--output\t" (string-concat o ".kseed")))))]
+    (if (not (= (l/exit-of a) 0))
+      (let [z (l/err (l/stdout-of a))] -1)
+      (let [b (loader-run seed off (string-concat "extract-native\t" (string-concat o (string-concat ".kseed\t--symbol\tmain\t--output\t" (string-concat o ".bin")))))
+            x (offset-in (l/stdout-of b))]
+        (if (or (not (= (l/exit-of b) 0)) (< x 0) (= (l/exists (string-concat o ".bin")) 0))
+          (let [z (l/err (l/stdout-of b))] -1)
+          (let [w (l/write-text (string-concat o ".offset") (l/dec x))] x))))))
+
+;; compile-with + one line of evidence; the offset or -1 (the failure printed)
+(defn- step [label :string seed :string off :i64 unity :string o :string] :i64
+  (let [x (compile-with seed off unity o)]
+    (if (< x 0)
+      (let [z (fail (string-concat label (string-concat ": seed " (string-concat seed (string-concat " could not compile " unity)))))] -1)
+      (let [bin (string-concat o ".bin")
+            z (say (string-concat label (string-concat "  " (string-concat (l/dec (l/file-size bin))
+                     (string-concat " bytes  sha256 " (l/sha256-file bin))))))]
+        x))))
+
+;; ---- the recorded rungs ----------------------------------------------------------------------------------------------
+;; "<depth> <record path>" lines of every seed/rungs/*.record, in lineage order ("" + error in `err` style: a line "!<msg>")
+(defn- records [R :string] :string
+  (let [a (l/run (string-concat "git\t-C\t" (string-concat R "\tls-files\tseed/rungs")))
+        files (l/stdout-of a)
+        n (l/nlines files)
+        keyed (loop [k 0 acc ""]
+                (if (>= k n)
+                  acc
+                  (let [f (l/line-at files k)
+                        rec (and (> (string-length f) 7)
+                                 (string=? (string-substring f (- (string-length f) 7) (string-length f)) ".record"))]
+                    (if (not rec)
+                      (recur (+ k 1) acc)
+                      (let [path (string-concat R (string-concat "/" f))
+                            t (l/read-text path)
+                            uc0 (l/field t "unity_commit")
+                            uc (if (string=? uc0 "") (l/field t "head") uc0)]
+                        (recur (+ k 1) (string-concat acc (string-concat (l/dec (depth R uc)) (string-concat " " (string-concat path "\n"))))))))))
+        m (l/nlines keyed)]
+    ;; selection sort by depth (a stable pick of the smallest not yet taken; at most a few dozen records)
+    (loop [taken "" out "" c 0]
+      (if (>= c m)
+        out
+        (let [best (loop [k 0 b -1 bd 0]
+                     (if (>= k m)
+                       b
+                       (let [d (l/parse-int (l/line-at keyed k))
+                             mark (string-concat "," (string-concat (l/dec k) ","))]
+                         (if (and (< (string-index-of-from (string-concat "," taken) mark 0) 0) (or (< b 0) (< d bd)))
+                           (recur (+ k 1) k d)
+                           (recur (+ k 1) b bd)))))]
+          (recur (string-concat taken (string-concat (l/dec best) ",")) (string-concat out (string-concat (l/line-at keyed best) "\n")) (+ c 1)))))))
+
+;; the record path of a "<depth> <path>" line
+(defn- rec-path [line :string] :string
+  (string-substring line (+ (string-index-of-from line " " 0) 1) (string-length line)))
+
+;; "<rung> <seed path> <offset>" lines: the fixed point of each rung so far (for bridge_compiler_rung)
+(defn- seed-of [seeds :string rung :string] :string (l/field seeds rung))
+
+;; verify one rung. cur/off: the seed it starts from. "" or an error
+(defn- rung [R :string W :string t :string cur :string off :i64 seeds :string] :string
+  (let [rg (l/field t "rung")
+        uc0 (l/field t "unity_commit")
+        uc (if (string=? uc0 "") (l/field t "head") uc0)
+        want (l/field t "seed1_sha256")
+        D (string-concat W (string-concat "/" rg))
+        z0 (l/mkdir D)
+        u (string-concat D "/seed-unity.kotoba")
+        r1 (if (string=? want "") (string-concat rg ": no seed1_sha256") (unity-of R uc (string-concat D "/src") u))]
+    (if (not (string=? r1 ""))
+      (string-concat rg (string-concat ": unity of " (string-concat (short uc 9) (string-concat ": " r1))))
+      (let [us (l/sha256-text (l/read-text u))]
+        (if (not (string=? us (l/field t "unity_sha256")))
+          (string-concat rg (string-concat ": unity of " (string-concat uc (string-concat " has sha256 " (string-concat us (string-concat ", the record says " (l/field t "unity_sha256")))))))
+          (let [z1 (say (string-concat rg (string-concat " unity of " (string-concat (short uc 9) (string-concat ": "
+                     (string-concat (l/dec (l/nlines (l/read-text u))) (string-concat " lines, sha256 " (string-concat (short us 16) " (as recorded)"))))))))
+                bc (l/field t "bridge_commit")
+                bcr (l/field t "bridge_compiler_rung")
+                bsrc (if (string=? bcr "") "" (seed-of seeds bcr))
+                c0 (if (string=? bsrc "") cur (string-substring bsrc 0 (string-index-of-from bsrc " " 0)))
+                o0 (if (string=? bsrc "") off (l/parse-int (string-substring bsrc (+ (string-index-of-from bsrc " " 0) 1) (string-length bsrc))))
+                bu (string-concat D "/bridge-unity.kotoba")
+                rb (if (string=? bc "") "" (unity-of R bc (string-concat D "/bridge-src") bu))
+                bo (cond (string=? bc "") o0
+                         (not (string=? rb "")) -1
+                         :else (step (string-concat rg (string-concat " bridge (unity of " (string-concat (short bc 9) ")"))) c0 o0 bu (string-concat D "/bridge")))
+                bs (if (and (not (string=? bc "")) (>= bo 0)) (l/sha256-file (string-concat D "/bridge.bin")) "")]
+            (cond (not (string=? rb "")) (string-concat rg (string-concat ": bridge unity: " rb))
+                  (< bo 0) (string-concat rg ": the bridge did not build")
+                  (and (not (string=? bc "")) (not (string=? bs (l/field t "bridge_sha256"))))
+                  (string-concat rg (string-concat ": bridge sha256 " (string-concat bs (string-concat " != recorded " (l/field t "bridge_sha256")))))
+                  :else
+                  (let [c1 (if (string=? bc "") c0 (string-concat D "/bridge.bin"))
+                        x1 (step (string-concat rg " seed-1") c1 bo u (string-concat D "/seed-1"))
+                        x2 (if (< x1 0) -1 (step (string-concat rg " seed-2 (by seed-1)") (string-concat D "/seed-1.bin") x1 u (string-concat D "/seed-2")))]
+                    (cond (< x2 0) (string-concat rg ": a compile failed")
+                          (or (not (= x1 x2)) (= (l/same-bytes (string-concat D "/seed-1.bin") (string-concat D "/seed-2.bin")) 0))
+                          (string-concat rg ": not a fixed point (seed-1 != seed-2)")
+                          :else
+                          (let [s1 (l/sha256-file (string-concat D "/seed-1.bin"))
+                                n1 (l/file-size (string-concat D "/seed-1.bin"))]
+                            (cond (not (string=? s1 want)) (string-concat rg (string-concat ": fixed point sha256 " (string-concat s1 (string-concat " != recorded " want))))
+                                  (not (string=? s1 (l/field t "seed2_sha256"))) (string-concat rg ": seed-2 sha256 differs from the record")
+                                  (not (= n1 (l/parse-int (l/field t "seed1_bytes")))) (string-concat rg ": size differs from the record")
+                                  :else (let [z (say (string-concat rg (string-concat " FIXED POINT == record " (short want 16))))] ""))))))))))))
+
+;; ---- the head --------------------------------------------------------------------------------------------------------
+(defn- head [R :string W :string commit :string cur :string off :i64 last :string lastwant :string] :i64
+  (let [H (string-concat W "/head")
+        z0 (l/mkdir H)
+        u (string-concat H "/seed-unity.kotoba")
+        r (unity-of R commit (string-concat H "/src") u)]
+    (if (not (string=? r ""))
+      (fail (string-concat "head unity: " r))
+      (let [z1 (say (string-concat "head unity (" (string-concat (if (string=? commit "") "working tree" commit)
+                  (string-concat "): " (string-concat (l/dec (l/nlines (l/read-text u))) (string-concat " lines, sha256 " (short (l/sha256-text (l/read-text u)) 16)))))))
+            xa (step (string-concat "head seed-A (by " (string-concat last ")")) cur off u (string-concat H "/seed-A"))
+            xb (if (< xa 0) -1 (step "head seed-B (by seed-A)" (string-concat H "/seed-A.bin") xa u (string-concat H "/seed-B")))
+            xc (if (< xb 0) -1 (step "head seed-C (by seed-B)" (string-concat H "/seed-B.bin") xb u (string-concat H "/seed-C")))]
+        (cond (< xc 0) 1
+              (and (= xa xb) (= xb xc)
+                   (= (l/same-bytes (string-concat H "/seed-A.bin") (string-concat H "/seed-B.bin")) 1)
+                   (= (l/same-bytes (string-concat H "/seed-B.bin") (string-concat H "/seed-C.bin")) 1))
+              (let [hh (l/sha256-file (string-concat H "/seed-A.bin"))
+                    z2 (say (string-concat "HEAD FIXED POINT seed-A == seed-B == seed-C sha256 " (string-concat hh (string-concat " ("
+                              (string-concat (l/dec (l/file-size (string-concat H "/seed-A.bin"))) " bytes)")))))
+                    z3 (say (if (string=? hh lastwant)
+                              (string-concat "head seed == the " (string-concat last " record"))
+                              (string-concat "head seed differs from the " (string-concat last " record (expected once the sources moved on; record the next rung to pin it)"))))
+                    z4 (say "OK")]
+                0)
+              :else (fail "head is not a fixed point (A/B/C differ)"))))))
+
+;; ---- the adopted head (seed/README.md "Native self-build") --------------------------------------------------------
+;; the 64-hex value of "<key>": "<value>" in the adoption receipt text, "" when absent
+(defn- receipt-hash [text :string key :string] :string
+  (let [p (string-concat "\"" (string-concat key "\": \""))
+        j (string-index-of-from text p 0)]
+    (if (< j 0) "" (string-substring text (+ j (string-length p)) (+ (+ j (string-length p)) 64)))))
+
+;; the working tree's unity (or commit C's) -> <W>/head/seed-unity.kotoba, checked against the receipt's sourceUnitySHA256
+;; when it is the working tree. The current tree is the adopted compiler, which the r6n lineage seed cannot compile (its
+;; tables are sized for the lineage, E101) and whose own compile runs longer than the loader's 10 s spawn budget: it is
+;; rebuilt by the literal loader commands of seed/README.md from seed/bootstrap/adopted-20261012.bin. 0 = written and as
+;; pinned (or a commit's), 1 = an error
+(defn- head-unity [R :string W :string commit :string receipt :string] :i64
+  (let [H (string-concat W "/head")
+        z0 (l/mkdir H)
+        u (string-concat H "/seed-unity.kotoba")
+        r (unity-of R commit (string-concat H "/src") u)]
+    (if (not (string=? r ""))
+      (fail (string-concat "head unity: " r))
+      (let [t (l/read-text u)
+            us (l/sha256-text t)
+            want (if (= (l/exists receipt) 1) (receipt-hash (l/read-text receipt) "sourceUnitySHA256") "")
+            z1 (say (string-concat "head unity (" (string-concat (if (string=? commit "") "working tree" commit)
+                      (string-concat "): " (string-concat (l/dec (l/nlines t)) (string-concat " lines, sha256 " us))))))]
+        (cond (not (string=? commit "")) 0
+              (string=? us want) (let [z (say (string-concat "head unity == " (string-concat receipt " sourceUnitySHA256"))) z2 (say (string-concat "head unity written to " u))] 0)
+              :else (fail (string-concat "head unity sha256 differs from " (string-concat receipt (string-concat " sourceUnitySHA256 " want)))))))))
+
+;; --image FILE: its sha256 against the receipt's nativeImageSHA256 (the adopted fixed point); 0 iff equal
+(defn- check-image [file :string receipt :string] :i64
+  (let [s (l/sha256-file file)
+        want (receipt-hash (l/read-text receipt) "nativeImageSHA256")
+        z (say (string-concat "image " (string-concat file (string-concat "  " (string-concat (l/dec (l/file-size file)) (string-concat " bytes  sha256 " s))))))]
+    (if (string=? s want)
+      (let [z2 (say (string-concat "image == " (string-concat receipt " nativeImageSHA256 (the adopted fixed point)")))] 0)
+      (fail (string-concat "image differs from " (string-concat receipt (string-concat " nativeImageSHA256 " want)))))))
+
+;; ---- main ------------------------------------------------------------------------------------------------------------
+;; seed/bootstrap/SHA256SUMS ("<sha256>  <name>" lines) against the files beside it; "" or an error
+(defn- check-sums [R :string] :string
+  (let [dir (string-concat R "/seed/bootstrap/")
+        t (l/read-text (string-concat dir "SHA256SUMS"))
+        n (l/nlines t)]
+    (loop [k 0]
+      (if (>= k n)
+        ""
+        (let [line (l/line-at t k)
+              sp (string-index-of-from line " " 0)]
+          (if (< sp 0)
+            (recur (+ k 1))
+            (let [name (loop [i sp] (if (and (< i (string-length line)) (= (string-code-point-at line i) 32)) (recur (+ i 1)) (string-substring line i (string-length line))))
+                  s (l/sha256-file (string-concat dir name))]
+              (if (string=? s (string-substring line 0 sp))
+                (recur (+ k 1))
+                (string-concat "seed/bootstrap/SHA256SUMS: " (string-concat name (string-concat " has sha256 " s)))))))))))
+
+(defn- run-all [R :string W :string upto :string head-step :i64 commit :string receipt :string] :i64
+  (let [sums (check-sums R)]
+    (if (not (string=? sums ""))
+      (fail sums)
+      (let [loader (string-concat W "/kexe-loader-v11")
+            z0 (l/mkdirs R W)
+            a (l/run (string-concat "cc\t" (string-concat R (string-concat "/seed/bootstrap/seed-loader-v11.c\t-std=c11\t-O2\t-o\t" loader))))]
+        (if (not (= (l/exit-of a) 0))
+          (fail (string-concat "cc could not build the loader: " (l/stdout-of a)))
+          (let [r0 (string-concat R "/seed/bootstrap/seed-r0.bin")
+                off0 (l/parse-int (l/read-text (string-concat R "/seed/bootstrap/seed-r0.offset")))
+                z1 (say (string-concat "loader " (string-concat (short (l/sha256-file loader) 12) (string-concat " (seed/bootstrap/seed-loader-v11.c), work dir " W))))
+                z2 (say (string-concat "R0 seed (committed)  " (string-concat (l/dec (l/file-size r0)) (string-concat " bytes  sha256 " (l/sha256-file r0)))))
+                recs (records R)
+                n (l/nlines recs)]
+            (loop [k 0 cur r0 off off0 seeds (string-concat "r0 " (string-concat r0 (string-concat " " (string-concat (l/dec off0) "\n")))) last "r0" lastwant ""]
+              (if (>= k n)
+                (cond (not (string=? upto "")) (fail (string-concat "no rung " upto))
+                      (= head-step 1) (head R W commit cur off last lastwant)
+                      :else (let [z (say (string-concat "recorded rungs reproduced through " last))
+                                  h (head-unity R W commit receipt)]
+                              (if (= h 0) (let [z2 (say "OK")] 0) 1)))
+                (let [t (l/read-text (rec-path (l/line-at recs k)))
+                      rg (l/field t "rung")
+                      e (rung R W t cur off seeds)]
+                  (if (not (string=? e ""))
+                    (fail e)
+                    (let [s1 (string-concat W (string-concat "/" (string-concat rg "/seed-1.bin")))
+                          o1 (l/parse-int (l/read-text (string-concat W (string-concat "/" (string-concat rg "/seed-1.offset")))))]
+                      (if (string=? rg upto)
+                        (let [z (say (string-concat "OK (recorded rungs through " (string-concat rg ")")))] 0)
+                        (recur (+ k 1) s1 o1 (string-concat seeds (string-concat rg (string-concat " " (string-concat s1 (string-concat " " (string-concat (l/dec o1) "\n"))))))
+                               rg (l/field t "seed1_sha256"))))))))))))))
+
+(defn main [] :i64
+  (if (or (< (l/argc) 1) (= (flag "--help") 1))
+    (let [z (l/err "usage: bootstrap <repo> [--work DIR] [--upto RUNG] [--head] [--commit C] [--receipt R] | bootstrap <repo> --image FILE\n")] 2)
+    (let [R (l/arg 0)
+          w (opt "--work")
+          rc (opt "--receipt")
+          receipt (if (string=? rc "") (string-concat R "/seed/adoption-20261017.json") rc)
+          img (opt "--image")]
+      (if (string=? img "")
+        (run-all R (if (string=? w "") (string-concat R "/build/seed-boot") w) (opt "--upto") (flag "--head") (opt "--commit") receipt)
+        (check-image img receipt)))))
