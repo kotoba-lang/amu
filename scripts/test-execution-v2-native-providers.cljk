@@ -1,5 +1,5 @@
 (ns test-execution-v2-native-providers
-  "Actual emitted guests cross one signed, durable scoped provider boundary."
+  "Actual native programs cross one signed, durable scoped provider boundary."
   (:require [cljs.test :as t :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kototama.execution-native :as adapter] [kototama.native.executor :as native]
@@ -38,7 +38,11 @@
         resource (:cid (blocks/block :policy {:resource :private-audit-log :path log}))
         scope [cap resource :audit/append]
         bindings [{:id 1 :scope scope}]
-        raw (:artifact (compiler/compile-source source target {:allow #{[:cap/call (js/BigInt 1)]}} limits))
+        raw (:artifact (if (map? source)
+                         (compiler/compile-project source 'native.program target
+                           {:allow #{[:cap/call (js/BigInt 1)]}} {} limits)
+                         (compiler/compile-source source target
+                           {:allow #{[:cap/call (js/BigInt 1)]}} limits)))
         artifact (signing/sign raw authority {:not-before 0 :expires 4102444800})
         artifact-trust (assoc (trust authority) :trusted-runtime-sha256 #{(runtime-id/identity-sha256 runtime)}
                               :revoked-runtime-sha256 #{})
@@ -118,6 +122,59 @@
         (is (refused? #(v2/run! (:host f) (:packet f))))
         (is (= 1 (lines f))))
       (finally (clean! f)))))
+
+(def typed-project
+  {'native.values
+   "(ns native.values (:export [make answer items head])
+      (:schemas {:native/value [:record :native/value [[:n :i64]]]}))
+    (defn make [n :i64] [:ref :native/value] (record-new [:ref :native/value] n))
+    (defn answer [v [:ref :native/value]] :i64 (record-get [:ref :native/value] v :n))
+    (defn items [n :i64] [:list :i64] (typed-list-conj [:list :i64] (typed-list-new [:list :i64]) n))
+    (defn head [v [:list :i64]] :i64 (typed-list-nth [:list :i64] v 0))"
+   'native.program
+   "(ns native.program (:export [main]) (:require [native.values :as values])
+      (:schemas {:native/value [:record :native/value [[:n :i64]]]}))
+    (defn main [] :i64 (typed-cap-call 1 :i64 :i64 (+ (values/answer (values/make 41)) (values/head (values/items 0)))))"})
+
+(deftest native-internal-records-stay-in-one-context
+  (let [f (fixture target typed-project 1 :ok)]
+    (try
+      (let [program (get-in f [:packet :artifact :artifact :program])
+            main (first (filter #(= 'main (:name %)) (:functions program)))
+            result (outcome (v2/run! (:host f) (:packet f)))]
+        ;; No project forwarding function between the public entry and its body.
+        (is (= 'typed-cap-call (first (:body main))))
+        (is (= :ok (:status result)))
+        (is (= (js/BigInt 42) (i64-result result)))
+        (is (= "41\n" (fs/readFileSync (:log f) "utf8")))
+        (is (refused? #(v2/run! (:host f) (:packet f))))
+        (is (= 1 (lines f))))
+      (finally (clean! f)))))
+
+(deftest internal-handles-do-not-widen-the-provider-signature
+  (is (refused?
+       #(compiler/compile-source
+         "(ns wire-probe (:export [main]) (:schemas {:wire/value [:record :wire/value [[:n :i64]]]}))
+          (defn main [] :i64 (typed-cap-call 1 :i64 :i64 (record-new [:ref :wire/value] 41)))"
+         target {:allow #{[:cap/call (js/BigInt 1)]}} limits))))
+
+(deftest native-internal-work-keeps-fuel-and-arena-limits
+  (doseq [[source bounds exhausted]
+          [["(ns fuel-probe (:export [main])) (defn main [] :i64 (loop [i 0] (if (< i 10000) (recur (+ i 1)) (typed-cap-call 1 :i64 :i64 41))))"
+            {:fuel 64} :fuel]
+           ["(ns arena-probe (:export [main])) (defn main [] :i64 (loop [i 0 cells 0] (if (< i 25000) (recur (+ i 1) (pair i cells)) (typed-cap-call 1 :i64 :i64 (pair-first cells)))))"
+            {:fuel 1000000} :arena]]]
+    (let [f (fixture target source 1 :ok bounds)]
+      (try
+        (let [result (outcome (v2/run! (:host f) (:packet f)))
+              report (get-in result [:value :report])]
+          (is (= :trap (:status result)))
+          (if (= :fuel exhausted)
+            (is (= 0 (get-in report [:fuel :remaining])))
+            (do (is (= (get-in report [:heap :capacity]) (get-in report [:heap :used])))
+                (is (pos? (get-in report [:fuel :remaining]))))))
+        (is (= 0 (lines f)))
+        (finally (clean! f))))))
 
 (deftest exhaustion-revocation-and-partial-trap
   (doseq [[source uses mode expected] [[twice 1 :ok 1] [twice 2 :revoke 1]

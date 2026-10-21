@@ -947,7 +947,8 @@
        (throw (ex-info "invalid verified supply-chain identity"
                        {:phase :project-link
                         :reason :invalid-supply-chain-identity}))))
-   (let [linked (project/link-source sources root)
+   (let [linked (project/link-source sources root
+                                    {:direct-exports? (= :native (:execution (target-profile/profile target)))})
          module-digests (into (sorted-map)
                               (map (fn [[namespace source]]
                                      [namespace (text-sha256 source)]))
