@@ -1,0 +1,76 @@
+#!/usr/bin/env kbb
+(ns runner-bookkeeping-receipt
+  "Reproduce one C-free runner bookkeeping decision + receipt from measured
+  digests (JUN-29), through `kotoba.compiler.runner-bookkeeping`: resolve
+  the four artifact slots (source graph from `:entries`, others as
+  digests), take the `pre-entry!` admission decision against the run's own
+  pins, then `post-run!` the output digest into a sealed
+  `:kotoba.runner-receipt/v1` that `verify` accepts. The recorded
+  2026-10-19 run answers admission `73c7761f...e95c` and receipt
+  `b16d1d53...3965` through this path.
+
+  Input: one JSON file (argv[1]) with keys `runner-sha256`,
+  `compiler-sha256`, `container-sha256`, `output-sha256`, `status`,
+  `started-at`, `finished-at` and `entries`. Each entry is a map with a
+  `path` (the manifest path) and either a `sha256` or a `file` to hash.
+
+  Output (stdout, EDN): entry count, source-graph manifest digest,
+  admission decision and the sealed + verified receipt. Exits non-zero
+  when any stage refuses.
+
+  This script is measurement orchestration (JSON read + file hashing).
+  The digests on the runner's acceptance path are computed by the pure
+  `sha2.core` code in `runner-bookkeeping`, never by a host hash module.
+
+  Usage: kbb --backend sci --classpath src scripts/runner-bookkeeping-receipt.cljk <input.json>"
+  (:require [kotoba.compiler.runner-bookkeeping :as bookkeeping]
+            ["node:fs" :as fs]))
+
+(defn- read-json [path]
+  (js->clj (.parse js/JSON (.readFileSync fs path "utf8")) :keywordize-keys true))
+
+(defn- entry-digest [{:keys [sha256 file path] :as entry}]
+  (cond
+    sha256 sha256
+    file (bookkeeping/artifact-digest (vec (js/Array.from (.readFileSync fs file))))
+    :else (throw (js/Error. (str "entry without sha256 or file: " (pr-str path))))))
+
+(defn- main [input-path]
+  (let [{:keys [status started-at finished-at] :as input} (read-json input-path)
+        entries (mapv (fn [entry]
+                        {:path (:path entry)
+                         :sha256 (entry-digest entry)})
+                      (:entries input))
+        source-graph-sha256 (bookkeeping/source-graph-digest entries)
+        admitted (bookkeeping/pre-entry!
+                  {:runner {:sha256 (:runner-sha256 input)}
+                   :compiler {:sha256 (:compiler-sha256 input)}
+                   :source-graph {:entries entries}
+                   :container {:sha256 (:container-sha256 input)}
+                   :pinned-source-graph-sha256
+                   (or (get-in input [:pins :source-graph-sha256])
+                       (:source-graph-sha256 input)
+                       source-graph-sha256)
+                   :expected-container-sha256
+                   (or (get-in input [:pins :container-sha256])
+                       (:container-sha256 input))})
+        sealed (bookkeeping/post-run!
+                {:digests (:digests admitted)
+                 :output {:sha256 (:output-sha256 input)}
+                 :status (keyword (or status "ok"))
+                 :started-at started-at
+                 :finished-at finished-at})]
+    (prn {:runner-bookkeeping-receipt/v1
+          {:entries (count entries)
+           :source-graph-manifest-sha256
+           (get-in admitted [:digests :source-graph-sha256])
+           :admission admitted
+           :receipt (:receipt sealed)
+           :verified? (:verified? sealed)}})))
+
+(let [argv (js->clj (.-argv js/process))
+      input (last argv)]
+  (if (and input (.endsWith input ".json"))
+    (main input)
+    (do (println "usage: runner-bookkeeping-receipt.cljk <input.json>")
+        (throw (js/Error. "missing input.json")))))

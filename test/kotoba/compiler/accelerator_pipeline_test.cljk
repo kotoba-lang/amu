@@ -1,0 +1,71 @@
+(ns kotoba.compiler.accelerator-pipeline-test
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-targets :as targets]
+            [kotoba.compiler.accelerator-pipeline :as pipeline]))
+
+(def spec {:kernel/name "ewise_add_f32" :kernel/op :ewise :kernel/operator :add})
+
+(deftest every-vendor-dispatches-and-emits
+  (testing "the five major vendors each reach a sealed artifact through dispatch"
+    (doseq [[device expected-target expected-measured]
+            [[{:vendor-id 4318} :cuda-v1 true]
+             [{:vendor-id 4203} :msl-v1 true]
+             [{:vendor-id 32902} :wgsl-v1 true]
+             [{:vendor-id 5045} :wgsl-v1 false]
+             [{:vendor-id 4098} :wgsl-v1 true]]]
+      (let [{:keys [artifact dispatch]} (pipeline/compile-spec spec device)]
+        (is (= expected-target (:target dispatch)))
+        (is (= artifact (accelerator/verify-artifact! artifact)))
+        (is (= expected-target (:target artifact)))
+        (is (= expected-measured (:measured? dispatch)))))))
+
+(deftest api-overrides-vendor
+  (testing "an api that names its shading language decides outright"
+    (is (= :msl-v1 (:target (:dispatch (pipeline/compile-spec spec {:vendor-id 4318 :api :metal})))))
+    (is (= :cuda-v1 (:target (:dispatch (pipeline/compile-spec spec {:vendor-id 4098 :api :cuda})))))))
+
+(deftest unknown-device-is-total
+  (testing "an unknown device takes the portable fallback, never a throw"
+    (let [{:keys [dispatch]} (pipeline/compile-spec spec {})]
+      (is (= :unknown (:vendor dispatch)))
+      (is (= :wgsl-v1 (:target dispatch)))
+      (is (= 256 (:workgroup-size dispatch))))))
+
+(deftest workgroup-provenance-is-recorded
+  (testing "the provisional dispatch default is labelled, a SPEC size wins"
+    (is (= [:dispatch 256] ((juxt :workgroup-source :workgroup-size)
+                            (:dispatch (pipeline/compile-spec spec {:vendor-id 4318})))))
+    (is (= [:spec 64] ((juxt :workgroup-source :workgroup-size)
+                       (:dispatch (pipeline/compile-spec
+                                    (assoc spec :kernel/workgroup-size 64)
+                                    {:vendor-id 4318})))))
+    (is (= [:spec 64] ((juxt :workgroup-source :workgroup-size)
+                       (:dispatch (pipeline/compile-spec
+                                    (assoc spec :kernel/workgroup-size #?(:cljs (js/BigInt "64") :clj 64))
+                                    {:vendor-id 4318})))))
+    (is (= 64 (get-in (:artifact (pipeline/compile-spec
+                                   (assoc spec :kernel/workgroup-size 64)
+                                   {:vendor-id 4318}))
+                      [:limits :workgroup-size])))
+    (testing "a non-integer explicit size is an input error, not a silent default"
+      (is (thrown? js/Error (pipeline/compile-spec
+                              (assoc spec :kernel/workgroup-size "64")
+                              {:vendor-id 4318}))))))
+
+(deftest same-input-same-artifact
+  (testing "dispatch adds no nondeterminism to the artifact regime"
+    (is (= (:artifact (pipeline/compile-spec spec {:vendor-id 4203}))
+           (:artifact (pipeline/compile-spec spec {:vendor-id 4203}))))))
+
+(deftest reader-integer-ids-classify
+  (testing "the kotoba reader's BigInt integer tokens still match the id table"
+    (let [id #?(:cljs (js/BigInt "4203") :clj 4203)]
+      (is (= :apple (targets/classify-vendor {:vendor-id id})))
+      (is (= :msl-v1 (:target (:dispatch (pipeline/compile-spec spec {:vendor-id id}))))))))
+
+(deftest invalid-spec-refuses
+  (testing "an operator outside the op's set refuses before any emission"
+    (is (thrown? js/Error (pipeline/compile-spec
+                            (assoc spec :kernel/operator :sum)
+                            {:vendor-id 4318})))))

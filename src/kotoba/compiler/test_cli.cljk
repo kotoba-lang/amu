@@ -132,7 +132,7 @@
   [args]
   (if (some #{"--manifest"} args)
     (run-manifest args)
-  (let [input (source-path/admit! (second args))
+  (let [input (source-path/admit-or-throw! (second args))
         roots (source-paths args)
         linked (when (seq roots)
                  (let [graph (project-files/load-closed-graph input roots)]

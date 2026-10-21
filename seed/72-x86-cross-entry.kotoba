@@ -1,3 +1,6 @@
 ;; Full optional AArch64-hosted cross-compiler keeps the adopted driver routes.
 (defn- xg-default [] :i64 (drv-main))
-(defn- seed-main [] :i64 (xg-main))
+(defn- seed-main [] :i64
+  (if (and (>= (io-argc) 4) (string=? (io-arg 0) "compile") (string=? (io-arg 2) "--target")
+           (string=? (io-arg 3) "x86_64-aiueos-kernel-v1"))
+    (xo-command) (xg-main)))
