@@ -1,0 +1,132 @@
+;; x86_64-linux-static: one ELF64 with the guest and a Kotoba runtime, no loader.
+;; The runtime source (xs-rt-src, seed/76) is appended to the guest source and compiled
+;; by the same checked frontend and x86 backend. Runtime functions are the ones
+;; whose symbol starts at or after the appended text; they charge no fuel, use
+;; only scalar SIR and the kxrt- intrinsics below, and are not callable from the
+;; guest. Context slots hold the absolute addresses of kxrt-slot-N functions.
+;; Absolute M cells (X86_64-LINUX-ABI): 197 = runtime text offset (0 = not a
+;; static build), 198 = first intrinsic FN (the runtime text starts with the
+;; XS-INTR-N intrinsic stubs in id order), 199 = kxrt-start FN,
+;; 200..255 = FN whose address fills context word slot/8 (slots 48..440).
+
+(def XS-INTR-N 8)
+(defn- xs-intr-name [k :i64] :string
+  (case k 0 "kxrt-load64" 1 "kxrt-store64" 2 "kxrt-load8" 3 "kxrt-store8"
+          4 "kxrt-syscall" 5 "kxrt-ctx" 6 "kxrt-call-main" 7 "kxrt-trap" ""))
+(defn- xs-on? [M :vector-i64] :bool (> (vector-at M 197) 0))
+(defn- xs-sym-start [M :vector-i64 f :i64] :i64
+  (vector-at M (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W) SF-START)))
+(defn- xs-rt? [M :vector-i64 f :i64] :bool
+  (and (xs-on? M) (> f 0) (>= (xs-sym-start M f) (vector-at M 197))))
+(defn- xs-intr [M :vector-i64 f :i64] :i64
+  (let [k (- f (vector-at M 198))]
+    (if (and (xs-on? M) (> (vector-at M 198) 0) (>= k 0) (< k XS-INTR-N)) k -1)))
+
+;; ---- intrinsics: operands are the call's temps t .. t+n-1 ----------------------
+(defn- xs-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
+  (case k
+    0 (-> M (xg-load t 0x858b48) (xg-bytes 0x008b48 3) (xg-save t))
+    1 (-> M (xg-load t 0x858b48) (xg-load (inc t) 0x8d8b48) (xg-bytes 0x088948 3)
+          (xg-bytes 0xc88948 3) (xg-save t))
+    2 (-> M (xg-load t 0x858b48) (xg-bytes 0x00b60f48 4) (xg-save t))
+    3 (-> M (xg-load t 0x858b48) (xg-load (inc t) 0x8d8b48) (xg-bytes 0x0888 2)
+          (xg-bytes 0xc88948 3) (xg-save t))
+    ;; rax = number; rdi rsi rdx r10 r8 r9 = arguments; r9 is reloaded after.
+    4 (-> M (xg-load (+ t 1) 0xbd8b48) (xg-load (+ t 2) 0xb58b48) (xg-load (+ t 3) 0x958b48)
+          (xg-load (+ t 4) 0x958b4c) (xg-load (+ t 5) 0x858b4c) (xg-load (+ t 6) 0x8d8b4c)
+          (xg-load t 0x858b48) (xg-bytes 0x050f 2) (xg-bytes 0xf84d8b4c 4) (xg-save t))
+    5 (-> M (xg-rel 0x058d48 3 3 0) (xg-save t))
+    ;; Guest entry as the loader's fn(0, 0, 0, 0, 0, context): r9 = context.
+    6 (-> M (xg-load t 0x8d8b4c) (xg-rel 0xe8 1 1 (xg-get M 1))
+          (xg-bytes 0xf84d8b4c 4) (xg-save t))
+    7 (xg-bytes M 0x0b0f 2)
+    (xg-err M 7101 OP-CALL)))
+
+;; ---- scan and admission ------------------------------------------------------
+(defn- xs-prefix? [S :string a :i64 b :i64 p :string] :bool
+  (let [n (string-length p)]
+    (and (>= (- b a) n) (string=? (string-substring S a (+ a n)) p))))
+;; The first runtime FN must be intrinsic 0 and the next ones follow in order.
+(defn- xs-scan-intr [M :vector-i64 name :string f :i64] :vector-i64
+  (let [first (if (and (= (vector-at M 198) 0) (string=? name (xs-intr-name 0))) f (vector-at M 198))
+        k (- f first)]
+    (cond (= first 0) (xg-err M 7102 f)
+          (and (< k XS-INTR-N) (not (string=? name (xs-intr-name k)))) (xg-err M 7102 f)
+          :else (mem-set M 198 first))))
+(defn- xs-scan-one [M :vector-i64 S :string f :i64] :vector-i64
+  (let [sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))
+        a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
+    (cond (not (xs-rt? M f)) M
+          (xs-prefix? S a b "kxrt-slot-")
+            (let [slot (mem-parse-dec S (+ a 10) b)]
+              (if (or (< slot 48) (> slot 440) (not= (bit-and slot 7) 0)
+                      (not= (vector-at M (+ 200 (quot slot 8))) 0))
+                (xg-err M 7102 f) (mem-set M (+ 200 (quot slot 8)) f)))
+          (string=? (string-substring S a b) "kxrt-start")
+            (if (= (vector-at M 199) 0) (mem-set M 199 f) (xg-err M 7102 f))
+          :else (xs-scan-intr M (string-substring S a b) f))))
+(defn- xs-scan [M :vector-i64 S :string f :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= f (vector-at M MM-FN-N))) M
+    (xs-scan (xs-scan-one M S f) S (inc f))))
+;; Runtime functions: scalar SIR and intrinsic/runtime calls only. Guest
+;; functions never call a runtime function directly.
+(defn- xs-scalar-op? [op :i64] :bool
+  (or (and (>= op OP-FN) (<= op OP-CALL)) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)))
+(defn- xs-check [M :vector-i64 i :i64 f :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
+    (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) g (if (= op OP-FN) a f) rt (xs-rt? M g)]
+      (cond (and rt (not (xs-scalar-op? op))) (xg-err M 7101 op)
+            (and (= op OP-CALL) (not rt) (xs-rt? M a)) (xg-err M 7101 op)
+            :else (xs-check M (inc i) g)))))
+
+;; ---- image ------------------------------------------------------------------
+;; Entry: rdi = initial rsp (argc, argv, envp), aligned call to kxrt-start.
+(defn- xs-entry [M :vector-i64] :vector-i64
+  (-> M (xg-bytes 0xe78948 3) (xg-bytes 0xf0e48348 4) (xg-rel 0xe8 1 1 (vector-at M 199))
+      (xg-bytes 0x0b0f 2)))
+(def XS-CTX-BYTES 512)
+(def XS-RW-BYTES 65536)
+;; Link-time context words: function addresses, code_base @384 and
+;; code_length @392 (the code region including the literal pool).
+(defn- xs-slot-word [M :vector-i64 slot :i64] :i64
+  (let [f (if (and (>= slot 48) (<= slot 440)) (vector-at M (+ 200 (quot slot 8))) 0)]
+    (cond (= slot 384) 0x401000
+          (= slot 392) (xg-pos M)
+          (> f 0) (+ 0x401000 (dec (xg-f M f FF-CODE)))
+          :else 0)))
+(defn- xs-out-ctx [M :vector-i64 at :i64] :vector-i64
+  (if (= at XS-CTX-BYTES) M (xs-out-ctx (xg-out M (xs-slot-word M at) 8) (+ at 8))))
+(defn- xs-elf-rw [M :vector-i64] :vector-i64
+  (let [off (xg-get M 3) addr (+ 0x400000 off)]
+    (-> M (xg-out 1 4) (xg-out 6 4) (xg-out off 8) (xg-out addr 8)
+        (xg-out addr 8) (xg-out XS-CTX-BYTES 8) (xg-out XS-RW-BYTES 8) (xg-out 4096 8))))
+(defn- xs-elf [M :vector-i64] :vector-i64
+  (-> M (mem-set MM-OUT-N 1) (xg-elf-header) (xg-elf-rx) (xs-elf-rw) (xg-elf-stack)
+      (xg-pad 4096) (xg-out-code 1) (xg-pad (xg-get M 3)) (xs-out-ctx 0)))
+(defn- xs-clear [M :vector-i64 k :i64] :vector-i64
+  (if (= k 256) M (xs-clear (mem-set M k 0) (inc k))))
+(defn- xs-build [M :vector-i64 S :string rt :i64] :vector-i64
+  (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 4 1)
+              (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))]
+    (cond (not= (vector-at a MM-ERR) 0) a
+          (= (xg-get a 1) 0) (xg-err a 7102 0)
+          (or (= (vector-at a 199) 0) (= (vector-at a 198) 0)) (xg-err a 7102 1)
+          :else (let [g (-> a (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xg-index-labels 1)
+                            (xs-entry) (xg-code 1) (xr-pool 1))
+                      data (bit-and (+ 8191 (xg-pos g)) -4096)]
+                  (if (>= (+ data XS-CTX-BYTES 1) MM-OUT-CAP) (xg-err g 7104 data)
+                    (xs-elf (xg-fix (xg-set g 3 data) 1)))))))
+(defn- xs-write [M :vector-i64 out :string] :i64
+  (let [n (dec (vector-at M MM-OUT-N)) written (out-write-v M out (+ MM-OUT-BASE 1) n)
+        w (io-out (string-concat "{:ok true, :target :x86_64-linux, :format :static, :code-bytes "
+                   (string-concat (mem-u2dec (xg-pos M)) (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))]
+    (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))
+(defn- xs-command [] :i64
+  (let [src (io-arg 1) out (io-arg 5)]
+    (cond (or (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
+            (drv-fail0 E-USAGE)
+          (= (io-exists src) 0) (drv-fail0 E-READ)
+          :else (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
+                      s (string-concat guest (xs-rt-src)) m (xs-build (xg-front s) s (string-length guest))]
+                  (cond (not= (vector-at m MM-ERR) 0) (xg-report m src out)
+                        :else (xs-write m out))))))

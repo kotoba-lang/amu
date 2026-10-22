@@ -89,3 +89,35 @@ subset plus the one-export rule; `--fuel` over 2^31-1 takes the imm64
 replenish path and stays ABI-identical. This route emits the object ABI only:
 not the kernel image, not the entry allowlist, not the fuel-tier table, and no
 emitted object has run in a kernel.
+
+## Loaderless static image (x86_64-linux-static), seed module 75
+
+`compile SOURCE --target x86_64-linux --output NEW_ELF --format static` emits
+one ELF64 ET_EXEC (EM_X86_64, no PT_INTERP/PT_DYNAMIC, no libc) holding the
+guest and a runtime written in Kotoba (`xs-rt-src`). The runtime text is
+appended after the guest (and its r6b library) and compiled by the same
+frontend and runtime-profile backend. Absolute header cells, static builds
+only: 197 = byte offset of the runtime text (0 = not a static build), 198 =
+first intrinsic FN, 199 = `kxrt-start`, 200..255 = FN whose absolute address
+fills context word slot/8 (slots 48..440). Functions whose symbol starts at or
+after cell 197 are runtime functions: no OP-FUEL code, scalar SIR only, and
+never called directly by guest functions (E7101). Calls to the eight
+`kxrt-` intrinsic stubs (load64, store64, load8, store8, syscall, ctx,
+call-main, trap) are replaced by inline code.
+
+Layout: file 0 maps at 0x400000 RX (headers, then code at 0x401000:
+entry stub, functions, literal pool); the RW segment at the page-aligned data
+offset holds the 400-byte v11 context image (function slots, code_base @384 =
+0x401000, code_length @392) plus runtime globals at context+1024. Entry:
+`mov rdi,rsp; and rsp,-16; call kxrt-start; ud2`. `kxrt-start` maps the
+arenas, fills version/data slots/fuel/allow, installs SIGILL/TRAP/BUS/FPE/SEGV
+handlers, calls `main` as the loader does (`fn(0,0,0,0,0, ctx)`, r9 =
+context), closes the append sink, flushes stdout and exits with
+`result & 0xff` (command mode), or prints the structured line when
+`KEXE_STRUCTURED_REPORT` is set. Environment read: `KEXE_ALLOW` (default
+35,37,38,39; `-` = none), `KEXE_FUEL`, `KEXE_STRUCTURED_REPORT`,
+`KEXE_CAP_RESOURCES_35` (one absolute root; opens use openat2
+RESOLVE_BENEATH|RESOLVE_NO_MAGICLINKS). Not provided: wire-35 forms other than
+READ/EXISTS/WRITE/APPEND (refused), wires other than 35/37/38/39 (refused),
+seccomp and rlimits, growth regions (pool/item layout differs; values are
+equal), the arena fields of the structured line.
