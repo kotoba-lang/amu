@@ -37,11 +37,13 @@
   name and the emitter target name. ADR-0359 decision 3 is why :vulkan and
   :glsl-v1 name one route (the api :vulkan opens compiled SPIR-V and the
   only source-to-SPIR-V path this repository owns is glslang from GLSL);
-  :cuda and :cuda-v1 are the CUDA route's two spellings the same way. The
-  sets are disjoint, so at most one route answers per target keyword and
-  the lookup is order-independent."
+  :cuda and :cuda-v1 are the CUDA route's two spellings the same way, and
+  :webgpu and :wgsl-v1 are the WGSL route's (ADR-0363). The sets are
+  disjoint, so at most one route answers per target keyword and the lookup
+  is order-independent."
   {:cuda-v1 #{:cuda :cuda-v1}
-   :glsl-v1 #{:vulkan :glsl-v1}})
+   :glsl-v1 #{:vulkan :glsl-v1}
+   :wgsl-v1 #{:webgpu :wgsl-v1}})
 
 (defn- emitter-route
   "The emission route a target keyword names, or nil when it names none.
@@ -106,7 +108,11 @@
     kernels
     over :sum/:max/:min with a workgroup of at least one subgroup floor
     (the emission's own predicate, kotoba.compiler.accelerator-subgroup-
-    reduce/applicable?), on the Vulkan route (:vulkan or :glsl-v1), under
+    reduce/applicable?), on the Vulkan route (:vulkan or :glsl-v1) for all
+    four vendors and, for Intel and ARM ONLY (ADR-0363), on the WGSL route
+    (:webgpu or :wgsl-v1 -- the vendor-default target for both); Apple and
+    NVIDIA stay Vulkan-route-only on their ADRs' scope (extending either is
+    a separate per-vendor decision, undecided), under
     ADR-0356 rule 6 and ADR-0357's capability precondition: the device
     descriptor must report, for the compute stage, the subgroup operations
     the fold needs (:subgroup-ops containing :basic and :shuffle-relative)
@@ -195,7 +201,16 @@
                    :warp-shuffle-reduce
 
                    (and (contains? #{:intel :arm :apple :nvidia} vendor)
-                        (= :glsl-v1 route)
+                        (or (= :glsl-v1 route)
+                            ;; ADR-0363: the WGSL route (:webgpu /
+                            ;; :wgsl-v1) carries the Intel and ARM rows
+                            ;; only. The Apple (ADR-0360) and NVIDIA
+                            ;; (ADR-0361) rows stay scoped to the Vulkan
+                            ;; route by their own ADRs; extending either
+                            ;; is a separate per-vendor decision, not made
+                            ;; here.
+                            (and (= :wgsl-v1 route)
+                                 (contains? #{:intel :arm} vendor)))
                         valid-kir?
                         subgroup-cap-ok?
                         ;; ADR-0361: NVIDIA's row carries the CUDA row's

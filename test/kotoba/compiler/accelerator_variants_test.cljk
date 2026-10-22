@@ -119,10 +119,15 @@
           (is (= :baseline
                  (:variant (variants/select-variant vendor kir target device)))
               (str "device " (pr-str device) " must fail closed")))))
-    (testing "a target outside the Vulkan route"
-      (doseq [target [:cuda :cuda-v1 :wgsl-v1 :msl-v1 :webgpu nil]]
+    (testing "a target outside the rows' routes (ADR-0363 moved the WGSL route in for Intel/ARM)"
+      (doseq [target [:cuda :cuda-v1 :msl-v1 :metal nil]]
         (is (= :baseline (:variant (variants/select-variant :intel kir target capable))))
         (is (= :baseline (:variant (variants/select-variant :arm kir target capable))))
+        (is (= :baseline (:variant (variants/select-variant :apple kir target capable))))
+        (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable)))))
+      ;; The WGSL route carries the Intel and ARM rows only (ADR-0363);
+      ;; the Apple/NVIDIA rows keep their ADRs' Vulkan-route scope.
+      (doseq [target [:webgpu :wgsl-v1]]
         (is (= :baseline (:variant (variants/select-variant :apple kir target capable))))
         (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable))))))
     (testing "a vendor outside the four designed rows"
@@ -161,10 +166,11 @@
     (is (= compiled (accelerator/verify-artifact! compiled)))))
 
 (deftest each-route-selects-under-either-of-its-names
-  ;; ADR-0359 decision 3: :vulkan and :glsl-v1 name one route, and :cuda /
-  ;; :cuda-v1 are the CUDA route's two spellings the same way. A caller
-  ;; holding target-for's api answer and a caller holding lower's emitter
-  ;; target select the same variant.
+  ;; ADR-0359 decision 3: :vulkan and :glsl-v1 name one route, :cuda /
+  ;; :cuda-v1 are the CUDA route's two spellings the same way, and
+  ;; (ADR-0363) :webgpu / :wgsl-v1 are the WGSL route's. A caller holding
+  ;; target-for's api answer and a caller holding lower's emitter target
+  ;; select the same variant.
   (let [reduce-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
         capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
     (doseq [target [:cuda :cuda-v1]]
@@ -172,6 +178,9 @@
              (:variant (variants/select-variant :nvidia reduce-kir target
                                                 {:compute-capability 7.0})))))
     (doseq [vendor [:intel :arm :apple :nvidia] target [:vulkan :glsl-v1]]
+      (is (= :subgroup-reduce
+             (:variant (variants/select-variant vendor reduce-kir target capable)))))
+    (doseq [vendor [:intel :arm] target [:webgpu :wgsl-v1]]
       (is (= :subgroup-reduce
              (:variant (variants/select-variant vendor reduce-kir target capable)))))))
 
@@ -217,6 +226,69 @@
                           {:compute-capability 7.0}))))))
     (doseq [target [:msl-v1 :metal :webgpu :wgsl-v1]]
       (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable)))))))
+
+(deftest the-wgsl-route-carries-the-intel-and-arm-rows
+  ;; ADR-0363 (JUN-59, JUN-60): the WGSL route -- :webgpu (api) and
+  ;; :wgsl-v1 (emitter target), one route under two names exactly like
+  ;; :vulkan/:glsl-v1 (ADR-0359 decision 3) -- selects :subgroup-reduce for
+  ;; Intel and ARM under the same rules 3 + 6 gate the Vulkan route uses.
+  ;; Apple and NVIDIA stay Vulkan-route-only (their ADRs' scope; extending
+  ;; either is a separate per-vendor decision). Everything here is
+  ;; UNCOMPILED (no WGSL validator on this host) and UNMEASURED -- no
+  ;; WebGPU execution path exists and :measured? is false on every answer.
+  (doseq [vendor [:intel :arm]
+          wg [32 64 128 256 512 1024]
+          operator [:sum :max :min]
+          target [:webgpu :wgsl-v1]
+          s [8 16 32]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                  :reduce operator {:workgroup-size wg})
+          device {:subgroup-size s :subgroup-ops #{:basic :shuffle-relative}}
+          answer (variants/select-variant vendor kir target device)]
+      (is (= :subgroup-reduce (:variant answer)))
+      (is (false? (:measured? answer)))
+      (is (string? (:basis answer)))))
+  (testing "the same rule-6 gate fails closed on this route too"
+    (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+          ewise (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+          malformed (assoc kir :kernel/dtype :f64)
+          capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
+      (doseq [device [nil
+                      {}
+                      {:subgroup-size 32 :subgroup-ops #{:basic}}
+                      {:subgroup-size 32 :subgroup-ops #{:shuffle-relative}}
+                      {:subgroup-size 24 :subgroup-ops #{:basic :shuffle-relative}}]
+              target [:webgpu :wgsl-v1]]
+        (doseq [vendor [:intel :arm]]
+          (is (= :baseline (:variant (variants/select-variant vendor kir target device)))
+              (str "device " (pr-str device) " must fail closed on the WGSL route"))))
+      (doseq [target [:webgpu :wgsl-v1]]
+        (is (= :baseline (:variant (variants/select-variant :intel ewise target capable))))
+        (is (= :baseline (:variant (variants/select-variant :arm malformed target capable)))))))
+  (testing "the MSL route still answers :baseline for every vendor (rule 3: the MSL emitter admits :baseline only)"
+    (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+          capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
+      (doseq [vendor [:intel :arm] target [:msl-v1 :metal]]
+        (is (= :baseline (:variant (variants/select-variant vendor kir target capable)))))))
+  (testing "rule 3 end to end: the selected variant lowers, seals and verifies on :wgsl-v1"
+    (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 128})
+          device {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+          selected (:variant (variants/select-variant :arm kir :wgsl-v1 device))
+          compiled (accelerator/compile-kernel kir :wgsl-v1 selected)]
+      (is (= :subgroup-reduce selected))
+      (is (= :subgroup-reduce (:variant compiled)))
+      (is (str/includes? (:code compiled) "enable subgroups;"))
+      (is (not (str/includes? (:code compiled) "enable subgroup_id;"))
+          "subgroup_id is a LANGUAGE extension; enable-ing it is a shader-creation error (WGSL spec pin, 2026-10-23)")
+      (is (str/includes? (:code compiled) "for(var d:u32=fold/2u;"))
+      (is (nil? (re-find #"d:u32=\d+u" (:code compiled)))
+          "a baked fold width leaked into the WGSL emission")
+      (is (= compiled (accelerator/verify-artifact! compiled)))))
+  (testing "same arguments in, same map out"
+    (let [kir (accelerator/kernel "reduce_max_f32" :reduce :max {:workgroup-size 128})
+          device {:subgroup-size 16 :subgroup-ops #{:basic :shuffle-relative}}]
+      (is (= (variants/select-variant :intel kir :wgsl-v1 device)
+             (variants/select-variant :intel kir :wgsl-v1 device))))))
 
 (deftest rule-6-reads-the-facts-the-subgroup-answer-parses
   ;; ADR-0362 decision 4, end to end at the seam it names: the consumer

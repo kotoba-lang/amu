@@ -182,6 +182,17 @@ test-pinned -- the same regime as the CUDA arm, which has no nvcc), and
 no WebGPU execution path exists. No `:measured?` flag moves and no
 workgroup row is touched.
 
+**Amendment (2026-10-23, the :wgsl-v1 selection question is DECIDED).**
+ADR-0363 supersedes the "proposed here and decided nowhere" clause above:
+the WGSL route (`:webgpu` / `:wgsl-v1`, one route two names) now carries
+the Intel and ARM rows under the same rule 3 + rule 6 gate, and the Apple
+and NVIDIA rows stay Vulkan-route-only (their ADRs' scope; extending either
+is a separate per-vendor decision, undecided). The selection change is
+implemented with tests; everything about it stays UNCOMPILED and
+UNMEASURED, `:measured? false` on every answer, no workgroup row touched,
+and both routes still fail closed to `:baseline` without the rule-6 facts
+whose producer (ADR-0362) is still unimplemented.
+
 ## Intel `:subgroup-reduce` (JUN-59) -- the design
 
 **Rationale (a design assumption, not a measurement).** The baseline tree
