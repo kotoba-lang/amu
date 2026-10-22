@@ -4,21 +4,26 @@
 // Reads a binary and prints what the cleanroom Kotoba decoder core knows
 // about it: format / entry / sections / symbols / imports / function
 // bounds / xrefs / strings / a disassembly listing. The decoding itself
-// runs in Kotoba — re_disasm/disasm.kotoba compiled to the js target
+// runs in Kotoba — re_disasm/disasm.kotoba (containers, a64 code views)
+// and re_disasm/x86disasm.kotoba (x64 listings) compiled to the js target
 // (kotoba-js-artifact/v1) and instantiated here. This file only does
 // argument parsing, file IO and formatting; it contains no architecture
-// or container knowledge of its own.
+// or container knowledge of its own beyond input-bounds validation.
 //
-//   node bin/re-disasm <file> [--raw] [--base 0x…] [--arch a64]
+//   node bin/re-disasm <file> [--raw] [--base 0x…] [--arch a64|x64]
 //       [--sections] [--symbols] [--imports] [--functions] [--xrefs]
 //       [--strings] [--listing] [--max N] [--all] [--json]
 //
 // --raw treats the file as a code blob at --base (default 0x0).
 // --max bounds the listing window (default 256 words).
+// --functions/--xrefs are a64-only in this slice; asking for them with
+// --arch x64 is refused rather than answered with a64 output.
 //
-// Limits (typed ABI): :bytes values cap at 64 KiB per call, so listing,
-// strings and words are windowed. The compile door is still the
-// node-hosted bin/amu bootstrap (docs/selfhost-priority.md, KOT-46).
+// Limits (typed ABI): :bytes values cap at 64 KiB per call and exported
+// vectors at 16,384 items, so container accessors see a bounded window
+// (abi below), string scans run in overlapping windows and listings are
+// requested in chunks. The compile door is still the node-hosted bin/amu
+// bootstrap (docs/selfhost-priority.md, KOT-46).
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -35,7 +40,7 @@ function fail(msg) {
 // ---- args ----
 const argv = process.argv.slice(2);
 const opts = {
-  raw: false, base: 0, arch: "a64", max: 256,
+  raw: false, base: 0n, arch: "a64", max: 256,
   sections: false, symbols: false, imports: false,
   functions: false, xrefs: false, strings: false, listing: false, json: false,
 };
@@ -60,8 +65,10 @@ for (let i = 0; i < argv.length; i++) {
   else if (file === null) file = a;
   else fail("one input file only");
 }
-if (!file) fail("usage: re-disasm <file> [--raw] [--base 0x…] [--all | --sections --symbols --imports --functions --xrefs --strings --listing] [--max N]");
+if (!file) fail("usage: re-disasm <file> [--raw] [--base 0x…] [--arch a64|x64] [--all | --sections --symbols --imports --functions --xrefs --strings --listing] [--max N]");
 if (!["a64", "x64"].includes(opts.arch)) fail("--arch must be a64 or x64");
+if (opts.arch === "x64" && (opts.functions || opts.xrefs))
+  fail("--functions/--xrefs are a64-only in this slice (M5); refusing rather than answering with a64 output");
 
 // ---- compile door: Kotoba -> js artifact (KOT-46 swaps in selfhost) ----
 const esm = path.join(os.tmpdir(), `re-disasm-${process.pid}.mjs`);
@@ -72,6 +79,18 @@ if (build.status !== 0) fail(`compile failed\n${build.stdout || ""}${build.stder
 const { instantiateKotoba } = await import(pathToFileURL(esm).href);
 try { fs.unlinkSync(esm); } catch {}
 const api = instantiateKotoba({}, { fuel: 2 ** 48, frames: 1000000, bytes: 2 ** 48 });
+
+// the x86 decode core is only instantiated when this slice needs it
+let xapi = null;
+if (opts.arch === "x64" && opts.listing) {
+  const esm2 = path.join(os.tmpdir(), `re-disasm-x86-${process.pid}.mjs`);
+  const build2 = spawnSync(process.execPath, ["bin/amu", "compile", "re_disasm/x86disasm.kotoba",
+    "--jvm-free", "--target", "js", "--output", esm2], { encoding: "utf8", cwd: root });
+  if (build2.status !== 0) fail(`x86 compile failed\n${build2.stdout || ""}${build2.stderr || ""}`);
+  const mod2 = await import(pathToFileURL(esm2).href);
+  try { fs.unlinkSync(esm2); } catch {}
+  xapi = mod2.instantiateKotoba({}, { fuel: 2 ** 48, frames: 1000000, bytes: 2 ** 48 });
+}
 
 // ---- input ----
 const data = fs.readFileSync(file);
@@ -88,8 +107,12 @@ const pairVec = (v) => {  // flat (a,b) pairs, -1-padded
   return out;
 };
 const window = (start, len) => bytes.subarray(start, Math.min(start + len, bytes.length));
-// typed ABI caps :bytes at 64 KiB per call
+// typed ABI caps :bytes at 64 KiB per call and exported vectors at 16,384
+// items; every value crossing into Kotoba is bounded accordingly
 const BYTE_CAP = 65536;
+const STR_CAP = 8192;   // strings-rows allocates 2 vector items per input byte
+const LIST_CAP = 512;   // words per listing-text call (keeps its string < 64 KiB)
+const abi = window(0, BYTE_CAP);  // bounded view handed to container accessors
 
 function out(line) { if (!opts.json) process.stdout.write(line + "\n"); }
 function emitJson() {
@@ -98,127 +121,158 @@ function emitJson() {
 }
 
 // ---- format detection ----
-let format = "raw", words, base = opts.base, n = 0;
-if (!opts.raw && api["macho-recognize"](bytes) === 1n) format = "macho64";
-else if (!opts.raw && api["elf-recognize"](bytes) === 1n) format = "elf64";
-else if (!opts.raw && api["pe-recognize"](bytes) === 1n) format = "pe32+";
+let format = "raw", base = opts.base;
+if (!opts.raw && api["macho-recognize"](abi) === 1n) format = "macho64";
+else if (!opts.raw && api["elf-recognize"](abi) === 1n) format = "elf64";
+else if (!opts.raw && api["pe-recognize"](abi) === 1n) format = "pe32+";
 out(`format: ${format}`);
 rep.format = format;
 
-// container views
+// code window: file offset + size of the section to decode, selected after
+// the entry point is known (selectCodeSection below)
+let codeOff = 0, codeSize = 0;
+
+// ---- container views ----
 let entry = opts.base;
 if (format === "macho64") {
-  entry = api["macho-entry"](bytes);
-  out(`image-base: ${hex(api["macho-image-base"](bytes))}`);
+  // bounds check before any accessor walks load commands: a crafted ncmds
+  // of billions or zero-sized commands would otherwise iterate unbounded
+  const ncmds = N(api["macho-ncmds"](abi));
+  if (ncmds < 1 || ncmds > 4096) fail(`mach-o header fails bounds check (ncmds=${ncmds})`);
+  const cmdEnd = N(api["macho-cmd-off"](abi, B(ncmds)));
+  if (cmdEnd < 32 + 8 * ncmds || cmdEnd > bytes.length)
+    fail(`mach-o load commands fail bounds check (span=${cmdEnd}, ncmds=${ncmds}, size=${bytes.length})`);
+  entry = api["macho-entry"](abi);
+  out(`image-base: ${hex(api["macho-image-base"](abi))}`);
   out(`entry: ${hex(entry)}`);
-  rep.image_base = api["macho-image-base"](bytes); rep.entry = entry;
-  const sc = N(api["macho-section-count"](bytes));
+  rep.image_base = api["macho-image-base"](abi); rep.entry = entry;
+  const sc = N(api["macho-section-count"](abi));
   if (opts.sections) {
     out("sections:");
     for (let i = 0; i < sc; i++) {
-      const row = api["macho-section-row"](bytes, B(i));
-      out(`  [${i}] ${api["macho-section-name"](bytes, B(i))} vaddr=${hex(row[0])} off=${hex(row[1])} size=${hex(row[2])}`);
-      rep.sections.push({ name: api["macho-section-name"](bytes, B(i)), vaddr: row[0], off: row[1], size: row[2] });
+      const row = api["macho-section-row"](abi, B(i));
+      out(`  [${i}] ${api["macho-section-name"](abi, B(i))} vaddr=${hex(row[0])} off=${hex(row[1])} size=${hex(row[2])}`);
+      rep.sections.push({ name: api["macho-section-name"](abi, B(i)), vaddr: row[0], off: row[1], size: row[2] });
     }
   }
   if (opts.symbols || opts.imports) {
-    const sy = N(api["macho-symbol-count"](bytes));
+    const sy = N(api["macho-symbol-count"](abi));
     for (let i = 0; i < sy; i++) {
-      const undef = api["macho-symbol-undef?"](bytes, B(i)) === true;
-      const name = api["macho-symbol-name"](bytes, B(i));
+      const undef = api["macho-symbol-undef?"](abi, B(i)) === true;
+      const name = api["macho-symbol-name"](abi, B(i));
       if (name === "") continue;
-      const val = api["macho-symbol-row"](bytes, B(i))[0];
+      const val = api["macho-symbol-row"](abi, B(i))[0];
       if (opts.imports && undef) { out(`import: ${name}`); rep.imports.push({ name }); }
       if (opts.symbols && !undef) { out(`symbol: ${hex(val)} ${name}`); rep.symbols.push({ value: val, name }); }
     }
   }
-  // disassemble the first section
   if (sc > 0 && (opts.listing || opts.functions || opts.xrefs)) {
-    const row = api["macho-section-row"](bytes, B(0));
-    base = row[0];
-    const size = N(row[2]);
-    const chunk = window(N(row[1]), Math.min(size, BYTE_CAP));
-    words = api["words-from-bytes"](chunk);
-    n = Math.min(words.length, opts.max);
+    const sel = selectCodeSection(sc, (i) => api["macho-section-row"](abi, B(i)), (i) => api["macho-section-name"](abi, B(i)), entry);
+    base = sel[0]; codeOff = N(sel[1]); codeSize = N(sel[2]);
   }
 } else if (format === "elf64") {
-  entry = api["elf-entry"](bytes);
-  out(`image-base: ${hex(api["elf-image-base"](bytes))}`);
+  entry = api["elf-entry"](abi);
+  out(`image-base: ${hex(api["elf-image-base"](abi))}`);
   out(`entry: ${hex(entry)}`);
-  rep.image_base = api["elf-image-base"](bytes); rep.entry = entry;
-  const sc = N(api["elf-section-count"](bytes));
+  rep.image_base = api["elf-image-base"](abi); rep.entry = entry;
+  const sc = N(api["elf-section-count"](abi));
   if (opts.sections) {
     out("sections:");
     for (let i = 0; i < sc; i++) {
-      const row = api["elf-section-row"](bytes, B(i));
-      out(`  [${i}] ${api["elf-section-name"](bytes, B(i))} vaddr=${hex(row[0])} off=${hex(row[1])} size=${hex(row[2])}`);
-      rep.sections.push({ name: api["elf-section-name"](bytes, B(i)), vaddr: row[0], off: row[1], size: row[2] });
+      const row = api["elf-section-row"](abi, B(i));
+      out(`  [${i}] ${api["elf-section-name"](abi, B(i))} vaddr=${hex(row[0])} off=${hex(row[1])} size=${hex(row[2])}`);
+      rep.sections.push({ name: api["elf-section-name"](abi, B(i)), vaddr: row[0], off: row[1], size: row[2] });
     }
   }
   if (opts.symbols || opts.imports) {
-    const sy = N(api["elf-symbol-count"](bytes));
+    const sy = N(api["elf-symbol-count"](abi));
     for (let i = 0; i < sy; i++) {
-      const undef = api["elf-symbol-undef?"](bytes, B(i)) === true;
-      const name = api["elf-symbol-name"](bytes, B(i));
+      const undef = api["elf-symbol-undef?"](abi, B(i)) === true;
+      const name = api["elf-symbol-name"](abi, B(i));
       if (name === "") continue;
-      const val = api["elf-symbol-row"](bytes, B(i))[0];
-      if (opts.imports && undef) { out(`import: ${name}`); rep.imports.push({ name }); }
-      if (opts.symbols && !undef) { out(`symbol: ${hex(val)} ${name}`); rep.symbols.push({ value: val, name }); }
-    }
-  }
-  if (sc > 1 && (opts.listing || opts.functions || opts.xrefs)) {
-    const row = api["elf-section-row"](bytes, B(1));
-    base = row[0];
-    const size = N(row[2]);
-    const chunk = window(N(row[1]), Math.min(size, BYTE_CAP));
-    words = api["words-from-bytes"](chunk);
-    n = Math.min(words.length, opts.max);
-  }
-} else if (format === "pe32+") {
-  entry = api["pe-entry"](bytes);
-  out(`image-base: ${hex(api["pe-image-base"](bytes))}`);
-  out(`entry: ${hex(entry)}`);
-  rep.image_base = api["pe-image-base"](bytes); rep.entry = entry;
-  const sc = N(api["pe-section-count"](bytes));
-  if (opts.sections) {
-    out("sections:");
-    for (let i = 0; i < sc; i++) {
-      const row = api["pe-section-row"](bytes, B(i));
-      out(`  [${i}] ${api["pe-section-name"](bytes, B(i))} vaddr=${hex(row[0])} off=${hex(row[1])} size=${hex(row[2])}`);
-      rep.sections.push({ name: api["pe-section-name"](bytes, B(i)), vaddr: row[0], off: row[1], size: row[2] });
-    }
-  }
-  if (opts.symbols || opts.imports) {
-    const sy = N(api["pe-symbol-count"](bytes));
-    for (let i = 0; i < sy; i++) {
-      const undef = api["pe-symbol-undef?"](bytes, B(i)) === true;
-      const name = api["pe-symbol-name"](bytes, B(i));
-      if (name === "") continue;
-      const val = api["pe-symbol-row"](bytes, B(i))[0];
+      const val = api["elf-symbol-row"](abi, B(i))[0];
       if (opts.imports && undef) { out(`import: ${name}`); rep.imports.push({ name }); }
       if (opts.symbols && !undef) { out(`symbol: ${hex(val)} ${name}`); rep.symbols.push({ value: val, name }); }
     }
   }
   if (sc > 0 && (opts.listing || opts.functions || opts.xrefs)) {
-    const row = api["pe-section-row"](bytes, B(0));
-    base = row[0];
-    const size = N(row[2]);
-    const chunk = window(N(row[1]), Math.min(size, BYTE_CAP));
-    words = api["words-from-bytes"](chunk);
-    n = Math.min(words.length, opts.max);
+    // section 1 is not generally code (.interp on ordinary ELF files); the
+    // code section is the one holding the entry point, else named .text
+    const sel = selectCodeSection(sc, (i) => api["elf-section-row"](abi, B(i)), (i) => api["elf-section-name"](abi, B(i)), entry);
+    base = sel[0]; codeOff = N(sel[1]); codeSize = N(sel[2]);
+  }
+} else if (format === "pe32+") {
+  entry = api["pe-entry"](abi);
+  out(`image-base: ${hex(api["pe-image-base"](abi))}`);
+  out(`entry: ${hex(entry)}`);
+  rep.image_base = api["pe-image-base"](abi); rep.entry = entry;
+  const sc = N(api["pe-section-count"](abi));
+  if (opts.sections) {
+    out("sections:");
+    for (let i = 0; i < sc; i++) {
+      const row = api["pe-section-row"](abi, B(i));
+      out(`  [${i}] ${api["pe-section-name"](abi, B(i))} vaddr=${hex(row[0])} off=${hex(row[1])} size=${hex(row[2])}`);
+      rep.sections.push({ name: api["pe-section-name"](abi, B(i)), vaddr: row[0], off: row[1], size: row[2] });
+    }
+  }
+  if (opts.symbols || opts.imports) {
+    const sy = N(api["pe-symbol-count"](abi));
+    for (let i = 0; i < sy; i++) {
+      const undef = api["pe-symbol-undef?"](abi, B(i)) === true;
+      const name = api["pe-symbol-name"](abi, B(i));
+      if (name === "") continue;
+      const val = api["pe-symbol-row"](abi, B(i))[0];
+      if (opts.imports && undef) { out(`import: ${name}`); rep.imports.push({ name }); }
+      if (opts.symbols && !undef) { out(`symbol: ${hex(val)} ${name}`); rep.symbols.push({ value: val, name }); }
+    }
+  }
+  if (sc > 0 && (opts.listing || opts.functions || opts.xrefs)) {
+    const sel = selectCodeSection(sc, (i) => api["pe-section-row"](abi, B(i)), (i) => api["pe-section-name"](abi, B(i)), entry);
+    base = sel[0]; codeOff = N(sel[1]); codeSize = N(sel[2]);
   }
 } else {
   out(`base: ${hex(base)}`);
   rep.base = base;
-  if (opts.listing || opts.functions || opts.xrefs) {
-    const chunk = window(0, Math.min(bytes.length, BYTE_CAP));
-    words = api["words-from-bytes"](chunk);
+  codeSize = bytes.length;
+}
+
+// the code section: the one containing the entry point, else the one named
+// .text/__text, else the first non-empty section. Returns the section row
+// [vaddr, off, size].
+function selectCodeSection(count, rowFn, nameFn, ent) {
+  let textRow = null, first = null;
+  for (let i = 0; i < count; i++) {
+    const row = rowFn(i);
+    if (row[2] === 0n) continue;
+    if (first === null) first = row;
+    if (ent >= row[0] && ent < row[0] + row[2]) return row;
+    const name = nameFn(i);
+    if (textRow === null && (name === ".text" || name === "__text")) textRow = row;
+  }
+  return textRow ?? first ?? rowFn(0);
+}
+
+// ---- code window ----
+let words = null, n = 0, codeBytes = null;
+if (codeSize > 0 && (opts.listing || opts.functions || opts.xrefs)) {
+  codeBytes = window(codeOff, Math.min(codeSize, BYTE_CAP));
+  if (opts.arch === "a64") {
+    words = api["words-from-bytes"](codeBytes);
+    // seed the analysis at the entry point when it falls inside the window:
+    // function-bounds seeds its first function at the window start, and the
+    // section start is not generally the entry (/bin/true: .text 0x1480,
+    // entry 0x19f0)
+    const entryOff = entry - base;
+    if (entry > base && entryOff >= 0n && entryOff % 4n === 0n) {
+      const idx = N(entryOff / 4n);
+      if (idx > 0 && idx < words.length) { words = words.slice(idx); base = entry; }
+    }
     n = Math.min(words.length, opts.max);
   }
 }
 
-// ---- code views (a64 words) ----
-if (words && n > 0) {
+// ---- code views ----
+if (opts.arch === "a64" && words && n > 0) {
   if (opts.functions) {
     out("functions:");
     for (const [s, e] of pairVec(api["function-bounds"](words, base, B(n)))) {
@@ -235,18 +289,50 @@ if (words && n > 0) {
   }
   if (opts.listing) {
     out("listing:");
-    rep.listing = api["listing-text"](words, base, B(n)).trimEnd().split("\n");
-    for (const line of rep.listing) out(line);
+    // an exported string caps at 65,536 UTF-8 bytes, so the listing is
+    // requested in word chunks with adjusted bases, not as one string
+    for (let s = 0; s < n; s += LIST_CAP) {
+      const cnt = Math.min(LIST_CAP, n - s);
+      const chunkBase = base + 4n * B(s);
+      const text = api["listing-text"](words.slice(s, s + cnt), chunkBase, B(cnt));
+      for (const line of text.trimEnd().split("\n")) {
+        if (line === "") continue;
+        rep.listing.push(line);
+        out(line);
+      }
+    }
   }
+} else if (opts.arch === "x64" && codeBytes && opts.listing) {
+  out("listing:");
+  const lines = [];
+  for (let p = 0; p < codeBytes.length && lines.length < opts.max; ) {
+    const rec = xapi["x86-decode"](codeBytes, B(p));
+    const len = N(xapi["x86-len"](rec));
+    if (len <= 0) break;
+    lines.push(xapi["x86-text"](rec, base + B(p)));
+    p += len;
+  }
+  rep.listing = lines;
+  for (const line of lines) out(line);
 }
 
 if (opts.strings) {
   out("strings:");
-  const chunk = window(0, BYTE_CAP);
-  for (const [off, len] of pairVec(api["strings-rows"](chunk, B(4)))) {
-    const s = Buffer.from(chunk.subarray(N(off), N(off) + N(len))).toString("latin1");
-    out(`  ${hex(off)} ${JSON.stringify(s)}`);
-    rep.strings.push({ off, len, text: s });
+  // strings-rows allocates 2 vector items per input byte and the js target
+  // caps vectors at 16,384 items, so the scan runs in bounded windows
+  // across the whole file with file-relative offsets
+  const seen = new Set();
+  for (let start = 0; start < bytes.length; start += STR_CAP) {
+    const chunk = window(start, STR_CAP);
+    for (const [off, len] of pairVec(api["strings-rows"](chunk, B(4)))) {
+      const abs = start + N(off);
+      if (seen.has(abs)) continue;
+      seen.add(abs);
+      const s = Buffer.from(bytes.subarray(abs, abs + N(len))).toString("latin1");
+      out(`  ${hex(abs)} ${JSON.stringify(s)}`);
+      rep.strings.push({ off: B(abs), len, text: s });
+    }
+    if (start + STR_CAP >= bytes.length) break;
   }
 }
 
