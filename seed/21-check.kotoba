@@ -4980,21 +4980,78 @@
                 M5 (nm-put M4 MM-LIT-N (inc lit))
                 M6 (nm-put M5 MM-LITB-N (+ lb len))]
             (ck-new M6 ND-STR tok lit 0)))))
-;; the rewrite: (quote x) / 'x with x a symbol or a scalar
+;;
+;; the rewrite: (quote x) / 'x. A symbol datum materializes as a :symbol value; a datum holding no
+;; symbols comes off as itself; a collection of all symbols materializes its items (a set / vector of
+;; :symbol items, or a map with :symbol keys of one scalar value kind -- the literal typing infers
+;; [:set :symbol] / [:map :symbol V] / [:vector ...] from the items, the way #{:a :b} is
+;; [:set :keyword]); mixed shapes and a quoted list are the named refusals E2180..E2184 (the
+;; guest-grammar :quoted sentences).
+;; =========================================================================================================
+;; materialize item x (a symbol) as a :symbol value in place
+(defn- ck-r6q-item [M :vector-i64 S :string x :i64] :vector-i64
+  (let [M1 (ck-r6q-lit M S x)
+        y (ck-r M1)]
+    (nm-set-nf (ck-become M1 x y) x NF-TYPE TY-SYM)))
+;; a chain's shape: 1 all items symbols, 0 no item a symbol, -1 mixed
+(defn- ck-r6q-shape [M :vector-i64 c :i64] :i64
+  (loop [i c ns 0 nt 0]
+    (cond (zero? i) (cond (zero? ns) 0 (zero? nt) 1 :else -1)
+          (= (nm-kind M i) ND-SYM) (recur (nm-next M i) (+ ns 1) nt)
+          :else (recur (nm-next M i) ns (+ nt 1)))))
+;; fix every symbol item of a set / vector chain in place
+(defn- ck-r6q-fix [M :vector-i64 S :string c :i64] :vector-i64
+  (loop [M2 M i c]
+    (if (zero? i) M2 (recur (if (nm-ne (nm-kind M2 i) ND-SYM) M2 (ck-r6q-item M2 S i)) (nm-next M2 i)))))
+;; a map chain's KEYS (even positions): 1 all symbols, 0 none, -1 mixed
+(defn- ck-r6q-keys [M :vector-i64 c :i64] :i64
+  (loop [i c ns 0 nt 0]
+    (cond (zero? i) (cond (zero? ns) 0 (zero? nt) 1 :else -1)
+          (= (nm-kind M i) ND-SYM) (recur (nm-next M (nm-next M i)) (+ ns 1) nt)
+          :else (recur (nm-next M (nm-next M i)) ns (+ nt 1)))))
+;; a map chain's VALUES (odd positions): their shared scalar kind, 0 when one is not scalar, -1 mixed
+(defn- ck-r6q-vkind [M :vector-i64 c :i64] :i64
+  (loop [i (nm-next M c) k 0]
+    (cond (zero? i) k
+          (and (nm-ne (nm-kind M i) ND-INT) (nm-ne (nm-kind M i) ND-STR) (nm-ne (nm-kind M i) ND-KW)) 0
+          (or (zero? k) (= k (nm-kind M i))) (recur (nm-next M (nm-next M i)) (nm-kind M i))
+          :else -1)))
+;; fix the keys (even positions) of a map chain in place
+(defn- ck-r6q-fix-keys [M :vector-i64 S :string c :i64] :vector-i64
+  (loop [M2 M i c]
+    (if (zero? i) M2 (recur (ck-r6q-item M2 S i) (nm-next M2 (nm-next M2 i))))))
+(defn- ck-r6q-coll [M :vector-i64 S :string n :i64 a :i64 mix :i64] :vector-i64
+  (let [c (nm-first M a)
+        sh (ck-r6q-shape M c)]
+    (cond (= sh 1) (ck-become (ck-r6q-fix M S c) n a)
+          (= sh -1) (ck-err M mix a 0)
+          :else (ck-become M n a))))
+(defn- ck-r6q-map [M :vector-i64 S :string n :i64 a :i64] :vector-i64
+  (let [c (nm-first M a)
+        ks (ck-r6q-keys M c)
+        vk (ck-r6q-vkind M c)]
+    (cond (= ks 1) (cond (or (= vk 0) (= vk -1)) (ck-err M E-QUOTE-MAP-VAL a 0)
+                         :else (ck-become (ck-r6q-fix-keys M S c) n a))
+          (= ks -1) (ck-err M E-QUOTE-MIX-MAP a 0)
+          :else (ck-become M n a))))
 (defn- ck-r6q-quote [M :vector-i64 S :string n :i64] :vector-i64
   (let [h (nm-first M n)
         a (nm-next M h)]
     (cond (nm-ne (nm-count M n) 2) (ck-err M E-CHECK-ARITY h 1)
-          (nm-ne (nm-kind M a) ND-SYM) (ck-become M n a)
+          (nm-ne (nm-kind M a) ND-SYM)
+          (let [k (nm-kind M a)]
+            (cond (or (= k ND-INT) (= k ND-STR) (= k ND-KW)) (ck-become M n a)
+                  (= k ND-LIST) (ck-err M E-QUOTE-LIST a 0)
+                  (= k ND-SET) (ck-r6q-coll M S n a E-QUOTE-MIX-SET)
+                  (= k ND-VEC) (ck-r6q-coll M S n a E-QUOTE-MIX-VEC)
+                  (= k ND-MAP) (ck-r6q-map M S n a)
+                  :else (ck-err M E-QUOTE-LIST a 0)))
           :else
           (let [M1 (ck-r6q-lit M S a)
                 y (ck-r M1)]
-            (ck-become (nm-set-nf M1 y NF-TYPE TY-SYM) n y)))))
-;; 13 when the quote form is one this rewrite handles (a symbol or scalar datum)
-(defn- ck-r6q-ds? [M :vector-i64 n :i64] :i64
-  (let [a (nm-next M (nm-first M n))
-        k (nm-kind M a)]
-    (if (or (= k ND-SYM) (= k ND-INT) (= k ND-STR) (= k ND-KW)) 13 0)))
+            (nm-set-nf (ck-become M1 n y) n NF-TYPE TY-SYM)))))
+;; 13 for every quote form: ck-r6q-quote processes or refuses each shape (ck-err stops the walk)
+(defn- ck-r6q-ds? [M :vector-i64 n :i64] :i64 13)
 
 (defn- ck-r6b-ds-code [M :vector-i64 n :i64] :i64
   (let [h (nm-first M n)
