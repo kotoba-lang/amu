@@ -30,6 +30,7 @@ const usage = [
   "       amu definition-cids <file> [--source-path <dir>]  # one CID per definition",
   "       amu kir <file.kotoba|file.cljk|file.cljc> [--output file.kir.edn]  # the module's KIR (:kotoba.kir/v4) as EDN",
   "       amu compile <entry> --source-path <dir> --unpinned --target <target> --output <file>",
+  "         [--selfhost-desktop]  (x86_64 AIUEOS browser shell; no GDT/TSS/ISR image)",
   "       amu worker [--target <target>]   (no --target: Kototama VM program)",
   "       amu inspect <file.kotoba|file.cljk|file.cljc> [--output interface.edn]",
   "       amu test <file.kotoba|file.cljk|file.cljc> [--json] [--fuel <n>] [--source-path <dir> ...]   (one instance per test)",
@@ -37,6 +38,7 @@ const usage = [
   "         [--native-runtime <dir> | --native-prepare <dir> [--loader-source-dir <dir>]] [--native-jobs <n>]",
   "       amu module-lock <file.kotoba> --blocks <dir> --source-path <dir>",
   "       amu package-aiueos-boot <kernel> [--output BOOTX64.EFI]",
+  "       amu package-aiueos-disk-image <BOOTX64.EFI> --output AIUEOS.img [--receipt receipt.json]",
   "       amu extract-native <file> [--symbol main] [--output program.bin]",
   "       amu package-ios program.kexe [--entry main] --output program.o",
   "       amu package-macos program.kexe [--entry main] --output program.o",
@@ -180,6 +182,16 @@ function option(args, flag) {
 // than left returning false, because a predicate that always answers the same
 // way is a claim nobody rechecks.
 
+// The x86-64 kernel-image divergence between the two kotoba.native.elf64 twins
+// (65,904 vs 110,872 bytes, measured 2026-08-31) is CLOSED by the kotoba-native
+// ede96447 pin (kotoba-native#203: the portable elf64 packager now carries the
+// full AIUEOS kernel-image shim -- GDT/TSS/owned-stack entry + ISR table, the
+// fixed-page RT kernel-image profile, and the isolated state page). A previous
+// guard refused `compile --target x86_64-aiueos-kernel-v1 --artifact image` on
+// this route entirely; with the pin advanced that refusal only blocks the
+// served image this repo exists to build, so it is gone and the conformance
+// asserts the served artifact instead (JUN-30).
+
 // The trust-plane commands: keys, trust sets, signatures, receipts, inspect.
 // One portable implementation (`kotoba.compiler.trust-cli`) since 2026-09-11;
 // this set is `kotoba.compiler.trust-cli/commands`, spelled again here because
@@ -196,7 +208,8 @@ const trustCommands = new Set(["keygen", "public-key", "inspect", "trust-key",
   "trust-runtime", "sign", "verify-signed", "verify", "receipt",
   "verify-receipt", "verify-chain",
   "sbom", "attest-release", "verify-release", "package-ios", "package-macos",
-  "coverage", "sign-coverage-evidence", "package-aiueos-boot"]);
+  "coverage", "sign-coverage-evidence", "package-aiueos-boot",
+  "package-aiueos-disk-image"]);
 
 function nbbNativeEligible(args) {
   const command = args[0];
@@ -415,8 +428,14 @@ function publishPrivateCache(cacheFile, value) {
 // so a compile never reads an executing command's classpath or vice versa.
 function securityClasspath(root, nbbCli, alias) {
   const depsEdn = path.join(root, "deps.edn");
-  const gitlibsRoot = path.resolve(process.env.GITLIBS || path.join(os.homedir(), ".gitlibs"));
-  const allowedRoots = [gitlibsRoot, root, path.join(os.homedir(), ".m2", "repository")];
+  const homeGitlibsRoot = path.join(os.homedir(), ".gitlibs");
+  const gitlibsRoot = path.resolve(process.env.GITLIBS || homeGitlibsRoot);
+  // A caller may use a private GITLIBS overlay whose unchanged entries are
+  // symlinks into the ordinary, user-owned cache. Admit the resolved cache
+  // paths as well as the overlay itself; neither root widens trust to a
+  // repository or checkout outside these user-managed dependency stores.
+  const allowedRoots = [gitlibsRoot, homeGitlibsRoot, root,
+    path.join(os.homedir(), ".m2", "repository")];
   const digest = createHash("sha256")
     .update(fs.readFileSync(depsEdn)).update("\0").update(gitlibsRoot)
     .update("\0").update(alias || "").digest("hex");

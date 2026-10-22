@@ -982,14 +982,19 @@
                   (list (clause-params clause) (clause-result clause) (body-of clause)))
                 clauses))))
 
-(defn- stub-body [schemas {:keys [result callable-result-contract]}]
+(defn- stub-body [stub {:keys [params callable-result-contract]}]
   (if callable-result-contract
     ;; The stub exists only for isolated type/effect analysis and is
     ;; removed before linking. Its explicit result contract supplies
     ;; the closure refinement without inventing a lambda ID/helper that
     ;; could be mistaken for executable project code.
     0
-    (stub-value result schemas)))
+    ;; A signature-only import must not manufacture a default value of its
+    ;; result type. Recursive records may have no finite default, and an
+    ;; internal typed call is not a foreign-value ABI. This self-call checks
+    ;; exactly the declared signature and is removed with the stub before
+    ;; emission; no recursive trampoline survives in the executable graph.
+    (list* stub params)))
 
 (defn- stub-form
   "The import stub an importing module analyses in place of a dependency.
@@ -997,8 +1002,8 @@
   A multi-arity export needs a multi-arity stub, or the importing module can
   call it at exactly one arity: the stub is what its own call resolution sees,
   and the frontend rejects `no matching multi-arity clause` for the others."
-  [stub clauses schemas]
-  (arity-declaration (quote defn-) stub clauses (fn [clause] (stub-body schemas clause))))
+  [stub clauses _schemas]
+  (arity-declaration (quote defn-) stub clauses (fn [clause] (stub-body stub clause))))
 
 (defn- capability-operation?
   "True for a friendly capability operation such as `clock/now`.
@@ -1052,6 +1057,20 @@
                            (meta form))
     :else form))
 
+;; Whether NS-PART (a qualified call's namespace) names a host class: `js`,
+;; `goog`, or a class -- the segment after the last `.` begins with an ASCII
+;; uppercase letter (`Math`, `MessageDigest`, `java.lang.Math`). Kotoba
+;; namespaces are lowercase by convention, so an uppercase class segment is
+;; not an import that failed to resolve. No regex: this module is compiled
+;; by Kotoba itself, whose reader refuses a host regex literal.
+(defn- host-class-namespace? [ns-part]
+  (let [dot (str/last-index-of ns-part ".")
+        segment (if (some? dot) (subs ns-part (inc dot)) ns-part)]
+    (or (= "js" ns-part)
+        (= "goog" ns-part)
+        (and (< 0 (count segment))
+             (str/includes? "ABCDEFGHIJKLMNOPQRSTUVWXYZ" (subs segment 0 1))))))
+
 (defn- rewrite-import-calls [form imported]
   (cond
     (seq? form)
@@ -1083,7 +1102,19 @@
                     ;; the message, and a module with forty qualified calls
                     ;; gave its reader no way to find the one refused
                     ;; (measured 2026-10-09 on kotoba-lang/text).
-                    (reject! (str "qualified call is not an admitted exported import: " op) {:call op}))
+                    ;;
+                    ;; 2026-10-20 (issue #785): a head whose namespace NAMES
+                    ;; A HOST CLASS -- `js`, `goog`, or a class like `Math` /
+                    ;; `MessageDigest` / `java.lang.Math` -- is host interop,
+                    ;; not an import that failed to resolve, and the sentence
+                    ;; must say so (it was measured misfiring as `qualified
+                    ;; call is not an admitted exported import: Math/abs` for
+                    ;; a module whose imports all resolved).
+                    (if (host-class-namespace? (namespace op))
+                      (reject! (str "host interop call is not admitted: " op
+                                    " (a Java / JS class is outside the language)")
+                               {:call op :host-interop true})
+                      (reject! (str "qualified call is not an admitted exported import: " op) {:call op})))
                 op)]
       (list* rewritten-op (map (fn [amu_project_lambda_6_arg_1]
                           (rewrite-import-calls amu_project_lambda_6_arg_1 imported)) args)))
@@ -1921,9 +1952,23 @@
                 (assoc :name (quote __kotoba_closure_apply))
                 (dissoc :project-closure-apply?))))))
 
+(defn- direct-exports
+  "Coalesce a single-clause root export with its implementation. This is
+  link-time name binding, not an ABI or authority crossing. Keep wrappers for
+  multi-arity exports and names that could capture an existing local."
+  [functions exports]
+  (let [used (set (mapcat #(tree-seq coll? seq
+                                   [(:name %) (:params %) (:body %)]) functions))]
+    (into {} (keep (fn [[export clauses]]
+                     (when (and (= 1 (count clauses)) (not (contains? used export)))
+                       [(:linked-name (first clauses)) export]))) exports)))
+
 (defn link-source
-  "Link a closed namespace->source map into one bounded source unit."
-  [sources root]
+  "Link a closed namespace->source map into one bounded source unit.
+  Native callers select :direct-exports? to avoid a forwarding call at the
+  root. Module imports already resolve to direct typed calls in this unit."
+  ([sources root] (link-source sources root {}))
+  ([sources root {:keys [direct-exports?]}]
   (when-not (and (map? sources) (pos? (count sources))
                  (<= (count sources) max-project-modules))
     (reject! "project source map is empty or exceeds module limit"
@@ -2063,8 +2108,8 @@
           module-schemas (merge-schema-tables
                           (map (fn [amu_project_lambda_33_arg_1]
                                    (get-in @linked [amu_project_lambda_33_arg_1 :schemas])) @order))
-          functions (into module-functions
-                          (project-dispatchers module-functions module-schemas))
+          linked-functions (into module-functions
+                                 (project-dispatchers module-functions module-schemas))
           ;; Clauses, not export names. `max-project-exports` bounds the
           ;; exported FUNCTION surface, and a multi-arity export is several
           ;; functions -- the artifact carries `twice$arity$1` and
@@ -2076,10 +2121,20 @@
                                         (reduce + (map count (vals (get-in @linked [module :interface])))))
                                       @order))
           exports (sort-by (comp str key) (:interface root-module))
-          wrappers (mapv wrapper-form exports)
+          direct (when direct-exports? (direct-exports linked-functions exports))
+          functions (if (seq direct)
+                      (mapv (fn [function]
+                              (-> function
+                                  (update :name #(get direct % %))
+                                  (update :body rewrite-calls direct)))
+                            linked-functions)
+                      linked-functions)
+          direct-names (set (vals direct))
+          wrapped-exports (remove #(contains? direct-names (first %)) exports)
+          wrappers (mapv wrapper-form wrapped-exports)
           ;; Same reason: one multi-arity wrapper form is several functions
           ;; against `max-project-functions`.
-          wrapper-function-count (reduce + (map (comp count val) exports))
+          wrapper-function-count (reduce + (map (comp count val) wrapped-exports))
           function-count (+ (count functions) wrapper-function-count)
           ;; The linked namespace deliberately carries NO `:capabilities`
           ;; clause even when its modules declared one. That clause is a
@@ -2113,7 +2168,7 @@
           (into
            (mapv (fn [{:keys [name params param-types result body
                               callable-param-contracts callable-result-contract]}]
-                   (list (quote defn-) name
+                   (list (if (contains? direct-names name) (quote defn) (quote defn-)) name
                          (typed-params params param-types callable-param-contracts)
                          (or callable-result-contract result)
                          body))
@@ -2163,7 +2218,7 @@
       {:source
        linked-source
        :root root :module-order @order :modules (set @order)
-       :source-map source-map})))
+       :source-map source-map}))))
 
 (defn source-position
   "Translate a line in the linked source back to the module that wrote it.

@@ -68,9 +68,8 @@
 ;; line, never by grepping this file.
 (ns run-tests
   (:require [cljs.test :as t]
-            ;; :subgroup-reduce emission (ADR-0356/0357, JUN-59/60), UNMEASURED
-            [kotoba.compiler.accelerator-subgroup-reduce-test]
             [kotoba.compiler.accelerator-targets-test]
+            [kotoba.compiler.accelerator-variants-test]
             [kotoba.compiler.accelerator-test]
             [kotoba.compiler.accelerator-pipeline-test]
             [kotoba.compiler.accelerator-subgroup-reduce-test]
@@ -216,8 +215,7 @@
   (when (pos? (+ (or (:fail m) 0) (or (:error m) 0)))
     (set! (.-exitCode js/process) 1)))
 
-(t/run-tests 'kotoba.compiler.accelerator-subgroup-reduce-test
-             'kotoba.compiler.accelerator-targets-test
+(t/run-tests 'kotoba.compiler.accelerator-targets-test
              'kotoba.compiler.accelerator-test
              'kotoba.compiler.accelerator-pipeline-test
              'kotoba.compiler.accelerator-subgroup-reduce-test

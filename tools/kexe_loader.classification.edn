@@ -1,8 +1,7 @@
-;; Every function of tools/kexe_loader.c, classified (superproject
-;; adr-2609251400 C1). scripts/test-loader-decisions.cljk fails on a function
-;; that is not named here and on a name here that no longer exists, and
-;; prints the per-class line counts before (the loader at 0d244a95, whose
-;; decisions were C) and after.
+;; Historical tools/kexe_loader.c function classification (superproject
+;; adr-2609251400 C1). The C comparison driver is retired; this data records
+;; migration provenance, not an active native gate or required C-loader pin.
+;; The before snapshot is loader 0d244a95, whose decisions were C.
 ;;
 ;;   :mechanism  decides nothing: mmap / fork / signals / syscalls / sandbox
 ;;               installation, handle and arena bookkeeping, memory-safety
@@ -164,7 +163,9 @@
   "kexe_decision_call" {:class :mechanism :new true}
   "kexe_decisions_init" {:class :mechanism :new true}
   "kexe_enumerate_directory" {:class :mechanism}
-  "kexe_free_browse_entries" {:class :mechanism}
+  "kexe_free_browse_entries" {:class :mechanism :gone true}
+  "kexe_llm_helper_start" {:class :mechanism}
+  "llm_generate_provider" {:class :mechanism}
   "kexe_le64" {:class :mechanism}
   "kexe_normalize_path" {:class :decision :left "lexical . / .. / // normalization: what a path MEANS before admission"}
   "kexe_parse_u64_span" {:class :mechanism :before :decision
@@ -230,7 +231,6 @@
                :left "SIGPIPE is not a trap; exit codes 122 / 123"}
   "supervisor_alarm_handler" {:class :mechanism}
   "trap_handler" {:class :mechanism :before :decision :moved "every signal trap text (a)"}
-  "trap_handler_siginfo" {:class :mechanism}
   "ui_commit_inject" {:class :mixed :left "base revision must match; first node becomes the event"}
   "ui_event_inject" {:class :mixed :left "event visibility by revision"}
   "utf8_invalid_reason" {:class :decision :left "which UTF-8 refusal gets which value-trap index (mirrors osaho kotoba.kir.value/utf8-invalid-at)"}

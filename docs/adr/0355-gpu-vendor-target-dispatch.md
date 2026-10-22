@@ -59,3 +59,9 @@ Rules:
   rows that carry hardware evidence.
 - An unmeasured row is labeled unmeasured in the code and here, so a reader
   can tell a design default from a tuning result without trusting prose.
+- Reporting landed before branching (2026-10-19): the wire-42 INFO answer
+  carries a fifth field, the VkPhysicalDeviceType as one word
+  (discrete|integrated|virtual|cpu|other, `tools/kexe_gpu_vulkan.c`), and
+  `device-class` maps that word into `device-classes`. The v1 table still
+  does not branch on device class; when a row needs the branch, it lands
+  with the measurement that justifies it (JUN-57..60).

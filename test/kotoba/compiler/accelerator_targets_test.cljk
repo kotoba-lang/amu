@@ -63,11 +63,35 @@
     (is (= :msl-v1 (:target apple)))
     (is (= :unknown (:vendor unknown)))
     (is (= :wgsl-v1 (:target unknown)))
-    (testing "a measured row answers :measured? true, a provisional row false"
-      (is (true? (:measured? nvidia)))
-      (is (true? (:measured? apple)))
-      (is (false? (:measured? unknown)))
+    (testing "every answer is marked unmeasured until hardware says otherwise"
       (doseq [decision [nvidia apple unknown]]
+        (is (false? (:measured? decision)))
         (is (string? (:basis decision)))))
     (testing "same descriptor in, same map out"
       (is (= nvidia (targets/recommend {:vendor-id 4318 :api :cuda}))))))
+
+(deftest info-answers-parse-into-measured-device-facts
+  (testing "the recorded 2026-10-18 M1 Max INFO answer (wire 42) parses"
+    (let [d (targets/device-from-info "Apple M1 Max|1.3.357|1024|1")]
+      (is (= "Apple M1 Max" (:vendor d)))
+      (is (= :vulkan (:api d)))
+      (is (= "1.3.357" (:api-version d)))
+      (is (= 1024 (:max-workgroup-x d)))
+      (is (true? (:unified-memory? d)))
+      (is (true? (:measured? d)))))
+  (testing "measured facts do not make the workgroup row measured"
+    (let [decision (targets/recommend (targets/device-from-info "Apple M1 Max|1.3.357|1024|1"))]
+      (is (= :apple (:vendor decision)))
+      (is (= :msl-v1 (targets/target-for nil :apple)) "vendor default stays msl-v1")
+      (is (= :wgsl-v1 (:target decision)) "the wire is Vulkan, so :vulkan decides")
+      (is (false? (:measured? decision)))))
+  (testing "malformed answers parse to nil, never a throw or a wrong decision"
+    (is (nil? (targets/device-from-info nil)))
+    (is (nil? (targets/device-from-info "")))
+    (is (nil? (targets/device-from-info "dev|1.3.357")))
+    (is (nil? (targets/device-from-info "dev|1.3.357|1024|1|extra")))
+    (is (nil? (targets/device-from-info "|1.3.357|1024|1")))
+    (is (nil? (targets/device-from-info "dev|vulkan|1024|1")))
+    (is (nil? (targets/device-from-info "dev|1.3.357|0|1")))
+    (is (nil? (targets/device-from-info "dev|1.3.357|1024|2")))
+    (is (nil? (targets/device-from-info "dev|1.3.357|1024|x")))))

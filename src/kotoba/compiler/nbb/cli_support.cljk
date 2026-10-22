@@ -319,13 +319,14 @@
     ;; 0348 iteration 8). EX_UNAVAILABLE, as the JVM table has for :execute.
     (:execute :native-executor) 69
     :receipt 76
-    ;; `:artifact-target` joined when the launcher guard removal routed
-    ;; `compile --target x86_64-aiueos-kernel-v1 --artifact image` into the
-    ;; package path, which refuses it by phase name (native_package.cljk).
-    ;; The documented answer for a refused artifact target is EX_USAGE (65),
-    ;; as the JVM table has it -- without this row the refusal fell through to
-    ;; 70 and automation read a known-unsupported route as an internal
-    ;; compiler failure (review finding on the `amu kir` PR).
+    ;; `:artifact-target` is back because it has live callers again: the
+    ;; aiueos disk packager refuses a bootloader that is not an x86-64 PE32+
+    ;; EFI application by this phase name (aiueos_disk.cljk, JUN-30 review
+    ;; finding), and `compile` still throws it for an unknown --artifact kind.
+    ;; The documented answer for a refused artifact target is the caller-error
+    ;; code 65, as `kotoba.compiler.cli/exit-code` must agree -- without this
+    ;; row a refused input answered 70 and automation read a known refusal as
+    ;; an internal compiler failure.
     :artifact-target 65
     70))
 

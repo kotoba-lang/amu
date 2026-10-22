@@ -10,6 +10,18 @@ Checks target-independent semantics and emits the default Kototama program or an
 
 ## Contract dependency direction
 
+Native module calls share the linked unit's value representation, context and
+budget. Single-clause root exports bind directly to their implementations when
+names cannot capture locals; multi-arity/collision wrappers remain. Module
+imports do not cross a guest/host ABI. Actual foreign/profile, provider,
+authority and independent resource boundaries still do. See the shared
+[native execution-domain decision](https://github.com/kotoba-lang/kotoba-lang/blob/main/docs/adr/ADR-native-execution-domains.md).
+Removing a forwarding call changes implementation overhead, never refills fuel
+or relaxes arena bounds, and does not qualify a selfhost compiler by itself.
+Import signatures are checked without constructing dummy result values;
+recursive records need no foreign-boundary default value. The signature-only
+stubs are removed before code generation.
+
 Arrows are consumer → contract dependency. These are intended entrypoint
 boundaries, not whole-repository imports already achieved.
 

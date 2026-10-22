@@ -236,9 +236,14 @@
           image (lib/join directory "kernel.img")
           efi (lib/join directory "BOOTX64.EFI")
           efi-again (lib/join directory "BOOTX64-again.EFI")
+          ok-payload (lib/join directory "ok-payload.bin")
           big-payload (lib/join directory "payload.bin")]
       (.writeFileSync fs image (js/Buffer.from (clj->js kernel)))
-      (.writeFileSync fs big-payload (js/Buffer.alloc 16385 1))
+      ;; The embedded payload bound is 512 KiB since boot-info v5 (the x86-64
+      ;; kernel image rides the payload slot), so 16 KiB + 1 is admitted and
+      ;; 512 KiB + 1 is the refusal boundary.
+      (.writeFileSync fs ok-payload (js/Buffer.alloc 16385 1))
+      (.writeFileSync fs big-payload (js/Buffer.alloc 524289 1))
       (let [result (ok! "package-aiueos-boot" "package-aiueos-boot" image "--output" efi "--k16-note" "test")
             value (stdout-edn result)
             bytes (.readFileSync fs efi)]
@@ -251,9 +256,130 @@
                "packaging the same input twice is byte-identical" "")
       (refused! "a kernel OBJECT is not an ET_EXEC image" 65 "embedded kernel must be x86-64 ET_EXEC"
                 "package-aiueos-boot" artifact "--output" (lib/join directory "never.efi"))
-      (refused! "a payload over 16 KiB" 65 "embedded RT payload exceeds 16 KiB"
+      (let [payload-efi (lib/join directory "payload.efi")
+            result (ok! "a payload over 16 KiB is admitted within the 512 KiB bound"
+                        "package-aiueos-boot" image "--payload" ok-payload
+                        "--output" payload-efi)
+            value (stdout-edn result)]
+        (report! (and (:ok value) (string? (:payload-sha256 value))
+                      (= 64 (count (:payload-sha256 value))))
+                 "the packaged image reports the embedded payload digest" (pr-str value)))
+      (refused! "a payload over 512 KiB" 65 "embedded AIUEOS payload exceeds 512 KiB"
                 "package-aiueos-boot" image "--payload" big-payload
-                "--output" (lib/join directory "never.efi")))
+                "--output" (lib/join directory "never.efi"))
+
+      ;; package-aiueos-disk-image: the bootloader must be an x86-64 PE32+
+      ;; EFI application (not merely MZ), disk and receipt destinations must
+      ;; be distinct, and the receipt is JSON under a .json name.
+      (let [disk (lib/join directory "desktop.img")
+            result (ok! "package-aiueos-disk-image" "package-aiueos-disk-image" efi
+                        "--output" disk)
+            value (stdout-edn result)
+            receipt-path (str disk ".receipt.json")
+            receipt (js/JSON.parse (lib/read-text receipt-path))]
+        (report! (and (:ok value) (= receipt-path (:receipt value)))
+                 "the default receipt path is the output plus .receipt.json"
+                 (pr-str value))
+        (report! (and (some? (aget receipt "disk")) (string? (aget receipt "disk" "sha256")))
+                 "the default receipt parses as JSON and binds the disk digest"
+                 (lib/read-text receipt-path)))
+      (refused! "an input colliding with the disk is refused" 64 "must be distinct"
+                "package-aiueos-disk-image" efi "--output" efi)
+      (let [dos (lib/join directory "dos.exe")]
+        (.writeFileSync fs dos (js/Buffer.concat
+                                #js [(js/Buffer.from #js [0x4d 0x5a])
+                                     (js/Buffer.alloc 126 0)]))
+        (refused! "a DOS MZ stub is not a bootloader" 65
+                  "bootloader is not PE32+"
+                  "package-aiueos-disk-image" dos
+                  "--output" (lib/join directory "never.img")))
+      (let [arm (js/Buffer.from (.readFileSync fs efi))
+            arm-path (lib/join directory "bootaa64.EFI")]
+        (.writeUInt16LE arm 0xaa64 (+ (.readUInt32LE arm 0x3c) 4))
+        (.writeFileSync fs arm-path arm)
+        (refused! "an ARM64 UEFI binary is not an x86-64 bootloader" 65
+                  "bootloader is not x86-64"
+                  "package-aiueos-disk-image" arm-path
+                  "--output" (lib/join directory "never.img")))
+
+    ;; --selfhost-desktop promises the desktop profile (no GDT/TSS, no ISR
+    ;; runtime): it must select the desktop packager -- different bytes from
+    ;; the base kernel image -- and refuse a source that exports interrupt
+    ;; entries (kotoba-native's package-kernel-desktop is fail-closed there).
+    (let [base-image (lib/join directory "kernel-base.elf")
+          desktop-image (lib/join directory "kernel-desktop.elf")
+          isr-source (lib/join directory "isr.kotoba")]
+      ;; The entry body's SysV signature is four arguments (vector, error
+      ;; code, rip, rsp -- `kernel.kotoba`'s `aiueos-isr-6 [vector rip cs
+      ;; flags]` form): kotoba-sema admits an entry only at arity 4
+      ;; (`:kotoba.error/interrupt-entry-signature` otherwise, measured), so a
+      ;; 0-arg fixture would be refused before the packager ever sees it and
+      ;; the desktop refusal below would go unmeasured.
+      (lib/write-text! isr-source
+                       (str "(ns kernel-isr (:export [main aiueos-isr-32]))\n"
+                            "(defn main [] :i64 0)\n"
+                            "(defn aiueos-isr-32 [vector error-code rip rsp] :i64 1)\n"))
+      (ok! "compile the x86-64 kernel image" "compile"
+           (lib/join lib/root "examples" "i64-semantics.kotoba")
+           "--target" "x86_64-aiueos-kernel-v1" "--artifact" "image"
+           "--output" base-image)
+      (ok! "compile the x86-64 kernel image with --selfhost-desktop" "compile"
+           (lib/join lib/root "examples" "i64-semantics.kotoba")
+           "--target" "x86_64-aiueos-kernel-v1" "--artifact" "image"
+           "--selfhost-desktop" "--output" desktop-image)
+      (report! (and (.existsSync fs desktop-image)
+                    (not (.equals (.readFileSync fs base-image)
+                                  (.readFileSync fs desktop-image))))
+               "--selfhost-desktop produces the desktop image, not the base image" "")
+      (refused! "the desktop profile refuses kernel interrupt entries" 65
+                "does not admit kernel interrupt entries"
+                "compile" isr-source "--target" "x86_64-aiueos-kernel-v1"
+                "--artifact" "image" "--selfhost-desktop"
+                "--output" (lib/join directory "never.elf")))
+
+
+      ;; --resident is not implemented and must not be acknowledged
+      (refused! "package-aiueos-boot refuses --resident" 64
+                "--resident is not implemented"
+                "package-aiueos-boot" image "--resident"
+                "--output" (lib/join directory "never-resident.efi"))
+
+      ;; package-aiueos-disk-image: deterministic GPT/FAT32 disk + JSON receipt
+      (let [disk (lib/join directory "aiueos.img")
+            result (ok! "package-aiueos-disk-image builds the desktop disk"
+                        "package-aiueos-disk-image" efi "--output" disk)
+            value (stdout-edn result)
+            receipt (lib/join directory "aiueos.img.receipt.json")
+            receipt-text (.readFileSync fs receipt "utf8")
+            disk-bytes (.readFileSync fs disk)]
+        (report! (= receipt (:receipt value))
+                 "the default disk receipt path ends in .json" (str (:receipt value)))
+        (report! (number? (aget (js/JSON.parse receipt-text) "disk" "bytes"))
+                 "the disk receipt is parseable JSON with a disk entry"
+                 (subs receipt-text 0 80))
+        (report! (and (= 85 (aget disk-bytes 510)) (= 170 (aget disk-bytes 511)))
+                 "the disk image carries the MBR signature" ""))
+      (refused! "package-aiueos-disk-image refuses a colliding receipt" 64
+                "input, disk, and receipt paths must be distinct"
+                "package-aiueos-disk-image" efi
+                "--output" (lib/join directory "collide.img")
+                "--receipt" (lib/join directory "collide.img"))
+      (let [junk (lib/join directory "junk.efi")]
+        (.writeFileSync fs junk
+                        (js/Buffer.concat #js [(js/Buffer.from "MZ") (js/Buffer.alloc 62 0)]))
+        (refused! "package-aiueos-disk-image refuses a non-PE bootloader" 65
+                  "bootloader is not PE32+"
+                  "package-aiueos-disk-image" junk
+                  "--output" (lib/join directory "never.img")))
+      (let [bad (js/Buffer.from (.readFileSync fs efi))
+            pe (.readUInt32LE bad 0x3c)
+            bad-path (lib/join directory "bad-subsystem.efi")]
+        (.writeUInt16LE bad 3 (+ pe 92))
+        (.writeFileSync fs bad-path bad)
+        (refused! "package-aiueos-disk-image refuses a non-EFI-application bootloader" 65
+                  "bootloader is not an EFI application"
+                  "package-aiueos-disk-image" bad-path
+                  "--output" (lib/join directory "never2.img"))))
 
     ;; the route: none of the above started a JVM
     (let [result (invoke "keygen" "--output" (lib/join directory "jvm-free.edn") "--jvm-free")]

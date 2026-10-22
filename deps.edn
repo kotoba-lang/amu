@@ -1251,11 +1251,12 @@
          ;; Advanced 2026-09-26, 0274ce3b -> 4aca449e (artifact main tip, forward only): POSIX
          ;; loader identity daa8df69 -- the :fs/app-data OWNER form (superproject
          ;; adr-2609242330, selfhost stage 2).
-         ;; Advanced 2026-10-19 for the named-trap decode loader (issue #785,
-         ;; amu PR #1365): loader-source-sha256 8308d360, the source whose
-         ;; SIGILL/SIGTRAP handler names inline refusals. Same-commit rule as
-         ;; every entry above.
-         :git/sha "a36ea2fcef8f653333d75c2684de5e98c49ec5b8"}
+        ;; Advanced 2026-10-21 to 16667678 (artifact PR #72): the
+        ;; heap-free fs READ + raw openat O_CLOEXEC loader (amu #1421).
+        ;; Advanced 2026-10-21 to ce6f82d3 (artifact PR #74, pending merge):
+        ;; loader identity 3e0f1a19 -- the KEXE_GPU_METAL backend selection
+        ;; (amu #1404; supersedes the unmerged 02ffea87).
+         :git/sha "ce6f82d398467ba5504c8d377b47a8ca2dc185c3"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -1707,7 +1708,12 @@
          ;; Advanced 2026-10-01, d625d554 -> ace48fd6 (kotoba-native main tip, forward only):
          ;; record-assoc lowers on both record routes -- ADR 0353 floor :native-record-operations.
          ;; Advanced 2026-10-10, 1bdc1a5c -> 34c42ec9 (main, behind 0): one gas debit per form whatever its weight (kotoba-native#197).
-         :git/sha "f9ed57e7318633f4642e9d010eed47fc269c5f86"} ;; Advanced 2026-10-09 0ecca92a -> 1bdc1a5c (main tip, forward only): :bytes and :link documents as EDN tagged literals on native (kotoba-native#196, root ADR-2610092310 S4). Before that: Advanced 2026-10-06 82d3dea1 -> 0ecca92a (main tip, forward only): typed-list-conj lowers to vector-conj on the list's arena (ADR 0353 floor :empty-vector-field). Before that: Advanced 2026-10-04 04a8e0e3 -> 82d3dea1 (main tip, forward only): the record with no fields is the empty pair chain, 0 (ADR 0353 floor :options-map-argument). Before that: Advanced 2026-10-03 e2da186d -> 04a8e0e3 (main tip, forward only): a record an [:option R] holds selects the pair-chain lowering (ADR 0353 floor :native-option-record). Before that: Advanced 2026-10-03 83eecc0e -> e2da186d (main tip, forward only): aggregate-abi spells the record field :vector-i64, not :vector (ADR 0353 floor :native-vector-field). Before that: Native Image host: portable exception class and byte hex rendering.
+         ;; 2026-10-20, 34c42ec9 -> ede96447 (kotoba-native main tip, forward only):
+         ;; the portable elf64 packager now carries the full AIUEOS kernel-image
+         ;; shim and exports package-kernel-desktop (kotoba-native#203). Required
+         ;; by JUN-30: --selfhost-desktop selects package-kernel-desktop, which
+         ;; fail-closed refuses interrupt entries (:desktop-profile-has-no-isr-runtime).
+         :git/sha "ede9644767fa0d15f4d23dcbcaf2a2c15bcefc37"} ;; Advanced 2026-10-09 0ecca92a -> 1bdc1a5c (main tip, forward only): :bytes and :link documents as EDN tagged literals on native (kotoba-native#196, root ADR-2610092310 S4). Before that: Advanced 2026-10-06 82d3dea1 -> 0ecca92a (main tip, forward only): typed-list-conj lowers to vector-conj on the list's arena (ADR 0353 floor :empty-vector-field). Before that: Advanced 2026-10-04 04a8e0e3 -> 82d3dea1 (main tip, forward only): the record with no fields is the empty pair chain, 0 (ADR 0353 floor :options-map-argument). Before that: Advanced 2026-10-03 e2da186d -> 04a8e0e3 (main tip, forward only): a record an [:option R] holds selects the pair-chain lowering (ADR 0353 floor :native-option-record). Before that: Advanced 2026-10-03 83eecc0e -> e2da186d (main tip, forward only): aggregate-abi spells the record field :vector-i64, not :vector (ADR 0353 floor :native-vector-field). Before that: Native Image host: portable exception class and byte hex rendering.
          ;; Advanced 2026-09-26 bc42c311 -> a0e10057 (main tip, forward only): string-search drops a bare (:require [kotoba.lang.text]) that named nothing (selfhost wall A, superproject adr-2609242330).
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
@@ -2138,7 +2144,7 @@
  :aliases {
  :execution-v2 {:extra-deps {io.github.kotoba-lang/kototama
                            {:git/url "https://github.com/kotoba-lang/kototama.git"
-                            :git/sha "0c81453f0e2f405d3f5d7e3b1a83d83a08f04b33"}}}
+                            :git/sha "b7bbcc44d08913fee69074ad70f92d341df2be92"}}}
 :test {:extra-paths ["test"]
                   :extra-deps
                   {;; Only `test/kotoba/compiler/backend_cljs_test.cljk` and

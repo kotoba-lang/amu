@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Build re-disasm as a native program and run its checks with NO JVM,
-// GraalVM or Node.js in the runtime tree.
+// Historical Node/C-loader re-disasm build/run driver. This is migration
+// input, not qualified Kotoba / Amu selfhost or current native CDCI.
 //
 //   node re_disasm/build-native.mjs [output-prefix]
 //
@@ -8,16 +8,16 @@
 //
 // Phase 1 is the COMPILE DOOR: `bin/amu` is still the node-hosted bootstrap
 // compiler (docs/selfhost-priority.md). `--jvm-free` proves no JVM is used;
-// Node is used only here. When the selfhost-built amu binary lands, phase 1
-// swaps to it and the whole script is Node-free too.
+// This script itself still requires Node, and later phases require C.
+// Replacing only the compiler path cannot qualify the complete route.
 //
-// Phases 2 and 3 are pure: cc builds the reviewed C loader
+// Historical phases 2 and 3: cc builds the C loader
 // (tools/kexe_loader.c), and the loader executes the extracted machine code
 // as a standalone native process (it spawns no children and reads no
 // configuration).
 //
-// This file is Node (not POSIX shell) on purpose: scripts/check-workflows.cljk
-// refuses `.sh` execution files in this repository.
+// The old Node/KBB workflow checker and its shell/Node prerequisite are
+// retired. Port the whole build/run component and corpus to the native route.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
