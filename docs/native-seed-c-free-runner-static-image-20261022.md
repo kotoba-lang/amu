@@ -1,5 +1,11 @@
 # C-free x86-64 runner: the `x86_64-linux-static` image (JUN-29, 2026-10-22)
 
+> **2026-10-22: the trusted C loader was removed.** Instructions below that build
+> or run it (clang, `kexe-loader`, `scripts/seed/build-*.py`, `check-*.py`) are
+> historical and no longer runnable; see `scripts/seed/RETIRED.md`. The current
+> route is `scripts/seed/selfhost-bootstrap.py` on arm64 Linux.
+
+
 Design and milestone record for the runner body that JUN-29's acceptance
 needs: the pinned Amu-produced x86-64 compiler runs on Linux without the
 trusted C loader and rebuilds itself (G1=G2=G3). Earlier records
