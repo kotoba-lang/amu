@@ -49,7 +49,9 @@
       (= c 38)
       ;; R6Q: `$` is a symbol byte -- the munged operation names the guest-grammar :quoted spec itself
       ;; cites ('kotoba$string-index-find) and the deterministic $arityN names its lowering describes.
-      (= c 36)))
+      (= c 36)
+      ;; R6D: `%` is a symbol byte -- the fn-literal arguments (% %1 .. %&) of '#('
+      (= c 37)))
 
 ;; a byte that starts a string, keyword, integer or symbol
 (defn- lx-multi? [c :i64] :bool (or (= c 34) (= c 58) (lx-symch? c)))
@@ -315,6 +317,8 @@
           (= c 59) (lx-scan M S (lx-eol S i) end)
           (> pk 0) (lx-scan (lx-push M pk i (+ i 1) 0) S (+ i 1) end)
           (lx-hash-brace? S i c) (lx-scan (lx-push M TK-HASH-BRACE i (+ i 2) 0) S (+ i 2) end)
+          ;; R6D: '#(' is one token (the fn-literal opener)
+          (lx-hash-paren? S i c) (lx-scan (lx-push M TK-HASH-PAREN i (+ i 2) 0) S (+ i 2) end)
           ;; R5A (agent R5A, minimal delimited change): #?( and #?@( select at read time (lx-rc below)
           (> (lx-rc-w S i c) 0) (lx-rc M S i end (lx-rc-w S i c))
           ;; R5B (agent R5B, delimited): '@' is a token of its own; 11-read reads @x as (deref x)
@@ -444,6 +448,11 @@
 ;; R3: '#{' opens a set literal (any other '#' stays E1005)
 (defn- lx-hash-brace? [S :string i :i64 c :i64] :bool
   (and (= c 35) (< (+ i 1) (string-length S)) (= (lx-ch S (+ i 1)) 123)))
+
+;; R6D: '#(' opens an fn literal (the parens of the body are the list's own; TK-HASH-PAREN is
+;; the opener token of the body list, the shape of TK-HASH-BRACE above)
+(defn- lx-hash-paren? [S :string i :i64 c :i64] :bool
+  (and (= c 35) (< (+ i 1) (string-length S)) (= (lx-ch S (+ i 1)) 40)))
 
 ;; scan after a clean ASCII check; the count of tokens is left in MM-R0
 (defn- lx-count [M :vector-i64] :vector-i64
