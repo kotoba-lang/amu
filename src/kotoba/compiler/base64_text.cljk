@@ -14,14 +14,29 @@
   {:kotoba/export [decode encode]}
   (:require #?(:kotoba [kotoba.bytes :as pure-bytes])))
 
+;; R6QW3: the Kotoba reading (W3 re-port). The pure codec (kotoba.bytes) is the shared
+;; reading; its Kotoba return is [:option :vector-i64] where the hosts answer a bare
+;; vector, so the :kotoba arms unwrap the option (the empty vector where the host's
+;; Buffer answers empty). The host reading is byte-for-byte.
+#?(:kotoba
+   (defn encode
+     "BYTES as padded base64 text."
+     [bs :vector-i64] :string
+     (pure-bytes/base64-encode bs))
+   :default
 (defn encode
   "BYTES as padded base64 text."
   [bytes]
   #?(:cljs (.toString bytes "base64")
-     :default (pure-bytes/base64-encode (vector-i64-from-bytes bytes))))
-
+     :default (pure-bytes/base64-encode (vector-i64-from-bytes bytes)))))
+#?(:kotoba
+   (defn decode
+     "Padded base64 TEXT as bytes."
+     [text :string] :vector-i64
+     (option-value-of [:option :vector-i64] (pure-bytes/base64-decode text) []))
+   :default
 (defn decode
   "Padded base64 TEXT as bytes."
   [text]
   #?(:cljs (.from js/Buffer text "base64")
-     :default (bytes-from-vector-i64 (pure-bytes/base64-decode text))))
+     :default (bytes-from-vector-i64 (pure-bytes/base64-decode text)))))

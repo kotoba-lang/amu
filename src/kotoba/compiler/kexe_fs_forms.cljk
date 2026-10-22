@@ -28,6 +28,93 @@
   the catalog, so the list is stated once."
   {:kotoba/export [forms loader-targets unanswered-in refuse-unanswered!]})
 
+;; R6QW3: the Kotoba reading (W3 re-port). The scan refused this module E2118 at the fn
+;; literal. The form->token table and the loader target set are data (document-map /
+;; typed-set); the walks (ascii, occurs?, the for/sort of unanswered-in) are the abac-style
+;; walks; the {:keys [...]} destructuring is the dgk pattern. The host reading is
+;; byte-for-byte.
+#?(:kotoba
+   (defn- dgk [d :document k :keyword] :document
+     (option-value-of [:option :document] (document-get d k) (document-null))))
+#?(:kotoba
+   (defn- dgk-b [d :document k :keyword] :bool
+     (document-equal? (option-value-of [:option :document] (document-get d k) (document-bool false)) (document-bool true))))
+;; the private helpers (the guest walks)
+#?(:kotoba
+   (defn- ascii-w [s :string i :i64 n :i64 acc [:list :i64]] [:list :i64]
+     (if (>= i n)
+       acc
+       (ascii-w s (+ i 1) n (typed-list-conj [:list :i64] acc (string-code-point-at s i))))))
+#?(:kotoba
+   (defn- occurs-w [code :document needle :document n :i64 limit :i64 i :i64] :bool
+     (if (> i limit)
+       false
+       (if (needle-w code needle n i 0)
+         true
+         (occurs-w code needle n limit (+ i 1))))))
+#?(:kotoba
+   (defn- needle-w [code :document needle :document n :i64 i :i64 j :i64] :bool
+     (cond (= j n) true
+           (document-equal? (option-value-of [:option :document] (document-list-at needle j) (document-null))
+                            (option-value-of [:option :document] (document-list-at code (+ i j)) (document-null)))
+           (needle-w code needle n i (+ j 1))
+           :else false)))
+;; the code normalization (the host's (mapv #(bit-and (num %) 0xff) code))
+#?(:kotoba
+   (defn- num-code [code :document] :document
+     (nc-w code 0 (document-count code) (document-vector))))
+#?(:kotoba
+   (defn- nc-w [code :document i :i64 n :i64 acc :document] :document
+     (if (>= i n)
+       acc
+       (nc-w code (+ i 1) n (document-vector-conj acc (document-i64 (bit-and (option-value-of [:option :i64] (document-i64-value (option-value-of [:option :document] (document-list-at code i) (document-null))) 0) 255)))))))
+;; the forms table (the document-map of the oracle table -- the ednmap pattern)
+#?(:kotoba
+   (defn- forms-doc [] :document
+     (document-map
+      (document-keyword :read) (document-map (document-keyword :token) (document-null) (document-keyword :kexe-loader?) (document-bool true))
+      (document-keyword :write) (document-map (document-keyword :token) (document-string "WRITE_SEP") (document-keyword :kexe-loader?) (document-bool true))
+      (document-keyword :append) (document-map (document-keyword :token) (document-string "APPEND_SEP") (document-keyword :kexe-loader?) (document-bool true))
+      (document-keyword :exists) (document-map (document-keyword :token) (document-string "EXISTS_SEP") (document-keyword :kexe-loader?) (document-bool true))
+      (document-keyword :range) (document-map (document-keyword :token) (document-string "RANGE_SEP") (document-keyword :kexe-loader?) (document-bool true))
+      (document-keyword :stat) (document-map (document-keyword :token) (document-string "STAT_SEP") (document-keyword :kexe-loader?) (document-bool true))
+      (document-keyword :mtime) (document-map (document-keyword :token) (document-string "MTIME_SEP") (document-keyword :kexe-loader?) (document-bool true))
+      (document-keyword :chmod) (document-map (document-keyword :token) (document-string "CHMOD_SEP") (document-keyword :kexe-loader?) (document-bool true))
+      (document-keyword :mkdir) (document-map (document-keyword :token) (document-string "MKDIR_SEP") (document-keyword :kexe-loader?) (document-bool true))
+      (document-keyword :unlink) (document-map (document-keyword :token) (document-string "UNLINK_SEP") (document-keyword :kexe-loader?) (document-bool true))
+      (document-keyword :rmdir) (document-map (document-keyword :token) (document-string "RMDIR_SEP") (document-keyword :kexe-loader?) (document-bool true))
+      (document-keyword :rename) (document-map (document-keyword :token) (document-string "RENAME_SEP") (document-keyword :kexe-loader?) (document-bool true))
+      (document-keyword :fsync) (document-map (document-keyword :token) (document-string "FSYNC_SEP") (document-keyword :kexe-loader?) (document-bool true))
+      (document-keyword :make-temp-dir) (document-map (document-keyword :token) (document-string "MKTEMP_SEP") (document-keyword :kexe-loader?) (document-bool true))
+      (document-keyword :stat-nofollow) (document-map (document-keyword :token) (document-string "NOFOLLOW_SEP") (document-keyword :kexe-loader?) (document-bool true))
+      (document-keyword :owner) (document-map (document-keyword :token) (document-string "OWNER_SEP") (document-keyword :kexe-loader?) (document-bool true)))))
+
+;; the unanswered walk (the host's for/sort over the table)
+#?(:kotoba
+   (defn- unanswered-w [table :document code :document keys :document i :i64 n :i64 acc :document] :document
+     (if (>= i n)
+       acc
+       (let [k (option-value-of [:option :document] (document-list-at keys i) (document-null))
+             entry (option-value-of [:option :document] (document-get table k) (document-null))
+             token (dgk entry :token)
+             answered (dgk-b entry :kexe-loader?)]
+         (unanswered-w table code keys (+ i 1) n
+                       (if (and (not (document-equal? token (document-null)))
+                                (not answered)
+                                (occurs? code token))
+                         (insert-sorted acc k 0 (document-count acc))
+                         acc))))))
+;; the sorted keyword insert (the host's (vec (sort ...)))
+#?(:kotoba
+   (defn- insert-sorted [acc :document k :document i :i64 n :i64] :document
+     (if (>= i n)
+       (document-vector-conj acc k)
+       (if (document-equal? k (option-value-of [:option :document] (document-vector-at acc i) (document-null)))
+         acc
+         (insert-sorted acc k (+ i 1) n)))))
+#?(:kotoba
+   (defn forms [] :document (forms-doc))
+   :default
 (def forms
   "Form -> its token and whether the kexe loader answers it."
   {:read {:token nil :kexe-loader? true}
@@ -45,19 +132,31 @@
    :fsync {:token "FSYNC_SEP" :kexe-loader? true}
    :make-temp-dir {:token "MKTEMP_SEP" :kexe-loader? true}
    :stat-nofollow {:token "NOFOLLOW_SEP" :kexe-loader? true}
-   :owner {:token "OWNER_SEP" :kexe-loader? true}})
-
+   :owner {:token "OWNER_SEP" :kexe-loader? true}}))
+#?(:kotoba
+   (defn loader-targets [] [:set :keyword]
+     (typed-set-new [:set :keyword] :x86_64-kotoba-v1 :x86_64-linux-kotoba-v1 :x86_64-macos-kotoba-v1
+                    :aarch64-kotoba-v1 :aarch64-linux-kotoba-v1 :aarch64-macos-kotoba-v1))
+   :default
 (def loader-targets
   "The target profiles whose artifact runs under tools/kexe_loader.c."
   #{:x86_64-kotoba-v1 :x86_64-linux-kotoba-v1 :x86_64-macos-kotoba-v1
-    :aarch64-kotoba-v1 :aarch64-linux-kotoba-v1 :aarch64-macos-kotoba-v1})
-
-(defn- num [n] #?(:clj (long n) :cljs (js/Number n)))
-
+    :aarch64-kotoba-v1 :aarch64-linux-kotoba-v1 :aarch64-macos-kotoba-v1}))
+#?(:kotoba
+   (defn- num [n :document] :i64 (option-value-of [:option :i64] (document-i64-value n) 0))
+   :default
+(defn- num [n] #?(:clj (long n) :cljs (js/Number n))))
+#?(:kotoba
+   (defn- ascii [s :string] [:list :i64]
+     (ascii-w s 0 (string-length s) (typed-list-new [:list :i64])))
+   :default
 (defn- ascii [s]
   (mapv (fn [i] #?(:clj (int (.charAt ^String s (int i))) :cljs (.charCodeAt s i)))
-        (range (count s))))
-
+        (range (count s)))))
+#?(:kotoba
+   (defn- occurs? [code :document needle :document] :bool
+     (occurs-w code needle (document-count needle) (- (document-count code) (document-count needle)) 0))
+   :default
 (defn- occurs? [code needle]
   (let [n (count needle) limit (- (count code) n)]
     (loop [i 0]
@@ -66,8 +165,13 @@
         (loop [j 0] (cond (= j n) true
                           (= (nth needle j) (nth code (+ i j))) (recur (inc j))
                           :else false)) true
-        :else (recur (inc i))))))
-
+        :else (recur (inc i)))))))
+#?(:kotoba
+   (defn unanswered-in
+     ([code :document] (unanswered-in (forms-doc) code))
+     ([table :document code :document] :document
+      (unanswered-w table (num-code code) (table-keys table 0 (document-count table) (document-list)) 0 (document-count table) (document-vector))))
+   :default
 (defn unanswered-in
   "The forms the kexe loader does not answer whose token occurs in CODE (the
   artifact's code bytes, literals included), sorted. TABLE defaults to
@@ -78,8 +182,19 @@
    (let [code (mapv #(bit-and (num %) 0xff) code)]
      (vec (sort (for [[form {:keys [token kexe-loader?]}] table
                       :when (and token (not kexe-loader?) (occurs? code (ascii token)))]
-                  form))))))
-
+                  form)))))))
+#?(:kotoba
+   (defn refuse-unanswered!
+     ([target :keyword code :document] (refuse-unanswered! (forms-doc) target code))
+     ([table :document target :keyword code :document] :bool
+      (if (typed-set-contains [:set :keyword] (loader-targets) target)
+        (let [found (unanswered-in table code)]
+          (if (> (document-count found) 0)
+            (throw (ex-info "the kexe loader does not answer the :fs/app-data form (lang/capability-catalog.edn :status :proposed). Nothing was written."
+                            {:phase :target :reason :fs-form-not-answered-by-kexe-loader :target (document-keyword target) :forms found}))
+            true))
+        true)))
+   :default
 (defn refuse-unanswered!
   "Throw, naming the forms, when TARGET runs under the kexe loader and CODE
   carries the token of a form the loader does not answer."
@@ -93,4 +208,10 @@
                            " (lang/capability-catalog.edn :status :proposed). "
                            "Nothing was written.")
                       {:phase :target :reason :fs-form-not-answered-by-kexe-loader
-                       :target target :forms (vec found)}))))))
+                       :target target :forms (vec found)})))))))
+;; the table keys walk (the host's keys of the table map)
+#?(:kotoba
+   (defn- table-keys [table :document i :i64 n :i64 acc :document] :document
+     (if (>= i n)
+       acc
+       (table-keys table (+ i 1) n (document-vector-conj acc (option-value-of [:option :document] (document-list-at (option-value-of [:option :document] (document-map-entry-at table i) (document-null)) 0) (document-null)))))))
