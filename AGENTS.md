@@ -17,6 +17,24 @@
 - Compiler benchmarks (Embench etc.) are published as selfhost results only
   when taken with a selfhost-built compiler on a quiet host.
 
+## The measured Embench compiler is the compiler core
+
+- Extend the adopted `seed/MANIFEST` compiler lineage for Amu selfhost and
+  the public `amu` / `kotoba` compiler. Preserve its frontend, lowering,
+  optimization and backend behavior while growing the complete command and
+  build closure. Do not replace it with an independently implemented core
+  or make it an optional benchmark-only backend.
+- `seed/compiler-core.json` pins the measured M104 baseline and the adopted
+  M105 source lineage. ADR 0370 defines the integration and review order.
+  Review and merge this lineage before unrelated feature work.
+- Preserve the full 19-workload corpus, exact result/fuel/arena/refusal
+  behavior and source/artifact provenance. A successor needs complete
+  self-rebuild and conformance evidence before replacing the admitted core;
+  a new score needs fresh measurements of that exact compiler.
+- Historical C-loader results remain historical. This core decision does
+  not relax the native-only build/execution contract above or qualify the
+  public CLI, a new runtime, or CDCI through source inspection alone.
+
 ## Q9 compiler routes must use Kotoba / Amu selfhost only
 
 - Q9 callers use the qualified Amu selfhost-built entrypoint for `check`
