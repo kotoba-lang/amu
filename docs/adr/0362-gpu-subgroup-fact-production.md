@@ -3,10 +3,12 @@
 - Status: accepted as design. The protocol-table entries (decision 1's verb
   code, decision 2's field count, decision 3's refusal) are IMPLEMENTED
   (2026-10-23, amendment below). The consumer parser (decision 4) is
-  IMPLEMENTED (2026-10-23, slice-3 amendment below). The producer's answer
-  remains unimplemented and lands with the ADR 0371 GPU provider track.
-  Nothing is measured; no `:measured?` flag moves and no workgroup row is
-  touched.
+  IMPLEMENTED (2026-10-23, slice-3 amendment below). The producer's PURE
+  HALF (the device record -> payload mapping, `subgroup-answer`) is
+  IMPLEMENTED (2026-10-23, slice-2 amendment below); the provider's
+  Vulkan read and wire reply remain unimplemented and land with the ADR
+  0371 GPU provider track. Nothing is measured; no `:measured?` flag
+  moves and no workgroup row is touched.
 - Date: 2026-10-23
 - Tracking: JUN-56 (the dispatch contract). Parent JUN-55. Serves the
   variant rows JUN-57 (ADR-0361), JUN-58 (ADR-0360), JUN-59 (ADR-0356)
@@ -151,3 +153,33 @@ contracts and the decision-4 seam end to end (the parser's answer feeds
 provider's answer) remains unimplemented: no live wire feeds the parser,
 no rule-6 fact has a producer, and the fail-closed behavior above is
 unchanged. No measurement, no `:measured?` move, no workgroup row touched.
+
+## Amendment 2026-10-23 (slice 2, pure half): the producer's answer mapping landed
+
+`kotoba.compiler.accelerator-targets/subgroup-answer` is the producer
+half of one answer: from the device record the ADR 0371 provider will
+read -- `VkPhysicalDeviceSubgroupProperties` as data
+({:subgroup-size, :supported-stages, :supported-ops}) -- to the
+`<size>|<ops>` payload, or to nil, which the provider answers as the
+named refusal `gpu/no-compute-subgroups` (decision 3). In both readings
+(the W3 `:kotoba` arm and the host arm), total and deterministic
+(decision 3 + ADR-0356 rule 5).
+
+Decision 2's bit values are pinned to the Vulkan registry (the
+VkShaderStageFlagBits and VkSubgroupFeatureFlagBits refpages, verified
+2026-10-23): COMPUTE stage 0x00000020 gates the answer's existence;
+the core eight ops bits are 0x1 0x2 0x4 0x8 0x10 0x20 0x40 0x80 in the
+vocabulary order; partitioned 0x100, rotate 0x200 and rotate-clustered
+0x400 answer no token (masked off). The implementation pins each single
+bit with a test, so a registry-value drift fails the gate.
+
+This is the mapping's PURE HALF only: the provider's Vulkan read of the
+struct and its wire reply REMAIN UNIMPLEMENTED (the ADR 0371 track). No
+live wire feeds `subgroup-answer`, no rule-6 fact has a live producer,
+and every rule-6 row keeps failing closed to `:baseline` -- behavior
+unchanged. Tests and gate evidence:
+`docs/evidence/gpu-subgroup-producer-pure-20261023/` (touched-ns scoped
+gate 17 tests / 2228 assertions / 0 failures / 0 errors; the full
+run-tests.cljk stays red at base at namespace load on `kotoba.form`,
+outside this diff). No measurement, no `:measured?` move, no workgroup
+row touched.

@@ -604,6 +604,127 @@
           (when (and size (pos? size) ops)
             {:subgroup-size size
              :subgroup-ops ops})))))))
+;; ADR-0362 slice 2's PURE HALF: the producer's answer mapping -- from the
+;; device record the ADR 0371 provider will read (the
+;; VkPhysicalDeviceSubgroupProperties fields as data) to the wire-42
+;; SUBGROUP payload, or to nothing at all (the provider answers the named
+;; refusal gpu/no-compute-subgroups). The bit values are the Vulkan
+;; registry's VkShaderStageFlagBits / VkSubgroupFeatureFlagBits values
+;; (registry.khronos.org refpages, verified 2026-10-23): COMPUTE stage
+;; 0x20; core-eight ops 0x1 0x2 0x4 0x8 0x10 0x20 0x40 0x80 in the
+;; vocabulary order of the table above; partitioned 0x100, rotate 0x200
+;; and rotate-clustered 0x400 are masked off (decision 2).
+#?(:kotoba
+   (defn- sg-compute-stage-bit [] :i64 32)
+   :default
+   (def ^:private subgroup-compute-stage-bit
+     "VK_SHADER_STAGE_COMPUTE_BIT = 0x00000020 (the Vulkan registry's
+  VkShaderStageFlagBits page, verified 2026-10-23). A SUBGROUP answer
+  reports compute-stage facts only, so the producer reads exactly this
+  one stage bit (decision 2: a width that is not a compute-stage fact is
+  not this answer)."
+     0x20))
+#?(:kotoba
+   (defn- sg-bits-doc [] :document
+     (document-list (document-i64 1) (document-i64 2) (document-i64 4) (document-i64 8)
+                    (document-i64 16) (document-i64 32) (document-i64 64) (document-i64 128)))
+   :default
+   (def ^:private subgroup-op-bits
+     "The producer half of `subgroup-op-tokens`: the same eight tokens in the
+  same vocabulary order, each with its VkSubgroupFeatureFlagBits value
+  (the Vulkan registry's VkSubgroupFeatureFlagBits page, verified
+  2026-10-23): basic 0x1, vote 0x2, arithmetic 0x4, ballot 0x8, shuffle
+  0x10, shuffle-relative 0x20, clustered 0x40, quad 0x80. Bits outside
+  the core eight -- partitioned 0x100, rotate 0x200, rotate-clustered
+  0x400 -- answer no token (decision 2 masks them off in v1)."
+     [["basic" 0x1] ["vote" 0x2] ["arithmetic" 0x4] ["ballot" 0x8]
+      ["shuffle" 0x10] ["shuffle-relative" 0x20] ["clustered" 0x40] ["quad" 0x80]]))
+#?(:kotoba
+   (defn- sg-token-at [i :i64] :string
+     (option-value-of [:option :string]
+                      (document-string-value (option-value-of [:option :document] (document-list-at (sg-tokens-doc) i) (document-null)))
+                      "")))
+#?(:kotoba
+   (defn- sg-bits-at [i :i64] :i64
+     (option-value-of [:option :i64]
+                      (document-i64-value (option-value-of [:option :document] (document-list-at (sg-bits-doc) i) (document-null)))
+                      -1)))
+#?(:kotoba
+   (defn- sg-ops-emit [ops-bit :i64 i :i64 acc :string] :string
+     (if (>= i 8)
+       acc
+       (sg-ops-emit ops-bit (+ i 1)
+                    (if (= (sg-bits-at i) (bit-and ops-bit (sg-bits-at i)))
+                      (if (= 0 (string-byte-length acc))
+                        (sg-token-at i)
+                        (string-concat acc (string-concat " " (sg-token-at i))))
+                      acc)))))
+#?(:kotoba
+   (defn subgroup-answer [record :document] :document
+     (let [size-d (dgk record :subgroup-size)
+           stages-d (dgk record :supported-stages)
+           ops-d (dgk record :supported-ops)]
+       (if (and (= (document-kind size-d) :i64)
+                (= (document-kind stages-d) :i64)
+                (= (document-kind ops-d) :i64))
+         (let [size (option-value-of [:option :i64] (document-i64-value size-d) -1)
+               stages (option-value-of [:option :i64] (document-i64-value stages-d) -1)
+               ops-bit (option-value-of [:option :i64] (document-i64-value ops-d) -1)]
+           (if (and (< 0 size) (<= 0 stages) (<= 0 ops-bit)
+                    (= (sg-compute-stage-bit) (bit-and stages (sg-compute-stage-bit))))
+             (document-string (string-concat (string-from-i64 size)
+                                             (string-concat "|" (sg-ops-emit ops-bit 0 ""))))
+             (document-null)))
+         (document-null))))
+   :default
+(defn subgroup-answer
+  "PRODUCER half of one wire-42 SUBGROUP answer (ADR-0362 decisions 2+3):
+  answer the \"<size>|<ops>\" payload for one device record, or nil for
+  the named refusal gpu/no-compute-subgroups -- the provider sends
+  `!gpu/no-compute-subgroups SUBGROUP: ...` on nil (the protocol table's
+  refusal 35), and the consumer treats that refusal exactly like an
+  absent fact (decision 3).
+
+  `record` is the VkPhysicalDeviceSubgroupProperties read the ADR 0371
+  provider will make, as data: {:subgroup-size <int>, :supported-stages
+  <VkShaderStageFlags>, :supported-ops <VkSubgroupFeatureFlags>}. A
+  payload answers exactly when the record reports compute-stage
+  subgroups: the size is a positive integer AND VK_SHADER_STAGE_COMPUTE_BIT
+  (0x20) is set in :supported-stages (decision 2). <ops> is the set
+  tokens of the core eight VkSubgroupFeatureFlagBits bits set in
+  :supported-ops, in the fixed vocabulary order of `subgroup-op-tokens`,
+  space-separated; bits outside the core eight are masked off. An EMPTY
+  <ops> is the legal \"no subgroup operations in compute\" fact
+  (decision 2), not a refusal.
+
+  TOTAL and deterministic (decision 3, ADR-0356 rule 5): any other
+  record shape -- not a map, a non-integer field, a non-positive size, a
+  negative mask -- answers nil (the provider reports no compute-stage
+  subgroups), never a throw; the same record answers the same bytes
+  forever.
+
+  UNMEASURED: this is a pure mapping over vendor-published struct
+  fields. No hardware measured it and it is not optimization evidence.
+  The provider's Vulkan read and wire reply do not exist yet (the ADR
+  0371 track), so no live wire feeds this function today -- and until
+  one does, the consumer sees no facts and every rule-6 row keeps
+  failing closed to :baseline."
+  [record]
+  (when (and (map? record)
+             (integer? (:subgroup-size record))
+             (pos? (:subgroup-size record))
+             (integer? (:supported-stages record))
+             (not (neg? (:supported-stages record)))
+             (integer? (:supported-ops record))
+             (not (neg? (:supported-ops record)))
+             (not (zero? (bit-and (:supported-stages record) subgroup-compute-stage-bit))))
+    (str (:subgroup-size record) "|"
+         (reduce (fn [acc [token bit]]
+                   (if (zero? (bit-and (:supported-ops record) bit))
+                     acc
+                     (if (= "" acc) token (str acc " " token))))
+                 ""
+                 subgroup-op-bits)))))
 #?(:kotoba
    (defn recommend [device :document] :document
      (let [vendor (classify-vendor device)

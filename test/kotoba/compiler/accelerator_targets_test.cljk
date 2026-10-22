@@ -182,3 +182,61 @@
   (testing "same answer in, same fact out"
     (is (= (targets/device-from-subgroup "32|basic shuffle-relative")
            (targets/device-from-subgroup "32|basic shuffle-relative")))))
+
+(deftest subgroup-answers-are-produced-from-the-device-record
+  ;; ADR-0362 decisions 2+3 (the producer half's PURE mapping): one device
+  ;; record -- the VkPhysicalDeviceSubgroupProperties fields the ADR 0371
+  ;; provider will read -- answers the "<size>|<ops>" payload, or nil for
+  ;; the named refusal gpu/no-compute-subgroups. Pure contracts over struct
+  ;; field values: no wire, no GPU, no provider, NO MEASUREMENT.
+  (testing "a payload answers exactly when the record reports compute-stage subgroups"
+    (is (= "32|basic"
+           (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x20 :supported-ops 0x1})))
+    (is (= "32|basic"
+           (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x23 :supported-ops 0x1}))
+        "other stage bits set alongside COMPUTE (0x20) change nothing")
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x1f :supported-ops 0x1}))
+        "no COMPUTE in supported-stages -> nil, the named refusal gpu/no-compute-subgroups")
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x0 :supported-ops 0xff})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size 0 :supported-stages 0x20 :supported-ops 0x1})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size -8 :supported-stages 0x20 :supported-ops 0x1})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32.5 :supported-stages 0x20 :supported-ops 0x1})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x20 :supported-ops -1})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32 :supported-stages -32 :supported-ops 0x1})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x20})))
+    (is (nil? (targets/subgroup-answer {})))
+    (is (nil? (targets/subgroup-answer "32|basic")))
+    (is (nil? (targets/subgroup-answer nil))))
+  (testing "the eight core bits answer their tokens in the vocabulary order"
+    (is (= "8|basic vote arithmetic ballot shuffle shuffle-relative clustered quad"
+           (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0xff})))
+    ;; single-bit pins: the raw values are the VkSubgroupFeatureFlagBits
+    ;; registry values (verified 2026-10-23) -- a changed bit answers a
+    ;; different token and fails here.
+    (doseq [[bits token] [[0x1 "basic"] [0x2 "vote"] [0x4 "arithmetic"] [0x8 "ballot"]
+                          [0x10 "shuffle"] [0x20 "shuffle-relative"] [0x40 "clustered"] [0x80 "quad"]]]
+      (is (= (str "8|" token)
+             (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops bits}))
+          (str "VkSubgroupFeatureFlagBits bit " bits " is " token))))
+  (testing "bits outside the core eight are masked off in v1 (decision 2)"
+    (is (= "8|" (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0x100}))
+        "partitioned (0x100) answers no token")
+    (is (= "8|" (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0x200}))
+        "rotate (0x200) answers no token")
+    (is (= "8|" (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0x400}))
+        "rotate-clustered (0x400) answers no token")
+    (is (= "8|basic"
+           (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0x701}))))
+  (testing "an empty <ops> is the legal zero-ops fact, not a refusal (decision 2)"
+    (is (= "32|" (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x20 :supported-ops 0}))))
+  (testing "the producer's bytes are the consumer's facts (decisions 2/4 seam, round-trip)"
+    (is (= {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+           (targets/device-from-subgroup
+            (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x20 :supported-ops 0x21}))))
+    (is (= {:subgroup-size 8 :subgroup-ops #{}}
+           (targets/device-from-subgroup
+            (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0x700})))
+        "a record with only masked-off bits still answers the zero-ops fact"))
+  (testing "same record in, same bytes out (ADR-0356 rule 5)"
+    (let [record {:subgroup-size 64 :supported-stages 0x20 :supported-ops 0x21}]
+      (is (= (targets/subgroup-answer record) (targets/subgroup-answer record))))))
