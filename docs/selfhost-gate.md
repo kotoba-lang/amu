@@ -31,3 +31,11 @@ Source admission, a unit test or a subset fixed point never substitutes for a na
 
 ## Out of scope
 Kotoba native gate; Wasm/browser matrices (generated targets run in the declared host); hosted comparisons.
+
+## Measured blocker (2026-10-22, JUN-282)
+The controller must open files, hash, spawn and trace processes. The only freestanding x86_64-linux route the seed
+emits (profile 0, standalone scalar ELF) rejects handles/runtime operations and cannot express a runner
+(seed/X86_64-LINUX-ABI; docs/native-seed-c-free-runner-expressiveness-20261019.md). The runtime profile (kx64-v1)
+runs under the trusted C loader, which the contract excludes from the required path. So only the pure verdict core
+(`gate/selfhost_gate_core.kotoba`) can be built now; the measuring side waits on a loaderless runner with file and
+process capabilities (JUN-29, amu#1443 line). Until then nothing here is a pass.
