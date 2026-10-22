@@ -94,6 +94,21 @@ measurement contracts stand as written. The NVIDIA row is selected under
 either of its route's names (`:cuda`, `:cuda-v1`), the same one-route rule
 ADR-0359 decision 3 established for `:vulkan` / `:glsl-v1`.
 
+**Amendment (2026-10-22, one reduce identity across every arm).** The
+review-P2 identity fix had landed on the GLSL arm only: the WGSL, MSL and
+CUDA reduce emissions (CUDA baseline and :warp-shuffle-reduce alike) still
+folded the finite +-3.402823466e+38 bound as the extrema identity. A finite
+bound is corrupted by a legitimate +-Inf input in the padded lanes -- an
+all-(-Inf) :max reduction answered -FLT_MAX -- and +-Inf is inside rule 2's
+ordinary-value domain, so the same KIR answered different reduces in the
+GLSL arms than in the other three. All four arms now carry the IEEE-754
+infinite neutral, each spelled in its own exact bit-reinterpretation
+intrinsic (uintBitsToFloat / bitcast<f32> / __uint_as_float /
+as_type<float>), pinned by `every-arm-shares-one-operator-meaning` in
+accelerator-test (which also asserts the finite bound appears in no arm's
+bytes). The NaN / negative-zero regime is UNCHANGED: still excluded from
+rule 2's claim and still UNMEASURED.
+
 ## Intel `:subgroup-reduce` (JUN-59) -- the design
 
 **Rationale (a design assumption, not a measurement).** The baseline tree

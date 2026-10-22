@@ -207,3 +207,39 @@
       (is (str/includes? variant (str "float combine(float a, float b) { return " combine "; }")))
       (is (str/includes? baseline (str "scratch[lid] = i < n ? x[i] : " identity-text ";")))
       (is (str/includes? variant (str "float v = i < n ? x[i] : " identity-text ";"))))))
+
+(deftest every-arm-shares-one-operator-meaning
+  ;; One meaning per operator across EVERY emission arm (review P2,
+  ;; completed 2026-10-22): the reduce identity is the IEEE-754 INFINITE
+  ;; neutral in all four targets and in both reduce variants. A finite bound
+  ;; is corrupted by a legitimate +-Inf input in the padded lanes (an
+  ;; all-(-Inf) :max reduction answered -FLT_MAX), and the same KIR must
+  ;; answer the same reduce wherever it is emitted -- ADR-0356 rule 2's
+  ;; ordinary-value domain includes +-Inf. Each arm spells the exact bits in
+  ;; its own reinterpretation intrinsic (no infinity literal exists in GLSL
+  ;; or WGSL). The finite +-3.402823466e+38 bound must appear in NO arm's
+  ;; bytes: that absence is the mechanical guard against the drift this
+  ;; test exists for.
+  (doseq [[operator ids]
+          [[:sum {:wgsl "0.0" :msl "0.0f" :cuda "0.0f" :glsl "0.0"}]
+           [:max {:wgsl "bitcast<f32>(0xFF800000u)" :msl "as_type<float>(0xFF800000u)"
+                  :cuda "__uint_as_float(0xFF800000u)" :glsl "uintBitsToFloat(0xFF800000u)"}]
+           [:min {:wgsl "bitcast<f32>(0x7F800000u)" :msl "as_type<float>(0x7F800000u)"
+                  :cuda "__uint_as_float(0x7F800000u)" :glsl "uintBitsToFloat(0x7F800000u)"}]]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size 128})]
+      (doseq [[code prefix id suffix]
+              [[(accelerator/lower kir :wgsl-v1 :baseline)
+                "scratch[lid.x]=select(" (:wgsl ids) ",x[i],i<n.value)"]
+               [(accelerator/lower kir :msl-v1 :baseline)
+                "s[l]=i<n?x[i]:" (:msl ids) ";"]
+               [(accelerator/lower kir :cuda-v1 :baseline)
+                "s[l]=i<n?x[i]:" (:cuda ids) ";"]
+               [(accelerator/lower kir :cuda-v1 :warp-shuffle-reduce)
+                "float v=i<n?x[i]:" (:cuda ids) ";"]
+               [(accelerator/lower kir :glsl-v1 :baseline)
+                "scratch[lid] = i < n ? x[i] : " (:glsl ids) ";"]
+               [(accelerator/lower kir :glsl-v1 :subgroup-reduce)
+                "float v = i < n ? x[i] : " (:glsl ids) ";"]]]
+        (is (str/includes? code (str prefix id suffix)))
+        (is (not (str/includes? code "3.402823466")))))))

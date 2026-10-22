@@ -52,11 +52,36 @@
   ;; must be the INFINITE neutral: a finite bound is corrupted by an input
   ;; that legitimately contains +Inf (:min) or -Inf (:max). GLSL has no
   ;; infinity literal; uintBitsToFloat of the IEEE-754 sign/exponent bits is
-  ;; exact. These are kotoba.compiler.accelerator-subgroup-reduce's values:
-  ;; one GLSL arm, one meaning per operator, across both variants.
+  ;; exact. ONE meaning per operator across EVERY arm and both variants
+  ;; (review P2, completed 2026-10-22): the WGSL, CUDA and MSL arms below
+  ;; carry the same neutrals spelled in their own reinterpretation
+  ;; intrinsic, so the same KIR answers the same reduce in every arm --
+  ;; before that they folded the finite +-3.402823466e+38 bound and answered
+  ;; -FLT_MAX for an all-(-Inf) :max reduction.
   {:sum "0.0"
    :max "uintBitsToFloat(0xFF800000u)"
    :min "uintBitsToFloat(0x7F800000u)"})
+
+(def ^:private wgsl-identity
+  ;; The same neutrals as glsl-identity, in WGSL: no infinity literal
+  ;; exists there either, bitcast of the IEEE-754 bits is exact.
+  {:sum "0.0"
+   :max "bitcast<f32>(0xFF800000u)"
+   :min "bitcast<f32>(0x7F800000u)"})
+
+(def ^:private cuda-identity
+  ;; The same neutrals as glsl-identity, in CUDA C: __uint_as_float is
+  ;; exact and header-free (no INFINITY macro dependency).
+  {:sum "0.0f"
+   :max "__uint_as_float(0xFF800000u)"
+   :min "__uint_as_float(0x7F800000u)"})
+
+(def ^:private msl-identity
+  ;; The same neutrals as glsl-identity, in MSL: as_type<float> of the
+  ;; IEEE-754 bits is exact.
+  {:sum "0.0f"
+   :max "as_type<float>(0xFF800000u)"
+   :min "as_type<float>(0x7F800000u)"})
 
 (def ^:private glsl-combine
   {:sum "a+b" :max "max(a,b)" :min "min(a,b)"})
@@ -72,7 +97,7 @@
            "@compute @workgroup_size(" wg ") fn main(@builtin(global_invocation_id) gid: vec3<u32>) {\n"
            "  let i=gid.x; if(i<n.value){ z[i]=" (first (expression operator)) "; }\n}\n")
       :reduce
-      (let [identity ({:sum "0.0" :max "-3.402823466e+38" :min "3.402823466e+38"} operator)
+      (let [identity (wgsl-identity operator)
             combine ({:sum "a+b" :max "max(a,b)" :min "min(a,b)"} operator)]
         (str "struct N { value: u32 };\n@group(0) @binding(0) var<storage,read> x: array<f32>;\n"
              "@group(0) @binding(1) var<storage,read_write> parts: array<f32>;\n"
@@ -94,7 +119,7 @@
   ;; :baseline tree, in a different order -- f32 :sum may differ in the low
   ;; bits across variants; :max/:min are order-independent.
   (let [operator (:kernel/operator kir) name (:kernel/name kir)
-        identity ({:sum "0.0f" :max "-3.402823466e+38f" :min "3.402823466e+38f"} operator)
+        identity (cuda-identity operator)
         combine ({:sum "a+b" :max "fmaxf(a,b)" :min "fminf(a,b)"} operator)]
     (str "__device__ float combine(float a,float b){return " combine ";}\n"
          "extern \"C\" __global__ void " name "(const float* x,float* parts,unsigned int n){\n"
@@ -127,7 +152,7 @@
       :reduce
       (if (= :warp-shuffle-reduce variant)
         (emit-cuda-shuffle-reduce kir)
-        (let [identity ({:sum "0.0f" :max "-3.402823466e+38f" :min "3.402823466e+38f"} operator)
+        (let [identity (cuda-identity operator)
               combine ({:sum "a+b" :max "fmaxf(a,b)" :min "fminf(a,b)"} operator)]
           (str "extern \"C\" __global__ void " name "(const float* x,float* parts,unsigned int n){\n"
                " extern __shared__ float s[]; unsigned int i=blockIdx.x*blockDim.x+threadIdx.x; unsigned int l=threadIdx.x;\n"
@@ -144,7 +169,7 @@
            "device float* z [[buffer(2)]],constant uint& n [[buffer(3)]],uint i [[thread_position_in_grid]]){\n"
            " if(i<n) z[i]=" (second (expression operator)) ";\n}\n")
       :reduce
-      (let [identity ({:sum "0.0f" :max "-3.402823466e+38f" :min "3.402823466e+38f"} operator)
+      (let [identity (msl-identity operator)
             combine ({:sum "a+b" :max "max(a,b)" :min "min(a,b)"} operator)]
         (str "#include <metal_stdlib>\nusing namespace metal;\n"
              "kernel void " name "(device const float* x [[buffer(0)]],device float* parts [[buffer(1)]],"
