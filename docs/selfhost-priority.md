@@ -56,6 +56,14 @@ apply to end-user apps.
    fallback is added to make a selfhost stage pass. `--jvm-free` alone is
    insufficient: it does not exclude Node/NBB/C. An unreachable component
    stays on the scoreboard as refused or blocked, with its reason.
+6. **The host's GPU driver is platform, not a legacy dependency.** The kernel
+   GPU driver and the vendor's userspace driver stack (the Vulkan loader and
+   its ICD, or Metal.framework) belong to the declared host, like the kernel.
+   Only the GPU provider of [ADR 0371](adr/0371-static-images-reach-the-gpu-through-a-provider-process.md)
+   may load them. The provider is never part of the compiler or selfhost
+   closure, never runs in CDCI, and never qualifies a C-free surface. This
+   does not admit a C loader, a C runtime object or any other foreign code.
+   Owner decision, 2026-10-22.
 
 ## Migration gates
 

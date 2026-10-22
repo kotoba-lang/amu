@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
-"""Qualify the seed x86_64-aiueos-kernel-v1 kernel object route.
+"""Qualify the seed x86_64-aiueos-kernel-v1 kernel object route, loaderless.
 
-Compiles probe fixtures with the selfhost-built compiler (G2.bin through the
-pinned trusted loader) and validates each object against the aiueos kernel
-object ABI -- the same fail-closed conditions as aiueos's
-`os/aiueos/scripts/verify-kotoba-kernel-object.py`, embedded here so this gate
-is self-contained. Also pins every refusal the route must keep.
+Compiles probe fixtures with an Amu-produced static compiler (--compiler,
+e.g. S3.elf from selfhost-bootstrap.py; no C loader) and validates each
+object against the aiueos kernel object ABI -- the same fail-closed
+conditions as aiueos's `os/aiueos/scripts/verify-kotoba-kernel-object.py`,
+embedded here so this gate is self-contained. Also pins every refusal the
+route must keep. Port of the script retired with the C loader
+(scripts/seed/RETIRED.md); the probes, ABI checks and refusals are unchanged.
 """
 import argparse
 import hashlib
 import json
-import os
+import platform
 import re
 import struct
 import subprocess
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
 TARGET = "x86_64-aiueos-kernel-v1"
 
 
@@ -81,25 +82,17 @@ def verify_abi(blob, expected_symbol):
     assert rel_offset + 4 <= len(section_bytes(by_name[".text"])), "relocation offset exceeds .text"
 
 
-def prepare(build, output):
+def main(compiler, output, seccomp_if_available=False):
+    assert platform.system() == "Linux"
     output.mkdir(parents=True, exist_ok=False)
     artifacts = output / "artifacts"
     raw = output / "raw"
     artifacts.mkdir()
     raw.mkdir()
-    report = json.loads((build / "report.json").read_text())
-    loader = build / "host/kexe-loader"
-    producer = build / "artifacts/G2.bin"
-    assert pin(producer)["sha256"] == report["generations"][-1]["native"]["sha256"]
-    for row in report["inputs"]:
-        assert pin(Path(row["path"])) == {k: row[k] for k in ("bytes", "sha256")}, "build source pin mismatch"
-    inputs = {p: pin(p) for p in [loader, producer, build / "report.json", *[Path(x["path"]) for x in report["inputs"]]]}
-    env = {k: v for k, v in os.environ.items() if not k.startswith("KEXE_")}
-    env.update(KEXE_COMMAND="1", KEXE_CAP_RESOURCES_35=str(artifacts), KEXE_FUEL="off",
-               KEXE_VECTORS="4194304", KEXE_VECTOR_ITEMS="134217728",
-               KEXE_STRING_POOL="268435456", KEXE_PAIRS="16777216",
-               KEXE_CPU_SECONDS="120", KEXE_WALL_SECONDS="120")
-    prefix = [loader, producer, "0", "0", "aarch64", "35,37,38,39", "--"]
+    env = {"PATH": "/usr/bin:/bin", "KEXE_CAP_RESOURCES_35": str(artifacts)}
+    if seccomp_if_available:
+        env["KEXE_SECCOMP"] = "if-available"
+    compiler_pin = pin(compiler)
 
     def compile_case(name, source, expected_symbol, extra=("--fuel", "1024"), sentinel=None):
         src, obj = artifacts / (name + ".kotoba"), artifacts / (name + ".o")
@@ -107,12 +100,12 @@ def prepare(build, output):
         if sentinel is not None:
             obj.write_bytes(sentinel)
         source_before = pin(src)
-        args = prefix + ["compile", src, "--target", TARGET, "--output", obj, *extra]
+        args = [compiler, "compile", src, "--target", TARGET, "--output", obj, *extra]
         result = subprocess.run(list(map(str, args)), cwd=artifacts, env=env, capture_output=True, timeout=180)
         (raw / (name + ".stdout")).write_bytes(result.stdout)
         (raw / (name + ".stderr")).write_bytes(result.stderr)
         assert pin(src) == source_before, "guest source changed during compilation"
-        assert all(pin(p) == v for p, v in inputs.items()), "input mutation"
+        assert pin(compiler) == compiler_pin, "compiler mutation"
         return obj, result
 
     cases = {
@@ -176,9 +169,10 @@ def prepare(build, output):
     obj, result = compile_case("existing-output", cases["probe"][0], "kotoba_aiueos_probe", sentinel=b"preserve original")
     assert result.returncode == 2 and obj.read_bytes() == b"preserve original"
     refused.append({"name": "existing-output", "code": "E7100"})
-    suite = {"status": "PASS_SEED_AIUEOS_KERNEL_OBJECT_ROUTE", "cases": rows, "refusals": refused,
-             "compiler": report["generations"][-1]["native"], "hostTarget": "aarch64-macos",
-             "kernelExecution": False, "performanceMeasured": False}
+    suite = {"status": "PASS_SEED_AIUEOS_KERNEL_OBJECT_ROUTE_LOADERLESS", "cases": rows, "refusals": refused,
+             "compiler": compiler_pin, "host": [platform.system(), platform.machine(), platform.release()],
+             "compilerSeccomp": "if-available" if seccomp_if_available else "required",
+             "cCompilerOrLoader": False, "kernelExecution": False, "performanceMeasured": False}
     (output / "suite.json").write_text(json.dumps(suite, indent=2) + "\n")
     print(suite["status"], len(rows), "objects", len(refused), "refusals", flush=True)
 
@@ -190,7 +184,9 @@ def re_findall(stdout):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--selfbuild-output", type=Path, required=True)
+    parser.add_argument("--compiler", type=Path, required=True, help="an Amu-produced static compiler (e.g. S3.elf)")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--seccomp-if-available", action="store_true",
+                        help="run the compiler with KEXE_SECCOMP=if-available (kernels without seccomp); recorded")
     args = parser.parse_args()
-    prepare(args.selfbuild_output.resolve(), args.output.resolve())
+    main(args.compiler.resolve(), args.output.resolve(), args.seccomp_if_available)

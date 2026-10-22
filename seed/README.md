@@ -23,3 +23,15 @@ execute all nineteen Embench workloads, and verify public imports/CLI.
 Neither source pin verification nor the saved full-19 offline audit satisfies
 these execution gates. The sixteen core source modules and test/refusal
 inputs are preserved unchanged by the hosted compiler removal.
+
+## Separate loaderless bootstrap root on owning main
+
+Owning main includes `bootstrap/aarch64-linux-static-root.elf` and its fixed
+receipt, plus the canonical `X86_64-LINUX-SELFHOST-MANIFEST` closure. Its
+source shares the measured frontend/lowering, while its bootstrap stack
+emitter is separate from the measured `41-a64gen` product backend. The root
+is a bootstrap input to verify, not a replacement for the measured core.
+The owning main snapshot must be reproduced separately from this candidate's
+FS2/document successor. See `docs/evidence/selfhost-bootstrap-aarch64-20261022/`.
+The complete product/packager/controller and public locked import/CLI gates
+remain open; the exit-69 public boundary stays in place until they pass.
