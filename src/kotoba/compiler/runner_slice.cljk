@@ -1,0 +1,281 @@
+(ns kotoba.compiler.runner-slice
+  "Admission decision and run receipt for the C-free x86-64 seed runner
+  (Linear JUN-29, kernel-profile slice shared with JUN-30/JUN-102).
+
+  WHY THIS NAMESPACE EXISTS. JUN-29's acceptance criteria require a
+  reproducible receipt binding runner, compiler, source graph and output
+  hashes, and require source reads / output writes to stay within the
+  declared capability root. In a runner that contains no C there is no
+  trusted loader to do that bookkeeping, so the binding itself becomes a
+  contract that both sides compute identically: the runner before the entry
+  call (`admit!`), and any later verifier (`verify`) over the same artifacts.
+
+  WHAT IS HASHED HERE AND WHAT IS NOT. Every digest this namespace binds is
+  a raw-byte SHA-256 over an artifact, spelled as 64 lowercase hex
+  characters -- the same provider shape the kexe loader's hash/sha256
+  ability answers with. This namespace deliberately does NOT compute those
+  byte digests: SHA-256 over artifact bytes is the runner slice's own code
+  (and the measurement harness' Python, which is orchestration only), while
+  this file must stay host-portable pure data + cross-checking so the same
+  contract runs under kbb/sci today and under the compiler-emitted runner
+  later. What it hashes is the receipt body and the admission decision
+  (`kotoba.artifact.core/sha256`, the same canonical value hash
+  `kotoba.compiler.receipt` seals its run receipts with).
+
+  WHERE ADMISSION RUNS. In the C-free runner: after the arenas are mapped
+  and before the guest entry is called (the measured loader never admits
+  `mmap`/`mprotect` inside the sandbox, so every mapping precedes the
+  sandbox install and the admission decision is the last fail-closed point
+  before guest code executes). `admit!` refuses unless the source-graph
+  digest matches the pin, the container digest matches the expected
+  container, and the call-site contract is one the measured emitters
+  satisfy. Nothing here grants capabilities; it only refuses.
+
+  THE CALL-SITE CONTRACT is the byte-measured dispatch discipline of the
+  kx64-v1 emitters (JUN-29, 2026-10-19, 25 payloads, anomaly 0): host
+  dispatch is `mov rdi,[rbp-8]` then `call [rdi+disp32]` with the disp32
+  inside the admitted slot set, guest call/return reload r9, host calls are
+  followed by an r9 restore, and every entry is reached by call
+  (`jmp rel32` to a `push rbp` prologue). A runner that lays out the
+  context struct must agree with that discipline or the payload reads a
+  slot the runner never wrote."
+  {:kotoba/export [admit! call-site-contract create receipt-format
+                   source-graph-manifest valid-digest? verify]}
+  (:require [kotoba.artifact.core :as artifact]
+            [kotoba.verifier :as verifier]))
+
+;; `verifier/guest-integer?`, not `integer?`: on the Node host the reader
+;; hands back bigints and cljs `integer?` is false for them (measured
+;; 2026-09-11, `kotoba.compiler.receipt`). Same trap, same fix.
+(defn- an-integer? [x] (verifier/guest-integer? x))
+
+(def receipt-format :kotoba.runner-receipt/v1)
+
+(def statuses #{:ok :trap :denied})
+
+(def ^:private receipt-fields
+  #{:format :runner-sha256 :compiler-sha256 :source-graph-sha256
+    :container-sha256 :output-sha256 :call-site-contract
+    :call-site-contract-sha256 :status :started-at :finished-at
+    :receipt-sha256})
+
+(def call-site-contract
+  "The kx64-v1 emitter call-site discipline as data, from the 2026-10-19
+  dual-scan measurement (pattern scan + llvm-objdump linear decode, 25
+  payloads, 0 anomalies). `:admitted-dispatch-slots` is the measured set of
+  context offsets the host-dispatch emitters actually address; the runner's
+  vtable layout must cover exactly this set or the contract changes and the
+  receipt must say so."
+  {:format :kotoba.call-site-contract/v1
+   :abi :sysv-ctx-v11
+   :entry-by-call true
+   :frame-alignment 16
+   :host-dispatch {:form :call-indirect-rdi-disp32
+                   :rdi-reloaded-before-call true
+                   :r9-restored-after-call true
+                   :disp32-within-admitted-slots true}
+   :guest-call {:r9-reloaded-before-call true
+                :r9-reloaded-before-return true}
+   :tail-dispatch {:form :jmp-indirect-rdi-disp32}
+   :admitted-dispatch-slots #{56 64 72 112 120 128 136 144 160 168 176
+                              184 200 208 216 240 352 360}
+   :measured-payload-sha256
+   "32fe88f0dc850728c44a4b4320b6c180292a38e98672c80759859a59469e3f34"})
+
+(defn valid-digest?
+  "A digest this contract binds: raw-byte SHA-256 as 64 lowercase hex
+  characters. Uppercase or wrong length is refused, not normalised -- a
+  digest that arrives in two spellings is a digest that was not computed by
+  the same code on both sides."
+  [digest]
+  (and (string? digest) (boolean (re-matches #"[0-9a-f]{64}" digest))))
+
+(defn- reject!
+  "`phase` names which side refused: `:runner-admission` for the runner's
+  pre-entry decision, `:runner-receipt` for sealing or verification."
+  [phase message data]
+  (throw (ex-info message (assoc data :phase phase))))
+
+(defn source-graph-manifest
+  "The canonical source-graph manifest: one `sha256  path` line per entry,
+  two spaces between them, entries sorted by path, LF terminated -- the
+  `sha256sum` spelling, because both the runner and the measurement side
+  must reproduce it byte for byte. The receipt's `:source-graph-sha256` is
+  SHA-256 over this text's UTF-8 bytes.
+
+  Refuses malformed digests, duplicate paths, empty paths and paths
+  containing CR or LF (which would let one entry forge two lines)."
+  [entries]
+  (let [lines (map (fn [{:keys [path sha256] :as entry}]
+                     (when-not (and (map? entry)
+                                    (string? path) (not (empty? path))
+                                    (nil? (re-find #"[\r\n]" path))
+                                    (valid-digest? sha256))
+                       (reject! :runner-receipt "source graph entry rejected"
+                                {:entry (pr-str entry)}))
+                     [path (str sha256 "  " path "\n")])
+                   entries)
+        paths (map first lines)]
+    (when-not (= (count paths) (count (set paths)))
+      (reject! :runner-receipt "source graph entry path duplicated" {:paths (vec paths)}))
+    (apply str (map second (sort-by first lines)))))
+
+(defn- contract-admitted?
+  "The contract must be one the measured emitters satisfy. The checks are
+  the measurement's findings as predicates: a contract that turns one of
+  them off is a DIFFERENT contract and must not be admitted under this
+  format."
+  [contract]
+  (and (map? contract)
+       (= :kotoba.call-site-contract/v1 (:format contract))
+       (= :sysv-ctx-v11 (:abi contract))
+       (true? (:entry-by-call contract))
+       (= 16 (:frame-alignment contract))
+       (let [host (:host-dispatch contract)]
+         (and (= :call-indirect-rdi-disp32 (:form host))
+              (true? (:rdi-reloaded-before-call host))
+              (true? (:r9-restored-after-call host))
+              (true? (:disp32-within-admitted-slots host))))
+       (let [guest (:guest-call contract)]
+         (and (true? (:r9-reloaded-before-call guest))
+              (true? (:r9-reloaded-before-return guest))))
+       (= :jmp-indirect-rdi-disp32 (get-in contract [:tail-dispatch :form]))
+       (let [slots (:admitted-dispatch-slots contract)]
+         (and (set? slots) (not (empty? slots))
+              (every? #(and (an-integer? %) (zero? (mod % 8))) slots)))
+       (valid-digest? (:measured-payload-sha256 contract))))
+
+(defn- check-digest! [phase field digest]
+  (when-not (valid-digest? digest)
+    (reject! phase (str "runner receipt " (name field) " is not a raw-byte SHA-256")
+             {:field field :value (pr-str digest)})))
+
+(defn- check-times! [phase started-at finished-at]
+  (when-not (and (an-integer? started-at) (an-integer? finished-at)
+                 (<= started-at finished-at))
+    (reject! phase "runner receipt time interval invalid"
+             {:started-at started-at :finished-at finished-at})))
+
+(defn- receipt-hash [receipt]
+  (artifact/sha256 (dissoc receipt :receipt-sha256)))
+
+(defn create
+  "Seal a runner receipt. `args` carries the four artifact digests
+  (runner / compiler / source graph / output) plus the container digest,
+  the call-site contract the payload was emitted under, and the run's
+  status and time interval. Returns the receipt including
+  `:receipt-sha256` over the body.
+
+  `source-graph-sha256` is SHA-256 over `source-graph-manifest`'s UTF-8
+  bytes; the caller computes it (the runner from the lock it admitted, the
+  measurement harness from the same entries)."
+  [{:keys [runner-sha256 compiler-sha256 source-graph-sha256 container-sha256
+           output-sha256 call-site-contract status started-at finished-at]}]
+  (doseq [[field digest] [[:runner-sha256 runner-sha256]
+                          [:compiler-sha256 compiler-sha256]
+                          [:source-graph-sha256 source-graph-sha256]
+                          [:container-sha256 container-sha256]
+                          [:output-sha256 output-sha256]]]
+    (check-digest! :runner-receipt field digest))
+  (when-not (contains? statuses status)
+    (reject! :runner-receipt "runner receipt status invalid" {:status status}))
+  (check-times! :runner-receipt started-at finished-at)
+  (when-not (contract-admitted? call-site-contract)
+    (reject! :runner-receipt "call-site contract rejected" {:contract (pr-str call-site-contract)}))
+  (let [body {:format receipt-format
+              :runner-sha256 runner-sha256
+              :compiler-sha256 compiler-sha256
+              :source-graph-sha256 source-graph-sha256
+              :container-sha256 container-sha256
+              :output-sha256 output-sha256
+              :call-site-contract call-site-contract
+              :call-site-contract-sha256 (artifact/sha256 call-site-contract)
+              :status status
+              :started-at started-at
+              :finished-at finished-at}]
+    (assoc body :receipt-sha256 (receipt-hash body))))
+
+(defn- verify-schema! [receipt]
+  (when-not (and (map? receipt) (= receipt-fields (set (keys receipt)))
+                 (= receipt-format (:format receipt)))
+    (throw (ex-info "runner receipt schema rejected" {:phase :runner-receipt})))
+  (when-not (= (:receipt-sha256 receipt) (receipt-hash receipt))
+    (throw (ex-info "runner receipt integrity mismatch" {:phase :runner-receipt})))
+  receipt)
+
+(defn verify
+  "Re-check a receipt against the artifacts in hand. `inputs` is the same
+  digest map `create` took, recomputed from the actual bytes now being
+  verified (plus the contract the current emitters satisfy). Every field
+  must match; the first mismatch throws. Returns
+  `{:verified? true :receipt-sha256 ...}` on success.
+
+  This is where the receipt's honesty lives: `create` can only bind what it
+  was told, `verify` binds what is there."
+  [receipt {:keys [runner-sha256 compiler-sha256 source-graph-sha256
+                   container-sha256 output-sha256 call-site-contract]}]
+  (verify-schema! receipt)
+  (doseq [[field digest] [[:runner-sha256 runner-sha256]
+                          [:compiler-sha256 compiler-sha256]
+                          [:source-graph-sha256 source-graph-sha256]
+                          [:container-sha256 container-sha256]
+                          [:output-sha256 output-sha256]]]
+    (check-digest! :runner-receipt field digest))
+  (when-not (contract-admitted? call-site-contract)
+    (reject! :runner-receipt "call-site contract rejected" {:contract (pr-str call-site-contract)}))
+  (when-not (and (= (:runner-sha256 receipt) runner-sha256)
+                 (= (:compiler-sha256 receipt) compiler-sha256)
+                 (= (:source-graph-sha256 receipt) source-graph-sha256)
+                 (= (:container-sha256 receipt) container-sha256)
+                 (= (:output-sha256 receipt) output-sha256)
+                 (= (:call-site-contract receipt) call-site-contract)
+                 (= (:call-site-contract-sha256 receipt)
+                    (artifact/sha256 call-site-contract))
+                 (contains? statuses (:status receipt))
+                 (an-integer? (:started-at receipt))
+                 (an-integer? (:finished-at receipt))
+                 (<= (:started-at receipt) (:finished-at receipt)))
+    (throw (ex-info "runner receipt evidence mismatch" {:phase :runner-receipt})))
+  {:verified? true
+   :receipt-sha256 (:receipt-sha256 receipt)
+   :runner-sha256 runner-sha256
+   :compiler-sha256 compiler-sha256
+   :source-graph-sha256 source-graph-sha256
+   :output-sha256 output-sha256})
+
+(defn admit!
+  "The runner's fail-closed admission decision, taken after arenas are
+  mapped and before the guest entry is called. `args` carries the digests
+  the runner just computed over the bytes it is about to run plus the pins
+  it was launched with: the source-graph digest must match the pinned one,
+  the container digest must match the expected container, and the call-site
+  contract must be admitted. Any failure throws
+  `{:phase :runner-admission}`; nothing is normalised, nothing falls back.
+
+  Returns `{:admitted? true :admission-sha256 ...}` where the digest seals
+  the exact decision (pins + contract digest), so a receipt can bind which
+  admission it passed."
+  [{:keys [source-graph-sha256 pinned-source-graph-sha256
+           container-sha256 expected-container-sha256 call-site-contract]}]
+  (doseq [[field digest] [[:source-graph-sha256 source-graph-sha256]
+                          [:pinned-source-graph-sha256 pinned-source-graph-sha256]
+                          [:container-sha256 container-sha256]
+                          [:expected-container-sha256 expected-container-sha256]]]
+    (check-digest! :runner-admission field digest))
+  (when-not (contract-admitted? call-site-contract)
+    (reject! :runner-admission "call-site contract rejected" {:contract (pr-str call-site-contract)}))
+  (when-not (= source-graph-sha256 pinned-source-graph-sha256)
+    (reject! :runner-admission "source graph does not match the pin"
+             {:source-graph-sha256 source-graph-sha256
+              :pinned-source-graph-sha256 pinned-source-graph-sha256}))
+  (when-not (= container-sha256 expected-container-sha256)
+    (reject! :runner-admission "container does not match the expected container"
+             {:container-sha256 container-sha256
+              :expected-container-sha256 expected-container-sha256}))
+  {:admitted? true
+   :admission-sha256
+   (artifact/sha256 {:format :kotoba.runner-admission/v1
+                     :source-graph-sha256 source-graph-sha256
+                     :container-sha256 container-sha256
+                     :call-site-contract-sha256
+                     (artifact/sha256 call-site-contract)})})

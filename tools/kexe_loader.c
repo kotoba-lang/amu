@@ -6130,7 +6130,9 @@ static int64_t intern_utf8(struct kexe_context_v11 *context,
   return checked_pair_new(context, -((int64_t)start) - 1, (int64_t)length);
 }
 
-#ifdef KEXE_GPU_VULKAN
+#if defined(KEXE_GPU_METAL)
+#include "kexe_gpu_metal.m"
+#elif defined(KEXE_GPU_VULKAN)
 #include "kexe_gpu_vulkan.c"
 #endif
 
@@ -11928,7 +11930,7 @@ static int supervise(pid_t child) {
     kspawn_req_pipe[1] = -1;
     kspawn_resp_pipe[0] = -1;
   }
-#ifdef KEXE_GPU_VULKAN
+#if defined(KEXE_GPU_VULKAN) || defined(KEXE_GPU_METAL)
   if (kgpu_broker_active) {
     (void)close(kgpu_req_pipe[1]);
     (void)close(kgpu_resp_pipe[0]);
@@ -11945,7 +11947,7 @@ static int supervise(pid_t child) {
   {
     int spawn_open = kspawn_broker_active;
     int net_open = knet_broker_active;
-#ifdef KEXE_GPU_VULKAN
+#if defined(KEXE_GPU_VULKAN) || defined(KEXE_GPU_METAL)
     int gpu_open = kgpu_broker_active;
 #else
     int gpu_open = 0;
@@ -11966,7 +11968,7 @@ static int supervise(pid_t child) {
             !knet_serve_one(knet_req_pipe[0], knet_resp_pipe[1]))
           net_open = 0;
       }
-#ifdef KEXE_GPU_VULKAN
+#if defined(KEXE_GPU_VULKAN) || defined(KEXE_GPU_METAL)
       if (gpu_open && (pfd[1].revents & (POLLIN | POLLHUP | POLLERR))) {
         if ((pfd[1].revents & POLLIN) == 0 ||
             kgpu_serve_one(kgpu_req_pipe[0], kgpu_resp_pipe[1]) != 0)
@@ -11974,7 +11976,7 @@ static int supervise(pid_t child) {
       }
 #endif
     }
-#ifdef KEXE_GPU_VULKAN
+#if defined(KEXE_GPU_VULKAN) || defined(KEXE_GPU_METAL)
     if (kgpu_broker_active) kgpu_shutdown();
 #endif
     if (knet_broker_active) knet_shutdown();
@@ -13038,7 +13040,7 @@ int main(int argc, char **argv) {
     if (pipe(knet_req_pipe) != 0 || pipe(knet_resp_pipe) != 0) fail("net broker pipe");
     knet_broker_active = 1;
   }
-#ifdef KEXE_GPU_VULKAN
+#if defined(KEXE_GPU_VULKAN) || defined(KEXE_GPU_METAL)
   /* :gpu/compute: only when the grant names wire 42. The pipes exist before
    * the fork so both sides hold them; the supervisor serves, the guest asks. */
   if (!kexe_lease_transport && kexe_cap_admitted(shared->context.allow, 42)) {

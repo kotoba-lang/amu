@@ -21,16 +21,12 @@
 ;; kexe_loader_decisions.kotoba compiled as well and asks its `decide` op 8
 ;; (scope-admitted) and `cap-admitted`, the same code the loader runs.
 ;;
-;; The kexe loader runs THIS module too (2026-09-25): tools/kexe_loader.c
-;; embeds its compiled code in the generated region beside C1's and calls
-;; `decide` for every handler question it shares with the image -- the
-;; :fs/app-data form (op 1), RANGE and CHMOD (ops 20-25), make-temp-dir,
-;; fsync and stat-nofollow, :entropy/draw and :process/spawn (ops 26-47).
-;; scripts/gen-linux-static-handlers.cljk refuses to write unless the bytes
-;; the image carries are the bytes the loader embeds, so a program and a
-;; grant give the same stdout, stderr and exit status through either path
-;; from ONE source of decisions. Ops 44-47 are asked by the loader only (the
-;; image seals its grant at packaging and names its refusals there).
+;; Historical C-loader embeddings and the CLJK generator's equality check
+;; are migration provenance, not native acceptance or a generation dependency.
+;; The canonical packager carries Amu-produced sealed decision artifacts and
+;; the complete native mechanisms. Qualify that closure without a C loader,
+;; a generated C header or a hosted generator prerequisite. Ops 44-47 retain
+;; their historical caller contract; native images seal the grant at packaging.
 
 ;; ---------------------------------------------------------------------
 ;; op 0: which static handler answers C1's provider number (decide op 0 of
