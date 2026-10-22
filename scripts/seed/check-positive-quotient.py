@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Ported after the C loader was removed (scripts/seed/RETIRED.md): --selfbuild-output is now the output
+# directory of scripts/seed/selfhost-bootstrap.py; payloads run through its C-free aarch64 runner
+# (R-aarch64.elf) and ON is its adopted fixed-point image (G3.bin). Run on arm64 Linux.
 """Independent full64 source oracles and exact native raw fuel/arena pairs."""
 from pathlib import Path
 import argparse,hashlib,importlib.util,json,os,shutil,subprocess,re
@@ -9,14 +12,14 @@ AUDITED=ROOT/'docs/evidence/same-algo-m104-20261015/previous-bootstrap.bin';AUDI
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 def pin(p):return dict(path=str(p),bytes=p.stat().st_size,sha256=sha(p))
 def main():
- ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--selfbuild-output',type=Path,required=True);a=ap.parse_args();O=a.selfbuild_output.resolve();D=O/'artifacts/positive-quotient-controls';D.mkdir(exist_ok=False);raw=D/'raw';raw.mkdir()
- L=O/'host/kexe-loader';F=ROOT/'seed/tests/positive-power2-quotient';S=D/'controls.kotoba';shutil.copy2(F/'controls.kotoba',S)
- E=ROOT/'docs/evidence/positive-quotient-20261013';J=ROOT/'docs/evidence/oneword-jump-20261014';P={'OFF':E/'previous-bootstrap.bin','PRE':J/'previous-bootstrap.bin','ON':O/'artifacts/G2.bin','AUDITED':AUDITED}
+ ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--selfbuild-output',type=Path,required=True);a=ap.parse_args();O=a.selfbuild_output.resolve();(O/'artifacts').mkdir(exist_ok=True);(O/'host').mkdir(exist_ok=True);D=O/'artifacts/positive-quotient-controls';D.mkdir(exist_ok=False);raw=D/'raw';raw.mkdir()
+ L=O/'R-aarch64.elf';F=ROOT/'seed/tests/positive-power2-quotient';S=D/'controls.kotoba';shutil.copy2(F/'controls.kotoba',S)
+ E=ROOT/'docs/evidence/positive-quotient-20261013';J=ROOT/'docs/evidence/oneword-jump-20261014';P={'OFF':E/'previous-bootstrap.bin','PRE':J/'previous-bootstrap.bin','ON':O/'G3.bin','AUDITED':AUDITED}
  assert sha(P['OFF'])=='9ce5f89aec3c04a139e4bb713eb3613fd482ae70fd41d0271bc021b550a0668b'
  assert sha(P['PRE'])=='f49356b0e979293ee6f42b622089dc77e2dbb55d0a28b07d8a8f35125d8a6cdb'
  assert sha(P['AUDITED'])==AUDITED_SHA256
  assert sha(P['ON'])==json.loads((ROOT/'seed/adoption-20261017.json').read_text())['nativeImageSHA256']
- pins={p:sha(p)for p in[L,S,*P.values()]};env={k:v for k,v in os.environ.items()if not k.startswith('KEXE_')};env.update(KEXE_COMMAND='1',KEXE_CAP_RESOURCES_35=str(D),KEXE_FUEL='off',KEXE_VECTORS='4194304',KEXE_VECTOR_ITEMS='134217728',KEXE_STRING_POOL='268435456',KEXE_PAIRS='16777216',KEXE_CPU_SECONDS='1800',KEXE_WALL_SECONDS='1800',TMPDIR=str(D));calls=[]
+ pins={p:sha(p)for p in[L,S,*P.values()]};env={k:v for k,v in os.environ.items()if not k.startswith('KEXE_')};env.update(KEXE_COMMAND='1',KEXE_STACK_BYTES='8388608',KEXE_CAP_RESOURCES_35=str(D),KEXE_FUEL='off',KEXE_VECTORS='4194304',KEXE_VECTOR_ITEMS='134217728',KEXE_STRING_POOL='268435456',KEXE_PAIRS='16777216',KEXE_CPU_SECONDS='1800',KEXE_WALL_SECONDS='1800',TMPDIR=str(D));calls=[]
  def run(tag,args,e):
   z=subprocess.run(list(map(str,args)),cwd=D,env=e,capture_output=True,timeout=1800);(raw/(tag+'.stdout')).write_bytes(z.stdout);(raw/(tag+'.stderr')).write_bytes(z.stderr);calls.append(dict(tag=tag,exit=z.returncode));(D/'calls.json').write_text(json.dumps(calls,indent=2)+'\n');assert z.returncode==0 and all(sha(p)==h for p,h in pins.items()),tag;return z.stdout,z.stderr
  arms={}

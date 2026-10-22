@@ -1,3 +1,6 @@
+# Ported after the C loader was removed (scripts/seed/RETIRED.md): --selfbuild-output is now the output
+# directory of scripts/seed/selfhost-bootstrap.py; payloads run through its C-free aarch64 runner
+# (R-aarch64.elf) and ON is its adopted fixed-point image (G3.bin). Run on arm64 Linux.
 from pathlib import Path
 import json,hashlib,subprocess,os,importlib.util,re
 ROOT=Path(__file__).resolve().parents[2]
@@ -5,12 +8,12 @@ ROOT=Path(__file__).resolve().parents[2]
 # and last held; the same-algorithm m104 adoption replaced it. Every behavioural pair runs on the current adopted compiler (ON).
 AUDITED=ROOT/'docs/evidence/same-algo-m104-20261015/previous-bootstrap.bin';AUDITED_SHA256='87efe842dc0389f0ba7d476fcf034f6820483632df61fad53b474a2297e3e345'
 import argparse,shutil
-ap=argparse.ArgumentParser();ap.add_argument('--selfbuild-output',type=Path,required=True);arg=ap.parse_args();O=arg.selfbuild_output.resolve();E=ROOT/'docs/evidence/adjacent-fuel-reload-20261014';F=ROOT/'seed/tests/adjacent-fuel-reload';D=O/'artifacts/adjacent-fuel-reload-controls';D.mkdir(exist_ok=False);A=D/'artifacts';A.mkdir();raw=D/'raw';raw.mkdir();S=A/'controls.kotoba';shutil.copy2(F/'controls.kotoba',S)
-L=O/'host/kexe-loader';P={'OFF':E/'previous-bootstrap.bin','ON':O/'artifacts/G2.bin','AUDITED':AUDITED}
+ap=argparse.ArgumentParser();ap.add_argument('--selfbuild-output',type=Path,required=True);arg=ap.parse_args();O=arg.selfbuild_output.resolve();(O/'artifacts').mkdir(exist_ok=True);(O/'host').mkdir(exist_ok=True);E=ROOT/'docs/evidence/adjacent-fuel-reload-20261014';F=ROOT/'seed/tests/adjacent-fuel-reload';D=O/'artifacts/adjacent-fuel-reload-controls';D.mkdir(exist_ok=False);A=D/'artifacts';A.mkdir();raw=D/'raw';raw.mkdir();S=A/'controls.kotoba';shutil.copy2(F/'controls.kotoba',S)
+L=O/'R-aarch64.elf';P={'OFF':E/'previous-bootstrap.bin','ON':O/'G3.bin','AUDITED':AUDITED}
 def pin(p):p=Path(p);b=p.read_bytes();return dict(path=str(p),bytes=len(b),sha256=hashlib.sha256(b).hexdigest())
 assert pin(P['OFF'])['sha256']=='87d29d354142b3391abd475211ddd6a677c4e1f18ea0c74c72ffa450cf16eb56';assert pin(P['AUDITED'])['sha256']==AUDITED_SHA256;assert pin(P['ON'])['sha256']==json.loads((ROOT/'seed/adoption-20261017.json').read_text())['nativeImageSHA256']
 pins={p:pin(p)for p in [L,S,F/'cases.json',E/'native-gate.py',E/'native-utils.py',E/'source-pool.py',E/'trusted-loader-abi.c',*P.values()]};calls=[]
-env={k:v for k,v in os.environ.items()if not k.startswith('KEXE_')};env.update(KEXE_COMMAND='1',KEXE_CAP_RESOURCES_35=str(A),KEXE_FUEL='off',KEXE_VECTORS='4194304',KEXE_VECTOR_ITEMS='134217728',KEXE_STRING_POOL='268435456',KEXE_PAIRS='16777216',KEXE_CPU_SECONDS='1800',KEXE_WALL_SECONDS='1800',TMPDIR=str(A))
+env={k:v for k,v in os.environ.items()if not k.startswith('KEXE_')};env.update(KEXE_COMMAND='1',KEXE_STACK_BYTES='8388608',KEXE_CAP_RESOURCES_35=str(A),KEXE_FUEL='off',KEXE_VECTORS='4194304',KEXE_VECTOR_ITEMS='134217728',KEXE_STRING_POOL='268435456',KEXE_PAIRS='16777216',KEXE_CPU_SECONDS='1800',KEXE_WALL_SECONDS='1800',TMPDIR=str(A))
 def call(tag,args,e):
  z=subprocess.run(list(map(str,args)),cwd=D,env=e,capture_output=True,timeout=1800);(raw/(tag+'.stdout')).write_bytes(z.stdout);(raw/(tag+'.stderr')).write_bytes(z.stderr);calls.append(dict(tag=tag,exit=z.returncode));(D/'calls.json').write_text(json.dumps(calls,indent=2)+'\n');assert all(pin(p)==v for p,v in pins.items());return z.returncode,z.stdout,z.stderr
 arms={}

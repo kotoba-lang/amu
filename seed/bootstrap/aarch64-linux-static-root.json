@@ -1,0 +1,61 @@
+{
+  "schema": "amu.seed.static-root.v1",
+  "image": {
+    "bytes": 1294848,
+    "sha256": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6"
+  },
+  "target": "aarch64-linux",
+  "format": "static",
+  "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
+  "sourceUnity": {
+    "bytes": 778613,
+    "sha256": "7a3f6bb9eca8d50a5cdb910a0ea82a60145474d552f3413dbf35377c48933bc2"
+  },
+  "sourceCommitBase": "07e326c8388b9892ca7c857fdd5b2bb58581d289",
+  "producedBy": {
+    "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S2 = S3; S1 differs because the previous root embeds the previous aarch64 runtime). Re-pinned because this source changes the runtime text embedded in every image: the wire-42 :gpu/compute transport of ADR 0371 step 2, on top of #1475.",
+    "date": "2026-10-22",
+    "previousRoot": "27440856b717877a91387f9a55be7149bacf93f0d31fa82ee1b06f567b370786"
+  },
+  "verification": "scripts/seed/selfhost-bootstrap.py on arm64 Linux: root -> S1 = S2 = S3 = root natively, without any C compiler or loader",
+  "history": [
+    {
+      "image": {
+        "bytes": 1278464,
+        "sha256": "27440856b717877a91387f9a55be7149bacf93f0d31fa82ee1b06f567b370786"
+      },
+      "sourceUnity": {
+        "bytes": 769800,
+        "sha256": "6d26d54e0e1729fee897c3c9ad2bfce842def76bcb63658b7e3dc4e5a77421b8"
+      },
+      "sourceCommitBase": "70ab19b659e73f72108d63497d3b3ff869f7d4b2",
+      "producedBy": {
+        "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S2 = S3). Re-pinned because this source changes the runtime text (wire 3 :hash/sha256, multiple KEXE_CAP_RESOURCES_35 roots).",
+        "date": "2026-10-22",
+        "previousRoot": "f4a2a53e0787b4a3bc8550e4a3eaf657421c28d6985156dbc564316e46c0d735"
+      }
+    },
+    {
+      "image": {
+        "bytes": 1225216,
+        "sha256": "7c63bc33d3d32bebf2f7627b7b2e0fb45e5cd2a71e7d83a7f0baaa8aeeeff686"
+      },
+      "sourceUnity": {
+        "bytes": 745718,
+        "sha256": "751fe4c40ff29e6dc3ae05e538599dfb173bc902bf79e38fe0649c81378e5c20"
+      },
+      "producedBy": {
+        "how": "last use of the removed trusted C loader (seed/bootstrap/adopted-loader-20261012.c, sha256 f44b5099...a8c3): the pinned adopted compiler built the selfhost closure for aarch64-macos (bridge), and the bridge compiled the same closure with --target aarch64-linux --format static",
+        "date": "2026-10-22",
+        "adoptedProducer": {
+          "bytes": 2547352,
+          "sha256": "6b158aa8654706743462b8a730f189072ba05f364b00af28a3f6d23045add2eb"
+        },
+        "bridge": {
+          "bytes": 1079848,
+          "sha256": "8ac88b7b480886de424d060106c87b9e7381a51433169437dfdb2b084fa3e7ae"
+        }
+      }
+    }
+  ]
+}
