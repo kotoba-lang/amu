@@ -36,9 +36,29 @@ selfhost, sealed and admitted from this exact updated source. Old compiled
 decision artifacts without op 48 remain unsupported and cause a terminal
 unknown-op refusal; no fallback uses a C loader or generated C header.
 
+Root/parent source completion keeps 53 handler functions, IDs 0..48 and every
+parameter unchanged. Existing op 15 now accepts slash index zero for a direct
+child of `/` and returns 2 for an empty/dot/dot-dot mutation base (ordinary
+negative). Op 19 handles root length one/slash zero as the root parent; a
+parent outside the admitted scope never opens. Only split-parent and
+parent-place bodies change; the public dispatcher and C1 are unchanged in
+this step. Native consumes the existing admitted relative pointer for deeper
+parents and separates its filesystem anchor from spawn's optional cwd root.
+
+The owning path API normalizes lexically before scope admission/opening.
+Raw POSIX component traversal is not a new native-port acceptance condition;
+the declared normalized-path, no-follow, descriptor/race and absence behavior
+still requires actual native qualification.
+
 Whole filesystem/provider and caller qualification remains open, as do the
 complete resolver/materializer/authoring ports, raw-byte I/O/digest, required
 runtime helpers/ABI, reviewed main/pins and actual compiler self-rebuild.
 No project/decision/provider implementation, filesystem operation, compiler,
 generator/assembler, native admission/artifact/runtime or test was executed.
 No tests were added; no workflow/protection/service/production change ran.
+
+Current handler source blob `b3f7fffb9ec93bafc066b07843abed734d415c95`,
+SHA-256 `8ee7a5f5e2937cf6be33a84c172634c2fc9d77e19af42b3c6de9b2f57d9a9c06`.
+Whole-module source AST/API/call/arity comparison preserves all 53 functions,
+parameters and dispatcher branches 0..48. Only the two private rule bodies
+above change from the preceding source candidate; no code was executed.

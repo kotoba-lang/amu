@@ -299,17 +299,18 @@
     (>= (+ cwd-length (+ 1 n)) 4096) 0
     :else 2))
 
-;; op 15: the parent / base split of a mutation's path (kexe_split_parent).
-;; PARENT-LENGTH 0 is a path directly under "/"; a base is 1..255 bytes and
-;; never "." or ".." (BASE-CLASS from op 13's classes).
+;; op 15: the parent / base split of a normalized mutation path.
+;; PARENT-LENGTH 0 is a direct child of "/". 1 admits a 1..255 byte base,
+;; 2 gives an ordinary negative answer for root/dot mutation, 0 invalid state.
 (defn- split-parent [parent-length base-length base-class]
   (cond
-    (< parent-length 1) 0
+    (< parent-length 0) 0
     (>= parent-length 4096) 0
-    (< base-length 1) 0
+    (< base-length 0) 0
     (>= base-length 256) 0
-    (= base-class 0) 0
-    (= base-class 1) 0
+    (= base-length 0) 2
+    (= base-class 0) 2
+    (= base-class 1) 2
     :else 1))
 
 ;; op 16: STAT's fields from st_mode (fs_app_data_stat_provider): WHICH 0 the
@@ -331,10 +332,11 @@
 
 ;; op 19: where a mutation's parent lies against the scope root, from the
 ;; last slash's index SLASH and the root's length ROOT (both into the
-;; normalized, admitted path). 0 outside (a grant violation: the kexe loader
-;; on Linux would act in the root's parent), 1 the root itself, 2 beneath.
+;; normalized, admitted path). 0 outside (ordinary negative; never act in
+;; the root's parent), 1 the root itself, 2 beneath. Root "/" has slash 0.
 (defn- parent-place [slash root]
   (cond
+    (and (= root 1) (= slash 0)) 1
     (< slash root) 0
     (= slash root) 1
     :else 2))
