@@ -5020,20 +5020,54 @@
 (defn- ck-r6q-fix-keys [M :vector-i64 S :string c :i64] :vector-i64
   (loop [M2 M i c]
     (if (zero? i) M2 (recur (ck-r6q-item M2 S i) (nm-next M2 (nm-next M2 i))))))
+;; R6Q3: the canonical constructor call of a quoted symbol collection (guest-grammar :quoted):
+;; (typed-set-new [:set :symbol] items ..) / (typed-map-new [:map :symbol V] pairs ..). The form n
+;; keeps its identity: its head becomes the constructor head and its children the type argument and
+;; the items (the chain under the original collection node, keys already materialized).
+(defn- ck-r6q-ctor [M :vector-i64 n :i64 a :i64 hd :i64 tk :i64 vk :i64] :vector-i64
+  (let [tok (nm-nf M n NF-TOK)
+        M1 (ck-n-head M tok hd)
+        h (ck-r M1)
+        M2 (ck-n-kw M1 tok tk)
+        k1 (ck-r M2)]
+    (if (zero? vk)
+      (let [M3 (ck-n-kw M2 tok KW-SYMBOL)
+            k2 (ck-r M3)
+            M4 (ck-chain2 M3 k1 k2)
+            M5 (ck-new M4 ND-VEC tok 0 0)
+            v (ck-r M5)
+            M6 (nm-set-nf M5 v NF-FIRST k1)
+            M7 (ck-link M6 h v)]
+        (nm-set-nf (ck-link M7 v (nm-first M7 a)) n NF-FIRST h))
+      (let [M3 (ck-n-kw M2 tok KW-SYMBOL)
+            k2 (ck-r M3)
+            M4 (ck-n-kw M3 tok vk)
+            k3 (ck-r M4)
+            M5 (ck-chain3 M4 k1 k2 k3)
+            M6 (ck-new M5 ND-VEC tok 0 0)
+            v (ck-r M6)
+            M7 (nm-set-nf M6 v NF-FIRST k1)
+            M8 (ck-link M7 h v)]
+        (nm-set-nf (ck-link M8 v (nm-first M8 a)) n NF-FIRST h)))))
+;; the value kind of a map chain as a KW code (1 i64 / 3 string / 13 keyword), 0 when one is not scalar, -1 mixed
+(defn- ck-r6q-vkw [M :vector-i64 c :i64] :i64
+  (let [k (ck-r6q-vkind M c)]
+    (cond (= k ND-INT) KW-I64 (= k ND-STR) KW-STRING (= k ND-KW) KW-KEYWORD :else k)))
 (defn- ck-r6q-coll [M :vector-i64 S :string n :i64 a :i64 mix :i64] :vector-i64
   (let [c (nm-first M a)
         sh (ck-r6q-shape M c)]
-    (cond (= sh 1) (ck-become (ck-r6q-fix M S c) n a)
+    (cond (= sh 1) (ck-r6q-ctor (ck-r6q-fix M S c) n a HD-SET-NEW KW-SET 0)
           (= sh -1) (ck-err M mix a 0)
           :else (ck-become M n a))))
 (defn- ck-r6q-map [M :vector-i64 S :string n :i64 a :i64] :vector-i64
   (let [c (nm-first M a)
         ks (ck-r6q-keys M c)
-        vk (ck-r6q-vkind M c)]
+        vk (ck-r6q-vkw M c)]
     (cond (= ks 1) (cond (or (= vk 0) (= vk -1)) (ck-err M E-QUOTE-MAP-VAL a 0)
-                         :else (ck-become (ck-r6q-fix-keys M S c) n a))
+                         :else (ck-r6q-ctor (ck-r6q-fix-keys M S c) n a HD-MAP-NEW KW-MAP vk))
           (= ks -1) (ck-err M E-QUOTE-MIX-MAP a 0)
           :else (ck-become M n a))))
+
 (defn- ck-r6q-quote [M :vector-i64 S :string n :i64] :vector-i64
   (let [h (nm-first M n)
         a (nm-next M h)]
