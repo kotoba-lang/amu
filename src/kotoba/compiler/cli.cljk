@@ -6,6 +6,7 @@
             [kotoba.compiler.atomic-output :as atomic-output]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.accelerator-pipeline :as accelerator-pipeline]
+            [kotoba.compiler.accelerator-spirv-compile :as spirv-compile]
             [kotoba.compiler.bounded-edn :as bounded-edn]
             [kotoba.compiler.capability-names :as cap-names]
             [kotoba.compiler.core :as compiler]
@@ -310,6 +311,28 @@
                         :kir-sha256 (:kir-sha256 artifact)
                         :code-sha256 (:code-sha256 artifact)
                         :output output})))
+
+    "gpu-spirv-compile"
+    ;; ADR-0359 decision 2's host half (the sibling of gpu-compile above):
+    ;; the sealed SPIR-V build step over the sealed source artifact
+    ;; gpu-compile wrote. The cache the loader opens is --output; the sealed
+    ;; record (bytes inline, tool identity, provenance) lands beside it in
+    ;; <file.spv>.edn.
+    (let [artifact (bounded-edn/read-file
+                     (or (second args)
+                         (throw (ex-info "gpu-spirv-compile needs ARTIFACT.edn" {:phase :usage}))))
+          output (or (option args "--output") "kernel.spv")
+          _ (when (some #{"--target" "--policy" "--source-path" "--module-lock"
+                          "--blocks" "--device"} args)
+              (throw (ex-info "gpu-spirv-compile takes ARTIFACT.edn --output <FILE.spv>"
+                              {:phase :usage})))
+          {sealed :artifact} (spirv-compile/compile-spirv! artifact {})]
+      (spirv-compile/write-loader-cache! sealed output)
+      (atomic-output/write-edn! (str output ".edn") sealed)
+      (println (pr-str {:ok true :target (:target sealed) :variant (:variant sealed)
+                        :bindings (:bindings sealed) :spirv-sha256 (:spirv-sha256 sealed)
+                        :tool (select-keys (:tool sealed) [:name :version])
+                        :artifact (str output ".edn") :output output})))
 
     "compile"
     (let [input (when-not (option args "--module-lock") (kotoba-source! (second args)))

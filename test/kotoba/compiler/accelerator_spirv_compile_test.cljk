@@ -1,0 +1,129 @@
+(ns kotoba.compiler.accelerator-spirv-compile-test
+  "ADR-0359 decision 2's host half: the one host-invoking entry point of the
+  sealed SPIR-V build step. The runner is FAKE here -- a recorded argv and a
+  file the fake tool writes -- so nothing in this file shells out; what is
+  under test is the orchestration the ADR specifies: refuse an unverified
+  source before any process runs, attribute the tool or refuse, seal what
+  the tool actually produced, write the loader cache from the sealed bytes,
+  and fail closed on a cache that no longer matches. Nothing in this file is
+  a measurement."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.io :as kio]
+            [kotoba.artifact.core :as artifact]
+            [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-spirv :as spirv]
+            [kotoba.compiler.accelerator-spirv-compile :as compile]))
+
+(defn- ewise-source []
+  (accelerator/compile-kernel
+   (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+   :glsl-v1))
+
+(def ^:private fake-spv
+  [0x03 0x02 0x23 0x07 0x00 0x00 0x01 0x00 0xde 0xad 0xbe 0xef])
+
+(def ^:private version-text "GlslangValidator version 11.16.0")
+
+(defn- fake-runner
+  "A runner that answers the recorded script and, on the compile invocation,
+  writes fake-spv to kernel.spv in the :cwd it was given -- exactly what the
+  real tool does with its -o argument. Every invocation is recorded in
+  `calls` as [argv opts]."
+  [calls {:keys [version-exit version-out compile-exit compile-err]
+          :or {version-exit 0 version-out version-text compile-exit 0}}]
+  (fn [argv opts]
+    (swap! calls conj [argv opts])
+    (if (= ["--version"] (rest argv))
+      {:status version-exit :out version-out :err ""}
+      (do (when (= 0 compile-exit)
+            (kio/write-bytes (kio/file (:cwd opts) "kernel.spv") fake-spv))
+          {:status compile-exit :out "" :err (or compile-err "")}))))
+
+(deftest compile-seals-the-bytes-tool-identity-and-provenance
+  (let [calls (atom [])
+        {sealed :artifact :keys [bytes tool]}
+        (compile/compile-spirv! (ewise-source) {:run (fake-runner calls {})})]
+    (testing "the sealed artifact verifies as provenance and carries the bytes"
+      (is (= {:claim :provenance} (spirv/verify-spirv-artifact! sealed)))
+      (is (= fake-spv bytes (:spirv-bytes sealed)))
+      (is (= (spirv/bytes-sha256 fake-spv) (:spirv-sha256 sealed))))
+    (testing "the tool identity is name + --version verbatim + exact argv"
+      (is (= "glslangValidator" (:name tool)))
+      (is (= version-text (:version tool)))
+      (is (= (compile/compile-argv "glslangValidator") (:argv tool)))
+      (is (= tool (:tool sealed))))
+    (testing "the version probe runs first and the argv recorded is exactly
+              what the runner was given"
+      (let [[[probe-argv _] [run-argv run-opts]] @calls]
+        (is (= ["glslangValidator" "--version"] probe-argv))
+        (is (= (compile/compile-argv "glslangValidator") run-argv))
+        (is (string? (str (:cwd run-opts))))))
+    (testing "the scratch directory is cleaned up"
+      (let [[_ [run-argv run-opts]] @calls]
+        (is (false? (kio/directory? (:cwd run-opts))))))))
+
+(deftest an-unverified-source-never-reaches-the-tool
+  (let [calls (atom [])
+        tampered (artifact/seal (assoc (ewise-source) :code "void main(){}"))]
+    (is (thrown-with-msg? Exception #"regeneration mismatch"
+                          (compile/compile-spirv!
+                           tampered {:run (fake-runner calls {})})))
+    (testing "not one process was spawned over refused bytes"
+      (is (empty? @calls)))))
+
+(deftest an-unattributable-tool-is-refused-not-sealed
+  (testing "a --version that does not succeed is a refusal"
+    (let [calls (atom [])]
+      (is (thrown-with-msg? Exception #"--version did not run cleanly"
+                            (compile/compile-spirv!
+                             (ewise-source)
+                             {:run (fake-runner calls {:version-exit 1})})))
+      (is (= 1 (count @calls)))))
+  (testing "a --version that prints nothing leaves the tool unattributable"
+    (let [calls (atom [])]
+      (is (thrown-with-msg? Exception #"refused, not sealed"
+                            (compile/compile-spirv!
+                             (ewise-source)
+                             {:run (fake-runner calls {:version-out ""})})))
+      (is (= 1 (count @calls))))))
+
+(deftest a-failed-compile-is-a-refusal-not-a-seal
+  (let [calls (atom [])]
+    (is (thrown-with-msg? Exception #"SPIR-V compile tool failed"
+                          (compile/compile-spirv!
+                           (ewise-source)
+                           {:run (fake-runner calls {:compile-exit 1
+                                                     :compile-err "ERROR: 0:3: 'foo'"})})))
+    (testing "the probe and the compile both ran; nothing was sealed"
+      (is (= 2 (count @calls))))))
+
+(deftest loader-cache-is-written-from-the-sealed-bytes-and-fails-closed
+  (let [calls (atom [])
+        {sealed :artifact} (compile/compile-spirv!
+                            (ewise-source) {:run (fake-runner calls {})})
+        dir (kio/temp-dir "amu-spirv-cache-")
+        out (kio/file dir "kernel.spv")]
+    (try
+      (testing "the cache round-trips the sealed bytes exactly (0xde and all)"
+        (is (= (str out) (compile/write-loader-cache! sealed out)))
+        (is (= fake-spv (mapv #(bit-and (int %) 0xff) (vec (kio/read-all-bytes out)))))
+        (is (= sealed (compile/verify-loader-cache! sealed out))))
+      (testing "a cache that no longer matches the seal refuses dispatch"
+        (kio/write-bytes out (assoc fake-spv 8 0x00))
+        (is (thrown-with-msg? Exception #"loader cache hash mismatch"
+                              (compile/verify-loader-cache! sealed out))))
+      (finally
+        (kio/delete-if-exists out)
+        (kio/delete-if-exists dir)))))
+
+(deftest the-recorded-argv-is-the-stable-relative-form
+  (testing "fixed names in a scratch cwd: two runs record identical argv"
+    (let [calls-a (atom []) calls-b (atom [])
+          a (:tool (compile/compile-spirv! (ewise-source)
+                                           {:run (fake-runner calls-a {})}))
+          b (:tool (compile/compile-spirv! (ewise-source)
+                                           {:run (fake-runner calls-b {})}))]
+      (is (= (:argv a) (:argv b)))
+      (is (= ["glslangValidator" "-V" "--target-env" "vulkan1.1" "-S" "comp"
+              "kernel.comp" "-o" "kernel.spv"]
+             (:argv a))))))

@@ -1,0 +1,148 @@
+(ns kotoba.compiler.accelerator-spirv-compile
+  "ADR-0359 decision 2's HOST HALF: the one host-invoking entry point of the
+  sealed SPIR-V build step (`amu gpu-spirv-compile <artifact.edn> --output
+  <file.spv>`) and the loader-cache file the wire-42 loader opens.
+
+  Where kotoba.compiler.accelerator-spirv is the pure half (payload
+  construction, sealing, verification -- and it never shells out), THIS
+  namespace performs the compilation: it takes a sealed source artifact
+  (kotoba.compiler.accelerator's `:kotoba.gpu-artifact/v1` -- what `amu
+  gpu-compile` writes), runs the recorded tool over its emitted GLSL,
+  records the tool identity, seals the compiled bytes through the pure half,
+  and writes the loader's `.spv` cache FROM the sealed bytes with the
+  pre-dispatch hash check.
+
+  The compile runs in a scratch directory with fixed file names
+  (`kernel.comp` / `kernel.spv`) and the exact argv is recorded verbatim, so
+  the recorded identity -- and with it the sealed artifact's own bytes -- is
+  stable across runs against the same tool version. The scratch directory is
+  transient and deliberately not recorded: the identity binds what ran over
+  which bytes; the embedded source artifact binds the source.
+
+  Everything host-shaped sits behind `run` (the tool invoker) and kotoba.io
+  (the file ops), so the suite drives this namespace with a fake runner and
+  real scratch files; the only seam no test covers is the default runner's
+  own process spawn, exercised by hand against glslangValidator (the tick
+  report, 2026-10-22). This is provenance machinery, not measurement:
+  nothing here touches a :measured? flag or a workgroup row.
+
+  UNIMPLEMENTED, named so no prose upgrades it: the measurement harnesses
+  consuming compiler-sealed artifacts (they keep their own glslang
+  invocations for now), and the dispatch-side call of verify-loader-cache!
+  before a wire-42 dispatch."
+  {:kotoba/export [compile-argv compile-spirv! default-runner
+                   verify-loader-cache! write-loader-cache!]}
+  (:require [kotoba.io :as kio]
+            [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-spirv :as spirv]
+            #?(:cljs ["node:child_process" :as child]
+               :clj [clojure.java.shell :as shell])))
+
+(def ^:private source-file "kernel.comp")
+(def ^:private spv-file "kernel.spv")
+
+(defn- octets
+  "A host byte array (byte[] on the JVM, Int8Array on Node) as the
+  deterministic inline encoding the seal carries: integers 0..255."
+  [host-bytes]
+  (mapv #(bit-and (int %) 0xff) (vec host-bytes)))
+
+(defn default-runner
+  "The one real invoker: run `argv` (a vector of strings, program first)
+  with `opts` `{:cwd dir}`, answering {:status :out :err} exactly as the
+  process produced them. A tool that cannot be spawned at all is a thrown
+  refusal, never a nil status passed upward as data."
+  [argv {:keys [cwd]}]
+  #?(:cljs (let [r (.spawnSync child (first argv) (clj->js (rest argv))
+                               (clj->js (cond-> {:encoding "utf8"}
+                                          cwd (assoc :cwd (str cwd)))))]
+             (if (.-error r)
+               (throw (ex-info "SPIR-V compile tool did not run"
+                               {:argv (vec argv) :error (str (.-error r))}))
+               {:status (.-status r)
+                :out (or (.-stdout r) "")
+                :err (or (.-stderr r) "")}))
+     :clj (let [{:keys [exit out err]}
+                (apply shell/sh (concat argv (when cwd [:dir (str cwd)])))]
+            {:status exit :out out :err err})))
+
+(defn compile-argv
+  "The exact argv the compile step runs, in the scratch directory (so the
+  recorded argv is the stable, relative form). The shape is the one the exec
+  harnesses measured against glslang 11:16.6.0 on this host: `-V
+  --target-env vulkan1.1 -S comp`, entry `main` by glslang's own default
+  (the wire-42 loader names `main`)."
+  [tool]
+  [tool "-V" "--target-env" "vulkan1.1" "-S" "comp" source-file "-o" spv-file])
+
+(defn compile-spirv!
+  "The build step's host half, exactly once in the repository. Over a sealed
+  source artifact, run `tool` (default \"glslangValidator\") on its emitted
+  `:code`, record the tool identity (name, the `--version` output verbatim,
+  the exact argv), and seal the compiled bytes through
+  kotoba.compiler.accelerator-spirv/seal-spirv-artifact. Answers
+  {:artifact sealed :bytes octets :tool identity}.
+
+  A source artifact that does not pass the full hostile re-lower is refused
+  BEFORE any process runs -- no tool is ever invoked over bytes the seal
+  regime would reject. A `--version` probe that does not succeed is refused
+  by name; a probe that leaves the tool unattributable (no version text at
+  all) is refused by the pure half's own rule -- no tool identity, no seal --
+  and before the compile is ever spawned.
+
+  opts: `:tool` (program name or path) and `:run` (the invoker,
+  default-runner). The scratch directory and its files are removed either
+  way."
+  [source-artifact {:keys [tool run]
+                    :or {tool "glslangValidator" run default-runner}}]
+  ;; The same step-1 rule as the seal, applied before the spawn: a build
+  ;; step over an unverified source never reaches the tool.
+  (accelerator/verify-artifact! source-artifact)
+  (let [{:keys [status out err]} (run [tool "--version"] {})]
+    (when-not (= 0 status)
+      (throw (ex-info "the SPIR-V compile tool's --version did not run cleanly"
+                      {:tool tool :status status})))
+    (let [version (if-not (empty? out) out err)
+          argv (compile-argv tool)
+          ;; Constructed BEFORE the compile spawn: an unattributable tool is
+          ;; refused, not sealed, and never gets to run.
+          identity (spirv/tool-identity tool version argv)
+          dir (kio/temp-dir "amu-spirv-")]
+      (try
+        (kio/write-string (kio/file dir source-file) (:code source-artifact))
+        (let [{:keys [status out err]} (run argv {:cwd dir})]
+          (when-not (= 0 status)
+            (throw (ex-info "SPIR-V compile tool failed"
+                            {:argv argv :status status :err err})))
+          (let [bytes (octets (kio/read-all-bytes (kio/file dir spv-file)))]
+            {:artifact (spirv/seal-spirv-artifact source-artifact bytes identity)
+             :bytes bytes
+             :tool identity}))
+        (finally
+          (kio/delete-if-exists (kio/file dir source-file))
+          (kio/delete-if-exists (kio/file dir spv-file))
+          (kio/delete-if-exists dir))))))
+
+(defn verify-loader-cache!
+  "The pre-dispatch check (ADR-0359 decision 2): the file the loader opens
+  is a cache of the sealed bytes, and before dispatch its own SHA-256 must
+  equal the sealed `:spirv-sha256`. Answers the artifact; a cache that does
+  not match is a refusal, never a dispatch."
+  [spv-artifact output]
+  (let [disk (octets (kio/read-all-bytes output))]
+    (when-not (= (:spirv-sha256 spv-artifact) (spirv/bytes-sha256 disk))
+      (throw (ex-info "loader cache hash mismatch: refusing dispatch"
+                      {:path (str output)
+                       :sealed-sha256 (:spirv-sha256 spv-artifact)
+                       :file-sha256 (spirv/bytes-sha256 disk)}))))
+  spv-artifact)
+
+(defn write-loader-cache!
+  "Write the loader's `.spv` cache FROM the sealed bytes -- not from a
+  tool's leftover output -- then run verify-loader-cache! on what landed on
+  disk, so a torn or tampered write is caught here rather than at dispatch.
+  Answers the output path."
+  [spv-artifact output]
+  (kio/write-bytes output (:spirv-bytes spv-artifact))
+  (verify-loader-cache! spv-artifact output)
+  (str output))

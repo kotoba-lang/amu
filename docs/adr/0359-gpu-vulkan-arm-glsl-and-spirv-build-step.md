@@ -2,14 +2,21 @@
 
 - Status: decisions 1 and 3 are IMPLEMENTED (2026-10-22; code + tests in
   kotoba.compiler.accelerator{,-kir,-targets,-subgroup-reduce} and their
-  tests). Decision 2's PURE HALF is IMPLEMENTED (2026-10-22; code + tests in
-  kotoba.compiler.accelerator-spirv{,-test}: payload construction, sealing,
-  and integrity-plus-provenance verification of the
-  :kotoba.gpu-spirv-artifact/v1 format). Decision 2's HOST HALF -- the
-  `amu gpu-spirv-compile` entry point, the loader-cache file written from the
-  sealed bytes, the harnesses consuming sealed artifacts -- is accepted
-  design only and nothing of it is implemented. UNMEASURED where a
-  measurement is owed.
+  tests). Decision 2 is IMPLEMENTED: its pure half (2026-10-22; code +
+  tests in kotoba.compiler.accelerator-spirv{,-test}: payload construction,
+  sealing, and integrity-plus-provenance verification of the
+  :kotoba.gpu-spirv-artifact/v1 format) and its host half (2026-10-22; code
+  + tests in kotoba.compiler.accelerator-spirv-compile{,-test}: the `amu
+  gpu-spirv-compile <artifact.edn> --output <file.spv>` entry point on both
+  CLI routes, the tool-identity recording, and the loader-cache file written
+  from the sealed bytes with the pre-dispatch hash check). The sealed record
+  is written beside the cache as `<file.spv>.edn` (the surface named where
+  the record lands). STILL UNIMPLEMENTED: the measurement harnesses
+  consuming compiler-sealed artifacts (they keep their own glslang
+  invocations), and the dispatch-side call of verify-loader-cache!. The
+  default runner's process spawn against real glslangValidator is exercised
+  by hand on this host, not by the suite (the suite drives the seam with a
+  fake runner). UNMEASURED where a measurement is owed.
 - Date: 2026-10-22
 - Tracking: closes ADR-0356's execution-path honesty gap "(a)" on paper.
   The Intel row (JUN-59) and the ARM row (JUN-60) both block on (a); parent
