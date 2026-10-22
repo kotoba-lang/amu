@@ -1,5 +1,28 @@
 {
   "status": "PASS_LINUX_X86_STATIC_SELFHOST",
+  "hardening": {
+    "cpuSeconds1": {
+      "exit": 120,
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGXCPU}"
+    },
+    "wallSeconds3": {
+      "exit": 120,
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGALRM}"
+    },
+    "stack1MiB": {
+      "exit": 120,
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGSEGV}"
+    },
+    "seccompRequired": {
+      "exit": 1,
+      "stderr": "kexe-runtime: resource limit setup failed"
+    },
+    "sandboxProbe": {
+      "exit": 0,
+      "stderr": ""
+    },
+    "seccompEnforced": false
+  },
   "host": [
     "Linux",
     "x86_64"
@@ -11,24 +34,24 @@
         "sha256": "b866f8f88e95a8adf3c45be1f1ab1a51f53b42f245cbc7bcaa375b1a7e1c4e13"
       },
       "seed/76-x86_64-static-rt.kotoba": {
-        "bytes": 36811,
-        "sha256": "2c5713809c1b0381519e11bab9165e44b8dcb35bc6a419bc73c78c0b80b2344a"
+        "bytes": 41593,
+        "sha256": "de9e72367d34f41ceb582655d88397fa3d14ba7dee4c1a560a2449b0e043504d"
       }
     },
     "form": "linked into each image (x86_64-linux-static)"
   },
   "compiler": {
-    "bytes": 1409536,
-    "sha256": "22b631729ca33740b6b75f48de6f25ecfd174a0a92dfa9be57182fe631a40028"
+    "bytes": 1425920,
+    "sha256": "48d4d3eadafeac73a58999fdf86b6988de7b3f297c800b88d9883ef61b0a51a2"
   },
   "kx64Runner": {
     "R1": {
-      "bytes": 102912,
-      "sha256": "62e3a193d7adabd6b152de162b50dae4d094fa66eb328067f8e1a40d7f19c585"
+      "bytes": 115200,
+      "sha256": "c5da5a4c98eb65ffcb94cfebb8405eec51c5acf408fe80ff2269265c88f504e3"
     },
     "rebuiltByS3": {
-      "bytes": 102912,
-      "sha256": "62e3a193d7adabd6b152de162b50dae4d094fa66eb328067f8e1a40d7f19c585"
+      "bytes": 115200,
+      "sha256": "c5da5a4c98eb65ffcb94cfebb8405eec51c5acf408fe80ff2269265c88f504e3"
     }
   },
   "image": {
@@ -44,8 +67,8 @@
   },
   "sourceGraph": {
     "unity": {
-      "bytes": 683023,
-      "sha256": "245865d0ca93d5213bcd927e6b52efb2a701484c175ec7fae1fbae5ed0163402"
+      "bytes": 687805,
+      "sha256": "722c9d2d5be47a4629052a804a9ec38e11a28e28e1538df6562fa9ec1b20b462"
     },
     "pins": {
       "seed/X86_64-LINUX-SELFHOST-MANIFEST": {
@@ -109,8 +132,8 @@
         "sha256": "b866f8f88e95a8adf3c45be1f1ab1a51f53b42f245cbc7bcaa375b1a7e1c4e13"
       },
       "seed/76-x86_64-static-rt.kotoba": {
-        "bytes": 36811,
-        "sha256": "2c5713809c1b0381519e11bab9165e44b8dcb35bc6a419bc73c78c0b80b2344a"
+        "bytes": 41593,
+        "sha256": "de9e72367d34f41ceb582655d88397fa3d14ba7dee4c1a560a2449b0e043504d"
       },
       "seed/74-x86_64-aiueos-object.kotoba": {
         "bytes": 8402,
@@ -130,36 +153,36 @@
     {
       "name": "S1",
       "pin": {
-        "bytes": 1409536,
-        "sha256": "22b631729ca33740b6b75f48de6f25ecfd174a0a92dfa9be57182fe631a40028"
+        "bytes": 1425920,
+        "sha256": "48d4d3eadafeac73a58999fdf86b6988de7b3f297c800b88d9883ef61b0a51a2"
       },
       "producedBy": "bootstrap (pinned loader + bridge)"
     },
     {
       "name": "S2",
       "pin": {
-        "bytes": 1409536,
-        "sha256": "22b631729ca33740b6b75f48de6f25ecfd174a0a92dfa9be57182fe631a40028"
+        "bytes": 1425920,
+        "sha256": "48d4d3eadafeac73a58999fdf86b6988de7b3f297c800b88d9883ef61b0a51a2"
       },
       "producedBy": "S1 on Linux, no loader"
     },
     {
       "name": "S3",
       "pin": {
-        "bytes": 1409536,
-        "sha256": "22b631729ca33740b6b75f48de6f25ecfd174a0a92dfa9be57182fe631a40028"
+        "bytes": 1425920,
+        "sha256": "48d4d3eadafeac73a58999fdf86b6988de7b3f297c800b88d9883ef61b0a51a2"
       },
       "producedBy": "S2 on Linux, no loader"
     }
   ],
   "kx64CrossCheck": {
     "loaderRun": {
-      "bytes": 1309068,
-      "sha256": "2faa08994c5d0e5b8796377bcd65cde4e11705f43b6a74c2e9e217cb87df48d8"
+      "bytes": 1313852,
+      "sha256": "88f1ca116cdb4b0165a8a946a643851535e2a2521d4b68e62682a64ed6eeecf5"
     },
     "staticRun": {
-      "bytes": 1309068,
-      "sha256": "2faa08994c5d0e5b8796377bcd65cde4e11705f43b6a74c2e9e217cb87df48d8"
+      "bytes": 1313852,
+      "sha256": "88f1ca116cdb4b0165a8a946a643851535e2a2521d4b68e62682a64ed6eeecf5"
     }
   },
   "cases": [
@@ -298,6 +321,7 @@
     "kernel": "aarch64 Linux (podman machine, applehv)",
     "x86_64": "qemu-user binfmt (/usr/bin/qemu-x86_64-static)",
     "container": "docker.io/library/python:3.12-alpine --platform linux/amd64",
-    "nativeX86_64Kernel": false
+    "nativeX86_64Kernel": false,
+    "qemuUserLimits": "seccomp returns ENOSYS; RLIMIT_AS/RLIMIT_STACK are not applied to the guest"
   }
 }

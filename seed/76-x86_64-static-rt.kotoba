@@ -23,7 +23,7 @@
 ;; 56 items 64 item-used 72 argc 80 argv 88 envp 96 out-buffer 104 out-used
 ;; 112 append-fd 120 append-path 128 append-len 136 root 144 root-len 152 root-fd
 ;; 160 report 168 fuel0 176 metered 184 cwd 192 cwd-len 200 scratch 208 path
-;; 216 budget 224 value-trap 232 io-buffer
+;; 216 budget 224 value-trap 232 io-buffer 240 command 248 alt-stack
 (defn- kxrt-g [] :i64 (+ (kxrt-ctx) 1024))
 (defn- kxrt-gl [k :i64] :i64 (kxrt-load64 (+ (kxrt-g) k)))
 (defn- kxrt-gs [k :i64 v :i64] :i64 (kxrt-store64 (+ (kxrt-g) k) v))
@@ -109,6 +109,8 @@
     7 (kxrt-w b i 0x535542 3)
     8 (kxrt-w b i 0x455046 3)
     11 (kxrt-w b i 0x56474553 4)
+    14 (kxrt-w b i 0x4d524c41 4)
+    24 (kxrt-w b i 0x55504358 4)
     (kxrt-w b i 0x535953 3)))
 (defn- kxrt-budget-text [b :i64 code :i64] :i64
   (let [i (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x4152545f4558454b 8) 0x646e696b3a7b2050 8) 0x7465676475623a20 8) 0x6e6f736165723a20 8) 0x7465676475623a20 8) 0x2f 1)]
@@ -479,6 +481,62 @@
 (defn- kxrt-slot-368 [c :i64 h :i64 s :i64 e :i64] :i64 (kxrt-bytes-slice h s e))
 (defn- kxrt-slot-376 [c :i64 a :i64 b :i64] :i64 (kxrt-bytes-concat a b))
 
+;; ---- hardening: the loader's install_limits and install_syscall_sandbox ----
+(defn- kxrt-die [] :i64
+  (let [b (kxrt-gl 200) z (kxrt-err-text b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x6e75722d6578656b 8) 0x6572203a656d6974 8) 0x6c20656372756f73 8) 0x7465732074696d69 8) 0x656c696166207075 8) 0xa64 2))] (kxrt-exit 1)))
+(defn- kxrt-rlimit [res :i64 n :i64] :i64
+  (let [p (+ (kxrt-gl 200) 12288) a (kxrt-store64 p n) b (kxrt-store64 (+ p 8) n)]
+    (if (< (kxrt-syscall 160 res p 0 0 0 0) 0) (kxrt-die) 0)))
+(defn- kxrt-env-seconds [s :i64] :i64
+  (if (= s 0) 0 (let [v (kxrt-parse s (kxrt-cstrlen s))] (if (or (<= v 0) (> v 86400)) (kxrt-exit 2) v))))
+;; Pre-touch the stack (RLIMIT_AS forbids later growth), then: core 0, cpu
+;; (KEXE_CPU_SECONDS, soft s / hard s+1), address space 64 MiB, stack 1 MiB,
+;; and alarm(wall-1) for KEXE_WALL_SECONDS. No budget given = no cpu/wall limit.
+(defn- kxrt-limits [sp :i64] :i64
+  (let [t (loop [k 1] (if (> k 240) 0 (let [z (kxrt-load8 (- sp (* k 4096)))] (recur (inc k)))))
+        cpu (kxrt-env-seconds (kxrt-env 0x5550435f4558454b 0x53444e4f4345535f 0x3d 17))
+        wall (kxrt-env-seconds (kxrt-env 0x4c41575f4558454b 0x444e4f4345535f4c 0x3d53 18))
+        a (kxrt-rlimit 4 0)
+        b (if (> cpu 0) (let [p (+ (kxrt-gl 200) 12288) x (kxrt-store64 p cpu) y (kxrt-store64 (+ p 8) (inc cpu))]
+                          (if (< (kxrt-syscall 160 0 p 0 0 0 0) 0) (kxrt-die) 0)) 0)
+        c (kxrt-rlimit 9 67108864)
+        d (kxrt-rlimit 3 1048576)]
+    (if (> wall 0) (kxrt-syscall 37 (if (> wall 1) (dec wall) 1) 0 0 0 0 0) 0)))
+;; classic BPF: code | jt<<16 | jf<<24 | k<<32
+(defn- kxrt-bpf [p :i64 i :i64 code :i64 jt :i64 jf :i64 k :i64] :i64
+  (let [z (kxrt-store64 (+ p (* 8 i)) (bit-or code (bit-or (i64-shift-left jt 16) (bit-or (i64-shift-left jf 24) (i64-shift-left k 32)))))] (inc i)))
+(defn- kxrt-allow-nr [p :i64 i :i64 nr :i64] :i64 (kxrt-bpf p (kxrt-bpf p i 21 0 1 nr) 6 0 0 2147418112))
+(defn- kxrt-allow-base [p :i64 i :i64] :i64
+  (-> i (kxrt-allow-nr-at p 1) (kxrt-allow-nr-at p 60) (kxrt-allow-nr-at p 231) (kxrt-allow-nr-at p 15)
+      (kxrt-allow-nr-at p 14) (kxrt-allow-nr-at p 39) (kxrt-allow-nr-at p 186) (kxrt-allow-nr-at p 234)
+      (kxrt-allow-nr-at p 11) (kxrt-allow-nr-at p 12) (kxrt-allow-nr-at p 228)))
+(defn- kxrt-allow-nr-at [i :i64 p :i64 nr :i64] :i64 (kxrt-allow-nr p i nr))
+(defn- kxrt-allow-fs [p :i64 i :i64] :i64
+  (-> i (kxrt-allow-nr-at p 0) (kxrt-allow-nr-at p 2) (kxrt-allow-nr-at p 257) (kxrt-allow-nr-at p 437)
+      (kxrt-allow-nr-at p 3) (kxrt-allow-nr-at p 8) (kxrt-allow-nr-at p 17) (kxrt-allow-nr-at p 5)
+      (kxrt-allow-nr-at p 262) (kxrt-allow-nr-at p 21) (kxrt-allow-nr-at p 439)))
+(defn- kxrt-allow-scope [p :i64 i :i64] :i64
+  (-> i (kxrt-allow-nr-at p 258) (kxrt-allow-nr-at p 263) (kxrt-allow-nr-at p 264) (kxrt-allow-nr-at p 91)
+      (kxrt-allow-nr-at p 74) (kxrt-allow-nr-at p 318)))
+;; Wrong arch: kill. Base set always; the fs set and the :fs/app-data extras
+;; only with an open scope 35 that is granted. Everything else: SIGSYS (trap).
+;; A kernel without seccomp fails closed unless KEXE_SECCOMP=if-available.
+(defn- kxrt-sandbox [] :i64
+  (let [p (+ (kxrt-gl 200) 12352) prog (+ (kxrt-gl 200) 12304)
+        i0 (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p 0 32 0 0 4) 21 1 0 3221225534) 6 0 0 2147483648) 32 0 0 0)
+        fs (and (> (kxrt-gl 144) 0) (kxrt-admitted? 35))
+        i1 (kxrt-allow-base p i0)
+        i2 (if fs (kxrt-allow-scope p (kxrt-allow-fs p i1)) i1)
+        n (kxrt-bpf p i2 6 0 0 196608)
+        a (kxrt-store64 prog n) b (kxrt-store64 (+ prog 8) p)]
+    (if (< (kxrt-syscall 157 38 1 0 0 0 0) 0) (kxrt-die)
+      (let [r (kxrt-syscall 317 1 0 prog 0 0 0)]
+        (cond (>= r 0) n
+              ;; ENOSYS (e.g. qemu-user): proceed only when the invoker asked for it
+              (and (= r -38) (kxrt-if-available? (kxrt-env 0x4345535f4558454b 0x3d504d4f43 0 13))) 0
+              :else (kxrt-die))))))
+(defn- kxrt-if-available? [s :i64] :bool (and (not= s 0) (kxrt-cstr= s 0x6c696176612d6669 0x656c6261 12)))
+
 ;; ---- start ----
 ;; value of the environment entry NAME= (packed w0 w1 w2, length n incl. '='), or 0
 (defn- kxrt-env [w0 :i64 w1 :i64 w2 :i64 n :i64] :i64
@@ -585,9 +643,18 @@
         sc (kxrt-scope (kxrt-env 0x5041435f4558454b 0x4352554f5345525f 0x3d35335f5345 22))
         ;; struct sigaction: handler, SA_RESTORER|SA_RESETHAND, restorer, mask
         act (+ (kxrt-gl 200) 8192)
-        s0 (kxrt-store64 act (kxrt-load64 (+ ctx 400))) s1 (kxrt-store64 (+ act 8) 2214592512)
+        alt (kxrt-gs 248 (kxrt-map 65536)) ss (+ act 64)
+        a0 (kxrt-store64 ss (kxrt-gl 248)) a1 (kxrt-store64 (+ ss 8) 0) a2 (kxrt-store64 (+ ss 16) 65536)
+        a3 (if (< (kxrt-syscall 131 ss 0 0 0 0 0) 0) (kxrt-die) 0)
+        ;; SA_RESTORER | SA_RESETHAND | SA_ONSTACK
+        s0 (kxrt-store64 act (kxrt-load64 (+ ctx 400))) s1 (kxrt-store64 (+ act 8) 2348810240)
         s2 (kxrt-store64 (+ act 16) (kxrt-load64 (+ ctx 400))) s3 (kxrt-store64 (+ act 24) 0)
         g1 (kxrt-signal 4 act) g2 (kxrt-signal 5 act) g3 (kxrt-signal 7 act) g4 (kxrt-signal 8 act) g5 (kxrt-signal 11 act)
+        g6 (kxrt-signal 14 act) g7 (kxrt-signal 24 act) g8 (kxrt-signal 31 act)
+        lim (kxrt-limits sp)
+        sb (kxrt-sandbox)
+        ;; diagnostic: a syscall outside the filter must trap (SIGSYS, exit 120)
+        pr (if (= (kxrt-env 0x4e41535f4558454b 0x4f52505f584f4244 0x3d4542 19) 0) 0 (kxrt-syscall 41 2 1 0 0 0 0))
         r (if (= mode 1) (kxrt-call-at (+ pl off) ctx) (kxrt-call-main ctx))
         e1 (if (= (kxrt-sink-close) 1) 0 (kxrt-fail))
         e2 (if (= (kxrt-flush) 1) 0 (kxrt-fail))]

@@ -28,8 +28,13 @@ def dump(p, obj):
     p.write_text(json.dumps(obj, indent=2) + "\n")
 
 
+RUNNER_SECCOMP = None
+
+
 def environment(out, command=True):
     env = {k: v for k, v in os.environ.items() if not k.startswith("KEXE_")}
+    if RUNNER_SECCOMP:
+        env["KEXE_SECCOMP"] = RUNNER_SECCOMP
     if platform.system() == "Linux":
         # The unchanged trusted loader permits brk, not guest mmap. Its file
         # provider's large malloc/realloc must use the ordinary heap after
@@ -257,7 +262,7 @@ def execute(out, rosetta, runner=None):
                   linuxAllocator=None if rosetta else environment(out)["GLIBC_TUNABLES"],
                   linuxStackReserveBytes=0 if rosetta else 524288,
                   cases=results, refusals=refused, trustedCLoader=runner is None, JVMNodeOrGraalFallback=False, performanceMeasured=False,
-                  runner=pin(loader) if runner else None)
+                  runner=pin(loader) if runner else None, runnerSeccomp=RUNNER_SECCOMP or ("required" if runner else None))
     dump(out / ("rosetta-selfhost.json" if rosetta else "cfree-runner-selfhost.json" if runner else "linux-selfhost.json"), report)
     print(report["status"], len(results), "cases; G1=G2=G3", flush=True)
 
@@ -289,8 +294,13 @@ if __name__ == "__main__":
     group.add_argument("--execute-linux", action="store_true")
     group.add_argument("--execute-rosetta", action="store_true")
     group.add_argument("--diagnose-linux", action="store_true")
+    parser.add_argument("--runner-seccomp-if-available", action="store_true",
+                        help="with --runner: KEXE_SECCOMP=if-available (kernels without seccomp); recorded")
     parser.add_argument("--runner", type=Path, help="with --execute-linux: run through this C-free KX64V1 runner instead of building the C loader")
     args = parser.parse_args()
+    if args.runner_seccomp_if_available:
+        assert args.runner, "--runner-seccomp-if-available needs --runner"
+        RUNNER_SECCOMP = "if-available"
     if args.prepare:
         prepare(args.output.resolve())
     elif args.diagnose_linux:

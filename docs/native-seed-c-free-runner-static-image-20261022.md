@@ -85,7 +85,7 @@ Status lines are appended below as milestones land.
   the intrinsics; `seed/76-x86_64-static-rt.kotoba` holds the runtime (23 context slots, wires 35/37/38/39, traps,
   structured report). `scripts/seed/check-x86_64-static.py` records:
   * prepare (macOS arm64, the one bootstrap step through the pinned loader):
-    S1 sha256 `22b63172…0028` (1,409,536 bytes; re-measured after the runner mode landed — the first landing measured `a897af61…95da`);
+    S1 sha256 `48d4d3ea…51a2` (1,425,920 bytes; re-measured after the hardening landed — earlier landings measured `a897af61…95da` and `22b63172…0028`);
   * execute-linux, no loader: **S1 = S2 = S3** byte for byte; S3's
     `--format kx64-v1` output for the same source graph equals the
     loader-run compiler's (`2faa0899…48d8`); the 24 runtime cases, rebuilt by
@@ -120,7 +120,22 @@ runs the existing G1/G2/G3, 24-case and refusal suite with the runner in
 place of the C loader.
 
 Measured on Linux (same qemu-user caveat): R1 = R rebuilt by S3
-(`62e3a193…c585`, 102,912 bytes); through R, the pinned-chain G1 payload
-(`08318b77…a6e6`) rebuilds itself **G1=G2=G3**, the 24 runtime cases match the
+(re-measured with the hardening: `c5da5a4c…04e3`); through R, the pinned-chain G1 payload
+(re-measured: `ef533d07…c816`) rebuilds itself **G1=G2=G3**, the 24 runtime cases match the
 AArch64 loader reference (result, trap/exit 120, remaining fuel), and the six
 refusals hold; the receipt records `trustedCLoader: false`. Receipts: `docs/evidence/native-x86_64-kx64-runner-20261022/`.
+
+### Status 2026-10-22 (later): M4 hardening
+
+The runtime now installs the loader's limits and syscall filter before the
+guest runs (seed/X86_64-LINUX-ABI lists the exact set). Observed on the
+qualification host (receipt field `hardening`): `KEXE_CPU_SECONDS=1` →
+SIGXCPU, exit 120; `KEXE_WALL_SECONDS=3` → SIGALRM, exit 120; unbounded
+recursion → SIGSEGV handled on the alternate stack, exit 120.
+
+**Not verifiable on this host.** qemu-user returns ENOSYS for `seccomp` and
+does not apply RLIMIT_AS/RLIMIT_STACK to the guest. The default (seccomp
+required) therefore fails closed there (exit 1, recorded), and the suites ran
+with `KEXE_SECCOMP=if-available`, recorded as `seccompEnforced: false` /
+`runnerSeccomp: if-available`. The filter, the 64 MiB address-space limit and
+the 1 MiB stack limit need a native Linux kernel run.
