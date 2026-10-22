@@ -6,8 +6,8 @@
   "result": "PASS_LOADERLESS_SELFHOST_BOOTSTRAP",
   "selfhost": {
     "S2EqualsS3": "be60c6cd2d05b2b3",
-    "rootReproduces": false,
-    "note": "S1 differs from the pinned root image because the frontend changed; the script reports 'root differs (re-pin to S3)'. The root image seed/bootstrap/aarch64-linux-static-root.elf was NOT re-pinned."
+    "rootReproduces": true,
+    "note": "Superseded by rootRepin: the root was re-pinned to S3 and the chain verified from it."
   },
   "adopted": {
     "receipt": "seed/adoption-20261022.json",
@@ -30,5 +30,12 @@
     "policy/safety qualifications bound to the old image",
     "FS2 successor build (needs an FS2-capable root)",
     "native KG 4096/4097 and quote-form observations"
-  ]
+  ],
+  "rootRepin": {
+    "previousRoot": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6",
+    "newRoot": "be60c6cd2d05b2b37b70b1eec7271121fc10718e40162b6b6948b3fe8dcd263a",
+    "bytes": 1331712,
+    "chain": "root = S1 = S2 = S3 (be60c6cd2d05b2b3), S3 byte-identical to the previous run's S3; adopted G1=G2=G3 fe01d4d2e895c503, 24 cases, hardening: PASS_LOADERLESS_SELFHOST_BOOTSTRAP 'root reproduces'",
+    "receipt": "seed/bootstrap/aarch64-linux-static-root.json (previous root kept in history)"
+  }
 }
