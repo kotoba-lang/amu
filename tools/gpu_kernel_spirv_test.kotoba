@@ -1,18 +1,20 @@
 (ns gpu-kernel-spirv-test (:export [main]))
 
 ;; Tests for tools/spirv_encode.kotoba, tools/spirv_check.kotoba and
-;; tools/gpu_kernel_kir1.kotoba (ADR 0372 step 1). No GPU and no C++ tool:
+;; tools/gpu_kernel_kir1.kotoba (ADR 0372 steps 1 and 2). No GPU and no C++ tool:
 ;; scripts/seed/check-gpu-kernel-spirv.py builds the unit (this ns line, then
 ;; the three modules without their ns lines, then the rest of this file),
 ;; compiles it with an Amu-produced static compiler, runs it with a writable
 ;; :fs/app-data scope, and afterwards runs spirv-val and spirv-dis on the
-;; written modules as oracles.
+;; written modules as oracles. Before the run the script puts glslang's
+;; modules of tools/gpu_kernel_refs/*.comp into the scope (ref-*.spv); the
+;; checker must accept them too.
 ;;
 ;; main answers the number of failed cases and prints a FAIL line for each.
 ;; CASES equals the expect calls below (the script counts them). CONTROL 1
 ;; makes exactly one expectation wrong; the script requires one failure then.
 
-(def CASES 33)
+(def CASES 50)
 (def CONTROL 0)
 
 (defn- say [s :string] :i64
@@ -96,8 +98,48 @@
        (expect "entry point names a type" (spc-check (with-word M 12 2)) 17)
        (expect "GLCompute without Shader" (spc-check (with-word M 6 2)) 18))))
 
+
+;; ---------------------------------------------------------------------
+;; Reductions (step 2).
+
+(defn- reductions [] :i64
+  (loop [r 1 bad 0]
+    (if (> r 3) bad
+      (let [a (kir1-reduce r 64) b (kir1-reduce r 256)
+            words (if (= r 1) 435 437)
+            pa (string-concat "kir1-reduce-" (string-concat (kir1-reducer-name r) "-wg64.spv"))
+            pb (string-concat "kir1-reduce-" (string-concat (kir1-reducer-name r) "-wg256.spv"))]
+        (recur (inc r)
+               (+ bad (+ (expect pa (spc-check a) 0) (+ (expect pb (spc-check b) 0)
+                      (+ (expect (string-concat "words " pb) (spv-count b) words)
+                         (+ (expect (string-concat "write " pa) (spv-write a pa) (* 4 words))
+                            (expect (string-concat "write " pb) (spv-write b pb) (* 4 words))))))))))))
+
+(defn- reduction-shape [] :i64
+  (let [M (kir1-reduce 2 256)]
+    (+ (expect "reduce bound" (spv-word M 3) 72)
+       (expect "max identity is -FLT_MAX bits (word 221)" (spv-word M 221) 4286578687)
+       (expect "reducer 4" (kir1-reduce-error 4 256) 1)
+       (expect "reduce workgroup 3" (kir1-reduce-error 1 3) 2)
+       (expect "reduce invalid gives an empty module" (spv-count (kir1-reduce 0 64)) 0)
+       (expect "same reduce twice" (if (same-words? M (kir1-reduce 2 256)) 1 0) 1))))
+
+;; what is written reads back word for word; glslang's modules pass the checker
+(defn- read-back [] :i64
+  (let [M (kir1-ewise 2 256)
+        w (spv-write M "round-trip.spv")
+        R (spv-read "round-trip.spv")
+        g1 (spv-read "ref-ewise-add.spv")
+        g2 (spv-read "ref-reduce-sum.spv")]
+    (+ (expect "round trip bytes" w 1004)
+       (expect "round trip words" (if (same-words? M R) 1 0) 1)
+       (expect "glslang ewise-add is read" (if (> (spv-count g1) 5) 1 0) 1)
+       (expect "glslang ewise-add passes the checker" (spc-check g1) 0)
+       (expect "glslang reduce-sum is read" (if (> (spv-count g2) 5) 1 0) 1)
+       (expect "glslang reduce-sum passes the checker" (spc-check g2) 0))))
+
 (defn main [] :i64
-  (let [failed (+ (module-shape) (written) (invalid-parameters) (refusals))
+  (let [failed (+ (module-shape) (written) (invalid-parameters) (refusals) (reductions) (reduction-shape) (read-back))
         x (say (string-concat "CASES " (string-from-i64 CASES)))
         y (say (string-concat "FAILED " (string-from-i64 failed)))]
     failed))
