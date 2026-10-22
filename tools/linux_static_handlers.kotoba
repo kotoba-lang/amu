@@ -125,7 +125,7 @@
 (defn- form-implemented [form]
   (cond
     (< form 0) 0
-    (> form 16) 0
+    (> form 18) 0
     :else 1))
 
 ;; op 17: how many occurrences of its token a form admits. The loader's
@@ -591,29 +591,30 @@
 ;; scope denial and before any target open/stat/mutation. The catalog requires
 ;; absence without a trap or existence leak. 1 = the boolean answer "0";
 ;; 0 = an empty data answer. -1 = unknown form, never a successful fallback.
-;; All sixteen forms are retained. Real request/resource/provider refusals
+;; All sixteen original forms are retained, with Q/R/S only under kind 11.
+;; Real request/resource/provider refusals
 ;; remain terminal; these results do not authorize any filesystem operation.
 (defn- scope-absent-answer [form]
   (cond
     (< form 0) -1
-    (> form 16) -1
+    (> form 18) -1
     (or (= form 3) (= form 7) (= form 8) (= form 9)
-        (= form 10) (= form 11) (= form 12) (= form 16)) 1
+        (= form 10) (= form 11) (= form 12) (= form 16) (= form 18)) 1
     :else 0))
 
 ;; op 49: the typed fs/app-data contract constrains the form before path
 ;; access. Raw calls require FS2 in the mechanism, never legacy token parsing.
 ;; 1 = old string/string surface; 8 = raw write or append;
-;; 11 = segmented write/append or exclusive mode-before-data stage-member;
+;; 11 = segmented write/append, stage-member, managed begin or discard;
 ;; 9 = string/bytes and 10 = string/list<bytes> read or range. No other original form
 ;; gains a raw-byte meaning; one provider operation retains one descriptor.
 (defn- typed-fs-form-admitted [kind form]
   (cond
     (< form 0) 0
-    (> form 16) 0
+    (> form 18) 0
     (= kind 1) (if (< form 16) 1 0)
     (= kind 8) (if (or (= form 1) (= form 2)) 1 0)
-    (= kind 11) (if (or (= form 1) (= form 2) (= form 16)) 1 0)
+    (= kind 11) (if (or (= form 1) (= form 2) (= form 16) (= form 17) (= form 18)) 1 0)
     (or (= kind 9) (= kind 10)) (if (or (= form 0) (= form 4)) 1 0)
     :else 0))
 

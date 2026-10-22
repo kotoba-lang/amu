@@ -1,7 +1,8 @@
 ;; Canonical filesystem capability boundary, only with acknowledged FS2 frames.
 (ns kotoba.compiler.filesystem
   {:kotoba/export [app-data browse read-bytes read-range read-chunks read-range-chunks
-                   write-bytes! append-bytes! write-chunks! append-chunks! stage-member!]}
+                   write-bytes! append-bytes! write-chunks! append-chunks! stage-member!
+                   begin-output-set! discard-output-set!]}
   (:require [kotoba.compiler.filesystem-wire :as wire]
             [kotoba.compiler.io-buffer :as buffer])
   (:capabilities #{:fs/app-data :fs/browse}))
@@ -94,22 +95,47 @@
 (defn append-chunks! [path :string payload [:ref :io.buffer/value]] [:result [:ref :io.buffer/value] :document]
   (write-data-chunks 2 path payload))
 
+(defn- managed-data [request [:result [:list :bytes] :document]] [:result [:ref :io.buffer/value] :document]
+  (if (not (result-ok?-of [:result [:list :bytes] :document] request))
+    (result-err-of [:result [:ref :io.buffer/value] :document]
+      (result-error-of [:result [:list :bytes] :document] request (document-null)))
+    (wire/answer-chunks (typed-cap-call :fs/app-data [:list :bytes] [:list :bytes]
+                         (result-value-of [:result [:list :bytes] :document] request (typed-list-new [:list :bytes]))))))
+(defn- boolean-mutation [answer [:result [:ref :io.buffer/value] :document] path :string message :string] [:result :bool :document]
+  (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] answer))
+    (result-err-of [:result :bool :document]
+      (result-error-of [:result [:ref :io.buffer/value] :document] answer (document-null)))
+    (let [value (result-value-of [:result [:ref :io.buffer/value] :document] answer (buffer/empty-buffer))
+          first (buffer/chunk-at value 0)]
+      (if (not (and (= (buffer/byte-count value) 1) (= (buffer/chunk-count value) 1)
+                    (option-some?-of [:option :bytes] first)))
+        (result-err-of [:result :bool :document] (fs-error message path))
+        (let [bytes (option-value-of [:option :bytes] first (bytes-empty))]
+          (if (= (bytes-count bytes) 1)
+            (if (= (bytes-at bytes 0) 49) (result-ok-of [:result :bool :document] true)
+              (result-err-of [:result :bool :document] (fs-error message path)))
+            (result-err-of [:result :bool :document] (fs-error "malformed managed filesystem answer" path))))))))
 (defn stage-member! [path :string mode :i64 payload [:ref :io.buffer/value]] [:result :bool :document]
-  (let [request (wire/request-staged path mode payload)]
-    (if (not (result-ok?-of [:result [:list :bytes] :document] request))
-      (result-err-of [:result :bool :document] (result-error-of [:result [:list :bytes] :document] request (document-null)))
-      (let [answer (wire/answer-chunks (typed-cap-call :fs/app-data [:list :bytes] [:list :bytes]
-                                       (result-value-of [:result [:list :bytes] :document] request (typed-list-new [:list :bytes]))))]
-        (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] answer))
-          (result-err-of [:result :bool :document]
-            (result-error-of [:result [:ref :io.buffer/value] :document] answer (document-null)))
-          (let [value (result-value-of [:result [:ref :io.buffer/value] :document] answer (buffer/empty-buffer))
-                first (buffer/chunk-at value 0)]
-            (if (not (and (= (buffer/byte-count value) 1) (= (buffer/chunk-count value) 1)
-                          (option-some?-of [:option :bytes] first)))
-              (result-err-of [:result :bool :document] (fs-error "output member staging did not succeed" path))
-              (let [bytes (option-value-of [:option :bytes] first (bytes-empty))]
-                (if (= (bytes-count bytes) 1)
-                  (if (= (bytes-at bytes 0) 49) (result-ok-of [:result :bool :document] true)
-                    (result-err-of [:result :bool :document] (fs-error "output member staging did not succeed" path)))
-                  (result-err-of [:result :bool :document] (fs-error "malformed output member staging answer" path)))))))))))
+  (boolean-mutation (managed-data (wire/request-staged path mode payload)) path "output member staging did not succeed"))
+(defn begin-output-set! [parent :string] [:result :string :document]
+  (let [answer (managed-data (wire/request-managed 17 parent))]
+    (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] answer))
+      (result-err-of [:result :string :document]
+        (result-error-of [:result [:ref :io.buffer/value] :document] answer (document-null)))
+      (let [value (result-value-of [:result [:ref :io.buffer/value] :document] answer (buffer/empty-buffer))
+            size (buffer/byte-count value)]
+        ;; A managed path is <=4095 bytes, not an oversized file-value flatten.
+        (if (or (< size 1) (> size 4095))
+          (result-err-of [:result :string :document] (fs-error "output staging directory could not be created" parent))
+          (loop [index 0 bytes (bytes-empty)]
+            (if (= index (buffer/chunk-count value))
+              (let [text (string-from-utf8 bytes)]
+                (if (or (not= (string-find-byte text 47 0) 0) (>= (string-find-byte text 0 0) 0))
+                  (result-err-of [:result :string :document] (fs-error "malformed output staging directory" parent))
+                  (result-ok-of [:result :string :document] text)))
+              (let [chunk (buffer/chunk-at value index)]
+                (if (not (option-some?-of [:option :bytes] chunk))
+                  (result-err-of [:result :string :document] (fs-error "malformed output staging directory" parent))
+                  (recur (+ index 1) (bytes-concat bytes (option-value-of [:option :bytes] chunk (bytes-empty)))))))))))))
+(defn discard-output-set! [directory :string] [:result :bool :document]
+  (boolean-mutation (managed-data (wire/request-managed 18 directory)) directory "output staging cleanup did not complete"))

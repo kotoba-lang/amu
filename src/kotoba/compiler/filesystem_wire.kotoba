@@ -1,6 +1,6 @@
 ;; Complete native filesystem framing. Provider acknowledgement is mandatory.
 (ns kotoba.compiler.filesystem-wire
-  {:kotoba/export [request request-bytes request-chunks request-staged answer answer-bytes answer-chunks entries]}
+  {:kotoba/export [request request-bytes request-chunks request-staged request-managed answer answer-bytes answer-chunks entries]}
   (:require [kotoba.compiler.io-buffer :as buffer]))
 
 (defn- failure [message :string] :document
@@ -8,15 +8,16 @@
                 (document-keyword :message) (document-string message)))
 (defn- form-letter [form :i64] :string
   (case form 0 "A" 1 "B" 2 "C" 3 "D" 4 "E" 5 "F" 6 "G" 7 "H"
-    8 "I" 9 "J" 10 "K" 11 "L" 12 "M" 13 "N" 14 "O" 15 "P" 16 "Q" ""))
+    8 "I" 9 "J" 10 "K" 11 "L" 12 "M" 13 "N" 14 "O" 15 "P" 16 "Q" 17 "R" 18 "S" ""))
 (defn- tail-form? [form :i64] :bool
   (or (= form 1) (= form 2) (= form 4) (= form 7) (= form 11) (= form 13) (= form 16)))
 
 (defn request [form :i64 path :string tail :string] [:result :string :document]
-  "All sixteen app-data forms; browse uses form 0 and an empty tail.
+  "The sixteen original forms and proposed Q/R/S managed-output forms.
+  Browse uses form 0 and an empty tail.
   Only NUL is excluded from a nonempty path, as in the native path domain."
   (cond
-    (or (< form 0) (> form 16))
+    (or (< form 0) (> form 18))
     (result-err-of [:result :string :document] (failure "unknown filesystem form"))
     (or (= (string-byte-length path) 0) (>= (string-find-byte path 0 0) 0))
     (result-err-of [:result :string :document] (failure "filesystem path is empty or holds NUL"))
@@ -73,6 +74,11 @@
   (if (or (< mode 0) (> mode 511))
     (result-err-of [:result [:list :bytes] :document] (failure "staged filesystem mode exceeds permission bits"))
     (framed-chunks (request 16 path (string-concat (octal mode) "\u0000")) payload)))
+
+(defn request-managed [form :i64 path :string] [:result [:list :bytes] :document]
+  (if (not (or (= form 17) (= form 18)))
+    (result-err-of [:result [:list :bytes] :document] (failure "managed filesystem request requires begin or discard"))
+    (framed-chunks (request form path "") (buffer/empty-buffer))))
 
 (defn- acknowledged-bytes? [response :bytes] :bool
   (if (< (bytes-count response) 5) false

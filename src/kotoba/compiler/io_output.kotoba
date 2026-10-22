@@ -132,15 +132,8 @@
             (if (not (result-ok?-of [:result :bool :document] flushed))
               (result-err-of [:result [:list :string] :document] (result-error-of [:result :bool :document] flushed (document-null)))
               (recur (+ index 1) (typed-list-conj [:list :string] out p)))))))))
-(defn- cleanup [dir :string count :i64] [:result :bool :document]
-  (loop [index 0]
-    (let [answer (fs/app-data (if (= index count) 10 9) (if (= index count) dir (temporary dir index)) "")]
-      (if (not (result-ok?-of [:result :string :document] answer))
-        (result-err-of [:result :bool :document] (result-error-of [:result :string :document] answer (document-null)))
-        (let [value (result-value-of [:result :string :document] answer "")]
-          (if (not (or (= value "0") (= value "1")))
-            (result-err-of [:result :bool :document] (failure "malformed cleanup answer" dir))
-            (if (= index count) (result-ok-of [:result :bool :document] true) (recur (+ index 1)))))))))
+(defn- cleanup [dir :string] [:result :bool :document]
+  (fs/discard-output-set! dir))
 (defn- finalize-result [primary [:result [:list :string] :document] cleaned [:result :bool :document]] [:result [:list :string] :document]
   (if (result-ok?-of [:result :bool :document] cleaned) primary
     (result-err-of [:result [:list :string] :document]
@@ -160,7 +153,7 @@
                      (typed-list-new [:list [:ref :io.output/resolved]]))
             first (typed-list-nth [:list [:ref :io.output/resolved]] values 0)
             dir (record-get [:ref :io.output/resolved] first :dir)
-            made (fs/app-data 13 dir ".kotoba-output-")]
+            made (fs/begin-output-set! dir)]
         (if (not (result-ok?-of [:result :string :document] made))
           (result-err-of [:result [:list :string] :document] (result-error-of [:result :string :document] made (document-null)))
           (let [temp (result-value-of [:result :string :document] made "")]
@@ -173,7 +166,7 @@
                                                  (typed-list-new [:list [:ref :io.output/staged]])))
                               (result-err-of [:result [:list :string] :document]
                                 (result-error-of [:result [:list [:ref :io.output/staged]] :document] staged (document-null))))]
-                (finalize-result primary (cleanup temp (vector-count values)))))))))))
+                (finalize-result primary (cleanup temp))))))))))
 (defn- write-one [path :string entry [:ref :io.output/entry]] [:result :string :document]
   (let [written (write-set! (typed-list-conj [:list [:ref :io.output/entry]] (typed-list-new [:list [:ref :io.output/entry]]) entry))]
     (if (not (result-ok?-of [:result [:list :string] :document] written))
