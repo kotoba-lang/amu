@@ -1,0 +1,31 @@
+;; deps: 01-mem 02-io
+;; Native FS2 integration fixture. Requires a dedicated writable scope and one
+;; absolute output path argument. Historical provider acknowledgement is refused.
+(defn- t-fs2-result [status :i64] :i64
+  (let [wrote (io-out (if (= status 0) "FS2_NATIVE_PASS\n" "FS2_NATIVE_FAIL\n"))] status))
+
+(defn- seed-main [] :i64
+  (let [mode (io-arg 0)]
+    (cond
+      (string=? mode "refuse-string-ack")
+      (let [bad (io-answer "legacy response")] (t-fs2-result 99))
+      (string=? mode "refuse-bytes-ack")
+      (let [bad (io-banswer (bytes-from-vector-i64 [0 70 83 49 0]))] (t-fs2-result 99))
+      :else
+      (let [path mode
+            payload [0 255 87 82 73 84 69 95 83 69 80 65 80 80 69 78 68 95 83 69 80 0]
+            sent (io-write-bytes payload path 0 22)
+            exists (io-exists path)
+            loaded (io-read-bytes path)
+            text-path (string-concat path ".text")
+            text "WRITE_SEP\nAPPEND_SEP\u0000FS2\u0000"
+            wrote (io-write-text text-path text)
+            check-text (io-read-file [0] text-path)]
+        (if (and (= sent 22) (= exists 1) (= (vector-count loaded) 22)
+                 (string=? text check-text)
+                 (string=? (io-answer "\u0000FS2\u0000ok") "ok")
+                 (loop [index 0]
+                   (if (= index 22) true
+                     (if (= (vector-at loaded index) (vector-at payload index))
+                       (recur (+ index 1)) false))))
+          (t-fs2-result 0) (t-fs2-result 1))))))

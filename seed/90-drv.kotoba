@@ -313,7 +313,14 @@
         :else "?"))
 
 (defn- drv-slice [path :string a :i64 b :i64] :string
-  (if (> b a) (io-slice path a (- b a)) ""))
+  (if (> b a)
+    ;; The compiler appends canonical helper source before checking. A failure
+    ;; in that source can lie beyond the original file. Preserve the compile
+    ;; error and its position instead of issuing an invalid filesystem RANGE
+    ;; request that replaces the diagnostic with a runtime signal.
+    (let [source (io-read-file [0] path)]
+      (if (or (< a 0) (> b (string-length source)))
+        "<generated-source>" (string-substring source a b))) ""))
 
 ;; the text of placeholder kind k
 (defn- drv-ph [k :i64 path :string a :i64 b :i64 n :i64] :string
