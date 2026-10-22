@@ -1,0 +1,23 @@
+// Oracle input only (ADR 0372): glslangValidator compiles this on a developer
+// host, and tools/spirv_check.kotoba must accept the module glslang writes.
+// The same kernel as gpu_kernel_kir1.kotoba's subgroup sum/wg256, by hand.
+#version 450
+#extension GL_KHR_shader_subgroup_arithmetic : require
+layout(local_size_x = 256) in;
+layout(std430, set = 0, binding = 0) readonly buffer X { float x[]; };
+layout(std430, set = 0, binding = 1) buffer P { float parts[]; };
+layout(std430, set = 0, binding = 2) readonly buffer N { uint n; };
+shared float partial[256];
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float v = 0.0;
+  if (i < n) v = x[i];
+  float s = subgroupAdd(v);
+  if (gl_SubgroupInvocationID == 0u) partial[gl_SubgroupID] = s;
+  barrier();
+  if (gl_LocalInvocationID.x == 0u) {
+    float acc = 0.0;
+    for (uint k = 0u; k < gl_NumSubgroups; k++) acc += partial[k];
+    parts[gl_WorkGroupID.x] = acc;
+  }
+}
