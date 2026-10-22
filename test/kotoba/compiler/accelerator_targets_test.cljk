@@ -23,11 +23,11 @@
     (is (= :unknown (targets/classify-vendor {})))))
 
 (deftest target-dispatch-matches-api-and-vendor
-  (testing "an api that names its shading language decides outright"
+  (testing "an api decides its route outright"
     (is (= :cuda-v1 (targets/target-for :cuda :nvidia)))
     (is (= :msl-v1 (targets/target-for :metal :apple)))
-    (is (= :wgsl-v1 (targets/target-for :vulkan :intel)))
-    (is (= :wgsl-v1 (targets/target-for :webgpu :arm))))
+    (is (= :glsl-v1 (targets/target-for :vulkan :intel)) ":vulkan answers the GLSL it compiles (ADR-0359 decision 3)")
+    (is (= :wgsl-v1 (targets/target-for :webgpu :arm)) ":webgpu keeps its language"))
   (testing "a missing or unknown api falls back to the vendor default"
     (is (= :cuda-v1 (targets/target-for nil :nvidia)))
     (is (= :msl-v1 (targets/target-for nil :apple)))
@@ -109,7 +109,7 @@
     (let [decision (targets/recommend (targets/device-from-info "Apple M1 Max|1.3.357|1024|1"))]
       (is (= :apple (:vendor decision)))
       (is (= :msl-v1 (targets/target-for nil :apple)) "vendor default stays msl-v1")
-      (is (= :wgsl-v1 (:target decision)) "the wire is Vulkan, so :vulkan decides")
+      (is (= :glsl-v1 (:target decision)) "the wire is Vulkan, so :vulkan decides :glsl-v1 (ADR-0359 decision 3)")
       (is (false? (:measured? decision)))))
   (testing "malformed answers parse to nil, never a throw or a wrong decision"
     (is (nil? (targets/device-from-info nil)))

@@ -26,9 +26,13 @@ Rules:
    fallback (:unknown / :wgsl-v1 / 256), never a throw. Dispatch time is
    where a refusal costs the most, and a portable default is honest about
    what it is.
-2. An api that names its shading language decides outright (:cuda ->
-   :cuda-v1, :metal -> :msl-v1, :vulkan/:webgpu -> :wgsl-v1). A missing or
-   unknown api falls back to the vendor default.
+2. An api decides its route outright (:cuda ->
+   :cuda-v1, :metal -> :msl-v1, :vulkan -> :glsl-v1, :webgpu -> :wgsl-v1). A
+   missing or unknown api falls back to the vendor default. Amended
+   2026-10-22 by ADR-0359 decision 3: :vulkan answered :wgsl-v1 before;
+   Vulkan names no shading language (it opens compiled SPIR-V), and the only
+   source-to-SPIR-V path this repository owns is glslang from GLSL. WebGPU
+   keeps its language; the api-less vendor defaults are unchanged.
 3. The workgroup values are PROVISIONAL DESIGN DEFAULTS: powers of two
    within ADR-0002's [1, 1024] bound that are multiples of each vendor's
    published execution width. Nothing in this repository has measured them.

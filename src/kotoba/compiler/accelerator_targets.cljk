@@ -111,15 +111,19 @@
   (get vendor-default-target vendor :wgsl-v1))
 
 (defn target-for
-  "The emission target for an (api, vendor) pair. An api that names its
-  shading language decides outright (:cuda -> :cuda-v1, :metal -> :msl-v1,
-  :vulkan/:webgpu -> :wgsl-v1); a missing or unknown api falls back to the
-  vendor default."
+  "The emission target for an (api, vendor) pair. An api decides its route
+  outright (:cuda -> :cuda-v1, :metal -> :msl-v1, :vulkan -> :glsl-v1,
+  :webgpu -> :wgsl-v1); a missing or unknown api falls back to the vendor
+  default. ADR-0359 decision 3: Vulkan names no shading language -- it opens
+  compiled SPIR-V -- and the only source-to-SPIR-V path this repository owns
+  is glslang from GLSL, so :vulkan answers :glsl-v1. WebGPU keeps its
+  language."
   [api vendor]
   (cond
     (= api :cuda) :cuda-v1
     (= api :metal) :msl-v1
-    (#{:vulkan :webgpu} api) :wgsl-v1
+    (= api :vulkan) :glsl-v1
+    (= api :webgpu) :wgsl-v1
     :else (default-target vendor)))
 
 (def workgroup-defaults

@@ -1,7 +1,9 @@
 # ADR-0359 -- The Vulkan arm: GLSL admission and a sealed SPIR-V build step
 
-- Status: accepted as design. Nothing is implemented at this date; every
-  state below is named. UNMEASURED where a measurement is owed.
+- Status: decisions 1 and 3 are IMPLEMENTED (2026-10-22; code + tests in
+  kotoba.compiler.accelerator{,-kir,-targets,-subgroup-reduce} and their
+  tests). Decision 2 (sealed SPIR-V build step) is accepted design only --
+  nothing of it is implemented. UNMEASURED where a measurement is owed.
 - Date: 2026-10-22
 - Tracking: closes ADR-0356's execution-path honesty gap "(a)" on paper.
   The Intel row (JUN-59) and the ARM row (JUN-60) both block on (a); parent
@@ -120,7 +122,9 @@ Blast radius (grep measured 2026-10-22): `target-for`'s cond and docstring,
 `accelerator-targets-test` pins at lines 29 and 112, and the four
 `:wgsl-v1` pins in `accelerator-pipeline-test` -- all inside the GPU
 namespace family. Evidence directories are historical records and are not
-rewritten.
+rewritten. Implemented 2026-10-22 (this ADR's implementation slices): the
+`target-for` route and its pins moved; the four `:wgsl-v1` pipeline pins
+are api-less vendor defaults and are UNCHANGED by design, re-verified green.
 
 ## What this decision does NOT do
 

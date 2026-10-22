@@ -23,7 +23,12 @@
 (deftest api-overrides-vendor
   (testing "an api that names its shading language decides outright"
     (is (= :msl-v1 (:target (:dispatch (pipeline/compile-spec spec {:vendor-id 4318 :api :metal})))))
-    (is (= :cuda-v1 (:target (:dispatch (pipeline/compile-spec spec {:vendor-id 4098 :api :cuda})))))))
+    (is (= :cuda-v1 (:target (:dispatch (pipeline/compile-spec spec {:vendor-id 4098 :api :cuda}))))))
+  (testing ":vulkan answers :glsl-v1 end to end (ADR-0359 decision 3)"
+    (let [{:keys [artifact dispatch]} (pipeline/compile-spec spec {:vendor-id 32902 :api :vulkan})]
+      (is (= :glsl-v1 (:target dispatch)))
+      (is (= :glsl-v1 (:target artifact)))
+      (is (= artifact (accelerator/verify-artifact! artifact))))))
 
 (deftest unknown-device-is-total
   (testing "an unknown device takes the portable fallback, never a throw"
