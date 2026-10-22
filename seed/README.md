@@ -17,29 +17,36 @@ measurement boundaries. `adoption-20261012.json` remains the historical
 receipt for the prior source closure. `HEADS`, `MEMORY-MAP`, and `SIR`
 are the corresponding compiler contracts, copied without changes.
 
-## Native self-build
+## Current selfhost acceptance
+
+The accepted compiler/build/runner closure is canonical Kotoba plus an
+Amu-built, loaderless native compiler. It must build and rebuild the complete
+compiler without C compiler/loader/runtime, Node/NBB/KBB or JVM dependencies.
+The required Linux CDCI artifact is `x86_64-linux-static`; the controller has
+the same native-only requirement. See `../docs/selfhost-priority.md` and
+`../AGENTS.md`.
+
+The recorded CLI image paths from the 2026-10-19 selfhost reports were absent
+when checked on 2026-10-22. The checked-in bootstrap below is a raw payload,
+and the raw-ELF runner evidence is a probe, not a whole compiler. A currently
+available independent compiler/runner and exact full-closure native
+build/execution evidence remain open. Do not report this source checkout or
+the historical pin checks as native selfhost qualification.
+
+## Historical C-loader bootstrap provenance
 
 The current source is bootstrapped from
 `bootstrap/adopted-20261012.bin` (macOS arm64, entry offset 0, arity 0). The
 current source's three-generation fixed-point image is recorded separately in
 `adoption-20261017.json`; the bootstrap file remains unchanged. It is a native
 code payload used by the pinned C loader, not a standalone OS executable.
-The loader is trusted C bootstrap infrastructure; this is not a C-free claim.
-The Python script orchestrates the native compiler and Clang loader build only;
+This is historical bootstrap infrastructure, outside the accepted selfhost
+and CDCI closure. The Python script orchestrates the native payload and Clang loader build only;
 it never compiles Kotoba through Python, Node, nbb, JVM or GraalVM.
 
-Verify the immutable source and bootstrap pins on any host:
-
-```sh
-python3 scripts/seed/build-adopted.py --verify-only
-```
-
-On macOS arm64, rebuild three generations into a new, empty task workspace:
-
-```sh
-python3 scripts/seed/build-adopted.py \
-  --output /Users/junkawasaki/github/workspaces/codex/seed-adopted-selfbuild-new
-```
+`scripts/seed/build-adopted.py` preserves historical reproduction, including
+its source/loader pin checks. Neither its verify-only mode nor its C-loader
+build is a current acceptance prerequisite or a replacement native gate.
 
 The script refuses existing outputs, places its host loader/logs outside the guest-writable artifacts directory,
 refuses input or loader changes during an invocation, preserves original logs,
