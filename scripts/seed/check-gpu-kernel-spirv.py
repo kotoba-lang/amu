@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """GPU kernels as SPIR-V from Kotoba, through the loaderless compiler (ADR 0372 steps 1-2).
 
+Modules: KIR v1 elementwise (4 operators x 2 workgroup sizes), workgroup
+reductions (3 x 2), the ADR 0358 workgroup-sweep FMA kernel (LocalSize 32..1024)
+and the subgroup reductions (3, GroupNonUniformArithmetic).
+
 Phase "refs" (a host with glslangValidator): glslang compiles the hand-written
 oracle kernels tools/gpu_kernel_refs/*.comp into OUT/refs/ref-*.spv. The
 build phase puts them into the scope, and the Kotoba checker must accept
@@ -135,8 +139,9 @@ def build(compiler, output, target, seccomp_if_available=False):
     k, cases, failed, fails = build_and_run("kernel-control", control, output / "spv-control")
     assert cases == counted and failed == 1 and len(fails) == 1 and fails[0].startswith("FAIL label inside an open block"), fails
     modules = {p.name: pin(p) for p in sorted(spv.glob("kir1-*.spv"))}
-    sizes = {"ewise": 1004, "reduce-sum": 1740, "reduce-max": 1748, "reduce-min": 1748}
-    assert len(modules) == 14 and all(m["bytes"] == next(v for k, v in sizes.items() if k in n) for n, m in modules.items()), modules
+    sizes = {"ewise": 1004, "reduce-sum": 1740, "reduce-max": 1748, "reduce-min": 1748,
+             "sweep": 856, "subgroup-sum": 1896, "subgroup-max": 1904, "subgroup-min": 1904}
+    assert len(modules) == 23 and all(m["bytes"] == next(v for k, v in sizes.items() if k in n) for n, m in modules.items()), modules
     report = dict(status="PASS_GPU_KERNEL_SPIRV_BUILD", target=target, compiler=pin(compiler),
                   host=[platform.system(), platform.machine(), platform.release()],
                   imageSeccomp="if-available" if seccomp_if_available else "required",

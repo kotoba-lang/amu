@@ -1,4 +1,4 @@
-(ns gpu-kernel-kir1 (:export [kir1-ewise kir1-ewise-error kir1-reduce kir1-reduce-error kir1-reducer-name]))
+(ns gpu-kernel-kir1 (:export [kir1-ewise kir1-ewise-error kir1-reduce kir1-reduce-error kir1-reducer-name kir1-sweep kir1-sweep-error kir1-subgroup-reduce]))
 
 ;; KIR v1 (ADR 0002) elementwise f32 kernels as SPIR-V 1.3 (ADR 0372 step 1).
 ;; Uses spirv_encode.kotoba. The binding layout is the wire-42 one (ADR 0371,
@@ -229,3 +229,190 @@
           M5 (spv-i5 M4 16 1 17 wg 1 1)
           M6 (kir1-reduce-body (kir1-reduce-types (kir1-reduce-annotations M5) r wg) r)]
       (spv-finish M6 KIR1-REDUCE-BOUND))))
+
+;; ---------------------------------------------------------------------
+;; The workgroup-sweep kernel of ADR 0358 (scripts/gpu-workgroup-sweep). One
+;; binding: 0 outp: f32[] write. Invocation gid computes x = float(gid) + 1.0,
+;; then 256 times x = fma(x, 1.0000001, 1.0000001), and stores outp[gid] = x,
+;; with no bound check (the sweep dispatches exactly 2^20 invocations). As with
+;; gen-wg-shaders.py, the workgroup size is the only difference between the
+;; modules. 1.0000001 rounds to the f32 0x3f800001.
+
+;; 0 admitted, 2 workgroup size not a power of two in 1..1024
+(defn kir1-sweep-error [wg :i64] :i64 (kir1-ewise-error 1 wg))
+
+;; Ids. 1 main, 2 void, 3 fn, 4 uint, 5 float, 6 v3uint, 7 ptr Input v3uint,
+;; 8 gid, 9 float[], 10 struct, 11 ptr struct, 12 outp, 13 ptr float, 14 uint 0,
+;; 15 int, 16 int 0, 17 int 1, 18 int 256, 19 float 1.0, 20 float 1.0000001,
+;; 21 bool, 22 GLSL.std.450, 23..37 the body (labels 23 28 32 33 34).
+(def KIR1-SWEEP-BOUND 38)
+
+(defn- kir1-sweep-annotations [M :vector-i64] :vector-i64
+  (-> M
+      (spv-i3 71 8 11 28)                 ; gid BuiltIn GlobalInvocationId
+      (spv-i3 71 9 6 4)                   ; float[] ArrayStride 4
+      (spv-i2 71 10 2) (spv-i4 72 10 0 35 0)
+      (kir1-bind 12 0)))
+
+(defn- kir1-sweep-types [M :vector-i64] :vector-i64
+  (-> M
+      (spv-i1 19 2) (spv-i2 33 3 2) (spv-i3 21 4 32 0) (spv-i2 22 5 32) (spv-i3 23 6 4 3) (spv-i3 32 7 1 6)
+      (spv-i3 59 7 8 1)
+      (spv-i2 29 9 5) (spv-i2 30 10 9) (spv-i3 32 11 12 10) (spv-i3 59 11 12 12)
+      (spv-i3 32 13 12 5)
+      (spv-i3 43 4 14 0)
+      (spv-i3 21 15 32 1)                 ; int = int 32 signed (the GLSL loop counter)
+      (spv-i3 43 15 16 0) (spv-i3 43 15 17 1) (spv-i3 43 15 18 256)
+      (spv-i3 43 5 19 0x3f800000) (spv-i3 43 5 20 0x3f800001)
+      (spv-i1 20 21)))
+
+(defn- kir1-sweep-body [M :vector-i64] :vector-i64
+  (-> M
+      (spv-i4 54 2 1 0 3)
+      (spv-i1 248 23)
+      (spv-i3 61 6 24 8) (spv-i4 81 4 25 24 0)            ; gid.x
+      (spv-i3 112 5 26 25)                                ; float(gid)
+      (spv-i4 129 5 27 26 19)                             ; + 1.0
+      (spv-i1 249 28)
+      (spv-i1 248 28)                                     ; loop header
+      (spv-i6 245 15 29 16 23 36 34)                      ; k = phi(0 from entry, k + 1 from continue)
+      (spv-i6 245 5 30 27 23 35 34)                       ; x = phi(x0, fma)
+      (spv-i4 177 21 31 29 18)                            ; k < 256
+      (spv-i3 246 33 34 0)                                ; LoopMerge merge continue None
+      (spv-i3 250 31 32 33)
+      (spv-i1 248 32)
+      (spv-head 12 8) (spv-put 5) (spv-put 35) (spv-put 22) (spv-put 50) (spv-put 30) (spv-put 20) (spv-put 20)  ; GLSL.std.450 Fma
+      (spv-i1 249 34)
+      (spv-i1 248 34)                                     ; continue
+      (spv-i4 128 15 36 29 17)                            ; k + 1
+      (spv-i1 249 28)
+      (spv-i1 248 33)                                     ; loop merge
+      (spv-i5 65 13 37 12 14 25) (spv-i2 62 37 30)        ; outp[gid] = x
+      (spv-i0 253) (spv-i0 56)))
+
+;; the module, or an empty one when (kir1-sweep-error wg) is not 0
+(defn kir1-sweep [wg :i64] :vector-i64
+  (if (> (kir1-sweep-error wg) 0) (spv-new 0)
+    (let [M0 (spv-header (spv-new 256) SPV-VERSION-1-3)
+          M1 (spv-i1 M0 17 1)
+          M2 (spv-put-str (spv-put (spv-head M1 11 6) 22) "GLSL.std.450")
+          M3 (spv-i2 M2 14 0 1)
+          M4 (spv-put (spv-put-str (spv-put (spv-put (spv-head M3 15 6) 5) 1) "main") 8)
+          M5 (spv-i5 M4 16 1 17 wg 1 1)
+          M6 (kir1-sweep-body (kir1-sweep-types (kir1-sweep-annotations M5)))]
+      (spv-finish M6 KIR1-SWEEP-BOUND))))
+
+;; ---------------------------------------------------------------------
+;; KIR v1 subgroup reductions (ADR 0372 step 2), on the bindings of the
+;; workgroup reductions (0 x, 1 parts, 2 n). Each invocation loads x[i] (the
+;; identity past n); OpGroupNonUniformFAdd, FMax or FMin with Reduce folds its
+;; subgroup; the subgroup's first invocation stores that at
+;; shared[SubgroupId]; after a barrier, invocation 0 folds the NumSubgroups
+;; partials in order and writes parts[workgroup]. The module declares the
+;; GroupNonUniform and GroupNonUniformArithmetic capabilities (Vulkan 1.1
+;; subgroup arithmetic in compute), and the subgroup size is the device's. A
+;; sum may differ from the workgroup tree's in its last bits, since the fold
+;; order differs; max and min do not.
+
+;; Ids. 1 main, 2 void, 3 fn, 4 uint, 5 float, 6 v3uint, 7 ptr Input v3uint,
+;; 8 gid, 9 lid, 10 wid, 11 ptr Input uint, 12 SubgroupId, 13
+;; SubgroupLocalInvocationId, 14 NumSubgroups, 15 float[], 16 struct ro,
+;; 17 ptr ro, 18 x, 19 struct rw, 20 ptr rw, 21 parts, 22 struct n, 23 ptr n,
+;; 24 n, 25 ptr float, 26 ptr uint, 27..32 uint 0 1 2 264 3 wg, 33 float[wg],
+;; 34 ptr Workgroup float[wg], 35 shared, 36 ptr Workgroup float,
+;; 37 identity, 38 bool, 39 GLSL.std.450, 40..77 the body (labels 40 50 51 58
+;; 59 63 64 66 70 71 72).
+(def KIR1-SUBGROUP-BOUND 78)
+
+(defn- kir1-subgroup-annotations [M :vector-i64] :vector-i64
+  (-> M
+      (spv-i3 71 8 11 28) (spv-i3 71 9 11 27) (spv-i3 71 10 11 26)
+      (spv-i3 71 12 11 40) (spv-i3 71 13 11 41) (spv-i3 71 14 11 38)   ; SubgroupId, SubgroupLocalInvocationId, NumSubgroups
+      (spv-i3 71 15 6 4)
+      (spv-i2 71 16 2) (spv-i4 72 16 0 35 0) (spv-i3 72 16 0 24)
+      (spv-i2 71 19 2) (spv-i4 72 19 0 35 0)
+      (spv-i2 71 22 2) (spv-i4 72 22 0 35 0) (spv-i3 72 22 0 24)
+      (kir1-bind 18 0) (kir1-bind 21 1) (kir1-bind 24 2)))
+
+(defn- kir1-subgroup-types [M :vector-i64 r :i64 wg :i64] :vector-i64
+  (-> M
+      (spv-i1 19 2) (spv-i2 33 3 2) (spv-i3 21 4 32 0) (spv-i2 22 5 32) (spv-i3 23 6 4 3) (spv-i3 32 7 1 6)
+      (spv-i3 59 7 8 1) (spv-i3 59 7 9 1) (spv-i3 59 7 10 1)
+      (spv-i3 32 11 1 4)                                  ; ptr Input uint
+      (spv-i3 59 11 12 1) (spv-i3 59 11 13 1) (spv-i3 59 11 14 1)
+      (spv-i2 29 15 5) (spv-i2 30 16 15) (spv-i3 32 17 12 16) (spv-i3 59 17 18 12)
+      (spv-i2 30 19 15) (spv-i3 32 20 12 19) (spv-i3 59 20 21 12)
+      (spv-i2 30 22 4) (spv-i3 32 23 12 22) (spv-i3 59 23 24 12)
+      (spv-i3 32 25 12 5) (spv-i3 32 26 12 4)
+      (spv-i3 43 4 27 0) (spv-i3 43 4 28 1) (spv-i3 43 4 29 2) (spv-i3 43 4 30 264) (spv-i3 43 4 31 3)
+      (spv-i3 43 4 32 wg)
+      (spv-i3 28 33 5 32)                                 ; float[wg]: at most one subgroup per invocation
+      (spv-i3 32 34 4 33) (spv-i3 59 34 35 4) (spv-i3 32 36 4 5)
+      (spv-i3 43 5 37 (kir1-identity-bits r))
+      (spv-i1 20 38)))
+
+;; OpGroupNonUniformFAdd 350, FMax 358, FMin 355
+(defn- kir1-subgroup-op [r :i64] :i64 (cond (= r 1) 350 (= r 2) 358 :else 355))
+
+;; acc combine shared[k] in the serial fold: OpFAdd, or GLSL.std.450 FMax / FMin
+(defn- kir1-fold [M :vector-i64 r :i64] :vector-i64
+  (cond (= r 1) (spv-i4 M 129 5 73 68 76)
+        (= r 2) (spv-i6 M 12 5 73 39 40 68 76)
+        :else (spv-i6 M 12 5 73 39 37 68 76)))
+
+(defn- kir1-subgroup-body [M :vector-i64 r :i64] :vector-i64
+  (-> M
+      (spv-i4 54 2 1 0 3)
+      (spv-i1 248 40)
+      (spv-i3 61 6 41 8) (spv-i4 81 4 42 41 0)            ; i
+      (spv-i3 61 6 43 9) (spv-i4 81 4 44 43 0)            ; l
+      (spv-i3 61 6 45 10) (spv-i4 81 4 46 45 0)           ; w
+      (spv-i4 65 26 47 24 27) (spv-i3 61 4 48 47)         ; n
+      (spv-i4 176 38 49 42 48)                            ; i < n
+      (spv-i2 247 51 0) (spv-i3 250 49 50 51)
+      (spv-i1 248 50)
+      (spv-i5 65 25 52 18 27 42) (spv-i3 61 5 53 52) (spv-i1 249 51)    ; x[i]
+      (spv-i1 248 51)
+      (spv-i6 245 5 54 53 50 37 40)                       ; v = phi(x[i], identity)
+      (spv-i5 (kir1-subgroup-op r) 5 55 31 0 54)          ; s = subgroup Reduce v
+      (spv-i3 61 4 56 13) (spv-i4 170 38 57 56 27)        ; SubgroupLocalInvocationId == 0
+      (spv-i2 247 59 0) (spv-i3 250 57 58 59)
+      (spv-i1 248 58)
+      (spv-i3 61 4 60 12) (spv-i4 65 36 61 35 60) (spv-i2 62 61 55) (spv-i1 249 59)   ; shared[SubgroupId] = s
+      (spv-i1 248 59)
+      (spv-i3 224 29 29 30)                               ; ControlBarrier Workgroup Workgroup AcquireRelease|WorkgroupMemory
+      (spv-i4 170 38 62 44 27)                            ; l == 0
+      (spv-i2 247 64 0) (spv-i3 250 62 63 64)
+      (spv-i1 248 63)
+      (spv-i3 61 4 65 14) (spv-i1 249 66)                 ; NumSubgroups
+      (spv-i1 248 66)                                     ; loop header
+      (spv-i6 245 4 67 27 63 74 70)                       ; k = phi(0, k + 1)
+      (spv-i6 245 5 68 37 63 73 70)                       ; acc = phi(identity, acc combine shared[k])
+      (spv-i4 176 38 69 67 65)                            ; k < NumSubgroups
+      (spv-i3 246 71 70 0)
+      (spv-i3 250 69 72 71)
+      (spv-i1 248 72)
+      (spv-i4 65 36 75 35 67) (spv-i3 61 5 76 75)         ; shared[k]
+      (kir1-fold r)
+      (spv-i1 249 70)
+      (spv-i1 248 70)                                     ; continue
+      (spv-i4 128 4 74 67 28)                             ; k + 1
+      (spv-i1 249 66)
+      (spv-i1 248 71)                                     ; loop merge
+      (spv-i5 65 25 77 21 27 46) (spv-i2 62 77 68)        ; parts[w] = acc
+      (spv-i1 249 64)
+      (spv-i1 248 64)
+      (spv-i0 253) (spv-i0 56)))
+
+;; the module, or an empty one when (kir1-reduce-error r wg) is not 0
+(defn kir1-subgroup-reduce [r :i64 wg :i64] :vector-i64
+  (if (> (kir1-reduce-error r wg) 0) (spv-new 0)
+    (let [M0 (spv-header (spv-new 640) SPV-VERSION-1-3)
+          M1 (spv-i1 (spv-i1 (spv-i1 M0 17 1) 17 61) 17 63)   ; Shader, GroupNonUniform, GroupNonUniformArithmetic
+          M2 (spv-put-str (spv-put (spv-head M1 11 6) 39) "GLSL.std.450")
+          M3 (spv-i2 M2 14 0 1)
+          M4 (-> (spv-head M3 15 11) (spv-put 5) (spv-put 1) (spv-put-str "main")
+                 (spv-put 8) (spv-put 9) (spv-put 10) (spv-put 12) (spv-put 13) (spv-put 14))
+          M5 (spv-i5 M4 16 1 17 wg 1 1)
+          M6 (kir1-subgroup-body (kir1-subgroup-types (kir1-subgroup-annotations M5) r wg) r)]
+      (spv-finish M6 KIR1-SUBGROUP-BOUND))))
