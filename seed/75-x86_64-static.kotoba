@@ -113,7 +113,9 @@
       (xg-pad 4096) (xg-out-code 1) (xg-pad (xg-get M 3)) (xs-out-ctx 0)))
 (defn- xs-clear [M :vector-i64 k :i64] :vector-i64
   (if (= k 256) M (xs-clear (mem-set M k 0) (inc k))))
-;; mode (context word 408): 0 = --format static, 1 = --format kx64-runner
+;; mode (context word 408): 0 = --format static, 1 = --format kx64-runner,
+;; 2 = --format launcher (the runtime ends with xs-rt-launch instead of the
+;; standard start; seed/76)
 (defn- xs-build [M :vector-i64 S :string rt :i64 mode :i64] :vector-i64
   (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 2 mode) (xg-set 4 1)
               (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))]
@@ -125,9 +127,10 @@
                       data (bit-and (+ 8191 (xg-pos g)) -4096)]
                   (if (>= (+ data XS-CTX-BYTES 1) MM-OUT-CAP) (xg-err g 7104 data)
                     (xs-elf (xg-fix (xg-set g 3 data) 1)))))))
+(defn- xs-format-name [mode :i64] :string (case mode 1 ":kx64-runner" 2 ":launcher" ":static"))
 (defn- xs-write [M :vector-i64 out :string] :i64
   (let [n (dec (vector-at M MM-OUT-N)) written (out-write-v M out (+ MM-OUT-BASE 1) n)
-        w (io-out (string-concat "{:ok true, :target :x86_64-linux, :format " (string-concat (if (= (xg-get M 2) 1) ":kx64-runner" ":static") (string-concat ", :code-bytes "
+        w (io-out (string-concat "{:ok true, :target :x86_64-linux, :format " (string-concat (xs-format-name (xg-get M 2)) (string-concat ", :code-bytes "
                    (string-concat (mem-u2dec (xg-pos M)) (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))))]
     (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))
 (defn- xs-command [mode :i64] :i64
@@ -136,6 +139,7 @@
             (drv-fail0 E-USAGE)
           (= (io-exists src) 0) (drv-fail0 E-READ)
           :else (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
-                      s (string-concat guest (xs-rt-src)) m (xs-build (xg-front s) s (string-length guest) mode)]
+                      rt (if (= mode 2) (string-concat (xs-rt-core) (xs-rt-launch)) (xs-rt-src))
+                      s (string-concat guest rt) m (xs-build (xg-front s) s (string-length guest) mode)]
                   (cond (not= (vector-at m MM-ERR) 0) (xg-report m src out)
                         :else (xs-write m out))))))

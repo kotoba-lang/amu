@@ -224,17 +224,18 @@
                     (xa-elf (xa-fix (xg-set g 3 data) 1)))))))
 (defn- xa-write [M :vector-i64 out :string] :i64
   (let [n (dec (vector-at M MM-OUT-N)) written (out-write-v M out (+ MM-OUT-BASE 1) n)
-        w (io-out (string-concat "{:ok true, :target :aarch64-linux, :format " (string-concat (if (= (xg-get M 2) 1) ":runner" ":static") (string-concat ", :code-bytes "
+        w (io-out (string-concat "{:ok true, :target :aarch64-linux, :format " (string-concat (case (xg-get M 2) 1 ":runner" 2 ":launcher" ":static") (string-concat ", :code-bytes "
                    (string-concat (mem-u2dec (xg-pos M)) (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))))]
     (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))
-;; compile SRC --target aarch64-linux --output NEW --format static|runner
+;; compile SRC --target aarch64-linux --output NEW --format static|runner|launcher
 (defn- xa-command [] :i64
   (let [src (io-arg 1) out (io-arg 5) fmt (io-arg 7)
-        mode (cond (string=? fmt "static") 0 (string=? fmt "runner") 1 :else -1)]
+        mode (cond (string=? fmt "static") 0 (string=? fmt "runner") 1 (string=? fmt "launcher") 2 :else -1)]
     (cond (or (not= (io-argc) 8) (not (string=? (io-arg 4) "--output")) (not (string=? (io-arg 6) "--format"))
               (< mode 0) (= (string-length out) 0) (= (io-exists out) 1))
-            (let [w (io-err "seed-aarch64-linux: E7100 expected compile SOURCE --target aarch64-linux --output NEW --format static|runner\n")] 2)
+            (let [w (io-err "seed-aarch64-linux: E7100 expected compile SOURCE --target aarch64-linux --output NEW --format static|runner|launcher\n")] 2)
           (= (io-exists src) 0) (drv-fail0 E-READ)
           :else (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
-                      s (string-concat guest (xa-rt-src)) m (xa-build (xg-front s) s (string-length guest) mode)]
+                      rt (if (= mode 2) (string-concat (xa-rt-core) (xa-rt-launch)) (xa-rt-src))
+                      s (string-concat guest rt) m (xa-build (xg-front s) s (string-length guest) mode)]
                   (if (not= (vector-at m MM-ERR) 0) (xg-report m src out) (xa-write m out))))))

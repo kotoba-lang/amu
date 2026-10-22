@@ -1,24 +1,40 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 1294848,
-    "sha256": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6"
+    "bytes": 1360384,
+    "sha256": "4a6d8a9759e7f474904df32c751d0cbef56ed7f7e5560015be5a5b3016104638"
   },
   "target": "aarch64-linux",
   "format": "static",
   "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
   "sourceUnity": {
-    "bytes": 778613,
-    "sha256": "7a3f6bb9eca8d50a5cdb910a0ea82a60145474d552f3413dbf35377c48933bc2"
+    "bytes": 841761,
+    "sha256": "2e36178ae3edd3fbe71499629d95d82f8b1183279340589ce41068f9b0c26da8"
   },
-  "sourceCommitBase": "07e326c8388b9892ca7c857fdd5b2bb58581d289",
+  "sourceCommitBase": "d13c486e1283fad5b6d634555876f4b232ebbabf",
   "producedBy": {
-    "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S2 = S3; S1 differs because the previous root embeds the previous aarch64 runtime). Re-pinned because this source changes the runtime text embedded in every image: the wire-42 :gpu/compute transport of ADR 0371 step 2, on top of #1475.",
+    "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3: the runtime text embedded in static images did not change). Re-pinned because this source adds --format launcher (ADR 0371 step 4): the launcher runtime text and the format plumbing in seed/70, 75, 76, 77 and 80.",
     "date": "2026-10-22",
-    "previousRoot": "27440856b717877a91387f9a55be7149bacf93f0d31fa82ee1b06f567b370786"
+    "previousRoot": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6"
   },
   "verification": "scripts/seed/selfhost-bootstrap.py on arm64 Linux: root -> S1 = S2 = S3 = root natively, without any C compiler or loader",
   "history": [
+    {
+      "image": {
+        "bytes": 1294848,
+        "sha256": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6"
+      },
+      "sourceUnity": {
+        "bytes": 778613,
+        "sha256": "7a3f6bb9eca8d50a5cdb910a0ea82a60145474d552f3413dbf35377c48933bc2"
+      },
+      "sourceCommitBase": "07e326c8388b9892ca7c857fdd5b2bb58581d289",
+      "producedBy": {
+        "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S2 = S3; S1 differs because the previous root embeds the previous aarch64 runtime). Re-pinned because this source changes the runtime text embedded in every image: the wire-42 :gpu/compute transport of ADR 0371 step 2, on top of #1475.",
+        "date": "2026-10-22",
+        "previousRoot": "27440856b717877a91387f9a55be7149bacf93f0d31fa82ee1b06f567b370786"
+      }
+    },
     {
       "image": {
         "bytes": 1278464,

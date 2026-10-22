@@ -3,9 +3,10 @@
 Date: 2026-10-22
 Status: Decision 1 (the platform boundary) accepted by the owner on 2026-10-22.
 The rest is Proposed. Wire 42 is not admitted until security integration signs
-off (Decision 7). Steps 1 (the protocol table) and 2 (the runtime transport)
-are implemented; nothing else is.
-Tracking: JUN-285 (this ADR), JUN-291 (step 1), JUN-294 (step 2). Related: JUN-109 (wire 42 admission), JUN-282
+off (Decision 7). Steps 1 (the protocol table), 2 (the runtime transport) and
+4 (the launcher) are implemented. Step 3 (the admission round) is built in
+#1477 and waits for that sign-off. Nothing else is implemented.
+Tracking: JUN-285 (this ADR), JUN-291 (step 1), JUN-294 (step 2), JUN-313 (step 4). Related: JUN-109 (wire 42 admission), JUN-282
 (`amu run` on static images), JUN-283, AWAI-12 (murakumo inference on Amu
 selfhost).
 
@@ -252,7 +253,7 @@ Only the broker's defects change:
 
 ### 6. The launcher and the grant
 
-The launcher reads a structured GPU grant. The grant contains:
+The GPU grant is a structured file. It contains:
 
 * wire 42;
 * the artifact table;
@@ -265,8 +266,26 @@ and is separate from the compiler's `--policy`. Admitting wire 42 at compile
 time therefore does not wait for E2170. Whether GPU guests also need
 compile-time policy narrowing is an open question (below).
 
-The launcher's own filter admits `pipe2`, `clone`, `execve`, `wait4` and
-`kill`. The guest's filter admits none of them.
+**The launcher does not read the grant** (amended 2026-10-22, step 4). It hashes
+the grant and passes a sealed copy to the provider, which parses and enforces it
+(Decision 3). No grant format is parsed in the launcher's scalar runtime code.
+Wall time is not a grant field: it is the launcher's `WALL` argument.
+
+**The launcher seals itself after both children have executed** (amended
+2026-10-22). This decision first said that the launcher's own filter admits
+`pipe2`, `clone`, `execve`, `wait4` and `kill`. That cannot work: a filter is
+inherited across fork and execve, so a filter installed before spawning would
+bind the guest and the provider too, and the provider needs `ioctl`, `mmap`,
+`futex` and threads. So:
+
+1. the launcher stays unsealed until both children have executed;
+2. it then limits itself (a 1 MiB stack, pre-touched; core 0; address space
+   64 MiB);
+3. it installs its own filter: the base set plus `read`, `close`, `ppoll`,
+   `wait4` and `kill`.
+
+That filter admits neither `pipe2`, `clone` nor `execve`: the children already
+exist. The guest's filter admits none of them either.
 
 ### 7. Seed admission (JUN-109, proposal 4a)
 
@@ -443,8 +462,61 @@ Each step is its own PR, in this order:
      enforces seccomp.
    * **Receipts.** `docs/evidence/gpu-runtime-transport-20261022/`.
 3. **Seed adoption round** admitting wire 42, with its receipts (JUN-109).
-4. **Launcher** (JUN-282): spawn, pipes, wall time, the GPU grant and the
-   joined receipt.
+4. **Launcher.** Done (JUN-313). It is narrower than `amu run` (JUN-282): it
+   signs nothing, since the trust plane (M3) does not exist yet.
+   * **Format.** `--format launcher` on both static targets sets context word
+     408 = 2. The launcher runtime text (`xs-rt-launch` in `seed/76`,
+     `xa-rt-launch` in `seed/77`) is appended in place of the standard start
+     in this format only, so static and runner images keep their bytes. A
+     guest cannot turn the launcher on: the mode is fixed at link time.
+   * **Command line.** `LAUNCHER WALL ALLOW GRANT PROVIDER [ARG ...] -- GUEST
+     [ARG ...]`. `GRANT` and `PROVIDER` are both `-` or both paths, and `ALLOW`
+     names wire 42 exactly when a provider is given.
+   * **Inputs.** Each one is read once into a memfd while it is hashed, then
+     sealed against every change. The children are executed from those copies
+     (`execveat`), so what runs is what was hashed. The launcher also hashes
+     its own image.
+   * **Children.** The provider starts first, then the guest. Each child gets
+     fixed descriptors and nothing else open, the parent-death signal, a clear
+     signal mask and `no_new_privs`:
+     * provider: 0 requests, 1 answers, 2 stderr, 3 the grant, 4 its report;
+     * guest: 0 stdin, 1 a pipe to the launcher, 2 stderr, 3 requests,
+       4 answers.
+
+     The guest's environment is built rather than inherited: `KEXE_ALLOW`,
+     `KEXE_STRUCTURED_REPORT=1`, `KEXE_WALL_SECONDS`, `KEXE_CAP_RESOURCES_42=3,4`
+     (with a provider), and seven `KEXE_` knobs passed through when the
+     launcher has them. The provider's environment is empty.
+   * **Waiting.** `ppoll` on the guest's stdout, the provider's report and both
+     pidfds, with no signal handlers. The guest's stdout is relayed as it
+     comes, hashed, and its tail kept for the structured line. At `WALL` the
+     guest is killed. The provider is killed 5 s after the guest exits (never
+     later than `WALL`).
+   * **Receipt.** The facts reach `main` (`tools/static_launcher.kotoba`) as
+     wire-38 arguments. `main` writes one EDN line,
+     `{:receipt :kotoba.static-launcher/v1 :verdict ...}`, holding the
+     launcher, guest, provider and grant digests, the exit or signal of each
+     child, the guest's structured line, the stdout bytes and digest, and the
+     provider's report. The exit status is 0 (ok), 122 (timeout) or 1.
+   * **Check.** `scripts/seed/check-static-launcher.py`:
+     * the receipt functions: 30 Kotoba cases, plus the control;
+     * byte identity of the static and runner outputs against the previous
+       root;
+     * 14 runs: a guest alone, and with a scripted provider (python3, test
+       scaffolding only), covering descriptors, environment, `no_new_privs`,
+       the wall kill, the launcher sealed while it waits, a crashing provider,
+       a lingering one, and invalid and oversized reports;
+     * 15 refusals before anything starts.
+
+     It runs in both native CI jobs (`selfhost-native.yml`).
+   * **Not under emulation.** Through binfmt_misc, `execveat` of a
+     close-on-exec memfd fails (ENOENT), so an image of another ISA cannot be
+     started that way. x86_64 is qualified on a native kernel.
+   * **Root.** Re-pinned C-free to `4a6d8a97…`; no adoption round was needed.
+     The previous root `cb0a7d02…` is kept in the receipt's history. It
+     built S1 equal to S2 and S3, since the runtime embedded in static
+     images did not change.
+   * **Receipts.** `docs/evidence/static-launcher-20261022/`.
 5. **Platform-linked ELF writer** and C-ABI imports, x86_64 SysV, with the
    import allowlist.
 6. **Vulkan provider** in Kotoba on x86_64-linux. Qualify it on B70 or gad

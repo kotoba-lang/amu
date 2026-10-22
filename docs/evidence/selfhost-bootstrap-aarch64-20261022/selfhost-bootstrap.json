@@ -15,30 +15,46 @@
   ],
   "root": {
     "image": {
-      "bytes": 1294848,
-      "sha256": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6"
+      "bytes": 1360384,
+      "sha256": "4a6d8a9759e7f474904df32c751d0cbef56ed7f7e5560015be5a5b3016104638"
     },
     "receipt": {
       "schema": "amu.seed.static-root.v1",
       "image": {
-        "bytes": 1294848,
-        "sha256": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6"
+        "bytes": 1360384,
+        "sha256": "4a6d8a9759e7f474904df32c751d0cbef56ed7f7e5560015be5a5b3016104638"
       },
       "target": "aarch64-linux",
       "format": "static",
       "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
       "sourceUnity": {
-        "bytes": 778613,
-        "sha256": "7a3f6bb9eca8d50a5cdb910a0ea82a60145474d552f3413dbf35377c48933bc2"
+        "bytes": 841761,
+        "sha256": "2e36178ae3edd3fbe71499629d95d82f8b1183279340589ce41068f9b0c26da8"
       },
-      "sourceCommitBase": "07e326c8388b9892ca7c857fdd5b2bb58581d289",
+      "sourceCommitBase": "d13c486e1283fad5b6d634555876f4b232ebbabf",
       "producedBy": {
-        "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S2 = S3; S1 differs because the previous root embeds the previous aarch64 runtime). Re-pinned because this source changes the runtime text embedded in every image: the wire-42 :gpu/compute transport of ADR 0371 step 2, on top of #1475.",
+        "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3: the runtime text embedded in static images did not change). Re-pinned because this source adds --format launcher (ADR 0371 step 4): the launcher runtime text and the format plumbing in seed/70, 75, 76, 77 and 80.",
         "date": "2026-10-22",
-        "previousRoot": "27440856b717877a91387f9a55be7149bacf93f0d31fa82ee1b06f567b370786"
+        "previousRoot": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6"
       },
       "verification": "scripts/seed/selfhost-bootstrap.py on arm64 Linux: root -> S1 = S2 = S3 = root natively, without any C compiler or loader",
       "history": [
+        {
+          "image": {
+            "bytes": 1294848,
+            "sha256": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6"
+          },
+          "sourceUnity": {
+            "bytes": 778613,
+            "sha256": "7a3f6bb9eca8d50a5cdb910a0ea82a60145474d552f3413dbf35377c48933bc2"
+          },
+          "sourceCommitBase": "07e326c8388b9892ca7c857fdd5b2bb58581d289",
+          "producedBy": {
+            "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S2 = S3; S1 differs because the previous root embeds the previous aarch64 runtime). Re-pinned because this source changes the runtime text embedded in every image: the wire-42 :gpu/compute transport of ADR 0371 step 2, on top of #1475.",
+            "date": "2026-10-22",
+            "previousRoot": "27440856b717877a91387f9a55be7149bacf93f0d31fa82ee1b06f567b370786"
+          }
+        },
         {
           "image": {
             "bytes": 1278464,
@@ -122,28 +138,28 @@
       "sha256": "1cf17b348bda09d73d721856705a52db05131b88f80d017e1fe9b9a92c066955"
     },
     "seed/70-x86_64-linux.kotoba": {
-      "bytes": 19198,
-      "sha256": "82f14d94d4d9b1f8c71a65de463b784b78b34ade93e5bb630148b5bde2dbebe7"
+      "bytes": 19311,
+      "sha256": "723a1b4e200b806ef5ecf74a6011a37d3dd6c9b9ce9f1e6e9e372922beef6623"
     },
     "seed/71-x86_64-runtime.kotoba": {
       "bytes": 5382,
       "sha256": "15f2c4f8b8f0a2a46ccd8fbb4c7f621e17a385b680e0d6878d258a9c9e6cc14c"
     },
     "seed/75-x86_64-static.kotoba": {
-      "bytes": 8845,
-      "sha256": "e2f260bae95b873fb5b18c4f47324429cff1acf969d4a39ba4386da76fcfe2c9"
+      "bytes": 9115,
+      "sha256": "7dad2a45edb5b32097c22d322a0e035c9752000ce0d92285dec0272a89280b7a"
     },
     "seed/76-x86_64-static-rt.kotoba": {
-      "bytes": 58199,
-      "sha256": "e829fc1be185f6607867299bffada947ad1c69986d5128c3c5a72d306ff9fdc6"
+      "bytes": 89506,
+      "sha256": "ffa65b6fc6d60bb945ac4fb26b8792ab3ddffdefd86996e6731b15793406e0e9"
     },
     "seed/77-aarch64-static-rt.kotoba": {
-      "bytes": 58315,
-      "sha256": "56ab7d8bc4a0c19b277aac2748713129c482100e3aa7aad61c40c074a90b809e"
+      "bytes": 89627,
+      "sha256": "12f4af86adb2e9af380b4c9975cd90467b4c76563eb09a7c13ca3db8f2465aec"
     },
     "seed/80-aarch64-linux.kotoba": {
-      "bytes": 15441,
-      "sha256": "508dd6769a2e8e9fd3c99bd5fe4c15c7a5bfd70a67b4451847f9cee547c58a1a"
+      "bytes": 15587,
+      "sha256": "b93f6e14a6fa7802b4a11dc589b93d47f81d7bc8183006d97225523fa832840d"
     },
     "seed/74-x86_64-aiueos-object.kotoba": {
       "bytes": 8402,
@@ -159,24 +175,24 @@
       "name": "S1",
       "producedBy": "root.elf",
       "pin": {
-        "bytes": 1294848,
-        "sha256": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6"
+        "bytes": 1360384,
+        "sha256": "4a6d8a9759e7f474904df32c751d0cbef56ed7f7e5560015be5a5b3016104638"
       }
     },
     {
       "name": "S2",
       "producedBy": "S1.elf",
       "pin": {
-        "bytes": 1294848,
-        "sha256": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6"
+        "bytes": 1360384,
+        "sha256": "4a6d8a9759e7f474904df32c751d0cbef56ed7f7e5560015be5a5b3016104638"
       }
     },
     {
       "name": "S3",
       "producedBy": "S2.elf",
       "pin": {
-        "bytes": 1294848,
-        "sha256": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6"
+        "bytes": 1360384,
+        "sha256": "4a6d8a9759e7f474904df32c751d0cbef56ed7f7e5560015be5a5b3016104638"
       }
     }
   ],
@@ -187,8 +203,8 @@
       "sha256": "2338205e8bfb2471ff8be4438b2bde8187f49ffd247305480cec8101d043560b"
     },
     "x86_64Compiler": {
-      "bytes": 1593856,
-      "sha256": "964329f2f4ff6b03ab3604aa1b737c10936bc660322ae67c2596df9e48e59fd1"
+      "bytes": 1655296,
+      "sha256": "391d731777a3edd37f5bf70162a4106e8d266649a6d19ca23760c960165a9069"
     },
     "x86_64Runner": {
       "bytes": 160256,
@@ -450,10 +466,5 @@
   },
   "cCompilerOrLoader": false,
   "JVMNodeOrGraalFallback": false,
-  "emulation": false,
-  "executionHost": {
-    "kernel": "arm64 Linux, podman machine (applehv) on macOS arm64",
-    "emulation": false,
-    "container": "docker.io/library/python:3.12-alpine --platform linux/arm64"
-  }
+  "emulation": false
 }

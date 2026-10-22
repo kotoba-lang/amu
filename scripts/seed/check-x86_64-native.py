@@ -13,7 +13,8 @@ emulation. Records, natively:
    SIGSYS), cpu / wall / stack limits;
 4. the KX64V1 runner: X2's kx64-v1 compiler payload G1 rebuilds itself
    through R-x86_64 (G1 = G2 = G3);
-5. the scalar ELF suite and the aiueos object checks with X2.
+5. the scalar ELF suite, the aiueos object checks and the static launcher
+   (check-static-launcher.py: --format launcher, ADR 0371 step 4) with X2.
 """
 import argparse
 import hashlib
@@ -125,9 +126,9 @@ def main(boot, out):
         producer = out / f"G{g}.bin"
     assert gens[0] == gens[1] == gens[2], "KX64V1 runner fixed point"
 
-    # 5. scalar ELF suite and aiueos object checks with X2
+    # 5. scalar ELF suite, aiueos object checks and the static launcher with X2
     suites = {}
-    for script, args in [("check-x86_64-scalar.py", []), ("check-x86_64-aiueos-object.py", [])]:
+    for script, args in [("check-x86_64-scalar.py", []), ("check-x86_64-aiueos-object.py", []), ("check-static-launcher.py", [])]:
         dst = out / script.replace(".py", "")
         r = subprocess.run([sys.executable, str(ROOT / "scripts/seed" / script), "--compiler", str(X), "--output", str(dst), *args],
                            capture_output=True, timeout=3600)
