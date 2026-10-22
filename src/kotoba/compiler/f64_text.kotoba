@@ -1,8 +1,7 @@
 (ns kotoba.compiler.f64-text
   "Host-independent, finite binary64 text for native document values."
   (:export [finite-bits? format-bits])
-  (:require [kotoba.compiler.decimal-bits :as decimal])
-  (:schemas {:f64/text-round [:record :f64/text-round [[:digits :string] [:order :i64]]]}))
+  (:require [kotoba.compiler.decimal-bits :as decimal]))
 
 ;; Generate exact decimal digits with integer arithmetic, then choose the first
 ;; ties-to-even rounded prefix that parses back to the original bits. Every
@@ -41,11 +40,11 @@
   (loop [i start]
     (if (>= i (string-byte-length text)) false
       (if (not (= (string-code-point-at text i) 48)) true (recur (+ i 1))))))
-(defn- round-prefix [text :string count :i64 order :i64 mode :i64] [:ref :f64/text-round]
+(defn- round-prefix [text :string count :i64 mode :i64] :string
   (let [length (string-byte-length text)
-        prefix (string-substring text 0 (min count length))]
+        prefix (string-substring text 0 (if (< count length) count length))]
     (if (>= count length)
-      (record-new [:ref :f64/text-round] prefix order)
+      prefix
       (let [next (- (string-code-point-at text count) 48)
             last (- (string-code-point-at text (- count 1)) 48)
             up (cond (= mode -1) false
@@ -54,17 +53,16 @@
                                (and (= next 5)
                                     (or (nonzero-after? text (+ count 1)) (= (bit-and last 1) 1)))))
             rounded (if up (increment prefix) prefix)]
-        (if (> (string-byte-length rounded) count)
-          (record-new [:ref :f64/text-round] (string-substring rounded 0 count) (+ order 1))
-          (record-new [:ref :f64/text-round] rounded order))))))
+        rounded))))
 (defn- trim-zeroes [text :string] :string
   (loop [n (string-byte-length text)]
     (if (and (> n 1) (= (string-code-point-at text (- n 1)) 48))
       (recur (- n 1))
       (string-substring text 0 n))))
-(defn- render [value [:ref :f64/text-round] negative :bool] :string
-  (let [digits (trim-zeroes (record-get [:ref :f64/text-round] value :digits))
-        order (record-get [:ref :f64/text-round] value :order)
+(defn- render [rounded :string original-order :i64 count :i64 negative :bool] :string
+  (let [carry (> (string-byte-length rounded) count)
+        digits (trim-zeroes (if carry (string-substring rounded 0 count) rounded))
+        order (if carry (+ original-order 1) original-order)
         length (string-byte-length digits)
         point (+ order 1)
         body (cond
@@ -88,9 +86,9 @@
       ;; At a power-of-two boundary the rounding interval is asymmetric.
       ;; Check both adjacent decimal lattice points as well as the nearest
       ;; ties-to-even point; the nearest alone may miss a shorter spelling.
-      (let [nearest (render (round-prefix digits count order 0) (< bits 0))
-            low (render (round-prefix digits count order -1) (< bits 0))
-            high (render (round-prefix digits count order 1) (< bits 0))
+      (let [nearest (render (round-prefix digits count 0) order count (< bits 0))
+            low (render (round-prefix digits count -1) order count (< bits 0))
+            high (render (round-prefix digits count 1) order count (< bits 0))
             parsed (decimal/decimal-f64-bits nearest)
             low-parsed (decimal/decimal-f64-bits low)
             high-parsed (decimal/decimal-f64-bits high)]

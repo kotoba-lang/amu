@@ -1,0 +1,114 @@
+{
+  "schema": "kotoba.seed.document-runtime-candidate.v1",
+  "state": "primitive source lowering connected; native type/build/run qualification not achieved",
+  "operations": [
+    "document-f64",
+    "document-f64-value",
+    "document-print",
+    "document-read"
+  ],
+  "still-refused": [
+    "document-sha256"
+  ],
+  "source-files": [
+    {
+      "path": "src/kotoba/compiler/f64_text.kotoba",
+      "sha256": "69e8f56ef02f36cebdd0264bd862687f20431cd23a6de5d49e058b1d0b6e44d4"
+    },
+    {
+      "path": "seed/runtime/document-f64.kotoba",
+      "sha256": "bb0dc0cfc02e4509f25a70d8438f3ed6483b6bcb8ff6a04a3e24cde53a40401c"
+    },
+    {
+      "path": "seed/runtime/document-codec.kotoba",
+      "sha256": "eee463789449d4b9b03df4e00fa4f635a694a22b82317948dfc23dc50e5076ae"
+    },
+    {
+      "path": "test/fixtures/selfhost/document/native/document_runtime_test.kotoba",
+      "sha256": "5494cc496c156fc8aa90eb32dc5436fb9fd77dda271fa8e4be2e3fb5b3dfcfe8"
+    },
+    {
+      "path": "test/fixtures/selfhost/f64-text/native/f64_text_test.kotoba",
+      "sha256": "688f1b3c1fc9fabe5bf84b3b983a15f10a67da2beeb73aa49b3c782b48b36fab"
+    }
+  ],
+  "compiler-source": {
+    "path": "seed/21-check.kotoba",
+    "sha256": "f03cb690fb8dc5881de7b713f576006de5cd6d6c99cbc92f7b6a9a53dac719fa",
+    "candidate-unity-source-sha256": "2b2d0ac53760a85c861f3763acd647836433206077113525fb7330eb7b4170c3",
+    "manifest": "seed/MANIFEST",
+    "manifest-changed": false,
+    "adopted-bootstrap-and-fixed-point-pins-changed": false,
+    "historical-receipts-do-not-qualify-candidate": true
+  },
+  "embedding": {
+    "literal-byte-parity": true,
+    "formatter-alpha-equivalence": true,
+    "parser-adapter": "existing exact integer decimal-f64-parse from seed R6D group",
+    "group-dependencies": [
+      "keyword",
+      "document",
+      "decimal",
+      "utf8"
+    ],
+    "literal-keyword-table-additions": [
+      ":f64-text/non-finite",
+      ":f64-text/no-roundtrip"
+    ],
+    "hosted-generator-required": false,
+    "runtime-source-file-reads": false
+  },
+  "reference-sources": [
+    {
+      "repository": "osaho",
+      "commit": "8d046cad2207460ff8b881565331d5bb57d91d56",
+      "path": "src/kotoba/kir/value.cljk",
+      "git-blob": "6d358aabd3b7277bd857f5d80a5666486752a14c",
+      "sha256": "7851d93dce9f7695a0ca46162f659f6eb747f67aa038dc4e3fd5ac35072b1d09",
+      "tracked-path-clean": true
+    },
+    {
+      "repository": "kotoba-lang",
+      "commit": "d9de0316223b5667fee35aef6ff2e6eeba71c1ac",
+      "path": "lang/conformance/document/sha256_anchors.kotoba",
+      "git-blob": "491d034e94678f707e244aca283572fb4bf69b3d",
+      "sha256": "34ea3f68e36353c7c4181a5d3619097ef4dd3fb9fc04e9ad3e17db7474c92d05",
+      "tracked-path-clean": true
+    }
+  ],
+  "semantic-boundaries": [
+    "all eleven preexisting document kinds and K/D map keys",
+    "finite binary64 only; raw bits preserved; signed zero normalized for identity",
+    "canonical identity equality and map/set membership",
+    "lowercase even hex; strict UTF8; no trailing bytes",
+    "depth8, nodes4096, items32 per container, aggregate payload65536, keyword/symbol512",
+    "sorted distinct set/map entries; overflow and non-finite rejection"
+  ],
+  "required-execution": {
+    "positive-entry": "main",
+    "expected-result": 31,
+    "independent-wire-anchors": 13,
+    "refusal-entries": 18,
+    "refusal-result": "trap; normal return is failure",
+    "formatter-boundary-corpus-required": true,
+    "full-Kami-component-required": true,
+    "qualified-loaderless-selfhost-required": true,
+    "executed": false,
+    "compiler-admission-verified": false
+  },
+  "actual-verification": [
+    "source delimiters",
+    "private helper call closure",
+    "runtime fragment literal byte parity",
+    "formatter alpha-equivalence",
+    "git diff --check"
+  ],
+  "remaining-gates": [
+    "native type and compile/link/run",
+    "complete forbidden-host and C-free build/package/launch closure",
+    "positive/refusal/fuel execution",
+    "full Kami input-map runtime qualification",
+    "existing native string-pool and EDN token spelling restrictions"
+  ],
+  "no-archive-or-deletion-authorized-by-this-receipt": true
+}

@@ -17,8 +17,10 @@ The existing C-loader receipts are historical evidence and cannot qualify
 this replacement under the current owner contract. Do not add a hosted or
 C-loader runner to obtain a pass.
 
-Next gates: compile/link/run this closure and denied-host/refusal controls via
-qualified selfhost-produced artifacts, integrate the text core into native
-`document-f64` / `document-f64-value`, and preserve canonical document bytes
-while implementing `document-print` / `document-read`. All four primitives
-remain unqualified until those gates and the full Kami input-map gate pass.
+The seed now embeds an alpha-renamed, schema-free formatter and connects it
+to all four document operations; see `../document/README.md` and
+`seed/runtime/document-runtime.json`. Embedding adds no source reads or hosted
+generator to the product closure. Next gates are actual native type checking,
+compile/link/run, denied-host/refusal controls, canonical-byte conformance and
+the full Kami input-map component through qualified selfhost-produced artifacts.
+All four primitives remain unqualified until those gates pass.
