@@ -2596,18 +2596,31 @@
           (= (nm-kind M c) ND-INT) (recur (nm-next M c))
           :else 0)))
 
+;; R6QD: the items of a def's constant vector keep their own literal kinds (integer / string /
+;; keyword), the same reading the expression path gives a vector literal; the integer case keeps
+;; its TY-I64 marking.
 (defn- ck-mark-items [M :vector-i64 c :i64] :vector-i64
   (if (= c 0)
     (ck-touch M)
     (let [nx (nm-next M c)
-          M1 (ck-mark M c TY-I64 0)]
-      (ck-mark-items M1 nx))))
+          k (nm-kind M c)
+          ty (cond (= k ND-INT) TY-I64 (= k ND-STR) TY-STR :else TY-KW)]
+      (ck-mark-items (ck-mark M c ty 0) nx))))
 
-;; 1 when v is a vector literal of at most 64 integer literals (R4B: 128)
+;; 1 when v is a vector literal of at most 128 scalar literals (integer / string / keyword).
+;; R6QD: was integers only; the guest-grammar :def :value rule is 'a vector / map of literals',
+;; and a keyword vector constant (an operation / key table) is the ordinary spelling -- the
+;; emission path already builds both shapes (a constant table above 64 items, OP-VEC below).
 (defn- ck-def-vec [M :vector-i64 v :i64] :i64
   (cond (nm-ne (nm-kind M v) ND-VEC) 0
         (> (nm-count M v) 128) 0
-        :else (ck-all-ints M v)))
+        :else (ck-all-scalars M v)))
+(defn- ck-all-scalars [M :vector-i64 v :i64] :i64
+  (loop [c (nm-first M v)]
+    (cond (zero? c) 1
+          (or (= (nm-kind M c) ND-INT) (= (nm-kind M c) ND-STR) (= (nm-kind M c) ND-KW))
+          (recur (nm-next M c))
+          :else 0)))
 
 (defn- ck-sig-def [M :vector-i64 f :i64] :vector-i64
   (let [n (nm-ff M f FF-NODE)
