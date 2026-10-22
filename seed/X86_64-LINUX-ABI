@@ -144,3 +144,23 @@ payload file is read into an anonymous mapping, made read+execute, and
 `kxrt-call-at` (r9 = context) at PAYLOAD+OFFSET. Exit: `KEXE_STRUCTURED_REPORT`
 line, else `result & 0xff` when `KEXE_COMMAND` is present, else the signed
 decimal result and a newline with status 0, as the loader.
+
+## aarch64-linux-static (seed modules 77, 80)
+
+`compile SOURCE --target aarch64-linux --output NEW --format static|runner`
+(Linux selfhost closure; dispatched by 73) emits the same image shape for
+EM_AARCH64. Module 80 is a plain stack-machine emitter for the runtime-profile
+SIR, independent of the adopted 41-a64gen: every local and temp lives in the
+frame (sp-relative, the x86 frame sizes), x0..x4 carry arguments 0..4 and
+arguments 5.. go to [sp, 8*(i-5)], x7 holds the context at every fuel site
+and guest call, helpers are `ldr x16,[x0,#slot]; blr x16` with x0 = context.
+Generated code uses only x0..x17, x29, x30 and sp, so runtime functions are
+AAPCS64-callable from a foreign payload. Fixups are MM-FIX kinds 11..17
+(imm26 FN/LABEL, imm19 LABEL, absolute FN/data/literal as movz+3 movk,
+code-relative literal). Entry: `mov x0, sp; bl kxrt-start; brk #0`. Traps are
+`brk #0` (SIGTRAP, exit 120). The runtime (77) is generated from the same
+template as 76: syscall numbers, openat for open, setitimer for alarm, O_
+flags, AUDIT_ARCH_AARCH64 and the aarch64 allow-lists differ. The runner
+format takes `PAYLOAD OFFSET 0 aarch64 ALLOW [-- ARGS]` and enters the payload
+as the loader did: fn(0..0, x7 = context). `KEXE_STACK_BYTES` (both arches)
+sets the stack budget; the adopted AArch64 compiler needs 8 MiB.
