@@ -86,7 +86,9 @@ plan carry no such facts (`INFO` is the four fields
 this row is selected today only for a descriptor that a future probe or
 provider supplies with subgroup facts; a descriptor that reports none
 fails closed to `:baseline` (rule 1: the portable variant runs). Producing
-the facts is a separate design decision, made nowhere yet.
+the facts is a separate design decision: ADR-0362 makes it (one additive
+wire-42 request, `SUBGROUP`), design only -- the producer does not exist
+yet.
 
 ## Measurement contract (JUN-57)
 

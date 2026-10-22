@@ -68,7 +68,9 @@ and `DEVCLASS` is one class word. So this row is selected today only for a
 descriptor that a future probe or provider supplies with subgroup facts; a
 descriptor that reports none fails closed to `:baseline` (rule 1: the
 portable variant runs). Producing the facts -- an extended probe answer or
-a provider request -- is a separate design decision and is not made here.
+a provider request -- is a separate design decision, made in ADR-0362
+(one additive wire-42 request, `SUBGROUP`): design only, the producer does
+not exist yet, and this row keeps failing closed without the facts.
 
 ## Measurement contract (JUN-58)
 

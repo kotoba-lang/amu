@@ -140,6 +140,16 @@ and one shape predicate now; every row stays UNMEASURED as a variant row
 untouched), and every row still fails closed to `:baseline` on a
 descriptor without the rule-6 facts.
 
+**Amendment (2026-10-23, the fact producer is designed).** ADR-0362 makes
+the separate design decision ADR-0360/0361 left open: the rule-6 facts
+ride one additive wire-42 request `SUBGROUP` answering `<size>|<ops>`
+(compute-stage subgroup width; the Vulkan 1.1 core
+`VkSubgroupFeatureFlagBits` tokens, `basic` and `shuffle-relative` being
+the two the fold needs), with the named refusal `gpu/no-compute-subgroups`
+treated exactly like an absent fact. Design only -- the producer, the
+protocol-table entries and the consumer parser are unimplemented slices,
+and every row here keeps failing closed to `:baseline` without the facts.
+
 ## Intel `:subgroup-reduce` (JUN-59) -- the design
 
 **Rationale (a design assumption, not a measurement).** The baseline tree
