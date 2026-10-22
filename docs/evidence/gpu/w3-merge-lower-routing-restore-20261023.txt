@@ -1,0 +1,67 @@
+W3 merge regression in the host reading of lower: the dropped :glsl-v1 arm
+============================================================
+Date: 2026-10-23 (JST). Branch: bot/amu-gpu-chain. Tracking: JUN-55, JUN-56.
+
+Found (tool output, this tick):
+
+1. The kbb suite runs the DEFAULT (host) reading of the dual-reading
+   .cljk modules -- probe on the gate's own engine:
+     kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" probe_reading.cljk
+     -> :branch DEFAULT
+     -> :glsl-baseline THREW: No matching clause: :glsl-v1
+     -> :glsl-subgroup THREW: No matching clause: :glsl-v1
+
+2. The W3 merge (3e14da99, previous tick) resolved accelerator.cljk to
+   main's W3 rewrite shape and DROPPED the host reading's :glsl-v1 arm of
+   `lower`. The arm existed on the chain side (33e01107):
+     :glsl-v1 (case variant
+                :baseline (emit-glsl-baseline kir)
+                :subgroup-reduce (subgroup-reduce/emit-glsl kir)
+                (throw (ex-info "kernel variant not applicable" ...)))
+   The :kotoba reading kept its :glsl-v1 routing (accelerator.cljk:600-605);
+   the two readings disagreed.
+
+3. The same merge mixed the verify-artifact! variant-label message: the
+   chain side threw "accelerator artifact carries an unsupported kernel
+   variant" (matching the pinned test regex #"unsupported kernel variant"),
+   main's wording was "...unsupported variant label", and the merged file
+   carried main's wording against the chain's (and main's own) test.
+
+Fixed (this tick, byte-for-byte where the arm is concerned):
+
+- src/kotoba/compiler/accelerator.cljk: the host `lower` carries the
+  :glsl-v1 arm again (identical text to 33e01107's arm; one extra close
+  because the arm now sits inside the #?(:kotoba ... :default ...) form).
+- src/kotoba/compiler/accelerator.cljk: both readings of verify-artifact!
+  say "accelerator artifact carries an unsupported kernel variant" again.
+- test/kotoba/compiler/accelerator_test.cljk: new pin
+  lower-routes-every-target-variant-pair-or-refuses-by-name -- the full
+  4x3 (target, variant) routing matrix must either lower to non-empty
+  text or refuse with "kernel variant not applicable", so a bare case
+  fall-through can never satisfy either arm.
+
+Verification (kbb --backend sci, the gate's engine and classpath; focused
+runner over the seven GPU-owned namespaces -- the full run-tests.cljk is
+blocked at namespace load by kotoba.form, see below):
+
+  BEFORE (HEAD before the fix):
+    Ran 54 tests containing 1591 assertions.
+    10 failures, 17 errors.   (all "No matching clause: :glsl-v1" except
+                               one verify-artifact! message mismatch)
+  AFTER (fix + new pin):
+    Ran 55 tests containing 1727 assertions.
+    0 failures, 0 errors.
+
+Base red, named not hidden: the full gate
+  kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" run-tests.cljk
+still fails at NAMESPACE LOAD with "Could not find namespace: kotoba.form",
+reached through kotoba.compiler.js-value-target (upstream W3 port, outside
+this diff). No kotoba/form .cljk reading exists in kotoba-sema (pinned
+a330352) or anywhere on the stdlib classpath; only .kotoba sources exist
+(amu src/kotoba/form.kotoba). Pre-existing at the merge (3e14da99 recorded
+it); unchanged by this fix. No namespace in the suite, GPU or otherwise,
+runs through run-tests.cljk until that reading exists.
+
+Measurement status: nothing here is a measurement. No GPU number changed,
+no :measured? flag moved, and every workgroup/variant row keeps its prior
+label (:arm and :unknown provisional; the variant rows UNMEASURED).

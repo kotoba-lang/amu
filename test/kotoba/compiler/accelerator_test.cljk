@@ -243,3 +243,31 @@
                 "float v = i < n ? x[i] : " (:glsl ids) ";"]]]
         (is (str/includes? code (str prefix id suffix)))
         (is (not (str/includes? code "3.402823466")))))))
+
+(deftest lower-routes-every-target-variant-pair-or-refuses-by-name
+  ;; The W3 dual-reading merge (3e14da99) dropped the host reading's
+  ;; :glsl-v1 arm of `lower`, and nothing caught it while the suite was
+  ;; blocked at namespace load on kotoba.form: `lower` fell through `case`
+  ;; with "No matching clause" instead of the named refusals. This pins the
+  ;; routing matrix exhaustively -- every (target, variant) pair either
+  ;; lowers to non-empty text or refuses with the contract's own message,
+  ;; and a bare case fall-through can never satisfy either arm.
+  (let [reduce-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})]
+    (doseq [[target variant] [[:wgsl-v1 :baseline]
+                              [:cuda-v1 :baseline]
+                              [:cuda-v1 :warp-shuffle-reduce]
+                              [:msl-v1 :baseline]
+                              [:glsl-v1 :baseline]
+                              [:glsl-v1 :subgroup-reduce]]]
+      (let [code (accelerator/lower reduce-kir target variant)]
+        (is (and (string? code) (pos? (count code)))
+            (str target " " variant " lowers to non-empty text"))))
+    (doseq [[target variant] [[:wgsl-v1 :warp-shuffle-reduce]
+                              [:wgsl-v1 :subgroup-reduce]
+                              [:msl-v1 :warp-shuffle-reduce]
+                              [:msl-v1 :subgroup-reduce]
+                              [:cuda-v1 :subgroup-reduce]
+                              [:glsl-v1 :warp-shuffle-reduce]]]
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower reduce-kir target variant))
+          (str target " " variant " refuses by name")))))

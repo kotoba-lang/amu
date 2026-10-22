@@ -628,7 +628,11 @@
      :msl-v1 (do (when-not (= :baseline variant)
                    (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))
                  (emit-msl kir))
-     :cuda-v1 (emit-cuda kir variant)))))
+     :cuda-v1 (emit-cuda kir variant)
+     :glsl-v1 (case variant
+                :baseline (emit-glsl-baseline kir)
+                :subgroup-reduce (subgroup-reduce/emit-glsl kir)
+                (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))))))
 #?(:kotoba
    (defn compile-kernel [kir :document target :keyword variant :keyword] :document
      (let [code (lower kir target variant)
@@ -665,7 +669,7 @@
          (if (not (or (document-equal? variant (document-keyword :baseline))
                       (document-equal? variant (document-keyword :warp-shuffle-reduce))
                       (document-equal? variant (document-keyword :subgroup-reduce))))
-           (throw (ex-info "accelerator artifact carries an unsupported variant label" {:variant variant}))
+           (throw (ex-info "accelerator artifact carries an unsupported kernel variant" {:variant variant}))
            (let [expected-code (lower (dgk compiled :kir) (option-value-of [:option :keyword] (document-keyword-value (dgk compiled :target)) :wgsl-v1) (option-value-of [:option :keyword] (document-keyword-value variant) :baseline))]
              (if (not (and (document-equal? (dgk compiled :kir-sha256) (document-string (artifact-sha256 (dgk compiled :kir))))
                            (document-equal? (dgk compiled :code-sha256) (document-string (artifact-sha256 (document-string expected-code))))
@@ -682,7 +686,7 @@
   ;; :baseline by definition, and re-lowering must still match exactly.
   (let [variant (if (contains? compiled :variant) (:variant compiled) :baseline)
         _ (when-not (contains? #{:baseline :warp-shuffle-reduce :subgroup-reduce} variant)
-            (throw (ex-info "accelerator artifact carries an unsupported variant label"
+            (throw (ex-info "accelerator artifact carries an unsupported kernel variant"
                             {:variant variant})))
         expected-code (lower (:kir compiled) (:target compiled) variant)]
     (when-not (and (= (:kir-sha256 compiled) (artifact/sha256 (:kir compiled)))
