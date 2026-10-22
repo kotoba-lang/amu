@@ -9,10 +9,11 @@
 ;; XS-INTR-N intrinsic stubs in id order), 199 = kxrt-start FN,
 ;; 200..255 = FN whose address fills context word slot/8 (slots 48..440).
 
-(def XS-INTR-N 8)
+(def XS-INTR-N 9)
 (defn- xs-intr-name [k :i64] :string
   (case k 0 "kxrt-load64" 1 "kxrt-store64" 2 "kxrt-load8" 3 "kxrt-store8"
-          4 "kxrt-syscall" 5 "kxrt-ctx" 6 "kxrt-call-main" 7 "kxrt-trap" ""))
+          4 "kxrt-syscall" 5 "kxrt-ctx" 6 "kxrt-call-main" 7 "kxrt-trap"
+          8 "kxrt-call-at" ""))
 (defn- xs-on? [M :vector-i64] :bool (> (vector-at M 197) 0))
 (defn- xs-sym-start [M :vector-i64 f :i64] :i64
   (vector-at M (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W) SF-START)))
@@ -40,6 +41,9 @@
     6 (-> M (xg-load t 0x8d8b4c) (xg-rel 0xe8 1 1 (xg-get M 1))
           (xg-bytes 0xf84d8b4c 4) (xg-save t))
     7 (xg-bytes M 0x0b0f 2)
+    ;; (kxrt-call-at addr ctx): an external KX64V1 entry, r9 = context.
+    8 (-> M (xg-load (inc t) 0x8d8b4c) (xg-load t 0x858b48) (xg-bytes 0xd0ff 2)
+          (xg-bytes 0xf84d8b4c 4) (xg-save t))
     (xg-err M 7101 OP-CALL)))
 
 ;; ---- scan and admission ------------------------------------------------------
@@ -91,6 +95,7 @@
 (defn- xs-slot-word [M :vector-i64 slot :i64] :i64
   (let [f (if (and (>= slot 48) (<= slot 440)) (vector-at M (+ 200 (quot slot 8))) 0)]
     (cond (= slot 384) 0x401000
+          (= slot 408) (xg-get M 2)
           (= slot 392) (xg-pos M)
           (> f 0) (+ 0x401000 (dec (xg-f M f FF-CODE)))
           :else 0)))
@@ -105,8 +110,9 @@
       (xg-pad 4096) (xg-out-code 1) (xg-pad (xg-get M 3)) (xs-out-ctx 0)))
 (defn- xs-clear [M :vector-i64 k :i64] :vector-i64
   (if (= k 256) M (xs-clear (mem-set M k 0) (inc k))))
-(defn- xs-build [M :vector-i64 S :string rt :i64] :vector-i64
-  (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 4 1)
+;; mode (context word 408): 0 = --format static, 1 = --format kx64-runner
+(defn- xs-build [M :vector-i64 S :string rt :i64 mode :i64] :vector-i64
+  (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 2 mode) (xg-set 4 1)
               (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))]
     (cond (not= (vector-at a MM-ERR) 0) a
           (= (xg-get a 1) 0) (xg-err a 7102 0)
@@ -118,15 +124,15 @@
                     (xs-elf (xg-fix (xg-set g 3 data) 1)))))))
 (defn- xs-write [M :vector-i64 out :string] :i64
   (let [n (dec (vector-at M MM-OUT-N)) written (out-write-v M out (+ MM-OUT-BASE 1) n)
-        w (io-out (string-concat "{:ok true, :target :x86_64-linux, :format :static, :code-bytes "
-                   (string-concat (mem-u2dec (xg-pos M)) (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))]
+        w (io-out (string-concat "{:ok true, :target :x86_64-linux, :format " (string-concat (if (= (xg-get M 2) 1) ":kx64-runner" ":static") (string-concat ", :code-bytes "
+                   (string-concat (mem-u2dec (xg-pos M)) (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))))]
     (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))
-(defn- xs-command [] :i64
+(defn- xs-command [mode :i64] :i64
   (let [src (io-arg 1) out (io-arg 5)]
     (cond (or (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
             (drv-fail0 E-USAGE)
           (= (io-exists src) 0) (drv-fail0 E-READ)
           :else (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
-                      s (string-concat guest (xs-rt-src)) m (xs-build (xg-front s) s (string-length guest))]
+                      s (string-concat guest (xs-rt-src)) m (xs-build (xg-front s) s (string-length guest) mode)]
                   (cond (not= (vector-at m MM-ERR) 0) (xg-report m src out)
                         :else (xs-write m out))))))

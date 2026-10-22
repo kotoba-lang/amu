@@ -189,7 +189,7 @@ def inspect(result, case):
     return dict(exit=result.returncode, remainingFuel=int(fuel[2]))
 
 
-def execute(out, rosetta):
+def execute(out, rosetta, runner=None):
     host = platform.system(), platform.machine()
     assert host == ("Darwin", "arm64") if rosetta else host[0] == "Linux" and host[1] in ("x86_64", "AMD64")
     prepared = json.loads((out / "prepare.json").read_text())
@@ -198,8 +198,16 @@ def execute(out, rosetta):
     assert (out / "seed-unity.kotoba").read_bytes() == b"".join((ROOT / p).read_bytes() + b"\n" for p in paths)
     assert pin(out / "G1.bin") == prepared["compiler"] and pin(out / "G1.kx64") == prepared["container"]
     run = Runs(out, prepared["sourcePins"])
-    loader = out / ("rosetta-loader" if rosetta else "linux-loader")
-    run.run("x86-loader-build", ["clang", "-std=c11", "-O2", *(["-arch", "x86_64"] if rosetta else []), ROOT / (LOADER if rosetta else LINUX_LOADER), "-o", loader])
+    if runner is None:
+        loader = out / ("rosetta-loader" if rosetta else "linux-loader")
+        run.run("x86-loader-build", ["clang", "-std=c11", "-O2", *(["-arch", "x86_64"] if rosetta else []), ROOT / (LOADER if rosetta else LINUX_LOADER), "-o", loader])
+    else:
+        # C-free KX64V1 runner (x86_64-linux-static, --format kx64-runner): same
+        # command line as the loader; no C loader is built or run.
+        assert not rosetta
+        loader = out / "kx64-runner"
+        shutil.copyfile(runner, loader)
+        loader.chmod(0o755)
     arch = ["/usr/bin/arch", "-x86_64"] if rosetta else []
     producer, source = out / "G1.bin", out / "seed-unity.kotoba"
     generations = [dict(native=prepared["compiler"], container=prepared["container"])]
@@ -243,12 +251,14 @@ def execute(out, rosetta):
         assert result.returncode != 0 and b"E" in result.stderr
         assert dst.read_bytes() == b"preserve original" if name == "existing-output" else not dst.exists()
         refused.append(name)
-    report = dict(status="PASS_ROSETTA_X86_SELF_REBUILD" if rosetta else "PASS_LINUX_X86_NATIVE_SELFHOST",
+    report = dict(status="PASS_ROSETTA_X86_SELF_REBUILD" if rosetta else
+                  "PASS_LINUX_X86_CFREE_RUNNER_SELFHOST" if runner else "PASS_LINUX_X86_NATIVE_SELFHOST",
                   host=list(host), linuxSelfhost=not rosetta, generations=generations, sourceUnity=prepared["sourceUnity"],
                   linuxAllocator=None if rosetta else environment(out)["GLIBC_TUNABLES"],
                   linuxStackReserveBytes=0 if rosetta else 524288,
-                  cases=results, refusals=refused, trustedCLoader=True, JVMNodeOrGraalFallback=False, performanceMeasured=False)
-    dump(out / ("rosetta-selfhost.json" if rosetta else "linux-selfhost.json"), report)
+                  cases=results, refusals=refused, trustedCLoader=runner is None, JVMNodeOrGraalFallback=False, performanceMeasured=False,
+                  runner=pin(loader) if runner else None)
+    dump(out / ("rosetta-selfhost.json" if rosetta else "cfree-runner-selfhost.json" if runner else "linux-selfhost.json"), report)
     print(report["status"], len(results), "cases; G1=G2=G3", flush=True)
 
 
@@ -279,10 +289,11 @@ if __name__ == "__main__":
     group.add_argument("--execute-linux", action="store_true")
     group.add_argument("--execute-rosetta", action="store_true")
     group.add_argument("--diagnose-linux", action="store_true")
+    parser.add_argument("--runner", type=Path, help="with --execute-linux: run through this C-free KX64V1 runner instead of building the C loader")
     args = parser.parse_args()
     if args.prepare:
         prepare(args.output.resolve())
     elif args.diagnose_linux:
         diagnose_linux(args.output.resolve())
     else:
-        execute(args.output.resolve(), args.execute_rosetta)
+        execute(args.output.resolve(), args.execute_rosetta, args.runner.resolve() if args.runner else None)

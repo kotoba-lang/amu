@@ -85,10 +85,10 @@ Status lines are appended below as milestones land.
   the intrinsics; `seed/76-x86_64-static-rt.kotoba` holds the runtime (23 context slots, wires 35/37/38/39, traps,
   structured report). `scripts/seed/check-x86_64-static.py` records:
   * prepare (macOS arm64, the one bootstrap step through the pinned loader):
-    S1 sha256 `a897af61…95da` (1,397,248 bytes);
+    S1 sha256 `22b63172…0028` (1,409,536 bytes; re-measured after the runner mode landed — the first landing measured `a897af61…95da`);
   * execute-linux, no loader: **S1 = S2 = S3** byte for byte; S3's
     `--format kx64-v1` output for the same source graph equals the
-    loader-run compiler's (`c2ec2f50…b046`); the 24 runtime cases, rebuilt by
+    loader-run compiler's (`2faa0899…48d8`); the 24 runtime cases, rebuilt by
     S3 as static images, match the AArch64 loader reference in result, trap
     status/exit 120 and remaining fuel; refusals: float, guest call into the
     runtime, unknown format, existing output preserved, source outside
@@ -105,3 +105,22 @@ Status lines are appended below as milestones land.
 * **Still open.** M4 hardening (seccomp, rlimits); wire-35 forms beyond
   READ/EXISTS/WRITE/APPEND; multiple scope roots; the S1 bootstrap still uses
   the pinned loader once and is labelled as such in the receipt.
+
+### Status 2026-10-22 (later): the KX64V1 runner
+
+JUN-29's acceptance names a C-free runner for KX64V1 payloads, separate from
+the static image. The runtime already implements the v11 context and the
+command-path wires, so the runner is the same image in mode 1
+(`--format kx64-runner`, source `seed/x86_64-kx64-runner.kotoba`): it maps
+the payload named on the loader-compatible command line and enters it
+through the ninth intrinsic `kxrt-call-at`. `scripts/seed/check-x86_64-static.py`
+bootstraps R1 with the bridge and checks that S3 rebuilds it byte for byte on
+Linux; `scripts/seed/check-x86_64-selfhost.py --execute-linux --runner R.elf`
+runs the existing G1/G2/G3, 24-case and refusal suite with the runner in
+place of the C loader.
+
+Measured on Linux (same qemu-user caveat): R1 = R rebuilt by S3
+(`62e3a193…c585`, 102,912 bytes); through R, the pinned-chain G1 payload
+(`08318b77…a6e6`) rebuilds itself **G1=G2=G3**, the 24 runtime cases match the
+AArch64 loader reference (result, trap/exit 120, remaining fuel), and the six
+refusals hold; the receipt records `trustedCLoader: false`. Receipts: `docs/evidence/native-x86_64-kx64-runner-20261022/`.

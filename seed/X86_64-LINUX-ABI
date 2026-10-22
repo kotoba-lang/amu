@@ -121,3 +121,16 @@ RESOLVE_BENEATH|RESOLVE_NO_MAGICLINKS). Not provided: wire-35 forms other than
 READ/EXISTS/WRITE/APPEND (refused), wires other than 35/37/38/39 (refused),
 seccomp and rlimits, growth regions (pool/item layout differs; values are
 equal), the arena fields of the structured line.
+
+### KX64V1 runner (`--format kx64-runner`)
+
+The same image with context word 408 = 1 (link time; 0 for `--format
+static`), built from `seed/x86_64-kx64-runner.kotoba`. It takes the trusted
+loader's command line for the x86_64 shape: `PAYLOAD OFFSET 0 x86_64 ALLOW
+[-- ARGS]` (arity 0 only; anything else exits 2 with a usage line). The
+payload file is read into an anonymous mapping, made read+execute, and
+`code_base`/`code_length` are set to it; ALLOW comes from argv and
+`KEXE_ALLOW` is ignored. Guest entry is the ninth intrinsic
+`kxrt-call-at` (r9 = context) at PAYLOAD+OFFSET. Exit: `KEXE_STRUCTURED_REPORT`
+line, else `result & 0xff` when `KEXE_COMMAND` is present, else the signed
+decimal result and a newline with status 0, as the loader.
