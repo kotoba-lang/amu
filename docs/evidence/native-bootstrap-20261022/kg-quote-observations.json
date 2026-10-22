@@ -1,0 +1,180 @@
+{
+ "schema": "amu.gate3.kg-quote-observations.v1",
+ "date": "2026-10-22",
+ "root": "be60c6cd2d05b2b37b70b1eec7271121fc10718e40162b6b6948b3fe8dcd263a",
+ "rootNote": "re-pinned root be60c6cd2d05b2b3 (aarch64 podman, no C compiler/loader)",
+ "method": "quote/fn-literal fixtures: compiled by the root to aarch64-linux static images and run. KG fixtures (test/fixtures/bootstrap/kgraph_*.kotoba): compiled to aarch64-macos raw payloads by the adopted G3 compiler (fe01d4d2e895c503) on the new runner (R-aarch64.elf, ce137284774f7f2e), extracted at symbol main, executed with the runner (offset 0, arity 0, empty allow list).",
+ "summary": {
+  "kgraphSlots": "exit 0, result 0 (point lookup, last-write-wins, missing = INT64_MIN)",
+  "kgraph4096": "exit 0, result 0 (4096 datoms asserted, lookups at 4095 and 4096 as expected)",
+  "kgraph4097": "exit 120, SIGILL then KEXE_TRAP budget/cells arena kgraph (4097th assertion refused)",
+  "payloadsIdenticalToEarlierReceipt": "312/220/128 bytes, same SHA-256 as current-main-bootstrap-kg.json",
+  "quote": "'5 -> 7, '[11 22 33] index 1 -> 22, #(+ % 1) 41 -> 42, #(+ %1 %2) 20 22 -> 42 all exit 0",
+  "refusals": "'(1 2) -> E2180 (E-QUOTE-LIST); #(+ %2 1) and #(+ %& 1) -> E2185 (E-FNLIT-ARGS)"
+ },
+ "limits": "aarch64 execution only; no x86 run, no forbidden-process trace, no quote-form corpus beyond these seven fixtures. The kgraph intrinsics are not admitted by the static-image scalar profile (E7101 detail 80/88): the KG boundary is observed through raw payloads, not the public static route.",
+ "results": [
+  {
+   "name": "kgraph_slots-raw",
+   "source": {
+    "bytes": 543,
+    "sha256": "cc3373428929969eea98413f3adb3b329742e07f1c6097bdeb1f05eadf878586"
+   },
+   "compileExit": 0,
+   "compileStderr": "",
+   "compileStdout": "",
+   "extractExit": 0,
+   "producer": "adopted G3.bin (fe01d4d2e895c503) on the new runner",
+   "payload": {
+    "bytes": 312,
+    "sha256": "808c5c408527fe861a15ea2e0b04de1741dbd00acad1041a94e246846d2cfb91"
+   },
+   "runExit": 0,
+   "result": null,
+   "runStderr": "",
+   "runStdout": "{:status :ok :result 0 :fuel {:initial 100000000 :remaining 100000000}}"
+  },
+  {
+   "name": "kgraph_boundary-raw",
+   "source": {
+    "bytes": 321,
+    "sha256": "8c442afa2a21f3a3a71a680e9ce0f4a324d789b361d3ad2aac8123b8a6d14311"
+   },
+   "compileExit": 0,
+   "compileStderr": "",
+   "compileStdout": "",
+   "extractExit": 0,
+   "producer": "adopted G3.bin (fe01d4d2e895c503) on the new runner",
+   "payload": {
+    "bytes": 220,
+    "sha256": "49d16929dac44edf53b2066a46d12a283d585d2fdce2e9504aed28cab6cab8ba"
+   },
+   "runExit": 0,
+   "result": null,
+   "runStderr": "",
+   "runStdout": "{:status :ok :result 0 :fuel {:initial 100000000 :remaining 99995904}}"
+  },
+  {
+   "name": "kgraph_overflow-raw",
+   "source": {
+    "bytes": 183,
+    "sha256": "a94a6f3222743e66b479a33068dd2a72658f0f73024b6e0b2c1fe2d8ebda385a"
+   },
+   "compileExit": 0,
+   "compileStderr": "",
+   "compileStdout": "",
+   "extractExit": 0,
+   "producer": "adopted G3.bin (fe01d4d2e895c503) on the new runner",
+   "payload": {
+    "bytes": 128,
+    "sha256": "9b14fde8fdbd3bc2a0c37680cc5836ed980073aa94a48defa3ed28324f5b686f"
+   },
+   "runExit": 120,
+   "result": null,
+   "runStderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_TRAP {:kind :budget :reason :budget/cells :arena :kgraph}",
+   "runStdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99995904}}"
+  },
+  {
+   "name": "quote-int",
+   "source": {
+    "bytes": 66,
+    "sha256": "345b97df53f742b56bbfbac0b3b89b510479d62e4c09fc83e3ed2628c1d69e6b"
+   },
+   "compileExit": 0,
+   "compileStderr": "",
+   "compileStdout": "{:ok true, :target :aarch64-linux, :format :static, :code-bytes 126584, :bytes 131584}",
+   "image": {
+    "bytes": 131584,
+    "sha256": "15afcc3ae234c423ea7906317442fb30875a3389a40e3fd56d34c227dcf2a534"
+   },
+   "runExit": 0,
+   "result": 7,
+   "runStderr": "",
+   "runStdout": "{:status :ok :result 7 :fuel {:initial 100000000 :remaining 100000000}}"
+  },
+  {
+   "name": "quote-vector",
+   "source": {
+    "bytes": 86,
+    "sha256": "29ec8923cfe94ddecf70d7c45771ba015a3094216facfd6f4d885d3902856403"
+   },
+   "compileExit": 0,
+   "compileStderr": "",
+   "compileStdout": "{:ok true, :target :aarch64-linux, :format :static, :code-bytes 126656, :bytes 131584}",
+   "image": {
+    "bytes": 131584,
+    "sha256": "a350ea4c8665e4f1de343a497efea189b43d51b38c93acaf6c33563a0be2a713"
+   },
+   "runExit": 0,
+   "result": 22,
+   "runStderr": "",
+   "runStdout": "{:status :ok :result 22 :fuel {:initial 100000000 :remaining 99999999}}"
+  },
+  {
+   "name": "fnlit-one",
+   "source": {
+    "bytes": 78,
+    "sha256": "1e4f268fabd8183d83d0c1e0ad9c682e569afeae96e75397baca012104ce39af"
+   },
+   "compileExit": 0,
+   "compileStderr": "",
+   "compileStdout": "{:ok true, :target :aarch64-linux, :format :static, :code-bytes 126820, :bytes 131584}",
+   "image": {
+    "bytes": 131584,
+    "sha256": "81a03a9062a21a5bb27d20ad4f0f2a6be623d4c389dbb9d4ca340b1b61a12dac"
+   },
+   "runExit": 0,
+   "result": 42,
+   "runStderr": "",
+   "runStdout": "{:status :ok :result 42 :fuel {:initial 100000000 :remaining 99999999}}"
+  },
+  {
+   "name": "fnlit-two",
+   "source": {
+    "bytes": 83,
+    "sha256": "31df283ffcf6b4fcc58f0bfef7d647b25fc8b443fde7abf9a180746e27b982de"
+   },
+   "compileExit": 0,
+   "compileStderr": "",
+   "compileStdout": "{:ok true, :target :aarch64-linux, :format :static, :code-bytes 126836, :bytes 131584}",
+   "image": {
+    "bytes": 131584,
+    "sha256": "671455d822400bce6aa8558a60a8bf6150359cc7e0c43dcaf6f2305bb1c688ed"
+   },
+   "runExit": 0,
+   "result": 42,
+   "runStderr": "",
+   "runStdout": "{:status :ok :result 42 :fuel {:initial 100000000 :remaining 99999999}}"
+  },
+  {
+   "name": "refuse-quote-list",
+   "source": {
+    "bytes": 86,
+    "sha256": "bb390c01c4b708484d9a2943533b1f0adcb358d0791fb6d7ad52059a238b4e1e"
+   },
+   "compileExit": 1,
+   "compileStderr": "seed-x86_64-linux: refuse-quote-list.kotoba at 76 detail 0 seed-x86_64-linux: E2180",
+   "compileStdout": ""
+  },
+  {
+   "name": "refuse-fnlit-gap",
+   "source": {
+    "bytes": 87,
+    "sha256": "1d7d7412c1653d546e67302042e7f3b535c51e08dcca357eb6da94f485971e33"
+   },
+   "compileExit": 1,
+   "compileStderr": "seed-x86_64-linux: refuse-fnlit-gap.kotoba at 71 detail 0 seed-x86_64-linux: E2185",
+   "compileStdout": ""
+  },
+  {
+   "name": "refuse-fnlit-rest",
+   "source": {
+    "bytes": 86,
+    "sha256": "9a35524a3871891c39ebc839e81ad3b042e35e10491c9bc50669fbacae6102ef"
+   },
+   "compileExit": 1,
+   "compileStderr": "seed-x86_64-linux: refuse-fnlit-rest.kotoba at 72 detail 0 seed-x86_64-linux: E2185",
+   "compileStdout": ""
+  }
+ ]
+}
