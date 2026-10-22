@@ -83,7 +83,8 @@
                 integer. Spans like `-` and `->` are symbols"]
   [:c TK-KW 10 "keyword: ':' followed by symbol chars; the span includes the ':' (e.g. :i64 :fs/app-data)"]
   [:c TK-HASH-BRACE 11 "R3: '#{' (a set literal opens; closed by '}')"]
-  [:c TK-AT 12 "R5B: '@' (11-read reads @x as (deref x): a list whose head symbol is the '@' token, spelled HD-DEREF)"]]
+  [:c TK-AT 12 "R5B: '@' (11-read reads @x as (deref x): a list whose head symbol is the '@' token, spelled HD-DEREF)"]
+  [:c TK-QUOTE 13 "R6Q: ''' (11-read reads 'x as (quote x): a list whose head symbol is the ''' token, spelled HD-QUOTE)"]]
  ;; R3 (10-lex, minimal delimited change): a string literal may hold any UTF-8 text (its bytes go to LITB as they are) and
  ;; the escapes \r \b \f \uXXXX (UTF-8 encoded; a surrogate is E1003) besides \n \t \\ \"; a comment may hold any
  ;; UTF-8 text. A byte >= 128 anywhere else is E1002 at that byte (no whole-input pre-check any more).
@@ -91,8 +92,8 @@
  ;; valid UTF-8 through wire 35), a literal's raw bytes are the code-point-aligned span between two '"', and the escapes encode
  ;; scalar values only (surrogates E1003); 12-kirread's literals are ASCII. Code generators may rely on it (41-a64gen reads
  ;; ASCII bytes of code-relative strings in line, seed/SIR :a64 :r4).
- ;; Whitespace: space, tab, \n, \r and ','. Comments: ';' to end of line. Reader syntax # ^ ` ~ @ \ ' (as a
- ;; prefix) -> E1005 with the one-character span. A token never spans lines except a string.
+ ;; Whitespace: space, tab, \n, \r and ','. Comments: ';' to end of line. Reader syntax # ^ ` ~ @ \ (as a
+ ;; prefix) -> E1005 with the one-character span. A leading quote is TK-QUOTE (R6Q), not an error. A token never spans lines except a string.
 
  ;; ---------------------------------------------------------------------------------------------------------
  ;; 3. Read tree (11-read)
@@ -388,7 +389,8 @@
                         stage-0 refuses a :keyword or :bool item of str): the items of (str ..), which 21-check desugars to string-concat"]
   [:c HD-R6-IS 162 "(__r6-is T x) -> x, which must have type T exactly (E2104 otherwise); no code. Written by the desugaring of
                      (record-assoc SCHEMA r :f v) -> (assoc (__r6-is SCHEMA r) :f v) (the reference's record-assoc)"]
-  [:c HD-COUNT 162 "number of heads"]]
+  [:c HD-QUOTE 163 "R6Q: ('x) / (quote x) -> a :symbol / [:set :symbol] / [:map :symbol V] / [:vector [:symbol ...]] constant, or the unwrapped datum for a symbol-free quote (guest-grammar :quoted); the reader's head symbol is the quote token"]
+  [:c HD-COUNT 163 "number of heads"]]
 
  ;; Head spellings, index = head code (20-names compares a symbol's bytes against these at intern time).
  ;; R1 spellings 43.. : "do" "when" "when-not" "if-not" "case" "condp" "->" "->>" "as->" "cond->" "cond->>" "dotimes"
@@ -409,6 +411,7 @@
  ;; "string-from-i64" "string-compare" "string-index-of" "string-byte-length" "pair" "pair-first" "pair-second" "count" "nth"
  ;; "contains?" "conj" "disj" "dissoc" "keys" "vals" "peek" "pop"; 129 130 have none. R4 spellings 131..139: "fn" "fn-ref" "invoke"
  ;; "apply" "map" "filter" "reduce" "list" "&"; 140 141 have none. R4B spellings 142..147: "bytes-empty" "bytes-count" "bytes-at"
+ ;; R6Q spelling 163: "quote" (and the quote char as the token of the reader's quote form).
  ;; "bytes-concat" "bytes-slice" "string-from-utf8". R5B spellings 148..156: "atom" "swap!" "reset!" "deref" (and "@", the token of the
  ;; reader's @x) "perform" "handle" "with" "resume" "defhandler"; 157 has none. Like R1's, an R3 head is shadowed by a
  ;; definition of the same name.
