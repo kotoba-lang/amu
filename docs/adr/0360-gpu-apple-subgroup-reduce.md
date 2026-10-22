@@ -156,3 +156,50 @@ the Vulkan route, not this one.
 Implemented the same date (code + tests in
 `kotoba.compiler.accelerator-variants`, evidence in
 `docs/evidence/gpu-apple-msl-route-20261023/`).
+
+## Amendment (2026-10-23, the first hardware comparison of the two arms --
+measurement recorded, every lock unchanged)
+
+One MEASUREMENT landed with this tick (evidence
+`docs/evidence/gpu-subgroup-reduce-m1max-20261023/`): the emitted
+`:baseline` and `:subgroup-reduce` MSL arms for :sum/:max/:min at W = 256
+(this ADR's measured workgroup row, ADR-0358) ran interleaved on the named
+device **Apple M1 Max** -- 6 fresh-process runs, 20 paired samples per
+operator per run with alternating AB/BA order, warmup submits discarded
+(the ADR-0358 sweep protocol), verified read-back every run. The harness
+(`scripts/gpu-subgroup-reduce-metal-measure.{m,py,cljk}`) dispatches the
+emitters' own bytes through the Metal API directly.
+
+Result: the variant is **~22% SLOWER** than baseline in every fresh process
+and every operator (paired median ratio 1.216-1.223; median GPU time
+~103 us baseline vs ~126 us variant per dispatch at n = 1,000,003;
+absolute medians shift with the GPU clock regime across processes, the
+paired ratio does not). Read-back: :max/:min partials bit-identical between
+the arms and against the double CPU reference -- rule 2's ordinary-value-
+domain claim is now OBSERVED on hardware for these inputs -- and :sum
+differs by at most 3.05e-5 across partials (the low-bit movement rule 2
+permits). The device's reported subgroup size (the runtime
+`[[threads_per_simdgroup]]` binding) is MEASURED **32**: the first measured
+subgroup-size fact for this device class. It says nothing about MoltenVK's
+`VkPhysicalDeviceSubgroupProperties` -- ADR-0362's unverified clause stands
+for the Vulkan route.
+
+Locks unchanged: NO `:measured?` flag moves and no workgroup row is
+touched. This run is NOT the contract's measurement: the contract requires
+the wire-42 route, which does not exist since the C loader removal
+(ADR 0371), and this harness has its own Metal dispatch path. The flip
+stays blocked on (a) the route clause above and (b) the per-tested-device
+scoping the flip would need (ADR-0358's `:measured-device` machinery
+exists for the workgroup rows only).
+
+TWO design questions are PROPOSED here and decided nowhere: (1) whether a
+native Metal harness that runs the emitters' own bytes under the sweep
+protocol satisfies this ADR's measurement contract, and if so how the flip
+records the tested device class; (2) what the Apple row should select given
+the measured cell -- the rationale the row inherited ("removing most of the
+barrier cascade wins", ADR-0356's Intel design assumption) is contradicted
+at W = 256 on M1 Max, where the variant is slower. Options include keeping
+the row as designed (one W, one device and one operator family is not the
+row), narrowing it, or a Metal-native `simd_sum`/`simd_max`/`simd_min`
+simdgroup row (still NOT designed). Nothing here is optimality evidence for
+any other W, n, device or operator.

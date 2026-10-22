@@ -1,0 +1,38 @@
+#!/usr/bin/env kbb
+;; EMIT the two compared MSL arms for the JUN-58 hardware measurement,
+;; straight from the emitters (never hand-written):
+;;
+;;   kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+;;     scripts/gpu-subgroup-reduce-metal-measure.cljk
+;;
+;; Writes docs/evidence/gpu-subgroup-reduce-m1max-20261023/shaders/
+;;   <arm>-reduce-<operator>.emitted.metal
+;; for arm in {baseline, subgroup} and operator in {sum, max, min}, at the
+;; measured Apple workgroup row W = 256 (ADR-0358): `lower` with :baseline
+;; and :subgroup-reduce on the :msl-v1 target, i.e. exactly what
+;; accelerator-pipeline/compile-spec would emit for those two variant
+;; answers. The measurement harness (scripts/gpu-subgroup-reduce-metal-measure.m)
+;; dispatches these sources; the driver (.py) compiles and runs them.
+;;
+;; Deterministic: same emitters, same bytes. If a run of this script
+;; changes a file, an emitter changed.
+
+(ns gpu-subgroup-reduce-metal-measure
+  (:require [kotoba.compiler.accelerator :as accelerator]))
+
+(def widths 256)
+(def operators [:sum :max :min])
+(def arms [[:baseline :baseline] [:subgroup :subgroup-reduce]])
+
+(defn -main [& _]
+  (doseq [[arm variant] arms
+          operator operators]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size widths})
+          code (accelerator/lower kir :msl-v1 variant)
+          path (str "docs/evidence/gpu-subgroup-reduce-m1max-20261023/shaders/"
+                    (name arm) "-reduce-" (name operator) ".emitted.metal")]
+      (spit path code)
+      (println "WROTE" path (count code) "bytes"))))
+
+(-main)
