@@ -1,7 +1,19 @@
 (ns kotoba.compiler.accelerator-spirv-compile
   "ADR-0359 decision 2's HOST HALF: the one host-invoking entry point of the
   sealed SPIR-V build step (`amu gpu-spirv-compile <artifact.edn> --output
-  <file.spv>`) and the loader-cache file the wire-42 loader opens.
+  <file.spv>`) and the cache file a wire-42 consumer opens.
+
+  WHO OPENS THE CACHE. When this namespace was written the consumer was the
+  loader's GPU broker. That broker was removed with the C loader on
+  2026-10-22 (amu 36479076, JUN-29): `tools/kexe_gpu_vulkan.c` and the
+  `scripts/test-gpu-*.cljk` harnesses are gone, and wire 42 has no route
+  today -- the seed checker refuses it (E2115). The accepted replacement
+  route is the ADR-0371 GPU provider process (decision 1 owner-accepted
+  2026-10-22; its steps 1-2 -- protocol table and runtime transport -- are
+  implemented; the provider, launcher and seed admission are NOT). The
+  cache contract below is consumer-agnostic on purpose: it binds the exact
+  bytes ANY consumer opens, fail-closed. The `*-loader-cache!` names are
+  historical; renaming them lands with the provider-integration slice.
 
   Where kotoba.compiler.accelerator-spirv is the pure half (payload
   construction, sealing, verification -- and it never shells out), THIS
@@ -9,8 +21,8 @@
   (kotoba.compiler.accelerator's `:kotoba.gpu-artifact/v1` -- what `amu
   gpu-compile` writes), runs the recorded tool over its emitted GLSL,
   records the tool identity, seals the compiled bytes through the pure half,
-  and writes the loader's `.spv` cache FROM the sealed bytes with the
-  pre-dispatch hash check.
+  and writes the `.spv` cache FROM the sealed bytes with the pre-dispatch
+  hash check.
 
   The compile runs in a scratch directory with fixed file names
   (`kernel.comp` / `kernel.spv`) and the exact argv is recorded verbatim, so
@@ -28,14 +40,18 @@
 
   The dispatch side of the seal is `pipeline-command`: the wire-42
   `PIPELINE <spv> <bindings>` command, answered only after the sealed
-  artifact verifies AND verify-loader-cache! accepts the file the loader
-  will open, with the bindings count read from the sealed payload rather
-  than caller text.
+  artifact verifies AND verify-loader-cache! accepts the exact file the
+  consumer will open, with the bindings count read from the sealed payload
+  rather than caller text.
 
   UNIMPLEMENTED, named so no prose upgrades it: the measurement harnesses
-  consuming compiler-sealed artifacts (they keep their own glslang
-  invocations and hand-written PIPELINE lines for now -- migrating them
-  means calling `pipeline-command` over a sealed artifact)."
+  consuming compiler-sealed artifacts. The old harnesses kept their own
+  glslang invocations and hand-written PIPELINE lines; they were REMOVED
+  with the GPU broker and `scripts/test-gpu-*.cljk` on 2026-10-22
+  (36479076), so nothing consumes sealed artifacts today and no wire-42
+  measurement is re-takeable. When the ADR-0371 provider route lands, the
+  harnesses return consuming sealed artifacts through `pipeline-command`
+  -- and any harness keeping its own glslang invocation is then a defect."
   {:kotoba/export [compile-argv compile-spirv! default-runner
                    pipeline-command verify-loader-cache! write-loader-cache!]}
   (:require [kotoba.io :as kio]
@@ -130,10 +146,12 @@
           (kio/delete-if-exists dir))))))
 
 (defn verify-loader-cache!
-  "The pre-dispatch check (ADR-0359 decision 2): the file the loader opens
-  is a cache of the sealed bytes, and before dispatch its own SHA-256 must
-  equal the sealed `:spirv-sha256`. Answers the artifact; a cache that does
-  not match is a refusal, never a dispatch."
+  "The pre-dispatch check (ADR-0359 decision 2): the file the consumer
+  opens is a cache of the sealed bytes, and before dispatch its own SHA-256
+  must equal the sealed `:spirv-sha256`. Answers the artifact; a cache that
+  does not match is a refusal, never a dispatch. The name is historical
+  (the loader's GPU broker, removed 2026-10-22); the contract is
+  consumer-agnostic. (see the ns docstring)"
   [spv-artifact output]
   (let [disk (octets (kio/read-all-bytes output))]
     (when-not (= (:spirv-sha256 spv-artifact) (spirv/bytes-sha256 disk))
@@ -144,10 +162,11 @@
   spv-artifact)
 
 (defn write-loader-cache!
-  "Write the loader's `.spv` cache FROM the sealed bytes -- not from a
-  tool's leftover output -- then run verify-loader-cache! on what landed on
+  "Write the `.spv` cache FROM the sealed bytes -- not from a tool's
+  leftover output -- then run verify-loader-cache! on what landed on
   disk, so a torn or tampered write is caught here rather than at dispatch.
-  Answers the output path."
+  Answers the output path. The loader-cache name is historical (see the ns
+  docstring)."
   [spv-artifact output]
   (kio/write-bytes output (:spirv-bytes spv-artifact))
   (verify-loader-cache! spv-artifact output)
@@ -157,20 +176,20 @@
   "The dispatch side of the seal (ADR-0359 decision 2): the wire-42
   `PIPELINE <spv> <bindings>` command, answered ONLY after the sealed
   artifact passes its own integrity-plus-provenance verification AND
-  verify-loader-cache! accepts the exact file the loader will open.
+  verify-loader-cache! accepts the exact file the consumer will open.
 
   The bindings count is read from the sealed payload -- derived from the
   KIR op at seal time (kotoba.compiler.accelerator-spirv/bindings-count)
-  -- never from caller text, so the loader call cannot name a different
+  -- never from caller text, so the wire-42 call cannot name a different
   arity than the kernel was compiled for; a payload whose seal no longer
   covers it is refused before any command exists. A cache that does not
   match the sealed `:spirv-sha256` answers no command at all: the dispatch
   cannot be named, so it cannot be sent.
 
   This is THE dispatch-side call of verify-loader-cache! in the repository.
-  The measurement harnesses still hand-write their PIPELINE lines over
-  their own glslang outputs (the remaining harness-consumption item);
-  migrating them means calling this over a compiler-sealed artifact."
+  No consumer exists today (wire 42 has no route; the ADR-0371 provider is
+  not landed), so this function is provenance machinery awaiting its
+  caller, not an executed measurement path."
   [spv-artifact spv-path]
   (spirv/verify-spirv-artifact! spv-artifact)
   (verify-loader-cache! spv-artifact spv-path)

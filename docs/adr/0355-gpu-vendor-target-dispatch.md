@@ -50,9 +50,28 @@ Rules:
   only callers are tests), any CUDA or Metal execution path (the runtime
   `:gpu/compute` wire 42 is Vulkan only, `tools/kexe_gpu_vulkan.c`), and
   every vendor optimization. Device class does not branch the v1 table.
+  SUPERSEDED 2026-10-22 -- see the loader-removal bullet below.
 - selfhost (`docs/selfhost-priority.md`) is paused at the 2026-10-12
   checkpoint. This work is owner-directed (2026-10-18) alongside it and
   claims no selfhost evidence.
+- Loader removal 2026-10-22 (amu 36479076, JUN-29; `docs/c-loader-removal.md`;
+  replacement route amu ADR 0371). The `:gpu/compute` execution path named
+  above is GONE: the loader's GPU brokers (`tools/kexe_gpu_vulkan.c`,
+  `tools/kexe_gpu_metal.m`) and the probe harnesses (`scripts/test-gpu-*.cljk`)
+  were removed with the C loader. Wire 42 has no route at any layer today --
+  the seed checker refuses it (E2115) and the static runtime serves wires
+  35/37/38/39 only. The accepted replacement is ADR 0371's GPU provider
+  process: its decision 1 (the platform boundary) is owner-accepted
+  2026-10-22 and its steps 1-2 (protocol table, runtime transport) are
+  implemented; the provider, launcher and seed admission are NOT. Until
+  they land, NO wire-42 measurement is re-takeable on any host, the
+  JUN-58 measurement wiring (Apple, this host) is BLOCKED on the provider,
+  and the per-vendor workgroup sweep (JUN-57..60 rows) cannot run.
+- The measured rows of ADR-0358 keep their provenance and their label:
+  measured 2026-10-18/19 through the then-existing loader path on the M1
+  Max. They stand as measurements OF THAT PATH. Nothing re-measures them
+  today; they are not provisional (the `:measured?` flags stay as ADR-0358
+  set them) and they are not re-derivable until a provider answers INFO.
 
 ## Consequences
 
@@ -72,6 +91,11 @@ Rules:
   superseded (owner-directed merge 740caee4): the INFO answer is exactly the
   four fields `<device>|<api>|<maxWgX>|<unified>`, and the harnesses read it
   that way (`scripts/test-gpu-compute.cljk` for INFO,
-  `scripts/test-gpu-devclass.cljk` for DEVCLASS). The v1 table still
-  does not branch on device class; when a row needs the branch, it lands
-  with the measurement that justifies it (JUN-57..60).
+  `scripts/test-gpu-devclass.cljk` for DEVCLASS). SUPERSEDED 2026-10-22
+  (36479076): both harnesses and the DEVCLASS producer (the broker) are
+  removed. `device-class`'s five-word map stays implemented and tested as a
+  pure map; a future ADR-0371 provider must answer the same five words, or
+  the map is re-pointed at the provider's class token -- that decision lands
+  with the provider, and until then no DEVCLASS answer exists to map. The
+  v1 table still does not branch on device class; when a row needs the
+  branch, it lands with the measurement that justifies it (JUN-57..60).

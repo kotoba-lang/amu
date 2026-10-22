@@ -22,7 +22,20 @@
   glslang invocations and hand-written PIPELINE lines for now).
   The default runner's process spawn against real glslangValidator is exercised
   by hand on this host, not by the suite (the suite drives the seam with a
-  fake runner). UNMEASURED where a measurement is owed.
+  fake runner). UNMEASURED where a measurement is owed. SUPERSEDED AS TO
+  THE CONSUMER (2026-10-22, amu 36479076, JUN-29): the loader and its GPU
+  broker (`tools/kexe_gpu_vulkan.c`) are removed, so "the file the loader
+  opens" is now "the file a wire-42 consumer opens" and no consumer exists
+  today -- wire 42 has no route (the seed checker refuses it, E2115). The
+  accepted replacement route is amu ADR 0371's GPU provider process
+  (decision 1 owner-accepted 2026-10-22; steps 1-2 implemented; the
+  provider, launcher and seed admission NOT). The sealed-artifact and cache
+  contracts of decisions 2-3 stand unchanged and consumer-agnostic; the
+  `*-loader-cache!` names are historical and are renamed only in the
+  provider-integration slice. The STILL-UNIMPLEMENTED harness-consumption
+  item above is additionally BLOCKED: the harnesses
+  (`scripts/test-gpu-*.cljk`) were removed with the broker, so they cannot
+  migrate to sealed artifacts until a provider route exists to migrate to.
 - Date: 2026-10-22
 - Tracking: closes ADR-0356's execution-path honesty gap "(a)" on paper.
   The Intel row (JUN-59) and the ARM row (JUN-60) both block on (a); parent
