@@ -68,8 +68,11 @@ does not make wire 20 available by declaration alone.
 
 ## Whole input closure remains open
 
-No native dependency resolver/writer, filesystem tree/materialization, source
-farm or full compiler self-rebuild is claimed by this component port. Those
+The [complete filesystem tree source](native-filesystem-boundary.md) now
+supplies all six exports with acknowledged native FS2 framing. Whole
+resolver/materializer caller integration and provider qualification remain
+open. No native dependency resolver/writer, source farm or full compiler
+self-rebuild is claimed by this component port. Those
 callers must consume the typed errors and preserve digest/pin/path/alias/order,
 fresh-checkout cleanup and authority/refusal behavior. Raw byte I/O/digest and
 required general list/document/ABI runtime helpers remain actual work.

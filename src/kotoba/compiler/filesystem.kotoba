@@ -1,0 +1,21 @@
+;; Canonical filesystem capability boundary, only with acknowledged FS2 frames.
+(ns kotoba.compiler.filesystem
+  {:kotoba/export [app-data browse]}
+  (:require [kotoba.compiler.filesystem-wire :as wire])
+  (:capabilities #{:fs/app-data :fs/browse}))
+
+(defn app-data [form :i64 path :string tail :string] [:result :string :document]
+  (let [request (wire/request form path tail)]
+    (if (not (result-ok?-of [:result :string :document] request))
+      (result-err-of [:result :string :document]
+        (result-error-of [:result :string :document] request (document-null)))
+      (wire/answer (typed-cap-call :fs/app-data :string :string
+                     (result-value-of [:result :string :document] request ""))))))
+
+(defn browse [path :string] [:result [:list :string] :document]
+  (let [request (wire/request 0 path "")]
+    (if (not (result-ok?-of [:result :string :document] request))
+      (result-err-of [:result [:list :string] :document]
+        (result-error-of [:result :string :document] request (document-null)))
+      (wire/entries (typed-cap-call :fs/browse :string :string
+                      (result-value-of [:result :string :document] request ""))))))
