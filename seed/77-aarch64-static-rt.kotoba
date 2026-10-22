@@ -658,8 +658,30 @@
 (defn- kxrt-fuel [s :i64] :i64
   (if (or (= s 0) (= (kxrt-load8 s) 0) (and (= (kxrt-cstrlen s) 3) (kxrt-tok-at s 0x66666f 0 3)))
     (let [z (kxrt-gs 176 0)] 9007199254740991)
-    (let [v (kxrt-parse s (kxrt-cstrlen s)) z (kxrt-gs 176 1)]
-      (if (or (<= v 0) (> v 9007199254740991)) (kxrt-exit 2) v))))
+    (let [n (kxrt-cstrlen s) z (kxrt-gs 176 1)]
+      (cond (or (not (kxrt-digits? s n)) (> n 20) (and (= n 20) (not (kxrt-le-u64-max? s)))) (kxrt-fuel-refuse 0)
+            (>= n 19) (kxrt-fuel-refuse 1)
+            :else (let [v (kxrt-parse s n)]
+                    (cond (<= v 0) (kxrt-fuel-refuse 0)
+                          (> v 9007199254740991) (kxrt-fuel-refuse 1)
+                          :else v))))))
+;; parse_u64 range: all decimal digits, at most 18446744073709551615
+(defn- kxrt-digits? [s :i64 n :i64] :bool
+  (and (> n 0) (loop [i 0] (cond (= i n) true (let [c (kxrt-load8 (+ s i))] (or (< c 48) (> c 57))) false :else (recur (inc i))))))
+(defn- kxrt-u64-max-digit [k :i64] :i64
+  (case k 0 1 1 8 2 4 3 4 4 6 5 7 6 4 7 4 8 0 9 7 10 3 11 7 12 0 13 9 14 5 15 5 16 1 17 6 18 1 5))
+(defn- kxrt-le-u64-max? [s :i64] :bool
+  (loop [k 0]
+    (if (= k 20) true
+      (let [d (- (kxrt-load8 (+ s k)) 48) m (kxrt-u64-max-digit k)]
+        (cond (< d m) true (> d m) false :else (recur (inc k)))))))
+;; the loader's exact KEXE_FUEL refusals (stderr, exit 2)
+(defn- kxrt-fuel-refuse [k :i64] :i64
+  (let [m (if (= (kxrt-gl 200) 0) (kxrt-gs 200 (kxrt-map 16384)) 0) b (kxrt-gl 200)
+        n (if (= k 0) (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x616f6c2d6578656b 8) 0x58454b203a726564 8) 0x6d204c4555465f45 8) 0x6120656220747375 8) 0x76697469736f7020 8) 0x616d696365642065 8) 0x656765746e69206c 8) 0x666f20726f202c72 8) 0xa66 2)
+            (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x616f6c2d6578656b 8) 0x58454b203a726564 8) 0x65204c4555465f45 8) 0x7420736465656378 8) 0x6d6978616d206568 8) 0x6567647562206d75 8) 0x3931373030392074 8) 0x3930343734353239 8) 0x33355e3228203139 8) 0xa29312d 4))
+        z (kxrt-err-text b n)]
+    (kxrt-exit 2)))
 (defn- kxrt-scope [s :i64] :i64
   (if (= s 0) 0
     (let [n (kxrt-cstrlen s) m (if (and (> n 0) (= (kxrt-load8 s) 47)) (kxrt-path s n) -1)]
