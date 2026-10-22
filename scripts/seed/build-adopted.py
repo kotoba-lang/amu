@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Bootstrap orchestration only: pinned native selfhost, no JVM/Node fallback."""
+"""Historical C-loader bootstrap reproduction; excluded from selfhost/Q9/CDCI.
+
+Source/loader pin checks reproduce the old receipt only. They do not qualify
+the current loaderless Kotoba/Amu-native compiler or authorize a C fallback.
+"""
 import argparse
 import hashlib
 import json
