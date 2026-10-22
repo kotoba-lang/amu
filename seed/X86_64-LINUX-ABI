@@ -116,7 +116,9 @@ context), closes the append sink, flushes stdout and exits with
 `result & 0xff` (command mode), or prints the structured line when
 `KEXE_STRUCTURED_REPORT` is set. Environment read: `KEXE_ALLOW` (default
 35,37,38,39; `-` = none), `KEXE_FUEL`, `KEXE_STRUCTURED_REPORT`,
-`KEXE_CAP_RESOURCES_35` (one absolute root; opens use openat2
+`KEXE_CAP_RESOURCES_35` (colon-separated absolute roots, at most 16; entries
+that are relative or cannot be opened are dropped; a path is admitted under
+the first root that is it or a directory prefix of it; opens use openat2
 RESOLVE_BENEATH|RESOLVE_NO_MAGICLINKS), `KEXE_CPU_SECONDS`, `KEXE_WALL_SECONDS`,
 `KEXE_SECCOMP`. Before the guest runs: an alternate signal stack (64 KiB,
 SA_ONSTACK) and SIGALRM/SIGXCPU/SIGSYS handlers; 960 KiB of stack pre-touched,
@@ -128,7 +130,8 @@ with an open, granted scope 35, everything else SIGSYS (exit 120). A kernel
 without seccomp fails closed (exit 1) unless `KEXE_SECCOMP=if-available`.
 `KEXE_SANDBOX_PROBE` issues one filtered call after installation (diagnostic).
 Not provided: wire-35 forms other than READ/EXISTS/WRITE/APPEND (refused),
-wires other than 35/37/38/39 (refused), the loader's default 1 s cpu / 3 s wall
+wires other than 3/35/37/38/39 (refused; wire 3 is :hash/sha256, the
+request bytes' FIPS 180-4 digest as 64 lowercase hex characters), the loader's default 1 s cpu / 3 s wall
 budgets (no budget unless given), growth regions (pool/item layout differs;
 values are equal), the arena fields of the structured line.
 
