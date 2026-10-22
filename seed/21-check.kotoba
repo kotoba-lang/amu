@@ -1742,7 +1742,7 @@
   (let [k (nm-kind M n)]
     (cond (nm-failed M) (ck-touch M)
           (= k ND-INT) (ck-mark M n TY-I64 0)
-          (= k ND-STR) (ck-mark M n TY-STR 0)
+          (= k ND-STR) (ck-mark M n (if (nm-ne (nm-nf M n NF-TYPE) TY-SYM) TY-STR TY-SYM) 0)   ; R6Q: a quote materialized as text stays :symbol
           (= k ND-KW) (ck-mark M n TY-KW 0)
           (and (= k ND-SYM) (ck-r6d-opaque-ref? M n)) (ck-expr (ck-r6d-inline-def M n) n fx ctx)   ; R6D
           (and (= k ND-SYM) (ck-r6f-cdef-ref? M n)) (ck-expr (ck-r6f-cdef-call M n) n fx ctx)   ; R6F: a computed def
@@ -2596,18 +2596,31 @@
           (= (nm-kind M c) ND-INT) (recur (nm-next M c))
           :else 0)))
 
+;; R6QD: the items of a def's constant vector keep their own literal kinds (integer / string /
+;; keyword), the same reading the expression path gives a vector literal; the integer case keeps
+;; its TY-I64 marking.
 (defn- ck-mark-items [M :vector-i64 c :i64] :vector-i64
   (if (= c 0)
     (ck-touch M)
     (let [nx (nm-next M c)
-          M1 (ck-mark M c TY-I64 0)]
-      (ck-mark-items M1 nx))))
+          k (nm-kind M c)
+          ty (cond (= k ND-INT) TY-I64 (= k ND-STR) TY-STR :else TY-KW)]
+      (ck-mark-items (ck-mark M c ty 0) nx))))
 
-;; 1 when v is a vector literal of at most 64 integer literals (R4B: 128)
+;; 1 when v is a vector literal of at most 128 scalar literals (integer / string / keyword).
+;; R6QD: was integers only; the guest-grammar :def :value rule is 'a vector / map of literals',
+;; and a keyword vector constant (an operation / key table) is the ordinary spelling -- the
+;; emission path already builds both shapes (a constant table above 64 items, OP-VEC below).
 (defn- ck-def-vec [M :vector-i64 v :i64] :i64
   (cond (nm-ne (nm-kind M v) ND-VEC) 0
         (> (nm-count M v) 128) 0
-        :else (ck-all-ints M v)))
+        :else (ck-all-scalars M v)))
+(defn- ck-all-scalars [M :vector-i64 v :i64] :i64
+  (loop [c (nm-first M v)]
+    (cond (zero? c) 1
+          (or (= (nm-kind M c) ND-INT) (= (nm-kind M c) ND-STR) (= (nm-kind M c) ND-KW))
+          (recur (nm-next M c))
+          :else 0)))
 
 (defn- ck-sig-def [M :vector-i64 f :i64] :vector-i64
   (let [n (nm-ff M f FF-NODE)
@@ -4948,6 +4961,145 @@
 ;; 0 none, 1 vector-i64, 2 3 4 5 document-vector list set map with items, 6 a document key to wrap, 7 (str ..),
 ;; 8 match-option, 9 ex-info with a map literal, 10 record-assoc, 11 a comparison of 3 or more operands, 12 a friendly
 ;; capability call (ck-r6b-cap)
+;
+;
+;; =========================================================================================================
+;; R6Q: quote (guest-grammar :quoted). The desugar walk has S; a quoted SYMBOL becomes a :symbol value
+;; whose text is its spelling -- materialized here as a string literal record (LIT + LITB), because
+;; 30-lower walks only M and an ND-STR node's emission is exactly OP-STR with the LIT index in NF-AUX.
+;; NF-TYPE :symbol survives the type phase (the ND-STR case preserves it), so the value is a :symbol
+;; and not a :string. A quoted datum with NO symbols is the datum itself (the quote comes off).
+;; Collections and the named refusals stay on the old path (an unknown head) until R6Q2.
+;; =========================================================================================================
+(defn- ck-r6q-bytes [M :vector-i64 S :string i :i64 e :i64 b :i64] :vector-i64
+  (if (>= i e) M (ck-r6q-bytes (nm-put M (+ MM-LITB-BASE b) (string-code-point-at S i)) S (+ i 1) e (+ b 1))))
+;; the symbol x materialized as an ND-STR node carrying the spelling's LIT record; R0 = the node
+(defn- ck-r6q-lit [M :vector-i64 S :string x :i64] :vector-i64
+  (let [s (nm-sym-of M x)
+        st (nm-sf M s SF-START)
+        en (nm-sf M s SF-END)
+        len (- en st)
+        lit (vector-at M MM-LIT-N)
+        lb (vector-at M MM-LITB-N)
+        tok (nm-nf M x NF-TOK)
+        p (+ MM-LIT-BASE (* lit MM-LIT-W))]
+    (cond (>= lit MM-LIT-CAP) (ck-err M E-HEAP-REGION x 2)
+          (> (+ lb len) MM-LITB-CAP) (ck-err M E-HEAP-REGION x 3)
+          :else
+          (let [M1 (ck-r6q-bytes M S st en lb)
+                M2 (nm-put M1 (+ p LF-B) lb)
+                M3 (nm-put M2 (+ p LF-LEN) len)
+                M4 (nm-put M3 (+ p LF-TOK) tok)
+                M5 (nm-put M4 MM-LIT-N (inc lit))
+                M6 (nm-put M5 MM-LITB-N (+ lb len))]
+            (ck-new M6 ND-STR tok lit 0)))))
+;;
+;; the rewrite: (quote x) / 'x. A symbol datum materializes as a :symbol value; a datum holding no
+;; symbols comes off as itself; a collection of all symbols materializes its items (a set / vector of
+;; :symbol items, or a map with :symbol keys of one scalar value kind -- the literal typing infers
+;; [:set :symbol] / [:map :symbol V] / [:vector ...] from the items, the way #{:a :b} is
+;; [:set :keyword]); mixed shapes and a quoted list are the named refusals E2180..E2184 (the
+;; guest-grammar :quoted sentences).
+;; =========================================================================================================
+;; materialize item x (a symbol) as a :symbol value in place
+(defn- ck-r6q-item [M :vector-i64 S :string x :i64] :vector-i64
+  (let [M1 (ck-r6q-lit M S x)
+        y (ck-r M1)]
+    (nm-set-nf (ck-become M1 x y) x NF-TYPE TY-SYM)))
+;; a chain's shape: 1 all items symbols, 0 no item a symbol, -1 mixed
+(defn- ck-r6q-shape [M :vector-i64 c :i64] :i64
+  (loop [i c ns 0 nt 0]
+    (cond (zero? i) (cond (zero? ns) 0 (zero? nt) 1 :else -1)
+          (= (nm-kind M i) ND-SYM) (recur (nm-next M i) (+ ns 1) nt)
+          :else (recur (nm-next M i) ns (+ nt 1)))))
+;; fix every symbol item of a set / vector chain in place
+(defn- ck-r6q-fix [M :vector-i64 S :string c :i64] :vector-i64
+  (loop [M2 M i c]
+    (if (zero? i) M2 (recur (if (nm-ne (nm-kind M2 i) ND-SYM) M2 (ck-r6q-item M2 S i)) (nm-next M2 i)))))
+;; a map chain's KEYS (even positions): 1 all symbols, 0 none, -1 mixed
+(defn- ck-r6q-keys [M :vector-i64 c :i64] :i64
+  (loop [i c ns 0 nt 0]
+    (cond (zero? i) (cond (zero? ns) 0 (zero? nt) 1 :else -1)
+          (= (nm-kind M i) ND-SYM) (recur (nm-next M (nm-next M i)) (+ ns 1) nt)
+          :else (recur (nm-next M (nm-next M i)) ns (+ nt 1)))))
+;; a map chain's VALUES (odd positions): their shared scalar kind, 0 when one is not scalar, -1 mixed
+(defn- ck-r6q-vkind [M :vector-i64 c :i64] :i64
+  (loop [i (nm-next M c) k 0]
+    (cond (zero? i) k
+          (and (nm-ne (nm-kind M i) ND-INT) (nm-ne (nm-kind M i) ND-STR) (nm-ne (nm-kind M i) ND-KW)) 0
+          (or (zero? k) (= k (nm-kind M i))) (recur (nm-next M (nm-next M i)) (nm-kind M i))
+          :else -1)))
+;; fix the keys (even positions) of a map chain in place
+(defn- ck-r6q-fix-keys [M :vector-i64 S :string c :i64] :vector-i64
+  (loop [M2 M i c]
+    (if (zero? i) M2 (recur (ck-r6q-item M2 S i) (nm-next M2 (nm-next M2 i))))))
+;; R6Q3: the canonical constructor call of a quoted symbol collection (guest-grammar :quoted):
+;; (typed-set-new [:set :symbol] items ..) / (typed-map-new [:map :symbol V] pairs ..). The form n
+;; keeps its identity: its head becomes the constructor head and its children the type argument and
+;; the items (the chain under the original collection node, keys already materialized).
+(defn- ck-r6q-ctor [M :vector-i64 n :i64 a :i64 hd :i64 tk :i64 vk :i64] :vector-i64
+  (let [tok (nm-nf M n NF-TOK)
+        M1 (ck-n-head M tok hd)
+        h (ck-r M1)
+        M2 (ck-n-kw M1 tok tk)
+        k1 (ck-r M2)]
+    (if (zero? vk)
+      (let [M3 (ck-n-kw M2 tok KW-SYMBOL)
+            k2 (ck-r M3)
+            M4 (ck-chain2 M3 k1 k2)
+            M5 (ck-new M4 ND-VEC tok 0 0)
+            v (ck-r M5)
+            M6 (nm-set-nf M5 v NF-FIRST k1)
+            M7 (ck-link M6 h v)]
+        (nm-set-nf (ck-link M7 v (nm-first M7 a)) n NF-FIRST h))
+      (let [M3 (ck-n-kw M2 tok KW-SYMBOL)
+            k2 (ck-r M3)
+            M4 (ck-n-kw M3 tok vk)
+            k3 (ck-r M4)
+            M5 (ck-chain3 M4 k1 k2 k3)
+            M6 (ck-new M5 ND-VEC tok 0 0)
+            v (ck-r M6)
+            M7 (nm-set-nf M6 v NF-FIRST k1)
+            M8 (ck-link M7 h v)]
+        (nm-set-nf (ck-link M8 v (nm-first M8 a)) n NF-FIRST h)))))
+;; the value kind of a map chain as a KW code (1 i64 / 3 string / 13 keyword), 0 when one is not scalar, -1 mixed
+(defn- ck-r6q-vkw [M :vector-i64 c :i64] :i64
+  (let [k (ck-r6q-vkind M c)]
+    (cond (= k ND-INT) KW-I64 (= k ND-STR) KW-STRING (= k ND-KW) KW-KEYWORD :else k)))
+(defn- ck-r6q-coll [M :vector-i64 S :string n :i64 a :i64 mix :i64] :vector-i64
+  (let [c (nm-first M a)
+        sh (ck-r6q-shape M c)]
+    (cond (= sh 1) (ck-r6q-ctor (ck-r6q-fix M S c) n a HD-SET-NEW KW-SET 0)
+          (= sh -1) (ck-err M mix a 0)
+          :else (ck-become M n a))))
+(defn- ck-r6q-map [M :vector-i64 S :string n :i64 a :i64] :vector-i64
+  (let [c (nm-first M a)
+        ks (ck-r6q-keys M c)
+        vk (ck-r6q-vkw M c)]
+    (cond (= ks 1) (cond (or (= vk 0) (= vk -1)) (ck-err M E-QUOTE-MAP-VAL a 0)
+                         :else (ck-r6q-ctor (ck-r6q-fix-keys M S c) n a HD-MAP-NEW KW-MAP vk))
+          (= ks -1) (ck-err M E-QUOTE-MIX-MAP a 0)
+          :else (ck-become M n a))))
+
+(defn- ck-r6q-quote [M :vector-i64 S :string n :i64] :vector-i64
+  (let [h (nm-first M n)
+        a (nm-next M h)]
+    (cond (nm-ne (nm-count M n) 2) (ck-err M E-CHECK-ARITY h 1)
+          (nm-ne (nm-kind M a) ND-SYM)
+          (let [k (nm-kind M a)]
+            (cond (or (= k ND-INT) (= k ND-STR) (= k ND-KW)) (ck-become M n a)
+                  (= k ND-LIST) (ck-err M E-QUOTE-LIST a 0)
+                  (= k ND-SET) (ck-r6q-coll M S n a E-QUOTE-MIX-SET)
+                  (= k ND-VEC) (ck-r6q-coll M S n a E-QUOTE-MIX-VEC)
+                  (= k ND-MAP) (ck-r6q-map M S n a)
+                  :else (ck-err M E-QUOTE-LIST a 0)))
+          :else
+          (let [M1 (ck-r6q-lit M S a)
+                y (ck-r M1)]
+            (nm-set-nf (ck-become M1 n y) n NF-TYPE TY-SYM)))))
+;; 13 for every quote form: ck-r6q-quote processes or refuses each shape (ck-err stops the walk)
+(defn- ck-r6q-ds? [M :vector-i64 n :i64] :i64 13)
+
 (defn- ck-r6b-ds-code [M :vector-i64 n :i64] :i64
   (let [h (nm-first M n)
         s (nm-sym-of M h)
@@ -4967,6 +5119,8 @@
                (>= (nm-count M n) 3)
                (nm-ne (ck-r6b-hd M (nm-nth M n 2)) HD-R6-DOCKEY)) 6
           (and (= hh ck-r6b-h-ex-info) (= (nm-count M n) 3) (= (nm-kind M (nm-nth M n 2)) ND-MAP)) 9
+          (or (= hh ck-r6b-h-quote) (= hh ck-r6b-h-quote-tok)) (ck-r6q-ds? M n)
+          (= (nm-tf M (nm-nf M h NF-TOK) TF-KIND) TK-HASH-PAREN) 14
           (and (= hh ck-r6b-h-record-assoc) (= (nm-count M n) 5) (ck-r6b-free? M s)) 10
           (and (= (nm-count M n) 2) (ck-r6b-free? M s) (pos? (ck-r6b-capwire hh))) 12
           :else 0)))
@@ -5149,6 +5303,126 @@
                      (recur (ck-link (ck-link M5 c w) w nx) w nx))))]
         (-> M3 (nm-set-nf m NF-KIND ND-LIST) (nm-set-nf m NF-FIRST dh))))))
 
+;; =========================================================================================================
+;; R6D: fn literals (guest-grammar :fn-literal). The reader's (fn-lit body) -- the '#(' shape -- is
+;; expanded here to (fn [%1 .. %N] body): the %-symbols of the body are the arguments ('%' is '%1')
+;; and the parameters are named after the arguments the body uses. The parameter name records are
+;; the body's own %-symbol records, so no name is synthesized (20-names interns names from source
+;; spans only). '%&' and a gap in %1..%N are the named refusal E-FNLIT-ARGS. A nested fn literal's
+;; arguments belong to it and are skipped (its form is an HD-FN / HD-FNLIT list).
+;; =========================================================================================================
+;; the argument a symbol names: 0 none, -2 bare '%', -1 '%&', N >= 1 for '%N'
+(defn- ck-r6d-arg [M :vector-i64 S :string x :i64] :i64
+  (if (nm-ne (nm-kind M x) ND-SYM)
+    0
+    (let [s (nm-sym-of M x)
+          a (nm-sf M s SF-START)
+          b (nm-sf M s SF-END)]
+      (cond (not= (string-code-point-at S a) 37) 0
+            (= (- b a) 1) -2
+            (not= (- b a) 2) 0
+            (= (string-code-point-at S (+ a 1)) 38) -1
+            :else (let [dd (string-code-point-at S (+ a 1))]
+                    (if (and (> dd 48) (<= dd 57)) (- dd 48) 0))))))
+;; true when n is a nested fn form (its arguments are its own)
+(defn- ck-r6d-nested [M :vector-i64 n :i64] :bool
+  (let [h (nm-first M n)]
+    (and (= (nm-kind M n) ND-LIST) (= (nm-kind M h) ND-SYM)
+         (or (= (nm-sf M (nm-sym-of M h) SF-HEAD) HD-FN) (= (nm-sf M (nm-sym-of M h) SF-HEAD) HD-FNLIT)))))
+;; the largest argument N of the tree (nested fn forms skipped), 0 none, -1 on %&
+;; an argument's contribution to the arity: %N is N, bare % is 1, %& refuses
+(defn- ck-r6d-arity [a :i64] :i64
+  (cond (= a -1) -1 (= a -2) 1 (> a 1) a :else 0))
+(defn- ck-r6d-max [M :vector-i64 S :string n :i64] :i64
+  (if (ck-r6d-nested M n)
+    0
+    (loop [c (nm-first M n) m (ck-r6d-arity (ck-r6d-arg M S n))]
+      (cond (< m 0) -1
+            (zero? c) m
+            :else (let [w (ck-r6d-max M S c)]
+                    (recur (nm-next M c) (if (< w 0) -1 (if (> w m) w m))))))))
+;; the number of bare '%' arguments of the tree (nested fn forms skipped)
+(defn- ck-r6d-bare [M :vector-i64 S :string n :i64] :i64
+  (if (ck-r6d-nested M n)
+    0
+    (loop [c (nm-first M n) k (if (= (ck-r6d-arg M S n) -2) 1 0)]
+      (cond (zero? c) k
+            :else (recur (nm-next M c) (+ k (ck-r6d-bare M S c)))))))
+;; the name record of a '%N' argument (arg = N), or of a bare '%' when N is 0; 0 when none
+(defn- ck-r6d-rec [M :vector-i64 S :string n :i64 N :i64] :i64
+  (if (ck-r6d-nested M n)
+    0
+    (if (= (ck-r6d-arg M S n) (if (zero? N) -2 N))
+      (nm-sym-of M n)
+      (loop [c (nm-first M n)]
+        (cond (zero? c) 0
+              :else (let [w (ck-r6d-rec M S c N)]
+                      (if (pos? w) w (recur (nm-next M c)))))))))
+;; every bare '%' of the tree becomes the argument %1 (its name record)
+(defn- ck-r6d-rename [M :vector-i64 S :string n :i64 s1 :i64] :vector-i64
+  (if (ck-r6d-nested M n)
+    M
+    (let [M1 (if (= (ck-r6d-arg M S n) -2) (nm-set-nf M n NF-SYM s1) M)]
+      (loop [M2 M1 c (nm-first M n)]
+        (if (zero? c) M2 (recur (ck-r6d-rename M2 S c s1) (nm-next M2 c)))))))
+;; R6D: build (fn [params] body) in n -- the parameters are %1..%N, their name records found in
+;; the body (no gaps); the chain is the head, then the parameter vector node, then the body.
+(defn- ck-r6d-build [M :vector-i64 S :string n :i64 body :i64 N :i64] :vector-i64
+  (let [tok (nm-nf M n NF-TOK)]
+    (loop [M1 M i 1 prev 0 f1 0]
+      (if (> i N)
+        (let [M5 (nm-set-nf M1 prev NF-NEXT 0)
+              M6 (nm-put M5 MM-R0 f1)
+              M7 (ck-new M6 ND-VEC tok 0 0)
+              pv (ck-r M7)
+              M8 (nm-set-nf M7 pv NF-FIRST f1)
+              M9 (nm-set-nf M8 pv NF-AUX N)
+              Ma (ck-n-head M9 tok HD-FN)
+              hd (ck-r Ma)]
+          (-> Ma (nm-set-nf n NF-FIRST hd) (nm-set-nf hd NF-NEXT pv) (nm-set-nf pv NF-NEXT body)
+              (nm-set-nf n NF-AUX 3)))
+        (let [s (ck-r6d-rec M1 S body i)]
+          (cond (zero? s) (ck-err M1 E-FNLIT-ARGS body 0)
+                :else (let [M2 (ck-new M1 ND-SYM tok 0 s)
+                            p (ck-r M2)
+                            M3 (if (zero? prev) M2 (nm-set-nf M2 prev NF-NEXT p))]
+                        (recur M3 (+ i 1) p (if (zero? f1) p f1)))))))))
+;; R6D: the expansion (fn-lit body) -> (fn [%1 .. %N] body)
+(defn- ck-r6d-fnlit [M :vector-i64 S :string n :i64] :vector-i64
+  (let [h (nm-first M n)
+        body (nm-next M h)]
+    (if (or (nm-ne (nm-count M n) 2) (zero? body))
+      (ck-err M E-CHECK-ARITY h 1)
+      (let [N (ck-r6d-max M S body)
+            nb (ck-r6d-bare M S body)]
+        (cond (< N 0) (ck-err M E-FNLIT-ARGS body 0)
+              ;; bare '%' only: one parameter, the bare record itself
+              (and (= N 1) (pos? nb) (zero? (ck-r6d-rec M S body 1)))
+              (let [s (ck-r6d-rec M S body 0)
+                    tok (nm-nf M n NF-TOK)
+                    M2 (ck-new M ND-SYM tok 0 s)
+                    p (ck-r M2)]
+                (ck-r6d-build1 M2 S n body p))
+              ;; '%' and '%1' together: '%' is '%1'
+              (pos? nb)
+              (let [s1 (ck-r6d-rec M S body 1)]
+                (if (zero? s1)
+                  (ck-err M E-FNLIT-ARGS body 0)
+                  (ck-r6d-build (ck-r6d-rename M S body s1) S n body N)))
+              :else (ck-r6d-build M S n body N))))))
+;; the bare-'%' one-parameter shape: (fn [p] body)
+(defn- ck-r6d-build1 [M :vector-i64 S :string n :i64 body :i64 p :i64] :vector-i64
+  (let [tok (nm-nf M n NF-TOK)
+        M1 (nm-set-nf M p NF-NEXT 0)
+        M2 (ck-new M1 ND-VEC tok 0 0)
+        pv (ck-r M2)
+        M3 (nm-set-nf M2 pv NF-FIRST p)
+        M4 (nm-set-nf M3 pv NF-AUX 1)
+        M5 (ck-n-head M4 tok HD-FN)
+        hd (ck-r M5)]
+    (-> M5 (nm-set-nf n NF-FIRST hd) (nm-set-nf hd NF-NEXT pv) (nm-set-nf pv NF-NEXT body)
+        (nm-set-nf n NF-AUX 3))))
+
 (defn- ck-r6b-ds [M :vector-i64 S :string n :i64] :vector-i64
   (let [code (ck-r6b-ds-code M n)]
     (case code
@@ -5160,6 +5434,8 @@
       10 (ck-r6b-recassoc M n)
       11 (ck-r6b-cmp M n (nm-head-of M (nm-first M n)))
       12 (ck-r6b-cap M n)
+      13 (ck-r6q-quote M S n)
+      14 (ck-r6d-fnlit M S n)
       (ck-r6b-fold M S n code))))
 ;; BEGIN R6B srclib (generated by seed/tests/r6b/srclib/gen-srclib.py)
 ;; edit seed/tests/r6b/srclib/r6b-lib.kotoba (or the KIR doclib), then run the generator
@@ -5198,6 +5474,9 @@
 (def ck-r6b-h-document-contains 7283803499010354882)
 (def ck-r6b-h-document-assoc -3223699498627898274)
 (def ck-r6b-h-document-dissoc -4750057269407097116)
+(def ck-r6b-h-quote 6512470130372368119)
+(def ck-r6b-h-quote-tok -5808629440921371546)
+(def ck-r6b-h-fn-lit-tok 561003850934371630)
 (def ck-r6b-h-record-assoc -715500776194032970)
 (def ck-r6b-h-__r6-dnth -7168050004506419644)
 (def ck-r6b-h-document-count -51795290030251958)
