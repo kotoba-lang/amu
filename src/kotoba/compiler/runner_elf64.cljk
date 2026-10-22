@@ -1,0 +1,213 @@
+(ns kotoba.compiler.runner-elf64
+  "Milestone-1 slice of the C-free x86-64 runner BODY (Linear JUN-29,
+  2026-10-22): the minimal Linux x86-64 ELF64 ET_EXEC container that turns
+  a raw runner payload into a file the kernel will execve.
+
+  WHY THIS SLICE EXISTS. The 2026-10-20 spike built `cfree_runner.bin`
+  (442,504 B) and measured its raw image fail with `Exec format error` --
+  the payload is machine code with no ELF container, so the kernel has
+  nothing to map. Everything else in JUN-29 (entry contract, admission,
+  cap dispatch, seed sequence) is specified and landed as pure code; this
+  namespace supplies the one missing piece between that code and a process
+  on x86-64 Linux: a bounded, byte-exact executable container.
+
+  LAYOUT (the measured 2026-10-19 raw-ELF probe layout,
+  docs/native-seed-c-free-runner-raw-elf-emitter-20261019.md -- 252 B,
+  e_entry 0x400078, one R+X PT_LOAD -- generalised from a 132 B code
+  region to an arbitrary payload):
+
+    offset    0  ELF64 header (64 B)
+    offset   64  one PT_LOAD program header (56 B)
+    offset  120  payload (the runner body; entry at :entry-offset inside it)
+
+  The whole file is one R+X segment mapped at 0x400000, so file offset ==
+  vaddr - 0x400000 and the payload entry is 0x400078 + entry-offset.
+
+  WHAT THIS IS AND IS NOT. Pure byte construction: integers in, integers
+  out -- no assembler, linker, C, JVM, GraalVM or Node appears in the
+  artifact build. It claims no x86-64 emission of its own (the payload
+  bytes come from elsewhere); it claims exactly that the container around
+  them is structurally a Linux x86-64 executable whose every field is
+  fixed by the layout above. `inspect` parses any byte string back into
+  those fields so a verifier never has to trust the emitter's state.
+
+  FAIL-CLOSED INPUT SHAPES. A payload is a non-empty seq of integers
+  0..255 -- strings are refused outright (a string is not bytes), each
+  byte is range-checked, and the size is bounded (:max-payload) so the
+  header arithmetic cannot leave the space a loader would accept.
+  :entry-offset must address a byte inside the payload; asking for an
+  entry past the payload is refused, not clamped.")
+
+;; Sizes and addresses of the layout above. 120 = 64 + 56: the probe's
+;; 0x400078 entry is load-base + header-size and stays true here.
+(def ehdr-size 64)
+(def phdr-size 56)
+(def header-size (+ ehdr-size phdr-size))
+(def load-base 0x400000)
+
+;; 64 MiB. A bound, not an estimate: the container maps one segment, and a
+;; refusal at build time beats an unmapable file at load time. Public
+;; because the bound itself is quoted by tests and receipts.
+(def max-payload 67108864)
+
+(def ^:private elf-magic [0x7f 0x45 0x4c 0x46])
+(def ^:private et-exec 2)
+(def ^:private em-x86-64 0x3e)
+(def ^:private pt-load 1)
+(def ^:private pf-rx 5)
+(def ^:private page-align 0x1000)
+
+(defn- byte-val?
+  [b]
+  (and (integer? b) (<= 0 b 255)))
+
+(defn le
+  "Little-endian `width`-byte encoding of `value` (width 2/4/8). Written
+  with quot/rem rather than shifts: ClojureScript shift counts are taken
+  mod 32, so `(bit-shift-right v 32)` is `v`, not 0 -- the same portability
+  trap pe32plus's `limit` comment records. Values must fit the width."
+  [width value]
+  (let [bound (loop [n 0 acc 1]
+                (if (= n width) acc (recur (inc n) (* acc 256))))]
+    (when-not (and (integer? value) (<= 0 value) (< value bound))
+      (throw (ex-info "value does not fit the requested width"
+                      {:width width :value value})))
+    (loop [n 0 v value acc []]
+      (if (= n width)
+        acc
+        (recur (inc n) (quot v 256) (conj acc (rem v 256)))))))
+
+(defn u8 [bytes offset] (nth bytes offset))
+(defn u16 [bytes offset] (+ (nth bytes offset) (* 256 (nth bytes (inc offset)))))
+(defn u32
+  [bytes offset]
+  (loop [n 0 acc 0]
+    (if (= n 4)
+      acc
+      (recur (inc n) (+ acc (* (nth bytes (+ offset n))
+                               (loop [k 0 m 1] (if (= k n) m (recur (inc k) (* m 256))))))))))
+
+(defn u64
+  [bytes offset]
+  (loop [n 0 acc 0]
+    (if (= n 8)
+      acc
+      (recur (inc n) (+ acc (* (nth bytes (+ offset n))
+                               (loop [k 0 m 1] (if (= k n) m (recur (inc k) (* m 256))))))))))
+
+(defn- header-fields
+  [entry filesz]
+  {:e-ident (into elf-magic [2 1 1 0 0 0 0 0 0 0 0 0])
+   :e-type et-exec
+   :e-machine em-x86-64
+   :e-version 1
+   :e-entry entry
+   :e-phoff ehdr-size
+   :e-shoff 0
+   :e-flags 0
+   :e-ehsize ehdr-size
+   :e-phentsize phdr-size
+   :e-phnum 1
+   :e-shentsize 0
+   :e-shnum 0
+   :e-shstrndx 0
+   :p-type pt-load
+   :p-flags pf-rx
+   :p-offset 0
+   :p-vaddr load-base
+   :p-paddr load-base
+   :p-filesz filesz
+   :p-memsz filesz
+   :p-align page-align})
+
+(defn check-size!
+  "Fail closed when a payload size leaves the bounded space. Split out of
+  `wrap` so the refusal is testable from the number alone -- proving it
+  through `wrap` would allocate a 64 MiB vector to exercise one
+  comparison (measured: it OOMs the suite's engine doing exactly that)."
+  [size]
+  (when (> size max-payload)
+    (throw (ex-info "the payload exceeds the bounded size"
+                    {:reason :payload-too-large :size size :max max-payload}))))
+
+(defn wrap
+  "Wrap `payload` in the container. Returns {:bytes <byte vector>
+  :entry <vaddr> :payload-offset header-size :filesz <n>}. Refuses a
+  string/empty/out-of-range payload or an :entry-offset outside it."
+  [{:keys [payload entry-offset] :or {entry-offset 0}}]
+  (when (string? payload)
+    (throw (ex-info "a payload is bytes, not a string"
+                    {:reason :payload-is-string})))
+  (when-not (and (sequential? payload) (seq payload))
+    (throw (ex-info "the payload must be a non-empty seq of bytes"
+                    {:reason :payload-empty})))
+  (let [size (count payload)]
+    (check-size! size)
+    (when-not (every? byte-val? payload)
+      (throw (ex-info "every payload byte must be an integer 0..255"
+                      {:reason :payload-byte-out-of-range})))
+    (when-not (and (integer? entry-offset) (<= 0 entry-offset) (< entry-offset size))
+      (throw (ex-info "the entry offset must address a byte inside the payload"
+                      {:reason :entry-out-of-payload
+                       :entry-offset entry-offset :payload-size size})))
+    (let [filesz (+ header-size size)
+          entry (+ load-base header-size entry-offset)
+          fields (header-fields entry filesz)
+          bytes (into []
+                      (concat (:e-ident fields)
+                              (le 2 (:e-type fields))
+                              (le 2 (:e-machine fields))
+                              (le 4 (:e-version fields))
+                              (le 8 (:e-entry fields))
+                              (le 8 (:e-phoff fields))
+                              (le 8 (:e-shoff fields))
+                              (le 4 (:e-flags fields))
+                              (le 2 (:e-ehsize fields))
+                              (le 2 (:e-phentsize fields))
+                              (le 2 (:e-phnum fields))
+                              (le 2 (:e-shentsize fields))
+                              (le 2 (:e-shnum fields))
+                              (le 2 (:e-shstrndx fields))
+                              (le 4 (:p-type fields))
+                              (le 4 (:p-flags fields))
+                              (le 8 (:p-offset fields))
+                              (le 8 (:p-vaddr fields))
+                              (le 8 (:p-paddr fields))
+                              (le 8 (:p-filesz fields))
+                              (le 8 (:p-memsz fields))
+                              (le 8 (:p-align fields))
+                              payload))]
+      {:bytes bytes
+       :entry entry
+       :payload-offset header-size
+       :filesz filesz})))
+
+(defn inspect
+  "Parse a byte string into the structural fields the layout promises.
+  Independent of `wrap`'s state: it reads only the bytes handed to it."
+  [bytes]
+  (when-not (and (sequential? bytes) (>= (count bytes) header-size))
+    (throw (ex-info "an ELF64 container is at least 120 bytes"
+                    {:reason :container-truncated})))
+  {:e-ident (vec (take 16 bytes))
+   :e-type (u16 bytes 16)
+   :e-machine (u16 bytes 18)
+   :e-version (u32 bytes 20)
+   :e-entry (u64 bytes 24)
+   :e-phoff (u64 bytes 32)
+   :e-shoff (u64 bytes 40)
+   :e-flags (u32 bytes 48)
+   :e-ehsize (u16 bytes 52)
+   :e-phentsize (u16 bytes 54)
+   :e-phnum (u16 bytes 56)
+   :e-shentsize (u16 bytes 58)
+   :e-shnum (u16 bytes 60)
+   :e-shstrndx (u16 bytes 62)
+   :p-type (u32 bytes 64)
+   :p-flags (u32 bytes 68)
+   :p-offset (u64 bytes 72)
+   :p-vaddr (u64 bytes 80)
+   :p-paddr (u64 bytes 88)
+   :p-filesz (u64 bytes 96)
+   :p-memsz (u64 bytes 104)
+   :p-align (u64 bytes 112)})

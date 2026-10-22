@@ -1,0 +1,115 @@
+(ns kotoba.compiler.runner-elf64-test
+  "M1 container tests (JUN-29, 2026-10-22). The structural checks below
+  are written AGAINST THE EMITTED BYTES with readers defined here, not
+  imported from `runner-elf64` -- the 2026-10-19 raw-ELF probe's
+  verification discipline: an independent parser, not the emitter's
+  state, decides whether the container is right."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.runner-elf64 :as elf64]))
+
+;; Independent little-endian readers (fixed widths, fixed offsets).
+(defn- le16 [bs o] (+ (nth bs o) (* 256 (nth bs (+ o 1)))))
+(defn- le32
+  [bs o]
+  (loop [n 0 acc 0]
+    (if (= n 4)
+      acc
+      (recur (inc n)
+             (+ acc (* (nth bs (+ o n)) (loop [k 0 m 1] (if (= k n) m (recur (inc k) (* m 256))))))))))
+(defn- le64
+  [bs o]
+  (loop [n 0 acc 0]
+    (if (= n 8)
+      acc
+      (recur (inc n)
+             (+ acc (* (nth bs (+ o n)) (loop [k 0 m 1] (if (= k n) m (recur (inc k) (* m 256))))))))))
+
+(def fixture-payload
+  "Three hand-audited x86-64 instructions: nop; nop; ret."
+  [0x90 0x90 0xc3])
+
+(deftest header-fields-are-the-fixed-layout
+  (let [bs (:bytes (elf64/wrap {:payload fixture-payload}))]
+    (testing "ELF identification"
+      (is (= [0x7f 0x45 0x4c 0x46] (vec (take 4 bs))))
+      (is (= 2 (nth bs 4)) "EI_CLASS = ELFCLASS64")
+      (is (= 1 (nth bs 5)) "EI_DATA = ELFDATA2LSB")
+      (is (= 1 (nth bs 6)) "EI_VERSION = EV_CURRENT"))
+    (testing "ELF header"
+      (is (= 2 (le16 bs 16)) "e_type = ET_EXEC")
+      (is (= 0x3e (le16 bs 18)) "e_machine = EM_X86_64")
+      (is (= 1 (le32 bs 20)) "e_version")
+      (is (= 64 (le64 bs 32)) "e_phoff = 64")
+      (is (= 0 (le64 bs 40)) "e_shoff = 0 (no section headers)")
+      (is (= 0 (le32 bs 48)) "e_flags")
+      (is (= 64 (le16 bs 52)) "e_ehsize")
+      (is (= 56 (le16 bs 54)) "e_phentsize")
+      (is (= 1 (le16 bs 56)) "e_phnum = 1")
+      (is (= 0 (le16 bs 58)) "e_shentsize")
+      (is (= 0 (le16 bs 60)) "e_shnum")
+      (is (= 0 (le16 bs 62)) "e_shstrndx"))
+    (testing "the one PT_LOAD program header"
+      (is (= 1 (le32 bs 64)) "p_type = PT_LOAD")
+      (is (= 5 (le32 bs 68)) "p_flags = PF_R|PF_X")
+      (is (= 0 (le64 bs 72)) "p_offset = 0")
+      (is (= 0x400000 (le64 bs 80)) "p_vaddr")
+      (is (= 0x400000 (le64 bs 88)) "p_paddr")
+      (is (= 0x1000 (le64 bs 112)) "p_align")
+      (is (= (+ 120 (count fixture-payload)) (le64 bs 96)) "p_filesz")
+      (is (= (le64 bs 96) (le64 bs 104)) "p_memsz = p_filesz"))))
+
+(deftest payload-and-entry-land-where-the-layout-promises
+  (let [wrapped (elf64/wrap {:payload fixture-payload})
+        bs (:bytes wrapped)]
+    (is (= fixture-payload (vec (drop 120 bs))) "payload round-trips at offset 120")
+    (is (= (+ 120 (count fixture-payload)) (count bs)) "container = 120 header + payload")
+    (is (= 0x400078 (:entry wrapped)) "default entry = load-base + 120 (the probe's 0x400078)")
+    (is (= (le64 bs 24) (:entry wrapped)) "e_entry carries the entry")
+    (testing "an entry offset addresses a byte inside the payload"
+      (let [at-2 (elf64/wrap {:payload fixture-payload :entry-offset 2})]
+        (is (= 0x40007a (:entry at-2)))
+        (is (= fixture-payload (vec (drop 120 (:bytes at-2)))))))
+    (testing "the entry stays inside the mapped segment"
+      (let [vaddr (le64 bs 80)
+            filesz (le64 bs 96)]
+        (is (<= vaddr (le64 bs 24) (+ vaddr filesz)))))))
+
+(deftest refusals-are-fail-closed
+  (testing "a string is not bytes"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (elf64/wrap {:payload "nop"}))))
+  (testing "the payload must be non-empty"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (elf64/wrap {:payload []}))))
+  (testing "every byte must be 0..255"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (elf64/wrap {:payload [0x90 256]}))))
+  (testing "the entry must address a byte inside the payload"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (elf64/wrap {:payload fixture-payload :entry-offset -1})))
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (elf64/wrap {:payload fixture-payload :entry-offset 3}))))
+  (testing "the payload size is bounded"
+    (is (= 67108864 elf64/max-payload))
+    (is (thrown? clojure.lang.ExceptionInfo (elf64/check-size! 67108865)))
+    (is (nil? (elf64/check-size! 67108864)))
+    (is (nil? (elf64/check-size! 0)))))
+
+(deftest little-endian-widths-encode-and-refuse
+  (is (= [0x78 0x00 0x40 0x00 0x00 0x00 0x00 0x00] (elf64/le 8 0x400078)))
+  (is (= [0x3e 0x00] (elf64/le 2 0x3e)))
+  (is (thrown? clojure.lang.ExceptionInfo (elf64/le 2 65536)))
+  (is (thrown? clojure.lang.ExceptionInfo (elf64/le 4 -1)))
+  (is (= 0x400078 (elf64/u64 (elf64/le 8 0x400078) 0)))
+  (is (= 0x3e (elf64/u16 (elf64/le 2 0x3e) 0))))
+
+(deftest inspect-reads-any-bytes-not-the-emitters-state
+  (let [bs (:bytes (elf64/wrap {:payload fixture-payload :entry-offset 1}))
+        parsed (elf64/inspect bs)]
+    (is (= 2 (:e-type parsed)))
+    (is (= 0x3e (:e-machine parsed)))
+    (is (= 0x400079 (:e-entry parsed)))
+    (is (= 123 (:p-filesz parsed)))
+    (is (= 0x400000 (:p-vaddr parsed))))
+  (is (thrown? clojure.lang.ExceptionInfo
+               (elf64/inspect [0x7f 0x45]))))
