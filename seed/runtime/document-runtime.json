@@ -1,15 +1,14 @@
 {
   "schema": "kotoba.seed.document-runtime-candidate.v1",
-  "state": "primitive source lowering connected; native type/build/run qualification not achieved",
+  "state": "five primitive source lowerings connected; native type/build/run and full-domain qualification not achieved",
   "operations": [
     "document-f64",
     "document-f64-value",
     "document-print",
-    "document-read"
-  ],
-  "still-refused": [
+    "document-read",
     "document-sha256"
   ],
+  "still-refused": [],
   "source-files": [
     {
       "path": "src/kotoba/compiler/f64_text.kotoba",
@@ -21,7 +20,7 @@
     },
     {
       "path": "seed/runtime/document-codec.kotoba",
-      "sha256": "eee463789449d4b9b03df4e00fa4f635a694a22b82317948dfc23dc50e5076ae"
+      "sha256": "d1f7494890a31b129d49fb2e0dfcff8735f0211a6d9c3515d81a7cf4508fadca"
     },
     {
       "path": "test/fixtures/selfhost/document/native/document_runtime_test.kotoba",
@@ -30,12 +29,28 @@
     {
       "path": "test/fixtures/selfhost/f64-text/native/f64_text_test.kotoba",
       "sha256": "688f1b3c1fc9fabe5bf84b3b983a15f10a67da2beeb73aa49b3c782b48b36fab"
+    },
+    {
+      "path": "src/kotoba/compiler/sha256_bits.kotoba",
+      "sha256": "5141619f960ad2b2642f3260769dd7256409149e96cbfcc0fa7d059267e62724"
+    },
+    {
+      "path": "seed/runtime/document-sha256.kotoba",
+      "sha256": "79e336d6855f8ea085d0cf8c5d4324dc474a40db064c975733256c9447471233"
+    },
+    {
+      "path": "test/fixtures/selfhost/document/native/document_sha256_test.kotoba",
+      "sha256": "1f5077af06567781968b3b2ee9a4e948778bcc9153360c7aaa2b324b4cf4b8ee"
+    },
+    {
+      "path": "test/fixtures/selfhost/document/native/sha256_bits_test.kotoba",
+      "sha256": "c529c6b94b34c96695efc91fa92a9128ba96006e4e5a6da2c738a65ab2f40dd9"
     }
   ],
   "compiler-source": {
     "path": "seed/21-check.kotoba",
-    "sha256": "b11f0167febde3ee95dcbf5b90d1d97127d72dc4b7c97169a19c7c0f8e8360d1",
-    "candidate-unity-source-sha256": "b34100a6ae25a9710dc336e6c2a7930605bcc354fd124e66863f2be44f2077cd",
+    "sha256": "d58c7c868288e20aed097e9180b501f9b5a919a4c359d737d5000ab2cafc58b2",
+    "candidate-unity-source-sha256": "b2bba850c3c09f47323f134f29d2f57876e7b66264e680051ab7ebf2fddaf0b9",
     "manifest": "seed/MANIFEST",
     "manifest-changed": true,
     "adopted-bootstrap-and-fixed-point-pins-changed": false,
@@ -62,7 +77,9 @@
       ":f64-text/no-roundtrip"
     ],
     "hosted-generator-required": false,
-    "runtime-source-file-reads": false
+    "runtime-source-file-reads": false,
+    "sha256-core-alpha-equivalence": true,
+    "runtime-fragments": 3
   },
   "reference-sources": [
     {
@@ -100,21 +117,65 @@
     "full-Kami-component-required": true,
     "qualified-loaderless-selfhost-required": true,
     "executed": false,
-    "compiler-admission-verified": false
+    "compiler-admission-verified": false,
+    "SHA-256-core": {
+      "path": "test/fixtures/selfhost/document/native/sha256_bits_test.kotoba",
+      "expected-result": 31,
+      "real-native-module-resolution-required": true,
+      "typed-byte-limit-input": 65536,
+      "input-immutability-and-repeat-calls-required": true,
+      "executed": false
+    },
+    "document-SHA-256": {
+      "path": "test/fixtures/selfhost/document/native/document_sha256_test.kotoba",
+      "expected-result": 15,
+      "unchanged-original-anchor-bodies": 26,
+      "canonical-padding-boundaries": [
+        55,
+        56,
+        63,
+        64,
+        119,
+        120,
+        127,
+        128
+      ],
+      "full-existing-document-payload": 65536,
+      "large-case-skip-forbidden": true,
+      "executed": false
+    }
   },
   "actual-verification": [
     "source delimiters",
     "private helper call closure",
     "runtime fragment literal byte parity",
     "formatter alpha-equivalence",
-    "git diff --check"
+    "git diff --check",
+    "SHA-256 core alpha-equivalence, helper/primitive arity, constant table and independent anchor-data checks",
+    "all original 26 language digest/wire anchor function bodies retained"
   ],
   "remaining-gates": [
     "native type and compile/link/run",
     "complete forbidden-host and C-free build/package/launch closure",
     "positive/refusal/fuel execution",
     "full Kami input-map runtime qualification",
-    "existing native string-pool and EDN token spelling restrictions"
+    "existing native string-pool and EDN token spelling restrictions",
+    "complete canonical document payload domain, including 65536-byte payload through existing EDN/string-pool representation"
   ],
-  "no-archive-or-deletion-authorized-by-this-receipt": true
+  "no-archive-or-deletion-authorized-by-this-receipt": true,
+  "document-sha256": {
+    "core": "src/kotoba/compiler/sha256_bits.kotoba",
+    "functions": 8,
+    "reference": "https://csrc.nist.gov/pubs/fips/180-4/upd1/final",
+    "format": "SHA-256 of validated raw document-canonical-bytes; 64 lowercase hex digits",
+    "canonical-validation": "decode canonical bytes and re-encode the validated document before hashing; no validation call discarded as unused",
+    "padding": "virtual 64-byte blocks with original big-endian 64-bit bit length",
+    "workspace": "fresh private eight-word state, 64-word schedule and constants per call; input bytes read-only; schedule reused across blocks",
+    "source-table-review": "64 round constants and eight IV words match independent org-nist-sha2 owner data",
+    "digest-input-not-limited-by-hex-printer": true,
+    "no-host-hash-or-capability": true,
+    "full-domain-qualification": "not achieved; existing seed document EDN/string-pool representation gaps remain, full payload test must not be skipped",
+    "SHA2-library-complete-or-retirement-claim": false
+  },
+  "refusal-inventory-scope": "source implementation only; empty source inventory does not establish native admission, full payload or resource qualification"
 }
