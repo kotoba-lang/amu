@@ -15,11 +15,154 @@
   (:require [kotoba.lang.text :as str]
             #?(:cljs [kotoba.kir.cljs-i64 :as i64])))
 
+;; R6QW3: the Kotoba reading (W3: the scan refused this module E1005 at a '#' fn literal).
+;; The exported constants are 0-argument functions (the export surface names functions only);
+;; the key sets are typed-set-new, vendor-ids is typed-map-new [:map :i64 :keyword] and the
+;; name fragments are two parallel tables (a typed vector holds one element kind). The host
+;; reading is byte-for-byte; there is no typed-guest consumer, so the shapes follow the
+;; kir.target conventions (documents for maps of mixed values).
+#?(:kotoba
+   (defn- dgk [d :document k :keyword] :document
+     (option-value-of [:option :document] (document-get d k) (document-null))))
+#?(:kotoba
+   (defn- none? [d :document] :bool
+     (document-equal? d (document-null))))
+#?(:kotoba
+   (def ^:private frag-names ["nvidia" "geforce" "quadro" "apple" "intel" "iris" "mali" "radeon" "amd"]))
+#?(:kotoba
+   (def ^:private frag-vendors [:nvidia :nvidia :nvidia :apple :intel :intel :arm :amd :amd]))
+#?(:kotoba
+   (defn- frag-vendor [i :i64] :keyword
+     (let [x (option-value-of [:option :document] (document-list-at (frag-doc) i) (document-null))]
+       (option-value-of [:option :keyword] (document-keyword-value x) :unknown))))
+
+#?(:kotoba
+   (defn- frag-doc [] :document
+     (document-list (document-keyword :nvidia) (document-keyword :nvidia) (document-keyword :nvidia)
+                    (document-keyword :apple) (document-keyword :intel) (document-keyword :intel)
+                    (document-keyword :arm) (document-keyword :amd) (document-keyword :amd))))
+;; the lowercase substring walk over the name table (string-index-of on the lowercased name)
+#?(:kotoba
+   (defn- frag-hit2 [lname :string i :i64 n :i64] :keyword
+     (if (>= i n)
+       :unknown
+       (let [fx (option-value-of [:option :document] (document-list-at (frag-names-doc) i) (document-null))
+             frag (option-value-of [:option :string] (document-string-value fx) "")]
+         (if (<= 0 (string-index-of lname frag))
+           (frag-vendor i)
+           (frag-hit2 lname (+ i 1) n))))))
+
+#?(:kotoba
+   (defn- frag-names-doc [] :document
+     (document-list (document-string "nvidia") (document-string "geforce") (document-string "quadro")
+                    (document-string "apple") (document-string "intel") (document-string "iris")
+                    (document-string "mali") (document-string "radeon") (document-string "amd"))))
+
+;; the workgroup row builder (the host map rows:
+;; size/execution-width/measured?/measured-device/basis/evidence). The
+;; measured-device fragment is the uB5G scoping key; an unmeasured row spells
+;; it "" and a blank fragment never matches a name (the host rows omit the
+;; key entirely for unmeasured rows -- same behavior, one spelling each).
+#?(:kotoba
+   (defn- wg-row [size :i64 width :i64 measured :bool mdev :string basis :string evidence :string] :document
+     (document-map (document-keyword :size) (document-i64 size)
+                   (document-keyword :execution-width) (document-i64 width)
+                   (document-keyword :measured?) (document-bool measured)
+                   (document-keyword :measured-device) (document-string mdev)
+                   (document-keyword :basis) (document-string basis)
+                   (document-keyword :evidence) (document-string evidence))))
+
+#?(:kotoba
+   (defn- string-ascii-lower [s :string] :string
+     (lower-walk s 0 (string-byte-length s) (string-substring (string-from-i64 7) 0 0))))
+#?(:kotoba
+   (defn- lower-walk [s :string i :i64 n :i64 acc :string] :string
+     (if (>= i n)
+       acc
+       (let [c (string-code-point-at s i)]
+         (lower-walk s (+ i 1) n
+                     (string-concat acc (string-from-i64 (if (and (>= c 65) (<= c 90)) (+ c 32) c))))))))
+
+;; the device-from-info / recommend helpers: the 4-field split (a document vector of
+;; the field strings), the digit/version validators, the blank/substring checks, the
+;; digits->i64 parse, the largest power-of-two at or below the limit and the i64 text.
+#?(:kotoba
+   (defn- split4 [s :string i :i64 n :i64 k :i64 acc :document] :document
+     (cond (and (>= i n) (= k 3)) (document-vector-conj acc (document-string (string-substring s 0 n)))
+           (>= i n) (document-null)
+           (= (string-code-point-at s i) 124)
+           (split4 s (+ i 1) n (+ k 1) (document-vector-conj acc (document-string (string-substring s 0 i))))
+           :else (split4 s (+ i 1) n k acc))))
+#?(:kotoba
+   (defn- digits? [s :string i :i64 n :i64] :bool
+     (cond (>= i n) (< 0 n)
+           (let [c (string-code-point-at s i)] (and (>= c 48) (<= c 57))) (digits? s (+ i 1) n)
+           :else false)))
+;; d.d.d with digits in each part (the host re-matches "[0-9]+\.[0-9]+\.[0-9]+")
+#?(:kotoba
+   (defn- version3? [s :string] :bool
+     (let [n (string-byte-length s)]
+       (and (digits? s 0 (dot1 s 0 n))
+            (digits? s (+ 1 (dot1 s 0 n)) (dot2 s 0 n))
+            (digits? s (+ 1 (dot2 s 0 n)) n)
+            (< (dot1 s 0 n) (dot2 s 0 n))))))
+#?(:kotoba
+   (defn- dot1 [s :string i :i64 n :i64] :i64
+     (if (>= i n) n (if (= 46 (string-code-point-at s i)) i (dot1 s (+ i 1) n)))))
+#?(:kotoba
+   (defn- dot2 [s :string i :i64 n :i64] :i64
+     (if (>= i n) n (if (= 46 (string-code-point-at s i)) (+ 1 (dot2 s (+ i 1) n)) (dot2 s (+ i 1) n)))))
+#?(:kotoba
+   (defn- blank-str? [s :string] :bool
+     (blank-walk s 0 (string-byte-length s))))
+#?(:kotoba
+   (defn- blank-walk [s :string i :i64 n :i64] :bool
+     (if (>= i n)
+       true
+       (let [c (string-code-point-at s i)]
+         (if (or (= c 32) (= c 9) (= c 10) (= c 13)) (blank-walk s (+ i 1) n) false)))))
+;; the case-insensitive substring search (the host str/includes? on the
+;; lower-cased name part -- callers lower the haystack)
+#?(:kotoba
+   (defn- substr-hits [hay :string needle :string] :bool
+     (sub-walk2 hay needle 0 (string-byte-length hay) (string-byte-length needle))))
+#?(:kotoba
+   (defn- sub-walk2 [hay :string needle :string i :i64 n :i64 m :i64] :bool
+     (cond (> (+ i m) n) false
+           (sub-eq hay needle i 0 m) true
+           :else (sub-walk2 hay needle (+ i 1) n m))))
+#?(:kotoba
+   (defn- sub-eq [hay :string needle :string j :i64 k :i64 m :i64] :bool
+     (cond (>= k m) true
+           (= (string-code-point-at hay (+ j k)) (string-code-point-at needle k)) (sub-eq hay needle j (+ k 1) m)
+           :else false)))
+;; the digits -> i64 parse (host parse-long on a digit string)
+#?(:kotoba
+   (defn- string->i64 [s :string] :i64
+     (parse-walk s 0 (string-byte-length s) 0)))
+#?(:kotoba
+   (defn- parse-walk [s :string i :i64 n :i64 acc :i64] :i64
+     (if (>= i n) acc (parse-walk s (+ i 1) n (+ (* acc 10) (- (string-code-point-at s i) 48))))))
+;; the largest power of two at or below lim (the host loop (quot sz 2))
+#?(:kotoba
+   (defn- clamp2 [sz :i64 lim :i64] :i64
+     (if (and (<= sz lim) (< 0 sz)) sz (if (< sz 1) 0 (clamp2 (quot sz 2) lim)))))
+;; the i64 text (the host str on a number)
+#?(:kotoba
+   (defn- i64-text [v :i64] :string (string-from-i64 v)))
+
+#?(:kotoba
+   (defn vendors [] [:set :keyword]
+     (typed-set-new [:set :keyword] :nvidia :apple :intel :arm :amd :unknown))
+   :default
 (def vendors
   "The vendors the dispatch table names. :unknown is the deterministic
   fallback for everything else and is deliberately not a refusal."
-  #{:nvidia :apple :intel :arm :amd :unknown})
-
+  #{:nvidia :apple :intel :arm :amd :unknown}))
+#?(:kotoba
+   (defn device-classes [] [:set :keyword]
+     (typed-set-new [:set :keyword] :discrete-gpu :integrated-gpu :virtual-gpu :cpu :other :unknown))
+   :default
 (def device-classes
   "The device-class vocabulary: one keyword per word of the wire-42 DEVCLASS
   answer (tools/kexe_gpu_vulkan.c reports the chosen device's
@@ -28,8 +171,16 @@
   table does not branch on device class yet; when a row needs it (discrete vs
   integrated memory behavior), it lands with the measurement that justifies
   the branch."
-  #{:discrete-gpu :integrated-gpu :virtual-gpu :cpu :other :unknown})
-
+  #{:discrete-gpu :integrated-gpu :virtual-gpu :cpu :other :unknown}))
+;; the DEVCLASS token table (the host device-class-tokens map): the five
+;; loader words and their classes in the guest's two parallel document lists
+;; (a typed vector holds one element kind). Exact word equality, no case
+;; fold -- a word the loader cannot emit is not a class fact.
+#?(:kotoba
+   (defn- dc-tokens-doc [] :document
+     (document-list (document-string "discrete") (document-string "integrated") (document-string "virtual")
+                    (document-string "cpu") (document-string "other")))
+   :default
 (def ^:private device-class-tokens
   "The DEVCLASS wire words -> device-classes keywords. The loader emits
   exactly these five lower-case words, so the map is the whole vocabulary and
@@ -38,8 +189,28 @@
    "integrated" :integrated-gpu
    "virtual" :virtual-gpu
    "cpu" :cpu
-   "other" :other})
-
+   "other" :other}))
+#?(:kotoba
+   (defn- dc-classes-doc [] :document
+     (document-list (document-keyword :discrete-gpu) (document-keyword :integrated-gpu) (document-keyword :virtual-gpu)
+                    (document-keyword :cpu) (document-keyword :other))))
+#?(:kotoba
+   (defn- dc-lookup [token :string i :i64 n :i64] :keyword
+     (if (>= i n)
+       :unknown
+       (let [tx (option-value-of [:option :document] (document-list-at (dc-tokens-doc) i) (document-null))
+             word (option-value-of [:option :string] (document-string-value tx) "")]
+         (if (= token word)
+           (option-value-of [:option :keyword]
+                            (document-keyword-value (option-value-of [:option :document] (document-list-at (dc-classes-doc) i) (document-null)))
+                            :unknown)
+           (dc-lookup token (+ i 1) n))))))
+#?(:kotoba
+   (defn device-class [token :document] :keyword
+     (if (not (= (document-kind token) :string))
+       :unknown
+       (dc-lookup (option-value-of [:option :string] (document-string-value token) "") 0 5)))
+   :default
 (defn device-class
   "Map one wire-42 DEVCLASS token into `device-classes`. TOTAL: a token
   outside the loader's five words (nil, blank, a case variant, a keyword)
@@ -48,8 +219,16 @@
   does not branch on this; it is the reporting half of device class for the
   dispatch layers that will (JUN-57..60)."
   [token]
-  (get device-class-tokens token :unknown))
-
+  (get device-class-tokens token :unknown)))
+#?(:kotoba
+   (defn vendor-ids [] [:map :i64 :keyword]
+     (typed-map-new [:map :i64 :keyword]
+                    4318 :nvidia
+                    4203 :apple
+                    32902 :intel
+                    5045 :arm
+                    4098 :amd))
+   :default
 (def vendor-ids
   "PCI vendor ids, as VkPhysicalDeviceProperties.vendorID reports them and as
   the gpu/compute (wire 42) INFO answer carries them. Decimal on purpose:
@@ -58,8 +237,11 @@
    4203 :apple    ;; 0x106B
    32902 :intel   ;; 0x8086
    5045 :arm      ;; 0x13B5 (Mali)
-   4098 :amd})    ;; 0x1002
-
+   4098 :amd}))
+#?(:kotoba
+   (defn name-vendor-fragments [] :document
+     (frag-doc))
+   :default
 (def name-vendor-fragments
   "Lower-case substrings matched against a lower-cased device name, in order.
   First hit wins, so a compound name always classifies the same way."
@@ -71,8 +253,22 @@
    ["iris" :intel]
    ["mali" :arm]
    ["radeon" :amd]
-   ["amd" :amd]])
-
+   ["amd" :amd]]))
+#?(:kotoba
+   (defn classify-vendor [device :document] :keyword
+     (let [id (dgk device :vendor-id)
+           nm (dgk device :vendor)]
+       (cond (and (= (document-kind id) :i64)
+                  (typed-map-contains [:map :i64 :keyword] (vendor-ids)
+                                      (option-value-of [:option :i64] (document-i64-value id) -1)))
+             (option-value-of [:option :keyword]
+                              (typed-map-get [:map :i64 :keyword] (vendor-ids)
+                                             (option-value-of [:option :i64] (document-i64-value id) -1))
+                              :unknown)
+             (= (document-kind nm) :string)
+             (frag-hit2 (string-ascii-lower (option-value-of [:option :string] (document-string-value nm) "")) 0 9)
+             :else :unknown)))
+   :default
 (defn classify-vendor
   "Classify a device descriptor map ({:vendor-id <int>} or {:vendor <name>})
   to a keyword in `vendors`. A :vendor-id match wins over name matching; no
@@ -94,22 +290,38 @@
             (some (fn [[fragment vendor]]
                     (when (str/includes? lower-name fragment) vendor))
                   name-vendor-fragments)))
-        :unknown)))
-
+        :unknown))))
+#?(:kotoba
+   (defn- vendor-default-target [] [:map :keyword :keyword]
+     (typed-map-new [:map :keyword :keyword]
+                    :nvidia :cuda-v1 :apple :msl-v1 :intel :wgsl-v1 :arm :wgsl-v1 :amd :wgsl-v1 :unknown :wgsl-v1))
+   :default
 (def ^:private vendor-default-target
   {:nvidia :cuda-v1
    :apple :msl-v1
    :intel :wgsl-v1
    :arm :wgsl-v1
    :amd :wgsl-v1
-   :unknown :wgsl-v1})
-
+   :unknown :wgsl-v1}))
+#?(:kotoba
+   (defn default-target [vendor :keyword] :keyword
+     (option-value-of [:option :keyword]
+                      (typed-map-get [:map :keyword :keyword] (vendor-default-target) vendor)
+                      :wgsl-v1))
+   :default
 (defn default-target
   "The emission target a vendor falls back to when no api names one. Always
   one of ADR-0002's three targets; SPIR-V and PTX stay future KIR extensions."
   [vendor]
-  (get vendor-default-target vendor :wgsl-v1))
-
+  (get vendor-default-target vendor :wgsl-v1)))
+#?(:kotoba
+   (defn target-for [api :keyword vendor :keyword] :keyword
+     (cond (= api :cuda) :cuda-v1
+           (= api :metal) :msl-v1
+           (= api :vulkan) :glsl-v1
+           (= api :webgpu) :wgsl-v1
+           :else (default-target vendor)))
+   :default
 (defn target-for
   "The emission target for an (api, vendor) pair. An api decides its route
   outright (:cuda -> :cuda-v1, :metal -> :msl-v1, :vulkan -> :glsl-v1,
@@ -124,8 +336,17 @@
     (= api :metal) :msl-v1
     (= api :vulkan) :glsl-v1
     (= api :webgpu) :wgsl-v1
-    :else (default-target vendor)))
-
+    :else (default-target vendor))))
+#?(:kotoba
+   (defn workgroup-defaults [] [:map :keyword :document]
+     (typed-map-new [:map :keyword :document]
+                    :nvidia (wg-row 256 32 true "xavier" "warp width 32; 256 is 8 warps per workgroup" "2026-10-19 Xavier nvgpu, 6 paired runs: 128-1024 flat within 2%, 32 is 22% slower; 256 kept inside the flat band")
+                    :apple (wg-row 256 32 true "m1 max" "SIMD-group width 32" "2026-10-19 Apple M1 Max / MoltenVK, 16 paired runs: 32-1024 medians within ~5% and no size won more than 6/16; 256 kept as the most frequent paired winner")
+                    :intel (wg-row 128 32 true "g31" "subgroup width 8/16/32; 128 is a multiple of all three" "2026-10-19 BMG G31 / ANV, 6 paired runs: 32-256 flat within 2% (64 won 4/6 on noise-level margins), 512/1024 marginally slower; 128 kept as the subgroup-safe row inside the flat band")
+                    :arm (wg-row 128 16 false "" "Mali execution widths 4-32 all divide 128" "")
+                    :amd (wg-row 1024 64 true "680m" "wavefront width 64; measurement chose the top of the bound" "2026-10-19 Radeon 680M / RADV, 6 paired runs: 1024 won 5/6 and is 28% faster than the provisional 256 (median 334,528 vs 467,981 ns); 32 slowest")
+                    :unknown (wg-row 256 32 false "" "portable fallback" "")))
+   :default
 (def workgroup-defaults
   "Per-vendor workgroup rows (ADR-0355). The rows hardware answered for are
   MEASURED (2026-10-19, ADR-0358) and carry :measured? true; :arm and
@@ -163,14 +384,50 @@
          :basis "wavefront width 64; measurement chose the top of the bound"
          :evidence "2026-10-19 Radeon 680M / RADV, 6 paired runs: 1024 won 5/6 and is 28% faster than the provisional 256 (median 334,528 vs 467,981 ns); 32 slowest"}
    :unknown {:size 256 :execution-width 32 :measured? false
-             :basis "portable fallback"}})
-
+             :basis "portable fallback"}}))
+#?(:kotoba
+   (defn workgroup-default [vendor :keyword] :i64
+     (let [row (option-value-of [:option :document]
+                                (typed-map-get [:map :keyword :document] (workgroup-defaults) vendor)
+                                (document-null))]
+       (if (none? row)
+         256
+         (option-value-of [:option :i64] (document-i64-value (dgk row :size)) 256))))
+   :default
 (defn workgroup-default
   "The provisional workgroup size for a vendor (a power of two in [32, 1024]).
   Total: a vendor outside `vendors` takes the :unknown row."
   [vendor]
-  (get-in workgroup-defaults [vendor :size] 256))
-
+  (get-in workgroup-defaults [vendor :size] 256)))
+#?(:kotoba
+   (defn device-from-info [answer :document] :document
+     (if (not (= (document-kind answer) :string))
+       (document-null)
+       (let [s (option-value-of [:option :string] (document-string-value answer) "")]
+         (let [f0 (split4 s 0 (string-byte-length s) 0 (document-vector))]
+           (if (none? f0)
+             (document-null)
+             (let [fields f0
+                   n (document-count fields)]
+               (if (not= 4 n)
+                 (document-null)
+                 (let [device (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-list-at fields 0) (document-null))) "")
+                       api-version (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-list-at fields 1) (document-null))) "")
+                       max-wg-x (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-list-at fields 2) (document-null))) "")
+                       unified (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-list-at fields 3) (document-null))) "")
+                       wg (if (digits? max-wg-x 0 (string-byte-length max-wg-x)) (string->i64 max-wg-x) -1)]
+                   (if (and (not (blank-str? device))
+                            (version3? api-version)
+                            (< 0 wg)
+                            (or (= unified "0") (= unified "1")))
+                     (document-map (document-keyword :vendor) (document-string device)
+                                   (document-keyword :api) (document-keyword :vulkan)
+                                   (document-keyword :api-version) (document-string api-version)
+                                   (document-keyword :max-workgroup-x) (document-i64 wg)
+                                   (document-keyword :unified-memory?) (document-bool (= unified "1"))
+                                   (document-keyword :measured?) (document-bool true))
+                     (document-null))))))))))
+   :default
 (defn device-from-info
   "Parse one wire-42 INFO answer -- \"<device>|<api>|<maxWgX>|<unified>\" as
   tools/kexe_gpu_vulkan.c answers it (deviceName, apiVersion major.minor.patch,
@@ -203,9 +460,56 @@
              :api-version api-version
              :max-workgroup-x wg
              :unified-memory? (= unified "1")
-             :measured? true}))))))
-
-
+             :measured? true})))))))
+#?(:kotoba
+   (defn recommend [device :document] :document
+     (let [vendor (classify-vendor device)
+           row (option-value-of [:option :document]
+                                (typed-map-get [:map :keyword :document] (workgroup-defaults) vendor)
+                                (option-value-of [:option :document]
+                                                 (typed-map-get [:map :keyword :document] (workgroup-defaults) :unknown)
+                                                 (document-null)))
+           lim (dgk device :max-workgroup-x)
+           probed (if (and (= (document-kind lim) :i64) (< 0 (option-value-of [:option :i64] (document-i64-value lim) -1)))
+                    (clamp2 (option-value-of [:option :i64] (document-i64-value (dgk row :size)) 256)
+                            (option-value-of [:option :i64] (document-i64-value lim) -1))
+                    -1)
+           ;; uB5G: the measured flag is scoped to the measured device (one
+           ;; configuration per measured row, ADR-0358). A descriptor NAMES a
+           ;; device through :device, :name, or the :vendor name key -- the
+           ;; key classify-vendor matches and device-from-info fills with
+           ;; deviceName. A named device keeps the row's measured flag only
+           ;; when its name carries the row's :measured-device fragment.
+           p-device (option-value-of [:option :string] (document-string-value (dgk device :device)) "")
+           p-name (option-value-of [:option :string] (document-string-value (dgk device :name)) "")
+           p-vendor (option-value-of [:option :string] (document-string-value (dgk device :vendor)) "")
+           named-device? (or (not (blank-str? p-device)) (not (blank-str? p-name)) (not (blank-str? p-vendor)))
+           frag (option-value-of [:option :string] (document-string-value (dgk row :measured-device)) "")
+           measured-device? (and (not (blank-str? frag))
+                                 (or (substr-hits (string-ascii-lower p-device) frag)
+                                     (substr-hits (string-ascii-lower p-name) frag)
+                                     (substr-hits (string-ascii-lower p-vendor) frag)))
+           basis (if (< 0 probed)
+                   (string-concat (option-value-of [:option :string] (document-string-value (dgk row :basis)) "")
+                                  (string-concat (string-concat " (bounded by probed device limit " (i64-text (option-value-of [:option :i64] (document-i64-value lim) 0))) ")"))
+                   (option-value-of [:option :string] (document-string-value (dgk row :basis)) ""))]
+       (document-map (document-keyword :vendor) (document-keyword vendor)
+                     (document-keyword :target) (document-keyword (target-for (option-value-of [:option :keyword] (document-keyword-value (dgk device :api)) :none) vendor))
+                     (document-keyword :workgroup-size) (document-i64 (if (< 0 probed) probed (option-value-of [:option :i64] (document-i64-value (dgk row :size)) 256)))
+                     (document-keyword :execution-width) (document-i64 (option-value-of [:option :i64] (document-i64-value (dgk row :execution-width)) 32))
+                     (document-keyword :basis) (document-string basis)
+                     ;; uB5G: a NAMED device must be the measured device (the
+                     ;; row's :measured-device fragment in its name) for the
+                     ;; row's measured flag to apply; an unnamed
+                     ;; (vendor-id-only) descriptor keeps the row-level flag
+                     ;; as the only available signal. An INFO-derived
+                     ;; descriptor (:max-workgroup-x present, from
+                     ;; device-from-info) reports a LIMIT, not a tuning
+                     ;; result, and never transfers the row's measured flag.
+                     (document-keyword :measured?) (document-bool (and (document-equal? (dgk row :measured?) (document-bool true))
+                                                                       (none? lim)
+                                                                       (or (not named-device?) measured-device?))))))
+   :default
 (defn recommend
   "A deterministic dispatch decision for one device descriptor
   ({:vendor-id | :vendor, optional :api, optional :device-class}). Answers
@@ -232,7 +536,7 @@
         ;; :vendor name key (the key classify-vendor matches and
         ;; device-from-info fills with deviceName) -- before this scoping the
         ;; :vendor-only spelling was missed and a named device that hardware
-        ;; never measured ({:vendor "Apple M3"}) inherited the row's flag,
+        ;; never measured ({:vendor \"Apple M3\"}) inherited the row's flag,
         ;; while the measured NVIDIA device spelled by name (Tegra Xavier)
         ;; was denied it. Now a named device keeps the row flag only when
         ;; its name carries the row's :measured-device fragment (matched
@@ -259,4 +563,4 @@
      ;; transfers the row's measured flag (the device-from-info contract).
      :measured? (and (boolean (:measured? row))
                      (nil? (:max-workgroup-x device))
-                     (or (not named-device?) (boolean measured-device?)))}))
+                     (or (not named-device?) (boolean measured-device?)))})))

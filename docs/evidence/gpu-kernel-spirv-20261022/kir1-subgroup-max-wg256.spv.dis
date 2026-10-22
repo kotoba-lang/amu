@@ -1,0 +1,128 @@
+; SPIR-V
+; Version: 1.3
+; Generator: Khronos; 0
+; Bound: 78
+; Schema: 0
+               OpCapability Shader
+               OpCapability GroupNonUniform
+               OpCapability GroupNonUniformArithmetic
+         %39 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %1 "main" %8 %9 %10 %12 %13 %14
+               OpExecutionMode %1 LocalSize 256 1 1
+               OpDecorate %8 BuiltIn GlobalInvocationId
+               OpDecorate %9 BuiltIn LocalInvocationId
+               OpDecorate %10 BuiltIn WorkgroupId
+               OpDecorate %12 BuiltIn SubgroupId
+               OpDecorate %13 BuiltIn SubgroupLocalInvocationId
+               OpDecorate %14 BuiltIn NumSubgroups
+               OpDecorate %15 ArrayStride 4
+               OpDecorate %16 Block
+               OpMemberDecorate %16 0 Offset 0
+               OpMemberDecorate %16 0 NonWritable
+               OpDecorate %19 Block
+               OpMemberDecorate %19 0 Offset 0
+               OpDecorate %22 Block
+               OpMemberDecorate %22 0 Offset 0
+               OpMemberDecorate %22 0 NonWritable
+               OpDecorate %18 DescriptorSet 0
+               OpDecorate %18 Binding 0
+               OpDecorate %21 DescriptorSet 0
+               OpDecorate %21 Binding 1
+               OpDecorate %24 DescriptorSet 0
+               OpDecorate %24 Binding 2
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %4 = OpTypeInt 32 0
+          %5 = OpTypeFloat 32
+          %6 = OpTypeVector %4 3
+          %7 = OpTypePointer Input %6
+          %8 = OpVariable %7 Input
+          %9 = OpVariable %7 Input
+         %10 = OpVariable %7 Input
+         %11 = OpTypePointer Input %4
+         %12 = OpVariable %11 Input
+         %13 = OpVariable %11 Input
+         %14 = OpVariable %11 Input
+         %15 = OpTypeRuntimeArray %5
+         %16 = OpTypeStruct %15
+         %17 = OpTypePointer StorageBuffer %16
+         %18 = OpVariable %17 StorageBuffer
+         %19 = OpTypeStruct %15
+         %20 = OpTypePointer StorageBuffer %19
+         %21 = OpVariable %20 StorageBuffer
+         %22 = OpTypeStruct %4
+         %23 = OpTypePointer StorageBuffer %22
+         %24 = OpVariable %23 StorageBuffer
+         %25 = OpTypePointer StorageBuffer %5
+         %26 = OpTypePointer StorageBuffer %4
+         %27 = OpConstant %4 0
+         %28 = OpConstant %4 1
+         %29 = OpConstant %4 2
+         %30 = OpConstant %4 264
+         %31 = OpConstant %4 3
+         %32 = OpConstant %4 256
+         %33 = OpTypeArray %5 %32
+         %34 = OpTypePointer Workgroup %33
+         %35 = OpVariable %34 Workgroup
+         %36 = OpTypePointer Workgroup %5
+         %37 = OpConstant %5 -3.40282347e+38
+         %38 = OpTypeBool
+          %1 = OpFunction %2 None %3
+         %40 = OpLabel
+         %41 = OpLoad %6 %8
+         %42 = OpCompositeExtract %4 %41 0
+         %43 = OpLoad %6 %9
+         %44 = OpCompositeExtract %4 %43 0
+         %45 = OpLoad %6 %10
+         %46 = OpCompositeExtract %4 %45 0
+         %47 = OpAccessChain %26 %24 %27
+         %48 = OpLoad %4 %47
+         %49 = OpULessThan %38 %42 %48
+               OpSelectionMerge %51 None
+               OpBranchConditional %49 %50 %51
+         %50 = OpLabel
+         %52 = OpAccessChain %25 %18 %27 %42
+         %53 = OpLoad %5 %52
+               OpBranch %51
+         %51 = OpLabel
+         %54 = OpPhi %5 %53 %50 %37 %40
+         %55 = OpGroupNonUniformFMax %5 %31 Reduce %54
+         %56 = OpLoad %4 %13
+         %57 = OpIEqual %38 %56 %27
+               OpSelectionMerge %59 None
+               OpBranchConditional %57 %58 %59
+         %58 = OpLabel
+         %60 = OpLoad %4 %12
+         %61 = OpAccessChain %36 %35 %60
+               OpStore %61 %55
+               OpBranch %59
+         %59 = OpLabel
+               OpControlBarrier %29 %29 %30
+         %62 = OpIEqual %38 %44 %27
+               OpSelectionMerge %64 None
+               OpBranchConditional %62 %63 %64
+         %63 = OpLabel
+         %65 = OpLoad %4 %14
+               OpBranch %66
+         %66 = OpLabel
+         %67 = OpPhi %4 %27 %63 %74 %70
+         %68 = OpPhi %5 %37 %63 %73 %70
+         %69 = OpULessThan %38 %67 %65
+               OpLoopMerge %71 %70 None
+               OpBranchConditional %69 %72 %71
+         %72 = OpLabel
+         %75 = OpAccessChain %36 %35 %67
+         %76 = OpLoad %5 %75
+         %73 = OpExtInst %5 %39 FMax %68 %76
+               OpBranch %70
+         %70 = OpLabel
+         %74 = OpIAdd %4 %67 %28
+               OpBranch %66
+         %71 = OpLabel
+         %77 = OpAccessChain %25 %21 %27 %46
+               OpStore %77 %68
+               OpBranch %64
+         %64 = OpLabel
+               OpReturn
+               OpFunctionEnd

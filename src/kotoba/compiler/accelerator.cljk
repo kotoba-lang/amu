@@ -9,24 +9,201 @@
 ;; The KIR model and its validation live in the leaf
 ;; kotoba.compiler.accelerator-kir so the Vulkan/GLSL arm can validate and
 ;; emit without requiring this namespace back (a require cycle); the ADR-0002
-;; surface keeps answering the same names from here.
-(def kir-format kir/kir-format)
-(def dtypes kir/dtypes)
-(def ewise-operators kir/ewise-operators)
-(def reduction-operators kir/reduction-operators)
-(def max-workgroup-size kir/max-workgroup-size)
-(def max-static-elements kir/max-static-elements)
-(def kernel kir/kernel)
-(def validation-errors kir/validation-errors)
-(def validate! kir/validate!)
+;; surface keeps answering the same names from here. The HOST reading aliases
+;; the leaf (one source of truth). The Kotoba reading below keeps its own
+;; port of those names: accelerator-kir has no Kotoba reading yet, so the
+;; guest surface cannot alias it -- when that leaf is ported, these bodies
+;; become aliases too.
 
-(def artifact-format :kotoba.gpu-artifact/v1)
+;; R6QW3: the Kotoba reading (W3: the scan refused this module E1005 at a '#' fn literal).
+;; The exported constants are 0-argument functions (the export surface names functions only);
+;; the key sets are typed-set-new. kernel's {:keys [...]} parameter is :document with dgk
+;; pulls and its result is document-map (a typed-map value is one value kind; documents
+;; unwrap as [:option :document] -- the walk contract). validate!'s (ex-info msg {:errors ..})
+;; keeps its map literal (the desugar's ex-info case admits one). The host reading is
+;; byte-for-byte; there is no typed-guest consumer, so the shapes follow the
+;; accelerator-targets conventions.
+#?(:kotoba
+   (defn- dgk [d :document k :keyword] :document
+     (option-value-of [:option :document] (document-get d k) (document-null))))
+#?(:kotoba
+   (defn- none? [d :document] :bool
+     (document-equal? d (document-null))))
+;; (vec (keep identity [checks])) as the error walk (a :document vector -- it counts)
+#?(:kotoba
+   (defn- errs-conj [acc :document e :document] :document
+     (if (none? e) acc (document-vector-conj acc e))))
+;; (string? x) / (pos-int? x) / the power-of-two check of validation-errors
+#?(:kotoba
+   (defn- string-kind? [d :document] :bool (= (document-kind d) :string)))
+#?(:kotoba
+   (defn- posint? [d :document] :bool
+     (and (= (document-kind d) :i64) (< 0 (option-value-of [:option :i64] (document-i64-value d) 0)))))
+;; the identifier shape of :kernel/name (the host re-matches "[A-Za-z_][A-Za-z0-9_]*")
+#?(:kotoba
+   (defn- ident? [s :string] :bool
+     (let [n (string-byte-length s)]
+       (and (< 0 n) (ident1? (string-code-point-at s 0)) (ident-rest s 1 n)))))
+#?(:kotoba
+   (defn- ident1? [c :i64] :bool
+     (or (and (>= c 65) (<= c 90)) (and (>= c 97) (<= c 122)) (= c 95))))
+#?(:kotoba
+   (defn- ident-rest [s :string i :i64 n :i64] :bool
+     (if (>= i n)
+       true
+       (let [c (string-code-point-at s i)]
+         (if (or (ident1? c) (and (>= c 48) (<= c 57))) (ident-rest s (+ i 1) n) false)))))
+
+;; the expression pair as a 2-item document vector (the host's [a b] pair)
+#?(:kotoba
+   (defn- expr-pair [a :string b :string] :document
+     (document-vector (document-string a) (document-string b))))
+;; (in-kset? ...) the keyword membership over a typed set (the host's (set kw) predicate)
+#?(:kotoba
+   (defn- in-kset? [ks [:set :keyword] x :document] :bool
+     (typed-set-contains [:set :keyword] ks
+                         (option-value-of [:option :keyword] (document-keyword-value x) :none))))
+
+;; the operator lookup table of the WGSL ewise arm (the host map invocation)
+#?(:kotoba
+   (defn- expr-first [operator :document] :string
+     (cond (document-equal? operator (document-keyword :add)) "x[i] + y[i]"
+           (document-equal? operator (document-keyword :sub)) "x[i] - y[i]"
+           (document-equal? operator (document-keyword :mul)) "x[i] * y[i]"
+           (document-equal? operator (document-keyword :div)) "x[i] / y[i]"
+           :else "")))
+;; the reduce identities: ONE meaning per operator in EVERY arm. The extrema
+;; neutrals are the INFINITE IEEE-754 reinterpretations (review P2, completed
+;; 2026-10-22) -- a finite bound is corrupted by an input that legitimately
+;; contains +Inf (:min) or -Inf (:max). Each reading spells them in its own
+;; arm's intrinsic: GLSL uintBitsToFloat, WGSL bitcast<f32>, CUDA
+;; __uint_as_float, MSL as_type<float>.
+#?(:kotoba
+   (defn- glsl-identity [operator :document] :string
+     (cond (document-equal? operator (document-keyword :sum)) "0.0"
+           (document-equal? operator (document-keyword :max)) "uintBitsToFloat(0xFF800000u)"
+           (document-equal? operator (document-keyword :min)) "uintBitsToFloat(0x7F800000u)"
+           :else "0.0"))
+   :default
+(def ^:private glsl-identity
+  ;; The padded lanes (i >= n) fold the identity. GLSL has no infinity
+  ;; literal; uintBitsToFloat of the IEEE-754 sign/exponent bits is exact.
+  {:sum "0.0"
+   :max "uintBitsToFloat(0xFF800000u)"
+   :min "uintBitsToFloat(0x7F800000u)"}))
+#?(:kotoba
+   (defn- wgsl-identity [operator :document] :string
+     (cond (document-equal? operator (document-keyword :sum)) "0.0"
+           (document-equal? operator (document-keyword :max)) "bitcast<f32>(0xFF800000u)"
+           (document-equal? operator (document-keyword :min)) "bitcast<f32>(0x7F800000u)"
+           :else "0.0"))
+   :default
+(def ^:private wgsl-identity
+  ;; The same neutrals as glsl-identity, in WGSL: no infinity literal
+  ;; exists there either, bitcast of the IEEE-754 bits is exact.
+  {:sum "0.0"
+   :max "bitcast<f32>(0xFF800000u)"
+   :min "bitcast<f32>(0x7F800000u)"}))
+#?(:kotoba
+   (defn- cuda-identity [operator :document] :string
+     (cond (document-equal? operator (document-keyword :sum)) "0.0f"
+           (document-equal? operator (document-keyword :max)) "__uint_as_float(0xFF800000u)"
+           (document-equal? operator (document-keyword :min)) "__uint_as_float(0x7F800000u)"
+           :else "0.0f"))
+   :default
+(def ^:private cuda-identity
+  ;; The same neutrals as glsl-identity, in CUDA C: __uint_as_float is
+  ;; exact and header-free (no INFINITY macro dependency).
+  {:sum "0.0f"
+   :max "__uint_as_float(0xFF800000u)"
+   :min "__uint_as_float(0x7F800000u)"}))
+#?(:kotoba
+   (defn- msl-identity [operator :document] :string
+     (cond (document-equal? operator (document-keyword :sum)) "0.0f"
+           (document-equal? operator (document-keyword :max)) "as_type<float>(0xFF800000u)"
+           (document-equal? operator (document-keyword :min)) "as_type<float>(0x7F800000u)"
+           :else "0.0f"))
+   :default
+(def ^:private msl-identity
+  ;; The same neutrals as glsl-identity, in MSL: as_type<float> of the
+  ;; IEEE-754 bits is exact.
+  {:sum "0.0f"
+   :max "as_type<float>(0xFF800000u)"
+   :min "as_type<float>(0x7F800000u)"}))
+#?(:kotoba
+   (defn- glsl-combine [operator :document] :string
+     (cond (document-equal? operator (document-keyword :sum)) "a+b"
+           (document-equal? operator (document-keyword :max)) "max(a,b)"
+           (document-equal? operator (document-keyword :min)) "min(a,b)"
+           :else "a+b"))
+   :default
+(def ^:private glsl-combine
+  {:sum "a+b" :max "max(a,b)" :min "min(a,b)"}))
+;; the WGSL/CUDA/MSL combine spellings (the host emitters inline these maps)
+#?(:kotoba
+   (defn- wgsl-combine [operator :document] :string
+     (cond (document-equal? operator (document-keyword :sum)) "a+b"
+           (document-equal? operator (document-keyword :max)) "max(a,b)"
+           (document-equal? operator (document-keyword :min)) "min(a,b)"
+           :else "a+b")))
+#?(:kotoba
+   (defn- cuda-combine [operator :document] :string
+     (cond (document-equal? operator (document-keyword :sum)) "a+b"
+           (document-equal? operator (document-keyword :max)) "fmaxf(a,b)"
+           (document-equal? operator (document-keyword :min)) "fminf(a,b)"
+           :else "a+b")))
+#?(:kotoba
+   (defn- msl-combine [operator :document] :string
+     (cond (document-equal? operator (document-keyword :sum)) "a+b"
+           (document-equal? operator (document-keyword :max)) "max(a,b)"
+           (document-equal? operator (document-keyword :min)) "min(a,b)"
+           :else "a+b")))
+;; the artifact module calls (kotoba.artifact.core's sha256/seal)
+#?(:kotoba
+   (defn- artifact-sha256 [v :document] :string (artifact/sha256 v)))
+#?(:kotoba
+   (defn- artifact-seal [v :document] :document (artifact/seal v)))
+
+;; the CUDA/MSL ewise operator table and the expr pair accessor (the host map
+;; invocations)
+#?(:kotoba
+   (defn- expr-second [operator :document] :string
+     (cond (document-equal? operator (document-keyword :add)) "x[i] + y[i]"
+           (document-equal? operator (document-keyword :sub)) "x[i] - y[i]"
+           (document-equal? operator (document-keyword :mul)) "x[i] * y[i]"
+           (document-equal? operator (document-keyword :div)) "x[i] / y[i]"
+           :else "")))
+;; the Vulkan/GLSL subgroup-reduce variant emitter
+;; (kotoba.compiler.accelerator-subgroup-reduce's emit-glsl) -- a cross-module
+;; call in the same idiom as artifact-sha256 above.
+#?(:kotoba
+   (defn- subgroup-emit-glsl [kir :document] :string (subgroup-reduce/emit-glsl kir)))
+;; the artifact seal check (kotoba.artifact.core's valid-seal?)
+#?(:kotoba
+   (defn- artifact-valid-seal? [v :document] :bool (artifact/valid-seal? v)))
+
+#?(:kotoba
+   (defn kir-format [] :keyword :kotoba.accelerator-kir/v1)
+   :default
+(def kir-format kir/kir-format))
+#?(:kotoba
+   (defn artifact-format [] :keyword :kotoba.gpu-artifact/v1)
+   :default
+(def artifact-format :kotoba.gpu-artifact/v1))
+#?(:kotoba
+   (defn targets [] [:set :keyword]
+     (typed-set-new [:set :keyword] :wgsl-v1 :cuda-v1 :msl-v1 :glsl-v1))
+   :default
 (def targets
   "The emission targets this compiler admits (ADR-0002 as amended by
   ADR-0359 decision 1): three shading languages plus :glsl-v1, the GLSL 450
   compute arm the Vulkan wire-42 path compiles. A target is a SOURCE text
   contract; the SPIR-V compilation is a separate sealed build step."
-  #{:wgsl-v1 :cuda-v1 :msl-v1 :glsl-v1})
+  #{:wgsl-v1 :cuda-v1 :msl-v1 :glsl-v1}))
+#?(:kotoba
+   (defn kernel-variants [] [:set :keyword]
+     (typed-set-new [:set :keyword] :baseline :warp-shuffle-reduce :subgroup-reduce))
+   :default
 (def kernel-variants
   "The emitted-code variants this compiler admits. :baseline is the ADR-0002
   v1 emission, byte-identical before and after variants existed;
@@ -41,51 +218,146 @@
   admitted reduction, never a different meaning. Admission is per target: a
   variant the target's emitter does not admit is refused, never silently
   answered as :baseline."
-  #{:baseline :warp-shuffle-reduce :subgroup-reduce})
-
+  #{:baseline :warp-shuffle-reduce :subgroup-reduce}))
+#?(:kotoba
+   (defn dtypes [] [:set :keyword]
+     (typed-set-new [:set :keyword] :f32))
+   :default
+(def dtypes kir/dtypes))
+#?(:kotoba
+   (defn ewise-operators [] [:set :keyword]
+     (typed-set-new [:set :keyword] :add :sub :mul :div))
+   :default
+(def ewise-operators kir/ewise-operators))
+#?(:kotoba
+   (defn reduction-operators [] [:set :keyword]
+     (typed-set-new [:set :keyword] :sum :max :min))
+   :default
+(def reduction-operators kir/reduction-operators))
+#?(:kotoba
+   (defn max-workgroup-size [] :i64 1024)
+   :default
+(def max-workgroup-size kir/max-workgroup-size))
+#?(:kotoba
+   (defn max-static-elements [] :i64 1073741824)
+   :default
+(def max-static-elements kir/max-static-elements))
+#?(:kotoba
+   (defn kernel [name :string op :keyword operator :keyword opts :document] :document
+     (let [wg0 (dgk opts :workgroup-size)
+           wg (if (posint? wg0) (option-value-of [:option :i64] (document-i64-value wg0) 256) 256)]
+       (document-map (document-keyword :format) (document-keyword :kotoba.accelerator-kir/v1)
+                     (document-keyword :kernel/name) (document-string name)
+                     (document-keyword :kernel/op) (document-keyword op)
+                     (document-keyword :kernel/operator) (document-keyword operator)
+                     (document-keyword :kernel/dtype) (document-keyword :f32)
+                     (document-keyword :kernel/index-type) (document-keyword :u32)
+                     (document-keyword :kernel/workgroup-size) (document-i64 wg)
+                     (document-keyword :kernel/bounds)
+                     (document-map (document-keyword :elements) (document-keyword :runtime-u32)
+                                   (document-keyword :max-elements) (document-i64 1073741824))
+                     (document-keyword :kernel/effects)
+                     (document-set (document-keyword :gpu/storage-read) (document-keyword :gpu/storage-write)))))
+   :default
+(def kernel kir/kernel))
+#?(:kotoba
+   (defn validation-errors [kir :document] :document
+     (let [e0 (errs-conj (document-vector)
+                         (if (document-equal? (dgk kir :format) (document-keyword :kotoba.accelerator-kir/v1))
+                           (document-null)
+                           (document-map (document-keyword :error) (document-keyword :invalid-format))))
+           nm (dgk kir :kernel/name)
+           e1 (errs-conj e0
+                         (if (and (string-kind? nm) (ident? (option-value-of [:option :string] (document-string-value nm) "")))
+                           (document-null)
+                           (document-map (document-keyword :error) (document-keyword :invalid-kernel-name))))
+           kop (dgk kir :kernel/op)
+           e2 (errs-conj e1
+                         (if (or (document-equal? kop (document-keyword :ewise)) (document-equal? kop (document-keyword :reduce)))
+                           (document-null)
+                           (document-map (document-keyword :error) (document-keyword :invalid-kernel-op))))
+           kopr (dgk kir :kernel/operator)
+           e3 (errs-conj e2
+                         (if (or (and (document-equal? kop (document-keyword :ewise)) (in-kset? (ewise-operators) kopr))
+                                 (and (document-equal? kop (document-keyword :reduce)) (in-kset? (reduction-operators) kopr)))
+                           (document-null)
+                           (document-map (document-keyword :error) (document-keyword :invalid-operator)
+                                         (document-keyword :operator) kopr)))
+           e4 (errs-conj e3
+                         (if (in-kset? (dtypes) (dgk kir :kernel/dtype))
+                           (document-null)
+                           (document-map (document-keyword :error) (document-keyword :invalid-dtype))))
+           e5 (errs-conj e4
+                         (if (document-equal? (dgk kir :kernel/index-type) (document-keyword :u32))
+                           (document-null)
+                           (document-map (document-keyword :error) (document-keyword :invalid-index-type))))
+           wg (dgk kir :kernel/workgroup-size)
+           wgv (option-value-of [:option :i64] (document-i64-value wg) 0)
+           e6 (errs-conj e5
+                         (if (and (posint? wg)
+                                  (= 0 (bit-and wgv (- wgv 1)))
+                                  (<= wgv 1024))
+                           (document-null)
+                           (document-map (document-keyword :error) (document-keyword :invalid-workgroup-size))))
+           bnd (dgk kir :kernel/bounds)
+           e7 (errs-conj e6
+                         (if (and (document-equal? (dgk bnd :elements) (document-keyword :runtime-u32))
+                                  (document-equal? (dgk bnd :max-elements) (document-i64 1073741824)))
+                           (document-null)
+                           (document-map (document-keyword :error) (document-keyword :invalid-resource-bounds))))
+           eff (dgk kir :kernel/effects)]
+       (errs-conj e7
+                  (if (and (document-contains eff (document-keyword :gpu/storage-read))
+                           (document-contains eff (document-keyword :gpu/storage-write))
+                           (= 2 (document-count eff)))
+                    (document-null)
+                    (document-map (document-keyword :error) (document-keyword :invalid-effects))))))
+   :default
+(def validation-errors kir/validation-errors))
+#?(:kotoba
+   (defn validate! [kir :document] :document
+     (let [errors (validation-errors kir)]
+       (if (< 0 (document-count errors))
+         (throw (ex-info "invalid accelerator KIR" {:errors errors}))
+         kir)))
+   :default
+(def validate! kir/validate!))
+#?(:kotoba
+   (def ^:private expression
+     "the operand spellings as two parallel string tables (a typed map value is one kind)"
+     (document-map (document-keyword :add) (expr-pair "x[i] + y[i]" "x[i] + y[i]")
+                             (document-keyword :sub) (expr-pair "x[i] - y[i]" "x[i] - y[i]")
+                             (document-keyword :mul) (expr-pair "x[i] * y[i]" "x[i] * y[i]")
+                             (document-keyword :div) (expr-pair "x[i] / y[i]" "x[i] / y[i]")))
+   :default
 (def ^:private expression
   {:add ["x[i] + y[i]" "x[i] + y[i]"] :sub ["x[i] - y[i]" "x[i] - y[i]"]
-   :mul ["x[i] * y[i]" "x[i] * y[i]"] :div ["x[i] / y[i]" "x[i] / y[i]"]})
-
-(def ^:private glsl-identity
-  ;; The padded lanes (i >= n) fold the identity. For extrema the identity
-  ;; must be the INFINITE neutral: a finite bound is corrupted by an input
-  ;; that legitimately contains +Inf (:min) or -Inf (:max). GLSL has no
-  ;; infinity literal; uintBitsToFloat of the IEEE-754 sign/exponent bits is
-  ;; exact. ONE meaning per operator across EVERY arm and both variants
-  ;; (review P2, completed 2026-10-22): the WGSL, CUDA and MSL arms below
-  ;; carry the same neutrals spelled in their own reinterpretation
-  ;; intrinsic, so the same KIR answers the same reduce in every arm --
-  ;; before that they folded the finite +-3.402823466e+38 bound and answered
-  ;; -FLT_MAX for an all-(-Inf) :max reduction.
-  {:sum "0.0"
-   :max "uintBitsToFloat(0xFF800000u)"
-   :min "uintBitsToFloat(0x7F800000u)"})
-
-(def ^:private wgsl-identity
-  ;; The same neutrals as glsl-identity, in WGSL: no infinity literal
-  ;; exists there either, bitcast of the IEEE-754 bits is exact.
-  {:sum "0.0"
-   :max "bitcast<f32>(0xFF800000u)"
-   :min "bitcast<f32>(0x7F800000u)"})
-
-(def ^:private cuda-identity
-  ;; The same neutrals as glsl-identity, in CUDA C: __uint_as_float is
-  ;; exact and header-free (no INFINITY macro dependency).
-  {:sum "0.0f"
-   :max "__uint_as_float(0xFF800000u)"
-   :min "__uint_as_float(0x7F800000u)"})
-
-(def ^:private msl-identity
-  ;; The same neutrals as glsl-identity, in MSL: as_type<float> of the
-  ;; IEEE-754 bits is exact.
-  {:sum "0.0f"
-   :max "as_type<float>(0xFF800000u)"
-   :min "as_type<float>(0x7F800000u)"})
-
-(def ^:private glsl-combine
-  {:sum "a+b" :max "max(a,b)" :min "min(a,b)"})
-
+   :mul ["x[i] * y[i]" "x[i] * y[i]"] :div ["x[i] / y[i]" "x[i] / y[i]"]}))
+#?(:kotoba
+   (defn- emit-wgsl [kir :document] :string
+     (let [wg (option-value-of [:option :i64] (document-i64-value (dgk kir :kernel/workgroup-size)) 256)
+           op (dgk kir :kernel/op)
+           operator (dgk kir :kernel/operator)]
+       (if (document-equal? op (document-keyword :ewise))
+         (let [expr (expr-first operator)
+               s1 (string-concat "struct N { value: u32 };\n@group(0) @binding(0) var<storage,read> x: array<f32>;\n" "@group(0) @binding(1) var<storage,read> y: array<f32>;\n")
+               s2 (string-concat s1 "@group(0) @binding(2) var<storage,read_write> z: array<f32>;\n")
+               s3 (string-concat s2 "@group(0) @binding(3) var<uniform> n: N;\n")
+               s4 (string-concat s3 (string-concat (string-concat "@compute @workgroup_size(" (string-from-i64 wg)) ") fn main(@builtin(global_invocation_id) gid: vec3<u32>) {\n"))
+               s5 (string-concat s4 (string-concat "  let i=gid.x; if(i<n.value){ z[i]=" (string-concat expr "; }\n}\n")))]
+           s5)
+         (let [identity (wgsl-identity operator)
+               combine (wgsl-combine operator)
+               s1 (string-concat "struct N { value: u32 };\n@group(0) @binding(0) var<storage,read> x: array<f32>;\n" "@group(0) @binding(1) var<storage,read_write> parts: array<f32>;\n")
+               s2 (string-concat s1 "@group(0) @binding(2) var<uniform> n: N;\nvar<workgroup> scratch: array<f32,")
+               s3 (string-concat (string-concat s2 (string-from-i64 wg)) ">;\n")
+               s4 (string-concat s3 (string-concat (string-concat (string-concat "fn combine(a:f32,b:f32)->f32{return " combine) ";}\n")
+                                                    (string-concat (string-concat "@compute @workgroup_size(" (string-from-i64 wg)) ") fn main(@builtin(global_invocation_id) gid:vec3<u32>,")))
+               s5 (string-concat s4 "@builtin(local_invocation_id) lid:vec3<u32>,@builtin(workgroup_id) wid:vec3<u32>){\n")
+               s6 (string-concat s5 (string-concat " let i=gid.x; scratch[lid.x]=select(" (string-concat identity ",x[i],i<n.value); workgroupBarrier();\n")))
+               s7 (string-concat s6 (string-concat (string-concat " var stride:u32=" (string-from-i64 (quot wg 2))) "u; loop { if(stride==0u){break;} if(lid.x<stride){scratch[lid.x]=combine(scratch[lid.x],scratch[lid.x+stride]);} workgroupBarrier(); stride=stride/2u;}\n"))]
+           (string-concat s7 " if(lid.x==0u){parts[wid.x]=scratch[0];}\n}\n")))))
+   :default
 (defn- emit-wgsl [kir]
   (let [wg (:kernel/workgroup-size kir) op (:kernel/op kir) operator (:kernel/operator kir)]
     (case op
@@ -107,8 +379,23 @@
              "@builtin(local_invocation_id) lid:vec3<u32>,@builtin(workgroup_id) wid:vec3<u32>){\n"
              " let i=gid.x; scratch[lid.x]=select(" identity ",x[i],i<n.value); workgroupBarrier();\n"
              " var stride:u32=" (/ wg 2) "u; loop { if(stride==0u){break;} if(lid.x<stride){scratch[lid.x]=combine(scratch[lid.x],scratch[lid.x+stride]);} workgroupBarrier(); stride=stride/2u;}\n"
-             " if(lid.x==0u){parts[wid.x]=scratch[0];}\n}\n")))))
-
+             " if(lid.x==0u){parts[wid.x]=scratch[0];}\n}\n"))))))
+#?(:kotoba
+   (defn- emit-cuda-shuffle-reduce [kir :document] :string
+     (let [operator (dgk kir :kernel/operator)
+           name (option-value-of [:option :string] (document-string-value (dgk kir :kernel/name)) "")
+           identity (cuda-identity operator)
+           combine (cuda-combine operator)
+           s1 (string-concat (string-concat "__device__ float combine(float a,float b){return " combine) ";}\n")
+           s2 (string-concat s1 (string-concat (string-concat "extern \"C\" __global__ void " name) "(const float* x,float* parts,unsigned int n){\n"))
+           s3 (string-concat s2 " extern __shared__ float s[]; unsigned int i=blockIdx.x*blockDim.x+threadIdx.x; unsigned int l=threadIdx.x; unsigned int lane=l%32, warp=l/32;\n")
+           s4 (string-concat s3 (string-concat " float v=i<n?x[i]:" (string-concat identity ";\n")))
+           s5 (string-concat s4 " for(unsigned int d=16;d>0;d>>=1){v=combine(v,__shfl_down_sync(0xffffffffu,v,d,32));}\n")
+           s6 (string-concat s5 " if(lane==0)s[warp]=v; __syncthreads();\n unsigned int warps=blockDim.x/32;\n")
+           s7 (string-concat s6 (string-concat " if(warp==0){float a=lane<warps?s[lane]:" (string-concat identity ";\n")))
+           s8 (string-concat s7 "  for(unsigned int d=warps/2;d>0;d>>=1){a=combine(a,__shfl_down_sync(0xffffffffu,a,d,warps));}\n")]
+       (string-concat s8 "  if(lane==0)parts[blockIdx.x]=a;}\n}\n")))
+   :default
 (defn- emit-cuda-shuffle-reduce [kir]
   ;; ADR-0356: NVIDIA warp-shuffle reduction. UNMEASURED -- this emitter has
   ;; no execution path (wire 42 runs Vulkan only) and nothing here has run on
@@ -130,8 +417,35 @@
          " unsigned int warps=blockDim.x/32;\n"
          " if(warp==0){float a=lane<warps?s[lane]:" identity ";\n"
          "  for(unsigned int d=warps/2;d>0;d>>=1){a=combine(a,__shfl_down_sync(0xffffffffu,a,d,warps));}\n"
-         "  if(lane==0)parts[blockIdx.x]=a;}\n}\n")))
-
+         "  if(lane==0)parts[blockIdx.x]=a;}\n}\n"))))
+#?(:kotoba
+   (defn- emit-cuda [kir :document variant :keyword] :string
+     (let [op (dgk kir :kernel/op)
+           operator (dgk kir :kernel/operator)
+           name (option-value-of [:option :string] (document-string-value (dgk kir :kernel/name)) "")
+           wg (option-value-of [:option :i64] (document-i64-value (dgk kir :kernel/workgroup-size)) 256)]
+       (if (not (or (document-equal? (document-keyword variant) (document-keyword :baseline))
+                    (document-equal? (document-keyword variant) (document-keyword :warp-shuffle-reduce))))
+         ;; :subgroup-reduce is the Vulkan/GLSL arm; the CUDA emitter does not
+         ;; admit it. Rule 3: a variant the target's emitter does not admit is
+         ;; refused here, never silently answered as :baseline.
+         (throw (ex-info "kernel variant not applicable" {:variant variant :target :cuda-v1}))
+       (if (document-equal? (document-keyword variant) (document-keyword :warp-shuffle-reduce))
+         (if (and (document-equal? op (document-keyword :reduce)) (and (= (document-kind (dgk kir :kernel/workgroup-size)) :i64) (<= 32 wg)))
+           (emit-cuda-shuffle-reduce kir)
+           (throw (ex-info "kernel variant not applicable" {:variant variant :op op :workgroup-size (dgk kir :kernel/workgroup-size)})))
+         (if (document-equal? op (document-keyword :ewise))
+           (let [s1 (string-concat (string-concat "extern \"C\" __global__ void " name) "(const float* x,const float* y,float* z,unsigned int n){\n")
+                 s2 (string-concat s1 " unsigned int i=blockIdx.x*blockDim.x+threadIdx.x; if(i<n) z[i]=")]
+             (string-concat s2 (string-concat (expr-second operator) "; }\n}\n")))
+           (let [identity (cuda-identity operator)
+                 combine (cuda-combine operator)
+                 s1 (string-concat (string-concat "extern \"C\" __global__ void " name) "(const float* x,float* parts,unsigned int n){\n")
+                 s2 (string-concat s1 " extern __shared__ float s[]; unsigned int i=blockIdx.x*blockDim.x+threadIdx.x; unsigned int l=threadIdx.x;\n")
+                 s3 (string-concat s2 (string-concat " s[l]=i<n?x[i]:" (string-concat identity "; __syncthreads();\n")))
+                 s4 (string-concat s3 (string-concat " for(unsigned int d=blockDim.x/2;d>0;d>>=1){if(l<d){float a=s[l],b=s[l+d];s[l]=" (string-concat combine ";}__syncthreads();}\n")))]
+             (string-concat s4 " if(l==0)parts[blockIdx.x]=s[0];}\n")))))))
+   :default
 (defn- emit-cuda [kir variant]
   (let [op (:kernel/op kir) operator (:kernel/operator kir) name (:kernel/name kir)]
     (when (and (= :warp-shuffle-reduce variant)
@@ -158,8 +472,29 @@
                " extern __shared__ float s[]; unsigned int i=blockIdx.x*blockDim.x+threadIdx.x; unsigned int l=threadIdx.x;\n"
                " s[l]=i<n?x[i]:" identity "; __syncthreads();\n"
                " for(unsigned int d=blockDim.x/2;d>0;d>>=1){if(l<d){float a=s[l],b=s[l+d];s[l]=" combine ";}__syncthreads();}\n"
-               " if(l==0)parts[blockIdx.x]=s[0];\n}\n"))))))
-
+               " if(l==0)parts[blockIdx.x]=s[0];\n}\n")))))))
+#?(:kotoba
+   (defn- emit-msl [kir :document] :string
+     (let [op (dgk kir :kernel/op)
+           operator (dgk kir :kernel/operator)
+           name (option-value-of [:option :string] (document-string-value (dgk kir :kernel/name)) "")
+           wg (option-value-of [:option :i64] (document-i64-value (dgk kir :kernel/workgroup-size)) 256)]
+       (if (document-equal? op (document-keyword :ewise))
+         (let [s1 (string-concat "#include <metal_stdlib>\nusing namespace metal;\n"
+                                 (string-concat (string-concat "kernel void " name) "(device const float* x [[buffer(0)]],device const float* y [[buffer(1)]],"))
+               s2 (string-concat s1 "device float* z [[buffer(2)]],constant uint& n [[buffer(3)]],uint i [[thread_position_in_grid]]){\n")]
+           (string-concat s2 (string-concat " if(i<n) z[i]=" (string-concat (expr-second operator) ";}\n"))))
+         (let [identity (msl-identity operator)
+               combine (msl-combine operator)
+               s1 (string-concat "#include <metal_stdlib>\nusing namespace metal;\n"
+                                 (string-concat (string-concat "kernel void " name) "(device const float* x [[buffer(0)]],device float* parts [[buffer(1)]],"))
+               s2 (string-concat s1 "constant uint& n [[buffer(2)]],threadgroup float* s [[threadgroup(0)]],")
+               s3 (string-concat s2 "uint i [[thread_position_in_grid]],uint l [[thread_index_in_threadgroup]],")
+               s4 (string-concat s3 "uint g [[threadgroup_position_in_grid]],uint width [[threads_per_threadgroup]]){\n")
+               s5 (string-concat s4 (string-concat " s[l]=i<n?x[i]:" (string-concat identity "; threadgroup_barrier(mem_flags::mem_threadgroup);\n")))
+               s6 (string-concat s5 (string-concat " for(uint d=width/2;d>0;d>>=1){if(l<d){float a=s[l],b=s[l+d];s[l]=" (string-concat combine ";}threadgroup_barrier(mem_flags::mem_threadgroup);}\n")))]
+           (string-concat s6 " if(l==0)parts[g]=s[0];}\n")))))
+   :default
 (defn- emit-msl [kir]
   (let [op (:kernel/op kir) operator (:kernel/operator kir) name (:kernel/name kir)]
     (case op
@@ -178,8 +513,31 @@
              "uint g [[threadgroup_position_in_grid]],uint width [[threads_per_threadgroup]]){\n"
              " s[l]=i<n?x[i]:" identity "; threadgroup_barrier(mem_flags::mem_threadgroup);\n"
              " for(uint d=width/2;d>0;d>>=1){if(l<d){float a=s[l],b=s[l+d];s[l]=" combine ";}threadgroup_barrier(mem_flags::mem_threadgroup);}\n"
-             " if(l==0)parts[g]=s[0];\n}\n")))))
-
+             " if(l==0)parts[g]=s[0];\n}\n"))))))
+#?(:kotoba
+   (defn- emit-glsl-baseline [kir :document] :string
+     (let [wg (option-value-of [:option :i64] (document-i64-value (dgk kir :kernel/workgroup-size)) 256)
+           op (dgk kir :kernel/op)
+           operator (dgk kir :kernel/operator)]
+       (if (document-equal? op (document-keyword :ewise))
+         (let [s1 (string-concat "#version 450\n" (string-concat (string-concat "layout(local_size_x = " (string-from-i64 wg)) ") in;\n"))
+               s2 (string-concat s1 "layout(set = 0, binding = 0, std430) readonly buffer X { float x[]; };\nlayout(set = 0, binding = 1, std430) readonly buffer Y { float y[]; };\n")
+               s3 (string-concat s2 "layout(set = 0, binding = 2, std430) writeonly buffer Z { float z[]; };\nlayout(set = 0, binding = 3, std430) readonly buffer N { uint n; };\n")
+               s4 (string-concat s3 "void main() {\n  uint i = gl_GlobalInvocationID.x;\n  if (i < n) { z[i] = ")]
+           (string-concat s4 (string-concat (expr-first operator) "; }\n}\n")))
+         (let [identity (glsl-identity operator)
+               combine (glsl-combine operator)
+               s1 (string-concat "#version 450\n" (string-concat (string-concat "layout(local_size_x = " (string-from-i64 wg)) ") in;\n"))
+               s2 (string-concat s1 "layout(set = 0, binding = 0, std430) readonly buffer X { float x[]; };\nlayout(set = 0, binding = 1, std430) writeonly buffer Parts { float parts[]; };\n")
+               s3 (string-concat s2 "layout(set = 0, binding = 2, std430) readonly buffer N { uint n; };\n")
+               s4 (string-concat s3 (string-concat (string-concat "shared float scratch[" (string-from-i64 wg)) "];\n"))
+               s5 (string-concat s4 (string-concat "float combine(float a, float b) { return " (string-concat combine "; }\n")))
+               s6 (string-concat s5 "void main() {\n  uint i = gl_GlobalInvocationID.x;\n  uint lid = gl_LocalInvocationID.x;\n  scratch[lid] = i < n ? x[i] : ")
+               s7 (string-concat s6 (string-concat identity ";\n  barrier();\n"))
+               s8 (string-concat s7 (string-concat (string-concat "  for (uint d = " (string-from-i64 (quot wg 2))) "u; d > 0u; d >>= 1u) {\n"))
+               s9 (string-concat s8 "    if (lid < d) { scratch[lid] = combine(scratch[lid], scratch[lid + d]); }\n    barrier();\n  }\n")]
+           (string-concat s9 "  if (lid == 0u) { parts[gl_WorkGroupID.x] = scratch[0]; }\n}\n")))))
+   :default
 (defn- emit-glsl-baseline
   "The :glsl-v1 :baseline emission: GLSL 450 compute over the ADR-0002
   baseline shapes (elementwise and the workgroup tree reduction) for the
@@ -229,8 +587,28 @@
              "    barrier();\n"
              "  }\n"
              "  if (lid == 0u) { parts[gl_WorkGroupID.x] = scratch[0]; }\n"
-             "}\n")))))
-
+             "}\n"))))))
+#?(:kotoba
+   (defn lower [kir :document target :keyword variant :keyword] :string
+     (let [checked (validate! kir)]
+       (if (not (in-kset? (targets) (document-keyword target)))
+         (throw (ex-info "unsupported accelerator target" {:target target :supported (document-set (document-keyword :wgsl-v1) (document-keyword :cuda-v1) (document-keyword :msl-v1) (document-keyword :glsl-v1))}))
+         (if (not (in-kset? (kernel-variants) (document-keyword variant)))
+           (throw (ex-info "unsupported kernel variant" {:variant variant :supported (document-set (document-keyword :baseline) (document-keyword :warp-shuffle-reduce) (document-keyword :subgroup-reduce))}))
+           (if (document-equal? (document-keyword target) (document-keyword :cuda-v1))
+             (emit-cuda kir variant)
+             (if (document-equal? (document-keyword target) (document-keyword :glsl-v1))
+               (if (document-equal? (document-keyword variant) (document-keyword :baseline))
+                 (emit-glsl-baseline kir)
+                 (if (document-equal? (document-keyword variant) (document-keyword :subgroup-reduce))
+                   (subgroup-emit-glsl kir)
+                   (throw (ex-info "kernel variant not applicable" {:variant variant :target target}))))
+               (if (not (document-equal? (document-keyword variant) (document-keyword :baseline)))
+                 (throw (ex-info "kernel variant not applicable" {:variant variant :target target}))
+                 (if (document-equal? (document-keyword target) (document-keyword :wgsl-v1))
+                   (emit-wgsl kir)
+                   (emit-msl kir)))))))))
+   :default
 (defn lower
   "Lower one validated KIR to `target`'s source text. `variant` defaults to
   :baseline, the byte-identical ADR-0002 emission. A non-baseline variant is
@@ -250,12 +628,22 @@
      :msl-v1 (do (when-not (= :baseline variant)
                    (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))
                  (emit-msl kir))
-     :cuda-v1 (emit-cuda kir variant)
-     :glsl-v1 (case variant
-                :baseline (emit-glsl-baseline kir)
-                :subgroup-reduce (subgroup-reduce/emit-glsl kir)
-                (throw (ex-info "kernel variant not applicable" {:variant variant :target target}))))))
-
+     :cuda-v1 (emit-cuda kir variant)))))
+#?(:kotoba
+   (defn compile-kernel [kir :document target :keyword variant :keyword] :document
+     (let [code (lower kir target variant)
+           payload (document-map (document-keyword :format) (document-keyword :kotoba.gpu-artifact/v1)
+                                 (document-keyword :target) (document-keyword target)
+                                 (document-keyword :kir) kir
+                                 (document-keyword :kir-sha256) (document-string (artifact-sha256 kir))
+                                 (document-keyword :code) (document-string code)
+                                 (document-keyword :code-sha256) (document-string (artifact-sha256 (document-string code)))
+                                 (document-keyword :variant) (document-keyword variant)
+                                 (document-keyword :limits)
+                                 (document-map (document-keyword :max-elements) (document-i64 1073741824)
+                                               (document-keyword :workgroup-size) (dgk kir :kernel/workgroup-size)))]
+       (artifact-seal payload)))
+   :default
 (defn compile-kernel
   ([kir target] (compile-kernel kir target :baseline))
   ([kir target variant]
@@ -265,8 +653,26 @@
                   :code-sha256 (artifact/sha256 code) :variant variant
                   :limits {:max-elements max-static-elements
                            :workgroup-size (:kernel/workgroup-size kir)}}]
-     (artifact/seal payload))))
-
+     (artifact/seal payload)))))
+#?(:kotoba
+   (defn verify-artifact! [compiled :document] :document
+     (if (not (and (document-equal? (dgk compiled :format) (document-keyword :kotoba.gpu-artifact/v1))
+                   (artifact-valid-seal? compiled)
+                   (in-kset? (targets) (dgk compiled :target))))
+       (throw (ex-info "invalid accelerator artifact envelope" {}))
+       (let [checked (validate! (dgk compiled :kir))
+             variant (if (document-contains compiled (document-keyword :variant)) (dgk compiled :variant) (document-keyword :baseline))]
+         (if (not (or (document-equal? variant (document-keyword :baseline))
+                      (document-equal? variant (document-keyword :warp-shuffle-reduce))
+                      (document-equal? variant (document-keyword :subgroup-reduce))))
+           (throw (ex-info "accelerator artifact carries an unsupported variant label" {:variant variant}))
+           (let [expected-code (lower (dgk compiled :kir) (option-value-of [:option :keyword] (document-keyword-value (dgk compiled :target)) :wgsl-v1) (option-value-of [:option :keyword] (document-keyword-value variant) :baseline))]
+             (if (not (and (document-equal? (dgk compiled :kir-sha256) (document-string (artifact-sha256 (dgk compiled :kir))))
+                           (document-equal? (dgk compiled :code-sha256) (document-string (artifact-sha256 (document-string expected-code))))
+                           (document-equal? (dgk compiled :code) (document-string expected-code))))
+               (throw (ex-info "accelerator artifact regeneration mismatch" {}))
+               compiled))))))
+   :default
 (defn verify-artifact! [compiled]
   (when-not (and (= artifact-format (:format compiled)) (artifact/valid-seal? compiled)
                  (targets (:target compiled)))
@@ -275,19 +681,12 @@
   ;; A sealed artifact that predates variants carries no :variant; that is
   ;; :baseline by definition, and re-lowering must still match exactly.
   (let [variant (if (contains? compiled :variant) (:variant compiled) :baseline)
-        _ (when-not (contains? kernel-variants variant)
-            ;; One concept, one refusal phrase: `lower` refuses an unknown
-            ;; variant as "unsupported kernel variant", and the artifact
-            ;; verifier refuses an unknown :variant label with the same
-            ;; vocabulary plus its own context (test pin:
-            ;; variant-artifacts-seal-and-verify). The vocabulary is
-            ;; `kernel-variants` itself (ADR-0359 decision 1): the verifier
-            ;; and `lower`'s admission converge on the same set.
-            (throw (ex-info "accelerator artifact carries an unsupported kernel variant"
+        _ (when-not (contains? #{:baseline :warp-shuffle-reduce :subgroup-reduce} variant)
+            (throw (ex-info "accelerator artifact carries an unsupported variant label"
                             {:variant variant})))
         expected-code (lower (:kir compiled) (:target compiled) variant)]
     (when-not (and (= (:kir-sha256 compiled) (artifact/sha256 (:kir compiled)))
                    (= (:code-sha256 compiled) (artifact/sha256 expected-code))
                    (= (:code compiled) expected-code))
       (throw (ex-info "accelerator artifact regeneration mismatch" {}))))
-  compiled)
+  compiled))
