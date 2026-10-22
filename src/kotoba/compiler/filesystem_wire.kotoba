@@ -1,6 +1,7 @@
 ;; Complete native filesystem framing. Provider acknowledgement is mandatory.
 (ns kotoba.compiler.filesystem-wire
-  {:kotoba/export [request request-bytes answer answer-bytes entries]})
+  {:kotoba/export [request request-bytes answer answer-bytes answer-chunks entries]}
+  (:require [kotoba.compiler.io-buffer :as buffer]))
 
 (defn- failure [message :string] :document
   (document-map (document-keyword :phase) (document-keyword :fs)
@@ -63,6 +64,22 @@
     (result-ok-of [:result :bytes :document] (bytes-slice response 5 (bytes-count response)))
     (result-err-of [:result :bytes :document]
       (failure "filesystem provider did not acknowledge FS2"))))
+
+(defn answer-chunks [response [:list :bytes]] [:result [:ref :io.buffer/value] :document]
+  (let [built (buffer/from-chunks response)]
+    (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] built)) built
+      (loop [chunk-index 0 within 0 marker-index 0]
+        (cond
+          (= marker-index 5)
+          (buffer/drop-prefix (result-value-of [:result [:ref :io.buffer/value] :document] built (buffer/empty-buffer)) 5)
+          (>= chunk-index (vector-count response))
+          (result-err-of [:result [:ref :io.buffer/value] :document] (failure "filesystem provider did not acknowledge FS2"))
+          :else
+          (let [chunk (typed-list-nth [:list :bytes] response chunk-index) n (bytes-count chunk)]
+            (if (= within n) (recur (+ chunk-index 1) 0 marker-index)
+              (if (not= (bytes-at chunk within) (case marker-index 0 0 1 70 2 83 3 50 0))
+                (result-err-of [:result [:ref :io.buffer/value] :document] (failure "filesystem provider did not acknowledge FS2"))
+                (recur chunk-index (+ within 1) (+ marker-index 1))))))))))
 
 (defn entries [response :string] [:result [:list :string] :document]
   "Decode complete name/NUL/0-or-1/NUL records; names retain TAB, LF and tokens."

@@ -1,0 +1,191 @@
+;; Segmented logical values. No aggregate string/bytes flattening or host IO.
+(ns kotoba.compiler.io-buffer
+  {:kotoba/export [empty-buffer from-bytes from-string from-chunks append-chunk concat-buffers
+                   byte-count chunk-count chunk-at start-cursor next-byte as-text text-buffer
+                   start-text-cursor next-code-point drop-prefix]}
+  (:schemas
+   {:io.buffer/value [:record :io.buffer/value [[:chunks [:list :bytes]] [:size :i64]]]
+    :io.buffer/text [:record :io.buffer/text [[:value [:ref :io.buffer/value]]]]
+    :io.buffer/cursor [:record :io.buffer/cursor
+                       [[:chunks [:list :bytes]] [:chunk :i64] [:within :i64] [:position :i64] [:size :i64]]]
+    :io.buffer/byte-step [:record :io.buffer/byte-step [[:byte :i64] [:next [:ref :io.buffer/cursor]]]]
+    :io.buffer/code-point [:record :io.buffer/code-point [[:value :i64] [:next [:ref :io.buffer/cursor]]]]}))
+
+(defn- error [reason :keyword offset :i64] :document
+  (document-map (document-keyword :phase) (document-keyword :buffer)
+    (document-keyword :reason) (document-keyword reason) (document-keyword :offset) (document-i64 offset)))
+(defn empty-buffer [] [:ref :io.buffer/value]
+  (record-new [:ref :io.buffer/value] (typed-list-new [:list :bytes]) 0))
+(defn from-bytes [bytes :bytes] [:ref :io.buffer/value]
+  (if (= (bytes-count bytes) 0) (empty-buffer)
+    (record-new [:ref :io.buffer/value]
+      (typed-list-conj [:list :bytes] (typed-list-new [:list :bytes]) bytes) (bytes-count bytes))))
+(defn from-string [text :string] [:ref :io.buffer/value] (from-bytes (string-to-utf8 text)))
+(defn byte-count [value [:ref :io.buffer/value]] :i64 (record-get [:ref :io.buffer/value] value :size))
+(defn chunk-count [value [:ref :io.buffer/value]] :i64
+  (vector-count (record-get [:ref :io.buffer/value] value :chunks)))
+(defn chunk-at [value [:ref :io.buffer/value] index :i64] [:option :bytes]
+  (if (or (< index 0) (>= index (chunk-count value))) (option-none-of [:option :bytes])
+    (option-some-of [:option :bytes]
+      (typed-list-nth [:list :bytes] (record-get [:ref :io.buffer/value] value :chunks) index))))
+
+(defn from-chunks [chunks [:list :bytes]] [:result [:ref :io.buffer/value] :document]
+  (loop [index 0 size 0 out (typed-list-new [:list :bytes])]
+    (if (= index (vector-count chunks))
+      (result-ok-of [:result [:ref :io.buffer/value] :document] (record-new [:ref :io.buffer/value] out size))
+      (let [chunk (typed-list-nth [:list :bytes] chunks index) length (bytes-count chunk)]
+        (if (> length (- 9223372036854775807 size))
+          (result-err-of [:result [:ref :io.buffer/value] :document] (error :buffer/too-large size))
+          (recur (+ index 1) (+ size length)
+            (if (= length 0) out (typed-list-conj [:list :bytes] out chunk))))))))
+(defn- checked [value [:ref :io.buffer/value]] [:result [:ref :io.buffer/value] :document]
+  (let [built (from-chunks (record-get [:ref :io.buffer/value] value :chunks))]
+    (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] built)) built
+      (if (= (byte-count (result-value-of [:result [:ref :io.buffer/value] :document] built (empty-buffer)))
+             (byte-count value)) built
+        (result-err-of [:result [:ref :io.buffer/value] :document] (error :buffer/size-mismatch 0))))))
+(defn append-chunk [value [:ref :io.buffer/value] bytes :bytes] [:result [:ref :io.buffer/value] :document]
+  (let [valid (checked value)]
+    (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] valid)) valid
+      (let [v (result-value-of [:result [:ref :io.buffer/value] :document] valid (empty-buffer))
+            n (bytes-count bytes) size (byte-count v)]
+        (if (> n (- 9223372036854775807 size))
+          (result-err-of [:result [:ref :io.buffer/value] :document] (error :buffer/too-large size))
+          (result-ok-of [:result [:ref :io.buffer/value] :document]
+            (if (= n 0) v
+              (record-new [:ref :io.buffer/value]
+                (typed-list-conj [:list :bytes] (record-get [:ref :io.buffer/value] v :chunks) bytes) (+ size n)))))))))
+(defn concat-buffers [a [:ref :io.buffer/value] b [:ref :io.buffer/value]] [:result [:ref :io.buffer/value] :document]
+  (let [left (checked a) right (checked b)]
+    (cond
+      (not (result-ok?-of [:result [:ref :io.buffer/value] :document] left)) left
+      (not (result-ok?-of [:result [:ref :io.buffer/value] :document] right)) right
+      :else
+      (let [x (result-value-of [:result [:ref :io.buffer/value] :document] left (empty-buffer))
+            y (result-value-of [:result [:ref :io.buffer/value] :document] right (empty-buffer))
+            chunks (record-get [:ref :io.buffer/value] y :chunks)]
+        (loop [index 0 out (record-get [:ref :io.buffer/value] x :chunks)]
+          (if (= index (vector-count chunks)) (from-chunks out)
+            (recur (+ index 1) (typed-list-conj [:list :bytes] out (typed-list-nth [:list :bytes] chunks index)))))))))
+
+(defn start-cursor [value [:ref :io.buffer/value]] [:result [:ref :io.buffer/cursor] :document]
+  (let [valid (checked value)]
+    (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] valid))
+      (result-err-of [:result [:ref :io.buffer/cursor] :document]
+        (result-error-of [:result [:ref :io.buffer/value] :document] valid (document-null)))
+      (let [v (result-value-of [:result [:ref :io.buffer/value] :document] valid (empty-buffer))]
+        (result-ok-of [:result [:ref :io.buffer/cursor] :document]
+          (record-new [:ref :io.buffer/cursor] (record-get [:ref :io.buffer/value] v :chunks) 0 0 0 (byte-count v)))))))
+(defn next-byte [cursor [:ref :io.buffer/cursor]] [:result [:option [:ref :io.buffer/byte-step]] :document]
+  (let [chunks (record-get [:ref :io.buffer/cursor] cursor :chunks)
+        position (record-get [:ref :io.buffer/cursor] cursor :position)
+        size (record-get [:ref :io.buffer/cursor] cursor :size)]
+    (if (or (< position 0) (> position size))
+      (result-err-of [:result [:option [:ref :io.buffer/byte-step]] :document] (error :buffer/cursor position))
+      (if (= position size)
+        (result-ok-of [:result [:option [:ref :io.buffer/byte-step]] :document] (option-none-of [:option [:ref :io.buffer/byte-step]]))
+        (loop [index (record-get [:ref :io.buffer/cursor] cursor :chunk)
+               within (record-get [:ref :io.buffer/cursor] cursor :within)]
+          (if (or (< index 0) (>= index (vector-count chunks)) (< within 0))
+            (result-err-of [:result [:option [:ref :io.buffer/byte-step]] :document] (error :buffer/cursor position))
+            (let [chunk (typed-list-nth [:list :bytes] chunks index) n (bytes-count chunk)]
+              (cond
+                (> within n) (result-err-of [:result [:option [:ref :io.buffer/byte-step]] :document] (error :buffer/cursor position))
+                (= within n) (recur (+ index 1) 0)
+                :else (result-ok-of [:result [:option [:ref :io.buffer/byte-step]] :document]
+                        (option-some-of [:option [:ref :io.buffer/byte-step]]
+                          (record-new [:ref :io.buffer/byte-step] (bytes-at chunk within)
+                            (record-new [:ref :io.buffer/cursor] chunks index (+ within 1) (+ position 1) size))))))))))))
+
+(defn drop-prefix [value [:ref :io.buffer/value] count :i64] [:result [:ref :io.buffer/value] :document]
+  (let [valid (checked value)]
+    (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] valid)) valid
+      (if (or (< count 0) (> count (byte-count value)))
+        (result-err-of [:result [:ref :io.buffer/value] :document] (error :buffer/slice count))
+        (let [v (result-value-of [:result [:ref :io.buffer/value] :document] valid (empty-buffer))
+              chunks (record-get [:ref :io.buffer/value] v :chunks)]
+          (loop [index 0 left count out (typed-list-new [:list :bytes])]
+            (if (= index (vector-count chunks)) (from-chunks out)
+              (let [chunk (typed-list-nth [:list :bytes] chunks index) n (bytes-count chunk)]
+                (if (>= left n) (recur (+ index 1) (- left n) out)
+                  (recur (+ index 1) 0
+                    (typed-list-conj [:list :bytes] out (if (= left 0) chunk (bytes-slice chunk left n)))))))))))))
+
+(defn- continuation [lead :i64 remaining :i64 acc :i64 first? :bool
+                     cursor [:ref :io.buffer/cursor] start :i64] [:result [:ref :io.buffer/code-point] :document]
+  (if (= remaining 0)
+    (result-ok-of [:result [:ref :io.buffer/code-point] :document] (record-new [:ref :io.buffer/code-point] acc cursor))
+    (let [read (next-byte cursor)]
+      (if (not (result-ok?-of [:result [:option [:ref :io.buffer/byte-step]] :document] read))
+        (result-err-of [:result [:ref :io.buffer/code-point] :document]
+          (result-error-of [:result [:option [:ref :io.buffer/byte-step]] :document] read (document-null)))
+        (let [value (result-value-of [:result [:option [:ref :io.buffer/byte-step]] :document] read
+                      (option-none-of [:option [:ref :io.buffer/byte-step]]))]
+          (if (not (option-some?-of [:option [:ref :io.buffer/byte-step]] value))
+            (result-err-of [:result [:ref :io.buffer/code-point] :document] (error :utf8/truncated start))
+            (let [step (option-value-of [:option [:ref :io.buffer/byte-step]] value
+                         (record-new [:ref :io.buffer/byte-step] 0 cursor))
+                  byte (record-get [:ref :io.buffer/byte-step] step :byte)
+                  reason (cond
+                           (or (< byte 128) (> byte 191)) :utf8/bad-continuation
+                           (and first? (or (and (= lead 224) (< byte 160)) (and (= lead 240) (< byte 144)))) :utf8/overlong
+                           (and first? (= lead 237) (>= byte 160)) :utf8/surrogate
+                           (and first? (= lead 244) (>= byte 144)) :utf8/above-max
+                           :else :ok)]
+              (if (not= reason :ok)
+                (result-err-of [:result [:ref :io.buffer/code-point] :document]
+                  (error reason (if (= reason :utf8/bad-continuation)
+                                  (record-get [:ref :io.buffer/cursor] cursor :position) start)))
+                (continuation lead (- remaining 1) (+ (* acc 64) (- byte 128)) false
+                  (record-get [:ref :io.buffer/byte-step] step :next) start)))))))))
+(defn next-code-point [cursor [:ref :io.buffer/cursor]] [:result [:option [:ref :io.buffer/code-point]] :document]
+  (let [read (next-byte cursor)]
+    (if (not (result-ok?-of [:result [:option [:ref :io.buffer/byte-step]] :document] read))
+      (result-err-of [:result [:option [:ref :io.buffer/code-point]] :document]
+        (result-error-of [:result [:option [:ref :io.buffer/byte-step]] :document] read (document-null)))
+      (let [value (result-value-of [:result [:option [:ref :io.buffer/byte-step]] :document] read
+                    (option-none-of [:option [:ref :io.buffer/byte-step]]))]
+        (if (not (option-some?-of [:option [:ref :io.buffer/byte-step]] value))
+          (result-ok-of [:result [:option [:ref :io.buffer/code-point]] :document] (option-none-of [:option [:ref :io.buffer/code-point]]))
+          (let [step (option-value-of [:option [:ref :io.buffer/byte-step]] value (record-new [:ref :io.buffer/byte-step] 0 cursor))
+                lead (record-get [:ref :io.buffer/byte-step] step :byte)
+                tail (record-get [:ref :io.buffer/byte-step] step :next)
+                start (record-get [:ref :io.buffer/cursor] cursor :position)
+                reason (cond (<= lead 127) :ok (<= lead 191) :utf8/unexpected-continuation
+                             (<= lead 193) :utf8/overlong (<= lead 244) :ok :else :utf8/invalid-byte)]
+            (if (not= reason :ok)
+              (result-err-of [:result [:option [:ref :io.buffer/code-point]] :document] (error reason start))
+              (let [decoded (if (<= lead 127)
+                              (result-ok-of [:result [:ref :io.buffer/code-point] :document]
+                                (record-new [:ref :io.buffer/code-point] lead tail))
+                              (continuation lead (if (<= lead 223) 1 (if (<= lead 239) 2 3))
+                                (bit-and lead (if (<= lead 223) 31 (if (<= lead 239) 15 7))) true tail start))]
+                (if (not (result-ok?-of [:result [:ref :io.buffer/code-point] :document] decoded))
+                  (result-err-of [:result [:option [:ref :io.buffer/code-point]] :document]
+                    (result-error-of [:result [:ref :io.buffer/code-point] :document] decoded (document-null)))
+                  (result-ok-of [:result [:option [:ref :io.buffer/code-point]] :document]
+                    (option-some-of [:option [:ref :io.buffer/code-point]]
+                      (result-value-of [:result [:ref :io.buffer/code-point] :document] decoded
+                        (record-new [:ref :io.buffer/code-point] 0 cursor)))))))))))))
+(defn as-text [value [:ref :io.buffer/value]] [:result [:ref :io.buffer/text] :document]
+  (let [initial (start-cursor value)]
+    (if (not (result-ok?-of [:result [:ref :io.buffer/cursor] :document] initial))
+      (result-err-of [:result [:ref :io.buffer/text] :document]
+        (result-error-of [:result [:ref :io.buffer/cursor] :document] initial (document-null)))
+      (loop [cursor (result-value-of [:result [:ref :io.buffer/cursor] :document] initial
+                      (record-new [:ref :io.buffer/cursor] (typed-list-new [:list :bytes]) 0 0 0 0))]
+        (let [read (next-code-point cursor)]
+          (if (not (result-ok?-of [:result [:option [:ref :io.buffer/code-point]] :document] read))
+            (result-err-of [:result [:ref :io.buffer/text] :document]
+              (result-error-of [:result [:option [:ref :io.buffer/code-point]] :document] read (document-null)))
+            (let [point (result-value-of [:result [:option [:ref :io.buffer/code-point]] :document] read
+                          (option-none-of [:option [:ref :io.buffer/code-point]]))]
+              (if (not (option-some?-of [:option [:ref :io.buffer/code-point]] point))
+                (result-ok-of [:result [:ref :io.buffer/text] :document] (record-new [:ref :io.buffer/text] value))
+                (recur (record-get [:ref :io.buffer/code-point]
+                         (option-value-of [:option [:ref :io.buffer/code-point]] point
+                           (record-new [:ref :io.buffer/code-point] 0 cursor)) :next))))))))))
+(defn text-buffer [value [:ref :io.buffer/text]] [:ref :io.buffer/value]
+  (record-get [:ref :io.buffer/text] value :value))
+(defn start-text-cursor [value [:ref :io.buffer/text]] [:result [:ref :io.buffer/cursor] :document]
+  (start-cursor (text-buffer value)))

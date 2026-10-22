@@ -603,14 +603,15 @@
 ;; op 49: the typed fs/app-data contract constrains the form before path
 ;; access. Raw calls require FS2 in the mechanism, never legacy token parsing.
 ;; 1 = old string/string surface; 8 = bytes/bytes write or append;
-;; 9 = string/bytes read or range. No other form gains a raw-byte meaning.
+;; 9 = string/bytes and 10 = string/list<bytes> read or range. No other form
+;; gains a raw-byte meaning; one provider operation retains one descriptor.
 (defn- typed-fs-form-admitted [kind form]
   (cond
     (< form 0) 0
     (> form 15) 0
     (= kind 1) 1
     (= kind 8) (if (or (= form 1) (= form 2)) 1 0)
-    (= kind 9) (if (or (= form 0) (= form 4)) 1 0)
+    (or (= kind 9) (= kind 10)) (if (or (= form 0) (= form 4)) 1 0)
     :else 0))
 
 (defn decide [op a b c d]

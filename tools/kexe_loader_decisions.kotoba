@@ -167,15 +167,16 @@
 ;; Typed kinds: 1 string, 2 option-i64, 3 result-i64, 4 clock-v1,
 ;; 5 dataspace-v1, 6 ui-commit-v1, 7 ui-event-v1.
 ;; Native proposal: 8 bytes-v1 (bytes/bytes), 9 string-bytes-v1
-;; (string/bytes). These are whole-contract discriminators, not primitive
-;; type tags. Only fs/app-data wire 35 owns the two raw-byte contracts.
+;; (string/bytes), 10 string-byte-chunks-v1 (string/list<bytes>). These
+;; are whole-contract discriminators, not primitive type tags. Only wire 35
+;; owns these raw/segmented byte contracts.
 (defn- cap-provider [id kind]
   (cond
     (= kind 4) (if (= id 7) 1 -1)
     (= kind 5) (if (= id 24) 2 0)
     (= kind 6) (if (= id 9) 3 0)
     (= kind 7) (if (= id 10) 4 0)
-    (or (= kind 8) (= kind 9)) (if (= id 35) 5 -1)
+    (or (= kind 8) (= kind 9) (= kind 10)) (if (= id 35) 5 -1)
     (= kind 1) (cond (= id 35) 5
                      (= id 34) 6
                      (= id 39) 7

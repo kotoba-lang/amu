@@ -1,7 +1,8 @@
 ;; Canonical filesystem capability boundary, only with acknowledged FS2 frames.
 (ns kotoba.compiler.filesystem
-  {:kotoba/export [app-data browse read-bytes read-range write-bytes! append-bytes!]}
-  (:require [kotoba.compiler.filesystem-wire :as wire])
+  {:kotoba/export [app-data browse read-bytes read-range read-chunks read-range-chunks write-bytes! append-bytes!]}
+  (:require [kotoba.compiler.filesystem-wire :as wire]
+            [kotoba.compiler.io-buffer :as buffer])
   (:capabilities #{:fs/app-data :fs/browse}))
 
 (defn app-data [form :i64 path :string tail :string] [:result :string :document]
@@ -64,3 +65,18 @@
 
 (defn append-bytes! [path :string bytes :bytes] [:result :bytes :document]
   (write-data 2 path bytes))
+
+(defn- read-data-chunks [form :i64 path :string tail :string] [:result [:ref :io.buffer/value] :document]
+  (let [request (wire/request form path tail)]
+    (if (not (result-ok?-of [:result :string :document] request))
+      (result-err-of [:result [:ref :io.buffer/value] :document]
+        (result-error-of [:result :string :document] request (document-null)))
+      (wire/answer-chunks (typed-cap-call :fs/app-data :string [:list :bytes]
+                            (result-value-of [:result :string :document] request ""))))))
+(defn read-chunks [path :string] [:result [:ref :io.buffer/value] :document]
+  (read-data-chunks 0 path ""))
+(defn read-range-chunks [path :string offset :i64 length :i64] [:result [:ref :io.buffer/value] :document]
+  (if (or (< offset 0) (< length 0))
+    (result-err-of [:result [:ref :io.buffer/value] :document]
+      (fs-error "filesystem range requires nonnegative offset and length" path))
+    (read-data-chunks 4 path (string-concat (string-from-i64 offset) (string-concat ":" (string-from-i64 length))))))
