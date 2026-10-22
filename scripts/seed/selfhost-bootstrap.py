@@ -91,7 +91,11 @@ def main(out):
         image = out / f"S{g}.elf"
         gens.append(dict(name=f"S{g}", producedBy=producer.name, pin=compile_(producer, source, image, "aarch64-linux", "static", f"S{g}")))
         producer = image
-    assert gens[0]["pin"] == gens[1]["pin"] == gens[2]["pin"], "aarch64 static fixed point mismatch"
+    # S2 = S3 is the fixed point. S1 also equals them when the root's code
+    # generator matches the source; after a codegen change it differs once,
+    # and the root is then re-pinned to S3 (recorded as rootReproduces).
+    assert gens[1]["pin"] == gens[2]["pin"], "aarch64 static fixed point mismatch"
+    root_reproduces = gens[0]["pin"] == gens[1]["pin"] == pin(ROOT / ROOT_IMAGE)
     S = out / "S3.elf"
 
     # 2. runners and the x86_64 compiler, from S3
@@ -164,13 +168,13 @@ def main(out):
 
     report = dict(status="PASS_LOADERLESS_SELFHOST_BOOTSTRAP", host=[platform.system(), platform.machine(), platform.release()],
                   root=dict(image=pin(ROOT / ROOT_IMAGE), receipt=root_receipt), sourceGraph=source_pins,
-                  generations=gens, built=built,
+                  generations=gens, rootReproduces=root_reproduces, built=built,
                   adopted=dict(sourceGraph=adopted_pins, runnerStackBytes=int(ADOPTED_STACK), generations=adopted_gens,
                                expectedNativeImage=adoption["nativeImageSHA256"]),
                   cases=results, hardening=hardening,
                   cCompilerOrLoader=False, JVMNodeOrGraalFallback=False, emulation=False)
     (out / "selfhost-bootstrap.json").write_text(json.dumps(report, indent=2) + "\n")
-    print(report["status"], "S1=S2=S3", gens[0]["pin"]["sha256"][:16], "adopted G1=G2=G3", len(results), "cases", flush=True)
+    print(report["status"], "S2=S3", gens[2]["pin"]["sha256"][:16], "root reproduces" if root_reproduces else "root differs (re-pin to S3)", "adopted G1=G2=G3", len(results), "cases", flush=True)
 
 
 if __name__ == "__main__":

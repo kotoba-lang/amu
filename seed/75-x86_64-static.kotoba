@@ -41,8 +41,11 @@
     6 (-> M (xg-load t 0x8d8b4c) (xg-rel 0xe8 1 1 (xg-get M 1))
           (xg-bytes 0xf84d8b4c 4) (xg-save t))
     7 (xg-bytes M 0x0b0f 2)
-    ;; (kxrt-call-at addr ctx): an external KX64V1 entry, r9 = context.
-    8 (-> M (xg-load (inc t) 0x8d8b4c) (xg-load t 0x858b48) (xg-bytes 0xd0ff 2)
+    ;; (kxrt-call-at addr ctx argv): an external KX64V1 entry as the loader's
+    ;; fn(a0..a4, context): rdi..r8 from the five words at argv, r9 = context.
+    8 (-> M (xg-load (+ t 2) 0x858b48) (xg-bytes 0x388b48 3) (xg-bytes 0x08708b48 4)
+          (xg-bytes 0x10508b48 4) (xg-bytes 0x18488b48 4) (xg-bytes 0x20408b4c 4)
+          (xg-load (inc t) 0x8d8b4c) (xg-load t 0x858b48) (xg-bytes 0xd0ff 2)
           (xg-bytes 0xf84d8b4c 4) (xg-save t))
     (xg-err M 7101 OP-CALL)))
 
