@@ -1,0 +1,125 @@
+(ns kotoba.compiler.f64-text
+  "Host-independent, finite binary64 text for native document values."
+  (:export [finite-bits? format-bits])
+  (:require [kotoba.compiler.decimal-bits :as decimal]))
+
+;; Generate exact decimal digits with integer arithmetic, then choose the first
+;; ties-to-even rounded prefix that parses back to the original bits. Every
+;; finite binary64 has such a prefix by17 significant digits. No host float
+;; printer, float arithmetic, platform locale, C runtime or numeric cast is used.
+(defn finite-bits? [bits :i64] :bool
+  (not (= (bit-and (u64-shift-right bits 52) 2047) 2047)))
+
+(defn- digit [value :i64] :string
+  (string-substring "0123456789" value (+ value 1)))
+(defn- multiply [text :string factor :i64] :string
+  (loop [i (- (string-byte-length text) 1) carry 0 out ""]
+    (if (< i 0)
+      (if (= carry 0) out (string-concat (digit carry) out))
+      (let [value (+ (* (- (string-code-point-at text i) 48) factor) carry)
+            next-carry (quot value 10)]
+        (recur (- i 1) next-carry
+               (string-concat (digit (- value (* next-carry 10))) out))))))
+(defn- multiply-power [text :string factor :i64 exponent :i64] :string
+  (loop [i 0 current text]
+    (if (>= i exponent) current
+      (recur (+ i 1) (multiply current factor)))))
+(defn- zeros [count :i64] :string
+  (loop [i 0 out ""]
+    (if (>= i count) out (recur (+ i 1) (string-concat out "0")))))
+(defn- increment [text :string] :string
+  (loop [i (- (string-byte-length text) 1) suffix ""]
+    (if (< i 0)
+      (string-concat "1" suffix)
+      (let [d (- (string-code-point-at text i) 48)]
+        (if (= d 9)
+          (recur (- i 1) (string-concat "0" suffix))
+          (string-concat (string-substring text 0 i)
+            (string-concat (digit (+ d 1)) suffix)))))))
+(defn- nonzero-after? [text :string start :i64] :bool
+  (loop [i start]
+    (if (>= i (string-byte-length text)) false
+      (if (not (= (string-code-point-at text i) 48)) true (recur (+ i 1))))))
+(defn- round-prefix [text :string count :i64 mode :i64] :string
+  (let [length (string-byte-length text)
+        prefix (string-substring text 0 (if (< count length) count length))]
+    (if (>= count length)
+      prefix
+      (let [next (- (string-code-point-at text count) 48)
+            last (- (string-code-point-at text (- count 1)) 48)
+            up (cond (= mode -1) false
+                     (= mode 1) (nonzero-after? text count)
+                     :else (or (> next 5)
+                               (and (= next 5)
+                                    (or (nonzero-after? text (+ count 1)) (= (bit-and last 1) 1)))))
+            rounded (if up (increment prefix) prefix)]
+        rounded))))
+(defn- trim-zeroes [text :string] :string
+  (loop [n (string-byte-length text)]
+    (if (and (> n 1) (= (string-code-point-at text (- n 1)) 48))
+      (recur (- n 1))
+      (string-substring text 0 n))))
+(defn- render [rounded :string original-order :i64 count :i64 negative :bool] :string
+  (let [carry (> (string-byte-length rounded) count)
+        digits (trim-zeroes (if carry (string-substring rounded 0 count) rounded))
+        order (if carry (+ original-order 1) original-order)
+        length (string-byte-length digits)
+        point (+ order 1)
+        body (cond
+               (or (< order -6) (>= order 21))
+               (string-concat (string-substring digits 0 1)
+                 (string-concat
+                   (if (> length 1) (string-concat "." (string-substring digits 1 length)) "")
+                   (string-concat "e" (string-from-i64 order))))
+               (<= point 0)
+               (string-concat "0." (string-concat (zeros (- 0 point)) digits))
+               (>= point length)
+               (string-concat digits (string-concat (zeros (- point length)) ".0"))
+               :else
+               (string-concat (string-substring digits 0 point)
+                              (string-concat "." (string-substring digits point length))))]
+    (if negative (string-concat "-" body) body)))
+(defn- shortest [digits :string order :i64 bits :i64] [:result :string :keyword]
+  (loop [count 1]
+    (if (> count 17)
+      (result-err-of [:result :string :keyword] :f64-text/no-roundtrip)
+      ;; At a power-of-two boundary the rounding interval is asymmetric.
+      ;; Check both adjacent decimal lattice points as well as the nearest
+      ;; ties-to-even point; the nearest alone may miss a shorter spelling.
+      (let [nearest (render (round-prefix digits count 0) order count (< bits 0))
+            low (render (round-prefix digits count -1) order count (< bits 0))
+            high (render (round-prefix digits count 1) order count (< bits 0))
+            parsed (decimal/decimal-f64-bits nearest)
+            low-parsed (decimal/decimal-f64-bits low)
+            high-parsed (decimal/decimal-f64-bits high)]
+        (cond
+          (and (option-some?-of [:option :i64] parsed)
+               (= (option-value-of [:option :i64] parsed 0) bits))
+          (result-ok-of [:result :string :keyword] nearest)
+          (and (option-some?-of [:option :i64] low-parsed)
+               (= (option-value-of [:option :i64] low-parsed 0) bits))
+          (result-ok-of [:result :string :keyword] low)
+          (and (option-some?-of [:option :i64] high-parsed)
+               (= (option-value-of [:option :i64] high-parsed 0) bits))
+          (result-ok-of [:result :string :keyword] high)
+          :else (recur (+ count 1)))))))
+
+(defn format-bits [bits :i64] [:result :string :keyword]
+  "Shortest round-trip finite decimal; integral values retain an EDN float
+  marker. Signed zero is preserved here; document identity normalizes it at
+  the canonical-byte boundary. NaN and infinities return a typed refusal."
+  (if (not (finite-bits? bits))
+    (result-err-of [:result :string :keyword] :f64-text/non-finite)
+    (let [magnitude (bit-and bits 9223372036854775807)]
+      (if (= magnitude 0)
+        (result-ok-of [:result :string :keyword] (if (< bits 0) "-0.0" "0.0"))
+        (let [exponent (bit-and (u64-shift-right bits 52) 2047)
+              fraction (bit-and bits 4503599627370495)
+              mantissa (if (= exponent 0) fraction (+ fraction 4503599627370496))
+              binary-exponent (if (= exponent 0) -1074 (- exponent 1075))
+              places (if (< binary-exponent 0) (- 0 binary-exponent) 0)
+              digits (multiply-power (string-from-i64 mantissa)
+                                     (if (< binary-exponent 0) 5 2)
+                                     (if (< binary-exponent 0) (- 0 binary-exponent) binary-exponent))
+              order (- (- (string-byte-length digits) places) 1)]
+          (shortest digits order bits))))))
