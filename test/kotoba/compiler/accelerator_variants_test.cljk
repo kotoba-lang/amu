@@ -207,9 +207,12 @@
   ;; subgroup-size-parametric emission (the warp's 32 is queried at runtime
   ;; like every other width, never baked), and it carries the CUDA row's
   ;; sm_70+ floor fail-closed on a REPORTED compute capability. The CUDA
-  ;; route keeps :warp-shuffle-reduce (rule 3: each route's emitter admits
-  ;; its own variant), and every target outside the Vulkan route answers
-  ;; :baseline.
+  ;; route keeps :warp-shuffle-reduce -- its own decided row; since
+  ;; 2026-10-23 the CUDA emitter ADMITS :subgroup-reduce too (the CUDA arm
+  ;; of the emission landed), so the reason the CUDA route keeps
+  ;; :warp-shuffle-reduce is the row's own scope, not rule 3: extending
+  ;; NVIDIA's CUDA-route row is a separate per-vendor decision, undecided
+  ;; -- and every target outside the Vulkan route answers :baseline.
   (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
         capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
         answer (variants/select-variant :nvidia kir :vulkan capable)]
@@ -269,7 +272,7 @@
       (doseq [target [:webgpu :wgsl-v1]]
         (is (= :baseline (:variant (variants/select-variant :intel ewise target capable))))
         (is (= :baseline (:variant (variants/select-variant :arm malformed target capable)))))))
-  (testing "the MSL route still answers :baseline for every vendor (rule 3: the MSL emitter admits :baseline only)"
+  (testing "the MSL route still answers :baseline for every vendor (the route is outside the rows' routes -- the MSL emitter has admitted :subgroup-reduce since 2026-10-23 and selection there answers :baseline by row scope)"
     (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
           capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
       (doseq [vendor [:intel :arm] target [:msl-v1 :metal]]

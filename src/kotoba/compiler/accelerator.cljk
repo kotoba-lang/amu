@@ -184,6 +184,9 @@
 ;; the MSL arm of the same emission (subgroup-reduce's emit-msl), same idiom.
 #?(:kotoba
    (defn- subgroup-emit-msl [kir :document] :string (subgroup-reduce/emit-msl kir)))
+;; the CUDA arm of the same emission (subgroup-reduce's emit-cuda), same idiom.
+#?(:kotoba
+   (defn- subgroup-emit-cuda [kir :document] :string (subgroup-reduce/emit-cuda kir)))
 ;; the artifact seal check (kotoba.artifact.core's valid-seal?)
 #?(:kotoba
    (defn- artifact-valid-seal? [v :document] :bool (artifact/valid-seal? v)))
@@ -436,9 +439,11 @@
            wg (option-value-of [:option :i64] (document-i64-value (dgk kir :kernel/workgroup-size)) 256)]
        (if (not (or (document-equal? (document-keyword variant) (document-keyword :baseline))
                     (document-equal? (document-keyword variant) (document-keyword :warp-shuffle-reduce))))
-         ;; :subgroup-reduce is the Vulkan/GLSL arm; the CUDA emitter does not
-         ;; admit it. Rule 3: a variant the target's emitter does not admit is
-         ;; refused here, never silently answered as :baseline.
+         ;; :subgroup-reduce has its own CUDA arm (subgroup-reduce's
+         ;; emit-cuda, routed by `lower`); this emitter answers :baseline
+         ;; and :warp-shuffle-reduce only. Rule 3's fail-closed contract is
+         ;; unchanged: a variant this emitter does not carry is refused
+         ;; here, never silently answered as :baseline.
          (throw (ex-info "kernel variant not applicable" {:variant variant :target :cuda-v1}))
        (if (document-equal? (document-keyword variant) (document-keyword :warp-shuffle-reduce))
          (if (and (document-equal? op (document-keyword :reduce)) (and (= (document-kind (dgk kir :kernel/workgroup-size)) :i64) (<= 32 wg)))
@@ -465,9 +470,11 @@
       (throw (ex-info "kernel variant not applicable"
                       {:variant variant :op op :workgroup-size (:kernel/workgroup-size kir)})))
     (when-not (contains? #{:baseline :warp-shuffle-reduce} variant)
-      ;; :subgroup-reduce is the Vulkan/GLSL arm; the CUDA emitter does not
-      ;; admit it. Rule 3: a variant the target's emitter does not admit is
-      ;; refused here, never silently answered as :baseline.
+      ;; :subgroup-reduce has its own CUDA arm (subgroup-reduce's
+      ;; emit-cuda, routed by `lower`); this emitter answers :baseline
+      ;; and :warp-shuffle-reduce only. Rule 3's fail-closed contract is
+      ;; unchanged: a variant this emitter does not carry is refused
+      ;; here, never silently answered as :baseline.
       (throw (ex-info "kernel variant not applicable" {:variant variant :target :cuda-v1})))
     (case op
       :ewise
@@ -606,7 +613,9 @@
          (if (not (in-kset? (kernel-variants) (document-keyword variant)))
            (throw (ex-info "unsupported kernel variant" {:variant variant :supported (document-set (document-keyword :baseline) (document-keyword :warp-shuffle-reduce) (document-keyword :subgroup-reduce))}))
            (if (document-equal? (document-keyword target) (document-keyword :cuda-v1))
-             (emit-cuda kir variant)
+             (if (document-equal? (document-keyword variant) (document-keyword :subgroup-reduce))
+               (subgroup-emit-cuda kir)
+               (emit-cuda kir variant))
              (if (document-equal? (document-keyword target) (document-keyword :glsl-v1))
                (if (document-equal? (document-keyword variant) (document-keyword :baseline))
                  (emit-glsl-baseline kir)
@@ -646,7 +655,9 @@
                :baseline (emit-msl kir)
                :subgroup-reduce (subgroup-reduce/emit-msl kir)
                (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))
-     :cuda-v1 (emit-cuda kir variant)
+     :cuda-v1 (case variant
+               :subgroup-reduce (subgroup-reduce/emit-cuda kir)
+               (emit-cuda kir variant))
      :glsl-v1 (case variant
                 :baseline (emit-glsl-baseline kir)
                 :subgroup-reduce (subgroup-reduce/emit-glsl kir)

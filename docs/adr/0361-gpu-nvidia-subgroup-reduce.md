@@ -27,8 +27,10 @@ too -- a reported capability below 7.0, or a malformed one, answers
 (the reported subgroup facts are the capability evidence there, exactly as
 for the other three rows). Every other answer -- the CUDA route, a device
 that confirms no capability, another shape -- is what the rules already
-say: the CUDA route keeps its own `:warp-shuffle-reduce` row (rule 3: each
-route's emitter admits its own variant), and the rest answer `:baseline`.
+say: the CUDA route keeps its own `:warp-shuffle-reduce` row (its decided
+row -- since 2026-10-23 the CUDA emitter ADMITS `:subgroup-reduce` too,
+see the amendment below, so the reason is row scope and not rule 3), and
+the rest answer `:baseline`.
 The rules of ADR-0356 bind this row, and ADR-0357's P1 (the `:sum`
 association scope) and P2 (subgroup IDs, not `lid` arithmetic) bind the
 emission byte-for-byte: this row reuses the existing emission, it emits
@@ -104,3 +106,36 @@ wire-42 route exists again (ADR-0371 provider; ADR-0355's honest state),
 so today the row stays `:measured? false` in every answer, and neither
 the provisional workgroup rows of ADR-0355 nor the measured ones of
 ADR-0358 are touched by this ADR.
+
+## Amendment (2026-10-23: the CUDA arm of the shared emission lands)
+
+The subgroup-size-parametric emission gains its CUDA arm
+(`kotoba.compiler.accelerator-subgroup-reduce/emit-cuda`) and `lower`
+admits the (`:cuda-v1`, `:subgroup-reduce`) pair in both readings --
+rule 3's emission-admission-first now holds on the CUDA path too, and the
+fold has all four emitters covered (GLSL 2026-10-22, WGSL and MSL
+2026-10-23, CUDA 2026-10-23). The arm keeps the fold to its letter in
+CUDA spellings: the subgroup size is queried at runtime as `warpSize`
+(the CUDA C++ Programming Guide's built-in device variable, "a run-time
+value defined as the number of threads in a warp" -- the width is 32 on
+shipping hardware and the emission names the spelling, not the number),
+the shuffle is `__shfl_down_sync(mask, v, d, fold)` (the guide's width
+parameter carries the runtime fold width; an out-of-range source lane
+returns the caller's own var and the `sgid + d < fold` guard drops it,
+exactly as in every arm), the participation mask is `__activemask()` (no
+32-lane constant is baked anywhere in the source), and the partial index
+is `threadIdx.x / warpSize` (CUDA has no subgroup-id builtin; P2 binds
+unchanged). Spellings pinned to the NVIDIA CUDA C++ Programming Guide
+(fetched 2026-10-23): vendor documentation, not a measurement.
+UNCOMPILED and UNMEASURED: no nvcc exists on the testing host (the same
+regime as the WGSL arm), the CUDA emitter has no execution path in this
+repository, and nothing has run on NVIDIA hardware.
+
+**The selection rows do NOT move.** `select-variant` still answers
+`:warp-shuffle-reduce` for :nvidia on the CUDA route (this ADR's
+`:subgroup-reduce` row stays Vulkan-route-only), and (`:cuda-v1`,
+`:subgroup-reduce`) lowers only when asked for by name. Whether the
+CUDA-route row should ever answer `:subgroup-reduce` (and what that would
+mean against `:warp-shuffle-reduce`'s baked-warp fold) is a separate
+per-vendor decision, proposed here and decided nowhere. No `:measured?`
+flag moves and no workgroup row is touched.

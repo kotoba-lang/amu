@@ -346,3 +346,112 @@
     (is (thrown-with-msg? Exception #"invalid accelerator KIR"
                           (sg/emit-msl (assoc reduce-sum :kernel/dtype :f64))))
     (is (= (sg/emit-msl reduce-sum) (sg/emit-msl reduce-sum)))))
+
+;; ---------------------------------------------------------------------------
+;; The CUDA arm (emit-cuda, landed 2026-10-23). The same fold to its letter,
+;; in CUDA spellings -- the last of the four emitters to carry it (GLSL
+;; 2026-10-22, WGSL and MSL 2026-10-23). UNCOMPILED on this host (no nvcc
+;; exists here, the same regime as the WGSL arm) -- these text contracts are
+;; the whole verification, and the spellings are pinned to the NVIDIA CUDA
+;; C++ Programming Guide (fetched 2026-10-23), not to a compiler.
+
+(deftest cuda-emission-queries-the-subgroup-size-at-runtime
+  ;; ADR-0356's letter, CUDA arm: the fold step is a function of warpSize
+  ;; (the guide's built-in device variable, a run-time value) and no literal
+  ;; width may appear as a fold loop bound or as the shuffle's width.
+  (doseq [w [32 64 128 256 512 1024] operator [:sum :max :min]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (sg/emit-cuda kir)]
+      (is (str/includes? code "unsigned int sgsize = warpSize;"))
+      (is (str/includes? code "unsigned int fold = sgsize < blockDim.x ? sgsize : blockDim.x;"))
+      (is (str/includes? code "for (unsigned int d = fold / 2u; d > 0u; d >>= 1u)"))
+      (is (str/includes? code "__shfl_down_sync(mask, v, d, fold)"))
+      (is (nil? (re-find #"\bd\s*=\s*\d+u" code))
+          (str "a baked fold width leaked into W=" w " " (name operator)))
+      ;; the shuffle arm's baked full-warp mask (a 32-lane fact) must not
+      ;; leak into the parametric arm: participation is queried at runtime.
+      (is (nil? (re-find #"0xffffffffu" code))
+          "a baked warp mask leaked into the parametric arm"))))
+
+(deftest cuda-each-operator-carries-its-combine-and-identity
+  (doseq [[operator combine identity-text]
+          [[:sum "a+b" "0.0f"]
+           ;; The same INFINITE neutrals as every other arm (accelerator-
+           ;; test's every-arm-shares-one-operator-meaning): CUDA C has no
+           ;; portable infinity literal here, __uint_as_float of the IEEE-754
+           ;; bits is exact and header-free.
+           [:max "fmaxf(a,b)" "__uint_as_float(0xFF800000u)"]
+           [:min "fminf(a,b)" "__uint_as_float(0x7F800000u)"]]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size 128})
+          code (sg/emit-cuda kir)]
+      (is (str/includes? code (str "__device__ float combine(float a, float b) { return " combine "; }")))
+      (is (str/includes? code (str "float v = i < n ? x[i] : " identity-text ";"))))))
+
+(deftest cuda-cites-the-guide-spellings-only
+  ;; Guide pins (NVIDIA CUDA C++ Programming Guide, fetched 2026-10-23):
+  ;; warpSize is the built-in runtime warp width; __shfl_down_sync's width
+  ;; parameter partitions the warp into fold-sized subsections and an
+  ;; out-of-range source lane returns the caller's own var (hence the
+  ;; guard); __activemask() is the runtime active-lane mask; __syncthreads
+  ;; is the block barrier. GLSL/WGSL/MSL spellings must not leak in, and
+  ;; the fold must stay the shuffle loop -- a __reduce_*_sync (sm_80+) or
+  ;; cub:: rewrite would be a different mechanism and is not this arm.
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 256})
+        code (sg/emit-cuda kir)]
+    (is (str/includes? code "unsigned int sgid = threadIdx.x % sgsize;"))
+    (is (str/includes? code "unsigned int sg = threadIdx.x / sgsize;"))
+    (is (str/includes? code "unsigned int mask = __activemask();"))
+    (is (str/includes? code "float s = __shfl_down_sync(mask, v, d, fold);"))
+    (is (str/includes? code "    __syncthreads();\n"))
+    (is (nil? (re-find #"__reduce_add_sync|__reduce_max_sync|__reduce_min_sync|cub::" code))
+        "the shuffle-loop fold was rewritten as a one-call reduce")
+    (is (nil? (re-find #"gl_Subgroup|gl_WorkGroup|gl_GlobalInvocation|gl_NumSubgroups|subgroup_size|subgroupShuffleDown|bitcast<|as_type<|simd_|threadgroup" code))
+        "a GLSL, WGSL or MSL spelling leaked into CUDA output")))
+
+(deftest cuda-cross-subgroup-fold-covers-every-partial
+  ;; ADR-0357 P2, CUDA arm: the partial index is the SUBGROUP index
+  ;; (threadIdx.x / warpSize -- CUDA has no subgroup-id builtin) and the
+  ;; cross-subgroup stage strides subgroup 0's lanes by sgsize, so every
+  ;; pair is combined regardless of the (S, nsg) shape.
+  (doseq [w [32 64 128 256 512 1024]]
+    (let [code (sg/emit-cuda (accelerator/kernel "reduce_sum" :reduce :sum
+                                                 {:workgroup-size w}))]
+      (is (str/includes? code
+                         "for (unsigned int lid = sgid; lid < d; lid += sgsize)"))
+      (is (str/includes? code "partials[sg] = v;"))
+      (is (nil? (re-find #"partials\[lid\] = v;" code))
+          "the partial index fell back to lid arithmetic")
+      (is (nil? (re-find #"unsigned int lid = 0" code))
+          "the cross-fold stride fell back to a fixed lane start"))))
+
+(deftest cuda-workgroup-shape-mirrors-the-kir
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 128})
+        code (sg/emit-cuda kir)]
+    ;; the partials array is W floats, fixed -- the MSL/WGSL arms'
+    ;; fixed-workgroup-array choice -- not the baseline CUDA reduce's
+    ;; dynamic extern __shared__ float s[].
+    (is (str/includes? code "__shared__ float partials[128];"))
+    (is (nil? (re-find #"extern __shared__" code))
+        "the baseline CUDA reduce's dynamic shared array leaked in")
+    (is (str/includes? code "unsigned int i = blockIdx.x*blockDim.x + threadIdx.x;"))
+    (is (str/includes? code "parts[blockIdx.x] = partials[0];"))
+    ;; n is the third kernel argument -- the CUDA family's own ABI (x,
+    ;; parts, n), the same signature shape the shuffle arm emits.
+    (is (str/includes? code
+                       "extern \"C\" __global__ void reduce_sum(const float* x, float* parts, unsigned int n){"))
+    ;; the entry point is the kernel's :kernel/name under the CUDA family's
+    ;; extern-C kernel linkage -- the variant family's name-free `main`
+    ;; convention is a wire-42/GLSL-WGSL artifact and does not extend here.
+    (is (nil? (re-find #"void main\(" code))
+        "the wire-42 'main' entry convention leaked into CUDA output")))
+
+(deftest cuda-emission-refuses-off-its-row-and-is-deterministic
+  (let [ewise (accelerator/kernel "k" :ewise :add {:workgroup-size 128})
+        reduce-sum (accelerator/kernel "k" :reduce :sum {:workgroup-size 128})]
+    (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                          (sg/emit-cuda ewise)))
+    (is (thrown-with-msg? Exception #"invalid accelerator KIR"
+                          (sg/emit-cuda (assoc reduce-sum :kernel/dtype :f64))))
+    (is (= (sg/emit-cuda reduce-sum) (sg/emit-cuda reduce-sum)))))

@@ -148,10 +148,12 @@
   ([vendor kir] (select-variant vendor kir nil nil))
   ([vendor kir target] (select-variant vendor kir target nil))
   ([vendor kir target device]
-   ;; ADR-0356 rule 3 (emission admission first): the variant is admitted
-   ;; only for the route whose emitter can emit it -- CUDA only for
-   ;; :warp-shuffle-reduce, the Vulkan/GLSL route only for
-   ;; :subgroup-reduce. A route the emitter refuses answers :baseline.
+   ;; ADR-0356 rule 3 (emission admission first): a selected variant is one
+   ;; the route's emitter can emit -- all four emitters admit
+   ;; :subgroup-reduce since 2026-10-23 (the CUDA arm landed that day), and
+   ;; the CUDA emitter additionally carries :warp-shuffle-reduce. Admission
+   ;; is NECESSARY, not sufficient: the ROWS below decide each route's
+   ;; answer, and a route outside every row answers :baseline.
    (let [route (emitter-route target)
          dev (or device {})
          ;; rule: validate the COMPLETE KIR first (a malformed kernel never

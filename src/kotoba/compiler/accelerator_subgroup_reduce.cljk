@@ -96,8 +96,44 @@
   (the WGSL arm's fixed-workgroup-array choice), not the baseline MSL
   reduce's `[[threadgroup(0)]]` pointer -- the buffer bindings (x 0, parts
   1, n 2) are the MSL family's, unchanged. P1 (option b scoping) and P2
+  (subgroup IDs, never lid arithmetic) bind this arm unchanged.
+
+  THE CUDA ARM (`emit-cuda`, landed 2026-10-23) is the same fold in CUDA
+  spellings, and completes the four-emitter coverage of the fold (GLSL
+  2026-10-22, WGSL and MSL 2026-10-23): the subgroup size is queried at
+  RUNTIME as `warpSize` (the CUDA C++ Programming Guide's built-in device
+  variable, a run-time value defined as the number of threads in a warp --
+  the width is 32 on every shipping NVIDIA device and this emission names
+  the spelling, not the number; the arm keeps the parametric letter of the
+  others and claims none of Intel's 8/16/32 variance here),
+  `threadIdx.x % sgsize` / `threadIdx.x / sgsize` are the subgroup geometry
+  (CUDA has no subgroup-id builtin; the warp id IS threadIdx.x / warpSize
+  -- P2's partial index, never a lid-derived fallback), the fold's shuffle
+  is `__shfl_down_sync(mask, v, d, fold)` with the guide's width parameter
+  carrying the runtime fold width (the guide: an out-of-range source lane
+  returns the caller's own var, so the `sgid + d < fold` guard drops it
+  exactly as in every arm), the participation mask is `__activemask()`
+  (the runtime active-lane query -- no 32-lane constant is baked anywhere
+  in the source), and the barrier is `__syncthreads()`. The guide's own
+  warning on `__activemask()` (an instantaneous snapshot, not a branch
+  probe) is satisfied by construction here: this kernel has no early exit
+  (the padded lanes fold the identity) and every launched lane calls every
+  shuffle unguarded, so the snapshot names exactly the participating
+  lanes. One arm-level deviation FORCED by the family's ABI shape: the
+  partials array is a fixed `__shared__ float partials[W]` (the MSL/WGSL
+  arms' fixed-workgroup-array choice), not the baseline CUDA reduce's
+  dynamic `extern __shared__ float s[]`. The entry point is the kernel's
+  :kernel/name under the CUDA family's own extern-C kernel linkage (exactly
+  what the :warp-shuffle-reduce arm emits). The KIR's n is the third kernel
+  argument, the CUDA family's own ABI (x, parts, n). UNCOMPILED and
+  UNMEASURED: no nvcc exists on the testing host (the same regime as the
+  WGSL arm -- the text contracts the tests pin are the whole verification,
+  spellings pinned to the NVIDIA CUDA C++ Programming Guide, fetched
+  2026-10-23: vendor documentation, not a measurement), the CUDA emitter
+  has no execution path in this repository (wire 42 runs Vulkan only), and
+  nothing has executed this arm on any GPU. P1 (option b scoping) and P2
   (subgroup IDs, never lid arithmetic) bind this arm unchanged."
-  {:kotoba/export [applicable? basis emit-glsl emit-wgsl emit-msl min-workgroup-size]}
+  {:kotoba/export [applicable? basis emit-cuda emit-glsl emit-wgsl emit-msl min-workgroup-size]}
   (:require [kotoba.compiler.accelerator-kir :as kir]))
 
 (def min-workgroup-size
@@ -359,4 +395,82 @@
          "    threadgroup_barrier(mem_flags::mem_threadgroup);\n"
          "  }\n"
          "  if (sg == 0u && sgid == 0u) { parts[g] = partials[0]; }\n"
+         "}\n")))
+
+(def ^:private identity-value-cuda
+  ;; The same INFINITE neutrals as identity-value, in CUDA C: __uint_as_float
+  ;; is exact and header-free -- byte-identical to accelerator.cljk's
+  ;; cuda-identity (one meaning per operator in every arm).
+  {:sum "0.0f"
+   :max "__uint_as_float(0xFF800000u)"
+   :min "__uint_as_float(0x7F800000u)"})
+
+(def ^:private combine-expression-cuda
+  {:sum "a+b" :max "fmaxf(a,b)" :min "fminf(a,b)"})
+
+(defn emit-cuda
+  "The :subgroup-reduce CUDA C++ compute kernel for one validated KIR. The
+  same fold as emit-glsl to its letter, in CUDA spellings (the ns
+  docstring's CUDA arm paragraph is the state of record). Total on the row,
+  fail-closed off it -- a kernel that `applicable?` refuses is refused here
+  too (ex-info \"kernel variant not applicable\"), for the same reason as
+  emit-glsl. Deterministic: the same KIR lowers to the same bytes, forever.
+  The entry point is the kernel's :kernel/name under the CUDA family's own
+  extern-C kernel linkage (exactly what emit-cuda-shuffle-reduce emits); the
+  min(S, W) fold width is spelled as a ternary -- the CUDA family emits no
+  math-header names for integer min, and the shuffle arm avoids min the same
+  way."
+  [kir]
+  (kir/validate! kir)
+  (when-not (applicable? kir)
+    (throw (ex-info "kernel variant not applicable"
+                    {:variant :subgroup-reduce
+                     :op (:kernel/op kir)
+                     :operator (:kernel/operator kir)
+                     :workgroup-size (:kernel/workgroup-size kir)})))
+  (let [wg (:kernel/workgroup-size kir)
+        name (:kernel/name kir)
+        operator (:kernel/operator kir)
+        identity (identity-value-cuda operator)
+        combine (combine-expression-cuda operator)]
+    (str "__device__ float combine(float a, float b) { return " combine "; }\n"
+         "extern \"C\" __global__ void " name "(const float* x, float* parts, unsigned int n){\n"
+         "  __shared__ float partials[" wg "];\n"
+         "  unsigned int i = blockIdx.x*blockDim.x + threadIdx.x;\n"
+         "  unsigned int sgsize = warpSize;\n"
+         "  unsigned int sgid = threadIdx.x % sgsize;\n"
+         "  unsigned int sg = threadIdx.x / sgsize;\n"
+         "  float v = i < n ? x[i] : " identity ";\n"
+         ;; The fold width is the ACTIVE width of this subgroup, exactly as
+         ;; in emit-glsl: min(S, W), both powers of two in the admitted row
+         ;; (and the shuffle's width parameter carries it -- the guide's
+         ;; width partitions the warp into fold-sized subsections with
+         ;; logical lane IDs from 0, so a partial first subgroup folds
+         ;; among its own active lanes). The guard drops the shuffle's
+         ;; out-of-range read (the guide: the caller's own var is returned)
+         ;; instead of folding it in.
+         "  unsigned int fold = sgsize < blockDim.x ? sgsize : blockDim.x;\n"
+         "  unsigned int mask = __activemask();\n"
+         "  for (unsigned int d = fold / 2u; d > 0u; d >>= 1u) {\n"
+         "    float s = __shfl_down_sync(mask, v, d, fold);\n"
+         "    if (sgid + d < fold) { v = combine(v, s); }\n"
+         "  }\n"
+         "  if (sgid == 0u) { partials[sg] = v; }\n"
+         "  __syncthreads();\n"
+         ;; The same strided cross-subgroup tree as emit-glsl (P2: the
+         ;; partial index is the SUBGROUP index -- threadIdx.x / warpSize,
+         ;; CUDA's own spelling of the warp id -- never lid arithmetic)
+         ;; over nsg partials; nsg is 1 or a power of two (W and the
+         ;; subgroup size are), so the halving tree is exact. The barrier
+         ;; per stage is uniform -- every thread of the block reaches it.
+         "  unsigned int nsg = (blockDim.x + sgsize - 1) / sgsize;\n"
+         "  for (unsigned int d = nsg / 2u; d > 0u; d >>= 1u) {\n"
+         "    if (sg == 0u) {\n"
+         "      for (unsigned int lid = sgid; lid < d; lid += sgsize) {\n"
+         "        partials[lid] = combine(partials[lid], partials[lid + d]);\n"
+         "      }\n"
+         "    }\n"
+         "    __syncthreads();\n"
+         "  }\n"
+         "  if (sg == 0u && sgid == 0u) { parts[blockIdx.x] = partials[0]; }\n"
          "}\n")))

@@ -247,6 +247,38 @@ designed, given a Metal-native descriptor would report SIMD-group facts
 directly) is a SEPARATE per-vendor design decision (JUN-58's own),
 proposed here and decided nowhere.
 
+**Amendment (2026-10-23, the CUDA arm of the shared emission lands).** The
+subgroup-size-parametric emission gains its CUDA arm
+(`kotoba.compiler.accelerator-subgroup-reduce/emit-cuda`), and `lower`
+admits the (:cuda-v1, :subgroup-reduce) pair in both readings -- rule 3's
+"emission admission first" now holds on the CUDA path too, and the fold is
+covered by all four emitters (GLSL 2026-10-22, WGSL and MSL 2026-10-23,
+CUDA 2026-10-23). The fold is the same shuffle loop in CUDA spellings: the
+subgroup size is queried at runtime as `warpSize` (the CUDA C++
+Programming Guide's built-in device variable, "a run-time value defined as
+the number of threads in a warp" -- the width is 32 on every shipping
+NVIDIA device and the emission names the spelling, not the number; the
+arm claims none of Intel's 8/16/32 variance), the shuffle is
+`__shfl_down_sync(mask, v, d, fold)` with the guide's width parameter
+carrying the runtime fold width (the guide: an out-of-range source lane
+returns the caller's own var, so the guard drops it exactly as in every
+arm), the participation mask is `__activemask()` (the runtime active-lane
+query -- no 32-lane constant is baked anywhere in the source), the partial
+index is `threadIdx.x / warpSize` (CUDA has no subgroup-id builtin; P2
+binds unchanged), and the partials array is a fixed
+`__shared__ float partials[W]` (the MSL/WGSL arms' fixed-workgroup-array
+choice). UNCOMPILED and UNMEASURED: no nvcc exists on the testing host
+(the same regime as the WGSL arm -- text contracts test-pinned to the
+NVIDIA CUDA C++ Programming Guide, fetched 2026-10-23: vendor
+documentation, not a measurement), the CUDA emitter has no execution path
+in this repository, and nothing has run on NVIDIA hardware. **The
+selection rows do NOT move**: the NVIDIA CUDA-route row keeps
+`:warp-shuffle-reduce` (ADR-0361's amendment records the same fact) and
+(:cuda-v1, :subgroup-reduce) lowers only when asked for by name; whether
+the CUDA-route row should ever answer `:subgroup-reduce` is a separate
+per-vendor decision, proposed here and decided nowhere. No `:measured?`
+flag moves and no workgroup row is touched.
+
 ## Intel `:subgroup-reduce` (JUN-59) -- the design
 
 **Rationale (a design assumption, not a measurement).** The baseline tree
