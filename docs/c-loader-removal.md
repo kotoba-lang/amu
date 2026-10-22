@@ -55,6 +55,10 @@ delegates to it.
 * `package-macos`
 * `test --native-prepare`, `test --native-runtime` and `test --loader-source-dir`
 
+The `:gpu/compute` capability (wire 42) is refused as well. Its only provider
+was the GPU broker inside the loader. The checker refuses it (E2115) and the
+static runtime has no provider for it. ADR 0371 proposes the replacement route.
+
 These still exist but executed programs through kotoba-native's loader
 executor. They now fail when it tries to build the removed source, and stay
 here until they are ported onto static images:
