@@ -10,7 +10,7 @@ def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 def main():
  ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--selfbuild-output',type=Path,required=True);a=ap.parse_args()
  out=a.selfbuild_output.resolve();(out/'artifacts').mkdir(exist_ok=True);(out/'host').mkdir(exist_ok=True);host=out/'host';D=out/'artifacts/sequential-scan-controls';D.mkdir(exist_ok=False)
- receipt=json.loads((ROOT/'seed/adoption-20261017.json').read_text())
+ receipt=json.loads((ROOT/'seed/adoption-20261022.json').read_text())
  loader=out/'R-aarch64.elf';producer=host/'sequential-scan-producer.bin';shutil.copy2(out/'G3.bin',producer)
  assert sha(producer)==receipt['nativeImageSHA256']
  paths=[p.strip()for p in(ROOT/'seed/MANIFEST').read_text().splitlines()if p.strip()and not p.startswith('#')]

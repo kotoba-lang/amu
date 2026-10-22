@@ -2,9 +2,10 @@
 
 Date: 2026-10-22
 Status: Decision 1 (the platform boundary) accepted by the owner on 2026-10-22.
-The rest is Proposed. Wire 42 is not admitted until security integration signs
-off (Decision 7). Steps 1 (the protocol table) and 2 (the runtime transport)
-are implemented; nothing else is.
+The rest is Proposed. Steps 1 (the protocol table) and 2 (the runtime transport)
+are merged. Step 3 (wire 42 admission) is built and measured, and waits for the
+security-integration sign-off (Decision 7) before it merges. Nothing else is
+implemented.
 Tracking: JUN-285 (this ADR), JUN-291 (step 1), JUN-294 (step 2). Related: JUN-109 (wire 42 admission), JUN-282
 (`amu run` on static images), JUN-283, AWAI-12 (murakumo inference on Amu
 selfhost).
@@ -277,6 +278,7 @@ admitted earlier wires. It changes:
 * `seed/00-ns` and `seed/20-names`, through their generators;
 * `seed/21-check`: `ck-wire-kw`, `ck-wire-ok`, the shapes and `ck-r6b-capkw`;
 * `seed/30-lower`: `lw-wire`;
+* `seed/60-proj`: `pj-r5b-wire`, so a module may declare the capability;
 * `seed/90-drv`: the policy names.
 
 These files are hash-pinned. The round needs:
@@ -442,7 +444,18 @@ Each step is its own PR, in this order:
      another fd; its guest must die of SIGSYS. It runs where the kernel
      enforces seccomp.
    * **Receipts.** `docs/evidence/gpu-runtime-transport-20261022/`.
-3. **Seed adoption round** admitting wire 42, with its receipts (JUN-109).
+3. **Seed adoption round** admitting wire 42 (JUN-109). Built and measured;
+   it merges after the sign-off.
+   * **Fixed point.** The new adopted image G1 = G2 = G3 = `9deed950…` is
+     recorded in `seed/adoption-20261022.json`. It was built C-free with
+     `scripts/seed/adoption-candidate.py`.
+   * **Root.** Re-pinned to `f19ab1c4…`.
+   * **Checks.** `scripts/seed/check-wire42-admission.py`; receipts are in
+     `docs/evidence/wire42-admission-20261022/`. Codegen is unchanged: all 19
+     workload images are exact, and the nine controls and certified-54 pass.
+   * **Sign-off record.** `seed/security-integration-20261022.json` (pending).
+   * **Known defect.** JUN-309: under the C-free runner, the adopted compiler
+     traps instead of naming E2115. It predates this round.
 4. **Launcher** (JUN-282): spawn, pipes, wall time, the GPU grant and the
    joined receipt.
 5. **Platform-linked ELF writer** and C-ABI imports, x86_64 SysV, with the

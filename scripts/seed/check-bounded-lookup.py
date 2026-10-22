@@ -43,7 +43,7 @@ def main():
     artifacts = out / 'artifacts' / 'lookup-controls'
     artifacts.mkdir(exist_ok=False)
     loader = out / 'R-aarch64.elf'
-    receipt = json.loads((ROOT / 'seed/adoption-20261017.json').read_text())
+    receipt = json.loads((ROOT / 'seed/adoption-20261022.json').read_text())
     producer = host / 'lookup-producer.bin'
     shutil.copyfile(out / 'G3.bin', producer)
     if digest(producer) != receipt['nativeImageSHA256']:
