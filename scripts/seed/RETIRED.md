@@ -10,7 +10,8 @@ runs on arm64 Linux with no C compiler or loader
 (receipt `docs/evidence/selfhost-bootstrap-aarch64-20261022/`).
 
 Every script below built that loader with clang or ran payloads through it.
-They are refused, not ported. Their receipts stay in `docs/evidence/` as
+They are refused or replaced by a C-free port — the table says which. Their
+receipts stay in `docs/evidence/` as
 historical evidence, and each one names what a selfhost replacement has to
 cover before its property counts as qualified again.
 
@@ -21,7 +22,7 @@ cover before its property counts as qualified again.
 | check-x86_64-selfhost.py | x86 G1..G3 and runtime cases through the C loader | replaced: `selfhost-bootstrap.py` steps 1, 2, 4 (static compiler, runners, cases against `seed/static-cases.json`) |
 | check-x86_64-static.py | static x86 image bootstrapped through the C loader | replaced: `selfhost-bootstrap.py` (root is Amu-produced, no bootstrap loader step) |
 | check-x86_64-linux.py | scalar standalone x86 ELF suite | replaced: `check-x86_64-scalar.py` (same 55 programs and 14 refusals through the static compiler; the AArch64 fuel reference and the cross-closure identity check are not ported) |
-| check-x86_64-aiueos-object.py | x86_64-aiueos-kernel-v1 object ABI | replaced: restored under the same name, compiling with the static compiler (`--compiler`); same probes, ABI checks and refusals |
+| check-x86_64-aiueos-object.py | x86_64-aiueos-kernel-v1 object ABI | replaced: restored under the same name, compiling with the static compiler (`--compiler`); same probes, ABI checks and refusals. Additionally re-qualified through two C-free producers (the static compiler `S-x86_64.elf` and the C-free KX64V1 runner `R-x86_64.elf` carrying the G1 payload) with byte-identical route parity in `check-x86_64-aiueos-object-cfree.py`; receipt `docs/evidence/aiueos-kernel-object-cfree-20261022/` |
 | check-certified-scalar-calls.py | adopted 41-a64gen certified scalar calls (54 OFF/ON pairs) | replaced: restored under the same name, run through the C-free aarch64 runner after `selfhost-bootstrap.py` (payloads equal the pinned structure; result, fuel and the runner's arena record raw-identical OFF/ON) |
 | check-adjacent-fuel-reload.py, check-bounded-lookup.py, check-mask-direct-source.py, check-nonzero-guard-charge.py, check-positive-quotient-proof.py, check-positive-quotient.py, check-prepaid-fuel-reuse.py, check-sequential-scan.py, check-twoarg-comparisons.py | adopted 41-a64gen optimizations (oracles, fuel, arena counters) through the C loader | refused: re-run the paired controls through the aarch64 runner |
 | verify-loader-fuzz.py | fuzz coverage of the C loader's parser | retired with the loader |
