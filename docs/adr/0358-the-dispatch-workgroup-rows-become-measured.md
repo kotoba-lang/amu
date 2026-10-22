@@ -42,3 +42,33 @@ point: the row records what measurement supports, not the luckiest cell.
 - `:arm` (Mali) has no hardware and stays provisional. AMD's row moved to
   1024, the top of ADR-0002's bound -- nothing here says larger would not be
   better; the bound is a contract, not a measured ceiling.
+
+## Scoping amendment (2026-10-22): the flag is scoped per row, per named device
+
+uB5G's device scoping in `recommend` had two leaks, both now fixed
+(`kotoba.compiler.accelerator-targets` and its test):
+
+- a descriptor naming a device through the `:vendor` name key -- the key
+  `classify-vendor` matches and `device-from-info` fills with deviceName --
+  was NOT counted as named, so `{:vendor "Apple M3"}` inherited the Apple
+  row's `:measured? true` although the measurement ran on one M1 Max
+  configuration. The old test pinned the leak: the `:vendor`-only spelling
+  of the M3 was asserted true while the `:vendor` + `:name` spelling of the
+  same device was asserted false.
+- the measured-device check was hard-coded to "m1 max", so the measured
+  NVIDIA device spelled by name (Tegra Xavier) was denied its own row flag.
+
+Each measured row now carries `:measured-device` -- the name fragment of the
+ONE device its measurement ran on, taken from the host column above
+(`xavier` / `m1 max` / `g31` / `680m`) -- and a named device keeps the
+row's flag only when its name carries that fragment (case-insensitive, the
+`name-vendor-fragments` matching idiom). The fragment match is coarse by
+design (a name containing the fragment counts as the measured device); it
+narrows the flag and never widens it past a named device. An unnamed,
+vendor-id-only descriptor keeps the row-level flag as the only available
+signal; an INFO-derived descriptor (`:max-workgroup-x` present) still never
+transfers it.
+
+No size, no row flag and no measurement changed: this narrows WHEN the
+row's flag reaches a caller. Nothing here re-measures anything, and no
+`:measured?` row flips.

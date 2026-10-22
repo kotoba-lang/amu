@@ -132,19 +132,34 @@
   :unknown stay provisional. :measured? says a hardware measurement chose
   this size -- nothing more. The measurements are one workload shape
   (2^20-thread f32 ewise FMA, 256 FMAs per thread, submit->fence host clock,
-  paired runs) and are not a claim of optimality for every kernel."
+  paired runs) and are not a claim of optimality for every kernel.
+
+  :measured-device (measured rows only) is the case-insensitive name
+  fragment of the ONE device each row's measurement ran on (ADR-0358's host
+  column: Xavier, M1 Max, BMG G31, Radeon 680M). It is the uB5G scoping
+  key: `recommend` reports the row's :measured? for a NAMED device only
+  when the device's name carries this fragment -- the row flag is evidence
+  about the measured device, and a name-fragment match (the same idiom as
+  name-vendor-fragments) is how this table recognises it. A fragment match
+  is deliberately coarse (a name containing the fragment counts as the
+  measured device); it narrows the flag, it never widens it past a named
+  device."
   {:nvidia {:size 256 :execution-width 32 :measured? true
+            :measured-device "xavier"
             :basis "warp width 32; 256 is 8 warps per workgroup"
             :evidence "2026-10-19 Xavier nvgpu, 6 paired runs: 128-1024 flat within 2%, 32 is 22% slower; 256 kept inside the flat band"}
    :apple {:size 256 :execution-width 32 :measured? true
+           :measured-device "m1 max"
            :basis "SIMD-group width 32"
            :evidence "2026-10-19 Apple M1 Max / MoltenVK, 16 paired runs: 32-1024 medians within ~5% and no size won more than 6/16; 256 kept as the most frequent paired winner"}
    :intel {:size 128 :execution-width 32 :measured? true
+           :measured-device "g31"
            :basis "subgroup width 8/16/32; 128 is a multiple of all three"
            :evidence "2026-10-19 BMG G31 / ANV, 6 paired runs: 32-256 flat within 2% (64 won 4/6 on noise-level margins), 512/1024 marginally slower; 128 kept as the subgroup-safe row inside the flat band"}
    :arm {:size 128 :execution-width 16 :measured? false
          :basis "Mali execution widths 4-32 all divide 128"}
    :amd {:size 1024 :execution-width 64 :measured? true
+         :measured-device "680m"
          :basis "wavefront width 64; measurement chose the top of the bound"
          :evidence "2026-10-19 Radeon 680M / RADV, 6 paired runs: 1024 won 5/6 and is 28% faster than the provisional 256 (median 334,528 vs 467,981 ns); 32 slowest"}
    :unknown {:size 256 :execution-width 32 :measured? false
@@ -197,7 +212,10 @@
   {:vendor :target :workgroup-size :execution-width :basis :measured?}.
   Same descriptor in, same map out, forever. :measured? is the row's: true
   where a hardware measurement (ADR-0358) chose the size, false while the
-  row is still the provisional design default."
+  row is still the provisional design default -- and, for a descriptor that
+  NAMES a device, true only when that name carries the row's
+  :measured-device fragment (uB5G: the flag is evidence about the measured
+  device, not the vendor class)."
   [device]
   (let [vendor (classify-vendor device)
         row (get workgroup-defaults vendor (workgroup-defaults :unknown))
@@ -208,22 +226,37 @@
                  (when (and (number? lim) (pos? lim))
                    (loop [sz (:size row)]
                      (if (and (<= sz lim) (pos? sz)) sz (recur (quot sz 2))))))
-        ;; uB5G: the measured flag is scoped to the measured device (one M1
-        ;; Max configuration, ADR-0358), not to the vendor class.
-        device-name (str (:device device) (:name device))
-        named-device? (not (clojure.string/blank? device-name))
-        measured-device? (boolean (re-find #"(?i)m1 max" device-name))]
+        ;; uB5G: the measured flag is scoped to the measured device (one
+        ;; configuration per measured row, ADR-0358), not to the vendor
+        ;; class. A descriptor NAMES a device through :device, :name, or the
+        ;; :vendor name key (the key classify-vendor matches and
+        ;; device-from-info fills with deviceName) -- before this scoping the
+        ;; :vendor-only spelling was missed and a named device that hardware
+        ;; never measured ({:vendor "Apple M3"}) inherited the row's flag,
+        ;; while the measured NVIDIA device spelled by name (Tegra Xavier)
+        ;; was denied it. Now a named device keeps the row flag only when
+        ;; its name carries the row's :measured-device fragment (matched
+        ;; case-insensitively, per name part, the name-vendor-fragments
+        ;; idiom). An UNNAMED (vendor-id-only) descriptor keeps the row-level
+        ;; flag as the only available signal.
+        name-parts (filter #(and (string? %) (not (str/blank? %)))
+                           [(:device device) (:name device) (:vendor device)])
+        named-device? (boolean (seq name-parts))
+        measured-device? (when-let [frag (:measured-device row)]
+                           (boolean (some #(str/includes? (str/lower %) frag)
+                                          name-parts)))]
     {:vendor vendor
      :target (target-for (:api device) vendor)
      :workgroup-size (or probed (:size row))
      :execution-width (:execution-width row)
      :basis (cond-> (:basis row) probed (str " (bounded by probed device limit " (:max-workgroup-x device) ")"))
-     ;; uB5G: a NAMED device must be the measured device for the row's
-     ;; measured flag to apply; an unnamed (vendor-class) descriptor keeps
-     ;; the row-level flag as the only available signal.
+     ;; uB5G: a NAMED device must be the measured device (the row's
+     ;; :measured-device fragment in its name) for the row's measured flag
+     ;; to apply; an unnamed (vendor-id-only) descriptor keeps the
+     ;; row-level flag as the only available signal.
      ;; An INFO-derived descriptor (:max-workgroup-x present, from
      ;; device-from-info) reports a LIMIT, not a tuning result, and never
      ;; transfers the row's measured flag (the device-from-info contract).
      :measured? (and (boolean (:measured? row))
                      (nil? (:max-workgroup-x device))
-                     (or (not named-device?) measured-device?))}))
+                     (or (not named-device?) (boolean measured-device?)))}))

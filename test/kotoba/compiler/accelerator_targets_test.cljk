@@ -55,7 +55,7 @@
 
 (deftest recommend-is-total-deterministic-and-provisional
   (let [nvidia (targets/recommend {:vendor-id 4318 :api :cuda})
-        apple (targets/recommend {:vendor "Apple M3"})
+        apple (targets/recommend {:vendor-id 4203})
         unknown (targets/recommend {})]
     (is (= :nvidia (:vendor nvidia)))
     (is (= :cuda-v1 (:target nvidia)))
@@ -71,9 +71,17 @@
       (doseq [decision [nvidia apple unknown]]
         (is (string? (:basis decision)))))
     (testing "the measured flag is scoped to the measured device (uB5G, ADR-0358)"
+      (is (false? (:measured? (targets/recommend {:vendor "Apple M3"})))
+          "a device named through :vendor that hardware never measured keeps the row flag out")
       (is (false? (:measured? (targets/recommend {:vendor "Apple M3" :name "Apple M3"})))
           "a named device that is not the measured one keeps the row flag out")
+      (is (false? (:measured? (targets/recommend {:vendor "GeForce RTX 4090" :api :cuda})))
+          "an unmeasured NVIDIA device named by name keeps the Xavier row flag out")
       (is (true? (:measured? (targets/recommend {:vendor "Apple M1 Max" :name "M1 Max"}))))
+      (is (true? (:measured? (targets/recommend {:vendor "NVIDIA Tegra Xavier" :api :cuda})))
+          "the measured NVIDIA device spelled by name keeps its own row flag")
+      (is (true? (:measured? (targets/recommend {:vendor "Intel(R) Graphics (BMG G31)" :api :vulkan}))))
+      (is (true? (:measured? (targets/recommend {:vendor "AMD Radeon 680M"}))))
       (is (false? (:measured? (targets/recommend {:vendor-id 4318 :api :cuda :max-workgroup-x 512})))
           "an INFO-derived limit probe never transfers the row flag"))
     (testing "same descriptor in, same map out"
