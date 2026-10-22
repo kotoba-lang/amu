@@ -4,11 +4,13 @@ Date: 2026-10-22
 
 ## Status
 
-Proposed. **Design only; no seed change in this ADR.** It touches the adopted
-compiler core, so it follows the ADR 0370 review order and needs its own
-change with a full self-rebuild and conformance run. It is written to
-unblock the aiueos `:browser-component` floor and every other kernel object
-that is still built by `kotoba-compiler/1`.
+Accepted for the first slice (u32 load, u32 store, subregion). The slice is
+implemented as a change to the **selfhost x86 object backend only**, not to the
+adopted core: the heads are not added to `seed/HEADS`, so `seed/MANIFEST` and
+its sixteen adopted files are byte-identical, no adoption round is needed,
+and `seed/compiler-core.json` is untouched. See "As built" below for how this
+differs from the design first written here. The aiueos `:browser-component`
+floor is not closed by this slice (CSSOM and the project-capable CLI remain).
 
 ## Context
 
@@ -78,3 +80,66 @@ op's static maximum, base against zero, offset against length, all unsigned,
   published one in aiueos.
 - Not a claim that the entry window's length describes real memory; that
   remains the trusted ABI boundary named in the threat model.
+
+## As built
+
+The Decision above proposed three new heads in `seed/HEADS`. Reading the code
+before writing it showed a cheaper, safer route with the same semantics and no
+change to the adopted core:
+
+- The three operations are **private library functions** (`kernel-load-u32`,
+  `kernel-store-u32`, `kernel-subregion`) that the object route appends to the
+  guest source (`xk-lib` in `seed/74-x86_64-aiueos-object.kotoba`), as it
+  already appends the R6B source library. The shared frontend, checker and
+  lowering see ordinary calls of ordinary `:i64` functions.
+- The x86 backend replaces a call of those three stubs by inline code
+  (`xk-intrinsic`, the way the static route replaces the `kxrt-` stubs). The
+  byte sequences and displacements are kotoba-native's `emit-kernel-load-u32`,
+  `emit-kernel-store-u32` and `emit-kernel-subregion`; the displacement sets
+  (+36/+27/+18/+5 and +27/+18/+6) match that file's own comments.
+- **Rooted bases** are enforced on the SIR the backend already reads (`xk-check`):
+  the base operand's last writer is found in straight-line code (a label or jump
+  in between refuses) and must be a literal, a parameter that is never assigned,
+  a `kernel-subregion` of a rooted base, or a let-bound local with one
+  assignment of a rooted value. Everything else is E7106. Thirteen cases in
+  `seed/tests/kernel-memory/` (six accepted, seven refused: a base read from
+  memory, arithmetic, a call result, a branch, a computed let, a loop variable,
+  a subregion of arithmetic).
+- Only `x86_64-aiueos-kernel-v1` has the library; other targets are unchanged
+  (M[200] stays 0), so a program that uses these names there is the same
+  "unknown function" it was.
+
+### Measured
+
+`scripts/seed/check-kernel-memory.py` (arm64 Linux, the selfhost-built
+compiler): the three emitted routines run in an emulator of exactly the
+instruction forms the backend emits, 12,380 runs over boundary and random
+values, zero deviations from the specification (every access inside the
+window, every trap before any access). Eleven single-condition mutants of the
+emitted checks (ja, jae, jz in each routine, the second ja where there is one)
+are each seen red. One first-choice mutant (`jae` to `ja` in load) turned out
+to be equivalent -- the later `index + 4 <= length` check traps the same case --
+and was replaced by `jae` to `jb`, which is not.
+
+`os/aiueos/kotoba/browser-damage.kotoba`, with its export renamed to the C symbol
+(`kotoba_aiueos_browser_damage`) and `main` dropped from the export list (the
+object route admits exactly one export), is compiled by the selfhost compiler
+(14,714 text bytes; `verify-kotoba-kernel-object.py` accepts it), linked into
+KERNEL.ELF in place of the `kotoba-compiler/1` object, and
+`guest-browser-damage` exits 0 on QEMU with the same census, the same damage
+bytes and screendumps identical to the whole-screen ones. That is the first
+aiueos kernel object whose code was produced by Amu selfhost and ran in the
+kernel gate.
+
+### Still open
+
+- The other `browser-*.kotoba` objects are not yet built by selfhost (they need
+  the same one-export form, and some use the other `kernel-*` operations: u8,
+  u16, u64, the 4k/16k/64k tiers, atomics).
+- The shipped `browser-damage.o` is still the `kotoba-compiler/1` object; the
+  selfhost one was linked for the experiment only. Replacing it is an aiueos
+  change (pin, provenance, a source with one export).
+- `kernel-region-report` is not ported.
+- The `:browser-component` floor needs the whole Browser/CSSOM graph; the
+  project-capable native CLI is still missing (JUN-137).
+

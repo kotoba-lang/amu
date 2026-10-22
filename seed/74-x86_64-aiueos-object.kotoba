@@ -34,6 +34,134 @@
       (xg-bytes 0x08ec8348 4) (xg-rel 0xe8 1 1 entry)
       (xg-bytes 0x08c48348 4) (xg-byte 0xc3)))
 
+;; ADR 0373: bounded kernel memory windows. The source library below is appended to
+;; the guest source for this route only; its three private functions are stubs whose
+;; calls this backend replaces by inline code (the way the static route's kxrt-
+;; intrinsics are), so the shared frontend, checker and lowering are unchanged and
+;; the adopted seed/MANIFEST sources are untouched. M[200] is the first stub's FN
+;; (0 = none); the stubs are the last three functions of the text, in this order.
+;;
+;;   (kernel-load-u32 base length index)      -> the u32 at base + index
+;;   (kernel-store-u32 base length index v)   -> v, after storing it as a u32
+;;   (kernel-subregion base length offset n)  -> base + offset
+;;
+;; Every check is unsigned and traps (ud2) before the access: length <= 512 (the
+;; tier of the plain u32 pair), base non-null, index < length, index + 4 <= length;
+;; subregion: base non-null, offset <= length, n <= length - offset. The byte
+;; sequences are kotoba-native's x86_64.cljk emit-kernel-load-u32 /
+;; emit-kernel-store-u32 / emit-kernel-subregion, and so are the displacements.
+(def XK-INTR-N 3)
+(defn- xk-intr-name [k :i64] :string
+  (case k 0 "kernel-load-u32" 1 "kernel-store-u32" 2 "kernel-subregion" ""))
+(defn- xk-lib [] :string
+  "\n(defn- kernel-load-u32 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u32 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n(defn- kernel-subregion [b :i64 n :i64 o :i64 l :i64] :i64 b)\n")
+(defn- xk-intr [M :vector-i64 f :i64] :i64
+  (let [first (vector-at M 200) k (- f first)]
+    (if (and (> first 0) (>= k 0) (< k XK-INTR-N)) k -1)))
+(defn- xk-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
+  (case k
+    ;; mov rdx,[base]; mov rcx,[length]; mov rax,[index]; cmp rcx,512; ja; test rdx,rdx; jz;
+    ;; cmp rax,rcx; jae; lea rsi,[rax+4]; cmp rsi,rcx; ja; mov eax,[rdx+rax]; jmp +2; ud2
+    0 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0x858b48)
+          (xg-bytes 0xf98148 3) (xg-bytes 512 4) (xg-bytes 0x870f 2) (xg-bytes 36 4)
+          (xg-bytes 0xd28548 3) (xg-bytes 0x840f 2) (xg-bytes 27 4)
+          (xg-bytes 0xc83948 3) (xg-bytes 0x830f 2) (xg-bytes 18 4)
+          (xg-bytes 0x04708d48 4) (xg-bytes 0xce3948 3) (xg-bytes 0x870f 2) (xg-bytes 5 4)
+          (xg-bytes 0x02048b 3) (xg-bytes 0x02eb 2) (xg-bytes 0x0b0f 2) (xg-save t))
+    ;; mov rdx,[base]; mov rcx,[length]; mov rdi,[index]; mov rax,[value]; cmp rcx,512; ja;
+    ;; test rdx,rdx; jz; cmp rdi,rcx; jae; lea rsi,[rdi+4]; cmp rsi,rcx; ja; mov [rdx+rdi],eax;
+    ;; jmp +2; ud2 -- rax stays the value
+    1 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0xbd8b48)
+          (xg-load (+ t 3) 0x858b48)
+          (xg-bytes 0xf98148 3) (xg-bytes 512 4) (xg-bytes 0x870f 2) (xg-bytes 36 4)
+          (xg-bytes 0xd28548 3) (xg-bytes 0x840f 2) (xg-bytes 27 4)
+          (xg-bytes 0xcf3948 3) (xg-bytes 0x830f 2) (xg-bytes 18 4)
+          (xg-bytes 0x04778d48 4) (xg-bytes 0xce3948 3) (xg-bytes 0x870f 2) (xg-bytes 5 4)
+          (xg-bytes 0x3a0489 3) (xg-bytes 0x02eb 2) (xg-bytes 0x0b0f 2) (xg-save t))
+    ;; mov rdx,[base]; mov rcx,[length]; mov rdi,[offset]; mov rax,[sublen]; test rdx,rdx; jz;
+    ;; cmp rdi,rcx; ja; sub rcx,rdi; cmp rax,rcx; ja; lea rax,[rdx+rdi]; jmp +2; ud2
+    2 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0xbd8b48)
+          (xg-load (+ t 3) 0x858b48)
+          (xg-bytes 0xd28548 3) (xg-bytes 0x840f 2) (xg-bytes 27 4)
+          (xg-bytes 0xcf3948 3) (xg-bytes 0x870f 2) (xg-bytes 18 4)
+          (xg-bytes 0xf92948 3) (xg-bytes 0xc83948 3) (xg-bytes 0x870f 2) (xg-bytes 6 4)
+          (xg-bytes 0x3a048d48 4) (xg-bytes 0x02eb 2) (xg-bytes 0x0b0f 2) (xg-save t))
+    (xg-err M 7101 OP-CALL)))
+;; The stubs are the last three functions, in id order, named as above. A source that
+;; leaves them out or reorders them (it cannot: the library is appended here) is refused.
+(defn- xk-scan [M :vector-i64 S :string] :vector-i64
+  (let [n (vector-at M MM-FN-N) first (- n XK-INTR-N)]
+    (if (or (not= (vector-at M MM-ERR) 0) (<= first 1)) (xg-err M 7102 n)
+      (loop [k 0]
+        (let [f (+ first k) sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))
+              a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
+          (cond (= k XK-INTR-N) (mem-set M 200 first)
+                (not (string=? (string-substring S a b) (xk-intr-name k))) (xg-err M 7102 f)
+                :else (recur (inc k))))))))
+
+;; ROOTED BASES (ADR 0373, kotoba-native docs/threat-model.md). Narrowing a window with
+;; (+ base offset), or taking a base out of memory, would conjure a window nothing
+;; checked, so the base operand (the first) of each of the three must be ROOTED:
+;;   - an integer literal (a literal window), or
+;;   - a parameter of the function that is never assigned in it (the ABI boundary
+;;     where the kernel hands in a region), or
+;;   - the result of kernel-subregion over a rooted base, or
+;;   - a let-bound local with exactly one assignment whose source is rooted.
+;; Anything else -- a value read from memory, arithmetic, a call result, a branch's
+;; result, a loop variable -- is refused (E7106, detail the SIR index of the call).
+;; SIR is read backwards from the call: the argument temps are allocated stack-wise,
+;; so the instruction that last wrote the base's temp before the call is the base's
+;; own last step, provided no label or jump lies between (otherwise a path could
+;; reach the call without it) and no op that may write that temp in a way this
+;; reader does not model is met first.
+(defn- xk-fn-start [M :vector-i64 i :i64] :i64
+  (if (<= i 1) 1 (if (= (xg-si M i IF-OP) OP-FN) i (xk-fn-start M (dec i)))))
+(defn- xk-lsets [M :vector-i64 j :i64 s :i64 cnt :i64] :i64
+  (if (>= j (vector-at M MM-SIR-N)) cnt
+    (let [op (xg-si M j IF-OP)]
+      (if (or (= op OP-FN) (= op OP-END)) cnt
+        (xk-lsets M (inc j) s (if (and (= op OP-LSET) (= (xg-si M j IF-A) s)) (inc cnt) cnt))))))
+(defn- xk-first-lset [M :vector-i64 j :i64 s :i64] :i64
+  (if (>= j (vector-at M MM-SIR-N)) -1
+    (let [op (xg-si M j IF-OP)]
+      (cond (or (= op OP-FN) (= op OP-END)) -1
+            (and (= op OP-LSET) (= (xg-si M j IF-A) s)) j
+            :else (xk-first-lset M (inc j) s)))))
+(defn- xk-param-slot? [M :vector-i64 j :i64 s :i64] :bool
+  (let [st (xk-fn-start M j) f (xg-si M st IF-A)]
+    (and (>= s 1) (<= s (xg-f M f FF-NPARAMS)) (= (xk-lsets M (inc st) s 0) 0))))
+(defn- xk-writer [M :vector-i64 i :i64 t :i64] :i64
+  (loop [j (dec i)]
+    (if (< j 1) -1
+      (let [op (xg-si M j IF-OP) a (xg-si M j IF-A) b (xg-si M j IF-B) c (xg-si M j IF-C)]
+        (cond (or (= op OP-LABEL) (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ) (= op OP-FN) (= op OP-END)) -1
+              (and (or (= op OP-CONST) (= op OP-LGET)) (= a t)) j
+              (and (or (= op OP-BIN) (= op OP-CMP) (= op OP-UN) (= op OP-CALL)) (= b t)) j
+              (or (= op OP-CONST) (= op OP-LGET) (= op OP-BIN) (= op OP-CMP) (= op OP-UN) (= op OP-CALL)
+                  (= op OP-LSET) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)) (recur (dec j))
+              (or (= a t) (= b t) (= c t)) -1
+              :else (recur (dec j)))))))
+(defn- xk-rooted [M :vector-i64 i :i64 t :i64 depth :i64] :bool
+  (if (> depth 6) false
+    (let [j (xk-writer M i t)]
+      (if (< j 0) false
+        (let [op (xg-si M j IF-OP) a (xg-si M j IF-A) b (xg-si M j IF-B)]
+          (cond (= op OP-CONST) true
+                (= op OP-LGET)
+                  (cond (xk-param-slot? M j b) true
+                        (= (xk-lsets M (inc (xk-fn-start M j)) b 0) 1)
+                          (let [k (xk-first-lset M (inc (xk-fn-start M j)) b)]
+                            (and (> k 0) (xk-rooted M k (xg-si M k IF-B) (inc depth))))
+                        :else false)
+                (= op OP-CALL) (and (= (xk-intr M a) 2) (xk-rooted M j b (inc depth)))
+                :else false))))))
+(defn- xk-check [M :vector-i64 i :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
+    (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
+      (if (and (= op OP-CALL) (>= (xk-intr M a) 0) (not (xk-rooted M i b 0)))
+        (xg-err M 7106 i)
+        (xk-check M (inc i))))))
+
 ;; Admission. The scalar profile is the x86_64-linux profile 0 subset with a
 ;; different export rule: exactly one exported defn, any name, at most five
 ;; scalar parameters, scalar result. `main` carries no special meaning.
@@ -102,7 +230,7 @@
                   (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))
 
 (defn- xo-build [M :vector-i64 S :string fuel :i64] :vector-i64
-  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0) (xo-check-fns S 1) (xg-check-sir 1))]
+  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0) (xo-check-fns S 1) (xg-check-sir 1) (xk-scan S) (xk-check 1))]
     (cond (not= (vector-at admitted MM-ERR) 0) admitted
           (= (xg-get admitted 1) 0) (xg-err admitted 7102 0)
           (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
@@ -114,7 +242,7 @@
                   (xo-elf (xg-fix generated 1) S a b (xo-shim-len fuel) fuel)))))
 
 (defn- xo-source [S :string path :string out :string fuel :i64] :i64
-  (let [text (string-concat S (ck-r6b-lib S)) front (xg-front text)]
+  (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib)) front (xg-front text)]
     (if (= (vector-at front MM-ERR) 0) (xo-report (xo-build front text fuel) path out) (drv-fail front path))))
 
 (defn- xo-command [] :i64
