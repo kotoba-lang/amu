@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Ported after the C loader was removed (scripts/seed/RETIRED.md): --selfbuild-output is now the output
+# directory of scripts/seed/selfhost-bootstrap.py; everything runs through its C-free aarch64 runner
+# (R-aarch64.elf) and the producer is its adopted fixed-point image (G3.bin). Run on arm64 Linux.
 """Native compiler-local positive interval, entry and scratch refusal controls."""
 import argparse,hashlib,importlib.util,json,os,shutil,subprocess
 from pathlib import Path
@@ -6,17 +9,16 @@ ROOT=Path(__file__).resolve().parents[2]
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 def main():
  ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--selfbuild-output',type=Path,required=True);a=ap.parse_args()
- out=a.selfbuild_output.resolve();host=out/'host';D=out/'artifacts/positive-quotient-proof-controls';D.mkdir(exist_ok=False)
- spec=importlib.util.spec_from_file_location('adopted_inputs',ROOT/'scripts/seed/build-adopted.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
- receipt,unity,_,_=m.inputs(ROOT/'seed/adoption-20261017.json')
- loader=host/'kexe-loader';producer=host/'positive-quotient-proof-producer.bin';shutil.copy2(out/'artifacts/G2.bin',producer)
+ out=a.selfbuild_output.resolve();(out/'artifacts').mkdir(exist_ok=True);(out/'host').mkdir(exist_ok=True);host=out/'host';D=out/'artifacts/positive-quotient-proof-controls';D.mkdir(exist_ok=False)
+ receipt=json.loads((ROOT/'seed/adoption-20261017.json').read_text())
+ loader=out/'R-aarch64.elf';producer=host/'positive-quotient-proof-producer.bin';shutil.copy2(out/'G3.bin',producer)
  assert sha(producer)==receipt['nativeImageSHA256']
  paths=[p.strip()for p in(ROOT/'seed/MANIFEST').read_text().splitlines()if p.strip()and not p.startswith('#')]
  fixture=ROOT/'seed/tests/unit/positive_quotient_t.kotoba';source=D/'controls.kotoba'
  # Internal generator controls omit the separately qualified CLI driver.
  source.write_bytes(b''.join((ROOT/p).read_bytes()+b'\n'for p in paths if p not in {'seed/90-drv.kotoba','seed/99-entry.kotoba'})+fixture.read_bytes()+b'\n')
  pins={p:sha(p)for p in[loader,producer,source,fixture]};env={k:v for k,v in os.environ.items()if not k.startswith('KEXE_')}
- env.update(KEXE_COMMAND='1',KEXE_CAP_RESOURCES_35=str(D),KEXE_FUEL='off',KEXE_VECTORS='4194304',KEXE_VECTOR_ITEMS='134217728',KEXE_STRING_POOL='268435456',KEXE_PAIRS='16777216',KEXE_CPU_SECONDS='1800',KEXE_WALL_SECONDS='1800',TMPDIR=str(D))
+ env.update(KEXE_COMMAND='1',KEXE_STACK_BYTES='8388608',KEXE_CAP_RESOURCES_35=str(D),KEXE_FUEL='off',KEXE_VECTORS='4194304',KEXE_VECTOR_ITEMS='134217728',KEXE_STRING_POOL='268435456',KEXE_PAIRS='16777216',KEXE_CPU_SECONDS='1800',KEXE_WALL_SECONDS='1800',TMPDIR=str(D))
  calls=[]
  def call(name,p,args):
   z=subprocess.run(list(map(str,[loader,p,'0','0','aarch64','35,37,38,39','--',*args])),cwd=D,env=env,capture_output=True,timeout=1800)

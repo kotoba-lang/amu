@@ -1,0 +1,246 @@
+{
+ "schema": "amu.seed.static-cases.v1",
+ "provenance": "AArch64 results of the pinned trusted C loader, measured 2026-10-22 (scripts/seed/check-x86_64-selfhost.py --prepare, receipt docs/evidence/native-x86_64-kx64-runner-20261022/selfhost-prepare.json); kept as fixed expectations after the loader was removed",
+ "cases": [
+  {
+   "name": "string-literal",
+   "source": "(ns runtime-string-literal (:export [main]))\n\n(defn main [] :i64 (string-length \"hello\"))\n",
+   "result": 5,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "string-concat",
+   "source": "(ns runtime-string-concat (:export [main]))\n\n(defn main [] :i64 (if (string=? (string-concat \"ab\" \"cd\") \"abcd\") 42 -1))\n",
+   "result": 42,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "string-view",
+   "source": "(ns runtime-string-view (:export [main]))\n\n(defn main [] :i64 (string-code-point-at (string-substring (string-concat \"xx\" \"abcd\") 2 6) 1))\n",
+   "result": 98,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "string-unicode",
+   "source": "(ns runtime-string-unicode (:export [main]))\n\n(defn main [] :i64 (+ (string-length \"\u65e5\u00e9\") (string-code-point-at \"\u65e5\u00e9\" 3)))\n",
+   "result": 238,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "string-empty-nul",
+   "source": "(ns runtime-string-empty-nul (:export [main]))\n\n(defn main [] :i64 (if (string=? (string-concat \"\" \"a\\u0000b\") \"a\\u0000b\") 42 -1))\n",
+   "result": 42,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "string-search",
+   "source": "(ns runtime-string-search (:export [main]))\n\n(defn main [] :i64 (+ (string-index-of (string-concat \"ab\" \"cd\") \"bc\") (string-compare \"a\" \"b\")))\n",
+   "result": 0,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "string-call",
+   "source": "(ns runtime-string-call (:export [main]))\n(defn- decorate [s :string] :string (string-concat \"[\" (string-concat s \"]\")))\n(defn main [] :i64 (string-length (decorate \"hello\")))\n",
+   "result": 7,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999998
+   }
+  },
+  {
+   "name": "vector-literal",
+   "source": "(ns runtime-vector-literal (:export [main]))\n\n(defn main [] :i64 (vector-at [11 22 33] 1))\n",
+   "result": 22,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "vector-dynamic",
+   "source": "(ns runtime-vector-dynamic (:export [main]))\n\n(defn main [] :i64 (let [x 7 v [x (+ x 1)]] (+ (vector-at v 0) (vector-at v 1))))\n",
+   "result": 15,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "vector-persistent",
+   "source": "(ns runtime-vector-persistent (:export [main]))\n\n(defn main [] :i64 (let [v [10 20] w (vector-assoc v 0 30)] (+ (vector-at v 0) (vector-at w 0))))\n",
+   "result": 40,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "vector-mutate",
+   "source": "(ns runtime-vector-mutate (:export [main]))\n\n(defn main [] :i64 (let [v (vector-alloc 5) w (vector-assoc! v 3 42)] (vector-at w 3)))\n",
+   "result": 42,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "vector-drop-conj",
+   "source": "(ns runtime-vector-drop-conj (:export [main]))\n\n(defn main [] :i64 (let [v (vector-conj [1 2] 9) w (vector-drop v 1)] (+ (vector-count w) (vector-at w 1))))\n",
+   "result": 11,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999995
+   }
+  },
+  {
+   "name": "vector-pooled",
+   "source": "(ns runtime-vector-pooled (:export [main]))\n\n(defn main [] :i64 (vector-count [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79]))\n",
+   "result": 80,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "vector-negative",
+   "source": "(ns runtime-vector-negative (:export [main]))\n(defn- negative [] :i64 -1)\n(defn main [] :i64 (vector-at [10 20] (negative)))\n",
+   "result": null,
+   "trap": true,
+   "reference": {
+    "exit": 120,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "vector-oob",
+   "source": "(ns runtime-vector-oob (:export [main]))\n\n(defn main [] :i64 (let [v [10 20]] (vector-at v 2)))\n",
+   "result": null,
+   "trap": true,
+   "reference": {
+    "exit": 120,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "string-oob",
+   "source": "(ns runtime-string-oob (:export [main]))\n\n(defn main [] :i64 (string-length (string-substring \"hello\" 0 10)))\n",
+   "result": null,
+   "trap": true,
+   "reference": {
+    "exit": 120,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "string-boundary",
+   "source": "(ns runtime-string-boundary (:export [main]))\n\n(defn main [] :i64 (string-length (string-substring \"\u65e5\u00e9\" 1 3)))\n",
+   "result": null,
+   "trap": true,
+   "reference": {
+    "exit": 120,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "wide-args",
+   "source": "(ns runtime-wide-args (:export [main]))\n(defn- wide [p0 :i64 p1 :i64 p2 :i64 p3 :i64 p4 :i64 p5 :i64 p6 :i64 p7 :i64 p8 :i64 p9 :i64 p10 :i64 p11 :i64 p12 :i64 p13 :i64 p14 :i64 p15 :i64] :i64 (+ (* p0 1) (* p1 2) (* p2 3) (* p3 4) (* p4 5) (* p5 6) (* p6 7) (* p7 8) (* p8 9) (* p9 10) (* p10 11) (* p11 12) (* p12 13) (* p13 14) (* p14 15) (* p15 16)))\n(defn main [] :i64 (wide 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16))\n",
+   "result": 1496,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "closure",
+   "source": "(ns runtime-closure (:export [main]))\n\n(defn main [] :i64 (let [k 9 f (fn [x] (+ x k))] (invoke f 33)))\n",
+   "result": 42,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "closure-env",
+   "source": "(ns runtime-closure-env (:export [main]))\n\n(defn main [] :i64 (let [a 10 b 20 f (fn [x] (+ x a b))] (invoke f 12)))\n",
+   "result": 42,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999998
+   }
+  },
+  {
+   "name": "state-results",
+   "source": "(ns runtime-state-results (:export [main]))\n(defhandler tally [:state :i64] (get [s] (resume s s)) (put [s v] (resume v v)))\n(defn main [] :i64 (handle (do (perform :state/put 42) (perform :state/get)) (with tally 0)))\n",
+   "result": 42,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "bytes-roundtrip",
+   "source": "(ns runtime-bytes-roundtrip (:export [main]))\n\n(defn main [] :i64 (string-code-point-at (string-from-utf8 (bytes-from-vector-i64 [65 66])) 1))\n",
+   "result": 66,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "capability-denied",
+   "source": "(ns runtime-capability-denied (:export [main]))\n\n(defn main [] :i64 (let [x (typed-cap-call :io/write :string :string \"denied\")] 42))\n",
+   "result": null,
+   "trap": true,
+   "reference": {
+    "exit": 120,
+    "remainingFuel": 999999
+   }
+  },
+  {
+   "name": "mutual-tail",
+   "source": "(ns runtime-mutual-tail (:export [main]))\n(defn- even [n :i64] :bool (if (= n 0) true (odd (dec n))))\n(defn- odd [n :i64] :bool (if (= n 0) false (even (dec n))))\n(defn main [] :i64 (if (even 20000) 42 -1))\n",
+   "result": 42,
+   "trap": false,
+   "reference": {
+    "exit": 0,
+    "remainingFuel": 979998
+   }
+  }
+ ]
+}

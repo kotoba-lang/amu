@@ -1,23 +1,28 @@
 #!/usr/bin/env python3
-"""Correctness-only integration of frozen source; no timing/search or host-language compiler."""
+"""Correctness-only integration of frozen source; no timing/search or host-language compiler.
+
+Ported after the C loader was removed (scripts/seed/RETIRED.md): every compiler and guest
+call goes through the C-free aarch64 runner from a selfhost-bootstrap.py output
+(--bootstrap). Run on arm64 Linux.
+"""
 import argparse,hashlib,json,os,pathlib,platform,re,subprocess,tarfile
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 def require_smoke_42(stdout,stderr):
  assert stdout==b'42\n' and stderr==b'', 'smoke result must be exactly 42, no diagnostics'
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 def main():
- ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--output',type=pathlib.Path,required=True);ap.add_argument('--main',action='store_true');a=ap.parse_args()
- if (platform.system(),platform.machine())!=('Darwin','arm64'):raise SystemExit('requires macOS arm64')
+ ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--output',type=pathlib.Path,required=True);ap.add_argument('--main',action='store_true');ap.add_argument('--bootstrap',type=pathlib.Path,required=True);a=ap.parse_args()
+ if platform.system()!='Linux' or platform.machine() not in ('aarch64','arm64'):raise SystemExit('requires arm64 Linux')
  out=a.output.resolve();out.mkdir(exist_ok=False,parents=True);host=out/'host';art=out/'artifacts';host.mkdir();art.mkdir()
  archive=ROOT/'docs/evidence/native-selfhost-paused-20261012/evidence.tgz'
  cp=json.loads((archive.parent/'checkpoint.json').read_text());assert sha(archive)==cp['evidence_archive']['sha256']
  paths=[p for p in (ROOT/('seed/MANIFEST' if a.main else 'seed/preserved-20261012/MANIFEST')).read_text().splitlines() if p and not p.startswith('#')];assert len(paths)==16
  unity=b''.join((ROOT/p).read_bytes()+b'\n' for p in paths);source=art/'seed-unity.kotoba';source.write_bytes(unity)
- loader_source=ROOT/'seed/bootstrap/adopted-loader-20261012.c';loader_pin=sha(loader_source);loader=host/'loader'
- env=dict(os.environ);env.update(KEXE_COMMAND='1',KEXE_CAP_RESOURCES_35=str(art),KEXE_FUEL='off',KEXE_VECTORS='4194304',KEXE_VECTOR_ITEMS='134217728',KEXE_STRING_POOL='268435456',KEXE_PAIRS='16777216',KEXE_CPU_SECONDS='1800',KEXE_WALL_SECONDS='1800',TMPDIR=str(art))
+ loader=host/'R-aarch64.elf';loader.write_bytes((a.bootstrap.resolve()/'R-aarch64.elf').read_bytes());loader.chmod(0o755);loader_pin=sha(loader)
+ env=dict(os.environ);env.update(KEXE_COMMAND='1',KEXE_STACK_BYTES='8388608',KEXE_CAP_RESOURCES_35=str(art),KEXE_FUEL='off',KEXE_VECTORS='4194304',KEXE_VECTOR_ITEMS='134217728',KEXE_STRING_POOL='268435456',KEXE_PAIRS='16777216',KEXE_CPU_SECONDS='1800',KEXE_WALL_SECONDS='1800',TMPDIR=str(art))
  calls=[]
  def run(argv,name,expect=0):
-  inputs=[source,loader_source]+([loader] if loader.exists() else [])
+  inputs=[source,loader]
   for arg in argv[1:]:
    path=pathlib.Path(str(arg))
    if path.is_file() and path not in inputs:inputs.append(path)
@@ -33,7 +38,6 @@ def main():
    stderr=(host/(name+'.stderr')).read_bytes()[-4000:]
    raise AssertionError(f'{name}: exit {r.returncode}, expected {expect}; stdout={stdout!r}; stderr={stderr!r}')
   return (host/(name+'.stdout')).read_bytes()+(host/(name+'.stderr')).read_bytes()
- run(['clang','-std=c11','-O2',loader_source,'-o',loader],'loader-build')
  frozen='workspace/held-compiler-cli30-bounded-balanced-byte-tree-token-capacity-picojpeg-fixedpoint6-source-v4-20261012-next/run-outputs/G4.bin'
  original19='workspace/held-compiler-cli30-bounded-balanced-byte-tree-token-capacity-picojpeg-g4-original19-compile38-source-v4-20261012-next/run-outputs/'
  with tarfile.open(archive) as t:
@@ -127,7 +131,7 @@ def main():
   run(prefix+['compile',source_input,'--target','aarch64-macos','--output',container],name+'-compile')
   run(prefix+['extract-native',container,'--symbol',symbols[name],'--output',image],name+'-extract');assert sha(image)==oldsha,name+' payload changed'
   images.append({'workload':name,'sha256':sha(image),'baselineImageExact':True})
- report={'status':'PASS_MAIN_AND_PRESERVED_POLICY_SAFETY' if a.main else 'PASS_PRESERVED_SOURCE_SAFETY_REINTEGRATION','sourceUnitySHA256':hashlib.sha256(unity).hexdigest(),'generations':gens,'explicitPolicyRefusals':len(policies)*4+6,'policyFreeResult':42,'inputCorpus':'current-official-all19' if a.main else 'preserved-original19','trustedLoaderSHA256':loader_pin,'performanceMeasurement':False,'goalStatus':receipt.get('performanceGoalStatus','unspecified') if a.main else 'paused','mainDefaultCompilerChanged':a.main,'publicLoaderChanged':False}
+ report={'status':'PASS_MAIN_AND_PRESERVED_POLICY_SAFETY' if a.main else 'PASS_PRESERVED_SOURCE_SAFETY_REINTEGRATION','sourceUnitySHA256':hashlib.sha256(unity).hexdigest(),'generations':gens,'explicitPolicyRefusals':len(policies)*4+6,'policyFreeResult':42,'inputCorpus':'current-official-all19' if a.main else 'preserved-original19','cFreeRunnerSHA256':loader_pin,'cCompilerOrLoader':False,'performanceMeasurement':False,'goalStatus':receipt.get('performanceGoalStatus','unspecified') if a.main else 'paused','mainDefaultCompilerChanged':a.main,'publicLoaderChanged':False}
  report['currentAll19Images' if a.main else 'original19Images']=images
  (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))
 if __name__=='__main__':main()
