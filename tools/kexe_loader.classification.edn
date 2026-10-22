@@ -166,6 +166,22 @@
   "kexe_free_browse_entries" {:class :mechanism :gone true}
   "kexe_llm_helper_start" {:class :mechanism}
   "llm_generate_provider" {:class :mechanism}
+  "kexe_http_helper_start" {:class :mechanism}
+  "http_post_provider" {:class :mechanism}
+  "kexe_close_inherited_fds" {:class :mechanism :new true}
+  "kexe_sleep_ms" {:class :mechanism :new true}
+  "kexe_elapsed_ms" {:class :mechanism :new true}
+  "kexe_helper_exited" {:class :mechanism :new true}
+  "kexe_helper_reap" {:class :mixed :new true
+                      :left "a host helper gets KEXE_HELPER_GRACE_MS (2 s) after SIGTERM before SIGKILL"}
+  "khttp_origin_of" {:class :decision :new true
+                     :left "the :http/post URL grammar and origin canonicalization (https only, host [A-Za-z0-9.-], port 1..65535, :443 dropped, lowercase)"}
+  "khttp_grant_init" {:class :decision :new true
+                      :left "the :http/post origin grant: comma-separated, at most 16, absent grants none"}
+  "khttp_refuse" {:class :decision :new true
+                  :left "the :http/post refusal names (:http/malformed-url, :http/origin-not-granted)"}
+  "khttp_admit" {:class :mixed :new true
+                 :left "a URL line longer than 4096 bytes (the http-v1 kit's :url-bytes) is malformed"}
   "kexe_le64" {:class :mechanism}
   "kexe_normalize_path" {:class :decision :left "lexical . / .. / // normalization: what a path MEANS before admission"}
   "kexe_parse_u64_span" {:class :mechanism :before :decision
