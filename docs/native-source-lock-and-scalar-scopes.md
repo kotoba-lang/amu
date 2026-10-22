@@ -30,7 +30,7 @@ repository; no hosted allocator or loader is added here.
 ## Native receipts
 
 See [correctness.json](evidence/native-source-lock-20261023/correctness.json)
-and its separately labelled intermediate pin-refusal receipt. The current
+and its separately labelled intermediate pin-refusal receipt. The first
 18-module unity bytes exactly match the source used to build G5. G5 rebuilt
 G6 to an identical 2,573,947-byte KSEED, SHA-256
 `bb94ca3692b4bf1f62fbdb3447a916aec48145dc3da3ab814e57421bd162042c`.
@@ -45,6 +45,19 @@ compiled by G5 and packaged/executed with the growth runtime. Their KSEED/raw
 code matches the earlier G2 receipt; the new ELF runtime hashes are separate.
 These are correctness results, without a fresh performance score.
 
+The parent reader updates through `588a96a4` were subsequently retained by a
+normal merge. [integrated-correctness.json](evidence/native-source-lock-20261023/integrated-correctness.json)
+records the current 2,811,561-byte unity, SHA-256
+`6155de09d2226d8183e8bda5ff609149bc8dc7dead000db98654d87ab7a1c92e`.
+G7 rebuilt G8 byte-identically, KSEED SHA-256
+`870b7ba49b28edf44d325594ce46aa5e5df212046c9ccc294f9a48db29fc1fbb`.
+G7's ELF SHA-256 is
+`f3a4b31d4219c5e8d920885093f565388ffe0e1ea8dc81073094e435bb94751d`.
+G7 freshly passes all 19 correctness workloads, SHA/KSL1 units, all 17 pin
+refusals, reference-escape refusal, and the locked two-module compile/run.
+It checks/compiles the whole 33-source MIR project to the exact same KSEED
+bytes as the G5 image whose eight ordinary/large entries were executed.
+
 MIR's whole linked ordinary suite and both-target allocator pressure run on
 this compiler. Its separate source/lock receipt records the large-case work.
 No old compiler host, C loader or Python semantic materializer was executed.
@@ -54,5 +67,5 @@ the existing VM's native executables. Process tracing remains unavailable.
 This is experimental AAPCS64 emission framed for an existing AArch64 Linux
 guest. Public CLI/target/profile/seal, x86_64-linux-static CDCI controller,
 owning main/resolver/CID integration, generic abort/recur cleanup and the full
-historical corpus remain open. The parent draft's later quote-reader updates
-are a separate integration input; this receipt identifies the exact tested core.
+historical corpus remain open. Every receipt identifies its exact tested core;
+the later integrated generation does not rewrite the earlier evidence.
