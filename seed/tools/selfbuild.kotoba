@@ -252,11 +252,22 @@
                   (let [dest (c3 W "/cp/" name)
                         z (l/mkdirs R dest)
                         r (restore clone sha dest "src")
-                        tree (git-out clone (c3 "rev-parse\t" sha ":src"))]
-                    (if (not (string=? r ""))
-                      (c4 "!" coord ": " r)
-                      (recur (+ k 1) (c3 roots dest "/src\n")
-                             (string-concat prov (c6 "root " coord " " sha (c4 " src tree " tree " clone " clone) (c3 " -> " dest "/src\n")))))))))))))
+                        tree (git-out clone (c3 "rev-parse\t" sha ":src"))
+                        kg (git-ok clone (c3 "cat-file\t-e\t" sha ":kotoba"))
+                        rk (if (= kg 1) (restore clone sha dest "kotoba") "")
+                        ktree (if (= kg 1) (git-out clone (c3 "rev-parse\t" sha ":kotoba")) "")]
+                    (cond (not (string=? r "")) (c4 "!" coord ": " r)
+                          (and (= kg 1) (not (string=? rk ""))) (c4 "!" coord ": " rk)
+                          :else
+                          (recur (+ k 1)
+                                 (if (= kg 1) (c5 roots dest "/kotoba\n" dest "/src\n") (c3 roots dest "/src\n"))
+                                 (string-concat
+                                  (string-concat
+                                   prov
+                                   (c6 "root " coord " " sha (c4 " src tree " tree " clone " clone) (c3 " -> " dest "/src\n")))
+                                  (if (= kg 1)
+                                    (c6 "root " coord " " sha (c4 " kotoba tree " ktree " clone " clone) (c3 " -> " dest "/kotoba\n"))
+                                    ""))))))))))))
 
 ;; the kotoba-lang root (its lang/compat is a module root) or "!<error>"
 (defn- kotoba-lang [R :string W :string krepo :string krev :string kdir :string] :string
