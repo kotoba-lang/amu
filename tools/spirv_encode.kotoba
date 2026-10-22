@@ -1,0 +1,121 @@
+(ns spirv-encode (:export [spv-new spv-count spv-word spv-write spv-token-free?]))
+
+;; SPIR-V binary encoder (ADR 0372 step 1). Kernel generators build a module
+;; with these functions; spirv_check.kotoba checks it; spv-write writes the
+;; bytes through :fs/app-data-bytes. No C or C++ tool is involved.
+;;
+;; A module under construction is a vector M: M[0] is the number of words
+;; written, and word k is M[k + 1]. The caller sizes M once (spv-new) and every
+;; write is in place (vector-assoc!), so building a module is linear. A word
+;; is a u32 held in an i64.
+;;
+;; A unit that uses this file prepends its own ns line and drops this one, as
+;; seed/MANIFEST units do (scripts/seed/check-gpu-kernel-spirv.py).
+
+;; ---------------------------------------------------------------------
+;; Words.
+
+(defn spv-new [cap :i64] :vector-i64 (vector-alloc (+ cap 1)))
+
+(defn spv-count [M :vector-i64] :i64 (vector-at M 0))
+
+;; word k (0-based) of the module
+(defn spv-word [M :vector-i64 k :i64] :i64 (vector-at M (+ k 1)))
+
+(defn- spv-put [M :vector-i64 w :i64] :vector-i64
+  (let [n (vector-at M 0)]
+    (vector-assoc! (vector-assoc! M (+ n 1) (bit-and w 4294967295)) 0 (+ n 1))))
+
+;; the first word of an instruction: word count in the high half, opcode low
+(defn- spv-head [M :vector-i64 op :i64 wc :i64] :vector-i64
+  (spv-put M (bit-or (i64-shift-left wc 16) op)))
+
+(defn- spv-i0 [M :vector-i64 op :i64] :vector-i64 (spv-head M op 1))
+(defn- spv-i1 [M :vector-i64 op :i64 a :i64] :vector-i64 (spv-put (spv-head M op 2) a))
+(defn- spv-i2 [M :vector-i64 op :i64 a :i64 b :i64] :vector-i64
+  (spv-put (spv-put (spv-head M op 3) a) b))
+(defn- spv-i3 [M :vector-i64 op :i64 a :i64 b :i64 c :i64] :vector-i64
+  (spv-put (spv-put (spv-put (spv-head M op 4) a) b) c))
+(defn- spv-i4 [M :vector-i64 op :i64 a :i64 b :i64 c :i64 d :i64] :vector-i64
+  (spv-put (spv-put (spv-put (spv-put (spv-head M op 5) a) b) c) d))
+(defn- spv-i5 [M :vector-i64 op :i64 a :i64 b :i64 c :i64 d :i64 e :i64] :vector-i64
+  (spv-put (spv-put (spv-put (spv-put (spv-put (spv-head M op 6) a) b) c) d) e))
+
+;; ---------------------------------------------------------------------
+;; Literal strings: the bytes, a NUL, then NUL padding to a word boundary,
+;; four bytes per word, first byte lowest. ASCII only.
+
+(defn- spv-str-words [s :string] :i64 (+ (quot (string-length s) 4) 1))
+
+(defn- spv-str-word [s :string k :i64] :i64
+  (let [n (string-length s)]
+    (loop [j 3 w 0]
+      (if (< j 0) w
+        (let [i (+ (* 4 k) j)
+              b (if (< i n) (string-code-point-at s i) 0)]
+          (recur (dec j) (bit-or (i64-shift-left w 8) b)))))))
+
+(defn- spv-put-str [M :vector-i64 s :string] :vector-i64
+  (let [nw (spv-str-words s)]
+    (loop [k 0 V M]
+      (if (>= k nw) V (recur (inc k) (spv-put V (spv-str-word s k)))))))
+
+;; ---------------------------------------------------------------------
+;; Header: magic, version, generator 0, bound (spv-finish), schema 0.
+
+(def SPV-MAGIC 0x07230203)
+(def SPV-VERSION-1-3 0x00010300)
+
+(defn- spv-header [M :vector-i64 version :i64] :vector-i64
+  (-> M (spv-put SPV-MAGIC) (spv-put version) (spv-put 0) (spv-put 0) (spv-put 0)))
+
+(defn- spv-finish [M :vector-i64 bound :i64] :vector-i64 (vector-assoc! M 4 bound))
+
+;; ---------------------------------------------------------------------
+;; Writing. The request is "<path>WRITE_SEP<bytes>" as :bytes (wire 35 kind 8),
+;; the route the seed uses for its own binaries (seed/02-io io-write-bytes).
+
+;; the bytes of "WRITE_SEP" (k 0..8) and "APPEND_SEP" (k 0..9)
+(defn- spv-tok [tw :i64 k :i64] :i64
+  (if (= tw 0) (vector-at [87 82 73 84 69 95 83 69 80] k) (vector-at [65 80 80 69 78 68 95 83 69 80] k)))
+(defn- spv-tok-n [tw :i64] :i64 (if (= tw 0) 9 10))
+
+(defn- spv-tok-at? [T :vector-i64 i :i64 end :i64 tw :i64] :bool
+  (if (> (+ i (spv-tok-n tw)) end) false
+    (loop [k 0]
+      (cond (>= k (spv-tok-n tw)) true
+            (= (vector-at T (+ i k)) (spv-tok tw k)) (recur (inc k))
+            :else false))))
+
+;; true when T[start, end) spells neither request token: the runtime refuses a
+;; request whose content holds one, so such a module is not written
+(defn spv-token-free? [T :vector-i64 start :i64 end :i64] :bool
+  (loop [i start]
+    (cond (>= i end) true
+          (spv-tok-at? T i end 0) false
+          (spv-tok-at? T i end 1) false
+          :else (recur (inc i)))))
+
+;; the module's bytes, little-endian words, at T[pre ..]
+(defn- spv-fill-bytes [T :vector-i64 M :vector-i64 pre :i64] :vector-i64
+  (let [n (vector-at M 0)]
+    (loop [k 0 V T]
+      (if (>= k n) V
+        (let [w (vector-at M (+ k 1)) at (+ pre (* 4 k))
+              V1 (vector-assoc! V at (bit-and w 255))
+              V2 (vector-assoc! V1 (+ at 1) (bit-and (u64-shift-right w 8) 255))
+              V3 (vector-assoc! V2 (+ at 2) (bit-and (u64-shift-right w 16) 255))]
+          (recur (inc k) (vector-assoc! V3 (+ at 3) (bit-and (u64-shift-right w 24) 255))))))))
+
+;; write M as the file at path, inside the granted :fs/app-data scope; answers
+;; the number of bytes written, -1 when the content spells a request token
+(defn spv-write [M :vector-i64 path :string] :i64
+  (let [plen (string-length path)
+        n (* 4 (vector-at M 0))
+        T0 (vector-alloc (+ plen 9 n))
+        T1 (loop [i 0 V T0] (if (>= i plen) V (recur (inc i) (vector-assoc! V i (string-code-point-at path i)))))
+        T2 (loop [k 0 V T1] (if (>= k 9) V (recur (inc k) (vector-assoc! V (+ plen k) (spv-tok 0 k)))))
+        T3 (spv-fill-bytes T2 M (+ plen 9))]
+    (if (not (spv-token-free? T3 (+ plen 9) (+ plen 9 n))) -1
+      (let [r (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 T3))]
+        (bytes-count r)))))
