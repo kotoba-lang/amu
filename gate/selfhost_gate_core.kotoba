@@ -1,0 +1,92 @@
+(ns gate.selfhost-gate-core
+  "The Amu selfhost gate's verdict core (docs/selfhost-gate.md, JUN-282).
+  Pure: no process, file or clock. The native controller measures; this decides.
+
+  Check status codes: 0 = pass, 1 = fail, 2 = unmeasured. Unmeasured is a
+  failure: nothing is skipped (fail closed). Required checks, in order:
+  1 pins  2 generations (g1=g2=g3)  3 closure (forbidden-process trace empty)
+  4 corpus (no case removed)  5 execution (loaderless x86_64-linux-static ELF)
+  The ratchet (host-coupling markers: head must not exceed base) is diagnostic
+  but a regression still fails the verdict.
+
+  Verdict codes: 0 = PASS, 1 = FAIL. 2 (could not complete) is reserved for the
+  controller. Same bounds as tsukasa.ledger-core: nested if, string reason
+  literals, no keyword values."
+  (:export [check-problem required-problem ratchet-problem verdict-code
+            verdict-reason generations-agree? corpus-preserved?
+            test-checks test-verdict test-generations test-corpus
+            test-ratchet]))
+
+(defn check-problem [status :i64] :string
+  (if (= status 0) "gate/ok"
+    (if (= status 1) "gate/check-failed"
+      (if (= status 2) "gate/unmeasured" "gate/unknown-status"))))
+
+;; First problem among the five required checks, in declared order.
+(defn required-problem [pins :i64 gens :i64 closure :i64 corpus :i64 exec :i64] :string
+  (if (not (= pins 0)) (string-concat "gate/pins:" (check-problem pins))
+  (if (not (= gens 0)) (string-concat "gate/generations:" (check-problem gens))
+  (if (not (= closure 0)) (string-concat "gate/closure:" (check-problem closure))
+  (if (not (= corpus 0)) (string-concat "gate/corpus:" (check-problem corpus))
+  (if (not (= exec 0)) (string-concat "gate/execution:" (check-problem exec))
+  "gate/ok"))))))
+
+;; Host-coupling markers (rc-no-arm, kotoba-nil): head must not exceed base.
+;; A negative count means the count was not measured.
+(defn ratchet-problem [base :i64 head :i64] :string
+  (if (< base 0) "gate/ratchet:unmeasured"
+    (if (< head 0) "gate/ratchet:unmeasured"
+      (if (> head base) "gate/ratchet:regressed" "gate/ok"))))
+
+(defn verdict-reason [pins :i64 gens :i64 closure :i64 corpus :i64 exec :i64
+                      base :i64 head :i64] :string
+  (let [r (required-problem pins gens closure corpus exec)]
+    (if (= r "gate/ok") (ratchet-problem base head) r)))
+
+;; 0 PASS, 1 FAIL. Any unmeasured input also yields 1.
+(defn verdict-code [pins :i64 gens :i64 closure :i64 corpus :i64 exec :i64
+                    base :i64 head :i64] :i64
+  (if (= (verdict-reason pins gens closure corpus exec base head) "gate/ok") 0 1))
+
+;; Generations: g1 = g2 = g3 by artifact hash (hashes compared as given).
+(defn generations-agree? [g1 :string g2 :string g3 :string] :bool
+  (if (= g1 "") false
+    (if (= g1 g2) (= g2 g3) false)))
+
+;; Corpus: every base case is still present and passing on head.
+(defn corpus-preserved? [base-cases :i64 head-cases :i64 head-passed :i64] :bool
+  (if (< head-cases base-cases) false
+    (if (= head-cases 0) false (= head-passed head-cases))))
+
+(defn test-checks [] :bool
+  (and (= (check-problem 0) "gate/ok")
+       (and (= (check-problem 1) "gate/check-failed")
+            (and (= (check-problem 2) "gate/unmeasured")
+                 (= (check-problem 9) "gate/unknown-status")))))
+
+(defn test-verdict [] :bool
+  (and (= (verdict-code 0 0 0 0 0 13 13) 0)
+       (and (= (verdict-code 0 0 0 0 0 13 0) 0)
+            (and (= (verdict-code 2 0 0 0 0 13 13) 1)
+                 (and (= (verdict-code 0 0 1 0 0 13 13) 1)
+                      (= (verdict-reason 0 0 0 2 0 1 1) "gate/corpus:gate/unmeasured"))))))
+
+(defn test-generations [] :bool
+  (and (generations-agree? "a1" "a1" "a1")
+       (and (not (generations-agree? "a1" "a1" "b2"))
+            (and (not (generations-agree? "" "" ""))
+                 (not (generations-agree? "a1" "b2" "b2"))))))
+
+(defn test-corpus [] :bool
+  (and (corpus-preserved? 372 372 372)
+       (and (corpus-preserved? 372 400 400)
+            (and (not (corpus-preserved? 372 371 371))
+                 (and (not (corpus-preserved? 372 372 370))
+                      (not (corpus-preserved? 0 0 0)))))))
+
+(defn test-ratchet [] :bool
+  (and (= (ratchet-problem 13 13) "gate/ok")
+       (and (= (ratchet-problem 13 12) "gate/ok")
+            (and (= (ratchet-problem 13 14) "gate/ratchet:regressed")
+                 (and (= (ratchet-problem -1 5) "gate/ratchet:unmeasured")
+                      (= (ratchet-problem 5 -1) "gate/ratchet:unmeasured"))))))
