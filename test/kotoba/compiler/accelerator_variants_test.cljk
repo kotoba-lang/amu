@@ -16,7 +16,7 @@
     (let [reduce-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
           ewise-kir (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
           subwarp-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 16})]
-      (doseq [vendor [:apple :intel :arm :amd :unknown :qualcomm]]
+      (doseq [vendor [:apple :intel :arm :nvidia :amd :unknown :qualcomm]]
         (is (= :baseline (:variant (variants/select-variant vendor reduce-kir)))))
       (is (= :baseline (:variant (variants/select-variant :nvidia ewise-kir))))
       (is (= :baseline (:variant (variants/select-variant :nvidia subwarp-kir))))
@@ -52,13 +52,14 @@
              (accelerator/lower kir :cuda-v1 apple))))))
 
 (deftest subgroup-reduce-rows-select-under-their-gates
-  ;; JUN-59 (Intel, ADR-0356), JUN-60 (ARM, ADR-0357) and JUN-58 (Apple,
-  ;; ADR-0360) selection rows:
+  ;; JUN-59 (Intel, ADR-0356), JUN-60 (ARM, ADR-0357), JUN-58 (Apple,
+  ;; ADR-0360) and JUN-57 (NVIDIA on the Vulkan route, ADR-0361) selection
+  ;; rows:
   ;; :subgroup-reduce is answered for a reduce over :sum/:max/:min with
   ;; W >= 32, on the Vulkan route under either of its two names, on a device
   ;; descriptor that reports the fold's subgroup ops and a subgroup size
   ;; that divides W (ADR-0356 rule 6 / ADR-0357's capability precondition).
-  (doseq [vendor [:intel :arm :apple]
+  (doseq [vendor [:intel :arm :apple :nvidia]
           wg [32 64 128 256 512 1024]
           operator [:sum :max :min]
           target [:vulkan :glsl-v1]
@@ -121,10 +122,22 @@
       (doseq [target [:cuda :cuda-v1 :wgsl-v1 :msl-v1 :webgpu nil]]
         (is (= :baseline (:variant (variants/select-variant :intel kir target capable))))
         (is (= :baseline (:variant (variants/select-variant :arm kir target capable))))
-        (is (= :baseline (:variant (variants/select-variant :apple kir target capable))))))
-    (testing "a vendor outside the three designed rows"
-      (doseq [vendor [:nvidia :amd :unknown :qualcomm]]
+        (is (= :baseline (:variant (variants/select-variant :apple kir target capable))))
+        (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable))))))
+    (testing "a vendor outside the four designed rows"
+      (doseq [vendor [:amd :unknown :qualcomm]]
         (is (= :baseline (:variant (variants/select-variant vendor kir :vulkan capable))))))
+    (testing "an NVIDIA descriptor whose reported compute capability contradicts the sm_70+ floor (ADR-0361)"
+      (doseq [device [(assoc capable :compute-capability 6.0)
+                      (assoc capable :compute-capability 6.5)
+                      (assoc capable :compute-capability "7.0")
+                      (assoc capable :compute-capability :seven)]
+              target [:vulkan :glsl-v1]]
+        (is (= :baseline (:variant (variants/select-variant :nvidia kir target device)))
+            (str "compute capability " (pr-str (:compute-capability device)) " must fail closed")))
+      (testing "and an absent capability is not a refusal: the reported subgroup facts are the evidence"
+        (doseq [target [:vulkan :glsl-v1]]
+          (is (= :subgroup-reduce (:variant (variants/select-variant :nvidia kir target capable)))))))
     (testing "a shape outside the emission's row"
       (is (= :baseline (:variant (variants/select-variant :intel ewise :vulkan capable))))
       (is (= :baseline (:variant (variants/select-variant :arm sub-min :vulkan capable))))
@@ -157,7 +170,7 @@
       (is (= :warp-shuffle-reduce
              (:variant (variants/select-variant :nvidia reduce-kir target
                                                 {:compute-capability 7.0})))))
-    (doseq [vendor [:intel :arm :apple] target [:vulkan :glsl-v1]]
+    (doseq [vendor [:intel :arm :apple :nvidia] target [:vulkan :glsl-v1]]
       (is (= :subgroup-reduce
              (:variant (variants/select-variant vendor reduce-kir target capable)))))))
 
@@ -174,3 +187,32 @@
     (is (str/includes? (:basis answer) "ADR-0360"))
     (doseq [target [:msl-v1 :metal :webgpu :wgsl-v1]]
       (is (= :baseline (:variant (variants/select-variant :apple kir target capable)))))))
+
+(deftest the-nvidia-row-rides-the-vulkan-route-only
+  ;; ADR-0361 (JUN-57): NVIDIA's row on the Vulkan route is the shared
+  ;; subgroup-size-parametric emission (the warp's 32 is queried at runtime
+  ;; like every other width, never baked), and it carries the CUDA row's
+  ;; sm_70+ floor fail-closed on a REPORTED compute capability. The CUDA
+  ;; route keeps :warp-shuffle-reduce (rule 3: each route's emitter admits
+  ;; its own variant), and every target outside the Vulkan route answers
+  ;; :baseline.
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+        answer (variants/select-variant :nvidia kir :vulkan capable)]
+    (is (= :subgroup-reduce (:variant answer)))
+    (is (false? (:measured? answer)))
+    (is (str/includes? (:basis answer) "ADR-0361"))
+    (testing "a reported capability at or above the floor still selects"
+      (doseq [target [:vulkan :glsl-v1]]
+        (is (= :subgroup-reduce
+               (:variant (variants/select-variant
+                          :nvidia kir target
+                          (assoc capable :compute-capability 7.0)))))))
+    (testing "the CUDA route keeps its own row on the same kernel"
+      (doseq [target [:cuda :cuda-v1]]
+        (is (= :warp-shuffle-reduce
+               (:variant (variants/select-variant
+                          :nvidia kir target
+                          {:compute-capability 7.0}))))))
+    (doseq [target [:msl-v1 :metal :webgpu :wgsl-v1]]
+      (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable)))))))

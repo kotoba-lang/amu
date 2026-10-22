@@ -8,11 +8,14 @@
   compile-kernel seals it and verify-artifact! re-lowers it like any other
   emission. SELECTABLE since the JUN-59/JUN-60 selection rows landed in
   `kotoba.compiler.accelerator-variants` (the design home of the rows):
-  `select-variant` answers :subgroup-reduce for the Intel and ARM rows under
+  `select-variant` answers :subgroup-reduce for the vendor rows under
   ADR-0356 rule 3 (this emission is the only one that admits the variant)
   and rule 6 / ADR-0357's capability precondition (a device descriptor that
   reports the fold's subgroup ops and a subgroup size dividing the
-  workgroup; anything else fails closed to :baseline). Nothing here is measured,
+  workgroup; anything else fails closed to :baseline). The selectable rows
+  are Intel (JUN-59), ARM (JUN-60), Apple (JUN-58, ADR-0360) and NVIDIA on
+  the Vulkan route (JUN-57, ADR-0361, carrying the CUDA row's sm_70+ floor
+  fail-closed on a reported compute capability). Nothing here is measured,
   and nothing here may be reported as optimization evidence: `basis` carries
   :measured? false and that flag flips only when an interleaved
   baseline-vs-variant comparison on an Intel device (JUN-59's measurement

@@ -1,9 +1,11 @@
 (ns kotoba.compiler.accelerator-variants
   "Total, deterministic per-vendor kernel variant selection for the ADR-0002
-  accelerator KIR (ADR-0356; the NVIDIA row is JUN-57, the Intel and ARM
-  rows are JUN-59/JUN-60 and share one subgroup-size-parametric emission,
-  and the Apple row JUN-58 (ADR-0360) shares that same emission on the
-  Vulkan route -- MoltenVK is Apple's only route here).
+  accelerator KIR (ADR-0356; the NVIDIA CUDA-route row is JUN-57, the
+  Intel and ARM rows are JUN-59/JUN-60 and share one
+  subgroup-size-parametric emission, and the Apple row JUN-58 (ADR-0360)
+  and the NVIDIA Vulkan-route row JUN-57 (ADR-0361) share that same
+  emission on the Vulkan route -- MoltenVK is Apple's only route there,
+  and NVIDIA's CUDA row has no execution path in this repository).
   UNMEASURED, all of it. Nothing in this repository has executed a variant
   reduction on the vendor hardware its rows name: the wire-42 (:gpu/compute)
   execution path has no producer today -- the C loader brokers were removed
@@ -62,8 +64,9 @@
     grouped in a different order (f32 :sum may differ in the low bits;
     :max/:min are order-independent)."
    :subgroup-reduce
-   "Intel (JUN-59, ADR-0356), ARM (JUN-60, ADR-0357) and Apple (JUN-58,
-    ADR-0360) subgroup reduce: an
+   "Intel (JUN-59, ADR-0356), ARM (JUN-60, ADR-0357), Apple (JUN-58,
+    ADR-0360) and NVIDIA on the Vulkan route (JUN-57, ADR-0361) subgroup
+    reduce: an
     intra-subgroup fold whose width is queried at RUNTIME (gl_SubgroupSize)
     and never baked in -- Intel subgroup size is device-chosen among
     8/16/32, Mali's spans 4..32 and Apple's SIMD-group is 32, so a baked
@@ -73,7 +76,8 @@
     log2(W)-stage cascade (4/3/2 stages at W = 128 for S = 8/16/32 against
     the baseline's 7 -- stage arithmetic, not a speed claim). The design
     assumption (UNMEASURED) is that removing most of the barrier cascade
-    wins on Intel, Mali and Apple hardware; no hardware here has said so. It
+    wins on Intel, Mali, Apple and NVIDIA hardware; no hardware here has
+    said so. It
     replaces no workgroup row. Semantics, scoped as ADR-0357 P1 requires:
     the reduction groups the same admitted elements as the :baseline tree
     in a different order -- f32 :sum agrees with the baseline to low bits on
@@ -97,8 +101,9 @@
     sm_70+ floor in variant-bases is a real requirement; a descriptor that
     does not confirm it answers :baseline, fail closed).
 
-  - :subgroup-reduce -- Intel (JUN-59), ARM (JUN-60) and Apple (JUN-58,
-    ADR-0360) reduction kernels
+  - :subgroup-reduce -- Intel (JUN-59), ARM (JUN-60), Apple (JUN-58,
+    ADR-0360) and NVIDIA on the Vulkan route (JUN-57, ADR-0361) reduction
+    kernels
     over :sum/:max/:min with a workgroup of at least one subgroup floor
     (the emission's own predicate, kotoba.compiler.accelerator-subgroup-
     reduce/applicable?), on the Vulkan route (:vulkan or :glsl-v1), under
@@ -107,8 +112,14 @@
     the fold needs (:subgroup-ops containing :basic and :shuffle-relative)
     and a subgroup size (:subgroup-size) that DIVIDES the workgroup -- which
     also refuses a subgroup larger than the workgroup, as rule 6 demands.
+    The NVIDIA row carries the CUDA row's sm_70+ floor on top: whenever the
+    descriptor reports a compute capability at all, one below 7.0 (or a
+    malformed one) answers :baseline, fail closed; an absent capability is
+    not a refusal, the reported subgroup facts are the capability evidence
+    (ADR-0361).
     The reported width is taken as the device gives it (8/16/32 on Intel,
-    4..32 on Mali, 32 on Apple's SIMD-groups); the emission is parametric
+    4..32 on Mali, 32 on Apple's SIMD-groups, 32 -- the warp -- on NVIDIA
+    Vulkan); the emission is parametric
     over it. The descriptor keys are the contract this table consumes and
     their producer DOES NOT EXIST YET: the wire-42 answers of the (today
     unimplemented) ADR-0371 GPU provider carry no subgroup facts (INFO is
@@ -146,6 +157,15 @@
          ;; guessing).
          cuda-cap-ok? (let [cc (:compute-capability dev)]
                         (and (number? cc) (>= cc 7.0)))
+         ;; ADR-0361: on the Vulkan route NVIDIA joins the shared
+         ;; subgroup-reduce row, and the CUDA row's sm_70+ floor binds that
+         ;; row whenever the descriptor reports a compute capability at all
+         ;; -- a reported capability below 7.0, or a malformed one, fails
+         ;; closed to :baseline, while an absent capability is not a
+         ;; refusal (the rule-6 subgroup facts are the capability evidence
+         ;; there, exactly as for the Intel/ARM/Apple rows).
+         nvidia-floor-ok? (let [cc (:compute-capability dev)]
+                            (or (nil? cc) (and (number? cc) (>= cc 7.0))))
          ;; ADR-0356 rule 6 and ADR-0357's ARM gate: the fold needs the
          ;; basic and shuffle-relative subgroup ops in the compute stage
          ;; (what the emission's two GL_KHR_shader_subgroup_* extensions
@@ -174,10 +194,15 @@
                           (and (int? wg) (>= wg min-warp-shuffle-workgroup))))
                    :warp-shuffle-reduce
 
-                   (and (contains? #{:intel :arm :apple} vendor)
+                   (and (contains? #{:intel :arm :apple :nvidia} vendor)
                         (= :glsl-v1 route)
                         valid-kir?
                         subgroup-cap-ok?
+                        ;; ADR-0361: NVIDIA's row carries the CUDA row's
+                        ;; sm_70+ floor; the other three vendors have no
+                        ;; compute-capability contract and pass this gate
+                        ;; on the absent fact alone.
+                        (or (not= :nvidia vendor) nvidia-floor-ok?)
                         (subgroup-reduce/applicable? kir))
                    :subgroup-reduce
 

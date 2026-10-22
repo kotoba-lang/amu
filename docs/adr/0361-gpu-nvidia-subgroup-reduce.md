@@ -1,0 +1,104 @@
+# ADR-0361 -- The NVIDIA row on the Vulkan route: the subgroup-size-parametric reduce
+
+- Status: accepted as design. The selection row is implemented 2026-10-23
+  (code + tests in `kotoba.compiler.accelerator-variants`); the row is
+  UNMEASURED.
+- Date: 2026-10-23
+- Tracking: JUN-57 (NVIDIA). Parent JUN-55. One vendor per decision, the
+  rule ADR-0356 set and ADR-0357 (ARM) and ADR-0360 (Apple) followed.
+
+## Decision
+
+NVIDIA's row on the Vulkan route is the SAME `:subgroup-reduce` variant
+ADR-0356 designed for Intel and ADR-0357/ADR-0360 bound to ARM and Apple:
+a subgroup-size-parametric intra-subgroup fold, one write barrier, a
+cross-subgroup tree over the `W/S` partials. The selection predicate is
+vendor `:nvidia` (as ADR-0355 classifies it: PCI 4318, or an `nvidia` /
+`geforce` / `quadro` device-name fragment), op `:reduce`, operator
+in `{:sum :max :min}`, `W >= 32`, on the Vulkan route (`:vulkan` or
+`:glsl-v1`), under ADR-0356 rule 6's capability gate: the device
+descriptor must report the fold's subgroup operations (`:subgroup-ops`
+containing `:basic` and `:shuffle-relative`) and a subgroup size
+(`:subgroup-size`) that divides `W`. One gate is NVIDIA-specific and
+carried over from the CUDA row on purpose: whenever the descriptor reports
+a compute capability at all, the CUDA row's sm_70+ floor binds this row
+too -- a reported capability below 7.0, or a malformed one, answers
+`:baseline` (fail closed), while an absent capability is not a refusal
+(the reported subgroup facts are the capability evidence there, exactly as
+for the other three rows). Every other answer -- the CUDA route, a device
+that confirms no capability, another shape -- is what the rules already
+say: the CUDA route keeps its own `:warp-shuffle-reduce` row (rule 3: each
+route's emitter admits its own variant), and the rest answer `:baseline`.
+The rules of ADR-0356 bind this row, and ADR-0357's P1 (the `:sum`
+association scope) and P2 (subgroup IDs, not `lid` arithmetic) bind the
+emission byte-for-byte: this row reuses the existing emission, it emits
+nothing new.
+
+## Why the shared emission, and not a GLSL warp shuffle
+
+`:warp-shuffle-reduce` is NVIDIA's row on the CUDA route only: its
+`__shfl_down_sync` fold bakes warp width 32 into the emission and rule 3
+keeps it off every other route. But CUDA has no execution path in this
+repository (ADR-0002 names the emitters; the runtime `:gpu/compute`
+route has only ever been Vulkan, and even that is gone today -- see the
+loader-removal bullet of ADR-0355's honest state and ADR-0371). On the
+one route that has ever executed anything, NVIDIA therefore had no
+designed row at all before this ADR: rule 3 answered `:baseline` for
+`:nvidia` on `:vulkan` even on a fully capable device. A second,
+shuffle-flavoured GLSL emission would duplicate a fold the existing
+emission already expresses; ADR-0360's precedent is one parametric
+emission and one selection gate per shape, and NVIDIA's Vulkan subgroup
+width (the warp) is exactly the width the emission queries at runtime
+(`gl_SubgroupSize`) and never bakes. So NVIDIA joins the shared row on
+the Vulkan route instead of growing a fifth emission arm.
+
+## Design facts (vendor documentation, not measurements)
+
+NVIDIA's execution width is the warp, 32. Vulkan subgroup support on
+NVIDIA (`VK_KHR_shader_subgroup`) exposes the shuffle-relative operations
+the fold needs from compute capability 7.0 (Turing) on; earlier
+architectures report no subgroup shuffle. Nothing here has PROBED an
+NVIDIA device's Vulkan subgroup surface (the probe that could was removed
+with the loader); these are documentation facts, and rule 6 consumes the
+descriptor's REPORTED facts, not the vendor name -- so the row is
+admitted only for a device that says so, and the sm_70+ floor is stated
+twice on purpose (the reported-capability gate above, and the reported-ops
+gate) because `variant-bases` already names the floor for the CUDA row.
+The stage arithmetic of ADR-0356 (W = 128, S = 32: 2 stages against the
+baseline's 7) applies unchanged and is stage counting, not a speed claim.
+The design assumption -- UNMEASURED -- is the same one the Intel, ARM and
+Apple rows carry: removing most of the barrier cascade wins. No NVIDIA
+hardware has run this variant here, and no report may cite this row as
+optimization evidence.
+
+What IS measured for NVIDIA, and is NOT this row: ADR-0358 replaced the
+NVIDIA workgroup row with a measured one (256, kept inside a flat
+128-1024 band) on the Tegra Xavier (nvgpu) through the then-existing
+loader path. That is a workgroup-size measurement of that path. It says
+nothing about this variant, and this ADR changes no workgroup row.
+
+## Open contract gap (named in ADR-0360, unchanged here)
+
+Rule 6 consumes descriptor facts (`:subgroup-size`, `:subgroup-ops`) whose
+producer does not exist: the wire-42 answers of the ADR-0371 provider
+plan carry no such facts (`INFO` is the four fields
+`<device>|<api>|<maxWgX>|<unified>` and `DEVCLASS` is one class word). So
+this row is selected today only for a descriptor that a future probe or
+provider supplies with subgroup facts; a descriptor that reports none
+fails closed to `:baseline` (rule 1: the portable variant runs). Producing
+the facts is a separate design decision, made nowhere yet.
+
+## Measurement contract (JUN-57)
+
+The row flips `:measured?` only on an interleaved baseline-vs-variant
+reduce comparison with verified read-back (the protocol the workgroup
+sweeps established: fresh-process runs, interleaved samples, verified
+read-back words), on a NAMED NVIDIA device, recorded under
+`docs/evidence/`. The measurement is keyed to the tested device (name and
+its reported subgroup size), not to the vendor row: one NVIDIA generation
+measured does not flip `:measured?` for any other (ADR-0356 rule 4's lock
+is per sufficient descriptor dimension). It also cannot be taken until a
+wire-42 route exists again (ADR-0371 provider; ADR-0355's honest state),
+so today the row stays `:measured? false` in every answer, and neither
+the provisional workgroup rows of ADR-0355 nor the measured ones of
+ADR-0358 are touched by this ADR.

@@ -77,6 +77,7 @@ and binding on every future row):
 | `:subgroup-reduce` | intel | reduce, W >= 32 | **implemented** 2026-10-22 (this ADR's design, on ADR-0359's admitted emission and sealed build step; selection row in `kotoba.compiler.accelerator-variants` under rules 3 + 6) | UNMEASURED: no Intel hardware |
 | `:subgroup-reduce` | arm | reduce, W >= 32 | **implemented** 2026-10-22 (the row is DESIGNED in ADR-0357, the ARM decision of record; same emission and selection row as the Intel row) | UNMEASURED: no Mali hardware |
 | `:subgroup-reduce` | apple | reduce, W >= 32 | **implemented** 2026-10-23 (the row is DESIGNED in ADR-0360, the Apple decision of record; same emission and selection row as the Intel row, Vulkan route only) | UNMEASURED: no Apple device has run the variant |
+| `:subgroup-reduce` | nvidia (Vulkan route) | reduce, W >= 32 | **implemented** 2026-10-23 (the row is DESIGNED in ADR-0361, the NVIDIA decision of record; same emission and selection row as the Intel row, Vulkan route only, plus the sm_70+ floor fail-closed on a reported compute capability) | UNMEASURED: no NVIDIA device has run the variant |
 
 **Amendment (2026-10-22, the JUN-59/JUN-60 selection rows land).** The
 execution-path honesty condition (a) below has landed in full: the
@@ -121,6 +122,23 @@ the open contract gap the rule-6 rows share: the descriptor facts
 (`INFO` is four fields, `DEVCLASS` one class word), so every rule-6 row
 today selects only for a descriptor a future probe or provider fills in,
 and fails closed to `:baseline` without them.
+
+**Amendment (2026-10-23, the JUN-57 Vulkan-route row lands).** ADR-0361
+adds the NVIDIA row on the Vulkan route: the same `:subgroup-reduce`
+emission and the same selection gate (rules 3 + 6) that ADR-0357/0360
+bound to ARM and Apple, plus one NVIDIA-specific condition -- whenever the
+descriptor reports a compute capability, the CUDA row's sm_70+ floor binds
+this row too (a reported capability below 7.0, or a malformed one, answers
+`:baseline`, fail closed; an absent capability is not a refusal). The CUDA
+row (`:warp-shuffle-reduce`, `__shfl_down_sync`, warp width baked in) is
+unchanged and stays CUDA-route only. The motivation is the execution
+record: CUDA has never executed anything in this repository and Vulkan is
+the only route that ever has, so before this amendment `:nvidia` answered
+`:baseline` on the one route that runs. All four rows share one emission
+and one shape predicate now; every row stays UNMEASURED as a variant row
+(the measured workgroup rows of ADR-0358 are a different axis and
+untouched), and every row still fails closed to `:baseline` on a
+descriptor without the rule-6 facts.
 
 ## Intel `:subgroup-reduce` (JUN-59) -- the design
 
