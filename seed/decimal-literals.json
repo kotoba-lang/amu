@@ -1,0 +1,136 @@
+{
+  "schema": "kotoba.seed.exact-decimal-literal-candidate.v1",
+  "state": "source lowering implemented; native type/selfbuild/compile/run qualification not achieved",
+  "canonical-core": {
+    "path": "src/kotoba/compiler/decimal_bits.kotoba",
+    "reference-commit": "5c5d9bced26393b2f78dd59c167af640f70a807a",
+    "git-blob": "ee76220f24ef5dc7ed9cfdcba3ff39c296fe3ca4",
+    "sha256": "7f3a1fcafcef0ffb4c3f2fc2d0f9b676c4d98857e15d723a083c657bcd666d95",
+    "unity-path": "seed/19-decimal.kotoba",
+    "function-prefix": "dc-",
+    "core-functions": 26,
+    "alpha-equivalence-source-review": true,
+    "hosted-generator-required": false
+  },
+  "token-contract": {
+    "shape-reference": "src/kotoba/compiler/kotoba_reader.kotoba:f64-shape?",
+    "finite-binary64": true,
+    "bytes-limit": 64,
+    "exponent-digits-limit": 3,
+    "decimal-point-or-exponent-required": true,
+    "operators-and-nonnumeric-symbols-unchanged": true,
+    "signed-zero-preserved": true,
+    "rounding": "exact base-2^32 integer limbs; ties to even",
+    "refusal": "malformed, oversized, unsupported or non-finite tokens are not rewritten to f64; no zero default or hosted parser"
+  },
+  "checker-lowering": {
+    "path": "seed/21-check.kotoba",
+    "functions": [
+      "ck-r6m-flscan",
+      "ck-r6m-flit?",
+      "ck-r6m-flit"
+    ],
+    "value": "raw i64 binary64 bits through the existing internal __r6-as :f64 carrier cast",
+    "new-cache-slot": 254,
+    "reused-cast-head-cache-slot": 233,
+    "emitted-guest-float-division": false,
+    "emitted-guest-text-parse": false
+  },
+  "compiler-manifests": [
+    {
+      "path": "seed/MANIFEST",
+      "sha256": "f886dc89f4dab0f2c5b3e3b71f363fe54cedfafdcff318fcd9e41f3ad086086d",
+      "modules": 17,
+      "unity-sha256": "b34100a6ae25a9710dc336e6c2a7930605bcc354fd124e66863f2be44f2077cd"
+    },
+    {
+      "path": "seed/X86_64-LINUX-MANIFEST",
+      "sha256": "9bd28e3738bf816e12098fb44b212b9d76f34c898981bc921389586c8f5c369c",
+      "modules": 20,
+      "unity-sha256": "7086557c38c2163d63adcc49c536950e24e8c967e6f0a44ab84f0da9d2d3e42c"
+    },
+    {
+      "path": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
+      "sha256": "295e7404070eb85a2a752199c6723739691e63ae390232a612f1ccbb563c7f6e",
+      "modules": 14,
+      "unity-sha256": "9aff67e674832270a7e1a82315b5cb0db19a477792e8b25729310eff2bb3402d"
+    }
+  ],
+  "source-files": [
+    {
+      "path": "seed/19-decimal.kotoba",
+      "sha256": "580557b45a067b866a09b6d7c49811662dc2f96cd4d64e0af4df0952ee5fe2f4"
+    },
+    {
+      "path": "seed/21-check.kotoba",
+      "sha256": "b11f0167febde3ee95dcbf5b90d1d97127d72dc4b7c97169a19c7c0f8e8360d1"
+    },
+    {
+      "path": "src/kotoba/compiler/decimal_bits.kotoba",
+      "sha256": "7f3a1fcafcef0ffb4c3f2fc2d0f9b676c4d98857e15d723a083c657bcd666d95"
+    },
+    {
+      "path": "test/fixtures/selfhost/decimal-literals/native/exact_literals_test.kotoba",
+      "sha256": "52f0d7d65fcdc6b7e189856da16321d93e9ea62913bce611ae8a8765b39c6b06"
+    },
+    {
+      "path": "test/fixtures/selfhost/decimal-literals/refusals/bigdec.kotoba",
+      "sha256": "8fa42c9f3c8f0d35a377b6ddefa10a67b24cf8722c34d0c18247d3dccc4c09e2"
+    },
+    {
+      "path": "test/fixtures/selfhost/decimal-literals/refusals/large-exponent.kotoba",
+      "sha256": "be82d720d3f010134e057736c4ebcc0e4edf0b50151a09bdc870ea12a5bea70d"
+    },
+    {
+      "path": "test/fixtures/selfhost/decimal-literals/refusals/malformed-exponent.kotoba",
+      "sha256": "02b863d3201673323bd57ca54fc0c85358967d6af261c4f1edd97480587a7cab"
+    },
+    {
+      "path": "test/fixtures/selfhost/decimal-literals/refusals/overflow.kotoba",
+      "sha256": "9daabf94cf580aa642249ecfe8548c3372b3783e908e26edfa2e994f11e49c7f"
+    },
+    {
+      "path": "test/fixtures/selfhost/decimal-literals/refusals/overlong.kotoba",
+      "sha256": "641009df8f387a69ca2028269c7b35368182aec1f29c718b215f18030e264470"
+    }
+  ],
+  "original-Kami-acceptance": {
+    "path": "test/native/kami/native_input_map.kotoba",
+    "repository": "kotoba-lang/kami-engine",
+    "sha256": "92e0fcf671ac4b3d71c82b1f401df883c04308e4553ae2952328e4e7fb506576",
+    "unchanged": true,
+    "unchanged-16-digit-fraction-occurrences": 3,
+    "complete-public-API-count": 5,
+    "semantic-groups": 8,
+    "expected-result": 255,
+    "runtime-qualified": false
+  },
+  "literal-corpus": {
+    "entry": "test/fixtures/selfhost/decimal-literals/native/exact_literals_test.kotoba:main",
+    "anchors": 26,
+    "groups": 5,
+    "expected-result": 31,
+    "compile-refusal-files": 5,
+    "native-typechecked": false,
+    "native-compiled": false,
+    "native-executed": false
+  },
+  "actual-checks": [
+    "source delimiter/private-call arity and closure review",
+    "canonical parser alpha-equivalence",
+    "compiler manifest ordering and unity source hash bindings",
+    "existing complete Kami fixture byte identity",
+    "source whitespace review"
+  ],
+  "adopted-and-preserved-artifact-pins-changed": false,
+  "old-receipts-cannot-qualify-new-closure": true,
+  "remaining": [
+    "complete qualified loaderless selfhost build/link/package/launch route",
+    "native literal/document/formatter positive/refusal/fuel execution",
+    "full five-API Kami input-map execution",
+    "x86 runtime float support; existing source profiles still refuse it",
+    "other seed language gaps, including top-level float constants and non-finite reader dispatch"
+  ],
+  "execution-foundation-stays-separate": true,
+  "no-archive-or-delete-authorization-from-this-receipt": true
+}

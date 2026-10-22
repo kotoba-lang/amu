@@ -1187,53 +1187,38 @@
           (= code 7) (ck-r6m-map2 M n)
           (>= code 5) (ck-r6m-i32sh M n code)
           :else (ck-r6m-ods1 M n code))))
-;; a decimal literal [-]d+.d+ (the lexer reads it as a symbol): with m = its digits as an integer and k
-;; its fraction digits, m below 2^53 (at most 15 digits) and 10^k exact (k <= 15), the f64 value is the correctly rounded
-;; quotient m / 10^k, i.e. (f64-div (i64-to-f64-rounded m) (i64-to-f64-rounded 10^k)) (both conversions exact, the division
-;; rounded once), usable wherever an :f64 is (f64-add 1.5 x). Any other spelling stays a symbol (E2102). The reference's
-;; + = < .. on :f64 (dual-backend 10-f64) stay refused: R6C pins them as recorded narrowings (seed/tests/r6c/feat n02 n03;
-;; lang/guest-grammar.edn :equality). R0 of the scanner: m * 32 + k, or -1.
-(defn- ck-r6m-flscan [S :string a :i64 b :i64] :i64
-  (let [neg (and (< a b) (= (string-code-point-at S a) 45))
-        a1 (if neg (+ a 1) a)]
-    (loop [i a1 m 0 nd 0 k -1]
-      (if (>= i b)
-        (if (and (pos? k) (> nd k) (<= nd 15)) (+ (* (if neg (- 0 m) m) 32) k) -1)
-        (let [c (string-code-point-at S i)]
-          (cond (and (>= c 48) (<= c 57)) (recur (+ i 1) (+ (* m 10) (- c 48)) (+ nd 1) (if (>= k 0) (+ k 1) k))
-                (and (= c 46) (< k 0) (pos? nd)) (recur (+ i 1) m nd 0)
-                :else -1))))))
+;; Decimal literals are rounded to their final binary64 bits at compile
+;; time by the same canonical integer parser as the native Form reader.
+;; No emitted division or runtime text parse participates. The typed option
+;; retains signed zero; unsupported/malformed/non-finite tokens remain E2102.
+(defn- ck-r6m-flscan [S :string a :i64 b :i64] [:option :i64]
+  (dc-literal-bits (string-substring S a b)))
 (defn- ck-r6m-flit? [M :vector-i64 S :string n :i64] :bool
   (let [s (nm-sym-of M n)
         a (nm-sf M s SF-START)
         b (nm-sf M s SF-END)]
-    (and (zero? (nm-sf M s SF-HEAD)) (zero? (nm-sf M s SF-FN)) (> b a) (< b (+ a 24)) (nm-ne (ck-r6m-flscan S a b) -1))))
-(defn- ck-r6m-pow10 [k :i64] :i64 (loop [i 0 p 1] (if (>= i k) p (recur (+ i 1) (* p 10)))))
-;; a call node (h x) whose head symbol is a gensym spelled by hash hh (a FLOAT operation of ck-fl-code); R0 = the list
-(defn- ck-r6m-hcall [M :vector-i64 tok :i64 hh :i64 x :i64 y :i64] :vector-i64
-  (let [M1 (nm-gensym M (nm-tf M tok TF-START) 0)
-        g (ck-r M1)
-        M2 (ck-n-ref (nm-set-sf M1 g SF-HASH hh) tok g)
-        hn (ck-r M2)
-        M3 (if (pos? y) (ck-chain3 M2 hn x y) (ck-chain2 M2 hn x))]
-    (ck-n-list M3 tok hn)))
+    (and (zero? (nm-sf M s SF-HEAD)) (zero? (nm-sf M s SF-FN))
+         (> b a) (<= (- b a) 64)
+         (option-some?-of [:option :i64] (ck-r6m-flscan S a b)))))
 (defn- ck-r6m-flit [M :vector-i64 S :string n :i64] :vector-i64
   (let [s (nm-sym-of M n)
-        v (ck-r6m-flscan S (nm-sf M s SF-START) (nm-sf M s SF-END))
-        k (bit-and v 31)
-        m (quot (- v k) 32)
-        tok (nm-nf M n NF-TOK)
-        M1 (ck-n-int M tok m)
-        mi (ck-r M1)
-        M2 (ck-r6m-hcall M1 tok 7348910623852123541 mi 0)   ; i64-to-f64-rounded
-        mf (ck-r M2)
-        M3 (ck-n-int M2 tok (ck-r6m-pow10 k))
-        pi (ck-r M3)
-        M4 (ck-r6m-hcall M3 tok 7348910623852123541 pi 0)
-        pf (ck-r M4)
-        M5 (ck-r6m-hcall M4 tok 4429907561435325029 mf pf)   ; f64-div
-        d (ck-r M5)]
-    (ck-become M5 n d)))
+        parsed (ck-r6m-flscan S (nm-sf M s SF-START) (nm-sf M s SF-END))
+        tok (nm-nf M n NF-TOK)]
+    (if (not (option-some?-of [:option :i64] parsed))
+      (ck-err M E-CHECK-SYM n 0)
+      (let [bits (option-value-of [:option :i64] parsed 0)
+            M1 (ck-n-int M tok bits)
+            value (ck-r M1)
+            ;; Cache254 is reserved for the f64 type;233 is the existing
+            ;; __r6-as head. Avoid the overlapping head/keyword cache indexes.
+            M2 (ck-r6b-nkw M1 tok KW-F64 254)
+            type (ck-r M2)
+            M3 (ck-r6b-nhead M2 tok HD-R6-AS 233)
+            head (ck-r M3)
+            M4 (ck-chain3 M3 head type value)
+            M5 (ck-n-list M4 tok head)
+            expression (ck-r M5)]
+        (ck-become M5 n expression)))))
 
 ;; list (code a b c) of fresh nodes (0 = absent; a b c are linked in order); R0 = the list
 (defn- ck-r6m-l [M :vector-i64 tok :i64 code :i64 a :i64 b :i64 c :i64] :vector-i64
