@@ -28,9 +28,14 @@ def compile_args(prefix, source, output, fmt):
     return [*prefix, "compile", source, "--target", "x86_64-linux", "--output", output, "--format", fmt]
 
 
+SECCOMP_IF_AVAILABLE = False
+
+
 def static_env(out, report=False):
     """The static image reads only these variables; everything else is dropped."""
     env = {"PATH": "/usr/bin:/bin"}
+    if SECCOMP_IF_AVAILABLE:
+        env["KEXE_SECCOMP"] = "if-available"
     if report:
         env.update(KEXE_STRUCTURED_REPORT="1", KEXE_FUEL="1000000", KEXE_ALLOW="-")
     else:
@@ -94,6 +99,38 @@ def elf_facts(path):
                 interpreter=None, dynamic=False)
 
 
+def probe_hardening(out, run, producer):
+    """Resource limits and the syscall filter, observed (not assumed)."""
+    progs = {"value": "(defn main [] :i64 42)",
+             "spin": "(defn main [] :i64 (loop [i 0] (if (< i 0) i (recur (inc i)))))",
+             "deep": "(defn- f [n :i64] :i64 (if (= n 0) 0 (+ 1 (f (dec n)))))\n(defn main [] :i64 (f 100000000))"}
+    for name, body in progs.items():
+        src = out / f"probe-{name}.kotoba"
+        src.write_text(f"(ns probe-{name} (:export [main]))\n{body}\n")
+        run.run(f"probe-{name}-compile", compile_args([producer], src, out / f"probe-{name}.elf", "static"), [src, producer], static_env(out))
+        (out / f"probe-{name}.elf").chmod(0o755)
+    base = static_env(out, True)
+    def observe(name, image, env):
+        r = run.run("probe-" + name, [out / f"probe-{image}.elf"], [], env, success=False)
+        return dict(exit=r.returncode, stderr=r.stderr.decode(errors="replace").strip())
+    rows = dict(
+        cpuSeconds1=observe("cpu", "spin", dict(base, KEXE_CPU_SECONDS="1", KEXE_FUEL="off")),
+        wallSeconds3=observe("wall", "spin", dict(base, KEXE_WALL_SECONDS="3", KEXE_FUEL="off")),
+        stack1MiB=observe("stack", "deep", dict(base, KEXE_FUEL="off")),
+        seccompRequired=observe("seccomp-required", "value", {k: v for k, v in base.items() if k != "KEXE_SECCOMP"}),
+        sandboxProbe=observe("sandbox-probe", "value", dict(base, KEXE_SANDBOX_PROBE="1")))
+    assert rows["cpuSeconds1"]["exit"] == 120 and "SIGXCPU" in rows["cpuSeconds1"]["stderr"]
+    assert rows["wallSeconds3"]["exit"] == 120 and "SIGALRM" in rows["wallSeconds3"]["stderr"]
+    assert rows["stack1MiB"]["exit"] == 120 and "SIGSEGV" in rows["stack1MiB"]["stderr"]
+    enforced = rows["seccompRequired"]["exit"] != 1
+    if enforced:
+        assert rows["sandboxProbe"]["exit"] == 120 and "SIGSYS" in rows["sandboxProbe"]["stderr"]
+    else:
+        assert SECCOMP_IF_AVAILABLE and "resource limit setup failed" in rows["seccompRequired"]["stderr"]
+    rows["seccompEnforced"] = enforced
+    return rows
+
+
 def execute(out):
     assert platform.system() == "Linux" and platform.machine() in ("x86_64", "AMD64")
     prepared = json.loads((out / "static-prepare.json").read_text())
@@ -155,7 +192,8 @@ def execute(out):
                      [producer], dict(static_env(out), KEXE_CAP_RESOURCES_35=str(out / "scope")), success=False)
     assert result.returncode != 0 and not (out / "o.elf").exists()
     refused.append("outside-scope")
-    report = dict(status="PASS_LINUX_X86_STATIC_SELFHOST", host=[platform.system(), platform.machine()],
+    hardening = probe_hardening(out, run, producer)
+    report = dict(status="PASS_LINUX_X86_STATIC_SELFHOST", hardening=hardening, host=[platform.system(), platform.machine()],
                   runner=dict(modules=prepared["runtimeModules"], form="linked into each image (x86_64-linux-static)"),
                   compiler=prepared["S1"], kx64Runner=dict(R1=prepared["R1"], rebuiltByS3=pin(out / "R.elf")), image=facts, sourceGraph=dict(unity=prepared["sourceUnity"], pins=prepared["sourcePins"]),
                   generations=generations, kx64CrossCheck=dict(loaderRun=prepared["G1kx64"], staticRun=pin(out / "G1.static.kx64")),
@@ -171,7 +209,10 @@ if __name__ == "__main__":
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--prepare", action="store_true")
     group.add_argument("--execute-linux", action="store_true")
+    parser.add_argument("--seccomp-if-available", action="store_true",
+                        help="run images with KEXE_SECCOMP=if-available (kernels without seccomp, e.g. qemu-user); recorded")
     args = parser.parse_args()
+    SECCOMP_IF_AVAILABLE = args.seccomp_if_available
     if args.prepare:
         prepare(args.output.resolve())
     else:
