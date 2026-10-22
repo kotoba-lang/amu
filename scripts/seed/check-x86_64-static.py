@@ -21,6 +21,7 @@ selfhost = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(selfhost)
 pin, dump, Runs, MANIFEST = selfhost.pin, selfhost.dump, selfhost.Runs, selfhost.MANIFEST
 RUNTIME = ("seed/75-x86_64-static.kotoba", "seed/76-x86_64-static-rt.kotoba")
+RUNNER = "seed/x86_64-kx64-runner.kotoba"
 
 
 def compile_args(prefix, source, output, fmt):
@@ -42,7 +43,7 @@ def prepare(out):
     out.mkdir(parents=True, exist_ok=False)
     paths = [p for p in (ROOT / MANIFEST).read_text().splitlines() if p and not p.startswith("#")]
     assert all(p in paths for p in RUNTIME)
-    source_pins = {p: pin(ROOT / p) for p in [MANIFEST, selfhost.LOADER, *paths]}
+    source_pins = {p: pin(ROOT / p) for p in [MANIFEST, selfhost.LOADER, RUNNER, *paths]}
     spec = importlib.util.spec_from_file_location("adopted", ROOT / "scripts/seed/build-adopted.py")
     adopted = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(adopted)
@@ -61,6 +62,9 @@ def prepare(out):
     # Bootstrap: the only C-loader run that produces a static artifact.
     run.run("S1-bootstrap", compile_args(prefix, source, out / "S1.elf", "static"), [source, bridge, loader])
     run.run("G1-kx64-reference", compile_args(prefix, source, out / "G1.kx64", "kx64-v1"), [source, bridge, loader])
+    runner_src = out / "kx64-runner.kotoba"
+    runner_src.write_bytes((ROOT / RUNNER).read_bytes())
+    run.run("R1-bootstrap", compile_args(prefix, runner_src, out / "R1.elf", "kx64-runner"), [runner_src, bridge, loader])
     rows = selfhost.cases()
     for row in rows:
         name = row["name"]
@@ -74,7 +78,7 @@ def prepare(out):
         row["reference"] = selfhost.inspect(result, row)
         row["staticPin"] = pin(out / (name + ".elf"))
     report = dict(status="PASS_STATIC_BOOTSTRAP_PREPARE", sourcePins=source_pins, sourceUnity=pin(source),
-                  runtimeModules={p: pin(ROOT / p) for p in RUNTIME}, bridge=pin(bridge), S1=pin(out / "S1.elf"),
+                  runtimeModules={p: pin(ROOT / p) for p in RUNTIME}, bridge=pin(bridge), S1=pin(out / "S1.elf"), R1=pin(out / "R1.elf"),
                   G1kx64=pin(out / "G1.kx64"), cases=rows, bootstrapCLoader=True, linuxRunUsesCLoader=False)
     dump(out / "static-prepare.json", report)
     print(report["status"], report["S1"], flush=True)
@@ -111,6 +115,11 @@ def execute(out):
         producer = image
     run.run("G1-kx64-from-S3", compile_args([producer], source, out / "G1.static.kx64", "kx64-v1"), [source, producer], static_env(out))
     assert pin(out / "G1.static.kx64") == prepared["G1kx64"], "static and loader-run compilers disagree"
+    runner_src = out / "kx64-runner.kotoba"
+    assert runner_src.read_bytes() == (ROOT / RUNNER).read_bytes()
+    run.run("R-from-S3", compile_args([producer], runner_src, out / "R.elf", "kx64-runner"), [runner_src, producer], static_env(out))
+    assert pin(out / "R.elf") == prepared["R1"], "kx64 runner rebuild mismatch"
+    elf_facts(out / "R.elf")
     results = []
     for case in prepared["cases"]:
         name = case["name"]
@@ -148,7 +157,7 @@ def execute(out):
     refused.append("outside-scope")
     report = dict(status="PASS_LINUX_X86_STATIC_SELFHOST", host=[platform.system(), platform.machine()],
                   runner=dict(modules=prepared["runtimeModules"], form="linked into each image (x86_64-linux-static)"),
-                  compiler=prepared["S1"], image=facts, sourceGraph=dict(unity=prepared["sourceUnity"], pins=prepared["sourcePins"]),
+                  compiler=prepared["S1"], kx64Runner=dict(R1=prepared["R1"], rebuiltByS3=pin(out / "R.elf")), image=facts, sourceGraph=dict(unity=prepared["sourceUnity"], pins=prepared["sourcePins"]),
                   generations=generations, kx64CrossCheck=dict(loaderRun=prepared["G1kx64"], staticRun=pin(out / "G1.static.kx64")),
                   cases=results, refusals=refused, linuxRunUsesCLoader=False, bootstrapCLoader=True,
                   JVMNodeOrGraalFallback=False)

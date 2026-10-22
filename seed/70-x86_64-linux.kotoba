@@ -285,5 +285,6 @@
   (if (and (>= (io-argc) 4) (string=? (io-arg 0) "compile") (string=? (io-arg 2) "--target")
            (string=? (io-arg 3) "x86_64-linux"))
     (cond (and (= (io-argc) 8) (string=? (io-arg 6) "--format") (string=? (io-arg 7) "kx64-v1")) (xr-command)
-          (and (= (io-argc) 8) (string=? (io-arg 6) "--format") (string=? (io-arg 7) "static")) (xs-command)
+          (and (= (io-argc) 8) (string=? (io-arg 6) "--format") (string=? (io-arg 7) "static")) (xs-command 0)
+          (and (= (io-argc) 8) (string=? (io-arg 6) "--format") (string=? (io-arg 7) "kx64-runner")) (xs-command 1)
           :else (xg-command)) (xg-default)))
