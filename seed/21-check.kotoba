@@ -5120,6 +5120,7 @@
                (nm-ne (ck-r6b-hd M (nm-nth M n 2)) HD-R6-DOCKEY)) 6
           (and (= hh ck-r6b-h-ex-info) (= (nm-count M n) 3) (= (nm-kind M (nm-nth M n 2)) ND-MAP)) 9
           (or (= hh ck-r6b-h-quote) (= hh ck-r6b-h-quote-tok)) (ck-r6q-ds? M n)
+          (= (nm-tf M (nm-nf M h NF-TOK) TF-KIND) TK-HASH-PAREN) 14
           (and (= hh ck-r6b-h-record-assoc) (= (nm-count M n) 5) (ck-r6b-free? M s)) 10
           (and (= (nm-count M n) 2) (ck-r6b-free? M s) (pos? (ck-r6b-capwire hh))) 12
           :else 0)))
@@ -5302,6 +5303,126 @@
                      (recur (ck-link (ck-link M5 c w) w nx) w nx))))]
         (-> M3 (nm-set-nf m NF-KIND ND-LIST) (nm-set-nf m NF-FIRST dh))))))
 
+;; =========================================================================================================
+;; R6D: fn literals (guest-grammar :fn-literal). The reader's (fn-lit body) -- the '#(' shape -- is
+;; expanded here to (fn [%1 .. %N] body): the %-symbols of the body are the arguments ('%' is '%1')
+;; and the parameters are named after the arguments the body uses. The parameter name records are
+;; the body's own %-symbol records, so no name is synthesized (20-names interns names from source
+;; spans only). '%&' and a gap in %1..%N are the named refusal E-FNLIT-ARGS. A nested fn literal's
+;; arguments belong to it and are skipped (its form is an HD-FN / HD-FNLIT list).
+;; =========================================================================================================
+;; the argument a symbol names: 0 none, -2 bare '%', -1 '%&', N >= 1 for '%N'
+(defn- ck-r6d-arg [M :vector-i64 S :string x :i64] :i64
+  (if (nm-ne (nm-kind M x) ND-SYM)
+    0
+    (let [s (nm-sym-of M x)
+          a (nm-sf M s SF-START)
+          b (nm-sf M s SF-END)]
+      (cond (not= (string-code-point-at S a) 37) 0
+            (= (- b a) 1) -2
+            (not= (- b a) 2) 0
+            (= (string-code-point-at S (+ a 1)) 38) -1
+            :else (let [dd (string-code-point-at S (+ a 1))]
+                    (if (and (> dd 48) (<= dd 57)) (- dd 48) 0))))))
+;; true when n is a nested fn form (its arguments are its own)
+(defn- ck-r6d-nested [M :vector-i64 n :i64] :bool
+  (let [h (nm-first M n)]
+    (and (= (nm-kind M n) ND-LIST) (= (nm-kind M h) ND-SYM)
+         (or (= (nm-sf M (nm-sym-of M h) SF-HEAD) HD-FN) (= (nm-sf M (nm-sym-of M h) SF-HEAD) HD-FNLIT)))))
+;; the largest argument N of the tree (nested fn forms skipped), 0 none, -1 on %&
+;; an argument's contribution to the arity: %N is N, bare % is 1, %& refuses
+(defn- ck-r6d-arity [a :i64] :i64
+  (cond (= a -1) -1 (= a -2) 1 (> a 1) a :else 0))
+(defn- ck-r6d-max [M :vector-i64 S :string n :i64] :i64
+  (if (ck-r6d-nested M n)
+    0
+    (loop [c (nm-first M n) m (ck-r6d-arity (ck-r6d-arg M S n))]
+      (cond (< m 0) -1
+            (zero? c) m
+            :else (let [w (ck-r6d-max M S c)]
+                    (recur (nm-next M c) (if (< w 0) -1 (if (> w m) w m))))))))
+;; the number of bare '%' arguments of the tree (nested fn forms skipped)
+(defn- ck-r6d-bare [M :vector-i64 S :string n :i64] :i64
+  (if (ck-r6d-nested M n)
+    0
+    (loop [c (nm-first M n) k (if (= (ck-r6d-arg M S n) -2) 1 0)]
+      (cond (zero? c) k
+            :else (recur (nm-next M c) (+ k (ck-r6d-bare M S c)))))))
+;; the name record of a '%N' argument (arg = N), or of a bare '%' when N is 0; 0 when none
+(defn- ck-r6d-rec [M :vector-i64 S :string n :i64 N :i64] :i64
+  (if (ck-r6d-nested M n)
+    0
+    (if (= (ck-r6d-arg M S n) (if (zero? N) -2 N))
+      (nm-sym-of M n)
+      (loop [c (nm-first M n)]
+        (cond (zero? c) 0
+              :else (let [w (ck-r6d-rec M S c N)]
+                      (if (pos? w) w (recur (nm-next M c)))))))))
+;; every bare '%' of the tree becomes the argument %1 (its name record)
+(defn- ck-r6d-rename [M :vector-i64 S :string n :i64 s1 :i64] :vector-i64
+  (if (ck-r6d-nested M n)
+    M
+    (let [M1 (if (= (ck-r6d-arg M S n) -2) (nm-set-nf M n NF-SYM s1) M)]
+      (loop [M2 M1 c (nm-first M n)]
+        (if (zero? c) M2 (recur (ck-r6d-rename M2 S c s1) (nm-next M2 c)))))))
+;; R6D: build (fn [params] body) in n -- the parameters are %1..%N, their name records found in
+;; the body (no gaps); the chain is the head, then the parameter vector node, then the body.
+(defn- ck-r6d-build [M :vector-i64 S :string n :i64 body :i64 N :i64] :vector-i64
+  (let [tok (nm-nf M n NF-TOK)]
+    (loop [M1 M i 1 prev 0 f1 0]
+      (if (> i N)
+        (let [M5 (nm-set-nf M1 prev NF-NEXT 0)
+              M6 (nm-put M5 MM-R0 f1)
+              M7 (ck-new M6 ND-VEC tok 0 0)
+              pv (ck-r M7)
+              M8 (nm-set-nf M7 pv NF-FIRST f1)
+              M9 (nm-set-nf M8 pv NF-AUX N)
+              Ma (ck-n-head M9 tok HD-FN)
+              hd (ck-r Ma)]
+          (-> Ma (nm-set-nf n NF-FIRST hd) (nm-set-nf hd NF-NEXT pv) (nm-set-nf pv NF-NEXT body)
+              (nm-set-nf n NF-AUX 3)))
+        (let [s (ck-r6d-rec M1 S body i)]
+          (cond (zero? s) (ck-err M1 E-FNLIT-ARGS body 0)
+                :else (let [M2 (ck-new M1 ND-SYM tok 0 s)
+                            p (ck-r M2)
+                            M3 (if (zero? prev) M2 (nm-set-nf M2 prev NF-NEXT p))]
+                        (recur M3 (+ i 1) p (if (zero? f1) p f1)))))))))
+;; R6D: the expansion (fn-lit body) -> (fn [%1 .. %N] body)
+(defn- ck-r6d-fnlit [M :vector-i64 S :string n :i64] :vector-i64
+  (let [h (nm-first M n)
+        body (nm-next M h)]
+    (if (or (nm-ne (nm-count M n) 2) (zero? body))
+      (ck-err M E-CHECK-ARITY h 1)
+      (let [N (ck-r6d-max M S body)
+            nb (ck-r6d-bare M S body)]
+        (cond (< N 0) (ck-err M E-FNLIT-ARGS body 0)
+              ;; bare '%' only: one parameter, the bare record itself
+              (and (= N 1) (pos? nb) (zero? (ck-r6d-rec M S body 1)))
+              (let [s (ck-r6d-rec M S body 0)
+                    tok (nm-nf M n NF-TOK)
+                    M2 (ck-new M ND-SYM tok 0 s)
+                    p (ck-r M2)]
+                (ck-r6d-build1 M2 S n body p))
+              ;; '%' and '%1' together: '%' is '%1'
+              (pos? nb)
+              (let [s1 (ck-r6d-rec M S body 1)]
+                (if (zero? s1)
+                  (ck-err M E-FNLIT-ARGS body 0)
+                  (ck-r6d-build (ck-r6d-rename M S body s1) S n body N)))
+              :else (ck-r6d-build M S n body N))))))
+;; the bare-'%' one-parameter shape: (fn [p] body)
+(defn- ck-r6d-build1 [M :vector-i64 S :string n :i64 body :i64 p :i64] :vector-i64
+  (let [tok (nm-nf M n NF-TOK)
+        M1 (nm-set-nf M p NF-NEXT 0)
+        M2 (ck-new M1 ND-VEC tok 0 0)
+        pv (ck-r M2)
+        M3 (nm-set-nf M2 pv NF-FIRST p)
+        M4 (nm-set-nf M3 pv NF-AUX 1)
+        M5 (ck-n-head M4 tok HD-FN)
+        hd (ck-r M5)]
+    (-> M5 (nm-set-nf n NF-FIRST hd) (nm-set-nf hd NF-NEXT pv) (nm-set-nf pv NF-NEXT body)
+        (nm-set-nf n NF-AUX 3))))
+
 (defn- ck-r6b-ds [M :vector-i64 S :string n :i64] :vector-i64
   (let [code (ck-r6b-ds-code M n)]
     (case code
@@ -5314,6 +5435,7 @@
       11 (ck-r6b-cmp M n (nm-head-of M (nm-first M n)))
       12 (ck-r6b-cap M n)
       13 (ck-r6q-quote M S n)
+      14 (ck-r6d-fnlit M S n)
       (ck-r6b-fold M S n code))))
 ;; BEGIN R6B srclib (generated by seed/tests/r6b/srclib/gen-srclib.py)
 ;; edit seed/tests/r6b/srclib/r6b-lib.kotoba (or the KIR doclib), then run the generator
@@ -5354,6 +5476,7 @@
 (def ck-r6b-h-document-dissoc -4750057269407097116)
 (def ck-r6b-h-quote 6512470130372368119)
 (def ck-r6b-h-quote-tok -5808629440921371546)
+(def ck-r6b-h-fn-lit-tok 561003850934371630)
 (def ck-r6b-h-record-assoc -715500776194032970)
 (def ck-r6b-h-__r6-dnth -7168050004506419644)
 (def ck-r6b-h-document-count -51795290030251958)
