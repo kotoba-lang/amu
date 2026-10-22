@@ -2,7 +2,9 @@
 
 - Status: accepted as design. The selection row is implemented 2026-10-23
   (code + tests in `kotoba.compiler.accelerator-variants`); the row is
-  UNMEASURED.
+  UNMEASURED. The 2026-10-23 amendment at the end of this ADR extends the
+  row from the Vulkan route to the MSL route as well (implemented same
+  date).
 - Date: 2026-10-23
 - Tracking: JUN-58 (Apple). Parent JUN-55. This is one vendor per decision,
   the rule ADR-0356 set and ADR-0357 (ARM) followed.
@@ -39,7 +41,11 @@ read as designing it. (SUPERSEDED 2026-10-23 as to the CAUSE, not the
 conclusion: the MSL arm of the shared emission landed and the MSL emitter
 now admits `:subgroup-reduce` (ADR-0356's MSL-arm amendment); the MSL
 route still answers `:baseline` because this ADR scopes the row to the
-Vulkan route, and a Metal simdgroup row is still not designed here.) The
+Vulkan route, and a Metal simdgroup row is still not designed here.
+SUPERSEDED AGAIN later the same day as to the conclusion too: the
+amendment at the end of this ADR extends the row to the MSL route; a
+Metal simdgroup row -- a different, Metal-native variant -- is still not
+designed here.) The
 measurement this row waits on runs GLSL ->
 SPIR-V through glslang (ADR-0359 decision 2's sealed build step) on
 MoltenVK.
@@ -90,3 +96,63 @@ is per sufficient descriptor dimension). It also cannot be taken until a
 wire-42 route exists again (ADR-0371 provider; ADR-0355's honest state),
 so today the row stays `:measured? false` in every answer, and the
 provisional workgroup rows of ADR-0355 are untouched by this ADR.
+
+## Amendment (2026-10-23, later the same day): the row rides the MSL route too
+
+This DECIDES the open question the 2026-10-23 MSL-arm amendment of
+ADR-0356 named -- "Extending Apple's row to the MSL route (and whether the
+rule-6 facts there come from the same wire-42 SUBGROUP request ADR-0362
+designed, given a Metal-native descriptor would report SIMD-group facts
+directly) is a SEPARATE per-vendor design decision (JUN-58's own),
+proposed here and decided nowhere" -- in two parts.
+
+**Part 1: the selection row extends to the MSL route.** `select-variant`
+answers `:subgroup-reduce` for `:apple` on the MSL route -- one route under
+two names, `:metal` (the api name `target-for` maps) and `:msl-v1` (the
+emitter target name `lower` admits), the ADR-0359 decision-3 idiom -- under
+the SAME rules 3 + 6 gate the Vulkan route uses, fail closed included.
+Rule 3 is satisfied exactly as the WGSL-route rows satisfied it (ADR-0363
+rationale 1): the MSL arm landed 2026-10-23 and `lower` admits the
+(:msl-v1, :subgroup-reduce) pair in both readings. The NVIDIA CUDA-route
+question (whether that row should ever answer `:subgroup-reduce`) stays
+UNDECIDED -- one vendor per decision, the rule ADR-0356 set.
+
+**Part 2: the rule-6 facts on the MSL route are the same descriptor keys,
+whatever fills them.** `:subgroup-size` and `:subgroup-ops` are this
+table's capability contract, not a Vulkan binding: `:basic` and
+`:shuffle-relative` name the two ops the fold needs (the vocabulary of
+`accelerator-variants`' gate, whose GLSL spelling is the two
+GL_KHR_shader_subgroup_* extensions), and a Metal-native descriptor would
+answer them from the device's SIMD-group facts directly -- `simd_shuffle_down`
+present is the `:shuffle-relative` evidence, and Apple's SIMD-group width
+reports as `:subgroup-size`. ADR-0362's wire-42 `SUBGROUP` request stays
+the VULKAN route's producer; this amendment invents no key, no request and
+no producer. The fact gap is unchanged and still named: nothing produces
+the keys today on ANY route, and every row still fails closed to
+`:baseline` without a filled descriptor.
+
+Rationale is ADR-0363's, transposed: (1) rule 3 is the ordering rule and
+it is satisfied; (2) the emission is the shared fold's own MSL arm -- this
+row reuses it and emits nothing new (this ADR's original decision
+unchanged) -- and that arm is COMPILED (all eighteen sources to AIR under
+Apple metal 32023.883; a toolchain fact of what compiles, not a
+measurement); (3) `:msl-v1` is `target-for`'s answer for an api-less Apple
+device (`vendor-default-target`): without this extension the row could
+never select on its own vendor's default path.
+
+Non-claims, restated so no prose upgrades them: UNMEASURED -- the MSL
+route has no execution path in this repository (the brokers died with the
+C loader; ADR 0371's provider is the replacement track), nothing has
+executed this arm on any hardware, every answer keeps `:measured? false`,
+and no workgroup row of ADR-0355/0358 is touched (a different axis).
+"A Metal simdgroup row" -- a Metal-native variant built on
+simd_sum/simd_max/simd_min -- remains NOT designed: this amendment routes
+the EXISTING shared fold's selection, it designs no new emission and no
+new spelling. The measurement contract above stands unchanged, keyed to
+the tested device class; a native-Metal measurement needs an execution
+path that does not exist, and the MoltenVK measurement channel measures
+the Vulkan route, not this one.
+
+Implemented the same date (code + tests in
+`kotoba.compiler.accelerator-variants`, evidence in
+`docs/evidence/gpu-apple-msl-route-20261023/`).

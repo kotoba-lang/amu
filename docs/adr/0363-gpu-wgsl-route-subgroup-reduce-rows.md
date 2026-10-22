@@ -93,7 +93,11 @@ whose scope its own ADR set.
   `:baseline` only; SUPERSEDED 2026-10-23 as to that CAUSE: the MSL arm
   landed and the emitter now admits `:subgroup-reduce`, ADR-0356's MSL-arm
   amendment -- the MSL route keeps answering `:baseline` because the
-  Apple row's scope is the Vulkan route). A Metal simdgroup row remains
-  not designed (ADR-0360 said so and this ADR does not design it).
+  Apple row's scope is the Vulkan route; SUPERSEDED again later the same
+  day as to the conclusion too: the ADR-0360 amendment extends Apple's row
+  to the MSL route, so `:msl-v1` / `:metal` answer `:subgroup-reduce` for
+  `:apple` and `:baseline` for every other vendor). A Metal simdgroup row
+  remains not designed (ADR-0360 said so and this ADR does not design
+  it).
 - `:amd`, `:unknown`, `:qualcomm` and any other vendor keep answering
   `:baseline` on every route.

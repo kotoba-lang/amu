@@ -279,6 +279,20 @@ the CUDA-route row should ever answer `:subgroup-reduce` is a separate
 per-vendor decision, proposed here and decided nowhere. No `:measured?`
 flag moves and no workgroup row is touched.
 
+**Amendment (2026-10-23, the :msl-v1 Apple selection question is DECIDED).**
+ADR-0360's same-day amendment supersedes the MSL-arm paragraph's
+"proposed here and decided nowhere" clause above: the Apple row now
+selects `:subgroup-reduce` on the MSL route (`:metal` / `:msl-v1`) under
+the same rules 3 + 6 gate the Vulkan route uses, and the rule-6 facts are
+read from the same descriptor keys whatever fills them -- a Metal-native
+probe reports SIMD-group facts directly into `:subgroup-size` /
+`:subgroup-ops` (the two tokens are this table's capability vocabulary,
+not a Vulkan binding), while ADR-0362's wire-42 `SUBGROUP` request stays
+the Vulkan route's producer. The NVIDIA CUDA-route question named in the
+CUDA-arm paragraph above stays UNDECIDED -- one vendor per decision.
+Everything stays UNMEASURED: no `:measured?` flag moves and no workgroup
+row is touched.
+
 ## Intel `:subgroup-reduce` (JUN-59) -- the design
 
 **Rationale (a design assumption, not a measurement).** The baseline tree

@@ -119,14 +119,19 @@
           (is (= :baseline
                  (:variant (variants/select-variant vendor kir target device)))
               (str "device " (pr-str device) " must fail closed")))))
-    (testing "a target outside the rows' routes (ADR-0363 moved the WGSL route in for Intel/ARM)"
-      (doseq [target [:cuda :cuda-v1 :msl-v1 :metal nil]]
+    (testing "a target outside the rows' routes (ADR-0363 moved the WGSL route in for Intel/ARM; the ADR-0360 amendment moved the MSL route in for Apple)"
+      (doseq [target [:cuda :cuda-v1 nil]]
         (is (= :baseline (:variant (variants/select-variant :intel kir target capable))))
         (is (= :baseline (:variant (variants/select-variant :arm kir target capable))))
         (is (= :baseline (:variant (variants/select-variant :apple kir target capable))))
         (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable)))))
+      ;; The MSL route carries the Apple row only (the ADR-0360 amendment).
+      (doseq [target [:msl-v1 :metal]]
+        (is (= :baseline (:variant (variants/select-variant :intel kir target capable))))
+        (is (= :baseline (:variant (variants/select-variant :arm kir target capable))))
+        (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable)))))
       ;; The WGSL route carries the Intel and ARM rows only (ADR-0363);
-      ;; the Apple/NVIDIA rows keep their ADRs' Vulkan-route scope.
+      ;; the NVIDIA row keeps its ADR's Vulkan-route scope.
       (doseq [target [:webgpu :wgsl-v1]]
         (is (= :baseline (:variant (variants/select-variant :apple kir target capable))))
         (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable))))))
@@ -167,8 +172,9 @@
 
 (deftest each-route-selects-under-either-of-its-names
   ;; ADR-0359 decision 3: :vulkan and :glsl-v1 name one route, :cuda /
-  ;; :cuda-v1 are the CUDA route's two spellings the same way, and
-  ;; (ADR-0363) :webgpu / :wgsl-v1 are the WGSL route's. A caller holding
+  ;; :cuda-v1 are the CUDA route's two spellings the same way, :metal /
+  ;; :msl-v1 the MSL route's, and (ADR-0363) :webgpu / :wgsl-v1 the WGSL
+  ;; route's. A caller holding
   ;; target-for's api answer and a caller holding lower's emitter target
   ;; select the same variant.
   (let [reduce-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
@@ -182,25 +188,57 @@
              (:variant (variants/select-variant vendor reduce-kir target capable)))))
     (doseq [vendor [:intel :arm] target [:webgpu :wgsl-v1]]
       (is (= :subgroup-reduce
-             (:variant (variants/select-variant vendor reduce-kir target capable)))))))
+             (:variant (variants/select-variant vendor reduce-kir target capable)))))
+    (doseq [target [:metal :msl-v1]]
+      (is (= :subgroup-reduce
+             (:variant (variants/select-variant :apple reduce-kir target capable)))))))
 
-(deftest the-apple-row-rides-the-vulkan-route-only
-  ;; ADR-0360 (JUN-58): Apple's row is the shared subgroup-size-parametric
-  ;; emission on the Vulkan route (MoltenVK is Apple's only execution route
-  ;; here). Since 2026-10-23 the MSL emitter ADMITS :subgroup-reduce (the
-  ;; MSL arm of the emission landed), so the reason the MSL route answers
-  ;; :baseline is no longer rule 3 but the row's own scope: extending
-  ;; Apple's row to :msl-v1/:metal is a separate per-vendor decision
-  ;; (JUN-58), and until it lands a capable Apple device on :msl-v1 (or
-  ;; :metal) still answers :baseline.
+(deftest the-apple-row-rides-the-vulkan-and-msl-routes
+  ;; ADR-0360 (JUN-58) as amended 2026-10-23 (JUN-58's own decision): the
+  ;; Apple row is the shared subgroup-size-parametric emission on the
+  ;; Vulkan route (MoltenVK is Apple's only EXECUTION route here) AND on
+  ;; the MSL route -- :metal (api) / :msl-v1 (emitter target), one route
+  ;; under two names, the ADR-0359 decision-3 idiom. Rule 3 holds on both
+  ;; (the MSL arm of the emission landed 2026-10-23 and lower admits
+  ;; (:msl-v1, :subgroup-reduce)), and rule 6 is the same descriptor gate
+  ;; on both routes -- the keys are the contract, whatever fills them. The
+  ;; WGSL route does NOT carry Apple (ADR-0363's scope is Intel/ARM).
   (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
-        capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
-        answer (variants/select-variant :apple kir :vulkan capable)]
-    (is (= :subgroup-reduce (:variant answer)))
-    (is (false? (:measured? answer)))
-    (is (str/includes? (:basis answer) "ADR-0360"))
-    (doseq [target [:msl-v1 :metal :webgpu :wgsl-v1]]
-      (is (= :baseline (:variant (variants/select-variant :apple kir target capable)))))))
+        capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
+    (doseq [target [:vulkan :glsl-v1 :metal :msl-v1]]
+      (let [answer (variants/select-variant :apple kir target capable)]
+        (is (= :subgroup-reduce (:variant answer)))
+        (is (false? (:measured? answer)))
+        (is (str/includes? (:basis answer) "ADR-0360"))))
+    (doseq [target [:webgpu :wgsl-v1 :cuda :cuda-v1]]
+      (is (= :baseline (:variant (variants/select-variant :apple kir target capable)))))
+    (testing "the same rule-6 gate fails closed on the MSL route"
+      (doseq [device [nil
+                      {}
+                      {:subgroup-size 32}
+                      {:subgroup-ops #{:basic :shuffle-relative}}
+                      {:subgroup-size 32 :subgroup-ops #{:basic}}
+                      {:subgroup-size 32 :subgroup-ops #{:shuffle-relative}}
+                      {:subgroup-size 24 :subgroup-ops #{:basic :shuffle-relative}}]
+              target [:metal :msl-v1]]
+        (is (= :baseline (:variant (variants/select-variant :apple kir target device)))
+            (str "device " (pr-str device) " must fail closed on the MSL route"))))
+    (testing "rule 3 end to end: the selected variant lowers, seals and verifies on :msl-v1"
+      (let [selected (:variant (variants/select-variant :apple kir :msl-v1 capable))
+            compiled (accelerator/compile-kernel kir :msl-v1 selected)]
+        (is (= :subgroup-reduce selected))
+        (is (= :subgroup-reduce (:variant compiled)))
+        (is (str/includes? (:code compiled) "uint sgsize [[threads_per_simdgroup]]"))
+        (is (str/includes? (:code compiled) "uint fold = min(sgsize, width);"))
+        (is (str/includes? (:code compiled) "simd_shuffle_down"))
+        (is (nil? (re-find #"\bfold = \d+u" (:code compiled)))
+            "a baked fold width leaked into the MSL emission")
+        ;; Metal refuses a kernel named main (Apple metal 32023.883): the
+        ;; MSL arm's entry is the kernel's :kernel/name (the MSL-arm
+        ;; amendment of ADR-0356).
+        (is (str/includes? (:code compiled) "kernel void reduce_sum_f32"))
+        (is (not (str/includes? (:code compiled) "kernel void main")))
+        (is (= compiled (accelerator/verify-artifact! compiled)))))))
 
 (deftest the-nvidia-row-rides-the-vulkan-route-only
   ;; ADR-0361 (JUN-57): NVIDIA's row on the Vulkan route is the shared
@@ -239,8 +277,10 @@
   ;; :wgsl-v1 (emitter target), one route under two names exactly like
   ;; :vulkan/:glsl-v1 (ADR-0359 decision 3) -- selects :subgroup-reduce for
   ;; Intel and ARM under the same rules 3 + 6 gate the Vulkan route uses.
-  ;; Apple and NVIDIA stay Vulkan-route-only (their ADRs' scope; extending
-  ;; either is a separate per-vendor decision). Everything here is
+  ;; The NVIDIA row stays Vulkan-route-only (its ADR's scope; the Apple row
+  ;; now rides the MSL route too -- the ADR-0360 amendment, tested in
+  ;; the-apple-row-rides-the-vulkan-and-msl-routes -- and stays off the
+  ;; WGSL route). Everything here is
   ;; UNCOMPILED (no WGSL validator on this host) and UNMEASURED -- no
   ;; WebGPU execution path exists and :measured? is false on every answer.
   (doseq [vendor [:intel :arm]
@@ -272,10 +312,10 @@
       (doseq [target [:webgpu :wgsl-v1]]
         (is (= :baseline (:variant (variants/select-variant :intel ewise target capable))))
         (is (= :baseline (:variant (variants/select-variant :arm malformed target capable)))))))
-  (testing "the MSL route still answers :baseline for every vendor (the route is outside the rows' routes -- the MSL emitter has admitted :subgroup-reduce since 2026-10-23 and selection there answers :baseline by row scope)"
+  (testing "the MSL route answers :baseline for every vendor but Apple (row scope, not rule 3: the MSL emitter has admitted :subgroup-reduce since 2026-10-23, and the ADR-0360 amendment put Apple's row on this route)"
     (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
           capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
-      (doseq [vendor [:intel :arm] target [:msl-v1 :metal]]
+      (doseq [vendor [:intel :arm :nvidia] target [:msl-v1 :metal]]
         (is (= :baseline (:variant (variants/select-variant vendor kir target capable)))))))
   (testing "rule 3 end to end: the selected variant lowers, seals and verifies on :wgsl-v1"
     (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 128})
@@ -309,6 +349,11 @@
            (:variant (variants/select-variant
                       :apple kir :vulkan
                       (targets/device-from-subgroup "32|basic shuffle-relative")))))
+    (is (= :subgroup-reduce
+           (:variant (variants/select-variant
+                      :apple kir :msl-v1
+                      (targets/device-from-subgroup "32|basic shuffle-relative"))))
+        "the descriptor keys are the route-agnostic contract: the same parsed facts select on the MSL route")
     (is (= :subgroup-reduce
            (:variant (variants/select-variant
                       :intel kir :glsl-v1
