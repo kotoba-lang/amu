@@ -135,7 +135,10 @@ def main(out):
     for g in (1, 2, 3):
         prefix, env = ([out / "C0.elf"], senv) if g == 1 else ([out / "R-aarch64.elf", payload, 0, 0, "aarch64", "35,37,38,39", "--"], renv)
         container, native = out / f"G{g}.kseed", out / f"G{g}.bin"
-        run.run(f"G{g}-compile", prefix + ["compile", adopted_src, "--target", "aarch64-macos", "--output", container], env)
+        # C0's code is unoptimized: its compile of the core takes ~32 min on an
+        # Apple-silicon VM and over an hour on a hosted arm64 runner.
+        run.run(f"G{g}-compile", prefix + ["compile", adopted_src, "--target", "aarch64-macos", "--output", container], env,
+                timeout=10800 if g == 1 else 3600)
         run.run(f"G{g}-extract", prefix + ["extract-native", container, "--symbol", "main", "--output", native], env)
         assert pin(native)["sha256"] == adoption["nativeImageSHA256"], "adopted fixed point mismatch"
         adopted_gens.append(dict(generation=g, native=pin(native), container=pin(container)))
