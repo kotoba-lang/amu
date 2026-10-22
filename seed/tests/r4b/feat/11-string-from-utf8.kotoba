@@ -1,0 +1,13 @@
+;; R4B feat: string-from-utf8 of canonical UTF-8 (2- and 3-byte sequences), a hex encoder over :bytes, string=?
+(ns seed.r4b (:export [test]))
+(defn- hex-digit [d :i64] :i64 (if (< d 10) (+ 48 d) (+ 87 d)))
+(defn- hex3 [b :bytes] :string
+  (string-from-utf8
+    (bytes-from-vector-i64
+      [(hex-digit (quot (bytes-at b 0) 16)) (hex-digit (bit-and (bytes-at b 0) 15))
+       (hex-digit (quot (bytes-at b 1) 16)) (hex-digit (bit-and (bytes-at b 1) 15))
+       (hex-digit (quot (bytes-at b 2) 16)) (hex-digit (bit-and (bytes-at b 2) 15))])))
+(defn test [] :i64
+  (let [s (string-from-utf8 (bytes-from-vector-i64 [104 195 169 226 130 172]))
+        h (hex3 (bytes-from-vector-i64 [0 171 255]))]
+    (+ (string-length s) (* 10 (string-length h)) (if (string=? h "00abff") 1000 0) (if (string=? s "hé€") 10000 0))))

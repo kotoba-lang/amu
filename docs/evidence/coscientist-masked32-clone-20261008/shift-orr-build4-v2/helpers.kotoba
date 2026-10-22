@@ -1,0 +1,66 @@
+;; SR1 isolated full64 shift/shift/OR fusion. Default OFF; retain three words.
+(def sr-feature 0)
+(defn- sr-ready [M :vector-i64 i :i64] :bool
+ (and (= sr-feature 1) (= (vector-at M MM-ERR) 0)
+      (> i 0) (< (+ i 9) (vector-at M MM-SIR-N))
+      (= (gn-g M gn-f-leaf) 0) (> (gn-g M gn-f-fb) 0)
+      (= (gn-g M gn-f-vmode) 0) (= (gn-g M gn-f-vslot) 0)
+      (= (gn-g M gn-f-dead) 0) (= (gn-g M 14) 0)
+      (= (gn-g M gn-f-skip) 0) (>= (gn-g M gn-f-h) 0) (<= (gn-g M gn-f-h) 1)
+      (>= (vector-at M MM-CODE-N) 0) (<= (vector-at M MM-CODE-N) MM-CODE-CAP)
+      (let [s (gn-sir M i IF-B) n (gn-sir M (inc i) IF-B)
+            first (gn-sir M (+ i 2) IF-A) second (gn-sir M (+ i 7) IF-A)
+            f (gn-sir M (+ i 9) IF-A)]
+       (and (> s 0) (<= s (gn-g M gn-f-ns))
+            (>= (gn-sreg M s) 19) (<= (gn-sreg M s) 28)
+            (>= n 1) (<= n 31)
+            (or (and (= first BOP-SHL) (= second BOP-USHR))
+                (and (= first BOP-USHR) (= second BOP-SHL)))
+            (xf-at M i OP-LGET 0 s 0)
+            (xf-at M (inc i) OP-CONST 1 n 0)
+            (xf-at M (+ i 2) OP-BIN first 0 0)
+            (xf-at M (+ i 3) OP-LGET 1 s 0)
+            (xf-at M (+ i 4) OP-CONST 2 32 0)
+            (xf-at M (+ i 5) OP-CONST 3 n 0)
+            (xf-at M (+ i 6) OP-BIN BOP-SUB 2 0)
+            (xf-at M (+ i 7) OP-BIN second 1 0)
+            (xf-at M (+ i 8) OP-BIN BOP-OR 0 0)
+            (> f 0) (< f (vector-at M MM-FN-N))
+            (xf-at M (+ i 9) OP-CALL f 0 1)
+            (= (gn-co M (+ i 8) 0) 0)
+            ;; X10 represents temp1. It is inactive after OR and the next
+            ;; call consumes only temp0. Prove kills before any future read.
+            (gn-kills M (+ i 9) 1 16) (gn-kills M (+ i 9) 2 16)
+            (gn-kills M (+ i 9) 3 16)))))
+(defn- sr-rewrite [M :vector-i64 i :i64] :vector-i64
+ (let [start (vector-at M MM-CODE-N)
+       fix (vector-at M MM-FIX-N) lit (vector-at M MM-LIT-N)
+       litb (vector-at M MM-LITB-N) label (vector-at M MM-LABEL-N)
+       x (gn-sreg M (gn-sir M i IF-B)) n (gn-sir M (inc i) IF-B)
+       left-first (= (gn-sir M (+ i 2) IF-A) BOP-SHL)
+       left (if left-first n (- 32 n)) right (if left-first (- 32 n) n)
+       m (xf-replay M i (+ i 8))]
+  (if (not= (vector-at m MM-ERR) 0) m
+   (let [next (gn-g m gn-f-skip) full (gn-gs m gn-f-skip (+ 8 next))]
+    (if (and (= next 0) (= (vector-at m MM-CODE-N) (+ start 3))
+             (= (vector-at m MM-FIX-N) fix) (= (vector-at m MM-LIT-N) lit)
+             (= (vector-at m MM-LITB-N) litb) (= (vector-at m MM-LABEL-N) label)
+             (= (gn-g m gn-f-h) 1)
+             (= (gn-dk m 0) gn-k-reg) (= (gn-dv m 0) 0)
+             (= (gn-dk m 1) gn-k-reg) (= (gn-dv m 1) 0)
+             (= (gn-dk m 2) gn-k-const) (= (gn-dv m 2) (- 32 n))
+             (= (gn-dk m 3) gn-k-const) (= (gn-dv m 3) n)
+             (= (gn-g m gn-f-vmode) 0) (= (gn-g m gn-f-vslot) 0)
+             (= (vector-at m (+ MM-CODE-BASE start))
+                (if left-first (gn-e-lsl 9 x left) (gn-e-lsr 9 x right)))
+             (= (vector-at m (+ MM-CODE-BASE start 1))
+                (if left-first (gn-e-lsr 10 x right) (gn-e-lsl 10 x left)))
+             (= (vector-at m (+ MM-CODE-BASE start 2)) (enc-orr-r 9 9 10)))
+     ;; Arbitrary64 input, full pre-mask result. Preserve nested call/fuel.
+     ;; Right-first changes inactive physical X10 only; no register snapshot
+     ;; equality claim. The source is resident19..28 and never aliases9/10.
+     (-> full (gn-put (+ MM-CODE-BASE start) (gn-e-lsr 10 x right))
+              (gn-put (+ MM-CODE-BASE start 1)
+                      (bit-or (enc-orr-r 9 10 x) (i64-shift-left left 10)))
+              (gn-put (+ MM-CODE-BASE start 2) 0xd503201f))
+     full)))))

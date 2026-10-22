@@ -1,0 +1,15 @@
+;; seed/tests/kgraph-capacity/budget.kotoba -- asserts N datoms (entity i mod 7, attribute 1, value i), then answers
+;; N + the sum of kgraph-get e 1 over e = 0..6: every lookup must see the LAST write of its (entity, attribute).
+;; Driven by check.sh: N = 4096 fits the default budget, 4097 traps :budget/cells :kgraph unless KEXE_KGRAPH allows it.
+(ns kgbudget {:kotoba/export [main entry]})
+(defn fill [i n acc]
+  (if (>= i n) acc (fill (+ i 1) n (+ acc (kgraph-assert! (- i (* 7 (quot i 7))) 1 i)))))
+
+(defn sum-get [e acc]
+  (if (>= e 7) acc (sum-get (+ e 1) (+ acc (kgraph-get e 1)))))
+
+(defn main [] 0)
+
+(defn entry [n]
+  (let [asserted (fill 0 n 0)]
+    (+ asserted (sum-get 0 0))))

@@ -1,0 +1,4 @@
+;; R3 feat: option-match binds the value
+(ns seed.r3 (:export [test]))
+(defn- f [o [:option :i64]] :i64 (option-match [:option :i64] o -1 x (* x 3)))
+(defn test [] :i64 (+ (f (option-some-of [:option :i64] 5)) (* 100 (f (option-none-of [:option :i64])))))

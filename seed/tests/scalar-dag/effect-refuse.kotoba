@@ -1,0 +1,3 @@
+(ns dag.effect-refuse (:export [scalar run]))
+(defn scalar [a :i64 b :i64] :i64 (do (typed-cap-call :io/write :string :string "E") (+ (* a a) b)))
+(defn run [x :i64 y :i64] :i64 (let [r (scalar x y)] (+ r x)))

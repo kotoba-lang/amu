@@ -1,0 +1,12 @@
+;; R6M: exports of the one-word value types whose boundary representation the seed shares with stage-0 (a :string /
+;; :vector-i64 / :bool result, a :string parameter, a variant); gate-r6m.sh EXPT runs each under the C loader and
+;; compares the loader's report by content with xp.expected (recorded from stage-0 d2cb84f6's code, BOOTSTRAP-REFERENCE)
+(ns r6m.xp (:export [main greet nums flag len shape]))
+(defn main [] :i64 7)
+(defn greet [] :string (string-concat "{\"status\":" "\"ok\"}"))
+(defn nums [] :vector-i64 (vector-conj (vector-conj (vector-alloc 0) 3) 4))
+(defn flag [] :bool (< 1 2))
+(defn len [s :string] :i64 (string-length s))
+(defn shape [n :i64] [:variant :r6m/sh [[:sq :i64] [:circle :i64]]]
+  (if (> n 0) (variant-new [:variant :r6m/sh [[:sq :i64] [:circle :i64]]] :circle n)
+      (variant-new [:variant :r6m/sh [[:sq :i64] [:circle :i64]]] :sq 9)))

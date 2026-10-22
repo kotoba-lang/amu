@@ -1,0 +1,13 @@
+;; seed/tests/check/ck-dump.kotoba -- 20-names/21-check test driver over the real front end (owner 20-names/21-check).
+;; Assembled by scripts/seed/ck-gate.sh: 00-ns 10-lex 11-read 20-names 21-check ck-common.kotoba ck-dump.kotoba.
+;; Guest argv: <mode> <absolute path>; modes and output: see ck-common.kotoba.
+(defn- t-read [M :vector-i64 S :string mode :i64] :i64
+  (if (= (vector-at M MM-ERR) 0) (t-names (rd-run M S) S mode) (t-out M S mode)))
+(defn- t-go [M :vector-i64 S :string mode :i64] :i64 (t-read (lx-run M S) S mode))
+
+(defn- seed-main [] :i64
+  (let [mode (typed-cap-call :cli/args :string :string "0")
+        path (typed-cap-call :cli/args :string :string "1")
+        S (typed-cap-call :fs/app-data :string :string path)
+        r (t-go (t-mem) S (string-code-point-at mode 0))]
+    0))

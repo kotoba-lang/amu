@@ -1,0 +1,5 @@
+;; R6D: the same `when` in a defn that DECLARES :i64 is the :i64 0 on the absent path (the reference's :legacy mode)
+;; want: 4
+(ns r6d.p02 (:export [main]))
+(defn- f [x :i64] :i64 (when (> x 0) (+ x 1)))
+(defn main [] :i64 (+ (f 3) (f -1)))

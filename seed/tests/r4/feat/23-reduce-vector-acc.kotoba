@@ -1,0 +1,5 @@
+;; R4 feat: reduce with a :vector-i64 accumulator (the init's type)
+(ns seed.r4 (:export [test]))
+(defn test [] :i64
+  (let [v (reduce (fn [acc x] (vector-conj acc (* x 2))) (vector-alloc 0) [1 2 3])]
+    (+ (vector-count v) (* 10 (vector-at v 2)))))

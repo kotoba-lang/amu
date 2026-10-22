@@ -1,0 +1,8 @@
+;; R1 conf from lang/conformance records/basic.kotoba (16): protocols (not R1) replaced by plain functions over flat records
+(ns seed.r1 (:export [test]))
+(defrecord LocalBox [x :i64])
+(defrecord ExtendedBox [x :i64])
+(defn- value-l [b [:record :seed.r1/LocalBox [[:x :i64]]]] :i64 (get b :x))
+(defn- value-e [b [:record :seed.r1/ExtendedBox [[:x :i64]]]] :i64 (get b :x))
+(defn test [] :i64
+  (+ (value-l (->LocalBox 7)) (value-e (map->ExtendedBox {:x 9}))))

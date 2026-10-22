@@ -1,5 +1,14 @@
 # Agent rules
 
+## Hosted compiler removal status
+
+- The C/JVM/Node compiler implementations and build/launch routes are removed
+  in this candidate. Public entrypoints currently refuse with exit 69; no
+  independent native compiler is qualified yet. Do not reinstall NBB/KBB,
+  restore a C loader, or infer success from the refusal wrappers.
+- See `docs/native-compiler-retirement.md` and the hash/blob inventory under
+  `docs/retirement/` for source recovery and pending native execution gates.
+
 ## Selfhost is the top priority
 
 - Use canonical `.kotoba` source and an Amu-built native compiler for the

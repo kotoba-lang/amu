@@ -1,0 +1,9 @@
+;; R6M: the i64 result kit (result-ok result-err result-ok? result-value result-error)
+(ns r6m.p04 (:export [main]))
+(defn- safe-div [a :i64 b :i64] (if (= b 0) (result-err 7) (result-ok (quot a b))))
+(defn main [] :i64
+  (+ (if (result-ok? (safe-div 10 2)) 1 0)
+     (+ (* 10 (result-value (safe-div 10 2) -1))
+        (+ (* 100 (result-error (safe-div 1 0) -1))
+           (+ (* 1000 (result-value (safe-div 1 0) 9))
+              (if (result-ok? (result-err 1)) 100000 0))))))

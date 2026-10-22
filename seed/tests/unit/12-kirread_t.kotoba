@@ -1,0 +1,45 @@
+;; seed/tests/unit/12-kirread_t.kotoba -- unit test of seed/12-kirread.kotoba (owner: agent KIR).
+;; deps: 10-lex 11-read
+;; For two KIR files (one heap M of 8M words each; the loader's KEXE_VECTOR_ITEMS of unit.sh holds two) it runs kr-lex,
+;; rd-run and kr-run and prints one line:
+;; token count, node count, top-level form count of the rewritten tree, and an FNV-style digest of the rewritten tree
+;; (kind, token span, aux of every node reachable from the new root, depth-first), or "ERR code a b".
+;; The 19 ports, the other pos/neg programs and the whole compile-kir route are scripts/seed/kir-gate.sh; this file is the
+;; stage-0 (linearity) build of the module and a regression digest of the rewritten tree (and/or/not, true/false,
+;; nested loop helpers, invariant captured locals).
+(defn- t-w [s :string] :i64 (let [o (typed-cap-call :io/write :string :string s)] 0))
+(defn- t-kv [k :string v :i64] :string (string-concat " " (string-concat k (string-concat "=" (mem-u2dec v)))))
+(defn- t-mix [h :i64 x :i64] :i64 (* (bit-xor h x) 1099511628211))
+(defn- t-nf [M :vector-i64 n :i64 f :i64] :i64 (vector-at M (+ (+ MM-NODE-BASE (* n MM-NODE-W)) f)))
+(defn- t-tf [M :vector-i64 t :i64 f :i64] :i64 (vector-at M (+ (+ MM-TOK-BASE (* t MM-TOK-W)) f)))
+;; digest of the subtree list starting at node c (siblings included)
+(defn- t-dig [M :vector-i64 c :i64 h :i64] :i64
+  (if (= c 0)
+    h
+    (let [k (t-nf M c NF-KIND)
+          t (t-nf M c NF-TOK)
+          h1 (t-mix (t-mix (t-mix h k) (- (t-tf M t TF-END) (t-tf M t TF-START))) (t-nf M c NF-AUX))
+          h2 (t-dig M (t-nf M c NF-FIRST) h1)]
+      (t-dig M (t-nf M c NF-NEXT) (t-mix h2 255)))))
+(defn- t-count [M :vector-i64 c :i64 i :i64] :i64 (if (= c 0) i (t-count M (t-nf M c NF-NEXT) (+ i 1))))
+(defn- t-report [M :vector-i64 name :string] :i64
+  (let [root (vector-at M MM-ROOT)
+        e (vector-at M MM-ERR)]
+    (if (= e 0)
+      (t-w (string-concat name (string-concat (t-kv "tok" (- (vector-at M MM-TOK-N) 1))
+             (string-concat (t-kv "node" (- (vector-at M MM-NODE-N) 1))
+               (string-concat (t-kv "forms" (t-count M (t-nf M root NF-FIRST) 0))
+                 (string-concat (t-kv "lit" (- (vector-at M MM-LIT-N) 1))
+                   (string-concat (t-kv "digest" (t-dig M (t-nf M root NF-FIRST) -3750763034362895579)) "\n")))))))
+      (t-w (string-concat name (string-concat " ERR" (string-concat (t-kv "code" e)
+             (string-concat (t-kv "a" (vector-at M MM-ERR-A)) (string-concat (t-kv "b" (vector-at M MM-ERR-B)) "\n")))))))))
+(defn- t-run [S :string name :string] :i64
+  (t-report (kr-run (rd-run (kr-lex (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S) S) name))
+(defn- t-file [root :string rel :string] :i64
+  (t-run (string-concat (typed-cap-call :fs/app-data :string :string (string-concat root rel)) (kr-prelude)) rel))
+(defn- t-rel [k :i64] :string
+  (cond (= k 0) "/seed/tests/kir/pos/03-bools.kir"
+        :else "/seed/tests/kir/neg/09-helper-twice.kir"))
+(defn- t-all [root :string k :i64] :i64
+  (if (> k 1) 0 (let [r (t-file root (t-rel k))] (t-all root (+ k 1)))))
+(defn- seed-main [] :i64 (t-all (io-arg 0) 0))

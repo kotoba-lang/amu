@@ -1,0 +1,10 @@
+;; R6F: a keyword-keyed map literal in the tail of a defn whose declared result is an inline record schema is that record
+;; (keys in any order; kotoba.security.hardware). ok? true -> 1, n 7, name "abc" (3).
+;; want: 1073
+(ns r6f.p09)
+(defn- mk [n :i64] [:record :r6f/res [[:ok? :bool] [:n :i64] [:name :string]]]
+  (let [nm "abc"]
+    {:name nm :n n :ok? (> n 0)}))
+(defn main [] :i64
+  (let [r (mk 7)]
+    (+ (if (:ok? r) 1000 0) (* 10 (:n r)) (string-length (:name r)))))

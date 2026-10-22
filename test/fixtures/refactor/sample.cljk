@@ -1,0 +1,28 @@
+(ns sample.core
+  (:require [clojure.string :as str]))
+
+;; a comment that must survive
+(defn pairs [m]
+  (into {} (map (fn [[k v]] [k (inc v)]) m)))
+
+(defn nested [xs]
+  (mapv (fn [{:keys [a b] :or {b 0} :as whole}]
+          ;; inner comment
+          (+ a b (count (map (fn [[x y]] (* x y)) (:ps whole)))))
+        xs))
+
+(defn kw [xs]
+  (->> xs (filter :ok) (map :name) (juxt :a :b)))
+
+(defn check [x form]
+  (when-not (integer? x) (reject! "x must be an integer" form :sample/not-integer))
+  (let [_ (when (neg? x) (reject! (str "neg " x) form))]
+    (when-not (< x 100)
+      (reject! "too big" form :sample/too-big))
+    (if (zero? x)
+      (reject! "zero" form)
+      x)))
+
+(defn loopy [xs form]
+  (doseq [x xs] (when-not x (reject! "nil in xs" form)))
+  (foo (reject! "val" form)))

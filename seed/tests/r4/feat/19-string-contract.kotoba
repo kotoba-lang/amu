@@ -1,0 +1,4 @@
+;; R4 feat: a fn literal in a [:fn [[:string] :i64]] parameter slot takes :string for its parameter (contract typing)
+(ns seed.r4 (:export [test]))
+(defn ap [f [:fn [[:string] :i64]] s :string] :i64 (f s))
+(defn test [] :i64 (+ (ap (fn [s] (string-length s)) "hello") (* 10 (ap (fn [t] (string-length (string-concat t t))) "ab"))))

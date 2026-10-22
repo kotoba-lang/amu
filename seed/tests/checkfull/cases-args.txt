@@ -1,0 +1,50 @@
+# `amu check` argument cases (agent CHECKFULL, 2026-10-04): one per line, run in seed/tests/checkfull/fx by both sides
+# (since 2026-10-10 also the malformed-input `compile` cases at the end).
+check io.kotoba
+check pure.kotoba
+check two.kotoba
+check abort.kotoba
+check bad.kotoba
+check ./io.kotoba
+check sub/../io.kotoba
+check sub/pure.kotoba
+check é.kotoba
+check é.txt
+check io.txt
+check
+check nosuch.kotoba
+check sub
+check io.kotoba --policy
+check io.kotoba --policy p01.edn --policy p06.edn
+check io.kotoba --policy p06.edn --policy p01.edn
+check --policy p01.edn io.kotoba
+check io.kotoba --jvm-free --policy p01.edn
+check --jvm-free io.kotoba --policy p01.edn
+check io.kotoba --policy ポリシー.edn
+check é.kotoba --policy ポリシー.edn
+check io.kotoba --policy nosuch.edn
+check io.kotoba --policy sub
+check pure.kotoba --profile pure-product
+check io.kotoba --profile pure-product
+check io.kotoba --profile pure-product --policy p01.edn
+check pure.kotoba --policy p07.edn --profile default
+check bad.kotoba --policy p03.edn
+check bad.kotoba --policy p13.edn
+check bad.kotoba --policy p04.edn
+check proj/app/main.kotoba
+check proj/app/main.kotoba --source-path proj
+check pure.kotoba --json
+check /private/tmp/nonexistent-checkfull.kotoba
+check /Users/junkawasaki/nonexistent-checkfull.kotoba
+check io.kotoba --policy /Users/junkawasaki/nonexistent-checkfull.edn
+# 2026-10-10 (final round): malformed input is refused by name, never trapped. The policy fixtures p05 (vector :allow),
+# p20 (#_ discard, admitted), p27 (nil), p32 (a map whose value is the symbol U+0007) and p34 (invalid UTF-8) run in
+# every args.sh pass (p*.edn x 4 programs); the two /Users/junkawasaki paths above are outside the image's baked scope.
+check bad-utf8.kotoba
+compile bad-utf8.kotoba --target aarch64-macos --output /private/tmp/checkfull-bad-utf8.kexe
+compile io.kotoba --policy p34.edn --target aarch64-macos --output /private/tmp/checkfull-p34.kexe
+compile pure.kotoba --policy p27.edn --target aarch64-macos --output /private/tmp/checkfull-p27.kexe
+compile pure.kotoba --policy p05.edn --target aarch64-macos --output /private/tmp/checkfull-p05.kexe
+compile io.kotoba --policy p32.edn --target aarch64-macos --output /private/tmp/checkfull-p32.kexe
+compile /Users/junkawasaki/nonexistent-checkfull.kotoba --target aarch64-macos --output /private/tmp/checkfull-scope.kexe
+compile pure.kotoba --policy /Users/junkawasaki/nonexistent-checkfull.edn --target aarch64-macos --output /private/tmp/checkfull-scope.kexe

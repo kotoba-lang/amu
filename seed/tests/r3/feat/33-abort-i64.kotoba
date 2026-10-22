@@ -1,0 +1,4 @@
+;; R3 feat: error type i64, nested try
+(ns seed.r3 (:export [test]))
+(defn- f [x :i64] :i64 (if (< x 0) (throw (- 0 x)) x))
+(defn test [] :i64 (try (+ (try (f -5) (catch e (* 10 e))) (f -7)) (catch e (* 1000 e))))

@@ -1,0 +1,24 @@
+(ns form-count
+  {:kotoba/export [fc-run]}
+  (:require [kotoba.form :as form])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :form/rd [:record :form/rd [[:form [:ref :form/r]] [:pos :i64]]]}))
+
+;; Memory census of the Form representation: read every line of TEXT with form/edn-form and count the nodes.
+(defn- fc-nodes [f [:ref :form/r]] :i64
+  (let [n (form/count-of f)]
+    (loop [i 0 acc 1]
+      (if (>= i n) acc (recur (inc i) (+ acc (fc-nodes (form/nth-of f i))))))))
+
+(defn- fc-lines [text :string i :i64 n :i64 acc :i64] :i64
+  (if (>= i n)
+    acc
+    (let [j (string-find-byte text 10 i)
+          end (if (< j 0) n j)]
+      (if (= end i)
+        (fc-lines text (+ end 1) n acc)
+        (fc-lines text (+ end 1) n (+ acc (fc-nodes (form/edn-form (string-substring text i end)))))))))
+
+(defn fc-run [text :string] :string
+  (string-concat "nodes " (string-from-i64 (fc-lines text 0 (string-byte-length text) 0))))

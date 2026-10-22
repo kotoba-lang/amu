@@ -1,0 +1,6 @@
+;; R6C: (- x) is negation (0 - x, wrapping: (- MIN) = MIN), as stage-0 reads it
+;; want: 1
+(ns r6c.p02 (:export [main]))
+(defn- neg [x :i64] :i64 (- x))
+(defn main [] :i64
+  (if (and (= (neg 5) -5) (= (neg -7) 7) (= (neg -9223372036854775808) -9223372036854775808) (<= (- 3) 0 3)) 1 0))

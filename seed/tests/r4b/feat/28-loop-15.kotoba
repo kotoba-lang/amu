@@ -1,0 +1,7 @@
+;; R4B feat: a loop with 15 bindings (the cap is 20; stage-0 lifts loops into helpers with up to 18 parameters)
+(ns seed.r4b (:export [test]))
+(defn test [] :i64
+  (loop [i 0 a 1 b 2 c 3 d 4 e 5 f 6 g 7 h 8 j 9 k 10 l 11 m 12 n 13 o 14]
+    (if (< i 5)
+      (recur (inc i) b c d e f g h j k l m n o a)
+      (+ a (* 2 b) (* 3 c) (* 4 d) (* 5 e) (* 6 f) (* 7 g) (* 8 h) (* 9 j) (* 10 k) (* 11 l) (* 12 m) (* 13 n) (* 14 o)))))

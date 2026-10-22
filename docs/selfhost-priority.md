@@ -1,5 +1,12 @@
 # Selfhost is the top priority for the Amu compiler
 
+Current source-candidate update (2026-10-22): the hosted compiler
+implementations, public launch routes and C-loader build tools are removed.
+Public entries currently refuse with exit 69 until the native compiler is
+qualified. See [the removal inventory](native-compiler-retirement.md).
+Historical progress notes below describe their recorded commits; old Node/C
+commands are not supported routes in this candidate.
+
 Decision updated by the owner on 2026-10-22. It outranks new features, new
 targets and benchmark publication. This contract supersedes the earlier
 CLJK syntax-sugar retention, hosted bootstrap exceptions and C-loader pinning

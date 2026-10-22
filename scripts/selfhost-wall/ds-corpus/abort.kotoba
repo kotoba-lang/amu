@@ -1,0 +1,26 @@
+(ns ds.abort)
+
+;; abort ability: throw / try / catch, the error type descriptor validated by the value-type check (type-valid!)
+(defn fail-str [x :i64] :i64
+  (if (> x 0) x (throw "negative")))
+
+(defn catch-str [x :i64] :i64
+  (try (fail-str x) (catch [:string] e 0)))
+
+(defn catch-implicit [x :i64] :i64
+  (try (fail-str x) (catch e 1)))
+
+(defn catch-record [x :i64] :i64
+  (try (fail-rec x) (catch [:record :ds/err [[:code :i64] [:msg :string]]] e (record-get [:record :ds/err [[:code :i64] [:msg :string]]] e :code))))
+
+(defn fail-rec [x :i64] :i64
+  (if (> x 0) x (throw (record-new [:record :ds/err [[:code :i64] [:msg :string]]] 7 "bad"))))
+
+(defn catch-bad-type [x :i64] :i64
+  (try (fail-str x) (catch [:bogus-type] e 0)))
+
+(defn catch-deep-type [x :i64] :i64
+  (try (fail-str x) (catch [:option [:option [:option [:option :i64]]]] e 0)))
+
+(defn nested [x :i64] :i64
+  (try (try (fail-str x) (catch [:string] inner (throw inner))) (catch [:string] outer 2)))

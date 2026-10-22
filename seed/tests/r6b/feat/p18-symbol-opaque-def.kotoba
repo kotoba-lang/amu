@@ -1,0 +1,7 @@
+;; want: 21
+;; R6B :symbol (its text; stage-0 checks it but does not compile it natively: 'typed values currently require ..'), want hand-derived:
+;; the symbol ab prints as 2 bytes -> 20, a 1-item vector -> 1; an unreferenced (def NAME #{..}) is accepted (opaque)
+(ns p18 (:export [main]))
+(defn- nm [] :symbol (symbol "ab"))
+(def ^:private unused #{:a :b})
+(defn main [] :i64 (+ (* 10 (string-length (document-edn-print (document-symbol (nm))))) (document-count (document-vector (document-symbol (symbol "c"))))))

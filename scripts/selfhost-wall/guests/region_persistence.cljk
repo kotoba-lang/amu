@@ -1,0 +1,42 @@
+(ns region-persistence
+  {:kotoba/export [run]})
+
+;; Persistence under the growth regions: an OLDER handle of a region that is
+;; appended to after a newer one exists must copy, and neither handle may see
+;; the other's append (lists and strings). Answers "ok" or the first failure.
+(defn run [text :string] :string
+  (let [p (string-concat text "-")
+        x0 (typed-list-new [:list :i64])
+        y0 (typed-list-new [:list :i64])
+        x1 (typed-list-conj [:list :i64] x0 1)
+        y1 (typed-list-conj [:list :i64] y0 10)
+        x2 (typed-list-conj [:list :i64] x1 2)
+        y2 (typed-list-conj [:list :i64] y1 20)
+        x3 (typed-list-conj [:list :i64] x2 3)
+        y3 (typed-list-conj [:list :i64] y2 30)
+        x4 (typed-list-conj [:list :i64] x3 4)
+        x5 (typed-list-conj [:list :i64] x4 5)
+        xb (typed-list-conj [:list :i64] x3 77)
+        xc (typed-list-conj [:list :i64] xb 78)
+        x6 (typed-list-conj [:list :i64] x5 6)
+        s0 (string-concat p (string-concat p (string-concat p p)))
+        t0 (string-concat s0 s0)
+        u0 (string-concat t0 "u")
+        s1 (string-concat t0 "A")
+        u1 (string-concat u0 "v")
+        s2 (string-concat s1 "B")
+        s3 (string-concat s2 "C")
+        sb (string-concat s1 "Z")
+        s4 (string-concat s3 "D")]
+    (cond
+      (not (= (typed-list-nth [:list :i64] x6 3) 4)) "x6[3]"
+      (not (= (typed-list-nth [:list :i64] x6 5) 6)) "x6[5]"
+      (not (= (typed-list-nth [:list :i64] xb 3) 77)) "xb[3]"
+      (not (= (typed-list-nth [:list :i64] xc 4) 78)) "xc[4]"
+      (not (= (typed-list-nth [:list :i64] x4 3) 4)) "x4[3]"
+      (not (= (typed-list-nth [:list :i64] y3 2) 30)) "y3[2]"
+      (not (= s4 (string-concat t0 "ABCD"))) "s4"
+      (not (= sb (string-concat t0 "AZ"))) "sb"
+      (not (= s2 (string-concat t0 "AB"))) "s2"
+      (not (= u1 (string-concat t0 "uv"))) "u1"
+      :else "ok")))

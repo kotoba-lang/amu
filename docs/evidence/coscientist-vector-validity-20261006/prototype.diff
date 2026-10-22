@@ -1,0 +1,52 @@
+diff --git a/private/tmp/amu-vector-validity-20261006/baseline-41-a64gen.kotoba b/private/tmp/amu-vector-validity-20261006/41-a64gen-prototype.kotoba
+index e628254..f935337 100644
+--- a/private/tmp/amu-vector-validity-20261006/baseline-41-a64gen.kotoba
++++ b/private/tmp/amu-vector-validity-20261006/41-a64gen-prototype.kotoba
+@@ -1113,14 +1113,45 @@
+            (= (gn-sir M (+ q 4) IF-B) 0) (= (gn-sir M (+ q 4) IF-C) 2)
+            (= (gn-op M (+ q 5)) OP-RET) (= (gn-sir M (+ q 5) IF-A) 0)
+            (= (gn-op M (+ q 6)) OP-END) (= (gn-sir M (+ q 6) IF-A) f)) q 0)))
++;; Bounded same-local provenance at a previous read argument. Pure prefix only;
++;; writes to the local or temp, control flow and unknown effects refuse.
++(defn- gn-vlocal [M :vector-i64 j :i64 t :i64 s :i64 work :i64] :bool
++ (if (or (<= j 0) (<= work 0)) false
++  (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B)]
++   (case op
++    OP-LGET (if (= a t) (= b s) (gn-vlocal M (dec j) t s (dec work)))
++    OP-CONST (and (not= a t) (gn-vlocal M (dec j) t s (dec work)))
++    (OP-BIN OP-CMP OP-UN) (and (not= b t) (gn-vlocal M (dec j) t s (dec work)))
++    OP-LSET (and (not= a s) (gn-vlocal M (dec j) t s (dec work)))
++    OP-FUEL (gn-vlocal M (dec j) t s (dec work))
++    false))))
++;; Dominating successful exact closed reader in this straight-line region.
++;; No branches/labels, capability/runtime mutation, unknown calls or reassignment.
++;; A chain of admitted reads terminates at a real check (strict decreasing j).
++(defn- gn-vdom [M :vector-i64 j :i64 s :i64 work :i64] :bool
++ (if (or (<= j 0) (<= work 0)) false
++  (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) n (gn-sir M j IF-C)]
++   (case op
++    (OP-CONST OP-LGET OP-BIN OP-CMP OP-UN OP-FUEL) (gn-vdom M (dec j) s (dec work))
++    OP-LSET (and (not= a s) (gn-vdom M (dec j) s (dec work)))
++    OP-CALL (and (> (gn-affine-reader M j a n) 0)
++              (or (gn-vlocal M (dec j) b s 32) (gn-vdom M (dec j) s (dec work))))
++    false))))
++(defn- gn-vchecked [M :vector-i64 i :i64 t :i64] :bool
++ (and (gn-isk M t gn-k-local) (gn-vdom M (dec i) (gn-dv M t) 64)))
++;; Reload descriptor afresh; only the already-proved handle range check goes.
++;; Per-access length/index checks and fuel/trap publication remain unchanged.
++(defn- gn-vaddr [M :vector-i64 rv :i64] :vector-i64
++ (-> M (gn-emit (enc-sub-i 17 rv 1)) (gn-emit (enc-ldr 16 7 320))
++       (gn-emit (gn-e-addsl 16 16 17 4))))
+ (defn- gn-call-affine-reader [M :vector-i64 i :i64 t :i64 f :i64 q :i64] :vector-i64
+  (let [p (gn-fnf M f FF-SIR) charged (= (gn-op M (inc p)) OP-FUEL)
+-       k (gn-sir M (+ q 2) IF-B) shift (gn-pow2 k)]
++       k (gn-sir M (+ q 2) IF-B) shift (gn-pow2 k) checked (gn-vchecked M i t)]
+   (-> M (gn-into 0 t) (gn-into 1 (inc t)) (gn-ctx)
+       (cond-> charged (gn-emit (enc-ldr 8 7 CTX-FUEL)) charged (gn-mask-charge))
+       (cond-> (> shift 0) (gn-emit (gn-e-lsl 1 1 shift))
+               (<= shift 0) (gn-mov-imm 2 k) (<= shift 0) (gn-emit (enc-mul 1 1 2)))
+-      (gn-hchk 0 312 320) (gn-vidx 1) (gn-emit (gn-e-ldrr 0 16 17 1))
++      (cond-> checked (gn-vaddr 0) (not checked) (gn-hchk 0 312 320)) (gn-vidx 1) (gn-emit (gn-e-ldrr 0 16 17 1))
+       (cond-> charged (gn-emit (enc-str 8 7 CTX-FUEL))) (gn-take i t 0))))
+ (defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
+   (let [w (gn-call-wrapper M i f t n) q (gn-clamp M i f n) mask (gn-scalar-mask M i f n) reader (gn-affine-reader M i f n)]

@@ -1,0 +1,9 @@
+;; R6L KWX: main = 0 when the importer reads the text of keywords kx.lib made at run time (r6k: SIGTRAP)
+(ns kx.main (:require [kx.lib :as l]))
+(defn main [] :i64
+  (let [a (l/mk (string-concat "al" "pha"))
+        d (l/mk (string-concat "del" "ta"))]
+    (cond (not (string=? (keyword-name a) "k-alpha")) 1
+          (not (l/same? d)) 2
+          (not (string=? (keyword-name d) "k-delta")) 3
+          :else 0)))

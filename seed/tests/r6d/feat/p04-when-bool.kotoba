@@ -1,0 +1,5 @@
+;; R6D: a :bool present value keeps the `when` :bool (the absent path is false)
+;; want: 2
+(ns r6d.p04 (:export [main]))
+(defn- b [x :i64] (when (> x 0) (< x 10)))
+(defn main [] :i64 (+ (if (b 3) 1 0) (if (b -3) 10 0) (if (b 30) 100 0) (if (b 5) 1 0)))

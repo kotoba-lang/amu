@@ -1,0 +1,4 @@
+;; R4 feat: a fn literal in the result position of a function declaring a [:fn ..] result takes its parameter types
+(ns seed.r4 (:export [test]))
+(defn len-plus [k :i64] [:fn [[:string] :i64]] (fn [s] (+ k (string-length s))))
+(defn test [] :i64 (invoke (len-plus 100) "abc"))

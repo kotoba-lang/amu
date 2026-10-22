@@ -1,0 +1,7 @@
+(ns p10.main (:require [p10.lib :as l]) (:export [main]))
+(defn- use-tail [x :i64] :i64 (l/need-pos x))
+(defn- use-let [x :i64] :i64 (let [y (l/need-pos x)] (+ y 1)))
+(defn main [] :i64
+  (+ (try (use-tail 5) (catch e 100))
+     (try (use-let -1) (catch e 1000))
+     (try (l/need-pos -2) (catch e 10000))))

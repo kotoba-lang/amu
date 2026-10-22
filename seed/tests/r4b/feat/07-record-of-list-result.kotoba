@@ -1,0 +1,18 @@
+;; R4B feat: a record holding a list of records, returned from a function and walked by typed-list-nth
+(ns seed.r4b (:export [test]))
+(defrecord Pt [x :i64 y :i64])
+(defrecord Poly [pts [:list [:ref :seed.r4b/Pt]] closed :bool])
+(defn- square [s :i64] [:ref :seed.r4b/Poly]
+  (->Poly (typed-list-new [:list [:ref :seed.r4b/Pt]] (->Pt 0 0) (->Pt s 0) (->Pt s s) (->Pt 0 s)) true))
+(defn- abs [d :i64] :i64 (if (< d 0) (- 0 d) d))
+(defn- dist [p [:ref :seed.r4b/Pt] q [:ref :seed.r4b/Pt]] :i64 (+ (abs (- (:x q) (:x p))) (abs (- (:y q) (:y p)))))
+(defn- pts [p [:ref :seed.r4b/Poly]] [:list [:ref :seed.r4b/Pt]]
+  (record-get [:record :seed.r4b/Poly [[:pts [:list [:ref :seed.r4b/Pt]]] [:closed :bool]]] p :pts))
+(defn- perim [p [:ref :seed.r4b/Poly]] :i64
+  (let [ps (pts p) n (count (pts p))]
+    (loop [i 0 acc 0]
+      (if (< i n)
+        (recur (inc i) (+ acc (dist (typed-list-nth [:list [:ref :seed.r4b/Pt]] ps i)
+                                    (typed-list-nth [:list [:ref :seed.r4b/Pt]] ps (if (= (inc i) n) 0 (inc i))))))
+        acc))))
+(defn test [] :i64 (let [p (square 7)] (+ (perim p) (if (:closed p) 1000 0))))

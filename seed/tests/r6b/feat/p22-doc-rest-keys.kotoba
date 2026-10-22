@@ -1,0 +1,10 @@
+;; want: 8091070910509103091
+;; R6B (rest d) of a vector, list and map, (keys m) on :document (want = stage-0's answer)
+(ns p22 (:export [main]))
+(defn- t [d :document] :i64 (let [s (document-edn-print d)] (+ (* 1000 (string-length s)) (string-code-point-at s 0))))
+(defn main [] :i64
+  (let [m (document-map (document-keyword :b) (document-i64 1) (document-keyword :a) (document-i64 2))]
+    (+ (t (rest (document-vector (document-i64 1) (document-i64 2))))
+       (* 100000 (t (rest (document-list (document-i64 1) (document-i64 2) (document-i64 3)))))
+       (* 10000000000 (t (keys m)))
+       (* 1000000000000000 (t (rest m))))))

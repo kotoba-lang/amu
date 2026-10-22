@@ -1,0 +1,124 @@
+{
+  "status": "complete-actual-native-cold-publication-private-reload-and-exhaustion-mutations-detected",
+  "controls": 3,
+  "supervisorExecutions": 9,
+  "rows": [
+    {
+      "mutation": "missingColdTrapPublication",
+      "wordAt": 34497,
+      "before": "0xf90004e8",
+      "after": "0xd503201f",
+      "args": [
+        7,
+        0
+      ],
+      "fuel": 100,
+      "baseline": {
+        "exit": 120,
+        "report": "{:status :trap :exit 120 :fuel {:initial 100 :remaining 98} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 2} :vector-items {:capacity 65536 :used 11}}",
+        "items": [
+          "DIAG_VECTOR_ITEMS 11 13 17 19 23 0 0 7 0 0 0 1"
+        ],
+        "traps": [
+          "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"
+        ]
+      },
+      "candidate": {
+        "exit": 120,
+        "report": "{:status :trap :exit 120 :fuel {:initial 100 :remaining 98} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 2} :vector-items {:capacity 65536 :used 11}}",
+        "items": [
+          "DIAG_VECTOR_ITEMS 11 13 17 19 23 0 0 7 0 0 0 1"
+        ],
+        "traps": [
+          "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"
+        ]
+      },
+      "mutant": {
+        "exit": 120,
+        "report": "{:status :trap :exit 120 :fuel {:initial 100 :remaining 99} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 2} :vector-items {:capacity 65536 :used 11}}",
+        "items": [
+          "DIAG_VECTOR_ITEMS 11 13 17 19 23 0 0 7 0 0 0 1"
+        ],
+        "traps": [
+          "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"
+        ]
+      }
+    },
+    {
+      "mutation": "staleReloadAtPrivateEntry",
+      "wordAt": 34146,
+      "before": "0x17fff7b9",
+      "after": "0x17fff7b8",
+      "args": [
+        7,
+        3
+      ],
+      "fuel": 100,
+      "baseline": {
+        "exit": 0,
+        "report": "{:status :ok :result 10 :fuel {:initial 100 :remaining 97} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 2} :vector-items {:capacity 65536 :used 11}}",
+        "items": [
+          "DIAG_VECTOR_ITEMS 11 13 17 19 23 1 0 7 3 0 10 1"
+        ],
+        "traps": []
+      },
+      "candidate": {
+        "exit": 0,
+        "report": "{:status :ok :result 10 :fuel {:initial 100 :remaining 97} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 2} :vector-items {:capacity 65536 :used 11}}",
+        "items": [
+          "DIAG_VECTOR_ITEMS 11 13 17 19 23 1 0 7 3 0 10 1"
+        ],
+        "traps": []
+      },
+      "mutant": {
+        "exit": 0,
+        "report": "{:status :ok :result 10 :fuel {:initial 100 :remaining 98} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 2} :vector-items {:capacity 65536 :used 11}}",
+        "items": [
+          "DIAG_VECTOR_ITEMS 11 13 17 19 23 1 0 7 3 0 10 1"
+        ],
+        "traps": []
+      }
+    },
+    {
+      "mutation": "reversedExhaustionCondition",
+      "wordAt": 34110,
+      "before": "0x54000062",
+      "after": "0x54000063",
+      "args": [
+        7,
+        3
+      ],
+      "fuel": 1,
+      "baseline": {
+        "exit": 120,
+        "report": "{:status :trap :exit 120 :fuel {:initial 1 :remaining 0} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 2} :vector-items {:capacity 65536 :used 11}}",
+        "items": [
+          "DIAG_VECTOR_ITEMS 11 13 17 19 23 0 0 7 3 0 0 1"
+        ],
+        "traps": [
+          "KEXE_TRAP {:kind :signal :signal :SIGTRAP}",
+          "KEXE_TRAP {:kind :budget :reason :budget/fuel}"
+        ]
+      },
+      "candidate": {
+        "exit": 120,
+        "report": "{:status :trap :exit 120 :fuel {:initial 1 :remaining 0} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 2} :vector-items {:capacity 65536 :used 11}}",
+        "items": [
+          "DIAG_VECTOR_ITEMS 11 13 17 19 23 0 0 7 3 0 0 1"
+        ],
+        "traps": [
+          "KEXE_TRAP {:kind :signal :signal :SIGTRAP}",
+          "KEXE_TRAP {:kind :budget :reason :budget/fuel}"
+        ]
+      },
+      "mutant": {
+        "exit": 0,
+        "report": "{:status :ok :result 10 :fuel {:initial 1 :remaining 18446744073709551614} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 2} :vector-items {:capacity 65536 :used 11}}",
+        "items": [
+          "DIAG_VECTOR_ITEMS 11 13 17 19 23 1 0 7 3 0 10 1"
+        ],
+        "traps": []
+      }
+    }
+  ]
+}

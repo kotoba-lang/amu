@@ -1,0 +1,538 @@
+(ns amu.check-full
+  {:kotoba/export [run]}
+  (:require [amu.cli :as cli]
+            [kotoba.form :as form]
+            [kotoba.compiler.kotoba-reader :as kr]
+            [kotoba.compiler.frontend.analyze :as an]
+            [kotoba.compiler.project :as project]
+            [kotoba.compiler.project-files :as pf])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]] [:phase :string] [:data [:ref :form/r]]]]
+             :ana/ir [:record :ana/ir [[:ok :bool] [:val [:ref :form/r]] [:err [:ref :fe/err]]]]
+             :kotoba.reader/out [:record :kotoba.reader/out [[:forms [:list [:ref :form/r]]] [:err :string] [:at :i64]]]}))
+
+;; seed/amu-main/src/amu/check_full.kotoba -- `amu check` beyond the default policy (agent CHECKFULL, 2026-10-04).
+;;
+;; Stage-0's `check` (src/kotoba/compiler/cli.cljk "check"), in its order, with its texts and exit codes:
+;;   1. argv[1] is the source (`--jvm-free` skipped, as bin/amu drops it): not .kotoba/.cljk/.cljc -> usage 64; not a
+;;      readable regular file -> `error: invalid-data at <src>: input must be a regular file`, 65. A path outside the
+;;      loader's scope reads as absent (amu.cli/readable), never a trap.
+;;   2. --policy <file> (the first one; a --policy with no value = no policy): read as bounded EDN
+;;      (kotoba.compiler.bounded-edn read-file: regular file, 8 MiB, the preflight scan -- dispatch forms, nesting 128,
+;;      token 4096 --, one form, the value walk -- nesting, 200,000 nodes, 1 MiB strings); a refusal is stage-0's
+;;      :kotoba.cli-error/v1 :decode map with the source's name, 65. Then capability-names/wire-policy: an `:allow` set's
+;;      [:cap/call :name] members become wire ids; an unregistered name is stage-0's :admission map, 65.
+;;   3. --profile <p> overrides the policy's :language-profile; the profile goes to the frontend's analyze.
+;;   4. the frontend (kotoba.compiler.frontend.analyze, from source): a refusal is the human line, 65.
+;;   5. admission (effect-row/check over kotoba.kir.admission/check, the capability half: the policy without
+;;      :language-profile / :budgets): keys outside admission's set, an :allow that is not a set, or a member that is
+;;      not [:cap/call 0..255] -> `capability-denied ... malformed capability policy`; required grants (the effect row
+;;      without :abort / :state) not allowed -> `capability-missing-grant ...` with catalog names; else the ok line.
+;;   6. --source-path <root> (any number): the project route below (absolute paths).
+;; DECLARED STUBS (exit 69, never counted as behaviour): --source-path with a relative entry or root (no cwd: wire 40),
+;; --module-lock, --package-lock, --json, and a policy that admits
+;; with :abac / :attributes / :information-flow / :crypto-* / :hardware-signing-* keys (their evaluators are not
+;; linked). DECLARED DIFFERENCES: a policy that is not a map answers `malformed capability policy` (stage-0: a JVM
+;; ClassCastException as internal-error, or malformed for nil);
+;; EDN text the Kotoba reader refuses but Clojure's edn reader takes (`\c` characters, tagged literals) answers "EDN input
+;; was rejected" only where the reader refuses; refusal lines carry no line:column; the effect classification refusal
+;; (an effect id the catalog does not classify) is not reproduced.
+
+;; ---- printing a Form the way pr-str prints the host value (seed/amu-front/check.cljk) ----------------------------
+(defn- kw-text [f [:ref :form/r]] :string (document-edn-print (document-keyword (form/keyword-value f))))
+
+(defn- join-forms [kids [:list [:ref :form/r]] i :i64 acc :string] :string
+  (if (>= i (vector-count kids))
+    acc
+    (join-forms kids (+ i 1)
+                (string-concat acc (string-concat (if (> i 0) " " "") (print-form (typed-list-nth [:list [:ref :form/r]] kids i)))))))
+
+(defn- print-form [f [:ref :form/r]] :string
+  (cond
+    (form/is-nil? f) "nil"
+    (form/is-bool? f) (if (form/bool-value f) "true" "false")
+    (form/is-int? f) (string-from-i64 (form/int-value f))
+    (form/is-string? f) (string-concat "\"" (string-concat (form/string-value f) "\""))
+    (form/is-keyword? f) (kw-text f)
+    (form/is-symbol? f) (form/symbol-value f)
+    (form/is-seq? f) (string-concat "(" (string-concat (join-forms (form/kids-of f) 0 "") ")"))
+    (form/is-vec? f) (string-concat "[" (string-concat (join-forms (form/kids-of f) 0 "") "]"))
+    (form/is-set? f) (string-concat "#{" (string-concat (join-forms (form/kids-of f) 0 "") "}"))
+    (form/is-map? f) (string-concat "{" (string-concat (join-forms (form/kids-of f) 0 "") "}"))
+    :else "?"))
+
+(defn- get-kw [m [:ref :form/r] k :keyword] [:ref :form/r]
+  (if (form/is-map? m) (form/form-get m (form/keyword-form k)) (form/nil-form)))
+
+(defn- profile-text [p [:ref :form/r]] :string
+  (cond (form/is-keyword? p) (let [t (kw-text p)] (string-substring t 1 (string-length t)))
+        (form/is-symbol? p) (form/symbol-value p)
+        :else "default"))
+
+(defn- coll-text [f [:ref :form/r] empty :string] :string
+  (if (form/is-nil? f) empty (print-form f)))
+
+(defn- ok-line [hir [:ref :form/r] modules :string] :string
+  (string-concat "ok profile="
+    (string-concat (profile-text (get-kw hir :language-profile))
+      (string-concat " effects="
+        (string-concat (effects-text (get-kw hir :effects))
+          (string-concat " exports=" (string-concat (coll-text (get-kw hir :exports) "[]") (string-concat modules "\n"))))))))
+
+;; ---- the frontend's refusal line (diagnostic/format-human, diagnostic/refine) ------------------------------------
+(defn- err-code [e [:ref :fe/err]] :string
+  (let [c (record-get [:ref :fe/err] e :code)
+        j (string-find-byte c 47 0)]
+    (cond (and (= (string-length c) 0) (string=? (record-get [:ref :fe/err] e :phase) "project-link")) "project-link-failed"
+          (= (string-length c) 0) "subset-reject"
+          (< j 0) c
+          :else (string-substring c (+ j 1) (string-length c)))))
+
+(defn- clause-head? [e [:ref :fe/err] head :string] :bool
+  (let [f (record-get [:ref :fe/err] e :form)]
+    (and (string=? (err-code e) "namespace-export-clause")
+         (form/is-seq? f) (> (form/count-of f) 0)
+         (form/is-keyword? (form/nth-of f 0))
+         (string=? (kw-text (form/nth-of f 0)) head))))
+
+(defn- require-message [] :string
+  (string-concat "this namespace declares (:require ...), so it is a module of a multi-file "
+    (string-concat "project; the single-module path admits only a standalone namespace. "
+      (string-concat "Pin the graph with `amu module-lock <entry> --source-path <dir> --blocks <dir>` "
+        (string-concat "then `amu compile --module-lock <lock> --blocks <dir>`; "
+          "`amu check <entry> --source-path <dir>` links and checks it without emitting.")))))
+
+(defn- human [code :string path :string message :string] :string
+  (string-concat "error: " (string-concat code (string-concat " at " (string-concat path (string-concat ": " (string-concat message "\n")))))))
+
+;; the `:line[:col]` diagnostic/format-human prints after the source when the refusal's data carries a :span map (the
+;; project linker's attribution: {:line N}); the frontend's own refusals carry none on this route
+(defn- span-text [e [:ref :fe/err]] :string
+  (let [sp (get-kw (record-get [:ref :fe/err] e :data) :span)
+        l (get-kw sp :line)
+        c (get-kw sp :column)]
+    (string-concat (if (form/is-int? l) (string-concat ":" (string-from-i64 (form/int-value l))) "")
+                   (if (form/is-int? c) (string-concat ":" (string-from-i64 (form/int-value c))) ""))))
+
+(defn- refusal [path :string e [:ref :fe/err]] :string
+  (cond (clause-head? e ":require") (human "namespace-require-needs-project" path (require-message))
+        (string=? (record-get [:ref :fe/err] e :code) "kotoba.hir/rejected") (human "internal-error" path (record-get [:ref :fe/err] e :msg))
+        :else (human (err-code e) (string-concat path (span-text e)) (record-get [:ref :fe/err] e :msg))))
+
+;; stage-0's exit status of a refusal (kotoba.compiler.cli/exit-code over the error's :phase; the HIR gate's refusal has
+;; no phase on the host, so it is an internal error there: 70)
+(defn- refusal-status [e [:ref :fe/err]] :i64
+  (let [p (record-get [:ref :fe/err] e :phase)]
+    (cond (string=? (record-get [:ref :fe/err] e :code) "kotoba.hir/rejected") 70
+          (string=? p "") 65
+          (string=? p "usage") 64
+          (or (string=? p "decode") (string=? p "read") (string=? p "subset") (string=? p "admission") (string=? p "ir")
+              (string=? p "verify") (string=? p "coverage") (string=? p "project-link") (string=? p "module-lock")
+              (string=? p "test")) 65
+          (string=? p "definition-identity") 66
+          (or (string=? p "signature") (string=? p "sign") (string=? p "trust") (string=? p "runtime-identity")) 77
+          (string=? p "output") 74
+          (or (string=? p "execute") (string=? p "native-executor")) 69
+          (string=? p "receipt") 76
+          :else 70)))
+
+;; ---- the capability catalog (stage-0's kotoba.sema registry, measured 2026-10-04: ids 1..42 named; 35 has a second
+;; name, :fs/app-data-bytes; 0 and 43..255 are admissible ids with no name and print as numbers) ---------------------
+(defn- wire-name [w :i64] :string
+  (cond (= w 1) ":identity/sign" (= w 2) ":identity/verify" (= w 3) ":hash/sha256" (= w 4) ":http/post"
+        (= w 5) ":log/read" (= w 6) ":log/append" (= w 7) ":clock/now" (= w 8) ":state/transact"
+        (= w 9) ":ui/commit" (= w 10) ":ui/next-event" (= w 11) ":llm/generate" (= w 12) ":storage/transact"
+        (= w 13) ":http/get-stream" (= w 14) ":object/get-stream" (= w 15) ":object/put-block"
+        (= w 16) ":object/compare-and-set-ref" (= w 17) ":http/accept" (= w 18) ":http/reply" (= w 19) ":fs/transact"
+        (= w 20) ":process/spawn" (= w 21) ":secret/get" (= w 22) ":git/run" (= w 23) ":entropy/draw"
+        (= w 24) ":dataspace/transact" (= w 25) ":stream/accept" (= w 26) ":stream/send" (= w 27) ":net/datagram"
+        (= w 28) ":link/frame" (= w 29) ":can/frame" (= w 30) ":code/eval" (= w 31) ":screen/observe"
+        (= w 32) ":screen/act" (= w 33) ":env/read" (= w 34) ":fs/browse" (= w 35) ":fs/app-data"
+        (= w 36) ":fs/browse-dir" (= w 37) ":io/write" (= w 38) ":cli/args" (= w 39) ":io/write-error"
+        (= w 40) ":sys/cwd" (= w 41) ":io/read" (= w 42) ":gpu/compute"
+        :else ""))
+
+;; the wire id of a capability name (":io/write"), -1 when unregistered
+(defn- name-id [s :string i :i64] :i64
+  (cond (> i 42) (if (string=? s ":fs/app-data-bytes") 35 -1)
+        (string=? s (wire-name i)) i
+        :else (name-id s (+ i 1))))
+
+(defn- grant? [x [:ref :form/r]] :bool
+  (and (form/is-vec? x) (= (form/count-of x) 2) (form/is-keyword? (form/nth-of x 0))
+       (string=? (kw-text (form/nth-of x 0)) ":cap/call")))
+
+;; [:cap/call N] -> its printed form with the catalog name (capability-names/named-grant), as text
+(defn- grant-text [x [:ref :form/r]] :string
+  (if (and (grant? x) (form/is-int? (form/nth-of x 1)) (> (string-length (wire-name (form/int-value (form/nth-of x 1)))) 0))
+    (string-concat "[:cap/call " (string-concat (wire-name (form/int-value (form/nth-of x 1))) "]"))
+    (print-form x)))
+
+(defn- grants-text [xs [:list [:ref :form/r]] i :i64 acc :string] :string
+  (if (>= i (vector-count xs))
+    acc
+    (grants-text xs (+ i 1)
+                 (string-concat acc (string-concat (if (= i 0) "" " ") (grant-text (typed-list-nth [:list [:ref :form/r]] xs i)))))))
+
+(defn- set-text [xs [:list [:ref :form/r]]] :string (string-concat "#{" (string-concat (grants-text xs 0 "") "}")))
+
+;; the effect row as printed (capability-names/name-grants over the set, then pr-str)
+(defn- effects-text [row [:ref :form/r]] :string
+  (if (or (form/is-set? row) (form/is-vec? row)) (set-text (form/kids-of row)) "#{}"))
+
+;; ---- sets of Forms as distinct lists ------------------------------------------------------------------------------
+(defn- member? [xs [:list [:ref :form/r]] x [:ref :form/r] i :i64] :bool
+  (cond (>= i (vector-count xs)) false
+        (form/eq (typed-list-nth [:list [:ref :form/r]] xs i) x) true
+        :else (member? xs x (+ i 1))))
+
+(defn- control-effect? [x [:ref :form/r]] :bool
+  (and (form/is-keyword? x) (or (string=? (kw-text x) ":abort") (string=? (kw-text x) ":state"))))
+
+;; effect-row/grants: the row's members without the control effects, distinct, in row order
+(defn- grants-of [kids [:list [:ref :form/r]] i :i64 acc [:list [:ref :form/r]]] [:list [:ref :form/r]]
+  (if (>= i (vector-count kids))
+    acc
+    (let [m (typed-list-nth [:list [:ref :form/r]] kids i)]
+      (grants-of kids (+ i 1) (if (or (control-effect? m) (member? acc m 0)) acc (form/append-form acc m))))))
+
+(defn- minus [xs [:list [:ref :form/r]] ys [:list [:ref :form/r]] i :i64 acc [:list [:ref :form/r]]] [:list [:ref :form/r]]
+  (if (>= i (vector-count xs))
+    acc
+    (let [x (typed-list-nth [:list [:ref :form/r]] xs i)]
+      (minus xs ys (+ i 1) (if (member? ys x 0) acc (form/append-form acc x))))))
+
+;; ---- the policy file (kotoba.compiler.bounded-edn read-file) -------------------------------------------------------
+(defn- ws? [b :i64] :bool (or (= b 32) (and (>= b 9) (<= b 13)) (and (>= b 28) (<= b 31))))
+
+(defn- cpw [c :i64] :i64 (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))
+
+;; the preflight scan: 0 clean, 1 dispatch form, 2 nesting, 3 token. Code points are stepped whole; the token count is in
+;; bytes, as the Kotoba reading counts (a multi-byte character is several token bytes)
+(defn- preflight [s :string n :i64 i :i64 depth :i64 token :i64 in-str :i64 esc :i64 in-com :i64] :i64
+  (if (>= i n)
+    0
+    (let [c (string-code-point-at s i)
+          w (cpw c)
+          i2 (+ i w)]
+      (cond
+        (= in-com 1) (preflight s n i2 depth 0 0 0 (if (= c 10) 0 1))
+        (and (= in-str 1) (= esc 1)) (preflight s n i2 depth 0 1 0 0)
+        (and (= in-str 1) (= c 92)) (preflight s n i2 depth 0 1 1 0)
+        (= c 10) (preflight s n i2 depth 0 in-str 0 0)
+        (and (= in-str 0) (= c 59)) (preflight s n i2 depth 0 0 0 1)
+        (= c 34) (preflight s n i2 depth 0 (if (= in-str 1) 0 1) 0 0)
+        (= in-str 1) (preflight s n i2 depth 0 1 0 0)
+        (and (= c 35) (or (>= i2 n) (not (= (string-code-point-at s i2) 123)))) 1
+        (or (= c 40) (= c 91) (= c 123)) (if (> (+ depth 1) 128) 2 (preflight s n i2 (+ depth 1) 0 0 0 0))
+        (or (= c 41) (= c 93) (= c 125)) (preflight s n i2 (if (> depth 0) (- depth 1) 0) 0 0 0 0)
+        (or (ws? c) (= c 44)) (preflight s n i2 depth 0 0 0 0)
+        :else (if (> (+ token w) 4096) 3 (preflight s n i2 depth (+ token w) 0 0 0))))))
+
+;; the value walk: the node count, or -1 nesting, -2 nodes, -3 string
+(defn- shape-kids [kids [:list [:ref :form/r]] i :i64 depth :i64 nodes :i64] :i64
+  (if (>= i (vector-count kids))
+    nodes
+    (let [r (shape (typed-list-nth [:list [:ref :form/r]] kids i) depth nodes)]
+      (if (< r 0) r (shape-kids kids (+ i 1) depth r)))))
+
+(defn- shape [x [:ref :form/r] depth :i64 nodes :i64] :i64
+  (cond (> depth 128) -1
+        (> (+ nodes 1) 200000) -2
+        (and (form/is-string? x) (> (string-length (form/string-value x)) 1048576)) -3
+        :else (shape-kids (form/kids-of x) 0 (+ depth 1) (+ nodes 1))))
+
+(defn- decode-refusal [src :string message :string] :i64
+  (cli/report-error ":decode" ":kotoba/invalid-data" src message ", :details {:phase :decode}" 65))
+
+;; UTF-8 validation of the policy file (bounded-edn decode-utf8: Java's decoder with REPORT -- no overlong forms, no
+;; surrogates, nothing above U+10FFFF, no truncated sequence). The file is read as bytes over :fs/app-data-bytes (the
+;; string read gives the bytes as they are, and string-code-point-at traps on a malformed sequence).
+(defn- put-cp [v :vector-i64 i :i64 c :i64] :vector-i64
+  (cond (< c 128) (vector-assoc! v i c)
+        (< c 2048) (vector-assoc! (vector-assoc! v i (+ 192 (quot c 64))) (+ i 1) (+ 128 (bit-and c 63)))
+        (< c 65536) (vector-assoc! (vector-assoc! (vector-assoc! v i (+ 224 (quot c 4096))) (+ i 1) (+ 128 (bit-and (quot c 64) 63)))
+                                   (+ i 2) (+ 128 (bit-and c 63)))
+        :else (vector-assoc! (vector-assoc! (vector-assoc! (vector-assoc! v i (+ 240 (quot c 262144)))
+                                                           (+ i 1) (+ 128 (bit-and (quot c 4096) 63)))
+                                            (+ i 2) (+ 128 (bit-and (quot c 64) 63)))
+                             (+ i 3) (+ 128 (bit-and c 63)))))
+
+(defn- path-bytes [s :string i :i64 v :vector-i64] :vector-i64
+  (if (>= i (string-length s))
+    v
+    (let [c (string-code-point-at s i)]
+      (path-bytes s (+ i (cpw c)) (put-cp v i c)))))
+
+(defn- cont? [v :vector-i64 i :i64] :bool
+  (and (< i (vector-count v)) (= (bit-and (vector-at v i) 192) 128)))
+
+;; 1 when bytes i.. of v are well-formed UTF-8
+(defn- utf8-ok [v :vector-i64 i :i64] :i64
+  (if (>= i (vector-count v))
+    1
+    (let [b (vector-at v i)]
+      (cond
+        (< b 128) (utf8-ok v (+ i 1))
+        (and (>= b 194) (<= b 223) (cont? v (+ i 1))) (utf8-ok v (+ i 2))
+        (and (>= b 224) (<= b 239) (cont? v (+ i 1)) (cont? v (+ i 2))
+             (not (and (= b 224) (< (vector-at v (+ i 1)) 160)))
+             (not (and (= b 237) (>= (vector-at v (+ i 1)) 160))))
+        (utf8-ok v (+ i 3))
+        (and (>= b 240) (<= b 244) (cont? v (+ i 1)) (cont? v (+ i 2)) (cont? v (+ i 3))
+             (not (and (= b 240) (< (vector-at v (+ i 1)) 144)))
+             (not (and (= b 244) (>= (vector-at v (+ i 1)) 144))))
+        (utf8-ok v (+ i 4))
+        :else 0))))
+
+(defn- file-bytes [path :string] :vector-i64
+  (vector-i64-from-bytes
+    (typed-cap-call :fs/app-data-bytes :bytes :bytes
+                    (bytes-from-vector-i64 (path-bytes path 0 (vector-alloc (string-length path)))))))
+
+;; ---- the admission half -------------------------------------------------------------------------------------------
+;; 1 when every key of the capability policy is one kotoba.kir.admission/check admits
+(defn- admission-keys [kids [:list [:ref :form/r]] i :i64] :i64
+  (if (>= i (vector-count kids))
+    1
+    (let [k (typed-list-nth [:list [:ref :form/r]] kids i)
+          t (if (form/is-keyword? k) (kw-text k) "")]
+      (if (or (string=? t ":allow") (string=? t ":abac") (string=? t ":attributes") (string=? t ":information-flow")
+              (string=? t ":crypto-required?") (string=? t ":crypto-policy") (string=? t ":crypto-envelope")
+              (string=? t ":hardware-signing-required?") (string=? t ":hardware-signing-evidence")
+              (string=? t ":language-profile") (string=? t ":budgets"))
+        (admission-keys kids (+ i 2))
+        0))))
+
+;; 1 when the policy holds a key whose evaluator is not linked here (abac, information flow, crypto, hardware signing)
+(defn- advanced-keys [kids [:list [:ref :form/r]] i :i64] :i64
+  (if (>= i (vector-count kids))
+    0
+    (let [t (kw-text (typed-list-nth [:list [:ref :form/r]] kids i))]
+      (if (or (string=? t ":allow") (string=? t ":language-profile") (string=? t ":budgets"))
+        (advanced-keys kids (+ i 2))
+        1))))
+
+;; 1 when every allowed member is [:cap/call <int 0..255>]
+(defn- well-formed [xs [:list [:ref :form/r]] i :i64] :i64
+  (if (>= i (vector-count xs))
+    1
+    (let [x (typed-list-nth [:list [:ref :form/r]] xs i)]
+      (if (and (grant? x) (form/is-int? (form/nth-of x 1)) (>= (form/int-value (form/nth-of x 1)) 0)
+               (<= (form/int-value (form/nth-of x 1)) 255))
+        (well-formed xs (+ i 1))
+        0))))
+
+;; capability-names/wire-grant over an :allow set's members: named grants -> [:cap/call id], distinct. An unregistered
+;; name answers the vector [:cap/call <the name>] marked by an empty first kid list: see unregistered below
+(defn- wire-grants [xs [:list [:ref :form/r]] i :i64 acc [:list [:ref :form/r]]] [:list [:ref :form/r]]
+  (if (>= i (vector-count xs))
+    acc
+    (let [x (typed-list-nth [:list [:ref :form/r]] xs i)
+          y (if (and (grant? x) (form/is-keyword? (form/nth-of x 1)) (>= (name-id (kw-text (form/nth-of x 1)) 1) 0))
+              (form/vec2 (form/nth-of x 0) (form/int-form (name-id (kw-text (form/nth-of x 1)) 1)))
+              x)]
+      (wire-grants xs (+ i 1) (if (member? acc y 0) acc (form/append-form acc y))))))
+
+;; the first [:cap/call :name] member whose name is unregistered, as its printed name; "" when none
+(defn- unregistered [xs [:list [:ref :form/r]] i :i64] :string
+  (if (>= i (vector-count xs))
+    ""
+    (let [x (typed-list-nth [:list [:ref :form/r]] xs i)]
+      (if (and (grant? x) (form/is-keyword? (form/nth-of x 1)) (< (name-id (kw-text (form/nth-of x 1)) 1) 0))
+        (kw-text (form/nth-of x 1))
+        (unregistered xs (+ i 1))))))
+
+(defn- deny-line [src :string missing [:list [:ref :form/r]] required [:list [:ref :form/r]] allowed [:list [:ref :form/r]]] :string
+  (human "capability-missing-grant" src
+         (string-concat "capability policy denies required effects; missing grants "
+           (string-concat (set-text missing)
+             (string-concat " (required "
+               (string-concat (set-text required) (string-concat ", allowed " (string-concat (set-text allowed) ")"))))))))
+
+;; HIR accepted by the frontend; POLICY nil (no --policy) or the policy map Form; ALLOWED its wire-form :allow members
+(defn- admit [src :string hir [:ref :form/r] policy [:ref :form/r] has-policy :i64 modules :string] :i64
+  (let [required (grants-of (form/kids-of (get-kw hir :effects)) 0 (form/no-forms))
+        allow (get-kw policy :allow)
+        allowed (if (form/is-set? allow) (form/kids-of allow) (form/no-forms))]
+    (cond
+      (and (= has-policy 1)
+           (or (not (form/is-map? policy))
+               (= (admission-keys (form/kids-of policy) 0) 0)
+               (and (form/form-has? policy (form/keyword-form :allow)) (not (form/is-set? allow)))
+               (= (well-formed allowed 0) 0)))
+      (let [w (cli/err (human "capability-denied" src "malformed capability policy"))] 65)
+      (> (vector-count (minus required allowed 0 (form/no-forms))) 0)
+      (let [w (cli/err (deny-line src (minus required allowed 0 (form/no-forms)) required allowed))] 65)
+      (and (= has-policy 1) (= (advanced-keys (form/kids-of policy) 0) 1))
+      (cli/not-available "check --policy"
+                         "\"kotoba.kir.admission/check: the :abac / :attributes / :information-flow / :crypto-* / :hardware-signing-* evaluators (kotoba.security.*) are not linked into this image\"")
+      :else (let [w (cli/out (ok-line hir modules))] 0))))
+
+(defn- analyze [src :string text :string policy [:ref :form/r] has-policy :i64 profile [:ref :form/r]] :i64
+  (let [opts (if (form/is-nil? profile)
+               (form/nil-form)
+               (form/form-map (form/two-forms (form/keyword-form :language-profile) profile)))
+        r (an/analyze text opts)]
+    (if (record-get [:ref :ana/ir] r :ok)
+      (admit src (record-get [:ref :ana/ir] r :val) policy has-policy "")
+      (let [e (record-get [:ref :ana/ir] r :err) w (cli/err (refusal src e))] (refusal-status e)))))
+
+;; ---- the project route (--source-path): kotoba.compiler.project-files/load-closed-graph and project/link-source, the
+;; kotoba-lang guest twins (agent WALL2, agent/wall2-project-twin), then the frontend over the linked unit with
+;; :admit-linked-synthetics? (core/check-project). Stage-0's reports: a graph refusal is the :kotoba.cli-error/v1
+;; :project-link map (it is raised outside check's try), a refusal of the link or of the linked unit is the human line
+;; attributed to the module's file (project/attribute-linked-error, with-module-file, diagnostic/source-label); the ok
+;; line gains ` modules=[..]` (the graph's namespaces as strings, sorted). The twin takes absolute paths only (it has no
+;; cwd): a relative entry or root is a declared stub until the loader answers wire 40 (:sys/cwd).
+(defn- source-roots [i :i64 acc [:list :string]] [:list :string]
+  (cond (>= (+ i 1) (cli/argc)) acc
+        (string=? (cli/arg i) "--source-path") (source-roots (+ i 2) (typed-list-conj [:list :string] acc (cli/arg (+ i 1))))
+        :else (source-roots (+ i 1) acc)))
+
+(defn- absolute? [p :string] :bool (and (> (string-length p) 0) (= (string-code-point-at p 0) 47)))
+
+(defn- all-absolute? [xs [:list :string] i :i64] :bool
+  (cond (>= i (vector-count xs)) true
+        (absolute? (typed-list-nth [:list :string] xs i)) (all-absolute? xs (+ i 1))
+        :else false))
+
+;; diagnostic/source-label: the attributed module's file (its base name), else the module's name, else DEFAULT
+(defn- label [e [:ref :fe/err] default :string] :string
+  (let [d (record-get [:ref :fe/err] e :data)
+        sf (get-kw d :source-file)
+        sm (get-kw d :source-module)]
+    (cond (form/is-string? sf) (cli/basename (form/string-value sf))
+          (form/is-symbol? sm) (form/symbol-value sm)
+          (form/is-string? sm) (form/string-value sm)
+          :else default)))
+
+;; the namespaces of a graph's :sources map (k v k v ..), as `"a" "b"` sorted bytewise
+(defn- ns-names [kids [:list [:ref :form/r]] i :i64 acc [:list :string]] [:list :string]
+  (if (>= i (vector-count kids))
+    acc
+    (ns-names kids (+ i 2) (typed-list-conj [:list :string] acc (print-form (typed-list-nth [:list [:ref :form/r]] kids i))))))
+
+(defn- insert-sorted [xs [:list :string] s :string i :i64 acc [:list :string] done :bool] [:list :string]
+  (cond (>= i (vector-count xs)) (if done acc (typed-list-conj [:list :string] acc s))
+        (and (not done) (< (string-compare s (typed-list-nth [:list :string] xs i)) 0))
+        (insert-sorted xs s i (typed-list-conj [:list :string] acc s) true)
+        :else (insert-sorted xs s (+ i 1) (typed-list-conj [:list :string] acc (typed-list-nth [:list :string] xs i)) done)))
+
+(defn- sort-strings [xs [:list :string] i :i64 acc [:list :string]] [:list :string]
+  (if (>= i (vector-count xs))
+    acc
+    (sort-strings xs (+ i 1) (insert-sorted acc (typed-list-nth [:list :string] xs i) 0 (typed-list-new [:list :string]) false))))
+
+(defn- modules-text [xs [:list :string] i :i64 acc :string] :string
+  (if (>= i (vector-count xs))
+    (string-concat acc "]")
+    (modules-text xs (+ i 1)
+                  (string-concat acc (string-concat (if (= i 0) "" " ") (string-concat "\"" (string-concat (typed-list-nth [:list :string] xs i) "\"")))))))
+
+(defn- linked-check [src :string g [:ref :form/r] policy [:ref :form/r] has-policy :i64 profile [:ref :form/r]] :i64
+  (let [modules (modules-text (sort-strings (ns-names (form/kids-of (get-kw g :sources)) 0 (typed-list-new [:list :string])) 0
+                                            (typed-list-new [:list :string]))
+                              0 " modules=[")
+        linked (project/link-source (get-kw g :sources) (get-kw g :root))
+        o1 (form/form-map (form/two-forms (form/keyword-form :admit-linked-synthetics?) (form/bool-form true)))
+        opts (if (form/is-nil? profile) o1 (form/assoc-form o1 (form/keyword-form :language-profile) profile))
+        r (an/analyze (form/string-value (get-kw linked :source)) opts)]
+    (if (record-get [:ref :ana/ir] r :ok)
+      (admit src (record-get [:ref :ana/ir] r :val) policy has-policy modules)
+      (throw (project/attribute-linked-error (record-get [:ref :ana/ir] r :err) linked)))))
+
+(defn- linked-refusal [src :string e [:ref :fe/err]] :i64
+  (let [w (cli/err (refusal (label e src) e))] (refusal-status e)))
+
+(defn- project-check [src :string roots [:list :string] policy [:ref :form/r] has-policy :i64 profile [:ref :form/r]] :i64
+  (let [g (try (pf/load-closed-graph src roots)
+               (catch [:ref :fe/err] e
+                 (let [w (cli/report-error ":project-link" ":kotoba/project-link-failed" (label e src)
+                                           (record-get [:ref :fe/err] e :msg) ", :details {:phase :project-link}" 65)]
+                   (form/nil-form))))]
+    (if (form/is-nil? g)
+      65
+      (try (linked-check src g policy has-policy profile)
+           (catch [:ref :fe/err] e (linked-refusal src (project/with-module-file e (get-kw g :paths))))))))
+
+;; the --profile value as a keyword Form, the policy's :language-profile, or nil
+(defn- profile-of [policy [:ref :form/r]] [:ref :form/r]
+  (let [k (cli/flag-value "--profile" 1)]
+    (if (>= k 0)
+      (form/edn-form (string-concat ":" (cli/arg k)))
+      (get-kw policy :language-profile))))
+
+(defn- with-source [src :string policy [:ref :form/r] has-policy :i64] :i64
+  (let [text (typed-cap-call :fs/app-data :string :string src)]
+    (if (> (string-length text) 1048576)
+      (let [w (cli/err (human "invalid-data" src "input exceeds byte limit"))] 65)
+      (if (> (vector-count (source-roots 1 (typed-list-new [:list :string]))) 0)
+        (project-check src (source-roots 1 (typed-list-new [:list :string])) policy has-policy (profile-of policy))
+        (analyze src text policy has-policy (profile-of policy))))))
+
+;; the policy read, then wire-policy
+(defn- with-policy-text [src :string text :string] :i64
+  (let [p (preflight text (string-length text) 0 0 0 0 0 0)]
+    (cond
+      (= p 1) (decode-refusal src "EDN dispatch forms are forbidden")
+      (= p 2) (decode-refusal src "EDN nesting exceeds limit")
+      (= p 3) (decode-refusal src "EDN token exceeds limit")
+      :else
+      (let [out (kr/read-forms-bounded text 128 4096)
+            forms (record-get [:ref :kotoba.reader/out] out :forms)
+            n (vector-count forms)]
+        (cond
+          (> (string-length (record-get [:ref :kotoba.reader/out] out :err)) 0) (decode-refusal src "EDN input was rejected")
+          (= n 0) (decode-refusal src "EDN input is empty")
+          (> n 1) (decode-refusal src "EDN input contains trailing forms")
+          :else
+          (let [v (typed-list-nth [:list [:ref :form/r]] forms 0)
+                walked (shape v 0 0)
+                allow (get-kw v :allow)]
+            (cond
+              (= walked -1) (decode-refusal src "EDN value nesting exceeds limit")
+              (= walked -2) (decode-refusal src "EDN value contains too many nodes")
+              (= walked -3) (decode-refusal src "EDN string exceeds limit")
+              (and (form/is-set? allow) (> (string-length (unregistered (form/kids-of allow) 0)) 0))
+              (cli/report-error ":admission" ":kotoba/admission-denied" src
+                                (string-concat "policy names an unregistered capability: " (unregistered (form/kids-of allow) 0))
+                                ", :details {:phase :admission}" 65)
+              (form/is-set? allow)
+              (with-source src (form/assoc-form v (form/keyword-form :allow)
+                                                (form/form-set (wire-grants (form/kids-of allow) 0 (form/no-forms)))) 1)
+              :else (with-source src v 1))))))))
+
+(defn- stub-flag [] :string
+  (cond (and (= (cli/has-flag "--source-path" 1) 1)
+             (not (and (absolute? (cli/argx 1)) (all-absolute? (source-roots 1 (typed-list-new [:list :string])) 0))))
+        "--source-path"
+        (= (cli/has-flag "--module-lock" 1) 1) "--module-lock"
+        (= (cli/has-flag "--package-lock" 1) 1) "--package-lock"
+        (= (cli/has-flag "--json" 1) 1) "--json"
+        :else ""))
+
+(defn- stub-reason [f :string] :string
+  (cond (string=? f "--source-path")
+        "\"check --source-path with a relative entry or root: the project twins take absolute paths and the image cannot learn its cwd (the loader has no wire 40 :sys/cwd provider)\""
+        (string=? f "--json") "\"check --json: the :kotoba.check/v1 envelope and definition CIDs (kotoba.compiler.definition-identity) are not linked\""
+        :else (string-concat "\"check " (string-concat f ": module locks and packages are not linked into this image\""))))
+
+(defn run [] :i64
+  (let [src (cli/argx 1)]
+    (cond
+      (or (string=? src "") (= (cli/source-ext src) 0))
+      (cli/usage-error ":kotoba/invalid-usage" "source input must use .kotoba, .cljk, or .cljc" ", :details {:phase :usage}")
+      (= (cli/regular-file src) 0)
+      (let [w (cli/err (human "invalid-data" src "input must be a regular file"))] 65)
+      (> (string-length (stub-flag)) 0)
+      (cli/not-available (string-concat "check " (stub-flag)) (stub-reason (stub-flag)))
+      (>= (cli/flag-value "--policy" 1) 0)
+      (let [pp (cli/arg (cli/flag-value "--policy" 1))]
+        (cond (= (cli/regular-file pp) 0) (decode-refusal src "input must be a regular file")
+              :else (let [b (file-bytes pp)]
+                      (cond (> (vector-count b) 8388608) (decode-refusal src "input exceeds byte limit")
+                            (= (utf8-ok b 0) 0) (decode-refusal src "input is not valid UTF-8")
+                            :else (with-policy-text src (typed-cap-call :fs/app-data :string :string pp))))))
+      :else (with-source src (form/nil-form) 0))))

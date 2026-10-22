@@ -1,0 +1,5 @@
+(ns p04 (:export [main]))
+(defhandler cell [:state :i64] (get [s] (resume s s)) (put [s v] (resume v v)))
+(defn- note [s :string] :i64 {:effects #{:io/write}} (string-byte-length (typed-cap-call :io/write :string :string s)))
+(defn- bump [] {:effects #{:state :io/write}} (+ (note "") (perform :state/put (+ 1 (perform :state/get)))))
+(defn main [] :i64 (handle (do (bump) (bump)) (with cell 40)))

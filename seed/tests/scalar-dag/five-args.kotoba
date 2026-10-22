@@ -1,0 +1,4 @@
+(ns resource.abi-permutation (:export [mix run walk]))
+(defn mix [a :i64 b :i64 c :i64 d :i64 e :i64] :i64 (+ a (* b 3) (* c 5) (* d 7) (* e 11)))
+(defn walk [a :i64 b :i64 c :i64 d :i64 e :i64] :i64 (+ (mix e d c b a) (mix a a c c e) a b c d e))
+(defn run [n :i64] :i64 (walk n (+ n 1) (+ n 2) (+ n 3) (+ n 4)))

@@ -1,0 +1,181 @@
+{
+  "status": "native-qualified-index-write-prototype-performance-promotion-rejected",
+  "hypothesis": {
+    "hypothesis": "Exact natural-parameter5 chain computes wrapped base+stride*k, signed16(value), and a proved in-place vector-write wrapper. Inline arithmetic and original checked store, retaining all optional charges0..3 and no name admission. Remove hot call/frame overhead.",
+    "promotion": "30 fresh rotating quiet baseline/candidate/C triples; >=5% speedup and gap>sumSD; unchanged source, native exact-fuel/correctness and fixedpoint.",
+    "sourceHead": "382fb4f20488843a1bfecc4a7a5db8e1ecd81e8e",
+    "exception": "One-off new compiler algorithm authoring, not mechanical refactoring"
+  },
+  "generations": [
+    {
+      "generation": 1,
+      "bytes": 828592,
+      "sha256": "610935e9f7ef0949da6ad1f44d4c47f1f04120e10eac7b6a4d6b0d273f5431e0"
+    },
+    {
+      "generation": 2,
+      "bytes": 828592,
+      "sha256": "610935e9f7ef0949da6ad1f44d4c47f1f04120e10eac7b6a4d6b0d273f5431e0"
+    },
+    {
+      "generation": 3,
+      "bytes": 828592,
+      "sha256": "610935e9f7ef0949da6ad1f44d4c47f1f04120e10eac7b6a4d6b0d273f5431e0"
+    },
+    {
+      "generation": 4,
+      "bytes": 828592,
+      "sha256": "610935e9f7ef0949da6ad1f44d4c47f1f04120e10eac7b6a4d6b0d273f5431e0"
+    }
+  ],
+  "canonical": {
+    "workloads": 19,
+    "exactResultsAndFuel": true,
+    "exhaustionParity": true,
+    "changedBinaries": [
+      "picojpeg"
+    ]
+  },
+  "bulk": {
+    "status": "complete-exact-8192-cell-parity",
+    "bodies": [
+      1,
+      2
+    ],
+    "cellsPerBody": 4096,
+    "stdoutSha256": "76f80ab5a80a2de8d2f1e9d0a01340169d9f8a3a606e6fb44e7c1a1a8218719a",
+    "observerSourceSha256": "26fbe3078519121c43292a5624a1f44d7697a8f6449b9cf9554d19591f1303a8",
+    "timedSourceUnchanged": true
+  },
+  "fixtures": {
+    "runs": 2358,
+    "fixtures": 257,
+    "realTestLayoutIdentical": true,
+    "instructionAudit": {
+      "call_iw000_pos": {
+        "directBL": 0,
+        "directB": 0,
+        "indirectAllocator": 1,
+        "handleIndexTrapWords": 4,
+        "bytes": 252
+      },
+      "call_iw111_wrapmul": {
+        "directBL": 0,
+        "directB": 0,
+        "indirectAllocator": 1,
+        "handleIndexTrapWords": 4,
+        "bytes": 308
+      },
+      "high4_iw101": {
+        "directBL": 0,
+        "directB": 0,
+        "indirectAllocator": 1,
+        "handleIndexTrapWords": 4,
+        "bytes": 312
+      },
+      "high5_iw101": {
+        "directBL": 1,
+        "directB": 0,
+        "indirectAllocator": 1,
+        "handleIndexTrapWords": 2,
+        "bytes": 228
+      }
+    }
+  },
+  "sourceGuestComparisons": 3920,
+  "handwrittenExactSupervisorComparisons": 288,
+  "structuredSourceProof": "Exact success/trap reports, result, context fuel, trap kind and resource counts. All setup errors fail.",
+  "preservedFailures": [
+    {
+      "symbol": "empty",
+      "input": -9223372036854775808,
+      "fuel": 3,
+      "baselineTraps": [
+        "KEXE_TRAP {:kind :signal :signal :SIGILL}"
+      ],
+      "candidateTraps": [
+        "KEXE_TRAP {:kind :signal :signal :SIGILL}",
+        "KEXE_TRAP {:kind :budget :reason :budget/fuel}"
+      ],
+      "cause": "Prematurely committing the final charged leaf writer fuel changed trap reporting; candidate rejected before timing.",
+      "repair": "Keep caller nonleaf; preserve charged writer check before store and commit only after successful checked store."
+    },
+    {
+      "symbol": "empty",
+      "input": -9223372036854775808,
+      "fuel": 16777216,
+      "baselineConsumed": 1,
+      "candidateConsumed": 2,
+      "cause": "The whole original scalar-index wrapper is already a leaf because both helpers inline; all its charges remain in x8 until successful return. Prefix commit was also premature.",
+      "repair": "Nonleaf caller keeps its original context-visible charges. Use reserved x8 for all compound charges with original individual exhaustion checks; commit x8 only after successful checked store."
+    },
+    {
+      "runsPassed": 2358,
+      "fixtures": 257,
+      "auditFailure": "high5_iw101 expected4UDF in caller, observed2: fallback delegates checked write to callee, retains only checked read in caller. Correct audit must require2 in fallback caller and retained direct callee branch.",
+      "productFailure": false
+    },
+    {
+      "stage": "canonical recompile",
+      "failure": "FileExistsError: first prototype ports-2 directory existed; no compilation ran",
+      "repair": "Preserve original complete first-prototype ports-2 under failed-early-fuel, rerun into fresh path"
+    }
+  ],
+  "fuelRepair": "Preserve original caller nonleaf classification; inline proved leaf wrapper uses reserved x8 for all its individual charges, writes zero on exhaustion and commits x8 only after successful checked store. No charge removed or context report relaxed.",
+  "performance": {
+    "baseline": {
+      "meanNsPerBody": 261042.2181372549,
+      "sdNs": 5830.798231773999,
+      "relativeSd": 0.022336610044847955,
+      "samples": 30
+    },
+    "candidate": {
+      "meanNsPerBody": 251357.95717592593,
+      "sdNs": 4893.561848036116,
+      "relativeSd": 0.019468497846722645,
+      "samples": 30
+    },
+    "C": {
+      "meanNsPerBody": 10759.902824384788,
+      "sdNs": 81.4201707932257,
+      "relativeSd": 0.007566998710128314,
+      "samples": 30
+    },
+    "stable": true,
+    "baselineOverCandidate": 1.0385277676113152,
+    "candidateOverC": 23.36061591618488,
+    "candidateImprovesBaseline": false
+  },
+  "meanGapNs": 9684.260961328982,
+  "summedSdNs": 10724.360079810114,
+  "fractionLessTime": 0.03709844725666955,
+  "decision": "reject; below5% speedup and gap below summed SD",
+  "canonicalSourceSha256": "f570d637a074437c8bf80dccd646efae834962a312f0cea72638f5376350b8cd",
+  "nativeCodeBytes": 45884,
+  "baselineCodeBytes": 45092,
+  "prototypeOnly": true,
+  "officialEmbenchScore": false,
+  "formalPerfgateQualified": false,
+  "COrBetterAchieved": false,
+  "nextHypothesis": {
+    "hypothesis": "Exact bounded vector-fill loop with verified index-write dependency and immutable context/descriptor. Runtime precondition proves every remaining index valid; fast loop avoids repeated handles/bounds/call frames, retaining each loop charge and a transactional helper x8 charge/commit after each write. Guard failure uses original loop unchanged.",
+    "motivation": "set-lane43008/fill-lane19440 successful charges at n1 versus multiply2640; isolated hot index-write still below5% and variation separation.",
+    "guards": "Natural five parameters, bound8, incoming0<=k<=8, valid handle, base<len and stride>=0 with stride <= (len-1-base)>>3. This stronger range guarantees base+7*stride in range without wrapped overflow. All other inputs fall back before any mutation or charge.",
+    "fuel": "Preserve original entry charge, each backedge charge including terminal iteration, original optional helper charges and save after each successful write. Do not batch or defer observed fuel across iterations, delete charges, or relax failure outputs.",
+    "proofRequired": "Exact complete loop SIR, backedge/parallel-parameter updates, and complete scalar/index/write dependency SIR. No names; no allocator, callback or unknown effect in fast region. Guard loads validate handle before descriptor dereference.",
+    "validation": "All19 exact result/fuel and exhaustion, signed source structured reports, hand SIR all optional charges, budget boundaries, fast/fallback paths, empty/invalid/wrapped indices, complete8192 state, opcode audits and3gen fixedpoint. Fresh same-host baseline/candidate/C30 triples, >=5% and gap>sumSD.",
+    "status": "unimplemented design hypothesis",
+    "sourceHead": "382fb4f20488843a1bfecc4a7a5db8e1ecd81e8e",
+    "nativeCountDerivation": {
+      "setLaneCharges": 43008,
+      "chargesPerSuccessfulSetLaneCall": 2,
+      "setLaneCalls": 21504,
+      "multiplyCalls": 2640,
+      "fillLoopCharges": 19440,
+      "chargesPerFillK0Invocation": 9,
+      "fillInvocations": 2160,
+      "setLaneCallsInsideFill": 17280,
+      "scope": "Specific exact SIR bodies on the complete successful n1 canonical run. Earlier conversational16x was charge ratio, not call ratio."
+    }
+  }
+}

@@ -1,0 +1,10 @@
+;; want: 44723
+;; R6B str (string, i64), ex-info with a map literal, ex-message/ex-data, min/max, string-find-byte (want = stage-0's answer)
+(ns p07 (:export [main]))
+(defn main [] :i64
+  (let [a (str "n=" 42)
+        e (ex-info "boom" {:code 7 :why "x"})
+        m (ex-message e)
+        c (option-or (document-i64-value (option-or (document-get (ex-data e) (document-keyword :code)) (document-null))) 0)]
+    (+ (* 10000 (string-length a)) (* 1000 (string-length m)) (* 100 c) (min 3 9) (max 0 -5)
+       (* 10 (string-find-byte "hello" 108 0)))))

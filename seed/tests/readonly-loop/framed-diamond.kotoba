@@ -1,0 +1,3 @@
+(ns cfg.framed-diamond (:export [run walk]))
+(defn- walk [v :vector-i64 n :i64 a :i64 b :i64 c :i64] :i64 (if (= n 0) (+ c (vector-at v 0)) (let [x (vector-at v 1) y (vector-at v 2) z (vector-at v (if (< x y) 1 2))] (walk v (- n 1) a b (+ c x y z)))))
+(defn run [n :i64] :i64 (walk [11 13 17] n 1 2 0))

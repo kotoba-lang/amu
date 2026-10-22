@@ -1,0 +1,87 @@
+{
+  "status": "SOURCE_OFFLINE_NARROW_SCRATCH_CONTINUATION_PROOF_TWO_JOINED_SITES_PENDING_COMPILER_CONTEXT_IMPLEMENTATION",
+  "nativeCalls": 0,
+  "compilerEdits": 0,
+  "SSHCalls": 0,
+  "joinedSitesSHA256": "c20f6126fe6340e0ba48f2ab02921f963188acbc69b5d6c535749f64151c9a81",
+  "mappingRowsSHA256": "61854e1fdc8f1fdfc48f86a5f7beb17f45ab9d4eb1b2a1593fa6b3ccb81d27a6",
+  "sourceSIRScreenings": 9,
+  "wholeMachinePatternsAllFunctions": 10,
+  "joinedLiteral2OriginalEntrySites": 9,
+  "narrowEligibleStaticJoinedSites": 2,
+  "eligible": [
+    {
+      "workload": "qrduino",
+      "sir": 4809,
+      "fn": 24,
+      "name": "reserve",
+      "divisor": 2,
+      "inBackedgeRegion": false,
+      "emissionRecord": [
+        4809,
+        0,
+        3238,
+        3240
+      ],
+      "oldV8NativeWord": 3237,
+      "currentNativeWord": 3231,
+      "currentByteOffset": 12924,
+      "sourceRegister": 9,
+      "destinationRegister": 9,
+      "initialResidentGate": true,
+      "divisorTemp": 1,
+      "nextInstructionDefinesBeforeRead": true,
+      "narrowPhysicalContinuation": [
+        "0x8b190136",
+        "0xd2800111"
+      ],
+      "physical17OverwriteBeforeAnyReadStraightline": true,
+      "qualifiedForNarrowProspectiveContextGate": true
+    },
+    {
+      "workload": "qrduino",
+      "sir": 5586,
+      "fn": 45,
+      "name": "reserved?",
+      "divisor": 2,
+      "inBackedgeRegion": false,
+      "emissionRecord": [
+        5586,
+        0,
+        4338,
+        4340
+      ],
+      "oldV8NativeWord": 4337,
+      "currentNativeWord": 4331,
+      "currentByteOffset": 17324,
+      "sourceRegister": 9,
+      "destinationRegister": 9,
+      "initialResidentGate": true,
+      "divisorTemp": 1,
+      "nextInstructionDefinesBeforeRead": true,
+      "narrowPhysicalContinuation": [
+        "0x8b170136",
+        "0xd2800111"
+      ],
+      "physical17OverwriteBeforeAnyReadStraightline": true,
+      "qualifiedForNarrowProspectiveContextGate": true
+    }
+  ],
+  "method": "V8 EMIT codeindex1 corresponds nativeword0; locate exactMOVZ17,2+SDIV in matchedEMIT span; apply previouslyqualifiedV4 deletedintervalmapping; verify currentOFF/ON original2words. Onlyup to2sequentialcontinuation words accepted: nonflags ADD/ORR LSL0 no17 operand, thenMOVZ17 which overwriteswithoutreads. No branch/call/unrecognized word passed. Source nextinstruction directlydefinesdivisorTEMP before read.",
+  "design": "Firstimplementation needs checkedSIR pattern predicting thisspecificsafecontinuation and after-originalreplay exact2word proof. It cannot lookahead to not-yet-emitted future machinewords without prereg puredryrun/readcontext. A complete basicblock emission/postpass may evaluate existingcontinuation machinewords underexact domain+noincomingbranch/addressanchors beforepatch. No giantallhelpers decoder needed for this narrowrule.",
+  "whyNoUniversalX17Proof": "Current gn-src/ldt nevercachephysical17; pinnedexcludes16/17; MOVimm17doesnotupdate descriptors. That is not proof every handwritteninline-helper continuation overwrites17. Future branches/calls/nonrecognizedinstructions thereforeHOLD undernarrowmatcher, not blanketpass.",
+  "twoWordRestore": "ADD+ASR doesnotleave17=2. RestoreMOVZ17 adds thirdword and violatesregisteredtwo-word layout unless usingnewresourcecontract; no generaltwo-word restore strategy found.",
+  "patchBoundaryObligations": [
+    "No control/address/export target enterssecondreplacedword or bypassesoldMOVZ",
+    "Currentfn no implicitdata/foreigninstruction domains",
+    "ExactM/G/cache/temp/protect/fin/skip/code/FIX/LIT/LABEL state afterordinaryreplay; only2CODEcells differ",
+    "No partialwrite oncapacity/error; originalCODE-N unchanged",
+    "Use frozenSIRsymbol/callgraphbridge forcurrententryclosure beforeperformanceeligibilityclaim"
+  ],
+  "limits": [
+    "Staticnarrowphysical overwrite proof is a futureadmission design, not actualoptimizer or runtimequalifiedphysicalstateproof",
+    "Metadata/cache/compile-time source proof and exactnativefullstatefixtures stillrequired beforecompileredit/nativeGO",
+    "Remaining7joined sites are conservativelyunqualified undercurrentnarrowcriteria",
+    "Full19correctness/selfhost/timing separate; no speedfromcodewords"
+  ]
+}

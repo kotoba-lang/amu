@@ -1,0 +1,6 @@
+;; R6D regression (60-proj, link-wide keyword text table): a keyword made in the entry (:zeta-k, :alpha/beta) or in another
+;; library (r6dp.mk) is turned into text by r6dp.lib, which does not spell it. With the R6B per-module table this trapped;
+;; the entry now carries the union of every module's spellings and each library's table is patched to it.
+;; want: 69   (stage-0 d2cb84f6 answers 69)
+(ns r6dp.main (:require [r6dp.lib :as l] [r6dp.mk :as m]) (:export [main]))
+(defn main [] :i64 (+ (l/klen :zeta-k) (* 10 (l/klen :alpha/beta)) (l/kfull (m/mk 1)) (l/klen (m/mk -1))))

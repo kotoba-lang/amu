@@ -1,0 +1,18 @@
+import runpy,copy,json
+from pathlib import Path
+D=Path(__file__).resolve().parent;A=runpy.run_path(str(D/'analyze.py'));query=A['query_before'];cfg=A['cfg'];op=A['op'];parse=A['parse'];C=A['C'];B=A['B']
+s,_,_,_=parse(B/'xgboost/compile.log');p,l=cfg(s,267,343);rows=[]
+def check(name,ss,pp,expected,budget=131072):
+ yes,n,why,nodes=query(ss,pp,327,0,1,budget);assert yes==expected,(name,yes,n,why);rows.append({'control':name,'acceptedOrigin':yes,'expected':expected,'visits':n,'refusalReason':why})
+check('actual scalar diamond both predecessors preserve vector',s,p,True)
+m=copy.deepcopy(s);m[318]=(op('LGET'),0,2,0);check('one branch defines alternate local handle',m,p,False)
+m=copy.deepcopy(s);m[318]=(op('CONST'),0,0,0);check('one branch redefines handle temporary to constant',m,p,False)
+m=copy.deepcopy(s);m[313]=(op('CONST'),0,0,0);check('original producer is not selected vector local',m,p,False)
+m=copy.deepcopy(s);m[318]=(op('LGET'),0,1,0);m[321]=(op('LGET'),0,1,0);check('two branch definitions both from same stable local',m,p,True)
+pp=copy.deepcopy(p);pp[322].append(268);check('join has a predecessor before handle definition',s,pp,False)
+m=copy.deepcopy(s);m[321]=(op('BR'),31,0,0);pp,_=cfg(m,267,343);check('backedge with no handle definition creates cycle',m,pp,False)
+check('finite query budget exhausted',s,p,False,2)
+# Synthetic entry undefined must never become true just because no conflicting
+# definition was discovered. Constants/ROOT defs are actual source opcodes.
+ss={1:(op('LABEL'),1,0,0),2:(op('BRZ'),1,2,0),3:(op('LGET'),0,1,0),4:(op('BR'),3,0,0),5:(op('LABEL'),2,0,0),6:(op('CONST'),1,7,0),7:(op('LABEL'),3,0,0),8:(op('RT'),176,0,2),9:(op('RET'),0,0,0)};pp,_=cfg(ss,0,10);yes,n,why,nodes=query(ss,pp,8,0,1,100);assert not yes;rows.append({'control':'synthetic alternate arm leaves handle undefined at entry','acceptedOrigin':yes,'expected':False,'visits':n,'refusalReason':why})
+(D/'controls.json').write_text(json.dumps({'status':'PASS nine abstract origin controls; altered SIR is diagnostic and not a typed compiler artifact','rows':rows,'limits':'No native code or new optimizer produced. Does not establish emission, allocation or time gains.'},indent=2)+'\n');print('PASS controls',len(rows))

@@ -1,0 +1,5 @@
+;; R4B feat: 7 parameters (all in registers x0..x6), mixed types
+(ns seed.r4b (:export [test]))
+(defn- f7 [a :i64 b :i64 c :string d :i64 e :vector-i64 f :i64 g :bool] :i64
+  (+ a (* 2 b) (* 3 (string-length c)) (* 5 d) (* 7 (vector-at e 1)) (* 11 f) (if g 1000 0)))
+(defn test [] :i64 (f7 1 2 "abcd" 4 [5 6] 7 true))

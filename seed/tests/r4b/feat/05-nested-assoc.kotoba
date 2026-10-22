@@ -1,0 +1,11 @@
+;; R4B feat: nested records: replace an inner record with assoc, read through two levels (accessor functions)
+(ns seed.r4b (:export [test]) (:schemas {:n/in [:record :n/in [[:a :i64] [:b :i64]]]
+                                          :n/out [:record :n/out [[:tag :i64] [:in [:ref :n/in]]]]}))
+(defn- mk-in [a :i64 b :i64] [:ref :n/in] (record-new [:record :n/in [[:a :i64] [:b :i64]]] a b))
+(defn- mk-out [t :i64 i [:ref :n/in]] [:ref :n/out] (record-new [:record :n/out [[:tag :i64] [:in [:ref :n/in]]]] t i))
+(defn- in-of [o [:ref :n/out]] [:ref :n/in] (record-get [:record :n/out [[:tag :i64] [:in [:ref :n/in]]]] o :in))
+(defn- a-of [i [:ref :n/in]] :i64 (get i :a))
+(defn- b-of [i [:ref :n/in]] :i64 (get i :b))
+(defn- bump [o [:ref :n/out]] [:ref :n/out] (assoc o :in (mk-in (+ 1 (a-of (in-of o))) (b-of (in-of o)))))
+(defn test [] :i64
+  (let [o (bump (bump (mk-out 9 (mk-in 10 20))))] (+ (get o :tag) (* 100 (a-of (in-of o))) (* 10000 (b-of (in-of o))))))

@@ -1,0 +1,47 @@
+{
+  "status": "complete-abstract-64bit-closed-charge-law-and-unsafe-controls",
+  "z3Version": "5.1.0",
+  "laws": [
+    {
+      "law": "oneChargeIncludingZero",
+      "negation": "; benchmark generated from python API\n(set-info :status unknown)\n(declare-fun fuel () (_ BitVec 64))\n(assert\n (let ((?x9 (bvsub fuel (_ bv1 64))))\n(let (($x7 (= fuel (_ bv0 64))))\n(let ((?x10 (ite $x7 (_ bv0 64) ?x9)))\n(and (distinct ?x10 ?x10) true)))))\n(check-sat)\n",
+      "result": "unsat"
+    },
+    {
+      "law": "successfulChargeRegisterEquality",
+      "negation": "; benchmark generated from python API\n(set-info :status unknown)\n(declare-fun fuel () (_ BitVec 64))\n(assert\n (let ((?x9 (bvsub fuel (_ bv1 64))))\n(let (($x7 (= fuel (_ bv0 64))))\n(let ((?x10 (ite $x7 (_ bv0 64) ?x9)))\n(let (($x14 (and (distinct fuel (_ bv0 64)) true)))\n(and $x14 (and (distinct ?x9 ?x10) true)))))))\n(check-sat)\n",
+      "result": "unsat"
+    },
+    {
+      "law": "coldTrapPublishesCurrentOriginalFuel",
+      "negation": "; benchmark generated from python API\n(set-info :status unknown)\n(declare-fun fuel () (_ BitVec 64))\n(assert\n (let ((?x9 (bvsub fuel (_ bv1 64))))\n(let (($x7 (= fuel (_ bv0 64))))\n(let ((?x10 (ite $x7 (_ bv0 64) ?x9)))\n(let (($x13 (and (distinct ?x10 ?x10) true)))\n(let (($x14 (and (distinct fuel (_ bv0 64)) true)))\n(and $x14 $x13)))))))\n(check-sat)\n",
+      "result": "unsat"
+    },
+    {
+      "law": "twoPrivateChargesPreserveOriginalFuel",
+      "negation": "; benchmark generated from python API\n(set-info :status unknown)\n(declare-fun fuel () (_ BitVec 64))\n(assert\n (and (bvugt fuel (_ bv1 64)) (and (distinct (bvsub (bvsub fuel (_ bv1 64)) (_ bv1 64)) (bvsub fuel (_ bv2 64))) true)))\n(check-sat)\n",
+      "result": "unsat"
+    }
+  ],
+  "unsafeControls": [
+    {
+      "law": "missingColdPublication",
+      "formula": "; benchmark generated from python API\n(set-info :status unknown)\n(declare-fun fuel () (_ BitVec 64))\n(declare-fun stored () (_ BitVec 64))\n(assert\n (let ((?x9 (bvsub fuel (_ bv1 64))))\n(let (($x60 (and (distinct stored ?x9) true)))\n(let (($x14 (and (distinct fuel (_ bv0 64)) true)))\n(and $x14 $x60)))))\n(check-sat)\n",
+      "result": "sat",
+      "counterexample": "[fuel = 18446744073709551615, stored = 1]"
+    },
+    {
+      "law": "reloadStalePrivateEntry",
+      "formula": "; benchmark generated from python API\n(set-info :status unknown)\n(declare-fun fuel () (_ BitVec 64))\n(declare-fun nextFuel () (_ BitVec 64))\n(declare-fun stored () (_ BitVec 64))\n(assert\n (let (($x62 (= nextFuel stored)))\n(let ((?x9 (bvsub fuel (_ bv1 64))))\n(let (($x60 (and (distinct stored ?x9) true)))\n(let (($x14 (and (distinct fuel (_ bv0 64)) true)))\n(and $x14 $x60 $x62 (and (distinct nextFuel ?x9) true)))))))\n(check-sat)\n",
+      "result": "sat",
+      "counterexample": "[stored = 1, fuel = 18446744073709551615, nextFuel = 1]"
+    },
+    {
+      "law": "wrapZeroExhaustionWithoutPublication",
+      "formula": "; benchmark generated from python API\n(set-info :status unknown)\n(declare-fun fuel () (_ BitVec 64))\n(assert\n (let ((?x9 (bvsub fuel (_ bv1 64))))\n(let (($x7 (= fuel (_ bv0 64))))\n(let ((?x10 (ite $x7 (_ bv0 64) ?x9)))\n(let (($x15 (and (distinct ?x9 ?x10) true)))\n(and $x7 $x15))))))\n(check-sat)\n",
+      "result": "sat",
+      "counterexample": "[fuel = 0]"
+    }
+  ],
+  "limits": "These equations do not prove ABI admission, CFG, metadata safety or machine emission. Native machine/state controls provide separate evidence."
+}

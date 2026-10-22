@@ -1,0 +1,19 @@
+;; R6A feature case p03: the Form shape of kotoba.form (a recursive record with a keyword field, a list of references and a
+;; bytes field) built in one module and walked in another
+(ns p03.form (:export [int-form kw-form vec-form tag-of kids-of int-value kw-value count-of nth-of eq])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]}))
+(defn- mk [t :i64 s :string n :i64 k :keyword kids [:list [:ref :form/r]]] [:ref :form/r]
+  (record-new [:ref :form/r] t s n k kids 0 (bytes-empty)))
+(defn int-form [n :i64] [:ref :form/r] (mk 2 "" n :none (typed-list-new [:list [:ref :form/r]])))
+(defn kw-form [k :keyword] [:ref :form/r] (mk 4 "" 0 k (typed-list-new [:list [:ref :form/r]])))
+(defn vec-form [kids [:list [:ref :form/r]]] [:ref :form/r] (mk 7 "" 0 :none kids))
+(defn tag-of [f [:ref :form/r]] :i64 (record-get [:ref :form/r] f :tag))
+(defn kids-of [f [:ref :form/r]] [:list [:ref :form/r]] (record-get [:ref :form/r] f :kids))
+(defn int-value [f [:ref :form/r]] :i64 (record-get [:ref :form/r] f :n))
+(defn kw-value [f [:ref :form/r]] :keyword (record-get [:ref :form/r] f :k))
+(defn count-of [f [:ref :form/r]] :i64 (count (kids-of f)))
+(defn nth-of [f [:ref :form/r] i :i64] [:ref :form/r] (typed-list-nth [:list [:ref :form/r]] (kids-of f) i))
+(defn eq [a [:ref :form/r] b [:ref :form/r]] :bool
+  (and (= (tag-of a) (tag-of b)) (= (int-value a) (int-value b)) (= (kw-value a) (kw-value b)) (= (count-of a) (count-of b))
+       (loop [i 0] (cond (>= i (count-of a)) true (eq (nth-of a i) (nth-of b i)) (recur (+ i 1)) :else false))))

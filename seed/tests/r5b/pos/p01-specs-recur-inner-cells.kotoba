@@ -1,0 +1,19 @@
+(defhandler cnt [:state :i64]
+  (get [s] (resume s s))
+  (put [s v] (resume v v)))
+(defhandler dbl [:state :i64]
+  (get [s] (resume s s))
+  (put [s v] (resume v (* 2 v))))
+(defn- down [n :i64] :i64
+  (if (zero? n) (perform :state/get) (do (perform :state/put (+ n (perform :state/get))) (down (dec n)))))
+(defn- rec [n :i64] :i64
+  (if (zero? n) 0 (do (perform :state/put (+ 1 (perform :state/get))) (recur (dec n)))))
+(defn- inner [x :i64] :i64
+  (+ (handle (do (perform :state/put x) (down 3)) (with dbl 1)) (perform :state/get)))
+(defn- cells [n :i64] :i64
+  (loop [i 0 acc 0]
+    (if (= i n) acc
+      (let [a (atom i)] (swap! a * 3) (reset! a (+ @a 1)) (recur (inc i) (+ acc @a))))))
+(defn main [] :i64
+  (+ (handle (do (rec 5) (down 4) (inner 7) (perform :state/get)) (with cnt 100))
+     (* 1000 (cells 4))))

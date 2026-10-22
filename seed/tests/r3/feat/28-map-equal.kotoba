@@ -1,0 +1,3 @@
+;; R3 feat: typed-map-equal ignores order, compares values
+(ns seed.r3 (:export [test]))
+(defn test [] :i64 (+ (if (typed-map-equal [:map :i64 :i64] {1 2 3 4} {3 4 1 2}) 1 0) (if (typed-map-equal [:map :i64 :i64] {1 2 3 4} {3 4 1 5}) 10 0) (if (typed-map-equal [:map :string :string] {"a" "x"} {"a" "x"}) 100 0)))

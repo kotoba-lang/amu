@@ -1,0 +1,220 @@
+(ns kotoba.compiler.e2e-probe2
+  {:kotoba/export [probe-run]}
+  (:require [kotoba.form :as form]
+            [kotoba.compiler.frontend.infer :as inf]
+            [kotoba.compiler.frontend.state-ability :as sa]
+            [kotoba.compiler.frontend.record-projection :as rp]
+            [kotoba.compiler.frontend.row :as row]
+            [kotoba.compiler.frontend.analyze :as an])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :form/rd [:record :form/rd [[:form [:ref :form/r]] [:pos :i64]]]
+             :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]] [:phase :string] [:data [:ref :form/r]]]]
+             :ie/ctx [:record :ie/ctx [[:schemas [:ref :form/r]] [:row-schemas [:ref :form/r]] [:handlers [:ref :form/r]] [:final :bool] [:tail :bool] [:names [:ref :form/r]] [:recording :bool] [:recorded [:ref :form/r]] [:collect :bool] [:throws [:list [:ref :form/r]]] [:known [:ref :form/r]] [:tbl [:ref :form/r]] [:rec-limit :i64] [:rec-count :i64]]]
+             :ana/ir [:record :ana/ir [[:ok :bool] [:val [:ref :form/r]] [:err [:ref :fe/err]]]]}))
+
+
+(defn- pr-msg [e [:ref :fe/err]] :string
+  (string-concat (record-get [:ref :fe/err] e :msg) (string-concat " [" (string-concat (record-get [:ref :fe/err] e :code) "]"))))
+
+(defn- stage-1 [src :string] :string
+  (match-result (an/an-c-read-forms src) [:result [:list [:ref :form/r]] [:ref :fe/err]]
+    (ok forms0 (let [forms (form/form-vec forms0)]
+      (match-result (an/an-expand-source forms (form/nil-form) false) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d1 "ok")
+ (err er (pr-msg er)))))
+    (err er0 (pr-msg er0))))
+
+(defn- stage-2 [src :string] :string
+  (match-result (an/an-c-read-forms src) [:result [:list [:ref :form/r]] [:ref :fe/err]]
+    (ok forms0 (let [forms (form/form-vec forms0)]
+      (match-result (an/an-expand-source forms (form/nil-form) false) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d1 (match-result (an/an-namespace-info d1) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d2 "ok")
+ (err er (pr-msg er))))
+ (err er (pr-msg er)))))
+    (err er0 (pr-msg er0))))
+
+(defn- stage-3 [src :string] :string
+  (match-result (an/an-c-read-forms src) [:result [:list [:ref :form/r]] [:ref :fe/err]]
+    (ok forms0 (let [forms (form/form-vec forms0)]
+      (match-result (an/an-expand-source forms (form/nil-form) false) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d1 (match-result (an/an-namespace-info d1) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d2 (match-result (an/an-constants-stage d2) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d3 "ok")
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er)))))
+    (err er0 (pr-msg er0))))
+
+(defn- stage-4 [src :string] :string
+  (match-result (an/an-c-read-forms src) [:result [:list [:ref :form/r]] [:ref :fe/err]]
+    (ok forms0 (let [forms (form/form-vec forms0)]
+      (match-result (an/an-expand-source forms (form/nil-form) false) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d1 (match-result (an/an-namespace-info d1) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d2 (match-result (an/an-constants-stage d2) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d3 (match-result (an/an-parts-stage d3) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d4 "ok")
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er)))))
+    (err er0 (pr-msg er0))))
+
+(defn- stage-5 [src :string] :string
+  (match-result (an/an-c-read-forms src) [:result [:list [:ref :form/r]] [:ref :fe/err]]
+    (ok forms0 (let [forms (form/form-vec forms0)]
+      (match-result (an/an-expand-source forms (form/nil-form) false) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d1 (match-result (an/an-namespace-info d1) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d2 (match-result (an/an-constants-stage d2) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d3 (match-result (an/an-parts-stage d3) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d4 (let [env0 (an/an-initial-env d4 0)]
+ "ok"))
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er)))))
+    (err er0 (pr-msg er0))))
+
+(defn- stage-6 [src :string] :string
+  (match-result (an/an-c-read-forms src) [:result [:list [:ref :form/r]] [:ref :fe/err]]
+    (ok forms0 (let [forms (form/form-vec forms0)]
+      (match-result (an/an-expand-source forms (form/nil-form) false) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d1 (match-result (an/an-namespace-info d1) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d2 (match-result (an/an-constants-stage d2) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d3 (match-result (an/an-parts-stage d3) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d4 (let [env0 (an/an-initial-env d4 0)]
+ (match-result (an/an-desugar-loop (form/form-get d4 (form/keyword-form :def-parts)) 0 (form/form-get d4 (form/keyword-form :constants)) (form/form-get (form/form-get d4 (form/keyword-form :ns-info)) (form/keyword-form :schemas)) (form/form-get d4 (form/keyword-form :result-contracts)) (form/form-get d4 (form/keyword-form :param-contracts)) env0 false (form/no-forms)) [:result [:ref :ana/ird] [:ref :fe/err]]
+ (ok s5 "ok")
+ (err er (pr-msg er)))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er)))))
+    (err er0 (pr-msg er0))))
+
+(defn- stage-7 [src :string] :string
+  (match-result (an/an-c-read-forms src) [:result [:list [:ref :form/r]] [:ref :fe/err]]
+    (ok forms0 (let [forms (form/form-vec forms0)]
+      (match-result (an/an-expand-source forms (form/nil-form) false) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d1 (match-result (an/an-namespace-info d1) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d2 (match-result (an/an-constants-stage d2) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d3 (match-result (an/an-parts-stage d3) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d4 (let [env0 (an/an-initial-env d4 0)]
+ (match-result (an/an-desugar-loop (form/form-get d4 (form/keyword-form :def-parts)) 0 (form/form-get d4 (form/keyword-form :constants)) (form/form-get (form/form-get d4 (form/keyword-form :ns-info)) (form/keyword-form :schemas)) (form/form-get d4 (form/keyword-form :result-contracts)) (form/form-get d4 (form/keyword-form :param-contracts)) env0 false (form/no-forms)) [:result [:ref :ana/ird] [:ref :fe/err]]
+ (ok s5 (let [d5 (form/assoc-form d4 (form/keyword-form :local-state-used) (form/bool-form (an/an-st-flag s5)))]
+ "ok"))
+ (err er (pr-msg er)))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er)))))
+    (err er0 (pr-msg er0))))
+
+(defn- stage-8 [src :string] :string
+  (match-result (an/an-c-read-forms src) [:result [:list [:ref :form/r]] [:ref :fe/err]]
+    (ok forms0 (let [forms (form/form-vec forms0)]
+      (match-result (an/an-expand-source forms (form/nil-form) false) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d1 (match-result (an/an-namespace-info d1) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d2 (match-result (an/an-constants-stage d2) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d3 (match-result (an/an-parts-stage d3) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d4 (let [env0 (an/an-initial-env d4 0)]
+ (match-result (an/an-desugar-loop (form/form-get d4 (form/keyword-form :def-parts)) 0 (form/form-get d4 (form/keyword-form :constants)) (form/form-get (form/form-get d4 (form/keyword-form :ns-info)) (form/keyword-form :schemas)) (form/form-get d4 (form/keyword-form :result-contracts)) (form/form-get d4 (form/keyword-form :param-contracts)) env0 false (form/no-forms)) [:result [:ref :ana/ird] [:ref :fe/err]]
+ (ok s5 (let [d5 (form/assoc-form d4 (form/keyword-form :local-state-used) (form/bool-form (an/an-st-flag s5)))]
+ (match-result (an/an-stage-lambdas d5 (an/an-st-env s5) (an/an-st-form s5)) [:result [:ref :ana/ird] [:ref :fe/err]]
+ (ok s6 "ok")
+ (err er (pr-msg er)))))
+ (err er (pr-msg er)))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er)))))
+    (err er0 (pr-msg er0))))
+
+(defn- stage-9 [src :string] :string
+  (match-result (an/an-c-read-forms src) [:result [:list [:ref :form/r]] [:ref :fe/err]]
+    (ok forms0 (let [forms (form/form-vec forms0)]
+      (match-result (an/an-expand-source forms (form/nil-form) false) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d1 (match-result (an/an-namespace-info d1) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d2 (match-result (an/an-constants-stage d2) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d3 (match-result (an/an-parts-stage d3) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d4 (let [env0 (an/an-initial-env d4 0)]
+ (match-result (an/an-desugar-loop (form/form-get d4 (form/keyword-form :def-parts)) 0 (form/form-get d4 (form/keyword-form :constants)) (form/form-get (form/form-get d4 (form/keyword-form :ns-info)) (form/keyword-form :schemas)) (form/form-get d4 (form/keyword-form :result-contracts)) (form/form-get d4 (form/keyword-form :param-contracts)) env0 false (form/no-forms)) [:result [:ref :ana/ird] [:ref :fe/err]]
+ (ok s5 (let [d5 (form/assoc-form d4 (form/keyword-form :local-state-used) (form/bool-form (an/an-st-flag s5)))]
+ (match-result (an/an-stage-lambdas d5 (an/an-st-env s5) (an/an-st-form s5)) [:result [:ref :ana/ird] [:ref :fe/err]]
+ (ok s6 (match-result (an/an-stage-passes (an/an-st-form s6) (an/an-st-env s6)) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d7 "ok")
+ (err er (pr-msg er))))
+ (err er (pr-msg er)))))
+ (err er (pr-msg er)))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er)))))
+    (err er0 (pr-msg er0))))
+
+(defn- stage-10 [src :string] :string
+  (match-result (an/an-c-read-forms src) [:result [:list [:ref :form/r]] [:ref :fe/err]]
+    (ok forms0 (let [forms (form/form-vec forms0)]
+      (match-result (an/an-expand-source forms (form/nil-form) false) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d1 (match-result (an/an-namespace-info d1) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d2 (match-result (an/an-constants-stage d2) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d3 (match-result (an/an-parts-stage d3) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d4 (let [env0 (an/an-initial-env d4 0)]
+ (match-result (an/an-desugar-loop (form/form-get d4 (form/keyword-form :def-parts)) 0 (form/form-get d4 (form/keyword-form :constants)) (form/form-get (form/form-get d4 (form/keyword-form :ns-info)) (form/keyword-form :schemas)) (form/form-get d4 (form/keyword-form :result-contracts)) (form/form-get d4 (form/keyword-form :param-contracts)) env0 false (form/no-forms)) [:result [:ref :ana/ird] [:ref :fe/err]]
+ (ok s5 (let [d5 (form/assoc-form d4 (form/keyword-form :local-state-used) (form/bool-form (an/an-st-flag s5)))]
+ (match-result (an/an-stage-lambdas d5 (an/an-st-env s5) (an/an-st-form s5)) [:result [:ref :ana/ird] [:ref :fe/err]]
+ (ok s6 (match-result (an/an-stage-passes (an/an-st-form s6) (an/an-st-env s6)) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d7 (match-result (an/an-stage-finish d7 (an/an-st-env s6) (form/assoc-form (an/an-empty-map) (form/keyword-form :language-profile) (form/nil-form))) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok hir "ok")
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er)))))
+ (err er (pr-msg er)))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er)))))
+    (err er0 (pr-msg er0))))
+
+(defn- stage-11 [src :string] :string
+  (match-result (an/an-c-read-forms src) [:result [:list [:ref :form/r]] [:ref :fe/err]]
+    (ok forms0 (let [forms (form/form-vec forms0)]
+      (match-result (an/an-expand-source forms (form/nil-form) false) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d1 (match-result (an/an-namespace-info d1) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d2 (match-result (an/an-constants-stage d2) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d3 (match-result (an/an-parts-stage d3) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d4 (let [env0 (an/an-initial-env d4 0)]
+ (match-result (an/an-desugar-loop (form/form-get d4 (form/keyword-form :def-parts)) 0 (form/form-get d4 (form/keyword-form :constants)) (form/form-get (form/form-get d4 (form/keyword-form :ns-info)) (form/keyword-form :schemas)) (form/form-get d4 (form/keyword-form :result-contracts)) (form/form-get d4 (form/keyword-form :param-contracts)) env0 false (form/no-forms)) [:result [:ref :ana/ird] [:ref :fe/err]]
+ (ok s5 (let [d5 (form/assoc-form d4 (form/keyword-form :local-state-used) (form/bool-form (an/an-st-flag s5)))]
+ (match-result (an/an-stage-lambdas d5 (an/an-st-env s5) (an/an-st-form s5)) [:result [:ref :ana/ird] [:ref :fe/err]]
+ (ok s6 (match-result (an/an-stage-passes (an/an-st-form s6) (an/an-st-env s6)) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok d7 (match-result (an/an-stage-finish d7 (an/an-st-env s6) (form/assoc-form (an/an-empty-map) (form/keyword-form :language-profile) (form/nil-form))) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok hir (match-result (an/an-hir-gate hir) [:result [:ref :form/r] [:ref :fe/err]]
+ (ok g "ok")
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er)))))
+ (err er (pr-msg er)))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er))))
+ (err er (pr-msg er)))))
+    (err er0 (pr-msg er0))))
+
+(defn- probe-case [c [:ref :form/r]] :string
+  (let [src (form/string-value (form/nth-of c 1))]
+    (string-concat (string-concat "1:" (stage-1 src)) (string-concat "|" (string-concat (string-concat "2:" (stage-2 src)) (string-concat "|" (string-concat (string-concat "3:" (stage-3 src)) (string-concat "|" (string-concat (string-concat "4:" (stage-4 src)) (string-concat "|" (string-concat (string-concat "5:" (stage-5 src)) (string-concat "|" (string-concat (string-concat "6:" (stage-6 src)) (string-concat "|" (string-concat (string-concat "7:" (stage-7 src)) (string-concat "|" (string-concat (string-concat "8:" (stage-8 src)) (string-concat "|" (string-concat (string-concat "9:" (stage-9 src)) (string-concat "|" (string-concat (string-concat "10:" (stage-10 src)) (string-concat "|" (string-concat (string-concat "11:" (stage-11 src)) (string-concat "|" ""))))))))))))))))))))))))
+
+(defn- probe-lines [text :string i :i64 n :i64 out :string] :string
+  (if (>= i n)
+    out
+    (let [j (string-find-byte text 10 i)
+          end (if (< j 0) n j)
+          line (string-substring text i end)
+          answer (if (< (string-length line) 2) "" (probe-case (form/edn-form line)))]
+      (probe-lines text (+ end 1) n (string-concat out (string-concat answer "\n"))))))
+
+(defn probe-run [text :string] :string
+  (probe-lines text 0 (string-length text) ""))

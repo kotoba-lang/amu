@@ -1,0 +1,4 @@
+;; R4 feat: a fn returning a fn, called through a computed head ((f a) b)
+(ns seed.r4 (:export [test]))
+(defn adder [n :i64] [:fn [[:i64] :i64]] (fn [x] (+ x n)))
+(defn test [] :i64 (+ ((adder 3) 4) ((fn [y] (* y 2)) 21)))

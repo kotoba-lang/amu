@@ -1,0 +1,7 @@
+;; want: 1
+;; R6B: hex integer literals (0x / -0x, upper and lower case digits, the i64 extremes)
+(ns p03 (:export [main]))
+(defn main [] :i64
+  (if (and (= 0xff 255) (= 0XFF 255) (= -0x10 -16) (= 0x7fffffffffffffff 9223372036854775807)
+           (= -0x8000000000000000 (- 0 9223372036854775807 1)) (= 0xDeadBeef 3735928559))
+    1 0))

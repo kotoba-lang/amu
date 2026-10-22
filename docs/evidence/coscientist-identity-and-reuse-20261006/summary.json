@@ -1,0 +1,579 @@
+{
+  "status": "rejected-native-high-loop-descriptor-cache",
+  "baselineSourceCommit": "3edefd64577c316b97fc890384f45590b68ec28a",
+  "productUnchanged": true,
+  "hypothesis": {
+    "status": "registered-before-native-build-and-measurement",
+    "sourceCommit": "3edefd64577c316b97fc890384f45590b68ec28a",
+    "hypothesis": "Dynamic-key descriptor reuse in original nonleaf functions structurally containing validated high-inline loop reads, across low/high/direct-affine reads without their prior C boundary.",
+    "priorRegistration": {
+      "status": "registered-not-implemented-or-measured",
+      "hypothesis": "Revisit guarded vector descriptor reuse only in nonleaf functions whose validated loops actually contain high-depth inlined reads. All admitted low/high/direct-affine reads use the same dynamic handle key and descriptor cache in proven-free caller scratch x3/x4/x5. Preserve every index check and fresh item read; miss validates handle at original access. No new callee registers/frame changes.",
+      "changedMechanismSinceRejectedExperiment": "The prior17-guest descriptor experiment used a low-depth cached read followed by a high-depth C helper which cleared the cache in matmult. Current qualified high-loop reads and new direct-affine composition eliminate that returning C boundary. This is a new generated-code mechanism; the old rejected machine must not be retimed. Restrict admission by structural high-inline-loop witness rather than workload names.",
+      "currentActualNativeWitness": {
+        "observerQuietAll19GuestParity": true,
+        "affineReadSites": [
+          [
+            3291,
+            7,
+            5,
+            0,
+            21,
+            19,
+            20,
+            800
+          ],
+          [
+            3300,
+            8,
+            6,
+            0,
+            19,
+            22,
+            20,
+            1200
+          ]
+        ],
+        "directReadInstructionAudit": {
+          "status": "complete-original19-observer-byte-parity-and-exact-affine-direct-read-words",
+          "sites": [
+            {
+              "workload": "matmult-int",
+              "site": [
+                3291,
+                7,
+                5,
+                0,
+                21,
+                19,
+                20,
+                800
+              ],
+              "words": [
+                "0xd2800290",
+                "0x9b104ea1",
+                "0x910c8021"
+              ],
+              "count": 1,
+              "directReadWord": "0xf8717a0e",
+              "destinationRegister": 14,
+              "byteOffset": 8740
+            },
+            {
+              "workload": "matmult-int",
+              "site": [
+                3300,
+                8,
+                6,
+                0,
+                19,
+                22,
+                20,
+                1200
+              ],
+              "words": [
+                "0xd2800290",
+                "0x9b105a61",
+                "0x9112c021"
+              ],
+              "count": 1,
+              "directReadWord": "0xf8717a0f",
+              "destinationRegister": 15,
+              "byteOffset": 8820
+            }
+          ],
+          "distinctFromPriorMachines": true,
+          "unchangedOriginalFn5Prologue": {
+            "offset": 8648,
+            "words": [
+              "0xa9bf7bfd",
+              "0x910003fd",
+              "0xd10303ff",
+              "0xa90053f3",
+              "0xa9015bf5",
+              "0xf90013f7",
+              "0xf9005fe7",
+              "0xaa0003f4",
+              "0xaa0103f5",
+              "0xaa0203f6",
+              "0xaa0303f3",
+              "0xaa0403f7",
+              "0xf94004f0",
+              "0xf1000610",
+              "0x54000042"
+            ],
+            "sourceFrameBytes": 192,
+            "sourceAllocatedLocals": 5,
+            "evidence": "Current native census FN5 start codeWord2163; first15 words exactly baseline; original gn-pre/frame source byte-preserved."
+          }
+        },
+        "meaning": "Actual native admission/machine instructions, not dynamic time shares or evidence of cache profitability."
+      },
+      "admission": "Bounded same-function high-inline-vector read and validated loop; nonleaf reserves x3..5 outside locals; all actual returning guest/runtime/indirect/Unicode slow calls clear key, including branch landing correction. Dynamic nonzero/same key check guards reuse; invalid/changed handles use original handle check before cache admission. Mutable vector elements remain freshly loaded. Unknown loops/effects/ownership refuse. State14 tree flag untouched; named cache state must not overlap existing state arrays.",
+      "requiredProof": "Native4gen; unchanged permanent434/9339 fixtures and actual19 canonical source/results/fuel; independent key changes/branch joins/bypassed first access/high-depth live homes/aliases/writes/allocating open imports/scratch clobbers/partial fuel/resource states; actual instruction and quiet/observer parity for all19; fresh30 triples each changed distinctguest, ratio>=1.05 gap>sumSD RSD<=10, then productgates+committed3gen+fullcorpus beforepromotion.",
+      "goal": "C-or-better all19 original unchanged aligned workloads remains unachieved; not officialscores, no result caching."
+    },
+    "authoringException": "One-off new experimental Kotoba compiler algorithm and independent hand fixtures; no mechanical product rewrite. Product untouched pending full semantics/performance/gates.",
+    "baselineSeedSha256": "a9cceee002d6365f3e68b740321b9e362635121bd575b613ac28d4b3da93372e",
+    "timingRule": "Fresh30triples per changed originalguest, load<=4 idle>=90 RSD<=10 ratio>=1.05 gap>sumSD; no identical-machine retiming.",
+    "goal": "C-or-better all19 original aligned unchanged workloads, native selfhost; not officialscore."
+  },
+  "generations": [
+    {
+      "generation": 1,
+      "bytes": 815512,
+      "sha256": "48ad455d44aa4e26cc684c41a866a122a037f9f0606ece982afc306ea021e7d7"
+    },
+    {
+      "generation": 2,
+      "bytes": 815512,
+      "sha256": "48ad455d44aa4e26cc684c41a866a122a037f9f0606ece982afc306ea021e7d7"
+    },
+    {
+      "generation": 3,
+      "bytes": 815512,
+      "sha256": "48ad455d44aa4e26cc684c41a866a122a037f9f0606ece982afc306ea021e7d7"
+    },
+    {
+      "generation": 4,
+      "bytes": 815512,
+      "sha256": "48ad455d44aa4e26cc684c41a866a122a037f9f0606ece982afc306ea021e7d7"
+    }
+  ],
+  "preflight": {
+    "status": "complete-native-semantic-proof-before-timing",
+    "fixedpointGenerations": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "originalWorkloads": 19,
+    "changedGuests": [
+      "matmult-int"
+    ],
+    "freshNativeCounts": {
+      "permanent-regression-proof.json": 9339,
+      "ports-state.json": 209,
+      "loop-state-proof.json": 1920,
+      "effect-proof.json": 24,
+      "import-proof.json": 72,
+      "resource-proof.json": 12
+    },
+    "proofPins": {
+      "permanent-regression-proof.json": "dc8c5c25e274ca29ff1637f667c7c8087ef07f8469af5314e82bedb2842db462",
+      "ports-state.json": "f6fa53bb80137a95b162cc9c4e49680073bf564fcf189ec7a13fde0a27ac8652",
+      "loop-state-proof.json": "c4c61e5d95a617c34c86cfd84de12f6b6e22b615453857e8434afe2dfa07133f",
+      "effect-proof.json": "781b55a3bf98ee5e9b06d67d15757ac81a6a596970c7afce85743c0e3c0cea47",
+      "import-proof.json": "0056731a334917a1f6c986f722b076e7dd64400d937aa7e8e64a1efa835cecc2",
+      "resource-proof.json": "bf570bdf82de2e0256a7d2cd3500faf3741d34bd8df79afa5cc57d9c1fa596f1",
+      "observer-byte-audit.json": "7ca0b7d8bb390e3ca24c79a70b1544d8a038f52d7009914039d2c9555f2be6ea",
+      "instruction-audit.json": "c7c72f93f15ff7fe5706609b78b1aa055ff285a37c64a866d2822e61036e9154",
+      "hit-coverage.json": "41f01f95d64e4eb3fff14a7eb36ce56c362bbf5ed394f912e05216cd1da922b6",
+      "hypothesis.json": "3dfb78b83e4a8201376f59529c875a4a87ca67aa007f9a1f9c3acd0503faf093"
+    },
+    "fullSupervisorComparisons": 2237,
+    "productUnchanged": true,
+    "mayPromote": false,
+    "productGatesAndIntegratedProofStillRequired": true,
+    "officialEmbenchScore": false
+  },
+  "nativeObservation": {
+    "status": "complete-native-meta-observation",
+    "observerOnly": true,
+    "entries": [
+      {
+        "workload": "aha-mont64",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "crc32",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "depthconv",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "edn",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "huffbench",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "matmult-int",
+        "sites": [
+          [
+            1,
+            0,
+            1,
+            14,
+            5
+          ],
+          [
+            1,
+            0,
+            1,
+            15,
+            5
+          ]
+        ],
+        "cachedReadSites": 2
+      },
+      {
+        "workload": "md5sum",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "nettle-aes",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "nettle-sha256",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "nsichneu",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "picojpeg",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "qrduino",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "sglib-combined",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "slre",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "statemate",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "tarfind",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "ud",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "wikisort",
+        "sites": [],
+        "cachedReadSites": 0
+      },
+      {
+        "workload": "xgboost",
+        "sites": [],
+        "cachedReadSites": 0
+      }
+    ],
+    "cachedReadSites": 2
+  },
+  "hitCoverage": {
+    "status": "complete-native-original-hit-path-reached",
+    "diagnosticOnly": true,
+    "notTimingArtifact": true,
+    "method": "Replace only each cache equality-hit branch with a branch to an appended SIGTRAP; original offsets and all other instructions unchanged. Original positive canonical n reaches hit diagnostic; n0 returns unchanged. Diagnostic establishes existence only, no hit count or performance claim.",
+    "cacheTemplateWordOffsets": [
+      2190,
+      2213
+    ],
+    "trapWordOffset": 2579,
+    "candidateSha256": "88d1e568d85f38aa47c03d975d32f8d6fb3bcf8d397aa3be2e28a49b214f5ce4",
+    "diagnosticSha256": "8a7201fa3cbc03dc054d15553cf15728098611faa44dff85b523f92aa5afacc9",
+    "runs": [
+      {
+        "n": 0,
+        "hitTrapReached": false,
+        "exit": 0,
+        "report": "{:status :ok :result 0 :fuel {:initial 16777216 :remaining 16777215} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+        "trap": []
+      },
+      {
+        "n": 1,
+        "hitTrapReached": true,
+        "exit": 120,
+        "report": "{:status :trap :exit 120 :fuel {:initial 16777216 :remaining 16774008} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 2001}}\n",
+        "trap": [
+          "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"
+        ]
+      },
+      {
+        "n": 2,
+        "hitTrapReached": true,
+        "exit": 120,
+        "report": "{:status :trap :exit 120 :fuel {:initial 16777216 :remaining 16774008} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 2001}}\n",
+        "trap": [
+          "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"
+        ]
+      },
+      {
+        "n": 17,
+        "hitTrapReached": true,
+        "exit": 120,
+        "report": "{:status :trap :exit 120 :fuel {:initial 16777216 :remaining 16774008} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 2001}}\n",
+        "trap": [
+          "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"
+        ]
+      },
+      {
+        "n": 32,
+        "hitTrapReached": true,
+        "exit": 120,
+        "report": "{:status :trap :exit 120 :fuel {:initial 16777216 :remaining 16774008} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 2001}}\n",
+        "trap": [
+          "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"
+        ]
+      }
+    ],
+    "hypothesisCorrection": "Initially suspected alternating distinct handles from the noncanonical illustrative port. Pinned canonical full batch uses one 2001-item vector with A/B offsets800/1200. Both reads reuse the same validated descriptor. Actual native hit diagnostic falsifies no-hit suspicion.",
+    "guestAudit": [
+      {
+        "workload": "aha-mont64",
+        "changed": false,
+        "baselineSha256": "b949dedc4fd706fef0c93f04930df47a868fc0fce065aa0b2a23b2a953b0dec4",
+        "candidateSha256": "b949dedc4fd706fef0c93f04930df47a868fc0fce065aa0b2a23b2a953b0dec4",
+        "baselineBytes": 3928,
+        "candidateBytes": 3928
+      },
+      {
+        "workload": "crc32",
+        "changed": false,
+        "baselineSha256": "da4cb2c12e74ab62097dc95f147497c5d2e0c8dc0cd4aeea234df52fb7bdedcd",
+        "candidateSha256": "da4cb2c12e74ab62097dc95f147497c5d2e0c8dc0cd4aeea234df52fb7bdedcd",
+        "baselineBytes": 3680,
+        "candidateBytes": 3680
+      },
+      {
+        "workload": "depthconv",
+        "changed": false,
+        "baselineSha256": "a9ca92a09f1158c333e4006dd58ba6f40fa7fc5ed7b7c9397e7bb30d4a5d67db",
+        "candidateSha256": "a9ca92a09f1158c333e4006dd58ba6f40fa7fc5ed7b7c9397e7bb30d4a5d67db",
+        "baselineBytes": 18752,
+        "candidateBytes": 18752
+      },
+      {
+        "workload": "edn",
+        "changed": false,
+        "baselineSha256": "be34a144282e1ec67b9cf1ecf6128e406e338bb54845b10aff0572197b0ada63",
+        "candidateSha256": "be34a144282e1ec67b9cf1ecf6128e406e338bb54845b10aff0572197b0ada63",
+        "baselineBytes": 14392,
+        "candidateBytes": 14392
+      },
+      {
+        "workload": "huffbench",
+        "changed": false,
+        "baselineSha256": "76919fa319c61d50e806ee931a198c359f2d07fb1f916308a70f0cc00f643b6b",
+        "candidateSha256": "76919fa319c61d50e806ee931a198c359f2d07fb1f916308a70f0cc00f643b6b",
+        "baselineBytes": 13104,
+        "candidateBytes": 13104
+      },
+      {
+        "workload": "matmult-int",
+        "changed": true,
+        "baselineSha256": "878b41fb4b6417fccddd3a1e7531001c755c70405ed195ad3c3dbd018457e20e",
+        "candidateSha256": "88d1e568d85f38aa47c03d975d32f8d6fb3bcf8d397aa3be2e28a49b214f5ce4",
+        "baselineBytes": 10280,
+        "candidateBytes": 10316
+      },
+      {
+        "workload": "md5sum",
+        "changed": false,
+        "baselineSha256": "c512d04d93bff8921368b88ca1ceed3e1ff1c79174cdfba297f99b8ece025df1",
+        "candidateSha256": "c512d04d93bff8921368b88ca1ceed3e1ff1c79174cdfba297f99b8ece025df1",
+        "baselineBytes": 6576,
+        "candidateBytes": 6576
+      },
+      {
+        "workload": "nettle-aes",
+        "changed": false,
+        "baselineSha256": "a890c81ce476a18b945e26048bb56e97ab243a945b903d9c08b188d0562e8e61",
+        "candidateSha256": "a890c81ce476a18b945e26048bb56e97ab243a945b903d9c08b188d0562e8e61",
+        "baselineBytes": 38960,
+        "candidateBytes": 38960
+      },
+      {
+        "workload": "nettle-sha256",
+        "changed": false,
+        "baselineSha256": "de8dbe88ccb45d05a0941040c062c7c9523137f702e8b6fe436f6c962ee44b0a",
+        "candidateSha256": "de8dbe88ccb45d05a0941040c062c7c9523137f702e8b6fe436f6c962ee44b0a",
+        "baselineBytes": 9680,
+        "candidateBytes": 9680
+      },
+      {
+        "workload": "nsichneu",
+        "changed": false,
+        "baselineSha256": "d6faf31e14d9810d9e35150f5343c7427c592b57f7e43d1d5e159800640603f6",
+        "candidateSha256": "d6faf31e14d9810d9e35150f5343c7427c592b57f7e43d1d5e159800640603f6",
+        "baselineBytes": 37548,
+        "candidateBytes": 37548
+      },
+      {
+        "workload": "picojpeg",
+        "changed": false,
+        "baselineSha256": "2885209cd9288a366b6652e59ee7c1ce966592a6f31ebe4b36dfc4985cd27706",
+        "candidateSha256": "2885209cd9288a366b6652e59ee7c1ce966592a6f31ebe4b36dfc4985cd27706",
+        "baselineBytes": 47880,
+        "candidateBytes": 47880
+      },
+      {
+        "workload": "qrduino",
+        "changed": false,
+        "baselineSha256": "b553e89bfd533101c8c9a341e88d5394841a1f235a2582f5c3dcf0b673fa665e",
+        "candidateSha256": "b553e89bfd533101c8c9a341e88d5394841a1f235a2582f5c3dcf0b673fa665e",
+        "baselineBytes": 29328,
+        "candidateBytes": 29328
+      },
+      {
+        "workload": "sglib-combined",
+        "changed": false,
+        "baselineSha256": "e50fcad191e1531c62da8db01b4989adc6517ed9b8f153cfed061c3b5d9f3ed8",
+        "candidateSha256": "e50fcad191e1531c62da8db01b4989adc6517ed9b8f153cfed061c3b5d9f3ed8",
+        "baselineBytes": 23880,
+        "candidateBytes": 23880
+      },
+      {
+        "workload": "slre",
+        "changed": false,
+        "baselineSha256": "bb5c2582a21cd2e33fcb179911fe45c5b5464d6654704edbb597a6d1f57d0acb",
+        "candidateSha256": "bb5c2582a21cd2e33fcb179911fe45c5b5464d6654704edbb597a6d1f57d0acb",
+        "baselineBytes": 14983,
+        "candidateBytes": 14983
+      },
+      {
+        "workload": "statemate",
+        "changed": false,
+        "baselineSha256": "56efb4bb01445d174546cf07a28f21eff4c74012c7dd46e79e5c4d65f98640b4",
+        "candidateSha256": "56efb4bb01445d174546cf07a28f21eff4c74012c7dd46e79e5c4d65f98640b4",
+        "baselineBytes": 105516,
+        "candidateBytes": 105516
+      },
+      {
+        "workload": "tarfind",
+        "changed": false,
+        "baselineSha256": "adb97dc092565c46ef9471b3ab9ad4ca0bd2b4f818018b4ab14bc59a5f01ced4",
+        "candidateSha256": "adb97dc092565c46ef9471b3ab9ad4ca0bd2b4f818018b4ab14bc59a5f01ced4",
+        "baselineBytes": 3020,
+        "candidateBytes": 3020
+      },
+      {
+        "workload": "ud",
+        "changed": false,
+        "baselineSha256": "fbffdd07eb6cf99d8d6bb8b85fbe98a32884245e36cf6fda635e6a4d6195c4ab",
+        "candidateSha256": "fbffdd07eb6cf99d8d6bb8b85fbe98a32884245e36cf6fda635e6a4d6195c4ab",
+        "baselineBytes": 4268,
+        "candidateBytes": 4268
+      },
+      {
+        "workload": "wikisort",
+        "changed": false,
+        "baselineSha256": "159780050b37e9078073d80cdf8d966ad04b3558749640680d7f1bd2272f4d62",
+        "candidateSha256": "159780050b37e9078073d80cdf8d966ad04b3558749640680d7f1bd2272f4d62",
+        "baselineBytes": 20120,
+        "candidateBytes": 20120
+      },
+      {
+        "workload": "xgboost",
+        "changed": false,
+        "baselineSha256": "5cb72cd1cdb4bb021bf395b99b2e22812b64002340bad6b8c44c1d5024ee50d0",
+        "candidateSha256": "5cb72cd1cdb4bb021bf395b99b2e22812b64002340bad6b8c44c1d5024ee50d0",
+        "baselineBytes": 58260,
+        "candidateBytes": 58260
+      }
+    ]
+  },
+  "timing": {
+    "status": "terminal-all-changed-guests-attempted",
+    "entries": [
+      {
+        "workload": "matmult-int",
+        "exit": 0,
+        "status": "complete-provisional-candidate-timing",
+        "acceptedTriples": 30,
+        "attemptedTriples": 32,
+        "summary": {
+          "baseline": {
+            "meanNsPerBody": 15872.496246246246,
+            "sdNs": 1027.7756838885723,
+            "relativeSd": 0.06475198783755487,
+            "samples": 30
+          },
+          "candidate": {
+            "meanNsPerBody": 15377.679234769688,
+            "sdNs": 1443.0062670942973,
+            "relativeSd": 0.09383771407011723,
+            "samples": 30
+          },
+          "C": {
+            "meanNsPerBody": 921.2453805912843,
+            "sdNs": 8.925018919298848,
+            "relativeSd": 0.009687993131179112,
+            "samples": 30
+          },
+          "stable": true,
+          "baselineOverCandidate": 1.0321776130144367,
+          "candidateOverC": 16.692272828439922,
+          "candidateImprovesBaseline": false
+        },
+        "error": null
+      }
+    ],
+    "changedGuests": [
+      "matmult-int"
+    ],
+    "officialEmbenchScore": false,
+    "productUnchanged": true
+  },
+  "timingAudit": {
+    "status": "complete-independent-canonical-source-machine-spec-C-receipt-and-raw-row-audit",
+    "sourceSha256": "84717e4e930a593acbc0b4389d791e51ed53683a982deb19fe85864178152e34",
+    "candidateSha256": "88d1e568d85f38aa47c03d975d32f8d6fb3bcf8d397aa3be2e28a49b214f5ce4",
+    "baselineSha256": "878b41fb4b6417fccddd3a1e7531001c755c70405ed195ad3c3dbd018457e20e",
+    "cDylibSha256": "12de24e5051dac499c603300fa86d2d164b66e7410d923e8aa6ec119a29f8a09",
+    "runnerSha256": "a1b8778cf9af255f66bba3e3cad20e3baadd9653e18defe429bfa179840665ac",
+    "nativeProofSealedBeforeTiming": true,
+    "acceptedTriples": 30,
+    "attemptedTriples": 32,
+    "meanGapNs": 494.81701147655804,
+    "summedSdNs": 2470.7819509828696,
+    "timeReductionPercent": 3.1174492266367926,
+    "decision": "reject-performance-promotion",
+    "officialEmbenchScore": false
+  },
+  "decision": "Reject:3.12percent shorter mean below5percent; gap494.82ns below summedSD2470.78ns. Actual descriptor reuse is observed but lacks qualified performance gain. No identical-machine retiming. All19 C-or-better remains unachieved.",
+  "officialEmbenchScore": false,
+  "nextHypothesis": {
+    "status": "registered-not-implemented-or-measured",
+    "hypothesis": "Prove a later high-depth read uses the same stable local vector handle and is dominated by an original successful checked read in a bounded same-function loop without intervening call/clobber. Reuse the captured descriptor on the later read without dynamic key comparison; retain the original first-read handle check and every index check.",
+    "admission": "Exact same-local, dominance, backedge and scratch lifetime proof; no reassignment or unknown/allocating calls. Unknown/joins/unproved aliases refuse. No workload names. Local SIR proof until native typed DefCID bridge exists.",
+    "requiredProof": "Independent invalid handle/index, partial fuel/resource, joins/mutation/open-import/indirect controls; original434/9339 expectations unchanged; original19 source/state, machine/frame audits and native fixedpoint.",
+    "timing": "One new distinct-machine batch, fresh30triples under unchanged product/C pins and criteria; permanent guards, product gates/integrated3gen/full corpus before promotion.",
+    "identity": "Future reusable proof seals definition/compiler/target/resource identities. This proposal is not a connected DefCID or result cache."
+  }
+}

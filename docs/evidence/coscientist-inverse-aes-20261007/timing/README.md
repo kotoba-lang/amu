@@ -1,0 +1,11 @@
+# Current inverse AES: ONE timing campaign, offline proof
+
+Copy only `inverse-timing-proof.tgz`, `inverse-timing-manifest.json`, and `replay-inverse-timing.py` into an unrelated directory, then run `python3 replay-inverse-timing.py`.
+
+The reader verifies the immutable envelope, reconstructs selected byte objects in a disposable directory, and independently recomputes all 57 functional preflight receipts and the current 19-workload calibration, rotation, CPU/load acceptance, mean/SD and decision rules. It runs no guest, compiler, solver, network or benchmark. The archived independently reviewed Python reader is executed only as offline data/statistics code. Trust starts with this pinned reader and manifest; this is no signature or universal correctness proof.
+
+457 original file paths are preserved through 325 unique byte objects, including the sealed native/header/source/C inputs once, nine campaign driver files, all 151 calibration and 866 attempted triples, 296 rejected triples, 570 accepted triples, raw CPU packets, root GO/transport receipts and the full independent report. Header arrays, offsets, source, required feature mask6 and C symbols are re-bound. Repeated native/C byte payloads are stored once, with each original path/hash retained. The package excludes historical timing archives and the separate pending directreg candidate.
+
+Only AES qualified: 1.8453247427× relative to the RF baseline, 45.8089963% shorter; candidate remains 5.4904772313× the C time. Other 18 workloads have no qualified gain or regression. The descriptive full19 geometric time ratio is 1.0299202677× baseline/candidate and candidate/C is 7.0397326659×. These are this single aligned experiment, not official Embench scores; original C compiler metadata remains unknown. Product adoption and the overall C-or-better goal remain false.
+
+The fresh copied three-file replay passed. A corrupt archive and corrupt manifest were each rejected. Native proof claims, broader compiler-M limits, asynchronous observations and arbitrary embedding ownership are outside this timing reader. Existing root/native evidence retains those scope limits. No measurements or external transfer were performed to create this packet.

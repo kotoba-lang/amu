@@ -1,0 +1,10 @@
+;; R4B feat: [:result [:ref R] :string] and [:option [:ref R]] carrying records by reference
+(ns seed.r4b (:export [test]) (:schemas {:o/r [:record :o/r [[:n :i64]]]}))
+(defn- mk [n :i64] [:ref :o/r] (record-new [:record :o/r [[:n :i64]]] n))
+(defn- parse [n :i64] [:result [:ref :o/r] :string]
+  (if (< n 0) (result-err-of [:result [:ref :o/r] :string] "negative") (result-ok-of [:result [:ref :o/r] :string] (mk (* 2 n)))))
+(defn- n-of [r [:ref :o/r]] :i64 (get r :n))
+(defn test [] :i64
+  (+ (n-of (result-value-of [:result [:ref :o/r] :string] (parse 21) (mk 0)))
+     (* 100 (n-of (result-value-of [:result [:ref :o/r] :string] (parse -1) (mk 5))))
+     (string-length (result-error-of [:result [:ref :o/r] :string] (parse -1) ""))))

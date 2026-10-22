@@ -1,0 +1,13 @@
+;; R4B feat: a recursive :schemas record ([:kids [:list [:ref :t/node]]]): build a tree and sum it (record-get accessors)
+(ns seed.r4b (:export [test])
+  (:schemas {:t/node [:record :t/node [[:v :i64] [:kids [:list [:ref :t/node]]]]]}))
+(defn- node [v :i64 kids [:list [:ref :t/node]]] [:ref :t/node]
+  (record-new [:record :t/node [[:v :i64] [:kids [:list [:ref :t/node]]]]] v kids))
+(defn- kids [n [:ref :t/node]] [:list [:ref :t/node]] (record-get [:record :t/node [[:v :i64] [:kids [:list [:ref :t/node]]]]] n :kids))
+(defn- leaf [v :i64] [:ref :t/node] (node v (typed-list-new [:list [:ref :t/node]])))
+(defn- tsum [n [:ref :t/node]] :i64
+  (let [ks (kids n) c (count ks) v0 (record-get [:record :t/node [[:v :i64] [:kids [:list [:ref :t/node]]]]] n :v)]
+    (loop [i 0 acc v0]
+      (if (< i c) (recur (inc i) (+ acc (tsum (typed-list-nth [:list [:ref :t/node]] ks i)))) acc))))
+(defn test [] :i64
+  (tsum (node 1 (typed-list-new [:list [:ref :t/node]] (leaf 20) (node 300 (typed-list-new [:list [:ref :t/node]] (leaf 4000)))))))

@@ -422,3 +422,10 @@ versa.
 - https://github.com/WebAssembly/WASI/releases/tag/v0.3.0
 - https://wasi.dev/releases/wasi-p3
 - https://wasi.dev/roadmap
+
+Rust-independence note: CI no longer runs `cargo install wac-cli`. No Kotoba
+source, script or test invokes `wac` (the composition above is produced by
+Kotoba's own emitters and validated with `wasm-tools`), so the install step was
+a dead Rust build dependency and was removed. `wasm-tools` remains the one
+external validation tool; it is fetched as a prebuilt pinned binary, not built
+from Rust sources here.

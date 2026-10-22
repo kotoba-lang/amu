@@ -1,0 +1,78 @@
+--- a/41-directreg-on.kotoba
++++ b/41-charged-compare-default.kotoba
+@@ -1800,9 +1800,74 @@
+ (defn- ai-call [M :vector-i64 i :i64 f :i64 t :i64] :vector-i64
+  (if (dr-admit M t) (dr-call M i f t) (dr-reference-call M i f t)))
+ 
++;; Experimental charged full64 unsigned comparison. Semantic SIR pattern only.
++(def uc-feature 0)
++(defn- uc-private [M :vector-i64 f :i64] :bool
++ (and (> f 0) (< f (vector-at M MM-FN-N)) (= (gn-fnf M f FF-KIND) FK-PRIV)
++      (= (gn-fnf M f FF-EXPORT) 0) (not (gn-clamp-open M f))
++      (= (gn-fnf M f FF-NPARAMS) 2) (= (gn-fnf M f FF-NSLOTS) 2)
++      (= (gn-fnf M f FF-RTYPE) TY-BOOL) (= (gn-fnf M f FF-PT0) TY-I64)
++      (= (gn-fnf M f (+ FF-PT0 1)) TY-I64)))
++(defn- uc-no-address [M :vector-i64 f :i64 g :i64] :bool
++ (loop [j 1 work 65536]
++  (cond (>= j (vector-at M MM-SIR-N)) true (<= work 0) false
++        (and (= (gn-op M j) OP-FADDR) (or (= (gn-sir M j IF-B) f) (= (gn-sir M j IF-B) g))) false
++        :else (recur (inc j) (dec work)))))
++(defn- uc-child [M :vector-i64 f :i64] :bool
++ (if (not (uc-private M f)) false
++  (let [p (gn-fnf M f FF-SIR) end (+ p 10)]
++   (and (> p 0) (< p (vector-at M MM-SIR-N)) (< end (vector-at M MM-SIR-N))
++    (let [label (gn-sir M (inc p) IF-A)]
++    (and (= (gn-fnf M f FF-DEPTH) 3)
++    (= (gn-fnf M f FF-FUEL) 0) (as-ins M p OP-FN f 2 2)
++    (> label 0) (< label MM-LABEL-CAP) (as-ins M (inc p) OP-LABEL label 0 0)
++    (as-ins M (+ p 2) OP-LGET 0 1 0) (as-ins M (+ p 3) OP-CONST 1 -9223372036854775808 0)
++    (as-ins M (+ p 4) OP-BIN BOP-XOR 0 0) (as-ins M (+ p 5) OP-LGET 1 2 0)
++    (as-ins M (+ p 6) OP-CONST 2 -9223372036854775808 0) (as-ins M (+ p 7) OP-BIN BOP-XOR 1 0)
++    (as-ins M (+ p 8) OP-CMP CC-LT 0 0) (as-ins M (+ p 9) OP-RET 0 0 0)
++    (as-ins M end OP-END f 0 0) (as-unique M p end)))))))
++(defn- uc-callee [M :vector-i64 f :i64] :bool
++ (if (not (uc-private M f)) false
++  (let [p (gn-fnf M f FF-SIR) end (+ p 8)]
++   (and (> p 0) (< p (vector-at M MM-SIR-N)) (< end (vector-at M MM-SIR-N))
++    (let [label (gn-sir M (+ p 2) IF-A) g (gn-sir M (+ p 5) IF-A)]
++    (and (= (gn-fnf M f FF-DEPTH) 2)
++    (= (gn-fnf M f FF-FUEL) 1) (as-ins M p OP-FN f 2 2) (as-ins M (inc p) OP-FUEL 0 0 0)
++    (> label 0) (< label MM-LABEL-CAP) (as-ins M (+ p 2) OP-LABEL label 0 0)
++    (as-ins M (+ p 3) OP-LGET 0 1 0) (as-ins M (+ p 4) OP-LGET 1 2 0)
++    (as-ins M (+ p 5) OP-CALL g 0 2) (as-ins M (+ p 6) OP-UN UOP-NOT 0 0)
++    (as-ins M (+ p 7) OP-RET 0 0 0) (as-ins M end OP-END f 0 0)
++    (not= f g) (as-unique M p end) (uc-child M g) (uc-no-address M f g)))))))
++(defn- uc-arg [M :vector-i64 t :i64] :bool
++ (let [k (gn-dk M t) v (gn-dv M t)]
++  (and (or (and (= k gn-k-reg) (= v 0))
++           (and (= k gn-k-local) (> v 0) (<= v (gn-g M gn-f-ns))))
++       (let [r (gn-sr M t 0)]
++        (or (and (>= r 9) (<= r 15)) (and (>= r 19) (<= r 28)))))))
++(defn- uc-admit [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :bool
++ (and (= uc-feature 1) (= (vector-at M MM-ERR) 0) (= n 2) (>= t 0) (<= t 1)
++      (= (gn-g M gn-f-leaf) 0) (> (gn-g M gn-f-fb) 0) (<= (gn-g M gn-f-fb) 4096)
++      (<= (+ t 2) (gn-g M gn-f-h)) (<= (+ t 2) (gn-g M gn-f-dp)) (<= (gn-g M gn-f-dp) 16)
++      (>= (vector-at M MM-CODE-N) 0) (<= (vector-at M MM-CODE-N) MM-CODE-CAP)
++      (<= 24 (- MM-CODE-CAP (vector-at M MM-CODE-N)))
++      (>= (gn-g M as-sites) 0) (< (gn-g M as-sites) 64)
++      (>= (gn-g M as-used) 0) (<= (gn-g M as-used) 4072)
++      (<= (vector-at M MM-FN-N) 1024) (<= (vector-at M MM-SIR-N) 65536)
++      (not= (gn-op M (inc i)) OP-RET) (not= (gn-op M (inc i)) OP-RES2)
++      (uc-arg M t) (uc-arg M (inc t)) (not= (gn-sr M t 0) (gn-sr M (inc t) 0)) (uc-callee M f)))
++(defn- uc-call [M :vector-i64 i :i64 t :i64] :vector-i64
++ (let [start (vector-at M MM-CODE-N)
++       m0 (-> M (gn-save 0 t) (gn-args t 0 2) (gn-ctx) (as-charges 1)
++                (gn-emit (enc-cmp-r 0 1)) (gn-emit (enc-cset 0 (enc-cond-hs)))
++                (gn-vclear) (gn-gs gn-f-ctx 0) (gn-take i t 0))
++       words (- (vector-at m0 MM-CODE-N) start)]
++  (cond (not= (vector-at m0 MM-ERR) 0) m0
++        (> words 24) (gn-err m0 E-GEN-OP OP-CALL)
++        :else (-> m0 (gn-gs as-used (+ (gn-g m0 as-used) words)) (gn-gs as-sites (inc (gn-g m0 as-sites)))))))
++
+ (defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
+   (let [w (gn-call-wrapper M i f t n) q (if (= (gn-g M gn-f-leaf) 2) 0 (gn-clamp M i f n)) mask (if (= (gn-g M gn-f-leaf) 2) 0 (gn-scalar-mask M i f n)) reader (if (= (gn-g M gn-f-leaf) 2) 0 (gn-affine-reader M i f n)) dag (di-admit M i f t n) inverse (ai-admit M i f t n) aes (as-admit M i f t n)]
+-   (cond inverse (ai-call M i f t) aes (as-call M i f t) (> reader 0) (gn-call-affine-reader M i t f reader) (> mask 0) (gn-call-scalar-mask M i t mask) (> q 0) (gn-call-clamp M i f t q) (gn-mask-writer M i f t n) (gn-call-mask-writer M t)
++   (cond (uc-admit M i f t n) (uc-call M i t) inverse (ai-call M i f t) aes (as-call M i f t) (> reader 0) (gn-call-affine-reader M i t f reader) (> mask 0) (gn-call-scalar-mask M i t mask) (> q 0) (gn-call-clamp M i f t q) (gn-mask-writer M i f t n) (gn-call-mask-writer M t)
+          (>= w 1024) (gn-call-sign M i t w)
+          (> w 0) (let [M1 (if (>= w 256) (gn-op-fuel M) M)
+                        slot (bit-and w 255)]

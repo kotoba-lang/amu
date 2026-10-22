@@ -12,6 +12,10 @@ evidence; hosted VM/VMM and C-reference results remain downstream oracles.
 Qualification reads those receipts after execution and never grants authority
 back to the compiler or backend.
 
+Language semantics are target-independent (ADR 0354): wasm32 is one build
+target among several, and a target that cannot lower an admitted feature
+refuses it by name instead of narrowing the language.
+
 The shared safety pipeline precedes every backend. A backend cannot weaken the
 source subset, inferred effects, resource bounds, or capability requirements.
 Every artifact records its target, KIR digest, declared effects, limits, and

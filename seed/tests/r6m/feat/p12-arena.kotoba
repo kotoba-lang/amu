@@ -1,0 +1,6 @@
+;; R6M: arena-scope around a scalar body (the value; the seed does not reclaim)
+(ns r6m.p12 (:export [main]))
+(defn- step [i :i64] :i64 (string-byte-length (string-substring (string-concat "01234" "56789") 0 (+ 5 i))))
+(defn- scoped-from [i :i64 n :i64 acc :i64] :i64
+  (if (>= i n) acc (scoped-from (+ i 1) n (+ acc (arena-scope (step i))))))
+(defn main [] :i64 (scoped-from 0 5 0))

@@ -1,0 +1,7 @@
+{:format :kotoba.kir/v4, :entry nil, :exports [t], :signature nil, :effects #{}, :functions [
+{:name fb, :params [], :result :i64, :effects #{}, :body (+ (* 10 (string-find-byte "a/b/c" 47 2)) (string-find-byte "é/x" 47 0)), :param-types []}
+{:name rp, :params [], :result :i64, :effects #{}, :body (let [r (string-replace-all "a.b.c" "." "--")] (+ (* 10 (string-byte-length r)) (string-index-of r "--"))), :param-types []}
+{:name ar, :params [], :result :i64, :effects #{}, :body (let [r (string-append-range "ab" "xyzw" 1 3)] (+ (* 1000 (string-byte-length r)) (string-code-point-at r 2))), :param-types []}
+{:name vt, :params [], :result :i64, :effects #{}, :body (+ (* 10 (vector-at (vector-take (vector-new 5 6 7) 2) 1)) (vector-count (vector-drop (vector-new 5 6 7) 1))), :param-types []}
+{:name op, :params [x], :result :i64, :effects #{}, :body (option-value-of [:option :i64] (option-some-of [:option :i64] x) 0), :param-types [:i64]}
+{:name t, :params [], :result :i64, :effects #{}, :body (if (= (fb) 32) (if (string-contains? "hello" "ll") (if (= (rp) 71) (if (= (ar) 4121) (if (= (string-index-of-from "abcabc" "bc" 2) 4) (if (= (vt) 62) (if (= (op 9) 9) 1 0) 0) 0) 0) 0) 0) 0), :param-types []}]}

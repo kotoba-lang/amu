@@ -1,0 +1,5 @@
+;; R6A feature case p01: keyword values across a module boundary (parameters, results, case, =)
+(ns p01.kw (:export [kind same? pick]))
+(defn kind [x :i64] :keyword (cond (> x 0) :pos (< x 0) :neg :else :zero))
+(defn same? [a :keyword b :keyword] :bool (= a b))
+(defn pick [k :keyword] :i64 (case k :pos 1 :neg 2 :zero 3 9))

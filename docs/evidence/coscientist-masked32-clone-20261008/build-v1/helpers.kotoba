@@ -1,0 +1,119 @@
+;; Isolated Unity post-lowering clone experiment. Default OFF; no EXTR emission.
+;; The only publication is returning a successfully generated private full-M copy.
+(def mc-feature 0)
+(defn- mc-ff-zero? [M :vector-i64 f :i64] :bool
+ (if (>= f (vector-at M MM-FN-N)) true
+  (and (= (gn-fnf M f FF-CODE) 0) (mc-ff-zero? M (inc f)))))
+(defn- mc-base? [M :vector-i64] :bool
+ (and (= (vector-count M) MM-WORDS) (= (vector-at M MM-ERR) 0)
+      (> (vector-at M MM-FN-N) 1) (<= (vector-at M MM-FN-N) 128)
+      (> (vector-at M MM-SIR-N) 1) (<= (vector-at M MM-SIR-N) 65536)
+      (> (vector-at M MM-LABEL-N) 0) (< (vector-at M MM-LABEL-N) MM-LABEL-CAP)
+      (= (vector-at M MM-CODE-N) 1) (= (vector-at M MM-FIX-N) 1)
+      (mc-ff-zero? M 1)))
+(defn- mc-private? [M :vector-i64 f :i64 n :i64] :bool
+ (and (> f 0) (< f (vector-at M MM-FN-N))
+      (= (gn-fnf M f FF-KIND) FK-PRIV) (= (gn-fnf M f FF-EXPORT) 0)
+      (= (gn-fnf M f FF-NPARAMS) n) (= (gn-fnf M f FF-RTYPE) TY-I64)
+      (= (gn-fnf M f FF-PT0) TY-I64)
+      (or (= n 1) (= (gn-fnf M f (inc FF-PT0)) TY-I64))))
+(defn- mc-mask? [M :vector-i64 f :i64] :bool
+ (if (not (mc-private? M f 1)) false
+  (let [p (gn-fnf M f FF-SIR) charged (and (> p 0) (< (inc p) (vector-at M MM-SIR-N)) (= (gn-op M (inc p)) OP-FUEL))
+        l (+ p (if charged 2 1)) end (+ l 5)]
+   (and (> p 0) (< end (vector-at M MM-SIR-N))
+        (as-ins M p OP-FN f 1 1) (= (gn-fnf M f FF-NSLOTS) 1)
+        (= (gn-fnf M f FF-FUEL) (if charged 1 0))
+        (or (not charged) (as-ins M (inc p) OP-FUEL 0 0 0))
+        (= (gn-op M l) OP-LABEL) (> (gn-sir M l IF-A) 0) (< (gn-sir M l IF-A) MM-LABEL-CAP)
+        (= (gn-sir M l IF-B) 0) (= (gn-sir M l IF-C) 0)
+        (as-ins M (+ l 1) OP-LGET 0 1 0) (as-ins M (+ l 2) OP-CONST 1 4294967295 0)
+        (as-ins M (+ l 3) OP-BIN BOP-AND 0 0) (as-ins M (+ l 4) OP-RET 0 0 0)
+        (as-ins M end OP-END f 0 0)))))
+(defn- mc-body? [M :vector-i64 f :i64] :bool
+ (if (not (mc-private? M f 2)) false
+  (let [p (gn-fnf M f FF-SIR)]
+   (and (> p 0) (< (+ p 14) (vector-at M MM-SIR-N))
+    (as-ins M p OP-FN f 2 2) (as-ins M (+ p 1) OP-FUEL 0 0 0)
+    (= (gn-fnf M f FF-NSLOTS) 2) (= (gn-fnf M f FF-DEPTH) 4) (= (gn-fnf M f FF-FUEL) 1)
+    (= (gn-op M (+ p 2)) OP-LABEL) (> (gn-sir M (+ p 2) IF-A) 0) (< (gn-sir M (+ p 2) IF-A) MM-LABEL-CAP)
+    (= (gn-sir M (+ p 2) IF-B) 0) (= (gn-sir M (+ p 2) IF-C) 0)
+    (as-ins M (+ p 3) OP-LGET 0 1 0) (as-ins M (+ p 4) OP-LGET 1 2 0)
+    (or (and (as-ins M (+ p 5) OP-BIN BOP-USHR 0 0) (as-ins M (+ p 10) OP-BIN BOP-SHL 1 0))
+        (and (as-ins M (+ p 5) OP-BIN BOP-SHL 0 0) (as-ins M (+ p 10) OP-BIN BOP-USHR 1 0)))
+    (as-ins M (+ p 6) OP-LGET 1 1 0) (as-ins M (+ p 7) OP-CONST 2 32 0)
+    (as-ins M (+ p 8) OP-LGET 3 2 0) (as-ins M (+ p 9) OP-BIN BOP-SUB 2 0)
+    (as-ins M (+ p 11) OP-BIN BOP-OR 0 0) (= (gn-op M (+ p 12)) OP-CALL)
+    (= (gn-sir M (+ p 12) IF-B) 0) (= (gn-sir M (+ p 12) IF-C) 1)
+    (not= (gn-sir M (+ p 12) IF-A) f) (mc-mask? M (gn-sir M (+ p 12) IF-A))
+    (as-ins M (+ p 13) OP-RET 0 0 0) (as-ins M (+ p 14) OP-END f 0 0)))))
+(defn- mc-site? [M :vector-i64 i :i64 originalFns :i64] :bool
+ (and (> i 1) (= (gn-op M i) OP-CALL) (= (gn-sir M i IF-C) 2)
+      (> (gn-sir M i IF-A) 0) (< (gn-sir M i IF-A) originalFns)
+      (>= (gn-sir M i IF-B) 0) (< (gn-sir M i IF-B) 127)
+      (as-ins M (dec i) OP-CONST (inc (gn-sir M i IF-B)) (gn-sir M (dec i) IF-B) 0)
+      (>= (gn-sir M (dec i) IF-B) 1) (<= (gn-sir M (dec i) IF-B) 31)
+      (mc-body? M (gn-sir M i IF-A))))
+(defn- mc-count [M :vector-i64 i :i64 n :i64] :i64
+ (cond (> n 32) -1 (>= i (vector-at M MM-SIR-N)) n
+  :else (mc-count M (inc i) (if (mc-site? M i (vector-at M MM-FN-N)) (inc n) n))))
+(defn- mc-fits? [M :vector-i64 count :i64] :bool
+ (and (> count 0) (<= count 32)
+      (<= (+ (vector-at M MM-FN-N) count) 128)
+      (< (+ (vector-at M MM-FN-N) count) MM-FN-CAP)
+      (< (+ (vector-at M MM-SIR-N) (* count 15)) MM-SIR-CAP)
+      (< (+ (vector-at M MM-LABEL-N) count) MM-LABEL-CAP)))
+(defn- mc-copy [M :vector-i64 C :vector-i64 i :i64] :vector-i64
+ (if (= i MM-WORDS) C
+  (mc-copy M (vector-assoc! C i (vector-at M i)) (inc i))))
+(defn- mc-ff-same? [M :vector-i64 f :i64 c :i64 k :i64] :bool
+ (cond (= k MM-FN-W) true
+       (or (= k FF-SIR) (= k FF-CODE)) (mc-ff-same? M f c (inc k))
+       :else (and (= (gn-fnf M f k) (gn-fnf M c k)) (mc-ff-same? M f c (inc k)))))
+(defn- mc-row-same? [M :vector-i64 p :i64 q :i64 f :i64 c :i64 value :i64 k :i64] :bool
+ (cond (= k 15) true
+  (= k 0) (and (as-ins M q OP-FN c 2 2) (mc-row-same? M p q f c value (inc k)))
+  (= k 14) (and (as-ins M (+ q k) OP-END c 0 0) (mc-row-same? M p q f c value (inc k)))
+  (= k 2) (and (= (gn-op M (+ q k)) OP-LABEL) (= (gn-sir M (+ q k) IF-B) 0) (= (gn-sir M (+ q k) IF-C) 0)
+                 (mc-row-same? M p q f c value (inc k)))
+  (or (= k 4) (= k 8)) (and (as-ins M (+ q k) OP-CONST (if (= k 4) 1 3) value 0) (mc-row-same? M p q f c value (inc k)))
+  :else (and (as-ins M (+ q k) (gn-op M (+ p k)) (gn-sir M (+ p k) IF-A) (gn-sir M (+ p k) IF-B) (gn-sir M (+ p k) IF-C))
+             (mc-row-same? M p q f c value (inc k)))))
+(defn- mc-find [M :vector-i64 f :i64 value :i64 c :i64] :i64
+ (cond (>= c (vector-at M MM-FN-N)) 0
+       (and (mc-ff-same? M f c 0) (mc-row-same? M (gn-fnf M f FF-SIR) (gn-fnf M c FF-SIR) f c value 0)) c
+       :else (mc-find M f value (inc c))))
+(defn- mc-ff-copy [M :vector-i64 f :i64 c :i64 k :i64] :vector-i64
+ (if (= k MM-FN-W) M
+  (mc-ff-copy (gn-put M (+ MM-FN-BASE (* c MM-FN-W) k)
+               (cond (= k FF-SIR) (vector-at M MM-SIR-N) (= k FF-CODE) 0 :else (gn-fnf M f k))) f c (inc k))))
+(defn- mc-row-copy [M :vector-i64 p :i64 q :i64 c :i64 label :i64 value :i64 k :i64 field :i64] :vector-i64
+ (cond (= k 15) M
+       (= field MM-SIR-W) (mc-row-copy M p q c label value (inc k) 0)
+       :else (let [v (cond (and (or (= k 0) (= k 14)) (= field IF-A)) c
+                           (and (= k 2) (= field IF-A)) label
+                           (and (or (= k 4) (= k 8)) (= field IF-OP)) OP-CONST
+                           (and (or (= k 4) (= k 8)) (= field IF-B)) value
+                           :else (gn-sir M (+ p k) field))]
+                (mc-row-copy (gn-put M (+ MM-SIR-BASE (* (+ q k) MM-SIR-W) field) v) p q c label value k (inc field)))))
+(defn- mc-add [M :vector-i64 f :i64 value :i64] :vector-i64
+ (let [c (vector-at M MM-FN-N) q (vector-at M MM-SIR-N) l (vector-at M MM-LABEL-N)
+       p (gn-fnf M f FF-SIR) m (mc-row-copy (mc-ff-copy M f c 0) p q c l value 0 0)]
+  (-> m (gn-put MM-FN-N (inc c)) (gn-put MM-SIR-N (+ q 15)) (gn-put MM-LABEL-N (inc l)))))
+(defn- mc-install [M :vector-i64 i :i64 originalSIR :i64 originalFns :i64] :vector-i64
+ (if (>= i originalSIR) M
+  (if (mc-site? M i originalFns)
+   (let [f (gn-sir M i IF-A) value (gn-sir M (dec i) IF-B) found (mc-find M f value originalFns)
+         c (if (> found 0) found (vector-at M MM-FN-N)) m (if (> found 0) M (mc-add M f value))]
+    (mc-install (gn-put m (+ MM-SIR-BASE (* i MM-SIR-W) IF-A) c) (inc i) originalSIR originalFns))
+   (mc-install M (inc i) originalSIR originalFns))))
+(defn- mc-generate [M :vector-i64] :vector-i64
+ (if (not (mc-base? M)) (gn-run-open M 0 0)
+  (let [count (mc-count M 1 0)]
+   (if (not (mc-fits? M count)) (gn-run-open M 0 0)
+    (let [copy (mc-copy M (vector-alloc MM-WORDS) 0)
+          transformed (mc-install copy 1 (vector-at M MM-SIR-N) (vector-at M MM-FN-N))
+          generated (gn-run-open transformed 0 0)]
+     (if (and (= (vector-at generated MM-ERR) 0)
+              (<= (vector-at generated MM-CODE-N) MM-CODE-CAP)
+              (<= (vector-at generated MM-FIX-N) MM-FIX-CAP)) generated (gn-run-open M 0 0)))))))

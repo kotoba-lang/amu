@@ -1,0 +1,14 @@
+(ns seed.hex (:export [main]))
+
+;; T3 fallback: every byte value 0..255 as two hex digits on :io/write (wire 37); decode with `xxd -r -p`.
+(defn- hexd [d :i64] :i64 (if (< d 10) (+ 48 d) (+ 87 d)))
+
+(defn- fill [v :vector-i64 i :i64 n :i64] :vector-i64
+  (if (= i n) v
+    (fill (vector-assoc! (vector-assoc! v (* i 2) (hexd (u64-shift-right i 4 ))) (+ (* i 2) 1) (hexd (bit-and i 15))) (+ i 1) n)))
+
+(defn main [] :i64
+  (let [n 256
+        s (string-from-utf8 (bytes-from-vector-i64 (fill (vector-alloc 512) 0 n)))
+        w (typed-cap-call :io/write :string :string s)]
+    0))

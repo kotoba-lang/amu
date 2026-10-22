@@ -1,0 +1,51 @@
+{
+  "status": "PASS-supplementary-counter-address-model",
+  "checks": [
+    {
+      "name": "bounded-index",
+      "result": "unsat"
+    },
+    {
+      "name": "bounded-index-alignment",
+      "result": "unsat"
+    },
+    {
+      "name": "no-address-wrap",
+      "result": "unsat"
+    },
+    {
+      "name": "distinct-slots",
+      "result": "unsat"
+    },
+    {
+      "name": "unsafe-no-slot-bound",
+      "result": "sat",
+      "counterexample": "[slot = 1152921504606846976]"
+    },
+    {
+      "name": "unsafe-no-base-bound",
+      "result": "sat",
+      "counterexample": "[slot = 8191, base = 18446744073709518848]"
+    },
+    {
+      "name": "modulo-wrap-is-possible",
+      "result": "sat",
+      "counterexample": "[count = 18446744073709551615]"
+    }
+  ],
+  "assumptions": [
+    "8192 consecutive initialized uint64 slots",
+    "base mapping has 65536 addressable bytes without wrap",
+    "slot checked against actual native function metadata",
+    "single guest thread and mapping lifetime encompasses run"
+  ],
+  "notProven": [
+    "actual emitted instructions",
+    "live register/NZCV preservation",
+    "loader mapping ownership",
+    "guest state equivalence",
+    "absence of counter wrap in executions"
+  ],
+  "counterSemantics": "uint64 modulo; wrapped execution cannot be called exact",
+  "performanceEvidence": false
+}

@@ -1,0 +1,10 @@
+;; R6D: a present value of any other type T makes the `when` [:option T], in either mode
+;; want: 5
+(ns r6d.p03 (:export [main]))
+(defn- g [x :i64] (when (> x 0) "abc"))
+(defn- h [x :i64] [:option :string] (when-not (> x 0) "zz"))
+(defn main [] :i64
+  (+ (string-length (option-value-of [:option :string] (g 1) "qqqqqqq"))
+     (string-length (option-value-of [:option :string] (h -1) "q"))
+     (if (option-some?-of [:option :string] (g -1)) 100 0)
+     (if (option-some?-of [:option :string] (h 1)) 100 0)))

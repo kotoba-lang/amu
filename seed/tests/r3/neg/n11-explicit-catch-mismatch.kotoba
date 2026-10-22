@@ -1,0 +1,4 @@
+;; R3 neg: explicit catch type differs from the thrown type
+(ns seed.r3.neg (:export [test]))
+(defn- f [x :i64] :i64 (if (= x 0) (throw "z") x))
+(defn test [] :i64 (try (f 1) (catch :i64 e e)))

@@ -1,0 +1,14 @@
+(ns p02 (:export [main]))
+(defhandler log [:state :string]
+  (get [s] (resume s s))
+  (put [s v] (resume v (string-concat s v))))
+(defhandler last-only [:state :string]
+  (get [s] (resume s s))
+  (put [s v] (when (> (string-byte-length v) 0) 0) (resume v v)))
+(defn- say [x :string] :string (perform :state/put x))
+(defn- twice [x :string] (do (say x) (say x) (perform :state/get)))
+(defn- deep [] :i64
+  (+ (string-byte-length (twice "ab"))
+     (* 100 (string-byte-length (handle (twice "xyz") (with last-only "")))) ))
+(defn main [] :i64
+  (+ (handle (deep) (with log "q")) (* 10000 (handle (do (twice "k") (string-byte-length (perform :state/get))) (with last-only "")))))

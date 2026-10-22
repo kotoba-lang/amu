@@ -1,0 +1,68 @@
+;; seed/tests/unit/30-lower-refload.kotoba -- REFERENCE FRONT END for the 30-lower gate (owner 30-lower, test-only).
+;; scripts/seed/lw-gate.sh with LW_FRONT=ref appends this file and replaces (lx-run M0 S) by (t-rl-load M0 S) and
+;; (rd-run M1 S) by (t-rl-root M1 S) in the test: the TOK/NODE/LIT/LITB tables come from the Python reference
+;; lexer/reader (scripts/seed/lw_tables.py, guest argv 4 = the table file), laid out exactly as 10-lex/11-read are
+;; specified to produce them. Used while 10-lex/11-read are not buildable by the stable stage-0.
+(defn- t-rl-dig [c :i64] :i64 (if (< c 48) 0 (if (> c 57) 0 1)))
+(defn- t-rl-skip [T :string i :i64] :i64
+  (loop [k i]
+    (cond (>= k (string-length T)) k
+          (= (string-code-point-at T k) 45) k
+          (= (t-rl-dig (string-code-point-at T k)) 1) k
+          :else (recur (+ k 1)))))
+(defn- t-rl-end [T :string i :i64] :i64
+  (loop [k i]
+    (cond (>= k (string-length T)) k
+          (= (t-rl-dig (string-code-point-at T k)) 1) (recur (+ k 1))
+          :else k)))
+(defn- t-rl-mag [T :string i :i64 e :i64] :i64
+  (loop [k i v 0] (if (< k e) (recur (+ k 1) (+ (* v 10) (- (string-code-point-at T k) 48))) v)))
+(defn- t-rl-d0 [T :string i :i64] :i64 (if (= (string-code-point-at T i) 45) (+ i 1) i))
+(defn- t-rl-sgn [T :string i :i64] :i64 (if (= (string-code-point-at T i) 45) -1 1))
+(defn- t-rl-val [T :string i :i64] :i64
+  (let [d (t-rl-d0 T i)] (* (t-rl-sgn T i) (t-rl-mag T d (t-rl-end T d)))))
+(defn- t-rl-after [T :string i :i64] :i64 (t-rl-end T (t-rl-d0 T i)))
+;; i-th number (0-based) is found by walking; to stay linear the loader walks once:
+;; load cnt numbers into M[addr], M[addr+stride*?]: fields f < w of records of width W, w words read per record
+(defn- t-rl-load-run [M0 :vector-i64 T :string i :i64 addr :i64 cnt :i64] :vector-i64
+  (if (= cnt 0)
+    (lw-put M0 MM-R0 i)
+    (let [j (t-rl-skip T i)
+          v (t-rl-val T j)
+          M1 (lw-put M0 addr v)]
+      (t-rl-load-run M1 T (t-rl-after T j) (+ addr 1) (- cnt 1)))))
+;; records of w words from the text into a region of width W, starting at record 1
+(defn- t-rl-recs [M0 :vector-i64 T :string i :i64 a :i64 k :i64] :vector-i64
+  (let [n (vector-at M0 92) w (vector-at M0 93) W (vector-at M0 94)]
+    (if (>= k n)
+      (lw-put M0 MM-R0 i)
+      (let [M1 (t-rl-load-run M0 T i a w)
+            i2 (vector-at M1 MM-R0)]
+        (t-rl-recs M1 T i2 (+ a W) (+ k 1))))))
+(defn- t-rl-region [M0 :vector-i64 T :string i :i64 base :i64 nww :i64] :vector-i64
+  ;; nww = n * 65536 + w * 256 + W
+  (let [M1 (lw-put M0 92 (quot nww 65536))
+        M2 (lw-put M1 93 (bit-and (quot nww 256) 255))
+        M3 (lw-put M2 94 (bit-and nww 255))]
+    (t-rl-recs M3 T i base 0)))
+(defn- t-rl-load [M0 :vector-i64 S :string] :vector-i64
+  (let [T (typed-cap-call :fs/app-data :string :string (typed-cap-call :cli/args :string :string "4"))
+        j0 (t-rl-skip T 0) ntok (t-rl-val T j0)
+        j1 (t-rl-skip T (t-rl-after T j0)) nnode (t-rl-val T j1)
+        j2 (t-rl-skip T (t-rl-after T j1)) nlit (t-rl-val T j2)
+        j3 (t-rl-skip T (t-rl-after T j2)) nlitb (t-rl-val T j3)
+        M1 (t-rl-region M0 T (t-rl-after T j3) (+ MM-TOK-BASE MM-TOK-W) (+ (* ntok 65536) (+ (* 4 256) MM-TOK-W)))
+        i1 (vector-at M1 MM-R0)
+        M2 (t-rl-region M1 T i1 (+ MM-NODE-BASE MM-NODE-W) (+ (* nnode 65536) (+ (* 5 256) MM-NODE-W)))
+        i2 (vector-at M2 MM-R0)
+        M3 (t-rl-region M2 T i2 (+ MM-LIT-BASE MM-LIT-W) (+ (* nlit 65536) (+ (* 4 256) MM-LIT-W)))
+        i3 (vector-at M3 MM-R0)
+        M4 (t-rl-load-run M3 T i3 (+ MM-LITB-BASE 1) nlitb)
+        M5 (lw-put M4 MM-TOK-N (+ ntok 1))
+        M6 (lw-put M5 MM-NODE-N (+ nnode 1))
+        M7 (lw-put M6 MM-LIT-N (+ nlit 1))
+        M8 (lw-put M7 MM-LITB-N (+ nlitb 1))
+        M9 (lw-put M8 MM-ROOT 1)]
+    (lw-put M9 MM-ERR (t-rl-empty ntok))))
+(defn- t-rl-empty [ntok :i64] :i64 (if (= ntok 0) 1 0))
+(defn- t-rl-root [M0 :vector-i64 S :string] :vector-i64 (lw-put M0 MM-R0 1))

@@ -1,0 +1,18 @@
+;; seed/tests/io-bytes/io_bytes_t.kotoba -- test of seed/02-io-bytes.snippet.kotoba (assembled by scripts/seed/io_bytes_check.sh).
+;; argv: 0 = scratch directory (inside KEXE_CAP_RESOURCES_35), 1 = byte count n. Writes <scratch>/b.bin with n bytes
+;; of the pattern (i*7 + (i >> 8)) & 255 and <scratch>/b0.bin with 0 bytes; the shell side compares the files.
+(defn- t-fillb [M0 :vector-i64 base :i64 i :i64 n :i64] :vector-i64
+  (if (>= i n) (mem-keep M0) (t-fillb (vector-assoc! M0 (+ base i) (bit-and (+ (* i 7) (u64-shift-right i 8)) 255)) base (+ i 1) n)))
+
+(defn- seed-main [] :i64
+  (let [scratch (io-arg 0)
+        sn (io-arg 1)
+        n (mem-parse-dec sn 0 (string-length sn))
+        M0 (mem-new)
+        M1 (t-fillb M0 1000 0 n)
+        r (io-write-bytes M1 (string-concat scratch "/b.bin") 1000 n)
+        r0 (io-write-bytes M1 (string-concat scratch "/b0.bin") 1000 0)
+        M2 (io-check-write M1 (string-concat scratch "/b.bin"))
+        e (vector-at M2 MM-ERR)
+        o (io-out (string-concat "wrote " (string-concat (mem-u2dec r) (string-concat " err " (string-concat (mem-u2dec e) "\n")))))]
+    e))

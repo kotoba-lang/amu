@@ -1,0 +1,80 @@
+(ns kotoba.compiler.refactor-graph-test
+  "`amu refactor graph / partition / split`: the reference graph is scope aware, cycles are atoms, a partition is a
+  DAG of modules, and a split loses and duplicates nothing (the roundtrip)."
+  (:require [cljs.test :refer [deftest is testing]]
+            [clojure.string :as str]
+            [kotoba.compiler.refactor.graph :as graph]
+            [kotoba.compiler.refactor.partition :as partition]
+            [kotoba.compiler.refactor.extract :as extract]))
+
+(def src
+  (str "(ns g.x\n  \"doc\"\n  (:require [clojure.string :as str]\n            #?@(:kotoba [] :default [[clojure.set :as set]])))\n\n"
+       "(def ^:dynamic *depth* 0)\n"
+       ";; the leaves\n"
+       "(defn leaf-a [x] (inc x))\n"
+       "(defn leaf-b [x] (leaf-a (* 2 x)))\n"
+       "(defn pass-one [x] (str/trim (str (leaf-a x))))\n"
+       "(defn pass-two [x] (binding [*depth* 1] (leaf-b x)))\n"
+       "(defn pass-three [x] (let [leaf-a 3] (+ leaf-a x)))\n"
+       "(defn- helper [x] (pass-one x))\n"
+       "(declare later)\n"
+       "(defn driver [x] (+ (pass-one x) (pass-two x) (pass-three x) (helper x) (later x)))\n"
+       "(defn later [x] (leaf-b x))\n"
+       "(defn even-n [n] (if (zero? n) true (odd-n (dec n))))\n"
+       "(defn odd-n [n] (if (zero? n) false (even-n (dec n))))\n"
+       "#?(:kotoba (defn only-kotoba [x] (leaf-a x)) :default (defn only-host [x] (leaf-b x)))\n"))
+
+(defn- idx-of [a nm] (:idx (first (filter #(some #{nm} (:names %)) (:chunks a)))))
+(defn- edge? [a from to] (contains? (nth (:adj a) (idx-of a from)) (idx-of a to)))
+
+(deftest graph-is-scope-aware
+  (let [a (graph/analysis src)]
+    (is (= 14 (count (:chunks a))) "ns + 12 definitions + the declare")
+    (is (edge? a "leaf-b" "leaf-a"))
+    (is (edge? a "driver" "later") "a forward (declared) reference is still an edge")
+    (is (not (edge? a "pass-three" "leaf-a")) "a local named like a top-level function is not a reference")
+    (is (edge? a "pass-two" "*depth*") "binding a dynamic var is a reference to it")
+    (is (= #{"*depth*"} (:binds (nth (:chunks a) (idx-of a "pass-two")))))
+    (is (some #(= #{"*depth*"} (:binds %)) (:chunks a)))
+    (testing "every reader-conditional branch is analysed"
+      (is (edge? a "only-kotoba" "leaf-a"))
+      (is (edge? a "only-host" "leaf-b")))
+    (testing "mutual recursion is one strongly connected component"
+      (is (some #(= (set %) #{(idx-of a "even-n") (idx-of a "odd-n")}) (:comps a))))))
+
+(deftest graph-data-shape
+  (let [a (graph/analysis src)
+        g (graph/graph-data a (:adj a) (:comps a) src)]
+    (is (= :kotoba.refactor/v1 (:format g)))
+    (is (= 14 (:source-forms g)))
+    (is (= [{:size 2 :lines 2 :members [(idx-of a "even-n") (idx-of a "odd-n")]}] (:sccs g)))
+    (is (= {"*depth*" {:defined-in (idx-of a "*depth*") :read-by [] :bound-by [(idx-of a "pass-two")]}} (:dynamic-vars g)))))
+
+(deftest partition-then-split-roundtrips
+  (let [a (graph/analysis src)
+        p (partition/partition-data a 2 {:min-root 1 :min-lines 1})
+        mods (:modules p)]
+    (is (= 0 (:edges-backward-blocking p)) "the module graph is a DAG: a dependency never sits in a later module")
+    (is (= (count (filter #(seq (:names %)) (:chunks a))) (reduce + (map :forms mods))) "every defining form is placed once")
+    (is (= (set (map :idx (filter #(seq (:names %)) (:chunks a)))) (set (mapcat :chunks mods))))
+    (is (some #(= #{(idx-of a "even-n") (idx-of a "odd-n")} (set (filter #{(idx-of a "even-n") (idx-of a "odd-n")} (:chunks %)))) mods)
+        "a cycle is never cut")
+    (let [ex (extract/extract src p {})
+          rt (extract/roundtrip src ex)]
+      (is (:ok rt) (pr-str rt))
+      (is (= 0 (:missing rt)))
+      (is (= 0 (:extra rt)))
+      (is (= (:defined-names rt) (:facade-names rt)))
+      (is (contains? (:files ex) "g/x.cljk") "the facade keeps the original namespace")
+      (let [facade (get (:files ex) "g/x.cljk")]
+        (is (str/includes? facade "(def ^:private helper "))
+        (is (str/includes? facade "(def ^:dynamic *depth* "))
+        (is (str/includes? facade "#?(:kotoba nil :default (def only-host ")))
+      (testing "a form moved out of its namespace is importable: defn- becomes defn, ^:private goes"
+        (is (not-any? #(str/includes? % "defn- helper") (vals (dissoc (:files ex) "g/x.cljk"))))))))
+
+(deftest split-refuses-a-foreign-partition
+  (let [a (graph/analysis src)
+        p (partition/partition-data a 2 {:min-root 1 :min-lines 1})
+        other (update-in p [:modules 0 :chunks] (fn [c] (vec (rest c))))]
+    (is (thrown-with-msg? js/Error #"does not place every defining form" (extract/extract src other {})))))

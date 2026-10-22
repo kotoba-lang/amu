@@ -1,0 +1,7 @@
+;; R4B caps: wire 34 :fs/browse (:string :string): the sorted NAME<TAB>D lines of a directory (grant 34; run with
+;; KEXE_CAP_RESOURCES_34 = seed/tests/r4b/caps/res and the absolute directory path passed by the harness in SEED_R4B_DIR)
+(ns seed.r4b (:export [test]))
+(defn test [] :i64
+  (let [d (typed-cap-call :env/read :string :string "SEED_R4B_DIR")
+        s (typed-cap-call :fs/browse :string :string d)]
+    (string-length s)))

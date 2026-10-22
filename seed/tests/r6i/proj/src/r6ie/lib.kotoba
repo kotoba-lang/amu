@@ -1,0 +1,6 @@
+;; R6I (LET) project case: an aborting export whose error type is a record crosses the module boundary (was E6017).
+(ns r6ie.lib (:export [need-pos err-code])
+  (:schemas {:r6ie/err [:record :r6ie/err [[:code :i64] [:msg :string]]]}))
+(defn need-pos [x :i64] :i64
+  (if (< x 0) (throw (record-new [:ref :r6ie/err] (- 0 x) "negative")) x))
+(defn err-code [e [:ref :r6ie/err]] :i64 (record-get [:ref :r6ie/err] e :code))

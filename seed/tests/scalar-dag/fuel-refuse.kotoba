@@ -1,0 +1,3 @@
+(ns dag.fuel-refuse (:export [scalar run]))
+(defn scalar [a :i64 b :i64] :i64 (loop [i 0 s b] (if (>= i a) s (recur (+ i 1) (+ s i)))))
+(defn run [x :i64 y :i64] :i64 (let [r (scalar (bit-and x 3) y)] (+ r x)))

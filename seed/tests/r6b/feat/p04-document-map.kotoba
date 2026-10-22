@@ -1,0 +1,14 @@
+;; want: 17142211
+;; R6B :document in the source route: map/vector/assoc/dissoc/get/count/equal (want = stage-0 d2cb84f6's answer)
+(ns p04 (:export [main]))
+(defn- k [d :document] :i64 (string-length (document-edn-print d)))
+(defn main [] :i64
+  (let [m (document-map (document-keyword :b) (document-i64 2) (document-keyword :a) (document-string "x"))
+        v (document-vector-conj (document-vector-conj (document-vector) (document-i64 7)) m)
+        n (document-count m)
+        g (option-or (document-i64-value (option-or (document-get m (document-keyword :b)) (document-null))) -1)
+        s (option-or (document-string-value (option-or (document-get m (document-keyword :a)) (document-null))) "")
+        m2 (document-assoc m (document-keyword :c) (document-bool true))
+        m3 (document-dissoc m2 (document-keyword :a))]
+    (+ (* 1000000 (k v)) (* 10000 (k m3)) (* 1000 n) (* 100 g) (* 10 (string-length s))
+       (if (document-equal? m (document-dissoc m2 (document-keyword :c))) 1 0))))

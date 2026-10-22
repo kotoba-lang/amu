@@ -1,0 +1,6 @@
+;; R6F: a vector literal of literals only is the closed tuple [:vector [:string :string]], not a [:list :string] (stage-0
+;; d2cb84f6: "expression type mismatch: expected [:list :string], got [:vector [:string :string]]").
+;; want: E2104
+(ns r6f.n02)
+(defn- cnt [xs [:list :string]] :i64 (count xs))
+(defn main [] :i64 (cnt ["ab" "cd"]))

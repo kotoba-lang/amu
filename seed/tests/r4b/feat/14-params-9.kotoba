@@ -1,0 +1,7 @@
+;; R4B feat: 9 parameters (two stack-passed), a leaf callee and a non-leaf caller that forwards stack parameters
+(ns seed.r4b (:export [test]))
+(defn- leaf9 [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64 g :i64 h :i64 i :i64] :i64
+  (+ a (* 10 b) (* 100 c) (* 1000 d) (* 10000 e) (* 100000 f) (* 1000000 g) (* 10000000 h) (* 100000000 i)))
+(defn- fwd9 [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64 g :i64 h :i64 i :i64] :i64
+  (+ (leaf9 i h g f e d c b a) (leaf9 a b c d e f g h i)))
+(defn test [] :i64 (fwd9 1 2 3 4 5 6 7 8 9))

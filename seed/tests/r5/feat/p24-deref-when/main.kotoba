@@ -1,0 +1,6 @@
+(ns p24.main (:export [main]))
+(defn- f [n :i64] :i64
+  (let [a (atom 10)]
+    (when (> n 0) (swap! a + n))
+    (do (reset! a (* (deref a) 2)) (deref a))))
+(defn main [] :i64 (+ (f 1) (* 1000 (f 0))))

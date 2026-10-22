@@ -1,6 +1,8 @@
 # ADR 0162: Reliability T4.2 string kit — bounded `string-join`
 
-- Status: Accepted
+- Status: Accepted. Amended by ADR 0354: the 8-part cap is removed (it was the
+  size of the unrolled expansion, not a semantic bound); the "no new wasm
+  intrinsics" constraint no longer limits the language.
 - Date: 2026-07-28
 - WBS: T4.2
 

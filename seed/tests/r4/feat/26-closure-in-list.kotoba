@@ -1,0 +1,7 @@
+;; R4 feat: reduce over the results of map with closures built per item
+(ns seed.r4 (:export [test]))
+(defn ap [f [:fn [[:i64] :i64]] x :i64] :i64 (f x))
+(defn test [] :i64
+  (let [ks [1 2 3]
+        v (map (fn [k] (ap (fn [x] (* x k)) 10)) ks)]
+    (reduce (fn [a x] (+ a x)) 0 v)))

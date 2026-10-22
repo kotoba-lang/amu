@@ -1,0 +1,13 @@
+;; R6F: (get d k) on a :document is [:option :document]; some?/nil? of an option are the option test; symbol? on a document;
+;; reduce over a vector document. {:a 1} has :a (1), not :b (nil? -> 1); (symbol? (document-edn-read "foo")) 1;
+;; reduce + over [1 2 3] = 6.
+;; want: 1116
+(ns r6f.p07)
+(defn- add [acc :i64 d :document] :i64 (+ acc (option-value-of [:option :i64] (document-i64-value d) 0)))
+(defn main [] :i64
+  (let [d (document-edn-read "{:a 1}")
+        v (document-edn-read "[1 2 3]")]
+    (+ (* 1000 (if (some? (get d :a)) 1 0))
+       (* 100 (if (nil? (get d :b)) 1 0))
+       (* 10 (if (symbol? (document-edn-read "foo")) 1 0))
+       (reduce add 0 v))))

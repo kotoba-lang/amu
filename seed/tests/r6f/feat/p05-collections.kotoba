@@ -1,0 +1,17 @@
+;; R6F: = on strings, reduce over a [:list :string], a vector literal with a non-literal item as a [:list T] (stage-0: a vector
+;; of literals only is the closed tuple, refused there), vector-get, contains? on
+;; a keyword set, a closure capturing a :keyword. "ab"="ab" 1; lengths 2+3 = 5; count 2; vector-get [7 8] 5 -1 = -1, 1 -> 8;
+;; contains? #{:a :b} :b 1; captured keyword compared inside filter-like reduce: 2 matches.
+;; want: 1528812
+(ns r6f.p05)
+(defn- lens [xs [:list :string]] :i64 (reduce (fn [acc s] (+ acc (string-length s))) 0 xs))
+(defn- cnt [xs [:list :string]] :i64 (count xs))
+(defn- hits [k :keyword ks [:list :keyword]] :i64 (reduce (fn [acc x] (if (= x k) (+ acc 1) acc)) 0 ks))
+(defn main [] :i64
+  (+ (* 1000000 (if (= "ab" (string-concat "a" "b")) 1 0))
+     (* 100000 (lens [(string-concat "a" "b") "cde"]))
+     (* 10000 (cnt [(string-concat "x" "") "y"]))
+     (* 1000 (+ 9 (vector-get [7 8] 5 -1)))
+     (* 100 (vector-get [7 8] 1 -1))
+     (* 10 (if (contains? #{:a :b} :b) 1 0))
+     (hits :q [(keyword-from-string "q") :r :q])))

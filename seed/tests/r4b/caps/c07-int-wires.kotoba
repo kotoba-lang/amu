@@ -1,0 +1,6 @@
+;; R4B caps: wire ids as integer literals (the spelling of stage-0's KIR, admitted by stage-0 in source too): 3, 33, 35
+(ns seed.r4b (:export [test]))
+(defn test [] :i64
+  (+ (string-length (typed-cap-call 3 :string :string "abc"))
+     (* 100 (string-length (typed-cap-call 33 :string :string "SEED_R4B_SURELY_UNSET_VARIABLE")))
+     (* 1000 (bytes-count (typed-cap-call 35 :string :bytes (typed-cap-call 33 :string :string "SEED_R4B_FILE"))))))

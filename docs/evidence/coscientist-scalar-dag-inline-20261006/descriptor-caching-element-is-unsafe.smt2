@@ -1,0 +1,11 @@
+(declare-fun cachedItem () Int)
+(declare-fun newValue () Int)
+(declare-fun writeAt () Int)
+(declare-fun items () (Array Int Int))
+(assert (= cachedItem 0))
+(assert (= newValue 99))
+(assert (distinct (select (store items writeAt newValue) writeAt) cachedItem))
+(model-add cachedItem () Int 0)
+(model-add newValue () Int 99)
+
+(check-sat)

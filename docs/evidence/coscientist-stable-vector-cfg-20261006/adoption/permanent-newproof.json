@@ -1,0 +1,1791 @@
+{
+  "status": "PASS standalone typed native readonly-loop regressions",
+  "seedSha256": "eab3a7c26eac2fdf32a3d4736fd8dd1c159b811a6dc6b5ef0f69c1d44b798406",
+  "loaderSha256": "8fc787ca556773b6991b44f51e0d4fdec52cf93ef37673cb289eb726c98dff64",
+  "sources": {
+    "framed-alias.kotoba": "2f2290a1f1e56dc2a4f292ce27bd382365f1a86713c60d0b3c8fe55812ca2408",
+    "framed-diamond.kotoba": "1bee0a5cc9380b1b4b3880fc757ea48a0d4b9b92fd571bb8853d4c1670f88256",
+    "same-vector-phi.kotoba": "d6fd09355272c753a525517972dca8afc95146d37e693538edb9739ebc3cd58f",
+    "framed-call.kotoba": "4cfb6924b139c3618ef77ccfda80884054aa59a5d19eec6d2ea3afa00c46b7e7",
+    "upper-index.kotoba": "a8b7f2dd2004c2aa6ca53fad043a58ffcb507442d3397b051759b248a49edd2a",
+    "framed-loop-diamond.kotoba": "693022d1cdf80398b8327ff125128351fc6ee5bff8217fb17a7305f41981094f",
+    "loop-first-read.kotoba": "7ff56f4fc0e7a85321ed929062efbeb747705a4700ef9d4902df03c72683a55b",
+    "negative-index.kotoba": "70c2dd758b2f046c02a4a0a47d1ada4161555be46f77e93ed84226d5c22db9ca",
+    "framed-vector-change.kotoba": "aa250ca851833e9ee4a58d5fbfd41db188435b328a65477ba07fa89a29b5d75f"
+  },
+  "controls": [
+    {
+      "case": "framed-diamond",
+      "symbol": "run",
+      "inputs": [
+        0
+      ],
+      "fuel": 1048576,
+      "expected": 11,
+      "expectedConsumed": 2,
+      "exit": 0,
+      "stdout": "{:status :ok :result 11 :fuel {:initial 1048576 :remaining 1048574} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-diamond",
+      "symbol": "run",
+      "inputs": [
+        1
+      ],
+      "fuel": 1048576,
+      "expected": 54,
+      "expectedConsumed": 3,
+      "exit": 0,
+      "stdout": "{:status :ok :result 54 :fuel {:initial 1048576 :remaining 1048573} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-diamond",
+      "symbol": "run",
+      "inputs": [
+        2
+      ],
+      "fuel": 1048576,
+      "expected": 97,
+      "expectedConsumed": 4,
+      "exit": 0,
+      "stdout": "{:status :ok :result 97 :fuel {:initial 1048576 :remaining 1048572} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-diamond",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1048576,
+      "expected": 183,
+      "expectedConsumed": 6,
+      "exit": 0,
+      "stdout": "{:status :ok :result 183 :fuel {:initial 1048576 :remaining 1048570} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-diamond",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1,
+      "expected": null,
+      "expectedConsumed": 1,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1 :remaining 0} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGTRAP}\nKEXE_TRAP {:kind :budget :reason :budget/fuel}\n"
+    },
+    {
+      "case": "framed-diamond",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-diamond",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-diamond",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-diamond",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-diamond",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-diamond",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-diamond",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-diamond",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-loop-diamond",
+      "symbol": "run",
+      "inputs": [
+        0
+      ],
+      "fuel": 1048576,
+      "expected": 11,
+      "expectedConsumed": 2,
+      "exit": 0,
+      "stdout": "{:status :ok :result 11 :fuel {:initial 1048576 :remaining 1048574} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-loop-diamond",
+      "symbol": "run",
+      "inputs": [
+        1
+      ],
+      "fuel": 1048576,
+      "expected": 54,
+      "expectedConsumed": 3,
+      "exit": 0,
+      "stdout": "{:status :ok :result 54 :fuel {:initial 1048576 :remaining 1048573} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-loop-diamond",
+      "symbol": "run",
+      "inputs": [
+        2
+      ],
+      "fuel": 1048576,
+      "expected": 97,
+      "expectedConsumed": 4,
+      "exit": 0,
+      "stdout": "{:status :ok :result 97 :fuel {:initial 1048576 :remaining 1048572} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-loop-diamond",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1048576,
+      "expected": 183,
+      "expectedConsumed": 6,
+      "exit": 0,
+      "stdout": "{:status :ok :result 183 :fuel {:initial 1048576 :remaining 1048570} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-loop-diamond",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1,
+      "expected": null,
+      "expectedConsumed": 1,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1 :remaining 0} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGTRAP}\nKEXE_TRAP {:kind :budget :reason :budget/fuel}\n"
+    },
+    {
+      "case": "framed-loop-diamond",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-loop-diamond",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-loop-diamond",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-loop-diamond",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-loop-diamond",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-loop-diamond",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-loop-diamond",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-loop-diamond",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-vector-change",
+      "symbol": "run",
+      "inputs": [
+        0
+      ],
+      "fuel": 1048576,
+      "expected": 11,
+      "expectedConsumed": 2,
+      "exit": 0,
+      "stdout": "{:status :ok :result 11 :fuel {:initial 1048576 :remaining 1048574} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-vector-change",
+      "symbol": "run",
+      "inputs": [
+        1
+      ],
+      "fuel": 1048576,
+      "expected": 50,
+      "expectedConsumed": 3,
+      "exit": 0,
+      "stdout": "{:status :ok :result 50 :fuel {:initial 1048576 :remaining 1048573} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 2} :vector-items {:capacity 65536 :used 4}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-vector-change",
+      "symbol": "run",
+      "inputs": [
+        2
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048573} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 2} :vector-items {:capacity 65536 :used 4}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-vector-change",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048573} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 2} :vector-items {:capacity 65536 :used 4}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-vector-change",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1,
+      "expected": null,
+      "expectedConsumed": 1,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1 :remaining 0} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGTRAP}\nKEXE_TRAP {:kind :budget :reason :budget/fuel}\n"
+    },
+    {
+      "case": "framed-vector-change",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-vector-change",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-vector-change",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-vector-change",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-vector-change",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-vector-change",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-vector-change",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-vector-change",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-alias",
+      "symbol": "run",
+      "inputs": [
+        0
+      ],
+      "fuel": 1048576,
+      "expected": 11,
+      "expectedConsumed": 2,
+      "exit": 0,
+      "stdout": "{:status :ok :result 11 :fuel {:initial 1048576 :remaining 1048574} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-alias",
+      "symbol": "run",
+      "inputs": [
+        1
+      ],
+      "fuel": 1048576,
+      "expected": 54,
+      "expectedConsumed": 3,
+      "exit": 0,
+      "stdout": "{:status :ok :result 54 :fuel {:initial 1048576 :remaining 1048573} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-alias",
+      "symbol": "run",
+      "inputs": [
+        2
+      ],
+      "fuel": 1048576,
+      "expected": 97,
+      "expectedConsumed": 4,
+      "exit": 0,
+      "stdout": "{:status :ok :result 97 :fuel {:initial 1048576 :remaining 1048572} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-alias",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1048576,
+      "expected": 183,
+      "expectedConsumed": 6,
+      "exit": 0,
+      "stdout": "{:status :ok :result 183 :fuel {:initial 1048576 :remaining 1048570} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-alias",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1,
+      "expected": null,
+      "expectedConsumed": 1,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1 :remaining 0} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGTRAP}\nKEXE_TRAP {:kind :budget :reason :budget/fuel}\n"
+    },
+    {
+      "case": "framed-alias",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-alias",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-alias",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-alias",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-alias",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-alias",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-alias",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-alias",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-call",
+      "symbol": "run",
+      "inputs": [
+        0
+      ],
+      "fuel": 1048576,
+      "expected": 11,
+      "expectedConsumed": 2,
+      "exit": 0,
+      "stdout": "{:status :ok :result 11 :fuel {:initial 1048576 :remaining 1048574} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-call",
+      "symbol": "run",
+      "inputs": [
+        1
+      ],
+      "fuel": 1048576,
+      "expected": 55,
+      "expectedConsumed": 3,
+      "exit": 0,
+      "stdout": "{:status :ok :result 55 :fuel {:initial 1048576 :remaining 1048573} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-call",
+      "symbol": "run",
+      "inputs": [
+        2
+      ],
+      "fuel": 1048576,
+      "expected": 143,
+      "expectedConsumed": 4,
+      "exit": 0,
+      "stdout": "{:status :ok :result 143 :fuel {:initial 1048576 :remaining 1048572} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-call",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1048576,
+      "expected": 671,
+      "expectedConsumed": 6,
+      "exit": 0,
+      "stdout": "{:status :ok :result 671 :fuel {:initial 1048576 :remaining 1048570} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "framed-call",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1,
+      "expected": null,
+      "expectedConsumed": 1,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1 :remaining 0} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGTRAP}\nKEXE_TRAP {:kind :budget :reason :budget/fuel}\n"
+    },
+    {
+      "case": "framed-call",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-call",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-call",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-call",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-call",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-call",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-call",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        0,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "framed-call",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        1,
+        1,
+        2,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "same-vector-phi",
+      "symbol": "run",
+      "inputs": [
+        0
+      ],
+      "fuel": 1048576,
+      "expected": 11,
+      "expectedConsumed": 2,
+      "exit": 0,
+      "stdout": "{:status :ok :result 11 :fuel {:initial 1048576 :remaining 1048574} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "same-vector-phi",
+      "symbol": "run",
+      "inputs": [
+        1
+      ],
+      "fuel": 1048576,
+      "expected": 24,
+      "expectedConsumed": 3,
+      "exit": 0,
+      "stdout": "{:status :ok :result 24 :fuel {:initial 1048576 :remaining 1048573} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "same-vector-phi",
+      "symbol": "run",
+      "inputs": [
+        2
+      ],
+      "fuel": 1048576,
+      "expected": 37,
+      "expectedConsumed": 4,
+      "exit": 0,
+      "stdout": "{:status :ok :result 37 :fuel {:initial 1048576 :remaining 1048572} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "same-vector-phi",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1048576,
+      "expected": 63,
+      "expectedConsumed": 6,
+      "exit": 0,
+      "stdout": "{:status :ok :result 63 :fuel {:initial 1048576 :remaining 1048570} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "same-vector-phi",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1,
+      "expected": null,
+      "expectedConsumed": 1,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1 :remaining 0} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGTRAP}\nKEXE_TRAP {:kind :budget :reason :budget/fuel}\n"
+    },
+    {
+      "case": "same-vector-phi",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "same-vector-phi",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "same-vector-phi",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "same-vector-phi",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "same-vector-phi",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "same-vector-phi",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "same-vector-phi",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "same-vector-phi",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "loop-first-read",
+      "symbol": "run",
+      "inputs": [
+        0
+      ],
+      "fuel": 1048576,
+      "expected": 0,
+      "expectedConsumed": 2,
+      "exit": 0,
+      "stdout": "{:status :ok :result 0 :fuel {:initial 1048576 :remaining 1048574} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "loop-first-read",
+      "symbol": "run",
+      "inputs": [
+        1
+      ],
+      "fuel": 1048576,
+      "expected": 30,
+      "expectedConsumed": 3,
+      "exit": 0,
+      "stdout": "{:status :ok :result 30 :fuel {:initial 1048576 :remaining 1048573} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "loop-first-read",
+      "symbol": "run",
+      "inputs": [
+        2
+      ],
+      "fuel": 1048576,
+      "expected": 60,
+      "expectedConsumed": 4,
+      "exit": 0,
+      "stdout": "{:status :ok :result 60 :fuel {:initial 1048576 :remaining 1048572} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "loop-first-read",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1048576,
+      "expected": 120,
+      "expectedConsumed": 6,
+      "exit": 0,
+      "stdout": "{:status :ok :result 120 :fuel {:initial 1048576 :remaining 1048570} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "loop-first-read",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1,
+      "expected": null,
+      "expectedConsumed": 1,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1 :remaining 0} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGTRAP}\nKEXE_TRAP {:kind :budget :reason :budget/fuel}\n"
+    },
+    {
+      "case": "loop-first-read",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": 0,
+      "expectedConsumed": 1,
+      "exit": 0,
+      "stdout": "{:status :ok :result 0 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "loop-first-read",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "loop-first-read",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": 0,
+      "expectedConsumed": 1,
+      "exit": 0,
+      "stdout": "{:status :ok :result 0 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "loop-first-read",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "loop-first-read",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": 0,
+      "expectedConsumed": 1,
+      "exit": 0,
+      "stdout": "{:status :ok :result 0 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "loop-first-read",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "loop-first-read",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": 0,
+      "expectedConsumed": 1,
+      "exit": 0,
+      "stdout": "{:status :ok :result 0 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "loop-first-read",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "negative-index",
+      "symbol": "run",
+      "inputs": [
+        0
+      ],
+      "fuel": 1048576,
+      "expected": 11,
+      "expectedConsumed": 2,
+      "exit": 0,
+      "stdout": "{:status :ok :result 11 :fuel {:initial 1048576 :remaining 1048574} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "negative-index",
+      "symbol": "run",
+      "inputs": [
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "negative-index",
+      "symbol": "run",
+      "inputs": [
+        2
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "negative-index",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "negative-index",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1,
+      "expected": null,
+      "expectedConsumed": 1,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1 :remaining 0} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGTRAP}\nKEXE_TRAP {:kind :budget :reason :budget/fuel}\n"
+    },
+    {
+      "case": "negative-index",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "negative-index",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "negative-index",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "negative-index",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "negative-index",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "negative-index",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "negative-index",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "negative-index",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "upper-index",
+      "symbol": "run",
+      "inputs": [
+        0
+      ],
+      "fuel": 1048576,
+      "expected": 11,
+      "expectedConsumed": 2,
+      "exit": 0,
+      "stdout": "{:status :ok :result 11 :fuel {:initial 1048576 :remaining 1048574} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": ""
+    },
+    {
+      "case": "upper-index",
+      "symbol": "run",
+      "inputs": [
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "upper-index",
+      "symbol": "run",
+      "inputs": [
+        2
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "upper-index",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048575} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "upper-index",
+      "symbol": "run",
+      "inputs": [
+        4
+      ],
+      "fuel": 1,
+      "expected": null,
+      "expectedConsumed": 1,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1 :remaining 0} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 1} :vector-items {:capacity 65536 :used 3}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGTRAP}\nKEXE_TRAP {:kind :budget :reason :budget/fuel}\n"
+    },
+    {
+      "case": "upper-index",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "upper-index",
+      "symbol": "walk",
+      "inputs": [
+        0,
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "upper-index",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "upper-index",
+      "symbol": "walk",
+      "inputs": [
+        1,
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "upper-index",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "upper-index",
+      "symbol": "walk",
+      "inputs": [
+        -1,
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "upper-index",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        0
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "case": "upper-index",
+      "symbol": "walk",
+      "inputs": [
+        9223372036854775807,
+        1
+      ],
+      "fuel": 1048576,
+      "expected": null,
+      "expectedConsumed": null,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 1048576 :remaining 1048576} :heap {:capacity 4096 :used 0} :string-pool {:capacity 65536 :used 0} :vectors {:capacity 4096 :used 0} :vector-items {:capacity 65536 :used 0}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    }
+  ],
+  "physicalChecks": [
+    {
+      "case": "framed-diamond",
+      "expectedAdmitted": true,
+      "physicalGuardSites": [
+        14,
+        34,
+        52,
+        75
+      ]
+    },
+    {
+      "case": "framed-loop-diamond",
+      "expectedAdmitted": true,
+      "physicalGuardSites": [
+        20,
+        40,
+        58,
+        81
+      ]
+    },
+    {
+      "case": "framed-vector-change",
+      "expectedAdmitted": false,
+      "physicalGuardSites": []
+    },
+    {
+      "case": "framed-alias",
+      "expectedAdmitted": false,
+      "physicalGuardSites": []
+    },
+    {
+      "case": "framed-call",
+      "expectedAdmitted": false,
+      "physicalGuardSites": []
+    },
+    {
+      "case": "same-vector-phi",
+      "expectedAdmitted": false,
+      "physicalGuardSites": []
+    },
+    {
+      "case": "loop-first-read",
+      "expectedAdmitted": false,
+      "physicalGuardSites": []
+    },
+    {
+      "case": "negative-index",
+      "expectedAdmitted": false,
+      "physicalGuardSites": []
+    },
+    {
+      "case": "upper-index",
+      "expectedAdmitted": false,
+      "physicalGuardSites": []
+    }
+  ],
+  "nativeObservations": 117,
+  "performanceClaim": false,
+  "limits": "Finite typed meaning/fuel/trap/entry and concrete guarded emission controls; not general equivalence or observer admission proof."
+}

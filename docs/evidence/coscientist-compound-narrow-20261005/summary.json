@@ -1,0 +1,126 @@
+{
+  "status": "native-qualified-candidate-performance-promotion-rejected",
+  "hypothesis": {
+    "hypothesis": "Exact pure scalar dependency chain signed16(x), multiply by adjacent constant |factor|<=4095, +128, exact wrapped-floor divisor256, signed16, can replace all calls with six arithmetic instructions, because narrowed product cannot overflow. Preserve every entry fuel charge.",
+    "promotion": "30 fresh rotating quiet baseline/candidate/C triples; >=5% speedup and gap>sumSD; unchanged canonical workload, native correctness and fixedpoint.",
+    "sourceHead": "4feb0fa773f98f55c25625fdc19419e5711efc9b",
+    "exception": "One-off new compiler algorithm authoring, not mechanical refactoring"
+  },
+  "generations": [
+    {
+      "generation": 1,
+      "bytes": 830824,
+      "sha256": "b02d380a7a7b782c76f62caaf30bf68649919951a80a71b780a8b3d0f33aeacd"
+    },
+    {
+      "generation": 2,
+      "bytes": 830824,
+      "sha256": "b02d380a7a7b782c76f62caaf30bf68649919951a80a71b780a8b3d0f33aeacd"
+    },
+    {
+      "generation": 3,
+      "bytes": 830824,
+      "sha256": "b02d380a7a7b782c76f62caaf30bf68649919951a80a71b780a8b3d0f33aeacd"
+    },
+    {
+      "generation": 4,
+      "bytes": 830824,
+      "sha256": "b02d380a7a7b782c76f62caaf30bf68649919951a80a71b780a8b3d0f33aeacd"
+    }
+  ],
+  "canonical": {
+    "workloads": 19,
+    "exactResultsAndFuel": true,
+    "exhaustionParity": true,
+    "changedBinaries": [
+      "picojpeg"
+    ]
+  },
+  "bulk": {
+    "status": "complete-exact-8192-cell-parity",
+    "bodies": [
+      1,
+      2
+    ],
+    "cellsPerBody": 4096,
+    "stdoutSha256": "76f80ab5a80a2de8d2f1e9d0a01340169d9f8a3a606e6fb44e7c1a1a8218719a",
+    "observerSourceSha256": "26fbe3078519121c43292a5624a1f44d7697a8f6449b9cf9554d19591f1303a8",
+    "timedSourceUnchanged": true
+  },
+  "fixtures": {
+    "runs": 2814,
+    "fixtures": 241,
+    "realTestLayoutIdentical": true,
+    "instructionAudit": {
+      "call_tr000_362": {
+        "directBL": 0,
+        "directB": 0,
+        "SDIV": 0,
+        "bytes": 76
+      },
+      "call_tr111_-4095": {
+        "directBL": 0,
+        "directB": 0,
+        "SDIV": 0,
+        "bytes": 140
+      },
+      "high_tr101": {
+        "directBL": 0,
+        "directB": 0,
+        "SDIV": 0,
+        "bytes": 132
+      },
+      "const_tr111": {
+        "directBL": 0,
+        "directB": 0,
+        "SDIV": 0,
+        "bytes": 116
+      },
+      "fallback_tr000_4096": {
+        "directBL": 0,
+        "directB": 1,
+        "SDIV": 0,
+        "bytes": 92
+      }
+    }
+  },
+  "signedSourceGuestComparisons": 3724,
+  "nearMatchingDependencyGuestComparisons": 322,
+  "sourceProbeFuel": "Positive fuel-budget result/trap parity only; native loader consumed counter unavailable. Canonical runner separately proves exact fuel.",
+  "performance": {
+    "baseline": {
+      "meanNsPerBody": 261432.29166666666,
+      "sdNs": 6962.104736801922,
+      "relativeSd": 0.026630622760553224,
+      "samples": 30
+    },
+    "candidate": {
+      "meanNsPerBody": 254157.79842342343,
+      "sdNs": 4071.7951050624356,
+      "relativeSd": 0.016020736449246703,
+      "samples": 30
+    },
+    "C": {
+      "meanNsPerBody": 10886.813822751323,
+      "sdNs": 106.11165105833231,
+      "relativeSd": 0.00974680496846374,
+      "samples": 30
+    },
+    "stable": true,
+    "baselineOverCandidate": 1.0286219556840983,
+    "candidateOverC": 23.345471187564822,
+    "candidateImprovesBaseline": false
+  },
+  "meanGapNs": 7274.493243243225,
+  "summedSdNs": 11033.899841864357,
+  "fractionLessTime": 0.027825534469622437,
+  "decision": "reject; less than 5% speedup and gap less than summed SD",
+  "canonicalSourceSha256": "f570d637a074437c8bf80dccd646efae834962a312f0cea72638f5376350b8cd",
+  "nativeCodeBytes": 45228,
+  "baselineCodeBytes": 45092,
+  "prototypeOnly": true,
+  "officialEmbenchScore": false,
+  "formalPerfgateQualified": false,
+  "COrBetterAchieved": false,
+  "nextHypothesis": "Use native dynamic function/fuel counts to locate the dominant cost, preserving full canonical workload. A body consumes 222003 fuel units; local scalar transformations have not separated from variation. Do not weaken fuel semantics or compare memoized results against fresh C execution."
+}

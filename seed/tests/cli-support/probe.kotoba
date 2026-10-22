@@ -1,0 +1,54 @@
+;; The Kotoba readings of kotoba.compiler.nbb.cli-support's policy / build-metadata / artifact helpers, run on the
+;; seed route (seed/tests/cli-support/run.sh). `main`:
+;;   checks <policy.edn> <artifact.edn>  -> 0 when all ten checks pass, else the bits of the failing ones (1..1023);
+;;                                          an abort answers -1
+;;   refuse <fuel-text>                  -> 1 when emit-metadata refuses with the host's message, 0 when it admits
+(ns cstest.probe
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.nbb.cli-support :as support]
+            [kotoba.form :as form])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]}))
+
+(defn- kw [k :keyword] [:ref :form/r] (form/keyword-form k))
+(defn- strs2 [a :string b :string] [:list :string] (conj (conj (typed-list-new [:list :string]) a) b))
+(defn- strs4 [a :string b :string c :string d :string] [:list :string] (conj (conj (strs2 a b) c) d))
+(defn- bit [ok :bool n :i64] :i64 (if ok n 0))
+(defn- empty-map [] [:ref :form/r] (form/form-map (form/no-forms)))
+
+(defn- checks [policy-path :string artifact-path :string] :i64
+  (let [md (support/emit-metadata (strs4 "compile" "x.kotoba" "--fuel" "100"))
+        md0 (support/emit-metadata (strs2 "compile" "x.kotoba"))
+        f1 (support/oracle-fuel md (empty-map))
+        budget (form/assoc-form (empty-map) (kw :budgets) (form/assoc-form (empty-map) (kw :fuel) (form/int-form 7)))
+        f2 (support/oracle-fuel md0 budget)
+        f3 (support/oracle-fuel md0 (empty-map))
+        pol (support/read-policy (strs4 "compile" "x.kotoba" "--policy" policy-path))
+        nopol (support/read-policy (strs2 "compile" "x.kotoba"))
+        cap (support/capability-policy pol)
+        art (support/read-artifact-file! artifact-path)
+        t (support/timed "phase" (fn [] (form/int-form 5)))]
+    (+ (bit (= 100 (form/int-value (form/form-get md (kw :fuel)))) 1)
+       (bit (= 0 (form/count-of md0)) 2)
+       (bit (= 100 (option-value-of [:option :i64] f1 -1)) 4)
+       (bit (= 7 (option-value-of [:option :i64] f2 -1)) 8)
+       (bit (not (option-some?-of [:option :i64] f3)) 16)
+       (bit (= 9 (form/int-value (form/form-get (form/form-get pol (kw :budgets)) (kw :fuel)))) 32)
+       (bit (= 0 (form/count-of nopol)) 64)
+       (bit (and (form/form-has? cap (kw :allow)) (not (form/form-has? cap (kw :budgets)))
+                 (not (form/form-has? cap (kw :language-profile)))) 128)
+       (bit (and (form/is-map? art) (form/form-has? art (kw :code))) 256)
+       (bit (= 5 (form/int-value t)) 512))))
+
+(defn- refuses? [fuel :string] :i64
+  (try (let [m (support/emit-metadata (strs4 "compile" "x.kotoba" "--fuel" fuel))] 0)
+       (catch e (if (string=? (ex-message e) "--fuel must be a positive decimal integer") 1 2))))
+
+(defn main [] :i64
+  (let [args (support/command-line-args)
+        n (vector-count args)]
+    (if (and (= n 3) (string=? (typed-list-nth [:list :string] args 0) "checks"))
+      (try (- 1023 (checks (typed-list-nth [:list :string] args 1) (typed-list-nth [:list :string] args 2))) (catch e -1))
+      (if (and (= n 2) (string=? (typed-list-nth [:list :string] args 0) "refuse"))
+        (refuses? (typed-list-nth [:list :string] args 1))
+        -2))))

@@ -1,0 +1,35 @@
+(ns wall2.effects
+  "WALL2 test driver: the Kotoba readings of kotoba.compiler.effect-row/check (with effect-classification and
+  capability-names), compiled by the seed and run natively.
+    effects <cases-file> <n>   runs line N (0-based) of the file, `ROW<TAB>POLICY` as EDN, and prints
+                               `OK ` + the result as EDN, or `REFUSED ` + the refusal message."
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.effect-row :as effect-row]
+            [kotoba.compiler.frontend.base :as base]
+            [kotoba.form :as form])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]}))
+
+(defn- arg [i :i64] :string (typed-cap-call :cli/args :string :string (string-from-i64 i)))
+
+(defn- out [s :string] :i64 (let [r (typed-cap-call :io/write :string :string s)] 0))
+
+(defn- dec-from [s :string i :i64 n :i64 acc :i64] :i64
+  (if (>= i n) acc (dec-from s (+ i 1) n (+ (* acc 10) (- (string-code-point-at s i) 48)))))
+
+;; the byte offset where line N of TEXT starts
+(defn- line-start [text :string n :i64 i :i64] :i64
+  (if (= n 0) i (line-start text (- n 1) (+ 1 (string-find-byte text 10 i)))))
+
+(defn- run [] :string
+  (let [text (typed-cap-call :fs/app-data :string :string (arg 0))
+        a (line-start text (dec-from (arg 1) 0 (string-length (arg 1)) 0) 0)
+        e (string-find-byte text 10 a)
+        tab (string-find-byte text 9 a)
+        row (form/edn-form (string-substring text a tab))
+        policy (form/edn-form (string-substring text (+ tab 1) e))
+        hir (form/assoc-form (form/form-map (form/no-forms)) (form/keyword-form :effects) row)]
+    (string-concat "OK " (base/pr-form (effect-row/check hir policy)))))
+
+(defn main [] :i64
+  (out (try (run) (catch e (string-concat "REFUSED " (ex-message e))))))

@@ -1,0 +1,17 @@
+(ns amu.check
+  {:kotoba/export [run]}
+  (:require [amu.launch :as launch]
+            [kotoba.compiler.nbb.check-cli :as product]))
+
+;; seed/amu-main/k/amu/check.kotoba -- the PRODUCT `amu check` of the native image (agent claude, 2026-10-10).
+;;
+;; The command is the product entry nbb.check-cli's Kotoba `run` (the body of its `main`): check-driver's Kotoba
+;; `check!` for one file or a `--source-path` graph, with `--policy`, printing the host's `:kotoba.check/v1` answer map
+;; (`bin/amu check`'s answer; its named difference: `:definitions` is definition-identity's unavailability marker);
+;; a refusal is cli-support's `:kotoba.cli-error/v1` report with the host's exit code for its phase. The argument list
+;; is bin/amu's (amu.launch: `--jvm-free` dropped).
+;;
+;; Until 2026-10-10 this module ran amu.check-full (seed/amu-main/src/amu/check_full.kotoba, agent CHECKFULL): stage-0's
+;; human report line and texts. That module stays in the tree and is no longer linked.
+
+(defn run [] :i64 (product/run (launch/args)))

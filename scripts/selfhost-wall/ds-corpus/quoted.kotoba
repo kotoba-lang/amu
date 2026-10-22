@@ -1,0 +1,48 @@
+(ns ds.quoted)
+
+;; quoted symbol data: a symbol, a symbol set, a symbol-key map, a symbol vector, and their refusals by name
+(defn sym [] :symbol 'alpha)
+
+(defn sym-set [] [:set :symbol] '#{gamma alpha beta})
+
+(defn sym-vec [] [:vector [:symbol :symbol]] '[left right])
+
+(defn sym-map-i [] [:map :symbol :i64] '{zeta 3 alpha 1 mu 2})
+
+(defn sym-map-s [] [:map :symbol :string] '{b "two" a "one"})
+
+(defn sym-map-k [] [:map :symbol :keyword] '{b :two a :one})
+
+(defn sym-map-b [] [:map :symbol :bool] '{yes true no false})
+
+(defn plain-data [] :keyword ':just-a-keyword)
+
+(defn plain-int [] :i64 '42)
+
+(defn plain-vec [] :document '[1 2 3])
+
+(defn mixed-set [] '#{a :b})
+
+(defn mixed-set-int [] '#{a 1 "s"})
+
+(defn mixed-vec [] '[a 1])
+
+(defn mixed-vec-nested [] '[a [b c]])
+
+(defn mixed-map-keys [] '{a 1 :b 2})
+
+(defn mixed-map-values [] '{a 1 b "two"})
+
+(defn symbol-map-values [] '{a b})
+
+(defn nested-map-values [] '{a [1 2]})
+
+(defn quoted-list [] '(a b c))
+
+(defn quoted-list-plain [] '(1 2 3))
+
+(defn quoted-empty-list [] '())
+
+(defn long-vec [] '[aaaaaaaaaaaaaaaa 1 bbbbbbbbbbbbbbbbbbbbb ccccccccccccccccccccc dddddddddddddddddddd eeeeeeeeeeeeeeeeeeee fffffff])
+
+(defn sorted-text [] '#{zz aa 1 mm})

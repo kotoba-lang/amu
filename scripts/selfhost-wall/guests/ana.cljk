@@ -1,0 +1,166 @@
+(ns kotoba.compiler.ana-probe
+  {:kotoba/export [ana-run]}
+  (:require [kotoba.form :as form]
+            [kotoba.compiler.frontend.infer :as inf]
+            [kotoba.compiler.frontend.state-ability :as sa]
+            [kotoba.compiler.frontend.record-projection :as rp]
+            [kotoba.compiler.frontend.row :as row])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :form/rd [:record :form/rd [[:form [:ref :form/r]] [:pos :i64]]]
+             :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]] [:phase :string] [:data [:ref :form/r]]]]
+             :ie/ctx [:record :ie/ctx [[:schemas [:ref :form/r]] [:row-schemas [:ref :form/r]] [:handlers [:ref :form/r]] [:final :bool] [:tail :bool] [:names [:ref :form/r]] [:recording :bool] [:recorded [:ref :form/r]] [:collect :bool] [:throws [:list [:ref :form/r]]] [:known [:ref :form/r]] [:tbl [:ref :form/r]] [:rec-limit :i64] [:rec-count :i64]]]}))
+
+;; ---- a best-effort printer for a failing case (the comparison itself is `form/eq`) ----
+(defn- an-join [kids [:list [:ref :form/r]] i :i64 acc :string] :string
+  (if (>= i (vector-count kids))
+    acc
+    (an-join kids (+ i 1)
+             (string-concat acc (string-concat (if (> i 0) " " "") (an-print (typed-list-nth [:list [:ref :form/r]] kids i)))))))
+
+(defn- an-print [f [:ref :form/r]] :string
+  (cond
+    (form/is-nil? f) "nil"
+    (form/is-bool? f) (if (form/bool-value f) "true" "false")
+    (form/is-int? f) (string-from-i64 (form/int-value f))
+    (form/is-string? f) (string-concat "\"" (string-concat (form/string-value f) "\""))
+    (form/is-keyword? f) (document-edn-print (document-keyword (form/keyword-value f)))
+    (form/is-symbol? f) (form/symbol-value f)
+    (form/is-seq? f) (string-concat "(" (string-concat (an-join (form/kids-of f) 0 "") ")"))
+    (form/is-vec? f) (string-concat "[" (string-concat (an-join (form/kids-of f) 0 "") "]"))
+    (form/is-set? f) (string-concat "#{" (string-concat (an-join (form/kids-of f) 0 "") "}"))
+    (form/is-map? f) (string-concat "{" (string-concat (an-join (form/kids-of f) 0 "") "}"))
+    :else "?"))
+
+(defn- an-op-is? [c [:ref :form/r] name :string] :bool
+  (string=? (document-edn-print (document-keyword (form/keyword-value (form/nth-of c 0))))
+            (string-concat ":" name)))
+
+(defn- an-get [m [:ref :form/r] k :keyword] [:ref :form/r]
+  (form/form-get m (form/keyword-form k)))
+
+(defn- an-ctx [c [:ref :form/r]] [:ref :ie/ctx]
+  (let [base (inf/ie-new-ctx (an-get c :schemas) (an-get c :row) (an-get c :handlers))
+        with-final (record-assoc [:ref :ie/ctx] base :final (if (form/is-true? (an-get c :final)) true false))]
+    with-final))
+
+;; the host answered (:err "message")
+(defn- an-expected-err? [e [:ref :form/r]] :bool
+  (and (form/is-seq? e) (= 2 (form/count-of e)) (form/is-keyword? (form/nth-of e 0))
+       (form/is-string? (form/nth-of e 1))
+       (string=? (document-edn-print (document-keyword (form/keyword-value (form/nth-of e 0)))) ":err")))
+
+(defn- an-verdict [got [:ref :form/r] expected [:ref :form/r]] :string
+  (if (an-expected-err? expected)
+    (string-concat "DIFF host refused (" (string-concat (form/string-value (form/nth-of expected 1)) (string-concat ") guest answered " (an-print got))))
+    (if (form/eq got expected)
+      "OK"
+      (string-concat "DIFF guest " (string-concat (an-print got) (string-concat " || host " (an-print expected)))))))
+
+(defn- an-refusal [e [:ref :fe/err] expected [:ref :form/r]] :string
+  (if (an-expected-err? expected)
+    (if (string=? (record-get [:ref :fe/err] e :msg) (form/string-value (form/nth-of expected 1)))
+      "OK"
+      (string-concat "DIFF guest refused: " (string-concat (record-get [:ref :fe/err] e :msg) (string-concat " || host refused: " (form/string-value (form/nth-of expected 1))))))
+    (string-concat "DIFF guest refused: " (string-concat (record-get [:ref :fe/err] e :msg) (string-concat " || host " (an-print expected))))))
+
+
+
+(defn- an-str-verdict [got :string expected [:ref :form/r]] :string
+  (if (form/is-nil? expected)
+    (if (string=? got "") "OK" (string-concat "DIFF guest " got))
+    (if (and (form/is-string? expected) (string=? got (form/string-value expected)))
+      "OK"
+      (string-concat "DIFF guest " (string-concat got " || host other")))))
+
+(defn- an-bool-verdict [got :bool expected [:ref :form/r]] :string
+  (if (form/eq (form/bool-form got) expected) "OK" (string-concat "DIFF guest " (if got "true" "false"))))
+
+(defn- an-pred [c [:ref :form/r]] :string
+  (cond
+    (an-name-is? c "escapes") (an-bool-verdict (sa/state-escapes? (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (an-name-is? c "mentions") (an-bool-verdict (sa/state-mentions? (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (an-name-is? c "first-op") (an-str-verdict (sa/state-first-stateful-operation (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (an-name-is? c "bodies") (an-verdict (form/form-vec (sa/state-handle-bodies (form/nth-of c 2))) (form/nth-of c 3))
+    (an-name-is? c "split")
+    (match-result (sa/state-split-resume (form/nth-of c 2) (form/nth-of c 3) (form/nth-of c 4) (form/nth-of c 5))
+                  [:result [:ref :form/r] [:ref :fe/err]]
+      (ok r (an-verdict r (form/nth-of c 6)))
+      (err e (an-refusal e (form/nth-of c 6))))
+    (an-name-is? c "impure")
+    (match-result (sa/state-refuse-impure-handler! (form/nth-of c 2) (form/nth-of c 3) (form/nth-of c 4) (form/nth-of c 5))
+                  [:result :i64 [:ref :fe/err]]
+      (ok r "DIFF guest accepted an impure handler")
+      (err e (an-refusal e (form/nth-of c 6))))
+    (an-name-is? c "advice") (an-str-verdict (rp/collection-head-advice (form/nth-of c 2)) (form/nth-of c 3))
+    (an-name-is? c "presence") (an-verdict (rp/option-presence-test (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (an-name-is? c "present")
+    (match-result (rp/option-present-value (form/nth-of c 2) (form/nth-of c 3) (form/nth-of c 4)) [:result [:ref :form/r] [:ref :fe/err]]
+      (ok r (an-verdict r (form/nth-of c 5)))
+      (err e (an-refusal e (form/nth-of c 5))))
+    (an-name-is? c "floatop") (an-verdict (rp/resolve-float-operator (form/nth-of c 2) (form/nth-of c 3) (form/nth-of c 4)) (form/nth-of c 5))
+    (an-name-is? c "f64bits") (an-bool-verdict (rp/f64-bits-literal-form? (form/nth-of c 2)) (form/nth-of c 3))
+    (an-name-is? c "libdoc") (an-verdict (rp/library-predicate-document-test (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (an-name-is? c "rsyms") (an-verdict (row/row-symbols-in (form/nth-of c 2)) (form/nth-of c 3))
+    (an-name-is? c "rrebinds") (an-bool-verdict (row/row-rebinds? (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (an-name-is? c "rif") (an-verdict (row/row-if-branches (form/nth-of c 2)) (form/nth-of c 3))
+    (an-name-is? c "rjoins") (an-verdict (row/row-joins (form/nth-of c 2) (form/nth-of c 3) (form/nth-of c 4)) (form/nth-of c 5))
+    (an-name-is? c "rreads") (an-verdict (row/row-field-reads (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (an-name-is? c "roperated") (an-bool-verdict (row/row-operated? (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (an-name-is? c "rpass") (an-verdict (row/row-pass-through (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    (an-name-is? c "rtext") (an-str-verdict (row/row-text (form/nth-of c 2)) (form/nth-of c 3))
+    (an-name-is? c "rname") (an-str-verdict (row/row-name-part (form/nth-of c 2)) (form/nth-of c 3))
+    (an-name-is? c "rarg") (an-str-verdict (row/row-argument-text (form/nth-of c 2)) (form/nth-of c 3))
+    (an-name-is? c "rfields") (an-verdict (row/row-record-fields (form/nth-of c 2) (form/nth-of c 3)) (form/nth-of c 4))
+    :else "unknown-pred"))
+
+(defn- an-name-is? [c [:ref :form/r] name :string] :bool
+  (string=? (form/symbol-value (form/nth-of c 1)) name))
+
+(defn- an-case [c [:ref :form/r]] :string
+  (cond
+    (an-op-is? c "spec")
+    (match-result (sa/specialize-state-abilities (form/nth-of c 2) (form/nth-of c 3) (form/nth-of c 4) (form/nth-of c 5) (form/nth-of c 6))
+                  [:result [:ref :form/r] [:ref :fe/err]]
+      (ok r (an-verdict r (form/nth-of c 7)))
+      (err e (an-refusal e (form/nth-of c 7))))
+    (an-op-is? c "thread")
+    (match-result (sa/thread-state-abilities (an-ctx (form/nth-of c 1)) (form/nth-of c 2) (form/nth-of c 3) (form/nth-of c 4))
+                  [:result [:ref :form/r] [:ref :fe/err]]
+      (ok r (an-verdict r (form/nth-of c 5)))
+      (err e (an-refusal e (form/nth-of c 5))))
+    (an-op-is? c "rps")
+    (match-result (rp/rewrite-record-projections (an-ctx (form/nth-of c 1)) (form/nth-of c 2) (form/nth-of c 3) (form/nth-of c 4))
+                  [:result [:ref :form/r] [:ref :fe/err]]
+      (ok r (an-verdict r (form/nth-of c 5)))
+      (err e (an-refusal e (form/nth-of c 5))))
+    (an-op-is? c "rowspec")
+    (match-result (row/specialize-row-parameters (an-ctx (form/nth-of c 1)) (form/nth-of c 2) (form/nth-of c 3))
+                  [:result [:ref :form/r] [:ref :fe/err]]
+      (ok r (an-verdict r (form/nth-of c 4)))
+      (err e (an-refusal e (form/nth-of c 4))))
+    (an-op-is? c "tl")
+    (match-result (row/type-literals (an-ctx (form/nth-of c 1)) (form/nth-of c 2))
+                  [:result [:ref :form/r] [:ref :fe/err]]
+      (ok r (an-verdict r (form/nth-of c 3)))
+      (err e (an-refusal e (form/nth-of c 3))))
+    (an-op-is? c "rowgen") (an-verdict (row/row-generics (an-ctx (form/nth-of c 1)) (form/nth-of c 2)) (form/nth-of c 3))
+    (an-op-is? c "tlit")
+    (match-result (row/type-literal (an-ctx (form/nth-of c 1)) (form/nth-of c 2) (form/nth-of c 3) (form/nth-of c 4))
+                  [:result [:ref :form/r] [:ref :fe/err]]
+      (ok r (an-verdict r (form/nth-of c 5)))
+      (err e (an-refusal e (form/nth-of c 5))))
+    (an-op-is? c "pred") (an-pred c)
+    :else "unknown-op"))
+
+(defn- an-lines [text :string i :i64 n :i64 out :string] :string
+  (if (>= i n)
+    out
+    (let [j (string-find-byte text 10 i)
+          end (if (< j 0) n j)
+          line (string-substring text i end)
+          answer (if (< (string-length line) 2) "" (an-case (form/edn-form line)))]
+      (an-lines text (+ end 1) n (string-concat out (string-concat answer "\n"))))))
+
+(defn ana-run [text :string] :string
+  (an-lines text 0 (string-length text) ""))

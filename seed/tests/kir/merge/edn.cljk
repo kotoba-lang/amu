@@ -1,0 +1,57 @@
+;; merge-test guest (agent KIR4): kotoba.lang.edn (the big compiler's EDN reader/writer, written over :document) over a
+;; corpus file. Input (file named by argument 0): one EDN text per line. Output per line: the canonical text of
+;; (edn/read-document line) written by edn/write-string, then a tab and four facts read through the document API
+;; (kind, count of a container else -1, the first item's kind or "-", document-equal? of a re-read of the written text).
+(ns probe.edn-merge
+  {:kotoba/export [main]}
+  (:require [kotoba.lang.edn :as edn]))
+
+(defn line-end [s :string i :i64] :i64
+  (loop [j i]
+    (if (>= j (string-byte-length s))
+      j
+      (let [c (string-code-point-at s j)]
+        (if (= c 10) j (recur (+ j (if (< c 128) 1 (if (< c 2048) 2 (if (< c 65536) 3 4))))))))))
+
+(defn kind-text [d :document] :string
+  (let [k (document-kind d)]
+    (if (= k :null) "null" (if (= k :bool) "bool" (if (= k :i64) "i64" (if (= k :string) "string"
+      (if (= k :keyword) "keyword" (if (= k :symbol) "symbol" (if (= k :vector) "vector" (if (= k :list) "list"
+        (if (= k :set) "set" (if (= k :map) "map" "f64"))))))))))))
+
+(defn container? [d :document] :bool
+  (let [k (document-kind d)]
+    (if (= k :vector) true (if (= k :list) true (if (= k :set) true (= k :map))))))
+
+(defn first-kind [d :document] :string
+  (let [k (document-kind d)]
+    (if (= k :vector)
+      (option-match [:option :document] (document-vector-at d 0) "-" x (kind-text x))
+      (if (= k :list)
+        (option-match [:option :document] (document-list-at d 0) "-" x (kind-text x))
+        (if (= k :map)
+          (option-match [:option :document] (document-map-entry-at d 0) "-" x (kind-text x))
+          "-")))))
+
+(defn answer0 [line :string] :string
+  (let [d (edn/read-document line)
+        w (edn/write-string d)
+        again (edn/read-document w)]
+    (string-concat w (string-concat "\t" (string-concat (kind-text d) (string-concat " "
+      (string-concat (string-from-i64 (if (container? d) (document-count d) -1)) (string-concat " "
+        (string-concat (first-kind d) (if (document-equal? d again) " =" " /"))))))))))
+
+(defn answer [line :string] :string
+  (try (answer0 line) (catch err (string-concat "ERR " (ex-message err)))))
+
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        s (typed-cap-call :fs/app-data :string :string path)
+        n (string-byte-length s)]
+    (loop [i 0 k 0]
+      (if (>= i n)
+        k
+        (let [e (line-end s i)
+              line (string-substring s i e)
+              w (typed-cap-call :io/write :string :string (string-concat (answer line) "\n"))]
+          (recur (+ e 1) (+ k 1)))))))

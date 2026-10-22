@@ -1,0 +1,4 @@
+;; R6A feature case p06: :bytes parameters and results across a module boundary
+(ns p06.bs (:export [mk bsum]))
+(defn mk [n :i64] :bytes (bytes-from-vector-i64 [n (+ n 1) (+ n 2)]))
+(defn bsum [b :bytes] :i64 (loop [i 0 s 0] (if (>= i (bytes-count b)) s (recur (+ i 1) (+ s (bytes-at b i))))))

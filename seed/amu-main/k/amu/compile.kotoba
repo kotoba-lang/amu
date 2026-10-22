@@ -1,0 +1,16 @@
+(ns amu.compile
+  {:kotoba/export [run]}
+  (:require [amu.cli :as cli]))
+
+;; seed/amu-main/k/amu/compile.kotoba -- `amu compile` on the KIR route (agent MAINS, 2026-10-04): DECLARED STUB.
+;;
+;; Measured (build-k.sh variant k2, 2026-10-04): the KIR route cannot carry the seed's compiler. kir-dump (the JVM lineage)
+;; refuses the seed's own split source: "vector-assoc! requires a linear handle: M0 is used more than once on some path
+;; through mem-init-fills" (the seed's flat-heap style is admitted by the seed, not by that frontend). The big backend
+;; (kotoba.kir lowering + kotoba.native.machine-ir + aarch64 emit) is not on the Kotoba route either (machine-ir: seed
+;; E1005; kotoba.kir.interp: seed E2101). Use the source-route image amu-s for `compile`.
+
+(defn run [] :i64
+  (cli/not-available "compile"
+    (string-concat "\"KIR-route image: seed.main (the seed compiler) is refused by the JVM lineage kir-dump (vector-assoc! linear handle, mem-init-fills)\" "
+                   "\"kotoba.kir lowering + kotoba.native.machine-ir (seed E1005) + aarch64 emit are not compiled on the Kotoba route\"")))

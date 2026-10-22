@@ -1,0 +1,6 @@
+{:format :kotoba.kir/v4, :entry nil, :exports [t], :signature nil, :effects #{}, :functions [
+{:name small, :params [x], :result :bool, :effects #{}, :body (if (< x 10) true false), :param-types [:i64]}
+{:name big, :params [x], :result :bool, :effects #{}, :body (if (small x) false true), :param-types [:i64]}
+{:name both, :params [a b c], :result :bool, :effects #{}, :body (let [__kotoba_and_3 (small a)] (if __kotoba_and_3 (let [__kotoba_and_2 (small b)] (if __kotoba_and_2 (small c) __kotoba_and_2)) __kotoba_and_3)), :param-types [:i64 :i64 :i64]}
+{:name any, :params [a b], :result :bool, :effects #{}, :body (let [__kotoba_or_2 (big a)] (if __kotoba_or_2 __kotoba_or_2 (big b))), :param-types [:i64 :i64]}
+{:name t, :params [], :result :i64, :effects #{}, :body (if (both 1 2 3) (if (both 1 20 3) 0 (if (any 1 2) 0 (if (any 1 30) (if (big 11) 1 0) 0))) 0), :param-types []}]}

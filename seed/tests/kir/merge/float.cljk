@@ -1,0 +1,37 @@
+;; merge-test guest (agent KIR5): the float conversions compile-kir supports (f64-from-bits, f64-to-f32-rounded,
+;; f32-to-bits, f32-to-f64-exact, f64-to-bits) over a corpus of f64 bit patterns. Input (file named by argument 0): one
+;; signed decimal i64 per line. Output per line: "<f32 bits> <hi:lo of the f64 bits of the f32 widened back>"; the shape of the big
+;; compiler's f32 literal check (desugar kotoba_module__4__639) and of the value codec's bit reads.
+(ns probe.float-merge
+  {:kotoba/export [main]})
+
+(defn dec-at [s :string i :i64 e :i64] :i64
+  (let [neg (= (string-code-point-at s i) 45)]
+    (loop [j (if neg (+ i 1) i) acc 0]
+      (if (>= j e)
+        acc
+        (recur (+ j 1) (if neg (- (* acc 10) (- (string-code-point-at s j) 48)) (+ (* acc 10) (- (string-code-point-at s j) 48))))))))
+
+(defn line-end [s :string i :i64] :i64
+  (loop [j i]
+    (if (>= j (string-byte-length s)) j (if (= (string-code-point-at s j) 10) j (recur (+ j 1))))))
+
+;; v as two unsigned 32-bit halves "hi:lo" (stage-0's string-from-i64 traps on the minimum i64, which is -0.0's pattern)
+(defn halves [v :i64] :string
+  (string-concat (string-from-i64 (u64-shift-right v 32)) (string-concat ":" (string-from-i64 (bit-and v 4294967295)))))
+
+(defn rt [b :i64] :string
+  (let [n (f64-to-f32-rounded (f64-from-bits b))]
+    (string-concat (string-from-i64 (f32-to-bits n))
+                   (string-concat " " (halves (f64-to-bits (f32-to-f64-exact n)))))))
+
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        s (typed-cap-call :fs/app-data :string :string path)
+        n (string-byte-length s)]
+    (loop [i 0 k 0]
+      (if (>= i n)
+        k
+        (let [e (line-end s i)
+              w (typed-cap-call :io/write :string :string (string-concat (rt (dec-at s i e)) "\n"))]
+          (recur (+ e 1) (+ k 1)))))))

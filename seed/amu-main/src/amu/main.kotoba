@@ -1,0 +1,93 @@
+(ns amu.main
+  {:kotoba/export [main]}
+  (:require [amu.cli :as cli]
+            [amu.check :as check]
+            [amu.compile :as compile]
+            [amu.refactor :as refactor]
+            [amu.kexe :as kexe]
+            [seed.main :as seed]))
+
+;; seed/amu-main/src/amu/main.kotoba -- the `amu` command as ONE Kotoba entry (agent MAINS, 2026-10-04; the native
+;; launcher's command table: agent CMD, 2026-10-04, seed/amu-main/LAUNCHER.md).
+;;
+;;   amu check <file> ..          -> amu.check/run      (the product entry nbb.check-cli's Kotoba `run`: bin/amu check's
+;;                                   :kotoba.check/v1 answer; 2026-10-10, was amu.check-full = stage-0's report line)
+;;   amu compile <file> [--target aarch64-macos] [--output X] [--policy P] [--fuel N] [--source-path R ..]
+;;                                -> amu.compile/run    (the product entry nbb.aarch64-cli's Kotoba `run` = nbb.cli's
+;;                                   Kotoba `run!`: bin/amu compile's sealed artifact and answer; 2026-10-10, was the
+;;                                   seed compiler behind stage-0's texts)
+;;   amu compile <file> .. --emit-module [--entry] --object-dir D --output X.kso
+;;                                -> seed.main          (INTERNAL: the module compiler of the self-build, the seed
+;;                                   compiler linked in; not a bin/amu mode. With `link`, `modules` and the KSEED1 arm of
+;;                                   `extract-native` it is how the image rebuilds itself: scripts/seed/image/front.sh,
+;;                                   scripts/seed/launcher/build.sh --builder)
+;;   amu refactor <sub> ..        -> amu.refactor/run   (bin/amu -> nbb refactor_cli)
+;;   amu link | modules | extract-native ..
+;;                                -> seed.main          (the seed driver's own build commands, so an amu image rebuilds
+;;                                   itself with no seed binary beside it; FRONTSRC's request, CONTRACT-REQUESTS 2026-10-04.
+;;                                   extract-native: a KSEED1 container goes to the seed driver, a :kotoba.kexe/v1
+;;                                   artifact (stage-0's or amu's) is read by amu.kexe/extract with stage-0's texts)
+;;   a command bin/amu routes elsewhere (nbb / JVM) -> declared stub, exit 69, naming the command
+;;   anything else                -> stage-0's usage refusal, exit 64
+;;   no command, -h, --help       -> bin/amu's usage text on stdout, exit 0 (the launcher layer; LAUNCHER.md)
+;; `--jvm-free` is ignored wherever it stands (bin/amu drops it before routing): amu.cli/argx skips it.
+;;
+;; Requires the source route (seed.main linked in). The k/ route (amu-k, JVM kir-dump) cannot compile seed.main and is
+;; superseded by the one image (amu-one); its build-k.sh keeps the MAINS entry of git history, not this one.
+
+;; bin/amu's usage text (its `usage` array joined by newlines, written on stdout with exit 0 for no command, -h, --help)
+(defn- usage-text [] :string
+  (string-concat "usage: amu compile <file.kotoba|file.cljk|file.cljc> [--target <target>] [--policy policy.edn] [--jvm-free] --output <file>\n       (no --target: this host's native target, e.g. aarch64-macos / x86_64-linux;\n        AMU_TARGET overrides it; wasm32-browser / wasm32-wasi are chosen explicitly)\n       amu check <file.kotoba|file.cljk|file.cljc> [--policy policy.edn] [--jvm-free]\n  multi-file (a module declaring (:require [ns :as alias])):\n       amu module-lock <entry> --source-path <dir> --blocks <dir>\n       amu compile --module-lock <lock> --blocks <dir> --target <target> --output <file>\n       (both halves run without a JDK; add --jvm-free to prove it)\n       amu check <entry> --source-path <dir>            # links, emits nothing\n"
+    (string-concat "       (a template module -- (ns lib (:params [elem]) ...) -- is instantiated per\n        importer binding: (:require [lib :as l :with {elem :i64}]); ADR 0346)\n  packages (a signed, CID-pinned kotoba.lock.edn supplying the dependencies):\n       amu check <entry> --source-path <dir> --package-lock kotoba.lock.edn \\\n         --packages <dir> [--trust trust.edn]\n       amu package-manifest <package root> --name <n> --version <v> \\\n         --url <git url> --key key.edn\n       amu package-fetch --deps kotoba.deps.edn --packages <dir>\n       amu package-lock --deps kotoba.deps.edn --packages <dir> --output kotoba.lock.edn\n       amu definition-cids <file> [--source-path <dir>]  # one CID per definition\n"
+    (string-concat "       amu compile <entry> --source-path <dir> --unpinned --target <target> --output <file>\n       amu worker [--target <target>]   (no --target: this host's native target)\n       amu inspect <file.kotoba|file.cljk|file.cljc> [--output interface.edn]\n       amu test <file.kotoba|file.cljk|file.cljc> [--json] [--fuel <n>] [--source-path <dir> ...]   (one instance per test)\n       amu module-lock <file.kotoba> --blocks <dir> --source-path <dir>\n       amu package-aiueos-boot <kernel> [--output BOOTX64.EFI]\n       amu extract-native <file> [--symbol main] [--output program.bin]\n       amu package-ios program.kexe [--entry main] --output program.S\n       amu sbom <artifact> --output artifact.spdx\n"
+    (string-concat "       amu attest-release <artifact> --sbom artifact.spdx --target <target> ...\n       amu verify-release release.edn --artifact <artifact> --sbom artifact.spdx --trust trust.edn\n       amu coverage <coverage-manifest.edn> --dataset <raw-dataset>\n       amu keygen --output key.edn\n       amu measure-runtime --output runtime.edn --loader-output kotoba-loader\n       amu sign program.kexe --key key.edn --expires <epoch> --output signed.kexe\n       amu run signed.kexe --trust trust.edn --runtime runtime.edn --loader kotoba-loader ...\n       amu verify <file>\n       amu refactor list-rules | plan <rules> <path>... | apply <rules> <path>... [--check]\n       amu refactor graph <path> | partition <path> | split <path> --partition p.edn --out <dir>\n"
+    "       amu refactor verify --runner <run-tests.cljk> --classpath <cp> [--base-first <dir>] [--candidate-first <dir>]\n         (AST-based refactoring, the default way to change compiler sources; EDN answers, :kotoba.refactor/v1)\n       amu sign-output-set <artifact> --key key.edn --not-before <epoch> --expires <epoch>\n       amu verify-output-set <artifact> [--attestation FILE --trust FILE --now <epoch>]\n       amu <other compiler command> ...\n")))))
+
+;; bin/amu's commands that have no native implementation in this image yet (bin/amu usage text, 2026-10-04)
+(defn- bin-amu-command [c :string] :i64
+  (cond (string=? c "module-lock") 1 (string=? c "package-manifest") 1 (string=? c "package-fetch") 1
+        (string=? c "package-lock") 1 (string=? c "definition-cids") 1 (string=? c "worker") 1 (string=? c "inspect") 1
+        (string=? c "test") 1 (string=? c "package-aiueos-boot") 1 (string=? c "package-ios") 1 (string=? c "sbom") 1
+        (string=? c "attest-release") 1 (string=? c "verify-release") 1 (string=? c "coverage") 1 (string=? c "keygen") 1
+        (string=? c "measure-runtime") 1 (string=? c "sign") 1 (string=? c "run") 1 (string=? c "verify") 1
+        (string=? c "sign-output-set") 1 (string=? c "verify-output-set") 1
+        :else 0))
+
+;; the self-build's module compiler: the seed driver's `compile .. --emit-module` (status 1 = refused 65, 2 = usage 64)
+(defn- module-compile [] :i64
+  (let [r (seed/main)]
+    (cond (= r 1) 65 (= r 2) 64 :else r)))
+
+(defn- extract-native [] :i64
+  (let [p (cli/argx 1)
+        ks (cli/flag-value "--symbol" 1)
+        ko (cli/flag-value "--output" 1)]
+    (cond (string=? p "")
+          (cli/report-plain ":decode" ":kotoba/invalid-data" "input path is required" ", :details {:phase :decode}" 65)
+          (= (cli/regular-file p) 0)
+          (cli/report-plain ":decode" ":kotoba/invalid-data" "input must be a regular file" ", :details {:phase :decode}" 65)
+          (= (kexe/head-byte p) 75) (seed/main)   ; KSEED1: the seed's own container (build use)
+          :else
+          (let [s (if (< ks 0) "main" (cli/arg ks))
+                r (kexe/extract p s (if (< ko 0) "program.bin" (cli/arg ko)))]
+            (cond (= r 0) 0
+                  (= r 1) (cli/report-plain ":verify" ":kotoba/verification-failed" "unknown native export"
+                                            (string-concat ", :details {:phase :verify, :entry " (string-concat s "}")) 65)
+                  (= r 2) (cli/report-plain ":decode" ":kotoba/invalid-data" "extract-native input did not read as a native artifact" ", :details {:phase :decode}" 65)
+                  :else (cli/report-plain ":output" ":kotoba/output-failed" "output could not be written" ", :details {:phase :output}" 74))))))
+
+(defn main [] :i64
+  (if (or (< (cli/argc) 1) (string=? (cli/argx 0) "-h") (string=? (cli/argx 0) "--help"))
+    (let [w (cli/out (usage-text))] 0)
+    (let [c (cli/argx 0)]
+      (cond (string=? c "") (let [w (cli/err "error: missing Amu compiler command\n")] 2)   ; bin/amu: only --jvm-free given
+            (string=? c "check") (check/run)
+            (and (string=? c "compile") (= (cli/has-flag "--emit-module" 1) 1)) (module-compile)
+            (string=? c "compile") (compile/run)
+            (string=? c "refactor") (refactor/run)
+            (string=? c "link") (seed/main)
+            (string=? c "modules") (seed/main)
+            (string=? c "extract-native") (extract-native)
+            (= (bin-amu-command c) 1)
+            (cli/not-available c (string-concat "\"bin/amu routes `" (string-concat c "` to nbb or the JVM; no native implementation in this image yet\"")))
+            :else (cli/usage-error ":kotoba/invalid-usage" "unknown or missing kotoba command" ", :details {:phase :usage}")))))

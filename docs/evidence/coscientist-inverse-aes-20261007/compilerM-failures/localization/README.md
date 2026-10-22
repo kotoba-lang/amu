@@ -1,0 +1,11 @@
+# Minimal localization of retained Compiler-M failure
+
+A separate, prospectively bounded diagnostic compiled/extracted one localization fixture (two successful compiler processes) and invoked it once. The structured result was `[5 2101 32579 32579 32582 0 0]`: requested stage, terminal MMERR, position, A, B, N, hint count. This directly observes terminal **MMERR 2101** at original source bytes 32579..32582, `rem`, line 80 (`residue (rem i 8)`). Stage 5 is the requested stage, not a first-failure-stage trace.
+
+The production CLI's `drv-run` appends `ck-r6b-lib(S0)` before parsing/checking. Its scanner selects the `rem` library template, which defines `rem` using `quot`. The diagnostic fixtures use bare original S0. Restoring persistent checker hints alone did not restore this earlier source preparation. This establishes a diagnostic setup discrepancy and a concrete terminal frontend error; it is not evidence of an inverse optimizer defect or a successful Compiler-M gate. Any corrected fixture still needs separate prospective execution and metadata binding.
+
+Older v1/v2 scalar `12101` receipts retain their return-branch ambiguity. This later vector observation directly reads MMERR but does not retrospectively instrument the earlier calls. Inverse and remaining Compiler-M cases remain unexecuted in those failed phases. There is no performance or adoption claim.
+
+Copy only `localization-proof.tgz`, `entry-manifest.json`, and `replay.py` to an unrelated directory, then run `python3 replay.py`. The stdlib reader rehashes 46 selected members, verifies the two compilation/extraction receipts, the sole structured observation, original source/token position, diagnostic source field order, source fragments, and independent report. It executes no native code. Source/native binding is through frozen receipts, not a new disassembly or execution proof.
+
+The observation wrapper writes stdout/status only after `subprocess.run` returns. An uncaught timeout could leave no terminal raw/status receipt. The actual observation completed normally with exit 0 and empty stderr; no timeout or malformed response occurred and no retry was performed. This limitation is retained rather than claiming complete timeout retention. No wrapper was changed for this publication.

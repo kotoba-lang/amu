@@ -1,0 +1,43 @@
+(ns wall2.check-host
+  "WALL2: compares the native `check` entry built from source (seed/tests/wall2/check-run.sh) with the HOST nbb entry
+  (kotoba.compiler.nbb.check-driver/check!, the same function src/kotoba/compiler/nbb/check_cli.cljk calls) on the same
+  argument lines. BOOTSTRAP-REFERENCE (node/nbb), one process for all cases. Run from the amu repo root:
+    node bin/kbb --backend sci --classpath \"$(cat build/walls/cp-walls.txt)\" seed/tests/wall2/check-host.cljk CASES OUT
+  Classes per case: SAME-OK (both answer, equal by value except `:definitions`, which the Kotoba reading reports
+  :unavailable by name), SAME-REFUSE (both refuse with the same message; the native report is the reduced one),
+  OK-DIFF, REFUSE-DIFF, NATIVE-REFUSES, NATIVE-ACCEPTS, NATIVE-TRAP. BigInts compare as numbers."
+  (:require [kotoba.compiler.nbb.check-driver :as driver]
+            [kotoba.compiler.kotoba-reader :as kr]
+            [clojure.walk :as walk]
+            ["node:fs" :as fs]))
+
+(defn- norm [v]
+  (walk/postwalk (fn [x] (if (= js/BigInt (type x)) (js/Number x) x)) v))
+
+(defn- read1 [text] (first (kr/read-forms text)))
+
+(let [[cases out] *command-line-args*
+      lines (remove empty? (.split (.readFileSync fs cases "utf8") "\n"))
+      classes
+      (doall
+       (map-indexed
+        (fn [i line]
+          (let [args (vec (remove empty? (.split line " ")))
+                host (try [:ok (driver/check! args nil)] (catch :default e [:refused (ex-message e)]))
+                status (.trim (.readFileSync fs (str out "/" i ".status") "utf8"))
+                nout (.readFileSync fs (str out "/" i ".out") "utf8")
+                nerr (.readFileSync fs (str out "/" i ".err") "utf8")
+                native (cond (= status "0") [:ok (read1 nout)]
+                             (or (= status "65") (= status "64")) [:refused (:message (read1 nerr))]
+                             :else [:trap (str status " " (subs nerr 0 (min 120 (count nerr))))])
+                cls (cond (= :trap (first native)) "NATIVE-TRAP"
+                          (and (= :ok (first host)) (= :ok (first native)))
+                          (if (= (norm (dissoc (second host) :definitions)) (norm (dissoc (second native) :definitions))) "SAME-OK" "OK-DIFF")
+                          (and (= :refused (first host)) (= :refused (first native)))
+                          (if (= (second host) (second native)) "SAME-REFUSE" "REFUSE-DIFF")
+                          (= :ok (first host)) "NATIVE-REFUSES"
+                          :else "NATIVE-ACCEPTS")]
+            (println i cls line (if (#{"SAME-OK" "SAME-REFUSE"} cls) "" (pr-str [(first host) (if (= :ok (first host)) (keys (second host)) (second host)) native])))
+            cls))
+        lines))]
+  (println (str "check-host: " (pr-str (frequencies classes)) " of " (count classes))))

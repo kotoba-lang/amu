@@ -49,8 +49,8 @@
  ;; ---------------------------------------------------------------------
  :language/static
  {:type-descriptor-depth
-  {:value 12
-   :why "Nesting of one value-type descriptor. 12 since osaho ADR 0025 (structured kv EDN spines); sema, ESM and the browser host's descriptor decoder had stayed at 8 -- unified 2026-09-24 (P1)."
+  {:value 64
+   :why "Nesting of one value-type descriptor. 64 since amu ADR 0355 (32 for a few hours the same day) (a compiler pass's s-expression sum type needs nesting the browser-row work never did); 12 since osaho ADR 0025 (structured kv EDN spines); 8 before that -- unified 2026-09-24 (P1), raised 2026-09-29."
    :copies [{:repo "kotoba-lang/osaho" :path "src/kotoba/kir/value.cljk" :var kotoba.kir.value/adt-depth-limit}
             {:repo "kotoba-lang/kotoba-sema" :path "src/kotoba/compiler/frontend.cljk" :var kotoba.compiler.frontend/max-type-depth}
             {:repo "kotoba-lang/kotoba-sema" :path "src/kotoba/compiler/schema.cljk" :var kotoba.compiler.schema/max-schema-depth}
@@ -59,8 +59,8 @@
             {:repo "kotoba-lang/amu" :path "src/kotoba/compiler/limits.cljk" :var kotoba.compiler.limits/table
              :note "artifact manifests :limits :parametric-adt-depth (compiler.core wasm32 + js, nbb wasm_cli, nbb js_cli) read this table"}]}
   :type-descriptor-nodes
-  {:value 64
-   :why "Nodes in one value-type descriptor, or one schema graph; bounds the checker's work per type."
+  {:value 512
+   :why "Nodes in one value-type descriptor, or one schema graph; bounds the checker's work per type. 64 until amu ADR 0355 (2026-09-29), raised with the depth so a recursive-shaped sum type unrolled to depth 32 fits."
    :copies [{:repo "kotoba-lang/osaho" :path "src/kotoba/kir/value.cljk" :var kotoba.kir.value/adt-node-limit}
             {:repo "kotoba-lang/kotoba-sema" :path "src/kotoba/compiler/frontend.cljk" :var kotoba.compiler.frontend/max-type-nodes}
             {:repo "kotoba-lang/kotoba-sema" :path "src/kotoba/compiler/schema.cljk" :var kotoba.compiler.schema/max-schema-nodes}
@@ -140,7 +140,9 @@
   :key :admission-limits
   :why "Compile-time bounds on the source a module may be: checked once by the frontend, never at run time."
   :copies {:max-functions [{:repo "kotoba-lang/kotoba-sema" :var kotoba.compiler.frontend/max-functions}
-                           {:repo "kotoba-lang/kotoba-verifier" :var kotoba.verifier/max-functions}]
+                           {:repo "kotoba-lang/kotoba-verifier" :var kotoba.verifier/max-functions}
+                           {:repo "kotoba-lang/amu" :var kotoba.compiler.project/max-project-functions
+                            :note "the linked project is one program; amu ADR 0358"}]
            :max-parameters [{:repo "kotoba-lang/kotoba-sema" :var kotoba.compiler.frontend/max-parameters}
                             {:repo "kotoba-lang/kotoba-verifier" :var kotoba.verifier/max-parameters}]
            :max-bindings [{:repo "kotoba-lang/kotoba-sema" :var kotoba.compiler.frontend/max-bindings}
@@ -148,7 +150,11 @@
            :max-symbol-chars [{:repo "kotoba-lang/kotoba-sema" :var kotoba.compiler.frontend/max-symbol-chars}
                               {:repo "kotoba-lang/kotoba-verifier" :var kotoba.verifier/max-symbol-chars}]
            :max-expression-nodes [{:repo "kotoba-lang/kotoba-sema" :var kotoba.compiler.frontend/max-expression-nodes}
-                                  {:repo "kotoba-lang/kotoba-verifier" :var kotoba.verifier/max-expression-nodes}]
+                                  {:repo "kotoba-lang/kotoba-verifier" :var kotoba.verifier/max-expression-nodes}
+                                  {:repo "kotoba-lang/amu" :var kotoba.compiler.project/max-project-expression-nodes
+                                   :note "the linked project is one program; amu ADR 0360"}]
+           :max-lowered-nodes [{:repo "kotoba-lang/kotoba-sema" :var kotoba.compiler.frontend/max-lowered-nodes}
+                               {:repo "kotoba-lang/kotoba-verifier" :var kotoba.verifier/max-lowered-nodes}]
            :max-list-items [{:repo "kotoba-lang/kotoba-sema" :var kotoba.compiler.frontend/max-list-items}]
            :max-set-items [{:repo "kotoba-lang/kotoba-sema" :var kotoba.compiler.frontend/max-typed-set-items}]
            :max-reader-depth [{:repo "kotoba-lang/kotoba-sema" :var kotoba.compiler.frontend/max-reader-depth}]}}
@@ -187,11 +193,17 @@
             {:repo "kotoba-lang/amu" :path "tools/kexe_loader_windows.c" :pattern "#define KEXE_VECTOR_LENGTH_LIMIT (\\d+)u"}
             {:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_BOUNDARY_VECTOR_ITEMS (\\d+)u"}]}
   :string-value-bytes
-  {:value 65536
-   :why "UTF-8 bytes of one string value."
+  {:value 8388608
+   :why "UTF-8 bytes of one string value. 8 MiB (8 388 608) since 2026-10-02, amu ADR 0362 (was 64 KiB): the source admission bound (ADR 0356), so a self-built compiler holds each of its sources as one value. A boundary walk still reads at most :language/boundary :traversal-bytes of payload per crossing, and a profile that has not moved keeps its own smaller bound under :profile/<target> :string-value-bytes, refused by the same trap name."
    :copies [{:repo "kotoba-lang/osaho" :path "src/kotoba/kir/value.cljk" :var kotoba.kir.value/string-value-byte-limit}
-            {:repo "kotoba-lang/kotoba-script" :path "src/kotoba/script.cljk" :var kotoba.script/max-string-value-bytes}
-            {:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_BOUNDARY_STRING_BYTES (\\d+)u"}]}
+            {:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_STRING_VALUE_LIMIT (\\d+)u"}
+            {:repo "kotoba-lang/kotoba-lang" :path "lang/guest-grammar.edn" :key [:bytes-value :limits :string-value-bytes] :note "the operation table's own statement of the bound"}]}
+  :bytes-value-bytes
+  {:value 8388608
+   :why "Bytes of one :bytes value (bytes-from-vector-i64, bytes-concat, a file read as :bytes): the string bound's twin, 8 MiB since 2026-10-02 (amu ADR 0362; was 64 KiB and unlisted)."
+   :copies [{:repo "kotoba-lang/osaho" :path "src/kotoba/kir/value.cljk" :var kotoba.kir.value/bytes-value-byte-limit}
+            {:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_BYTES_VALUE_LIMIT (\\d+)u"}
+            {:repo "kotoba-lang/kotoba-lang" :path "lang/guest-grammar.edn" :key [:bytes-value :limits :bytes-value-bytes]}]}
   :document-nodes
   {:value 4096
    :why "Nodes of one :document value (osaho, 256 -> 4096 on 2026-09-10: a realistic screen). The browser host's document walk and surface-status still said 256; unified 2026-09-24 (P1)."
@@ -295,15 +307,20 @@
           :default {:value 4096 :override "KEXE_PAIRS" :why "The pair arena, where aggregates live as pair chains (aggregate ABI v8)."
                     :copies [{:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_PAIR_CAPACITY (\\d+)u"}]}
           :pair-arena-max {:value 67108864 :why "64 Mi handles: address space, not memory."}
+          :vector-table-max {:value 67108864 :why "64 Mi vector handles (amu ADR 0364, 2026-10-03; was 4 Mi): address space, not memory -- an entry is 16 bytes of the shared mapping plus a 4-byte growth-region tag, touched only when a handle is minted. The 4 Mi table was the measured wall of the frontend's analyze pass (about 30 KB of real source per process)."}
           :vectors {:value 4096 :why "Vector table entries: a second cell pool, exhaustion :budget/cells {:arena :vectors}."
                     :copies [{:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_VECTOR_CAPACITY (\\d+)u"}]}
-          :vector-items {:value 65536 :why "The item arena per run: one item = one cell of this pool; exhaustion :budget/cells {:arena :vector-items}." :copies [{:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_VECTOR_ITEM_CAPACITY (\\d+)u"}]}}
+          :vector-items {:value 65536 :why "The item arena per run: one item = one cell of this pool; exhaustion :budget/cells {:arena :vector-items}." :copies [{:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_VECTOR_ITEM_CAPACITY (\\d+)u"}]}
+          :kgraph {:value 4096 :override "KEXE_KGRAPH" :why "The kgraph datom store per run (amu ADR 0369, 2026-10-09: a per-run budget, was the array's fixed size); exhaustion :budget/cells {:arena :kgraph}. Also the artifact ABI's :kgraph-capacity. Seed rung r6l keeps run-time keyword texts here, so the Kotoba-route compiler needs about 1.6 datoms per emitted code byte: its images bake a larger budget." :copies [{:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_KGRAPH_CAPACITY (\\d+)u"}]}
+          :kgraph-max {:value 16777216 :why "16 Mi datoms (amu ADR 0369, 2026-10-09): address space, not memory -- 24 bytes of the shared mapping a datom, touched only when asserted; kgraph-get goes through an (entity, attribute) index sized by the budget."}}
   :bytes {:unit :byte :trap :budget/bytes
           :default {:value 65536 :override "KEXE_STRING_POOL" :copies [{:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_STRING_POOL_BYTES (\\d+)u"}]}
           :max {:value 1073741824 :why "1 GiB of address space."}}
   :frames {:unit :frame :trap :budget/frames
            :default {:value nil :why "Not metered: the compiled code keeps no call-depth counter (adding one is a codegen change to both ISAs and a context ABI slot -- not done in P4). The guest stack is the host's (RLIMIT_STACK 1 MiB; macOS keeps the 8 MiB launch stack), and running off it is named :host/stack-exhausted by the loader's alternate-stack fault handler."}}
-  :structural {:arena-scope-depth {:value 256 :why "Open arena-scope marks; a trap, not a budget of the four." :copies [{:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_ARENA_SCOPE_DEPTH (\\d+)u"}]}}
+  :structural {:arena-scope-depth {:value 256 :why "Open arena-scope marks; a trap, not a budget of the four." :copies [{:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_ARENA_SCOPE_DEPTH (\\d+)u"}]}
+               :export-argument-string-bytes {:value 65536 :why "UTF-8 bytes of one string leaf of a native EXPORT ARGUMENT (the loader's boundary codec; arguments arrive through argv, which is what limits them). Was a copy of :language/value :string-value-bytes until amu ADR 0362 moved that to 8 MiB; argv did not grow." :copies [{:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_BOUNDARY_STRING_BYTES (\\d+)u"}]}
+               :export-argument-bytes-items {:value 65536 :why "Items of one :bytes leaf of a native export argument; same reason as :export-argument-string-bytes." :copies [{:repo "kotoba-lang/amu" :path "tools/kexe_loader.c" :pattern "#define KEXE_BOUNDARY_BYTES_ITEMS (\\d+)u"}]}}
   :emergency-stop {:why "Outside the semantics: an OS bound on the child, not a language budget."
                    :cpu-seconds {:value 1 :override "KEXE_CPU_SECONDS"}
                    :wall-seconds {:value 3 :override "KEXE_WALL_SECONDS"}}
@@ -356,6 +373,9 @@
                                   {:repo "kotoba-lang/amu" :path "src/kotoba/compiler/limits.cljk" :var kotoba.compiler.limits/table
                                    :note "js manifests :limits :vector-i64-items / :vector-f64-items read this table"}]}}
   :bytes {:unit :byte :trap :budget/bytes :default {:value nil :why "Not metered unless named."}}
+  :string-value-bytes {:value 65536 :why "The ESM runtime's per-value string bound: 64 KiB, the pre-ADR-0362 language number. The ESM/JS backend is deferred from the first self-build (owner decision 1, 2026-10-02), so it keeps the bound it enforces and its manifests say so; a longer string traps :string/too-large there."
+                       :copies [{:repo "kotoba-lang/kotoba-script" :path "src/kotoba/script.cljk" :var kotoba.script/max-string-value-bytes}
+                                {:repo "kotoba-lang/amu" :path "src/kotoba/compiler/limits.cljk" :var kotoba.compiler.limits/table :note "js manifests :limits :string-value-bytes read this key"}]}
   :frames {:unit :frame :trap :budget/frames
            :default {:value 1024
                      :why "New in P4 (a deep recursion used to end as RangeError). Measured 2026-09-24, node 26 default stack, one cold process, the emitted try/finally shape: a bare non-tail recursion reaches 3,967 before RangeError, with a 3-binding let 2,431; 1024 is under both."

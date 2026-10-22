@@ -1,0 +1,64 @@
+;; guest side of the native-admission differential: every case file (args) is read, each case's host verdict is
+;; compared with kotoba.compiler.native-admission, and the disagreements are written to the last argument.
+(ns cstest.gate
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.nbb.cli-support :as support]
+            [kotoba.compiler.nbb.io :as nbb-io]
+            [kotoba.compiler.native-admission :as gate]
+            [kotoba.compiler.project :as project]
+            [kotoba.form :as form])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]}))
+
+(defn- kw [k :keyword] [:ref :form/r] (form/keyword-form k))
+(defn- get-k [m [:ref :form/r] k :keyword] [:ref :form/r] (form/form-get m (kw k)))
+
+(defn- verdict [ctx [:ref :form/r] c [:ref :form/r]] :i64
+  (let [kind (form/nth-of c 1) x (form/nth-of c 2)]
+    (if (= (form/keyword-value kind) :fn)
+      (if (gate/function-admitted? ctx x) 1 0)
+      (if (gate/body-admitted? ctx x) 1 0))))
+
+
+;; [agree disagree report-text]
+(defn- check-file [path :string acc [:ref :form/r]] [:ref :form/r]
+  (let [ctx (form/edn-form (nbb-io/read-artifact-text-file path))
+        cases (get-k ctx :cases)
+        n (form/count-of cases)]
+    (loop [i 0 agree (form/int-value (form/nth-of acc 0)) dis (form/int-value (form/nth-of acc 1))
+           text (form/string-value (form/nth-of acc 2))]
+      (if (>= i n)
+        (form/form-vec (form/three-forms (form/int-form agree) (form/int-form dis) (form/string-form text)))
+        (let [c (form/nth-of cases i)
+              host (form/int-value (form/nth-of c 0))
+              guest (verdict ctx c)]
+          (if (= host guest)
+            (recur (+ i 1) (+ agree 1) dis text)
+            (recur (+ i 1) agree (+ dis 1)
+                   (string-concat text
+                     (string-concat path (string-concat " host=" (string-concat (project/pr-text (form/int-form host))
+                       (string-concat " " (string-concat (project/pr-text c) "\n")))))))))))))
+
+(defn- check-from [args [:list :string] i :i64 n :i64 acc [:ref :form/r]] [:ref :form/r]
+  ;; reading a file can abort, and a call that can abort may not precede `recur`: plain recursion over the files
+  (if (>= i (- n 1))
+    acc
+    (let [next (check-file (typed-list-nth [:list :string] args i) acc)]
+      (check-from args (+ i 1) n next))))
+
+(defn- check-all [args [:list :string] n :i64] [:ref :form/r]
+  (check-from args 0 n (form/form-vec (form/three-forms (form/int-form 0) (form/int-form 0) (form/string-form "")))))
+
+(defn main [] :i64
+  (let [args (support/command-line-args)
+        n (vector-count args)
+        out (typed-list-nth [:list :string] args (- n 1))]
+    (try
+      (let [r (check-all args n)
+            agree (form/int-value (form/nth-of r 0))
+            dis (form/int-value (form/nth-of r 1))
+            w (nbb-io/write-text! out (form/string-value (form/nth-of r 2)))
+            p (io/write (string-concat "agree " (string-concat (project/pr-text (form/int-form agree))
+                          (string-concat " disagree " (string-concat (project/pr-text (form/int-form dis)) "\n")))))]
+        (if (= dis 0) 0 1))
+      (catch e (let [w (io/write-error (string-concat (ex-message e) "\n"))] 70)))))

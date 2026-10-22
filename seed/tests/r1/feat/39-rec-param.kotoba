@@ -1,0 +1,6 @@
+;; R1 feat: record as a parameter
+(ns seed.r1 (:export [test]))
+(defrecord Pt [x :i64 y :i64])
+(defn- sum [p [:record :seed.r1/Pt [[:x :i64] [:y :i64]]]] :i64 (+ (get p :x) (get p :y)))
+(defn test [] :i64
+  (sum (->Pt 3 4)))

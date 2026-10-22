@@ -1,0 +1,3 @@
+(defhandler cell [:state :i64] (get [s] (resume s s)) (put [s v] (resume v v)))
+(defn- tick [x :i64] :i64 (perform :state/put x))
+(defn main [] :i64 (handle (vector-at (map (fn [x] (tick x)) [1 2]) 0) (with cell 0)))

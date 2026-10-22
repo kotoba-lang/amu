@@ -1,0 +1,56 @@
+{
+  "status": "PASS causal adoption unit failure diagnosed; insufficient diagnostic vector-item capacity",
+  "actualSameNativeBinaryCapacityControl": {
+    "unitNativeSha256": "d42a0723e94d69d243d366b3b21f72cc4b76c415564a4406cef4b01ed5e5d8c2",
+    "rows": [
+      {
+        "capacity": 16777216,
+        "exit": 120,
+        "stdoutLines": 5226,
+        "goldenMatch": false,
+        "stdoutSha256": "dcb83edde02618c6fbf1e9355acd3338b7c67c0c90b34b60944b2a00b10eb6cd",
+        "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+      },
+      {
+        "capacity": 134217728,
+        "exit": 0,
+        "stdoutLines": 5226,
+        "goldenMatch": true,
+        "stdoutSha256": "dcb83edde02618c6fbf1e9355acd3338b7c67c0c90b34b60944b2a00b10eb6cd",
+        "stderr": ""
+      }
+    ]
+  },
+  "unitSourceEqualsPermanentFalseExceptTrailingWhitespace": true,
+  "unitNativeEqualsPermanentFalseExactBytes": true,
+  "unitOffset": 0,
+  "unitVectorItemDefault": 16777216,
+  "permanentVectorItemCapacity": 134217728,
+  "tArStateInvocations": 12,
+  "oneTInitVectorWords": 8388608,
+  "minimumMainPlusArStateVectorWords": 109051904,
+  "cause": "Golden code-print prefix completes before t-ar-guards allocates repeated fresh compiler memory vectors. Standard seed_run vector-item capacity fails after printing, whereas permanent capacity permits the unchanged native unit to return0.",
+  "environmentComparison": {
+    "unit": {
+      "pairs": 4194304,
+      "vectors": 65536,
+      "vectorItems": 16777216,
+      "seconds": 120,
+      "stringPool": 268435456
+    },
+    "permanent": {
+      "pairs": 16777216,
+      "vectors": 65536,
+      "vectorItems": 134217728,
+      "seconds": 1800,
+      "stringPool": 268435456
+    },
+    "causalControl": "Only vector-item capacity varied; pairs/time/argv/loader/native binary kept fixed."
+  },
+  "recommendation": "Run this compiler-unit gate with explicit SEED_VECTOR_ITEMS=134217728, matching existing permanent-generator resource contract; preserve golden/source/model.",
+  "limitations": [
+    "Other capacities or baseline compiler paths not executed by this agent.",
+    "This is compiler diagnostic heap capacity, not guest program fuel or resource equivalence claim."
+  ],
+  "modifiedProductFiles": []
+}

@@ -1,0 +1,12 @@
+;; merge-test guest (agent KIR3): kotoba.string.case/upper-case-root (lang/compat) over the whole input file (argument 0).
+(ns probe.case-merge
+  {:kotoba/export [main]}
+  (:require [kotoba.string.case :as c]))
+(defn up [s :string] :string (c/upper-case-root s))
+
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        text (typed-cap-call :fs/app-data :string :string path)
+        out (up text)
+        n (typed-cap-call :io/write :string :string out)]
+    0))

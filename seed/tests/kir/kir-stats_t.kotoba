@@ -1,0 +1,63 @@
+;; seed/tests/kir/kir-stats_t.kotoba -- memory census of one compile (owner: agent KIR). Appended to the seed's unity
+;; source WITHOUT 99-entry (scripts/seed/kir-stats.sh), so it defines seed-main. Compiled by a seed, run by the loader.
+;;   argv: kir|src <path>
+;; Runs the compile pipeline of `compile-kir` (kir) or `compile` (src) on <path> and prints one line of region fills
+;; (records used, not capacity) and the words of M they occupy:
+;;   bytes=<input bytes> tok= node= sym= hash= fn= sir= label= code= fix= lit= litb= exp= out= heap= words=<sum> err=<code>
+;; words = 4 tok + 8 node + 8 sym + hash + 16 fn + 4 sir + label + code + 4 fix + 4 lit + litb + 4 exp + out + heap
+;; (MEMORY-MAP widths; the SCOPE stack is transient and not counted). The heap M itself is one fixed 64 MiB vector.
+(defn- t-ks-d [n :i64] :string (mem-u2dec n))
+
+(defn- t-ks-f [M :vector-i64 i :i64] :i64 (- (vector-at M i) 1))
+
+(defn- t-ks-words [M :vector-i64] :i64
+  (+ (+ (+ (* 4 (t-ks-f M MM-TOK-N)) (* 8 (t-ks-f M MM-NODE-N)))
+        (+ (* 8 (t-ks-f M MM-SYM-N)) (vector-at M MM-HASH-N)))
+     (+ (+ (+ (* 16 (t-ks-f M MM-FN-N)) (* 4 (t-ks-f M MM-SIR-N)))
+           (+ (t-ks-f M MM-LABEL-N) (t-ks-f M MM-CODE-N)))
+        (+ (+ (+ (* 4 (t-ks-f M MM-FIX-N)) (* 4 (t-ks-f M MM-LIT-N))) (+ (t-ks-f M MM-LITB-N) (* 4 (t-ks-f M MM-EXP-N))))
+           (+ (t-ks-f M MM-OUT-N) (- (vector-at M MM-HEAP-TOP) MM-HEAP-BASE))))))
+
+(defn- t-ks-kv [k :string v :i64] :string (string-concat " " (string-concat k (string-concat "=" (t-ks-d v)))))
+
+(defn- t-ks-report [M :vector-i64 len :i64] :i64
+  (let [s (string-concat (t-ks-kv "bytes" len)
+          (string-concat (t-ks-kv "tok" (t-ks-f M MM-TOK-N))
+          (string-concat (t-ks-kv "node" (t-ks-f M MM-NODE-N))
+          (string-concat (t-ks-kv "sym" (t-ks-f M MM-SYM-N))
+          (string-concat (t-ks-kv "hash" (vector-at M MM-HASH-N))
+          (string-concat (t-ks-kv "fn" (t-ks-f M MM-FN-N))
+          (string-concat (t-ks-kv "sir" (t-ks-f M MM-SIR-N))
+          (string-concat (t-ks-kv "label" (t-ks-f M MM-LABEL-N))
+          (string-concat (t-ks-kv "code" (t-ks-f M MM-CODE-N))
+          (string-concat (t-ks-kv "fix" (t-ks-f M MM-FIX-N))
+          (string-concat (t-ks-kv "lit" (t-ks-f M MM-LIT-N))
+          (string-concat (t-ks-kv "litb" (t-ks-f M MM-LITB-N))
+          (string-concat (t-ks-kv "exp" (t-ks-f M MM-EXP-N))
+          (string-concat (t-ks-kv "out" (t-ks-f M MM-OUT-N))
+          (string-concat (t-ks-kv "heap" (- (vector-at M MM-HEAP-TOP) MM-HEAP-BASE))
+          (string-concat (t-ks-kv "words" (t-ks-words M))
+          (string-concat (t-ks-kv "err" (vector-at M MM-ERR)) "\n")))))))))))))))))
+        w (io-out s)]
+    (if (= (vector-at M MM-ERR) 0) 0 1)))
+
+(defn- t-ks-back [M :vector-i64 S :string len :i64] :i64
+  (t-ks-report (out-build (ly-run (gn-run (lw-run (ck-run (nm-run M S) S)))) S) len))
+
+(defn- t-ks-new [S :string] :vector-i64 (mem-set (mem-new) MM-SRC-LEN (string-length S)))
+
+(defn- t-ks-kir [S :string len :i64] :i64
+  (t-ks-back (kr-run (rd-run (kr-lex (t-ks-new S) S) S) S) S len))
+
+(defn- t-ks-src [S :string len :i64] :i64
+  (t-ks-back (rd-run (lx-run (t-ks-new S) S) S) S len))
+
+(defn- t-ks-go [mode :string path :string] :i64
+  (let [S0 (typed-cap-call :fs/app-data :string :string path)]
+    (if (= (string-length mode) 3)
+      (if (= (string-code-point-at mode 0) 107)
+        (t-ks-kir (string-concat S0 (kr-prelude)) (string-length S0))
+        (t-ks-src S0 (string-length S0)))
+      2)))
+
+(defn- seed-main [] :i64 (t-ks-go (io-arg 0) (io-arg 1)))

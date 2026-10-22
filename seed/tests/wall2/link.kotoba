@@ -1,0 +1,38 @@
+(ns wall2.link
+  "WALL2 test driver: the guest twin of `kotoba.compiler.project/link-source` (kotoba-lang
+  lang/compat/kotoba/compiler/project.kotoba), compiled by the seed and run natively.
+    link <dir> <root> <ns> ...   reads <dir>/<ns>.src for every module and prints `SOURCE` + newline + the linked
+                                 text, or `REFUSED ` + the refusal message (the format of link-host.cljk's host.out)."
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.project :as project]
+            [kotoba.form :as form])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]] [:phase :string] [:data [:ref :form/r]]]]}))
+
+(defn- dec-from [s :string i :i64 n :i64 acc :i64] :i64
+  (if (>= i n) acc (dec-from s (+ i 1) n (+ (* acc 10) (- (string-code-point-at s i) 48)))))
+
+(defn- argc [] :i64
+  (let [s (typed-cap-call :cli/args :string :string "")] (dec-from s 0 (string-length s) 0)))
+
+(defn- arg [i :i64] :string (typed-cap-call :cli/args :string :string (string-from-i64 i)))
+
+(defn- out [s :string] :i64 (let [r (typed-cap-call :io/write :string :string s)] 0))
+
+(defn- sources [dir :string i :i64 n :i64 acc [:ref :form/r]] [:ref :form/r]
+  (if (>= i n)
+    acc
+    (let [ns (arg i)
+          text (typed-cap-call :fs/app-data :string :string (string-concat dir (string-concat "/" (string-concat ns ".src"))))]
+      (sources dir (+ i 1) n (form/assoc-form acc (form/symbol-form ns) (form/string-form text))))))
+
+(defn- link [] :string
+  (let [n (argc)
+        srcs (sources (arg 0) 2 n (form/form-map (form/no-forms)))
+        r (project/link-source srcs (form/symbol-form (arg 1)))]
+    (string-concat "SOURCE\n" (form/string-value (form/form-get r (form/keyword-form :source))))))
+
+(defn main [] :i64
+  (let [text (try (link) (catch [:ref :fe/err] e (string-concat "REFUSED " (record-get [:ref :fe/err] e :msg))))]
+    (out text)))

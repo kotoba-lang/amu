@@ -1,0 +1,10 @@
+(ns cfg.framed-alias (:export [run walk]))
+;; A separate vector local preserves value but is not the admitted parameter root.
+(defn- walk [v :vector-i64 n :i64 a :i64 b :i64 c :i64] :i64
+  (let [w v]
+    (if (= n 0)
+      (+ c (vector-at w 0))
+      (let [x (vector-at w 1) y (vector-at w 2)
+            z (vector-at w (if (< x y) 1 2))]
+        (walk v (- n 1) a b (+ c x y z))))))
+(defn run [n :i64] :i64 (walk [11 13 17] n 1 2 0))

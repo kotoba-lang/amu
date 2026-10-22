@@ -1,0 +1,24 @@
+from pathlib import Path
+import json,hashlib,tarfile,shutil,subprocess
+r=Path('/Users/junkawasaki/github/wt/amu-seed17');w=Path('/private/tmp/amu-masked-writer-20261005');d=r/'docs/evidence/coscientist-masked-writer-20261005';d.mkdir()
+def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
+reports=[]
+for row in json.loads((w/'all-summary.json').read_text()):
+ name=row['workload'];base=w/'remote-timing'/name;b=json.loads((base/'baseline/results.json').read_text());t=json.loads((base/'timing/results.json').read_text());mf=json.loads((base/'candidate/manifest.json').read_text());e=b['entries'][0]
+ assert t['status']=='complete-provisional-candidate-timing' and t['acceptedTriples']==30 and t['summary']['stable'];assert sha(base/'baseline/results.json')==t['baselineResultsSha256'];assert sha(base/'baseline'/name/'native.bin')==e['nativeSha256']==mf['baselineNativeSha256'];assert sha(base/'baseline'/name/'c.dylib')==e['cDylibSha256'];assert sha(base/'candidate/native.bin')==mf['nativeSha256'];assert mf==t['manifest'];assert sha(r/'bench/embench/paired-timing-spec.json')==t['specSha256'];assert sha(r/'bench/embench/comparison-matrix.json')==b['matrixSpecSha256']
+ s=t['summary'];gap=s['candidate']['meanNsPerBody']-s['baseline']['meanNsPerBody'];sd=s['candidate']['sdNs']+s['baseline']['sdNs'];reports.append({'workload':name,'acceptedTriples':t['acceptedTriples'],'attemptedTriples':t['attemptedTriples'],'summary':s,'regressionGapNs':gap,'summedSdNs':sd,'regressionSeparated':gap>sd,'baselineResultsSha256':sha(base/'baseline/results.json'),'timingResultsSha256':sha(base/'timing/results.json')})
+changes=json.loads((w/'code-change.json').read_text());assert sorted(x['workload'] for x in reports)==sorted(x['workload'] for x in changes if x['changed'])==['picojpeg'];proof=json.loads((w/'fixture-proof.json').read_text());gen=json.loads((w/'generations.json').read_text());assert len({x['sha256'] for x in gen[1:]})==1
+qualified=all(x['summary']['candidateImprovesBaseline'] for x in reports) and not any(x['regressionSeparated'] for x in reports)
+summary={'status':'complete-native-masked-writer-experiment','decision':'Candidate passes changed-workload timing; product gates and integration remain required.' if qualified else 'Reject promotion: changed-workload timing fails prospective acceptance. Keep qualified scalar-tree product.','sourceHead':'1d04fda6b354ba7463201b86a72e42f23626bbf8','generations':gen,'prototypeSourceSha256':sha(w/'41-a64gen-prototype.kotoba'),'unitySourceSha256':sha(w/'seed-unity.kotoba'),'canonicalWorkloads':19,'canonicalResultFuelExhaustionStatus':json.loads((w/'ports-correctness.json').read_text())['status'],'nativeFixtureProof':{k:proof[k] for k in ['status','canonicalRuns','fixtures','realTestLayoutIdentical','supervisorComparisons','instructionAudit']},'compilerGenerationEntryOffsets':{str(n):int((w/f'seed-{n}.offset').read_text()) for n in [2,3,4]},'workspace':json.loads((w/'bulk-state.json').read_text()),'codeChanges':changes,'timingReports':reports,'measurementScriptSha256':sha(w/'measure-native-candidate-v2.py'),'productChanged':False,'timingQualified':qualified,'officialEmbenchScore':False,'formalPerfgateQualified':False,'COrBetterEvidence':False}
+(d/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+q=subprocess.run(['git','diff','--no-index',str(r/'seed/41-a64gen.kotoba'),str(w/'41-a64gen-prototype.kotoba')],capture_output=True,text=True);(d/'prototype.diff').write_text(q.stdout)
+with tarfile.open(d/'native-proof.tgz','w:gz') as a:
+ names=['create.py','build.py','41-a64gen-prototype.kotoba','hypothesis.json','generations.json','check-ports.py','ports-correctness.json','code-change.json','bulk-state.py','bulk-state.json','picojpeg-state-observer.kotoba','bulk-baseline','bulk-candidate','create-proof.py','fixture-proof.py','fixture-proof.json','fixture-proof-first.json','fixture-baseline-code.bin','fixture-candidate-code.bin','resume-fixture.py','failed-audit-pool-boundary.txt','corrected-context-fixture.txt']
+ for name in names:a.add(w/name,arcname=name)
+ for glob in ['seed-*.bin','seed-*.offset','seed-*.log','candidate-*.kotoba','candidate-*.bin','candidate-*.stdout','candidate-*.log','baseline-real.kotoba','baseline-real.bin','baseline-real*.stdout','baseline-real-*.log']:
+  for p in sorted(w.glob(glob)):a.add(p,arcname=p.name)
+with tarfile.open(d/'timing.tgz','w:gz') as a:
+ for name in ['remote-timing','all-summary.json','remote-all.py','prepare-timing.py','measure-native-candidate-v2.py']:a.add(w/name,arcname=name)
+ for name in ['paired-timing-spec.json','comparison-matrix.json']:a.add(r/'bench/embench'/name,arcname=name)
+for n in ['audit.py','archive.py']:shutil.copyfile(w/n,d/n)
+files=sorted(x for x in d.iterdir() if x.is_file());(d/'checksums.sha256').write_text(''.join(sha(x)+'  '+x.name+'\n' for x in files));print('PASS pins; timingQualified',qualified,'changed',len(reports),flush=True)

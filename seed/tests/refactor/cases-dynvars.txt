@@ -1,0 +1,45 @@
+# rule c (dynvars) (scripts/seed/refactor/diff.sh)
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/base.cljk --target dual
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/base.cljk --target host-env
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/desugar.cljk --target dual
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/desugar.cljk --target host-env
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/infer.cljk --target dual
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/infer.cljk --target host-env
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/analyze.cljk --target dual
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/analyze.cljk --target host-env
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/record_projection.cljk --target dual
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/record_projection.cljk --target host-env
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/validate.cljk --target dual
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/validate.cljk --target host-env
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/row.cljk --target dual
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/row.cljk --target host-env
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/expand.cljk --target dual
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/expand.cljk --target host-env
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/closure_types.cljk --target dual
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/closure_types.cljk --target host-env
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/state_ability.cljk --target dual
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/state_ability.cljk --target host-env
+plan c,a /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/base.cljk --target host-env --observable-from /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend
+plan a,b,c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/infer.cljk --target dual --no-diff
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/base.cljk --target dual --include-ported
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/base.cljk --target host-env --include-ported --no-diff
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/desugar.cljk --target dual --include-ported
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/desugar.cljk --target host-env --include-ported --no-diff
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/infer.cljk --target dual --include-ported
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/infer.cljk --target host-env --include-ported --no-diff
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/expand.cljk --target dual --include-ported
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/expand.cljk --target host-env --include-ported --no-diff
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/closure_types.cljk --target dual --include-ported
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/closure_types.cljk --target host-env --include-ported --no-diff
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/record_projection.cljk --target dual --include-ported
+plan c /private/tmp/wt-WALLS-sema/src/kotoba/compiler/frontend/record_projection.cljk --target host-env --include-ported --no-diff
+plan c @R@/seed/tests/refactor/fixtures/dyn1.cljk --target dual
+plan c @R@/seed/tests/refactor/fixtures/dyn1.cljk --target dual --include-ported
+plan c @R@/seed/tests/refactor/fixtures/dyn1.cljk --target host-env
+plan c @R@/seed/tests/refactor/fixtures/dyn1.cljk --target host-env --include-ported
+plan c @R@/seed/tests/refactor/fixtures/equiv.cljk --target dual
+plan c @R@/seed/tests/refactor/fixtures/equiv.cljk --target dual --include-ported
+plan c @R@/seed/tests/refactor/fixtures/equiv.cljk --target host-env
+plan c @R@/seed/tests/refactor/fixtures/equiv.cljk --target host-env --include-ported
+plan c,a,b @R@/seed/tests/refactor/fixtures/dyn1.cljk --target host-env --observable-from @R@/seed/tests/refactor/fixtures
+plan c @R@/seed/tests/refactor/fixtures/dyn1.cljk --target other

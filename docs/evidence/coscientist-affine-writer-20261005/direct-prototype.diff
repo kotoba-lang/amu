@@ -1,0 +1,72 @@
+diff --git a/private/tmp/amu-affine-writer-direct-20261005/baseline-41-a64gen.kotoba b/private/tmp/amu-affine-writer-direct-20261005/41-a64gen-prototype.kotoba
+index 81ebc13..c65d739 100644
+--- a/private/tmp/amu-affine-writer-direct-20261005/baseline-41-a64gen.kotoba
++++ b/private/tmp/amu-affine-writer-direct-20261005/41-a64gen-prototype.kotoba
+@@ -520,6 +520,27 @@
+              (= (gn-op M (+ q 20)) OP-RET) (= (gn-sir M (+ q 20) IF-A) 0)
+              (= (gn-op M (+ q 21)) OP-END) (= (gn-sir M (+ q 21) IF-A) f)) q 0)))
+ 
++;; Exact five-argument affine-index/signed-value checked vector write.
++;; Keep original nonleaf caller, closed dependencies and leaf fuel transaction.
++(defn- gn-affine-writer [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :i64
++  (let [p (gn-fnf M f FF-SIR) fuel (if (= (gn-op M (inc p)) OP-FUEL) 1 0)
++        q (gn-skiplab M (+ p 1 fuel)) sign (gn-sir M (+ q 7) IF-A)
++        writer (gn-sir M (+ q 8) IF-A) w (gn-wrapper M writer 0 3)]
++    (if (and (> p 0) (= n 5) (<= t 2) (= (gn-g M gn-f-leaf) 0)
++             (not (gn-clamp-open M f)) (not (gn-clamp-open M sign)) (not (gn-clamp-open M writer))
++             (not= (gn-op M (inc i)) OP-RES2)
++             (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) f) (= (gn-sir M p IF-B) 5)
++             (= (gn-wparams M q 0 4) (+ q 4))
++             (= (gn-op M (+ q 4)) OP-BIN) (= (gn-sir M (+ q 4) IF-A) BOP-MUL) (= (gn-sir M (+ q 4) IF-B) 2)
++             (= (gn-op M (+ q 5)) OP-BIN) (= (gn-sir M (+ q 5) IF-A) BOP-ADD) (= (gn-sir M (+ q 5) IF-B) 1)
++             (= (gn-op M (+ q 6)) OP-LGET) (= (gn-sir M (+ q 6) IF-A) 2) (= (gn-sir M (+ q 6) IF-B) 5)
++             (= (gn-op M (+ q 7)) OP-CALL) (= (gn-sir M (+ q 7) IF-B) 2) (= (gn-sir M (+ q 7) IF-C) 1)
++             (> (gn-sign-wrapper M sign 1) 0)
++             (= (gn-op M (+ q 8)) OP-CALL) (= (gn-sir M (+ q 8) IF-B) 0) (= (gn-sir M (+ q 8) IF-C) 3)
++             (or (= w RT-VECTOR-ASSOC-IN-PLACE) (= w (+ RT-VECTOR-ASSOC-IN-PLACE 256)))
++             (= (gn-op M (+ q 9)) OP-RET) (= (gn-sir M (+ q 9) IF-A) 0)
++             (= (gn-op M (+ q 10)) OP-END) (= (gn-sir M (+ q 10) IF-A) f)) q 0)))
++
+ (defn- gn-use [M :vector-i64 s :i64 w :i64] :vector-i64
+   (if (and (>= s 0) (< s gn-cap)) (gn-gs M (+ gn-a-use s) (+ w (gn-g M (+ gn-a-use s)))) M))
+ (defn- gn-use1 [M :vector-i64 j :i64 w :i64] :vector-i64
+@@ -1028,6 +1049,28 @@
+         (cond-> charged (gn-emit (enc-str 8 7 CTX-FUEL)))
+         (gn-take i t 0))))
+ 
++;; x0 is the signed value, x1 the wrapping affine index; operands read
++;; existing caller registers or distinct x0/x16/x17 scratch words. Pinned vector stays in x9..x11.
++(defn- gn-call-affine-writer [M :vector-i64 i :i64 f :i64 t :i64 q :i64] :vector-i64
++  (let [p (gn-fnf M f FF-SIR) outer (= (gn-op M (inc p)) OP-FUEL)
++        sw (gn-sign-wrapper M (gn-sir M (+ q 7) IF-A) 1)
++        ww (gn-wrapper M (gn-sir M (+ q 8) IF-A) 0 3)
++        charged (or outer (>= sw 1536) (>= ww 256)) width (bit-and sw 511)
++        M1 (gn-pin M t) rv (gn-pinned M1 t)
++        rb (gn-src M1 (inc t) 0 1) rs (gn-src M1 (+ t 2) 16 1)
++        rk (gn-src M1 (+ t 3) 17 1) rx (gn-src M1 (+ t 4) 0 1)]
++    (-> M1 (gn-ldt (inc t) 0 1) (gn-ldt (+ t 2) 16 1) (gn-ldt (+ t 3) 17 1)
++        (gn-ctx)
++        (cond-> charged (gn-emit (enc-ldr 8 7 CTX-FUEL))
++                outer (gn-mask-charge))
++        (gn-emit (enc-madd 1 rs rk rb))
++        (cond-> (>= sw 1536) (gn-mask-charge))
++        (gn-ldt (+ t 4) 0 1) (gn-emit (gn-e-bf 0x93400000 0 rx 0 (dec width)))
++        (cond-> (>= ww 256) (gn-mask-charge))
++        (gn-hchk rv 312 320) (gn-vidx 1) (gn-emit (gn-e-strr3 0 16 17))
++        (cond-> charged (gn-emit (enc-str 8 7 CTX-FUEL)))
++        (gn-into 0 t) (gn-take i t 0))))
++
+ ;; Bounded structural proof that a direct callee returns with input x7.
+ ;; A shared remaining-work budget counts all transitive SIR instructions; it
+ ;; prevents exponential rescanning. Unknown effects/operations fail closed.
+@@ -1052,8 +1095,8 @@
+         -1))))
+ 
+ (defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
+-  (let [w (gn-call-wrapper M i f t n) q (gn-clamp M i f n)]
+-   (cond (> q 0) (gn-call-clamp M i f t q) (gn-mask-writer M i f t n) (gn-call-mask-writer M t)
++  (let [w (gn-call-wrapper M i f t n) q (gn-clamp M i f n) aw (gn-affine-writer M i f t n)]
++   (cond (> aw 0) (gn-call-affine-writer M i f t aw) (> q 0) (gn-call-clamp M i f t q) (gn-mask-writer M i f t n) (gn-call-mask-writer M t)
+          (>= w 1024) (gn-call-sign M i t w)
+          (> w 0) (let [M1 (if (>= w 256) (gn-op-fuel M) M)
+                        slot (bit-and w 255)]

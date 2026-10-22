@@ -1,0 +1,8 @@
+;; R4B feat: strings, records and bytes in stack-passed parameters; the callee has lets and loops (framed)
+(ns seed.r4b (:export [test]) (:schemas {:m/r [:record :m/r [[:a :i64] [:s :string]]]}))
+(defn- g [x1 :i64 x2 :i64 x3 :i64 x4 :i64 x5 :i64 x6 :i64 x7 :i64 s :string r [:ref :m/r] b :bytes] :i64
+  (let [t (+ x1 x2 x3 x4 x5 x6 x7)]
+    (loop [i 0 acc t]
+      (if (< i (bytes-count b)) (recur (inc i) (+ acc (bytes-at b i))) (+ acc (* 100 (string-length s)) (* 1000 (get r :a)) (* 100000 (string-length (get r :s))))))))
+(defn test [] :i64
+  (g 1 1 1 1 1 1 1 "xyz" (record-new [:record :m/r [[:a :i64] [:s :string]]] 4 "hello") (bytes-from-vector-i64 [10 20])))

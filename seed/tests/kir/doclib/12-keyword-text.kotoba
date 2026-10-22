@@ -1,0 +1,16 @@
+(ns kw (:export [t]))
+(defn- kt [k :keyword] :document (document-keyword k))
+(defn- bit [ok :bool k :i64] :i64 (if ok 0 k))
+(defn- kv [d :document] :keyword (option-value-of [:option :keyword] (document-keyword-value d) :none))
+(defn t [] :i64
+  (+ 1
+     (bit (string=? (document-edn-print (kt :a/b)) ":a/b") 2)
+     (bit (= (kv (document-edn-read ":zz")) :zz) 4)
+     (bit (string=? (keyword-name :a/b) "b") 8)
+     (bit (string=? (keyword-name :x) "x") 16)
+     (bit (string=? (keyword-name (keyword-from-string "p/q")) "q") 32)
+     (bit (= (keyword-from-string "zz") :zz) 64)
+     (bit (string=? (keyword-name (document-kind (document-null))) "null") 128)
+     (bit (= (kv (document-i64 3)) :none) 256)
+     (bit (string=? (document-edn-print (document-map (kt :k) (kt :v))) "{:k :v}") 512)
+     (bit (= (kv (option-value-of [:option :document] (document-get (document-map :q (kt :p/q)) :q) (document-null))) :p/q) 1024)))

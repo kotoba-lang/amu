@@ -1,0 +1,4 @@
+;; R4B feat: a 6-parameter private defn called from a fn literal's context (captures stay at 5 in all)
+(ns seed.r4b (:export [test]))
+(defn- six [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64 (- (+ a b c d e) f))
+(defn test [] :i64 (reduce (fn [acc x] (+ acc (six x x x x x 1))) 0 [1 2 3]))

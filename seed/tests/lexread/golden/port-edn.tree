@@ -1,0 +1,8 @@
+(ns embench.edn (:export [run test-edn]))
+(defn- signed16 [x :i64] :i64 (if (> x 32767) (- x 65536) x))
+(defn- a-at [i :i64] :i64 (signed16 (vector-at [0 2047 3072 2048 512 63488 62208 1024] (- i (* 8 (quot i 8))))))
+(defn- b-at [i :i64] :i64 (signed16 (vector-at [3168 3136 3104 3072 62976 62464 61952 61440] (- i (* 8 (quot i 8))))))
+(defn- scaled-a [i :i64] :i64 (+ (a-at i) (quot (* 3 (b-at i)) 32768)))
+(defn- fir-at [i :i64] :i64 (loop [j 0 sum 0] (if (= j 50) (quot sum 32768) (recur (+ j 1) (+ sum (* (scaled-a (+ i j)) (b-at j)))))))
+(defn run [token :i64] :i64 (if (= token 1) (loop [i 0 hash -3750763034362895579] (if (= i 50) hash (recur (+ i 1) (* (bit-xor hash (fir-at i)) 1099511628211)))) 0))
+(defn test-edn [] :i64 (if (= (run 1) -1701642695750269687) 1 0))

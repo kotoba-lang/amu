@@ -1,0 +1,29 @@
+(ns wall2.capnames
+  "WALL2 test: the Kotoba reading of kotoba.compiler.capability-names, compiled from source by the seed and run
+  natively. main answers 0 when every case equals the host reading's answer (the same cases, by value, as
+  `kbb` on the host reading: seed/tests/wall2/capnames-host.cljk), else the number of the first failing case."
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.capability-names :as cn]
+            [kotoba.form :as form])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]}))
+
+(defn- e [text :string] [:ref :form/r] (form/edn-form text))
+
+(defn- same [got [:ref :form/r] want :string] :bool (form/eq got (e want)))
+
+(defn- cases [] :i64
+  (cond
+    (not (same (cn/named-grant (e "[:cap/call 3]")) "[:cap/call :hash/sha256]")) 1
+    (not (same (cn/named-grant (e "[:cap/call 200]")) "[:cap/call 200]")) 2
+    (not (same (cn/named-grant (e "[:cap/call :x/y]")) "[:cap/call :x/y]")) 3
+    (not (same (cn/name-grants (e "{:effects #{[:cap/call 3] [:cap/call 200]} :x [[:cap/call 1] 5]}"))
+               "{:effects #{[:cap/call :hash/sha256] [:cap/call 200]} :x [[:cap/call :identity/sign] 5]}")) 4
+    (not (same (cn/wire-grant (e "[:cap/call :hash/sha256]")) "[:cap/call 3]")) 5
+    (not (same (cn/wire-grant (e "[:cap/call 4]")) "[:cap/call 4]")) 6
+    (not (same (cn/wire-policy (e "{:allow #{[:cap/call :hash/sha256] [:cap/call 3] [:cap/call 4]} :abac 1}"))
+               "{:allow #{[:cap/call 3] [:cap/call 4]} :abac 1}")) 7
+    (not (same (cn/wire-policy (e "{:abac 1}")) "{:abac 1}")) 8
+    :else 0))
+
+(defn main [] :i64 (try (cases) (catch e 99)))

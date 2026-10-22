@@ -1,0 +1,15 @@
+from pathlib import Path
+import json,hashlib,shutil,os,subprocess
+root=Path('/private/tmp/amu-zebulun-private-length-clones-20261006');p=root/'timing-package';old=Path('/private/tmp/amu-zebulun-paired-20261005');sha=lambda x:hashlib.sha256(x.read_bytes()).hexdigest();load=lambda x:json.loads(x.read_text());o=load(old/'measurement-2/results.json');pb=load(p/'product-proof.json');pc=load(p/'candidate-proof.json');pre=load(p/'preflight.json');assert pre['status']=='complete-native-semantic-proof-before-timing' and pre['fullSupervisorComparisons']==209 and len(pre['changedGuests'])==5
+for name,h in pre['proofPins'].items():assert sha(p/name)==h
+assert sha(old/'environment/runner')==o['runnerSha256'];assert sha(p/'comparison-matrix.json')==o['matrixSpecSha256'];assert sha(p/'paired-timing-spec.json')==sha(old/'repo/bench/embench/paired-timing-spec.json');env=dict(os.environ,PYTHONPATH=str(old/'repo/scripts/seed/image'));report={'status':'running','entries':[],'changedGuests':pre['changedGuests'],'officialEmbenchScore':False,'productUnchanged':True}
+def save():(root/'batch-status.json').write_text(json.dumps(report,indent=2)+'\n')
+save()
+for name in pre['changedGuests']:
+ d=p/name;b=d/'baseline';mf=load(d/'candidate/manifest.json');e=next(x for x in o['entries'] if x['workload']==name);eb=next(x for x in pb['entries'] if x['workload']==name);ec=next(x for x in pc['entries'] if x['workload']==name)
+ assert sha(d/'baseline-native.bin')==mf['baselineNativeSha256']==eb['nativeSha256'];assert sha(d/'candidate/native.bin')==mf['nativeSha256']==ec['nativeSha256'];assert ec['runs']==eb['runs'] and ec['fuelTrapReturncode']==eb['fuelTrapReturncode'];assert sha(old/'measurement-2'/name/'c.dylib')==e['cDylibSha256'];t=b/name;t.mkdir(parents=True);shutil.copyfile(d/'baseline-native.bin',t/'native.bin');shutil.copyfile(old/'measurement-2'/name/'c.dylib',t/'c.dylib')
+ (b/'results.json').write_text(json.dumps({'status':'complete-provisional-timing','runnerSha256':o['runnerSha256'],'matrixSpecSha256':o['matrixSpecSha256'],'entries':[{**e,'offset':mf['baselineOffset'],'nativeSha256':mf['baselineNativeSha256']}],'derivation':'Current qualified static vector chain product; pinned original C/runner. Allthree arms freshly measured after native preflight.','nativePreflightSha256':sha(p/'preflight.json'),'officialEmbenchScore':False},indent=2)+'\n')
+ print('START',name,flush=True)
+ with (d/'timing.log').open('w') as log:q=subprocess.run(['python3',str(p/'measure-native-candidate-v2.py'),str(b),str(d/'candidate'),str(old/'environment/runner'),str(p/'paired-timing-spec.json'),str(d/'timing')],env=env,stdout=log,stderr=subprocess.STDOUT)
+ result=load(d/'timing/results.json');row={'workload':name,'exit':q.returncode,'status':result['status'],'acceptedTriples':result.get('acceptedTriples'),'attemptedTriples':result.get('attemptedTriples'),'summary':result.get('summary'),'error':result.get('error')};report['entries'].append(row);save();print('FINISH',name,json.dumps(row),flush=True)
+report['status']='terminal-all-changed-guests-attempted';save();print('PASS terminal one prospective timing experiment; per-workload decisions retained',flush=True)

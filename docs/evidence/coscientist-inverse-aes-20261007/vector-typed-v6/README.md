@@ -1,0 +1,15 @@
+# Typed V6 offline proof checkpoint
+
+Copy only typed-v6-proof.tgz, typed-v6-proof.manifest.json and replay-typed-v6-proof.py to a fresh folder; run `python3 replay-typed-v6-proof.py`. The standard-library reader hash-checks the envelope, safely materializes data, reads compiler evidence and runs pure finite/reference calculations. It never executes a compiler, loader, benchmark, solver, network operation or build script.
+
+Frozen source includes V6's four variants, exact guarded width helpers, strict active load/merge/kill, V5 reversal, full768 reset/50177 cleanup and unchanged work cap. Finite design/model evidence and root copied-model replay are included. V5 ancestor unity variants are losslessly materialized by reversing the V6 kernel in V6 unity and validating exact frozen V5 SHA/length; this is a source reconstruction, never a compiler surrogate. Selected historical pin inventories retain their ancestor references without recursively expanding every earlier input.
+
+Native build evidence includes original pre-entry sandbox failure125 plus the unchanged-source retry's eight successful compile/extract calls: nine loader calls and eight compiler entries. Four generations are921256 bytes, offset0, byte-identical a6e468dad8d7b5ceee4210a7e1c22ec2fe2859fc8bc77ce0606c5ab6bdc5d597. The reader preserves the initial failure rather than treating it as a compiler result.
+
+Actual observer evidence contains40 terminal successful compiler calls, all19 ordinary wholeKSEED/native/source/export-offset parity, rawSIR/FREC/CACHE/EMIT chain and identity tuples, unchanged schema/filter/hunks, owner joins and completed independent review. All19 frozen V6 reference rows are recomputed exactly from current raw observations. That does not mean all native analyses completed or all reference candidates were published:43 published tuples match a subset;42 reference candidates remain missing.
+
+Actual counts:43 semantic/33 compatible globally,18 semantic/16 compatible across3 priority modules;15 complete,2 work-cap and2 FN-cap refusals. The registered32-compatible-sites/3-priority-bodies gate FAILS. The global33 count cannot satisfy the priority gate. Pico refuses alias phase5; QR refuses shape phase6. No native rewrite is emitted and no runtime gain/C superiority/official score is established.
+
+Two fresh three-file copies pass. Two envelope-corruption controls reject. The initial archive exceeded compressed cap by38099 bytes and is retained in scratch; source reconstruction resolves the limit without removing required evidence. The initial reader setup failure attempted a historical census without all historical inputs; its code and failure record are preserved. The corrected reader replays finite model portions and recomputes actual19 reference evidence, without relabeling the historical width census as newly recomputed.
+
+Remaining qualification includes native dirty-entry/error/cleanup/reuse controls, preciseNF/wholeM/ABI, strict128 CPU-operation theorem, branch/check omission validation, benchmark runtime/performance, product adoption and the full Cgoal. V7 designs and unrelated later model hypotheses are excluded.

@@ -1,0 +1,22 @@
+;; Diagnostic proof kernel, never a product dependency. One-off new algorithm.
+(ns research.rewrite-proof (:export [batch]))
+;; Bits 0..4: compiler effect, requested operation, delegation, local policy,
+;; current runtime validity. Bit5: previously issued capability witness.
+(defn- allowed [s :i64] :bool (= (bit-and s 31) 31))
+(defn- decision [s :i64 mutation :i64] :bool
+ (if (= mutation 1) (= (bit-and s 32) 32) (allowed s)))
+(defn- step [s :i64 e :i64] :i64
+ (cond (< e 5) (bit-or s (i64-shift-left 1 e))
+       (< e 10) (bit-and s (bit-not (i64-shift-left 1 (- e 5))))
+       (= e 10) (if (allowed s) (bit-or s 32) s)
+       :else (bit-and s 31)))
+(defn- events [s :i64 e :i64 mutation :i64 n :i64] :i64
+ (if (= e 12) n
+  (let [q (step s e)]
+   (events s (inc e) mutation
+    (+ n (if (and (decision q mutation) (not (allowed q))) 1 0))))))
+(defn- states [s :i64 mutation :i64 n :i64] :i64
+ (if (= s 64) n (states (inc s) mutation (events s 0 mutation n))))
+;; Exhaust every state and every transition in the finite model. A stale-cache
+;; mutation must produce violations, otherwise this checker cannot discriminate.
+(defn batch [mutation :i64] :i64 (states 0 mutation 0))

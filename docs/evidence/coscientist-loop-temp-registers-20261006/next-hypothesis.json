@@ -1,0 +1,217 @@
+{
+  "status": "registered-not-implemented-or-measured",
+  "hypothesis": "Compose a closed high-depth affine expression: exact LGET t localA; CONST t+1 c; integer MUL t; LGET t+1 localB; integer ADD t; integer ADD t-1 with a known small constant prefix. Emit existing enc-madd plus immediate prefix add directly to original final destination, eliminating intermediate high homes and redundant reloads. Keep original frame/local assignment/no new callee registers.",
+  "nativeStructuralCensus": {
+    "status": "complete-fresh-native-SIR-structural-census-before-fusion-implementation",
+    "notActualCompilerAdmission": true,
+    "notRuntimeTimeShares": true,
+    "requiredAdditionalChecks": "Same-function loop; local register mappings; actual known prefix descriptor; consumed high temps killed before subsequent use; fullstate/overflow/fuel/traps/aliases/branch/profitability proof.",
+    "entries": [
+      {
+        "workload": "aha-mont64",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "crc32",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "depthconv",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "edn",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "huffbench",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "matmult-int",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": [
+          {
+            "sir": 3291,
+            "highTemp": 7,
+            "leftLocal": 2,
+            "factor": 20,
+            "rightLocal": 4,
+            "knownPrefix": 800,
+            "sequence": [
+              [
+                3,
+                6,
+                800,
+                0
+              ],
+              [
+                4,
+                7,
+                2,
+                0
+              ],
+              [
+                3,
+                8,
+                20,
+                0
+              ],
+              [
+                6,
+                3,
+                7,
+                0
+              ],
+              [
+                4,
+                8,
+                4,
+                0
+              ],
+              [
+                6,
+                1,
+                7,
+                0
+              ],
+              [
+                6,
+                1,
+                6,
+                0
+              ]
+            ]
+          },
+          {
+            "sir": 3300,
+            "highTemp": 8,
+            "leftLocal": 4,
+            "factor": 20,
+            "rightLocal": 3,
+            "knownPrefix": 1200,
+            "sequence": [
+              [
+                3,
+                7,
+                1200,
+                0
+              ],
+              [
+                4,
+                8,
+                4,
+                0
+              ],
+              [
+                3,
+                9,
+                20,
+                0
+              ],
+              [
+                6,
+                3,
+                8,
+                0
+              ],
+              [
+                4,
+                9,
+                3,
+                0
+              ],
+              [
+                6,
+                1,
+                8,
+                0
+              ],
+              [
+                6,
+                1,
+                7,
+                0
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "workload": "md5sum",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "nettle-aes",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "nettle-sha256",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "nsichneu",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "picojpeg",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "qrduino",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "sglib-combined",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "slre",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "statemate",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "tarfind",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "ud",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "wikisort",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      },
+      {
+        "workload": "xgboost",
+        "sourcePinnedAndGuestEqualCurrentProduct": true,
+        "rawStructuralMatches": []
+      }
+    ]
+  },
+  "generalAdmission": "No workload names. Same-function validated loop, high temp>=7, exact integer opcode/operand records, register-resident valid local slots, known prefix descriptor and immediate range, proof that consumed high temps are killed before later reads with bounded scan, original alias/coalescing bookkeeping and final folded LSET skip count. Unknown shapes/labels/liveness/resources refuse to original path. Preserve existing scalar-tree state14.",
+  "evidence": "Current quiet native census identifies two structural sequences in originalmatmult FN5 SIR3291/3300 with factors20/prefix800/1200. Structural match is not compiler admission or timing. Existing enc-madd is available in seed/40-a64enc.",
+  "requiredProof": "Independent i64 modular overflow/negative/zero/extreme arguments; live prefix homes/registers; local aliases/coalescing; RET2/future temp reads causing refusal; call/branch/loop imports/resources/fuel/traps; native fixedpoint; current402/7989 regressions; all19source/result/fuel/actual-byte admission beforefresh prospective timing. No result cache/check hoisting/benchmark changes.",
+  "measurement": "Each changed original guest new quiet30triples, RSD<=10%, ratio>=1.05 and gap>sumSD. New machine must differ from rejected2reg/3reg machines. Performance pass thenpermanent guards/gates/integrated3gen/percasecorpus beforepromotion.",
+  "goal": "C-or-better remains all19 original aligned workloads, not officialscores."
+}

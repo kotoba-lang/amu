@@ -1,0 +1,76 @@
+(ns wall2.graph-host
+  "WALL2: the HOST answer of `kotoba.compiler.project-files/load-closed-graph` + `project/link-source` (amu src, nbb)
+  on file trees, written as fixtures for the native differential of their guest twins (kotoba-lang lang/compat).
+  BOOTSTRAP-REFERENCE (node/nbb). Run from the amu repo root:
+    node bin/kbb --backend sci --classpath \"$(cat build/walls/cp-walls.txt)\" seed/tests/wall2/graph-host.cljk <out-dir>
+  <out-dir> must be an absolute real path (no symlink on it). For each case: the tree under <case>/t/, <case>/args
+  (input file, then the source roots, all absolute) and <case>/host.out:
+    GRAPH / root / `ns path` per module (sorted, paths relative to <case>/t) / SOURCE / the linked text
+  or `REFUSED ` + the message."
+  (:require [kotoba.compiler.project :as project]
+            [kotoba.compiler.project-files :as project-files]
+            [kotoba.lang.text :as str]
+            ["node:fs" :as fs]
+            ["node:path" :as path]))
+
+(def calc-main "(ns main (:require [util :as u]) (:export [run]))\n(defn run [x :i64] :i64 (+ 1 (u/twice x)))")
+(defn- util [factor] (str "(ns util (:export [twice]))\n(defn twice [x :i64] :i64 (* " factor " x))"))
+
+;; [label input roots {relative-path text}]
+(def cases
+  [["two-modules" "main.kotoba" ["src"] {"main.kotoba" calc-main "src/util.kotoba" (util 2)}]
+   ["root-inside-a-root" "src/main.kotoba" ["src"] {"src/main.kotoba" calc-main "src/util.cljk" (util 3)}]
+   ["nested-namespace-and-dash" "main.kotoba" ["src"]
+    {"main.kotoba" "(ns main (:require [my-lib.core-x :as c]) (:export [run]))\n(defn run [x :i64] :i64 (c/f x))"
+     "src/my_lib/core_x.cljc" "(ns my-lib.core-x (:export [f]))\n(defn f [x :i64] :i64 (+ x 7))"}]
+   ["extension-priority-in-one-root" "main.kotoba" ["src"]
+    {"main.kotoba" calc-main "src/util.kotoba" (util 2) "src/util.cljk" (util 9)}]
+   ["kotoba-twin-across-roots" "main.kotoba" ["a" "b"]
+    {"main.kotoba" calc-main "a/util.cljk" (util 9) "b/util.kotoba" (util 2)}]
+   ["two-cljk-across-roots" "main.kotoba" ["a" "b"]
+    {"main.kotoba" calc-main "a/util.cljk" (util 9) "b/util.cljk" (util 2)}]
+   ["two-kotoba-across-roots" "main.kotoba" ["a" "b"]
+    {"main.kotoba" calc-main "a/util.kotoba" (util 9) "b/util.kotoba" (util 2)}]
+   ["missing-module" "main.kotoba" ["src"] {"main.kotoba" calc-main}]
+   ["missing-module-in-an-existing-root" "main.kotoba" ["src"] {"main.kotoba" calc-main "src/other.kotoba" (util 1)}]
+   ["root-header-refusal-with-a-root" "main.kotoba" ["src"] {"main.kotoba" "(ns main (:frobnicate 1))\n(defn run [] :i64 1)" "src/x.kotoba" (util 1)}]
+   ["sibling-directory-sharing-a-prefix" "main.kotoba" ["src"]
+    {"main.kotoba" "(ns main (:require [util :as u]) (:export [run]))\n(defn run [x :i64] :i64 (u/twice x))" "src/keep.kotoba" (util 1) "src-evil/util.kotoba" (util 2)}]
+   ["declared-namespace-mismatch" "main.kotoba" ["src"]
+    {"main.kotoba" calc-main "src/util.kotoba" "(ns other (:export [twice]))\n(defn twice [x :i64] :i64 x)"}]
+   ["root-is-not-a-directory" "main.kotoba" ["main.kotoba"] {"main.kotoba" calc-main}]
+   ["dependency-header-refusal" "main.kotoba" ["src"]
+    {"main.kotoba" "(ns main (:require [leaf :as l]) (:export [run]))\n(defn run [] :i64 (l/one))"
+     "src/leaf.kotoba" "(ns leaf (:require [\"node:fs\" :as fs]) (:export [one]))\n(defn one [] :i64 1)"}]
+   ["root-header-refusal" "main.kotoba" ["src"] {"main.kotoba" "(ns main (:frobnicate 1))\n(defn run [] :i64 1)"}]
+   ["three-levels-and-shared-dependency" "app.kotoba" ["src"]
+    {"app.kotoba" "(ns app (:require [b :as b] [c :as c]) (:export [run]))\n(defn run [] :i64 (+ (b/f) (c/g)))"
+     "src/b.kotoba" "(ns b (:require [d :as d]) (:export [f]))\n(defn f [] :i64 (d/h))"
+     "src/c.kotoba" "(ns c (:require [d :as d]) (:export [g]))\n(defn g [] :i64 (+ 1 (d/h)))"
+     "src/d.kotoba" "(ns d (:export [h]))\n(defn h [] :i64 40)"}]
+   ["template-through-the-filesystem" "root.kotoba" ["src"]
+    {"root.kotoba" "(ns root\n  (:require [kotoba.set.union :as ui :with {elem :i64}])\n  (:export [main]))\n(defn main [] :i64\n  (typed-set-count [:set :i64] (ui/union (typed-set-new [:set :i64] 1 2) (typed-set-new [:set :i64] 2 3))))"
+     "src/kotoba/set/union.kotoba" "(ns kotoba.set.union\n  (:params [elem])\n  (:export [union]))\n(defn union [s1 [:set elem] s2 [:set elem]] [:set elem]\n  (loop [i 0 acc s1]\n    (if (< i (typed-set-count [:set elem] s2))\n      (recur (+ i 1) (typed-set-conj [:set elem] acc (typed-set-nth [:set elem] s2 i)))\n      acc)))"}]])
+
+(defn- write! [file text]
+  (.mkdirSync fs (.dirname path file) #js {:recursive true})
+  (.writeFileSync fs file text "utf8"))
+
+(defn- rel [dir p] (if (str/starts-with? p (str dir "/")) (subs p (inc (count dir))) p))
+
+(let [out (or (first *command-line-args*) "build/wall2/graph")]
+  (doseq [[label input roots files] cases]
+    (let [dir (.join path out label)
+          t (.join path dir "t")
+          _ (doseq [[f text] files] (write! (.join path t f) text))
+          in (.join path t input)
+          rs (mapv #(.join path t %) roots)
+          answer (try (let [g (project-files/load-closed-graph in rs)
+                            linked (project/link-source (:sources g) (:root g))]
+                        (str "GRAPH\n" (:root g) "\n"
+                             (apply str (map (fn [[k v]] (str k " " (rel t v) "\n")) (:paths g)))
+                             "SOURCE\n" (:source linked)))
+                      (catch :default e (str "REFUSED " (ex-message e))))]
+      (write! (.join path dir "args") (str in "\n" (apply str (map #(str % "\n") rs))))
+      (write! (.join path dir "host.out") answer)))
+  (println (str "graph-host: " (count cases) " cases written to " out)))

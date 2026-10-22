@@ -1,0 +1,393 @@
+(ns kotoba.compiler.refactor-cli-test
+  "`amu refactor` as a command: EDN answers with a stable format keyword, plan/apply/--check semantics, refusals with
+  stable codes, split into a directory, verify over two (faked) test runs. The I/O record is an in-memory file system, so
+  nothing here touches the disk or starts a process; the end-to-end route through bin/amu is scripts/test-refactor.sh."
+  (:require [cljs.test :refer [deftest is testing]]
+            ["node:fs" :as fs]
+            [clojure.string :as str]
+            [kotoba.compiler.project :as project]
+            [kotoba.compiler.refactor-cli :as cli]
+            [kotoba.compiler.refactor.verify :as verify]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def sample
+  (str "(ns sample.x\n  \"doc\"\n  (:require [clojure.string :as str]))\n\n"
+       ";; keep this comment\n"
+       "(defn pairs [m] (map (fn [[k v]] [k v]) m))\n\n"
+       "(defn names [xs] (mapv :name xs))\n\n"
+       "(defn bad [x]\n  (when-not (pos? x) (reject! \"neg\" x \"code\"))\n  x)\n"))
+
+(defn- memory-io
+  "files: atom of {path text}; dirs: set of directory paths."
+  [files & [{:keys [spawn]}]]
+  {:read (fn [p] (or (get @files p) (throw (ex-info "no such file" {:path p}))))
+   :write (fn [p t] (swap! files assoc p t))
+   :rename (fn [a b] (swap! files (fn [m] (-> m (assoc b (get m a)) (dissoc a)))))
+   :kind (fn [p] (cond (contains? @files p) :file
+                       (some #(str/starts-with? % (str p "/")) (keys @files)) :dir))
+   :list (fn [d] (distinct (for [k (keys @files) :when (str/starts-with? k (str d "/"))
+                                 :let [rest* (subs k (inc (count d)))
+                                       [head & more] (str/split rest* #"/")]]
+                             {:name head :dir? (boolean (seq more))})))
+   :mkdirs (fn [_] nil)
+   :read-edn (fn [p] (cljs.reader/read-string (or (get @files p) (throw (ex-info "no such file" {:path p})))))
+   :nbb-cli "/nbb/cli.js"
+   :spawn (or spawn (fn [_] (throw (ex-info "no process in this test" {}))))})
+
+(defn- refusal-code [thunk]
+  (try (thunk) nil
+       (catch :default e (get (ex-data e) :kotoba.error/code))))
+
+(deftest list-rules
+  (let [{:keys [value status]} (cli/run ["list-rules"] (memory-io (atom {})))]
+    (is (= 0 status))
+    (is (= :kotoba.refactor/v1 (:format value)))
+    (is (= [:a :b :c :d :e :f :g] (map :id (:rules value))))
+    (is (= [:a :b :d :e :f] (:standard-order value)))
+    (is (= [:list-rules :plan :apply :graph :partition :split :verify :to-kotoba] (:commands value)))
+    (is (= [:c] (map :id (filter :needs-target (:rules value)))))))
+
+(deftest plan-counts-and-diff-without-writing
+  (let [files (atom {"/w/sample.cljk" sample})
+        {:keys [value status]} (cli/run ["plan" "a,d" "/w/sample.cljk"] (memory-io files))
+        file (first (:files value))]
+    (is (= 0 status))
+    (is (= :plan (:command value)))
+    (is (= [:a :d] (:rules value)))
+    (is (= {:patterns 1 :ported 0 :actionable 1 :auto 1 :human 0 :applied 1} (get-in value [:totals :summary :destructure])))
+    (is (= {:patterns 1 :ported 0 :actionable 1 :auto 1 :human 0 :applied 1} (get-in value [:totals :summary :kwcallback])))
+    (is (:changed file))
+    (is (str/includes? (:diff file) "-(defn pairs [m] (map (fn [[k v]] [k v]) m))"))
+    (is (str/includes? (:diff file) "+(defn names [xs] (mapv (fn [e] (:name e)) xs))"))
+    (is (= sample (get @files "/w/sample.cljk")) "plan never writes")
+    (testing "--no-diff and --patch-out"
+      (let [r (cli/run ["plan" "a" "/w/sample.cljk" "--no-diff" "--patch-out" "/w/p.patch"] (memory-io files))]
+        (is (nil? (:diff (first (:files (:value r))))))
+        (is (= "" (get @files "/w/p.patch")) "no diff text is produced with --no-diff, so the patch is empty")))
+    (testing "human sites are reported with their reason, not rewritten"
+      (let [r (cli/run ["plan" "b" "/w/sample.cljk"] (memory-io files))]
+        (is (= 1 (:human-sites-total (first (:files (:value r))))))
+        (is (string? (:reason (first (:human-sites (first (:files (:value r))))))))))))
+
+(deftest apply-check-and-write
+  (let [files (atom {"/w/sample.cljk" sample})
+        check (cli/run ["apply" "a,d" "/w/sample.cljk" "--check"] (memory-io files))]
+    (is (= 1 (:status check)) "--check: pending changes are exit 1")
+    (is (false? (:ok (:value check))))
+    (is (= sample (get @files "/w/sample.cljk")) "--check never writes")
+    (let [applied (cli/run ["apply" "a,d" "/w/sample.cljk"] (memory-io files))
+          out (get @files "/w/sample.cljk")]
+      (is (= 0 (:status applied)))
+      (is (= 1 (:written (:value applied))))
+      (is (not= sample out))
+      (is (str/includes? out ";; keep this comment") "comments survive")
+      (is (str/includes? out "(defn- fe-nth [c i] (nth c i nil))") "the helper is inserted once")
+      (is (not-any? #(str/includes? % ".amu-refactor.tmp") (keys @files)) "the temporary file was renamed away")
+      (testing "a second run applies nothing, and --check is then green"
+        (let [again (cli/run ["apply" "a,d" "/w/sample.cljk" "--check"] (memory-io files))]
+          (is (= 0 (:status again)))
+          (is (true? (:ok (:value again))))
+          (is (= 0 (get-in again [:value :totals :changed]))))))))
+
+(deftest apply-out-leaves-the-source-alone
+  (let [files (atom {"/w/sample.cljk" sample})
+        r (cli/run ["apply" "a" "/w/sample.cljk" "--out" "/w/copy.cljk"] (memory-io files))]
+    (is (= 0 (:status r)))
+    (is (= sample (get @files "/w/sample.cljk")))
+    (is (str/includes? (get @files "/w/copy.cljk") "fe-nth"))))
+
+(deftest directories-are-searched
+  (let [files (atom {"/w/src/a.cljk" sample "/w/src/sub/b.cljc" sample "/w/src/notes.md" "x" "/w/src/.hidden/c.cljk" sample})
+        r (cli/run ["plan" "a" "/w/src" "--no-diff"] (memory-io files))]
+    (is (= ["/w/src/a.cljk" "/w/src/sub/b.cljc"] (sort (map :path (:files (:value r))))))))
+
+(deftest refusals-have-stable-codes
+  (let [files (atom {"/w/sample.cljk" sample "/w/broken.cljk" "(defn f [x" "/w/empty/readme.md" "x"})
+        io (memory-io files)]
+    (is (= :refactor/usage (refusal-code #(cli/run [] io))))
+    (is (= :refactor/usage (refusal-code #(cli/run ["frobnicate"] io))))
+    (is (= :refactor/usage (refusal-code #(cli/run ["plan" "a" "--bogus" "/w/sample.cljk"] io))))
+    (is (= :refactor/usage (refusal-code #(cli/run ["plan" "a"] io))))
+    (is (= :refactor/unknown-rule (refusal-code #(cli/run ["plan" "zz" "/w/sample.cljk"] io))))
+    (is (= :refactor/target-required (refusal-code #(cli/run ["plan" "c" "/w/sample.cljk"] io))))
+    (is (= :refactor/unreadable (refusal-code #(cli/run ["plan" "a" "/w/missing.cljk"] io))))
+    (is (= :refactor/parse-error (refusal-code #(cli/run ["plan" "a" "/w/broken.cljk"] io))))
+    (is (= :refactor/no-paths (refusal-code #(cli/run ["plan" "a" "/w/empty"] io))))
+    (is (= :refactor/usage (refusal-code #(cli/run ["split" "/w/sample.cljk" "--out" "/o"] io))))
+    (testing "the phases map onto the exit codes of the other commands"
+      (is (= :usage (:phase (try (cli/run [] io) (catch :default e (ex-data e))))))
+      (is (= :decode (:phase (try (cli/run ["plan" "a" "/w/broken.cljk"] io) (catch :default e (ex-data e)))))))))
+
+(deftest refuses-to-write-an-unreadable-rewrite
+  ;; a rule that returns text the parser cannot read must leave every file as it was
+  (let [files (atom {"/w/sample.cljk" sample})
+        bad-rule {:id "z" :name "bad" :needs-target false
+                  :rule {:id :bad :find (fn [{:keys [nodes]}]
+                                          [{:rule :bad :status :auto :region :shared :s (:s (first nodes)) :e (:e (first nodes))
+                                            :edits [{:s (:s (first nodes)) :e (:e (first nodes)) :text "(unclosed"}]}])}}]
+    (with-redefs [kotoba.compiler.refactor.rules/library (conj kotoba.compiler.refactor.rules/library bad-rule)]
+      (is (= :refactor/output-unparsable (refusal-code #(cli/run ["apply" "z" "/w/sample.cljk"] (memory-io files)))))
+      (is (= sample (get @files "/w/sample.cljk"))))))
+
+(def graph-src
+  (str "(ns g.x)\n(defn leaf-a [x] (inc x))\n(defn leaf-b [x] (leaf-a x))\n(defn pass-one [x] (leaf-a x))\n"
+       "(defn pass-two [x] (leaf-b x))\n(defn pass-three [x] (leaf-b x))\n"
+       "(defn driver [x] (+ (pass-one x) (pass-two x) (pass-three x)))\n"))
+
+(deftest graph-partition-split-through-the-command
+  (let [files (atom {"/w/g.cljk" graph-src})
+        io (memory-io files)
+        g (:value (cli/run ["graph" "/w/g.cljk"] io))]
+    (is (= :kotoba.refactor/v1 (:format g)))
+    (is (= 7 (:source-forms g)))
+    (is (= 6 (:names g)))
+    (is (= 0 (count (:sccs g))))
+    (testing "--summary and --out"
+      (is (nil? (:nodes (:value (cli/run ["graph" "/w/g.cljk" "--summary"] io)))))
+      (let [r (cli/run ["graph" "/w/g.cljk" "--out" "/w/graph.edn"] io)]
+        (is (= "/w/graph.edn" (:out (:value r))))
+        (is (= 6 (:names (cljs.reader/read-string (get @files "/w/graph.edn")))))))
+    (testing "partition, written to a file, is what split consumes"
+      (is (= :refactor/no-driver
+             (refusal-code #(cli/run ["partition" "/w/g.cljk" "--modules" "2"] io)))
+          "the default min-root is 100 lines: nothing in this toy calls three big passes")
+      (let [p (cli/run ["partition" "/w/g.cljk" "--driver" "driver" "--modules" "2" "--out" "/w/p.edn"] io)]
+        (is (= 0 (:status p)))
+        (is (contains? @files "/w/p.edn"))
+        (let [s (cli/run ["split" "/w/g.cljk" "--partition" "/w/p.edn" "--out" "/o"] io)]
+          (is (= 0 (:status s)))
+          (is (:ok (:roundtrip (:value s))))
+          (is (contains? @files "/o/g/x.cljk") "the facade")
+          (is (some #(str/starts-with? % "/o/g/x/") (keys @files)) "the modules"))))))
+
+;; ---- verify ----------------------------------------------------------------------------------------------------------
+
+(def run-pass
+  (str "Testing a.b-test\n\nFAIL in (known) (a_test.cljk:12:3)\nexpected: (= 1 2)\n  expected: (= 1 2)\n  actual: (not (= 1 2))\n\n"
+       "Ran 3 tests containing 4 assertions.\n\nnbb: 3 tests, 3 passed, 1 failed, 0 errors\n"))
+
+(deftest verify-normalization
+  (is (= (sort ["FAIL in (known) (a_test.cljk)" "  expected: (= 1 2)" "  actual: (not (= 1 2))" "nbb: 3 tests, 3 passed, 1 failed, 0 errors"])
+         (verify/outcomes run-pass)) "line and column numbers are removed; sorted")
+  (is (= ["actual :message \"boom\""]
+         (verify/outcomes "  actual: #error {:cause \"x\" :data {} :message \"boom\"}"))))
+
+(deftest verify-compares-outcomes-not-counts
+  (let [spawned (atom [])
+        outputs (atom [run-pass run-pass])
+        spawn (fn [argv] (swap! spawned conj argv) (let [o (first @outputs)] (swap! outputs rest) {:status 1 :stdout o}))
+        io (memory-io (atom {}) {:spawn spawn})
+        args ["verify" "--runner" "/k/run-tests.cljk" "--classpath" "/a:/b" "--base-first" "/k/src" "--candidate-first" "/tmp/new" "--stack-size" "7000"]
+        ok (cli/run args io)]
+    (is (= 0 (:status ok)))
+    (is (true? (:ok (:value ok))))
+    (is (= 0 (:differences (:value ok))))
+    (is (= [["node" "--stack-size=7000" "/nbb/cli.js" "--classpath" "/k/src:/a:/b" "/k/run-tests.cljk"]
+            ["node" "--stack-size=7000" "/nbb/cli.js" "--classpath" "/tmp/new:/a:/b" "/k/run-tests.cljk"]]
+           @spawned)
+        "the same classpath twice, the baseline root first and then the candidate root first")
+    (testing "a different failing test with the same counts is a difference"
+      (reset! outputs [run-pass (str/replace run-pass "(known)" "(other)")])
+      (let [r (cli/run args io)]
+        (is (= 1 (:status r)))
+        (is (false? (:ok (:value r))))
+        (is (= ["FAIL in (known) (a_test.cljk)"] (:only-baseline (:value r))))
+        (is (= ["FAIL in (other) (a_test.cljk)"] (:only-candidate (:value r))))))
+    (testing "a run that printed no summary is a refusal, not a pass"
+      (reset! outputs [run-pass "Exception in thread main"])
+      (is (= :refactor/verify-no-result (refusal-code #(cli/run args io)))))
+    (testing "verify needs a runner and a classpath"
+      (is (= :refactor/usage (refusal-code #(cli/run ["verify" "--classpath" "/a"] io))))
+      (is (= :refactor/usage (refusal-code #(cli/run ["verify" "--runner" "/r.cljk"] io)))))))
+
+;; ---- to-kotoba ------------------------------------------------------------------------------------------------------
+
+(def rc-sample
+  (str "(ns sample.dual\n"
+       "  (:require #?(:kotoba [kotoba.lang.text :as str] :default [clojure.string :as str])))\n"
+       "\n"
+       ";; keep this comment\n"
+       "(defn f [x] #?(:kotoba (kotoba-call x) :default (host-call x)))\n"
+       "(defn g [x] #?(:clj (jvm-only x) :cljs (js-only x)))\n"))
+
+(deftest to-kotoba-source-resolves-reader-conditionals
+  (let [files (atom {"/w/dual.cljk" rc-sample})
+        {:keys [value status]} (cli/run ["to-kotoba" "/w/dual.cljk"] (memory-io files))
+        f (first (:files value))
+        out (get @files "/w/dual.kotoba")]
+    (is (= 0 status))
+    (is (= :to-kotoba (:command value)))
+    (is (= {:files 1 :pending 1 :source 1 :edn 0} (:totals value)))
+    (is (str/includes? out "(kotoba-call x)"))
+    (is (not (str/includes? out "host-call")) "the :default arm is not the .kotoba reading")
+    (is (not (str/includes? out "jvm-only")) "no arm names :kotoba or :default; the Kotoba reader reads nothing there")
+    (is (str/includes? out ";; keep this comment") "every untouched byte is copied verbatim")
+    (is (= {:kotoba-arm 2 :default-arm 0 :dropped 1 :spliced 0} (:rc f)))
+    (is (= [:rc-no-arm] (map :kind (:findings f))))
+    (is (= {:parse true :idempotent true} (:roundtrip f)))
+    (is (:pending f) "the output file does not exist yet"))
+  (testing "a file with no conditional converts byte-identically; --check writes nothing"
+    (let [files (atom {"/w/sample.cljk" sample})
+          io (memory-io files)
+          r (cli/run ["to-kotoba" "/w/sample.cljk" "--check"] io)]
+      (is (= 1 (:status r)))
+      (is (nil? (get @files "/w/sample.kotoba")) "--check never writes")
+      (let [r2 (cli/run ["to-kotoba" "/w/sample.cljk"] io)]
+        (is (= 0 (:status r2)))
+        (is (= sample (get @files "/w/sample.kotoba")) "no reader conditional, byte-identical output")))))
+
+(deftest to-kotoba-edn-becomes-a-data-module
+  (let [data "{:a 1 :b \"two\" :c [1 2 3]}"
+        files (atom {"/w/conf.edn" data})
+        {:keys [value status]} (cli/run ["to-kotoba" "/w/conf.edn"] (memory-io files))
+        f (first (:files value))
+        out (get @files "/w/conf.kotoba")]
+    (is (= 0 status))
+    (is (= :edn (:kind f)))
+    (is (str/includes? out "(ns conf"))
+    (is (str/includes? out (str "(defn data [] " data ")")) "a data module exports a function (amu check: exports must name public functions); the value keeps its original bytes")
+    (is (= {:parse true :value-equivalent true} (:roundtrip f)))
+    (testing "--data-name and --ns"
+      (let [files (atom {"/w/more.edn" "[1 2 3]"})
+            _ (cli/run ["to-kotoba" "/w/more.edn" "--data-name" "rows" "--ns" "my.data"] (memory-io files))
+            out (get @files "/w/more.kotoba")]
+        (is (str/includes? out "(ns my.data"))
+        (is (str/includes? out "(defn rows [] [1 2 3])"))))
+    (testing "--out DIR writes the ns-conventional module path the project linker resolves"
+      (let [files (atom {"/w/src/cst.cljk" "(ns kotoba.compiler.refactor.cst)"
+                         "/w/out/.keep" ""})
+            r (cli/run ["to-kotoba" "/w/src/cst.cljk" "--ns" "kotoba.compiler.refactor.cst" "--out" "/w/out"] (memory-io files))
+            out (get @files "/w/out/kotoba/compiler/refactor/cst.kotoba")]
+        (is (= 0 (:status r)))
+        (is (some? out) "the output lands under the --out directory at the ns path")
+        (is (str/includes? out "(ns kotoba.compiler.refactor.cst"))))
+    (testing "an .edn file holding two values is refused"
+      (let [files (atom {"/w/two.edn" "1 2"})]
+        (is (= :refactor/parse-error (refusal-code #(cli/run ["to-kotoba" "/w/two.edn"] (memory-io files)))))))))
+
+
+
+(deftest to-kotoba-edn-names-a-set-of-collections
+  (let [files (atom {"/w/policy.edn" "{:allow #{[:cap/call :x]}}"})
+        {:keys [value status]} (cli/run ["to-kotoba" "/w/policy.edn"] (memory-io files))
+        f (first (:files value))]
+    (is (= 0 status))
+    (is (= [:set-of-collections] (map :kind (:findings f)))
+        "amu check: a set of vectors is outside the safe profile; a set of scalars is not")))
+(deftest to-kotoba-edn-keeps-literals-and-encodes-lists
+  (let [files (atom {"/w/lit.edn" "{:a true :b false :c (1 \"x\" sym) :d (symbol \"y\")}"})
+        {:keys [value status]} (cli/run ["to-kotoba" "/w/lit.edn"] (memory-io files))
+        f (first (:files value))
+        out (get @files "/w/lit.kotoba")]
+    (is (= 0 status))
+    (is (str/includes? out ":a true") "true/false/nil are data literals, not symbols")
+    (is (not (str/includes? out "(symbol \"true\")")))
+    (is (str/includes? out "(list 1 \"x\" (symbol \"sym\"))") "an EDN list is a (list ...) call; its items are data-spelled")
+    (is (str/includes? out "(list (symbol \"symbol\") \"y\")") "a literal (symbol \"y\") is a 2-item list, not a symbol")
+    (is (= {:parse true :value-equivalent true} (:roundtrip f)))))
+
+(deftest to-kotoba-refuses-collisions-and-bad-ns-names
+  (testing "two inputs mapping to one output are refused before any write"
+    (let [files (atom {"/w/foo.cljk" "(ns foo)\n" "/w/foo.edn" "{}"})]
+      (is (= :refactor/usage (refusal-code #(cli/run ["to-kotoba" "/w/foo.cljk" "/w/foo.edn"] (memory-io files)))))
+      (is (nil? (get @files "/w/foo.kotoba")) "nothing was written")))
+  (testing "a generated namespace name that is not a symbol is refused"
+    (let [files (atom {"/w/2026.edn" "{}"})]
+      (is (= :refactor/usage (refusal-code #(cli/run ["to-kotoba" "/w/2026.edn"] (memory-io files)))))))
+  (testing "--ns names the module"
+    (let [files (atom {"/w/2026.edn" "{}"})
+          _ (cli/run ["to-kotoba" "/w/2026.edn" "--ns" "year2026"] (memory-io files))
+          out (get @files "/w/2026.kotoba")]
+      (is (str/includes? out "(ns year2026")))))
+
+(deftest to-kotoba-splice-keeps-trivia
+  (let [src "(def f #?@(:kotoba [first ;; keep this\n second] :default [other]))\n"
+        files (atom {"/w/sp.cljk" src})
+        {:keys [value status]} (cli/run ["to-kotoba" "/w/sp.cljk"] (memory-io files))
+        f (first (:files value))
+        out (get @files "/w/sp.kotoba")]
+    (is (= 0 status))
+    (is (str/includes? out ";; keep this") "a splice keeps the arm's interior bytes")
+    (is (= 1 (get-in f [:rc :spliced])))
+    (is (= {:parse true :idempotent true} (:roundtrip f)))))
+;; ---- the :kotoba reading vs the host (selfhost S6.1 differential) ---------------------------------------------------
+
+(defn- slurp* [p] (str (.readFileSync fs p "utf8")))
+
+(defn- guest-run
+  "The real :kotoba reading of refactor_cli: its own module sources (refactor_cli + the rules twin), linked as a
+  project and read by the compiler's :kotoba feature, lowered and executed over the KIR reference interpreter -- the
+  same chain `amu check` admits (:ok true, :effects #{})."
+  [args]
+  (let [root (str (.cwd js/process) "/src/kotoba/compiler")
+        sources {'kotoba.compiler.refactor-cli (slurp* (str root "/refactor_cli.cljk"))
+                 'kotoba.compiler.refactor.rules (slurp* (str root "/refactor/rules.cljk"))}
+        {:keys [source]} (project/link-source sources 'kotoba.compiler.refactor-cli)
+        kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))]
+    ;; the interpreter's typed ABI: a [:list :string] travels as its type tag plus the items
+    (ir/execute kir 'run [[[:list :string] (vec args)]])))
+
+(deftest kotoba-route-run-branches-match-the-host
+  (testing "the refusal branches answer the host's refusal codes as EDN"
+    (let [host-usage (:kotoba.error/code (ex-data (try (cli/run [] (memory-io (atom {}))) (catch :default e e))))
+          guest-usage (cljs.reader/read-string (guest-run []))
+          host-bogus (:kotoba.error/code (ex-data (try (cli/run ["bogus"] (memory-io (atom {}))) (catch :default e e))))
+          guest-bogus (cljs.reader/read-string (guest-run ["bogus"]))]
+      (is (= host-usage (:code (:diagnostic guest-usage))))
+      (is (= host-bogus (:code (:diagnostic guest-bogus))))
+      (is (= "unknown refactor command bogus; one of list-rules plan apply graph partition split verify to-kotoba"
+             (:message (:diagnostic guest-bogus))) "the guest wording is the host wording"))))
+
+(deftest kotoba-route-list-rules-matches-the-host
+  ;; Full parity (measured 2026-10-19): the guest answer EDN-equals the host answer. The two walls this
+  ;; crossed, both closed by pin advances recorded in deps.edn: the pinned sema lacked typed-list-conj
+  ;; (check refused), and the pinned osaho's KIR interpreter trapped :unknown-function on typed-list-conj
+  ;; (probe E) while check stayed green. One interpreter-depth note remains: the chain runs with
+  ;; --stack-size=4096 (as scripts/measure-selfhost-distance.cljk already does); g-rule now takes the
+  ;; entry so `library` builds once per answer instead of once per entry.
+  (let [host (:value (cli/run ["list-rules"] (memory-io (atom {}))))
+        guest (guest-run ["list-rules"])]
+    (is (string? guest) "the guest run answers a string")
+    (is (= host (cljs.reader/read-string guest)) "the guest answer reads to the host answer")))
+
+(deftest kotoba-route-refusals-name-the-wall
+  (let [guest (guest-run ["to-kotoba" "x.edn"])]
+    (is (string? guest))
+    (is (= :refactor/not-on-kotoba-route (:code (:diagnostic (cljs.reader/read-string guest))))
+        "an I/O subcommand names its own absence on the Kotoba route")))
+
+
+
+(deftest to-kotoba-edn-spells-symbols-as-calls
+  (let [files (atom {"/w/dep.edn" "{org.example/lib {:x 1}}"})
+        {:keys [value status]} (cli/run ["to-kotoba" "/w/dep.edn"] (memory-io files))
+        f (first (:files value))
+        out (get @files "/w/dep.kotoba")]
+    (is (= 0 status))
+    (is (str/includes? out "(defn data [] {(symbol \"org.example/lib\") {:x 1}})")
+        "a bare symbol is a constant alias in kotoba; data symbols are spelled (symbol \"name\")")
+    (is (= [:symbol-key] (map :kind (:findings f)))
+        "the key wall is named, not guessed: amu check refuses a symbol map key")
+    (is (= {:parse true :value-equivalent true} (:roundtrip f)))))
+
+(deftest to-kotoba-edn-chunks-maps-over-the-admission-limit
+  (let [big (str "{" (str/join " " (map #(str ":k" % " " %) (range 200))) "}")
+        files (atom {"/w/big.edn" big})
+        {:keys [value status]} (cli/run ["to-kotoba" "/w/big.edn"] (memory-io files))
+        f (first (:files value))
+        out (get @files "/w/big.kotoba")]
+    (is (= 0 status))
+    (is (str/includes? out "(merge {") "a map over the literal limit is mechanically chunked into a merge chain")
+    (is (str/includes? out ":k199 199")) ;; every entry survives the chunking
+    (is (= [:record-type-node-wall] (map :kind (:findings f)))
+        "the chunking is mechanical; the residual type wall (merged record value type over the node limit at 40 entries) is named")
+    (is (= {:parse true :value-equivalent true} (:roundtrip f)) "the merged chunks carry the same data"))
+  (testing "a string-keyed map over its limit is a named language wall, not a guessed rewrite"
+    (let [big (str "{" (str/join " " (map #(str "\"s" % "\" " %) (range 40))) "}")
+          files (atom {"/w/strs.edn" big})
+          {:keys [value]} (cli/run ["to-kotoba" "/w/strs.edn"] (memory-io files))
+          f (first (:files value))
+          out (get @files "/w/strs.kotoba")]
+      (is (not (str/includes? out "(merge")) "merge is a row operation on a record; typed maps stay one literal")
+      (is (= [:typed-map-over-limit] (map :kind (:findings f)))))))

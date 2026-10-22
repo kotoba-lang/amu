@@ -1,0 +1,32 @@
+# scripts/seed/launcher/rebuild-r6l.record -- agent REBUILD, 2026-10-04: amu-one-src, the launcher and the unified image
+# rebuilt on rung r6l's recorded seed (54b87cf6, 753,576 B). All MEASURED on a loaded host (load 19-53): no timing is a
+# result. Stage-0 build/native-image/amu-native d2cb84f6 = BOOTSTRAP-REFERENCE oracle of parity runs only. Work dirs under
+# build/rebuild (untracked). Tree HEAD a90d4b510 + this commit's build glue; patch-split.py overlay (LAUNCHER_OVERLAY).
+seed rung r6l 54b87cf6207d2a4dcf6a70054ab507cbfc77615ff071004ef51b4b7689c5faca
+kotoba-lang compat (refactor route) /private/tmp/wt-K-port-kotoba-lang agent/refactor-cst-twin 289d718
+
+## amu-one-src (scripts/seed/frontsrc/build-one-src.sh; frontend 33 modules / 64,457 lines from source, no kir-dump)
+one1 (by the seed) == two (by one1) == three (by two): objects 53 sha-of-list 29463eec, kseed 875535a0, code dd015c7b
+  4,814,792 B, command 61c0e960 5,035,904 B: byte-identical, 3 generations; also == the build whose builder is the launcher
+frontsrc/test.sh two: 7/7 PASS (T4 crc32 kseed == the r6l seed's; T6 0 exec/spawn/system/popen)
+parity check (391 vs stage-0): 358 SAME-OK, 32 SAME-REFUSE, 1 SAME-REFUSE-RC (w1-denial-ceiling 65 vs 70), 0 AMU-TRAP
+  (r6j image: 320 same + 70 AMU-TRAP; the run-time keyword texts of r6l remove all 70)
+parity compile: not comparable (amu-one-src writes kseed/v1; parity.sh reads :kotoba.kexe/v1 since CMD)
+
+## launcher (scripts/seed/launcher/build.sh --front build/rebuild/one1/o; LAUNCHER_OVERLAY=patch-split.py)
+command 71dcd5f7 5,085,432 B; wires 3,35,37,38,39; libSystem only
+launcher/test.sh: L1 37 cases 33 SAME 4 DECLARED 0 DIFF (without the pj-read MM-QUIET patch: 1 DIFF, case 25 extra seed ok
+  line), L2 Embench 19/19 BEHAVIOUR-SAME, 114 export runs, 19 seals ok, L3 6 runs 0 exec/spawn/system/popen, L4 PASS
+parity check: 358 SAME-OK, 32 SAME-REFUSE, 1 SAME-REFUSE-RC, 0 AMU-TRAP (r6j launcher: 321 same + 70 AMU-TRAP)
+parity compile: 264 BEHAVIOUR-SAME, 47 AMU-REFUSES, 22 AMU-ACCEPTS, 54 BOTH-REFUSE, 4 BOTH-OK-DIFF; 646 export runs SAME,
+  0 DIFF, 5 MISSING; 290 kexe/v1 seals ok (unchanged vs r6j: the 47 are seed-language gaps, SEEDLANG)
+
+## unified image (launcher + check + compile + refactor Kotoba route; LAUNCHER_REFACTOR=<kotoba-lang>)
+command fc691d84 5,696,376 B, code 273f3db3 5,460,072 B, 78 objects (34 frontend, 14 split, 18 refactor library,
+  12 amu); wires 3,34,35,37,38,39 (never 20); link holds the +~600 KB of code in separate mode (no large-M)
+self-rebuild: gen1 (by the seed) == gen2 (frontend + all objects, modules, link, extract by gen1) == gen3 (by gen2):
+  objects list, kseed f631860e, code, command byte-identical, 3 generations
+launcher/test.sh: L1 33 SAME 4 DECLARED 0 DIFF, L2 Embench 19/19, 114 runs, 19 seals, L3 PASS, L4 PASS (wires incl. 34)
+refactor/all.sh (code of the image under the C loader, vs bin/amu): args 31, graph 20, plan 18, partition 19, dynvars 44,
+  graph-src 109, plan-src 128 same, apply 40 same, split 10 same (SKIP = host refused), verify 5 same; 0 differ
+parity check/compile: identical class counts to the launcher above

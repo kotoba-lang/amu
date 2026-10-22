@@ -1,0 +1,6 @@
+;; R6M: if-let on an [:option :string] (stage-0 d2cb84f6 reads if-let on [:option :i64] only: "expected [:option :i64], got
+;; [:option :string]"; the seed's if-let is if-some, the value is spec)
+(ns r6m.p15 (:export [main]))
+(defn- name-of [n :i64] [:option :string]
+  (if (> n 0) (option-some-of [:option :string] "kotoba") (option-none-of [:option :string])))
+(defn main [] :i64 (+ (if-let [t (name-of 0)] (string-length t) 50000) (if-let [t (name-of 1)] (string-length t) 0)))

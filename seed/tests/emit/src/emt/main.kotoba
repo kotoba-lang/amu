@@ -1,0 +1,12 @@
+(ns emt.main
+  {:kotoba/export [main]}
+  (:require [emt.kirlib :as k]))
+
+;; seed/tests/emit: a source-route entry that calls a KIR-route module (compile-kir --emit-module) through `seed link`.
+;; 0 when every call answers what the KIR functions compute; else the number of the first failing check.
+(defn main [] :i64
+  (cond (not= (k/add3 1 2 3) 15) 1
+        (not= (k/slen "kir") 10) 2
+        (not= (string-length (k/greet "abc")) 10) 3
+        (not= (string-code-point-at (k/greet "abc") 7) 97) 4
+        :else 0))

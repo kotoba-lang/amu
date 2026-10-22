@@ -1,0 +1,7 @@
+;; R6C: a typed catch around a body that cannot abort is admitted (stage-0 admits it; kotoba.compiler.schema
+;; validate-table!); the value is the body's. An untyped catch there stays E2131 (seed/tests/r3/neg).
+;; want: 42
+(ns r6c.p03 (:export [main]))
+(defn- check [x :i64] :i64 (+ x 1))
+(defn- guarded [x :i64] :i64 (try (check x) (catch :string e (string-length e))))
+(defn main [] :i64 (guarded 41))

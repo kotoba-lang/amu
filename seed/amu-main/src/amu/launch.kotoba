@@ -1,0 +1,26 @@
+(ns amu.launch
+  {:kotoba/export [args]}
+  (:require [kotoba.compiler.nbb.cli-support :as support]))
+
+;; seed/amu-main/src/amu/launch.kotoba -- bin/amu's launcher layer over the image's argv, for the product entries
+;; (agent claude, 2026-10-10). bin/amu (main / defaultTarget) hands nbb the argument list with every `--jvm-free`
+;; removed and, for `compile` and `worker` with no `--target`, `--target <host native target>` appended (ADR 0351;
+;; aarch64-macos on this host). AMU_TARGET is not read (the image holds no :env/read wire), and caller paths are not
+;; made absolute (the guest reads them relative to the caller's cwd through wire 35; bin/amu resolves them because nbb
+;; runs with cwd = the repository).
+
+(defn- defaulted [c :string] :bool
+  (or (string=? c "compile") (string=? c "worker")))
+
+(defn- filtered [argv [:list :string] i :i64 acc [:list :string] target :bool] [:list :string]
+  (if (>= i (vector-count argv))
+    (if (and (not target) (> (vector-count acc) 0) (defaulted (typed-list-nth [:list :string] acc 0)))
+      (conj (conj acc "--target") "aarch64-macos")
+      acc)
+    (let [a (typed-list-nth [:list :string] argv i)]
+      (if (string=? a "--jvm-free")
+        (filtered argv (+ i 1) acc target)
+        (filtered argv (+ i 1) (conj acc a) (or target (string=? a "--target")))))))
+
+(defn args [] [:list :string]
+  (filtered (support/command-line-args) 0 (typed-list-new [:list :string]) false))

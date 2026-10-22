@@ -1,0 +1,5 @@
+;; want: 16255
+;; R6B hex literals in arithmetic, incl. -0x1 and 0x7fffffffffffffff (want = stage-0's answer)
+(ns p08 (:export [main]))
+(defn main [] :i64
+  (+ 0xff (* 1000 0x10) (bit-and -0x1 0x7fffffffffffffff) (- 0 0x7fffffffffffffff)))

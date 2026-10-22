@@ -1,0 +1,49 @@
+(ns amu.compile
+  {:kotoba/export [run]}
+  (:require [amu.cli :as cli]
+            [seed.main :as seed]))
+
+;; seed/amu-main/s/amu/compile.kotoba -- `amu compile` on the SOURCE route (agent MAINS, 2026-10-04).
+;;
+;; REAL: the seed's compiler (seed/split/seed, the r6f seed's own source split into namespaces, its own fixed point) is
+;; linked into this image and called in-process: lex, read, names, check, lower, a64gen, layout, out; --source-path
+;; (60-proj project route) and --policy (R5B capability gate) as the seed driver reads them. Before it, stage-0's
+;; argument checks, with stage-0's texts and exit codes: source extension (64), --target required (64), input not a
+;; regular file (65). After it, the seed's exit status mapped to stage-0's: 1 (refusal) -> 65, 2 (usage) -> 64.
+;;
+;; Not stage-0 (declared, listed in missing.tsv, never counted as parity):
+;; - the artifact is a kseed/v1 container (code + export table), not a :kotoba.kexe/v1 EDN artifact with :program KIR,
+;;   provenance and inputs files; the ok line is the seed's `{:ok true, :target :aarch64-macos, :output .., :bytes N}`;
+;; - a refusal is the seed's one line `seed: E<code> <text> (byte <pos>)`, not stage-0's :kotoba.cli-error/v1 map;
+;; - the language accepted is the seed's (refused by name outside it), not the big frontend's;
+;; - targets other than aarch64-macos: declared stub (exit 69);
+;; - an omitted --output (stage-0 writes <src>.kexe): declared stub (exit 69): the seed driver reads argv itself.
+
+(defn- target-ok [] :i64
+  (let [t (cli/flag-value "--target" 1)]
+    (if (< t 0) 0 (if (string=? (cli/arg t) "aarch64-macos") 1 0))))
+
+(defn- seed-status [r :i64] :i64
+  (cond (= r 1) 65
+        (= r 2) 64
+        :else r))
+
+(defn run [] :i64
+  (let [s (cli/positional 1 0)
+        t (cli/flag-value "--target" 1)]
+    (cond (< s 0)
+          (cli/usage-error ":kotoba/invalid-usage" "source input must use .kotoba, .cljk, or .cljc" ", :details {:phase :usage}")
+          (= (cli/source-ext (cli/arg s)) 0)
+          (cli/usage-error ":kotoba/invalid-usage" "source input must use .kotoba, .cljk, or .cljc" ", :details {:phase :usage}")
+          (< t 0)
+          (cli/usage-error ":kotoba/invalid-usage"
+                           "--target is required on the in-process CLI; bin/amu defaults an omitted --target to the host's native target (amu ADR 0351)"
+                           ", :details {:phase :usage, :problem :compile/missing-target}")
+          (= (target-ok) 0)
+          (cli/not-available (string-concat "compile --target " (cli/arg t))
+                             "\"targets other than aarch64-macos: the seed backend emits aarch64-macos only (ADR 0367 draft)\"")
+          (< (cli/flag-value "--output" 1) 0)
+          (cli/not-available "compile without --output"
+                             "\"default output path <src>.kexe: the seed driver reads argv itself and needs --output\"")
+          (= (cli/regular-file (cli/arg s)) 0) (cli/decode-error (cli/arg s))
+          :else (seed-status (seed/main)))))

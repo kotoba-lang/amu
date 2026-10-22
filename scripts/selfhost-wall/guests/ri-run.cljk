@@ -1,0 +1,62 @@
+;; Text->text twin of probe-runtime-identity.cljs for guest-run.sh: one case per line, `op<TAB>edn<TAB>edn`.
+;;   v  runtime            -> ok | threw <error>          (validate!)
+;;   m  measurement        -> ok | threw <error>          (validate-measurement!)
+;;   i  runtime            -> sha256 | threw <error>      (identity-sha256)
+;;   d  trust, identity    -> keyword name                (trust-decision)
+;;   a  runtime, trust     -> admitted <sha> | threw <e>  (admit!)
+;;   l  profile            -> sha256 | none               (loader-source-for-profile)
+;;   p  -                  -> linux and windows loader pins
+(ns probe.ri-run
+  {:kotoba/export [ri-run]}
+  (:require [kotoba.artifact.runtime-identity :as rid]))
+
+(defn- threw-doc [r [:result :document :document]] :string
+  (string-concat "threw " (document-edn-print (result-error-of [:result :document :document] r (document-null)))))
+
+(defn- doc-ok [r [:result :document :document]] :string
+  (if (result-ok?-of [:result :document :document] r) "ok" (threw-doc r)))
+
+(defn- str-result [r [:result :string :document]] :string
+  (if (result-ok?-of [:result :string :document] r)
+    (result-value-of [:result :string :document] r "")
+    (string-concat "threw " (document-edn-print (result-error-of [:result :string :document] r (document-null))))))
+
+(defn- admit-text [r [:result :document :document]] :string
+  (if (result-ok?-of [:result :document :document] r)
+    (string-concat "admitted"
+                   (string-concat " " (option-value-of [:option :string]
+                                         (document-string-value (get (result-value-of [:result :document :document] r (document-null)) :runtime-sha256 (document-null))) "")))
+    (threw-doc r)))
+
+(defn- ri-case [op :string a :string b :string] :string
+  (cond
+    (string=? op "v") (doc-ok (rid/validate! (document-edn-read a)))
+    (string=? op "m") (doc-ok (rid/validate-measurement! (document-edn-read a)))
+    (string=? op "i") (str-result (rid/identity-sha256 (document-edn-read a)))
+    (string=? op "d") (keyword-name (rid/trust-decision (document-edn-read a) b))
+    (string=? op "a") (admit-text (rid/admit! (document-edn-read a) (document-edn-read b)))
+    (string=? op "l") (option-value-of [:option :string] (rid/loader-source-for-profile (document-edn-read a)) "none")
+    (string=? op "p") (string-concat (rid/loader-source-sha256) (string-concat " " (rid/windows-loader-source-sha256)))
+    :else "unknown-op"))
+
+(defn- field [line :string from :i64 end :i64] :string
+  (let [j (string-find-byte line 9 from)]
+    (string-substring line from (if (or (< j 0) (> j end)) end j))))
+
+(defn- ri-line [line :string] :string
+  (let [n (string-byte-length line)
+        j1 (string-find-byte line 9 0)
+        a0 (if (< j1 0) n (+ j1 1))
+        j2 (if (< j1 0) -1 (string-find-byte line 9 a0))
+        b0 (if (< j2 0) n (+ j2 1))]
+    (ri-case (field line 0 n) (if (< a0 n) (field line a0 n) "") (if (< b0 n) (field line b0 n) ""))))
+
+(defn- ri-lines [text :string i :i64 n :i64 out :string] :string
+  (if (>= i n)
+    out
+    (let [j (string-find-byte text 10 i)
+          end (if (< j 0) n j)]
+      (ri-lines text (+ end 1) n (string-concat out (string-concat (ri-line (string-substring text i end)) "\n"))))))
+
+(defn ri-run [text :string] :string
+  (ri-lines text 0 (string-byte-length text) ""))

@@ -1,0 +1,128 @@
+;; merge-test guest (agent KIR4): every KIR document operation the seed lowers (seed/tests/kir/doclib), driven by a corpus
+;; (gen-docops.py). The stack is itself a document vector. One op per line of the file named by argument 0; after each
+;; line the canonical text of the top item (or "-") is written. Ops: i<int> s<text> k<0-9> n t f push; v<k> l<k> S<k> M<k>
+;; pop k items (M: k pairs) into a vector/list/set/map; a assoc, g get, c conj, r<i> remove, D<i> drop, o sort, m merge,
+;; x edn-read of edn-print, E equal?, K kind (as a keyword document), N count, V string-value, I i64-value, B bool-value,
+;; W keyword-value, p pop, R reset (keep the top only), C contains?, H set-contains?, A vector-assoc at 0, Y entry-at 0, Z list-at 0, z vector-at 0.
+(ns probe.docops-merge
+  {:kotoba/export [main]}
+  )
+
+(defn line-end [s :string i :i64] :i64
+  (loop [j i]
+    (if (>= j (string-byte-length s))
+      j
+      (let [c (string-code-point-at s j)]
+        (if (= c 10) j (recur (+ j (if (< c 128) 1 (if (< c 2048) 2 (if (< c 65536) 3 4))))))))))
+
+(defn num [s :string] :i64
+  (let [n (string-byte-length s)
+        neg (if (> n 0) (= (string-code-point-at s 0) 45) false)]
+    (loop [i (if neg 1 0) acc 0]
+      (if (>= i n)
+        (if neg (- 0 acc) acc)
+        (recur (+ i 1) (+ (* acc 10) (- (string-code-point-at s i) 48)))))))
+
+(defn kw [d :i64] :keyword
+  (if (= d 0) :a (if (= d 1) :b (if (= d 2) :c (if (= d 3) :x/y (if (= d 4) :kotoba/form
+    (if (= d 5) :zz (if (= d 6) :map (if (= d 7) :null (if (= d 8) :e1 (if (= d 9) :a-b? :none)))))))))))
+
+(defn top [st :document] :document
+  (let [n (document-count st)]
+    (if (= n 0) (document-null) (option-value-of [:option :document] (document-vector-at st (- n 1)) (document-null)))))
+
+(defn pop1 [st :document] :document
+  (let [n (document-count st)]
+    (if (= n 0) st (document-vector-remove st (- n 1)))))
+
+(defn dn [o [:option :document]] :document (option-value-of [:option :document] o (document-null)))
+
+;; the top k items, bottom first, as a vector document
+(defn take-top [st :document k :i64] :document
+  (document-vector-drop st (- (document-count st) k)))
+
+(defn drop-top [st :document k :i64] :document
+  (loop [s st i 0] (if (>= i k) s (recur (pop1 s) (+ i 1)))))
+
+(defn it [items :document i :i64] :document (dn (document-vector-at items i)))
+
+;; vectors and maps by repeated conj / assoc, lists and sets (0..4 items) and maps of 1..2 pairs by the variadic constructors
+(defn build [items :document kind :i64] :document
+  (let [n (document-count items)]
+    (if (= kind 1)
+      (if (= n 0) (document-list) (if (= n 1) (document-list (it items 0)) (if (= n 2) (document-list (it items 0) (it items 1))
+        (if (= n 3) (document-list (it items 0) (it items 1) (it items 2)) (document-list (it items 0) (it items 1) (it items 2) (it items 3))))))
+      (if (= kind 2)
+        (if (= n 0) (document-set) (if (= n 1) (document-set (it items 0)) (if (= n 2) (document-set (it items 0) (it items 1))
+          (if (= n 3) (document-set (it items 0) (it items 1) (it items 2)) (document-set (it items 0) (it items 1) (it items 2) (it items 3))))))
+        (if (if (= kind 3) (= n 2) false)
+          (document-map (it items 0) (it items 1))
+          (if (if (= kind 3) (= n 4) false)
+            (document-map (it items 0) (it items 1) (it items 2) (it items 3))
+            (loop [i 0 acc (if (= kind 0) (document-vector) (document-map))]
+              (if (>= i n)
+                acc
+                (if (= kind 3)
+                  (recur (+ i 2) (document-assoc acc (it items i) (it items (+ i 1))))
+                  (recur (+ i 1) (document-vector-conj acc (it items i))))))))))))
+
+(defn is [d :document k :keyword] :bool (= (document-kind d) k))
+
+(defn container? [d :document] :bool
+  (let [k (document-kind d)] (if (= k :vector) true (if (= k :list) true (if (= k :set) true (= k :map))))))
+
+(defn step [st :document line :string] :document
+  (let [op (string-code-point-at line 0)
+        arg (string-substring line 1 (string-byte-length line))
+        t (top st)
+        u (pop1 st)
+        t2 (top u)
+        u2 (pop1 u)]
+    (if (= op 112) u
+    (if (= op 82) (document-vector t)
+    (if (= op 105) (document-vector-conj st (document-i64 (num arg)))
+    (if (= op 115) (document-vector-conj st (document-string arg))
+    (if (= op 107) (document-vector-conj st (document-keyword (kw (num arg))))
+    (if (= op 110) (document-vector-conj st (document-null))
+    (if (= op 116) (document-vector-conj st (document-bool true))
+    (if (= op 102) (document-vector-conj st (document-bool false))
+    (if (= op 118) (if (>= (document-count st) (num arg)) (document-vector-conj (drop-top st (num arg)) (build (take-top st (num arg)) 0)) st)
+    (if (= op 108) (if (>= (document-count st) (num arg)) (document-vector-conj (drop-top st (num arg)) (build (take-top st (num arg)) 1)) st)
+    (if (= op 83) (if (>= (document-count st) (num arg)) (document-vector-conj (drop-top st (num arg)) (build (take-top st (num arg)) 2)) st)
+    (if (= op 77) (if (>= (document-count st) (* 2 (num arg))) (document-vector-conj (drop-top st (* 2 (num arg))) (build (take-top st (* 2 (num arg))) 3)) st)
+    (if (= op 97) (if (is (top u2) :map) (document-vector-conj (pop1 u2) (document-assoc (top u2) t2 t)) st)
+    (if (= op 103) (if (is t2 :map) (document-vector-conj u2 (dn (document-get t2 t))) st)
+    (if (= op 99) (if (is t2 :vector) (document-vector-conj u2 (document-vector-conj t2 t)) st)
+    (if (= op 114) (if (if (is t :vector) (> (document-count t) (num arg)) false) (document-vector-conj u (document-vector-remove t (num arg))) st)
+    (if (= op 68) (if (if (is t :vector) (>= (document-count t) (num arg)) false) (document-vector-conj u (document-vector-drop t (num arg))) st)
+    (if (= op 111) (if (is t :vector) (document-vector-conj u (document-vector-sort t)) st)
+    (if (= op 109) (if (if (is t2 :map) (is t :map) false) (document-vector-conj u2 (document-merge t2 t)) st)
+    (if (= op 120) (document-vector-conj u (document-edn-read (document-edn-print t)))
+    (if (= op 69) (document-vector-conj u2 (document-bool (document-equal? t2 t)))
+    (if (= op 75) (document-vector-conj u (document-keyword (document-kind t)))
+    (if (= op 78) (if (container? t) (document-vector-conj u (document-i64 (document-count t))) st)
+    (if (= op 86) (document-vector-conj u (option-match [:option :string] (document-string-value t) (document-null) x (document-string x)))
+    (if (= op 73) (document-vector-conj u (option-match [:option :i64] (document-i64-value t) (document-null) x (document-i64 x)))
+    (if (= op 66) (document-vector-conj u (option-match [:option :bool] (document-bool-value t) (document-null) x (document-bool x)))
+    (if (= op 87) (document-vector-conj u (option-match [:option :keyword] (document-keyword-value t) (document-null) x (document-keyword x)))
+    (if (= op 67) (if (is t2 :map) (document-vector-conj u2 (document-bool (document-contains t2 t))) st)
+    (if (= op 72) (if (is t2 :set) (document-vector-conj u2 (document-bool (document-set-contains? t2 t))) st)
+    (if (= op 65) (if (if (is t2 :vector) (> (document-count t2) 0) false) (document-vector-conj u2 (document-vector-assoc t2 0 t)) st)
+    (if (= op 89) (if (is t :map) (document-vector-conj u (dn (document-map-entry-at t 0))) st)
+    (if (= op 90) (if (is t :list) (document-vector-conj u (dn (document-list-at t 0))) st)
+    (if (= op 122) (if (is t :vector) (document-vector-conj u (dn (document-vector-at t 0))) st)
+      st)))))))))))))))))))))))))))))))))))
+
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        s (typed-cap-call :fs/app-data :string :string path)
+        n (string-byte-length s)]
+    (loop [i 0 k 0 st (document-vector)]
+      (if (>= i n)
+        k
+        (let [e (line-end s i)
+              line (string-substring s i e)
+              st2 (if (> e i) (step st line) st)
+              w (typed-cap-call :io/write :string :string
+                  (string-concat (if (= (document-count st2) 0) "-" (document-edn-print (top st2))) "\n"))]
+          (recur (+ e 1) (+ k 1) st2))))))

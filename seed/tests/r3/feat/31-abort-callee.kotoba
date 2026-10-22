@@ -1,0 +1,4 @@
+;; R3 feat: an aborting callee, caught
+(ns seed.r3 (:export [test]))
+(defn- parse [s :string] :i64 (if (string=? s "") (throw "empty") (string-length s)))
+(defn test [] :i64 (+ (try (parse "") (catch e (* 100 (string-length e)))) (try (parse "abc") (catch e 0))))

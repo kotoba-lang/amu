@@ -1,0 +1,115 @@
+;; seed/tests/unit/02-io_t.kotoba -- unit test of 02-io. argv (unit.sh): 0 = repo root, 1 = scratch directory.
+;; "ok name" / "FAIL name got want" lines, hex lines of io-write-hex, exit status = number of failures.
+;; scripts/seed/io_check.sh decodes the hex block of the last run and compares it with the 256 byte pattern.
+
+(defn- t-out [s :string] :i64
+  (let [o (typed-cap-call :io/write :string :string s)] 0))
+
+(defn- t-eq [name :string got :i64 want :i64] :i64
+  (if (= got want)
+    (let [a (t-out (string-concat "ok " (string-concat name "\n")))] 0)
+    (let [a (t-out (string-concat "FAIL " (string-concat name (string-concat " got " (string-concat (mem-u2dec got) (string-concat " want " (string-concat (mem-u2dec want) "\n")))))))] 1)))
+
+(defn- t-fin [M0 :vector-i64 f :i64] :vector-i64
+  (vector-assoc! M0 MM-STAT-BASE (+ (vector-at M0 MM-STAT-BASE) f)))
+
+(defn- t-fillb [M0 :vector-i64 base :i64 i :i64 n :i64] :vector-i64
+  (if (>= i n) (mem-keep M0) (t-fillb (vector-assoc! M0 (+ base i) (bit-and i 255)) base (+ i 1) n)))
+
+;; text and strings
+(defn- t-text [scratch :string] :i64
+  (let [f (string-concat scratch "/t1.txt")
+        g (string-concat scratch "/missing.txt")
+        e0 (io-exists f)
+        e1 (io-exists g)
+        n (io-write-text f (string-concat "hello, seed\n" "0123456789"))
+        e2 (io-exists f)
+        s (io-read-file (vector-alloc 1) f)
+        sl (io-slice f 7 4)
+        sl2 (io-slice f 12 10)]
+    (+ (t-eq "exists-before" e0 0)
+       (+ (t-eq "exists-missing" e1 0)
+          (+ (t-eq "write-text-len" n 22)
+             (+ (t-eq "exists-after" e2 1)
+                (+ (t-eq "read-len" (string-length s) 22)
+                   (+ (t-eq "read-h" (string-code-point-at s 0) 104)
+                      (+ (t-eq "read-digit" (string-code-point-at s 12) 48)
+                         (+ (t-eq "slice-len" (string-length sl) 4)
+                            (+ (t-eq "slice-s" (string-code-point-at sl 0) 115)
+                               (+ (t-eq "slice-d" (string-code-point-at sl 3) 100)
+                                  (+ (t-eq "slice2-len" (string-length sl2) 10)
+                                     (+ (t-eq "slice2-first" (string-code-point-at sl2 0) 48)
+                                        (t-eq "slice2-last" (string-code-point-at sl2 9) 57)))))))))))))))
+
+;; argv
+(defn- t-argv [] :i64
+  (let [a0 (io-arg 0)
+        a5 (io-arg 5)]
+    (+ (t-eq "argc" (io-argc) 2)
+       (+ (t-eq "arg0-slash" (string-code-point-at a0 0) 47)
+          (+ (t-eq "arg5-empty" (string-length a5) 0)
+             (t-eq "arg1-nonempty" (t-gt0 (string-length (io-arg 1))) 1))))))
+
+(defn- t-gt0 [n :i64] :i64 (if (> n 0) 1 0))
+
+;; check writers
+(defn- t-checks [M0 :vector-i64 scratch :string] :vector-i64
+  (let [f (string-concat scratch "/t1.txt")
+        g (string-concat scratch "/missing.txt")
+        M1 (io-check-read M0 f)
+        r1 (vector-at M1 MM-R0)
+        e1 (vector-at M1 MM-ERR)
+        M2 (io-check-read M1 g)
+        r2 (vector-at M2 MM-R0)
+        e2 (vector-at M2 MM-ERR)
+        p2 (vector-at M2 MM-ERR-POS)
+        M3 (io-check-write M2 g)
+        e3 (vector-at M3 MM-ERR)
+        M4 (mem-set M3 MM-ERR 0)
+        M5 (io-check-write M4 g)
+        e5 (vector-at M5 MM-ERR)
+        M6 (mem-set M5 MM-ERR 0)
+        M7 (io-check-write M6 f)
+        e7 (vector-at M7 MM-ERR)
+        r7 (vector-at M7 MM-R0)
+        fl (+ (t-eq "check-read-ok-r0" r1 1)
+              (+ (t-eq "check-read-ok-err" e1 0)
+                 (+ (t-eq "check-read-missing-r0" r2 0)
+                    (+ (t-eq "check-read-missing-err" e2 E-IO-READ)
+                       (+ (t-eq "check-read-missing-pos" p2 -1)
+                          (+ (t-eq "first-error-wins" e3 E-IO-READ)
+                             (+ (t-eq "check-write-missing" e5 E-IO-WRITE)
+                                (+ (t-eq "check-write-ok-err" e7 0)
+                                   (t-eq "check-write-ok-r0" r7 1)))))))))]
+    (t-fin M7 fl)))
+
+;; hex on stdout: 256 bytes (4 lines), 65 bytes (64 + 1), 0 bytes (nothing), a window in the middle
+(defn- t-hex [M0 :vector-i64] :vector-i64
+  (let [M1 (t-fillb M0 1000 0 256)
+        a (t-out "hex256\n")
+        r1 (io-write-hex M1 1000 256)
+        b (t-out "hex65\n")
+        r2 (io-write-hex M1 1000 65)
+        c (t-out "hex0\n")
+        r3 (io-write-hex M1 1000 0)
+        d (t-out "hexwindow\n")
+        r4 (io-write-hex M1 1250 6)
+        e (t-out "hexend\n")
+        fl (t-eq "hex-ret" r1 0)]
+    (t-fin M1 fl)))
+
+(defn- t-gt [a :i64 b :i64] :i64 (if (> a b) 1 0))
+
+(defn- seed-main [] :i64
+  (let [o (t-out "02-io unit\n")
+        scratch (io-arg 1)
+        M0 (mem-new)
+        f0 (t-argv)
+        f1 (t-text scratch)
+        M1 (t-fin M0 (+ f0 f1))
+        M2 (t-checks M1 scratch)
+        M3 (t-hex M2)
+        z (io-err "io-err ok\n")
+        fails (vector-at M3 MM-STAT-BASE)
+        zz (t-out (string-concat "failures = " (string-concat (mem-u2dec fails) "\n")))]
+    fails))

@@ -1,0 +1,7 @@
+;; R6F: homogeneous hetero-vector / hetero-vector-at (R6D's [:vector [T T]] = a list of two): (pair-like 40 2) -> 40*1 + 2*100.
+;; want: 240
+(ns r6f.p08)
+(defn- two [a :i64 b :i64] [:vector [:i64 :i64]] (hetero-vector [:vector [:i64 :i64]] a b))
+(defn main [] :i64
+  (let [t (two 40 2)]
+    (+ (hetero-vector-at [:vector [:i64 :i64]] t 0) (* 100 (hetero-vector-at [:vector [:i64 :i64]] t 1)))))

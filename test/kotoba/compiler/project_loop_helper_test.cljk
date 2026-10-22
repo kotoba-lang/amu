@@ -1,0 +1,46 @@
+(ns kotoba.compiler.project-loop-helper-test
+  "A `loop` desugars to a `__kotoba_loop_N` helper whose self-tail call the KIR
+  interpreter trampolines. The linker renames every function of a module to
+  `kotoba_module__<module>__<index>`, and the trampoline recognises a helper by
+  its NAME, so a renamed helper nested one host frame per iteration: on the
+  project route (nbb, `--stack-size=4096`) a loop of a few hundred turns raised
+  `host/stack-exhausted`. The linker now keeps the helper shape,
+  `__kotoba_loop_<digits>`, unique across modules."
+  (:require [clojure.test :refer [deftest is]]
+            [kotoba.compiler.project :as project]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def library
+  "(ns lib.count
+  (:export [count-to]))
+(defn count-to [n :i64] :i64
+  (loop [i 0 acc 0]
+    (if (< i n) (recur (+ i 1) (+ acc i)) acc)))")
+
+(def other-library
+  "(ns lib.twice
+  (:export [twice-to]))
+(defn twice-to [n :i64] :i64
+  (loop [i 0 acc 0]
+    (if (< i n) (recur (+ i 1) (+ acc 2)) acc)))")
+
+(def root
+  "(ns root
+  (:require [lib.count :as c] [lib.twice :as t])
+  (:export [main]))
+(defn main [] :i64
+  (+ (c/count-to 3000) (t/twice-to 3000)))")
+
+(defn- linked-hir []
+  (let [linked (project/link-source {'lib.count library 'lib.twice other-library 'root root} 'root)]
+    (sema/analyze (:source linked) {:admit-linked-synthetics? true})))
+
+(deftest a-linked-loop-helper-keeps-the-loop-helper-shape
+  (let [names (map (comp str :name) (:functions (linked-hir)))
+        helpers (filter #(re-matches #"__kotoba_loop_\d+" %) names)]
+    (is (= 2 (count helpers)) (pr-str names))
+    (is (= (count helpers) (count (distinct helpers))) "one helper per loop, unique across modules")))
+
+(deftest a-linked-loop-runs-in-bounded-host-stack
+  (is (= "4504500" (str (ir/execute (ir/lower (linked-hir)) 'main [])))))

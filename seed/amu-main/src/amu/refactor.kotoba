@@ -1,0 +1,43 @@
+(ns amu.refactor
+  {:kotoba/export [run]}
+  (:require [amu.cli :as cli]))
+
+;; seed/amu-main/src/amu/refactor.kotoba -- `amu refactor` (agent MAINS, 2026-10-04). Same in both build routes.
+;;
+;; REAL: the subcommand layer of kotoba.compiler.refactor-cli/run (src/kotoba/compiler/refactor_cli.cljk lines 370-385):
+;; no subcommand and an unknown subcommand give its :refactor/usage refusal, byte for byte, exit 64.
+;; DECLARED STUB: every known subcommand (list-rules plan apply graph partition split verify). The Kotoba arm of
+;; refactor-cli/run throws "not available"; the refactor library is required by the :default arm only, and the seed
+;; does not compile it from source (scan of seed da6d0a98, build/walls/sb0, 2026-10-04): refactor.cst REFUSED E2003
+;; `declare` (its typed twin is on kotoba-lang agent/refactor-cst-twin, unmerged), refactor.edit / diff / verify REFUSED
+;; E1005 `#` reader syntax, refactor.prelude REFUSED E6009, core / graph / extract / partition / rules / rules.* BLOCKED
+;; behind cst; `verify` also needs wire 20 (process spawn), which the amu image never holds.
+
+(defn- missing [] :string
+  (string-concat "\"kotoba.compiler.refactor-cli/run: Kotoba arm is a stub (throws not available)\" "
+  (string-concat "\"kotoba.compiler.refactor.cst: seed E2003 declare (typed twin unmerged: kotoba-lang agent/refactor-cst-twin)\" "
+  (string-concat "\"kotoba.compiler.refactor.edit: seed E1005 # reader syntax\" "
+  (string-concat "\"kotoba.compiler.refactor.diff: seed E1005 # reader syntax\" "
+  (string-concat "\"kotoba.compiler.refactor.verify: seed E1005 # reader syntax; needs wire 20 (spawn)\" "
+  (string-concat "\"kotoba.compiler.refactor.prelude: seed E6009 exports nothing\" "
+                 "\"kotoba.compiler.refactor.{core,graph,extract,partition,rules,rules.*}: blocked behind refactor.cst\"")))))))
+
+(defn- known [s :string] :i64
+  (cond (string=? s "list-rules") 1
+        (string=? s "plan") 1
+        (string=? s "apply") 1
+        (string=? s "graph") 1
+        (string=? s "partition") 1
+        (string=? s "split") 1
+        (string=? s "verify") 1
+        :else 0))
+
+(defn run [] :i64
+  (cond (< (cli/argc) 2)
+        (cli/usage-error ":refactor/usage" "usage: amu refactor <list-rules|plan|apply|graph|partition|split|verify> ..." "")
+        (= (known (cli/arg 1)) 0)
+        (cli/usage-error ":refactor/usage"
+                         (string-concat "unknown refactor command "
+                                        (string-concat (cli/arg 1) "; one of list-rules plan apply graph partition split verify"))
+                         "")
+        :else (cli/not-available (string-concat "refactor " (cli/arg 1)) (missing))))

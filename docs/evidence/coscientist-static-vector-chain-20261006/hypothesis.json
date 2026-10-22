@@ -1,0 +1,46 @@
+{
+  "status": "registered-after-negative-private-descriptor-timing-before-next-implementation",
+  "hypothesis": "Restrict private descriptor entry to a source edge with a valid unchanged-root witness and a callee access whose actual local equals that root. A control-flow proof may remove a runtime equality guard, rather than transferring descriptor state with a guard on every first access.",
+  "prerequisites": [
+    "Count admitted original sites prospectively; no workload/name specialization.",
+    "An observed equal handle is insufficient. Prove each reaching path initialized the positive key and binds actual outgoing argument to it. Branch joins/root assignments/unknown effects must kill or intersect witness.",
+    "No earlier trap or descriptor read at entry: original fuel/access/partial items preserved. Public and unknown edges remain cold.",
+    "Independent changed/invalid/root-alias/fuel/branch controls; all19 unchanged source and native regression; then one unchanged-rule product/candidate/C campaign."
+  ],
+  "observedNegativeEvidence": [
+    {
+      "workload": "statemate",
+      "baseline": {
+        "meanNsPerBody": 561.6358699094307,
+        "sdNs": 16.947368437010137,
+        "relativeSd": 0.03017501079434807,
+        "samples": 30
+      },
+      "candidate": {
+        "meanNsPerBody": 580.1899367514055,
+        "sdNs": 13.354113200413966,
+        "relativeSd": 0.023016795629352348,
+        "samples": 30
+      },
+      "C": {
+        "meanNsPerBody": 30.56781048337744,
+        "sdNs": 0.3711928105496811,
+        "relativeSd": 0.012143258044325195,
+        "samples": 30
+      },
+      "stable": true,
+      "qualifiedImprovement": false,
+      "qualifiedRegression": false,
+      "qualifiedCOrBetter": false,
+      "timeReductionPercent": -3.3035758284040595,
+      "candidateOverC": 18.98042180897807,
+      "attemptedTriples": 31
+    }
+  ],
+  "alternative": "If a closed proof admits too few original dynamic accesses, investigate scalar state representation rather than retime this candidate.",
+  "implementationExists": false,
+  "nativeDefCIDCacheConnected": false,
+  "all19GoalAchieved": false,
+  "registration": "Before static-witness implementation and timing; product remains B",
+  "authoringException": "New one-off private-entry witness algorithm in temporary prototype; not mechanical product refactor."
+}

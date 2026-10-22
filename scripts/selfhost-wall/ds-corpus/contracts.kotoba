@@ -1,0 +1,79 @@
+(ns ds.contracts)
+
+;; callable contracts (ADR 0353): typed closure parameters, typed results, direct calls of local closures, and the dispatcher families they select
+
+(defn apply-doc [f [:fn [[:document] :document]] d :document] :document (f d))
+
+(defn apply-str [f [:fn [[:string] :string]] s :string] :string (f s))
+
+(defn apply-str-len [f [:fn [[:string] :i64]] s :string] :i64 (f s))
+
+(defn combine [f [:fn [[:document :document] :document]] a :document b :document] :document (f a b))
+
+(defn apply-i64 [f [:fn [[:i64] :i64]] x :i64] :i64 (f x))
+
+(defn apply-bool [f [:fn [[:i64 :bool] :bool]] x :i64 b :bool] :bool (f x b))
+
+(defn apply-pt [f [:fn [[[:record :demo/pt [[:x :i64]]]] :i64]] p [:record :demo/pt [[:x :i64]]]] :i64 (f p))
+
+(defn run-state [node [:fn [[[:record :demo/st [[:count :i64] [:phase :keyword]]]] [:record :demo/st [[:count :i64] [:phase :keyword]]]]]
+                 s [:record :demo/st [[:count :i64] [:phase :keyword]]]]
+  [:record :demo/st [[:count :i64] [:phase :keyword]]]
+  (node s))
+
+(defn twice [f [:fn [[:document] :document]] d :document] :document
+  (apply-doc f (apply-doc f d)))
+
+(defn make-counter [] [:fn [[:document] :i64]] (fn [d] (document-count d)))
+
+(defn make-two [] [:fn [[:i64] :i64] [[:i64 :i64] :i64]]
+  (fn ([x] (+ x 1)) ([x y] (+ x y))))
+
+(defn make-str [] [:fn [[:string] :string]] (fn [s] (string-concat s s)))
+
+(defn use-ref [d :document] :document
+  (apply-doc (fn-ref wrap) d))
+
+(defn wrap [d :document] :document (document-vector d))
+
+(defn main [] :i64
+  (let [g (make-counter)]
+    (g (document-vector (document-i64 1) (document-i64 2)))))
+
+(defn main-two [] :i64
+  (let [h (make-two) k (h 3)]
+    (+ k (h 1 2))))
+
+(defn main-chain [] :i64
+  (let [g (make-counter) n (g (document-vector (document-i64 1)))]
+    (apply-i64 (fn [x] (+ x n)) 4)))
+
+(defn main-pt [] :i64
+  (apply-pt (fn [p] (record-get [:record :demo/pt [[:x :i64]]] p :x))
+            (record-new [:record :demo/pt [[:x :i64]]] 7)))
+
+(defn main-merge [] :document
+  (combine (fn [x y] (document-merge x y)) (document {:a 1}) (document {:b 2})))
+
+(defn main-str [] :i64
+  (string-length (apply-str (fn [s] (string-concat s s)) "abc")))
+
+(defn main-state [] :i64
+  (record-get [:record :demo/st [[:count :i64] [:phase :keyword]]]
+              (run-state (fn [s] (record-new [:record :demo/st [[:count :i64] [:phase :keyword]]]
+                                             (+ 1 (record-get [:record :demo/st [[:count :i64] [:phase :keyword]]] s :count)) :end))
+                         (record-new [:record :demo/st [[:count :i64] [:phase :keyword]]] 0 :go))
+              :count))
+
+(defn bad-arity [] :i64
+  (let [g (make-counter)]
+    (g 1 2)))
+
+(defn bad-fn-arity [] [:fn [[:i64] :i64]]
+  (fn [x y] (+ x y)))
+
+(defn main-bool [] :bool
+  (apply-bool (fn [x b] (and b (> x 0))) 3 true))
+
+(defn main-nested [] :document
+  (twice (fn [d] (document-merge d (document {:n 1}))) (document {:a 1})))

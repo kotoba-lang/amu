@@ -1,0 +1,4 @@
+;; R3 feat: abort on the path that exits a loop
+(ns seed.r3 (:export [test]))
+(defn- f [x :i64] :i64 (if (= x 3) (throw x) x))
+(defn test [] :i64 (try (loop [i 1] (if (= i 3) (f i) (recur (+ i 1)))) (catch e (+ 1000 e))))

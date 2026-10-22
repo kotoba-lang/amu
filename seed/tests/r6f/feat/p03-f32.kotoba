@@ -1,0 +1,5 @@
+;; R6F: :f32 is a binary32 carrier: f32-to-bits / f32-from-bits round-trip the signed 32-bit pattern (-1.0f = -1082130432).
+;; want: -1082130432
+(ns r6f.p03)
+(defn- id32 [x :f32] :f32 x)
+(defn main [] :i64 (f32-to-bits (id32 (f32-from-bits -1082130432))))

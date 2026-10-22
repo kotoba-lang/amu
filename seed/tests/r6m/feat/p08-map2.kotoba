@@ -1,0 +1,8 @@
+;; R6M: map over two collections (stops at the shorter one): a fn literal, a defn name (an operation head is refused, as by
+;; stage-0)
+(ns r6m.p08 (:export [main]))
+(defn add [a :i64 b :i64] :i64 (+ a b))
+(defn main [] :i64
+  (+ (reduce + 0 (map (fn [x y] (* x y)) [1 2 3] [4 5 6]))
+     (+ (* 100 (vector-count (map add [1 2 3] [10 20])))
+        (* 1000 (reduce + 0 (map (fn [a b] (* a b)) [10 20 30] [1 2 3]))))))

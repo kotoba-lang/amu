@@ -1,0 +1,6 @@
+;; want: 169087
+;; R6B string-parse-i64 range edges, parse-long, a 2-byte code point through string-to-utf8 (want = stage-0's answer)
+(ns p12 (:export [main]))
+(defn main [] :i64 (let [p (string-parse-i64 "9223372036854775808") q (string-parse-i64 "-9223372036854775808") m (string-parse-i64 "12x")]
+  (+ (if (result-ok?-of [:result :i64 :keyword] p) 1 0) (if (= (result-value-of [:result :i64 :keyword] q 0) -9223372036854775808) 10 0)
+     (if (result-ok?-of [:result :i64 :keyword] m) 100 0) (option-or (parse-long "77") 0) (* 1000 (bytes-at (string-to-utf8 "aé") 2)))))

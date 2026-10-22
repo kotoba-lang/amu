@@ -1,0 +1,22 @@
+(ns amu.compile
+  {:kotoba/export [run]}
+  (:require [amu.launch :as launch]
+            [kotoba.compiler.nbb.aarch64-cli :as product]))
+
+;; seed/amu-main/l/amu/compile.kotoba -- the PRODUCT `amu compile` of the native image (agent claude, 2026-10-10).
+;;
+;; The command is the product entry nbb.aarch64-cli's Kotoba `run` (the body of its `main`), i.e. nbb.cli's Kotoba
+;; `run!`: `compile <src> --target aarch64-macos [--output f] [--policy p] [--fuel n] [--source-path r ...]`, the host's
+;; `compile-uncached!` over kotoba.compiler.native-artifact, writing the host's sealed `.kexe`, `.provenance.edn` and
+;; `.publication.edn` and printing the host's answer map; a refusal is cli-support's `:kotoba.cli-error/v1` report with
+;; the host's exit code for its phase. Modes that route has not are refused by name there (other targets, --artifact,
+;; --backend, --module-lock, --package-lock, worker). The argument list is bin/amu's (amu.launch: `--jvm-free` dropped,
+;; the host --target default).
+;;
+;; Not this command: `compile ... --emit-module` is the image's INTERNAL module compiler (the seed compiler linked in,
+;; seed.main), used by the self-build only; amu.main routes it before this module is reached.
+;;
+;; Until 2026-10-10 this module was the seed compiler behind stage-0's CLI texts (a :kotoba.kexe/v1 container rewritten
+;; by amu.kexe, an amu-seed provenance record): a different artifact from `bin/amu compile`'s.
+
+(defn run [] :i64 (product/run (launch/args)))

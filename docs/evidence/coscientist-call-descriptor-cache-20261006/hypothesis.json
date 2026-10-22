@@ -1,0 +1,46 @@
+{
+  "status": "PREREGISTERED before any native build",
+  "hypothesis": "Closed no-reset nonleaf read-heavy functions may reuse successful vector descriptor metadata across calls using three saved registers; actual per-access key comparison and fresh element loads preserve semantics. Runtime descriptor recycle makes unrestricted positive-handle caching unsafe.",
+  "baselineSourceCommit": "44bfaa28ccb70252bf763e20de5321ced848f0e4",
+  "baselineSeedSha256": "761856bb455de5d36021e177be8f3a0bbf65772dd66cbdf29c8e114f8cbe3d93",
+  "baselineIntegratedSha256": "1df5677800b7664a00992cc63eb6ba877b5933a750f181ddcb213c75604fc1bd",
+  "newMode": 4,
+  "guards": [
+    "original mode0",
+    "original leaf0 framed",
+    "originalNSV<=7",
+    "expanded frame<=32768",
+    "at least2 vector reads",
+    "at least1 direct source call",
+    "finite entire-function CFG and transitive source call closure",
+    "no reachable or unreachable reset232/CALLI/CAP/FADDR/RT-cap/unknownRT/open target"
+  ],
+  "caps": {
+    "moduleFunctionCount": 2048,
+    "perFunctionBody": 8192,
+    "perClosureSharedScanAndLabelVisits": 131072,
+    "scratchWords": "8+2*functionCount",
+    "closureWorklist": "function marked before pushing, at most functionCount entries"
+  },
+  "bank": [
+    "len=x19+oldNSV",
+    "base=x20+oldNSV",
+    "key=x21+oldNSV"
+  ],
+  "generatorState": "No additional G fields; mode4 uses original NSV/frame/mode fields preserved by scalar-DAG snapshot; original slots/descriptor allocations untouched.",
+  "intent": [
+    "native generations2/3/4 fixedpoint",
+    "all19 original measured batch source native artifacts",
+    "observer certificate actual fullSIR closedcall edges frame bank and reads",
+    "593 fixture semantics and readonly/scalar318 regressions by independent root",
+    "typed semantic alias/write/reassignment/firstread/zero-trip/trap controls",
+    "resource/fuel/ABI sentinel/extreme frame/bank controls",
+    "unsafe admission/metadata/frame/call preservation faults",
+    "closed/open/closed sameM state",
+    "shared finite proof budget exhaustion retains original mode0"
+  ],
+  "notASTRuleReason": "Interprocedural no-reset closure and frame/register reservation are target machine lifetime/ABI analyses; a local AST rewrite cannot establish this contract.",
+  "noTimingBeforeSemanticQualification": true,
+  "nativeExecutions": 0,
+  "productEdits": false
+}

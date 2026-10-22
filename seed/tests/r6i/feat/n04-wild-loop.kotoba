@@ -1,0 +1,4 @@
+;; R6I (LET): repeated `_` in a loop binding vector stays E2112 (stage-0 refuses it: "HIR rejected: invalid-parameters").
+;; want: E2112
+(ns r6i.n04)
+(defn main [] :i64 (loop [_ 0 _ 5 i 0] (if (< i 3) (recur 0 5 (+ i 1)) i)))

@@ -1,0 +1,117 @@
+{
+  "format": "amu.picojpeg-reader-fragment/v1",
+  "status": "complete-fragment-correctness",
+  "completeWorkload": false,
+  "performanceMeasured": false,
+  "officialEmbenchScore": false,
+  "formalPerfgateQualified": false,
+  "compilerSha256": "abcc1318957af7d3a09cfd66c06d17821b5cf47f4c47d02b5620e9e92a24f02e",
+  "runnerSha256": "a1b8778cf9af255f66bba3e3cad20e3baadd9653e18defe429bfa179840665ac",
+  "sourcePins": {
+    "libpicojpeg.c": "ed1fb932e9c2c15796bbe6caea8e2e53e61d1349fae4afc1d71847eeebb9185d",
+    "picojpeg.h": "50dbd519c3e7b5732cc2e58d9e47195a3e5652f5d14f9d997f102b844e64db36",
+    "picojpeg_test.c": "fab1ba5e93f854512ff10910e2b304b20f42a6d579db1793c7aa87e398188f8a"
+  },
+  "oracleSelfchecks": [
+    {
+      "iterations": 1,
+      "unchangedCDecoderAndVerifier": true
+    },
+    {
+      "iterations": 2,
+      "unchangedCDecoderAndVerifier": true
+    },
+    {
+      "iterations": 17,
+      "unchangedCDecoderAndVerifier": true
+    },
+    {
+      "iterations": 32,
+      "unchangedCDecoderAndVerifier": true
+    }
+  ],
+  "guards": [
+    {
+      "symbol": "bounds-probe",
+      "input": 511,
+      "fuel": 16777216,
+      "returncode": 0
+    },
+    {
+      "symbol": "bounds-probe",
+      "input": 512,
+      "fuel": 16777216,
+      "returncode": -4
+    },
+    {
+      "symbol": "observe",
+      "input": 524288,
+      "fuel": 1,
+      "returncode": -5
+    }
+  ],
+  "rows": [],
+  "sha256": {
+    "picojpeg-reader.kotoba": "424f29518b7f369b8fe83ee57145069b77b45a78cbb09b0163c31c3aaada3b3d",
+    "observe.bin": "1890680e8a64202de062dd2ce46070a3cd2eefb358157be71919a6c454b316ae",
+    "c-bridge.c": "8d02eb36d3f961c67dbb89f43e53a5e239923ba1a5a11ff494996b8934fb000c",
+    "c.dylib": "207f49fbc282cf426c5ac2f43612fe95e6cbd65b9572565c406b5cfc8e0bf0d6",
+    "profile.json": "7e242170d135406e9646bc5398156a2c2585ac6c40a41e771d0c647d9c9bb818"
+  },
+  "cellComparisons": 9504,
+  "proof": {
+    "byteIdenticalRegeneration": true,
+    "pinRefusals": [
+      {
+        "source": "libpicojpeg.c",
+        "exit": 1,
+        "stderr": "unreviewed picojpeg reader profile: libpicojpeg.c\n"
+      },
+      {
+        "source": "picojpeg.h",
+        "exit": 1,
+        "stderr": "unreviewed picojpeg reader profile: picojpeg.h\n"
+      },
+      {
+        "source": "picojpeg_test.c",
+        "exit": 1,
+        "stderr": "unreviewed picojpeg reader profile: picojpeg_test.c\n"
+      }
+    ],
+    "PRODUCT": {
+      "unchanged": true,
+      "entries": 97
+    },
+    "syntaxCompilation": true,
+    "originalDecoderProfile": "init=0 width=51 height=64 components=3 scan=1 blocks=3 MCU=8x8 total=56\ndecodedMCUs=56 terminal=1 bytes=570 verifier=1\n"
+  },
+  "sanitizers": {
+    "compileCommand": [
+      "clang",
+      "-O1",
+      "-g",
+      "-std=gnu11",
+      "-fsanitize=address,undefined",
+      "-fno-sanitize-recover=all",
+      "-I",
+      "/private/tmp/amu-embench-compare-20261004/upstream/support",
+      "/private/tmp/amu-embench-compare-20261004/coscientist-picojpeg-reader/sanitize.c",
+      "-o",
+      "/private/tmp/amu-embench-compare-20261004/coscientist-picojpeg-reader/sanitize"
+    ],
+    "runCommand": [
+      "/private/tmp/amu-embench-compare-20261004/coscientist-picojpeg-reader/sanitize"
+    ],
+    "exitCode": 0,
+    "stdout": "PASS 32 unchanged C decoder/verifier selfchecks, 9504 initialized reader state accesses\n",
+    "sourceSha256": "de2f05e54e7f7f95169b7a91f510954b630587b76667c394ea8ad07ee7e1fee2",
+    "binarySha256": "a69b98ede7659e8a349d7a304f1da8944f51797764f9aac0b9b6c58c905e4f69"
+  },
+  "asher": [
+    {
+      "HostName": "asher",
+      "Online": false,
+      "LastSeen": "2026-10-04T08:29:46.1Z"
+    }
+  ]
+}

@@ -1,0 +1,306 @@
+{
+  "status": "PASS actual previous/new integrated refactor list/plan/apply/check/out/refusal/stub and Unicode WRITE_SEP parity",
+  "pairs": 12,
+  "rows": [
+    {
+      "case": 0,
+      "args": [
+        "refactor",
+        "list-rules"
+      ],
+      "old": {
+        "exit": 0,
+        "stdout": "{:format :kotoba.refactor/v1, :command :list-rules, :ok true, :standard-order [:a :b :d :e :f], :rules [{:id :a, :name :destructure, :summary \"destructuring lambda parameters (fn [[k v]] ..) / {:keys ..} -> plain parameter + (let [k (fe-nth p 0) ..] ..)\", :host-effect \"none: fe-nth is (nth c i nil), fe-get is get, fe-nthnext is nthnext -- what Clojure's destructuring expands to\"} {:id :b, :name :reject, :summary \"reject! -> the :fe/err typed abort (statement -> require-k, tail / let value -> throw fe-error)\", :host-effect \"none: the original call stays as the :default arm\"} {:id :c, :name :dynvars, :summary \"dynamic vars -> explicit env threading (--target dual: #?(:kotoba <threaded defn> :default <original>); --target host-env: in place, host-valid)\", :host-effect \"none for dual; host-env is the differential experiment\", :needs-target true} {:id :d, :name :kwcallback, :summary \"keyword callbacks (map :k xs) -> (map (fn [e] (:k e)) xs); (juxt :a :b)\", :host-effect \"none\"} {:id :e, :name :let, :summary \"destructuring in let binding vectors, flattened in place\", :host-effect \"none\"} {:id :f, :name :lowerloops, :summary \"mapv/map/filter/filterv/reduce with a one-lambda callback -> a loop over kotoba.form as the :kotoba arm\", :host-effect \"none: the :default arm is the original call\"}], :commands [:list-rules :plan :apply :graph :partition :split :verify]}\n",
+        "stderr": "",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      },
+      "new": {
+        "exit": 0,
+        "stdout": "{:format :kotoba.refactor/v1, :command :list-rules, :ok true, :standard-order [:a :b :d :e :f], :rules [{:id :a, :name :destructure, :summary \"destructuring lambda parameters (fn [[k v]] ..) / {:keys ..} -> plain parameter + (let [k (fe-nth p 0) ..] ..)\", :host-effect \"none: fe-nth is (nth c i nil), fe-get is get, fe-nthnext is nthnext -- what Clojure's destructuring expands to\"} {:id :b, :name :reject, :summary \"reject! -> the :fe/err typed abort (statement -> require-k, tail / let value -> throw fe-error)\", :host-effect \"none: the original call stays as the :default arm\"} {:id :c, :name :dynvars, :summary \"dynamic vars -> explicit env threading (--target dual: #?(:kotoba <threaded defn> :default <original>); --target host-env: in place, host-valid)\", :host-effect \"none for dual; host-env is the differential experiment\", :needs-target true} {:id :d, :name :kwcallback, :summary \"keyword callbacks (map :k xs) -> (map (fn [e] (:k e)) xs); (juxt :a :b)\", :host-effect \"none\"} {:id :e, :name :let, :summary \"destructuring in let binding vectors, flattened in place\", :host-effect \"none\"} {:id :f, :name :lowerloops, :summary \"mapv/map/filter/filterv/reduce with a one-lambda callback -> a loop over kotoba.form as the :kotoba arm\", :host-effect \"none: the :default arm is the original call\"}], :commands [:list-rules :plan :apply :graph :partition :split :verify]}\n",
+        "stderr": "",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      }
+    },
+    {
+      "case": 1,
+      "args": [
+        "refactor",
+        "list-rules",
+        "--summary"
+      ],
+      "old": {
+        "exit": 0,
+        "stdout": "{:format :kotoba.refactor/v1, :command :list-rules, :ok true, :standard-order [:a :b :d :e :f], :rules [{:id :a, :name :destructure, :summary \"destructuring lambda parameters (fn [[k v]] ..) / {:keys ..} -> plain parameter + (let [k (fe-nth p 0) ..] ..)\", :host-effect \"none: fe-nth is (nth c i nil), fe-get is get, fe-nthnext is nthnext -- what Clojure's destructuring expands to\"} {:id :b, :name :reject, :summary \"reject! -> the :fe/err typed abort (statement -> require-k, tail / let value -> throw fe-error)\", :host-effect \"none: the original call stays as the :default arm\"} {:id :c, :name :dynvars, :summary \"dynamic vars -> explicit env threading (--target dual: #?(:kotoba <threaded defn> :default <original>); --target host-env: in place, host-valid)\", :host-effect \"none for dual; host-env is the differential experiment\", :needs-target true} {:id :d, :name :kwcallback, :summary \"keyword callbacks (map :k xs) -> (map (fn [e] (:k e)) xs); (juxt :a :b)\", :host-effect \"none\"} {:id :e, :name :let, :summary \"destructuring in let binding vectors, flattened in place\", :host-effect \"none\"} {:id :f, :name :lowerloops, :summary \"mapv/map/filter/filterv/reduce with a one-lambda callback -> a loop over kotoba.form as the :kotoba arm\", :host-effect \"none: the :default arm is the original call\"}], :commands [:list-rules :plan :apply :graph :partition :split :verify]}\n",
+        "stderr": "",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      },
+      "new": {
+        "exit": 0,
+        "stdout": "{:format :kotoba.refactor/v1, :command :list-rules, :ok true, :standard-order [:a :b :d :e :f], :rules [{:id :a, :name :destructure, :summary \"destructuring lambda parameters (fn [[k v]] ..) / {:keys ..} -> plain parameter + (let [k (fe-nth p 0) ..] ..)\", :host-effect \"none: fe-nth is (nth c i nil), fe-get is get, fe-nthnext is nthnext -- what Clojure's destructuring expands to\"} {:id :b, :name :reject, :summary \"reject! -> the :fe/err typed abort (statement -> require-k, tail / let value -> throw fe-error)\", :host-effect \"none: the original call stays as the :default arm\"} {:id :c, :name :dynvars, :summary \"dynamic vars -> explicit env threading (--target dual: #?(:kotoba <threaded defn> :default <original>); --target host-env: in place, host-valid)\", :host-effect \"none for dual; host-env is the differential experiment\", :needs-target true} {:id :d, :name :kwcallback, :summary \"keyword callbacks (map :k xs) -> (map (fn [e] (:k e)) xs); (juxt :a :b)\", :host-effect \"none\"} {:id :e, :name :let, :summary \"destructuring in let binding vectors, flattened in place\", :host-effect \"none\"} {:id :f, :name :lowerloops, :summary \"mapv/map/filter/filterv/reduce with a one-lambda callback -> a loop over kotoba.form as the :kotoba arm\", :host-effect \"none: the :default arm is the original call\"}], :commands [:list-rules :plan :apply :graph :partition :split :verify]}\n",
+        "stderr": "",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      }
+    },
+    {
+      "case": 2,
+      "args": [
+        "refactor",
+        "plan",
+        "a",
+        "x.cljk"
+      ],
+      "old": {
+        "exit": 0,
+        "stdout": "{:format :kotoba.refactor/v1, :command :plan, :ok true, :rules [:a], :files [{:path \"x.cljk\", :human-sites-total 0, :human-sites [], :chars-after 13155, :chars-before 11551, :lines {:removed 8, :added 40}, :passes 2, :inventory [{:rule :destructure, :data {:other-destructuring {\"for\" {:shared 3}, \"if-let\" {:shared 1}, \"defn params\" {:shared 1}}}}], :summary {:destructure {:applied 6, :patterns 6, :human 0, :by-region {:shared 6}, :actionable 6, :human-reasons [], :auto 6, :auto-by-kind {\"map\" 1, \"cst/walk\" 1, \"some\" 3, \"mapcat\" 1}, :ported 0}}, :changed true, :diff \"--- a/x.cljk\\n+++ b/x.cljk\\n@@ -12,6 +12,37 @@\\n             [kotoba.compiler.refactor.cst :as cst]\\n             [kotoba.compiler.refactor.edit :as edit]))\\n \\n+;; amu-refactor: positional access.  Host: what [a b] destructuring does; Kotoba: Form child, nil-form past the end.\\n+#?(:kotoba\\n+   (defn- fe-nth [f [:ref :form/r] i :i64] [:ref :form/r] (form/nth-of f i))\\n+   :default\\n+   (defn- fe-nth [c i] (nth c i nil)))\\n+\\n+;; amu-refactor: the rest after the first i children (nil / nil-form when none).\\n+#?(:kotoba\\n+   (defn- fe-nthnext [f [:ref :form/r] i :i64] [:ref :form/r]\\n+     (let [n (form/count-of f)]\\n+       (if (>= i n)\\n+         (form/nil-form)\\n+         (form/form-seq (loop [j i acc (form/no-forms)]\\n+                          (if (>= j n) acc (recur (+ j 1) (form/append-form acc (form/nth-of f j)))))))))\\n+   :default\\n+   (defn- fe-nthnext [c i] (nthnext c i)))\\n+\\n+;; amu-refactor: keyword lookup.  Host: `get`; Kotoba: form-get with a keyword Form.\\n+#?(:kotoba\\n+   (defn- fe-get [m [:ref :form/r] k :keyword] [:ref :form/r] (form/form-get m (form/keyword-form k)))\\n+   :default\\n+   (defn- fe-get [m k] (get m k)))\\n+\\n+;; amu-refactor: keyword lookup with a default used only when the key is ABSENT (get's not-found, not nil-punning).\\n+#?(:kotoba\\n+   (defn- fe-get-or [m [:ref :form/r] k :keyword d [:ref :form/r]] [:ref :form/r]\\n+     (if (form/form-has? m (form/keyword-form k)) (form/form-get m (form/keyword-form k)) d))\\n+   :default\\n+   (defn- fe-get-or [m k d] (get m k d)))\\n+\\n+\\n (def prelude-names '[fe-nth fe-nthnext fe-get])\\n \\n (defn pat?\\n@@ -122,7 +153,7 @@\\n       :else nil)))\\n \\n (defn- format-binds [src insert-pos binds]\\n-  (let [flat (map (fn [[n e]] (str n \\\" \\\" e)) binds)\\n+  (let [flat (map (fn [dd__6369_1] (let [n (fe-nth dd__6369_1 0) e (fe-nth dd__6369_1 1)] (str n \\\" \\\" e))) binds)\\n         one (str/join \\\" \\\" flat)\\n         starts (edit/line-starts src)\\n         col (- insert-pos (nth starts (dec (edit/offset->line starts insert-pos))))]\\n@@ -203,25 +234,26 @@\\n   (let [out (atom [])\\n         other (atom {})]\\n     (cst/walk\\n-     (fn [n {:keys [region path]}]\\n-       (when (and (cst/lst? n) (contains? #{\\\"fn\\\" \\\"fn*\\\"} (cst/head-text n)))\\n+     (fn [n dd__10010_1]\\n+       (let [region (fe-get dd__10010_1 :region) path (fe-get dd__10010_1 :path)]\\n+         (when (and (cst/lst? n) (contains? #{\\\"fn\\\" \\\"fn*\\\"} (cst/head-text n)))\\n          (when-let [ars (arities n)]\\n-           (when (some (fn [[pv _]] (some pat? (:kids pv))) ars)\\n+           (when (some (fn [dd__10176_1] (let [pv (fe-nth dd__10176_1 0)] (some pat? (:kids pv)))) ars)\\n              (let [r (rewrite-fn src n)\\n                    ctx (context-of path n)\\n                    starts (edit/line-starts src)]\\n                (swap! out conj (assoc r :rule :destructure :s (:s n) :e (:e n) :region region\\n                                       :line (edit/offset->line starts (:s n)) :context ctx\\n-                                      :shape (->> (mapcat (fn [[pv _]] (:kids pv)) ars) (filter pat?) (map shape-of) distinct sort (str/join \\\"+\\\"))))))))\\n+                                      :shape (->> (mapcat (fn [dd__10594_1] (let [pv (fe-nth dd__10594_1 0)] (:kids pv))) ars) (filter pat?) (map shape-of) distinct sort (str/join \\\"+\\\"))))))))\\n        ;; destructuring that is NOT a fn parameter: counted for the report, not rewritten\\n        (when (cst/lst? n)\\n          (let [h (cst/head-text n) as (cst/args n)]\\n            (cond\\n              (and (contains? #{\\\"let\\\" \\\"loop\\\" \\\"doseq\\\" \\\"for\\\" \\\"when-let\\\" \\\"if-let\\\" \\\"when-some\\\" \\\"if-some\\\"} h) (cst/vec? (first as))\\n-                  (some (fn [[p _]] (pat? p)) (partition 2 (:kids (first as)))))\\n+                  (some (fn [dd__11024_1] (let [p (fe-nth dd__11024_1 0)] (pat? p))) (partition 2 (:kids (first as)))))\\n              (swap! other update-in [h region] (fnil inc 0))\\n-             (and (contains? #{\\\"defn\\\" \\\"defn-\\\"} h) (some (fn [[pv _]] (some pat? (:kids pv))) (arities (cst/->fn-view n))))\\n-             (swap! other update-in [\\\"defn params\\\" region] (fnil inc 0))))))\\n+             (and (contains? #{\\\"defn\\\" \\\"defn-\\\"} h) (some (fn [dd__11198_1] (let [pv (fe-nth dd__11198_1 0)] (some pat? (:kids pv)))) (arities (cst/->fn-view n))))\\n+             (swap! other update-in [\\\"defn params\\\" region] (fnil inc 0)))))))\\n      nodes)\\n     (conj @out {:rule :destructure :kind :inventory :status :info :region :shared :data {:other-destructuring @other}})))\\n \\n\"}], :totals {:files 1, :changed 1, :summary {:destructure {:patterns 6, :ported 0, :actionable 6, :auto 6, :human 0, :applied 6}}}}\n",
+        "stderr": "",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      },
+      "new": {
+        "exit": 0,
+        "stdout": "{:format :kotoba.refactor/v1, :command :plan, :ok true, :rules [:a], :files [{:path \"x.cljk\", :human-sites-total 0, :human-sites [], :chars-after 13155, :chars-before 11551, :lines {:removed 8, :added 40}, :passes 2, :inventory [{:rule :destructure, :data {:other-destructuring {\"for\" {:shared 3}, \"if-let\" {:shared 1}, \"defn params\" {:shared 1}}}}], :summary {:destructure {:applied 6, :patterns 6, :human 0, :by-region {:shared 6}, :actionable 6, :human-reasons [], :auto 6, :auto-by-kind {\"map\" 1, \"cst/walk\" 1, \"some\" 3, \"mapcat\" 1}, :ported 0}}, :changed true, :diff \"--- a/x.cljk\\n+++ b/x.cljk\\n@@ -12,6 +12,37 @@\\n             [kotoba.compiler.refactor.cst :as cst]\\n             [kotoba.compiler.refactor.edit :as edit]))\\n \\n+;; amu-refactor: positional access.  Host: what [a b] destructuring does; Kotoba: Form child, nil-form past the end.\\n+#?(:kotoba\\n+   (defn- fe-nth [f [:ref :form/r] i :i64] [:ref :form/r] (form/nth-of f i))\\n+   :default\\n+   (defn- fe-nth [c i] (nth c i nil)))\\n+\\n+;; amu-refactor: the rest after the first i children (nil / nil-form when none).\\n+#?(:kotoba\\n+   (defn- fe-nthnext [f [:ref :form/r] i :i64] [:ref :form/r]\\n+     (let [n (form/count-of f)]\\n+       (if (>= i n)\\n+         (form/nil-form)\\n+         (form/form-seq (loop [j i acc (form/no-forms)]\\n+                          (if (>= j n) acc (recur (+ j 1) (form/append-form acc (form/nth-of f j)))))))))\\n+   :default\\n+   (defn- fe-nthnext [c i] (nthnext c i)))\\n+\\n+;; amu-refactor: keyword lookup.  Host: `get`; Kotoba: form-get with a keyword Form.\\n+#?(:kotoba\\n+   (defn- fe-get [m [:ref :form/r] k :keyword] [:ref :form/r] (form/form-get m (form/keyword-form k)))\\n+   :default\\n+   (defn- fe-get [m k] (get m k)))\\n+\\n+;; amu-refactor: keyword lookup with a default used only when the key is ABSENT (get's not-found, not nil-punning).\\n+#?(:kotoba\\n+   (defn- fe-get-or [m [:ref :form/r] k :keyword d [:ref :form/r]] [:ref :form/r]\\n+     (if (form/form-has? m (form/keyword-form k)) (form/form-get m (form/keyword-form k)) d))\\n+   :default\\n+   (defn- fe-get-or [m k d] (get m k d)))\\n+\\n+\\n (def prelude-names '[fe-nth fe-nthnext fe-get])\\n \\n (defn pat?\\n@@ -122,7 +153,7 @@\\n       :else nil)))\\n \\n (defn- format-binds [src insert-pos binds]\\n-  (let [flat (map (fn [[n e]] (str n \\\" \\\" e)) binds)\\n+  (let [flat (map (fn [dd__6369_1] (let [n (fe-nth dd__6369_1 0) e (fe-nth dd__6369_1 1)] (str n \\\" \\\" e))) binds)\\n         one (str/join \\\" \\\" flat)\\n         starts (edit/line-starts src)\\n         col (- insert-pos (nth starts (dec (edit/offset->line starts insert-pos))))]\\n@@ -203,25 +234,26 @@\\n   (let [out (atom [])\\n         other (atom {})]\\n     (cst/walk\\n-     (fn [n {:keys [region path]}]\\n-       (when (and (cst/lst? n) (contains? #{\\\"fn\\\" \\\"fn*\\\"} (cst/head-text n)))\\n+     (fn [n dd__10010_1]\\n+       (let [region (fe-get dd__10010_1 :region) path (fe-get dd__10010_1 :path)]\\n+         (when (and (cst/lst? n) (contains? #{\\\"fn\\\" \\\"fn*\\\"} (cst/head-text n)))\\n          (when-let [ars (arities n)]\\n-           (when (some (fn [[pv _]] (some pat? (:kids pv))) ars)\\n+           (when (some (fn [dd__10176_1] (let [pv (fe-nth dd__10176_1 0)] (some pat? (:kids pv)))) ars)\\n              (let [r (rewrite-fn src n)\\n                    ctx (context-of path n)\\n                    starts (edit/line-starts src)]\\n                (swap! out conj (assoc r :rule :destructure :s (:s n) :e (:e n) :region region\\n                                       :line (edit/offset->line starts (:s n)) :context ctx\\n-                                      :shape (->> (mapcat (fn [[pv _]] (:kids pv)) ars) (filter pat?) (map shape-of) distinct sort (str/join \\\"+\\\"))))))))\\n+                                      :shape (->> (mapcat (fn [dd__10594_1] (let [pv (fe-nth dd__10594_1 0)] (:kids pv))) ars) (filter pat?) (map shape-of) distinct sort (str/join \\\"+\\\"))))))))\\n        ;; destructuring that is NOT a fn parameter: counted for the report, not rewritten\\n        (when (cst/lst? n)\\n          (let [h (cst/head-text n) as (cst/args n)]\\n            (cond\\n              (and (contains? #{\\\"let\\\" \\\"loop\\\" \\\"doseq\\\" \\\"for\\\" \\\"when-let\\\" \\\"if-let\\\" \\\"when-some\\\" \\\"if-some\\\"} h) (cst/vec? (first as))\\n-                  (some (fn [[p _]] (pat? p)) (partition 2 (:kids (first as)))))\\n+                  (some (fn [dd__11024_1] (let [p (fe-nth dd__11024_1 0)] (pat? p))) (partition 2 (:kids (first as)))))\\n              (swap! other update-in [h region] (fnil inc 0))\\n-             (and (contains? #{\\\"defn\\\" \\\"defn-\\\"} h) (some (fn [[pv _]] (some pat? (:kids pv))) (arities (cst/->fn-view n))))\\n-             (swap! other update-in [\\\"defn params\\\" region] (fnil inc 0))))))\\n+             (and (contains? #{\\\"defn\\\" \\\"defn-\\\"} h) (some (fn [dd__11198_1] (let [pv (fe-nth dd__11198_1 0)] (some pat? (:kids pv)))) (arities (cst/->fn-view n))))\\n+             (swap! other update-in [\\\"defn params\\\" region] (fnil inc 0)))))))\\n      nodes)\\n     (conj @out {:rule :destructure :kind :inventory :status :info :region :shared :data {:other-destructuring @other}})))\\n \\n\"}], :totals {:files 1, :changed 1, :summary {:destructure {:patterns 6, :ported 0, :actionable 6, :auto 6, :human 0, :applied 6}}}}\n",
+        "stderr": "",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      }
+    },
+    {
+      "case": 3,
+      "args": [
+        "refactor",
+        "plan",
+        "all",
+        "x.cljk"
+      ],
+      "old": {
+        "exit": 0,
+        "stdout": "{:format :kotoba.refactor/v1, :command :plan, :ok true, :rules [:a :b :d :e :f], :files [{:path \"x.cljk\", :human-sites-total 1, :human-sites [{:rule :lowerloops, :line 125, :region :shared, :reason \"callback parameters are not plain symbols (run rule a first) or the body is empty\", :context \"map\"}], :chars-after 14018, :chars-before 11551, :lines {:removed 13, :added 45}, :passes 3, :inventory [{:rule :destructure, :data {:other-destructuring {\"for\" {:shared 3}, \"if-let\" {:shared 1}, \"defn params\" {:shared 1}}}}], :summary {:destructure {:applied 6, :patterns 6, :human 0, :by-region {:shared 6}, :actionable 6, :human-reasons [], :auto 6, :auto-by-kind {\"map\" 1, \"cst/walk\" 1, \"some\" 3, \"mapcat\" 1}, :ported 0}, :kwcallback {:applied 4, :patterns 4, :human 0, :by-region {:shared 4}, :actionable 4, :human-reasons [], :auto 4, :auto-by-kind {\"some\" 2, \"mapcat\" 2}, :ported 0}, :lowerloops {:applied 2, :patterns 2, :human 1, :by-region {:shared 2}, :actionable 2, :human-reasons [[\"callback parameters are not plain symbols (run rule a first) or the body is empty\" 1]], :auto 1, :auto-by-kind {\"mapv\" 1}, :ported 0}}, :changed true, :diff \"--- a/x.cljk\\n+++ b/x.cljk\\n@@ -12,6 +12,37 @@\\n             [kotoba.compiler.refactor.cst :as cst]\\n             [kotoba.compiler.refactor.edit :as edit]))\\n \\n+;; amu-refactor: positional access.  Host: what [a b] destructuring does; Kotoba: Form child, nil-form past the end.\\n+#?(:kotoba\\n+   (defn- fe-nth [f [:ref :form/r] i :i64] [:ref :form/r] (form/nth-of f i))\\n+   :default\\n+   (defn- fe-nth [c i] (nth c i nil)))\\n+\\n+;; amu-refactor: the rest after the first i children (nil / nil-form when none).\\n+#?(:kotoba\\n+   (defn- fe-nthnext [f [:ref :form/r] i :i64] [:ref :form/r]\\n+     (let [n (form/count-of f)]\\n+       (if (>= i n)\\n+         (form/nil-form)\\n+         (form/form-seq (loop [j i acc (form/no-forms)]\\n+                          (if (>= j n) acc (recur (+ j 1) (form/append-form acc (form/nth-of f j)))))))))\\n+   :default\\n+   (defn- fe-nthnext [c i] (nthnext c i)))\\n+\\n+;; amu-refactor: keyword lookup.  Host: `get`; Kotoba: form-get with a keyword Form.\\n+#?(:kotoba\\n+   (defn- fe-get [m [:ref :form/r] k :keyword] [:ref :form/r] (form/form-get m (form/keyword-form k)))\\n+   :default\\n+   (defn- fe-get [m k] (get m k)))\\n+\\n+;; amu-refactor: keyword lookup with a default used only when the key is ABSENT (get's not-found, not nil-punning).\\n+#?(:kotoba\\n+   (defn- fe-get-or [m [:ref :form/r] k :keyword d [:ref :form/r]] [:ref :form/r]\\n+     (if (form/form-has? m (form/keyword-form k)) (form/form-get m (form/keyword-form k)) d))\\n+   :default\\n+   (defn- fe-get-or [m k d] (get m k d)))\\n+\\n+\\n (def prelude-names '[fe-nth fe-nthnext fe-get])\\n \\n (defn pat?\\n@@ -118,11 +149,11 @@\\n         kids (if (cst/sym? (first kids)) (rest kids) kids)]\\n     (cond\\n       (cst/vec? (first kids)) [[(first kids) (vec (rest kids))]]\\n-      (every? cst/lst? kids) (mapv (fn [l] [(first (:kids l)) (vec (rest (:kids l)))]) kids)\\n+      (every? cst/lst? kids) #?(:kotoba (let [fe-lc__6230 (form/kids-of kids) fe-ln__6230 (vector-count fe-lc__6230)] (form/form-vec (loop [fe-li__6230 0 fe-la__6230 (form/no-forms)] (if (>= fe-li__6230 fe-ln__6230) fe-la__6230 (recur (+ fe-li__6230 1) (form/append-form fe-la__6230 (let [l (typed-list-nth [:list [:ref :form/r]] fe-lc__6230 fe-li__6230)] [(first (:kids l)) (vec (rest (:kids l)))]))))))) :default (mapv (fn [l] [(first (:kids l)) (vec (rest (:kids l)))]) kids))\\n       :else nil)))\\n \\n (defn- format-binds [src insert-pos binds]\\n-  (let [flat (map (fn [[n e]] (str n \\\" \\\" e)) binds)\\n+  (let [flat #?(:kotoba (let [fe-lc__6756 (form/kids-of binds) fe-ln__6756 (vector-count fe-lc__6756)] (form/form-seq (loop [fe-li__6756 0 fe-la__6756 (form/no-forms)] (if (>= fe-li__6756 fe-ln__6756) fe-la__6756 (recur (+ fe-li__6756 1) (form/append-form fe-la__6756 (let [dd__6369_1 (typed-list-nth [:list [:ref :form/r]] fe-lc__6756 fe-li__6756)] (let [n (fe-nth dd__6369_1 0) e (fe-nth dd__6369_1 1)] (str n \\\" \\\" e))))))))) :default (map (fn [dd__6369_1] (let [n (fe-nth dd__6369_1 0) e (fe-nth dd__6369_1 1)] (str n \\\" \\\" e))) binds))\\n         one (str/join \\\" \\\" flat)\\n         starts (edit/line-starts src)\\n         col (- insert-pos (nth starts (dec (edit/offset->line starts insert-pos))))]\\n@@ -154,9 +185,9 @@\\n                   {:human \\\"destructuring in the & rest parameter\\\"}\\n                   (rewrite-arity src pv body gen))\\n                 :else (rewrite-arity src pv body gen)))]\\n-        (if-let [h (some :human results)]\\n+        (if-let [h (some (fn [e] (:human e)) results)]\\n           {:status :human :reason h}\\n-          {:status :auto :edits (vec (mapcat :edits results))})))))\\n+          {:status :auto :edits (vec (mapcat (fn [e] (:edits e)) results))})))))\\n \\n (defn rewrite-arity [src pv body gen]\\n   (let [params (:kids pv)\\n@@ -165,9 +196,9 @@\\n                 (let [g (gen) r (expand src p g gen false)]\\n                   (assoc r :param p :g g))\\n                 {:binds [] :param p :g nil}))]\\n-    (if-let [h (some :human per)]\\n+    (if-let [h (some (fn [e] (:human e)) per)]\\n       {:human h}\\n-      (let [binds (mapcat :binds per)\\n+      (let [binds (mapcat (fn [e] (:binds e)) per)\\n             first-body (first body)\\n             last-body (last body)\\n             ins (:s first-body)\\n@@ -203,25 +234,26 @@\\n   (let [out (atom [])\\n         other (atom {})]\\n     (cst/walk\\n-     (fn [n {:keys [region path]}]\\n-       (when (and (cst/lst? n) (contains? #{\\\"fn\\\" \\\"fn*\\\"} (cst/head-text n)))\\n+     (fn [n dd__10010_1]\\n+       (let [region (fe-get dd__10010_1 :region) path (fe-get dd__10010_1 :path)]\\n+         (when (and (cst/lst? n) (contains? #{\\\"fn\\\" \\\"fn*\\\"} (cst/head-text n)))\\n          (when-let [ars (arities n)]\\n-           (when (some (fn [[pv _]] (some pat? (:kids pv))) ars)\\n+           (when (some (fn [dd__10176_1] (let [pv (fe-nth dd__10176_1 0)] (some pat? (:kids pv)))) ars)\\n              (let [r (rewrite-fn src n)\\n                    ctx (context-of path n)\\n                    starts (edit/line-starts src)]\\n                (swap! out conj (assoc r :rule :destructure :s (:s n) :e (:e n) :region region\\n                                       :line (edit/offset->line starts (:s n)) :context ctx\\n-                                      :shape (->> (mapcat (fn [[pv _]] (:kids pv)) ars) (filter pat?) (map shape-of) distinct sort (str/join \\\"+\\\"))))))))\\n+                                      :shape (->> (mapcat (fn [dd__10594_1] (let [pv (fe-nth dd__10594_1 0)] (:kids pv))) ars) (filter pat?) (map shape-of) distinct sort (str/join \\\"+\\\"))))))))\\n        ;; destructuring that is NOT a fn parameter: counted for the report, not rewritten\\n        (when (cst/lst? n)\\n          (let [h (cst/head-text n) as (cst/args n)]\\n            (cond\\n              (and (contains? #{\\\"let\\\" \\\"loop\\\" \\\"doseq\\\" \\\"for\\\" \\\"when-let\\\" \\\"if-let\\\" \\\"when-some\\\" \\\"if-some\\\"} h) (cst/vec? (first as))\\n-                  (some (fn [[p _]] (pat? p)) (partition 2 (:kids (first as)))))\\n+                  (some (fn [dd__11024_1] (let [p (fe-nth dd__11024_1 0)] (pat? p))) (partition 2 (:kids (first as)))))\\n              (swap! other update-in [h region] (fnil inc 0))\\n-             (and (contains? #{\\\"defn\\\" \\\"defn-\\\"} h) (some (fn [[pv _]] (some pat? (:kids pv))) (arities (cst/->fn-view n))))\\n-             (swap! other update-in [\\\"defn params\\\" region] (fnil inc 0))))))\\n+             (and (contains? #{\\\"defn\\\" \\\"defn-\\\"} h) (some (fn [dd__11198_1] (let [pv (fe-nth dd__11198_1 0)] (some pat? (:kids pv)))) (arities (cst/->fn-view n))))\\n+             (swap! other update-in [\\\"defn params\\\" region] (fnil inc 0)))))))\\n      nodes)\\n     (conj @out {:rule :destructure :kind :inventory :status :info :region :shared :data {:other-destructuring @other}})))\\n \\n\"}], :totals {:files 1, :changed 1, :summary {:destructure {:patterns 6, :ported 0, :actionable 6, :auto 6, :human 0, :applied 6}, :kwcallback {:patterns 4, :ported 0, :actionable 4, :auto 4, :human 0, :applied 4}, :lowerloops {:patterns 2, :ported 0, :actionable 2, :auto 1, :human 1, :applied 2}}}}\n",
+        "stderr": "",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      },
+      "new": {
+        "exit": 0,
+        "stdout": "{:format :kotoba.refactor/v1, :command :plan, :ok true, :rules [:a :b :d :e :f], :files [{:path \"x.cljk\", :human-sites-total 1, :human-sites [{:rule :lowerloops, :line 125, :region :shared, :reason \"callback parameters are not plain symbols (run rule a first) or the body is empty\", :context \"map\"}], :chars-after 14018, :chars-before 11551, :lines {:removed 13, :added 45}, :passes 3, :inventory [{:rule :destructure, :data {:other-destructuring {\"for\" {:shared 3}, \"if-let\" {:shared 1}, \"defn params\" {:shared 1}}}}], :summary {:destructure {:applied 6, :patterns 6, :human 0, :by-region {:shared 6}, :actionable 6, :human-reasons [], :auto 6, :auto-by-kind {\"map\" 1, \"cst/walk\" 1, \"some\" 3, \"mapcat\" 1}, :ported 0}, :kwcallback {:applied 4, :patterns 4, :human 0, :by-region {:shared 4}, :actionable 4, :human-reasons [], :auto 4, :auto-by-kind {\"some\" 2, \"mapcat\" 2}, :ported 0}, :lowerloops {:applied 2, :patterns 2, :human 1, :by-region {:shared 2}, :actionable 2, :human-reasons [[\"callback parameters are not plain symbols (run rule a first) or the body is empty\" 1]], :auto 1, :auto-by-kind {\"mapv\" 1}, :ported 0}}, :changed true, :diff \"--- a/x.cljk\\n+++ b/x.cljk\\n@@ -12,6 +12,37 @@\\n             [kotoba.compiler.refactor.cst :as cst]\\n             [kotoba.compiler.refactor.edit :as edit]))\\n \\n+;; amu-refactor: positional access.  Host: what [a b] destructuring does; Kotoba: Form child, nil-form past the end.\\n+#?(:kotoba\\n+   (defn- fe-nth [f [:ref :form/r] i :i64] [:ref :form/r] (form/nth-of f i))\\n+   :default\\n+   (defn- fe-nth [c i] (nth c i nil)))\\n+\\n+;; amu-refactor: the rest after the first i children (nil / nil-form when none).\\n+#?(:kotoba\\n+   (defn- fe-nthnext [f [:ref :form/r] i :i64] [:ref :form/r]\\n+     (let [n (form/count-of f)]\\n+       (if (>= i n)\\n+         (form/nil-form)\\n+         (form/form-seq (loop [j i acc (form/no-forms)]\\n+                          (if (>= j n) acc (recur (+ j 1) (form/append-form acc (form/nth-of f j)))))))))\\n+   :default\\n+   (defn- fe-nthnext [c i] (nthnext c i)))\\n+\\n+;; amu-refactor: keyword lookup.  Host: `get`; Kotoba: form-get with a keyword Form.\\n+#?(:kotoba\\n+   (defn- fe-get [m [:ref :form/r] k :keyword] [:ref :form/r] (form/form-get m (form/keyword-form k)))\\n+   :default\\n+   (defn- fe-get [m k] (get m k)))\\n+\\n+;; amu-refactor: keyword lookup with a default used only when the key is ABSENT (get's not-found, not nil-punning).\\n+#?(:kotoba\\n+   (defn- fe-get-or [m [:ref :form/r] k :keyword d [:ref :form/r]] [:ref :form/r]\\n+     (if (form/form-has? m (form/keyword-form k)) (form/form-get m (form/keyword-form k)) d))\\n+   :default\\n+   (defn- fe-get-or [m k d] (get m k d)))\\n+\\n+\\n (def prelude-names '[fe-nth fe-nthnext fe-get])\\n \\n (defn pat?\\n@@ -118,11 +149,11 @@\\n         kids (if (cst/sym? (first kids)) (rest kids) kids)]\\n     (cond\\n       (cst/vec? (first kids)) [[(first kids) (vec (rest kids))]]\\n-      (every? cst/lst? kids) (mapv (fn [l] [(first (:kids l)) (vec (rest (:kids l)))]) kids)\\n+      (every? cst/lst? kids) #?(:kotoba (let [fe-lc__6230 (form/kids-of kids) fe-ln__6230 (vector-count fe-lc__6230)] (form/form-vec (loop [fe-li__6230 0 fe-la__6230 (form/no-forms)] (if (>= fe-li__6230 fe-ln__6230) fe-la__6230 (recur (+ fe-li__6230 1) (form/append-form fe-la__6230 (let [l (typed-list-nth [:list [:ref :form/r]] fe-lc__6230 fe-li__6230)] [(first (:kids l)) (vec (rest (:kids l)))]))))))) :default (mapv (fn [l] [(first (:kids l)) (vec (rest (:kids l)))]) kids))\\n       :else nil)))\\n \\n (defn- format-binds [src insert-pos binds]\\n-  (let [flat (map (fn [[n e]] (str n \\\" \\\" e)) binds)\\n+  (let [flat #?(:kotoba (let [fe-lc__6756 (form/kids-of binds) fe-ln__6756 (vector-count fe-lc__6756)] (form/form-seq (loop [fe-li__6756 0 fe-la__6756 (form/no-forms)] (if (>= fe-li__6756 fe-ln__6756) fe-la__6756 (recur (+ fe-li__6756 1) (form/append-form fe-la__6756 (let [dd__6369_1 (typed-list-nth [:list [:ref :form/r]] fe-lc__6756 fe-li__6756)] (let [n (fe-nth dd__6369_1 0) e (fe-nth dd__6369_1 1)] (str n \\\" \\\" e))))))))) :default (map (fn [dd__6369_1] (let [n (fe-nth dd__6369_1 0) e (fe-nth dd__6369_1 1)] (str n \\\" \\\" e))) binds))\\n         one (str/join \\\" \\\" flat)\\n         starts (edit/line-starts src)\\n         col (- insert-pos (nth starts (dec (edit/offset->line starts insert-pos))))]\\n@@ -154,9 +185,9 @@\\n                   {:human \\\"destructuring in the & rest parameter\\\"}\\n                   (rewrite-arity src pv body gen))\\n                 :else (rewrite-arity src pv body gen)))]\\n-        (if-let [h (some :human results)]\\n+        (if-let [h (some (fn [e] (:human e)) results)]\\n           {:status :human :reason h}\\n-          {:status :auto :edits (vec (mapcat :edits results))})))))\\n+          {:status :auto :edits (vec (mapcat (fn [e] (:edits e)) results))})))))\\n \\n (defn rewrite-arity [src pv body gen]\\n   (let [params (:kids pv)\\n@@ -165,9 +196,9 @@\\n                 (let [g (gen) r (expand src p g gen false)]\\n                   (assoc r :param p :g g))\\n                 {:binds [] :param p :g nil}))]\\n-    (if-let [h (some :human per)]\\n+    (if-let [h (some (fn [e] (:human e)) per)]\\n       {:human h}\\n-      (let [binds (mapcat :binds per)\\n+      (let [binds (mapcat (fn [e] (:binds e)) per)\\n             first-body (first body)\\n             last-body (last body)\\n             ins (:s first-body)\\n@@ -203,25 +234,26 @@\\n   (let [out (atom [])\\n         other (atom {})]\\n     (cst/walk\\n-     (fn [n {:keys [region path]}]\\n-       (when (and (cst/lst? n) (contains? #{\\\"fn\\\" \\\"fn*\\\"} (cst/head-text n)))\\n+     (fn [n dd__10010_1]\\n+       (let [region (fe-get dd__10010_1 :region) path (fe-get dd__10010_1 :path)]\\n+         (when (and (cst/lst? n) (contains? #{\\\"fn\\\" \\\"fn*\\\"} (cst/head-text n)))\\n          (when-let [ars (arities n)]\\n-           (when (some (fn [[pv _]] (some pat? (:kids pv))) ars)\\n+           (when (some (fn [dd__10176_1] (let [pv (fe-nth dd__10176_1 0)] (some pat? (:kids pv)))) ars)\\n              (let [r (rewrite-fn src n)\\n                    ctx (context-of path n)\\n                    starts (edit/line-starts src)]\\n                (swap! out conj (assoc r :rule :destructure :s (:s n) :e (:e n) :region region\\n                                       :line (edit/offset->line starts (:s n)) :context ctx\\n-                                      :shape (->> (mapcat (fn [[pv _]] (:kids pv)) ars) (filter pat?) (map shape-of) distinct sort (str/join \\\"+\\\"))))))))\\n+                                      :shape (->> (mapcat (fn [dd__10594_1] (let [pv (fe-nth dd__10594_1 0)] (:kids pv))) ars) (filter pat?) (map shape-of) distinct sort (str/join \\\"+\\\"))))))))\\n        ;; destructuring that is NOT a fn parameter: counted for the report, not rewritten\\n        (when (cst/lst? n)\\n          (let [h (cst/head-text n) as (cst/args n)]\\n            (cond\\n              (and (contains? #{\\\"let\\\" \\\"loop\\\" \\\"doseq\\\" \\\"for\\\" \\\"when-let\\\" \\\"if-let\\\" \\\"when-some\\\" \\\"if-some\\\"} h) (cst/vec? (first as))\\n-                  (some (fn [[p _]] (pat? p)) (partition 2 (:kids (first as)))))\\n+                  (some (fn [dd__11024_1] (let [p (fe-nth dd__11024_1 0)] (pat? p))) (partition 2 (:kids (first as)))))\\n              (swap! other update-in [h region] (fnil inc 0))\\n-             (and (contains? #{\\\"defn\\\" \\\"defn-\\\"} h) (some (fn [[pv _]] (some pat? (:kids pv))) (arities (cst/->fn-view n))))\\n-             (swap! other update-in [\\\"defn params\\\" region] (fnil inc 0))))))\\n+             (and (contains? #{\\\"defn\\\" \\\"defn-\\\"} h) (some (fn [dd__11198_1] (let [pv (fe-nth dd__11198_1 0)] (some pat? (:kids pv)))) (arities (cst/->fn-view n))))\\n+             (swap! other update-in [\\\"defn params\\\" region] (fnil inc 0)))))))\\n      nodes)\\n     (conj @out {:rule :destructure :kind :inventory :status :info :region :shared :data {:other-destructuring @other}})))\\n \\n\"}], :totals {:files 1, :changed 1, :summary {:destructure {:patterns 6, :ported 0, :actionable 6, :auto 6, :human 0, :applied 6}, :kwcallback {:patterns 4, :ported 0, :actionable 4, :auto 4, :human 0, :applied 4}, :lowerloops {:patterns 2, :ported 0, :actionable 2, :auto 1, :human 1, :applied 2}}}}\n",
+        "stderr": "",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      }
+    },
+    {
+      "case": 4,
+      "args": [
+        "refactor",
+        "apply",
+        "a",
+        "x.cljk"
+      ],
+      "old": {
+        "exit": 0,
+        "stdout": "{:format :kotoba.refactor/v1, :command :apply, :ok true, :check false, :written 1, :rules [:a], :files [{:path \"x.cljk\", :changed true, :chars-before 11551, :chars-after 13155, :passes 2, :summary {:destructure {:applied 6, :patterns 6, :human 0, :by-region {:shared 6}, :actionable 6, :human-reasons [], :auto 6, :auto-by-kind {\"map\" 1, \"cst/walk\" 1, \"some\" 3, \"mapcat\" 1}, :ported 0}}, :human-sites-total 0, :lines {:removed 8, :added 40}}], :totals {:files 1, :changed 1, :summary {:destructure {:patterns 6, :ported 0, :actionable 6, :auto 6, :human 0, :applied 6}}}}\n",
+        "stderr": "",
+        "files": {
+          "x.cljk": "27d5743837f0adaf3e4afcc04425d55f7d2d4d352e9b4439331bf7a2aa271dac"
+        }
+      },
+      "new": {
+        "exit": 0,
+        "stdout": "{:format :kotoba.refactor/v1, :command :apply, :ok true, :check false, :written 1, :rules [:a], :files [{:path \"x.cljk\", :changed true, :chars-before 11551, :chars-after 13155, :passes 2, :summary {:destructure {:applied 6, :patterns 6, :human 0, :by-region {:shared 6}, :actionable 6, :human-reasons [], :auto 6, :auto-by-kind {\"map\" 1, \"cst/walk\" 1, \"some\" 3, \"mapcat\" 1}, :ported 0}}, :human-sites-total 0, :lines {:removed 8, :added 40}}], :totals {:files 1, :changed 1, :summary {:destructure {:patterns 6, :ported 0, :actionable 6, :auto 6, :human 0, :applied 6}}}}\n",
+        "stderr": "",
+        "files": {
+          "x.cljk": "27d5743837f0adaf3e4afcc04425d55f7d2d4d352e9b4439331bf7a2aa271dac"
+        }
+      }
+    },
+    {
+      "case": 5,
+      "args": [
+        "refactor",
+        "apply",
+        "all",
+        "x.cljk",
+        "--check"
+      ],
+      "old": {
+        "exit": 1,
+        "stdout": "{:format :kotoba.refactor/v1, :command :apply, :ok false, :check true, :written 0, :rules [:a :b :d :e :f], :files [{:path \"x.cljk\", :changed true, :chars-before 11551, :chars-after 14018, :passes 3, :summary {:destructure {:applied 6, :patterns 6, :human 0, :by-region {:shared 6}, :actionable 6, :human-reasons [], :auto 6, :auto-by-kind {\"map\" 1, \"cst/walk\" 1, \"some\" 3, \"mapcat\" 1}, :ported 0}, :kwcallback {:applied 4, :patterns 4, :human 0, :by-region {:shared 4}, :actionable 4, :human-reasons [], :auto 4, :auto-by-kind {\"some\" 2, \"mapcat\" 2}, :ported 0}, :lowerloops {:applied 2, :patterns 2, :human 1, :by-region {:shared 2}, :actionable 2, :human-reasons [[\"callback parameters are not plain symbols (run rule a first) or the body is empty\" 1]], :auto 1, :auto-by-kind {\"mapv\" 1}, :ported 0}}, :human-sites-total 1, :lines {:removed 13, :added 45}}], :totals {:files 1, :changed 1, :summary {:destructure {:patterns 6, :ported 0, :actionable 6, :auto 6, :human 0, :applied 6}, :kwcallback {:patterns 4, :ported 0, :actionable 4, :auto 4, :human 0, :applied 4}, :lowerloops {:patterns 2, :ported 0, :actionable 2, :auto 1, :human 1, :applied 2}}}}\n",
+        "stderr": "",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      },
+      "new": {
+        "exit": 1,
+        "stdout": "{:format :kotoba.refactor/v1, :command :apply, :ok false, :check true, :written 0, :rules [:a :b :d :e :f], :files [{:path \"x.cljk\", :changed true, :chars-before 11551, :chars-after 14018, :passes 3, :summary {:destructure {:applied 6, :patterns 6, :human 0, :by-region {:shared 6}, :actionable 6, :human-reasons [], :auto 6, :auto-by-kind {\"map\" 1, \"cst/walk\" 1, \"some\" 3, \"mapcat\" 1}, :ported 0}, :kwcallback {:applied 4, :patterns 4, :human 0, :by-region {:shared 4}, :actionable 4, :human-reasons [], :auto 4, :auto-by-kind {\"some\" 2, \"mapcat\" 2}, :ported 0}, :lowerloops {:applied 2, :patterns 2, :human 1, :by-region {:shared 2}, :actionable 2, :human-reasons [[\"callback parameters are not plain symbols (run rule a first) or the body is empty\" 1]], :auto 1, :auto-by-kind {\"mapv\" 1}, :ported 0}}, :human-sites-total 1, :lines {:removed 13, :added 45}}], :totals {:files 1, :changed 1, :summary {:destructure {:patterns 6, :ported 0, :actionable 6, :auto 6, :human 0, :applied 6}, :kwcallback {:patterns 4, :ported 0, :actionable 4, :auto 4, :human 0, :applied 4}, :lowerloops {:patterns 2, :ported 0, :actionable 2, :auto 1, :human 1, :applied 2}}}}\n",
+        "stderr": "",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      }
+    },
+    {
+      "case": 6,
+      "args": [
+        "refactor",
+        "apply",
+        "a",
+        "x.cljk",
+        "--out",
+        "out.cljk"
+      ],
+      "old": {
+        "exit": 0,
+        "stdout": "{:format :kotoba.refactor/v1, :command :apply, :ok true, :check false, :written 0, :rules [:a], :files [{:path \"x.cljk\", :changed true, :chars-before 11551, :chars-after 13155, :passes 2, :summary {:destructure {:applied 6, :patterns 6, :human 0, :by-region {:shared 6}, :actionable 6, :human-reasons [], :auto 6, :auto-by-kind {\"map\" 1, \"cst/walk\" 1, \"some\" 3, \"mapcat\" 1}, :ported 0}}, :human-sites-total 0, :lines {:removed 8, :added 40}}], :totals {:files 1, :changed 1, :summary {:destructure {:patterns 6, :ported 0, :actionable 6, :auto 6, :human 0, :applied 6}}}}\n",
+        "stderr": "",
+        "files": {
+          "out.cljk": "27d5743837f0adaf3e4afcc04425d55f7d2d4d352e9b4439331bf7a2aa271dac",
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      },
+      "new": {
+        "exit": 0,
+        "stdout": "{:format :kotoba.refactor/v1, :command :apply, :ok true, :check false, :written 0, :rules [:a], :files [{:path \"x.cljk\", :changed true, :chars-before 11551, :chars-after 13155, :passes 2, :summary {:destructure {:applied 6, :patterns 6, :human 0, :by-region {:shared 6}, :actionable 6, :human-reasons [], :auto 6, :auto-by-kind {\"map\" 1, \"cst/walk\" 1, \"some\" 3, \"mapcat\" 1}, :ported 0}}, :human-sites-total 0, :lines {:removed 8, :added 40}}], :totals {:files 1, :changed 1, :summary {:destructure {:patterns 6, :ported 0, :actionable 6, :auto 6, :human 0, :applied 6}}}}\n",
+        "stderr": "",
+        "files": {
+          "out.cljk": "27d5743837f0adaf3e4afcc04425d55f7d2d4d352e9b4439331bf7a2aa271dac",
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      }
+    },
+    {
+      "case": 7,
+      "args": [
+        "refactor",
+        "plan",
+        "zz",
+        "x.cljk"
+      ],
+      "old": {
+        "exit": 64,
+        "stdout": "",
+        "stderr": "{:format :kotoba.cli-error/v1, :ok false, :error :usage, :diagnostic {:format :kotoba.diagnostic/v1, :code :refactor/unknown-rule, :severity :error}, :message \"unknown rule zz; see `amu refactor list-rules`\"}\n",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      },
+      "new": {
+        "exit": 64,
+        "stdout": "",
+        "stderr": "{:format :kotoba.cli-error/v1, :ok false, :error :usage, :diagnostic {:format :kotoba.diagnostic/v1, :code :refactor/unknown-rule, :severity :error}, :message \"unknown rule zz; see `amu refactor list-rules`\"}\n",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      }
+    },
+    {
+      "case": 8,
+      "args": [
+        "refactor",
+        "verify",
+        "--runner",
+        "runner",
+        "--classpath",
+        "cp"
+      ],
+      "old": {
+        "exit": 69,
+        "stdout": "",
+        "stderr": "{:format :kotoba.cli-error/v1, :ok false, :error :not-available, :diagnostic {:format :kotoba.diagnostic/v1, :code :amu-main/not-available, :severity :error}, :message \"amu refactor verify is not available in this native image (declared stub, seed/amu-main/missing.tsv)\", :details {:phase :entry, :missing [\"amu refactor verify: runs node/nbb twice through wire 20 (process spawn), which the amu image never holds (seed/amu-main/REFACTOR.md); the comparison itself is the kotoba.compiler.refactor.verify twin\"]}}\n",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      },
+      "new": {
+        "exit": 69,
+        "stdout": "",
+        "stderr": "{:format :kotoba.cli-error/v1, :ok false, :error :not-available, :diagnostic {:format :kotoba.diagnostic/v1, :code :amu-main/not-available, :severity :error}, :message \"amu refactor verify is not available in this native image (declared stub, seed/amu-main/missing.tsv)\", :details {:phase :entry, :missing [\"amu refactor verify: runs node/nbb twice through wire 20 (process spawn), which the amu image never holds (seed/amu-main/REFACTOR.md); the comparison itself is the kotoba.compiler.refactor.verify twin\"]}}\n",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      }
+    },
+    {
+      "case": 9,
+      "args": [
+        "refactor"
+      ],
+      "old": {
+        "exit": 64,
+        "stdout": "",
+        "stderr": "{:format :kotoba.cli-error/v1, :ok false, :error :usage, :diagnostic {:format :kotoba.diagnostic/v1, :code :refactor/usage, :severity :error}, :message \"usage: amu refactor <list-rules|plan|apply|graph|partition|split|verify> ...\"}\n",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      },
+      "new": {
+        "exit": 64,
+        "stdout": "",
+        "stderr": "{:format :kotoba.cli-error/v1, :ok false, :error :usage, :diagnostic {:format :kotoba.diagnostic/v1, :code :refactor/usage, :severity :error}, :message \"usage: amu refactor <list-rules|plan|apply|graph|partition|split|verify> ...\"}\n",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      }
+    },
+    {
+      "case": 10,
+      "args": [
+        "refactor",
+        "bogus"
+      ],
+      "old": {
+        "exit": 64,
+        "stdout": "",
+        "stderr": "{:format :kotoba.cli-error/v1, :ok false, :error :usage, :diagnostic {:format :kotoba.diagnostic/v1, :code :refactor/usage, :severity :error}, :message \"unknown refactor command bogus; one of list-rules plan apply graph partition split verify\"}\n",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      },
+      "new": {
+        "exit": 64,
+        "stdout": "",
+        "stderr": "{:format :kotoba.cli-error/v1, :ok false, :error :usage, :diagnostic {:format :kotoba.diagnostic/v1, :code :refactor/usage, :severity :error}, :message \"unknown refactor command bogus; one of list-rules plan apply graph partition split verify\"}\n",
+        "files": {
+          "x.cljk": "75894bb30e9d009938e6bda514e96487776f8452d15723832e615642b6e045f5"
+        }
+      }
+    },
+    {
+      "case": 11,
+      "args": [
+        "refactor",
+        "apply",
+        "a",
+        "x.cljk"
+      ],
+      "old": {
+        "exit": 0,
+        "stdout": "{:format :kotoba.refactor/v1, :command :apply, :ok true, :check false, :written 1, :rules [:a], :files [{:path \"x.cljk\", :changed true, :chars-before 11589, :chars-after 13193, :passes 2, :summary {:destructure {:applied 6, :patterns 6, :human 0, :by-region {:shared 6}, :actionable 6, :human-reasons [], :auto 6, :auto-by-kind {\"map\" 1, \"cst/walk\" 1, \"some\" 3, \"mapcat\" 1}, :ported 0}}, :human-sites-total 0, :lines {:removed 8, :added 40}}], :totals {:files 1, :changed 1, :summary {:destructure {:patterns 6, :ported 0, :actionable 6, :auto 6, :human 0, :applied 6}}}}\n",
+        "stderr": "",
+        "files": {
+          "x.cljk": "314b46c34a7db334630b66a0ec8a0a2fc2413a8ed4cd92eda0dfd7766ac32163"
+        }
+      },
+      "new": {
+        "exit": 0,
+        "stdout": "{:format :kotoba.refactor/v1, :command :apply, :ok true, :check false, :written 1, :rules [:a], :files [{:path \"x.cljk\", :changed true, :chars-before 11589, :chars-after 13193, :passes 2, :summary {:destructure {:applied 6, :patterns 6, :human 0, :by-region {:shared 6}, :actionable 6, :human-reasons [], :auto 6, :auto-by-kind {\"map\" 1, \"cst/walk\" 1, \"some\" 3, \"mapcat\" 1}, :ported 0}}, :human-sites-total 0, :lines {:removed 8, :added 40}}], :totals {:files 1, :changed 1, :summary {:destructure {:patterns 6, :ported 0, :actionable 6, :auto 6, :human 0, :applied 6}}}}\n",
+        "stderr": "",
+        "files": {
+          "x.cljk": "314b46c34a7db334630b66a0ec8a0a2fc2413a8ed4cd92eda0dfd7766ac32163"
+        }
+      }
+    }
+  ],
+  "limitations": "verify remains declared wire20 stub; equality is not implementation of process-spawn verification."
+}

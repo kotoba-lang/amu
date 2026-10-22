@@ -1,0 +1,9 @@
+;; R6C: :f64 is an opaque binary64 carrier: f64-from-bits / f64-to-bits are bit casts (cbor.core finite-number?)
+;; want: 1
+(ns r6c.p06 (:export [main]))
+(defn- finite? [x :f64] :bool (not= 2047 (bit-and (u64-shift-right (f64-to-bits x) 52) 2047)))
+(defn- through [x :f64] :f64 x)
+(defn main [] :i64
+  (let [one (f64-from-bits 4607182418800017408)
+        inf (f64-from-bits 9218868437227405312)]
+    (if (and (finite? (through one)) (not (finite? inf)) (= (f64-to-bits one) 4607182418800017408)) 1 0)))

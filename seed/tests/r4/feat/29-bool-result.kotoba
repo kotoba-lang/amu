@@ -1,0 +1,4 @@
+;; R4 feat: a :bool-result fn type and its call in an if test
+(ns seed.r4 (:export [test]))
+(defn pick [p [:fn [[:i64] :bool]] a :i64 b :i64] :i64 (if (p a) a b))
+(defn test [] :i64 (+ (pick (fn [x] (> x 10)) 20 5) (pick (fn [x] (> x 10)) 2 7)))

@@ -1,0 +1,5 @@
+;; R6F: a def value with a loop is refused (the reference: no fuel bound for a compile-time loop).
+;; want: E2124
+(ns r6f.n01)
+(def n (loop [i 0] (if (< i 3) (recur (+ i 1)) i)))
+(defn main [] :i64 n)

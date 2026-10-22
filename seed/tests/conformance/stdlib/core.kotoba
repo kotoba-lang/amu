@@ -1,0 +1,320 @@
+;; The bounded portable standard library.
+;;
+;; A LIBRARY MODULE, reached the way every other module is reached: a guest
+;; writes `(:require [stdlib.core :as core])` and puts this file's grandparent
+;; directory on `--source-path`. Nothing is prepended to anything; `--prelude`
+;; was never implemented on any route (`lang/stdlib.edn`).
+;;
+;; Until 2026-09-01 this file declared no namespace and could therefore not be
+;; required at all, and its contents had drifted out of the language: five of
+;; its twenty-seven public names had since become RESERVED, and eleven of its
+;; functions no longer admitted as written. What is left here is what a guest
+;; can call. What left, and why, is recorded name by name in
+;; `lang/conformance/stdlib/manifest.edn` under `:withdrawn`.
+;;
+;; Option and Result are NOT here. The language owns them now --
+;; `option-some` / `option-none` / `option-some?` / `option-value` /
+;; `result-ok` / `result-err` / `result-ok?` / `result-value` /
+;; `result-error`, plus the parametric `*-of` family -- which is why those
+;; names are reserved and this module cannot define them.
+;;
+;; Nothing here returns an option, for a second reason: wasm32 refuses it. An
+;; `if` whose two arms are `(option-some x)` and `(option-none)` is
+;; "unsupported typed Wasm expression" (measured 2026-09-01 in a single file
+;; with no project involved, amu 27d82d8). This package claims
+;; `:kotoba-wasm`, so it carries only what that claim covers.
+;;
+;; The typed map WAS on that list until version 5, and for two reasons that
+;; both turned out to be one defect apiece. `map-new` / `map-assoc` -- the
+;; LEGACY keyword-keyed pair map -- is still an internal compiler error on
+;; wasm32 and is still not used here. The canonical `[:map K V]` is a
+;; different thing and now works: a map literal could not have an integer key
+;; at all (kotoba-sema ADR 0012), and a `[:map :i64 V]` carrying two entries
+;; exited 70 on wasm32 because the language's own i64 order was computed with
+;; `clojure.core/compare`, which cannot compare a bigint under nbb
+;; (kotoba-kir ADR 0257). `frequencies` and `get-in2` are what those two
+;; fixes bought.
+;;
+;; Every export here is single-arity. That is a linker limit, not a style:
+;; `(:export [f])` where `f` has more than one arity is refused with
+;; "export does not name a declared function", because a module is analyzed
+;; before linking and arities have been expanded to `f$arity$1` by then
+;; (measured 2026-09-01, amu 27d82d8, two-module reproduction in the manifest).
+;; That is why `range` takes three arguments rather than one, two or three.
+
+(ns stdlib.core
+  (:export [every? first-match concat reverse-into reverse
+            range-step range zipmap merge
+            comp2 stdlib-binary-closure-anchor partial1
+            keep remove mapv take-while drop-while
+            sort sort-by partition distinct interpose juxt2
+            frequencies get-in2]))
+
+;; The first item satisfying the predicate, or 0. `some` is the Clojure name
+;; and is a reserved word here, so this one carries a different one. The 0
+;; sentinel rather than an option is the wasm32 limit above, not a preference.
+(defn first-match [predicate items]
+  (if (= items 0)
+    0
+    (let [value (pair-first items)]
+      (if (invoke predicate value)
+        value
+        (first-match predicate (pair-second items))))))
+
+(defn every? [predicate items]
+  (if (= items 0)
+    1
+    (if (invoke predicate (pair-first items))
+      (every? predicate (pair-second items))
+      0)))
+
+(defn concat [left right]
+  (if (= left 0)
+    right
+    (pair (pair-first left) (concat (pair-second left) right))))
+
+(defn reverse-into [items out]
+  (if (= items 0)
+    out
+    (reverse-into (pair-second items) (pair (pair-first items) out))))
+
+(defn reverse [items]
+  (reverse-into items 0))
+
+(defn range-step [current end step fuel]
+  (if (<= fuel 0)
+    0
+    (if (if (> step 0) (>= current end) (<= current end))
+      0
+      (pair current (range-step (+ current step) end step (- fuel 1))))))
+
+;; Three arguments, always. See the note about multi-arity exports above.
+(defn range [start end step]
+  (range-step start end step 128))
+
+(defn zipmap [keys-list values-list]
+  (if (or (= keys-list 0) (= values-list 0))
+    0
+    (pair (pair (pair-first keys-list) (pair-first values-list))
+          (zipmap (pair-second keys-list) (pair-second values-list)))))
+
+(defn merge [left right]
+  (concat right left))
+
+(defn comp2 [f g]
+  (fn [x] (invoke f (invoke g x))))
+
+;; Ensures the bounded arity-2 static closure dispatcher exists even when a
+;; program only receives its binary closure from outside this module.
+(defn stdlib-binary-closure-anchor []
+  (fn [a b] b))
+
+(defn partial1 [f fixed]
+  (fn [x] (invoke f fixed x)))
+
+;; ---------------------------------------------------------------------------
+;; Version 3 (2026-09-02). Eleven more of clojure.core, on the same terms as
+;; everything above: a collection is a pair chain ending in 0, an item is an
+;; i64, and 0 is the only nil there is. Each one is checked against the real
+;; clojure.core function in test/kotoba/lang/stdlib_core_oracle_test.cljk.
+;; What could NOT be added, and the message that refused each, is in
+;; lang/conformance/stdlib/manifest.edn under :absent.
+
+;; `keep` keeps the non-nil results of f -- and 0 is nil here, as it is for
+;; first-match and every other function in this module. That is the ONE place
+;; this differs from clojure.core: (keep identity [0 1]) is (0 1) there and
+;; (1) here. The oracle test pins that divergence rather than hiding it.
+(defn keep [f items]
+  (if (= items 0)
+    0
+    (let [value (invoke f (pair-first items))]
+      (if (= value 0)
+        (keep f (pair-second items))
+        (pair value (keep f (pair-second items)))))))
+
+(defn remove [predicate items]
+  (if (= items 0)
+    0
+    (if (invoke predicate (pair-first items))
+      (remove predicate (pair-second items))
+      (pair (pair-first items) (remove predicate (pair-second items))))))
+
+;; NOT an alias of the `map` head. `(map f items)` with a STORED closure f is
+;; refused -- "expression type mismatch: expected vector-i64, got i64"
+;; (measured 2026-09-02, amu bb51dc14) -- because that form is the typed
+;; vector path; only an inline (fn ...) maps a pair chain. A stdlib function
+;; receives its callback stored, so this is its own eager walk. A vector
+;; literal IS a pair chain here, which is why the result is exactly what mapv
+;; returns and not merely what map returns.
+(defn mapv [f items]
+  (if (= items 0)
+    0
+    (pair (invoke f (pair-first items)) (mapv f (pair-second items)))))
+
+(defn take-while [predicate items]
+  (if (= items 0)
+    0
+    (if (invoke predicate (pair-first items))
+      (pair (pair-first items) (take-while predicate (pair-second items)))
+      0)))
+
+(defn drop-while [predicate items]
+  (if (= items 0)
+    0
+    (if (invoke predicate (pair-first items))
+      (drop-while predicate (pair-second items))
+      items)))
+
+;; Insertion sort, ascending. `x` goes in front of the first item it is
+;; strictly less than, so an item that arrives later stays behind its equals:
+;; that is what makes sort-by stable, which clojure.core's sort-by is (it is
+;; java.util.Arrays.sort on objects, a stable merge sort). O(n^2) steps, and
+;; every step is a fuel-bounded call like everything else here -- which has
+;; a measured ceiling: under the default budget of 512 calls that the wasm
+;; host and the KIR interpreter both start with, `sort-by` handles 15 items
+;; already in ascending order (its worst case) and `sort` more than 17
+;; (the oracle test's encoding stops there). Above that, raise the budget or
+;; the sort traps on fuel; it does not answer wrongly.
+(defn- insert-sorted [x sorted]
+  (if (= sorted 0)
+    (pair x 0)
+    (if (< x (pair-first sorted))
+      (pair x sorted)
+      (pair (pair-first sorted) (insert-sorted x (pair-second sorted))))))
+
+(defn- sort-into [items sorted]
+  (if (= items 0)
+    sorted
+    (sort-into (pair-second items) (insert-sorted (pair-first items) sorted))))
+
+(defn sort [items]
+  (sort-into items 0))
+
+(defn- insert-by [keyfn x sorted]
+  (if (= sorted 0)
+    (pair x 0)
+    (if (< (invoke keyfn x) (invoke keyfn (pair-first sorted)))
+      (pair x sorted)
+      (pair (pair-first sorted) (insert-by keyfn x (pair-second sorted))))))
+
+(defn- sort-by-into [keyfn items sorted]
+  (if (= items 0)
+    sorted
+    (sort-by-into keyfn (pair-second items) (insert-by keyfn (pair-first items) sorted))))
+
+;; The key function returns an i64 and keys compare with <. Clojure's
+;; sort-by with the default comparator on integer keys is exactly that.
+(defn sort-by [keyfn items]
+  (sort-by-into keyfn items 0))
+
+;; `take` and `drop` are reserved (the lazy-sequence heads), so the eager
+;; pair-chain forms carry a suffix and stay private.
+(defn- take-n [n items]
+  (if (= n 0)
+    0
+    (if (= items 0)
+      0
+      (pair (pair-first items) (take-n (- n 1) (pair-second items))))))
+
+(defn- drop-n [n items]
+  (if (= n 0)
+    items
+    (if (= items 0)
+      0
+      (drop-n (- n 1) (pair-second items)))))
+
+(defn- has-n? [n items]
+  (if (<= n 0)
+    1
+    (if (= items 0)
+      0
+      (has-n? (- n 1) (pair-second items)))))
+
+;; (partition n items): groups of exactly n, an incomplete tail dropped --
+;; the two-argument clojure.core/partition. A group is itself a pair chain,
+;; so the result is a chain of chains, the same shape zipmap already builds.
+;; n must be positive; clojure.core loops forever on 0 and this traps on fuel.
+(defn partition [n items]
+  (if (has-n? n items)
+    (pair (take-n n items) (partition n (drop-n n items)))
+    0))
+
+(defn- member? [x items]
+  (if (= items 0)
+    0
+    (if (= x (pair-first items))
+      1
+      (member? x (pair-second items)))))
+
+(defn- distinct-from [items seen]
+  (if (= items 0)
+    0
+    (if (member? (pair-first items) seen)
+      (distinct-from (pair-second items) seen)
+      (pair (pair-first items)
+            (distinct-from (pair-second items) (pair (pair-first items) seen))))))
+
+;; First occurrence wins, in order, as clojure.core/distinct.
+(defn distinct [items]
+  (distinct-from items 0))
+
+(defn interpose [separator items]
+  (if (= items 0)
+    0
+    (if (= (pair-second items) 0)
+      items
+      (pair (pair-first items)
+            (pair separator (interpose separator (pair-second items)))))))
+
+;; Two functions, always -- the arity is in the name for the same reason it
+;; is in comp2 and partial1. Returns a two-item chain, which is what the
+;; vector clojure.core/juxt returns is here. Items are i64, so there is no
+;; heterogeneous result to refuse.
+(defn juxt2 [f g]
+  (fn [x] (pair (invoke f x) (pair (invoke g x) 0))))
+
+;; --- the two the keyword-keyed map used to refuse -------------------------
+
+;; `frequencies`, on clojure.core's terms: item -> how many times it occurs.
+;; The result is a canonical `[:map :i64 :i64]`, which is the first typed map
+;; anything in this package has returned.
+;;
+;; Recorded as unwritable in versions 3 and 4, with the message that refused
+;; it: "expression type mismatch: expected keyword, got i64". An item taken
+;; out of a pair chain is an i64, and the persistent map heads took keyword
+;; keys only. A `frequencies` returning an association list would answer to
+;; `alist-get` rather than to `get`, which is a different function under
+;; Clojure's name, so nothing was written instead.
+;;
+;; The map is bounded at 31 entries -- 31 DISTINCT items, not 31 items. Past
+;; that the assoc traps `:map-too-large` rather than answering wrongly.
+(defn- tally-into [items counts [:map :i64 :i64]] [:map :i64 :i64]
+  (if (= items 0)
+    counts
+    (let [value (pair-first items)]
+      (tally-into (pair-second items)
+                  (assoc counts value (+ 1 (get counts value 0)))))))
+
+(defn frequencies [items] [:map :i64 :i64]
+  (tally-into items (typed-map-new [:map :i64 :i64])))
+
+;; Two levels, always -- the DEPTH is in the name for the same reason the
+;; arity is in comp2, partial1 and juxt2, and for a stronger reason than
+;; theirs: in clojure.core/get-in the path is a value, and here it is part of
+;; the TYPE. A one-key path answers the inner map and a two-key path answers
+;; an i64, so one monomorphic function cannot be both. `get-in` itself stays
+;; absent, with this as the reason.
+;;
+;; Divergence from clojure.core/get-in, pinned by the oracle rather than
+;; hidden by the inputs: a path shorter than two keys answers NOT-FOUND here,
+;; where Clojure would answer the inner map or the map itself. Those have
+;; types this function cannot return.
+(defn get-in2 [nested [:map :i64 [:map :i64 :i64]] path not-found] :i64
+  (if (= path 0)
+    not-found
+    (let [rest-path (pair-second path)]
+      (if (= rest-path 0)
+        not-found
+        (get (get nested (pair-first path) (typed-map-new [:map :i64 :i64]))
+             (pair-first rest-path)
+             not-found)))))

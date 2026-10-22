@@ -1,0 +1,8 @@
+;; want: 4207
+;; R6B: (record-assoc SCHEMA r :f v) is (assoc r :f v) with r checked against SCHEMA (the reference's form; kotoba.form with-span)
+(ns p01 (:export [main]))
+(defn- mk [a :i64 b :i64] [:ref :p01/pt] (record-new [:record :p01/pt [[:x :i64] [:y :i64]]] a b))
+(defn- with-y [p [:ref :p01/pt] y :i64] [:ref :p01/pt] (record-assoc [:ref :p01/pt] p :y y))
+(defn main [] :i64
+  (let [p (with-y (mk 42 1) 7)]
+    (+ (* 100 (record-get [:ref :p01/pt] p :x)) (record-get [:ref :p01/pt] p :y))))

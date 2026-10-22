@@ -1,0 +1,41 @@
+
+;; Excluded new native layout algorithm: validate the whole source partition,
+;; then emit each generic body and its private length clones in source order.
+;; Safe[0]=original FN count; Safe[MM-SIR-CAP+clone]=original FN identity.
+;; Public/source metadata and all clone transformations remain unchanged.
+(defn- pl-original-valid [M :vector-i64 i :i64 limit :i64 n :i64] :bool
+ (if (= i limit) true
+  (if (or (< i 1) (>= i limit) (not= (gn-op M i) OP-FN)) false
+   (let [f (gn-sir M i IF-A) end (sh-end M (inc i) f 8192)]
+    (and (> f 0) (< f n) (= (gn-fnf M f FF-SIR) i) (> end i) (< end limit)
+         (pl-original-valid M (inc end) limit n))))))
+(defn- pl-clones-valid [M :vector-i64 Safe :vector-i64 i :i64 f :i64] :bool
+ (let [limit (vector-at M MM-SIR-N) n (vector-at M MM-FN-N) orig (vector-at Safe 0)]
+  (if (= i limit) (= f n)
+   (if (or (< i 1) (>= i limit) (>= f n) (not= (gn-op M i) OP-FN) (not= (gn-sir M i IF-A) f)) false
+    (let [source (vector-at Safe (+ MM-SIR-CAP f)) p (if (and (> source 0) (< source orig)) (gn-fnf M source FF-SIR) 0) end (sh-end M (inc i) f 8192)]
+     (and (> source 0) (< source orig) (> p 0) (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) source)
+          (= (gn-fnf M f FF-SIR) i) (> end i) (< end limit)
+          (pl-clones-valid M Safe (inc end) (inc f))))))))
+(defn- pl-range [M :vector-i64 i :i64 limit :i64 Safe :vector-i64] :vector-i64
+ (if (and (< i limit) (= (vector-at M MM-ERR) 0))
+  (let [m1 (gn-ins (gn-gs M (+ gn-g-open-n 1) (vector-at Safe i)) i (gn-op M i))
+        next (+ i 1 (gn-g m1 gn-f-skip)) m2 (gn-gs m1 gn-f-skip 0)]
+   (if (> next limit) (gn-err m2 E-GEN-OP OP-FN) (pl-range m2 next limit Safe))) M))
+(defn- pl-versions [M :vector-i64 Safe :vector-i64 original :i64 f :i64] :vector-i64
+ (if (or (>= f (vector-at M MM-FN-N)) (not= (vector-at M MM-ERR) 0)) M
+  (let [p (gn-fnf M f FF-SIR) end (if (= (vector-at Safe (+ MM-SIR-CAP f)) original) (sh-end M (inc p) f 8192) 0)
+        m0 (if (> end p) (pl-range M p (inc end) Safe) M)]
+   (pl-versions m0 Safe original (inc f)))))
+(defn- pl-source [M :vector-i64 Safe :vector-i64 i :i64 limit :i64] :vector-i64
+ (if (or (>= i limit) (not= (vector-at M MM-ERR) 0)) M
+  (let [f (gn-sir M i IF-A) end (sh-end M (inc i) f 8192)
+        m0 (pl-range M i (inc end) Safe) m1 (pl-versions m0 Safe f (vector-at Safe 0))]
+   (pl-source m1 Safe (inc end) limit))))
+(defn- pl-run [M :vector-i64 Safe :vector-i64 first :i64 count :i64 Origin :i64] :vector-i64
+ (let [n (vector-at Safe 0)]
+  (if (or (not= first 0) (not= count 0) (= n 0) (= Origin 0)) (gn-loop M 1 Safe)
+   (let [limit (vector-at M (inc Origin))]
+    (if (and (> n 1) (< n (vector-at M MM-FN-N)) (> limit 1) (< limit (vector-at M MM-SIR-N))
+             (pl-original-valid M 1 limit n) (pl-clones-valid M Safe limit n))
+      (pl-source M Safe 1 limit) (gn-err M E-GEN-OP OP-FN))))))

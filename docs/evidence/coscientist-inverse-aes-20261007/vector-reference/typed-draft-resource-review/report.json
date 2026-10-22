@@ -1,0 +1,141 @@
+{
+  "status": "HOLD evolving typed source; independent negative draft review",
+  "draftSourceSHA256": "bc0474927ede3ea79aa01cfd943cad00489c73111777d189ec1203096f568701",
+  "draftSourceNotFrozen": true,
+  "findings": [
+    {
+      "id": "R1",
+      "status": "HOLD concrete signed-wrap domain defect",
+      "sourceLines": [
+        70,
+        109
+      ],
+      "evidence": "Nonnegative temp/base/arity operands are not bounded before gn-need-t signed additions. CONST a=I64_MAX computes a+1=I64_MIN; CALLI b=I64_MAX,c=0 likewise. The computed dp maximum can retain its small initial value; later fact-address arithmetic is not independently bounded.",
+      "required": "Validate primitive indexed operands and spans with bounded/subtraction-safe checks before gn-need-t; stop before all writes/reads on invalid domain. Scalar CONST value b remains full i64 allowed.",
+      "nativeControl": "CONST temp I64_MAX; CALLI/CALL/RT base/arity I64_MAX; BIN b=I64_MAX; local slot I64_MAX; both >128 and wrap extremes; whole-M/cert/code fallback compare."
+    },
+    {
+      "id": "R2",
+      "status": "HOLD nonbody reserved SIR read order",
+      "sourceLines": [
+        122
+      ],
+      "evidence": "ns let evaluates gn-sir p IF-C before if p=0 skip. Actual19 FF-SIR0 nonbody records exist (edn6,xgboost8, plus depthconv,huffbench,AES,SLRE). This reads reserved SIR0 as FN metadata, even though transfer later skips.",
+      "required": "Branch on p=0 before SIR header read; nonbody remains lifetime-unknown and its incoming edges/roots remain covered. Do not infer semantic body from FF-SIR0.",
+      "nativeControl": "Retain all19 and EDN6/XGB8 counts; sentinel SIR0 fields, no fact/body reads on nonbody; call-to-nonbody unknown closure and no certificate."
+    },
+    {
+      "id": "R3",
+      "status": "HOLD source G ownership/overflow precondition binding",
+      "sourceLines": [
+        65
+      ],
+      "evidence": "base>0 and base+fixedAllocationSize<=vectorCount do not establish nonwrapped pointer or owned G allocation in arbitrary M. Correct gn-run-open allocation is an entry precondition that must be bound to actual inserted hook; no finished hook/native receipt exists.",
+      "required": "Bind invocation strictly after successful mem-alloc/initialized G before gn-loop; use subtraction-safe vector length bounds and heap ownership evidence. Failed allocation never runs analysis.",
+      "nativeControl": "Near-end successful/failed G allocation, MMERR existing error, invalid/overflow gn-cell, compare all M including sentinel beyond scratch."
+    },
+    {
+      "id": "R4",
+      "status": "HOLD complete work accounting proof",
+      "sourceLines": [
+        19,
+        344,
+        34,
+        40
+      ],
+      "evidence": "tick charges128, capped268435456, zero-work precharges spans; preflight zero scan and mandatory cleanup bypass work counter. Both are finite41984-cell routines but separate overhead must be explicit rather than claim every scan/write charged. Direct vw-cs and bounded unticked recursion require per-entry cost inventory.",
+      "required": "Account charged and uncharged finite overhead explicitly; per-tick upper bound of128 actual semantic operations/reads/writes, no scan/query unbounded outside charge. Cleanup always completes after budget refusal.",
+      "nativeControl": "Budget0/127/128/cap-128/cap exact; nested label/SCC/shape scans exhausting different stages; cleanup exact41984cells all refusal paths."
+    },
+    {
+      "id": "R5",
+      "status": "HOLD mixed convergence fail-closed binding",
+      "sourceLines": [
+        412,
+        453,
+        460
+      ],
+      "evidence": "Alias-pass8 fallback clears aliases while global shape pass128 must converge or refuse whole module. Existing reference qualification is conditional, not proof of current typed implementation.",
+      "required": "Demonstrate mixed convergent/nonconvergent functions never publish provisional global certs; downstream unknown inputs preserved; absence of base anchor clears positive recursive assumptions.",
+      "nativeControl": "Global mixed SCC, alias round8/shape round128, mutual vs self recursion, one path undefined, unsupported >64-block caller poisoning all incoming bounds."
+    }
+  ],
+  "reservedGeometry": {
+    "LPRelativeStart": 32784,
+    "LPBlockFactsEnd": 65552,
+    "current128FactEnd": 66064,
+    "CFG64x4End": 66320,
+    "control256End": 66576,
+    "LPReservedWords": 33792,
+    "tails": [
+      {
+        "name": "sites",
+        "start": 272,
+        "end": 2320
+      },
+      {
+        "name": "fns",
+        "start": 4368,
+        "end": 6416
+      },
+      {
+        "name": "edges",
+        "start": 8464,
+        "end": 10512
+      },
+      {
+        "name": "old",
+        "start": 12560,
+        "end": 14608
+      }
+    ],
+    "tailWords": 8192,
+    "allOwnedWords": 41984,
+    "comparison": "Current source reallocates original prospective LP current512+CFG512 to current512+CFG256+control256; end unchanged, requires exact source review not old design field equivalence.",
+    "GAllocationRelativeWords": 147554,
+    "status": "arithmetic only, actual G ownership/native cleanup HOLD"
+  },
+  "checklist": [
+    {
+      "gate": "Domain before reads",
+      "status": "HOLD until frozen source/native evidence",
+      "required": "MM counts/table capacities/vector length/owned G; FN ids and body intervals; nonbody FF-SIR0; bounded slot/temp/call span/arity/target/literal index and unique owned label/branch."
+    },
+    {
+      "gate": "Fact banks",
+      "status": "HOLD until frozen source/native evidence",
+      "required": "Local1..64 maps0..63; temp0..63 maps64..127; two-input temp\u226462; n-arg spans subtraction-safe; no read at slot128; CFGblock0..63; four fields full extent."
+    },
+    {
+      "gate": "Whole graph coverage",
+      "status": "HOLD until frozen source/native evidence",
+      "required": "Every body including detailed-refused/large/unknown functions scanned for CAP/indirect/reset/unknown/FADDR/edges before summary; open first/count0 only; all roots preserved."
+    },
+    {
+      "gate": "Dirty scratch",
+      "status": "HOLD until frozen source/native evidence",
+      "required": "Zero preflight all41984 words before first write; any dirty cell returns input unchanged and does not zero foreign old content."
+    },
+    {
+      "gate": "Cleanup all exits",
+      "status": "HOLD until frozen source/native evidence",
+      "required": "After activation every success/refusal/work budget/error clears full LP+four tails to originalzero before original gn/pre/lpos helpers; MMERR/MMR0/heap/CODE/FIX/FN/oldG prefix exact."
+    },
+    {
+      "gate": "Machine binding",
+      "status": "HOLD until frozen source/native evidence",
+      "required": "Frozen source SHA, actual defaultoff all19 bytes/offsets unchanged; fourgen later separately authorized; observer diagnostic prints before cleanup, not product certificate emission."
+    },
+    {
+      "gate": "Fault sensitivity",
+      "status": "HOLD until frozen source/native evidence",
+      "required": "Actual owned compiled mutants: remove operand check; skip cleanup tail/last cell; permit dirty scratch; drop work charge; publish mixed-nonconverged cert; nonbody metadata read exposed. No native controls executed by reviewer."
+    }
+  ],
+  "actual19InputInventory": "input-pins.json and actual19-domain-geometry.json",
+  "nativeBuildGuestNetworkSolverTiming": 0,
+  "sourceEdits": 0,
+  "noQualifiedSourcePASS": true,
+  "futureCorrectionMustSeparateReport": true,
+  "allWritesComplete": true
+}

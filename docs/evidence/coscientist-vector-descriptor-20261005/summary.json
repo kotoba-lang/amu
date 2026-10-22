@@ -1,0 +1,210 @@
+{
+  "experiments": [
+    {
+      "experiment": "vector-descriptor",
+      "status": "measured-and-rejected-for-performance-promotion",
+      "productionCompilerChanged": false,
+      "canonicalSourcesChanged": false,
+      "hypothesis": {
+        "hypothesis": "Reuse checked vector descriptor in free x6 for repeated accesses to same unchanged local handle, keeping each index bound check and fuel.",
+        "admission": "non-leaf or leaf with ns<7; exact local descriptor; invalidate calls, labels, branches, comparisons, unknown effects, replacements, and coalesced replacement",
+        "promotion": "Fresh 30 rotating baseline/candidate/C triples, >=1.05 speedup and gap>sumSD, existing quiet policy; correctness and fixed-point required",
+        "sourceHead": "20116bc27586155eae3289438f26c67ae6f1a253",
+        "exception": "One-off new compiler algorithm authoring, no mechanical refactor"
+      },
+      "compilerGenerations": {
+        "2": "235d7bd4d4941bd1a583d747a4822d92d4655e1366b053d662efb9963647a722",
+        "3": "235d7bd4d4941bd1a583d747a4822d92d4655e1366b053d662efb9963647a722",
+        "4": "235d7bd4d4941bd1a583d747a4822d92d4655e1366b053d662efb9963647a722"
+      },
+      "compilerBytes": 820200,
+      "canonicalResultAndExactFuelParity": "complete-result-and-exact-fuel-parity",
+      "canonicalWorkloads": 19,
+      "changedNativeWorkloads": [
+        "aha-mont64",
+        "depthconv",
+        "edn",
+        "huffbench",
+        "matmult-int",
+        "md5sum",
+        "nettle-aes",
+        "nettle-sha256",
+        "nsichneu",
+        "picojpeg",
+        "qrduino",
+        "sglib-combined",
+        "slre",
+        "statemate",
+        "tarfind",
+        "ud",
+        "wikisort",
+        "xgboost"
+      ],
+      "picoWorkspace": {
+        "status": "complete-exact-8192-cell-parity",
+        "bodies": [
+          1,
+          2
+        ],
+        "cellsPerBody": 4096,
+        "stdoutSha256": "76f80ab5a80a2de8d2f1e9d0a01340169d9f8a3a606e6fb44e7c1a1a8218719a",
+        "observerSourceSha256": "26fbe3078519121c43292a5624a1f44d7697a8f6449b9cf9554d19591f1303a8",
+        "timedSourceUnchanged": true
+      },
+      "fixtureProof": {
+        "runs": 912,
+        "fixtures": 169,
+        "realTestLayoutIdentical": true,
+        "instructionAudit": {
+          "desc_reads": {
+            "cacheDescriptorMovToX6": 1,
+            "reuseDescriptorMovFromX6": 4,
+            "bytes": 344
+          },
+          "desc_leaf7": {
+            "cacheDescriptorMovToX6": 0,
+            "reuseDescriptorMovFromX6": 0,
+            "bytes": 104
+          }
+        }
+      },
+      "timing": {
+        "baseline": {
+          "meanNsPerBody": 260413.09523809524,
+          "sdNs": 5956.184564187156,
+          "relativeSd": 0.022872062400477313,
+          "samples": 30
+        },
+        "candidate": {
+          "meanNsPerBody": 263191.16071428574,
+          "sdNs": 5129.408560418343,
+          "relativeSd": 0.019489288874662135,
+          "samples": 30
+        },
+        "C": {
+          "meanNsPerBody": 10783.236298166854,
+          "sdNs": 351.92867699807397,
+          "relativeSd": 0.03263664703869113,
+          "samples": 30
+        },
+        "stable": true,
+        "baselineOverCandidate": 0.9894446854953222,
+        "candidateOverC": 24.407437010262694,
+        "candidateImprovesBaseline": false
+      },
+      "acceptedTriples": 30,
+      "attemptedTriples": 30,
+      "candidateBytes": 45076,
+      "baselineBytes": 45092,
+      "officialEmbenchScore": false,
+      "newFullSuiteMean": false
+    },
+    {
+      "experiment": "vector-descriptor2",
+      "status": "measured-and-rejected-for-performance-promotion",
+      "productionCompilerChanged": false,
+      "canonicalSourcesChanged": false,
+      "hypothesis": {
+        "hypothesis": "Descriptor reuse across proven inlined sign/identity/vector-at/vector-set wrappers; all genuine/unknown calls still invalidate.",
+        "firstExperiment": "Descriptor reuse invalidating every source call gave 0.98944x Picojpeg speedup; not promoted.",
+        "promotion": "same prospective 30 triple and >=1.05/summedSD criteria; no repeat of first experiment",
+        "sourceHead": "20116bc27586155eae3289438f26c67ae6f1a253",
+        "exception": "One-off new compiler algorithm authoring"
+      },
+      "compilerGenerations": {
+        "2": "5bd3f75c0c7a002cdc418a792a2e460f342fe7f8405bf836f59693f0b28306e0",
+        "3": "5bd3f75c0c7a002cdc418a792a2e460f342fe7f8405bf836f59693f0b28306e0",
+        "4": "5bd3f75c0c7a002cdc418a792a2e460f342fe7f8405bf836f59693f0b28306e0"
+      },
+      "compilerBytes": 817328,
+      "canonicalResultAndExactFuelParity": "complete-result-and-exact-fuel-parity",
+      "canonicalWorkloads": 19,
+      "changedNativeWorkloads": [
+        "aha-mont64",
+        "depthconv",
+        "edn",
+        "huffbench",
+        "matmult-int",
+        "md5sum",
+        "nettle-aes",
+        "nettle-sha256",
+        "nsichneu",
+        "picojpeg",
+        "qrduino",
+        "sglib-combined",
+        "slre",
+        "statemate",
+        "tarfind",
+        "ud",
+        "wikisort",
+        "xgboost"
+      ],
+      "picoWorkspace": {
+        "status": "complete-exact-8192-cell-parity",
+        "bodies": [
+          1,
+          2
+        ],
+        "cellsPerBody": 4096,
+        "stdoutSha256": "76f80ab5a80a2de8d2f1e9d0a01340169d9f8a3a606e6fb44e7c1a1a8218719a",
+        "observerSourceSha256": "26fbe3078519121c43292a5624a1f44d7697a8f6449b9cf9554d19591f1303a8",
+        "timedSourceUnchanged": true
+      },
+      "fixtureProof": {
+        "runs": 914,
+        "fixtures": 171,
+        "realTestLayoutIdentical": true,
+        "instructionAudit": {
+          "desc_reads": {
+            "cacheDescriptorMovToX6": 1,
+            "reuseDescriptorMovFromX6": 4,
+            "bytes": 344
+          },
+          "desc_leaf7": {
+            "cacheDescriptorMovToX6": 0,
+            "reuseDescriptorMovFromX6": 0,
+            "bytes": 104
+          },
+          "desc_inline": {
+            "cacheDescriptorMovToX6": 1,
+            "reuseDescriptorMovFromX6": 2,
+            "bytes": 260
+          }
+        }
+      },
+      "timing": {
+        "baseline": {
+          "meanNsPerBody": 260135.50595238095,
+          "sdNs": 5277.639398175884,
+          "relativeSd": 0.020288039415665083,
+          "samples": 30
+        },
+        "candidate": {
+          "meanNsPerBody": 257786.36642156861,
+          "sdNs": 6374.44075547394,
+          "relativeSd": 0.024727610090324,
+          "samples": 30
+        },
+        "C": {
+          "meanNsPerBody": 10764.884285181037,
+          "sdNs": 103.69046845193259,
+          "relativeSd": 0.00963228825363902,
+          "samples": 30
+        },
+        "stable": true,
+        "baselineOverCandidate": 1.0091127376649962,
+        "candidateOverC": 23.946970500782612,
+        "candidateImprovesBaseline": false
+      },
+      "acceptedTriples": 30,
+      "attemptedTriples": 30,
+      "candidateBytes": 44852,
+      "baselineBytes": 45092,
+      "officialEmbenchScore": false,
+      "newFullSuiteMean": false,
+      "sourceProbeComparisons": 1448
+    }
+  ],
+  "decision": "Neither prototype qualifies for promotion; current integrated production compiler retained.",
+  "nextHypothesis": "Reuse the existing function frame for direct scalar self-tail-recursion; preserve argument permutation, original entry fuel, bounds and caller return state."
+}

@@ -1,0 +1,73 @@
+--- product/seed/41-a64gen.kotoba
++++ prototype/seed/41-a64gen.kotoba
+@@ -1172 +1172,5 @@
+-  (if (= (gn-g M gn-f-freg) 1)
++  (if (= (gn-g M 13) 1)
++    (if (= (gn-g M gn-f-freg) 1)
++      (gn-emit M (enc-subs-i 8 8 1))
++      (-> M (gn-ctx) (gn-emit (enc-ldr 16 7 CTX-FUEL)) (gn-emit (enc-subs-i 16 16 1)) (gn-emit (enc-str 16 7 CTX-FUEL))))
++    (if (= (gn-g M gn-f-freg) 1)
+@@ -1180 +1184 @@
+-        (gn-emit (enc-str 16 7 CTX-FUEL)))))
++        (gn-emit (enc-str 16 7 CTX-FUEL))))))
+@@ -1218,0 +1223,52 @@
++;; A bounded straight-line region: no control transfer, external call,
++;; allocation, context mutation or handler. Inline reads/writes retain traps.
++(def gn-region-save (+ gn-a-lp MM-LABEL-CAP))
++(defn- gn-region-call [M :vector-i64 j :i64] :i64
++  (gn-call-wrapper M j (gn-sir M j IF-A) (gn-sir M j IF-B) (gn-sir M j IF-C)))
++(defn- gn-region-charge [M :vector-i64 j :i64] :i64
++  (case (gn-op M j)
++    OP-FUEL 1
++    OP-CALL (let [w (gn-region-call M j)] (if (if (>= w 1024) (>= w 1536) (>= w 256)) 1 0))
++    0))
++(defn- gn-region-safe [M :vector-i64 j :i64] :bool
++  (case (gn-op M j)
++    (OP-CONST OP-LGET OP-LSET OP-BIN OP-UN OP-FUEL) true
++    OP-CALL (> (gn-region-call M j) 0)
++    OP-RT (gn-inl (gn-sir M j IF-A) (gn-sir M j IF-B) (gn-sir M j IF-C))
++    false))
++;; Token: end*256 + cost. Hitting the cap refuses, never splits a consumed op.
++(defn- gn-region-end [M :vector-i64 start :i64 j :i64 cost :i64] :i64
++  (cond (or (>= j (vector-at M MM-SIR-N)) (>= (- j start) 128)) 0
++        (gn-region-safe M j) (gn-region-end M start (inc j) (+ cost (gn-region-charge M j)))
++        (>= cost 3) (+ (* j 256) cost)
++        :else 0))
++;; One private reusable snapshot of metadata and temp descriptors; no labels
++;; or local register assignments can change inside an admitted region.
++(defn- gn-region-copy [M :vector-i64 lo :i64 hi :i64 offset :i64 restore :bool] :vector-i64
++  (if (>= lo hi) M
++    (gn-region-copy (if restore (gn-gs M lo (gn-g M (+ offset lo))) (gn-gs M (+ offset lo) (gn-g M lo)))
++                    (inc lo) hi offset restore)))
++(defn- gn-region-state [M :vector-i64 restore :bool] :vector-i64
++  (let [dp (gn-g M gn-f-dp)]
++    (-> M (gn-region-copy 0 16 gn-region-save restore)
++          (gn-region-copy gn-a-dk (+ gn-a-dk dp) (- (+ gn-region-save 16) gn-a-dk) restore)
++          (gn-region-copy gn-a-dv (+ gn-a-dv dp) (- (+ gn-region-save 16 gn-cap) gn-a-dv) restore))))
++(defn- gn-region-emit [M :vector-i64 j :i64 end :i64] :vector-i64
++  (if (or (>= j end) (not= (vector-at M MM-ERR) 0)) M
++    (let [M1 (gn-ins M j (gn-op M j)) skip (gn-g M1 gn-f-skip)]
++      (gn-region-emit (gn-gs M1 gn-f-skip 0) (+ j 1 skip) end))))
++(defn- gn-region [M :vector-i64 start :i64 token :i64] :vector-i64
++  (let [end (quot token 256) cost (bit-and token 255)
++        M0 (gn-region-state M false)
++        M1 (if (= (gn-g M0 gn-f-freg) 1)
++             (gn-emit M0 (enc-cmp-i 8 cost))
++             (-> M0 (gn-ctx) (gn-emit (enc-ldr 16 7 CTX-FUEL)) (gn-emit (enc-cmp-i 16 cost))))
++        guard (vector-at M1 MM-CODE-N)
++        M2 (gn-region-emit (-> M1 (gn-emit (enc-bcond (enc-cond-lo) 0)) (gn-gs 13 1)) start end)
++        jump (vector-at M2 MM-CODE-N)
++        M3 (gn-emit M2 (enc-b 0)) slow (vector-at M3 MM-CODE-N)
++        M4 (gn-region-emit (gn-region-state M3 true) start end) done (vector-at M4 MM-CODE-N)]
++    (-> M4 (gn-put (+ MM-CODE-BASE guard) (enc-bcond (enc-cond-lo) (- slow guard)))
++           (gn-put (+ MM-CODE-BASE jump) (enc-b (- done jump)))
++           (gn-gs gn-f-skip (- end start 1)))))
++
+@@ -1222 +1278,3 @@
+-    (let [M1 (gn-ins M i (gn-op M i))
++    (let [token (if (or (= (gn-g M gn-f-dead) 1) (= (gn-g M 14) 1) (not= (gn-g M 13) 0)
++                               (= (gn-region-charge M i) 0)) 0 (gn-region-end M i i 0))
++          M1 (if (> token 0) (gn-region M i token) (gn-ins M i (gn-op M i)))
+@@ -1231 +1289 @@
+-        M1 (mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP))
++        M1 (mem-alloc M0 (+ gn-region-save 16 (* 2 gn-cap)))

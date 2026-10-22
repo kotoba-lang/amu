@@ -1,0 +1,164 @@
+--- a/seed/41-a64gen.kotoba
++++ b/seed/41-a64gen.kotoba
+@@ -458,0 +459,106 @@
++;; Exact index-write dependency proof; token4096+original charges0..3.
++;; Generic natural-argument SIR shapes, never names. Handle/index checks remain.
++(defn- gn-index-fuel [M :vector-i64 p :i64] :bool
++  (or (not= (gn-op M (inc p)) OP-FUEL)
++      (and (= (gn-sir M (inc p) IF-A) 0) (= (gn-sir M (inc p) IF-B) 0) (= (gn-sir M (inc p) IF-C) 0))))
++(defn- gn-index-sign [M :vector-i64 f :i64] :i64
++  (let [p (gn-fnf M f FF-SIR)]
++    (if (or (< p 1) (not= (gn-op M p) OP-FN) (not= (gn-sir M p IF-A) f)
++            (not= (gn-sir M p IF-B) 1) (not (gn-index-fuel M p))) 0
++      (let [fuel (if (= (gn-op M (inc p)) OP-FUEL) 1 0) q (gn-skiplab M (+ p 1 fuel))
++            slot (gn-sir M (+ q 3) IF-A) le (gn-sir M (+ q 7) IF-B) lx (gn-sir M (+ q 11) IF-A)]
++        (if (and (> slot 1) (> le 0) (> lx 0) (not= le lx)
++                 (and (= (gn-op M (+ q 0)) OP-LGET) (= (gn-sir M (+ q 0) IF-A) 0) (= (gn-sir M (+ q 0) IF-B) 1) (= (gn-sir M (+ q 0) IF-C) 0))
++                 (and (= (gn-op M (+ q 1)) OP-CONST) (= (gn-sir M (+ q 1) IF-A) 1) (= (gn-sir M (+ q 1) IF-B) 65535) (= (gn-sir M (+ q 1) IF-C) 0))
++                 (and (= (gn-op M (+ q 2)) OP-BIN) (= (gn-sir M (+ q 2) IF-A) BOP-AND) (= (gn-sir M (+ q 2) IF-B) 0) (= (gn-sir M (+ q 2) IF-C) 0))
++                 (and (= (gn-op M (+ q 3)) OP-LSET) (= (gn-sir M (+ q 3) IF-A) slot) (= (gn-sir M (+ q 3) IF-B) 0) (= (gn-sir M (+ q 3) IF-C) 0))
++                 (and (= (gn-op M (+ q 4)) OP-LGET) (= (gn-sir M (+ q 4) IF-A) 0) (= (gn-sir M (+ q 4) IF-B) slot) (= (gn-sir M (+ q 4) IF-C) 0))
++                 (and (= (gn-op M (+ q 5)) OP-CONST) (= (gn-sir M (+ q 5) IF-A) 1) (= (gn-sir M (+ q 5) IF-B) 32768) (= (gn-sir M (+ q 5) IF-C) 0))
++                 (and (= (gn-op M (+ q 6)) OP-CMP) (= (gn-sir M (+ q 6) IF-A) CC-GE) (= (gn-sir M (+ q 6) IF-B) 0) (= (gn-sir M (+ q 6) IF-C) 0))
++                 (and (= (gn-op M (+ q 7)) OP-BRZ) (= (gn-sir M (+ q 7) IF-A) 0) (= (gn-sir M (+ q 7) IF-B) le) (= (gn-sir M (+ q 7) IF-C) 0))
++                 (and (= (gn-op M (+ q 8)) OP-LGET) (= (gn-sir M (+ q 8) IF-A) 0) (= (gn-sir M (+ q 8) IF-B) slot) (= (gn-sir M (+ q 8) IF-C) 0))
++                 (and (= (gn-op M (+ q 9)) OP-CONST) (= (gn-sir M (+ q 9) IF-A) 1) (= (gn-sir M (+ q 9) IF-B) 65536) (= (gn-sir M (+ q 9) IF-C) 0))
++                 (and (= (gn-op M (+ q 10)) OP-BIN) (= (gn-sir M (+ q 10) IF-A) BOP-SUB) (= (gn-sir M (+ q 10) IF-B) 0) (= (gn-sir M (+ q 10) IF-C) 0))
++                 (and (= (gn-op M (+ q 11)) OP-BR) (= (gn-sir M (+ q 11) IF-A) lx) (= (gn-sir M (+ q 11) IF-B) 0) (= (gn-sir M (+ q 11) IF-C) 0))
++                 (and (= (gn-op M (+ q 12)) OP-LABEL) (= (gn-sir M (+ q 12) IF-A) le) (= (gn-sir M (+ q 12) IF-B) 0) (= (gn-sir M (+ q 12) IF-C) 0))
++                 (and (= (gn-op M (+ q 13)) OP-LGET) (= (gn-sir M (+ q 13) IF-A) 0) (= (gn-sir M (+ q 13) IF-B) slot) (= (gn-sir M (+ q 13) IF-C) 0))
++                 (and (= (gn-op M (+ q 14)) OP-LABEL) (= (gn-sir M (+ q 14) IF-A) lx) (= (gn-sir M (+ q 14) IF-B) 0) (= (gn-sir M (+ q 14) IF-C) 0))
++                 (and (= (gn-op M (+ q 15)) OP-RET) (= (gn-sir M (+ q 15) IF-A) 0) (= (gn-sir M (+ q 15) IF-B) 0) (= (gn-sir M (+ q 15) IF-C) 0))
++                 (and (= (gn-op M (+ q 16)) OP-END) (= (gn-sir M (+ q 16) IF-A) f) (= (gn-sir M (+ q 16) IF-B) 0) (= (gn-sir M (+ q 16) IF-C) 0))) (inc fuel) 0)))))
++(defn- gn-index-write [M :vector-i64 f :i64] :i64
++  (let [p (gn-fnf M f FF-SIR)]
++    (if (or (< p 1) (not= (gn-op M p) OP-FN) (not= (gn-sir M p IF-A) f)
++            (not= (gn-sir M p IF-B) 3) (not (gn-index-fuel M p))) 0
++      (let [fuel (if (= (gn-op M (inc p)) OP-FUEL) 1 0) q (gn-skiplab M (+ p 1 fuel))]
++        (if (and (and (= (gn-op M (+ q 0)) OP-LGET) (= (gn-sir M (+ q 0) IF-A) 0) (= (gn-sir M (+ q 0) IF-B) 1) (= (gn-sir M (+ q 0) IF-C) 0))
++                 (and (= (gn-op M (+ q 1)) OP-LGET) (= (gn-sir M (+ q 1) IF-A) 1) (= (gn-sir M (+ q 1) IF-B) 2) (= (gn-sir M (+ q 1) IF-C) 0))
++                 (and (= (gn-op M (+ q 2)) OP-LGET) (= (gn-sir M (+ q 2) IF-A) 2) (= (gn-sir M (+ q 2) IF-B) 3) (= (gn-sir M (+ q 2) IF-C) 0))
++                 (and (= (gn-op M (+ q 3)) OP-RT) (= (gn-sir M (+ q 3) IF-A) RT-VECTOR-ASSOC-IN-PLACE) (= (gn-sir M (+ q 3) IF-B) 0) (= (gn-sir M (+ q 3) IF-C) 3))
++                 (and (= (gn-op M (+ q 4)) OP-RET) (= (gn-sir M (+ q 4) IF-A) 0) (= (gn-sir M (+ q 4) IF-B) 0) (= (gn-sir M (+ q 4) IF-C) 0))
++                 (and (= (gn-op M (+ q 5)) OP-END) (= (gn-sir M (+ q 5) IF-A) f) (= (gn-sir M (+ q 5) IF-B) 0) (= (gn-sir M (+ q 5) IF-C) 0))) (inc fuel) 0)))))
++(defn- gn-index-wrapper [M :vector-i64 f :i64 t :i64 n :i64] :i64
++  (let [p (gn-fnf M f FF-SIR)]
++    (if (or (< p 1) (not= n 5) (> t 4) (not= (gn-op M p) OP-FN)
++            (not= (gn-sir M p IF-A) f) (not= (gn-sir M p IF-B) 5) (not (gn-index-fuel M p))) 0
++      (let [fuel (if (= (gn-op M (inc p)) OP-FUEL) 1 0) q (gn-skiplab M (+ p 1 fuel))
++            sf (gn-sir M (+ q 7) IF-A) wf (gn-sir M (+ q 8) IF-A)]
++        (if (and (> sf 0) (> wf 0) (not= f sf) (not= f wf) (not= sf wf)
++                 (and (= (gn-op M (+ q 0)) OP-LGET) (= (gn-sir M (+ q 0) IF-A) 0) (= (gn-sir M (+ q 0) IF-B) 1) (= (gn-sir M (+ q 0) IF-C) 0))
++                 (and (= (gn-op M (+ q 1)) OP-LGET) (= (gn-sir M (+ q 1) IF-A) 1) (= (gn-sir M (+ q 1) IF-B) 2) (= (gn-sir M (+ q 1) IF-C) 0))
++                 (and (= (gn-op M (+ q 2)) OP-LGET) (= (gn-sir M (+ q 2) IF-A) 2) (= (gn-sir M (+ q 2) IF-B) 3) (= (gn-sir M (+ q 2) IF-C) 0))
++                 (and (= (gn-op M (+ q 3)) OP-LGET) (= (gn-sir M (+ q 3) IF-A) 3) (= (gn-sir M (+ q 3) IF-B) 4) (= (gn-sir M (+ q 3) IF-C) 0))
++                 (and (= (gn-op M (+ q 4)) OP-BIN) (= (gn-sir M (+ q 4) IF-A) BOP-MUL) (= (gn-sir M (+ q 4) IF-B) 2) (= (gn-sir M (+ q 4) IF-C) 0))
++                 (and (= (gn-op M (+ q 5)) OP-BIN) (= (gn-sir M (+ q 5) IF-A) BOP-ADD) (= (gn-sir M (+ q 5) IF-B) 1) (= (gn-sir M (+ q 5) IF-C) 0))
++                 (and (= (gn-op M (+ q 6)) OP-LGET) (= (gn-sir M (+ q 6) IF-A) 2) (= (gn-sir M (+ q 6) IF-B) 5) (= (gn-sir M (+ q 6) IF-C) 0))
++                 (and (= (gn-op M (+ q 7)) OP-CALL) (= (gn-sir M (+ q 7) IF-A) sf) (= (gn-sir M (+ q 7) IF-B) 2) (= (gn-sir M (+ q 7) IF-C) 1))
++                 (and (= (gn-op M (+ q 8)) OP-CALL) (= (gn-sir M (+ q 8) IF-A) wf) (= (gn-sir M (+ q 8) IF-B) 0) (= (gn-sir M (+ q 8) IF-C) 3))
++                 (and (= (gn-op M (+ q 9)) OP-RET) (= (gn-sir M (+ q 9) IF-A) 0) (= (gn-sir M (+ q 9) IF-B) 0) (= (gn-sir M (+ q 9) IF-C) 0))
++                 (and (= (gn-op M (+ q 10)) OP-END) (= (gn-sir M (+ q 10) IF-A) f) (= (gn-sir M (+ q 10) IF-B) 0) (= (gn-sir M (+ q 10) IF-C) 0)))
++          (let [s (gn-index-sign M sf) z (gn-index-write M wf)]
++            (if (and (> s 0) (> z 0)) (+ 4096 fuel (dec s) (dec z)) 0)) 0)))))
++;; Exact bound8 loop, natural parameter updates and fully proved index writer.
++;; Token8192+16*entryCharge+helperCharges; no names, unknown shape ->0.
++(defn- gn-fill-regs [M :vector-i64 k :i64] :bool
++  (if (> k 5) true (and (>= (gn-sreg M k) 19) (<= (gn-sreg M k) 28) (gn-fill-regs M (inc k)))))
++(defn- gn-fill-wrapper [M :vector-i64 f :i64] :i64
++  (let [p (gn-fnf M f FF-SIR)]
++    (if (or (< p 1) (not= (gn-op M p) OP-FN) (not= (gn-sir M p IF-A) f)
++            (not= (gn-sir M p IF-B) 5) (not (gn-index-fuel M p))
++            (not= (gn-g M gn-f-leaf) 0) (not= (gn-g M gn-f-freg) 0) (not (gn-fill-regs M 1))) 0
++      (let [fuel (if (= (gn-op M (inc p)) OP-FUEL) 1 0) lab (+ p 1 fuel) q (inc lab)
++            loop (gn-sir M lab IF-A) le (gn-sir M (+ q 3) IF-B) lx (gn-sir M (+ q 5) IF-A)
++            wf (gn-sir M (+ q 12) IF-A)]
++        (if (and (= (gn-op M lab) OP-LABEL) (> loop 0)
++                 (= (gn-sir M lab IF-B) 0) (= (gn-sir M lab IF-C) 0)
++                 (> le 0) (> lx 0) (not= loop le) (not= loop lx) (not= le lx) (> wf 0) (not= wf f)
++                 (and (= (gn-op M (+ q 0)) OP-LGET) (= (gn-sir M (+ q 0) IF-A) 0) (= (gn-sir M (+ q 0) IF-B) 4) (= (gn-sir M (+ q 0) IF-C) 0))
++                 (and (= (gn-op M (+ q 1)) OP-CONST) (= (gn-sir M (+ q 1) IF-A) 1) (= (gn-sir M (+ q 1) IF-B) 8) (= (gn-sir M (+ q 1) IF-C) 0))
++                 (and (= (gn-op M (+ q 2)) OP-CMP) (= (gn-sir M (+ q 2) IF-A) CC-EQ) (= (gn-sir M (+ q 2) IF-B) 0) (= (gn-sir M (+ q 2) IF-C) 0))
++                 (and (= (gn-op M (+ q 3)) OP-BRZ) (= (gn-sir M (+ q 3) IF-A) 0) (= (gn-sir M (+ q 3) IF-B) le) (= (gn-sir M (+ q 3) IF-C) 0))
++                 (and (= (gn-op M (+ q 4)) OP-LGET) (= (gn-sir M (+ q 4) IF-A) 0) (= (gn-sir M (+ q 4) IF-B) 1) (= (gn-sir M (+ q 4) IF-C) 0))
++                 (and (= (gn-op M (+ q 5)) OP-BR) (= (gn-sir M (+ q 5) IF-A) lx) (= (gn-sir M (+ q 5) IF-B) 0) (= (gn-sir M (+ q 5) IF-C) 0))
++                 (and (= (gn-op M (+ q 6)) OP-LABEL) (= (gn-sir M (+ q 6) IF-A) le) (= (gn-sir M (+ q 6) IF-B) 0) (= (gn-sir M (+ q 6) IF-C) 0))
++                 (and (= (gn-op M (+ q 7)) OP-LGET) (= (gn-sir M (+ q 7) IF-A) 0) (= (gn-sir M (+ q 7) IF-B) 1) (= (gn-sir M (+ q 7) IF-C) 0))
++                 (and (= (gn-op M (+ q 8)) OP-LGET) (= (gn-sir M (+ q 8) IF-A) 1) (= (gn-sir M (+ q 8) IF-B) 2) (= (gn-sir M (+ q 8) IF-C) 0))
++                 (and (= (gn-op M (+ q 9)) OP-LGET) (= (gn-sir M (+ q 9) IF-A) 2) (= (gn-sir M (+ q 9) IF-B) 3) (= (gn-sir M (+ q 9) IF-C) 0))
++                 (and (= (gn-op M (+ q 10)) OP-LGET) (= (gn-sir M (+ q 10) IF-A) 3) (= (gn-sir M (+ q 10) IF-B) 4) (= (gn-sir M (+ q 10) IF-C) 0))
++                 (and (= (gn-op M (+ q 11)) OP-LGET) (= (gn-sir M (+ q 11) IF-A) 4) (= (gn-sir M (+ q 11) IF-B) 5) (= (gn-sir M (+ q 11) IF-C) 0))
++                 (and (= (gn-op M (+ q 12)) OP-CALL) (= (gn-sir M (+ q 12) IF-A) wf) (= (gn-sir M (+ q 12) IF-B) 0) (= (gn-sir M (+ q 12) IF-C) 5))
++                 (and (= (gn-op M (+ q 13)) OP-LGET) (= (gn-sir M (+ q 13) IF-A) 1) (= (gn-sir M (+ q 13) IF-B) 2) (= (gn-sir M (+ q 13) IF-C) 0))
++                 (and (= (gn-op M (+ q 14)) OP-LGET) (= (gn-sir M (+ q 14) IF-A) 2) (= (gn-sir M (+ q 14) IF-B) 3) (= (gn-sir M (+ q 14) IF-C) 0))
++                 (and (= (gn-op M (+ q 15)) OP-LGET) (= (gn-sir M (+ q 15) IF-A) 3) (= (gn-sir M (+ q 15) IF-B) 4) (= (gn-sir M (+ q 15) IF-C) 0))
++                 (and (= (gn-op M (+ q 16)) OP-CONST) (= (gn-sir M (+ q 16) IF-A) 4) (= (gn-sir M (+ q 16) IF-B) 1) (= (gn-sir M (+ q 16) IF-C) 0))
++                 (and (= (gn-op M (+ q 17)) OP-BIN) (= (gn-sir M (+ q 17) IF-A) BOP-ADD) (= (gn-sir M (+ q 17) IF-B) 3) (= (gn-sir M (+ q 17) IF-C) 0))
++                 (and (= (gn-op M (+ q 18)) OP-LGET) (= (gn-sir M (+ q 18) IF-A) 4) (= (gn-sir M (+ q 18) IF-B) 5) (= (gn-sir M (+ q 18) IF-C) 0))
++                 (and (= (gn-op M (+ q 19)) OP-LSET) (= (gn-sir M (+ q 19) IF-A) 1) (= (gn-sir M (+ q 19) IF-B) 0) (= (gn-sir M (+ q 19) IF-C) 0))
++                 (and (= (gn-op M (+ q 20)) OP-LSET) (= (gn-sir M (+ q 20) IF-A) 2) (= (gn-sir M (+ q 20) IF-B) 1) (= (gn-sir M (+ q 20) IF-C) 0))
++                 (and (= (gn-op M (+ q 21)) OP-LSET) (= (gn-sir M (+ q 21) IF-A) 3) (= (gn-sir M (+ q 21) IF-B) 2) (= (gn-sir M (+ q 21) IF-C) 0))
++                 (and (= (gn-op M (+ q 22)) OP-LSET) (= (gn-sir M (+ q 22) IF-A) 4) (= (gn-sir M (+ q 22) IF-B) 3) (= (gn-sir M (+ q 22) IF-C) 0))
++                 (and (= (gn-op M (+ q 23)) OP-LSET) (= (gn-sir M (+ q 23) IF-A) 5) (= (gn-sir M (+ q 23) IF-B) 4) (= (gn-sir M (+ q 23) IF-C) 0))
++                 (and (= (gn-op M (+ q 24)) OP-FUEL) (= (gn-sir M (+ q 24) IF-A) 0) (= (gn-sir M (+ q 24) IF-B) 0) (= (gn-sir M (+ q 24) IF-C) 0))
++                 (and (= (gn-op M (+ q 25)) OP-BR) (= (gn-sir M (+ q 25) IF-A) loop) (= (gn-sir M (+ q 25) IF-B) 0) (= (gn-sir M (+ q 25) IF-C) 0))
++                 (and (= (gn-op M (+ q 26)) OP-LABEL) (= (gn-sir M (+ q 26) IF-A) lx) (= (gn-sir M (+ q 26) IF-B) 0) (= (gn-sir M (+ q 26) IF-C) 0))
++                 (and (= (gn-op M (+ q 27)) OP-RET) (= (gn-sir M (+ q 27) IF-A) 0) (= (gn-sir M (+ q 27) IF-B) 0) (= (gn-sir M (+ q 27) IF-C) 0))
++                 (and (= (gn-op M (+ q 28)) OP-END) (= (gn-sir M (+ q 28) IF-A) f) (= (gn-sir M (+ q 28) IF-B) 0) (= (gn-sir M (+ q 28) IF-C) 0)))
++          (let [z (gn-index-wrapper M wf 0 5)]
++            (if (>= z 4096) (+ 8192 (* fuel 16) (- z 4096)) 0)) 0)))))
+@@ -589 +695,2 @@
+-                  (gn-gs gn-f-h 0)))))))
++                  (gn-gs gn-f-h 0)
++                  (gn-fill-entry f)))))))
+@@ -605,0 +713,50 @@
++
++;; Runtime guards are total and branch to the original body on failure.
++;; x9 pointer, x11 byte stride, x12 narrowed value, x13 loop k; x8 is the
++;; original helper's leaf fuel transaction and commits after each write.
++(defn- gn-fill-helper-fuel [M :vector-i64 n :i64] :vector-i64
++  (if (= n 0) M (gn-fill-helper-fuel
++    (-> M (gn-emit (enc-subs-i 8 8 1)) (gn-emit (enc-bcond (enc-cond-hs) 3))
++          (gn-emit (enc-str 31 7 CTX-FUEL)) (gn-emit (enc-brk 0))) (dec n))))
++(defn- gn-fill-fast [M :vector-i64 w :i64] :vector-i64
++  (let [rv (gn-sreg M 1) rb (gn-sreg M 2) rs (gn-sreg M 3) rk (gn-sreg M 4) rx (gn-sreg M 5)
++        n (bit-and w 15)
++        M0 (gn-emit M (enc-cmp-i rk 8)) f0 (vector-at M0 MM-CODE-N)
++        M1 (-> M0 (gn-emit (enc-bcond 8 0)) (gn-emit (enc-cmp-i rs 0))) f1 (vector-at M1 MM-CODE-N)
++        M2 (-> M1 (gn-emit (enc-bcond (enc-cond-lt) 0))
++               (gn-emit (enc-ldr 16 7 312)) (gn-emit (enc-ldr 16 16 0))
++               (gn-emit (enc-sub-i 17 rv 1)) (gn-emit (enc-cmp-r 17 16))) f2 (vector-at M2 MM-CODE-N)
++        M3 (-> M2 (gn-emit (enc-bcond (enc-cond-hs) 0))
++               (gn-emit (enc-ldr 16 7 320)) (gn-emit (gn-e-addsl 16 16 17 4))
++               (gn-emit (enc-ldp 17 16 16 0)) (gn-mov 9 17) (gn-mov 10 16)
++               (gn-emit (enc-cmp-r rb 10))) f3 (vector-at M3 MM-CODE-N)
++        M4 (-> M3 (gn-emit (enc-bcond (enc-cond-hs) 0))
++               (gn-emit (enc-sub-r 16 10 rb)) (gn-emit (enc-sub-i 16 16 1))
++               (gn-emit (gn-e-bf 0xd3400000 16 16 3 63))
++               (gn-emit (enc-cmp-r rs 16))) f4 (vector-at M4 MM-CODE-N)
++        M5 (-> M4 (gn-emit (enc-bcond 8 0))
++               (gn-emit (enc-ldr 16 7 328)) (gn-emit (gn-e-addsl 9 16 9 3))
++               (gn-emit (enc-mul 10 rs rk)) (gn-emit (enc-add-r 10 10 rb))
++               (gn-emit (gn-e-addsl 9 9 10 3))
++               (gn-emit (gn-e-bf 0xd3400000 11 rs 61 60))
++               (gn-emit (gn-e-bf 0x93400000 12 rx 0 15)) (gn-mov 13 rk)
++               (cond-> (= (bit-and w 16) 16) (gn-op-fuel)))
++        loop (vector-at M5 MM-CODE-N)
++        M6 (gn-emit M5 (enc-cmp-i 13 8)) done (vector-at M6 MM-CODE-N)
++        M7 (-> M6 (gn-emit (enc-bcond (enc-cond-eq) 0))
++               (cond-> (> n 0) (gn-emit (enc-ldr 8 7 CTX-FUEL)))
++               (gn-fill-helper-fuel n)
++               (gn-emit (enc-str 12 9 0))
++               (cond-> (> n 0) (gn-emit (enc-str 8 7 CTX-FUEL)))
++               (gn-emit (enc-add-r 9 9 11)) (gn-emit (enc-add-i 13 13 1)) (gn-op-fuel))
++        back (vector-at M7 MM-CODE-N)
++        M8 (gn-emit M7 (enc-b (- loop back))) end (vector-at M8 MM-CODE-N)
++        M9 (-> M8 (gn-mov 0 rv) (gn-epilogue) (gn-gs gn-f-dead 0)) fallback (vector-at M9 MM-CODE-N)]
++    (-> M9 (gn-put (+ MM-CODE-BASE f0) (enc-bcond 8 (- fallback f0)))
++        (gn-put (+ MM-CODE-BASE f1) (enc-bcond (enc-cond-lt) (- fallback f1)))
++        (gn-put (+ MM-CODE-BASE f2) (enc-bcond (enc-cond-hs) (- fallback f2)))
++        (gn-put (+ MM-CODE-BASE f3) (enc-bcond (enc-cond-hs) (- fallback f3)))
++        (gn-put (+ MM-CODE-BASE f4) (enc-bcond 8 (- fallback f4)))
++        (gn-put (+ MM-CODE-BASE done) (enc-bcond (enc-cond-eq) (- end done))))))
++(defn- gn-fill-entry [M :vector-i64 f :i64] :vector-i64
++  (let [w (gn-fill-wrapper M f)] (if (= w 0) M (gn-fill-fast M w))))

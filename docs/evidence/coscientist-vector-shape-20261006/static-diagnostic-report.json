@@ -1,0 +1,120 @@
+{
+  "status": "PASS_STATIC_NEGATIVE_CAUSE_CHECK",
+  "candidateAdopted": false,
+  "cause": "Undetermined; actual sampled-PC or controlled successor evidence is needed for causality.",
+  "baselineSeed": {
+    "path": "/private/tmp/amu-scalar-dag-inline-20261006/implementation/seed-4.bin",
+    "bytes": 858392,
+    "sha256": "761856bb455de5d36021e177be8f3a0bbf65772dd66cbdf29c8e114f8cbe3d93"
+  },
+  "candidateSeed": {
+    "path": "/private/tmp/amu-vector-shape-specialize-20261006/implementation-v4/seed-4.bin",
+    "bytes": 910456,
+    "sha256": "924b03c26998aed4d2a6b15a720cea14866fa3c70d803f56e52de6efdd0a35eb"
+  },
+  "callSpans": {
+    "calls": 1474,
+    "changedSpans": 416,
+    "lostNoBL": 0,
+    "gainedNoBL": 0,
+    "baselineBL": 216,
+    "candidateBL": 216,
+    "wordDifference": -2730,
+    "skipTransitions": {
+      "0->0": 1358,
+      "1->1": 116
+    }
+  },
+  "frames": {
+    "cloneCount": 532,
+    "frameTransitions": {
+      "80->80": 1,
+      "0->0": 426,
+      "96->96": 1,
+      "64->64": 100,
+      "48->48": 4
+    },
+    "leafTransitions": {
+      "0->0": 106,
+      "1->1": 36,
+      "2->2": 390
+    },
+    "nsvTransitions": {
+      "2->2": 17,
+      "0->0": 426,
+      "4->4": 1,
+      "1->1": 88
+    },
+    "lostTailB": 0,
+    "gainedTailB": 0
+  },
+  "footprint": {
+    "baselineBytes": 87716,
+    "candidateBytes": 152292,
+    "baselineFunctions": 539,
+    "candidateFunctions": 1071,
+    "branchSites": 611,
+    "baselineDistanceSum": 1484952,
+    "candidateDistanceSum": 1553152,
+    "scope": "Static cloned CALL spans only; distances unweighted by execution frequency. No causal performance claim."
+  },
+  "findings": [
+    "All 1,474 cloned CALL records are bound by PCMAP to original CALL SIR. Actual native CALL emission has 216 BL instructions in both variants; zero no-BL to BL changes and zero lost tail-B sites.",
+    "All 532 cloned functions retain original frame size, callee-save count and leaf class; 390 shared-fuel leaf2 functions remain leaf2.",
+    "416 cloned CALL spans change instruction length; their aggregate difference is minus 2,730 words. Static helper-fusion loss and frame inflation are not supported by these comparisons.",
+    "Full image grows from 87,716 to 152,292 bytes because original bodies are preserved plus 532 private clones; original539 becomes1071functions. Direct-branch distance aggregate rises from1,484,952 to1,553,152 bytes over611 static CALL spans. Neither count is dynamically weighted or a proven slowdown cause."
+  ],
+  "limitations": [
+    "Static counts do not establish executed hotness, cache-miss rates or causality.",
+    "EMIT spans account for skip/coalescing as emitted; zero-BL spans alone do not distinguish every fusion family. Preserved skip and branch classifications support the narrow negative check.",
+    "Reader-cache modes are not printed by this observer; do not claim independently sampled runtime cache-mode frequencies.",
+    "Independent V4 whole-machine proof separately binds cloned SIR, fix targets, aux1 entries and permitted guard deletions. This diagnosis does not rerun native proof, timing or profiling."
+  ],
+  "inputPins": [
+    {
+      "path": "/private/tmp/amu-scalar-dag-inline-20261006/implementation/seed-4.bin",
+      "bytes": 858392,
+      "sha256": "761856bb455de5d36021e177be8f3a0bbf65772dd66cbdf29c8e114f8cbe3d93"
+    },
+    {
+      "path": "/private/tmp/amu-vector-shape-specialize-20261006/implementation-v4/seed-4.bin",
+      "bytes": 910456,
+      "sha256": "924b03c26998aed4d2a6b15a720cea14866fa3c70d803f56e52de6efdd0a35eb"
+    },
+    {
+      "path": "/private/tmp/amu-scalar-dag-inline-20261006/implementation/observer/ports/statemate/compile.log",
+      "bytes": 658152,
+      "sha256": "05b7352a411583755ed7873cb15ba0917110cb21e0461b51f69d38003c13d8be"
+    },
+    {
+      "path": "/private/tmp/amu-scalar-dag-inline-20261006/implementation/observer/ports/statemate/native.bin",
+      "bytes": 87716,
+      "sha256": "5500419beb37f71f0c2ee09c64233170bc853378b082b694025b45ccbe32152d"
+    },
+    {
+      "path": "/private/tmp/amu-vector-shape-specialize-20261006/implementation-v4/observer/ports/statemate/compile.log",
+      "bytes": 2078576,
+      "sha256": "997291c5583dce12066f1731069885e0d4cf87f67d05dcc24ffcd695c52334f8"
+    },
+    {
+      "path": "/private/tmp/amu-vector-shape-specialize-20261006/implementation-v4/observer/ports/statemate/native.bin",
+      "bytes": 152292,
+      "sha256": "bda9ab62ea4d98c4510ce252612eaf44f95cf9d158752bf2e574ebe7e6e0c63d"
+    },
+    {
+      "path": "/private/tmp/amu-vector-shape-specialize-20261006/implementation-v4/41-a64gen-prototype.kotoba",
+      "bytes": 155334,
+      "sha256": "ef360633cb4bd404eaec6ce7e7ccb8b239f91a38657744339c45df9766b1cef4"
+    },
+    {
+      "path": "/private/tmp/amu-vector-shape-specialize-20261006/implementation-v4/clones-native.kotoba",
+      "bytes": 11555,
+      "sha256": "135aeb77f9d2c4458bfcdd27d40187a0fd397e8bc924994bbf7879f257a1c5d3"
+    },
+    {
+      "path": "/private/tmp/amu-vector-shape-specialize-20261006/team-independent-v4/report.json",
+      "bytes": 66529,
+      "sha256": "9a0fc2f399914df80b1283a757e9e32dc64746c646cce657e7a59a4da2b77c90"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+# Compiler-M fixture-v2 failure supplement
+
+The focused fixture refinement correction and corrected raw-value reporter did **not** resolve the failure. Four compiler-only processes succeeded. The first and only diagnostic guest was RF case 0: stdout `12101`, empty stderr, OS exit 0, expected raw value 0. Qualification remains **FAIL**. No inverse diagnostic guest and no remaining case was executed. A successful reporter exit is not a successful fixture assertion.
+
+The source correction routes checking through persistent refinement hints and rereading before lowering. Independent source and runtime reviews passed their bounded static/provenance gates; they did not establish runtime qualification. The observed integer does not directly identify a selected return branch or MMERR value. `10000 + 2101` remains an origin hypothesis; a structural-difference return can numerically coincide. The latest scope correction is included alongside the earlier classification and takes precedence.
+
+Copy only `failure-v2.tgz`, `entry-manifest.json`, and `replay.py` into an unrelated directory and run `python3 replay.py`. The reader hashes all 63 selected members, verifies all 21 compiled pins and 31 combined runtime inputs, checks four successful compilation/extraction receipts and the sole failed raw result, binds the compiled RF entry offset, and verifies the unchanged embedded original AES source and refinement interface. It executes no guest, compiler, solver, or measurement. Native provenance is receipt-based, not independent native execution or a machine proof. The selected payload is not a complete inventory of every historical investigation.
+
+The v1 three-file envelope remains unchanged and separate. These are different fixture revisions, not a performance comparison. There is no compiler-M PASS, optimizer attribution, product adoption, performance authorization, or C-score claim.

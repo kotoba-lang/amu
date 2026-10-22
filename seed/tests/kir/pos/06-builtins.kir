@@ -1,0 +1,7 @@
+{:format :kotoba.kir/v4, :entry nil, :exports [t], :signature nil, :effects #{}, :functions [
+{:name add2, :params [a b], :result :i64, :effects #{}, :body (+ a b), :param-types [:i64 :i64]}
+{:name neg, :params [x], :result :i64, :effects #{}, :body (- x), :param-types [:i64]}
+{:name lo, :params [a b], :result :i64, :effects #{}, :body (min (add2 a 0) (min b 100)), :param-types [:i64 :i64]}
+{:name hi, :params [a b], :result :i64, :effects #{}, :body (max a (- b)), :param-types [:i64 :i64]}
+{:name bump, :params [x], :result :i64, :effects #{}, :body (let [p (record-new [:record :kir.t/Pt [[:x :i64] [:y :i64]]] x 2) q (record-assoc [:record :kir.t/Pt [[:x :i64] [:y :i64]]] p :y 40)] (+ (record-get [:record :kir.t/Pt [[:x :i64] [:y :i64]]] q :x) (record-get [:record :kir.t/Pt [[:x :i64] [:y :i64]]] q :y))), :param-types [:i64]}
+{:name t, :params [], :result :i64, :effects #{}, :body (if (bool-not (= (+ (+ (neg 5) (lo 7 3)) (+ (hi -2 -9) (bump 1))) 0)) (if (= (+ (+ (neg 5) (lo 7 3)) (+ (hi -2 -9) (bump 1))) 48) 1 0) 0), :param-types []}]}

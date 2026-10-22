@@ -1,0 +1,53 @@
+--- 41-a64gen-inverse-on.kotoba
++++ 41-directreg-default.kotoba
+@@ -1748,7 +1748,7 @@
+       (<= (vector-at M MM-FN-N) 1024) (<= (vector-at M MM-SIR-N) 65536)
+       (not= (gn-op M (inc i)) OP-RET) (not= (gn-op M (inc i)) OP-RES2)
+       (as-args-safe M t 6) (ai-callee M f)))
+-(defn- ai-call [M :vector-i64 i :i64 f :i64 t :i64] :vector-i64
++(defn- dr-reference-call [M :vector-i64 i :i64 f :i64 t :i64] :vector-i64
+  (let [start (vector-at M MM-CODE-N)
+        m0 (-> M (gn-save 0 t) (gn-args t 0 6) (gn-ctx) (rf-charges)) dispatch (vector-at m0 MM-CODE-N)
+        m1 (-> m0 (gn-emit (enc-cbnz 0 0))
+@@ -1764,6 +1764,41 @@
+     (cond (not= (vector-at m4 MM-ERR) 0) m4
+           (> words 96) (gn-err m4 E-GEN-OP OP-CALL)
+           :else (-> m4 (gn-gs as-used (+ (gn-g m4 as-used) words)) (gn-gs as-sites (inc (gn-g m4 as-sites)))))))))
++
++;; Explicit experimental opt-in. Canonical temp descriptors only; no local/home capture.
++(def dr-feature 0)
++(defn- dr-regs [M :vector-i64 t :i64 n :i64] :bool
++ (if (= n 0) true
++  (and (>= t 0) (< t 7) (= (gn-dk M t) gn-k-reg) (= (gn-dv M t) 0)
++       (dr-regs M (inc t) (dec n)))))
++(defn- dr-admit [M :vector-i64 t :i64] :bool
++ (and (= dr-feature 1) (>= t 0) (<= t 1) (dr-regs M t 6)))
++(defn- dr-value [M :vector-i64 t :i64 inverse :bool] :vector-i64
++ (let [a (+ 10 t) b (+ 11 t) c (+ 12 t) d (+ 13 t) key (+ 14 t) result (+ 9 t)]
++  (-> M (gn-emit 0x4f00e401)
++        (gn-emit (+ 0x1e270000 (* a 32)))
++        (gn-emit (+ 0x4e0c1c00 (* (if inverse d b) 32)))
++        (gn-emit (+ 0x4e141c00 (* c 32)))
++        (gn-emit (+ 0x4e1c1c00 (* (if inverse b d) 32)))
++        (gn-emit (if inverse 0x4e285820 0x4e284820))
++        (gn-emit (if inverse 0x4e287800 0x4e286800))
++        (gn-emit 0x0e043c10)
++        (gn-emit (+ 0xca000200 (* key 65536) result)))))
++(defn- dr-call [M :vector-i64 i :i64 f :i64 t :i64] :vector-i64
++ (let [start (vector-at M MM-CODE-N)
++       m0 (-> M (gn-save 0 t) (gn-ctx) (rf-charges)) dispatch (vector-at m0 MM-CODE-N)
++       m1 (-> m0 (gn-emit (enc-cbnz (+ 9 t) 0)) (dr-value t false))
++       jump (vector-at m1 MM-CODE-N) m2 (gn-emit m1 (enc-b 0)) inverse (vector-at m2 MM-CODE-N)
++       m3 (dr-value m2 t true) after (vector-at m3 MM-CODE-N)]
++  (if (not= (vector-at m3 MM-ERR) 0) m3
++   (let [m4 (-> m3 (gn-put (+ MM-CODE-BASE dispatch) (enc-cbnz (+ 9 t) (- inverse dispatch)))
++                  (gn-put (+ MM-CODE-BASE jump) (enc-b (- after jump)))
++                  (gn-vclear) (gn-gs gn-f-ctx 0) (gn-take i t (+ 9 t))) words (- (vector-at m4 MM-CODE-N) start)]
++    (cond (not= (vector-at m4 MM-ERR) 0) m4
++          (> words 96) (gn-err m4 E-GEN-OP OP-CALL)
++          :else (-> m4 (gn-gs as-used (+ (gn-g m4 as-used) words)) (gn-gs as-sites (inc (gn-g m4 as-sites)))))))))
++(defn- ai-call [M :vector-i64 i :i64 f :i64 t :i64] :vector-i64
++ (if (dr-admit M t) (dr-call M i f t) (dr-reference-call M i f t)))
+ 
+ (defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
+   (let [w (gn-call-wrapper M i f t n) q (if (= (gn-g M gn-f-leaf) 2) 0 (gn-clamp M i f n)) mask (if (= (gn-g M gn-f-leaf) 2) 0 (gn-scalar-mask M i f n)) reader (if (= (gn-g M gn-f-leaf) 2) 0 (gn-affine-reader M i f n)) dag (di-admit M i f t n) inverse (ai-admit M i f t n) aes (as-admit M i f t n)]

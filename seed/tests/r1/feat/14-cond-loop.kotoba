@@ -1,0 +1,5 @@
+;; R1 feat: cond in a loop (collatz steps of 27)
+(ns seed.r1 (:export [test]))
+(defn test [] :i64
+  (loop [n 27 steps 0]
+    (cond (= n 1) steps (= (bit-and n 1) 0) (recur (quot n 2) (+ steps 1)) :else (recur (+ (* 3 n) 1) (+ steps 1)))))

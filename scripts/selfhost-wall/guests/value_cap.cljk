@@ -1,0 +1,13 @@
+(ns value-cap
+  {:kotoba/export [run]})
+
+;; The value-size bound (ADR 0362): the input, read as ONE string, goes through
+;; :bytes and back (string-to-utf8, bytes-concat, string-from-utf8), the path a
+;; source file read as :bytes takes. Answers "ok" when the round trip kept every
+;; byte. Up to 8 MiB passes;
+;; past it bytes-concat traps :bytes/too-large.
+(defn run [text :string] :string
+  (let [b (string-to-utf8 text)
+        c (bytes-concat b (bytes-empty))
+        s (string-from-utf8 c)]
+    (if (= (string-byte-length s) (string-byte-length text)) "ok" "bad")))

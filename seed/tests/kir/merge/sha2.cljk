@@ -1,0 +1,29 @@
+;; merge-test guest (agent KIR3): sha2.core (org-nist-sha2, the big compiler's pure SHA-2 library behind
+;; kotoba.compiler.nbb.compile-cache/sha256-bytes) over a corpus file. Input (file named by argument 0, read as bytes):
+;; cut into chunks (lengths 0, 7, then the first byte of the previous chunk mod 200: 0..199 bytes, the tail dropped);
+;; every chunk answers one line "<sha256-hex> <sha224-hex> <hmac-sha256-hex(key = previous chunk)>".
+(ns probe.sha2-merge
+  {:kotoba/export [main]}
+  (:require [sha2.core :as sha2]))
+
+(defn cut [v :vector-i64 a :i64 b :i64] :vector-i64
+  (loop [i a out (vector-i64)]
+    (if (>= i b) out (recur (+ i 1) (vector-conj out (vector-at v i))))))
+
+(defn path-bytes [s :string] :vector-i64
+  (loop [i 0 out (vector-i64)]
+    (if (>= i (string-byte-length s)) out (recur (+ i 1) (vector-conj out (string-code-point-at s i))))))
+
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        data (vector-i64-from-bytes (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 (path-bytes path))))
+        n (vector-count data)]
+    (loop [i 0 k 0 prev (vector-i64) len 0]
+      (if (> (+ i len) n)
+        k
+        (let [c (cut data i (+ i len))
+              w (typed-cap-call :io/write :string :string
+                                (string-concat (string-concat (string-concat (sha2/sha256-hex c) " ")
+                                                              (string-concat (sha2/sha224-hex c) " "))
+                                               (string-concat (sha2/hmac-sha256-hex prev c) "\n")))]
+          (recur (+ i len) (+ k 1) c (if (> len 0) (mod (vector-at c 0) 200) 7)))))))

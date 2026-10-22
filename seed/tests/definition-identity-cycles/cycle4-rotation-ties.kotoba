@@ -1,0 +1,7 @@
+;; seed/tests/definition-identity-cycles/cycle4-rotation-ties.kotoba -- a recursive group for kotoba.compiler.definition-identity's ordering choice
+;; (best-candidate). Compare the Kotoba route with the host: seed/tests/compile-cli/run.sh <objects> <work> <list of these>.
+(defn q1 [n] (if (<= n 0) 0 (q2 (- n 1))))
+(defn q2 [n] (if (<= n 0) 0 (q3 (- n 1))))
+(defn q3 [n] (if (<= n 0) 0 (q4 (- n 1))))
+(defn q4 [n] (if (<= n 0) 0 (q1 (- n 1))))
+(defn main [] (q1 7))

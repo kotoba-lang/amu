@@ -1,0 +1,318 @@
+{
+  "status": "registered-not-implemented-or-measured",
+  "hypothesis": "Use callee registers left unused by current local allocation for temps7+ in deep expressions. Keep original frame size and local registers. Save/restore added callee registers in those mapped temps original home slots, which then stop storing expression values. Bounds/alias/call/fuel/resource/effect behavior remains original.",
+  "actualNativeCensus": {
+    "status": "complete-existing-native-census-unused-callee-high-temp-register-analysis",
+    "observerGuestsEqualProduct": true,
+    "countsAreNotTimeShares": true,
+    "proposal": "Retain original frame size and local allocation; save unused callee registers in homes of mapped high temps. Those homes cease to store expression values. Use only disjoint x19..x28 after current local allocation, preserve original save/restore/fuel/effect contracts.",
+    "entries": [
+      {
+        "workload": "aha-mont64",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 0,
+        "functions": [],
+        "nativeCensusLogSha256": "3c49cd55c1ca132e2dac5c2b41e2325f42242c39071729506bebd44f24e2c3e0"
+      },
+      {
+        "workload": "crc32",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 0,
+        "functions": [],
+        "nativeCensusLogSha256": "228dde12f78491d4a45295a49fb4d7acf0e503ecad2bd82c4d0f9a2d540d5214"
+      },
+      {
+        "workload": "depthconv",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 0,
+        "functions": [],
+        "nativeCensusLogSha256": "b4e0fbe15530c10defb0ea1daa9e16dc954e39b69619a87298ce29648145aa46"
+      },
+      {
+        "workload": "edn",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 0,
+        "functions": [],
+        "nativeCensusLogSha256": "6d12b6d23fe72f49d9d4649c9b3e304ea34ce6b25352b89ab5d45356ca87821f"
+      },
+      {
+        "workload": "huffbench",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 1,
+        "functions": [
+          {
+            "fn": 29,
+            "sir": 602,
+            "locals": 11,
+            "depth": 8,
+            "localCalleeRegisters": 4,
+            "leaf": 1,
+            "availableHighTempRegisters": 1,
+            "firstTemp": 7,
+            "lastTemp": 7,
+            "firstRegister": 23,
+            "lastRegister": 23
+          }
+        ],
+        "nativeCensusLogSha256": "4193e7a8d8958cb39b76cff762375d1115ee843769d61b49e1de5318b741695a"
+      },
+      {
+        "workload": "matmult-int",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 1,
+        "functions": [
+          {
+            "fn": 5,
+            "sir": 3272,
+            "locals": 5,
+            "depth": 10,
+            "localCalleeRegisters": 5,
+            "leaf": 0,
+            "availableHighTempRegisters": 3,
+            "firstTemp": 7,
+            "lastTemp": 9,
+            "firstRegister": 24,
+            "lastRegister": 26
+          }
+        ],
+        "nativeCensusLogSha256": "9ef61d04f3fcd5a96858a62bc34dcaa654dcbc5b9a167b901ac8fda13ecd41f0"
+      },
+      {
+        "workload": "md5sum",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 2,
+        "functions": [
+          {
+            "fn": 2,
+            "sir": 8,
+            "locals": 0,
+            "depth": 64,
+            "localCalleeRegisters": 0,
+            "leaf": 0,
+            "availableHighTempRegisters": 10,
+            "firstTemp": 7,
+            "lastTemp": 16,
+            "firstRegister": 19,
+            "lastRegister": 28
+          },
+          {
+            "fn": 3,
+            "sir": 77,
+            "locals": 0,
+            "depth": 64,
+            "localCalleeRegisters": 0,
+            "leaf": 0,
+            "availableHighTempRegisters": 10,
+            "firstTemp": 7,
+            "lastTemp": 16,
+            "firstRegister": 19,
+            "lastRegister": 28
+          }
+        ],
+        "nativeCensusLogSha256": "f6edc3c3381d8256850949ec93af309ca8547fb2fc00f4693e601acf96073407"
+      },
+      {
+        "workload": "nettle-aes",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 0,
+        "functions": [],
+        "nativeCensusLogSha256": "e98a60a45092c40f8dd63c8b4a219c025fbb670614f9f38488ce42edff4b7861"
+      },
+      {
+        "workload": "nettle-sha256",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 3,
+        "functions": [
+          {
+            "fn": 2,
+            "sir": 8,
+            "locals": 0,
+            "depth": 64,
+            "localCalleeRegisters": 0,
+            "leaf": 0,
+            "availableHighTempRegisters": 10,
+            "firstTemp": 7,
+            "lastTemp": 16,
+            "firstRegister": 19,
+            "lastRegister": 28
+          },
+          {
+            "fn": 9,
+            "sir": 194,
+            "locals": 0,
+            "depth": 56,
+            "localCalleeRegisters": 0,
+            "leaf": 0,
+            "availableHighTempRegisters": 10,
+            "firstTemp": 7,
+            "lastTemp": 16,
+            "firstRegister": 19,
+            "lastRegister": 28
+          },
+          {
+            "fn": 21,
+            "sir": 726,
+            "locals": 6,
+            "depth": 12,
+            "localCalleeRegisters": 6,
+            "leaf": 0,
+            "availableHighTempRegisters": 4,
+            "firstTemp": 7,
+            "lastTemp": 10,
+            "firstRegister": 25,
+            "lastRegister": 28
+          }
+        ],
+        "nativeCensusLogSha256": "577787fe201ea650e1ff65cd8a6f70ad9686f11a5cf25c3957f4fba7a3bf160f"
+      },
+      {
+        "workload": "nsichneu",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 0,
+        "functions": [],
+        "nativeCensusLogSha256": "e45020a292ca6a341103e774a0b57d9da89d2de2f9a9de6a9df2dccecf73145c"
+      },
+      {
+        "workload": "picojpeg",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 0,
+        "functions": [],
+        "nativeCensusLogSha256": "f139b0171b183481e325ced991e6fe352b54a7eceb12267852d3fb61ff603083"
+      },
+      {
+        "workload": "qrduino",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 0,
+        "functions": [],
+        "nativeCensusLogSha256": "6463f5b6738683235693d75b573da5318d4acf51926862b636dde9bab1ea847c"
+      },
+      {
+        "workload": "sglib-combined",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 0,
+        "functions": [],
+        "nativeCensusLogSha256": "fae3b1fb1f177b1067bbb5584bc53041384bc33b182c769de1f40cecf4c6f691"
+      },
+      {
+        "workload": "slre",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 3,
+        "functions": [
+          {
+            "fn": 17,
+            "sir": 661,
+            "locals": 8,
+            "depth": 8,
+            "localCalleeRegisters": 8,
+            "leaf": 0,
+            "availableHighTempRegisters": 1,
+            "firstTemp": 7,
+            "lastTemp": 7,
+            "firstRegister": 27,
+            "lastRegister": 27
+          },
+          {
+            "fn": 25,
+            "sir": 1628,
+            "locals": 8,
+            "depth": 10,
+            "localCalleeRegisters": 8,
+            "leaf": 0,
+            "availableHighTempRegisters": 2,
+            "firstTemp": 7,
+            "lastTemp": 8,
+            "firstRegister": 27,
+            "lastRegister": 28
+          },
+          {
+            "fn": 34,
+            "sir": 2429,
+            "locals": 8,
+            "depth": 8,
+            "localCalleeRegisters": 8,
+            "leaf": 0,
+            "availableHighTempRegisters": 1,
+            "firstTemp": 7,
+            "lastTemp": 7,
+            "firstRegister": 27,
+            "lastRegister": 27
+          }
+        ],
+        "nativeCensusLogSha256": "8ce2504dfa712e04d549dd8cb5c30f27b280d282f5bc16191f87d63a2a75e940"
+      },
+      {
+        "workload": "statemate",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 0,
+        "functions": [],
+        "nativeCensusLogSha256": "148834a08b7b1a257f6525b3b116c805b4006093b827072e8dfde4a23d931f25"
+      },
+      {
+        "workload": "tarfind",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 0,
+        "functions": [],
+        "nativeCensusLogSha256": "8e83c5b5937fb5e3ffdf7a414ac8e56107ca220a129d8f84152d34362c7fdb18"
+      },
+      {
+        "workload": "ud",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 4,
+        "functions": [
+          {
+            "fn": 4,
+            "sir": 98,
+            "locals": 5,
+            "depth": 9,
+            "localCalleeRegisters": 5,
+            "leaf": 0,
+            "availableHighTempRegisters": 2,
+            "firstTemp": 7,
+            "lastTemp": 8,
+            "firstRegister": 24,
+            "lastRegister": 25
+          },
+          {
+            "fn": 6,
+            "sir": 182,
+            "locals": 5,
+            "depth": 9,
+            "localCalleeRegisters": 5,
+            "leaf": 0,
+            "availableHighTempRegisters": 2,
+            "firstTemp": 7,
+            "lastTemp": 8,
+            "firstRegister": 24,
+            "lastRegister": 25
+          },
+          {
+            "fn": 9,
+            "sir": 296,
+            "locals": 4,
+            "depth": 8,
+            "localCalleeRegisters": 4,
+            "leaf": 0,
+            "availableHighTempRegisters": 1,
+            "firstTemp": 7,
+            "lastTemp": 7,
+            "firstRegister": 23,
+            "lastRegister": 23
+          },
+          {
+            "fn": 11,
+            "sir": 368,
+            "locals": 4,
+            "depth": 8,
+            "localCalleeRegisters": 4,
+            "leaf": 0,
+            "availableHighTempRegisters": 1,
+            "firstTemp": 7,
+            "lastTemp": 7,
+            "firstRegister": 23,
+            "lastRegister": 23
+          }
+        ],
+        "nativeCensusLogSha256": "33d5f01882eb4e46d87a0788b73652c661871703fc9e01fe02fc6e7d096f455d"
+      },
+      {
+        "workload": "wikisort",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 0,
+        "functions": [],
+        "nativeCensusLogSha256": "27cec3d82c5d1b0220f15e8540c850b05f6fc874c32ba1fc9ca60f7c1fa59c19"
+      },
+      {
+        "workload": "xgboost",
+        "functionsWithHighTempsAndUnusedCalleeRegisters": 0,
+        "functions": [],
+        "nativeCensusLogSha256": "e14fdd262e2f0b546f2f522bf53dc9fa70ae0d6522fabbbccfea197419d3b00f"
+      }
+    ]
+  },
+  "evidence": "Actual native census finds high temps and unused callee slots in huffbench/matmult/md5/SHA/slre/UD. Counts are not time shares. New loop optimization keeps original allocation, so census allocation remains applicable; independently observe new admission before measuring.",
+  "proofRequirements": "Disjoint registers/backups/locals/low homes/outgoing area; prologue/epilogue/tailcall/RET2 preservation; deep aliases/joins/calls/indirect/allocatingimports/resources/fuel/fullstate. Refuse unknown invariants; nativefixedpoint/all19 originalsource/result/fuel/bytes; fresh30rotatingtriples everychangedguest1.05+sumSD, thenpermanentgates/integrated3gen/corpus.",
+  "identity": "No connected native DefCID/result cache. Future artifact proof keys require definition/dependency identity, semantics/compiler/optimization/target/runtime ABI; input/state/effect/resource identity additionally needed for execution-result reuse.",
+  "scope": "C-or-better remains all19 original aligned workloads; no result-cache benchmarks or official score claim."
+}

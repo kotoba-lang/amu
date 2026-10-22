@@ -1,0 +1,909 @@
+{
+  "status": "qualified-native-signed-clamp-composition",
+  "decision": "Promote exact signed-extension/clamp composition after quiet timing and integrated proof. No C-level or full-release claim.",
+  "sourceHeadBefore": "e5ed92335fe44d72be11c66507b9c0f16559282d",
+  "sourceCommit": "33303be5a",
+  "hypothesis": {
+    "sourceHead": "e5ed92335fe44d72be11c66507b9c0f16559282d",
+    "hypothesis": "Exact width1..32 signed-extension helper followed by ordered signed i64 clamp decision tree can replace direct call with signed bitfield extension and two CSELs. Retain original nonleaf caller and exact callee leaf fuel transaction. Reject open imports, unknown forms and result pairs. No benchmark/function names.",
+    "promotion": "Native fixedpoint; all19 original source results/exactfuel/exhaustion, fullPico8192state and full targeted supervisor/trap/live-temp proof plus instruction audits; freshquiet30 triples for every changed workload with original C >=5% speedup and gain>summedSD in at least one, no separated regressions. Then native gates and integrated3gen+percasecorpus.",
+    "exception": "One-off new compiler algorithm authoring, not mechanical refactor; no product changes until acceptance"
+  },
+  "generations": [
+    {
+      "generation": 1,
+      "bytes": 806792,
+      "sha256": "a3e1803d92a446862d773a18d10b5023163fd9a0a3146bc7aae1c02aa32d24c7"
+    },
+    {
+      "generation": 2,
+      "bytes": 806792,
+      "sha256": "a3e1803d92a446862d773a18d10b5023163fd9a0a3146bc7aae1c02aa32d24c7"
+    },
+    {
+      "generation": 3,
+      "bytes": 806792,
+      "sha256": "a3e1803d92a446862d773a18d10b5023163fd9a0a3146bc7aae1c02aa32d24c7"
+    },
+    {
+      "generation": 4,
+      "bytes": 806792,
+      "sha256": "a3e1803d92a446862d773a18d10b5023163fd9a0a3146bc7aae1c02aa32d24c7"
+    }
+  ],
+  "timing": {
+    "status": "complete-independent-row-and-pin-audit",
+    "acceptedTriples": 30,
+    "attemptedTriples": 31,
+    "qualifies": true,
+    "savedTimeFraction": 0.05479570313142533,
+    "meanGapNs": 12083.774646107166,
+    "summedSdNs": 11142.773695352014,
+    "eighteenOtherGuestBinariesByteIdentical": true,
+    "summary": {
+      "baseline": {
+        "meanNsPerBody": 220524.12790697673,
+        "sdNs": 6624.547286604703,
+        "relativeSd": 0.030040011265339287,
+        "samples": 30
+      },
+      "candidate": {
+        "meanNsPerBody": 208440.35326086957,
+        "sdNs": 4518.22640874731,
+        "relativeSd": 0.02167635171435643,
+        "samples": 30
+      },
+      "C": {
+        "meanNsPerBody": 10799.450587905934,
+        "sdNs": 105.10899669202763,
+        "relativeSd": 0.009732809631050757,
+        "samples": 30
+      },
+      "stable": true,
+      "baselineOverCandidate": 1.0579723381632535,
+      "candidateOverC": 19.301014580713698,
+      "candidateImprovesBaseline": true
+    },
+    "officialEmbenchScore": false,
+    "COrBetter": false
+  },
+  "codeChanges": [
+    {
+      "workload": "aha-mont64",
+      "changed": false,
+      "baselineSha256": "b949dedc4fd706fef0c93f04930df47a868fc0fce065aa0b2a23b2a953b0dec4",
+      "candidateSha256": "b949dedc4fd706fef0c93f04930df47a868fc0fce065aa0b2a23b2a953b0dec4",
+      "baselineBytes": 3928,
+      "candidateBytes": 3928
+    },
+    {
+      "workload": "crc32",
+      "changed": false,
+      "baselineSha256": "da4cb2c12e74ab62097dc95f147497c5d2e0c8dc0cd4aeea234df52fb7bdedcd",
+      "candidateSha256": "da4cb2c12e74ab62097dc95f147497c5d2e0c8dc0cd4aeea234df52fb7bdedcd",
+      "baselineBytes": 3680,
+      "candidateBytes": 3680
+    },
+    {
+      "workload": "depthconv",
+      "changed": false,
+      "baselineSha256": "a9ca92a09f1158c333e4006dd58ba6f40fa7fc5ed7b7c9397e7bb30d4a5d67db",
+      "candidateSha256": "a9ca92a09f1158c333e4006dd58ba6f40fa7fc5ed7b7c9397e7bb30d4a5d67db",
+      "baselineBytes": 18752,
+      "candidateBytes": 18752
+    },
+    {
+      "workload": "edn",
+      "changed": false,
+      "baselineSha256": "be34a144282e1ec67b9cf1ecf6128e406e338bb54845b10aff0572197b0ada63",
+      "candidateSha256": "be34a144282e1ec67b9cf1ecf6128e406e338bb54845b10aff0572197b0ada63",
+      "baselineBytes": 14392,
+      "candidateBytes": 14392
+    },
+    {
+      "workload": "huffbench",
+      "changed": false,
+      "baselineSha256": "76919fa319c61d50e806ee931a198c359f2d07fb1f916308a70f0cc00f643b6b",
+      "candidateSha256": "76919fa319c61d50e806ee931a198c359f2d07fb1f916308a70f0cc00f643b6b",
+      "baselineBytes": 13104,
+      "candidateBytes": 13104
+    },
+    {
+      "workload": "matmult-int",
+      "changed": false,
+      "baselineSha256": "636b26b24a40e1659f3460363c66c864bb8fcd3e2c3541f6b08fa3d00190d532",
+      "candidateSha256": "636b26b24a40e1659f3460363c66c864bb8fcd3e2c3541f6b08fa3d00190d532",
+      "baselineBytes": 10296,
+      "candidateBytes": 10296
+    },
+    {
+      "workload": "md5sum",
+      "changed": false,
+      "baselineSha256": "36b86c91516478202c871b94f51dfbcbc7db78b48edc5f4705e74b5e5e210f34",
+      "candidateSha256": "36b86c91516478202c871b94f51dfbcbc7db78b48edc5f4705e74b5e5e210f34",
+      "baselineBytes": 6572,
+      "candidateBytes": 6572
+    },
+    {
+      "workload": "nettle-aes",
+      "changed": false,
+      "baselineSha256": "a890c81ce476a18b945e26048bb56e97ab243a945b903d9c08b188d0562e8e61",
+      "candidateSha256": "a890c81ce476a18b945e26048bb56e97ab243a945b903d9c08b188d0562e8e61",
+      "baselineBytes": 38960,
+      "candidateBytes": 38960
+    },
+    {
+      "workload": "nettle-sha256",
+      "changed": false,
+      "baselineSha256": "352b96f5775d21694b577fdfd6d1324ff836ea5dd39f79cfa134d488a9deb0ba",
+      "candidateSha256": "352b96f5775d21694b577fdfd6d1324ff836ea5dd39f79cfa134d488a9deb0ba",
+      "baselineBytes": 9676,
+      "candidateBytes": 9676
+    },
+    {
+      "workload": "nsichneu",
+      "changed": false,
+      "baselineSha256": "d6faf31e14d9810d9e35150f5343c7427c592b57f7e43d1d5e159800640603f6",
+      "candidateSha256": "d6faf31e14d9810d9e35150f5343c7427c592b57f7e43d1d5e159800640603f6",
+      "baselineBytes": 37548,
+      "candidateBytes": 37548
+    },
+    {
+      "workload": "picojpeg",
+      "changed": true,
+      "baselineSha256": "0582570b92a2330ed26ceb0a3e5d005b09f014a3bb0ef802c8b3b278b1bf89c0",
+      "candidateSha256": "2885209cd9288a366b6652e59ee7c1ce966592a6f31ebe4b36dfc4985cd27706",
+      "baselineBytes": 47660,
+      "candidateBytes": 47880
+    },
+    {
+      "workload": "qrduino",
+      "changed": false,
+      "baselineSha256": "b553e89bfd533101c8c9a341e88d5394841a1f235a2582f5c3dcf0b673fa665e",
+      "candidateSha256": "b553e89bfd533101c8c9a341e88d5394841a1f235a2582f5c3dcf0b673fa665e",
+      "baselineBytes": 29328,
+      "candidateBytes": 29328
+    },
+    {
+      "workload": "sglib-combined",
+      "changed": false,
+      "baselineSha256": "e50fcad191e1531c62da8db01b4989adc6517ed9b8f153cfed061c3b5d9f3ed8",
+      "candidateSha256": "e50fcad191e1531c62da8db01b4989adc6517ed9b8f153cfed061c3b5d9f3ed8",
+      "baselineBytes": 23880,
+      "candidateBytes": 23880
+    },
+    {
+      "workload": "slre",
+      "changed": false,
+      "baselineSha256": "bb5c2582a21cd2e33fcb179911fe45c5b5464d6654704edbb597a6d1f57d0acb",
+      "candidateSha256": "bb5c2582a21cd2e33fcb179911fe45c5b5464d6654704edbb597a6d1f57d0acb",
+      "baselineBytes": 14983,
+      "candidateBytes": 14983
+    },
+    {
+      "workload": "statemate",
+      "changed": false,
+      "baselineSha256": "56efb4bb01445d174546cf07a28f21eff4c74012c7dd46e79e5c4d65f98640b4",
+      "candidateSha256": "56efb4bb01445d174546cf07a28f21eff4c74012c7dd46e79e5c4d65f98640b4",
+      "baselineBytes": 105516,
+      "candidateBytes": 105516
+    },
+    {
+      "workload": "tarfind",
+      "changed": false,
+      "baselineSha256": "adb97dc092565c46ef9471b3ab9ad4ca0bd2b4f818018b4ab14bc59a5f01ced4",
+      "candidateSha256": "adb97dc092565c46ef9471b3ab9ad4ca0bd2b4f818018b4ab14bc59a5f01ced4",
+      "baselineBytes": 3020,
+      "candidateBytes": 3020
+    },
+    {
+      "workload": "ud",
+      "changed": false,
+      "baselineSha256": "fbffdd07eb6cf99d8d6bb8b85fbe98a32884245e36cf6fda635e6a4d6195c4ab",
+      "candidateSha256": "fbffdd07eb6cf99d8d6bb8b85fbe98a32884245e36cf6fda635e6a4d6195c4ab",
+      "baselineBytes": 4268,
+      "candidateBytes": 4268
+    },
+    {
+      "workload": "wikisort",
+      "changed": false,
+      "baselineSha256": "781103c9875ad0de78aa00a93dc0be7b5ad5dc67395b774a61cf55e6a1e89981",
+      "candidateSha256": "781103c9875ad0de78aa00a93dc0be7b5ad5dc67395b774a61cf55e6a1e89981",
+      "baselineBytes": 19388,
+      "candidateBytes": 19388
+    },
+    {
+      "workload": "xgboost",
+      "changed": false,
+      "baselineSha256": "5cb72cd1cdb4bb021bf395b99b2e22812b64002340bad6b8c44c1d5024ee50d0",
+      "candidateSha256": "5cb72cd1cdb4bb021bf395b99b2e22812b64002340bad6b8c44c1d5024ee50d0",
+      "baselineBytes": 58260,
+      "candidateBytes": 58260
+    }
+  ],
+  "nativeProof": {
+    "status": "complete-native-fixture-and-exact-supervisor-parity",
+    "fixtures": 287,
+    "canonicalRuns": 3625,
+    "realTestLayoutIdentical": true,
+    "supervisorComparisons": 8800,
+    "instructionAudit": {
+      "cl_call0_0": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call0_3": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call0_6": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call0_7": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call0_8": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call1_0": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call1_3": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call1_6": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call1_7": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call1_8": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call2_0": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call2_3": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call2_6": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call2_7": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call2_8": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call3_0": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call3_3": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call3_6": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call3_7": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call3_8": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call4_0": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call4_3": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call4_6": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call4_7": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call4_8": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call5_0": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call5_3": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call5_6": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call5_7": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call5_8": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call6_0": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call6_3": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call6_6": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call6_7": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call6_8": {
+        "admitted": true,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 0,
+          "conditionalSelects": 2
+        }
+      },
+      "cl_call7_0": {
+        "admitted": false,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        }
+      },
+      "cl_call7_3": {
+        "admitted": false,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        }
+      },
+      "cl_call7_6": {
+        "admitted": false,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        }
+      },
+      "cl_call7_7": {
+        "admitted": false,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        }
+      },
+      "cl_call7_8": {
+        "admitted": false,
+        "baseline": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        },
+        "candidate": {
+          "realClampCalls": 1,
+          "conditionalSelects": 0
+        }
+      }
+    }
+  },
+  "openImportProof": {
+    "status": "complete-clamp-import-substitution-refusal",
+    "executions": 15,
+    "realCalls": {
+      "cl_call2_0": {
+        "baseline-open": 1,
+        "candidate-open": 1,
+        "candidate-closed": 0
+      },
+      "cl_call2_3": {
+        "baseline-open": 1,
+        "candidate-open": 1,
+        "candidate-closed": 0
+      },
+      "cl_call2_6": {
+        "baseline-open": 1,
+        "candidate-open": 1,
+        "candidate-closed": 0
+      },
+      "cl_call2_7": {
+        "baseline-open": 1,
+        "candidate-open": 1,
+        "candidate-closed": 0
+      },
+      "cl_call2_8": {
+        "baseline-open": 1,
+        "candidate-open": 1,
+        "candidate-closed": 0
+      }
+    }
+  },
+  "workspace": {
+    "status": "complete-exact-8192-cell-parity",
+    "bodies": [
+      1,
+      2
+    ],
+    "cellsPerBody": 4096,
+    "stdoutSha256": "76f80ab5a80a2de8d2f1e9d0a01340169d9f8a3a606e6fb44e7c1a1a8218719a",
+    "observerSourceSha256": "26fbe3078519121c43292a5624a1f44d7697a8f6449b9cf9554d19591f1303a8",
+    "timedSourceUnchanged": true
+  },
+  "integration": {
+    "status": "complete-3-generations-19-ports-and-per-case-corpus-parity",
+    "sourceCommit": "33303be5a",
+    "imageGenerations": {
+      "amu": {
+        "1": "5b18cc4f3cdf52e6ae3b3e2dd5e13f4033f007b5d725614a987f7bef9cf3bebe",
+        "2": "5b18cc4f3cdf52e6ae3b3e2dd5e13f4033f007b5d725614a987f7bef9cf3bebe",
+        "3": "5b18cc4f3cdf52e6ae3b3e2dd5e13f4033f007b5d725614a987f7bef9cf3bebe"
+      },
+      "amu.bin": {
+        "1": "41ebd338a0e51403e5b9f6aa324fc91adeda0dc3a8b147058e2eb77e8fe12ffa",
+        "2": "41ebd338a0e51403e5b9f6aa324fc91adeda0dc3a8b147058e2eb77e8fe12ffa",
+        "3": "41ebd338a0e51403e5b9f6aa324fc91adeda0dc3a8b147058e2eb77e8fe12ffa"
+      },
+      "amu.kseed": {
+        "1": "568c2a4dc05bb02411378f5f8c20225da2f7eb332f3fa3006b9fda154cccacca",
+        "2": "568c2a4dc05bb02411378f5f8c20225da2f7eb332f3fa3006b9fda154cccacca",
+        "3": "568c2a4dc05bb02411378f5f8c20225da2f7eb332f3fa3006b9fda154cccacca"
+      }
+    },
+    "imageBytes": 6076152,
+    "objectsPerGeneration": 162,
+    "frontendObjects": 117,
+    "canonicalPorts": {
+      "status": "complete-19-integrated-native-machine-parity",
+      "entries": [
+        {
+          "workload": "aha-mont64",
+          "sourceSha256": "05ce65b5791786c347199162028c098d1c9a51cfb890241bac10c08c983fbf7c",
+          "nativeSha256": "b949dedc4fd706fef0c93f04930df47a868fc0fce065aa0b2a23b2a953b0dec4",
+          "offset": 3408
+        },
+        {
+          "workload": "crc32",
+          "sourceSha256": "d3ef82a6a6f973002aef29ac6a443d46437fc60d9e1151808220a4635a3d01c3",
+          "nativeSha256": "da4cb2c12e74ab62097dc95f147497c5d2e0c8dc0cd4aeea234df52fb7bdedcd",
+          "offset": 1200
+        },
+        {
+          "workload": "depthconv",
+          "sourceSha256": "886b9f612857da9f6dab52782e44b60d18e4febcd79cc1dcc9b4af4bb8a894c1",
+          "nativeSha256": "a9ca92a09f1158c333e4006dd58ba6f40fa7fc5ed7b7c9397e7bb30d4a5d67db",
+          "offset": 1352
+        },
+        {
+          "workload": "edn",
+          "sourceSha256": "f34ec1384dd2b9b05fd0498d581e36421e379726eddb5a613427241e3c3a8e20",
+          "nativeSha256": "be34a144282e1ec67b9cf1ecf6128e406e338bb54845b10aff0572197b0ada63",
+          "offset": 8588
+        },
+        {
+          "workload": "huffbench",
+          "sourceSha256": "33099ec837abd05a63008d6330af670b906401c80848a8613673b5ae00269dec",
+          "nativeSha256": "76919fa319c61d50e806ee931a198c359f2d07fb1f916308a70f0cc00f643b6b",
+          "offset": 8732
+        },
+        {
+          "workload": "matmult-int",
+          "sourceSha256": "84717e4e930a593acbc0b4389d791e51ed53683a982deb19fe85864178152e34",
+          "nativeSha256": "636b26b24a40e1659f3460363c66c864bb8fcd3e2c3541f6b08fa3d00190d532",
+          "offset": 9776
+        },
+        {
+          "workload": "md5sum",
+          "sourceSha256": "154816149d8c87b18ff665c6ad57161ed45e65ed852c0212ac30ca47f80e1dde",
+          "nativeSha256": "36b86c91516478202c871b94f51dfbcbc7db78b48edc5f4705e74b5e5e210f34",
+          "offset": 5564
+        },
+        {
+          "workload": "nettle-aes",
+          "sourceSha256": "5c224278b7abb7db9e70a118204f4772bb108483e1369828aabb12cc6f2408c4",
+          "nativeSha256": "a890c81ce476a18b945e26048bb56e97ab243a945b903d9c08b188d0562e8e61",
+          "offset": 11496
+        },
+        {
+          "workload": "nettle-sha256",
+          "sourceSha256": "30b76a306b744fbdd9ab0018df2e1f49e9f01b74206dbbb77e4700b0cde8526e",
+          "nativeSha256": "352b96f5775d21694b577fdfd6d1324ff836ea5dd39f79cfa134d488a9deb0ba",
+          "offset": 8932
+        },
+        {
+          "workload": "nsichneu",
+          "sourceSha256": "24eb0464fd75b4d3ff0fde5bf044611a7cfebd2054222194fc54642f164cb9e7",
+          "nativeSha256": "d6faf31e14d9810d9e35150f5343c7427c592b57f7e43d1d5e159800640603f6",
+          "offset": 36440
+        },
+        {
+          "workload": "picojpeg",
+          "sourceSha256": "f570d637a074437c8bf80dccd646efae834962a312f0cea72638f5376350b8cd",
+          "nativeSha256": "2885209cd9288a366b6652e59ee7c1ce966592a6f31ebe4b36dfc4985cd27706",
+          "offset": 47140
+        },
+        {
+          "workload": "qrduino",
+          "sourceSha256": "5c5f1eb44dee7195bfcee2101010334edde40b00253754bb23e2dd1ecf35a657",
+          "nativeSha256": "b553e89bfd533101c8c9a341e88d5394841a1f235a2582f5c3dcf0b673fa665e",
+          "offset": 28124
+        },
+        {
+          "workload": "sglib-combined",
+          "sourceSha256": "b0755e54485eb3c8365b2b1f389e21807b5e52b1b030a95194f63aa4a07e19e0",
+          "nativeSha256": "e50fcad191e1531c62da8db01b4989adc6517ed9b8f153cfed061c3b5d9f3ed8",
+          "offset": 22996
+        },
+        {
+          "workload": "slre",
+          "sourceSha256": "84cdac4d3fec6a086f3aa186c1ebb7ee1c4fd274a1c09fa229b7e6b079dfbcea",
+          "nativeSha256": "bb5c2582a21cd2e33fcb179911fe45c5b5464d6654704edbb597a6d1f57d0acb",
+          "offset": 14340
+        },
+        {
+          "workload": "statemate",
+          "sourceSha256": "977d840bc3beee78ff8fcc43fd5c34bdb786b65da494c5926a4745515cc0bf44",
+          "nativeSha256": "56efb4bb01445d174546cf07a28f21eff4c74012c7dd46e79e5c4d65f98640b4",
+          "offset": 103348
+        },
+        {
+          "workload": "tarfind",
+          "sourceSha256": "fd6157fb8fdc82a056baf5ed94cc47cac66bf0a77f86d7eb6983370a18407653",
+          "nativeSha256": "adb97dc092565c46ef9471b3ab9ad4ca0bd2b4f818018b4ab14bc59a5f01ced4",
+          "offset": 2196
+        },
+        {
+          "workload": "ud",
+          "sourceSha256": "fc511e2fec1a165a7eead3188deb823f957aefa29d47baac3f5d97fcb0caf41b",
+          "nativeSha256": "fbffdd07eb6cf99d8d6bb8b85fbe98a32884245e36cf6fda635e6a4d6195c4ab",
+          "offset": 3748
+        },
+        {
+          "workload": "wikisort",
+          "sourceSha256": "89d70084e21651c328dd312538603e4eb9e67757d5f94b9253ebeb3f98b9890c",
+          "nativeSha256": "781103c9875ad0de78aa00a93dc0be7b5ad5dc67395b774a61cf55e6a1e89981",
+          "offset": 18568
+        },
+        {
+          "workload": "xgboost",
+          "sourceSha256": "abdc982d1feebe0260bf5d8c5d326d48387fa2ece229208b308be5fa7ba4bfbe",
+          "nativeSha256": "5cb72cd1cdb4bb021bf395b99b2e22812b64002340bad6b8c44c1d5024ee50d0",
+          "offset": 4340
+        }
+      ]
+    },
+    "perCaseClassificationComparison": {
+      "baseline": "previous qualified context-preserving-call product",
+      "rows": {
+        "check.tsv": 391,
+        "compile.tsv": 391,
+        "exports.tsv": 891
+      },
+      "everyOutcomeUnchanged": true
+    },
+    "checkCounts": {
+      "sameAccept": 358,
+      "sameRefuse": 33
+    },
+    "compileCounts": {
+      "behaviorSame": 300,
+      "amuOnlyAccept": 27,
+      "amuOnlyRefuse": 12,
+      "differingAcceptedBehavior": 3,
+      "sharedRefuse": 49
+    },
+    "exportCounts": {
+      "same": 875,
+      "existingDiff": 15,
+      "timeout": 0,
+      "missing": 1
+    },
+    "inputSnapshotSha256": "276fdea7e1ed44ef211e15c4379bd5d5398a1667e7b7e37be942af4e6a666df4",
+    "externalInputSnapshotLocalOnly": true,
+    "sourceSnapshotsCompared": 1,
+    "officialEmbenchScore": false,
+    "COrBetter": false
+  },
+  "gates": {
+    "rung": "r6m",
+    "subset": [
+      "ERR",
+      "G1",
+      "G2",
+      "G3",
+      "G4",
+      "G5"
+    ],
+    "pass": 6,
+    "fullReleaseGateClaim": false
+  },
+  "bootstrapProductInventoryUnchanged": true,
+  "prototypeSha256": "68e6f8f61bff4f9b093d9110b0c24de1479d7d6a3f7e899506ece2ec91b02aec",
+  "unitySha256": "a89543def70edd2971346658cc2dd627a1e43b05bb4b125e609c9ec636bc7c60",
+  "productChanged": true,
+  "launcherSwitched": false,
+  "officialEmbenchScore": false,
+  "COrBetterEvidence": false
+}

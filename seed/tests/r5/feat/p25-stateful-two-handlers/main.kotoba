@@ -1,0 +1,11 @@
+(ns p25.main (:export [main]))
+(defhandler plain [:state :i64]
+  (get [s] (resume s s))
+  (put [s v] (resume v v)))
+(defhandler doubling [:state :i64]
+  (get [s] (resume s s))
+  (put [s v] (resume v (* 2 v))))
+(defn- inc! [] :i64 (perform :state/put (+ 1 (perform :state/get))))
+(defn main [] :i64
+  (+ (handle (do (inc!) (inc!) (perform :state/get)) (with plain 1))
+     (* 100 (handle (do (inc!) (inc!) (perform :state/get)) (with doubling 1)))))

@@ -1,0 +1,137 @@
+{
+  "status": "registered-not-implemented-or-measured",
+  "hypothesis": "Inline high-temp vector-at in retained original nonleaf frame: preserve original gn-save0t homes, load vector/index into free x0/x1, restore x7, emit original handle/index checks and load, then original gn-take. Keep gn-inl/prescan unchanged so caller register assignment/frame/fuel publication remain original. No loop cache and no handle/descriptor hoisting.",
+  "actualCensus": {
+    "status": "complete-actual-original19-SIR-high-temp-vector-read-census",
+    "entries": [
+      {
+        "workload": "aha-mont64",
+        "highTempVectorReadSites": [],
+        "count": 0
+      },
+      {
+        "workload": "crc32",
+        "highTempVectorReadSites": [],
+        "count": 0
+      },
+      {
+        "workload": "depthconv",
+        "highTempVectorReadSites": [],
+        "count": 0
+      },
+      {
+        "workload": "edn",
+        "highTempVectorReadSites": [],
+        "count": 0
+      },
+      {
+        "workload": "huffbench",
+        "highTempVectorReadSites": [],
+        "count": 0
+      },
+      {
+        "workload": "matmult-int",
+        "highTempVectorReadSites": [
+          {
+            "sir": 3306,
+            "temp": 6
+          }
+        ],
+        "count": 1
+      },
+      {
+        "workload": "md5sum",
+        "highTempVectorReadSites": [],
+        "count": 0
+      },
+      {
+        "workload": "nettle-aes",
+        "highTempVectorReadSites": [],
+        "count": 0
+      },
+      {
+        "workload": "nettle-sha256",
+        "highTempVectorReadSites": [
+          {
+            "sir": 747,
+            "temp": 6
+          },
+          {
+            "sir": 750,
+            "temp": 7
+          },
+          {
+            "sir": 753,
+            "temp": 8
+          },
+          {
+            "sir": 756,
+            "temp": 9
+          },
+          {
+            "sir": 759,
+            "temp": 10
+          }
+        ],
+        "count": 5
+      },
+      {
+        "workload": "nsichneu",
+        "highTempVectorReadSites": [],
+        "count": 0
+      },
+      {
+        "workload": "picojpeg",
+        "highTempVectorReadSites": [],
+        "count": 0
+      },
+      {
+        "workload": "qrduino",
+        "highTempVectorReadSites": [],
+        "count": 0
+      },
+      {
+        "workload": "sglib-combined",
+        "highTempVectorReadSites": [],
+        "count": 0
+      },
+      {
+        "workload": "slre",
+        "highTempVectorReadSites": [],
+        "count": 0
+      },
+      {
+        "workload": "statemate",
+        "highTempVectorReadSites": [],
+        "count": 0
+      },
+      {
+        "workload": "tarfind",
+        "highTempVectorReadSites": [],
+        "count": 0
+      },
+      {
+        "workload": "ud",
+        "highTempVectorReadSites": [],
+        "count": 0
+      },
+      {
+        "workload": "wikisort",
+        "highTempVectorReadSites": [],
+        "count": 0
+      },
+      {
+        "workload": "xgboost",
+        "highTempVectorReadSites": [],
+        "count": 0
+      }
+    ],
+    "total": 6,
+    "countsAreNotTimeShares": true,
+    "currentCodeReason": "gn-inl permits vector-at only t<=5; t>=6 executes original C helper even when function already nonleaf."
+  },
+  "evidence": "Matmult inner loop has an ordinary read at t5 and second read at t6. Originalgn-inl accepts only t<=5; t6 executes real C helper, invalidates loop cache each iteration. SHA256 has5 additional high-temp C-read sites. Staticcounts are not time shares.",
+  "proofRequirements": "Actualnativeall19 admission/quietbytes, signed/rawinvalidhandles/indices, highdepth/livehomes/locals/coalescedresults, private/public fuel and SIGILL/resource parity, actualallocatingimports, fixedpoint; freshquiet30triples everychangedguest original1.05+sumSD, thenpermanentregression/fullgates/integrated3gen/per-casecorpus beforepromotion.",
+  "scope": "C-or-better acrossall19 canonical originalalignedworkloads; no official-score or100percent claim.",
+  "ABI": "No x18, no ABI mutation, x0/x1 only if originalnonleaf; refuse if scratch ownership not proved."
+}

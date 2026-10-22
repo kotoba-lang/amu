@@ -1,0 +1,33 @@
+;; merge-test guest (agent KIR5): form_count -- the memory census of the Form representation (kotoba.form/edn-form over
+;; every line, then a node count), the wall guest scripts/selfhost-wall/guests/form_count.cljk with a `main`. Input (file
+;; named by argument 0): one EDN form per line (the desugar pass corpus, build/hc/forms.txt = 1x, forms8.txt = 8x). Output:
+;; one line per input line, "<nodes>" (so a DIFF names the line), then "nodes <total>".
+(ns probe.form-count-merge
+  {:kotoba/export [main]}
+  (:require [kotoba.form :as form])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                       [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :form/rd [:record :form/rd [[:form [:ref :form/r]] [:pos :i64]]]}))
+
+(defn- fc-nodes [f [:ref :form/r]] :i64
+  (let [n (form/count-of f)]
+    (loop [i 0 acc 1]
+      (if (>= i n) acc (recur (inc i) (+ acc (fc-nodes (form/nth-of f i))))))))
+
+(defn- fc-lines [text :string i :i64 n :i64 acc :i64] :i64
+  (if (>= i n)
+    acc
+    (let [j (string-find-byte text 10 i)
+          end (if (< j 0) n j)]
+      (if (= end i)
+        (fc-lines text (+ end 1) n acc)
+        (let [k (fc-nodes (form/edn-form (string-substring text i end)))
+              w (typed-cap-call :io/write :string :string (string-concat (string-from-i64 k) "\n"))]
+          (fc-lines text (+ end 1) n (+ acc k)))))))
+
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        text (typed-cap-call :fs/app-data :string :string path)
+        total (fc-lines text 0 (string-byte-length text) 0)
+        w (typed-cap-call :io/write :string :string (string-concat "nodes " (string-concat (string-from-i64 total) "\n")))]
+    0))

@@ -1,0 +1,6 @@
+(ns embench.qrduino (:export [run test-qrduino]))
+(defn- xtime [x :i64] :i64 (bit-and (bit-xor (* x 2) (if (> x 127) 285 0)) 255))
+(defn- gf-mul [a :i64 b :i64] :i64 (loop [x a y b result 0] (if (= y 0) result (recur (xtime x) (u64-shift-right y 1) (if (= (bit-and y 1) 1) (bit-xor result x) result)))))
+(defn- message [i :i64] :i64 (vector-at [69 109 98 101 110 99 104 32 73 111 84 32 98 101 110 99 104] i))
+(defn run [token :i64] :i64 (if (= token 1) (loop [i 0 parity 0] (if (= i 17) parity (recur (+ i 1) (bit-xor (gf-mul parity 29) (message i))))) 0))
+(defn test-qrduino [] :i64 (if (= (run 1) 241) 1 0))

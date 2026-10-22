@@ -1,0 +1,6 @@
+;; R4 feat: a higher-order defn applying a fn value n times in a loop
+(ns seed.r4 (:export [test]))
+(defn iterate-n [f [:fn [[:i64] :i64]] x :i64 n :i64] :i64
+  (loop [i 0 v x] (if (= i n) v (recur (+ i 1) (f v)))))
+(defn test [] :i64 (+ (iterate-n (fn [v] (* v 2)) 1 20) (iterate-n (fn-ref inc1) 0 1000)))
+(defn inc1 [x :i64] :i64 (+ x 1))

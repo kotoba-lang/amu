@@ -1,0 +1,9 @@
+;; R6F: typed-set-nth over a [:set :keyword] answers the items in printed-text order (the reference's :order :keyword), not
+;; the seed's hash order: #{:zeta :alpha :mid :alpha/b} -> :alpha :alpha/b :mid :zeta.
+;; want: 1234
+(ns r6f.p01)
+(defn- code [k :keyword] :i64 (cond (= k :alpha) 1 (= k :alpha/b) 2 (= k :mid) 3 (= k :zeta) 4 :else 9))
+(defn main [] :i64
+  (let [s #{:zeta :alpha :mid :alpha/b}]
+    (+ (* 1000 (code (typed-set-nth [:set :keyword] s 0))) (* 100 (code (typed-set-nth [:set :keyword] s 1)))
+       (* 10 (code (typed-set-nth [:set :keyword] s 2))) (code (typed-set-nth [:set :keyword] s 3)))))

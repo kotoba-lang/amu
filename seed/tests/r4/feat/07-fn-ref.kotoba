@@ -1,0 +1,6 @@
+;; R4 feat: fn-ref of a defn, invoked and passed
+(ns seed.r4 (:export [test]))
+(defn add [a :i64 b :i64] :i64 (+ a b))
+(defn sub [a :i64 b :i64] :i64 (- a b))
+(defn run2 [f [:fn [[:i64 :i64] :i64]] a :i64 b :i64] :i64 (f a b))
+(defn test [] :i64 (+ (invoke (fn-ref add) 3 8) (* 100 (run2 (fn-ref sub) 9 2))))

@@ -1,0 +1,52 @@
+{
+  "status": "PASS executed finite source-bound lifetime model; actual native controls remain future work",
+  "rows": [
+    {
+      "control": "scope release then new valid reusedpositivehandle changes length3to1",
+      "handle": 1,
+      "original": {
+        "trap": true,
+        "reason": "index"
+      },
+      "unsafeKeyOnly": {
+        "result": 0,
+        "trap": false
+      },
+      "epochGuard": {
+        "trap": true,
+        "reason": "cached index"
+      },
+      "mutantDetected": true
+    },
+    {
+      "control": "caller handle predates balanced callee scope",
+      "safeWithoutResetKeyInvalidation": true,
+      "requiresProof": "callee enter/leave structural balance cannot leave caller scope"
+    },
+    {
+      "control": "contents-only write requires fresh element load",
+      "before": 0,
+      "after": 99,
+      "unsafeCachedValue": 0,
+      "mutantDetected": true
+    },
+    {
+      "control": "released handle without reallocation must revalidate",
+      "original": {
+        "trap": true,
+        "reason": "invalid handle"
+      },
+      "unsafeKeyOnly": {
+        "result": 0,
+        "trap": false
+      },
+      "epochGuard": {
+        "trap": true,
+        "reason": "invalid handle"
+      },
+      "mutantDetected": true
+    }
+  ],
+  "scope": "Host transition subset reviewed at intern_vector/checked_vector_alloc/assoc_in_place/arena_enter/arena_leave; no native execution or complete runtime proof.",
+  "legalLifetimeSourceScenario": "(defn run [] :i64 (let [x (arena-scope (let [v (vector-alloc 3)] (vector-at v 0))) v (vector-alloc 1)] (vector-at v 2))) ; inner handle does not escape; outside fresh valid handle reuses numericID. Source scenario not compiled by this read-only task."
+}

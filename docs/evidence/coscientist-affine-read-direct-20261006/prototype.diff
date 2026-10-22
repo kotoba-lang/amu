@@ -1,0 +1,50 @@
+diff --git a/private/tmp/amu-affine-read-direct-20261006/baseline-41-a64gen.kotoba b/private/tmp/amu-affine-read-direct-20261006/41-a64gen-prototype.kotoba
+index 2b745db90..45d82d275 100644
+--- a/private/tmp/amu-affine-read-direct-20261006/baseline-41-a64gen.kotoba
++++ b/private/tmp/amu-affine-read-direct-20261006/41-a64gen-prototype.kotoba
+@@ -1395,6 +1395,36 @@
+         (gn-emit (enc-brk 0))
+         (gn-emit (enc-str 16 7 CTX-FUEL)))))
+ 
++;; Exact affine index consumed by immediately adjacent checked vector read.
++;; Original nonleaf frame reserves x0/x1 scratch; every handle/index check stays.
++;; Dead intermediates only; final result uses original alias/coalescing placement.
++(defn- gn-affine-read? [M :vector-i64 i :i64 t :i64] :bool
++ (let [a (gn-sir M i IF-B) b (gn-sir M (+ i 3) IF-B)
++       factor (gn-sir M (inc i) IF-B) prefix (gn-dv M (dec t))]
++  (and (= (gn-g M gn-f-leaf) 0) (>= t 7) (< (inc t) (gn-g M gn-f-dp)) (< (+ i 6) (vector-at M MM-SIR-N))
++       (> a 0) (<= a (gn-g M gn-f-ns)) (> b 0) (<= b (gn-g M gn-f-ns))
++       (>= (gn-sreg M a) 0) (>= (gn-sreg M b) 0)
++       (gn-isk M (dec t) gn-k-const) (>= prefix -4095) (<= prefix 4095)
++       (not= factor 0) (not= factor 1) (not= factor -1)
++       (= (gn-sir M i IF-C) 0)
++       (= (gn-op M (inc i)) OP-CONST) (= (gn-sir M (inc i) IF-A) (inc t)) (= (gn-sir M (inc i) IF-C) 0)
++       (= (gn-op M (+ i 2)) OP-BIN) (= (gn-sir M (+ i 2) IF-A) BOP-MUL) (= (gn-sir M (+ i 2) IF-B) t) (= (gn-sir M (+ i 2) IF-C) 0)
++       (= (gn-op M (+ i 3)) OP-LGET) (= (gn-sir M (+ i 3) IF-A) (inc t)) (= (gn-sir M (+ i 3) IF-C) 0)
++       (= (gn-op M (+ i 4)) OP-BIN) (= (gn-sir M (+ i 4) IF-A) BOP-ADD) (= (gn-sir M (+ i 4) IF-B) t) (= (gn-sir M (+ i 4) IF-C) 0)
++       (= (gn-op M (+ i 5)) OP-BIN) (= (gn-sir M (+ i 5) IF-A) BOP-ADD) (= (gn-sir M (+ i 5) IF-B) (dec t)) (= (gn-sir M (+ i 5) IF-C) 0)
++       (= (gn-op M (+ i 6)) OP-RT) (= (gn-sir M (+ i 6) IF-A) RT-VECTOR-AT)
++       (= (gn-sir M (+ i 6) IF-B) (- t 2)) (= (gn-sir M (+ i 6) IF-C) 2)
++       (gn-kills M (+ i 7) (dec t) 16) (gn-high-loop M i) (gn-kills M (+ i 6) t 16) (gn-kills M (+ i 6) (inc t) 16))))
++(defn- gn-affine-read [M :vector-i64 i :i64 t :i64] :vector-i64
++ (let [out (- t 2) s (gn-co M (+ i 6) out) d (gn-dreg M out s)
++       a (gn-sreg M (gn-sir M i IF-B)) b (gn-sreg M (gn-sir M (+ i 3) IF-B))
++       factor (gn-sir M (inc i) IF-B) prefix (gn-dv M (dec t))
++       M1 (-> M (gn-protect out s) (gn-into 0 out) (gn-mov-imm 16 factor)
++              (gn-emit (enc-madd 1 a 16 b)) (gn-bin-imm BOP-ADD 1 1 prefix)
++              (gn-ctx) (gn-hchk 0 312 320) (gn-vidx 1)
++              (gn-emit (gn-e-ldrr d 16 17 1)) (gn-fin out s d))]
++  (gn-gs M1 gn-f-skip (+ 6 (gn-g M1 gn-f-skip)))))
++
+ ;; one SIR instruction (unreachable ones are dropped until the next LABEL / FN / END)
+ (defn- gn-ins [M :vector-i64 i :i64 op :i64] :vector-i64
+   (let [a (gn-sir M i IF-A)
+@@ -1405,7 +1435,7 @@
+       M
+       (case op
+         OP-CONST (gn-def M a gn-k-const b)
+-        OP-LGET (gn-def M a gn-k-local b)
++        OP-LGET (if (gn-affine-read? M i a) (gn-affine-read M i a) (gn-def M a gn-k-local b))
+         OP-LSET (gn-op-lset M a b)
+         OP-BIN (gn-op-bin M i a b)
+         OP-CMP (gn-op-cmp M i a b)

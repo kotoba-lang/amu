@@ -1,0 +1,18 @@
+;; R6F: the string kit heads and mod. fold-ascii "AbC-Z" = "abc-z" (5 bytes, code point 0 = 97), find-blank "ab c" 0 = 2,
+;; skip-blank "  \tx" 0 = 3, index-of-from "abcabc" "c" 3 = 5, compare-lines ("b\nz" 0) vs ("b\ny" 0) = 0 and
+;; ("a" 0) vs ("b" 0) = -1, append-range "x" "hello" 1 3 = "xel" (3), mod -7 3 = 2, mod 7 -3 = -2, fold-case "QR" = "qr".
+;; 97 + 2*10 + 3*100 + 5*1000 + 0 + (-1 + 1)*1 + 3*100000 + 2*1000000 + (-2+3)*10000000 + 2*100000000
+;; want: 212305417
+(ns r6f.p04)
+(defn main [] :i64
+  (+ (string-code-point-at (string-fold-ascii "AbC-Z") 0)
+     (* 10 (string-find-blank "ab c" 0))
+     (* 100 (string-skip-blank "  \tx" 0))
+     (* 1000 (string-index-of-from "abcabc" "c" 3))
+     (string-compare-lines "b\nz" 0 "b\ny" 0)
+     (+ (string-compare-lines "a" 0 "b" 0) 1)
+     (* 100000 (string-length (string-append-range "x" "hello" 1 3)))
+     (* 1000000 (mod -7 3))
+     (* 10000000 (+ (mod 7 -3) 3))
+     (* 100000000 (string-length (string-fold-case "QR")))
+     (- 0 (if (= (string-upper "ab") "AB") 0 1000000000))))

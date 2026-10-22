@@ -1,0 +1,7 @@
+;; R6M: if-some over a call that answers [:option :string] (stage-0 d2cb84f6 refuses "expected [:option :i64], got
+;; [:option :string]" here, while it admits the same over a literal option-some-of (conformance if_some_string_kit) and
+;; if-let over this call (p15); the value is spec)
+(ns r6m.p16 (:export [main]))
+(defn- name-of [n :i64] [:option :string]
+  (if (> n 0) (option-some-of [:option :string] "kotoba") (option-none-of [:option :string])))
+(defn main [] :i64 (+ (string-length (if-some [s (name-of 1)] s "")) (string-length (if-some [s (name-of 0)] s "xy"))))

@@ -1,0 +1,9 @@
+;; R6C: the refinement comes from a callee defined AFTER its caller (the reference refines from the first function whose own
+;; body asks; the seed's strict run stops at the caller, so its probe run checks the provisional functions first and lets
+;; the call through): label's s and wrap's t become :string through three re-runs; main's verdict is the strict run's.
+;; want: 7
+(ns r6c.p07 (:export [main]))
+(defn- shout [x :string] :string (label x))
+(defn- label [s] (wrap (string-concat s "!")))
+(defn- wrap [t] (string-concat "<" (string-concat t ">")))
+(defn main [] :i64 (string-length (shout "abcd")))

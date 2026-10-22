@@ -1,0 +1,14 @@
+;; Q2 isolated integer quotient by literal+2 experiment. Default OFF.
+;; Three physical words restore x17=2; CODE admission/layout can differ on ON.
+(def q2-feature 0)
+(defn- q2-register? [r :i64] :bool
+ (and (>= r 0) (< r 31) (not= r 17)))
+(defn- q2-ready? [M :vector-i64 bop :i64 d :i64 x :i64 k :i64] :bool
+ (and (= q2-feature 1) (= (vector-at M MM-ERR) 0)
+      (= bop BOP-QUOT) (= k 2) (q2-register? d) (q2-register? x)))
+(defn- q2-emit [M :vector-i64 d :i64 x :i64] :vector-i64
+ (-> M
+  (gn-emit (+ 0x8b40fc00 (i64-shift-left x 16) (i64-shift-left x 5) d))
+  (gn-emit (gn-e-asr d d 1))
+  (gn-emit (enc-movz 17 2 0))))
+

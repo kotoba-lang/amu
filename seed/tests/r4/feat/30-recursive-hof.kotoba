@@ -1,0 +1,5 @@
+;; R4 feat: a self-recursive defn taking a fn value (fold over a range)
+(ns seed.r4 (:export [test]))
+(defn fold-range [f [:fn [[:i64 :i64] :i64]] acc :i64 i :i64 n :i64] :i64
+  (if (>= i n) acc (fold-range f (f acc i) (+ i 1) n)))
+(defn test [] :i64 (fold-range (fn [a i] (+ a (* i i))) 0 0 10))

@@ -1,0 +1,4 @@
+;; R4 feat: a contract with a :vector-i64 parameter and result
+(ns seed.r4 (:export [test]))
+(defn ap [f [:fn [[:vector-i64 :i64] :vector-i64]] v :vector-i64] :i64 (vector-count (f v 5)))
+(defn test [] :i64 (ap (fn [v x] (vector-conj (vector-conj v x) x)) [1 2]))

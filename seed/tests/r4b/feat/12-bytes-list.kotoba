@@ -1,0 +1,11 @@
+;; R4B feat: a [:list :bytes] and a :bytes loop variable
+(ns seed.r4b (:export [test]))
+(defn- chunks [b :bytes n :i64] [:list :bytes]
+  (loop [i 0 xs (typed-list-new [:list :bytes])]
+    (if (< i (bytes-count b))
+      (recur (+ i n) (typed-list-conj [:list :bytes] xs (bytes-slice b i (if (> (+ i n) (bytes-count b)) (bytes-count b) (+ i n)))))
+      xs)))
+(defn test [] :i64
+  (let [xs (chunks (bytes-from-vector-i64 [1 2 3 4 5 6 7]) 3)
+        last (nth xs (dec (count xs)))]
+    (+ (* 100 (count xs)) (* 10 (bytes-count last)) (bytes-at last 0))))
