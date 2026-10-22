@@ -20,7 +20,7 @@ cover before its property counts as qualified again.
 | build-x86_64-linux.py | AArch64-hosted x86 cross compiler (X86_64-LINUX-MANIFEST) | refused: the cross closure has no static runtime; the Linux selfhost closure covers x86_64 output |
 | check-x86_64-selfhost.py | x86 G1..G3 and runtime cases through the C loader | replaced: `selfhost-bootstrap.py` steps 1, 2, 4 (static compiler, runners, cases against `seed/static-cases.json`) |
 | check-x86_64-static.py | static x86 image bootstrapped through the C loader | replaced: `selfhost-bootstrap.py` (root is Amu-produced, no bootstrap loader step) |
-| check-x86_64-linux.py | scalar standalone x86 ELF suite | refused: port the 55 standalone regressions onto the static compiler |
+| check-x86_64-linux.py | scalar standalone x86 ELF suite | replaced: `check-x86_64-scalar.py` (same 55 programs and 14 refusals through the static compiler; the AArch64 fuel reference and the cross-closure identity check are not ported) |
 | check-x86_64-aiueos-object.py | x86_64-aiueos-kernel-v1 object ABI | refused: port onto the static compiler (`--target x86_64-aiueos-kernel-v1`) |
 | check-adjacent-fuel-reload.py, check-bounded-lookup.py, check-certified-scalar-calls.py, check-mask-direct-source.py, check-nonzero-guard-charge.py, check-positive-quotient-proof.py, check-positive-quotient.py, check-prepaid-fuel-reuse.py, check-sequential-scan.py, check-twoarg-comparisons.py | adopted 41-a64gen optimizations (oracles, fuel, arena counters) through the C loader | refused: re-run the paired controls through the aarch64 runner |
 | verify-loader-fuzz.py | fuzz coverage of the C loader's parser | retired with the loader |
