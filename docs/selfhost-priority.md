@@ -52,6 +52,15 @@ apply to end-user apps.
 
 ## Migration gates
 
+The owner selected the Embench-measured compiler lineage as the complete
+compiler core on 2026-10-22. Extend the adopted `seed/MANIFEST` implementation
+through the complete selfhost/public-CLI closure, preserving its semantics
+and measured provenance. [ADR 0370](adr/0370-embench-measured-compiler-core.md)
+and [`seed/compiler-core.json`](../seed/compiler-core.json) fix the baseline,
+descendant identities, review order and required qualification. The old
+optional seed/backend-fallback design is historical; it does not define the
+replacement product. Native-only acceptance remains unchanged.
+
 The final graph contains canonical `.kotoba` implementations. Existing CLJK
 fixtures, readers and host-specific branches are migration inventory; they
 do not establish a requirement to retain the old surface. Preserve recorded
