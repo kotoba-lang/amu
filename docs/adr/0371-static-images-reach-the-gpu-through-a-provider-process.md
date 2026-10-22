@@ -1,10 +1,11 @@
 # ADR 0371: Static images reach the GPU through a separate provider process
 
 Date: 2026-10-22
-Status: Proposed. Needs an owner decision on the platform boundary (Decision 1)
-and a security-integration sign-off before wire 42 is admitted. Nothing here is
+Status: Decision 1 (the platform boundary) accepted by the owner on 2026-10-22.
+The rest is Proposed. Wire 42 is not admitted until security integration signs
+off (Decision 7). Step 1 (the protocol table) is in progress; nothing else is
 implemented.
-Tracking: JUN-285 (this ADR). Related: JUN-109 (wire 42 admission), JUN-282
+Tracking: JUN-285 (this ADR), JUN-291 (step 1). Related: JUN-109 (wire 42 admission), JUN-282
 (`amu run` on static images), JUN-283, AWAI-12 (murakumo inference on Amu
 selfhost).
 
@@ -116,8 +117,9 @@ artifact class may load them: the GPU provider (Decision 3). The provider:
 * never runs in CDCI;
 * is never accepted for `:aiueos-c-free-bare-metal-v1`.
 
-**This is the decision that needs the owner.** `docs/selfhost-priority.md` has
-no platform boundary today. Without one, no GPU route exists on any fleet host.
+**Accepted by the owner on 2026-10-22.** Before this, `docs/selfhost-priority.md`
+had no platform boundary, and without one no GPU route existed on any fleet
+host. That document now states the boundary and points here.
 
 ### 2. Three processes, one direction of authority
 
@@ -364,7 +366,7 @@ Every other GPU number is a bootstrap reference.
 
 ## Open questions for the owner
 
-1. Is the platform boundary in Decision 1 accepted?
+1. ~~Is the platform boundary in Decision 1 accepted?~~ Accepted 2026-10-22.
 2. Will security integration sign off on admitting wire 42, and on the
    artifact table replacing guest-named paths?
 3. Does provider confinement (Landlock plus seccomp after device creation) hold
