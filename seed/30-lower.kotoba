@@ -443,6 +443,9 @@
       HD-BIT-NOT (lw-un M a t UOP-BITNOT)
       HD-TYPED-CAP-CALL (lw-cap M a t)
       HD-DO (lw-do M a t k)
+      ;; Context ABI v6, structural only: no source head names these slots.
+      ;; The scalar body stays in temp t across leave's separate result temp.
+      ck-r6m-hd-arena (-> M (lw-emit OP-RT 224 t 0) (lw-expr a t 0) (lw-emit OP-RT 232 (inc t) 0))
       HD-TRAP (lw-emit M OP-TRAP 0)
       HD-RECORD-NEW (lw-recnew M (lw-next M a) t)
       HD-RECORD-CTOR (lw-recnew M a t)
