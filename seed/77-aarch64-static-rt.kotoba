@@ -15,7 +15,7 @@
 (defn- kxrt-ctx [] :i64 0)
 (defn- kxrt-call-main [ctx :i64] :i64 0)
 (defn- kxrt-trap [code :i64] :i64 0)
-(defn- kxrt-call-at [addr :i64 ctx :i64] :i64 0)
+(defn- kxrt-call-at [addr :i64 ctx :i64 argv :i64] :i64 0)
 
 ;; ---- globals: G = context + 1024 (inside the image's RW segment) ----
 ;; 0 pairs 8 pair-used 16 validated 24 pool 32 pool-used 40 vectors 48 vector-used
@@ -23,6 +23,8 @@
 ;; 112 append-fd 120 append-path 128 append-len 136 root 144 root-len 152 root-fd
 ;; 160 report 168 fuel0 176 metered 184 cwd 192 cwd-len 200 scratch 208 path
 ;; 216 budget 224 value-trap 232 io-buffer 240 command 248 alt-stack
+;; 256 conj 264 conj-tail 272 conj-copy 280 copied-words 288 string-copied-bytes
+;; 296 arena-use flag 320..359 payload arguments
 (defn- kxrt-g [] :i64 (+ (kxrt-ctx) 1024))
 (defn- kxrt-gl [k :i64] :i64 (kxrt-load64 (+ (kxrt-g) k)))
 (defn- kxrt-gs [k :i64 v :i64] :i64 (kxrt-store64 (+ (kxrt-g) k) v))
@@ -155,7 +157,8 @@
         y2 (if (> v 0) (kxrt-err-text b (kxrt-w b v1 0xa7d 2)) 0)
         t0 (kxrt-w b (kxrt-w b (kxrt-w b 0 0x7375746174733a7b 8) 0x3a20706172743a20 8) 0x3032312074697865 8)
         t1 (kxrt-fuel-text b t0)
-        y3 (if (= (kxrt-gl 160) 1) (kxrt-write-all 1 b (kxrt-w b t1 0xa7d 2)) 0)]
+        y3 (if (= (kxrt-gl 160) 1) (kxrt-write-all 1 b (kxrt-w b t1 0xa7d 2)) 0)
+        y4 (kxrt-arena-use)]
     (kxrt-exit 120)))
 (defn- kxrt-fail [] :i64 (kxrt-trap 0))
 (defn- kxrt-budget [code :i64] :i64
@@ -227,7 +230,8 @@
           (if (> lb (- KXRT-POOL u)) (kxrt-budget 4)
             (let [z (kxrt-copy (+ (kxrt-gl 24) u) y lb) w (kxrt-gs 32 (+ u lb))] (kxrt-mark (kxrt-pair-new oa (+ la lb)))))
           (if (> (+ la lb) (- KXRT-POOL u)) (kxrt-budget 4)
-            (let [p (+ (kxrt-gl 24) u) z (kxrt-copy p x la) z2 (kxrt-copy (+ p la) y lb) w (kxrt-gs 32 (+ u la lb))]
+            (let [p (+ (kxrt-gl 24) u) z (kxrt-copy p x la) z2 (kxrt-copy (+ p la) y lb) w (kxrt-gs 32 (+ u la lb))
+                  t (kxrt-count 288 (+ la lb))]
               (kxrt-mark (kxrt-pair-new (- -1 u) (+ la lb))))))))))
 (defn- kxrt-cont? [a :i64 i :i64 n :i64] :bool (and (< i n) (= (bit-and (kxrt-load8 (+ a i)) 192) 128)))
 (defn- kxrt-substring [h :i64 s :i64 e :i64] :i64
@@ -292,14 +296,16 @@
     (cond (or (< i 0) (>= i n)) (kxrt-fail)
           (> n (- KXRT-ITEMS u)) (kxrt-fail)
           :else (let [z (kxrt-icopy u off n) y (kxrt-store64 (kxrt-item u i) x) w (kxrt-gs 64 (+ u n))] (kxrt-vnew u n)))))
+(defn- kxrt-count [k :i64 n :i64] :i64 (kxrt-gs k (+ (kxrt-gl k) n)))
 (defn- kxrt-conj [h :i64 x :i64] :i64
-  (let [n (kxrt-vlen h) off (kxrt-voff h) u (kxrt-gl 64)]
+  (let [n (kxrt-vlen h) off (kxrt-voff h) u (kxrt-gl 64) c (kxrt-count 256 1)]
     (cond (>= n KXRT-VECTOR-MAX) (kxrt-fail)
           (= (+ off n) u)
             (if (>= u KXRT-ITEMS) (kxrt-arena 3)
-              (let [z (kxrt-store64 (kxrt-item u 0) x) w (kxrt-gs 64 (inc u))] (kxrt-vnew off (inc n))))
+              (let [t (kxrt-count 264 1) z (kxrt-store64 (kxrt-item u 0) x) w (kxrt-gs 64 (inc u))] (kxrt-vnew off (inc n))))
           (> (inc n) (- KXRT-ITEMS u)) (kxrt-arena 3)
-          :else (let [z (kxrt-icopy u off n) y (kxrt-store64 (kxrt-item u n) x) w (kxrt-gs 64 (+ u n 1))]
+          :else (let [t (kxrt-count 272 1) t2 (kxrt-count 280 n)
+                      z (kxrt-icopy u off n) y (kxrt-store64 (kxrt-item u n) x) w (kxrt-gs 64 (+ u n 1))]
                   (kxrt-vnew u (inc n))))))
 (defn- kxrt-drop [h :i64 k :i64] :i64
   (let [n (kxrt-vlen h)] (if (or (< k 0) (> k n)) (kxrt-fail) (kxrt-vnew (+ (kxrt-voff h) k) (- n k)))))
@@ -543,6 +549,26 @@
               :else (kxrt-die))))))
 (defn- kxrt-if-available? [s :i64] :bool (and (not= s 0) (kxrt-cstr= s 0x6c696176612d6669 0x656c6261 12)))
 
+;; KEXE_ARENA_USE: one line on stderr with the loader's 17 fields. Peaks equal
+;; the final use (this runtime never releases an arena scope); the region and
+;; scope fields are 0 because the runtime has no growth regions.
+(defn- kxrt-kv [b :i64 i :i64 v :i64] :i64 (+ i (kxrt-dec (+ b i) v)))
+(defn- kxrt-arena-use [] :i64
+  (if (= (kxrt-gl 296) 0) 0
+    (let [b (+ (kxrt-gl 200) 4096) pairs (kxrt-gl 8) pool (kxrt-gl 32) vecs (kxrt-gl 48) items (kxrt-gl 64)
+          i0 (kxrt-w b (kxrt-w b (kxrt-w b 0 0x4552415f4558454b 8) 0x7b204553555f414e 8) 0x2073726961703a 7)
+          i1 (kxrt-kv b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-kv b i0 pairs) 0x676e697274733a20 8) 0x79622d6c6f6f702d 8) 0x20736574 4) pool)
+          i2 (kxrt-kv b (kxrt-w b (kxrt-w b i1 0x726f746365763a20 8) 0x2073 2) vecs)
+          i3 (kxrt-kv b (kxrt-w b (kxrt-w b i2 0x726f746365763a20 8) 0x20736d6574692d 7) items)
+          i4 (kxrt-kv b (kxrt-w b (kxrt-w b i3 0x622d706165683a20 8) 0x2073657479 5) (+ (* 16 pairs) pool (* 16 vecs) (* 8 items)))
+          i5 (kxrt-kv b (kxrt-w b i4 0x206a6e6f633a20 7) (kxrt-gl 256))
+          i6 (kxrt-kv b (kxrt-w b (kxrt-w b i5 0x742d6a6e6f633a20 8) 0x206c6961 4) (kxrt-gl 264))
+          i7 (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b i6 0x722d6a6e6f633a20 8) 0x2030206e6f696765 8) 0x6f632d6a6e6f633a 8) 0x207970 3)
+          i8 (kxrt-kv b (kxrt-w b (kxrt-w b (kxrt-kv b i7 (kxrt-gl 272)) 0x646569706f633a20 8) 0x207364726f772d 7) (kxrt-gl 280))
+          i9 (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b i8 0x7672657365723a20 8) 0x7364726f772d6465 8) 0x696765723a203020 8) 0x733a203020736e6f 8) 0x6c65722d65706f63 8) 0x2030207365736165 8) 0x2d676e697274733a 8) 0x20736e6f69676572 8) 0x6e697274733a2030 8) 0x6e6f696765722d67 8) 0x73646e657070612d 8) 0x697274733a203020 8) 0x6569706f632d676e 8) 0x2073657479622d64 8)
+          i10 (kxrt-kv b i9 (kxrt-gl 288))]
+      (kxrt-err-text b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b i10 0x676e697274733a20 8) 0x657672657365722d 8) 0x2073657479622d64 8) 0xa7d30 3)))))
+
 ;; ---- start ----
 ;; value of the environment entry NAME= (packed w0 w1 w2, length n incl. '='), or 0
 (defn- kxrt-env [w0 :i64 w1 :i64 w2 :i64 n :i64] :i64
@@ -590,7 +616,7 @@
 ;;     result line; the payload is mapped read+execute and entered as
 ;;     fn(0,0,0,0,0, context) at PAYLOAD+OFFSET.
 (defn- kxrt-usage [code :i64] :i64
-  (let [b (kxrt-gl 200) z (kxrt-err-text b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x6e75722d6578656b 8) 0x617375203a72656e 8) 0x4c594150203a6567 8) 0x5346464f2044414f 8) 0x4153492030205445 8) 0x5b20574f4c4c4120 8) 0x5d53475241202d2d 8) 0xa 1))] (kxrt-exit code)))
+  (let [m (if (= (kxrt-gl 200) 0) (kxrt-gs 200 (kxrt-map 16384)) 0) b (kxrt-gl 200) z (kxrt-err-text b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x6e75722d6578656b 8) 0x617375203a72656e 8) 0x4c594150203a6567 8) 0x5346464f2044414f 8) 0x5954495241205445 8) 0x492029352e2e3028 8) 0x574f4c4c41204153 8) 0x52412d3436495b20 8) 0x5b205d2e2e2e2047 8) 0x5453455547202d2d 8) 0xa5d534752412d 7))] (kxrt-exit code)))
 (defn- kxrt-arg [i :i64] :i64 (kxrt-load64 (+ (kxrt-gl 80) (* 8 i))))
 (defn- kxrt-cstr= [s :i64 w0 :i64 w1 :i64 n :i64] :bool (and (= (kxrt-cstrlen s) n) (kxrt-tok-at s w0 w1 n)))
 ;; loader argv: the first -- ends it; returns its argc (incl. argv[0])
@@ -607,6 +633,19 @@
                 x (kxrt-syscall 226 p (bit-and (+ n 4095) -4096) 5 0 0 0)
                 c (kxrt-store64 (+ (kxrt-ctx) 384) p) d (kxrt-store64 (+ (kxrt-ctx) 392) n)]
             (if (or (< k n) (< x 0)) (kxrt-usage 1) p)))))))
+;; the loader's decimal i64 arguments (argv[6..6+arity)) into G+320..; any
+;; other argument form (s:HEX strings, regions) is refused with the usage line
+;; (the magnitude 9223372036854775808 wraps to exactly i64 MIN, which is
+;; accepted only with a minus sign)
+(defn- kxrt-sparse [s :i64] :i64
+  (if (= (kxrt-load8 s) 45)
+    (let [v (kxrt-parse (inc s) (kxrt-cstrlen (inc s)))]
+      (cond (= v -9223372036854775808) v (< v 0) (kxrt-usage 2) :else (- 0 v)))
+    (let [v (kxrt-parse s (kxrt-cstrlen s))] (if (< v 0) (kxrt-usage 2) v))))
+(defn- kxrt-runner-argv [arity :i64] :i64
+  (loop [i 0]
+    (if (= i 5) 0
+      (let [z (kxrt-gs (+ 320 (* 8 i)) (if (< i arity) (kxrt-sparse (kxrt-arg (+ 6 i))) 0))] (recur (inc i))))))
 (defn- kxrt-runner-args [argc :i64] :i64
   (let [d (kxrt-split argc) g (kxrt-gs 72 (if (< d argc) (- argc (inc d)) 0))
         h (kxrt-gs 80 (+ (kxrt-gl 80) (* 8 (inc d))))]
@@ -618,12 +657,14 @@
         ;; runner: argv[0] at sp+8 is index 0 here; d = loader argc
         b1 (if (= mode 1) (kxrt-gs 80 (+ sp 8)) 0)
         d (if (= mode 1) (kxrt-split argc) 0)
-        u (if (and (= mode 1) (or (not= d 6) (not (kxrt-cstr= (kxrt-arg 3) 0x30 0 1))
+        arity (if (and (= mode 1) (>= d 4)) (kxrt-parse (kxrt-arg 3) (kxrt-cstrlen (kxrt-arg 3))) 0)
+        u (if (and (= mode 1) (or (< arity 0) (> arity 5) (not= d (+ 6 arity))
                                  (not (kxrt-cstr= (kxrt-arg 4) 0x34366863726161 0 7))
                                  (< (kxrt-parse (kxrt-arg 2) (kxrt-cstrlen (kxrt-arg 2))) 0)))
             (kxrt-usage 2) 0)
         off (if (= mode 1) (kxrt-parse (kxrt-arg 2) (kxrt-cstrlen (kxrt-arg 2))) 0)
         allow (if (= mode 1) (kxrt-arg 5) 0)
+        av (if (= mode 1) (kxrt-runner-argv arity) 0)
         path (if (= mode 1) (kxrt-arg 1) 0)
         ga (if (= mode 1) (kxrt-runner-args argc) 0)
         m0 (kxrt-gs 0 (kxrt-map (* KXRT-PAIRS 16))) m1 (kxrt-gs 16 (kxrt-map KXRT-PAIRS))
@@ -661,9 +702,11 @@
         sb (kxrt-sandbox)
         ;; diagnostic: a syscall outside the filter must trap (SIGSYS, exit 120)
         pr (if (= (kxrt-env 0x4e41535f4558454b 0x4f52505f584f4244 0x3d4542 19) 0) 0 (kxrt-syscall 198 2 1 0 0 0 0))
-        r (if (= mode 1) (kxrt-call-at (+ pl off) ctx) (kxrt-call-main ctx))
+        au (kxrt-gs 296 (if (= (kxrt-env 0x4552415f4558454b 0x3d4553555f414e 0 15) 0) 0 1))
+        r (if (= mode 1) (kxrt-call-at (+ pl off) ctx (+ (kxrt-g) 320)) (kxrt-call-main ctx))
         e1 (if (= (kxrt-sink-close) 1) 0 (kxrt-fail))
-        e2 (if (= (kxrt-flush) 1) 0 (kxrt-fail))]
+        e2 (if (= (kxrt-flush) 1) 0 (kxrt-fail))
+        e3 (kxrt-arena-use)]
     (cond (= (kxrt-gl 160) 1) (let [z (kxrt-report r)] (kxrt-exit 0))
           (= (kxrt-gl 240) 1) (kxrt-exit (bit-and r 255))
           :else (let [b (kxrt-gl 200) n (kxrt-sdec b r) z (kxrt-store8 (+ b n) 10) w (kxrt-write-all 1 b (inc n))] (kxrt-exit 0)))))

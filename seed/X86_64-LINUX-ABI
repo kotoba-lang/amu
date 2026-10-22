@@ -136,12 +136,18 @@ values are equal), the arena fields of the structured line.
 
 The same image with context word 408 = 1 (link time; 0 for `--format
 static`), built from `seed/x86_64-kx64-runner.kotoba`. It takes the trusted
-loader's command line for the x86_64 shape: `PAYLOAD OFFSET 0 x86_64 ALLOW
-[-- ARGS]` (arity 0 only; anything else exits 2 with a usage line). The
+loader's command line: `PAYLOAD OFFSET ARITY ISA ALLOW [I64-ARG ...] [--
+GUEST-ARGS]` with ARITY 0..5 and exactly ARITY signed decimal i64 arguments
+(the loader's other argument forms, `s:HEX` strings and region references,
+exit 2 with a usage line), which enter as the payload's first ARITY argument
+registers. The
 payload file is read into an anonymous mapping, made read+execute, and
 `code_base`/`code_length` are set to it; ALLOW comes from argv and
 `KEXE_ALLOW` is ignored. Guest entry is the ninth intrinsic
-`kxrt-call-at` (r9 = context) at PAYLOAD+OFFSET. Exit: `KEXE_STRUCTURED_REPORT`
+`kxrt-call-at addr ctx argv` (five argument words at argv; r9 / x7 =
+context) at PAYLOAD+OFFSET. With `KEXE_ARENA_USE` set, both formats print the
+loader's one-line `KEXE_ARENA_USE {...}` record (17 fields) on stderr at exit
+or trap; peaks equal the final use and the growth-region/scope fields are 0. Exit: `KEXE_STRUCTURED_REPORT`
 line, else `result & 0xff` when `KEXE_COMMAND` is present, else the signed
 decimal result and a newline with status 0, as the loader.
 

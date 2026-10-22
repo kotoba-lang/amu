@@ -132,7 +132,11 @@
     ;; guest main as the loader calls it: fn(0, 0, 0, 0, 0, 0, 0, context in x7)
     6 (-> M (xa-zero-args 0) (xa-lt 7 t) (xa-fixrec 11 (xg-get M 1)) (xa-w 0x94000000) (xa-x7) (xa-st 0 t))
     7 (xa-w M 0xD4200000)
-    8 (-> M (xa-zero-args 0) (xa-lt 16 t) (xa-lt 7 (inc t)) (xa-w 0xD63F0200) (xa-x7) (xa-st 0 t))
+    ;; (kxrt-call-at addr ctx argv): x0..x4 from the five words at argv,
+    ;; x5 = x6 = 0, x7 = context, as the loader's fn(a0..a4, 0, 0, context)
+    8 (-> M (xa-zero-args 0) (xa-lt 16 (+ t 2)) (xa-w 0xF9400200) (xa-w 0xF9400601) (xa-w 0xF9400A02)
+          (xa-w 0xF9400E03) (xa-w 0xF9401204) (xa-lt 17 t) (xa-lt 7 (inc t)) (xa-w 0xD63F0220)
+          (xa-x7) (xa-st 0 t))
     (xg-err M 7101 OP-CALL)))
 (defn- xa-one [M :vector-i64 i :i64] :vector-i64
   (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B) c (xg-si M i IF-C)]
