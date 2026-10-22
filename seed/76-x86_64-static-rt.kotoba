@@ -1364,3 +1364,60 @@
         e2 (if (= (kxrt-flush) 1) 0 (kxrt-fail))]
     (kxrt-exit (bit-and r 255))))
 ")
+;; --format platform-linked (seed/78): xs-rt-core, then this text.
+(defn- xs-rt-pstart [] :string
+"
+;; ---- platform-linked: --format platform-linked, context word 408 = 3 (ADR 0371 step 5) ----
+;; Appended after the runtime core in place of the standard start, x86_64 only
+;; (seed/78 writes the dynamically linked ELF). The host libc calls kxrt-start
+;; as main(argc, argv, envp) from __libc_start_main; it maps the arenas, fills
+;; the context, runs the program and returns its status to libc, which exits.
+;; No signal handlers, limits or seccomp here: the GPU provider confines itself
+;; after device creation (ADR 0371 Decision 5). A runtime refusal traps
+;; (SIGILL, no handler). Environment: KEXE_ALLOW (default 35,37,38,39),
+;; KEXE_FUEL, KEXE_STRUCTURED_REPORT, KEXE_CAP_RESOURCES_35, KEXE_ARENA_USE, as
+;; in a static image.
+(defn- kxrt-ccall [fp :i64 argv :i64] :i64 0)
+;; The platform API: the program may call these kxrt-p- functions, in this
+;; format only (seed/78 checks its calls by name). Addresses are i64; nothing is
+;; checked, as in C. The GOT is 2048 bytes below the context: GOT[0]
+;; __libc_start_main, GOT[1] the second import (vkGetInstanceProcAddr, imported
+;; only when the program calls kxrt-p-vkgipa), read-only after relocation.
+(defn- kxrt-p-ccall [fp :i64 argv :i64] :i64 (kxrt-ccall fp argv))
+(defn- kxrt-p-vkgipa [] :i64 (kxrt-load64 (- (kxrt-ctx) 2040)))
+(defn- kxrt-p-got-slot [k :i64] :i64 (if (or (< k 0) (> k 1)) 0 (+ (- (kxrt-ctx) 2048) (* 8 k))))
+(defn- kxrt-p-alloc [n :i64] :i64 (kxrt-syscall 9 0 n 3 34 -1 0))
+(defn- kxrt-p-load8 [a :i64] :i64 (kxrt-load8 a))
+(defn- kxrt-p-store8 [a :i64 v :i64] :i64 (kxrt-store8 a v))
+(defn- kxrt-p-load64 [a :i64] :i64 (kxrt-load64 a))
+(defn- kxrt-p-store64 [a :i64 v :i64] :i64 (kxrt-store64 a v))
+(defn- kxrt-p-read [fd :i64 a :i64 n :i64] :i64 (kxrt-syscall 0 fd a n 0 0 0))
+(defn- kxrt-p-write [fd :i64 a :i64 n :i64] :i64 (kxrt-syscall 1 fd a n 0 0 0))
+(defn- kxrt-start [argc :i64 argv :i64 envp :i64] :i64
+  (let [ctx (kxrt-ctx)
+        a (kxrt-gs 72 (if (> argc 0) (dec argc) 0)) b (kxrt-gs 80 (+ argv 8)) c (kxrt-gs 88 envp)
+        m0 (kxrt-gs 0 (kxrt-map (* KXRT-PAIRS 16))) m1 (kxrt-gs 16 (kxrt-map KXRT-PAIRS))
+        m2 (kxrt-gs 24 (kxrt-map KXRT-POOL)) m3 (kxrt-gs 40 (kxrt-map (* KXRT-VECTORS 16)))
+        m4 (kxrt-gs 56 (kxrt-map (* KXRT-ITEMS 8))) m5 (kxrt-gs 96 (kxrt-map 65536))
+        m6 (kxrt-gs 200 (kxrt-map 16384)) m7 (kxrt-gs 208 (kxrt-map 8192))
+        m8 (kxrt-gs 120 (kxrt-map 4096)) m9 (kxrt-gs 136 (kxrt-map 65536)) m10 (kxrt-gs 184 (kxrt-map 4096))
+        m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
+        cw (kxrt-syscall 79 (kxrt-gl 184) 4096 0 0 0 0)
+        cl (kxrt-gs 192 (if (and (> cw 1) (= (kxrt-load8 (kxrt-gl 184)) 47)) (kxrt-cstrlen (kxrt-gl 184)) 0))
+        v (kxrt-store64 ctx 11)
+        d0 (kxrt-store64 (+ ctx 288) (+ (kxrt-g) 8)) d1 (kxrt-store64 (+ ctx 296) (kxrt-gl 0))
+        d2 (kxrt-store64 (+ ctx 304) (kxrt-gl 16)) d3 (kxrt-store64 (+ ctx 312) (+ (kxrt-g) 48))
+        d4 (kxrt-store64 (+ ctx 320) (kxrt-gl 40)) d5 (kxrt-store64 (+ ctx 328) (kxrt-gl 56))
+        al (kxrt-allow (kxrt-env 0x4c4c415f4558454b 0x3d574f 0 11))
+        cm (kxrt-gs 240 1)
+        f0 (kxrt-gs 168 (kxrt-fuel (kxrt-env 0x4555465f4558454b 0x3d4c 0 10)))
+        f1 (kxrt-store64 (+ ctx 8) (kxrt-gl 168))
+        rp (kxrt-gs 160 (if (= (kxrt-env 0x5254535f4558454b 0x5f44455255544355 0x3d54524f504552 23) 0) 0 1))
+        sc (kxrt-scope (kxrt-env 0x5041435f4558454b 0x4352554f5345525f 0x3d35335f5345 22))
+        au (kxrt-gs 296 (if (= (kxrt-env 0x4552415f4558454b 0x3d4553555f414e 0 15) 0) 0 1))
+        r (kxrt-call-main ctx)
+        e1 (if (= (kxrt-sink-close) 1) 0 (kxrt-fail))
+        e2 (if (= (kxrt-flush) 1) 0 (kxrt-fail))
+        e3 (kxrt-arena-use)]
+    (if (= (kxrt-gl 160) 1) (let [z (kxrt-report r)] 0) (bit-and r 255))))
+")

@@ -8,6 +8,9 @@
 ;; static build), 198 = first intrinsic FN (the runtime text starts with the
 ;; XS-INTR-N intrinsic stubs in id order), 199 = kxrt-start FN,
 ;; 200..255 = FN whose address fills context word slot/8 (slots 48..440).
+;; Cells 200..205 (slots 0..47) hold no slot, so --format platform-linked
+;; (mode 3, seed/78) uses two of them: 200 = kxrt-ccall FN (intrinsic 9),
+;; 204 = 1 when the program calls kxrt-p-vkgipa.
 
 (def XS-INTR-N 9)
 (defn- xs-intr-name [k :i64] :string
@@ -15,13 +18,20 @@
           4 "kxrt-syscall" 5 "kxrt-ctx" 6 "kxrt-call-main" 7 "kxrt-trap"
           8 "kxrt-call-at" ""))
 (defn- xs-on? [M :vector-i64] :bool (> (vector-at M 197) 0))
-(defn- xs-sym-start [M :vector-i64 f :i64] :i64
-  (vector-at M (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W) SF-START)))
+;; Where f is defined: the first token of its def form. A symbol's SF-START is
+;; its first appearance anywhere, so a guest that names a runtime function
+;; would otherwise make it a guest function, and reach the intrinsics.
+(defn- xs-def-start [M :vector-i64 f :i64] :i64
+  (let [tok (vector-at M (+ MM-NODE-BASE (* (xg-f M f FF-NODE) MM-NODE-W) NF-TOK))]
+    (vector-at M (+ MM-TOK-BASE (* tok MM-TOK-W) TF-START))))
 (defn- xs-rt? [M :vector-i64 f :i64] :bool
-  (and (xs-on? M) (> f 0) (>= (xs-sym-start M f) (vector-at M 197))))
+  (and (xs-on? M) (> f 0) (>= (xs-def-start M f) (vector-at M 197))))
 (defn- xs-intr [M :vector-i64 f :i64] :i64
   (let [k (- f (vector-at M 198))]
-    (if (and (xs-on? M) (> (vector-at M 198) 0) (>= k 0) (< k XS-INTR-N)) k -1)))
+    (cond (and (xs-on? M) (> (vector-at M 198) 0) (>= k 0) (< k XS-INTR-N)) k
+          (and (xs-on? M) (> (vector-at M 200) 0) (= f (vector-at M 200))) 9
+          :else -1)))
+
 
 ;; ---- intrinsics: operands are the call's temps t .. t+n-1 ----------------------
 (defn- xs-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
@@ -47,7 +57,21 @@
           (xg-bytes 0x10508b48 4) (xg-bytes 0x18488b48 4) (xg-bytes 0x20408b4c 4)
           (xg-load (inc t) 0x8d8b4c) (xg-load t 0x858b48) (xg-bytes 0xd0ff 2)
           (xg-bytes 0xf84d8b4c 4) (xg-save t))
+    ;; (kxrt-ccall fp argv), mode 3 only: a SysV C call. argv holds 14 words:
+    ;; 0..5 go to rdi rsi rdx rcx r8 r9, 6..13 to [rsp] (the frame's outgoing
+    ;; area); al = 0 for varargs callees; call fp; r9 = context again.
+    9 (-> M (xg-load (inc t) 0x858b48) (xs-ccall-stack 0)
+          (xg-bytes 0x388b48 3) (xg-bytes 0x08708b48 4) (xg-bytes 0x10508b48 4)
+          (xg-bytes 0x18488b48 4) (xg-bytes 0x20408b4c 4) (xg-bytes 0x28488b4c 4)
+          (xg-load t 0x9d8b4c) (xg-bytes 0xc031 2) (xg-bytes 0xd3ff41 3)
+          (xg-bytes 0xf84d8b4c 4) (xg-save t))
     (xg-err M 7101 OP-CALL)))
+;; mov r10, [rax + 48 + 8k] ; mov [rsp + 8k], r10 for k = 0..7
+(defn- xs-ccall-stack [M :vector-i64 k :i64] :vector-i64
+  (if (= k 8) M
+    (xs-ccall-stack (-> M (xg-bytes (bit-or 0x508b4c (i64-shift-left (+ 48 (* 8 k)) 24)) 4)
+                        (xg-bytes (bit-or 0x2454894c (i64-shift-left (* 8 k) 32)) 5))
+                    (inc k))))
 
 ;; ---- scan and admission ------------------------------------------------------
 (defn- xs-prefix? [S :string a :i64 b :i64 p :string] :bool
@@ -71,19 +95,24 @@
                 (xg-err M 7102 f) (mem-set M (+ 200 (quot slot 8)) f)))
           (string=? (string-substring S a b) "kxrt-start")
             (if (= (vector-at M 199) 0) (mem-set M 199 f) (xg-err M 7102 f))
+          (string=? (string-substring S a b) "kxrt-ccall")
+            (if (and (= (xg-get M 2) 3) (= (vector-at M 200) 0)) (mem-set M 200 f) (xg-err M 7102 f))
+          ;; the platform API (seed/78 checks the program's calls by name)
+          (xs-prefix? S a b "kxrt-p-") (if (= (xg-get M 2) 3) M (xg-err M 7102 f))
           :else (xs-scan-intr M (string-substring S a b) f))))
 (defn- xs-scan [M :vector-i64 S :string f :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= f (vector-at M MM-FN-N))) M
     (xs-scan (xs-scan-one M S f) S (inc f))))
 ;; Runtime functions: scalar SIR and intrinsic/runtime calls only. Guest
-;; functions never call a runtime function directly.
+;; functions never call a runtime function directly; in mode 3 seed/78
+;; (xp-check-api) admits the kxrt-p- functions by name instead.
 (defn- xs-scalar-op? [op :i64] :bool
   (or (and (>= op OP-FN) (<= op OP-CALL)) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)))
 (defn- xs-check [M :vector-i64 i :i64 f :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) g (if (= op OP-FN) a f) rt (xs-rt? M g)]
       (cond (and rt (not (xs-scalar-op? op))) (xg-err M 7101 op)
-            (and (= op OP-CALL) (not rt) (xs-rt? M a)) (xg-err M 7101 op)
+            (and (= op OP-CALL) (not rt) (xs-rt? M a) (not= (xg-get M 2) 3)) (xg-err M 7101 op)
             :else (xs-check M (inc i) g)))))
 
 ;; ---- image ------------------------------------------------------------------
