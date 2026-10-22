@@ -30,6 +30,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[2]
 SELFHOST = "seed/X86_64-LINUX-SELFHOST-MANIFEST"
+SELFHOST_FS2 = "seed/X86_64-LINUX-SELFHOST-FS2-MANIFEST"
 ADOPTED = "seed/ADOPTED-MANIFEST"
 ROOT_IMAGE = "seed/bootstrap/aarch64-linux-static-root.elf"
 ROOT_RECEIPT = "seed/bootstrap/aarch64-linux-static-root.json"
@@ -100,6 +101,24 @@ def main(out):
     assert gens[1]["pin"] == gens[2]["pin"], "aarch64 static fixed point mismatch"
     root_reproduces = gens[0]["pin"] == gens[1]["pin"] == pin(ROOT / ROOT_IMAGE)
     S = out / "S3.elf"
+
+    # 1b. the FS2 successor of the same closure (mandatory FS2 framing on wire 35),
+    # built by S3 and then by itself: T1 = T2 = T3. The FS1 closure above stays the
+    # adopted lineage; T needs the FS2-capable static runtime (seed/76, seed/77).
+    fs2_source = out / "selfhost-fs2-unity.kotoba"
+    fs2_pins = unity(SELFHOST_FS2, fs2_source)
+    fs2_gens, fs2_producer = [], S
+    for g in (1, 2, 3):
+        image = out / f"T{g}.elf"
+        fs2_gens.append(dict(name=f"T{g}", producedBy=fs2_producer.name, pin=compile_(fs2_producer, fs2_source, image, "aarch64-linux", "static", f"T{g}")))
+        fs2_producer = image
+    assert fs2_gens[0]["pin"] == fs2_gens[1]["pin"] == fs2_gens[2]["pin"], "FS2 successor fixed point mismatch"
+    assert fs2_gens[2]["pin"] != gens[2]["pin"], "FS2 successor must differ from the FS1 closure"
+    probe = out / "fs2-probe.kotoba"
+    probe.write_text("(ns fs2-probe (:export [main]))\n(defn main [] :i64 (+ 40 2))\n")
+    probe_pins = [compile_(c, probe, out / f"fs2-probe-{n}.elf", "aarch64-linux", "static", f"fs2-probe-{n}") for n, c in (("S3", S), ("T3", fs2_producer))]
+    assert probe_pins[0] == probe_pins[1], "S3 and T3 compile the probe differently"
+    fs2_successor = dict(sourceGraph=fs2_pins, generations=fs2_gens, probeImage=probe_pins[0])
 
     # 2. runners and the x86_64 compiler, from S3
     (out / "runner.kotoba").write_bytes((ROOT / RUNNER_SRC).read_bytes())
@@ -194,13 +213,13 @@ def main(out):
 
     report = dict(status="PASS_LOADERLESS_SELFHOST_BOOTSTRAP", capabilities=capabilities, host=[platform.system(), platform.machine(), platform.release()],
                   root=dict(image=pin(ROOT / ROOT_IMAGE), receipt=root_receipt), sourceGraph=source_pins,
-                  generations=gens, rootReproduces=root_reproduces, built=built,
+                  generations=gens, rootReproduces=root_reproduces, fs2Successor=fs2_successor, built=built,
                   adopted=dict(sourceGraph=adopted_pins, runnerStackBytes=int(ADOPTED_STACK), generations=adopted_gens,
                                expectedNativeImage=adoption["nativeImageSHA256"]),
                   cases=results, hardening=hardening,
                   cCompilerOrLoader=False, JVMNodeOrGraalFallback=False, emulation=False)
     (out / "selfhost-bootstrap.json").write_text(json.dumps(report, indent=2) + "\n")
-    print(report["status"], "S2=S3", gens[2]["pin"]["sha256"][:16], "root reproduces" if root_reproduces else "root differs (re-pin to S3)", "adopted G1=G2=G3", len(results), "cases", flush=True)
+    print(report["status"], "S2=S3", gens[2]["pin"]["sha256"][:16], "root reproduces" if root_reproduces else "root differs (re-pin to S3)", "FS2 successor T1=T2=T3", fs2_gens[2]["pin"]["sha256"][:16], "adopted G1=G2=G3", len(results), "cases", flush=True)
 
 
 if __name__ == "__main__":

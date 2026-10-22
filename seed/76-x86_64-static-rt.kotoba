@@ -420,22 +420,37 @@
         (kxrt-syscall 437 (kxrt-gl 664) rest how 24 0 0)))))
 (defn- kxrt-sink-close [] :i64
   (let [fd (kxrt-gl 112)] (if (< fd 0) 1 (let [z (kxrt-gs 112 -1) y (kxrt-gs 128 0)] (if (= (kxrt-close fd) 0) 1 (kxrt-fail))))))
+;; FS2 framing (NUL F S 2 NUL, form, path, NUL, tail): the answer starts with the
+;; same five acknowledgement bytes. Forms A read, B write, C append, D exists are
+;; provided; every other form is refused. FS1 token requests are still served.
+(defn- kxrt-ack-at [d :i64] :i64
+  (let [a (kxrt-store8 d 0) b (kxrt-store8 (+ d 1) 70) c (kxrt-store8 (+ d 2) 83) e (kxrt-store8 (+ d 3) 50) f (kxrt-store8 (+ d 4) 0)] d))
+(defn- kxrt-ack-only [] :i64 (let [b (kxrt-gl 200) z (kxrt-ack-at b)] (kxrt-intern b 5)))
+(defn- kxrt-fs2? [a :i64 n :i64] :bool
+  (and (>= n 7) (= (kxrt-load8 a) 0) (= (kxrt-load8 (+ a 1)) 70) (= (kxrt-load8 (+ a 2)) 83) (= (kxrt-load8 (+ a 3)) 50) (= (kxrt-load8 (+ a 4)) 0)))
+(defn- kxrt-nul-at [a :i64 i :i64 n :i64] :i64
+  (loop [k i] (cond (>= k n) -1 (= (kxrt-load8 (+ a k)) 0) k :else (recur (inc k)))))
+(defn- kxrt-fs-exists2 [a :i64 n :i64] :i64
+  (let [m (kxrt-path a n) fd (if (< m 0) -1 (kxrt-open m 557056 0))
+        z (if (< fd 0) 0 (kxrt-close fd))
+        b (kxrt-gl 200) y (kxrt-ack-at b) x (kxrt-store8 (+ b 5) (if (< fd 0) 48 49))]
+    (kxrt-intern b 6)))
 (defn- kxrt-fs-exists [a :i64 n :i64] :i64
   (let [m (kxrt-path a n) fd (if (< m 0) -1 (kxrt-open m 655360 0))]
     (if (< fd 0) (kxrt-intern-dec 0) (let [z (kxrt-close fd)] (kxrt-intern-dec 1)))))
-(defn- kxrt-fs-read [a :i64 n :i64] :i64
+(defn- kxrt-fs-read [a :i64 n :i64 lead :i64] :i64
   (let [m (kxrt-path a n) fd (if (< m 0) -1 (kxrt-open m 655360 0))]
     (if (< fd 0) (kxrt-fail)
       (let [u (kxrt-gl 32) p (+ (kxrt-gl 24) u)
             k (loop [k 0]
-                (let [r (kxrt-syscall 0 fd (+ p k) (if (> (- KXRT-POOL u k) 1048576) 1048576 (- KXRT-POOL u k)) 0 0 0)]
+                (let [r (kxrt-syscall 0 fd (+ p lead k) (if (> (- KXRT-POOL u lead k) 1048576) 1048576 (- KXRT-POOL u lead k)) 0 0 0)]
                   (cond (= r -4) (recur k) (< r 0) -1 (= r 0) k
-                        (>= (+ u k r) KXRT-POOL) -2
+                        (>= (+ u lead k r) KXRT-POOL) -2
                         :else (recur (+ k r)))))
             z (kxrt-close fd)]
         (cond (= k -2) (kxrt-budget 4) (< k 0) (kxrt-fail)
-              :else (let [w (kxrt-gs 32 (+ u k))] (kxrt-pair-new (- -1 u) k)))))))
-(defn- kxrt-fs-write [a :i64 n :i64 i :i64 tl :i64 append :bool] :i64
+              :else (let [q (if (= lead 0) 0 (kxrt-ack-at p)) w (kxrt-gs 32 (+ u lead k))] (kxrt-pair-new (- -1 u) (+ lead k))))))))
+(defn- kxrt-fs-write [a :i64 n :i64 i :i64 tl :i64 append :bool fs2 :bool] :i64
   (let [m (kxrt-path a i) c (+ a i tl) cn (- n (+ i tl)) d (kxrt-gl 208)
         same (and append (>= (kxrt-gl 112) 0) (= (kxrt-gl 128) m) (kxrt-same (kxrt-gl 120) d m))
         fd (cond (< m 0) (kxrt-fail)
@@ -446,7 +461,7 @@
                  :else (kxrt-open m 655937 420))
         ok (if (< fd 0) (kxrt-fail) (kxrt-write-all fd c cn))
         z (if append 0 (kxrt-close fd))]
-    (if (= ok 1) (kxrt-intern c cn) (kxrt-fail))))
+    (if (= ok 1) (if fs2 (kxrt-ack-only) (kxrt-intern c cn)) (kxrt-fail))))
 (defn- kxrt-fs-tok [a :i64 n :i64 k :i64] :bool
   (case k
     3 (>= (kxrt-find a n 0x45535f45474e4152 0x50 9) 0) 4 (>= (kxrt-find a n 0x5045535f54415453 0 8) 0)
@@ -458,18 +473,29 @@
 (defn- kxrt-fs-other? [a :i64 n :i64] :bool
   (loop [k 3] (cond (> k 14) false (kxrt-fs-tok a n k) true :else (recur (inc k)))))
 ;; the loader's fs_app_data_dispatch for a validated request string h
-(defn- kxrt-fs [h :i64] :i64
+(defn- kxrt-fs1 [h :i64] :i64
   (let [a (kxrt-saddr h) n (kxrt-ps h)
         wi (kxrt-find a n 0x45535f4554495257 0x50 9) ai (kxrt-find a n 0x535f444e45505041 0x5045 10) ei (kxrt-find a n 0x535f535453495845 0x5045 10)
         append (and (>= ai 0) (or (< wi 0) (< ai wi)))]
-    (cond append (if (= (kxrt-count2 a n 0x535f444e45505041 0x5045 10) 1) (kxrt-fs-write a n ai 10 true) (kxrt-fail))
+    (cond append (if (= (kxrt-count2 a n 0x535f444e45505041 0x5045 10) 1) (kxrt-fs-write a n ai 10 true false) (kxrt-fail))
           (>= wi 0) (let [z (kxrt-sink-close)]
-                      (if (= (kxrt-count2 a n 0x45535f4554495257 0x50 9) 1) (kxrt-fs-write a n wi 9 false) (kxrt-fail)))
+                      (if (= (kxrt-count2 a n 0x45535f4554495257 0x50 9) 1) (kxrt-fs-write a n wi 9 false false) (kxrt-fail)))
           (>= ei 0) (let [z (kxrt-sink-close)] (kxrt-fs-exists a ei))
           ;; RANGE, STAT, ... are not provided by this runtime: refused.
           (kxrt-fs-other? a n) (kxrt-fail)
-          :else (let [z (kxrt-sink-close)] (kxrt-fs-read a n)))))
+          :else (let [z (kxrt-sink-close)] (kxrt-fs-read a n 0)))))
 
+;; FS2 dispatch: path is [a+6, z), the tail follows the NUL at z
+(defn- kxrt-fs2 [a :i64 n :i64] :i64
+  (let [f (kxrt-load8 (+ a 5)) z (kxrt-nul-at a 6 n)]
+    (cond (< z 0) (kxrt-fail)
+          (= f 65) (let [y (kxrt-sink-close)] (kxrt-fs-read (+ a 6) (- z 6) 5))
+          (= f 66) (let [y (kxrt-sink-close)] (kxrt-fs-write (+ a 6) (- n 6) (- z 6) 1 false true))
+          (= f 67) (kxrt-fs-write (+ a 6) (- n 6) (- z 6) 1 true true)
+          (= f 68) (let [y (kxrt-sink-close)] (kxrt-fs-exists2 (+ a 6) (- z 6)))
+          :else (kxrt-fail))))
+(defn- kxrt-fs [h :i64] :i64
+  (let [a (kxrt-saddr h) n (kxrt-ps h)] (if (kxrt-fs2? a n) (kxrt-fs2 a n) (kxrt-fs1 h))))
 ;; ---- wire 42 :gpu/compute: a transport to the GPU provider (ADR 0371) ----
 ;; The provider is another process. The launcher passes two inherited fds,
 ;; KEXE_CAP_RESOURCES_42=REQUEST,ANSWER (checked at start, kxrt-gpu-fds). A
@@ -521,6 +547,7 @@
           (if (< (kxrt-signal 13 act) 0) (kxrt-die) 0))))))
 (defn- kxrt-typed-cap-call [id :i64 rk :i64 sk :i64 req :i64] :i64
   (cond (not (kxrt-admitted? id)) (kxrt-fail)
+        (and (= rk 1) (= sk 8) (= id 35)) (let [v (kxrt-valid req) r (kxrt-fs req)] (kxrt-bytes-raw (kxrt-saddr r) (kxrt-ps r)))
         (not= rk sk) (kxrt-fail)
         (= rk 1)
           (let [v (kxrt-valid req)

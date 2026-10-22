@@ -1,0 +1,21 @@
+{
+ "schema": "amu.gate3.fs2-root.v1",
+ "date": "2026-10-22",
+ "change": "seed/76-x86_64-static-rt.kotoba and seed/77-aarch64-static-rt.kotoba: wire 35 answers FS2 frames (NUL FS2 NUL, form, path, NUL, tail) with the same five acknowledgement bytes; forms A read, B write, C append, D exists; every other form (E..P) is refused; typed kind 9 (string request, bytes answer) is accepted; FS1 token requests are still served for the adopted lineage.",
+ "newManifest": "seed/X86_64-LINUX-SELFHOST-FS2-MANIFEST (the selfhost closure with the FS2 seed/02-io and seed/50-out)",
+ "script": "scripts/seed/selfhost-bootstrap.py stage 1b builds T1, T2, T3 from the FS2 closure, asserts T1 = T2 = T3, T3 != S3, and that S3 and T3 compile a probe to the same image",
+ "root": {
+  "previous": "be60c6cd2d05b2b37b70b1eec7271121fc10718e40162b6b6948b3fe8dcd263a",
+  "new": "2095dea2d77fa58e7677725281a7f39e2c8e1ba53a7fef2a76dc47e26a9a10bf",
+  "bytes": 1339904
+ },
+ "run": "PASS_LOADERLESS_SELFHOST_BOOTSTRAP from the re-pinned root: root = S1 = S2 = S3 (2095dea2d77fa58e), FS2 successor T1 = T2 = T3 (c9ca977adb6265d3), adopted G1=G2=G3 (fe01d4d2e895c503), 24 cases, hardening, sha256 and scope-root capability checks",
+ "controls": "The FS2 successor built before the fix (first attempt) was in fact the FS1 closure because of a manifest error and equalled S3; after fixing the manifest, T differs from S3.",
+ "limits": [
+  "Forms E..P (range, stat, rename, directory forms...) are refused, not implemented; the FS2 owner contract in kotoba-native #205 defines them and was not available here.",
+  "The selfhost driver exercises forms A, B, C and D and kind 8; kind 9 (io-read-bytes) is implemented but not exercised by this chain.",
+  "Missing-acknowledgement and malformed-frame refusals were not tested.",
+  "aarch64 execution only; x86 runtime source changed identically but was not run.",
+  "Embench and policy/safety qualification of the new images are not re-run."
+ ]
+}
